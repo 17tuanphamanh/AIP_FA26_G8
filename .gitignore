@@ -39,3 +39,6 @@ data/*
 outputs/
 logs/
 *.log
+
+# tai lieu ca nhan, khong dua vao repo nhom
+LUAT_GIT.md
