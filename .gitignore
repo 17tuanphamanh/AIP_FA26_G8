@@ -1,0 +1,41 @@
+# moi truong ao va thu vien
+.venv/
+venv/
+env/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# notebook
+.ipynb_checkpoints/
+
+# he dieu hanh / editor
+.DS_Store
+.idea/
+.vscode/
+
+# bi mat - KHONG BAO GIO commit (Dieu 6)
+.env
+*.key
+secrets/
+
+# du lieu va model - nang, tai lai duoc (Dieu 7)
+data/*
+!data/.gitkeep
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.csv
+*.parquet
+*.zip
+
+# ket qua chay
+outputs/
+logs/
+*.log
