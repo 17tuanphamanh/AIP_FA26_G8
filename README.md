@@ -52,6 +52,4 @@ Mở [agent/tools.py](agent/tools.py):
 - Trước khi commit: `git status` → `git diff` → chạy `pytest` → mới `git add -A`.
 - Mỗi người làm xong phần của mình thì `git pull` trước, rồi mới `git push`.
 
-## Model đang dùng
 
-`claude-opus-5` qua Anthropic Python SDK. Đổi model bằng biến `MODEL` trong `.env`, không sửa thẳng vào code.
