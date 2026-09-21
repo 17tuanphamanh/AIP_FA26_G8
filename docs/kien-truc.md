@@ -6,7 +6,7 @@
 người dùng
     │  câu hỏi
     ▼
-main.py ──► Agent.hoi()  (agent/core.py)
+main.py ──► Agent.ask()  (agent/core.py)
                 │
                 ▼
         tool_runner của SDK
@@ -22,7 +22,7 @@ main.py ──► Agent.hoi()  (agent/core.py)
 
 - **Tool runner thay vì tự viết vòng lặp:** SDK lo phần gọi API → chạy tool → nạp kết quả → gọi tiếp. Ít code hơn, ít lỗi hơn.
 - **Tool tách làm 2 lớp** (hàm thuần + bản bọc `@beta_tool`): test được logic mà không cần gọi API, đỡ tốn tiền và chạy nhanh.
-- **Chặn đường dẫn ra ngoài repo** trong `_duong_dan_an_toan`: không cho model đọc bừa file trong máy.
+- **Chặn đường dẫn ra ngoài repo** trong `_safe_path`: không cho model đọc bừa file trong máy.
 
 ## Những thứ còn thiếu / dự định làm thêm
 

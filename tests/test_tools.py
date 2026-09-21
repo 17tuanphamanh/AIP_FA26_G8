@@ -1,26 +1,26 @@
-"""Test cac tool - chay duoc ma khong can goi API."""
+"""Tests for the tools — runnable without any API call."""
 
-from agent.tools import doc_file, liet_ke_file
-
-
-def test_doc_file_doc_duoc_file_co_that():
-    noi_dung = doc_file("README.md")
-    assert "AIP_FA26_G8" in noi_dung
+from agent.tools import list_files, read_file
 
 
-def test_doc_file_bao_loi_khi_khong_co_file():
-    assert doc_file("khong-ton-tai.md").startswith("Loi:")
+def test_read_file_reads_an_existing_file():
+    content = read_file("README.md")
+    assert "AIP_FA26_G8" in content
 
 
-def test_doc_file_chan_duong_dan_ra_ngoai_repo():
-    ket_qua = doc_file("../../etc/passwd")
-    assert ket_qua.startswith("Loi:")
+def test_read_file_reports_a_missing_file():
+    assert read_file("khong-ton-tai.md").startswith("Lỗi:")
 
 
-def test_liet_ke_file_thay_thu_muc_agent():
-    ket_qua = liet_ke_file(".")
-    assert "agent/" in ket_qua.splitlines()
+def test_read_file_rejects_a_path_outside_the_repo():
+    result = read_file("../../etc/passwd")
+    assert result.startswith("Lỗi:")
 
 
-def test_liet_ke_file_bao_loi_khi_khong_phai_thu_muc():
-    assert liet_ke_file("README.md").startswith("Loi:")
+def test_list_files_sees_the_agent_directory():
+    result = list_files(".")
+    assert "agent/" in result.splitlines()
+
+
+def test_list_files_reports_a_non_directory():
+    assert list_files("README.md").startswith("Lỗi:")

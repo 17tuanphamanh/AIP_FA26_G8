@@ -1,23 +1,30 @@
-"""Test phan cau hinh - khong goi API that."""
+"""Tests for the config layer — no real API calls."""
 
 import pytest
 
-from agent.config import MODEL_MAC_DINH, CauHinh, doc_prompt
+from agent.config import DEFAULT_MODEL, Config, read_prompt
 
 
-def test_thieu_api_key_thi_bao_loi_ro_rang(monkeypatch):
+def test_missing_api_key_raises_a_clear_error(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
-        CauHinh.tu_moi_truong()
+        Config.from_env()
 
 
-def test_doc_duoc_cau_hinh_tu_bien_moi_truong(monkeypatch):
+def test_config_is_read_from_environment(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-gia-lap")
     monkeypatch.delenv("MODEL", raising=False)
-    cau_hinh = CauHinh.tu_moi_truong()
-    assert cau_hinh.api_key == "sk-ant-gia-lap"
-    assert cau_hinh.model == MODEL_MAC_DINH
+    config = Config.from_env()
+    assert config.api_key == "sk-ant-gia-lap"
+    assert config.model == DEFAULT_MODEL
 
 
-def test_co_file_system_prompt():
-    assert "AIP_FA26_G8" in doc_prompt("system.md")
+def test_max_steps_is_read_from_environment(monkeypatch):
+    """MAX_STEPS was renamed from SO_BUOC_TOI_DA — pin the new name down."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-gia-lap")
+    monkeypatch.setenv("MAX_STEPS", "7")
+    assert Config.from_env().max_steps == 7
+
+
+def test_system_prompt_file_exists():
+    assert "AIP_FA26_G8" in read_prompt("system.md")

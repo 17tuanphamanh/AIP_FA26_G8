@@ -1,6 +1,6 @@
-"""Cau hinh doc tu bien moi truong (.env).
+"""Configuration loaded from environment variables (.env).
 
-Khong bao gio viet thang API key vao code (Dieu 6 trong LUAT_GIT.md).
+Never write an API key straight into the code; keep it in .env, which is gitignored.
 """
 
 import os
@@ -9,41 +9,41 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-GOC_REPO = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Nap file .env o goc repo neu co. .env nam trong .gitignore.
-load_dotenv(GOC_REPO / ".env")
+# Load .env from the repo root if present. .env is gitignored.
+load_dotenv(REPO_ROOT / ".env")
 
-# Model mac dinh. Doi o .env bang bien MODEL neu can.
-MODEL_MAC_DINH = "claude-opus-5"
+# Default model. Override with MODEL in .env.
+DEFAULT_MODEL = "claude-opus-5"
 
 
 @dataclass(frozen=True)
-class CauHinh:
+class Config:
     api_key: str
     model: str
     max_tokens: int
-    so_buoc_toi_da: int
+    max_steps: int
 
     @staticmethod
-    def tu_moi_truong() -> "CauHinh":
+    def from_env() -> "Config":
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
             raise RuntimeError(
-                "Thieu ANTHROPIC_API_KEY. Copy .env.example thanh .env roi dien key vao."
+                "Thiếu ANTHROPIC_API_KEY. Copy .env.example thành .env rồi điền key vào."
             )
-        return CauHinh(
+        return Config(
             api_key=api_key,
-            model=os.environ.get("MODEL", MODEL_MAC_DINH),
+            model=os.environ.get("MODEL", DEFAULT_MODEL),
             max_tokens=int(os.environ.get("MAX_TOKENS", "16000")),
-            so_buoc_toi_da=int(os.environ.get("SO_BUOC_TOI_DA", "20")),
+            max_steps=int(os.environ.get("MAX_STEPS", "20")),
         )
 
 
-def duong_dan_prompt(ten: str) -> Path:
-    """Tra ve duong dan toi mot file prompt trong agent/prompts/."""
-    return GOC_REPO / "agent" / "prompts" / ten
+def prompt_path(name: str) -> Path:
+    """Return the path to a prompt file in agent/prompts/."""
+    return REPO_ROOT / "agent" / "prompts" / name
 
 
-def doc_prompt(ten: str) -> str:
-    return duong_dan_prompt(ten).read_text(encoding="utf-8")
+def read_prompt(name: str) -> str:
+    return prompt_path(name).read_text(encoding="utf-8")

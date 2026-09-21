@@ -1,85 +1,85 @@
-"""Cac tool ma agent duoc phep goi.
+"""Tools the agent is allowed to call.
 
-Moi tool gom 2 phan:
-  - mot ham Python thuan (doc_file, liet_ke_file) - de goi truc tiep va viet test;
-  - mot ban boc @beta_tool (tool_doc_file, ...) - de dua cho Claude.
+Every tool comes in two layers:
+  - a plain Python function (read_file, list_files) — callable directly and testable;
+  - a @beta_tool wrapper (tool_read_file, ...) — the thing handed to Claude.
 
-Docstring cua ban boc chinh la phan Claude doc de biet khi nao goi tool nay,
-nen viet cho ky. Schema tham so duoc SDK sinh tu type hint.
+The wrapper's docstring is what Claude reads to decide when to call the tool, so
+write it carefully. The SDK derives the parameter schema from the type hints.
 
-Them tool moi: viet ham thuan, viet ban boc @beta_tool, them vao DANH_SACH_TOOL.
+Adding a tool: write the plain function, write the @beta_tool wrapper, append to TOOLS.
 """
 
 from pathlib import Path
 
 from anthropic import beta_tool
 
-from agent.config import GOC_REPO
+from agent.config import REPO_ROOT
 
-# Gioi han so ky tu doc ra tu mot file, tranh nhoi het context window.
-GIOI_HAN_KY_TU = 20_000
-
-
-def _duong_dan_an_toan(duong_dan_tuong_doi: str) -> Path:
-    """Chan viec truy cap file nam ngoai repo (vi du ../../.ssh/id_rsa)."""
-    dich = (GOC_REPO / duong_dan_tuong_doi).resolve()
-    if not dich.is_relative_to(GOC_REPO):
-        raise ValueError("Chi duoc truy cap file nam trong thu muc du an.")
-    return dich
+# Cap on characters read from a single file, so one file cannot fill the context window.
+CHAR_LIMIT = 20_000
 
 
-def doc_file(duong_dan: str) -> str:
-    """Doc noi dung mot file van ban trong repo, tra ve chuoi."""
+def _safe_path(relative_path: str) -> Path:
+    """Block access to files outside the repo (e.g. ../../.ssh/id_rsa)."""
+    target = (REPO_ROOT / relative_path).resolve()
+    if not target.is_relative_to(REPO_ROOT):
+        raise ValueError("Chỉ được truy cập file nằm trong thư mục dự án.")
+    return target
+
+
+def read_file(path: str) -> str:
+    """Read a text file inside the repo and return its contents."""
     try:
-        dich = _duong_dan_an_toan(duong_dan)
-    except ValueError as loi:
-        return f"Loi: {loi}"
+        target = _safe_path(path)
+    except ValueError as err:
+        return f"Lỗi: {err}"
 
-    if not dich.is_file():
-        return f"Loi: khong tim thay file {duong_dan}"
+    if not target.is_file():
+        return f"Lỗi: không tìm thấy file {path}"
 
-    noi_dung = dich.read_text(encoding="utf-8", errors="replace")
-    if len(noi_dung) > GIOI_HAN_KY_TU:
-        return noi_dung[:GIOI_HAN_KY_TU] + "\n... (da cat bot vi file qua dai)"
-    return noi_dung
+    content = target.read_text(encoding="utf-8", errors="replace")
+    if len(content) > CHAR_LIMIT:
+        return content[:CHAR_LIMIT] + "\n... (đã cắt bớt vì file quá dài)"
+    return content
 
 
-def liet_ke_file(thu_muc: str = ".") -> str:
-    """Liet ke ten cac muc trong mot thu muc cua repo, moi ten mot dong."""
+def list_files(directory: str = ".") -> str:
+    """List the entries of a directory in the repo, one name per line."""
     try:
-        dich = _duong_dan_an_toan(thu_muc)
-    except ValueError as loi:
-        return f"Loi: {loi}"
+        target = _safe_path(directory)
+    except ValueError as err:
+        return f"Lỗi: {err}"
 
-    if not dich.is_dir():
-        return f"Loi: {thu_muc} khong phai thu muc"
+    if not target.is_dir():
+        return f"Lỗi: {directory} không phải thư mục"
 
-    ten = sorted(
-        muc.name + ("/" if muc.is_dir() else "")
-        for muc in dich.iterdir()
-        if not muc.name.startswith(".")
+    names = sorted(
+        entry.name + ("/" if entry.is_dir() else "")
+        for entry in target.iterdir()
+        if not entry.name.startswith(".")
     )
-    return "\n".join(ten) if ten else "(thu muc rong)"
+    return "\n".join(names) if names else "(thư mục rỗng)"
 
 
 @beta_tool
-def tool_doc_file(duong_dan: str) -> str:
-    """Doc noi dung mot file van ban trong thu muc du an.
+def tool_read_file(path: str) -> str:
+    """Read a text file inside the project directory.
 
     Args:
-        duong_dan: Duong dan tuong doi tinh tu goc repo, vi du "docs/de-bai.md".
+        path: Path relative to the repo root, e.g. "docs/de-bai.md".
     """
-    return doc_file(duong_dan)
+    return read_file(path)
 
 
 @beta_tool
-def tool_liet_ke_file(thu_muc: str = ".") -> str:
-    """Liet ke ten cac file va thu muc con nam trong mot thu muc cua du an.
+def tool_list_files(directory: str = ".") -> str:
+    """List the files and sub-directories inside a directory of the project.
 
     Args:
-        thu_muc: Duong dan tuong doi tinh tu goc repo. Mac dinh la goc repo.
+        directory: Path relative to the repo root. Defaults to the repo root.
     """
-    return liet_ke_file(thu_muc)
+    return list_files(directory)
 
 
-DANH_SACH_TOOL = [tool_doc_file, tool_liet_ke_file]
+TOOLS = [tool_read_file, tool_list_files]

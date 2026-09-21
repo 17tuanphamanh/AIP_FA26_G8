@@ -42,7 +42,7 @@ Mở [agent/tools.py](agent/tools.py):
 
 1. Viết hàm Python thuần (dễ test).
 2. Viết bản bọc `@beta_tool` gọi vào hàm đó — **docstring chính là thứ model đọc** để biết khi nào dùng tool, viết cho rõ.
-3. Thêm vào `DANH_SACH_TOOL`.
+3. Thêm vào `TOOLS`.
 4. Viết test trong `tests/test_tools.py`.
 
 ## Quy ước làm việc chung

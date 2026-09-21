@@ -1,57 +1,57 @@
-"""Vong lap agent: dua cau hoi cho Claude, de Claude tu goi tool den khi xong.
+"""The agent loop: hand a question to Claude, let it call tools until it is done.
 
-Dung tool runner cua SDK (client.beta.messages.tool_runner) - no lo phan
-"goi API -> chay tool -> nap ket qua lai -> goi tiep" thay minh.
-Model mac dinh claude-opus-5 da bat adaptive thinking san, khong can khai bao them.
+Uses the SDK's tool runner (client.beta.messages.tool_runner) — it handles the
+"call API -> run tool -> feed the result back -> call again" cycle for us.
+The default model claude-opus-5 has adaptive thinking on already; nothing to declare.
 """
 
 import anthropic
 
-from agent.config import CauHinh, doc_prompt
-from agent.tools import DANH_SACH_TOOL
+from agent.config import Config, read_prompt
+from agent.tools import TOOLS
 
 
 class Agent:
-    def __init__(self, cau_hinh: CauHinh | None = None, tools: list | None = None):
-        self.cau_hinh = cau_hinh or CauHinh.tu_moi_truong()
-        self.tools = DANH_SACH_TOOL if tools is None else tools
-        self.system = doc_prompt("system.md")
-        self.client = anthropic.Anthropic(api_key=self.cau_hinh.api_key)
-        # Lich su hoi thoai, giu lai de agent nho nhung luot truoc.
-        self.lich_su: list[dict] = []
+    def __init__(self, config: Config | None = None, tools: list | None = None):
+        self.config = config or Config.from_env()
+        self.tools = TOOLS if tools is None else tools
+        self.system = read_prompt("system.md")
+        self.client = anthropic.Anthropic(api_key=self.config.api_key)
+        # Conversation history, kept so the agent remembers earlier turns.
+        self.history: list[dict] = []
 
-    def hoi(self, cau_hoi: str, in_tien_trinh: bool = False) -> str:
-        """Gui mot cau hoi, tra ve phan tra loi dang van ban cua Claude."""
-        self.lich_su.append({"role": "user", "content": cau_hoi})
+    def ask(self, question: str, show_progress: bool = False) -> str:
+        """Send one question, return Claude's answer as plain text."""
+        self.history.append({"role": "user", "content": question})
 
         runner = self.client.beta.messages.tool_runner(
-            model=self.cau_hinh.model,
-            max_tokens=self.cau_hinh.max_tokens,
+            model=self.config.model,
+            max_tokens=self.config.max_tokens,
             system=self.system,
             tools=self.tools,
-            messages=self.lich_su,
-            max_iterations=self.cau_hinh.so_buoc_toi_da,
+            messages=self.history,
+            max_iterations=self.config.max_steps,
         )
 
-        cuoi_cung = None
-        for tin_nhan in runner:
-            cuoi_cung = tin_nhan
-            self.lich_su.append({"role": "assistant", "content": tin_nhan.content})
-            ket_qua_tool = runner.generate_tool_call_response()
-            if ket_qua_tool is not None:
-                self.lich_su.append(ket_qua_tool)
-            if in_tien_trinh:
-                for khoi in tin_nhan.content:
-                    if khoi.type == "tool_use":
-                        print(f"  [tool] {khoi.name}({khoi.input})")
+        last = None
+        for message in runner:
+            last = message
+            self.history.append({"role": "assistant", "content": message.content})
+            tool_result = runner.generate_tool_call_response()
+            if tool_result is not None:
+                self.history.append(tool_result)
+            if show_progress:
+                for block in message.content:
+                    if block.type == "tool_use":
+                        print(f"  [tool] {block.name}({block.input})")
 
-        if cuoi_cung is None:
-            return "(khong nhan duoc phan hoi)"
-        return lay_van_ban(cuoi_cung)
+        if last is None:
+            return "(không nhận được phản hồi)"
+        return extract_text(last)
 
 
-def lay_van_ban(tin_nhan) -> str:
-    """Gop cac khoi text trong mot message thanh mot chuoi."""
+def extract_text(message) -> str:
+    """Join the text blocks of a message into a single string."""
     return "\n".join(
-        khoi.text for khoi in tin_nhan.content if khoi.type == "text"
+        block.text for block in message.content if block.type == "text"
     ).strip()
