@@ -19,12 +19,40 @@ from agent.config import REPO_ROOT
 # Cap on characters read from a single file, so one file cannot fill the context window.
 CHAR_LIMIT = 20_000
 
+# Secrets live INSIDE the repo, so the "stay inside the repo" check does not cover
+# them. Without this list the agent can read .env and print the API key straight
+# into the answer. Mirrors the secret section of .gitignore, plus .git/ (which
+# holds remote URLs and the whole history).
+SECRET_DIRS = {".git", "secrets"}
+SECRET_SUFFIXES = (".key", ".pem")
+# Public sample file — safe to read, and the tests and docs point at it.
+PUBLIC_FILES = {".env.example"}
+
+
+def _is_secret(target: Path) -> bool:
+    """True for files inside the repo that the agent must never read."""
+    relative = target.relative_to(REPO_ROOT)
+    name = relative.name
+    if name in PUBLIC_FILES:
+        return False
+    if SECRET_DIRS.intersection(relative.parts):
+        return True
+    if name == ".env" or name.startswith(".env."):
+        return True
+    return name.endswith(SECRET_SUFFIXES)
+
 
 def _safe_path(relative_path: str) -> Path:
-    """Block access to files outside the repo (e.g. ../../.ssh/id_rsa)."""
+    """Block access to files outside the repo (e.g. ../../.ssh/id_rsa) and to secrets.
+
+    Secrets are refused whether or not the file exists, so the error message never
+    reveals which secret files are present.
+    """
     target = (REPO_ROOT / relative_path).resolve()
     if not target.is_relative_to(REPO_ROOT):
         raise ValueError("Chỉ được truy cập file nằm trong thư mục dự án.")
+    if _is_secret(target):
+        raise ValueError("Không được phép đọc file bí mật.")
     return target
 
 
