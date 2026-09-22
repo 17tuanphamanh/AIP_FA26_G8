@@ -1,30 +1,29 @@
 #!/bin/bash
-# Chặn commit khi test đỏ. Chạy bằng PreToolUse hook, xem .claude/settings.json.
-# exit 2 = chặn tool call. exit 1 chỉ là lỗi thường, KHÔNG chặn được.
-cd "$CLAUDE_PROJECT_DIR" || exit 0
+# Lớp mỏng cho Claude Code — gọi thẳng hook git ở .githooks/pre-commit, để logic
+# soát test chỉ nằm MỘT chỗ. Sửa luật soát thì sửa bên đó, đừng sửa file này.
+#
+# Vì sao vẫn giữ lớp này khi đã có hook git:
+#   - Nó chặn SỚM hơn, trước khi lệnh git kịp chạy.
+#   - Nó vẫn gác kể cả khi ai đó quên `git config core.hooksPath .githooks`.
+#
+# Khác biệt duy nhất là mã thoát: PreToolUse cần exit 2 mới chặn được tool call,
+# exit 1 chỉ là lỗi thường và KHÔNG chặn.
+#
+# Rà 22/09/2026 — bỏ `cd ... || exit 0`. Hướng hỏng cũ là im lặng cho qua:
+# biến rỗng thì hook thoát 0 và commit lọt. Giờ hỏng ở đâu cũng chặn.
+set -u
 
-# Rà 22/09/2026 — vá lỗ `git commit -a`.
-# Bản cũ: lấy --cached, RỖNG thì mới ngó `git diff HEAD`. Nên khi đã stage một
-# file .md trong lúc vài file .py đang bẩn, `git commit -a` gom hết .py vào
-# commit mà hook thấy danh sách toàn .md rồi bỏ qua test. Đúng tình huống đã
-# xảy ra: staged = docs/quy-uoc-du-an.md, 8 file .py bẩn.
-# Giờ lấy HỢP của hai tập. pytest ở repo này chạy 1.0s — chạy thừa vài lần rẻ
-# hơn nhiều so với lọt một commit đỏ.
-files=$(
-  git diff --cached --name-only
-  git diff --name-only HEAD
-)
-printf '%s\n' "$files" | grep -qE '\.py$' || exit 0
+repo="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+if [ -z "$repo" ] || [ ! -d "$repo" ]; then
+  echo "Không xác định được thư mục repo — không soát được test." >&2
+  exit 2
+fi
+cd "$repo" || { echo "Không vào được $repo." >&2; exit 2; }
 
-# Không có .venv thì nói thẳng, đừng để pytest hỏng rồi báo "test đỏ" sai sự thật.
-if [ ! -x .venv/bin/python ]; then
-  echo "Không thấy .venv/bin/python — chưa dựng môi trường, không soát được test." >&2
-  echo "Dựng bằng: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt" >&2
+if [ ! -x .githooks/pre-commit ]; then
+  echo "Thiếu .githooks/pre-commit — không soát được test." >&2
   exit 2
 fi
 
-if ! .venv/bin/python -m pytest -q; then
-  echo "Test đỏ — sửa xong rồi hãy commit." >&2
-  exit 2
-fi
+.githooks/pre-commit || exit 2
 exit 0

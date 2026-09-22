@@ -1,10 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.venv/bin/python -m pytest *)", "Bash(python3 -m pytest *)"
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(python3 -m pytest *)"
     ],
     "ask": [
-      "Bash(pip install *)", "Bash(pip3 install *)"
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -m pip install *)",
+      "Bash(python -m pip install *)",
+      "Bash(python3 -m pip install *)",
+      "Bash(uv pip install *)",
+      "Bash(uv add *)",
+      "Bash(poetry add *)",
+      "Bash(conda install *)",
+      "Bash(*pip install *)",
+      "Bash(*pip3 install *)"
     ]
   },
   "hooks": {

@@ -1,0 +1,44 @@
+#!/bin/bash
+# Chặn mọi dấu vết AI trong thông điệp commit.
+#
+# Vì sao ở TẦNG GIT chứ không phải hook của Claude Code:
+#   - Hook PreToolUse chỉ thấy chuỗi lệnh. Commit qua `-F file`, qua trình soạn
+#     thảo, qua `--amend`, qua script khác thì nó không thấy gì.
+#   - commit-msg đọc ĐÚNG thông điệp cuối cùng, ngay trước khi commit thành
+#     hình. Không có đường nào vòng qua, kể cả khi đổi agent hay đổi công cụ.
+#   - Và nó không thêm một prompt nào vào phiên làm việc — đó là điều kiện.
+#
+# Nằm ở .githooks/ (trong repo) chứ không phải .git/hooks/ để đồng đội clone về
+# là có. Cài MỘT LẦN sau khi clone:  git config core.hooksPath .githooks
+#
+# Không đặt ở PreToolUse còn vì lý do thứ hai: chuỗi lệnh ghi CHÍNH file này
+# có chứa mấy mẫu bên dưới, nên guard đặt sai tầng sẽ tự chặn lúc cài nó.
+#
+# Cần cố tình bỏ qua (ví dụ commit chính file này, message buộc phải nhắc mẫu):
+#   git commit --no-verify
+set -u
+msg="$1"
+
+mau='co-authored-by:[[:space:]]*claude'
+mau+='|claude-session:'
+mau+='|generated with[[:space:]]*\[?claude'
+mau+='|claude\.ai/(code|share)'
+mau+='|noreply@anthropic\.com'
+mau+='|🤖'
+
+# Bỏ dòng comment của git (# ...) — `git commit -v` nhét cả diff vào đó, mà diff
+# có thể chứa mẫu một cách chính đáng (đúng như file này). Chỉ soi phần người viết.
+if grep -v '^#' "$msg" | grep -qiE "$mau"; then
+  cat >&2 <<'LOI'
+
+  ✖ Commit bị chặn: thông điệp có dấu vết AI.
+
+  Repo này không nhận Co-Authored-By: Claude, Claude-Session, link claude.ai
+  hay 🤖 trong lịch sử. Xoá các dòng đó rồi commit lại.
+
+  Thật sự cần giữ:  git commit --no-verify
+
+LOI
+  exit 1
+fi
+exit 0
