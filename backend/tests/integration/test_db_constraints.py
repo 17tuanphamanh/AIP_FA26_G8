@@ -165,6 +165,22 @@ def test_audit_accepts_valid_risk_fields(rw: Engine, seeded: dict[str, str]) -> 
         _audit(conn, seeded["ticket"], raw_prob=0.3, calibrated_prob=0.2, p_method="sampling_k5")
 
 
+# Cổng 1 (huong-dan 5.1, thủ công và tài liệu): "Ghi audit thiếu trường bắt buộc bị từ chối".
+@pytest.mark.parametrize("missing", ["ticket_id", "step", "event"])
+def test_audit_missing_required_field_rejected(
+    rw: Engine, seeded: dict[str, str], missing: str
+) -> None:
+    row = {"ticket_id": seeded["ticket"], "step": "B3", "event": "classified"}
+    del row[missing]
+    with pytest.raises(DBAPIError, match="not-null|null value"), rw.begin() as conn:
+        insert(conn, "audit_logs", **row)
+
+
+def test_audit_unknown_ticket_rejected(rw: Engine) -> None:
+    with pytest.raises(DBAPIError, match="fk_audit_logs_ticket_id_tickets"), rw.begin() as conn:
+        _audit(conn, _id("khong-co"))
+
+
 # ---- 6. một phiếu pending mỗi ticket; rejected phải có note ----------------------------------
 
 

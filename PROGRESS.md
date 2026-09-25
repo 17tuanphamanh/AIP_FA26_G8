@@ -8,8 +8,8 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **1 — Hạ tầng, DB, domain, mock, auth** |
-| Cổng xanh | Phase 0; T01 (cấu trúc project, 26/09/2026) — cổng Phase 1: P5 xong phần code (chặng 1 của Phase 1c, chờ người duyệt), auth P6 là chặng 2 |
+| Phase đang mở | **Phase 1 đã đóng (26/09/2026).** Phase 2 (P1, B01, B20) chưa mở — chờ giao task |
+| Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
 | Cập nhật | 26/09/2026 |
 
 ## Phase 0 — đã xong (25/09/2026)
@@ -39,15 +39,15 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 
 `make test` = 908 passed (874 unit + 34 integration trên testcontainers Postgres 16), 26/09/2026.
 
-## Phase 1 — đang mở
+## Phase 1 — đã đóng (26/09/2026)
 
 | Việc | Trạng thái |
 |---|---|
 | docker-compose (postgres 16, qdrant, backend, worker, mock) + `make up/down` | **Xong** 25/09/2026 (Phase 1a) — backend và worker chung image `servicedesk-backend`; mock mới có `/health` |
 | DB 22 bảng + 3 role Postgres + trigger append-only (Alembic, P7) | **Xong** 25/09/2026 (Phase 1a) — migration `0001` chạy bằng `app_migrate`; bảng nguồn từng cột ở `backend/app/db/README.md`; 34 test integration (testcontainers) |
 | `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | **Xong** 25/09/2026 (Phase 1b) — `build_action` làm cùng B11 (câu hỏi 9) |
-| `mock_services` + `seed.json` + `make seed` + registry/tool (P5) | **Code xong, `make test` xanh** 26/09/2026 (Phase 1c chặng 1) — chờ người duyệt |
-| Auth (P6) | Chưa |
+| `mock_services` + `seed.json` + `make seed` + registry/tool (P5) | **Xong** 26/09/2026 (Phase 1c chặng 1, đã duyệt, commit `2257060`) |
+| Auth (P6) | **Xong** 26/09/2026 (Phase 1c chặng 2) — `make test` + `make up` + đăng nhập demo xanh; chưa commit |
 | `.importlinter` 5 hợp đồng + hợp đồng 6 bằng test AST (01 mục 4.3) | **Xong** 25/09/2026 (Phase 1b) — `make lint` + `test_side_effects_ast.py`, `test_write_adapters_listed.py`; đã thử phá từng hợp đồng, đều bắt được |
 | `.env.example` theo 01 mục 5.1 (bỏ biến agent cũ; biến LLM để trống tới mốc G) | **Xong** 25/09/2026 (Phase 1a) |
 
@@ -115,7 +115,7 @@ Kế hoạch đã duyệt chia 2 chặng: chặng 1 = mock (P5 mục 7) + `backe
 - Worker không có `SVC_EXECUTOR_TOKEN`, nhưng `runner.recover()` (P1 mục 7) chạy trong worker có thể
   đi tới B17 → hiện sẽ ra E7. Chưa giải ở 1c.
 
-## Phase 1c — chặng 2: auth (P6) — kế hoạch đã duyệt (26/09/2026, chưa làm)
+## Phase 1c — chặng 2: auth (P6) — kế hoạch đã duyệt (26/09/2026; đã làm — kết quả ở mục ngay dưới)
 
 Làm sau khi chặng 1 được duyệt (đã commit `2257060`). Lệch phase so với P6 mục 10 (middleware ở
 Phase 2, MFA/CSRF ở Phase 7, `can_decide_approval` ở Phase 4): làm sớm theo task. **Không làm:** B1
@@ -212,6 +212,111 @@ chỉ test đăng nhập bỏ qua `role` trong body); test integration B01 (Phas
 `mock`), `make seed` OK; thử đăng nhập user demo (cần `.env` có `JWT_SIGNING_KEY`, `SVC_AGENT_TOKEN` —
 người tự thêm); đóng Phase 1 trong PROGRESS; mục "người xác nhận gọi tay 12 tool" (bảng ở README mock)
 vẫn cần người khác làm.
+
+## Phase 1c — chặng 2: kết quả (26/09/2026)
+
+**Đã làm** (theo kế hoạch trên, không commit):
+- `backend/app/auth/`: `permissions.py` (PERMS P6 5.1, `ADMIN_REVOKE_ROLES`), `models.py`, `ports.py`
+  (`IdentityProvider`, `SecurityEventSink`, `AdUser`, **`AuthStore`**), `tokens.py`, `mfa.py` (+ CLI),
+  `store.py` (`SqlAuthStore`), `service.py` (login 8 bước, refresh, logout, logout-all, revoke,
+  `validate_access`), `deps.py` (`current_principal`, `require`), `authz.py` (`can_*`, `scope_tool_target`).
+- `domain/context.py`: `role_from_groups`, `RequesterContext.from_ad`. `audit/security_events.py`
+  (`SecurityEventWriter`, `check_event`). `api/auth.py` (6 route). `core/logging.py` (`redact`,
+  `RedactSecretsFilter`). `tools/adapters/ad_read.py`: `AdIdentityProvider`. `main.create_app` nối tất cả,
+  nhận `idp`/`store`/`sink`/`clock` để test tiêm vào. `settings.py`: 7 tham số auth (env, có mặc định).
+- Migration `0002_security_events_mfa_types.py`; `SECURITY_EVENT_TYPES` + `AUTH_FAILURE_TYPES` ở `db/models.py`.
+- `.env.example`: mục "Xác thực (P6)" (tham số tùy chọn + lệnh enroll MFA).
+- Test mới — unit: `test_auth_{permissions,tokens,mfa,login,sessions,idor,route_scan,store_memory,redaction}.py`,
+  `test_authz.py`, `test_domain_context.py`, `test_ad_identity_provider.py`; bộ hợp đồng chung
+  `auth_store_contract.py`; bản giả `tests/fakes/auth.py`; helper `auth_helpers.py`. Integration:
+  `test_auth_store_sql.py` (cùng bộ hợp đồng trên Postgres), `test_migration_0002.py`, `test_mfa_cli.py`,
+  `test_auth_http_sql.py` (luồng đầy đủ trên Postgres, gồm 2 refresh đồng thời thật), thêm 4 test Cổng 1
+  "ghi audit thiếu trường bắt buộc bị từ chối" vào `test_db_constraints.py` (trước đó **chưa có**).
+  `tests/integration/pg.py`: `fresh_database()` — DB trống riêng cho test ghi `mfa_*`. E2E: thêm
+  `test_identity_provider_against_mock_ad` vào `test_tools_vs_mock.py`.
+
+**Kết quả kiểm (26/09/2026, trong sandbox Claude Code):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy `backend/app` (67 file), mypy mock, 5 hợp đồng import-linter, gitleaks detect 28 commit không leak; `gitleaks dir` trên `backend/app`, `backend/tests`, `mock_services`: không leak (bản đầu có 1 chuỗi JWT giả trong test → đã đổi sang sinh lúc chạy) |
+| unit backend | **1137 passed** (963 cũ + 174 mới, gồm test hồi quy cookie và test chuẩn hoá UTC) |
+| test mock | **86 passed** |
+| integration (53 test, testcontainers) | **Xanh** — `make test` lần 2 (người chạy ngoài sandbox, 26/09/2026); gồm bộ hợp đồng AuthStore trên Postgres (có test UTC), migration 0002, CLI MFA, luồng auth đầy đủ trên Postgres |
+| e2e (25 test) | **Xanh** — cùng lần chạy trên (gồm `AdIdentityProvider` với mock AD thật) |
+| `make test` đầy đủ | **Xanh** (lần 2, sau sửa bug cookie/UTC): backend **1215 passed** (1137 unit + 53 integration + 25 e2e) + mock **86 passed** |
+| `make up` + `/api/health` | **Xanh** (người chạy, 26/09/2026): build image mới (có `pyjwt`, `pyotp`, `cryptography`); `alembic upgrade head` chạy `0001 -> 0002` trên volume cũ; mock `/health` ok; `make seed` 16 người, 7 thiết bị; `/api/health` = `{"status":"ok","checks":{"db":"ok","qdrant":"ok","mock":"ok"}}` |
+| Đăng nhập user demo trên stack thật | **Xanh** (người chạy `curl`, 26/09/2026): `POST /api/auth/login` `an.nv` → có `access_token` (JWT HS256, payload `sub=nv001`, `role=employee`) — backend gọi mock AD thật (argon2id) bằng `SVC_AGENT_TOKEN`, ký bằng `JWT_SIGNING_KEY` của `.env` |
+
+**`make test` lần 1 (người chạy ngoài sandbox, 26/09/2026): 3 failed, 1206 passed** — 2 nguyên nhân:
+- **Bug thật trong code:** mốc thời gian đọc từ Postgres mang tzinfo `ZoneInfo("Etc/UTC")`, không phải
+  `timezone.utc`; `Response.set_cookie(expires=…)` của Starlette từ chối → `/api/auth/refresh` trả 500 trên DB
+  thật. Unit không bắt được vì store in-memory giữ UTC của FakeClock — đúng lý do cần test SQL. Sửa: chuẩn
+  hoá `astimezone(UTC)` trong `api/auth._set_cookies`; thêm unit hồi quy `test_cookie_expiry_accepts_postgres_timezone`
+  (đã kiểm: bỏ fix → test đỏ).
+- **Bug của test:** `test_migration_0002` đọc `alembic_version` bằng `app_rw` — role này (đúng thiết kế) không
+  có quyền trên bảng đó; đổi sang `app_migrate`. Kèm sửa cảnh báo pytest (fixture scope class viết dạng
+  method → fixture module). Sau sửa: `make lint` xanh, unit **1133 passed** — chờ người chạy lại `make test`.
+
+**Bổ sung theo yêu cầu người (26/09/2026, sau `make test` lần 1):** `SqlAuthStore` chuẩn hoá MỌI datetime trả
+về thành `tzinfo=timezone.utc` (`store._utc`; DB trả naive → `ValueError`); bản giả in-memory làm y hệt khi
+đọc. Bộ hợp đồng thêm `test_every_returned_datetime_is_timezone_utc`: đầu vào cố ý mang múi giờ
+`Asia/Ho_Chi_Minh`, soi mọi đường trả về (`get_user`, `get_user_by_username`, `upsert_user`, `get_session`,
+`get_session_by_refresh_hash`, sau `rotate`/`revoke`, `login_started_at`) — `assert_utc` duyệt mọi trường
+datetime của dataclass nên trường mới cũng bị soi. Thêm `test_auth_store_sql_mapping.py` (unit, không cần
+Postgres) kiểm ánh xạ dòng của `SqlAuthStore` với giá trị `ZoneInfo("Etc/UTC")` như psycopg trả. Bản sửa ở
+`_set_cookies` giữ nguyên làm lớp thứ hai. Mutation: bỏ chuẩn hoá ở bản giả → test hợp đồng đỏ; bỏ ở
+`SqlAuthStore._utc` → 3 test ánh xạ đỏ. `make lint` xanh, unit **1137 passed**, mock 86 passed; phần hợp đồng
+trên Postgres chạy trong `make test` (chưa chạy lại).
+
+**Mutation check (sửa hỏng code rồi chạy test, sau đó khôi phục):** bỏ khoá cửa sổ trượt; rotate không
+nguyên tử; `require` bỏ kiểm perm; bỏ filter che log; bỏ che ở formatter; bỏ kiểm `iat`; cache thu hồi
+không hết hạn; bỏ kiểm `tv`; bỏ kiểm role claim; bỏ phát hiện reuse; hạn refresh trượt → **đều có test
+đỏ**. Lần đầu có 4 đột biến sống (`require` bỏ kiểm perm, bỏ filter, bỏ formatter, bỏ `tv`/role) vì lớp
+khác che hộ → đã thêm test riêng cho từng lớp. Test quét route bản đầu **không tìm thấy route nào** (FastAPI
+0.141 bọc router thành `_IncludedRouter`) — nó chỉ không đỏ oan nhờ có assert "danh sách route không rỗng";
+đã chuyển sang `fastapi.routing.iter_route_contexts`.
+
+**Quyết định khi hiện thực — người đã duyệt 26/09/2026** (đánh số theo kế hoạch Plan Mode):
+1. Port `AuthStore` + bản in-memory; một bộ test hợp đồng chạy trên cả in-memory (unit) và Postgres (integration).
+2. Bảng nhóm AD → role ở `domain/context.py`; >1 nhóm đặc quyền hoặc không nhóm nào đã biết → từ chối
+   (login 401 + `permission_denied(reason=role_unmappable)`; `from_ad` → `DomainError`).
+3. `authenticate` gọi thẳng `/ad/authenticate` 1 lần, không retry, không qua ToolRegistry (không phải tool
+   P5; mật khẩu không vào input/span registry). `get_user` qua registry `ad_get_user`, `caller_step="B1"`.
+4. `require()` = chỉ cần đăng nhập; admin revoke = `require(roles=ADMIN_REVOKE_ROLES, recent_login=True)`,
+   hằng ở `permissions.py`, có test; không thêm permission mới.
+5. Username chưa có dòng `users` → khoá theo cửa sổ trượt (≥ 5 lỗi/10 phút); phản hồi **giống hệt** user thật
+   bị khoá (status + body + không set-cookie) — có test.
+6. Giới hạn dải IP đếm lượt thất bại (`auth_failures` theo `ip_prefix`), 429 không ghi sự kiện.
+7. Mỗi lần thử khi đang khoá ghi `account_locked`, `detail.reason` = `threshold` | `still_locked`.
+8. Role đổi khi đăng nhập → `role_changed` + tăng `token_version` + thu hồi phiên (`admin`).
+9. Cookie `refresh` HttpOnly/Secure/Strict/`Path=/api/auth`; `csrf` không HttpOnly, `Path=/`.
+10. `exp`/`iat` kiểm theo clock tiêm vào; pyjwt vẫn kiểm chữ ký, thuật toán (chỉ HS256), claim bắt buộc;
+    test: exp quá hạn, iat tương lai, `alg=none`, HS512 cùng khoá, sai khoá, sửa payload, claim thừa/thiếu → 401.
+11. Test ghi `mfa_*` chạy trên DB riêng (`fresh_database`).
+12. Người quản lý không có trong AD / không ánh xạ được role / quá 5 cấp / vòng → `manager_id = NULL`.
+
+Chi tiết nhỏ khác (không đổi đặc tả): thiếu OTP khi cần MFA → 401 `mfa_required`, **không** ghi `mfa_failed`
+(bước 1 của form 2 bước); OTP sai → `mfa_failed(invalid_otp)` và tính vào ngưỡng khoá (view `auth_failures`
+đếm cả `mfa_failed`); manager chưa enroll → 401 `mfa_not_enrolled` + `mfa_failed(not_enrolled)`. Tài khoản
+disabled/terminated → 401 chung + `login_failed(reason=account_inactive)` + thu hồi mọi phiên
+(`user_disabled`). CLI MFA là điểm nối riêng nên import `audit`/`store` muộn trong `_run` (giống `main`).
+`security_events.detail` bị chặn nếu tên khoá có phần `password|token|secret|otp|uri|key|cookie|csrf|…`
+hoặc giá trị trông như JWT. Refresh không tính là đăng nhập lại (xác nhận lại dùng `min(created_at)` của họ).
+
+**Ràng buộc chuyển cho phase sau (người yêu cầu ghi, 26/09/2026):**
+- **Phase 7 (Caddy):** sau proxy, `request.client.host` là IP của Caddy → chỉ tin `X-Forwarded-For` khi request
+  đến từ Caddy (danh sách proxy tin cậy); nếu không, giới hạn dải IP sẽ gộp mọi người vào một dải.
+- **Phase 7 (M9, P9 luật 3):** cảnh báo khoá tài khoản chỉ sinh khi `account_locked.detail.reason = "threshold"`,
+  không sinh cho `still_locked` (tránh spam mỗi lần thử khi đang khoá).
+- **Phase 3–4 (M5/B15):** `users.manager_id = NULL` / `RequesterContext.manager_id is None` nghĩa là **"không
+  biết"**, không phải "không có sếp" → không được khớp luật `allow` (R09, xung đột `boss_of_approver` ở B15);
+  phải đi phê duyệt (giảm False Negative).
+
+**Đóng Phase 1 (26/09/2026):** mọi mục tự động của cổng xanh (bảng trên). Còn mở:
+- Thủ công (thuộc cổng 1): người gọi tay 12 tool với seed, đối chiếu `mock_services/README.md` — có chặn Phase 2 hay không do người quyết.
+- Chưa commit chặng 2 — chờ người bảo.
+- P6 mục 11: D-01 (TC24/TC25 viết lại) cần nhóm xác nhận và báo GVHD.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

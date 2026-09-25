@@ -19,11 +19,14 @@ from typing import Any
 
 import httpx
 import pytest
+from app.auth.ports import IdentityUnavailable
 from app.core.clock import FakeClock
 from app.settings import Settings
 from app.tools.adapters import vpn_write
+from app.tools.adapters.ad_read import AdIdentityProvider
 from app.tools.adapters.http import ServiceHttp
 from app.tools.registry import ToolRegistry
+from app.tools.specs import READ_TIMEOUT_S
 from app.tools.wiring import breaker_board, build_read_registry
 from pydantic import SecretStr
 
@@ -189,3 +192,22 @@ async def test_agent_token_cannot_write_executor_can(mock_server: MockServer, re
     finally:
         await agent_http.aclose()
         await exec_http.aclose()
+
+
+# ---- P6: đăng nhập qua mock AD (argon2id) ----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_identity_provider_against_mock_ad(mock_server: MockServer, reset: None) -> None:
+    registry, http = build_read_registry(_settings(mock_server), FakeClock())
+    idp = AdIdentityProvider(http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable)
+    try:
+        user = await idp.authenticate("quan.tm", "Demo@2026!")  # mật khẩu demo công khai (README mock)
+        assert user is not None and user.user_id == "it_mgr01" and "IT-Manager" in user.groups
+        assert await idp.authenticate("quan.tm", "sai") is None
+        assert await idp.authenticate("khong.ton.tai", "Demo@2026!") is None  # hash giả, cùng 401
+        boss = await idp.get_user("fin_head")
+        assert boss is not None and boss.manager_id is None
+        assert await idp.get_user("khong-co") is None
+    finally:
+        await http.aclose()

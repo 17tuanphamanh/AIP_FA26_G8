@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     breaker_window_seconds: float = Field(default=60.0, gt=0)  # … trong cửa sổ này → mở
     breaker_open_seconds: float = Field(default=30.0, gt=0)  # mở bao lâu rồi half-open
 
+    # ---- Xác thực (P6 mục 4; B01 mục 7 [Đề xuất]) ----
+    # MAX_AUTH_FAILURES và cửa sổ 10 phút là hằng số nghiệp vụ → ở config/policy.json, không ở đây.
+    access_ttl_minutes: int = Field(default=15, ge=1)
+    refresh_ttl_hours: int = Field(default=8, ge=1)  # hạn tuyệt đối từ lúc đăng nhập, không trượt
+    lockout_minutes: int = Field(default=15, ge=1)
+    ip_failure_limit: int = Field(default=20, ge=1)  # lượt thất bại theo dải IP …
+    ip_failure_window_minutes: int = Field(default=10, ge=1)  # … trong cửa sổ này → 429
+    reauth_minutes: int = Field(default=10, ge=1)  # xác nhận lại: đăng nhập trong N phút gần nhất
+    revocation_cache_seconds: float = Field(default=30.0, ge=0)  # thu hồi có hiệu lực ≤ N giây
+
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False
     enable_proactive_diagnosis: bool = True  # B06 mục 7: mặc định true

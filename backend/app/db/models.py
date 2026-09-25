@@ -92,7 +92,9 @@ SECURITY_EVENT_TYPES = (  # P7 2.3
     "login_success", "login_failed", "account_locked", "logout", "token_refreshed",
     "refresh_reuse_detected", "session_revoked", "permission_denied", "role_changed",
     "mfa_failed", "policy_saved", "injection_detected", "privacy_secret_redacted",
+    "mfa_enrolled", "mfa_reset",  # migration 0002 (P7 2.3 bản 1.5)
 )  # fmt: skip
+AUTH_FAILURE_TYPES = ("login_failed", "mfa_failed")  # view auth_failures (P7 2.3)
 LLM_CACHE_MODES = ("runtime", "eval")  # P7 2.4
 WAIT_KINDS = ("clarify", "confirm")  # P7 2.5
 SIDE_EFFECT_KINDS = (  # P7 2.8
