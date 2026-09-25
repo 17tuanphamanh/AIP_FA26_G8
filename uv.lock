@@ -2611,7 +2611,7 @@ dependencies = [
     { name = "qdrant-client" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "sqlalchemy" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "unidecode" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2658,7 +2658,7 @@ requires-dist = [
     { name = "qdrant-client" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "sqlalchemy", specifier = ">=2,<3" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2,<3" },
     { name = "unidecode" },
     { name = "uvicorn", extras = ["standard"] },
 ]
@@ -2842,6 +2842,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d4/48/512fdd8a9c2078abc8378195051d7a1d7c2f15545c453138052030b80534/sqlalchemy-2.1.0-cp312-cp312-win_amd64.whl", hash = "sha256:46c7fcf4b3aac35947572c9598a35e101c2c8e01999ada5c7097a7666dd0ccf2", size = 2421594, upload-time = "2026-09-24T20:36:44.815Z" },
     { url = "https://files.pythonhosted.org/packages/0f/06/e274c2fa3d64e61bd55ab5de254ad31b07b9bfe108f33c24ff9de2465df1/sqlalchemy-2.1.0-cp312-cp312-win_arm64.whl", hash = "sha256:b87ed75fd74f49da2d637348ff2ef4453e15a8b3e798b06f52c5e57357fa49da", size = 2381171, upload-time = "2026-09-24T20:27:15.52Z" },
     { url = "https://files.pythonhosted.org/packages/25/8a/9178cd9411c57f16a1e73b0a75bca9270cd471aafdccae2dd8b0b491c9bd/sqlalchemy-2.1.0-py3-none-any.whl", hash = "sha256:8728cbc7544d05c5cab9bf50749636f128e4db4828a20ce5952355c4f33d6e2e", size = 2047583, upload-time = "2026-09-24T20:36:44.055Z" },
+]
+
+[package.optional-dependencies]
+asyncio = [
+    { name = "greenlet" },
 ]
 
 [[package]]

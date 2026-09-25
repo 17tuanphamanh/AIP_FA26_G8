@@ -1,0 +1,84 @@
+# Compose dev — docs/spec/build/01-kien-truc-project.md mục 2. Dùng qua `make up` / `make down`
+# (Makefile truyền --env-file: .env nếu có, không thì .env.example với cảnh báo).
+# Chỉ backend (8000) và postgres (5432) bind 127.0.0.1 cho dev; qdrant, mock chỉ trong mạng nội bộ.
+name: servicedesk
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
+  MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
+  QDRANT_URL: http://qdrant:6333
+  ML_SERVICE_URL: http://ml-service:8200
+  MOCK_URL: http://mock:8100
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
+  MFA_ENC_KEY: ${MFA_ENC_KEY:-}
+  SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+  GRAPH_CONCURRENCY: ${GRAPH_CONCURRENCY:-8}
+  LOCK_POOL_SIZE: ${LOCK_POOL_SIZE:-10}
+  TICKET_LOCK_TIMEOUT: ${TICKET_LOCK_TIMEOUT:-5}
+  EVAL_MODE: ${EVAL_MODE:-false}
+  ENABLE_PROACTIVE_DIAGNOSIS: ${ENABLE_PROACTIVE_DIAGNOSIS:-true}
+  STRATEGY: ${STRATEGY:-hybrid}
+  LLM_CACHE_MODE: ${LLM_CACHE_MODE:-default}
+  REDIAGNOSE_ON_NEW_SLOT: ${REDIAGNOSE_ON_NEW_SLOT:-false}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${PG_DATABASE}
+      POSTGRES_USER: ${PG_SUPERUSER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      # đọc bởi init-roles.sh (chạy một lần khi volume còn trống)
+      PG_MIGRATE_PASSWORD: ${PG_MIGRATE_PASSWORD}
+      PG_RW_PASSWORD: ${PG_RW_PASSWORD}
+      PG_MONITOR_PASSWORD: ${PG_MONITOR_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    ports:
+      - "127.0.0.1:${PG_PORT:-55432}:5432"
+    healthcheck:
+      # -h 127.0.0.1: server tạm lúc chạy init chỉ nghe unix socket → chưa healthy tới khi init xong
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1  # khớp qdrant-client 1.19 trong uv.lock
+    volumes:
+      - qdrant:/qdrant/storage
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: servicedesk-backend:dev
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    image: servicedesk-backend:dev  # CÙNG image với backend (T01 mục 5), chỉ khác lệnh
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mock:
+    build:
+      context: .
+      dockerfile: mock_services/Dockerfile
+    image: servicedesk-mock:dev
+
+volumes:
+  pgdata:
+  qdrant:

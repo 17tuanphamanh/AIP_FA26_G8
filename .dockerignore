@@ -1,0 +1,27 @@
+# Build context của backend/mock là gốc repo — loại mọi thứ không cần và mọi bí mật.
+.git
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.claude
+.githooks
+
+# bí mật — KHÔNG BAO GIỜ vào image
+.env
+.env.*
+!.env.example
+*.key
+secrets/
+
+# dữ liệu, model, tài liệu, frontend
+training/
+ml_models/
+notebooks/
+docs/
+frontend/
+eval/
+**/*.onnx
+**/*.csv

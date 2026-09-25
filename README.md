@@ -17,13 +17,33 @@ uv sync                      # thêm --group ml nếu cần model nặng của m
 # 2. Bật hook dùng chung của repo (làm MỘT LẦN cho mỗi bản clone)
 git config core.hooksPath .githooks
 
-# 3. Chạy test và lint
+# 3. Docker (make up, test integration dùng testcontainers) — trên macOS dùng colima
+colima start --cpu 4 --memory 8
+docker run --rm hello-world   # kiểm Docker chạy được
+
+# 4. gitleaks (make lint quét bí mật; thiếu thì make lint báo lỗi, không bỏ qua)
+brew install gitleaks
+
+# 5. Chạy test và lint
 make test
 make lint
 ```
 
-Các lệnh `make up | down | ingest | seed | probe | eval | eval-rag | load` đã có tên
-nhưng chưa có nội dung (in TODO và thoát mã 1) — sẽ làm theo từng phase.
+**Makefile tự nhận colima:** nếu có `~/.colima/default/docker.sock` thì các lệnh `make` tự đặt
+`DOCKER_HOST` trỏ vào socket đó và `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`
+(cho Ryuk của testcontainers) — không cần sửa `~/.zshrc`. Không có socket colima (Docker Desktop,
+Linux) thì Makefile để nguyên. Máy từng cài Docker Desktop thường có `"credsStore": "desktop"`
+trong `~/.docker/config.json`; Makefile tự thêm `/Applications/Docker.app/Contents/Resources/bin`
+vào `PATH` để `docker pull` không lỗi `docker-credential-desktop not found`. Chạy `docker` trực
+tiếp ngoài `make` thì tự thêm thư mục đó vào `PATH`.
+
+`make up` dựng compose (postgres, qdrant, backend, worker, mock), chạy migration bằng role
+`app_migrate`, rồi chờ `/api/health` trả 200. `make down` dừng container (giữ volume). Chưa có
+`.env` thì `make up` dùng `.env.example` và in cảnh báo. Postgres bind `127.0.0.1:55432` (đổi bằng
+`PG_PORT`) để khỏi đụng Postgres của dự án khác trên máy.
+
+Các lệnh `make ingest | seed | probe | eval | eval-rag | load` đã có tên nhưng chưa có nội dung
+(in TODO và thoát mã 1) — sẽ làm theo từng phase.
 
 ## Cấu trúc thư mục
 

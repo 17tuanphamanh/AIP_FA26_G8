@@ -9,8 +9,8 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **1 — Hạ tầng, DB, domain, mock, auth** |
-| Cổng xanh | Phase 0 |
-| Cập nhật | 25/09/2026 |
+| Cổng xanh | Phase 0; T01 (cấu trúc project, 26/09/2026) — cổng Phase 1 còn chờ mock (P5) và auth (P6) |
+| Cập nhật | 26/09/2026 |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -27,22 +27,29 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
   `lint` chạy được, các lệnh khác in TODO.
 - `backend/tests/unit/test_smoke.py` — test giữ chỗ; **đã xoá** ở Phase 1b khi có test thật.
 
-Cổng T01 (01 mục 8): mục 2 (5 hợp đồng import-linter trong `make lint` + hợp đồng 6 là test AST
-trong `make test`) và mục 3 (test chữ ký
-`policy_engine.evaluate`) **xanh** từ Phase 1b. Còn thiếu: mục 1 (`make up`, `/api/health`),
-mục 4 (gitleaks), mục 5 (image backend = worker).
+**Cổng T01 (01 mục 8) — xanh cả 5 mục** (26/09/2026, Phase 1a):
+
+| Mục | Kết quả | Kiểm bằng |
+|---|---|---|
+| 1. `make up` dựng postgres, mock, backend; `/api/health` 200 | Xanh | `make up` → `{"status":"ok","checks":{"db":"ok","qdrant":"ok"}}`; chạy lại lần 2 trên volume cũ vẫn OK; `make down` sạch, giữ volume |
+| 2. `make lint` xanh gồm hợp đồng import | Xanh | ruff, mypy, 5 hợp đồng import-linter; hợp đồng 6 là test AST trong `make test` |
+| 3. Test chữ ký `policy_engine.evaluate` | Xanh | `test_policy_engine_signature.py` |
+| 4. `.env` trong `.gitignore`; gitleaks sạch | Xanh | `gitleaks detect` trong `make lint`: 21 commit, không có leak |
+| 5. backend và worker chung image | Xanh | `docker inspect`: cùng image id `sha256:083acb13…` |
+
+`make test` = 908 passed (874 unit + 34 integration trên testcontainers Postgres 16), 26/09/2026.
 
 ## Phase 1 — đang mở
 
 | Việc | Trạng thái |
 |---|---|
-| docker-compose (postgres 16, qdrant, backend, mock_services) + `make up/down` | Chưa |
-| DB 22 bảng + 3 role Postgres + trigger append-only (Alembic, P7) | Chưa |
+| docker-compose (postgres 16, qdrant, backend, worker, mock) + `make up/down` | **Xong** 25/09/2026 (Phase 1a) — backend và worker chung image `servicedesk-backend`; mock mới có `/health` |
+| DB 22 bảng + 3 role Postgres + trigger append-only (Alembic, P7) | **Xong** 25/09/2026 (Phase 1a) — migration `0001` chạy bằng `app_migrate`; bảng nguồn từng cột ở `backend/app/db/README.md`; 34 test integration (testcontainers) |
 | `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | **Xong** 25/09/2026 (Phase 1b) — `build_action` làm cùng B11 (câu hỏi 9) |
-| `mock_services` + `seed.json` + `make seed` (P5) | Chưa |
+| `mock_services` + `seed.json` + `make seed` (P5) | Chưa (Phase 1a chỉ dựng khung `/health` cho compose) |
 | Auth (P6) | Chưa |
 | `.importlinter` 5 hợp đồng + hợp đồng 6 bằng test AST (01 mục 4.3) | **Xong** 25/09/2026 (Phase 1b) — `make lint` + `test_side_effects_ast.py`, `test_write_adapters_listed.py`; đã thử phá từng hợp đồng, đều bắt được |
-| `.env.example` theo 01 mục 5.1 (bỏ biến agent cũ; biến LLM để trống tới mốc G) | Chưa |
+| `.env.example` theo 01 mục 5.1 (bỏ biến agent cũ; biến LLM để trống tới mốc G) | **Xong** 25/09/2026 (Phase 1a) |
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -96,3 +103,39 @@ mục 4 (gitleaks), mục 5 (image backend = worker).
     `approval_result != "approved"`; cấm 3 chặn cả khi thiếu `action_plan_hash`; cấm 4 ở domain chỉ
     kiểm `step`/`event`, phần audit cùng transaction thuộc `goto()` Phase 2. `approval_result` đã có
     trong P1 `TicketState`. Cấm 1 giữ đúng chữ (`risk` rỗng không bị cấm 1 chặn).
+13. ~~Thiếu DDL 17 bảng gốc~~ — **đã giải quyết** (25/09/2026, Phase 1a): không còn `schema.sql`; dựng
+    lại từ `claude/thiet-ke-database.md`, NGU-CANH III mục 9, IV mục 3 và 9, `huong-dan` 17.1 và
+    17.9, các file B/P, rồi áp P7. Người đã duyệt bảng "bảng → cột → nguồn" (lưu ở
+    `backend/app/db/README.md`). Quyết định kèm theo:
+    - **A1:** cột `tickets.redacted_request` thay cho `raw_request` (D-07: ticket chỉ lưu bản đã che).
+    - **A2:** `tickets` = 20 cột có nguồn + `is_parent` = 21; không thêm cột thứ 21 không có nguồn
+      mà `thiet-ke-database.md` nhắc tới.
+    - **A3:** CHECK `transaction_log.status` gồm `begun` (B17 mục 8 — phát hiện thực thi bị gián đoạn).
+    - **A4:** `docker/postgres/init-roles.sh` (superuser, chạy lúc khởi tạo container) tạo 3 role có
+      mật khẩu lấy từ env và cho `app_migrate` làm owner schema. Alembic chạy bằng `app_migrate`
+      (không superuser). Downgrade không đụng role. Conftest testcontainers chạy cùng script này.
+    - Điều chỉnh: `audit_logs` thêm `raw_prob` (CHECK 0..1) và `p_method` (CHECK
+      {self_report, sampling_k5}); `thresholds`, `all_matched`, `layer`, `model_probs` nằm trong
+      `detail` JSONB. Thêm index `audit_logs(step, created_at)`, `escalations(closed_at, exit_code)`,
+      `llm_calls(created_at)` (P9 mục 4).
+14. Phase 1a — ghi chú không chặn:
+    - Bảng checkpoint LangGraph (`checkpointer.setup()`) chưa tạo — làm ở Phase 2 (P1).
+    - Repository `backend/app/db/tickets.py` (`create_child`, `finalize_once`…) chưa có — làm khi có
+      B05/B20.
+    - Thêm trigger chặn TRUNCATE trên `audit_logs` và `security_events` [Đề xuất] — P6 chỉ ghi
+      UPDATE/DELETE, nhưng TRUNCATE bỏ qua trigger FOR EACH ROW.
+    - `exit_code_priority` seed theo B20 4.1 — thứ tự vẫn là [Suy luận, cần chốt].
+    - Postgres dev bind `127.0.0.1:55432`, không dùng 5432 (máy dev đang có Postgres khác ở 5432).
+    - `gitleaks detect` trong `make lint` chỉ quét lịch sử commit; file chưa commit chỉ được quét
+      khi đã commit (trong Phase 1a đã quét tay các file mới bằng `gitleaks dir`, không thấy gì).
+      **Đã bổ sung** (26/09/2026): `.githooks/pre-commit` chạy `gitleaks git --pre-commit --staged
+      --redact` trước pytest, với mọi commit; thiếu gitleaks thì chặn. Đã thử stage file chứa token
+      giả dạng `ghp_…` → hook chặn (rule `github-pat`).
+    - Lỗi gặp khi dựng image (đã sửa): SQLAlchemy 2.1 không tự kéo `greenlet` → backend chết khi
+      import `sqlalchemy.ext.asyncio`. Test trên máy vẫn xanh vì `greenlet` có sẵn qua nhóm dev
+      (locust). Đã đổi phụ thuộc thành `sqlalchemy[asyncio]` (`uv add`). **Bài học:** test chạy
+      với nhóm dev không phát hiện được phụ thuộc thiếu ở image `--no-dev`; `make up` mới bắt được.
+    - Mạng trong VM colima chập chờn (timeout tới ghcr.io, tải `spacy`) → Dockerfile đặt
+      `UV_HTTP_TIMEOUT=300`, cache mount cho uv, build backend rồi mới build mock.
+    - Máy dev: colima (4 CPU, 8 GB) + gitleaks cài bằng brew. Makefile tự nhận socket colima và thêm
+      `docker-credential-desktop` vào PATH (xem README "Dựng môi trường").

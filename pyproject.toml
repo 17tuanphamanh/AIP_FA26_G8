@@ -18,7 +18,7 @@ dependencies = [
     "langgraph>=1,<2",
     "langgraph-checkpoint-postgres",
     # DB [Chốt]
-    "sqlalchemy>=2,<3",
+    "sqlalchemy[asyncio]>=2,<3",
     "alembic",
     "psycopg[binary]>=3,<4",
     # HTTP [Chốt]
@@ -84,3 +84,8 @@ target-version = "py312"
 
 [tool.mypy]
 python_version = "3.12"
+
+# APScheduler 3.x không có type stub / py.typed.
+[[tool.mypy.overrides]]
+module = ["apscheduler.*"]
+ignore_missing_imports = true

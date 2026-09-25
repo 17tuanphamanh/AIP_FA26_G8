@@ -5,24 +5,60 @@
 STRATEGY ?= hybrid
 SPLIT ?= dev
 
+# Docker qua colima: nếu socket colima tồn tại thì dùng nó (không sửa ~/.zshrc).
+# Không có (Docker Desktop, Linux) thì để nguyên DOCKER_HOST của máy.
+COLIMA_SOCK := $(HOME)/.colima/default/docker.sock
+ifneq ($(wildcard $(COLIMA_SOCK)),)
+export DOCKER_HOST := unix://$(COLIMA_SOCK)
+# Ryuk của testcontainers mount socket BÊN TRONG VM colima, không phải socket trên macOS.
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE := /var/run/docker.sock
+endif
+
+# ~/.docker/config.json của máy từng cài Docker Desktop có "credsStore": "desktop"; dùng colima
+# mà helper không nằm trong PATH thì mọi lệnh pull đều lỗi. Thêm thư mục bin của Docker.app.
+DOCKER_DESKTOP_BIN := /Applications/Docker.app/Contents/Resources/bin
+ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
+export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
+endif
+
 .PHONY: up down test lint ingest seed probe eval eval-rag load
 
-# Dựng compose; chạy migration; seed mock; kiểm /api/health.
-up:
-	@echo "TODO (Phase 1): chưa có docker-compose.yml, migration, seed mock." >&2; exit 1
+# Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
+ENV_FILE := $(if $(wildcard .env),.env,.env.example)
+COMPOSE := docker compose --env-file $(ENV_FILE)
+HEALTH_URL := http://127.0.0.1:8000/api/health
 
+# Dựng compose; chạy migration (role app_migrate); kiểm /api/health. Seed mock: task P5.
+up:
+	@if [ "$(ENV_FILE)" = ".env.example" ]; then \
+	  echo "CẢNH BÁO: không có .env — dùng giá trị mẫu của .env.example (chỉ cho máy dev)." >&2; fi
+	$(COMPOSE) build backend
+	$(COMPOSE) build mock
+	$(COMPOSE) up -d --wait postgres qdrant
+	$(COMPOSE) run --rm --no-deps backend alembic upgrade head
+	$(COMPOSE) up -d backend worker mock
+	@for i in $$(seq 1 60); do \
+	  if curl -fsS $(HEALTH_URL) >/dev/null 2>&1; then \
+	    echo "/api/health: $$(curl -s $(HEALTH_URL))"; exit 0; fi; \
+	  sleep 1; done; \
+	echo "/api/health chưa OK sau 60 giây: $$(curl -s $(HEALTH_URL))" >&2; \
+	$(COMPOSE) logs --tail 50 backend >&2; exit 1
+
+# Dừng và xoá container; GIỮ volume dữ liệu (xoá hẳn: docker compose down -v).
 down:
-	@echo "TODO (Phase 1): chưa có docker-compose.yml." >&2; exit 1
+	$(COMPOSE) down
 
 # unit + integration + e2e với ScriptedLLM, testcontainers. Không gồm probe/ và load/.
 test:
 	uv run pytest backend/tests/unit backend/tests/integration backend/tests/e2e
 
-# ruff, mypy, import-linter.
+# ruff, mypy, import-linter, gitleaks (cổng T01 mục 4).
 lint:
 	uv run ruff check .
 	uv run mypy backend/app
 	PYTHONPATH=backend uv run lint-imports
+	@command -v gitleaks >/dev/null || { echo "Thiếu gitleaks — cài: brew install gitleaks" >&2; exit 1; }
+	gitleaks detect --no-banner --redact
 
 # Pipeline RAG (P3): in kb_version và số đoạn truncated (phải = 0).
 ingest:
