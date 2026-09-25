@@ -94,7 +94,7 @@ class TicketState(TypedDict, total=False):
     action_plan_hash: str | None
     risk: RiskDecision | None
     approval_id: str | None
-    # Bằng chứng duyệt cho chuyển cấm số 2 (NGU-CANH IV mục 3); approval_wait đặt khi resume.
+    # Bằng chứng duyệt — chuyển cấm số 2 kiểm trường này (P1 mục 4, 5.1.1); approval_wait đặt.
     approval_result: Literal["approved", "rejected", "timeout"] | None
     execution: ExecutionResult | None
     # bộ đếm [Chốt]

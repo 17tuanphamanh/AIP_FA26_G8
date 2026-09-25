@@ -27,7 +27,8 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
   `lint` chạy được, các lệnh khác in TODO.
 - `backend/tests/unit/test_smoke.py` — test giữ chỗ; **đã xoá** ở Phase 1b khi có test thật.
 
-Cổng T01 (01 mục 8): mục 2 (6 hợp đồng import-linter trong `make lint`) và mục 3 (test chữ ký
+Cổng T01 (01 mục 8): mục 2 (5 hợp đồng import-linter trong `make lint` + hợp đồng 6 là test AST
+trong `make test`) và mục 3 (test chữ ký
 `policy_engine.evaluate`) **xanh** từ Phase 1b. Còn thiếu: mục 1 (`make up`, `/api/health`),
 mục 4 (gitleaks), mục 5 (image backend = worker).
 
@@ -37,10 +38,10 @@ mục 4 (gitleaks), mục 5 (image backend = worker).
 |---|---|
 | docker-compose (postgres 16, qdrant, backend, mock_services) + `make up/down` | Chưa |
 | DB 22 bảng + 3 role Postgres + trigger append-only (Alembic, P7) | Chưa |
-| `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | **Xong** 25/09/2026 (Phase 1b) — `build_action` để sang B11, xem câu hỏi 9 |
+| `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | **Xong** 25/09/2026 (Phase 1b) — `build_action` làm cùng B11 (câu hỏi 9) |
 | `mock_services` + `seed.json` + `make seed` (P5) | Chưa |
 | Auth (P6) | Chưa |
-| `.importlinter` 6 hợp đồng (01 mục 4.3) | **Xong** 25/09/2026 (Phase 1b) — trong `make lint`; đã thử phá từng hợp đồng, đều báo BROKEN |
+| `.importlinter` 5 hợp đồng + hợp đồng 6 bằng test AST (01 mục 4.3) | **Xong** 25/09/2026 (Phase 1b) — `make lint` + `test_side_effects_ast.py`, `test_write_adapters_listed.py`; đã thử phá từng hợp đồng, đều bắt được |
 | `.env.example` theo 01 mục 5.1 (bỏ biến agent cũ; biến LLM để trống tới mốc G) | Chưa |
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
@@ -81,21 +82,17 @@ mục 4 (gitleaks), mục 5 (image backend = worker).
    D-29 sinh ra để sửa, và làm đỏ test P1 mục 11 "lỗi giả ở B2 → `S_ESCALATED` E9". B02 mục 7 (dòng
    163) cũng ghi "(cần nới cho dòng E2 ở trên khi chốt)" nhưng chưa ai nới. Quy tắc 1 (`S_SCREENING` →
    `S_SCREENING`) cũng va với chuyển cấm này theo chữ, nhưng hiện chưa node nào dùng.
-9. `domain/action.py` mới có `Action`; **`build_action` chưa làm** vì cần `config/action_metadata.yaml`
-   + `REQUIRED_SLOTS` (B11, Phase 3). 01 mục 3 ghi `action.py # Action, build_action`.
-10. Hợp đồng import-linter số 6 (01 mục 4.3) nhắc `tickets.create_child`, nhưng cây thư mục 01 mục 3
-    không có module `tickets` → `.importlinter` chưa chặn mục này. Ngoài ra mã giả B15 truyền
-    `approvals.create` làm đối số cho `effects.once`, nghĩa là node vẫn phải import tới nó — va với
-    hợp đồng 6 nếu `create` là hàm chứ không phải module `app.approval.create`. Cần chốt trước
-    Phase 2/3 (có thể: `graph.effects` tự giữ bảng `kind → hàm`, node chỉ truyền `kind`).
-11. Hợp đồng 3: import-linter không nhận wildcard một phần tên (`*_write`), nên liệt kê tường minh
-    `app.tools.adapters.{ad,vpn,software,fileserver}_write` theo 4 hệ thống của P5. Ai thêm adapter
-    ghi mới phải thêm dòng vào `.importlinter`; nếu P5 đặt tên khác thì sửa theo.
-12. Hiện thực 6 chuyển cấm ở `domain/states.py` (Phase 1b) — ba chỗ là cách hiểu của code, chưa ghi
-    trong đặc tả:
-    - Cấm 2: chặn khi **không có** `approval_result == "approved"` (fail-safe, gồm cả hết SLA).
-      Vì thế thêm `approval_result` vào `TicketState` (có ở NGU-CANH IV 3, P1 mục 4 không có).
-    - Cấm 3: thiếu `action_plan_hash` hoặc `intended_action` cũng bị chặn.
-    - Cấm 4: domain chỉ kiểm được "`step`/`event` không rỗng"; phần "đã ghi audit cùng transaction"
-      thuộc `goto()` Phase 2.
-    - Cấm 1 giữ đúng chữ: `risk` rỗng **không** bị cấm 1 chặn.
+9. ~~`build_action` chưa có~~ — **đã chốt** (25/09/2026): làm cùng B11 ở Phase 3 (cần
+   `config/action_metadata.yaml` + `REQUIRED_SLOTS`); `domain/action.py` hiện chỉ có `Action`.
+10. ~~Hợp đồng 6 va với `effects.once(…, approvals.create, …)`~~ — **đã giải quyết** (25/09/2026):
+    01 mục 4.3 + P1 mục 5.3 bỏ hợp đồng 6 khỏi import-linter, thay bằng test AST
+    `backend/tests/unit/test_side_effects_ast.py` (quét `graph/nodes/**`, tham chiếu tới
+    `SIDE_EFFECT_FUNCS` ngoài vị trí `fn` của `effects.once` → đỏ; có mẫu node giả chứng minh bắt được).
+    `tickets` = `backend/app/db/tickets.py` (chưa tạo). B15 đổi sang `approvals.notify_approver`.
+11. ~~Wildcard `*_write`~~ — **đã giải quyết** (25/09/2026): 01 mục 4.3 chốt liệt kê tường minh
+    `{ad,vpn,software,fileserver}_write`; `backend/tests/unit/test_write_adapters_listed.py` đỏ nếu có
+    `tools/adapters/*_write.py` chưa khai báo trong `.importlinter`.
+12. ~~Cách hiện thực cấm 2/3/4~~ — **đã chốt** (25/09/2026, P1 mục 5.1.1): cấm 2 chặn mọi
+    `approval_result != "approved"`; cấm 3 chặn cả khi thiếu `action_plan_hash`; cấm 4 ở domain chỉ
+    kiểm `step`/`event`, phần audit cùng transaction thuộc `goto()` Phase 2. `approval_result` đã có
+    trong P1 `TicketState`. Cấm 1 giữ đúng chữ (`risk` rỗng không bị cấm 1 chặn).
