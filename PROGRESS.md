@@ -86,7 +86,7 @@ Kế hoạch đã duyệt chia 2 chặng: chặng 1 = mock (P5 mục 7) + `backe
 | e2e `test_tools_vs_mock.py` (24) | **Xanh** — cùng lần chạy trên (sandbox chặn bind cổng local) |
 | `make test` đầy đủ | **Xanh** (người chạy ngoài sandbox, sau khi sửa breaker theo P5 1.4): backend 1021 passed (963 unit + 34 integration + 24 e2e) + mock 86 passed |
 | `make up` + `/api/health` | Chưa chạy ở chặng 1 (làm ở bước kiểm cuối Phase 1c) |
-| CI GitHub | **Chờ push để kiểm** |
+| CI GitHub | **Xanh** — run `36189412156` (workflow `ci`, push `dev-tuananh`, commit `de243b6`, 1m1s, 26/09/2026): `make lint` + `make test` đầy đủ trên ubuntu |
 
 **Quyết định khi hiện thực** — người đã duyệt cả 5 điểm (26/09/2026); điểm 1–4 đã vào P5 mục 6.1, 7 (bản 1.4):
 - `registry.call` theo P5 6.1. Sơ đồ P5 mục 2 vẫn ghi "mở ─► ExternalSystemError ngay" — mục 6.1 [Chốt] thắng.
@@ -140,6 +140,9 @@ node, graph, route tickets/approvals thật, LLM.
 3. **Refresh giữ chặt:** trình lại token đã xoay → thu hồi cả họ (`reuse_detected`) + ghi
    `refresh_reuse_detected`. Test ca **2 request refresh đồng thời cùng token** (2 tab) → request thứ
    hai bị coi là reuse; đây là hành vi đã biết, frontend xử lý ở Phase 7.
+4. **Worker không có `SVC_EXECUTOR_TOKEN`** (đã hiện thực ở chặng 1, `docker-compose.yml`): chỉ container
+   backend giữ credential ghi (D-03). Chặng 2 không đổi điều này. Hệ quả còn mở cho Phase 2:
+   `runner.recover()` chạy trong worker mà đi tới B17 thì sẽ ra E7 (xem mục chặng 1 "Câu hỏi mở cho Phase 2").
 
 **Thiết kế (từ kế hoạch Phase 1c):**
 - **Phụ thuộc module (01 mục 4.2: auth → domain, core, db):** `auth` không import `tools`/`audit`. Port
