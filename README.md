@@ -3,7 +3,7 @@
 Repo đồ án môn AIP, kỳ Fall 2026, nhóm 8.
 Khung một **AI agent**: nhận câu hỏi bằng tiếng Việt, tự gọi các *tool* (đọc file, liệt kê thư mục…) rồi trả lời.
 
-## Chạy thử trong 4 bước
+## Chạy thử trong 5 bước
 
 ```bash
 # 1. Tạo môi trường ảo + cài thư viện
@@ -14,10 +14,13 @@ python3 -m venv .venv
 cp .env.example .env
 #    rồi mở .env, điền ANTHROPIC_API_KEY thật vào
 
-# 3. Chạy test cho chắc
+# 3. Bật hook dùng chung của repo (làm MỘT LẦN cho mỗi bản clone)
+git config core.hooksPath .githooks
+
+# 4. Chạy test cho chắc
 .venv/bin/python -m pytest
 
-# 4. Chạy agent
+# 5. Chạy agent
 .venv/bin/python main.py "Trong repo này có những thư mục nào?"
 .venv/bin/python main.py          # chế độ chat, gõ 'thoat' để dừng
 ```
@@ -33,6 +36,7 @@ cp .env.example .env
 | `agent/prompts/system.md` | System prompt — quy định cách agent hành xử |
 | `tests/` | Test chạy được mà không cần gọi API |
 | `docs/` | Đề bài, kiến trúc, nhật ký nhóm |
+| `.githooks/` | Hook git dùng chung — chặn commit khi test đỏ, chặn dấu vết AI |
 | `notebooks/` | Notebook thử nghiệm |
 | `data/` | Dữ liệu — **không** commit lên git |
 
@@ -42,7 +46,7 @@ Mở [agent/tools.py](agent/tools.py):
 
 1. Viết hàm Python thuần (dễ test).
 2. Viết bản bọc `@beta_tool` gọi vào hàm đó — **docstring chính là thứ model đọc** để biết khi nào dùng tool, viết cho rõ.
-3. Thêm vào `DANH_SACH_TOOL`.
+3. Thêm vào `TOOLS`.
 4. Viết test trong `tests/test_tools.py`.
 
 ## Quy ước làm việc chung
@@ -50,6 +54,8 @@ Mở [agent/tools.py](agent/tools.py):
 - **Không commit `.env`, dữ liệu nặng, `.venv/`** — đã chặn sẵn trong `.gitignore`. Nếu lỡ commit key thì phải vào trang nhà cung cấp **thu hồi (revoke) key ngay**, xoá dòng code là không đủ.
 - Message commit ghi rõ làm được gì, tiếng Việt không dấu — ví dụ `them tool tim kiem tai lieu, test pass`. Tránh `update`, `fix bug`.
 - Trước khi commit: `git status` → `git diff` → chạy `pytest` → mới `git add -A`.
+- Hook ở `.githooks/` sẽ tự chặn nếu test đỏ hoặc message có dấu vết AI — nhưng chỉ
+  khi đã chạy `git config core.hooksPath .githooks` ở bước 3. Chưa chạy thì không ai gác.
 - Mỗi người làm xong phần của mình thì `git pull` trước, rồi mới `git push`.
 
 

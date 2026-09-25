@@ -1,0 +1,43 @@
+#!/bin/bash
+# Chặn commit khi test đỏ.
+#
+# Đây là hook của GIT, không phải của Claude Code. Đặt ở tầng này vì:
+#   - Hook PreToolUse chỉ thấy chuỗi lệnh và chỉ tồn tại trong phiên Claude.
+#     Người gõ tay trong Terminal, hay dùng công cụ khác, thì không ai gác.
+#   - .githooks/ nằm trong repo nên đồng đội clone về là có. Hook trong
+#     .git/hooks/ thì không bao giờ đi theo repo được.
+#
+# Cài (mỗi người làm MỘT LẦN sau khi clone):
+#   git config core.hooksPath .githooks
+#
+# Cần cố tình bỏ qua:  git commit --no-verify
+set -u
+
+repo=$(git rev-parse --show-toplevel) || exit 1
+cd "$repo" || exit 1
+
+# Lấy HỢP của hai tập: cái đã stage, và cái đang bẩn trong cây làm việc.
+# Vì sao phải là hợp: `git commit -a` gom cả file bẩn chưa stage. Bản cũ chỉ
+# ngó --cached, nên khi đã stage một file .md trong lúc vài file .py đang bẩn
+# thì hook thấy danh sách toàn .md rồi bỏ qua test. Đã xảy ra thật 22/09/2026.
+files=$(
+  git diff --cached --name-only
+  git diff --name-only HEAD
+)
+
+# .py đổi thì phải test. agent/prompts/*.md cũng vậy: system prompt là thứ
+# quyết định hành vi agent — sửa nó là đổi hành vi, không phải sửa tài liệu.
+printf '%s\n' "$files" | grep -qE '\.py$|^agent/prompts/.*\.md$' || exit 0
+
+# Không có .venv thì nói thẳng, đừng để pytest hỏng rồi báo "test đỏ" sai sự thật.
+if [ ! -x .venv/bin/python ]; then
+  echo "Không thấy .venv/bin/python — chưa dựng môi trường, không soát được test." >&2
+  echo "Dựng bằng: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt" >&2
+  exit 1
+fi
+
+if ! .venv/bin/python -m pytest -q; then
+  echo "Test đỏ — sửa xong rồi hãy commit." >&2
+  exit 1
+fi
+exit 0
