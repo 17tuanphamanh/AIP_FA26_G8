@@ -131,6 +131,11 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
       **Đã bổ sung** (26/09/2026): `.githooks/pre-commit` chạy `gitleaks git --pre-commit --staged
       --redact` trước pytest, với mọi commit; thiếu gitleaks thì chặn. Đã thử stage file chứa token
       giả dạng `ghp_…` → hook chặn (rule `github-pat`).
+    - Test không chạm `.env` (26/09/2026): pytest tự `stat` từng mục ở thư mục gốc khi thu thập
+      test → sandbox chặn đọc `.env` làm hỏng cả phiên test (và hook pre-commit). `conftest.py` gốc
+      đặt `collect_ignore_glob = [".env*"]` và `APP_ENV_FILE=""`; `Settings` đọc file env theo
+      `APP_ENV_FILE` (mặc định `.env`, rỗng = tắt). Kiểm: trong sandbox unit 876 passed; bỏ conftest
+      (`--noconftest`) thì lỗi `PermissionError … .env` quay lại.
     - Lỗi gặp khi dựng image (đã sửa): SQLAlchemy 2.1 không tự kéo `greenlet` → backend chết khi
       import `sqlalchemy.ext.asyncio`. Test trên máy vẫn xanh vì `greenlet` có sẵn qua nhóm dev
       (locust). Đã đổi phụ thuộc thành `sqlalchemy[asyncio]` (`uv add`). **Bài học:** test chạy

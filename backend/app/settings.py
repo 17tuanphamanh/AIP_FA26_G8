@@ -2,8 +2,13 @@
 
 Bí mật để SecretStr (không in ra log/repr). Biến LLM để trống tới mốc G (decisions.md mục 4).
 Tên model, giá, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml (P2).
+
+File env: `APP_ENV_FILE` (mặc định `.env`, tính từ thư mục đang chạy); đặt RỖNG để tắt hẳn —
+khi đó chỉ đọc biến môi trường. `conftest.py` ở gốc repo đặt rỗng trước khi import app, để test
+không bao giờ đọc (hay stat) file `.env` thật.
 """
 
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -11,10 +16,16 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def env_file_from_env() -> str | None:
+    """Đường dẫn file env theo `APP_ENV_FILE`; rỗng → None (tắt đọc file)."""
+    return os.environ.get("APP_ENV_FILE", ".env") or None
+
+
 class Settings(BaseSettings):
+    # env_file đọc lúc import module: đổi APP_ENV_FILE sau khi đã import app.settings thì không ăn.
     # env_ignore_empty: `LLM_API_KEY=` (để trống tới mốc G) được hiểu là chưa đặt → None.
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
     )
 
     # ---- Bí mật ----

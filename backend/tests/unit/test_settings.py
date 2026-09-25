@@ -1,7 +1,7 @@
 """Settings: mặc định an toàn, biến LLM để trống hợp lệ (mốc G), bí mật không lộ qua repr."""
 
 import pytest
-from app.settings import Settings
+from app.settings import Settings, env_file_from_env
 from pydantic import ValidationError
 
 
@@ -53,3 +53,17 @@ def test_flags_read_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_unknown_strategy_rejected() -> None:
     with pytest.raises(ValidationError):
         _settings(strategy="yolo")
+
+
+def test_env_file_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("APP_ENV_FILE", raising=False)
+    assert env_file_from_env() == ".env"
+    monkeypatch.setenv("APP_ENV_FILE", "/srv/khac.env")
+    assert env_file_from_env() == "/srv/khac.env"
+    monkeypatch.setenv("APP_ENV_FILE", "")
+    assert env_file_from_env() is None
+
+
+def test_env_file_disabled_under_pytest() -> None:
+    """conftest.py gốc tắt file env trước khi import app — test không bao giờ đọc .env thật."""
+    assert Settings.model_config.get("env_file") is None
