@@ -25,10 +25,11 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
   ngay tại gốc repo (chỉ `__init__.py` + README 1 dòng, **chưa có logic nghiệp vụ**).
 - `pyproject.toml` (Python 3.12, uv) + `uv.lock`; `Makefile` theo 01 mục 7.1 — `test`,
   `lint` chạy được, các lệnh khác in TODO.
-- `backend/tests/unit/test_smoke.py` — test giữ chỗ để pytest không trả mã 5; xoá khi có test thật.
+- `backend/tests/unit/test_smoke.py` — test giữ chỗ; **đã xoá** ở Phase 1b khi có test thật.
 
-Cổng T01 (01 mục 8) còn thiếu: `make up`, 6 hợp đồng import-linter, test chữ ký
-`policy_engine.evaluate` — làm trong Phase 1.
+Cổng T01 (01 mục 8): mục 2 (6 hợp đồng import-linter trong `make lint`) và mục 3 (test chữ ký
+`policy_engine.evaluate`) **xanh** từ Phase 1b. Còn thiếu: mục 1 (`make up`, `/api/health`),
+mục 4 (gitleaks), mục 5 (image backend = worker).
 
 ## Phase 1 — đang mở
 
@@ -36,10 +37,10 @@ Cổng T01 (01 mục 8) còn thiếu: `make up`, 6 hợp đồng import-linter, 
 |---|---|
 | docker-compose (postgres 16, qdrant, backend, mock_services) + `make up/down` | Chưa |
 | DB 22 bảng + 3 role Postgres + trigger append-only (Alembic, P7) | Chưa |
-| `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | Chưa |
+| `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | **Xong** 25/09/2026 (Phase 1b) — `build_action` để sang B11, xem câu hỏi 9 |
 | `mock_services` + `seed.json` + `make seed` (P5) | Chưa |
 | Auth (P6) | Chưa |
-| `.importlinter` 6 hợp đồng (01 mục 4.3) | Chưa |
+| `.importlinter` 6 hợp đồng (01 mục 4.3) | **Xong** 25/09/2026 (Phase 1b) — trong `make lint`; đã thử phá từng hợp đồng, đều báo BROKEN |
 | `.env.example` theo 01 mục 5.1 (bỏ biến agent cũ; biến LLM để trống tới mốc G) | Chưa |
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
@@ -69,3 +70,32 @@ Cổng T01 (01 mục 8) còn thiếu: `make up`, 6 hợp đồng import-linter, 
    CPU của PyTorch để không kéo bản CUDA — xử lý khi làm P4.
 7. ~~Hook chặn nhầm~~ — **đã sửa** (25/09/2026): `.claude/hooks/pre-commit-test.sh` tự lọc
    lệnh có `git commit` từ stdin; `.githooks/pre-commit` dùng `uv run --locked`.
+8. ~~Mâu thuẫn cấm số 5 ↔ D-29~~ — **đã giải quyết** (25/09/2026): người nới đặc tả (NGU-CANH IV 2.2,
+   B02 mục 7, P1 5.1.1) thành `S_SCREENING` → ngoài {`S_CLASSIFYING`, `S_BLOCKED`, `S_ESCALATED`};
+   `S_SCREENING → S_SCREENING` vẫn cấm. Có test ở `backend/tests/unit/test_states.py`. Ghi chép gốc:
+   chuyển cấm số 5
+   (`NGU-CANH-DAY-DU.md` IV 2.2 **[Chốt]**: `S_SCREENING` → bất kỳ đâu ngoài `S_CLASSIFYING`/`S_BLOCKED`)
+   đụng D-29 quy tắc 2 (P1 5.1.1: mọi trạng thái chưa kết thúc → `S_ESCALATED`, ghi rõ "E2/E9 ở
+   `S_NEW` **và `S_SCREENING`**"). Cả P1 5.1.1 lẫn 00-README đều ghi "`FORBIDDEN` luôn thắng" → hiểu
+   theo chữ thì E9/E2 ở B2 vẫn ném `IllegalTransition`, ticket kẹt ở `S_SCREENING` — đúng lỗi L-13 mà
+   D-29 sinh ra để sửa, và làm đỏ test P1 mục 11 "lỗi giả ở B2 → `S_ESCALATED` E9". B02 mục 7 (dòng
+   163) cũng ghi "(cần nới cho dòng E2 ở trên khi chốt)" nhưng chưa ai nới. Quy tắc 1 (`S_SCREENING` →
+   `S_SCREENING`) cũng va với chuyển cấm này theo chữ, nhưng hiện chưa node nào dùng.
+9. `domain/action.py` mới có `Action`; **`build_action` chưa làm** vì cần `config/action_metadata.yaml`
+   + `REQUIRED_SLOTS` (B11, Phase 3). 01 mục 3 ghi `action.py # Action, build_action`.
+10. Hợp đồng import-linter số 6 (01 mục 4.3) nhắc `tickets.create_child`, nhưng cây thư mục 01 mục 3
+    không có module `tickets` → `.importlinter` chưa chặn mục này. Ngoài ra mã giả B15 truyền
+    `approvals.create` làm đối số cho `effects.once`, nghĩa là node vẫn phải import tới nó — va với
+    hợp đồng 6 nếu `create` là hàm chứ không phải module `app.approval.create`. Cần chốt trước
+    Phase 2/3 (có thể: `graph.effects` tự giữ bảng `kind → hàm`, node chỉ truyền `kind`).
+11. Hợp đồng 3: import-linter không nhận wildcard một phần tên (`*_write`), nên liệt kê tường minh
+    `app.tools.adapters.{ad,vpn,software,fileserver}_write` theo 4 hệ thống của P5. Ai thêm adapter
+    ghi mới phải thêm dòng vào `.importlinter`; nếu P5 đặt tên khác thì sửa theo.
+12. Hiện thực 6 chuyển cấm ở `domain/states.py` (Phase 1b) — ba chỗ là cách hiểu của code, chưa ghi
+    trong đặc tả:
+    - Cấm 2: chặn khi **không có** `approval_result == "approved"` (fail-safe, gồm cả hết SLA).
+      Vì thế thêm `approval_result` vào `TicketState` (có ở NGU-CANH IV 3, P1 mục 4 không có).
+    - Cấm 3: thiếu `action_plan_hash` hoặc `intended_action` cũng bị chặn.
+    - Cấm 4: domain chỉ kiểm được "`step`/`event` không rỗng"; phần "đã ghi audit cùng transaction"
+      thuộc `goto()` Phase 2.
+    - Cấm 1 giữ đúng chữ: `risk` rỗng **không** bị cấm 1 chặn.

@@ -22,7 +22,7 @@ test:
 lint:
 	uv run ruff check .
 	uv run mypy backend/app
-	@echo "TODO (Phase 1): import-linter — chưa có .importlinter (6 hợp đồng ở 01 mục 4.3)." >&2
+	PYTHONPATH=backend uv run lint-imports
 
 # Pipeline RAG (P3): in kb_version và số đoạn truncated (phải = 0).
 ingest:

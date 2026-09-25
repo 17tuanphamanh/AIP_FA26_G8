@@ -160,7 +160,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 | `S_SCREENING` | Không phát hiện injection | `S_CLASSIFYING` | **[Chốt]** |
 | `S_SCREENING` | Phát hiện injection | `S_BLOCKED` (`injection_detected`) → E0 | **[Chốt]** |
 | `S_SCREENING` | Classifier và LLM cùng lỗi | `S_ESCALATED` (E2 + cờ an ninh) | **[Đề xuất]** |
-| Chuyển bị cấm | `S_SCREENING` → bất kỳ đâu ngoài `S_CLASSIFYING` hoặc `S_BLOCKED` | — | **[Chốt 2.2]** (cần nới cho dòng E2 ở trên khi chốt) |
+| Chuyển bị cấm | `S_SCREENING` → bất kỳ đâu ngoài `S_CLASSIFYING`, `S_BLOCKED` hoặc `S_ESCALATED` | — | **[Chốt 2.2, nới theo D-29 ngày 25/09/2026]**: thêm `S_ESCALATED` cho E2/E9; `S_SCREENING → S_SCREENING` vẫn cấm |
 
 ### 0.3. Đặc tả gốc đã chốt
 
@@ -383,7 +383,7 @@ def block(state, **info):
   - 11: RQ4 (so regex / Prompt Guard 2 / `injection-clf` của nhóm / chỉ LLM).
 - **Việc còn mở:**
   - Giấy phép Prompt Guard 2 (Llama 4 Community License) chỉ còn liên quan tới lần chạy baseline RQ4; đường chính dùng model của nhóm (giấy phép MIT của mDeBERTa).
-  - Chuyển `S_SCREENING → S_ESCALATED` (E2) chưa có trong bảng chuyển gốc, cần thêm khi chốt.
+  - ~~Chuyển `S_SCREENING → S_ESCALATED`~~ — đã chốt 25/09/2026: chuyển cấm số 5 nới thêm `S_ESCALATED` (D-29).
 
 ---
 

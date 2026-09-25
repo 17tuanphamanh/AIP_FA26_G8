@@ -333,6 +333,8 @@ def is_allowed(state, frm, to):
 
 `goto()` gọi `is_allowed(state, frm, to_status)` thay cho phép thử `in ALLOWED_TRANSITIONS`. Bảng `FORBIDDEN` (6 chuyển cấm **[Chốt 2.2]**) vẫn kiểm **sau** và luôn thắng.
 
+**Chuyển cấm số 5 đã nới (chốt 25/09/2026):** `S_SCREENING` → ngoài {`S_CLASSIFYING`, `S_BLOCKED`, **`S_ESCALATED`**}. Nếu không nới, quy tắc 2 bị cấm 5 chặn và lỗi ở B2 không ra được E2/E9 (test mục 11 đỏ). `S_ESCALATED` chỉ chuyển cho người nên không tạo đường vòng qua sàng lọc. `S_SCREENING → S_SCREENING` (quy tắc 1) **vẫn cấm**: B2 là một node, không cần giữ nguyên trạng thái.
+
 **Vì sao ba quy tắc này không làm yếu an toàn:**
 
 - Quy tắc 1 không đổi trạng thái, nên không bỏ qua bước nào. Bước tiếp theo vẫn do `ROUTES` kiểm.

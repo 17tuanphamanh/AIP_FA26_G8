@@ -1508,7 +1508,7 @@ Bảng 2.2 (chuyển bị cấm) vẫn luôn thắng. Chi tiết: `build/nen-tan
 | `S_PENDING_APPROVAL` → `S_EXECUTING` khi hết SLA | Cơ chế fail-safe, không bao giờ tự thực hiện khi thiếu giám sát |
 | `S_PENDING_APPROVAL` → `S_EXECUTING` khi `action_plan_hash` lúc thực thi khác lúc duyệt | Người duyệt phê duyệt một ActionPlan cụ thể, không phải "duyệt trước cho bất kỳ hành động nào sau này" (xem mục 5.2.1) |
 | Bất kỳ trạng thái nào → `S_RESOLVED` mà không qua ghi log | Nguyên tắc mọi quyết định phải truy vết được |
-| `S_SCREENING` → bất kỳ đâu ngoài `S_CLASSIFYING` hoặc `S_BLOCKED` | Không có đường vòng qua bước kiểm tra an ninh |
+| `S_SCREENING` → bất kỳ đâu ngoài `S_CLASSIFYING`, `S_BLOCKED` hoặc `S_ESCALATED` | Không có đường vòng qua bước kiểm tra an ninh. `S_ESCALATED` (E2/E9) được phép vì chỉ chuyển cho người, không đi tiếp tới bước xử lý nào (D-29, chốt 25/09/2026). `S_SCREENING → S_SCREENING` vẫn bị cấm |
 | `S_ESCALATED` (do `deny` hoặc rủi ro cao ở E5) → `S_EXECUTING` của **cùng một** `intended_action`/`action_plan_hash` | L2 không có quyền "bật đèn xanh" lại cho đúng hành động đã bị luật cứng/LLM từ chối trong cùng một ticket — muốn thực hiện phải là một `intended_action` mới, qua lại từ B12 (xem mục 1.2, mục 5.2.2) |
 
 ---
