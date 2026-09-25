@@ -115,8 +115,100 @@ Kế hoạch đã duyệt chia 2 chặng: chặng 1 = mock (P5 mục 7) + `backe
 - Worker không có `SVC_EXECUTOR_TOKEN`, nhưng `runner.recover()` (P1 mục 7) chạy trong worker có thể
   đi tới B17 → hiện sẽ ra E7. Chưa giải ở 1c.
 
-**Sẽ ghi ở chặng 2:** refresh giữ chặt — 2 request refresh đồng thời cùng token → request thứ hai bị
-coi là reuse, thu hồi cả họ (hành vi đã biết, frontend xử lý ở Phase 7).
+## Phase 1c — chặng 2: auth (P6) — kế hoạch đã duyệt (26/09/2026, chưa làm)
+
+Làm sau khi chặng 1 được duyệt (đã commit `2257060`). Lệch phase so với P6 mục 10 (middleware ở
+Phase 2, MFA/CSRF ở Phase 7, `can_decide_approval` ở Phase 4): làm sớm theo task. **Không làm:** B1
+node, graph, route tickets/approvals thật, LLM.
+
+**Quyết định đã chốt:**
+1. **IDOR (D-02):** `can_*` là hàm thuần trong `auth/`; test HTTP qua **router chỉ có trong
+   `backend/tests/`**, không thêm route sản phẩm (route thật gắn ở Phase 2/4, dùng lại các hàm này).
+   Đọc ticket của người khác mà không có quyền → **404, không 403** (không lộ ticket tồn tại). Test cả
+   hai phía: ticket có thật của người khác và id không tồn tại cho **cùng** phản hồi 404 (status + body).
+2. **MFA:** bắt buộc với `manager`, chỉ đăng ký qua CLI vận hành
+   `python -m app.auth.mfa enroll|reset <username> --by <operator> --reason <text>`.
+   - Enroll và reset đều ghi `security_events` (`mfa_enrolled` / `mfa_reset`); `detail` chỉ có `by`,
+     `reason` — **không** secret, không URI otpauth (có test canary). Hai loại này **không** nằm trong
+     view `auth_failures`.
+   - `reset`: xoá secret cũ, sinh secret mới, tăng `token_version` (phiên cũ chết). Secret/URI chỉ in
+     ra stdout, không log.
+   - Manager chưa enroll mà đăng nhập → 401 (fail-closed) + `mfa_failed` (`detail.reason=not_enrolled`).
+   - **Migration 0002** (không sửa 0001) nới CHECK `security_events.event_type`; thêm 2 giá trị vào
+     `SECURITY_EVENT_TYPES` (`db/models.py`). Test upgrade/downgrade; downgrade dừng với thông báo rõ
+     nếu đã có dòng thuộc 2 loại này (bảng append-only, không xoá được). P7 2.3 đã được người cập nhật.
+3. **Refresh giữ chặt:** trình lại token đã xoay → thu hồi cả họ (`reuse_detected`) + ghi
+   `refresh_reuse_detected`. Test ca **2 request refresh đồng thời cùng token** (2 tab) → request thứ
+   hai bị coi là reuse; đây là hành vi đã biết, frontend xử lý ở Phase 7.
+
+**Thiết kế (từ kế hoạch Phase 1c):**
+- **Phụ thuộc module (01 mục 4.2: auth → domain, core, db):** `auth` không import `tools`/`audit`. Port
+  `Protocol` ở `auth/ports.py`: `IdentityProvider`, `SecurityEventSink`, `AdUser`. Adapter AD
+  (`tools/adapters/ad_read.py`) và writer (`audit/security_events.py`) khớp port theo cấu trúc;
+  `main.create_app` nối lại.
+- **Tham số (một nguồn):** `MAX_AUTH_FAILURES`, `AUTH_FAILURE_WINDOW_MINUTES` ở `config/policy.json`
+  (đã có). `Settings` (env, có mặc định): `ACCESS_TTL` 15 phút, `REFRESH_TTL` 8 giờ, `LOCKOUT_MINUTES`
+  15, giới hạn theo dải IP 20 lần/10 phút, xác nhận lại 10 phút, cache thu hồi 30 giây.
+- **Role từ nhóm AD:** `IT-L1`→l1, `IT-Manager`→manager, `IT-L2`→l2, chỉ `IT-Users`→employee; thuộc hơn
+  1 nhóm đặc quyền → 401 (fail-closed) [Suy luận]. Role đổi giữa 2 lần đăng nhập → `role_changed`.
+- **Refresh xoay vòng:** mỗi lần refresh tạo dòng `sessions` mới cùng `token_family_id`, dòng cũ
+  `revoke_reason='rotated'`; hạn tuyệt đối 8 giờ tính từ lúc đăng nhập (không trượt).
+- **Xác nhận lại** (admin revoke): thời điểm đăng nhập = `min(created_at)` của họ token; JWT giữ đúng
+  7 claim của P6 (`sub, role, sid, tv, iat, exp, jti`), không thêm `auth_time`.
+- **Khoá do dò mật khẩu:** auth ghi `security_events(account_locked)`; dòng `alerts` báo Trưởng BP do
+  M9 sinh (P9 luật 3) → Phase 7.
+- **`manager_id` có FK:** đồng bộ user thì upsert người quản lý trước (`idp.get_user`, sâu tối đa 5 cấp,
+  chặn vòng).
+- **Chống dò username:** vẫn đếm lỗi theo `username_attempted` khi user không tồn tại, trả cùng 401;
+  mock AD verify hash giả (đã có ở chặng 1).
+- Thiếu `JWT_SIGNING_KEY` → route auth trả 503; app vẫn khởi động, `/api/health` vẫn chạy.
+
+**Việc làm (phần C của kế hoạch):**
+- `auth/permissions.py`: `PERMS` đúng P6 5.1.
+- `auth/ports.py`: `IdentityProvider`, `SecurityEventSink`, `AdUser`.
+- `auth/tokens.py`: JWT HS256, 7 claim, khoá ≥ 32 byte, chặn `alg=none`; refresh 256 bit, DB chỉ lưu
+  SHA-256; CSRF double-submit (cookie `csrf` + header `X-CSRF-Token` ở `/api/auth/refresh`).
+- `auth/mfa.py`: AES-GCM (`MFA_ENC_KEY`), TOTP (pyotp, thời gian lấy từ clock) + CLI như quyết định 2.
+- `db/alembic/versions/0002_security_events_mfa_types.py`.
+- `auth/service.py`: `login` (8 bước P6 mục 4, thông báo lỗi chung), `refresh`, `logout`, `logout_all`,
+  `revoke_user`, `validate_access` (phiên chưa thu hồi, `tv` khớp, status không disabled/terminated;
+  cache 30 giây).
+- `auth/deps.py`: `current_principal` (Bearer), `require(perm)`; từ chối → `permission_denied` kèm route,
+  perm, không kèm dữ liệu.
+- `auth/authz.py`: `can_read_ticket` (không quyền → 404), `can_decide_approval` (có quyền, là người được
+  giao, phiếu pending, chưa quá hạn, không rơi vào 3 xung đột B15), `can_override`,
+  `can_close_escalation`, `can_read_audit`, `scope_tool_target` (D-16).
+- `domain/context.py`: `RequesterContext.from_ad(user, now)`.
+- `api/auth.py`: `login`, `refresh`, `logout`, `logout-all`, `me`, `POST /api/admin/users/{id}/revoke`
+  (manager + xác nhận lại); cookie refresh `HttpOnly; Secure; SameSite=Strict; Path=/api/auth`.
+- `audit/security_events.py`: chỉ INSERT, `occurred_at` lấy từ clock.
+- `core/logging.py`: filter che chuỗi dạng JWT, `password=…`, cookie refresh.
+- `main.create_app` nhận `idp`, `clock`, `sink` để test tiêm vào.
+
+**Test (định nghĩa "xong" của chặng 2):**
+
+| Nguồn | Test |
+|---|---|
+| P6 test 1 | Quét route (`iter_route_contexts`): mọi route có `require()`, trừ `/api/auth/login`, `/api/auth/refresh`, `/api/health` |
+| P6 test 2 | 40 test ma trận (10 chức năng × 4 vai trò, NGU-CANH 2.2) + 2 luật cứng (`policy:edit` ∉ l1, `approval:decide` ∉ l2) |
+| P6 test 3 | TC30 qua router trong test: A đọc ticket của B → 404 (giống hệt id không tồn tại); L1-X duyệt phiếu của L1-Y → 403; L2 duyệt → 403 |
+| P6 test 4–7, 10 | Thu hồi ≤ 30 giây (FakeClock); terminated → mọi phiên chết; refresh dùng lại → cả họ bị thu hồi; **2 refresh đồng thời → cái thứ hai là reuse**; TC25 khoá 15 phút + `account_locked`; TC24 đúng 1 `login_failed`, không khoá; MFA; CSRF; `role_changed`; canary (không mật khẩu/token trong log và `security_events`) |
+| P6 test 8 | Đã có (`test_db_constraints.py`) |
+| P6 test 9 | Đã có (chặng 1: test mock + e2e) |
+| P7 2.3 / MFA | Migration 0002 upgrade/downgrade; `auth_failures` không đếm 2 loại mới; CLI enroll/reset ghi sự kiện, `detail` không có secret/URI; manager chưa enroll → 401 + `mfa_failed(not_enrolled)` |
+| B01 unit | `from_ad`: `tenure_days` đúng; model frozen |
+| Cổng 1 | "Ghi audit thiếu trường bắt buộc bị từ chối" — kiểm lại test cũ, thiếu thì thêm |
+
+Khoá JWT, `MFA_ENC_KEY`, token dịch vụ trong test sinh ngẫu nhiên trong fixture; không đọc `.env`.
+
+**Chuyển phase (không phải mốc G — không cần LLM):** P6 test 11 mạo danh qua B1 + M5 (Phase 2/3; chặng 2
+chỉ test đăng nhập bỏ qua `role` trong body); test integration B01 (Phase 2); dòng `alerts` khi khoá
+(Phase 7, M9); header/CORS/giới hạn kích thước request (Caddy, Phase 7); OWASP ZAP (Phase 7).
+
+**Kiểm cuối Phase 1c (sau chặng 2):** `make lint`, `make test` xanh; `make up` + `/api/health` 200 (có
+`mock`), `make seed` OK; thử đăng nhập user demo (cần `.env` có `JWT_SIGNING_KEY`, `SVC_AGENT_TOKEN` —
+người tự thêm); đóng Phase 1 trong PROGRESS; mục "người xác nhận gọi tay 12 tool" (bảng ở README mock)
+vẫn cần người khác làm.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
