@@ -379,6 +379,16 @@ Trigger `forbid_mutation` trên `audit_logs` và `security_events` là lớp th�
 
 **Pool khóa (D-19):** khóa ticket dùng `pg_advisory_lock` cấp session trên một pool kết nối riêng cùng role `app_rw`. Không cần bảng hay quyền mới.
 
+**Chốt khi hiện thực Phase 1a (26/09/2026):**
+
+- **Ai tạo role:** script init của container Postgres (superuser, chạy một lần) tạo 3 role, mật khẩu lấy từ env, cho `app_migrate` làm owner schema. Alembic chạy bằng `app_migrate`, không dùng superuser. Downgrade không xoá role.
+- **Chặn cả `TRUNCATE`:** thêm trigger cấp câu lệnh `BEFORE TRUNCATE` trên `audit_logs` và `security_events`. Trigger `forbid_mutation` cấp dòng không bắt được `TRUNCATE` **[Đề xuất, đã hiện thực]**.
+- **`tickets`:** cột câu yêu cầu tên là `redacted_request` (chỉ lưu bản đã che, D-07), không phải `raw_request`. Đủ 20 cột có nguồn + `is_parent` = 21 cột.
+- **`transaction_log.status`:** CHECK `{begun, undone, undo_failed}` — `begun` để phát hiện thực thi bị gián đoạn (B17 mục 8).
+- **`audit_logs`:** thêm cột `raw_prob` (0..1) và `p_method` `{self_report, sampling_k5}` cho điểm log 4 (B12 mục 8, P8 fit calibrator); phần bổ sung khác của từng nhánh vào `detail JSONB`.
+- **Index cho P9:** `audit_logs(step, created_at)`, `escalations(closed_at, exit_code)`, `llm_calls(created_at)`.
+- **Nguồn sự thật của 17 bảng gốc:** `schema.sql` gốc đã mất; bảng "bảng → cột → nguồn" nằm ở `backend/app/db/README.md`, DDL thật là `backend/app/db/models.py` + migration `0001`.
+
 ## 4. Chính sách lưu trữ [Chốt 17.2, chi tiết hóa]
 
 | Dữ liệu | Giữ | Cách xóa |
@@ -421,3 +431,4 @@ Khi nhóm duyệt D-04, D-05, D-11, D-14, D-18, D-27, D-30, D-31:
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0 |
 | 25/09/2026 | 1.2 | Thêm `side_effects` (D-18) → 21 bảng; khóa audit mới (D-14); UNIQUE phiếu `pending`; `escalations.reason_detail` (D-27) |
 | 25/09/2026 | 1.3 | Thêm `child_notices` (D-31) → 22 bảng; `tickets.is_parent`, cha `close_reason = NULL` (D-30); `side_effects.kind` thêm `child_event` |
+| 26/09/2026 | 1.4 | Ghi nhận các quyết định khi hiện thực Phase 1a (role, TRUNCATE, `redacted_request`, `begun`, `raw_prob`/`p_method`, index P9) |

@@ -1,6 +1,6 @@
 # Thiết kế Database SQL — AI Agent IT Service Desk L1 + HITL
 
-> **Hiện hành (25/09/2026): 22 bảng.** File này mô tả 17 bảng gốc (3 vòng review). Bộ `build/` thêm 5 bảng (`security_events`, `llm_cache`, `wait_deadlines`, `side_effects`, `child_notices`), mở rộng 6 bảng và thêm 3 role Postgres — xem `build/nen-tang/P7-db-thay-doi.md`. Khi code, `schema.sql`/`models.py` phải theo P7.
+> **Hiện hành (25/09/2026): 22 bảng.** File này mô tả 17 bảng gốc (3 vòng review). Bộ `build/` thêm 5 bảng (`security_events`, `llm_cache`, `wait_deadlines`, `side_effects`, `child_notices`), mở rộng 6 bảng và thêm 3 role Postgres — xem `build/nen-tang/P7-db-thay-doi.md`. Khi code, `schema.sql`/`models.py` phải theo P7. **Cập nhật 26/09/2026:** `schema.sql`/`models.py` gốc gửi qua chat đã mất; 17 bảng được dựng lại khi làm Phase 1a — nguồn sự thật hiện nay là `backend/app/db/models.py` + migration `0001` trong repo, bảng đối chiếu cột → tài liệu ở `backend/app/db/README.md`. Khác biệt so với file này: xem P7 mục 3 "Chốt khi hiện thực Phase 1a".
 
 Trạng thái: đã qua BA vòng tự review (2 vòng sửa lỗi domain-value/PK + 1 vòng thiết kế lại kiến trúc bảng `tickets`), kiểm thử lại toàn bộ trên PostgreSQL 16 sau mỗi vòng (raw SQL + SQLAlchemy ORM), pass hết. Nguồn: `NGU-CANH-DAY-DU.md`, `huong-dan-xay-dung-he-thong-2.md`, `bo-sung-tang-Monitor-M9.md`.
 
