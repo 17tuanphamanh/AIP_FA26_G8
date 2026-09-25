@@ -167,7 +167,7 @@ node B6 / B11 / B17
 │  1 tra ToolSpec  2 kiểm caller_step ∈ allowed_steps                  │
 │  3 kiểm kind: write ⇒ caller phải là Executor (B17)                  │
 │  4 validate input (Pydantic)                                         │
-│  5 CircuitBreaker[target_system].allow()?  ── mở ─► ExternalSystemError ngay
+│  5 CircuitBreaker[target_system].allow()?  ── mở ─► ToolResult(error="circuit_open") ngay
 │  6 đọc: call_with_retry(adapter.fn, retry=2, backoff 1s/2s)          │
 │     ghi: gọi 1 lần, timeout 5s, KHÔNG retry                          │
 │  7 validate output; 404/rỗng = dữ liệu hợp lệ                        │
@@ -277,13 +277,35 @@ Trạng thái breaker nằm trong bộ nhớ process (không lưu DB) **[Chốt]
 
 **Vì sao:** khi AD chết, mỗi ticket không phải mất 3 giây retry mới biết. Ticket đi E2 ngay.
 
+### 6.1. Kiểu trả của `registry.call` [Chốt 26/09/2026]
+
+`registry.call(...)` **không raise** khi hệ thống ngoài lỗi. Nó luôn trả:
+
+```python
+@dataclass(frozen=True)
+class ToolResult:
+    tool: str
+    data: Any | None          # None khi lỗi hoặc 404
+    error: str | None         # "circuit_open" | "TimeoutException: …" | None
+    attempts: int             # → tool_retry_count (điểm log 2, 3)
+    empty: bool               # 404 / rỗng = dữ liệu hợp lệ, KHÔNG phải lỗi (E2 ≠ E3)
+    def __iter__(self): return iter((self.data, self.error, self.attempts))   # cho B01/B17: data, err, _ = ...
+```
+
+- Breaker mở → `error="circuit_open"`, node đi **E2** như mọi lỗi hạ tầng đã biết.
+- Chỉ lỗi **hợp đồng** (4xx khác 404/429, output sai schema, `caller_step` không được phép) mới raise — đó là lỗi lập trình, rơi xuống **E9** là đúng.
+- **Tool ghi gặp 404/409** (máy chưa đăng ký, hết license… phát hiện lúc thực thi): trả `error` như thất bại thực thi → B17 đi **E7** (có hoàn tác theo mục 5.3 của B17), **không** raise và **không** tính vào breaker — đây là trạng thái nghiệp vụ của hệ thống đích, không phải bug hay hạ tầng chết.
+- **Breaker đếm theo lần gọi registry** (sau khi `call_with_retry` đã thử xong), không theo từng HTTP attempt: một lời gọi thử 3 lần rồi thất bại = 1 lỗi. Đếm theo attempt thì chỉ 2 ticket lỗi đã mở breaker.
+- **Tool có `arg_slots` bắt buộc mà thiếu slot** → lỗi hợp đồng (raise). Vì vậy B6 **phải lọc** tool theo `arg_slots` đã có trước khi gọi (D-20), không gọi "thử".
+- **Lý do:** B01, B06, B17 đều xử lý lỗi tool như giá trị (`r.error`, `data, err, _ = …`). Nếu breaker raise, node nào quên bắt sẽ rơi xuống E9, làm lẫn "hạ tầng ngoài chết" (E2) với "bug chưa lường trước" (E9) trong số liệu M9.
+
 ## 7. Mock services [Chốt]
 
 | Endpoint | Ghi chú |
 |---|---|
 | `/ad/authenticate` | Nhận username + mật khẩu, so với hash argon2id trong seed, trả thuộc tính + nhóm AD **[Đề xuất, phục vụ P6]** |
 | `/ad/users/{id}`, `/ad/users/{id}/lockouts`, `/ad/users/{id}/privilege` | Đọc |
-| `/vpn/devices/{id}`, `/vpn/certs/{user}`, `/vpn/connections/{user}` | Đọc |
+| `/vpn/devices/{id}`, `/vpn/devices?owner_id=` (thêm 26/09/2026 — B6 tự tìm máy khi người dùng chưa nêu `device_id`, TC06), `/vpn/certs/{user}`, `/vpn/connections/{user}` | Đọc |
 | `/software/catalog/{name}`, `/software/licenses/{name}`, `/software/installed/{device}` | Đọc |
 | `/files/permissions/{user}`, `/files/resources/{path}`, `/ad/users/{id}/manager-chain` | Đọc |
 | `POST /ad/…/reset-password`, `/vpn/…/renew`, `/software/…/install`, `/files/…/grant` … | **Ghi, bắt buộc token `svc_executor`** **[Đề xuất D-03]** |
@@ -325,3 +347,5 @@ Trạng thái breaker nằm trong bộ nhớ process (không lưu DB) **[Chốt]
 | 25/09/2026 | 1.0 | Tạo file |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0 |
 | 25/09/2026 | 1.2 | Thêm `ToolSpec.arg_slots` + bảng cho 12 tool đọc (D-20); seed cho test D-15, D-20 |
+| 26/09/2026 | 1.3 | Chốt kiểu trả `ToolResult` của `registry.call` (không raise khi breaker mở → E2); sửa sơ đồ mục 2 |
+| 26/09/2026 | 1.4 | Chốt khi hiện thực Phase 1c: tool ghi 404/409 → E7 không tính breaker; breaker đếm theo lời gọi; thiếu slot bắt buộc = lỗi hợp đồng; mock thêm `GET /vpn/devices?owner_id=` |

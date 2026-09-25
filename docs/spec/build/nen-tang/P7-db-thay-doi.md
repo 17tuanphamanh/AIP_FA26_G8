@@ -217,7 +217,8 @@ CREATE TABLE security_events (
   event_type         VARCHAR(32) NOT NULL CHECK (event_type IN (
       'login_success','login_failed','account_locked','logout','token_refreshed',
       'refresh_reuse_detected','session_revoked','permission_denied','role_changed',
-      'mfa_failed','policy_saved','injection_detected','privacy_secret_redacted')),
+      'mfa_failed','mfa_enrolled','mfa_reset',         -- mfa_enrolled/mfa_reset: thêm ở migration 0002 (26/09/2026)
+      'policy_saved','injection_detected','privacy_secret_redacted')),
   user_id            VARCHAR(64) REFERENCES users(user_id),
   username_attempted VARCHAR(128),
   ip_prefix          VARCHAR(48),
@@ -231,6 +232,8 @@ CREATE INDEX ix_sec_type_time ON security_events(event_type, occurred_at DESC);
 CREATE VIEW auth_failures AS
   SELECT * FROM security_events WHERE event_type IN ('login_failed','mfa_failed');
 ```
+
+**`mfa_enrolled`, `mfa_reset` [Chốt 26/09/2026]:** ghi mỗi khi lệnh CLI `python -m app.auth.mfa enroll|reset` chạy (P6: MFA chỉ đăng ký qua kênh vận hành, không qua đăng nhập). `detail` chỉ chứa người thực hiện và lý do, **không** chứa secret hay URI `otpauth`. Hai loại này **không** nằm trong view `auth_failures`.
 
 **Truy vấn đếm dò mật khẩu [Chốt 5/10 phút]:**
 
@@ -432,3 +435,4 @@ Khi nhóm duyệt D-04, D-05, D-11, D-14, D-18, D-27, D-30, D-31:
 | 25/09/2026 | 1.2 | Thêm `side_effects` (D-18) → 21 bảng; khóa audit mới (D-14); UNIQUE phiếu `pending`; `escalations.reason_detail` (D-27) |
 | 25/09/2026 | 1.3 | Thêm `child_notices` (D-31) → 22 bảng; `tickets.is_parent`, cha `close_reason = NULL` (D-30); `side_effects.kind` thêm `child_event` |
 | 26/09/2026 | 1.4 | Ghi nhận các quyết định khi hiện thực Phase 1a (role, TRUNCATE, `redacted_request`, `begun`, `raw_prob`/`p_method`, index P9) |
+| 26/09/2026 | 1.5 | `security_events.event_type` thêm `mfa_enrolled`, `mfa_reset` (migration 0002) |
