@@ -44,6 +44,8 @@ dependencies = [
     "scikit-learn",
     "numpy",
     "scipy",
+    # Cấu hình config/*.yaml (slots.yaml — P5/B11)
+    "pyyaml>=6.0.3",
 ]
 
 [dependency-groups]
@@ -60,6 +62,7 @@ dev = [
     "ruff",
     "mypy",
     "import-linter",
+    "types-pyyaml>=6.0.12.20260906",  # stub cho mypy
 ]
 # Model nặng của ml-service (P4) — KHÔNG cài mặc định: `uv sync --group ml`.
 # 01 mục 6 ghi "FlagEmbedding hoặc sentence-transformers"; chọn FlagEmbedding theo P4 mục 4.

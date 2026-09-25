@@ -70,3 +70,12 @@ def test_json_log_context_resets_after_block() -> None:
 def test_json_log_rejects_unknown_context_key() -> None:
     with pytest.raises(ValueError), bind_log_context(raw_request="..."):
         pass
+
+
+@pytest.mark.asyncio
+async def test_fake_clock_sleep_advances_without_waiting() -> None:
+    clock = FakeClock(datetime(2026, 9, 25, 8, 0, tzinfo=UTC))
+    await clock.sleep(1)
+    await clock.sleep(2)
+    assert clock.sleeps == [1, 2]
+    assert clock.now() == datetime(2026, 9, 25, 8, 0, 3, tzinfo=UTC)

@@ -1,0 +1,11 @@
+# Slot theo intent — B11 mục 4, 7. Nạp và kiểm schema ở backend/app/settings.py.
+#
+# tool_arg_slots (TOOL_ARG_SLOTS, D-20): slot mà ít nhất một tool chẩn đoán dùng làm tham số.
+# ToolSpec.arg_slots phải là tập con của danh sách này — sai thì import tools lỗi (P5 mục 4).
+# required_slots theo intent (bảng B11 mục 4) thêm ở Phase 3 cùng B11.
+tool_arg_slots:
+  - target_user
+  - account_type
+  - device_id
+  - software_name
+  - resource_path

@@ -1,0 +1,47 @@
+# CI — 01 mục 7.2 bước 1 (PR: make lint + make test; đỏ thì không merge) + cổng 1 "CI trên GitHub xanh".
+# Chạy ĐẦY ĐỦ: unit + integration (testcontainers Postgres 16 — runner ubuntu có Docker) + e2e
+# (mock chạy bằng uvicorn trên cổng local) + test mock_services. Không có key thật nào: test không
+# gọi LLM, token/khoá sinh ngẫu nhiên trong fixture.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks detect trong make lint quét toàn bộ lịch sử commit
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Cài phụ thuộc theo uv.lock (nhóm dev, không nhóm ml)
+        run: uv sync --locked
+
+      - name: Cài gitleaks (cùng bản với máy dev)
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: make lint (ruff, mypy, import-linter, gitleaks)
+        run: make lint
+
+      - name: make test (unit + integration + e2e + mock)
+        run: make test

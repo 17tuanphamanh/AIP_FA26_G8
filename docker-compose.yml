@@ -3,6 +3,8 @@
 # Chỉ backend (8000) và postgres (5432) bind 127.0.0.1 cho dev; qdrant, mock chỉ trong mạng nội bộ.
 name: servicedesk
 
+# Env chung của backend và worker. Worker KHÔNG nhận SVC_EXECUTOR_TOKEN (credential ghi duy nhất,
+# D-03) — chỉ backend (nơi chạy B17) có.
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
   MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
@@ -12,7 +14,8 @@ x-backend-env: &backend-env
   LLM_API_KEY: ${LLM_API_KEY:-}
   JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
   MFA_ENC_KEY: ${MFA_ENC_KEY:-}
-  SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+  SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
+  SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
   GRAPH_CONCURRENCY: ${GRAPH_CONCURRENCY:-8}
   LOCK_POOL_SIZE: ${LOCK_POOL_SIZE:-10}
   TICKET_LOCK_TIMEOUT: ${TICKET_LOCK_TIMEOUT:-5}
@@ -55,7 +58,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     image: servicedesk-backend:dev
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +83,11 @@ services:
       context: .
       dockerfile: mock_services/Dockerfile
     image: servicedesk-mock:dev
+    environment:
+      # Mock kiểm X-Service-Token (P6 mục 3); thiếu token → endpoint cần token trả 503.
+      SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
+      SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+      SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
 
 volumes:
   pgdata:

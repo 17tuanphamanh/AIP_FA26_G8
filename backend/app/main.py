@@ -21,7 +21,11 @@ def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:
         async with httpx.AsyncClient(timeout=settings.health_timeout) as client:
             (await client.get(f"{settings.qdrant_url.rstrip('/')}/readyz")).raise_for_status()
 
-    return {"db": db, "qdrant": qdrant}
+    async def mock() -> None:  # hệ thống ngoài giả lập (P5) — /health không cần token
+        async with httpx.AsyncClient(timeout=settings.health_timeout) as client:
+            (await client.get(f"{settings.mock_url.rstrip('/')}/health")).raise_for_status()
+
+    return {"db": db, "qdrant": qdrant, "mock": mock}
 
 
 def create_app(

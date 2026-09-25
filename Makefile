@@ -27,8 +27,10 @@ endif
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 COMPOSE := docker compose --env-file $(ENV_FILE)
 HEALTH_URL := http://127.0.0.1:8000/api/health
+# Mock chỉ nghe trong mạng compose (không bind ra máy) → kiểm /health từ bên trong container.
+MOCK_HEALTH := python -c "import httpx; httpx.get('http://127.0.0.1:8100/health').raise_for_status()"
 
-# Dựng compose; chạy migration (role app_migrate); kiểm /api/health. Seed mock: task P5.
+# Dựng compose; chạy migration (role app_migrate); nạp seed mock; kiểm /health của mock và /api/health.
 up:
 	@if [ "$(ENV_FILE)" = ".env.example" ]; then \
 	  echo "CẢNH BÁO: không có .env — dùng giá trị mẫu của .env.example (chỉ cho máy dev)." >&2; fi
@@ -37,6 +39,11 @@ up:
 	$(COMPOSE) up -d --wait postgres qdrant
 	$(COMPOSE) run --rm --no-deps backend alembic upgrade head
 	$(COMPOSE) up -d backend worker mock
+	@for i in $$(seq 1 60); do \
+	  if $(COMPOSE) exec -T mock $(MOCK_HEALTH) >/dev/null 2>&1; then echo "mock /health: ok"; break; fi; \
+	  if [ $$i = 60 ]; then echo "mock /health chưa OK sau 60 giây" >&2; $(COMPOSE) logs --tail 50 mock >&2; exit 1; fi; \
+	  sleep 1; done
+	$(MAKE) seed
 	@for i in $$(seq 1 60); do \
 	  if curl -fsS $(HEALTH_URL) >/dev/null 2>&1; then \
 	    echo "/api/health: $$(curl -s $(HEALTH_URL))"; exit 0; fi; \
@@ -49,13 +56,17 @@ down:
 	$(COMPOSE) down
 
 # unit + integration + e2e với ScriptedLLM, testcontainers. Không gồm probe/ và load/.
+# backend và mock_services đều là package `app` → chạy pytest riêng, mỗi lần một PYTHONPATH.
+# e2e dựng mock bằng uvicorn trên cổng local: sandbox Claude Code cần sandbox.network.allowLocalBinding.
 test:
 	uv run pytest backend/tests/unit backend/tests/integration backend/tests/e2e
+	uv run pytest mock_services/tests -o pythonpath=mock_services
 
 # ruff, mypy, import-linter, gitleaks (cổng T01 mục 4).
 lint:
 	uv run ruff check .
 	uv run mypy backend/app
+	uv run mypy --cache-dir .mypy_cache/mock_services mock_services/app  # cache riêng: cùng tên package `app`
 	PYTHONPATH=backend uv run lint-imports
 	@command -v gitleaks >/dev/null || { echo "Thiếu gitleaks — cài: brew install gitleaks" >&2; exit 1; }
 	gitleaks detect --no-banner --redact
@@ -64,8 +75,11 @@ lint:
 ingest:
 	@echo "TODO (Phase 3): chưa có pipeline RAG (P3)." >&2; exit 1
 
+# Kiểm schema mock_services/seed.json rồi nạp lại vào mock đang chạy (/_admin/reset — đồng thời tắt
+# mọi lỗi đang bơm). Cần `make up` trước.
 seed:
-	@echo "TODO (Phase 1): chưa có mock_services/seed.json (P5)." >&2; exit 1
+	PYTHONPATH=mock_services uv run python -m app.seed validate
+	$(COMPOSE) exec -T mock python -m app.seed reset
 
 # Probe với LLM thật (intent, injection, phân phối p) — TỐN TIỀN, không nằm trong make test.
 probe:

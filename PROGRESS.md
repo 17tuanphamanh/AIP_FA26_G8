@@ -9,7 +9,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **1 — Hạ tầng, DB, domain, mock, auth** |
-| Cổng xanh | Phase 0; T01 (cấu trúc project, 26/09/2026) — cổng Phase 1 còn chờ mock (P5) và auth (P6) |
+| Cổng xanh | Phase 0; T01 (cấu trúc project, 26/09/2026) — cổng Phase 1: P5 xong phần code (chặng 1 của Phase 1c, chờ người duyệt), auth P6 là chặng 2 |
 | Cập nhật | 26/09/2026 |
 
 ## Phase 0 — đã xong (25/09/2026)
@@ -46,10 +46,77 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | docker-compose (postgres 16, qdrant, backend, worker, mock) + `make up/down` | **Xong** 25/09/2026 (Phase 1a) — backend và worker chung image `servicedesk-backend`; mock mới có `/health` |
 | DB 22 bảng + 3 role Postgres + trigger append-only (Alembic, P7) | **Xong** 25/09/2026 (Phase 1a) — migration `0001` chạy bằng `app_migrate`; bảng nguồn từng cột ở `backend/app/db/README.md`; 34 test integration (testcontainers) |
 | `backend/app/core`, `domain` (14 trạng thái, `is_allowed`, E0–E9, Action, hash) | **Xong** 25/09/2026 (Phase 1b) — `build_action` làm cùng B11 (câu hỏi 9) |
-| `mock_services` + `seed.json` + `make seed` (P5) | Chưa (Phase 1a chỉ dựng khung `/health` cho compose) |
+| `mock_services` + `seed.json` + `make seed` + registry/tool (P5) | **Code xong, `make test` xanh** 26/09/2026 (Phase 1c chặng 1) — chờ người duyệt |
 | Auth (P6) | Chưa |
 | `.importlinter` 5 hợp đồng + hợp đồng 6 bằng test AST (01 mục 4.3) | **Xong** 25/09/2026 (Phase 1b) — `make lint` + `test_side_effects_ast.py`, `test_write_adapters_listed.py`; đã thử phá từng hợp đồng, đều bắt được |
 | `.env.example` theo 01 mục 5.1 (bỏ biến agent cũ; biến LLM để trống tới mốc G) | **Xong** 25/09/2026 (Phase 1a) |
+
+## Phase 1c — chặng 1: mock + registry/tool + Makefile/CI (26/09/2026, chờ duyệt)
+
+Kế hoạch đã duyệt chia 2 chặng: chặng 1 = mock (P5 mục 7) + `backend/app/tools/` (P5 mục 4–6.1)
++ Makefile/CI; chặng 2 = auth (P6), MFA, migration 0002 — chỉ làm sau khi người duyệt chặng 1.
+
+**Đã làm:**
+- `mock_services/`: AD (argon2id, hash giả cho user không tồn tại), VPN, phần mềm, file server; 13
+  endpoint ghi (8 tool + 5 hoàn tác) chỉ nhận token `svc_executor`; `/_admin/faults` (error/timeout/
+  latency, theo tiền tố path, giới hạn số lần), `/_admin/reset`; `seed.json` 16 người (đủ 4
+  `employment_status`, 4 nhóm AD, ca D-15, D-20, TC06), mốc thời gian tương đối; `python -m app.seed
+  validate|reset|hash`. Mật khẩu demo + bảng mong đợi 12 tool: `mock_services/README.md`.
+- `backend/app/tools/`: `specs.py` (ToolSpec, 12 tool đọc + `ad_get_user` + 13 tool ghi, `TOOL_MAP`,
+  `validate_specs` chạy lúc import), `retry.py` (`call_with_retry`), `breaker.py`, `registry.py`
+  (`ToolResult` theo P5 6.1), `adapters/` (`*_read` token svc_agent, `*_write` token svc_executor),
+  `wiring.py` (`build_read_registry`).
+- `config/policy.json` (chỉ khối `constants`; `rules` thêm ở Phase 3) và `config/slots.yaml`
+  (`tool_arg_slots`), nạp + kiểm schema trong `settings.py`. `Clock.sleep` (FakeClock tua giờ).
+- `/api/health` kiểm thêm `mock`. Compose: mock nhận 3 token; **worker không nhận `SVC_EXECUTOR_TOKEN`**.
+  `.env.example` thêm `SVC_AGENT_TOKEN`, `SVC_WORKER_TOKEN`. Phụ thuộc: `pyyaml`, `types-pyyaml` (dev).
+- Makefile: `test` chạy thêm `pytest mock_services/tests -o pythonpath=mock_services`; `lint` thêm mypy
+  cho mock (cache riêng); `seed` = validate + reset; `up` chờ mock `/health` rồi `make seed`.
+  → giải quyết câu hỏi mở 3 (ba package `app`) cho mock; ml_service làm tương tự ở P4.
+- `.github/workflows/ci.yml`: `uv sync --locked` → `make lint` (có gitleaks 8.30.1) → `make test` đầy đủ.
+
+**Kết quả kiểm (26/09/2026, trong sandbox Claude Code):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy backend + mock, 5 hợp đồng import-linter, gitleaks detect 24 commit không leak; `gitleaks dir` trên file mới/sửa: không leak (kể cả hash argon2 trong seed) |
+| unit backend | **963 passed** (961 + 2 test breaker trung tính, sau khi sửa theo P5 1.4) |
+| test mock | **86 passed** |
+| integration (34, testcontainers) | **Xanh** — người chạy `make test` ngoài sandbox (sandbox chặn socket Docker) |
+| e2e `test_tools_vs_mock.py` (24) | **Xanh** — cùng lần chạy trên (sandbox chặn bind cổng local) |
+| `make test` đầy đủ | **Xanh** (người chạy ngoài sandbox, sau khi sửa breaker theo P5 1.4): backend 1021 passed (963 unit + 34 integration + 24 e2e) + mock 86 passed |
+| `make up` + `/api/health` | Chưa chạy ở chặng 1 (làm ở bước kiểm cuối Phase 1c) |
+| CI GitHub | **Chờ push để kiểm** |
+
+**Quyết định khi hiện thực** — người đã duyệt cả 5 điểm (26/09/2026); điểm 1–4 đã vào P5 mục 6.1, 7 (bản 1.4):
+- `registry.call` theo P5 6.1. Sơ đồ P5 mục 2 vẫn ghi "mở ─► ExternalSystemError ngay" — mục 6.1 [Chốt] thắng.
+- **Tool ghi 404/409** = thực thi thất bại → `error` (B17 → E7), không raise, **không tính vào breaker**.
+  Bản đầu gọi `record_success()` (xoá chuỗi lỗi liên tiếp) — lệch chữ "không tính"; đã sửa thành
+  `record_neutral()`: giữ nguyên chuỗi lỗi, riêng lượt thử half-open thì coi là thành công (hệ thống
+  đã trả lời, không để kẹt half-open). Có 2 test mới (4 lỗi + 409 + 1 lỗi → mở; 409 ở lượt thử → đóng).
+- Breaker đếm lỗi theo **lần gọi registry sau retry**, không theo từng HTTP attempt.
+  Lỗi hợp đồng không tính là lỗi hạ tầng; exception lạ thì tính (để half-open không kẹt).
+- `check_device_registered` không có `device_id` → tra mọi máy của người đó (thêm endpoint mock
+  `GET /vpn/devices?owner_id=`) — để TC06 tự suy `device_id`. `check_installed_list`,
+  `check_catalog_entry`, `check_license_available`, `check_resource_sensitivity` **bắt buộc** slot
+  tương ứng; thiếu slot = lỗi hợp đồng (raise → E9) → B6 (Phase 3) **phải lọc** tool theo slot đã có
+  trước khi gọi (P5 6.1 bản 1.4).
+- **Hook pre-commit** (`.githooks/pre-commit`): đổi file trong `mock_services/` (kể cả `seed.json`) →
+  chạy thêm `pytest mock_services/tests -o pythonpath=mock_services -q`; luật cũ (`.py`, `config/prompts/`,
+  `config/policy.json` → unit backend) giữ nguyên. Đã thử: sửa giả `mock_services/app/main.py` cho đỏ 1
+  test → hook chạy test mock, in "Test mock đỏ", thoát 1; hoàn tác → hook chạy cả 2 bộ, thoát 0.
+  Hook chỉ thấy file đã stage hoặc file tracked đang sửa — file mới chưa `git add` không kích hoạt
+  (commit thì phải stage nên vẫn bị bắt).
+- Tên trường input trùng tên slot, trừ `target_user` → `user_id` (`models.SLOT_TO_FIELD`).
+- Mock: khoá tài khoản email/ERP không chặn `/ad/authenticate`; trạng thái disabled/terminated do
+  backend quyết (P6 mục 4 bước 5).
+
+**Câu hỏi mở cho Phase 2:**
+- Worker không có `SVC_EXECUTOR_TOKEN`, nhưng `runner.recover()` (P1 mục 7) chạy trong worker có thể
+  đi tới B17 → hiện sẽ ra E7. Chưa giải ở 1c.
+
+**Sẽ ghi ở chặng 2:** refresh giữ chặt — 2 request refresh đồng thời cùng token → request thứ hai bị
+coi là reuse, thu hồi cả họ (hành vi đã biết, frontend xử lý ở Phase 7).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

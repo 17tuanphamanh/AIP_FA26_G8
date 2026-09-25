@@ -20,6 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY mock_services/app ./mock_services/app
+COPY mock_services/seed.json ./mock_services/seed.json
 
 RUN useradd --system --uid 10001 app
 USER app

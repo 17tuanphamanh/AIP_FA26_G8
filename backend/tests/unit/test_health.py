@@ -54,9 +54,22 @@ def test_slow_dependency_times_out() -> None:
     assert r.json()["checks"]["db"] == "timeout"
 
 
-def test_default_checks_are_db_and_qdrant() -> None:
+def test_default_checks_are_db_qdrant_mock() -> None:
     app = create_app(_settings())
-    assert set(app.state.health_checks) == {"db", "qdrant"}
+    assert set(app.state.health_checks) == {"db", "qdrant", "mock"}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_mock_check_calls_health() -> None:
+    settings = _settings(mock_url="http://mock.test:8100/")
+    checks = _default_checks(settings, create_app(settings))
+    route = respx.get("http://mock.test:8100/health").mock(return_value=httpx.Response(200))
+    await checks["mock"]()
+    assert route.called
+    route.mock(return_value=httpx.Response(500))
+    with pytest.raises(httpx.HTTPStatusError):
+        await checks["mock"]()
 
 
 @pytest.mark.asyncio

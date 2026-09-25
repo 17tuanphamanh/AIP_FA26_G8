@@ -40,10 +40,16 @@ files=$(
   git diff --name-only HEAD
 )
 
-# .py đổi thì phải test. config/prompts/* và config/policy.json cũng vậy: prompt
-# và bảng luật là thứ quyết định hành vi agent — sửa chúng là đổi hành vi, không
-# phải sửa tài liệu.
-printf '%s\n' "$files" | grep -qE '\.py$|^config/prompts/|^config/policy\.json$' || exit 0
+# .py đổi thì phải test backend. config/prompts/* và config/policy.json cũng vậy:
+# prompt và bảng luật là thứ quyết định hành vi agent — sửa chúng là đổi hành vi,
+# không phải sửa tài liệu.
+run_backend=no
+printf '%s\n' "$files" | grep -qE '\.py$|^config/prompts/|^config/policy\.json$' && run_backend=yes
+# mock_services/ đổi (code, seed.json, …) thì chạy test mock. Mock là package `app`
+# riêng → pytest riêng với pythonpath của nó (như `make test`).
+run_mock=no
+printf '%s\n' "$files" | grep -qE '^mock_services/' && run_mock=yes
+[ "$run_backend" = yes ] || [ "$run_mock" = yes ] || exit 0
 
 # Thiếu môi trường thì nói thẳng và chặn, đừng để pytest hỏng rồi báo "test đỏ"
 # sai sự thật. Git client dạng GUI hay chạy hook với PATH rút gọn — không thấy uv
@@ -60,8 +66,12 @@ if [ ! -x .venv/bin/python ]; then
 fi
 
 # --locked: pyproject.toml đổi mà uv.lock chưa cập nhật thì chặn, không tự sửa .venv lúc commit.
-if ! uv run --locked pytest backend/tests/unit -q; then
+if [ "$run_backend" = yes ] && ! uv run --locked pytest backend/tests/unit -q; then
   echo "Test đỏ — sửa xong rồi hãy commit." >&2
+  exit 1
+fi
+if [ "$run_mock" = yes ] && ! uv run --locked pytest mock_services/tests -o pythonpath=mock_services -q; then
+  echo "Test mock đỏ — sửa xong rồi hãy commit." >&2
   exit 1
 fi
 exit 0
