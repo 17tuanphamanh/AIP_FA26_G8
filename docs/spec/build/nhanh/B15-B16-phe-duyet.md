@@ -301,7 +301,7 @@ async def b15_prepare_approval(state):
                               action_plan_hash=h, conflict_detected=bool(conflict),
                               conflict_type=conflict)
     a = await approvals.get(a_id)                                 # lần chạy lại: đúng phiếu cũ
-    await effects.once(state, "notify_approver", notify, a.approver_id, approval_link(a_id), step="B15")
+    await effects.once(state, "notify_approver", approvals.notify_approver, a.approver_id, approval_link(a_id), step="B15")
     # dùng a.approver_id, không dùng approver vừa chọn: lần chạy lại có thể chọn người khác theo giờ trực
     audit_point_5(state, approver_id=a.approver_id, deadline=a.deadline,
                   conflict_detected=bool(conflict), action_plan_hash=h)          # [Chốt]

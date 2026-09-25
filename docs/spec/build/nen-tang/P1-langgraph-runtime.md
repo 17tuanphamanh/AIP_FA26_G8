@@ -240,6 +240,7 @@ class TicketState(TypedDict, total=False):
     risk: RiskDecision | None             # decided_by, policy_decision, matched_rule_id,
                                           # raw_prob, calibrated_prob, risk_level, reason
     approval_id: str | None
+    approval_result: Literal["approved", "rejected", "timeout"] | None   # NGU-CANH Phần IV mục 3; FORBIDDEN 2 kiểm trường này
     execution: ExecutionResult | None
     # bộ đếm [Chốt]
     clarification_turns: int; reasoning_loops: int; off_topic_streak: int
@@ -333,6 +334,12 @@ def is_allowed(state, frm, to):
 
 `goto()` gọi `is_allowed(state, frm, to_status)` thay cho phép thử `in ALLOWED_TRANSITIONS`. Bảng `FORBIDDEN` (6 chuyển cấm **[Chốt 2.2]**) vẫn kiểm **sau** và luôn thắng.
 
+**Cách hiện thực 3 chuyển cấm có điều kiện [Chốt 25/09/2026]** — đều theo hướng chặt hơn chữ gốc (giảm False Negative):
+
+- **Cấm 2** (`S_PENDING_APPROVAL → S_EXECUTING` khi hết SLA): chặn **mọi** ca `approval_result != "approved"`, không chỉ ca hết hạn. Lối duy nhất từ chờ duyệt sang thực thi là đã được duyệt.
+- **Cấm 3** (hash lúc thực thi khác lúc duyệt): thiếu hẳn `action_plan_hash` lúc duyệt cũng chặn.
+- **Cấm 4** (`→ S_RESOLVED` không qua ghi log): ở `domain` chỉ kiểm `step`/`event` không rỗng; `goto()` (Phase 2) kiểm thêm dòng audit đã ghi trong cùng transaction.
+
 **Chuyển cấm số 5 đã nới (chốt 25/09/2026):** `S_SCREENING` → ngoài {`S_CLASSIFYING`, `S_BLOCKED`, **`S_ESCALATED`**}. Nếu không nới, quy tắc 2 bị cấm 5 chặn và lỗi ở B2 không ra được E2/E9 (test mục 11 đỏ). `S_ESCALATED` chỉ chuyển cho người nên không tạo đường vòng qua sàng lọc. `S_SCREENING → S_SCREENING` (quy tắc 1) **vẫn cấm**: B2 là một node, không cần giữ nguyên trạng thái.
 
 **Vì sao ba quy tắc này không làm yếu an toàn:**
@@ -391,6 +398,8 @@ async def once(state, kind: str, fn, *args, step: str, sub: str = "", **kwargs):
 ```
 
 Ví dụ dùng ở B15: `a_id = await effects.once(state, "approval_create", approvals.create, ..., step="B15")`. Lần chạy lại trả về đúng `approval_id` cũ thay vì tạo phiếu mới.
+
+**Kiểm tĩnh "không gọi thẳng side effect" [Chốt 25/09/2026, thay hợp đồng import-linter số 6]:** vì `once` nhận chính hàm (`fn`) làm tham số, node **phải import** được `approvals.create`, `notify_user`… — nên không thể cấm bằng import-linter. Thay bằng một test AST quét `graph/nodes/**`: mọi lời gọi trực tiếp (`Call`) tới các hàm trong `SIDE_EFFECT_FUNCS = {approvals.create, approvals.notify_approver, notify_user, deadlines.set, tickets.create_child, runner.submit}` đều làm test đỏ; chỉ được **tham chiếu** chúng làm tham số thứ ba của `effects.once`. `tickets` là repository ở `backend/app/db/tickets.py` (`create_child`, `mark_parent_once`, đọc `final_state`) **[Đề xuất]**. Thêm hàm side effect mới thì thêm tên vào `SIDE_EFFECT_FUNCS`.
 
 **Ghi chú:** `side_effects` chỉ là chỉ mục chống trùng, có một chủ sở hữu duy nhất là hàm `once`. Nó không nhân đôi dữ liệu nghiệp vụ của checkpoint, nên không vi phạm nguyên tắc DB vòng 3 (xem P7). Thông báo gửi ra ngoài hệ thống (email, Teams) vẫn có một khe nhỏ "đã gửi nhưng chưa kịp ghi `result_ref`". Chấp nhận khe này vì thông báo trong app (bảng `notifications`) nằm cùng transaction.
 

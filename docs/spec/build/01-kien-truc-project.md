@@ -217,10 +217,10 @@ core ──► (không gì)
 |---|---|---|
 | `risk` không được import `guard`, `api`, hoặc đọc `raw_request` | M5 đọc câu người dùng | Bất biến chống injection **[Chốt 6.2]** |
 | `monitor` không được import `graph`, `executor`, `tools`, `graph.goto` | M9 ghi ngược | Ranh giới chỉ-đọc **[Chốt 17.9.1]** |
-| Chỉ `executor` được import `tools.adapters.*_write` | Tool ghi bị gọi ngoài B17 | Điểm ghi duy nhất **[Chốt]** |
+| Chỉ `executor` được import `tools.adapters.*_write` | Tool ghi bị gọi ngoài B17 | Điểm ghi duy nhất **[Chốt]**. Import-linter không nhận wildcard một phần tên → liệt kê từng module `{ad,vpn,software,fileserver}_write`; kèm test: mọi file `tools/adapters/*_write.py` phải có tên trong `.importlinter` |
 | `domain`, `core` không import module nghiệp vụ | Vòng phụ thuộc | Giữ lớp lõi thuần |
 | `graph.nodes.*` không import lẫn nhau | Nhánh gọi thẳng nhánh khác | Mọi chuyển trạng thái đi qua `goto()` và routing |
-| `graph.nodes.*` không import thẳng `approval.notify`, `approval.create`, `tickets.create_child`, `notify.*` — phải qua `graph.effects` | Tác dụng phụ lặp khi node chạy lại | Idempotency sau crash **[Đề xuất D-18]** |
+| *(không dùng import-linter)* `graph.nodes.*` không **gọi thẳng** `approvals.create`, `approvals.notify_approver`, `notify_user`, `deadlines.set`, `tickets.create_child`, `runner.submit` — chỉ truyền vào `effects.once` | Tác dụng phụ lặp khi node chạy lại | Idempotency sau crash **[D-18]**. Import-linter không phân biệt được "import để truyền vào `once`" với "gọi thẳng", nên kiểm bằng **test AST** (P1 mục 5.3) **[Chốt 25/09/2026]** |
 
 Thêm một test bổ sung: `inspect.signature(policy_engine.evaluate)` chỉ có tham số `action`, `ctx` **[Chốt]**.
 
@@ -302,7 +302,7 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 ## 8. Tiêu chí đạt của cấu trúc project (cổng T01)
 
 1. `make up` dựng đủ process của Phase 1 (postgres, mock, backend), `/api/health` trả 200.
-2. `make lint` xanh, bao gồm cả 6 hợp đồng import-linter ở mục 4.3 (với module rỗng).
+2. `make lint` xanh, bao gồm 5 hợp đồng import-linter ở mục 4.3 (với module rỗng); hợp đồng thứ 6 là test AST trong `make test`.
 3. Test chữ ký `policy_engine.evaluate(action, ctx)` xanh.
 4. `.env` nằm trong `.gitignore`; gitleaks không báo gì trên toàn repo.
 5. Image `backend` và `worker` là một; chỉ khác lệnh khởi động.
