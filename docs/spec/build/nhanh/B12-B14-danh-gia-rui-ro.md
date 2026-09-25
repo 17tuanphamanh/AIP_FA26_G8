@@ -142,7 +142,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ### 0.2. Vị trí của nhánh trong luồng
 
@@ -220,7 +220,7 @@ Ngưỡng dưới lý thuyết `t_low* = c_review/c_miss`. Quét lưới trên t
 
 **So sánh (RQ1):**
 
-- Thủ công / Full-auto / Chỉ-luật / Chỉ-LLM / Hybrid (+ Hybrid-guarded chờ GVHD).
+- Thủ công / Full-auto / Chỉ-luật / Chỉ-LLM / Hybrid (+ Hybrid-guarded, chạy sau 5 phương án chính — Q8).
 - Ablation: bỏ lớp luật, bỏ lớp LLM.
 - Chỉ số: FNR (quan trọng nhất, kèm cận trên Clopper–Pearson), FPR, ECE, Brier, chi phí kỳ vọng mỗi ticket.
 
@@ -233,7 +233,7 @@ Ngưỡng dưới lý thuyết `t_low* = c_review/c_miss`. Quét lưới trên t
 | TC01–TC03 | Happy path | Luật allow → tự động |
 | TC07 | Reset tài khoản quản trị | approval_required → L1 đồng ý |
 | TC08 | Cấp quyền thư mục tài chính | approval_required → L1 từ chối |
-| TC09, TC10 | VPN ngoài giờ thiết bị lạ; phần mềm ngoài danh mục có phí | Biên — LLM vùng giữa (tùy Q1) |
+| TC09, TC10 | VPN ngoài giờ thiết bị lạ; phần mềm ngoài danh mục có phí | Biên — luật `approval_required` R17/R18, R13/R14 (Q1) |
 | TC37 | Ca không luật nào khớp (ví dụ đặt lại mật khẩu tài khoản thường của đồng nghiệp) | LLM quyết định theo ngưỡng |
 | Cổng 5 | 20 luật | Mỗi luật có ca khớp và ca suýt khớp |
 | Cổng 6 | Prompt LLM rủi ro | Không chứa câu người dùng; mọi ca có `decided_by` |
@@ -434,7 +434,7 @@ def finish(state, d):
 - **Điểm log 4 [Chốt, quan trọng nhất]:** `decided_by`, `policy_decision`, `risk_level`, `reason`, `matched_rule_id`, `calibrated_prob`. Bổ sung thêm `raw_prob`, `p_method`, `thresholds`, `all_matched`.
 - **`lineage`:** `policy_version_id`, `prompt_id@version`, model, `calibrator_version`, `kb_version`, commit **[Chốt 17.1]**.
 - **Dữ liệu thực nghiệm:** nhãn 3 mức (`expected_route`); tập calibration ≥ 50 ca đi xuống LLM và ≥ 30 ca "chuyển L2"; tập test ≥ 60 ca "cần người" **[Chốt 8.2]**.
-- **Họ kịch bản đi xuống LLM** (vì với bảng luật 6.3, 28 TC gốc gần như không có ca nào chắc chắn đi xuống LLM: TC09/TC10 tùy Q1, còn TC21 là ca lỗi thực thi ở B17) **[Chốt 8.2]**, mỗi họ 6–8 biến thể:
+- **Họ kịch bản đi xuống LLM** (vì với bảng luật 6.3, 28 TC gốc gần như không có ca nào chắc chắn đi xuống LLM: TC09/TC10 đi theo luật cần duyệt (Q1), còn TC21 là ca lỗi thực thi ở B17) **[Chốt 8.2]**, mỗi họ 6–8 biến thể:
   - cấp quyền mới vào thư mục độ nhạy thấp/trung bình cùng phòng ban
   - đặt lại mật khẩu cho tài khoản thường của đồng nghiệp
   - mở khóa tài khoản bị khóa không phải do nhập sai
@@ -458,7 +458,7 @@ def finish(state, d):
 | Reset tài khoản quản trị | approval_required → HITL | TC07 |
 | Cấp quyền thư mục tài chính | R07 approval_required → HITL (L1 từ chối) | TC08 |
 | Cấp quyền cho tài khoản bị vô hiệu vì bảo mật | R12 deny → E5, không có phiếu duyệt | — |
-| VPN thiết bị lạ ngoài giờ | Theo bảng luật hiện tại: approval_required; nếu Q1 chốt nhánh LLM thì LLM → vùng giữa | TC09 (Q1) |
+| VPN thiết bị lạ ngoài giờ | R17/R18 approval_required → HITL (Q1 đã chốt theo luật) | TC09 |
 | Không luật nào khớp | LLM → theo ngưỡng | TC37 + các họ bổ sung |
 | Khớp cả allow và approval_required | approval_required thắng | — |
 | Thiếu fact `device_registered` | Luật allow VPN không khớp → xuống luật khác hoặc LLM | — |
@@ -486,9 +486,8 @@ def finish(state, d):
 - **Phụ thuộc:** B11 (`Action` + `facts`), B1 (`requester_context`), P2, dữ liệu có nhãn.
 - **Phase:** 3 (luật VPN), 5 (20 luật), 6 (lớp 2), 8 (calibrator + ngưỡng — code), 10 (chọn thật trên tập calibration).
 - **Việc còn mở:**
-  - Q1 (TC09/TC10 theo luật hay đi xuống LLM).
-  - Q9 (tỉ lệ chi phí, mặc định 10:1).
-  - Q8 (`hybrid_guarded`) **[Chốt: câu hỏi GVHD]**.
+  - Đã chốt (không còn mở): Q1 (theo luật), Q9 (10:1, độ nhạy 5/10/20) — `decisions.md` mục 2.
+  - Q8 (`hybrid_guarded`): code Phase 6, chạy Phase 10 **[Chốt nhóm, `decisions.md` mục 2]**.
   - Cú pháp DSL điều kiện (khớp với việc còn mở số 4 của thiết kế DB).
   - Người xây M5 không tự chạy thực nghiệm **[Chốt]**.
 
@@ -501,7 +500,7 @@ def finish(state, d):
 | Thêm hoặc sửa luật | Trưởng BP sửa qua UI → validate schema → "mô phỏng tác động" trên N ticket gần nhất → lưu `policy_versions` mới **[Chốt 16.3]** | Mỗi luật mới có test khớp/suýt khớp; không luật `allow` nào khớp nhờ thiếu fact |
 | Đổi cách lấy p (RQ2) | Thêm `estimator` mới (`sampling_k5`, `token_logprob`) sau interface `RiskEstimator`; fit lại calibrator trên tập calibration | Không đổi ngưỡng mà không fit lại; ghi `p_method` vào lineage |
 | Đổi LLM rủi ro (API → local) | Đổi `roles.strong` hoặc tạo vai trò riêng `risk` trong `llm.yaml` | Phải fit lại calibrator và chọn lại ngưỡng |
-| `hybrid_guarded` (chờ GVHD) | Đã có nhánh chiến lược; bật bằng `strategy` | LLM chỉ được nâng mức, không bao giờ hạ |
+| `hybrid_guarded` (Q8) | Đã có nhánh chiến lược; bật bằng `strategy` | LLM chỉ được nâng mức, không bao giờ hạ |
 | Dùng lại cho domain khác (HR, tài chính) | Engine luật + DSL + estimator + calibrator là độc lập domain; chỉ thay `policy.json`, `Action` schema, prompt | Giữ chữ ký `evaluate(action, ctx)` |
 | Scale | Lớp luật < 5 ms trong bộ nhớ; chi phí nằm ở LLM (khoảng 25% ticket). Hỏi nhiều lần chạy song song | Không cache B14 khi vận hành |
 

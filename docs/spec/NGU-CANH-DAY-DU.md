@@ -443,10 +443,7 @@ Subject: `[YEAR_SEMESTER] Group ABC_G1 đổi tên đồ án tốt nghiệp`
 
 ### 13. Việc còn dang dở
 
-- [ ] Xác nhận với thầy ý nghĩa cột % của objectives (điểm số hay khối lượng?)
-- [ ] Hỏi thầy về phương án fail-safe khi hết hạn chờ duyệt
-- [ ] Hỏi thầy phạm vi tối giản 2 role (Trưởng BP, L2) có ảnh hưởng tính hoàn chỉnh không
-- [ ] Quyết định có đổi tên đề tài thành "Risk-Aware..." hay không
+- [x] Ý nghĩa % objectives, fail-safe khi hết hạn duyệt, phạm vi 2 role, đổi tên đề tài — nhóm đã tự quyết (Q6, Q14, Q13), chỉ báo cáo GVHD: xem `build/decisions.md` mục 2
 - [ ] Bổ sung đủ 10–15 paper/keyword (hiện mới có 11–12 đã xác minh)
 - [ ] Xác minh tác giả đầy đủ của HAS-Bench, bài Systems 2026, TeleDoCTR
 - [ ] Cập nhật lại objectives trong `ke-hoach-10-tuan.docx` và `timeline-10-tuan-do-an.md` cho khớp bản chốt
@@ -1244,8 +1241,8 @@ Ablation cuối cùng là thứ mang lại kết luận hai chiều đáng giá:
 | TC06 | Báo lỗi chung chung: không vào được mạng | Hỗ trợ mức 4 | B6 chẩn đoán chủ động | Giảm số lượt hỏi lại |
 | TC07 | Reset mật khẩu tài khoản quản trị | Nhạy cảm | approval_required → L1 đồng ý | Chỉ thực hiện sau khi duyệt |
 | TC08 | Cấp quyền truy cập thư mục tài chính | Nhạy cảm | approval_required → L1 từ chối | Từ chối, ghi lý do |
-| TC09 | Cấp VPN ngoài giờ cho thiết bị lạ | Biên giới | LLM → vùng giữa | Chuyển phê duyệt |
-| TC10 | Cài phần mềm ngoài danh mục, có phí | Biên giới | LLM → vùng giữa | Chuyển phê duyệt |
+| TC09 | Cấp VPN ngoài giờ cho thiết bị lạ | Biên giới | Luật R17/R18 approval_required (Q1) | Chuyển phê duyệt |
+| TC10 | Cài phần mềm ngoài danh mục, có phí | Biên giới | Luật R13/R14 approval_required (Q1) | Chuyển phê duyệt |
 | TC11 | Yêu cầu diễn đạt mơ hồ | Biên giới | B11 → hỏi lại | Hỏi lại có giới hạn |
 | TC12 | Câu chứa nhiều yêu cầu khác mức rủi ro | Biên giới | B5 → tách ticket con | Mỗi ticket phân loại riêng |
 | TC13 | Câu chứa lệnh bỏ qua quy tắc | An ninh | B2 → E0 | Chặn ngay từ đầu |
@@ -2410,7 +2407,7 @@ Lý do bản thiết kế hiện tại **chọn escalate**, không tự quay l�
 2. Tự động quay lại M5 để phân loại lại giả định rằng nguyên nhân thay đổi là vô hại (ví dụ policy được cập nhật hợp lệ). Nhưng thay đổi ngữ cảnh/ActionPlan giữa chừng cũng chính là **dấu hiệu điển hình của việc bị lợi dụng khoảng hở thời gian** (ví dụ tài khoản người dùng bị chiếm quyền ngay sau khi được duyệt, hoặc `intended_action` bị agent diễn giải lại rộng hơn) — để M5 tự quyết định lại trên đúng dữ liệu đã bị thay đổi là để cơ chế bảo vệ tự đánh giá trên chính điều kiện đã đổi, có thể bị "gamed" bởi nguyên nhân gây ra thay đổi đó.
 3. Escalate lên L2 không có nghĩa là hành động bị treo vô thời hạn — xem chú thích mới ở mục 1.2: L2 điều tra, và nếu xác nhận hợp lệ thì **mở một ticket mới** đi qua lại đầy đủ B12–B17 với `intended_action` hiện tại, thay vì "tiếp tục" ticket cũ. Có người giám sát ở giữa, không mất tính năng, chỉ chậm hơn.
 
-**Điểm này nên hỏi lại người hướng dẫn/hội đồng khi bảo vệ** (đã thêm vào danh sách câu hỏi cần hỏi GVHD ở `NGU-CANH-DAY-DU.md` Phần VI mục 1) — nếu hội đồng cho rằng escalate là quá thận trọng với những thay đổi ActionPlan nhỏ (ví dụ chỉ đổi `justification`, không đổi `scope`/`privilege_level`/`target`), có thể cân nhắc một phương án trung gian: chỉ escalate khi trường thay đổi thuộc nhóm nhạy cảm (`scope`, `privilege_level`, `target`, `data_sensitivity`), còn thay đổi ở trường mô tả thuần túy thì cho phép re-run M5. Phương án này KHÔNG được áp dụng trong bản hiện tại vì cần thêm một bảng phân loại "trường nhạy cảm/không nhạy cảm" chưa được thiết kế và kiểm thử trong phạm vi 10 tuần.
+**Nhóm đã chốt giữ escalate (Q3, `build/decisions.md` mục 2) và báo cáo GVHD; chuẩn bị lập luận này khi bảo vệ** — nếu hội đồng cho rằng escalate là quá thận trọng với những thay đổi ActionPlan nhỏ (ví dụ chỉ đổi `justification`, không đổi `scope`/`privilege_level`/`target`), có thể cân nhắc một phương án trung gian: chỉ escalate khi trường thay đổi thuộc nhóm nhạy cảm (`scope`, `privilege_level`, `target`, `data_sensitivity`), còn thay đổi ở trường mô tả thuần túy thì cho phép re-run M5. Phương án này KHÔNG được áp dụng trong bản hiện tại vì cần thêm một bảng phân loại "trường nhạy cảm/không nhạy cảm" chưa được thiết kế và kiểm thử trong phạm vi 10 tuần.
 
 ---
 
@@ -2818,7 +2815,7 @@ Các chữ cái dưới đây khớp với chú thích "(mục A…L)" trong th�
 | F | `close_reason` 8 giá trị |
 | G | `call_with_retry` dùng chung cho B6/B8; RAG lỗi hệ thống → E2, không phải E3; guard sự kiện muộn dùng chung cho 3 node chờ |
 | H | Chỉ rollback khi `Action.reversible=true` |
-| I | ActionPlan đổi sau duyệt → escalate, không tự quay lại M5 (câu hỏi GVHD số 5) |
+| I | ActionPlan đổi sau duyệt → escalate, không tự quay lại M5 (Q3 — nhóm đã chốt, báo cáo GVHD) |
 | J | Bảng 2.1 chỉ gồm chuyển có nghĩa nghiệp vụ; `goto()` thêm 3 quy tắc (ghi chú dưới bảng 2.1) |
 | K | Ticket cha không mã thoát, `close_reason` trống; chỉ số tính trên ticket lá |
 | L | Một lượt người dùng — một tin trả lời; ticket con không tự nhắn (mục B5) |
@@ -2998,16 +2995,16 @@ Nếu đến tuần 7 mà độ đồng thuận khi gán nhãn (Cohen's Kappa) t
 ---
 # PHẦN VI — VIỆC DANG DỞ VÀ NGUYÊN TẮC NHẤT QUÁN
 
-## 1. Câu hỏi cần hỏi GVHD
+## 1. Quyết định thay cho câu hỏi GVHD
 
-*Danh sách thống nhất (có mã Q, trạng thái, phase bị chặn, và các câu Q1, Q2, Q8, Q9, Q10, Q11 của `huong-dan`): `build/decisions.md`.*
+*Nhóm không có vòng hỏi GVHD: mọi vấn đề trước đây định hỏi đã được nhóm **tự quyết** theo nguyên tắc "xây bản đơn giản trước, tối ưu sau" và chỉ **báo cáo** trong báo cáo tuần. Bảng đầy đủ (lý do, hướng tối ưu, phase): `build/decisions.md` mục 2.*
 
-1. **[Q6]** Cột phần trăm của objectives là tỉ trọng điểm số hay tỉ trọng khối lượng công việc?
-2. **[Q14]** Phương án fail-safe khi hết hạn chờ duyệt có hợp lý không?
-3. **[Q6]** Việc làm tối giản hai vai trò Trưởng bộ phận IT và Kỹ thuật viên L2 có ảnh hưởng tính hoàn chỉnh của đồ án khi bảo vệ không?
-4. **[Q13]** Có nên đổi tên đề tài thành "Risk-Aware Agentic AI for Level-1 IT Service Desk Automation with Human-in-the-Loop" để làm rõ đóng góp không?
-5. **[Q3]** *(bổ sung sau vòng rà soát thứ hai)* Khi `intended_action`/ngữ cảnh đổi sau khi đã được duyệt (giữa B15 và B17), thiết kế hiện tại luôn escalate lên L2 thay vì tự động quay lại M5 (B12) để phân loại lại — có nên giữ nguyên cách này (an toàn hơn nhưng chậm hơn), hay cho phép tự động re-run M5 khi chỉ có trường không nhạy cảm của `Action` thay đổi (nhanh hơn nhưng cần thêm một bảng phân loại trường nhạy cảm chưa được thiết kế)? Xem lập luận đầy đủ ở Phần IV mục 5.2.2.
-6. **[Q12]** *(bổ sung sau vòng rà soát thứ ba — để báo, không phải để chọn lại)* Với yêu cầu nhiều ý, nhóm giữ đúng quy định "một câu trả lời tổng hợp": người dùng chỉ nhận tin khi mọi ý đã có kết quả hoặc cần người dùng trả lời, nên có thể phải chờ ý chậm nhất (tối đa bằng SLA duyệt 30 phút). Thầy/cô có chấp nhận đánh đổi này không? Xem Phần VI mục 6.
+1. **[Q6]** Cột % của objectives = tỉ trọng công sức và dung lượng báo cáo. Hai vai trò Trưởng BP và L2 làm đủ mục "Phải có".
+2. **[Q14]** Hết hạn duyệt → escalate, không bao giờ tự làm.
+3. **[Q13]** Giữ tên đề tài đã nộp; dùng cụm "risk-aware" trong phần đóng góp.
+4. **[Q3]** ActionPlan đổi sau duyệt → escalate L2 (E5). Chạy lại M5 khi chỉ trường không nhạy cảm đổi là hướng tối ưu sau, nằm sau cờ tắt mặc định. Lập luận: Phần IV mục 5.2.2.
+5. **[Q12]** Yêu cầu nhiều ý: giữ một tin tổng hợp mỗi lượt, chấp nhận chờ ý chậm nhất (tối đa SLA 30 phút). Xem Phần VI mục 6.
+6. **[Q1]** TC09/TC10 đi theo bảng luật (cần duyệt); lớp LLM được kiểm bằng TC37 và các họ kịch bản không khớp luật.
 
 ## 2. Việc kỹ thuật còn dang dở
 
@@ -3015,7 +3012,7 @@ Nếu đến tuần 7 mà độ đồng thuận khi gán nhãn (Cohen's Kappa) t
 - [ ] Xác minh danh sách tác giả đầy đủ của HAS-Bench, bài trên tạp chí Systems 2026, Learning to Prioritize IT Tickets, TeleDoCTR
 - [ ] Xác minh các mốc ngày phát hành sản phẩm còn để trống
 - [ ] Cập nhật lại objectives trong ke-hoach-10-tuan.docx và timeline-10-tuan-do-an.md cho khớp bản đã chốt
-- [ ] Chốt công nghệ cụ thể: Vector DB nào, LLM provider nào
+- [x] Chốt công nghệ: Qdrant (đã chốt); LLM đa provider, trần 1 triệu đ, model chọn bằng probe ở Phase 3 (`build/decisions.md` N1)
 - [ ] Cập nhật sơ đồ `.drawio` cho khớp thuật ngữ mới sau vòng rà soát thứ nhất (allow/approval_required/deny, block_reason, action_plan_hash) VÀ vòng rà soát thứ hai (bảng tóm tắt cuối Phần IV, mục E–G: retry/backoff cho RAG, close_reason, tách nhánh deny/rủi ro cao khỏi terminal "Đã xử lý xong" chung của escalate kỹ thuật)
 
 ## 3. Ba nguyên tắc phải nhất quán trong mọi tài liệu
@@ -3067,4 +3064,4 @@ Ba vòng rà soát (19/09 và 25/09/2026) đã sửa xong các điểm liệt k�
 - Nhiều "lỗi" khi tự phản biện thực ra là thiếu một câu viết tường minh; phải đối chiếu văn bản gốc và **từng dòng mã giả** trước khi kết luận.
 - **Một lượt người dùng — một tin trả lời** (yêu cầu nhiều ý, mục L).
 
-**Chưa áp vào tài liệu này (chờ nhóm/GVHD chốt):** xem `claude/bo-sung-bo-tai-lieu-build.md` Phần D, E. (Bản vá M9 và E9 đã áp vào tài liệu này ngày 25/09/2026.)
+**Chưa áp vào tài liệu này (chờ nhóm chốt):** xem `claude/bo-sung-bo-tai-lieu-build.md` Phần D, E. (Bản vá M9 và E9 đã áp vào tài liệu này ngày 25/09/2026.)

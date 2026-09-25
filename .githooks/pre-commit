@@ -25,18 +25,27 @@ files=$(
   git diff --name-only HEAD
 )
 
-# .py đổi thì phải test. agent/prompts/*.md cũng vậy: system prompt là thứ
-# quyết định hành vi agent — sửa nó là đổi hành vi, không phải sửa tài liệu.
-printf '%s\n' "$files" | grep -qE '\.py$|^agent/prompts/.*\.md$' || exit 0
+# .py đổi thì phải test. config/prompts/* và config/policy.json cũng vậy: prompt
+# và bảng luật là thứ quyết định hành vi agent — sửa chúng là đổi hành vi, không
+# phải sửa tài liệu.
+printf '%s\n' "$files" | grep -qE '\.py$|^config/prompts/|^config/policy\.json$' || exit 0
 
-# Không có .venv thì nói thẳng, đừng để pytest hỏng rồi báo "test đỏ" sai sự thật.
+# Thiếu môi trường thì nói thẳng và chặn, đừng để pytest hỏng rồi báo "test đỏ"
+# sai sự thật. Git client dạng GUI hay chạy hook với PATH rút gọn — không thấy uv
+# là chặn, không cho qua.
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Không thấy lệnh uv — chưa dựng môi trường, không soát được test." >&2
+  echo "Cài uv (https://docs.astral.sh/uv/) rồi chạy: uv sync" >&2
+  exit 1
+fi
 if [ ! -x .venv/bin/python ]; then
   echo "Không thấy .venv/bin/python — chưa dựng môi trường, không soát được test." >&2
-  echo "Dựng bằng: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt" >&2
+  echo "Dựng bằng: uv sync" >&2
   exit 1
 fi
 
-if ! .venv/bin/python -m pytest -q; then
+# --locked: pyproject.toml đổi mà uv.lock chưa cập nhật thì chặn, không tự sửa .venv lúc commit.
+if ! uv run --locked pytest backend/tests/unit -q; then
   echo "Test đỏ — sửa xong rồi hãy commit." >&2
   exit 1
 fi

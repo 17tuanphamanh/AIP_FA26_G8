@@ -141,7 +141,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ### 0.2. Vị trí của nhánh trong luồng
 
@@ -310,7 +310,7 @@ async def confirm_wait(state):
 
 - **Phụ thuộc:** P1 (kể cả mục 8.2 cho ticket con), B10, B17–B18.
 - **Phase:** 3 (ticket thường), 5 (ticket con).
-- **Việc còn mở:** D-31 chờ nhóm xác nhận.
+- **Việc còn mở:** không (D-31 đã chốt theo đặc tả).
 
 ---
 

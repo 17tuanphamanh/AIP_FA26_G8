@@ -140,7 +140,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ---
 
@@ -217,7 +217,7 @@ ORDER BY p.rank, e.created_at;
 
 ## 6. Luật cảnh báo
 
-Mười ba luật: tám luật gộp từ tài liệu gốc **[Chốt 17.9.3]**, bốn luật an ninh/vận hành bổ sung **[Đề xuất ở `02` T5]** và một luật cho model intent (D-32). Mọi luật dừng ở "báo người".
+Mười bốn luật: tám luật gộp từ tài liệu gốc **[Chốt 17.9.3]**, bốn luật an ninh/vận hành bổ sung **[Đề xuất ở `02` T5]**, một luật cho model intent (D-32) và một luật ngân sách LLM (N1). Mọi luật dừng ở "báo người".
 
 | # | Luật | Điều kiện | Chu kỳ | Người nhận |
 |---|---|---|---|---|
@@ -234,6 +234,7 @@ Mười ba luật: tám luật gộp từ tài liệu gốc **[Chốt 17.9.3]**,
 | 11 | Policy vừa được lưu | Mỗi `policy_saved` | 60 giây | Trưởng BP |
 | 12 | Classifier B2 xuống cấp | Tỉ lệ câu xuống L4 > 30% trong ngày | Hằng ngày | Dev |
 | 13 | Model intent xuống cấp (D-32) | Tỉ lệ câu B3 xuống LLM > 30% trong ngày | Hằng ngày | Dev |
+| 14 | Sắp hết ngân sách LLM (N1) | Tổng `llm_calls.cost_usd` ≥ 80% `spend.cap_usd` (P2 mục 5) | Hằng giờ | Dev + cả nhóm |
 
 ```python
 # monitor/rules.py — hàm thuần: (dữ liệu đã truy vấn) → list[AlertDraft]; không I/O ghi
@@ -282,3 +283,4 @@ Bản ghi `alerts` có khóa chống trùng `(rule_id, cửa sổ thời gian)`,
 |---|---|---|
 | 25/09/2026 | 1.0 | Tạo file: ranh giới chỉ đọc, view SQL, 12 luật cảnh báo, API, kiểm thử |
 | 25/09/2026 | 1.1 | Thêm luật 13 (model intent xuống cấp) và chỉ số đường B3 (D-32) |
+| 25/09/2026 | 1.2 | Thêm luật 14 (sắp hết ngân sách LLM, N1) |

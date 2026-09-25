@@ -140,7 +140,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 **Mã quyết định dùng trong file (bản vá v1.2):** D-08, D-14 (khóa mới), D-17, D-18, D-19, D-20, D-28.
 
@@ -608,7 +608,7 @@ async def parent_reply_wait(state):                              # S_CONFIRMING 
 - **Việc còn mở:**
   - D-08 (`interrupt()`) và cách bỏ `S_SPLIT` cần nhóm xác nhận.
   - D-17, D-18, D-19 nên chốt **trước khi code Phase 2**, vì sửa sau rất đắt.
-  - D-20 cần GVHD đồng ý (thêm chuyển `S_CLARIFYING → S_DIAGNOSING`); tới lúc đó giữ cờ tắt.
+  - D-20 (thêm chuyển `S_CLARIFYING → S_DIAGNOSING`): cờ tắt ở bản đầu (Q10 đã chốt); chỉ bật khi tối ưu.
   - D-29 nên chốt **trước Phase 2** (mọi node đi qua `goto`).
   - D-30, D-31 chốt trước Phase 5 (ticket nhiều ý). Nhóm đã chọn giữ đúng câu "một tin nhắn" **[Chốt B5]**; nên báo GVHD đánh đổi ở mục 8.3.
   - Pin phiên bản LangGraph ở T01 và chạy test "khởi động lại" mỗi khi nâng phiên bản.

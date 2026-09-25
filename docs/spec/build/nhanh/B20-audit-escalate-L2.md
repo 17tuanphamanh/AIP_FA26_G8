@@ -142,7 +142,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ### 0.2. Vị trí của nhánh trong luồng
 
@@ -300,7 +300,7 @@ class HandoffNote(BaseModel):
 | `confirmed_denial` | L2 xác nhận từ chối là đúng | `resolved_after_deny_review` (ca deny) hoặc `resolved_after_escalation` |
 | `reopened_as_new` | Mở ticket mới **chạy lại từ B1**, liên kết ticket cũ (D-26) | theo loại ca như trên |
 
-E6 có được `completed` hay không phụ thuộc Q2 (hỏi GVHD) **[Chốt: câu hỏi]**. Mặc định chặn `completed` cho E6 cho tới khi có câu trả lời, vì an toàn trước.
+E6 **không** được `completed` (Q2 đã chốt, `decisions.md` mục 2): L2 chỉ chọn `reopened_as_new` hoặc `confirmed_denial`, vì an toàn trước.
 
 **Vì sao ticket mới chạy từ B1 (D-26, L-11):**
 

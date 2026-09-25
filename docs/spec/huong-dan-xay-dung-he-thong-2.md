@@ -162,6 +162,8 @@ Xây theo phase tuần tự, mỗi phase chỉ mở khi phase trước qua cổn
 | 10 | Thực nghiệm bắt buộc RQ1, RQ3 | Đủ bảng + biểu đồ; người thứ hai chạy lại ra cùng số | Kết quả chính của đồ án |
 | 11 | Thực nghiệm mở rộng RQ2, RQ4, RQ5 (tùy chọn) | Như phase 10 | Chỉ khi phase 10 có số liệu |
 
+> **Chế độ xây đã chốt (25/09/2026): code trước, gắn API sau.** Phase 1–7 chạy bằng `ScriptedLLM`; mọi phần cổng cần LLM thật (demo cổng 3, cổng 5 thủ công, probe cổng 6) dồn về **mốc G** sau Phase 7, trước Phase 8. Chi tiết và đánh đổi: `build/decisions.md` mục 4.
+
 ### 5.1. Chi tiết từng phase
 
 Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog.md`), điều kiện mở, sản phẩm bàn giao, cổng nghiệm thu đầy đủ, việc triển khai đi kèm và rủi ro chính. Cổng chỉ đạt khi mọi ô được đánh dấu và người xác nhận không phải người làm chính.
@@ -170,7 +172,7 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 
 **Mục tiêu:** khóa các lựa chọn mà nếu đổi sau khi code sẽ phải làm lại.
 
-**Việc làm:** họp nhóm theo `build/decisions.md`; gửi câu hỏi GVHD (danh sách thống nhất ở cùng file).
+**Việc làm:** họp nhóm theo `build/decisions.md`; chốt các mục còn mở. Các vấn đề trước đây định hỏi GVHD (Q1–Q14) đã được nhóm tự quyết ở `decisions.md` mục 2 và chỉ **báo cáo** GVHD trong báo cáo tuần.
 
 **Mở khi:** ngay.
 
@@ -178,9 +180,9 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 
 **Cổng 0:**
 - Chốt provider LLM và ngân sách; chạy thử được một lời gọi structured output bằng API key thật.
-- Trả lời Q1 (bảng luật §6.3 hay nhánh LLM của TC09/TC10) và Q9 (tỉ lệ chi phí bỏ sót/một lượt duyệt).
+- Q1 (TC09/TC10 theo bảng luật) và Q9 (10:1, độ nhạy 5/10/20) đã chốt ở `decisions.md` mục 2.
 - Xác định mức phần cứng (mục 11).
-- Đã gửi câu hỏi GVHD — không cần chờ trả lời để sang Phase 1; câu trả lời chỉ ảnh hưởng Phase 4, 6 và 7.
+- Đã đưa các quyết định Q1–Q14 vào báo cáo tuần gửi GVHD (báo cáo, không chờ trả lời).
 
 **Rủi ro:** kéo dài họp. Giới hạn một buổi; điểm chưa chốt thì dùng mặc định trong tài liệu và ghi "tạm".
 
@@ -270,7 +272,7 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 
 **Mục tiêu:** vòng Human-in-the-Loop hoàn chỉnh: chọn người duyệt, xung đột lợi ích, hạn chờ, nhắc, hết hạn, duyệt muộn, ghi đè, đủ 8 điểm log.
 
-**Việc làm:** T18 → T19. Kịch bản thử dùng VPN cho thiết bị chưa đăng ký (luật R22 → cần duyệt).
+**Việc làm:** T18 → T19. Kịch bản thử dùng VPN cho thiết bị chưa đăng ký (luật R17 → cần duyệt; tài liệu cũ ghi R22, xem `decisions.md` N4).
 
 **Mở khi:** cổng 3 đạt.
 
@@ -317,7 +319,7 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 
 **Mục tiêu:** lớp 2 của M5 hoàn chỉnh — một cách lấy p bắt buộc, calibrator, toán quyết định theo chi phí; sẵn sàng cho RQ1. Chuỗi bắt buộc: xác suất thô → calibrator → hai ngưỡng → tự làm/chờ duyệt/chuyển L2.
 
-**Việc làm:** T22b — estimator theo cách LLM tự nêu xác suất (gốc) kèm quy tắc dự phòng hỏi nhiều lần (k = 5); calibrator Platt/temperature; `decision_math`; 4 chiến lược (+ `hybrid_guarded` nếu GVHD đồng ý). Cách đọc xác suất token và việc so sánh cả ba cách thuộc Phase 11 (RQ2).
+**Việc làm:** T22b — estimator theo cách LLM tự nêu xác suất (gốc) kèm quy tắc dự phòng hỏi nhiều lần (k = 5); calibrator Platt/temperature; `decision_math`; 4 chiến lược + `hybrid_guarded` (Q8: code ở Phase 6, chạy ở Phase 10). Cách đọc xác suất token và việc so sánh cả ba cách thuộc Phase 11 (RQ2).
 
 **Mở khi:** cổng 5 đạt và cổng dữ liệu D2 (≥ 80 kịch bản, trong đó đủ họ kịch bản đi xuống LLM — mục 8.2).
 
@@ -558,7 +560,7 @@ Cách nào cũng qua cùng calibrator Platt hoặc temperature scaling, fit trê
 
 ### 7.3. Ngưỡng suy ra từ chi phí (bổ sung)
 
-Chi phí khi chọn route (cột) trong khi route đúng là (dòng), đơn vị = một lượt duyệt. Giá trị là giả định cần nhóm và GVHD chốt:
+Chi phí khi chọn route (cột) trong khi route đúng là (dòng), đơn vị = một lượt duyệt. Giá trị là giả định do nhóm chốt (Q9, `decisions.md` mục 2), báo cáo GVHD:
 
 | Đúng \ Chọn | Tự làm | Chờ duyệt | Chuyển L2 |
 |---|---|---|---|
@@ -578,9 +580,9 @@ Ngưỡng 0.25 của tài liệu gốc tương đương ngầm coi bỏ sót ch�
 4. Báo cáo khoảng cách giữa ngưỡng thực nghiệm và t_low*, kèm phân tích độ nhạy khi tỉ lệ bỏ sót/duyệt ∈ {5, 10, 20}.
 5. Nếu p không tách được "chuyển L2" (AUC < 0.7), bỏ đường LLM → chuyển L2; chỉ luật deny được chuyển L2.
 
-### 7.4. Biến thể "LLM chỉ được nâng mức" (bổ sung, chờ GVHD)
+### 7.4. Biến thể "LLM chỉ được nâng mức" (bổ sung, đã chốt Q8)
 
-Gốc: luật khớp → trả về ngay. Hệ quả: ngữ cảnh bất thường không có ô luật (VPN hợp lệ nhưng kết nối gần nhất từ nước ngoài) bị luật allow cho qua. Biến thể `hybrid_guarded`: luật allow vẫn gọi LLM, LLM chỉ được nâng lên chờ duyệt hoặc chuyển L2, không bao giờ hạ. Chạy như phương án so sánh thứ năm, không phải mặc định.
+Gốc: luật khớp → trả về ngay. Hệ quả: ngữ cảnh bất thường không có ô luật (VPN hợp lệ nhưng kết nối gần nhất từ nước ngoài) bị luật allow cho qua. Biến thể `hybrid_guarded`: luật allow vẫn gọi LLM, LLM chỉ được nâng lên chờ duyệt hoặc chuyển L2, không bao giờ hạ. Chạy như phương án so sánh thứ sáu (sau 5 phương án ở P8), không phải mặc định.
 
 Code tham chiếu: `scaffold/backend/app/risk/policy_engine.py`, `decision_math.py`; đặc tả: `docs/02-spec/risk-engine.md`, `docs/00-context/research-design.md` §3.
 
@@ -611,7 +613,7 @@ Quy trình (gốc): lượt 1 hai người ngồi chung; lượt 2 một ngườ
 | Ca "chuyển L2" trong tập calibration | ≥ 30 | Để chọn được ngưỡng trên |
 | Ca "cần người" trong tập test | ≥ 60 | Không lỗi trên n ca → cận trên FNR ≈ 3/n; muốn khẳng định FNR < 5% cần n ≥ 60 |
 
-Với bảng luật §6.3, 28 kịch bản gốc gần như không có ca nào chắc chắn đi xuống LLM (TC09/TC10 tùy Q1; TC21 là ca lỗi thực thi ở B17). Vì vậy cần TC37 và thêm các họ kịch bản thiết kế để không luật nào khớp, ví dụ: cấp quyền mới vào thư mục độ nhạy thấp/trung bình cùng phòng ban (đọc hoặc ghi); đặt lại mật khẩu cho tài khoản thường của đồng nghiệp; mở khóa tài khoản bị khóa không phải do nhập sai; cấp quyền 180 ngày. Mỗi họ 6–8 biến thể.
+Với bảng luật §6.3, 28 kịch bản gốc gần như không có ca nào chắc chắn đi xuống LLM (TC09/TC10 đi theo luật cần duyệt — Q1; TC21 là ca lỗi thực thi ở B17). Vì vậy cần TC37 và thêm các họ kịch bản thiết kế để không luật nào khớp, ví dụ: cấp quyền mới vào thư mục độ nhạy thấp/trung bình cùng phòng ban (đọc hoặc ghi); đặt lại mật khẩu cho tài khoản thường của đồng nghiệp; mở khóa tài khoản bị khóa không phải do nhập sai; cấp quyền 180 ngày. Mỗi họ 6–8 biến thể.
 
 ### 8.3. Tỉ lệ escalate
 
@@ -654,7 +656,7 @@ Mọi thực nghiệm chạy trên tập test đã khóa, với ngưỡng chọn
 | Chỉ-luật | Lớp 1; không khớp → chờ duyệt | RQ1 |
 | Chỉ-LLM | Lớp 2 cho mọi ca | RQ1, ablation bỏ lớp luật |
 | Hybrid (đề xuất) | Lớp 1 + lớp 2, ngưỡng theo chi phí | RQ1 |
-| Hybrid-guarded (bổ sung) | LLM chỉ được nâng mức | RQ1, chờ GVHD |
+| Hybrid-guarded (bổ sung) | LLM chỉ được nâng mức | RQ1, chạy sau 5 phương án chính (Q8) |
 | 3 cách lấy p × trước/sau hiệu chỉnh | Tự nêu/hỏi nhiều lần/xác suất token | RQ2 — tùy chọn |
 | Bỏ RAG/bỏ tool/bỏ chẩn đoán chủ động | Ablation của gốc | RQ3 và giá trị từng thành phần |
 | B2 dạng tầng (mở rộng) | Regex/mô hình nhỏ/fine-tune/LLM | RQ4 |
@@ -705,18 +707,13 @@ Chi tiết: `docs/02-spec/llm-contracts.md`, `docs/00-context/research-design.md
 
 ## 12. Rủi ro và việc cần chốt
 
-Bốn việc cần chốt trước khi code Phase 3 trở đi; Phase 1–2 bắt đầu được ngay vì không phụ thuộc chúng.
+Trạng thái chốt ở `build/decisions.md` (nhóm tự quyết, báo cáo GVHD; không có vòng hỏi GVHD). Tóm tắt những gì ảnh hưởng Phase 3 trở đi:
 
-- **Provider LLM và ngân sách** — chặn mọi task có gọi LLM (từ Phase 3).
-- **Q1:** bảng luật §6.3 hay nhánh "LLM → vùng giữa" của TC09/TC10. Tài liệu gốc mâu thuẫn; mặc định đang theo bảng luật, nên phải bổ sung họ kịch bản đi xuống LLM (mục 8.2).
-- **Q9:** tỉ lệ chi phí bỏ sót/một lượt duyệt (mặc định 10:1). Quyết định trực tiếp ngưỡng dưới; cần GVHD đồng ý.
-- **Phần cứng:** nhóm có GPU không, bao nhiêu VRAM — quyết định mức ở mục 11.
-
-**Câu hỏi gửi GVHD** (danh sách thống nhất, trạng thái và Q12–Q14 mới: `build/decisions.md`):
-- Q2: L2 có được hoàn tất tay ca đã hết hạn duyệt (E6) không?
-- Q3: ActionPlan đổi sau khi duyệt — giữ chuyển L2 (gốc) hay cho chạy lại M5 với trường không nhạy cảm?
-- Q8: có chấp nhận biến thể "LLM chỉ được nâng mức" làm phương án so sánh không?
-- Q6: ý nghĩa % của objectives; hai vai trò làm tối giản có ảnh hưởng đánh giá không?
+- **Provider LLM và ngân sách (N1):** đa provider, trần tổng ≤ 1.000.000 đ; model cụ thể chọn bằng probe ở Phase 3; `spend_cap` chặn cứng (P2 mục 5).
+- **Q1:** TC09/TC10 theo bảng luật (R17/R18, R13/R14 → cần duyệt); dữ liệu cho lớp LLM lấy từ TC37 và các họ kịch bản mục 8.2.
+- **Q9:** 10:1 → `t_low*` = 0,1; báo cáo độ nhạy 5/10/20.
+- **Phần cứng (N2):** 3 máy gaming + 1 Mac; mức 1 nếu có máy ≥ 8 GB VRAM (ghi số VRAM vào `decisions.md` mục 1.3).
+- Q2, Q3, Q6, Q8, Q10–Q14: đã chốt theo nguyên tắc "xây bản đơn giản trước, tối ưu sau" — xem `decisions.md` mục 2.
 
 | Rủi ro | Dấu hiệu sớm | Cách xử lý |
 |---|---|---|
@@ -1168,7 +1165,7 @@ Các quyết định mới trong bộ này (D-01…D-33) đang ở trạng thái
 
 ### 18.1. Các quyết định bổ sung trong bộ `build/`
 
-Bộ `build/` bổ sung các quyết định D-01…D-33 (danh sách, trạng thái và câu hỏi GVHD ở `build/decisions.md`).
+Bộ `build/` bổ sung các quyết định D-01…D-33 (danh sách, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`).
 
 **Tài liệu `docs/…` được nhắc ở các mục trên nằm trong repo của nhóm, không có trong project.** Bản tương đương trong project:
 

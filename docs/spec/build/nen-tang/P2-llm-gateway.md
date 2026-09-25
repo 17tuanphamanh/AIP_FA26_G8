@@ -140,7 +140,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ---
 
@@ -180,7 +180,7 @@ base_url của nhà cung cấp)        vLLM máy GPU), cùng API OpenAI
 | Thành phần | Công nghệ | Lý do |
 |---|---|---|
 | Transport | SDK `openai` (async), `base_url` cấu hình được | Ollama và vLLM đều có API tương thích OpenAI, nên một client dùng cho cả hai **[Đề xuất D-12]** |
-| Provider không tương thích | Adapter riêng trong `llm/providers/` | Provider chốt ở Phase 0 **[Chốt: quyết định provider trong `build/decisions.md`]** |
+| Provider không tương thích | Adapter riêng trong `llm/providers/` | Đa provider, trần chi tiêu (N1 trong `build/decisions.md`); model chọn bằng probe ở Phase 3 |
 | Ép JSON | `response_format={"type":"json_schema",…}` (cloud hỗ trợ); `format=<schema>` (Ollama); guided decoding (vLLM) | Giảm lỗi schema ngay từ nguồn |
 | Validate | Pydantic v2 | Giống nhau cho mọi provider **[Chốt]** |
 | Đếm token | Trường `usage` trả về; ước lượng bằng tokenizer khi thiếu | Chi phí, ngân sách |
@@ -208,15 +208,22 @@ async def complete(role: Literal["fast","strong"], prompt_id: str, variables: di
 ## 5. Cấu hình `config/llm.yaml`
 
 ```yaml
+# Đa provider (N1): mỗi provider một khóa; vai trò trỏ tới provider nào cũng được.
 providers:
-  cloud: {kind: openai_compat, base_url: ${LLM_BASE_URL}, api_key: ${LLM_API_KEY}}
-  local: {kind: openai_compat, base_url: ${LOCAL_LLM_URL:-http://ollama:11434/v1}, api_key: none}
+  cloud_a: {kind: openai_compat, base_url: ${LLM_A_BASE_URL}, api_key: ${LLM_A_API_KEY}}
+  cloud_b: {kind: openai_compat, base_url: ${LLM_B_BASE_URL}, api_key: ${LLM_B_API_KEY}}   # bỏ trống nếu chỉ dùng 1 provider
+  local:   {kind: openai_compat, base_url: ${LOCAL_LLM_URL:-http://ollama:11434/v1}, api_key: none}
 roles:
-  fast:   {provider: cloud, model: ${FAST_MODEL},   timeout_s: 8,  max_tokens: 400, temperature: 0, budget_in: 2000}
-  strong: {provider: cloud, model: ${STRONG_MODEL}, timeout_s: 20, max_tokens: 900, temperature: 0, budget_in: 6000}
+  fast:   {provider: ${FAST_PROVIDER:-cloud_a},   model: ${FAST_MODEL},   timeout_s: 8,  max_tokens: 400, temperature: 0, budget_in: 2000}
+  strong: {provider: ${STRONG_PROVIDER:-cloud_a}, model: ${STRONG_MODEL}, timeout_s: 20, max_tokens: 900, temperature: 0, budget_in: 6000}
 fallback:
-  fast: [local]        # khi có model local
-  strong: []           # KHÔNG fallback sang model yếu hơn
+  fast: [{provider: local}, {provider: cloud_b, model: ${FAST_MODEL_B}}]   # bỏ phần tử chưa cấu hình
+  strong: []           # KHÔNG fallback — kể cả sang provider khác (giữ số liệu thực nghiệm nhất quán)
+# Trần chi tiêu toàn đồ án (N1: ≤ 1.000.000 đ ≈ 38 USD). Tính từ SUM(llm_calls.cost_usd), cache hit = 0.
+spend:
+  cap_usd: ${LLM_SPEND_CAP_USD:-38}
+  warn_ratio: 0.8      # ≥ 80% → cảnh báo M9 (P9 luật 14)
+  hard_stop: true      # ≥ 100% → không gọi provider trả phí nữa: ném LLMBudgetExceeded (local và cache vẫn chạy)
 sensitivity_routing:
   sensitive: local_if_available   # nếu không có local: chỉ gửi phần đã che
 limits: {max_concurrency: 8, retry_on: [429, 500, 502, 503, 504], max_retries: 3, backoff_base_s: 1}
@@ -229,6 +236,8 @@ pricing:                          # USD / 1M token — thay bằng bảng giá t
 **Vì sao `strong` không có fallback:** B10 (câu trả lời) và B14 (rủi ro) mà âm thầm rơi xuống model yếu sẽ làm hỏng chất lượng và số liệu thực nghiệm mà không ai hay biết. Thà ném `LLMUnavailable` rõ ràng.
 
 **Giá trị `budget_in`** lấy từ mục 17.2 **[Chốt]**: fast ≤ 2.000 token, strong ≤ 6.000 token.
+
+**Trần chi tiêu `spend` [Đề xuất, theo N1]:** kiểm trước mỗi lời gọi tới provider trả phí bằng tổng `llm_calls.cost_usd` (cache trong bộ nhớ, làm mới mỗi 60 giây). Vượt trần → `LLMBudgetExceeded`, node ánh xạ như `LLMUnavailable` (mục 10) — tức B14 vẫn ra E5, không bao giờ "tự làm vì hết tiền". Khi chạy thực nghiệm, harness M8 kiểm trần **trước** khi bắt đầu một lượt và dừng sớm nếu ước lượng lượt đó vượt phần còn lại. Kế hoạch chia ngân sách: `build/decisions.md` mục 1.2.
 
 ## 6. Prompt registry
 
@@ -304,7 +313,7 @@ Cache ngữ nghĩa cho B10 (độ giống ≥ 0,95, khóa chứa `kb_version`) l
 
 | Lỗi | B2 (L4) | B3/B10/B11 | B14 |
 |---|---|---|---|
-| `LLMUnavailable` | E2 + cờ an ninh (xem dưới) | E2 | E5 (không có p → không tự làm) |
+| `LLMUnavailable`, `LLMBudgetExceeded` | E2 + cờ an ninh (xem dưới) | E2 | E5 (không có p → không tự làm) |
 | `LLMSchemaError` | E2 + cờ an ninh | E2 (mở rộng) | E5 |
 
 **B2 khi LLM không trả lời được:** câu đã nằm ở vùng lưng chừng của model phân loại. Chọn **escalate E2 kèm cờ an ninh** thay vì E0, vì chưa có bằng chứng tấn công. Như vậy an toàn (không đi tiếp) mà không gắn nhãn tấn công sai **[Đề xuất]**.
@@ -342,7 +351,9 @@ Mỗi lời gọi (kể cả cache hit) ghi 1 span `llm:<prompt_id>` + 1 dòng `
 | Unit: whitelist biến của `b14_risk_estimate` | Truyền `redacted_request` → lỗi |
 | Unit (respx): 429 ×2 rồi 200 | Đúng 3 request, có tôn trọng `Retry-After` |
 | Unit: JSON sai → sửa → đúng | 2 request, `json_valid_first_try=False` |
-| Unit: strong lỗi hết retry | `LLMUnavailable`, **không** gọi local |
+| Unit: strong lỗi hết retry | `LLMUnavailable`, **không** gọi local hay provider khác |
+| Unit: tổng `cost_usd` ≥ `cap_usd` | Lời gọi cloud ném `LLMBudgetExceeded`; cache hit và `local` vẫn chạy |
+| Unit: fast provider A lỗi hết retry | Thử lần lượt `local` rồi `cloud_b`; `used_fallback=True` |
 | Integration: đổi `roles.fast.provider` cloud → local | Không sửa dòng code nào; probe intent chạy được |
 | Integration: `LLM_CACHE_MODE=eval`, chạy 20 kịch bản 2 lần | Kết quả giống hệt, lần 2 có 0 request ra ngoài |
 | Probe (LLM thật) | JSON hợp lệ sau retry ≥ 99% trên 200 lời gọi |
@@ -351,4 +362,4 @@ Mỗi lời gọi (kể cả cache hit) ghi 1 span `llm:<prompt_id>` + 1 dòng `
 
 - **Phụ thuộc:** P7 (`llm_calls`, `llm_cache`, `lineage`); P1 (span).
 - **Phase:** 3 (router + cache + trace). Fallback local khi có phần cứng mức 1.
-- **Việc còn mở:** provider và bảng giá thật (Phase 0); mã lỗi cho structured-output (17.3).
+- **Việc còn mở:** chọn model cụ thể bằng probe và điền bảng giá thật (Phase 3, N1 — hướng đa provider và trần 1 triệu đ đã chốt); mã lỗi cho structured-output (17.3).

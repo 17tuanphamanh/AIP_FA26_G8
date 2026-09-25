@@ -2,7 +2,7 @@
 
 > **Tầng:** T3 · **Module:** M6 · **Objective:** 2 · **Phase:** 4 (luồng HITL hoàn chỉnh), 7 (giao diện)
 > **Trạng thái vào:** `S_ASSESSING` (route = HITL) · **Ra:** `S_PENDING_APPROVAL` → `S_EXECUTING` | `S_REJECTED` | `S_ESCALATED` (E6)
-> **Kịch bản thử Phase 4:** VPN cho thiết bị chưa đăng ký (luật R22 → cần duyệt) **[Chốt]**
+> **Kịch bản thử Phase 4:** VPN cho thiết bị chưa đăng ký (luật R17 → cần duyệt; tài liệu cũ ghi R22) **[Chốt]**
 > **Bản vá v1.2:** D-18 (tạo phiếu + thông báo idempotent, UNIQUE một phiếu `pending`), D-19 (khóa ticket cấp session)
 
 ---
@@ -143,7 +143,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ### 0.2. Vị trí của nhánh trong luồng
 
@@ -431,7 +431,7 @@ Transaction khóa hàng ở trên ngắn (chỉ đọc và kiểm tra). `deliver
 - **Việc còn mở:**
   - Cách chọn L1 trực (lịch trực tĩnh trong seed hay xoay vòng) **[Đề xuất: lịch tĩnh trong seed]**.
   - Q2: L2 có được hoàn tất tay ca E6 không.
-  - Q3: Action đổi sau duyệt thì escalate hay chạy lại M5 **[Chốt: câu hỏi GVHD]**.
+  - Q3: Action đổi sau duyệt → escalate L2 (E5); chạy lại M5 chỉ sau cờ `RERUN_M5_ON_NONSENSITIVE_CHANGE` (mặc định tắt) **[Chốt nhóm, `decisions.md` mục 2]**.
 
 ---
 

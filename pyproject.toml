@@ -1,0 +1,86 @@
+# Danh sách thư viện theo docs/spec/build/01-kien-truc-project.md mục 6.
+# Phiên bản cụ thể pin trong uv.lock (01 mục 6: "Pin toàn bộ ở T01 bằng uv lock").
+# Thêm/bớt phụ thuộc: `uv add` / `uv remove` — đừng cài ngầm bằng pip.
+
+[project]
+name = "servicedesk-agent"
+version = "0.1.0"
+description = "AI Agent tự động hoá IT Service Desk cấp 1 với Human-in-the-Loop"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # API [Chốt]
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2",
+    # Điều phối [Chốt]
+    "langgraph>=1,<2",
+    "langgraph-checkpoint-postgres",
+    # DB [Chốt]
+    "sqlalchemy>=2,<3",
+    "alembic",
+    "psycopg[binary]>=3,<4",
+    # HTTP [Chốt]
+    "httpx",
+    # Lịch [Chốt]
+    "apscheduler>=3,<4",
+    # LLM [Đề xuất D-12]
+    "openai",
+    # Vector [Chốt]
+    "qdrant-client",
+    # Tiếng Việt [Đề xuất D-10]
+    "pyvi",
+    # Riêng tư [Đề xuất D-06]
+    "presidio-analyzer",
+    "presidio-anonymizer",
+    "unidecode",
+    # Bảo mật (P6)
+    "pyjwt",
+    "argon2-cffi",
+    "pyotp",
+    "cryptography",
+    # Hiệu chỉnh [Chốt]
+    "scikit-learn",
+    "numpy",
+    "scipy",
+]
+
+[dependency-groups]
+# `uv sync` cài nhóm dev mặc định.
+dev = [
+    # Test [Chốt]
+    "pytest",
+    "pytest-asyncio",
+    "respx",
+    "testcontainers",
+    "hypothesis",
+    "locust",
+    # Chất lượng (CI)
+    "ruff",
+    "mypy",
+    "import-linter",
+]
+# Model nặng của ml-service (P4) — KHÔNG cài mặc định: `uv sync --group ml`.
+# 01 mục 6 ghi "FlagEmbedding hoặc sentence-transformers"; chọn FlagEmbedding theo P4 mục 4.
+ml = [
+    "FlagEmbedding",
+    "transformers",
+    "torch",
+    "onnxruntime",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+# Chỉ unit + integration + e2e. probe/ (LLM thật) và load/ (locust) chạy riêng qua Makefile.
+testpaths = ["backend/tests/unit", "backend/tests/integration", "backend/tests/e2e"]
+pythonpath = ["backend"]
+addopts = "-q --import-mode=importlib"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"

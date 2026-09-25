@@ -32,8 +32,12 @@ data/*
 *.ckpt
 *.safetensors
 *.csv
+!eval/reports/**/*.csv
 *.parquet
 *.zip
+*.onnx
+training/data/
+training/runs/
 
 # ket qua chay
 outputs/

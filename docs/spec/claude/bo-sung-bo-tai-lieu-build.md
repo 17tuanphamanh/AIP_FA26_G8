@@ -9,7 +9,7 @@
 | Nhóm | File | Dùng khi |
 |---|---|---|
 | Tổng quan | `build/00-README.md` — mục lục, quy ước, bảng D-01…D-33, thứ tự đọc cho coding agent | Đọc đầu tiên |
-| Quyết định | `build/decisions.md` — danh sách duy nhất D-xx, việc nhóm tự chốt, câu hỏi GVHD, thứ tự chốt | Trước mỗi buổi họp nhóm/GVHD |
+| Quyết định | `build/decisions.md` — danh sách duy nhất D-xx, việc nhóm tự chốt, quyết định Q1–Q14, thứ tự chốt | Trước mỗi buổi họp nhóm |
 | Kiến trúc code | `build/01-kien-truc-project.md` — modular monolith (không microservices) và lý do; 9 process; cây thư mục; quy tắc import; cấu hình; CI/CD | T01, tạo repo |
 | Tầng | `build/02-cac-tang-he-thong.md` — 8 tầng (T0 giao diện … T7 đánh giá): chức năng, được làm/cấm, FR/NFR, tiêu chí đạt; bảng nhánh → tầng → trạng thái → mã thoát | Trước khi code module |
 | Nền tảng | `build/nen-tang/P1…P11` — LangGraph runtime, LLM gateway, RAG, ml-service, tool registry + mock, xác thực/phân quyền, thay đổi DB (22 bảng), đánh giá M8, Monitor M9, giao diện, huấn luyện model phân loại | Theo phase |

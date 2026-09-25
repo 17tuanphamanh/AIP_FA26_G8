@@ -140,7 +140,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 12. Một lượt người dùng — một tin trả lời: ticket con không tự nhắn, ticket cha gom (D-31).
 13. Mọi chỉ số M8/M9 tính trên ticket lá (`is_parent = false`) (D-30).
 
-**Mã quyết định mới (chờ nhóm xác nhận):** D-01…D-33 — danh sách đầy đủ, trạng thái và câu hỏi GVHD ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
+**Mã quyết định mới (đã chốt theo đặc tả 25/09/2026):** D-01…D-33 — danh sách đầy đủ, trạng thái và các quyết định Q1–Q14 ở `build/decisions.md`. Các mã mà file này dùng được liệt kê ở mục 0.5 (file nền tảng: trong thân bài).
 
 ---
 
@@ -160,7 +160,7 @@ Ba yêu cầu không được thỏa hiệp **[Chốt]**:
 
 | RQ | Bắt buộc? | Lần chạy | Chỉ số chính |
 |---|---|---|---|
-| RQ1 — Lai có giảm chi phí sai lầm so với chỉ-luật, chỉ-LLM? | **Bắt buộc** | Thủ công, Full-auto, Chỉ-luật, Chỉ-LLM, Hybrid (+ Hybrid-guarded nếu GVHD đồng ý — Q8) | FNR (+ cận trên 95%), FPR, chi phí kỳ vọng/ticket, ECE, Brier, escalation rate |
+| RQ1 — Lai có giảm chi phí sai lầm so với chỉ-luật, chỉ-LLM? | **Bắt buộc** | Thủ công, Full-auto, Chỉ-luật, Chỉ-LLM, Hybrid (+ Hybrid-guarded, chạy sau 5 phương án chính — Q8) | FNR (+ cận trên 95%), FPR, chi phí kỳ vọng/ticket, ECE, Brier, escalation rate |
 | RQ3 — Chẩn đoán chủ động giảm bao nhiêu lượt hỏi lại? | **Bắt buộc** | Hybrid bật/tắt `ENABLE_PROACTIVE_DIAGNOSIS` | Lượt hỏi lại TB, tỉ lệ giải quyết một lượt, độ chính xác route không giảm |
 | Ablation | **Bắt buộc** (gốc) | Bỏ RAG, bỏ tool, bỏ lớp luật (= Chỉ-LLM), bỏ lớp LLM (= Chỉ-luật), bỏ chẩn đoán chủ động | Như trên theo từng thành phần |
 | Ablation RAG (D-25) | Nên có | dense / BM25 / hybrid / hybrid + rerank trên bộ câu truy hồi | Recall@5, MRR, nDCG@5, false-grounding |
@@ -350,7 +350,7 @@ Ký hiệu `pred`, `gold` ∈ {AUTO, HITL, ESCALATE_L2}; "cần người" = `gol
 | Chỉ số | Công thức |
 |---|---|
 | Automation rate | #ticket lá đóng `S_RESOLVED` mà không qua người (không phiếu duyệt, không escalation) / #ticket lá |
-| Escalation rate | #ticket lá có `exit_code` / #ticket lá — báo cáo **thô** và **trên phân bố vận hành giả định** (mặc định 70% thường ngày / 20% cần duyệt / 10% nhạy cao, trọng số theo nhóm) **[Chốt 8.3]**; cảnh báo > 40% áp trên bản có trọng số |
+| Escalation rate | #ticket lá có `exit_code` / #ticket lá — báo cáo **thô** và **trên phân bố vận hành giả định** (70% thường ngày / 20% cần duyệt / 10% nhạy cao, trọng số theo nhóm; độ nhạy với 60/30/10 và 80/15/5 — N3) **[Chốt 8.3]**; cảnh báo > 40% áp trên bản có trọng số |
 | Deflection rate | #ticket `resolution_path = deflected` / #ticket lá |
 | Lượt hỏi lại TB | mean(`clarification_turns`) — chỉ số chính RQ3 |
 | Giải quyết một lượt | #ticket lá có `clarification_turns = 0` và `close_reason = resolved_user_confirmed` / #ticket lá |
@@ -410,9 +410,9 @@ Mỗi bảng/biểu đồ ghi `run_id` ở chú thích. Kết quả không ủng
 
 ## 11. Việc còn mở
 
-- Q1 (TC09/TC10 theo luật hay xuống LLM), Q8 (`hybrid_guarded`), Q9 (tỉ lệ chi phí) — xem `build/decisions.md`.
+- Q1 (theo luật), Q8 (`hybrid_guarded` chạy sau 5 phương án chính), Q9 (10:1) đã chốt — `build/decisions.md` mục 2. N3 (70/20/10 + độ nhạy 60/30/10, 80/15/5) — mục 1.
 - Phân bố vận hành giả định 70/20/10 cần nhóm xác nhận trước Phase 10.
-- Bootstrap theo họ (mục 6.4) là đề xuất bổ sung; nếu GVHD muốn đơn giản hơn, giữ Clopper–Pearson cho FNR và bỏ so sánh hiệu.
+- Bootstrap theo họ (mục 6.4) là đề xuất bổ sung; nếu thiếu thời gian, giữ Clopper–Pearson cho FNR và bỏ so sánh hiệu.
 
 ## 12. Nhật ký thay đổi
 

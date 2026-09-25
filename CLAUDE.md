@@ -1,14 +1,24 @@
-# AIP_FA26_G8
+# AIP_FA26_G8 — servicedesk-agent
 
-Cài  : .venv/bin/python -m pip install -r requirements.txt
-Test : .venv/bin/python -m pytest -q
-Chạy : .venv/bin/python main.py "câu hỏi"   — bỏ tham số là vào chế độ chat
+**Đặc tả ở `docs/spec/` — đọc `docs/spec/CLAUDE.md` trước mọi task.** Mọi đường dẫn
+tài liệu trong đặc tả tính từ `docs/spec/`. Tiến độ, cổng phase và câu hỏi mở ghi ở
+`PROGRESS.md`.
+
+**Chế độ xây hiện tại: code trước, gắn API sau** (`docs/spec/build/decisions.md` mục 4).
+Phase 1–7 không gọi LLM thật, không thêm API key; phần cổng cần LLM thật ghi vào
+`PROGRESS.md` mục "Dồn về mốc G" rồi đi tiếp.
+
+Cài  : uv sync                 — Python 3.12; model nặng của ml-service: uv sync --group ml
+Test : make test               — hoặc uv run pytest
+Lint : make lint
 
 ## Cách làm việc
 
 - **Làm trọn việc rồi mới báo cáo.** Sửa xong thì chạy test, đọc kết quả, rồi mới
   quay lại. Đừng dừng hỏi sau từng bước nhỏ — trừ khi có hai hướng khác hẳn nhau
   mà chọn sai thì phải làm lại từ đầu.
+- **Mâu thuẫn trong đặc tả chính là trường hợp "hai hướng khác hẳn nhau"** — dừng,
+  ghi vào `PROGRESS.md`, hỏi người. Không tự chọn một bên.
 - **Việc dài thì lên kế hoạch trước** (Plan Mode, Shift+Tab). Rẻ hơn nhiều so với
   đi sai hướng rồi sửa.
 - **Báo cáo trung thực.** Test đỏ thì nói đỏ kèm output. Bỏ qua bước nào thì nói rõ.
@@ -17,49 +27,28 @@ Chạy : .venv/bin/python main.py "câu hỏi"   — bỏ tham số là vào ch�
 
 ## Ranh giới
 
-- Đổi phụ thuộc thì sửa `requirements.txt`, đừng cài ngầm vào máy.
+- Đổi phụ thuộc thì sửa `pyproject.toml` (`uv add` / `uv remove`, `uv.lock` đi kèm),
+  đừng cài ngầm vào máy.
 - Bí mật nằm ở `.env` (đã gitignore) — không đọc, không ghi, không in ra. Không dán
   key vào prompt, log hay chỗ chat. `.env.example` là file mẫu công khai, sửa thoải mái.
-- `data/` chỉ đọc, không ghi đè. File sinh tự động (cache, lockfile) thì sửa nguồn.
+- **Dữ liệu:** dữ liệu huấn luyện ở `training/data/` (gitignore) — chỉ đọc, không ghi
+  đè. KB ở `kb/`, kịch bản ở `eval/` — hai chỗ này **được commit**. Đừng tạo thư mục
+  dữ liệu tên khác. File sinh tự động (cache, `uv.lock`) thì sửa nguồn.
 - **File untracked là việc chưa ai lưu.** Không xoá, không `git clean`, khi chưa hỏi —
   git không giữ bản sao nào để lấy lại.
 
 ## Ghi chú riêng của repo
 
-### Luồng chạy
-
-`main.py` → `Agent.ask()` (`agent/core.py`) → `tool_runner` của SDK → `agent/tools.py`
-→ kết quả nạp ngược lại model, lặp đến khi model thôi gọi tool. Vẽ đầy đủ ở
-`docs/kien-truc.md`. System prompt nằm ở `agent/prompts/system.md`.
-
-### Thêm một tool
-
-1. Viết hàm Python thuần trong `agent/tools.py` — test được, không cần API.
-2. Viết bản bọc `@beta_tool` gọi vào hàm đó. **Docstring chính là schema model đọc**
-   để quyết định khi nào gọi; SDK suy kiểu tham số từ type hint.
-3. Thêm vào danh sách `TOOLS`.
-4. Viết test trong `tests/test_tools.py`.
-
 ### Chỗ hay sai
 
-- **`_safe_path()` là rào chắn, chặn HAI thứ** — đừng gỡ cho tiện, tool nào đụng
-  file cũng phải đi qua nó:
-  1. đường dẫn ra ngoài repo (`../../etc/passwd`, `/etc/passwd`);
-  2. bí mật *nằm trong* repo — `.env`, `.env.*`, `.git/`, `*.key`, `*.pem`,
-     `secrets/` — vì rào (1) không với tới chúng. `.env.example` vẫn đọc được.
-  Bí mật bị từ chối kể cả khi file không tồn tại, nên thông báo lỗi không tiết lộ
-  file nào đang có. Test ghim: `test_read_file_rejects_a_path_outside_the_repo`,
-  `test_read_file_refuses_the_env_file`,
-  `test_refusing_a_secret_does_not_reveal_whether_it_exists`.
-- **Test không được gọi API thật.** Cả `tests/` hiện chạy bằng key giả, không tốn
-  lượt nào. Muốn thử model thật thì chạy tay `main.py`, đừng nhét vào test.
-- **Đổi tên biến cấu hình phải sửa đủ 3 chỗ**: `agent/config.py`, `.env.example`, và
-  test đang ghim tên đó (`test_max_steps_is_read_from_environment`).
-- **Đã có `data/` rồi, đừng tạo thư mục dữ liệu tên khác.** `.gitignore` chỉ chừa
-  `data/*`; thư mục khác (`du_lieu/`…) sẽ lọt thẳng vào git kèm dữ liệu nặng.
-- Sửa `system.md` hay docstring tool là **đổi hành vi agent** — phải chạy lại thử,
-  không phải sửa xong báo xong.
-- `CHAR_LIMIT` trong `tools.py` cắt file dài, để một file không nhét đầy context.
+- **Test không gọi LLM thật** — dùng `ScriptedLLM` (`backend/tests/fakes/`). Probe với
+  LLM thật nằm ở `backend/tests/probe/`, chạy riêng bằng `make probe`, không nằm trong
+  `make test`.
+- Sửa `config/prompts/*` hay `config/policy.json` là **đổi hành vi agent** — phải chạy
+  lại thử, không phải sửa xong báo xong.
+- `.gitignore` chặn `*.csv`, `*.zip`, `*.onnx`… trên **toàn repo**. Ngoại lệ duy nhất:
+  CSV nguồn của báo cáo thực nghiệm trong `eval/reports/` (P8). Cần commit loại file
+  khác thì hỏi trước khi thêm luật ngoại lệ.
 - `.claude/settings.local.json` là quyền riêng từng người, **đã gitignore** — đừng
   `git add -f` nó lên. Quyền dùng chung thì sửa `.claude/settings.json`.
 - **Mẫu quyền trong `settings.json`: dấu cách trước `*` là một phần của luật.**
@@ -78,10 +67,11 @@ một lần, không bật thì không có gì gác:
 git config core.hooksPath .githooks
 ```
 
-- `.githooks/pre-commit` — đụng file `.py` **hoặc** `agent/prompts/*.md` thì `pytest`
-  phải xanh mới cho commit. Không thấy `.venv` thì cũng chặn, thay vì báo "test đỏ"
-  sai sự thật. Nó lấy **hợp** của `git diff --cached` và `git diff HEAD` nên
-  `git commit -a` không lách được.
+- `.githooks/pre-commit` — đụng file `.py`, `config/prompts/*` **hoặc**
+  `config/policy.json` thì `uv run pytest backend/tests/unit -q` phải xanh mới cho
+  commit. Không thấy `uv` hoặc `.venv` thì cũng chặn, thay vì báo "test đỏ" sai sự
+  thật. Nó lấy **hợp** của `git diff --cached` và `git diff HEAD` nên `git commit -a`
+  không lách được.
 - `.githooks/commit-msg` — chặn `Co-Authored-By: Claude`, `Claude-Session`, link
   `claude.ai`, `noreply@anthropic.com`, emoji robot. Lọc bỏ dòng `#` trước khi soi
   nên `git commit -v` (nhét cả diff vào comment) không báo động giả.

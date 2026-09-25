@@ -30,7 +30,7 @@ Người đọc chính: thành viên nhóm và coding agent. Mỗi file tự đ�
 | 11 | `build/nen-tang/P9-monitor-M9.md` | M9: ranh giới chỉ đọc, view SQL, 12 luật cảnh báo, API dashboard | Phase 1, 4, 7 |
 | 12 | `build/nen-tang/P10-giao-dien.md` | Giao diện 4 vai trò, API, tin tổng hợp (D-31), bảo mật phía giao diện, cổng 7 | Phase 4, 7 |
 | 13a | `build/nen-tang/P11-huan-luyen-model.md` | Huấn luyện 2 model phân loại (intent đa nhãn, injection): chọn backbone, dữ liệu, chống rò rỉ, ngưỡng, ONNX, đánh giá | Song song từ Phase 1; tích hợp Phase 3–5 |
-| 13 | `build/decisions.md` | Danh sách duy nhất: D-01…D-33, việc nhóm tự chốt, câu hỏi GVHD (Q-codes), thứ tự chốt | Phase 0 và trước mỗi buổi họp |
+| 13 | `build/decisions.md` | Danh sách duy nhất: D-01…D-33, việc nhóm tự chốt (N1–N5, bảng R01–R20, ngân sách LLM), quyết định Q1–Q14, thứ tự chốt | Phase 0 và trước mỗi buổi họp |
 | 14–25 | `build/nhanh/B01…B20-*.md` | 12 tài liệu nhánh, mỗi file theo cùng khuôn 16 mục | Khi làm nhánh đó |
 
 Danh sách 12 file nhánh:
@@ -95,7 +95,7 @@ File nền tảng P1–P7 cũng có mục 0.1.
 
 ## 4. Quyết định mới được đưa vào bản build (cần nhóm xác nhận)
 
-*Trạng thái, phase phải chốt và câu hỏi GVHD được theo dõi ở `build/decisions.md` (danh sách duy nhất). Bảng dưới giữ lý do và file liên quan.*
+*Trạng thái, phase phải chốt và các quyết định Q1–Q14 được theo dõi ở `build/decisions.md` (danh sách duy nhất). Bảng dưới giữ lý do và file liên quan.*
 
 ### 4.1. D-01…D-16 (bản 1.0)
 
@@ -103,60 +103,60 @@ Các quyết định dưới đây đã được thảo luận trong phiên làm
 
 | Mã | Quyết định | Lý do ngắn | Ảnh hưởng | Trạng thái |
 |---|---|---|---|---|
-| D-01 | Tách đăng nhập (AuthN) ra khỏi graph thành middleware; B1 chỉ còn "xác lập danh tính + chụp `requester_context`" | API duyệt/ghi đè/policy/L2 không chạy qua graph nên cần lớp bảo vệ riêng; role phải đến từ AD, không từ lời người dùng | TC24, TC25 viết lại; `NGU-CANH-DAY-DU.md` Phần IV B1 | Chờ xác nhận |
-| D-02 | RBAC + kiểm tra theo từng bản ghi (chống IDOR), deny-by-default có test quét route | Ma trận 2.2 chỉ ở mức vai trò | Thêm TC30 | Chờ xác nhận |
-| D-03 | 4 service identity; chỉ `svc_executor` giữ credential ghi | Phòng thủ nhiều lớp cho "B17 là điểm ghi duy nhất" | Mock services | Chờ xác nhận |
-| D-04 | Bảng `security_events` (append-only) + view `auth_failures` | `auth_failures` được nhắc nhưng chưa có trong 17 bảng | `thiet-ke-database.md` | Chờ xác nhận |
-| D-05 | Ba role Postgres (`app_rw`, `app_monitor`, `app_migrate`), REVOKE UPDATE/DELETE trên bảng audit | Biến "append-only" và "M9 chỉ đọc" thành ràng buộc thật | Migration Phase 1 | Chờ xác nhận |
-| D-06 | B2 có 5 lớp: chuẩn hóa → privacy guard → regex → **model phân loại** → LLM chỉ cho vùng lưng chừng | Giảm lời gọi LLM ở B2 từ 100% xuống ~10–20%, tất định, chạy CPU | B2, chi phí 15.1 | Chờ xác nhận |
-| D-07 | Privacy guard chạy ở API **trước khi lưu ticket**, không phải node trong graph | Nếu chạy trong graph, `raw_request` đã bị checkpoint trước → không đạt được "mật khẩu không có trong DB" | B2, `TicketState` | Chờ xác nhận |
-| D-08 | Dùng `interrupt()` thay `interrupt_before` cho 3 node chờ người | Tài liệu LangGraph hiện ghi static interrupt không khuyến nghị cho HITL | `NGU-CANH-DAY-DU.md` Phần IV 8.2 | Chờ xác nhận |
-| D-09 | Thêm process `ml-service` (embedding, rerank, classifier) | Tránh mỗi worker uvicorn nạp model riêng (8–16 GB RAM) | Compose: 7 process | Chờ xác nhận |
-| D-10 | BM25 tách từ tiếng Việt, lưu dạng sparse vector trong Qdrant, gộp RRF phía server | Lọc + gộp trong một truy vấn; version cùng index | M2 | Chờ xác nhận |
-| D-11 | Bảng `llm_cache` trong Postgres | Không thêm Redis; cache thực nghiệm được sao lưu cùng DB | `thiet-ke-database.md` | Chờ xác nhận |
-| D-12 | LLM gateway tự viết trên SDK `openai` (API tương thích OpenAI), LiteLLM là phương án B | Kiểm soát trọn khóa cache, trace, lineage | M4/LLMOps | Chờ xác nhận |
-| D-13 | Kiến trúc **modular monolith** + service phụ trợ, không microservices | Xem `01-kien-truc-project.md` mục 1 | Toàn bộ | Chờ xác nhận |
-| D-14 | Audit ghi trong `goto()` có khóa idempotent — **sửa ở v1.2:** khóa là `(ticket_id, step, event, turn_id, loop_seq)` thay vì `(ticket_id, step, turn_id)` | Node chờ chạy lại khi resume → tránh ghi trùng; khóa cũ nuốt mất sự kiện thứ hai cùng bước trong một lượt | M7 | Chờ xác nhận |
-| D-15 | B17 kiểm tra lại trạng thái trong AD trước khi ghi — **sửa ở v1.2:** kiểm **cả** người gửi (`requester_context.user_id`) lẫn người hưởng lợi (`action.requested_for`) | Người gửi có thể bị vô hiệu hóa trong 30 phút chờ duyệt; mã giả cũ chỉ kiểm người hưởng lợi | B17 | Chờ xác nhận |
-| D-16 | Tool chẩn đoán mặc định chỉ tra cứu chính người gửi (`scope_tool_target`) | Agent không thành công cụ dò thông tin đồng nghiệp | B6, M5 ctx | Chờ xác nhận |
+| D-01 | Tách đăng nhập (AuthN) ra khỏi graph thành middleware; B1 chỉ còn "xác lập danh tính + chụp `requester_context`" | API duyệt/ghi đè/policy/L2 không chạy qua graph nên cần lớp bảo vệ riêng; role phải đến từ AD, không từ lời người dùng | TC24, TC25 viết lại; `NGU-CANH-DAY-DU.md` Phần IV B1 | Đã chốt (theo đặc tả) |
+| D-02 | RBAC + kiểm tra theo từng bản ghi (chống IDOR), deny-by-default có test quét route | Ma trận 2.2 chỉ ở mức vai trò | Thêm TC30 | Đã chốt (theo đặc tả) |
+| D-03 | 4 service identity; chỉ `svc_executor` giữ credential ghi | Phòng thủ nhiều lớp cho "B17 là điểm ghi duy nhất" | Mock services | Đã chốt (theo đặc tả) |
+| D-04 | Bảng `security_events` (append-only) + view `auth_failures` | `auth_failures` được nhắc nhưng chưa có trong 17 bảng | `thiet-ke-database.md` | Đã chốt (theo đặc tả) |
+| D-05 | Ba role Postgres (`app_rw`, `app_monitor`, `app_migrate`), REVOKE UPDATE/DELETE trên bảng audit | Biến "append-only" và "M9 chỉ đọc" thành ràng buộc thật | Migration Phase 1 | Đã chốt (theo đặc tả) |
+| D-06 | B2 có 5 lớp: chuẩn hóa → privacy guard → regex → **model phân loại** → LLM chỉ cho vùng lưng chừng | Giảm lời gọi LLM ở B2 từ 100% xuống ~10–20%, tất định, chạy CPU | B2, chi phí 15.1 | Đã chốt (theo đặc tả) |
+| D-07 | Privacy guard chạy ở API **trước khi lưu ticket**, không phải node trong graph | Nếu chạy trong graph, `raw_request` đã bị checkpoint trước → không đạt được "mật khẩu không có trong DB" | B2, `TicketState` | Đã chốt (theo đặc tả) |
+| D-08 | Dùng `interrupt()` thay `interrupt_before` cho 3 node chờ người | Tài liệu LangGraph hiện ghi static interrupt không khuyến nghị cho HITL | `NGU-CANH-DAY-DU.md` Phần IV 8.2 | Đã chốt (theo đặc tả) |
+| D-09 | Thêm process `ml-service` (embedding, rerank, classifier) | Tránh mỗi worker uvicorn nạp model riêng (8–16 GB RAM) | Compose: 7 process | Đã chốt (theo đặc tả) |
+| D-10 | BM25 tách từ tiếng Việt, lưu dạng sparse vector trong Qdrant, gộp RRF phía server | Lọc + gộp trong một truy vấn; version cùng index | M2 | Đã chốt (theo đặc tả) |
+| D-11 | Bảng `llm_cache` trong Postgres | Không thêm Redis; cache thực nghiệm được sao lưu cùng DB | `thiet-ke-database.md` | Đã chốt (theo đặc tả) |
+| D-12 | LLM gateway tự viết trên SDK `openai` (API tương thích OpenAI), LiteLLM là phương án B | Kiểm soát trọn khóa cache, trace, lineage | M4/LLMOps | Đã chốt (theo đặc tả) |
+| D-13 | Kiến trúc **modular monolith** + service phụ trợ, không microservices | Xem `01-kien-truc-project.md` mục 1 | Toàn bộ | Đã chốt (theo đặc tả) |
+| D-14 | Audit ghi trong `goto()` có khóa idempotent — **sửa ở v1.2:** khóa là `(ticket_id, step, event, turn_id, loop_seq)` thay vì `(ticket_id, step, turn_id)` | Node chờ chạy lại khi resume → tránh ghi trùng; khóa cũ nuốt mất sự kiện thứ hai cùng bước trong một lượt | M7 | Đã chốt (theo đặc tả) |
+| D-15 | B17 kiểm tra lại trạng thái trong AD trước khi ghi — **sửa ở v1.2:** kiểm **cả** người gửi (`requester_context.user_id`) lẫn người hưởng lợi (`action.requested_for`) | Người gửi có thể bị vô hiệu hóa trong 30 phút chờ duyệt; mã giả cũ chỉ kiểm người hưởng lợi | B17 | Đã chốt (theo đặc tả) |
+| D-16 | Tool chẩn đoán mặc định chỉ tra cứu chính người gửi (`scope_tool_target`) | Agent không thành công cụ dò thông tin đồng nghiệp | B6, M5 ctx | Đã chốt (theo đặc tả) |
 
 ### 4.2. D-17…D-28 (bản vá v1.2 — sửa lỗi lõi AI)
 
 | Mã | Quyết định | Sửa lỗi | File | Trạng thái |
 |---|---|---|---|---|
-| D-17 | `parent_wait` tự đối soát trạng thái các con từ bảng `tickets` mỗi lần chạy; `child_done` chỉ là tín hiệu đánh thức | L-01: cha không bao giờ đóng khi con xong trước lúc cha vào `parent_wait` | P1, B03-B05, B20 | Chờ xác nhận |
-| D-18 | Mọi side effect (thông báo, đặt hạn, tạo phiếu duyệt, tạo/submit ticket con) đi qua `effects.once(key, fn)` với bảng `side_effects`; phục hồi sau sự cố bằng `ainvoke(None)`, giữ nguyên `turn_id` | L-02: phiếu duyệt/thông báo trùng khi process chết giữa chừng | P1, P7, B03-B05, B10, B11, B15-B16, B17-B18 | Chờ xác nhận |
-| D-19 | Khóa ticket bằng `pg_advisory_lock` cấp session trên pool khóa riêng, nhả trong `finally`, có `lock_timeout` | L-03: transaction mở suốt lượt có gọi LLM, cạn pool | P1, B15-B16 | Chờ xác nhận |
-| D-20 | Chẩn đoán lại khi slot mới thay đổi tham số tool: B11 → B6 (tính `reasoning_loops`); cần thêm chuyển `S_CLARIFYING → S_DIAGNOSING`. Cờ `REDIAGNOSE_ON_NEW_SLOT` **mặc định tắt** tới khi chốt | L-08: facts cũ/thiếu sau khi hỏi lại; `MAX_LOOPS` không có vòng thật | P1, P5, B06-B07, B11 | Chờ xác nhận + hỏi GVHD (Q10) |
-| D-21 | Chunk đo bằng tokenizer bge-m3, trần 380 token nội dung | L-04: chunk > 512 token bị cắt âm thầm | P3, P4, B08-B09 | Chờ xác nhận |
-| D-22 | Bộ ≥ 20 câu không có đáp án; chọn `RETRIEVAL_THRESHOLD` theo cặp tỉ lệ lỗi | L-05: ngưỡng E3 không kiểm chứng được | P3, B08-B09 | Chờ xác nhận |
-| D-23 | Truy hồi lại một lần không lọc intent khi điểm dưới ngưỡng; ghi `intent_filter_fallback` | L-06: B3 phân sai → E3 oan | P3, B08-B09 | Chờ xác nhận |
-| D-24 | Mở rộng ngữ cảnh cho B10 bằng chunk liền kề cùng tài liệu | L-09: hướng dẫn thiếu bước | P3, B10 | Chờ xác nhận |
-| D-25 | K2 giữ 16 tài liệu tối thiểu; mục tiêu ≥ 50 tài liệu có tài liệu gây nhiễu; ablation RAG 4 cấu hình (Recall@5, MRR, nDCG@5) | L-10: pipeline quá phức tạp so với KB, chưa có số liệu biện minh | P3, B08-B09 | Chờ xác nhận |
-| D-26 | Ticket mới do L2 mở lại (`reopened_as_new`) chạy **từ B1**; `intended_action` dựng lại từ đầu | L-11: mâu thuẫn B1 / B12 giữa NGU-CANH và huong-dan | B20 | Chờ xác nhận + hỏi GVHD (Q11) |
-| D-27 | Ca confidence thấp vẫn ra E1 nhưng ghi `event=intent_low_confidence` và `escalations.reason_detail` | L-12: chỉ số E1 lẫn hai loại ca | B03-B05 | Chờ xác nhận |
-| D-28 | Viết tường minh lập luận "constrained agent" (LLM hiểu ngôn ngữ và ước lượng; code nắm điều khiển và hành động) | Chuẩn bị câu hỏi hội đồng "đâu là phần agent?" | P1 | Chờ xác nhận |
+| D-17 | `parent_wait` tự đối soát trạng thái các con từ bảng `tickets` mỗi lần chạy; `child_done` chỉ là tín hiệu đánh thức | L-01: cha không bao giờ đóng khi con xong trước lúc cha vào `parent_wait` | P1, B03-B05, B20 | Đã chốt (theo đặc tả) |
+| D-18 | Mọi side effect (thông báo, đặt hạn, tạo phiếu duyệt, tạo/submit ticket con) đi qua `effects.once(key, fn)` với bảng `side_effects`; phục hồi sau sự cố bằng `ainvoke(None)`, giữ nguyên `turn_id` | L-02: phiếu duyệt/thông báo trùng khi process chết giữa chừng | P1, P7, B03-B05, B10, B11, B15-B16, B17-B18 | Đã chốt (theo đặc tả) |
+| D-19 | Khóa ticket bằng `pg_advisory_lock` cấp session trên pool khóa riêng, nhả trong `finally`, có `lock_timeout` | L-03: transaction mở suốt lượt có gọi LLM, cạn pool | P1, B15-B16 | Đã chốt (theo đặc tả) |
+| D-20 | Chẩn đoán lại khi slot mới thay đổi tham số tool: B11 → B6 (tính `reasoning_loops`); cần thêm chuyển `S_CLARIFYING → S_DIAGNOSING`. Cờ `REDIAGNOSE_ON_NEW_SLOT` **mặc định tắt** tới khi chốt | L-08: facts cũ/thiếu sau khi hỏi lại; `MAX_LOOPS` không có vòng thật | P1, P5, B06-B07, B11 | Cờ tắt ở bản đầu (Q10 đã chốt) |
+| D-21 | Chunk đo bằng tokenizer bge-m3, trần 380 token nội dung | L-04: chunk > 512 token bị cắt âm thầm | P3, P4, B08-B09 | Đã chốt (theo đặc tả) |
+| D-22 | Bộ ≥ 20 câu không có đáp án; chọn `RETRIEVAL_THRESHOLD` theo cặp tỉ lệ lỗi | L-05: ngưỡng E3 không kiểm chứng được | P3, B08-B09 | Đã chốt (theo đặc tả) |
+| D-23 | Truy hồi lại một lần không lọc intent khi điểm dưới ngưỡng; ghi `intent_filter_fallback` | L-06: B3 phân sai → E3 oan | P3, B08-B09 | Đã chốt (theo đặc tả) |
+| D-24 | Mở rộng ngữ cảnh cho B10 bằng chunk liền kề cùng tài liệu | L-09: hướng dẫn thiếu bước | P3, B10 | Đã chốt (theo đặc tả) |
+| D-25 | K2 giữ 16 tài liệu tối thiểu; mục tiêu ≥ 50 tài liệu có tài liệu gây nhiễu; ablation RAG 4 cấu hình (Recall@5, MRR, nDCG@5) | L-10: pipeline quá phức tạp so với KB, chưa có số liệu biện minh | P3, B08-B09 | Đã chốt (theo đặc tả) |
+| D-26 | Ticket mới do L2 mở lại (`reopened_as_new`) chạy **từ B1**; `intended_action` dựng lại từ đầu | L-11: mâu thuẫn B1 / B12 giữa NGU-CANH và huong-dan | B20 | Từ B1 (Q11 đã chốt) |
+| D-27 | Ca confidence thấp vẫn ra E1 nhưng ghi `event=intent_low_confidence` và `escalations.reason_detail` | L-12: chỉ số E1 lẫn hai loại ca | B03-B05 | Đã chốt (theo đặc tả) |
+| D-28 | Viết tường minh lập luận "constrained agent" (LLM hiểu ngôn ngữ và ước lượng; code nắm điều khiển và hành động) | Chuẩn bị câu hỏi hội đồng "đâu là phần agent?" | P1 | Đã chốt (theo đặc tả) |
 
 ### 4.3. D-29…D-31 (bản vá v1.3 — ticket cha/con và chuyển trạng thái)
 
 | Mã | Quyết định | Sửa lỗi | File | Trạng thái |
 |---|---|---|---|---|
-| D-29 | `ALLOWED_TRANSITIONS` viết tường minh = bảng 2.1 **[Chốt]** + 3 quy tắc: giữ nguyên trạng thái xử lý; mọi trạng thái chưa kết thúc → `S_ESCALATED`; chuyển riêng của ticket cha. `FORBIDDEN` vẫn thắng | L-13: HITL, deflection, E9 ở B1/B2, đóng cha đều ném `IllegalTransition` | P1, B03-B05 | Chờ xác nhận — chốt trước Phase 2 |
-| D-30 | Ticket cha đóng với `close_reason = NULL`, không `exit_code`, không `escalations`; `tickets.is_parent`; mọi chỉ số M8/M9 và hàng đợi L2 chỉ tính ticket lá | L-14: cha mồ côi trong hàng đợi L2, chỉ số đếm trùng | P1, P7, B03-B05, B20 | Chờ xác nhận |
+| D-29 | `ALLOWED_TRANSITIONS` viết tường minh = bảng 2.1 **[Chốt]** + 3 quy tắc: giữ nguyên trạng thái xử lý; mọi trạng thái chưa kết thúc → `S_ESCALATED`; chuyển riêng của ticket cha. `FORBIDDEN` vẫn thắng | L-13: HITL, deflection, E9 ở B1/B2, đóng cha đều ném `IllegalTransition` | P1, B03-B05 | Đã chốt (theo đặc tả) |
+| D-30 | Ticket cha đóng với `close_reason = NULL`, không `exit_code`, không `escalations`; `tickets.is_parent`; mọi chỉ số M8/M9 và hàng đợi L2 chỉ tính ticket lá | L-14: cha mồ côi trong hàng đợi L2, chỉ số đếm trùng | P1, P7, B03-B05, B20 | Đã chốt (theo đặc tả) |
 | D-31 | **Giữ đúng câu chốt "một câu trả lời tổng hợp"**: ticket con không tự nhắn (`notify_user` ghi `child_notices`); cha gửi **một tin mỗi lượt người dùng** khi mọi con đã dừng; người dùng trả lời/xác nhận một lần cho mọi ý qua `POST /tickets/{cha}/reply`; cha chuyển xuống từng con | L-15: câu chốt không có cơ chế, va với B19 | P1, P7, B03-B05, B10, B11, B15-B16, B17-B18, B19, B20 | Nhóm đã chọn phương án; nên báo GVHD đánh đổi "người dùng chờ ý chậm nhất" (tối đa `SLA_MINUTES`) |
 
 ### 4.4. D-32…D-33 (model phân loại do nhóm huấn luyện)
 
 | Mã | Quyết định | Lý do | File | Trạng thái |
 |---|---|---|---|---|
-| D-32 | B3 chạy model phân loại intent **đa nhãn** trước (`intent-clf` qua ml-service `/classify_intent`); chỉ vùng lưng chừng, câu nhiều ý (cần tách span) hoặc khi chưa có model mới gọi LLM `b03_classify` | Nâng mục "fine-tune model intent" (Nên có, `huong-dan` mục 11) lên đường chính theo cùng khuôn B2; intent tất định, nhanh, chịu câu không dấu | B03-B05, P4, P2, P9, P11 | Chờ xác nhận |
-| D-33 | Backbone `microsoft/mdeberta-v3-base` cho cả `intent-clf` và `injection-clf`; PhoBERT-base-v2 làm baseline so sánh intent; Prompt Guard 2 chỉ làm baseline RQ4 | Câu thật không dấu, viết tắt, trộn tiếng Anh; một script/tokenizer/đường ONNX cho cả hai model | P11, B02, P4 | Chờ xác nhận |
+| D-32 | B3 chạy model phân loại intent **đa nhãn** trước (`intent-clf` qua ml-service `/classify_intent`); chỉ vùng lưng chừng, câu nhiều ý (cần tách span) hoặc khi chưa có model mới gọi LLM `b03_classify` | Nâng mục "fine-tune model intent" (Nên có, `huong-dan` mục 11) lên đường chính theo cùng khuôn B2; intent tất định, nhanh, chịu câu không dấu | B03-B05, P4, P2, P9, P11 | Đã chốt (theo đặc tả) |
+| D-33 | Backbone `microsoft/mdeberta-v3-base` cho cả `intent-clf` và `injection-clf`; PhoBERT-base-v2 làm baseline so sánh intent; Prompt Guard 2 chỉ làm baseline RQ4 | Câu thật không dấu, viết tắt, trộn tiếng Anh; một script/tokenizer/đường ONNX cho cả hai model | P11, B02, P4 | Đã chốt (theo đặc tả) |
 
 Các patch cho tài liệu gốc (`NGU-CANH-DAY-DU.md`, `huong-dan-xay-dung-he-thong-2.md`, `NGU-CANH-DAY-DU.md` Phần IV, `thiet-ke-database.md`, sơ đồ kiến trúc) được gom ở `claude/bo-sung-bo-tai-lieu-build.md`. Các patch "áp ngay" (sửa lỗi gõ, thêm mục trỏ sang `build/`) đã được áp vào `huong-dan-xay-dung-he-thong-2.md` ngày 25/09/2026. Các patch còn lại chỉ áp sau khi quyết định tương ứng được chốt.
 
 ## 5. Điểm lệch với tài liệu gốc còn cần xử lý
 
-- Mã luật R22 ở Phase 4 của `huong-dan` vượt quá 20 luật → đánh số lại khi viết `policy.json` (`decisions.md` N4).
+- Mã luật R22 (tài liệu cũ) vượt quá 20 luật → đã đánh số lại thành **R17**; bảng R01–R20 ở `decisions.md` mục 1.1 (N4).
 - `S_SPLIT` trong mã giả B5 gốc được thay bằng cờ `is_parent` (P1 mục 8).
 - Ticket L2 mở lại chạy từ B1 hay B12 → Q11 (D-26).
 
