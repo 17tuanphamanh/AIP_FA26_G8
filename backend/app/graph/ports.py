@@ -1,5 +1,6 @@
-"""Cổng lưu trữ của runtime (P1) — bản SQL ở `app/db/runtime.py`, `app/audit/writer.py`; bản
-in-memory cùng hợp đồng ở `backend/tests/fakes/graph.py` để test graph không cần Postgres.
+"""Cổng lưu trữ của runtime (P1) và phụ thuộc của node thật — bản SQL ở `app/db/runtime.py`,
+`app/db/identity.py`, `app/audit/writer.py`, `app/audit/alerts.py`; bản in-memory cùng hợp đồng ở
+`backend/tests/fakes/graph.py` để test graph không cần Postgres.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -8,9 +9,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.db.identity import LiveSession
 from app.db.runtime import DueWait, OpenTurn, WaitKind
+from app.domain.alerts import AlertDraft
+from app.tools.registry import ToolResult
 
-__all__ = ["DueWait", "OpenTurn", "WaitKind"]  # bản ghi dữ liệu dùng chung với store SQL
+# bản ghi dữ liệu dùng chung với store SQL
+__all__ = ["DueWait", "LiveSession", "OpenTurn", "ToolResult", "WaitKind"]
 
 
 class AuditSink(Protocol):
@@ -92,3 +97,29 @@ class TicketLock(Protocol):
 
 class TicketBusy(Exception):
     """Ticket đang bị lượt khác giữ khoá quá `lock_timeout` — lỗi tạm, thử lại chu kỳ sau."""
+
+
+# ---- phụ thuộc của node thật ------------------------------------------------------------------
+
+
+class IdentityReads(Protocol):
+    """B1 (B01 mục 5): phiên còn sống (theo họ token) + khoá do dò mật khẩu (`users.locked_until`)."""
+
+    async def active_session(self, session_id: str, now: datetime) -> LiveSession | None: ...
+
+    async def locked_until(self, user_id: str) -> datetime | None: ...
+
+
+class ToolCaller(Protocol):
+    """`tools.registry.ToolRegistry` khớp theo cấu trúc: lỗi hệ thống ngoài → `ToolResult.error`,
+    không raise (P5 mục 6.1)."""
+
+    async def call(
+        self, name: str, args: Mapping[str, Any], *, caller_step: str
+    ) -> ToolResult: ...
+
+
+class AlertSink(Protocol):
+    """`audit.alerts.AlertWriter` — idempotent theo `(rule_id, subject, window_start)`."""
+
+    async def raise_once(self, draft: AlertDraft) -> bool: ...

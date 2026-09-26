@@ -354,6 +354,18 @@ async def b20_audit(state):
 - **Ticket cha:** tới B20 qua `parent_wait` với `aggregate_status`, **không có `exit_code`** nên không tạo `escalations`; `close_reason = NULL` (không giá trị nào trong 8 giá trị **[Chốt]** mô tả "đóng vì tổng hợp"). Tin tổng kết cuối đã do `parent_wait` gửi trước khi vào B20, nên B20 của cha không gửi thêm gì.
 - **Hàng đợi L2 và chỉ số** lọc `tickets.is_parent = false`, để không đếm trùng.
 
+### 5.1. Chốt khi lập kế hoạch Phase 2b (26/09/2026, hiện thực ở 2b-2)
+
+| Điểm | Chốt | Lý do |
+|---|---|---|
+| `is_deny_case` | **Mọi** E5 (deny, rủi ro cao, hash lệch) | Hash lệch = kế hoạch bị đổi sau khi duyệt; để L2 "hoàn tất" là thực hiện hành động đã bị sửa. An toàn trước (bất biến 7) |
+| "`tickets` chỉ ghi một lần" | Hiểu theo **từng cột**. Ticket escalate đóng ở B20 với `close_reason = NULL`; khi L2 đóng (Phase 7): `UPDATE … SET close_reason = … WHERE close_reason IS NULL AND final_state = 'S_ESCALATED'` | Khớp sơ đồ mục 2 (L2 ghi `close_reason`) mà không cột nào bị ghi hai lần. 2b kiểm 6/8 giá trị `close_reason`; `resolved_after_escalation`, `resolved_after_deny_review` kiểm ở Phase 7 |
+| Exception trong B20 | Boundary ghi audit `unhandled_exception` (khóa theo lượt) rồi **ném tiếp**; lượt không đóng, `scan_stale_turns` chạy lại B20, lần sau chỉ ghi phần còn thiếu (`finalize_once`, `effects.once`). Thất bại **3 lần** cùng lượt → worker ngừng, ghi audit `finalize_failed_permanent` kèm chi tiết | Giữ END như 2a thì ticket nằm lại không `final_state` (bị bỏ rơi). Thử mãi thì bug cố định làm ticket biến mất khỏi mọi hàng đợi. Luật M9 cho `finalize_failed_permanent` ở Phase 7 (P9 mục 6) |
+| `wake_parent` | Runner gọi **sau khi nhả khóa** ticket con, không gọi trong B20 như mã giả | Gọi trong B20 có thể deadlock (con giữ khóa con chờ khóa cha, cha chuyển sự kiện xuống con). D-17 vẫn giữ: chỉ là tín hiệu. **Việc Phase 5:** worker đối soát ticket cha ở `parent_wait` khi mọi con đã có `final_state` (phòng mất tín hiệu) |
+| Bước 6 (cảnh báo E0/E7/E9) | Do M9 làm ở Phase 7 (P9 luật 2, 4) | Dò mật khẩu đã ghi ở auth/B1 (B01 mục 5.1) |
+| Ưu tiên hàng đợi | `escalations.priority` lấy bằng `INSERT … SELECT rank FROM exit_code_priority` — bảng seed là nguồn duy nhất; `list_open` sắp `priority, created_at`, lọc `is_parent = false` | Không có hằng ưu tiên thứ hai trong code |
+| `next_for_l2` và thông báo | Mẫu theo mã E trong `config/escalation_templates.yaml`, kiểm schema lúc nạp (thiếu mã → lỗi) | Tất định, không LLM (mục 4.2) |
+
 ## 6. Quyết định thiết kế và lý do
 
 | Quyết định | Lý do |
@@ -459,3 +471,4 @@ M9 đọc toàn bộ nhánh này:
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: `wake_parent` thay `child_done` (D-17); escalation + thông báo qua `effects.once` (D-18); ticket mở lại chạy từ B1 và giải thích mâu thuẫn tài liệu (D-26); `reason_detail` (D-27); thêm TC32 |
 | 25/09/2026 | 1.3 | Cha đóng không `exit_code`, `close_reason=NULL`, không `escalations` (D-30); thông báo escalate của con đi qua tin tổng hợp (D-31) |
+| 26/09/2026 | 1.4 | Mục 5.1: chốt khi lập kế hoạch Phase 2b — mọi E5 là deny case; ghi một lần theo từng cột; B20 lỗi thử lại tối đa 3 lần rồi `finalize_failed_permanent`; `wake_parent` sau khi nhả khóa; ưu tiên lấy từ bảng seed |

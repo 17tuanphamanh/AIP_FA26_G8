@@ -8,7 +8,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a (runtime) **đã duyệt** (26/09/2026), đã commit; chặng 2b chưa bắt đầu (việc cần làm ở mục "Chặng 2b — việc cần làm"). Phase 1 đã đóng |
+| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a (runtime) **đã duyệt** (26/09/2026), đã commit; chặng 2b: kế hoạch đã duyệt, làm theo 4 bước 2b-1 → 2b-4, **2b-1 (B1 thật) xong, chờ duyệt**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
 | Cập nhật | 26/09/2026 |
 
@@ -444,32 +444,110 @@ sau khi người duyệt 2a). Không LLM, không đọc `.env`, **không commit*
 | unit backend | **1233 passed** (sandbox; 1221 + 12 heartbeat) |
 | `make test` | **Xanh** (người chạy, trước phần heartbeat): 1312 + mock 86. Sau heartbeat chỉ đổi 1 dòng import ở `test_migration.py` — integration chưa chạy lại, CI sẽ chạy |
 | `make up` | **Xanh** (người chạy, 26/09/2026, sau phần heartbeat): `worker: healthy`, rồi `/api/health` ok (db, qdrant, mock) |
+| CI GitHub | **Xanh** — run `36226646863` (commit `9b310d4`, push `dev-tuananh`, 26/09/2026): `make lint` + `make test` đầy đủ trên ubuntu, gồm integration sau lần đổi import và test giết process |
 
-## Phase 2 — Chặng 2b — việc cần làm
+## Phase 2 — chặng 2b: kế hoạch đã duyệt (26/09/2026)
 
-Mở khi người giao task (kế hoạch Plan Mode trước). Nguồn: B01, B20, P1, huong-dan 5.1 cổng 2, P6 (route).
+Làm 4 bước; mỗi bước: `make lint` + unit, người chạy `! make test` nếu cần Docker, dừng chờ duyệt, commit
+riêng (tiếng Việt không dấu). 2b-1 = B1 thật + cảnh báo dò mật khẩu; 2b-2 = B20 thật + hàng đợi L2; 2b-3 =
+dịch vụ ticket + route sự kiện + nối `create_app`; 2b-4 = stack thật (timeout/recover) + cổng 2.
 
-1. **Dịch vụ ticket tối thiểu:** `db/tickets.py` (repository: tạo ticket, `finalize_once` — `UPDATE … WHERE
-   final_state IS NULL`, đọc `final_state`; `create_child`/`mark_parent_once` để Phase 5); route
-   `POST /api/tickets` (`require("ticket:create")`, privacy guard L0–L1 là phần của B02 — 2b chỉ nhận chuỗi
-   đã che hoặc để TODO rõ), `GET /api/tickets/{id}` (IDOR 404 qua `can_read_ticket`), gọi `runner.submit`
-   nền (202). Nối runtime vào `main.create_app` (backend `can_execute=True`).
-2. **Route sự kiện:** gửi tin/trả lời, xác nhận, duyệt → `deliver_event`; ánh xạ `LateEvent` → 409,
-   `InvalidEvent` → 422, `TicketNotFound` → 404. Ticket con: 409 "trả lời trong hội thoại chung" (D-31).
-3. **B1 thật** (`b01_identity`): `sessions.get_active`, `registry.call_internal("ad_get_user", caller_step="B1")`,
-   khoá dò mật khẩu (`users.locked_until`) → `repeated_auth_failure` + đúng 1 cảnh báo; disabled/terminated →
-   `invalid_credentials`; AD lỗi → E2 (không E9); `RequesterContext.from_ad` frozen. Test B01 mục 11, TC24/TC25
-   viết lại (D-01), mạo danh ("tôi là admin" → role vẫn employee).
-4. **B20 thật** (`b20_audit`): điểm log 8 (`final_state`, `exit_code`, `block_reason`, `close_reason`,
-   `total_turns`, `total_duration`); `finalize_once`; `exit_code` ≠ ∅ → `effects.once("escalation_create")`
-   (priority theo `exit_code_priority` — B20 mục 4.1) + `handoff_note` 4 phần (mẫu theo mã E, không LLM) +
-   `effects.once("notify_user")` theo mẫu 7.1; ticket con → `wake_parent`. Tin người dùng nằm trong
-   `conversation`/checkpoint (không thêm bảng). Test B20 mục 11 phần làm được ở Phase 2 (mỗi mã E0–E9 đúng
-   1 dòng `escalations`; B20 chạy lại → vẫn 1 dòng, 1 thông báo; 8 giá trị `close_reason` có ca sinh ra —
-   phần cần B2/B16/B19 thật thì dùng node giả).
-5. Boundary lỗi ở B20: xem lại quyết định 2 của 2a khi B20 có `finalize_once` (lần chạy lại chỉ ghi phần thiếu).
-6. `make test` + `make up` + thử tạo ticket trên stack thật (worker quét hạn thật trên ticket thật).
-7. Cập nhật P6 test 11 (mạo danh qua B1 + M5 — phần B1), test integration B01 (chuyển từ Phase 1c).
+**Quyết định của người (trả lời Q1–Q7, 26/09/2026):**
+1. **Q1 cảnh báo dò mật khẩu:** một hàm ghi idempotent (`audit/alerts.py`), gọi từ auth lúc khoá và từ B1;
+   khoá chống trùng PHẢI có người dùng → migration 0004 thêm `alerts.subject`, khoá `(rule_id, subject,
+   window_start)` (gộp cảnh báo 2 người = False Negative an ninh). Cảnh báo E0/E7/E9 ở B20 bước 6 → M9 Phase 7
+   (P9 luật 2, 4).
+2. **Q2 privacy guard (2b-3):** port `PrivacyGuard`; `NotRedactingGuard` chỉ nạp khi `APP_ENV ∈ {dev, test}`,
+   env khác → app từ chối khởi động. Có test.
+3. **Q3 route duyệt (2b-3):** làm; quyết định duyệt đi qua `deliver_event` (mong đợi `S_PENDING_APPROVAL`; quá
+   hạn / duyệt lần 2 → 409 + `late_event`). `FAKE_APPROVER_ID` cùng luật fail-closed như Q2.
+4. **Q4:** mọi E5 là deny case (`is_deny_case`).
+5. **Q5:** 2b kiểm 6/8 `close_reason`. "Ghi một lần" hiểu **theo từng cột**; L2 đóng = `UPDATE tickets SET
+   close_reason = … WHERE close_reason IS NULL AND final_state = 'S_ESCALATED'` (Phase 7) — sinh
+   `resolved_after_escalation`, `resolved_after_deny_review`.
+6. **Q6 lỗi ở B20 (2b-2):** boundary ở B20 ghi audit `unhandled_exception` rồi ném tiếp → lượt không đóng →
+   worker recover chạy lại B20 (chỉ ghi phần thiếu). **Giới hạn:** thất bại 3 lần cho cùng một lượt → worker
+   ngừng thử, ghi audit `finalize_failed_permanent` kèm chi tiết. **Phase 7 (M9): thêm luật cảnh báo cho event
+   `finalize_failed_permanent`.** Test: bug cố định → đúng 3 lần thử, 1 dòng, rồi dừng.
+7. **Q7:** đồng ý mặc định (`total_turns` = số dòng `turns`; `total_duration` = `closed_at − created_at`;
+   `auto_closed`; AD 404 → `S_BLOCKED invalid_credentials`; non-owner đọc được → 403, không đọc được → 404),
+   trừ:
+   - Role không ánh xạ được → **`S_ESCALATED` E2, `reason_detail=role_unmappable`** (lỗi cấu hình, không phải
+     lỗi người dùng; không bao giờ mặc định employee).
+   - `resolution_path`: đối chiếu CHECK trong P7 trước khi code (2b-2).
+   - `TicketBusy`: đang giữ khoá → 503 + `Retry-After`; lượt trước đã xong, trạng thái không còn chờ → 409.
+     Test điều khiển thứ tự bằng Event, không dựa vào sleep.
+   - **Lệch mã giả B20 (ghi theo yêu cầu):** `wake_parent` gọi **sau khi nhả khoá** của ticket con (runner),
+     không gọi trong B20 — gọi trong B20 có thể deadlock (con giữ khoá con chờ khoá cha, cha chuyển sự kiện
+     xuống con). **Việc Phase 5:** worker đối soát ticket cha đang ở `parent_wait` khi mọi con đã có
+     `final_state` (trường hợp mất tín hiệu wake).
+
+**Đặc tả — ĐÃ ĐỒNG BỘ (người sửa `docs/spec`, 26/09/2026; Claude đối chiếu với code 2b-1: khớp):** `decisions.md` mục 4.1 (2b-Q1…2b-Q7), P7 bản 1.6 (mục 2.12, tiêu chí 10), P9 bản 1.3 (bảng `subject` 14 luật), B01 bản 1.2 (mục 5.1), B20 bản 1.4 (mục 5.1). Việc đã yêu cầu:
+- P7: thêm mục 2.12 (migration 0004: `alerts.subject VARCHAR(64) NOT NULL DEFAULT ''`, bỏ UNIQUE
+  `(rule_id, window_start)`, thêm UNIQUE `(rule_id, subject, window_start)`) + nhật ký bản 1.6.
+- P9 mục 6: khoá chống trùng thành `(rule_id, subject, window_start)`; ghi `subject` cho từng luật (luật theo
+  người → user_id, theo ticket → ticket_id, tổng hợp → '').
+
+## Phase 2 — 2b-1: B1 thật + cảnh báo dò mật khẩu (26/09/2026, `make test` xanh, chờ duyệt commit)
+
+**Đã làm:**
+- `graph/nodes/b01_identity.py` — B1 thật theo B01 mục 5: phiên → `ad_get_user` qua ToolRegistry thật
+  (`caller_step="B1"`, retry + breaker) → khoá → disabled/terminated → role → `RequesterContext.from_ad`.
+  AD lỗi/breaker mở → E2 `identity_unverifiable` (không E9); AD 404 → `invalid_credentials` (`user_not_found`);
+  role không ánh xạ được → E2 `role_unmappable` (Q7). B1 không đọc `redacted_request`, không import `app.llm`.
+- `db/identity.py` — `SqlIdentityReads`: `active_session`, `locked_until` (chuẩn hoá UTC).
+- `domain/alerts.py` — `AlertDraft`, `bruteforce_alert` (rule `password_bruteforce`, `subject` = user_id; username
+  chưa có dòng `users` → `username:<tên>`, dài quá 64 ký tự thì băm — không cắt cụt để khỏi gộp), severity
+  `critical`. `window_start` = thời điểm bắt đầu khoá: auth lấy lúc khoá, B1 lấy `locked_until − LOCKOUT` →
+  cùng khoá. **Đánh đổi đã chấp nhận:** đổi `LOCKOUT_MINUTES` giữa một đợt khoá thì B1 tính ra khoá khác
+  auth → thêm một cảnh báo thừa (False Positive, chấp nhận; không bao giờ mất cảnh báo).
+- `audit/alerts.py` — `AlertWriter.raise_once` (`ON CONFLICT (rule_id, subject, window_start) DO NOTHING`),
+  `check_alert` (chặn `detail` có khoá nhạy cảm/giá trị giống JWT — tách `check_detail` dùng chung với
+  `security_events`).
+- Migration `0004_alerts_subject.py` + `models.Alert.subject`; downgrade dừng rõ ràng nếu đã có hai dòng cùng
+  `(rule_id, window_start)` khác `subject`. **Cột `subject` KHÔNG có DEFAULT** (người yêu cầu, 26/09/2026):
+  DEFAULT '' chỉ dùng lúc ADD COLUMN để điền dòng cũ rồi `DROP DEFAULT` ngay — INSERT quên `subject` phải lỗi
+  (M9 Phase 7 viết SQL cho 14 luật; quên subject = gộp cảnh báo = False Negative). Luật tổng hợp truyền
+  `SYSTEM_SUBJECT = ""` (hằng ở `domain/alerts.py`) tường minh.
+- Auth: port `AlertSink` (`auth/ports.py`); `AuthService._check_threshold` ghi cảnh báo khi khoá (`threshold`),
+  không ghi khi `still_locked`. `main.create_app(alerts=…)` để test tiêm.
+- `graph/ports.py` thêm `IdentityReads`, `ToolCaller`, `AlertSink`; `NodeDeps` thêm `identity`, `directory`,
+  `alerts`, `lockout`; `graph/wiring.open_runtime` dựng registry đọc (hoặc nhận `directory` để dùng chung
+  breaker), thiếu `SVC_AGENT_TOKEN` → `UnconfiguredDirectory` (B1 → E2, runtime vẫn lên).
+
+**Quyết định khi hiện thực:**
+- **Phiên = họ token — người đã duyệt (26/09/2026):** mỗi lần refresh tạo dòng `sessions` mới và thu hồi dòng cũ (`rotated`);
+  ticket giữ `session_id` lúc tạo. Nếu B1 chỉ xét đúng dòng đó, một lần refresh bình thường làm ticket bị
+  chặn `invalid_credentials`. B1 coi phiên còn hiệu lực ⇔ **họ token còn ít nhất một dòng chưa thu hồi, chưa hết
+  hạn**. Logout, logout-all, admin revoke, reuse, user bị vô hiệu hoá đều thu hồi dòng đang sống → hết hiệu lực.
+- Thứ tự kiểm theo đúng B01 mục 5: khoá dò mật khẩu **trước** disabled — người vừa bị khoá vừa bị vô hiệu hoá
+  vẫn được báo là sự cố an ninh (có test).
+
+**Test mới / sửa:**
+
+| File | Nội dung |
+|---|---|
+| `unit/test_b01_identity.py` (24) | phiên hợp lệ → `S_SCREENING` + ngữ cảnh đúng AD, `tenure_days`, frozen; nhóm IT-L1 → l1; mạo danh "tôi là quản trị viên" → employee (P6 test 11 phần B1); AST: B1 không đọc `redacted_request`, không import llm; phiên không có/None/thu hồi/hết hạn → `invalid_credentials`, không gọi AD, không cảnh báo; xoay vòng refresh vẫn hợp lệ, logout thì hết; AD timeout → E2 (3 lần gọi, backoff 1s 2s), không E9; breaker mở → E2 không gọi AD; AD 404; disabled/terminated; role không ánh xạ được (3 dạng nhóm) → E2 `role_unmappable`; khoá → `repeated_auth_failure` + đúng 1 cảnh báo cho 2 ticket; **khoá lần 2 sau khi hết khoá → cảnh báo thứ 2**; khoá kiểm trước disabled; khoá hết hạn không chặn; **TC25** (auth khoá → ticket → vẫn 1 cảnh báo, nguồn `login`); **TC24** (sai 1 lần → đúng → ticket qua B1, 0 cảnh báo) |
+| `unit/test_alerts.py` (7) | khoá login == khoá B1; subject user/username/băm dài; `check_alert` từ chối 5 dạng sai |
+| `unit/test_auth_login.py` | TC24: 0 cảnh báo; TC25: 1 cảnh báo đúng khoá, `still_locked` không thêm, đợt khoá thứ 2 → cảnh báo thứ 2; **2 người khoá cùng thời điểm → 2 cảnh báo (Q1)**; username không tồn tại → subject `username:…` |
+| `unit/test_graph_runtime.py` | "lỗi ở B1 → E9" đổi sang lỗi từ phụ thuộc của B1 thật (scenario không còn chọn kết quả B1) |
+| `integration/test_b01_pg.py` (10) | `SqlIdentityReads` theo họ token + hết hạn; `locked_until` UTC; `AlertWriter` idempotent theo subject; **INSERT thiếu `subject` → IntegrityError**, luật tổng hợp dùng `SYSTEM_SUBJECT`; migration 0004 downgrade dừng khi trùng, hạ/nâng sạch; B1 trên runtime Postgres: hợp lệ (đọc lại checkpoint), phiên bị thu hồi (audit ghi `block_reason`/`close_reason`), khoá → 1 dòng `alerts` cho 2 ticket, **khoá lần 2 sau khi hết khoá → 2 dòng**, AD tắt → E2 |
+| `integration/test_auth_http_sql.py` | TC25 trên SQL: đúng 1 dòng `alerts` `(password_bruteforce, nv001, lúc khoá, critical)` |
+| `integration/graph_pg.py`, `test_graph_pg.py`, `_crash_after_approval.py` | seed phiên thật `sess-graph` (B1 thật đọc `sessions`), submit bằng phiên đó thay cho `session_id=None` |
+| `e2e/test_b01_vs_mock.py` (4) | mock AD thật: nv001 → ngữ cảnh đúng seed, l1_01 → l1; nv004/nv006 (disabled/terminated) → chặn; `/_admin/faults` trên `/ad` → E2 không E9 |
+| `e2e/conftest.py`, `e2e/mock_server.py` | tách fixture `mock_server`/`reset` khỏi `test_tools_vs_mock.py` để dùng chung (không đổi nội dung test cũ) |
+
+**Kết quả kiểm (26/09/2026, trong sandbox Claude Code):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy 106 file, mypy mock, 5 hợp đồng import-linter, gitleaks detect 30 commit không leak; `gitleaks dir backend/app backend/tests`: không leak |
+| unit backend | **1266 passed** (1233 cũ + 33 mới) |
+| `make test` đầy đủ | **Xanh** (người chạy ngoài sandbox, 26/09/2026, code sạch sau khi hoàn nguyên mutation): backend **1371 passed** (1266 unit + 76 integration [66 cũ + 10 `test_b01_pg`] + 29 e2e [25 cũ + 4 `test_b01_vs_mock`]) + mock **86 passed** — gồm migration 0004 (model khớp migration, `subject` không DEFAULT), `test_graph_pg` với phiên thật, `test_tools_vs_mock` sau khi tách fixture |
+| Mutation | Sửa hỏng rồi khôi phục 11 chỗ, **đều có test đỏ**: bỏ kiểm phiên; AD lỗi ném ra (E9); AD 404 coi như hợp lệ; đảo thứ tự khoá/disabled; `lock_start = now`; bỏ cảnh báo ở B1; role không ánh xạ được → đi tiếp; khoá `>=`; bỏ `frozen`; auth bỏ cảnh báo khi khoá; subject không có người dùng. Mutation SQL của `SqlIdentityReads` (người chạy từng lệnh `pytest test_b01_pg.py -k …` ngoài sandbox, 26/09/2026) — **3/3 đỏ, đúng lý do**: (a) bỏ `live.revoked_at IS NULL` → `follows_token_family` đỏ ở assert "logout xong phải None" + `revoked_session_blocks` đỏ (ticket không bị chặn); (b) bỏ `expires_at > now` → chỉ đỏ ở assert phiên `short` hết hạn (các assert thu hồi vẫn qua); (c) join theo `user_id` → cả 2 test đỏ (mượn phiên `sess-graph` của họ khác). Đã hoàn nguyên, kiểm lại truy vấn khớp bản gốc. Chạy pytest trực tiếp phải kèm env của Makefile (`DOCKER_HOST` colima, `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`) — thiếu thì Ryuk lỗi mount socket ở setup |
+
+**Chuyển sang bước sau:** TC24/TC25 qua HTTP (đăng nhập → `POST /api/tickets`) ở 2b-3 khi có route ticket;
+điểm log 8 cho ticket bị chặn ở B1 ở 2b-2 (B20 thật).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

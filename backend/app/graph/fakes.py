@@ -1,4 +1,5 @@
-"""Phụ thuộc của node GIẢ (Phase 2 — P1: "khung, node giả"). Phase 3+ thay từng node bằng node thật.
+"""Phụ thuộc của node (`NodeDeps`) + phần GIẢ của Phase 2 (P1: "khung, node giả"). Phase 3+ thay từng
+node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, `directory`, `alerts`, `lockout`).
 
 `FakeScenario` chọn kết quả của mỗi node theo ticket (mặc định = đường vui dừng ở chờ duyệt), để test
 đi được mọi nhánh ra của mọi node. Kết quả đặc biệt `"raise"` → node ném `ValueError` (TC29 → E9).
@@ -10,13 +11,19 @@ Các port side effect (`Notifier`, `Approvals`, `DeadlineStore`) luôn được 
 import inspect
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from app.domain.action import Action
 from app.domain.context import RequesterContext
 from app.domain.ticket_state import RiskDecision
-from app.graph.ports import DeadlineStore
+from app.graph.ports import (
+    AlertSink,
+    DeadlineStore,
+    IdentityReads,
+    ToolCaller,
+    ToolResult,
+)
 from app.settings import PolicyConstants
 
 
@@ -41,7 +48,6 @@ class Executor(Protocol):
 
 
 DEFAULT_OUTCOMES: Mapping[str, str] = {
-    "b01_identity": "ok",
     "b02_screen": "ok",
     "b03_classify": "single",
     "b06_diagnose": "ok",
@@ -96,6 +102,10 @@ class NodeDeps:
     executor: Executor
     deadlines: DeadlineStore
     constants: PolicyConstants
+    identity: IdentityReads  # B1: sessions + users.locked_until
+    directory: ToolCaller  # B1: `ad_get_user` qua ToolRegistry (retry, breaker)
+    alerts: AlertSink  # B1: cảnh báo dò mật khẩu (P9 luật 3)
+    lockout: timedelta  # LOCKOUT_MINUTES — B1 suy thời điểm bắt đầu khoá từ `locked_until`
     scenario: FakeScenario = field(default_factory=FakeScenario)
     approver_id: str = "l1-fake"
 
@@ -153,3 +163,13 @@ class RefusingExecutor:
     async def execute(self, ticket_id: str, action: Action | None) -> bool:
         return False
 
+
+
+class UnconfiguredDirectory:
+    """Thiếu SVC_AGENT_TOKEN: không gọi được AD — trả lỗi hệ thống (B1 → E2), không kết luận gì về
+    người dùng. Dùng thay vì để runtime không khởi động được."""
+
+    error = "not_configured: SVC_AGENT_TOKEN"
+
+    async def call(self, name: str, args: Mapping[str, Any], *, caller_step: str) -> ToolResult:
+        return ToolResult(name, None, self.error, 0, False)

@@ -1,7 +1,8 @@
 """FastAPI app — /api/health + auth (P6). Router nghiệp vụ gắn thêm ở các phase sau.
 
 `create_app` là điểm nối (composition root): auth chỉ biết port (`auth/ports.py`); ở đây gắn adapter
-AD (`tools`), writer `security_events` (`audit`), store SQL. Test tiêm `idp`, `store`, `sink`, `clock`.
+AD (`tools`), writer `security_events` + `alerts` (`audit`), store SQL. Test tiêm `idp`, `store`, `sink`,
+`alerts`, `clock`.
 
 Thiếu `JWT_SIGNING_KEY` (hoặc thiếu `SVC_AGENT_TOKEN` khi không tiêm idp) → route auth trả 503; app
 vẫn khởi động và `/api/health` vẫn chạy.
@@ -19,9 +20,11 @@ from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.health import HealthCheck
 from app.api.health import router as health_router
+from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.auth.mfa import MfaCipher
 from app.auth.ports import (
+    AlertSink,
     AuthStore,
     IdentityProvider,
     IdentityUnavailable,
@@ -61,6 +64,7 @@ def _build_auth(
     clock: Clock,
     store: AuthStore,
     sink: SecurityEventSink,
+    alerts: AlertSink,
     idp: IdentityProvider | None,
 ) -> AuthService | None:
     if settings.jwt_signing_key is None:
@@ -74,7 +78,7 @@ def _build_auth(
     )
     cipher = MfaCipher(settings.mfa_enc_key) if settings.mfa_enc_key is not None else None
     return AuthService(
-        store=store, idp=idp, sink=sink, clock=clock, signer=signer, cipher=cipher,
+        store=store, idp=idp, sink=sink, alerts=alerts, clock=clock, signer=signer, cipher=cipher,
         config=auth_config(settings, get_policy().constants),
     )  # fmt: skip
 
@@ -86,6 +90,7 @@ def create_app(
     idp: IdentityProvider | None = None,
     store: AuthStore | None = None,
     sink: SecurityEventSink | None = None,
+    alerts: AlertSink | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -107,6 +112,7 @@ def create_app(
             clock,
             store or SqlAuthStore(engines.main),
             sink or SecurityEventWriter(engines.main, clock),
+            alerts or AlertWriter(engines.main, clock),
             identity,
         )
         try:

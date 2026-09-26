@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.fakes.graph import Crash
 from tests.integration import _crash_after_approval
 from tests.integration.graph_pg import (
+    SESSION,
     create_ticket,
     open_pg_runtime,
     scalar,
@@ -95,9 +96,9 @@ async def test_stop_restart_resume_on_postgres(db: PgUrls, rw: AsyncEngine) -> N
     clock = FakeClock()
     t1, t2 = await new_ticket(rw), await new_ticket(rw)
     async with open_pg_runtime(db.role("app_rw"), clock=clock) as rt:
-        r = await rt.runner.submit(t1, session_id=None, redacted_request="x")
+        r = await rt.runner.submit(t1, session_id=SESSION, redacted_request="x")
         assert (r.status, r.waiting_at) == (S_PENDING_APPROVAL, "approval_wait")
-        await rt.runner.submit(t2, session_id=None, redacted_request="x")
+        await rt.runner.submit(t2, session_id=SESSION, redacted_request="x")
     async with open_pg_runtime(db.role("app_rw"), clock=clock) as rt:  # process mới
         r = await deliver_event(rt.runner, t1, S_PENDING_APPROVAL, {"kind": "approved"})
         assert (r.status, r.waiting_at) == (S_CONFIRMING, "confirm_wait")
@@ -125,7 +126,7 @@ async def test_late_event_in_each_wait_state_on_postgres(
     ticket = await new_ticket(rw)
     async with open_pg_runtime(db.role("app_rw"), clock=FakeClock()) as rt:
         rt.scenario.plan(ticket, **WAIT_PLANS[actual])
-        await rt.runner.submit(ticket, session_id=None, redacted_request="x")
+        await rt.runner.submit(ticket, session_id=SESSION, redacted_request="x")
         before = await rt.runner.snapshot(ticket)
         for expected in sorted(set(WAIT_PLANS) - {actual}):
             with pytest.raises(LateEvent):
@@ -188,7 +189,7 @@ async def test_worker_recover_never_executes(db: PgUrls, rw: AsyncEngine) -> Non
         rt.scenario.plan(ticket, b12_assess="auto")
         rt.executor.crash_once.add(ticket)
         with pytest.raises(Crash):
-            await rt.runner.submit(ticket, session_id=None, redacted_request="x")
+            await rt.runner.submit(ticket, session_id=SESSION, redacted_request="x")
     clock.advance(timedelta(minutes=3))
     async with open_pg_runtime(db.role("app_rw"), clock=clock, can_execute=False) as rt:
         await WorkerJobs(rt.runner, rt.deadlines, rt.turns).scan_stale_turns()
@@ -212,7 +213,7 @@ async def test_tc29_on_postgres_with_parallel_tickets(db: PgUrls, rw: AsyncEngin
     async with open_pg_runtime(db.role("app_rw"), clock=FakeClock()) as rt:
         rt.scenario.plan(bad, b08_retrieve="raise")
         results = await asyncio.gather(
-            *(rt.runner.submit(t, session_id=None, redacted_request="x") for t in [bad, *others])
+            *(rt.runner.submit(t, session_id=SESSION, redacted_request="x") for t in [bad, *others])
         )
     assert (results[0].status, results[0].values["exit_code"]) == (S_ESCALATED, "E9")
     assert all(r.status == S_PENDING_APPROVAL for r in results[1:])
@@ -234,7 +235,7 @@ async def test_two_processes_deliver_concurrently_resume_once(db: PgUrls, rw: As
     ticket = await new_ticket(rw)
     clock = FakeClock()
     async with open_pg_runtime(db.role("app_rw"), clock=clock) as rt:
-        await rt.runner.submit(ticket, session_id=None, redacted_request="x")
+        await rt.runner.submit(ticket, session_id=SESSION, redacted_request="x")
     async with (
         open_pg_runtime(db.role("app_rw"), clock=clock) as a,
         open_pg_runtime(db.role("app_rw"), clock=clock) as b,
@@ -274,8 +275,8 @@ async def test_worker_deadlines_on_postgres(db: PgUrls, rw: AsyncEngine) -> None
     clock = FakeClock()
     async with open_pg_runtime(db.role("app_rw"), clock=clock) as rt:
         rt.scenario.plan(clarify, b11_slots="missing")
-        await rt.runner.submit(clarify, session_id=None, redacted_request="x")
-        await rt.runner.submit(approval, session_id=None, redacted_request="x")
+        await rt.runner.submit(clarify, session_id=SESSION, redacted_request="x")
+        await rt.runner.submit(approval, session_id=SESSION, redacted_request="x")
     clock.advance(timedelta(hours=25))
     async with open_pg_runtime(db.role("app_rw"), clock=clock, can_execute=False) as rt:
         jobs = WorkerJobs(rt.runner, rt.deadlines, rt.turns)

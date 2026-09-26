@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from app.audit.alerts import AlertWriter
 from app.audit.writer import AuditWriter
 from app.core.clock import FakeClock
+from app.db.identity import SqlIdentityReads
 from app.db.models import Approval
 from app.db.runtime import (
     SqlDeadlineStore,
@@ -29,10 +31,12 @@ from app.graph.runner import Runner
 from app.settings import Settings, get_policy
 from sqlalchemy import Table, insert, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
-from tests.fakes.graph import CountingExecutor, RecordingNotifier
+from tests.fakes.graph import LOCKOUT, CountingExecutor, RecordingNotifier
+from tests.fakes.identity import FakeAd, ad_user, fake_directory
 
 REQUESTER = "nv-graph"
 APPROVER = "l1-fake"  # NodeDeps.approver_id mặc định
+SESSION = "sess-graph"  # phiên thật của REQUESTER (B1 đọc bảng `sessions`)
 _APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 
 
@@ -89,6 +93,7 @@ class PgRuntime:
     executor: CountingExecutor
     scenario: FakeScenario
     clock: FakeClock
+    ad: FakeAd
 
 
 @asynccontextmanager
@@ -99,15 +104,19 @@ async def open_pg_runtime(
     scenario: FakeScenario | None = None,
     can_execute: bool = True,
     lock_timeout: float = 5.0,
+    ad: FakeAd | None = None,
 ) -> AsyncIterator[PgRuntime]:
     settings = Settings(database_url=rw_url, ticket_lock_timeout=lock_timeout)
     engines = create_engines(settings)
     scenario = scenario or FakeScenario()
     deadlines, turns = SqlDeadlineStore(engines.main), SqlTurnStore(engines.main)
     approvals, notifier, executor = SqlApprovals(engines.main), RecordingNotifier(), CountingExecutor()
+    ad = ad or FakeAd(ad_user(REQUESTER))
     deps = NodeDeps(
         notifier=notifier, approvals=approvals, executor=executor, deadlines=deadlines,
-        constants=get_policy().constants, scenario=scenario, approver_id=APPROVER,
+        constants=get_policy().constants, identity=SqlIdentityReads(engines.main),
+        directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
+        lockout=LOCKOUT, scenario=scenario, approver_id=APPROVER,
     )  # fmt: skip
     try:
         async with open_postgres_saver(rw_url, max_size=5) as saver:
@@ -117,16 +126,22 @@ async def open_pg_runtime(
                 spans=SqlSpanSink(engines.main), clock=clock, can_execute=can_execute,
             )  # fmt: skip
             yield PgRuntime(runner, engines, deadlines, turns, approvals, notifier, executor,
-                            scenario, clock)  # fmt: skip
+                            scenario, clock, ad)  # fmt: skip
     finally:
         await engines.dispose()
 
 
 async def seed_users(engine: AsyncEngine) -> None:
+    """Người gửi + người duyệt, và một phiên còn hạn rất xa của người gửi (FakeClock ở năm 2026)."""
     async with engine.begin() as conn:
         await conn.execute(text(
             "INSERT INTO users (user_id, username, role) VALUES "
             f"('{REQUESTER}', 'graph.nv', 'employee'), ('{APPROVER}', 'graph.l1', 'l1') "
+            "ON CONFLICT DO NOTHING"
+        ))  # fmt: skip
+        await conn.execute(text(
+            "INSERT INTO sessions (session_id, user_id, token_family_id, expires_at) VALUES "
+            f"('{SESSION}', '{REQUESTER}', gen_random_uuid(), '2100-01-01T00:00:00Z') "
             "ON CONFLICT DO NOTHING"
         ))  # fmt: skip
 

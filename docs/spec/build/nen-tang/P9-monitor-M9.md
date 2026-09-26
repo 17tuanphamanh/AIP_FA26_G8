@@ -244,7 +244,26 @@ def escalation_rate_high(q) -> list[AlertDraft]:
     return [AlertDraft("escalation_rate_high", severity="warning", value=r)] if r > 0.40 else []
 ```
 
-Bản ghi `alerts` có khóa chống trùng `(rule_id, cửa sổ thời gian)`, nên chạy lại luật không sinh cảnh báo trùng.
+**Khóa chống trùng (v1.3, migration 0004):** `alerts` có `UNIQUE (rule_id, subject, window_start)`, nên chạy lại luật không sinh cảnh báo trùng, mà hai đối tượng khác nhau trong cùng cửa sổ vẫn ra hai cảnh báo. Khóa cũ `(rule_id, cửa sổ thời gian)` gộp chúng làm một — bỏ sót sự cố an ninh ở các luật "mỗi sự kiện" (2, 3, 9, 10) **[Chốt khi hiện thực Phase 2b-1]**.
+
+`subject` là bắt buộc, cột không có DEFAULT (P7 mục 2.12). `window_start`: luật theo sự kiện dùng thời điểm sự kiện; luật tổng hợp dùng đầu cửa sổ đánh giá.
+
+| # | `rule_id` | `subject` | `window_start` | Trạng thái |
+|---|---|---|---|---|
+| 1 | `escalation_rate_high` | `SYSTEM_SUBJECT` (`""`) | Đầu ngày đánh giá | [Đề xuất, chốt ở Phase 7] |
+| 2 | `injection_detected` | `ticket_id` | Thời điểm B2 chặn | [Đề xuất, chốt ở Phase 7] |
+| 3 | `password_bruteforce` | `user_id` (không có dòng `users` → `username:<tên>`) | Thời điểm bắt đầu khóa | **[Chốt 2b-1]** — auth ghi lúc khóa, B1 ghi lại cùng khóa (B01 mục 5.1) |
+| 4 | `e9_spike` | `""` | Đầu giờ | [Đề xuất] |
+| 5 | `breaker_open` | Tên tool | Thời điểm breaker mở | [Đề xuất] |
+| 6 | `e6_spike` | `""` | Đầu giờ | [Đề xuất] |
+| 7 | `reflex_approval` | `user_id` của L1 | Đầu ngày | [Đề xuất] |
+| 8 | `drift` | Tên phân bố | Đầu tuần | [Đề xuất] |
+| 9 | `refresh_reuse` | `token_family_id` | Thời điểm phát hiện | [Đề xuất] |
+| 10 | `permission_denied_burst` | `user_id` | Đầu cửa sổ 5 phút | [Đề xuất] |
+| 11 | `policy_saved` | Phiên bản policy | Thời điểm lưu | [Đề xuất] |
+| 12–14 | `b2_degraded`, `b3_degraded`, `llm_budget` | `""` | Đầu ngày / đầu giờ | [Đề xuất] |
+
+**Việc Phase 7 (đã ghi PROGRESS 2b):** thêm luật cho audit `finalize_failed_permanent` (B20 thử lại 3 lần vẫn lỗi — B20 mục 5.1); cảnh báo E0/E7/E9 ở bước 6 sơ đồ B20 do M9 làm qua luật 2 và 4.
 
 ## 7. API
 
@@ -284,3 +303,4 @@ Bản ghi `alerts` có khóa chống trùng `(rule_id, cửa sổ thời gian)`,
 | 25/09/2026 | 1.0 | Tạo file: ranh giới chỉ đọc, view SQL, 12 luật cảnh báo, API, kiểm thử |
 | 25/09/2026 | 1.1 | Thêm luật 13 (model intent xuống cấp) và chỉ số đường B3 (D-32) |
 | 25/09/2026 | 1.2 | Thêm luật 14 (sắp hết ngân sách LLM, N1) |
+| 26/09/2026 | 1.3 | Khóa chống trùng `(rule_id, subject, window_start)`, bảng `subject` cho 14 luật (luật 3 chốt ở Phase 2b-1, còn lại đề xuất); việc Phase 7: luật `finalize_failed_permanent` |

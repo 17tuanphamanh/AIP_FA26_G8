@@ -11,7 +11,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.audit.writer import check_audit_row
@@ -21,10 +21,21 @@ from app.domain.action import Action
 from app.graph.builder import build_graph, fake_nodes
 from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
-from app.graph.ports import SpanRecord, TicketBusy
+from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.settings import get_policy
 from langgraph.checkpoint.memory import InMemorySaver
+from tests.fakes.identity import (
+    REQUESTER,
+    SESSION,
+    FakeAd,
+    MemoryAlerts,
+    MemoryIdentity,
+    ad_user,
+    fake_directory,
+)
+
+LOCKOUT = timedelta(minutes=15)
 
 
 class MemoryAudit:
@@ -234,6 +245,11 @@ class GraphHarness:
     deadlines: MemoryDeadlines = field(default_factory=MemoryDeadlines)
     notifier: RecordingNotifier = field(default_factory=RecordingNotifier)
     executor: CountingExecutor = field(default_factory=CountingExecutor)
+    # B1 thật: phiên `s1` của `nv-fake` còn sống, AD có `nv-fake` (employee)
+    identity: MemoryIdentity = field(default_factory=MemoryIdentity)
+    ad: FakeAd = field(default_factory=lambda: FakeAd(ad_user()))
+    alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
+    directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
     approvals: MemoryApprovals = field(init=False)
     lock: MemoryTicketLock = field(init=False)
     runner: Runner = field(init=False)
@@ -241,12 +257,16 @@ class GraphHarness:
     def __post_init__(self) -> None:
         self.approvals = MemoryApprovals(self.deadlines)
         self.lock = MemoryTicketLock(self.lock_timeout)
+        self.identity.add_session(SESSION, REQUESTER, expires_at=self.clock.now() + timedelta(days=365))
         self.runner = self._make_runner()
 
     def deps(self) -> NodeDeps:
+        """Mỗi lần gọi = một "process": registry (và breaker) mới, như khởi động lại backend."""
         return NodeDeps(
             notifier=self.notifier, approvals=self.approvals, executor=self.executor,
-            deadlines=self.deadlines, constants=get_policy().constants, scenario=self.scenario,
+            deadlines=self.deadlines, constants=get_policy().constants,
+            identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
+            alerts=self.alerts, lockout=LOCKOUT, scenario=self.scenario,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:
@@ -269,4 +289,8 @@ class GraphHarness:
     async def submit(self, ticket_id: str, **plan: str | list[str]) -> Any:
         if plan:
             self.scenario.plan(ticket_id, **plan)
-        return await self.runner.submit(ticket_id, session_id="s1", redacted_request="yêu cầu")
+        return await self.runner.submit(ticket_id, session_id=SESSION, redacted_request="yêu cầu")
+
+    async def submit_as(self, ticket_id: str, session_id: str | None, text: str = "yêu cầu") -> Any:
+        return await self.runner.submit(ticket_id, session_id=session_id, redacted_request=text)
+

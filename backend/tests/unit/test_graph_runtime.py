@@ -291,8 +291,13 @@ async def test_tc29_node_raises_goes_e9_with_error_span_and_others_finish() -> N
 @pytest.mark.parametrize("node", ["b01_identity", "b02_screen"])
 async def test_error_in_b1_b2_does_not_get_stuck(node: str) -> None:
     h = GraphHarness()
-    r = await h.submit("t1", **{node: "raise"})
+    if node == "b01_identity":  # B1 thật: lỗi chưa lường trước từ phụ thuộc của node
+        h.identity.fail = RuntimeError("lỗi giả tại b01_identity")
+        r = await h.submit("t1")
+    else:
+        r = await h.submit("t1", **{node: "raise"})
     assert (r.status, r.values["exit_code"], r.waiting_at) == (S_ESCALATED, "E9", None)
+    assert [x["step"] for x in h.audit.of("t1", "unhandled_exception")] == [node]
 
 
 @pytest.mark.asyncio

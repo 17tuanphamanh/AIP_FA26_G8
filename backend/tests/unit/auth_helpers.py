@@ -25,6 +25,7 @@ from tests.fakes.auth import (
     InMemoryAuthStore,
     RecordingSink,
 )
+from tests.fakes.identity import MemoryAlerts
 
 BASE_URL = "https://testserver"
 
@@ -47,6 +48,7 @@ class AuthEnv:
     store: AuthStore
     idp: FakeIdentityProvider
     settings: Settings
+    alerts: MemoryAlerts
 
     def login(
         self, username: str, password: str = DEMO_PASSWORD, otp: str | None = None, **extra: Any
@@ -94,6 +96,7 @@ def auth_env(
     sink: RecordingSink | None = None,
     clock: FakeClock | None = None,
     idp: FakeIdentityProvider | None = None,
+    alerts: MemoryAlerts | None = None,
     extra_router: APIRouter | None = None,
     client_ip: str = "203.0.113.7",
     **settings_over: Any,
@@ -102,9 +105,12 @@ def auth_env(
     sink = sink or RecordingSink(clock)
     store = store or InMemoryAuthStore(sink)
     idp = idp or FakeIdentityProvider()
+    alerts = alerts or MemoryAlerts()
     settings = auth_settings(**settings_over)
-    app = create_app(settings, health_checks={}, idp=idp, store=store, sink=sink, clock=clock)
+    app = create_app(
+        settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=alerts, clock=clock
+    )
     if extra_router is not None:
         app.include_router(extra_router)
     with TestClient(app, base_url=BASE_URL, client=(client_ip, 50000)) as client:
-        yield AuthEnv(app, client, clock, sink, store, idp, settings)
+        yield AuthEnv(app, client, clock, sink, store, idp, settings, alerts)

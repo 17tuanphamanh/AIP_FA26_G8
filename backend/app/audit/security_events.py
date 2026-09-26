@@ -24,15 +24,21 @@ _TABLE: Table = SecurityEvent.__table__  # type: ignore[assignment]
 _JWT_LIKE = re.compile(r"eyJ[\w-]+\.[\w-]+\.")
 
 
+def check_detail(table: str, detail: Mapping[str, Any]) -> None:
+    """`detail` JSONB không được mang bí mật: khoá tên nhạy cảm hoặc giá trị trông như JWT → lỗi
+    lập trình. Dùng cho `security_events` và `alerts`."""
+    for key, value in detail.items():
+        if _SENSITIVE_PARTS & set(key.lower().split("_")):
+            raise ValueError(f"{table}.detail không được có khoá nhạy cảm {key!r}")
+        if isinstance(value, str) and _JWT_LIKE.search(value):
+            raise ValueError(f"{table}.detail[{key!r}] trông như token")
+
+
 def check_event(event_type: str, detail: Mapping[str, Any]) -> None:
     """Chặn sự kiện lạ và `detail` có dấu hiệu chứa bí mật — dùng chung cho writer và bản giả test."""
     if event_type not in SECURITY_EVENT_TYPES:
         raise ValueError(f"security_events: event_type lạ {event_type!r}")
-    for key, value in detail.items():
-        if _SENSITIVE_PARTS & set(key.lower().split("_")):
-            raise ValueError(f"security_events.detail không được có khoá nhạy cảm {key!r}")
-        if isinstance(value, str) and _JWT_LIKE.search(value):
-            raise ValueError(f"security_events.detail[{key!r}] trông như token")
+    check_detail("security_events", detail)
 
 
 class SecurityEventWriter:

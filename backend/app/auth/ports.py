@@ -1,6 +1,7 @@
 """Port của auth (01 mục 4.1). auth chỉ phụ thuộc domain, core, db (01 mục 4.2) — adapter AD
-(`tools/adapters/ad_read.AdIdentityProvider`) và writer `audit/security_events.SecurityEventWriter`
-khớp các Protocol này theo cấu trúc, `main.create_app` nối lại. Test tiêm bản giả.
+(`tools/adapters/ad_read.AdIdentityProvider`), writer `audit/security_events.SecurityEventWriter` và
+`audit/alerts.AlertWriter` khớp các Protocol này theo cấu trúc, `main.create_app` nối lại. Test tiêm
+bản giả.
 """
 
 from collections.abc import Mapping
@@ -9,6 +10,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.auth.models import SessionRecord, UserRecord, UserSync
+from app.domain.alerts import AlertDraft
 from app.domain.context import AdAttributes
 
 
@@ -51,6 +53,13 @@ class SecurityEventSink(Protocol):
         ticket_id: str | None = None,
         detail: Mapping[str, Any] | None = None,
     ) -> None: ...
+
+
+class AlertSink(Protocol):
+    """Ghi `alerts` idempotent theo `(rule_id, subject, window_start)` (`audit/alerts.AlertWriter`).
+    True = dòng mới; False = đã có."""
+
+    async def raise_once(self, draft: AlertDraft) -> bool: ...
 
 
 class AuthStore(Protocol):
