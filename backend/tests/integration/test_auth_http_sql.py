@@ -83,6 +83,9 @@ def test_full_flow_on_postgres(db: PgUrls, rw: Engine, monkeypatch: pytest.Monke
         [(locked,)] = _rows(rw, "SELECT locked_until FROM users WHERE user_id = 'nv001'")
         assert locked == clock.now() + timedelta(minutes=15)
         assert client.post("/api/auth/login", json={"username": "an.nv", "password": "Demo@2026!"}).status_code == 401
+        # Cảnh báo Trưởng BP (P9 luật 3) ghi bằng AlertWriter thật: đúng 1 dòng, khoá có người dùng
+        assert _rows(rw, "SELECT rule_id, subject, window_start, severity FROM alerts") == [
+            ("password_bruteforce", "nv001", clock.now(), "critical")]
         clock.advance(timedelta(minutes=15))
 
         # 2 refresh đồng thời trên Postgres thật → cái thứ hai là reuse

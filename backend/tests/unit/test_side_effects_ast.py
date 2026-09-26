@@ -20,6 +20,7 @@ SIDE_EFFECT_FUNCS = frozenset({
     "notify_user",
     "deadlines.set",
     "tickets.create_child",  # backend/app/db/tickets.py
+    "escalations.create",  # B20 — qua effects.once("escalation_create") (D-18)
     "runner.submit",
 })  # fmt: skip
 ONCE = "effects.once"

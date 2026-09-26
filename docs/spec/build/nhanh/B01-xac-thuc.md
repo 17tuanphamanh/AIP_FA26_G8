@@ -281,6 +281,21 @@ async def b01_identity(state):
 
 **Ghi chú về bảng chuyển trạng thái:** `S_NEW → S_ESCALATED` chưa có trong bảng 2.1 của `NGU-CANH-DAY-DU.md` Phần IV. Cần thêm dòng này khi nhóm chốt D-01.
 
+### 5.1. Chốt khi hiện thực Phase 2b-1 (26/09/2026)
+
+Mã giả ở trên giữ nguyên thứ tự kiểm: phiên → AD → khóa → disabled/terminated → role → `from_ad`. Code thật khác mã giả ở các điểm sau:
+
+| Điểm | Chốt | Lý do |
+|---|---|---|
+| "Phiên còn hiệu lực" | Theo **họ token**: dòng `sessions` của ticket còn ít nhất một dòng cùng `token_family_id` chưa thu hồi và chưa hết hạn (`SqlIdentityReads.active_session`) **[Suy luận, đã duyệt]** | Mỗi lần refresh tạo dòng mới và đánh dấu dòng cũ `rotated` (P6). Xét đúng một dòng thì refresh bình thường cũng làm ticket bị chặn oan. Logout, logout-all, admin thu hồi, phát hiện dùng lại, user bị vô hiệu hóa đều thu hồi dòng đang sống → vẫn chặn |
+| AD trả 404 | `S_BLOCKED invalid_credentials` (event `user_not_found`) | User không còn trong AD cũng như tài khoản bị vô hiệu hóa |
+| Role không ánh xạ được | `S_ESCALATED` E2, `reason_detail=role_unmappable` | Lỗi cấu hình AD, không phải lỗi người dùng (bất biến 6). S_BLOCKED không vào hàng đợi L2 nên không ai sửa. **Không bao giờ** mặc định `employee` |
+| AD lỗi / breaker mở | E2, `reason_detail=identity_unverifiable`, không E9 | Như mã giả; qua `ToolRegistry` thật (`ad_get_user`, `caller_step="B1"`) |
+| Cảnh báo dò mật khẩu | Auth ghi **lúc khóa**; B1 gặp user đang bị khóa ghi lại **cùng khóa** qua `AlertWriter.raise_once(bruteforce_alert(...))`; khóa `(password_bruteforce, user_id, lock_start)` | TC25 đòi cảnh báo cả khi người bị khóa không có ticket. Mỗi đợt khóa đúng 1 dòng; hai người cùng lúc → 2 dòng; khóa lần 2 → dòng mới (P7 mục 2.12, P9 mục 6) |
+| Mốc `lock_start` ở B1 | `users.locked_until − LOCKOUT` | Khớp mốc auth dùng. Đổi `LOCKOUT` giữa chừng có thể sinh cảnh báo thừa (False Positive, chấp nhận) |
+
+**Bằng chứng:** mutation 11 chỗ ở logic và 3 chỗ ở SQL (bỏ `revoked_at IS NULL`, bỏ `expires_at > now`, join theo `user_id` thay vì `token_family_id`) đều làm test đỏ đúng chỗ. TC24/TC25 qua HTTP (đăng nhập → tạo ticket) làm ở 2b-3.
+
 ## 6. Quyết định thiết kế và lý do
 
 | Quyết định | Lý do |
@@ -369,3 +384,4 @@ async def b01_identity(state):
 |---|---|---|
 | 25/09/2026 | 1.0 | Tạo file; thiết kế lại theo D-01 (tách đăng nhập khỏi graph) |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
+| 26/09/2026 | 1.2 | Mục 5.1: chốt khi hiện thực Phase 2b-1 — phiên theo họ token, AD 404, `role_unmappable` → E2, cảnh báo dò mật khẩu idempotent (auth + B1) |

@@ -276,7 +276,7 @@ class DecisionIn(BaseModel):
     decision: Literal["approved", "rejected"]
     note: str | None = Field(default=None, max_length=1000)
     reason_code: str | None                 # mẫu lý do chọn nhanh (Nên có) [Chốt 16.2]
-    view_started_at: datetime               # client gửi; server đối chiếu approvals.first_viewed_at
+    view_started_at: datetime | None = None # client gửi, CHỈ ghi log; view_duration tính phía server từ approvals.first_viewed_at (chốt 2b-3, mục 5.1)
 ```
 
 **Quy tắc:** `rejected` mà thiếu `note` → 422 **[Chốt cổng 4]**.
@@ -353,6 +353,23 @@ Transaction khóa hàng ở trên ngắn (chỉ đọc và kiểm tra). `deliver
 
 **Ticket con của yêu cầu nhiều ý (D-31, v1.3):** hàm `notify_user` tự kiểm `state["parent_ticket_id"]`. Với ticket con, lời nhắn được ghi vào `child_notices` thay vì gửi, và `deadlines.set` không đặt hạn (hạn do ticket cha giữ). Ticket cha gom mọi lời nhắn thành **một** tin mỗi lượt người dùng **[Chốt B5]** (P1 mục 8.1–8.2). Logic của nhánh này không đổi. Với ticket con, lý do từ chối **[Chốt: bắt buộc có]** xuất hiện trong tin tổng hợp. `S_PENDING_APPROVAL` **không** phải điểm dừng của con: cha chờ tới khi phiếu có kết quả hoặc hết hạn (E6), rồi mới gửi tin. Vì vậy thời gian người dùng chờ tin đầu tiên tối đa bằng `SLA_MINUTES` **[Chốt]**.
 
+### 5.1. Chốt khi hiện thực Phase 2b-3 (26/09/2026)
+
+Mã giả mục 5 giữ nguyên để đối chiếu; bảng dưới **thắng** mã giả ở những điểm khác nhau. Mã quyết định ở `decisions.md` mục 4.1 (2b-3).
+
+| Điểm | Chốt | Lý do |
+|---|---|---|
+| `mark_late` (2b-3-Q2, phương án A) | **Không đổi `approvals.status`**; chỉ ghi audit `late_event` (step B16, `source=user`, `approval_id`, `clicked_by`, `reason ∈ {expired, already_decided}`). Trạng thái phiếu chỉ do B16 đổi (`approvals.close` có điều kiện `WHERE status='pending'`) | Nếu đổi `pending → late_ignored` khi bấm sau hạn mà worker chưa quét (chu kỳ 15 s), worker chỉ bắn timeout cho phiếu `pending` → không bao giờ bắn → ticket kẹt `S_PENDING_APPROVAL`, không tới L2 (FN). Đổi `timeout → late_ignored` thì mất dấu SLA breach. Giá trị `late_ignored` giữ trong CHECK nhưng không dùng |
+| Mọi đường 409 | `mark_late` ở route và `LateEvent` từ `deliver_event` đều để lại **đúng 1** `late_event` | Một loại dấu vết cho mọi lần bấm muộn; M9 đếm được |
+| Biên hạn | `clock.now() >= deadline` → muộn (bằng hạn là muộn); so bằng `Clock` của app, không `now()` của DB | Bất biến 5 "hết hạn không bao giờ thực thi"; một nguồn đồng hồ |
+| Thứ tự kiểm ở route | 413 (body > 64 KB, đếm byte đọc thật) → quyền `approval:decide` → `lock_row` (FOR UPDATE; không có → 404) → `may_decide_as` sai (không phải người được giao / xung đột) → 403 + `permission_denied` → xác định muộn → **nhả hàng** → nếu muộn: `mark_late` + 409; `rejected` thiếu note → 422 → note qua privacy guard → `start_event` (lấy khóa ticket, guard trạng thái, giao khóa cho task nền; worker vẫn dùng `deliver_event`) | Người không có quyền không học được trạng thái phiếu; 422 chỉ tới sau khi đã biết đúng người, đúng lúc |
+| Route không ghi quyết định | Route chỉ đọc + kiểm; B16 ghi `approved/rejected` + `decided_by`. `approver_id` **chỉ từ token** | Một nơi quyết định; body không giả danh được người duyệt |
+| Trả về | 202 ngay; khóa ticket lấy trong request rồi **giao** cho task nền (try/finally + cờ "đã giao": chưa giao thì request nhả) — xem P1 mục 7 | Chốt 14.3 "API trả 202 ngay"; không rò khóa advisory khi client ngắt |
+| `view_started_at` | Tùy chọn trong 2b (UI ở Phase 7); `view_duration` tính phía server từ `first_viewed_at` (2b chưa có route xem → `None`) | Giờ do client gửi không dùng để quyết định |
+| `FAKE_APPROVER_ID` | B15 giả (trước Phase 4) giao phiếu cho người này; chỉ nạp khi `APP_ENV ∈ {dev, test}`, env khác → app và worker từ chối khởi động. Người này chưa có dòng `users` (chưa đăng nhập lần nào) → B15 giả ném → E9 | Fail-closed như 2b-Q2; không seed user giả vào DB app |
+
+Kiểm chứng: 28 mutation logic + 8 mutation SQL (S3 bỏ `FOR UPDATE`, S4 `close` bỏ điều kiện `pending`, S5 `mark_late` đổi status → ticket kẹt) đều bị bắt; test "bấm muộn trước chu kỳ quét" (phiếu vẫn `pending`, worker quét → E6, phiếu `timeout`).
+
 ## 6. Quyết định thiết kế và lý do
 
 | Quyết định | Lý do |
@@ -401,7 +418,7 @@ Transaction khóa hàng ở trên ngắn (chỉ đọc và kiểm tra). `deliver
 | L1 gửi yêu cầu cho chính mình | Trưởng BP duyệt | TC19 |
 | Người gửi là sếp của người duyệt; hành động tác động tài khoản người duyệt | Trưởng BP duyệt | 2 ca bổ sung **[Chốt cổng 4]** |
 | Quá 30 phút | E6, không có lời gọi thực thi nào | TC20 |
-| Bấm duyệt sau khi hết hạn | 409, phiếu `late_ignored` | TC27 |
+| Bấm duyệt sau khi hết hạn | 409 + audit `late_event` (reason `expired`); phiếu **giữ nguyên** trạng thái, worker vẫn bắn timeout → E6 (chốt 2b-3, mục 5.1) | TC27 |
 | Action bị sửa sau khi duyệt | B17 phát hiện hash lệch → E5 | TC26 |
 | L2 gọi API duyệt | 403 | cổng 4 |
 | L1-X duyệt phiếu giao cho L1-Y | 403 | TC30 (mới) |
@@ -466,3 +483,4 @@ Transaction khóa hàng ở trên ngắn (chỉ đọc và kiểm tra). `deliver
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: tạo phiếu + thông báo qua `effects.once`, UNIQUE một phiếu `pending` (D-18); khóa ticket cấp session (D-19); thêm TC33 |
 | 25/09/2026 | 1.3 | Lý do từ chối của ticket con đi qua tin tổng hợp của cha; chờ duyệt không phải điểm dừng (D-31) |
+| 26/09/2026 | 1.4 | Chốt Phase 2b-3 (mục 5.1): `mark_late` không đổi status, chỉ audit `late_event`; bằng hạn = muộn; thứ tự kiểm ở route; 202 + giao khóa; `view_started_at` tùy chọn; `FAKE_APPROVER_ID` dev/test. Sửa mục 4 (`DecisionIn`) và mục 10 (TC27) theo |

@@ -150,7 +150,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 |---|---|
 | Nhánh trước | B13 (luật allow), B14 (p < ngưỡng thấp), hoặc B16 (đã duyệt) |
 | Nhận vào | `intended_action`, `action_plan_hash` (nếu đã qua duyệt), `approval_id`, `risk`, `requester_context` |
-| Giao cho nhánh sau | Thành công: kết quả đã gửi người dùng (B18), `S_CONFIRMING`, `next=confirm_wait`, `resolution_path` = auto hoặc approved. Lỗi: `S_ESCALATED` E7/E5 kèm `handoff_note` |
+| Giao cho nhánh sau | Thành công: kết quả đã gửi người dùng (B18), `S_CONFIRMING`, `next=confirm_wait` (`resolution_path` auto/approved do B20 suy ra từ `approval_result`). Lỗi: `S_ESCALATED` E7/E5 kèm `handoff_note` |
 | Ai dùng đầu ra | B19, B20/L2 (ghi chú bàn giao), M9 (tỉ lệ thành công, hoàn tác, hash lệch) |
 
 **Chuyển trạng thái của nhánh [Chốt 2.1]:**
@@ -325,7 +325,7 @@ async def b17_execute(state):
     await effects.once(state, "deadline_set", deadlines.set, state["ticket_id"], "confirm",
                        hours=48, step="B18")
     return goto(state, S_CONFIRMING, next_node="confirm_wait", step="B18", event="executed_ok",
-                execution=res, resolution_path="approved" if approved else "auto")
+                execution=res)                  # resolution_path do B20 suy ra (v1.4)
 ```
 
 **Vì sao `ExecutionStepError` là lỗi đã lường trước (trả E7), còn mọi exception khác thì rơi xuống E9:** một bug trong executor không được giả làm "API lỗi". Hai loại lỗi này cần hai người xử lý khác nhau (L2 cho E7, dev cho E9).
@@ -441,3 +441,4 @@ async def b17_execute(state):
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: D-15 kiểm cả người gửi lẫn người hưởng lợi (sửa L-07); thông báo + đặt hạn qua `effects.once` (D-18); phát hiện thực thi bị gián đoạn qua `transaction_log` |
 | 25/09/2026 | 1.3 | Thông báo kết quả của ticket con để lại notice `needs=confirm` cho cha gom (D-31) |
+| 26/09/2026 | 1.4 | Bỏ việc B18 tự đặt `resolution_path` (bị LangGraph bỏ im lặng); B20 suy ra (Phase 2b-2) |

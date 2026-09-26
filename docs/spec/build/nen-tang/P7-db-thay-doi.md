@@ -366,6 +366,33 @@ ALTER TABLE escalations
 
 Mã thoát E0–E9 giữ nguyên **[Chốt]**. `reason_detail` chỉ để M9 tách các nguyên nhân khác nhau trong cùng một mã.
 
+### 2.12. `alerts` (mở rộng, v1.6 — migration 0004) [Chốt khi hiện thực Phase 2b-1]
+
+```sql
+ALTER TABLE alerts ADD COLUMN subject VARCHAR(64) NOT NULL DEFAULT '';   -- DEFAULT chỉ để điền dòng cũ
+ALTER TABLE alerts ALTER COLUMN subject DROP DEFAULT;                     -- INSERT thiếu subject → lỗi
+ALTER TABLE alerts DROP CONSTRAINT uq_alerts_rule_id_window_start;
+ALTER TABLE alerts ADD CONSTRAINT uq_alerts_rule_id_subject_window_start
+  UNIQUE (rule_id, subject, window_start);
+```
+
+- **Vì sao:** khóa cũ `(rule_id, window_start)` gộp mọi sự kiện cùng luật trong cùng cửa sổ thành **một** cảnh báo. Hai tài khoản bị khóa cùng lúc, hai vụ injection trong cùng phút… chỉ ra một dòng — bỏ sót sự cố an ninh (False Negative).
+- **`subject`** là đối tượng của cảnh báo: `user_id`, `ticket_id`, tên tool… theo từng luật (bảng ở P9 mục 6). Luật tổng hợp truyền hằng `SYSTEM_SUBJECT = ""` **tường minh**.
+- **Không có DEFAULT** (fail-closed): code nào quên `subject` thì INSERT lỗi ngay, thay vì âm thầm nhận `''` và gộp cảnh báo của mọi người.
+- **Ghi:** duy nhất qua `AlertWriter.raise_once` (`app/audit/alerts.py`), `INSERT … ON CONFLICT (rule_id, subject, window_start) DO NOTHING`.
+- **Downgrade:** dừng với lỗi rõ ràng nếu đã có hai dòng cùng `(rule_id, window_start)` khác `subject`; không xóa cảnh báo để hạ migration.
+- `subject VARCHAR(64)` khớp `users.user_id VARCHAR(64)`. Username không có dòng `users` → `username:<tên>`, quá dài thì `username#<sha256[:40]>`.
+
+### 2.13. `turns` (mở rộng, v1.7 — migration 0005) [Chốt khi hiện thực Phase 2b-2]
+
+```sql
+ALTER TABLE turns ADD COLUMN recover_attempts SMALLINT NOT NULL DEFAULT 0;
+```
+
+- Worker tăng **trước** mỗi lần recover: `UPDATE turns SET recover_attempts = recover_attempts + 1 WHERE turn_id = :t AND ended_at IS NULL RETURNING recover_attempts`. Giá trị sau khi tăng > 3 → dừng, tức chạy lại tối đa 3 lần và bộ đếm dừng ở 4 (P1 mục 7, B20 mục 5.1).
+- **Vì sao không đếm span lỗi:** process bị giết (OOM, SIGKILL) không kịp ghi span, nên đếm lỗi ra 0 và worker thử vô hạn. Span là dữ liệu quan sát (có thể bị job lưu trữ xóa), không dùng làm dữ liệu điều khiển.
+- **Vì sao DEFAULT 0 ở đây lại đúng** (khác `alerts.subject`): 0 là giá trị khởi đầu thật của mọi lượt, không phải giá trị "quên điền".
+
 ## 3. Role và trigger
 
 Xem DDL đầy đủ ở `P6-auth-bao-mat.md` mục 6. Tóm tắt:
@@ -416,6 +443,8 @@ Trigger `forbid_mutation` trên `audit_logs` và `security_events` là lớp th�
 7. `effects.once` gọi 2 lần cùng khóa → hàm bên trong chạy đúng 1 lần, lần 2 trả cùng `result_ref` (v1.2).
 8. `notify_user` của ticket con gọi 2 lần cùng khóa → đúng 1 dòng `child_notices` (UNIQUE `effect_key`) (v1.3).
 9. Ticket cha đóng với `close_reason = NULL` → không lỗi CHECK; truy vấn escalation rate với `is_parent = false` không đếm cha (v1.3).
+10. `INSERT alerts` thiếu `subject` → lỗi; hai `subject` khác nhau cùng `(rule_id, window_start)` → 2 dòng; ghi lại cùng khóa → vẫn 1 dòng (v1.6).
+11. B20 lỗi cố định hoặc process bị giết ở B20 → worker chạy lại đúng 3 lần (bộ đếm lên 1, 2, 3); lần quét kế tiếp đưa bộ đếm lên 4, thấy vượt 3 thì ngừng thử và ghi đúng 1 audit `finalize_failed_permanent` (v1.7).
 
 ## 6. Việc cần làm ở `thiet-ke-database.md`
 
@@ -436,3 +465,5 @@ Khi nhóm duyệt D-04, D-05, D-11, D-14, D-18, D-27, D-30, D-31:
 | 25/09/2026 | 1.3 | Thêm `child_notices` (D-31) → 22 bảng; `tickets.is_parent`, cha `close_reason = NULL` (D-30); `side_effects.kind` thêm `child_event` |
 | 26/09/2026 | 1.4 | Ghi nhận các quyết định khi hiện thực Phase 1a (role, TRUNCATE, `redacted_request`, `begun`, `raw_prob`/`p_method`, index P9) |
 | 26/09/2026 | 1.5 | `security_events.event_type` thêm `mfa_enrolled`, `mfa_reset` (migration 0002) |
+| 26/09/2026 | 1.6 | Mục 2.12: `alerts.subject` không DEFAULT, khóa chống trùng `(rule_id, subject, window_start)` (migration 0004, Phase 2b-1); tiêu chí 10 |
+| 26/09/2026 | 1.7 | Mục 2.13: `turns.recover_attempts` (migration 0005, Phase 2b-2); tiêu chí 11 |

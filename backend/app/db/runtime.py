@@ -125,6 +125,19 @@ class SqlTurnStore:
             )
             return row.first() is not None
 
+    async def bump_recover_attempts(self, turn_id: str) -> int | None:
+        """Tăng bộ đếm TRƯỚC khi chạy lại (migration 0005): process chết giữa lượt vẫn bị tính.
+        None = lượt đã đóng."""
+        async with self._engine.begin() as conn:
+            row = await conn.execute(
+                update(_TURNS)
+                .where(_TURNS.c.turn_id == turn_id, _TURNS.c.ended_at.is_(None))
+                .values(recover_attempts=_TURNS.c.recover_attempts + 1)
+                .returning(_TURNS.c.recover_attempts)
+            )
+            value = row.scalar()
+            return None if value is None else int(value)
+
     async def stale(self, before: datetime, limit: int) -> list[OpenTurn]:
         async with self._engine.connect() as conn:
             rows = await conn.execute(

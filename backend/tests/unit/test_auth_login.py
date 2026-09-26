@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 import pytest
 from app.auth.service import GENERIC_LOGIN_ERROR
 from app.core.logging import JsonFormatter, RedactSecretsFilter
+from app.domain.alerts import BRUTEFORCE_RULE_ID
 from tests.fakes.auth import (
     DEMO_PASSWORD,
     FakeAdUser,
@@ -80,6 +81,7 @@ def test_tc24_one_wrong_password(env: AuthEnv) -> None:
     assert r.json() == {"detail": GENERIC_LOGIN_ERROR}
     assert len(env.sink.of("login_failed")) == 1
     assert env.sink.of("account_locked") == []
+    assert env.alerts.rows == {}  # một lần sai không phải sự cố an ninh [Chốt 1.3]
 
 
 @pytest.mark.asyncio
@@ -92,14 +94,43 @@ async def test_tc25_five_failures_lock_15_minutes() -> None:
         assert locked.detail["reason"] == "threshold" and locked.user_id == "nv001"
         user = await env.store.get_user("nv001")
         assert user is not None and user.locked_until == env.clock.now() + timedelta(minutes=15)
+        [alert] = env.alerts.of(BRUTEFORCE_RULE_ID)  # báo Trưởng BP (P9 luật 3)
+        assert (alert.subject, alert.window_start, alert.severity) == (
+            "nv001", env.clock.now(), "critical")
+        assert alert.detail == {"user_id": "nv001", "username": "an.nv", "source": "login"}
 
         r = env.login("an.nv")  # đúng mật khẩu nhưng đang khoá
         assert (r.status_code, r.json()) == (401, {"detail": GENERIC_LOGIN_ERROR})
         assert env.sink.of("account_locked")[-1].detail == {"reason": "still_locked"}
         assert env.idp.authenticate_calls == 6  # đang khoá thì không hỏi AD
+        assert len(env.alerts.rows) == 1  # still_locked không sinh cảnh báo mới
 
         env.clock.advance(timedelta(minutes=15))
         assert env.login("an.nv").status_code == 200
+
+        env.clock.advance(timedelta(minutes=11))  # đợt khoá thứ hai → cảnh báo thứ hai
+        for _ in range(5):
+            env.login("an.nv", "sai")
+        assert len(env.alerts.of(BRUTEFORCE_RULE_ID)) == 2
+
+
+def test_two_users_locked_same_instant_get_two_alerts(env: AuthEnv) -> None:
+    """Quyết định Q1: khoá chống trùng có người dùng — gộp 2 người = bỏ sót sự cố an ninh."""
+    env.login("an.nv")
+    env.login("binh.tt")
+    for _ in range(5):  # FakeClock đứng yên: hai đợt khoá cùng một thời điểm
+        env.login("an.nv", "sai")
+        env.login("binh.tt", "sai")
+    alerts = env.alerts.of(BRUTEFORCE_RULE_ID)
+    assert sorted(a.subject for a in alerts) == ["nv001", "nv002"]
+    assert {a.window_start for a in alerts} == {env.clock.now()}
+
+
+def test_unknown_username_lock_alert_uses_username_subject(env: AuthEnv) -> None:
+    for _ in range(5):
+        env.login("khong.ton.tai", "sai")
+    [alert] = env.alerts.of(BRUTEFORCE_RULE_ID)
+    assert alert.subject == "username:khong.ton.tai" and alert.detail["user_id"] is None
 
 
 def test_failures_outside_window_do_not_lock(env: AuthEnv) -> None:

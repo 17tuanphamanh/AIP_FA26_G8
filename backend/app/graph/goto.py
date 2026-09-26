@@ -5,6 +5,8 @@
 2. Ghi `audit_logs` idempotent: khoá sha256(ticket_id|step|event|turn_id|loop_seq) (D-14 v1.2).
 3. Cấm 4 đầy đủ: sang `S_RESOLVED` mà không có dòng audit (kiểm trong cùng transaction với INSERT)
    → `IllegalTransition(F4)`. Ở domain chỉ kiểm được step/event không rỗng.
+4. Key trả về phải thuộc `TicketState` (`UnknownStateKey`) — kiểm TRƯỚC khi ghi audit. LangGraph bỏ im
+   lặng key lạ; ví dụ mã giả B10/B17 đặt `resolution_path` (không có trong state) sẽ mất dữ liệu.
 
 Lỗi ở đây (IllegalTransition) là bug → lọt tới boundary thành E9 (P1 mục 10).
 """
@@ -16,6 +18,7 @@ from pydantic import BaseModel
 
 from app.core.hashing import sha256_key
 from app.domain.states import S_RESOLVED, IllegalTransition, check_transition
+from app.domain.ticket_state import check_state_keys
 from app.graph.context import current_run
 
 # Trường state → cột audit_logs cùng tên (P7 2.7, B20 mục 0.3). Trường khác (ghi chú escalate…)
@@ -60,6 +63,7 @@ async def goto(
 ) -> dict[str, Any]:
     run = current_run()
     frm = state["status"]
+    check_state_keys(("status", "next", *fields))
     check_transition(
         state, frm, to_status, step=step, event=event, fields=fields,
         rediagnose_on_new_slot=run.rediagnose_on_new_slot,

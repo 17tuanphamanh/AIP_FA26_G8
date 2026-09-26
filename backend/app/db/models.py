@@ -543,6 +543,10 @@ class Turn(Base):
     event_type: Mapped[str] = mapped_column(String(16), nullable=False)
     started_at: Mapped[datetime] = _now()
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Số lần worker chạy lại lượt dở dang — tăng TRƯỚC khi chạy (migration 0005, 2b-Q6).
+    recover_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("0")
+    )
 
 
 class Span(Base):
@@ -601,11 +605,15 @@ class Alert(Base):
     __tablename__ = "alerts"
     __table_args__ = (
         check_in("status", ALERT_STATUSES),
-        UniqueConstraint("rule_id", "window_start"),  # P9: chống trùng (rule_id, cửa sổ)
+        # Chống trùng theo (luật, đối tượng, cửa sổ) — migration 0004, quyết định Q1 26/09/2026.
+        UniqueConstraint("rule_id", "subject", "window_start"),
     )
 
     alert_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     rule_id: Mapped[str] = mapped_column(String(48), nullable=False)
+    # user_id (luật theo người) | ticket_id (luật theo ticket) | SYSTEM_SUBJECT '' (luật tổng hợp) —
+    # domain/alerts.py. KHÔNG có DEFAULT: INSERT quên subject phải lỗi (gộp cảnh báo = False Negative).
+    subject: Mapped[str] = mapped_column(String(64), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     value: Mapped[float | None] = mapped_column(Float)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

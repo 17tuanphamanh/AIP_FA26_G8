@@ -6,22 +6,12 @@ Bảng mong đợi này cũng có ở mock_services/README.md cho người xác 
 Backoff chạy trên FakeClock; HTTP là thật.
 """
 
-import os
-import secrets
-import socket
-import subprocess
-import sys
-import time
-from collections.abc import Iterator
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from app.auth.ports import IdentityUnavailable
 from app.core.clock import FakeClock
-from app.settings import Settings
 from app.tools.adapters import vpn_write
 from app.tools.adapters.ad_read import AdIdentityProvider
 from app.tools.adapters.http import ServiceHttp
@@ -29,59 +19,7 @@ from app.tools.registry import ToolRegistry
 from app.tools.specs import READ_TIMEOUT_S
 from app.tools.wiring import breaker_board, build_read_registry
 from pydantic import SecretStr
-
-REPO = Path(__file__).resolve().parents[3]
-
-
-@dataclass(frozen=True)
-class MockServer:
-    url: str
-    agent: str
-    executor: str
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
-@pytest.fixture(scope="module")
-def mock_server() -> Iterator[MockServer]:
-    port = _free_port()
-    server = MockServer(f"http://127.0.0.1:{port}", secrets.token_urlsafe(32), secrets.token_urlsafe(32))
-    env = {**os.environ, "PYTHONPATH": str(REPO / "mock_services"), "SVC_AGENT_TOKEN": server.agent,
-           "SVC_EXECUTOR_TOKEN": server.executor}  # fmt: skip
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port),
-         "--log-level", "warning"],
-        env=env, cwd=REPO,
-    )  # fmt: skip
-    try:
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                if httpx.get(f"{server.url}/health", timeout=1).status_code == 200:
-                    break
-            except httpx.TransportError:
-                pass
-            if proc.poll() is not None or time.monotonic() > deadline:
-                raise RuntimeError(f"mock không lên được (exit={proc.poll()})")
-            time.sleep(0.2)
-        yield server
-    finally:
-        proc.terminate()
-        proc.wait(timeout=10)
-
-
-@pytest.fixture
-def reset(mock_server: MockServer) -> None:
-    httpx.post(f"{mock_server.url}/_admin/reset", timeout=5).raise_for_status()
-
-
-def _settings(server: MockServer) -> Settings:
-    return Settings(_env_file=None, mock_url=server.url, svc_agent_token=server.agent)  # type: ignore[call-arg, arg-type]
-
+from tests.e2e.mock_server import MockServer
 
 # (tool, input, kiểm kết quả) — bảng mong đợi với seed.json
 EXPECTED: list[tuple[str, dict[str, Any], Any]] = [
@@ -123,7 +61,7 @@ EXPECTED: list[tuple[str, dict[str, Any], Any]] = [
 async def test_twelve_read_tools_against_seed(
     mock_server: MockServer, reset: None, tool: str, args: dict[str, Any], check: Any
 ) -> None:
-    registry, http = build_read_registry(_settings(mock_server), FakeClock())
+    registry, http = build_read_registry(mock_server.settings(), FakeClock())
     try:
         result = await registry.call(tool, args, caller_step="B6")
     finally:
@@ -144,7 +82,7 @@ async def test_all_twelve_tools_covered() -> None:
 
 @pytest.mark.asyncio
 async def test_ad_get_user_for_b1(mock_server: MockServer, reset: None) -> None:
-    registry, http = build_read_registry(_settings(mock_server), FakeClock())
+    registry, http = build_read_registry(mock_server.settings(), FakeClock())
     try:
         user, err, _ = await registry.call_internal("ad_get_user", {"user_id": "nv004"}, caller_step="B1")
     finally:
@@ -155,7 +93,7 @@ async def test_ad_get_user_for_b1(mock_server: MockServer, reset: None) -> None:
 @pytest.mark.asyncio
 async def test_fault_on_gives_system_error_off_gives_data(mock_server: MockServer, reset: None) -> None:
     clock = FakeClock()
-    registry, http = build_read_registry(_settings(mock_server), clock)
+    registry, http = build_read_registry(mock_server.settings(), clock)
     try:
         async with httpx.AsyncClient(base_url=mock_server.url) as admin:
             fault = {"path_prefix": "/vpn", "mode": "error", "status": 500}
@@ -177,7 +115,7 @@ async def test_agent_token_cannot_write_executor_can(mock_server: MockServer, re
     agent_http = ServiceHttp(mock_server.url, SecretStr(mock_server.agent))
     exec_http = ServiceHttp(mock_server.url, SecretStr(mock_server.executor))
     clock = FakeClock()
-    settings = _settings(mock_server)
+    settings = mock_server.settings()
     try:
         as_agent = ToolRegistry(vpn_write.write_handlers(agent_http), breakers=breaker_board(settings, clock),
                                 clock=clock)  # fmt: skip
@@ -199,7 +137,7 @@ async def test_agent_token_cannot_write_executor_can(mock_server: MockServer, re
 
 @pytest.mark.asyncio
 async def test_identity_provider_against_mock_ad(mock_server: MockServer, reset: None) -> None:
-    registry, http = build_read_registry(_settings(mock_server), FakeClock())
+    registry, http = build_read_registry(mock_server.settings(), FakeClock())
     idp = AdIdentityProvider(http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable)
     try:
         user = await idp.authenticate("quan.tm", "Demo@2026!")  # mật khẩu demo công khai (README mock)

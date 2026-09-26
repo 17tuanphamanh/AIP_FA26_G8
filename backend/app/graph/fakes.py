@@ -1,4 +1,6 @@
-"""Phụ thuộc của node GIẢ (Phase 2 — P1: "khung, node giả"). Phase 3+ thay từng node bằng node thật.
+"""Phụ thuộc của node (`NodeDeps`) + phần GIẢ của Phase 2 (P1: "khung, node giả"). Phase 3+ thay từng
+node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, `directory`, `alerts`, `lockout`),
+`b20_audit` (dùng `tickets`, `escalations`, `templates`, `notifier`).
 
 `FakeScenario` chọn kết quả của mỗi node theo ticket (mặc định = đường vui dừng ở chờ duyệt), để test
 đi được mọi nhánh ra của mọi node. Kết quả đặc biệt `"raise"` → node ném `ValueError` (TC29 → E9).
@@ -10,14 +12,22 @@ Các port side effect (`Notifier`, `Approvals`, `DeadlineStore`) luôn được 
 import inspect
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from app.domain.action import Action
 from app.domain.context import RequesterContext
 from app.domain.ticket_state import RiskDecision
-from app.graph.ports import DeadlineStore
-from app.settings import PolicyConstants
+from app.graph.ports import (
+    AlertSink,
+    DeadlineStore,
+    EscalationStore,
+    IdentityReads,
+    TicketStore,
+    ToolCaller,
+    ToolResult,
+)
+from app.settings import EscalationTemplates, PolicyConstants
 
 
 class Notifier(Protocol):
@@ -31,8 +41,16 @@ class Approvals(Protocol):
 
     async def notify_approver(self, approval_id: str, approver_id: str) -> str: ...
 
-    async def record_result(self, approval_id: str, result: str, at: datetime) -> None:
-        """Ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`)."""
+    async def close(
+        self,
+        approval_id: str,
+        result: str,
+        at: datetime,
+        *,
+        decided_by: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        """B16 ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`)."""
         ...
 
 
@@ -41,7 +59,6 @@ class Executor(Protocol):
 
 
 DEFAULT_OUTCOMES: Mapping[str, str] = {
-    "b01_identity": "ok",
     "b02_screen": "ok",
     "b03_classify": "single",
     "b06_diagnose": "ok",
@@ -52,7 +69,6 @@ DEFAULT_OUTCOMES: Mapping[str, str] = {
     "b15_prepare_approval": "ok",
     "b17_execute": "ok",
     "parent_wait": "wait",
-    "b20_audit": "ok",
 }
 
 type Hook = Callable[[Mapping[str, Any]], Any]
@@ -62,7 +78,9 @@ class FakeScenario:
     def __init__(self, default: Mapping[str, str] | None = None) -> None:
         self._default = {**DEFAULT_OUTCOMES, **(default or {})}
         self._plans: dict[tuple[str, str], list[str]] = {}
+        self._template: dict[str, list[str]] = {}  # `plan_all`: áp cho ticket chưa có kịch bản riêng
         self._hooks: dict[tuple[str, str], Hook] = {}
+        self._all_hooks: dict[str, Hook] = {}
 
     def plan(self, ticket_id: str, **outcomes: str | list[str]) -> "FakeScenario":
         """Kết quả cho ticket: một chuỗi, hoặc danh sách dùng lần lượt (phần tử cuối lặp lại)."""
@@ -70,19 +88,33 @@ class FakeScenario:
             self._plans[(ticket_id, node)] = [value] if isinstance(value, str) else list(value)
         return self
 
+    def plan_all(self, **outcomes: str | list[str]) -> "FakeScenario":
+        """Như `plan` nhưng cho MỌI ticket (id do API sinh, test không biết trước). Mỗi ticket nhận
+        một bản sao riêng của danh sách."""
+        for node, value in outcomes.items():
+            self._template[node] = [value] if isinstance(value, str) else list(value)
+        return self
+
     def on(self, ticket_id: str, label: str, fn: Hook) -> "FakeScenario":
         self._hooks[(ticket_id, label)] = fn
         return self
 
+    def on_all(self, label: str, fn: Hook) -> "FakeScenario":
+        self._all_hooks[label] = fn
+        return self
+
     def pick(self, state: Mapping[str, Any], node: str) -> str:
-        seq = self._plans.get((state["ticket_id"], node))
+        key = (state["ticket_id"], node)
+        if key not in self._plans and node in self._template:
+            self._plans[key] = list(self._template[node])
+        seq = self._plans.get(key)
         outcome = (seq.pop(0) if len(seq) > 1 else seq[0]) if seq else self._default[node]
         if outcome == "raise":
             raise ValueError(f"lỗi giả tại {node}")  # TC29: exception không lường trước
         return outcome
 
     async def hook(self, state: Mapping[str, Any], label: str) -> None:
-        fn = self._hooks.get((state["ticket_id"], label))
+        fn = self._hooks.get((state["ticket_id"], label)) or self._all_hooks.get(label)
         if fn is not None:
             result = fn(state)
             if inspect.isawaitable(result):
@@ -96,8 +128,16 @@ class NodeDeps:
     executor: Executor
     deadlines: DeadlineStore
     constants: PolicyConstants
+    identity: IdentityReads  # B1: sessions + users.locked_until
+    directory: ToolCaller  # B1: `ad_get_user` qua ToolRegistry (retry, breaker)
+    alerts: AlertSink  # B1: cảnh báo dò mật khẩu (P9 luật 3)
+    lockout: timedelta  # LOCKOUT_MINUTES — B1 suy thời điểm bắt đầu khoá từ `locked_until`
+    tickets: TicketStore  # B20: created_at, số lượt, ghi kết quả cuối một lần
+    escalations: EscalationStore  # B20: hàng đợi L2 (qua effects.once)
+    templates: EscalationTemplates  # B20: thông báo + next_for_l2 theo mã E
     scenario: FakeScenario = field(default_factory=FakeScenario)
-    approver_id: str = "l1-fake"
+    # B15 GIẢ: người duyệt cố định (`FAKE_APPROVER_ID`, chỉ dev/test). None → B15 ném → E9.
+    approver_id: str | None = "l1-fake"
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:
@@ -132,24 +172,19 @@ class LoggingNotifier:
         return f"noop:{ticket_id}"
 
 
-class UnavailableApprovals:
-    """Phase 2 chưa có M6: không ticket nào đi tới B15 qua API (chưa có route ticket)."""
-
-    async def create(
-        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
-    ) -> str:
-        raise NotImplementedError("approvals chưa có trước Phase 4")
-
-    async def notify_approver(self, approval_id: str, approver_id: str) -> str:
-        raise NotImplementedError("approvals chưa có trước Phase 4")
-
-    async def record_result(self, approval_id: str, result: str, at: datetime) -> None:
-        raise NotImplementedError("approvals chưa có trước Phase 4")
-
-
 class RefusingExecutor:
     """Không thực thi gì: B17 thật (credential svc_executor) làm ở Phase 3."""
 
     async def execute(self, ticket_id: str, action: Action | None) -> bool:
         return False
 
+
+
+class UnconfiguredDirectory:
+    """Thiếu SVC_AGENT_TOKEN: không gọi được AD — trả lỗi hệ thống (B1 → E2), không kết luận gì về
+    người dùng. Dùng thay vì để runtime không khởi động được."""
+
+    error = "not_configured: SVC_AGENT_TOKEN"
+
+    async def call(self, name: str, args: Mapping[str, Any], *, caller_step: str) -> ToolResult:
+        return ToolResult(name, None, self.error, 0, False)

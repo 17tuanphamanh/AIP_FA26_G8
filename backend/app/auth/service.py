@@ -3,7 +3,8 @@
 Đăng nhập 8 bước:
  1 giới hạn theo dải IP (lượt thất bại)                → 429
  2 username đang khoá                                   → 401 chung + account_locked(still_locked)
- 3 idp.authenticate: sai → login_failed; đủ ngưỡng → khoá + account_locked(threshold) → 401 chung
+ 3 idp.authenticate: sai → login_failed; đủ ngưỡng → khoá + account_locked(threshold) + 1 dòng
+                    `alerts` (P9 luật 3, idempotent theo người + đợt khoá) → 401 chung
                     AD lỗi → 503 (không đếm)
  4 đồng bộ users (role từ nhóm AD, chuỗi quản lý ≤ 5 cấp) — role đổi → role_changed + phiên cũ chết
  5 disabled/terminated                                  → 401 chung (mọi phiên bị thu hồi)
@@ -37,6 +38,7 @@ from app.auth.models import (
 from app.auth.permissions import permissions_of
 from app.auth.ports import (
     AdUser,
+    AlertSink,
     AuthStore,
     IdentityProvider,
     IdentityUnavailable,
@@ -51,6 +53,7 @@ from app.auth.tokens import (
     new_refresh_token,
 )
 from app.core.clock import Clock
+from app.domain.alerts import bruteforce_alert
 from app.domain.context import Role, role_from_groups
 from app.settings import PolicyConstants, Settings
 
@@ -123,6 +126,7 @@ class AuthService:
         store: AuthStore,
         idp: IdentityProvider,
         sink: SecurityEventSink,
+        alerts: AlertSink,
         clock: Clock,
         signer: TokenSigner,
         cipher: MfaCipher | None,
@@ -131,6 +135,7 @@ class AuthService:
         self.store = store
         self.idp = idp
         self.sink = sink
+        self.alerts = alerts
         self.clock = clock
         self.signer = signer
         self.cipher = cipher
@@ -217,7 +222,8 @@ class AuthService:
     async def _check_threshold(
         self, username: str, user: UserRecord | None, ip: str | None, now: datetime
     ) -> None:
-        """Sau mỗi lần thất bại: đủ MAX_AUTH_FAILURES trong cửa sổ → khoá + account_locked."""
+        """Sau mỗi lần thất bại: đủ MAX_AUTH_FAILURES trong cửa sổ → khoá + account_locked + cảnh báo
+        Trưởng BP (P9 luật 3; khoá cảnh báo tính giống B1 — `domain.alerts.bruteforce_alert`)."""
         failures = await self.store.count_failures(username, now - self.config.failure_window)
         if failures < self.config.max_failures:
             return
@@ -225,6 +231,10 @@ class AuthService:
             await self.store.set_locked_until(user.user_id, now + self.config.lockout)
         await self._event("account_locked", user, username, ip, reason="threshold",
                           failures=failures)  # fmt: skip
+        await self.alerts.raise_once(
+            bruteforce_alert(user_id=user.user_id if user else None, username=username,
+                             lock_start=now, source="login")
+        )  # fmt: skip
 
     async def _event(
         self, event_type: str, user: UserRecord | None, username: str, ip: str | None,

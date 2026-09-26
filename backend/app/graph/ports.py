@@ -1,5 +1,6 @@
-"""Cổng lưu trữ của runtime (P1) — bản SQL ở `app/db/runtime.py`, `app/audit/writer.py`; bản
-in-memory cùng hợp đồng ở `backend/tests/fakes/graph.py` để test graph không cần Postgres.
+"""Cổng lưu trữ của runtime (P1) và phụ thuộc của node thật — bản SQL ở `app/db/runtime.py`,
+`app/db/identity.py`, `app/audit/writer.py`, `app/audit/alerts.py`; bản in-memory cùng hợp đồng ở
+`backend/tests/fakes/graph.py` để test graph không cần Postgres.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -8,9 +9,19 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.approval.store import ApprovalRow
+from app.db.identity import LiveSession
 from app.db.runtime import DueWait, OpenTurn, WaitKind
+from app.db.tickets import NewTicket, TicketRow
+from app.domain.alerts import AlertDraft
+from app.domain.final import FinalSummary
+from app.tools.registry import ToolResult
 
-__all__ = ["DueWait", "OpenTurn", "WaitKind"]  # bản ghi dữ liệu dùng chung với store SQL
+# bản ghi dữ liệu dùng chung với store SQL
+__all__ = [
+    "ApprovalRow", "DueWait", "LiveSession", "NewTicket", "OpenTurn", "TicketRow", "ToolResult",
+    "WaitKind",
+]  # fmt: skip
 
 
 class AuditSink(Protocol):
@@ -65,6 +76,10 @@ class TurnStore(Protocol):
 
     async def is_open(self, turn_id: str) -> bool: ...
 
+    async def bump_recover_attempts(self, turn_id: str) -> int | None:
+        """`recover_attempts + 1` của lượt còn mở, trả giá trị mới; lượt đã đóng → None (2b-Q6)."""
+        ...
+
     async def stale(self, before: datetime, limit: int) -> list[OpenTurn]:
         """Lượt chưa kết thúc (`ended_at IS NULL`) bắt đầu trước `before` (P1 mục 7)."""
         ...
@@ -92,3 +107,79 @@ class TicketLock(Protocol):
 
 class TicketBusy(Exception):
     """Ticket đang bị lượt khác giữ khoá quá `lock_timeout` — lỗi tạm, thử lại chu kỳ sau."""
+
+
+# ---- phụ thuộc của node thật ------------------------------------------------------------------
+
+
+class IdentityReads(Protocol):
+    """B1 (B01 mục 5): phiên còn sống (theo họ token) + khoá do dò mật khẩu (`users.locked_until`)."""
+
+    async def active_session(self, session_id: str, now: datetime) -> LiveSession | None: ...
+
+    async def locked_until(self, user_id: str) -> datetime | None: ...
+
+
+class ToolCaller(Protocol):
+    """`tools.registry.ToolRegistry` khớp theo cấu trúc: lỗi hệ thống ngoài → `ToolResult.error`,
+    không raise (P5 mục 6.1)."""
+
+    async def call(
+        self, name: str, args: Mapping[str, Any], *, caller_step: str
+    ) -> ToolResult: ...
+
+
+class AlertSink(Protocol):
+    """`audit.alerts.AlertWriter` — idempotent theo `(rule_id, subject, window_start)`."""
+
+    async def raise_once(self, draft: AlertDraft) -> bool: ...
+
+
+class TicketReader(Protocol):
+    """Runner dựng state đầu của ticket từ dòng `tickets` (lượt `submit` chạy nền, hoặc worker phục
+    hồi lượt chết trước checkpoint đầu tiên — 2b-3)."""
+
+    async def get(self, ticket_id: str) -> TicketRow | None: ...
+
+
+class TicketStore(TicketReader, Protocol):
+    """`db/tickets.SqlTicketStore` — B20 đọc `created_at`, số lượt, ghi kết quả cuối MỘT lần."""
+
+    async def created_at(self, ticket_id: str) -> datetime: ...
+
+    async def count_turns(self, ticket_id: str) -> int: ...
+
+    async def finalize_once(self, ticket_id: str, summary: FinalSummary) -> FinalSummary:
+        """Ghi nếu `final_state IS NULL`; luôn trả dòng ĐANG CÓ (vừa ghi hoặc từ lần trước)."""
+        ...
+
+
+class EscalationStore(Protocol):
+    """`db/escalations.SqlEscalationStore.create` — chỉ gọi qua `effects.once("escalation_create")`."""
+
+    async def create(
+        self,
+        *,
+        ticket_id: str,
+        exit_code: str,
+        reason_detail: str | None,
+        handoff_note: Mapping[str, Any],
+        is_deny_case: bool,
+        created_at: datetime,
+    ) -> str: ...
+
+
+class TicketRepo(TicketStore, Protocol):
+    """Thêm phần API dùng (2b-3): tạo ticket + lượt `submit` đầu tiên trong MỘT transaction."""
+
+    async def create(self, ticket: NewTicket, *, turn_id: str) -> None: ...
+
+
+class ApprovalRepo(Protocol):
+    """Phần `approval/store.SqlApprovals` mà route duyệt dùng (2b-Q3)."""
+
+    def lock_row(self, approval_id: str) -> AbstractAsyncContextManager[ApprovalRow | None]:
+        """Transaction ngắn, khoá hàng (`FOR UPDATE`) suốt khối `async with`."""
+        ...
+
+    async def get(self, approval_id: str) -> ApprovalRow | None: ...

@@ -54,6 +54,23 @@ def test_every_route_declares_require() -> None:
     assert _unguarded(app) == []
 
 
+TICKET_ROUTES = {  # 2b-3 — mỗi route có đúng permission này (không chỉ "có require nào đó")
+    ("POST", "/api/tickets"): "ticket:create",
+    ("GET", "/api/tickets/{ticket_id}"): "ticket:read:own",
+    ("POST", "/api/tickets/{ticket_id}/messages"): "ticket:message",
+    ("POST", "/api/tickets/{ticket_id}/confirm"): "ticket:confirm",
+    ("POST", "/api/approvals/{approval_id}/decision"): "approval:decide",
+}
+
+
+def test_ticket_and_approval_routes_are_scanned_with_their_permission() -> None:
+    app = create_app(auth_settings(), health_checks={})
+    found = {(m, c.path): c.requirements for c in route_auth(app) for m in c.methods}
+    for key, perm in TICKET_ROUTES.items():
+        assert key in found, f"quét không thấy {key}"
+        assert found[key] == ((perm, None, False),), key
+
+
 def test_exempt_routes_really_have_no_require() -> None:
     # Miễn có chủ đích, không phải vì test quét sót.
     app = create_app(auth_settings(), health_checks={})

@@ -240,4 +240,7 @@ class InMemoryAuthStore:
         return _utc(started)
 
 
-EPOCH = datetime(2026, 9, 26, 8, 0, tzinfo=UTC)
+# Mốc FakeClock của test auth. PHẢI nằm xa trong tương lai: cookie jar của httpx/TestClient bỏ cookie
+# theo GIỜ THẬT, còn cookie refresh hết hạn ở EPOCH + 8 giờ. Mốc cũ (26/09/2026 08:00 UTC) làm 8 test
+# refresh/CSRF đỏ từ 16:00 UTC cùng ngày — mọi phép kiểm của app (JWT, phiên, khoá) vẫn theo FakeClock.
+EPOCH = datetime(2099, 9, 26, 8, 0, tzinfo=UTC)

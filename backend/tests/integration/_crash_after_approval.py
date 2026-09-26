@@ -11,7 +11,7 @@ import os
 import sys
 
 from app.core.clock import FakeClock
-from tests.integration.graph_pg import open_pg_runtime
+from tests.integration.graph_pg import SESSION, open_pg_runtime
 
 EXIT_CODE = 17
 
@@ -19,7 +19,7 @@ EXIT_CODE = 17
 async def main(rw_url: str, ticket_id: str) -> None:
     async with open_pg_runtime(rw_url, clock=FakeClock()) as rt:
         rt.scenario.on(ticket_id, "after_approval_create", lambda _: os._exit(EXIT_CODE))
-        await rt.runner.submit(ticket_id, session_id=None, redacted_request="yêu cầu")
+        await rt.runner.submit(ticket_id, session_id=SESSION, redacted_request="yêu cầu")
     sys.exit(0)  # không được tới đây
 
 

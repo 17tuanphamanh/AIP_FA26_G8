@@ -178,6 +178,43 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 
 **Còn chặn:** không còn mục nào chặn việc viết code. N1 (chọn model) và N2 (VRAM) chỉ chặn mốc G.
 
+## 4.1. Quyết định khi hiện thực Phase 2b (26/09/2026)
+
+Đánh số `2b-Q…` để không lẫn với Q1–Q14 ở mục 2. Chi tiết và lý do nằm ở file đặc tả được trỏ tới.
+
+| Mã | Câu hỏi | Chốt | Ở đâu |
+|---|---|---|---|
+| 2b-Q1 | Ai ghi cảnh báo dò mật khẩu? | Một writer idempotent `AlertWriter.raise_once`; auth ghi lúc khóa, B1 ghi lại cùng khóa. Khóa `(rule_id, subject, window_start)`, `subject` không DEFAULT (migration 0004). Cảnh báo E0/E7/E9 → M9 Phase 7 | P7 2.12, P9 mục 6, B01 5.1 |
+| 2b-Q2 | Privacy guard ở `POST /api/tickets` trước Phase 3 | Port `PrivacyGuard`; 2b gắn `NotRedactingGuard`, **chỉ nạp khi `APP_ENV` ∈ {dev, test}**, env khác → app từ chối khởi động | B02 (Phase 3 thay adapter) |
+| 2b-Q3 | Route duyệt trong 2b? | Có: `SqlApprovals` vào `app/approval/store.py`, `POST /api/approvals/{id}/decision` (`approval:decide` + `can_decide_approval`), đi qua `deliver_event`. `FAKE_APPROVER_ID` chỉ ở dev/test (fail-closed như 2b-Q2) | B15-B16 |
+| 2b-Q4 | `is_deny_case` | Mọi E5 | B20 5.1 |
+| 2b-Q5 | Hai `close_reason` do L2 sinh | Phase 7; "ghi một lần" theo từng cột | B20 5.1 |
+| 2b-Q6 | Exception ở B20 | Ném tiếp, worker chạy lại; tối đa 3 lần rồi `finalize_failed_permanent` | B20 5.1 |
+| 2b-Q7 | Mặc định còn lại | `role_unmappable` → E2; AD 404 → `invalid_credentials`; phiên theo họ token; TicketBusy (đang giữ khóa) → 503 + Retry-After, lượt đã xong mà trạng thái không còn chờ → 409; non-owner đọc được → 403, không đọc được → 404; `wake_parent` sau khi nhả khóa | B01 5.1, B20 5.1 |
+
+**Phase 2b-2 (26/09/2026):**
+
+| Mã | Câu hỏi | Chốt | Ở đâu |
+|---|---|---|---|
+| 2b-QA | `resolution_path` lấy từ đâu? | B20 suy ra tại một chỗ; `goto()`/boundary chặn key ngoài `TicketState` (LangGraph bỏ im lặng key lạ) | B20 5.1, P1 5.1, B10/B17 1.4 |
+| 2b-QB | Đếm "3 lần" B20 lỗi bằng gì? | `turns.recover_attempts` (migration 0005), tăng **trước** khi recover; không đếm span lỗi vì process bị giết không kịp ghi. Vượt 3: B20 → `finalize_failed_permanent`; node khác → E9 `recover_exhausted` | P7 2.13, P1 mục 7, B20 5.1 |
+| 2b-QC | Thứ tự trong B20 | `finalize_once` trước, điểm log 8 từ dòng đã lưu | B20 5.1 |
+| 2b-QD | Mặc định còn lại | Route `/api/escalations/queue`; `handoff_note.request` chỉ từ `redacted_request`; `closed_at` ở B20 cho mọi trạng thái cuối; 2b-3: `created_at` lấy từ `Clock` của app | B20 5.1 |
+
+**Phase 2b-3 (26/09/2026):**
+
+| Mã | Câu hỏi | Chốt | Ở đâu |
+|---|---|---|---|
+| 2b-3-Q1 | Sự kiện qua API trả gì? | 202; khóa ticket lấy trong request rồi giao cho task nền (try/finally + cờ "đã giao") | P1 mục 7 |
+| 2b-3-Q2 | `mark_late` làm gì với phiếu? | **A:** không đổi `approvals.status`, chỉ audit `late_event` (`reason = expired \| already_decided`); mọi đường 409 để lại đúng 1 `late_event`; bằng hạn = muộn | B15-B16 5.1 |
+| 2b-3-Q3 | `APP_ENV` | Bắt buộc khai báo trong `.env`; compose `${APP_ENV:?…}`, không mặc định | 01 lịch sử v1.5 |
+| 2b-3-Q4 | `FAKE_APPROVER_ID` cần dòng `users` | Không seed DB app; thiếu → B15 giả → E9; 2b-4 `gate2.py` đăng nhập l1 trước | B15-B16 5.1 |
+| 2b-3-Q5 | Giới hạn body | 64 KB, kiểm **trước** quyền, đếm byte đọc thật (chunked cũng bị chặn) → 413 | B15-B16 5.1 |
+| 2b-3-QA | Thứ tự kiểm ở messages/confirm | 413 → quyền → tải ticket → không đọc được 404 → không phải chủ 403 → ticket con 409 → body 422 → guard → `start_event` (route; worker dùng `deliver_event`); 403 và 404-có-thật ghi 1 `permission_denied`, guard không được gọi | P6, P1 6.1 |
+| 2b-3-QB | `GET /api/tickets/{id}` | Response model khai báo; có `final_state` thì `status` từ `tickets`, còn mở từ checkpoint; `waiting_for` chỉ từ checkpoint; đọc checkpoint lỗi → 503 | P1 mục 7 |
+| 2b-3-QC | Chết trước checkpoint đầu | Recover (đang giữ khóa) chạy state đầu dựng từ dòng `tickets` như `run_new`, giữ `turn_id` — không gọi `run_new` (tự khóa chết); quá 3 lần → E9 `recover_exhausted` qua B20 (không để ticket thiếu `final_state`) | P1 mục 7 |
+| 2b-3-QD | Runtime lỗi lúc khởi động | Route ticket/duyệt 503; `/api/health` 200 + `"runtime": "up\|down"` | P1 mục 10 |
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -187,3 +224,6 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 25/09/2026 | Sửa bảng hỏng: dòng Q12 (7 cột, gắn D-31), đưa D-32/D-33 về bảng D |
 | 25/09/2026 | Bỏ vòng hỏi GVHD: Q1–Q14 thành quyết định của nhóm (xây trước / tối ưu sau), chỉ báo cáo. Chốt N1 (đa provider, trần 1 triệu đ), N2 (3 máy gaming + 1 Mac, chờ VRAM), N3 (70/20/10), N4 (bảng R01–R20, R22 → R17), N5 (Kaggle + Colab, fp32) |
 | 25/09/2026 | Chốt D-01…D-33 theo đặc tả; thêm chế độ "code trước, gắn API sau" (mục 4, mốc G); N1/N2 chỉ chặn mốc G |
+| 26/09/2026 | Mục 4.1: quyết định 2b-Q1…2b-Q7 của Phase 2b |
+| 26/09/2026 | Mục 4.1: quyết định 2b-QA…2b-QD của Phase 2b-2 |
+| 26/09/2026 | Mục 4.1: quyết định 2b-3-Q1…Q5, 2b-3-QA…QD của Phase 2b-3 |
