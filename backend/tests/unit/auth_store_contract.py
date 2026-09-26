@@ -1,0 +1,228 @@
+"""Bộ test hợp đồng AuthStore — CHUNG cho bản in-memory (unit, `test_auth_store_memory.py`) và bản
+SQL (integration, `test_auth_store_sql.py`), để bản giả không lệch bản thật.
+
+Lớp con cung cấp fixture `env` → `StoreEnv`. Tên lớp không bắt đầu bằng `Test` nên pytest không
+thu thập lớp gốc. Mỗi test dùng id ngẫu nhiên — DB integration dùng chung giữa các test.
+"""
+
+import asyncio
+import dataclasses
+import uuid
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
+
+import pytest
+from app.auth.models import SessionRecord, UserSync
+from app.auth.ports import AuthStore, SecurityEventSink
+from app.auth.tokens import hash_refresh_token, new_refresh_token
+from app.core.clock import FakeClock
+
+
+@dataclass
+class StoreEnv:
+    store: AuthStore
+    sink: SecurityEventSink
+    clock: FakeClock
+
+
+def _uid(prefix: str = "u") -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+def _sync(env: StoreEnv, user_id: str, *, role: Any = "employee", manager_id: str | None = None,
+          status: str = "active") -> UserSync:  # fmt: skip
+    return UserSync(user_id, f"name-{user_id}", "Tên", role, "it", manager_id, status, None, False,
+                    env.clock.now())  # fmt: skip
+
+
+def _session(env: StoreEnv, user_id: str, family: uuid.UUID | None = None,
+             created_offset: timedelta = timedelta()) -> SessionRecord:  # fmt: skip
+    now = env.clock.now() + created_offset
+    return SessionRecord(
+        session_id=uuid.uuid4().hex, user_id=user_id, token_family_id=family or uuid.uuid4(),
+        refresh_token_hash=hash_refresh_token(new_refresh_token()), created_at=now,
+        expires_at=now + timedelta(hours=8), ip_prefix="203.0.113.0/24",
+    )  # fmt: skip
+
+
+HCM = ZoneInfo("Asia/Ho_Chi_Minh")  # múi giờ khác UTC — đầu vào cố ý không chuẩn
+
+
+def assert_utc(value: object) -> None:
+    """Mọi datetime trả về phải có tzinfo ĐÚNG là timezone.utc (không chỉ "tương đương UTC" như
+    ZoneInfo("Etc/UTC") của psycopg). Duyệt mọi trường của dataclass để trường mới cũng bị soi."""
+    if value is None:
+        return
+    if isinstance(value, datetime):
+        assert value.tzinfo is UTC, f"tzinfo={value.tzinfo!r}, cần timezone.utc"
+        return
+    if isinstance(value, tuple):
+        for item in value:
+            assert_utc(item)
+        return
+    assert dataclasses.is_dataclass(value), type(value)
+    for f in dataclasses.fields(value):
+        field_value = getattr(value, f.name)
+        if isinstance(field_value, datetime):
+            assert_utc(field_value)
+
+
+class AuthStoreContract:
+    @pytest.mark.asyncio
+    async def test_every_returned_datetime_is_timezone_utc(self, env: StoreEnv) -> None:
+        uid = _uid()
+        # upsert trả về
+        assert_utc(await env.store.upsert_user(_sync(env, uid)))
+        until = env.clock.now().astimezone(HCM) + timedelta(minutes=15)
+        await env.store.set_locked_until(uid, until)
+        for user in (
+            await env.store.get_user(uid),
+            await env.store.get_user_by_username(f"name-{uid}"),
+            (await env.store.upsert_user(_sync(env, uid)))[0],
+        ):
+            assert user is not None and user.locked_until == until  # cùng thời điểm
+            assert_utc(user)
+
+        s = _session(env, uid)
+        s = replace(s, created_at=s.created_at.astimezone(HCM), expires_at=s.expires_at.astimezone(HCM))
+        await env.store.create_session(s)
+        for got in (await env.store.get_session(s.session_id),
+                    await env.store.get_session_by_refresh_hash(s.refresh_token_hash)):  # fmt: skip
+            assert got is not None and (got.created_at, got.expires_at) == (s.created_at, s.expires_at)
+            assert_utc(got)
+
+        new = _session(env, uid, s.token_family_id, created_offset=timedelta(minutes=5))
+        new = replace(new, created_at=new.created_at.astimezone(HCM))
+        now_hcm = env.clock.now().astimezone(HCM)
+        assert await env.store.rotate_session(s.session_id, new, now_hcm)
+        for sid in (s.session_id, new.session_id):
+            assert_utc(await env.store.get_session(sid))
+        await env.store.revoke_session(new.session_id, "logout", now_hcm)
+        revoked = await env.store.get_session(new.session_id)
+        assert revoked is not None and revoked.revoked_at == now_hcm
+        assert_utc(revoked)
+
+        started = await env.store.login_started_at(new.session_id)
+        assert started == s.created_at
+        assert_utc(started)
+
+    @pytest.mark.asyncio
+    async def test_upsert_insert_then_update_returns_previous_role(self, env: StoreEnv) -> None:
+        uid = _uid()
+        user, previous = await env.store.upsert_user(_sync(env, uid))
+        assert previous is None and user.role == "employee" and user.token_version == 0
+        user, previous = await env.store.upsert_user(_sync(env, uid, role="l1"))
+        assert previous == "employee" and user.role == "l1"
+        by_name = await env.store.get_user_by_username(f"name-{uid}")
+        assert by_name is not None and by_name.user_id == uid
+
+    @pytest.mark.asyncio
+    async def test_upsert_keeps_token_version_lock_and_mfa(self, env: StoreEnv) -> None:
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        assert await env.store.bump_token_version(uid) == 1
+        until = env.clock.now() + timedelta(minutes=15)
+        await env.store.set_locked_until(uid, until)
+        await env.store.set_mfa_secret(uid, b"\x00\x01bi-mat")
+        user, _ = await env.store.upsert_user(_sync(env, uid, status="probation"))
+        assert (user.token_version, user.locked_until, user.mfa_secret_enc) == (1, until, b"\x00\x01bi-mat")
+        assert user.employment_status == "probation"
+
+    @pytest.mark.asyncio
+    async def test_manager_fk_enforced(self, env: StoreEnv) -> None:
+        with pytest.raises(Exception):  # noqa: B017 — FK: IntegrityError (SQL) / ValueError (giả)
+            await env.store.upsert_user(_sync(env, _uid(), manager_id=_uid("khong-co")))
+        boss = _uid("boss")
+        await env.store.upsert_user(_sync(env, boss))
+        user, _ = await env.store.upsert_user(_sync(env, _uid(), manager_id=boss))
+        assert user.manager_id == boss
+
+    @pytest.mark.asyncio
+    async def test_count_failures_uses_auth_failures_only(self, env: StoreEnv) -> None:
+        name, ip = _uid("name"), f"10.{uuid.uuid4().int % 250}.{uuid.uuid4().int % 250}.0/24"
+        since = env.clock.now()
+        env.clock.advance(timedelta(seconds=1))
+        for event in ("login_failed", "mfa_failed", "login_success", "account_locked"):
+            await env.sink.record(event, username_attempted=name, ip_prefix=ip)
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        await env.sink.record("mfa_enrolled", user_id=uid, username_attempted=name,
+                              detail={"by": "ops", "reason": "x"})  # fmt: skip
+        await env.sink.record("mfa_reset", user_id=uid, username_attempted=name, ip_prefix=ip,
+                              detail={"by": "ops", "reason": "x"})  # fmt: skip
+        assert await env.store.count_failures(name, since) == 2  # chỉ login_failed + mfa_failed
+        assert await env.store.count_ip_failures(ip, since) == 2
+        assert await env.store.count_failures(name, env.clock.now()) == 0  # "sau since", không bằng
+
+    @pytest.mark.asyncio
+    async def test_session_lookup_and_revoke(self, env: StoreEnv) -> None:
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        s = _session(env, uid)
+        await env.store.create_session(s)
+        assert await env.store.get_session(s.session_id) == s
+        assert await env.store.get_session_by_refresh_hash(s.refresh_token_hash) == s
+        await env.store.revoke_session(s.session_id, "logout", env.clock.now())
+        got = await env.store.get_session(s.session_id)
+        assert got is not None and got.revoke_reason == "logout" and not got.usable(env.clock.now())
+        # thu hồi lần 2 không ghi đè lý do cũ
+        await env.store.revoke_session(s.session_id, "admin", env.clock.now())
+        got = await env.store.get_session(s.session_id)
+        assert got is not None and got.revoke_reason == "logout"
+
+    @pytest.mark.asyncio
+    async def test_rotate_is_atomic_once(self, env: StoreEnv) -> None:
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        old = _session(env, uid)
+        await env.store.create_session(old)
+        a, b = _session(env, uid, old.token_family_id), _session(env, uid, old.token_family_id)
+        results = await asyncio.gather(
+            env.store.rotate_session(old.session_id, a, env.clock.now()),
+            env.store.rotate_session(old.session_id, b, env.clock.now()),
+        )
+        assert sorted(results) == [False, True]
+        winner = a if results[0] else b
+        loser = b if results[0] else a
+        assert await env.store.get_session(winner.session_id) is not None
+        assert await env.store.get_session(loser.session_id) is None
+        rotated = await env.store.get_session(old.session_id)
+        assert rotated is not None and rotated.revoke_reason == "rotated"
+
+    @pytest.mark.asyncio
+    async def test_revoke_family_and_user(self, env: StoreEnv) -> None:
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        fam = uuid.uuid4()
+        s1, s2, other = _session(env, uid, fam), _session(env, uid, fam), _session(env, uid)
+        for s in (s1, s2, other):
+            await env.store.create_session(s)
+        assert await env.store.revoke_family(fam, "reuse_detected", env.clock.now()) == 2
+        still = await env.store.get_session(other.session_id)
+        assert still is not None and still.revoked_at is None
+        assert await env.store.revoke_user_sessions(uid, "user_disabled", env.clock.now()) == 1
+        assert await env.store.revoke_user_sessions(uid, "user_disabled", env.clock.now()) == 0
+
+    @pytest.mark.asyncio
+    async def test_login_started_at_is_min_of_family(self, env: StoreEnv) -> None:
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        first = _session(env, uid)
+        later = _session(env, uid, first.token_family_id, created_offset=timedelta(hours=2))
+        await env.store.create_session(first)
+        await env.store.create_session(later)
+        assert await env.store.login_started_at(later.session_id) == first.created_at
+        assert await env.store.login_started_at("khong-co") is None
+
+    @pytest.mark.asyncio
+    async def test_duplicate_refresh_hash_rejected(self, env: StoreEnv) -> None:
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        s = _session(env, uid)
+        await env.store.create_session(s)
+        dup = SessionRecord(uuid.uuid4().hex, uid, uuid.uuid4(), s.refresh_token_hash, s.created_at,
+                            s.expires_at)  # fmt: skip
+        with pytest.raises(Exception):  # noqa: B017 — UNIQUE refresh_token_hash
+            await env.store.create_session(dup)

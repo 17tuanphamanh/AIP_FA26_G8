@@ -1,0 +1,77 @@
+#!/bin/bash
+# Chặn commit khi phần đã stage có bí mật (gitleaks), hoặc khi test đỏ.
+#
+# Đây là hook của GIT, không phải của Claude Code. Đặt ở tầng này vì:
+#   - Hook PreToolUse chỉ thấy chuỗi lệnh và chỉ tồn tại trong phiên Claude.
+#     Người gõ tay trong Terminal, hay dùng công cụ khác, thì không ai gác.
+#   - .githooks/ nằm trong repo nên đồng đội clone về là có. Hook trong
+#     .git/hooks/ thì không bao giờ đi theo repo được.
+#
+# Cài (mỗi người làm MỘT LẦN sau khi clone):
+#   git config core.hooksPath .githooks
+#
+# Cần cố tình bỏ qua:  git commit --no-verify
+set -u
+
+repo=$(git rev-parse --show-toplevel) || exit 1
+cd "$repo" || exit 1
+
+# Soát bí mật TRƯỚC mọi thứ khác, và với MỌI commit (kể cả chỉ đổi .md): khóa lọt
+# vào một file tài liệu cũng lộ y như lọt vào code. `gitleaks detect` trong
+# `make lint` chỉ quét lịch sử — tới lúc đó bí mật đã nằm trong commit rồi.
+# Thiếu gitleaks thì chặn, giống khi thiếu uv — không im lặng cho qua.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "Không thấy lệnh gitleaks — không soát được bí mật trong phần đã stage." >&2
+  echo "Cài: brew install gitleaks (macOS) hoặc xem https://github.com/gitleaks/gitleaks#installing" >&2
+  exit 1
+fi
+if ! gitleaks git --pre-commit --staged --redact --no-banner --verbose; then
+  echo "gitleaks thấy chuỗi giống bí mật trong phần đã stage — gỡ ra rồi hãy commit." >&2
+  echo "Bí mật thật thì để trong .env (đã gitignore). Báo nhầm thì thêm fingerprint vào .gitleaksignore." >&2
+  exit 1
+fi
+
+# Lấy HỢP của hai tập: cái đã stage, và cái đang bẩn trong cây làm việc.
+# Vì sao phải là hợp: `git commit -a` gom cả file bẩn chưa stage. Bản cũ chỉ
+# ngó --cached, nên khi đã stage một file .md trong lúc vài file .py đang bẩn
+# thì hook thấy danh sách toàn .md rồi bỏ qua test. Đã xảy ra thật 22/09/2026.
+files=$(
+  git diff --cached --name-only
+  git diff --name-only HEAD
+)
+
+# .py đổi thì phải test backend. config/prompts/* và config/policy.json cũng vậy:
+# prompt và bảng luật là thứ quyết định hành vi agent — sửa chúng là đổi hành vi,
+# không phải sửa tài liệu.
+run_backend=no
+printf '%s\n' "$files" | grep -qE '\.py$|^config/prompts/|^config/policy\.json$' && run_backend=yes
+# mock_services/ đổi (code, seed.json, …) thì chạy test mock. Mock là package `app`
+# riêng → pytest riêng với pythonpath của nó (như `make test`).
+run_mock=no
+printf '%s\n' "$files" | grep -qE '^mock_services/' && run_mock=yes
+[ "$run_backend" = yes ] || [ "$run_mock" = yes ] || exit 0
+
+# Thiếu môi trường thì nói thẳng và chặn, đừng để pytest hỏng rồi báo "test đỏ"
+# sai sự thật. Git client dạng GUI hay chạy hook với PATH rút gọn — không thấy uv
+# là chặn, không cho qua.
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Không thấy lệnh uv — chưa dựng môi trường, không soát được test." >&2
+  echo "Cài uv (https://docs.astral.sh/uv/) rồi chạy: uv sync" >&2
+  exit 1
+fi
+if [ ! -x .venv/bin/python ]; then
+  echo "Không thấy .venv/bin/python — chưa dựng môi trường, không soát được test." >&2
+  echo "Dựng bằng: uv sync" >&2
+  exit 1
+fi
+
+# --locked: pyproject.toml đổi mà uv.lock chưa cập nhật thì chặn, không tự sửa .venv lúc commit.
+if [ "$run_backend" = yes ] && ! uv run --locked pytest backend/tests/unit -q; then
+  echo "Test đỏ — sửa xong rồi hãy commit." >&2
+  exit 1
+fi
+if [ "$run_mock" = yes ] && ! uv run --locked pytest mock_services/tests -o pythonpath=mock_services -q; then
+  echo "Test mock đỏ — sửa xong rồi hãy commit." >&2
+  exit 1
+fi
+exit 0

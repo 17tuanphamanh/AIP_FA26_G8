@@ -32,8 +32,12 @@ data/*
 *.ckpt
 *.safetensors
 *.csv
+!eval/reports/**/*.csv
 *.parquet
 *.zip
+*.onnx
+training/data/
+training/runs/
 
 # ket qua chay
 outputs/
@@ -42,3 +46,6 @@ logs/
 
 # tai lieu ca nhan, khong dua vao repo nhom
 LUAT_GIT.md
+
+# quyen Claude Code rieng tung nguoi - KHONG commit
+.claude/settings.local.json

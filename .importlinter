@@ -1,0 +1,91 @@
+# 5 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3. Hợp đồng thứ 6
+# ("node không gọi thẳng side effect") là test AST: backend/tests/unit/test_side_effects_ast.py.
+# Chạy: PYTHONPATH=backend uv run lint-imports   (hoặc make lint)
+
+[importlinter]
+root_package = app
+include_external_packages = False
+
+# 1. M5 không đọc câu người dùng [Chốt 6.2]. Phần "không đọc raw_request" import-linter
+#    không bắt được → test AST ở backend/tests/unit/test_policy_engine_signature.py.
+[importlinter:contract:risk-no-user-text]
+name = risk khong import guard, api
+type = forbidden
+source_modules =
+    app.risk
+forbidden_modules =
+    app.guard
+    app.api
+
+# 2. M9 chỉ đọc [Chốt 17.9.1]. Cấm app.graph là đã gồm app.graph.goto.
+[importlinter:contract:monitor-read-only]
+name = monitor khong import graph, executor, tools
+type = forbidden
+source_modules =
+    app.monitor
+forbidden_modules =
+    app.graph
+    app.executor
+    app.tools
+
+# 3. B17 là điểm ghi duy nhất [Chốt]: chỉ executor được import adapter ghi.
+#    app.tools không nằm trong nguồn: registry khai báo tool ghi (P5).
+#    import-linter không nhận wildcard một phần tên (`*_write`) → liệt kê tường minh theo
+#    4 hệ thống ngoài của P5. Thêm adapter ghi mới thì thêm dòng ở đây — test
+#    backend/tests/unit/test_write_adapters_listed.py đỏ nếu quên.
+[importlinter:contract:write-adapters-only-executor]
+name = chi executor import tools.adapters.*_write
+type = forbidden
+source_modules =
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.core
+    app.db
+    app.domain
+    app.eval
+    app.graph
+    app.guard
+    app.llm
+    app.monitor
+    app.notify
+    app.rag
+    app.risk
+forbidden_modules =
+    app.tools.adapters.ad_write
+    app.tools.adapters.vpn_write
+    app.tools.adapters.software_write
+    app.tools.adapters.fileserver_write
+
+# 4. Lớp lõi thuần: domain, core không import module nghiệp vụ.
+[importlinter:contract:core-domain-pure]
+name = domain, core khong import module nghiep vu
+type = forbidden
+source_modules =
+    app.core
+    app.domain
+forbidden_modules =
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.db
+    app.eval
+    app.executor
+    app.graph
+    app.guard
+    app.llm
+    app.monitor
+    app.notify
+    app.rag
+    app.risk
+    app.tools
+
+# 5. Nhánh không gọi thẳng nhánh khác — mọi chuyển trạng thái qua goto() và routing.
+[importlinter:contract:nodes-independent]
+name = graph.nodes.* khong import lan nhau
+type = independence
+modules =
+    app.graph.nodes.*
+
