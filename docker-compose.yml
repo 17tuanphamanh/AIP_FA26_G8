@@ -74,6 +74,14 @@ services:
     pull_policy: never
     command: ["python", "-m", "app.worker"]
     environment: *backend-env
+    healthcheck:
+      # Worker ghi heartbeat mỗi 10 giây (app/heartbeat.py); cũ hơn 60 giây / không có file → thoát 1.
+      # retries 1: một lần kiểm hỏng là unhealthy — ngưỡng 60 giây đã nằm trong chính lệnh kiểm.
+      test: ["CMD", "python", "-m", "app.heartbeat"]
+      interval: 5s
+      timeout: 5s
+      retries: 1
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,34 @@
+"""Node chờ `S_CONFIRMING` — B19 (node GIẢ, Phase 2a; B19 thật ở Phase 3). Không side effect trước
+`interrupt()`. Im lặng 48 giờ → tự đóng `resolved_auto_timeout_48h` [Chốt]."""
+
+from typing import Any
+
+from langgraph.types import interrupt
+
+from app.domain.exit_codes import CloseReason, ExitCode
+from app.domain.states import S_ESCALATED, S_RESOLVED
+from app.graph.fakes import NodeDeps
+from app.graph.goto import goto
+from app.graph.tracing import NodeFn
+
+
+def make(deps: NodeDeps) -> NodeFn:
+    async def confirm_wait(state: Any) -> dict[str, Any]:
+        ev = interrupt({"wait": "confirm"})
+        if ev["kind"] == "timeout":
+            return await goto(
+                state, S_RESOLVED, next_node="b20_audit", step="B19",
+                event="auto_closed_no_response_48h",
+                close_reason=CloseReason.RESOLVED_AUTO_TIMEOUT_48H.value,
+            )  # fmt: skip
+        if ev["kind"] == "confirmed":
+            return await goto(
+                state, S_RESOLVED, next_node="b20_audit", step="B19", event="user_confirmed",
+                close_reason=CloseReason.RESOLVED_USER_CONFIRMED.value,
+            )  # fmt: skip
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B19", event="user_reported_unresolved",
+            exit_code=ExitCode.E8.value,
+        )  # fmt: skip
+
+    return confirm_wait

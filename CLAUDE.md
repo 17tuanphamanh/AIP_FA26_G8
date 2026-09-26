@@ -24,6 +24,10 @@ Lint : make lint
 - **Báo cáo trung thực.** Test đỏ thì nói đỏ kèm output. Bỏ qua bước nào thì nói rõ.
   Đừng viết "đã xong" cho phần chưa chạy thử.
 - **Không commit, không push trừ khi được bảo.** Commit không để dấu vết AI.
+- **Sau mỗi lần push, theo dõi CI:** `gh run list --branch <nhánh> -L 1` lấy id, rồi
+  `gh run watch <id>`, báo xanh/đỏ. Đỏ thì `gh run view <id> --log-failed` và báo
+  nguyên nhân. Chỉ dùng lệnh `gh` chỉ đọc (`run list/view/watch`). Lệnh `gh` bị sandbox
+  chặn (mạng/keychain) → báo người, không tự nới quyền.
 
 ## Ranh giới
 

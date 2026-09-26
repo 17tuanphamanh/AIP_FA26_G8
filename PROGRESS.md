@@ -8,7 +8,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **Phase 1 đã đóng (26/09/2026).** Phase 2 (P1, B01, B20) chưa mở — chờ giao task |
+| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a (runtime) **đã duyệt** (26/09/2026), đã commit; chặng 2b chưa bắt đầu (việc cần làm ở mục "Chặng 2b — việc cần làm"). Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
 | Cập nhật | 26/09/2026 |
 
@@ -112,8 +112,9 @@ Kế hoạch đã duyệt chia 2 chặng: chặng 1 = mock (P5 mục 7) + `backe
   backend quyết (P6 mục 4 bước 5).
 
 **Câu hỏi mở cho Phase 2:**
-- Worker không có `SVC_EXECUTOR_TOKEN`, nhưng `runner.recover()` (P1 mục 7) chạy trong worker có thể
-  đi tới B17 → hiện sẽ ra E7. Chưa giải ở 1c.
+- ~~Worker không có `SVC_EXECUTOR_TOKEN`, nhưng `runner.recover()` (P1 mục 7) chạy trong worker có thể
+  đi tới B17~~ — **đã chốt + hiện thực ở Phase 2a**: recover ở worker không chạy B17, chuyển E7 "thực thi
+  bị gián đoạn" (mục Phase 2a, quyết định 4).
 
 ## Phase 1c — chặng 2: auth (P6) — kế hoạch đã duyệt (26/09/2026; đã làm — kết quả ở mục ngay dưới)
 
@@ -315,8 +316,160 @@ hoặc giá trị trông như JWT. Refresh không tính là đăng nhập lại 
 
 **Đóng Phase 1 (26/09/2026):** mọi mục tự động của cổng xanh (bảng trên). Còn mở:
 - Thủ công (thuộc cổng 1): người gọi tay 12 tool với seed, đối chiếu `mock_services/README.md` — có chặn Phase 2 hay không do người quyết.
-- Chưa commit chặng 2 — chờ người bảo.
+  **→ Người quyết (26/09/2026): không chặn Phase 2; đây là mục duy nhất còn lại của Phase 1.**
+- ~~Chưa commit chặng 2~~ — đã commit `62b0d0e`.
+- **CI GitHub xanh:** run `36195560365` (commit `62b0d0e`, 26/09/2026) — Phase 1 đóng, chỉ còn mục "người khác gọi tay 12 tool".
 - P6 mục 11: D-01 (TC24/TC25 viết lại) cần nhóm xác nhận và báo GVHD.
+
+## Phase 2 — chặng 2a: runtime LangGraph (P1) — 26/09/2026, đã duyệt
+
+Kế hoạch Plan Mode đã duyệt (chia 2 chặng; 2b = B1 thật, B20 thật, dịch vụ ticket tối thiểu — chỉ làm
+sau khi người duyệt 2a). Không LLM, không đọc `.env`, **không commit**.
+
+**Đã làm:**
+- `backend/app/graph/`: `context.py` (RunContext qua contextvar — `turn_id` ở đây là nguồn khoá
+  idempotent), `goto.py`, `effects.py`, `boundary.py`, `tracing.py`, `routing.py` (`ROUTES`, `WAIT_NODES`),
+  `builder.py` (`build_graph`, `fake_nodes`), `checkpoint.py` (serde có allowlist kiểu Pydantic,
+  `open_postgres_saver`), `lock.py` (`PgTicketLock`), `runner.py`, `late_event.py` (`deliver_event`,
+  `wake_parent`, `LateEvent` 409), `worker_jobs.py`, `ports.py`, `fakes.py` (phụ thuộc của node giả),
+  `wiring.py`; `nodes/` 16 node **giả** (bảng dưới).
+- `audit/writer.py` (`AuditWriter`, `check_audit_row`); `db/runtime.py` (store SQL `side_effects`, `turns`,
+  `spans`, `wait_deadlines` + đọc hạn `approvals`, `current_tx()`).
+- Migration `0003_langgraph_checkpoint`: `PostgresSaver.setup()` trên kết nối autocommit riêng dưới
+  `app_migrate` (setup có `CREATE INDEX CONCURRENTLY`), `GRANT` CRUD 4 bảng checkpoint cho `app_rw`;
+  downgrade DROP 4 bảng. `alembic/env.py` bỏ qua bảng checkpoint khi so metadata.
+- `domain/ticket_state.py`: thêm `escalation_note`, `escalation_reason_detail` (D-27), `aggregate_status`
+  (D-30) — **đã kiểm: LangGraph 1.2 bỏ IM LẶNG key không khai báo trong state**, thiếu thì ghi chú E9 mất.
+- `core/hashing.py`: `sha256_key`. `settings.py`: `graph_recursion_limit` 60, `checkpoint_pool_size`,
+  4 tham số worker (quét hạn 15 giây, quét lượt dở 60 giây, lượt mở quá 120 giây, batch 200).
+- `worker.py`: APScheduler chạy 2 job + recover một lần lúc khởi động; runner `can_execute=False`.
+
+**Node (tên theo mã giả các file nhánh; bước con nằm trong node như đặc tả):** `b01_identity` (B1),
+`b02_screen` (B2), `b03_classify` (B3–B5), `b06_diagnose` (B6–B7), `b08_retrieve` (B8–B9), `b10_route`
+(B10), `b11_slots` + `clarify_wait` (B11), `b12_assess` (B12–B14), `b15_prepare_approval` (B15),
+`approval_wait` (B16), `b17_execute` (B17–B18), `confirm_wait` (B19), `parent_wait` + `parent_reply_wait`
+(B5 cha, D-31), `b20_audit` (B20, giả: chỉ kết thúc thread). Kết quả của node giả chọn qua `FakeScenario`
+(mặc định: đường vui dừng ở chờ duyệt); việc trước khi chờ nằm ở node đứng trước, qua `effects.once`.
+
+**Quyết định khi hiện thực (trong phạm vi kế hoạch đã duyệt):**
+1. `goto` là `async` (ghi DB). Cấm 4 đầy đủ: sang `S_RESOLVED` thì `AuditSink.record` kiểm dòng audit
+   (khoá idempotent) tồn tại **trong cùng transaction** với INSERT; không có → `IllegalTransition(F4)`.
+2. Boundary: exception ở node khi trạng thái đã kết thúc/đã escalate (chỉ xảy ra ở `b20_audit`) — không còn
+   chuyển hợp lệ → ghi audit `unhandled_exception` + kết thúc thread (không ném, worker không sập).
+3. `GraphRecursionError` → runner bẻ luồng `S_ESCALATED` E9 (`step="runner"`, `event="recursion_limit"`)
+   qua `goto` + `aupdate_state`, rồi chạy B20.
+4. **Worker không có SVC_EXECUTOR_TOKEN (đã chốt):** recover mà bước kế tiếp là `b17_execute` → không thực
+   thi, `goto` E7 (`event="execution_interrupted"`, `escalation_reason_detail="execution_interrupted"`,
+   ghi chú "Thực thi bị gián đoạn — cần L2 kiểm tra…") rồi B20. Runner của backend (`can_execute=True`)
+   vẫn chạy lại B17 như P1 mục 7 (B17 thật tự chặn bằng `transaction_log begun` — Phase 3).
+5. Đã kiểm với LangGraph 1.2: giá trị `Command(resume=…)` được ghi vào checkpoint trước khi node chạy →
+   process chết giữa lượt resume thì `recover` = `ainvoke(None)` chạy lại node chờ với đúng giá trị đó.
+6. Recover giữ `turn_id` và chỉ đóng dòng `turns` cũ — `turn_id` là khoá chính nên
+   `turns.event_type='recover'` không được dùng.
+7. `late_event`: `step` = bước của trạng thái chờ mà sự kiện nhắm tới (B11/B16/B19), `turn_id` NULL, không
+   khoá idempotent, `detail = {expected_status, actual_status, event_kind, source}`, **`source` = `user` |
+   `worker`** (bổ sung của người khi duyệt). Sai loại sự kiện → `InvalidEvent` (API → 422, 2b).
+8. Worker quét hạn: đọc hạn không khoá → `deliver_event(timeout, source="worker")` → đánh dấu `fired_at`
+   (cả khi 409); ticket bận → để chu kỳ sau. Hạn duyệt: sau 409 đặt `approvals.status='timeout'` để không bắn
+   lại. `deadlines.set` thay (đánh dấu đã bắn) hạn cũ chưa bắn của cùng ticket + kind — không để hạn vòng hỏi
+   trước cắt ngang vòng sau.
+9. Thứ tự bọc: `traced(with_error_boundary(fn))` — span ghi cả `interrupted`; boundary đánh dấu span `error`
+   + traceback ≤ 4 KB khi nuốt exception.
+
+**Hoãn (người đã duyệt 26/09/2026):**
+- TC34–36, ticket cha 3 con, TC32/"con E1 tức thì" (P1 mục 11) → **Phase 5** cùng B05 (`child_notices`,
+  `compose_digest`, `aggregate_children`, `finalize_once`). 2a chỉ có node cha giả + `wake_parent` + routing.
+- Test tải 8 graph × LLM chậm 10 giây + `pg_stat_activity` (P1 mục 11) → `backend/tests/load/`, ngoài `make test`.
+- Nhắc duyệt 50%/80% → Phase 4 (cần `notify_approver` thật).
+
+**Ghi nhận cho phase sau (người yêu cầu ghi, 26/09/2026):**
+- **2b:** tin trả lời người dùng nằm trong `conversation`/checkpoint — **không thêm bảng**.
+- **Phase 4 cần bảng `notifications`** (P10 "Phải có": `GET /api/me/notifications`; P1 5.3 và B15 cũng nhắc)
+  — không có trong 22 bảng P7 → thêm bằng **migration mới + cập nhật P7, chốt trước Phase 4**.
+- Nâng `langgraph-checkpoint-postgres`: số migration checkpoint đổi → test đỏ "cần migration Alembic mới"
+  (unit so `KNOWN_CHECKPOINT_MIGRATIONS` của 0003; integration so số dòng `checkpoint_migrations`).
+- **Phase 3 (B06, B11):** node thật thay node giả phải giữ `goto(state, S_X, next_node="…")` với hằng
+  (test tĩnh AST suy trạng thái vào từ các goto khác).
+
+**Test mới:**
+
+| File | Nội dung |
+|---|---|
+| `unit/test_graph_goto.py` | 14×14 cặp × (thường/cha): goto ⇔ bảng chuyển, bị chặn thì không ghi audit; 5 chuyển cấm có ca riêng + F4 (audit không ghi được → chặn; chạy lại có dòng cũ → qua); FORBIDDEN thắng bảng; `B11/user_replied` + `B11/action_built` → 2 dòng; khoá theo turn/loop_seq; cờ D-20; cột audit từ `risk` |
+| `unit/test_graph_effects.py` | `once` chạy lại → 1 lần, ref cũ; `sub`/loop/turn khác → lần mới; fn lỗi không ghi, thử lại được; kind lạ |
+| `unit/test_graph_static.py` | AST: đích ⊆ ROUTES; trạng thái vào suy từ goto → mọi cặp qua `is_allowed` (chỉ D-20 cần cờ); mọi node tới `b20_audit`, không node mồ côi; 16 node đều `traced` ngoài `boundary` |
+| `unit/test_graph_runtime.py` | cổng 2 (dừng → restart → resume, cả 3 trạng thái chờ); sự kiện muộn 6 cặp chờ × chờ + sau khi đóng → 409, state không đổi, 1 dòng `late_event`; duyệt sau hết hạn → 409, không thực thi; đếm thông báo; **process chết sau `approval_create` → worker recover → 1 phiếu, 1 thông báo, giữ turn_id**; worker recover trước B17 → E7, không thực thi (đối chứng backend chạy lại); TC29 + 10 ticket song song; lỗi B1/B2/B20; boundary không nuốt `GraphInterrupt`; recursion → E9; span; 2 sự kiện đồng thời → 1 lần chạy; `wake_parent`; vòng cha giả |
+| `unit/test_graph_worker.py` | hạn clarify → E4 (bắn 1 lần), duyệt → E6 + phiếu `timeout`, confirm → tự đóng 48h; timeout sau khi ticket đã đi tiếp → `late_event source=worker`; hạn vòng mới thay hạn cũ; mục lỗi không chặn mục khác; ticket bận → chu kỳ sau |
+| `unit/test_checkpoint_schema.py` | số migration checkpoint của bản cài == 0003; 3 danh sách bảng checkpoint khớp; serde không cảnh báo kiểu chưa đăng ký |
+| `integration/test_graph_pg.py` (12) | `checkpoint_migrations` == thư viện; `app_rw` không tạo được bảng, CRUD được bảng checkpoint; cổng 2 trên `AsyncPostgresSaver` qua 3 lần mở lại runtime + mỗi ticket 1 thread; sự kiện muộn 3 trạng thái chờ; **giết process thật** (`subprocess` + `os._exit` sau `approval_create`) → recover; worker không thực thi B17; TC29 + 10 song song (span error có traceback); 2 "process" giao sự kiện đồng thời với `pg_advisory_lock` thật; `lock_timeout` → `TicketBusy`; worker quét `wait_deadlines`/`approvals` thật |
+| `integration/test_migration.py` | tách 22 bảng nghiệp vụ với 4 bảng checkpoint; so metadata bỏ qua bảng checkpoint; **mới** 0003 hạ/nâng lại + grant `app_rw` |
+| `integration/test_migration_0002.py` | nâng tới `0002` thay vì `head` (head nay là 0003) |
+
+**Kết quả kiểm (26/09/2026, trong sandbox Claude Code):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy `backend/app` (101 file), mypy mock, 5 hợp đồng import-linter, gitleaks 29 commit không leak; `gitleaks dir` trên thư mục mới: không leak |
+| unit backend | **1221 passed** (1137 cũ + 84 mới) |
+| test mock | **86 passed** |
+| integration (13 mới + sửa `test_migration*`) | **Xanh** — người chạy `make test` ngoài sandbox (26/09/2026): 66 integration (53 cũ + 12 `test_graph_pg.py` + 1 test 0003), gồm test giết process thật |
+| `make test` đầy đủ | **Xanh** (người chạy, 26/09/2026): backend **1312 passed** (1221 unit + 66 integration + 25 e2e) + mock **86 passed** |
+| `make up` | **Xanh** (người chạy, 26/09/2026): build lại image backend; `alembic upgrade head` chạy `0002 -> 0003` trên volume cũ; `make seed` 16 người, 7 thiết bị; `/api/health` = `{"status":"ok","checks":{"db":"ok","qdrant":"ok","mock":"ok"}}`. `docker compose ps worker` = `Up 6 minutes` — qua nhiều chu kỳ quét 15 giây và 60 giây (worker dựng runtime + pool checkpoint bằng `app_rw` không sập). Log 30 dòng cuối: `scan_deadlines` mỗi 15 giây, `scan_stale_turns` mỗi 60 giây đều `executed successfully` (~5–35 ms), không có dòng ERROR/traceback. DB chưa có ticket nào nên lượt quét không giao sự kiện nào — đường giao timeout/recover thật đã phủ ở `test_graph_pg.py` |
+| Mutation check | Sửa hỏng rồi khôi phục 11 chỗ, **đều có test đỏ**: bỏ re-raise `GraphInterrupt`, bỏ kiểm cấm 4, bỏ `check_transition`, bỏ `once` (gọi thẳng), worker recover chạy B17, resume không cập nhật `turn_id`, bỏ guard trạng thái chờ, `source` luôn `user`, span `interrupted` sai, worker không đánh dấu `fired_at`, hạn cũ không bị thay. (Lần chạy đầu cho kết quả sai do `.pyc` cũ cùng kích thước + cùng giây mtime — đã xoá `__pycache__`, chạy lại với `PYTHONDONTWRITEBYTECODE=1`.) |
+
+**Bổ sung trước khi commit 2a (người yêu cầu khi duyệt, 26/09/2026):**
+1. `core/logging.py`: `QUIET_LOGGERS` — logger `apscheduler` hạ xuống WARNING (trước đó ~10 dòng INFO/phút ở
+   worker). Log `app.*` vẫn INFO; lỗi job vẫn hiện (job tự `log.exception`).
+2. **Heartbeat worker — file, không bảng** (không thêm bảng ngoài P7): `app/heartbeat.py`. Worker ghi thời
+   điểm vào `WORKER_HEARTBEAT_PATH` (mặc định `/tmp/servicedesk-worker.heartbeat`) mỗi
+   `WORKER_HEARTBEAT_SECONDS` (10 giây) bằng CHÍNH APScheduler chạy job quét, và một lần lúc khởi động; ghi
+   nguyên tử (file tạm + rename). `python -m app.heartbeat`: thiếu file / hỏng / cũ hơn
+   `WORKER_HEARTBEAT_MAX_AGE` (60 giây) → thoát 1. Settings chặn nhịp > MAX_AGE/3.
+   `docker-compose.yml` worker: healthcheck gọi lệnh đó (interval 5s, timeout 5s, retries 1, start_period 20s).
+   `Makefile up`: sau `make seed` chờ worker `healthy` tối đa 60 giây; quá hạn in trạng thái + 30 dòng log
+   worker, `exit 1`. `worker.py` tách `schedule_jobs` để test không cần DB.
+   *Giới hạn đã biết:* heartbeat chứng minh event loop + scheduler còn chạy, không chứng minh từng lượt quét
+   thành công (job lỗi vẫn được bắt và log, không làm heartbeat ngừng).
+3. Test `unit/test_worker_heartbeat.py` (12): ngưỡng 60 giây, file thiếu/hỏng/thiếu múi giờ, ghi nguyên tử,
+   biên nhịp/MAX_AGE, `schedule_jobs` có job heartbeat, **APScheduler thật nhịp 0,05 giây làm mới file**,
+   healthcheck compose + vòng chờ trong `make up` (đọc file cấu hình), mức log apscheduler.
+   **Mutation — 6/6 đỏ:** tắt job heartbeat (2 test đỏ); job không ghi file; bỏ ngưỡng 60 giây; healthcheck
+   không đọc heartbeat; `make up` không in log worker; không hạ log apscheduler.
+
+**Kết quả kiểm cuối 2a:**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** (sandbox) — ruff, mypy 102 file, mypy mock, 5 hợp đồng, gitleaks không leak |
+| unit backend | **1233 passed** (sandbox; 1221 + 12 heartbeat) |
+| `make test` | **Xanh** (người chạy, trước phần heartbeat): 1312 + mock 86. Sau heartbeat chỉ đổi 1 dòng import ở `test_migration.py` — integration chưa chạy lại, CI sẽ chạy |
+| `make up` | **Xanh** (người chạy, 26/09/2026, sau phần heartbeat): `worker: healthy`, rồi `/api/health` ok (db, qdrant, mock) |
+
+## Phase 2 — Chặng 2b — việc cần làm
+
+Mở khi người giao task (kế hoạch Plan Mode trước). Nguồn: B01, B20, P1, huong-dan 5.1 cổng 2, P6 (route).
+
+1. **Dịch vụ ticket tối thiểu:** `db/tickets.py` (repository: tạo ticket, `finalize_once` — `UPDATE … WHERE
+   final_state IS NULL`, đọc `final_state`; `create_child`/`mark_parent_once` để Phase 5); route
+   `POST /api/tickets` (`require("ticket:create")`, privacy guard L0–L1 là phần của B02 — 2b chỉ nhận chuỗi
+   đã che hoặc để TODO rõ), `GET /api/tickets/{id}` (IDOR 404 qua `can_read_ticket`), gọi `runner.submit`
+   nền (202). Nối runtime vào `main.create_app` (backend `can_execute=True`).
+2. **Route sự kiện:** gửi tin/trả lời, xác nhận, duyệt → `deliver_event`; ánh xạ `LateEvent` → 409,
+   `InvalidEvent` → 422, `TicketNotFound` → 404. Ticket con: 409 "trả lời trong hội thoại chung" (D-31).
+3. **B1 thật** (`b01_identity`): `sessions.get_active`, `registry.call_internal("ad_get_user", caller_step="B1")`,
+   khoá dò mật khẩu (`users.locked_until`) → `repeated_auth_failure` + đúng 1 cảnh báo; disabled/terminated →
+   `invalid_credentials`; AD lỗi → E2 (không E9); `RequesterContext.from_ad` frozen. Test B01 mục 11, TC24/TC25
+   viết lại (D-01), mạo danh ("tôi là admin" → role vẫn employee).
+4. **B20 thật** (`b20_audit`): điểm log 8 (`final_state`, `exit_code`, `block_reason`, `close_reason`,
+   `total_turns`, `total_duration`); `finalize_once`; `exit_code` ≠ ∅ → `effects.once("escalation_create")`
+   (priority theo `exit_code_priority` — B20 mục 4.1) + `handoff_note` 4 phần (mẫu theo mã E, không LLM) +
+   `effects.once("notify_user")` theo mẫu 7.1; ticket con → `wake_parent`. Tin người dùng nằm trong
+   `conversation`/checkpoint (không thêm bảng). Test B20 mục 11 phần làm được ở Phase 2 (mỗi mã E0–E9 đúng
+   1 dòng `escalations`; B20 chạy lại → vẫn 1 dòng, 1 thông báo; 8 giá trị `close_reason` có ca sinh ra —
+   phần cần B2/B16/B19 thật thì dùng node giả).
+5. Boundary lỗi ở B20: xem lại quyết định 2 của 2a khi B20 có `finalize_once` (lần chạy lại chỉ ghi phần thiếu).
+6. `make test` + `make up` + thử tạo ticket trên stack thật (worker quét hạn thật trên ticket thật).
+7. Cập nhật P6 test 11 (mạo danh qua B1 + M5 — phần B1), test integration B01 (chuyển từ Phase 1c).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

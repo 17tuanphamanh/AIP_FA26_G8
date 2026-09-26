@@ -30,7 +30,8 @@ HEALTH_URL := http://127.0.0.1:8000/api/health
 # Mock chỉ nghe trong mạng compose (không bind ra máy) → kiểm /health từ bên trong container.
 MOCK_HEALTH := python -c "import httpx; httpx.get('http://127.0.0.1:8100/health').raise_for_status()"
 
-# Dựng compose; chạy migration (role app_migrate); nạp seed mock; kiểm /health của mock và /api/health.
+# Dựng compose; chạy migration (role app_migrate); nạp seed mock; kiểm /health của mock, worker healthy
+# (heartbeat, tối đa 60 giây — quá hạn in 30 dòng log worker, exit 1) và /api/health.
 up:
 	@if [ "$(ENV_FILE)" = ".env.example" ]; then \
 	  echo "CẢNH BÁO: không có .env — dùng giá trị mẫu của .env.example (chỉ cho máy dev)." >&2; fi
@@ -44,6 +45,12 @@ up:
 	  if [ $$i = 60 ]; then echo "mock /health chưa OK sau 60 giây" >&2; $(COMPOSE) logs --tail 50 mock >&2; exit 1; fi; \
 	  sleep 1; done
 	$(MAKE) seed
+	@for i in $$(seq 1 60); do \
+	  st=$$(docker inspect -f '{{.State.Health.Status}}' $$($(COMPOSE) ps -q worker) 2>/dev/null); \
+	  if [ "$$st" = "healthy" ]; then echo "worker: healthy"; break; fi; \
+	  if [ $$i = 60 ]; then echo "worker chưa healthy sau 60 giây (trạng thái: $${st:-không chạy})" >&2; \
+	    $(COMPOSE) logs --tail 30 worker >&2; exit 1; fi; \
+	  sleep 1; done
 	@for i in $$(seq 1 60); do \
 	  if curl -fsS $(HEALTH_URL) >/dev/null 2>&1; then \
 	    echo "/api/health: $$(curl -s $(HEALTH_URL))"; exit 0; fi; \

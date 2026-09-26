@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     lock_pool_size: int | None = Field(default=None, ge=1)  # mặc định GRAPH_CONCURRENCY + 2 (D-19)
     ticket_lock_timeout: float = Field(default=5.0, gt=0)  # giây; SET lock_timeout trên lock pool
     health_timeout: float = Field(default=2.0, gt=0)  # giây mỗi phụ thuộc ở /api/health
+    graph_recursion_limit: int = Field(default=60, ge=10)  # P1 mục 7: lưới cuối sau MAX_LOOPS
+    checkpoint_pool_size: int = Field(default=10, ge=1)  # pool psycopg của AsyncPostgresSaver
+    # ---- Worker (P1 mục 7) ----
+    worker_deadline_scan_seconds: float = Field(default=15.0, gt=0)  # quét hạn chờ
+    worker_recover_scan_seconds: float = Field(default=60.0, gt=0)  # quét lượt dở dang
+    worker_stale_turn_seconds: float = Field(default=120.0, gt=0)  # lượt mở quá 2 phút → recover
+    worker_batch: int = Field(default=200, ge=1)
+    # Heartbeat (app/heartbeat.py): worker ghi file định kỳ; healthcheck compose: quá MAX_AGE = unhealthy.
+    worker_heartbeat_path: Path = Path("/tmp/servicedesk-worker.heartbeat")
+    worker_heartbeat_seconds: float = Field(default=10.0, gt=0)
+    worker_heartbeat_max_age: float = Field(default=60.0, gt=0)
     config_dir: Path = Path(__file__).resolve().parents[2] / "config"  # repo: ./config; image: /srv/config
 
     # ---- Circuit breaker theo hệ thống ngoài [Chốt 17.3, P5 mục 6] ----
@@ -84,6 +95,13 @@ class Settings(BaseSettings):
     def _default_lock_pool(self) -> "Settings":
         if self.lock_pool_size is None:
             self.lock_pool_size = self.graph_concurrency + 2
+        return self
+
+    @model_validator(mode="after")
+    def _heartbeat_margin(self) -> "Settings":
+        # Ít nhất 3 nhịp trong một MAX_AGE: một nhịp trễ không làm worker bị báo unhealthy oan.
+        if self.worker_heartbeat_seconds * 3 > self.worker_heartbeat_max_age:
+            raise ValueError("WORKER_HEARTBEAT_SECONDS phải ≤ WORKER_HEARTBEAT_MAX_AGE / 3")
         return self
 
     @property

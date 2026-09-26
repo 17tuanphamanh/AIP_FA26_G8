@@ -28,7 +28,7 @@ def _version(db: PgUrls) -> str:
 def test_upgrade_accepts_mfa_types_and_view_excludes_them(pg: PgUrls) -> None:
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0002")  # head đã là 0003+; test này nói về 0002
         rw = create_engine(db.role("app_rw"))
         try:
             assert _version(db) == "0002"
@@ -52,7 +52,7 @@ def test_upgrade_accepts_mfa_types_and_view_excludes_them(pg: PgUrls) -> None:
 def test_downgrade_without_rows_restores_old_check_then_upgrade_again(pg: PgUrls) -> None:
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0002")  # head đã là 0003+; test này nói về 0002
         command.downgrade(cfg, "0001")
         rw = create_engine(db.role("app_rw"))
         try:
@@ -61,7 +61,7 @@ def test_downgrade_without_rows_restores_old_check_then_upgrade_again(pg: PgUrls
                 _event(conn, "mfa_enrolled")
             with rw.begin() as conn:
                 _event(conn, "login_failed")  # loại cũ vẫn ghi được
-            command.upgrade(cfg, "head")
+            command.upgrade(cfg, "0002")  # head đã là 0003+; test này nói về 0002
             with rw.begin() as conn:
                 _event(conn, "mfa_reset")
             assert _version(db) == "0002"

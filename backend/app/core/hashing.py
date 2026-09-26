@@ -16,3 +16,8 @@ def hash_action(action: BaseModel | Mapping[str, Any]) -> str:
     data = action.model_dump(mode="json") if isinstance(action, BaseModel) else dict(action)
     canonical = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def sha256_key(*parts: object) -> str:
+    """Khoá idempotent: SHA-256 của các phần nối bằng "|" (P1 mục 5.1, 5.3; P7 2.7, 2.8)."""
+    return hashlib.sha256("|".join(str(p) for p in parts).encode("utf-8")).hexdigest()

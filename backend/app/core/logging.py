@@ -68,6 +68,11 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+# Thư viện ghi INFO quá dày: APScheduler ghi 2 dòng mỗi lần chạy job (~10 dòng/phút ở worker).
+# Lỗi của job vẫn hiện: job tự log.exception ở logger `app.*`, APScheduler báo lỗi ở mức ERROR.
+QUIET_LOGGERS: dict[str, int] = {"apscheduler": logging.WARNING}
+
+
 def configure_logging(level: int | str = logging.INFO) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
@@ -75,3 +80,5 @@ def configure_logging(level: int | str = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
+    for name, quiet_level in QUIET_LOGGERS.items():
+        logging.getLogger(name).setLevel(quiet_level)

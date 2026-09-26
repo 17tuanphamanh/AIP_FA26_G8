@@ -18,6 +18,19 @@ if config.config_file_name is not None and config.attributes.get(
 
 target_metadata = Base.metadata
 
+# Bảng checkpoint LangGraph do migration 0003 tạo bằng `PostgresSaver.setup()`, không nằm trong
+# models.py — autogenerate/compare_metadata phải bỏ qua, không thì đề xuất DROP chúng.
+CHECKPOINT_TABLES = frozenset(
+    {"checkpoint_migrations", "checkpoints", "checkpoint_blobs", "checkpoint_writes"}
+)
+
+
+def include_object(obj: object, name: str | None, type_: str, reflected: bool, compare_to: object) -> bool:
+    if type_ == "table":
+        return name not in CHECKPOINT_TABLES
+    table = getattr(obj, "table", None)
+    return getattr(table, "name", None) not in CHECKPOINT_TABLES
+
 
 def _url() -> str:
     url = config.get_main_option("sqlalchemy.url") or os.environ.get(
@@ -29,7 +42,10 @@ def _url() -> str:
 
 
 def run_migrations_offline() -> None:
-    context.configure(url=_url(), target_metadata=target_metadata, literal_binds=True)
+    context.configure(
+        url=_url(), target_metadata=target_metadata, literal_binds=True,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -37,7 +53,9 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     engine = create_engine(_url(), poolclass=pool.NullPool)
     with engine.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection, target_metadata=target_metadata, include_object=include_object
+        )
         with context.begin_transaction():
             context.run_migrations()
     engine.dispose()

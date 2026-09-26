@@ -107,3 +107,7 @@ class TicketState(TypedDict, total=False):
     exit_code: str | None
     block_reason: str | None
     close_reason: str | None
+    # Ghi chú escalate: key không khai báo ở đây bị LangGraph bỏ IM LẶNG khi node trả về.
+    escalation_note: str | None  # câu đọc được (boundary E9 — P1 mục 5.2; B1/B17 …)
+    escalation_reason_detail: str | None  # D-27 — B20 chép vào escalations.reason_detail
+    aggregate_status: str | None  # chỉ ticket cha (D-30) — AGGREGATE_STATUSES ở db/models.py
