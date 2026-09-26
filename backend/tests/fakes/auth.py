@@ -15,8 +15,7 @@ from app.auth.models import SessionRecord, UserRecord, UserSync
 from app.auth.ports import IdentityUnavailable
 from app.core.clock import Clock
 from app.db.models import AUTH_FAILURE_TYPES
-
-DEMO_PASSWORD = "Demo@2026!"  # giống mock_services/README.md — chỉ cho mock
+from tests.fakes.demo import DEMO_PASSWORD
 
 
 @dataclass(frozen=True)

@@ -289,6 +289,7 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | `make eval STRATEGY=hybrid SPLIT=test` | Harness M8 (chỉ khi `EVAL_MODE=true`) |
 | `make eval-rag` | Ablation 4 cấu hình truy hồi (D-25) trên tập dev |
 | `make load` | Locust theo 5 kịch bản mục 14.4 |
+| `make gate2 S=<kịch bản>\|all` | **Chỉ dev** (2b-4): chạy kịch bản cổng 2 trên stack compose thật — restart, restart-all, late, expire, late-click, kill, kill-b15, tc29, threads. Chốt an toàn: `APP_ENV` của container backend phải là `dev`, URL chỉ `127.0.0.1`, cấm `down -v`. Cần `FAKE_SCENARIO`, `FAKE_NODE_DELAY`, `FAKE_APPROVER_ID` trong `.env` |
 
 ### 7.2. Pipeline [Chốt 13.3, chi tiết hóa]
 
@@ -317,3 +318,4 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | v1.3 | 25/09/2026 | `is_allowed()` (D-29); `notify/` + `child_notices`, 22 bảng (D-31) |
 | v1.4 | 25/09/2026 | Thêm `training/`, `ml_models/`, `ml_service/app/intent.py` (D-32, D-33, P11) |
 | v1.5 | 26/09/2026 | Mục 4.2: `api` được phụ thuộc `guard` (privacy guard chạy ở API trước khi lưu — D-07, B02 §2; chốt khi hiện thực 2b-3). `APP_ENV` bắt buộc trong `.env` (compose `${APP_ENV:?…}`), không mặc định |
+| v1.6 | 27/09/2026 | Mục 7.1: thêm `make gate2` (chỉ dev, chốt 2b-4-Q7) |

@@ -215,6 +215,21 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 2b-3-QC | Chết trước checkpoint đầu | Recover (đang giữ khóa) chạy state đầu dựng từ dòng `tickets` như `run_new`, giữ `turn_id` — không gọi `run_new` (tự khóa chết); quá 3 lần → E9 `recover_exhausted` qua B20 (không để ticket thiếu `final_state`) | P1 mục 7 |
 | 2b-3-QD | Runtime lỗi lúc khởi động | Route ticket/duyệt 503; `/api/health` 200 + `"runtime": "up\|down"` | P1 mục 10 |
 
+**Phase 2b-4 (27/09/2026):**
+
+| Mã | Câu hỏi | Chốt | Ở đâu |
+|---|---|---|---|
+| 2b-4-Q1 | Chọn kịch bản node giả trên stack | Thẻ `[fake:<preset>]` trong câu yêu cầu; chỉ đọc khi `FAKE_SCENARIO` được đặt (dev/test), đọc từ `redacted_request`; B1/B20 không đọc thẻ (test AST). Thẻ lạ → E9. Kết quả preset đánh chỉ số **theo state**, không theo bộ nhớ process (giống nhau trước/sau restart) | `backend/tests/stack/README.md`, PROGRESS 2b-4 |
+| 2b-4-Q2 | `FAKE_NODE_DELAY` | Số giây, điểm dừng do preset quyết (`kill_b06`, `kill_b15`); < stale/2; fail-closed ngoài dev/test | như trên |
+| 2b-4-Q3 | Hết hạn trên stack | Script dời `deadline` bằng psql; không thêm setting rút SLA | như trên |
+| 2b-4-Q4 | Ai chạy lệnh compose | Script tự chạy, in lệnh trước; chốt an toàn `APP_ENV=dev`, chỉ `127.0.0.1`, cấm `down -v` | như trên |
+| 2b-4-Q5 | Duyệt approved trên stack ra E7 | Chấp nhận tới Phase 3 (RefusingExecutor); script in rõ nguyên nhân | B17 |
+| 2b-4-Q6 | Assert quét guard | Giữ ≥ 22 + tập con bắt buộc (ước tính 25 bảng) | — |
+| 2b-4-Q7 | `make gate2` | Thêm, chỉ dev | 01 §7.1 |
+| 2b-4-Q8 | Auth trên stack | Không chạy; TC24/TC25 đã phủ ở 2b-3 | — |
+| 2b-4-QA | Đọc trạng thái sau request trả 202 | Luôn chờ **có lượt mới và mọi lượt đã đóng** (`after_event`) rồi mới đọc; mọi phép kiểm "khoá nhả / không có X" phải có đối chứng | PROGRESS 2b-4 |
+| 2b-4-QB | Cổng 2 đạt khi nào | 10 kịch bản `make gate2` 0 FAIL trên máy Tuấn Anh **và** một thành viên khác chạy `make gate2 S=all` trên máy họ (ưu tiên máy gaming, kiêm N2) + người đọc bảng threads xác nhận | P1 §11 |
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -227,3 +242,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 26/09/2026 | Mục 4.1: quyết định 2b-Q1…2b-Q7 của Phase 2b |
 | 26/09/2026 | Mục 4.1: quyết định 2b-QA…2b-QD của Phase 2b-2 |
 | 26/09/2026 | Mục 4.1: quyết định 2b-3-Q1…Q5, 2b-3-QA…QD của Phase 2b-3 |
+| 27/09/2026 | Mục 4.1: quyết định 2b-4-Q1…Q8, 2b-4-QA…QB của Phase 2b-4 |

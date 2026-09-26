@@ -8,9 +8,9 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, mutation logic 28/28 + SQL 8/8 đỏ, `make test` xanh (1550 + mock 86) — đã duyệt commit, chờ CI**. Phase 1 đã đóng |
+| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 26/09/2026 (2b-3) |
+| Cập nhật | 27/09/2026 (2b-4) |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -631,7 +631,7 @@ mới mỗi lần (ném lại cùng đối tượng → traceback cộng dồn q
 **Commit + CI:** `b68e800` — CI GitHub **xanh**, run `36243253945` (26/09/2026, người theo dõi, đã đối chiếu `headSha`).
 
 
-## Phase 2 — 2b-3: dịch vụ ticket + route sự kiện + nối `create_app` (26–27/09/2026, `make test` xanh, chờ duyệt commit)
+## Phase 2 — 2b-3: dịch vụ ticket + route sự kiện + nối `create_app` (26–27/09/2026, commit `dcc5ddc`, CI xanh run `36270415646`)
 
 Kế hoạch Plan Mode đã duyệt (kèm chốt a–h và Q1–Q5 của người, 26/09/2026). Không LLM, không đọc `.env`,
 **không commit**.
@@ -744,8 +744,11 @@ chạy state đầu từ dòng `tickets`, không gọi `run_new`" = `_run_initia
 
 **Bổ sung trước commit (người yêu cầu, 27/09/2026):** test quét guard trên Postgres assert danh sách quét có ≥ 22 bảng
 (và chứa `tickets`, `audit_logs`, `turns`, `side_effects`, 3 bảng checkpoint) — không xanh oan khi danh sách rỗng /
-lọc sai schema. **CHƯA CHẠY** (sandbox không tới được Docker); kiểm tĩnh: 22/22 bảng P7 có cột text/jsonb và `app_rw`
-có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 4 bảng checkpoint (0003) → dự kiến 26. CI sẽ chạy.
+lọc sai schema. Sandbox không tới được Docker nên chưa chạy lúc commit; **đã chạy và xanh trên CI** (run `36270415646`,
+`make test` đầy đủ). Kiểm tĩnh trước đó: 22/22 bảng P7 có cột text/jsonb và `app_rw`
+có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 3 bảng checkpoint có cột text/bytea → **ước tính
+25** (`checkpoint_migrations` chỉ có cột `v INTEGER` nên không vào danh sách quét; bản trước ghi "dự kiến 26" là sai;
+chưa đo). Người chốt (2b-4 Q6): giữ assert `≥ 22` + tập con bắt buộc, không siết `== 25`.
 
 **Spec cần sửa (người sửa `docs/spec`) — đã xử lý ở trên:**
 - B15-B16 mục 10: "Bấm duyệt sau khi hết hạn → 409, phiếu `late_ignored`" → phiếu giữ trạng thái thật, dấu vết ở
@@ -754,6 +757,103 @@ có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 4 b�
 - B15-B16 mục 4 `DecisionIn.view_started_at` bắt buộc → tuỳ chọn, chỉ log; `view_duration` tính phía server từ
   `first_viewed_at` (chốt f).
 - 01 mục 4.2: đồ thị phụ thuộc thiếu `api → guard` (B02 mục 2 + D-07 đặt privacy guard ở API).
+
+## Phase 2 — 2b-4: chứng minh cổng 2 trên stack compose thật (27/09/2026, chưa commit)
+
+Kế hoạch Plan Mode đã duyệt (chốt Q1–Q8 + 4 vá của người, 27/09/2026). Không LLM, không đọc `.env`, **không commit**.
+
+**Kiểm đầu 2b-4:** run `36270415646` đã ghi ở trên (vào commit đầu 2b-4). Assert "≥ 22 bảng" của test quét guard
+**đã có** trong commit `dcc5ddc` (`backend/tests/integration/test_tickets_http_pg.py:288-292`) và chạy ở run đó.
+
+**Quyết định của người (27/09/2026):**
+- **Q1:** chọn kịch bản theo ticket bằng thẻ `[fake:<preset>]` trong câu yêu cầu; chỉ đọc thẻ khi `FAKE_SCENARIO`
+  đặt (dev/test), đọc từ `redacted_request`; node thật B1/B20 không đọc thẻ.
+- **Q2:** `FAKE_NODE_DELAY` = số giây; điểm dừng do preset quyết (`kill_b06`: đầu `b06_diagnose`; `kill_b15`:
+  sau `approval_create`).
+- **Q3:** hết hạn = dời `deadline` bằng psql trong script (không thêm setting rút ngắn SLA).
+- **Q4:** script tự chạy lệnh compose, in lệnh trước khi chạy, có chốt an toàn.
+- **Q5:** duyệt `approved` trên stack ra **E7** (B17 giả + `RefusingExecutor`) là đúng tới Phase 3; script in
+  "E7 do RefusingExecutor (dung toi Phase 3)".
+- **Q6:** giữ assert quét guard `≥ 22` + tập con; sửa "dự kiến 26" → "ước tính 25" (đã sửa ở mục 2b-3).
+- **Q7:** thêm `make gate2` — người đã thêm vào bảng lệnh `build/01-kien-truc-project.md` §7.1 (27/09/2026).
+- **Q8:** không chạy TC24/TC25 trên stack — **đã phủ ở 2b-3** (`test_tickets_api.py` qua HTTP, `test_auth_http_sql.py`
+  trên SQL, `test_b01_pg.py`).
+- **Vá 1:** chốt an toàn gate2 chạy trước mọi việc: `compose exec -T backend printenv APP_ENV` ≠ `dev` → dừng (exit 2);
+  URL chỉ `http://127.0.0.1:<cổng>`; cấm `down -v` / `--volumes` / `volume rm|prune` (kiểm chuỗi lệnh ở một điểm).
+- **Vá 2:** kịch bản kill poll `pg_locks` (khoá advisory của ĐÚNG ticket) tới 0 trong ≤ 10 giây; quá hạn mới FAIL,
+  in số khoá còn.
+- **Vá 3:** **cổng 2 chỉ đạt khi một thành viên khác chạy `make gate2 S=all` trên máy họ** (ưu tiên máy gaming —
+  kiêm ghi N2: GPU + VRAM) và dán kết quả vào đây.
+- **Vá 4:** mật khẩu demo đọc `GATE2_PASSWORD`, mặc định là hằng import được (không chép chuỗi vào script).
+  **Lệch nhỏ so với chốt:** `mock_services` không có hằng Python nào (mật khẩu chỉ ở README + hash trong
+  `seed.json`), và `mock_services/app` trùng tên package `app` với backend nên không import chéo được → tách hằng
+  có sẵn `DEMO_PASSWORD` của `tests/fakes/auth.py` sang `tests/fakes/demo.py` (không import gì; `auth.py` import lại
+  từ đó) — vẫn một nguồn duy nhất, script không chép chuỗi. Người muốn nguồn nằm trong `mock_services` thì báo.
+- Nhỏ: `restart-all` so số ticket trước/sau; mỗi dòng PASS/FAIL kèm ticket_id.
+
+**Đã làm:**
+- `graph/fakes.py`: `StackScenario` (cùng giao diện `FakeScenario`; preset theo thẻ trong `redacted_request`, không
+  thẻ → preset `FAKE_SCENARIO`; thẻ lạ → `ValueError` → E9; kết quả đánh chỉ số theo `clarification_turns` của
+  STATE — backend, worker, trước/sau restart chọn như nhau), `STACK_PRESETS` (`approval`, `clarify`, `confirm`,
+  `raise`, `kill_b06`, `kill_b15`), `PAUSABLE_NODES` (node giả b02…b17, không node thật/node chờ) + hook
+  `after_approval_create`; `FakeScenario.pause` (bản test không dừng).
+- `graph/builder.fake_nodes`: bọc node trong `PAUSABLE_NODES` bằng `scenario.pause` (bên trong boundary — thẻ lạ ở
+  điểm dừng cũng ra E9; `functools.wraps` giữ tên, test tĩnh traced/boundary không đổi).
+- `settings.py`: `fake_scenario`, `fake_node_delay` (≥ 0, phải < `WORKER_STALE_TURN_SECONDS/2`).
+  `graph/wiring.fake_scenario(settings)`: fail-closed (`require_dev_fakes`) cho cả hai biến, trước khi đụng DB;
+  delay mà không có scenario → từ chối; gọi ở `main.create_app` và `open_runtime` (worker).
+- `docker-compose.yml`: anchor chung backend + worker thêm `FAKE_SCENARIO`, `FAKE_NODE_DELAY`. `.env.example`: mẫu
+  `FAKE_SCENARIO=approval`, `FAKE_NODE_DELAY=40` + giải thích. **Người tự thêm 2 biến vào `.env`.**
+- `Makefile`: `make gate2 S=<kịch bản>` (dùng `COMPOSE` của Makefile — colima + `--env-file`).
+- `backend/tests/stack/gate2.py` + `README.md`: 10 kịch bản (`preflight`, `restart`, `restart-all`, `late`, `expire`,
+  `late-click`, `kill`, `kill-b15`, `tc29`, `threads`; `all` = trừ `restart-all`), cách đọc kết quả ở README.
+  psql chạy trong container postgres bằng biến của container (script không đọc `.env`). Kiểm trên tập rỗng = FAIL;
+  "không có X" cần đối chứng "có Y" cùng ticket.
+
+**Test mới:**
+
+| File | Nội dung |
+|---|---|
+| `unit/test_stack_scenario.py` (31) | kết quả mỗi preset ⊆ nhánh thật của node (đọc AST node); điểm dừng không gồm b01/b20/node chờ; AST: B1/B20 không đọc thẻ/scenario; preset mặc định lạ → lỗi; thẻ chọn preset (5 trạng thái chờ) + `raise` → E9; không thẻ → mặc định; thẻ lạ → E9 (không về mặc định); không đặt FAKE_SCENARIO → thẻ bị bỏ qua; **hỏi → restart với StackScenario MỚI → trả lời → chờ duyệt, B11 `asked` 1 lần**; delay chỉ ở điểm preset (sleep tiêm, không ngủ thật); `kill_b15` ngủ khi đã có đúng 1 phiếu; delay 0 không ngủ; compose truyền 2 biến cho backend VÀ worker |
+| `unit/test_app_env.py` (+16) | FAKE_SCENARIO / FAKE_NODE_DELAY / cả hai với APP_ENV None/staging/prod → `RuntimeError` ở `create_app`; worker (`open_runtime`) chặn trước DB; dev/test lên; preset lạ → `ValueError`; delay không scenario → từ chối; delay ≥ stale/2, âm → `ValidationError` |
+| `unit/test_gate2.py` (42 → 45: +2 `after_event`, +1 tĩnh "đọc sau 202 luôn chờ lượt") | **chốt 1**: APP_ENV prod/staging/test/rỗng → exit 2, chỉ đúng 1 lệnh (`printenv`) đã chạy; printenv lỗi → dừng; **chốt 2**: 7 URL không phải `http://127.0.0.1` → dừng trước mọi lệnh; **chốt 3**: 7 dạng xoá volume bị từ chối, lệnh thường (kể cả `psql -v`) qua; `Shell` từ chối trước khi chạy, in lệnh trước khi chạy; `rows` rỗng → FAIL; `absent` cần đối chứng; dòng PASS/FAIL kèm ticket_id; tổng kết không có kiểm nào ≠ xanh; mật khẩu `GATE2_PASSWORD` → hằng; ticket_id lạ không vào SQL; psql chạy trong container postgres |
+| `integration/test_stack_scenario_pg.py` (1) | `Settings(FAKE_SCENARIO)` → `open_runtime` thật trên Postgres: `[fake:clarify]` → hỏi → đóng runtime, mở runtime mới → trả lời → chờ duyệt; 1 `asked`, 1 phiếu |
+
+**Kết quả kiểm (27/09/2026, sandbox):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy `backend/app` 121 file, mypy mock 11 file, 5 hợp đồng import-linter, `gitleaks detect` 33 commit không leak |
+| `gitleaks dir` (`backend/app backend/tests config .env.example docker-compose.yml Makefile`) | không leak |
+| unit backend | **1498 passed** (1409 + 89 mới) |
+| Mutation M1–M9 | **9/9 đỏ đúng test dự đoán** (script tự khôi phục, so md5 + `git diff --stat` sau cùng khớp): M1 bỏ `require_dev_fakes` FAKE_SCENARIO → `test_prod_refuses_fake_scenario[FAKE_SCENARIO-*]` + `test_worker_runtime_refuses_fake_scenario`; M2 `create_app` không gọi `fake_scenario` → 6 ca prod + `delay_without_scenario`; M3 chỉ số theo bộ nhớ process → `test_clarify_sequence_survives_restart`; M4 thẻ lạ về mặc định → `test_unknown_tag_goes_e9_not_default`; M5 delay mọi điểm → `test_delay_only_at_preset_pause_point` (5 ca) + `kill_b15_pauses…`; M6 compose chỉ backend → `test_compose_passes_fake_vars_to_service[worker]`; M7 kiểm rỗng cho qua → `test_rows_empty_is_fail`; M8 bỏ validator delay → `test_delay_must_stay_below_half_stale_turn`; **M9 gate2 bỏ kiểm APP_ENV → `test_stops_before_anything_when_backend_not_dev` (4 ca)** |
+| `make test` đầy đủ (người chạy, 27/09/2026) | **Xanh** — backend **1640 passed** (1498 unit + 113 integration [112 cũ + 1 `test_stack_scenario_pg`] + 29 e2e) + mock **86 passed** |
+| `make up` (người chạy, 27/09/2026, `.env` đã có `FAKE_SCENARIO`, `FAKE_NODE_DELAY`) | **Xanh** — build lại image backend; `alembic upgrade head` chạy `0003 -> 0004 -> 0005` trên volume cũ (stack dev chưa từng nâng từ 2b-1/2b-2); `make seed` 16 người, 7 thiết bị; `worker: healthy`; `/api/health` = `{"status":"ok","checks":{"db":"ok","qdrant":"ok","mock":"ok"},"failed":[],"runtime":"up"}` |
+| `make gate2 S=preflight` (người chạy, 27/09/2026, run `37ee2db4`) | **5 PASS, 0 FAIL** — chốt APP_ENV qua (`printenv` = dev); health `ok` + `runtime: up`; worker `healthy`; đăng nhập ha.lt rồi an.nv; ticket `6bb7146d-276a-49f0-a6d9-d210f6287dd4` `[fake:clarify]` → `S_CLARIFYING` (thẻ có hiệu lực trên stack) |
+| `make gate2 S=restart` lần 1 (người chạy, run `241a2e7e`) | **14 PASS, 1 FAIL**. PASS: 3 ticket dừng đúng 3 trạng thái chờ; `restart backend`; duyệt → 202 → **E7 do RefusingExecutor** (audit `… B15 queued → B16 approved → B17 execution_failed → B20 closed`), phiếu `approved`/`l1_01`; confirm → `resolved_user_confirmed`; mỗi ticket có checkpoint (14/13/10). **FAIL** ticket `08ba0c88-…` "clarify → chờ duyệt": thấy `S_CLARIFYING`. **Chẩn đoán — lỗi SCRIPT, ĐÃ XÁC NHẬN** (người đọc audit ticket `08ba0c88-…`: `… B11 asked → B11 user_replied → B11 action_built → B13/B14 risk_decided → B15 queued`, đúng 1 `asked` — hệ thống đã tới chờ duyệt, không hỏi lại): trả lời trả 202 rồi lượt chạy NỀN; script dùng `settled()` — mà ticket ngay sau 202 vẫn đang ở trạng thái chờ CŨ nên `settled` trả về ngay. Kiểm "B11 asked 1 lần" cũng đo quá sớm nên PASS của nó chưa có nghĩa. **Sửa:** `Ctx.after_event` chờ có lượt mới (> số lượt trước sự kiện) và mọi lượt đã đóng rồi mới đọc trạng thái (đúng cả khi lượt mới dừng lại ở cùng trạng thái chờ — ca "hỏi lại" mà kiểm này nhắm bắt). Unit +2 (`test_after_event_*`), **M10** (bỏ bước chờ) → cả 2 đỏ; unit 1500 passed |
+| `make gate2 S=restart` lần 2 (người chạy, run `6b8b4cf9`, script đã sửa) | **15 PASS, 0 FAIL** — **cổng 2 dòng 1 trên stack thật**: 3 ticket dừng ở 3 trạng thái chờ → `restart backend` → approval `3c083b2b-…`: duyệt 202 → E7 do RefusingExecutor, audit `B15 queued → B16 approved → B17 execution_failed → B20 closed`, phiếu `approved`/`l1_01`; clarify `16e5baba-…`: trả lời 202 → (chờ lượt nền đóng) → `S_PENDING_APPROVAL`, `B11 asked` đúng 1 lần; confirm `fc824308-…` → `resolved_user_confirmed`; checkpoint 14/13/10 |
+| `make gate2 S=late` (người chạy, run `4fd4cd89`) | **15 PASS, 0 FAIL** — **cổng 2 dòng 3 trên stack**: 3 trạng thái chờ × sự kiện sai loại → 409, trạng thái giữ nguyên, đúng 1 `late_event` mỗi ticket, `source=user`; `step` = bước của trạng thái chờ mà sự kiện NHẮM tới (2a quyết định 7): message vào chờ duyệt → `B11` (`expected=S_CLARIFYING`, `actual=S_PENDING_APPROVAL`); confirm vào chờ trả lời → `B19`; message vào chờ xác nhận → `B11` |
+| `make gate2 S=expire` (người chạy, run `1eca2b45`) | **15 PASS, 0 FAIL** — dời hạn về quá khứ bằng psql (mỗi ticket đúng 1 dòng) → worker thật (đồng hồ thật, quét 15 giây) bắn hạn cả 3 trong ≤ 45 giây: chờ duyệt → E6 + phiếu `timeout` + escalation E6, **0 dòng audit B17** (đối chứng `B16 approval_timeout` có) — bất biến "hết hạn không tự thực thi" trên stack; chờ trả lời → E4 + escalation E4; chờ xác nhận → `S_RESOLVED` `resolved_auto_timeout_48h`; `wait_deadlines.fired_at` đã đặt |
+| `make gate2 S=late-click` (người chạy, run `aaa48265`) | **10 PASS, 0 FAIL** — 2b-3-Q2 trên stack: `stop worker` → ticket `52b1df7c-…` chờ duyệt, phiếu 7 → dời hạn → l1 bấm duyệt → 409, phiếu **vẫn `pending`**, `late_event` (`expired`, approval 7, `l1_01`, `user`) → `start worker` → E6 + phiếu `timeout`, 0 dòng B17 (đối chứng B16 `approval_timeout` có) → bấm lại → 409, `late_event` thứ hai `already_decided` |
+| `make gate2 S=kill` (người chạy, run `43187920`) | **8 PASS, 0 FAIL** — ticket `ced3bfb5-…` `[fake:kill_b06]` ngủ ở b06 (lượt mở) → `kill -s SIGKILL backend` → lượt vẫn mở → `up -d backend` → worker phục hồi → `S_PENDING_APPROVAL`; **cùng `turn_id` `def23064-…`, `recover_attempts=1`, 1 lượt đã đóng**; 1 phiếu; `side_effects` `approval_create`/`notify_approver` = 1/1; không `(step, event)` nào trùng. **Hạn chế của lần chạy này:** dòng "khoá advisory nhả ≤ 10 giây" (thấy 0) **không có đối chứng** — chưa chứng minh truy vấn `pg_locks` (classid/objid từ `hashtext`) tìm thấy được khoá khi đang giữ; trái chính quy ước "không có X cần đối chứng có Y" của script. **Sửa:** thêm kiểm "khoá đang giữ trước kill = 1"; `kill-b15` (cùng hàm `_kill`) sẽ chạy đối chứng này, chạy lại `kill` sau |
+| `make gate2 S=kill-b15` (người chạy, run `b4aae64a`, có đối chứng khoá) | **9 PASS, 0 FAIL** — D-18 trên stack: ticket `2c69eb03-…` `[fake:kill_b15]` ngủ SAU `approval_create`, TRƯỚC `notify_approver` → **đối chứng: khoá advisory của ticket đang giữ = 1** (truy vấn `pg_locks` tìm đúng khoá) → SIGKILL backend → khoá nhả (0) ≤ 10 giây → lượt vẫn mở → `up -d backend` → worker phục hồi → `S_PENDING_APPROVAL`; cùng `turn_id` `c8a9b929-…`, `recover_attempts=1`; **đúng 1 phiếu**, `approval_create`/`notify_approver` = 1/1; audit không trùng |
+| `make gate2 S=kill` lần 2 (người chạy, run `2949de7e`, có đối chứng khoá) | **9 PASS, 0 FAIL** — ticket `2703a100-…` ngủ ở b06; **đối chứng khoá đang giữ = 1** → SIGKILL → khoá 0 ≤ 10 giây → lượt vẫn mở → worker phục hồi → `S_PENDING_APPROVAL`; cùng `turn_id` `4dcc7d6c-…`, `recover_attempts=1`; 1 phiếu; `approval_create`/`notify_approver` 1/1; audit không trùng. Thay cho hạn chế của lần 1 |
+| `make gate2 S=tc29` (người chạy, run `37786dd7`) | **9 PASS, 0 FAIL** — **cổng 2 dòng 4 (E9) trên stack**: ticket `8716fc55-…` `[fake:raise]` → `ValueError` ở `b06_diagnose` → `S_ESCALATED` E9; audit `unhandled_exception` (step `b06_diagnose`) có `exception`, `traceback`, `escalation_note`; span `error` có traceback (khung `builder.py` = lớp dừng `_pausable`, đúng thứ tự boundary → pause → node); 5 ticket song song tới `S_PENDING_APPROVAL`; worker vẫn `healthy` |
+| `make gate2 S=threads` (người chạy, run `476e38c7`) | **2 PASS, 0 FAIL** — bảng 23 ticket gate2 (= 1 preflight + 3 restart lần 1 + 3 restart lần 2 + 3 late + 3 expire + 1 late-click + 1 kill lần 1 + 1 kill-b15 + 1 kill lần 2 + 6 tc29 — khớp số ticket các kịch bản đã tạo), mỗi ticket 7–14 checkpoint trên thread riêng; 0 thread không có dòng `tickets`. **Nói rõ giới hạn:** cột `threads` luôn ≤ 1 do truy vấn lọc `thread_id = ticket_id` — "mỗi ticket một luồng" đúng theo cách dựng (`Runner.config`: `thread_id = ticket_id`), phần có nội dung kiểm là "mọi ticket có checkpoint" + "không thread lạ". Mục thủ công của cổng 2 ("đọc bảng checkpoint") — xem dòng xác nhận của người ở tổng kết dưới |
+| `make gate2 S=restart-all` (người chạy, run `14fe67f5`) | **16 PASS, 0 FAIL** — 3 ticket ở 3 trạng thái chờ → `down` (không `-v`) + `make up` (cả backend lẫn worker, image dựng lại) → chốt APP_ENV chạy lại → **số ticket trước/sau = 26/26** (23 ticket gate2 cũ + 3 mới) → cùng 3 kết quả như `restart` (E7 do RefusingExecutor, clarify → chờ duyệt với 1 `asked`, confirm → `resolved_user_confirmed`), checkpoint 14/13/10 |
+| `make gate2 S=threads` lần 2 (người chạy, run `b8c98bed`, sau `restart-all`) | **2 PASS, 0 FAIL** — bảng 26 ticket gate2 (23 cũ + 3 của `restart-all`), mỗi ticket 1 thread, 7–14 checkpoint; 0 thread lạ |
+| Sau 2 lần sửa script (`after_event`, đối chứng khoá) | `make lint` xanh, unit **1500 passed**, `gitleaks dir backend/tests/stack backend/tests/unit/test_gate2.py` không leak |
+| Rà trước commit (người yêu cầu): mọi chỗ đọc trạng thái sau request 202 | Đổi sang `after_event` **7 chỗ**: sau tạo ticket ở `preflight`, `_three_waits` (dùng bởi restart/restart-all/late/expire), `late_click`, `tc29` (ticket lỗi + 5 ticket song song); sau quyết định duyệt và sau xác nhận ở `restart` (trước là `closed`); chờ phục hồi ở `_kill` (trước là `settled` — nay chờ lượt duy nhất cùng `turn_id` đóng). Bỏ hẳn `settled`; `closed` chỉ còn cho việc do WORKER làm (`expire`, `late_click` sau `start worker`). Test tĩnh `test_reads_after_202_always_wait_for_turn` (AST); **M11** (ticket lỗi của `tc29` quay lại `closed`) → đỏ. `make lint` xanh, unit **1501 passed**; **`make test` đầy đủ (người chạy, 27/09/2026) xanh: backend 1643 passed (1501 unit + 113 integration + 29 e2e) + mock 86 passed**. Các lần chạy `make gate2` ở trên dùng bản TRƯỚC lần rà này (7 chỗ cũ vẫn cho kết quả đúng vì chờ `final_state`/trạng thái chờ của ticket mới — không đọc được trạng thái cũ — nhưng không bảo đảm được như `after_event`) |
+
+**Tổng kết `make gate2` trên máy dev (27/09/2026):** đủ 10 kịch bản, lần chạy cuối của mỗi kịch bản đều 0 FAIL. Hai FAIL
+giữa chừng đều là lỗi SCRIPT, không phải lỗi hệ thống, đã sửa + có unit/mutation: (1) đọc trạng thái ngay sau 202
+(`restart` lần 1 — audit xác nhận hệ thống đúng); (2) dòng "khoá nhả" thiếu đối chứng (`kill` lần 1 — chạy lại có đối chứng).
+**Cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** (vá 3; ưu tiên máy
+gaming, kiêm ghi N2). **Tuấn Anh đã đọc bảng threads** (27/09/2026, bảng 26 ticket của run `b8c98bed`): mỗi ticket một
+`thread_id` trùng `ticket_id`, số thread = số ticket, không thread lạ, mọi ticket có checkpoint — mục thủ công của cổng 2 xong. Spec đã đồng bộ (người cập nhật, 27/09/2026): `build/01-kien-truc-project.md` §7.1 thêm `make gate2`
+(Q7), `build/decisions.md` 4.1 quyết định 2b-4.
+
+**Còn lại của 2b-4:** cổng 2 chờ thành viên khác chạy `make gate2 S=all` (vá 3).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

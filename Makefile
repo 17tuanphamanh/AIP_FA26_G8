@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test lint ingest seed probe eval eval-rag load
+.PHONY: up down test lint ingest seed probe eval eval-rag load gate2
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -81,6 +81,13 @@ lint:
 # Pipeline RAG (P3): in kb_version và số đoạn truncated (phải = 0).
 ingest:
 	@echo "TODO (Phase 3): chưa có pipeline RAG (P3)." >&2; exit 1
+
+# Cổng 2 trên stack compose thật (2b-4) — backend/tests/stack/README.md. Cần `make up` trước và
+# FAKE_SCENARIO, FAKE_NODE_DELAY trong .env. Script tự chạy lệnh compose (in lệnh trước khi chạy), dừng
+# nếu APP_ENV của container backend khác dev. Ví dụ: make gate2 S=preflight | make gate2 S=all
+S ?= preflight
+gate2:
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate2 $(S)
 
 # Kiểm schema mock_services/seed.json rồi nạp lại vào mock đang chạy (/_admin/reset — đồng thời tắt
 # mọi lỗi đang bơm). Cần `make up` trước.

@@ -4,7 +4,8 @@ Worker dùng `can_execute=False` (không có SVC_EXECUTOR_TOKEN — D-03, quyế
 chưa có logic thật dùng port không làm gì (`fakes.LoggingNotifier`…); phase sau thay bằng dịch vụ thật.
 Phiếu duyệt ghi bảng `approvals` thật (`approval/store.SqlApprovals`, 2b-Q3) ở CẢ backend lẫn worker —
 worker bắn timeout thì B16 giả ghi `timeout` lên phiếu. Người duyệt của B15 giả = `FAKE_APPROVER_ID`,
-chỉ nạp khi `APP_ENV` ∈ {dev, test} (kiểm TRƯỚC khi đụng DB — fail-closed).
+chỉ nạp khi `APP_ENV` ∈ {dev, test} (kiểm TRƯỚC khi đụng DB — fail-closed); `FAKE_SCENARIO` /
+`FAKE_NODE_DELAY` (kịch bản node giả trên stack, 2b-4) cùng luật.
 B1 (2b) đọc AD qua registry tool đọc (token svc_agent): truyền `directory` vào để dùng chung breaker
 với nơi khác trong cùng process; không truyền thì tự dựng (và tự đóng client HTTP khi thoát).
 """
@@ -27,9 +28,11 @@ from app.db.tickets import SqlTicketStore
 from app.graph.builder import build_graph, fake_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import (
+    FakeScenario,
     LoggingNotifier,
     NodeDeps,
     RefusingExecutor,
+    StackScenario,
     UnconfiguredDirectory,
 )
 from app.graph.lock import PgTicketLock
@@ -65,6 +68,19 @@ def fake_approver(settings: Settings) -> str | None:
     return settings.fake_approver_id
 
 
+def fake_scenario(settings: Settings) -> FakeScenario:
+    """`FAKE_SCENARIO` / `FAKE_NODE_DELAY` chỉ ở dev/test (2b-4, fail-closed như 2b-Q3). Không đặt →
+    kịch bản mặc định (thẻ `[fake:…]` bị bỏ qua). Preset lạ → `ValueError` (không khởi động)."""
+    if settings.fake_node_delay is not None:
+        settings.require_dev_fakes("FAKE_NODE_DELAY (điểm dừng node giả)")
+    if settings.fake_scenario is None:
+        if settings.fake_node_delay is not None:
+            raise RuntimeError("FAKE_NODE_DELAY chỉ có nghĩa khi đặt FAKE_SCENARIO — từ chối khởi động")
+        return FakeScenario()
+    settings.require_dev_fakes("FAKE_SCENARIO (kịch bản node giả theo thẻ)")
+    return StackScenario(settings.fake_scenario, delay=settings.fake_node_delay or 0.0)
+
+
 @asynccontextmanager
 async def open_runtime(
     settings: Settings,
@@ -75,6 +91,7 @@ async def open_runtime(
     directory: ToolCaller | None = None,
 ) -> AsyncIterator[Runtime]:
     approver_id = fake_approver(settings)  # trước mọi kết nối: sai môi trường → không khởi động
+    scenario = fake_scenario(settings)  # như trên (2b-4)
     async with AsyncExitStack() as stack:
         if directory is None:
             if settings.svc_agent_token is None:
@@ -86,7 +103,7 @@ async def open_runtime(
                 directory = registry
         opened = _open(
             settings, engines, clock, can_execute=can_execute, directory=directory,
-            approver_id=approver_id,
+            approver_id=approver_id, scenario=scenario,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
 
@@ -94,7 +111,7 @@ async def open_runtime(
 @asynccontextmanager
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
-    approver_id: str | None,
+    approver_id: str | None, scenario: FakeScenario,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
@@ -106,7 +123,7 @@ async def _open(
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
-        templates=get_escalation_templates(), approver_id=approver_id,
+        templates=get_escalation_templates(), approver_id=approver_id, scenario=scenario,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

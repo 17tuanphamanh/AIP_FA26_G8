@@ -5,12 +5,16 @@ node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, 
 `FakeScenario` chọn kết quả của mỗi node theo ticket (mặc định = đường vui dừng ở chờ duyệt), để test
 đi được mọi nhánh ra của mọi node. Kết quả đặc biệt `"raise"` → node ném `ValueError` (TC29 → E9).
 `hook(state, label)` cho test chèn việc vào giữa node (vd. giết process ngay sau `approval_create`).
+Trên stack compose (2b-4) dùng `StackScenario`: chọn preset theo thẻ `[fake:<preset>]` trong câu yêu cầu,
+kết quả suy từ state (không từ bộ nhớ process), dừng `FAKE_NODE_DELAY` giây ở điểm preset khai báo.
 
 Các port side effect (`Notifier`, `Approvals`, `DeadlineStore`) luôn được node gọi QUA `effects.once`.
 """
 
+import asyncio
 import inspect
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -119,6 +123,81 @@ class FakeScenario:
             result = fn(state)
             if inspect.isawaitable(result):
                 await result
+
+    async def pause(self, state: Mapping[str, Any], point: str) -> None:
+        """Điểm dừng trước node giả (`builder.fake_nodes`) — bản test không dừng."""
+
+
+# ---- Kịch bản trên stack compose (2b-4): FAKE_SCENARIO + thẻ [fake:<preset>], FAKE_NODE_DELAY ----
+
+# Node giả được phép làm điểm dừng: không có node thật (b01, b20) và node chờ (dừng ở đó chỉ làm
+# chậm lượt resume, không mở ra khe hở nào mới). Cộng hook sau khi tạo phiếu (D-18).
+PAUSABLE_NODES = frozenset({
+    "b02_screen", "b03_classify", "b06_diagnose", "b08_retrieve", "b10_route", "b11_slots",
+    "b12_assess", "b15_prepare_approval", "b17_execute",
+})  # fmt: skip
+PAUSE_POINTS = PAUSABLE_NODES | {"after_approval_create"}
+FAKE_TAG = re.compile(r"\[fake:([a-z0-9_]+)\]")
+
+
+@dataclass(frozen=True)
+class StackPreset:
+    # node → kết quả đánh chỉ số theo `clarification_turns` của STATE (phần tử cuối lặp lại) — không theo
+    # bộ nhớ process: backend, worker, trước/sau restart đều chọn như nhau.
+    outcomes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    pause_at: str | None = None  # điểm dừng FAKE_NODE_DELAY giây (để SIGKILL giữa lượt)
+
+
+STACK_PRESETS: Mapping[str, StackPreset] = {
+    "approval": StackPreset(),  # đường mặc định: dừng ở chờ duyệt
+    "clarify": StackPreset({"b11_slots": ("missing", "complete")}),
+    "confirm": StackPreset({"b10_route": ("info",)}),
+    "raise": StackPreset({"b06_diagnose": ("raise",)}),  # TC29 → E9
+    "kill_b06": StackPreset(pause_at="b06_diagnose"),
+    "kill_b15": StackPreset(pause_at="after_approval_create"),
+}
+
+type Sleep = Callable[[float], Awaitable[None]]
+
+
+class StackScenario(FakeScenario):
+    """Kịch bản node giả chọn theo ticket bằng thẻ `[fake:<preset>]` trong `redacted_request` (chỉ dựng
+    khi `FAKE_SCENARIO` đặt, dev/test — `graph/wiring.fake_scenario`). Không thẻ → preset `default`.
+    Thẻ lạ → `ValueError` trong node giả → E9 qua boundary (thấy được, không lặng lẽ về mặc định).
+    Chỉ node giả gọi `deps.scenario`; node thật B1/B20 không đọc thẻ."""
+
+    def __init__(self, default: str, *, delay: float = 0.0, sleep: Sleep = asyncio.sleep) -> None:
+        if default not in STACK_PRESETS:
+            raise ValueError(f"FAKE_SCENARIO={default!r} lạ — chọn một trong {sorted(STACK_PRESETS)}")
+        if delay < 0:
+            raise ValueError("FAKE_NODE_DELAY phải ≥ 0")
+        super().__init__()
+        self.default = default
+        self.delay = delay
+        self._sleep = sleep
+
+    def preset(self, state: Mapping[str, Any]) -> StackPreset:
+        found = FAKE_TAG.search(str(state.get("redacted_request") or ""))
+        name = found.group(1) if found else self.default
+        if name not in STACK_PRESETS:
+            raise ValueError(f"thẻ [fake:{name}] lạ — chọn một trong {sorted(STACK_PRESETS)}")
+        return STACK_PRESETS[name]
+
+    def pick(self, state: Mapping[str, Any], node: str) -> str:
+        seq = self.preset(state).outcomes.get(node)
+        if not seq:
+            return DEFAULT_OUTCOMES[node]
+        outcome = seq[min(int(state.get("clarification_turns") or 0), len(seq) - 1)]
+        if outcome == "raise":
+            raise ValueError(f"lỗi giả tại {node}")  # TC29: exception không lường trước
+        return outcome
+
+    async def hook(self, state: Mapping[str, Any], label: str) -> None:
+        await self.pause(state, label)
+
+    async def pause(self, state: Mapping[str, Any], point: str) -> None:
+        if self.delay > 0 and self.preset(state).pause_at == point:
+            await self._sleep(self.delay)
 
 
 @dataclass

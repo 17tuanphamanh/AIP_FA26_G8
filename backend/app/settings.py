@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     app_env: Literal["dev", "test", "staging", "prod"] | None = None
     # Người duyệt cố định của node B15 GIẢ (tới Phase 4). Phải có dòng `users` (FK approvals).
     fake_approver_id: str | None = None
+    # Stack compose (2b-4): preset node giả mặc định; ĐẶT biến = bật thẻ `[fake:<preset>]` theo ticket
+    # (`graph/fakes.StackScenario`). Không đặt → kịch bản mặc định, thẻ bị bỏ qua. Chỉ dev/test.
+    fake_scenario: str | None = None
+    # Giây dừng ở điểm do preset quyết (kill_b06, kill_b15) — để SIGKILL giữa lượt. Chỉ dev/test.
+    fake_node_delay: float | None = Field(default=None, ge=0)
 
     # ---- Hạ tầng ----
     database_url: str = "postgresql+psycopg://app_rw@localhost:5432/servicedesk"  # role app_rw
@@ -118,6 +123,13 @@ class Settings(BaseSettings):
         # Ít nhất 3 nhịp trong một MAX_AGE: một nhịp trễ không làm worker bị báo unhealthy oan.
         if self.worker_heartbeat_seconds * 3 > self.worker_heartbeat_max_age:
             raise ValueError("WORKER_HEARTBEAT_SECONDS phải ≤ WORKER_HEARTBEAT_MAX_AGE / 3")
+        return self
+
+    @model_validator(mode="after")
+    def _fake_delay_below_stale(self) -> "Settings":
+        # Lượt đang ngủ ≥ nửa ngưỡng "lượt dở dang" thì worker dễ coi lượt còn sống là lượt chết.
+        if self.fake_node_delay is not None and self.fake_node_delay * 2 >= self.worker_stale_turn_seconds:
+            raise ValueError("FAKE_NODE_DELAY phải < WORKER_STALE_TURN_SECONDS / 2")
         return self
 
     @property

@@ -9,6 +9,9 @@ x-backend-env: &backend-env
   # Bắt buộc khai báo (2b-3 Q3): thiếu → compose dừng. Thành phần giả chỉ nạp khi dev/test.
   APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
   FAKE_APPROVER_ID: ${FAKE_APPROVER_ID:-}
+  # Kịch bản node giả trên stack (2b-4, `make gate2`) — backend và worker PHẢI thấy cùng giá trị.
+  FAKE_SCENARIO: ${FAKE_SCENARIO:-}
+  FAKE_NODE_DELAY: ${FAKE_NODE_DELAY:-}
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
   MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
   QDRANT_URL: http://qdrant:6333
