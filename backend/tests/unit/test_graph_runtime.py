@@ -153,7 +153,7 @@ async def test_invalid_event_kind_and_unknown_ticket() -> None:
 async def test_other_outcomes_of_waits() -> None:
     h = GraphHarness()
     await h.submit("rej")
-    r = await deliver_event(h.runner, "rej", S_PENDING_APPROVAL, {"kind": "rejected"})
+    r = await deliver_event(h.runner, "rej", S_PENDING_APPROVAL, {"kind": "rejected", "note": "không duyệt"})
     assert (r.status, r.values["close_reason"]) == (S_REJECTED, "rejected_by_approver")
     await h.submit("unres", b12_assess="auto")
     r = await deliver_event(h.runner, "unres", S_CONFIRMING, {"kind": "unresolved"})
@@ -358,7 +358,7 @@ async def test_two_concurrent_events_resume_once() -> None:
     await h.submit("t1")
     results = await asyncio.gather(
         deliver_event(h.runner, "t1", S_PENDING_APPROVAL, {"kind": "approved"}),
-        deliver_event(h.runner, "t1", S_PENDING_APPROVAL, {"kind": "rejected"}),
+        deliver_event(h.runner, "t1", S_PENDING_APPROVAL, {"kind": "rejected", "note": "không duyệt"}),
         return_exceptions=True,
     )
     assert sum(isinstance(x, LateEvent) for x in results) == 1

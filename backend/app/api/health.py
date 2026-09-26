@@ -2,6 +2,9 @@
 
 Phase 1: DB, Qdrant, mock (P5). ml-service, LLM thêm khi có (P9 mục 5).
 Route công khai trong mạng nội bộ, không cần permission (FR-T1-1).
+
+`runtime`: `up` | `down` — runtime graph (checkpoint + runner) có mở được lúc khởi động không (2b-3).
+Chỉ để báo; không đổi mã 200/503 (runtime down thì route ticket tự trả 503).
 """
 
 import asyncio
@@ -34,5 +37,8 @@ async def run_checks(checks: Mapping[str, HealthCheck], timeout: float) -> dict[
 async def health(request: Request) -> JSONResponse:
     results = await run_checks(request.app.state.health_checks, request.app.state.health_timeout)
     failed = sorted(name for name, status in results.items() if status != "ok")
-    body = {"status": "ok" if not failed else "degraded", "checks": results, "failed": failed}
+    body = {
+        "status": "ok" if not failed else "degraded", "checks": results, "failed": failed,
+        "runtime": getattr(request.app.state, "runtime_status", "down"),
+    }  # fmt: skip
     return JSONResponse(body, status_code=200 if not failed else 503)

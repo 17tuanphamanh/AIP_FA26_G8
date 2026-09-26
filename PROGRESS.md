@@ -8,9 +8,9 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 (B20 thật + hàng đợi L2) xong, `make test` xanh, chờ duyệt commit**. Phase 1 đã đóng |
+| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, mutation logic 28/28 + SQL 8/8 đỏ, `make test` xanh (1550 + mock 86) — đã duyệt commit, chờ CI**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 26/09/2026 |
+| Cập nhật | 26/09/2026 (2b-3) |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -552,7 +552,7 @@ dịch vụ ticket + route sự kiện + nối `create_app`; 2b-4 = stack thật
 **Commit + CI:** `6c43153` (35 file, gồm 5 file `docs/spec` người cập nhật) — CI GitHub **xanh**, run
 `36240526098` (26/09/2026, người theo dõi).
 
-## Phase 2 — 2b-2: B20 thật + hàng đợi L2 (26/09/2026, `make test` xanh, chờ duyệt commit)
+## Phase 2 — 2b-2: B20 thật + hàng đợi L2 (26/09/2026, commit `b68e800`, CI xanh run `36243253945`)
 
 **Quyết định của người cho 2b-2 (26/09/2026):**
 - **Q-A `resolution_path`:** B20 suy ra ở MỘT chỗ (`audit/final.resolution_path`): cha → NULL; `S_ESCALATED` →
@@ -628,6 +628,132 @@ dịch vụ ticket + route sự kiện + nối `create_app`; 2b-4 = stack thật
 Kèm: chạy pytest trực tiếp phải `cd` về gốc repo (`!` chạy ở thư mục hiện tại của phiên); `FailingTickets` ném bản exception
 mới mỗi lần (ném lại cùng đối tượng → traceback cộng dồn qua các lần thử — chỉ ảnh hưởng log của test).
 
+**Commit + CI:** `b68e800` — CI GitHub **xanh**, run `36243253945` (26/09/2026, người theo dõi, đã đối chiếu `headSha`).
+
+
+## Phase 2 — 2b-3: dịch vụ ticket + route sự kiện + nối `create_app` (26–27/09/2026, `make test` xanh, chờ duyệt commit)
+
+Kế hoạch Plan Mode đã duyệt (kèm chốt a–h và Q1–Q5 của người, 26/09/2026). Không LLM, không đọc `.env`,
+**không commit**.
+
+**Quyết định của người cho 2b-3:**
+- **Q1:** sự kiện (messages/confirm/decision) trả **202**: request lấy khoá ticket + kiểm guard (409/422 trả
+  ngay), rồi **giao khoá cho task nền** chạy lượt resume. try/finally + cờ "đã giao": chưa giao thì request nhả;
+  task nền nhả trong `finally`; task bị huỷ trước khi kịp chạy → `on_cancel` nhả.
+- **Q2 (lệch B15 mục 10):** bấm duyệt muộn **KHÔNG đổi `approvals.status`** — chỉ audit `late_event` (B16,
+  `source=user`, `approval_id`, `clicked_by`, `reason=expired|already_decided`). Lý do: đổi `pending→late_ignored`
+  trước chu kỳ quét 15 giây làm worker không bao giờ bắn timeout → ticket kẹt `S_PENDING_APPROVAL`.
+- **Q3:** compose `APP_ENV: ${APP_ENV:?…}`; `.env.example` có `APP_ENV=dev`. Người tự thêm vào `.env`.
+- **Q4:** không seed DB app; `FAKE_APPROVER_ID` chưa có dòng `users` → B15 giả vấp FK → E9 (có test).
+  **2b-4: `gate2.py` phải tự đăng nhập l1 trước.** Phase 4 (chọn người duyệt theo lịch trực) gặp lại vấn đề này.
+- **Q5:** 413 đứng TRƯỚC kiểm quyền, đếm **byte đọc thật** (chunked không Content-Length vẫn bị chặn).
+- Chốt a–h: thứ tự kiểm messages/confirm = 413 → quyền → 404 (không có / không đọc được, cùng body) → 403 (không
+  phải chủ) → 409 (ticket con) → 422 (body) → guard → `start_event`; bị từ chối chỉ ghi `permission_denied`
+  (404 id giả: không ghi gì); GET `status` = `tickets.final_state` nếu đã đóng, còn mở thì từ checkpoint;
+  `waiting_for` chỉ từ checkpoint; checkpoint lỗi → 503; response model `TicketView`; route duyệt không ghi quyết
+  định (B16 ghi), so hạn bằng Clock của app (bằng hạn = muộn), `approver_id` chỉ từ token; `view_started_at` tuỳ
+  chọn, chỉ log; worker recover lượt mở + snapshot rỗng → chạy state đầu từ dòng `tickets` cùng `turn_id`; task nền
+  giữ tham chiếu + `done_callback` log exception.
+
+**Đã làm:**
+- `api/tickets.py` (`POST /api/tickets` 202, `GET /api/tickets/{id}`, `POST …/messages`, `POST …/confirm`),
+  `api/approvals.py` (`POST /api/approvals/{id}/decision`), `api/desk.py` (phụ thuộc chung; runtime lỗi → 503;
+  `parse_body` để 422 đứng sau kiểm quyền), `api/background.py` (`BackgroundRuns`), `api/errors.py` (LateEvent 409,
+  TicketBusy 503 + `Retry-After`, InvalidEvent 422, TicketNotFound 404), `api/limits.py` (`BodyLimitMiddleware`).
+- `guard/privacy.py` (`PrivacyGuard`, `RedactionResult` B02 mục 4, `NotRedactingGuard`); `approval/store.py`
+  (`SqlApprovals`: `create` trong `current_tx()`, `close` chỉ từ `pending`, `lock_row` FOR UPDATE, `get`).
+- `db/tickets.py`: `NewTicket`, `TicketRow`, `create` (ticket + lượt `submit` MỘT transaction, `created_at` từ
+  Clock của app), `get`. `graph/ports.py`: `TicketReader`, `TicketRepo`, `ApprovalRepo`.
+- `graph/runner.py`: `run_new` (không chạy khi lượt đã đóng hoặc thread đã có state), recover snapshot rỗng →
+  state đầu từ dòng `tickets`; port `tickets`. `graph/late_event.py`: tách `_guard`, thêm `start_event` (giao
+  khoá), `record_late`. `auth/authz.py`: `may_decide_as` (phần "ai" → 403); `can_decide_approval` giữ nghĩa P6.
+- `graph/wiring.py`: `Runtime` mang `tickets`, `approvals`; `SqlApprovals` thay `UnavailableApprovals` ở CẢ
+  backend lẫn worker; `fake_approver()` kiểm `APP_ENV` trước khi đụng DB. Node giả B15 dùng `FAKE_APPROVER_ID`
+  (thiếu → ném → E9); B16 giả ghi `decided_by`, `note` từ sự kiện.
+- `main.create_app(runtime=, guard=)`: guard giả / `FAKE_APPROVER_ID` sai môi trường → `RuntimeError` ngay trong
+  `create_app`; lifespan một `AsyncExitStack`; runtime mở lỗi → `runtime_status="down"`, route ticket/duyệt 503;
+  tắt app: chờ `BACKGROUND_SHUTDOWN_SECONDS` rồi huỷ lượt nền (worker phục hồi). `/api/health` thêm `"runtime"`.
+- `settings.py`: `app_env` (không mặc định), `fake_approver_id`, `max_request_body_bytes`, `background_shutdown_seconds`,
+  `require_dev_fakes`. `conftest.py` gốc đặt `APP_ENV=test`. `docker-compose.yml`, `.env.example` (mục "Môi trường").
+- `FakeScenario.plan_all`/`on_all` (id ticket do API sinh, test không biết trước).
+
+**Sửa thêm ngoài phạm vi (phát hiện khi chạy test, 26/09/2026 16:09 UTC):** 8 test auth (refresh, CSRF) **đỏ trên
+chính HEAD `b68e800`** — đã kiểm bằng worktree tạm ở `$TMPDIR`. Nguyên nhân: `EPOCH` của `tests/fakes/auth.py` là
+26/09/2026 08:00 UTC, cookie refresh hết hạn EPOCH + 8 giờ = 16:00 UTC, mà cookie jar của httpx bỏ cookie theo
+**giờ thật**. CI run `36243253945` xanh vì chạy trước 16:00. Sửa: `EPOCH = 2099-09-26 08:00 UTC` (app vẫn kiểm
+JWT/phiên/khoá theo FakeClock; store SQL ghi mọi mốc thời gian từ clock, không dùng `now()`). Integration auth
+chưa chạy lại với mốc mới.
+
+**Lỗi tìm ra khi viết test:** `BackgroundRuns.drain` quay vô hạn — `gather` trên task đã xong trả về mà không
+nhường vòng lặp nên `done_callback` chưa kịp bỏ task khỏi tập; sửa bằng `sleep(0)` sau mỗi vòng.
+
+**Bổ sung sau duyệt sandbox (người yêu cầu, 27/09/2026):**
+1. **Cạn lượt phục hồi mà thread chưa từng có checkpoint** — bản đầu chỉ đóng lượt + log (ticket không
+   `final_state` = biến mất khỏi mọi hàng đợi, trái 2b-Q6). Nay `Runner._give_up_before_checkpoint`: dựng state đầu
+   từ dòng `tickets`, `goto` sang `S_ESCALATED` E9 `recover_exhausted` (audit `detail.no_checkpoint=true`), ghi cả
+   state lẫn cập nhật vào checkpoint (`aupdate_state(as_node=b01_identity)`) rồi chạy B20 — cùng đường E9
+   `recover_exhausted` có sẵn. `_divert`/`_divert_bound` nhận `values` thay cho snapshot (+ cờ `seed`).
+   **Sửa nhận định cũ:** "chết ở B1 cả 4 lần" KHÔNG rơi vào khe này — LangGraph ghi checkpoint input trước khi
+   chạy B1, nên ca đó đi đường `_give_up` có sẵn (đã có test chứng minh). Khe thật hẹp hơn: chết sau commit
+   `tickets.create`, trước checkpoint input, cả 4 lần.
+2. **Test cho lỗi `drain`** (`gather` trên toàn task đã xong trả về ngay, không nhường vòng lặp → quay vô hạn):
+   dựng đúng trạng thái "xong mà callback chưa chạy" bằng `eager_task_factory`, chạy trong thread daemon + `join`
+   2 giây (vòng quay không nhường nên `wait_for` không cắt được) → hỏng thì đỏ, không treo.
+3. **EPOCH 2099 giữ nguyên**; message commit sau này có dòng riêng:
+   `- test: doi EPOCH auth sang 2099, sua bom hen gio tu 1c`.
+
+**Test mới:**
+
+| File | Nội dung |
+|---|---|
+| `unit/test_tickets_api.py` (36) | tạo 202 + chạy nền; `requester_role/dept/session`; guard che trước khi lưu; `created_at` = FakeClock, thời lượng 300 giây (`tickets` + điểm log 8); body sai 422 không ghi gì; 401; `TicketView` đúng tập key; TC30 404 cùng body; `waiting_for` 3 trạng thái; `status` theo `final_state` khi lệch checkpoint; checkpoint lỗi 503; thứ tự (a): người lạ → ticket con 404, chủ → con 409 trước body/guard, l1 không phải chủ 403 (`reason=not_owner`), 404 id giả không ghi gì, bị từ chối không gọi guard, 422 sau kiểm; sự kiện muộn 3 ca → đúng 1 `late_event`, state không đổi; bận → 503 `Retry-After: 3` rồi 409; request bị huỷ khi đang giữ khoá → khoá nhả NGAY; task huỷ trước khi chạy → `on_cancel` nhả; huỷ giữa lượt → không E9, lượt mở; task nền lỗi → log; TC24, TC25 qua HTTP |
+| `unit/test_approvals_api.py` (16) | phiếu `pending` tới khi graph chạy; từ chối ghi note (đã che) + `decided_by`; `approver_id` chỉ từ token (body có → 422); từ chối thiếu note (3 dạng) → 422, 0 resume; l1 khác / L2 / employee / người gửi → 403; 404; đã quyết → 409 `already_decided`; bấm muộn trước chu kỳ quét → 409 `expired`, phiếu vẫn `pending`, worker → E6 + `timeout`, 0 lần thực thi; biên hạn (`==` → 409, `−1 µs` → 202); so bằng Clock của app; 2 request đồng thời (request sau đứng ở khoá) → 1 resume, 409, đúng 1 `late_event` |
+| `unit/test_runner_intake.py` (7) | `run_new` dựng state từ dòng `tickets`; chết trước checkpoint đầu → worker recover, cùng `turn_id`, 1 phiếu; `run_new` tới sau khi thread có state → không chạy lại; lượt đã đóng; `create` nguyên tử; **chết ở B1 × 4** → E9 `recover_exhausted`, 1 escalation, 1 lượt, `recover_attempts=4`, 1 tin; **chết trước checkpoint đầu × 4** → như trên + `no_checkpoint`, B1 chưa từng chạy |
+| `unit/test_background_runs.py` (1) | `drain` trả về khi task đã xong mà `done_callback` chưa chạy (eager task, thread + join 2 giây) |
+| `unit/test_app_env.py` (14) | None/staging/prod + guard giả → `RuntimeError`; + `FAKE_APPROVER_ID` → lỗi; dev/test lên; worker (`open_runtime`) cùng luật, chặn trước khi đụng DB; runtime lỗi → health 200 `"down"`, route ticket/duyệt/GET 503; runtime lên → `"up"` |
+| `unit/test_body_limit.py` (6) | 64 KB + 1 → 413 ở 4 route POST, trước 401, 0 dòng ghi; chunked (không Content-Length) → 413; đúng 64 KB → qua giới hạn |
+| `unit/test_privacy_guard.py` (2) | sau tạo ticket + trả lời có `SECRET`: không có trong mọi store giả + mọi blob checkpoint; đối chứng: guard không che → quét thấy |
+| `unit/test_auth_route_scan.py` (+1) | 5 route mới có trong danh sách quét, đúng permission |
+| `integration/test_tickets_http_pg.py` (11) | cổng 2 qua HTTP (đóng app, mở app mới cùng DB) + thời lượng 300 giây; sự kiện muộn 3 trạng thái chờ; bấm muộn trước chu kỳ quét (S5); IDOR + mỗi người đọc đúng ticket mình; quét `information_schema` mọi cột text/varchar/jsonb/bytea mọi bảng + checkpoint không có `SECRET` (đối chứng: thấy chuỗi không bí mật ở `tickets` và checkpoint); Q4 E9; **giết process thật giữa commit INSERT và submit** → worker xong, 1 thread, 1 `turn_id`; cạn lượt phục hồi (chết ở B1 × 4 / chết trước checkpoint đầu × 4, mỗi lần một runtime mới) → `tickets` E9, đúng 1 dòng `escalations` E9 `recover_exhausted`, 1 lượt `recover_attempts=4` |
+| `integration/test_approval_store_pg.py` (8) | `create` ghi ticket + lượt theo Clock, `get` UTC; `create` nguyên tử; `close` chỉ từ `pending`; CHECK note; `lock_row` chặn UPDATE khác (`LockNotAvailable`); id sai/không có → None; UTC; **chết giữa INSERT phiếu và commit `side_effects` → cả hai mất, phục hồi đúng 1 phiếu** |
+| Sửa | `test_graph_runtime.py`, `test_graph_pg.py`: sự kiện `rejected` kèm `note` (bản giả cũ tự điền "(node giả)"; nay note phải đi từ sự kiện); `test_health.py`, `auth_helpers.py`: tiêm `no_runtime`; `graph_pg.py`: `SqlApprovals` thật (`RecordingApprovals`), `pg_runtime_factory` |
+
+**Kết quả kiểm (26/09/2026, sandbox):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` (từng bước) | **Xanh** — ruff, mypy `backend/app` 121 file, mypy mock 11 file, 5 hợp đồng import-linter, `gitleaks detect` không leak; `gitleaks dir backend/app backend/tests config .env.example docker-compose.yml conftest.py`: không leak (bản đầu bắt `SECRET = "SECRET-…"` ở `tests/fakes/desk.py` → đổi sang ghép lúc chạy) |
+| unit backend | **1409 passed** (1326 cũ + 83 mới) — lần chạy sau bổ sung 27/09/2026 |
+| `docker compose config` (bản sao ở `$TMPDIR`) | có `APP_ENV` → `dev`; bỏ `APP_ENV` → dừng "required variable APP_ENV is missing a value" |
+| Mutation logic L1–L28 | **28/28 đỏ đúng test dự đoán** (chạy lại cả bộ sau bổ sung 27/09/2026). **L27** bỏ nhánh E9 trước checkpoint → `final_state` None (`test_killed_before_first_checkpoint_every_time_goes_e9`); **L28** bỏ `sleep(0)` trong `drain` → "drain treo quá 2.0 giây" (`test_drain_returns_when_done_callback_pending`). Lần chạy đầu 2 đột biến SỐNG → đã sửa test: **L25** xanh oan vì generator của khoá bị GC tự nhả khi task chết (test giờ kiểm khoá nhả NGAY, không nhường vòng lặp); **L17** xanh oan vì request thứ hai ra 409 ở `lock_row` (phiếu đã quyết) chứ không chờ khoá (test giờ đợi request thứ hai đứng ở khoá ticket rồi mới thả lượt đầu). L24 thực hiện là "bỏ log trong `done_callback`" (bỏ hẳn callback thì `drain` treo) |
+| `make test` lần 1 (người chạy, 27/09/2026) | **2 failed, 1548 passed** — cả hai là lỗi TEST (không nằm trong danh sách S nên trước đó chỉ chạy lẻ/chưa chạy): (1) `test_late_click_before_scan_pg` `delivered 2 == 1` — DB dùng chung cả module, phiếu pending của `test_late_events_pg` cũng quá hạn khi tua clock → đổi sang `delivered >= 1 and failed == 0`, vẫn kiểm đúng phiếu/ticket của test (S5 bắt ở assert "vẫn pending" TRƯỚC bước quét, không bị nới); (2) quét guard `relation "collations" does not exist` — Postgres tính `has_table_privilege(quote_ident(table_name))` trên cả dòng của `information_schema` trước khi lọc schema → dùng tên đủ schema `format('%I.%I', …)` |
+| `make test` lần 2 (người chạy, 27/09/2026) | **Xanh** — backend **1550 passed** (1409 unit + 112 integration [93 cũ + 19 mới] + 29 e2e) + mock **86 passed**; gồm integration auth với `EPOCH` 2099, giết process thật giữa commit INSERT và submit, quét guard toàn DB |
+| Mutation SQL S1–S8 | **8/8 đỏ đúng lý do** (người chạy từng lệnh ngoài sandbox, 27/09/2026; script tự khôi phục + so nội dung, sau cùng không còn dấu đột biến): **S1** tách 2 tx → `assert 1 == 0` (dòng `tk-a2` còn lại); **S2** bỏ `created_at=:at` → `test_full_flow_restart_duration_300s_pg` (`created_at = EPOCH` False) + `test_create_writes_ticket_and_turn_with_app_clock`; **S3** bỏ `FOR UPDATE` → `DID NOT RAISE OperationalError`; **S4** `close` bỏ điều kiện `pending` → phiếu `approved` bị đè `status='timeout'`; **S5** `mark_late` đổi status → `'late_ignored' == 'pending'`; **S6** `tickets.get` bỏ `WHERE` → rò IDOR thật (binh đọc ticket của an ra 200; kèm B15 vấp UNIQUE vì `run_new` dựng state từ nhầm dòng); **S7** bỏ `current_tx()` → `assert 1 == 0` (phiếu mồ côi sau khi chết); **S8** recover snapshot rỗng đóng lượt → `None == 'S_ESCALATED'` |
+
+**Đặc tả — ĐÃ ĐỒNG BỘ** (người sửa `docs/spec`, 27/09/2026; Claude đối chiếu với code 2b-3: khớp nội dung):
+`decisions.md` mục 4.1 (2b-3-Q1…Q5, QA…QD), P1 bản 1.5 (mục 7, 10), B15-B16 bản 1.4 (mục 4, 5.1, 10), 01 bản 1.5
+(mục 4.2). Lệch CHỮ còn lại (đề xuất, không đổi code): (1) "recover gọi `run_new`" — code gọi `_run_initial`
+(cùng cách dựng state), vì `run_new` tự lấy khoá ticket mà recover đang giữ (khoá không tái nhập); (2) B15 5.1 đặt
+`mark_late` và 422 trước "nhả hàng" — code nhả hàng ngay sau khi xác định 404/403/muộn rồi mới ghi `late_event`,
+parse body, 422; (3) route gọi `start_event` (bản API của `deliver_event`), không phải `deliver_event`; B15 5.1
+chưa nhắc `note` cũng qua privacy guard.
+
+Người đã sửa cả 3 chỗ lệch chữ (27/09/2026) — Claude đối chiếu lại: decisions 2b-3-QC + P1 mục 7/10 "recover
+chạy state đầu từ dòng `tickets`, không gọi `run_new`" = `_run_initial`; B15 5.1 "xác định muộn → nhả hàng → mark_late
++ 409 → 422 → note qua guard → `start_event`" = code; 2b-3-QA `start_event` (route) / `deliver_event` (worker) = code.
+
+**Bổ sung trước commit (người yêu cầu, 27/09/2026):** test quét guard trên Postgres assert danh sách quét có ≥ 22 bảng
+(và chứa `tickets`, `audit_logs`, `turns`, `side_effects`, 3 bảng checkpoint) — không xanh oan khi danh sách rỗng /
+lọc sai schema. **CHƯA CHẠY** (sandbox không tới được Docker); kiểm tĩnh: 22/22 bảng P7 có cột text/jsonb và `app_rw`
+có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 4 bảng checkpoint (0003) → dự kiến 26. CI sẽ chạy.
+
+**Spec cần sửa (người sửa `docs/spec`) — đã xử lý ở trên:**
+- B15-B16 mục 10: "Bấm duyệt sau khi hết hạn → 409, phiếu `late_ignored`" → phiếu giữ trạng thái thật, dấu vết ở
+  audit `late_event` (Q2). Mã giả handler mục 5: `can_decide_approval` (gồm `pending` + hạn) đứng trước → TC27 ra
+  403 — tách "ai" (403) với "khi nào" (409).
+- B15-B16 mục 4 `DecisionIn.view_started_at` bắt buộc → tuỳ chọn, chỉ log; `view_duration` tính phía server từ
+  `first_viewed_at` (chốt f).
+- 01 mục 4.2: đồ thị phụ thuộc thiếu `api → guard` (B02 mục 2 + D-07 đặt privacy guard ở API).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

@@ -2,6 +2,9 @@
 
 Worker dùng `can_execute=False` (không có SVC_EXECUTOR_TOKEN — D-03, quyết định 26/09/2026). Node
 chưa có logic thật dùng port không làm gì (`fakes.LoggingNotifier`…); phase sau thay bằng dịch vụ thật.
+Phiếu duyệt ghi bảng `approvals` thật (`approval/store.SqlApprovals`, 2b-Q3) ở CẢ backend lẫn worker —
+worker bắn timeout thì B16 giả ghi `timeout` lên phiếu. Người duyệt của B15 giả = `FAKE_APPROVER_ID`,
+chỉ nạp khi `APP_ENV` ∈ {dev, test} (kiểm TRƯỚC khi đụng DB — fail-closed).
 B1 (2b) đọc AD qua registry tool đọc (token svc_agent): truyền `directory` vào để dùng chung breaker
 với nơi khác trong cùng process; không truyền thì tự dựng (và tự đóng client HTTP khi thoát).
 """
@@ -12,6 +15,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 
+from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
 from app.audit.writer import AuditWriter
 from app.core.clock import Clock
@@ -26,11 +30,16 @@ from app.graph.fakes import (
     LoggingNotifier,
     NodeDeps,
     RefusingExecutor,
-    UnavailableApprovals,
     UnconfiguredDirectory,
 )
 from app.graph.lock import PgTicketLock
-from app.graph.ports import ToolCaller
+from app.graph.ports import (
+    ApprovalRepo,
+    DeadlineStore,
+    TicketRepo,
+    ToolCaller,
+    TurnStore,
+)
 from app.graph.runner import Runner
 from app.settings import Settings, get_escalation_templates, get_policy
 from app.tools.wiring import build_read_registry
@@ -40,9 +49,20 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Runtime:
+    """`runner` + store mà API/worker cần (Protocol — test tiêm bản in-memory `tests/fakes/graph.py`)."""
+
     runner: Runner
-    deadlines: SqlDeadlineStore
-    turns: SqlTurnStore
+    deadlines: DeadlineStore
+    turns: TurnStore
+    tickets: TicketRepo  # create, get (API); B20
+    approvals: ApprovalRepo  # lock_row (route duyệt); create/close (B15/B16)
+
+
+def fake_approver(settings: Settings) -> str | None:
+    """`FAKE_APPROVER_ID` chỉ ở dev/test (2b-Q3). Chưa đặt → None (B15 giả → E9)."""
+    if settings.fake_approver_id is not None:
+        settings.require_dev_fakes("FAKE_APPROVER_ID (người duyệt giả của B15)")
+    return settings.fake_approver_id
 
 
 @asynccontextmanager
@@ -54,6 +74,7 @@ async def open_runtime(
     can_execute: bool,
     directory: ToolCaller | None = None,
 ) -> AsyncIterator[Runtime]:
+    approver_id = fake_approver(settings)  # trước mọi kết nối: sai môi trường → không khởi động
     async with AsyncExitStack() as stack:
         if directory is None:
             if settings.svc_agent_token is None:
@@ -63,24 +84,29 @@ async def open_runtime(
                 registry, http = build_read_registry(settings, clock)
                 stack.push_async_callback(http.aclose)
                 directory = registry
-        yield await stack.enter_async_context(
-            _open(settings, engines, clock, can_execute=can_execute, directory=directory)
-        )
+        opened = _open(
+            settings, engines, clock, can_execute=can_execute, directory=directory,
+            approver_id=approver_id,
+        )  # fmt: skip
+        yield await stack.enter_async_context(opened)
 
 
 @asynccontextmanager
 async def _open(
-    settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller
-) -> AsyncIterator[Runtime]:
+    settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
+    approver_id: str | None,
+) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
+    tickets = SqlTicketStore(engines.main)
+    approvals = SqlApprovals(engines.main)
     deps = NodeDeps(
-        notifier=LoggingNotifier(), approvals=UnavailableApprovals(), executor=RefusingExecutor(),
+        notifier=LoggingNotifier(), approvals=approvals, executor=RefusingExecutor(),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
-        tickets=SqlTicketStore(engines.main), escalations=SqlEscalationStore(engines.main),
-        templates=get_escalation_templates(),
+        tickets=tickets, escalations=SqlEscalationStore(engines.main),
+        templates=get_escalation_templates(), approver_id=approver_id,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size
@@ -92,6 +118,7 @@ async def _open(
             concurrency=settings.graph_concurrency, can_execute=can_execute,
             rediagnose_on_new_slot=settings.rediagnose_on_new_slot,
             recursion_limit=settings.graph_recursion_limit,
-            max_recover_attempts=settings.max_recover_attempts,
+            max_recover_attempts=settings.max_recover_attempts, tickets=tickets,
         )  # fmt: skip
-        yield Runtime(runner=runner, deadlines=deadlines, turns=turns)
+        yield Runtime(runner=runner, deadlines=deadlines, turns=turns, tickets=tickets,
+                      approvals=approvals)  # fmt: skip

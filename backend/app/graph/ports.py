@@ -9,14 +9,19 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.approval.store import ApprovalRow
 from app.db.identity import LiveSession
 from app.db.runtime import DueWait, OpenTurn, WaitKind
+from app.db.tickets import NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.final import FinalSummary
 from app.tools.registry import ToolResult
 
 # bản ghi dữ liệu dùng chung với store SQL
-__all__ = ["DueWait", "LiveSession", "OpenTurn", "ToolResult", "WaitKind"]
+__all__ = [
+    "ApprovalRow", "DueWait", "LiveSession", "NewTicket", "OpenTurn", "TicketRow", "ToolResult",
+    "WaitKind",
+]  # fmt: skip
 
 
 class AuditSink(Protocol):
@@ -130,7 +135,14 @@ class AlertSink(Protocol):
     async def raise_once(self, draft: AlertDraft) -> bool: ...
 
 
-class TicketStore(Protocol):
+class TicketReader(Protocol):
+    """Runner dựng state đầu của ticket từ dòng `tickets` (lượt `submit` chạy nền, hoặc worker phục
+    hồi lượt chết trước checkpoint đầu tiên — 2b-3)."""
+
+    async def get(self, ticket_id: str) -> TicketRow | None: ...
+
+
+class TicketStore(TicketReader, Protocol):
     """`db/tickets.SqlTicketStore` — B20 đọc `created_at`, số lượt, ghi kết quả cuối MỘT lần."""
 
     async def created_at(self, ticket_id: str) -> datetime: ...
@@ -155,3 +167,19 @@ class EscalationStore(Protocol):
         is_deny_case: bool,
         created_at: datetime,
     ) -> str: ...
+
+
+class TicketRepo(TicketStore, Protocol):
+    """Thêm phần API dùng (2b-3): tạo ticket + lượt `submit` đầu tiên trong MỘT transaction."""
+
+    async def create(self, ticket: NewTicket, *, turn_id: str) -> None: ...
+
+
+class ApprovalRepo(Protocol):
+    """Phần `approval/store.SqlApprovals` mà route duyệt dùng (2b-Q3)."""
+
+    def lock_row(self, approval_id: str) -> AbstractAsyncContextManager[ApprovalRow | None]:
+        """Transaction ngắn, khoá hàng (`FOR UPDATE`) suốt khối `async with`."""
+        ...
+
+    async def get(self, approval_id: str) -> ApprovalRow | None: ...

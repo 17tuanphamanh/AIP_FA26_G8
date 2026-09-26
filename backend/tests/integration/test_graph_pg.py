@@ -242,7 +242,7 @@ async def test_two_processes_deliver_concurrently_resume_once(db: PgUrls, rw: As
     ):
         results = await asyncio.gather(
             deliver_event(a.runner, ticket, S_PENDING_APPROVAL, {"kind": "approved"}),
-            deliver_event(b.runner, ticket, S_PENDING_APPROVAL, {"kind": "rejected"}),
+            deliver_event(b.runner, ticket, S_PENDING_APPROVAL, {"kind": "rejected", "note": "không duyệt"}),
             return_exceptions=True,
         )
         executed = a.executor.calls[ticket] + b.executor.calls[ticket]

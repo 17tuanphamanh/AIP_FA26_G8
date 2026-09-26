@@ -9,6 +9,7 @@ import respx
 from app.main import _default_checks, create_app
 from app.settings import Settings
 from fastapi.testclient import TestClient
+from tests.fakes.runtime import no_runtime
 
 
 def _settings(**over: object) -> Settings:
@@ -28,7 +29,7 @@ async def slow() -> None:
 
 
 def _get(checks: dict[str, object], **over: object) -> httpx.Response:
-    app = create_app(_settings(**over), health_checks=checks)  # type: ignore[arg-type]
+    app = create_app(_settings(**over), health_checks=checks, runtime=no_runtime)  # type: ignore[arg-type]
     with TestClient(app) as client:
         return client.get("/api/health")
 
@@ -36,7 +37,8 @@ def _get(checks: dict[str, object], **over: object) -> httpx.Response:
 def test_all_ok_returns_200() -> None:
     r = _get({"db": ok, "qdrant": ok})
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "checks": {"db": "ok", "qdrant": "ok"}, "failed": []}
+    assert r.json() == {"status": "ok", "checks": {"db": "ok", "qdrant": "ok"}, "failed": [],
+                        "runtime": "down"}  # fmt: skip
 
 
 def test_one_dependency_down_returns_503_with_name() -> None:

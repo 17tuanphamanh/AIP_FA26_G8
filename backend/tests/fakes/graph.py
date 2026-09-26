@@ -16,10 +16,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.approval.store import ApprovalRow
 from app.audit.writer import check_audit_row
 from app.core.clock import FakeClock
 from app.db.escalations import QueueItem
 from app.db.runtime import DueWait, OpenTurn, as_ref
+from app.db.tickets import NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.final import FinalSummary
 from app.graph.builder import build_graph, fake_nodes
@@ -170,15 +172,21 @@ class MemoryDeadlines:
 
 
 class MemoryApprovals:
-    """Port approvals giả, ghi vào cùng bảng `approvals` giả mà worker đọc hạn."""
+    """Port approvals giả, ghi vào cùng bảng `approvals` giả mà worker đọc hạn. `lock_row` khoá
+    theo phiếu như `SELECT … FOR UPDATE` (giữ suốt khối `async with`)."""
 
     def __init__(self, deadlines: MemoryDeadlines) -> None:
         self._table = deadlines.approvals
         self.notified: list[tuple[str, str]] = []
+        self._row_locks: dict[str, asyncio.Lock] = {}
+        self.crash_on_create = False  # process "chết" ở lần tạo phiếu kế tiếp (chưa ghi gì)
 
     async def create(
         self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
     ) -> str:
+        if self.crash_on_create:
+            self.crash_on_create = False
+            raise Crash(f"process chết khi tạo phiếu cho {ticket_id}")
         approval_id = str(len(self._table) + 1)
         self._table[approval_id] = {"ticket_id": ticket_id, "approver_id": approver_id,
                                     "deadline": deadline, "status": "pending",
@@ -189,9 +197,37 @@ class MemoryApprovals:
         self.notified.append((approval_id, approver_id))
         return f"n{len(self.notified)}"
 
-    async def record_result(self, approval_id: str, result: str, at: datetime) -> None:
-        if self._table[approval_id]["status"] == "pending":
-            self._table[approval_id]["status"] = result
+    async def close(
+        self, approval_id: str, result: str, at: datetime, *, decided_by: str | None = None,
+        note: str | None = None,
+    ) -> None:  # fmt: skip
+        row = self._table[approval_id]
+        if row["status"] == "pending":
+            if result == "rejected" and note is None:
+                raise ValueError("CHECK rejected_needs_note")  # như Postgres
+            row.update(status=result, decided_at=at, decided_by=decided_by, note=note)
+
+    def _row(self, approval_id: str) -> ApprovalRow | None:
+        a = self._table.get(approval_id)
+        if a is None:
+            return None
+        return ApprovalRow(
+            approval_id=approval_id, ticket_id=a["ticket_id"], approver_id=a["approver_id"],
+            status=a["status"], deadline=a["deadline"], decided_by=a.get("decided_by"),
+            note=a.get("note"), first_viewed_at=a.get("first_viewed_at"),
+        )  # fmt: skip
+
+    async def get(self, approval_id: str) -> ApprovalRow | None:
+        return self._row(approval_id)
+
+    @asynccontextmanager
+    async def lock_row(self, approval_id: str) -> AsyncIterator[ApprovalRow | None]:
+        lock = self._row_locks.setdefault(approval_id, asyncio.Lock())
+        async with lock:
+            yield self._row(approval_id)
+
+    def status(self, approval_id: str) -> str:
+        return str(self._table[approval_id]["status"])
 
     def count(self, ticket_id: str) -> int:
         return sum(1 for a in self._table.values() if a["ticket_id"] == ticket_id)
@@ -253,9 +289,47 @@ class MemoryTickets:
         self.fail_times: int | None = None
         self.finalize_calls: Counter[str] = Counter()
 
-    def register(self, ticket_id: str, created_at: datetime, *, is_parent: bool = False) -> None:
-        self.rows.setdefault(ticket_id, {"created_at": created_at, "final": None,
-                                         "is_parent": is_parent})  # fmt: skip
+    def register(
+        self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
+        requester_id: str = REQUESTER, session_id: str | None = SESSION,
+        redacted_request: str = "yêu cầu", parent_ticket_id: str | None = None,
+        requester_role: str = "employee", requester_dept: str | None = None,
+    ) -> None:  # fmt: skip
+        self.rows.setdefault(ticket_id, {
+            "created_at": created_at, "final": None, "is_parent": is_parent,
+            "requester_id": requester_id, "session_id": session_id,
+            "redacted_request": redacted_request, "parent_ticket_id": parent_ticket_id,
+            "requester_role": requester_role, "requester_dept": requester_dept,
+        })  # fmt: skip
+
+    async def create(self, ticket: NewTicket, *, turn_id: str) -> None:
+        """Như SQL: dòng `tickets` + lượt `submit` trong MỘT transaction (lượt lỗi → không ticket)."""
+        if ticket.ticket_id in self.rows:
+            raise ValueError("PK tickets")
+        if turn_id in self._turns.rows:
+            raise ValueError("PK turns")
+        self.register(
+            ticket.ticket_id, ticket.created_at, requester_id=ticket.requester_id,
+            session_id=ticket.session_id, redacted_request=ticket.redacted_request,
+            requester_role=ticket.requester_role, requester_dept=ticket.requester_dept,
+        )  # fmt: skip
+        await self._turns.start(turn_id=turn_id, ticket_id=ticket.ticket_id,
+                                session_id=ticket.session_id, event_type="submit",
+                                at=ticket.created_at)  # fmt: skip
+
+    async def get(self, ticket_id: str) -> TicketRow | None:
+        r = self.rows.get(ticket_id)
+        if r is None:
+            return None
+        final: FinalSummary | None = r["final"]
+        return TicketRow(
+            ticket_id=ticket_id, requester_id=r["requester_id"], session_id=r["session_id"],
+            redacted_request=r["redacted_request"], parent_ticket_id=r["parent_ticket_id"],
+            is_parent=r["is_parent"], final_state=final.final_state if final else None,
+            exit_code=final.exit_code if final else None,
+            close_reason=final.close_reason if final else None, created_at=r["created_at"],
+            closed_at=final.closed_at if final else None,
+        )  # fmt: skip
 
     async def created_at(self, ticket_id: str) -> datetime:
         return self.rows[ticket_id]["created_at"]  # type: ignore[no-any-return]
@@ -356,6 +430,7 @@ class GraphHarness:
     alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
     max_recover_attempts: int = 3
+    approver_id: str | None = "l1-fake"  # B15 giả (FAKE_APPROVER_ID)
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -367,7 +442,10 @@ class GraphHarness:
         self.tickets = MemoryTickets(self.turns)
         self.escalations = MemoryEscalations(self.tickets)
         self.lock = MemoryTicketLock(self.lock_timeout)
-        self.identity.add_session(SESSION, REQUESTER, expires_at=self.clock.now() + timedelta(days=365))
+        if isinstance(self.identity, MemoryIdentity):
+            self.identity.add_session(
+                SESSION, REQUESTER, expires_at=self.clock.now() + timedelta(days=365)
+            )
         self.runner = self._make_runner()
 
     def deps(self) -> NodeDeps:
@@ -378,7 +456,7 @@ class GraphHarness:
             identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(),
-            scenario=self.scenario,
+            scenario=self.scenario, approver_id=self.approver_id,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:
@@ -388,6 +466,7 @@ class GraphHarness:
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,
             recursion_limit=self.recursion_limit, max_recover_attempts=self.max_recover_attempts,
+            tickets=self.tickets,
         )  # fmt: skip
 
     def restart(self, *, can_execute: bool | None = None) -> Runner:

@@ -26,6 +26,7 @@ from tests.fakes.auth import (
     RecordingSink,
 )
 from tests.fakes.identity import MemoryAlerts
+from tests.fakes.runtime import no_runtime
 
 BASE_URL = "https://testserver"
 
@@ -110,7 +111,7 @@ def auth_env(
     settings = auth_settings(**settings_over)
     app = create_app(
         settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=alerts,
-        escalations=escalations, clock=clock,
+        escalations=escalations, clock=clock, runtime=no_runtime,
     )  # fmt: skip
     if extra_router is not None:
         app.include_router(extra_router)

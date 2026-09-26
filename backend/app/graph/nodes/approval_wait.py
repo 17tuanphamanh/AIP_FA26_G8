@@ -2,6 +2,10 @@
 
 Không side effect trước `interrupt()`. Hết hạn → E6, KHÔNG BAO GIỜ tự thực thi (bất biến 5; chuyển
 cấm 2 chặn mọi ca `approval_result != "approved"`).
+
+Quyết định được ghi vào phiếu Ở ĐÂY (B15-B16 mục 5: `approvals.close` có điều kiện `status='pending'`),
+không ở route duyệt: người duyệt (`approver_id`) và lý do (`note`) đến từ sự kiện mà route dựng từ
+token + body (2b-3).
 """
 
 from typing import Any
@@ -21,7 +25,10 @@ def make(deps: NodeDeps) -> NodeFn:
         ev = interrupt({"wait": "approval", "approval_id": state.get("approval_id")})
         kind = ev["kind"]
         if state.get("approval_id"):
-            await deps.approvals.record_result(state["approval_id"], kind, current_run().clock.now())
+            await deps.approvals.close(
+                state["approval_id"], kind, current_run().clock.now(),
+                decided_by=ev.get("approver_id"), note=ev.get("note"),
+            )  # fmt: skip
         if kind == "approved":
             return await goto(
                 state, S_EXECUTING, next_node="b17_execute", step="B16", event="approved",

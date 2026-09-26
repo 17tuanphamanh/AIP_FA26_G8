@@ -41,8 +41,16 @@ class Approvals(Protocol):
 
     async def notify_approver(self, approval_id: str, approver_id: str) -> str: ...
 
-    async def record_result(self, approval_id: str, result: str, at: datetime) -> None:
-        """Ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`)."""
+    async def close(
+        self,
+        approval_id: str,
+        result: str,
+        at: datetime,
+        *,
+        decided_by: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        """B16 ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`)."""
         ...
 
 
@@ -70,7 +78,9 @@ class FakeScenario:
     def __init__(self, default: Mapping[str, str] | None = None) -> None:
         self._default = {**DEFAULT_OUTCOMES, **(default or {})}
         self._plans: dict[tuple[str, str], list[str]] = {}
+        self._template: dict[str, list[str]] = {}  # `plan_all`: áp cho ticket chưa có kịch bản riêng
         self._hooks: dict[tuple[str, str], Hook] = {}
+        self._all_hooks: dict[str, Hook] = {}
 
     def plan(self, ticket_id: str, **outcomes: str | list[str]) -> "FakeScenario":
         """Kết quả cho ticket: một chuỗi, hoặc danh sách dùng lần lượt (phần tử cuối lặp lại)."""
@@ -78,19 +88,33 @@ class FakeScenario:
             self._plans[(ticket_id, node)] = [value] if isinstance(value, str) else list(value)
         return self
 
+    def plan_all(self, **outcomes: str | list[str]) -> "FakeScenario":
+        """Như `plan` nhưng cho MỌI ticket (id do API sinh, test không biết trước). Mỗi ticket nhận
+        một bản sao riêng của danh sách."""
+        for node, value in outcomes.items():
+            self._template[node] = [value] if isinstance(value, str) else list(value)
+        return self
+
     def on(self, ticket_id: str, label: str, fn: Hook) -> "FakeScenario":
         self._hooks[(ticket_id, label)] = fn
         return self
 
+    def on_all(self, label: str, fn: Hook) -> "FakeScenario":
+        self._all_hooks[label] = fn
+        return self
+
     def pick(self, state: Mapping[str, Any], node: str) -> str:
-        seq = self._plans.get((state["ticket_id"], node))
+        key = (state["ticket_id"], node)
+        if key not in self._plans and node in self._template:
+            self._plans[key] = list(self._template[node])
+        seq = self._plans.get(key)
         outcome = (seq.pop(0) if len(seq) > 1 else seq[0]) if seq else self._default[node]
         if outcome == "raise":
             raise ValueError(f"lỗi giả tại {node}")  # TC29: exception không lường trước
         return outcome
 
     async def hook(self, state: Mapping[str, Any], label: str) -> None:
-        fn = self._hooks.get((state["ticket_id"], label))
+        fn = self._hooks.get((state["ticket_id"], label)) or self._all_hooks.get(label)
         if fn is not None:
             result = fn(state)
             if inspect.isawaitable(result):
@@ -112,7 +136,8 @@ class NodeDeps:
     escalations: EscalationStore  # B20: hàng đợi L2 (qua effects.once)
     templates: EscalationTemplates  # B20: thông báo + next_for_l2 theo mã E
     scenario: FakeScenario = field(default_factory=FakeScenario)
-    approver_id: str = "l1-fake"
+    # B15 GIẢ: người duyệt cố định (`FAKE_APPROVER_ID`, chỉ dev/test). None → B15 ném → E9.
+    approver_id: str | None = "l1-fake"
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:
@@ -145,21 +170,6 @@ def fake_risk(route: str) -> RiskDecision:
 class LoggingNotifier:
     async def notify_user(self, ticket_id: str, text: str, needs: str = "none") -> str:
         return f"noop:{ticket_id}"
-
-
-class UnavailableApprovals:
-    """Phase 2 chưa có M6: không ticket nào đi tới B15 qua API (chưa có route ticket)."""
-
-    async def create(
-        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
-    ) -> str:
-        raise NotImplementedError("approvals chưa có trước Phase 4")
-
-    async def notify_approver(self, approval_id: str, approver_id: str) -> str:
-        raise NotImplementedError("approvals chưa có trước Phase 4")
-
-    async def record_result(self, approval_id: str, result: str, at: datetime) -> None:
-        raise NotImplementedError("approvals chưa có trước Phase 4")
 
 
 class RefusingExecutor:

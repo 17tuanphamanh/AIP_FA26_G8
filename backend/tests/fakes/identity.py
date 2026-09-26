@@ -52,15 +52,19 @@ def _status(code: int) -> httpx.HTTPStatusError:
 
 
 class FakeAd:
-    """`down=True` → mọi lần gọi timeout (hết retry → B1 E2). Không có user → 404."""
+    """`down=True` → mọi lần gọi timeout (hết retry → B1 E2). Không có user → 404. `crash` → ném đúng
+    exception đó (BaseException như `Crash` = process bị giết giữa B1, boundary không bắt)."""
 
     def __init__(self, *users: Mapping[str, Any]) -> None:
         self.users: dict[str, dict[str, Any]] = {u["user_id"]: dict(u) for u in users}
         self.down = False
+        self.crash: BaseException | None = None  # process "chết" giữa lời gọi AD (không phải lỗi AD)
         self.calls = 0
 
     async def ad_get_user(self, inp: UserIn, timeout: float) -> object:
         self.calls += 1
+        if self.crash is not None:
+            raise self.crash
         if self.down:
             raise httpx.ConnectTimeout("AD không trả lời")
         user = self.users.get(inp.user_id)

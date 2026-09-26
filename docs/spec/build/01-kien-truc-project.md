@@ -201,7 +201,7 @@ module/
 ### 4.2. Đồ thị phụ thuộc cho phép
 
 ```
-api ──► auth, graph.runner, approval, audit(read), monitor, risk(policy CRUD), rag(kb admin)
+api ──► auth, guard(privacy), graph.runner, approval, audit(read), monitor, risk(policy CRUD), rag(kb admin)   # guard: D-07, B02 §2
 graph ──► guard, llm, rag, tools, risk, approval, executor, audit, domain, core
 risk ──► llm, domain, core            (KHÔNG import guard, rag.raw, api)
 executor ──► tools(write adapters), risk.policy_engine, domain, core
@@ -316,3 +316,4 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | v1.2 | 25/09/2026 | `graph/effects.py` (D-18); `runner.recover`, lock pool (D-19); `late_event.wake_parent` (D-17); DB 21 bảng; hợp đồng import-linter số 6; cờ `REDIAGNOSE_ON_NEW_SLOT` (D-20); `vi_abbrev.yaml`, `ml_service/tokens.py` (D-21); `make eval-rag` (D-25) |
 | v1.3 | 25/09/2026 | `is_allowed()` (D-29); `notify/` + `child_notices`, 22 bảng (D-31) |
 | v1.4 | 25/09/2026 | Thêm `training/`, `ml_models/`, `ml_service/app/intent.py` (D-32, D-33, P11) |
+| v1.5 | 26/09/2026 | Mục 4.2: `api` được phụ thuộc `guard` (privacy guard chạy ở API trước khi lưu — D-07, B02 §2; chốt khi hiện thực 2b-3). `APP_ENV` bắt buộc trong `.env` (compose `${APP_ENV:?…}`), không mặc định |

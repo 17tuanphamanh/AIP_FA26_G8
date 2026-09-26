@@ -20,6 +20,13 @@ chạy lại (dưới khoá ticket) — process chết giữa lượt vẫn bị
 lượt kẹt ở B20 → audit `finalize_failed_permanent` + đóng lượt (M9 Phase 7 có luật cảnh báo); kẹt ở
 node khác → `S_ESCALATED` E9 `recover_exhausted` rồi chạy B20.
 
+**Lượt `submit` của API chạy nền** (2b-3): API ghi dòng `tickets` + dòng `turns` trong một transaction
+rồi giao `run_new(ticket_id, turn_id)` cho task nền. State đầu dựng từ dòng `tickets` (không truyền
+qua tham số) nên worker dựng lại được y hệt: process chết giữa lúc commit và checkpoint đầu tiên →
+lượt còn mở, snapshot rỗng → `recover` chạy state đầu với CÙNG `turn_id`. `run_new` tới sau khi thread
+đã có state (recover chạy trước, hoặc lượt đầu chết giữa chừng) → không làm gì: không bao giờ chạy lại
+từ START đè lên thread đang có.
+
 **`wake_parent` sau khi nhả khoá** (2b-Q7, lệch mã giả B20): thread con kết thúc → runner đánh thức cha
 khi KHÔNG còn giữ khoá con (gọi trong B20 có thể deadlock: con giữ khoá con chờ khoá cha, cha chuyển sự
 kiện xuống con). Chỉ là tín hiệu (D-17): lỗi thì log, cha tự đối soát ở `parent_wait` (Phase 5 thêm job
@@ -43,8 +50,16 @@ from app.domain.states import S_ESCALATED, S_NEW
 from app.graph.builder import Graph
 from app.graph.context import RunContext, bind_run
 from app.graph.goto import audit_key, goto
-from app.graph.ports import AuditSink, EffectStore, SpanSink, TicketLock, TurnStore
-from app.graph.routing import AUDIT
+from app.graph.ports import (
+    AuditSink,
+    EffectStore,
+    SpanSink,
+    TicketLock,
+    TicketReader,
+    TicketRow,
+    TurnStore,
+)
+from app.graph.routing import AUDIT, ENTRY
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +95,7 @@ class Runner:
         rediagnose_on_new_slot: bool = False,
         recursion_limit: int = 60,
         max_recover_attempts: int = 3,
+        tickets: TicketReader | None = None,
     ) -> None:
         self.graph = graph
         self.audit = audit
@@ -93,6 +109,7 @@ class Runner:
         self._rediagnose = rediagnose_on_new_slot
         self._recursion_limit = recursion_limit
         self._max_recover = max_recover_attempts
+        self._tickets = tickets
 
     # ---- tiện ích -----------------------------------------------------------------------------
 
@@ -134,15 +151,38 @@ class Runner:
                 turn_id=turn_id, ticket_id=ticket_id, session_id=session_id,
                 event_type="submit", at=self.clock.now(),
             )  # fmt: skip
-            initial: dict[str, Any] = {
-                "ticket_id": ticket_id, "parent_ticket_id": parent_ticket_id, "is_parent": False,
-                "children": [], "session_id": session_id, "turn_id": turn_id,
-                "redacted_request": redacted_request, "conversation": [], "status": S_NEW,
-                "clarification_turns": 0, "reasoning_loops": 0, "off_topic_streak": 0,
-            }  # fmt: skip
+            initial = _initial_state(
+                ticket_id, turn_id, session_id=session_id, redacted_request=redacted_request,
+                parent_ticket_id=parent_ticket_id,
+            )  # fmt: skip
             result = await self._run(ticket_id, turn_id, initial)
         await self.after_turn(result)
         return result
+
+    async def run_new(self, ticket_id: str, turn_id: str) -> RunResult | None:
+        """Lượt `submit` mà API đã ghi (`tickets.create`): chạy state đầu dựng từ dòng `tickets`.
+        Lượt đã đóng, hoặc thread đã có state → None (worker đã phục hồi / lượt đang dở)."""
+        async with self._lock.hold(ticket_id):
+            if not await self._turns.is_open(turn_id):
+                return None
+            snap = await self.snapshot(ticket_id)
+            if snap.values:
+                return None  # không chạy lại từ START đè lên thread đang có
+            result = await self._run_initial(ticket_id, turn_id)
+        await self.after_turn(result)
+        return result
+
+    async def _row(self, ticket_id: str) -> TicketRow:
+        if self._tickets is None:
+            raise RuntimeError("Runner không có TicketReader — không dựng được state đầu")
+        row = await self._tickets.get(ticket_id)
+        if row is None:
+            raise LookupError(f"không có dòng tickets {ticket_id}")
+        return row
+
+    async def _run_initial(self, ticket_id: str, turn_id: str) -> RunResult:
+        row = await self._row(ticket_id)
+        return await self._run(ticket_id, turn_id, _state_from_row(row, turn_id))
 
     async def resume(
         self, ticket_id: str, event: Mapping[str, Any], *, session_id: str | None = None
@@ -175,14 +215,19 @@ class Runner:
             if attempts is None:
                 return None
             snap = await self.snapshot(ticket_id)
-            if not snap.next:  # thread đã kết thúc, chỉ chưa kịp đóng turn
+            if not snap.values and attempts <= self._max_recover:
+                # chết sau `tickets.create`, trước checkpoint đầu: chạy state đầu, GIỮ turn_id
+                result = await self._run_initial(ticket_id, turn_id)
+            elif not snap.values:  # cạn lượt mà thread CHƯA từng có checkpoint (chết ở B1 mỗi lần)
+                result = await self._give_up_before_checkpoint(ticket_id, turn_id, attempts)
+            elif not snap.next:  # thread đã kết thúc, chỉ chưa kịp đóng turn
                 await self._turns.end(turn_id, self.clock.now())
                 result = await self._result(ticket_id, turn_id)
             elif attempts > self._max_recover:
                 result = await self._give_up(ticket_id, turn_id, snap, attempts)
             elif not self._can_execute and EXECUTE_NODE in snap.next:
                 result = await self._divert(
-                    ticket_id, turn_id, snap, as_node=EXECUTE_NODE, step="B17",
+                    ticket_id, turn_id, snap.values, as_node=EXECUTE_NODE, step="B17",
                     event="execution_interrupted", exit_code=ExitCode.E7.value,
                     escalation_note=INTERRUPTED_NOTE,
                     escalation_reason_detail="execution_interrupted",
@@ -192,6 +237,23 @@ class Runner:
         await self.after_turn(result)
         return result
 
+    async def _give_up_before_checkpoint(
+        self, ticket_id: str, turn_id: str, attempts: int
+    ) -> RunResult:
+        """Không để ticket biến mất (2b-Q6): dựng state đầu từ dòng `tickets` rồi bẻ thẳng sang
+        `S_ESCALATED` E9 `recover_exhausted` → B20 (`finalize_once`, escalation, tin người dùng) —
+        cùng đường với E9 `recover_exhausted` ở node khác, chỉ khác là phải tự gieo state."""
+        log.error("ticket %s: lượt %s chưa tạo được checkpoint sau %d lần phục hồi — E9",
+                  ticket_id, turn_id, attempts - 1)  # fmt: skip
+        values = _state_from_row(await self._row(ticket_id), turn_id)
+        return await self._divert(
+            ticket_id, turn_id, values, seed=True, as_node=ENTRY, step="runner",
+            event=RECOVER_EXHAUSTED, exit_code=ExitCode.E9.value,
+            escalation_reason_detail=RECOVER_EXHAUSTED,
+            escalation_note=f"Phục hồi lượt thất bại {attempts - 1} lần trước checkpoint đầu tiên",
+            audit_detail={"recover_attempts": attempts - 1, "node": ENTRY, "no_checkpoint": True},
+        )  # fmt: skip
+
     async def _give_up(
         self, ticket_id: str, turn_id: str, snap: StateSnapshot, attempts: int
     ) -> RunResult:
@@ -200,7 +262,7 @@ class Runner:
                   ticket_id, turn_id, node, attempts - 1)  # fmt: skip
         if node != AUDIT:
             return await self._divert(
-                ticket_id, turn_id, snap, as_node=node, step="runner", event=RECOVER_EXHAUSTED,
+                ticket_id, turn_id, snap.values, as_node=node, step="runner", event=RECOVER_EXHAUSTED,
                 exit_code=ExitCode.E9.value, escalation_reason_detail=RECOVER_EXHAUSTED,
                 escalation_note=f"Phục hồi lượt thất bại {attempts - 1} lần tại {node}",
                 audit_detail={"recover_attempts": attempts - 1, "node": node},
@@ -255,7 +317,7 @@ class Runner:
                     log.error("ticket %s vượt recursion_limit → E9", ticket_id)
                     snap = await self.graph.aget_state(cfg)
                     await self._divert_bound(
-                        ticket_id, snap, as_node=snap.next[0] if snap.next else AUDIT,
+                        ticket_id, snap.values, as_node=snap.next[0] if snap.next else AUDIT,
                         step="runner", event="recursion_limit", exit_code=ExitCode.E9.value,
                         escalation_note="Vượt giới hạn số bước của graph (recursion_limit)",
                     )  # fmt: skip
@@ -263,23 +325,47 @@ class Runner:
         return await self._result(ticket_id, turn_id)
 
     async def _divert(
-        self, ticket_id: str, turn_id: str, snap: StateSnapshot, **kwargs: Any
+        self, ticket_id: str, turn_id: str, values: Mapping[str, Any], **kwargs: Any
     ) -> RunResult:
         async with self._sem:
             with bind_run(self._context(turn_id)):
-                await self._divert_bound(ticket_id, snap, **kwargs)
+                await self._divert_bound(ticket_id, values, **kwargs)
         await self._turns.end(turn_id, self.clock.now())
         return await self._result(ticket_id, turn_id)
 
     async def _divert_bound(
-        self, ticket_id: str, snap: StateSnapshot, *, as_node: str, step: str, event: str,
-        audit_detail: Mapping[str, Any] | None = None, **fields: Any,
+        self, ticket_id: str, values: Mapping[str, Any], *, as_node: str, step: str, event: str,
+        audit_detail: Mapping[str, Any] | None = None, seed: bool = False, **fields: Any,
     ) -> None:  # fmt: skip
-        """Bẻ luồng sang S_ESCALATED → B20 mà không chạy node kế tiếp. Vẫn qua goto() (audit)."""
+        """Bẻ luồng sang S_ESCALATED → B20 mà không chạy node kế tiếp. Vẫn qua goto() (audit).
+        `seed=True`: thread chưa có checkpoint — ghi cả state đầu (`values`) cùng phần cập nhật."""
         cfg = self.config(ticket_id)
         update = await goto(
-            snap.values, S_ESCALATED, next_node=AUDIT, step=step, event=event,
+            values, S_ESCALATED, next_node=AUDIT, step=step, event=event,
             audit_detail=audit_detail, **fields,
         )  # fmt: skip
-        await self.graph.aupdate_state(cfg, update, as_node=as_node)
+        await self.graph.aupdate_state(cfg, {**values, **update} if seed else update, as_node=as_node)
         await self.graph.ainvoke(None, cfg)
+
+
+def _initial_state(
+    ticket_id: str,
+    turn_id: str,
+    *,
+    session_id: str | None,
+    redacted_request: str,
+    parent_ticket_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "ticket_id": ticket_id, "parent_ticket_id": parent_ticket_id, "is_parent": False,
+        "children": [], "session_id": session_id, "turn_id": turn_id,
+        "redacted_request": redacted_request, "conversation": [], "status": S_NEW,
+        "clarification_turns": 0, "reasoning_loops": 0, "off_topic_streak": 0,
+    }  # fmt: skip
+
+
+def _state_from_row(row: TicketRow, turn_id: str) -> dict[str, Any]:
+    return _initial_state(
+        row.ticket_id, turn_id, session_id=row.session_id, redacted_request=row.redacted_request,
+        parent_ticket_id=row.parent_ticket_id,
+    )  # fmt: skip

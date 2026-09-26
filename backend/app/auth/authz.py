@@ -2,7 +2,8 @@
 tự trả mã HTTP và ghi `permission_denied`. Nhận Protocol theo cấu trúc để không phụ thuộc bảng/ORM.
 
 - `can_read_ticket` sai → route trả **404**, không 403: không lộ ticket có tồn tại (D-02, TC30).
-- `can_decide_approval` sai → 403.
+- `can_decide_approval` = `may_decide_as` (sai → 403) + còn `pending`, chưa quá hạn (route duyệt tách
+  riêng phần này → 409 + `late_event`, TC27 — 2b-3 Q3).
 - `can_close_escalation` → "forbidden" (403) hoặc "unprocessable" (422: L2 hoàn tất ca deny).
 """
 
@@ -58,16 +59,20 @@ def approval_conflict(approver_id: str, parties: ApprovalParties) -> str | None:
     return None
 
 
-def can_decide_approval(
-    p: Principal, a: ApprovalLike, parties: ApprovalParties, *, now: datetime
-) -> bool:
+def may_decide_as(p: Principal, a: ApprovalLike, parties: ApprovalParties) -> bool:
+    """Phần "ai" của `can_decide_approval`: có quyền, đúng người được giao, không xung đột → sai = 403.
+    Phần "khi nào" (còn `pending`, chưa quá hạn) route duyệt kiểm riêng → 409 (TC27, 2b-3 Q3)."""
     return (
         p.has("approval:decide")
         and a.approver_id == p.user_id
-        and a.status == "pending"
-        and now < a.deadline
         and approval_conflict(p.user_id, parties) is None
     )
+
+
+def can_decide_approval(
+    p: Principal, a: ApprovalLike, parties: ApprovalParties, *, now: datetime
+) -> bool:
+    return may_decide_as(p, a, parties) and a.status == "pending" and now < a.deadline
 
 
 def can_override(p: Principal, t: TicketLike) -> bool:

@@ -201,6 +201,20 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 2b-QC | Thứ tự trong B20 | `finalize_once` trước, điểm log 8 từ dòng đã lưu | B20 5.1 |
 | 2b-QD | Mặc định còn lại | Route `/api/escalations/queue`; `handoff_note.request` chỉ từ `redacted_request`; `closed_at` ở B20 cho mọi trạng thái cuối; 2b-3: `created_at` lấy từ `Clock` của app | B20 5.1 |
 
+**Phase 2b-3 (26/09/2026):**
+
+| Mã | Câu hỏi | Chốt | Ở đâu |
+|---|---|---|---|
+| 2b-3-Q1 | Sự kiện qua API trả gì? | 202; khóa ticket lấy trong request rồi giao cho task nền (try/finally + cờ "đã giao") | P1 mục 7 |
+| 2b-3-Q2 | `mark_late` làm gì với phiếu? | **A:** không đổi `approvals.status`, chỉ audit `late_event` (`reason = expired \| already_decided`); mọi đường 409 để lại đúng 1 `late_event`; bằng hạn = muộn | B15-B16 5.1 |
+| 2b-3-Q3 | `APP_ENV` | Bắt buộc khai báo trong `.env`; compose `${APP_ENV:?…}`, không mặc định | 01 lịch sử v1.5 |
+| 2b-3-Q4 | `FAKE_APPROVER_ID` cần dòng `users` | Không seed DB app; thiếu → B15 giả → E9; 2b-4 `gate2.py` đăng nhập l1 trước | B15-B16 5.1 |
+| 2b-3-Q5 | Giới hạn body | 64 KB, kiểm **trước** quyền, đếm byte đọc thật (chunked cũng bị chặn) → 413 | B15-B16 5.1 |
+| 2b-3-QA | Thứ tự kiểm ở messages/confirm | 413 → quyền → tải ticket → không đọc được 404 → không phải chủ 403 → ticket con 409 → body 422 → guard → `start_event` (route; worker dùng `deliver_event`); 403 và 404-có-thật ghi 1 `permission_denied`, guard không được gọi | P6, P1 6.1 |
+| 2b-3-QB | `GET /api/tickets/{id}` | Response model khai báo; có `final_state` thì `status` từ `tickets`, còn mở từ checkpoint; `waiting_for` chỉ từ checkpoint; đọc checkpoint lỗi → 503 | P1 mục 7 |
+| 2b-3-QC | Chết trước checkpoint đầu | Recover (đang giữ khóa) chạy state đầu dựng từ dòng `tickets` như `run_new`, giữ `turn_id` — không gọi `run_new` (tự khóa chết); quá 3 lần → E9 `recover_exhausted` qua B20 (không để ticket thiếu `final_state`) | P1 mục 7 |
+| 2b-3-QD | Runtime lỗi lúc khởi động | Route ticket/duyệt 503; `/api/health` 200 + `"runtime": "up\|down"` | P1 mục 10 |
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -212,3 +226,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 25/09/2026 | Chốt D-01…D-33 theo đặc tả; thêm chế độ "code trước, gắn API sau" (mục 4, mốc G); N1/N2 chỉ chặn mốc G |
 | 26/09/2026 | Mục 4.1: quyết định 2b-Q1…2b-Q7 của Phase 2b |
 | 26/09/2026 | Mục 4.1: quyết định 2b-QA…2b-QD của Phase 2b-2 |
+| 26/09/2026 | Mục 4.1: quyết định 2b-3-Q1…Q5, 2b-3-QA…QD của Phase 2b-3 |

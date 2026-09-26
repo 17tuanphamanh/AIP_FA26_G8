@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     svc_executor_token: SecretStr | None = None  # DUY NHẤT có quyền ghi (B17)
     svc_worker_token: SecretStr | None = None  # worker phát sự kiện timeout (Phase 2)
 
+    # ---- Môi trường (2b-Q2, 2b-Q3) ----
+    # KHÔNG mặc định: thiếu = coi như môi trường thật → mọi thành phần giả (`NotRedactingGuard`,
+    # `FAKE_APPROVER_ID`) bị từ chối lúc khởi động (`require_dev_fakes`). Compose bắt khai báo.
+    app_env: Literal["dev", "test", "staging", "prod"] | None = None
+    # Người duyệt cố định của node B15 GIẢ (tới Phase 4). Phải có dòng `users` (FK approvals).
+    fake_approver_id: str | None = None
+
     # ---- Hạ tầng ----
     database_url: str = "postgresql+psycopg://app_rw@localhost:5432/servicedesk"  # role app_rw
     migrate_database_url: str | None = None  # role app_migrate — chỉ Alembic dùng
@@ -72,6 +79,9 @@ class Settings(BaseSettings):
     worker_heartbeat_seconds: float = Field(default=10.0, gt=0)
     worker_heartbeat_max_age: float = Field(default=60.0, gt=0)
     config_dir: Path = Path(__file__).resolve().parents[2] / "config"  # repo: ./config; image: /srv/config
+    # ---- API ----
+    max_request_body_bytes: int = Field(default=64 * 1024, ge=1)  # đếm byte ĐỌC THẬT (2b-3 Q5)
+    background_shutdown_seconds: float = Field(default=10.0, ge=0)  # tắt app: chờ lượt nền rồi huỷ
 
     # ---- Circuit breaker theo hệ thống ngoài [Chốt 17.3, P5 mục 6] ----
     breaker_failure_threshold: int = Field(default=5, ge=1)  # lỗi liên tiếp …
@@ -114,6 +124,17 @@ class Settings(BaseSettings):
     def effective_lock_pool_size(self) -> int:
         assert self.lock_pool_size is not None
         return self.lock_pool_size
+
+    def require_dev_fakes(self, what: str) -> None:
+        """Thành phần giả chỉ được nạp khi `APP_ENV` ∈ {dev, test} — fail-closed (2b-Q2, 2b-Q3)."""
+        if self.app_env not in DEV_FAKE_ENVS:
+            raise RuntimeError(
+                f"{what} chỉ dùng được khi APP_ENV ∈ {sorted(DEV_FAKE_ENVS)} "
+                f"(đang là {self.app_env!r}) — từ chối khởi động"
+            )
+
+
+DEV_FAKE_ENVS = frozenset({"dev", "test"})
 
 
 @lru_cache
