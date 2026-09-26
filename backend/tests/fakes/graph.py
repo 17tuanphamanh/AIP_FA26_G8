@@ -7,23 +7,27 @@ khởi động lại backend (cổng 2).
 """
 
 import asyncio
+import importlib.util
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from app.audit.writer import check_audit_row
 from app.core.clock import FakeClock
+from app.db.escalations import QueueItem
 from app.db.runtime import DueWait, OpenTurn, as_ref
 from app.domain.action import Action
+from app.domain.final import FinalSummary
 from app.graph.builder import build_graph, fake_nodes
 from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
-from app.settings import get_policy
+from app.settings import get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.fakes.identity import (
     REQUESTER,
@@ -42,9 +46,13 @@ class MemoryAudit:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
         self.drop = False  # True → mô phỏng INSERT không để lại dòng (kiểm cấm 4)
+        self.crash_once: set[str] = set()  # event → process "chết" ngay TRƯỚC khi ghi dòng đó
 
     async def record(self, row: Mapping[str, Any]) -> bool:
         check_audit_row(row)
+        if row["event"] in self.crash_once:
+            self.crash_once.discard(row["event"])
+            raise Crash(f"process chết trước khi ghi audit {row['event']}")
         key = row.get("idempotency_key")
         if self.drop:
             return False
@@ -83,8 +91,12 @@ class MemoryEffects:
 class MemorySpans:
     def __init__(self) -> None:
         self.spans: list[SpanRecord] = []
+        self.crash_once: set[str] = set()  # tên span → process "chết" khi node đã xong, trước checkpoint
 
     async def write(self, span: SpanRecord) -> None:
+        if span.name in self.crash_once:
+            self.crash_once.discard(span.name)
+            raise Crash(f"process chết sau {span.name}, trước checkpoint")
         self.spans.append(span)
 
 
@@ -105,6 +117,13 @@ class MemoryTurns:
 
     async def is_open(self, turn_id: str) -> bool:
         return turn_id in self.rows and self.rows[turn_id]["ended_at"] is None
+
+    async def bump_recover_attempts(self, turn_id: str) -> int | None:
+        row = self.rows.get(turn_id)
+        if row is None or row["ended_at"] is not None:
+            return None
+        row["recover_attempts"] = row.get("recover_attempts", 0) + 1
+        return int(row["recover_attempts"])
 
     async def stale(self, before: datetime, limit: int) -> list[OpenTurn]:
         rows = sorted(
@@ -181,8 +200,12 @@ class MemoryApprovals:
 class RecordingNotifier:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []
+        self.crash_once: set[str] = set()  # ticket → process "chết" giữa lúc gửi (chưa gửi được)
 
     async def notify_user(self, ticket_id: str, text: str, needs: str = "none") -> str:
+        if ticket_id in self.crash_once:
+            self.crash_once.discard(ticket_id)
+            raise Crash(f"process chết khi gửi tin cho {ticket_id}")
         self.sent.append((ticket_id, text, needs))
         return f"m{len(self.sent)}"
 
@@ -206,6 +229,88 @@ class CountingExecutor:
             self.crash_once.discard(ticket_id)
             raise Crash(f"process chết khi đang thực thi {ticket_id}")
         return True
+
+
+def seed_priority() -> dict[str, tuple[int, str]]:
+    """Rank + nhãn E0–E9 đọc từ CHÍNH seed của migration 0001 (nguồn duy nhất, B20 5.1)."""
+    path = Path(__file__).resolve().parents[2] / "app/db/alembic/versions/0001_init_22_bang_role_trigger.py"
+    spec = importlib.util.spec_from_file_location("_mig_0001", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return {r["exit_code"]: (r["rank"], r["label"]) for r in module.EXIT_CODE_PRIORITY}
+
+
+class MemoryTickets:
+    """`tickets` giả: ghi kết quả cuối MỘT lần (`WHERE final_state IS NULL`), trả dòng đang có.
+    `fail` tiêm lỗi vào `finalize_once`: Exception (bug → boundary) hoặc `Crash` (process chết, không
+    kịp ghi gì); `fail_times` None = mãi mãi."""
+
+    def __init__(self, turns: MemoryTurns) -> None:
+        self._turns = turns
+        self.rows: dict[str, dict[str, Any]] = {}
+        self.fail: BaseException | None = None
+        self.fail_times: int | None = None
+        self.finalize_calls: Counter[str] = Counter()
+
+    def register(self, ticket_id: str, created_at: datetime, *, is_parent: bool = False) -> None:
+        self.rows.setdefault(ticket_id, {"created_at": created_at, "final": None,
+                                         "is_parent": is_parent})  # fmt: skip
+
+    async def created_at(self, ticket_id: str) -> datetime:
+        return self.rows[ticket_id]["created_at"]  # type: ignore[no-any-return]
+
+    async def count_turns(self, ticket_id: str) -> int:
+        return len(self._turns.of(ticket_id))
+
+    async def finalize_once(self, ticket_id: str, summary: FinalSummary) -> FinalSummary:
+        self.finalize_calls[ticket_id] += 1
+        if self.fail is not None and (self.fail_times is None or self.fail_times > 0):
+            if self.fail_times is not None:
+                self.fail_times -= 1
+            raise self.fail
+        row = self.rows[ticket_id]
+        if row["final"] is None:
+            row["final"] = summary
+        return row["final"]  # type: ignore[no-any-return]
+
+    def final(self, ticket_id: str) -> FinalSummary | None:
+        return self.rows[ticket_id]["final"]  # type: ignore[no-any-return]
+
+
+class MemoryEscalations:
+    def __init__(self, tickets: MemoryTickets) -> None:
+        self._tickets = tickets
+        self._priority = seed_priority()
+        self.rows: list[dict[str, Any]] = []
+
+    async def create(
+        self, *, ticket_id: str, exit_code: str, reason_detail: str | None,
+        handoff_note: Mapping[str, Any], is_deny_case: bool, created_at: datetime,
+    ) -> str:  # fmt: skip
+        rank, _ = self._priority[exit_code]
+        self.rows.append({"escalation_id": len(self.rows) + 1, "ticket_id": ticket_id,
+                          "exit_code": exit_code, "priority": rank, "reason_detail": reason_detail,
+                          "handoff_note": dict(handoff_note), "is_deny_case": is_deny_case,
+                          "created_at": created_at, "closed_at": None, "assigned_to": None})  # fmt: skip
+        return str(len(self.rows))
+
+    def of(self, ticket_id: str) -> list[dict[str, Any]]:
+        return [r for r in self.rows if r["ticket_id"] == ticket_id]
+
+    async def list_open(self, limit: int) -> list[QueueItem]:
+        rows = [r for r in self.rows if r["closed_at"] is None
+                and not self._tickets.rows.get(r["ticket_id"], {}).get("is_parent")]  # fmt: skip
+        rows.sort(key=lambda r: (r["priority"], r["created_at"], r["escalation_id"]))
+        return [
+            QueueItem(
+                escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
+                priority=r["priority"], label=self._priority[r["exit_code"]][1],
+                reason_detail=r["reason_detail"], is_deny_case=r["is_deny_case"],
+                handoff_note=r["handoff_note"], assigned_to=None, created_at=r["created_at"],
+            )
+            for r in rows[:limit]
+        ]
 
 
 class MemoryTicketLock:
@@ -250,12 +355,17 @@ class GraphHarness:
     ad: FakeAd = field(default_factory=lambda: FakeAd(ad_user()))
     alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
+    max_recover_attempts: int = 3
+    tickets: MemoryTickets = field(init=False)
+    escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
     lock: MemoryTicketLock = field(init=False)
     runner: Runner = field(init=False)
 
     def __post_init__(self) -> None:
         self.approvals = MemoryApprovals(self.deadlines)
+        self.tickets = MemoryTickets(self.turns)
+        self.escalations = MemoryEscalations(self.tickets)
         self.lock = MemoryTicketLock(self.lock_timeout)
         self.identity.add_session(SESSION, REQUESTER, expires_at=self.clock.now() + timedelta(days=365))
         self.runner = self._make_runner()
@@ -266,7 +376,9 @@ class GraphHarness:
             notifier=self.notifier, approvals=self.approvals, executor=self.executor,
             deadlines=self.deadlines, constants=get_policy().constants,
             identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
-            alerts=self.alerts, lockout=LOCKOUT, scenario=self.scenario,
+            alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
+            escalations=self.escalations, templates=get_escalation_templates(),
+            scenario=self.scenario,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:
@@ -275,7 +387,7 @@ class GraphHarness:
             audit=self.audit, effects=self.effects, spans=self.spans, clock=self.clock,
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,
-            recursion_limit=self.recursion_limit,
+            recursion_limit=self.recursion_limit, max_recover_attempts=self.max_recover_attempts,
         )  # fmt: skip
 
     def restart(self, *, can_execute: bool | None = None) -> Runner:
@@ -289,8 +401,16 @@ class GraphHarness:
     async def submit(self, ticket_id: str, **plan: str | list[str]) -> Any:
         if plan:
             self.scenario.plan(ticket_id, **plan)
-        return await self.runner.submit(ticket_id, session_id=SESSION, redacted_request="yêu cầu")
+        return await self.submit_as(ticket_id, SESSION)
 
-    async def submit_as(self, ticket_id: str, session_id: str | None, text: str = "yêu cầu") -> Any:
-        return await self.runner.submit(ticket_id, session_id=session_id, redacted_request=text)
+    async def submit_as(
+        self, ticket_id: str, session_id: str | None, text: str = "yêu cầu",
+        parent_ticket_id: str | None = None,
+    ) -> Any:  # fmt: skip
+        """Như API (2b-3): có dòng `tickets` trước, rồi mới submit graph."""
+        self.tickets.register(ticket_id, self.clock.now())
+        return await self.runner.submit(
+            ticket_id, session_id=session_id, redacted_request=text,
+            parent_ticket_id=parent_ticket_id,
+        )  # fmt: skip
 

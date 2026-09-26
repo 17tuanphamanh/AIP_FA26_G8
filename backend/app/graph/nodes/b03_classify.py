@@ -17,6 +17,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope",
                 exit_code=ExitCode.E1.value, escalation_reason_detail="out_of_scope",
             )  # fmt: skip
+        if outcome == "low_confidence":  # D-27: E1 do confidence thấp, tách khỏi ngoài phạm vi thật
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_low_confidence",
+                exit_code=ExitCode.E1.value, escalation_reason_detail="intent_low_confidence",
+            )  # fmt: skip
         if outcome == "split":
             return await goto(
                 state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="split",

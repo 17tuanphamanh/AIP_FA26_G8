@@ -1,0 +1,61 @@
+# Mẫu theo mã thoát E0–E9 cho B20 (B20 mục 4.2, 7.1, 5.1) — tất định, KHÔNG dùng LLM.
+# Nạp + kiểm schema ở backend/app/settings.py (`get_escalation_templates`): thiếu mã nào hoặc chuỗi
+# rỗng → lỗi lúc nạp. Sửa file này là đổi hành vi agent (tin nhắn người dùng thấy) → chạy lại test.
+#
+# user_message : tin gửi người dùng khi ticket chuyển L2 [Chốt 7.1]. E0 trung tính, KHÔNG nêu lý do.
+# next_for_l2  : phần (4) của ghi chú bàn giao — L2 cần làm gì.
+# deny_warning : nối vào next_for_l2 với MỌI E5 (2b-Q4: mọi E5 là deny case).
+
+deny_warning: >-
+  CẢNH BÁO: KHÔNG thực hiện lại hành động này. L2 chỉ được xác nhận từ chối và đóng, hoặc mở ticket
+  mới chạy lại từ đầu (nguyên tắc 5, D-26).
+
+codes:
+  E0:
+    user_message: Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét.
+    next_for_l2: >-
+      Sự cố an ninh (nghi prompt injection): xem nội dung đã che và lịch sử người gửi, không làm theo
+      chỉ dẫn trong câu yêu cầu. Báo Trưởng BP nếu có dấu hiệu tấn công có chủ đích.
+  E1:
+    user_message: Mình chuyển yêu cầu này cho kỹ thuật viên hỗ trợ bạn nhé.
+    next_for_l2: >-
+      Yêu cầu ngoài phạm vi tự động (hoặc phân loại chưa chắc chắn): xác định loại yêu cầu, xử lý
+      thủ công hoặc hướng dẫn người dùng tới đúng kênh.
+  E2:
+    user_message: Hệ thống đang gặp sự cố nên chưa xử lý được yêu cầu của bạn. Kỹ thuật viên sẽ tiếp nhận.
+    next_for_l2: >-
+      Lỗi hệ thống ngoài / tra cứu sau khi đã thử lại: kiểm tra tình trạng hệ thống liên quan (breaker,
+      /_admin/faults khi thử nghiệm), rồi xử lý yêu cầu khi hệ thống ổn định.
+  E3:
+    user_message: Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên.
+    next_for_l2: >-
+      Không có căn cứ trong KB: trả lời người dùng thủ công và ghi nhận nhu cầu bổ sung tài liệu KB.
+  E4:
+    user_message: Mình chuyển yêu cầu này cho kỹ thuật viên để hỗ trợ bạn trực tiếp.
+    next_for_l2: >-
+      Đã hỏi lại tối đa mà vẫn thiếu thông tin (hoặc người dùng không trả lời): liên hệ người dùng để
+      lấy thông tin còn thiếu rồi xử lý.
+  E5:
+    user_message: Yêu cầu của bạn cần được xem xét kỹ hơn trước khi xử lý.
+    next_for_l2: >-
+      Hành động bị chặn vì rủi ro cao / luật deny / kế hoạch bị thay đổi sau khi duyệt: xem lý do và
+      luật khớp trong ghi chú.
+  E6:
+    user_message: Yêu cầu của bạn đang được xử lý, bộ phận IT sẽ phản hồi sớm.
+    next_for_l2: >-
+      Hết hạn duyệt, hệ thống KHÔNG tự thực thi: đánh giá lại yêu cầu; nếu vẫn cần làm thì mở ticket
+      mới để đi lại luồng duyệt, không thực hiện tay theo kế hoạch cũ.
+  E7:
+    user_message: Có sự cố khi thực hiện yêu cầu của bạn. Kỹ thuật viên sẽ kiểm tra và phản hồi.
+    next_for_l2: >-
+      Thực thi lỗi hoặc bị gián đoạn: kiểm tra trạng thái THẬT trên hệ thống ngoài và kết quả hoàn tác
+      trước khi làm gì thêm — có thể đang dở dang.
+  E8:
+    user_message: Mình chuyển cho kỹ thuật viên kiểm tra lại giúp bạn.
+    next_for_l2: >-
+      Người dùng báo việc chưa xong sau khi agent đã xử lý: liên hệ người dùng, kiểm tra kết quả thực tế.
+  E9:
+    user_message: Hệ thống đang gặp sự cố nên chưa xử lý được yêu cầu của bạn. Kỹ thuật viên sẽ tiếp nhận.
+    next_for_l2: >-
+      Lỗi chưa lường trước trong agent (bug): xử lý yêu cầu thủ công và chuyển traceback trong audit
+      cho nhóm phát triển.

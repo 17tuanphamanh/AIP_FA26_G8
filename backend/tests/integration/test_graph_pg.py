@@ -115,7 +115,7 @@ async def test_stop_restart_resume_on_postgres(db: PgUrls, rw: AsyncEngine) -> N
     events = await scalar(
         rw, "SELECT string_agg(event, ',' ORDER BY log_id) FROM audit_logs WHERE ticket_id=:t", t=t1
     )
-    assert events.endswith("queued,approved,executed_ok,user_confirmed")
+    assert events.endswith("queued,approved,executed_ok,user_confirmed,closed")  # + điểm log 8 (B20)
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,8 @@
   (không in ra log/repr). Biến LLM để trống tới mốc G (decisions.md mục 4).
 - `config/policy.json` (`get_policy`): hằng số nghiệp vụ [Chốt 01 mục 5.2]; sai schema → không khởi động.
 - `config/slots.yaml` (`get_slots`): `tool_arg_slots` (D-20); `required_slots` thêm ở Phase 3 (B11).
+- `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
+  của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
 Tên model, giá, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml (P2).
 
 File env: `APP_ENV_FILE` (mặc định `.env`, tính từ thư mục đang chạy); đặt RỖNG để tắt hẳn —
@@ -20,6 +22,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.domain.exit_codes import ExitCode
 
 
 def env_file_from_env() -> str | None:
@@ -61,6 +65,8 @@ class Settings(BaseSettings):
     worker_recover_scan_seconds: float = Field(default=60.0, gt=0)  # quét lượt dở dang
     worker_stale_turn_seconds: float = Field(default=120.0, gt=0)  # lượt mở quá 2 phút → recover
     worker_batch: int = Field(default=200, ge=1)
+    # Worker chạy lại một lượt dở dang tối đa bấy nhiêu lần (turns.recover_attempts, 2b-Q6).
+    max_recover_attempts: int = Field(default=3, ge=1)
     # Heartbeat (app/heartbeat.py): worker ghi file định kỳ; healthcheck compose: quá MAX_AGE = unhealthy.
     worker_heartbeat_path: Path = Path("/tmp/servicedesk-worker.heartbeat")
     worker_heartbeat_seconds: float = Field(default=10.0, gt=0)
@@ -178,3 +184,39 @@ def load_slots(path: Path) -> SlotsFile:
 @lru_cache
 def get_slots() -> SlotsFile:
     return load_slots(get_settings().config_dir / "slots.yaml")
+
+
+# ---- config/escalation_templates.yaml ---------------------------------------------------------
+
+
+class CodeTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    user_message: str = Field(min_length=1)  # tin gửi người dùng [Chốt B20 7.1]
+    next_for_l2: str = Field(min_length=1)  # phần (4) của ghi chú bàn giao (B20 4.2)
+
+
+class EscalationTemplates(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    deny_warning: str = Field(min_length=1)  # nối vào next_for_l2 với MỌI E5 (2b-Q4)
+    codes: dict[ExitCode, CodeTemplate]
+
+    @model_validator(mode="after")
+    def _all_codes(self) -> "EscalationTemplates":
+        missing = sorted(c.value for c in ExitCode if c not in self.codes)
+        if missing:
+            raise ValueError(f"escalation_templates thiếu mã: {missing}")
+        return self
+
+    def of(self, code: str) -> CodeTemplate:
+        return self.codes[ExitCode(code)]
+
+
+def load_escalation_templates(path: Path) -> EscalationTemplates:
+    return EscalationTemplates.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+@lru_cache
+def get_escalation_templates() -> EscalationTemplates:
+    return load_escalation_templates(get_settings().config_dir / "escalation_templates.yaml")

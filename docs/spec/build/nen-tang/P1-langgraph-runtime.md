@@ -300,6 +300,8 @@ def goto(state, to_status, *, next_node, step, event, **fields) -> dict:
     return {"status": to_status, "next": next_node, **fields}
 ```
 
+**Kiểm key trả về [Chốt khi hiện thực Phase 2b-2]:** `goto()` và `with_error_boundary` từ chối mọi key không khai báo trong `TicketState` (ném lỗi → E9). Lý do: LangGraph 1.x **bỏ im lặng** key không khai báo — node gõ sai tên hoặc đặt key chưa có trong state thì giá trị biến mất, không lỗi, không log, chỉ sai số liệu về sau (phát hiện ở 2b-2 với `resolution_path`). Có test đối chiếu và mutation "bỏ kiểm key" đã bị bắt.
+
 **Vì sao audit ghi bằng khóa idempotent:** khi resume, node chờ chạy lại từ đầu (mục 6), nên có thể gọi `goto()` lần hai. Dùng `INSERT … ON CONFLICT DO NOTHING` theo khóa idempotent để không ghi trùng. **[Đề xuất D-14]**
 
 **Vì sao khóa có thêm `event` và `loop_seq` (sửa ở v1.2):** khóa cũ `(ticket_id, step, turn_id)` trùng nhau khi cùng một bước ghi hai sự kiện khác nhau trong một lượt. Ví dụ: sau khi người dùng trả lời, `clarify_wait` ghi `B11/user_replied`, rồi `b11_slots` ghi `B11/action_built`, cả hai cùng `turn_id` → bản ghi thứ hai bị bỏ qua âm thầm. Thêm `event` khắc phục trường hợp này; thêm `loop_seq` khắc phục trường hợp đi qua cùng một bước hai lần trong một lượt (D-20).
@@ -448,6 +450,7 @@ Sự kiện timeout của worker đi qua **đúng hàm này**, nên timeout và 
 | Giới hạn đồng thời | `Semaphore(GRAPH_CONCURRENCY=8)` mỗi process | Không làm cạn pool DB và hạn mức LLM |
 | Turn | Mỗi lần submit/resume tạo `turn_id`; ghi `turns` lúc bắt đầu và kết thúc. `recover` giữ `turn_id` cũ **[Đề xuất D-18]** | Nền cho trace **[Chốt 17.1]**; khóa idempotent ổn định khi phục hồi |
 | Phục hồi sau sự cố | Khi khởi động, worker tìm `turns` có `ended_at IS NULL` quá 2 phút → `runner.recover(ticket_id)` = `ainvoke(None, cfg)` dưới khóa ticket | Ticket không kẹt khi process chết giữa lượt |
+| Giới hạn phục hồi [Chốt 2b-2] | Trước **mỗi** lần recover, worker `UPDATE turns SET recover_attempts = recover_attempts + 1 … RETURNING` (migration 0005). Vượt 3: lượt kẹt ở B20 → audit `finalize_failed_permanent` + đóng lượt; kẹt ở node khác → ticket sang E9 (`reason_detail=recover_exhausted`) qua B20 | Đếm **số lần thử**, không đếm số lần thất bại: process bị giết (OOM, SIGKILL) không kịp ghi span lỗi, đếm lỗi sẽ ra 0 và thử vô hạn |
 | Recursion | `recursion_limit=60` | Lưới cuối, sau `MAX_LOOPS=5` |
 | Worker | Mỗi 15 giây: `SELECT … WHERE deadline < now() AND status IN (chờ) FOR UPDATE SKIP LOCKED LIMIT 200` → `deliver_event(timeout)` | `SKIP LOCKED` cho phép nhiều worker không đụng nhau |
 | Nhắc duyệt | Worker gửi nhắc ở 50% và 80% thời hạn; ghi `approvals.reminder_1_at/2_at` để không gửi lại | **[Chốt]** |
@@ -632,3 +635,4 @@ async def parent_reply_wait(state):                              # S_CONFIRMING 
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0 |
 | 25/09/2026 | 1.2 | Bản vá lõi AI: mục 1.1 constrained agent (D-28); khóa idempotent mới (D-14); `effects.once` + recover giữ `turn_id` (D-18); khóa cấp session (D-19); đối soát con từ DB (D-17); đích D-20 trong `ROUTES` (cờ tắt); thêm test tương ứng |
 | 25/09/2026 | 1.3 | `ALLOWED_TRANSITIONS` tường minh với 3 quy tắc (D-29); đóng ticket cha, chỉ số trên ticket lá (D-30); vòng tổng hợp của cha, hộp thư con, `parent_reply_wait` (D-31); TC34–TC36 |
+| 26/09/2026 | 1.4 | Chốt Phase 2b-2: `goto()`/boundary chặn key ngoài `TicketState` (mục 5.1); giới hạn phục hồi bằng `turns.recover_attempts`, tăng trước khi recover (mục 7) |

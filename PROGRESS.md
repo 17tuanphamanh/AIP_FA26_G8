@@ -8,7 +8,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a (runtime) **đã duyệt** (26/09/2026), đã commit; chặng 2b: kế hoạch đã duyệt, làm theo 4 bước 2b-1 → 2b-4, **2b-1 (B1 thật) xong, chờ duyệt**. Phase 1 đã đóng |
+| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 (B20 thật + hàng đợi L2) xong, `make test` xanh, chờ duyệt commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
 | Cập nhật | 26/09/2026 |
 
@@ -548,6 +548,86 @@ dịch vụ ticket + route sự kiện + nối `create_app`; 2b-4 = stack thật
 
 **Chuyển sang bước sau:** TC24/TC25 qua HTTP (đăng nhập → `POST /api/tickets`) ở 2b-3 khi có route ticket;
 điểm log 8 cho ticket bị chặn ở B1 ở 2b-2 (B20 thật).
+
+**Commit + CI:** `6c43153` (35 file, gồm 5 file `docs/spec` người cập nhật) — CI GitHub **xanh**, run
+`36240526098` (26/09/2026, người theo dõi).
+
+## Phase 2 — 2b-2: B20 thật + hàng đợi L2 (26/09/2026, `make test` xanh, chờ duyệt commit)
+
+**Quyết định của người cho 2b-2 (26/09/2026):**
+- **Q-A `resolution_path`:** B20 suy ra ở MỘT chỗ (`audit/final.resolution_path`): cha → NULL; `S_ESCALATED` →
+  escalated; `S_REJECTED` → rejected; `S_BLOCKED` → NULL; `S_RESOLVED` → deflected (`need_type=info`) /
+  approved (`approval_result=approved`) / auto. Kèm: **`goto()` và boundary kiểm key trả về ⊆ `TicketState`**
+  (`domain.ticket_state.check_state_keys`, key lạ → `UnknownStateKey` → E9) — chặn loại lỗi LangGraph bỏ im
+  lặng. **Việc spec (người sửa):** mã giả B10/B17 bỏ tự đặt `resolution_path` (không có trong `TicketState`).
+- **Q-B đếm lần phục hồi:** KHÔNG dùng span (process bị giết không kịp ghi span → đếm 0 → thử vô hạn). Migration
+  **0005** `turns.recover_attempts SMALLINT NOT NULL DEFAULT 0`; runner tăng bằng `UPDATE … RETURNING` **trước**
+  khi chạy lại (dưới khoá ticket). Vượt 3: kẹt ở B20 → audit `finalize_failed_permanent` + đóng lượt; kẹt ở node
+  khác → E9 `recover_exhausted` qua B20. Nghĩa "3": tối đa **3 lần worker chạy lại** (cộng lượt gốc = 4 lần chạy
+  node), lần quét thứ 4 ngừng thử.
+- **Q-C (lệch thứ tự mã giả B20, ghi theo yêu cầu):** `finalize_once` chạy **trước**, trả dòng `tickets` đang
+  có; điểm log 8 ghi **từ chính dòng đó** → audit và `tickets` luôn giống hệt dù B20 chạy lại sau vài phút (mã
+  giả ghi audit trước → hai nguồn lệch `total_duration`).
+- **Q-D:** route **`GET /api/escalations/queue`** (P9 mục 7); `handoff_note.request` **chỉ** từ `redacted_request`
+  (cắt 500 ký tự); `closed_at` đặt ở B20 cho mọi trạng thái cuối; ticket `S_BLOCKED` không có tin ở B20.
+
+**Đã làm:**
+- `graph/nodes/b20_audit.py` — B20 thật: `finalize_once` → điểm log 8 (event `closed`, khoá theo lượt) → nếu có
+  `exit_code` (cha không bao giờ có): `effects.once("escalation_create")` + `effects.once("notify_user")`, tin
+  vào `conversation` của checkpoint (không thêm bảng).
+- `audit/final.py` (`summarize_final`, `resolution_path`), `domain/final.py` (`FinalSummary` — `db` không import
+  `audit`), `audit/handoff.py` (`HandoffNote` 4 phần, `build_handoff`, `is_deny_case` = mọi E5).
+- `config/escalation_templates.yaml` + `settings.get_escalation_templates` (đủ E0–E9, không rỗng, không khoá lạ):
+  tin người dùng theo B20 7.1, `next_for_l2`, `deny_warning`.
+- `db/tickets.py` (`created_at`, `count_turns`, `finalize_once` — ghi `WHERE final_state IS NULL` rồi đọc lại
+  trong cùng transaction), `db/escalations.py` (`create` = `INSERT … SELECT rank FROM exit_code_priority` trong
+  transaction của `effects.once`; `list_open` lọc `is_parent=false`, `closed_at IS NULL`, sắp `priority,
+  created_at, escalation_id`).
+- Migration `0005_turns_recover_attempts.py` + `models.Turn.recover_attempts`; `SqlTurnStore.bump_recover_attempts`.
+- `graph/boundary.py`: lỗi ở trạng thái kết thúc → audit `unhandled_exception` **khoá theo lượt** rồi ném tiếp
+  (2a kết thúc thread → ticket không `final_state`). `graph/runner.py`: `recover` tăng bộ đếm trước, `_give_up`,
+  `after_turn`/`wake_parent` **sau khi nhả khoá** (2b-Q7); `late_event.deliver_event` gọi `after_turn` sau khi nhả
+  khoá; `late_event.wake_parent` chuyển sang `Runner.wake_parent`. `settings.max_recover_attempts = 3`.
+- `api/escalations.py` — `GET /api/escalations/queue` (`escalation:handle`, `limit` 1..200, mặc định 50);
+  `main.create_app(escalations=…)`.
+- Node giả: B3 thêm `low_confidence` (E1 `intent_low_confidence`, D-27); B12 thêm `high_risk` (E5 do LLM, không
+  luật deny — để kiểm "mọi E5 là deny case").
+- `tests/unit/test_side_effects_ast.py`: thêm `escalations.create` vào danh sách phải qua `effects.once`.
+
+**Test mới / sửa:**
+
+| File | Nội dung |
+|---|---|
+| `unit/test_b20_audit.py` (26) | E0–E9 do node giả sinh: 1 escalation, rank từ seed 0001 (đọc thẳng migration — không chép), handoff 4 phần không rỗng, 1 tin đúng mẫu vào `conversation`, điểm log 8 == `tickets`; E0 không lộ lý do; E1 `intent_low_confidence` vs `out_of_scope`; mọi E5 (deny + LLM rủi ro cao) là deny case + cảnh báo; `request` chỉ từ `redacted_request`, cắt 500; 8 ca `close_reason`/`resolution_path` (6/8 giá trị); cha → không escalation, NULL; `total_turns`, `total_duration`; **chạy lại ở 3 khe hở** (chết trước điểm log 8 / giữa lúc gửi tin / trước checkpoint) → 1 escalation, 1 tin, 1 điểm log 8, audit = `tickets` |
+| `unit/test_recover_limit.py` (4) | bug cố định ở B20 → 3 lần worker, lần 4 dừng: 1 `finalize_failed_permanent`, lượt đóng, `recover_attempts=4`, sau đó không đụng tới; **process bị giết ở B20, không có span lỗi → vẫn dừng**; lỗi tạm thời → xong, không bỏ cuộc; kẹt ở B15 (chết mãi) → E9 `recover_exhausted` qua B20, vẫn 1 phiếu duyệt |
+| `unit/test_state_keys.py` (3) | `need_type`, `approval_result` có trong `TicketState`, `resolution_path` không; goto key lạ → lỗi, không ghi audit; node trả key gõ sai → E9 |
+| `unit/test_final_handoff.py` (18) | bảng `resolution_path` (9 ca) + trạng thái không kết thúc → lỗi; `summarize_final`; handoff từ state đầy đủ/tối thiểu; chỉ E5 là deny; file mẫu đủ mã; schema từ chối thiếu mã / chuỗi rỗng / khoá lạ |
+| `unit/test_escalations_api.py` (7) | l1, l2 đọc được, sắp đúng, bỏ cha; employee, manager → 403 + `permission_denied`; `limit` 0/201/x → 422; `limit` áp dụng |
+| `unit/test_graph_runtime.py` | điểm log 8 ở cuối chuỗi event; E4 có thêm tin escalation; lỗi B20 → ném tiếp, lượt mở; **con kết thúc → đánh thức cha khi không còn giữ khoá con**; lỗi đánh thức chỉ log |
+| `integration/test_b20_pg.py` (17) | seed `exit_code_priority` == B20 4.1; E0–E9 trên Postgres (1 dòng, rank, JSONB 4 khoá, điểm log 8 == `tickets`, `side_effects` B20); chạy lại sau khi chết giữa lúc gửi tin (5 phút sau) → không trùng, thời lượng audit = tickets; **chết giữa `finalize_once` và điểm log 8 → audit lấy dòng DB**; `finalize_once` không đè; hàng đợi sắp đúng + bỏ cha; giới hạn phục hồi với `turns.recover_attempts` thật (bug + SIGKILL) |
+| `integration/test_graph_pg.py` | chuỗi event kết thúc bằng `closed` |
+
+**Kết quả kiểm (26/09/2026, sandbox):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy 113 file, mypy mock, 5 hợp đồng, gitleaks detect không leak; `gitleaks dir backend/app backend/tests config`: không leak |
+| unit backend | **1326 passed** (1266 + 60 mới) |
+| Mutation logic | **14/14 đỏ**: escalation không qua `effects.once`; điểm log 8 từ summary thay vì dòng đã lưu; bỏ `done_so_far`; E0 nói lý do; boundary nuốt lỗi B20 như 2a; giới hạn `>=`; không đóng lượt sau `finalize_failed_permanent`; **tăng bộ đếm SAU khi recover** (đọc trước, tăng sau — lần viết đầu của đột biến này sai, gây lỗi thu thập test, đã viết lại đúng nghĩa); goto bỏ kiểm key; boundary bỏ kiểm key; `resolution_path` cha không NULL; `wake_parent` trong khoá; tin không vào `conversation`; `is_deny_case` chỉ khi luật deny |
+| Mutation SQL | **7/7 đỏ đúng lý do** (người chạy từng lệnh `pytest test_b20_pg.py -k …` ngoài sandbox, 26/09/2026): (1) `finalize_once` bỏ `WHERE final_state IS NULL` → `finalize_once_never_overwrites` + `rerun_no_duplicates` đỏ `(0, 300)`; (2) `finalize_once` trả `summary` thay dòng đọc lại → `finalize_once_never_overwrites` + **`crash_between_finalize_and_point8`** đỏ `(300, 0)`; (3) priority hằng 6 → `each_exit_code` đỏ đúng 6 mã có hạng ≠ 6 (E0, E2, E5, E6, E7, E9) + `queue_sorted`; (4) bỏ lọc cha → `queue_sorted` (thêm E7 của cha); (5a) bỏ ORDER BY → `queue_sorted`; (5b) ORDER BY `priority, escalation_id` → `queue_sorted` đúng vị trí 3 (`E9` trước `E2`); (6) `bump_recover_attempts` không tăng → `recover_limit[bug]` (`calls` 6 ≠ 4) + `[killed]` (đỏ — output bị cắt, chưa thấy dòng lỗi cụ thể). Đã hoàn nguyên cả 7, kiểm không còn chú thích `MUTATION` |
+| `make test` đầy đủ | **Xanh** (người chạy ngoài sandbox, 26/09/2026, code sạch sau khi hoàn nguyên 7 mutation SQL): backend **1448 passed** (1326 unit + 93 integration [76 cũ + 17 `test_b20_pg`] + 29 e2e) + mock **86 passed** — gồm migration 0005 (model khớp migration), `test_graph_pg` với B20 thật, `test_b01_pg`, e2e |
+
+**Bài học từ mutation SQL (người yêu cầu kiểm, 26/09/2026) — ba test đã sửa/thêm vì đột biến lẽ ra phải bị bắt:**
+1. **Test xanh oan vì lệch đồng hồ:** `test_b20_rerun_…` bản đầu xanh dưới đột biến (1). Dòng `tickets` tạo bằng `now()` thật
+   của Postgres, còn FakeClock ở 08:00 → `max(0, NOW − created_at)` luôn kẹp về 0 ở cả lần ghi đầu lẫn lần đè. Sửa:
+   `create_ticket(created_at=NOW)` tường minh (`graph_pg.py`) → thời lượng có nghĩa (0 vs 300).
+2. **Thiếu ca cốt lõi của Q-C trên SQL:** thêm `test_crash_between_finalize_and_point8_audit_uses_stored_row`
+   (`finalize_once` thật commit rồi chết trước điểm log 8; recover 5 phút sau → audit phải lấy dòng DB, 0 chứ không 300).
+3. **Hoà hạng phân định bằng id thay vì `created_at`:** hàng đợi chèn mọi dòng cùng `created_at` → bỏ `created_at` khỏi
+   ORDER BY vẫn xanh. Sửa: E9 chèn trước nhưng `created_at` muộn hơn E2 → đúng phải ra E2 trước E9.
+Kèm: chạy pytest trực tiếp phải `cd` về gốc repo (`!` chạy ở thư mục hiện tại của phiên); `FailingTickets` ném bản exception
+mới mỗi lần (ném lại cùng đối tượng → traceback cộng dồn qua các lần thử — chỉ ảnh hưởng log của test).
+
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

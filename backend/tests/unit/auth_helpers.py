@@ -97,6 +97,7 @@ def auth_env(
     clock: FakeClock | None = None,
     idp: FakeIdentityProvider | None = None,
     alerts: MemoryAlerts | None = None,
+    escalations: Any = None,
     extra_router: APIRouter | None = None,
     client_ip: str = "203.0.113.7",
     **settings_over: Any,
@@ -108,8 +109,9 @@ def auth_env(
     alerts = alerts or MemoryAlerts()
     settings = auth_settings(**settings_over)
     app = create_app(
-        settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=alerts, clock=clock
-    )
+        settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=alerts,
+        escalations=escalations, clock=clock,
+    )  # fmt: skip
     if extra_router is not None:
         app.include_router(extra_router)
     with TestClient(app, base_url=BASE_URL, client=(client_ip, 50000)) as client:

@@ -150,7 +150,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 |---|---|
 | Nhánh trước | B8–B9 (đã có căn cứ: top-5 với điểm ≥ ngưỡng) |
 | Nhận vào | `redacted_request`, `retrieved`, `intent`, `conversation` (≤ 4 tin), `kb_version` |
-| Giao cho nhánh sau | Nhánh info: câu trả lời đã gửi, `status=S_CONFIRMING`, `next=confirm_wait`, `resolution_path=deflected`. Nhánh action: `need_type=action`, `next=b11_slots` |
+| Giao cho nhánh sau | Nhánh info: câu trả lời đã gửi, `status=S_CONFIRMING`, `next=confirm_wait` (`resolution_path=deflected` do B20 suy ra từ `need_type=info`). Nhánh action: `need_type=action`, `next=b11_slots` |
 | Ai dùng đầu ra | B19 (xác nhận), B11 (dựng Action), `lineage`, M9 (deflection rate, tỉ lệ có trích nguồn) |
 
 **Chuyển trạng thái của nhánh [Chốt 2.1]:**
@@ -259,7 +259,7 @@ class AnswerOut(BaseModel):
 ```
 
 - **Đọc:** `redacted_request`, `retrieved`, `intent`, `conversation` (≤ 4 tin).
-- **Ghi:** `need_type`, `answer` (tham chiếu), `status`, `next`, `exit_code`, `resolution_path="deflected"`.
+- **Ghi:** `need_type`, `answer` (tham chiếu), `status`, `next`, `exit_code`. **Không** đặt `resolution_path` — B20 suy ra (v1.4).
 
 ## 5. Luồng xử lý chi tiết
 
@@ -294,7 +294,7 @@ async def b10_route(state):
                        hours=48, step="B10")
     lineage.record(state, prompt=meta, kb_version=state["kb_version"])     # [Chốt 17.1]
     return goto(state, S_CONFIRMING, next_node="confirm_wait", step="B10", event="deflected_info_only",
-                need_type="info", resolution_path="deflected")
+                need_type="info")              # resolution_path do B20 suy ra (v1.4)
 ```
 
 **Vì sao `expand_for_answer` không đổi tập trích dẫn hợp lệ (D-24):** chunk liền kề chỉ là ngữ cảnh đọc thêm. Mỗi khối bằng chứng gửi cho LLM mang `anchor_chunk_id` của chunk top-5 gốc, và prompt yêu cầu trích dẫn theo anchor. Nhờ vậy hậu kiểm trích dẫn bằng code (`citations ⊆ top-5`) giữ nguyên, và ngưỡng căn cứ của B9 vẫn áp lên đúng các chunk đã được chấm điểm.
@@ -323,7 +323,7 @@ async def b10_route(state):
 
 - **`audit_logs`:** bước B10 (`deflected_info_only` / `needs_action` / `invalid_citation`).
 - **`lineage`:** prompt, model, `kb_version`, commit **[Chốt]**.
-- **`tickets`:** `resolution_path="deflected"` ghi ở B20.
+- **`tickets`:** `resolution_path="deflected"` do B20 suy ra từ `need_type=info` và ghi (B20 mục 5.1).
 - **`side_effects`:** `notify_user`, `deadline_set` (D-18).
 
 ## 9. Trace và giám sát
@@ -394,3 +394,4 @@ async def b10_route(state):
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: ghép chunk liền kề làm ngữ cảnh (D-24), gửi tin + đặt hạn qua `effects.once` (D-18) |
 | 25/09/2026 | 1.3 | Ticket con không tự gửi câu trả lời, để lại notice `needs=confirm` cho cha gom (D-31) |
+| 26/09/2026 | 1.4 | Bỏ việc B10 tự đặt `resolution_path`: key không có trong `TicketState` nên LangGraph bỏ im lặng; B20 suy ra tại một chỗ (Phase 2b-2) |

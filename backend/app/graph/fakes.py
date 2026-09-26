@@ -1,5 +1,6 @@
 """Phụ thuộc của node (`NodeDeps`) + phần GIẢ của Phase 2 (P1: "khung, node giả"). Phase 3+ thay từng
-node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, `directory`, `alerts`, `lockout`).
+node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, `directory`, `alerts`, `lockout`),
+`b20_audit` (dùng `tickets`, `escalations`, `templates`, `notifier`).
 
 `FakeScenario` chọn kết quả của mỗi node theo ticket (mặc định = đường vui dừng ở chờ duyệt), để test
 đi được mọi nhánh ra của mọi node. Kết quả đặc biệt `"raise"` → node ném `ValueError` (TC29 → E9).
@@ -20,11 +21,13 @@ from app.domain.ticket_state import RiskDecision
 from app.graph.ports import (
     AlertSink,
     DeadlineStore,
+    EscalationStore,
     IdentityReads,
+    TicketStore,
     ToolCaller,
     ToolResult,
 )
-from app.settings import PolicyConstants
+from app.settings import EscalationTemplates, PolicyConstants
 
 
 class Notifier(Protocol):
@@ -58,7 +61,6 @@ DEFAULT_OUTCOMES: Mapping[str, str] = {
     "b15_prepare_approval": "ok",
     "b17_execute": "ok",
     "parent_wait": "wait",
-    "b20_audit": "ok",
 }
 
 type Hook = Callable[[Mapping[str, Any]], Any]
@@ -106,6 +108,9 @@ class NodeDeps:
     directory: ToolCaller  # B1: `ad_get_user` qua ToolRegistry (retry, breaker)
     alerts: AlertSink  # B1: cảnh báo dò mật khẩu (P9 luật 3)
     lockout: timedelta  # LOCKOUT_MINUTES — B1 suy thời điểm bắt đầu khoá từ `locked_until`
+    tickets: TicketStore  # B20: created_at, số lượt, ghi kết quả cuối một lần
+    escalations: EscalationStore  # B20: hàng đợi L2 (qua effects.once)
+    templates: EscalationTemplates  # B20: thông báo + next_for_l2 theo mã E
     scenario: FakeScenario = field(default_factory=FakeScenario)
     approver_id: str = "l1-fake"
 

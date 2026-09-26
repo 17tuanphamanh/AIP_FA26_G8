@@ -2,7 +2,7 @@
 
 `create_app` là điểm nối (composition root): auth chỉ biết port (`auth/ports.py`); ở đây gắn adapter
 AD (`tools`), writer `security_events` + `alerts` (`audit`), store SQL. Test tiêm `idp`, `store`, `sink`,
-`alerts`, `clock`.
+`alerts`, `escalations` (hàng đợi L2), `clock`.
 
 Thiếu `JWT_SIGNING_KEY` (hoặc thiếu `SVC_AGENT_TOKEN` khi không tiêm idp) → route auth trả 503; app
 vẫn khởi động và `/api/health` vẫn chạy.
@@ -18,6 +18,8 @@ from fastapi import FastAPI
 
 from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
+from app.api.escalations import EscalationQueue
+from app.api.escalations import router as escalations_router
 from app.api.health import HealthCheck
 from app.api.health import router as health_router
 from app.audit.alerts import AlertWriter
@@ -35,6 +37,7 @@ from app.auth.store import SqlAuthStore
 from app.auth.tokens import TokenSigner
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
+from app.db.escalations import SqlEscalationStore
 from app.db.session import create_engines, ping
 from app.settings import Settings, get_policy, get_settings
 from app.tools.adapters.ad_read import AdIdentityProvider
@@ -91,6 +94,7 @@ def create_app(
     store: AuthStore | None = None,
     sink: SecurityEventSink | None = None,
     alerts: AlertSink | None = None,
+    escalations: EscalationQueue | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -100,6 +104,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engines = create_engines(settings)
         app.state.engines = engines
+        app.state.escalations = escalations or SqlEscalationStore(engines.main)
         ad_http = None
         identity = idp
         if identity is None and settings.svc_agent_token is not None:
@@ -131,6 +136,7 @@ def create_app(
     app.add_exception_handler(AuthError, auth_error_handler)
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(escalations_router)
     return app
 
 

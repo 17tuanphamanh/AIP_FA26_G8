@@ -15,9 +15,11 @@ from datetime import timedelta
 from app.audit.alerts import AlertWriter
 from app.audit.writer import AuditWriter
 from app.core.clock import Clock
+from app.db.escalations import SqlEscalationStore
 from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines
+from app.db.tickets import SqlTicketStore
 from app.graph.builder import build_graph, fake_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import (
@@ -30,7 +32,7 @@ from app.graph.fakes import (
 from app.graph.lock import PgTicketLock
 from app.graph.ports import ToolCaller
 from app.graph.runner import Runner
-from app.settings import Settings, get_policy
+from app.settings import Settings, get_escalation_templates, get_policy
 from app.tools.wiring import build_read_registry
 
 log = logging.getLogger(__name__)
@@ -77,6 +79,8 @@ async def _open(
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
+        tickets=SqlTicketStore(engines.main), escalations=SqlEscalationStore(engines.main),
+        templates=get_escalation_templates(),
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size
@@ -88,5 +92,6 @@ async def _open(
             concurrency=settings.graph_concurrency, can_execute=can_execute,
             rediagnose_on_new_slot=settings.rediagnose_on_new_slot,
             recursion_limit=settings.graph_recursion_limit,
+            max_recover_attempts=settings.max_recover_attempts,
         )  # fmt: skip
         yield Runtime(runner=runner, deadlines=deadlines, turns=turns)

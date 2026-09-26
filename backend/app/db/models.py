@@ -543,6 +543,10 @@ class Turn(Base):
     event_type: Mapped[str] = mapped_column(String(16), nullable=False)
     started_at: Mapped[datetime] = _now()
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Số lần worker chạy lại lượt dở dang — tăng TRƯỚC khi chạy (migration 0005, 2b-Q6).
+    recover_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("0")
+    )
 
 
 class Span(Base):

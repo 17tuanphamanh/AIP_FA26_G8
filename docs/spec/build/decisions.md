@@ -192,6 +192,15 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 2b-Q6 | Exception ở B20 | Ném tiếp, worker chạy lại; tối đa 3 lần rồi `finalize_failed_permanent` | B20 5.1 |
 | 2b-Q7 | Mặc định còn lại | `role_unmappable` → E2; AD 404 → `invalid_credentials`; phiên theo họ token; TicketBusy (đang giữ khóa) → 503 + Retry-After, lượt đã xong mà trạng thái không còn chờ → 409; non-owner đọc được → 403, không đọc được → 404; `wake_parent` sau khi nhả khóa | B01 5.1, B20 5.1 |
 
+**Phase 2b-2 (26/09/2026):**
+
+| Mã | Câu hỏi | Chốt | Ở đâu |
+|---|---|---|---|
+| 2b-QA | `resolution_path` lấy từ đâu? | B20 suy ra tại một chỗ; `goto()`/boundary chặn key ngoài `TicketState` (LangGraph bỏ im lặng key lạ) | B20 5.1, P1 5.1, B10/B17 1.4 |
+| 2b-QB | Đếm "3 lần" B20 lỗi bằng gì? | `turns.recover_attempts` (migration 0005), tăng **trước** khi recover; không đếm span lỗi vì process bị giết không kịp ghi. Vượt 3: B20 → `finalize_failed_permanent`; node khác → E9 `recover_exhausted` | P7 2.13, P1 mục 7, B20 5.1 |
+| 2b-QC | Thứ tự trong B20 | `finalize_once` trước, điểm log 8 từ dòng đã lưu | B20 5.1 |
+| 2b-QD | Mặc định còn lại | Route `/api/escalations/queue`; `handoff_note.request` chỉ từ `redacted_request`; `closed_at` ở B20 cho mọi trạng thái cuối; 2b-3: `created_at` lấy từ `Clock` của app | B20 5.1 |
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -202,3 +211,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 25/09/2026 | Bỏ vòng hỏi GVHD: Q1–Q14 thành quyết định của nhóm (xây trước / tối ưu sau), chỉ báo cáo. Chốt N1 (đa provider, trần 1 triệu đ), N2 (3 máy gaming + 1 Mac, chờ VRAM), N3 (70/20/10), N4 (bảng R01–R20, R22 → R17), N5 (Kaggle + Colab, fp32) |
 | 25/09/2026 | Chốt D-01…D-33 theo đặc tả; thêm chế độ "code trước, gắn API sau" (mục 4, mốc G); N1/N2 chỉ chặn mốc G |
 | 26/09/2026 | Mục 4.1: quyết định 2b-Q1…2b-Q7 của Phase 2b |
+| 26/09/2026 | Mục 4.1: quyết định 2b-QA…2b-QD của Phase 2b-2 |

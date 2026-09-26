@@ -75,14 +75,11 @@ async def deliver_event(
             raise LateEvent(ticket_id, expected_status, status)
         if event.get("kind") not in spec[2]:
             raise InvalidEvent(f"{waiting} không nhận sự kiện {event.get('kind')!r}")
-        return await runner.resume_locked(ticket_id, event, session_id=session_id)
+        result = await runner.resume_locked(ticket_id, event, session_id=session_id)
+    await runner.after_turn(result)  # SAU khi nhả khoá: con kết thúc → đánh thức cha (2b-Q7)
+    return result
 
 
 async def wake_parent(runner: Runner, parent_id: str) -> RunResult | None:
-    """Chỉ là tín hiệu (D-17): cha đang ở `parent_wait` → đánh thức; không thì không làm gì và KHÔNG
-    ghi `late_event` — cha tự đối soát từ DB khi tới `parent_wait`."""
-    async with runner.hold(parent_id):
-        snap = await runner.snapshot(parent_id)
-        if snap.next != ("parent_wait",):
-            return None
-        return await runner.resume_locked(parent_id, {"kind": "wake"})
+    """Chỉ là tín hiệu (D-17) — xem `Runner.wake_parent`."""
+    return await runner.wake_parent(parent_id)

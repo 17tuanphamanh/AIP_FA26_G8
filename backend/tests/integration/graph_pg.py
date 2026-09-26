@@ -13,6 +13,7 @@ from typing import Any
 from app.audit.alerts import AlertWriter
 from app.audit.writer import AuditWriter
 from app.core.clock import FakeClock
+from app.db.escalations import SqlEscalationStore
 from app.db.identity import SqlIdentityReads
 from app.db.models import Approval
 from app.db.runtime import (
@@ -23,12 +24,13 @@ from app.db.runtime import (
     current_tx,
 )
 from app.db.session import Engines, create_engines
+from app.db.tickets import SqlTicketStore
 from app.graph.builder import build_graph, fake_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.lock import PgTicketLock
 from app.graph.runner import Runner
-from app.settings import Settings, get_policy
+from app.settings import Settings, get_escalation_templates, get_policy
 from sqlalchemy import Table, insert, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from tests.fakes.graph import LOCKOUT, CountingExecutor, RecordingNotifier
@@ -105,6 +107,7 @@ async def open_pg_runtime(
     can_execute: bool = True,
     lock_timeout: float = 5.0,
     ad: FakeAd | None = None,
+    tickets: SqlTicketStore | None = None,
 ) -> AsyncIterator[PgRuntime]:
     settings = Settings(database_url=rw_url, ticket_lock_timeout=lock_timeout)
     engines = create_engines(settings)
@@ -116,7 +119,9 @@ async def open_pg_runtime(
         notifier=notifier, approvals=approvals, executor=executor, deadlines=deadlines,
         constants=get_policy().constants, identity=SqlIdentityReads(engines.main),
         directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
-        lockout=LOCKOUT, scenario=scenario, approver_id=APPROVER,
+        lockout=LOCKOUT, tickets=tickets or SqlTicketStore(engines.main),
+        escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
+        scenario=scenario, approver_id=APPROVER,
     )  # fmt: skip
     try:
         async with open_postgres_saver(rw_url, max_size=5) as saver:
@@ -146,13 +151,16 @@ async def seed_users(engine: AsyncEngine) -> None:
         ))  # fmt: skip
 
 
-async def create_ticket(engine: AsyncEngine, ticket_id: str) -> None:
-    """Dịch vụ ticket thật làm ở chặng 2b; ở đây chỉ INSERT dòng `tickets` cho khoá ngoại."""
+async def create_ticket(
+    engine: AsyncEngine, ticket_id: str, *, created_at: datetime | None = None
+) -> None:
+    """Dịch vụ ticket thật làm ở 2b-3; ở đây chỉ INSERT dòng `tickets` cho khoá ngoại. `created_at`
+    tường minh khi test đo thời lượng theo FakeClock (mặc định: `now()` thật của Postgres)."""
     async with engine.begin() as conn:
         await conn.execute(
-            text("INSERT INTO tickets (ticket_id, requester_id, requester_role, redacted_request) "
-                 "VALUES (:t, :u, 'employee', 'yêu cầu thử')"),
-            {"t": ticket_id, "u": REQUESTER},
+            text("INSERT INTO tickets (ticket_id, requester_id, requester_role, redacted_request, "
+                 "created_at) VALUES (:t, :u, 'employee', 'yêu cầu thử', COALESCE(:c, now()))"),
+            {"t": ticket_id, "u": REQUESTER, "c": created_at},
         )  # fmt: skip
 
 

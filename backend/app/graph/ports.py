@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from app.db.identity import LiveSession
 from app.db.runtime import DueWait, OpenTurn, WaitKind
 from app.domain.alerts import AlertDraft
+from app.domain.final import FinalSummary
 from app.tools.registry import ToolResult
 
 # bản ghi dữ liệu dùng chung với store SQL
@@ -70,6 +71,10 @@ class TurnStore(Protocol):
 
     async def is_open(self, turn_id: str) -> bool: ...
 
+    async def bump_recover_attempts(self, turn_id: str) -> int | None:
+        """`recover_attempts + 1` của lượt còn mở, trả giá trị mới; lượt đã đóng → None (2b-Q6)."""
+        ...
+
     async def stale(self, before: datetime, limit: int) -> list[OpenTurn]:
         """Lượt chưa kết thúc (`ended_at IS NULL`) bắt đầu trước `before` (P1 mục 7)."""
         ...
@@ -123,3 +128,30 @@ class AlertSink(Protocol):
     """`audit.alerts.AlertWriter` — idempotent theo `(rule_id, subject, window_start)`."""
 
     async def raise_once(self, draft: AlertDraft) -> bool: ...
+
+
+class TicketStore(Protocol):
+    """`db/tickets.SqlTicketStore` — B20 đọc `created_at`, số lượt, ghi kết quả cuối MỘT lần."""
+
+    async def created_at(self, ticket_id: str) -> datetime: ...
+
+    async def count_turns(self, ticket_id: str) -> int: ...
+
+    async def finalize_once(self, ticket_id: str, summary: FinalSummary) -> FinalSummary:
+        """Ghi nếu `final_state IS NULL`; luôn trả dòng ĐANG CÓ (vừa ghi hoặc từ lần trước)."""
+        ...
+
+
+class EscalationStore(Protocol):
+    """`db/escalations.SqlEscalationStore.create` — chỉ gọi qua `effects.once("escalation_create")`."""
+
+    async def create(
+        self,
+        *,
+        ticket_id: str,
+        exit_code: str,
+        reason_detail: str | None,
+        handoff_note: Mapping[str, Any],
+        is_deny_case: bool,
+        created_at: datetime,
+    ) -> str: ...

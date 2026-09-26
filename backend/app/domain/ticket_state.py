@@ -4,7 +4,8 @@ Kiểu phụ ChunkRef (B08), RiskDecision (B12 mục 4.1), ExecutionResult (B17)
 không được import rag/risk/executor. raw_request KHÔNG có trong state — chỉ redacted_request (D-07).
 """
 
-from collections.abc import Callable
+import typing
+from collections.abc import Callable, Iterable
 from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
@@ -111,3 +112,17 @@ class TicketState(TypedDict, total=False):
     escalation_note: str | None  # câu đọc được (boundary E9 — P1 mục 5.2; B1/B17 …)
     escalation_reason_detail: str | None  # D-27 — B20 chép vào escalations.reason_detail
     aggregate_status: str | None  # chỉ ticket cha (D-30) — AGGREGATE_STATUSES ở db/models.py
+
+
+STATE_KEYS: frozenset[str] = frozenset(typing.get_type_hints(TicketState))
+
+
+class UnknownStateKey(ValueError):
+    """Node trả về key không khai báo trong `TicketState`. LangGraph 1.2 bỏ IM LẶNG key lạ (dữ liệu
+    mất mà không ai biết) — chặn thành lỗi để boundary đưa về E9 (quyết định Q-A 2b-2)."""
+
+
+def check_state_keys(keys: Iterable[str]) -> None:
+    unknown = sorted(set(keys) - STATE_KEYS)
+    if unknown:
+        raise UnknownStateKey(f"key không có trong TicketState: {unknown}")

@@ -4,6 +4,8 @@ Cùng các luồng chạy lại trên Postgres thật ở `tests/integration/tes
 """
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
@@ -28,7 +30,7 @@ from app.graph.late_event import (
 from app.graph.runner import INTERRUPTED_NOTE
 from app.graph.tracing import TRACEBACK_LIMIT
 from langgraph.errors import GraphInterrupt
-from tests.fakes.graph import Crash, GraphHarness
+from tests.fakes.graph import Crash, GraphHarness, MemoryTicketLock
 
 WAIT_PLANS: dict[str, dict[str, Any]] = {  # cách đưa ticket tới từng trạng thái chờ
     S_CLARIFYING: {"b11_slots": "missing"},
@@ -61,8 +63,9 @@ async def test_stops_at_approval_restart_then_resumes_at_same_place() -> None:
     r = await deliver_event(h.runner, "t1", S_CONFIRMING, {"kind": "confirmed"})
     assert (r.status, r.waiting_at) == (S_RESOLVED, None)
     assert r.values["close_reason"] == "resolved_user_confirmed"
-    assert h.audit.events("t1")[-4:] == [
+    assert h.audit.events("t1")[-5:] == [
         ("B15", "queued"), ("B16", "approved"), ("B18", "executed_ok"), ("B19", "user_confirmed"),
+        ("B20", "closed"),  # điểm log 8 (B20 thật, 2b-2)
     ]
     assert _open_turns(h) == []
     assert [t["event_type"] for t in h.turns.of("t1")] == ["submit", "resume", "resume"]
@@ -169,8 +172,10 @@ async def test_clarify_loop_until_max_turns_then_e4() -> None:
         assert (r.status, r.values["clarification_turns"]) == (S_CLARIFYING, n)
     r = await deliver_event(h.runner, "t1", S_CLARIFYING, {"kind": "user_reply", "text": "x"})
     assert (r.status, r.values["exit_code"]) == (S_ESCALATED, "E4")
-    assert h.notifier.count("t1") == 3  # mỗi vòng hỏi đúng 1 câu
-    assert len(r.values["conversation"]) == 3
+    # mỗi vòng hỏi đúng 1 câu (3) + 1 tin "chuyển kỹ thuật viên" của B20 khi ra E4
+    assert h.notifier.count("t1") == 4
+    assert len(r.values["conversation"]) == 4
+    assert r.values["conversation"][-1]["kind"] == "escalation"
 
 
 # ---- Không gửi thông báo 2 lần (đếm bản ghi) ------------------------------------------------
@@ -301,11 +306,19 @@ async def test_error_in_b1_b2_does_not_get_stuck(node: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_error_in_b20_ends_thread_without_crash() -> None:
+async def test_error_in_b20_reraises_and_keeps_turn_open() -> None:
+    """2b-Q6: lỗi ở B20 (trạng thái đã kết thúc) → audit `unhandled_exception` khoá theo lượt rồi
+    NÉM TIẾP — lượt không đóng để worker chạy lại; không kết thúc thread khi chưa có final_state."""
     h = GraphHarness()
-    r = await h.submit("t1", b12_assess="deny", b20_audit="raise")
-    assert (r.status, r.values["exit_code"], r.waiting_at) == (S_ESCALATED, "E5", None)
-    assert [x["step"] for x in h.audit.of("t1", "unhandled_exception")] == ["b20_audit"]
+    h.tickets.fail = RuntimeError("lỗi giả tại b20")
+    with pytest.raises(RuntimeError, match="lỗi giả tại b20"):
+        await h.submit("t1", b12_assess="deny")
+    [row] = h.audit.of("t1", "unhandled_exception")
+    assert row["step"] == "b20_audit" and row["idempotency_key"] is not None
+    snap = await h.runner.snapshot("t1")
+    assert (snap.values["status"], snap.values["exit_code"], snap.next) == (
+        S_ESCALATED, "E5", ("b20_audit",))
+    assert len(_open_turns(h)) == 1 and h.tickets.final("t1") is None
 
 
 @pytest.mark.asyncio
@@ -378,3 +391,56 @@ async def test_parent_digest_then_reply_goes_back_to_parent_wait() -> None:
     r = await deliver_event(h.runner, "p1", S_CONFIRMING, {"kind": "reply", "items": {}})
     assert (r.status, r.waiting_at) == (S_CLASSIFYING, "parent_wait")
     assert h.notifier.count("p1") == 1  # một tin tổng hợp cho một vòng
+
+
+# ---- wake_parent SAU khi nhả khoá ticket con (2b-Q7) ----------------------------------------
+
+
+class RecordingLock(MemoryTicketLock):
+    """Ghi lại các khoá đang giữ tại mỗi lần lấy khoá."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.held: set[str] = set()
+        self.acquired: list[tuple[str, frozenset[str]]] = []
+
+    @asynccontextmanager
+    async def hold(self, ticket_id: str) -> AsyncIterator[None]:
+        async with super().hold(ticket_id):
+            self.acquired.append((ticket_id, frozenset(self.held)))
+            self.held.add(ticket_id)
+            try:
+                yield
+            finally:
+                self.held.discard(ticket_id)
+
+
+@pytest.mark.asyncio
+async def test_child_end_wakes_parent_after_releasing_child_lock() -> None:
+    h = GraphHarness()
+    lock = RecordingLock()
+    h.lock = lock
+    h.runner._lock = lock
+    await h.submit("p1", b03_classify="split", parent_wait=["wait", "wait"])
+    parent_turns = len(h.turns.of("p1"))
+    h.scenario.plan("p1-1", b12_assess="deny")  # con kết thúc ngay (E5) → B20
+    r = await h.submit_as("p1-1", "s1", parent_ticket_id="p1")
+    assert r.waiting_at is None
+    assert len(h.turns.of("p1")) == parent_turns + 1  # cha được đánh thức (một lượt resume)
+    [(_, held_when_waking)] = [(t, held) for t, held in lock.acquired if t == "p1"][-1:]
+    assert held_when_waking == frozenset()  # không còn giữ khoá con khi lấy khoá cha
+
+
+@pytest.mark.asyncio
+async def test_wake_failure_is_logged_not_raised(caplog: pytest.LogCaptureFixture) -> None:
+    h = GraphHarness()
+    await h.submit("p1", b03_classify="split", parent_wait="wait")
+
+    async def broken(parent_id: str) -> None:
+        raise RuntimeError("cha lỗi")
+
+    h.runner.wake_parent = broken  # type: ignore[method-assign]
+    h.scenario.plan("p1-1", b12_assess="deny")
+    r = await h.submit_as("p1-1", "s1", parent_ticket_id="p1")
+    assert r.values["exit_code"] == "E5"  # con vẫn đóng bình thường
+    assert "không đánh thức được ticket cha p1" in caplog.text
