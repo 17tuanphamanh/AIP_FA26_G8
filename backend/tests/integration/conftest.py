@@ -8,9 +8,11 @@ from collections.abc import Iterator
 
 import pytest
 from alembic import command
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 from testcontainers.community.postgres import PostgresContainer
+from testcontainers.community.qdrant import QdrantContainer
 from tests.integration.pg import DB, INIT_DIR, PASSWORDS, PgUrls, alembic_config
+from tests.integration.qdrant import QDRANT_IMAGE, wipe_kb
 
 
 @pytest.fixture(scope="session")
@@ -54,3 +56,22 @@ def rw(migrated: PgUrls) -> Iterator[Engine]:
 @pytest.fixture
 def monitor(migrated: PgUrls) -> Iterator[Engine]:
     yield from _engine(migrated.role("app_monitor"))
+
+
+# ---- Qdrant (Phase 3 chặng 3b — RAG ingest) ------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def qdrant_url() -> Iterator[str]:
+    with QdrantContainer(QDRANT_IMAGE) as container:
+        yield f"http://{container.rest_host_address}"
+
+
+@pytest.fixture
+def clean_qdrant(qdrant_url: str, rw: Engine) -> str:
+    """Qdrant không có alias/collection `kb_*`, bảng `kb_documents`/`kb_versions` trống (ghi bằng app_rw)."""
+    wipe_kb(qdrant_url)
+    with rw.begin() as conn:
+        conn.execute(text("DELETE FROM kb_documents"))
+        conn.execute(text("DELETE FROM kb_versions"))
+    return qdrant_url

@@ -234,6 +234,7 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 
 | Chặng | Mã | Tóm tắt | Ở đâu |
 |---|---|---|---|
+| 3b | Q-3b-1…17 | Embed ingest nhóm 1; sha gồm front matter; ghi bù từ metadata collection; cổng (c) đánh giá lại bản cũ; `pipeline_sha` (3c so lúc truy vấn → E2); khoá advisory; hợp đồng `rag-lower-layer`; cổng kiểm dense-only tạm tới 3c; hậu kiểm 3b sau dự án (mục 1.5) | `phase3-thiet-ke-chi-tiet.md` mục 5.14 |
 | 3a | Q-3a-1…16 | torch CPU; `attempts` = số lần gọi lỗi; lỗi mạng khác → `connect` có retry; `NodeDeps.ml` bắt buộc; fake tầng HTTP; test sinh đôi + `ml_real`; worker chờ ml-service; lock luôn 40 hex; trần timeout < stale/2, rerank 10 s tạm, quyết ở 3c | `phase3-thiet-ke-chi-tiet.md` mục 4.12 |
 
 ## 5. Nhật ký
@@ -250,3 +251,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 26/09/2026 | Mục 4.1: quyết định 2b-3-Q1…Q5, 2b-3-QA…QD của Phase 2b-3 |
 | 27/09/2026 | Mục 4.1: quyết định 2b-4-Q1…Q8, 2b-4-QA…QB của Phase 2b-4 |
 | 27/09/2026 | Mục 4.1: trỏ 3-Q1…Q40 và Q-3a-1…16 (chặng 3a) |
+| 28/09/2026 | Mục 4.1: Q-3b-1…17 (chặng 3b) |

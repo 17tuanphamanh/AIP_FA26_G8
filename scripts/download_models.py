@@ -1,6 +1,8 @@
 """`make models` — tải model của ml-service về máy, ghim revision HF (3-Q19, 3-Q21).
 
 Chạy: `uv run --with huggingface_hub python scripts/download_models.py [MODELS_DIR]` (mặc định `./models`).
+`--tokenizer-only DIR` (`make tokenizer`, Q-3b-11): chỉ 3 file tokenizer của bge-m3 đúng revision trong lock, vào
+`DIR/<repo>@<rev>/` — cho test chunker `tokenizer_real`; đã có `tokenizer.json` thì bỏ qua, không cần mạng.
 Chỉ cần `huggingface_hub`, không kéo torch. Cần mạng tới huggingface.co.
 
 - Chưa có `ml_service/models.lock.json` → lấy SHA commit HIỆN TẠI của từng repo, tải đúng SHA đó, rồi GHI
@@ -24,6 +26,7 @@ LOCK = Path(__file__).resolve().parents[1] / "ml_service" / "models.lock.json"
 REPOS = {"embed": "BAAI/bge-m3", "rerank": "BAAI/bge-reranker-v2-m3"}
 REVISION = re.compile(r"^[0-9a-f]{40}$")
 ALWAYS_IGNORE = ["onnx/*", "*.onnx", "colbert_linear.pt", "sparse_linear.pt", "imgs/*"]
+TOKENIZER_FILES = ["tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]
 
 
 class LockMismatch(Exception):
@@ -55,7 +58,39 @@ def ignore_patterns(files: Iterable[str]) -> list[str]:
     return ALWAYS_IGNORE + extra
 
 
+def tokenizer_target(lock: Mapping[str, Any], out_dir: Path) -> tuple[str, str, Path]:
+    """(repo, revision, thư mục đích) của tokenizer bge-m3 — lock phải hợp lệ (40 hex), không tự resolve."""
+    entry = plan(lock, lambda repo: "")["embed"]
+    return entry["repo"], entry["revision"], out_dir / f"{entry['repo']}@{entry['revision']}"
+
+
+def tokenizer_only(out_dir: Path, *, lock_path: Path = LOCK, download: Callable[..., Any] | None = None) -> int:
+    if not lock_path.exists():
+        print(f"make tokenizer: thiếu {lock_path} — chạy make models trước (không tự tạo lock)", file=sys.stderr)
+        return 1
+    try:
+        repo, rev, target = tokenizer_target(json.loads(lock_path.read_text(encoding="utf-8")), out_dir)
+    except LockMismatch as e:
+        print(f"make tokenizer: {e}", file=sys.stderr)
+        return 1
+    if (target / "tokenizer.json").is_file():
+        print(f"tokenizer: đã có {target / 'tokenizer.json'} — bỏ qua")
+        return 0
+    if download is None:
+        from huggingface_hub import snapshot_download
+
+        download = snapshot_download
+    print(f"tokenizer: {repo}@{rev} → {target}")
+    download(repo, revision=rev, local_dir=target, allow_patterns=TOKENIZER_FILES)
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] == "--tokenizer-only":
+        if len(argv) != 3:
+            print("dùng: download_models.py --tokenizer-only DIR", file=sys.stderr)
+            return 2
+        return tokenizer_only(Path(argv[2]))
     from huggingface_hub import HfApi, snapshot_download
 
     models_dir = Path(argv[1]) if len(argv) > 1 else Path("models")

@@ -225,6 +225,7 @@ core ──► (không gì)
 | Chỉ `executor` được import `tools.adapters.*_write` | Tool ghi bị gọi ngoài B17 | Điểm ghi duy nhất **[Chốt]**. Import-linter không nhận wildcard một phần tên → liệt kê từng module `{ad,vpn,software,fileserver}_write`; kèm test: mọi file `tools/adapters/*_write.py` phải có tên trong `.importlinter` |
 | `domain`, `core` không import module nghiệp vụ | Vòng phụ thuộc | Giữ lớp lõi thuần |
 | `ml` chỉ phụ thuộc `core` và `tools.retry` (`ml-only-core`) | Client ml kéo theo module nghiệp vụ | Giữ `ml` là adapter mỏng, dùng được từ `rag`, `guard`, `graph` (chốt 3a) |
+| `rag` chỉ phụ thuộc `domain`, `core`, `db`, `ml`, `tools.retry` (`rag-lower-layer`) | RAG kéo theo graph/api/nghiệp vụ | `rag` là tầng dưới, node gọi vào chứ không ngược lại (chốt 3b) |
 | `graph.nodes.*` không import lẫn nhau | Nhánh gọi thẳng nhánh khác | Mọi chuyển trạng thái đi qua `goto()` và routing |
 | *(không dùng import-linter)* `graph.nodes.*` không **gọi thẳng** `approvals.create`, `approvals.notify_approver`, `notify_user`, `deadlines.set`, `tickets.create_child`, `runner.submit` — chỉ truyền vào `effects.once` | Tác dụng phụ lặp khi node chạy lại | Idempotency sau crash **[D-18]**. Import-linter không phân biệt được "import để truyền vào `once`" với "gọi thẳng", nên kiểm bằng **test AST** (P1 mục 5.3) **[Chốt 25/09/2026]** |
 
@@ -312,7 +313,7 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 ## 8. Tiêu chí đạt của cấu trúc project (cổng T01)
 
 1. `make up` dựng đủ process của Phase 1 (postgres, mock, backend), `/api/health` trả 200.
-2. `make lint` xanh, bao gồm 6 hợp đồng import-linter ở mục 4.3 (từ 3a thêm `ml-only-core`); hợp đồng "không gọi thẳng side effect" là test AST trong `make test`.
+2. `make lint` xanh, bao gồm 7 hợp đồng import-linter ở mục 4.3 (3a thêm `ml-only-core`, 3b thêm `rag-lower-layer`); hợp đồng "không gọi thẳng side effect" là test AST trong `make test`.
 3. Test chữ ký `policy_engine.evaluate(action, ctx)` xanh.
 4. `.env` nằm trong `.gitignore`; gitleaks không báo gì trên toàn repo.
 5. Image `backend` và `worker` là một; chỉ khác lệnh khởi động.
@@ -329,3 +330,4 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | v1.5 | 26/09/2026 | Mục 4.2: `api` được phụ thuộc `guard` (privacy guard chạy ở API trước khi lưu — D-07, B02 §2; chốt khi hiện thực 2b-3). `APP_ENV` bắt buộc trong `.env` (compose `${APP_ENV:?…}`), không mặc định |
 | v1.6 | 27/09/2026 | Mục 7.1: thêm `make gate2` (chỉ dev, chốt 2b-4-Q7) |
 | v1.7 | 27/09/2026 | Chặng 3a: cây thư mục thêm `backend/app/ml/`, `scripts/`, `ml_service/models.lock.json`; mục 4.2 thêm `ml`; mục 4.3 hợp đồng `ml-only-core` (6 hợp đồng); mục 7.1 `make models`, `make test-ml`, `make ml-bench` |
+| v1.8 | 28/09/2026 | Chặng 3b: mục 4.3 hợp đồng `rag-lower-layer` (7 hợp đồng); `make ingest` mount `kb/`, `make tokenizer` |

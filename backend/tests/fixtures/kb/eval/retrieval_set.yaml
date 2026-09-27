@@ -1,0 +1,107 @@
+# Bộ câu kiểm tra truy hồi của KB fixture (PLAN-3b mục 6; định dạng docs/spec/build/kb-mau/retrieval_set.mau.yaml).
+# Chỉ cho test cổng kiểm của ingest — KHÔNG dùng để chọn RETRIEVAL_THRESHOLD, không trộn với kịch bản M8.
+# Ràng buộc: P006 chỉ có KB-VPN-004 (tắt 004 → Recall tụt 1/8 = 0,125 — b17); P007 role l1 hỏi nội dung chỉ có ở
+# KB-VPN-007 (restricted), N005 cùng nội dung với role employee → rỗng.
+
+version: 1
+kb_scope: [vpn]
+items:
+  # ---------- Có đáp án ----------
+  - id: P001
+    query: "VPN cty dùng cổng nào vậy ạ, mạng nhà mình có cần mở port ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001]
+    note: TC04
+
+  - id: P002
+    query: "bi loi 809 khi ket noi vpn o khach san, lam sao"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+    note: TC05, không dấu
+
+  - id: P003
+    query: "Đổi sang SSTP trong ABC Connect ở chỗ nào?"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+
+  - id: P004
+    query: "chứng chỉ vpn bao lâu thì hết hạn, gia hạn trước được mấy ngày"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001, KB-VPN-004]
+
+  - id: P005
+    query: "muốn đăng ký thêm laptop mới để dùng vpn thì làm sao, có cần ai duyệt ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-005]
+    note: TC09
+
+  - id: P006
+    query: "chứng chỉ vpn trên máy em hết hạn rồi, xin cấp lại thế nào"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-004]
+    note: TC02 — chỉ KB-VPN-004 (b17)
+
+  - id: P007
+    query: "tường lửa biên phải mở những cổng nào cho máy chủ vpn"
+    intent: vpn
+    role: l1
+    expected_doc_ids: [KB-VPN-007]
+    note: Nội dung restricted — l1 thấy
+
+  - id: P008
+    query: "mk vpn đúng rồi mà vẫn ko kết nối dc, báo lỗi 809"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+    note: viết tắt
+
+  # ---------- Không có đáp án ----------
+  - id: N001
+    query: "Làm sao bật xác thực 2 lớp MFA cho tài khoản email?"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+    note: TC16 — cố ý không có tài liệu MFA
+
+  - id: N002
+    query: "cài vpn công ty trên ubuntu linux thế nào"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N003
+    query: "Khách của công ty đối tác có được cấp VPN để vào hệ thống mình không?"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N004
+    query: "máy in tầng 3 kẹt giấy"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N005
+    query: "tường lửa biên phải mở những cổng nào cho máy chủ vpn"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+    note: Cùng câu P007 nhưng role employee — KB-VPN-007 restricted, không được thấy
+
+  - id: N006
+    query: "đặt phòng họp lớn tầng 5 chiều thứ sáu"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false

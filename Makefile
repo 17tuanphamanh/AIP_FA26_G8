@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test test-ml lint ingest seed probe eval eval-rag load gate2 models ml-bench
+.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 models ml-bench
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -96,9 +96,20 @@ lint:
 	@command -v gitleaks >/dev/null || { echo "Thiếu gitleaks — cài: brew install gitleaks" >&2; exit 1; }
 	gitleaks detect --no-banner --redact
 
-# Pipeline RAG (P3): in kb_version và số đoạn truncated (phải = 0).
+# Pipeline RAG (P3, thiết kế Phase 3 mục 5.8): image backend KHÔNG có kb/ → mount read-only. Cần `make up`
+# (postgres, qdrant, ml-service chạy). In kb_version và số đoạn truncated (phải = 0).
+# Ví dụ: make ingest ARGS=--dry-run | make ingest KB_DIR=backend/tests/fixtures/kb
+KB_DIR ?= kb
 ingest:
-	@echo "TODO (Phase 3): chưa có pipeline RAG (P3)." >&2; exit 1
+	$(COMPOSE) build backend
+	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/srv/kb:ro" backend \
+	  python -m app.rag.ingest.cli --kb-dir /srv/kb $(ARGS)
+
+# Chỉ tokenizer bge-m3 (tokenizer.json, tokenizer_config.json, special_tokens_map.json) đúng revision trong
+# ml_service/models.lock.json — cho test chunker thật (marker tokenizer_real). Có rồi thì bỏ qua. Cần mạng lần đầu.
+TOKENIZER_DIR ?= ./models/_tokenizer
+tokenizer:
+	uv run --with huggingface_hub python scripts/download_models.py --tokenizer-only $(TOKENIZER_DIR)
 
 # Cổng 2 trên stack compose thật (2b-4) — backend/tests/stack/README.md. Cần `make up` trước và
 # FAKE_SCENARIO, FAKE_NODE_DELAY trong .env. Script tự chạy lệnh compose (in lệnh trước khi chạy), dừng

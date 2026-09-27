@@ -1,7 +1,8 @@
 # CI — 01 mục 7.2 bước 1 (PR: make lint + make test; đỏ thì không merge) + cổng 1 "CI trên GitHub xanh".
 # Chạy ĐẦY ĐỦ: unit + integration (testcontainers Postgres 16 — runner ubuntu có Docker) + e2e
 # (mock chạy bằng uvicorn trên cổng local) + test mock_services. Không có key thật nào: test không
-# gọi LLM, token/khoá sinh ngẫu nhiên trong fixture.
+# gọi LLM, token/khoá sinh ngẫu nhiên trong fixture. Tokenizer bge-m3 (chỉ 3 file, không trọng số) tải bằng
+# `make tokenizer` cho test chunker `tokenizer_real` — thiếu tokenizer trong CI thì test FAIL, không skip.
 name: ci
 
 on:
@@ -31,6 +32,15 @@ jobs:
 
       - name: Cài phụ thuộc theo uv.lock (nhóm dev, không nhóm ml)
         run: uv sync --locked
+
+      - name: Cache tokenizer bge-m3 (không có trọng số)
+        uses: actions/cache@v4
+        with:
+          path: models/_tokenizer
+          key: bge-m3-tokenizer-${{ hashFiles('ml_service/models.lock.json') }}
+
+      - name: make tokenizer (có cache thì bỏ qua)
+        run: make tokenizer
 
       - name: Cài gitleaks (cùng bản với máy dev)
         env:

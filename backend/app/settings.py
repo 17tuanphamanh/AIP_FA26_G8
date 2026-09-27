@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     worker_heartbeat_seconds: float = Field(default=10.0, gt=0)
     worker_heartbeat_max_age: float = Field(default=60.0, gt=0)
     config_dir: Path = Path(__file__).resolve().parents[2] / "config"  # repo: ./config; image: /srv/config
+    # RAG ingest (3-Q16): ngoài bản đích alias, giữ N collection `kb_*` mới nhất để quay lui; còn lại bị xoá.
+    # Mặc định ở đây, không truyền qua compose.
+    rag_keep_old_collections: int = Field(default=2, ge=0)
     # ---- API ----
     max_request_body_bytes: int = Field(default=64 * 1024, ge=1)  # đếm byte ĐỌC THẬT (2b-3 Q5)
     background_shutdown_seconds: float = Field(default=10.0, ge=0)  # tắt app: chờ lượt nền rồi huỷ

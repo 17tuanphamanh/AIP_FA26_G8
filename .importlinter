@@ -1,5 +1,5 @@
-# 6 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
-# (Phase 3 chặng 3a, thiết kế Phase 3 mục 4.2). Hợp đồng thứ 6
+# 7 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
+# (Phase 3 chặng 3a, thiết kế Phase 3 mục 4.2) + `rag-lower-layer` (chặng 3b, PLAN-3b Q-3b-16). Hợp đồng thứ 6 cũ
 # ("node không gọi thẳng side effect") là test AST: backend/tests/unit/test_side_effects_ast.py.
 # Chạy: PYTHONPATH=backend uv run lint-imports   (hoặc make lint)
 
@@ -114,6 +114,30 @@ forbidden_modules =
     app.monitor
     app.notify
     app.rag
+    app.risk
+    app.tools
+ignore_imports =
+    app.ml.client -> app.tools.retry
+
+# 7. rag (P3) là tầng dưới: chỉ phụ thuộc domain, core, db, ml (+ tools.retry qua ml.client; 3c thêm dòng
+#    ignore cho rag.retriever -> tools.retry khi dùng call_with_retry). Thiết kế Phase 3, PLAN-3b Q-3b-16.
+[importlinter:contract:rag-lower-layer]
+name = rag chi phu thuoc domain, core, db, ml
+type = forbidden
+source_modules =
+    app.rag
+forbidden_modules =
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.eval
+    app.executor
+    app.graph
+    app.guard
+    app.llm
+    app.monitor
+    app.notify
     app.risk
     app.tools
 ignore_imports =

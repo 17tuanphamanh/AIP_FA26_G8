@@ -46,6 +46,8 @@ dependencies = [
     "scipy",
     # Cấu hình config/*.yaml (slots.yaml — P5/B11)
     "pyyaml>=6.0.3",
+    # Băm token BM25 thành chỉ số sparse (P3, rag/bm25.py — thiết kế Phase 3 mục 5.6)
+    "mmh3>=5.3.0",
 ]
 
 [dependency-groups]
@@ -63,6 +65,8 @@ dev = [
     "mypy",
     "import-linter",
     "types-pyyaml>=6.0.12.20260906",  # stub cho mypy
+    # Tokenizer bge-m3 thật cho test chunker (marker tokenizer_real, Q-3b-11) — image backend KHÔNG có
+    "tokenizers>=0.23.2",
 ]
 # Model nặng của ml-service (P4) — KHÔNG cài mặc định: `uv sync --group ml`.
 # sentence-transformers (SentenceTransformer + CrossEncoder), không FlagEmbedding (3-Q19).
@@ -94,6 +98,7 @@ pythonpath = ["backend"]
 addopts = "-q --import-mode=importlib"
 markers = [
     "ml_real: cần model/tokenizer thật (make models) — chỉ chạy bằng `make test-ml`, không vào make test/CI",
+    "tokenizer_real: cần tokenizer bge-m3 thật (make tokenizer) — chạy trong make test; thiếu: local skip, CI FAIL",
 ]
 
 [tool.ruff]
@@ -105,6 +110,11 @@ python_version = "3.12"
 # APScheduler 3.x không có type stub / py.typed.
 [[tool.mypy.overrides]]
 module = ["apscheduler.*"]
+ignore_missing_imports = true
+
+# pyvi (tách từ tiếng Việt cho BM25, rag/bm25.py) không có type stub / py.typed.
+[[tool.mypy.overrides]]
+module = ["pyvi.*"]
 ignore_missing_imports = true
 
 # Nhóm uv `ml` không cài trong CI (make lint): ml_service/app/loader.py import muộn các gói này.
