@@ -28,6 +28,7 @@ from app.graph.wiring import Runtime
 from app.settings import Settings, get_escalation_templates, get_policy
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import LOCKOUT, CountingExecutor, Crash, RecordingNotifier
 from tests.fakes.identity import FakeAd, ad_user, fake_directory
 
@@ -98,7 +99,7 @@ async def open_pg_runtime(
         directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
         lockout=LOCKOUT, tickets=ticket_store,
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
-        scenario=scenario, approver_id=approver_id,
+        ml=FakeMlService().client(clock), scenario=scenario, approver_id=approver_id,
     )  # fmt: skip
     try:
         async with open_postgres_saver(rw_url, max_size=5) as saver:

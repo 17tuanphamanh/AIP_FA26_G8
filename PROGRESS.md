@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 27/09/2026 (2b-4) |
+| Cập nhật | 27/09/2026 (2b-4; Phase 3 chặng 3a ml-service xong phần kiểm, chưa commit — mục "Phase 3 — chặng 3a") |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -854,6 +854,191 @@ gaming, kiêm ghi N2). **Tuấn Anh đã đọc bảng threads** (27/09/2026, b�
 (Q7), `build/decisions.md` 4.1 quyết định 2b-4.
 
 **Còn lại của 2b-4:** cổng 2 chờ thành viên khác chạy `make gate2 S=all` (vá 3).
+
+**Commit + CI:** `2a9f3ee` (19 file, gồm 2 file `docs/spec` người cập nhật) — CI GitHub **xanh**, run `36274714302`
+(workflow `ci`, push `dev-tuananh`, 1m27s, 27/09/2026; người theo dõi, đã đối chiếu `headSha` = `2a9f3ee711db…`).
+Cổng 2 vẫn **CHƯA đạt** — chờ thành viên khác chạy `make gate2 S=all` (vá 3).
+
+## Phase 3 — chặng 3a: ml-service (27/09/2026, đang làm, chưa commit)
+
+Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` mục 4 (bản 1.1). Spec Phase 3 đã nằm trong commit `ce2429f` (local,
+chưa push) — không còn file spec nào chờ stage. Kế hoạch Plan đã duyệt kèm chốt Q-3a-1…15 của người (27/09/2026).
+
+**Quyết định của người (Q-3a):**
+1. Torch lấy từ index `pytorch-cpu` trên linux (`[tool.uv.sources]` marker `sys_platform == 'linux'`); Mac giữ PyPI.
+2. `MlResult.attempts` = số lần gọi LỖI (cùng nghĩa `ToolResult.attempts`, `call_with_retry`): 500,500,200 → 2; hết
+   lượt → **3**. **Spec cần sửa:** a10 (ghi `attempts=2`) và mục 4.5 ("số lần thử lại").
+3. `httpx.TransportError` khác timeout/connect (vd. `RemoteProtocolError` khi ml-service bị OOMKilled giữa request)
+   → `error="connect"`, có retry — xử lý trong `MlClient`, **không sửa** `tools/retry.py`. **Lỗ tương tự ở tool đọc**
+   (`call_with_retry` để lọt `ReadError`/`RemoteProtocolError` → E9 thay vì E2): quyết ở 3f.
+4. `NodeDeps.ml` bắt buộc, không mặc định (FakeMlService nằm ở `tests/`).
+5. `ML_SERVICE_TOKEN` backend: `Settings.ml_service_token` tuỳ chọn; `open_runtime` từ chối trước khi đụng DB;
+   `create_app` từ chối khi dùng runtime mặc định; `conftest.py` gốc đặt token ngẫu nhiên.
+6. `FakeMlService` = `httpx.MockTransport` sau `MlClient` thật; băm `blake2b` (không `mmh3` ở 3a).
+7. Test sinh đôi a3f/a4f/a6f dùng tokenizer giả (thêm ĐÚNG 2 token đặc biệt), gọi code thật `tokens.py`/`rerank.py`.
+8. Backend **và worker** `depends_on: ml-service: service_healthy`.
+9. Image ml theo spec (`--group ml`) — đo kích thước, ghi ở đây.
+10. Giữ `onnxruntime` trong nhóm ml. 11. `make tokenizer` để 3b.
+12. Client: `attempts` cộng dồn qua lô, dừng ở lô lỗi đầu; chia lô thêm theo byte; một văn bản đơn vượt giới hạn
+    byte → `MlContractError` thông điệp rõ; `MlResult.model_version` từ `X-Model-Version`; span = dòng log.
+13. `/classify`, `/classify_intent` Phase 3: token → body (422) → 503 `model_missing`, kể cả khi có thư mục.
+14. **Không** commit lock với revision null: người chạy `make models` trước commit 3a; test tĩnh: `models.lock.json`
+    phải có revision 40 hex.
+15. Spec cần sửa (Claude chat): xem cuối mục.
+
+**Sửa thêm của người:** compose không truyền biến int rỗng (`ML_THREADS`, `ML_MAX_CONCURRENCY`) + test tĩnh;
+`ML_MAX_CONCURRENCY` mặc định 1; `make ml-bench` đo rerank 20 và 32 đoạn, timeout rerank tạm 10 s (chỉnh theo số đo
+≥ 2 × p95 lô 32); `make models` dùng `uv run --with huggingface_hub` (không kéo torch); `make test-ml` thiếu model →
+FAIL; ml_real assert đoạn không liên quan có điểm < 0,5 (bắt sigmoid hai lần).
+
+**Nhật ký bước (1→11 của plan):**
+- **B1 xong** — `uv remove --group ml FlagEmbedding`, `uv add --group ml sentence-transformers`, index `pytorch-cpu`
+  cho linux. Kiểm xanh: `uv lock --check`; `uv.lock` 0 dòng `flagembedding`, 0 gói `nvidia-*` (trước: 15); torch
+  linux = `2.14.0+cpu` (aarch64 + x86_64), mac = `2.14.0` PyPI; `uv sync --locked` (nhóm dev) OK. `uv lock` cần
+  host `download-r2.pytorch.org` (đã khai báo cho lệnh đó).
+- **B2 xong** (+ `scripts/download_models.py` của B7 làm sớm vì test ml cần) — `ml_service/app/` (settings, lock,
+  models, tokens, embed, rerank, classify, intent, auth, limits, loader, main, bench), `ml_service/tests/` (conftest
+  tokenizer giả +2 token đặc biệt, security, endpoints, lock, download_models, real_models = ml_real). pyproject:
+  marker `ml_real`, override mypy cho torch/sentence_transformers/transformers/huggingface_hub. Kiểm:
+  `pytest ml_service/tests -o pythonpath=ml_service -m "not ml_real"` **56 passed, 1 failed** — failed là
+  `test_repo_lock_pins_40_hex_revisions` (chưa có `ml_service/models.lock.json`; đỏ tới khi người chạy `make models`,
+  đúng Q-3a-14); mypy `ml_service/app` 15 file xanh; ruff xanh.
+- **B3 xong** — `backend/app/ml/` (`models`, `ports`: `MlPort`, `MlResult`, `MlContractError`; `client`: `MlClient`
+  dùng `call_with_retry`, chia lô theo số + byte), `backend/tests/fakes/fake_ml.py` (MockTransport, blake2b),
+  `unit/test_ml_client.py` (a9–a13 + TransportError, 429, 404, schema, byte, hằng khớp `ml_service/app/schemas.py`,
+  log không văn bản), `unit/test_fake_ml.py` (a14). Kiểm: 29 passed; `mypy backend/app` 125 file xanh; ruff xanh.
+- **B4 xong** — `Settings.ml_service_token` + `require_ml_token()`; `NodeDeps.ml: MlPort` bắt buộc; `wiring.open_runtime`
+  từ chối thiếu token trước DB rồi dựng `MlClient` (client HTTP đóng khi thoát); `create_app` từ chối khi dùng runtime
+  thật mà thiếu token; `_default_checks` thêm `"ml"` (GET `/health`, không token); `conftest.py` gốc đặt
+  `ML_SERVICE_TOKEN` ngẫu nhiên; `tests/fakes/graph.py` (`GraphHarness.ml`), `integration/graph_pg.py` truyền
+  `FakeMlService`. Test: `test_health` (+2, đổi tên test tập check), `test_app_env` (+6). Kiểm: unit **1538 passed**
+  (1501 + 37); `--collect-only` integration + e2e 142 test (113 + 29) thu thập được; mypy, ruff xanh.
+- **B5 xong** — `.importlinter`: `app.ml` vào nguồn hợp đồng 3 và vào cấm của hợp đồng 4; hợp đồng mới **6
+  `ml-only-core`** (ml cấm import mọi module nghiệp vụ + `app.tools`, `ignore_imports = app.ml.client -> app.tools.retry`).
+  Kiểm: `lint-imports` 6 kept; thử phá (ml/ports import `tools.registry`; domain/action import `ml.ports`) → đúng 2 hợp
+  đồng BROKEN (6 và 4), hoàn nguyên, không còn dấu `MUTATION`, `git diff` 2 file trống; `test_write_adapters_listed` xanh.
+- **B6 xong** — `ml_service/Dockerfile` (khuôn mock, `uv sync --frozen --no-dev --group ml --no-install-project`,
+  `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `HF_HOME=/tmp/hf`, không copy `models/`, 1 worker); compose: service
+  `ml-service` (không `ports`, `${MODELS_DIR:-./models}:/models:ro`, healthcheck start_period 180s, env chỉ
+  `ML_SERVICE_TOKEN` `:?` + `MODELS_DIR`), `x-backend-env` thêm `ML_SERVICE_TOKEN` `:?`, backend + worker
+  `depends_on ml-service: service_healthy`; `.env.example` `ML_SERVICE_TOKEN=` trống; `.gitignore` `/models/`; Makefile:
+  `models`, `test-ml`, `ml-bench`, dòng pytest thứ 3 trong `test`, mypy ml_service trong `lint`, `up` kiểm model trước
+  (`python -m app.lock`) + build ml-service + in log ml-service khi không lên. `ml_service/README.md`.
+  **Lệch nhỏ so với 3.5:** `MODELS_DIR` là biến make/shell (Makefile `export`), KHÔNG đặt trong `.env` — env shell
+  đè `.env` khi compose nội suy, để trong `.env` thì `make up` kiểm một chỗ mà mount chỗ khác.
+  Test tĩnh mới `unit/test_ml_deploy.py` (10). Kiểm: `docker compose config` (bản sao `.env.example` có token giả ở
+  `$TMPDIR`) OK — ml-service không ports, volume `read_only`, backend/worker `service_healthy`; thiếu token → dừng
+  "required variable ML_SERVICE_TOKEN is missing a value"; `python -m app.lock ./models` khi chưa có model → exit 1
+  "chạy `make models`"; test tĩnh + `test_stack_scenario` + `test_worker_heartbeat` xanh.
+- **B7 xong (làm cùng B2)** — `scripts/download_models.py` (`uv run --with huggingface_hub`): chưa có lock → SHA hiện tại
+  của từng repo, tải, ghi lock; có lock → tải đúng SHA, lock lệch repo/revision → exit 1; bỏ `onnx/*`, `*.onnx`,
+  `colbert_linear.pt`, `sparse_linear.pt`, `imgs/*`, và `pytorch_model.bin` khi repo có `model.safetensors`. Thư mục
+  `models/<repo>@<sha>` khớp `ml_service/app/lock.py`. **`ml_service/models.lock.json` CHƯA có** — người tạo bằng
+  `make models` (Q-3a-14); tới lúc đó `test_repo_lock_pins_40_hex_revisions` đỏ.
+- **B8 xong** — `make lint` **xanh**: ruff; mypy backend 125 file, mock 11, ml_service 15; `lint-imports` 6 kept;
+  `gitleaks detect` 35 commit không leak. Unit backend **1548 passed** (1501 + 47); mock **86 passed**; ml
+  **56 passed, 1 failed** (chỉ `test_repo_lock_pins_40_hex_revisions` — chờ lock), 5 deselected (`ml_real`).
+  `gitleaks dir` trên `ml_service`, `backend/app/ml`, `fake_ml.py`, `test_ml_client.py`, `test_ml_deploy.py`,
+  `scripts`, compose, `.env.example`, Makefile, `conftest.py`, pyproject: không leak.
+- **B9 xong (phần sandbox)** — mutation logic **13/13 đỏ đúng test dự đoán** (script áp → chạy → khôi phục → so md5;
+  sau cùng `git diff --stat` khớp, `grep MUTATION` trống): M-3a-1 bỏ kiểm token → 11 đỏ (`test_missing_token_401` ×5,
+  `test_wrong_token_401` ×5, header); **M-3a-2** truncated luôn False → `test_a4f`; **M-3a-3** đếm không token đặc biệt →
+  `test_a3f` + `test_a4f`; **M-3a-4** retry cả model_missing → `test_a11` ×2 + fake; **M-3a-5** nuốt 5xx → `test_a10` + 7;
+  **M-3a-6** không cắt câu truy vấn → `test_a6f`; M7 bỏ nhánh TransportError → 3; M8 không chia lô theo byte → 1; M9 bỏ
+  sigmoid → `test_a5`; M10 bỏ giới hạn body → 2; M11 health bỏ `ml` → 2; M12 worker không kiểm token → 2; M13 bỏ handler
+  422 (vọng lại input) → `test_logs_never_contain_text`. Lần chạy đầu 2 đột biến viết SAI (không phải test yếu): M-3a-2
+  chèn comment giữa dòng làm hỏng lời gọi (đỏ vì lỗi setup, không vì assert); M13 regex không khớp nên không áp gì
+  ("SỐNG") — sửa script, thêm chặn "đột biến không áp được", chạy lại cả bộ. Script (người yêu cầu đưa vào repo):
+  **`scripts/mutation/mutate_3a.py`** — đường dẫn tương đối theo vị trí file, không đọc `.env`; chạy lại từ chỗ mới:
+  13/13 đỏ, md5 khớp, ruff xanh. Chế độ `--real` (M-3a-2/3/6, M9 + **M14** bỏ `activation_fn=Identity` =
+  sigmoid hai lần — chỉ model thật bắt được) chờ người chạy sau `make models`.
+- **B10 đang chờ người** (Docker/mạng, chạy bằng `!`; `ML_SERVICE_TOKEN` đã có trong `.env` — người xác nhận):
+  `colima list` → `make models`
+  → `make test-ml` → `uv run python scripts/mutation/mutate_3a.py --real` → `make up` → a15 (ps, `/api/health` 200, stop ml-service → 503 có `ml`, start) →
+  `make ml-bench` + `docker stats` (3-Q39: tổng > 7 GB → tăng RAM colima, sửa README) → kích thước image ml (Q-3a-9)
+  → `make test` trên code sạch. Kết quả dán vào đây (B10), rồi B11.
+  - `colima list` (người chạy, 27/09/2026): aarch64, 4 CPU, **8 GiB**, đĩa **20 GiB** — RAM đo sau `make up`; đĩa VM có
+    thể chật khi thêm image ml (model nằm trên máy, mount vào, không tốn đĩa VM).
+  - `make models` (người chạy, 27/09/2026): xong, exit 0, ~9 phút. Lock: `BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181`,
+    `BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`; mỗi thư mục 2,1 GB (bge-m3 chỉ có
+    `pytorch_model.bin`, không có safetensors; ONNX/colbert/sparse đã bỏ). `models/` bị gitignore; lock untracked, chờ
+    commit. Sau đó (sandbox): `python -m app.lock ./models` → đủ model; test ml **57 passed** (test lock 40 hex đã xanh).
+  - `make test-ml` (Claude chạy trong sandbox, không cần Docker, 27/09/2026): **5 passed** trong 57 giây (a3, a4, a5 thật
+    có assert đoạn không liên quan < 0,5, a6, a16) — bge-m3 dạng `pytorch_model.bin` nạp được với transformers 5.17 +
+    torch 2.14 (mac).
+  - `scripts/mutation/mutate_3a.py --real` (sandbox): **5/5 đỏ đúng test dự đoán** — M-3a-2 → `test_a4`, M-3a-3 → `test_a3`,
+    M-3a-6 → `test_a6`, M9 bỏ sigmoid → `test_a5_real`, **M14 sigmoid hai lần** (bỏ `activation_fn=Identity`) →
+    `test_a5_real`; md5 khớp, `git diff --stat` khớp, không còn dấu `MUTATION`.
+  - `make up` (người chạy, 27/09/2026): **xanh**, exit 0. Image `servicedesk-ml:dev` build: `torch==2.14.0+cpu`,
+    sentence-transformers 6.1.0, transformers 5.17.0, onnxruntime 1.30.0, **0 gói nvidia** (Q-3a-1 hiệu lực), 132 gói;
+    alembic không có migration mới; ml-service `Healthy` rồi backend + worker mới start (depends_on); mock ok; seed 16
+    người, 7 thiết bị; `worker: healthy`; `/api/health` =
+    `{"status":"ok","checks":{"db":"ok","qdrant":"ok","mock":"ok","ml":"ok"},"failed":[],"runtime":"up"}`.
+  - **a15 phần "tắt ml-service"** (người chạy, 27/09/2026): `compose stop ml-service` → `/api/health` **503**
+    `{"status":"degraded","checks":{…,"ml":"error: ConnectError"},"failed":["ml"],"runtime":"up"}` — đúng 3-Q9.
+    `compose start ml-service` → `/api/health` **200**, `"ml":"ok"` (backend tự hồi phục, không cần restart). **a15 đạt.**
+  - `make ml-bench` (người chạy, 27/09/2026; exit 2 chỉ do gõ thừa đối số `—` sau target — phần đo đã chạy hết). Colima
+    4 CPU / 8 GiB, `ML_THREADS` mặc định 3, `ML_MAX_CONCURRENCY` 1. Đoạn đo = 278 token, cặp (query, đoạn) = 296 token
+    (đếm bằng tokenizer reranker thật):
+
+    | Đo | n | p50 | p95 | Mục tiêu P4 §9 |
+    |---|---|---|---|---|
+    | embed 1 câu | 50 | 118,6 ms | **228,1 ms** | < 300 ms — **đạt** |
+    | rerank 20 đoạn | 20 | 15 105 ms | **15 626 ms** | < 2 s — **KHÔNG đạt** (gấp ~8 lần) |
+    | rerank 32 đoạn | 20 | 24 482 ms | **33 213 ms** | — |
+
+    ≈ 0,75 s mỗi cặp ~300 token (bge-reranker-v2-m3 fp32, CPU, 3 luồng). RAM: RSS ml-service **3 615 MB** (`docker stats`
+    3,474 GiB); tổng các container servicedesk ≈ 3,8 GiB (+ `voca_pg16_dev` của dự án khác 46 MiB) trên 7,737 GiB →
+    **< 7 GB, KHÔNG cần tăng RAM colima** (3-Q39), README giữ nguyên.
+  - **Kích thước image ml (Q-3a-9, người chạy 27/09/2026):** `servicedesk-ml:dev` = **2,6 GB** (`--group ml`, gồm cả deps
+    chính của project — presidio/spacy, langgraph… — và torch CPU; không có model). Chấp nhận theo chốt Q-3a-9; nếu đĩa VM
+    colima 20 GiB chật thì cách giảm là `--only-group ml` + khai báo fastapi/uvicorn/pydantic-settings/httpx vào nhóm ml
+    (chưa làm; 3e gỡ presidio cũng giảm một phần).
+  - **Số đo tóm tắt:** embed 1 câu p95 **228 ms**; rerank 20 đoạn p95 **15,6 s**; rerank 32 đoạn p95 **33,2 s**; RSS
+    ml-service **3,6 GB** (colima 4 CPU / 8 GiB, `ML_THREADS` 3, cặp 296 token, 27/09/2026).
+  - **Q-3a-16 — ĐÃ CHỐT (người, 27/09/2026):** 3a **giữ timeout rerank 10 s**; cấu hình quyết ở **3c** khi có độ dài đoạn
+    KB thật, theo thứ tự thử: `RAG_RERANK_K=10` → `ML_THREADS=4` → int8 (phải đo độ lệch điểm). Lý do không theo luật
+    "≥ 2 × p95 lô 32" (≥ 66 s): 3 lần thử × 66 + 3 s backoff ≈ 200 s > `WORKER_STALE_TURN_SECONDS` = 120 → worker recover
+    lượt còn đang chạy; biên an toàn: 3·T + 3 < 60 → T ≤ 19 s. Hệ quả đã biết: với số đo hiện tại, rerank 20 đoạn
+    ~300 token sẽ timeout → B8 ra E2 — phải xử lý ở 3c trước khi B8 thật chạy.
+    **Khoá trần (thêm ở 3a):** `unit/test_ml_timeouts.py` (7) — mọi phương thức của `MlPort` có timeout; với mọi
+    endpoint: (TOOL_RETRY + 1) × `TIMEOUT_S[ep]` + tổng backoff < `worker_stale_turn_seconds` mặc định / 2, đọc hằng thật
+    (`client.TIMEOUT_S`, `policy.json`, `Settings.model_fields`); đối chứng công thức 10 s → 33 s. Biên tính cho MỘT
+    request (lượt graph: embed 1 câu, rerank ≤ 20 ≤ 32 đoạn = 1 lô). **Mutation M15** timeout rerank 30 s →
+    `test_worst_case_call_under_half_stale_turn[rerank]` **đỏ** (93 s ≥ 60 s), đã hoàn nguyên (md5 khớp). Script thêm
+    `--only <tiền tố>`. Unit backend sau khi thêm: **1555 passed** (1548 + 7).
+  - **`make test` đầy đủ (người chạy, 27/09/2026, code sạch sau mọi mutation): XANH** — backend **1697 passed** (1555 unit +
+    113 integration + 29 e2e, gồm `graph_pg` với `FakeMlService`, `test_stack_scenario_pg` qua `open_runtime` có
+    `MlClient` thật), mock **86 passed**, ml **57 passed** (5 `ml_real` deselected; `make test-ml` 5 passed riêng).
+- **B10 xong.** **B11 xong** — PROGRESS cập nhật (mục này). **Chặng 3a: code + unit + lint + mutation (13 + 5 thật + M15)
+  + `make test` + stack xanh; CHƯA commit** — chờ người bảo. Khi commit phải có `ml_service/models.lock.json`
+  (untracked) và `scripts/` (download_models.py, mutation/mutate_3a.py); KHÔNG có `models/`.
+
+**Spec cần sửa (Claude chat sửa `docs/spec`; Claude Code không sửa — Q-3a-15):**
+**→ ĐÃ SỬA** (Claude chat, 27/09/2026): `phase3-thiet-ke-chi-tiet.md` v1.2 (mục 4.12 mới; a4/a6/a10, 4.5, 4.6, 3.5, 4.11),
+P4 v1.3, `01` v1.7, `decisions.md` 4.1. **Claude Code đối chiếu với code: khớp nội dung.** Lệch CHỮ còn lại (code đúng
+chốt, không sửa code): (1) bảng 4.8 dòng a3 vẫn ghi "unit (ml, tokenizer thật)", a16 "probe" — 4.12 (Q-3a-7) xếp cả hai là
+`ml_real`, code theo 4.12; (2) 4.12 Q-3a-5 ghi "`create_app` từ chối" — code từ chối khi dùng runtime THẬT (không tiêm
+`runtime=`), đúng chốt Q-3a-5; test tiêm runtime giả không cần token; (3) "≤ 200 KB/request" = `MAX_REQUEST_BYTES =
+200 * 1024` (KiB); (4) P4 §3 dòng Torch còn `set_num_threads(N_CPU)` — code dùng `ML_THREADS` (vCPU − 1, P4 §6).
+Các mục dưới giữ để truy vết.
+1. `phase3-thiet-ke-chi-tiet.md` mục 4.8 a10 + mục 4.5: `attempts` hết lượt = **3** (số lần gọi lỗi, cùng nghĩa
+   `ToolResult.attempts`), không phải 2 / "số lần thử lại" (Q-3a-2).
+2. Mục 4.8: nhãn a4 ("model giả nhỏ"), a6 ("unit") → ml_real như mục 4.7; thêm a3f/a4f/a6f (tokenizer giả, make test)
+   và a5 ml_real "đoạn không liên quan < 0,5" (Q-3a-7).
+3. Mục 4.6: FakeMlService băm `blake2b` (không `mmh3` ở 3a); là `httpx.MockTransport` sau `MlClient` thật (Q-3a-6).
+4. Mục 3.5: `MODELS_DIR` là biến make/shell (Makefile export), không đặt trong `.env`; `ML_THREADS`/`ML_MAX_CONCURRENCY`
+   không truyền qua compose, mặc định ở `ml_service/app/settings.py` (`ML_MAX_CONCURRENCY` = 1, P4 §6 ghi 4).
+5. Mục 4.7: `make models` dùng `uv run --with huggingface_hub` (không `--group ml`); `make tokenizer` để 3b (Q-3a-11);
+   worker cũng `depends_on ml-service healthy` (Q-3a-8).
+6. Mục 4.10/4.4: lock không bao giờ có revision null — lock trong repo phải 40 hex (Q-3a-14).
+7. **P4 §9 "rerank 20 đoạn p95 < 2 giây" chỉ đúng với GPU** — CPU 4 vCPU đo 15,6 s (cặp ~300 token); mục 4.11 của thiết
+   kế Phase 3 cũng vậy. P4 §3 vẫn ghi FlagEmbedding (3-Q19 đè lên).
+8. `01-kien-truc-project.md`: §3 cây thư mục thêm `backend/app/ml/`, `scripts/`; §4.2 đồ thị thêm `ml ──► core
+   (+ tools.retry)` và `rag, guard, graph ──► ml`; §4.3 thêm hợp đồng `ml-only-core` (nay 6 hợp đồng import-linter).
+9. Mục 4.5: timeout phải thoả trần (lần thử × timeout + backoff < stale/2 — `test_ml_timeouts.py`); rerank 10 s tạm,
+   quyết ở 3c (Q-3a-16).
+10. Lỗ ở tool đọc: `call_with_retry` để lọt `httpx.ReadError`/`RemoteProtocolError` → E9 thay vì E2 — quyết ở 3f (Q-3a-3).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

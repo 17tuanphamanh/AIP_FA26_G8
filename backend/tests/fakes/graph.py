@@ -31,6 +31,7 @@ from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.settings import get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
+from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.identity import (
     REQUESTER,
     SESSION,
@@ -431,6 +432,7 @@ class GraphHarness:
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
     max_recover_attempts: int = 3
     approver_id: str | None = "l1-fake"  # B15 giả (FAKE_APPROVER_ID)
+    ml: FakeMlService = field(default_factory=FakeMlService)  # ml-service giả (3a), đếm ở nơi nhận
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -455,7 +457,7 @@ class GraphHarness:
             deadlines=self.deadlines, constants=get_policy().constants,
             identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
-            escalations=self.escalations, templates=get_escalation_templates(),
+            escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             scenario=self.scenario, approver_id=self.approver_id,
         )  # fmt: skip
 

@@ -1,6 +1,7 @@
 """GET /api/health — 200 khi mọi phụ thuộc lõi sống, 503 kèm danh sách phụ thuộc lỗi (P9 mục 7).
 
-Phase 1: DB, Qdrant, mock (P5). ml-service, LLM thêm khi có (P9 mục 5).
+Phụ thuộc lõi: DB, Qdrant, mock (P5), ml-service (3a, 3-Q9 — chết/đang nạp model → 503). LLM thêm khi có
+(P9 mục 5).
 Route công khai trong mạng nội bộ, không cần permission (FR-T1-1).
 
 `runtime`: `up` | `down` — runtime graph (checkpoint + runner) có mở được lúc khởi động không (2b-3).

@@ -230,6 +230,12 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 2b-4-QA | Đọc trạng thái sau request trả 202 | Luôn chờ **có lượt mới và mọi lượt đã đóng** (`after_event`) rồi mới đọc; mọi phép kiểm "khoá nhả / không có X" phải có đối chứng | PROGRESS 2b-4 |
 | 2b-4-QB | Cổng 2 đạt khi nào | 10 kịch bản `make gate2` 0 FAIL trên máy Tuấn Anh **và** một thành viên khác chạy `make gate2 S=all` trên máy họ (ưu tiên máy gaming, kiêm N2) + người đọc bảng threads xác nhận | P1 §11 |
 
+**Phase 3 (27/09/2026):** quyết định `3-Q1…3-Q40` nằm ở `build/phase3-thiet-ke-chi-tiet.md` mục 2; quyết định khi hiện thực từng chặng nằm ở mục chốt của chặng đó.
+
+| Chặng | Mã | Tóm tắt | Ở đâu |
+|---|---|---|---|
+| 3a | Q-3a-1…16 | torch CPU; `attempts` = số lần gọi lỗi; lỗi mạng khác → `connect` có retry; `NodeDeps.ml` bắt buộc; fake tầng HTTP; test sinh đôi + `ml_real`; worker chờ ml-service; lock luôn 40 hex; trần timeout < stale/2, rerank 10 s tạm, quyết ở 3c | `phase3-thiet-ke-chi-tiet.md` mục 4.12 |
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -243,3 +249,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 26/09/2026 | Mục 4.1: quyết định 2b-QA…2b-QD của Phase 2b-2 |
 | 26/09/2026 | Mục 4.1: quyết định 2b-3-Q1…Q5, 2b-3-QA…QD của Phase 2b-3 |
 | 27/09/2026 | Mục 4.1: quyết định 2b-4-Q1…Q8, 2b-4-QA…QB của Phase 2b-4 |
+| 27/09/2026 | Mục 4.1: trỏ 3-Q1…Q40 và Q-3a-1…16 (chặng 3a) |

@@ -8,6 +8,8 @@ chỉ nạp khi `APP_ENV` ∈ {dev, test} (kiểm TRƯỚC khi đụng DB — fa
 `FAKE_NODE_DELAY` (kịch bản node giả trên stack, 2b-4) cùng luật.
 B1 (2b) đọc AD qua registry tool đọc (token svc_agent): truyền `directory` vào để dùng chung breaker
 với nơi khác trong cùng process; không truyền thì tự dựng (và tự đóng client HTTP khi thoát).
+ml-service (3a): `MlClient` thật (`ML_SERVICE_URL`, `ML_SERVICE_TOKEN`) — thiếu token → từ chối khởi động
+TRƯỚC khi đụng DB (3-Q21), ở cả backend lẫn worker.
 """
 
 import logging
@@ -15,6 +17,8 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
+
+import httpx
 
 from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
@@ -44,6 +48,7 @@ from app.graph.ports import (
     TurnStore,
 )
 from app.graph.runner import Runner
+from app.ml import MlClient, MlPort
 from app.settings import Settings, get_escalation_templates, get_policy
 from app.tools.wiring import build_read_registry
 
@@ -92,7 +97,11 @@ async def open_runtime(
 ) -> AsyncIterator[Runtime]:
     approver_id = fake_approver(settings)  # trước mọi kết nối: sai môi trường → không khởi động
     scenario = fake_scenario(settings)  # như trên (2b-4)
+    ml_token = settings.require_ml_token()  # như trên (3-Q21)
     async with AsyncExitStack() as stack:
+        ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
+        stack.push_async_callback(ml_http.aclose)
+        ml = MlClient(ml_http, ml_token.get_secret_value(), clock=clock)
         if directory is None:
             if settings.svc_agent_token is None:
                 log.warning("SVC_AGENT_TOKEN chưa cấu hình — B1 không đọc được AD, ticket sẽ ra E2")
@@ -103,7 +112,7 @@ async def open_runtime(
                 directory = registry
         opened = _open(
             settings, engines, clock, can_execute=can_execute, directory=directory,
-            approver_id=approver_id, scenario=scenario,
+            approver_id=approver_id, scenario=scenario, ml=ml,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
 
@@ -111,7 +120,7 @@ async def open_runtime(
 @asynccontextmanager
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
-    approver_id: str | None, scenario: FakeScenario,
+    approver_id: str | None, scenario: FakeScenario, ml: MlPort,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
@@ -123,7 +132,7 @@ async def _open(
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
-        templates=get_escalation_templates(), approver_id=approver_id, scenario=scenario,
+        templates=get_escalation_templates(), ml=ml, approver_id=approver_id, scenario=scenario,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

@@ -139,6 +139,7 @@ servicedesk-agent/
 │   │   ├── auth/                 # P6 — AuthN/AuthZ
 │   │   ├── guard/                # B2 — normalize, privacy, patterns, injection
 │   │   ├── llm/                  # P2 — LLM gateway
+│   │   ├── ml/                   # P4 phía backend — MlClient, MlPort (chỉ phụ thuộc core + tools.retry; 3a)
 │   │   ├── rag/                  # P3 — ingest (chunk theo token), retriever (fallback D-23), expand (D-24)
 │   │   ├── tools/                # P5 — registry (ToolSpec.arg_slots), call_with_retry, breaker, adapters
 │   │   ├── risk/                 # M5 — policy_engine, estimator, calibrator, decision_math
@@ -164,8 +165,9 @@ servicedesk-agent/
 │       ├── unit/  integration/  e2e/  probe/  load/
 │       ├── fakes/                # ScriptedLLM, FakeClock, FakeMlService
 │       └── conftest.py           # testcontainers Postgres + Qdrant
-├── ml_service/                   # P4
-│   ├── Dockerfile
+├── ml_service/                   # P4 — package `app` riêng, test chạy -o pythonpath=ml_service
+│   ├── Dockerfile                # build context = gốc repo; uv sync --group ml; torch CPU
+│   ├── models.lock.json          # repo + revision 40 hex của bge-m3, reranker (3a)
 │   └── app/  (main.py, embed.py, rerank.py, classify.py, intent.py, tokens.py)   # intent.py: /classify_intent (D-32)
 ├── ml_models/                    # intent-clf/<ver>/, injection-clf/<ver>/ — ONNX + thresholds.json + model_card.md (P11); tải vào volume models/
 ├── training/                     # P11 — KHÔNG nằm trong image; common/, intent/, injection/, data/
@@ -174,6 +176,7 @@ servicedesk-agent/
 │   ├── seed.json                 # [Chốt] người dùng, thiết bị, license, thư mục...
 │   └── app/  (ad.py, vpn.py, software.py, fileserver.py, admin_faults.py)
 ├── frontend/                     # React + Vite + TS + Tailwind + TanStack Query — P10
+├── scripts/                      # download_models.py (make models), mutation/ (script đột biến từng chặng)
 ├── kb/                           # tài liệu KB .md có front matter
 ├── eval/                         # kịch bản, nhãn, SPLIT.md, kết quả thực nghiệm
 └── docs/                         # servicedesk-agent-docs + build/ (bộ này)
@@ -207,6 +210,8 @@ risk ──► llm, domain, core            (KHÔNG import guard, rag.raw, api)
 executor ──► tools(write adapters), risk.policy_engine, domain, core
 monitor ──► db (role app_monitor) , domain, core   (KHÔNG import graph, executor, tools)
 llm, rag, tools, guard, auth, audit ──► domain, core, db
+rag, guard, graph ──► ml
+ml ──► core (+ tools.retry)          (KHÔNG import module nghiệp vụ khác)
 domain ──► core
 core ──► (không gì)
 ```
@@ -219,6 +224,7 @@ core ──► (không gì)
 | `monitor` không được import `graph`, `executor`, `tools`, `graph.goto` | M9 ghi ngược | Ranh giới chỉ-đọc **[Chốt 17.9.1]** |
 | Chỉ `executor` được import `tools.adapters.*_write` | Tool ghi bị gọi ngoài B17 | Điểm ghi duy nhất **[Chốt]**. Import-linter không nhận wildcard một phần tên → liệt kê từng module `{ad,vpn,software,fileserver}_write`; kèm test: mọi file `tools/adapters/*_write.py` phải có tên trong `.importlinter` |
 | `domain`, `core` không import module nghiệp vụ | Vòng phụ thuộc | Giữ lớp lõi thuần |
+| `ml` chỉ phụ thuộc `core` và `tools.retry` (`ml-only-core`) | Client ml kéo theo module nghiệp vụ | Giữ `ml` là adapter mỏng, dùng được từ `rag`, `guard`, `graph` (chốt 3a) |
 | `graph.nodes.*` không import lẫn nhau | Nhánh gọi thẳng nhánh khác | Mọi chuyển trạng thái đi qua `goto()` và routing |
 | *(không dùng import-linter)* `graph.nodes.*` không **gọi thẳng** `approvals.create`, `approvals.notify_approver`, `notify_user`, `deadlines.set`, `tickets.create_child`, `runner.submit` — chỉ truyền vào `effects.once` | Tác dụng phụ lặp khi node chạy lại | Idempotency sau crash **[D-18]**. Import-linter không phân biệt được "import để truyền vào `once`" với "gọi thẳng", nên kiểm bằng **test AST** (P1 mục 5.3) **[Chốt 25/09/2026]** |
 
@@ -289,6 +295,9 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | `make eval STRATEGY=hybrid SPLIT=test` | Harness M8 (chỉ khi `EVAL_MODE=true`) |
 | `make eval-rag` | Ablation 4 cấu hình truy hồi (D-25) trên tập dev |
 | `make load` | Locust theo 5 kịch bản mục 14.4 |
+| `make models` | **Chỉ dev, cần mạng**: tải bge-m3 + reranker theo `ml_service/models.lock.json` vào `MODELS_DIR` (biến make, mặc định `./models`); `uv run --with huggingface_hub`, không kéo torch |
+| `make test-ml` | Test ml-service với model thật (`ml_real`); thiếu model → FAIL. Không vào CI |
+| `make ml-bench` | Đo p50/p95 embed, rerank 20/32 đoạn, RSS |
 | `make gate2 S=<kịch bản>\|all` | **Chỉ dev** (2b-4): chạy kịch bản cổng 2 trên stack compose thật — restart, restart-all, late, expire, late-click, kill, kill-b15, tc29, threads. Chốt an toàn: `APP_ENV` của container backend phải là `dev`, URL chỉ `127.0.0.1`, cấm `down -v`. Cần `FAKE_SCENARIO`, `FAKE_NODE_DELAY`, `FAKE_APPROVER_ID` trong `.env` |
 
 ### 7.2. Pipeline [Chốt 13.3, chi tiết hóa]
@@ -303,7 +312,7 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 ## 8. Tiêu chí đạt của cấu trúc project (cổng T01)
 
 1. `make up` dựng đủ process của Phase 1 (postgres, mock, backend), `/api/health` trả 200.
-2. `make lint` xanh, bao gồm 5 hợp đồng import-linter ở mục 4.3 (với module rỗng); hợp đồng thứ 6 là test AST trong `make test`.
+2. `make lint` xanh, bao gồm 6 hợp đồng import-linter ở mục 4.3 (từ 3a thêm `ml-only-core`); hợp đồng "không gọi thẳng side effect" là test AST trong `make test`.
 3. Test chữ ký `policy_engine.evaluate(action, ctx)` xanh.
 4. `.env` nằm trong `.gitignore`; gitleaks không báo gì trên toàn repo.
 5. Image `backend` và `worker` là một; chỉ khác lệnh khởi động.
@@ -319,3 +328,4 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | v1.4 | 25/09/2026 | Thêm `training/`, `ml_models/`, `ml_service/app/intent.py` (D-32, D-33, P11) |
 | v1.5 | 26/09/2026 | Mục 4.2: `api` được phụ thuộc `guard` (privacy guard chạy ở API trước khi lưu — D-07, B02 §2; chốt khi hiện thực 2b-3). `APP_ENV` bắt buộc trong `.env` (compose `${APP_ENV:?…}`), không mặc định |
 | v1.6 | 27/09/2026 | Mục 7.1: thêm `make gate2` (chỉ dev, chốt 2b-4-Q7) |
+| v1.7 | 27/09/2026 | Chặng 3a: cây thư mục thêm `backend/app/ml/`, `scripts/`, `ml_service/models.lock.json`; mục 4.2 thêm `ml`; mục 4.3 hợp đồng `ml-only-core` (6 hợp đồng); mục 7.1 `make models`, `make test-ml`, `make ml-bench` |

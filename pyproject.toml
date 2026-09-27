@@ -65,9 +65,10 @@ dev = [
     "types-pyyaml>=6.0.12.20260906",  # stub cho mypy
 ]
 # Model nặng của ml-service (P4) — KHÔNG cài mặc định: `uv sync --group ml`.
-# 01 mục 6 ghi "FlagEmbedding hoặc sentence-transformers"; chọn FlagEmbedding theo P4 mục 4.
+# sentence-transformers (SentenceTransformer + CrossEncoder), không FlagEmbedding (3-Q19).
+# onnxruntime cho model phân loại của nhóm (Phase 5, P11).
 ml = [
-    "FlagEmbedding",
+    "sentence-transformers>=6.1.0",
     "transformers",
     "torch",
     "onnxruntime",
@@ -76,11 +77,24 @@ ml = [
 [tool.uv]
 package = false
 
+# Torch bản CPU cho image ml-service (Q-3a-1): torch trên PyPI cho linux kéo cả bộ CUDA (nvidia-*,
+# hàng GB). Chỉ linux lấy từ index CPU của PyTorch; macOS giữ PyPI (bản mac vốn không có CUDA).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
 [tool.pytest.ini_options]
 # Chỉ unit + integration + e2e. probe/ (LLM thật) và load/ (locust) chạy riêng qua Makefile.
 testpaths = ["backend/tests/unit", "backend/tests/integration", "backend/tests/e2e"]
 pythonpath = ["backend"]
 addopts = "-q --import-mode=importlib"
+markers = [
+    "ml_real: cần model/tokenizer thật (make models) — chỉ chạy bằng `make test-ml`, không vào make test/CI",
+]
 
 [tool.ruff]
 target-version = "py312"
@@ -91,4 +105,9 @@ python_version = "3.12"
 # APScheduler 3.x không có type stub / py.typed.
 [[tool.mypy.overrides]]
 module = ["apscheduler.*"]
+ignore_missing_imports = true
+
+# Nhóm uv `ml` không cài trong CI (make lint): ml_service/app/loader.py import muộn các gói này.
+[[tool.mypy.overrides]]
+module = ["torch.*", "sentence_transformers.*", "transformers.*", "huggingface_hub.*"]
 ignore_missing_imports = true

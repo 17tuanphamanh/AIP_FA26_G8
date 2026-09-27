@@ -183,8 +183,8 @@ backend (httpx, call_with_retry) ──HTTP nội bộ──► ml-service :8200
 | Thành phần | Công nghệ | Ghi chú |
 |---|---|---|
 | API | FastAPI, uvicorn **1 worker** | 1 worker để chỉ có 1 bản model; song song hóa bằng threadpool |
-| Embed | `FlagEmbedding.BGEM3FlagModel` (hoặc `sentence-transformers`) | dense 1024 chiều, `normalize=True`, `max_length=512` |
-| Rerank | `FlagEmbedding.FlagReranker` (hoặc `CrossEncoder`) | `normalize=True` → sigmoid 0..1; `max_length=512` cho cặp (câu hỏi, đoạn) |
+| Embed | `sentence-transformers` `SentenceTransformer` (**không** dùng FlagEmbedding — 3-Q19) | dense 1024 chiều, `normalize=True`, `max_length=512` |
+| Rerank | `sentence-transformers` `CrossEncoder` | Lấy logit thô rồi tự sigmoid 0..1 (tránh sigmoid hai lần); `max_length=640`, câu truy vấn cắt ở 128 token (3-Q12) |
 | Classify (injection + intent) | `onnxruntime` chạy ONNX int8 xuất từ `optimum`; dự phòng `transformers` `AutoModelForSequenceClassification` khi debug | Hai model `injection-clf`, `intent-clf` do nhóm huấn luyện (P11). Prompt Guard 2 chỉ nạp khi chạy baseline RQ4 |
 | Đếm token | Tokenizer đi kèm `BAAI/bge-m3` (XLM-RoBERTa) | Dùng cho chunker của P3 (D-21) |
 | Torch | Bản CPU | `torch.set_num_threads(N_CPU)` |
@@ -243,7 +243,7 @@ class CountOut(BaseModel): counts: list[int]; model: str
 | `INTENT_MODEL_DIR` | `models/intent-clf/<phiên bản>` |
 | `BASELINE_GUARD_MODEL` | `meta-llama/Llama-Prompt-Guard-2-86M` — chỉ nạp khi chạy RQ4 |
 | `ML_THREADS` | số vCPU − 1 |
-| `ML_MAX_CONCURRENCY` | 4 |
+| `ML_MAX_CONCURRENCY` | **1** (torch đã đa luồng; chốt 3a) |
 
 ## 7. Trace
 
@@ -266,7 +266,7 @@ Backend mở span `ml:<endpoint>` phía client. ml-service trả header `X-Model
 | Unit | `/count_tokens` trả đúng số token của tokenizer bge-m3; văn bản 600 token gửi `/embed` → `truncated=[true]` |
 | Integration | Embed 2 lần cùng câu → vector giống hệt (tất định) |
 | Integration | Ingest toàn bộ KB → tổng `truncated=true` = 0 (D-21) |
-| Hiệu năng (VM 4 vCPU) | Embed 1 câu p95 < 300 ms; rerank 20 đoạn p95 < 2 giây; classify và classify_intent p95 < 100 ms |
+| Hiệu năng (VM 4 vCPU) | Embed 1 câu p95 < 300 ms; rerank 20 đoạn p95 < 2 giây (**chỉ đúng với GPU** — CPU 4 vCPU đo 15,6 s ở 3a; ràng buộc timeout và cấu hình CPU xem `phase3-thiet-ke-chi-tiet.md` mục 4.12); classify và classify_intent p95 < 100 ms |
 | Unit | Thư mục `INTENT_MODEL_DIR` không tồn tại → `/classify_intent` 503; `/health` báo model thiếu nhưng service vẫn chạy |
 | Integration | `/classify_intent` trả đúng 5 nhãn và ngưỡng khớp `thresholds.json` của phiên bản đã nạp |
 | Tài nguyên | RSS ổn định sau 1 giờ tải (không rò rỉ bộ nhớ) |
@@ -289,3 +289,4 @@ Backend mở span `ml:<endpoint>` phía client. ml-service trả header `X-Model
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0 |
 | 25/09/2026 | 1.2 | Thêm `/count_tokens`, cờ `truncated` ở `/embed` và `/rerank`, test tương ứng (D-21) |
 | 25/09/2026 | 1.2 | Thêm `/classify_intent` (D-32); hai classifier là model nhóm tự huấn luyện, ONNX int8 (D-33, P11); 503 khi chưa có model |
+| 27/09/2026 | 1.3 | Chốt khi hiện thực Phase 3a: sentence-transformers thay FlagEmbedding; `ML_MAX_CONCURRENCY=1`; mục tiêu rerank < 2 s chỉ với GPU. Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 4 và 4.12; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]) |

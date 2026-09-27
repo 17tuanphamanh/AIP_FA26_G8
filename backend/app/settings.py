@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     svc_agent_token: SecretStr | None = None  # tool đọc (B6, B11), đăng nhập qua AD
     svc_executor_token: SecretStr | None = None  # DUY NHẤT có quyền ghi (B17)
     svc_worker_token: SecretStr | None = None  # worker phát sự kiện timeout (Phase 2)
+    # Header X-Service-Token khi gọi ml-service (3-Q21): BẮT BUỘC ở mọi môi trường — backend và worker
+    # từ chối khởi động khi thiếu (`require_ml_token`). None ở đây chỉ để test dựng Settings tự do.
+    ml_service_token: SecretStr | None = None
 
     # ---- Môi trường (2b-Q2, 2b-Q3) ----
     # KHÔNG mặc định: thiếu = coi như môi trường thật → mọi thành phần giả (`NotRedactingGuard`,
@@ -136,6 +139,12 @@ class Settings(BaseSettings):
     def effective_lock_pool_size(self) -> int:
         assert self.lock_pool_size is not None
         return self.lock_pool_size
+
+    def require_ml_token(self) -> SecretStr:
+        """`ML_SERVICE_TOKEN` bắt buộc mọi env (3-Q21, Q-3a-5) — thiếu → từ chối khởi động."""
+        if self.ml_service_token is None:
+            raise RuntimeError("ML_SERVICE_TOKEN chưa cấu hình (bắt buộc mọi môi trường) — từ chối khởi động")
+        return self.ml_service_token
 
     def require_dev_fakes(self, what: str) -> None:
         """Thành phần giả chỉ được nạp khi `APP_ENV` ∈ {dev, test} — fail-closed (2b-Q2, 2b-Q3)."""

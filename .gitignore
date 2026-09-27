@@ -37,6 +37,8 @@ data/*
 *.zip
 *.onnx
 training/data/
+# model của ml-service — tải bằng `make models` (ghim revision ở ml_service/models.lock.json, lock thì commit)
+/models/
 training/runs/
 
 # ket qua chay

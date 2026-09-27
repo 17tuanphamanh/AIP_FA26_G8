@@ -144,3 +144,34 @@ def test_runtime_factory_exception_is_contained() -> None:
     with TestClient(app) as client:
         assert client.get("/api/health").json()["runtime"] == "down"
 
+
+
+# ---- ML_SERVICE_TOKEN (3-Q21, Q-3a-5) — bắt buộc mọi môi trường, kể cả dev/test ----------------
+
+
+@pytest.mark.parametrize("env", ["dev", "test", "prod"])
+def test_backend_refuses_without_ml_token(env: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ML_SERVICE_TOKEN")
+    settings = _settings(app_env=env)
+    assert settings.ml_service_token is None
+    with pytest.raises(RuntimeError, match="ML_SERVICE_TOKEN"):
+        create_app(settings, health_checks={}, guard=NotRedactingGuard())  # runtime thật (mặc định)
+
+
+def test_backend_starts_with_ml_token() -> None:
+    settings = _settings(app_env="test")
+    assert settings.ml_service_token is not None  # conftest gốc đặt token ngẫu nhiên
+    assert create_app(settings, health_checks={}) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("env", ["dev", "prod"])
+async def test_worker_runtime_refuses_without_ml_token(env: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Worker (`open_runtime`) — chặn TRƯỚC khi đụng DB (engine chưa từng kết nối)."""
+    monkeypatch.delenv("ML_SERVICE_TOKEN")
+    settings = _settings(app_env=env)
+    engines = create_engines(settings)
+    with pytest.raises(RuntimeError, match="ML_SERVICE_TOKEN"):
+        async with open_runtime(settings, engines, clock=None, can_execute=False):  # type: ignore[arg-type]
+            pass
+    await engines.dispose()

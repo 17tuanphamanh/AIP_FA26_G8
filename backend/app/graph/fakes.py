@@ -1,6 +1,7 @@
 """Phụ thuộc của node (`NodeDeps`) + phần GIẢ của Phase 2 (P1: "khung, node giả"). Phase 3+ thay từng
 node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, `directory`, `alerts`, `lockout`),
-`b20_audit` (dùng `tickets`, `escalations`, `templates`, `notifier`).
+`b20_audit` (dùng `tickets`, `escalations`, `templates`, `notifier`). `ml` (3a): `MlClient` thật dựng ở
+`graph/wiring.py`, test truyền `FakeMlService` (`tests/fakes/fake_ml.py`) — chưa node nào dùng ở 3a.
 
 `FakeScenario` chọn kết quả của mỗi node theo ticket (mặc định = đường vui dừng ở chờ duyệt), để test
 đi được mọi nhánh ra của mọi node. Kết quả đặc biệt `"raise"` → node ném `ValueError` (TC29 → E9).
@@ -31,6 +32,7 @@ from app.graph.ports import (
     ToolCaller,
     ToolResult,
 )
+from app.ml import MlPort
 from app.settings import EscalationTemplates, PolicyConstants
 
 
@@ -214,6 +216,7 @@ class NodeDeps:
     tickets: TicketStore  # B20: created_at, số lượt, ghi kết quả cuối một lần
     escalations: EscalationStore  # B20: hàng đợi L2 (qua effects.once)
     templates: EscalationTemplates  # B20: thông báo + next_for_l2 theo mã E
+    ml: MlPort  # ml-service qua MlClient (3-Q7): B8 (3c), B2/B3 (3e/3f). Bắt buộc, không bản giả mặc định
     scenario: FakeScenario = field(default_factory=FakeScenario)
     # B15 GIẢ: người duyệt cố định (`FAKE_APPROVER_ID`, chỉ dev/test). None → B15 ném → E9.
     approver_id: str | None = "l1-fake"

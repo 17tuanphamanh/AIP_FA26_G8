@@ -1,6 +1,6 @@
 # Phase 3 — Thiết kế chi tiết (lát cắt VPN B1 → B20)
 
-*Thuộc bộ `build/`. Phiên bản 1.1 — 27/09/2026 (đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
+*Thuộc bộ `build/`. Phiên bản 1.2 — 27/09/2026 (1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
 
 ---
 
@@ -286,7 +286,7 @@ Cột `VARCHAR(48)` không có CHECK — giữ nguyên, nhưng thêm hằng `REA
 |---|---|---|---|
 | `ML_SERVICE_URL` | `.env` | `http://ml-service:8200` | đã có |
 | `ML_SERVICE_TOKEN` | `.env` (bí mật) | **không có** | Bắt buộc cả backend lẫn ml-service; thiếu → không khởi động. Compose: thêm vào khối `x-backend-env` (backend + worker) và service `ml-service` theo kiểu `${ML_SERVICE_TOKEN:?…}` |
-| `MODELS_DIR` | `.env` | `./models` | Mount read-only vào ml-service |
+| `MODELS_DIR` | biến make/shell (Makefile export), **không** đặt trong `.env` | `./models` | Mount read-only vào ml-service. `ML_THREADS`, `ML_MAX_CONCURRENCY` không truyền qua compose, mặc định ở `ml_service/app/settings.py` (`ML_MAX_CONCURRENCY=1`) — xem 4.12 |
 | `QDRANT_URL` | `.env` | `http://qdrant:6333` | đã có |
 | `LLM_BACKEND` | `.env` | **không có** (bắt buộc) | `scripted` (chỉ dev/test) hoặc `real` |
 | `LLM_SCRIPT_PRESET_DIR` | `.env` | `config/scripted` | Chỉ khi `scripted` |
@@ -456,7 +456,7 @@ scores = sigmoid(scores) nếu thư viện trả logit                 # test: m
 ```python
 @dataclass(frozen=True)
 class MlResult(Generic[T]):
-    data: T | None; error: str | None; attempts: int     # attempts = SỐ LẦN THỬ LẠI (cùng nghĩa ToolResult.attempts)
+    data: T | None; error: str | None; attempts: int     # attempts = SỐ LẦN GỌI LỖI (cùng nghĩa ToolResult.attempts; hết lượt = 3) — Q-3a-2
     # error ∈ {None, "timeout", "http_5xx", "connect", "model_missing"}
 
 class MlClient:
@@ -477,7 +477,7 @@ class MlClient:
 
 Phải **tất định và có ngữ nghĩa**, để test truy hồi phân biệt được tài liệu đúng/sai:
 
-- **Embed:** chuẩn hóa NFC + lowercase, tách âm tiết theo khoảng trắng/dấu câu, bỏ stopword nhỏ; băm từng âm tiết và từng cặp âm tiết liền nhau (`mmh3 % 1024`) → vector 1024 chiều, đếm tần suất, chuẩn hóa L2. Hai câu chung nhiều từ → cosine cao.
+- **Embed:** chuẩn hóa NFC + lowercase, tách âm tiết theo khoảng trắng/dấu câu, bỏ stopword nhỏ; băm từng âm tiết và từng cặp âm tiết liền nhau (`blake2b` → `% 1024`; Q-3a-6) → vector 1024 chiều, đếm tần suất, chuẩn hóa L2. Hai câu chung nhiều từ → cosine cao.
 - **Rerank:** `score = |T(q) ∩ T(p)| / max(1, |T(q)|)` trên tập âm tiết đã chuẩn hóa, rồi ép vào [0, 1]. Câu hỏi về "cổng VPN" và đoạn nói "cổng 443" → điểm cao; câu về MFA → thấp.
 - **Count:** `ceil(1,5 × số âm tiết) + 2`. Chỉ dùng khi test không kiểm giới hạn token thật.
 - **Bật lỗi:** `fake.fail_next(endpoint, kind, times)` với `kind ∈ {timeout, http_500, model_missing}`; `fake.calls[endpoint]` đếm lời gọi.
@@ -510,13 +510,13 @@ backend: {depends_on: {ml-service: {condition: service_healthy}}}   # dev; nếu
 | a1 | unit (ml) | Thiếu/sai `X-Service-Token` | 401; đúng token → 200 |
 | a2 | unit (ml) | Body 300 KB, gửi chunked | 413, handler không chạy |
 | a3 | unit (ml, tokenizer thật) | `/count_tokens("xin chào")` | Bằng `len(tok(..., add_special_tokens=True))` và **lớn hơn 2** so với không có token đặc biệt |
-| a4 | unit (ml, model giả nhỏ) | `/embed` văn bản ~600 token | `truncated=[true]`, `token_counts[0] > 512`; văn bản ngắn → `false` |
+| a4 | ml_real (+ bản sinh đôi a4f, tokenizer giả, `make test`) | `/embed` văn bản ~600 token | `truncated=[true]`, `token_counts[0] > 512`; văn bản ngắn → `false` |
 | a5 | unit (ml) | `/rerank` 3 đoạn | Đúng 3 điểm, cùng thứ tự, mọi điểm ∈ [0,1] |
-| a6 | unit (ml) | `/rerank` câu truy vấn 300 token + đoạn 480 token | `query_truncated=true`, `truncated=[false]` |
+| a6 | ml_real (+ a6f) | `/rerank` câu truy vấn 300 token + đoạn 480 token | `query_truncated=true`, `truncated=[false]` |
 | a7 | unit (ml) | Thư mục model phân loại không có | `/classify`, `/classify_intent` → 503 `model_missing`; `/health` 200 ghi `missing` |
 | a8 | unit (ml) | Log khi gọi `/embed` với chuỗi canary | Log không chứa canary |
 | a9 | unit (backend) | `MlClient` gặp 500, 500, 200 | 3 lời gọi, `attempts=2`, `error=None` |
-| a10 | unit (backend) | `MlClient` gặp 500 liên tục | 3 lời gọi, `attempts=2`, `error="http_5xx"`, **không raise** |
+| a10 | unit (backend) | `MlClient` gặp 500 liên tục | 3 lời gọi, `attempts=3`, `error="http_5xx"`, **không raise** |
 | a11 | unit (backend) | `MlClient` gặp 503 `model_missing` | **1** lời gọi, `attempts=0`, `error="model_missing"` |
 | a12 | unit (backend) | `MlClient` gặp 401 | raise `MlContractError` |
 | a13 | unit (backend) | `rerank` 50 đoạn | Chia 2 lô (32 + 18), điểm ghép đúng thứ tự |
@@ -545,7 +545,32 @@ backend: {depends_on: {ml-service: {condition: service_healthy}}}   # dev; nếu
 
 **Trước tiên [3-Q39]:** `colima list` xem RAM VM. Hiện README ghi `colima start --cpu 4 --memory 8`; postgres + qdrant + backend + worker + mock + ml-service (bge-m3 + reranker ≈ 2,5–3,5 GB RSS) có thể chạm trần 8 GB. Nếu `docker stats` sau `make up` cho tổng > 7 GB hoặc ml-service bị OOMKilled → `colima stop && colima start --cpu 4 --memory 10` và sửa README dòng đó (ghi PROGRESS).
 
-`make models` → `make up` → `make ml-bench`. Dán: RSS ml-service sau warm-up, p95 embed 1 câu (mục tiêu < 300 ms), p95 rerank 20 đoạn (mục tiêu < 2 s). Rerank > 2 s trên Mac → ghi vào PROGRESS; quyết ở 3c có hạ `RAG_RERANK_K` xuống 10 không (P3 đã cho phép), **không** đổi model.
+`make models` → `make up` → `make ml-bench`. Dán: RSS ml-service sau warm-up, p95 embed 1 câu (mục tiêu < 300 ms), p95 rerank 20 đoạn (mục tiêu < 2 s **chỉ đúng với GPU**; CPU 4 vCPU đo 15,6 s — mục 4.12). Rerank > 2 s trên Mac → ghi vào PROGRESS; quyết ở 3c có hạ `RAG_RERANK_K` xuống 10 không (P3 đã cho phép), **không** đổi model.
+
+### 4.12. Chốt khi hiện thực 3a (27/09/2026)
+
+Khi mục 4.1–4.11 nói khác bảng này, bảng này thắng. Chi tiết và lý do: PROGRESS.md mục "Phase 3 — chặng 3a".
+
+| Mã | Điểm | Chốt |
+|---|---|---|
+| Q-3a-1 | torch | Index `pytorch-cpu` (explicit) cho `sys_platform == 'linux'`; image không kéo bản CUDA |
+| Q-3a-2 | `attempts` | **Số lần gọi lỗi**, cùng nghĩa `ToolResult.attempts`: 500,500,200 → 2; hết lượt → 3; `model_missing` → 0 |
+| Q-3a-3 | Lỗi mạng khác | `httpx.TransportError` không phải timeout → `error="connect"`, có retry (trong `MlClient`; không sửa `tools/retry.py`). 429 → `http_5xx`. Lỗ tương tự ở tool đọc (lọt `ReadError`/`RemoteProtocolError` → E9) **quyết ở 3f** |
+| Q-3a-4 | `NodeDeps.ml` | Trường bắt buộc, không mặc định (fail-closed) |
+| Q-3a-5 | Token backend | `Settings.ml_service_token: SecretStr \| None`; thiếu → `open_runtime`/`create_app` từ chối trước khi đụng DB |
+| Q-3a-6 | `FakeMlService` | `httpx.MockTransport` đặt sau `MlClient` thật; băm `blake2b` (mmh3 để 3b) |
+| Q-3a-7 | Test sinh đôi | a3, a4, a6, a16 là `ml_real` (`make test-ml`, không vào CI); thêm a3f/a4f/a6f dùng tokenizer giả (đúng 2 token đặc biệt) trong `make test`; a5 ml_real thêm "đoạn không liên quan < 0,5" (bắt sigmoid hai lần). `make test-ml` thiếu model → FAIL, không skip |
+| Q-3a-8 | Compose | Worker cũng `depends_on ml-service healthy`. Mọi máy phải `make models` + có `ML_SERVICE_TOKEN` trước `make up` |
+| Q-3a-9 | Image | `uv sync --group ml` theo spec; image 2,6 GB |
+| Q-3a-10/11 | onnxruntime, tokenizer | Giữ onnxruntime; `make tokenizer` + cache tokenizer CI để 3b |
+| Q-3a-12 | Client | Chia lô theo số phần tử **và** byte (≤ 200 KB/request); một văn bản đơn vượt → `MlContractError` rõ; `attempts` cộng dồn, dừng ở lô lỗi đầu; `MlResult.model_version` từ `X-Model-Version` |
+| Q-3a-13 | Endpoint phân loại | Luôn 503 `model_missing` ở Phase 3; thứ tự token → body (422) → 503 |
+| Q-3a-14 | Lock | `ml_service/models.lock.json` trong repo **luôn** có revision 40 hex (test tĩnh); `make models` dùng `uv run --with huggingface_hub` (không kéo torch) |
+| Q-3a-16 | Timeout rerank | Trần bắt buộc: số lần thử × timeout + tổng backoff < ngưỡng stale worker / 2 (`test_ml_timeouts.py`, mutation 30 s đỏ). Rerank tạm 10 s; **quyết ở 3c** theo thứ tự: `RAG_RERANK_K=10` → `ML_THREADS=4` → int8 có đo độ lệch điểm |
+| — | Cấu hình | `MODELS_DIR` là biến make/shell; `ML_THREADS`/`ML_MAX_CONCURRENCY` không qua compose, `ML_MAX_CONCURRENCY=1` (torch đã đa luồng) |
+| — | import-linter | Thêm hợp đồng `ml-only-core` (nay 6 hợp đồng); `app.ml` nằm trong `source_modules` của hợp đồng 3 |
+
+**Số đo 3a** (colima 4 CPU / 8 GiB, fp32): embed 1 câu p95 228 ms; rerank 20 đoạn (cặp ~296 token) p50 15,1 s / p95 15,6 s; 32 đoạn p95 33,2 s; RSS ml-service 3,6 GB, tổng container ~3,8 GiB (không cần tăng RAM colima); image ml 2,6 GB. Hệ quả: với timeout 10 s, rerank 20 đoạn trên Mac luôn hết giờ → B8 ra E2 cho tới khi 3c chốt Q-3a-16.
 
 ---
 
@@ -1906,4 +1931,5 @@ Mỗi file thêm mục **"5.1 Chốt khi hiện thực Phase 3"** gồm một c�
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 27/09/2026 | 1.0 | Tạo file: phạm vi, 36 quyết định, hợp đồng chung, 8 chặng 3a–3h |
+| 27/09/2026 | 1.2 | Mục 4.12: chốt khi hiện thực 3a (Q-3a-1…16, số đo bench); sửa a4/a6/a10, 4.5 `attempts`, 4.6 băm, 3.5 `MODELS_DIR`, mục tiêu rerank |
 | 27/09/2026 | 1.1 | Rà soát với code commit `2a9f3ee` (mục 0.1): node factory + `await goto` + `audit_detail`; giữ Pydantic trong state; bỏ bảng `notifications` (3-Q28 đổi); tên tool/endpoint VPN theo `specs.py` và mock thật; người/máy theo `seed.json`; TC09 dừng ở chờ duyệt (3-Q38); `B17_RECHECK` (3-Q37); `Executor` dùng `ExecutionResult` sẵn có; `Approvals.get_status`; ml-service dùng nhóm uv gốc + Dockerfile context gốc + check health `ml`; `kb` health chỉ báo; migration kb chỉ thêm cột thiếu; `owner` FK (3-Q40); guard giữ `RedactionResult` cũ + `pii_found`, `Accepted.notices`, E0 dùng mẫu sẵn có, `security_events` trong transaction tạo ticket; `make ingest` mount `kb/` vào container; thêm 3-Q37…Q40 |
