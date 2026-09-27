@@ -1,6 +1,6 @@
 # Compose dev — docs/spec/build/01-kien-truc-project.md mục 2. Dùng qua `make up` / `make down`
 # (Makefile truyền --env-file: .env nếu có, không thì .env.example với cảnh báo).
-# Chỉ backend (8000) và postgres (5432) bind 127.0.0.1 cho dev; qdrant, mock chỉ trong mạng nội bộ.
+# Chỉ backend (8000) và postgres (5432) bind 127.0.0.1 cho dev; qdrant, mock, ml-service chỉ trong mạng nội bộ.
 name: servicedesk
 
 # Env chung của backend và worker. Worker KHÔNG nhận SVC_EXECUTOR_TOKEN (credential ghi duy nhất,
@@ -9,10 +9,15 @@ x-backend-env: &backend-env
   # Bắt buộc khai báo (2b-3 Q3): thiếu → compose dừng. Thành phần giả chỉ nạp khi dev/test.
   APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
   FAKE_APPROVER_ID: ${FAKE_APPROVER_ID:-}
+  # Kịch bản node giả trên stack (2b-4, `make gate2`) — backend và worker PHẢI thấy cùng giá trị.
+  FAKE_SCENARIO: ${FAKE_SCENARIO:-}
+  FAKE_NODE_DELAY: ${FAKE_NODE_DELAY:-}
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
   MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
   QDRANT_URL: http://qdrant:6333
   ML_SERVICE_URL: http://ml-service:8200
+  # Bắt buộc mọi env (3-Q21): thiếu → compose dừng; backend/worker cũng tự từ chối khởi động.
+  ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:?ML_SERVICE_TOKEN phai khai bao trong .env}
   MOCK_URL: http://mock:8100
   LLM_API_KEY: ${LLM_API_KEY:-}
   JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
@@ -69,6 +74,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      ml-service:
+        condition: service_healthy  # /api/health coi ml là phụ thuộc lõi (3-Q9)
     ports:
       - "127.0.0.1:8000:8000"
 
@@ -88,6 +95,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ml-service:
+        condition: service_healthy  # worker phục hồi lượt dở có thể tới node dùng ml (Q-3a-8)
 
   mock:
     build:
@@ -99,6 +108,27 @@ services:
       SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
+
+  # P4 — model nạp một lần, CPU. Model tải trên máy bằng `make models` rồi mount read-only; không bind cổng
+  # 8200 ra host (P4 mục 5). ML_THREADS / ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở
+  # ml_service/app/settings.py (một nguồn); truyền chuỗi rỗng cho trường số là lỗi cấu hình.
+  ml-service:
+    build:
+      context: .
+      dockerfile: ml_service/Dockerfile
+    image: servicedesk-ml:dev
+    environment:
+      ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:?ML_SERVICE_TOKEN phai khai bao trong .env}
+      MODELS_DIR: /models
+    volumes:
+      - ${MODELS_DIR:-./models}:/models:ro
+    healthcheck:
+      # 200 chỉ khi đã nạp + warm-up xong; nạp 2 model CPU mất tới vài phút lần đầu.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
 
 volumes:
   pgdata:

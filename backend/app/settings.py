@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     svc_agent_token: SecretStr | None = None  # tool đọc (B6, B11), đăng nhập qua AD
     svc_executor_token: SecretStr | None = None  # DUY NHẤT có quyền ghi (B17)
     svc_worker_token: SecretStr | None = None  # worker phát sự kiện timeout (Phase 2)
+    # Header X-Service-Token khi gọi ml-service (3-Q21): BẮT BUỘC ở mọi môi trường — backend và worker
+    # từ chối khởi động khi thiếu (`require_ml_token`). None ở đây chỉ để test dựng Settings tự do.
+    ml_service_token: SecretStr | None = None
 
     # ---- Môi trường (2b-Q2, 2b-Q3) ----
     # KHÔNG mặc định: thiếu = coi như môi trường thật → mọi thành phần giả (`NotRedactingGuard`,
@@ -53,6 +56,11 @@ class Settings(BaseSettings):
     app_env: Literal["dev", "test", "staging", "prod"] | None = None
     # Người duyệt cố định của node B15 GIẢ (tới Phase 4). Phải có dòng `users` (FK approvals).
     fake_approver_id: str | None = None
+    # Stack compose (2b-4): preset node giả mặc định; ĐẶT biến = bật thẻ `[fake:<preset>]` theo ticket
+    # (`graph/fakes.StackScenario`). Không đặt → kịch bản mặc định, thẻ bị bỏ qua. Chỉ dev/test.
+    fake_scenario: str | None = None
+    # Giây dừng ở điểm do preset quyết (kill_b06, kill_b15) — để SIGKILL giữa lượt. Chỉ dev/test.
+    fake_node_delay: float | None = Field(default=None, ge=0)
 
     # ---- Hạ tầng ----
     database_url: str = "postgresql+psycopg://app_rw@localhost:5432/servicedesk"  # role app_rw
@@ -120,10 +128,23 @@ class Settings(BaseSettings):
             raise ValueError("WORKER_HEARTBEAT_SECONDS phải ≤ WORKER_HEARTBEAT_MAX_AGE / 3")
         return self
 
+    @model_validator(mode="after")
+    def _fake_delay_below_stale(self) -> "Settings":
+        # Lượt đang ngủ ≥ nửa ngưỡng "lượt dở dang" thì worker dễ coi lượt còn sống là lượt chết.
+        if self.fake_node_delay is not None and self.fake_node_delay * 2 >= self.worker_stale_turn_seconds:
+            raise ValueError("FAKE_NODE_DELAY phải < WORKER_STALE_TURN_SECONDS / 2")
+        return self
+
     @property
     def effective_lock_pool_size(self) -> int:
         assert self.lock_pool_size is not None
         return self.lock_pool_size
+
+    def require_ml_token(self) -> SecretStr:
+        """`ML_SERVICE_TOKEN` bắt buộc mọi env (3-Q21, Q-3a-5) — thiếu → từ chối khởi động."""
+        if self.ml_service_token is None:
+            raise RuntimeError("ML_SERVICE_TOKEN chưa cấu hình (bắt buộc mọi môi trường) — từ chối khởi động")
+        return self.ml_service_token
 
     def require_dev_fakes(self, what: str) -> None:
         """Thành phần giả chỉ được nạp khi `APP_ENV` ∈ {dev, test} — fail-closed (2b-Q2, 2b-Q3)."""

@@ -1,4 +1,5 @@
-# 5 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3. Hợp đồng thứ 6
+# 6 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
+# (Phase 3 chặng 3a, thiết kế Phase 3 mục 4.2). Hợp đồng thứ 6
 # ("node không gọi thẳng side effect") là test AST: backend/tests/unit/test_side_effects_ast.py.
 # Chạy: PYTHONPATH=backend uv run lint-imports   (hoặc make lint)
 
@@ -48,6 +49,7 @@ source_modules =
     app.graph
     app.guard
     app.llm
+    app.ml
     app.monitor
     app.notify
     app.rag
@@ -76,6 +78,7 @@ forbidden_modules =
     app.graph
     app.guard
     app.llm
+    app.ml
     app.monitor
     app.notify
     app.rag
@@ -89,3 +92,29 @@ type = independence
 modules =
     app.graph.nodes.*
 
+# 6. ml (client ml-service, 3-Q7) chỉ phụ thuộc core + tools.retry (thiết kế Phase 3 mục 4.2): không đi vòng qua
+#    registry tool, graph, rag… `rag`, `guard`, `graph` được import ml — chiều ngược lại bị cấm ở đây.
+[importlinter:contract:ml-only-core]
+name = ml chi phu thuoc core va tools.retry
+type = forbidden
+source_modules =
+    app.ml
+forbidden_modules =
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.db
+    app.domain
+    app.eval
+    app.executor
+    app.graph
+    app.guard
+    app.llm
+    app.monitor
+    app.notify
+    app.rag
+    app.risk
+    app.tools
+ignore_imports =
+    app.ml.client -> app.tools.retry

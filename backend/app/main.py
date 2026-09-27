@@ -8,8 +8,9 @@ Thiếu `JWT_SIGNING_KEY` (hoặc thiếu `SVC_AGENT_TOKEN` khi không tiêm idp
 vẫn khởi động và `/api/health` vẫn chạy. Runtime graph mở lỗi → route ticket/duyệt trả 503,
 `/api/health` báo `"runtime": "down"`.
 
-Fail-closed (2b-Q2, 2b-Q3): thành phần giả (guard không che, `FAKE_APPROVER_ID`) chỉ nạp khi
-`APP_ENV` ∈ {dev, test} — kiểm NGAY trong `create_app`, sai thì không có app nào được dựng.
+Fail-closed (2b-Q2, 2b-Q3, 2b-4): thành phần giả (guard không che, `FAKE_APPROVER_ID`, `FAKE_SCENARIO`,
+`FAKE_NODE_DELAY`) chỉ nạp khi `APP_ENV` ∈ {dev, test} — kiểm NGAY trong `create_app`, sai thì không có app nào được dựng.
+Như vậy với `ML_SERVICE_TOKEN` (3-Q21) khi dùng runtime thật: thiếu → không dựng app.
 Body > `MAX_REQUEST_BODY_BYTES` → 413 trước mọi kiểm quyền (`api/limits.py`).
 """
 
@@ -51,7 +52,7 @@ from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
 from app.db.session import Engines, create_engines, ping
 from app.graph.ports import ToolCaller
-from app.graph.wiring import Runtime, fake_approver, open_runtime
+from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.privacy import NotRedactingGuard, PrivacyGuard
 from app.settings import Settings, get_policy, get_settings
 from app.tools.adapters.ad_read import AdIdentityProvider
@@ -89,7 +90,11 @@ def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:
         async with httpx.AsyncClient(timeout=settings.health_timeout) as client:
             (await client.get(f"{settings.mock_url.rstrip('/')}/health")).raise_for_status()
 
-    return {"db": db, "qdrant": qdrant, "mock": mock}
+    async def ml() -> None:  # ml-service (P4, 3-Q9) — /health không cần token; 503 khi đang nạp model
+        async with httpx.AsyncClient(timeout=settings.health_timeout) as client:
+            (await client.get(f"{settings.ml_service_url.rstrip('/')}/health")).raise_for_status()
+
+    return {"db": db, "qdrant": qdrant, "mock": mock, "ml": ml}
 
 
 def _build_auth(
@@ -133,6 +138,9 @@ def create_app(
     clock = clock or SystemClock()
     guard = guard or _default_guard(settings)  # sai APP_ENV → RuntimeError, không dựng app
     fake_approver(settings)  # như trên cho FAKE_APPROVER_ID (worker kiểm lại trong open_runtime)
+    fake_scenario(settings)  # như trên cho FAKE_SCENARIO / FAKE_NODE_DELAY (2b-4)
+    if runtime is None:  # runtime thật gọi ml-service: thiếu ML_SERVICE_TOKEN → không dựng app (3-Q21)
+        settings.require_ml_token()
     runtime_factory = runtime or _default_runtime
     background = BackgroundRuns()
     lock_retry = retry_after(settings.ticket_lock_timeout)

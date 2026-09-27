@@ -4,6 +4,7 @@ Checkpointer tiêm vào: `AsyncPostgresSaver` khi chạy thật (`checkpoint.ope
 `InMemorySaver(serde=make_serde())` ở unit test. Node chưa có logic thật dùng bản GIẢ (`fake_nodes`).
 """
 
+import functools
 from collections.abc import Mapping
 from typing import Any
 
@@ -13,7 +14,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.domain.ticket_state import TicketState
 from app.graph.boundary import with_error_boundary
-from app.graph.fakes import NodeDeps
+from app.graph.fakes import PAUSABLE_NODES, FakeScenario, NodeDeps
 from app.graph.nodes import (
     approval_wait,
     b01_identity,
@@ -48,8 +49,21 @@ _NODE_MODULES = {
 
 
 def fake_nodes(deps: NodeDeps) -> dict[str, NodeFn]:
-    """Toàn bộ node GIẢ (Phase 2). Phase sau thay từng mục bằng node thật."""
-    return {name: module.make(deps) for name, module in _NODE_MODULES.items()}
+    """Toàn bộ node GIẢ (Phase 2). Phase sau thay từng mục bằng node thật. Node giả trong
+    `PAUSABLE_NODES` có điểm dừng `scenario.pause` ở đầu node (FAKE_NODE_DELAY trên stack, 2b-4)."""
+    nodes = {name: module.make(deps) for name, module in _NODE_MODULES.items()}
+    for name in PAUSABLE_NODES:
+        nodes[name] = _pausable(name, nodes[name], deps.scenario)
+    return nodes
+
+
+def _pausable(name: str, fn: NodeFn, scenario: FakeScenario) -> NodeFn:
+    @functools.wraps(fn)
+    async def node(state: Any) -> dict[str, Any]:
+        await scenario.pause(state, name)  # bên trong boundary: thẻ lạ ở đây cũng ra E9
+        return await fn(state)
+
+    return node
 
 
 def wrap_node(name: str, fn: NodeFn) -> NodeFn:

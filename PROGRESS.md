@@ -8,9 +8,9 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Mục | Giá trị |
 |---|---|
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
-| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, mutation logic 28/28 + SQL 8/8 đỏ, `make test` xanh (1550 + mock 86) — đã duyệt commit, chờ CI**. Phase 1 đã đóng |
+| Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 26/09/2026 (2b-3) |
+| Cập nhật | 27/09/2026 (2b-4; Phase 3 chặng 3a ml-service xong phần kiểm, chưa commit — mục "Phase 3 — chặng 3a") |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -631,7 +631,7 @@ mới mỗi lần (ném lại cùng đối tượng → traceback cộng dồn q
 **Commit + CI:** `b68e800` — CI GitHub **xanh**, run `36243253945` (26/09/2026, người theo dõi, đã đối chiếu `headSha`).
 
 
-## Phase 2 — 2b-3: dịch vụ ticket + route sự kiện + nối `create_app` (26–27/09/2026, `make test` xanh, chờ duyệt commit)
+## Phase 2 — 2b-3: dịch vụ ticket + route sự kiện + nối `create_app` (26–27/09/2026, commit `dcc5ddc`, CI xanh run `36270415646`)
 
 Kế hoạch Plan Mode đã duyệt (kèm chốt a–h và Q1–Q5 của người, 26/09/2026). Không LLM, không đọc `.env`,
 **không commit**.
@@ -744,8 +744,11 @@ chạy state đầu từ dòng `tickets`, không gọi `run_new`" = `_run_initia
 
 **Bổ sung trước commit (người yêu cầu, 27/09/2026):** test quét guard trên Postgres assert danh sách quét có ≥ 22 bảng
 (và chứa `tickets`, `audit_logs`, `turns`, `side_effects`, 3 bảng checkpoint) — không xanh oan khi danh sách rỗng /
-lọc sai schema. **CHƯA CHẠY** (sandbox không tới được Docker); kiểm tĩnh: 22/22 bảng P7 có cột text/jsonb và `app_rw`
-có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 4 bảng checkpoint (0003) → dự kiến 26. CI sẽ chạy.
+lọc sai schema. Sandbox không tới được Docker nên chưa chạy lúc commit; **đã chạy và xanh trên CI** (run `36270415646`,
+`make test` đầy đủ). Kiểm tĩnh trước đó: 22/22 bảng P7 có cột text/jsonb và `app_rw`
+có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 3 bảng checkpoint có cột text/bytea → **ước tính
+25** (`checkpoint_migrations` chỉ có cột `v INTEGER` nên không vào danh sách quét; bản trước ghi "dự kiến 26" là sai;
+chưa đo). Người chốt (2b-4 Q6): giữ assert `≥ 22` + tập con bắt buộc, không siết `== 25`.
 
 **Spec cần sửa (người sửa `docs/spec`) — đã xử lý ở trên:**
 - B15-B16 mục 10: "Bấm duyệt sau khi hết hạn → 409, phiếu `late_ignored`" → phiếu giữ trạng thái thật, dấu vết ở
@@ -754,6 +757,288 @@ có SELECT trên cả 22 (`RW_CRUD_TABLES` ∪ `APPEND_ONLY` của 0001) + 4 b�
 - B15-B16 mục 4 `DecisionIn.view_started_at` bắt buộc → tuỳ chọn, chỉ log; `view_duration` tính phía server từ
   `first_viewed_at` (chốt f).
 - 01 mục 4.2: đồ thị phụ thuộc thiếu `api → guard` (B02 mục 2 + D-07 đặt privacy guard ở API).
+
+## Phase 2 — 2b-4: chứng minh cổng 2 trên stack compose thật (27/09/2026, chưa commit)
+
+Kế hoạch Plan Mode đã duyệt (chốt Q1–Q8 + 4 vá của người, 27/09/2026). Không LLM, không đọc `.env`, **không commit**.
+
+**Kiểm đầu 2b-4:** run `36270415646` đã ghi ở trên (vào commit đầu 2b-4). Assert "≥ 22 bảng" của test quét guard
+**đã có** trong commit `dcc5ddc` (`backend/tests/integration/test_tickets_http_pg.py:288-292`) và chạy ở run đó.
+
+**Quyết định của người (27/09/2026):**
+- **Q1:** chọn kịch bản theo ticket bằng thẻ `[fake:<preset>]` trong câu yêu cầu; chỉ đọc thẻ khi `FAKE_SCENARIO`
+  đặt (dev/test), đọc từ `redacted_request`; node thật B1/B20 không đọc thẻ.
+- **Q2:** `FAKE_NODE_DELAY` = số giây; điểm dừng do preset quyết (`kill_b06`: đầu `b06_diagnose`; `kill_b15`:
+  sau `approval_create`).
+- **Q3:** hết hạn = dời `deadline` bằng psql trong script (không thêm setting rút ngắn SLA).
+- **Q4:** script tự chạy lệnh compose, in lệnh trước khi chạy, có chốt an toàn.
+- **Q5:** duyệt `approved` trên stack ra **E7** (B17 giả + `RefusingExecutor`) là đúng tới Phase 3; script in
+  "E7 do RefusingExecutor (dung toi Phase 3)".
+- **Q6:** giữ assert quét guard `≥ 22` + tập con; sửa "dự kiến 26" → "ước tính 25" (đã sửa ở mục 2b-3).
+- **Q7:** thêm `make gate2` — người đã thêm vào bảng lệnh `build/01-kien-truc-project.md` §7.1 (27/09/2026).
+- **Q8:** không chạy TC24/TC25 trên stack — **đã phủ ở 2b-3** (`test_tickets_api.py` qua HTTP, `test_auth_http_sql.py`
+  trên SQL, `test_b01_pg.py`).
+- **Vá 1:** chốt an toàn gate2 chạy trước mọi việc: `compose exec -T backend printenv APP_ENV` ≠ `dev` → dừng (exit 2);
+  URL chỉ `http://127.0.0.1:<cổng>`; cấm `down -v` / `--volumes` / `volume rm|prune` (kiểm chuỗi lệnh ở một điểm).
+- **Vá 2:** kịch bản kill poll `pg_locks` (khoá advisory của ĐÚNG ticket) tới 0 trong ≤ 10 giây; quá hạn mới FAIL,
+  in số khoá còn.
+- **Vá 3:** **cổng 2 chỉ đạt khi một thành viên khác chạy `make gate2 S=all` trên máy họ** (ưu tiên máy gaming —
+  kiêm ghi N2: GPU + VRAM) và dán kết quả vào đây.
+- **Vá 4:** mật khẩu demo đọc `GATE2_PASSWORD`, mặc định là hằng import được (không chép chuỗi vào script).
+  **Lệch nhỏ so với chốt:** `mock_services` không có hằng Python nào (mật khẩu chỉ ở README + hash trong
+  `seed.json`), và `mock_services/app` trùng tên package `app` với backend nên không import chéo được → tách hằng
+  có sẵn `DEMO_PASSWORD` của `tests/fakes/auth.py` sang `tests/fakes/demo.py` (không import gì; `auth.py` import lại
+  từ đó) — vẫn một nguồn duy nhất, script không chép chuỗi. Người muốn nguồn nằm trong `mock_services` thì báo.
+- Nhỏ: `restart-all` so số ticket trước/sau; mỗi dòng PASS/FAIL kèm ticket_id.
+
+**Đã làm:**
+- `graph/fakes.py`: `StackScenario` (cùng giao diện `FakeScenario`; preset theo thẻ trong `redacted_request`, không
+  thẻ → preset `FAKE_SCENARIO`; thẻ lạ → `ValueError` → E9; kết quả đánh chỉ số theo `clarification_turns` của
+  STATE — backend, worker, trước/sau restart chọn như nhau), `STACK_PRESETS` (`approval`, `clarify`, `confirm`,
+  `raise`, `kill_b06`, `kill_b15`), `PAUSABLE_NODES` (node giả b02…b17, không node thật/node chờ) + hook
+  `after_approval_create`; `FakeScenario.pause` (bản test không dừng).
+- `graph/builder.fake_nodes`: bọc node trong `PAUSABLE_NODES` bằng `scenario.pause` (bên trong boundary — thẻ lạ ở
+  điểm dừng cũng ra E9; `functools.wraps` giữ tên, test tĩnh traced/boundary không đổi).
+- `settings.py`: `fake_scenario`, `fake_node_delay` (≥ 0, phải < `WORKER_STALE_TURN_SECONDS/2`).
+  `graph/wiring.fake_scenario(settings)`: fail-closed (`require_dev_fakes`) cho cả hai biến, trước khi đụng DB;
+  delay mà không có scenario → từ chối; gọi ở `main.create_app` và `open_runtime` (worker).
+- `docker-compose.yml`: anchor chung backend + worker thêm `FAKE_SCENARIO`, `FAKE_NODE_DELAY`. `.env.example`: mẫu
+  `FAKE_SCENARIO=approval`, `FAKE_NODE_DELAY=40` + giải thích. **Người tự thêm 2 biến vào `.env`.**
+- `Makefile`: `make gate2 S=<kịch bản>` (dùng `COMPOSE` của Makefile — colima + `--env-file`).
+- `backend/tests/stack/gate2.py` + `README.md`: 10 kịch bản (`preflight`, `restart`, `restart-all`, `late`, `expire`,
+  `late-click`, `kill`, `kill-b15`, `tc29`, `threads`; `all` = trừ `restart-all`), cách đọc kết quả ở README.
+  psql chạy trong container postgres bằng biến của container (script không đọc `.env`). Kiểm trên tập rỗng = FAIL;
+  "không có X" cần đối chứng "có Y" cùng ticket.
+
+**Test mới:**
+
+| File | Nội dung |
+|---|---|
+| `unit/test_stack_scenario.py` (31) | kết quả mỗi preset ⊆ nhánh thật của node (đọc AST node); điểm dừng không gồm b01/b20/node chờ; AST: B1/B20 không đọc thẻ/scenario; preset mặc định lạ → lỗi; thẻ chọn preset (5 trạng thái chờ) + `raise` → E9; không thẻ → mặc định; thẻ lạ → E9 (không về mặc định); không đặt FAKE_SCENARIO → thẻ bị bỏ qua; **hỏi → restart với StackScenario MỚI → trả lời → chờ duyệt, B11 `asked` 1 lần**; delay chỉ ở điểm preset (sleep tiêm, không ngủ thật); `kill_b15` ngủ khi đã có đúng 1 phiếu; delay 0 không ngủ; compose truyền 2 biến cho backend VÀ worker |
+| `unit/test_app_env.py` (+16) | FAKE_SCENARIO / FAKE_NODE_DELAY / cả hai với APP_ENV None/staging/prod → `RuntimeError` ở `create_app`; worker (`open_runtime`) chặn trước DB; dev/test lên; preset lạ → `ValueError`; delay không scenario → từ chối; delay ≥ stale/2, âm → `ValidationError` |
+| `unit/test_gate2.py` (42 → 45: +2 `after_event`, +1 tĩnh "đọc sau 202 luôn chờ lượt") | **chốt 1**: APP_ENV prod/staging/test/rỗng → exit 2, chỉ đúng 1 lệnh (`printenv`) đã chạy; printenv lỗi → dừng; **chốt 2**: 7 URL không phải `http://127.0.0.1` → dừng trước mọi lệnh; **chốt 3**: 7 dạng xoá volume bị từ chối, lệnh thường (kể cả `psql -v`) qua; `Shell` từ chối trước khi chạy, in lệnh trước khi chạy; `rows` rỗng → FAIL; `absent` cần đối chứng; dòng PASS/FAIL kèm ticket_id; tổng kết không có kiểm nào ≠ xanh; mật khẩu `GATE2_PASSWORD` → hằng; ticket_id lạ không vào SQL; psql chạy trong container postgres |
+| `integration/test_stack_scenario_pg.py` (1) | `Settings(FAKE_SCENARIO)` → `open_runtime` thật trên Postgres: `[fake:clarify]` → hỏi → đóng runtime, mở runtime mới → trả lời → chờ duyệt; 1 `asked`, 1 phiếu |
+
+**Kết quả kiểm (27/09/2026, sandbox):**
+
+| Lệnh | Kết quả |
+|---|---|
+| `make lint` | **Xanh** — ruff, mypy `backend/app` 121 file, mypy mock 11 file, 5 hợp đồng import-linter, `gitleaks detect` 33 commit không leak |
+| `gitleaks dir` (`backend/app backend/tests config .env.example docker-compose.yml Makefile`) | không leak |
+| unit backend | **1498 passed** (1409 + 89 mới) |
+| Mutation M1–M9 | **9/9 đỏ đúng test dự đoán** (script tự khôi phục, so md5 + `git diff --stat` sau cùng khớp): M1 bỏ `require_dev_fakes` FAKE_SCENARIO → `test_prod_refuses_fake_scenario[FAKE_SCENARIO-*]` + `test_worker_runtime_refuses_fake_scenario`; M2 `create_app` không gọi `fake_scenario` → 6 ca prod + `delay_without_scenario`; M3 chỉ số theo bộ nhớ process → `test_clarify_sequence_survives_restart`; M4 thẻ lạ về mặc định → `test_unknown_tag_goes_e9_not_default`; M5 delay mọi điểm → `test_delay_only_at_preset_pause_point` (5 ca) + `kill_b15_pauses…`; M6 compose chỉ backend → `test_compose_passes_fake_vars_to_service[worker]`; M7 kiểm rỗng cho qua → `test_rows_empty_is_fail`; M8 bỏ validator delay → `test_delay_must_stay_below_half_stale_turn`; **M9 gate2 bỏ kiểm APP_ENV → `test_stops_before_anything_when_backend_not_dev` (4 ca)** |
+| `make test` đầy đủ (người chạy, 27/09/2026) | **Xanh** — backend **1640 passed** (1498 unit + 113 integration [112 cũ + 1 `test_stack_scenario_pg`] + 29 e2e) + mock **86 passed** |
+| `make up` (người chạy, 27/09/2026, `.env` đã có `FAKE_SCENARIO`, `FAKE_NODE_DELAY`) | **Xanh** — build lại image backend; `alembic upgrade head` chạy `0003 -> 0004 -> 0005` trên volume cũ (stack dev chưa từng nâng từ 2b-1/2b-2); `make seed` 16 người, 7 thiết bị; `worker: healthy`; `/api/health` = `{"status":"ok","checks":{"db":"ok","qdrant":"ok","mock":"ok"},"failed":[],"runtime":"up"}` |
+| `make gate2 S=preflight` (người chạy, 27/09/2026, run `37ee2db4`) | **5 PASS, 0 FAIL** — chốt APP_ENV qua (`printenv` = dev); health `ok` + `runtime: up`; worker `healthy`; đăng nhập ha.lt rồi an.nv; ticket `6bb7146d-276a-49f0-a6d9-d210f6287dd4` `[fake:clarify]` → `S_CLARIFYING` (thẻ có hiệu lực trên stack) |
+| `make gate2 S=restart` lần 1 (người chạy, run `241a2e7e`) | **14 PASS, 1 FAIL**. PASS: 3 ticket dừng đúng 3 trạng thái chờ; `restart backend`; duyệt → 202 → **E7 do RefusingExecutor** (audit `… B15 queued → B16 approved → B17 execution_failed → B20 closed`), phiếu `approved`/`l1_01`; confirm → `resolved_user_confirmed`; mỗi ticket có checkpoint (14/13/10). **FAIL** ticket `08ba0c88-…` "clarify → chờ duyệt": thấy `S_CLARIFYING`. **Chẩn đoán — lỗi SCRIPT, ĐÃ XÁC NHẬN** (người đọc audit ticket `08ba0c88-…`: `… B11 asked → B11 user_replied → B11 action_built → B13/B14 risk_decided → B15 queued`, đúng 1 `asked` — hệ thống đã tới chờ duyệt, không hỏi lại): trả lời trả 202 rồi lượt chạy NỀN; script dùng `settled()` — mà ticket ngay sau 202 vẫn đang ở trạng thái chờ CŨ nên `settled` trả về ngay. Kiểm "B11 asked 1 lần" cũng đo quá sớm nên PASS của nó chưa có nghĩa. **Sửa:** `Ctx.after_event` chờ có lượt mới (> số lượt trước sự kiện) và mọi lượt đã đóng rồi mới đọc trạng thái (đúng cả khi lượt mới dừng lại ở cùng trạng thái chờ — ca "hỏi lại" mà kiểm này nhắm bắt). Unit +2 (`test_after_event_*`), **M10** (bỏ bước chờ) → cả 2 đỏ; unit 1500 passed |
+| `make gate2 S=restart` lần 2 (người chạy, run `6b8b4cf9`, script đã sửa) | **15 PASS, 0 FAIL** — **cổng 2 dòng 1 trên stack thật**: 3 ticket dừng ở 3 trạng thái chờ → `restart backend` → approval `3c083b2b-…`: duyệt 202 → E7 do RefusingExecutor, audit `B15 queued → B16 approved → B17 execution_failed → B20 closed`, phiếu `approved`/`l1_01`; clarify `16e5baba-…`: trả lời 202 → (chờ lượt nền đóng) → `S_PENDING_APPROVAL`, `B11 asked` đúng 1 lần; confirm `fc824308-…` → `resolved_user_confirmed`; checkpoint 14/13/10 |
+| `make gate2 S=late` (người chạy, run `4fd4cd89`) | **15 PASS, 0 FAIL** — **cổng 2 dòng 3 trên stack**: 3 trạng thái chờ × sự kiện sai loại → 409, trạng thái giữ nguyên, đúng 1 `late_event` mỗi ticket, `source=user`; `step` = bước của trạng thái chờ mà sự kiện NHẮM tới (2a quyết định 7): message vào chờ duyệt → `B11` (`expected=S_CLARIFYING`, `actual=S_PENDING_APPROVAL`); confirm vào chờ trả lời → `B19`; message vào chờ xác nhận → `B11` |
+| `make gate2 S=expire` (người chạy, run `1eca2b45`) | **15 PASS, 0 FAIL** — dời hạn về quá khứ bằng psql (mỗi ticket đúng 1 dòng) → worker thật (đồng hồ thật, quét 15 giây) bắn hạn cả 3 trong ≤ 45 giây: chờ duyệt → E6 + phiếu `timeout` + escalation E6, **0 dòng audit B17** (đối chứng `B16 approval_timeout` có) — bất biến "hết hạn không tự thực thi" trên stack; chờ trả lời → E4 + escalation E4; chờ xác nhận → `S_RESOLVED` `resolved_auto_timeout_48h`; `wait_deadlines.fired_at` đã đặt |
+| `make gate2 S=late-click` (người chạy, run `aaa48265`) | **10 PASS, 0 FAIL** — 2b-3-Q2 trên stack: `stop worker` → ticket `52b1df7c-…` chờ duyệt, phiếu 7 → dời hạn → l1 bấm duyệt → 409, phiếu **vẫn `pending`**, `late_event` (`expired`, approval 7, `l1_01`, `user`) → `start worker` → E6 + phiếu `timeout`, 0 dòng B17 (đối chứng B16 `approval_timeout` có) → bấm lại → 409, `late_event` thứ hai `already_decided` |
+| `make gate2 S=kill` (người chạy, run `43187920`) | **8 PASS, 0 FAIL** — ticket `ced3bfb5-…` `[fake:kill_b06]` ngủ ở b06 (lượt mở) → `kill -s SIGKILL backend` → lượt vẫn mở → `up -d backend` → worker phục hồi → `S_PENDING_APPROVAL`; **cùng `turn_id` `def23064-…`, `recover_attempts=1`, 1 lượt đã đóng**; 1 phiếu; `side_effects` `approval_create`/`notify_approver` = 1/1; không `(step, event)` nào trùng. **Hạn chế của lần chạy này:** dòng "khoá advisory nhả ≤ 10 giây" (thấy 0) **không có đối chứng** — chưa chứng minh truy vấn `pg_locks` (classid/objid từ `hashtext`) tìm thấy được khoá khi đang giữ; trái chính quy ước "không có X cần đối chứng có Y" của script. **Sửa:** thêm kiểm "khoá đang giữ trước kill = 1"; `kill-b15` (cùng hàm `_kill`) sẽ chạy đối chứng này, chạy lại `kill` sau |
+| `make gate2 S=kill-b15` (người chạy, run `b4aae64a`, có đối chứng khoá) | **9 PASS, 0 FAIL** — D-18 trên stack: ticket `2c69eb03-…` `[fake:kill_b15]` ngủ SAU `approval_create`, TRƯỚC `notify_approver` → **đối chứng: khoá advisory của ticket đang giữ = 1** (truy vấn `pg_locks` tìm đúng khoá) → SIGKILL backend → khoá nhả (0) ≤ 10 giây → lượt vẫn mở → `up -d backend` → worker phục hồi → `S_PENDING_APPROVAL`; cùng `turn_id` `c8a9b929-…`, `recover_attempts=1`; **đúng 1 phiếu**, `approval_create`/`notify_approver` = 1/1; audit không trùng |
+| `make gate2 S=kill` lần 2 (người chạy, run `2949de7e`, có đối chứng khoá) | **9 PASS, 0 FAIL** — ticket `2703a100-…` ngủ ở b06; **đối chứng khoá đang giữ = 1** → SIGKILL → khoá 0 ≤ 10 giây → lượt vẫn mở → worker phục hồi → `S_PENDING_APPROVAL`; cùng `turn_id` `4dcc7d6c-…`, `recover_attempts=1`; 1 phiếu; `approval_create`/`notify_approver` 1/1; audit không trùng. Thay cho hạn chế của lần 1 |
+| `make gate2 S=tc29` (người chạy, run `37786dd7`) | **9 PASS, 0 FAIL** — **cổng 2 dòng 4 (E9) trên stack**: ticket `8716fc55-…` `[fake:raise]` → `ValueError` ở `b06_diagnose` → `S_ESCALATED` E9; audit `unhandled_exception` (step `b06_diagnose`) có `exception`, `traceback`, `escalation_note`; span `error` có traceback (khung `builder.py` = lớp dừng `_pausable`, đúng thứ tự boundary → pause → node); 5 ticket song song tới `S_PENDING_APPROVAL`; worker vẫn `healthy` |
+| `make gate2 S=threads` (người chạy, run `476e38c7`) | **2 PASS, 0 FAIL** — bảng 23 ticket gate2 (= 1 preflight + 3 restart lần 1 + 3 restart lần 2 + 3 late + 3 expire + 1 late-click + 1 kill lần 1 + 1 kill-b15 + 1 kill lần 2 + 6 tc29 — khớp số ticket các kịch bản đã tạo), mỗi ticket 7–14 checkpoint trên thread riêng; 0 thread không có dòng `tickets`. **Nói rõ giới hạn:** cột `threads` luôn ≤ 1 do truy vấn lọc `thread_id = ticket_id` — "mỗi ticket một luồng" đúng theo cách dựng (`Runner.config`: `thread_id = ticket_id`), phần có nội dung kiểm là "mọi ticket có checkpoint" + "không thread lạ". Mục thủ công của cổng 2 ("đọc bảng checkpoint") — xem dòng xác nhận của người ở tổng kết dưới |
+| `make gate2 S=restart-all` (người chạy, run `14fe67f5`) | **16 PASS, 0 FAIL** — 3 ticket ở 3 trạng thái chờ → `down` (không `-v`) + `make up` (cả backend lẫn worker, image dựng lại) → chốt APP_ENV chạy lại → **số ticket trước/sau = 26/26** (23 ticket gate2 cũ + 3 mới) → cùng 3 kết quả như `restart` (E7 do RefusingExecutor, clarify → chờ duyệt với 1 `asked`, confirm → `resolved_user_confirmed`), checkpoint 14/13/10 |
+| `make gate2 S=threads` lần 2 (người chạy, run `b8c98bed`, sau `restart-all`) | **2 PASS, 0 FAIL** — bảng 26 ticket gate2 (23 cũ + 3 của `restart-all`), mỗi ticket 1 thread, 7–14 checkpoint; 0 thread lạ |
+| Sau 2 lần sửa script (`after_event`, đối chứng khoá) | `make lint` xanh, unit **1500 passed**, `gitleaks dir backend/tests/stack backend/tests/unit/test_gate2.py` không leak |
+| Rà trước commit (người yêu cầu): mọi chỗ đọc trạng thái sau request 202 | Đổi sang `after_event` **7 chỗ**: sau tạo ticket ở `preflight`, `_three_waits` (dùng bởi restart/restart-all/late/expire), `late_click`, `tc29` (ticket lỗi + 5 ticket song song); sau quyết định duyệt và sau xác nhận ở `restart` (trước là `closed`); chờ phục hồi ở `_kill` (trước là `settled` — nay chờ lượt duy nhất cùng `turn_id` đóng). Bỏ hẳn `settled`; `closed` chỉ còn cho việc do WORKER làm (`expire`, `late_click` sau `start worker`). Test tĩnh `test_reads_after_202_always_wait_for_turn` (AST); **M11** (ticket lỗi của `tc29` quay lại `closed`) → đỏ. `make lint` xanh, unit **1501 passed**; **`make test` đầy đủ (người chạy, 27/09/2026) xanh: backend 1643 passed (1501 unit + 113 integration + 29 e2e) + mock 86 passed**. Các lần chạy `make gate2` ở trên dùng bản TRƯỚC lần rà này (7 chỗ cũ vẫn cho kết quả đúng vì chờ `final_state`/trạng thái chờ của ticket mới — không đọc được trạng thái cũ — nhưng không bảo đảm được như `after_event`) |
+
+**Tổng kết `make gate2` trên máy dev (27/09/2026):** đủ 10 kịch bản, lần chạy cuối của mỗi kịch bản đều 0 FAIL. Hai FAIL
+giữa chừng đều là lỗi SCRIPT, không phải lỗi hệ thống, đã sửa + có unit/mutation: (1) đọc trạng thái ngay sau 202
+(`restart` lần 1 — audit xác nhận hệ thống đúng); (2) dòng "khoá nhả" thiếu đối chứng (`kill` lần 1 — chạy lại có đối chứng).
+**Cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** (vá 3; ưu tiên máy
+gaming, kiêm ghi N2). **Tuấn Anh đã đọc bảng threads** (27/09/2026, bảng 26 ticket của run `b8c98bed`): mỗi ticket một
+`thread_id` trùng `ticket_id`, số thread = số ticket, không thread lạ, mọi ticket có checkpoint — mục thủ công của cổng 2 xong. Spec đã đồng bộ (người cập nhật, 27/09/2026): `build/01-kien-truc-project.md` §7.1 thêm `make gate2`
+(Q7), `build/decisions.md` 4.1 quyết định 2b-4.
+
+**Còn lại của 2b-4:** cổng 2 chờ thành viên khác chạy `make gate2 S=all` (vá 3).
+
+**Commit + CI:** `2a9f3ee` (19 file, gồm 2 file `docs/spec` người cập nhật) — CI GitHub **xanh**, run `36274714302`
+(workflow `ci`, push `dev-tuananh`, 1m27s, 27/09/2026; người theo dõi, đã đối chiếu `headSha` = `2a9f3ee711db…`).
+Cổng 2 vẫn **CHƯA đạt** — chờ thành viên khác chạy `make gate2 S=all` (vá 3).
+
+## Phase 3 — chặng 3a: ml-service (27/09/2026, đang làm, chưa commit)
+
+Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` mục 4 (bản 1.1). Spec Phase 3 đã nằm trong commit `ce2429f` (local,
+chưa push) — không còn file spec nào chờ stage. Kế hoạch Plan đã duyệt kèm chốt Q-3a-1…15 của người (27/09/2026).
+
+**Quyết định của người (Q-3a):**
+1. Torch lấy từ index `pytorch-cpu` trên linux (`[tool.uv.sources]` marker `sys_platform == 'linux'`); Mac giữ PyPI.
+2. `MlResult.attempts` = số lần gọi LỖI (cùng nghĩa `ToolResult.attempts`, `call_with_retry`): 500,500,200 → 2; hết
+   lượt → **3**. **Spec cần sửa:** a10 (ghi `attempts=2`) và mục 4.5 ("số lần thử lại").
+3. `httpx.TransportError` khác timeout/connect (vd. `RemoteProtocolError` khi ml-service bị OOMKilled giữa request)
+   → `error="connect"`, có retry — xử lý trong `MlClient`, **không sửa** `tools/retry.py`. **Lỗ tương tự ở tool đọc**
+   (`call_with_retry` để lọt `ReadError`/`RemoteProtocolError` → E9 thay vì E2): quyết ở 3f.
+4. `NodeDeps.ml` bắt buộc, không mặc định (FakeMlService nằm ở `tests/`).
+5. `ML_SERVICE_TOKEN` backend: `Settings.ml_service_token` tuỳ chọn; `open_runtime` từ chối trước khi đụng DB;
+   `create_app` từ chối khi dùng runtime mặc định; `conftest.py` gốc đặt token ngẫu nhiên.
+6. `FakeMlService` = `httpx.MockTransport` sau `MlClient` thật; băm `blake2b` (không `mmh3` ở 3a).
+7. Test sinh đôi a3f/a4f/a6f dùng tokenizer giả (thêm ĐÚNG 2 token đặc biệt), gọi code thật `tokens.py`/`rerank.py`.
+8. Backend **và worker** `depends_on: ml-service: service_healthy`.
+9. Image ml theo spec (`--group ml`) — đo kích thước, ghi ở đây.
+10. Giữ `onnxruntime` trong nhóm ml. 11. `make tokenizer` để 3b.
+12. Client: `attempts` cộng dồn qua lô, dừng ở lô lỗi đầu; chia lô thêm theo byte; một văn bản đơn vượt giới hạn
+    byte → `MlContractError` thông điệp rõ; `MlResult.model_version` từ `X-Model-Version`; span = dòng log.
+13. `/classify`, `/classify_intent` Phase 3: token → body (422) → 503 `model_missing`, kể cả khi có thư mục.
+14. **Không** commit lock với revision null: người chạy `make models` trước commit 3a; test tĩnh: `models.lock.json`
+    phải có revision 40 hex.
+15. Spec cần sửa (Claude chat): xem cuối mục.
+
+**Sửa thêm của người:** compose không truyền biến int rỗng (`ML_THREADS`, `ML_MAX_CONCURRENCY`) + test tĩnh;
+`ML_MAX_CONCURRENCY` mặc định 1; `make ml-bench` đo rerank 20 và 32 đoạn, timeout rerank tạm 10 s (chỉnh theo số đo
+≥ 2 × p95 lô 32); `make models` dùng `uv run --with huggingface_hub` (không kéo torch); `make test-ml` thiếu model →
+FAIL; ml_real assert đoạn không liên quan có điểm < 0,5 (bắt sigmoid hai lần).
+
+**Nhật ký bước (1→11 của plan):**
+- **B1 xong** — `uv remove --group ml FlagEmbedding`, `uv add --group ml sentence-transformers`, index `pytorch-cpu`
+  cho linux. Kiểm xanh: `uv lock --check`; `uv.lock` 0 dòng `flagembedding`, 0 gói `nvidia-*` (trước: 15); torch
+  linux = `2.14.0+cpu` (aarch64 + x86_64), mac = `2.14.0` PyPI; `uv sync --locked` (nhóm dev) OK. `uv lock` cần
+  host `download-r2.pytorch.org` (đã khai báo cho lệnh đó).
+- **B2 xong** (+ `scripts/download_models.py` của B7 làm sớm vì test ml cần) — `ml_service/app/` (settings, lock,
+  models, tokens, embed, rerank, classify, intent, auth, limits, loader, main, bench), `ml_service/tests/` (conftest
+  tokenizer giả +2 token đặc biệt, security, endpoints, lock, download_models, real_models = ml_real). pyproject:
+  marker `ml_real`, override mypy cho torch/sentence_transformers/transformers/huggingface_hub. Kiểm:
+  `pytest ml_service/tests -o pythonpath=ml_service -m "not ml_real"` **56 passed, 1 failed** — failed là
+  `test_repo_lock_pins_40_hex_revisions` (chưa có `ml_service/models.lock.json`; đỏ tới khi người chạy `make models`,
+  đúng Q-3a-14); mypy `ml_service/app` 15 file xanh; ruff xanh.
+- **B3 xong** — `backend/app/ml/` (`models`, `ports`: `MlPort`, `MlResult`, `MlContractError`; `client`: `MlClient`
+  dùng `call_with_retry`, chia lô theo số + byte), `backend/tests/fakes/fake_ml.py` (MockTransport, blake2b),
+  `unit/test_ml_client.py` (a9–a13 + TransportError, 429, 404, schema, byte, hằng khớp `ml_service/app/schemas.py`,
+  log không văn bản), `unit/test_fake_ml.py` (a14). Kiểm: 29 passed; `mypy backend/app` 125 file xanh; ruff xanh.
+- **B4 xong** — `Settings.ml_service_token` + `require_ml_token()`; `NodeDeps.ml: MlPort` bắt buộc; `wiring.open_runtime`
+  từ chối thiếu token trước DB rồi dựng `MlClient` (client HTTP đóng khi thoát); `create_app` từ chối khi dùng runtime
+  thật mà thiếu token; `_default_checks` thêm `"ml"` (GET `/health`, không token); `conftest.py` gốc đặt
+  `ML_SERVICE_TOKEN` ngẫu nhiên; `tests/fakes/graph.py` (`GraphHarness.ml`), `integration/graph_pg.py` truyền
+  `FakeMlService`. Test: `test_health` (+2, đổi tên test tập check), `test_app_env` (+6). Kiểm: unit **1538 passed**
+  (1501 + 37); `--collect-only` integration + e2e 142 test (113 + 29) thu thập được; mypy, ruff xanh.
+- **B5 xong** — `.importlinter`: `app.ml` vào nguồn hợp đồng 3 và vào cấm của hợp đồng 4; hợp đồng mới **6
+  `ml-only-core`** (ml cấm import mọi module nghiệp vụ + `app.tools`, `ignore_imports = app.ml.client -> app.tools.retry`).
+  Kiểm: `lint-imports` 6 kept; thử phá (ml/ports import `tools.registry`; domain/action import `ml.ports`) → đúng 2 hợp
+  đồng BROKEN (6 và 4), hoàn nguyên, không còn dấu `MUTATION`, `git diff` 2 file trống; `test_write_adapters_listed` xanh.
+- **B6 xong** — `ml_service/Dockerfile` (khuôn mock, `uv sync --frozen --no-dev --group ml --no-install-project`,
+  `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `HF_HOME=/tmp/hf`, không copy `models/`, 1 worker); compose: service
+  `ml-service` (không `ports`, `${MODELS_DIR:-./models}:/models:ro`, healthcheck start_period 180s, env chỉ
+  `ML_SERVICE_TOKEN` `:?` + `MODELS_DIR`), `x-backend-env` thêm `ML_SERVICE_TOKEN` `:?`, backend + worker
+  `depends_on ml-service: service_healthy`; `.env.example` `ML_SERVICE_TOKEN=` trống; `.gitignore` `/models/`; Makefile:
+  `models`, `test-ml`, `ml-bench`, dòng pytest thứ 3 trong `test`, mypy ml_service trong `lint`, `up` kiểm model trước
+  (`python -m app.lock`) + build ml-service + in log ml-service khi không lên. `ml_service/README.md`.
+  **Lệch nhỏ so với 3.5:** `MODELS_DIR` là biến make/shell (Makefile `export`), KHÔNG đặt trong `.env` — env shell
+  đè `.env` khi compose nội suy, để trong `.env` thì `make up` kiểm một chỗ mà mount chỗ khác.
+  Test tĩnh mới `unit/test_ml_deploy.py` (10). Kiểm: `docker compose config` (bản sao `.env.example` có token giả ở
+  `$TMPDIR`) OK — ml-service không ports, volume `read_only`, backend/worker `service_healthy`; thiếu token → dừng
+  "required variable ML_SERVICE_TOKEN is missing a value"; `python -m app.lock ./models` khi chưa có model → exit 1
+  "chạy `make models`"; test tĩnh + `test_stack_scenario` + `test_worker_heartbeat` xanh.
+- **B7 xong (làm cùng B2)** — `scripts/download_models.py` (`uv run --with huggingface_hub`): chưa có lock → SHA hiện tại
+  của từng repo, tải, ghi lock; có lock → tải đúng SHA, lock lệch repo/revision → exit 1; bỏ `onnx/*`, `*.onnx`,
+  `colbert_linear.pt`, `sparse_linear.pt`, `imgs/*`, và `pytorch_model.bin` khi repo có `model.safetensors`. Thư mục
+  `models/<repo>@<sha>` khớp `ml_service/app/lock.py`. **`ml_service/models.lock.json` CHƯA có** — người tạo bằng
+  `make models` (Q-3a-14); tới lúc đó `test_repo_lock_pins_40_hex_revisions` đỏ.
+- **B8 xong** — `make lint` **xanh**: ruff; mypy backend 125 file, mock 11, ml_service 15; `lint-imports` 6 kept;
+  `gitleaks detect` 35 commit không leak. Unit backend **1548 passed** (1501 + 47); mock **86 passed**; ml
+  **56 passed, 1 failed** (chỉ `test_repo_lock_pins_40_hex_revisions` — chờ lock), 5 deselected (`ml_real`).
+  `gitleaks dir` trên `ml_service`, `backend/app/ml`, `fake_ml.py`, `test_ml_client.py`, `test_ml_deploy.py`,
+  `scripts`, compose, `.env.example`, Makefile, `conftest.py`, pyproject: không leak.
+- **B9 xong (phần sandbox)** — mutation logic **13/13 đỏ đúng test dự đoán** (script áp → chạy → khôi phục → so md5;
+  sau cùng `git diff --stat` khớp, `grep MUTATION` trống): M-3a-1 bỏ kiểm token → 11 đỏ (`test_missing_token_401` ×5,
+  `test_wrong_token_401` ×5, header); **M-3a-2** truncated luôn False → `test_a4f`; **M-3a-3** đếm không token đặc biệt →
+  `test_a3f` + `test_a4f`; **M-3a-4** retry cả model_missing → `test_a11` ×2 + fake; **M-3a-5** nuốt 5xx → `test_a10` + 7;
+  **M-3a-6** không cắt câu truy vấn → `test_a6f`; M7 bỏ nhánh TransportError → 3; M8 không chia lô theo byte → 1; M9 bỏ
+  sigmoid → `test_a5`; M10 bỏ giới hạn body → 2; M11 health bỏ `ml` → 2; M12 worker không kiểm token → 2; M13 bỏ handler
+  422 (vọng lại input) → `test_logs_never_contain_text`. Lần chạy đầu 2 đột biến viết SAI (không phải test yếu): M-3a-2
+  chèn comment giữa dòng làm hỏng lời gọi (đỏ vì lỗi setup, không vì assert); M13 regex không khớp nên không áp gì
+  ("SỐNG") — sửa script, thêm chặn "đột biến không áp được", chạy lại cả bộ. Script (người yêu cầu đưa vào repo):
+  **`scripts/mutation/mutate_3a.py`** — đường dẫn tương đối theo vị trí file, không đọc `.env`; chạy lại từ chỗ mới:
+  13/13 đỏ, md5 khớp, ruff xanh. Chế độ `--real` (M-3a-2/3/6, M9 + **M14** bỏ `activation_fn=Identity` =
+  sigmoid hai lần — chỉ model thật bắt được) chờ người chạy sau `make models`.
+- **B10 đang chờ người** (Docker/mạng, chạy bằng `!`; `ML_SERVICE_TOKEN` đã có trong `.env` — người xác nhận):
+  `colima list` → `make models`
+  → `make test-ml` → `uv run python scripts/mutation/mutate_3a.py --real` → `make up` → a15 (ps, `/api/health` 200, stop ml-service → 503 có `ml`, start) →
+  `make ml-bench` + `docker stats` (3-Q39: tổng > 7 GB → tăng RAM colima, sửa README) → kích thước image ml (Q-3a-9)
+  → `make test` trên code sạch. Kết quả dán vào đây (B10), rồi B11.
+  - `colima list` (người chạy, 27/09/2026): aarch64, 4 CPU, **8 GiB**, đĩa **20 GiB** — RAM đo sau `make up`; đĩa VM có
+    thể chật khi thêm image ml (model nằm trên máy, mount vào, không tốn đĩa VM).
+  - `make models` (người chạy, 27/09/2026): xong, exit 0, ~9 phút. Lock: `BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181`,
+    `BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`; mỗi thư mục 2,1 GB (bge-m3 chỉ có
+    `pytorch_model.bin`, không có safetensors; ONNX/colbert/sparse đã bỏ). `models/` bị gitignore; lock untracked, chờ
+    commit. Sau đó (sandbox): `python -m app.lock ./models` → đủ model; test ml **57 passed** (test lock 40 hex đã xanh).
+  - `make test-ml` (Claude chạy trong sandbox, không cần Docker, 27/09/2026): **5 passed** trong 57 giây (a3, a4, a5 thật
+    có assert đoạn không liên quan < 0,5, a6, a16) — bge-m3 dạng `pytorch_model.bin` nạp được với transformers 5.17 +
+    torch 2.14 (mac).
+  - `scripts/mutation/mutate_3a.py --real` (sandbox): **5/5 đỏ đúng test dự đoán** — M-3a-2 → `test_a4`, M-3a-3 → `test_a3`,
+    M-3a-6 → `test_a6`, M9 bỏ sigmoid → `test_a5_real`, **M14 sigmoid hai lần** (bỏ `activation_fn=Identity`) →
+    `test_a5_real`; md5 khớp, `git diff --stat` khớp, không còn dấu `MUTATION`.
+  - `make up` (người chạy, 27/09/2026): **xanh**, exit 0. Image `servicedesk-ml:dev` build: `torch==2.14.0+cpu`,
+    sentence-transformers 6.1.0, transformers 5.17.0, onnxruntime 1.30.0, **0 gói nvidia** (Q-3a-1 hiệu lực), 132 gói;
+    alembic không có migration mới; ml-service `Healthy` rồi backend + worker mới start (depends_on); mock ok; seed 16
+    người, 7 thiết bị; `worker: healthy`; `/api/health` =
+    `{"status":"ok","checks":{"db":"ok","qdrant":"ok","mock":"ok","ml":"ok"},"failed":[],"runtime":"up"}`.
+  - **a15 phần "tắt ml-service"** (người chạy, 27/09/2026): `compose stop ml-service` → `/api/health` **503**
+    `{"status":"degraded","checks":{…,"ml":"error: ConnectError"},"failed":["ml"],"runtime":"up"}` — đúng 3-Q9.
+    `compose start ml-service` → `/api/health` **200**, `"ml":"ok"` (backend tự hồi phục, không cần restart). **a15 đạt.**
+  - `make ml-bench` (người chạy, 27/09/2026; exit 2 chỉ do gõ thừa đối số `—` sau target — phần đo đã chạy hết). Colima
+    4 CPU / 8 GiB, `ML_THREADS` mặc định 3, `ML_MAX_CONCURRENCY` 1. Đoạn đo = 278 token, cặp (query, đoạn) = 296 token
+    (đếm bằng tokenizer reranker thật):
+
+    | Đo | n | p50 | p95 | Mục tiêu P4 §9 |
+    |---|---|---|---|---|
+    | embed 1 câu | 50 | 118,6 ms | **228,1 ms** | < 300 ms — **đạt** |
+    | rerank 20 đoạn | 20 | 15 105 ms | **15 626 ms** | < 2 s — **KHÔNG đạt** (gấp ~8 lần) |
+    | rerank 32 đoạn | 20 | 24 482 ms | **33 213 ms** | — |
+
+    ≈ 0,75 s mỗi cặp ~300 token (bge-reranker-v2-m3 fp32, CPU, 3 luồng). RAM: RSS ml-service **3 615 MB** (`docker stats`
+    3,474 GiB); tổng các container servicedesk ≈ 3,8 GiB (+ `voca_pg16_dev` của dự án khác 46 MiB) trên 7,737 GiB →
+    **< 7 GB, KHÔNG cần tăng RAM colima** (3-Q39), README giữ nguyên.
+  - **Kích thước image ml (Q-3a-9, người chạy 27/09/2026):** `servicedesk-ml:dev` = **2,6 GB** (`--group ml`, gồm cả deps
+    chính của project — presidio/spacy, langgraph… — và torch CPU; không có model). Chấp nhận theo chốt Q-3a-9; nếu đĩa VM
+    colima 20 GiB chật thì cách giảm là `--only-group ml` + khai báo fastapi/uvicorn/pydantic-settings/httpx vào nhóm ml
+    (chưa làm; 3e gỡ presidio cũng giảm một phần).
+  - **Số đo tóm tắt:** embed 1 câu p95 **228 ms**; rerank 20 đoạn p95 **15,6 s**; rerank 32 đoạn p95 **33,2 s**; RSS
+    ml-service **3,6 GB** (colima 4 CPU / 8 GiB, `ML_THREADS` 3, cặp 296 token, 27/09/2026).
+  - **Q-3a-16 — ĐÃ CHỐT (người, 27/09/2026):** 3a **giữ timeout rerank 10 s**; cấu hình quyết ở **3c** khi có độ dài đoạn
+    KB thật, theo thứ tự thử: `RAG_RERANK_K=10` → `ML_THREADS=4` → int8 (phải đo độ lệch điểm). Lý do không theo luật
+    "≥ 2 × p95 lô 32" (≥ 66 s): 3 lần thử × 66 + 3 s backoff ≈ 200 s > `WORKER_STALE_TURN_SECONDS` = 120 → worker recover
+    lượt còn đang chạy; biên an toàn: 3·T + 3 < 60 → T ≤ 19 s. Hệ quả đã biết: với số đo hiện tại, rerank 20 đoạn
+    ~300 token sẽ timeout → B8 ra E2 — phải xử lý ở 3c trước khi B8 thật chạy.
+    **Khoá trần (thêm ở 3a):** `unit/test_ml_timeouts.py` (7) — mọi phương thức của `MlPort` có timeout; với mọi
+    endpoint: (TOOL_RETRY + 1) × `TIMEOUT_S[ep]` + tổng backoff < `worker_stale_turn_seconds` mặc định / 2, đọc hằng thật
+    (`client.TIMEOUT_S`, `policy.json`, `Settings.model_fields`); đối chứng công thức 10 s → 33 s. Biên tính cho MỘT
+    request (lượt graph: embed 1 câu, rerank ≤ 20 ≤ 32 đoạn = 1 lô). **Mutation M15** timeout rerank 30 s →
+    `test_worst_case_call_under_half_stale_turn[rerank]` **đỏ** (93 s ≥ 60 s), đã hoàn nguyên (md5 khớp). Script thêm
+    `--only <tiền tố>`. Unit backend sau khi thêm: **1555 passed** (1548 + 7).
+  - **`make test` đầy đủ (người chạy, 27/09/2026, code sạch sau mọi mutation): XANH** — backend **1697 passed** (1555 unit +
+    113 integration + 29 e2e, gồm `graph_pg` với `FakeMlService`, `test_stack_scenario_pg` qua `open_runtime` có
+    `MlClient` thật), mock **86 passed**, ml **57 passed** (5 `ml_real` deselected; `make test-ml` 5 passed riêng).
+- **B10 xong.** **B11 xong** — PROGRESS cập nhật (mục này). **Chặng 3a: code + unit + lint + mutation (13 + 5 thật + M15)
+  + `make test` + stack xanh; CHƯA commit** — chờ người bảo. Khi commit phải có `ml_service/models.lock.json`
+  (untracked) và `scripts/` (download_models.py, mutation/mutate_3a.py); KHÔNG có `models/`.
+
+**Spec cần sửa (Claude chat sửa `docs/spec`; Claude Code không sửa — Q-3a-15):**
+**→ ĐÃ SỬA** (Claude chat, 27/09/2026): `phase3-thiet-ke-chi-tiet.md` v1.2 (mục 4.12 mới; a4/a6/a10, 4.5, 4.6, 3.5, 4.11),
+P4 v1.3, `01` v1.7, `decisions.md` 4.1. **Claude Code đối chiếu với code: khớp nội dung.** Lệch CHỮ còn lại (code đúng
+chốt, không sửa code): (1) bảng 4.8 dòng a3 vẫn ghi "unit (ml, tokenizer thật)", a16 "probe" — 4.12 (Q-3a-7) xếp cả hai là
+`ml_real`, code theo 4.12; (2) 4.12 Q-3a-5 ghi "`create_app` từ chối" — code từ chối khi dùng runtime THẬT (không tiêm
+`runtime=`), đúng chốt Q-3a-5; test tiêm runtime giả không cần token; (3) "≤ 200 KB/request" = `MAX_REQUEST_BYTES =
+200 * 1024` (KiB); (4) P4 §3 dòng Torch còn `set_num_threads(N_CPU)` — code dùng `ML_THREADS` (vCPU − 1, P4 §6).
+Các mục dưới giữ để truy vết.
+1. `phase3-thiet-ke-chi-tiet.md` mục 4.8 a10 + mục 4.5: `attempts` hết lượt = **3** (số lần gọi lỗi, cùng nghĩa
+   `ToolResult.attempts`), không phải 2 / "số lần thử lại" (Q-3a-2).
+2. Mục 4.8: nhãn a4 ("model giả nhỏ"), a6 ("unit") → ml_real như mục 4.7; thêm a3f/a4f/a6f (tokenizer giả, make test)
+   và a5 ml_real "đoạn không liên quan < 0,5" (Q-3a-7).
+3. Mục 4.6: FakeMlService băm `blake2b` (không `mmh3` ở 3a); là `httpx.MockTransport` sau `MlClient` thật (Q-3a-6).
+4. Mục 3.5: `MODELS_DIR` là biến make/shell (Makefile export), không đặt trong `.env`; `ML_THREADS`/`ML_MAX_CONCURRENCY`
+   không truyền qua compose, mặc định ở `ml_service/app/settings.py` (`ML_MAX_CONCURRENCY` = 1, P4 §6 ghi 4).
+5. Mục 4.7: `make models` dùng `uv run --with huggingface_hub` (không `--group ml`); `make tokenizer` để 3b (Q-3a-11);
+   worker cũng `depends_on ml-service healthy` (Q-3a-8).
+6. Mục 4.10/4.4: lock không bao giờ có revision null — lock trong repo phải 40 hex (Q-3a-14).
+7. **P4 §9 "rerank 20 đoạn p95 < 2 giây" chỉ đúng với GPU** — CPU 4 vCPU đo 15,6 s (cặp ~300 token); mục 4.11 của thiết
+   kế Phase 3 cũng vậy. P4 §3 vẫn ghi FlagEmbedding (3-Q19 đè lên).
+8. `01-kien-truc-project.md`: §3 cây thư mục thêm `backend/app/ml/`, `scripts/`; §4.2 đồ thị thêm `ml ──► core
+   (+ tools.retry)` và `rag, guard, graph ──► ml`; §4.3 thêm hợp đồng `ml-only-core` (nay 6 hợp đồng import-linter).
+9. Mục 4.5: timeout phải thoả trần (lần thử × timeout + backoff < stale/2 — `test_ml_timeouts.py`); rerank 10 s tạm,
+   quyết ở 3c (Q-3a-16).
+10. Lỗ ở tool đọc: `call_with_retry` để lọt `httpx.ReadError`/`RemoteProtocolError` → E9 thay vì E2 — quyết ở 3f (Q-3a-3).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

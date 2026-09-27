@@ -1,0 +1,96 @@
+# Bộ câu kiểm tra truy hồi — MẪU định dạng (kb/eval/retrieval_set.yaml)
+#
+# Mục đích: chọn ngưỡng "có căn cứ" RETRIEVAL_THRESHOLD (P3 mục 7.1) và làm cổng kiểm khi nạp KB mới.
+# KHÔNG dùng làm tập đánh giá RQ, không trộn với bộ kịch bản M8.
+#
+# Yêu cầu bộ thật:
+#   - >= 30 câu có đáp án (expected_doc_ids không rỗng)
+#   - >= 20 câu KHÔNG có đáp án (expected_doc_ids: []), trong đó >= 8 câu near_topic: true
+#   - Viết như người dùng thật gõ: viết tắt, không dấu, sai chính tả nhẹ, dài dòng, cộc lốc
+#   - Không chép câu từ tài liệu; người viết câu khác người viết tài liệu
+#   - Có cặp câu hỏi nội dung restricted: role l1 (có đáp án) và role employee (đáp án rỗng)
+#
+# Trường:
+#   id                 P### (có đáp án) | N### (không có đáp án) — duy nhất
+#   query              câu hỏi như người dùng gõ
+#   intent             vpn | account | software | access | out_of_scope — intent ĐÚNG của câu
+#   role               employee | l1 | l2 | manager — quyền dùng khi truy hồi
+#   expected_doc_ids   danh sách doc_id chứa câu trả lời; [] nếu KB không có
+#   near_topic         chỉ với câu không có đáp án: true nếu gần chủ đề KB (dễ bị "trả lời bừa")
+#   note               tùy chọn
+
+version: 1
+kb_scope: [vpn]
+items:
+  # ---------- Có đáp án (mẫu 5 câu) ----------
+  - id: P001
+    query: "VPN cty dùng cổng nào vậy ạ, mạng nhà mình có cần mở port ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001]
+    note: TC04
+
+  - id: P002
+    query: "bi loi 809 khi ket noi vpn o khach san, lam sao"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+    note: TC05, không dấu
+
+  - id: P003
+    query: "Đổi sang SSTP trong ABC Connect ở chỗ nào?"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+
+  - id: P004
+    query: "chứng chỉ vpn bao lâu thì hết hạn, gia hạn trước được mấy ngày"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001, KB-VPN-004]
+    note: Có 2 tài liệu đều trả lời được; chỉ cần 1 trong top-5
+
+  - id: P005
+    query: "mình dùng được vpn trên mấy máy"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001]
+
+  # ---------- Không có đáp án (mẫu 5 câu) ----------
+  - id: N001
+    query: "Làm sao bật xác thực 2 lớp MFA cho tài khoản email?"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+    note: TC16 — cố ý không có tài liệu MFA
+
+  - id: N002
+    query: "cài vpn công ty trên ubuntu linux thế nào"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+    note: KB chỉ có Windows/macOS
+
+  - id: N003
+    query: "Khách của công ty đối tác có được cấp VPN để vào hệ thống mình không?"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N004
+    query: "máy in tầng 3 kẹt giấy"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N005
+    query: "cấu hình IKEv2 phía máy chủ vpn đặt ở đâu"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+    note: Nội dung chỉ có ở KB-VPN-007 (restricted) — employee không được thấy; câu cùng nội dung với role l1 thì expected_doc_ids = [KB-VPN-007]

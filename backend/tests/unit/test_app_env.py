@@ -1,4 +1,4 @@
-"""Fail-closed theo APP_ENV (2b-Q2, 2b-Q3) + lifespan: runtime lỗi → route ticket 503, `/api/health`
+"""Fail-closed theo APP_ENV (2b-Q2, 2b-Q3, 2b-4 `FAKE_SCENARIO`/`FAKE_NODE_DELAY`) + lifespan: runtime lỗi → route ticket 503, `/api/health`
 vẫn 200 kèm `"runtime"`."""
 
 from contextlib import asynccontextmanager
@@ -11,6 +11,7 @@ from app.guard.privacy import NotRedactingGuard
 from app.main import create_app
 from app.settings import Settings
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from tests.fakes.desk import desk_env
 from tests.fakes.runtime import no_runtime
 
@@ -52,6 +53,59 @@ async def test_worker_runtime_refuses_fake_approver(env: str | None) -> None:
     await engines.dispose()
 
 
+# ---- FAKE_SCENARIO / FAKE_NODE_DELAY (2b-4) — cùng luật fail-closed -------------------------
+
+
+@pytest.mark.parametrize("env", [None, "staging", "prod"])
+@pytest.mark.parametrize(("over", "name"), [
+    ({"fake_scenario": "approval"}, "FAKE_SCENARIO"),
+    ({"fake_scenario": "approval", "fake_node_delay": 5}, "FAKE_NODE_DELAY"),
+    ({"fake_node_delay": 5}, "FAKE_NODE_DELAY"),
+])  # fmt: skip
+def test_prod_refuses_fake_scenario(env: str | None, over: dict[str, Any], name: str) -> None:
+    # guard được tiêm, không có FAKE_APPROVER_ID → chỉ còn kịch bản giả để chặn
+    with pytest.raises(RuntimeError, match=name):
+        create_app(_settings(app_env=env, **over), health_checks={}, runtime=no_runtime,
+                   guard=NotRedactingGuard())  # fmt: skip
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("env", [None, "prod"])
+async def test_worker_runtime_refuses_fake_scenario(env: str | None) -> None:
+    settings = _settings(app_env=env, fake_scenario="approval")
+    engines = create_engines(settings)
+    with pytest.raises(RuntimeError, match="FAKE_SCENARIO"):
+        async with open_runtime(settings, engines, clock=None, can_execute=False):  # type: ignore[arg-type]
+            pass
+    await engines.dispose()
+
+
+@pytest.mark.parametrize("env", ["dev", "test"])
+def test_dev_test_start_with_fake_scenario(env: str) -> None:
+    settings = _settings(app_env=env, fake_scenario="kill_b06", fake_node_delay=40)
+    assert create_app(settings, health_checks={}, runtime=no_runtime) is not None
+
+
+def test_unknown_preset_refuses_start() -> None:
+    with pytest.raises(ValueError, match="FAKE_SCENARIO"):
+        create_app(_settings(app_env="dev", fake_scenario="khong-co"), health_checks={}, runtime=no_runtime)
+
+
+def test_delay_without_scenario_refuses_start() -> None:
+    with pytest.raises(RuntimeError, match="FAKE_NODE_DELAY chỉ có nghĩa"):
+        create_app(_settings(app_env="dev", fake_node_delay=5), health_checks={}, runtime=no_runtime)
+
+
+def test_delay_must_stay_below_half_stale_turn() -> None:
+    assert _settings(fake_node_delay=59.9).fake_node_delay == 59.9  # stale mặc định 120 giây
+    with pytest.raises(ValidationError, match="FAKE_NODE_DELAY"):
+        _settings(fake_node_delay=60)
+    with pytest.raises(ValidationError, match="FAKE_NODE_DELAY"):
+        _settings(fake_node_delay=20, worker_stale_turn_seconds=40)
+    with pytest.raises(ValidationError):
+        _settings(fake_node_delay=-1)
+
+
 def test_runtime_failure_health_still_up() -> None:
     app = create_app(_settings(), health_checks={}, runtime=no_runtime)
     with TestClient(app) as client:
@@ -90,3 +144,34 @@ def test_runtime_factory_exception_is_contained() -> None:
     with TestClient(app) as client:
         assert client.get("/api/health").json()["runtime"] == "down"
 
+
+
+# ---- ML_SERVICE_TOKEN (3-Q21, Q-3a-5) — bắt buộc mọi môi trường, kể cả dev/test ----------------
+
+
+@pytest.mark.parametrize("env", ["dev", "test", "prod"])
+def test_backend_refuses_without_ml_token(env: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ML_SERVICE_TOKEN")
+    settings = _settings(app_env=env)
+    assert settings.ml_service_token is None
+    with pytest.raises(RuntimeError, match="ML_SERVICE_TOKEN"):
+        create_app(settings, health_checks={}, guard=NotRedactingGuard())  # runtime thật (mặc định)
+
+
+def test_backend_starts_with_ml_token() -> None:
+    settings = _settings(app_env="test")
+    assert settings.ml_service_token is not None  # conftest gốc đặt token ngẫu nhiên
+    assert create_app(settings, health_checks={}) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("env", ["dev", "prod"])
+async def test_worker_runtime_refuses_without_ml_token(env: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Worker (`open_runtime`) — chặn TRƯỚC khi đụng DB (engine chưa từng kết nối)."""
+    monkeypatch.delenv("ML_SERVICE_TOKEN")
+    settings = _settings(app_env=env)
+    engines = create_engines(settings)
+    with pytest.raises(RuntimeError, match="ML_SERVICE_TOKEN"):
+        async with open_runtime(settings, engines, clock=None, can_execute=False):  # type: ignore[arg-type]
+            pass
+    await engines.dispose()

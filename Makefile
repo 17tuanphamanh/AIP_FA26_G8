@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test lint ingest seed probe eval eval-rag load
+.PHONY: up down test test-ml lint ingest seed probe eval eval-rag load gate2 models ml-bench
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -29,17 +29,28 @@ COMPOSE := docker compose --env-file $(ENV_FILE)
 HEALTH_URL := http://127.0.0.1:8000/api/health
 # Mock chỉ nghe trong mạng compose (không bind ra máy) → kiểm /health từ bên trong container.
 MOCK_HEALTH := python -c "import httpx; httpx.get('http://127.0.0.1:8100/health').raise_for_status()"
+# Thư mục model của ml-service trên máy (compose mount read-only). Biến make/shell, KHÔNG đặt trong .env
+# (export cho compose — một giá trị cho cả kiểm, tải và mount). Đổi: make models up MODELS_DIR=/đường/dẫn
+MODELS_DIR ?= ./models
+export MODELS_DIR
 
 # Dựng compose; chạy migration (role app_migrate); nạp seed mock; kiểm /health của mock, worker healthy
 # (heartbeat, tối đa 60 giây — quá hạn in 30 dòng log worker, exit 1) và /api/health.
+# ml-service (3a): kiểm model đã tải TRƯỚC khi build (thiếu → "chạy make models"); backend và worker chờ
+# ml-service healthy (depends_on) — nạp model lần đầu mất tới vài phút; lỗi thì in log ml-service.
 up:
 	@if [ "$(ENV_FILE)" = ".env.example" ]; then \
 	  echo "CẢNH BÁO: không có .env — dùng giá trị mẫu của .env.example (chỉ cho máy dev)." >&2; fi
+	@PYTHONPATH=ml_service uv run python -m app.lock $(MODELS_DIR) || { \
+	  echo "Thiếu model cho ml-service — chạy: make models" >&2; exit 1; }
 	$(COMPOSE) build backend
 	$(COMPOSE) build mock
+	$(COMPOSE) build ml-service
 	$(COMPOSE) up -d --wait postgres qdrant
 	$(COMPOSE) run --rm --no-deps backend alembic upgrade head
-	$(COMPOSE) up -d backend worker mock
+	$(COMPOSE) up -d ml-service backend worker mock || { \
+	  echo "ml-service/backend/worker không lên — 50 dòng log ml-service:" >&2; \
+	  $(COMPOSE) logs --tail 50 ml-service >&2; exit 1; }
 	@for i in $$(seq 1 60); do \
 	  if $(COMPOSE) exec -T mock $(MOCK_HEALTH) >/dev/null 2>&1; then echo "mock /health: ok"; break; fi; \
 	  if [ $$i = 60 ]; then echo "mock /health chưa OK sau 60 giây" >&2; $(COMPOSE) logs --tail 50 mock >&2; exit 1; fi; \
@@ -68,12 +79,19 @@ down:
 test:
 	uv run pytest backend/tests/unit backend/tests/integration backend/tests/e2e
 	uv run pytest mock_services/tests -o pythonpath=mock_services
+	uv run pytest ml_service/tests -o pythonpath=ml_service -m "not ml_real"
+
+# Test ml-service với model/tokenizer THẬT (a3, a4, a5, a6, a16 — thiết kế Phase 3 mục 4.8). Cài nhóm uv
+# `ml` (torch…) vào .venv; cần `make models` trước — thiếu model thì FAIL, không skip. Không vào CI.
+test-ml:
+	uv run --group ml pytest ml_service/tests -o pythonpath=ml_service -m ml_real
 
 # ruff, mypy, import-linter, gitleaks (cổng T01 mục 4).
 lint:
 	uv run ruff check .
 	uv run mypy backend/app
 	uv run mypy --cache-dir .mypy_cache/mock_services mock_services/app  # cache riêng: cùng tên package `app`
+	uv run mypy --cache-dir .mypy_cache/ml_service ml_service/app
 	PYTHONPATH=backend uv run lint-imports
 	@command -v gitleaks >/dev/null || { echo "Thiếu gitleaks — cài: brew install gitleaks" >&2; exit 1; }
 	gitleaks detect --no-banner --redact
@@ -81,6 +99,25 @@ lint:
 # Pipeline RAG (P3): in kb_version và số đoạn truncated (phải = 0).
 ingest:
 	@echo "TODO (Phase 3): chưa có pipeline RAG (P3)." >&2; exit 1
+
+# Cổng 2 trên stack compose thật (2b-4) — backend/tests/stack/README.md. Cần `make up` trước và
+# FAKE_SCENARIO, FAKE_NODE_DELAY trong .env. Script tự chạy lệnh compose (in lệnh trước khi chạy), dừng
+# nếu APP_ENV của container backend khác dev. Ví dụ: make gate2 S=preflight | make gate2 S=all
+S ?= preflight
+gate2:
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate2 $(S)
+
+# Tải model của ml-service về $(MODELS_DIR), ghim revision HF ở ml_service/models.lock.json (lần đầu ghi
+# SHA — commit file lock; các lần sau tải đúng SHA đã ghim, lock lệch → dừng). Cần mạng tới huggingface.co,
+# ~4–5 GB. Chỉ cần huggingface_hub — không cài torch.
+models:
+	uv run --with huggingface_hub python scripts/download_models.py $(MODELS_DIR)
+
+# Đo ml-service đang chạy (cần `make up`): embed 1 câu × 50, rerank 20 và 32 đoạn × 20 → p50/p95 + RSS.
+# Chạy trong container (cổng 8200 không bind ra máy), rồi in RAM mọi container.
+ml-bench:
+	$(COMPOSE) exec -T ml-service python -m app.bench
+	docker stats --no-stream
 
 # Kiểm schema mock_services/seed.json rồi nạp lại vào mock đang chạy (/_admin/reset — đồng thời tắt
 # mọi lỗi đang bơm). Cần `make up` trước.

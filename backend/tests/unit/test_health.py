@@ -56,9 +56,32 @@ def test_slow_dependency_times_out() -> None:
     assert r.json()["checks"]["db"] == "timeout"
 
 
-def test_default_checks_are_db_qdrant_mock() -> None:
+def test_default_checks_are_db_qdrant_mock_ml() -> None:
     app = create_app(_settings())
-    assert set(app.state.health_checks) == {"db", "qdrant", "mock"}
+    assert set(app.state.health_checks) == {"db", "qdrant", "mock", "ml"}  # ml: 3-Q9
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ml_check_calls_health_without_token() -> None:
+    settings = _settings(ml_service_url="http://ml.test:8200/")
+    checks = _default_checks(settings, create_app(settings))
+    route = respx.get("http://ml.test:8200/health").mock(return_value=httpx.Response(200))
+    await checks["ml"]()
+    assert route.called
+    assert "X-Service-Token" not in route.calls.last.request.headers
+    route.mock(return_value=httpx.Response(503, json={"status": "loading"}))  # đang nạp model
+    with pytest.raises(httpx.HTTPStatusError):
+        await checks["ml"]()
+
+
+def test_ml_down_makes_health_503() -> None:
+    async def down() -> None:
+        raise httpx.ConnectError("ml-service chết")
+
+    r = _get({"db": ok, "ml": down})
+    assert r.status_code == 503
+    assert r.json()["failed"] == ["ml"] and r.json()["checks"]["ml"] == "error: ConnectError"
 
 
 @pytest.mark.asyncio
