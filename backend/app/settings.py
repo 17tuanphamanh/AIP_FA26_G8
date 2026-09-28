@@ -90,6 +90,19 @@ class Settings(BaseSettings):
     # RAG ingest (3-Q16): ngoài bản đích alias, giữ N collection `kb_*` mới nhất để quay lui; còn lại bị xoá.
     # Mặc định ở đây, không truyền qua compose.
     rag_keep_old_collections: int = Field(default=2, ge=0)
+    # ---- RAG query (3c, mục 3.5) — một nguồn, không lặp hằng ở chỗ khác ----
+    rag_prefetch_k: int = Field(default=20, ge=1)  # P3 [Chốt]
+    # Q-3a-16 (S9, PLAN-3c mục 6.2): tier ② (threads=4, K=10, fp32) trên CPU dev — trung vị p95 đo được
+    # (10,4 s) vẫn > 9 s/9,5 s "đạt", nhưng người quyết định NỚI tiêu chí thực tế là trần 3·T+3<60
+    # (T ≤ 18, xem TIMEOUT_S["rerank"]) chứ không phải "≤ 9 s" — xem PROGRESS. Nợ kỹ thuật: đo lại trên
+    # máy gaming/staging GPU (N2), đặt lại theo số đo đó.
+    rag_rerank_k: int = Field(default=10, ge=1)
+    rag_top_n: int = Field(default=5, ge=1)  # [Chốt]
+    rag_intent_fallback: bool = True  # D-23
+    rag_neighbor_window: int = Field(default=1, ge=0)  # D-24
+    rag_evidence_max_tokens: int = Field(default=4000, ge=1)  # B10
+    rag_qdrant_timeout_s: float = Field(default=5.0, gt=0)  # timeout mỗi lời gọi AsyncQdrantClient
+    rag_deadline_s: float = Field(default=50.0, gt=0)  # Q-3c-4: bọc toàn bộ retrieve/expand_for_answer
     # ---- API ----
     max_request_body_bytes: int = Field(default=64 * 1024, ge=1)  # đếm byte ĐỌC THẬT (2b-3 Q5)
     background_shutdown_seconds: float = Field(default=10.0, ge=0)  # tắt app: chờ lượt nền rồi huỷ
@@ -136,6 +149,26 @@ class Settings(BaseSettings):
         # Lượt đang ngủ ≥ nửa ngưỡng "lượt dở dang" thì worker dễ coi lượt còn sống là lượt chết.
         if self.fake_node_delay is not None and self.fake_node_delay * 2 >= self.worker_stale_turn_seconds:
             raise ValueError("FAKE_NODE_DELAY phải < WORKER_STALE_TURN_SECONDS / 2")
+        return self
+
+    @model_validator(mode="after")
+    def _rag_rerank_bounds(self) -> "Settings":
+        # 32 = một lô rerank của ml-service (`ml.client.RERANK_MAX_PASSAGES`) — không import `app.ml`
+        # ở đây (vòng: ml.client -> tools.retry -> settings); `test_rag_timeouts.py` (c32) đối chiếu.
+        rerank_max_passages = 32
+        if not 1 <= self.rag_rerank_k <= min(self.rag_prefetch_k, rerank_max_passages):
+            raise ValueError(
+                "RAG_RERANK_K phải trong [1, min(RAG_PREFETCH_K, 32)]"
+            )
+        if self.rag_top_n > self.rag_rerank_k:
+            raise ValueError("RAG_TOP_N phải <= RAG_RERANK_K")
+        return self
+
+    @model_validator(mode="after")
+    def _rag_deadline_below_stale(self) -> "Settings":
+        # Q-3c-4: lượt truy hồi treo hết deadline vẫn phải xong trước khi worker coi lượt là "dở dang".
+        if self.rag_deadline_s >= self.worker_stale_turn_seconds / 2:
+            raise ValueError("RAG_DEADLINE_S phải < WORKER_STALE_TURN_SECONDS / 2")
         return self
 
     @property
@@ -220,6 +253,9 @@ class SlotsFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tool_arg_slots: frozenset[str] = Field(min_length=1)  # TOOL_ARG_SLOTS (D-20)
+    # 3-Q13: slot nối thêm vào câu truy hồi (build_query). Mặc định rỗng — fixture test cũ (vd.
+    # test_tool_registry.py) dựng slots.yaml tối giản không khai báo mục này vẫn nạp được.
+    query_slots: tuple[str, ...] = ()
 
 
 def load_slots(path: Path) -> SlotsFile:

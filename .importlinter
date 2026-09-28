@@ -120,7 +120,8 @@ ignore_imports =
     app.ml.client -> app.tools.retry
 
 # 7. rag (P3) là tầng dưới: chỉ phụ thuộc domain, core, db, ml (+ tools.retry qua ml.client; 3c thêm dòng
-#    ignore cho rag.retriever -> tools.retry khi dùng call_with_retry). Thiết kế Phase 3, PLAN-3b Q-3b-16.
+#    ignore cho rag.retriever -> tools.retry — Retriever._call dùng call_with_retry, S5). Thiết kế Phase 3,
+#    PLAN-3b Q-3b-16.
 [importlinter:contract:rag-lower-layer]
 name = rag chi phu thuoc domain, core, db, ml
 type = forbidden
@@ -142,3 +143,4 @@ forbidden_modules =
     app.tools
 ignore_imports =
     app.ml.client -> app.tools.retry
+    app.rag.retriever -> app.tools.retry

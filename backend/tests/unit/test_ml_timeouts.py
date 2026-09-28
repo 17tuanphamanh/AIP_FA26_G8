@@ -5,8 +5,8 @@ Với mọi endpoint: (số lần thử) × timeout + tổng backoff < `WORKER_S
 `FAKE_NODE_DELAY` (2b-4). Mọi số đọc từ hằng thật: `TIMEOUT_S` của client, `TOOL_RETRY` + `BACKOFF_BASE_SECONDS` của
 `config/policy.json` (mặc định retry của `call_with_retry`), mặc định `worker_stale_turn_seconds` của `Settings`.
 
-Biên tính cho MỘT request (một lô). Trong lượt graph, B8 gọi embed 1 câu và rerank ≤ `RAG_RERANK_K` (20) ≤ 32 đoạn →
-một lô; nhiều lô (ingest 3b) chạy ngoài lượt graph.
+Biên tính cho MỘT request (một lô). Trong lượt graph, B8 gọi embed 1 câu và rerank ≤ `RAG_RERANK_K` (10,
+Q-3a-16/S9) ≤ 32 đoạn → một lô; nhiều lô (ingest 3b) chạy ngoài lượt graph.
 """
 
 import inspect

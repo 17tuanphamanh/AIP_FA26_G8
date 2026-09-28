@@ -32,6 +32,9 @@ x-backend-env: &backend-env
   STRATEGY: ${STRATEGY:-hybrid}
   LLM_CACHE_MODE: ${LLM_CACHE_MODE:-default}
   REDIAGNOSE_ON_NEW_SLOT: ${REDIAGNOSE_ON_NEW_SLOT:-false}
+  # Q-3a-16 (S9, PLAN-3c mục 6.2): mặc định tier ② đo trên CPU dev. Máy chậm hôm demo → đặt
+  # RAG_RERANK_K=5 trong .env (không đổi code) để rerank ít đoạn hơn, nhanh hơn.
+  RAG_RERANK_K: ${RAG_RERANK_K:-10}
 
 services:
   postgres:
@@ -110,8 +113,9 @@ services:
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
 
   # P4 — model nạp một lần, CPU. Model tải trên máy bằng `make models` rồi mount read-only; không bind cổng
-  # 8200 ra host (P4 mục 5). ML_THREADS / ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở
-  # ml_service/app/settings.py (một nguồn); truyền chuỗi rỗng cho trường số là lỗi cấu hình.
+  # 8200 ra host (P4 mục 5). ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở ml_service/app/settings.py
+  # (một nguồn); truyền chuỗi rỗng cho trường số là lỗi cấu hình. ML_THREADS TRUYỀN tường minh (khác quy ước
+  # trên) từ Q-3a-16 (S9, PLAN-3c mục 6.2): mặc định 4 = tier ② đo trên CPU dev — không rỗng.
   ml-service:
     build:
       context: .
@@ -120,6 +124,7 @@ services:
     environment:
       ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:?ML_SERVICE_TOKEN phai khai bao trong .env}
       MODELS_DIR: /models
+      ML_THREADS: ${ML_THREADS:-4}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
     healthcheck:

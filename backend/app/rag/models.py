@@ -1,17 +1,25 @@
-"""Kiểu dữ liệu của RAG ingest (thiết kế Phase 3 mục 5.2–5.7; PLAN-3b mục 4.2, 4.7, 5).
+"""Kiểu dữ liệu của RAG: ingest (3b, mục 5.2–5.7; PLAN-3b mục 4.2, 4.7, 5) + truy hồi (3c, mục 6.3).
 
 `FrontMatter` kiểm từng file KB (`extra="forbid"`); ba miền giá trị lấy từ hằng của `db/models.py` — không gõ lại
 danh sách (lệch với CHECK của DB là lỗi lúc ghi). Lỗi dự kiến của ingest là GIÁ TRỊ (`IngestIssue`) được gom rồi
 in một lượt; `IngestError` bọc một issue khi cần thoát sớm khỏi một tài liệu (chunker).
+
+Phần truy hồi (3c): `RetrievalQuery`/`RetrievalResult`/`EvidenceBlock` là hợp đồng của `Retriever` (`rag/retriever.py`,
+`rag/expand.py`, S5). `RetrievalSystemError` là lỗi hệ thống DUY NHẤT mà node `b08_retrieve` bắt (E2) — mọi exception
+khác (hợp đồng, `ChunkTruncatedError`) nổi lên boundary → E9.
 """
 
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db.models import KB_DOC_TYPES, KB_REQUEST_TYPES, KB_SENSITIVITY
+from app.domain.ticket_state import ChunkRef
+
+type Stage = Literal["alias", "pipeline", "embed", "search", "rerank", "expand"]
 
 DOC_ID_PATTERN = r"^KB-(VPN|ACC|SW|ACS|GEN)-\d{3}$"
 
@@ -152,3 +160,49 @@ class IngestReport:
     recall_at5: float | None = None
     false_grounding_rate: float | None = None
     warnings: list[str] = field(default_factory=list)
+
+
+# ---- Truy hồi (Phase 3 chặng 3c, mục 6.3) ------------------------------------------------------
+
+
+class RetrievalQuery(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    intent: str | None
+
+
+class RetrievalResult(BaseModel):
+    chunks: list[ChunkRef]
+    top_score: float  # 0.0 khi rỗng
+    kb_version: str  # suy từ tên collection đã ghim
+    intent_filter_fallback: bool
+    fallback_tried: bool
+    retries: int  # tổng số lần THỬ LẠI (Q-3c-10)
+    query_truncated: bool
+
+
+class RetrievalSystemError(Exception):
+    """Lỗi hệ thống DUY NHẤT mà `b08_retrieve` bắt (→ E2). `detail`: loại lỗi + thao tác, ví dụ
+    "ConnectError: query kb_…" hoặc "deadline" — KHÔNG BAO GIỜ chứa câu truy vấn người dùng."""
+
+    def __init__(self, stage: Stage, retries: int, *, kb_version: str | None = None, detail: str = "") -> None:
+        self.stage = stage
+        self.retries = retries
+        self.kb_version = kb_version
+        self.detail = detail
+        super().__init__(f"{stage}: {detail}" if detail else stage)
+
+
+class ChunkTruncatedError(Exception):
+    """Reranker báo cắt đoạn tài liệu (`rr.data.truncated`) → vi phạm D-21 → E9 (không phải RetrievalSystemError)."""
+
+
+class EvidenceBlock(BaseModel):
+    anchor_chunk_id: str
+    doc_id: str
+    title: str
+    heading_path: str
+    score: float
+    text: str
+    tokens: int  # Σ token_count các điểm ghép (spec 6.3 ghi `_tokens`)

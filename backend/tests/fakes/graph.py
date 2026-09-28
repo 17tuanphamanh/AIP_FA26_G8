@@ -41,6 +41,7 @@ from tests.fakes.identity import (
     ad_user,
     fake_directory,
 )
+from tests.fakes.rag import FakeRag
 
 LOCKOUT = timedelta(minutes=15)
 
@@ -433,6 +434,7 @@ class GraphHarness:
     max_recover_attempts: int = 3
     approver_id: str | None = "l1-fake"  # B15 giả (FAKE_APPROVER_ID)
     ml: FakeMlService = field(default_factory=FakeMlService)  # ml-service giả (3a), đếm ở nơi nhận
+    rag: FakeRag = field(default_factory=FakeRag)  # RAG giả (3c) — b08 thật dùng khi `nodes="real"`
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -458,7 +460,7 @@ class GraphHarness:
             identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
-            scenario=self.scenario, approver_id=self.approver_id,
+            rag=self.rag, scenario=self.scenario, approver_id=self.approver_id,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:

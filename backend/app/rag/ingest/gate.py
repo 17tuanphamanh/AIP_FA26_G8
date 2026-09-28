@@ -1,17 +1,19 @@
-"""Cổng kiểm của ingest, bước 10 (thiết kế Phase 3 mục 5.8, 3-Q15; PLAN-3b mục 7.1; Q-3b-4).
+"""Cổng kiểm của ingest, bước 10 (thiết kế Phase 3 mục 5.8, 3-Q15; PLAN-3b mục 7.1, PLAN-3c mục 1; Q-3b-4).
 
 Bộ kiểm tra `<kb_dir>/eval/retrieval_set.yaml` → Recall@5, tỉ lệ trả lời bừa (FG), MRR@5. Quyết định:
   (a) không có bộ: `--allow-unevaluated` (env đã qua bước 0) → đạt, `unevaluated`, số đo NULL; không cờ → KHÔNG đạt.
-  (b) có bộ, chưa có alias: đạt ⇔ Recall ≥ 0,80 và FG ≤ 0,05.
-  (c) có bộ, có alias: đánh giá LẠI bản cũ bằng cùng bộ, cùng retriever; đạt ⇔ Recall không tụt quá 0,05 và FG không
-      tăng quá 0,05.
+  (b) có bộ, chưa có alias (hoặc bản cũ lệch `pipeline_sha` — Q-3c-6, "ngoại lệ 3-Q15"): đạt ⇔ Recall ≥ 0,80 và
+      FG ≤ 0,05.
+  (c) có bộ, có alias, CÙNG `pipeline_sha`: đánh giá LẠI bản cũ bằng cùng bộ, cùng retriever; đạt ⇔ Recall không
+      tụt quá 0,05 và FG không tăng quá 0,05.
 
-GIỚI HẠN ĐÃ BIẾT (3b): `DenseOnlyRetriever` chỉ có dense cosine — chưa BM25, rerank, lọc intent. Cosine khác thang
-điểm rerank mà `RETRIEVAL_THRESHOLD` dành cho → với model thật, FG ở 3b vô nghĩa và `make ingest` có thể đỏ cổng; 3c
-thay bằng adapter quanh `retrieve()`.
+3c: cổng kiểm dùng chung `Retriever` thật (BM25 + dense + rerank + lọc quyền) qua `RetrieveGateAdapter` — không
+còn cosine dense-only (giới hạn đã biết của 3b, xem `01-kien-truc-project.md`/PROGRESS "spec cần sửa").
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -24,25 +26,26 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from qdrant_client.models import Filter
 
 from app.db.models import KB_REQUEST_TYPES
-from app.domain.context import Role
-from app.ml.ports import MlPort
-from app.rag.filters import base_filter
+from app.domain.context import RequesterContext, Role
 from app.rag.ingest.config import (
-    DENSE_DIM,
     GATE_EPS,
     GATE_MAX_DELTA,
     GATE_MAX_FALSE_GROUNDING,
     GATE_MIN_RECALL,
-    GATE_PREFETCH,
     GATE_TOP_DOCS,
 )
-from app.rag.models import IngestIssue, IngestMlError
-from app.rag.vector_store import VectorIndex
+from app.rag.models import (
+    IngestIssue,
+    IngestMlError,
+    RetrievalQuery,
+    RetrievalSystemError,
+)
+from app.rag.ports import RagPort
 
 RETRIEVAL_SET = Path("eval") / "retrieval_set.yaml"
+_GATE_CTX_TIME = datetime(2026, 1, 1, tzinfo=UTC)  # ngữ cảnh tổng hợp cho cổng kiểm — chỉ role được đọc
 
 
 class EvalItem(BaseModel):
@@ -102,37 +105,44 @@ def load_retrieval_set(kb_dir: Path) -> tuple[RetrievalSet | None, list[IngestIs
         ]
 
 
-# ---- Truy hồi dense-only -----------------------------------------------------------------------
+# ---- Truy hồi (adapter quanh `retrieve()` thật, 3c) ---------------------------------------------
+
+
+def gate_intent(intent: str) -> str | None:
+    """Q-3c-7: cổng kiểm truyền `intent` của câu kiểm tra nếu ∈ `KB_REQUEST_TYPES`, ngược lại `None`."""
+    return intent if intent in KB_REQUEST_TYPES else None
+
+
+def gate_ctx(role: str) -> RequesterContext:
+    """Ngữ cảnh tổng hợp cho cổng kiểm/eval — chỉ `role` có ý nghĩa (lọc quyền); các trường khác không được
+    `retrieve()`/`expand_for_answer()` đọc tới."""
+    return RequesterContext(
+        user_id="gate", role=role, department="gate", manager_id=None, employment_status="active",  # type: ignore[arg-type]
+        tenure_days=0, is_privileged_account=False, captured_at=_GATE_CTX_TIME,
+    )  # fmt: skip
 
 
 class Retriever(Protocol):
-    async def top_docs(self, query: str, role: str, *, collection: str) -> tuple[list[str], float]:
-        """(≤ 5 doc_id theo hạng, điểm của hit đầu); không có hit → ([], 0.0)."""
+    async def top_docs(self, item: EvalItem, *, collection: str) -> tuple[list[str], float]:
+        """(≤ 5 doc_id theo hạng, top_score); không có hit → ([], 0.0)."""
         ...
 
 
-class DenseOnlyRetriever:
-    """3b — CHƯA có BM25, rerank, lọc intent (3c thay bằng adapter quanh `retrieve()`)."""
+class RetrieveGateAdapter:
+    """Bọc `RagPort` (Retriever thật, 3c) thành Protocol hẹp mà cổng kiểm cần — cùng đường lọc quyền, BM25,
+    rerank với node B8. `RetrievalSystemError` (lỗi hệ thống khi đánh giá) → `IngestMlError` (mã thoát 1, như
+    lỗi ml-service khi ingest — không phải lỗi cổng kiểm KHÔNG ĐẠT, mà là không đánh giá được)."""
 
-    def __init__(self, index: VectorIndex, ml: MlPort) -> None:
-        self._index = index
-        self._ml = ml
+    def __init__(self, retriever: RagPort) -> None:
+        self._retriever = retriever
 
-    async def top_docs(self, query: str, role: str, *, collection: str) -> tuple[list[str], float]:
-        result = await self._ml.embed([query])  # nhóm 1 (Q-3b-1)
-        if result.error is not None or result.data is None:
-            raise IngestMlError(f"ml-service /embed lỗi khi đánh giá: {result.error} sau {result.attempts} lần")
-        if len(result.data.vectors) != 1 or result.data.dim != DENSE_DIM:
-            raise IngestMlError(f"ml-service /embed trả {len(result.data.vectors)} vector, dim {result.data.dim}")
-        hits = await self._index.query_dense(
-            collection, result.data.vectors[0], Filter(must=list(base_filter(role))), GATE_PREFETCH
-        )
-        docs: list[str] = []
-        for hit in hits:
-            doc_id = str((hit.payload or {}).get("doc_id"))
-            if doc_id not in docs:
-                docs.append(doc_id)
-        return docs[:GATE_TOP_DOCS], (float(hits[0].score) if hits else 0.0)
+    async def top_docs(self, item: EvalItem, *, collection: str) -> tuple[list[str], float]:
+        q = RetrievalQuery(text=item.query, intent=gate_intent(item.intent))
+        try:
+            res = await self._retriever.retrieve(q, gate_ctx(item.role), collection=collection)
+        except RetrievalSystemError as e:
+            raise IngestMlError(f"retrieve lỗi khi đánh giá (stage={e.stage}, sau {e.retries} lần thử lại)") from e
+        return [c.doc_id for c in res.chunks][:GATE_TOP_DOCS], res.top_score
 
 
 # ---- Chỉ số, quyết định ---------------------------------------------------------------------------
@@ -169,7 +179,7 @@ async def evaluate(
 ) -> GateMetrics:
     results = []
     for item in rs.items:
-        top, score = await retriever.top_docs(item.query, item.role, collection=collection)
+        top, score = await retriever.top_docs(item, collection=collection)
         results.append((item, top, score))
     return metrics(results, threshold)
 
@@ -206,3 +216,37 @@ def decide(
     reason = (f"so với bản đang chạy: Recall@5 không tụt quá {GATE_MAX_DELTA:.2f}, "
               f"trả lời bừa không tăng quá {GATE_MAX_DELTA:.2f}")  # fmt: skip
     return GateDecision(ok, "c", "evaluated", reason, new, old)
+
+
+# ---- Quét ngưỡng (Q-3c-15, `eval_cli.py --sweep`) -------------------------------------------------
+
+# 0,30 … 0,90, bước 0,05 = 13 điểm — chỉ để QUAN SÁT độ nhạy, KHÔNG dùng để chọn RETRIEVAL_THRESHOLD (D-22).
+SWEEP_THRESHOLDS: tuple[float, ...] = tuple(round(0.30 + 0.05 * i, 2) for i in range(13))
+
+type SearchPair = tuple[list[str], float]  # (doc_id theo hạng, top_score) — từ `Retriever.search_once`
+
+
+@dataclass(frozen=True)
+class SweepPoint:
+    threshold: float
+    metrics: GateMetrics
+
+
+def sweep(
+    rs: RetrievalSet,
+    pairs: Mapping[str, tuple[SearchPair, SearchPair]],
+    thresholds: Sequence[float] = SWEEP_THRESHOLDS,
+) -> list[SweepPoint]:
+    """Hàm THUẦN — không gọi mạng. `pairs[item.id] = (first, alt)`: `first` = `search_once(use_intent=True)`,
+    `alt` = `search_once(use_intent=False)` (mô phỏng D-23 CHO TỪNG ngưỡng T, không phải ngưỡng thật đang chạy):
+    `first.top_score ≥ T` → dùng `first`; ngược lại `alt.top_score ≥ T` → dùng `alt`; ngược lại vẫn `first`
+    (đúng ngữ nghĩa D-23 thật: không bao giờ trả `alt` khi `alt` cũng dưới ngưỡng)."""
+    out = []
+    for t in thresholds:
+        results: list[tuple[EvalItem, list[str], float]] = []
+        for item in rs.items:
+            first, alt = pairs[item.id]
+            chosen = first if first[1] >= t else (alt if alt[1] >= t else first)
+            results.append((item, chosen[0], chosen[1]))
+        out.append(SweepPoint(t, metrics(results, t)))
+    return out

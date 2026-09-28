@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 models ml-bench
+.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 models ml-bench rerank-bench
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -130,6 +130,15 @@ ml-bench:
 	$(COMPOSE) exec -T ml-service python -m app.bench
 	docker stats --no-stream
 
+# Đo tốc độ + độ lệch int8 của reranker TRONG TIẾN TRÌNH, không qua HTTP (Q-3a-16) — chọn cấu hình rag_rerank_k
+# / threads / int8. Nạp model bằng lock thật (`make models` trước) — DỪNG service đang chạy trước khi đo (torch
+# tranh CPU với service thật sẽ làm số đo sai): `docker compose stop backend worker ml-service` rồi `make up`
+# lại sau khi đo xong. Ví dụ: make rerank-bench KB_DIR=backend/tests/fixtures/kb ARGS="--k 10,20 --threads 3,4 --int8"
+rerank-bench:
+	$(COMPOSE) build ml-service
+	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/kb:ro" ml-service \
+	  python -m app.rerank_bench --kb /kb $(ARGS)
+
 # Kiểm schema mock_services/seed.json rồi nạp lại vào mock đang chạy (/_admin/reset — đồng thời tắt
 # mọi lỗi đang bơm). Cần `make up` trước.
 seed:
@@ -144,9 +153,14 @@ probe:
 eval:
 	@echo "TODO (Phase 8): chưa có harness M8 (P8). STRATEGY=$(STRATEGY) SPLIT=$(SPLIT)" >&2; exit 1
 
-# Ablation 4 cấu hình truy hồi (D-25) trên tập dev.
+# Đo Recall@5/FG/MRR truy hồi trên bản KB ĐANG CHẠY (alias kb_current, Q-3c-15) — không ingest lại. Cần `make up`
+# và đã `make ingest` trước. `--sweep` thêm bảng 13 ngưỡng (chỉ quan sát, KHÔNG chọn ngưỡng — D-22); `--csv` in
+# CSV thay bảng người đọc. Ablation 4 cấu hình truy hồi (D-25, Phase 5) là việc KHÁC, làm sau, có thể dùng lại
+# CLI này với tham số khác — không nhầm với việc này.
+# Ví dụ: make eval-rag KB_DIR=backend/tests/fixtures/kb ARGS=--sweep
 eval-rag:
-	@echo "TODO (Phase 5): chưa có ablation RAG (D-25)." >&2; exit 1
+	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/srv/kb:ro" backend \
+	  python -m app.rag.eval_cli --kb-dir /srv/kb $(ARGS)
 
 # Locust theo 5 kịch bản huong-dan mục 14.4.
 load:

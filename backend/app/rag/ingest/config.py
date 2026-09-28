@@ -14,7 +14,6 @@ INGEST_EMBED_GROUP = 1  # Q-3b-1: số văn bản mỗi lời gọi embed khi in
 DENSE_DIM = 1024
 ALIAS = "kb_current"
 COLLECTION_RE = r"^kb_[0-9a-f]{64}$"
-GATE_PREFETCH = 20  # dense-only: số điểm lấy trước khi bỏ trùng doc
 GATE_TOP_DOCS = 5
 GATE_MIN_RECALL = 0.80  # 3-Q15 (b)
 GATE_MAX_FALSE_GROUNDING = 0.05  # 3-Q15 (b)

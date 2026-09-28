@@ -221,7 +221,8 @@ async def test_b1_run_ingest_stops_at_step_1(tmp_path: Path) -> None:
     unused = cast(Any, None)  # bước 1 dừng trước khi đụng Qdrant, ml-service, DB
     out, err = io.StringIO(), io.StringIO()
     deps = IngestDeps(index=unused, ml=unused, counter=unused, repo=unused, clock=CLOCK, app_env="test",
-                      retrieval_threshold=0.6, keep_old=2, config_dir=CONFIG_DIR, out=out, err=err)  # fmt: skip
+                      retrieval_threshold=0.6, keep_old=2, config_dir=CONFIG_DIR, out=out, err=err,
+                      rag=unused)  # fmt: skip
     assert await run_ingest(IngestOptions(kb), deps) == 1
     lines = err.getvalue().splitlines()
     assert f"kb/vpn/KB-VPN-901.md:{LINE['version']}: version: phải ≥ 1" in lines
@@ -241,6 +242,7 @@ async def test_step0_flag_rejected_outside_dev_test(tmp_path: Path) -> None:
     for env in ("prod", "staging", None):
         err = io.StringIO()
         deps = IngestDeps(index=unused, ml=unused, counter=unused, repo=unused, clock=CLOCK, app_env=env,
-                          retrieval_threshold=0.6, keep_old=2, config_dir=CONFIG_DIR, out=io.StringIO(), err=err)  # fmt: skip
+                          retrieval_threshold=0.6, keep_old=2, config_dir=CONFIG_DIR, out=io.StringIO(), err=err,
+                          rag=unused)  # fmt: skip
         assert await run_ingest(IngestOptions(tmp_path / "kb", allow_unevaluated=True), deps) == 1
         assert err.getvalue().startswith("bước 0: --allow-unevaluated chỉ dùng khi APP_ENV ∈ {dev,test}")

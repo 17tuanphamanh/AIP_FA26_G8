@@ -25,7 +25,7 @@ from app.graph.context import current_run
 # vào `detail`. `risk` bung ra các cột điểm log 4.
 _SAME_NAME_COLUMNS = frozenset({
     "intended_action", "exit_code", "block_reason", "close_reason", "intent",
-    "approval_result", "action_plan_hash", "approver_id", "note",
+    "approval_result", "action_plan_hash", "approver_id", "note", "kb_version",
 })  # fmt: skip
 _DETAIL_FIELDS = frozenset({"escalation_note", "escalation_reason_detail", "aggregate_status"})
 _RISK_COLUMNS = (

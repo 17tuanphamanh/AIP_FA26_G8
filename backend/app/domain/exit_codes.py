@@ -58,3 +58,21 @@ BLOCK_TO_CLOSE: dict[BlockReason, CloseReason] = {
 }
 
 SECURITY_BLOCK_REASONS = frozenset({BlockReason.REPEATED_AUTH_FAILURE, BlockReason.INJECTION_DETECTED})
+
+
+# Giá trị `escalations.reason_detail`/`escalation_reason_detail` hợp lệ (Phase 3, mục 3.4 + giá trị
+# đã có từ Phase 2 ở node giả B1/B3 và runner). Test AST (test_state_keys_ast.py, c33) quét mọi chuỗi
+# gán cho `escalation_reason_detail` trong `graph/**` phải thuộc tập này.
+REASON_DETAILS: frozenset[str] = frozenset({
+    # Phase 3 mục 3.4 (22 giá trị)
+    "rag_system_error", "no_grounding", "llm_unavailable", "llm_schema_error",
+    "screening_unavailable", "injection_in_reply", "intent_not_enabled",
+    "multi_intent_not_enabled", "tool_system_error", "max_loops_exceeded",
+    "invalid_citation", "output_guard_block", "clarification_exhausted",
+    "clarify_timeout", "off_topic_twice", "target_check_error", "llm_layer_disabled",
+    "recheck_failed", "action_plan_changed_since_approval", "person_no_longer_valid",
+    "exec_failed", "exec_interrupted",
+    # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
+    "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
+    "out_of_scope", "role_unmappable", "recover_exhausted",
+})  # fmt: skip

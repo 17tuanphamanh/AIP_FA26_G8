@@ -22,6 +22,7 @@ from app.core.clock import SystemClock
 from app.db.kb import KbRepo
 from app.ml import MlClient
 from app.rag.ingest.pipeline import STEP_NOTE, IngestDeps, IngestOptions, run_ingest
+from app.rag.retriever import RagConfig
 from app.rag.token_counter import MlTokenCounter
 from app.rag.vector_store import QdrantIndex
 from app.settings import Settings, get_policy
@@ -50,6 +51,7 @@ async def _build_deps(settings: Settings) -> AsyncIterator[IngestDeps]:
             index=QdrantIndex(qdrant), ml=ml, counter=MlTokenCounter(ml), repo=KbRepo(engine), clock=SystemClock(),
             app_env=settings.app_env, retrieval_threshold=get_policy().constants.RETRIEVAL_THRESHOLD,
             keep_old=settings.rag_keep_old_collections, config_dir=settings.config_dir,
+            rag=RagConfig.from_settings(settings),
         )  # fmt: skip
     finally:
         await http.aclose()

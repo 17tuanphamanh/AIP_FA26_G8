@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 import httpx
+from qdrant_client import AsyncQdrantClient
 
 from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
@@ -29,7 +30,7 @@ from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines
 from app.db.tickets import SqlTicketStore
-from app.graph.builder import build_graph, fake_nodes
+from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import (
     FakeScenario,
@@ -48,7 +49,13 @@ from app.graph.ports import (
     TurnStore,
 )
 from app.graph.runner import Runner
+from app.graph.tracing import NodeFn
 from app.ml import MlClient, MlPort
+from app.rag.bm25 import load_lexicon
+from app.rag.ingest.kbversion import pipeline_sha
+from app.rag.ports import RagPort
+from app.rag.retriever import RagConfig, Retriever
+from app.rag.vector_store import QdrantIndex
 from app.settings import Settings, get_escalation_templates, get_policy
 from app.tools.wiring import build_read_registry
 
@@ -102,6 +109,16 @@ async def open_runtime(
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
         ml = MlClient(ml_http, ml_token.get_secret_value(), clock=clock)
+        qdrant = AsyncQdrantClient(
+            url=settings.qdrant_url, timeout=int(settings.rag_qdrant_timeout_s), check_compatibility=False
+        )  # AsyncQdrantClient.timeout: int | None — rag_qdrant_timeout_s (float, mục 3.5) làm tròn xuống
+        stack.push_async_callback(qdrant.close)
+        rag: RagPort = Retriever(
+            QdrantIndex(qdrant), ml, RagConfig.from_settings(settings),
+            threshold=get_policy().constants.RETRIEVAL_THRESHOLD,
+            pipeline_sha=pipeline_sha(settings.config_dir),
+            lexicon=load_lexicon(settings.config_dir), clock=clock,
+        )  # fmt: skip
         if directory is None:
             if settings.svc_agent_token is None:
                 log.warning("SVC_AGENT_TOKEN chưa cấu hình — B1 không đọc được AD, ticket sẽ ra E2")
@@ -112,15 +129,21 @@ async def open_runtime(
                 directory = registry
         opened = _open(
             settings, engines, clock, can_execute=can_execute, directory=directory,
-            approver_id=approver_id, scenario=scenario, ml=ml,
+            approver_id=approver_id, scenario=scenario, ml=ml, rag=rag,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
+
+
+def select_nodes(settings: Settings, deps: NodeDeps) -> dict[str, NodeFn]:
+    """3-Q32 cách A: `FAKE_SCENARIO` đặt → toàn bộ node giả (gate2 không đổi); không đặt → node giả + node
+    thật đã có (`builder.real_nodes`)."""
+    return fake_nodes(deps) if settings.fake_scenario is not None else real_nodes(deps)
 
 
 @asynccontextmanager
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
-    approver_id: str | None, scenario: FakeScenario, ml: MlPort,
+    approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
@@ -132,13 +155,13 @@ async def _open(
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
-        templates=get_escalation_templates(), ml=ml, approver_id=approver_id, scenario=scenario,
+        templates=get_escalation_templates(), ml=ml, rag=rag, approver_id=approver_id, scenario=scenario,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size
     ) as saver:
         runner = Runner(
-            build_graph(fake_nodes(deps), saver),
+            build_graph(select_nodes(settings, deps), saver),
             lock=PgTicketLock(engines.lock), turns=turns, audit=AuditWriter(engines.main),
             effects=SqlEffectStore(engines.main), spans=SqlSpanSink(engines.main), clock=clock,
             concurrency=settings.graph_concurrency, can_execute=can_execute,

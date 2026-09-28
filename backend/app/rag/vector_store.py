@@ -1,9 +1,13 @@
-"""Port `VectorIndex` + `QdrantIndex` (thiết kế Phase 3 mục 5.7; PLAN-3b mục 4.7).
+"""Port `VectorIndex` + `QdrantIndex` (thiết kế Phase 3 mục 5.7, 6.2 [3c]; PLAN-3b mục 4.7, PLAN-3c mục 3.2).
 
 - Collection `kb_<64 hex>`: vector dense 1024 chiều cosine + sparse `bm25` (IDF), 6 payload index.
 - Đổi alias NGUYÊN TỬ: đúng MỘT lời gọi `update_collection_aliases([DeleteAlias?, CreateAlias])` — không bao giờ
   xoá rồi tạo bằng hai lệnh (khe giữa hai lệnh là lúc không có KB nào). M-3b-5 kiểm bằng review + test spy.
-- Không retry (ingest chạy tay): lỗi Qdrant đổi thành `VectorStoreError` kèm thao tác, pipeline in rồi trả mã 1/2.
+- Ingest (3b) không retry (chạy tay): lỗi Qdrant đổi thành `VectorStoreError` kèm thao tác, pipeline in rồi trả mã
+  1/2. Truy hồi (3c, `Retriever._call`) CÓ retry ở tầng trên — `_classify` phân biệt lỗi tạm thời
+  (`VectorStoreTransient`, retry được) với 404 (`CollectionNotFound`, không retry — collection bị dọn) và lỗi hợp
+  đồng khác (`VectorStoreError` gốc, nổi lên thành E9). Bản thân `vector_store` KHÔNG retry, không tự dựng `Filter`
+  (chỉ nhận từ bên gọi, `rag/filters.py`).
 """
 
 import re
@@ -13,6 +17,7 @@ from typing import Any, Protocol
 
 import httpx
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.common.client_exceptions import ResourceExhaustedResponse
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from qdrant_client.models import (
     CreateAlias,
@@ -21,10 +26,15 @@ from qdrant_client.models import (
     DeleteAliasOperation,
     Distance,
     Filter,
+    Fusion,
+    FusionQuery,
     Modifier,
     PayloadSchemaType,
     PointStruct,
+    Prefetch,
+    Record,
     ScoredPoint,
+    SparseVector,
     SparseVectorParams,
     VectorParams,
 )
@@ -48,12 +58,37 @@ class VectorStoreError(Exception):
     """Qdrant lỗi (mạng, HTTP, phản hồi hỏng) — lỗi dự kiến của ingest, không phải bug."""
 
 
+class VectorStoreTransient(VectorStoreError):
+    """Lỗi tạm thời (transport, timeout, 5xx, 429) — `Retriever._call` (3c) coi là retry được."""
+
+
+class CollectionNotFound(VectorStoreError):
+    """HTTP 404 — collection không tồn tại (bị dọn giữa chừng) — KHÔNG retry."""
+
+
+def _classify(op: str, e: Exception) -> VectorStoreError:
+    msg = f"Qdrant {op}: {type(e).__name__}: {e}"
+    if isinstance(e, ResponseHandlingException) and isinstance(e.source, httpx.TransportError):
+        return VectorStoreTransient(msg)
+    if isinstance(e, ResourceExhaustedResponse):
+        return VectorStoreTransient(msg)
+    if isinstance(e, UnexpectedResponse):
+        if e.status_code == 404:
+            return CollectionNotFound(msg)
+        if e.status_code is not None and (e.status_code >= 500 or e.status_code == 429):
+            return VectorStoreTransient(msg)
+        return VectorStoreError(msg)
+    if isinstance(e, httpx.TransportError):
+        return VectorStoreTransient(msg)
+    return VectorStoreError(msg)
+
+
 @contextmanager
 def _qdrant(op: str) -> Iterator[None]:
     try:
         yield
-    except (UnexpectedResponse, ResponseHandlingException, httpx.HTTPError) as e:
-        raise VectorStoreError(f"Qdrant {op}: {type(e).__name__}: {e}") from e
+    except (UnexpectedResponse, ResponseHandlingException, ResourceExhaustedResponse, httpx.HTTPError) as e:
+        raise _classify(op, e) from e
 
 
 class VectorIndex(Protocol):
@@ -69,7 +104,10 @@ class VectorIndex(Protocol):
     async def switch_alias(self, alias: str, target: str, *, had_alias: bool) -> None: ...
     async def snapshot(self, name: str) -> str: ...
     async def payload_index_fields(self, name: str) -> set[str]: ...
-    async def query_dense(self, name: str, vector: list[float], flt: Filter, limit: int) -> list[ScoredPoint]: ...
+    async def hybrid_query(
+        self, name: str, dense: list[float], sparse: SparseVector, flt: Filter, prefetch_k: int, limit: int
+    ) -> list[ScoredPoint]: ...
+    async def scroll_window(self, name: str, flt: Filter, limit: int) -> list[Record]: ...
 
 
 class QdrantIndex:
@@ -145,9 +183,25 @@ class QdrantIndex:
             info = await self._client.get_collection(name)
         return set(info.payload_schema or {})
 
-    async def query_dense(self, name: str, vector: list[float], flt: Filter, limit: int) -> list[ScoredPoint]:
+    async def hybrid_query(
+        self, name: str, dense: list[float], sparse: SparseVector, flt: Filter, prefetch_k: int, limit: int
+    ) -> list[ScoredPoint]:
         with _qdrant(f"query {name}"):
             result = await self._client.query_points(
-                name, query=vector, using=DENSE, query_filter=flt, limit=limit, with_payload=True
+                name,
+                prefetch=[
+                    Prefetch(query=dense, using=DENSE, limit=prefetch_k, filter=flt),
+                    Prefetch(query=sparse, using=SPARSE, limit=prefetch_k, filter=flt),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=limit,
+                with_payload=True,
             )
         return list(result.points)
+
+    async def scroll_window(self, name: str, flt: Filter, limit: int) -> list[Record]:
+        with _qdrant(f"scroll {name}"):
+            points, _ = await self._client.scroll(
+                name, scroll_filter=flt, limit=limit, with_payload=True, with_vectors=False
+            )
+        return list(points)

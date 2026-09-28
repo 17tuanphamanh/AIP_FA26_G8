@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); **chặng 3b (RAG ingest): code + unit + lint + mutation 10/10 + `make test` xanh (1847 + mock 86 + ml 61), chưa commit** — mục "Phase 3 — chặng 3b" |
+| Cập nhật | 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); **chặng 3c (RAG query + node B8–B9) đang làm theo `PLAN-3c.md`, bước S0 xong (L1 đã chạy)** — mục "Phase 3 — chặng 3c" |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -1226,6 +1226,839 @@ Kế hoạch đã duyệt: `PLAN-3b.md` ở gốc repo (KHÔNG commit). Thiết 
      khi cần. Ngoài ra `rag` import `app.settings` (không bị cấm, spec không liệt kê).
 - **Việc đầu 3c:** `make up` + `make ingest KB_DIR=backend/tests/fixtures/kb` (`--dry-run` rồi chạy thật), ghi số đoạn,
   thời gian embed, Recall/FG.
+- **Commit + CI:** `a711b8e` (66 file, gồm 4 file spec Claude chat sửa: phase3 v1.4, 01 v1.8, P8, decisions) — push
+  `dev-tuananh`; CI GitHub **xanh**, run `36344625601` (workflow `ci`, 2m14s, 28/09/2026; người theo dõi): `make tokenizer`
+  (lần đầu, tải từ huggingface.co) xanh, `make lint` xanh, `make test` xanh. Cảnh báo CI (không chặn): Node.js 20 của
+  `actions/cache@v4`, `actions/checkout@v4`, `astral-sh/setup-uv@v6` bị ép chạy Node 24; `ubuntu-latest` chuyển Ubuntu 26
+  từ 19/10/2026. **Chặng 3b đóng.** Chưa commit: `PLAN-3b.md` (theo luật), `.env.example` (một dòng chú thích
+  `RAG_KEEP_OLD_COLLECTIONS` — để ngoài vì lệnh commit loại `.env*`, chờ người quyết).
+
+## Phase 3 — chặng 3c: RAG query + node B8–B9 (28/09/2026, đang làm, chưa commit)
+
+Kế hoạch đã duyệt: `PLAN-3c.md` ở gốc repo (KHÔNG commit). Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` mục 6;
+khi lệch, `PLAN-3c.md` thắng (đã gồm chốt Q-3c), trừ 13 bất biến và mục [Chốt] của spec. Chế độ model: S2 và S14
+chạy bằng Opus, còn lại Sonnet.
+
+**Quyết định của người (Q-3c, 28/09/2026):**
+
+| Mã | Chốt |
+|---|---|
+| Q-3c-1 | Đọc alias **và** metadata collection cũng qua retry (`call_with_retry`). Transport lỗi sau retry → `stage="search"` (Qdrant không tới được); alias **không tồn tại** → `stage="alias"`. (c12 + c13 khớp chữ) |
+| Q-3c-2 | `pipeline_sha` của collection ghim ≠ cấu hình hiện tại → `RetrievalSystemError(stage="pipeline")` → E2 `rag_system_error`, **0 lời gọi ml**. `"pipeline"` là giá trị stage mới (chỉ ở audit/state; không phải mã thoát, không phải `reason_detail`) |
+| Q-3c-3 | Embed câu truy vấn **một lần** mỗi lượt; lần chạy lại D-23 dùng lại vector dense + sparse. c11 đổi thành: lần chạy lại lỗi ở **rerank** → `stage="rerank"` |
+| Q-3c-4 | `Settings.rag_deadline_s = 50` bọc toàn bộ `retrieve` bằng `asyncio.timeout`; hết giờ → `RetrievalSystemError(stage=<bước đang chạy>, detail="deadline")` → E2. Test tĩnh `rag_deadline_s < worker_stale_turn_seconds / 2` |
+| Q-3c-5 | Body health luôn có `"kb": {"alias": "kb_current", "collection": "kb_<…>" \| null, "status": "ready" \| "missing" \| "unknown"}`; trường này **không** đổi mã. Qdrant tắt → **503** (do check lõi `qdrant`) + `kb.status="unknown"`. Chưa ingest → 200, `status="missing"`, `collection=null` |
+| Q-3c-6 | Cổng kiểm nhánh (c): bản cũ (đích alias) có `pipeline_sha` ≠ cấu hình hiện tại → **không** đánh giá bản cũ, áp tiêu chí tuyệt đối nhánh (b) cho bản mới, in ghi chú. Ghi PROGRESS "**ngoại lệ 3-Q15**" để Claude chat sửa spec |
+| Q-3c-7 | Cổng kiểm truyền `intent` của câu kiểm tra nếu ∈ `KB_REQUEST_TYPES`, ngược lại `None` |
+| Q-3c-8 | Điểm log 3 ghi vào `detail` + cột `kb_version` (theo spec). Các cột `query/top_score/doc_ids/retrieval_error/tool_retry_count` của `audit_logs` **không** điền ở 3c — ghi PROGRESS, quyết ở Phase 4 (P9) |
+| Q-3c-9 | Qdrant 4xx khác 404 / response sai schema / lỗi khác không phải transport → exception nổi lên → **E9** (lỗi hợp đồng, bảng 3.3). 404 ở search/metadata → `stage="alias"` (collection bị dọn); 404 ở expand → `stage="expand"` |
+| Q-3c-10 | `retries` / `tool_retry_count` = **số lần thử lại**, suy từ `attempts`: thành công → `attempts`; lỗi → `max(0, attempts − 1)` (hết lượt = 2). Ghi PROGRESS để 3f thống nhất cho tool (điểm log 2) |
+| Q-3c-11 | Chỉ chuyển node giả **b08** sang `graph/nodes/fake/`; node khác chuyển khi có bản thật |
+| Q-3c-12 | S2 mô phỏng số cổng kiểm với FakeMl trước khi đổi gate; **FG > 0,05 hoặc Recall < 0,8 → dừng hỏi**, không sửa fixture |
+| Q-3c-13 | `content_of(payload)` = `text` bỏ tiền tố `f"{title} › {heading_path}\n\n"` (không khớp tiền tố → trả nguyên `text`); ngân sách token dùng `token_count` (tính dư, an toàn). Không ingest lại |
+| Q-3c-14 | Làm ở 3c: hằng `REASON_DETAILS` (3.4) + test AST `reason_detail`; test AST keyword `goto(...)` ⊆ `STATE_KEYS` (3.1) |
+| Q-3c-15 | `eval-rag --sweep`: in bảng + `--csv` ra stdout (người chuyển hướng vào `eval/reports/`), không vẽ PNG. D-23 mô phỏng theo từng ngưỡng bằng 2 lần `search_once` mỗi câu |
+| Q-3c-16 | Tiêu chí Q-3a-16 mục 5: p95 ≤ 9 s; `TIMEOUT_S["rerank"] = max(10, ceil(2 × p95)) ≤ 18`; int8 chỉ nhận khi max\|Δ\| ≤ 0,05, top-1 trùng 100 %, 0 câu đổi phán quyết ở 0,6. **Không cấu hình nào đạt → dừng báo người**, không tự chọn |
+| gate2 | **Cách A** (3-Q32): `FAKE_SCENARIO` đặt → toàn bộ node giả (gate2 không đổi); không đặt → node giả + **b08 thật** |
+
+Ghi chú (không cần chốt, code giữ nguyên): `ChunkRef` không `frozen` (spec ghi frozen); `base_filter(role)` thay vì
+`base_filter(ctx)` (Q-3b-6) — bên gọi truyền `ctx.role`; spec gọi `retrieve`/`expand_for_answer` là hàm tự do, code
+là phương thức của `Retriever` (cùng nghĩa, spec mục 0 cho phép).
+
+**Nhật ký (S0–S14 của `PLAN-3c.md` mục 9):**
+
+- **S0 xong** — mục này. Kết quả **L1** (người chạy, 28/09/2026): `make up` → `make ingest KB_DIR=backend/tests/fixtures/kb
+  ARGS=--dry-run` → `make ingest KB_DIR=backend/tests/fixtures/kb`:
+  - `kb_version` = `c88b47a2c38958836ba4d73e2928070f8ea71a431641fc7ed1317b210fa593a9`.
+  - Dry-run: 5/6 tài liệu enabled, 20 đoạn, `max text_tokens` = 363, `truncated` = 0.
+  - Embed 20 đoạn: tổng 9 345 ms, p50 445 ms, max 852 ms.
+  - Cổng kiểm (b) dense-only, model thật: Recall@5 = 1,000; trả lời bừa = 0,333 (6 câu âm); MRR = 1,000 →
+    **không đạt** (trả lời bừa > 0 dự kiến, cổng dense-only dùng thang cosine ≠ thang rerank — ghi chú 3b), mã
+    thoát 1, alias giữ nguyên (dự kiến, không phải lỗi).
+  - Collection `kb_c88b47a2…` để lại (không dọn) — bước 14 của lần `make ingest` **sau** (khi B8 thật đã dùng
+    được collection này) sẽ dọn theo `rag_keep_old_collections`.
+  - **Ghi chú cho S2/S9:** 20 đoạn enabled = đúng `rag_prefetch_k` mặc định (20) → khi mô phỏng cổng kiểm ở S2,
+    hybrid lấy hết đoạn qua filter nên kết quả mô phỏng chỉ phụ thuộc rerank + lọc quyền, **không** phản ánh việc
+    RRF cắt bớt khi `K < tổng số đoạn` (nếu sau này đổi `rag_prefetch_k`/`rag_rerank_k` xuống dưới 20 thì RRF mới
+    thật sự quyết định đoạn nào vào rerank) — S2 phải ghi rõ giới hạn mô phỏng này khi báo cáo số. L2
+    (`rerank-bench`) dùng `--passage-tokens 363` (= `max text_tokens` đo được ở đây).
+- **S1 xong** (Sonnet) — `settings.py`: 8 field `rag_*` (mục 3.5, mặc định đúng bảng), 3 validator
+  (`_rag_rerank_bounds`: `1 ≤ rag_rerank_k ≤ min(rag_prefetch_k, 32)` và `rag_top_n ≤ rag_rerank_k`, 32 hardcode
+  kèm comment vì import `app.ml.client` ở `settings.py` sẽ vòng qua `tools.retry -> settings`;
+  `_rag_deadline_below_stale`: `rag_deadline_s < worker_stale_turn_seconds / 2`); `SlotsFile.query_slots:
+  tuple[str, ...] = ()` (mặc định rỗng — fixture tối giản của `test_tool_registry.py` không khai báo mục này
+  vẫn nạp được). `config/slots.yaml` thêm `query_slots: [error_code]`. `.env.example` thêm dòng chú thích 8 biến
+  `RAG_*` mới (không giá trị). `ticket_state.py` thêm `kb_version: str | None`, `intent_filter_fallback: bool`
+  vào nhóm "phân loại / chẩn đoán / tra cứu". `goto._SAME_NAME_COLUMNS` thêm `"kb_version"`. `domain/exit_codes.py`:
+  `REASON_DETAILS` = 22 giá trị spec mục 3.4 + 6 giá trị đã có trong code trước 3c (grep
+  `escalation_reason_detail=`): `execution_interrupted`, `identity_unverifiable`, `intent_low_confidence`,
+  `out_of_scope`, `role_unmappable`, `recover_exhausted` (qua hằng `RECOVER_EXHAUSTED` ở `runner.py` — AST test
+  phải giải hằng số mới bắt được, xem dưới).
+  - Test mới: `unit/test_rag_timeouts.py` (c32 — 6 test: mặc định thoả 2 biên thời gian, `rag_rerank_k` mặc định
+    ≤ 1 lô rerank, validator từ chối `rag_rerank_k` sai [0, 33], `rag_top_n` > `rag_rerank_k`, `rag_rerank_k` >
+    `rag_prefetch_k`, `rag_deadline_s` quá lớn). `unit/test_state_keys_ast.py` (c33 — AST, không dựng RunContext):
+    (1) mọi kwarg của `goto(...)` trong `graph/nodes/**`, trừ 4 tham số riêng của chữ ký (`next_node`, `step`,
+    `event`, `audit_detail`, không vào `**fields`), phải ⊆ `STATE_KEYS`, có mẫu giả chứng minh bắt được key lạ;
+    (2) mọi chuỗi gán `escalation_reason_detail=` trong toàn `graph/**` — kể cả qua hằng số module-level như
+    `RECOVER_EXHAUSTED` (giải bằng bảng `NAME = "literal"` top-level cùng file) — phải ⊆ `REASON_DETAILS`, có mẫu
+    giả chứng minh bắt được cả chuỗi trực tiếp lẫn qua hằng số chưa chốt. `unit/test_config_files.py` thêm
+    `test_query_slots_match_3c`. `unit/test_graph_goto.py` thêm `test_goto_copies_kb_version_to_audit_column` (c35).
+  - Kiểm: `uv run pytest backend/tests/unit -q -k "settings or config_files or state_keys or goto or timeouts"` —
+    **xanh** (không đếm số cụ thể, lệnh lọc). `uv run pytest backend/tests/unit -q` toàn bộ — **1721 passed**
+    (không đổi CI mock/ml). `ruff check` + `mypy backend/app` (143 file) — xanh.
+  - Lần đầu để `query_slots` là field bắt buộc (không default) → `test_import_fails_when_slots_config_disagrees`
+    (`test_tool_registry.py`, fixture slots.yaml tối giản có sẵn từ trước) đỏ vì lỗi Pydantic "Field required"
+    che mất thông điệp gốc kỳ vọng (chứa `"TOOL_ARG_SLOTS"`) — đổi sang mặc định `()`, xanh lại; không sửa test cũ.
+- **S2 — DỪNG theo Q-3c-12 (Opus, 28/09/2026): FG = 0,333 > 0,05.** Mô phỏng bằng script tạm trong scratchpad (không
+  vào repo): `load_kb` + `chunk_doc` với `MlTokenCounter(FakeMlService().client())` trên fixture KB → **20 đoạn** (khớp
+  L1); lọc base (enabled + sensitivity theo role) + intent (`request_type ∈ [intent, general]`; cổng: intent ∉
+  `KB_REQUEST_TYPES` → `None`, Q-3c-7); hybrid = dense `embed_text` FakeMl + BM25 (`tokenize_vi`, IDF kiểu Qdrant trên
+  toàn collection) → RRF (k = 2) → `limit = rerank_k`; rerank FakeMl; sắp `(-score, rrf_idx)`, dedupe doc, top 5; D-23;
+  chỉ số bằng `gate.metrics(…, 0.6)`.
+
+  | Biến thể | Số đoạn | Recall@5 | FG (6 câu âm) | MRR |
+  |---|---|---|---|---|
+  | Bộ đủ, prefetch 20 / rerank 20 | 20 | 1,000 | **0,333** | 0,938 |
+  | Tắt KB-VPN-004 (b17), 20/20 | 16 | 0,875 (đổi −0,125, chỉ P006 trượt) | **0,333** | 0,812 |
+  | Bộ đủ, rerank_k = 10 (xấp xỉ) | 20 | 1,000 | 0,333 | 0,938 |
+  | Tắt 004, rerank_k = 10 (xấp xỉ) | 16 | 0,875 | 0,333 | 0,812 |
+
+  - **Giới hạn mô phỏng:** tổng đoạn sau lọc ≤ 20 = `rag_prefetch_k` = `rag_rerank_k` → hybrid lấy HẾT đoạn, kết quả chỉ
+    phụ thuộc rerank + lọc; RRF chỉ còn vai trò phá hoà. Biến thể `rerank_k = 10` là **xấp xỉ** (IDF, hằng RRF k của
+    Qdrant chưa kiểm trên máy): trên fixture này ra cùng số, nhưng khi K < số đoạn thì RRF thật quyết định đoạn nào vào
+    rerank — số thật chỉ có ở L3/L5.
+  - **Nguyên nhân FG:** rerank FakeMl = |âm tiết câu ∩ âm tiết đoạn| / |âm tiết câu| — câu âm "gần chủ đề" chung nhiều
+    âm tiết với KB VPN: N003 top 0,600 (= T, tính là ≥ T; hoà KB-VPN-001/003), N005 top 0,700 (employee, KB-VPN-003
+    chung "tường lửa/cổng/vpn"). N002 0,556, N004 0,500, N006 0,333, N001 0 (intent account → rỗng, D-23 cũng không đạt).
+    3b (S7, dense-only FakeMl) có max cosine câu âm 0,282 → FG 0; đổi sang thang rerank thì FG nhảy lên.
+  - **Dự đoán test Q (PLAN mục 7):** c6 ✓ (employee không có 007; l1 có, 0,900); c7 ✓ (`fallback_tried`, không 007);
+    c9 ✓; c10 ✓ (fallback, top 0,692); c11 ✓ (lần 1 intent account rỗng → không gọi rerank, D-23 gọi rerank).
+    **c4 mong manh:** top-1 hoà 3 tài liệu ở 0,833 (001/005/003), 001 thắng chỉ nhờ `rrf_idx` → phụ thuộc thứ hạng RRF
+    thật của Qdrant. **c5 ĐỎ theo mô phỏng:** "đăng ký MFA thế nào?" (intent None hoặc account) → top 0,600 = T
+    (KB-VPN-001#4, chung "đăng ký", "thế nào") → B9 cho đi tiếp B10, **không** ra E3.
+  - Hệ quả thêm: test b17 (`test_rag_ingest_pg.py`) đang chờ chuỗi `"trả lời bừa 0.000"`; với adapter `retrieve` cổng
+    (b) sẽ **không đạt** trên fixture → các test ingest cần cổng đạt sẽ đỏ.
+  - Ghi chú phụ: P001 (0,462) và P002 (0,182) có tài liệu đúng trong top-5 nhưng dưới T → Recall không phạt, nhưng qua
+    node thật sẽ ra E3.
+  - **Chưa sửa gì** (fixture, FakeMl, gate). Chờ người quyết hướng — bước S3 trở đi chưa làm.
+  - **Người chốt (28/09/2026): phương án B có điều kiện** — luật rerank FakeMl tổng quát (cấm đặc cách câu/doc), chỉ đổi
+    rerank, test 3a xanh, mô phỏng lại MỘT lần không sửa fixture; đạt Recall ≥ 0,8 và FG ≤ 0,05 → tiếp; không đạt →
+    dừng, chuyển **phương án A**, không vặn luật lần hai. **FakeMl chỉ chứng minh cơ chế; số liệu cổng/ngưỡng thật
+    chọn trên model thật (D-22).**
+  - **Luật thử (một lần, chọn trước khi chạy):** độ phủ âm tiết của câu truy vấn có trọng số IDF tính trên chính các
+    passage trong request — `idf(t) = ln((N+1)/(df(t)+1)) + 1`, điểm = Σ idf(t ∈ q ∩ p) / Σ idf(t ∈ q) ∈ [0, 1]; embed
+    giữ nguyên.
+
+    | Biến thể (luật IDF) | Recall@5 | FG | MRR |
+    |---|---|---|---|
+    | Bộ đủ, 20/20 | 1,000 | **0,167** | 0,906 |
+    | Tắt KB-VPN-004, 20/20 | 0,875 | **0,167** | 0,792 |
+    | Bộ đủ, rerank_k = 10 (xấp xỉ) | 1,000 | 0,167 | 0,906 |
+    | Tắt 004, rerank_k = 10 (xấp xỉ) | 0,875 | 0,167 | 0,792 |
+
+    Câu âm lọt: **N005 = 0,620** (employee, KB-VPN-003#0; bản gốc 0,700); N003 xuống 0,509, các câu âm khác ≤ 0,348.
+    Dự đoán: c4 hết hoà (KB-VPN-001 0,811 > 0,709); c5 → 0,434 < T (E3 ✓); c6/c7/c9 ✓; **c10 hỏng** (D-23 không lấy
+    lại được: câu P006 intent account → alt < T → rỗng); c11 vẫn đi được D-23 → rerank.
+  - **Kết luận: B KHÔNG ĐẠT (FG 0,167 > 0,05) → dừng, chuyển phương án A theo chốt.** `backend/tests/fakes/fake_ml.py`
+    đã khôi phục về bản gốc (`git checkout` riêng file đó, diff chỉ có thay đổi của Claude); `test_fake_ml.py` 5 passed.
+    Chưa có unit test luật mới (không giữ luật). Chờ người xác nhận chi tiết phương án A trước khi làm S3.
+  - **Người chốt phương án A (28/09/2026)** — FakeMl gốc, không sửa fixture:
+    1. Cổng kiểm tách 2 đường test. **"Cổng chặn":** fixture + `retrieval_set.yaml` gốc → assert Recall 1,000, FG
+       0,333, không đạt, thoát 1, alias giữ nguyên; bản tắt KB-VPN-004 → Recall 0,875. **"Cổng đạt"** (đổi alias, ghi
+       bù, b17 nhánh c, dọn collection): test chép KB fixture ra thư mục tạm + `retrieval_set` RIÊNG CỦA TEST (câu có
+       đáp án như cũ; câu âm tính rõ ràng ngoài chủ đề, vd "máy in tầng 3 kẹt giấy") — không sửa fixture, **không**
+       dùng `--allow-unevaluated` để lách.
+    2. c4: assert KB-VPN-001 ∈ top-3 và `top_score ≥ T` (FakeMl gốc hoà top-1 ở 0,833 — không dựa phá hoà RRF).
+    3. c5: câu mới cùng chủ đề MFA, qua mô phỏng trước, điểm phải < T rõ.
+  - **Mô phỏng lại với FakeMl gốc (sau khi hoàn nguyên):** số cổng tái lập đúng bảng S2 đầu (bộ đủ 1,000 / 0,333 /
+    0,938; tắt 004 0,875 / 0,333 / 0,812; biến thể rerank_k = 10 xấp xỉ cùng số).
+  - **Câu c5 = "Làm sao bật xác thực 2 lớp MFA cho email?"** (âm tiết FakeMl: làm, sao, bật, xác, thực, 2, lớp, mfa,
+    email). Điểm top (T = 0,6):
+
+    | role | intent None | intent `account` | intent `vpn` |
+    |---|---|---|---|
+    | employee | 0,222 | 0,000 (lần 1 rỗng; D-23 alt 0,222 < T → trả lần 1) | 0,222 (D-23 thử, vẫn 0,222) |
+    | l1 | 0,333 (KB-VPN-007#2) | 0,000 | 0,333 |
+
+    → mọi tổ hợp < T với khoảng cách ≥ 0,267 → E3 thật. **Câu này dùng lại cho e2e h7 (TC16) ở 3h. Mọi test cần E3
+    với FakeMl phải dùng câu đã qua mô phỏng này** (script tạm `sim_gate_3c.py` trong scratchpad phiên, không vào repo —
+    phiên sau cần thì dựng lại theo mô tả ở mục S2 trên).
+  - **S2 xong (phương án A).** Chờ người cho làm S3.
+- **S3 xong** (Sonnet) — `rag/models.py` thêm phần "Truy hồi (3c)": `Stage` (6 giá trị mục 3.1, gồm `"pipeline"`
+  Q-3c-2), `RetrievalQuery` (frozen), `RetrievalResult`, `RetrievalSystemError` (`__init__(stage, retries, *,
+  kb_version=None, detail="")`), `ChunkTruncatedError`, `EvidenceBlock`; `ChunkRef` import từ
+  `app.domain.ticket_state` (không vi phạm hợp đồng 7 — `domain` không nằm trong `forbidden_modules` của
+  `rag-lower-layer`). `rag/filters.py` thêm `intent_filter(intent)` và `query_filter(role, *extra) ->
+  Filter(must=[*base_filter(role), *extra])`. `rag/query.py` (mới): `build_query`. `rag/ports.py` (mới):
+  `RagPort` Protocol (`retrieve`, `expand_for_answer`). `rag/__init__.py` export thêm `EvidenceBlock`,
+  `RetrievalQuery`, `RetrievalResult`, `RetrievalSystemError`, `build_query` (`Retriever`, `RagConfig` đợi S5).
+  - **Giữ bất biến "`Filter(` chỉ ở `filters.py`" NGAY TỪ S3** (không đợi S8 bỏ `DenseOnlyRetriever`):
+    `rag/ingest/gate.py` — nơi duy nhất khác còn gọi `Filter(must=list(base_filter(role)))` trực tiếp — đổi sang
+    gọi `query_filter(role)` (cùng giá trị, hành vi 3b không đổi, test 3b vẫn xanh); import `Filter`, `base_filter`
+    bỏ khỏi file. Việc này nằm ngoài danh sách "File tạo/sửa" của PLAN-3c mục 2 (chỉ ghi gate.py đổi ở S8) nhưng
+    cần thiết để c36 (test AST quét toàn `backend/app/rag/**`, viết ở S3) không đỏ oan trong lúc chờ S8 —
+    không đổi thiết kế, chỉ đổi CÁCH gọi cùng một filter.
+  - Test mới: `unit/test_rag_query.py` (c1, 5 test — nối slot thiếu, không nối lại (kể cả khác hoa/thường,
+    có khoảng trắng thừa), không nối `device_id` ngoài `query_slots`, bỏ qua slot thiếu/rỗng, giữ nguyên
+    `intent`). `unit/test_rag_filters.py` thêm (c2 mở rộng + c36): `intent_filter` đúng `MatchAny([intent,
+    "general"])`; `query_filter(role, *extra) == base_filter(role) + extra`; AST quét mọi file `.py` dưới
+    `app/rag/**` (≥ 10 file, không rỗng), lời gọi `Filter(` chỉ xuất hiện ở `filters.py`.
+  - Kiểm: `uv run pytest backend/tests/unit -q -k "rag_filters or rag_query"` — **20 passed**. `uv run pytest
+    backend/tests/unit -q` toàn bộ — **1746 passed**. `ruff check` (2 lỗi sắp xếp import tự `--fix` xong, còn lại
+    xanh) + `mypy backend/app` (145 file) — xanh. `PYTHONPATH=backend uv run lint-imports` — **7/7 hợp đồng
+    KEPT** (kể cả `rag-lower-layer` với `ChunkRef` mới import). `pytest backend/tests/integration --collect-only`
+    — xanh, không lỗi import.
+- **S4 xong** (Sonnet) — `rag/vector_store.py` (mục 3.2): `VectorStoreTransient`, `CollectionNotFound` (2 lớp con
+  của `VectorStoreError`, ingest 3b vẫn bắt được nguyên như cũ); `_classify(op, e)` — `ResponseHandlingException`
+  có `e.source` là `httpx.TransportError` → transient; `ResourceExhaustedResponse` → transient; `UnexpectedResponse`
+  404 → `CollectionNotFound`, ≥ 500 hoặc 429 → transient (mypy bắt `status_code: int | None` — thêm `is not None`),
+  4xx khác → lỗi gốc; `httpx.TransportError` thô → transient; còn lại (vd `ResponseHandlingException` bọc lỗi parse)
+  → lỗi gốc. `_qdrant(op)` bắt thêm `ResourceExhaustedResponse`, raise `_classify(op, e)`. Thêm `hybrid_query`
+  (Query API: 2 `Prefetch` dense/sparse cùng `limit=prefetch_k` + filter, `FusionQuery(fusion=Fusion.RRF)`,
+  `limit=limit`) và `scroll_window` (`scroll(scroll_filter=flt, limit=…, with_vectors=False)`) — cả hai vào Protocol
+  `VectorIndex` và `QdrantIndex`. `vector_store` không tự dựng `Filter`, không retry (giữ nguyên như 3b).
+  - **Lệch PLAN mục 2 (ghi rõ, không phải đổi thiết kế):** PLAN ghi S4 "bỏ `query_dense` (khỏi Protocol + class)",
+    nhưng `rag/ingest/gate.py::DenseOnlyRetriever.top_docs` vẫn gọi `index.query_dense(...)` tới khi S8 xoá hẳn
+    class đó (thay bằng `RetrieveGateAdapter` quanh `Retriever.retrieve` — chưa tồn tại, `Retriever` làm ở S5). Xoá
+    `query_dense` ngay bây giờ sẽ làm `mypy` đỏ ở `gate.py` (Protocol thiếu phương thức) dù test unit sandbox không
+    chạm tới (chỉ lộ khi chạy `make ingest` thật — không nằm giữa S4 và S8 theo lịch S9–S12). Giữ `query_dense`
+    trên cả Protocol và `QdrantIndex` kèm comment "xoá cùng lúc với S8"; xoá thật ở S8 khi `DenseOnlyRetriever`
+    biến mất — không đổi trạng thái cuối cùng, chỉ dời đúng một sub-task sang đúng bước nó thuộc về. Cùng loại
+    quyết định với việc sửa `gate.py` dùng `query_filter` ở S3 (giữ bất biến "test lúc nào cũng xanh" qua từng bước).
+  - Test mới: `unit/test_rag_vector_store_errors.py` (phần `_classify` của c26 — 3.2; SpyIndex → `RetrievalSystemError`
+    làm ở S5): 8 ca transient (2 `ResponseHandlingException`/`httpx.TransportError`, `ResourceExhaustedResponse`,
+    3 mã 5xx/429, 2 `httpx.TransportError` thô) đều ra `VectorStoreTransient`; 404 → `CollectionNotFound`; 4 ca khác
+    (400/401/422, lỗi parse) → `VectorStoreError` gốc; mọi lớp trả về vẫn `isinstance` `VectorStoreError` (3b không
+    đổi hành vi); thông điệp giữ nhãn thao tác.
+  - Kiểm: `uv run pytest backend/tests/unit -q -k "vector_store"` — **17 passed**. Toàn bộ unit — **1763 passed**.
+    `ruff check` (1 lỗi sắp import tự `--fix`) + `mypy backend/app` (145 file) — xanh. `lint-imports` — 7/7 KEPT.
+- **S5 xong** (Sonnet) — `rag/retriever.py` (mới): `RagConfig.from_settings`; `_Counter` (Q-3c-10: thành công
+  `+attempt`, lỗi `+max(0, attempt-1)`); `_Transient` (nội bộ); `_StageBox` (stage cục bộ MỘT lượt, KHÔNG lưu
+  `self` — `Retriever` dùng chung giữa nhiều lượt đồng thời); `_call` (module + method, bọc
+  `VectorStoreTransient` → `httpx.ConnectError` cho `call_with_retry` — tiền lệ Q-3a-3; `CollectionNotFound`/
+  `VectorStoreError` khác đi thẳng); `content_of`, `to_ref`, `rank_and_dedupe` (thuần); `Retriever` (`retrieve`,
+  `_embed`, `_search`, `search_once`, `expand_for_answer`) đúng thuật toán mục 3.3: ghim collection 1 lần
+  (`alias_target` hoặc `collection=` truyền vào), kiểm `COLLECTION_RE`, kiểm `pipeline_sha` TRƯỚC embed (Q-3c-2,
+  0 lời gọi ml khi lệch), embed 1 lần dùng lại cho D-23 (Q-3c-3), D-23 đúng logic (lỗi ở `alt` nổi lên, không
+  bao giờ trả `first` khi `alt` lỗi), toàn thân bọc `asyncio.timeout(cfg.deadline_s)` → `TimeoutError` →
+  `RetrievalSystemError(stage hiện tại, kb_version hiện tại, detail="deadline")`. `rag/expand.py` (mới):
+  `expand()` (thân của `Retriever.expand_for_answer`, nạp muộn trong method để tránh vòng import — `expand.py`
+  nhập ngược `_Counter`/`_Transient`/`content_of` từ `retriever.py`, không có vòng lúc nạp module vì
+  `retriever.py` không nhập `expand.py` ở top-level); `trim_to_budget` (bỏ khối cuối trước, không bao giờ bỏ
+  khối đầu).
+  - **Lệch PLAN mục 2 (ghi rõ, không đổi thiết kế):** dùng import `app.tools.retry.call_with_retry` trong
+    `rag/retriever.py` làm hợp đồng 7 (`rag-lower-layer`) đỏ ngay (cấm `app.tools`) — PLAN dự định thêm dòng
+    `ignore_imports: app.rag.retriever -> app.tools.retry` ở S10. Thêm dòng đó NGAY Ở S5 (giữ nguyên comment
+    hợp đồng 7 đã dự đoán trước việc này từ 3b) để `make lint` xanh liên tục; S10 vẫn còn phần việc riêng
+    (integration test, sửa `01-kien-truc-project.md`). Cùng nguyên tắc với 2 lệch ở S3/S4.
+  - `tests/fakes/rag.py` (mới): `FakeRag` (`RagPort` giả, đếm lời gọi — dùng ở node b08 test, S6); `SpyIndex`
+    (`VectorIndex` giả trong tiến trình — **không** mô phỏng RRF/dense/sparse thật, điểm mỗi `SpyPoint` do test
+    tự gán; `hybrid_query`/`scroll_window` lọc đúng ngữ nghĩa `Filter` thật (`MatchValue`/`MatchAny`/`Range`) rồi
+    sắp theo điểm; `fail_next`/`delay_next` ép lỗi/trễ theo tên phương thức; `self.filters` ghi mọi `Filter` nhận
+    được — dùng khi test chỉ cần kiểm CƠ CHẾ `Retriever`, chất lượng xếp hạng thật kiểm ở S10 trên Qdrant thật).
+  - Test mới: `unit/test_rag_retriever.py` (17 test) — c3 (rank_and_dedupe: giữ điểm cao nhất/doc, hoà điểm theo
+    RRF, top_n, excerpt không tiền tố ≤ 600); c13 (`QdrantIndex` thật tới `127.0.0.1:1` → `stage=="search"`,
+    `retries==2`, **0 lời gọi ml** — không cần Docker); c15 (top_score đúng bằng ngưỡng → không chạy D-23); c11
+    (lần 1 rỗng do lọc intent, D-23 rerank lỗi 3 lần → `stage=="rerank"`, embed chỉ gọi 1 lần); c17 (embed lỗi
+    2 lần rồi thành công → 1 lời gọi `retrieve()` = 3 lời gọi HTTP embed, `retries==2`); c23 (`pipeline_sha`
+    lệch → `stage=="pipeline"`, 0 lời gọi ml); c24 (`MlContractError` nổi lên nguyên, không bọc); c25
+    (`ChunkTruncatedError` khi rerank báo cắt); c26×2 (`CollectionNotFound` ở `hybrid_query` → `stage=="alias"`;
+    `VectorStoreError` khác nổi lên nguyên, không phải `RetrievalSystemError`); c27×2 (mọi Filter có
+    `enabled`+`sensitivity`, lần 1 có `request_type`, D-23 không có; filter `expand` theo role + `doc_id`/`seq`);
+    c31 (delay 1s thật ở `hybrid_query`, `deadline_s=0.05` → `stage=="search"`, `detail=="deadline"`,
+    `retries==0`, thật sự dừng ở ~0,05s — có cảnh báo pyvi nạp model lần đầu ~0,8s [bm25.py] làm sai lệch phép đo
+    nếu không "khởi động" `tokenize_vi` trước, đã thêm dòng gọi trước ở đầu file). `unit/test_rag_expand.py`
+    (5 test): phần `expand` của c26 (`CollectionNotFound`/`VectorStoreError` ở `scroll_window`); c28
+    (`trim_to_budget`: bỏ khối cuối trước, không bao giờ bỏ khối đầu, giữ nguyên khi đã đủ ngân sách).
+  - **`.importlinter`** hợp đồng 7: thêm `app.rag.retriever -> app.tools.retry` vào `ignore_imports` (2 dòng
+    ignore); sửa comment ghi rõ làm sớm ở S5.
+  - Kiểm: `uv run pytest backend/tests/unit -q -k "rag_retriever or rag_expand"` — **22 passed**. Toàn bộ unit —
+    **1785 passed**. `ruff check` + `mypy backend/app` (147 file) — xanh. `lint-imports` — **7/7 KEPT** (hợp
+    đồng 7 nay có 2 ignored import). `pytest backend/tests/integration --collect-only` — xanh.
+- **S6 xong** (Sonnet) — Node b08 thật thay vào đúng vị trí cũ + node giả tách ra `fake/` (3-Q32 cách A):
+  - `graph/nodes/fake/__init__.py`, `graph/nodes/fake/b08_retrieve.py` (mới) — chép nguyên node giả Phase 2,
+    sửa docstring ("dùng khi FAKE_SCENARIO đặt").
+  - `graph/nodes/b08_retrieve.py` — **thay bằng node thật** (mục 6.8): `point3` (điểm log 3, `tool_retry_count`
+    của nhánh thành công dùng `result.retries` — sửa 1 chỗ so với pseudocode spec vốn viết
+    `result.retries if result else error.retries` mơ hồ khi cả hai None, đã tường minh `error.retries if error
+    else None`); bắt đúng MỘT lỗi (`RetrievalSystemError` → E2), không `except Exception`; giữ tên event cũ
+    (`retrieval_error`, `no_evidence`, `retrieved`); `RETRIEVAL_THRESHOLD` từ `deps.constants`; không gọi
+    `deps.scenario`.
+  - `graph/builder.py`: `_NODE_MODULES["b08_retrieve"]` trỏ `fake.b08_retrieve` (import `as fake_b08_retrieve`
+    tránh trùng tên); `REAL_NODE_MODULES = {"b08_retrieve": b08_retrieve}`; `real_nodes(deps)` =
+    `fake_nodes(deps)` rồi ghi đè bằng `REAL_NODE_MODULES` (không bọc `_pausable`, không đọc `deps.scenario`).
+  - `graph/fakes.py`: `NodeDeps` thêm `rag: RagPort` (bắt buộc, đặt ngay sau `ml` — TRƯỚC các field có default,
+    theo luật dataclass) và `query_slots: tuple[str, ...] = field(default_factory=lambda:
+    tuple(get_slots().query_slots))`.
+  - `graph/wiring.py`: `select_nodes(settings, deps) = fake_nodes(deps) if settings.fake_scenario is not None
+    else real_nodes(deps)`. `open_runtime` dựng `AsyncQdrantClient(url=settings.qdrant_url,
+    timeout=int(settings.rag_qdrant_timeout_s), check_compatibility=False)` (mypy: tham số `timeout` của
+    `AsyncQdrantClient` là `int | None`, không nhận `float` — làm tròn xuống giây), đóng qua
+    `stack.push_async_callback(qdrant.close)`; `Retriever(QdrantIndex(qdrant), ml, RagConfig.from_settings(...),
+    threshold=get_policy().constants.RETRIEVAL_THRESHOLD, pipeline_sha=pipeline_sha(settings.config_dir),
+    lexicon=load_lexicon(settings.config_dir), clock=clock)`; `_open` nhận `rag` truyền vào `NodeDeps`, dùng
+    `build_graph(select_nodes(settings, deps), saver)` thay `fake_nodes(deps)` trực tiếp.
+  - **Hệ quả (ghi PROGRESS theo yêu cầu mục 5.5 — README cập nhật ở S13):** stack dev **không** đặt
+    `FAKE_SCENARIO` sẽ dùng B8 thật → phải `make ingest` trước, không thì B8 ra E2 `stage=alias` (chưa có
+    collection/alias). `make gate2` không đổi (luôn đặt `FAKE_SCENARIO=approval` qua `.env.example`).
+  - `tests/fakes/graph.py::GraphHarness` thêm field `rag: FakeRag = field(default_factory=FakeRag)`, truyền vào
+    `deps()`; `_make_runner` vẫn dùng `fake_nodes` (GraphHarness là runtime in-memory thuần, không có Qdrant
+    thật — muốn test node b08 thật thì gọi `b08_retrieve.make(deps)(state)` trực tiếp, xem
+    `test_b08_retrieve.py`). `test_b20_audit.py` (`E_CASES["E3"]` dùng `b08_retrieve="no_evidence"` qua
+    `deps.scenario`) **không đổi, vẫn xanh** vì `GraphHarness` không dùng `real_nodes`.
+  - `tests/integration/graph_pg.py::open_pg_runtime` thêm `rag: RagPort | None = None` (mặc định `FakeRag()`)
+    và `nodes: Literal["fake", "real"] = "fake"` (chọn `real_nodes`/`fake_nodes`) — dùng ở S10.
+  - Test mới: `unit/test_b08_retrieve.py` (5 test) — c15(node): top_score đúng bằng ngưỡng vẫn qua B10 (không
+    phải `<`), `retrieved` đúng `list[ChunkRef]`, node thật gọi `deps.rag` (không đọc `deps.scenario`); thêm
+    2 ca ngoài bảng gốc (không phải yêu cầu riêng, nhưng cần để chứng minh hai nhánh còn lại của điều kiện B9):
+    chunks rỗng dù `top_score` cao vẫn E3, và node KHÔNG bắt exception ngoài `RetrievalSystemError` (boundary lo
+    E9); c18: `RetrievalSystemError` → đúng 1 dòng audit `B8/retrieval_error`, `detail.query` = redacted_request
+    đã che, `detail.retrieval_error` (thông điệp lỗi) không chứa câu truy vấn, `kb_version`/`tool_retry_count`
+    đúng từ lỗi. `unit/test_graph_select_nodes.py` (c34, 2 test) — phân biệt bằng HÀNH VI (không so định danh
+    hàm): cấu hình `deps.scenario` và `deps.rag` cho kết quả ĐỐI LẬP nhau (E3 vs thành công), `FAKE_SCENARIO`
+    đặt → ra kết quả của scenario (`rag.retrieve_calls == []`); không đặt → ra kết quả của rag
+    (`scenario` không được đọc).
+  - Kiểm: `uv run pytest backend/tests/unit -q -k "b08_retrieve or select_nodes"` — 7 passed. Toàn bộ unit —
+    **1792 passed** (đúng lệnh kiểm S6: "toàn bộ unit xanh"). `ruff check` — xanh. `mypy backend/app` (149 file)
+    — 1 lỗi kiểu `AsyncQdrantClient(timeout=float)` → sửa `int(...)`, xanh lại. `lint-imports` — 7/7 KEPT.
+    `pytest backend/tests/integration --collect-only` và `backend/tests/e2e --collect-only` — xanh, không lỗi
+    import (kể cả `test_stack_scenario_pg.py`, `test_graph_pg.py` dùng `graph_pg.open_pg_runtime` đã đổi chữ ký).
+- **S7 xong** (Sonnet) — Health `kb` (Q-3c-5): `api/health.py` thêm `KbProbe` type, `KB_ALIAS="kb_current"` (hằng
+  cục bộ — **không** import `app.rag`, đúng luật "api không import rag/qdrant-client"), `KB_CACHE_SECONDS=10.0`,
+  `_kb_status(request)` (cache theo `app.state._kb_cache = (now, body)`, `now = app.state.kb_monotonic()`; lỗi/
+  timeout bắt `except Exception` → `status="unknown"`); body `/api/health` thêm khoá `"kb"` — **không đổi mã**
+  200/503 (mã vẫn do `checks`, có `qdrant`, quyết). `main.py`: `_default_kb_probe(settings)` — httpx thô (không
+  qdrant-client) gọi `GET {qdrant_url}/collections/aliases`, tìm `alias_name == ALIAS` trong `result.aliases`;
+  `create_app(..., kb_probe: KbProbe | None = None)`; `app.state.kb_probe`, `app.state.kb_monotonic =
+  time.monotonic` (test tiêm đồng hồ giả bằng gán thẳng `app.state.kb_monotonic = ...` sau `create_app`, trước
+  request đầu — giống cách `health_checks` đã tiêm qua tham số, nhưng đồng hồ không đáng để thêm tham số riêng).
+  - **Lệch chữ với PLAN-3c mục 5.4 (đã kiểm bằng mã nguồn qdrant-client 1.19.1, không phải suy diễn):** PLAN ghi
+    "GET {qdrant_url}/aliases" — đường REST thật của `AsyncQdrantClient.get_aliases()` là
+    `/collections/aliases` (`qdrant_client/http/api/aliases_api.py::_build_for_get_collections_aliases`, url
+    cố định trong thư viện), không phải `/aliases`. Dùng đường thật (`/aliases` không tồn tại, probe sẽ luôn
+    404 nếu theo đúng chữ PLAN) — ghi vào "spec cần sửa" (mục 11 PLAN, Claude chat sửa `phase3-thiet-ke-chi-tiet.md`
+    mục 6.9). Bao bọc phản hồi Qdrant REST cũng theo đúng thư viện: `{"result": {"aliases": [{"alias_name",
+    "collection_name"}]}, "status", "time"}` — kiểm bằng `model_fields` của `InlineResponse20012`/
+    `CollectionsAliasesResponse`/`AliasDescription`, có test respx xác nhận hình dạng JSON.
+  - Test sửa: `unit/test_health.py::test_all_ok_returns_200` — thêm `kb_probe` giả trả `None` mặc định cho `_get()`
+    (trước đây không có, sẽ gọi `_default_kb_probe` thật ra `httpx.ConnectError` tới `localhost:6333` không chạy
+    → vẫn cho `status="unknown"` chứ không phải `"missing"` như PLAN yêu cầu — phải tiêm probe giả mới đúng ý PLAN);
+    body kỳ vọng thêm `"kb": {"alias": "kb_current", "collection": None, "status": "missing"}`.
+  - Test mới (c20, 4 ca đúng bảng PLAN mục 6.11): **(a)** đã gộp vào `test_all_ok_returns_200` (mọi check ok +
+    probe `None` → 200, `status="missing"`); **(b)** `test_c20b_...` probe trả `kb_<v>` → `status="ready"`;
+    **(c)** `test_c20c_...` check `qdrant` lỗi + probe raise → **503**, `failed==["qdrant"]`, `kb.status=="unknown"`
+    (mã do check, không do kb); **(d)** `test_c20d_...` 2 lần gọi trong cùng app/TestClient trong 10 s (đồng hồ
+    giả cố định) → probe gọi 1 lần; tua đồng hồ giả qua mốc 10 s → gọi lần 2. Thêm `test_c20a_...` (không đánh số
+    trong bảng nhưng cần để KHÔNG kiểm probe mặc định bằng cách "đoán" — respx giả `GET .../collections/aliases`
+    đúng hình dạng JSON thật, kiểm `_default_kb_probe` đọc đúng `alias_name`/`collection_name`, và trả `None` khi
+    `aliases` rỗng — chưa ingest).
+  - Kiểm: `uv run pytest backend/tests/unit -q -k health` — **26 passed**. Toàn bộ unit — **1798 passed**.
+    `ruff check` + `mypy backend/app` (149 file) — xanh. `lint-imports` — 7/7 KEPT (không đổi số ignored import).
+- **S8 xong** (Sonnet) — Cổng kiểm ingest chuyển từ dense-only sang `Retriever` thật (BM25 + dense + rerank + lọc
+  quyền), theo đúng chốt phương án A của S2 và Q-3c-6.
+  - `rag/ingest/gate.py`: bỏ `DenseOnlyRetriever` (+ `query_dense`/`base_filter`/`GATE_PREFETCH`/`DENSE_DIM` hết
+    dùng ở đây). Protocol `Retriever.top_docs` đổi chữ ký sang `top_docs(item: EvalItem, *, collection: str)`.
+    `gate_intent(intent)` (Q-3c-7: giữ nếu ∈ `KB_REQUEST_TYPES`, ngược lại `None`), `gate_ctx(role)`
+    (RequesterContext tổng hợp — chỉ `role` được `retrieve()` đọc tới). `RetrieveGateAdapter(retriever: RagPort)`:
+    `top_docs` dựng `RetrievalQuery` + `gate_ctx`, gọi `retriever.retrieve(q, ctx, collection=collection)`,
+    `RetrievalSystemError` → `IngestMlError` (mã thoát 1 — không đánh giá được, khác "cổng KHÔNG ĐẠT"); trả
+    `doc_ids[:GATE_TOP_DOCS]` (an toàn dù `cfg.top_n` cấu hình khác 5) + `top_score`. `evaluate()` gọi
+    `top_docs(item, collection=collection)`. Thêm `sweep()` (hàm THUẦN) + `SWEEP_THRESHOLDS` (13 điểm 0,30→0,90
+    bước 0,05) + `SweepPoint`: mô phỏng D-23 cho TỪNG ngưỡng T từ cặp `(first, alt)` đã có sẵn (từ
+    `search_once` hai lần) — `first.top ≥ T → first; alt.top ≥ T → alt; else first` (đúng luật D-23 thật: không
+    bao giờ trả `alt` khi `alt` cũng dưới ngưỡng).
+  - `rag/ingest/pipeline.py`: `IngestDeps` thêm `rag: RagConfig` (bắt buộc). Bước 10 dựng `Retriever(d.index,
+    d.ml, d.rag, threshold=d.retrieval_threshold, pipeline_sha=psha, lexicon=lexicon, clock=d.clock)` (dùng lại
+    `lexicon` đã nạp ở bước 9, cùng scope hàm) rồi bọc `RetrieveGateAdapter`. **Nhánh Q-3c-6 (ngoại lệ 3-Q15):**
+    trước khi đánh giá `old`, đọc `meta` của collection đích alias (`target`); `pipeline_sha` lệch cấu hình hiện
+    tại → **không** đánh giá lại bản cũ, in ghi chú, để `old=None` → `decide()` tự áp nhánh (b) tuyệt đối cho
+    bản mới (đúng cơ chế sẵn có của `decide`, không cần nhánh mã mới). `_gate_line` đổi nhãn "dense-only" →
+    "retrieve".
+  - `rag/ingest/cli.py`: `_build_deps` thêm `rag=RagConfig.from_settings(settings)`.
+  - `rag/ingest/config.py`: bỏ `GATE_PREFETCH` (hết chỗ dùng).
+  - `rag/eval_cli.py` (mới): `python -m app.rag.eval_cli --kb-dir … [--sweep] [--csv]` — đọc alias `kb_current`
+    hiện tại (KHÔNG ingest lại), in Recall@5/FG/MRR ở đúng `RETRIEVAL_THRESHOLD` đang cấu hình qua
+    `RetrieveGateAdapter`; `--sweep` gọi `search_once` hai lần mỗi câu rồi in bảng 13 ngưỡng (`gate.sweep`) —
+    ghi rõ trong help lẫn dòng in cuối: "KHÔNG dùng để chọn ngưỡng thật, D-22"; `--csv` in CSV thay bảng.
+  - `Makefile`: **`eval-rag` đổi mục đích** — trước là TODO placeholder "Ablation 4 cấu hình truy hồi (D-25,
+    Phase 5)"; PLAN-3c mục 2 + lệnh kiểm S8/L5 chỉ đích danh `make eval-rag ... ARGS=--sweep` chạy
+    `app.rag.eval_cli`. Ghi rõ trong comment Makefile: D-25 (Phase 5) là việc KHÁC, làm sau, có thể dùng lại
+    CLI này với tham số khác — không mất việc, chỉ là tên lệnh dùng chung. `.PHONY` đã sẵn có `eval-rag`, không
+    cần sửa.
+  - Test sửa: `test_rag_gate.py` — các test cũ (`metrics`, `decide`, `load_retrieval_set`, `EvalItem`) **không
+    đổi, vẫn xanh nguyên** (không chạm `Retriever`/`DenseOnlyRetriever`). Thêm c29 (4 test): RSE → `IngestMlError`;
+    `gate_intent("out_of_scope") is None`, `gate_intent("vpn")=="vpn"` + xác nhận `RetrievalQuery.intent` đúng
+    qua `FakeRag.retrieve_calls`; role câu → `ctx.role`; doc_ids ≤ 5 dù `RetrievalResult` giả có 7 chunk. Thêm
+    c30 (3 test): 13 ngưỡng đúng dải; mô phỏng D-23 theo tay (FG đổi giữa T=0,50 dùng `alt` và T=0,90 dùng
+    `first` cho mọi câu — chứng minh nhánh chọn đúng, kèm chú thích rõ `Recall@5` ở đây KHÔNG tự trừ theo ngưỡng
+    vì đó là việc của node/E3 thật, không phải của `metrics()`); test riêng xác nhận không bao giờ dùng `alt`
+    khi `alt` cũng dưới ngưỡng.
+  - **Sửa thêm (không nằm trong danh sách S8, cần để `make lint`/test không đỏ):** `IngestDeps` thêm field bắt
+    buộc `rag` làm 2 chỗ dựng `IngestDeps(...)` trực tiếp trong test cũ đỏ (thiếu tham số) —
+    `unit/test_rag_frontmatter.py` (2 ca, dùng `unused` sentinel có sẵn vì các test này dừng ở bước 0–1, chưa
+    đụng `rag`) và `integration/test_rag_ingest_pg.py::Env.deps` (thêm `rag=RagConfig.from_settings(Settings(
+    _env_file=None))`) — sửa để CODE hợp lệ, KHÔNG phải phần việc c37 (số in cổng kiểm) vốn thuộc S10.
+  - **Cảnh báo cho S10/S12 (ghi rõ, không tự sửa bây giờ):** `integration/test_rag_ingest_pg.py` còn NGUYÊN các
+    assertion cũ dựa trên `DenseOnlyRetriever` (chuỗi `"Recall@5 1.000"`, `"trả lời bừa 0.000"`, `"Recall@5
+    0.875"`, `"(đổi -0.125)"`, "dense-only"…) — **sẽ ĐỎ nếu chạy ngay bây giờ** vì bước 10 giờ dùng `Retriever`
+    thật (BM25+rerank+lọc quyền), số liệu chắc chắn khác (xem S2: FG lên 0,333 với FakeMl gốc). Đây ĐÚNG LÀ việc
+    của **c37 (S10)** — "sửa `test_rag_ingest_pg.py`, số theo S2" — không sửa ở S8 theo đúng lịch PLAN. Không
+    chạy được trong sandbox (cần Docker) nên chưa tự kiểm chứng đỏ/xanh — người chạy L3/L4 ở S12 sẽ thấy đỏ ở
+    đây nếu S10 chưa làm xong; PROGRESS này để không ai bất ngờ.
+  - Kiểm: `uv run pytest backend/tests/unit -q -k "rag_gate or rag_sweep or ingest"` — **40 passed**.
+    `make -n eval-rag ARGS=--sweep` — in đúng lệnh `docker compose … python -m app.rag.eval_cli --kb-dir /srv/kb
+    --sweep`. Toàn bộ unit — **1815 passed**. `ruff check` + `mypy backend/app` (150 file) — xanh. `lint-imports`
+    — 7/7 KEPT (không đổi số ignored import). `pytest backend/tests/integration --collect-only` và
+    `backend/tests/e2e --collect-only` — xanh, không lỗi import.
+- **S9 — công cụ đo xong (Sonnet), ĐANG DỪNG chờ người chạy L2 rồi xác nhận cấu hình (mục 6.2) — CHƯA áp gì.**
+  - `ml_service/app/rerank_bench.py` (mới): `python -m app.rerank_bench --kb /kb [--k 10,20] [--threads N,…]
+    [--int8] [--passage-tokens 380] [--n 10]`. Nạp model TRONG TIẾN TRÌNH qua `app.loader.load_models` (không
+    HTTP). `load_queries` (14 câu `query` của `eval/retrieval_set.yaml`), `load_passages` (mọi `*.md` dưới
+    `<kb>/<type>/`, bỏ qua `enabled: false`, tách theo mục `##`; thiếu khoá `enabled` → coi là `true`, khớp
+    `FrontMatter.enabled` mặc định của 3b). `measurement_passage` (ghép mọi đoạn rồi cắt đúng `--passage-tokens`
+    token bằng tokenizer của reranker, không token đặc biệt) + `make_pairs` (câu lặp vòng nếu K > 14) dựng đúng
+    K cặp cho `measure_speed` (đo thời gian thật — KHÔNG unit test). `percentiles` tách riêng thành hàm THUẦN
+    (p50/p95 từ danh sách mẫu có sẵn) để test được mà không cần chờ. `int8_deviation`: chấm lại TOÀN BỘ 14 câu ×
+    mọi đoạn văn thật (không phải đoạn đo tốc độ) bằng cả fp32 lẫn int8 (`sigmoid(logit)`, đúng thang
+    `RETRIEVAL_THRESHOLD`) → `max|Δ|`, tỉ lệ top-1 trùng, số câu đổi phán quyết ở 0,6. `_quantized_reranker`:
+    `torch.quantization.quantize_dynamic` trên **bản sao** (`copy.deepcopy`) model `CrossEncoder` bọc trong
+    `_CeReranker` (đọc thuộc tính riêng `_model` của `app.loader._CeReranker` — công cụ đo nội bộ, không phải
+    API công khai của loader). torch/`app.loader` nạp muộn (trong hàm) như `app.loader` đã làm — test không cần
+    torch cài (nhóm `ml` không có trong CI, đúng quy ước sẵn có).
+  - `Makefile`: `rerank-bench` (mới, thêm vào `.PHONY`) = `$(COMPOSE) run --rm --no-deps -v
+    "$(abspath $(KB_DIR)):/kb:ro" ml-service python -m app.rerank_bench --kb /kb $(ARGS)` — đúng lệnh PLAN mục
+    6.1. Comment nhắc dừng `backend worker ml-service` trước khi đo (torch tranh CPU với service thật làm số đo
+    sai) và `make up` lại sau.
+  - Test mới: `ml_service/tests/test_rerank_bench.py` (16 test, loader giả `FakeTokenizer` từ `conftest.py` có
+    sẵn, không torch) — `parse_ints`; `load_queries`; `load_passages` (tách theo `##`, bỏ `enabled: false`, coi
+    thiếu `enabled` là `true`, bỏ file không có front matter); `measurement_passage` (cắt đúng độ dài, giữ
+    nguyên nếu ngắn hơn); `make_pairs` (lặp vòng); `percentiles` (median tay tính 10 mẫu, 1 mẫu trả chính nó,
+    rỗng → `ValueError`); `int8_deviation` (bảng logit tay cho 2 câu × 2 đoạn — 1 câu đồng ý top-1 lệch điểm
+    nhỏ, 1 câu bất đồng top-1 VÀ đổi phán quyết ở 0,6 qua `sigmoid` tay tính; 2 reranker giống hệt → lệch 0; đoạn
+    rỗng → `ValueError`); `_parser` (bắt buộc `--kb`, mặc định `k/threads/passage-tokens/n`, đọc `--int8`).
+  - Kiểm: `uv run pytest ml_service/tests -o pythonpath=ml_service -m "not ml_real" -q` — **77 passed** (61 cũ +
+    16 mới). `make -n rerank-bench KB_DIR=backend/tests/fixtures/kb ARGS="--k 10,20 --threads 3,4 --int8
+    --passage-tokens 363"` — in đúng lệnh docker compose, mount `/kb`, đúng đối số. `uv run pytest
+    backend/tests/unit/test_ml_timeouts.py backend/tests/unit/test_rag_timeouts.py -q` — 15 passed (không đổi,
+    không chạm `TIMEOUT_S`/`Settings` ở S9). `ruff check` (backend + ml_service) + `mypy backend/app` (150 file)
+    + `mypy --cache-dir .mypy_cache/ml_service ml_service/app` (16 file) — xanh. `uv run pytest backend/tests/unit
+    -q` toàn bộ — **1815 passed** (không đổi từ S8, S9 không chạm code backend).
+  - **DỪNG BẮT BUỘC (theo PLAN mục 9 và yêu cầu người):** chờ người chạy **L2** —
+    `docker compose stop backend worker ml-service` → `make rerank-bench KB_DIR=backend/tests/fixtures/kb
+    ARGS="--k 10,20 --threads 3,4 --int8 --passage-tokens 363"` (363 = `max text_tokens` đo ở L1) → `make up` —
+    rồi người xác nhận cấu hình theo tiêu chí mục 6.2 (thử ① K=10/threads 3/fp32 → ② K=10/threads 4/fp32 →
+    ③ K=10/threads 4/int8; chọn cấu hình ĐẦU TIÊN có p95 ≤ 9 s; int8 chỉ nhận khi max|Δ| ≤ 0,05 và top-1 trùng
+    100% và 0 câu đổi phán quyết ở 0,6; **không cấu hình nào đạt → dừng báo người, không tự chọn K=5/bỏ rerank/
+    đổi model**). Chưa áp bất kỳ thay đổi nào vào `Settings.rag_rerank_k`, `ml/client.TIMEOUT_S["rerank"]`,
+    compose, hay `ml_service/app/settings.py` — chờ số đo thật rồi mới làm, đúng luật phiên.
+  - **Sửa lỗi L2 lần 1 (người chạy, báo lỗi):** `make rerank-bench` ban đầu thiếu bước build lại image —
+    `docker compose run` dùng image `servicedesk-ml:dev` đã build TRƯỚC KHI có `rerank_bench.py`, container báo
+    `No module named app.rerank_bench`. Sửa: thêm `$(COMPOSE) build ml-service` trước dòng `run`, đúng khuôn
+    target `ingest` (`$(COMPOSE) build backend` trước khi chạy) — không chỉnh gì trong `ml_service/app/`.
+    `make -n rerank-bench` xác nhận có dòng build. Chờ người chạy lại.
+  - **L2 lần 2 (người chạy, 28/09/2026): build xong, chạy được, nhưng bị KILL giữa chừng (`Error 137` =
+    SIGKILL, thường do OOM).** Đúng MỘT dòng số đo in ra trước khi chết: `threads=3 k=10 fp32 p50=10676 ms
+    p95=11129 ms` — đã VƯỢT tiêu chí tier ① (p95 ≤ 9 s) khá rõ, nhưng CHƯA đủ để kết luận (chưa có tier ②/③
+    vì crash trước khi in dòng tiếp — có thể đang đo `int8` ở K=10 hoặc chuyển sang K=20 thì bị kill).
+  - Nguyên nhân nghi ngờ (chưa chắc, không tự sửa code để "đoán đúng"): script hiện quantize (`_quantized_
+    reranker`, có `copy.deepcopy` toàn bộ model CrossEncoder) NGAY LÚC ĐẦU nếu có `--int8`, bất kể có cần tới
+    tier ③ hay không; cộng thêm lệnh chạy có `--k 10,20` trong khi cả 3 tier quyết định (mục 6.2) CHỈ dùng
+    K=10 — K=20 là dữ liệu quan sát thêm, không bắt buộc. Máy dev colima chỉ 4 CPU/8 GB (ghi ở "Việc treo"
+    trước đây) — tải 2 model + 1 bản deepcopy cùng lúc dễ chạm trần RAM.
+  - **Đề nghị người chạy lại với phạm vi ĐÚNG BẰNG 3 tier cần quyết định** (bỏ K=20 khỏi lệnh, không đổi code):
+    `make rerank-bench KB_DIR=backend/tests/fixtures/kb ARGS="--k 10 --threads 3,4 --int8 --passage-tokens 363"`.
+    Không tự đổi code `rerank_bench.py` để "tối ưu lại" khi chưa có xác nhận đây đúng là nguyên nhân — chờ kết
+    quả lần chạy hẹp hơn trước khi kết luận có cần sửa thứ tự quantize hay không.
+  - **L2 lần 3 (người chạy, bỏ K=20): VẪN bị kill (`Error 137`), cùng một điểm.** Dòng in được: `threads=3 k=10
+    fp32 p50=10935 ms p95=16724 ms` (nhiễu hơn lần trước nhưng cùng kết luận: vượt xa 9 s). Không có dòng `int8`
+    nào in ra ở CẢ HAI lần chạy — quantize (`torch.quantization.quantize_dynamic`) tự nó chạy xong (thấy log
+    deprecation warning trước dòng fp32), nhưng lời gọi `predict()` TRÊN MODEL ĐÃ QUANTIZE mới là chỗ chết —
+    tái lập đúng 2/2 lần, không phải ngẫu nhiên. Không có `mem_limit`/`deploy.resources` nào đặt trong
+    `docker-compose.yml` cho `ml-service` → kill tới từ trần RAM của VM colima (4 CPU/8 GB), không phải giới
+    hạn container.
+  - **Kết luận tạm (chưa đủ dữ liệu để áp dụng mục 6.2, KHÔNG tự chọn cấu hình):** tier ① (K=10, threads 3,
+    fp32) đã đo được 2 lần, cả hai đều p95 vượt xa 9 s (11,1 s và 16,7 s — dao động lớn, đáng ngờ máy đang bị
+    tranh tài nguyên chứ không hẳn ổn định). Tier ② (threads 4, fp32) và ③ (int8) CHƯA đo được — ③ crash tái
+    lập, có thể máy dev không đủ RAM để đo nhánh int8 của công cụ này.
+  - **Đề nghị (người quyết, không tự làm):** chạy lại KHÔNG có `--int8` trước để lấy sạch số tier ①+② (ít tốn
+    RAM hơn, đã chạy fp32 thành công ổn định qua các lần trên):
+    `make rerank-bench KB_DIR=backend/tests/fixtures/kb ARGS="--k 10 --threads 3,4 --passage-tokens 363"`.
+    Nếu tier ② cũng vượt 9 s thì theo đúng mục 6.2 mục 5: dừng, báo — không cần cố đo tier ③ nữa (đỡ tốn máy);
+    nếu người vẫn muốn số int8 để tham khảo, cân nhắc đóng bớt ứng dụng khác / tăng RAM colima rồi thử riêng
+    lệnh có `--int8` một mình.
+  - **L2 lần 4 (người chạy, không `--int8`): chạy xong, KHÔNG bị kill.** Kết quả:
+    `threads=3 k=10 fp32   p50=    9065 ms  p95=   10473 ms` và
+    `threads=4 k=10 fp32   p50=    8751 ms  p95=    9072 ms`.
+  - **Áp tiêu chí mục 6.2 điểm 1–2 (thử ① → ② → ③, chọn cấu hình ĐẦU TIÊN có p95 ≤ 9 s):**
+    tier ① (threads 3, fp32): p95 = 10 473 ms > 9 000 ms → KHÔNG đạt. Tier ② (threads 4, fp32):
+    p95 = 9 072 ms > 9 000 ms → KHÔNG đạt (vượt 72 ms, rất sát ngưỡng nhưng vẫn không thoả điều kiện `≤`).
+    Tier ③ (threads 4, int8) chưa đo được lần nào trong 2 lần thử — cả hai đều bị kill (`Error 137`) đúng tại
+    bước `predict()` trên model đã quantize (xem lần 2–3 ở trên); máy dev colima (4 CPU/8 GB) có vẻ không đủ
+    RAM cho nhánh này của công cụ đo.
+  - **KHÔNG CẤU HÌNH NÀO ĐO ĐƯỢC ĐẠT p95 ≤ 9 s (① và ② đều vượt); ③ không đo được do máy hết RAM khi chạy
+    inference trên model int8 — DỪNG theo đúng mục 6.2 điểm 5, báo người, KHÔNG tự chọn K=5, bỏ rerank, đổi
+    model, hay coi tier ② "gần đạt" là đạt.** Ghi chú thêm: số đo tier ① dao động khá lớn qua 3 lần (11,1 s /
+    16,7 s / 10,5 s) — nghi ngờ nhiễu do tranh tài nguyên trên máy dev, không hẳn phản ánh đúng tốc độ ổn định
+    của cấu hình; tier ② chỉ đo được 1 lần (9,072 s), sát ngưỡng 9 s nên rất nhạy với nhiễu tương tự. Việc quyết
+    định tiếp theo (chấp nhận tier ② dù vượt nhẹ / đo lại tier ① và ② nhiều lần lấy trung vị để giảm nhiễu / tìm
+    cách đo tier ③ trên máy khác hay tăng RAM colima / coi đây là "không đạt" và dừng hẳn nhánh int8+threads-tuning
+    ở 3c, ghi nợ kỹ thuật) là quyết định của người — Claude Code không tự chọn.
+  - **Chốt S9 của người (Q-3a-16):** đo lại tier ② 3 lần liên tiếp, máy sạch (đóng app nặng, stop
+    backend/worker/ml-service trước, đúng quy trình L2). Trung vị p95 ≤ 9,5 s → chọn tier ②; > 9,5 s → dừng báo.
+    int8 bỏ hẳn trên máy dev (OOM colima 8 GB) — ghi nợ "đo int8 trên máy gaming/staging, không bật ở 3c".
+  - **L2 lần 5 (người chạy, 3 lần liên tiếp tier ②, threads=4, K=10, fp32, không int8): KHÔNG bị kill cả 3
+    lần.** Kết quả: lần 1 `p50=8857 ms p95=9015 ms`, lần 2 `p50=8955 ms p95=12440 ms`, lần 3
+    `p50=8902 ms p95=10388 ms`. Trung vị p95 (3 mẫu 9015/10388/12440) = **10 388 ms** — vượt ngưỡng 9,5 s đã
+    chốt.
+  - **Theo đúng điều kiện đã chốt (trung vị p95 > 9,5 s → dừng báo người): DỪNG, KHÔNG áp `rag_rerank_k=10`,
+    KHÔNG thêm `ML_THREADS`, KHÔNG sửa `TIMEOUT_S["rerank"]`.** Tổng hợp toàn bộ số đo tier ① và ② thu được
+    qua các lần L2 (tất cả threads 3/4, K=10, fp32, không int8, `--passage-tokens 363`):
+    - tier ① (threads 3): p95 = 11 129 ms (lần 2), 16 724 ms (lần 3), 10 473 ms (lần 4) — 3 mẫu, dao động lớn.
+    - tier ② (threads 4): p95 = 9 072 ms (lần 4), 9 015 / 12 440 / 10 388 ms (lần 5) — 4 mẫu, dao động lớn,
+      trung vị 4 mẫu cũng ≈ 9 743 ms (vẫn > 9,5 s).
+    Cả hai tier đều không ổn định dưới ngưỡng cần thiết trên máy dev này; tier ③ (int8) không đo được (OOM,
+    ghi nợ đo trên máy khác theo chốt của người). Không có cấu hình nào trong mục 6.2 đạt trên máy dev — S9
+    dừng ở đây, chờ người quyết hướng tiếp theo (S9 vẫn là điểm dừng bắt buộc, chưa sang S10).
+  - **Chốt S9 cuối cùng của người — cách 4 (NỚI tiêu chí mục 6.2, ghi rõ không phải "đạt" theo nghĩa cũ):**
+    áp tier ② (`rag_rerank_k=10`, `ML_THREADS=4`, `TIMEOUT_S["rerank"]=18`). Lý do (người nêu, ghi lại nguyên
+    văn ý): ràng buộc THẬT không phải "p95 ≤ 9 s" mà là trần `3·T + 3 < 60` (⇒ T ≤ 18) và `rag_deadline_s=50 <
+    worker_stale_turn_seconds/2=60` — cả hai đều thoả với T=18 (p95 lớn nhất đo được 12,4 s < 18 s). Tiêu chí
+    "≤ 9 s / 2×p95" trong mục 6.2 không đạt được trên CPU Mac dev (trung vị tier ② 10,4 s) — khi máy dev chậm
+    hơn giả định lúc viết plan, timeout ở 18 s vẫn là lỗi AN TOÀN (`E2`, chuyển người), không phải false-
+    negative (không bao giờ trả kết quả rerank ẩu vì hết giờ — chỉ chậm hơn mong muốn).
+  - **Áp vào code (Sonnet):**
+    - `backend/app/settings.py`: `rag_rerank_k` mặc định 20 → **10**, comment dẫn Q-3a-16/S9 + nợ kỹ thuật.
+    - `backend/app/ml/client.py`: `TIMEOUT_S["rerank"]` 10.0 → **18.0** (đúng trần `3·T+3<60`), comment dẫn
+      Q-3a-16 + số đo thật (không còn là "2×p95 đo qua `make ml-bench`" như comment cũ — nay là trần an toàn).
+    - `docker-compose.yml`: thêm `ML_THREADS: ${ML_THREADS:-4}` vào `ml-service.environment` (lệch quy ước cũ
+      "không truyền ML_THREADS/ML_MAX_CONCURRENCY" — sửa lại comment, chỉ còn `ML_MAX_CONCURRENCY` giữ quy ước
+      không truyền); thêm `RAG_RERANK_K: ${RAG_RERANK_K:-10}` vào `x-backend-env` (trước đây không truyền qua
+      compose, nay cho ghi đè để máy chậm hôm demo đặt `RAG_RERANK_K=5` mà không đổi code — theo đúng yêu cầu).
+    - `.env.example`: cập nhật khối chú thích `ML_THREADS`/`RAG_RERANK_K`, thêm ví dụ đã comment
+      `# ML_THREADS=4` và `# RAG_RERANK_K=5` (máy chậm demo).
+    - `backend/tests/unit/test_ml_deploy.py`: `test_no_empty_numeric_env_passed_to_ml_service` — cập nhật tập
+      env mong đợi thêm `ML_THREADS`, kiểm giá trị mặc định `${ML_THREADS:-4}`; test mới
+      `test_rag_rerank_k_passed_through_backend_env` kiểm `x-backend-env.RAG_RERANK_K == "${RAG_RERANK_K:-10}"`.
+    - `backend/tests/unit/test_rag_timeouts.py`, `test_ml_timeouts.py`: sửa 2 chỗ comment nhắc "mặc định (20)"
+      thành "(10, Q-3a-16/S9)" cho khớp giá trị mới — không đổi assert nào (logic test không phụ thuộc con số
+      cụ thể trong comment).
+    - int8: **bỏ hẳn ở 3c**, không thêm `ml_rerank_int8` vào `ml_service/app/settings.py`/loader/compose (khác
+      với nhánh "nếu chọn int8" ở mục 6.2 điểm 6 — không áp vì không chọn int8).
+  - **Kiểm sau khi áp:** `uv run pytest backend/tests/unit -q` — **1764 passed, 0 failed** (junit-xml đối
+    chiếu; số khác 1815 ghi ở lần trước do lần đó đếm nhầm/khác snapshot — không phải regression, không tests
+    nào bị xoá ngoài 1 test mới thêm ở `test_ml_deploy.py`). `uv run pytest ml_service/tests -o
+    pythonpath=ml_service -m "not ml_real" -q` — **77 passed, 0 failed** (không đổi). `make lint` từng phần:
+    `ruff check .` xanh; `mypy backend/app` (150 file), `mypy --cache-dir .mypy_cache/mock_services
+    mock_services/app` (11 file), `mypy --cache-dir .mypy_cache/ml_service ml_service/app` (16 file) đều xanh;
+    `PYTHONPATH=backend uv run lint-imports` — 7 hợp đồng giữ, 0 vỡ; `gitleaks detect --no-banner --redact` —
+    không lộ bí mật.
+  - **Nợ kỹ thuật (ghi lại, chưa làm ở 3c):** đo lại K/threads/int8 trên máy gaming/staging có GPU (N2); đặt
+    lại `TIMEOUT_S["rerank"]` và `rag_rerank_k` theo số đo đó khi có máy — cấu hình hiện tại (10/4/18) là an
+    toàn nhưng CHẬM hơn mục tiêu ban đầu của thiết kế trên CPU dev.
+  - **Spec cần sửa (Claude chat sửa `docs/spec`, Claude Code không sửa — bổ sung mục 11 PLAN-3c):** mục 4.12 +
+    6.x của `phase3-thiet-ke-chi-tiet.md` — tiêu chí Q-3a-16 viết là "chọn cấu hình đầu tiên p95 ≤ 9 s" không
+    khớp thực tế đo được trên CPU dev (Mac, colima 4 CPU/8 GB); tiêu chí THẬT đã dùng để quyết định là trần an
+    toàn `3·T+3 < WORKER_STALE_TURN_SECONDS/2` (T ≤ 18) chứ không phải một ngưỡng tốc độ tuyệt đối — cần sửa
+    spec để phản ánh đây là "chọn T nhỏ nhất thoả trần, ưu tiên p95 thấp nếu máy đủ nhanh" thay vì "phải ≤ 9 s
+    mới được chọn". Cũng cần ghi rõ trong spec: nếu p95 tiệm cận T thì coi timeout là lỗi an toàn (E2), không
+    phải bug.
+  - **S9 XONG (người đã chốt cấu hình + lý do, đã áp).** Tiếp S10.
+- **S10 xong** (Sonnet) — `.importlinter` (ignore `app.rag.retriever -> app.tools.retry`): đã thêm sớm ở S5,
+  comment đã ghi rõ lý do + bước (S5) từ trước — không cần sửa gì thêm ở S10, chỉ xác nhận lại (`lint-imports`
+  7/7 KEPT). Việc chính S10: viết 2 file integration Qdrant+Postgres mới + sửa `test_rag_ingest_pg.py` (c37).
+  - `backend/tests/integration/test_rag_query_qdrant.py` (mới, 10 test) — `Retriever` thật trên Qdrant thật,
+    `FakeMlService` sau `MlClient` thật, tái dùng `Env`/`_env` của `test_rag_ingest_pg.py` (import thẳng, như
+    `graph_pg.py` đã là "module dùng chung không phải test" cho phần đồ thị — RAG ingest chưa có module dùng
+    chung tương tự, import chéo giữa 2 file test chấp nhận được ở quy mô này).
+    - c4: "VPN công ty dùng cổng nào?" → `KB-VPN-001` trong top-3 (KHÔNG top-1 — theo chốt S2: FakeMl hoà
+      điểm 0,833 giữa 3 tài liệu ở fixture, thắng nhờ `rrf_idx` thật của Qdrant, không mô phỏng được ngoài
+      băng) và `top_score ≥ T`.
+    - c6, c7, c9: câu P007 ("tường lửa biên phải mở những cổng nào cho máy chủ vpn") — employee/intent vpn
+      không thấy `KB-VPN-007` (restricted), l1 thấy; đổi `intent="account"` (D-23) vẫn đúng lọc quyền cho cả
+      2 role (c9 diễn giải là "như c6/c7 nhưng l1" — PLAN ghi "như c6", suy luận hợp lý nhất để không trùng
+      lặp với chính c6: c7 đã kiểm employee/account, c9 kiểm l1/account, đối xứng với c6's employee/l1 dưới
+      intent vpn).
+    - c10: câu P006 (chứng chỉ hết hạn), `intent="account"` → D-23 phục hồi kết quả, `intent_filter_fallback`
+      và `fallback_tried` đều `True` (khớp S2: "c10 ✓ (fallback, top 0,692)").
+    - c11 (Q): TÁI DÙNG câu P006/account (như c10) để chắc "lần 1 rỗng, không tốn lượt rerank" tái lập đúng,
+      rồi `fail_next("rerank","http_500",3)` — D-23 gọi rerank, hết 3 lượt thử (`TOOL_RETRY=2`) → `RSE`,
+      `stage=="rerank"`.
+    - c12: Qdrant sạch, chưa alias → `RSE.stage=="alias"`, `sum(fake.calls.values())==0` (không collection
+      thật, không cần `kb` fixture).
+    - c14: tạo collection rỗng bằng `QdrantIndex.create` với `pipeline_sha` đúng, gắn alias → `chunks==[]`,
+      `top_score==0.0`, `fake.calls["rerank"]==0`; qua node b08 (helper `_run_node` dùng `GraphHarness` +
+      `MemoryAudit`, cùng khuôn `test_b08_retrieve.py`) → `status/exit_code == (S_ESCALATED, "E3")`.
+    - c16: lớp `_AliasSwitcher` (KHÔNG phải `tests.fakes.rag.SpyIndex` — PLAN gọi "SpyIndex bọc QdrantIndex"
+      nhưng `SpyIndex` là bản giả TOÀN BỘ, không bọc được index thật; ở đây cần Qdrant THẬT phía sau nên viết
+      lớp bọc riêng, `__getattr__` uỷ quyền mọi phương thức khác, chỉ chặn `hybrid_query` lần đầu để đổi alias
+      làm tác dụng phụ) → `res.kb_version` = bản CŨ (ghim từ đầu `retrieve()`, không đọc lại alias giữa
+      chừng); `expand_for_answer(kb_version=res.kb_version)` đọc đúng `kb_{kb_version}` = bản cũ, không lẫn
+      nội dung bản mới (3-Q14).
+    - c8: 3 điểm cùng `doc_id`, `seq` 0/1/2 (0, 2 `restricted`; 1 `public`), `expand_for_answer` neo seq 1,
+      `neighbor_window` mặc định 1 → employee chỉ thấy `MARK1`; l1 thấy cả 3 — lọc quyền áp đúng TRONG cửa sổ
+      láng giềng, không chỉ ở lượt tìm đầu.
+  - `backend/tests/integration/test_b08_pg.py` (mới, 2 test):
+    - c5: node b08 + `Retriever` thật + `MemoryAudit` — câu MFA dùng bản đã mô phỏng ở S2 ("Làm sao bật xác
+      thực 2 lớp MFA cho email?"), KHÔNG dùng nguyên văn câu gốc PLAN ("đăng ký MFA thế nào?" — S2 đã chỉ ra
+      câu đó chạm đúng ngưỡng 0,600, không ra E3 chắc chắn) → `(status, exit_code) == (S_ESCALATED, "E3")`,
+      `escalation_reason_detail=="no_grounding"`, đúng 1 dòng audit `("B9","no_evidence")`.
+    - c19: `graph_pg.open_pg_runtime(nodes="real", rag=Retriever thật)` — phát hiện quan trọng khi viết:
+      `_NODE_MODULES` trong `builder.py` đã ánh xạ B1/B2/B3/B6/… tới module THẬT từ trước 3c (chỉ B8 có bản
+      giả/thật song song); `b03_classify` (Phase 2a) CỐ ĐỊNH `intent="vpn"` không đọc câu, `b06_diagnose`
+      (Phase 2a) luôn định tuyến `b08_retrieve` mặc định — nên "ticket đi đường mặc định tới B8" không cần
+      thẻ `FakeScenario` nào, chỉ cần `seed_users`+`create_ticket`+`SESSION` như các test PG khác. Dùng
+      `arw` (engine ASYNC riêng, tên khác `rw` sync của conftest để tránh đè fixture) trên CÙNG `migrated`
+      session-DB mà `kb_env` ingest (an toàn: `Retriever` không chạm Postgres, chỉ chạm Qdrant). Kiểm:
+      `result.values["retrieved"]` không rỗng; `rt.runner.snapshot(ticket_id)` đọc LẠI checkpoint (khác giá
+      trị `RunResult` vừa trả) → `retrieved`/`kb_version`/`intent_filter_fallback` khớp; `audit_logs.kb_version`
+      dòng `step='B8'` = `kb_version` của kết quả.
+  - `backend/tests/integration/test_rag_ingest_pg.py` (c37, sửa): tách `test_b17_gate_c_recall_drop` (giữ
+    tên, sửa nội dung) thành 2 hướng theo đúng chốt S2 "phương án A":
+    - **`test_b17_gate_blocks_with_fixture_retrieval_set`** (mới) — fixture + `retrieval_set.yaml` GỐC
+      (không sửa) → cổng KHÔNG đạt: `Recall@5 1.000`, **`trả lời bừa 0.333`** (KHÔNG còn `0.000` như bản
+      dense-only 3b), thoát 1, alias giữ `None`. Đúng số S2 "cổng chặn".
+    - **`test_b17_gate_c_recall_drop`** (viết lại, giữ đúng Ý GỐC — kiểm nhánh c recall-drop, không phải số
+      dense-only) — `retrieval_set` RIÊNG của test (`_PASSING_RETRIEVAL_SET`, hằng module): CÙNG 8 câu có đáp
+      án P001–P008 (không sửa fixture), CHỈ giữ 3 câu âm tính "rõ ràng ngoài chủ đề" theo đúng ví dụ người đã
+      chốt (N001 MFA, N004 "máy in tầng 3 kẹt giấy", N006 "đặt phòng họp") — bỏ N002/N003/N005 (mô phỏng S2
+      cho các câu này ≥ 0,6, gây trả lời bừa). Lần đầu: nhánh b, Recall 1.000, FG 0.000, đạt. Tắt KB-VPN-004
+      (Q-3b-2): Recall 7/8=0.875, tụt 0,125 > `GATE_MAX_DELTA`=0,05 → nhánh c KHÔNG đạt, alias giữ bản cũ,
+      collection mới giữ lại (số y hệt bản gốc — cùng cơ chế đếm, chỉ khác việc tránh 2 câu âm gây nhiễu).
+    - **`test_q3c6_old_pipeline_sha_mismatch_skips_comparison_uses_branch_b`** (mới) — copy `config/` ra
+      `tmp_path`, ingest lần 1 (đạt, `_PASSING_RETRIEVAL_SET`); thêm dòng vào `vi_stopwords.txt` (đổi
+      `pipeline_sha`) RỒI tăng version `KB-VPN-001` (tránh vấp kiểm "cấu hình đã đổi" ở bước 5 — đó là việc
+      của `test_b32_pipeline_sha_changed`, khác hẳn: b32 KHÔNG tăng version nên `name==target`, dừng sớm ở
+      bước 5; test này tăng version nên `name != target`, đi hết tới bước 10, `target` vẫn trỏ bản pipeline_sha
+      CŨ) → bước 10 in đúng câu "cổng kiểm: bản cũ (…) có pipeline_sha khác cấu hình hiện tại — không đánh
+      giá lại, áp tiêu chí tuyệt đối (nhánh b) cho bản mới (ngoại lệ 3-Q15, Q-3c-6)" và pass nhánh b (Recall
+      1.000 mới, FG 0.000 mới, không so với bản cũ) → thoát 0.
+    - Wording "dense-only" ĐÃ được đổi thành "retrieve" ở `pipeline.py::_gate_line` từ trước S10 (không rõ
+      chính xác bước nào — grep xác nhận không còn "dense-only" ở cả `pipeline.py` lẫn test) — không có gì để
+      sửa thêm cho phần này của c37.
+  - **Lưu ý chung cho mọi số ở 2 file Qdrant mới + b17/Q-3c-6:** dựng NGOÀI BĂNG bằng suy luận từ mô phỏng S2
+    (script tạm, không còn trong repo) + đọc trực tiếp code `retriever.py`/`gate.py`/`filters.py` — CHƯA chạy
+    được trên Qdrant thật (cần Docker, người chạy). Nếu L3 (S12) ra đỏ ở test nào, đối chiếu lại với đúng
+    dòng PROGRESS này trước khi coi là lỗi code — có thể chỉ là số đo ngoài băng chưa khớp RRF thật.
+  - Kiểm (không cần Docker): `uv run pytest backend/tests/integration --collect-only -q` — 18 file, không lỗi
+    import/collect (2 file mới cộng 2 test mới ở `test_rag_ingest_pg.py`, 17 test trong file đó, tăng từ 15).
+    `uv run pytest backend/tests/unit -q` — **1764 passed** (không đổi, S10 không chạm code backend). `make
+    lint` từng phần: `ruff check .` xanh; `mypy backend/app` (150 file) xanh; `PYTHONPATH=backend uv run
+    lint-imports` 7/7 KEPT; `gitleaks detect --no-banner --redact` không lộ bí mật.
+  - **S10 XONG.** Tiếp S11.
+- **S11 xong** (Sonnet) — `scripts/mutation/mutate_3c.py` (mới, khuôn `mutate_3b.py`): 12 mã M-3c-1…12, tách
+  `UNIT` (chạy sandbox, không Docker) và `INTEGRATION` (`--integration`, người chạy ở L4/S12).
+  - **Lệch với PLAN mục 9 dòng S11 ("chạy phần U (M-3c-1…6, 8…12 phần unit)") — đã ghi rõ trong docstring của
+    script, không âm thầm sửa bảng PLAN mục 8:** M-3c-7, 8, 9 KHÔNG có phần unit — test DUY NHẤT phủ chúng
+    (c16, c12, c14) chỉ tồn tại ở `integration/test_rag_query_qdrant.py` (Q, cần Qdrant thật, viết ở S10) —
+    xác nhận bằng cách đọc lại toàn bộ `test_rag_retriever.py`/`test_rag_filters.py`/`test_b08_retrieve.py`/
+    `test_graph_goto.py`, không tìm thấy test unit nào phủ 3 mã này. Vậy `UNIT` thực tế chỉ có 1,2,3,4,5,6,
+    10,11,12 (9 mã); `INTEGRATION` có 1(c7),2(c8),7,8,9,12(c19) (6 mã, M-3c-1/2/12 xuất hiện Ở CẢ HAI danh
+    sách vì mỗi mã có cả test unit lẫn test Q phủ cùng một đột biến nguồn).
+  - **M-3c-6 (c17) — số lời gọi `embed` sau đột biến KHÔNG phải 9 như PLAN ghi, đã đo thực tế = 4** (ghi rõ
+    trong docstring script, không lặng lẽ đổi cho khớp): với `fail_next("embed","http_500",2)` của c17 (hàng
+    đợi lỗi HỮU HẠN, dùng hết là hết — không nạp lại mỗi lượt gọi lại), MỌI đột biến "bọc lại quanh ml.embed"
+    hợp lý (đã thử amp biến "gọi lại nếu vừa phải thử lại ở tầng ml", `for _ in range(3): ... if emb.attempts
+    == 0: break`) chỉ có thể tạo thêm ĐÚNG MỘT lượt gọi thành công dư (không tốn thêm 2 lỗi vì hàng đợi đã
+    cạn) → 3 (lượt đầu, 2 lỗi+1 thành công) + 1 (lượt dư) = 4, không phải 9. Vẫn đủ để c17 đỏ đúng lý do (số
+    lệch dự kiến 3), chỉ khác con số cụ thể trong PLAN — không sửa PLAN (Claude Code không sửa docs/spec;
+    PLAN-3c.md không phải docs/spec nhưng cũng không tự sửa khi chưa hỏi — ghi lệch ở đây).
+  - Mỗi đột biến: `flt`/`Filter` thiếu import trong file gốc (retriever.py, expand.py không có sẵn `Filter`)
+    → mutation TEXT tự thêm `from qdrant_client.models import ... # MUTATION` ngay trong hàm (import cục bộ,
+    không đổi import đầu file) để tránh `NameError` làm sai lệch phân loại lỗi (dù pytest vẫn tính exception
+    trong thân test là "FAILED" chứ không phải "ERROR" — đã kiểm bằng cách đọc `call_with_retry`/`_collect`
+    trước khi viết mutation, không đoán).
+  - **Chạy lượt UNIT (sandbox, không Docker):** `uv run python scripts/mutation/mutate_3c.py` — **9/9 đột biến
+    ĐỎ ĐÚNG DỰ ĐOÁN** (M-3c-1, 2, 3, 4, 5, 6, 10, 11, 12 — mỗi mã đúng tên test đã liệt, kể cả 4 tham số hoá
+    của M-3c-3), **md5 sau khôi phục: khớp**, **git diff --stat: khớp lúc đầu**, mã thoát **0**.
+    `grep -rn MUTATION backend/app` — **trống** (không có dấu vết còn sót trong mã nguồn thật; script
+    `scripts/mutation/mutate_3c.py` tự nó dĩ nhiên CÓ chuỗi "MUTATION" trong code — cùng tình trạng
+    `mutate_3a.py`/`mutate_3b.py`, không phải chỗ cần trống).
+  - **Lượt INTEGRATION (M-3c-1[c7], 2[c8], 7, 8, 9, 12[c19]) CHƯA chạy — cần Docker, để dành cho L4 (S12,
+    người chạy `uv run python scripts/mutation/mutate_3c.py --integration`).** Mã nguồn mutation cho các mã
+    này đã viết xong, dùng lại ĐÚNG file/chuỗi cũ đã kiểm ở lượt UNIT khi trùng (M-3c-1, 2, 12) — chỉ đổi lệnh
+    test sang file Q/P tương ứng.
+  - Kiểm khác: `ruff check .`, `mypy backend/app` (150 file), `PYTHONPATH=backend uv run lint-imports` (7/7
+    KEPT), `gitleaks detect --no-banner --redact` — tất cả xanh sau khi thêm `scripts/mutation/mutate_3c.py`.
+  - **S11 XONG.** Tiếp S12 — điểm dừng bắt buộc, chờ người chạy L3–L7.
+- **S12 — L3 lần 1 (người chạy, 28/09/2026): `uv run pytest backend/tests/integration/test_rag_query_qdrant.py
+  backend/tests/integration/test_b08_pg.py backend/tests/integration/test_rag_ingest_pg.py -q` — 26/29 passed
+  trong `test_rag_ingest_pg.py`; CẢ 12 test mới ở `test_rag_query_qdrant.py` (10) và `test_b08_pg.py` (2) đều
+  XANH ngay lần chạy đầu trên Qdrant thật — xác nhận số mô phỏng S2 khớp RRF/hybrid thật, không cần sửa gì ở
+  2 file này.** 3 test CŨ (không do 3c viết, không nằm trong c37) đỏ vì CÙNG nguyên nhân đã biết (gate 3c dùng
+  rerank thật thay dense-only, fixture retrieval_set gốc không đạt — FG 0,333): `test_b18_crash_between_
+  alias_and_db` (DID NOT RAISE — dừng ở gate trước khi tới bước 12 cần test), `test_b32_pipeline_sha_changed`
+  (code 1 thay vì 0 — dừng ở gate trước khi tới bước 5 cần test), `test_b34_known_owner_written` (code 1 —
+  dừng ở gate trước khi ghi owner). **Đã sửa (Sonnet):** cả 3 test đổi `copy_kb(tmp_path)` →
+  `copy_kb(tmp_path, with_eval=False)` + `allow_unevaluated=True` — vì cả 3 đều kiểm hành vi Ở SAU/TRƯỚC cổng
+  (bước 12 ghi bù, bước 5 pipeline_sha, bước 12 owner), không kiểm số đo cổng, nên bỏ qua cổng bằng cờ (như
+  b12/b13/b16/b19 đã làm) thay vì kéo theo `_PASSING_RETRIEVAL_SET` riêng như b17/Q-3c-6 (chỉ 2 test đó thật
+  sự cần số đo cổng). Đã kiểm lại bằng cách đọc code: cả 3 test đều dừng TRƯỚC khi chạm bước 10 (gate) trong
+  luồng họ kiểm, nên `allow_unevaluated=True` không ảnh hưởng gì tới phần đang test. `ruff check` +
+  `--collect-only` xanh (17 test, không đổi số lượng) — **CHƯA chạy lại được trên Qdrant thật (cần người)**.
+  Grep xác nhận không còn `copy_kb(tmp_path)` (mặc định có eval) nào khác thiếu xử lý trong file.
+  - **Chờ người chạy lại L3 (ít nhất `test_rag_ingest_pg.py`) để xác nhận bản sửa, rồi tiếp L4–L7.**
+- **L4 (người chạy, 28/09/2026): `uv run python scripts/mutation/mutate_3c.py --integration` — 6/6 đột biến
+  ĐỎ ĐÚNG DỰ ĐOÁN** (M-3c-1[c7], 2[c8], 7[c16], 8[c12], 9[c14], 12[c19]), **md5 sau khôi phục: khớp, git diff
+  --stat: khớp lúc đầu.** Cùng với 9/9 UNIT ở S11, cả 15 đột biến của mutate_3c.py đều bị bắt đúng lý do —
+  không đột biến nào "sống". Vẫn chờ chạy lại L3 (xác nhận bản sửa 3 test b18/b32/b34) rồi tới L5–L7.
+- **L3 lần 2 (người chạy, 28/09/2026): lần đầu bị lỗi hạ tầng testcontainers/colima (Reaper mount sai socket
+  path macOS thay vì `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`) — không phải lỗi code, người chạy lại là qua.
+  17/18 passed; `test_b32_pipeline_sha_changed`, `test_b34_known_owner_written` ĐÃ XANH (bản sửa với_eval=False
+  đúng). CHỈ `test_b18_crash_between_alias_and_db` còn đỏ, LÝ DO KHÁC 2 test kia: bản sửa `with_eval=False`
+  làm `report["recall_at5"]`/`["false_grounding_rate"]` = `None` (do `rs is None` → `new is None`) — VÀ QDRANT
+  THẬT (phát hiện chạy trên hạ tầng thật, không đoán) **BỎ HẲN khoá metadata có giá trị `None` khi đọc lại**
+  (`get_metadata` trả về thiếu 2 khoá, không phải giữ khoá với giá trị `null`). `_backfill` (bước 5, đích test
+  b18) đòi đủ `GATE_KEYS` → báo "thiếu recall_at5, false_grounding_rate", đỏ SAI LÝ DO (không phải lỗi test
+  đang kiểm — bước 12, mà lỗi ở bước 5 vì thiếu dữ liệu tiền đề).** Sửa (Sonnet): b18 đổi sang dùng
+  `_PASSING_RETRIEVAL_SET` (giống b17/Q-3c-6) thay vì `with_eval=False` — cổng đạt thật → `recall_at5`/
+  `false_grounding_rate` là SỐ THẬT (không None) → metadata đủ khoá → `_backfill` chạy đúng như ý gốc test.
+  Bài học ghi lại: **"bỏ qua cổng bằng with_eval=False" chỉ an toàn cho test không đọc `recall_at5`/
+  `false_grounding_rate` từ metadata sau đó** (b32, b34 an toàn vì không chạm nhánh ghi bù) — test nào chạm
+  `_backfill`/đọc lại các khoá đó phải dùng retrieval_set THẬT (`_PASSING_RETRIEVAL_SET`). `ruff check` +
+  `--collect-only` xanh (17 test, không đổi). **Chờ người chạy lại L3 lần 3 để xác nhận, rồi tiếp L5–L7.**
+- **L5 (người chạy, 28/09/2026): `make up` → `make ingest KB_DIR=backend/tests/fixtures/kb` → `curl .../api/
+  health` → `make eval-rag --sweep`.** Lưu ý về mã thoát "1" ở cuối log người dán: KHÔNG phải lỗi — 3 dòng có
+  tiền tố `!` bị gộp chung MỘT lệnh bash, mà `! lệnh` ở đầu dòng trong bash là toán tử ĐẢO NGƯỢC mã thoát; dòng
+  cuối (`! make eval-rag ...`) thật ra trả 0 (thành công) rồi bị `!` đảo thành 1 — không liên quan gì tới ingest
+  hay eval-rag (đọc log: cả hai đều in xong bình thường, không có traceback).
+  - **`make ingest` (KHÔNG cờ, model ml-service THẬT, retrieval_set GỐC của fixture): ĐẠT cổng** — `Recall@5
+    1.000, trả lời bừa 0.000, MRR 1.000`, alias đổi, snapshot xong. **Khác hẳn dự đoán FG=0,333 của mô phỏng
+    FakeMl ở S2** — FakeMl (Jaccard âm tiết thô) coi câu âm "gần chủ đề" là dương tính giả nhiều hơn hẳn model
+    thật (bge-reranker-v2-m3 phân biệt tốt hơn nhiều). KHÔNG ảnh hưởng gì tới test 3c (đều dùng FakeMl nhất
+    quán nội bộ) — chỉ là bằng chứng thêm cho D-22 (số/ngưỡng thật phải đo trên model thật, không suy từ
+    FakeMl). `eval-rag --sweep` in cùng số, bảng 13 ngưỡng ổn định (FG=0 từ T=0,40 trở lên).
+  - **BUG THẬT phát hiện qua `curl /api/health`: `kb.status` luôn `"unknown"`, `collection: null`, dù `make
+    ingest` vừa đạt và đổi alias — không phải cache 10 giây (curl lại nhiều phút sau vẫn vậy).** Chẩn đoán bằng
+    cách gọi trực tiếp same URL probe gọi (`docker compose exec backend python -c "httpx.get('http://qdrant:
+    6333/collections/aliases')"`) → **404** `"Collection \`aliases\` doesn't exist"` — Qdrant hiểu `aliases`
+    là TÊN COLLECTION dưới `/collections/{name}`, không phải endpoint đặc biệt.
+  - **SỬA LẠI ĐIỀU ĐÃ "SỬA" SAI Ở S7:** S7 ghi PLAN mục 5.4 ("`GET {qdrant_url}/aliases`") là "chữ tắt", đường
+    REST thật là `/collections/aliases`, dựa trên đọc `qdrant_client/http/api/aliases_api.py`. **Đọc lại kỹ
+    file đó (không suy diễn, đọc nguyên hàm):** `_build_for_get_collections_aliases()` — hàm ĐỌC mọi alias mà
+    `AsyncQdrantClient.get_aliases()` (và `QdrantIndex.alias_target()`) thật sự gọi — có `url="/aliases"`
+    (dòng 85 file đó). `/collections/aliases` (dòng 105) là URL của `_build_for_update_aliases()` — hàm GHI
+    (POST, đổi alias), một thao tác HOÀN TOÀN KHÁC, chỉ tình cờ chuỗi giống nhau — S7 đọc nhầm hàm. **PLAN mục
+    5.4 viết ĐÚNG từ đầu; lỗi là ở bản sửa của Claude Code, không phải ở PLAN.** Xác nhận lại bằng Qdrant thật
+    (không chỉ đọc SDK nữa): `GET /aliases` → 200, `{"result":{"aliases":[{"alias_name":"kb_current",
+    "collection_name":"kb_c88b47a2...f593a9"}]},"status":"ok","time":...}` — đúng hình dạng JSON đã giả định
+    (`result.aliases[].alias_name`/`.collection_name`), chỉ sai ĐƯỜNG DẪN.
+  - **Đã sửa (Sonnet):** `backend/app/main.py::_default_kb_probe` — `/collections/aliases` → `/aliases`, viết
+    lại docstring ghi rõ lỗi đọc nhầm ở S7 (không xoá dấu vết, chỉ sửa tiếp). `backend/tests/unit/
+    test_health.py::test_c20a_default_kb_probe_reads_collections_aliases` → đổi tên
+    `test_c20a_default_kb_probe_reads_aliases`, route respx mock `/collections/aliases` → `/aliases` (test này
+    tự nó không phát hiện được lỗi vì chỉ khớp URL với chính URL code gọi — cùng sai một chỗ — lỗi CHỈ lộ ra
+    khi chạy trên Qdrant thật, đúng lý do L5/L3-thật tồn tại). Kiểm: `uv run pytest backend/tests/unit/
+    test_health.py -q` — 12 passed; `ruff check backend/app/main.py backend/tests/unit/test_health.py` xanh;
+    `mypy backend/app` (150 file) xanh.
+  - **Sửa "spec cần sửa" đã ghi sai ở S7 (mục 11 PLAN):** bản ghi trước nói PLAN mục 5.4 cần sửa từ `/aliases`
+    thành `/collections/aliases` — **RÚT LẠI, PLAN mục 5.4 không cần sửa gì cả, đã đúng.** Không có mục "spec
+    cần sửa" nào ở điểm này nữa.
+  - **Người chạy `docker compose build backend` → `docker compose up -d backend` → `curl .../api/health`
+    (28/09/2026): xác nhận — `kb.status="ready"`, `collection="kb_c88b47a2c38958836ba4d73e2928070f8ea71a4316
+    41fc7ed1317b210fa593a9"`, `alias="kb_current"`. Bug đã sửa xong, xác nhận trên stack thật.** L5 XONG.
+- **L3 lần 3 (người chạy, 28/09/2026): `uv run pytest backend/tests/integration/test_rag_ingest_pg.py -q` —
+  17/17 PASSED.** Sửa b18 (dùng `_PASSING_RETRIEVAL_SET` thay `with_eval=False`) đã đúng. **L3 XONG hoàn
+  toàn** — cả 3 file integration của 3c (`test_rag_query_qdrant.py`, `test_b08_pg.py`, `test_rag_ingest_pg.py`,
+  tổng 29 test) đều xanh trên Qdrant + Postgres thật. Còn L6 (`make gate2 S=all`), L7 (`make test`).
+- **L6 (người chạy, 28/09/2026): `make gate2 S=all` — 89 PASS, 0 FAIL, mã thoát 0 (c21).** L6 XONG. Còn L7.
+- **L7 (người chạy, 28/09/2026): `make test` — backend (unit+integration+e2e) 1938 passed; mock_services 86
+  passed; ml_service 77 passed (5 deselected `ml_real`, đúng quy ước không vào `make test`). L7 XONG.**
+- **S12 XONG HOÀN TOÀN — L3 đến L7 đều xanh, không có gì đỏ cần sửa lại.** Tổng kết 2 lỗi thật phát hiện qua
+  L3–L5 (không phải lỗi mô phỏng/test, lỗi CODE THẬT, đã sửa và xác nhận lại trên hạ tầng thật): (1) 3 test cũ
+  ở `test_rag_ingest_pg.py` (b18, b32, b34) giả định cổng kiểm luôn đạt trên retrieval_set gốc — không còn
+  đúng từ khi 3c đổi gate sang rerank thật; (2) `_default_kb_probe` gọi sai đường REST alias của Qdrant
+  (`/collections/aliases` thay vì `/aliases`) — lỗi Claude Code tự gây ra khi "sửa" nhầm ở S7, chỉ lộ ra khi
+  chạy trên Qdrant thật ở L5 (không unit test nào bắt được vì mock tự khớp URL sai với chính nó). Tiếp S13.
+- **S13 xong** (Sonnet) — README:
+  - `backend/app/rag/README.md`: mở rộng từ 1 dòng — liệt kê `ingest/` (3b, không đổi) và phần truy hồi 3c
+    (`filters.py`/`query.py`/`models.py`/`vector_store.py`/`retriever.py`/`expand.py`/`ports.py`/
+    `eval_cli.py`, mỗi file 1 câu vai trò) + 3 nhóm test (unit, integration Qdrant/Postgres thật, mutation).
+  - `backend/app/graph/nodes/README.md`: thêm ghi chú "hầu hết node ở đây đã là bản THẬT từ phase trước, 'giả'
+    chỉ còn ở b03/b06 (Phase 2a)" + mô tả cặp `b08_retrieve.py` thật / `fake/b08_retrieve.py` giả và
+    `wiring.select_nodes` chọn bản nào.
+  - **Tổng kết số liệu 3c (thay cho bảng riêng — đọc trực tiếp từ kết quả L3–L7 vừa chạy, không ước lượng):**
+    - Unit: **1764 passed** (`backend/tests/unit`, không đổi suốt 3c vì mọi thay đổi backend ở 3c đều có test
+      unit đi kèm từng bước); **77 passed** (`ml_service/tests`, không `ml_real`).
+    - Integration (Qdrant + Postgres thật, người chạy L3): **29 test MỚI của 3c** — 10 ở
+      `test_rag_query_qdrant.py`, 2 ở `test_b08_pg.py`, 2 test mới + 1 sửa lại (b17) + 3 test cũ sửa (b18, b32,
+      b34) ở `test_rag_ingest_pg.py` (tổng file đó: 17 test, tăng từ 15 trước 3c).
+    - `make test` (L7, toàn repo): backend (unit+integration+e2e) **1938 passed**; mock_services **86 passed**;
+      ml_service **77 passed** (5 `ml_real` deselected, đúng quy ước).
+    - `make gate2 S=all` (L6): **89 PASS, 0 FAIL** (10 kịch bản, c21).
+    - Mutation `scripts/mutation/mutate_3c.py`: **15/15 đột biến bị bắt đúng lý do** — 9 UNIT (S11, sandbox) +
+      6 INTEGRATION (L4, người chạy) — không đột biến nào "sống"; 2 mã (M-3c-6 số lệch PLAN, M-3c-7/8/9 không
+      có phần unit) đã ghi lệch rõ trong docstring script + PROGRESS S11, không sửa PLAN.
+    - Lỗi thật tìm thấy và sửa qua toàn chặng (không tính vào số test ở trên, liệt lại cho đủ): S2 (FakeMl quá
+      nhạy với câu âm gần chủ đề — chốt phương án A), S9 (rerank chậm trên CPU dev — nới tiêu chí theo trần an
+      toàn), S12/L3 (3 test cũ giả định cổng luôn đạt), S12/L5 (`_default_kb_probe` sai đường REST — lỗi
+      Claude Code tự gây ở S7, đã sửa).
+  - **"Spec cần sửa" — tổng hợp cuối (Claude chat sửa `docs/spec/`; Claude Code KHÔNG sửa), đối chiếu PLAN-3c
+    mục 11 với thực tế đã làm — mục nào PLAN liệt sẵn thì xác nhận còn đúng, mục nào phát sinh thêm/bị RÚT LẠI
+    thì ghi rõ:**
+    1. Mục 6.2: thêm `rag/ports.py`, `rag/eval_cli.py`, `graph/nodes/fake/`, `ml_service/app/rerank_bench.py`;
+       `filters.py` có `query_filter`; `retrieve`/`expand_for_answer` là phương thức của `Retriever`. (xác nhận
+       đúng, không đổi so với PLAN liệt)
+    2. Mục 6.3: `RetrievalSystemError.stage` thêm `"pipeline"` (Q-3c-2); `EvidenceBlock.tokens`. (xác nhận đúng)
+    3. Mục 6.6: embed một lần dùng lại ở D-23 (Q-3c-3); alias/metadata có retry, transport lỗi → `search`
+       (Q-3c-1); deadline `RAG_DEADLINE_S` (Q-3c-4); 4xx/sai schema Qdrant → E9 (Q-3c-9); `retries` = số lần
+       thử lại (Q-3c-10). (xác nhận đúng)
+    4. Mục 6.9 + 3-Q9 + c20: dạng `kb:{alias, collection, status}`; Qdrant tắt → 503 (Q-3c-5); **THÊM (S12/L5,
+       không có trong PLAN gốc): endpoint probe đúng là `GET {qdrant_url}/aliases` — PLAN mục 5.4 đã ghi ĐÚNG
+       từ đầu, KHÔNG cần sửa (S7 từng đề nghị sửa thành `/collections/aliases` — RÚT LẠI đề nghị đó, đó là lỗi
+       đọc code của Claude Code, không phải lỗi PLAN).**
+    5. Mục 6.11: c11 đổi sang rerank lỗi; c13 như Q-3c-1; c23–c37 mới. (xác nhận đúng — cả c23–c37 đã viết đủ
+       ở S3–S10, số liệu c37 theo mô phỏng S2 đã đối chiếu khớp trên Qdrant thật ở L3)
+    6. Ngoại lệ 3-Q15 (5.8 bước 10 c, 5.14 Q-3b-4): bản cũ lệch `pipeline_sha` → áp tiêu chí tuyệt đối (b)
+       (Q-3c-6). (xác nhận đúng, có test `test_q3c6_...` ở S10, xanh ở L3)
+    7. Mục 3.5: `RAG_RERANK_K` theo Q-3a-16 → **kết quả đo thật (S9): không cấu hình nào đạt "p95 ≤ 9 s" trên
+       CPU dev — người quyết định NỚI tiêu chí thành "trần an toàn `3·T+3 < WORKER_STALE_TURN_SECONDS/2`"
+       thay vì một mốc tốc độ tuyệt đối; áp `rag_rerank_k=10`, `ML_THREADS=4`, `TIMEOUT_S["rerank"]=18`. Spec
+       cần sửa câu chữ tiêu chí Q-3a-16 theo hướng này (không phải "phải ≤ 9 s"), không phải chỉ điền số đo
+       như PLAN mục 4.12 dự kiến** (thực tế phức tạp hơn "điền số" — phải đổi cả LÝ DO chọn).
+    8. Mục 3.6/P9: cột điểm log 3 của `audit_logs` chưa điền (Q-3c-8) — quyết Phase 4. (xác nhận đúng, chưa
+       làm gì thêm ở 3c, để nguyên cho Phase 4)
+    9. `01-kien-truc-project.md` §3 (file mới: `rag/query.py`, `rag/ports.py`, `rag/eval_cli.py`,
+       `graph/nodes/fake/`, `ml_service/app/rerank_bench.py`, `scripts/mutation/mutate_3c.py`,
+       `backend/tests/integration/test_rag_query_qdrant.py`, `test_b08_pg.py`); §4.3 (hợp đồng 7 thêm ignore
+       `rag.retriever -> tools.retry` — đã thêm ở S5). (xác nhận đúng)
+    10. Cho 3f: `tool_retry_count` điểm 2 dùng cùng nghĩa "số lần thử lại" (Q-3c-10). (xác nhận đúng, chưa làm
+        — ghi nợ cho 3f)
+  - Kiểm: `make lint` (ruff, mypy×3, import-linter 7/7, `gitleaks detect`) xanh; **`gitleaks dir` trên tất cả
+    64 file mới/sửa của cả chặng 3c (scan riêng, không chạy trên toàn cây làm việc — quá chậm vì quét cả
+    `.venv`/`models/`) — không lộ bí mật.** `uv run pytest backend/tests/unit -q` — 1764 passed (không đổi).
+  - **S13 XONG.** Tiếp S14 — điểm dừng bắt buộc CUỐI CÙNG, phải chuyển `/model opus` trước khi làm (soát bảo
+    mật `rag/filters.py` + mọi chỗ gọi `query_points`/`scroll`/`hybrid_query`/`scroll_window`/`Filter(` + nhánh
+    E2/E3, trước khi commit — commit chỉ khi người bảo).
+- **S14 xong (Opus, 28/09/2026) — soát bảo mật theo checklist người đưa.**
+  - Grep `query_points|.scroll(|scroll_window|hybrid_query|Filter(` trong `backend/app`: `Filter(` duy nhất ở
+    `rag/filters.py:37`; `hybrid_query` gọi duy nhất ở `rag/retriever.py:266` (flt từ `query_filter` dòng 263);
+    `scroll_window` gọi duy nhất ở `rag/expand.py:49` (flt từ `query_filter` dòng 42); `query_points`/`scroll`
+    của client chỉ trong `QdrantIndex.hybrid_query`/`scroll_window` (`vector_store.py`), nhận flt từ bên gọi.
+  - **Sửa nhỏ 1 — xoá `query_dense` (code chết, không filter bắt buộc):** PLAN hẹn xoá ở S4/S8 nhưng S8 bỏ
+    `DenseOnlyRetriever` mà quên xoá hàm này; không còn nơi gọi. Xoá khỏi `VectorIndex` Protocol, `QdrantIndex`
+    và `tests/fakes/rag.SpyIndex`.
+  - **Sửa nhỏ 2 — log lỗi probe health:** `api/health.py::_kb_status` nuốt mọi exception không log (chính vì
+    thế bug `/collections/aliases` ẩn tới L5). Thêm `log.warning("kb probe lỗi: %s", type(exc).__name__)` —
+    chỉ tên lớp lỗi. Test mới `test_health.py::test_kb_probe_error_is_logged_with_type_only`.
+  - **Test mới cho nhánh E2/E3 còn thiếu:** `test_rag_retriever.py::test_embed_exhausted_raises_embed_stage_
+    not_empty_result`, `::test_rerank_timeout_raises_rerank_stage_not_empty_result` (timeout thật của FakeMl,
+    không chỉ http_500); `test_b08_retrieve.py::test_node_chunks_below_threshold_gives_e3` (nhánh E3 "có chunk
+    nhưng dưới ngưỡng" — trước đó chỉ có unit cho nhánh rỗng).
+  - **Chưa sửa, cần người quyết (lệch giữa checklist S14 và PLAN/spec):** (a) role rỗng/lạ → checklist đòi
+    "khớp 0 bản ghi"; PLAN c2 + `filters.py` + 3-Q5 quy định `["public"]` (ít quyền nhất). Thực tế không tới
+    được: `RequesterContext.role` là `Literal` Pydantic, B1 escalate E2 `role_unmappable`. (b) Điểm log 3 lưu
+    `query = redacted_request[:500]` trong `audit_logs.detail` ([Chốt] spec 3.6) — checklist đòi chỉ độ dài/
+    hash; hiện `NotRedactingGuard` trả nguyên văn nên đây là văn bản gốc ở dev.
+  - Kiểm: `make lint` phần ruff/mypy (150 file)/import-linter 7/7/gitleaks xanh; unit **1768 passed** (+4);
+    `mutate_3c.py` lượt UNIT 9/9 đỏ đúng dự đoán, md5 khớp; integration collect sạch. Integration sau sửa
+    CHƯA chạy lại (sửa không đụng file integration, nhưng `vector_store.py` đổi — nên chạy lại L3 trước commit).
+    **Chưa commit.**
+  - **Người chốt (28/09/2026):** (a) role lạ GIỮ `["public"]` theo 3-Q5 — checklist S14 đòi chặn hết là sai,
+    không sửa. (b) GIỮ điểm log 3 lưu `redacted_request[:500]` (spec 3.6). Xác nhận `point3` chỉ đọc
+    `state["redacted_request"]` (qua `build_query`), state không có `raw_request` (D-07). Test mới
+    `test_b08_retrieve.py::test_point3_query_comes_from_redacted_request_only` — state có khoá mồi
+    `raw_request` chứa email/số điện thoại: `detail.query` và câu gửi RAG đều là bản đã che, PII không có trong
+    dòng audit. Unit **1769 passed**. Nợ ghi ở "Việc treo" mục 3. Commit sau khi người chạy L3 xanh.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -1240,6 +2073,16 @@ Kế hoạch đã duyệt: `PLAN-3b.md` ở gốc repo (KHÔNG commit). Thiết 
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 
 ---
+
+## Việc treo
+
+1. CI: `actions/cache@v4`, `checkout@v4`, `setup-uv@v6` còn Node 20 (deprecated); `ubuntu-latest` → Ubuntu 26 từ
+   19/10/2026 — nâng trước 19/10.
+2. Chưa commit, đi chung commit đầu 3c (người chốt 28/09/2026): dòng PROGRESS kết quả CI 3b (run `36344625601`) và
+   `.env.example` (dòng chú thích `RAG_KEEP_OLD_COLLECTIONS`).
+3. 3e: nghiệm thu phải có test audit B8 detail.query đã che PII bằng guard thật.
+4. 3c (Q-3a-16): đo lại K/threads/int8 rerank trên máy gaming/staging GPU (N2), đặt lại `TIMEOUT_S["rerank"]`
+   và `rag_rerank_k` theo số đo đó — int8 không bật ở 3c (OOM trên colima 8 GB).
 
 ## Câu hỏi mở / điểm lệch
 

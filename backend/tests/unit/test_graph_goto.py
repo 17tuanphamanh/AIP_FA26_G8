@@ -190,6 +190,16 @@ async def test_audit_columns_from_fields() -> None:
 
 
 @pytest.mark.asyncio
+async def test_goto_copies_kb_version_to_audit_column() -> None:
+    """c35 (3c) — `kb_version` chép sang cột `audit_logs.kb_version` như mọi cột `_SAME_NAME_COLUMNS`."""
+    audit = MemoryAudit()
+    with run(audit):
+        await goto(state(S_RETRIEVING), S_RETRIEVING, next_node="b10_route", step="B8",
+                   event="retrieved", kb_version="a" * 64)  # fmt: skip
+    assert audit.rows[0]["kb_version"] == "a" * 64
+
+
+@pytest.mark.asyncio
 async def test_goto_outside_runner_is_an_error() -> None:
     with pytest.raises(RuntimeError, match="RunContext"):
         await goto(state(S_RETRIEVING), S_RETRIEVING, next_node="x", step="B8", event="e")

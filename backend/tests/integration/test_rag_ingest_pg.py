@@ -17,6 +17,7 @@ from app.rag.ingest import cli
 from app.rag.ingest.config import ALIAS, INGEST_LOCK_KEY
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ingest.pipeline import IngestDeps, IngestOptions, run_ingest
+from app.rag.retriever import RagConfig
 from app.rag.token_counter import MlTokenCounter
 from app.rag.vector_store import PAYLOAD_INDEXES, QdrantIndex
 from app.settings import Settings
@@ -51,7 +52,7 @@ class Env:
         return IngestDeps(
             index=self.index, ml=ml, counter=MlTokenCounter(ml), repo=repo or self.repo, clock=FakeClock(KB_TEST_NOW),
             app_env=app_env, retrieval_threshold=0.6, keep_old=2, config_dir=config_dir, out=io.StringIO(),
-            err=io.StringIO(),
+            err=io.StringIO(), rag=RagConfig.from_settings(Settings(_env_file=None)),  # type: ignore[call-arg]
         )  # fmt: skip
 
     async def run(self, kb: Path, deps: IngestDeps | None = None, **opts: bool) -> Result:
@@ -190,12 +191,105 @@ async def test_b16_prod_rejects_flag(env: Env, tmp_path: Path) -> None:
     assert await env.index.list_kb_collections() == []
 
 
-# ---- b17 ------------------------------------------------------------------------------------------
+# ---- b17 (Q-3c-16, PLAN-3c c37): cổng kiểm 3c dùng Retriever thật (BM25+dense+rerank+lọc quyền) qua
+# RetrieveGateAdapter — số liệu KHÁC hẳn bản dense-only 3b (xem PROGRESS, S2, "phương án A"). Số ở đây là mô
+# phỏng ngoài băng bằng FakeMl gốc + fixture 20 đoạn, prefetch=20/rerank=10 (RagConfig.from_settings mặc
+# định) — S2 xác nhận biến thể rerank_k=10 ra CÙNG số trên fixture này ("xấp xỉ"); số THẬT (Qdrant RRF) chỉ
+# xác nhận được khi người chạy L3 (S12) — đỏ ở đây thì đối chiếu với PROGRESS trước khi coi là lỗi code. ----
+
+
+# retrieval_set RIÊNG của 2 test "cổng đạt" dưới đây — CÙNG 8 câu có đáp án với fixture gốc (P001–P008,
+# không sửa fixture), nhưng chỉ giữ 3 câu âm tính "rõ ràng ngoài chủ đề" (N001/N004/N006 — mô phỏng S2 cho
+# điểm < 0,6 với biên rõ: 0 / 0,500 / 0,333) — bỏ N002/N003/N005 (mô phỏng S2 cho điểm ≥ 0,6, gây trả lời
+# bừa 0,333 trên bộ gốc). Không dùng `--allow-unevaluated` để lách (S2, phương án A điểm 1).
+_PASSING_RETRIEVAL_SET = """\
+version: 1
+kb_scope: [vpn]
+items:
+  - id: P001
+    query: "VPN cty dùng cổng nào vậy ạ, mạng nhà mình có cần mở port ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001]
+  - id: P002
+    query: "bi loi 809 khi ket noi vpn o khach san, lam sao"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+  - id: P003
+    query: "Đổi sang SSTP trong ABC Connect ở chỗ nào?"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+  - id: P004
+    query: "chứng chỉ vpn bao lâu thì hết hạn, gia hạn trước được mấy ngày"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001, KB-VPN-004]
+  - id: P005
+    query: "muốn đăng ký thêm laptop mới để dùng vpn thì làm sao, có cần ai duyệt ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-005]
+  - id: P006
+    query: "chứng chỉ vpn trên máy em hết hạn rồi, xin cấp lại thế nào"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-004]
+    note: chỉ KB-VPN-004 — tắt 004 làm Recall tụt 1/8 = 0,125 (b17)
+  - id: P007
+    query: "tường lửa biên phải mở những cổng nào cho máy chủ vpn"
+    intent: vpn
+    role: l1
+    expected_doc_ids: [KB-VPN-007]
+  - id: P008
+    query: "mk vpn đúng rồi mà vẫn ko kết nối dc, báo lỗi 809"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+  - id: N001
+    query: "Làm sao bật xác thực 2 lớp MFA cho tài khoản email?"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+  - id: N004
+    query: "máy in tầng 3 kẹt giấy"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+  - id: N006
+    query: "đặt phòng họp lớn tầng 5 chiều thứ sáu"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+"""
+
+
+def _write_passing_retrieval_set(kb_dir: Path) -> None:
+    (kb_dir / "eval" / "retrieval_set.yaml").write_text(_PASSING_RETRIEVAL_SET, encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_b17_gate_blocks_with_fixture_retrieval_set(env: Env, tmp_path: Path) -> None:
+    """"Cổng chặn" (S2, phương án A): fixture + `retrieval_set.yaml` GỐC (không sửa) → trả lời bừa 0,333 >
+    0,05 (2/6 câu âm gần chủ đề vượt ngưỡng rerank thật) — KHÔNG đạt, thoát 1, alias giữ nguyên."""
+    kb = copy_kb(tmp_path)
+    r = await env.run(kb)
+    assert r.code == 1
+    assert "nhánh b" in r.out
+    assert "Recall@5 1.000" in r.out and "trả lời bừa 0.333" in r.out
+    assert await _current(env) is None  # alias chưa từng có, giữ nguyên = vẫn None
 
 
 @pytest.mark.asyncio
 async def test_b17_gate_c_recall_drop(env: Env, tmp_path: Path) -> None:
+    """"Cổng đạt" (S2, phương án A): retrieval_set RIÊNG của test → lần đầu đạt (nhánh b); tắt KB-VPN-004
+    (đổi enabled phải tăng version — Q-3b-2) → Recall tụt quá 0,05 → nhánh c KHÔNG đạt, alias giữ nguyên."""
     kb = copy_kb(tmp_path)
+    _write_passing_retrieval_set(kb)
     first = await env.run(kb)
     assert first.code == 0, first.err
     assert "nhánh b" in first.out and "Recall@5 1.000" in first.out and "trả lời bừa 0.000" in first.out
@@ -206,6 +300,24 @@ async def test_b17_gate_c_recall_drop(env: Env, tmp_path: Path) -> None:
     assert "Recall@5 0.875" in r.out and "(đổi -0.125)" in r.out
     assert await _current(env) == old
     assert len(await env.index.list_kb_collections()) == 2  # collection mới giữ lại để xem
+
+
+# ---- Q-3c-6: bản cũ lệch pipeline_sha — bỏ qua so sánh, áp tiêu chí tuyệt đối (nhánh b) cho bản mới -----
+
+
+@pytest.mark.asyncio
+async def test_q3c6_old_pipeline_sha_mismatch_skips_comparison_uses_branch_b(env: Env, tmp_path: Path) -> None:
+    cfg = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, cfg)
+    kb = copy_kb(tmp_path)
+    _write_passing_retrieval_set(kb)
+    assert (await env.run(kb, env.deps(config_dir=cfg))).code == 0
+    with (cfg / "vi_stopwords.txt").open("a", encoding="utf-8") as f:
+        f.write("thêm\n")  # đổi pipeline_sha — không đụng bản đang chạy (target)
+    set_version(kb, "KB-VPN-001", 2)  # tăng version — tránh vấp kiểm "cấu hình đã đổi" ở bước 5 (test_b32)
+    r = await env.run(kb, env.deps(config_dir=cfg))
+    assert r.code == 0, r.err
+    assert "pipeline_sha khác cấu hình hiện tại" in r.out and "nhánh b" in r.out
 
 
 # ---- b18 ------------------------------------------------------------------------------------------
@@ -225,7 +337,13 @@ class _DiesOnce(KbRepo):
 
 @pytest.mark.asyncio
 async def test_b18_crash_between_alias_and_db(env: Env, rw: Engine, tmp_path: Path) -> None:
+    """`_PASSING_RETRIEVAL_SET` (S12/L3 — KHÔNG dùng `with_eval=False`): lần ghi bù ở bước 5/`_backfill` đòi
+    metadata đủ `GATE_KEYS` (recall_at5, false_grounding_rate…) — ingest "unevaluated" ghi các khoá này bằng
+    `None`, và Qdrant BỎ HẲN khoá metadata có giá trị `None` khi đọc lại (phát hiện chạy thật, không đoán) —
+    `_backfill` báo "thiếu recall_at5, false_grounding_rate", đỏ oan. Dùng retrieval_set thật (đạt cổng) để
+    metadata có số thật (không None), giữ đúng ý gốc test (kiểm bước 12, không kiểm cổng)."""
     kb = copy_kb(tmp_path)
+    _write_passing_retrieval_set(kb)
     with pytest.raises(RuntimeError, match="chết giả") as e:
         await env.run(kb, env.deps(repo=_DiesOnce(env.repo)))
     assert "ingest: lỗi ở bước 12" in e.value.__notes__
@@ -273,10 +391,12 @@ async def test_b31_dry_run_writes_nothing(env: Env, rw: Engine, tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_b32_pipeline_sha_changed(env: Env, tmp_path: Path) -> None:
+    """with_eval=False (S2): việc kiểm là bước 5 (pipeline_sha đổi), không phải cổng kiểm — lần chạy lại
+    (dòng dưới) không tăng version nên `name==target`, dừng ở bước 5 TRƯỚC khi chạm cổng, không cần cờ."""
     cfg = tmp_path / "config"
     shutil.copytree(CONFIG_DIR, cfg)
-    kb = copy_kb(tmp_path)
-    assert (await env.run(kb, env.deps(config_dir=cfg))).code == 0
+    kb = copy_kb(tmp_path, with_eval=False)
+    assert (await env.run(kb, env.deps(config_dir=cfg), allow_unevaluated=True)).code == 0
     with (cfg / "vi_stopwords.txt").open("a", encoding="utf-8") as f:
         f.write("thêm\n")
     r = await env.run(kb, env.deps(config_dir=cfg))
@@ -301,8 +421,8 @@ async def test_b34_known_owner_written(env: Env, rw: Engine, tmp_path: Path) -> 
     with rw.begin() as conn:
         conn.execute(text("INSERT INTO users (user_id, username, role) VALUES ('it_mgr01', 'it_mgr01', 'manager') "
                           "ON CONFLICT DO NOTHING"))  # fmt: skip
-    try:
-        r = await env.run(copy_kb(tmp_path))
+    try:  # with_eval=False (S2): việc kiểm là owner ghi ở bước 12, không phải cổng kiểm
+        r = await env.run(copy_kb(tmp_path, with_eval=False), allow_unevaluated=True)
         assert r.code == 0, r.err
         with rw.connect() as conn:
             assert set(conn.execute(text("SELECT owner FROM kb_documents")).scalars()) == {"it_mgr01"}

@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
@@ -19,18 +19,20 @@ from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines, create_engines
 from app.db.tickets import SqlTicketStore
-from app.graph.builder import build_graph, fake_nodes
+from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.lock import PgTicketLock
 from app.graph.runner import Runner
 from app.graph.wiring import Runtime
+from app.rag.ports import RagPort
 from app.settings import Settings, get_escalation_templates, get_policy
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import LOCKOUT, CountingExecutor, Crash, RecordingNotifier
 from tests.fakes.identity import FakeAd, ad_user, fake_directory
+from tests.fakes.rag import FakeRag
 
 REQUESTER = "nv-graph"
 APPROVER = "l1-fake"  # NodeDeps.approver_id mặc định
@@ -85,6 +87,8 @@ async def open_pg_runtime(
     ad: FakeAd | None = None,
     tickets: SqlTicketStore | None = None,
     approver_id: str | None = APPROVER,
+    rag: RagPort | None = None,
+    nodes: Literal["fake", "real"] = "fake",
 ) -> AsyncIterator[PgRuntime]:
     settings = Settings(database_url=rw_url, ticket_lock_timeout=lock_timeout)
     engines = create_engines(settings)
@@ -99,12 +103,13 @@ async def open_pg_runtime(
         directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
         lockout=LOCKOUT, tickets=ticket_store,
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
-        ml=FakeMlService().client(clock), scenario=scenario, approver_id=approver_id,
+        ml=FakeMlService().client(clock), rag=rag or FakeRag(), scenario=scenario, approver_id=approver_id,
     )  # fmt: skip
+    build_nodes = real_nodes if nodes == "real" else fake_nodes
     try:
         async with open_postgres_saver(rw_url, max_size=5) as saver:
             runner = Runner(
-                build_graph(fake_nodes(deps), saver), lock=PgTicketLock(engines.lock),
+                build_graph(build_nodes(deps), saver), lock=PgTicketLock(engines.lock),
                 turns=turns, audit=AuditWriter(engines.main), effects=SqlEffectStore(engines.main),
                 spans=SqlSpanSink(engines.main), clock=clock, can_execute=can_execute,
                 tickets=ticket_store,

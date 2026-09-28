@@ -1,4 +1,7 @@
-"""b23, b24 — bộ kiểm tra truy hồi và cổng kiểm của ingest (3-Q15; PLAN-3b mục 7.1, Q-3b-4, Q-3b-13)."""
+"""b23, b24 — bộ kiểm tra truy hồi và cổng kiểm của ingest (3-Q15; PLAN-3b mục 7.1, Q-3b-4, Q-3b-13).
+
+c29, c30 (3c, mục 1 Q-3c-7/15, mục 7) — `RetrieveGateAdapter` và `sweep()`: ở cuối file.
+"""
 
 from pathlib import Path
 from typing import Any
@@ -6,13 +9,20 @@ from typing import Any
 import pytest
 import yaml
 from app.rag.ingest.gate import (
+    SWEEP_THRESHOLDS,
     EvalItem,
     GateMetrics,
+    RetrievalSet,
+    RetrieveGateAdapter,
     decide,
+    gate_intent,
     load_retrieval_set,
     metrics,
+    sweep,
 )
+from app.rag.models import IngestMlError, RetrievalResult, RetrievalSystemError
 from tests.fakes.kb import FIXTURE_KB
+from tests.fakes.rag import FakeRag
 
 GOOD: dict[str, Any] = {
     "version": 1,
@@ -130,3 +140,110 @@ def test_b24_branch_b_boundaries(r: float, fg: float, passed: bool) -> None:
 def test_b24_branch_c_boundaries(old: tuple[float, float], new: tuple[float, float], passed: bool) -> None:
     d = decide(has_set=True, allow_unevaluated=True, new=_m(*new), old=_m(*old))
     assert (d.branch, d.passed) == ("c", passed)
+
+
+# ---- c29: RetrieveGateAdapter (3c) ----------------------------------------------------------------
+
+
+def _good_result(top_score: float = 0.9) -> RetrievalResult:
+    return RetrievalResult(chunks=[], top_score=top_score, kb_version="a" * 64, intent_filter_fallback=False,
+                           fallback_tried=False, retries=0, query_truncated=False)  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_c29_retrieval_system_error_becomes_ingest_ml_error() -> None:
+    rag = FakeRag(error=RetrievalSystemError("search", 2, detail="ConnectError"))
+    adapter = RetrieveGateAdapter(rag)
+    item = EvalItem(id="P1", query="vpn lỗi", intent="vpn", role="employee", expected_doc_ids=["D1"])
+    with pytest.raises(IngestMlError):
+        await adapter.top_docs(item, collection="kb_x")
+
+
+@pytest.mark.asyncio
+async def test_c29_intent_mapped_via_gate_intent_q_3c_7() -> None:
+    assert gate_intent("out_of_scope") is None and gate_intent("vpn") == "vpn"
+    rag = FakeRag(result=_good_result())
+    adapter = RetrieveGateAdapter(rag)
+    oos = EvalItem(id="N1", query="máy in kẹt giấy", intent="out_of_scope", role="employee", expected_doc_ids=[])
+    await adapter.top_docs(oos, collection="kb_x")
+    assert rag.retrieve_calls[-1][0].intent is None
+    vpn = EvalItem(id="P1", query="vpn lỗi", intent="vpn", role="employee", expected_doc_ids=["D1"])
+    await adapter.top_docs(vpn, collection="kb_x")
+    assert rag.retrieve_calls[-1][0].intent == "vpn"
+
+
+@pytest.mark.asyncio
+async def test_c29_role_of_item_becomes_ctx_role() -> None:
+    rag = FakeRag(result=_good_result())
+    adapter = RetrieveGateAdapter(rag)
+    item = EvalItem(id="P1", query="x", intent="vpn", role="l1", expected_doc_ids=["D1"])
+    await adapter.top_docs(item, collection="kb_x")
+    assert rag.retrieve_calls[-1][1].role == "l1"
+
+
+@pytest.mark.asyncio
+async def test_c29_returns_doc_ids_capped_at_5_and_top_score() -> None:
+    from app.domain.ticket_state import ChunkRef
+
+    chunks = [
+        ChunkRef(chunk_id=f"c{i}", doc_id=f"D{i}", version=1, seq=0, title="T", heading_path="H",
+                 score=0.9 - i * 0.01, excerpt="x")
+        for i in range(7)
+    ]
+    rag = FakeRag(result=RetrievalResult(chunks=chunks, top_score=0.9, kb_version="a" * 64,
+                                         intent_filter_fallback=False, fallback_tried=False, retries=0,
+                                         query_truncated=False))  # fmt: skip
+    adapter = RetrieveGateAdapter(rag)
+    item = EvalItem(id="P1", query="x", intent="vpn", role="employee", expected_doc_ids=["D0"])
+    docs, score = await adapter.top_docs(item, collection="kb_x")
+    assert len(docs) == 5  # GATE_TOP_DOCS — an toàn dù Retriever cấu hình top_n khác
+    assert docs[0] == "D0" and score == 0.9
+
+
+# ---- c30: sweep() (3c, Q-3c-15) — hàm thuần, kết quả tay ------------------------------------------
+
+
+def test_c30_sweep_thresholds_are_13_points_030_to_090() -> None:
+    assert len(SWEEP_THRESHOLDS) == 13
+    assert SWEEP_THRESHOLDS[0] == 0.30 and SWEEP_THRESHOLDS[-1] == 0.90
+    assert SWEEP_THRESHOLDS == tuple(round(0.30 + 0.05 * i, 2) for i in range(13))
+
+
+def test_c30_sweep_simulates_d23_per_threshold_matching_hand_math() -> None:
+    rs = RetrievalSet(version=1, kb_scope=["vpn"], items=[
+        EvalItem(id="P1", query="q1", intent="vpn", role="employee", expected_doc_ids=["D1"]),
+        EvalItem(id="P2", query="q2", intent="vpn", role="employee", expected_doc_ids=["D2"]),
+        EvalItem(id="N1", query="q3", intent="vpn", role="employee", expected_doc_ids=[]),
+    ])  # fmt: skip
+    pairs = {
+        # P1: first thấp (0.40), alt cao (0.80) — D-23 "cứu" được câu này ở ngưỡng vừa.
+        "P1": ((["D1"], 0.40), (["D1"], 0.80)),
+        # P2: first đã cao (0.85) — không cần D-23 (alt cố tình sai để lộ nếu bị chọn nhầm).
+        "P2": ((["D2"], 0.85), (["D9"], 0.20)),
+        # N1: first thấp (0.35), alt CAO hơn (0.65) — D-23 làm câu âm tính "trả lời bừa" hơn ở ngưỡng vừa.
+        "N1": ((["D9"], 0.35), (["D9"], 0.65)),
+    }
+    # T = 0,50: P1.first(0,40) < T → alt(0,80) ≥ T → dùng alt; P2.first(0,85) ≥ T → dùng first;
+    #           N1.first(0,35) < T → alt(0,65) ≥ T → dùng alt (0,65 ≥ 0,50 → trả lời bừa).
+    [p50] = sweep(rs, pairs, thresholds=[0.50])
+    assert p50.metrics.false_grounding_rate == pytest.approx(1.0)  # tay tính: N1 dùng alt 0,65 ≥ 0,50
+    assert p50.metrics.recall_at5 == pytest.approx(1.0)  # cả 2 câu dương đều có doc đúng trong danh sách trả về
+
+    # T = 0,90: mọi first/alt đều < 0,90 → luôn dùng first (đúng luật D-23 thật: không đạt cũng trả first,
+    # KHÔNG BAO GIỜ trả alt khi alt cũng dưới ngưỡng) — "E3 oan": P1 đáng lẽ có D1 đúng nhưng điểm chỉ 0,40.
+    # `Recall@5` ở đây đo việc doc đúng có nằm trong top hay không, KHÔNG tự trừ khi điểm dưới ngưỡng (đó là
+    # việc của `false_grounding_rate` phía âm tính và của quyết định E3 thật ở node — không phải của hàm này).
+    [p90] = sweep(rs, pairs, thresholds=[0.90])
+    assert p90.metrics.false_grounding_rate == pytest.approx(0.0)  # tay tính: N1 dùng first 0,35 < 0,90
+    assert p90.metrics.recall_at5 == pytest.approx(1.0)
+
+
+def test_c30_sweep_never_uses_alt_when_alt_also_below_threshold() -> None:
+    """`else first` — kể cả khi first cũng dưới T, vẫn KHÔNG trả alt (đúng D-23 thật, không phải "trả cái lớn hơn")."""
+    rs = RetrievalSet(version=1, kb_scope=["vpn"], items=[
+        EvalItem(id="P1", query="q1", intent="vpn", role="employee", expected_doc_ids=["D1"]),
+        EvalItem(id="N1", query="q2", intent="vpn", role="employee", expected_doc_ids=[]),
+    ])  # fmt: skip
+    pairs = {"P1": ((["D1"], 0.10), (["D_KHAC"], 0.05)), "N1": ((["D9"], 0.10), (["D9"], 0.05))}
+    [p] = sweep(rs, pairs, thresholds=[0.50])
+    assert p.metrics.recall_at5 == pytest.approx(1.0)  # dùng first (D1) — nếu lỡ dùng alt sẽ mất D1

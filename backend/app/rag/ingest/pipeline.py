@@ -35,8 +35,8 @@ from app.rag.ingest.config import (
 )
 from app.rag.ingest.facts_check import check_facts
 from app.rag.ingest.gate import (
-    DenseOnlyRetriever,
     GateMetrics,
+    RetrieveGateAdapter,
     decide,
     evaluate,
     load_retrieval_set,
@@ -52,6 +52,7 @@ from app.rag.models import (
     IngestMlError,
     IngestReport,
 )
+from app.rag.retriever import RagConfig, Retriever
 from app.rag.token_counter import TokenCounter
 from app.rag.vector_store import VectorIndex, VectorStoreError
 from app.settings import DEV_FAKE_ENVS
@@ -78,6 +79,7 @@ class IngestDeps:
     retrieval_threshold: float  # get_policy().constants.RETRIEVAL_THRESHOLD — không lặp hằng ở đây
     keep_old: int  # Settings.rag_keep_old_collections
     config_dir: Path
+    rag: RagConfig  # RagConfig.from_settings(settings) — Retriever thật dựng cổng kiểm bước 10 (3c)
     out: TextIO = field(default_factory=lambda: sys.stdout)
     err: TextIO = field(default_factory=lambda: sys.stderr)
 
@@ -264,17 +266,28 @@ async def _index_and_switch(
         stored = await d.index.count(name)
         if stored != len(points):
             return run.fail(f"{name} có {stored} điểm, cần {len(points)} — collection giữ lại để xem")
-        # 10 — cổng kiểm
+        # 10 — cổng kiểm (3c: Retriever thật qua RetrieveGateAdapter — BM25 + dense + rerank + lọc quyền)
         run.step = 10
         rs, issues = load_retrieval_set(opts.kb_dir)
         if issues:
             return run.issues(issues, "bộ kiểm tra")
         new = old = None
         if rs is not None:
-            retriever = DenseOnlyRetriever(d.index, d.ml)
-            new = await evaluate(rs, retriever, name, d.retrieval_threshold)
+            gate_retriever = Retriever(
+                d.index, d.ml, d.rag, threshold=d.retrieval_threshold, pipeline_sha=psha,
+                lexicon=lexicon, clock=d.clock,
+            )  # fmt: skip
+            adapter = RetrieveGateAdapter(gate_retriever)
+            new = await evaluate(rs, adapter, name, d.retrieval_threshold)
             if target is not None:
-                old = await evaluate(rs, retriever, target, d.retrieval_threshold)  # Q-3b-4
+                old_meta = await d.index.get_metadata(target)
+                if old_meta.get("pipeline_sha") == psha:
+                    old = await evaluate(rs, adapter, target, d.retrieval_threshold)  # Q-3b-4
+                else:
+                    run.say(
+                        f"cổng kiểm: bản cũ ({target}) có pipeline_sha khác cấu hình hiện tại — không đánh giá "
+                        "lại, áp tiêu chí tuyệt đối (nhánh b) cho bản mới (ngoại lệ 3-Q15, Q-3c-6)"
+                    )
         decision = decide(has_set=rs is not None, allow_unevaluated=opts.allow_unevaluated, new=new, old=old)
         run.say(_gate_line(decision.branch, new, old))
         if not decision.passed:
@@ -405,7 +418,7 @@ def _gate_line(branch: str, new: GateMetrics | None, old: GateMetrics | None) ->
     if new is None:
         return f"cổng kiểm (nhánh {branch}): không có bộ kiểm tra — eval_status=unevaluated, số đo NULL"
     line = (
-        f"cổng kiểm (nhánh {branch}, dense-only): Recall@5 {new.recall_at5:.3f}, trả lời bừa "
+        f"cổng kiểm (nhánh {branch}, retrieve): Recall@5 {new.recall_at5:.3f}, trả lời bừa "
         f"{new.false_grounding_rate:.3f}, MRR {new.mrr:.3f}; câu có đáp án {new.positives}, câu âm tính {new.negatives}"
     )
     if old is not None:

@@ -23,6 +23,10 @@ def test_tool_arg_slots_match_b11() -> None:
                                           "account_type"}  # fmt: skip
 
 
+def test_query_slots_match_3c() -> None:
+    assert get_slots().query_slots == ("error_code",)  # 3-Q13
+
+
 def _policy(tmp_path: Path, **over: object) -> Path:
     raw = json.loads((REPO / "config" / "policy.json").read_text())
     raw["constants"].update(over)
