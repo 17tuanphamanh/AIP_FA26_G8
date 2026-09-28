@@ -1,6 +1,6 @@
 # Phase 3 — Thiết kế chi tiết (lát cắt VPN B1 → B20)
 
-*Thuộc bộ `build/`. Phiên bản 1.5 — 28/09/2026 (1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
+*Thuộc bộ `build/`. Phiên bản 1.6 — 29/09/2026 (1.6: chốt khi hiện thực 3d, mục 7.8; 1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
 
 ---
 
@@ -1226,6 +1226,35 @@ Step = Reply(json: dict | str) | BadJSON(raw: str) | Http(status: int, retry_aft
 | M-3d-4 | Bỏ kiểm `allowed_vars` | d7 |
 | M-3d-5 | ScriptedLLM trả mặc định khi hết kịch bản | d8 |
 
+### 7.8. Chốt khi hiện thực 3d (29/09/2026)
+
+Commit `5348bda` (spec v1.5), `57bf3e5` (decisions.md), `7889cc3` (code 3d, 54 file) trên `dev-tuananh`; CI xanh. **Mọi thành viên phải thêm `LLM_BACKEND=scripted` vào `.env`**, thiếu thì backend/worker không khởi động.
+
+**Sửa so với 7.1–7.7 và P2 (thắng bản cũ khi lệch):**
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | 7.6 d4, P2 §13 | SDK `openai` bản đang ghim dùng `httpx2`, **respx không chặn được**. Test tiêm `AsyncOpenAI(http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))`, đếm request ở handler. `conftest` gốc chặn mạng: transport thật ném `NetworkBlocked` → test quên transport giả đỏ rõ ràng, không ra mạng |
+| 2 | P2 §9, 7.3 | `max_retries` theo vai trò: **fast 3, strong 1**. Công thức Q-3a-16: (max_retries+1)·timeout_s + Σbackoff + max_retries·jitter < `WORKER_STALE_TURN_SECONDS`/2 = 60 s. Strong theo P2 cũ = 87,75 s (vượt); strong 1 lần = 41,25 s; fast = 39,75 s. Strong hỏng → E2 sớm (an toàn hơn) |
+| 3 | P2 §5/§9, 7.3 | `deadline_s` theo vai trò (**fast 45 s, strong 50 s**, < stale/2) bọc toàn bộ `complete()` (retry + fallback + sửa schema); hết hạn → `LLMUnavailable`; `Retry-After` dài hơn thời gian còn lại → không ngủ. Kiểm lúc khởi động (`check_timing`). Có `limits.jitter_max_s` 0,25 s, `backoff_base_s`; `Retry-After` nhận cả giây lẫn HTTP-date |
+| 4 | P2 §5, 7.3 | **Không nội suy `${…}`** trong `llm.yaml`. `FAST_MODEL`, `STRONG_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env qua **tên trường Settings** (`model_setting`, `base_url_setting`, `api_key_setting`; khoá là `SecretStr`). Chỉ `pricing` ghi tên model cố định; `real` mà model trong env không có ở `pricing` → từ chối khởi động, nêu tên model. Bỏ `no_cache_prompts` (YAML prompt là nguồn duy nhất), thêm `spend.refresh_s`, bỏ `hard_stop` (luôn chặn). Scripted = model `scripted` giá 0; luật thiếu pricing áp mọi provider |
+| 5 | 3.9, 7.6 d10 | `MIN_LLM_CALL_SITES = 0` **tạm** ở 3d (chưa node gọi LLM), có mẫu giả chứng minh AST bắt được lỗi. **3e nâng ≥ 1** (`b02_injection_judge`) — nợ bắt buộc |
+| 6 | B10 §4 | `AnswerOut.citations` mặc định `[]` + validator hai chiều: `cannot_answer=false` → ≥ 1 trích dẫn; `cannot_answer=true` cho rỗng → B10 đi **E3 `no_grounding`**, không E2 |
+| 7 | P2 §4 | `complete(..., kb_version=None)`; Phase 3: `n != 1` → `ValueError`; `sensitivity` chỉ ghi vào span |
+| 8 | P2 §8 | Khoá cache băm thêm `mode` (runtime/eval); `model_version` trong khoá = giá trị ghim ở `llm.yaml`, bản thật từ response chỉ ghi `llm_calls.model_version` (≤ 64 ký tự) |
+| 9 | P2 §6, P7 | `prompt_hash` (sha256 cả file prompt) chỉ ở `llm_calls`; bảng `lineage` không có cột này |
+| 10 | 3.8, 7.5 | `ScriptedLLM` ở `app/llm/providers/scripted.py` (image không có `tests/`), `tests/fakes/scripted_llm.py` re-export. Preset stack **tĩnh** (mỗi prompt một phản hồi) + `default`, chọn qua `turn_id` → `tickets.redacted_request`; phản hồi động để 3g/3h |
+| 11 | 7.4 | Biến template phải **bằng** `allowed_vars` (không phải ⊇); renderer một lượt, không Jinja; dấu phân cách do renderer sinh bằng `secrets`, không nằm trong `allowed_vars` |
+| 12 | 7.3 | Ước lượng token trước khi gửi = ceil(ký tự / 3) — **ước tính, chưa đo**; span ghi cả `est_tokens_in` và `usage_tokens_in` thật để hiệu chỉnh ở mốc G |
+| 13 | P2 §5, N1 | Trần chi: **giữ chỗ chi phí xấu nhất** (token vào ước tính × giá in + `max_tokens` × giá out) trước **mỗi** request trả phí (gồm thử lại, sửa schema); không gửi request có thể đẩy tổng vượt trần; đọc tổng lỗi → fail-closed. Giới hạn: bộ đếm theo tiến trình, backend và worker thấy nhau sau `refresh_s` → **"Việc treo" 9, chốt trước mốc G** (chia trần/2 mỗi tiến trình hoặc bảng giữ chỗ DB) |
+| 14 | P2 §11, 01 §5 | `EVAL_MODE=true` bị từ chối khi `APP_ENV` ∈ {prod, thiếu}; được bật ở dev/test/staging, kèm **1 dòng WARNING** lúc khởi động mỗi tiến trình (`llm/wiring.open_llm`) |
+| 15 | P2 §11 | Không log `base_url`: `Settings.llm_base_url` `repr=False`; logger `httpx2` của SDK nâng lên WARNING (ở INFO in nguyên URL kèm user:pass/api-key); nhãn lỗi provider chỉ có host |
+| 16 | 01 §3/§4.3 | File mới `backend/app/llm/README.md`, `config/prompts/README.md`; import-linter hợp đồng 8 `llm-lower-layer` và 9 `llm-only-via-gateway` (node không gọi provider trực tiếp); test AST "SDK chỉ ở `openai_compat.py`" |
+
+**Khác:** prompt `b11_clarify_question` có thêm câu "không hỏi mật khẩu, OTP, bí mật" (version 1). Mutation M-3d-1…5 theo 7.7 + M-3d-6 (ghi `prompt_full` khi `EVAL_MODE=false` → d9), M-3d-7 (bỏ chặn scripted ngoài dev/test → d2 ×6), M-3d-8 (đọc tổng chi lỗi thì cho qua → d17).
+
+**Kết quả 3d.** Unit 1914; `make test` backend 2094 · mock 86 · ml 77 (5 `ml_real` bỏ qua đúng quy ước); integration d16 8 test trên Postgres thật; `make gate2 S=all` 89 PASS / 0 FAIL; stack lên với `LLM_BACKEND=scripted`. Mutation 8/8 đỏ đúng dự đoán, chạy 2 lượt, md5 khớp. Soát S9: 4 lỗi tìm ra và đã sửa kèm test (EVAL_MODE bật được ở prod; `base_url` lộ qua repr và log SDK; gọi đồng thời vượt trần 6/6; lần sửa schema vượt trần). Import-linter 9/9.
+
 ---
 
 ## 8. Chặng 3e — B2: privacy guard thật và sàng lọc injection
@@ -1989,6 +2018,7 @@ Mỗi file thêm mục **"5.1 Chốt khi hiện thực Phase 3"** gồm một c�
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 27/09/2026 | 1.0 | Tạo file: phạm vi, 36 quyết định, hợp đồng chung, 8 chặng 3a–3h |
+| 29/09/2026 | 1.6 | Mục 7.8: chốt khi hiện thực 3d (16 mục sửa: MockTransport thay respx, strong max_retries=1, deadline_s, không nội suy env, MIN_LLM_CALL_SITES tạm 0, AnswerOut hai chiều, giữ chỗ trần chi, EVAL_MODE, ẩn base_url; kết quả) |
 | 28/09/2026 | 1.5 | Mục 6.13: chốt khi hiện thực 3c (Q-3c-1…8: 2 đường cổng kiểm, nới tiêu chí rerank, probe `/aliases`, giữ role lạ `public` và audit câu đã che; kết quả) |
 | 28/09/2026 | 1.4 | Mục 5.14: chốt khi hiện thực 3b (Q-3b-1…17, cổng dense-only, kết quả); sửa 5.10 mmh3/index, 4.12 Q-3a-6 |
 | 28/09/2026 | 1.3 | Mục 1.5: 3b vẫn làm ngay; hậu kiểm/cải tiến 3b sau khi xong dự án (phạm vi đề xuất) |
