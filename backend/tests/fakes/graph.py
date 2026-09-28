@@ -21,7 +21,8 @@ from app.audit.writer import check_audit_row
 from app.core.clock import FakeClock
 from app.db.escalations import QueueItem
 from app.db.runtime import DueWait, OpenTurn, as_ref
-from app.db.tickets import NewTicket, TicketRow
+from app.db.security_events import check_event
+from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.final import FinalSummary
 from app.graph.builder import build_graph, fake_nodes
@@ -292,6 +293,7 @@ class MemoryTickets:
         self.fail: BaseException | None = None
         self.fail_times: int | None = None
         self.finalize_calls: Counter[str] = Counter()
+        self.security_events: list[dict[str, Any]] = []  # sự kiện ghi cùng `create` (3e)
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -306,12 +308,19 @@ class MemoryTickets:
             "requester_role": requester_role, "requester_dept": requester_dept,
         })  # fmt: skip
 
-    async def create(self, ticket: NewTicket, *, turn_id: str) -> None:
-        """Như SQL: dòng `tickets` + lượt `submit` trong MỘT transaction (lượt lỗi → không ticket)."""
+    async def create(self, ticket: NewTicket, *, turn_id: str, security_events: NewEvents = ()) -> None:
+        """Như SQL: dòng `tickets` + lượt `submit` + `security_events` trong MỘT transaction (lượt lỗi → không
+        ticket, không sự kiện)."""
+        for event_type, detail in security_events:
+            check_event(event_type, detail)
         if ticket.ticket_id in self.rows:
             raise ValueError("PK tickets")
         if turn_id in self._turns.rows:
             raise ValueError("PK turns")
+        self.security_events.extend(
+            {"event_type": e, "ticket_id": ticket.ticket_id, "user_id": ticket.requester_id, "detail": dict(d)}
+            for e, d in security_events
+        )
         self.register(
             ticket.ticket_id, ticket.created_at, requester_id=ticket.requester_id,
             session_id=ticket.session_id, redacted_request=ticket.redacted_request,

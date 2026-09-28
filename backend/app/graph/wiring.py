@@ -10,6 +10,7 @@ B1 (2b) đọc AD qua registry tool đọc (token svc_agent): truyền `director
 với nơi khác trong cùng process; không truyền thì tự dựng (và tự đóng client HTTP khi thoát).
 ml-service (3a): `MlClient` thật (`ML_SERVICE_URL`, `ML_SERVICE_TOKEN`) — thiếu token → từ chối khởi động
 TRƯỚC khi đụng DB (3-Q21), ở cả backend lẫn worker.
+Guard (3e): `check_guard` — file mẫu `config/privacy_patterns.json` (và mẫu injection) hỏng → không khởi động, trước DB.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 """
@@ -52,6 +53,7 @@ from app.graph.ports import (
 )
 from app.graph.runner import Runner
 from app.graph.tracing import NodeFn, trace_parent
+from app.guard.patterns import check_guard
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
@@ -110,6 +112,7 @@ async def open_runtime(
     scenario = fake_scenario(settings)  # như trên (2b-4)
     ml_token = settings.require_ml_token()  # như trên (3-Q21)
     llm_setup = check_llm(settings)  # như trên (3-Q26, PLAN-3d Q-3d-13): LLM_BACKEND, pricing, prompt, preset
+    check_guard(settings)  # như trên (3e): file mẫu guard hỏng → không khởi động
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)

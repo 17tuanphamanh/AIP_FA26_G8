@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from app.approval.store import ApprovalRow
 from app.db.identity import LiveSession
 from app.db.runtime import DueWait, OpenTurn, WaitKind
-from app.db.tickets import NewTicket, TicketRow
+from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.final import FinalSummary
 from app.tools.registry import ToolResult
@@ -172,7 +172,11 @@ class EscalationStore(Protocol):
 class TicketRepo(TicketStore, Protocol):
     """Thêm phần API dùng (2b-3): tạo ticket + lượt `submit` đầu tiên trong MỘT transaction."""
 
-    async def create(self, ticket: NewTicket, *, turn_id: str) -> None: ...
+    async def create(
+        self, ticket: NewTicket, *, turn_id: str, security_events: NewEvents = ()
+    ) -> None:
+        """`security_events` (event_type, detail) INSERT cùng transaction (3e, phase3 mục 8.3)."""
+        ...
 
 
 class ApprovalRepo(Protocol):

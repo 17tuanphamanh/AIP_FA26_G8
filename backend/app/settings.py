@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     # ---- API ----
     max_request_body_bytes: int = Field(default=64 * 1024, ge=1)  # đếm byte ĐỌC THẬT (2b-3 Q5)
     background_shutdown_seconds: float = Field(default=10.0, ge=0)  # tắt app: chờ lượt nền rồi huỷ
+    # ---- Privacy guard (B02 L1, phase3 mục 8.3, 3-Q25) ----
+    # Mặc định MỌI env là guard regex thật. `none` (NotRedactingGuard) chỉ khi đặt tường minh VÀ APP_ENV ∈ {dev, test}
+    # (`main._default_guard` → `require_dev_fakes`) — không có đường nào lưu dữ liệu thô ở môi trường thật.
+    privacy_guard: Literal["regex", "none"] = "regex"
+    # Email thuộc các tên miền này (và tên miền con) KHÔNG bị che — cần cho slot (mục 3.5, 8.3).
+    company_email_domains: list[str] = Field(default_factory=lambda: ["congty-abc.vn"])
 
     # ---- Circuit breaker theo hệ thống ngoài [Chốt 17.3, P5 mục 6] ----
     breaker_failure_threshold: int = Field(default=5, ge=1)  # lỗi liên tiếp …

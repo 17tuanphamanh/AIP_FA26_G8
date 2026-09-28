@@ -2256,6 +2256,16 @@ Kế hoạch: `PLAN-3d.md` ở gốc repo (KHÔNG commit). Thiết kế: `build/
      v1.5 (chot 3c)"; (b) chỉ `decisions.md` "docs: ghi VRAM may gaming 1 va ket qua cong 2 cua Ta Duy Anh"; (c) code 3d
      + `PROGRESS.md` (gồm dòng CI 3c — "Việc treo" 5) + `.env.example` + README, message có "can them LLM_BACKEND vao
      .env". Push, báo 3 hash.
+- **Commit + push (29/09/2026, nhánh `dev-tuananh`, `9680471..7889cc3`):** (a) `5348bda` spec phase 3 v1.5 (1 file);
+  (b) `57bf3e5` `decisions.md` (1 file); (c) `7889cc3` code 3d (54 file, stage đích danh; hook gitleaks + unit xanh cả 3
+  lần). **Sự cố đã xử lý trước push:** lần commit (c) đầu (`d7d7776`, không push) lẫn thêm 5 file untracked
+  `docs/spec/claude/*` — ngay trước `git commit` chúng vẫn `??` (đã kiểm), không hook nào `git add` (đã grep
+  `.githooks/`, `.claude/hooks/`) → bị stage từ ngoài phiên, không rõ nguồn. Đã `git rm --cached` 5 file + `--amend`
+  → `7889cc3` đúng 54 file; 5 file còn nguyên trên đĩa (md5 trước = sau). Nguồn (suy từ lịch sử): Tuấn Anh commit riêng
+  5 file này ở `fe8cf26` "docs: them tai lieu ngu canh claude/ vao docs/spec (ban sao Project)" (00:49, ngay sau
+  `7889cc3`) — trùng lúc với commit (c).
+  **CI xanh:** run `36460921089` (3m4s) trên `fe8cf26` — cây này chứa trọn `7889cc3` (fe8cf26 chỉ thêm 5 file `.md`).
+  `gh` bị sandbox chặn (TLS keychain) → Tuấn Anh chạy `gh run list`.
 - **S8 xong** — `backend/app/llm/README.md` (sơ đồ file, luồng, test), `config/prompts/README.md` (luật sửa prompt: tăng
   `version`, biến == `allowed_vars`, `random_boundary`, render một lượt, chất lượng đo ở mốc G); "Spec cần sửa" đầy đủ
   ở cuối mục này; "Dồn về mốc G" thêm 4 dòng 3d; "Việc treo" thêm 9. `gitleaks dir` trên 29 đường dẫn (mọi file/thư
@@ -2327,11 +2337,103 @@ KHÔNG sửa `docs/spec/`):
 13. **(S9) P2 §5 / N1 — trần chi:** giữ chỗ chi phí xấu nhất (`token vào ước tính × giá in + max_tokens × giá out`) trước
     MỖI request trả phí (gồm thử lại, sửa schema); không gửi request có thể đẩy tổng vượt trần. Đọc tổng lỗi →
     fail-closed. Giới hạn: bộ đếm theo tiến trình ("Việc treo" 9).
-14. **(S9) P2 §11 / 01 §5: `EVAL_MODE=true` bị từ chối khi `APP_ENV` ∈ {prod, thiếu}** (validator `Settings`).
+14. **(S9) P2 §11 / 01 §5: `EVAL_MODE=true` bị từ chối khi `APP_ENV` ∈ {prod, thiếu}** (validator `Settings`);
+    dev/test/staging được bật, kèm 1 dòng WARNING lúc khởi động (`llm/wiring.open_llm`, chốt DỪNG 3).
 15. **(S9) P2 §11: không log `base_url`** — `Settings.llm_base_url` `repr=False`; logger `httpx2` (SDK) nâng WARNING vì
     in nguyên URL ở INFO; nhãn lỗi provider chỉ có host.
 16. 01 §3 / §4.3: file mới của `llm/` (README `backend/app/llm/README.md`); hợp đồng import-linter 8 `llm-lower-layer` và
     **9 `llm-only-via-gateway`**; test AST "SDK chỉ ở `openai_compat.py`".
+
+## Phase 3 — chặng 3e: B2 privacy guard thật + sàng lọc injection (29/09/2026, đang làm, chưa commit)
+
+Kế hoạch: `PLAN-3e.md` ở gốc repo (KHÔNG commit). Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` v1.6 mục 8; khi lệch,
+`PLAN-3e.md` thắng (đã gồm chốt Q-3e), trừ 13 bất biến và mục [Chốt]. Chạy toàn bộ bằng Opus. Chặng AN NINH: phân vân
+giữa cho qua và chặn/escalate → chọn chặn/escalate.
+
+**Quyết định của người (Q-3e, 29/09/2026 — Tuấn Anh + Claude chat):**
+
+| Mã | Chốt |
+|---|---|
+| Q-3e-1 | M-3e-1 ("L2 chỉ so bản có dấu") làm đỏ e10 + e1 (e11 đã không dấu, không bắt được); M-3e-11 = `confirm_wait` bỏ `screen_reply` → e16b; thêm e16c |
+| Q-3e-2 | Một `invalid_request()` cho mọi lỗi 422 do kiểm body/tham số (`parse_body` + handler `RequestValidationError`): `{"error":"invalid_request","fields":[loc…]}`, không `input`/`ctx`. Grep toàn `backend/app/api/`; e8 phủ mọi route tìm được |
+| Q-3e-3 | Luật 6 (entropy) loại trừ token dạng email (email cá nhân H ≥ 4,0 đo được) + M-3e-13 |
+| Q-3e-4 | Cụm mật khẩu: 0–3 từ đệm giữa từ khoá và `là/:/=`; (a) từ đệm không chứa `lỗi\|loi\|mã\|ma\|code\|error`; (b) `mk` chỉ đi với `:`/`=` |
+| Q-3e-5 | L0 guard (`guard/normalize.py`) = `core.normalize` → NFKC → xoá ký tự `Cf`; áp cho L1 và L2; văn bản lưu là bản đã L0 guard; bản không dấu = `unidecode`. `core.normalize` không đổi (ingest) |
+| Q-3e-6 | `/approvals/{id}/decision` trả thêm `notices` |
+| Q-3e-7 | Ghi chú bàn giao L2 có câu cờ an ninh (E2 `screening_unavailable`) và câu cho `injection_in_reply`; tin người dùng giữ mẫu |
+| Q-3e-8 | `FakeMlService(classify_p=…)`, e18, M-3e-12; `TAU_PASS` 0,10 (phase3) — lệch B02 §7 (0,20) → "spec cần sửa" |
+| B1–B4 | `classify` không retry `model_missing`; "Việc treo" 7 + test tĩnh cộng dồn thời gian một lượt; test 10.000 ký tự L1 + L2 < 100 ms; kiểm tên miền công ty với seed/KB |
+
+**Nhật ký (S0–S9 của `PLAN-3e.md` mục 3):**
+
+- **S0 xong** — mục này. `uv remove presidio-analyzer presidio-anonymizer` (nợ bắt buộc 3-Q22): `pyproject.toml` −2 dòng,
+  `uv.lock` −313 dòng (presidio, spacy, thinc… — 159 gói còn lại), `uv lock --check` khớp. **Lưu ý môi trường:** `uv remove`
+  đồng bộ lại `.venv` chỉ với nhóm mặc định nên gỡ luôn nhóm `ml` (torch, transformers, sentence-transformers) khỏi venv
+  máy — lock KHÔNG đổi nhóm `ml`; đã cài lại bằng `uv sync --group ml --offline` (từ cache, không mạng).
+  **Image vẫn build được** (Tuấn Anh chạy `docker compose build backend worker`, 29/09/2026): `uv sync --frozen --no-dev`
+  cài 89 gói, không còn presidio/spacy/thinc; có `unidecode 1.4.0`; image `servicedesk-backend:dev` (backend + worker).
+- **S1 xong** — L0 + L1. `guard/normalize.py` (`l0` = `core.normalize` → NFKC → xoá `Cf` → gộp lại khoảng trắng;
+  `match_forms` cho L2), `guard/patterns.py` (Pydantic `extra=forbid`, đúng 10 luật theo `PRIVACY_RULE_ORDER`, biên dịch
+  từng regex, lỗi → `PatternFileError`; `check_guard` gọi ở `create_app` + `graph/wiring.open_runtime` trước DB),
+  `guard/privacy.py` (`RegexPrivacyGuard`, `RedactionResult.pii_found`, nhãn theo giá trị chuẩn hoá, đếm số chỗ thay,
+  `NOTICE_SECRET`/`NOTICE_PII` nguyên văn 8.3), `config/privacy_patterns.json`, `Settings.privacy_guard` (mặc định
+  `regex`), `company_email_domains`, `.env.example`. `main._default_guard`: `none` → `require_dev_fakes`.
+  - Test `unit/test_guard_privacy.py` (71): e2 (20 câu, 8 loại, đếm đúng), e3 (+ 4 chuỗi dài H ≥ 4,0 làm đối chứng cho
+    loại trừ path/url/email), e4, Q-3e-3, Q-3e-4 (8 câu phải che gồm 4 câu MISS cũ; 6 câu không che gồm (a), (b)),
+    L0 cho L1 (full-width "ｍật khẩu", zero-width, soft hyphen, NFD, word joiner), B3 10.000 ký tự < 100 ms, 8 kiểu file
+    mẫu hỏng + JSON hỏng, `create_app` và `open_runtime` từ chối file hỏng (trước DB).
+  - **B1** đã có từ 3a: `ml/client.py:183` trả `model_missing` không retry; `test_ml_client.py:81` (a11) đếm ở nơi nhận
+    = 1 request. Kiểm lại ở mức node trong e12 (S5).
+  - **B3**: giới hạn trước guard đã có — `TEXT_MAX=4000`, `NOTE_MAX=1000` (Pydantic) + `MAX_REQUEST_BODY_BYTES` 64 KiB
+    (413 trước kiểm quyền). Không cần Q.
+  - **B4**: `seed.json` không có địa chỉ email; KB fixture + `kb-mau` dùng `vpn.congty-abc.vn` → mặc định `congty-abc.vn`
+    khớp (tên miền con). `NGU-CANH-DAY-DU.md:1079` có ví dụ `nv001@company.vn` (minh hoạ) — không thêm vào danh sách.
+- **S2 xong** — API. `api/errors.py` (`InvalidRequest`, `error_fields`, `invalid_request`, `PrivacyGuardUnavailable`,
+  `install_request_errors`: `RequestValidationError` + `InvalidRequest` → 422 `{"error":"invalid_request","fields":[…]}`,
+  khoá thừa → `<extra>`; guard lỗi → 503), `api/desk.py` (`parse_body` không `input`; `redact` log chỉ mẫu route + tên lớp
+  lỗi; `record_redacted` trước `start_event`; `Desk.security`), `api/tickets.py` (`Accepted.notices`, 3 route),
+  `api/approvals.py` (guard + sự kiện + `notices`, Q-3e-6), `db/security_events.py` (MỚI: `check_detail`, `check_event`,
+  `insert_event` chuyển từ `audit` — 01 §4.2 không cho `db → audit`), `audit/security_events.py` (import lại; writer dùng
+  `current_tx()` khi có), `db/tickets.create(…, security_events=())` INSERT cùng khối, `graph/ports.TicketRepo`, `main.py`
+  (một sink cho auth + guard), `tests/fakes/{graph,desk}.py`.
+  - **Grep `backend/app/api/` (Q-3e-2)** — mọi chỗ trả 422: (1) `api/desk.py:62` `parse_body` → `HTTPException(422,
+    exc.errors())` CÓ `input` — 4 route: tạo ticket, messages, confirm, decision → **đã đưa qua `invalid_request`**;
+    (2) handler mặc định `RequestValidationError` của FastAPI (CÓ `input`) — `POST /api/auth/login` (body `LoginIn`, gồm
+    mật khẩu), `GET /api/escalations/queue` (`limit`), mọi tham số khác → **đã thay handler**; (3) `api/errors.py:29`
+    `InvalidEvent` → 422 `{"detail": "<node> không nhận sự kiện '<kind>'"}` — `kind` do route đặt, không từ người gửi →
+    giữ; (4) `api/approvals.py:99` `rejected_requires_note` (hằng) → giữ.
+  - Test `unit/test_guard_api.py` (21): e6 (tạo + 3 route sau: 503, 0 ticket/lượt/sự kiện, không `start_event`, log không
+    có canary, có `route=… loại=RuntimeError`), e7 unit (notices, sự kiện cùng `tickets.create`, PII-only không sự kiện,
+    3 route sau ghi sự kiện đúng `route`/`ticket_id`, ghi lỗi → 503 không `start_event`), e8 (tạo ticket 4 body, messages 3,
+    confirm 3, decision 4, login 3, query `limit`; không `input`/`ctx`/canary; `rejected_requires_note` giữ nguyên). Sửa
+    `test_app_env.py` (e17 ×3 env từ chối `none`; mặc định regex ở 5 env; `none` ở dev/test), `test_tickets_api.py`
+    (body 202 có `notices: []`). Nợ 2: `test_b08_retrieve.py::test_point3_query_redacted_by_real_guard`.
+  - Integration `integration/test_guard_pg.py` (3: e6 PG, e7 PG, M-3e-14 rollback) + `integration/scan.py` (tách từ
+    `test_tickets_http_pg.py`) — sandbox chặn socket Docker; **Tuấn Anh chạy `uv run pytest backend/tests/integration
+    -q` (29/09/2026): 156 test, không F/E** (dòng tổng không hiện trong output dán lại).
+  - Kiểm: unit **2014 passed** (3d: 1914); ruff, mypy (168 file), `lint-imports` 9/9 KEPT; gitleaks không thấy.
+    Stack (Tuấn Anh chạy, 29/09/2026, image mới): `make up` → `/api/health` 200 `ok`, `runtime: up`, `kb: ready`, worker
+    healthy (guard regex mặc định nạp được trong image); **`make gate2 S=all` 89 PASS / 0 FAIL**. **DỪNG 1 xanh.**
+- **Chốt sau DỪNG 1 (Tuấn Anh, 29/09/2026) — đã làm:**
+  - **Q-3e-9:** cụm mật khẩu 0–4 từ đệm ((a)(b) giữ); giá trị là từ hỏi `gì|gi|sao|bao|nào|nao` (kèm dấu câu cuối) → không
+    che ("mật khẩu wifi công ty là gì" giữ nguyên) — lookahead trong `config/privacy_patterns.json`. Test hai phía: 7 câu
+    hỏi giữ nguyên, 4 giá trị bắt đầu bằng từ hỏi vẫn bị che ("gìn123", "Gi@2026"…); 5 từ đệm → không khớp (giới hạn biết
+    trước, có test ghi lại).
+  - **Q-3e-10:** loại trừ `path` của luật 6 = `\\|^(?:/|~/|\.{1,2}/|[A-Za-z]:)` (URL vẫn là loại trừ riêng). Khoá base64
+    có `/` (40 ký tự, H=4,66) bị che; e3 thêm 4 đường dẫn tuyệt đối/`~/`/`./` dài, H ≥ 4,0 → giữ; `share/it/vpn-setup.pdf`
+    (H=3,88) giữ. Mutation mới **M-3e-15** (loại trừ quay về "mọi token có /") → `test_q3e10_base64_key_with_slash_masked`.
+  - **Q-3e-11 (MỚI, chờ chốt):** `KeToan/BaoCao/Q3_2026.xlsx` có H=4,104 ≥ 4,0 (26 ký tự) → luật 6 **che** đường dẫn
+    tương đối này. Không nới ngưỡng (theo chốt). Test ghi lại bằng `xfail(strict=True)` (`test_q3e11_…`) — sửa xong thì
+    test tự đỏ để gỡ xfail. Đề xuất: coi token có `/` VÀ đoạn cuối có đuôi file (`\.[A-Za-z0-9]{1,5}$`) là đường dẫn —
+    base64 (kể cả URL-safe) không bao giờ chứa `.`, JWT đã bị luật 2 che trước.
+  - **Nhóm uv `ml` sau `uv remove`:** CI `uv sync --locked` (cố ý chỉ nhóm dev — comment trong `ci.yml`; `make test` chạy
+    ml_service với `-m "not ml_real"`); `make test-ml` dùng `uv run --group ml` tường minh; `ml_service/Dockerfile`
+    `uv sync --frozen --no-dev --group ml`. Không cần sửa. Máy dev: `uv sync` trần (exact) sẽ gỡ nhóm `ml` khỏi `.venv` —
+    dùng `uv sync --group ml` như CLAUDE.md.
+  - Kiểm lại: unit **2033 passed, 1 xfailed** (xfail = Q-3e-11); ruff, mypy (168 file), `lint-imports` 9/9.
+  - **Phát hiện (chờ Tuấn Anh):** (1) "mật khẩu **hiện tại của tôi** là Abc@123" (4 từ đệm) vẫn lọt — chốt Q-3e-4 là
+    0–3; (2) loại trừ "đường dẫn" (mọi token có `/`) làm lọt khoá base64 có `/`: `wJalrXUtnFEMI/K7MDENG/bPxRfiCY…`
+    (H=4,66, 40 ký tự) không bị che — đúng chữ spec 8.3.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

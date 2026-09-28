@@ -132,6 +132,33 @@ async def test_point3_query_comes_from_redacted_request_only() -> None:
     assert "an.nv@congty.vn" not in str(row) and "0912345678" not in str(row)
 
 
+async def test_point3_query_redacted_by_real_guard() -> None:
+    """Nợ bắt buộc 3e (Q-3c-7, PROGRESS "Việc treo" 3): `detail.query` của điểm log 3 là câu đã qua guard THẬT
+    (`RegexPrivacyGuard`, như API ghi `tickets.redacted_request`) — không SĐT, email cá nhân, mật khẩu."""
+    from app.guard.privacy import RegexPrivacyGuard
+    from app.rag.models import RetrievalResult
+    from app.settings import Settings
+
+    guard = RegexPrivacyGuard.from_settings(Settings(_env_file=None))  # type: ignore[call-arg]
+    phone, email, password = "0912345678", "nguyen.van.a1990@gmail.com", "Abc@123xyz"
+    raw = f"vpn lỗi 809, gọi {phone} hoặc mail {email}, mật khẩu là {password} máy LAP-0342"
+    redacted = (await guard.redact(raw)).text
+    h = _harness_with_rag(FakeRag(result=RetrievalResult(
+        chunks=[_chunk()], top_score=0.9, kb_version="a" * 64, intent_filter_fallback=False,
+        fallback_tried=False, retries=0, query_truncated=False,
+    )))  # fmt: skip
+    audit = MemoryAudit()
+    with run(audit):
+        await b08_retrieve.make(h.deps())(_state(redacted_request=redacted))
+    [row] = audit.rows
+    query = row["detail"]["query"]
+    assert query == redacted[:500]
+    for value in (phone, email, password):
+        assert value not in str(row) and value not in h.rag.retrieve_calls[0][0].text
+    for kept in ("<SĐT_1>", "<EMAIL_1>", "[BÍ_MẬT_ĐÃ_ẨN]", "lỗi 809", "LAP-0342"):  # mã lỗi, mã máy còn nguyên
+        assert kept in query
+
+
 # ---- c18: RetrievalSystemError → đúng 1 dòng audit điểm 3, state đúng, exit_code E2 ---------------
 
 

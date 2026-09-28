@@ -51,6 +51,7 @@ from tests.integration.graph_pg import (
     seed_users,
 )
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
+from tests.integration.scan import scannable_columns, tables_containing
 from tests.unit.auth_helpers import BASE_URL, auth_settings
 
 SLA = timedelta(minutes=30)
@@ -244,35 +245,6 @@ async def test_http_idor_pg(db: PgUrls) -> None:
 # ---- Guard: quét MỌI cột text/jsonb/bytea của MỌI bảng + checkpoint ---------------------------
 
 
-async def _scannable_columns(rw: AsyncEngine) -> list[Any]:
-    """(bảng, cột, kiểu) của mọi cột text/jsonb/bytea ở schema public mà app_rw đọc được — liệt kê từ
-    information_schema, không viết tay."""
-    async with rw.connect() as conn:
-        return list((await conn.execute(text(
-            "SELECT c.table_name, c.column_name, c.data_type FROM information_schema.columns c "
-            "JOIN information_schema.tables t USING (table_schema, table_name) "
-            "WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE' "
-            "AND c.data_type IN ('text', 'character varying', 'character', 'jsonb', 'json', 'bytea') "
-            # tên ĐỦ schema: Postgres có thể tính hàm này trên cả dòng của information_schema trước khi
-            # lọc schema — tên trần tra theo search_path → "relation collations does not exist"
-            "AND has_table_privilege(current_user, format('%I.%I', c.table_schema, c.table_name), 'SELECT')"
-        ))).all())  # fmt: skip
-
-
-async def _tables_containing(rw: AsyncEngine, needle: str) -> list[str]:
-    """Bảng.cột chứa `needle` (quét toàn bộ `_scannable_columns`)."""
-    cols = await _scannable_columns(rw)
-    async with rw.connect() as conn:
-        hits = []
-        for table, column, dtype in cols:
-            expr = (f'position(convert_to(:n, \'UTF8\') in "{column}") > 0' if dtype == "bytea"
-                    else f'"{column}"::text LIKE \'%\' || :n || \'%\'')  # fmt: skip
-            found = await conn.execute(text(f'SELECT 1 FROM "{table}" WHERE {expr} LIMIT 1'), {"n": needle})
-            if found.first() is not None:
-                hits.append(f"{table}.{column}")
-        return hits
-
-
 @pytest.mark.asyncio
 async def test_secret_nowhere_in_db_after_ticket_and_message_pg(db: PgUrls, rw: AsyncEngine) -> None:
     scenario = FakeScenario().plan_all(b11_slots=["missing", "complete"])
@@ -286,16 +258,16 @@ async def test_secret_nowhere_in_db_after_ticket_and_message_pg(db: PgUrls, rw: 
         assert r.status_code == 202
         await d.drain()
     # không xanh oan vì danh sách quét rỗng / lọc sai schema: 22 bảng nghiệp vụ (P7) + 4 bảng checkpoint
-    scanned = {table for table, _, _ in await _scannable_columns(rw)}
+    scanned = {table for table, _, _ in await scannable_columns(rw)}
     assert len(scanned) >= 22, sorted(scanned)
     assert {"tickets", "audit_logs", "turns", "side_effects", "checkpoints", "checkpoint_blobs",
             "checkpoint_writes"} <= scanned  # fmt: skip
-    assert await _tables_containing(rw, SECRET) == []
+    assert await tables_containing(rw, SECRET) == []
     # đối chứng: phép quét thấy chuỗi không bị che — cả ở tickets lẫn blob checkpoint
-    seen = await _tables_containing(rw, f"{CANARY}-2")
+    seen = await tables_containing(rw, f"{CANARY}-2")
     assert any(h.startswith("checkpoint") for h in seen), seen
-    assert "tickets.redacted_request" in await _tables_containing(rw, CANARY)
-    assert await _tables_containing(rw, MASK)
+    assert "tickets.redacted_request" in await tables_containing(rw, CANARY)
+    assert await tables_containing(rw, MASK)
 
 
 # ---- Q4: người duyệt giả chưa có dòng users → E9 ---------------------------------------------

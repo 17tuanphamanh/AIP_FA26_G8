@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 from app.db.session import create_engines
 from app.graph.wiring import open_runtime
-from app.guard.privacy import NotRedactingGuard
-from app.main import create_app
+from app.guard.privacy import NotRedactingGuard, RegexPrivacyGuard
+from app.main import _default_guard, create_app
 from app.settings import Settings
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -21,9 +21,22 @@ def _settings(**over: Any) -> Settings:
 
 
 @pytest.mark.parametrize("env", [None, "staging", "prod"])
-def test_prod_refuses_not_redacting_guard(env: str | None) -> None:
-    with pytest.raises(RuntimeError, match="NotRedactingGuard"):
-        create_app(_settings(app_env=env), health_checks={}, runtime=no_runtime)
+def test_e17_refuses_privacy_guard_none_outside_dev_test(env: str | None) -> None:
+    """phase3 8.7 e17 (3e): `PRIVACY_GUARD=none` (NotRedactingGuard) ngoài dev/test → không dựng app."""
+    with pytest.raises(RuntimeError, match="PRIVACY_GUARD=none"):
+        create_app(_settings(app_env=env, privacy_guard="none"), health_checks={}, runtime=no_runtime)
+
+
+@pytest.mark.parametrize("env", [None, "dev", "test", "staging", "prod"])
+def test_default_guard_is_regex_in_every_env(env: str | None) -> None:
+    """3e: mặc định MỌI env là guard regex thật (trước 3e: prod không tiêm guard thì từ chối khởi động)."""
+    assert isinstance(_default_guard(_settings(app_env=env)), RegexPrivacyGuard)
+    create_app(_settings(app_env=env), health_checks={}, runtime=no_runtime)  # không ném
+
+
+@pytest.mark.parametrize("env", ["dev", "test"])
+def test_privacy_guard_none_only_when_explicit_in_dev_test(env: str) -> None:
+    assert isinstance(_default_guard(_settings(app_env=env, privacy_guard="none")), NotRedactingGuard)
 
 
 @pytest.mark.parametrize("env", [None, "staging", "prod"])
