@@ -25,6 +25,7 @@ from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.lock import PgTicketLock
 from app.graph.runner import Runner
 from app.graph.wiring import Runtime
+from app.llm import LlmPort
 from app.rag.ports import RagPort
 from app.settings import Settings, get_escalation_templates, get_policy
 from sqlalchemy import text
@@ -32,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import LOCKOUT, CountingExecutor, Crash, RecordingNotifier
 from tests.fakes.identity import FakeAd, ad_user, fake_directory
+from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
 
 REQUESTER = "nv-graph"
@@ -88,6 +90,7 @@ async def open_pg_runtime(
     tickets: SqlTicketStore | None = None,
     approver_id: str | None = APPROVER,
     rag: RagPort | None = None,
+    llm: LlmPort | None = None,
     nodes: Literal["fake", "real"] = "fake",
 ) -> AsyncIterator[PgRuntime]:
     settings = Settings(database_url=rw_url, ticket_lock_timeout=lock_timeout)
@@ -103,7 +106,8 @@ async def open_pg_runtime(
         directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
         lockout=LOCKOUT, tickets=ticket_store,
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
-        ml=FakeMlService().client(clock), rag=rag or FakeRag(), scenario=scenario, approver_id=approver_id,
+        ml=FakeMlService().client(clock), rag=rag or FakeRag(), llm=llm or make_gateway(clock=clock).client,
+        scenario=scenario, approver_id=approver_id,
     )  # fmt: skip
     build_nodes = real_nodes if nodes == "real" else fake_nodes
     try:

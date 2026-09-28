@@ -6,7 +6,8 @@
 - `config/slots.yaml` (`get_slots`): `tool_arg_slots` (D-20); `required_slots` thêm ở Phase 3 (B11).
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
-Tên model, giá, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml (P2).
+Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
+trò (`FAST_MODEL`, `STRONG_MODEL`), `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env (PLAN-3d Q-3d-3).
 
 File env: `APP_ENV_FILE` (mặc định `.env`, tính từ thư mục đang chạy); đặt RỖNG để tắt hẳn —
 khi đó chỉ đọc biến môi trường. `conftest.py` ở gốc repo đặt rỗng trước khi import app, để test
@@ -20,7 +21,14 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.domain.exit_codes import ExitCode
@@ -61,6 +69,19 @@ class Settings(BaseSettings):
     fake_scenario: str | None = None
     # Giây dừng ở điểm do preset quyết (kill_b06, kill_b15) — để SIGKILL giữa lượt. Chỉ dev/test.
     fake_node_delay: float | None = Field(default=None, ge=0)
+
+    # ---- LLM gateway (P2; phase3 mục 7.3, PLAN-3d Q-3d-3, Q-3d-13) ----
+    # BẮT BUỘC, không mặc định (3-Q26): thiếu → backend/worker từ chối khởi động (`require_llm_backend`).
+    # `scripted` (ScriptedLLM) chỉ khi APP_ENV ∈ {dev, test}. None ở đây chỉ để test dựng Settings tự do.
+    llm_backend: Literal["scripted", "real"] | None = None
+    # Chỉ dùng khi `real`: model của hai vai trò (phải có dòng trong `pricing` của config/llm.yaml) và
+    # base_url của provider — config/llm.yaml trỏ tới TÊN các trường này (`model_setting`, `base_url_setting`).
+    fast_model: str | None = None
+    strong_model: str | None = None
+    # repr=False: URL có thể mang khoá (`user:pass@`, `?api-key=`) — không lộ qua repr/str của Settings (S9).
+    llm_base_url: str | None = Field(default=None, repr=False)
+    # Preset ScriptedLLM trên stack dev (`[fake:<preset>]`, Q-3d-12). None → `<config_dir>/scripted`.
+    llm_script_preset_dir: Path | None = None
 
     # ---- Hạ tầng ----
     database_url: str = "postgresql+psycopg://app_rw@localhost:5432/servicedesk"  # role app_rw
@@ -131,6 +152,25 @@ class Settings(BaseSettings):
     llm_cache_mode: Literal["default", "eval", "bypass"] = "default"  # P2 mục 8
     rediagnose_on_new_slot: bool = False  # D-20: tắt mặc định
 
+    @field_validator("llm_backend", mode="before")
+    @classmethod
+    def _llm_backend_value(cls, v: object) -> object:
+        # Q-3d-13: thông báo nêu tên biến + giá trị hợp lệ (lỗi Literal mặc định chỉ ghi tên trường thường).
+        if v is not None and v not in LLM_BACKENDS:
+            raise ValueError(f"LLM_BACKEND={v!r} không hợp lệ — giá trị hợp lệ: {' | '.join(LLM_BACKENDS)}")
+        return v
+
+    @model_validator(mode="after")
+    def _eval_mode_not_in_prod(self) -> "Settings":
+        # P2 mục 11: EVAL_MODE ghi prompt đầy đủ vào `llm_calls.prompt_full` — chỉ môi trường thử nghiệm. Thiếu
+        # APP_ENV = coi như môi trường thật (2b-Q2). Kiểm ở Settings nên MỌI tiến trình (backend, worker, CLI) từ chối.
+        if self.eval_mode and self.app_env not in EVAL_MODE_ENVS:
+            raise ValueError(
+                f"EVAL_MODE=true chỉ dùng được khi APP_ENV ∈ {sorted(EVAL_MODE_ENVS)} "
+                f"(đang là {self.app_env!r}) — từ chối khởi động"
+            )
+        return self
+
     @model_validator(mode="after")
     def _default_lock_pool(self) -> "Settings":
         if self.lock_pool_size is None:
@@ -182,6 +222,17 @@ class Settings(BaseSettings):
             raise RuntimeError("ML_SERVICE_TOKEN chưa cấu hình (bắt buộc mọi môi trường) — từ chối khởi động")
         return self.ml_service_token
 
+    def require_llm_backend(self) -> Literal["scripted", "real"]:
+        """`LLM_BACKEND` bắt buộc mọi env (3-Q26, Q-3d-13); `scripted` chỉ dev/test — fail-closed."""
+        if self.llm_backend is None:
+            raise RuntimeError(
+                f"LLM_BACKEND chưa cấu hình — giá trị hợp lệ: {' | '.join(LLM_BACKENDS)} "
+                "(scripted chỉ khi APP_ENV là dev hoặc test) — từ chối khởi động"
+            )
+        if self.llm_backend == "scripted":
+            self.require_dev_fakes("LLM_BACKEND=scripted (ScriptedLLM; môi trường thật dùng LLM_BACKEND=real)")
+        return self.llm_backend
+
     def require_dev_fakes(self, what: str) -> None:
         """Thành phần giả chỉ được nạp khi `APP_ENV` ∈ {dev, test} — fail-closed (2b-Q2, 2b-Q3)."""
         if self.app_env not in DEV_FAKE_ENVS:
@@ -192,6 +243,8 @@ class Settings(BaseSettings):
 
 
 DEV_FAKE_ENVS = frozenset({"dev", "test"})
+EVAL_MODE_ENVS = frozenset({"dev", "test", "staging"})  # S9 PLAN-3d: prod và APP_ENV thiếu → từ chối
+LLM_BACKENDS = ("scripted", "real")
 
 
 @lru_cache

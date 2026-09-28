@@ -10,6 +10,8 @@ B1 (2b) đọc AD qua registry tool đọc (token svc_agent): truyền `director
 với nơi khác trong cùng process; không truyền thì tự dựng (và tự đóng client HTTP khi thoát).
 ml-service (3a): `MlClient` thật (`ML_SERVICE_URL`, `ML_SERVICE_TOKEN`) — thiếu token → từ chối khởi động
 TRƯỚC khi đụng DB (3-Q21), ở cả backend lẫn worker.
+LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
+ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 """
 
 import logging
@@ -49,7 +51,9 @@ from app.graph.ports import (
     TurnStore,
 )
 from app.graph.runner import Runner
-from app.graph.tracing import NodeFn
+from app.graph.tracing import NodeFn, trace_parent
+from app.llm import LlmPort
+from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
@@ -105,6 +109,7 @@ async def open_runtime(
     approver_id = fake_approver(settings)  # trước mọi kết nối: sai môi trường → không khởi động
     scenario = fake_scenario(settings)  # như trên (2b-4)
     ml_token = settings.require_ml_token()  # như trên (3-Q21)
+    llm_setup = check_llm(settings)  # như trên (3-Q26, PLAN-3d Q-3d-13): LLM_BACKEND, pricing, prompt, preset
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
@@ -113,6 +118,9 @@ async def open_runtime(
             url=settings.qdrant_url, timeout=int(settings.rag_qdrant_timeout_s), check_compatibility=False
         )  # AsyncQdrantClient.timeout: int | None — rag_qdrant_timeout_s (float, mục 3.5) làm tròn xuống
         stack.push_async_callback(qdrant.close)
+        llm = await stack.enter_async_context(
+            open_llm(llm_setup, settings, engine=engines.main, clock=clock, trace=trace_parent)
+        )
         rag: RagPort = Retriever(
             QdrantIndex(qdrant), ml, RagConfig.from_settings(settings),
             threshold=get_policy().constants.RETRIEVAL_THRESHOLD,
@@ -129,7 +137,7 @@ async def open_runtime(
                 directory = registry
         opened = _open(
             settings, engines, clock, can_execute=can_execute, directory=directory,
-            approver_id=approver_id, scenario=scenario, ml=ml, rag=rag,
+            approver_id=approver_id, scenario=scenario, ml=ml, rag=rag, llm=llm,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
 
@@ -143,7 +151,7 @@ def select_nodes(settings: Settings, deps: NodeDeps) -> dict[str, NodeFn]:
 @asynccontextmanager
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
-    approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort,
+    approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort, llm: LlmPort,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
@@ -155,7 +163,8 @@ async def _open(
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
-        templates=get_escalation_templates(), ml=ml, rag=rag, approver_id=approver_id, scenario=scenario,
+        templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
+        scenario=scenario,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

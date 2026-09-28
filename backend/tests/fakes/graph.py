@@ -29,6 +29,7 @@ from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
+from app.llm import LlmPort
 from app.settings import get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.fakes.fake_ml import FakeMlService
@@ -41,6 +42,7 @@ from tests.fakes.identity import (
     ad_user,
     fake_directory,
 )
+from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
 
 LOCKOUT = timedelta(minutes=15)
@@ -435,6 +437,8 @@ class GraphHarness:
     approver_id: str | None = "l1-fake"  # B15 giả (FAKE_APPROVER_ID)
     ml: FakeMlService = field(default_factory=FakeMlService)  # ml-service giả (3a), đếm ở nơi nhận
     rag: FakeRag = field(default_factory=FakeRag)  # RAG giả (3c) — b08 thật dùng khi `nodes="real"`
+    # LLM gateway THẬT + ScriptedLLM rỗng (3d): node gọi LLM mà test chưa cấp kịch bản → ScriptExhausted → E9
+    llm: LlmPort = field(default_factory=lambda: make_gateway().client)
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -460,7 +464,7 @@ class GraphHarness:
             identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
-            rag=self.rag, scenario=self.scenario, approver_id=self.approver_id,
+            rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:

@@ -42,6 +42,9 @@ tiếp ngoài `make` thì tự thêm thư mục đó vào `PATH`.
 `.env` thì `make up` dùng `.env.example` và in cảnh báo. Postgres bind `127.0.0.1:55432` (đổi bằng
 `PG_PORT`) để khỏi đụng Postgres của dự án khác trên máy.
 
+**Từ Phase 3d, `.env` phải có `LLM_BACKEND=scripted`** (máy dev, LLM giả `ScriptedLLM`, không gọi API) — thiếu thì
+`make up`/`make gate2` dừng và backend/worker từ chối khởi động; `real` chỉ dùng từ mốc G (`config/llm.yaml`).
+
 Các lệnh `make ingest | seed | probe | eval | eval-rag | load` đã có tên nhưng chưa có nội dung
 (in TODO và thoát mã 1) — sẽ làm theo từng phase.
 

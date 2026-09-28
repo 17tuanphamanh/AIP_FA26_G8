@@ -1,0 +1,33 @@
+# LLM gateway — P2 mục 5, sửa theo PLAN-3d (Q-3d-3, Q-3d-4, Q-3d-5, Q-3d-7). Sửa file này là đổi hành vi agent.
+#
+# KHÔNG nội suy ${…}. Tên model hai vai trò, base_url, khoá API đọc từ env qua TÊN trường của Settings
+# (FAST_MODEL, STRONG_MODEL, LLM_BASE_URL, LLM_API_KEY). Bảng `pricing` ghi TÊN MODEL CỐ ĐỊNH: model không có
+# dòng giá thì không bao giờ được gọi (LLM_BACKEND=real mà FAST_MODEL/STRONG_MODEL thiếu dòng → từ chối khởi động).
+# Bật LLM thật (mốc G): thêm dòng giá của model đã chọn vào `pricing` + đặt 4 biến env trên, không sửa code.
+providers:
+  cloud_a: {kind: openai_compat, base_url_setting: llm_base_url, api_key_setting: llm_api_key, json_mode: json_schema}
+
+# Thời gian (Q-3d-7): với mỗi vai trò, (max_retries+1)·timeout_s + Σ backoff + max_retries·jitter_max_s phải
+# < WORKER_STALE_TURN_SECONDS/2 (60 s) và ≤ deadline_s < 60 s — backend/worker kiểm lúc khởi động.
+#   fast:   4 × 8 + (1+2+4) + 3 × 0.25 = 39.75 s ≤ 45 s
+#   strong: 2 × 20 + 1 + 0.25          = 41.25 s ≤ 50 s   (max_retries 1, không phải 3 như P2 §9: 4 × 20 + 7.75 > 60)
+roles:
+  fast:   {provider: cloud_a, model_setting: fast_model,   timeout_s: 8,  max_retries: 3, deadline_s: 45, max_tokens: 400, temperature: 0, budget_in: 2000}
+  strong: {provider: cloud_a, model_setting: strong_model, timeout_s: 20, max_retries: 1, deadline_s: 50, max_tokens: 900, temperature: 0, budget_in: 6000}
+
+# fast: chuỗi dự phòng (vd. [{provider: local, model: <tên cố định>}]) — chưa có local ở Phase 3.
+# strong: KHÔNG fallback (P2 mục 5) — validator từ chối danh sách khác rỗng.
+fallback:
+  fast: []
+  strong: []
+
+# N1: trần tổng ≤ 1.000.000 đ ≈ 38 USD cho cả đồ án. SUM(llm_calls.cost_usd), cache hit = 0. Chỉ chặn model giá > 0.
+spend: {cap_usd: 38, warn_ratio: 0.8, refresh_s: 60}
+
+limits: {max_concurrency: 8, retry_on: [429, 500, 502, 503, 504], backoff_base_s: 1, jitter_max_s: 0.25}
+
+cache: {ttl_hours_runtime: 24}
+
+# USD / 1M token. `scripted` = ScriptedLLM (LLM_BACKEND=scripted, chỉ dev/test), giá 0.
+pricing:
+  scripted: {in: 0, out: 0}

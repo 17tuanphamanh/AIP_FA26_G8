@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); **chặng 3c (RAG query + node B8–B9) đang làm theo `PLAN-3c.md`, bước S0 xong (L1 đã chạy)** — mục "Phase 3 — chặng 3c" |
+| Cập nhật | 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -2060,6 +2060,279 @@ là phương thức của `Retriever` (cùng nghĩa, spec mục 0 cho phép).
     `raw_request` chứa email/số điện thoại: `detail.query` và câu gửi RAG đều là bản đã che, PII không có trong
     dòng audit. Unit **1769 passed**. Nợ ghi ở "Việc treo" mục 3. Commit sau khi người chạy L3 xanh.
 
+## Phase 3 — chặng 3d: LLM gateway, ScriptedLLM, prompt registry (28/09/2026, đang làm, chưa commit)
+
+Kế hoạch: `PLAN-3d.md` ở gốc repo (KHÔNG commit). Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` v1.5 mục 7; khi lệch,
+`PLAN-3d.md` thắng (đã gồm chốt Q-3d), trừ 13 bất biến và mục [Chốt]. Chạy toàn bộ bằng Opus.
+
+**Quyết định của người (Q-3d, 28/09/2026):**
+
+| Mã | Chốt |
+|---|---|
+| Q-3d-1 | `ScriptedLLM` ở `app/llm/providers/scripted.py` (image không có `tests/`), chỉ nạp sau `require_dev_fakes`; `tests/fakes/scripted_llm.py` re-export |
+| Q-3d-2 | Graph tiêm hàm `trace_parent()` (`llm` không import `graph`); mỗi lời gọi ghi span `llm:<id>` + `llm_calls` trong một transaction; ngoài lượt graph với store SQL → `RuntimeError` (E9); ghi trace lỗi → chỉ log tên lớp lỗi |
+| Q-3d-3 | `FAST_MODEL`, `STRONG_MODEL` từ env (`Settings`). Chỉ `pricing` ghi tên model cố định (không `${…}`). `real` mà model env thiếu trong `pricing` → từ chối khởi động, nêu tên model. API key (và `base_url`, Claude Code chọn cùng khuôn) trỏ tới tên trường `Settings` |
+| Q-3d-4 | `scripted`: mọi vai trò → model `"scripted"`, không fallback, dòng pricing giá 0. Thiếu pricing → từ chối, đồng nhất mọi provider; "trả phí" = giá > 0 |
+| Q-3d-5 | YAML prompt là nguồn duy nhất cho role/schema/cache; tham số node lệch → `PromptContractError` (E9); node chỉ làm cache chặt hơn; bỏ `no_cache_prompts`; prompt `bypass` không cache ở mọi chế độ |
+| Q-3d-6 | `AnswerOut`: `cannot_answer=true` → cho `citations=[]` (B10 đi E3 `no_grounding`, không E2); `false` → ≥ 1 trích dẫn. Mỗi chiều 1 test |
+| Q-3d-7 | `deadline_s` theo vai trò bọc toàn bộ `complete()`; mỗi vai trò có test retry dừng khi hết hạn; test tĩnh công thức Q-3a-16 cho fast + strong; rủi ro tổng thời gian lượt → "Việc treo" |
+| Q-3d-8 | Ước lượng token `ceil(ký tự / 3)` (ước tính, chưa đo); cắt bằng chứng điểm thấp → tin cũ; vẫn vượt → `LLMBudgetExceeded` |
+| Q-3d-9 | Khoá cache băm thêm `mode`; `model_version` = giá trị ghim trong `llm.yaml`; `complete(..., kb_version=None)` |
+| Q-3d-10 | `sensitivity` chỉ ghi vào span; `n != 1` → `ValueError` |
+| Q-3d-11 | `MIN_LLM_CALL_SITES = 0` + mẫu giả; nợ bắt buộc 3e ở "Việc treo" |
+| Q-3d-12 | Preset stack tĩnh + `default`; chọn qua `turn_id → tickets.redacted_request`; thẻ lạ / thiếu prompt → `ScriptExhausted` |
+| Q-3d-13 | `LLM_BACKEND` bắt buộc từ 3d; `.env.example` `LLM_BACKEND=scripted`; lỗi khởi động nêu tên biến + giá trị hợp lệ; README 1 dòng; commit message ghi "can them LLM_BACKEND vao .env" |
+| Q-3d-14 | Đọc tổng chi lỗi → đích trả phí `LLMUnavailable`; cộng dồn chi phí ngay; 80 % chỉ log ở 3d |
+| Q-3d-15 | 2 commit: (1) phase3 v1.5 + dòng PROGRESS CI 3c; (2) `decisions.md` riêng, **chỉ sau khi Tuấn Anh xác nhận diff** |
+| Mutation | M-3d-1…8 (thêm 6–8) |
+
+**Nhật ký (S0–S9 của `PLAN-3d.md` mục 5):**
+
+- **S0 xong** — mục này + 3 dòng "Việc treo" (6, 7, 8).
+- **S1 xong** — `core/errors.py` (+`LLMUnavailable`, `LLMBudgetExceeded`); `settings.py` (`llm_backend` + validator
+  nêu tên biến/giá trị hợp lệ, `fast_model`, `strong_model`, `llm_base_url`, `llm_script_preset_dir`,
+  `require_llm_backend`); `llm/errors.py`, `llm/config.py` (`LlmConfig` extra=forbid, `resolve`, `worst_case_s`,
+  `check_timing`), `llm/wiring.py::check_llm` gọi ở `create_app` (runtime thật) và `open_runtime` TRƯỚC khi đụng DB;
+  `config/llm.yaml`; compose `LLM_BACKEND: ${LLM_BACKEND:?…}` + 3 biến rỗng; `.env.example`; README 1 dòng; conftest gốc
+  `LLM_BACKEND=scripted`; `.importlinter` hợp đồng 8 `llm-lower-layer`.
+  - **Chọn thêm (báo ở DỪNG 1):** (a) `base_url` cũng đọc từ env qua `base_url_setting: llm_base_url` (cùng khuôn khoá
+    API). (b) **`max_retries` theo vai trò, strong = 1** (P2 §9 ghi 3): với timeout 20 s, 3 lần thử lại cho
+    4 × 20 + 7,75 = 87,75 s > 60 → công thức Q-3a-16 không đạt; strong 1 lần → 41,25 s. fast giữ 3 → 39,75 s.
+    `deadline_s` fast 45, strong 50. (c) `openai` 3.19.2 dùng `httpx2`, **respx không chặn được** (đã thử: request đi
+    thẳng ra mạng, sandbox chặn) → test provider thật dùng `httpx2.MockTransport` tiêm vào `AsyncOpenAI(http_client=…)`,
+    đếm request ở handler (nơi nhận). Ghi "spec cần sửa" (7.6 d4 "respx đếm").
+  - Test mới `unit/test_llm_config.py` (33): d2 (create_app + open_runtime, env None/staging/prod), d3, giá trị lạ nêu
+    tên biến, d15 (file repo nạp được, không `${` ở khoá/giá trị nào, real thiếu model → nêu `FAST_MODEL`, model thiếu
+    giá → nêu `FAST_MODEL='m-fast'`, fallback thiếu giá, thiếu key/URL, repr không lộ key, strong fallback bị từ chối,
+    khoá pricing có `${`), Q-3d-7 (công thức cho fast + strong, 4 ca vi phạm, stale cấu hình), compose/.env.example.
+  - Kiểm: `test_llm_config.py` 33 passed; toàn unit **1802 passed**; ruff (2 lỗi sắp import, `--fix`) + mypy (153 file)
+    xanh; `lint-imports` **8/8 KEPT**.
+- **S2 xong** — `llm/schemas.py` (6 schema, `extra="forbid"`, `AnswerOut` hai chiều Q-3d-6, `SCHEMAS`),
+  `llm/registry.py` (`PromptSpec`: tên file = id, schema có thật, biến template **==** `allowed_vars` — chặt hơn spec
+  "⊇", `boundary` dành riêng; `sha256` nội dung file), `llm/context.py` (whitelist, render một lượt, `evidence`/
+  `recent_messages` ≤ 4, cắt điểm thấp → tin cũ → `LLMBudgetExceeded`, `random_boundary`, ước lượng `ceil(ký tự/3)`),
+  6 file `config/prompts/*.yaml` (bản khởi điểm theo 7.4, `version: 1`; thêm vào b11_clarify_question câu "không hỏi
+  mật khẩu, OTP, bí mật" — ngoài ý chính 7.4, ghi để soát); `check_llm` nạp registry (prompt sai → không khởi động).
+  - Test mới `unit/test_llm_prompts.py` (26): d10 (đúng 6 file khớp bảng 7.4, đọc template độc lập, AST lời gọi node
+    với `MIN_LLM_CALL_SITES = 0` + mẫu giả bắt đủ 5 loại lỗi), registry từ chối 7 kiểu file sai, d7 (thừa/thiếu biến,
+    không lộ giá trị, không truyền được `boundary`), d11 (dấu khác nhau mỗi lần, đúng 2 lần trong user, dấu đóng giả
+    không đóng được khối, sinh lại khi trùng văn bản), d12 (giá trị chứa `{{ … }}` giữ nguyên), d13 (cắt khối điểm
+    thấp nhất, giữ thứ hạng, không sửa list bên gọi; tin cũ nhất; vượt → lỗi), Q-3d-6 hai chiều (mỗi chiều 1 test).
+  - Kiểm: 26 passed; toàn unit **1828 passed**; ruff (1 lỗi sắp import, `--fix`) + mypy (156 file) xanh; 8/8 KEPT.
+- **S3 xong (khung gateway + provider) — DỪNG 1, chờ Tuấn Anh.** `llm/ports.py` (`LLMMeta`, `LlmPort`, `LlmStore`,
+  `TraceParent`, `LlmSpan`, `LlmCallRow`), `llm/providers/base.py` (`ProviderRequest/Response`, `ProviderError` do ta
+  dựng, `parse_retry_after` giây | HTTP-date), `providers/openai_compat.py` (SDK `max_retries=0`, lỗi SDK → `ProviderError
+  … from None`), `providers/scripted.py` (`ScriptedLLM` + 5 loại bước, `ScriptExhausted`; `PresetScriptedLLM` +
+  `SqlPresetResolver` `turn_id → tickets.redacted_request`, `load_presets` kiểm schema), `llm/cache.py`, `llm/spend.py`
+  (`SpendTracker`: làm mới 60 s, cộng dồn ngay, đọc lỗi → `unknown`), `llm/client.py` (`LLMClient.complete` đủ 7 bước
+  ở docstring), `llm/store.py` (`SqlLlmStore`), `llm/wiring.py` (`check_llm` + `open_llm`), `config/scripted/default.yaml`,
+  `tests/fakes/{llm.py, scripted_llm.py}`. `model_version` cắt ≤ 64 ký tự (cột VARCHAR(64) — dài hơn làm hỏng cả
+  dòng, mất chi phí).
+  - Test khói `unit/test_llm_client.py` (3): scripted đầu-cuối (1 span + 1 dòng), `openai_compat` qua gateway bằng
+    `httpx2.MockTransport` (thân request, usage, chi phí), `check_llm` nạp preset `default` đủ 6 prompt.
+  - Kiểm: toàn unit **1831 passed**; ruff xanh (thêm `# noqa: BLE001` có lý do ở 2 chỗ nuốt lỗi — cùng khuôn
+    `api/health.py`; `TRY004` → `TypeError`); mypy 165 file xanh; `lint-imports` 8/8 KEPT; collect integration + e2e
+    174 test, không lỗi import. **Chưa viết** d1, d4–d9, d14, d17, d19 (S4) và chưa nối `NodeDeps.llm` (S5).
+  - **Tuấn Anh chốt DỪNG 1 (28/09/2026):**
+    1. **strong `max_retries=1` (fast 3), `deadline_s` fast 45 s / strong 50 s — lệch P2 §9 CÓ CHỦ ĐÍCH:** công thức
+       Q-3a-16 `(max_retries+1)·timeout_s + Σ backoff + jitter < WORKER_STALE_TURN_SECONDS/2 = 60 s` phải đạt cho cả
+       hai vai trò (strong theo P2: 87,75 s); strong hỏng thì ra E2 sớm là an toàn hơn chờ lâu. Test khẳng định giá trị
+       trong `config/llm.yaml` thoả công thức: `test_llm_config.py::test_q3d7_repo_timing_below_half_stale`,
+       `::test_q3d7_repo_timing_values` (39,75 s / 41,25 s).
+    2. `LLM_BASE_URL` từ env: đồng ý. Không log `base_url` (có thể chứa query/khoá); lỗi kết nối chỉ ghi **loại lỗi +
+       host** (`ProviderError.host` = `urlsplit(base_url).hostname`).
+    3. respx → `httpx2.MockTransport`: đồng ý. Thêm test "chặn mạng" (provider thật thiếu transport giả → lỗi rõ ràng,
+       không ra mạng).
+    4. `b11_clarify_question` giữ câu "không hỏi mật khẩu, OTP, bí mật" (`version: 1`).
+    5. `decisions.md`: Tuấn Anh xác nhận nội dung → **commit riêng chỉ chứa file đó**, cùng đợt push 3d, message
+       `docs: ghi VRAM may gaming 1 va ket qua cong 2 cua Ta Duy Anh`.
+    6. `.env` đã có `LLM_BACKEND=scripted` (Tuấn Anh thêm; `grep -c` = 1).
+
+- **S4 xong** — theo chốt DỪNG 1: `ProviderError.host` (nhãn lỗi `connect@llm.test`, không scheme/cổng/đường dẫn/
+  query/userinfo); conftest gốc chặn transport thật của `httpx2` (`NetworkBlocked`, không phải `RequestError` nên SDK
+  không bọc, gateway không đổi thành `LLMUnavailable`). Fixture `tests/fixtures/llm/vpn.py::vpn_scripts` (mọi bước là
+  hàm của biến: slot đúng chữ người dùng, trích dẫn đúng anchor, TC05 đủ bước theo số khối) và prompt giả
+  `tests/fixtures/llm/prompts/b14_risk_estimate.yaml` (d1b).
+  - `unit/test_llm_client.py` (58): d1a (11 thành phần khoá, mỗi cái đổi → khoá khác), d1b (b14 giả: `redacted_request`,
+    `conversation` → `PromptVariableError`, 0 lời gọi), d1c (MockTransport 429 ×2 `Retry-After: 2` rồi 200 → đúng 3
+    request, `sleeps == [2.0, 2.0]`), d1d (sửa 1 lần: 2 lời gọi, `json_valid_first_try=False`; sai tiếp → `LLMSchemaError`,
+    không fallback), d1e (strong có fallback dựng tay bỏ qua validator → chỉ đích chính, 2 lần thử, local/cloud_b 0 lời
+    gọi), d1f (chạm trần: cache hit + đích giá 0 vẫn chạy, đích trả phí `LLMBudgetExceeded`), d1g (A → local → B theo
+    thứ tự, 4/4/1 lời gọi, `used_fallback`), 4xx khác 429 → thẳng fallback, d4 (thiếu pricing: 0 request kể cả còn
+    fallback), d5 (b02 ×2 với dấu phân cách cố định, cả default lẫn eval → 2 lời gọi, cache rỗng), d6 (hit lần 2, dòng
+    `llm_calls` vẫn ghi; TTL 24 h hết hạn; eval không hết hạn; bypass do node/do env; câu trả lời của fallback không cache
+    dưới khoá đích chính), d8 (`ScriptExhausted` không thành `LLMUnavailable`, không retry), d9 (4 lời gọi ok/hit/lỗi/sai
+    schema → 4 span + 4 dòng, đúng turn/trace/span cha, canary không có trong dòng/span/log/thông điệp lỗi; EVAL_MODE →
+    `prompt_full`; store SQL ngoài lượt → `RuntimeError`, 0 lời gọi; ghi trace lỗi không làm hỏng lời gọi), d14 (fast và
+    strong: `max_retries=100`, chỉ `deadline_s` của `llm.yaml` dừng được, thời gian giả ≤ deadline, lỗi cuối `deadline`;
+    `Retry-After` 3600 s → không ngủ), `parse_retry_after` (9 ca), d17 (đọc tổng lỗi → đích trả phí bị bỏ, strong
+    `LLMUnavailable` "spend_unknown"; chi phí cộng dồn chặn lời gọi sau mà không đọc lại DB), hợp đồng node (role/schema/
+    `eval_forever` lệch → `PromptContractError`, 0 dòng; `n=2` → `ValueError`), Q-3d-6 qua gateway (`cannot_answer`
+    không ra `LLMSchemaError`), **chặn mạng** (provider thật không transport giả → `NetworkBlocked`, dòng ghi lỗi
+    `NetworkBlocked`), **nhãn chỉ host** (base_url có userinfo/cổng/query → không lộ trong lỗi/span/dòng/log), jitter.
+  - `unit/test_llm_scripted.py` (8): d19 (cú pháp thẻ = `graph/fakes.FAKE_TAG`; preset `default` repo đủ 6 prompt,
+    an toàn; thẻ → preset, không thẻ → default, hỏi theo `turn_id`; thẻ lạ / preset thiếu prompt → `ScriptExhausted`;
+    preset sai schema / prompt lạ / thiếu `default` → từ chối nạp), d18 (6 prompt qua gateway với `vpn_scripts`, đúng
+    lần đầu; slot `LAP-0342` đúng chữ; 3 khối → 3 trích dẫn + 3 bước; luồng info/TC06; ghi đè).
+  - Kiểm: 66 passed; toàn unit **1894 passed**; ruff (2 lỗi sắp import, `--fix`) + mypy 165 file xanh.
+- **S5 xong — DỪNG 2, chờ Tuấn Anh chạy L1–L4.** `graph/context.py` thêm `run_or_none()` (không đổi hàm cũ);
+  `graph/tracing.py::trace_parent()` (lượt + span node đang chạy → `TraceParent`, ngoài lượt → None); `NodeDeps.llm:
+  LlmPort` **bắt buộc**; `graph/wiring.open_runtime`: `llm_setup = check_llm(settings)` trước khi đụng DB, rồi
+  `open_llm(..., engine=engines.main, trace=trace_parent)` trong stack (đóng client HTTP khi thoát) → `NodeDeps.llm`.
+  `GraphHarness.llm` mặc định = gateway thật + ScriptedLLM rỗng; `graph_pg.open_pg_runtime(llm=…)` mặc định tương tự.
+  - Test mới: `unit/test_graph_trace_parent.py` (3: ngoài lượt None; trong node → span LLM có `parent_span_id` = span
+    node; `GraphHarness` gọi LLM không kịch bản → `ScriptExhausted`); `integration/test_llm_store_pg.py` (d16, 8 test —
+    **viết, chưa chạy**, cần Docker): span + `llm_calls` một transaction (FK, `app_rw`), tràn `prompt_id` → không còn
+    span mồ côi, thiếu `turn_id` → từ chối, cache runtime hết TTL / eval không hết / khác chế độ không lẫn / ghi đè,
+    `spend_total`, `SqlPresetResolver` (thẻ của ticket theo `turn_id`), gateway trong lượt graph thật (span LLM trỏ span
+    node, không văn bản prompt trong `llm_calls`/`spans`), `check_llm` + `open_llm` scripted preset `default`.
+    `test_stack_scenario_pg.py` (đã có) nay đi qua `check_llm` + `open_llm` trong `open_runtime`.
+  - Kiểm: toàn unit **1897 passed** (trước 3d 1769; +128); ruff xanh; mypy `backend/app` 165 file xanh;
+    `lint-imports` 8/8 KEPT; collect integration + e2e **182** test (+8), không lỗi import.
+
+**Bảng DỪNG 2 (28/09/2026)** — U = unit trong sandbox, P = Postgres testcontainer:
+
+| # | Loại | Kết quả | File |
+|---|---|---|---|
+| d1 (a–g) | U | PASS | `test_llm_client.py` |
+| d2, d3, d15 | U | PASS | `test_llm_config.py` |
+| d4, d5, d6, d8, d9, d14, d17 | U | PASS | `test_llm_client.py` |
+| d7, d10, d11, d12, d13 | U | PASS | `test_llm_prompts.py` |
+| d16 | P | **CHƯA CHẠY** (cần Docker — L1) | `integration/test_llm_store_pg.py` |
+| d18, d19 | U | PASS (phần SQL của d19 nằm ở d16) | `test_llm_scripted.py` |
+| Q-3d-6 hai chiều, Q-3d-7 công thức, chặn mạng, nhãn chỉ host | U | PASS | như trên |
+
+- **L1 (Tuấn Anh chạy, 28/09/2026):** `pytest integration/test_llm_store_pg.py test_stack_scenario_pg.py test_graph_pg.py`
+  — **21/21 passed** (21 dấu chấm, không dòng đỏ; collect cùng 3 file ra đúng 21 test): d16 8/8 xanh trên Postgres thật
+  (role `app_rw`), `open_runtime` với `check_llm` + `open_llm` chạy được. Còn L2 (`make up` + health + `ps`), L3
+  (`make gate2 S=all`), L4 (`make test`).
+- **L2 (Tuấn Anh chạy, 28/09/2026):** `docker compose build backend worker` rồi `make up` — image backend dựng lại (có
+  `config/llm.yaml`, `config/prompts/`, `config/scripted/`), migration chạy, `worker: healthy`, `/api/health` →
+  `{"status":"ok", checks db/qdrant/mock/ml ok, "failed":[], "runtime":"up", "kb":{…"status":"ready"}}`. Backend và
+  worker khởi động được với `LLM_BACKEND=scripted` từ `.env` (qua `check_llm` + `open_llm`; `runtime: up` = gateway
+  dựng xong). `make up` đã tự in trạng thái worker nên không cần chạy riêng `docker compose ps`.
+  Tuấn Anh chạy thêm: `curl …/api/health` (cùng body) và `docker compose ps backend worker` — backend `Up`, worker
+  `Up (healthy)`, cùng image `servicedesk-backend:dev`, không khởi động lại.
+- **L3 (Tuấn Anh chạy, 28–29/09/2026):** `make gate2 S=all` — **89 PASS, 0 FAIL**, mã thoát 0 (dòng tổng kết
+  `==== 89 PASS, 0 FAIL ====`; mọi ticket gate2 đúng 1 thread, không thread lạ). Bằng số của 3c (L6) — cổng 2 không
+  vỡ khi bắt buộc `LLM_BACKEND` + nối gateway.
+- **L4 (Tuấn Anh chạy, 29/09/2026):** `make test` — backend (unit + integration + e2e) **2079 passed**; mock_services
+  **86 passed**; ml_service **77 passed** (5 `ml_real` deselected, đúng quy ước). Đối chiếu: 3c L7 1938 + 5 unit thêm ở
+  S14 của 3c (1764 → 1769) + 128 unit 3d + 8 integration 3d (d16) = 2079 — khớp. **DỪNG 2 xanh hoàn toàn (L1–L4).**
+
+- **S6 xong (29/09/2026)** — `scripts/mutation/mutate_3d.py` (khuôn `mutate_3c.py`: áp → chạy TRỌN các file test liên
+  quan → khôi phục trong `finally` → so md5 từng file + `git diff --stat`). Mọi đột biến đều có test unit phủ → chỉ
+  một lượt, trong sandbox. Chạy 2 lần: trên code DỪNG 2 và trên code cuối sau S9 (`client.py`, `spend.py`,
+  `settings.py` đổi) — cả hai lần **8/8 đỏ đúng dự đoán, mã thoát 0**, md5 trước = sau, `git diff --stat` khớp,
+  `grep -rn MUTATION backend/app` trống. Bảng dưới là lần chạy trên code cuối:
+
+  | Mã | Phá gì (file) | Test đỏ |
+  |---|---|---|
+  | M-3d-1 | Bỏ `bypass` của YAML prompt → `b02_injection_judge` vào cache (`llm/cache.py`) | d5 ×2 (`[default]`, `[eval]`) |
+  | M-3d-2 | Strong được fallback (`llm/client.py`) | d1e |
+  | M-3d-3 | Model thiếu pricing vẫn gọi, coi như giá 0 (`llm/client.py`) | d4 |
+  | M-3d-4 | Bỏ kiểm `allowed_vars` (`llm/context.py`) | d1b, d7 ×3 (thừa biến, thiếu biến, truyền `boundary`) |
+  | M-3d-5 | `ScriptedLLM` hết kịch bản → trả phản hồi mặc định (`llm/providers/scripted.py`) | d8 |
+  | M-3d-6 | Ghi `prompt_full` cả khi `EVAL_MODE=false` (`llm/client.py`) | d9 |
+  | M-3d-7 | Bỏ `require_dev_fakes` của `LLM_BACKEND=scripted` (`settings.py`) | d2 ×6 (create_app + worker × None/staging/prod) |
+  | M-3d-8 | Đọc tổng chi lỗi → cho qua (`llm/spend.py`) | d17 |
+
+  md5 (code cuối): `cache.py` 79761b81…, `client.py` eac890fa…, `context.py` 4c601c8d…, `scripted.py` b1f33c75…,
+  `spend.py` 6164ec1f…, `settings.py` 0a4aadc3… — trước = sau. Ghi chú M-3d-8: trên code cuối, dù bước kiểm đã bị phá,
+  vẫn **0 request trả phí** ra ngoài (giữ chỗ từ chối khi chưa từng đọc được tổng — lớp chặn thứ hai); test đỏ vì loại
+  lỗi thành `LLMBudgetExceeded` thay vì `LLMUnavailable "spend_unknown"`.
+- **S7** — L1–L4 đã xanh ở DỪNG 2 (trên code trước S9). S9 sửa `client.py`/`spend.py`/`settings.py`/`openai_compat.py`
+  → **cần chạy lại `make test`** trước commit (lệnh L5 ở bảng DỪNG 3). `make gate2` không cần: chưa node nào gọi LLM, đích
+  `scripted` giá 0 không đi qua nhánh giữ chỗ, `EVAL_MODE` compose mặc định `false`.
+  - **L5 (Tuấn Anh chạy, 29/09/2026, trên code cuối sau S9):** `make test` — backend **2094 passed**; mock_services **86
+    passed**; ml_service **77 passed** (5 `ml_real` deselected). Đối chiếu: L4 2079 + 14 test `test_llm_security.py` + 1
+    tham số `staging` của d2 worker = 2094 — khớp.
+- **Tuấn Anh chốt DỪNG 3 (29/09/2026):**
+  1. `EVAL_MODE` giữ cho phép ở dev/test/staging (prod/None từ chối); thêm 1 dòng WARNING lúc khởi động khi bật, kèm
+     test — **đã làm** (`llm/wiring.py::open_llm`; `test_llm_security.py::test_s9_eval_mode_logs_one_warning_at_startup`
+     ×2). Sau sửa: unit **1914 passed** (1912 + 2), ruff + mypy + `lint-imports` 9/9 xanh.
+  2. Rủi ro trần chi 2 tiến trình: giữ "Việc treo" 9, chốt trước mốc G (chia trần/2 hoặc bảng giữ chỗ DB).
+  3. Commit — **thay Q-3d-15**, KHÔNG stage từng phần: (a) chỉ `phase3-thiet-ke-chi-tiet.md` "docs: cap nhat spec phase 3
+     v1.5 (chot 3c)"; (b) chỉ `decisions.md` "docs: ghi VRAM may gaming 1 va ket qua cong 2 cua Ta Duy Anh"; (c) code 3d
+     + `PROGRESS.md` (gồm dòng CI 3c — "Việc treo" 5) + `.env.example` + README, message có "can them LLM_BACKEND vao
+     .env". Push, báo 3 hash.
+- **S8 xong** — `backend/app/llm/README.md` (sơ đồ file, luồng, test), `config/prompts/README.md` (luật sửa prompt: tăng
+  `version`, biến == `allowed_vars`, `random_boundary`, render một lượt, chất lượng đo ở mốc G); "Spec cần sửa" đầy đủ
+  ở cuối mục này; "Dồn về mốc G" thêm 4 dòng 3d; "Việc treo" thêm 9. `gitleaks dir` trên 29 đường dẫn (mọi file/thư
+  mục mới hoặc sửa của 3d, gồm `phase3-thiet-ke-chi-tiet.md`, `decisions.md`) — **0 phát hiện**.
+- **S9 xong — DỪNG 3 (soát bảo mật), chờ Tuấn Anh.** 4 lỗi tìm thấy, đều nhỏ, **đã sửa kèm test** (test đỏ trước khi
+  sửa — đã chạy, 6 test đỏ đúng lý do; xanh sau khi sửa). 1 rủi ro còn lại (lớn — không tự sửa, ghi "Việc treo" 9).
+  Test mới `unit/test_llm_security.py` (14 test, 11 hàm) + d2 worker thêm `staging` (1). Hợp đồng import-linter 9.
+  Kiểm: toàn unit **1912 passed** (1897 + 14 + 1); ruff xanh; mypy `backend/app` 165 file xanh; `lint-imports` **9/9 KEPT**
+  (đã thử tạm thêm `import app.llm.providers.scripted` vào `b08_retrieve.py` → hợp đồng 9 BROKEN đúng dòng; khôi
+  phục, md5 khớp); mutation 8/8. Lệnh soát của PLAN `grep -rn "prompt_full\|api_key\|get_secret_value" backend/app`:
+  trong `llm/`, `get_secret_value` chỉ ở `config.py:203` (kiểm có khoá) và `openai_compat.py:51` (trao cho SDK);
+  `prompt_full` chỉ được gán ở `client.py:210`, trong nhánh `EVAL_MODE`.
+
+**Bảng soát bảo mật S9 / DỪNG 3 (29/09/2026)** — file:line theo code cuối:
+
+| # | Tiêu chí | Kết quả | Chứng cứ (code · test) |
+|---|---|---|---|
+| 1a | Prompt đầy đủ không vào `llm_calls`, span, log, lỗi — chỉ `prompt_hash`; trừ `EVAL_MODE=true` | PASS | `llm/client.py:209` (`prompt_full` chỉ khi eval), `:377`/`:400` (`prompt_hash`), `:408` (log chỉ tên lớp lỗi); mọi `raise`/`log` trong `app/llm` chỉ chứa id, tên biến, tên model, loại lỗi (đã rà từng dòng); lời nhắc sửa schema chỉ `loc` + `msg` Pydantic (`client.py:122`, không có `input`) · `test_llm_client.py:394` (d9: canary không có trong dòng/span/log/thông điệp lỗi, 4 loại lời gọi), `:420` (eval → có `prompt_full`), `test_llm_security.py:88` (canary không vào log SDK); d16 (Postgres thật) |
+| 1b | `EVAL_MODE` không bật được ở `APP_ENV=prod` | **FAIL → đã sửa** | Trước: không có kiểm nào. Sửa: validator `settings.py:164` — `EVAL_MODE=true` chỉ khi `APP_ENV` ∈ {dev, test, staging}; prod **và APP_ENV thiếu** (quy ước 2b-Q2: thiếu = môi trường thật) → Settings lỗi → mọi tiến trình (backend, worker, CLI) từ chối khởi động · `test_llm_security.py:65` (prod, None → lỗi), `:71` (dev/test/staging được; prod mặc định vẫn chạy). **Chốt DỪNG 3: giữ dev/test/staging**; thêm 1 dòng WARNING lúc khởi động khi `EVAL_MODE=true` (`llm/wiring.py` `open_llm` — mỗi tiến trình một lần) · `test_llm_security.py::test_s9_eval_mode_logs_one_warning_at_startup` (bật → đúng 1 WARNING, tắt → 0; bỏ dòng log → đỏ, đã thử) |
+| 2a | Khoá API không vào log, exception, repr | PASS | `llm_api_key: SecretStr`; `openai_compat.py:73–81` lỗi SDK → `ProviderError(loại, host) from None`; `repr(provider)` = repr mặc định của object · `test_settings.py:33`, `test_llm_config.py:172` (d15), `test_llm_security.py:88` (repr/str provider + client, log SDK DEBUG: không có khoá) |
+| 2b | `base_url` không vào log, exception, repr | **FAIL → đã sửa** | Trước: (1) `repr(Settings)`/`str(Settings)` in nguyên `llm_base_url`; (2) logger `httpx2` (SDK openai) ghi `HTTP Request: POST http://user:pass@host/v1?api-key=…` ở mức INFO (đã dò bằng MockTransport). Sửa: `settings.py:82` `Field(repr=False)`; `openai_compat.py:34` logger `httpx2` → WARNING (log `openai` ở DEBUG không có thân request — đã dò). Lỗi kết nối chỉ ghi host (`openai_compat.py:49`) · `test_llm_security.py:79`, `:88`; `test_llm_client.py:562` (nhãn chỉ host) |
+| 3a | `LLM_BACKEND=scripted` bị từ chối ở mọi `APP_ENV` ngoài dev/test — backend lẫn worker | PASS (+ thêm test) | `settings.py:225` `require_llm_backend` → `require_dev_fakes`; gọi ở `main.py:168` (backend, trước DB) và `graph/wiring.py:112` (`open_runtime` — worker `worker.py:61` và backend). Không đường nạp nào khác (grep `open_runtime`/`check_llm`/`open_llm`: chỉ main, worker, wiring) · `test_llm_config.py:64` (create_app × None/staging/prod), `:72` (worker × None/**staging**/prod — S9 thêm staging); M-3d-7 giết cả 6 |
+| 3b | Preset `[fake:…]` không có tác dụng khi `backend=real` | PASS (+ thêm test) | `llm/wiring.py:55` (chỉ nạp preset khi scripted), `:66` (chỉ dựng `PresetScriptedLLM` + `SqlPresetResolver` khi scripted) · `test_llm_security.py:114` (real với preset có trên đĩa: `presets is None`; câu `[fake:vpn_demo]…` → request đi thẳng tới provider thật, bị chốt chặn mạng bắt `POST tới llm.test`) |
+| 4a | Trần chi không lách qua cache miss liên tiếp; đọc tổng lỗi → fail-closed | PASS | `spend.py` cộng dồn ngay; `spend.py:58` đọc lỗi → `unknown` → đích trả phí bị bỏ · `test_llm_client.py:502` (d17: lời gọi sau bị chặn bằng số cộng dồn, không đọc lại DB), `:488` (d17: đọc lỗi → `LLMUnavailable spend_unknown`, 0 request); M-3d-8 |
+| 4b | Trần chi không lách qua gọi đồng thời | **FAIL → đã sửa** | Trước: kiểm trần một lần/đích TRƯỚC khi gửi, chi phí cộng SAU khi trả lời → 6/6 lời gọi song song gần trần cùng lọt (test đỏ `assert 6 < 6`). Sửa: giữ chỗ chi phí xấu nhất trước **mỗi** request trả phí (`client.py:317`, `:348` = `Price.cost(token vào ước tính, max_tokens)`; `spend.py:65` `reserve` đồng bộ — không `await` giữa kiểm và cộng), nhả trong `finally` · `test_llm_security.py:146` (6 lời gọi song song, trần còn 0,0025 USD → chỉ 1–2 được gửi, còn lại `LLMBudgetExceeded`, tổng ≤ trần) |
+| 4c | Trần chi không lách qua retry / sửa schema | **FAIL → đã sửa** (một phần) | Trước: lần thử lại không tốn tiền (429/5xx không tính phí) nhưng **lần sửa schema** được gửi dù lần đầu đã đẩy tổng vượt trần. Sửa: như 4b (giữ chỗ mỗi request, kể cả lần sửa) · `test_llm_security.py:166` (lần sửa bị chặn, 1 request), `:179` (lần thử lỗi nhả chỗ — 4 lần thử không lần nào bị chặn oan). Kèm: lần đọc tổng không làm mất chi phí của dòng `llm_calls` chưa ghi xong lúc đọc (`spend.py`, `client.py:410` `recorded`) |
+| 4d | *Rủi ro còn lại (không sửa)* | GHI LẠI | (1) Giữ chỗ dùng token vào **ước tính** `ceil(ký tự/3)` → provider đếm nhiều hơn thì vượt tối đa bằng sai số ước tính của các request đang bay (hiệu chỉnh ở mốc G — span có `est_tokens_in` + `usage_tokens_in`). (2) **Backend và worker mỗi tiến trình một bộ đếm**; thấy chi tiêu của nhau chỉ qua `SUM` mỗi 60 s → gần trần, hai tiến trình có thể cùng tiêu phần còn lại. Chặn tuyệt đối cần sổ giữ chỗ chung trong DB — thiết kế lớn, **không tự làm** → "Việc treo" 9 |
+| 5 | Model thiếu pricing: 0 request, kể cả retry/sửa schema | PASS (+ thêm test) | `client.py:211` đích chính thiếu giá → `LLMBudgetExceeded` TRƯỚC cache và provider (retry, sửa schema không thể xảy ra); `:213` đích fallback thiếu giá bị loại khỏi chuỗi; `config.py` `resolve` từ chối khởi động khi `real` thiếu giá · `test_llm_client.py:300` (d4), `test_llm_security.py:192` (fallback thiếu giá: 0 request sau khi đích chính hết 4 lần thử); M-3d-3 |
+| 6a | `b02_injection_judge` luôn bypass cache | PASS | `config/prompts/b02_injection_judge.yaml:8` `cache: bypass`; `llm/cache.py:23` (bypass của YAML thắng mọi chế độ, node không mở được) · `test_llm_client.py:316` (d5, default + eval); M-3d-1 |
+| 6b | Dấu phân cách ngẫu nhiên không đoán được (`secrets`, không `random`) | PASS (+ thêm test) | `llm/context.py:41` `secrets.token_hex(8)` (64 bit); client không ghi đè `boundary` ở `open_llm` · `test_llm_security.py:215` (gieo lại `random` không lặp dấu; AST: `context.py` import `secrets`, không `random`); `test_llm_prompts.py:245`, `:264` (d11) |
+| 7 | Sai schema sau 1 lần sửa → `LLMSchemaError`, không object rỗng/mặc định | PASS | `client.py:301` (không có nhánh trả mặc định; bản cache sai schema bị bỏ qua, gọi lại provider) · `test_llm_client.py:228` (d1d: `LLMSchemaError`, không fallback, dòng ghi lỗi) |
+| 8a | Import-linter: `llm` không import `graph`/`rag` | PASS | `.importlinter:152` hợp đồng 8 `llm-lower-layer` KEPT |
+| 8b | Node không gọi provider trực tiếp, chỉ qua gateway | PASS (+ thêm hợp đồng) | `.importlinter:177` **hợp đồng 9 `llm-only-via-gateway`** (mới): `graph.nodes` + mọi module nghiệp vụ không import `llm.client`/`providers`/`store`/`wiring` — chỉ composition root dựng gateway; KEPT, đã thử vi phạm → BROKEN · `test_llm_security.py:228` (AST: SDK `openai`/`httpx2` chỉ được import ở `providers/openai_compat.py` — import-linter đặt `include_external_packages = False`) |
+
+**Spec cần sửa (3d) — để Claude chat cập nhật `phase3-thiet-ke-chi-tiet.md` mục 7.8 "Chốt khi hiện thực 3d"** (Claude Code
+KHÔNG sửa `docs/spec/`):
+
+1. **7.6 d4 (và P2 §13 dòng 3 "Unit (respx)"): respx → `httpx2.MockTransport`.** SDK `openai` 3.19.2 dùng `httpx2`, respx
+   không chặn được (đã thử: request đi thẳng ra mạng). Test tiêm `AsyncOpenAI(http_client=httpx2.AsyncClient(transport=
+   httpx2.MockTransport(handler)))`, đếm request ở handler. Kèm chốt chặn mạng trong conftest gốc: transport thật của
+   `httpx2` ném `NetworkBlocked` (test quên transport giả đỏ rõ ràng, không ra mạng).
+2. **P2 §9 / 7.3: strong `max_retries=1`** (fast giữ 3) — `max_retries` theo vai trò trong `llm.yaml`. Lý do: công thức
+   Q-3a-16 `(max_retries+1)·timeout_s + Σ backoff + max_retries·jitter < WORKER_STALE_TURN_SECONDS/2 = 60 s`; strong theo
+   P2 (3 lần, 20 s) = 87,75 s; strong 1 lần = 41,25 s; fast 39,75 s. Strong hỏng thì ra E2 sớm an toàn hơn.
+3. **P2 §5 / §9 / 7.3: `deadline_s` theo vai trò** (fast 45 s, strong 50 s, `< stale/2`) bọc TOÀN BỘ `complete()` (retry +
+   fallback + sửa schema); hết hạn → `LLMUnavailable`; `Retry-After` dài hơn thời gian còn lại → không ngủ. Kiểm lúc
+   khởi động (`check_timing`). Kèm `limits.jitter_max_s` (0,25 s), `backoff_base_s`; `Retry-After` nhận cả giây lẫn
+   HTTP-date.
+4. **P2 §5 / 7.3: không nội suy `${…}` trong `llm.yaml`.** `FAST_MODEL`, `STRONG_MODEL`, **`LLM_BASE_URL`**, `LLM_API_KEY`
+   đọc từ env qua TÊN trường `Settings` (`model_setting`, `base_url_setting`, `api_key_setting` — khoá phải là
+   `SecretStr`); chỉ `pricing` ghi tên model cố định; `real` mà model env không có trong `pricing` → từ chối khởi động,
+   nêu tên model. Bỏ `no_cache_prompts` (YAML prompt là nguồn duy nhất, Q-3d-5), thêm `spend.refresh_s`, bỏ
+   `hard_stop` (luôn chặn).
+5. **3.9 / 7.6 d10: `MIN_LLM_CALL_SITES = 0` TẠM ở 3d** (chưa node nào gọi LLM — trái "assert không rỗng"); phần AST có
+   mẫu giả chứng minh bắt được lỗi. 3e nâng ≥ 1 (`b02_injection_judge`) — nợ bắt buộc ("Việc treo" 6).
+6. B10 §4: `AnswerOut.citations` mặc định `[]` + validator hai chiều (`cannot_answer=false` → ≥ 1 trích dẫn;
+   `cannot_answer=true` cho rỗng → B10 đi E3 `no_grounding`, không E2 — Q-3d-6).
+7. P2 §4: `complete(..., kb_version=None)`; Phase 3: `n != 1` → `ValueError`, `sensitivity` chỉ ghi vào span (Q-3d-10).
+8. P2 §8: khoá cache băm thêm `mode` (runtime/eval — P7 `cache_key` là PK duy nhất); `model_version` trong khoá = giá trị
+   ghim ở `llm.yaml`, bản thật từ response chỉ ghi `llm_calls.model_version` (≤ 64 ký tự) (Q-3d-9).
+9. P2 §6 + P7: `prompt_hash` (sha256 cả file prompt) chỉ ở `llm_calls` — bảng `lineage` không có cột này.
+10. 3.8 / 7.5: `ScriptedLLM` ở `app/llm/providers/scripted.py` (image không có `tests/`), `tests/fakes/scripted_llm.py`
+    re-export; preset stack TĨNH (mỗi prompt một phản hồi) + `default`, chọn qua `turn_id → tickets.redacted_request`
+    (Q-3d-1, Q-3d-12).
+11. 7.4: biến template phải **bằng** `allowed_vars` (spec ghi "⊇"); renderer một lượt, không Jinja; `boundary` do
+    renderer sinh (`secrets`), không được nằm trong `allowed_vars`.
+12. Q-3d-8 (7.3): ước lượng token trước khi gửi = `ceil(ký tự/3)` (ƯỚC TÍNH, chưa đo) — span ghi cả `est_tokens_in` và
+    `usage_tokens_in` thật để hiệu chỉnh ở mốc G.
+13. **(S9) P2 §5 / N1 — trần chi:** giữ chỗ chi phí xấu nhất (`token vào ước tính × giá in + max_tokens × giá out`) trước
+    MỖI request trả phí (gồm thử lại, sửa schema); không gửi request có thể đẩy tổng vượt trần. Đọc tổng lỗi →
+    fail-closed. Giới hạn: bộ đếm theo tiến trình ("Việc treo" 9).
+14. **(S9) P2 §11 / 01 §5: `EVAL_MODE=true` bị từ chối khi `APP_ENV` ∈ {prod, thiếu}** (validator `Settings`).
+15. **(S9) P2 §11: không log `base_url`** — `Settings.llm_base_url` `repr=False`; logger `httpx2` (SDK) nâng WARNING vì
+    in nguyên URL ở INFO; nhãn lỗi provider chỉ có host.
+16. 01 §3 / §4.3: file mới của `llm/` (README `backend/app/llm/README.md`); hợp đồng import-linter 8 `llm-lower-layer` và
+    **9 `llm-only-via-gateway`**; test AST "SDK chỉ ở `openai_compat.py`".
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -2069,6 +2342,10 @@ là phương thức của `Retriever` (cùng nghĩa, spec mục 0 cho phép).
 | — | Chọn model fast/strong bằng probe, điền `pricing` (N1) | P2 mục 12–13 |
 | — | Ghi GPU + VRAM 3 máy gaming (N2) | `build/decisions.md` mục 1.3 |
 | 3 | Demo 4 ca VPN với LLM thật (+ chạy thử 1 lần bằng model rẻ ngay khi xong cổng code Phase 3) | `huong-dan` 5.1, `decisions.md` mục 4 |
+| 3d | Probe chất lượng 6 prompt `config/prompts/*.yaml` (`version: 1`, viết theo 7.4, **chưa đo**): JSON hợp lệ sau retry ≥ 99 % trên 200 lời gọi; `b02` bắt injection; `b11_clarify_question` không hỏi bí mật | P2 §13 dòng "Probe"; 7.4 |
+| 3d | Chọn `FAST_MODEL`/`STRONG_MODEL`, điền dòng `pricing` thật (tới lúc đó `LLM_BACKEND=real` từ chối khởi động); kiểm provider nhận `response_format` json_schema non-strict hay phải `json_object` | P2 §12–13, Q-3d-3 |
+| 3d | P2 §13 dòng Integration: đổi `roles.fast.provider` cloud → local không sửa code; `LLM_CACHE_MODE=eval` chạy 20 kịch bản 2 lần → lần 2 có 0 request ra ngoài | P2 §13 |
+| 3d | Hiệu chỉnh ước lượng token `ceil(ký tự/3)` (cắt `budget_in`, giữ chỗ trần chi) bằng `usage_tokens_in` thật trong span; đo `Retry-After`/429 thật của provider | Q-3d-8, S9 mục 4d |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 
@@ -2078,11 +2355,24 @@ là phương thức của `Retriever` (cùng nghĩa, spec mục 0 cho phép).
 
 1. CI: `actions/cache@v4`, `checkout@v4`, `setup-uv@v6` còn Node 20 (deprecated); `ubuntu-latest` → Ubuntu 26 từ
    19/10/2026 — nâng trước 19/10.
-2. Chưa commit, đi chung commit đầu 3c (người chốt 28/09/2026): dòng PROGRESS kết quả CI 3b (run `36344625601`) và
-   `.env.example` (dòng chú thích `RAG_KEEP_OLD_COLLECTIONS`).
+2. ~~Chưa commit, đi chung commit đầu 3c: dòng PROGRESS kết quả CI 3b (run `36344625601`) và `.env.example` (dòng chú
+   thích `RAG_KEEP_OLD_COLLECTIONS`)~~ — **đã commit** trong `9680471`.
 3. 3e: nghiệm thu phải có test audit B8 detail.query đã che PII bằng guard thật.
 4. 3c (Q-3a-16): đo lại K/threads/int8 rerank trên máy gaming/staging GPU (N2), đặt lại `TIMEOUT_S["rerank"]`
    và `rag_rerank_k` theo số đo đó — int8 không bật ở 3c (OOM trên colima 8 GB).
+5. ~~Chưa commit: dòng kết quả CI 3c — commit `9680471` (28/09/2026), CI xanh run `36447564133` (2m41s)~~ — **đi trong
+   commit code 3d** (chốt DỪNG 3).
+6. **3e: nâng `MIN_LLM_CALL_SITES` ≥ 1 (`b02_injection_judge`)** — nợ bắt buộc (Q-3d-11). 3f/3g tăng tiếp khi thêm
+   node gọi LLM (`b03_classify`, `b10_*`, `b11_*`).
+7. 3g/3h: rủi ro tổng thời gian một lượt (Q-3d-7) — B8 tới 50 s (`rag_deadline_s`) + B10 `b10_need_type` (fast) +
+   `b10_answer` (strong) có thể vượt `WORKER_STALE_TURN_SECONDS` (120 s) dù từng lời gọi đều dưới trần 60 s → worker
+   có thể coi lượt còn sống là dở dang. Khoá ticket (D-19) chặn chạy song song, nhưng phải chốt ngân sách thời gian
+   cả lượt ở 3g/3h.
+8. 3g: node B10 — `AnswerOut.cannot_answer=true` (citations rỗng) → E3 `no_grounding`, **không** E2 (Q-3d-6); cần test.
+9. Trần chi LLM theo TIẾN TRÌNH (S9 3d, mục 4d): backend và worker mỗi bên một `SpendTracker`, thấy chi tiêu của nhau
+   chỉ qua `SUM(llm_calls.cost_usd)` mỗi 60 s → sát trần, hai tiến trình có thể cùng tiêu phần còn lại (vượt tối đa ≈
+   phần còn lại + chi tiêu 60 s của tiến trình kia). **Chốt trước mốc G: chia trần/2 mỗi tiến trình hoặc bảng giữ chỗ
+   DB** (bảng mới → ngoài P7, phải hỏi). Tuấn Anh giữ ở đây (chốt DỪNG 3, 29/09/2026).
 
 ## Câu hỏi mở / điểm lệch
 

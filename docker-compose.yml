@@ -19,6 +19,11 @@ x-backend-env: &backend-env
   # Bắt buộc mọi env (3-Q21): thiếu → compose dừng; backend/worker cũng tự từ chối khởi động.
   ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:?ML_SERVICE_TOKEN phai khai bao trong .env}
   MOCK_URL: http://mock:8100
+  # Bắt buộc mọi env (3-Q26, PLAN-3d Q-3d-13): thiếu → compose dừng; backend/worker cũng tự từ chối khởi động.
+  LLM_BACKEND: ${LLM_BACKEND:?LLM_BACKEND phai khai bao trong .env (scripted | real)}
+  FAST_MODEL: ${FAST_MODEL:-}
+  STRONG_MODEL: ${STRONG_MODEL:-}
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
   LLM_API_KEY: ${LLM_API_KEY:-}
   JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
   MFA_ENC_KEY: ${MFA_ENC_KEY:-}

@@ -55,6 +55,7 @@ from app.db.session import Engines, create_engines, ping
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.privacy import NotRedactingGuard, PrivacyGuard
+from app.llm.wiring import check_llm
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
 from app.tools.adapters.ad_read import AdIdentityProvider
@@ -164,6 +165,7 @@ def create_app(
     fake_scenario(settings)  # như trên cho FAKE_SCENARIO / FAKE_NODE_DELAY (2b-4)
     if runtime is None:  # runtime thật gọi ml-service: thiếu ML_SERVICE_TOKEN → không dựng app (3-Q21)
         settings.require_ml_token()
+        check_llm(settings)  # như trên: LLM_BACKEND thiếu/sai, scripted ngoài dev/test, model thiếu giá (3-Q26)
     runtime_factory = runtime or _default_runtime
     background = BackgroundRuns()
     lock_retry = retry_after(settings.ticket_lock_timeout)

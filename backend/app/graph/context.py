@@ -31,6 +31,11 @@ class RunContext:
 _RUN: ContextVar[RunContext | None] = ContextVar("graph_run", default=None)
 
 
+def run_or_none() -> RunContext | None:
+    """Như `current_run` nhưng trả None ngoài lượt (LLM gateway hỏi xem có lượt để ghi trace không, 3d)."""
+    return _RUN.get()
+
+
 def current_run() -> RunContext:
     run = _RUN.get()
     if run is None:

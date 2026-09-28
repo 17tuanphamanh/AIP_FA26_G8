@@ -16,8 +16,9 @@ from uuid import uuid4
 
 from langgraph.errors import GraphBubbleUp
 
-from app.graph.context import current_run
+from app.graph.context import current_run, run_or_none
 from app.graph.ports import SpanRecord
+from app.llm.ports import TraceParent
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,15 @@ _SPAN: ContextVar[SpanRecord | None] = ContextVar("graph_span", default=None)
 
 def current_span() -> SpanRecord | None:
     return _SPAN.get()
+
+
+def trace_parent() -> TraceParent | None:
+    """Lượt + span node đang chạy cho LLM gateway (`llm` không import `graph` — PLAN-3d Q-3d-2). Ngoài lượt → None."""
+    run = run_or_none()
+    if run is None:
+        return None
+    span = _SPAN.get()
+    return TraceParent(run.turn_id, run.trace_id, span.span_id if span else None)
 
 
 def short_traceback(exc: BaseException) -> str:

@@ -1,0 +1,12 @@
+# Prompt GIẢ cho test d1b (P2 §13 dòng 2): b14_risk_estimate chưa có ở Phase 3 (Phase 6). Chỉ để chứng minh whitelist
+# biến chặn câu người dùng (`redacted_request`, `conversation`) ở tầng gateway — bất biến "M5 không đọc câu người dùng".
+id: b14_risk_estimate
+version: 1
+role: strong
+schema: QuestionOut
+allowed_vars: [intended_action, requester_context, diagnostics, retrieved]
+cache: bypass
+system: |
+  Prompt giả cho test.
+user: |
+  {{ intended_action }} {{ requester_context }} {{ diagnostics }} {{ retrieved }}
