@@ -1,6 +1,6 @@
 # Phase 3 — Thiết kế chi tiết (lát cắt VPN B1 → B20)
 
-*Thuộc bộ `build/`. Phiên bản 1.4 — 28/09/2026 (1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
+*Thuộc bộ `build/`. Phiên bản 1.5 — 28/09/2026 (1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
 
 ---
 
@@ -1111,6 +1111,23 @@ Khuyên **A trong 3c–3g**, xét **B ở 3h** khi mọi node thật đã có. V
 | M-3c-8 | Alias thiếu → trả rỗng | c12 |
 | M-3c-9 | Hit rỗng vẫn gọi rerank (hoặc ném lỗi) | c14 |
 
+### 6.13. Chốt khi hiện thực 3c (28/09/2026)
+
+Commit `9680471` (nhánh `dev-tuananh`, 60 file). CI run 36447564133 xanh.
+
+| Mã | Việc | Chốt |
+|---|---|---|
+| Q-3c-1 | FakeMl rerank quá dễ dãi (FG 0,333 trên fixture gốc) | Giữ FakeMl (Jaccard âm tiết). Thử luật IDF (FG 0,167) rồi bỏ. Cổng kiểm có **2 đường test**: đường chặn dùng fixture gốc (FakeMl FG 0,333 → thoát 1); đường qua dùng `retrieval_set` riêng cho test. c4 khẳng định KB-VPN-001 trong top-3. c5 dùng câu âm "Làm sao bật xác thực 2 lớp MFA cho email?" → điểm ≤ 0,333 → E3; **3h dùng lại câu này cho h7** |
+| Q-3c-2 | Q-3a-16 (rerank trên CPU) | Bench không đạt (tầng ② p95 trung vị 10,4 s; int8 hết RAM). Chốt "cách 4", **ghi là nới tiêu chí**: `rag_rerank_k=10`, `ML_THREADS=4`, `TIMEOUT_S["rerank"]=18`; `RAG_RERANK_K` đè được bằng env (demo có thể đặt 5). Nợ: đo lại trên staging có GPU |
+| Q-3c-3 | Node giả của Phase 2 | Chuyển sang `graph/nodes/fake/`; `select_nodes` chọn thật/giả để giữ `make gate2` (hướng A của 3-Q32) |
+| Q-3c-4 | Probe `kb` của health | Đọc alias bằng `GET /aliases` (lọc `alias_name == "kb_current"`). Lỗi `/collections/aliases` (S7) lộ ra ở L5 vì nhánh `except` nuốt lặng; nay `except` ghi `logger.warning` chỉ kèm tên loại lỗi, vẫn trả `unknown`, health không 500 |
+| Q-3c-5 | Dọn cổng truy vấn | Xoá `query_dense`. Chỉ còn `hybrid_query` (retriever) và `scroll_window` (expand); `Filter(` chỉ được dựng trong `rag/filters.py` (có test chặn) |
+| Q-3c-6 | Role lạ (soát S14) | **Giữ `["public"]`** như 3-Q5/6.5: tài liệu `public` ai đăng nhập cũng xem được nên không lộ; thực tế không tới được vì `role` là `Literal` và B1 ra E2 `role_unmappable`. M-3c-3 đỏ đúng |
+| Q-3c-7 | Audit lưu câu hỏi (soát S14) | **Giữ** điểm log 3: `detail.query = redacted_request[:500]`, chỉ đọc từ `redacted_request` (có test: `raw_request` chứa email/SĐT không lọt vào audit). Log ứng dụng của RAG không ghi câu hỏi. **Nợ bắt buộc 3e:** nghiệm thu có test audit B8 `detail.query` đã che PII bằng guard thật |
+| Q-3c-8 | Chạy cổng kiểm trên model thật | Số trên model thật khác FakeMl (D-22): chỉ số thật phải đo bằng model thật, FakeMl chỉ để test nội bộ nhất quán |
+
+**Kết quả 3c.** Model thật trên `backend/tests/fixtures/kb`: Recall@5 1,000 · trả lời bừa (FG) 0,000 · MRR 1,000; `make ingest` đạt cổng, đổi alias, thoát 0. Health `kb.status: ready`. Integration L3 29/29; `make gate2 S=all` 89 PASS / 0 FAIL; `make test` 1938 + 86 + 77 passed; unit 1769. Mutation: lượt unit 9/9, lượt integration 6/6 đỏ đúng dự đoán. Soát S14 (Opus): 11/13 mục đạt ngay, 2 mục (role lạ, audit) giữ theo thiết kế (Q-3c-6, Q-3c-7), 1 mục sửa (probe log).
+
 ---
 
 ## 7. Chặng 3d — LLM gateway, ScriptedLLM, prompt registry
@@ -1972,6 +1989,7 @@ Mỗi file thêm mục **"5.1 Chốt khi hiện thực Phase 3"** gồm một c�
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 27/09/2026 | 1.0 | Tạo file: phạm vi, 36 quyết định, hợp đồng chung, 8 chặng 3a–3h |
+| 28/09/2026 | 1.5 | Mục 6.13: chốt khi hiện thực 3c (Q-3c-1…8: 2 đường cổng kiểm, nới tiêu chí rerank, probe `/aliases`, giữ role lạ `public` và audit câu đã che; kết quả) |
 | 28/09/2026 | 1.4 | Mục 5.14: chốt khi hiện thực 3b (Q-3b-1…17, cổng dense-only, kết quả); sửa 5.10 mmh3/index, 4.12 Q-3a-6 |
 | 28/09/2026 | 1.3 | Mục 1.5: 3b vẫn làm ngay; hậu kiểm/cải tiến 3b sau khi xong dự án (phạm vi đề xuất) |
 | 27/09/2026 | 1.2 | Mục 4.12: chốt khi hiện thực 3a (Q-3a-1…16, số đo bench); sửa a4/a6/a10, 4.5 `attempts`, 4.6 băm, 3.5 `MODELS_DIR`, mục tiêu rerank |
