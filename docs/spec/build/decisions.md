@@ -17,7 +17,7 @@
 | Mã | Việc | Đã chốt | Còn phải làm | Chặn từ | Trạng thái |
 |---|---|---|---|---|---|
 | N1 | Provider LLM, ngân sách | **Đa provider** qua `config/llm.yaml` (P2 mục 5): vai trò fast và strong có thể ở provider khác nhau; fast có chuỗi dự phòng sang provider khác hoặc model local. **Trần tổng ≤ 1.000.000 đ cho cả đồ án** (khoảng 38 USD, quy đổi lại theo tỉ giá lúc nạp). Kế hoạch chi ở mục 1.2 | Chọn model cụ thể cho fast/strong bằng probe (P2 mục 12) và điền bảng giá thật vào `pricing` | Phase 3 (chọn model) | Đã chốt hướng; model chọn ở Phase 3 |
-| N2 | Phần cứng | 3 máy gaming (GPU NVIDIA) + 1 Mac. Phân vai ở mục 1.3. Nếu có ít nhất 1 máy ≥ 8 GB VRAM → **mức 1** (`huong-dan` mục 11): fast chạy local 7–8B 4-bit được | Chạy `nvidia-smi` trên 3 máy, ghi tên GPU + VRAM vào mục 1.3 | Phase 3 | Chờ số VRAM |
+| N2 | Phần cứng | 3 máy gaming (GPU NVIDIA) + 1 Mac. Phân vai ở mục 1.3. Nếu có ít nhất 1 máy ≥ 8 GB VRAM → **mức 1** (`huong-dan` mục 11): fast chạy local 7–8B 4-bit được | Chạy `nvidia-smi` trên 3 máy, ghi tên GPU + VRAM vào mục 1.3 | Phase 3 | 1/3 máy đã đo (RTX 4050 Laptop 6 GB, 28/09/2026) — chưa đạt mức 1; chờ 2 máy còn lại |
 | N3 | Phân bố vận hành giả định (escalation rate có trọng số) | **70% thường ngày / 20% cần duyệt / 10% nhạy cao** + báo cáo độ nhạy với 60/30/10 và 80/15/5. Giải thích ở mục 1.4 | — | Phase 10 | Đã chốt |
 | N4 | Đánh số 20 luật trong `policy.json` | Bảng R01–R20 ở mục 1.1; luật "VPN cho thiết bị chưa đăng ký" (tài liệu cũ ghi R22) là **R17** | — | Phase 4 | Đã chốt |
 | N5 | Huấn luyện `intent-clf`, `injection-clf` | Nhóm tự huấn luyện trên **Kaggle + Colab** (P11). GPU T4/P100 không có bf16 → **train fp32** (không fp16). Model xuất ONNX lưu ngoài git (`*.onnx` bị ignore): GitHub Release hoặc Kaggle Dataset riêng tư, ghi link + sha256 vào `ml_models/<task>/<ver>/model_card.md`. Người phụ trách mặc định TV1 | — | Phase 1 (luồng dữ liệu) | Đã chốt |
@@ -82,7 +82,7 @@ Thứ tự số không ảnh hưởng kết quả: khớp cả `allow` và `appr
 
 | Máy | GPU | VRAM | Ghi khi đo |
 |---|---|---|---|
-| Gaming #1 | | | |
+| Gaming #1 (máy Tạ Duy Anh, WSL 2) | NVIDIA GeForce RTX 4050 Laptop GPU, driver 610.78, CUDA 13.3 | 6141 MiB (6 GB) — dưới ngưỡng 8 GB của mức 1 | 28/09/2026, kèm xác nhận cổng 2 |
 | Gaming #2 | | | |
 | Gaming #3 | | | |
 
@@ -250,5 +250,6 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 26/09/2026 | Mục 4.1: quyết định 2b-QA…2b-QD của Phase 2b-2 |
 | 26/09/2026 | Mục 4.1: quyết định 2b-3-Q1…Q5, 2b-3-QA…QD của Phase 2b-3 |
 | 27/09/2026 | Mục 4.1: quyết định 2b-4-Q1…Q8, 2b-4-QA…QB của Phase 2b-4 |
+| 28/09/2026 | Mục 1.3: ghi VRAM máy gaming thứ nhất (RTX 4050 Laptop 6 GB); **cổng 2 đạt** — Tạ Duy Anh chạy `make gate2 S=all` trên `2a9f3ee`: 89 PASS / 0 FAIL, threads đạt (20 ticket = 20 thread) |
 | 27/09/2026 | Mục 4.1: trỏ 3-Q1…Q40 và Q-3a-1…16 (chặng 3a) |
 | 28/09/2026 | Mục 4.1: Q-3b-1…17 (chặng 3b) |
