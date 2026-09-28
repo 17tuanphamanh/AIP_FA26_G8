@@ -9,3 +9,9 @@ tool_arg_slots:
   - device_id
   - software_name
   - resource_path
+
+# query_slots (3-Q13): slot nối thêm vào câu truy hồi RAG khi câu người dùng chưa có (build_query,
+# Phase 3 chặng 3c) — không nối device_id (vô nghĩa với KB) hay tên intent.
+query_slots:
+  - error_code
+

@@ -1,5 +1,6 @@
-# 6 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
-# (Phase 3 chặng 3a, thiết kế Phase 3 mục 4.2). Hợp đồng thứ 6
+# 9 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
+# (Phase 3 chặng 3a, thiết kế Phase 3 mục 4.2) + `rag-lower-layer` (chặng 3b, PLAN-3b Q-3b-16) + `llm-lower-layer`
+# và `llm-only-via-gateway` (chặng 3d, PLAN-3d). Hợp đồng thứ 6 cũ
 # ("node không gọi thẳng side effect") là test AST: backend/tests/unit/test_side_effects_ast.py.
 # Chạy: PYTHONPATH=backend uv run lint-imports   (hoặc make lint)
 
@@ -118,3 +119,80 @@ forbidden_modules =
     app.tools
 ignore_imports =
     app.ml.client -> app.tools.retry
+
+# 7. rag (P3) là tầng dưới: chỉ phụ thuộc domain, core, db, ml (+ tools.retry qua ml.client; 3c thêm dòng
+#    ignore cho rag.retriever -> tools.retry — Retriever._call dùng call_with_retry, S5). Thiết kế Phase 3,
+#    PLAN-3b Q-3b-16.
+[importlinter:contract:rag-lower-layer]
+name = rag chi phu thuoc domain, core, db, ml
+type = forbidden
+source_modules =
+    app.rag
+forbidden_modules =
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.eval
+    app.executor
+    app.graph
+    app.guard
+    app.llm
+    app.monitor
+    app.notify
+    app.risk
+    app.tools
+ignore_imports =
+    app.ml.client -> app.tools.retry
+    app.rag.retriever -> app.tools.retry
+
+# 8. llm (P2 — LLM gateway) là tầng dưới: chỉ phụ thuộc domain, core, db (01 mục 4.2). Ngữ cảnh trace (lượt, span
+#    cha) do graph TIÊM vào qua hàm `trace_parent` — llm không import graph (PLAN-3d Q-3d-2). Không dùng
+#    tools.retry: retry của LLM (Retry-After, jitter, deadline) nằm trọn trong llm/client.py (P2 mục 9).
+[importlinter:contract:llm-lower-layer]
+name = llm chi phu thuoc domain, core, db
+type = forbidden
+source_modules =
+    app.llm
+forbidden_modules =
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.eval
+    app.executor
+    app.graph
+    app.guard
+    app.ml
+    app.monitor
+    app.notify
+    app.rag
+    app.risk
+    app.tools
+
+# 9. Mọi lời gọi LLM đi qua gateway (P2 mục 2; PLAN-3d S9): chỉ composition root (graph/wiring.py, main.py, worker.py)
+#    dựng `LLMClient` + provider qua `llm.wiring`. Node và module nghiệp vụ dùng `LlmPort` (`NodeDeps.llm`), không import
+#    provider/client/store/wiring của llm. SDK `openai`/`httpx2` (gói ngoài — include_external_packages = False): test
+#    AST backend/tests/unit/test_llm_security.py::test_s9_only_openai_compat_imports_llm_sdk.
+[importlinter:contract:llm-only-via-gateway]
+name = node va module nghiep vu chi goi LLM qua LlmPort
+type = forbidden
+source_modules =
+    app.graph.nodes
+    app.api
+    app.approval
+    app.audit
+    app.auth
+    app.eval
+    app.executor
+    app.guard
+    app.monitor
+    app.notify
+    app.rag
+    app.risk
+    app.tools
+forbidden_modules =
+    app.llm.client
+    app.llm.providers
+    app.llm.store
+    app.llm.wiring

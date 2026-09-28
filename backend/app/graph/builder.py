@@ -33,6 +33,7 @@ from app.graph.nodes import (
     parent_reply_wait,
     parent_wait,
 )
+from app.graph.nodes.fake import b08_retrieve as fake_b08_retrieve
 from app.graph.routing import ENTRY, ROUTES, route_next
 from app.graph.tracing import NodeFn, traced
 
@@ -40,11 +41,17 @@ type Graph = CompiledStateGraph[Any, Any, Any, Any]
 
 _NODE_MODULES = {
     "b01_identity": b01_identity, "b02_screen": b02_screen, "b03_classify": b03_classify,
-    "b06_diagnose": b06_diagnose, "b08_retrieve": b08_retrieve, "b10_route": b10_route,
+    "b06_diagnose": b06_diagnose, "b08_retrieve": fake_b08_retrieve, "b10_route": b10_route,
     "b11_slots": b11_slots, "clarify_wait": clarify_wait, "b12_assess": b12_assess,
     "b15_prepare_approval": b15_prepare_approval, "approval_wait": approval_wait,
     "b17_execute": b17_execute, "confirm_wait": confirm_wait, "parent_wait": parent_wait,
     "parent_reply_wait": parent_reply_wait, "b20_audit": b20_audit,
+}  # fmt: skip
+
+# Node THẬT đã có (thay dần _NODE_MODULES khi mỗi nhánh xong — 3-Q32 cách A). `real_nodes(deps)` dùng bảng
+# này để ghi đè lên `fake_nodes(deps)`; node giả còn lại giữ nguyên tới khi có bản thật.
+REAL_NODE_MODULES = {
+    "b08_retrieve": b08_retrieve,
 }  # fmt: skip
 
 
@@ -54,6 +61,14 @@ def fake_nodes(deps: NodeDeps) -> dict[str, NodeFn]:
     nodes = {name: module.make(deps) for name, module in _NODE_MODULES.items()}
     for name in PAUSABLE_NODES:
         nodes[name] = _pausable(name, nodes[name], deps.scenario)
+    return nodes
+
+
+def real_nodes(deps: NodeDeps) -> dict[str, NodeFn]:
+    """`fake_nodes(deps)` với các nhánh đã có bản thật (`REAL_NODE_MODULES`) ghi đè lên — node thật KHÔNG bọc
+    `_pausable` (không đọc `deps.scenario`, 3-Q32 cách A)."""
+    nodes = fake_nodes(deps)
+    nodes.update({name: module.make(deps) for name, module in REAL_NODE_MODULES.items()})
     return nodes
 
 

@@ -243,7 +243,7 @@ labels: {annotator_1: HITL, annotator_2: HITL}   # lưu cả hai lượt để t
 | D3 | ≥ 120 | 8 |
 | D4 | 150–180, ~20% ca biên | 9 |
 
-KB: K1 (5 tài liệu VPN, trước Phase 3), K2 (≥ 16 tài liệu, trước Phase 5; mục tiêu ≥ 50 có tài liệu gây nhiễu — D-25). Số liệu trong KB phải khớp `eval/kb-facts.md` (bảng sự thật dùng chung cho KB và seed mock), tạo ở Phase 0 **[Chốt 8, tên file theo huong-dan]**.
+KB: K1 (5 tài liệu VPN, trước Phase 3), K2 (≥ 16 tài liệu, trước Phase 5; mục tiêu ≥ 50 có tài liệu gây nhiễu — D-25). Số liệu trong KB phải khớp `eval/kb-facts.md` (bảng sự thật dùng chung cho KB và seed mock), tạo ở Phase 0 **[Chốt 8, tên file theo huong-dan]**. *Vị trí khi hiện thực (3b, 28/09/2026):* file nằm ở `kb/kb-facts.md` — đi cùng thư mục KB để `make ingest` kiểm số liệu (tên file giữ đúng Chốt; mẫu ở `build/kb-mau/kb-facts.md`).
 
 ### 4.3. Chia tập và cổng cỡ mẫu [Chốt 8.2, cổng 9]
 

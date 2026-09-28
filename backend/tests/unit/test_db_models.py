@@ -71,3 +71,12 @@ def test_migration_grants_cover_every_table() -> None:
     assert not set(m.RW_CRUD_TABLES) & set(m.APPEND_ONLY)
     assert set(m.MONITOR_TABLES) <= set(Base.metadata.tables)
     assert len(m.EXIT_CODE_PRIORITY) == len(ExitCode)
+
+
+def test_kb_eval_statuses_match_migration_0006() -> None:
+    from app.db.models import KB_EVAL_STATUSES
+
+    assert KB_EVAL_STATUSES == ("evaluated", "unevaluated")
+    assert _check("kb_versions", "eval_status") == "eval_status IN ('evaluated', 'unevaluated')"
+    source = (MIGRATION.parent / "0006_kb_content_hash.py").read_text(encoding="utf-8")
+    assert "\"eval_status IN ('evaluated', 'unevaluated')\"" in source

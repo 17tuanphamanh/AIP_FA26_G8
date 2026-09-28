@@ -1,7 +1,8 @@
 """Phụ thuộc của node (`NodeDeps`) + phần GIẢ của Phase 2 (P1: "khung, node giả"). Phase 3+ thay từng
 node bằng node thật. Node thật từ 2b: `b01_identity` (dùng `identity`, `directory`, `alerts`, `lockout`),
 `b20_audit` (dùng `tickets`, `escalations`, `templates`, `notifier`). `ml` (3a): `MlClient` thật dựng ở
-`graph/wiring.py`, test truyền `FakeMlService` (`tests/fakes/fake_ml.py`) — chưa node nào dùng ở 3a.
+`graph/wiring.py`, test truyền `FakeMlService` (`tests/fakes/fake_ml.py`) — chưa node nào dùng ở 3a. `llm` (3d):
+`LLMClient` dựng ở `graph/wiring.py` (`llm/wiring.open_llm`) — chưa node nào gọi ở 3d.
 
 `FakeScenario` chọn kết quả của mỗi node theo ticket (mặc định = đường vui dừng ở chờ duyệt), để test
 đi được mọi nhánh ra của mọi node. Kết quả đặc biệt `"raise"` → node ném `ValueError` (TC29 → E9).
@@ -32,8 +33,10 @@ from app.graph.ports import (
     ToolCaller,
     ToolResult,
 )
+from app.llm import LlmPort
 from app.ml import MlPort
-from app.settings import EscalationTemplates, PolicyConstants
+from app.rag.ports import RagPort
+from app.settings import EscalationTemplates, PolicyConstants, get_slots
 
 
 class Notifier(Protocol):
@@ -217,9 +220,15 @@ class NodeDeps:
     escalations: EscalationStore  # B20: hàng đợi L2 (qua effects.once)
     templates: EscalationTemplates  # B20: thông báo + next_for_l2 theo mã E
     ml: MlPort  # ml-service qua MlClient (3-Q7): B8 (3c), B2/B3 (3e/3f). Bắt buộc, không bản giả mặc định
+    rag: RagPort  # B8 (3c): retrieve/expand_for_answer. Bắt buộc, không bản giả mặc định
+    # LLM gateway (3d, P2): B2 L4 (3e), B3 (3f), B10/B11 (3g). Bắt buộc, không bản giả mặc định — test dùng
+    # `LLMClient` thật với ScriptedLLM làm provider (`tests/fakes/llm.make_gateway`, phase3 7.3).
+    llm: LlmPort
     scenario: FakeScenario = field(default_factory=FakeScenario)
     # B15 GIẢ: người duyệt cố định (`FAKE_APPROVER_ID`, chỉ dev/test). None → B15 ném → E9.
     approver_id: str | None = "l1-fake"
+    # 3-Q13: slot nối vào câu truy hồi RAG (`build_query`, B8) — một nguồn `config/slots.yaml`.
+    query_slots: tuple[str, ...] = field(default_factory=lambda: tuple(get_slots().query_slots))
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:

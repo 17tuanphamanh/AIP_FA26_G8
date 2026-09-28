@@ -35,8 +35,11 @@ RERANK_MAX_PASSAGES = 32
 COUNT_MAX_ITEMS = 256
 # ml-service chặn body > 256 KB (413); chừa phần đầu JSON và câu truy vấn.
 MAX_REQUEST_BYTES = 200 * 1024
-# Giây mỗi lần gọi (thiết kế 3a mục 4.5). Rerank tạm 10 s — chỉnh ≥ 2 × p95 lô 32 theo `make ml-bench`.
-TIMEOUT_S = {"embed": 5.0, "rerank": 10.0, "count_tokens": 5.0, "classify": 2.0, "classify_intent": 2.0}
+# Giây mỗi lần gọi (thiết kế 3a mục 4.5). rerank=18: trần cho phép của Q-3a-16 (PLAN-3c mục 6.2 điểm 3,
+# 3·T+3 < WORKER_STALE_TURN_SECONDS/2=60 → T ≤ 18) — KHÔNG phải 2×p95 đo thật (tier ② trung vị p95 10,4 s
+# trên CPU dev, lớn nhất đo được 12,4 s, vẫn dưới 18 s nên timeout trên máy chậm sẽ là E2 an toàn, không
+# phải false-negative). Xem PROGRESS S9 (Q-3a-16) và nợ kỹ thuật đo lại trên máy staging GPU (N2).
+TIMEOUT_S = {"embed": 5.0, "rerank": 18.0, "count_tokens": 5.0, "classify": 2.0, "classify_intent": 2.0}
 MODEL_VERSION_HEADER = "X-Model-Version"
 
 _SYSTEM_CLOCK = SystemClock()

@@ -1,0 +1,12 @@
+# Preset `default` của ScriptedLLM trên stack dev (LLM_BACKEND=scripted, PLAN-3d Q-3d-12; phase3 mục 7.5).
+# Dùng cho ticket KHÔNG có thẻ [fake:<preset>]. Phản hồi "an toàn": không phải tấn công, out_of_scope, không đủ căn cứ.
+# Preset khác: thêm file <tên>.yaml cùng dạng (prompt_id → phản hồi tĩnh); mỗi phản hồi được kiểm schema lúc khởi
+# động. KHÔNG dùng trong test (test dùng ScriptedLLM + kịch bản riêng).
+b02_injection_judge: {is_attack: false, category: none, reason: "preset default"}
+b03_classify:
+  intents: [{type: out_of_scope, confidence: 1.0, span: "", action_hint: null, slots: {}}]
+  is_multi: false
+b10_need_type: {type: info, confidence: 0.5}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cho mình biết thêm thông tin về yêu cầu này nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}

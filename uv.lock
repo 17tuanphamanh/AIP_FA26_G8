@@ -1167,6 +1167,30 @@ wheels = [
 ]
 
 [[package]]
+name = "mmh3"
+version = "5.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/69/d00269fee7a3102fcc0f04f0a312e41c6b237762bdcad4c19426f18e697c/mmh3-5.3.0.tar.gz", hash = "sha256:95832419b87b882bec9dcd7d041d74887ba7745b3659c14be1ae1db5cfa35cad", size = 33607, upload-time = "2026-08-26T04:58:20.042Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/97/28c3905a7e27e100ef50322798659e0af514eff600aabffbab00e3cd27ad/mmh3-5.3.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:5e7373e6834e4bdf2c24dbb1a0c6dd834bb5a189efb65723ebb58a8f3e76204b", size = 55484, upload-time = "2026-08-26T04:56:12.197Z" },
+    { url = "https://files.pythonhosted.org/packages/44/13/629beb4d3e92ffcf1486c81cbb0605d9e6685b2721eb6753946a9d217359/mmh3-5.3.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:430ed4de594d0084d9b7956b05075a9054d290a3a0d7b370553a9096a4fd429f", size = 40091, upload-time = "2026-08-26T04:56:13.289Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/64/0a5832cd45207c507ee83bb7286dfeccf51c438aa8b6217f44f286f354f4/mmh3-5.3.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:bee76669a5b588cd806aa619ea9eb8f0c8a00e6991001d830e07cc69258962a9", size = 39694, upload-time = "2026-08-26T04:56:14.244Z" },
+    { url = "https://files.pythonhosted.org/packages/13/ac/e9a157fbeebf44da5e39e49ef3901cbd68651d966658b58303074f349422/mmh3-5.3.0-cp312-cp312-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:c6fbc4e3017fb99e639abdb58a6a31e14bcbd270562805a0b80a102f8a4f3024", size = 97220, upload-time = "2026-08-26T04:56:15.312Z" },
+    { url = "https://files.pythonhosted.org/packages/af/a6/5012e363699c598166fb955f7267975284dd51eadc0383771a1a593d4ac2/mmh3-5.3.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:98db40c6ef8bbeb028e0424736a6bef3b1d8d0a02399236eb00db0dd0b7ca957", size = 103238, upload-time = "2026-08-26T04:56:16.425Z" },
+    { url = "https://files.pythonhosted.org/packages/47/53/5710edf5edd969bbc42985577ddc73758a1c90a1613ffc4356087b5e330f/mmh3-5.3.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:fa216ac716e7c99e4dc4b039c6219a31cd381cc0588ca45cf66f36011613f3ed", size = 106138, upload-time = "2026-08-26T04:56:17.54Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/dc/e7737d142ecb5847aad04fc92d63bd455587f5dc33ebbfddeb7936f98713/mmh3-5.3.0-cp312-cp312-manylinux2014_ppc64le.manylinux_2_17_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:ef9fe783b932927da8070f5b2913ce412e42c80bf17fd523042325ee3a44f756", size = 112973, upload-time = "2026-08-26T04:56:18.644Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/04/34e1242a23e14c78a39dd76ffdf860e76d01c917e4103b9729c27efc22f7/mmh3-5.3.0-cp312-cp312-manylinux2014_s390x.manylinux_2_17_s390x.manylinux_2_28_s390x.whl", hash = "sha256:1d5de36640293374673ec6813b7a23d8a9621bbd87f079c6ec4c5e8585cb1f64", size = 120621, upload-time = "2026-08-26T04:56:19.837Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/6b/665f1bd97666095f8a92b4191e22c21038c3e5f6bccad2a09218962e0541/mmh3-5.3.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:0a6bd95c410ec9500d9515a4fe522e24452f71df38de47395f99aebc085a5d5a", size = 99020, upload-time = "2026-08-26T04:56:21.07Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/a8/0ce084753cc8a82f8cbadcb6723f2e17c341b17683eafc49729a55db4930/mmh3-5.3.0-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:f0c7a36ccb66bfc8fcfa7a9722614b959231e325f0e08862c6ea70a7283a6520", size = 98497, upload-time = "2026-08-26T04:56:22.252Z" },
+    { url = "https://files.pythonhosted.org/packages/01/1e/501564ca0687e4138c01c12d5b1bc049511753f5a5db2538ad662bf16d97/mmh3-5.3.0-cp312-cp312-musllinux_1_2_ppc64le.whl", hash = "sha256:767c6c0cf3f67c3e4e246ae7e1cc9ce7755f174f994aa3111c8357f16a587161", size = 106369, upload-time = "2026-08-26T04:56:23.375Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/af/7e072e63c10f81b0d4f2abff29363029144c62006baa1fbe437302d24f05/mmh3-5.3.0-cp312-cp312-musllinux_1_2_s390x.whl", hash = "sha256:408d37be08e12a154b482dcb300781d3dd154abab8e002ab32ecde6aa6a325bc", size = 109882, upload-time = "2026-08-26T04:56:24.495Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/89/90e3f0f59eb13b362cb0c091a1ce43b94325fae8c6c20a991dc9ee6bd0b7/mmh3-5.3.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:a2b77b3e6a9d817822407b32c514205b44ceeb8ab197bee09de19e5f1e04ce18", size = 97421, upload-time = "2026-08-26T04:56:25.675Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/be/eaa4b95e3fdb2617ec1c1502ab15f5941408c02a3c80a5df63ab4c412abd/mmh3-5.3.0-cp312-cp312-win32.whl", hash = "sha256:d4cc2cb5f117da6460c14c65cbc0d1cf0976af3e56de6cd627cc36019f323e15", size = 40467, upload-time = "2026-08-26T04:56:26.804Z" },
+    { url = "https://files.pythonhosted.org/packages/39/86/695592b763d2c0a5739ff50e62be102a1790bd5817a5f7f9ed2ffcbe198f/mmh3-5.3.0-cp312-cp312-win_amd64.whl", hash = "sha256:ad5e6b56000d4b1b82a380c664982371939dc8f728fcbb73d017edc035247dcb", size = 41864, upload-time = "2026-08-26T04:56:27.779Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/ea/b534107b184454994865f5c1695df2f666672f16636b814da182b3ab0f6f/mmh3-5.3.0-cp312-cp312-win_arm64.whl", hash = "sha256:4b660543eee66d5f07408fc1cdd0d017416f0f5cd1725def314cca3f67b0cac5", size = 39206, upload-time = "2026-08-26T04:56:28.789Z" },
+]
+
+[[package]]
 name = "mpmath"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1996,6 +2020,7 @@ dependencies = [
     { name = "httpx" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
+    { name = "mmh3" },
     { name = "numpy" },
     { name = "openai" },
     { name = "presidio-analyzer" },
@@ -2026,6 +2051,7 @@ dev = [
     { name = "respx" },
     { name = "ruff" },
     { name = "testcontainers" },
+    { name = "tokenizers" },
     { name = "types-pyyaml" },
 ]
 ml = [
@@ -2046,6 +2072,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "langgraph", specifier = ">=1,<2" },
     { name = "langgraph-checkpoint-postgres" },
+    { name = "mmh3", specifier = ">=5.3.0" },
     { name = "numpy" },
     { name = "openai" },
     { name = "presidio-analyzer" },
@@ -2076,6 +2103,7 @@ dev = [
     { name = "respx" },
     { name = "ruff" },
     { name = "testcontainers" },
+    { name = "tokenizers", specifier = ">=0.23.2" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260906" },
 ]
 ml = [

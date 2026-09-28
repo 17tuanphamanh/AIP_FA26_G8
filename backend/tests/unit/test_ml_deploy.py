@@ -43,10 +43,18 @@ def test_ml_token_required_everywhere_without_default() -> None:
 
 
 def test_no_empty_numeric_env_passed_to_ml_service() -> None:
-    """Chuỗi rỗng cho trường số là lỗi cấu hình: ML_THREADS/ML_MAX_CONCURRENCY không truyền, không `:-}`."""
+    """Chuỗi rỗng cho trường số là lỗi cấu hình: ML_MAX_CONCURRENCY không truyền, không `:-}`.
+    ML_THREADS TRUYỀN tường minh từ Q-3a-16 (S9, PLAN-3c mục 6.2) — mặc định "4" (tier ②), không rỗng."""
     env = compose()["services"]["ml-service"]["environment"]
-    assert set(env) == {"ML_SERVICE_TOKEN", "MODELS_DIR"}
+    assert set(env) == {"ML_SERVICE_TOKEN", "MODELS_DIR", "ML_THREADS"}
+    assert env["ML_THREADS"] == "${ML_THREADS:-4}"
     assert not any(str(v).endswith(":-}") for v in env.values())
+
+
+def test_rag_rerank_k_passed_through_backend_env() -> None:
+    """Q-3a-16 (S9): RAG_RERANK_K ghi đè được qua env, mặc định "10" (tier ②), không rỗng."""
+    env = compose()["x-backend-env"]
+    assert env["RAG_RERANK_K"] == "${RAG_RERANK_K:-10}"
 
 
 @pytest.mark.parametrize("name", ["backend", "worker"])

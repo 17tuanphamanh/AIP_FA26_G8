@@ -15,6 +15,7 @@ Body > `MAX_REQUEST_BODY_BYTES` → 413 trước mọi kiểm quyền (`api/limi
 """
 
 import logging
+import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from datetime import timedelta
@@ -30,7 +31,7 @@ from app.api.desk import Desk, retry_after
 from app.api.errors import install_graph_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
-from app.api.health import HealthCheck
+from app.api.health import HealthCheck, KbProbe
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
 from app.api.tickets import router as tickets_router
@@ -54,6 +55,8 @@ from app.db.session import Engines, create_engines, ping
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.privacy import NotRedactingGuard, PrivacyGuard
+from app.llm.wiring import check_llm
+from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
 from app.tools.adapters.ad_read import AdIdentityProvider
 from app.tools.specs import READ_TIMEOUT_S
@@ -97,6 +100,26 @@ def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:
     return {"db": db, "qdrant": qdrant, "mock": mock, "ml": ml}
 
 
+def _default_kb_probe(settings: Settings) -> KbProbe:
+    """3c, Q-3c-5: `GET {qdrant_url}/aliases` — ĐÚNG như PLAN-3c mục 5.4 ghi. S7 từng "sửa" sang
+    `/collections/aliases`, dựa trên đọc nhầm `qdrant_client.http.api.aliases_api`: đường đó là của
+    `update_aliases` (POST, ĐỔI alias — khác thao tác), không phải của `get_collections_aliases()` (đọc mọi
+    alias, mà `AsyncQdrantClient.get_aliases()`/`QdrantIndex.alias_target()` dùng) — hàm đó gọi
+    `_build_for_get_collections_aliases()`, `url="/aliases"`. Phát hiện lại ở S12/L5: Qdrant thật trả 404
+    "Collection `aliases` doesn't exist" cho `/collections/aliases` (hiểu thành `/collections/{name}`); xác
+    nhận `GET /aliases` trả `{"result": {"aliases": [{"alias_name", "collection_name"}]}, "status", "time"}`
+    trên Qdrant 1.19.1 thật (không chỉ suy từ client SDK nữa). httpx thô — KHÔNG import qdrant-client."""
+
+    async def probe() -> str | None:
+        async with httpx.AsyncClient(timeout=settings.health_timeout) as client:
+            resp = await client.get(f"{settings.qdrant_url.rstrip('/')}/aliases")
+            resp.raise_for_status()
+        aliases = resp.json()["result"]["aliases"]
+        return next((a["collection_name"] for a in aliases if a["alias_name"] == KB_ALIAS), None)
+
+    return probe
+
+
 def _build_auth(
     settings: Settings,
     clock: Clock,
@@ -133,6 +156,7 @@ def create_app(
     runtime: RuntimeFactory | None = None,
     guard: PrivacyGuard | None = None,
     clock: Clock | None = None,
+    kb_probe: KbProbe | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -141,6 +165,7 @@ def create_app(
     fake_scenario(settings)  # như trên cho FAKE_SCENARIO / FAKE_NODE_DELAY (2b-4)
     if runtime is None:  # runtime thật gọi ml-service: thiếu ML_SERVICE_TOKEN → không dựng app (3-Q21)
         settings.require_ml_token()
+        check_llm(settings)  # như trên: LLM_BACKEND thiếu/sai, scripted ngoài dev/test, model thiếu giá (3-Q26)
     runtime_factory = runtime or _default_runtime
     background = BackgroundRuns()
     lock_retry = retry_after(settings.ticket_lock_timeout)
@@ -195,6 +220,8 @@ def create_app(
     app.state.health_checks = (
         health_checks if health_checks is not None else _default_checks(settings, app)
     )
+    app.state.kb_probe = kb_probe or _default_kb_probe(settings)
+    app.state.kb_monotonic = time.monotonic  # test tiêm đồng hồ giả bằng gán trực tiếp app.state
     app.state.auth = None  # dựng trong lifespan
     app.state.desk = None
     app.state.runtime_status = "down"

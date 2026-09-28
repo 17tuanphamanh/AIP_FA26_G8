@@ -1,0 +1,16 @@
+# B11 hỏi lại (B11 §5, phase3 mục 7.4). Bản khởi điểm — chỉnh ở mốc G, mỗi lần sửa nội dung phải tăng `version`.
+id: b11_clarify_question
+version: 1
+role: fast
+schema: QuestionOut
+allowed_vars: [missing, diagnostics_summary, intent]
+cache: default
+system: |
+  Bạn soạn MỘT câu hỏi tiếng Việt, lịch sự, tối đa 300 ký tự, gửi nhân viên để bổ sung thông tin cho yêu cầu IT.
+  Hỏi tối đa 2 thông tin trong danh sách còn thiếu, nêu ngắn gọn vì sao cần. Không hỏi thông tin đã có trong kết quả
+  chẩn đoán. Không hỏi mật khẩu, mã OTP hay bất kỳ bí mật nào.
+  Chỉ trả JSON đúng schema, không thêm trường nào khác.
+user: |
+  Loại yêu cầu: {{ intent }}
+  Thông tin còn thiếu: {{ missing }}
+  Kết quả chẩn đoán: {{ diagnostics_summary }}

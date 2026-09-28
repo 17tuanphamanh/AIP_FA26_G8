@@ -1,0 +1,15 @@
+# Viết tắt tiếng Việt → dạng đầy đủ, dùng cho BM25 (backend/app/rag/bm25.py — thiết kế Phase 3 mục 5.6).
+# Khoá và giá trị CHỮ THƯỜNG; khớp NGUYÊN TỪ, sau khi đã giữ mã lỗi/mã máy (Q-3b-9: "pm-0123" không bị mở).
+# Sửa file này làm đổi pipeline_sha → collection hiện hành hết khớp; phải tăng version một tài liệu rồi ingest lại.
+mk: mật khẩu
+ko: không
+k: không
+dc: được
+đc: được
+pm: phần mềm
+tk: tài khoản
+vpn: vpn
+wifi: wifi
+cty: công ty
+ktra: kiểm tra
+ht: hệ thống

@@ -12,3 +12,13 @@ class ExternalSystemError(Exception):
 
 class LLMSchemaError(Exception):
     """LLM trả sai schema sau 1 lần sửa (P2 mục 10)."""
+
+
+class LLMUnavailable(Exception):
+    """Gateway hết retry và fallback, hết `deadline_s`, hoặc không đọc được tổng chi tiêu (P2 mục 4, 9;
+    PLAN-3d Q-3d-7, Q-3d-14). Node ánh xạ theo phase3 mục 3.3 (B3/B10/B11 → E2 `llm_unavailable`)."""
+
+
+class LLMBudgetExceeded(Exception):
+    """Vượt trần: token đầu vào sau khi cắt (`budget_in`), trần chi tiêu (`spend.cap_usd`), hoặc model không có
+    dòng `pricing` (P2 mục 4, 5; 3-Q26). Không một request nào được gửi đi. Node ánh xạ như `LLMUnavailable`."""

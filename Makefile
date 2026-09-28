@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test test-ml lint ingest seed probe eval eval-rag load gate2 models ml-bench
+.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 models ml-bench rerank-bench
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -96,9 +96,20 @@ lint:
 	@command -v gitleaks >/dev/null || { echo "Thiếu gitleaks — cài: brew install gitleaks" >&2; exit 1; }
 	gitleaks detect --no-banner --redact
 
-# Pipeline RAG (P3): in kb_version và số đoạn truncated (phải = 0).
+# Pipeline RAG (P3, thiết kế Phase 3 mục 5.8): image backend KHÔNG có kb/ → mount read-only. Cần `make up`
+# (postgres, qdrant, ml-service chạy). In kb_version và số đoạn truncated (phải = 0).
+# Ví dụ: make ingest ARGS=--dry-run | make ingest KB_DIR=backend/tests/fixtures/kb
+KB_DIR ?= kb
 ingest:
-	@echo "TODO (Phase 3): chưa có pipeline RAG (P3)." >&2; exit 1
+	$(COMPOSE) build backend
+	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/srv/kb:ro" backend \
+	  python -m app.rag.ingest.cli --kb-dir /srv/kb $(ARGS)
+
+# Chỉ tokenizer bge-m3 (tokenizer.json, tokenizer_config.json, special_tokens_map.json) đúng revision trong
+# ml_service/models.lock.json — cho test chunker thật (marker tokenizer_real). Có rồi thì bỏ qua. Cần mạng lần đầu.
+TOKENIZER_DIR ?= ./models/_tokenizer
+tokenizer:
+	uv run --with huggingface_hub python scripts/download_models.py --tokenizer-only $(TOKENIZER_DIR)
 
 # Cổng 2 trên stack compose thật (2b-4) — backend/tests/stack/README.md. Cần `make up` trước và
 # FAKE_SCENARIO, FAKE_NODE_DELAY trong .env. Script tự chạy lệnh compose (in lệnh trước khi chạy), dừng
@@ -119,6 +130,15 @@ ml-bench:
 	$(COMPOSE) exec -T ml-service python -m app.bench
 	docker stats --no-stream
 
+# Đo tốc độ + độ lệch int8 của reranker TRONG TIẾN TRÌNH, không qua HTTP (Q-3a-16) — chọn cấu hình rag_rerank_k
+# / threads / int8. Nạp model bằng lock thật (`make models` trước) — DỪNG service đang chạy trước khi đo (torch
+# tranh CPU với service thật sẽ làm số đo sai): `docker compose stop backend worker ml-service` rồi `make up`
+# lại sau khi đo xong. Ví dụ: make rerank-bench KB_DIR=backend/tests/fixtures/kb ARGS="--k 10,20 --threads 3,4 --int8"
+rerank-bench:
+	$(COMPOSE) build ml-service
+	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/kb:ro" ml-service \
+	  python -m app.rerank_bench --kb /kb $(ARGS)
+
 # Kiểm schema mock_services/seed.json rồi nạp lại vào mock đang chạy (/_admin/reset — đồng thời tắt
 # mọi lỗi đang bơm). Cần `make up` trước.
 seed:
@@ -133,9 +153,14 @@ probe:
 eval:
 	@echo "TODO (Phase 8): chưa có harness M8 (P8). STRATEGY=$(STRATEGY) SPLIT=$(SPLIT)" >&2; exit 1
 
-# Ablation 4 cấu hình truy hồi (D-25) trên tập dev.
+# Đo Recall@5/FG/MRR truy hồi trên bản KB ĐANG CHẠY (alias kb_current, Q-3c-15) — không ingest lại. Cần `make up`
+# và đã `make ingest` trước. `--sweep` thêm bảng 13 ngưỡng (chỉ quan sát, KHÔNG chọn ngưỡng — D-22); `--csv` in
+# CSV thay bảng người đọc. Ablation 4 cấu hình truy hồi (D-25, Phase 5) là việc KHÁC, làm sau, có thể dùng lại
+# CLI này với tham số khác — không nhầm với việc này.
+# Ví dụ: make eval-rag KB_DIR=backend/tests/fixtures/kb ARGS=--sweep
 eval-rag:
-	@echo "TODO (Phase 5): chưa có ablation RAG (D-25)." >&2; exit 1
+	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/srv/kb:ro" backend \
+	  python -m app.rag.eval_cli --kb-dir /srv/kb $(ARGS)
 
 # Locust theo 5 kịch bản huong-dan mục 14.4.
 load:

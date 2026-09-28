@@ -83,6 +83,7 @@ CLOSE_RESULTS = ("completed", "confirmed_denial", "reopened_as_new")  # B20 mụ
 KB_REQUEST_TYPES = (*INTENTS, "general")  # P3 mục 4
 KB_DOC_TYPES = ("policy", "howto", "troubleshooting", "faq")  # P3 mục 4
 KB_SENSITIVITY = ("public", "internal", "restricted")  # P3 mục 4
+KB_EVAL_STATUSES = ("evaluated", "unevaluated")  # migration 0006 (3-Q15)
 TURN_EVENTS = ("submit", "resume", "recover")  # P1 mục 7 (runner)
 SPAN_TYPES = ("node", "llm", "tool", "rag")  # HD17.1
 SPAN_STATUSES = ("ok", "error", "interrupted")  # P1 mục 9
@@ -239,6 +240,11 @@ class PolicyRule(Base):
 
 class KbVersion(Base):
     __tablename__ = "kb_versions"
+    __table_args__ = (
+        check_in("eval_status", KB_EVAL_STATUSES),
+        # Nhiều nhất một bản hiện hành (migration 0006, Q-3b-5).
+        Index("ux_kb_versions_current", "is_current", unique=True, postgresql_where=text("is_current")),
+    )
 
     kb_version: Mapped[str] = mapped_column(CHAR(64), primary_key=True)
     created_at: Mapped[datetime] = _now()
@@ -246,6 +252,9 @@ class KbVersion(Base):
     recall_at5: Mapped[float | None] = mapped_column(Float)
     false_grounding_rate: Mapped[float | None] = mapped_column(Float)
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # migration 0006 (3-Q15, 3-Q16): số đoạn; 'unevaluated' = nạp không có bộ kiểm tra (dev/test).
+    chunk_count: Mapped[int | None] = mapped_column(Integer)
+    eval_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'evaluated'"))
 
 
 class KbDocument(Base):
@@ -268,6 +277,8 @@ class KbDocument(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     distractor: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     kb_version: Mapped[str | None] = mapped_column(CHAR(64), ForeignKey("kb_versions.kb_version"))
+    # sha256(front matter chuẩn + thân bài) — sửa nội dung mà không tăng version → ingest dừng (0006, 3-Q4).
+    content_sha256: Mapped[str | None] = mapped_column(CHAR(64))
 
 
 # ---- 7. tickets (TK 20 cột + P7 is_parent) — chỉ ghi lúc tạo và một lần ở B20 ---------------

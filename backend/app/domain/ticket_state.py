@@ -89,6 +89,8 @@ class TicketState(TypedDict, total=False):
     retrieved: list[ChunkRef]
     retrieval_score: float
     retrieval_error: str | None
+    kb_version: str | None
+    intent_filter_fallback: bool
     need_type: Literal["info", "action"] | None
     # hành động + rủi ro + duyệt
     intended_action: Action | None

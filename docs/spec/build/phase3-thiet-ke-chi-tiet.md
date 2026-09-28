@@ -1,6 +1,6 @@
 # Phase 3 — Thiết kế chi tiết (lát cắt VPN B1 → B20)
 
-*Thuộc bộ `build/`. Phiên bản 1.2 — 27/09/2026 (1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
+*Thuộc bộ `build/`. Phiên bản 1.5 — 28/09/2026 (1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
 
 ---
 
@@ -100,6 +100,18 @@ Bản 1.1 đã đối chiếu từng mục với repo. Những điểm dưới �
 | **3h** | B12–B13 luật VPN, estimator tắt → E5, B17–B18 VPN, e2e cổng 3, `make gate3`, smoke LLM thật | 3g | C1, C5, C8 | **Cao** | **Opus** |
 
 Thứ tự bắt buộc: 3a → 3b → 3c; 3d có thể chạy xen sau 3a; 3e sau 3d; 3f sau 3d; 3g sau 3c + 3f; 3h cuối.
+
+### 1.5. Hậu kiểm 3b sau khi xong dự án (28/09/2026)
+
+**Quyết định (Tuấn Anh):** 3b **vẫn làm ngay** theo thứ tự mục 1.4, bằng `PLAN-3b.md` (Opus lập, các chốt Q-3b-1…17). Sau khi dự án xong phần chính (sau Phase 10), **hậu kiểm lại 3b** để cải tiến — không phải bỏ hay hoãn.
+
+**Phạm vi hậu kiểm [Đề xuất, chốt lúc làm]:**
+
+- Soát lại cổng kiểm: bản 3b dùng dense-only tạm, 3c thay bằng `retrieve` thật — kiểm lại ngưỡng, Recall@5, tỉ lệ trả lời bừa trên KB thật đủ cỡ (≥ 50 tài liệu, D-25).
+- Đo lại thời gian ingest thật (embed nhóm 1, Q-3b-1) và cân nhắc embed theo lô khi có GPU.
+- Soát `pipeline_sha` (Q-3b-8): có nên tự dựng lại collection khi cấu hình đổi thay vì dừng.
+- Cân nhắc tách mã nguồn 3b thành phần thuần (textnorm, chunker, BM25) và phần hạ tầng (Qdrant, pipeline) cho dễ bảo trì.
+- Ghi kết quả hậu kiểm vào mục này + PROGRESS.
 
 **Quy trình mỗi chặng giữ nguyên** (`claude/ngu-canh-phien-review.md` mục 4): plan → review → code → lint + unit → mutation logic → mutation SQL/Qdrant qua script → `make test` → spec → commit → CI. Chặng rủi ro Thấp/TB được phép ít mutation hơn (chỉ các mutation ghi "bắt buộc" trong mục của chặng).
 
@@ -558,7 +570,7 @@ Khi mục 4.1–4.11 nói khác bảng này, bảng này thắng. Chi tiết và
 | Q-3a-3 | Lỗi mạng khác | `httpx.TransportError` không phải timeout → `error="connect"`, có retry (trong `MlClient`; không sửa `tools/retry.py`). 429 → `http_5xx`. Lỗ tương tự ở tool đọc (lọt `ReadError`/`RemoteProtocolError` → E9) **quyết ở 3f** |
 | Q-3a-4 | `NodeDeps.ml` | Trường bắt buộc, không mặc định (fail-closed) |
 | Q-3a-5 | Token backend | `Settings.ml_service_token: SecretStr \| None`; thiếu → `open_runtime`/`create_app` từ chối trước khi đụng DB |
-| Q-3a-6 | `FakeMlService` | `httpx.MockTransport` đặt sau `MlClient` thật; băm `blake2b` (mmh3 để 3b) |
+| Q-3a-6 | `FakeMlService` | `httpx.MockTransport` đặt sau `MlClient` thật; băm `blake2b` (FakeMl không dùng mmh3; mmh3 chỉ ở `rag/bm25.py`) |
 | Q-3a-7 | Test sinh đôi | a3, a4, a6, a16 là `ml_real` (`make test-ml`, không vào CI); thêm a3f/a4f/a6f dùng tokenizer giả (đúng 2 token đặc biệt) trong `make test`; a5 ml_real thêm "đoạn không liên quan < 0,5" (bắt sigmoid hai lần). `make test-ml` thiếu model → FAIL, không skip |
 | Q-3a-8 | Compose | Worker cũng `depends_on ml-service healthy`. Mọi máy phải `make models` + có `ML_SERVICE_TOKEN` trước `make up` |
 | Q-3a-9 | Image | `uv sync --group ml` theo spec; image 2,6 GB |
@@ -783,7 +795,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_kb_versions_current ON kb_versions((true)) 
 
 - Sửa đồng thời model SQLAlchemy (`KbDocument.content_sha256`, `KbVersion.chunk_count/eval_status`, `Index(..., unique=True, postgresql_where=is_current)`) — test so khớp model ↔ migration sẵn có phải xanh.
 - `kb_version` là CHAR(64) → đủ 64 ký tự hex, khớp tên collection `kb_<64 hex>` (mục 5.7) và cột `audit_logs.kb_version`.
-- `mmh3` chưa có trong deps → `uv add mmh3` (nhóm chính; dùng bởi `rag/bm25.py` và `FakeMlService`).
+- `mmh3` chưa có trong deps → `uv add mmh3` (nhóm chính; chỉ dùng bởi `rag/bm25.py` — FakeMl dùng blake2b, Q-3b-10). Index duy nhất viết dạng cột `(is_current) WHERE is_current` (Q-3b-5).
 
 ### 5.11. Test
 
@@ -827,6 +839,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_kb_versions_current ON kb_versions((true)) 
 - Không dùng `kb/` thật trong CI. Không chọn lại `RETRIEVAL_THRESHOLD` trên fixture.
 - Không cho `--allow-unevaluated` ở env khác dev/test.
 
+### 5.14. Chốt khi hiện thực 3b (28/09/2026)
+
+Khi mục 5.1–5.13 nói khác bảng này, bảng này thắng. Chi tiết: PROGRESS.md mục "Phase 3 — chặng 3b" (plan đã duyệt `PLAN-3b.md`, không commit).
+
+| Mã | Điểm | Chốt |
+|---|---|---|
+| Q-3b-1 | Embed khi ingest | Gọi `embed` theo nhóm `INGEST_EMBED_GROUP=1` (đoạn KB và câu hỏi bộ kiểm tra); không sửa `MlClient`/`TIMEOUT_S`; bước 7 in thời gian embed |
+| Q-3b-2 | `content_sha256` | sha256(canonical JSON front matter **mọi trường** + "\n" + thân đã normalize) → đổi cả `enabled` cũng phải tăng version; tài liệu disabled vẫn so ở bước 4 và upsert `kb_documents` với `kb_version=NULL`; `doc_count` chỉ đếm enabled |
+| Q-3b-3 | Ghi bù (3-Q16) | Bước 10 đạt → ghi báo cáo cổng + `chunk_count` vào metadata collection **trước** khi đổi alias; ghi bù đọc số từ đó |
+| Q-3b-4 | Cổng (c) | Đánh giá lại cả bản cũ (đích alias) bằng bộ kiểm tra hiện tại, cùng retriever — không so với số đã lưu |
+| Q-3b-5 | Index | `ux_kb_versions_current ON kb_versions (is_current) WHERE is_current` (dạng cột) |
+| Q-3b-6 | Lọc quyền | `rag/filters.py` (`allowed_sensitivity`, `base_filter(role)`) tạo ở 3b; 3c dùng lại, không dựng filter thứ hai |
+| Q-3b-7 | Payload | Thêm `owner` |
+| Q-3b-8 | `pipeline_sha` | sha của `vi_abbrev.yaml`, `vi_stopwords.txt`, hằng chia đoạn, `CODE_RE`, phiên bản pyvi — lưu trong metadata collection; alias đúng `kb_<v>` mà `pipeline_sha` lệch → mã 1 "cấu hình ingest đã đổi". **3c:** `retrieve` so `pipeline_sha` của collection đã ghim với cấu hình hiện tại, lệch → E2 `rag_system_error` |
+| Q-3b-9 | BM25 | Giữ mã (`CODE_RE`) trước rồi mới mở viết tắt |
+| Q-3b-10 | FakeMl | `blake2b`; `mmh3` chỉ ở `rag/bm25.py` |
+| Q-3b-11 | Tokenizer | `uv add --dev tokenizers`; `LocalTokenizerCounter` chỉ cho test (marker `tokenizer_real`, `make tokenizer`, CI cache tokenizer, CI thiếu → FAIL); CLI không có tuỳ chọn chọn bộ đếm |
+| Q-3b-12 | Mã thoát | 0 xong/KB không đổi; 1 lỗi trước đổi alias (alias giữ nguyên); 2 lỗi bước 12–14 (alias đã đổi, chạy lại để ghi bù); `--allow-unevaluated` + `APP_ENV ∉ {dev,test}` → 1 ở bước 0. `--dry-run` chạy bước 1–6, bước 4–5 **chỉ đọc** (không khoá, không ghi bù) |
+| Q-3b-13 | Luật loader | `.md` ở gốc KB và `eval/` bỏ qua; thư mục lạ / lồng sâu → lỗi; tiền tố doc_id ↔ request_type (VPN/ACC/SW/ACS/GEN); `###` trước `##` đầu tiên → lỗi; `####` → lỗi; `supersedes` hợp lệ và có trong KB; "tương lai" theo UTC+7; KB phải có ≥ 1 tài liệu enabled; bộ kiểm tra có ≥ 1 câu có đáp án và ≥ 1 câu âm tính. Lỗi không gắn dòng in `path: thông điệp` |
+| Q-3b-14 | Fixture | `KB-VPN-003` fixture: 6 bước trải 3 mục H2 (khác bản mẫu `kb-mau/`, 2 mục); `KB-VPN-001` chép nguyên văn |
+| Q-3b-15 | Đồng thời | Khoá advisory Postgres chặn 2 lượt ingest; bước 12 ghi `kb_versions` **trước** `kb_documents` (FK), tắt `is_current` cũ trước khi bật mới; `kb_version` quay lại bản cũ → upsert giữ `created_at` cũ; bước 14 xếp theo `created_at` |
+| Q-3b-16 | import-linter | Hợp đồng 7 `rag-lower-layer`: `rag` chỉ import `domain`, `core`, `db`, `ml`, `tools.retry` |
+| Q-3b-17 | Alias | Test spy `switch_alias` (1 lời gọi, 2 thao tác) + review M-3b-5 |
+| — | Cấu hình | `RAG_KEEP_OLD_COLLECTIONS` mặc định 2 trong `settings.py`, không qua compose; file thêm ngoài 5.2: `rag/ingest/config.py`, `db/kb.py`, `rag/filters.py` |
+| — | kb-facts | Regex theo bản `build/kb-mau/kb-facts.md` (ví dụ ở 5.4 là minh hoạ); đường dẫn `kb/kb-facts.md` |
+
+**Cổng kiểm 3b là dense-only (`DenseOnlyRetriever`)** — cosine khác thang điểm rerank mà `RETRIEVAL_THRESHOLD` dành cho → `make ingest` với model thật có thể đỏ cổng kiểm, **dự kiến**; KB thật chỉ nạp được sau 3c (3c thay bằng adapter quanh `retrieve()`).
+
+**Kết quả 3b:** backend 1847 passed (1687 unit + 131 integration + 29 e2e), mock 86, ml 61; lint 7 hợp đồng; mutation 10/10 đỏ đúng dự đoán + review M-3b-5; S17 (Opus soát `pipeline.py`, `chunker.py`) không phát hiện lỗi.
 ---
 
 ## 6. Chặng 3c — RAG query + node B8–B9
@@ -1069,6 +1110,23 @@ Khuyên **A trong 3c–3g**, xét **B ở 3h** khi mọi node thật đã có. V
 | M-3c-7 | `kb_version` đọc lại alias sau khi truy vấn | c16 |
 | M-3c-8 | Alias thiếu → trả rỗng | c12 |
 | M-3c-9 | Hit rỗng vẫn gọi rerank (hoặc ném lỗi) | c14 |
+
+### 6.13. Chốt khi hiện thực 3c (28/09/2026)
+
+Commit `9680471` (nhánh `dev-tuananh`, 60 file). CI run 36447564133 xanh.
+
+| Mã | Việc | Chốt |
+|---|---|---|
+| Q-3c-1 | FakeMl rerank quá dễ dãi (FG 0,333 trên fixture gốc) | Giữ FakeMl (Jaccard âm tiết). Thử luật IDF (FG 0,167) rồi bỏ. Cổng kiểm có **2 đường test**: đường chặn dùng fixture gốc (FakeMl FG 0,333 → thoát 1); đường qua dùng `retrieval_set` riêng cho test. c4 khẳng định KB-VPN-001 trong top-3. c5 dùng câu âm "Làm sao bật xác thực 2 lớp MFA cho email?" → điểm ≤ 0,333 → E3; **3h dùng lại câu này cho h7** |
+| Q-3c-2 | Q-3a-16 (rerank trên CPU) | Bench không đạt (tầng ② p95 trung vị 10,4 s; int8 hết RAM). Chốt "cách 4", **ghi là nới tiêu chí**: `rag_rerank_k=10`, `ML_THREADS=4`, `TIMEOUT_S["rerank"]=18`; `RAG_RERANK_K` đè được bằng env (demo có thể đặt 5). Nợ: đo lại trên staging có GPU |
+| Q-3c-3 | Node giả của Phase 2 | Chuyển sang `graph/nodes/fake/`; `select_nodes` chọn thật/giả để giữ `make gate2` (hướng A của 3-Q32) |
+| Q-3c-4 | Probe `kb` của health | Đọc alias bằng `GET /aliases` (lọc `alias_name == "kb_current"`). Lỗi `/collections/aliases` (S7) lộ ra ở L5 vì nhánh `except` nuốt lặng; nay `except` ghi `logger.warning` chỉ kèm tên loại lỗi, vẫn trả `unknown`, health không 500 |
+| Q-3c-5 | Dọn cổng truy vấn | Xoá `query_dense`. Chỉ còn `hybrid_query` (retriever) và `scroll_window` (expand); `Filter(` chỉ được dựng trong `rag/filters.py` (có test chặn) |
+| Q-3c-6 | Role lạ (soát S14) | **Giữ `["public"]`** như 3-Q5/6.5: tài liệu `public` ai đăng nhập cũng xem được nên không lộ; thực tế không tới được vì `role` là `Literal` và B1 ra E2 `role_unmappable`. M-3c-3 đỏ đúng |
+| Q-3c-7 | Audit lưu câu hỏi (soát S14) | **Giữ** điểm log 3: `detail.query = redacted_request[:500]`, chỉ đọc từ `redacted_request` (có test: `raw_request` chứa email/SĐT không lọt vào audit). Log ứng dụng của RAG không ghi câu hỏi. **Nợ bắt buộc 3e:** nghiệm thu có test audit B8 `detail.query` đã che PII bằng guard thật |
+| Q-3c-8 | Chạy cổng kiểm trên model thật | Số trên model thật khác FakeMl (D-22): chỉ số thật phải đo bằng model thật, FakeMl chỉ để test nội bộ nhất quán |
+
+**Kết quả 3c.** Model thật trên `backend/tests/fixtures/kb`: Recall@5 1,000 · trả lời bừa (FG) 0,000 · MRR 1,000; `make ingest` đạt cổng, đổi alias, thoát 0. Health `kb.status: ready`. Integration L3 29/29; `make gate2 S=all` 89 PASS / 0 FAIL; `make test` 1938 + 86 + 77 passed; unit 1769. Mutation: lượt unit 9/9, lượt integration 6/6 đỏ đúng dự đoán. Soát S14 (Opus): 11/13 mục đạt ngay, 2 mục (role lạ, audit) giữ theo thiết kế (Q-3c-6, Q-3c-7), 1 mục sửa (probe log).
 
 ---
 
@@ -1931,5 +1989,8 @@ Mỗi file thêm mục **"5.1 Chốt khi hiện thực Phase 3"** gồm một c�
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 27/09/2026 | 1.0 | Tạo file: phạm vi, 36 quyết định, hợp đồng chung, 8 chặng 3a–3h |
+| 28/09/2026 | 1.5 | Mục 6.13: chốt khi hiện thực 3c (Q-3c-1…8: 2 đường cổng kiểm, nới tiêu chí rerank, probe `/aliases`, giữ role lạ `public` và audit câu đã che; kết quả) |
+| 28/09/2026 | 1.4 | Mục 5.14: chốt khi hiện thực 3b (Q-3b-1…17, cổng dense-only, kết quả); sửa 5.10 mmh3/index, 4.12 Q-3a-6 |
+| 28/09/2026 | 1.3 | Mục 1.5: 3b vẫn làm ngay; hậu kiểm/cải tiến 3b sau khi xong dự án (phạm vi đề xuất) |
 | 27/09/2026 | 1.2 | Mục 4.12: chốt khi hiện thực 3a (Q-3a-1…16, số đo bench); sửa a4/a6/a10, 4.5 `attempts`, 4.6 băm, 3.5 `MODELS_DIR`, mục tiêu rerank |
 | 27/09/2026 | 1.1 | Rà soát với code commit `2a9f3ee` (mục 0.1): node factory + `await goto` + `audit_detail`; giữ Pydantic trong state; bỏ bảng `notifications` (3-Q28 đổi); tên tool/endpoint VPN theo `specs.py` và mock thật; người/máy theo `seed.json`; TC09 dừng ở chờ duyệt (3-Q38); `B17_RECHECK` (3-Q37); `Executor` dùng `ExecutionResult` sẵn có; `Approvals.get_status`; ml-service dùng nhóm uv gốc + Dockerfile context gốc + check health `ml`; `kb` health chỉ báo; migration kb chỉ thêm cột thiếu; `owner` FK (3-Q40); guard giữ `RedactionResult` cũ + `pii_found`, `Accepted.notices`, E0 dùng mẫu sẵn có, `security_events` trong transaction tạo ticket; `make ingest` mount `kb/` vào container; thêm 3-Q37…Q40 |

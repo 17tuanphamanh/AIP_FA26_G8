@@ -77,3 +77,45 @@ def test_ignore_patterns_skip_unused_weights() -> None:
     both = dm.ignore_patterns(["model.safetensors", "pytorch_model.bin", "tokenizer.json"])
     assert "pytorch_model.bin" in both and "onnx/*" in both and "colbert_linear.pt" in both
     assert "pytorch_model.bin" not in dm.ignore_patterns(["pytorch_model.bin", "config.json"])
+
+
+# ---- --tokenizer-only (make tokenizer, 3b Q-3b-11) — không mạng ---------------------------------------
+
+
+def test_tokenizer_target_from_lock(tmp_path: Path) -> None:
+    repo, rev, target = dm.tokenizer_target(lock(), tmp_path)
+    assert (repo, rev) == ("BAAI/bge-m3", SHA)
+    assert target == tmp_path / f"BAAI/bge-m3@{SHA}"
+
+
+def _write_lock(tmp_path: Path) -> Path:
+    import json
+
+    path = tmp_path / "models.lock.json"
+    path.write_text(json.dumps(lock()), encoding="utf-8")
+    return path
+
+
+def test_tokenizer_only_downloads_three_files(tmp_path: Path) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    out = tmp_path / "_tokenizer"
+    code = dm.tokenizer_only(out, lock_path=_write_lock(tmp_path), download=lambda *a, **k: calls.append((a, k)))
+    assert code == 0
+    assert calls == [(("BAAI/bge-m3",), {"revision": SHA, "local_dir": out / f"BAAI/bge-m3@{SHA}",
+                                        "allow_patterns": dm.TOKENIZER_FILES})]  # fmt: skip
+    assert dm.TOKENIZER_FILES == ["tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]
+
+
+def test_tokenizer_only_skips_when_present(tmp_path: Path) -> None:
+    out = tmp_path / "_tokenizer"
+    target = out / f"BAAI/bge-m3@{SHA}"
+    target.mkdir(parents=True)
+    (target / "tokenizer.json").write_text("{}", encoding="utf-8")
+    code = dm.tokenizer_only(out, lock_path=_write_lock(tmp_path), download=lambda *a, **k: pytest.fail("tải lại"))
+    assert code == 0
+
+
+def test_tokenizer_only_needs_lock(tmp_path: Path) -> None:
+    missing = tmp_path / "khong-co.json"
+    assert dm.tokenizer_only(tmp_path, lock_path=missing, download=lambda *a, **k: pytest.fail("tải")) == 1
+    assert not missing.exists()  # không tự tạo lock
