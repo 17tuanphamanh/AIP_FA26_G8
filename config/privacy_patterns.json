@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "B02 L1 (phase3 mục 8.3; PLAN-3e Q-3e-3, Q-3e-4). Chạy trên văn bản đã qua L0 guard, ĐÚNG thứ tự dưới đây (guard/patterns.py kiểm thứ tự). Có nhóm tên 'v' → chỉ thay nhóm đó; không có → thay cả đoạn khớp. Sửa file này là đổi hành vi guard → chạy lại test. Q-3e-10: chỉ loại trừ token giống ĐƯỜNG DẪN THẬT (có \\, hoặc bắt đầu /, ~/, ./, ../, <ổ đĩa>:, http(s)://) — khoá base64 có / vẫn bị luật 6 che.",
+  "description": "B02 L1 (phase3 mục 8.3; PLAN-3e Q-3e-3, Q-3e-4). Chạy trên văn bản đã qua L0 guard, ĐÚNG thứ tự dưới đây (guard/patterns.py kiểm thứ tự). Có nhóm tên 'v' → chỉ thay nhóm đó; không có → thay cả đoạn khớp. Sửa file này là đổi hành vi guard → chạy lại test. Q-3e-10: chỉ loại trừ token giống ĐƯỜNG DẪN THẬT (có \\, hoặc bắt đầu /, ~/, ./, ../, <ổ đĩa>:, http(s)://) — khoá base64 có / vẫn bị luật 6 che. Q-3e-11: thêm file_path (có / + đuôi file cố định).",
   "secret_mask": "[BÍ_MẬT_ĐÃ_ẨN]",
   "rules": [
     {
@@ -69,6 +69,11 @@
     {
       "id": "path",
       "regex": "\\\\|^(?:/|~/|\\.{1,2}/|[A-Za-z]:)"
+    },
+    {
+      "id": "file_path",
+      "description": "Q-3e-11: đường dẫn tương đối — có / VÀ đoạn cuối có đuôi trong danh sách CỐ ĐỊNH (base64 không có dấu chấm). Đuôi lạ (vd .abc12) → vẫn xét entropy. Chữ thường, đúng danh sách.",
+      "regex": "/[^/]*\\.(?:xlsx|xls|csv|docx|doc|pdf|pptx|ppt|txt|log|zip|rar|7z|png|jpg|jpeg|json|xml|ini|conf|cfg|yaml|yml|msi|exe|bat|ps1|sh)$"
     },
     {
       "id": "device_id",

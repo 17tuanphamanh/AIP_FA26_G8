@@ -5,7 +5,7 @@ phỏng ở S2 (PROGRESS, phương án A, mục "Câu c5"), KHÔNG dùng nguyên
 nào?") vì câu đó ra điểm CHẠM ngưỡng khi mô phỏng — đã ghi rõ trong PROGRESS, không tự đoán lại ở đây.
 
 c19: `graph_pg.open_pg_runtime(nodes="real")` — B1–B7 vẫn là node THẬT có sẵn từ trước 3c (chỉ B8 đổi từ giả
-sang thật ở chặng này); B3 (`b03_classify`) hiện còn ở dạng "Phase 2a" — CỐ ĐỊNH `intent="vpn"`, không đọc
+sang thật ở chặng này; từ 3e B2 cũng thật → ScriptedLLM trả `is_attack=false` cho L4); B3 (`b03_classify`) hiện còn ở dạng "Phase 2a" — CỐ ĐỊNH `intent="vpn"`, không đọc
 nội dung câu — nên không cần câu hỏi đặc biệt để "lọt" phân loại. Ticket đi đường MẶC ĐỊNH (không gắn thẻ
 FakeScenario) qua B1→…→B6→B8 thật.
 """
@@ -23,6 +23,7 @@ from app.domain.context import RequesterContext
 from app.domain.states import S_ESCALATED, S_RETRIEVING
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b08_retrieve
+from app.llm.providers.scripted import Reply
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.retriever import RagConfig, Retriever
@@ -30,6 +31,7 @@ from app.settings import Settings, get_policy
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.kb import CONFIG_DIR, KB_TEST_NOW, copy_kb
+from tests.fakes.llm import make_gateway
 from tests.integration.graph_pg import (
     SESSION,
     create_ticket,
@@ -114,6 +116,9 @@ async def arw(migrated: PgUrls) -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
+NOT_ATTACK = {"is_attack": False, "category": "none", "reason": "yêu cầu hỗ trợ VPN bình thường"}
+
+
 async def test_c19_checkpoint_and_audit_match_retriever_result(
     migrated: PgUrls, arw: AsyncEngine, kb_env: Env
 ) -> None:
@@ -121,7 +126,9 @@ async def test_c19_checkpoint_and_audit_match_retriever_result(
     ticket_id = f"b8-{uuid4().hex[:12]}"
     await create_ticket(arw, ticket_id)
     clock = FakeClock()
-    async with open_pg_runtime(migrated.role("app_rw"), clock=clock, rag=retriever, nodes="real") as rt:
+    # 3e: B2 cũng là node thật — L3 model_missing → L4 `b02_injection_judge` (ScriptedLLM: không phải tấn công)
+    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)]}, clock=clock).client
+    async with open_pg_runtime(migrated.role("app_rw"), clock=clock, rag=retriever, llm=llm, nodes="real") as rt:
         result = await rt.runner.submit(ticket_id, session_id=SESSION, redacted_request=VPN_QUESTION)
         reread = await rt.runner.snapshot(ticket_id)  # đọc lại checkpoint (không phải giá trị vừa trả về)
     assert result.values["retrieved"], "câu VPN rõ ràng — phải có chunk trả về, không escalate ở B8/B9"

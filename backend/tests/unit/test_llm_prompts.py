@@ -34,9 +34,9 @@ REPO = Path(__file__).resolve().parents[3]
 PROMPTS = REPO / "config" / "prompts"
 NODES = REPO / "backend" / "app" / "graph" / "nodes"
 
-# Q-3d-11: ở 3d chưa node nào gọi LLM. NỢ BẮT BUỘC (PROGRESS "Việc treo"): 3e nâng ≥ 1 (b02_injection_judge);
-# 3f/3g tăng tiếp khi thêm b03_classify, b10_*, b11_*.
-MIN_LLM_CALL_SITES = 0
+# Q-3d-11: 3d = 0 (chưa node nào gọi LLM). 3e trả nợ: b02_screen gọi b02_injection_judge → 1. 3f/3g tăng tiếp khi
+# thêm b03_classify, b10_*, b11_*.
+MIN_LLM_CALL_SITES = 1
 
 # phase3 mục 7.4 — (vai trò, cache, schema, biến)
 TABLE_7_4 = {

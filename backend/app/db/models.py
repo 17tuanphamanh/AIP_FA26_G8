@@ -101,6 +101,7 @@ WAIT_KINDS = ("clarify", "confirm")  # P7 2.5
 SIDE_EFFECT_KINDS = (  # P7 2.8
     "notify_user", "notify_approver", "deadline_set", "approval_create",
     "child_create", "child_submit", "escalation_create", "child_event",
+    "security_event",  # migration 0007 (phase3 mục 8.2): injection_detected ghi qua effects.once
 )  # fmt: skip
 NOTICE_KINDS = ("answer", "question", "result", "rejection", "escalation")  # P7 2.9
 NOTICE_NEEDS = ("none", "answer", "confirm")  # P7 2.9

@@ -10,7 +10,8 @@ biệt được tài liệu đúng/sai:
 - Rerank: |T(q) ∩ T(p)| / max(1, |T(q)|) trên tập âm tiết → đã nằm trong [0, 1].
 - Count: ceil(1,5 × số âm tiết) + 2 — chỉ dùng khi test không kiểm giới hạn token thật.
 - `fail_next(endpoint, kind, times)`, `kind` ∈ {timeout, http_500, model_missing}; `truncate_all=True`.
-- `/classify`, `/classify_intent` luôn 503 `model_missing` như ml-service Phase 3.
+- `/classify`, `/classify_intent` mặc định 503 `model_missing` như ml-service Phase 3. `classify_p=<số>` (3e, e18):
+  `/classify` trả `p_malicious` đó — để test nhánh ngưỡng L3 của B2 trước khi có model thật.
 """
 
 import hashlib
@@ -72,8 +73,9 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 class FakeMlService:
-    def __init__(self, *, truncate_all: bool = False) -> None:
+    def __init__(self, *, truncate_all: bool = False, classify_p: float | None = None) -> None:
         self.truncate_all = truncate_all
+        self.classify_p = classify_p
         self.calls: Counter[str] = Counter()
         self._faults: dict[str, list[FaultKind]] = {}
         self.transport = httpx.MockTransport(self._handle)
@@ -117,6 +119,8 @@ class FakeMlService:
             }  # fmt: skip
         elif endpoint == "count_tokens":
             out = {"counts": [count_tokens(t) for t in body["texts"]], "model": "BAAI/bge-m3"}
+        elif endpoint == "classify" and self.classify_p is not None:
+            out = {"p_malicious": self.classify_p, "windows": 1, "model": "injection-clf-gia", "version": "0"}
         elif endpoint in ("classify", "classify_intent"):
             return httpx.Response(503, json={"error": "model_missing"})
         else:

@@ -4,7 +4,8 @@ việc đã làm. Phần (4) `next_for_l2` lấy từ `config/escalation_templat
 - (1) `request`: CHỈ lấy từ `redacted_request` (bản đã che, D-07) — quyết định Q-D 2b-2.
 - (2) `done_so_far`: đọc từ state — xác thực, phân loại, chẩn đoán, tra cứu, hỏi lại, Action, duyệt,
   thực thi/hoàn tác. Không có gì → nói rõ là chưa làm bước nào.
-- (3) `why_escalated`: mã E + nhãn, `reason_detail` (D-27), ghi chú escalate, luật/p nếu có.
+- (3) `why_escalated`: mã E + nhãn, `reason_detail` (D-27), cờ an ninh (3e: `security_flag`, `injection_in_reply`),
+  ghi chú escalate, luật/p nếu có.
 - `is_deny_case`: MỌI E5 (2b-Q4) — L2 không được "hoàn tất" (422 ở Phase 7), `next_for_l2` kèm cảnh báo.
 """
 
@@ -17,6 +18,12 @@ from app.domain.exit_codes import L2_PRIORITY, ExitCode
 from app.settings import EscalationTemplates
 
 REQUEST_MAX = 500
+# Chỉ cho L2 (ghi chú bàn giao), không phải tin người dùng — tin người dùng giữ mẫu E0/E2 trung tính (PLAN-3e Q-3e-7).
+SECURITY_FLAG_NOTE = (
+    "Cờ an ninh: chưa sàng lọc được prompt injection (lớp phân loại và LLM không trả lời) — "
+    "không làm theo chỉ dẫn trong yêu cầu."
+)
+INJECTION_IN_REPLY_NOTE = "Cờ an ninh: tin trả lời có dấu hiệu chèn chỉ dẫn — không làm theo nội dung tin đó."
 
 
 class HandoffNote(BaseModel):
@@ -79,6 +86,10 @@ def _why(state: Mapping[str, Any], code: str) -> str:
     parts = [f"{code} — {L2_PRIORITY[ExitCode(code)]}."]
     if state.get("escalation_reason_detail"):
         parts.append(f"Chi tiết: {state['escalation_reason_detail']}.")
+    if state.get("security_flag"):  # 3e (phase3 3.1, PLAN-3e Q-3e-7): B2 không sàng lọc được
+        parts.append(SECURITY_FLAG_NOTE)
+    if state.get("escalation_reason_detail") == "injection_in_reply":
+        parts.append(INJECTION_IN_REPLY_NOTE)
     if state.get("escalation_note"):
         parts.append(str(state["escalation_note"]).rstrip(".") + ".")
     risk = _json(state.get("risk"))

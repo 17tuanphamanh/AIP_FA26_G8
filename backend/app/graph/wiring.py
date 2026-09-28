@@ -26,6 +26,7 @@ from qdrant_client import AsyncQdrantClient
 
 from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
+from app.audit.security_events import SecurityEventWriter
 from app.audit.writer import AuditWriter
 from app.core.clock import Clock
 from app.db.escalations import SqlEscalationStore
@@ -167,7 +168,7 @@ async def _open(
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
         templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
-        scenario=scenario,
+        scenario=scenario, security_events=SecurityEventWriter(engines.main, clock),
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

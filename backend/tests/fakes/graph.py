@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.approval.store import ApprovalRow
 from app.audit.writer import check_audit_row
@@ -25,7 +25,7 @@ from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.final import FinalSummary
-from app.graph.builder import build_graph, fake_nodes
+from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
@@ -254,6 +254,24 @@ class RecordingNotifier:
         return sum(1 for t, _, _ in self.sent if t == ticket_id)
 
 
+class MemorySecurityEvents:
+    """`security_events` giả cho node (3e) — cùng kiểm `check_event` như writer thật; ghi vào transaction của
+    `effects.once` giả (MemoryEffects gọi hàm đúng một lần theo khoá)."""
+
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
+
+    async def record(
+        self, event_type: str, *, ticket_id: str | None = None, detail: Mapping[str, Any] | None = None
+    ) -> None:
+        payload = dict(detail or {})
+        check_event(event_type, payload)
+        self.rows.append({"event_type": event_type, "ticket_id": ticket_id, "detail": payload})
+
+    def of(self, ticket_id: str, event_type: str = "injection_detected") -> list[dict[str, Any]]:
+        return [r for r in self.rows if r["ticket_id"] == ticket_id and r["event_type"] == event_type]
+
+
 class Crash(BaseException):
     """Mô phỏng process chết giữa chừng: không phải Exception nên boundary E9 không bắt, LangGraph
     không kịp ghi checkpoint của node đang chạy."""
@@ -427,6 +445,7 @@ class GraphHarness:
     can_execute: bool = True
     rediagnose_on_new_slot: bool = False
     recursion_limit: int = 60
+    nodes: Literal["fake", "real"] = "fake"  # "real": node thật đã có (b02 — 3e, b08 — 3c) đè lên node giả
     concurrency: int = 8
     lock_timeout: float = 5.0
     saver: InMemorySaver = field(default_factory=lambda: InMemorySaver(serde=make_serde()))
@@ -448,6 +467,7 @@ class GraphHarness:
     rag: FakeRag = field(default_factory=FakeRag)  # RAG giả (3c) — b08 thật dùng khi `nodes="real"`
     # LLM gateway THẬT + ScriptedLLM rỗng (3d): node gọi LLM mà test chưa cấp kịch bản → ScriptExhausted → E9
     llm: LlmPort = field(default_factory=lambda: make_gateway().client)
+    security_events: "MemorySecurityEvents" = field(default_factory=lambda: MemorySecurityEvents())
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -474,11 +494,13 @@ class GraphHarness:
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
+            security_events=self.security_events,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:
         return Runner(
-            build_graph(fake_nodes(self.deps()), self.saver), lock=self.lock, turns=self.turns,
+            build_graph((real_nodes if self.nodes == "real" else fake_nodes)(self.deps()), self.saver),
+            lock=self.lock, turns=self.turns,
             audit=self.audit, effects=self.effects, spans=self.spans, clock=self.clock,
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,

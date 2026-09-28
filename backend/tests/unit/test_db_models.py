@@ -80,3 +80,14 @@ def test_kb_eval_statuses_match_migration_0006() -> None:
     assert _check("kb_versions", "eval_status") == "eval_status IN ('evaluated', 'unevaluated')"
     source = (MIGRATION.parent / "0006_kb_content_hash.py").read_text(encoding="utf-8")
     assert "\"eval_status IN ('evaluated', 'unevaluated')\"" in source
+
+
+def test_side_effect_kinds_match_migration_0007() -> None:
+    from app.db.models import SIDE_EFFECT_KINDS
+
+    assert SIDE_EFFECT_KINDS[-1] == "security_event" and len(SIDE_EFFECT_KINDS) == 9
+    source = (MIGRATION.parent / "0007_side_effects_security_event.py").read_text(encoding="utf-8")
+    assert 'NEW_KINDS = ("security_event",)' in source
+    for kind in SIDE_EFFECT_KINDS[:-1]:
+        assert f'"{kind}"' in source  # OLD_KINDS tĩnh đủ 8 giá trị cũ
+    assert _check("side_effects", "kind") == "kind IN (" + ", ".join(f"'{k}'" for k in SIDE_EFFECT_KINDS) + ")"

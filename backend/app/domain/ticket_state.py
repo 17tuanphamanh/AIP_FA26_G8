@@ -76,6 +76,9 @@ class TicketState(TypedDict, total=False):
     requester_context: RequesterContext
     # nội dung
     redacted_request: str  # đã qua privacy guard (D-07)
+    # sàng lọc B2 (phase3 mục 3.1, 8.5): {layer_decided, pattern_id, group, p_mal, llm_category} — KHÔNG văn bản
+    screening: dict[str, Any]
+    security_flag: bool  # B2 E2 khi không sàng lọc được (L3 + L4 lỗi) → B20 ghi vào ghi chú bàn giao
     conversation: Annotated[list[Msg], append_capped(20)]
     # phân loại / chẩn đoán / tra cứu
     intent: str | None

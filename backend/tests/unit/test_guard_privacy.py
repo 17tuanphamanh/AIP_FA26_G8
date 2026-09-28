@@ -156,11 +156,31 @@ def test_q3e10_relative_path_below_threshold_kept(guard: RegexPrivacyGuard) -> N
     assert guard.redact_text(f"tải {token} về").text == f"tải {token} về"
 
 
-@pytest.mark.xfail(strict=True, reason="Q-3e-11 chờ chốt: H=4,10 ≥ 4,0 → luật 6 che đường dẫn tương đối này")
-def test_q3e11_relative_path_above_threshold_kept(guard: RegexPrivacyGuard) -> None:
-    token = "KeToan/BaoCao/Q3_2026.xlsx"
-    assert len(token) >= 20 and shannon_bits(token) >= 4.0
-    assert guard.redact_text(f"mở {token} lỗi").text == f"mở {token} lỗi"
+# Q-3e-11: đường dẫn tương đối = có "/" VÀ đoạn cuối có đuôi trong danh sách CỐ ĐỊNH (loại trừ `file_path`).
+@pytest.mark.parametrize("token", [
+    "KeToan/BaoCao/Q3_2026.xlsx",
+    "PhongIT/CaiDat/VPN_Setup-v3.2.msi",
+    "HR/HopDong/NV0417_2026-09.pdf",
+])  # fmt: skip
+def test_q3e11_relative_path_known_extension_kept(guard: RegexPrivacyGuard, token: str) -> None:
+    assert len(token) >= 20 and shannon_bits(token) >= 4.0  # trên ngưỡng: chỉ loại trừ `file_path` giữ được
+    r = guard.redact_text(f"mở {token} lỗi")
+    assert (r.text, r.secrets_found) == (f"mở {token} lỗi", 0)
+
+
+# Đối chứng M-3e-16: đuôi lạ / đuôi không nằm ở đoạn cuối / chữ hoa → vẫn xét entropy (an toàn hơn: che).
+@pytest.mark.parametrize("suffix", [".abc12", ".xlsxz", ".XLSX"])
+def test_q3e11_base64_slash_unknown_extension_masked(guard: RegexPrivacyGuard, suffix: str) -> None:
+    blob = "/".join(("q9Zk3LxW7vB4" + "nM6tR1yU", "aP8fH2jD5sG0")) + suffix  # ghép lúc chạy (gitleaks)
+    assert len(blob) >= 20 and shannon_bits(blob) >= 4.0
+    r = guard.redact_text(f"key {blob} nhé")
+    assert (r.text, r.secrets_found) == (f"key {MASK} nhé", 1)
+
+
+def test_q3e11_extension_must_be_in_last_segment(guard: RegexPrivacyGuard) -> None:
+    blob = "/".join(("q9Zk3LxW7vB4.xlsx", "nM6tR1yU" + "aP8fH2jD5sG0"))
+    assert shannon_bits(blob) >= 4.0
+    assert guard.redact_text(f"key {blob} nhé").text == f"key {MASK} nhé"
 
 
 # ---- e4: cùng giá trị → cùng nhãn; không lưu ánh xạ ----------------------------------------------------
@@ -318,8 +338,8 @@ def test_repo_file_has_ten_rules_in_order() -> None:
     patterns = load_privacy_patterns(CONFIG / PRIVACY_FILE)
     assert tuple(r.id for r in patterns.rules) == PRIVACY_RULE_ORDER
     assert len(PRIVACY_RULE_ORDER) == 10
-    assert {e for e, _ in patterns.entropy_exclude} >= {"path", "device_id", "hex_error", "url", "username",
-                                                         "digits", "email"}  # fmt: skip
+    assert {e for e, _ in patterns.entropy_exclude} >= {"path", "file_path", "device_id", "hex_error", "url",
+                                                         "username", "digits", "email"}  # fmt: skip
 
 
 @pytest.mark.asyncio

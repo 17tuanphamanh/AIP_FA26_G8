@@ -169,6 +169,16 @@ class EscalationStore(Protocol):
     ) -> str: ...
 
 
+class SecurityEvents(Protocol):
+    """`audit/security_events.SecurityEventWriter.record` (cùng chữ ký, phase3 mục 8.2). Node CHỈ gọi qua
+    `effects.once("security_event", …)` (test AST `SIDE_EFFECT_FUNCS`); writer ghi bằng `current_tx()` nên dòng sự kiện
+    và dòng `side_effects` cùng commit. `detail` không chứa văn bản người dùng (`check_event` chặn khoá nhạy cảm)."""
+
+    async def record(
+        self, event_type: str, *, ticket_id: str | None = None, detail: Mapping[str, Any] | None = None
+    ) -> None: ...
+
+
 class TicketRepo(TicketStore, Protocol):
     """Thêm phần API dùng (2b-3): tạo ticket + lượt `submit` đầu tiên trong MỘT transaction."""
 

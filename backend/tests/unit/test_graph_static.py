@@ -30,14 +30,27 @@ def _const_targets(node: ast.expr) -> set[str]:
     raise AssertionError(f"next_node phải là hằng chuỗi (dòng {node.lineno})")
 
 
+def _node_functions(tree: ast.AST) -> list[tuple[str, ast.AST]]:
+    """(tên node, hàm) — hàm node VÀ mọi hàm phụ khai báo cùng `make()` (vd `_block`/`_pass` của B2, 3e): goto
+    trong hàm phụ cũng phải qua kiểm tĩnh, không được lọt vì nằm ngoài thân hàm node."""
+    out: list[tuple[str, ast.AST]] = []
+    for make in ast.walk(tree):
+        if not (isinstance(make, ast.FunctionDef) and make.name == "make"):
+            continue
+        inner = [f for f in make.body if isinstance(f, ast.AsyncFunctionDef)]
+        names = [f.name for f in inner if f.name in ROUTES]
+        if names:
+            assert len(names) == 1, f"make() có nhiều node: {names}"
+            out += [(names[0], f) for f in inner]
+    return out
+
+
 def collect_gotos() -> dict[str, list[tuple[str, set[str], str, str]]]:
     """node → [(to_status, next_nodes, step, event)] cho mọi lời gọi goto trong graph/nodes/."""
     found: dict[str, list[tuple[str, set[str], str, str]]] = defaultdict(list)
     for path in sorted(NODES_DIR.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for fn in ast.walk(tree):
-            if not isinstance(fn, ast.AsyncFunctionDef) or fn.name not in ROUTES:
-                continue
+        for node_name, fn in _node_functions(tree):
             for call in ast.walk(fn):
                 if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
                         and call.func.id == "goto"):  # fmt: skip
@@ -49,7 +62,7 @@ def collect_gotos() -> dict[str, list[tuple[str, set[str], str, str]]]:
                 event_s = event.value if isinstance(event, ast.Constant) else "<expr>"
                 step = kw["step"]
                 assert isinstance(step, ast.Constant)
-                found[fn.name].append(
+                found[node_name].append(
                     (getattr(states, to.id), _const_targets(kw["next_node"]), step.value, event_s)
                 )
     return found
