@@ -27,11 +27,18 @@ CSRF_HEADER = "X-CSRF-Token"
 REFRESH_PATH = "/api/auth"
 
 
+# Tên đăng nhập AD (chữ thường, số, `.`, `_`, `-`). Username sai được ghi NGUYÊN VĂN vào
+# `security_events.username_attempted` (chống dò mật khẩu, P6) → gõ nhầm mật khẩu vào ô này thì mật khẩu nằm trong DB.
+# Ràng dạng định danh: có chữ hoa/ký tự đặc biệt/dấu cách → 422 `invalid_request`, không ghi sự kiện (PLAN-3e rà trường
+# tự do). Mật khẩu chỉ gồm chữ thường + số vẫn lọt — PLAN-3e Q-3e-14.
+USERNAME_PATTERN = r"^[a-z][a-z0-9._-]{0,127}$"
+
+
 class LoginIn(BaseModel):
     # extra="ignore": trường lạ như `role` trong body bị bỏ qua — role chỉ lấy từ nhóm AD (bất biến 11).
     model_config = ConfigDict(extra="ignore")
 
-    username: str = Field(min_length=1, max_length=128)
+    username: str = Field(min_length=1, max_length=128, pattern=USERNAME_PATTERN)
     password: str = Field(min_length=1, max_length=256)
     otp: str | None = Field(default=None, max_length=16)
 

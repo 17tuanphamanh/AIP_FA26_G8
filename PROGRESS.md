@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
+| Cập nhật | 29/09/2026 — **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do; Q-3e-14 chờ chốt) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -2344,7 +2344,7 @@ KHÔNG sửa `docs/spec/`):
 16. 01 §3 / §4.3: file mới của `llm/` (README `backend/app/llm/README.md`); hợp đồng import-linter 8 `llm-lower-layer` và
     **9 `llm-only-via-gateway`**; test AST "SDK chỉ ở `openai_compat.py`".
 
-## Phase 3 — chặng 3e: B2 privacy guard thật + sàng lọc injection (29/09/2026, đang làm, chưa commit)
+## Phase 3 — chặng 3e: B2 privacy guard thật + sàng lọc injection (29/09/2026; DỪNG 1 `13274a8`, DỪNG 2 `5904835`, DỪNG 3 commit "3e dung 3" — hash + CI ghi ở lần commit sau, như 3c/3d)
 
 Kế hoạch: `PLAN-3e.md` ở gốc repo (KHÔNG commit). Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` v1.6 mục 8; khi lệch,
 `PLAN-3e.md` thắng (đã gồm chốt Q-3e), trừ 13 bất biến và mục [Chốt]. Chạy toàn bộ bằng Opus. Chặng AN NINH: phân vân
@@ -2366,6 +2366,7 @@ giữa cho qua và chặn/escalate → chọn chặn/escalate.
 | Q-3e-9 | (sau DỪNG 1) Cụm mật khẩu 0–4 từ đệm; giá trị là từ hỏi `gì\|gi\|sao\|bao\|nào\|nao` → không che |
 | Q-3e-10 | (sau DỪNG 1) Loại trừ `path` của luật 6 chỉ cho đường dẫn thật (có `\`, hoặc bắt đầu `/`, `~/`, `./`, `../`, `<ổ đĩa>:`) + M-3e-15 |
 | Q-3e-11 | (sau DỪNG 2) Đường dẫn tương đối = có `/` VÀ đoạn cuối có đuôi trong danh sách CỐ ĐỊNH (`xlsx\|xls\|csv\|docx\|doc\|pdf\|pptx\|ppt\|txt\|log\|zip\|rar\|7z\|png\|jpg\|jpeg\|json\|xml\|ini\|conf\|cfg\|yaml\|yml\|msi\|exe\|bat\|ps1\|sh`); đuôi lạ → vẫn xét entropy; mutation mới |
+| Q-3e-13 | (sau DỪNG 3) `reason_code` của `/decision` = danh sách mã CỐ ĐỊNH (enum, không regex — regex lọt mật khẩu chữ thường + số); spec chưa có danh sách → đề xuất 7 mã; mã lạ → 422 `invalid_request`; test canary; M-3e-17. Rà MỌI trường str đầu vào của `backend/app/api/`: trường LỌT → guard (văn bản tự do) hoặc enum (mã). Tách DB cho test quét toàn DB. Q-3e-11: chấp nhận `.XLSX` viết hoa bị che |
 | Q-3e-12 | (sau DỪNG 2) Hướng "hạn cho cả lượt" — **làm ở S0 của 3f, không làm trong 3e**: `TURN_BUDGET_S` < `WORKER_STALE_TURN_SECONDS` (đề xuất 100 s) đặt khi worker nhận lượt, truyền qua context/deps; mọi lời gọi ra ngoài (AD, ml, LLM, RAG) dùng min(timeout riêng, còn lại − biên an toàn); hết → E2 `turn_budget_exceeded` (không cho qua); test tĩnh + test `FakeClock` lượt xấu nhất. 3e giữ `xfail(strict)` |
 
 **Nhật ký (S0–S9 của `PLAN-3e.md` mục 3):**
@@ -2514,6 +2515,125 @@ giữa cho qua và chặn/escalate → chọn chặn/escalate.
     hoa (`.XLSX`) vẫn bị che nhầm nếu H ≥ 4,0 — đường dẫn Windows có `\` đã được loại trừ `path` giữ.
   - **Q-3e-12 — chốt hướng, làm ở S0 của 3f:** giữ `xfail(strict)` của `test_first_turn_worst_case_below_stale_threshold`
     (reason ghi "làm ở 3f S0"); "Việc treo" 7 ghi chốt.
+  - Kiểm: unit **2107 passed, 1 xfailed** (Q-3e-12); ruff, mypy (172 file), `lint-imports` 9/9, gitleaks sạch.
+- **Commit + push DỪNG 2 (29/09/2026, `dev-tuananh`, `13274a8..5904835`):** `5904835` "3e dung 2: L2 injection, node
+  b02_screen that, screen_reply, migration 0007" (36 file, stage đích danh; hook gitleaks + unit xanh). **CI xanh:** run
+  `36476411023` (2m51s) trên `5904835` — `gh` bị sandbox chặn, Tuấn Anh chạy `gh run list`.
+- **S8 xong** — `scripts/mutation/mutate_3e.py` (khuôn 3d: áp → chạy trọn 7 file test unit của chặng → khôi phục trong
+  `finally` → md5 + `git diff --stat`). Lượt unit (sandbox) chạy **2 lần, kết quả giống hệt, md5 8 file khớp, `git diff
+  --stat` khớp**: **16/16 đột biến ĐỎ đúng dự đoán**.
+
+  | Mã | Phá | Test đỏ (số) |
+  |---|---|---|
+  | M-3e-1 | L2 chỉ so bản có dấu | e10 ×2, e1 ×11, e5 ×5 (IMP-01/02, LEAK-01, OVR-01/02), e16 ×2, `match_forms` (21). **e11 vẫn xanh** — xác nhận Q-3e-1 |
+  | M-3e-2 | guard lỗi → lưu bản chưa che | e6 tạo ticket + 3 route sau (4) |
+  | M-3e-3 | L3 lỗi → cho qua | e12 ×2, e13 ×4, e14 (7) |
+  | M-3e-4 | L4 lỗi → E0 | e13 ×4 (4) |
+  | M-3e-5 | bỏ loại trừ `path` | e3 đường dẫn dài ×4 (4) |
+  | M-3e-6 | handler 422 chung trả lại `input` | e8 login ×2, query, tạo ticket (4) |
+  | M-3e-6b | `parse_body` quay về `HTTPException(422, exc.errors())` (trước 3e) | e8 tạo ticket + messages/confirm/decision (4) |
+  | M-3e-7 | bỏ `screen_reply` ở `clarify_wait` | e16 ×3 (3) |
+  | M-3e-8 | `security_events.record` gọi thẳng | AST `test_graph_nodes_never_call_side_effects_directly`, e10 `effects.once` (2) |
+  | M-3e-9 | `detail` chứa `redacted_request` | e10, e14 (2) |
+  | M-3e-10 | `NotRedactingGuard` nạp ngoài dev/test | e17 None/prod/staging (3) |
+  | M-3e-11 | bỏ `screen_reply` ở `confirm_wait` | e16b ×2 (2) |
+  | M-3e-12 | `>=` TAU_BLOCK thành `>` | e18 biên 0,90 (1) |
+  | M-3e-13 | bỏ loại trừ email | e2 (email cá nhân H ≥ 4), e3 email công ty dài, Q-3e-3 (3) |
+  | M-3e-15 | loại trừ `path` = mọi token có `/` | Q-3e-10 base64, Q-3e-11 ×4 (5) |
+  | M-3e-16 | `file_path` nhận mọi đuôi `\.\w{1,5}$` | Q-3e-11 `.abc12`/`.xlsxz`/`.XLSX` (3) |
+  | M-3e-17 | `reason_code` bỏ kiểm enum (sau DỪNG 3) | Q-3e-13 giá trị lạ ×5 (5) |
+  | M-3e-18 | username đăng nhập bỏ ràng dạng (sau DỪNG 3) | username ×6 (6) |
+
+  Lệch bảng PLAN mục 4 (ghi, không âm thầm sửa): M-3e-6 tách hai đường rò 422 (6 = handler chung, 6b = `parse_body`);
+  M-3e-14 và phần e15 của M-3e-8 chỉ có bản PG. **Lượt `--integration`** (Tuấn Anh chạy, 29/09/2026): **3/3 ĐỎ đúng
+  dự đoán**, md5 3 file khớp, `git diff --stat` khớp — M-3e-2 → e6 PG (+ e7 PG, e9 đỏ theo: fixture `db` dùng chung
+  cả module, e6 dưới đột biến để lại ticket chứa canary chưa che → hai test quét toàn DB thấy nó; không phải bắt độc
+  lập); M-3e-8 → e15 (1); M-3e-14 → `test_e7_event_rolls_back_with_ticket_pg` (1). Script sửa một lỗi đọc kết quả trước khi chạy lượt chính thức: id test có
+  dấu cách (`[system: bỏ qua …]`) làm regex `FAILED (\S+?)` bỏ sót → nay đọc tới `]`.
+- **S9 — soát bảo mật (danh sách chốt DỪNG 3):**
+
+  | # | Mục | Kết quả | Chứng cứ |
+  |---|---|---|---|
+  | 1 | Không lộ câu gốc ở DB / checkpoint / log / span / `llm_calls` / `security_events` | PASS (4 điểm guard 8.3) | Guard chạy trước mọi lưu: `api/tickets.py:130` (trước `tickets.create` :133), `:179` (trước `start_event` :181), `:197` (:202), `api/approvals.py:102` (:113). `detail` không có câu: `graph/nodes/b02_screen.py:57-61`, `db/security_events.py:30`. e9 `integration/test_guard_pg.py:200`: 25 bảng + checkpoint giải mã + log DEBUG + `rendered_messages` = 0 canary. M-3e-9 → e10 đỏ |
+  | 1b | Ô chữ tự do ngoài 4 điểm guard | **FAIL → đã sửa sau DỪNG 3** (Q-3e-13, xem dưới) | `api/approvals.py:51` `reason_code: str` (≤ 64, tự do) → `:110` vào event → `Command(resume=…)` (`graph/runner.py:204`) → `checkpoint_writes` **không qua guard**. e9 không phủ (không gửi `reason_code`) |
+  | 2 | 422 không trả `input` | PASS | `api/errors.py:44` (`error_fields` chỉ `loc`, khoá thừa → `<extra>`), `:82` handler `RequestValidationError`, `api/desk.py:76` (`include_input=False`); e8 `unit/test_guard_api.py:199-238` (5 route + query); M-3e-6, M-3e-6b đỏ |
+  | 3 | Guard lỗi → 503, không INSERT | PASS | `api/desk.py:85-90` (log chỉ mẫu route + tên lớp lỗi, `from None`), `:93-105` (ghi sự kiện lỗi → 503 trước `start_event`); e6 `unit/test_guard_api.py:74, 90`, PG `integration/test_guard_pg.py:117`; M-3e-2 đỏ |
+  | 4 | L4 lỗi → E2 (không cho qua, không E0) | PASS | `graph/nodes/b02_screen.py:46-52`; e13 `unit/test_b02_screen.py:129, 146`; M-3e-3, M-3e-4 đỏ |
+  | 5 | `NotRedactingGuard` bị chặn ngoài dev/test | PASS | `main.py:83-85` (`require_dev_fakes`); e17 `unit/test_app_env.py:24`; M-3e-10 đỏ |
+  | 6 | `screen_reply` ở cả `clarify_wait` và `confirm_wait` | PASS | `graph/nodes/clarify_wait.py:24`, `confirm_wait.py:25` (ngay sau `interrupt()`, trước mọi nhánh); e16 `unit/test_screen_reply.py:61`, e16b `:80`; M-3e-7, M-3e-11 đỏ |
+  | 7 | `effects.once` cho `security_event` | PASS | `b02_screen.py:59`, `clarify_wait.py:25`, `confirm_wait.py:26`; writer dùng `current_tx()` (`audit/security_events.py:45`) → cùng commit với `side_effects`; AST `unit/test_side_effects_ast.py:83`, e10 `unit/test_b02_screen.py:82`, e15 PG `integration/test_guard_pg.py:272` (xanh ở DỪNG 2); M-3e-8 đỏ cả unit lẫn PG (e15) |
+
+  Ghi nhận, không sửa: (a) `api/background.py:50` log `exc` + `exc_info` khi lượt graph lỗi — graph chỉ nhận văn bản
+  đã che nên tối đa lộ bản đã che; (b) `note` của người duyệt (`/decision`) qua L1 nhưng không qua L2 — 8.6 chỉ sàng lọc
+  tin của người yêu cầu, Phase 3 chưa đưa `note` vào LLM (Phase 5 xét lại nếu `note` vào prompt); (c) đuôi file chữ hoa
+  (`.XLSX`) có `/` và H ≥ 4,0 vẫn bị che nhầm (phía an toàn, Q-3e-11); (d) cụm mật khẩu có ≥ 5 từ đệm không bị luật 4
+  che (giới hạn đã chốt Q-3e-9, có test ghi lại).
+  - **Q-3e-13 (MỚI, chờ chốt) — `reason_code` của `/approvals/{id}/decision`:** B15-B16 §4 ghi "mẫu lý do chọn nhanh"
+    nhưng model nhận **chuỗi tự do** ≤ 64 ký tự, không qua guard, nằm nguyên văn trong `checkpoint_writes` (người duyệt
+    dán nhầm mật khẩu vào đó → lưu). Đề xuất **(A, khuyến nghị)**: ràng dạng mã `^[a-z][a-z0-9_]{0,63}$` (sai → 422
+    `invalid_request`, không `input`) + test canary; (B) cho qua `redact` như `note` (điểm guard thứ 5). Chưa sửa — đổi
+    hợp đồng API 2b-3 ngoài 4 điểm của 8.3.
+- **Chốt sau DỪNG 3 (Tuấn Anh, 29/09/2026) — đã làm:**
+  - **Q-3e-11:** chấp nhận `.XLSX` viết hoa bị che (phía an toàn) — giữ nguyên.
+  - **Q-3e-13 — `reason_code` = enum:** B15-B16 §4 và P10 3.2 chỉ ghi "mẫu lý do từ chối chọn nhanh — Nên có"
+    [Chốt 16.2], **spec chưa có danh sách** → đề xuất 7 mã: `missing_info`, `not_authorized`, `policy_violation`,
+    `duplicate`, `wrong_device`, `security_concern`, `other` (`api/approvals.py` `type ReasonCode = Literal[…]`, một
+    nguồn). Mã lạ → 422 `{"error":"invalid_request","fields":["reason_code"]}` (qua `parse_body`, không `input`), không
+    `start_event`, phiếu giữ `pending`. Test: `unit/test_guard_api.py` — 7 mã → 202; 5 giá trị lạ (canary, `abc12345`,
+    `missing_info2`, `Missing_Info`, rỗng) → 422, canary/`abc12345` không có trong checkpoint, audit, sự kiện; PG
+    `integration/test_guard_pg.py::test_q3e13_free_fields_canary_422_nowhere_pg` (quét mọi bảng). Mutation **M-3e-17**
+    (bỏ kiểm enum) → 5 test đỏ.
+  - **Rà MỌI trường str đầu vào của `backend/app/api/`** (body, path, query, header, cookie — grep model + `Query`/
+    `Header`/`Cookie`/`Path`; không có `Form`):
+
+    | Route | Trường | Đi đâu | Phân loại | Xử lý |
+    |---|---|---|---|---|
+    | `POST /api/tickets` | `text` (≤ 4000) | `tickets`, checkpoint, LLM | qua guard | — |
+    | `POST /api/tickets/{ticket_id}/messages` | `text` | checkpoint | qua guard | — |
+    | `POST /api/tickets/{ticket_id}/confirm` | `note` (≤ 1000); `confirmed` bool | checkpoint | qua guard; kiểu chặt | — |
+    | `POST /api/approvals/{approval_id}/decision` | `note` | checkpoint, `approvals.note` (B16) | qua guard | — |
+    | | `decision` | event | enum `approved\|rejected` | — |
+    | | `reason_code` | event → `checkpoint_writes` | **LỌT** (chuỗi tự do ≤ 64) | **đã sửa: enum 7 mã** |
+    | | `view_started_at` | chỉ log | kiểu `datetime` | — |
+    | `POST /api/auth/login` | `username` (≤ 128) | sai → `security_events.username_attempted`, cảnh báo dò mật khẩu | **LỌT** (tự do) | **đã sửa: định danh `^[a-z][a-z0-9._-]{0,127}$`** (`USERNAME_PATTERN`), sai → 422 trước `AuthService`, 0 sự kiện; phần còn lọt → Q-3e-14 |
+    | | `password` (≤ 256), `otp` (≤ 16) | `idp.authenticate`, `verify_totp` — không lưu, không log | bí mật không lưu (P6) | — |
+    | | header `User-Agent` | `sessions.user_agent_hash` (sha256) | băm | — |
+    | `POST /api/auth/refresh` | cookie `refresh` | so với `refresh_token_hash` | token, lưu dạng băm | — |
+    | | cookie `csrf` + header `X-CSRF-Token` | so khớp, không lưu | token | — |
+    | mọi route có quyền | header `Authorization: Bearer` | kiểm chữ ký JWT, không lưu | token | — |
+    | `{ticket_id}` (GET/POST ticket), `{approval_id}`, `{user_id}` (revoke) | path | tra DB; chỉ ghi (`permission_denied`, `late_event`, `session_revoked`) SAU khi bản ghi tồn tại | định danh có trong DB | — |
+    | `GET /api/escalations/queue` | `limit` | query | `int` 1…max | — |
+    | ghi chú L2 (`/reply`), lý do ghi đè (`/override`) | — | — | **chưa có route** (Phase 4/5) — khi thêm phải qua `desk.redact` (8.3: `/reply` dùng cùng hàm) | ghi "spec cần sửa" |
+
+    Test username: 6 giá trị (canary, `Abc@12345`, có dấu cách, chữ hoa `AN.NV`, `;`, bắt đầu bằng số) → 422
+    `["body.username"]`, 0 sự kiện; đối chứng: 16 username của `mock_services/seed.json` + bản giả đều khớp dạng (không
+    khoá ai). PG: cùng test Q-3e-13 ở trên. Mutation **M-3e-18** (bỏ ràng dạng) → 6 test đỏ. Username so khớp `users`
+    vốn phân biệt hoa thường (`auth/store.py:109`) → chặn chữ hoa không đổi ai đăng nhập được.
+  - **Q-3e-14 (MỚI, chờ chốt) — phần còn lọt của username:** chuỗi chỉ gồm chữ thường + số (vd `matkhau123`) vẫn khớp
+    dạng định danh → gõ nhầm mật khẩu kiểu này vào ô username thì vẫn nằm ở `security_events.username_attempted` (+ cảnh
+    báo dò mật khẩu). Đề xuất: khi username **không** có dòng `users` và AD trả sai, lưu HMAC (khoá server) thay cho
+    chuỗi gốc — vẫn đếm/khoá được theo username, cảnh báo hiện mã băm. Đổi P6/P7 (view `auth_failures`, nội dung cảnh
+    báo, test khoá username ma) → không tự làm; chốt trước Phase 7.
+  - **Tách DB cho test quét toàn DB:** fixture `db` của `integration/test_guard_pg.py` từ phạm vi module → **function**
+    (mỗi test một database mới + migrate; `security_events`/audit append-only nên không TRUNCATE được). e6, e7, e9 và
+    test Q-3e-13 không còn phụ thuộc dòng test khác để lại. Kỳ vọng lượt `--integration` M-3e-2: chỉ e6 đỏ — **chưa
+    chạy lại** (cần Docker).
+  - Kiểm: unit **2126 passed, 1 xfailed**; ruff, mypy (172 + 11 + 16 file), `lint-imports` 9/9, gitleaks sạch.
+    Mutation unit chạy lại **2 lượt: 18/18 ĐỎ đúng dự đoán**, hai lượt giống hệt, md5 khớp, `git diff --stat` khớp
+    (M-3e-6 nay 15 test đỏ, M-3e-6b 9 — thêm các test 422 mới).
+- **S9 — README + tài liệu:** `backend/app/guard/README.md` (6 module sau 3e, điểm áp L1, test/mutation),
+  `config/README.md` (hai file mẫu: thứ tự luật là hợp đồng, loại trừ luật 6, file hỏng → không khởi động),
+  `backend/app/graph/nodes/README.md` (`b02_screen` thật + bản giả, `screen_reply` ở hai node chờ). "Dồn về mốc G" thêm
+  probe cổng 5. "Việc treo" 3, 6 đã gạch; 7 ghi chốt Q-3e-12.
+- **Kiểm (DỪNG 3, phần tự chạy được, 29/09/2026):** unit **2108 passed, 1 xfailed** (Q-3e-12); `mock_services` 86;
+  `ml_service` 77 (5 `ml_real` bỏ); ruff, mypy (172 + 11 + 16 file), `lint-imports` 9/9 KEPT, gitleaks sạch.
+  `backend/tests/e2e` (28) **không chạy được trong sandbox** (mở cổng local bị chặn — `PermissionError` ở
+  `e2e/mock_server.py:33`, có từ trước 3e) và `backend/tests/integration` cần Docker → Tuấn Anh chạy `make test`.
+  **`make test` đầy đủ (Tuấn Anh, 29/09/2026): backend 2295 passed, 1 xfailed** (= unit 2108 + integration 159 + e2e
+  28; xfail = Q-3e-12), `mock_services` 86, `ml_service` 77 (5 `ml_real` bỏ) — 0 F/E.
+  Stack (Tuấn Anh, 29/09/2026, image build lại sau Q-3e-11 — layer `config` + `backend/app` mới): `make up` →
+  `alembic upgrade head` không có bước (DB dev đã ở 0007), `/api/health` 200 `ok`, `runtime: up`, `kb: ready`, worker
+  healthy; **`make gate2 S=all` 89 PASS / 0 FAIL**. **DỪNG 3 xanh** — còn Q-3e-13 chờ chốt, chờ lệnh commit.
 
 **Spec cần sửa (3e) — để Claude chat thêm mục 8.9 "Chốt khi hiện thực 3e" vào `phase3-thiet-ke-chi-tiet.md`** (Claude Code
 KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
@@ -2526,7 +2646,9 @@ KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
 3. **Bộ quét `goto` của `test_graph_static.py`** nay đọc cả hàm phụ `async def` trong cùng `make()` (`_block`, `_pass` của
    8.5) — trước đó `goto` trong hàm phụ lọt khỏi kiểm tĩnh (`step=` hằng, chuyển hợp lệ). 8.5 nên ghi.
 4. **e9:** quét **25 bảng** (22 bảng P7 + 3 bảng checkpoint có cột văn bản); `alembic_version` không có quyền SELECT
-   của `app_rw`, `checkpoint_migrations` không có cột văn bản. "≥ 25" của 8.7 đạt đúng biên.
+   của `app_rw`, `checkpoint_migrations` không có cột văn bản. "≥ 25" của 8.7 đạt đúng biên. Test quét toàn DB (e6, e7,
+   e9) phải chạy trên **database riêng mỗi test** — dùng chung DB thì dòng test trước để lại làm đỏ test sau (thấy ở
+   M-3e-2: e7, e9 đỏ theo e6); bảng append-only nên không TRUNCATE được.
 5. **M-3e-1 → e11 (8.8) không bắt được** (Q-3e-1): e11 đã không dấu nên bản có dấu vẫn khớp → M-3e-1 phải làm đỏ e10 +
    e1. M-3e-11 (`confirm_wait` bỏ `screen_reply`) → e16b; thêm e16c.
 6. **Đường rò 422 thứ hai (Q-3e-2):** 4 route của B2 kiểm body bằng `desk.parse_body` → `HTTPException(422,
@@ -2551,11 +2673,23 @@ KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
 12. **`notices` (8.3 "3 route 202"):** guard áp 4 điểm; `/approvals/{id}/decision` trả body riêng → thêm `notices`
     (Q-3e-6). Ghi chú bàn giao L2 có câu cờ an ninh cho E2 `screening_unavailable` và `injection_in_reply` (Q-3e-7).
 13. **M-3e-9** (`detail` chứa `redacted_request`): e9 **không** bắt được (canary đã bị L1 che trước B2) → e10 bắt (kiểm
-    khoá `detail` + không chứa từ nào của câu). Mutation thêm ngoài 8.8: M-3e-9…16 (bảng trong `PLAN-3e.md` mục 4).
+    khoá `detail` + không chứa từ nào của câu). Mutation thêm ngoài 8.8: M-3e-6b, M-3e-9…18 (bảng trong `PLAN-3e.md` mục 4).
 14. **Ngân sách thời gian một lượt:** lượt đầu 3e ước tính trần 122 s ≥ `WORKER_STALE_TURN_SECONDS` 120 s (Q-3e-12) →
     chốt "hạn cho cả lượt" làm ở 3f S0 (mục 9 nên có bước này).
 15. **Loại test:** e6–e8, e10–e14, e16 hiện thực ở unit (app/graph thật trên bản giả in-memory) + bản PG cho e6, e7, e9,
     e15 — 8.7 ghi "integration".
+16. **(S9) Điểm guard 8.3 chưa phủ `reason_code`** của `/approvals/{id}/decision` (chuỗi tự do ≤ 64 → `checkpoint_writes`
+    không che). Chốt Q-3e-13: enum cố định 7 mã `missing_info`, `not_authorized`, `policy_violation`, `duplicate`,
+    `wrong_device`, `security_concern`, `other` — B15-B16 §4 (`DecisionIn.reason_code`) và P10 3.2 nên ghi danh sách
+    này (hiện chỉ "mẫu lý do chọn nhanh"). 8.3 nên có luật chung: ô KHÔNG qua guard mà được lưu phải là enum/định danh.
+17. **(S9) 8.8:** M-3e-6 nên tách hai đường rò 422 (handler chung / `parse_body`); M-3e-8 phần e15 và M-3e-14 chỉ đo được
+    trên PG. 8.6: `note` của người duyệt không qua L2 — ghi rõ phạm vi (chỉ tin của người yêu cầu) và xét lại ở Phase 5
+    nếu `note` vào prompt.
+18. **(sau DỪNG 3) Username đăng nhập:** `LoginIn.username` được lưu nguyên văn vào `security_events.username_attempted`
+    khi sai (P6/P7) → ràng dạng `^[a-z][a-z0-9._-]{0,127}$` (422 trước `AuthService`). P6 mục đăng nhập nên ghi dạng
+    username và việc 422 cho dạng sai (không lộ tài khoản tồn tại). Phần còn lọt (mật khẩu chữ thường + số) → Q-3e-14.
+19. **(sau DỪNG 3) Route chưa có:** ghi chú L2 (`/reply`, Phase 5) và lý do ghi đè (`/override`, Phase 4) — spec
+    Phase 4/5 phải ghi rõ đi qua `desk.redact` (+ `record_redacted`) như 4 điểm của 8.3.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -2570,6 +2704,7 @@ KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
 | 3d | Chọn `FAST_MODEL`/`STRONG_MODEL`, điền dòng `pricing` thật (tới lúc đó `LLM_BACKEND=real` từ chối khởi động); kiểm provider nhận `response_format` json_schema non-strict hay phải `json_object` | P2 §12–13, Q-3d-3 |
 | 3d | P2 §13 dòng Integration: đổi `roles.fast.provider` cloud → local không sửa code; `LLM_CACHE_MODE=eval` chạy 20 kịch bản 2 lần → lần 2 có 0 request ra ngoài | P2 §13 |
 | 3d | Hiệu chỉnh ước lượng token `ceil(ký tự/3)` (cắt `budget_in`, giữ chỗ trần chi) bằng `usage_tokens_in` thật trong span; đo `Retry-After`/429 thật của provider | Q-3d-8, S9 mục 4d |
+| 3e | Probe cổng 5 cho B2 thật với LLM thật: 15 câu tấn công (gồm vòng vo không khớp L2) / 30 câu thường qua L2 → L3 (`model_missing`) → L4 `b02_injection_judge` — đo tỉ lệ bắt và chặn nhầm; ScriptedLLM không đo được chất lượng L4 | phase3 8.5, 8.7; `huong-dan` 5.1 |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 

@@ -5,12 +5,19 @@ thật của app, graph trên bản giả.
 - e7 (unit): có bí mật → 202 kèm `notices`; `privacy_secret_redacted {count}` — lúc tạo đi cùng `tickets.create`
   (transaction, bản PG ở `integration/test_guard_pg.py`), tin nhắn sau ghi TRƯỚC `start_event`; ghi lỗi → 503.
 - e8: MỌI đường trả 422 do kiểm dữ liệu vào (grep `backend/app/api/`, PLAN-3e Q-3e-2) không trả lại giá trị người gửi.
+- Q-3e-13 + rà trường tự do: ô KHÔNG qua guard mà được lưu (`reason_code`, username đăng nhập) chỉ nhận mã cố định /
+  định danh; giá trị khác → 422, không lưu.
 """
 
+import json
 import logging
-from typing import Any
+import re
+from pathlib import Path
+from typing import Any, get_args
 
 import pytest
+from app.api.approvals import ReasonCode
+from app.api.auth import USERNAME_PATTERN
 from app.api.errors import GUARD_UNAVAILABLE
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_PENDING_APPROVAL
 from app.guard.privacy import (
@@ -20,10 +27,12 @@ from app.guard.privacy import (
     RegexPrivacyGuard,
 )
 from app.settings import Settings
+from tests.fakes.auth import seed_ad_users
 from tests.fakes.desk import DeskEnv, desk_env
 
 pytestmark = pytest.mark.asyncio
 
+REPO = Path(__file__).resolve().parents[3]
 CANARY = "Canary#" + "7781xyz"  # ghép lúc chạy (gitleaks)
 PASSWORD_TEXT = f"mật khẩu của tôi là {CANARY}, reset giúp"
 PLANS: dict[str, dict[str, str | list[str]]] = {
@@ -243,3 +252,50 @@ async def test_e8_reject_without_note_still_plain_422() -> None:
         r = await env.client.post(f"/api/approvals/{env.approval_of(ticket)}/decision",
                                   json={"decision": "rejected"}, headers=l1)  # fmt: skip
         assert (r.status_code, r.json()) == (422, {"detail": "rejected_requires_note"})
+
+
+# ---- Q-3e-13 + rà trường tự do: ô KHÔNG qua guard chỉ nhận mã cố định / định danh ---------------------------
+
+
+@pytest.mark.parametrize("code", get_args(ReasonCode.__value__))
+async def test_q3e13_reason_code_accepts_fixed_codes(code: str) -> None:
+    async with desk_env() as env:
+        ticket, _ = await _ticket_at(env, S_PENDING_APPROVAL)
+        l1 = await env.token("ha.lt")
+        r = await env.client.post(f"/api/approvals/{env.approval_of(ticket)}/decision", headers=l1,
+                                  json={"decision": "rejected", "note": "thiếu", "reason_code": code})  # fmt: skip
+        assert r.status_code == 202, r.text
+
+
+@pytest.mark.parametrize("value", [CANARY, "abc12345", "missing_info2", "Missing_Info", ""])
+async def test_q3e13_reason_code_not_in_list_422_nothing_stored(value: str) -> None:
+    """Mật khẩu dán nhầm vào `reason_code` (kể cả dạng chữ thường + số — regex không chặn được) → 422, không lưu."""
+    async with desk_env() as env:
+        ticket, _ = await _ticket_at(env, S_PENDING_APPROVAL)
+        l1 = await env.token("ha.lt")
+        turns = len(env.h.turns.of(ticket))
+        r = await env.client.post(f"/api/approvals/{env.approval_of(ticket)}/decision", headers=l1,
+                                  json={"decision": "rejected", "note": "thiếu", "reason_code": value})  # fmt: skip
+        await env.drain()
+        assert _assert_clean_422(r) == ["reason_code"] and (value == "" or value not in r.text)
+        assert len(env.h.turns.of(ticket)) == turns and env.late(ticket) == []
+        assert (await env.ticket(ticket, l1))["status"] == S_PENDING_APPROVAL
+        stored = repr(env.h.saver.storage) + repr(env.h.saver.blobs) + repr(env.h.audit.rows) + repr(env.sink.events)
+        assert CANARY not in stored and "abc12345" not in stored
+
+
+@pytest.mark.parametrize("username", [CANARY, "Abc@12345", "an nv", "AN.NV", "an.nv;drop", "1an.nv"])
+async def test_login_username_must_be_identifier_422_no_event(username: str) -> None:
+    """Username sai được ghi nguyên văn vào `security_events.username_attempted` → gõ nhầm mật khẩu vào ô username
+    phải bị 422 TRƯỚC khi tới AuthService (không sự kiện nào)."""
+    async with desk_env() as env:
+        r = await env.client.post("/api/auth/login", json={"username": username, "password": "sai"})
+        assert _assert_clean_422(r) == ["body.username"]
+        assert env.sink.events == [] and username not in r.text
+
+
+async def test_login_username_pattern_accepts_every_seed_user() -> None:
+    """Đối chứng: ràng dạng không khoá ai trong seed AD của mock (16 người, gồm `svc-backup`) lẫn bản giả của test."""
+    seed = json.loads((REPO / "mock_services" / "seed.json").read_text(encoding="utf-8"))
+    names = [u["username"] for u in seed["users"]] + [u.username for u in seed_ad_users()]
+    assert len(names) >= 16 and all(re.fullmatch(USERNAME_PATTERN, n) for n in names), names

@@ -7,7 +7,9 @@ Thứ tự:
    - `may_decide_as` sai (không phải người được giao, xung đột lợi ích) → 403 + `permission_denied`;
    - phiếu không còn `pending` → `already_decided`; `clock.now() >= deadline` (Clock của APP, bằng hạn
      là muộn) → `expired` → `record_late` + 409 (TC27).
-3. Body: `rejected` thiếu `note` → 422.
+3. Body: `rejected` thiếu `note` → 422. `reason_code` chỉ nhận mã trong `ReasonCode` (danh sách CỐ ĐỊNH, PLAN-3e
+   Q-3e-13): ô này không qua privacy guard mà nằm nguyên văn trong checkpoint → chuỗi tự do (vd mật khẩu dán nhầm)
+   bị 422 `invalid_request`, không lưu gì.
 4. Privacy guard trên `note` (3e, phase3 mục 8.3): lỗi → 503, có bí mật → `privacy_secret_redacted` trước
    `start_event`; body 202 thêm `notices` (PLAN-3e Q-3e-6).
 5. `start_event(S_PENDING_APPROVAL)` → 202. Route KHÔNG ghi quyết định: B16 ghi (`approvals.close` có
@@ -42,13 +44,17 @@ router = APIRouter()
 
 NOTE_MAX = 1000
 type LateReason = Literal["expired", "already_decided"]
+# Mẫu lý do chọn nhanh (B15-B16 §4, P10 3.2 [Chốt 16.2] — spec chưa có danh sách; đề xuất ở PLAN-3e Q-3e-13).
+type ReasonCode = Literal[
+    "missing_info", "not_authorized", "policy_violation", "duplicate", "wrong_device", "security_concern", "other",
+]  # fmt: skip
 
 
 class DecisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal["approved", "rejected"]
     note: str | None = Field(default=None, max_length=NOTE_MAX)
-    reason_code: str | None = Field(default=None, max_length=64)
+    reason_code: ReasonCode | None = None  # mã cố định — KHÔNG chuỗi tự do (không qua guard)
     view_started_at: datetime | None = None  # tuỳ chọn; chỉ log
 
 

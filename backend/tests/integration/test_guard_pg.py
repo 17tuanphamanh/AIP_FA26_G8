@@ -7,7 +7,10 @@
 - e9 canary: B2 THẬT + gateway SQL (`llm_calls`, span), đi qua CẢ 4 điểm guard (tạo, trả lời, duyệt, xác nhận) tới
   `S_RESOLVED`; quét mọi bảng (≥ 25, in danh sách), blob checkpoint GIẢI MÃ, log, `rendered_messages` của ScriptedLLM.
 - e15: process chết SAU khi ghi `security_event`, TRƯỚC audit + checkpoint của B2 → worker chạy lại → đúng 1 sự kiện.
-Database riêng (dòng security_events/audit append-only).
+- Q-3e-13 + rà trường tự do: `reason_code` lạ / username giống mật khẩu → 422, canary không ở bảng nào.
+Database riêng cho MỖI test (fixture `db` phạm vi function): e6, e7, e9 quét TOÀN DB tìm canary — dùng chung một DB
+thì dòng test trước để lại (vd e6 dưới đột biến M-3e-2) làm đỏ test sau. Bảng `security_events`/audit append-only nên
+không TRUNCATE được → tạo DB mới + migrate cho từng test.
 """
 
 import logging
@@ -61,7 +64,7 @@ CANARY = "Canary#" + "7781xyz"  # ghép lúc chạy (gitleaks)
 PASSWORD_TEXT = f"mật khẩu của tôi là {CANARY}, reset giúp"
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def db(pg: PgUrls) -> Iterator[PgUrls]:
     with fresh_database(pg) as fresh:
         command.upgrade(alembic_config(fresh), "head")
@@ -165,6 +168,27 @@ async def test_e7_event_rolls_back_with_ticket_pg(db: PgUrls, rw: AsyncEngine) -
                            security_events=[("privacy_secret_redacted", {"count": 2})])  # fmt: skip
     assert await _count(rw, "SELECT count(*) FROM tickets WHERE ticket_id = 'tk-guard-b'") == 0
     assert await _count(rw, "SELECT count(*) FROM security_events WHERE ticket_id = 'tk-guard-b'") == 0
+
+
+# ---- Q-3e-13 + rà trường tự do: ô KHÔNG qua guard chỉ nhận mã / định danh -------------------------------
+
+
+async def test_q3e13_free_fields_canary_422_nowhere_pg(db: PgUrls, rw: AsyncEngine) -> None:
+    """`reason_code` lạ (mật khẩu dán nhầm) và username giống mật khẩu → 422; canary không ở bảng nào."""
+    async with desk(db) as d:
+        l1, an = await d.token("ha.lt"), await d.token("an.nv")
+        r = await d.client.post("/api/tickets", json={"text": "VPN không vào được"}, headers=an)
+        ticket = r.json()["ticket_id"]
+        await d.app.state.background.drain()
+        aid = await _scalar(rw, "SELECT approval_id FROM approvals WHERE ticket_id = :t", t=ticket)
+        r = await d.client.post(f"/api/approvals/{aid}/decision", headers=l1,
+                                json={"decision": "rejected", "note": "thiếu thông tin", "reason_code": CANARY})
+        assert (r.status_code, r.json()) == (422, {"error": "invalid_request", "fields": ["reason_code"]})
+        r = await d.client.post("/api/auth/login", json={"username": CANARY, "password": "sai"})
+        assert (r.status_code, r.json()) == (422, {"error": "invalid_request", "fields": ["body.username"]})
+        await d.app.state.background.drain()
+    assert await _scalar(rw, "SELECT status FROM approvals WHERE approval_id = :a", a=aid) == "pending"
+    assert await tables_containing(rw, CANARY) == []
 
 
 # ---- e9: canary — không ở đâu cả sau trọn một ticket đi qua 4 điểm guard ---------------------------------
