@@ -1,4 +1,4 @@
-"""f19 (phase3 mục 9.0; PLAN-3f S0, cập nhật S6) — lượt XẤU NHẤT trên FakeClock qua graph thật, hạn lượt mặc định (100 s / 2 s).
+"""f19 (phase3 mục 9.0; PLAN-3f S0, cập nhật S6 + S7) — lượt XẤU NHẤT trên FakeClock qua graph thật, hạn lượt mặc định (100 s / 2 s).
 
 Mọi phụ thuộc ngoài chậm tới trần riêng của nó: AD (B1) 2 lần quá timeout rồi trả lời sau 4,9 s; ml `/classify` (B2 L3) 3
 lần quá timeout; L4 `b02_injection_judge` 3 lần Timeout rồi trả lời; ml `/classify_intent` (B3) 3 lần quá timeout;
@@ -21,7 +21,9 @@ from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import SESSION, ad_user
 from tests.fakes.llm import make_gateway
+from tests.fakes.rag import SpyPoint
 from tests.fakes.vpn import SeedVpn
+from tests.unit.test_rag_retriever import _payload, _retriever, _spy
 from tests.unit.test_turn_deadline import SlowHandler, _registry
 
 pytestmark = pytest.mark.asyncio
@@ -49,7 +51,10 @@ def slow(handler: Handler, clock: FakeClock, latency: float, seen: list[tuple[fl
     return call
 
 
-async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_remaining() -> None:
+@pytest.mark.parametrize("ends_at", ["B6", "b08_retrieve"])
+async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_remaining(ends_at: str) -> None:
+    """`B6`: 3 tool VPN chậm 4,9 s → hết hạn giữa các tool (B6 bắt tường minh). `b08_retrieve`: tool VPN nhanh, B8
+    Retriever THẬT với ml embed 4,9 s + rerank quá timeout → hết hạn ở ml (B8 không tự bắt → boundary E2)."""
     clock = FakeClock()
     start = clock.now()
     budget, margin = SETTINGS.turn_budget_s, SETTINGS.safety_margin_s
@@ -57,21 +62,25 @@ async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_rem
 
     ad = SlowHandler(clock, 99, 99, 4.9, result=ad_user())
     tool_seen: list[tuple[float, datetime]] = []
-    vpn = {name: slow(h, clock, 4.9, tool_seen) for name, h in SeedVpn(clock).handlers().items()}
+    tool_latency = 4.9 if ends_at == "B6" else 0.0
+    vpn = {name: slow(h, clock, tool_latency, tool_seen) for name, h in SeedVpn(clock).handlers().items()}
     directory, _ = _registry(clock, {"ad_get_user": ad, **vpn})
     ml = FakeMlService().slow("classify", 99, times=3).slow("classify_intent", 99, times=3)
+    ml.slow("embed", 4.9).slow("rerank", 99, times=3)
     gw = make_gateway({
         "b02_injection_judge": [Timeout(), Timeout(), Timeout(), Reply(NOT_ATTACK)],
         "b03_classify": [Timeout(), Timeout(), Reply(VPN_ONE)],
     }, clock=clock)  # fmt: skip
-    h = GraphHarness(clock=clock, nodes="real", directory=directory, ml=ml, llm=gw.client)
+    spy = _spy(points=[SpyPoint("p1", _payload("KB-VPN-001", 0, "vpn lỗi 809 chứng chỉ"), score=0.9)])
+    rag = _retriever(spy, ml.client(clock), clock=clock)  # Retriever THẬT, cùng ml-service giả chậm
+    h = GraphHarness(clock=clock, nodes="real", directory=directory, ml=ml, llm=gw.client, rag=rag)  # type: ignore[arg-type]
 
     v = (await h.submit_as("t1", SESSION, text=NORMAL)).values
 
     assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E2", "turn_budget_exceeded")
     assert clock.now() <= usable_end  # không lời gọi nào chạy quá hạn − biên
     [row] = [r for r in h.audit.rows if r["event"] == "turn_budget_exceeded"]
-    assert row["step"] == "B6"  # hết hạn giữa 3 tool VPN — B6 bắt tường minh (điểm log 2)
+    assert row["step"] == ends_at
 
     seen: list[tuple[str, float, datetime]] = [("ad", t, at) for t, at in ad.seen]
     seen += [("tool:vpn", t, at) for t, at in tool_seen]
@@ -80,9 +89,12 @@ async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_rem
     kinds = {k for k, _, _ in seen}
     assert {"ad", "ml:classify", "llm:b02_injection_judge", "ml:classify_intent", "llm:b03_classify",
             "tool:vpn"} <= kinds  # lượt đi qua đủ lớp  # fmt: skip
+    if ends_at == "b08_retrieve":
+        assert {"ml:embed", "ml:rerank"} <= kinds
     assert len(seen) >= 18
     for kind, timeout, at in seen:
         remaining = (usable_end - at).total_seconds()
         assert timeout <= remaining + 1e-9, f"{kind}: timeout {timeout:g}s > còn {remaining:g}s lúc {at}"
-    assert any(t < 5.0 for t, _ in tool_seen)  # tool cuối bị cắt timeout theo phần còn lại (không phải 5 s riêng)
+    last = [t for k, t, _ in seen if k == ("tool:vpn" if ends_at == "B6" else "ml:rerank")]
+    assert any(t < (5.0 if ends_at == "B6" else 18.0) for t in last)  # lời gọi cuối bị cắt theo phần còn lại
     assert (clock.now() - start).total_seconds() > budget - margin - 5  # thật sự bị cắt, không xong sớm tình cờ

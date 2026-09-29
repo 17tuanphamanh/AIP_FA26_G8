@@ -12,7 +12,7 @@
 - `last_connection_ok`: lần kết nối MỚI NHẤT (theo `at`, không tin thứ tự trả về) là `success`; rỗng → không đặt.
 
 `device_id` (có thể do người dùng nêu) chỉ là KHOÁ TRA CỨU — không bao giờ là giá trị của một fact; `slots` trả về chỉ để
-B6 bổ sung slot người dùng chưa nêu. Test AST P3 (`test_b06_diagnose.py`): không phép gán `facts[...]` nào lấy từ slot.
+B6 bổ sung slot người dùng chưa nêu. Test AST P3 (`test_facts_ast.py`): không phép gán `facts[...]` nào lấy từ slot.
 """
 
 from collections.abc import Mapping

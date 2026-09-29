@@ -154,11 +154,12 @@ async def test_registry_write_needs_full_timeout() -> None:
     cert = {"serial": "S1", "device_id": "LAP-0342", "issued_at": "2026-01-01T00:00:00Z",
             "expires_at": "2027-01-01T00:00:00Z", "status": "valid", "days_to_expiry": 365}  # fmt: skip
     handler = SlowHandler(clock, result=cert)
-    reg, _ = _registry(clock, {"renew_vpn_cert": handler})
+    reg, board = _registry(clock, {"renew_vpn_cert": handler}, threshold=1)
     args = UserDeviceRequiredIn(user_id="nv001", device_id="LAP-0342")
     with turn(clock, 4.0), pytest.raises(TurnBudgetExceeded):
         await reg.call("renew_vpn_cert", args, caller_step="B17")
     assert handler.seen == []  # không gửi với timeout rút ngắn
+    assert board["vpn"].state == "closed"  # không gửi vì hết hạn ≠ lỗi hệ thống ngoài
     with turn(clock, 8.0):
         r = await reg.call("renew_vpn_cert", args, caller_step="B17")
     assert r.error is None and [t for t, _ in handler.seen] == [5.0]

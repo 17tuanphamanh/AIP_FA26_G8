@@ -1,8 +1,20 @@
 Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xem docs/spec/build/01-kien-truc-project.md mục 3.
 
 - Hầu hết các file ở đây (b01, b02, b03, b06, b10, b11, b12, b15, b17, b20, các node `*_wait`) đã là bản THẬT
-  từ các phase trước — "giả" chỉ còn ở NHỮNG CHỖ chưa tới phase (vd `b03_classify`/`b06_diagnose` hiện còn
-  Phase 2a: cố định `intent="vpn"`, không đọc câu — sẽ thay ở Phase 5).
+  từ các phase trước — "giả" chỉ còn ở NHỮNG CHỖ chưa tới phase. Node có cả bản giả (gate2, `FAKE_SCENARIO`) để bản
+  giả ở `graph/nodes/fake/` (b02, b03, b06, b08); `graph/builder.REAL_NODE_MODULES` liệt kê bản thật.
+- `b03_classify.py`: node THẬT (Phase 3 chặng 3f, chỉ VPN) — `deps.ml.classify_intent` (Phase 3 `model_missing`) → LLM
+  fast `b03_classify` (prompt v2). Thứ tự kiểm cố định: ngoài phạm vi → ≥ 2 ý (đếm MỌI ý, câu xã giao không là ý) →
+  confidence < `TAU_INTENT` → intent chưa bật (E1, `step="B4"`); lỗi LLM / hết hạn lượt → E2. Slot CHỈ qua
+  `domain.slots.sanitize_slots` (bỏ key trùng fact, key lạ, > 100 ký tự, mã/lý do không có trong câu); `facts={}`.
+  Điểm log 1 ở mọi nhánh, không câu người dùng, không giá trị slot, key lạ ghi `"<unknown>"`.
+- `b06_diagnose.py`: node THẬT (Phase 3 chặng 3f, chỉ VPN) — 3 tool đọc song song (`tools/diagnosis/vpn.calls`), lỗi hệ
+  thống → B7 E2 `tool_system_error` (`tool_errors` chỉ tên lớp lỗi), 404/rỗng = dữ liệu, hết hạn lượt → E2; `facts` CHỈ
+  từ `tools/diagnosis/vpn.infer_vpn` (test AST `test_facts_ast.py`), slot suy ra không ghi đè slot người dùng,
+  `diagnostics` lưu JSON. Cờ `ENABLE_PROACTIVE_DIAGNOSIS=false` → 0 lời gọi. D-20 (chọn tool theo slot đổi) → 3g.
+- Hạn cho cả lượt (3f S0): node gọi ra ngoài chỉ qua `deps.directory` / `deps.ml` / `deps.llm` / `deps.rag` (đã cắt
+  theo `core.turn_budget`). Hết hạn → E2 `turn_budget_exceeded` — boundary làm lưới chung; B2 (giữ `security_flag`),
+  B3, B6 (giữ điểm log) bắt tường minh.
 - `b08_retrieve.py`: node THẬT (Phase 3 chặng 3c) — gọi `deps.rag.retrieve()` (`RagPort`, thật là
   `rag.retriever.Retriever`), chỉ bắt `RetrievalSystemError` (E2); rỗng/dưới ngưỡng → E3 (B9). Bản GIẢ (Phase
   2, đọc `deps.scenario`) nằm ở `graph/nodes/fake/b08_retrieve.py`. `graph/builder.py::select_nodes` (qua
