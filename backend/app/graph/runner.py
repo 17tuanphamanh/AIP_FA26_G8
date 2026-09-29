@@ -6,7 +6,12 @@
 3. submit/resume: `turn_id` mới + dòng `turns`; recover GIỮ `turn_id` cũ (D-18) — khoá idempotent của
    audit/side effect trùng với lần chạy hỏng. `turn_id` là khoá chính của `turns` nên recover chỉ
    đóng dòng cũ (không dùng `event_type='recover'`).
-4. `ainvoke(input | Command(resume=…) | None)`, `recursion_limit` (lưới cuối sau MAX_LOOPS).
+4. `ainvoke(input | Command(resume=…) | None)`, `recursion_limit` (lưới cuối sau MAX_LOOPS), `durability="sync"`.
+
+**Checkpoint lưu ĐỒNG BỘ** (`DURABILITY`, chốt DỪNG 2 — soát S12 NGHI-3): LangGraph mặc định `"async"` — checkpoint của bước
+trước được lưu song song với bước sau, nên process chết giữa B17 (đã gửi lời gọi ghi) có thể để lại checkpoint cũ hơn node
+đứng trước B17, và recover chạy lại cả node đó. `"sync"`: checkpoint của mỗi bước lưu xong rồi bước sau mới chạy. API và worker
+cùng đi qua Runner này. Lớp khác vẫn giữ: B17 bước 0 đọc `transaction_log` (NGHI-2).
 
 Đã kiểm với LangGraph 1.2: giá trị resume được ghi vào checkpoint trước khi node chạy, nên process
 chết giữa lượt resume thì `ainvoke(None)` chạy lại node chờ với đúng giá trị đó.
@@ -46,7 +51,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
-from langgraph.types import Command, StateSnapshot
+from langgraph.types import Command, Durability, StateSnapshot
 
 from app.core.clock import Clock
 from app.core.ids import new_trace_id, new_turn_id
@@ -70,6 +75,7 @@ from app.graph.routing import AUDIT, ENTRY
 log = logging.getLogger(__name__)
 
 EXECUTE_NODE = "b17_execute"
+DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module
 PARENT_WAIT = "parent_wait"
 INTERRUPTED_NOTE = "Thực thi bị gián đoạn — cần L2 kiểm tra trạng thái thật trên hệ thống ngoài"
 FINALIZE_FAILED = "finalize_failed_permanent"
@@ -331,7 +337,7 @@ class Runner:
         async with self._sem:
             with bind_run(self._context(turn_id)):
                 try:
-                    await self.graph.ainvoke(graph_input, cfg)
+                    await self.graph.ainvoke(graph_input, cfg, durability=DURABILITY)
                 except GraphRecursionError:
                     log.error("ticket %s vượt recursion_limit → E9", ticket_id)
                     snap = await self.graph.aget_state(cfg)
@@ -363,7 +369,7 @@ class Runner:
             audit_detail=audit_detail, **fields,
         )  # fmt: skip
         await self.graph.aupdate_state(cfg, {**values, **update} if seed else update, as_node=as_node)
-        await self.graph.ainvoke(None, cfg)
+        await self.graph.ainvoke(None, cfg, durability=DURABILITY)
 
 
 def _initial_state(

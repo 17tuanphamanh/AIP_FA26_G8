@@ -9,6 +9,7 @@
 - Bấm muộn (TC27, quyết định 2b-3 Q2): KHÔNG đổi `status` — phiếu `pending` quá hạn phải giữ `pending`
   để worker còn bắn timeout (E6); chỉ ghi audit `late_event` (`graph.late_event.record_late`).
 - `notify_approver`: thông báo trong app thật ở Phase 4 (bảng `notifications`); 2b chỉ log.
+- `get_status` (3h): B17 kiểm "đã duyệt" = state + bảng + hash (phase3 11.4 bước 1, P8).
 """
 
 import logging
@@ -109,6 +110,11 @@ class SqlApprovals:
         async with self._engine.connect() as conn:
             r = (await conn.execute(select(_APPROVALS).where(_APPROVALS.c.approval_id == pk))).first()
         return None if r is None else _row(r)
+
+    async def get_status(self, approval_id: str) -> str | None:
+        """B17 (3h, P8): "đã duyệt" đọc cả BẢNG, không chỉ state. Không có phiếu → None."""
+        row = await self.get(approval_id)
+        return None if row is None else row.status
 
     @asynccontextmanager
     async def lock_row(self, approval_id: str) -> AsyncIterator[ApprovalRow | None]:

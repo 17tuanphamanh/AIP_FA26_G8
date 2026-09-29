@@ -20,6 +20,7 @@ from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines, create_engines
 from app.db.tickets import SqlTicketStore
+from app.executor.txlog import SqlTxLog
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import FakeScenario, NodeDeps
@@ -104,7 +105,7 @@ async def open_pg_runtime(
     ad = ad or FakeAd(ad_user(REQUESTER))
     ticket_store = tickets or SqlTicketStore(engines.main)
     deps = NodeDeps(
-        notifier=notifier, approvals=approvals, executor=executor, deadlines=deadlines,
+        notifier=notifier, approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock), deadlines=deadlines,
         constants=get_policy().constants, identity=SqlIdentityReads(engines.main),
         # 3f: B6 thật — VPN giả đọc mock_services/seed.json (tests/fakes/vpn.py)
         directory=fake_directory(ad, clock, SeedVpn(clock).handlers()), alerts=AlertWriter(engines.main, clock),

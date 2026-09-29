@@ -197,6 +197,18 @@ def check_rules(rules: Sequence[Rule]) -> None:
         raise ValueError(f"policy.rules: id trùng {sorted({i for i in ids if ids.count(i) > 1})}")
 
 
+def referenced_facts(rules: Iterable[Rule], source: str) -> frozenset[str]:
+    """Tên fact thuộc nguồn `source` mà ít nhất một luật tham chiếu (kể cả nhóm lồng). B17 dùng với `"requester"` (Q-3h-7):
+    đúng các trường này phải khớp giữa bản chụp B1 và AD đọc mới."""
+    names: set[str] = set()
+    for rule in rules:
+        for fact in rule.conditions.facts():
+            fact_source, name = split_fact(fact)
+            if fact_source == source:
+                names.add(name)
+    return frozenset(names)
+
+
 # ---- Đánh giá (thuần) -------------------------------------------------------------------------------------------------
 
 _MISSING = object()

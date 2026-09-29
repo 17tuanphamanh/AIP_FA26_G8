@@ -4,11 +4,13 @@ Kiểu phụ ChunkRef (B08), RiskDecision (B12 mục 4.1), ExecutionResult (B17)
 không được import rag/risk/executor. raw_request KHÔNG có trong state — chỉ redacted_request (D-07).
 """
 
+import re
 import typing
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from datetime import date
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.action import Action
 from app.domain.context import RequesterContext
@@ -52,6 +54,26 @@ class RiskDecision(BaseModel):
     thresholds: tuple[float, float] | None
 
 
+# Kết quả tool ghi được mang theo tới B18 (Q-3h-2 A): khoá ĐÓNG, giá trị qua regex chặt — tin kết quả và ghi chú bàn giao chỉ
+# ghép từ enum/định danh/ngày (P6, luật 8.9). `serial` theo mẫu mock (`VPN-2025-0342`, bản mới cấp `VPN-NEW-0001`).
+EXEC_OUTPUT_PATTERNS: Mapping[str, re.Pattern[str]] = {
+    "serial": re.compile(r"VPN-(?:\d{4}|NEW)-\d{4,6}"),
+    "expires_on": re.compile(r"\d{4}-\d{2}-\d{2}"),
+}
+
+
+def _valid_output(key: str, value: object) -> bool:
+    pattern = EXEC_OUTPUT_PATTERNS.get(key)
+    if pattern is None or not isinstance(value, str) or not pattern.fullmatch(value):
+        return False
+    if key == "expires_on":
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+    return True
+
+
 class ExecutionResult(BaseModel):
     success: bool
     steps_done: list[str]
@@ -60,6 +82,16 @@ class ExecutionResult(BaseModel):
     rollback_details: list[tuple[str, str]]  # (step, "undone" | "UNDO_FAILED: …")
     action_plan_hash_matched: bool | None
     handoff_note: str | None
+    # Q-3h-2 (A): khoá lạ / giá trị sai mẫu bị BỎ (không lỗi, không vào tin). Mặc định {} — checkpoint cũ không có trường này
+    # vẫn nạp được.
+    outputs: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("outputs", mode="before")
+    @classmethod
+    def _closed_outputs(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(k): v for k, v in value.items() if _valid_output(str(k), v)}
 
 
 class TicketState(TypedDict, total=False):

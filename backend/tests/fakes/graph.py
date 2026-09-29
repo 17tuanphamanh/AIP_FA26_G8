@@ -26,6 +26,7 @@ from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.final import FinalSummary
+from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
@@ -34,6 +35,7 @@ from app.graph.runner import Runner
 from app.llm import LlmPort
 from app.settings import Settings, get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.identity import (
     REQUESTER,
@@ -234,6 +236,10 @@ class MemoryApprovals:
     async def get(self, approval_id: str) -> ApprovalRow | None:
         return self._row(approval_id)
 
+    async def get_status(self, approval_id: str) -> str | None:
+        row = self._row(approval_id)
+        return None if row is None else row.status
+
     @asynccontextmanager
     async def lock_row(self, approval_id: str) -> AsyncIterator[ApprovalRow | None]:
         lock = self._row_locks.setdefault(approval_id, asyncio.Lock())
@@ -287,16 +293,21 @@ class Crash(BaseException):
 
 
 class CountingExecutor:
+    """Executor giả cho graph node GIẢ (gate2-kiểu) và test runtime: luôn thành công, đếm lời gọi theo ticket."""
+
     def __init__(self) -> None:
         self.calls: Counter[str] = Counter()
         self.crash_once: set[str] = set()  # ticket sẽ "chết" giữa lần thực thi đầu
 
-    async def execute(self, ticket_id: str, action: Action | None) -> bool:
+    async def execute(self, ticket_id: str, turn_id: str, action: Action) -> ExecutionResult:
         self.calls[ticket_id] += 1
         if ticket_id in self.crash_once:
             self.crash_once.discard(ticket_id)
             raise Crash(f"process chết khi đang thực thi {ticket_id}")
-        return True
+        return ExecutionResult(
+            success=True, steps_done=[action.type], failed_step=None, rollback_status="none_needed",
+            rollback_details=[], action_plan_hash_matched=None, handoff_note=None,
+        )  # fmt: skip
 
 
 def seed_priority() -> dict[str, tuple[int, str]]:
@@ -468,6 +479,7 @@ class GraphHarness:
     deadlines: MemoryDeadlines = field(default_factory=MemoryDeadlines)
     notifier: RecordingNotifier = field(default_factory=RecordingNotifier)
     executor: CountingExecutor = field(default_factory=CountingExecutor)
+    txlog: MemoryTxLog = field(default_factory=MemoryTxLog)  # B17 bước 0 (NGHI-2) — test đặt `begun` qua đây
     # B1 thật: phiên `s1` của `nv-fake` còn sống, AD có `nv-fake` (employee)
     identity: MemoryIdentity = field(default_factory=MemoryIdentity)
     ad: FakeAd = field(default_factory=lambda: FakeAd(ad_user()))
@@ -507,7 +519,7 @@ class GraphHarness:
     def deps(self) -> NodeDeps:
         """Mỗi lần gọi = một "process": registry (và breaker) mới, như khởi động lại backend."""
         return NodeDeps(
-            notifier=self.notifier, approvals=self.approvals, executor=self.executor,
+            notifier=self.notifier, approvals=self.approvals, executor=self.executor, txlog=self.txlog,
             deadlines=self.deadlines, constants=get_policy().constants,
             identity=self.identity,
             directory=self.directory or fake_directory(self.ad, self.clock, self.vpn.handlers() if self.vpn else None),

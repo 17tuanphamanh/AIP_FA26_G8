@@ -17,6 +17,7 @@ from app.tools import models as m
 
 READ_STEPS = frozenset({"B6", "B11"})  # [Chốt 17.3]: chẩn đoán + kiểm target
 WRITE_STEPS = frozenset({"B17"})  # [Chốt]: B17 là điểm ghi duy nhất
+RECHECK_STEP = "B17_RECHECK"  # 3-Q37: B17 ĐỌC lại AD trước khi ghi (tool đọc không bao giờ khai báo "B17")
 READ_TIMEOUT_S = 5.0  # [Chốt 17.3]: đọc 5 giây, 2 lần retry
 WRITE_TIMEOUT_S = 5.0  # [Chốt 17.3]: ghi 5 giây, KHÔNG retry
 
@@ -99,8 +100,9 @@ SPECS: tuple[ToolSpec, ...] = (
     _read("check_current_permissions", "files", m.UserResourceIn, m.PermissionList, {"resource_path"}),
     _read("check_resource_sensitivity", "files", m.ResourceIn, m.ResourceInfo, {"resource_path"}),
     _read("check_manager_chain", "ad", m.UserIn, m.ManagerChain),
-    # ---- Tool đọc nội bộ: B1 chụp requester_context, B11 kiểm target (B01 mục 3, B11 mục 3) ----
-    _read("ad_get_user", "ad", m.UserIn, m.AdUser, steps=frozenset({"B1", "B11"})),
+    # ---- Tool đọc nội bộ: B1 chụp requester_context, B11 kiểm target (B01 mục 3, B11 mục 3), B17 kiểm lại người gửi +
+    # người hưởng lợi (3-Q37: nhãn riêng `B17_RECHECK` — nhãn `B17` chỉ dành cho tool ghi, `validate_specs` giữ luật đó) ----
+    _read("ad_get_user", "ad", m.UserIn, m.AdUser, steps=frozenset({"B1", "B11", RECHECK_STEP})),
     # ---- Tool ghi (chỉ B17) [Suy luận từ 4 loại yêu cầu + 20 luật, P5 mục 4] ----
     _write("reset_password", "ad", m.UserAccountIn, m.ResetPasswordResult, "partial", "lock_account"),
     _write("unlock_account", "ad", m.UserAccountIn, m.LockStateResult, "full", "lock_account"),

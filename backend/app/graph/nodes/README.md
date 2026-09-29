@@ -1,9 +1,20 @@
 Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xem docs/spec/build/01-kien-truc-project.md mục 3.
 
-- Hầu hết các file ở đây (b01, b02, b03, b06, b10, b11, b12, b15, b17, b20, các node `*_wait`) đã là bản THẬT
-  từ các phase trước — "giả" chỉ còn ở NHỮNG CHỖ chưa tới phase. Node có cả bản giả (gate2, `FAKE_SCENARIO`) để bản
-  giả ở `graph/nodes/fake/` (b02, b03, b06, b08, b10, b11, `clarify_wait`); `graph/builder.REAL_NODE_MODULES` liệt
-  kê bản thật.
+- File ở đây là bản THẬT (b01, b02, b03, b06, b08, b10, b11, b12, b17, b20, các node `*_wait`), TRỪ `b15_prepare_approval.py`
+  (B15 giả tới Phase 4: người duyệt `FAKE_APPROVER_ID`, chưa xung đột lợi ích). Node có cả bản giả (gate2, `FAKE_SCENARIO`)
+  để bản giả ở `graph/nodes/fake/` (b02, b03, b06, b08, b10, b11, b12, b17, `clarify_wait`); `graph/builder.REAL_NODE_MODULES`
+  liệt kê bản thật.
+- `b12_assess.py`: node THẬT (Phase 3 chặng 3h, phase3 11.3) — `build_ctx` (chỉ `intended_action`, `requester_context`,
+  `ctx_flags` + Clock) → `risk.policy_engine.evaluate` (R16–R20, `config/policy.json`): allow → B17, approval_required →
+  B15, deny → E5; không luật nào → `deps.estimator` (Phase 3 `DisabledEstimator`) → E5 `llm_layer_disabled`; estimator trả
+  xác suất → E9. Điểm log 4 + `policy_sha256` + `lineage` qua `goto`.
+- `b17_execute.py`: node THẬT (3h, phase3 11.4) — [0] ticket đã có `begun` (mọi lượt) → E7 `exec_interrupted` TRƯỚC mọi bước
+  kiểm lại (NGHI-2); [1] luật + Clock hiện hành, "đã duyệt" = state + bảng `approvals` + hash;
+  [2] hash; [3] `ad_get_user` (`B17_RECHECK`) cho người gửi + người hưởng lợi, trường `requester.*` luật dùng mà AD mới khác
+  bản chụp B1 → E5 `recheck_failed` (Q-3h-7); [4–5] `deps.executor` (API: `VpnExecutor`,
+  `transaction_log` `begun` trước mỗi lời gọi ghi; worker: `RefusingExecutor`) — `begun` có sẵn → E7 `exec_interrupted`,
+  hết hạn lượt → E2, lỗi ghi → E7 `exec_failed` + ghi chú bàn giao 4 phần; [6] B18 tin `result` THEO MẪU + hạn confirm qua
+  `effects.once` → `S_CONFIRMING`.
 - `b03_classify.py`: node THẬT (Phase 3 chặng 3f, chỉ VPN) — `deps.ml.classify_intent` (Phase 3 `model_missing`) → LLM
   fast `b03_classify` (prompt v2). Thứ tự kiểm cố định: ngoài phạm vi → ≥ 2 ý (đếm MỌI ý, câu xã giao không là ý) →
   confidence < `TAU_INTENT` → intent chưa bật (E1, `step="B4"`); lỗi LLM / hết hạn lượt → E2. Slot CHỈ qua
