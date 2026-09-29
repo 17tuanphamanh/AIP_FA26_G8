@@ -20,7 +20,8 @@ __pycache__/
 .vscode/
 
 # bi mat - KHONG BAO GIO commit (Dieu 6)
-.env
+.env*
+!.env.example
 *.key
 secrets/
 
