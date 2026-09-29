@@ -56,7 +56,7 @@ from app.db.session import Engines, create_engines, ping
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.patterns import check_guard
-from app.guard.privacy import NotRedactingGuard, PrivacyGuard, RegexPrivacyGuard
+from app.guard.privacy import PrivacyGuard, guard_from_settings
 from app.llm.wiring import check_llm
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
@@ -80,10 +80,7 @@ def _default_runtime(
 
 def _default_guard(settings: Settings) -> PrivacyGuard:
     """Mặc định MỌI env: guard regex thật (3e). `PRIVACY_GUARD=none` chỉ dev/test (phase3 mục 8.3, e17)."""
-    if settings.privacy_guard == "none":
-        settings.require_dev_fakes("PRIVACY_GUARD=none (NotRedactingGuard — privacy guard không che)")
-        return NotRedactingGuard()
-    return RegexPrivacyGuard.from_settings(settings)
+    return guard_from_settings(settings)
 
 
 def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:

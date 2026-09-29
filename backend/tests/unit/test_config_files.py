@@ -113,6 +113,14 @@ def test_enabled_intent_without_slots_refuses_startup() -> None:
         check_intent_config(settings, get_slots(), get_action_metadata())
 
 
+def test_q3g7_rediagnose_flag_refuses_startup() -> None:
+    """3g (chốt Q-3g-7): chẩn đoán lại D-20 chưa hiện thực — bật cờ là không khởi động (fail-closed), không chạy nửa vời."""
+    settings = Settings(_env_file=None, rediagnose_on_new_slot=True)  # type: ignore[call-arg]
+    with pytest.raises(RuntimeError, match="REDIAGNOSE_ON_NEW_SLOT"):
+        check_intent_config(settings, get_slots(), get_action_metadata())
+    check_intent_config(Settings(_env_file=None), get_slots(), get_action_metadata())  # type: ignore[call-arg]  # tắt → qua
+
+
 _META = "scope: single_device, privilege_level: standard_user"
 
 

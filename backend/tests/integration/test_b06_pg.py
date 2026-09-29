@@ -54,7 +54,8 @@ async def test_f17_checkpoint_roundtrip_after_b6_pg(migrated: PgUrls, arw: Async
     ticket_id = f"b6-{uuid4().hex[:12]}"
     await create_ticket(arw, ticket_id)
     clock = FakeClock()
-    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"]},
+    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"],
+                       "b10_need_type": vpn_scripts()["b10_need_type"]},  # 3g: B10 thật — action → B11 như trước
                        clock=clock).client  # fmt: skip
     async with open_pg_runtime(migrated.role("app_rw"), clock=clock, llm=llm, rag=_rag(), nodes="real") as rt:
         result = await rt.runner.submit(ticket_id, session_id=SESSION, redacted_request=TEXT)

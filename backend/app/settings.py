@@ -22,7 +22,7 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import (
@@ -31,6 +31,7 @@ from pydantic import (
     Field,
     RootModel,
     SecretStr,
+    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -144,6 +145,11 @@ class Settings(BaseSettings):
     privacy_guard: Literal["regex", "none"] = "regex"
     # Email thuộc các tên miền này (và tên miền con) KHÔNG bị che — cần cho slot (mục 3.5, 8.3).
     company_email_domains: list[str] = Field(default_factory=lambda: ["congty-abc.vn"])
+    # Output guard (phase3 10.3 (b), `guard/output.py`): chuỗi canary cài trong KB/prompt — xuất hiện trong chữ LLM sắp
+    # lưu/gửi → chặn. Mặc định rỗng; test/probe đặt. Mỗi chuỗi ≥ 8 ký tự (ngắn hơn dễ chặn nhầm câu thường).
+    output_canaries: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=8)]] = Field(
+        default_factory=list
+    )
 
     # ---- Circuit breaker theo hệ thống ngoài [Chốt 17.3, P5 mục 6] ----
     breaker_failure_threshold: int = Field(default=5, ge=1)  # lỗi liên tiếp …
@@ -170,7 +176,7 @@ class Settings(BaseSettings):
         "hybrid"
     )
     llm_cache_mode: Literal["default", "eval", "bypass"] = "default"  # P2 mục 8
-    rediagnose_on_new_slot: bool = False  # D-20: tắt mặc định
+    rediagnose_on_new_slot: bool = False  # D-20: tắt mặc định; bật → không khởi động (3g, Q-3g-7)
 
     @field_validator("llm_backend", mode="before")
     @classmethod
@@ -383,7 +389,12 @@ def get_action_metadata() -> ActionMetadataFile:
 
 
 def check_intent_config(settings: Settings, slots: SlotsFile, metadata: ActionMetadataFile) -> None:
-    """Fail-closed lúc khởi động (phase3 9.2, 3-Q27): intent bật phải có slot; mọi `action_type` phải có metadata."""
+    """Fail-closed lúc khởi động (phase3 9.2, 3-Q27): intent bật phải có slot; mọi `action_type` phải có metadata.
+    3g (chốt Q-3g-7): cờ D-20 `REDIAGNOSE_ON_NEW_SLOT` bật → từ chối — chẩn đoán lại chưa hiện thực ("Việc treo" 11)."""
+    if settings.rediagnose_on_new_slot:
+        raise RuntimeError(
+            "REDIAGNOSE_ON_NEW_SLOT=true: chẩn đoán lại (D-20) chưa hiện thực ở Phase 3 — từ chối khởi động"
+        )
     if missing := sorted(set(settings.enabled_intents) - set(slots.intents)):
         raise RuntimeError(f"ENABLED_INTENTS có intent không khai báo trong slots.yaml: {missing} — từ chối khởi động")
     for intent, spec in sorted(slots.intents.items()):

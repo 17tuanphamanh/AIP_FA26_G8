@@ -227,7 +227,8 @@ async def test_e9_canary_nowhere_after_full_ticket_pg(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     clock = FakeClock(EPOCH)
-    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"]},
+    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"],
+                       "b10_need_type": vpn_scripts()["b10_need_type"]},  # 3g: B10 thật — action → B11 như trước
                       clock=clock, store=SqlLlmStore(rw), trace=trace_parent)  # type: ignore[arg-type]  # fmt: skip
     scenario = FakeScenario().plan_all(b11_slots=["missing", "complete"])
     async with desk(db, clock=clock, scenario=scenario, nodes="real", llm=gw.client, rag=_good_rag()) as d:

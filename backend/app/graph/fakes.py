@@ -34,6 +34,8 @@ from app.graph.ports import (
     ToolCaller,
     ToolResult,
 )
+from app.guard.output import OutputGuard, default_output_guard
+from app.guard.privacy import TextRedactor, guard_from_settings
 from app.llm import LlmPort
 from app.ml import MlPort
 from app.rag.ports import RagPort
@@ -42,6 +44,7 @@ from app.settings import (
     PolicyConstants,
     SlotsFile,
     get_action_metadata,
+    get_settings,
     get_slots,
 )
 
@@ -246,6 +249,11 @@ class NodeDeps:
     )
     enabled_intents: frozenset[str] = frozenset({"vpn"})
     enable_proactive_diagnosis: bool = True
+    # 3g: output guard (phase3 10.3) — MỌI chữ LLM sắp lưu/gửi (thân B10, câu hỏi B11) qua đây (P4). Privacy guard THUẦN
+    # (`redact_text`) — `clarify_wait` che lại câu trả lời trước khi gửi LLM/lưu (P3, Q-3g-4). Mặc định = cấu hình repo
+    # (guard regex; KHÔNG BAO GIỜ mặc định bản không che); runtime dựng tường minh theo Settings (`graph/wiring._open`).
+    output_guard: OutputGuard = field(default_factory=default_output_guard)
+    privacy: TextRedactor = field(default_factory=lambda: guard_from_settings(get_settings()))
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:

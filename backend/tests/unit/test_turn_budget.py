@@ -48,6 +48,18 @@ def first_turn_ceilings() -> dict[str, float]:
     }
 
 
+def info_turn_ceilings() -> dict[str, float]:
+    """3g — lượt đầu đường HỎI THÔNG TIN (TC04/TC05): lượt đầu 3f → B8 → B10 (need_type fast → expand → b10_answer strong)."""
+    settings = _settings()
+    roles = load_llm_config(CONFIG / "llm.yaml").roles
+    return {
+        **first_turn_ceilings(),
+        "B10 b10_need_type (fast deadline_s)": roles["fast"].deadline_s,
+        "B10 expand_for_answer (rag_deadline_s)": settings.rag_deadline_s,
+        "B10 b10_answer (strong deadline_s)": roles["strong"].deadline_s,
+    }
+
+
 def test_budget_items_come_from_constants() -> None:
     budget = first_turn_ceilings()
     assert budget["B1 ad_get_user"] == 18.0 and budget["B2 L3 ml classify"] == 9.0  # 3·5+1+2, 3·2+1+2
@@ -68,8 +80,19 @@ def test_every_single_call_fits_a_fresh_turn() -> None:
     """Lượt mới (kể cả recover) luôn chạy trọn MỘT lời gọi với timeout riêng — hạn lượt chỉ cắt khi đã tiêu vào lời gọi
     trước, không cắt sẵn lời gọi đầu."""
     s = _settings()
-    for name, ceiling in first_turn_ceilings().items():
+    for name, ceiling in info_turn_ceilings().items():
         assert ceiling <= s.turn_budget_s - s.safety_margin_s, name
+
+
+def test_3g_info_path_is_bounded_by_turn_budget() -> None:
+    """3g: đường B8 → B10 cộng thêm 145 s trần riêng (fast 45 + RAG 50 + strong 50) — tổng 339 s, chỉ hạn lượt giữ lượt
+    dưới ngưỡng stale (hành vi: g22 ở `test_b10_route.py`)."""
+    s = _settings()
+    budget = info_turn_ceilings()
+    assert len(budget) == 10
+    total = sum(budget.values())
+    assert total == sum(first_turn_ceilings().values()) + 145.0
+    assert total >= s.worker_stale_turn_seconds and min(total, s.turn_budget_s) < s.worker_stale_turn_seconds
 
 
 def test_defaults_match_plan() -> None:
@@ -139,3 +162,51 @@ def test_ml_client_never_passes_raw_timeout_constant() -> None:
     assert kws
     for k in kws:
         assert not (isinstance(k.value, ast.Subscript) and ast.unparse(k.value).startswith("TIMEOUT_S")), ast.unparse(k)
+
+
+
+# ---- AST: điểm gọi ra ngoài ở NODE thật (3g, P7) — chỉ qua 4 lớp đã cắt theo hạn lượt ------------------------------------
+
+NODES = APP / "graph" / "nodes"
+# (file node, "port.phương thức") → số lời gọi. Port của `NodeDeps` → lớp đã cắt (CALL_SITES ở trên): llm → LLMClient._run,
+# rag → Retriever.retrieve/expand, directory → ToolRegistry.call, ml → MlClient.once, executor → registry `_invoke` (3h).
+# Thêm điểm gọi mới = thêm dòng ở đây (buộc soát nó có đi qua lớp cắt không).
+NODE_CALL_SITES: dict[tuple[str, str], int] = {
+    ("b01_identity.py", "directory.call"): 1,
+    ("b02_screen.py", "ml.classify"): 1,
+    ("b02_screen.py", "llm.complete"): 1,
+    ("b03_classify.py", "ml.classify_intent"): 1,
+    ("b03_classify.py", "llm.complete"): 1,
+    ("b06_diagnose.py", "directory.call"): 1,
+    ("b08_retrieve.py", "rag.retrieve"): 1,
+    ("b10_route.py", "llm.complete"): 2,  # 3g: b10_need_type, b10_answer
+    ("b10_route.py", "rag.expand_for_answer"): 1,  # 3g
+    ("b17_execute.py", "executor.execute"): 1,
+}
+PORTS = frozenset({"llm", "rag", "directory", "ml", "executor"})
+
+
+def _node_call_sites() -> dict[tuple[str, str], int]:
+    found: dict[tuple[str, str], int] = {}
+    for path in sorted(NODES.glob("*.py")):
+        for c in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            f = c.func if isinstance(c, ast.Call) else None
+            if (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Attribute) and f.value.attr in PORTS
+                    and isinstance(f.value.value, ast.Name) and f.value.value.id == "deps"):  # fmt: skip
+                key = (path.name, f"{f.value.attr}.{f.attr}")
+                found[key] = found.get(key, 0) + 1
+    return found
+
+
+def test_p7_node_external_call_sites_are_registered() -> None:
+    found = _node_call_sites()
+    assert sum(found.values()) >= 11  # 3.9: danh sách không rỗng (3f: 8 → 3g DỪNG 1: 11)
+    assert found == NODE_CALL_SITES
+
+
+def test_p7_nodes_have_no_direct_network_client() -> None:
+    for path in sorted(NODES.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        mods = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+        mods |= {(n.module or "").split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+        assert not mods & {"httpx", "httpx2", "qdrant_client", "openai", "requests", "aiohttp"}, path.name

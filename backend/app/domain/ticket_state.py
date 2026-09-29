@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from app.domain.action import Action
 from app.domain.context import RequesterContext
 
-# Chưa file nào định nghĩa cấu trúc tin nhắn; chốt khi làm B10/B11.
+# Khuôn tin nhắn: `domain/messages.py` (3g, phase3 10.2) — khoá đóng, `sources` chỉ 3 khoá.
 type Msg = dict[str, Any]
 
 
@@ -102,6 +102,7 @@ class TicketState(TypedDict, total=False):
     kb_version: str | None
     intent_filter_fallback: bool
     need_type: Literal["info", "action"] | None
+    answer_ref: str | None  # B10 (3g): ref do `notify_user` trả cho câu trả lời — phase3 3.1
     # hành động + rủi ro + duyệt
     intended_action: Action | None
     action_plan_hash: str | None

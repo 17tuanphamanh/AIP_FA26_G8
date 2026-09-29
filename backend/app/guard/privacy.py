@@ -50,11 +50,29 @@ class PrivacyGuard(Protocol):
     async def redact(self, text: str) -> RedactionResult: ...
 
 
+class TextRedactor(Protocol):
+    """Bản THUẦN cho node (3g, chốt Q-3g-4): `clarify_wait` che lại câu trả lời — không ghi sự kiện/notice lần hai."""
+
+    def redact_text(self, text: str) -> RedactionResult: ...
+
+
 class NotRedactingGuard:
     """Không che gì — chỉ dev/test với `PRIVACY_GUARD=none` (bên gọi phải qua `Settings.require_dev_fakes` trước)."""
 
     async def redact(self, text: str) -> RedactionResult:
+        return self.redact_text(text)
+
+    def redact_text(self, text: str) -> RedactionResult:
         return RedactionResult(text=text, secrets_found=0, pii_map_id=None, notices=[])
+
+
+def guard_from_settings(settings: Settings) -> "RegexPrivacyGuard | NotRedactingGuard":
+    """Mặc định MỌI env: guard regex thật (3e). `PRIVACY_GUARD=none` chỉ dev/test (phase3 mục 8.3, e17). Dùng chung cho API
+    (`main._default_guard`) và runtime graph (`graph/wiring._open` → `NodeDeps.privacy`, 3g)."""
+    if settings.privacy_guard == "none":
+        settings.require_dev_fakes("PRIVACY_GUARD=none (NotRedactingGuard — privacy guard không che)")
+        return NotRedactingGuard()
+    return RegexPrivacyGuard.from_settings(settings)
 
 
 def shannon_bits(text: str) -> float:

@@ -129,7 +129,8 @@ async def test_c19_checkpoint_and_audit_match_retriever_result(
     clock = FakeClock()
     # 3e: B2 cũng là node thật — L3 model_missing → L4 `b02_injection_judge` (ScriptedLLM: không phải tấn công)
     # 3f: B3 thật — kịch bản b03_classify VPN chuẩn; B6 thật trên VPN giả (graph_pg)
-    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"]},
+    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"],
+                       "b10_need_type": vpn_scripts()["b10_need_type"]},  # 3g: B10 thật — action → B11 như trước
                        clock=clock).client  # fmt: skip
     async with open_pg_runtime(migrated.role("app_rw"), clock=clock, rag=retriever, llm=llm, nodes="real") as rt:
         result = await rt.runner.submit(ticket_id, session_id=SESSION, redacted_request=VPN_QUESTION)

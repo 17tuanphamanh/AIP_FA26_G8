@@ -56,7 +56,9 @@ from app.graph.ports import (
 )
 from app.graph.runner import Runner
 from app.graph.tracing import NodeFn, trace_parent
+from app.guard.output import OutputGuard
 from app.guard.patterns import check_guard
+from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
@@ -183,6 +185,8 @@ async def _open(
         slots=get_slots(), action_metadata=get_action_metadata().root,
         enabled_intents=frozenset(settings.enabled_intents),
         enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
+        output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
+        privacy=guard_from_settings(settings),
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

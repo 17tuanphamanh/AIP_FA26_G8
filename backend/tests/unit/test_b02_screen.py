@@ -41,8 +41,11 @@ def _rag() -> FakeRag:
 
 def _env(scripts: dict[str, Script] | None = None, ml: FakeMlService | None = None) -> tuple[GraphHarness, Gateway]:
     clock = FakeClock()
-    # 3f: B3 thật đứng sau B2 — kịch bản b03_classify VPN chuẩn (không đổi assert nào của B2)
-    gw = make_gateway({"b03_classify": vpn_scripts()["b03_classify"], **(scripts or {})}, clock=clock)
+    # 3f: B3 thật đứng sau B2 — kịch bản b03_classify VPN chuẩn; 3g: B10 thật — b10_need_type (action → B11 giả) — không
+    # đổi assert nào của B2
+    vpn = vpn_scripts()
+    gw = make_gateway({"b03_classify": vpn["b03_classify"], "b10_need_type": vpn["b10_need_type"], **(scripts or {})},
+                      clock=clock)  # fmt: skip
     h = GraphHarness(clock=clock, nodes="real", llm=gw.client, ml=ml or FakeMlService(), rag=_rag())
     return h, gw
 

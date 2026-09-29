@@ -268,3 +268,22 @@ def test_env_example_has_scripted_backend_and_blank_key() -> None:
     assert "LLM_BACKEND=scripted" in lines
     assert "LLM_API_KEY=" in lines  # tên, không giá trị
     assert not any(re.match(r"^(FAST_MODEL|STRONG_MODEL|LLM_BASE_URL)=\S", line) for line in lines)
+
+
+# ---- f1 (PLAN-3g): khung b10_answer + trần bằng chứng ≤ budget_in của strong — kiểm lúc khởi động ----------------------
+
+
+def test_f1_repo_evidence_budget_fits_strong_budget_in() -> None:
+    from app.llm.context import PLACEHOLDER, estimate_tokens
+
+    setup = check_llm(_settings(app_env="dev", llm_backend="scripted"))
+    spec = setup.registry.get("b10_answer").spec
+    frame = estimate_tokens(PLACEHOLDER.sub("", spec.system)) + estimate_tokens(PLACEHOLDER.sub("", spec.user))
+    assert spec.role == "strong" and 0 < frame < 1000
+    assert frame + _settings().rag_evidence_max_tokens <= setup.config.roles["strong"].budget_in
+
+
+def test_f1_evidence_budget_over_budget_in_refuses_startup() -> None:
+    budget = load_llm_config(LLM_YAML).roles["strong"].budget_in
+    with pytest.raises(ValueError, match="RAG_EVIDENCE_MAX_TOKENS"):
+        check_llm(_settings(app_env="dev", llm_backend="scripted", rag_evidence_max_tokens=budget))

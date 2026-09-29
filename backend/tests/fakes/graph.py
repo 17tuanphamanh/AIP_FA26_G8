@@ -20,6 +20,7 @@ from app.approval.store import ApprovalRow
 from app.audit.writer import check_audit_row
 from app.core.clock import FakeClock
 from app.db.escalations import QueueItem
+from app.db.lineage import LINEAGE_KEY, check_lineage_row
 from app.db.runtime import DueWait, OpenTurn, as_ref
 from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
@@ -53,17 +54,24 @@ LOCKOUT = timedelta(minutes=15)
 class MemoryAudit:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
+        self.lineage: list[dict[str, Any]] = []  # bảng `lineage` giả — ghi cùng "transaction" với dòng audit (3g)
         self.drop = False  # True → mô phỏng INSERT không để lại dòng (kiểm cấm 4)
         self.crash_once: set[str] = set()  # event → process "chết" ngay TRƯỚC khi ghi dòng đó
 
-    async def record(self, row: Mapping[str, Any]) -> bool:
+    async def record(self, row: Mapping[str, Any], *, lineage: Mapping[str, Any] | None = None) -> bool:
         check_audit_row(row)
+        if lineage is not None:
+            check_lineage_row(lineage)
         if row["event"] in self.crash_once:
             self.crash_once.discard(row["event"])
             raise Crash(f"process chết trước khi ghi audit {row['event']}")
         key = row.get("idempotency_key")
         if self.drop:
             return False
+        if lineage is not None and not any(
+            all(r.get(k) == lineage.get(k) for k in LINEAGE_KEY) for r in self.lineage
+        ):  # như `db/lineage.insert_once`: NOT EXISTS (ticket, lượt, bước, prompt)
+            self.lineage.append(dict(lineage))
         if key is None or all(r.get("idempotency_key") != key for r in self.rows):
             self.rows.append(dict(row))
         return True
