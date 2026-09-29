@@ -36,6 +36,7 @@ from tests.fakes.graph import LOCKOUT, CountingExecutor, Crash, RecordingNotifie
 from tests.fakes.identity import FakeAd, ad_user, fake_directory
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fakes.vpn import SeedVpn
 
 REQUESTER = "nv-graph"
 APPROVER = "l1-fake"  # NodeDeps.approver_id mặc định
@@ -105,7 +106,8 @@ async def open_pg_runtime(
     deps = NodeDeps(
         notifier=notifier, approvals=approvals, executor=executor, deadlines=deadlines,
         constants=get_policy().constants, identity=SqlIdentityReads(engines.main),
-        directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
+        # 3f: B6 thật — VPN giả đọc mock_services/seed.json (tests/fakes/vpn.py)
+        directory=fake_directory(ad, clock, SeedVpn(clock).handlers()), alerts=AlertWriter(engines.main, clock),
         lockout=LOCKOUT, tickets=ticket_store,
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
         ml=FakeMlService().client(clock), rag=rag or FakeRag(), llm=llm or make_gateway(clock=clock).client,

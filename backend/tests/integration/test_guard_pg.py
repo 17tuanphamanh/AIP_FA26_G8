@@ -47,6 +47,7 @@ from tests.fakes.desk import ad_directory
 from tests.fakes.graph import Crash
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fixtures.llm.vpn import vpn_scripts
 from tests.integration.graph_pg import (
     REQUESTER,
     SESSION,
@@ -226,8 +227,8 @@ async def test_e9_canary_nowhere_after_full_ticket_pg(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     clock = FakeClock(EPOCH)
-    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)]}, clock=clock, store=SqlLlmStore(rw),  # type: ignore[arg-type]
-                      trace=trace_parent)  # fmt: skip
+    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"]},
+                      clock=clock, store=SqlLlmStore(rw), trace=trace_parent)  # type: ignore[arg-type]  # fmt: skip
     scenario = FakeScenario().plan_all(b11_slots=["missing", "complete"])
     async with desk(db, clock=clock, scenario=scenario, nodes="real", llm=gw.client, rag=_good_rag()) as d:
         l1, an = await d.token("ha.lt"), await d.token("an.nv")
@@ -266,6 +267,11 @@ async def test_e9_canary_nowhere_after_full_ticket_pg(
     assert "[BÍ_MẬT_ĐÃ_ẨN]" in rendered[0]
     assert await _scalar(rw, "SELECT count(*) FROM llm_calls WHERE prompt_id = 'b02_injection_judge'") >= 1
     assert await _scalar(rw, "SELECT count(*) FROM spans WHERE name = 'llm:b02_injection_judge'") >= 1
+    # 3f: B3 thật cũng nhận câu (đã che) — quét cả prompt b03_classify (không mù: phải có lời gọi, có bản đã che)
+    b03 = [repr(c.rendered_messages) for c in gw.llm.calls if c.prompt_id == "b03_classify"]
+    assert b03 and all(CANARY not in m for m in b03) and "[BÍ_MẬT_ĐÃ_ẨN]" in b03[0]
+    assert await _scalar(rw, "SELECT count(*) FROM llm_calls WHERE prompt_id = 'b03_classify'") >= 1
+    assert await _scalar(rw, "SELECT count(*) FROM spans WHERE name = 'llm:b03_classify'") >= 1
     assert await _scalar(rw, "SELECT count(*) FROM security_events WHERE ticket_id = :t "
                              "AND event_type = 'privacy_secret_redacted'", t=ticket) == 4  # fmt: skip
 

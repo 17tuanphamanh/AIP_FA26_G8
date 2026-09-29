@@ -180,6 +180,9 @@ async def _open(
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
         templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
         scenario=scenario, security_events=SecurityEventWriter(engines.main, clock),
+        slots=get_slots(), action_metadata=get_action_metadata().root,
+        enabled_intents=frozenset(settings.enabled_intents),
+        enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

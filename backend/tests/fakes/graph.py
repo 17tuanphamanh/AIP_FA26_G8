@@ -45,6 +45,7 @@ from tests.fakes.identity import (
 )
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fakes.vpn import SeedVpn
 
 LOCKOUT = timedelta(minutes=15)
 
@@ -463,7 +464,9 @@ class GraphHarness:
     identity: MemoryIdentity = field(default_factory=MemoryIdentity)
     ad: FakeAd = field(default_factory=lambda: FakeAd(ad_user()))
     alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
-    directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
+    directory: ToolCaller | None = None  # None = registry thật trên `FakeAd` + `vpn`; e2e gắn registry tới mock
+    vpn: SeedVpn | None = None  # B6 thật (3f): VPN giả đọc mock_services/seed.json — None = dựng theo `clock`
+    enable_proactive_diagnosis: bool = True  # ablation RQ3 (B6)
     max_recover_attempts: int = 3
     # Hạn cho cả lượt (9.0): mặc định = Settings (100 s / 2 s) — test FakeClock tua quá hạn trong một lượt sẽ ra E2
     turn_budget_s: float = field(default_factory=lambda: _DEFAULT_SETTINGS.turn_budget_s)
@@ -481,6 +484,8 @@ class GraphHarness:
     runner: Runner = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.vpn is None:
+            self.vpn = SeedVpn(self.clock)
         self.approvals = MemoryApprovals(self.deadlines)
         self.tickets = MemoryTickets(self.turns)
         self.escalations = MemoryEscalations(self.tickets)
@@ -496,11 +501,12 @@ class GraphHarness:
         return NodeDeps(
             notifier=self.notifier, approvals=self.approvals, executor=self.executor,
             deadlines=self.deadlines, constants=get_policy().constants,
-            identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
+            identity=self.identity,
+            directory=self.directory or fake_directory(self.ad, self.clock, self.vpn.handlers() if self.vpn else None),
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
-            security_events=self.security_events,
+            security_events=self.security_events, enable_proactive_diagnosis=self.enable_proactive_diagnosis,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:

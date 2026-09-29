@@ -1,7 +1,9 @@
 # B3 đường LLM (B03 §5.1, D-32: dự phòng khi model phân loại chưa chắc / câu nhiều ý / chưa có model).
 # Bản khởi điểm (phase3 mục 7.4) — chỉnh ở mốc G, mỗi lần sửa nội dung phải tăng `version`.
+# v2 (3f, chốt Q-3f-6): B3 đếm "≥ 2 ý" trên MỌI ý kể cả out_of_scope → nói rõ câu xã giao/đệm KHÔNG là một ý, việc ngoài
+# phạm vi mà người dùng có yêu cầu LÀ một ý riêng. Chất lượng thật (không tách nhầm câu xã giao) đo ở mốc G (probe).
 id: b03_classify
-version: 1
+version: 2
 role: fast
 schema: ClassifyOut
 allowed_vars: [redacted_request, recent_messages, label_hint]
@@ -12,6 +14,9 @@ system: |
   software (cài đặt, cấp phép phần mềm), access (quyền truy cập thư mục, hệ thống), out_of_scope (mọi việc khác).
   Quy tắc:
   - Mỗi ý riêng của người dùng là một phần tử của intents (tối đa 4); is_multi=true khi có từ 2 ý trở lên.
+  - Một ý là một việc người dùng muốn IT làm hoặc trả lời. Lời chào, cảm ơn, xin lỗi, lời nhờ, lời giục ("cảm ơn anh",
+    "nhờ anh", "gấp giúp em", "ạ") KHÔNG phải một ý — không tạo phần tử intents cho chúng.
+  - Việc ngoài 4 loại mà người dùng có yêu cầu (ví dụ "tiện sửa máy in giúp em") LÀ một ý riêng, loại out_of_scope.
   - span: đoạn nguyên văn trong yêu cầu dẫn tới ý đó.
   - slots: chỉ lấy ĐÚNG chữ người dùng đã viết (ví dụ mã thiết bị, mã lỗi); không suy đoán, không tự điền giá trị.
   - action_hint: việc người dùng muốn hệ thống làm nếu nói rõ (ví dụ renew_vpn_cert), không rõ thì null.

@@ -84,8 +84,15 @@ class TicketState(TypedDict, total=False):
     intent: str | None
     intent_confidence: float | None
     span: str | None
-    slots: dict[str, Any]
+    slots: dict[str, Any]  # THAM SỐ người dùng/LLM (qua domain.slots.sanitize_slots) — KHÔNG là căn cứ cho luật (3-Q1)
+    # DỮ KIỆN cho luật M5 (phase3 3.2): chỉ key thuộc domain.facts.FACT_KEYS, CHỈ B6 (infer_vpn) và B11 validate_targets
+    # ghi; B3 đặt lại {}. Không đường nào từ slots/đầu ra LLM vào đây (G-01).
+    facts: dict[str, str | int | bool]
+    ctx_flags: dict[str, bool]  # {target_is_other} — B6 ghi, B12 build_ctx đọc (VPN Phase 3 luôn false)
+    rediagnose: bool  # D-20 (cờ tắt) — 3f chỉ khai báo, B6 ghi False; chế độ chẩn đoán lại ở 3g ("Việc treo" 11)
+    changed_slots: list[str]  # D-20 — B11 ghi ở 3g
     missing_slots: list[str]
+    # B6: kết quả 3 tool dạng JSON (`model_dump(mode="json")`, không phải model Pydantic — PLAN-3f mục 3); None = 404/rỗng
     diagnostics: dict[str, Any]
     tool_errors: list[str]
     tool_retry_count: int

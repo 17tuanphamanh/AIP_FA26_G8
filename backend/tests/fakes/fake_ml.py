@@ -77,9 +77,13 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 class FakeMlService:
-    def __init__(self, *, truncate_all: bool = False, classify_p: float | None = None) -> None:
+    def __init__(
+        self, *, truncate_all: bool = False, classify_p: float | None = None,
+        intent_probs: dict[str, float] | None = None,
+    ) -> None:  # fmt: skip
         self.truncate_all = truncate_all
         self.classify_p = classify_p
+        self.intent_probs = intent_probs  # 3f: `/classify_intent` trả xác suất này (model "đã có") thay vì model_missing
         self.calls: Counter[str] = Counter()
         self._faults: dict[str, list[FaultKind]] = {}
         self._slow: dict[str, list[float]] = {}
@@ -144,6 +148,10 @@ class FakeMlService:
             out = {"counts": [count_tokens(t) for t in body["texts"]], "model": "BAAI/bge-m3"}
         elif endpoint == "classify" and self.classify_p is not None:
             out = {"p_malicious": self.classify_p, "windows": 1, "model": "injection-clf-gia", "version": "0"}
+        elif endpoint == "classify_intent" and self.intent_probs is not None:
+            half = dict.fromkeys(self.intent_probs, 0.5)
+            out = {"probs": self.intent_probs, "tau_hi": half, "tau_lo": half, "truncated": False,
+                   "model": "intent-clf-gia", "version": "0"}  # fmt: skip
         elif endpoint in ("classify", "classify_intent"):
             return httpx.Response(503, json={"error": "model_missing"})
         else:

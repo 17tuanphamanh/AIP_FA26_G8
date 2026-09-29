@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.kb import CONFIG_DIR, KB_TEST_NOW, copy_kb
 from tests.fakes.llm import make_gateway
+from tests.fixtures.llm.vpn import vpn_scripts
 from tests.integration.graph_pg import (
     SESSION,
     create_ticket,
@@ -127,7 +128,9 @@ async def test_c19_checkpoint_and_audit_match_retriever_result(
     await create_ticket(arw, ticket_id)
     clock = FakeClock()
     # 3e: B2 cũng là node thật — L3 model_missing → L4 `b02_injection_judge` (ScriptedLLM: không phải tấn công)
-    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)]}, clock=clock).client
+    # 3f: B3 thật — kịch bản b03_classify VPN chuẩn; B6 thật trên VPN giả (graph_pg)
+    llm = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], "b03_classify": vpn_scripts()["b03_classify"]},
+                       clock=clock).client  # fmt: skip
     async with open_pg_runtime(migrated.role("app_rw"), clock=clock, rag=retriever, llm=llm, nodes="real") as rt:
         result = await rt.runner.submit(ticket_id, session_id=SESSION, redacted_request=VPN_QUESTION)
         reread = await rt.runner.snapshot(ticket_id)  # đọc lại checkpoint (không phải giá trị vừa trả về)

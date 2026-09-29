@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from app.domain.action import Action
+from app.domain.action import Action, ActionMeta
 from app.domain.context import RequesterContext
 from app.domain.ticket_state import RiskDecision
 from app.graph.ports import (
@@ -37,7 +37,13 @@ from app.graph.ports import (
 from app.llm import LlmPort
 from app.ml import MlPort
 from app.rag.ports import RagPort
-from app.settings import EscalationTemplates, PolicyConstants, get_slots
+from app.settings import (
+    EscalationTemplates,
+    PolicyConstants,
+    SlotsFile,
+    get_action_metadata,
+    get_slots,
+)
 
 
 class Notifier(Protocol):
@@ -232,6 +238,14 @@ class NodeDeps:
     approver_id: str | None = "l1-fake"
     # 3-Q13: slot nối vào câu truy hồi RAG (`build_query`, B8) — một nguồn `config/slots.yaml`.
     query_slots: tuple[str, ...] = field(default_factory=lambda: tuple(get_slots().query_slots))
+    # 3f: slot theo intent (B3 `sanitize_slots`), metadata hành động (B11 `build_action`, 3g), intent đang bật (B3, 3-Q27 —
+    # frozenset thay vì cả `Settings`: node chỉ cần đúng tập này), cờ ablation RQ3 (B6). Mặc định = cấu hình repo / Settings.
+    slots: SlotsFile = field(default_factory=get_slots)
+    action_metadata: Mapping[str, Mapping[str, ActionMeta]] = field(
+        default_factory=lambda: get_action_metadata().root
+    )
+    enabled_intents: frozenset[str] = frozenset({"vpn"})
+    enable_proactive_diagnosis: bool = True
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:

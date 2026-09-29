@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 29/09/2026 — **Phase 3 chặng 3f** (hạn cả lượt + slots/facts + B3/B6 VPN): DỪNG 1 (S0 + S1) xanh phần tự chạy được — unit 2205, 0 xfail; chưa commit — mục "Phase 3 — chặng 3f". Trước đó: **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do); **3e đóng** (make test 2315/86/77, gate2 89/0; Q-3e-14 chốt → Phase 4 S0, "Việc treo" 10) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
+| Cập nhật | 29/09/2026 — **Phase 3 chặng 3f** (hạn cả lượt + slots/facts + B3/B6 VPN): DỪNG 1 `3f33ab2` (make test 2394/86/77, gate2 89/0, CI xanh run `36505355921`); DỪNG 2 (B3/B6 thật) xanh — make test 2477/86/77, gate2 89/0, chưa commit — mục "Phase 3 — chặng 3f". Trước đó: **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do); **3e đóng** (make test 2315/86/77, gate2 89/0; Q-3e-14 chốt → Phase 4 S0, "Việc treo" 10) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -2752,6 +2752,40 @@ biến và mục [Chốt]. Opus toàn phiên. G-01: lời người dùng / đầ
   `kb: ready`, worker healthy (backend/worker qua kiểm hạn lượt + `check_intent_config`); **`make gate2 S=all` 89 PASS /
   0 FAIL**. **DỪNG 1 xanh** — chờ lệnh commit.
 
+- **Commit DỪNG 1 (29/09/2026):** `3f33ab2` "3f dung 1: han cho ca luot, tach slots/facts, action_metadata" (34 file,
+  stage đích danh; hook gitleaks + unit xanh), đã push `dev-tuananh` — **CI xanh:** run `36505355921` (2m20s).
+- **S2 — state + deps + node giả:** `TicketState` + `facts`, `ctx_flags`, `rediagnose`, `changed_slots` (Q-3f-7: 3f chỉ khai
+  báo D-20); `NodeDeps` + `slots`, `action_metadata`, `enabled_intents: frozenset` (không truyền cả `Settings`),
+  `enable_proactive_diagnosis` (`wiring._open` điền từ Settings/cấu hình). Node giả chuyển `graph/nodes/fake/b03_classify.py`,
+  `fake/b06_diagnose.py` (git mv); `builder.REAL_NODE_MODULES` + b03, b06 — gate2 (`FAKE_SCENARIO`) vẫn toàn node giả.
+- **S3 — `tools/diagnosis/vpn.py`:** `calls()` (3 tool, `device_id` tuỳ chọn), `infer_vpn` thuần theo 9.5 + 2 chỗ chặt hơn:
+  kết nối mới nhất theo `at` (không tin thứ tự), bỏ tham số `now` (không dùng).
+- **S4 — B3 thật (9.3):** thứ tự kiểm cố định; ml có kết quả vẫn xuống LLM (ghi `model_probs`); E1 `step="B4"`; mọi nhánh ghi
+  điểm log 1 (14 khoá, không câu/giá trị slot); `span` chỉ giữ khi là đoạn con (Q-3f-4); `facts={}`. Prompt `b03_classify`
+  **v2** (Q-3f-6: câu xã giao không là ý; việc ngoài phạm vi có yêu cầu LÀ ý riêng). `MIN_LLM_CALL_SITES` = 2.
+- **S5 — B6–B7 thật (9.4):** `gather(return_exceptions=True)` — lỗi hợp đồng ném trước (E9), rồi hết hạn lượt (E2);
+  `tool_errors` chỉ "tool: LớpLỗi"; `retries_of` (Q-3f-1); `diagnostics` JSON; `rediagnose` → `b11_slots`, luôn ghi False.
+- **S6 — fake + test cũ:** `tests/fakes/vpn.SeedVpn` (đọc `mock_services/seed.json`, trả JSON như mock; `fail`, `latency`,
+  `calls`), `fake_directory(ad, clock, extra)`, `GraphHarness(vpn, enable_proactive_diagnosis)`, `FakeMlService(intent_probs)`,
+  `config/scripted/vpn.yaml` (preset stack `[fake:vpn]` khi không đặt `FAKE_SCENARIO`). Test cũ đi qua B3/B6 thật — thêm
+  kịch bản `b03_classify` (không đổi assert): `test_b02_screen._env`, `integration/test_b08_pg` c19, `integration/test_guard_pg`
+  e9 (+ đối chứng: có lời gọi b03, `rendered_messages` của b03 có bản đã che, 0 canary; `llm_calls`/`spans` có b03),
+  `integration/graph_pg` (directory + VPN giả). **Một assert đổi:** `test_e12_judge_bypasses_cache` `cache == {}` → "không dòng
+  cache nào của judge" (B3 cache mặc định nay có dòng riêng — ý test giữ nguyên). f19 viết lại: lượt xấu nhất nay qua B3 + B6
+  thật, hết hạn giữa 3 tool VPN (≥ 18 lời gọi đo ở nơi nhận).
+- **Test mới (DỪNG 2):** `test_infer_vpn.py` (16 — **f3**), `test_b03_classify.py` (33 — **f4** 9 ca + thứ tự, **f5** + biến thể
+  3.2 LAP-9999, **f6**, **f18** node, Q-3f-4/5/6, điểm log 1 mọi nhánh, hạn lượt, max loops, preset stack), `test_b06_diagnose.py`
+  (17 — **f7–f16**, f13 404 người lạ, retry 1 lần, **f17** serde in-memory, D-20), `test_facts_ast.py` (4 — **P3** + mẫu giả),
+  `test_graph_select_nodes.py` (+4 — b03/b06 thật vs giả theo hành vi), `e2e/test_b06_vs_mock.py` (8 — f7–f14 mock thật),
+  `integration/test_b06_pg.py` (1 — **f17** checkpoint Postgres).
+- **Kiểm (DỪNG 2, phần tự chạy được, 29/09/2026):** unit **2279 passed**; ruff sạch; mypy 179 file; `lint-imports` 9/9. Thử
+  tay: M-3f-2 → f5 + AST P3 đỏ; M-3f-3 → f3 (3) + f10 + f11 đỏ; file khôi phục md5 khớp.
+  **`make test` đầy đủ (Tuấn Anh, 29/09/2026): backend 2477 passed** (= unit 2279 + integration 161 + e2e 37 — thêm f17 PG,
+  f7–f14 mock thật; e9 canary 0 kể cả prompt b03), `mock_services` 86, `ml_service` 77 — 0 F/E. Stack (Tuấn Anh,
+  29/09/2026, image build lại — layer `config` + `backend/app` mới): `make up` → không có migration mới, `/api/health` 200
+  `ok`, `runtime: up`, `kb: ready`, worker healthy (preset `vpn.yaml` + prompt b03 v2 qua kiểm schema lúc khởi động);
+  **`make gate2 S=all` 89 PASS / 0 FAIL** (gate2 dùng node giả đã chuyển sang `nodes/fake/`). **DỪNG 2 xanh** — chờ lệnh commit.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -2765,6 +2799,7 @@ biến và mục [Chốt]. Opus toàn phiên. G-01: lời người dùng / đầ
 | 3d | Chọn `FAST_MODEL`/`STRONG_MODEL`, điền dòng `pricing` thật (tới lúc đó `LLM_BACKEND=real` từ chối khởi động); kiểm provider nhận `response_format` json_schema non-strict hay phải `json_object` | P2 §12–13, Q-3d-3 |
 | 3d | P2 §13 dòng Integration: đổi `roles.fast.provider` cloud → local không sửa code; `LLM_CACHE_MODE=eval` chạy 20 kịch bản 2 lần → lần 2 có 0 request ra ngoài | P2 §13 |
 | 3d | Hiệu chỉnh ước lượng token `ceil(ký tự/3)` (cắt `budget_in`, giữ chỗ trần chi) bằng `usage_tokens_in` thật trong span; đo `Retry-After`/429 thật của provider | Q-3d-8, S9 mục 4d |
+| 3f | Probe `b03_classify` v2 với LLM thật: câu có lời xã giao/đệm ("cảm ơn anh", "nhờ anh", "gấp giúp em") phải ra 1 ý; "VPN lỗi, tiện sửa máy in" ra 2 ý (vpn + out_of_scope); slot chỉ lấy đúng chữ người dùng (P2 bỏ phần bịa) — ScriptedLLM chỉ kiểm được logic node, không kiểm được prompt (Q-3f-6) | PLAN-3f Q-3f-6 |
 | 3e | Probe cổng 5 cho B2 thật với LLM thật: 15 câu tấn công (gồm vòng vo không khớp L2) / 30 câu thường qua L2 → L3 (`model_missing`) → L4 `b02_injection_judge` — đo tỉ lệ bắt và chặn nhầm; ScriptedLLM không đo được chất lượng L4 | phase3 8.5, 8.7; `huong-dan` 5.1 |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
