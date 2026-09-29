@@ -29,7 +29,7 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
 - `confirm_wait.py` (node chung, không có bản giả): `note` qua `guard.screen_reply` (L0 + L2) NGAY sau `interrupt()` —
   khớp → E0 `S_ESCALATED` `injection_in_reply`. KHÔNG gửi tin nào (câu trả lời B10 gửi ở B10 — M-3g-2).
 - `b10_route.py`: node THẬT (Phase 3 chặng 3g) — `b10_need_type` (fast): `action` → B11; `info` → `expand_for_answer`
-  trên `kb_version` đã ghim → `b10_answer` (strong) → gateway cắt khối → E3 `evidence_truncated`; hậu kiểm bằng CODE
+  trên `kb_version` đã ghim → `b10_answer` (strong) → gateway cắt khối → E3 `invalid_citation` (audit `evidence_truncated=true`); hậu kiểm bằng CODE
   (`domain.answer.check_citations`): `cannot_answer` → E3 `no_grounding`, trích ngoài anchor (top-5 ∩ khối thật sự gửi
   LLM, KHÔNG chunk liền kề) → E3 `invalid_citation` → `render_answer` theo mẫu → `guard.output` (E3
   `output_guard_block`, 0 tin) → `notify_user` + hạn confirm 48 h qua `effects.once` → `goto(lineage=…)` (cùng
@@ -40,6 +40,7 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   riêng từng lượt hỏi (`sub=f"q{n}"`); hết `MAX_CLARIFICATION_TURNS` → E4. D-20 không có ở 3g (cờ bật → không khởi động).
 - `clarify_wait.py`: node THẬT (3g) — `interrupt()` là lệnh đầu; `screen_reply` → timeout E4 → che L1 (`redact_text`
   thuần) → `b11_extract_slots` với bản đã che → `sanitize_slots(text=bản đã che, allowed=missing)` → lạc đề 2 lần E4.
-  Chỉ bản đã che vào `conversation`/LLM; nhánh injection không lưu câu trả lời.
+  Chỉ bản đã che vào `conversation`/LLM; nhánh injection không lưu câu trả lời vào `conversation` (giá trị resume
+  đã che vẫn nằm trong checkpoint — phase3 10.7 #13).
 - Tin gửi người dùng: khuôn ở `domain/messages.py` (`answer`/`question`/`user`); chữ LLM gửi/lưu đều qua
   `guard.output.OutputGuard` (B10 body, B11 câu hỏi).

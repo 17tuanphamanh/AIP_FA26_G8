@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 29/09/2026 — **Phase 3 chặng 3g** (B10, B11, output guard, tin nhắn): DỪNG 1 `50dcf19` (make test 2547/86/77, gate2 89/0); DỪNG 2 `d4e3ac2` (make test 2581/86/77, gate2 89/0) + `ef33f17` (CLAUDE.md); DỪNG 3 xanh (unit 2382, mutation unit 19/19 ×2 + 7b tương đương, mutation PG 5/5 ×2, soát 8/8 PASS, make test 2584/86/77, gate2 89/0) commit cùng spec v1.9 mục 10.7 (hash + CI ghi ở lần commit sau) — **3g ĐÓNG** — mục "Phase 3 — chặng 3g". Trước đó: **Phase 3 chặng 3f** (hạn cả lượt + slots/facts + B3/B6 VPN): DỪNG 1 `3f33ab2` (make test 2394/86/77, gate2 89/0, CI xanh run `36505355921`); DỪNG 2 `8b7bb92` (make test 2477/86/77, gate2 89/0, CI xanh run `36509949909`); DỪNG 3 xanh (make test 2478/86/77, gate2 89/0, mutation unit 22/22 ×2 + e2e 4/4 + PG 1/1, soát 6/6 PASS) `605b973` (CI xanh run `36520034455`) — **3f đóng** — chưa commit — mục "Phase 3 — chặng 3f". Trước đó: **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do); **3e đóng** (make test 2315/86/77, gate2 89/0; Q-3e-14 chốt → Phase 4 S0, "Việc treo" 10) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
+| Cập nhật | 29/09/2026 — **Phase 3 chặng 3h** (luật VPN R16–R20, B12–B13, Executor VPN, e2e cổng 3): PLAN-3h duyệt; **DỪNG 1 xanh** (unit 2534, mock 86, ml 77, lint xanh; soát S7: 2 FAIL tiềm ẩn + 4 NGHI đã sửa) — make test 2737/86/77, gate2 89/0 (commit + CI ghi ở lần sau) — mục "Phase 3 — chặng 3h". Trước đó: **Phase 3 chặng 3g** (B10, B11, output guard, tin nhắn): DỪNG 1 `50dcf19` (make test 2547/86/77, gate2 89/0); DỪNG 2 `d4e3ac2` (make test 2581/86/77, gate2 89/0) + `ef33f17` (CLAUDE.md); DỪNG 3 xanh (unit 2382, mutation unit 19/19 ×2 + 7b tương đương, mutation PG 5/5 ×2, soát 8/8 PASS, make test 2584/86/77, gate2 89/0) commit cùng spec v1.9 mục 10.7 `fe15469` (CI xanh run `36535301060`) — **3g ĐÓNG** — mục "Phase 3 — chặng 3g". Trước đó: **Phase 3 chặng 3f** (hạn cả lượt + slots/facts + B3/B6 VPN): DỪNG 1 `3f33ab2` (make test 2394/86/77, gate2 89/0, CI xanh run `36505355921`); DỪNG 2 `8b7bb92` (make test 2477/86/77, gate2 89/0, CI xanh run `36509949909`); DỪNG 3 xanh (make test 2478/86/77, gate2 89/0, mutation unit 22/22 ×2 + e2e 4/4 + PG 1/1, soát 6/6 PASS) `605b973` (CI xanh run `36520034455`) — **3f đóng** — chưa commit — mục "Phase 3 — chặng 3f". Trước đó: **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do); **3e đóng** (make test 2315/86/77, gate2 89/0; Q-3e-14 chốt → Phase 4 S0, "Việc treo" 10) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -2874,7 +2874,7 @@ KHÔNG sửa `docs/spec/`):
 13. **8.7 (3e) — e12:** `test_e12_judge_bypasses_cache` đổi `cache == {}` → "không dòng cache nào của judge" (B3 thật, prompt
     cache mặc định, nay có dòng cache riêng).
 
-## Phase 3 — chặng 3g: B10 trả lời có trích dẫn + B11 hỏi lại + output guard + tin nhắn (29/09/2026; DỪNG 1 `50dcf19`, DỪNG 2 `d4e3ac2`, CLAUDE.md `ef33f17`, DỪNG 3 + spec v1.9 — hash ghi ở lần commit sau; **ĐÓNG**)
+## Phase 3 — chặng 3g: B10 trả lời có trích dẫn + B11 hỏi lại + output guard + tin nhắn (29/09/2026; DỪNG 1 `50dcf19`, DỪNG 2 `d4e3ac2`, CLAUDE.md `ef33f17`, DỪNG 3 + spec v1.9 `fe15469` — CI xanh run `36535301060`; **ĐÓNG**)
 
 Kế hoạch: `PLAN-3g.md` ở gốc repo (KHÔNG commit). Tuấn Anh chốt (29/09/2026): P6 = (a) `validate_targets` ở B11 luôn kiểm lại máy
 đích trước `build_action`, bỏ `slots` do `infer_vpn` trả, chỉ lấy fact phụ thuộc máy; Q-3g-1…9 như bảng dưới; tự quyết f1 SỬA,
@@ -3062,6 +3062,11 @@ f2–f5 duyệt; M-3g-15…17 duyệt. Thiết kế: `build/phase3-thiet-ke-chi-
   2584, unit 2382, mutation PG 5/5, test mới) commit CÙNG DỪNG 3 — đúng 6 file: spec, `PROGRESS.md`, `mutate_3g.py`,
   `test_b10_route.py`, `test_b11_slots.py`, `graph/nodes/README.md`. Mutation: unit 19/19 ×2 + 7b tương đương, **PG 5/5 ×2**.
   **Chặng 3g ĐÓNG** — dừng, chưa bắt đầu 3h.
+- **Commit DỪNG 3 (29/09/2026):** `fe15469` "3g dung 3: mutation 3g, soat bao mat, readme, spec v1.9" (6 file đích danh —
+  `git diff --cached --name-only` đúng 6 dòng; gitleaks `--staged` sạch; hook xanh), push `ef33f17..fe15469`. CI xanh run
+  `36535301060` (`lint-test` 2m52s: `make lint` + `make test`). Chú thích CI: Node 20 và `ubuntu-latest` → Ubuntu 26 — đã có ở
+  "Việc treo" 1 (nâng trước 19/10). Dòng này chưa commit — đi cùng commit đầu 3h.
+- Hạ tầng subagent + chặn `.env*`: `7e64926`, `ddcdef7` — CI `36539274994` xanh (lint-test 3m27s)
 
 **Spec cần sửa (3g) — ĐÃ VÀO spec v1.9 mục 10.7** "Chốt khi hiện thực 3g" (`phase3-thiet-ke-chi-tiet.md`, Claude chat viết;
 commit cùng DỪNG 3). Bản ghi 16 mục dưới giữ lại để đối chiếu:
@@ -3113,6 +3118,93 @@ commit cùng DỪNG 3). Bản ghi 16 mục dưới giữ lại để đối chi�
     node không chặn được việc này; an toàn dựa vào API che L1 TRƯỚC khi tạo sự kiện (`start_event`, `api/tickets.py:179–182`). Node che lại
     chỉ bảo vệ `conversation` và prompt. Ghi thành luật: mọi nơi TẠO sự kiện có chữ người dùng (hiện chỉ API) phải che trước
     khi gửi vào runner; e9 PG canh (canary không có trong checkpoint giải mã).
+
+## Phase 3 — chặng 3h: luật VPN R16–R20, B12–B13, Executor VPN (B17–B18), e2e cổng 3, `make gate3` (29/09/2026, đang làm, chưa commit)
+
+Kế hoạch: `PLAN-3h.md` ở gốc repo (KHÔNG commit). Tuấn Anh DUYỆT (29/09/2026): Q-3h-1 intent suy từ `action_metadata.yaml`
+(kiểm lúc khởi động); Q-3h-2 = A (`ExecutionResult.outputs` khoá đóng `{serial, expires_on}` + regex); Q-3h-3 giữ cả
+`execution_interrupted` (worker) lẫn `exec_interrupted` (B17); Q-3h-4 gate3 tính route theo giờ lúc chạy, không biến ép đồng
+hồ; Q-3h-5 `uv add tzdata` + validator khởi động; Q-3h-6 h15 (runner API recover) + h15b (worker recover). Tự quyết mục 4 duyệt
+cả 5; 5 chỉnh (PLAN-3h mục 5).
+
+- **S0 (commit đầu 3h, chỉ tài liệu):** `graph/nodes/README.md` — B10 gateway cắt khối → E3 `invalid_citation` (audit
+  `evidence_truncated=true`); `clarify_wait` nhánh injection "không lưu câu trả lời vào `conversation` (giá trị resume đã che
+  vẫn nằm trong checkpoint)"; docstring `confirm_wait.py:1` bỏ "node GIẢ" → "node chung, không có bản giả". Đi cùng: spec 10.7
+  dòng 13 (Claude chat sửa) + dòng CI `fe15469`/`7e64926`/`ddcdef7` ở mục 3g.
+
+- **DỪNG 1 (29/09/2026, xanh — commit "3h dung 1: …", hash + CI ghi ở lần commit sau):**
+  - **Luật (S1, S3):** `domain/policy.py` — schema `Rule`/`Conditions`/`Condition`/`BusinessHours` (`extra=forbid`) + DSL thuần:
+    nguồn fact theo danh sách TRẮNG (`action.*`, `action.facts.*` ⊆ `FACT_KEYS`, `requester.*`, `time.within_business_hours`,
+    `ctx.target_is_other`), value kiểu CHẶT (`StrictStr/Int/Float/Bool`, số hữu hạn), thiếu fact → SAI (kể cả `is_false`/`ne`/
+    `not_in`), khác kiểu/bool với số → SAI, `deny > approval_required > allow` (cùng mức → luật đứng trước).
+    `within_business_hours` (tz → thứ ISO ∈ weekdays, `start ≤ giờ < end`). `config/policy.json` = đúng 11.2 (test ghim nguyên
+    khối). `settings`: `PolicyFile{constants, business_hours, rules}`, `parse_policy` từ chối NaN/Infinity, `_policy_bytes` đọc
+    MỘT lần → `get_policy` và `policy_sha256` cùng một bản; `check_policy_config` (Q-3h-1) gọi ở `open_runtime` trước DB.
+    `risk/policy_engine.py` (`evaluate` giữ chữ ký; `evaluate_rules`; intent suy từ `action_metadata.yaml`), `risk/context.py`
+    (`build_ctx(state, now, hours)` — P2, P3 + cờ B6 OR), `risk/estimator.py` (`DisabledEstimator` ném `LLMUnavailable`).
+    `uv add tzdata` (Q-3h-5).
+  - **B12 thật (S4):** `graph/nodes/b12_assess.py` — allow → `S_EXECUTING`/b17; approval_required → b15; deny → E5; không luật
+    → estimator → E5 `llm_layer_disabled`; estimator TRẢ p → `RuntimeError` → E9 (không bao giờ AUTO). Điểm log 4 + `policy_sha256`
+    + `lineage` (policy_version_id/commit_sha NULL). Bản giả → `graph/nodes/fake/b12_assess.py` (gate2). `NodeDeps` thêm
+    `business_hours`, `estimator`; `REAL_NODE_MODULES` thêm `b12_assess`.
+  - **Test:** test-writer (S2) `test_policy_rules_vpn.py` 45 + `test_business_hours.py` 20 (đỏ 42 trước S3 — đúng
+    `NotImplementedError`; xanh 65 sau S3). Chính: `test_b12_assess.py` 10, h21 (AST fail-closed + 7 đối chứng) trong
+    `test_policy_engine_signature.py`, N1 `test_start_event_redacted_ast.py` (cổng `start_event/deliver_event/resume/
+    resume_locked`, fail-closed + 19 đối chứng), `test_config_files.py` (luật ghim 11.2, 24 cấu hình hỏng, NaN/Infinity, Q-3h-1,
+    `open_runtime` từ chối trước DB). Đột biến tay: N1 (`body.text` thay bản đã che) → đỏ; bỏ `check_policy_config` ở
+    `open_runtime` → đỏ; khôi phục md5 khớp cả hai.
+  - **S6 — test cũ:** KHÔNG test cũ nào phải sửa. Lý do: FakeClock mặc định 01/01/2026 00:00 UTC = 07:00 VN thứ Năm (ngoài giờ)
+    → luồng thật tới B12 khớp R18 (HITL) = cùng đích với mặc định `hitl` của B12 giả. (Tên `test_policy_rules_not_accepted_yet`
+    → `test_incomplete_rule_rejected`, assert giữ nguyên.)
+  - **Kết quả (máy dev, sandbox):** unit **2534 passed**; mock 86; ml 77 (5 deselected `ml_real`); `make lint` xanh (ruff, mypy
+    190/11/16, import-linter 9/9, gitleaks sạch); `uv lock --check` khớp. **Tuấn Anh chạy `make test` (testcontainers, colima):
+    backend 2737 passed (unit 2534 + integration/e2e 203) · mock 86 · ml 77 (5 deselected)** — xanh. `docker compose build
+    backend worker` (image có `tzdata==2026.4`) → `make up`: `/api/health` 200 (db, qdrant, mock, ml ok; runtime up; kb ready),
+    worker healthy, không lỗi nạp policy/múi giờ. **`make gate2 S=all` = 89 PASS, 0 FAIL** (run `7c11f2c1`; lần chạy trước đó
+    bắt đầu khi `make up` còn đang dựng lại container → 4 kịch bản dừng ở đăng nhập 503 `identity_unavailable` — bỏ, không tính).
+  - **Soát bảo mật S7 (security-reviewer, chỉ đọc `git diff HEAD` + file mới):** B1 PASS, B3 PASS, B6 PASS, B7 PASS, B8 PASS,
+    P1/P2/P3 PASS, DSL fail-closed PASS, estimator PASS, giờ hành chính PASS, điểm log 4 + lineage PASS; B2/B4/B5 N/A (DỪNG 2).
+    **2 FAIL (tiềm ẩn — executor vẫn `RefusingExecutor`, chưa lọt ghi thật), agent chính đã tự xác minh và SỬA:**
+    (1) Q-3h-1 `check_policy_config` chưa gọi lúc khởi động (kịch bản: R18 gõ sai `reissue_vpn_acess` → nạp được → 20:00 R20
+    allow thay HITL) → gọi ở `open_runtime` + test; (2) bộ quét N1 lọt im lặng 9 dạng (bí danh import/partial/getattr,
+    `deliver_event`/`resume_locked`, `**` trong dict, khoá biến, sửa dict sau khi dựng, gán lại tên sạch, biểu thức trộn có
+    `redact`/hàm `redact` tự viết, khoá khác `text`/`note`, nhiều cổng một hàm) → viết lại fail-closed, mỗi dạng có ca đối chứng.
+    **3 NGHI đã xác minh đúng và SỬA:** `[true]` bị ép `(1,)` → kiểu chặt; `policy_sha256` đọc file muộn → một lần đọc;
+    NaN/Infinity → từ chối. NGHI h21 (helper/bí danh/`dict(state)`) → bộ quét fail-closed.
+    **Ghi chú không phải lỗi DỪNG 1:** (a) DỪNG 2 phải giữ B17 kiểm lại người qua AD — `requester_context` chụp ở B1, người bị
+    disabled/terminated trong lúc chờ hỏi lại vẫn qua R20 (R19 chỉ xét probation); (b) Phase 6: F1 (`states.py`) không chặn
+    `S_ASSESSING → S_EXECUTING` khi `policy_decision=None` mà `route≠AUTO` (đường LLM) — Phase 3 không có đường này.
+
+**Spec cần sửa (3h) — đang gom (in nguyên văn ở S18):**
+1. 11.2 — DSL: nguồn fact danh sách trắng (tên lạ → không khởi động); value kiểu chặt, số hữu hạn; NaN/Infinity bị từ chối;
+   intent của luật suy từ `action_metadata.yaml` + `check_policy_config` lúc khởi động (Q-3h-1); `tzdata` là phụ thuộc chính (Q-3h-5).
+2. 11.3 — `step="B13/B14"` (như mã giả B12 §5 và bản giả); estimator trả p ở Phase 3 → E9 (không route theo p); `NodeDeps`
+   thêm `business_hours`, `estimator`; `build_ctx(state, now, hours)` (không đọc Clock bên trong — node truyền `now`).
+3. 11.3 / P3 — `target_is_other` = cờ B6 `ctx_flags.target_is_other` OR công thức P3 (cờ chỉ làm chặt).
+4. 10.7 #13 — cổng resume cần quét gồm `start_event`, `deliver_event`, `resume`, `resume_locked`; test N1 fail-closed
+   (`test_start_event_redacted_ast.py`), khoá kiểu chặt được miễn: `kind, approver_id, at, reason_code, view_duration`.
+5. 11.7 h21 nằm ở `test_policy_engine_signature.py` (cùng h22).
+
+### Thử subagent 3h
+
+| Chỉ số | 3g (nền) | 3h |
+|---|---|---|
+| Số vòng sửa plan | 1 | 1 |
+| Số mutation sống phải vá test | 3 (M-3g-1, M-3g-13, M-3g-14c) | |
+| Số lần nén context / tách phiên | không rõ | |
+| Tổng thời gian PLAN → đóng chặng | ~3 giờ 15 phút | |
+
+| Lần gọi | Loại | Việc | Kết quả | Agent chính kiểm lại |
+|---|---|---|---|---|
+| S2 | test-writer | h-rule (11 dòng bảng + P3 + 20 ca C5 khớp/suýt khớp + 5 ca P3 + 4 ca giờ) + h20 (20) | 65 test; đỏ 42 đúng lý do (chưa thân hàm); 6 điểm mơ hồ tự chọn kỳ vọng — hợp lý, không trái chốt | `git diff --stat` + `git status --porcelain`: chỉ 2 file mới dưới `backend/tests/unit/`; đọc lướt kỳ vọng khớp bảng 11.2; chạy lại sau S3 xanh 65/65 |
+| S7 | security-reviewer | Soát DỪNG 1 (B1–B8 + P1–P3, N1, Q-3h-1, DSL, điểm log 4) | 2 FAIL tiềm ẩn + 4 NGHI | Tự xác minh từng mục (chạy thử `[true]`, NaN, liệt kê cổng resume); sửa cả 6 kèm test đối chứng; đột biến tay 2 chỗ → đỏ |
+
+| Mốc | Bắt đầu | Kết thúc |
+|---|---|---|
+| PLAN | 29/09/2026 15:07 | 29/09/2026 ~15:20 (MẪU A) |
+| DỪNG 1 | 29/09/2026 17:29 | 29/09/2026 18:05 |
+| DỪNG 2 | | |
+| DỪNG 3 | | |
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -3189,6 +3281,21 @@ commit cùng DỪNG 3). Bản ghi 16 mục dưới giữ lại để đối chi�
 13. **`lineage.commit_sha` (chốt Q-3g-3, 29/09/2026).** 3g ghi `NULL` (chưa có nguồn). Lấy từ `GIT_SHA` lúc build image
     (build arg → biến môi trường → `Settings`), **trước mốc G**.
 14. mypy chưa soát `backend/tests` (lỗi kiểu có sẵn, vd `test_b11_pg.py:85`, `test_b11_slots.py:483`) — xử lý ở Phase 4 S0.
+15. **Việc giao cho 3h — từ lần thử subagent security-reviewer soát `fe15469` (B1–B8: 0 FAIL, B4/B5 N/A; chốt Tuấn Anh
+    29/09/2026).**
+    - **Commit đầu 3h** — chỉ sửa tài liệu, không đổi code: (N2) `graph/nodes/README.md:43` "nhánh injection không lưu câu trả
+      lời" → "không lưu vào `conversation`" (giá trị resume đã che vẫn nằm trong checkpoint — 10.7 #13); `README.md:32` "gateway
+      cắt khối → E3 `evidence_truncated`" → E3 `invalid_citation` + `evidence_truncated=true` trong audit (đúng code
+      `b10_route.py:117–122`); docstring `graph/nodes/confirm_wait.py:1` bỏ "node GIẢ" (README ghi node chung). Đi cùng: spec
+      `phase3-thiet-ke-chi-tiet.md` 10.7 dòng 13 (N1, Claude chat đã sửa: đủ 3 nơi tạo sự kiện có chữ người dùng) — chưa commit.
+    - ~~**DỪNG 1 3h (N1)**~~ — **đã làm ở 3h DỪNG 1** (`test_start_event_redacted_ast.py`, fail-closed sau soát S7). Gốc: test AST: mọi lời gọi `start_event` mang chữ người dùng phải đi sau bước che L1 (`redact(...)`):
+      `/messages` `text` (`api/tickets.py:179–182`), `/confirm` `note` (`api/tickets.py:197–201`), route duyệt `note`
+      (`api/approvals.py:108–111`). Cả 3 hiện đã che — test để người sau sửa route không bỏ bước che mà không ai thấy.
+    - **DỪNG 3 3h (N3)** — `mutate_3h.py` và vá `mutate_3g.py`: trước khi đột biến (a) kiểm file đích không còn chữ `MUTATION`,
+      còn thì dừng; (b) chạy mốc xanh một lần, đỏ thì dừng. Lý do: khôi phục chỉ nằm trong `finally` (`mutate_3g.py:240–246`)
+      — bị SIGKILL/SIGTERM giữa chừng thì đột biến sót trong working tree (vd M-3g-6 tắt output guard, `make up` dựng image từ
+      đó); lần chạy sau lấy md5 bản đã đột biến làm mốc "trước" nên không phát hiện; không có mốc xanh thì test đỏ sẵn bị tính
+      là "giết được".
 
 ## Câu hỏi mở / điểm lệch
 

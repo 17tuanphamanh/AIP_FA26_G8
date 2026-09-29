@@ -2,7 +2,10 @@
 
 - Env (`Settings`): bí mật, hạ tầng, cờ thực nghiệm, tham số vận hành. Bí mật để SecretStr
   (không in ra log/repr). Biến LLM để trống tới mốc G (decisions.md mục 4).
-- `config/policy.json` (`get_policy`): hằng số nghiệp vụ [Chốt 01 mục 5.2]; sai schema → không khởi động.
+- `config/policy.json` (`get_policy`): hằng số nghiệp vụ [Chốt 01 mục 5.2]; sai schema → không khởi động. 3h (phase3 11.2):
+  `business_hours` + `rules` (R16–R20, schema/DSL `domain.policy`); `policy_sha256` vào audit điểm 4 (3-Q29);
+  `check_policy_config` (Q-3h-1, gọi ở `open_runtime` trước DB): mỗi `action_type` thuộc đúng một intent, mọi `action` của
+  luật ∈ `action_types` của intent luật đó — lệch → không khởi động.
 - `config/slots.yaml` (`get_slots`): `tool_arg_slots` (D-20), `query_slots` (3-Q13), `intents` (3f, phase3 3.2 — schema
   `domain.slots.IntentSlots`).
 - `config/action_metadata.yaml` (`get_action_metadata`, 3f, phase3 9.2): thuộc tính rủi ro từng `action_type`.
@@ -18,8 +21,10 @@ khi đó chỉ đọc biến môi trường. `conftest.py` ở gốc repo đặt
 không bao giờ đọc (hay stat) file `.env` thật.
 """
 
+import hashlib
 import json
 import os
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -39,6 +44,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.domain.action import ActionMeta
 from app.domain.exit_codes import ExitCode
+from app.domain.policy import BusinessHours, Rule, check_rules
 from app.domain.slots import IntentSlots
 
 
@@ -320,21 +326,47 @@ class PolicyConstants(BaseModel):
 
 
 class PolicyFile(BaseModel):
-    """Schema của policy.json. Phase 3 thêm `rules` (20 luật), `thresholds`, `cost_matrix`… (B12–B14
-    mục 7) — tới lúc đó khoá lạ bị từ chối để không ai tưởng luật đã có hiệu lực."""
+    """Schema của policy.json. 3h: `business_hours` + `rules` (Phase 3 chỉ R16–R20 — phase3 11.2; 15 luật còn lại ở
+    Phase 5). `thresholds`, `cost_matrix`… (B12–B14 mục 7) chưa có — khoá lạ bị từ chối để không ai tưởng đã có hiệu lực."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     constants: PolicyConstants
+    business_hours: BusinessHours
+    rules: tuple[Rule, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> "PolicyFile":
+        check_rules(self.rules)
+        return self
+
+
+def _no_nan(name: str) -> float:
+    raise ValueError(f"policy.json: {name} không hợp lệ (NaN/Infinity làm điều kiện luật luôn đúng/sai)")
+
+
+def parse_policy(raw: bytes) -> PolicyFile:
+    return PolicyFile.model_validate(json.loads(raw.decode("utf-8"), parse_constant=_no_nan))
 
 
 def load_policy(path: Path) -> PolicyFile:
-    return PolicyFile.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    return parse_policy(path.read_bytes())
+
+
+@lru_cache
+def _policy_bytes() -> bytes:
+    """Đọc `config/policy.json` MỘT lần mỗi process — luật đang chạy và sha ghi audit luôn cùng một bản (soát S7 NGHI 2)."""
+    return (get_settings().config_dir / "policy.json").read_bytes()
 
 
 @lru_cache
 def get_policy() -> PolicyFile:
-    return load_policy(get_settings().config_dir / "policy.json")
+    return parse_policy(_policy_bytes())
+
+
+def policy_sha256() -> str:
+    """sha256 của đúng các byte đã nạp thành `get_policy()` — audit điểm 4 (3-Q29, `policy_version_id` NULL ở Phase 3)."""
+    return hashlib.sha256(_policy_bytes()).hexdigest()
 
 
 # ---- config/slots.yaml -----------------------------------------------------------------------
@@ -386,6 +418,38 @@ def load_action_metadata(path: Path) -> ActionMetadataFile:
 @lru_cache
 def get_action_metadata() -> ActionMetadataFile:
     return load_action_metadata(get_settings().config_dir / "action_metadata.yaml")
+
+
+def intents_of_actions(metadata: ActionMetadataFile) -> dict[str, str]:
+    """`action_type` → intent (Q-3h-1: `Action` không mang intent). Một `action_type` ở ≥ 2 intent → `ValueError`."""
+    owner: dict[str, str] = {}
+    for intent, actions in sorted(metadata.root.items()):
+        for action_type in actions:
+            if action_type in owner:
+                raise ValueError(f"action_type {action_type!r} thuộc cả {owner[action_type]!r} lẫn {intent!r}")
+            owner[action_type] = intent
+    return owner
+
+
+@lru_cache
+def action_intents() -> Mapping[str, str]:
+    return intents_of_actions(get_action_metadata())
+
+
+def check_policy_config(policy: PolicyFile, slots: SlotsFile, metadata: ActionMetadataFile) -> None:
+    """Fail-closed lúc khởi động (Q-3h-1): mỗi `action_type` thuộc đúng một intent; mọi `action` của luật thuộc
+    `action_types` (slots.yaml) của đúng intent luật đó — luật nhắm hành động không tồn tại sẽ im lặng không bao giờ khớp."""
+    try:
+        owner = intents_of_actions(metadata)
+    except ValueError as e:
+        raise RuntimeError(f"action_metadata.yaml: {e} — từ chối khởi động") from e
+    for rule in policy.rules:
+        declared = set(slots.intents[rule.intent].action_types) if rule.intent in slots.intents else set()
+        bad = sorted(a for a in rule.actions if a not in declared or owner.get(a) != rule.intent)
+        if bad:
+            raise RuntimeError(
+                f"policy.json {rule.id}: action {bad} không thuộc action_types của intent {rule.intent!r} — từ chối khởi động"
+            )
 
 
 def check_intent_config(settings: Settings, slots: SlotsFile, metadata: ActionMetadataFile) -> None:

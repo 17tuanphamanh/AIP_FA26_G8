@@ -23,6 +23,7 @@ from typing import Any, Protocol
 
 from app.domain.action import Action, ActionMeta
 from app.domain.context import RequesterContext
+from app.domain.policy import BusinessHours
 from app.domain.ticket_state import RiskDecision
 from app.graph.ports import (
     AlertSink,
@@ -39,11 +40,13 @@ from app.guard.privacy import TextRedactor, guard_from_settings
 from app.llm import LlmPort
 from app.ml import MlPort
 from app.rag.ports import RagPort
+from app.risk.estimator import DisabledEstimator, RiskEstimator
 from app.settings import (
     EscalationTemplates,
     PolicyConstants,
     SlotsFile,
     get_action_metadata,
+    get_policy,
     get_settings,
     get_slots,
 )
@@ -254,6 +257,10 @@ class NodeDeps:
     # (guard regex; KHÔNG BAO GIỜ mặc định bản không che); runtime dựng tường minh theo Settings (`graph/wiring._open`).
     output_guard: OutputGuard = field(default_factory=default_output_guard)
     privacy: TextRedactor = field(default_factory=lambda: guard_from_settings(get_settings()))
+    # 3h (phase3 11.2, 11.3): giờ hành chính của luật R18 (`config/policy.json` — một nguồn); lớp 2 của M5 (B14) — Phase 3
+    # luôn `DisabledEstimator` (3-Q30: không luật nào khớp → E5 `llm_layer_disabled`).
+    business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
+    estimator: RiskEstimator = field(default_factory=DisabledEstimator)
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:

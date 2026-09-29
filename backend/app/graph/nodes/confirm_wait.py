@@ -1,4 +1,4 @@
-"""Node chờ `S_CONFIRMING` — B19 (node GIẢ, Phase 2a; B19 thật ở Phase 3). Không side effect trước
+"""Node chờ `S_CONFIRMING` — B19 (node chung, không có bản giả). Không side effect trước
 `interrupt()`. Im lặng 48 giờ → tự đóng `resolved_auto_timeout_48h` [Chốt].
 
 3e (thiết kế Phase 3 mục 8.6, 3-Q3 phương án A): `note` của xác nhận qua `screen_reply` (L0 + L2) NGAY sau

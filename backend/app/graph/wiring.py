@@ -12,7 +12,8 @@ ml-service (3a): `MlClient` thật (`ML_SERVICE_URL`, `ML_SERVICE_TOKEN`) — th
 TRƯỚC khi đụng DB (3-Q21), ở cả backend lẫn worker.
 Guard (3e): `check_guard` — file mẫu `config/privacy_patterns.json` (và mẫu injection) hỏng → không khởi động, trước DB.
 Intent (3f): `check_intent_config` — `ENABLED_INTENTS` ⊆ `slots.yaml` `intents`, mọi `action_type` có dòng trong
-`config/action_metadata.yaml`; sai → không khởi động, trước DB. Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
+`config/action_metadata.yaml`; sai → không khởi động, trước DB. Luật M5 (3h, Q-3h-1): `check_policy_config` cùng chỗ.
+Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 """
@@ -70,6 +71,7 @@ from app.rag.vector_store import QdrantIndex
 from app.settings import (
     Settings,
     check_intent_config,
+    check_policy_config,
     get_action_metadata,
     get_escalation_templates,
     get_policy,
@@ -127,6 +129,8 @@ async def open_runtime(
     check_guard(settings)  # như trên (3e): file mẫu guard hỏng → không khởi động
     # như trên (3f, phase3 9.2): intent bật phải có slot; mọi action_type phải có metadata
     check_intent_config(settings, get_slots(), get_action_metadata())
+    # như trên (3h, Q-3h-1): mỗi action_type thuộc đúng một intent; mọi action của luật ∈ action_types của intent luật đó
+    check_policy_config(get_policy(), get_slots(), get_action_metadata())
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)

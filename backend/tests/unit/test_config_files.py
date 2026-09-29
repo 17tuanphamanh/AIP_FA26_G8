@@ -1,18 +1,25 @@
-"""config/policy.json và config/slots.yaml: đúng hằng số [Chốt 01 mục 5.2], sai schema → lỗi."""
+"""config/policy.json và config/slots.yaml: đúng hằng số [Chốt 01 mục 5.2], sai schema → lỗi. 3h: `business_hours` + luật
+R16–R20 đúng phase3 11.2; luật/giờ hỏng → không nạp; `check_policy_config` (Q-3h-1); `policy_sha256` (3-Q29)."""
 
+import copy
+import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from app.settings import (
+    ActionMetadataFile,
     Settings,
     check_intent_config,
+    check_policy_config,
     get_action_metadata,
     get_policy,
     get_slots,
     load_action_metadata,
     load_policy,
     load_slots,
+    policy_sha256,
 )
 from pydantic import ValidationError
 
@@ -55,13 +62,124 @@ def test_bad_policy_rejected(tmp_path: Path, over: dict[str, object]) -> None:
         load_policy(_policy(tmp_path, **over))
 
 
-def test_policy_rules_not_accepted_yet(tmp_path: Path) -> None:
+def test_incomplete_rule_rejected(tmp_path: Path) -> None:
     raw = json.loads((REPO / "config" / "policy.json").read_text())
     raw["rules"] = [{"id": "R01"}]
     path = tmp_path / "policy.json"
     path.write_text(json.dumps(raw))
-    with pytest.raises(ValidationError):  # Phase 3 mới thêm schema luật
+    with pytest.raises(ValidationError):  # luật thiếu trường (3h: schema `domain.policy.Rule`)
         load_policy(path)
+
+
+# ---- 3h: luật R16–R20 + giờ hành chính (phase3 11.2; PLAN-3h S1) ----------------------------------------------------
+
+SPEC_11_2: dict[str, Any] = {
+    "business_hours": {"tz": "Asia/Ho_Chi_Minh", "weekdays": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00"},
+    "rules": [
+        {"id": "R16", "type": "allow", "intent": "vpn", "action": "check_vpn_status",
+         "conditions": {"all": [{"fact": "ctx.target_is_other", "op": "is_false"}]},
+         "description": "Kiểm tra trạng thái VPN của chính mình"},
+        {"id": "R17", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
+         "conditions": {"all": [{"fact": "action.facts.device_registered", "op": "is_false"}]},
+         "description": "Thiết bị chưa đăng ký"},
+        {"id": "R18", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
+         "conditions": {"all": [{"fact": "time.within_business_hours", "op": "is_false"}]},
+         "description": "Ngoài giờ hành chính"},
+        {"id": "R19", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
+         "conditions": {"all": [{"fact": "requester.employment_status", "op": "eq", "value": "probation"}]},
+         "description": "Nhân viên chưa qua thử việc"},
+        {"id": "R20", "type": "allow", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
+         "conditions": {"all": [
+            {"fact": "action.facts.device_registered", "op": "is_true"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"},
+            {"fact": "ctx.target_is_other", "op": "is_false"}]},
+         "description": "Cấp lại cho thiết bị đã đăng ký của chính người gửi"},
+    ],
+}  # fmt: skip
+
+
+def test_policy_json_rules_are_exactly_spec_11_2() -> None:
+    raw = json.loads((REPO / "config" / "policy.json").read_text())
+    assert raw["business_hours"] == SPEC_11_2["business_hours"]
+    assert raw["rules"] == SPEC_11_2["rules"]
+    assert [r.id for r in get_policy().rules] == ["R16", "R17", "R18", "R19", "R20"]
+    check_policy_config(get_policy(), get_slots(), get_action_metadata())
+
+
+def test_policy_sha256_is_file_bytes() -> None:
+    assert policy_sha256() == hashlib.sha256((REPO / "config" / "policy.json").read_bytes()).hexdigest()
+
+
+def _with(tmp_path: Path, fn: Any) -> Path:
+    raw = json.loads((REPO / "config" / "policy.json").read_text())
+    fn(raw)
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(raw, ensure_ascii=False))
+    return path
+
+
+def _cond(raw: dict[str, Any], i: int, **over: Any) -> None:
+    raw["rules"][i]["conditions"]["all"][0] = {**raw["rules"][i]["conditions"]["all"][0], **over}
+
+
+BAD_POLICIES = {
+    "fact-la": lambda r: _cond(r, 1, fact="action.facts.bogus"),
+    "nguon-slots": lambda r: _cond(r, 1, fact="slots.device_id"),
+    "nguon-cau-nguoi-dung": lambda r: _cond(r, 1, fact="redacted_request"),
+    "requester-la": lambda r: _cond(r, 3, fact="requester.password"),
+    "is_true-co-value": lambda r: _cond(r, 1, value=True),
+    "eq-thieu-value": lambda r: _cond(r, 3, value=None),
+    "lt-value-bool": lambda r: _cond(r, 3, op="lt", value=True),
+    "in-rong": lambda r: _cond(r, 3, op="in", value=[]),
+    "op-la": lambda r: _cond(r, 3, op="matches"),
+    "id-trung": lambda r: r["rules"][1].update(id="R16"),
+    "id-sai-dang": lambda r: r["rules"][1].update(id="rule-17"),
+    "type-la": lambda r: r["rules"][1].update(type="maybe"),
+    "action-rong": lambda r: r["rules"][1].update(action=[]),
+    "ca-all-lan-any": lambda r: r["rules"][1]["conditions"].update(any=[{"fact": "ctx.target_is_other", "op": "is_true"}]),
+    "all-rong": lambda r: r["rules"][1].update(conditions={"all": []}),
+    "khoa-la-trong-luat": lambda r: r["rules"][1].update(note="x"),
+    "khong-co-luat": lambda r: r.update(rules=[]),
+    "tz-la": lambda r: r["business_hours"].update(tz="Asia/Khong_Co"),
+    "start-sau-end": lambda r: r["business_hours"].update(start="18:00", end="08:00"),
+    "thu-8": lambda r: r["business_hours"].update(weekdays=[1, 8]),
+    "thu-trung": lambda r: r["business_hours"].update(weekdays=[1, 1]),
+    "thieu-business-hours": lambda r: r.pop("business_hours"),
+    # soát S7 NGHI 1: kiểu CHẶT lúc nạp — `[true]` không bị ép thành `(1,)`, chuỗi số không thành số
+    "in-bool-bi-ep-so": lambda r: _cond(r, 3, fact="action.facts.device_count", op="in", value=[True]),
+    "lt-chuoi-so": lambda r: _cond(r, 3, fact="action.facts.device_count", op="lt", value="3"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(BAD_POLICIES))
+def test_bad_rules_or_hours_rejected(tmp_path: Path, name: str) -> None:
+    assert len(BAD_POLICIES) >= 20  # quy ước 3.9
+    with pytest.raises(ValidationError):
+        load_policy(_with(tmp_path, BAD_POLICIES[name]))
+
+
+def test_nested_any_group_accepted(tmp_path: Path) -> None:
+    def nest(r: dict[str, Any]) -> None:
+        r["rules"][4]["conditions"] = {"all": [{"any": [{"fact": "ctx.target_is_other", "op": "is_false"}]},
+                                               {"fact": "action.facts.device_registered", "op": "is_true"}]}  # fmt: skip
+
+    assert load_policy(_with(tmp_path, nest)).rules[4].id == "R20"
+
+
+def test_q3h1_rule_action_outside_intent_refuses_start(tmp_path: Path) -> None:
+    policy = load_policy(_with(tmp_path, lambda r: r["rules"][1].update(action=["renew_vpn_cert", "reset_password"])))
+    with pytest.raises(RuntimeError, match="R17"):
+        check_policy_config(policy, get_slots(), get_action_metadata())
+    policy = load_policy(_with(tmp_path, lambda r: r["rules"][1].update(intent="account")))
+    with pytest.raises(RuntimeError, match="R17"):
+        check_policy_config(policy, get_slots(), get_action_metadata())
+
+
+def test_q3h1_action_type_in_two_intents_refuses_start() -> None:
+    meta = copy.deepcopy(get_action_metadata().model_dump())
+    meta["account"] = {"renew_vpn_cert": meta["vpn"]["renew_vpn_cert"]}
+    with pytest.raises(RuntimeError, match="renew_vpn_cert"):
+        check_policy_config(get_policy(), get_slots(), ActionMetadataFile.model_validate(meta))
 
 
 def test_bad_slots_rejected(tmp_path: Path) -> None:
@@ -176,3 +294,36 @@ def test_abbrev_loads_lowercase() -> None:
     lx = load_lexicon(REPO / "config")
     assert lx.abbrev["mk"] == "mật khẩu" and lx.abbrev["ko"] == "không"
     assert lx.stopwords == frozenset(_stopwords())
+
+
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_numbers_rejected(tmp_path: Path, bad: str) -> None:
+    """Soát S7 NGHI 3: `json.loads` mặc định nhận NaN/Infinity — điều kiện `ne NaN`/`lt Infinity` luôn đúng."""
+    text = (REPO / "config" / "policy.json").read_text()
+    text = text.replace('"op": "eq", "value": "probation"', f'"op": "lt", "value": {bad}')
+    assert bad in text
+    path = tmp_path / "policy.json"
+    path.write_text(text)
+    with pytest.raises(ValueError):
+        load_policy(path)
+
+
+@pytest.mark.asyncio
+async def test_q3h1_open_runtime_refuses_bad_policy_before_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Soát S7 FAIL (Q-3h-1): `open_runtime` (backend + worker) gọi `check_policy_config` TRƯỚC khi đụng DB — luật nhắm
+    action gõ sai (`reissue_vpn_acess`) im lặng không bao giờ khớp → R20 allow thay cho R18."""
+    from app.db.session import create_engines
+    from app.graph import wiring
+    from pydantic import SecretStr
+
+    typo = load_policy(_with(tmp_path, lambda r: r["rules"][2].update(action=["renew_vpn_cert", "reissue_vpn_acess"])))
+    monkeypatch.setattr(wiring, "get_policy", lambda: typo)
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, app_env="dev", llm_backend="scripted", ml_service_token=SecretStr("t" * 32),
+        database_url="postgresql+psycopg://x@127.0.0.1:1/khong_co",
+    )
+    engines = create_engines(settings)
+    with pytest.raises(RuntimeError, match="R18"):
+        async with wiring.open_runtime(settings, engines, clock=None, can_execute=False):  # type: ignore[arg-type]
+            pass
+    await engines.dispose()

@@ -46,6 +46,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     # Băm token BM25 thành chỉ số sparse (P3, rag/bm25.py — thiết kế Phase 3 mục 5.6)
     "mmh3>=5.3.0",
+    # Múi giờ IANA cho giờ hành chính của luật R18 (ZoneInfo, PLAN-3h Q-3h-5) — image slim có thể không có /usr/share/zoneinfo
+    "tzdata>=2026.4",
 ]
 
 [dependency-groups]
