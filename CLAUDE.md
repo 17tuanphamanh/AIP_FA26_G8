@@ -29,6 +29,16 @@ Lint : make lint
   nguyên nhân. Chỉ dùng lệnh `gh` chỉ đọc (`run list/view/watch`). Lệnh `gh` bị sandbox
   chặn (mạng/keychain) → báo người, không tự nới quyền.
 
+## Subagent
+
+- **Chỉ gọi khi:** (a) Tuấn Anh ra lệnh trong tin nhắn, hoặc (b) bước trong PLAN đã duyệt có
+  cột "Ai làm" ghi tên agent đó. Ngoài 2 trường hợp này: không gọi.
+- Trước MỖI lần gọi, báo 1 dòng: "Gọi <agent> — việc — file được đọc/ghi — theo bước S… của
+  PLAN / theo lệnh". Xong thì báo kết quả + agent chính đã kiểm lại gì (test-writer: `git diff --stat`).
+- Lõi (policy, evaluate, b12, b17, executor, txlog) và file dùng chung (ticket_state, fakes/NodeDeps,
+  builder, goto, specs.py, models.py, settings.py, Makefile, .importlinter) không bao giờ giao subagent.
+- Không dùng chế độ bypass permissions trong repo này (lớp "ask" với Task/Agent sẽ mất tác dụng).
+
 ## Ranh giới
 
 - Đổi phụ thuộc thì sửa `pyproject.toml` (`uv add` / `uv remove`, `uv.lock` đi kèm),
