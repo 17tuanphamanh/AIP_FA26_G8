@@ -453,3 +453,24 @@ async def test_tc25_locked_user_ticket_blocked_one_alert() -> None:
         final = env.h.tickets.final(ticket)
         assert final is not None and final.block_reason == "repeated_auth_failure"
         assert len(env.h.alerts.rows) == 1  # B1 ghi lại CÙNG khoá → vẫn một
+
+
+@pytest.mark.asyncio
+async def test_g18_other_user_404_does_not_see_conversation() -> None:
+    """3g g18: ticket có `conversation` thật (câu hỏi B11 thật) — người khác GET → 404 y hệt id không tồn tại, không lộ
+    tin nào; chủ ticket thấy câu hỏi."""
+    from tests.fakes.llm import make_gateway
+    from tests.fixtures.llm.vpn import vpn_scripts
+    from tests.unit.test_b11_slots import _rag
+
+    gw = make_gateway(vpn_scripts(action=None))  # type: ignore[arg-type]
+    async with desk_env(harness={"nodes": "real", "llm": gw.client, "rag": _rag()}) as env:
+        binh, an = await env.token("binh.tt"), await env.token("an.nv")
+        ticket = await env.create(binh)  # nv002 có 2 máy → B11 thật hỏi máy
+        await env.drain()
+        mine = await env.ticket(ticket, binh)
+        [question] = [m for m in mine["conversation"] if m.get("kind") == "question"]
+        other = await env.client.get(f"/api/tickets/{ticket}", headers=an)
+        missing = await env.client.get("/api/tickets/khong-co", headers=an)
+        assert (other.status_code, other.json()) == (missing.status_code, missing.json()) == (404, NOT_FOUND)
+        assert question["text"] not in other.text and "conversation" not in other.text

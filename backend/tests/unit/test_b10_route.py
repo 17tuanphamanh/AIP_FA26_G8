@@ -22,9 +22,9 @@ from app.domain.answer import check_citations, render_answer
 from app.domain.context import RequesterContext
 from app.domain.messages import SOURCE_KEYS
 from app.domain.states import (
+    S_CLARIFYING,
     S_CONFIRMING,
     S_ESCALATED,
-    S_PENDING_APPROVAL,
     S_RESOLVED,
     S_RETRIEVING,
 )
@@ -442,7 +442,8 @@ async def test_g2_crash_after_b10_goto_then_recover_single_answer() -> None:
 async def test_g8_graph_action_continues_to_b11() -> None:
     h, gw = await _graph(["KB-VPN-004#v1#1"], need="action")
     v = (await h.submit_as("t1", SESSION, text="Gia hạn chứng chỉ VPN giúp mình")).values
-    assert v["need_type"] == "action" and v["status"] == S_PENDING_APPROVAL  # B11/B12 còn là node giả ở DỪNG 1
+    # DỪNG 2: B11 thật — người gửi giả không có máy nào (seed) → phải hỏi `device_id`
+    assert v["need_type"] == "action" and v["status"] == S_CLARIFYING
     assert gw.llm.calls_for("b10_answer") == []
 
 

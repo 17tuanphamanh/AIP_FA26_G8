@@ -38,6 +38,8 @@ from app.graph.nodes.fake import b03_classify as fake_b03_classify
 from app.graph.nodes.fake import b06_diagnose as fake_b06_diagnose
 from app.graph.nodes.fake import b08_retrieve as fake_b08_retrieve
 from app.graph.nodes.fake import b10_route as fake_b10_route
+from app.graph.nodes.fake import b11_slots as fake_b11_slots
+from app.graph.nodes.fake import clarify_wait as fake_clarify_wait
 from app.graph.routing import ENTRY, ROUTES, route_next
 from app.graph.tracing import NodeFn, traced
 
@@ -46,7 +48,7 @@ type Graph = CompiledStateGraph[Any, Any, Any, Any]
 _NODE_MODULES = {
     "b01_identity": b01_identity, "b02_screen": fake_b02_screen, "b03_classify": fake_b03_classify,
     "b06_diagnose": fake_b06_diagnose, "b08_retrieve": fake_b08_retrieve, "b10_route": fake_b10_route,
-    "b11_slots": b11_slots, "clarify_wait": clarify_wait, "b12_assess": b12_assess,
+    "b11_slots": fake_b11_slots, "clarify_wait": fake_clarify_wait, "b12_assess": b12_assess,
     "b15_prepare_approval": b15_prepare_approval, "approval_wait": approval_wait,
     "b17_execute": b17_execute, "confirm_wait": confirm_wait, "parent_wait": parent_wait,
     "parent_reply_wait": parent_reply_wait, "b20_audit": b20_audit,
@@ -60,6 +62,8 @@ REAL_NODE_MODULES = {
     "b06_diagnose": b06_diagnose,  # 3f: 3 tool VPN song song + infer_vpn (phase3 mục 9.4, 9.5)
     "b08_retrieve": b08_retrieve,
     "b10_route": b10_route,  # 3g: need_type → trả lời có trích dẫn do code xác minh + output guard (phase3 mục 10.3)
+    "b11_slots": b11_slots,  # 3g: validate_targets + build_action, hỏi lại có giới hạn (phase3 mục 10.4)
+    "clarify_wait": clarify_wait,  # 3g: screen_reply → che L1 → trích slot (sanitize, allowed=missing)
 }  # fmt: skip
 
 

@@ -36,7 +36,7 @@ NODES = REPO / "backend" / "app" / "graph" / "nodes"
 
 # Q-3d-11: 3d = 0 (chưa node nào gọi LLM). 3e trả nợ: b02_screen gọi b02_injection_judge → 1. 3f: b03_classify → 2.
 # 3g DỪNG 1: b10_need_type + b10_answer → 4; DỪNG 2 thêm b11_clarify_question, b11_extract_slots → 6.
-MIN_LLM_CALL_SITES = 4
+MIN_LLM_CALL_SITES = 6
 
 # phase3 mục 7.4 — (vai trò, cache, schema, biến)
 TABLE_7_4 = {

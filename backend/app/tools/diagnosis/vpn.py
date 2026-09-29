@@ -20,9 +20,15 @@ from typing import Any
 
 from app.domain.facts import FACT_KEYS
 from app.tools.models import CertList, ConnectionList, DeviceList
+from app.tools.specs import REGISTRY
 
 TOOLS = ("check_device_registered", "check_vpn_cert_expiry", "check_last_connection")  # = tools.specs.TOOL_MAP["vpn"]
 ACTION_BY_CERT = {"expired": "renew_vpn_cert", "revoked": "reissue_vpn_access"}
+# 3g (P6 (a)): fact phụ thuộc MÁY — B11 `validate_targets` bỏ hết giá trị cũ rồi tính lại cho `slots.device_id`. Fact theo
+# NGƯỜI (`device_count`, `has_registered_device`, `last_connection_ok`) giữ nguyên.
+DEVICE_FACTS = frozenset({"device_registered", "device_owner_is_requester", "cert_status", "cert_days_to_expiry"})
+# Tool đọc có `device_id` trong `arg_slots` (`tools.specs`, D-20) — `validate_targets` chỉ gọi đúng các tool này.
+TARGET_TOOLS = tuple(t for t in TOOLS if "device_id" in REGISTRY[t].arg_slots)
 
 
 def calls(requester_id: str, device_id: str | None) -> list[tuple[str, dict[str, str]]]:
@@ -33,6 +39,11 @@ def calls(requester_id: str, device_id: str | None) -> list[tuple[str, dict[str,
         ("check_vpn_cert_expiry", args),
         ("check_last_connection", {"user_id": requester_id}),
     ]
+
+
+def target_calls(requester_id: str, device_id: str) -> list[tuple[str, dict[str, str]]]:
+    """B11 `validate_targets` (3g, P6 (a)): chỉ tool nhận `device_id` — `check_device_registered`, `check_vpn_cert_expiry`."""
+    return [(t, {"user_id": requester_id, "device_id": device_id}) for t in TARGET_TOOLS]
 
 
 def infer_vpn(

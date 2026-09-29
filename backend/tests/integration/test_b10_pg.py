@@ -150,3 +150,26 @@ async def test_g1_resume_confirm_wait_twice_single_b10_notice_pg(migrated: PgUrl
                              "AND step = 'B10'", ticket) == 1  # fmt: skip
     assert await _count(arw, "SELECT count(*) FROM side_effects WHERE ticket_id = :t AND kind = 'notify_user'",
                         ticket) == 1  # B19 → S_RESOLVED: B20 không gửi thêm (không exit_code)  # fmt: skip
+
+
+async def test_q3g3_audit_insert_fails_lineage_rolled_back_pg(arw: AsyncEngine) -> None:
+    """Chốt DỪNG 1: dòng audit INSERT lỗi (vi phạm CHECK `exit_code`) → rollback CẢ transaction → 0 dòng lineage — audit và
+    lineage của một bước cùng có hoặc cùng không."""
+    from app.db.lineage import LINEAGE_COLUMNS
+    from sqlalchemy.exc import IntegrityError
+
+    clock = FakeClock()
+    ticket, turn = await _ticket(arw, clock)
+    row = {"ticket_id": ticket, "turn_id": turn, "loop_seq": 0, "idempotency_key": f"k-{uuid4().hex}", "step": "B10",
+           "event": "deflected_info_only", "from_status": "S_RETRIEVING", "to_status": "S_CONFIRMING",
+           "created_at": clock.now(), "detail": {}, "exit_code": "E99"}  # fmt: skip
+    lineage = {"ticket_id": ticket, "turn_id": turn, "step": "B10", "created_at": clock.now(),
+               "prompt_id": "b10_answer", "prompt_version": "1", "model": "scripted", "kb_version": KBV}  # fmt: skip
+    assert set(lineage) <= LINEAGE_COLUMNS
+    with pytest.raises(IntegrityError):
+        await AuditWriter(arw).record(row, lineage=lineage)
+    assert await _count(arw, "SELECT count(*) FROM lineage WHERE ticket_id = :t", ticket) == 0
+    assert await _count(arw, "SELECT count(*) FROM audit_logs WHERE ticket_id = :t AND step = 'B10'", ticket) == 0
+    # đối chứng: cùng dòng với exit_code hợp lệ → cả hai được ghi
+    await AuditWriter(arw).record({**row, "exit_code": None}, lineage=lineage)
+    assert await _count(arw, "SELECT count(*) FROM lineage WHERE ticket_id = :t", ticket) == 1
