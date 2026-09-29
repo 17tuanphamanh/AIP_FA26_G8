@@ -8,8 +8,9 @@ Thiếu `JWT_SIGNING_KEY` (hoặc thiếu `SVC_AGENT_TOKEN` khi không tiêm idp
 vẫn khởi động và `/api/health` vẫn chạy. Runtime graph mở lỗi → route ticket/duyệt trả 503,
 `/api/health` báo `"runtime": "down"`.
 
-Fail-closed (2b-Q2, 2b-Q3, 2b-4): thành phần giả (guard không che, `FAKE_APPROVER_ID`, `FAKE_SCENARIO`,
-`FAKE_NODE_DELAY`) chỉ nạp khi `APP_ENV` ∈ {dev, test} — kiểm NGAY trong `create_app`, sai thì không có app nào được dựng.
+Fail-closed (2b-Q2, 2b-Q3, 2b-4): thành phần giả (guard không che — `PRIVACY_GUARD=none`, `FAKE_APPROVER_ID`,
+`FAKE_SCENARIO`, `FAKE_NODE_DELAY`) chỉ nạp khi `APP_ENV` ∈ {dev, test} — kiểm NGAY trong `create_app`, sai thì không có
+app nào được dựng. Mặc định mọi env là guard regex thật (3e); file mẫu guard hỏng → không dựng app (`check_guard`).
 Như vậy với `ML_SERVICE_TOKEN` (3-Q21) khi dùng runtime thật: thiếu → không dựng app.
 Body > `MAX_REQUEST_BODY_BYTES` → 413 trước mọi kiểm quyền (`api/limits.py`).
 """
@@ -28,7 +29,7 @@ from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.desk import Desk, retry_after
-from app.api.errors import install_graph_errors
+from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
 from app.api.health import HealthCheck, KbProbe
@@ -54,7 +55,8 @@ from app.db.escalations import SqlEscalationStore
 from app.db.session import Engines, create_engines, ping
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
-from app.guard.privacy import NotRedactingGuard, PrivacyGuard
+from app.guard.patterns import check_guard
+from app.guard.privacy import NotRedactingGuard, PrivacyGuard, RegexPrivacyGuard
 from app.llm.wiring import check_llm
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
@@ -77,8 +79,11 @@ def _default_runtime(
 
 
 def _default_guard(settings: Settings) -> PrivacyGuard:
-    settings.require_dev_fakes("NotRedactingGuard (privacy guard không che)")
-    return NotRedactingGuard()
+    """Mặc định MỌI env: guard regex thật (3e). `PRIVACY_GUARD=none` chỉ dev/test (phase3 mục 8.3, e17)."""
+    if settings.privacy_guard == "none":
+        settings.require_dev_fakes("PRIVACY_GUARD=none (NotRedactingGuard — privacy guard không che)")
+        return NotRedactingGuard()
+    return RegexPrivacyGuard.from_settings(settings)
 
 
 def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:
@@ -160,7 +165,8 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
-    guard = guard or _default_guard(settings)  # sai APP_ENV → RuntimeError, không dựng app
+    check_guard(settings)  # file mẫu guard hỏng → PatternFileError, không dựng app (3e)
+    guard = guard or _default_guard(settings)  # PRIVACY_GUARD=none ngoài dev/test → RuntimeError, không dựng app
     fake_approver(settings)  # như trên cho FAKE_APPROVER_ID (worker kiểm lại trong open_runtime)
     fake_scenario(settings)  # như trên cho FAKE_SCENARIO / FAKE_NODE_DELAY (2b-4)
     if runtime is None:  # runtime thật gọi ml-service: thiếu ML_SERVICE_TOKEN → không dựng app (3-Q21)
@@ -186,11 +192,12 @@ def create_app(
                     ad_http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable
                 )
             auth_store = store or SqlAuthStore(engines.main)
+            security = sink or SecurityEventWriter(engines.main, clock)  # auth + guard (3e) dùng chung
             app.state.auth = _build_auth(
                 settings,
                 clock,
                 auth_store,
-                sink or SecurityEventWriter(engines.main, clock),
+                security,
                 alerts or AlertWriter(engines.main, clock),
                 identity,
             )
@@ -203,7 +210,7 @@ def create_app(
                 app.state.desk, app.state.runtime_status = None, "down"
             else:
                 app.state.desk = Desk(
-                    runner=rt.runner, tickets=rt.tickets, approvals=rt.approvals, guard=guard,
+                    runner=rt.runner, tickets=rt.tickets, approvals=rt.approvals, guard=guard, security=security,
                     users=auth_store, clock=clock, background=background,
                     retry_after_seconds=lock_retry,
                 )  # fmt: skip
@@ -228,6 +235,7 @@ def create_app(
     app.state.background = background
     app.add_exception_handler(AuthError, auth_error_handler)
     install_graph_errors(app, lock_retry)
+    install_request_errors(app)  # 422 không trả `input`, guard lỗi → 503 (phase3 mục 8.3)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
     app.include_router(auth_router)

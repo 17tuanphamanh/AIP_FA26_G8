@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "description": "B02 L1 (phase3 mục 8.3; PLAN-3e Q-3e-3, Q-3e-4). Chạy trên văn bản đã qua L0 guard, ĐÚNG thứ tự dưới đây (guard/patterns.py kiểm thứ tự). Có nhóm tên 'v' → chỉ thay nhóm đó; không có → thay cả đoạn khớp. Sửa file này là đổi hành vi guard → chạy lại test. Q-3e-10: chỉ loại trừ token giống ĐƯỜNG DẪN THẬT (có \\, hoặc bắt đầu /, ~/, ./, ../, <ổ đĩa>:, http(s)://) — khoá base64 có / vẫn bị luật 6 che. Q-3e-11: thêm file_path (có / + đuôi file cố định).",
+  "secret_mask": "[BÍ_MẬT_ĐÃ_ẨN]",
+  "rules": [
+    {
+      "id": "pem",
+      "kind": "secret",
+      "regex": "-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----[\\s\\S]+?-----END [A-Z ]*-----"
+    },
+    {
+      "id": "jwt",
+      "kind": "secret",
+      "regex": "\\beyJ[\\w-]{5,}\\.[\\w-]{5,}\\.[\\w-]{5,}\\b"
+    },
+    {
+      "id": "api_key",
+      "kind": "secret",
+      "regex": "\\b(?:sk|pk|ghp|xox[bp])[-_][A-Za-z0-9_-]{16,}\\b"
+    },
+    {
+      "id": "password",
+      "kind": "secret",
+      "description": "Q-3e-4, Q-3e-9: 0–4 từ đệm (không dấu câu, không phải lỗi|loi|mã|ma|code|error) giữa từ khoá và là/la/:/=; 'mk' chỉ đi với : hoặc =; giá trị là từ hỏi (gì|gi|sao|bao|nào|nao) → không che",
+      "regex": "(?i)(?:\\b(?:mật\\s*khẩu|mat\\s*khau|pass(?:word|code)?|pwd)\\b(?:\\s+(?!(?:lỗi|loi|mã|ma|code|error)(?!\\w))[^\\s:=,.;!?]+){0,4}?\\s*(?:(?:là|la)(?!\\w)\\s*[:=]?|[:=])|\\bmk\\s*[:=])\\s*(?P<v>(?!(?:gì|gi|sao|bao|nào|nao)[?.!,;:]*(?!\\S))\\S+)"
+    },
+    {
+      "id": "otp",
+      "kind": "secret",
+      "regex": "(?i)\\b(?:otp|mã\\s*xác\\s*(?:thực|minh))\\s*(?:là|:)?\\s*(?P<v>\\d{4,8})\\b"
+    },
+    {
+      "id": "entropy",
+      "kind": "entropy",
+      "min_len": 20,
+      "min_bits": 4.0
+    },
+    {
+      "id": "email",
+      "kind": "pii",
+      "label": "EMAIL",
+      "canonical": "lower",
+      "regex": "\\b[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+\\b"
+    },
+    {
+      "id": "phone",
+      "kind": "pii",
+      "label": "SĐT",
+      "canonical": "phone",
+      "description": "Cho phép một dấu cách/chấm/gạch giữa các chữ số",
+      "regex": "(?<![\\d+])(?:\\+?84|0)[ .-]?[35789](?:[ .-]?\\d){8}(?!\\d)"
+    },
+    {
+      "id": "cccd",
+      "kind": "pii",
+      "label": "CCCD",
+      "canonical": "digits",
+      "regex": "(?<!\\d)0\\d{11}(?!\\d)"
+    },
+    {
+      "id": "bank_account",
+      "kind": "pii",
+      "label": "STK",
+      "canonical": "digits",
+      "regex": "(?i)(?:stk|số\\s*tài\\s*khoản|tài\\s*khoản\\s*ngân\\s*hàng)\\D{0,10}(?P<v>\\d[\\d\\s.-]{7,18}\\d)"
+    }
+  ],
+  "entropy_exclude": [
+    {
+      "id": "path",
+      "regex": "\\\\|^(?:/|~/|\\.{1,2}/|[A-Za-z]:)"
+    },
+    {
+      "id": "file_path",
+      "description": "Q-3e-11: đường dẫn tương đối — có / VÀ đoạn cuối có đuôi trong danh sách CỐ ĐỊNH (base64 không có dấu chấm). Đuôi lạ (vd .abc12) → vẫn xét entropy. Chữ thường, đúng danh sách.",
+      "regex": "/[^/]*\\.(?:xlsx|xls|csv|docx|doc|pdf|pptx|ppt|txt|log|zip|rar|7z|png|jpg|jpeg|json|xml|ini|conf|cfg|yaml|yml|msi|exe|bat|ps1|sh)$"
+    },
+    {
+      "id": "device_id",
+      "regex": "^[A-Z]{2,4}-\\d{3,5}$"
+    },
+    {
+      "id": "hex_error",
+      "regex": "^0x[0-9A-Fa-f]+$"
+    },
+    {
+      "id": "url",
+      "regex": "^https?://"
+    },
+    {
+      "id": "username",
+      "regex": "^[a-z]+(?:\\.[a-z0-9]+)+$"
+    },
+    {
+      "id": "digits",
+      "regex": "^\\d+$"
+    },
+    {
+      "id": "email",
+      "regex": "^[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+$"
+    }
+  ]
+}

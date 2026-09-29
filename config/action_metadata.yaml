@@ -1,0 +1,7 @@
+# Thuộc tính rủi ro của từng hành động (phase3 mục 9.2; build_action → Action → M5). Nạp và kiểm ở
+# backend/app/settings.py (ActionMetadataFile, extra=forbid): mọi action_type trong slots.yaml phải có dòng ở đây —
+# thiếu → backend/worker từ chối khởi động (KHÔNG mặc định reversible). reversible phải khớp reversibility (none ↔ false).
+vpn:
+  renew_vpn_cert:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user}
+  reissue_vpn_access: {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user}
+  check_vpn_status:   {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user}

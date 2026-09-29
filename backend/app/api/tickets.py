@@ -1,7 +1,11 @@
 """Route ticket (P10 "Phải có"; B01 mục 2, B02 mục 2, B19 mục 2; 2b-3).
 
-`POST /api/tickets` → 202: privacy guard (D-07) → `tickets.create` (ticket + lượt `submit`, MỘT
-transaction, `created_at` từ Clock của app) → `runner.run_new` chạy nền.
+`POST /api/tickets` → 202: privacy guard (D-07) → `tickets.create` (ticket + lượt `submit` + sự kiện
+`privacy_secret_redacted` nếu có, MỘT transaction, `created_at` từ Clock của app) → `runner.run_new` chạy nền.
+
+Privacy guard (3e, phase3 mục 8.3): guard lỗi → 503 `{"error":"privacy_guard_unavailable"}`, không INSERT, không
+`start_event`. Body 202 có `notices` (thông báo đã che bí mật/PII). Tin nhắn sau có bí mật → `privacy_secret_redacted`
+ghi TRƯỚC `start_event` (lỗi ghi → 503).
 
 `POST /api/tickets/{id}/messages` | `/confirm` → 202, thứ tự kiểm CHỐT (2b-3 a, b):
   413 (middleware) → quyền (`require`) → không có / không đọc được → 404 (giống hệt nhau) → không phải
@@ -21,7 +25,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.desk import Desk, get_desk, parse_body
+from app.api.desk import (
+    SECRET_EVENT,
+    Desk,
+    get_desk,
+    parse_body,
+    record_redacted,
+    redact,
+)
 from app.auth.authz import can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
@@ -64,6 +75,7 @@ class ConfirmIn(BaseModel):
 class Accepted(BaseModel):
     ticket_id: str
     status: str
+    notices: list[str] = []  # phase3 mục 8.3 — nguyên văn `RedactionResult.notices`
 
 
 class TicketView(BaseModel):
@@ -80,8 +92,9 @@ class TicketView(BaseModel):
     closed_at: datetime | None
 
 
-def _accepted(ticket_id: str, status: str) -> JSONResponse:
-    return JSONResponse(Accepted(ticket_id=ticket_id, status=status).model_dump(), status_code=202)
+def _accepted(ticket_id: str, status: str, notices: list[str]) -> JSONResponse:
+    body = Accepted(ticket_id=ticket_id, status=status, notices=notices)
+    return JSONResponse(body.model_dump(), status_code=202)
 
 
 async def _readable(request: Request, p: Principal, desk: Desk, ticket_id: str) -> TicketRow:
@@ -114,7 +127,7 @@ async def create_ticket(
     desk: Annotated[Desk, Depends(get_desk)],
 ) -> JSONResponse:
     body = await parse_body(request, TicketIn)
-    redacted = await desk.guard.redact(body.text)
+    redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
     ticket_id, turn_id = new_ticket_id(), new_turn_id()
     await desk.tickets.create(
@@ -124,9 +137,10 @@ async def create_ticket(
             redacted_request=redacted.text, created_at=desk.clock.now(),
         ),
         turn_id=turn_id,
+        security_events=[(SECRET_EVENT, {"count": redacted.secrets_found})] if redacted.secrets_found else (),
     )  # fmt: skip
     desk.background.spawn(desk.runner.run_new(ticket_id, turn_id), name=f"submit:{ticket_id}")
-    return _accepted(ticket_id, S_NEW)
+    return _accepted(ticket_id, S_NEW, redacted.notices)
 
 
 @router.get("/api/tickets/{ticket_id}", response_model=TicketView)
@@ -162,12 +176,13 @@ async def post_message(
 ) -> JSONResponse:
     await _owned_leaf(request, p, desk, ticket_id, "ticket:message")
     body = await parse_body(request, MessageIn)
-    redacted = await desk.guard.redact(body.text)
+    redacted = await redact(desk, request, body.text)
+    await record_redacted(desk, request, p, ticket_id, redacted)
     await start_event(
         desk.runner, ticket_id, S_CLARIFYING, {"kind": "user_reply", "text": redacted.text},
         spawn=desk.background.spawn, session_id=p.session_id,
     )  # fmt: skip
-    return _accepted(ticket_id, S_CLARIFYING)
+    return _accepted(ticket_id, S_CLARIFYING, redacted.notices)
 
 
 @router.post("/api/tickets/{ticket_id}/confirm", status_code=202)
@@ -179,10 +194,13 @@ async def confirm(
 ) -> JSONResponse:
     await _owned_leaf(request, p, desk, ticket_id, "ticket:confirm")
     body = await parse_body(request, ConfirmIn)
-    note = (await desk.guard.redact(body.note)).text if body.note else None
+    redacted = await redact(desk, request, body.note) if body.note else None
+    if redacted is not None:
+        await record_redacted(desk, request, p, ticket_id, redacted)
+    note = redacted.text if redacted is not None else None
     event = {"kind": "confirmed" if body.confirmed else "unresolved", "note": note}
     await start_event(
         desk.runner, ticket_id, S_CONFIRMING, event, spawn=desk.background.spawn,
         session_id=p.session_id,
     )  # fmt: skip
-    return _accepted(ticket_id, S_CONFIRMING)
+    return _accepted(ticket_id, S_CONFIRMING, redacted.notices if redacted is not None else [])

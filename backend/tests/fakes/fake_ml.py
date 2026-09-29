@@ -10,7 +10,11 @@ biệt được tài liệu đúng/sai:
 - Rerank: |T(q) ∩ T(p)| / max(1, |T(q)|) trên tập âm tiết → đã nằm trong [0, 1].
 - Count: ceil(1,5 × số âm tiết) + 2 — chỉ dùng khi test không kiểm giới hạn token thật.
 - `fail_next(endpoint, kind, times)`, `kind` ∈ {timeout, http_500, model_missing}; `truncate_all=True`.
-- `/classify`, `/classify_intent` luôn 503 `model_missing` như ml-service Phase 3.
+- `slow(endpoint, seconds, times)` (3f S0, hạn cả lượt): request tốn `seconds` giây trên FakeClock của `client(clock)`;
+  `seconds` ≥ timeout client gửi → tua đúng timeout rồi `ReadTimeout` (như server chậm thật). `seen` ghi (endpoint,
+  timeout đọc, thời điểm nhận) ở NƠI NHẬN.
+- `/classify`, `/classify_intent` mặc định 503 `model_missing` như ml-service Phase 3. `classify_p=<số>` (3e, e18):
+  `/classify` trả `p_malicious` đó — để test nhánh ngưỡng L3 của B2 trước khi có model thật.
 """
 
 import hashlib
@@ -19,6 +23,7 @@ import math
 import re
 import unicodedata
 from collections import Counter
+from datetime import datetime, timedelta
 from itertools import pairwise
 from typing import Literal
 
@@ -72,11 +77,19 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 class FakeMlService:
-    def __init__(self, *, truncate_all: bool = False) -> None:
+    def __init__(self, *, truncate_all: bool = False, classify_p: float | None = None) -> None:
         self.truncate_all = truncate_all
+        self.classify_p = classify_p
         self.calls: Counter[str] = Counter()
         self._faults: dict[str, list[FaultKind]] = {}
+        self._slow: dict[str, list[float]] = {}
+        self._clock: FakeClock | None = None
+        self.seen: list[tuple[str, float | None, datetime | None]] = []
         self.transport = httpx.MockTransport(self._handle)
+
+    def slow(self, endpoint: str, seconds: float, times: int = 1) -> "FakeMlService":
+        self._slow.setdefault(endpoint, []).extend([seconds] * times)
+        return self
 
     def fail_next(self, endpoint: str, kind: FaultKind, times: int = 1) -> "FakeMlService":
         self._faults.setdefault(endpoint, []).extend([kind] * times)
@@ -84,13 +97,25 @@ class FakeMlService:
 
     def client(self, clock: Clock | None = None) -> MlClient:
         http = httpx.AsyncClient(transport=self.transport, base_url=BASE_URL)
-        return MlClient(http, TOKEN, clock=clock or FakeClock())
+        clock = clock or FakeClock()
+        if isinstance(clock, FakeClock):
+            self._clock = clock
+        return MlClient(http, TOKEN, clock=clock)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         endpoint = request.url.path.strip("/")
         self.calls[endpoint] += 1
+        timeout = (request.extensions.get("timeout") or {}).get("read")
+        self.seen.append((endpoint, timeout, self._clock.now() if self._clock else None))
         if request.headers.get("X-Service-Token") != TOKEN:
             return httpx.Response(401, json={"detail": "invalid_service_token"})
+        slow = self._slow.get(endpoint)
+        if slow and self._clock is not None:
+            seconds = slow.pop(0)
+            if timeout is not None and seconds >= timeout:
+                self._clock.advance(timedelta(seconds=timeout))
+                raise httpx.ReadTimeout("ml-service giả: chậm quá timeout", request=request)
+            self._clock.advance(timedelta(seconds=seconds))
         faults = self._faults.get(endpoint)
         if faults:
             kind = faults.pop(0)
@@ -117,6 +142,8 @@ class FakeMlService:
             }  # fmt: skip
         elif endpoint == "count_tokens":
             out = {"counts": [count_tokens(t) for t in body["texts"]], "model": "BAAI/bge-m3"}
+        elif endpoint == "classify" and self.classify_p is not None:
+            out = {"p_malicious": self.classify_p, "windows": 1, "model": "injection-clf-gia", "version": "0"}
         elif endpoint in ("classify", "classify_intent"):
             return httpx.Response(503, json={"error": "model_missing"})
         else:

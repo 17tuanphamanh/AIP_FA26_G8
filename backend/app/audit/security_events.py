@@ -1,44 +1,24 @@
 """Writer `security_events` (P7 2.3, D-04) — chỉ INSERT (bảng append-only ở cả quyền `app_rw` lẫn
 trigger); `occurred_at` lấy từ clock tiêm vào. Khớp `auth.ports.SecurityEventSink` theo cấu trúc.
 
-`detail` KHÔNG chứa mật khẩu, token, secret, URI otpauth hay nội dung chat: khoá mang tên nhạy cảm
-bị từ chối ngay (lỗi lập trình), và giá trị trông như JWT cũng vậy.
+`detail` KHÔNG chứa mật khẩu, token, secret, URI otpauth hay nội dung chat: `check_event`/`check_detail`
+(ở `db/security_events.py` từ 3e, import lại ở đây) từ chối khoá tên nhạy cảm và giá trị trông như JWT.
+
+Trong `effects.once` (node B2, `clarify_wait`, `confirm_wait` — 3e, kind `security_event`) writer ghi bằng
+`current_tx()`: dòng `security_events` và dòng `side_effects` cùng commit — chạy lại node sau sự cố không ghi hai sự
+kiện cho một lần tấn công (e15). Ngoài đó (auth, API) mỗi lần ghi là một transaction riêng như trước.
 """
 
-import re
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import Table, insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.clock import Clock
-from app.db.models import SECURITY_EVENT_TYPES, SecurityEvent
+from app.db.runtime import current_tx
+from app.db.security_events import check_detail, check_event, insert_event
 
-# So theo từng phần của tên khoá tách bởi "_" (khỏi bắt nhầm "security" chứa "uri").
-_SENSITIVE_PARTS = frozenset(
-    {"password", "passwd", "pwd", "token", "secret", "otp", "otpauth", "cookie", "authorization",
-     "uri", "key", "jwt", "refresh", "csrf"}
-)  # fmt: skip
-_TABLE: Table = SecurityEvent.__table__  # type: ignore[assignment]
-_JWT_LIKE = re.compile(r"eyJ[\w-]+\.[\w-]+\.")
-
-
-def check_detail(table: str, detail: Mapping[str, Any]) -> None:
-    """`detail` JSONB không được mang bí mật: khoá tên nhạy cảm hoặc giá trị trông như JWT → lỗi
-    lập trình. Dùng cho `security_events` và `alerts`."""
-    for key, value in detail.items():
-        if _SENSITIVE_PARTS & set(key.lower().split("_")):
-            raise ValueError(f"{table}.detail không được có khoá nhạy cảm {key!r}")
-        if isinstance(value, str) and _JWT_LIKE.search(value):
-            raise ValueError(f"{table}.detail[{key!r}] trông như token")
-
-
-def check_event(event_type: str, detail: Mapping[str, Any]) -> None:
-    """Chặn sự kiện lạ và `detail` có dấu hiệu chứa bí mật — dùng chung cho writer và bản giả test."""
-    if event_type not in SECURITY_EVENT_TYPES:
-        raise ValueError(f"security_events: event_type lạ {event_type!r}")
-    check_detail("security_events", detail)
+__all__ = ["SecurityEventWriter", "check_detail", "check_event"]
 
 
 class SecurityEventWriter:
@@ -57,18 +37,14 @@ class SecurityEventWriter:
         ticket_id: str | None = None,
         detail: Mapping[str, Any] | None = None,
     ) -> None:
-        payload = dict(detail or {})
-        check_event(event_type, payload)
-        async with self._engine.begin() as conn:
-            await conn.execute(
-                insert(_TABLE).values(
-                    occurred_at=self._clock.now(),
-                    event_type=event_type,
-                    user_id=user_id,
-                    username_attempted=username_attempted,
-                    ip_prefix=ip_prefix,
-                    route=route,
-                    ticket_id=ticket_id,
-                    detail=payload,
-                )
-            )
+        check_event(event_type, dict(detail or {}))  # lỗi lập trình nổ TRƯỚC khi mở transaction
+        values: dict[str, Any] = {
+            "occurred_at": self._clock.now(), "user_id": user_id, "username_attempted": username_attempted,
+            "ip_prefix": ip_prefix, "route": route, "ticket_id": ticket_id, "detail": detail,
+        }  # fmt: skip
+        conn = current_tx()
+        if conn is not None:
+            await insert_event(conn, event_type, **values)
+            return
+        async with self._engine.begin() as own:
+            await insert_event(own, event_type, **values)

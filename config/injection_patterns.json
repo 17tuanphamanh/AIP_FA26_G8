@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "description": "B02 L2 (phase3 mục 8.4, bản đầu). Regex viết trên bản KHÔNG DẤU, chữ thường; guard/injection.py so trên 4 bản của L0 guard (có dấu / unidecode × giữ dòng / gộp dòng). Mỗi mẫu có test khớp + suýt khớp (e5). Thêm mẫu: id mới, không mẫu quá rộng (chặn nhầm ≤ 1/30 — B02 mục 13). Sửa file này là đổi hành vi agent → chạy lại test.",
+  "patterns": [
+    {
+      "id": "OVR-01",
+      "group": "override",
+      "regex": "\\b(bo qua|phot lo|khong can (quan tam|tuan theo))\\b.{0,20}\\b(moi|tat ca|cac|nhung)?\\s*(quy tac|huong dan|chi dan|lenh|rang buoc)\\b"
+    },
+    {
+      "id": "OVR-02",
+      "group": "override",
+      "regex": "\\bquen\\b.{0,15}\\b(huong dan|chi dan|quy tac)\\b"
+    },
+    {
+      "id": "OVR-03",
+      "group": "override",
+      "regex": "\\b(ignore|disregard|forget)\\b.{0,20}\\b(previous|prior|above|all|system)\\b.{0,15}\\b(instructions?|rules?|prompts?)\\b"
+    },
+    {
+      "id": "IMP-01",
+      "group": "impersonation",
+      "regex": "\\b(toi|minh|em|anh|chi)\\s+(la|dang la)\\s+(admin|quan tri vien|truong (phong|bo phan) it|sep it|root)\\b"
+    },
+    {
+      "id": "IMP-02",
+      "group": "impersonation",
+      "regex": "\\bvoi tu cach (la )?(admin|quan tri vien|truong bo phan)\\b"
+    },
+    {
+      "id": "IMP-03",
+      "group": "impersonation",
+      "regex": "\\bi am (the )?(admin|administrator|root)\\b"
+    },
+    {
+      "id": "SYS-01",
+      "group": "system_spoof",
+      "regex": "(^|\\n)\\s*(system|assistant|developer)\\s*:"
+    },
+    {
+      "id": "SYS-02",
+      "group": "system_spoof",
+      "description": "Bảng 8.4 viết trong markdown nên | của token ChatML bị escape thành \\|: <|system|>, <|im_start|>, [INST], [/INST]",
+      "regex": "\\[/?inst\\]|<\\|?(system|im_start|im_end)\\|?>"
+    },
+    {
+      "id": "SYS-03",
+      "group": "system_spoof",
+      "regex": "(^|\\n)\\s*#{2,}\\s*(system|instruction|chi dan he thong)\\b"
+    },
+    {
+      "id": "LEAK-01",
+      "group": "prompt_leak",
+      "regex": "\\b(cho (toi|minh) xem|in ra|hien thi|tiet lo|show)\\b.{0,25}\\b(prompt|system prompt|huong dan (he thong|cua ban|goc)|chi dan (goc|cua ban))\\b"
+    },
+    {
+      "id": "LEAK-02",
+      "group": "prompt_leak",
+      "regex": "\\b(reveal|print|repeat)\\b.{0,20}\\b(system prompt|your instructions)\\b"
+    }
+  ]
+}

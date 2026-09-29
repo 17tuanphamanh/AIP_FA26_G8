@@ -7,8 +7,12 @@ Thứ tự:
    - `may_decide_as` sai (không phải người được giao, xung đột lợi ích) → 403 + `permission_denied`;
    - phiếu không còn `pending` → `already_decided`; `clock.now() >= deadline` (Clock của APP, bằng hạn
      là muộn) → `expired` → `record_late` + 409 (TC27).
-3. Body: `rejected` thiếu `note` → 422.
-4. `start_event(S_PENDING_APPROVAL)` → 202. Route KHÔNG ghi quyết định: B16 ghi (`approvals.close` có
+3. Body: `rejected` thiếu `note` → 422. `reason_code` chỉ nhận mã trong `ReasonCode` (danh sách CỐ ĐỊNH, PLAN-3e
+   Q-3e-13): ô này không qua privacy guard mà nằm nguyên văn trong checkpoint → chuỗi tự do (vd mật khẩu dán nhầm)
+   bị 422 `invalid_request`, không lưu gì.
+4. Privacy guard trên `note` (3e, phase3 mục 8.3): lỗi → 503, có bí mật → `privacy_secret_redacted` trước
+   `start_event`; body 202 thêm `notices` (PLAN-3e Q-3e-6).
+5. `start_event(S_PENDING_APPROVAL)` → 202. Route KHÔNG ghi quyết định: B16 ghi (`approvals.close` có
    điều kiện) khi graph chạy — trước đó phiếu vẫn `pending`. `approver_id` chỉ lấy từ token.
 
 Bấm muộn KHÔNG đổi `approvals.status` (quyết định 2b-3 Q2 — lệch câu "phiếu `late_ignored`" của B15
@@ -28,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.desk import Desk, get_desk, parse_body
+from app.api.desk import Desk, get_desk, parse_body, record_redacted, redact
 from app.auth.authz import ApprovalParties, may_decide_as
 from app.auth.deps import deny, require
 from app.auth.models import Principal
@@ -40,13 +44,17 @@ router = APIRouter()
 
 NOTE_MAX = 1000
 type LateReason = Literal["expired", "already_decided"]
+# Mẫu lý do chọn nhanh (B15-B16 §4, P10 3.2 [Chốt 16.2] — spec chưa có danh sách; đề xuất ở PLAN-3e Q-3e-13).
+type ReasonCode = Literal[
+    "missing_info", "not_authorized", "policy_violation", "duplicate", "wrong_device", "security_concern", "other",
+]  # fmt: skip
 
 
 class DecisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal["approved", "rejected"]
     note: str | None = Field(default=None, max_length=NOTE_MAX)
-    reason_code: str | None = Field(default=None, max_length=64)
+    reason_code: ReasonCode | None = None  # mã cố định — KHÔNG chuỗi tự do (không qua guard)
     view_started_at: datetime | None = None  # tuỳ chọn; chỉ log
 
 
@@ -97,7 +105,10 @@ async def decide(
     body = await parse_body(request, DecisionIn)
     if body.decision == "rejected" and not (body.note and body.note.strip()):
         raise HTTPException(422, "rejected_requires_note")  # [Chốt cổng 4]
-    note = (await desk.guard.redact(body.note)).text if body.note else None
+    redacted = await redact(desk, request, body.note) if body.note else None
+    if redacted is not None:
+        await record_redacted(desk, request, p, ticket_id, redacted)
+    note = redacted.text if redacted is not None else None
     if body.view_started_at is not None:
         log.info("phiếu %s: client báo bắt đầu xem lúc %s (chỉ log)", approval_id, body.view_started_at)
     event = {
@@ -111,5 +122,6 @@ async def decide(
         # ticket đã rời chờ duyệt (lượt duyệt khác vừa chạy xong) — vẫn đúng MỘT dòng late_event
         late_extra={"approval_id": approval_id, "clicked_by": p.user_id, "reason": "already_decided"},
     )  # fmt: skip
+    notices = redacted.notices if redacted is not None else []
     return JSONResponse({"approval_id": approval_id, "ticket_id": ticket_id,
-                         "status": "accepted"}, status_code=202)  # fmt: skip
+                         "status": "accepted", "notices": notices}, status_code=202)  # fmt: skip

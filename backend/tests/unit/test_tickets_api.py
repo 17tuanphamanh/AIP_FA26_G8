@@ -41,7 +41,7 @@ async def test_create_returns_202_then_graph_runs_in_background() -> None:
         r = await env.client.post("/api/tickets", json={"text": "VPN lỗi"}, headers=an)
         assert r.status_code == 202
         ticket = r.json()["ticket_id"]
-        assert r.json() == {"ticket_id": ticket, "status": "S_NEW"}
+        assert r.json() == {"ticket_id": ticket, "status": "S_NEW", "notices": []}  # 3e: notices (8.3)
         await env.drain()
         view = await env.ticket(ticket, an)
         assert (view["status"], view["waiting_for"]) == (S_PENDING_APPROVAL, "approval")

@@ -32,8 +32,6 @@ dependencies = [
     # Tiếng Việt [Đề xuất D-10]
     "pyvi",
     # Riêng tư [Đề xuất D-06]
-    "presidio-analyzer",
-    "presidio-anonymizer",
     "unidecode",
     # Bảo mật (P6)
     "pyjwt",

@@ -14,23 +14,24 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.approval.store import ApprovalRow
 from app.audit.writer import check_audit_row
 from app.core.clock import FakeClock
 from app.db.escalations import QueueItem
 from app.db.runtime import DueWait, OpenTurn, as_ref
-from app.db.tickets import NewTicket, TicketRow
+from app.db.security_events import check_event
+from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.final import FinalSummary
-from app.graph.builder import build_graph, fake_nodes
+from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.llm import LlmPort
-from app.settings import get_escalation_templates, get_policy
+from app.settings import Settings, get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.identity import (
@@ -253,6 +254,24 @@ class RecordingNotifier:
         return sum(1 for t, _, _ in self.sent if t == ticket_id)
 
 
+class MemorySecurityEvents:
+    """`security_events` giả cho node (3e) — cùng kiểm `check_event` như writer thật; ghi vào transaction của
+    `effects.once` giả (MemoryEffects gọi hàm đúng một lần theo khoá)."""
+
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
+
+    async def record(
+        self, event_type: str, *, ticket_id: str | None = None, detail: Mapping[str, Any] | None = None
+    ) -> None:
+        payload = dict(detail or {})
+        check_event(event_type, payload)
+        self.rows.append({"event_type": event_type, "ticket_id": ticket_id, "detail": payload})
+
+    def of(self, ticket_id: str, event_type: str = "injection_detected") -> list[dict[str, Any]]:
+        return [r for r in self.rows if r["ticket_id"] == ticket_id and r["event_type"] == event_type]
+
+
 class Crash(BaseException):
     """Mô phỏng process chết giữa chừng: không phải Exception nên boundary E9 không bắt, LangGraph
     không kịp ghi checkpoint của node đang chạy."""
@@ -292,6 +311,7 @@ class MemoryTickets:
         self.fail: BaseException | None = None
         self.fail_times: int | None = None
         self.finalize_calls: Counter[str] = Counter()
+        self.security_events: list[dict[str, Any]] = []  # sự kiện ghi cùng `create` (3e)
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -306,12 +326,19 @@ class MemoryTickets:
             "requester_role": requester_role, "requester_dept": requester_dept,
         })  # fmt: skip
 
-    async def create(self, ticket: NewTicket, *, turn_id: str) -> None:
-        """Như SQL: dòng `tickets` + lượt `submit` trong MỘT transaction (lượt lỗi → không ticket)."""
+    async def create(self, ticket: NewTicket, *, turn_id: str, security_events: NewEvents = ()) -> None:
+        """Như SQL: dòng `tickets` + lượt `submit` + `security_events` trong MỘT transaction (lượt lỗi → không
+        ticket, không sự kiện)."""
+        for event_type, detail in security_events:
+            check_event(event_type, detail)
         if ticket.ticket_id in self.rows:
             raise ValueError("PK tickets")
         if turn_id in self._turns.rows:
             raise ValueError("PK turns")
+        self.security_events.extend(
+            {"event_type": e, "ticket_id": ticket.ticket_id, "user_id": ticket.requester_id, "detail": dict(d)}
+            for e, d in security_events
+        )
         self.register(
             ticket.ticket_id, ticket.created_at, requester_id=ticket.requester_id,
             session_id=ticket.session_id, redacted_request=ticket.redacted_request,
@@ -409,6 +436,9 @@ class MemoryTicketLock:
             lock.release()
 
 
+_DEFAULT_SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 @dataclass
 class GraphHarness:
     """Toàn bộ runtime trên bản giả. Trường `saver`, store… giữ nguyên qua `restart()`."""
@@ -418,6 +448,7 @@ class GraphHarness:
     can_execute: bool = True
     rediagnose_on_new_slot: bool = False
     recursion_limit: int = 60
+    nodes: Literal["fake", "real"] = "fake"  # "real": node thật đã có (b02 — 3e, b08 — 3c) đè lên node giả
     concurrency: int = 8
     lock_timeout: float = 5.0
     saver: InMemorySaver = field(default_factory=lambda: InMemorySaver(serde=make_serde()))
@@ -434,11 +465,15 @@ class GraphHarness:
     alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
     max_recover_attempts: int = 3
+    # Hạn cho cả lượt (9.0): mặc định = Settings (100 s / 2 s) — test FakeClock tua quá hạn trong một lượt sẽ ra E2
+    turn_budget_s: float = field(default_factory=lambda: _DEFAULT_SETTINGS.turn_budget_s)
+    safety_margin_s: float = field(default_factory=lambda: _DEFAULT_SETTINGS.safety_margin_s)
     approver_id: str | None = "l1-fake"  # B15 giả (FAKE_APPROVER_ID)
     ml: FakeMlService = field(default_factory=FakeMlService)  # ml-service giả (3a), đếm ở nơi nhận
     rag: FakeRag = field(default_factory=FakeRag)  # RAG giả (3c) — b08 thật dùng khi `nodes="real"`
     # LLM gateway THẬT + ScriptedLLM rỗng (3d): node gọi LLM mà test chưa cấp kịch bản → ScriptExhausted → E9
     llm: LlmPort = field(default_factory=lambda: make_gateway().client)
+    security_events: "MemorySecurityEvents" = field(default_factory=lambda: MemorySecurityEvents())
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -465,12 +500,15 @@ class GraphHarness:
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
+            security_events=self.security_events,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:
         return Runner(
-            build_graph(fake_nodes(self.deps()), self.saver), lock=self.lock, turns=self.turns,
+            build_graph((real_nodes if self.nodes == "real" else fake_nodes)(self.deps()), self.saver),
+            lock=self.lock, turns=self.turns,
             audit=self.audit, effects=self.effects, spans=self.spans, clock=self.clock,
+            turn_budget_s=self.turn_budget_s, safety_margin_s=self.safety_margin_s,
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,
             recursion_limit=self.recursion_limit, max_recover_attempts=self.max_recover_attempts,

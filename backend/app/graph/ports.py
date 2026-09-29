@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from app.approval.store import ApprovalRow
 from app.db.identity import LiveSession
 from app.db.runtime import DueWait, OpenTurn, WaitKind
-from app.db.tickets import NewTicket, TicketRow
+from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.final import FinalSummary
 from app.tools.registry import ToolResult
@@ -169,10 +169,24 @@ class EscalationStore(Protocol):
     ) -> str: ...
 
 
+class SecurityEvents(Protocol):
+    """`audit/security_events.SecurityEventWriter.record` (cùng chữ ký, phase3 mục 8.2). Node CHỈ gọi qua
+    `effects.once("security_event", …)` (test AST `SIDE_EFFECT_FUNCS`); writer ghi bằng `current_tx()` nên dòng sự kiện
+    và dòng `side_effects` cùng commit. `detail` không chứa văn bản người dùng (`check_event` chặn khoá nhạy cảm)."""
+
+    async def record(
+        self, event_type: str, *, ticket_id: str | None = None, detail: Mapping[str, Any] | None = None
+    ) -> None: ...
+
+
 class TicketRepo(TicketStore, Protocol):
     """Thêm phần API dùng (2b-3): tạo ticket + lượt `submit` đầu tiên trong MỘT transaction."""
 
-    async def create(self, ticket: NewTicket, *, turn_id: str) -> None: ...
+    async def create(
+        self, ticket: NewTicket, *, turn_id: str, security_events: NewEvents = ()
+    ) -> None:
+        """`security_events` (event_type, detail) INSERT cùng transaction (3e, phase3 mục 8.3)."""
+        ...
 
 
 class ApprovalRepo(Protocol):

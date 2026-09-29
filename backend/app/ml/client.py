@@ -11,6 +11,8 @@
 - Tự chia lô theo số phần tử (khớp `ml_service/app/schemas.py`) VÀ theo byte (dưới giới hạn 256 KB của
   ml-service): lô lỗi đầu tiên → dừng, trả lỗi; `attempts` cộng dồn qua các lô (Q-3a-12).
 - Span `ml:<endpoint>`: một dòng log (như `ToolRegistry._span`) — không ghi văn bản.
+- Hạn cho cả lượt (phase3 9.0): timeout mỗi lần thử = `cap_timeout(TIMEOUT_S[endpoint])`; hết → `TurnBudgetExceeded`
+  (KHÔNG thành `MlResult.error` — B2/B3 không được "rơi xuống LLM" khi chính lượt đã hết giờ).
 """
 
 import json
@@ -23,6 +25,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.core.clock import Clock, SystemClock
+from app.core.turn_budget import cap_timeout
 from app.ml.models import ClassifyOut, CountOut, EmbedOut, IntentOut, RerankOut
 from app.ml.ports import MlContractError, MlError, MlResult
 from app.tools.retry import call_with_retry
@@ -168,9 +171,8 @@ class MlClient:
         async def once() -> httpx.Response:
             nonlocal kind
             try:
-                response = await self._http.post(
-                    f"/{endpoint}", content=payload, headers=self._headers, timeout=TIMEOUT_S[endpoint]
-                )
+                timeout = cap_timeout(TIMEOUT_S[endpoint], self._clock, what=f"ml:{endpoint}")  # 9.0
+                response = await self._http.post(f"/{endpoint}", content=payload, headers=self._headers, timeout=timeout)
             except httpx.TimeoutException:
                 kind = "timeout"
                 raise
@@ -189,7 +191,7 @@ class MlClient:
 
         try:
             response, error, attempts = await call_with_retry(
-                once, retries=self._retries, clock=self._clock
+                once, retries=self._retries, clock=self._clock, what=f"ml:{endpoint}"
             )
         except httpx.HTTPStatusError as e:  # 4xx khác 404/429: call_with_retry raise lại, không retry
             raise MlContractError(f"ml-service /{endpoint}: HTTP {e.response.status_code}") from e

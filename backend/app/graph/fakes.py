@@ -29,6 +29,7 @@ from app.graph.ports import (
     DeadlineStore,
     EscalationStore,
     IdentityReads,
+    SecurityEvents,
     TicketStore,
     ToolCaller,
     ToolResult,
@@ -224,6 +225,8 @@ class NodeDeps:
     # LLM gateway (3d, P2): B2 L4 (3e), B3 (3f), B10/B11 (3g). Bắt buộc, không bản giả mặc định — test dùng
     # `LLMClient` thật với ScriptedLLM làm provider (`tests/fakes/llm.make_gateway`, phase3 7.3).
     llm: LlmPort
+    # `security_events(injection_detected)` của B2 / tin trả lời (3e) — CHỈ qua `effects.once("security_event")`.
+    security_events: SecurityEvents
     scenario: FakeScenario = field(default_factory=FakeScenario)
     # B15 GIẢ: người duyệt cố định (`FAKE_APPROVER_ID`, chỉ dev/test). None → B15 ném → E9.
     approver_id: str | None = "l1-fake"

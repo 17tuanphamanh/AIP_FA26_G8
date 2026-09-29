@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 
 from app.core.clock import Clock
+from app.core.turn_budget import TurnBudgetExceeded, window
 from app.domain.context import RequesterContext
 from app.domain.ticket_state import ChunkRef
 from app.ml.ports import MlPort
@@ -37,7 +38,7 @@ from app.rag.models import (
 )
 from app.rag.vector_store import CollectionNotFound, VectorIndex, VectorStoreTransient
 from app.settings import Settings
-from app.tools.retry import call_with_retry
+from app.tools.retry import call_with_retry, retries_of
 
 _COLLECTION_RE = re.compile(COLLECTION_RE)
 
@@ -74,7 +75,7 @@ class _Counter:
     total: int = 0
 
     def add(self, attempt: int, *, failed: bool) -> None:
-        self.total += attempt if not failed else max(0, attempt - 1)
+        self.total += retries_of(attempt, failed=failed)
 
 
 class _Transient(Exception):
@@ -97,7 +98,7 @@ async def _call(clock: Clock, retries: _Counter, fn: Callable[..., Awaitable[Any
         except VectorStoreTransient as e:
             raise httpx.ConnectError(str(e)) from e  # cho call_with_retry thấy là lỗi tạm (tiền lệ Q-3a-3)
 
-    data, err, attempt = await call_with_retry(once, clock=clock)
+    data, err, attempt = await call_with_retry(once, clock=clock, what="rag:qdrant")
     retries.add(attempt, failed=err is not None)
     if err is not None:
         raise _Transient(err)
@@ -190,8 +191,9 @@ class Retriever:
         retries = _Counter()
         stage = _StageBox("alias")
         kb_version: str | None = None
+        limit_s, turn_bound = window(self._cfg.deadline_s, self._clock, what="rag:retrieve")  # 9.0
         try:
-            async with asyncio.timeout(self._cfg.deadline_s):
+            async with asyncio.timeout(limit_s):
                 if collection is not None:
                     coll = collection
                 else:
@@ -231,6 +233,8 @@ class Retriever:
                     return first.finish(kb_version, fallback=False, tried=True, retries=retries.total)
                 return first.finish(kb_version, fallback=False, tried=False, retries=retries.total)
         except TimeoutError:
+            if turn_bound:  # hết khung vì hạn cả lượt, không phải vì RAG chậm quá rag_deadline_s
+                raise TurnBudgetExceeded(f"rag:retrieve ({stage.value})") from None
             raise RetrievalSystemError(
                 stage.value, retries.total, kb_version=kb_version, detail="deadline"
             ) from None

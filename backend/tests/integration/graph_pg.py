@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
+from app.audit.security_events import SecurityEventWriter
 from app.audit.writer import AuditWriter
 from app.core.clock import FakeClock
 from app.db.escalations import SqlEscalationStore
@@ -92,6 +93,7 @@ async def open_pg_runtime(
     rag: RagPort | None = None,
     llm: LlmPort | None = None,
     nodes: Literal["fake", "real"] = "fake",
+    audit: AuditWriter | None = None,
 ) -> AsyncIterator[PgRuntime]:
     settings = Settings(database_url=rw_url, ticket_lock_timeout=lock_timeout)
     engines = create_engines(settings)
@@ -108,14 +110,16 @@ async def open_pg_runtime(
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
         ml=FakeMlService().client(clock), rag=rag or FakeRag(), llm=llm or make_gateway(clock=clock).client,
         scenario=scenario, approver_id=approver_id,
+        security_events=SecurityEventWriter(engines.main, clock),
     )  # fmt: skip
     build_nodes = real_nodes if nodes == "real" else fake_nodes
     try:
         async with open_postgres_saver(rw_url, max_size=5) as saver:
             runner = Runner(
                 build_graph(build_nodes(deps), saver), lock=PgTicketLock(engines.lock),
-                turns=turns, audit=AuditWriter(engines.main), effects=SqlEffectStore(engines.main),
+                turns=turns, audit=audit or AuditWriter(engines.main), effects=SqlEffectStore(engines.main),
                 spans=SqlSpanSink(engines.main), clock=clock, can_execute=can_execute,
+                turn_budget_s=settings.turn_budget_s, safety_margin_s=settings.safety_margin_s,
                 tickets=ticket_store,
             )  # fmt: skip
             yield PgRuntime(runner, engines, deadlines, turns, approvals, notifier, executor,
@@ -132,6 +136,10 @@ def pg_runtime_factory(
     scenario: FakeScenario | None = None,
     approver_id: str | None = "l1_01",
     can_execute: bool = True,
+    nodes: Literal["fake", "real"] = "fake",
+    llm: LlmPort | None = None,
+    rag: RagPort | None = None,
+    audit: AuditWriter | None = None,
 ) -> Callable[..., AbstractAsyncContextManager[Runtime]]:
     """`create_app(runtime=…)` trên Postgres thật: store SQL, `AsyncPostgresSaver`, B1 đọc bảng
     `sessions` thật (phiên do route đăng nhập ghi), AD giả qua registry thật, người duyệt giả mặc định
@@ -141,7 +149,7 @@ def pg_runtime_factory(
     async def factory(*_: Any) -> AsyncIterator[Runtime]:
         async with open_pg_runtime(
             rw_url, clock=clock, scenario=scenario, ad=ad, approver_id=approver_id,
-            can_execute=can_execute,
+            can_execute=can_execute, nodes=nodes, llm=llm, rag=rag, audit=audit,
         ) as rt:  # fmt: skip
             yield Runtime(runner=rt.runner, deadlines=rt.deadlines, turns=rt.turns,
                           tickets=rt.tickets, approvals=rt.approvals)  # fmt: skip

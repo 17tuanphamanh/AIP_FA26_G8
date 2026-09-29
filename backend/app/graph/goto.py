@@ -27,7 +27,10 @@ _SAME_NAME_COLUMNS = frozenset({
     "intended_action", "exit_code", "block_reason", "close_reason", "intent",
     "approval_result", "action_plan_hash", "approver_id", "note", "kb_version",
 })  # fmt: skip
-_DETAIL_FIELDS = frozenset({"escalation_note", "escalation_reason_detail", "aggregate_status"})
+# `screening`, `security_flag` (3e): audit bước B2 mang lớp quyết định — M9 tính tỉ lệ xuống L4 (B02 mục 9).
+_DETAIL_FIELDS = frozenset({
+    "escalation_note", "escalation_reason_detail", "aggregate_status", "screening", "security_flag",
+})  # fmt: skip
 _RISK_COLUMNS = (
     "decided_by", "policy_decision", "risk_level", "reason", "matched_rule_id",
     "calibrated_prob", "raw_prob", "p_method",

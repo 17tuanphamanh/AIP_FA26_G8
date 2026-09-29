@@ -7,3 +7,10 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   `rag.retriever.Retriever`), chỉ bắt `RetrievalSystemError` (E2); rỗng/dưới ngưỡng → E3 (B9). Bản GIẢ (Phase
   2, đọc `deps.scenario`) nằm ở `graph/nodes/fake/b08_retrieve.py`. `graph/builder.py::select_nodes` (qua
   `FAKE_SCENARIO`) hoặc `real_nodes`/`fake_nodes` chọn bản nào chạy — xem `graph/wiring.py`.
+- `b02_screen.py`: node THẬT (Phase 3 chặng 3e) — L2 regex (`guard.injection.match`) → L3 `deps.ml.classify`
+  (`TAU_BLOCK`/`TAU_PASS`) → L4 LLM fast `b02_injection_judge` (không cache). Chặn → E0 `S_BLOCKED` +
+  `security_events(injection_detected)` qua `effects.once("security_event")` (`detail` không chứa câu); L3 và L4 đều
+  không trả lời → E2 `S_ESCALATED` + `security_flag`, `screening_unavailable` (không cho qua). Bản GIẢ (đọc
+  `deps.scenario`, gate2 dùng) ở `graph/nodes/fake/b02_screen.py`.
+- `clarify_wait.py` / `confirm_wait.py` (node chung, không có bản giả): câu trả lời / `note` qua `guard.screen_reply`
+  (L0 + L2) NGAY sau `interrupt()` — khớp → E0 `S_ESCALATED` `injection_in_reply`, tin không vào `conversation`.

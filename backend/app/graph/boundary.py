@@ -10,6 +10,9 @@
   thread ở đây (bản 2a) để lại ticket không có `final_state` = bị bỏ rơi. Giới hạn số lần: runner
   (`recover_attempts`, migration 0005).
 - Mọi giá trị node trả về phải có key thuộc `TicketState` (`check_state_keys`) — key lạ → E9.
+- **Hết hạn cả lượt** (`core.turn_budget.TurnBudgetExceeded`, phase3 9.0, Q-3f-2): KHÔNG phải bug → E2
+  `turn_budget_exceeded` (lưới chung cho node không tự bắt: B1, B8…; B2/B3/B6 bắt tường minh để giữ `security_flag`/điểm
+  log). Không bao giờ cho qua, không E3, không E9.
 """
 
 import functools
@@ -18,6 +21,7 @@ from typing import Any
 
 from langgraph.errors import GraphBubbleUp
 
+from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import ExitCode
 from app.domain.states import S_ESCALATED, TERMINAL
 from app.domain.ticket_state import check_state_keys
@@ -40,6 +44,8 @@ def with_error_boundary(name: str, fn: NodeFn) -> NodeFn:
         except GraphBubbleUp:
             raise
         except Exception as exc:
+            if isinstance(exc, TurnBudgetExceeded) and state.get("status") not in TERMINAL | {S_ESCALATED}:
+                return await _turn_budget_exceeded(name, state, exc)
             log.error(
                 "unhandled_exception tại %s (ticket %s): %s: %s",
                 name, state.get("ticket_id"), type(exc).__name__, exc,
@@ -69,3 +75,12 @@ def with_error_boundary(name: str, fn: NodeFn) -> NodeFn:
 
     wrapped.__dict__["error_boundary"] = True
     return wrapped
+
+
+async def _turn_budget_exceeded(name: str, state: Any, exc: TurnBudgetExceeded) -> dict[str, Any]:
+    log.warning("turn_budget_exceeded tại %s (ticket %s): %s", name, state.get("ticket_id"), exc)
+    return await goto(
+        state, S_ESCALATED, next_node=AUDIT_NODE, step=name, event="turn_budget_exceeded",
+        audit_detail={"node": name, "exception": f"{type(exc).__name__}: {exc}"[:500]},
+        exit_code=ExitCode.E2.value, escalation_reason_detail="turn_budget_exceeded",
+    )  # fmt: skip

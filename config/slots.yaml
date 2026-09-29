@@ -2,7 +2,10 @@
 #
 # tool_arg_slots (TOOL_ARG_SLOTS, D-20): slot mà ít nhất một tool chẩn đoán dùng làm tham số.
 # ToolSpec.arg_slots phải là tập con của danh sách này — sai thì import tools lỗi (P5 mục 4).
-# required_slots theo intent (bảng B11 mục 4) thêm ở Phase 3 cùng B11.
+# intents (3f, phase3 mục 3.2 — 3-Q1 tách slots/facts): slot người dùng/LLM được phép nêu cho từng intent. Key ngoài
+# required ∪ optional, key trùng tên fact (FACT_KEYS), action ngoài action_types, giá trị sai value_rules hoặc dài > 100 ký
+# tự đều bị BỎ (domain/slots.sanitize_slots). device_id, error_code, reason còn phải có thật trong câu người dùng (luật
+# trong code, không cấu hình ở đây). Mọi action_type phải có dòng trong action_metadata.yaml — thiếu → không khởi động.
 tool_arg_slots:
   - target_user
   - account_type
@@ -15,3 +18,12 @@ tool_arg_slots:
 query_slots:
   - error_code
 
+intents:
+  vpn:                                             # Phase 3 chỉ khai báo vpn; Phase 5 thêm 3 loại
+    required: [device_id, action]
+    optional: [reason, error_code]
+    action_types: [renew_vpn_cert, reissue_vpn_access, check_vpn_status]   # 3-Q38
+    value_rules:
+      device_id:  {pattern: '^[A-Z]{2,4}-\d{3,5}$'}
+      error_code: {pattern: '^(0x[0-9A-Fa-f]{4,8}|\d{3,4})$'}
+      reason:     {max_len: 200}                   # luật chung 100 ký tự (P1) chặt hơn — ghi "spec cần sửa (3f)"

@@ -72,6 +72,8 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "clarify_timeout", "off_topic_twice", "target_check_error", "llm_layer_disabled",
     "recheck_failed", "action_plan_changed_since_approval", "person_no_longer_valid",
     "exec_failed", "exec_interrupted",
+    # Phase 3 mục 9.0 (3f S0): hạn cho cả lượt — boundary + B2/B3/B6
+    "turn_budget_exceeded",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",

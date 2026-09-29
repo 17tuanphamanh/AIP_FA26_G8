@@ -10,6 +10,11 @@ Kiểu trả [Chốt P5 mục 6.1]: lỗi hệ thống ngoài KHÔNG raise — l
 
 Tool ghi gặp 404/409 [Chốt P5 mục 6.1, bản 1.4]: thất bại thực thi → `error` (B17 đi E7), không
 raise, không tính vào breaker. Breaker đếm theo lời gọi registry (sau retry), không theo HTTP attempt.
+
+Hạn cho cả lượt (phase3 9.0, PLAN-3f S0): kiểm TRƯỚC breaker (hết hạn → `TurnBudgetExceeded`, không gọi, không đụng
+breaker); tool đọc: timeout MỖI lần thử = `cap_timeout(spec.timeout_s)`, backoff không vượt phần còn lại; tool ghi: không
+đủ TRỌN `timeout_s` → không gửi (`full=True`). Bị bỏ giữa chừng vì hết hạn → `breaker.record_abandoned()` (không tính
+lỗi). `TurnBudgetExceeded` luôn ném (không thành `ToolResult.error`): node/boundary → E2 `turn_budget_exceeded`.
 """
 
 import logging
@@ -22,6 +27,7 @@ import httpx
 from pydantic import BaseModel, RootModel, ValidationError
 
 from app.core.clock import Clock
+from app.core.turn_budget import TurnBudgetExceeded, cap_timeout
 from app.tools.breaker import BreakerBoard, CircuitBreaker
 from app.tools.retry import call_with_retry
 from app.tools.specs import REGISTRY, ToolSpec, ToolSpecError
@@ -90,6 +96,7 @@ class ToolRegistry:
         if handler is None:
             raise ToolContractError(f"{name}: chưa gắn handler vào registry này")
 
+        cap_timeout(spec.timeout_s, self._clock, what=f"tool:{name}", full=spec.kind == "write")  # 9.0: trước breaker
         breaker = self._breakers[spec.target_system]
         if not breaker.allow():
             result = ToolResult(name, None, CIRCUIT_OPEN, 0, False)
@@ -100,6 +107,9 @@ class ToolRegistry:
         try:
             outcome = await self._invoke(spec, handler, inp, breaker)
         except ToolContractError:
+            raise
+        except TurnBudgetExceeded:
+            breaker.record_abandoned()  # hết hạn lượt ≠ hệ thống ngoài hỏng
             raise
         except BaseException:
             breaker.record_failure()  # lỗi chưa lường trước: không để half-open kẹt lượt thử
@@ -114,17 +124,23 @@ class ToolRegistry:
     async def _invoke(
         self, spec: ToolSpec, handler: Handler, inp: BaseModel, breaker: CircuitBreaker
     ) -> "_Outcome":
+        what = f"tool:{spec.name}"
         if spec.kind == "read":
+
+            async def attempt() -> Any:  # timeout tính lại MỖI lần thử theo phần còn lại của lượt (9.0)
+                return await handler(inp, cap_timeout(spec.timeout_s, self._clock, what=what))
+
             try:
                 data, error, attempts = await call_with_retry(
-                    handler, inp, spec.timeout_s, retries=spec.retries, clock=self._clock
+                    attempt, retries=spec.retries, clock=self._clock, what=what
                 )
             except httpx.HTTPStatusError as e:
                 breaker.record_success()  # hệ thống ngoài vẫn trả lời — lỗi là ở phía ta
                 raise ToolContractError(f"{spec.name}: HTTP {e.response.status_code}") from e
             return _Outcome(data, error, attempts, "success" if error is None else "failure")
-        try:  # ghi: 1 lần, KHÔNG retry [Chốt 17.3]
-            return _Outcome(await handler(inp, spec.timeout_s), None, 0, "success")
+        try:  # ghi: 1 lần, KHÔNG retry [Chốt 17.3]; không đủ trọn timeout → không gửi (9.0)
+            timeout = cap_timeout(spec.timeout_s, self._clock, what=what, full=True)
+            return _Outcome(await handler(inp, timeout), None, 0, "success")
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             return _Outcome(None, f"{type(e).__name__}: {e}", 0, "failure")
         except httpx.HTTPStatusError as e:

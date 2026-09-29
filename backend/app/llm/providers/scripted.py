@@ -16,6 +16,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -76,6 +77,8 @@ class CallRecord:
     rendered_messages: list[dict[str, str]]
     variables: Mapping[str, Any]
     attempt: int
+    timeout_s: float | None = None  # timeout gateway truyền cho request (test hạn cả lượt 9.0 đọc ở nơi nhận)
+    at: datetime | None = None  # đồng hồ provider lúc nhận (chỉ khi dựng với `clock`)
 
 
 def _content(step: Reply | BadJSON) -> str:
@@ -117,7 +120,10 @@ class ScriptedLLM:
         return [c for c in self.calls if c.prompt_id == prompt_id]
 
     async def chat(self, req: ProviderRequest) -> ProviderResponse:
-        self.calls.append(CallRecord(req.prompt_id, req.model, req.messages, req.variables, req.attempt))
+        at = self._clock.now() if self._clock is not None else None
+        self.calls.append(
+            CallRecord(req.prompt_id, req.model, req.messages, req.variables, req.attempt, req.timeout_s, at)
+        )
         script = self._scripts.get(req.prompt_id)
         if script is None:
             raise ScriptExhausted(f"ScriptedLLM: không có kịch bản cho {req.prompt_id!r}")

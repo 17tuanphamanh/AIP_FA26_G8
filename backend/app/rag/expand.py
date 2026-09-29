@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from qdrant_client.models import FieldCondition, MatchValue, Range
 
+from app.core.turn_budget import TurnBudgetExceeded, window
 from app.domain.context import RequesterContext
 from app.domain.ticket_state import ChunkRef
 from app.rag.filters import query_filter
@@ -34,8 +35,9 @@ async def expand(
     coll = f"kb_{kb_version}"
     cfg = retriever._cfg
     retries = _Counter()
+    limit_s, turn_bound = window(cfg.deadline_s, retriever._clock, what="rag:expand")  # 9.0
     try:
-        async with asyncio.timeout(cfg.deadline_s):
+        async with asyncio.timeout(limit_s):
             blocks: list[EvidenceBlock] = []
             for c in chunks:  # giữ thứ tự đầu vào = thứ tự điểm giảm dần
                 w = cfg.neighbor_window
@@ -68,6 +70,8 @@ async def expand(
                 )
             return trim_to_budget(blocks, max_tokens or cfg.evidence_max_tokens)
     except TimeoutError:
+        if turn_bound:  # hết khung vì hạn cả lượt (9.0), không phải vì expand chậm quá rag_deadline_s
+            raise TurnBudgetExceeded("rag:expand") from None
         raise RetrievalSystemError("expand", retries.total, kb_version=kb_version, detail="deadline") from None
 
 

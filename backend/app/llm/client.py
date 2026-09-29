@@ -10,7 +10,9 @@ Thứ tự trong một lời gọi:
 5. Mỗi đích: trần chi (đích trả phí, Q-3d-14) → mỗi request trả phí giữ chỗ chi phí xấu nhất trước khi gửi (S9: song
    song, thử lại, sửa schema đều không lọt trần — `llm/spend.py`) → semaphore → provider; retry 429/5xx/timeout/mất kết nối tới
    `max_retries` (Retry-After ưu tiên, không thì backoff + jitter); hết lượt → đích fallback kế. Toàn bộ nằm trong
-   `deadline_s` (Q-3d-7): lần chờ vượt thời gian còn lại → dừng, `LLMUnavailable`.
+   `deadline_s` (Q-3d-7): lần chờ vượt thời gian còn lại → dừng, `LLMUnavailable`. Hạn cho cả lượt (phase3 9.0):
+   deadline = min(`deadline_s`, còn lại của lượt − biên an toàn); hết vì hạn LƯỢT → `TurnBudgetExceeded` (không phải
+   `LLMUnavailable` — node ghi E2 `turn_budget_exceeded`); lượt đã hết trước khi gửi → ném ngay, 0 request.
 6. Validate schema; sai → một lần sửa trên CÙNG đích; vẫn sai → `LLMSchemaError` (không fallback).
 7. Ghi cache (chỉ khi đích chính trả lời) + span `llm:<id>` và dòng `llm_calls` (kể cả cache hit, kể cả lỗi) —
    không có văn bản prompt/đầu ra, trừ `prompt_full` khi `EVAL_MODE=true` (P2 mục 11).
@@ -31,6 +33,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ValidationError
 
 from app.core.clock import Clock
+from app.core.turn_budget import TurnBudgetExceeded, window
 from app.llm.cache import cache_key, cache_mode
 from app.llm.config import RoleCfg, RuntimeLlm, Target
 from app.llm.context import (
@@ -110,6 +113,7 @@ class _Call:
     trimmed_messages: int = 0
     prompt_full: str | None = None
     error: str | None = None
+    turn_bound: bool = False  # deadline của lời gọi bị hạn cả lượt chặn (9.0), không phải `deadline_s` của vai trò
 
 
 def _parse[T: BaseModel](schema: type[T], content: str) -> tuple[T | None, ValidationError | None]:
@@ -230,7 +234,10 @@ class LLMClient:
                 else:
                     call.cache_hit, call.json_valid_first_try = True, True
                     return obj
-        deadline = call.t0 + timedelta(seconds=rcfg.deadline_s)
+        now = self._clock.now()
+        role_left = (call.t0 + timedelta(seconds=rcfg.deadline_s) - now).total_seconds()
+        limit_s, call.turn_bound = window(role_left, self._clock, what=f"llm:{prompt.id}")  # 9.0: hết → ném, 0 request
+        deadline = now + timedelta(seconds=limit_s)
         obj, answered = await self._call_chain(call, chain, prompt, rendered, schema, json_schema, rcfg, temp,
                                                deadline, variables, parent)  # fmt: skip
         if key is not None and mode is not None and answered is primary:
@@ -247,6 +254,7 @@ class LLMClient:
         variables: Mapping[str, Any], parent: TraceParent | None,
     ) -> tuple[T, Target]:  # fmt: skip
         over_budget = unknown_spend = failed = 0
+        deadline_hit = False
         for index, target in enumerate(chain):
             assert target.price is not None
             if target.price.paid:
@@ -267,9 +275,12 @@ class LLMClient:
                     continue
                 failed += 1
                 if f.deadline:
+                    deadline_hit = True
                     break
                 continue
             return obj, target
+        if deadline_hit and call.turn_bound:  # 9.0: hết vì hạn cả lượt → E2 turn_budget_exceeded, không LLMUnavailable
+            raise TurnBudgetExceeded(f"llm:{prompt.id}: hết hạn lượt ({', '.join(call.failures)})") from None
         if over_budget and not unknown_spend and not failed:
             raise LLMBudgetExceeded(f"{prompt.id}: đã chạm trần chi tiêu, không còn đích giá 0") from None
         raise LLMUnavailable(f"{prompt.id}: hết retry/fallback/deadline ({', '.join(call.failures)})") from None

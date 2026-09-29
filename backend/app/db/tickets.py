@@ -9,16 +9,21 @@ escalate còn NULL tới khi L2 đóng (Phase 7).
 `create` (API, 2b-3): dòng `tickets` + dòng `turns` (lượt `submit` đầu tiên) trong MỘT transaction —
 không có khe nào để lại ticket không có lượt (worker chỉ phục hồi được lượt đã có dòng `turns`).
 `created_at` lấy từ Clock của app, không `now()` của Postgres (2b-QD): thời lượng B20 tính cùng đồng hồ.
+Sự kiện `security_events` của lúc tạo (3e: `privacy_secret_redacted {count}`) INSERT CÙNG khối đó (phase3 mục 8.3) — lỗi
+bất kỳ INSERT nào thì không còn ticket, lượt hay sự kiện nào.
 `create_child`/`mark_parent_once` ở Phase 5.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import Table, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.db.models import Ticket, Turn
+from app.db.security_events import check_event, insert_event
 from app.domain.final import FinalSummary
 
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
@@ -59,6 +64,9 @@ class TicketRow:
 
 
 _ROW_COLUMNS = tuple(TicketRow.__dataclass_fields__)
+CREATE_ROUTE = "/api/tickets"  # `security_events.route` của sự kiện ghi lúc tạo ticket
+
+type NewEvents = Sequence[tuple[str, Mapping[str, Any]]]  # (event_type, detail) — không chứa văn bản người dùng
 
 
 class TicketMissing(LookupError):
@@ -69,7 +77,9 @@ class SqlTicketStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(self, ticket: NewTicket, *, turn_id: str) -> None:
+    async def create(self, ticket: NewTicket, *, turn_id: str, security_events: NewEvents = ()) -> None:
+        for event_type, detail in security_events:  # lỗi lập trình nổ TRƯỚC khi mở transaction
+            check_event(event_type, detail)
         async with self._engine.begin() as conn:
             await conn.execute(
                 insert(_TICKETS).values(
@@ -85,6 +95,11 @@ class SqlTicketStore:
                     event_type="submit", started_at=ticket.created_at,
                 )
             )  # fmt: skip
+            for event_type, detail in security_events:
+                await insert_event(
+                    conn, event_type, occurred_at=ticket.created_at, user_id=ticket.requester_id,
+                    route=CREATE_ROUTE, ticket_id=ticket.ticket_id, detail=detail,
+                )  # fmt: skip
 
     async def get(self, ticket_id: str) -> TicketRow | None:
         async with self._engine.connect() as conn:

@@ -108,7 +108,7 @@ class DeskEnv:
     clock: FakeClock
     sink: RecordingSink
     store: InMemoryAuthStore
-    guard: MaskingGuard
+    guard: Any  # MaskingGuard (mặc định) hoặc guard thật `RegexPrivacyGuard` (3e)
     idp: FakeIdentityProvider
     settings: Settings
 
@@ -155,7 +155,7 @@ async def desk_env(
     *,
     plan: dict[str, str | list[str]] | None = None,
     lock_timeout: float = 5.0,
-    guard: MaskingGuard | None = None,
+    guard: Any = None,
     runtime: RuntimeFactory | None = None,
     **settings_over: Any,
 ) -> AsyncIterator[DeskEnv]:
