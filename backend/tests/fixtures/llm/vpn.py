@@ -22,7 +22,7 @@ def _field(item: Any, name: str) -> Any:
 
 
 def vpn_scripts(
-    *, need: Literal["action", "info"] = "action", action: str = "renew_vpn_cert", **overrides: Script
+    *, need: Literal["action", "info"] = "action", action: str | None = "renew_vpn_cert", **overrides: Script
 ) -> dict[str, Script]:
     def judge(_: Mapping[str, Any]) -> Step:
         return Reply({"is_attack": False, "category": "none", "reason": "yêu cầu hỗ trợ VPN bình thường"})

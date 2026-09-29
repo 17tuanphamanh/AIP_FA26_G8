@@ -77,7 +77,12 @@ log = logging.getLogger(__name__)
 EXECUTE_NODE = "b17_execute"
 DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module
 PARENT_WAIT = "parent_wait"
-INTERRUPTED_NOTE = "Thực thi bị gián đoạn — cần L2 kiểm tra trạng thái thật trên hệ thống ngoài"
+# Worker không biết lời gọi ghi đã tới hệ thống đích hay chưa (có thể có `begun`) → cùng câu chốt với B17 bước 0 (DỪNG 3 3h,
+# h15b): L2 không được hiểu là "chưa làm". `reason_detail` giữ `execution_interrupted` (Q-3h-3).
+INTERRUPTED_NOTE = (
+    "Thực thi bị gián đoạn (worker không chạy lại B17): có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi "
+    "làm tay."
+)
 FINALIZE_FAILED = "finalize_failed_permanent"
 RECOVER_EXHAUSTED = "recover_exhausted"
 
