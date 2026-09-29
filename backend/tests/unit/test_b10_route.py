@@ -275,6 +275,16 @@ async def test_citing_top5_chunk_dropped_from_evidence_is_e3() -> None:
 
 
 @pytest.mark.asyncio
+async def test_citing_evidence_anchor_outside_top5_is_e3() -> None:
+    """Anchor phải thuộc top-5 (M-3g-13): khối bằng chứng neo ở chunk NGOÀI top-5 (expand trả lạ) — trích nó → E3."""
+    stray = _ref("KB-VPN-005", 0, 0.5)
+    h, _ = _env(evidence=[_block(TOP[0]), _block(stray)], answer=[_answer([stray.chunk_id])])
+    out = await _node(h)
+    assert (out["exit_code"], out["escalation_reason_detail"]) == ("E3", "invalid_citation")
+    _nothing_sent(h)
+
+
+@pytest.mark.asyncio
 async def test_f1_gateway_trimmed_evidence_is_e3_truncated() -> None:
     """f1: gateway phải bỏ khối bằng chứng để vừa `budget_in` → E3 `invalid_citation`, `evidence_truncated=true` — kể cả
     khi trích dẫn trông hợp lệ (không đoán anchor)."""
@@ -361,12 +371,31 @@ async def test_g22_turn_budget_at_b10_answer_is_e2() -> None:
     _nothing_sent(h)
 
 
+@pytest.mark.asyncio
+async def test_g22_turn_budget_at_expand_is_e2() -> None:
+    """P7: `expand_for_answer` (Retriever THẬT trên SpyIndex) cắt khung theo phần còn lại của lượt — index chậm hơn phần
+    còn lại → `TurnBudgetExceeded` → E2 `turn_budget_exceeded` ở B10, không viết câu trả lời (M-3g-14c)."""
+    clock = FakeClock()
+    rag = await fixture_rag(["KB-VPN-001#v1#1"], clock)
+    rag.index.delay_next("scroll_window", 1.0)  # giây THẬT (asyncio.timeout) — lâu hơn phần còn lại 0,2 s
+    gw = make_gateway(vpn_scripts(need="info"), clock=clock)  # type: ignore[arg-type]
+    h = GraphHarness(clock=clock, llm=gw.client, rag=rag)  # type: ignore[arg-type]
+    deadline = TurnDeadline(clock.now() + timedelta(seconds=0.2 + MARGIN), MARGIN)
+    with bind_turn_deadline(deadline):
+        out = await _node(h, _state(retrieved=list(rag.top)))
+    assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (
+        S_ESCALATED, "E2", "turn_budget_exceeded",
+    )  # fmt: skip
+    assert _only(h)["step"] == "B10" and gw.llm.calls_for("b10_answer") == []
+    _nothing_sent(h)
+
+
 # ---- Graph thật tới B10: g5 (TC04), g6 (TC05), g7, g2 ---------------------------------------------------------------
 
 
-async def _graph(top_ids: list[str], *, need: str = "info") -> tuple[GraphHarness, Gateway]:
+async def _graph(top_ids: list[str], *, need: str = "info", **overrides: Script) -> tuple[GraphHarness, Gateway]:
     clock = FakeClock()
-    gw = make_gateway(vpn_scripts(need=need), clock=clock)  # type: ignore[arg-type]
+    gw = make_gateway(vpn_scripts(need=need, **overrides), clock=clock)  # type: ignore[arg-type]
     h = GraphHarness(clock=clock, nodes="real", llm=gw.client, rag=await fixture_rag(top_ids, clock))  # type: ignore[arg-type]
     return h, gw
 
@@ -402,6 +431,23 @@ async def test_g6_tc05_evidence_spans_three_neighbor_chunks_citations_are_anchor
     [msg] = _answers(v)
     assert {s["chunk_id"] for s in msg["sources"]} <= set(top)  # trích dẫn chỉ là anchor top-5
     assert "KB-VPN-003#v1#1" not in {s["chunk_id"] for s in msg["sources"]}
+
+
+def _cite_neighbor(_: Any) -> Reply:
+    return _answer(["KB-VPN-003#v1#1"], steps=["Tắt Wi-Fi điện thoại"])
+
+
+@pytest.mark.asyncio
+async def test_g6_citing_neighbor_seen_in_expanded_evidence_is_e3() -> None:
+    """g6 (M-3g-1, M-3g-13): chunk LIỀN KỀ `KB-VPN-003#v1#1` nằm trong khối bằng chứng mở rộng (LLM đã thấy nội dung) nhưng
+    không phải anchor top-5 → trích nó là E3 `invalid_citation`; không câu trả lời nào được gửi."""
+    h, gw = await _graph(["KB-VPN-003#v1#2", "KB-VPN-001#v1#1"], b10_answer=_cite_neighbor)
+    v = (await h.submit_as("t1", SESSION, text="Kết nối VPN báo lỗi 809, làm sao để sửa?")).values
+    assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E3", "invalid_citation")
+    [call] = gw.llm.calls_for("b10_answer")
+    _, neighbor = (await fixture_chunks())["KB-VPN-003#v1#1"]
+    assert neighbor.content in call.rendered_messages[1]["content"]  # nội dung chunk liền kề ĐÃ gửi LLM
+    assert _answers(v) == [] and "confirm" not in [n for _, _, n in h.notifier.sent]
 
 
 @pytest.mark.asyncio

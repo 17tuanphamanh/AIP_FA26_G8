@@ -445,6 +445,17 @@ async def test_p8_action_has_no_free_text() -> None:
 
 
 @pytest.mark.asyncio
+async def test_last_allowed_turn_reply_with_all_slots_builds_action() -> None:
+    """spec 10.7 #8: kiểm số lượt hỏi đặt SAU kiểm slot thiếu — đã hỏi đủ `MAX_CLARIFICATION_TURNS` lượt mà câu trả lời cuối
+    đủ slot → vẫn dựng Action (không E4 `clarification_exhausted`), không hỏi thêm."""
+    h, gw = _node_harness()
+    turns = h.deps().constants.MAX_CLARIFICATION_TURNS
+    out = await _node(h, _state({"device_id": "LAP-0342", "action": "renew_vpn_cert"}, clarification_turns=turns))
+    assert out["status"] == S_ASSESSING and out["intended_action"].params == {"device_id": "LAP-0342"}
+    assert gw.llm.calls_for("b11_clarify_question") == [] and h.notifier.sent == []
+
+
+@pytest.mark.asyncio
 async def test_f4_diagnostics_summary_only_enums_ids_numbers() -> None:
     h, gw = _node_harness()
     diag = {"check_device_registered": [
