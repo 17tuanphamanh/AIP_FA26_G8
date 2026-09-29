@@ -11,6 +11,8 @@ với nơi khác trong cùng process; không truyền thì tự dựng (và tự
 ml-service (3a): `MlClient` thật (`ML_SERVICE_URL`, `ML_SERVICE_TOKEN`) — thiếu token → từ chối khởi động
 TRƯỚC khi đụng DB (3-Q21), ở cả backend lẫn worker.
 Guard (3e): `check_guard` — file mẫu `config/privacy_patterns.json` (và mẫu injection) hỏng → không khởi động, trước DB.
+Intent (3f): `check_intent_config` — `ENABLED_INTENTS` ⊆ `slots.yaml` `intents`, mọi `action_type` có dòng trong
+`config/action_metadata.yaml`; sai → không khởi động, trước DB. Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 """
@@ -63,7 +65,14 @@ from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ports import RagPort
 from app.rag.retriever import RagConfig, Retriever
 from app.rag.vector_store import QdrantIndex
-from app.settings import Settings, get_escalation_templates, get_policy
+from app.settings import (
+    Settings,
+    check_intent_config,
+    get_action_metadata,
+    get_escalation_templates,
+    get_policy,
+    get_slots,
+)
 from app.tools.wiring import build_read_registry
 
 log = logging.getLogger(__name__)
@@ -114,6 +123,8 @@ async def open_runtime(
     ml_token = settings.require_ml_token()  # như trên (3-Q21)
     llm_setup = check_llm(settings)  # như trên (3-Q26, PLAN-3d Q-3d-13): LLM_BACKEND, pricing, prompt, preset
     check_guard(settings)  # như trên (3e): file mẫu guard hỏng → không khởi động
+    # như trên (3f, phase3 9.2): intent bật phải có slot; mọi action_type phải có metadata
+    check_intent_config(settings, get_slots(), get_action_metadata())
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
@@ -177,6 +188,7 @@ async def _open(
             build_graph(select_nodes(settings, deps), saver),
             lock=PgTicketLock(engines.lock), turns=turns, audit=AuditWriter(engines.main),
             effects=SqlEffectStore(engines.main), spans=SqlSpanSink(engines.main), clock=clock,
+            turn_budget_s=settings.turn_budget_s, safety_margin_s=settings.safety_margin_s,
             concurrency=settings.graph_concurrency, can_execute=can_execute,
             rediagnose_on_new_slot=settings.rediagnose_on_new_slot,
             recursion_limit=settings.graph_recursion_limit,

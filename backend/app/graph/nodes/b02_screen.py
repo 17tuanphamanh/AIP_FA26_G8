@@ -7,6 +7,8 @@ Thứ tự rẻ → đắt, không lớp nào "mở cửa" khi lớp trước l�
 3. L4 LLM fast `b02_injection_judge` (prompt riêng, không cache — [Chốt 17.5]): `is_attack` → E0, không → qua.
    `LLMUnavailable`/`LLMBudgetExceeded`/`LLMSchemaError` → E2 `S_ESCALATED` + `security_flag` +
    `screening_unavailable` (không đi tiếp khi chưa sàng lọc được, nhưng cũng không gắn nhãn tấn công — B02 mục 6).
+4. Hết hạn cả lượt (`TurnBudgetExceeded`, phase3 9.0) ở L3 hoặc L4 → E2 `turn_budget_exceeded` + `security_flag` (chưa
+   sàng lọc xong — cùng lý do như `screening_unavailable`; bắt tường minh thay vì để boundary, Q-3f-2).
 
 E0: `security_events(injection_detected)` QUA `effects.once("security_event")` (chạy lại node không ghi hai lần);
 `detail`/`screening` KHÔNG chứa câu người dùng. Tin trung tính cho người dùng do B20 gửi theo mẫu E0 sẵn có (không nêu
@@ -15,6 +17,7 @@ lớp/mẫu nào bắt). Lỗi khác (`ScriptExhausted`, `PromptContractError`, 
 
 from typing import Any
 
+from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import BlockReason, CloseReason, ExitCode
 from app.domain.states import S_BLOCKED, S_CLASSIFYING, S_ESCALATED
 from app.graph import effects
@@ -32,6 +35,16 @@ def make(deps: NodeDeps) -> NodeFn:
         text = state["redacted_request"]
         if (hit := injection.match(text)) is not None:  # L2 (L0 bên trong)
             return await _block(state, layer_decided="regex", pattern_id=hit.id, group=hit.group)
+        try:
+            return await _screen(state, text)
+        except TurnBudgetExceeded:  # 9.0: chưa sàng lọc xong mà lượt hết hạn — không cho qua
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B2", event="turn_budget_exceeded",
+                audit_detail={"error": "TurnBudgetExceeded"}, exit_code=ExitCode.E2.value,
+                security_flag=True, escalation_reason_detail="turn_budget_exceeded",
+            )  # fmt: skip
+
+    async def _screen(state: Any, text: str) -> dict[str, Any]:
         r = await deps.ml.classify(text)  # L3 — Phase 3 luôn model_missing
         p_mal = r.data.p_malicious if r.error is None and r.data is not None else None
         if p_mal is not None:

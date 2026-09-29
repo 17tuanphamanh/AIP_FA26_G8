@@ -1,6 +1,6 @@
 # Phase 3 — Thiết kế chi tiết (lát cắt VPN B1 → B20)
 
-*Thuộc bộ `build/`. Phiên bản 1.6 — 29/09/2026 (1.6: chốt khi hiện thực 3d, mục 7.8; 1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
+*Thuộc bộ `build/`. Phiên bản 1.7 — 30/09/2026 (1.7: chốt khi hiện thực 3e, mục 8.9; thêm 9.0 hạn cho cả lượt; 1.6: chốt khi hiện thực 3d, mục 7.8; 1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
 
 ---
 
@@ -1458,9 +1458,49 @@ if (hit := screen_reply(ev.get("text") or ev.get("note") or "")):
 | M-3e-7 | Bỏ `screen_reply` ở `clarify_wait` | e16 |
 | M-3e-8 | `deps.security_events.record` gọi thẳng, không qua `effects.once` | test AST + e15 |
 
+### 8.9. Chốt khi hiện thực 3e (29/09/2026)
+
+Commit `13274a8` (DỪNG 1, CI 36470648539), `5904835` (DỪNG 2, CI 36476411023), `6797455` (DỪNG 3) trên `dev-tuananh`. **Nguyên tắc chung rút ra ở 3e:** mọi trường chữ của request được lưu ở bất kỳ đâu phải thuộc một trong ba loại — (1) đi qua guard (`desk.redact` + `record_redacted`), (2) enum/hằng cố định, (3) định danh có regex chặt. Route mới (`/override` ở Phase 4, `/reply` ở Phase 5) phải theo luật này.
+
+**Sửa so với 8.1–8.8 (thắng bản cũ khi lệch):**
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | 8.2, 8.3 L0 | `core.normalize` không xử lý full-width, U+00AD, U+2060; sửa nó thì đổi `content_sha256` của ingest → **L0 riêng `guard/normalize.py`**: `core.normalize` → **NFKC** → xoá ký tự loại `Cf`; áp cho **cả L1 lẫn L2**; văn bản lưu là bản đã L0. L2 so trên 4 bản {có dấu, không dấu (`unidecode`)} × {giữ, gộp xuống dòng}. File mới ngoài 8.2: `guard/normalize.py`, `db/security_events.py` (`check_event` chuyển xuống db vì 01 §4.2 không cho db → audit) |
+| 2 | 8.3 luật 4 | Cụm mật khẩu: 0–4 từ đệm giữa từ khoá và `là/:/=` (không dấu câu, không chứa `lỗi\|loi\|mã\|ma\|code\|error`); `mk` chỉ khớp với `:`/`=` (vì "mk là…" = "mình là…"); giá trị là từ hỏi (`gì\|gi\|sao\|bao\|nào\|nao`) không che |
+| 3 | 8.3 luật 6 | Loại trừ entropy: (a) token dạng email → luật 7 xử lý; (b) đường dẫn chỉ khi có `\` hoặc bắt đầu `/`, `~/`, `./`, `../`, `<ổ đĩa>:`, `http(s)://` (không còn "có `/` là bỏ qua" — làm lọt khoá base64); (c) đường dẫn tương đối = có `/` **và** đoạn cuối có đuôi trong danh sách cố định (xlsx, xls, csv, docx, doc, pdf, pptx, ppt, txt, log, zip, rar, 7z, png, jpg, jpeg, json, xml, ini, conf, cfg, yaml, yml, msi, exe, bat, ps1, sh — chữ thường; `.XLSX` bị che, chấp nhận) |
+| 4 | 8.3 luật 8 | SĐT cho 1 dấu cách/chấm/gạch giữa các nhóm số. Nhãn PII theo giá trị chuẩn hoá (SĐT bỏ phân cách, `+84`→`0`; email chữ thường) |
+| 5 | 8.3 422 | **Hai đường rò 422**: handler `RequestValidationError` **và** `desk.parse_body` (`HTTPException(422, exc.errors())` có `input`). Một hàm `invalid_request()` cho cả hai: `{"error":"invalid_request","fields":[loc…]}`, khoá thừa (`extra_forbidden`) → `<extra>` |
+| 6 | 8.3 notices | Guard áp 4 điểm; `/approvals/{id}/decision` trả body riêng → thêm khoá `notices` |
+| 7 | B15-B16 §4, P10 3.2 | `reason_code` của `/decision` là **enum 7 mã**: `missing_info, not_authorized, policy_violation, duplicate, wrong_device, security_concern, other`; mã lạ → 422 không trả input (trước đây chuỗi tự do ≤ 64 → lưu nguyên trong checkpoint) |
+| 8 | P6 đăng nhập | `LoginIn.username` ràng dạng `^[a-z][a-z0-9._-]{0,127}$`, sai dạng → 422 **trước** AuthService (vì `security_events.username_attempted` lưu nguyên văn khi sai). Phần còn lọt (mật khẩu chữ thường + số khớp dạng username) → **Q-3e-14**, xem dưới |
+| 9 | 8.4 SYS-02 | Bảng markdown làm hỏng `\|`. Regex đúng: `\[/?inst\]\|<\|?(system\|im_start\|im_end)\|?>` (ChatML `<\|system\|>`, `[INST]`). Regex nên viết trong khối code |
+| 10 | 8.5 | `TAU_PASS` = **0,10** (B02 §7 ghi 0,20 — phase3 thắng ở Phase 3). Nhánh E2 thêm `audit_detail={"ml_error","llm_error"}` (tên lớp lỗi). `_block` của L4 giữ `p_mal`. `step="B2"` là hằng chữ (test tĩnh), không dùng biến. `goto._DETAIL_FIELDS` thêm `screening`, `security_flag`. Node giả chuyển `graph/nodes/fake/b02_screen.py`; gate2 vẫn dùng bản giả |
+| 11 | 8.5 L3 | `model_missing` là lỗi cố định → **không retry**, xuống L4 ngay (đã có từ 3a). Nhánh L3 có test **e18** (0,95 → E0; 0,05 → qua; 0,5 → L4; biên 0,90/0,10) |
+| 12 | 8.6 | `screen_reply` chạy ngay sau `interrupt()`, trước mọi nhánh; khớp → không ghi `conversation`. `note` người duyệt qua L1, **không** qua L2 (8.6 chỉ sàng lọc tin người yêu cầu) — xét lại ở Phase 5 nếu note vào prompt. Ghi chú bàn giao L2 có câu cờ an ninh cho `screening_unavailable` và `injection_in_reply` |
+| 13 | 8.7 | e16 gốc khớp OVR-01 trước SYS-01 → thêm câu riêng chỉ khớp SYS-01; thêm **e16b** (`confirm_wait`), **e16c** (có dấu). e9 quét **25 bảng** (alembic_version không có quyền SELECT). Test quét toàn DB (e6, e7, e9) chạy trên **database riêng mỗi test** (bảng append-only không TRUNCATE được). e6–e8, e10–e14, e16 hiện thực ở unit + bản PG cho e6, e7, e9, e15 |
+| 14 | 8.8 | M-3e-1 → **e10 + e1** (e11 vốn không dấu nên không bắt được). M-3e-6 tách 6 / 6b (hai đường 422). M-3e-9 → e10 (e9 không bắt vì L1 đã che canary). Thêm M-3e-9…18: detail chứa câu gốc, NotRedactingGuard ở prod, `confirm_wait` bỏ `screen_reply`, ngưỡng L3 `>=`→`>`, loại trừ email, transaction riêng, loại trừ đường dẫn, đuôi file, enum `reason_code`, dạng username |
+| 15 | test tĩnh | Bộ quét `goto` đọc cả hàm phụ `async def` trong cùng `make()` (`_block`, `_pass`) |
+| 16 | ngân sách lượt | Lượt đầu 3e ước tính trần 122 s ≥ `WORKER_STALE_TURN_SECONDS` 120 s → **"hạn cho cả lượt" làm ở 3f S0** (mục 9.0). Test ngân sách để `xfail(strict)` tới khi xong |
+
+**Việc còn treo:**
+- **Q-3e-14** — username sai dạng mật khẩu chữ thường + số vẫn có thể vào `security_events.username_attempted`. **Chốt:** khi username **không có** trong bảng `users`, lưu `"h:" + HMAC-SHA256(khoá riêng trong Settings, username)` thay cho chuỗi gốc (không đổi schema); username có trong `users` giữ nguyên. **Làm ở S0 của Phase 4** (Phase 4 đụng audit), trước Phase 7.
+- Route `/override` (Phase 4) và `/reply` (Phase 5) phải đi qua guard như 4 điểm của 8.3.
+
+**Kết quả 3e.** `make test` backend 2295 + 1 xfail · mock 86 · ml 77 (lúc DỪNG 3; sau Q-3e-13 unit 2126 + 1 xfail). Integration PG 159 (DỪNG 2). **e9 canary: 0 lần xuất hiện ở 25 bảng**, log, `rendered_messages`, `llm_calls`, `spans`. Mutation unit 18/18 (2 lượt giống hệt) + PG 3/3, md5 khớp. `make gate2 S=all` 89/0 trên image có guard regex mặc định. Soát bảo mật: 7/7 mục PASS; thêm 2 trường lọt tìm được khi rà (`reason_code`, `username`) — đã sửa. Nợ đã trả: `MIN_LLM_CALL_SITES` = 1, audit B8 `detail.query` qua guard thật, gỡ Presidio (`uv.lock` −313 dòng).
+
 ---
 
 ## 9. Chặng 3f — tách `slots`/`facts`, B3 (VPN), B6–B7 VPN
+
+### 9.0. S0 — hạn cho cả lượt (chốt Q-3e-12, làm TRƯỚC B3/B6)
+
+**Vì sao:** lượt đầu sau 3e có thể tới 122 s (B1 AD 18 + B2 ml 9 + L4 45 + B8 50) ≥ `WORKER_STALE_TURN_SECONDS` 120 s → worker khác coi lượt là "chết" và chạy lại; cuối Phase 3 lượt đầy đủ ước tính ~316 s. Tăng ngưỡng stale không đủ.
+
+- `TURN_BUDGET_S` (đề xuất **100 s**, phải < `WORKER_STALE_TURN_SECONDS`) đặt khi worker nhận lượt; truyền qua context/deps (không qua state — không checkpoint thời hạn tuyệt đối).
+- **Mọi** lời gọi ra ngoài (AD/directory, ml, LLM gateway, RAG, executor) dùng `min(timeout riêng, còn lại − biên an toàn)`; retry không vượt phần còn lại.
+- Hết hạn → **E2** `turn_budget_exceeded` (không cho qua, không E3).
+- Test: FakeClock cho lượt xấu nhất; test tĩnh cộng dồn deadline các lời gọi trong một lượt (thay test `xfail(strict)` của 3e); mutation: bỏ cắt theo phần còn lại → test đỏ.
 
 ### 9.1. Mục tiêu
 
@@ -2018,6 +2058,7 @@ Mỗi file thêm mục **"5.1 Chốt khi hiện thực Phase 3"** gồm một c�
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 27/09/2026 | 1.0 | Tạo file: phạm vi, 36 quyết định, hợp đồng chung, 8 chặng 3a–3h |
+| 30/09/2026 | 1.7 | Mục 8.9: chốt khi hiện thực 3e (L0 NFKC riêng, luật mật khẩu/entropy/SĐT, 2 đường rò 422, reason_code enum, username dạng chặt, SYS-02, TAU_PASS 0,10, Q-3e-14 HMAC ở Phase 4 S0; kết quả). Mục 9.0: hạn cho cả lượt (S0 của 3f) |
 | 29/09/2026 | 1.6 | Mục 7.8: chốt khi hiện thực 3d (16 mục sửa: MockTransport thay respx, strong max_retries=1, deadline_s, không nội suy env, MIN_LLM_CALL_SITES tạm 0, AnswerOut hai chiều, giữ chỗ trần chi, EVAL_MODE, ẩn base_url; kết quả) |
 | 28/09/2026 | 1.5 | Mục 6.13: chốt khi hiện thực 3c (Q-3c-1…8: 2 đường cổng kiểm, nới tiêu chí rerank, probe `/aliases`, giữ role lạ `public` và audit câu đã che; kết quả) |
 | 28/09/2026 | 1.4 | Mục 5.14: chốt khi hiện thực 3b (Q-3b-1…17, cổng dense-only, kết quả); sửa 5.10 mmh3/index, 4.12 Q-3a-6 |

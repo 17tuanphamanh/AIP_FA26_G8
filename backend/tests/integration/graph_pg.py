@@ -119,6 +119,7 @@ async def open_pg_runtime(
                 build_graph(build_nodes(deps), saver), lock=PgTicketLock(engines.lock),
                 turns=turns, audit=audit or AuditWriter(engines.main), effects=SqlEffectStore(engines.main),
                 spans=SqlSpanSink(engines.main), clock=clock, can_execute=can_execute,
+                turn_budget_s=settings.turn_budget_s, safety_margin_s=settings.safety_margin_s,
                 tickets=ticket_store,
             )  # fmt: skip
             yield PgRuntime(runner, engines, deadlines, turns, approvals, notifier, executor,

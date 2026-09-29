@@ -31,7 +31,7 @@ from app.graph.fakes import FakeScenario, NodeDeps
 from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.llm import LlmPort
-from app.settings import get_escalation_templates, get_policy
+from app.settings import Settings, get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.identity import (
@@ -436,6 +436,9 @@ class MemoryTicketLock:
             lock.release()
 
 
+_DEFAULT_SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 @dataclass
 class GraphHarness:
     """Toàn bộ runtime trên bản giả. Trường `saver`, store… giữ nguyên qua `restart()`."""
@@ -462,6 +465,9 @@ class GraphHarness:
     alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
     max_recover_attempts: int = 3
+    # Hạn cho cả lượt (9.0): mặc định = Settings (100 s / 2 s) — test FakeClock tua quá hạn trong một lượt sẽ ra E2
+    turn_budget_s: float = field(default_factory=lambda: _DEFAULT_SETTINGS.turn_budget_s)
+    safety_margin_s: float = field(default_factory=lambda: _DEFAULT_SETTINGS.safety_margin_s)
     approver_id: str | None = "l1-fake"  # B15 giả (FAKE_APPROVER_ID)
     ml: FakeMlService = field(default_factory=FakeMlService)  # ml-service giả (3a), đếm ở nơi nhận
     rag: FakeRag = field(default_factory=FakeRag)  # RAG giả (3c) — b08 thật dùng khi `nodes="real"`
@@ -502,6 +508,7 @@ class GraphHarness:
             build_graph((real_nodes if self.nodes == "real" else fake_nodes)(self.deps()), self.saver),
             lock=self.lock, turns=self.turns,
             audit=self.audit, effects=self.effects, spans=self.spans, clock=self.clock,
+            turn_budget_s=self.turn_budget_s, safety_margin_s=self.safety_margin_s,
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,
             recursion_limit=self.recursion_limit, max_recover_attempts=self.max_recover_attempts,

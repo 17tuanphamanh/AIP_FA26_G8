@@ -242,8 +242,10 @@ def test_q3d7_timing_violations_refuse_start(role: str, field: str, value: float
 
 
 def test_q3d7_timing_checked_against_configured_stale() -> None:
-    # stale 80 → trần 40 s: fast deadline_s 45 vượt (rag_deadline_s hạ theo để Settings còn hợp lệ, Q-3c-4)
-    settings = _settings(app_env="dev", llm_backend="scripted", worker_stale_turn_seconds=80, rag_deadline_s=30)
+    # stale 80 → trần 40 s: fast deadline_s 45 vượt (rag_deadline_s, turn_budget_s hạ theo để Settings còn hợp lệ,
+    # Q-3c-4, phase3 9.0)
+    settings = _settings(app_env="dev", llm_backend="scripted", worker_stale_turn_seconds=80, rag_deadline_s=30,
+                         turn_budget_s=70)  # fmt: skip
     with pytest.raises(RuntimeError, match=r"roles\.fast: deadline_s = 45s ≥ WORKER_STALE_TURN_SECONDS/2 = 40s"):
         check_llm(settings)
 

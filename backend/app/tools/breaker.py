@@ -76,6 +76,12 @@ class CircuitBreaker:
         if self._state == "half_open":
             self.record_success()
 
+    def record_abandoned(self) -> None:
+        """Lời gọi bị bỏ giữa chừng vì HẾT HẠN LƯỢT (phase3 9.0) — không kết luận gì về hệ thống ngoài: không tính lỗi,
+        không đóng breaker; riêng half-open nhả lượt thử để lời gọi sau thử lại."""
+        if self._state == "half_open":
+            self._probe_in_flight = False
+
     def record_failure(self) -> None:
         now = self._clock.now()
         if self._state == "half_open":

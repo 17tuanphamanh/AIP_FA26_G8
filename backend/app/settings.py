@@ -3,7 +3,11 @@
 - Env (`Settings`): bí mật, hạ tầng, cờ thực nghiệm, tham số vận hành. Bí mật để SecretStr
   (không in ra log/repr). Biến LLM để trống tới mốc G (decisions.md mục 4).
 - `config/policy.json` (`get_policy`): hằng số nghiệp vụ [Chốt 01 mục 5.2]; sai schema → không khởi động.
-- `config/slots.yaml` (`get_slots`): `tool_arg_slots` (D-20); `required_slots` thêm ở Phase 3 (B11).
+- `config/slots.yaml` (`get_slots`): `tool_arg_slots` (D-20), `query_slots` (3-Q13), `intents` (3f, phase3 3.2 — schema
+  `domain.slots.IntentSlots`).
+- `config/action_metadata.yaml` (`get_action_metadata`, 3f, phase3 9.2): thuộc tính rủi ro từng `action_type`.
+  `check_intent_config` (gọi ở `graph/wiring.open_runtime` trước DB): `ENABLED_INTENTS` ⊆ `slots.intents`, mọi
+  `action_type` có metadata — thiếu → không khởi động (không mặc định "reversible").
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
 Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
@@ -25,13 +29,16 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    RootModel,
     SecretStr,
     field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.domain.action import ActionMeta
 from app.domain.exit_codes import ExitCode
+from app.domain.slots import IntentSlots
 
 
 def env_file_from_env() -> str | None:
@@ -100,6 +107,10 @@ class Settings(BaseSettings):
     worker_deadline_scan_seconds: float = Field(default=15.0, gt=0)  # quét hạn chờ
     worker_recover_scan_seconds: float = Field(default=60.0, gt=0)  # quét lượt dở dang
     worker_stale_turn_seconds: float = Field(default=120.0, gt=0)  # lượt mở quá 2 phút → recover
+    # Hạn cho cả lượt (phase3 9.0, P4 PLAN-3f): mọi lời gọi ra ngoài cắt timeout theo phần còn lại − biên an toàn
+    # (`core/turn_budget.py`); hết → E2 turn_budget_exceeded. Phải < WORKER_STALE_TURN_SECONDS (`_turn_budget_below_stale`).
+    turn_budget_s: float = Field(default=100.0, gt=0)
+    safety_margin_s: float = Field(default=2.0, gt=0)
     worker_batch: int = Field(default=200, ge=1)
     # Worker chạy lại một lượt dở dang tối đa bấy nhiêu lần (turns.recover_attempts, 2b-Q6).
     max_recover_attempts: int = Field(default=3, ge=1)
@@ -148,6 +159,9 @@ class Settings(BaseSettings):
     ip_failure_window_minutes: int = Field(default=10, ge=1)  # … trong cửa sổ này → 429
     reauth_minutes: int = Field(default=10, ge=1)  # xác nhận lại: đăng nhập trong N phút gần nhất
     revocation_cache_seconds: float = Field(default=30.0, ge=0)  # thu hồi có hiệu lực ≤ N giây
+
+    # ---- Phạm vi intent (3-Q27, phase3 3.5) — Phase 5 mở 3 loại còn lại ----
+    enabled_intents: list[str] = Field(default_factory=lambda: ["vpn"], min_length=1)
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False
@@ -208,6 +222,17 @@ class Settings(BaseSettings):
             )
         if self.rag_top_n > self.rag_rerank_k:
             raise ValueError("RAG_TOP_N phải <= RAG_RERANK_K")
+        return self
+
+    @model_validator(mode="after")
+    def _turn_budget_below_stale(self) -> "Settings":
+        # 9.0: lượt dùng hết hạn vẫn phải xong (kể cả E2 → B20) trước khi worker coi là "dở dang" và chạy lại.
+        if not self.safety_margin_s < self.turn_budget_s < self.worker_stale_turn_seconds:
+            raise ValueError(
+                "cần SAFETY_MARGIN_S < TURN_BUDGET_S < WORKER_STALE_TURN_SECONDS "
+                f"(đang {self.safety_margin_s:g} / {self.turn_budget_s:g} / {self.worker_stale_turn_seconds:g}) "
+                "— từ chối khởi động"
+            )
         return self
 
     @model_validator(mode="after")
@@ -277,6 +302,7 @@ class PolicyConstants(BaseModel):
     THRESHOLD_LOW: float = Field(ge=0, le=1)
     THRESHOLD_HIGH: float = Field(ge=0, le=1)
     RETRIEVAL_THRESHOLD: float = Field(ge=0, le=1)
+    TAU_INTENT: float = Field(ge=0, le=1)  # B3 đường LLM: confidence < ngưỡng → E1 intent_low_confidence (D-27, 3-Q29)
     CLARIFY_TIMEOUT_HOURS: int = Field(ge=1)
     CONFIRM_TIMEOUT_HOURS: int = Field(ge=1)
 
@@ -315,6 +341,17 @@ class SlotsFile(BaseModel):
     # 3-Q13: slot nối thêm vào câu truy hồi (build_query). Mặc định rỗng — fixture test cũ (vd.
     # test_tool_registry.py) dựng slots.yaml tối giản không khai báo mục này vẫn nạp được.
     query_slots: tuple[str, ...] = ()
+    # 3f (phase3 3.2): slot theo intent — Phase 3 chỉ `vpn`. Mặc định rỗng (fixture test tối giản vẫn nạp được);
+    # intent bật mà không có mục ở đây → `check_intent_config` từ chối khởi động.
+    intents: dict[str, IntentSlots] = Field(default_factory=dict)
+
+    @property
+    def declared_names(self) -> frozenset[str]:
+        """Mọi tên slot khai báo trong file (định danh cố định — ghi vào audit được, khác key tự do của LLM)."""
+        names = set(self.tool_arg_slots) | set(self.query_slots)
+        for spec in self.intents.values():
+            names |= spec.keys
+        return frozenset(names)
 
 
 def load_slots(path: Path) -> SlotsFile:
@@ -324,6 +361,37 @@ def load_slots(path: Path) -> SlotsFile:
 @lru_cache
 def get_slots() -> SlotsFile:
     return load_slots(get_settings().config_dir / "slots.yaml")
+
+
+# ---- config/action_metadata.yaml (3f, phase3 9.2) -------------------------------------------------
+
+
+class ActionMetadataFile(RootModel[dict[str, dict[str, ActionMeta]]]):
+    """intent → action_type → `ActionMeta`."""
+
+    def of(self, intent: str) -> dict[str, ActionMeta]:
+        return self.root.get(intent, {})
+
+
+def load_action_metadata(path: Path) -> ActionMetadataFile:
+    return ActionMetadataFile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+@lru_cache
+def get_action_metadata() -> ActionMetadataFile:
+    return load_action_metadata(get_settings().config_dir / "action_metadata.yaml")
+
+
+def check_intent_config(settings: Settings, slots: SlotsFile, metadata: ActionMetadataFile) -> None:
+    """Fail-closed lúc khởi động (phase3 9.2, 3-Q27): intent bật phải có slot; mọi `action_type` phải có metadata."""
+    if missing := sorted(set(settings.enabled_intents) - set(slots.intents)):
+        raise RuntimeError(f"ENABLED_INTENTS có intent không khai báo trong slots.yaml: {missing} — từ chối khởi động")
+    for intent, spec in sorted(slots.intents.items()):
+        if missing := sorted(set(spec.action_types) - set(metadata.of(intent))):
+            raise RuntimeError(
+                f"action_metadata.yaml thiếu metadata cho {intent}: {missing} — từ chối khởi động "
+                "(không mặc định reversible)"
+            )
 
 
 # ---- config/escalation_templates.yaml ---------------------------------------------------------

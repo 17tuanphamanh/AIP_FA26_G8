@@ -11,6 +11,10 @@
 Đã kiểm với LangGraph 1.2: giá trị resume được ghi vào checkpoint trước khi node chạy, nên process
 chết giữa lượt resume thì `ainvoke(None)` chạy lại node chờ với đúng giá trị đó.
 
+**Hạn cho cả lượt** (phase3 9.0, PLAN-3f S0): `_run`/`_divert` — nơi DUY NHẤT mọi lượt (submit, run_new, resume, recover,
+divert) đi qua — gắn `core.turn_budget.TurnDeadline(now + TURN_BUDGET_S, SAFETY_MARGIN_S)` TRƯỚC semaphore (thời gian chờ
+hàng đợi tính vào hạn). Contextvar, không vào state/checkpoint: recover nhận hạn mới (khoá D-19 chặn chạy song song).
+
 **Worker không có SVC_EXECUTOR_TOKEN** (quyết định 26/09/2026): `Runner(can_execute=False)` — recover
 mà bước kế tiếp là `b17_execute` thì KHÔNG thực thi (không biết hệ thống ngoài đang ở trạng thái nào),
 chuyển `S_ESCALATED` E7 "thực thi bị gián đoạn" rồi chạy B20.
@@ -37,6 +41,7 @@ import asyncio
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -45,6 +50,7 @@ from langgraph.types import Command, StateSnapshot
 
 from app.core.clock import Clock
 from app.core.ids import new_trace_id, new_turn_id
+from app.core.turn_budget import TurnDeadline, bind_turn_deadline
 from app.domain.exit_codes import ExitCode
 from app.domain.states import S_ESCALATED, S_NEW
 from app.graph.builder import Graph
@@ -90,6 +96,8 @@ class Runner:
         effects: EffectStore,
         spans: SpanSink,
         clock: Clock,
+        turn_budget_s: float,
+        safety_margin_s: float,
         concurrency: int = 8,
         can_execute: bool = True,
         rediagnose_on_new_slot: bool = False,
@@ -110,6 +118,8 @@ class Runner:
         self._recursion_limit = recursion_limit
         self._max_recover = max_recover_attempts
         self._tickets = tickets
+        self._turn_budget = timedelta(seconds=turn_budget_s)
+        self._margin_s = safety_margin_s
 
     # ---- tiện ích -----------------------------------------------------------------------------
 
@@ -127,6 +137,9 @@ class Runner:
             turn_id=turn_id, trace_id=new_trace_id(), audit=self.audit, effects=self._effects,
             spans=self._spans, clock=self.clock, rediagnose_on_new_slot=self._rediagnose,
         )  # fmt: skip
+
+    def _deadline(self) -> TurnDeadline:
+        return TurnDeadline(self.clock.now() + self._turn_budget, self._margin_s)
 
     async def _result(self, ticket_id: str, turn_id: str) -> RunResult:
         snap = await self.snapshot(ticket_id)
@@ -309,6 +322,12 @@ class Runner:
 
     async def _run(self, ticket_id: str, turn_id: str, graph_input: Any) -> RunResult:
         cfg = self.config(ticket_id)
+        with bind_turn_deadline(self._deadline()):  # trước semaphore: chờ hàng đợi cũng tính vào hạn
+            await self._invoke(ticket_id, turn_id, graph_input, cfg)
+        await self._turns.end(turn_id, self.clock.now())
+        return await self._result(ticket_id, turn_id)
+
+    async def _invoke(self, ticket_id: str, turn_id: str, graph_input: Any, cfg: RunnableConfig) -> None:
         async with self._sem:
             with bind_run(self._context(turn_id)):
                 try:
@@ -321,15 +340,14 @@ class Runner:
                         step="runner", event="recursion_limit", exit_code=ExitCode.E9.value,
                         escalation_note="Vượt giới hạn số bước của graph (recursion_limit)",
                     )  # fmt: skip
-        await self._turns.end(turn_id, self.clock.now())
-        return await self._result(ticket_id, turn_id)
 
     async def _divert(
         self, ticket_id: str, turn_id: str, values: Mapping[str, Any], **kwargs: Any
     ) -> RunResult:
-        async with self._sem:
-            with bind_run(self._context(turn_id)):
-                await self._divert_bound(ticket_id, values, **kwargs)
+        with bind_turn_deadline(self._deadline()):
+            async with self._sem:
+                with bind_run(self._context(turn_id)):
+                    await self._divert_bound(ticket_id, values, **kwargs)
         await self._turns.end(turn_id, self.clock.now())
         return await self._result(ticket_id, turn_id)
 

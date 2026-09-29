@@ -10,7 +10,7 @@ Mọi đường dẫn dưới đây tính từ `docs/spec/`.*
 | Chế độ xây | **Code trước, gắn API sau** (`build/decisions.md` mục 4): Phase 1–7 dùng `ScriptedLLM`, không gọi LLM thật |
 | Phase đang mở | **Phase 2 (P1, B01, B20)** — chặng 2a **đã duyệt**, đã commit; chặng 2b theo 4 bước: **2b-1 đã commit `6c43153`, CI xanh (run `36240526098`)**; **2b-2 đã commit `b68e800`, CI xanh (run `36243253945`)**; **2b-3 (dịch vụ ticket + route sự kiện + nối `create_app`): code + unit + lint xanh, đã commit `dcc5ddc`, CI xanh (run `36270415646`)**; **2b-4 (stack thật + cổng 2): code + unit + lint + mutation 11/11, `make test` xanh (1643 + mock 86, sau lần rà `after_event`), `make gate2` đủ 10 kịch bản 0 FAIL trên máy dev, Tuấn Anh đã đọc bảng threads; **cổng 2 CHƯA đạt — chờ một thành viên khác chạy `make gate2 S=all` trên máy họ và dán kết quả** — chưa commit**. Phase 1 đã đóng |
 | Cổng xanh | Phase 0; T01; **Cổng Phase 1 — tự động xanh** (26/09/2026): `make lint`, `make test` (backend 1215 + mock 86), `make up` + `/api/health` 200 có `mock`, `make seed`, đăng nhập user demo. Còn mục **thủ công** của cổng 1 (`huong-dan` 5.1): người xác nhận gọi tay 12 tool (bảng ở `mock_services/README.md`) — mở Phase 2 trước khi mục này xong hay không là **người quyết** |
-| Cập nhật | 29/09/2026 — **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do; Q-3e-14 chờ chốt) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
+| Cập nhật | 29/09/2026 — **Phase 3 chặng 3f** (hạn cả lượt + slots/facts + B3/B6 VPN): DỪNG 1 (S0 + S1) xanh phần tự chạy được — unit 2205, 0 xfail; chưa commit — mục "Phase 3 — chặng 3f". Trước đó: **Phase 3 chặng 3e (B2 privacy guard + sàng lọc injection)**: DỪNG 1 `13274a8` (CI xanh, run `36470648539`), DỪNG 2 `5904835` (CI xanh, run `36476411023`), DỪNG 3 xanh (`make test` 2295/86/77, mutation unit 18/18 ×2 + PG 3/3, gate2 89/0, soát bảo mật 7 mục PASS; `reason_code` → enum, username → định danh sau rà trường tự do); **3e đóng** (make test 2315/86/77, gate2 89/0; Q-3e-14 chốt → Phase 4 S0, "Việc treo" 10) — mục "Phase 3 — chặng 3e". Trước đó: 28/09/2026 — Phase 3 chặng 3a đã commit `00e72b0` (CI xanh); chặng 3b (RAG ingest) đã commit `a711b8e` (CI xanh, run `36344625601`); chặng 3c đã commit `9680471` (CI xanh, run `36447564133`); **chặng 3d (LLM gateway)** xong DỪNG 3 (29/09/2026): DỪNG 2 xanh (L1–L4), L5 `make test` 2094/86/77, mutation 8/8, soát bảo mật S9 (4 lỗi nhỏ đã sửa kèm test); commit 3 phần theo chốt DỪNG 3 (hash + CI ghi ở lần commit sau, như 3c) — mục "Phase 3 — chặng 3d" |
 
 ## Phase 0 — đã xong (25/09/2026)
 
@@ -2344,7 +2344,7 @@ KHÔNG sửa `docs/spec/`):
 16. 01 §3 / §4.3: file mới của `llm/` (README `backend/app/llm/README.md`); hợp đồng import-linter 8 `llm-lower-layer` và
     **9 `llm-only-via-gateway`**; test AST "SDK chỉ ở `openai_compat.py`".
 
-## Phase 3 — chặng 3e: B2 privacy guard thật + sàng lọc injection (29/09/2026; DỪNG 1 `13274a8`, DỪNG 2 `5904835`, DỪNG 3 commit "3e dung 3" — hash + CI ghi ở lần commit sau, như 3c/3d)
+## Phase 3 — chặng 3e: B2 privacy guard thật + sàng lọc injection (29/09/2026; DỪNG 1 `13274a8`, DỪNG 2 `5904835`, DỪNG 3 `6797455` — CI xanh run `36481912353`)
 
 Kế hoạch: `PLAN-3e.md` ở gốc repo (KHÔNG commit). Thiết kế: `build/phase3-thiet-ke-chi-tiet.md` v1.6 mục 8; khi lệch,
 `PLAN-3e.md` thắng (đã gồm chốt Q-3e), trừ 13 bất biến và mục [Chốt]. Chạy toàn bộ bằng Opus. Chặng AN NINH: phân vân
@@ -2609,28 +2609,39 @@ giữa cho qua và chặn/escalate → chọn chặn/escalate.
     `["body.username"]`, 0 sự kiện; đối chứng: 16 username của `mock_services/seed.json` + bản giả đều khớp dạng (không
     khoá ai). PG: cùng test Q-3e-13 ở trên. Mutation **M-3e-18** (bỏ ràng dạng) → 6 test đỏ. Username so khớp `users`
     vốn phân biệt hoa thường (`auth/store.py:109`) → chặn chữ hoa không đổi ai đăng nhập được.
-  - **Q-3e-14 (MỚI, chờ chốt) — phần còn lọt của username:** chuỗi chỉ gồm chữ thường + số (vd `matkhau123`) vẫn khớp
+  - **Q-3e-14 (chốt 29/09/2026 → làm ở Phase 4 S0, "Việc treo" 10) — phần còn lọt của username:** chuỗi chỉ gồm chữ thường + số (vd `matkhau123`) vẫn khớp
     dạng định danh → gõ nhầm mật khẩu kiểu này vào ô username thì vẫn nằm ở `security_events.username_attempted` (+ cảnh
     báo dò mật khẩu). Đề xuất: khi username **không** có dòng `users` và AD trả sai, lưu HMAC (khoá server) thay cho
     chuỗi gốc — vẫn đếm/khoá được theo username, cảnh báo hiện mã băm. Đổi P6/P7 (view `auth_failures`, nội dung cảnh
     báo, test khoá username ma) → không tự làm; chốt trước Phase 7.
   - **Tách DB cho test quét toàn DB:** fixture `db` của `integration/test_guard_pg.py` từ phạm vi module → **function**
     (mỗi test một database mới + migrate; `security_events`/audit append-only nên không TRUNCATE được). e6, e7, e9 và
-    test Q-3e-13 không còn phụ thuộc dòng test khác để lại. Kỳ vọng lượt `--integration` M-3e-2: chỉ e6 đỏ — **chưa
-    chạy lại** (cần Docker).
+    test Q-3e-13 không còn phụ thuộc dòng test khác để lại. **Lượt `--integration` chạy lại** (Tuấn Anh, 29/09/2026):
+    3/3 ĐỎ đúng dự đoán, **M-3e-2 nay CHỈ e6 đỏ** (e7, e9 hết đỏ theo — xác nhận tách DB), M-3e-8 → e15, M-3e-14 → e7
+    rollback; md5 3 file khớp, `git diff --stat` khớp. **`make test` đầy đủ** (Tuấn Anh, 29/09/2026): backend **2315
+    passed, 1 xfailed** (= unit 2126 + integration 160 + e2e 29, đếm bằng `--collect-only`; integration +1 = test PG
+    Q-3e-13), `mock_services` 86, `ml_service` 77 — 0 F/E. Stack (Tuấn Anh, 29/09/2026, image build lại — layer `backend/app`
+    mới có `approvals.py`/`auth.py` đã sửa): `make up` → health 200 `ok`, `runtime: up`, `kb: ready`, worker healthy, không
+    có migration mới; **`make gate2 S=all` 89 PASS / 0 FAIL** (gate2 đăng nhập `ha.lt`/`an.nv` — khớp dạng username).
+    **Chặng 3e ĐÓNG** (Tuấn Anh, 29/09/2026). Q-3e-14 chốt → Phase 4 S0 ("Việc treo" 10). Spec v1.7 (8.9, 9.0 — Claude
+    chat sửa) + các dòng PROGRESS sau `6797455` đi cùng commit đầu 3f.
   - Kiểm: unit **2126 passed, 1 xfailed**; ruff, mypy (172 + 11 + 16 file), `lint-imports` 9/9, gitleaks sạch.
     Mutation unit chạy lại **2 lượt: 18/18 ĐỎ đúng dự đoán**, hai lượt giống hệt, md5 khớp, `git diff --stat` khớp
     (M-3e-6 nay 15 test đỏ, M-3e-6b 9 — thêm các test 422 mới).
+- **Commit + push DỪNG 3 (29/09/2026, `5904835..6797455`):** `6797455` "3e dung 3: mutation 3e, reason_code enum, soat
+  truong tu do api" (9 file, stage đích danh; hook gitleaks + unit xanh). **CI xanh:** run `36481912353` (3m3s) — Tuấn Anh
+  chạy `gh run watch` + `gh run list`. Dòng này đi ở commit sau.
 - **S9 — README + tài liệu:** `backend/app/guard/README.md` (6 module sau 3e, điểm áp L1, test/mutation),
   `config/README.md` (hai file mẫu: thứ tự luật là hợp đồng, loại trừ luật 6, file hỏng → không khởi động),
   `backend/app/graph/nodes/README.md` (`b02_screen` thật + bản giả, `screen_reply` ở hai node chờ). "Dồn về mốc G" thêm
   probe cổng 5. "Việc treo" 3, 6 đã gạch; 7 ghi chốt Q-3e-12.
-- **Kiểm (DỪNG 3, phần tự chạy được, 29/09/2026):** unit **2108 passed, 1 xfailed** (Q-3e-12); `mock_services` 86;
+- **Kiểm (DỪNG 3, phần tự chạy được, 29/09/2026):** unit **2107 passed, 1 xfailed** (Q-3e-12; sửa: bản trước ghi 2108 —
+  lệnh chạy `unit + e2e` nên tính cả 1 test e2e không cần cổng); `mock_services` 86;
   `ml_service` 77 (5 `ml_real` bỏ); ruff, mypy (172 + 11 + 16 file), `lint-imports` 9/9 KEPT, gitleaks sạch.
-  `backend/tests/e2e` (28) **không chạy được trong sandbox** (mở cổng local bị chặn — `PermissionError` ở
+  `backend/tests/e2e` (29 test, 28 lỗi) **không chạy được trong sandbox** (mở cổng local bị chặn — `PermissionError` ở
   `e2e/mock_server.py:33`, có từ trước 3e) và `backend/tests/integration` cần Docker → Tuấn Anh chạy `make test`.
-  **`make test` đầy đủ (Tuấn Anh, 29/09/2026): backend 2295 passed, 1 xfailed** (= unit 2108 + integration 159 + e2e
-  28; xfail = Q-3e-12), `mock_services` 86, `ml_service` 77 (5 `ml_real` bỏ) — 0 F/E.
+  **`make test` đầy đủ (Tuấn Anh, 29/09/2026): backend 2295 passed, 1 xfailed** (= unit 2107 + integration 159 + e2e
+  29; xfail = Q-3e-12 — tách số theo `--collect-only` từng thư mục, e2e không đổi từ 2b-1), `mock_services` 86, `ml_service` 77 (5 `ml_real` bỏ) — 0 F/E.
   Stack (Tuấn Anh, 29/09/2026, image build lại sau Q-3e-11 — layer `config` + `backend/app` mới): `make up` →
   `alembic upgrade head` không có bước (DB dev đã ở 0007), `/api/health` 200 `ok`, `runtime: up`, `kb: ready`, worker
   healthy; **`make gate2 S=all` 89 PASS / 0 FAIL**. **DỪNG 3 xanh** — còn Q-3e-13 chờ chốt, chờ lệnh commit.
@@ -2691,6 +2702,56 @@ KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
 19. **(sau DỪNG 3) Route chưa có:** ghi chú L2 (`/reply`, Phase 5) và lý do ghi đè (`/override`, Phase 4) — spec
     Phase 4/5 phải ghi rõ đi qua `desk.redact` (+ `record_redacted`) như 4 điểm của 8.3.
 
+## Phase 3 — chặng 3f: hạn cho cả lượt (S0) + tách slots/facts + B3 VPN + B6–B7 VPN (29/09/2026, đang làm, chưa commit)
+
+Kế hoạch: `PLAN-3f.md` ở gốc repo (KHÔNG commit), đã chốt Q-3f-1…7 (Tuấn Anh + Claude chat, 29/09/2026). Thiết kế:
+`build/phase3-thiet-ke-chi-tiet.md` v1.7 mục 3, 9 (9.0 mới); khi lệch, `PLAN-3f.md` thắng (đã gồm chốt Q-3f), trừ 13 bất
+biến và mục [Chốt]. Opus toàn phiên. G-01: lời người dùng / đầu ra LLM không bao giờ thành `facts`.
+
+| Mã | Chốt |
+|---|---|
+| Q-3f-1 | `tool_retry_count`: helper chung `tools/retry.retries_of` (thành công +attempts, lỗi +attempts−1) cho B6 + Retriever; không sửa `call_with_retry`; f13 = 2 |
+| Q-3f-2 | Boundary bắt riêng `TurnBudgetExceeded` → E2 `turn_budget_exceeded` (không E9); B2/B3/B6 bắt tường minh; M-3f-11; test B1, B8 |
+| Q-3f-3 | `reason` giữ khi là đoạn con của `redacted_request` sau casefold + gộp khoảng trắng; không → `slot_not_in_text` |
+| Q-3f-4 | `span` không phải đoạn con → `span=None` + audit `span_not_in_text` |
+| Q-3f-5 | `dropped_slot_keys` chỉ key đã khai báo ∪ FACT_KEYS; key lạ → `"<unknown>"` + `dropped_unknown_count` |
+| Q-3f-6 | "≥ 2 ý" đếm trên mọi ý (khi có ≥ 1 ý trong phạm vi); câu xã giao không là một ý — sửa prompt `b03_classify` (tăng version) + test |
+| Q-3f-7 | Chỉ khai báo `rediagnose`/`changed_slots`; B6 luôn đủ 3 tool, `rediagnose=False`; chọn tool theo slot đổi → 3g ("Việc treo" 11) |
+
+- **S0 — hạn cho cả lượt (9.0, chốt Q-3e-12):** `core/turn_budget.py` (mới — `TurnBudgetExceeded`, `TurnDeadline`, contextvar
+  `bind_turn_deadline`, `cap_timeout`, `check_sleep`, `window`); `Settings.turn_budget_s=100`, `safety_margin_s=2` + validator
+  `SAFETY_MARGIN_S < TURN_BUDGET_S < WORKER_STALE_TURN_SECONDS` (sai → không khởi động); `Runner(turn_budget_s,
+  safety_margin_s)` bind hạn ở `_run`/`_divert` TRƯỚC semaphore (không vào state/checkpoint). Cắt ở: `tools/retry` (backoff),
+  `tools/registry` (kiểm trước breaker; tool đọc: timeout mỗi lần thử; tool ghi: không đủ TRỌN timeout → không gửi; hết hạn
+  giữa chừng → `breaker.record_abandoned`, không tính lỗi), `ml/client` (`once`), `llm/client` (deadline = min(vai trò, hạn
+  lượt − biên); hết vì hạn lượt → `TurnBudgetExceeded`, không `LLMUnavailable`), `rag/retriever` + `rag/expand` (`window`).
+  `graph/boundary` → E2 `turn_budget_exceeded`; `b02_screen` bắt riêng (E2 + `security_flag`). `REASON_DETAILS` +
+  `turn_budget_exceeded`. `ScriptedLLM.CallRecord` + `timeout_s`, `at` (đo ở nơi nhận); `FakeMlService.slow()` + `seen`.
+  Test: `test_turn_budget.py` viết lại (gỡ xfail Q-3e-12; tĩnh: tổng trần riêng lượt đầu cuối 3f = 194 s ≥ 120 → hạn lượt
+  là cái giữ < stale; mỗi lời gọi lẻ ≤ hạn − biên; khởi động 4 ca; AST 8 điểm gọi), `test_turn_deadline.py` (19: từng lớp +
+  boundary B1/B8 + B2 `security_flag`), **f19** `test_turn_worst_case.py` (graph thật, FakeClock: AD chậm → ml classify
+  timeout → L4 3 Timeout → B8 Retriever thật, rerank quá timeout → E2 `turn_budget_exceeded` ≤ 98 s; ≥ 12 lời gọi, không lời
+  nào nhận timeout > còn lại − biên). Thử tay M-3f-7b (MlClient bỏ cắt): 4 test đỏ, file khôi phục md5 khớp.
+  Test cũ đổi SETUP (không đổi assert): `test_llm_config.py` stale 80 thêm `turn_budget_s=70`.
+- **S1 — slots/facts/cấu hình (3.2, 9.2):** `domain/facts.py` (`FACT_KEYS` 7 key + kiểu chặt, `FactKeyViolation(AssertionError)`,
+  `check_facts`), `domain/slots.py` (`ValueRule`, `IntentSlots` — cấm slot trùng tên fact; `sanitize_slots(spec, raw, *, text,
+  allowed)` → (sạch, key→lý do), không raise; > 100 ký tự BỎ (P1); `device_id`/`error_code` khớp biên token, `reason` đoạn con
+  sau casefold + gộp khoảng trắng (P2, Q-3f-3) — danh sách là hằng code; `audit_dropped` (Q-3f-5)), `domain/action.py`
+  (`ActionMeta`, `build_action` — `check_facts` trước, raise tường minh nên còn hiệu lực dưới `python -O`).
+  `settings.py`: `SlotsFile.intents` (mặc định `{}`), `declared_names`, `enabled_intents=["vpn"]`, `PolicyConstants.TAU_INTENT`,
+  `ActionMetadataFile`/`get_action_metadata`, `check_intent_config` (gọi ở `open_runtime` trước DB). `config/slots.yaml`
+  (`intents.vpn`), `config/action_metadata.yaml` (mới), `config/policy.json` (`TAU_INTENT` 0,6), `.env.example` 2 chú thích.
+  Test: `test_slots_facts.py` (35: **f1**, **f2**, **f18** mức hàm, Q-3f-5, schema), `test_config_files.py` (+6: khớp spec,
+  thiếu metadata / intent bật không có slot → không khởi động, metadata sai schema, slot trùng tên fact),
+  `test_call_with_retry.py` (+8: `retries_of`).
+- **Kiểm (DỪNG 1, 29/09/2026, phần tự chạy được):** unit **2205 passed, 0 xfailed** (trước 3f: 2126 + 1 xfail); ruff sạch;
+  mypy 175 file; `lint-imports` 9/9 KEPT; `gitleaks dir` 32 file đổi/mới — sạch.
+  **`make test` đầy đủ (Tuấn Anh, 29/09/2026): backend 2394 passed, 0 xfailed** (= unit 2205 + integration 160 + e2e 29),
+  `mock_services` 86, `ml_service` 77 (5 `ml_real` bỏ) — 0 F/E. Stack (Tuấn Anh, 29/09/2026, image build lại — layer `config`
+  + `backend/app` mới): `make up` → không có migration mới, `/api/health` 200 `ok` (db, qdrant, mock, ml), `runtime: up`,
+  `kb: ready`, worker healthy (backend/worker qua kiểm hạn lượt + `check_intent_config`); **`make gate2 S=all` 89 PASS /
+  0 FAIL**. **DỪNG 1 xanh** — chờ lệnh commit.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -2724,7 +2785,7 @@ KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
    commit code 3d** (chốt DỪNG 3).
 6. ~~**3e: nâng `MIN_LLM_CALL_SITES` ≥ 1 (`b02_injection_judge`)**~~ — **đã trả ở 3e S5** (`= 1`). 3f/3g tăng tiếp khi
    thêm node gọi LLM (`b03_classify`, `b10_*`, `b11_*`).
-7. **Tổng thời gian MỘT lượt (mọi lời gọi nối tiếp: B1 + B2 + B3 + B6 + B8 + B10 + B11 + … cùng lượt) phải <
+7. ~~**Tổng thời gian MỘT lượt (mọi lời gọi nối tiếp: B1 + B2 + B3 + B6 + B8 + B10 + B11 + … cùng lượt) phải <
    `WORKER_STALE_TURN_SECONDS` (120 s)** (chốt B2 của 3e) — từng lời gọi dưới trần 60 s chưa đủ; vượt thì worker có thể
    coi lượt còn sống là dở dang (khoá D-19 chặn chạy song song nhưng lượt vẫn bị phục hồi oan). Test tĩnh
    `unit/test_turn_budget.py` cộng dồn từ hằng số thật; **3e: lượt đầu = 122 s ĐỎ (Q-3e-12, xfail strict)**. 3f thêm B3
@@ -2732,12 +2793,26 @@ KHÔNG sửa `docs/spec/`; S9 bổ sung nếu soát thấy thêm):
    **Chốt Q-3e-12 (29/09/2026): làm ở 3f S0** — "hạn cho cả lượt": `TURN_BUDGET_S` < `WORKER_STALE_TURN_SECONDS` (đề xuất
    100 s), đặt khi worker nhận lượt, truyền qua context/deps; mỗi lời gọi ra ngoài (AD, ml, LLM, RAG) dùng min(timeout
    riêng, thời gian còn lại − biên an toàn); hết → E2 `turn_budget_exceeded` (không cho qua); test tĩnh + test `FakeClock`
-   cho lượt xấu nhất; gỡ `xfail` của test ngân sách.
+   cho lượt xấu nhất; gỡ `xfail` của test ngân sách.~~ — **đã làm ở 3f S0** (`core/turn_budget.py`, f19; mục "Phase 3 —
+   chặng 3f"). 3g/3h: node mới gọi ra ngoài phải đi qua 4 lớp đã cắt (registry, MlClient, LLM gateway, Retriever) — thêm
+   điểm gọi mới thì thêm vào `test_turn_budget.py::CALL_SITES`.
 8. 3g: node B10 — `AnswerOut.cannot_answer=true` (citations rỗng) → E3 `no_grounding`, **không** E2 (Q-3d-6); cần test.
 9. Trần chi LLM theo TIẾN TRÌNH (S9 3d, mục 4d): backend và worker mỗi bên một `SpendTracker`, thấy chi tiêu của nhau
    chỉ qua `SUM(llm_calls.cost_usd)` mỗi 60 s → sát trần, hai tiến trình có thể cùng tiêu phần còn lại (vượt tối đa ≈
    phần còn lại + chi tiêu 60 s của tiến trình kia). **Chốt trước mốc G: chia trần/2 mỗi tiến trình hoặc bảng giữ chỗ
    DB** (bảng mới → ngoài P7, phải hỏi). Tuấn Anh giữ ở đây (chốt DỪNG 3, 29/09/2026).
+10. **Phase 4 S0 — username đăng nhập không có trong `users` → lưu băm (chốt Q-3e-14, Tuấn Anh 29/09/2026).** Khi
+    username **không** có dòng trong bảng `users`: `security_events.username_attempted` = `"h:"` + HMAC-SHA256(khoá riêng
+    trong `Settings`, username) (hex — 66 ký tự ≤ `String(128)`, **không đổi schema**); username **có** trong `users`
+    giữ nguyên văn. Lý do: mật khẩu chỉ gồm chữ thường + số gõ nhầm vào ô username vẫn khớp `USERNAME_PATTERN` (3e) và
+    đang được lưu nguyên văn. Chỗ đụng (đã thấy ở 3e, chưa làm): `auth/service.py` — `_event`, `_check_threshold`,
+    `_is_locked` → `store.count_failures` (đếm/khoá username ma phải dùng cùng giá trị băm), `permission_denied`
+    `role_unmappable`, `bruteforce_alert(username=…)`; view `auth_failures`; test
+    `test_locked_ghost_username_responds_exactly_like_locked_real_user` (đang kiểm `username_attempted` nguyên văn);
+    `.env.example` thêm khoá.
+11. **3g — chẩn đoán lại D-20 (chốt Q-3f-7, 29/09/2026).** 3f chỉ khai báo `rediagnose`/`changed_slots` trong `TicketState`;
+    B6 luôn gọi đủ 3 tool VPN và ghi `rediagnose=False`. Chọn tool theo `ToolSpec.arg_slots ∩ changed_slots` (và gộp facts cũ
+    + mới cho đúng máy) làm ở 3g cùng B11 — nơi kích hoạt chẩn đoán lại (cờ `REDIAGNOSE_ON_NEW_SLOT`, mặc định tắt).
 
 ## Câu hỏi mở / điểm lệch
 
