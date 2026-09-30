@@ -31,6 +31,7 @@ class FakeAdUser:
     is_privileged_account: bool = False
 
 
+# Bản chép tay — từ P14 cố ý lệch seed.json (l1_01 → it_mgr01 ở đây, → l1_lead ở seed) để test auth không đổi kỳ vọng. Test chuỗi quản lý của 4b dùng tests/fakes/ad_seed.py hoặc dựng tay.
 def seed_ad_users() -> list[FakeAdUser]:
     """Tập nhỏ theo mock_services/seed.json: đủ 4 role, disabled, terminated, chuỗi quản lý."""
     return [

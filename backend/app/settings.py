@@ -11,6 +11,9 @@
 - `config/action_metadata.yaml` (`get_action_metadata`, 3f, phase3 9.2): thuộc tính rủi ro từng `action_type`.
   `check_intent_config` (gọi ở `graph/wiring.open_runtime` trước DB): `ENABLED_INTENTS` ⊆ `slots.intents`, mọi
   `action_type` có metadata — thiếu → không khởi động (không mặc định "reversible").
+- `config/approvers.yaml` (`open_approvers`, Phase 4 4b P1): người duyệt chính/dự phòng/Trưởng BP theo intent — gọi ở
+  `open_runtime` trước DB; thiếu intent đang bật, khoá lạ, id sai mẫu, trùng người → không khởi động. `approval_sla_minutes`
+  (P12): `APPROVAL_SLA_MINUTES_DEV` chỉ dev/test.
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
 Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
@@ -45,6 +48,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.domain.action import ActionMeta
+from app.domain.approval import Roster
 from app.domain.exit_codes import ExitCode
 from app.domain.policy import BusinessHours, Rule, check_rules
 from app.domain.slots import IntentSlots
@@ -198,6 +202,9 @@ class Settings(BaseSettings):
     # `backend/Dockerfile` đặt `ENV APP_GIT_SHA`. Chỉ nhận 40 hex; khác → None + 1 dòng WARNING (không từ chối khởi động);
     # rỗng (cây bẩn) → None. `lineage.commit_sha` lấy từ đây (qua `NodeDeps.commit_sha`).
     app_git_sha: str | None = None
+    # 4b P12: hạn duyệt (phút) đè `SLA_MINUTES` của policy.json để thử hết hạn/nhắc trên stack dev — CHỈ khi APP_ENV ∈ {dev, test}
+    # (`require_dev_fakes` ở `open_runtime`, trước DB); môi trường khác đặt biến này → từ chối khởi động.
+    approval_sla_minutes_dev: int | None = Field(default=None, ge=1, le=30)
 
     @field_validator("app_git_sha", mode="before")
     @classmethod
@@ -493,6 +500,50 @@ def check_intent_config(settings: Settings, slots: SlotsFile, metadata: ActionMe
                 f"action_metadata.yaml thiếu metadata cho {intent}: {missing} — từ chối khởi động "
                 "(không mặc định reversible)"
             )
+
+
+# ---- config/approvers.yaml (Phase 4 chặng 4b P1) ------------------------------------------------
+
+APPROVERS_FILE = "approvers.yaml"
+
+
+class ApproversFile(RootModel[dict[str, Roster]]):
+    """intent → người duyệt chính / dự phòng / Trưởng BP (Q-4-H: lịch trực tĩnh). Nhóm AD và trạng thái KHÔNG kiểm lúc khởi động
+    (mock AD có thể chưa lên) — B15 kiểm lúc chạy."""
+
+    def of(self, intent: str) -> Roster | None:
+        return self.root.get(intent)
+
+
+def load_approvers(path: Path) -> ApproversFile:
+    return ApproversFile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def check_approvers_config(settings: Settings, approvers: ApproversFile) -> None:
+    """Fail-closed lúc khởi động (P1): mọi intent trong `ENABLED_INTENTS` phải có roster."""
+    if missing := sorted(i for i in settings.enabled_intents if approvers.of(i) is None):
+        raise RuntimeError(f"{APPROVERS_FILE} thiếu người duyệt cho intent đang bật {missing} — từ chối khởi động")
+
+
+def open_approvers(settings: Settings) -> ApproversFile:
+    """Nạp `<config_dir>/approvers.yaml` + kiểm (P1). File thiếu, YAML hỏng, schema sai (khoá lạ, id sai mẫu, trùng người),
+    intent đang bật không có roster → `RuntimeError` (backend/worker từ chối khởi động, gọi TRƯỚC khi đụng DB)."""
+    path = settings.config_dir / APPROVERS_FILE
+    try:
+        approvers = load_approvers(path)
+    except (OSError, yaml.YAMLError, ValueError) as e:  # ValidationError là ValueError
+        raise RuntimeError(f"{APPROVERS_FILE} không nạp được ({type(e).__name__}) — từ chối khởi động") from e
+    check_approvers_config(settings, approvers)
+    return approvers
+
+
+def approval_sla_minutes(settings: Settings) -> int:
+    """Hạn duyệt HIỆU LỰC (P12): `APPROVAL_SLA_MINUTES_DEV` — chỉ APP_ENV ∈ {dev, test}, khác → từ chối khởi động — hoặc
+    `SLA_MINUTES` của policy.json."""
+    if settings.approval_sla_minutes_dev is None:
+        return get_policy().constants.SLA_MINUTES
+    settings.require_dev_fakes("APPROVAL_SLA_MINUTES_DEV (hạn duyệt rút ngắn cho dev)")
+    return settings.approval_sla_minutes_dev
 
 
 # ---- config/escalation_templates.yaml ---------------------------------------------------------

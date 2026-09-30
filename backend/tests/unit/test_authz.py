@@ -16,6 +16,7 @@ from app.auth.authz import (
 )
 from app.auth.models import Principal
 from app.auth.permissions import permissions_of
+from app.domain.action import Action
 from app.domain.context import RequesterContext
 
 NOW = datetime(2026, 9, 26, 9, 0, tzinfo=UTC)
@@ -42,7 +43,16 @@ class E:
     is_deny_case: bool
 
 
-NO_CONFLICT = ApprovalParties(requester_id="nv001", approver_manager_id="it_mgr01", action_targets=("nv001",))
+def _for(user_id: str) -> Action:
+    """Hành động mà người hưởng lợi (`requested_for`) là `user_id` — thay `action_targets` cũ (Phase 4 4b TQ-4: `ApprovalParties`
+    mang `approver_chain` + `action`, xung đột tính bằng `domain.approval.conflict_type`; kỳ vọng không đổi)."""
+    return Action(
+        type="renew_vpn_cert", target="device:LAP-0342", requested_for=user_id, scope="single_device",
+        privilege_level="standard_user", reversible=True, reversibility="full", data_sensitivity="low", params={}, facts={},
+    )  # fmt: skip
+
+
+NO_CONFLICT = ApprovalParties(requester_id="nv001", approver_chain=("it_mgr01",), action=_for("nv001"))
 
 
 def test_can_read_ticket() -> None:
@@ -70,14 +80,14 @@ def test_can_decide_approval_denied(principal: Principal, approval: A, now: date
 
 
 def test_three_conflicts_of_interest() -> None:
-    assert approval_conflict("l1_01", ApprovalParties("l1_01", None, ())) == "self"
-    assert approval_conflict("l1_01", ApprovalParties("boss", "boss", ())) == "boss_of_approver"
-    assert approval_conflict("l1_01", ApprovalParties("nv001", None, ("l1_01",))) == "targets_approver"
+    assert approval_conflict("l1_01", ApprovalParties("l1_01", (), None)) == "self"
+    assert approval_conflict("l1_01", ApprovalParties("boss", ("boss",), None)) == "boss_of_approver"
+    assert approval_conflict("l1_01", ApprovalParties("nv001", (), _for("l1_01"))) == "targets_approver"
     assert approval_conflict("l1_01", NO_CONFLICT) is None
     for parties in (
-        ApprovalParties("l1_01", None, ()),
-        ApprovalParties("boss", "boss", ()),
-        ApprovalParties("nv001", None, ("l1_01",)),
+        ApprovalParties("l1_01", (), None),
+        ApprovalParties("boss", ("boss",), None),
+        ApprovalParties("nv001", (), _for("l1_01")),
     ):
         assert not can_decide_approval(_p("l1_01", "l1"), A("l1_01"), parties, now=NOW)
 

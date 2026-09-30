@@ -207,9 +207,11 @@ async def test_missing_intended_action_is_e9() -> None:
     assert out["exit_code"] == "E9"
 
 
-async def test_p5_other_persons_device_after_hours_is_hitl_r18() -> None:
-    """P5 (test phụ h11): máy của người khác lúc 20:00 → R18 (chỉ xét giờ) khớp → HITL, KHÔNG tới B17 (0 lời gọi ghi —
-    người duyệt quyết; nếu duyệt, B17 kiểm lại và mock trả 404 vì máy không thuộc người gửi → E7)."""
+async def test_p5_other_persons_device_after_hours_is_e5_not_hitl() -> None:
+    """P5 (test phụ h11) — đổi theo Phase 4 P7 (Q-4-M, G4-16): máy của người khác lúc 20:00. 3h: R18 (chỉ xét giờ) khớp → HITL,
+    phiếu duyệt tạo cho máy không thuộc người gửi. Nay R18 đòi `device_owner_is_requester` → không luật nào → E5
+    `llm_layer_disabled`, KHÔNG tới B15 (0 phiếu) — nhất quán với ca ban ngày (h11)."""
     out, _, _ = await _node(_state(intended_action=_action(owner=False)), at=AFTER_HOURS)
-    assert (out["status"], out["next"]) == (S_ASSESSING, "b15_prepare_approval")
-    assert _risk(out).matched_rule_id == "R18"
+    assert (out["status"], out["next"], out["exit_code"]) == (S_ESCALATED, "b20_audit", "E5")
+    assert out["escalation_reason_detail"] == "llm_layer_disabled"
+    assert _risk(out).matched_rule_id is None

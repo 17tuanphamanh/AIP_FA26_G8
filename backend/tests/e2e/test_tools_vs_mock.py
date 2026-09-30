@@ -50,7 +50,8 @@ EXPECTED: list[tuple[str, dict[str, Any], Any]] = [
     ("check_current_permissions", {"user_id": "nv002", "resource_path": "finance/Q3"},
      lambda d: [p.status for p in d.root] == ["expired"]),
     ("check_resource_sensitivity", {"resource_path": "finance/Q3"}, lambda d: d.sensitivity == "high"),
-    ("check_manager_chain", {"user_id": "l1_01"}, lambda d: [m.user_id for m in d.root] == ["it_mgr01"]),
+    ("check_manager_chain", {"user_id": "l1_01"},  # Phase 4 P14: l1_01 → l1_lead → it_mgr01
+     lambda d: [m.user_id for m in d.root] == ["l1_lead", "it_mgr01"]),
     ("check_manager_chain", {"user_id": "fin_head"}, None),
 ]  # fmt: skip
 

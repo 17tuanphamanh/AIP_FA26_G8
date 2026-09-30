@@ -4,7 +4,9 @@ Thứ tự:
 1. 413 (middleware) → `require("approval:decide")` (L2, employee → 403).
 2. Transaction NGẮN `lock_row` (`FOR UPDATE`, chỉ đọc + kiểm):
    - không có phiếu → 404;
-   - `may_decide_as` sai (không phải người được giao, xung đột lợi ích) → 403 + `permission_denied`;
+   - `may_decide_as` sai (không phải người được giao, xung đột lợi ích) → 403 + `permission_denied`. Xung đột dùng CÙNG
+     `domain.approval.conflict_type` với B15; chuỗi quản lý của người quyết dựng từ bảng `users` (`manager_id`, ≤ 5 cấp, chặn
+     vòng — `domain.approval.manager_chain`, Phase 4 P4);
    - phiếu không còn `pending` → `already_decided`; `clock.now() >= deadline` (Clock của APP, bằng hạn
      là muộn) → `expired` → `record_late` + 409 (TC27).
 3. Body: `rejected` thiếu `note` → 422. `reason_code` chỉ nhận mã trong `ReasonCode` (danh sách CỐ ĐỊNH, PLAN-3e
@@ -32,10 +34,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.desk import Desk, get_desk, parse_body, record_redacted, redact
+from app.api.desk import (
+    Desk,
+    UserDirectory,
+    get_desk,
+    parse_body,
+    record_redacted,
+    redact,
+)
 from app.auth.authz import ApprovalParties, may_decide_as
 from app.auth.deps import deny, require
 from app.auth.models import Principal
+from app.domain.action import Action
+from app.domain.approval import manager_chain
 from app.domain.states import S_PENDING_APPROVAL
 from app.graph.late_event import record_late, start_event
 
@@ -58,11 +69,20 @@ class DecisionIn(BaseModel):
     view_started_at: datetime | None = None  # tuỳ chọn; chỉ log
 
 
-def _action_targets(values: dict[str, Any]) -> list[str]:
+def _action(values: dict[str, Any]) -> Action | None:
     action = values.get("intended_action")
-    if action is None:
-        return []
-    return [str(t) for t in (getattr(action, "target", None), getattr(action, "requested_for", None)) if t]
+    return None if action is None else Action.model_validate(action)
+
+
+async def _chain_from_users(users: UserDirectory, user_id: str) -> tuple[str, ...]:
+    """Chuỗi quản lý của người quyết theo bảng `users` (không có dòng → rỗng; sếp không có dòng → dừng ở đó)."""
+
+    async def fetch_manager(uid: str) -> str | None:
+        row = await users.get_user(uid)
+        return None if row is None else row.manager_id
+
+    me = await users.get_user(user_id)
+    return await manager_chain(user_id, me.manager_id if me else None, fetch_manager)
 
 
 @router.post("/api/approvals/{approval_id}/decision", status_code=202)
@@ -78,12 +98,11 @@ async def decide(
         if a is None:
             raise HTTPException(404, "not_found")
         ticket = await desk.tickets.get(a.ticket_id)
-        me = await desk.users.get_user(p.user_id)
         snap = await desk.runner.snapshot(a.ticket_id)
         parties = ApprovalParties(
             requester_id=ticket.requester_id if ticket else "",
-            approver_manager_id=me.manager_id if me else None,
-            action_targets=_action_targets(dict(snap.values or {})),
+            approver_chain=await _chain_from_users(desk.users, p.user_id),
+            action=_action(dict(snap.values or {})),
         )  # fmt: skip
         if not may_decide_as(p, a, parties):
             await deny(request, p, "approval:decide", approval_id=approval_id)

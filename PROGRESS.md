@@ -4049,6 +4049,112 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi
     6. P7 / 4.4: recipe `verify` gọi `MAKE_BIN=make bash scripts/verify.sh`, KHÔNG dùng `$(MAKE)` (dòng recipe có `$(MAKE)`
        khiến `make -n verify` chạy thật); thêm `verify-status`; 4a-7 "đã có" (`env_ignore_empty=True`).
   - `make test` (integration + e2e), gate2/gate3 trên stack: đã chạy trong `make verify G=23 BENCH=1` — XANH (ở trên).
+  - **Commit `f64fd86`** "4a dung 2: no ky thuat P1-P7 + make verify; HMAC username ma (Q-4a-5, Q-4a-6)", push lên `origin/dev-tuananh`;
+    **CI xanh** run `36726470829` (Tuấn Anh kiểm). **4a ĐÓNG** — spec phase4 v1.0 (mục 4.10) đi cùng commit đầu 4b.
+
+## Phase 4 — chặng 4b: B15 thật (tầng A) (30/09/2026, DỪNG 1 xong (verify xanh 23:05, Claude chat duyệt) — đang DỪNG 2)
+
+**TẠM DỪNG STACK theo yêu cầu Phase 7 (verify FE) — chờ Tuấn Anh báo "FE verify xong".** Tới lúc đó: không `make verify`/`make up`/
+`make gate*`/`docker compose`/build image/`make test` đầy đủ; chỉ unit + lint trong sandbox, test-writer, mutation, security-reviewer.
+Phần cần stack ghi "chờ stack".
+
+Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.1** mục 5 (+ 3.1, 3.2, 4.10 #11) — **mục 5.6 (chốt DỪNG 1) thắng khi
+lệch**. Kế hoạch: `PLAN-4b.md` (untracked) — **DUYỆT
+30/09/2026 21:44** (1 vòng, chốt ở `PLAN-4b.md` mục 8): Q-4b-1 = A; Q-4b-2 thêm b2b; Q-4b-3 đồng ý (x14 giết tại `after_approval_create`,
+tắt `l1_01` giữa hai lần chạy); Q-4b-4 b8 kiểm `intended_action` có `action_type` + `target`; Q-4b-5 = B với hằng riêng
+`approver_sync_unavailable` (E2 TRƯỚC `ensure`, 0 phiếu); TQ-7 sửa (`choice_reason` bắt buộc ở nhánh `peek`, suy tất định, `recovered=true`);
+điều kiện thêm: R17/R18/R19 mỗi luật ≥ 1 test khớp dương máy của chính người gửi; `AdUserSync` dùng chung auth + B15; `make verify`
+DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo.
+
+- **Bước 0 (30/09/2026):** `git fetch` — `origin/dev-tuananh` = HEAD `f64fd86`, không có merge M9 mới (`origin/dev-duyanh`,
+  `origin/dev-luuduong` dừng ở `839810a`) → không rebase. `uv run alembic heads` = 1 (`0007`). `make test` trong sandbox: backend 2969
+  passed + 252 ERROR — toàn bộ ERROR là integration/e2e do sandbox chặn bind cổng (`PermissionError` ở `e2e/mock_server.py:33`); chạy
+  tách: unit **2968 passed** (= mốc 4a), mock 94, ml 77 / 5 deselected.
+- **Q đã chốt (Tuấn Anh / Claude chat 30/09/2026 — nguyên văn ở spec v1.1 mục 5.6):**
+  - **Q-4b-1 = A** — B17: lỗi AD khi tra `decided_by` → E2 `approver_lookup_error` (spec P13 đã sửa chữ); nhánh người gửi/người hưởng
+    lợi GIỮ E5 `person_no_longer_valid`; xét người gửi/người hưởng lợi trước, `decided_by` sau, trong **một** `gather` (TQ-11).
+  - **Q-4b-2** — thêm b2b: `it_mgr01` gửi, phiếu giao `l1_01`, `l1_01` quyết → 403 (chuỗi 2 cấp; giết M-4b-11).
+  - **Q-4b-3** — x14 giết process TẠI hook `after_approval_create` (trước `notify_approver`), tắt `l1_01` trong AD giữa hai lần chạy;
+    đúng 1 phiếu, đúng 1 `notify_approver` cho `a.approver_id = l1_01`. M-4b-9 = "bỏ `peek` + báo người vừa chọn".
+  - **Q-4b-4** — b8 kiểm thêm `audit_logs.intended_action` không NULL, có `action_type` + `target` (giết M-4b-14 ngay ở 4b).
+  - **Q-4b-5 = B** — thiếu `JWT_SIGNING_KEY`: WARNING lúc khởi động (không đổi điều kiện khởi động); B15 ra E2 **trước** `ensure` với
+    hằng riêng **`approver_sync_unavailable`** (thêm `REASON_DETAILS`; KHÔNG phải `approver_lookup_error`), 0 phiếu.
+  - **Q-4b-6 = A** — route giữ chuỗi dựng từ bảng `users` (P4); lớp chặn chính là B15 thật (chuỗi từ AD); DỪNG 2 BẮT BUỘC có test B15
+    "sếp trung gian không ra role". NULL hai nghĩa → Việc treo 25. S1e → Việc treo 26. S5a chấp nhận (không sửa `main.py`). Lệch A24
+    (kiểm SLA đầu tiên) chấp nhận.
+- **DỪNG 1 (30/09/2026) — XONG, Claude chat duyệt (MẪU B ĐẠT, cho commit + push):**
+  - **S1 khung:** `domain/approval.py` (kiểu + chữ ký, thân `NotImplementedError`), `auth/user_sync.py` (`LockPolicy`, `AdUserSync`),
+    `settings.py` khối Phase 4 (`approval_sla_minutes_dev` 1–30, `ApproversFile`/`load_approvers`/`check_approvers_config`),
+    `config/approvers.yaml` (`vpn: l1_01 / l1_02 / it_mgr01`), `tools/specs.APPROVER_STEP`, `NodeDeps.approval_sla_minutes`. Test fakes:
+    `FakeAd` + `fail_ids` (HTTP 500 theo người), `calls_by`, `set_status`, `add`; `tests/fakes/ad_seed.py` (AD giả ĐỌC `seed.json`).
+    **Seed P14** (`seed.json`, sửa bằng script giữ nguyên định dạng — round-trip byte khớp trước khi sửa): `l1_lead` (khoa.dv, argon2id
+    salt mới của mật khẩu demo công khai), `l1_01.manager_id → l1_lead`, `PC-0124`/`LAP-0700`/`LAP-0900` chưa đăng ký, không cert.
+  - **Test đổi vì seed P14 (3 chỗ; A19 của PLAN chỉ liệt kê 2 — sót `:92`):** `mock_services/tests/test_endpoints.py:45-46` (chuỗi
+    quản lý `l1_01` → `[l1_lead, it_mgr01]`), `:92` (`/_admin/reset` 16 → 17 người), `backend/tests/e2e/test_tools_vs_mock.py:53`
+    (`check_manager_chain(l1_01)` → `[l1_lead, it_mgr01]`, chưa chạy — Docker). Grep rộng lại (Tuấn Anh yêu cầu): không còn chỗ vỡ; script
+    cổng gate2/gate3 không phụ thuộc chuỗi/số lượng seed (đăng nhập `ha.lt` nay tạo thêm dòng `users` của `l1_lead` — không assert
+    nào dựa vào). Docstring `test_guard_api.py:298` "16 người" cũ (assert `>= 16` vẫn đúng).
+  - **S2 test-writer (theo bước S2 PLAN):** 164 test mới + 2 e2e sửa (h14 → `…_unknown_device_e5_no_approval_no_write`, h11-20h →
+    `…_other_persons_device_e5_no_approval_no_write`). Chạy trước code: **133 đỏ / 31 xanh** — đỏ đúng lý do (83 `NotImplementedError`, 23
+    "DID NOT RAISE" do khung chưa có validator/kiểm khởi động, 13 verdict luật cũ, 7 thứ tự kiểm b5, còn lại kỳ vọng mới: graph x5/x6
+    ra `S_PENDING_APPROVAL`, route b2b 202 ≠ 403, SLA 30 ≠ 5); 0 đỏ vì import/fixture. Tôi kiểm: `git status` chỉ file test mới +
+    đúng 2 test e2e; ruff + mypy sạch. Agent tự khai: 1 lần sửa file test của nó bằng heredoc python (ngoài danh sách lệnh), grep chữ ký
+    `enroll` trong `auth/mfa.py` (không thuộc danh sách đọc/cấm).
+  - **S3:** thân `domain/approval.py` (3.1; `memo_lookup` — mỗi người tra một lần, lỗi không nhớ; `manager_chain` ≤ 5, chặn vòng;
+    `rejected` theo thứ tự đánh giá). `auth/authz.ApprovalParties(requester_id, approver_chain, action)`; `approval_conflict` gọi
+    `conflict_type`. Route: `_chain_from_users` (bảng `users`, cùng `manager_chain`), bỏ `_action_targets`. `test_authz.py`,
+    `test_auth_idor.py` đổi CÁCH DỰNG `ApprovalParties` (kỳ vọng giữ — TQ-4).
+  - **S4:** `AdUserSync` chứa `_ensure_manager`/`_upsert`/`_carry_ghost_lock` (chép nguyên, `self.config` → `self.lock`,
+    `_evict_user` → callback `on_sessions_revoked`); `AuthService._sync_login_user` gọi lại (một định nghĩa); `username_hash.failure_keys`
+    thuần, `AuthService._failure_keys` gọi lại. Test auth hiện có xanh KHÔNG sửa kỳ vọng. `mutate_4a.py`: M-4a-3 → `username_hash.py`,
+    M-4a-5…8 → `user_sync.py` (+ `test_user_sync.py` vào lệnh, thêm test mức sync vào danh sách phải đỏ) → `--hmac` **8/8 ĐỎ đúng dự
+    đoán**, md5 3 file khớp, `git diff --stat` khớp.
+  - **S5:** `settings.open_approvers` (lỗi file/YAML/schema → `RuntimeError` "approvers.yaml") + `approval_sla_minutes`
+    (`require_dev_fakes`) — `open_runtime` gọi SLA ĐẦU TIÊN, roster sau `check_plans`, cả hai trước DB; `_open` nhận giá trị hiệu lực.
+    `docker-compose.yml` `x-backend-env` + `.env.example` khối `# ==== Phase 4 ====` mới (`APPROVAL_SLA_MINUTES_DEV` rỗng).
+  - **S6:** `policy.json` R17/R18/R19 + `device_owner_is_requester is_true`; `ad_get_user.allowed_steps` + `B15_APPROVER`. Test cũ đổi (lý
+    do P7 / P3):
+    - `test_config_files.py::SPEC_11_2`, `test_policy_rules_vpn.py::SPEC_11_2` — bản ghim policy thêm điều kiện chủ máy.
+    - `test_policy_rules_vpn.py` LUAT_C5: `R18-khop-renew/reissue-20h`, `R19-khop-probation` dời từ máy người khác sang máy CỦA MÌNH
+      (+ `target_is_other=True` để R20 không chen); `R18-suyt-trong-gio`, `R19-suyt-active` dời sang máy của mình (chỉ còn khác đúng một
+      điều kiện); thêm suýt khớp `R17-suyt-may-nguoi-khac`, `R18-suyt-20h-may-nguoi-khac`, `R19-suyt-probation-may-nguoi-khac`.
+    - `test_b12_assess.py::test_p5_other_persons_device_after_hours_is_hitl_r18` → `…_is_e5_not_hitl` (E5 `llm_layer_disabled`, rule None)
+      — bản unit của đúng ca P7 đảo (h11-20h).
+    - `test_b02_screen.py` e12 + e18 (5 ca "qua"): harness `nv-fake` xin LAP-0342 (máy của nv001) lúc 07:00 ICT — 3h khớp R18 → chờ duyệt
+      (vô tình dựa vào lỗ G4-16). Nay E5 ở B13/B14. Kỳ vọng "qua B2" giữ, CHẶT hơn: `_passed_b2` kiểm E5 `llm_layer_disabled` và
+      điểm escalate đầu tiên là `B13/B14`, không có `B2`. Không assert an toàn nào bị nới.
+    - `test_executor_plans.py:292` — `allowed_steps` + `B15_APPROVER`.
+  - **Luật → test khớp DƯƠNG với máy của chính người gửi (điều kiện 1):** R17: C5 `R17-khop-renew/reissue` (UNREG_OWN), BANG `tc09-nv002
+    …R17+R18`, `test_hrule_4b_owner` `R17-khop-may-minh-chua-dang-ky`, `R17-khop-reissue-tc09-PC0977`, e2e h6, gate3 tc09. R18: C5
+    `R18-khop-renew/reissue-20h` (REG_OWN), BANG `ngoai-gio-20h-R20+R18`, `test_hrule_4b_owner` `R18-khop-may-minh-20h`,
+    `R18-khop-may-minh-chua-dang-ky-20h-cung-R17`, gate3 tc02/tc06 ngoài giờ. R19: C5 `R19-khop-probation` (REG_OWN), BANG `thu-viec-
+    probation-R20+R19`, `test_hrule_4b_owner` `R19-khop-thu-viec-may-minh`, e2e h10.
+  - **Kết quả sandbox (30/09/2026 22:30):** unit **3129 passed**; mock **100**; `make lint` xanh (ruff; mypy app 201 / tests 188 / mock
+    12 / ml 16; import-linter 9/9; gitleaks sạch). Integration + e2e chưa chạy (Docker).
+  - **S7 mutation `mutate_4b.py` (mới, khuôn `mutate_4a`, N3):** M-4b-1, 2, 3, 4, 5 (ở `memo_lookup`), 6, 7 (`policy.json`, chữ MUTATION
+    trong `description`), 11 — **lượt 1: 8/8 ĐỎ đúng dự đoán; lượt 2: 8/8** — md5 `api/approvals.py`, `domain/approval.py`,
+    `config/policy.json` khớp, `git diff --stat` khớp. **Sự cố:** tôi gõ thừa một lệnh chạy lần 3 nối `| head -0` (lỗi cú pháp head) →
+    pipe đóng ngay giữa lần chạy; kiểm lại sau 20 s: 3 file đích không còn chữ `MUTATION`, md5 = mốc — `finally` đã khôi phục.
+  - **S8 soát bảo mật (security-reviewer, theo bước S8 PLAN, chỉ đọc):** **0 FAIL, 3 NGHI**, còn lại PASS (S1a–c, S2, S3, S4a–d, S5b–c,
+    S6, S7; bất biến B1–B3, B6, B7 PASS; B4/B5/B8 N/A — B15 vẫn giả). gitleaks 0 trên 12 file mới + 10 file sửa. Tôi đã kiểm lại 2 chỗ:
+    - **NGHI S1d** (route): `users.manager_id = NULL` vừa là "không có sếp" vừa là "không biết" (`_ensure_manager` ghi NULL khi sếp
+      không ra role / không có trong AD / quá 5 cấp) → `_chain_from_users` dừng chuỗi ở đó. Ca: `l1_lead` thuộc cả IT-L1 lẫn IT-Manager
+      (role None) → dòng `l1_01.manager_id = NULL` → `it_mgr01` gửi, phiếu (B15 GIẢ/`FAKE_APPROVER_ID`, chỉ dev) giao `l1_01` → route
+      202. B15 thật dựng chuỗi từ AD, không lọc role → bắt được (thêm test B15 "sếp trung gian không ra role" vào S11). Route là lớp thứ
+      hai; bảng `users` không phân biệt được hai nghĩa của NULL (không đổi schema) → **Q-4b-6** (MẪU B) — chốt A, Việc treo 25.
+    - **NGHI S1e**: `targets_approver` chỉ so `requested_for` (đúng P4; bản cũ so cả `target` thô nhưng `device:`/`user:` không bao giờ
+      khớp → VPN không đổi). Phase 5 (intent account, `target="user:…"`) cần xét lại → Việc treo 26.
+    - **Ghi chú S5a**: lỗi `open_runtime` (kể cả `APPROVAL_SLA_MINUTES_DEV` ngoài dev/test, `approvers.yaml` hỏng) ở API bị `lifespan`
+      bắt (`main.py:222-228`) → API chạy nhưng runtime "down" (route ticket/duyệt 503); worker dừng hẳn. Như mọi kiểm có sẵn của
+      `open_runtime` (ML token, policy…). `main.py` ngoài phạm vi 4b → chỉ báo. Lệch PLAN A24: kiểm SLA đặt ĐẦU dãy (lời giao test-writer
+      "trước mọi kiểm khác"), roster sau `check_plans`.
+  - **`make verify G=23` (Tuấn Anh, 30/09/2026 22:51:23 → 23:05:22, HEAD `f64fd86` + cây bẩn 49 mục, `.env`): XANH** —
+    `.verify/summary.txt`: 0 chuẩn bị PASS; 1 lint PASS; 2 test PASS (2m14s: backend **3382 passed** = 3129 unit + 253 integration/e2e
+    — gồm h14/h11-20h mới và `test_tools_vs_mock` theo seed mới; 0 skipped — mock 100, ml 77 / 5 deselected); 3 up PASS (APP_ENV=dev);
+    6 gate2 PASS (**89 PASS / 0 FAIL**); 4 ingest PASS (KB không đổi); 5 gate3 PASS (**72 PASS / 0 FAIL**, NGOÀI GIỜ 23:02: tc02/tc06 R18
+    (+R20) HITL → `ha.lt` duyệt qua route (chuỗi từ `users`) → 202 → renew đúng 1; **tc09** R17+R18 → `S_PENDING_APPROVAL`, 1 phiếu
+    `pending` — **không đổi so với 4a**); 8 trả về `.env` PASS; 9 CI (gh) PASS — run `36731653667` completed success (CI của HEAD
+    đang đẩy; DỪNG 1 chưa push). Điều kiện 3 đạt: luật + seed mới không đổi kết quả gate2/gate3.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -4074,8 +4180,9 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi
 
 ## Việc treo
 
-1. **[4a P1 — đã làm, chưa commit; kiểm "không còn annotation Node 20" sau push]** CI: `actions/cache@v4`, `checkout@v4`,
-   `setup-uv@v6` còn Node 20 (deprecated); `ubuntu-latest` → Ubuntu 26 từ 19/10/2026 — nâng trước 19/10.
+1. ~~CI: `actions/cache@v4`, `checkout@v4`, `setup-uv@v6` còn Node 20 (deprecated); `ubuntu-latest` → Ubuntu 26 từ 19/10/2026 —
+   nâng trước 19/10.~~ — **ĐÓNG** (4a P1, commit `f64fd86`: `checkout@v5`, `setup-uv@v7`, `cache@v5`, `runs-on: ubuntu-24.04`; CI run
+   `36726470829` không còn annotation Node 20).
 2. ~~Chưa commit, đi chung commit đầu 3c: dòng PROGRESS kết quả CI 3b (run `36344625601`) và `.env.example` (dòng chú
    thích `RAG_KEEP_OLD_COLLECTIONS`)~~ — **đã commit** trong `9680471`.
 3. ~~3e: nghiệm thu phải có test audit B8 detail.query đã che PII bằng guard thật.~~ — **đã trả ở 3e S2**
@@ -4178,6 +4285,14 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi
     username mới vào dòng có sẵn — không phải "dòng vừa tạo" → không mang khoá trượt mà username mới (khi còn là username ma) đã
     tích; lần kế tiếp tới AD (cùng loại lỗ với Q-4a-6). *Giới hạn đã biết:* mock AD không đổi username (seed cố định, không có
     endpoint đổi tên) → không tái hiện được trên stack/test hiện tại; xét khi thay AD thật (cùng lúc Việc treo 22).
+25. **`users.manager_id = NULL` mang hai nghĩa (Q-4b-6 = A, soát DỪNG 1 4b NGHI S1d; chốt 30/09/2026).** NULL vừa là "không có sếp"
+    vừa là "không biết" (`AdUserSync._ensure_manager` ghi NULL khi sếp không ra role, không có trong AD, sâu > 5 cấp, vòng) → chuỗi
+    quản lý mà route duyệt dựng từ bảng `users` (`api/approvals.py::_chain_from_users`) có thể **cụt** (vd `l1_lead` thuộc cả IT-L1 lẫn
+    IT-Manager → `l1_01.manager_id = NULL` → `it_mgr01` gửi, phiếu giao `l1_01` → route 202). Lớp chặn chính là B15 thật (chuỗi từ AD,
+    không lọc role — DỪNG 2 có test). Đóng hẳn: phân biệt hai nghĩa trong schema (cần migration) — sau Phase 4.
+26. **`conflict_type` `targets_approver` chỉ so `action.requested_for` (soát DỪNG 1 4b NGHI S1e).** Đúng P4 và không đổi hành vi VPN
+    (đích `device:…` không bao giờ trùng `user_id`). Phase 5 (intent tài khoản, `target="user:…"`) phải xét lại: đích là tài khoản của
+    chính người duyệt mà không qua `requested_for` thì không bị bắt.
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

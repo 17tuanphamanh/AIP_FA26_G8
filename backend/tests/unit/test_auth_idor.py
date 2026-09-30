@@ -63,7 +63,7 @@ def _router() -> APIRouter:
         a = APPROVALS.get(approval_id)
         if a is None:
             raise HTTPException(404, "not_found")
-        parties = ApprovalParties(a.requester_id, None, ())
+        parties = ApprovalParties(a.requester_id, (), None)  # Phase 4 4b TQ-4: (requester, chuỗi quản lý, hành động)
         if not can_decide_approval(principal, a, parties, now=get_auth(request).clock.now()):
             await deny(request, principal, "approval:decide")
             raise HTTPException(403, "forbidden")

@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from app.audit.handoff import SECURITY_FLAG_NOTE
 from app.core.clock import FakeClock
-from app.domain.states import S_BLOCKED, S_CLASSIFYING, S_ESCALATED, S_PENDING_APPROVAL
+from app.domain.states import S_BLOCKED, S_CLASSIFYING, S_ESCALATED
 from app.domain.ticket_state import ChunkRef
 from app.llm.providers.scripted import BadJSON, Http, Reply, Script, Unavailable
 from app.rag.models import RetrievalResult
@@ -48,6 +48,18 @@ def _env(scripts: dict[str, Script] | None = None, ml: FakeMlService | None = No
                       clock=clock)  # fmt: skip
     h = GraphHarness(clock=clock, nodes="real", llm=gw.client, ml=ml or FakeMlService(), rag=_rag())
     return h, gw
+
+
+# Qua B2 → đi hết B3 … B12. Harness: `nv-fake` xin gia hạn LAP-0342 (máy của nv001) lúc 07:00 ICT (ngoài giờ). Tới 3h ca này khớp
+# R18 → chờ duyệt; Phase 4 P7 (Q-4-M, G4-16): R17–R19 đòi `device_owner_is_requester` → không luật nào → E5 `llm_layer_disabled`
+# ở B13/B14. Điều test kiểm (B2 cho qua, không escalate ở B2) giữ nguyên — `_passed_b2` kiểm điểm escalate là B13/B14.
+PASSED = "passed_b2"
+
+
+def _passed_b2(h: GraphHarness, ticket: str, v: dict[str, Any]) -> None:
+    assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E5", "llm_layer_disabled"), v
+    escalated = [r["step"] for r in h.audit.rows if r["ticket_id"] == ticket and r["to_status"] == S_ESCALATED]
+    assert escalated[0] == "B13/B14" and "B2" not in escalated, escalated  # escalate ở B12 (rồi B20 đóng), không ở B2
 
 
 def _judge_calls(gw: Gateway) -> int:
@@ -107,7 +119,7 @@ async def test_e12_normal_passes_via_llm_one_call() -> None:
     h, gw = _env({JUDGE: [Reply(NOT_ATTACK)]})
     v = (await h.submit_as("t1", SESSION, text=NORMAL)).values
     assert v["screening"] == {"layer_decided": "llm", "p_mal": None}
-    assert v["status"] == S_PENDING_APPROVAL  # đi tiếp qua B3 (giả) … tới chờ duyệt, không escalate
+    _passed_b2(h, "t1", v)  # đi tiếp qua B3 … B12, không escalate ở B2 (PASSED — xem trên)
     assert _judge_calls(gw) == 1
     assert h.ml.calls["classify"] == 1  # B1 (chốt 3e): model_missing → đúng 1 request, không retry
     assert ("B2", "screened") in h.audit.events("t1")
@@ -181,13 +193,16 @@ async def test_e14_llm_says_attack_blocked() -> None:
 
 @pytest.mark.parametrize(("p", "status", "judge_calls"), [
     (0.95, S_BLOCKED, 0), (0.90, S_BLOCKED, 0),  # biên: p = TAU_BLOCK → chặn (M-3e-12)
-    (0.05, S_PENDING_APPROVAL, 0), (0.10, S_PENDING_APPROVAL, 0),  # biên: p = TAU_PASS → qua
-    (0.5, S_PENDING_APPROVAL, 1), (0.11, S_PENDING_APPROVAL, 1), (0.89, S_PENDING_APPROVAL, 1),  # giữa → L4
+    (0.05, PASSED, 0), (0.10, PASSED, 0),  # biên: p = TAU_PASS → qua
+    (0.5, PASSED, 1), (0.11, PASSED, 1), (0.89, PASSED, 1),  # giữa → L4
 ])  # fmt: skip
 async def test_e18_classifier_thresholds(p: float, status: str, judge_calls: int) -> None:
     h, gw = _env({JUDGE: [Reply(NOT_ATTACK)]}, ml=FakeMlService(classify_p=p))
     v = (await h.submit_as("t1", SESSION, text=NORMAL)).values
-    assert v["status"] == status
+    if status == PASSED:
+        _passed_b2(h, "t1", v)
+    else:
+        assert v["status"] == status
     assert _judge_calls(gw) == judge_calls
     expected_layer = "classifier" if judge_calls == 0 else "llm"
     assert v["screening"]["layer_decided"] == expected_layer and v["screening"]["p_mal"] == p

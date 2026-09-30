@@ -234,6 +234,7 @@ def test_hrule_bang_du_dong() -> None:
 REG_OWN: dict[str, FactValue] = {"device_registered": True, "device_owner_is_requester": True}
 REG_OTHER: dict[str, FactValue] = {"device_registered": True, "device_owner_is_requester": False}
 UNREG_OWN: dict[str, FactValue] = {"device_registered": False, "device_owner_is_requester": True}
+UNREG_OTHER: dict[str, FactValue] = {"device_registered": False, "device_owner_is_requester": False}
 
 
 @dataclass(frozen=True)
@@ -273,20 +274,28 @@ LUAT_C5 = [
     pytest.param(_cl("R17", "suyt", RENEW, _bo(UNREG_OWN, "device_registered"), khop="", decision=E5),
                  id="R17-suyt-thieu-device_registered"),
     pytest.param(_cl("R17", "suyt", CHECK, UNREG_OWN, khop="R16", decision=AUTO), id="R17-suyt-action-check"),
-    # R18 — approval_required renew/reissue ngoài giờ. owner=false để R20 không chen vào, chỉ còn R18.
-    pytest.param(_cl("R18", "khop", RENEW, REG_OTHER, khop="R18", decision=HITL, trong_gio=False,
+    # Phase 4 P7 (Q-4-M): R17–R19 đòi `device_owner_is_requester` — máy chưa đăng ký của NGƯỜI KHÁC → không luật nào.
+    pytest.param(_cl("R17", "suyt", RENEW, UNREG_OTHER, khop="", decision=E5, target_is_other=True),
+                 id="R17-suyt-may-nguoi-khac"),
+    # R18 — approval_required renew/reissue ngoài giờ + máy của chính người gửi (P7). Máy của mình + target_is_other=True để R20
+    # không chen vào, chỉ còn R18 (3h dùng owner=false cho việc này — P7 làm ca đó thành không luật nào, xem dòng suýt khớp).
+    pytest.param(_cl("R18", "khop", RENEW, REG_OWN, khop="R18", decision=HITL, trong_gio=False,
                      target_is_other=True), id="R18-khop-renew-20h"),
-    pytest.param(_cl("R18", "khop", REISSUE, REG_OTHER, khop="R18", decision=HITL, trong_gio=False,
+    pytest.param(_cl("R18", "khop", REISSUE, REG_OWN, khop="R18", decision=HITL, trong_gio=False,
                      target_is_other=True), id="R18-khop-reissue-20h"),
-    pytest.param(_cl("R18", "suyt", RENEW, REG_OTHER, khop="", decision=E5, target_is_other=True),
+    pytest.param(_cl("R18", "suyt", RENEW, REG_OWN, khop="", decision=E5, target_is_other=True),
                  id="R18-suyt-trong-gio"),
+    pytest.param(_cl("R18", "suyt", RENEW, REG_OTHER, khop="", decision=E5, trong_gio=False, target_is_other=True),
+                 id="R18-suyt-20h-may-nguoi-khac"),  # P7 / G4-16: 3h ca này là HITL
     pytest.param(_cl("R18", "suyt", CHECK, REG_OWN, khop="R16", decision=AUTO, trong_gio=False),
                  id="R18-suyt-action-check-20h"),
-    # R19 — approval_required renew/reissue khi requester.employment_status == probation.
-    pytest.param(_cl("R19", "khop", RENEW, REG_OTHER, khop="R19", decision=HITL, requester=NV003,
+    # R19 — approval_required renew/reissue khi requester.employment_status == probation + máy của chính người gửi (P7).
+    pytest.param(_cl("R19", "khop", RENEW, REG_OWN, khop="R19", decision=HITL, requester=NV003,
                      target_is_other=True), id="R19-khop-probation"),
-    pytest.param(_cl("R19", "suyt", RENEW, REG_OTHER, khop="", decision=E5, target_is_other=True),
+    pytest.param(_cl("R19", "suyt", RENEW, REG_OWN, khop="", decision=E5, target_is_other=True),
                  id="R19-suyt-active"),
+    pytest.param(_cl("R19", "suyt", RENEW, REG_OTHER, khop="", decision=E5, requester=NV003, target_is_other=True),
+                 id="R19-suyt-probation-may-nguoi-khac"),  # P7 / G4-16
     pytest.param(_cl("R19", "suyt", CHECK, REG_OWN, khop="R16", decision=AUTO, requester=NV003),
                  id="R19-suyt-action-check-probation"),
     # R20 — allow renew/reissue khi registered is_true, owner is_true, target_is_other is_false.
@@ -378,13 +387,19 @@ SPEC_11_2 = {
          "conditions": {"all": [{"fact": "ctx.target_is_other", "op": "is_false"}]},
          "description": "Kiểm tra trạng thái VPN của chính mình"},
         {"id": "R17", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
-         "conditions": {"all": [{"fact": "action.facts.device_registered", "op": "is_false"}]},
+         "conditions": {"all": [
+            {"fact": "action.facts.device_registered", "op": "is_false"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
          "description": "Thiết bị chưa đăng ký"},
         {"id": "R18", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
-         "conditions": {"all": [{"fact": "time.within_business_hours", "op": "is_false"}]},
+         "conditions": {"all": [
+            {"fact": "time.within_business_hours", "op": "is_false"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
          "description": "Ngoài giờ hành chính"},
         {"id": "R19", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
-         "conditions": {"all": [{"fact": "requester.employment_status", "op": "eq", "value": "probation"}]},
+         "conditions": {"all": [
+            {"fact": "requester.employment_status", "op": "eq", "value": "probation"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
          "description": "Nhân viên chưa qua thử việc"},
         {"id": "R20", "type": "allow", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
          "conditions": {"all": [

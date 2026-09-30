@@ -1,0 +1,8 @@
+# Người duyệt theo intent (Phase 4 chặng 4b P1, Q-4-H: lịch trực TĨNH). Nạp + kiểm ở backend/app/settings.py (ApproversFile):
+# mọi intent trong ENABLED_INTENTS phải có dòng; 3 id khác nhau, mẫu ^[a-z0-9_]{3,64}$, khoá lạ → backend/worker từ chối khởi động.
+# Nhóm AD + trạng thái KHÔNG kiểm lúc khởi động — B15 kiểm lúc chạy: primary/backup phải `active` + nhóm IT-L1, head `active` +
+# IT-Manager. Xung đột lợi ích (tự duyệt, người gửi trong chuỗi quản lý ≤ 5 cấp, hành động nhắm vào người duyệt) → Trưởng BP.
+vpn:
+  primary: l1_01
+  backup: l1_02
+  head: it_mgr01

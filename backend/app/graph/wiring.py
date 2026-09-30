@@ -76,12 +76,14 @@ from app.rag.retriever import RagConfig, Retriever
 from app.rag.vector_store import QdrantIndex
 from app.settings import (
     Settings,
+    approval_sla_minutes,
     check_intent_config,
     check_policy_config,
     get_action_metadata,
     get_escalation_templates,
     get_policy,
     get_slots,
+    open_approvers,
 )
 from app.tools.wiring import build_read_registry
 
@@ -129,6 +131,7 @@ async def open_runtime(
     directory: ToolCaller | None = None,
     executor: Executor | None = None,
 ) -> AsyncIterator[Runtime]:
+    sla_minutes = approval_sla_minutes(settings)  # 4b P12 — trước mọi kiểm khác và mọi kết nối (dev/test mới được đè)
     approver_id = fake_approver(settings)  # trước mọi kết nối: sai môi trường → không khởi động
     scenario = fake_scenario(settings)  # như trên (2b-4)
     ml_token = settings.require_ml_token()  # như trên (3-Q21)
@@ -140,6 +143,8 @@ async def open_runtime(
     check_policy_config(get_policy(), get_slots(), get_action_metadata())
     # như trên (3h, h23): mọi action_type của intent đang bật có PLAN hợp lệ (executor/plans.py) — cả worker lẫn backend
     check_plans(get_action_metadata().root, settings.enabled_intents)
+    # như trên (4b P1): `config/approvers.yaml` — mọi intent đang bật có người duyệt chính/dự phòng/Trưởng BP hợp lệ về dạng
+    open_approvers(settings)
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
@@ -169,6 +174,7 @@ async def open_runtime(
             settings, engines, clock, can_execute=can_execute, directory=directory,
             approver_id=approver_id, scenario=scenario, ml=ml, rag=rag, llm=llm,
             executor=executor if executor is not None else RefusingExecutor(SqlTxLog(engines.main, clock)),
+            approval_sla_minutes=sla_minutes,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
 
@@ -183,6 +189,7 @@ def select_nodes(settings: Settings, deps: NodeDeps) -> dict[str, NodeFn]:
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
     approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort, llm: LlmPort, executor: Executor,
+    approval_sla_minutes: int | None = None,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
@@ -202,6 +209,7 @@ async def _open(
         grounding_gate_actions=settings.grounding_gate_actions, commit_sha=settings.app_git_sha,
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
         privacy=guard_from_settings(settings),
+        approval_sla_minutes=approval_sla_minutes if approval_sla_minutes is not None else get_policy().constants.SLA_MINUTES,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size
