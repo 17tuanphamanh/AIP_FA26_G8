@@ -14,6 +14,9 @@ x-backend-env: &backend-env
   FAKE_NODE_DELAY: ${FAKE_NODE_DELAY:-}
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
   MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
+  # M9 — role chỉ-đọc app_monitor. Ghi cứng như DATABASE_URL (DSN localhost trong .env không đè). Tắt để thử 503:
+  # docker compose run --rm -e MONITOR_DATABASE_URL= … (rỗng = chưa đặt → route M9 trả 503, không rơi về app_rw).
+  MONITOR_DATABASE_URL: postgresql+psycopg://app_monitor:${PG_MONITOR_PASSWORD}@postgres:5432/${PG_DATABASE}
   QDRANT_URL: http://qdrant:6333
   ML_SERVICE_URL: http://ml-service:8200
   # Bắt buộc mọi env (3-Q21): thiếu → compose dừng; backend/worker cũng tự từ chối khởi động.

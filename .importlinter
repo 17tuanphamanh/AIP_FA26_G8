@@ -1,6 +1,6 @@
-# 9 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
+# 10 hợp đồng phụ thuộc — docs/spec/build/01-kien-truc-project.md mục 4.3 (5 hợp đồng) + `ml-only-core`
 # (Phase 3 chặng 3a, thiết kế Phase 3 mục 4.2) + `rag-lower-layer` (chặng 3b, PLAN-3b Q-3b-16) + `llm-lower-layer`
-# và `llm-only-via-gateway` (chặng 3d, PLAN-3d). Hợp đồng thứ 6 cũ
+# và `llm-only-via-gateway` (chặng 3d, PLAN-3d) + `monitor-only-api-worker` (M9 chặng A0). Hợp đồng thứ 6 cũ
 # ("node không gọi thẳng side effect") là test AST: backend/tests/unit/test_side_effects_ast.py.
 # Chạy: PYTHONPATH=backend uv run lint-imports   (hoặc make lint)
 
@@ -19,9 +19,10 @@ forbidden_modules =
     app.guard
     app.api
 
-# 2. M9 chỉ đọc [Chốt 17.9.1]. Cấm app.graph là đã gồm app.graph.goto.
+# 2. M9 chỉ đọc [Chốt 17.9.1]. Cấm app.graph là đã gồm app.graph.goto. M9 A0 (kế hoạch M9 mục 4.2) cấm thêm
+#    audit, approval, risk, api, guard, llm, rag: monitor đọc qua engine app_monitor (db), không đi vòng tầng ghi/nghiệp vụ.
 [importlinter:contract:monitor-read-only]
-name = monitor khong import graph, executor, tools
+name = monitor khong import graph, executor, tools, audit, approval, risk, api, guard, llm, rag
 type = forbidden
 source_modules =
     app.monitor
@@ -29,6 +30,13 @@ forbidden_modules =
     app.graph
     app.executor
     app.tools
+    app.audit
+    app.approval
+    app.risk
+    app.api
+    app.guard
+    app.llm
+    app.rag
 
 # 3. B17 là điểm ghi duy nhất [Chốt]: chỉ executor được import adapter ghi.
 #    app.tools không nằm trong nguồn: registry khai báo tool ghi (P5).
@@ -199,3 +207,32 @@ forbidden_modules =
     app.llm.providers
     app.llm.store
     app.llm.wiring
+
+# 10. M9 không là nguồn dữ liệu cho M5 (kế hoạch M9 mục 4.1.4, 4.2 — M9 A0): chỉ app.api, app.worker (và app.main,
+#     composition root) import app.monitor. Nguồn liệt kê TƯỜNG MINH mọi package/module cấp một của app trừ api,
+#     monitor, main, worker — thêm package mới mà quên dòng ở đây thì
+#     backend/tests/unit/test_monitor_import_contracts.py đỏ.
+[importlinter:contract:monitor-only-api-worker]
+name = chi api, worker import monitor
+type = forbidden
+source_modules =
+    app.approval
+    app.audit
+    app.auth
+    app.core
+    app.db
+    app.domain
+    app.eval
+    app.executor
+    app.graph
+    app.guard
+    app.heartbeat
+    app.llm
+    app.ml
+    app.notify
+    app.rag
+    app.risk
+    app.settings
+    app.tools
+forbidden_modules =
+    app.monitor

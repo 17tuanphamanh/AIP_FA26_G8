@@ -1,8 +1,10 @@
-"""Engine async (psycopg 3): pool chính + lock pool riêng (D-19, P1 mục 7).
+"""Engine async (psycopg 3): pool chính + lock pool riêng (D-19, P1 mục 7) + pool chỉ-đọc M9.
 
 - Pool chính: transaction nghiệp vụ, audit (role app_rw).
 - Lock pool: chỉ để giữ pg_advisory_lock CẤP SESSION theo ticket suốt một lượt, không giữ
   transaction mở khi gọi LLM. Cùng role app_rw, kích thước LOCK_POOL_SIZE, có lock_timeout.
+- Monitor (M9): role app_monitor, chỉ SELECT. Thiếu MONITOR_DATABASE_URL → None; M9 lấy qua
+  `monitor.db.monitor_engine`, không bao giờ rơi về pool chính.
 """
 
 from dataclasses import dataclass
@@ -17,10 +19,13 @@ from app.settings import Settings
 class Engines:
     main: AsyncEngine
     lock: AsyncEngine
+    monitor: AsyncEngine | None  # M9 — None khi thiếu DSN (fail-closed)
 
     async def dispose(self) -> None:
         await self.main.dispose()
         await self.lock.dispose()
+        if self.monitor is not None:
+            await self.monitor.dispose()
 
 
 def create_engines(settings: Settings) -> Engines:
@@ -35,7 +40,12 @@ def create_engines(settings: Settings) -> Engines:
         pool_pre_ping=True,
         connect_args={"options": f"-c lock_timeout={lock_timeout_ms}"},
     )
-    return Engines(main=main, lock=lock)
+    monitor = (
+        create_async_engine(settings.monitor_database_url, pool_pre_ping=True)
+        if settings.monitor_database_url is not None
+        else None
+    )
+    return Engines(main=main, lock=lock, monitor=monitor)
 
 
 async def ping(engine: AsyncEngine) -> None:
