@@ -40,6 +40,9 @@ x-backend-env: &backend-env
   # Q-3a-16 (S9, PLAN-3c mục 6.2): mặc định tier ② đo trên CPU dev. Máy chậm hôm demo → đặt
   # RAG_RERANK_K=5 trong .env (không đổi code) để rerank ít đoạn hơn, nhanh hơn.
   RAG_RERANK_K: ${RAG_RERANK_K:-10}
+  # Phase 4 (4b P12): hạn duyệt rút ngắn (phút, 1–30) CHỈ cho APP_ENV dev/test — môi trường khác đặt → từ chối khởi động.
+  # Rỗng = dùng SLA_MINUTES của config/policy.json. `make verify` truyền bằng biến shell (không sửa .env).
+  APPROVAL_SLA_MINUTES_DEV: ${APPROVAL_SLA_MINUTES_DEV:-}
 
 services:
   postgres:

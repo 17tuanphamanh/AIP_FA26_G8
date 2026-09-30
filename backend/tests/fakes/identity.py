@@ -6,6 +6,7 @@
 - `MemoryAlerts`: cùng khoá chống trùng `(rule_id, subject, window_start)` như `audit/alerts.py`.
 """
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -53,20 +54,37 @@ def _status(code: int) -> httpx.HTTPStatusError:
 
 class FakeAd:
     """`down=True` → mọi lần gọi timeout (hết retry → B1 E2). Không có user → 404. `crash` → ném đúng
-    exception đó (BaseException như `Crash` = process bị giết giữa B1, boundary không bắt)."""
+    exception đó (BaseException như `Crash` = process bị giết giữa B1, boundary không bắt).
+    Phase 4 (4b): `fail_ids` → lời tra ĐÚNG những người đó trả HTTP 500 (hết retry → `ToolResult.error`), người khác vẫn trả;
+    `calls_by[user_id]` đếm ở nơi nhận (kể cả lần bị lỗi); `set_status` đổi `employment_status` như `/_admin/users/{id}/status`."""
 
     def __init__(self, *users: Mapping[str, Any]) -> None:
         self.users: dict[str, dict[str, Any]] = {u["user_id"]: dict(u) for u in users}
         self.down = False
         self.crash: BaseException | None = None  # process "chết" giữa lời gọi AD (không phải lỗi AD)
         self.calls = 0
+        self.calls_by: Counter[str] = Counter()
+        self.fail_ids: set[str] = set()
+
+    def add(self, *users: Mapping[str, Any]) -> None:
+        """Thêm người chưa có (không ghi đè người test đã dựng)."""
+        for u in users:
+            self.users.setdefault(u["user_id"], dict(u))
+
+    def set_status(self, user_id: str, employment_status: str) -> None:
+        user = self.users[user_id]
+        user["employment_status"] = employment_status
+        user["account"] = {**user["account"], "enabled": employment_status not in ("disabled", "terminated")}
 
     async def ad_get_user(self, inp: UserIn, timeout: float) -> object:
         self.calls += 1
+        self.calls_by[inp.user_id] += 1
         if self.crash is not None:
             raise self.crash
         if self.down:
             raise httpx.ConnectTimeout("AD không trả lời")
+        if inp.user_id in self.fail_ids:
+            raise _status(500)
         user = self.users.get(inp.user_id)
         if user is None:
             raise _status(404)

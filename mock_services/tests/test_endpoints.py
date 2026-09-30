@@ -43,7 +43,7 @@ def test_privilege_and_manager_chain(client: TestClient, agent: dict[str, str]) 
     p = client.get("/ad/users/svc_backup/privilege", headers=agent).json()
     assert p["level"] == "admin" and p["is_privileged_account"] is True
     chain = client.get("/ad/users/l1_01/manager-chain", headers=agent).json()
-    assert [c["user_id"] for c in chain] == ["it_mgr01"]
+    assert [c["user_id"] for c in chain] == ["l1_lead", "it_mgr01"]  # Phase 4 P14: l1_01 → l1_lead → it_mgr01 (chuỗi 2 cấp)
     assert client.get("/ad/users/fin_head/manager-chain", headers=agent).json() == []
 
 
@@ -89,7 +89,7 @@ def test_writes_mutate_state_and_reset_restores(client: TestClient, executor: di
                       json={"resource_path": "finance/Q3", "duration_days": 30}).json()  # fmt: skip
     assert ext["status"] == "active" and ext["previous_expires_at"] is not None
     reset = client.post("/_admin/reset")
-    assert reset.status_code == 200 and reset.json()["users"] == 16
+    assert reset.status_code == 200 and reset.json()["users"] == 17  # Phase 4 P14: + l1_lead
     assert [c["status"] for c in client.get("/vpn/certs/nv001", headers=agent).json()] == ["expired"]
 
 

@@ -25,7 +25,8 @@ chỉ riêng username ma (thời gian phản hồi giữ như 3e).
 Chuyển tiếp (Q-4a-5): username ma có dòng `users` giữa cửa sổ (chính người đó đăng nhập, hoặc `_ensure_manager` khi cấp dưới
 đăng nhập) → đếm `IN (nguyên văn, bản băm)` trong CÙNG một câu SQL (`_failure_keys`) — các lần sai lưu băm trước đó không mất.
 Q-4a-6: username ma ĐÃ khoá theo cửa sổ trượt rồi mới có dòng → `_upsert` khi dòng VỪA tạo mang khoá sang `locked_until`
-(`_carry_ghost_lock`) — lần kế tiếp bị chặn ở bước 2, không tới AD.
+(`_carry_ghost_lock`) — lần kế tiếp bị chặn ở bước 2, không tới AD. Phase 4 4b P5: bước 4 (`_ensure_manager`, `_upsert`,
+`_carry_ghost_lock`) nằm ở `auth/user_sync.AdUserSync` — dùng chung với B15 (người duyệt chưa đăng nhập).
 """
 
 import ipaddress
@@ -37,12 +38,10 @@ from uuid import uuid4
 
 from app.auth.mfa import MfaCipher, MfaError, verify_totp
 from app.auth.models import (
-    INACTIVE_STATUSES,
     IssuedTokens,
     Principal,
     SessionRecord,
     UserRecord,
-    UserSync,
 )
 from app.auth.permissions import permissions_of
 from app.auth.ports import (
@@ -61,16 +60,15 @@ from app.auth.tokens import (
     new_csrf_token,
     new_refresh_token,
 )
-from app.auth.username_hash import stored_username
+from app.auth.user_sync import AdUserSync, LockPolicy
+from app.auth.username_hash import failure_keys, stored_username
 from app.core.clock import Clock
 from app.domain.alerts import bruteforce_alert
-from app.domain.context import Role, role_from_groups
 from app.settings import PolicyConstants, Settings
 
 log = logging.getLogger(__name__)
 
 GENERIC_LOGIN_ERROR = "Tên đăng nhập hoặc mật khẩu không đúng"  # P6 mục 4: luôn cùng một câu
-MAX_MANAGER_DEPTH = 5
 LOGIN_ROUTE = "/api/auth/login"
 
 
@@ -152,6 +150,11 @@ class AuthService:
         self.config = config
         self._cache: dict[str, _Cached] = {}
         self._username_key = signer.username_key()  # P2: một lần lúc dựng service; không log, không vào Settings
+        self._sync = AdUserSync(
+            store=store, sink=sink, username_key=self._username_key,
+            lock=LockPolicy(config.failure_window, config.max_failures, config.lockout),
+            on_sessions_revoked=self._evict_user,
+        )  # fmt: skip
 
     def _stored(self, username: str, user: UserRecord | None) -> str:
         """Giá trị lưu/đếm của username: có dòng `users` → nguyên văn; không → `"h:" + HMAC` (P2–P3)."""
@@ -160,8 +163,7 @@ class AuthService:
     def _failure_keys(self, username: str, user: UserRecord | None) -> tuple[str, ...]:
         """Giá trị đếm lỗi (view `auth_failures`, MỘT câu `IN`): username ma → (bản băm,); có dòng `users` → (nguyên văn,
         bản băm) — lần sai ghi lúc CHƯA có dòng vẫn được đếm sau khi dòng được tạo (Q-4a-5)."""
-        hashed = stored_username(username, known=False, key=self._username_key)
-        return (hashed,) if user is None else (username, hashed)
+        return failure_keys(username, known=user is not None, key=self._username_key)
 
     # ---- đăng nhập -------------------------------------------------------------------------
 
@@ -299,89 +301,8 @@ class AuthService:
     # ---- đồng bộ users ---------------------------------------------------------------------
 
     async def _sync_login_user(self, ad: AdUser, now: datetime) -> UserRecord | None:
-        role = role_from_groups(ad.groups)
-        if role is None:
-            return None
-        manager_id = (
-            await self._ensure_manager(ad.manager_id, depth=1, seen={ad.user_id}, now=now)
-            if ad.manager_id
-            else None
-        )
-        return await self._upsert(ad, role, manager_id, now)
-
-    async def _ensure_manager(
-        self, user_id: str, *, depth: int, seen: set[str], now: datetime
-    ) -> str | None:
-        """Upsert người quản lý trước (FK `users.manager_id`), sâu tối đa 5 cấp, chặn vòng.
-        Không tìm thấy / không ánh xạ được role / quá sâu / vòng → NULL = "không biết" (không phải
-        "không có sếp") — Phase 3–4 không được cho NULL khớp luật allow."""
-        if depth > MAX_MANAGER_DEPTH or user_id in seen:
-            log.warning("chuỗi quản lý dừng ở %s (vòng hoặc quá %d cấp)", user_id, MAX_MANAGER_DEPTH)
-            return None
-        ad = await self.idp.get_user(user_id)
-        if ad is None:
-            log.warning("người quản lý %s không có trong AD — manager_id = NULL", user_id)
-            return None
-        role = role_from_groups(ad.groups)
-        if role is None:
-            log.warning("người quản lý %s không ánh xạ được role — manager_id = NULL", user_id)
-            return None
-        boss = (
-            await self._ensure_manager(ad.manager_id, depth=depth + 1, seen=seen | {user_id}, now=now)
-            if ad.manager_id
-            else None
-        )
-        await self._upsert(ad, role, boss, now)
-        return user_id
-
-    async def _upsert(self, ad: AdUser, role: Role, manager_id: str | None, now: datetime) -> UserRecord:
-        user, previous_role = await self.store.upsert_user(
-            UserSync(
-                user_id=ad.user_id,
-                username=ad.username,
-                full_name=ad.full_name,
-                role=role,
-                department=ad.department,
-                manager_id=manager_id,
-                employment_status=ad.employment_status,
-                hired_at=ad.hired_at,
-                is_privileged_account=ad.is_privileged_account,
-                synced_at=now,
-            )
-        )
-        if previous_role is None:  # dòng VỪA tạo bởi chính lời gọi này (kết quả INSERT … ON CONFLICT — AuthStore.upsert_user)
-            user = await self._carry_ghost_lock(user, now)
-        if previous_role is not None and previous_role != user.role:
-            # Role đổi trong AD → access token mang role cũ phải chết [Suy luận, đã duyệt].
-            version = await self.store.bump_token_version(user.user_id)
-            await self.store.revoke_user_sessions(user.user_id, "admin", now)
-            self._evict_user(user.user_id)
-            await self.sink.record(
-                "role_changed", user_id=user.user_id,
-                detail={"from": previous_role, "to": user.role},
-            )  # fmt: skip
-            user = replace(user, token_version=version)
-        if user.employment_status in INACTIVE_STATUSES:
-            await self.store.revoke_user_sessions(user.user_id, "user_disabled", now)
-            self._evict_user(user.user_id)
-        return user
-
-    async def _carry_ghost_lock(self, user: UserRecord, now: datetime) -> UserRecord:
-        """Q-4a-6: dòng `users` VỪA tạo cho username từng là "ma". Lần sai trong cửa sổ đếm như `_is_locked`/`_check_threshold`
-        (`_failure_keys` = nguyên văn + băm; cùng ngưỡng, cùng cửa sổ) đủ ngưỡng → `locked_until` = lần sai CUỐI + thời gian khoá
-        — như thể dòng đã có từ lần sai đó (khoá của người có dòng tính từ lần sai chạm ngưỡng), không tính từ lúc tạo dòng.
-        Chỉ chạy lúc tạo dòng (mỗi người một lần) — lượt của người đã có dòng không thêm truy vấn. `account_locked` + cảnh báo đã
-        ghi lúc khoá trượt → không ghi lại."""
-        since = now - self.config.failure_window
-        keys = self._failure_keys(user.username, user)
-        failures = await self.store.count_failures(keys, since)
-        if failures >= self.config.max_failures:
-            last = await self.store.last_failure_at(keys, since)
-            # `last` None không xảy ra (đã đếm ≥ 1 dòng, bảng append-only) — nếu có: khoá từ now (fail-closed, không bỏ khoá)
-            until = (last or now) + self.config.lockout
-            await self.store.set_locked_until(user.user_id, until)
-            return replace(user, locked_until=until)
-        return user
+        """Bước 4: `AdUserSync` (Phase 4 4b P5 — MỘT định nghĩa `_upsert`/`_carry_ghost_lock` với B15)."""
+        return await self._sync.sync_user_from_ad(self.idp.get_user, ad, now)
 
     # ---- phiên ------------------------------------------------------------------------------
 

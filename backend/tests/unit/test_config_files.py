@@ -80,13 +80,19 @@ SPEC_11_2: dict[str, Any] = {
          "conditions": {"all": [{"fact": "ctx.target_is_other", "op": "is_false"}]},
          "description": "Kiểm tra trạng thái VPN của chính mình"},
         {"id": "R17", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
-         "conditions": {"all": [{"fact": "action.facts.device_registered", "op": "is_false"}]},
+         "conditions": {"all": [
+            {"fact": "action.facts.device_registered", "op": "is_false"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
          "description": "Thiết bị chưa đăng ký"},
         {"id": "R18", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
-         "conditions": {"all": [{"fact": "time.within_business_hours", "op": "is_false"}]},
+         "conditions": {"all": [
+            {"fact": "time.within_business_hours", "op": "is_false"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
          "description": "Ngoài giờ hành chính"},
         {"id": "R19", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
-         "conditions": {"all": [{"fact": "requester.employment_status", "op": "eq", "value": "probation"}]},
+         "conditions": {"all": [
+            {"fact": "requester.employment_status", "op": "eq", "value": "probation"},
+            {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
          "description": "Nhân viên chưa qua thử việc"},
         {"id": "R20", "type": "allow", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
          "conditions": {"all": [

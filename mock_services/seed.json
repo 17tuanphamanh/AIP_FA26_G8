@@ -24,6 +24,29 @@
       "lockouts": []
     },
     {
+      "user_id": "l1_lead",
+      "username": "khoa.dv",
+      "full_name": "Đặng Văn Khoa",
+      "title": "Trưởng nhóm Helpdesk",
+      "department": "IT",
+      "groups": [
+        "IT-Users",
+        "IT-L1"
+      ],
+      "manager_id": "it_mgr01",
+      "employment_status": "active",
+      "hired_days_ago": 1500,
+      "is_privileged_account": false,
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$ATJQeOR8W2qPbY205FpEFQ$NXSNYwU7ZZUuiXUrRlfuMjLGczyyLQmyMhVS/+TzojU",
+      "accounts": {
+        "ad": {
+          "privilege": "elevated"
+        },
+        "email": {}
+      },
+      "lockouts": []
+    },
+    {
       "user_id": "l1_01",
       "username": "ha.lt",
       "full_name": "Lê Thu Hà",
@@ -33,7 +56,7 @@
         "IT-Users",
         "IT-L1"
       ],
-      "manager_id": "it_mgr01",
+      "manager_id": "l1_lead",
       "employment_status": "active",
       "hired_days_ago": 1200,
       "is_privileged_account": false,
@@ -421,6 +444,27 @@
       "os": "Windows 11",
       "registered": true,
       "registered_days_ago": 1100
+    },
+    {
+      "device_id": "PC-0124",
+      "owner_id": "l1_01",
+      "kind": "desktop",
+      "os": "Windows 11",
+      "registered": false
+    },
+    {
+      "device_id": "LAP-0700",
+      "owner_id": "l1_lead",
+      "kind": "laptop",
+      "os": "Windows 11",
+      "registered": false
+    },
+    {
+      "device_id": "LAP-0900",
+      "owner_id": "it_mgr01",
+      "kind": "laptop",
+      "os": "macOS 15",
+      "registered": false
     },
     {
       "device_id": "LAP-0233",

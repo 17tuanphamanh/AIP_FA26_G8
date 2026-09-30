@@ -279,6 +279,9 @@ class NodeDeps:
     # luôn `DisabledEstimator` (3-Q30: không luật nào khớp → E5 `llm_layer_disabled`).
     business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
     estimator: RiskEstimator = field(default_factory=DisabledEstimator)
+    # Phase 4 4b P12: hạn duyệt (phút) HIỆU LỰC = `APPROVAL_SLA_MINUTES_DEV` (chỉ dev/test) hoặc `SLA_MINUTES` của policy.json — wiring
+    # tính, node không đọc Settings. Mặc định = policy.json.
+    approval_sla_minutes: int = field(default_factory=lambda: get_policy().constants.SLA_MINUTES)
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:

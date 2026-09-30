@@ -42,6 +42,7 @@ B12 = "backend/app/graph/nodes/b12_assess.py"
 FILTERS = "backend/app/rag/filters.py"
 HANDOFF = "backend/app/audit/handoff.py"
 AUTH = "backend/app/auth/service.py"
+USER_SYNC = "backend/app/auth/user_sync.py"  # Phase 4 4b P5: `_upsert`/`_carry_ghost_lock` tách từ service.py
 USERNAME_HASH = "backend/app/auth/username_hash.py"
 
 UT = pt(*[
@@ -52,7 +53,8 @@ UT = pt(*[
         "test_rag_expand", "test_graph_static",
     )
 ])  # fmt: skip
-AUTH_UT = pt("backend/tests/unit/test_auth_username_hash.py", "backend/tests/unit/test_auth_login.py")
+AUTH_UT = pt("backend/tests/unit/test_auth_username_hash.py", "backend/tests/unit/test_auth_login.py",
+             "backend/tests/unit/test_user_sync.py")  # 4b: AdUserSync dùng chung auth + B15
 E2E = pt("backend/tests/e2e/test_gate3_vpn.py", "-k", "s8 or h7 or h6 or h2")
 IT = pt("backend/tests/integration/test_b08_pg.py")
 
@@ -165,13 +167,16 @@ _COUNT_LOCK = (
     "        return await self.store.count_failures(self._failure_keys(username, user), since) >= self.config.max_failures\n"
 )
 _COUNT_THRESHOLD = "            self._failure_keys(username, user), now - self.config.failure_window\n"
-_FAILURE_KEYS = "        return (hashed,) if user is None else (username, hashed)\n"
+_FAILURE_KEYS = "    return (username, hashed) if known else (hashed,)\n"  # 4b: hàm thuần `username_hash.failure_keys`
 _DERIVE = "    return hmac.new(jwt_signing_key, USERNAME_KEY_LABEL, hashlib.sha256).digest()\n"
 _CARRY_IF = "        if previous_role is None:  # dòng VỪA tạo bởi chính lời gọi này (kết quả INSERT … ON CONFLICT — AuthStore.upsert_user)\n"
 _CARRY_COUNT = "        failures = await self.store.count_failures(keys, since)\n"
-_CARRY_GE = "        if failures >= self.config.max_failures:\n"
-_CARRY_UNTIL = "            until = (last or now) + self.config.lockout\n"
-Q4A6_CARRY = ["test_q4a6a_ghost_lock_carried_to_new_row_blocks_before_ad", "test_q4a6e_verbatim_and_hashed_failures_sum"]
+_CARRY_GE = "        if failures >= self.lock.max_failures:\n"
+_CARRY_UNTIL = "            until = (last or now) + self.lock.lockout\n"
+Q4A6_CARRY = ["test_q4a6a_ghost_lock_carried_to_new_row_blocks_before_ad", "test_q4a6e_verbatim_and_hashed_failures_sum",
+              # 4b (phase4 4.10 #11): cùng đột biến phải giết cả test mức AdUserSync (đường B15 ensure dùng chung)
+              "test_a_ghost_lock_carried_to_new_row_without_new_event",
+              "test_a_ghost_lock_carried_when_row_created_as_manager_in_chain"]
 Q4A5 = ["test_q4a5a_ghost_failures_count_after_own_first_login",
         "test_q4a5b_ghost_failures_count_after_row_created_by_ensure_manager[binh.tt-lan.dt]",
         "test_q4a5b_ghost_failures_count_after_row_created_by_ensure_manager[ha.lt-quan.tm]"]  # fmt: skip
@@ -188,21 +193,22 @@ HMAC = [  # phase4 mục 4.6 (mutation tay 2 cái — HMAC) + chốt Q-4a-5 (M-4
              AUTH_UT, ["test_4a3_ghost_locked_after_5_failures_like_real_user",
                        "test_locked_ghost_username_responds_exactly_like_locked_real_user"]),
     Mutation("M-4a-3 người đã có dòng users chỉ đếm nguyên văn (mất lần sai lưu băm trước chuyển tiếp — Q-4a-5)",
-             [one(AUTH, _FAILURE_KEYS, "        return (hashed,) if user is None else (username,)  # MUTATION M-4a-3\n")],
-             AUTH_UT, Q4A5),
+             [one(USERNAME_HASH, _FAILURE_KEYS, "    return (username,) if known else (hashed,)  # MUTATION M-4a-3\n")],
+             AUTH_UT, [*Q4A5, "test_b_verbatim_and_hashed_failures_sum"]),
     Mutation("M-4a-4 khoá HMAC = thẳng khoá ký (mất tách miền Q-4-S — security-reviewer lượt 2, H6)",
              [one(USERNAME_HASH, _DERIVE, "    return jwt_signing_key  # MUTATION M-4a-4\n")],
              AUTH_UT, ["test_4a4_known_answer_independent_of_product_code"]),
     # Q-4a-6 (chốt (ii)): mang khoá trượt của username ma sang `locked_until` khi dòng users VỪA tạo
     Mutation("M-4a-5 bỏ phép đếm lúc tạo dòng",
-             [one(AUTH, _CARRY_COUNT, "        failures = 0  # MUTATION M-4a-5\n")], AUTH_UT, Q4A6_CARRY),
+             [one(USER_SYNC, _CARRY_COUNT, "        failures = 0  # MUTATION M-4a-5\n")], AUTH_UT, Q4A6_CARRY),
     Mutation("M-4a-6 đủ ngưỡng: >= thành >",
-             [one(AUTH, _CARRY_GE, "        if failures > self.config.max_failures:  # MUTATION M-4a-6\n")], AUTH_UT, Q4A6_CARRY),
+             [one(USER_SYNC, _CARRY_GE, "        if failures > self.lock.max_failures:  # MUTATION M-4a-6\n")], AUTH_UT, Q4A6_CARRY),
     Mutation("M-4a-7 đếm cả khi dòng đã tồn tại",
-             [one(AUTH, _CARRY_IF, "        if True:  # MUTATION M-4a-7\n")],
-             AUTH_UT, ["test_q4a6d_existing_row_upsert_neither_counts_nor_overwrites_lock"]),
+             [one(USER_SYNC, _CARRY_IF, "        if True:  # MUTATION M-4a-7\n")],
+             AUTH_UT, ["test_q4a6d_existing_row_upsert_neither_counts_nor_overwrites_lock",
+                       "test_c_existing_row_neither_counts_nor_overwrites_lock"]),
     Mutation("M-4a-8 locked_until tính từ now() thay vì lần sai cuối",
-             [one(AUTH, _CARRY_UNTIL, "            until = now + self.config.lockout  # MUTATION M-4a-8\n")],
+             [one(USER_SYNC, _CARRY_UNTIL, "            until = now + self.lock.lockout  # MUTATION M-4a-8\n")],
              AUTH_UT, Q4A6_CARRY),
 ]  # fmt: skip
 

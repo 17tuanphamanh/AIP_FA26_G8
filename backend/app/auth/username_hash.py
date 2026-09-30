@@ -26,3 +26,10 @@ def stored_username(username: str, *, known: bool, key: bytes) -> str:
     if known:
         return username
     return HASH_PREFIX + hmac.new(key, username.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def failure_keys(username: str, *, known: bool, key: bytes) -> tuple[str, ...]:
+    """Giá trị đếm lỗi (view `auth_failures`, MỘT câu `IN`): username ma → (bản băm,); có dòng `users` → (nguyên văn, bản băm) —
+    lần sai ghi lúc CHƯA có dòng vẫn được đếm sau khi dòng được tạo (Q-4a-5). Dùng chung cho `AuthService` và `AdUserSync`."""
+    hashed = stored_username(username, known=False, key=key)
+    return (username, hashed) if known else (hashed,)

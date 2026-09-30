@@ -289,7 +289,8 @@ def test_h24_q37_step_labels_declared() -> None:
     """3-Q37: `ad_get_user.allowed_steps = {B1, B11, B17_RECHECK}`; không tool đọc nào khai báo `B17`; tool ghi VPN
     chỉ `{"B17"}`."""
     assert RECHECK_STEP == "B17_RECHECK"
-    assert REGISTRY["ad_get_user"].allowed_steps == {"B1", "B11", "B17_RECHECK"}
+    # Phase 4 4b P3: + `B15_APPROVER` (B15 tra người duyệt + chuỗi quản lý) — vẫn không có `B17`
+    assert REGISTRY["ad_get_user"].allowed_steps == {"B1", "B11", "B17_RECHECK", "B15_APPROVER"}
     reads = [s for s in REGISTRY.values() if s.kind == "read"]
     assert len(reads) >= 13 and not [s.name for s in reads if "B17" in s.allowed_steps]
     for tool in VPN_WRITES:

@@ -7,12 +7,13 @@ tự trả mã HTTP và ghi `permission_denied`. Nhận Protocol theo cấu trú
 - `can_close_escalation` → "forbidden" (403) hoặc "unprocessable" (422: L2 hoàn tất ca deny).
 """
 
-from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
 
 from app.auth.models import Principal
+from app.domain.action import Action
+from app.domain.approval import ConflictType, conflict_type
 from app.domain.context import RequesterContext
 
 
@@ -32,11 +33,12 @@ class ApprovalLike(Protocol):
 
 @dataclass(frozen=True)
 class ApprovalParties:
-    """Các bên để kiểm 3 xung đột lợi ích [Chốt B15]. `approver_manager_id` None = không biết."""
+    """Các bên để kiểm 3 xung đột lợi ích [Chốt B15]. `approver_chain` = chuỗi quản lý của người quyết (sếp trực tiếp trước,
+    ≤ 5 cấp — Q-4-R; route dựng từ bảng `users`, B15 từ AD). `action` None = state không có hành động."""
 
     requester_id: str
-    approver_manager_id: str | None
-    action_targets: Collection[str]  # user_id mà hành động nhắm tới (target/requested_for)
+    approver_chain: tuple[str, ...]
+    action: Action | None
 
 
 class EscalationLike(Protocol):
@@ -48,15 +50,10 @@ def can_read_ticket(p: Principal, t: TicketLike) -> bool:
     return t.requester_id == p.user_id or p.has("ticket:read:any")
 
 
-def approval_conflict(approver_id: str, parties: ApprovalParties) -> str | None:
-    """`self` | `boss_of_approver` | `targets_approver` | None (P7 2.6 conflict_type)."""
-    if parties.requester_id == approver_id:
-        return "self"
-    if parties.approver_manager_id is not None and parties.approver_manager_id == parties.requester_id:
-        return "boss_of_approver"
-    if approver_id in parties.action_targets:
-        return "targets_approver"
-    return None
+def approval_conflict(approver_id: str, parties: ApprovalParties) -> ConflictType | None:
+    """`self` | `boss_of_approver` | `targets_approver` | None (P7 2.6 conflict_type) — MỘT định nghĩa dùng chung với B15
+    (`domain.approval.conflict_type`, phase4 5.1 P4)."""
+    return conflict_type(parties.requester_id, approver_id, parties.approver_chain, parties.action)
 
 
 def may_decide_as(p: Principal, a: ApprovalLike, parties: ApprovalParties) -> bool:
