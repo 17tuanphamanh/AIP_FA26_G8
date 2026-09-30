@@ -131,20 +131,24 @@ export type ApprovalListItem = {
   device_id: string | null;
 };
 
-// Nguồn: phase4-thiet-ke-chi-tiet.md §6.1 P6 (4c) — thay ApprovalView phỏng đoán ở KH 3.2. Không có
-// server_now → giờ máy chủ từ header `Date` (KH 1.3 #5). 409 `plan_changed`, 404, 403. Xoá khi: 4c merge → gen:api.
-export type ApprovalView = {
+// Nguồn: phase4-thiet-ke-chi-tiet.md §6.1 P6 (4c, bản 1.0) — thay ApprovalView phỏng đoán ở KH 3.2. Không có
+// server_now, không có created_at → giờ máy chủ từ header `Date` (KH 1.3 #5), created_at từ hộp thư.
+// `risk` (RiskDecision) chưa chốt cấu trúc cho giao diện → Record, hiện khoá–giá trị chung, KHÔNG đọc tên trường.
+// `procedure` từ ActionMeta.procedure_doc (D-34); không tìm thấy tiêu đề → chỉ `doc_id`. 409 `plan_changed`, 404, 403.
+// Xoá khi: 4c merge → gen:api (xoá cùng mocks/handlers/approvals.ts).
+export type ApprovalViewP4 = {
   approval_id: string;
   ticket_id: string;
   status: ApprovalStatus;
   deadline: string;
-  requester: { role: string; department: string | null };
+  requester: { role: string; department: string };
   request_summary: string;
   action: Record<string, unknown>;
   action_plan_hash: string;
   risk: Record<string, unknown>;
   facts: Record<string, unknown>;
   role_as: "primary" | "backup";
+  procedure: { doc_id: string; title?: string | null };
 };
 
 // Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P2 (4d).
@@ -161,8 +165,9 @@ export type OverrideReasonCode =
   | "policy_gap"
   | "other";
 
-// Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P1–P4 (4d) — 201; 409 ticket_open / already_overridden;
-// 422 same_as_original; 403 reauth_required (P6 §4, 12b Q-fe-4). `note` bắt buộc khi reason_code="other". Xoá khi: 4d merge.
+// Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P1–P4 (4d, bản 1.0) — 201; 409 ticket_open / already_overridden;
+// 422 same_as_original; 403 reauth_required (P6 §4, 12b Q-fe-4). `note` ≤ 1000, bắt buộc khi reason_code="other".
+// Xoá khi: 4d merge → gen:api (xoá cùng mocks/handlers/override.ts).
 export type OverrideIn = { override_decision: OverrideDecision; reason_code: OverrideReasonCode; note?: string };
 
 // Nguồn: KH 3.2 ← ke-hoach-m9-monitor.md §5.1 — tên trường giữ nguyên, không tự đặt. Soát lại §5.1 khi vào F5.

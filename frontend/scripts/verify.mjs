@@ -10,14 +10,17 @@
 //      F3-1…6 L2: DÙNG LẠI ticket E3 (F2-2) + E0 (F2-4) của cùng lượt → long.nh / ha.lt xem hàng đợi + chi tiết THẬT;
 //      an.nv (không có escalation:handle) → trang không có quyền + 403 thật khi gọi thẳng API; đóng ca = MSW (dev:mock,
 //      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
+//      F4-1…6 L1 trên dev:mock (hộp thư / xem phiếu / ghi đè chưa có ở backend — 4c, 4d) + backend thật (đăng nhập,
+//      ticket, decision cho id không phải fixture); F4-7, F4-8 dev KHÔNG mock. F4 không gửi câu chat nào.
 //   c) dọn dẹp: tắt mọi server đã mở, đóng trình duyệt — kể cả khi lỗi hay Ctrl+C.
 // Đầu ra: .verify/summary.txt (bảng), .verify/run-<giờ>.log (chi tiết), .verify/<giờ>-<bước>.png khi FAIL,
-//         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png, l2-*.png (1440×900, để so Bản 4).
+//         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png, l2-*.png, l1-*.png (1440×900, để so Bản 4).
 // Mật khẩu demo đọc LÚC CHẠY từ mock_services/README.md mục "Dữ liệu demo" — không ghi cứng, không in;
 // mọi dòng ghi log/summary đi qua redact(). Không đọc .env.
-/* global document, indexedDB -- chỉ dùng bên trong page.evaluate (chạy ở trình duyệt); localStorage, sessionStorage
+/* global document, indexedDB, getComputedStyle -- chỉ dùng bên trong page.evaluate (chạy ở trình duyệt); localStorage, sessionStorage
    đã là biến toàn cục của Node ≥ 22 nhưng ở đây cũng chỉ đọc bên trong page.evaluate */
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +33,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "F3";
+const BUILT = "F4";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -352,9 +355,22 @@ async function expectSidebar(page, username) {
   check(path === expected.home, `${username}: trang đầu ${path}, cần ${expected.home}`);
 }
 
+// Cổng 5173 chỉ một server: dev không mock (F1…F4-7/8) hoặc dev:mock (F3-6, F4-1…6) — bật cái này thì tắt cái kia.
 let f1Server = null;
+let mockServer = null;
 async function ensureF1Server() {
+  if (mockServer) {
+    await stopServer(mockServer);
+    mockServer = null;
+  }
   f1Server ??= await startServer("dev(F1)", [VITE], { VITE_API_MOCK: "0" }, DEV);
+}
+async function ensureMockServer(name) {
+  if (f1Server) {
+    await stopServer(f1Server);
+    f1Server = null;
+  }
+  mockServer ??= await startServer(name, [join(FE, "scripts", "dev-mock.mjs")], {}, DEV);
 }
 
 // ---------------------------------------------------------------- chat nhân viên (F2)
@@ -546,7 +562,8 @@ async function openDetail(page, row) {
  * Đăng nhập bằng API (Node → backend trực tiếp, không qua trình duyệt) rồi gọi thẳng hàng đợi kèm Bearer → mã HTTP THẬT
  * của backend (lớp quyền phía server, không phải RequirePerm của UI). Đăng xuất phiên API ngay sau đó.
  */
-async function directQueueStatus(username) {
+/** Đăng nhập bằng API (Node → backend trực tiếp). Token vào `secrets` (mọi log bị che). Nhớ gọi `apiLogout`. */
+async function apiLogin(username) {
   const login = await fetch(`${BACKEND}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -558,16 +575,117 @@ async function directQueueStatus(username) {
   const token = (await login.json()).access_token;
   check(typeof token === "string" && token.length > 0, "đăng nhập API không trả access_token");
   secrets.push(token);
-  const auth = { Authorization: `Bearer ${token}` };
+  return token;
+}
+
+async function apiLogout(username, token) {
+  const out = await fetch(`${BACKEND}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+  log(`POST /api/auth/logout (${username}, API) → ${out?.status ?? "lỗi mạng"}`);
+}
+
+async function directQueueStatus(username) {
+  const token = await apiLogin(username);
   try {
-    const res = await fetch(`${BACKEND}${QUEUE_PATH}`, { headers: auth, signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(`${BACKEND}${QUEUE_PATH}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
     const detail = (await res.json().catch(() => null))?.detail ?? null;
     log(`GET ${QUEUE_PATH} (${username}, Bearer) → ${res.status} ${detail ?? ""}`);
     return { status: res.status, detail };
   } finally {
-    const out = await fetch(`${BACKEND}/api/auth/logout`, { method: "POST", headers: auth }).catch(() => null);
-    log(`POST /api/auth/logout (${username}, API) → ${out?.status ?? "lỗi mạng"}`);
+    await apiLogout(username, token);
   }
+}
+
+// ---------------------------------------------------------------- L1 (F4)
+
+// Chữ trên màn — trùng src/routes/l1/inbox.ts và src/api/errors.ts (verify chạy bằng Node, không import TS).
+const APPROVALS_HEADING = { name: "Chờ tôi duyệt", level: 1 };
+const INBOX_MISSING = "Hộp thư duyệt có từ Phase 4 (4c)";
+const PLAN_CHANGED = "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt";
+const BACKUP_TEXT = "Bạn duyệt với vai trò dự phòng";
+const DECISION_SENT = "Đã gửi quyết định";
+const OVERRIDE_MSG = {
+  ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
+  same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
+};
+const TICKET_UNAVAILABLE = "Chưa tải được chi tiết yêu cầu."; // Q-fe-24: GET ticket lỗi → câu trung tính
+const DANGER_RGB = "rgb(198, 40, 40)"; // token --color-danger #C62828
+const URGENT_RATIO = 0.2;
+// Fixture MSW (src/mocks/fixtures/approvals.ts): 01 thường + đỏ + có tiêu đề quy trình · 02 dự phòng (không tiêu đề)
+// · 03 không đỏ (dùng để từ chối) · 04 plan_changed. Ticket ghi đè: tkt-demo-open / -same / -reauth.
+const DEMO = { normal: "apv-demo-01", backup: "apv-demo-02", reject: "apv-demo-03", planChanged: "apv-demo-04" };
+const REJECT_NOTE = "verify F4-3: từ chối (minh hoạ)";
+const OVERRIDE_REASON = "too_risky_for_auto";
+
+const pathOf = (r) => new URL(r.url()).pathname;
+const isInboxCall = (r, status) =>
+  r.request().method() === "GET" && pathOf(r) === "/api/approvals" && new URL(r.url()).searchParams.get("status") === status;
+const isDecisionCall = (r) => r.request().method() === "POST" && /^\/api\/approvals\/[^/]+\/decision$/.test(pathOf(r));
+const isOverrideCall = (id) => (r) => r.request().method() === "POST" && pathOf(r) === `/api/tickets/${id}/override`;
+
+/** Ghi lại response khớp `match`: mã HTTP + thân JSON lần gần nhất (so với màn, chẩn đoán). */
+function watchJson(page, match) {
+  const seen = { last: null, statuses: [] };
+  page.on("response", async (r) => {
+    if (!match(r)) return;
+    seen.statuses.push(r.status());
+    try {
+      seen.last = await r.json();
+    } catch {
+      // trang đã chuyển đi giữa chừng
+    }
+  });
+  return seen;
+}
+
+async function waitJson(page, seen, what) {
+  const deadline = Date.now() + 20_000;
+  while (seen.last === null && Date.now() < deadline) await page.waitForTimeout(250);
+  check(seen.last !== null, `${what}: chưa nhận được response sau 20 s (mã: ${seen.statuses.join(", ") || "không có"})`);
+  return seen.last;
+}
+
+/** Tập khoá của một object (đệ quy: "cha.con", "cha[0]"; object/mảng rỗng giữ khoá) — viết riêng, không dùng code app. */
+function keyPaths(value, prefix = "") {
+  if (Array.isArray(value)) return value.length ? value.flatMap((v, i) => keyPaths(v, `${prefix}[${i}]`)) : [prefix];
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value);
+    return entries.length ? entries.flatMap(([k, v]) => keyPaths(v, prefix ? `${prefix}.${k}` : k)) : [prefix];
+  }
+  return [prefix];
+}
+const sameKeys = (a, b) => a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+const mswOn = (lines) => lines.some((l) => l.includes("[MSW] Mocking enabled"));
+
+/** Nút trong vùng nội dung (không tính thanh bên — nút đăng xuất). */
+const mainButtons = (page) =>
+  page.locator('main button, main [role="button"], main [role="tab"], main input[type="submit"]').evaluateAll((els) =>
+    els.map((el) => (el.textContent || el.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim()),
+  );
+
+async function openTicketOverride(page, ticketId, { viaBox = false } = {}) {
+  if (viaBox) {
+    await page.locator("#override-ticket").fill(ticketId);
+    await page.getByRole("button", { name: "Xem ticket", exact: true }).click();
+    await page.waitForURL(`**/approvals/ticket/${ticketId}`, { timeout: 10_000 });
+  } else {
+    await page.goto(`${DEV}/approvals/ticket/${ticketId}`, { waitUntil: "load" });
+    await expectSignedIn(page, `ha.lt (ticket ${ticketId})`);
+  }
+  await page.getByRole("button", { name: "Ghi đè…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Ghi đè quyết định" });
+  await dialog.waitFor({ timeout: 10_000 });
+  await dialog.getByRole("radio", { name: /^Cần người duyệt/ }).click();
+  await page.locator("#override-reason").selectOption(OVERRIDE_REASON);
+  return dialog;
+}
+
+async function sendOverride(page, dialog, ticketId) {
+  const [res] = await Promise.all([
+    page.waitForResponse(isOverrideCall(ticketId), { timeout: 15_000 }),
+    dialog.getByRole("button", { name: "Gửi ghi đè", exact: true }).click(),
+  ]);
+  log(`POST /api/tickets/${ticketId}/override → ${res.status()} (fromServiceWorker=${res.fromServiceWorker()})`);
+  return res;
 }
 
 async function backendUp() {
@@ -1043,6 +1161,307 @@ await step("F3-7 ca E5 (deny): banner + khoá “Đã hoàn tất” + 422", asy
   status: "BỎ QUA",
   note: "BỎ QUA — gate3 không có preset ra E5 — đã kiểm bằng t30/t32 (vitest)",
 }));
+
+// F4 — L1. Hộp thư / xem phiếu / ghi đè CHƯA CÓ ở backend (4c, 4d) → F4-1…6 chạy trên dev:mock + backend thật (đăng nhập,
+// ticket, decision cho id không phải fixture). F4-7, F4-8: dev KHÔNG mock. Không gửi câu chat nào (không tạo ticket/phiếu
+// thật — câu tc09 sẽ tạo phiếu rồi hết hạn thành E6, làm hàng đợi dev đầy thêm).
+const liveMock = (name, fn) =>
+  step(name, async () => {
+    if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt (cần đăng nhập thật)" };
+    await ensureMockServer("dev:mock(F4)");
+    return fn();
+  });
+
+await liveMock("F4-1 ha.lt /approvals (dev:mock): sắp theo hạn, phiếu < 20% đỏ, phiếu dự phòng có huy hiệu", () =>
+  scenario("F4-1", async ({ page, consoleLines }) => {
+    const inbox = watchJson(page, (r) => isInboxCall(r, "pending"));
+    await signInAs(page, "ha.lt"); // trang đầu theo quyền: /approvals (12b Q-fe-8)
+    check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
+    await page.getByRole("heading", APPROVALS_HEADING).waitFor();
+    const items = await waitJson(page, inbox, "hộp thư");
+    check(Array.isArray(items) && items.length >= 4, `hộp thư giả có ${items?.length} phiếu chờ, cần ≥ 4`);
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="inbox-row"]').length === n, items.length, {
+      timeout: 10_000,
+    });
+    const rows = await page.locator('[data-testid="inbox-row"]').evaluateAll((els) =>
+      els.map((el) => ({
+        id: el.dataset.approvalId,
+        urgent: el.dataset.urgent === "true",
+        badge: el.querySelector('[data-testid="backup-badge"]')?.textContent?.trim() ?? null,
+        color: getComputedStyle(el.querySelector('[data-testid="inbox-time"]')).color,
+      })),
+    );
+    const byDeadline = [...items]
+      .sort((a, b) => Date.parse(a.deadline) - Date.parse(b.deadline) || a.approval_id.localeCompare(b.approval_id))
+      .map((i) => i.approval_id);
+    check(JSON.stringify(rows.map((r) => r.id)) === JSON.stringify(byDeadline), `thứ tự dòng ${rows.map((r) => r.id)} ≠ theo hạn ${byDeadline}`);
+    check(JSON.stringify(items.map((i) => i.approval_id)) !== JSON.stringify(byDeadline), "MSW trả sẵn theo hạn — không chứng minh được giao diện tự sắp");
+    const now = Date.now();
+    for (const item of items) {
+      const d = Date.parse(item.deadline);
+      const expected = d - now < URGENT_RATIO * (d - Date.parse(item.created_at));
+      const row = rows.find((r) => r.id === item.approval_id);
+      check(row.urgent === expected, `${item.approval_id}: đỏ=${row.urgent}, cần ${expected} (còn ${Math.round((d - now) / 1000)} s / ${Math.round((d - Date.parse(item.created_at)) / 1000)} s)`);
+      if (expected) check(row.color === DANGER_RGB, `${item.approval_id}: phiếu < 20% mà chữ màu ${row.color}, cần ${DANGER_RGB}`);
+      const badge = item.role_as === "backup" ? "Dự phòng" : null;
+      check(row.badge === badge, `${item.approval_id} (role_as=${item.role_as}): huy hiệu "${row.badge}", cần "${badge}"`);
+    }
+    check(rows.some((r) => r.urgent) && rows.some((r) => !r.urgent), "fixture phải có cả phiếu đỏ lẫn không đỏ");
+    check(items.some((i) => i.role_as === "backup" && i.reminder_2_at), "fixture thiếu phiếu dự phòng có reminder_2_at");
+    const decisionButtons = (await mainButtons(page)).filter((t) => /Đồng ý|Từ chối/.test(t));
+    check(decisionButtons.length === 0, `hộp thư có nút quyết định "${decisionButtons[0]}" — chỉ ở chi tiết phiếu`);
+    await shoot(page, "l1-queue.png");
+    const urgent = rows.filter((r) => r.urgent).map((r) => r.id);
+    return {
+      note: `${items.length} phiếu chờ; MSW trả theo created_at giảm dần → màn sắp theo hạn ${byDeadline.join(", ")}; đỏ (< 20%, ${DANGER_RGB}): ${urgent.join(", ")}; "Dự phòng": ${items.filter((i) => i.role_as === "backup").map((i) => i.approval_id).join(", ")}`,
+    };
+  }),
+);
+
+await liveMock("F4-2 mở phiếu thường: đủ khối, căn cứ quy trình, Bảng/JSON cùng tập khoá, mã băm đủ", () =>
+  scenario("F4-2", async ({ page }) => {
+    const views = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === `/api/approvals/${DEMO.normal}`);
+    await signInAs(page, "ha.lt");
+    await page.locator(`[data-testid="inbox-row"][data-approval-id="${DEMO.normal}"]`).click();
+    await page.waitForURL(`**/approvals/${DEMO.normal}`, { timeout: 10_000 });
+    const view = await waitJson(page, views, "xem phiếu");
+    await page.getByTestId("action-hash").waitFor({ timeout: 10_000 });
+    const text = async (id) => (await page.getByTestId(id).innerText()).trim();
+    check((await text("request-summary")) === view.request_summary.trim(), "khối yêu cầu khác request_summary");
+    const procedure = await text("procedure");
+    check(view.procedure?.title && procedure.includes(view.procedure.title), `căn cứ quy trình "${procedure}" thiếu tiêu đề "${view.procedure?.title}"`);
+    check((await page.getByText(view.requester.department, { exact: true }).count()) >= 1, `không thấy phòng ban "${view.requester.department}"`);
+    const rowKeys = (id) => page.locator(`[data-testid="${id}"]`).evaluateAll((els) => els.map((el) => el.dataset.key));
+    check(sameKeys(await rowKeys("risk-row"), keyPaths(view.risk)), "khối rủi ro thiếu/thừa khoá so với risk");
+    check(sameKeys(await rowKeys("fact-row"), keyPaths(view.facts)), "khối dữ kiện thiếu/thừa khoá so với facts");
+    const tableKeys = await rowKeys("action-row");
+    const expected = keyPaths(view.action);
+    check(sameKeys(tableKeys, expected), `Bảng: ${tableKeys.length} khoá, object có ${expected.length} (${expected.filter((k) => !tableKeys.includes(k)).join(", ")})`);
+    check(tableKeys.some((k) => k.includes(".")), "Bảng không có khoá lồng nào (cần vd params.device_id)");
+    const hash = await text("action-hash");
+    check(hash === view.action_plan_hash && hash.length === 64, `mã băm trên màn "${hash}" ≠ action_plan_hash`);
+    check((await page.getByTestId("approval-deadline").getAttribute("data-urgent")) === "true", `${DEMO.normal} (còn < 20%) mà đồng hồ không đỏ`);
+    await shoot(page, "l1-detail-table.png");
+    await page.getByRole("tab", { name: "JSON", exact: true }).click();
+    const json = await page.getByTestId("action-json").evaluate((el) => el.textContent);
+    check(json === JSON.stringify(view.action, null, 2), "tab JSON khác JSON.stringify(action, null, 2) của object nhận về");
+    check(sameKeys(keyPaths(JSON.parse(json)), tableKeys), "tập khoá JSON ≠ tập khoá Bảng");
+    await shoot(page, "l1-detail-json.png");
+    // Phiếu dự phòng + căn cứ không có tiêu đề → chỉ doc_id.
+    await page.goto(`${DEV}/approvals/${DEMO.backup}`, { waitUntil: "load" });
+    await expectSignedIn(page, "ha.lt (phiếu dự phòng)");
+    const banner = (await page.getByTestId("backup-banner").innerText({ timeout: 10_000 })).trim();
+    check(banner.includes(BACKUP_TEXT), `phiếu dự phòng: dải "${banner}"`);
+    const docOnly = await text("procedure");
+    check(/^KB-[A-Z]+-\d+$/.test(docOnly), `căn cứ không có tiêu đề phải hiện doc_id, đang hiện "${docOnly}"`);
+    return {
+      note: `${DEMO.normal}: yêu cầu, người gửi (${view.requester.department}), căn cứ "${view.procedure.title}", rủi ro + dữ kiện đủ khoá; Bảng = JSON = object (${expected.length} khoá, có lồng); JSON đúng stringify; mã băm 64 ký tự; đồng hồ đỏ · ${DEMO.backup}: dải dự phòng, căn cứ "${docOnly}"`,
+    };
+  }),
+);
+
+await liveMock("F4-3 từ chối: thiếu lý do / thiếu ghi chú → không gửi; đủ → 202 (giả) → “Đã gửi quyết định”", () =>
+  scenario("F4-3", async ({ page }) => {
+    const decisions = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && /\/decision$/.test(new URL(r.url()).pathname)) decisions.push(r.url());
+    });
+    await signInAs(page, "ha.lt");
+    await page.goto(`${DEV}/approvals/${DEMO.reject}`, { waitUntil: "load" });
+    await expectSignedIn(page, "ha.lt");
+    await page.getByRole("button", { name: "Từ chối", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Từ chối yêu cầu" });
+    const send = sheet.getByRole("button", { name: "Gửi từ chối", exact: true });
+    const alert = sheet.getByRole("alert");
+    await page.locator("#reject-note").fill(REJECT_NOTE); // có ghi chú, chưa chọn lý do
+    await send.click();
+    check((await alert.innerText()).trim() === "Chọn lý do từ chối.", `thiếu lý do: "${await alert.innerText()}"`);
+    await page.locator("#reject-reason").selectOption("wrong_device");
+    await page.locator("#reject-note").fill("   "); // có lý do, ghi chú chỉ khoảng trắng
+    await send.click();
+    check((await alert.innerText()).trim() === "Nhập lý do gửi người dùng (bắt buộc).", `thiếu ghi chú: "${await alert.innerText()}"`);
+    await page.waitForTimeout(500);
+    check(decisions.length === 0, `chưa đủ lý do/ghi chú mà đã gửi ${decisions.length} lần`);
+    await shoot(page, "l1-reject.png");
+    await page.locator("#reject-note").fill(REJECT_NOTE);
+    const [res] = await Promise.all([page.waitForResponse(isDecisionCall, { timeout: 15_000 }), send.click()]);
+    check(res.status() === 202, `POST decision (${DEMO.reject}) → ${res.status()}, cần 202 của MSW`);
+    const body = res.request().postDataJSON();
+    check(
+      JSON.stringify(Object.keys(body).sort()) === JSON.stringify(["decision", "note", "reason_code", "view_started_at"]) &&
+        body.decision === "rejected" && body.reason_code === "wrong_device" && body.note === REJECT_NOTE,
+      `body từ chối sai dạng: ${JSON.stringify({ ...body, view_started_at: "…" })}`,
+    );
+    const server = (await res.allHeaders()).server ?? null;
+    check(!/uvicorn/i.test(server ?? ""), `decision ${DEMO.reject} lẽ ra do MSW trả, lại có header server="${server}"`);
+    const sent = (await page.getByTestId("decision-sent").innerText({ timeout: 5_000 })).trim();
+    check(sent.startsWith(DECISION_SENT), `sau 202 hiện "${sent}"`);
+    check(decisions.length === 1, `gửi ${decisions.length} lần, cần 1`);
+    return {
+      note: `thiếu lý do → "Chọn lý do từ chối."; ghi chú rỗng → "Nhập lý do…"; 0 request; đủ → 1 POST {decision, reason_code, note, view_started_at} → MSW 202 (không header server) → "${sent}"`,
+    };
+  }),
+);
+
+await liveMock("F4-4 phiếu plan_changed: chỉ câu chặn, 0 nút, không object", () =>
+  scenario("F4-4", async ({ page }) => {
+    const views = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === `/api/approvals/${DEMO.planChanged}`);
+    await signInAs(page, "ha.lt");
+    await page.goto(`${DEV}/approvals/${DEMO.planChanged}`, { waitUntil: "load" });
+    await expectSignedIn(page, "ha.lt");
+    await page.getByRole("heading", { name: PLAN_CHANGED, level: 1 }).waitFor({ timeout: 10_000 });
+    check(views.statuses.includes(409), `GET /api/approvals/${DEMO.planChanged} → ${views.statuses.join(", ")}, cần 409`);
+    const buttons = await mainButtons(page);
+    check(buttons.length === 0, `màn plan_changed có ${buttons.length} nút: ${buttons.join(" | ")}`);
+    for (const id of ["action-row", "action-json", "action-hash", "request-summary", "risk-row"]) {
+      check((await page.getByTestId(id).count()) === 0, `màn plan_changed vẫn hiện ${id}`);
+    }
+    const mainText = await page.locator("main").innerText();
+    check(!/reissue_vpn_access|renew_vpn_cert|LAP-\d/.test(mainText), "màn plan_changed lộ chữ của object action");
+    return { note: `GET → 409 plan_changed; chỉ "${PLAN_CHANGED}"; 0 nút/tab trong nội dung; không Bảng/JSON/hash/khối nào` };
+  }),
+);
+
+await liveMock("F4-5 decision cho id KHÔNG tiền tố apv-demo- (dev:mock) → tới backend thật → 404 thật", () =>
+  scenario("F4-5", async ({ page, consoleLines }) => {
+    await signInAs(page, "ha.lt");
+    check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
+    const id = randomUUID();
+    // Token trong bộ nhớ của app không lấy ra được (đúng thiết kế) → token riêng bằng API; request vẫn đi TỪ TRANG
+    // (qua service worker của MSW → handler passthrough → proxy → backend).
+    const token = await apiLogin("ha.lt");
+    try {
+      const [res] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === "POST" && pathOf(r) === `/api/approvals/${id}/decision`, { timeout: 15_000 }),
+        page.evaluate(
+          async ({ id, token }) => {
+            await fetch(`/api/approvals/${id}/decision`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ decision: "approved" }),
+            }).catch(() => null);
+          },
+          { id, token },
+        ),
+      ]);
+      const server = (await res.allHeaders()).server ?? null;
+      const detail = (await res.json().catch(() => null))?.detail ?? null;
+      log(`F4-5 POST /api/approvals/<uuid>/decision → ${res.status()} ${detail} server=${server} fromServiceWorker=${res.fromServiceWorker()}`);
+      check(res.status() === 404 && detail === "not_found", `decision id ngẫu nhiên → ${res.status()} ${detail}, cần 404 not_found của backend`);
+      check(/uvicorn/i.test(server ?? ""), `response không có header server của backend thật (server="${server}") — MSW đã chặn?`);
+      const mocked = consoleLines.filter((l) => l.includes("[MSW]") && l.includes(id));
+      check(mocked.length === 0, `console MSW có dòng giả cho id này: ${mocked[0]}`);
+      return {
+        note: `id ngẫu nhiên → handler passthrough → backend: 404 not_found, header server="${server}" (MSW không trả; fromServiceWorker=${res.fromServiceWorker()} vì MSW 3 cho mọi request đi qua worker, kể cả passthrough)`,
+      };
+    } finally {
+      await apiLogout("ha.lt", token);
+    }
+  }),
+);
+
+await liveMock("F4-6 ghi đè: tkt-demo-open → 409; tkt-demo-same → 422; tkt-demo-reauth → đăng nhập lại (thật) → 201", () =>
+  scenario("F4-6", async ({ page }) => {
+    await signInAs(page, "ha.lt");
+    await page.getByRole("heading", APPROVALS_HEADING).waitFor();
+    const results = [];
+    for (const [ticket, status, code] of [
+      ["tkt-demo-open", 409, "ticket_open"],
+      ["tkt-demo-same", 422, "same_as_original"],
+    ]) {
+      const dialog = await openTicketOverride(page, ticket, { viaBox: ticket === "tkt-demo-open" });
+      const res = await sendOverride(page, dialog, ticket);
+      check(res.status() === status, `${ticket}: override → ${res.status()}, cần ${status}`);
+      const alert = (await dialog.getByRole("alert").innerText({ timeout: 5_000 })).trim();
+      check(alert === OVERRIDE_MSG[code], `${ticket}: câu "${alert}", cần "${OVERRIDE_MSG[code]}"`);
+      // Ticket minh hoạ không có ở backend → GET thật 404 → câu trung tính, không khối lỗi đỏ (Q-fe-24).
+      const unavailable = (await page.getByTestId("ticket-unavailable").innerText({ timeout: 10_000 })).trim();
+      check(unavailable === TICKET_UNAVAILABLE, `${ticket}: GET ticket 404 mà vùng hội thoại hiện "${unavailable}"`);
+      check((await page.locator("main [role=alert]").count()) === 1, `${ticket}: ngoài câu lỗi ghi đè còn khối lỗi đỏ khác`);
+      results.push(`${ticket} → ${status} "${alert}"`);
+    }
+    // tkt-demo-reauth: lần đầu 403 reauth_required → hộp đăng nhập lại → đăng nhập ha.lt THẬT → gửi lại đúng 1 lần → 201.
+    const overrides = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && pathOf(r) === "/api/tickets/tkt-demo-reauth/override") overrides.push(r.url());
+    });
+    const dialog = await openTicketOverride(page, "tkt-demo-reauth");
+    const first = await sendOverride(page, dialog, "tkt-demo-reauth");
+    check(first.status() === 403, `tkt-demo-reauth lần đầu → ${first.status()}, cần 403 reauth_required`);
+    const reauth = page.getByRole("dialog", { name: "Xác nhận lại đăng nhập" });
+    await reauth.waitFor({ timeout: 5_000 });
+    await page.locator("#reauth-username").fill("ha.lt");
+    await page.locator("#reauth-password").fill(password);
+    const [login, second] = await Promise.all([
+      page.waitForResponse(isLoginCall, { timeout: 15_000 }),
+      page.waitForResponse(isOverrideCall("tkt-demo-reauth"), { timeout: 20_000 }),
+      reauth.getByRole("button", { name: "Đăng nhập lại", exact: true }).click(),
+    ]);
+    const loginServer = (await login.allHeaders()).server ?? null;
+    check(login.status() === 200 && /uvicorn/i.test(loginServer ?? ""), `đăng nhập lại → ${login.status()} (server="${loginServer}"), cần 200 của backend thật`);
+    check(second.status() === 201, `gửi lại sau đăng nhập → ${second.status()}, cần 201`);
+    const done = dialog.getByRole("status");
+    await done.waitFor({ timeout: 5_000 });
+    check((await done.innerText()).includes("Đã ghi nhận ghi đè"), `sau 201 hiện "${await done.innerText()}"`);
+    await page.waitForTimeout(500);
+    check(overrides.length === 2, `tkt-demo-reauth gửi ${overrides.length} lần, cần đúng 2 (gốc + 1 lần gửi lại)`);
+    check((await page.getByTestId("me-user-id").innerText()).trim() === "l1_01", "sau đăng nhập lại không còn là ha.lt (l1_01)");
+    await shoot(page, "l1-override.png");
+    results.push("tkt-demo-reauth → 403 → đăng nhập lại (backend thật 200) → gửi lại 1 lần → 201 “Đã ghi nhận ghi đè (minh hoạ)”");
+    return { note: `${results.join(" · ")} · GET ticket minh hoạ 404 → "${TICKET_UNAVAILABLE}", nút "Ghi đè…" vẫn có (Q-fe-24)` };
+  }),
+);
+
+if (mockServer) {
+  await stopServer(mockServer);
+  mockServer = null;
+}
+
+await live("F4-7 long.nh (L2) → /approvals: trang không có quyền; thanh bên không có mục duyệt", () =>
+  scenario("F4-7", async ({ page }) => {
+    const calls = [];
+    page.on("request", (r) => {
+      if (pathOf(r).startsWith("/api/approvals") || /\/override$/.test(pathOf(r))) calls.push(pathOf(r));
+    });
+    await signInAs(page, "long.nh");
+    const nav = page.getByRole("navigation", NAV);
+    check((await nav.getByRole("link", { name: "Chờ tôi duyệt", exact: true }).count()) === 0, 'thanh bên long.nh có "Chờ tôi duyệt"');
+    for (const path of ["/approvals", `/approvals/${DEMO.normal}`, "/approvals/ticket/tkt-demo-open"]) {
+      await page.goto(`${DEV}${path}`, { waitUntil: "load" });
+      await expectSignedIn(page, `long.nh ${path}`);
+      await page.getByRole("heading", FORBIDDEN_HEADING).waitFor({ timeout: 10_000 });
+      const buttons = (await mainButtons(page)).filter((t) => APPROVE_WORDS.test(t) || /Từ chối|Ghi đè/.test(t));
+      check(buttons.length === 0, `${path}: có nút "${buttons[0]}"`);
+    }
+    check(calls.length === 0, `trang không có quyền mà UI vẫn gọi ${calls[0]}`);
+    return { note: '/approvals, /approvals/{id}, /approvals/ticket/{id} → "Bạn không có quyền xem trang này"; không mục "Chờ tôi duyệt"; 0 lời gọi /api/approvals' };
+  }),
+);
+
+await live("F4-8 ha.lt /approvals KHÔNG mock → “Hộp thư duyệt có từ Phase 4 (4c)” (hoặc danh sách thật nếu 4c đã có)", () =>
+  scenario("F4-8", async ({ page, consoleLines }) => {
+    const inbox = watchJson(page, (r) => isInboxCall(r, "pending"));
+    await signInAs(page, "ha.lt");
+    await page.getByRole("heading", APPROVALS_HEADING).waitFor();
+    check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+    const deadline = Date.now() + 15_000;
+    while (inbox.statuses.length === 0 && Date.now() < deadline) await page.waitForTimeout(250);
+    const status = inbox.statuses[0];
+    check(status !== undefined, "không thấy lời gọi GET /api/approvals?mine=1&status=pending");
+    if (status === 404) {
+      const box = page.getByTestId("inbox-missing");
+      await box.waitFor({ timeout: 10_000 });
+      const title = (await box.getByRole("heading").innerText()).trim();
+      check(title === INBOX_MISSING, `tiêu đề "${title}", cần "${INBOX_MISSING}"`);
+      check((await page.locator("main [role=alert]").count()) === 0, "trang Phase 4 có khối lỗi đỏ (role=alert)");
+      return { note: `backend chưa có route: GET /api/approvals → 404 → "${INBOX_MISSING}", không lỗi đỏ` };
+    }
+    check(status === 200, `GET /api/approvals → ${status} (không phải 404 cũng không phải 200)`);
+    await page.locator('[data-testid="inbox-row"]').or(page.getByText("Không có phiếu nào chờ bạn duyệt")).first().waitFor({ timeout: 10_000 });
+    check((await page.getByTestId("inbox-missing").count()) === 0, "4c đã có (200) mà vẫn hiện trang Phase 4");
+    return { note: `4c đã có — kiểm thật: GET /api/approvals → 200, ${inbox.last?.length ?? "?"} phiếu, màn hiện danh sách` };
+  }),
+);
 
 // c) dọn dẹp — luôn chạy
 {

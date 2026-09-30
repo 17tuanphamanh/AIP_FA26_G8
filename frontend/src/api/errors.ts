@@ -56,6 +56,13 @@ const CODE_MESSAGES: Record<string, string> = {
   deny_case_cannot_complete:
     "Không đóng được: ca E5 không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
   escalation_not_found: "Ca đã đóng hoặc không còn trong hàng đợi.",
+  // Duyệt (backend/app/api/approvals.py) + xem phiếu (4c P6).
+  rejected_requires_note: "Từ chối cần ghi chú lý do gửi người dùng.",
+  plan_changed: "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt",
+  // Ghi đè (4d P1–P4; KH 4.6, 12b Q-fe-10).
+  ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
+  already_overridden: "Bạn đã ghi đè ticket này rồi — mỗi người chỉ ghi đè một ticket một lần.",
+  same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
 };
 
 export function errorMessage(error: ApiError | null): string {

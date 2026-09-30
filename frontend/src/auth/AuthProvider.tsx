@@ -1,8 +1,8 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import type { Client, LoginResult } from "../api/client.ts";
+import type { Client } from "../api/client.ts";
 import { api, subscribeSessionEnd } from "../api/http.ts";
 import type { Me } from "../api/types.ts";
-import { AuthContext, type AuthState, type AuthValue } from "./context.ts";
+import { AuthContext, type AuthState, type AuthValue, type SignInResult } from "./context.ts";
 
 type AuthProviderProps = {
   children: ReactNode;
@@ -54,12 +54,13 @@ export function AuthProvider({ children, client = api, subscribe = subscribeSess
   );
 
   const signIn = useCallback(
-    async (username: string, password: string, otp?: string): Promise<LoginResult> => {
+    async (username: string, password: string, otp?: string): Promise<SignInResult> => {
       const result = await client.login(username, password, otp);
       if (!result.ok) return result;
       try {
-        setState({ status: "signedIn", me: await fetchMe() });
-        return result;
+        const me = await fetchMe();
+        setState({ status: "signedIn", me });
+        return { ok: true, me, subject: result.subject };
       } catch {
         return { ok: false, kind: "profile_error" }; // mật khẩu ĐÚNG — không được báo "sai mật khẩu"
       }

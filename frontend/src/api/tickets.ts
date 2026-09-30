@@ -1,4 +1,5 @@
 // Route ticket của nhân viên (KH 1.1; backend/app/api/tickets.py). Đều là route THẬT — F2 không dùng MSW.
+import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
 import type { Accepted, ConfirmIn, TicketView } from "./types.ts";
@@ -16,6 +17,10 @@ export async function createTicket(text: string): Promise<Accepted> {
 export async function getTicket(id: string): Promise<TicketView> {
   return (await api.request<TicketView>(ticketPath(id))).data;
 }
+
+/** Đọc một lần, không polling — cho màn chỉ đọc của IT (L1/L2 có ticket:read:any): chi tiết escalate, ghi đè. */
+export const ticketReadOnlyQuery = (id: string) =>
+  queryOptions({ queryKey: ["ticket", id] as const, queryFn: () => getTicket(id), retry: false });
 
 /** Chỉ khi `waiting_for = clarify`. */
 export async function sendMessage(id: string, text: string): Promise<Accepted> {

@@ -1,12 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { QUEUE_LIMIT, queueQuery } from "../../api/escalations.ts";
-import { getTicket } from "../../api/tickets.ts";
 import type { EscalationQueueItem } from "../../api/types.ts";
-import { Conversation } from "../../components/Conversation.tsx";
-import { normalizeConversation } from "../../components/messages.ts";
+import { TicketConversation } from "../../components/TicketConversation.tsx";
 import { CloseForm } from "./CloseForm.tsx";
 import { DENY_BANNER, EMPTY_NOTE, GONE_TEXT, handoffRows, OVERFLOW_NOTE, OVERFLOW_TEXT, splitLabel, waitingText } from "./queue.ts";
 
@@ -125,30 +122,6 @@ function Handoff({ note }: { note: unknown }) {
           </div>
         ))}
       </dl>
-    </section>
-  );
-}
-
-function TicketConversation({ ticketId }: { ticketId: string }) {
-  // Ticket escalate đã kết thúc (S_ESCALATED / S_BLOCKED) → đọc một lần, không polling.
-  const query = useQuery({ queryKey: ["ticket", ticketId], queryFn: () => getTicket(ticketId), retry: false });
-  const messages = useMemo(() => normalizeConversation(query.data?.conversation), [query.data]);
-  return (
-    <section aria-labelledby="conversation-heading" className="flex flex-col gap-2">
-      <h2 id="conversation-heading" className="pl-1 text-label text-ink-2">
-        Hội thoại
-      </h2>
-      {query.isPending ? (
-        <p className="text-secondary text-ink-2">Đang tải hội thoại…</p>
-      ) : query.data === undefined ? (
-        <p role="alert" className="text-secondary text-danger">
-          Chưa tải được hội thoại: {errorMessage(query.error instanceof ApiError ? query.error : null)}
-        </p>
-      ) : messages.length === 0 ? (
-        <p className="text-secondary text-ink-2">{EMPTY_NOTE}</p>
-      ) : (
-        <Conversation messages={messages} />
-      )}
     </section>
   );
 }

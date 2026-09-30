@@ -1,13 +1,9 @@
-import { type FormEvent, useState } from "react";
 import { Navigate, useLocation } from "react-router";
-import type { LoginResult } from "../api/client.ts";
-import { GENERIC_LOGIN_ERROR, loginErrorMessage, USERNAME_HINT } from "../api/errors.ts";
 import logoUrl from "../assets/logo.svg";
-import { OTP_LENGTH, OtpInput } from "../components/OtpInput.tsx";
+import { OtpInput } from "../components/OtpInput.tsx";
 import { homePath } from "./permissions.ts";
 import { useAuth } from "./useAuth.ts";
-
-const EMPTY_OTP = Array<string>(OTP_LENGTH).fill("");
+import { useLoginSteps } from "./useLoginSteps.ts";
 
 /** Trang cũ người dùng đang mở trước khi bị đưa về /login — chỉ nhận đường dẫn nội bộ. */
 function returnPath(state: unknown): string | null {
@@ -17,17 +13,14 @@ function returnPath(state: unknown): string | null {
     : null;
 }
 
-// B4Login: bước mật khẩu → (401 `mfa_required`) bước OTP 6 số. Mọi lỗi 401 khác là MỘT câu chung (P6 §4).
-// Tên đăng nhập sai mẫu bị chặn trong `client.login` — không gửi request (mật khẩu gõ nhầm vào ô này không rời máy).
+// B4Login: bước mật khẩu → (401 `mfa_required`) bước OTP 6 số (luồng ở useLoginSteps — dùng chung với hộp xác nhận lại
+// đăng nhập F4). Mọi lỗi 401 khác là MỘT câu chung (P6 §4). Tên đăng nhập sai mẫu bị chặn trong `client.login` — không
+// gửi request (mật khẩu gõ nhầm vào ô này không rời máy). Thành công → AuthProvider chuyển sang signedIn → <Navigate>.
 export function LoginPage() {
-  const { state, signIn } = useAuth();
+  const { state } = useAuth();
   const location = useLocation();
-  const [step, setStep] = useState<"password" | "otp">("password");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [digits, setDigits] = useState<string[]>(EMPTY_OTP);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { step, username, setUsername, password, setPassword, digits, setDigits, error, busy, submitPassword, submitOtp, backToPassword } =
+    useLoginSteps();
 
   if (state.status === "signedIn") {
     return <Navigate to={returnPath(location.state) ?? homePath(state.me)} replace />;
@@ -40,58 +33,6 @@ export function LoginPage() {
         Đang kiểm tra phiên đăng nhập…
       </main>
     );
-  }
-
-  function show(result: LoginResult, fromOtp: boolean) {
-    if (result.ok) return; // AuthProvider chuyển sang signedIn → <Navigate> ở trên
-    if (result.kind === "otp_required") {
-      if (fromOtp) {
-        setError(GENERIC_LOGIN_ERROR);
-      } else {
-        setStep("otp");
-        setDigits(EMPTY_OTP);
-        setError(null);
-      }
-      return;
-    }
-    if (result.kind === "invalid_username") setError(USERNAME_HINT);
-    else if (result.kind === "profile_error") setError("Đăng nhập được nhưng chưa tải được thông tin tài khoản. Thử lại sau giây lát.");
-    else setError(loginErrorMessage(result.error));
-  }
-
-  async function attempt(otp: string | undefined) {
-    setBusy(true);
-    try {
-      show(await signIn(username, password, otp), otp !== undefined);
-    } catch {
-      setError(loginErrorMessage(null));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitPassword(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    await attempt(undefined);
-  }
-
-  async function submitOtp(event: FormEvent) {
-    event.preventDefault();
-    const otp = digits.join("");
-    if (otp.length !== OTP_LENGTH) {
-      setError(`Nhập đủ ${OTP_LENGTH} chữ số.`);
-      return;
-    }
-    setError(null);
-    await attempt(otp);
-  }
-
-  function backToPassword() {
-    setStep("password");
-    setPassword("");
-    setDigits(EMPTY_OTP);
-    setError(null);
   }
 
   const otp = step === "otp";
@@ -112,7 +53,7 @@ export function LoginPage() {
       </div>
 
       {otp ? (
-        <form onSubmit={submitOtp} noValidate className="flex w-100 max-w-full flex-col items-center gap-4">
+        <form onSubmit={(e) => void submitOtp(e)} noValidate className="flex w-100 max-w-full flex-col items-center gap-4">
           <OtpInput digits={digits} onChange={setDigits} disabled={busy} />
           {alert}
           <button type="submit" disabled={busy} className="h-11 w-full rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60">
@@ -123,7 +64,7 @@ export function LoginPage() {
           </button>
         </form>
       ) : (
-        <form onSubmit={submitPassword} noValidate className="flex w-100 max-w-full flex-col gap-4">
+        <form onSubmit={(e) => void submitPassword(e)} noValidate className="flex w-100 max-w-full flex-col gap-4">
           <div className="overflow-hidden rounded-group border border-line bg-white">
             <label htmlFor="login-username" className="sr-only">
               Tên đăng nhập

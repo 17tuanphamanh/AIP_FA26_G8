@@ -6,11 +6,15 @@ import { LoginPage } from "./auth/LoginPage.tsx";
 import { CHAT_NAV, homePath, STAFF_NAV } from "./auth/permissions.ts";
 import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
 import { useAuth, useMe } from "./auth/useAuth.ts";
+import { FlashNotice } from "./components/FlashNotice.tsx";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ChatHome } from "./routes/employee/ChatHome.tsx";
 import { ChatRoute } from "./routes/employee/ChatPage.tsx";
 import { sessionTickets } from "./routes/employee/sessionTickets.ts";
+import { ApprovalDetailRoute } from "./routes/l1/ApprovalDetail.tsx";
+import { ApprovalQueue } from "./routes/l1/ApprovalQueue.tsx";
+import { TicketOverrideRoute } from "./routes/l1/TicketOverride.tsx";
 import { EscalationDetailRoute } from "./routes/l2/EscalationDetail.tsx";
 import { EscalationQueue } from "./routes/l2/EscalationQueue.tsx";
 import { NotFound } from "./routes/NotFound.tsx";
@@ -25,6 +29,7 @@ function Shell() {
     <div className="flex h-full">
       <Sidebar me={me} onSignOut={signOut} />
       <main className="min-w-0 grow overflow-y-auto">
+        <FlashNotice />
         <Outlet />
       </main>
     </div>
@@ -35,8 +40,9 @@ function Home() {
   return <Navigate to={homePath(useMe())} replace />;
 }
 
-// F2: chat nhân viên (API thật). F3: hàng đợi + chi tiết escalate (L1 + L2 — quyền escalation:handle). Màn của F4–F5
-// chưa dựng: route + quyền có sẵn, nội dung là <Pending>. Chặng sau thay element, giữ RequirePerm.
+// F2: chat nhân viên (API thật). F3: hàng đợi + chi tiết escalate (L1 + L2 — quyền escalation:handle). F4: hộp thư duyệt,
+// chi tiết phiếu (approval:decide — L1 + Trưởng BP IT; L2 không có → trang 403), xem ticket để ghi đè (decision:override).
+// Màn của F5 chưa dựng: route + quyền có sẵn, nội dung là <Pending>. Chặng sau thay element, giữ RequirePerm.
 const chatRoutes = [
   {
     path: CHAT_NAV.to.slice(1),
@@ -76,7 +82,35 @@ const escalationRoutes = [
   },
 ];
 
-const featureRoutes = STAFF_NAV.filter((item) => item !== ESCALATIONS).map((item) => ({
+const APPROVALS = STAFF_NAV.find((item) => item.to === "/approvals")!;
+const approvalRoutes = [
+  {
+    path: APPROVALS.to.slice(1),
+    element: (
+      <RequirePerm perm={APPROVALS.perm}>
+        <ApprovalQueue />
+      </RequirePerm>
+    ),
+  },
+  {
+    path: `${APPROVALS.to.slice(1)}/ticket/:ticketId`,
+    element: (
+      <RequirePerm perm="decision:override">
+        <TicketOverrideRoute />
+      </RequirePerm>
+    ),
+  },
+  {
+    path: `${APPROVALS.to.slice(1)}/:approvalId`,
+    element: (
+      <RequirePerm perm={APPROVALS.perm}>
+        <ApprovalDetailRoute />
+      </RequirePerm>
+    ),
+  },
+];
+
+const featureRoutes = STAFF_NAV.filter((item) => item !== ESCALATIONS && item !== APPROVALS).map((item) => ({
   path: item.to.slice(1),
   element: (
     <RequirePerm perm={item.perm}>
@@ -97,6 +131,7 @@ const router = createBrowserRouter([
       { index: true, element: <Home /> },
       ...chatRoutes,
       ...escalationRoutes,
+      ...approvalRoutes,
       ...featureRoutes,
       { path: "*", element: <NotFound /> },
     ],

@@ -1,6 +1,7 @@
-import { bypass, http, HttpResponse } from "msw";
+import { bypass, http } from "msw";
 import { CLOSE_NOTE_MAX, QUEUE_LIMIT } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueItem } from "../../api/types.ts";
+import { reply } from "./shared.ts";
 
 // `POST /api/escalations/:id/close` — route CHƯA CÓ (Phase 7, T31; B20 §4.3, P10 §3.4). Xoá file này khi T31 merge.
 // KHÔNG giả `GET /api/escalations/{id}` (12b Q-fe-6) và KHÔNG sửa hàng đợi thật: 202 ở đây không xoá ca nào.
@@ -50,11 +51,11 @@ export const escalationCloseHandlers = [
     const queue = await fetch(bypass(new Request(queueUrl, { headers })));
     if (!queue.ok) {
       // 401 (token hết hạn) → client tự refresh rồi gửi lại; 403 → không có quyền escalation:handle.
-      return HttpResponse.json(await queue.json().catch(() => null), { status: queue.status });
+      return reply(await queue.json().catch(() => null), queue.status);
     }
     const items = (await queue.json()) as EscalationQueueItem[];
     const id = Number(params.id);
     const outcome = closeOutcome(body, items.find((i) => i.escalation_id === id));
-    return HttpResponse.json(outcome.body as Record<string, unknown>, { status: outcome.status });
+    return reply(outcome.body as Record<string, unknown>, outcome.status);
   }),
 ];

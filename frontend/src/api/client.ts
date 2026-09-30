@@ -42,7 +42,8 @@ export type RequestOptions = Omit<RequestInit, "body"> & { json?: unknown; body?
 export type ApiResult<T> = { data: T; status: number; headers: Headers };
 
 export type LoginResult =
-  | { ok: true }
+  /** `subject` = `sub` của token vừa cấp (null khi không đọc được) — để so danh tính khi đăng nhập lại (F4, Q-fe-25). */
+  | { ok: true; subject: string | null }
   | { ok: false; kind: "otp_required" }
   | { ok: false; kind: "invalid_username" }
   /** Đăng nhập được nhưng không tải được `/api/auth/me`. */
@@ -273,7 +274,7 @@ export function createClient(deps: ClientDeps) {
     ended = false;
     endNotified = false;
     share(token, tokenAt);
-    return { ok: true };
+    return { ok: true, subject };
   }
 
   /** Tải lại trang: lấy access token mới từ cookie refresh. Không gọi `onSessionEnd` (chưa đăng nhập ≠ hết phiên). */
