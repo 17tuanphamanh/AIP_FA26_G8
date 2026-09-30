@@ -444,6 +444,14 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 10.4, 10.7;
 - `clarify_wait`: `screen_reply` → che L1 → LLM/slot/`conversation` chỉ dùng bản đã che.
 - `validate_targets` luôn kiểm lại máy đích trước `build_action`, bỏ fact máy cũ; câu hỏi LLM qua output guard; `effects.once` khoá riêng từng lượt hỏi; D-20 bật → không khởi động.
 
+### Chốt khi hiện thực Phase 4 — S0 (30/09/2026, `5ed423d`)
+
+Theo `build/phase4-thiet-ke-chi-tiet.md` mục 4.0 (D-34):
+
+- **Bước mới — kiểm quy trình:** sau `build_action`, trước `goto(S_ASSESSING)`: `procedure_available(ActionMeta.procedure_doc, ctx)` trên **KB đang chạy lúc B11** (không dùng `kb_version` ghim ở B8 — B11 có thể chạy sau lượt hỏi lại). `False` → E3 `no_procedure` (event `no_procedure`, ghi kèm `intended_action`/`facts` cho L2); lỗi RAG → E2 `rag_system_error` (`retrieval_error="procedure"`). Audit B11: `procedure_doc`, `procedure_kb_version`.
+- `procedure_doc` là trường **bắt buộc** của `ActionMeta` (thiếu → không khởi động), **không** chép vào `Action` (`action_plan_hash` không đổi). VPN: `renew_vpn_cert`, `reissue_vpn_access` → KB-VPN-004; `check_vpn_status` → KB-VPN-001.
+- Ghi chú bàn giao cho `no_procedure` có câu cố định: không làm tay theo tài liệu đã tra (Q-4a-1).
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -453,3 +461,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 10.4, 10.7;
 | 25/09/2026 | 1.2 | Bản vá: gửi câu hỏi + đặt hạn qua `effects.once` (D-18); kích hoạt chẩn đoán lại (D-20, cờ tắt mặc định); ghi chú khóa audit mới |
 | 25/09/2026 | 1.3 | Ticket con gửi câu hỏi qua cha (`needs=answer`), không đặt hạn riêng (D-31) |
 | 30/09/2026 | 1.4 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 10.4, 10.7) |
+| 30/09/2026 | 1.5 | Chốt khi hiện thực Phase 4 — S0 (D-34): kiểm `procedure_doc` sau `build_action` → E3 `no_procedure` |

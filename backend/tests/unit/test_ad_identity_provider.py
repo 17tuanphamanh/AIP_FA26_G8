@@ -13,6 +13,7 @@ from app.settings import Settings
 from app.tools.adapters.ad_read import AdIdentityProvider
 from app.tools.specs import READ_TIMEOUT_S
 from app.tools.wiring import build_read_registry
+from pydantic import SecretStr
 
 MOCK = "http://mock.test"
 USER = {
@@ -26,7 +27,7 @@ USER = {
 
 @pytest.fixture
 def idp() -> AdIdentityProvider:
-    settings = Settings(_env_file=None, mock_url=MOCK, svc_agent_token=secrets.token_urlsafe(32))  # type: ignore[call-arg]
+    settings = Settings(_env_file=None, mock_url=MOCK, svc_agent_token=SecretStr(secrets.token_urlsafe(32)))  # type: ignore[call-arg]
     registry, http = build_read_registry(settings, FakeClock())
     return AdIdentityProvider(http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable)
 
@@ -51,7 +52,7 @@ async def test_authenticate_ok_and_wrong_password(idp: AdIdentityProvider) -> No
      httpx.ConnectTimeout("chậm")],
 )  # fmt: skip
 async def test_authenticate_system_errors_are_unavailable_without_retry(
-    idp: AdIdentityProvider, response: object
+    idp: AdIdentityProvider, response: httpx.Response | Exception
 ) -> None:
     route = respx.post(f"{MOCK}/ad/authenticate").mock(side_effect=[response])
     with pytest.raises(IdentityUnavailable):

@@ -9,7 +9,7 @@
 """
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -76,8 +76,9 @@ def _block(c: ChunkRef, text: str = "nội dung", tokens: int = 50) -> EvidenceB
 def _state(**over: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "ticket_id": "t1", "turn_id": "T1", "status": S_RETRIEVING, "redacted_request": QUESTION, "intent": "vpn",
-        "retrieved": list(TOP), "kb_version": KBV, "requester_context": _ctx(), "slots": {}, "facts": {},
-    }  # fmt: skip
+        "retrieved": list(TOP), "retrieval_score": TOP[0].score, "kb_version": KBV, "requester_context": _ctx(),
+        "slots": {}, "facts": {},
+    }  # fmt: skip  # retrieval_score (S0): B8 luôn ghi; 0,9 ≥ ngưỡng — test cũ đi nhánh trả lời như trước
     base.update(over)
     return base
 
@@ -174,6 +175,7 @@ async def test_info_answer_sends_once_sets_confirm_deadline_and_lineage() -> Non
                                                                       "T1")  # fmt: skip
     [lin] = h.audit.lineage
     assert lin == {"prompt_id": "b10_answer", "prompt_version": "1", "model": "scripted", "kb_version": KBV,
+                   "commit_sha": None,  # Phase 4 P4: NodeDeps.commit_sha (test: None)
                    "ticket_id": "t1", "turn_id": "T1", "step": "B10", "created_at": h.clock.now()}  # fmt: skip
     row = _only(h)
     assert (row["event"], row["to_status"]) == ("deflected_info_only", S_CONFIRMING)
@@ -216,7 +218,8 @@ async def test_g8_action_goes_to_b11_without_answer() -> None:
 @pytest.mark.parametrize("prompt", ["b10_need_type", "b10_answer"])
 @pytest.mark.asyncio
 async def test_g9_schema_error_e2(prompt: str) -> None:
-    h, _ = _env(**{prompt: [BadJSON("{"), BadJSON("{")]})  # 1 lần sửa schema cũng hỏng
+    extra: dict[str, Any] = {prompt: [BadJSON("{"), BadJSON("{")]}  # 1 lần sửa schema cũng hỏng
+    h, _ = _env(**extra)
     out = await _node(h)
     assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (S_ESCALATED, "E2", "llm_schema_error")
     _nothing_sent(h)
@@ -236,7 +239,8 @@ async def test_q3g2_empty_citations_without_cannot_answer_is_schema_error_e2() -
 @pytest.mark.parametrize("prompt", ["b10_need_type", "b10_answer"])
 @pytest.mark.asyncio
 async def test_llm_unavailable_e2(prompt: str) -> None:
-    h, _ = _env(**{prompt: lambda _: Unavailable()})
+    extra: dict[str, Any] = {prompt: lambda _: Unavailable()}
+    h, _ = _env(**extra)
     out = await _node(h)
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E2", "llm_unavailable")
     _nothing_sent(h)
@@ -400,7 +404,7 @@ async def _graph(top_ids: list[str], *, need: str = "info", **overrides: Script)
     return h, gw
 
 
-def _answers(values: dict[str, Any]) -> list[dict[str, Any]]:
+def _answers(values: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [m for m in values.get("conversation") or [] if m.get("kind") == "answer"]
 
 
@@ -522,7 +526,14 @@ def test_g25_b10_gotos_use_literal_step_event_reason() -> None:
     assert len(gotos) >= 12
     for call in gotos:
         kw = {k.arg: k.value for k in call.keywords}
-        assert isinstance(kw["step"], ast.Constant) and kw["step"].value == "B10", call.lineno
+        assert isinstance(kw["step"], ast.Constant) and kw["step"].value in ("B10", "B9"), call.lineno
         assert isinstance(kw["event"], ast.Constant), call.lineno
         if "escalation_reason_detail" in kw:
             assert isinstance(kw["escalation_reason_detail"], ast.Constant), call.lineno
+    # S0-P2/P11: B9 chạy trong B10 — đúng 2 goto (info; action khi GROUNDING_GATE_ACTIONS), y hệt nhánh B9 cũ ở B8
+    b9 = [{k.arg: getattr(k.value, "value", None) for k in c.keywords} for c in gotos
+          if getattr({k.arg: k.value for k in c.keywords}["step"], "value", None) == "B9"]  # fmt: skip
+    assert len(b9) == 2
+    for kw9 in b9:
+        assert (kw9["event"], kw9["escalation_reason_detail"], kw9["next_node"]) == ("no_evidence", "no_grounding",
+                                                                                    "b20_audit")  # fmt: skip

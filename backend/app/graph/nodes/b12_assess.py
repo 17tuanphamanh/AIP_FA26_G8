@@ -6,11 +6,12 @@ Input DUY NHẤT của M5: `intended_action` + `build_ctx(state, now, business_h
 
 - Luật khớp → trả ngay, KHÔNG gọi estimator/LLM (h18): `allow` → `S_EXECUTING`/B17; `approval_required` → B15 (tạo phiếu,
   `S_PENDING_APPROVAL`); `deny` → E5 (không vào hàng đợi duyệt [Chốt]).
-- Không luật nào khớp → B14 `deps.estimator` — Phase 3 là `DisabledEstimator` (3-Q30): ném `LLMUnavailable` → E5
+- Không luật nào khớp → B14 `deps.estimator` — trích đoạn KB CHỈ qua `evidence_for_estimator` (Phase 4 S0-P9: dưới ngưỡng
+  truy hồi → `[]`; không đọc thẳng `state["retrieved"]`). Phase 3 là `DisabledEstimator` (3-Q30): ném `LLMUnavailable` → E5
   `llm_layer_disabled`, "Không ước lượng được rủi ro → không tự làm". Estimator TRẢ về xác suất ở Phase 3 = cấu hình sai
   (lớp 2 chưa hiện thực) → ném lỗi → E9 qua boundary, không bao giờ tự làm (M-3h-9).
 - Điểm log 4 (3.6) qua `audit_detail` của chính lần `goto` + `policy_sha256` (3-Q29, `policy_version_id` NULL ở Phase 3);
-  dòng `lineage` cùng transaction audit (`goto(lineage=…)`, như B10 3g).
+  dòng `lineage` cùng transaction audit (`goto(lineage=…)`, như B10 3g); `commit_sha` = `deps.commit_sha` (Phase 4 P4).
 - Mỗi nhánh một `goto` với `step`/`exit_code`/`escalation_reason_detail` hằng (P1). `step="B13/B14"` như bản giả / mã giả B12 §5.
 """
 
@@ -26,6 +27,7 @@ from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
 from app.risk.context import build_ctx
+from app.risk.estimator import evidence_for_estimator
 from app.risk.policy_engine import evaluate
 from app.settings import policy_sha256
 
@@ -51,7 +53,7 @@ def make(deps: NodeDeps) -> NodeFn:
         action = Action.model_validate(state["intended_action"])  # thiếu = bug B11 → E9
         ctx = build_ctx(state, current_run().clock.now(), deps.business_hours)
         verdict = evaluate(action, ctx)
-        lineage = {"policy_version_id": None, "kb_version": state.get("kb_version"), "commit_sha": None}
+        lineage = {"policy_version_id": None, "kb_version": state.get("kb_version"), "commit_sha": deps.commit_sha}
         if verdict.matched and verdict.decision is not None:
             decision = RiskDecision(
                 decided_by="rule", policy_decision=verdict.decision, matched_rule_id=verdict.rule_id,
@@ -75,7 +77,10 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=detail, lineage=lineage, risk=decision, exit_code=ExitCode.E5.value,
             )  # fmt: skip
         try:  # LỚP 2 (B14) — chỉ khi không luật nào khớp
-            await deps.estimator.estimate(action, ctx, state.get("retrieved") or [])
+            evidence = evidence_for_estimator(
+                state.get("retrieved") or [], state.get("retrieval_score"), deps.constants.RETRIEVAL_THRESHOLD
+            )  # S0-P9
+            await deps.estimator.estimate(action, ctx, evidence)
         except (LLMUnavailable, LLMSchemaError, LLMBudgetExceeded) as exc:
             decision = RiskDecision(
                 decided_by="llm", policy_decision=None, matched_rule_id=None, raw_prob=None, calibrated_prob=None,

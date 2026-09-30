@@ -52,3 +52,6 @@ LUAT_GIT.md
 
 # quyen Claude Code rieng tung nguoi - KHONG commit
 .claude/settings.local.json
+
+# make verify (Phase 4 mục 4.4): kết quả chạy trên máy — không commit
+.verify/

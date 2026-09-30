@@ -394,6 +394,16 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 10.2, 10.3,
 - `cannot_answer` → E3 `no_grounding`; trích dẫn ⊆ anchor top-5 ∩ khối gửi LLM; gateway cắt khối → E3 `invalid_citation`; 0 khối → E3 không gọi LLM.
 - Output guard (`guard/output.py`): luật bí mật + canary + đoạn ≥ 40 ký tự trùng dòng system prompt; áp cho mọi chữ LLM được lưu/gửi.
 
+### Chốt khi hiện thực Phase 4 — S0 (30/09/2026, `5ed423d`)
+
+Theo `build/phase4-thiet-ke-chi-tiet.md` mục 4.0 (D-34):
+
+1. `b10_need_type` chạy **trước** mọi kiểm ngưỡng (kể cả khi B8 trả 0 chunk).
+2. `info` + (không chunk hoặc `retrieval_score` < `RETRIEVAL_THRESHOLD`, thiếu/NaN coi như dưới) → E3 `no_grounding`, step `B9`, event `no_evidence`, `need_type=info` — 0 `expand`, 0 `b10_answer`.
+3. `action` → B11 bất kể điểm; audit `grounding = {top_score, above_threshold, kb_gap}`. Cờ `GROUNDING_GATE_ACTIONS=true` (ablation) → nhánh action cũng áp ngưỡng như Phase 3.
+4. Lỗi LLM ở `b10_need_type` → E2 (ca điểm thấp trước đây ra E3 — chấp nhận).
+5. Ba tầng chống bịa cho câu trả lời giữ nguyên.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -404,3 +414,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 10.2, 10.3,
 | 25/09/2026 | 1.3 | Ticket con không tự gửi câu trả lời, để lại notice `needs=confirm` cho cha gom (D-31) |
 | 26/09/2026 | 1.4 | Bỏ việc B10 tự đặt `resolution_path`: key không có trong `TicketState` nên LangGraph bỏ im lặng; B20 suy ra tại một chỗ (Phase 2b-2) |
 | 30/09/2026 | 1.5 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 10.2, 10.3, 10.7) |
+| 30/09/2026 | 1.6 | Chốt khi hiện thực Phase 4 — S0 (D-34): phân loại trước, ngưỡng B9 chỉ cho nhánh trả lời, nhánh hành động đi B11 kèm `kb_gap` |

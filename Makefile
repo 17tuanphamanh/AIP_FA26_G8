@@ -22,7 +22,7 @@ export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
 .PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 vpn-smoke models ml-bench \
-	rerank-bench
+	rerank-bench verify verify-status
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -34,6 +34,10 @@ MOCK_HEALTH := python -c "import httpx; httpx.get('http://127.0.0.1:8100/health'
 # (export cho compose — một giá trị cho cả kiểm, tải và mount). Đổi: make models up MODELS_DIR=/đường/dẫn
 MODELS_DIR ?= ./models
 export MODELS_DIR
+# Phase 4 P4 (Việc treo 13): commit của image backend cho `lineage.commit_sha` — CHỈ khi file tracked không đổi (file untracked
+# như PLAN-*.md không tính, không thì máy dev không bao giờ "sạch"); cây bẩn → rỗng → lineage NULL.
+GIT_SHA := $(shell test -z "$$(git status --porcelain --untracked-files=no 2>/dev/null)" && git rev-parse HEAD 2>/dev/null)
+BUILD_BACKEND := $(COMPOSE) build --build-arg GIT_SHA=$(GIT_SHA) backend
 
 # Dựng compose; chạy migration (role app_migrate); nạp seed mock; kiểm /health của mock, worker healthy
 # (heartbeat, tối đa 60 giây — quá hạn in 30 dòng log worker, exit 1) và /api/health.
@@ -44,7 +48,7 @@ up:
 	  echo "CẢNH BÁO: không có .env — dùng giá trị mẫu của .env.example (chỉ cho máy dev)." >&2; fi
 	@PYTHONPATH=ml_service uv run python -m app.lock $(MODELS_DIR) || { \
 	  echo "Thiếu model cho ml-service — chạy: make models" >&2; exit 1; }
-	$(COMPOSE) build backend
+	$(BUILD_BACKEND)
 	$(COMPOSE) build mock
 	$(COMPOSE) build ml-service
 	$(COMPOSE) up -d --wait postgres qdrant
@@ -91,6 +95,9 @@ test-ml:
 lint:
 	uv run ruff check .
 	uv run mypy backend/app
+	# Phase 4 P5: test cũng soát kiểu. --explicit-package-bases + MYPYPATH=backend: gốc gói như pytest (`tests.*`, `app.*`) —
+	# thiếu thì mypy dừng vì 2 `conftest.py` (integration, e2e) trùng tên module. Cache riêng (khác gốc gói với backend/app).
+	MYPYPATH=backend uv run mypy --explicit-package-bases --cache-dir .mypy_cache/tests backend/tests
 	uv run mypy --cache-dir .mypy_cache/mock_services mock_services/app  # cache riêng: cùng tên package `app`
 	uv run mypy --cache-dir .mypy_cache/ml_service ml_service/app
 	PYTHONPATH=backend uv run lint-imports
@@ -102,7 +109,7 @@ lint:
 # Ví dụ: make ingest ARGS=--dry-run | make ingest KB_DIR=backend/tests/fixtures/kb
 KB_DIR ?= kb
 ingest:
-	$(COMPOSE) build backend
+	$(BUILD_BACKEND)
 	$(COMPOSE) run --rm --no-deps -v "$(abspath $(KB_DIR)):/srv/kb:ro" backend \
 	  python -m app.rag.ingest.cli --kb-dir /srv/kb $(ARGS)
 
@@ -125,6 +132,19 @@ gate2:
 # tc28 tự `compose stop qdrant` rồi `start` lại. Ví dụ: make gate3 S=preflight | make gate3 S=tc02 | make gate3 S=all
 gate3:
 	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate3 $(S)
+
+# Phase 4 (mục 4.4, Q-4-I/Q-4-T): MỘT lệnh cho mọi DỪNG — lint → test → up → cổng theo G (chuỗi chữ số: 0 = chỉ lint+test,
+# 2 = gate2, 3 = gate3; 4d thêm 4) → LUÔN trả backend+worker về cấu hình .env. gate2/gate3 cần FAKE_SCENARIO ngược nhau →
+# script tạo lại backend+worker bằng biến shell, không đọc/sửa .env. BENCH=1 thêm bench checkpoint (P6). Kết quả:
+# .verify/summary.txt (agent đọc) + .verify/run-*.log. Lệnh >120 s bị đẩy nền là bình thường — báo agent "xong".
+G ?= 3
+BENCH ?= 0
+# KHÔNG viết biến MAKE của make trong dòng lệnh dưới: GNU make coi dòng có nó là gọi đệ quy và CHẠY THẬT cả khi `make -n`.
+verify:
+	G="$(G)" BENCH="$(BENCH)" COMPOSE="$(COMPOSE)" MAKE_BIN=make bash scripts/verify.sh
+
+verify-status:
+	@cat .verify/summary.txt 2>/dev/null || echo "chưa có .verify/summary.txt — chạy: make verify"
 
 # Smoke luồng VPN (phase3 11.9): tc02, tc04, tc05, tc06 với LLM_BACKEND hiện hành + số liệu llm_calls. Với real: TỪ CHỐI
 # khi spend.cap_usd (config container backend đang nạp) > 1 hoặc model chưa có pricing — README "Chạy smoke LLM thật".

@@ -194,7 +194,7 @@ def test_d1a_every_key_component_changes_key(part: str) -> None:
 async def test_d1b_b14_whitelist_rejects_user_text() -> None:
     registry = load_prompts(REPO_CONFIG.parent / "backend" / "tests" / "fixtures" / "llm" / "prompts")
     gw = make_gateway({"b14_risk_estimate": [Reply({"text": "x"})]}, registry=registry)
-    ok_vars = {"intended_action": {}, "requester_context": {}, "diagnostics": {}, "retrieved": []}
+    ok_vars: dict[str, Any] = {"intended_action": {}, "requester_context": {}, "diagnostics": {}, "retrieved": []}
     for leak in ("redacted_request", "conversation"):
         with pytest.raises(PromptVariableError, match=leak):
             await gw.client.complete("strong", "b14_risk_estimate", {**ok_vars, leak: "câu người dùng"}, QuestionOut)

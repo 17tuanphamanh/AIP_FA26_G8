@@ -6,6 +6,7 @@ import base64
 import json
 import secrets
 import uuid
+from typing import Any
 
 import pytest
 from alembic import command
@@ -57,7 +58,7 @@ def test_enroll_and_reset_via_cli(
             assert (etype, uid, json.loads(detail)) == ("mfa_enrolled", "it_mgr01",
                                                         {"by": "ops.an", "reason": "cấp mới"})  # fmt: skip
             with rw.connect() as conn:
-                blob = conn.execute(
+                blob: Any = conn.execute(
                     text("SELECT mfa_secret_enc FROM users WHERE user_id = 'it_mgr01'")
                 ).scalar_one()
             assert secret.encode() not in bytes(blob)
@@ -70,8 +71,8 @@ def test_enroll_and_reset_via_cli(
             new_secret, _ = _parse(capsys.readouterr().out)
             assert new_secret != secret
             with rw.connect() as conn:
-                tv = conn.execute(text("SELECT token_version FROM users WHERE user_id='it_mgr01'")).scalar_one()
-                reason = conn.execute(text("SELECT revoke_reason FROM sessions WHERE session_id='s1'")).scalar_one()
+                tv: Any = conn.execute(text("SELECT token_version FROM users WHERE user_id='it_mgr01'")).scalar_one()
+                reason: Any = conn.execute(text("SELECT revoke_reason FROM sessions WHERE session_id='s1'")).scalar_one()
             assert (tv, reason) == (1, "admin")
 
             assert main(["enroll", "ai.do", "--by", "ops", "--reason", "x"]) == 2

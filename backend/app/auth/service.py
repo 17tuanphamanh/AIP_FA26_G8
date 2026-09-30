@@ -17,6 +17,15 @@ Khoá theo username [Suy luận, đã duyệt]: user có dòng `users` → `lock
 chưa có dòng (không tồn tại, hoặc người AD chưa đăng nhập lần nào) → không có chỗ đặt khoá, coi
 "≥ MAX_AUTH_FAILURES lỗi trong cửa sổ" là đang khoá (cửa sổ trượt). Hai trường hợp trả phản hồi
 GIỐNG HỆT nhau — không dò được username nào tồn tại.
+
+Username ma (Phase 4 P2–P3, Q-3e-14 + Q-4-S): username KHÔNG có dòng `users` (tra một lần ở bước 2 — `existing`) được lưu
+`stored_username(…, known=False)` = `"h:" + HMAC` ở MỌI chỗ ghi `username_attempted` và trong cảnh báo dò mật khẩu; đếm/khoá
+(`count_failures`) dùng CÙNG giá trị. Khoá HMAC tính một lần ở `__init__` từ signer — không thêm truy vấn, không thêm nhánh
+chỉ riêng username ma (thời gian phản hồi giữ như 3e).
+Chuyển tiếp (Q-4a-5): username ma có dòng `users` giữa cửa sổ (chính người đó đăng nhập, hoặc `_ensure_manager` khi cấp dưới
+đăng nhập) → đếm `IN (nguyên văn, bản băm)` trong CÙNG một câu SQL (`_failure_keys`) — các lần sai lưu băm trước đó không mất.
+Q-4a-6: username ma ĐÃ khoá theo cửa sổ trượt rồi mới có dòng → `_upsert` khi dòng VỪA tạo mang khoá sang `locked_until`
+(`_carry_ghost_lock`) — lần kế tiếp bị chặn ở bước 2, không tới AD.
 """
 
 import ipaddress
@@ -52,6 +61,7 @@ from app.auth.tokens import (
     new_csrf_token,
     new_refresh_token,
 )
+from app.auth.username_hash import stored_username
 from app.core.clock import Clock
 from app.domain.alerts import bruteforce_alert
 from app.domain.context import Role, role_from_groups
@@ -141,6 +151,17 @@ class AuthService:
         self.cipher = cipher
         self.config = config
         self._cache: dict[str, _Cached] = {}
+        self._username_key = signer.username_key()  # P2: một lần lúc dựng service; không log, không vào Settings
+
+    def _stored(self, username: str, user: UserRecord | None) -> str:
+        """Giá trị lưu/đếm của username: có dòng `users` → nguyên văn; không → `"h:" + HMAC` (P2–P3)."""
+        return stored_username(username, known=user is not None, key=self._username_key)
+
+    def _failure_keys(self, username: str, user: UserRecord | None) -> tuple[str, ...]:
+        """Giá trị đếm lỗi (view `auth_failures`, MỘT câu `IN`): username ma → (bản băm,); có dòng `users` → (nguyên văn,
+        bản băm) — lần sai ghi lúc CHƯA có dòng vẫn được đếm sau khi dòng được tạo (Q-4a-5)."""
+        hashed = stored_username(username, known=False, key=self._username_key)
+        return (hashed,) if user is None else (username, hashed)
 
     # ---- đăng nhập -------------------------------------------------------------------------
 
@@ -180,8 +201,8 @@ class AuthService:
             raise AuthError(503, "identity_unavailable") from None
         if user is None:  # nhóm AD không ánh xạ được role → fail-closed
             await self.sink.record(
-                "permission_denied", username_attempted=username, ip_prefix=ip, route=LOGIN_ROUTE,
-                detail={"reason": "role_unmappable"},
+                "permission_denied", username_attempted=self._stored(username, existing), ip_prefix=ip,
+                route=LOGIN_ROUTE, detail={"reason": "role_unmappable"},
             )  # fmt: skip
             raise _invalid_login()
 
@@ -208,8 +229,8 @@ class AuthService:
         await self.store.create_session(session)
 
         # 8.
-        await self.sink.record(
-            "login_success", user_id=user.user_id, username_attempted=username, ip_prefix=ip
+        await self.sink.record(  # `user` vừa đồng bộ ở bước 4 → có dòng `users` → nguyên văn
+            "login_success", user_id=user.user_id, username_attempted=self._stored(username, user), ip_prefix=ip
         )
         return LoginResult(tokens, user)
 
@@ -217,14 +238,16 @@ class AuthService:
         if user is not None:
             return user.locked_until is not None and user.locked_until > now
         since = now - self.config.failure_window
-        return await self.store.count_failures(username, since) >= self.config.max_failures
+        return await self.store.count_failures(self._failure_keys(username, user), since) >= self.config.max_failures
 
     async def _check_threshold(
         self, username: str, user: UserRecord | None, ip: str | None, now: datetime
     ) -> None:
         """Sau mỗi lần thất bại: đủ MAX_AUTH_FAILURES trong cửa sổ → khoá + account_locked + cảnh báo
         Trưởng BP (P9 luật 3; khoá cảnh báo tính giống B1 — `domain.alerts.bruteforce_alert`)."""
-        failures = await self.store.count_failures(username, now - self.config.failure_window)
+        failures = await self.store.count_failures(
+            self._failure_keys(username, user), now - self.config.failure_window
+        )
         if failures < self.config.max_failures:
             return
         if user is not None:
@@ -232,7 +255,7 @@ class AuthService:
         await self._event("account_locked", user, username, ip, reason="threshold",
                           failures=failures)  # fmt: skip
         await self.alerts.raise_once(
-            bruteforce_alert(user_id=user.user_id if user else None, username=username,
+            bruteforce_alert(user_id=user.user_id if user else None, username=self._stored(username, user),
                              lock_start=now, source="login")
         )  # fmt: skip
 
@@ -243,7 +266,7 @@ class AuthService:
         await self.sink.record(
             event_type,
             user_id=user.user_id if user else None,
-            username_attempted=username,
+            username_attempted=self._stored(username, user),
             ip_prefix=ip,
             detail=detail,
         )
@@ -326,6 +349,8 @@ class AuthService:
                 synced_at=now,
             )
         )
+        if previous_role is None:  # dòng VỪA tạo bởi chính lời gọi này (kết quả INSERT … ON CONFLICT — AuthStore.upsert_user)
+            user = await self._carry_ghost_lock(user, now)
         if previous_role is not None and previous_role != user.role:
             # Role đổi trong AD → access token mang role cũ phải chết [Suy luận, đã duyệt].
             version = await self.store.bump_token_version(user.user_id)
@@ -339,6 +364,23 @@ class AuthService:
         if user.employment_status in INACTIVE_STATUSES:
             await self.store.revoke_user_sessions(user.user_id, "user_disabled", now)
             self._evict_user(user.user_id)
+        return user
+
+    async def _carry_ghost_lock(self, user: UserRecord, now: datetime) -> UserRecord:
+        """Q-4a-6: dòng `users` VỪA tạo cho username từng là "ma". Lần sai trong cửa sổ đếm như `_is_locked`/`_check_threshold`
+        (`_failure_keys` = nguyên văn + băm; cùng ngưỡng, cùng cửa sổ) đủ ngưỡng → `locked_until` = lần sai CUỐI + thời gian khoá
+        — như thể dòng đã có từ lần sai đó (khoá của người có dòng tính từ lần sai chạm ngưỡng), không tính từ lúc tạo dòng.
+        Chỉ chạy lúc tạo dòng (mỗi người một lần) — lượt của người đã có dòng không thêm truy vấn. `account_locked` + cảnh báo đã
+        ghi lúc khoá trượt → không ghi lại."""
+        since = now - self.config.failure_window
+        keys = self._failure_keys(user.username, user)
+        failures = await self.store.count_failures(keys, since)
+        if failures >= self.config.max_failures:
+            last = await self.store.last_failure_at(keys, since)
+            # `last` None không xảy ra (đã đếm ≥ 1 dòng, bảng append-only) — nếu có: khoá từ now (fail-closed, không bỏ khoá)
+            until = (last or now) + self.config.lockout
+            await self.store.set_locked_until(user.user_id, until)
+            return replace(user, locked_until=until)
         return user
 
     # ---- phiên ------------------------------------------------------------------------------

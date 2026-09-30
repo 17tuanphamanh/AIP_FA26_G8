@@ -77,7 +77,7 @@ def test_ticket_state_has_no_raw_request() -> None:
 
 
 def test_chunk_excerpt_capped_600() -> None:
-    base = {"chunk_id": "c", "doc_id": "d", "version": 1, "seq": 0, "title": "t",
+    base: dict[str, Any] = {"chunk_id": "c", "doc_id": "d", "version": 1, "seq": 0, "title": "t",
             "heading_path": "h", "score": 0.9}  # fmt: skip
     ChunkRef(**base, excerpt="x" * 600)
     with pytest.raises(ValidationError):

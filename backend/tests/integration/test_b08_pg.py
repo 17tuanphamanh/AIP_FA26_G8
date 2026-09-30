@@ -1,8 +1,10 @@
 """Node B8–B9 thật trên Qdrant + Postgres 16 thật (thiết kế Phase 3 mục 6.8; PLAN-3c mục 7 — c5, c19).
 
-c5: node b08 + `Retriever` thật + `MemoryAudit` (không cần runtime graph đầy đủ) — câu hỏi dùng câu MFA đã mô
+c5: node b08 → b10 + `Retriever` thật + `MemoryAudit` (không cần runtime graph đầy đủ) — câu hỏi dùng câu MFA đã mô
 phỏng ở S2 (PROGRESS, phương án A, mục "Câu c5"), KHÔNG dùng nguyên văn câu của PLAN gốc ("đăng ký MFA thế
-nào?") vì câu đó ra điểm CHẠM ngưỡng khi mô phỏng — đã ghi rõ trong PROGRESS, không tự đoán lại ở đây.
+nào?") vì câu đó ra điểm CHẠM ngưỡng khi mô phỏng — đã ghi rõ trong PROGRESS, không tự đoán lại ở đây. Phase 4 S0-P1/P2:
+B8 không còn nhánh B9 — B9 chạy trong `b10_route` sau `b10_need_type` (preset `info`); kỳ vọng E3 `no_grounding` GIỮ NGUYÊN.
+S0-P10: `Retriever.procedure_available` trên Qdrant thật (lọc quyền, alias hiện hành).
 
 c19: `graph_pg.open_pg_runtime(nodes="real")` — B1–B7 vẫn là node THẬT có sẵn từ trước 3c (chỉ B8 đổi từ giả
 sang thật ở chặng này; từ 3e B2 cũng thật → ScriptedLLM trả `is_attack=false` cho L4); B3 (`b03_classify`) hiện còn ở dạng "Phase 2a" — CỐ ĐỊNH `intent="vpn"`, không đọc
@@ -19,12 +21,13 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from app.core.clock import FakeClock
-from app.domain.context import RequesterContext
+from app.domain.context import RequesterContext, Role
 from app.domain.states import S_ESCALATED, S_RETRIEVING
 from app.graph.context import RunContext, bind_run
-from app.graph.nodes import b08_retrieve
+from app.graph.nodes import b08_retrieve, b10_route
 from app.llm.providers.scripted import Reply
 from app.rag.bm25 import load_lexicon
+from app.rag.ingest.config import ALIAS
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.retriever import RagConfig, Retriever
 from app.settings import Settings, get_policy
@@ -50,7 +53,7 @@ MFA_QUESTION = "Làm sao bật xác thực 2 lớp MFA cho email?"  # S2 (PROGRE
 VPN_QUESTION = "VPN công ty dùng cổng nào?"  # c4 — top-1 KB-VPN-001 rõ ràng ≥ T
 
 
-def _ctx(role: str) -> RequesterContext:
+def _ctx(role: Role) -> RequesterContext:
     return RequesterContext(
         user_id="u1", role=role, department="it", manager_id=None, employment_status="active",
         tenure_days=10, is_privileged_account=False, captured_at=KB_TEST_NOW,
@@ -60,7 +63,7 @@ def _ctx(role: str) -> RequesterContext:
 async def _retriever(env: Env) -> Retriever:
     lexicon = load_lexicon(CONFIG_DIR)
     return Retriever(
-        env.index, env.fake.client(), RagConfig.from_settings(Settings(_env_file=None)),
+        env.index, env.fake.client(), RagConfig.from_settings(Settings(_env_file=None)),  # type: ignore[call-arg]  # _env_file: tham số riêng của pydantic-settings
         threshold=get_policy().constants.RETRIEVAL_THRESHOLD, pipeline_sha=pipeline_sha(CONFIG_DIR),
         lexicon=lexicon, clock=FakeClock(),
     )  # fmt: skip
@@ -91,7 +94,7 @@ def _run_ctx(audit: MemoryAudit) -> Any:
 
 async def test_c5_mfa_question_gives_e3_no_grounding(kb_env: Env) -> None:
     retriever = await _retriever(kb_env)
-    h = GraphHarness()
+    h = GraphHarness(llm=make_gateway({"b10_need_type": vpn_scripts(need="info")["b10_need_type"]}).client)
     h.rag = retriever  # type: ignore[assignment]
     deps = h.deps()
     audit = MemoryAudit()
@@ -101,9 +104,26 @@ async def test_c5_mfa_question_gives_e3_no_grounding(kb_env: Env) -> None:
     }  # fmt: skip
     with _run_ctx(audit):
         out = await b08_retrieve.make(deps)(state)
+        assert (out["status"], out["next"]) == (S_RETRIEVING, "b10_route")  # S0-P1: B8 luôn đi tiếp
+        out = await b10_route.make(deps)({**state, **out})
     assert (out["status"], out["exit_code"]) == (S_ESCALATED, "E3")
     assert out["escalation_reason_detail"] == "no_grounding"
-    assert audit.events("t1") == [("B9", "no_evidence")]
+    assert audit.events("t1") == [("B8", "retrieved"), ("B9", "no_evidence")]
+
+
+@pytest.mark.parametrize(
+    ("doc", "role", "ok"),
+    [("KB-VPN-004", "employee", True), ("KB-VPN-001", "employee", True), ("KB-VPN-002", "employee", False),
+     ("KB-VPN-007", "employee", False), ("KB-VPN-007", "l1", True), ("KB-VPN-009", "manager", False)],
+    ids=["co", "public", "tat", "restricted-employee", "restricted-l1", "khong-co"],
+)  # fmt: skip
+async def test_s0_procedure_available_on_real_qdrant(kb_env: Env, doc: str, role: Role, ok: bool) -> None:
+    """S0-P10 + S0-A3 trên Qdrant THẬT: `procedure_filter` (base_filter + doc_id) đúng ngữ nghĩa Qdrant (SpyIndex chỉ mô phỏng),
+    `kb_version` = collection mà alias đang trỏ."""
+    retriever = await _retriever(kb_env)
+    check = await retriever.procedure_available(doc, _ctx(role))
+    assert check.available is ok
+    assert f"kb_{check.kb_version}" == await kb_env.index.alias_target(ALIAS)
 
 
 # ---- c19: graph thật (Postgres checkpoint + audit_logs) ---------------------------------------------

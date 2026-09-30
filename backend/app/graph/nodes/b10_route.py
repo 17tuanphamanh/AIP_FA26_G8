@@ -1,7 +1,12 @@
 """B10 — node THẬT (phase3 mục 10.3; PLAN-3g chốt Q-3g-1, Q-3g-2, Q-3g-3, f1). Node giả (Phase 2, `FAKE_SCENARIO`):
 `graph/nodes/fake/b10_route.py`.
 
-1. LLM fast `b10_need_type`: `action` → B11 (`need_type=action`, không trả lời gì). `info` → 2.
+1. LLM fast `b10_need_type` — chạy TRƯỚC mọi kiểm ngưỡng (S0-P2). `action` → B11 (`need_type=action`, không trả lời gì)
+   BẤT KỂ điểm truy hồi (S0-P3, Q-4-U A+, D-34: căn cứ của hành động là `procedure_doc` kiểm ở B11, không phải độ giống văn
+   bản); cờ `GROUNDING_GATE_ACTIONS=true` (ablation Phase 10, S0-P11) → hành động cũng qua B9 như 3h. `info` → B9.
+   B9 (S0-P2): không chunk hoặc `retrieval_score` < `RETRIEVAL_THRESHOLD` → E3 `no_grounding` với step `B9`, event
+   `no_evidence` — Y HỆT nhánh cũ ở B8 (B20, mẫu tin E3, M9 không đổi); 0 `expand`, 0 `b10_answer`. Mọi dòng audit của B10
+   có `grounding = {top_score, above_threshold, kb_gap}` (M9: chỉ số "yêu cầu hành động thiếu KB").
 2. `expand_for_answer(top-5)` trên CÙNG `kb_version` đã ghim ở B8 (D-24) — `RetrievalSystemError` → E2 `rag_system_error`.
    Không khối bằng chứng nào → E3 `no_grounding`, không gọi LLM viết câu trả lời.
 3. LLM strong `b10_answer`. Gateway phải cắt khối bằng chứng (`trimmed_evidence > 0`) → E3 `invalid_citation`,
@@ -41,7 +46,14 @@ def _info() -> dict[str, Any]:
     return {
         "need_type": None, "prompt": None, "llm_error": None, "rag_error": None, "evidence_blocks": None,
         "trimmed_evidence": None, "evidence_truncated": False, "citation": None, "cited": [], "guard": None,
+        "grounding": None,
     }  # fmt: skip
+
+
+def grounding(chunks: list[ChunkRef], score: float | None, threshold: float) -> dict[str, Any]:
+    """S0-P3: đạt ngưỡng = có chunk VÀ `score` ≥ ngưỡng (bằng ngưỡng là đạt — c15). Thiếu `score` → coi như dưới ngưỡng."""
+    above = bool(chunks) and score is not None and score >= threshold
+    return {"top_score": score, "above_threshold": above, "kb_gap": not above}
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -58,6 +70,8 @@ def make(deps: NodeDeps) -> NodeFn:
     async def _route(state: Any, info: dict[str, Any]) -> dict[str, Any]:
         chunks: list[ChunkRef] = list(state["retrieved"])
         kb_version = state["kb_version"]
+        info["grounding"] = grounding(chunks, state.get("retrieval_score"), deps.constants.RETRIEVAL_THRESHOLD)
+        above = info["grounding"]["above_threshold"]
         try:
             need, meta = await deps.llm.complete(
                 "fast", "b10_need_type",
@@ -78,9 +92,21 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         info["need_type"], info["prompt"] = need.type, f"{meta.prompt_id}@{meta.prompt_version}"
         if need.type == "action":
-            return await goto(
+            if deps.grounding_gate_actions and not above:  # S0-P11: ablation — hành vi 3h (B9 chặn cả hành động)
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
+                    exit_code=ExitCode.E3.value, need_type="action", escalation_reason_detail="no_grounding",
+                    kb_version=kb_version,
+                )  # fmt: skip
+            return await goto(  # S0-P3: tới B11 bất kể điểm — căn cứ hành động = procedure_doc (B11)
                 state, S_RETRIEVING, next_node="b11_slots", step="B10", event="needs_action", audit_detail=info,
                 need_type="action",
+            )  # fmt: skip
+        if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
+                exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
+                kb_version=kb_version,  # cột audit_logs.kb_version như dòng B9 cũ ở B8 (soát NGHI-5)
             )  # fmt: skip
         try:
             evidence = await deps.rag.expand_for_answer(chunks, state["requester_context"], kb_version=kb_version)
@@ -153,7 +179,7 @@ def make(deps: NodeDeps) -> NodeFn:
         return await goto(
             state, S_CONFIRMING, next_node="confirm_wait", step="B10", event="deflected_info_only", audit_detail=info,
             lineage={"prompt_id": meta.prompt_id, "prompt_version": meta.prompt_version, "model": meta.model,
-                     "kb_version": kb_version},
+                     "kb_version": kb_version, "commit_sha": deps.commit_sha},  # P4: commit của image (Settings)
             need_type="info", answer_ref=ref, conversation=[answer_msg(body, ref, cited)],
         )  # fmt: skip
 

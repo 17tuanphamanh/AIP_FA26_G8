@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import httpx
@@ -356,9 +356,9 @@ async def _assert_e9_once_pg(rw: AsyncEngine, ticket: str, turn: str) -> Any:
         turns = (await conn.execute(text(
             "SELECT turn_id, recover_attempts, ended_at IS NOT NULL FROM turns WHERE ticket_id=:t"),
             {"t": ticket})).all()  # fmt: skip
-        [detail] = (await conn.execute(text(
+        [detail] = cast(list[Any], (await conn.execute(text(
             "SELECT detail FROM audit_logs WHERE ticket_id=:t AND event='recover_exhausted'"),
-            {"t": ticket})).scalars().all()  # fmt: skip
+            {"t": ticket})).scalars().all())  # fmt: skip
     assert tuple(final) == (S_ESCALATED, "E9")
     assert [tuple(e) for e in escs] == [("E9", "recover_exhausted")]
     assert [tuple(t) for t in turns] == [(turn, 4, True)]

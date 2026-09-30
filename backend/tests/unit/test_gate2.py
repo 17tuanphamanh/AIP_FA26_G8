@@ -2,7 +2,7 @@
 container backend, URL chỉ 127.0.0.1, cấm xoá volume), hàm kiểm không xanh oan khi rỗng, dòng PASS/FAIL
 kèm ticket_id, nguồn mật khẩu. Kịch bản thật chạy tay: `make gate2 S=…`."""
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from tests.fakes.demo import DEMO_PASSWORD
@@ -99,7 +99,7 @@ def test_normal_commands_allowed(cmd: str) -> None:
 
 
 def test_shell_refuses_before_running_and_echoes_before_run() -> None:
-    run, log = FakeRun(), []
+    run, log = FakeRun(), cast(list[str], [])
     shell = Shell(COMPOSE.split(), run=run, echo=log.append)
     with pytest.raises(Unsafe):
         shell.compose("down", "-v")

@@ -313,7 +313,7 @@ async def test_fail7_same_errors_before_begin_propagate_unchanged(exc: Exception
     async def begin(*_: Any) -> None:
         raise exc
 
-    txlog.begin = begin  # type: ignore[method-assign]
+    object.__setattr__(txlog, "begin", begin)  # thay method trên instance
     with pytest.raises(type(exc)) as info:
         await ex.execute("t1", "T1", _action())
     assert not isinstance(info.value, ExecutionInterrupted)

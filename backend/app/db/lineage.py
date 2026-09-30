@@ -6,7 +6,8 @@
 - **Idempotent** bằng `INSERT … SELECT … WHERE NOT EXISTS (ticket_id, turn_id, step, prompt_id)` — chạy lại node trong cùng
   lượt không ghi dòng thứ hai. Không cần khoá duy nhất (không migration): hai lượt cùng ticket không chạy song song
   (khoá ticket D-19).
-- `commit_sha = NULL` ở Phase 3 (chưa có nguồn — "Việc treo": `GIT_SHA` lúc build image, trước mốc G).
+- `commit_sha` (Phase 4 P4): `Settings.app_git_sha` qua `NodeDeps.commit_sha` — image build từ cây sạch (`make up` truyền
+  `GIT_SHA`); cây bẩn / chưa build qua Makefile → NULL.
 - Không chứa văn bản người dùng/LLM: chỉ định danh, phiên bản, tên model.
 """
 

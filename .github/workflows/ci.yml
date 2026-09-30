@@ -3,6 +3,9 @@
 # (mock chạy bằng uvicorn trên cổng local) + test mock_services. Không có key thật nào: test không
 # gọi LLM, token/khoá sinh ngẫu nhiên trong fixture. Tokenizer bge-m3 (chỉ 3 file, không trọng số) tải bằng
 # `make tokenizer` cho test chunker `tokenizer_real` — thiếu tokenizer trong CI thì test FAIL, không skip.
+# Phase 4a P1 (Việc treo 1, hạn 19/10/2026): runner GHIM `ubuntu-24.04` (không theo `ubuntu-latest` sang Ubuntu 26); action
+# lên major THẤP NHẤT chạy Node 24 (đọc `runs.using` trong action.yml trên GitHub, 30/09/2026): checkout v5, cache v5,
+# setup-uv v7 — v4/v4/v6 còn node20. Không lên checkout v6/v7, cache v6: ít thay đổi hành vi nhất, input đang dùng vẫn còn.
 name: ci
 
 on:
@@ -18,14 +21,14 @@ concurrency:
 
 jobs:
   lint-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0  # gitleaks detect trong make lint quét toàn bộ lịch sử commit
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
@@ -34,7 +37,7 @@ jobs:
         run: uv sync --locked
 
       - name: Cache tokenizer bge-m3 (không có trọng số)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: models/_tokenizer
           key: bge-m3-tokenizer-${{ hashFiles('ml_service/models.lock.json') }}

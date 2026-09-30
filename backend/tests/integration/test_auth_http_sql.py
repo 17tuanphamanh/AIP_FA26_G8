@@ -1,13 +1,13 @@
 """Auth end-to-end trên Postgres thật: `create_app` tự nối SqlAuthStore + SecurityEventWriter (role
 app_rw) trong lifespan; AD giả, FakeClock. Kiểm dữ liệu ghi xuống bảng, không chỉ mã HTTP.
-Database riêng (có bước enroll MFA → dòng mfa_enrolled không xoá được)."""
+Database riêng (có bước enroll MFA → dòng mfa_enrolled không xoá được). Phase 4 P2: 4a-1/4a-3 username ma lưu băm."""
 
 import asyncio
 import contextlib
 import hashlib
 import io
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import timedelta
 
 import pyotp
@@ -15,12 +15,16 @@ import pytest
 from alembic import command
 from app.auth.mfa import main as mfa_cli
 from app.auth.service import AuthError, AuthService
+from app.auth.username_hash import stored_username, username_key
 from app.core.clock import FakeClock
+from app.domain.alerts import BRUTEFORCE_RULE_ID
 from app.main import create_app
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.ext.asyncio import create_async_engine
 from tests.fakes.auth import EPOCH, FakeIdentityProvider
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
+from tests.integration.scan import tables_containing
 from tests.unit.auth_helpers import BASE_URL, auth_settings
 
 
@@ -94,12 +98,14 @@ def test_full_flow_on_postgres(db: PgUrls, rw: Engine, monkeypatch: pytest.Monke
         auth = app.state.auth
         assert isinstance(auth, AuthService)
 
-        async def both() -> list[object]:
+        async def both() -> Sequence[object]:
             return await asyncio.gather(
                 auth.refresh(token, ip=None), auth.refresh(token, ip=None), return_exceptions=True
             )
 
-        results = client.portal.call(both)  # chạy trên event loop của app (engine gắn với loop đó)
+        portal = client.portal
+        assert portal is not None  # trong `with TestClient(...)`: portal luôn có
+        results = portal.call(both)  # chạy trên event loop của app (engine gắn với loop đó)
         assert sum(isinstance(x, AuthError) for x in results) == 1
 
         # manager: chưa enroll → 401 + mfa_failed(not_enrolled); enroll bằng CLI; OTP đúng → 200
@@ -125,3 +131,43 @@ def test_full_flow_on_postgres(db: PgUrls, rw: Engine, monkeypatch: pytest.Monke
     for expected in ("login_success", "token_refreshed", "refresh_reuse_detected", "login_failed",
                      "account_locked", "mfa_failed", "mfa_enrolled"):  # fmt: skip
         assert expected in types
+
+
+# ---- Phase 4 P2 (4a-1, 4a-3 trên Postgres thật): username ma lưu băm, không nằm nguyên văn ở bảng nào ---------------------
+
+
+async def _tables_containing(url: str, needle: str) -> list[str]:
+    engine = create_async_engine(url)
+    try:
+        return await tables_containing(engine, needle)
+    finally:
+        await engine.dispose()
+
+
+def test_4a1_ghost_username_hashed_on_postgres_and_nowhere_verbatim(pg: PgUrls) -> None:
+    """`matkhau123` (mật khẩu chữ thường + số gõ nhầm vào ô username, không có dòng `users`) × 6: mọi `username_attempted` là
+    `"h:" + HMAC`; view `auth_failures` đếm 5 bằng giá trị băm → khoá (4a-3, đếm trên view THẬT); đúng 1 cảnh báo dò mật khẩu;
+    chuỗi gốc không có ở bảng nào (quét mọi cột text/jsonb/bytea như e9). Database riêng (bảng append-only)."""
+    ghost = "matkhau123"
+    with fresh_database(pg) as fresh:
+        command.upgrade(alembic_config(fresh), "head")
+        settings = auth_settings(database_url=fresh.role("app_rw"))
+        app = create_app(settings, health_checks={}, idp=FakeIdentityProvider(), clock=FakeClock(EPOCH))
+        with TestClient(app, base_url=BASE_URL, client=("203.0.113.60", 50000)) as client:
+            for _ in range(6):
+                r = client.post("/api/auth/login", json={"username": ghost, "password": "bat-ky"})
+                assert r.status_code == 401
+        assert settings.jwt_signing_key is not None
+        stored = stored_username(ghost, known=False,
+                                 key=username_key(settings.jwt_signing_key.get_secret_value().encode("utf-8")))  # fmt: skip
+        engine = create_engine(fresh.role("app_rw"))
+        try:
+            events = _rows(engine, "SELECT event_type, username_attempted FROM security_events ORDER BY event_id")
+            assert events and {u for _, u in events} == {stored}
+            assert [t for t, _ in events].count("login_failed") == 5
+            assert {t for t, _ in events} == {"login_failed", "account_locked"}
+            assert _rows(engine, "SELECT count(*) FROM auth_failures WHERE username_attempted = :u", u=stored) == [(5,)]
+            assert len(_rows(engine, "SELECT alert_id FROM alerts WHERE rule_id = :r", r=BRUTEFORCE_RULE_ID)) == 1
+        finally:
+            engine.dispose()
+        assert asyncio.run(_tables_containing(fresh.role("app_rw"), ghost)) == []

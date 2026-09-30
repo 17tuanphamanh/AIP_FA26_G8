@@ -5,9 +5,10 @@ Bản ở node B3 (f5, f18 qua graph): `test_b03_classify.py`.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
-from app.domain.action import Action, ActionMeta, build_action
+from app.domain.action import Action, ActionMeta, FactValue, build_action
 from app.domain.context import RequesterContext
 from app.domain.facts import FACT_KEYS, FactKeyViolation, check_facts
 from app.domain.slots import (
@@ -103,7 +104,7 @@ def test_f1_mixed_payload_and_allowed() -> None:
 
 
 def test_f1_never_raises_on_odd_values() -> None:
-    raw: dict[str, object] = {"device_id": None, "action": 3, "reason": ["a"], 7: "x"}
+    raw: dict[Any, object] = {"device_id": None, "action": 3, "reason": ["a"], 7: "x"}  # khoá int cố ý
     clean, dropped = sanitize_slots(VPN, raw, text=TEXT)
     assert clean == {} and set(dropped) == {"device_id", "action", "reason", "7"}
 
@@ -211,7 +212,7 @@ def test_f2_build_action_rejects_wrong_fact_type() -> None:
 
 def test_build_action_takes_facts_only_from_facts() -> None:
     slots = {"device_id": "LAP-0342", "action": "renew_vpn_cert"}
-    facts = {"device_registered": True, "device_owner_is_requester": True, "cert_status": "expired"}
+    facts: dict[str, FactValue] = {"device_registered": True, "device_owner_is_requester": True, "cert_status": "expired"}
     action = build_action("vpn", slots, facts, _requester(), _meta())
     assert action == Action(
         type="renew_vpn_cert", target="device:LAP-0342", requested_for="nv001", scope="single_device",
@@ -223,4 +224,4 @@ def test_build_action_takes_facts_only_from_facts() -> None:
 def test_action_meta_reversible_must_match() -> None:
     with pytest.raises(ValidationError):
         ActionMeta(reversible=True, reversibility="none", data_sensitivity="low", scope="single_device",
-                   privilege_level="standard_user")  # fmt: skip
+                   privilege_level="standard_user", procedure_doc="KB-VPN-004")  # fmt: skip

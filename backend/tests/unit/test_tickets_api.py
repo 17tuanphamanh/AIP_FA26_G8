@@ -176,7 +176,7 @@ async def test_checkpoint_error_503() -> None:
         async def broken(_: str) -> Any:
             raise ConnectionError("checkpoint DB chết")
 
-        env.h.runner.snapshot = broken  # type: ignore[method-assign]
+        object.__setattr__(env.h.runner, "snapshot", broken)  # thay method trên instance
         r = await env.client.get(f"/api/tickets/{ticket}", headers=an)
         assert r.status_code == 503
 

@@ -1,7 +1,7 @@
 """ROUTES — tập đích hợp lệ của TỪNG node [Chốt: định tuyến riêng từng node] (P1 mục 5).
 
 Tên node lấy từ mã giả các file nhánh; bước con nằm trong node như đặc tả (B4, B5 trong
-`b03_classify`; B7 trong `b06_diagnose`; B9 trong `b08_retrieve`; B13–B14 trong `b12_assess`; B16 trong
+`b03_classify`; B7 trong `b06_diagnose`; B9 trong `b10_route` (Phase 4 S0 — bản giả: `b08_retrieve`); B13–B14 trong `b12_assess`; B16 trong
 `approval_wait`; B18 trong `b17_execute`; B19 là `confirm_wait`).
 
 `b20_audit` được thêm vào đích của MỌI node: boundary E9 (và mọi lối thoát) đi về B20 (bất biến 4).

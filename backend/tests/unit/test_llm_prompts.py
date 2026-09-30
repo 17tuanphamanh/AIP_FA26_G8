@@ -114,7 +114,8 @@ def llm_call_sites(source: str, where: str) -> list[CallSite]:
         if len(args) > 2 and isinstance(args[2], ast.Dict):
             keys = [k.value if isinstance(k, ast.Constant) else None for k in args[2].keys]
             variables = None if None in keys else {str(k) for k in keys}
-        sites.append(CallSite(f"{where}:{node.lineno}", *(const + [None] * (2 - len(const))), variables,
+        role, prompt_id = (const + [None, None])[:2]  # thiếu đối số → None (như cũ)
+        sites.append(CallSite(f"{where}:{node.lineno}", role, prompt_id, variables,
                               _name(args[3]) if len(args) > 3 else None))  # fmt: skip
     return sites
 

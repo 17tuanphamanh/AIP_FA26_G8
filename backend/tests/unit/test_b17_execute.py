@@ -502,7 +502,7 @@ async def test_executor_exceptions_mapping(exc: BaseException, code: str, reason
 
 # ---- Q-3h-2: ExecutionResult.outputs ------------------------------------------------------------------------------------
 
-_BASE = {"success": True, "steps_done": ["renew_vpn_cert"], "failed_step": None, "rollback_status": "none_needed",
+_BASE: dict[str, Any] = {"success": True, "steps_done": ["renew_vpn_cert"], "failed_step": None, "rollback_status": "none_needed",
          "rollback_details": [], "action_plan_hash_matched": None, "handoff_note": None}  # fmt: skip
 
 
@@ -590,7 +590,7 @@ async def test_fail7_same_errors_before_begun_are_e9(where: str, exc: Exception)
         async def begin(*_: object) -> None:
             raise exc
 
-        env.txlog.begin = begin  # type: ignore[method-assign]
+        object.__setattr__(env.txlog, "begin", begin)  # thay method trên instance (khuôn test_gate3)
     out = await env.node(_state(), boundary=True)
     assert (out["status"], out["exit_code"]) == (S_ESCALATED, "E9")
     assert env.writes_total() == 0 and env.txlog.rows == []
@@ -611,7 +611,7 @@ async def test_fail7_b18_error_after_successful_write_is_e7_not_e9() -> None:
     async def notify_fails(*_: object) -> str:
         raise RuntimeError(SECRET_BODY)
 
-    env.h.notifier.notify_user = notify_fails  # type: ignore[method-assign]
+    object.__setattr__(env.h.notifier, "notify_user", notify_fails)  # thay method trên instance
     out = await env.node(_state(), boundary=True)
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E7", "exec_interrupted")
     assert MAY_HAVE_WRITTEN in out["escalation_note"] and out["execution"].success

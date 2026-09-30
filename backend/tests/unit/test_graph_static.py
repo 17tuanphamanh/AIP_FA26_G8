@@ -8,6 +8,7 @@ thái vào của node suy từ các goto khác trỏ tới nó; mọi cặp (và
 import ast
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, cast
 
 import app.graph.nodes
 import pytest
@@ -63,7 +64,7 @@ def collect_gotos() -> dict[str, list[tuple[str, set[str], str, str]]]:
                 step = kw["step"]
                 assert isinstance(step, ast.Constant)
                 found[node_name].append(
-                    (getattr(states, to.id), _const_targets(kw["next_node"]), step.value, event_s)
+                    (getattr(states, to.id), _const_targets(kw["next_node"]), cast(str, step.value), cast(str, event_s))
                 )
     return found
 
@@ -127,7 +128,7 @@ def test_wait_nodes_are_routed_nodes() -> None:
 @pytest.mark.parametrize("name", sorted(ROUTES))
 def test_every_compiled_node_is_traced_then_boundary(name: str) -> None:
     graph = GraphHarness().runner.graph
-    outer = graph.builder.nodes[name].runnable.afunc  # type: ignore[attr-defined]
+    outer = cast(Any, graph.builder.nodes[name]).runnable.afunc  # RunnableCallable.afunc (kiểu công khai là union)
     assert outer.__dict__.get("traced"), name  # traced(...) ngoài cùng
     inner = outer.__wrapped__
     assert inner.__dict__.get("error_boundary") and not inner.__dict__.get("traced"), name

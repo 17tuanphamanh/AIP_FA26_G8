@@ -286,8 +286,8 @@ async def test_q3e13_reason_code_not_in_list_422_nothing_stored(value: str) -> N
 
 @pytest.mark.parametrize("username", [CANARY, "Abc@12345", "an nv", "AN.NV", "an.nv;drop", "1an.nv"])
 async def test_login_username_must_be_identifier_422_no_event(username: str) -> None:
-    """Username sai được ghi nguyên văn vào `security_events.username_attempted` → gõ nhầm mật khẩu vào ô username
-    phải bị 422 TRƯỚC khi tới AuthService (không sự kiện nào)."""
+    """Username sai DẠNG (gõ nhầm mật khẩu có chữ hoa/ký tự đặc biệt vào ô username) phải bị 422 TRƯỚC khi tới AuthService (không
+    sự kiện nào). Đúng dạng mà không có dòng `users` → lưu băm (Phase 4 P2, `test_auth_username_hash.py`)."""
     async with desk_env() as env:
         r = await env.client.post("/api/auth/login", json={"username": username, "password": "sai"})
         assert _assert_clean_422(r) == ["body.username"]

@@ -3565,6 +3565,10 @@ cả 5; 5 chỉnh (PLAN-3h mục 5).
     11. **Phase 3 đóng phần code; nợ NỢ-3-1, NỢ-3-2 (phase3 spec mục 13)** — Tuấn Anh chốt 30/09/2026. NỢ-3-1: thành viên chạy
         `make gate3 S=all` NGOÀI GIỜ; NỢ-3-2: smoke LLM thật (11.9). Hạn và rủi ro: bảng "Nợ nghiệm thu Phase 3" ở mục 13
         + `decisions.md`.
+        Commit `5d0a990` (PROGRESS + phase3 mục 13 + decisions.md), push `6311a0e..5d0a990`; CI xanh: push run `36686745332` (3m7s) + PR #16
+        run `36686972103` (`lint-test` 4m11s); run push của `6311a0e` (`36686400081`) bị huỷ vì có push mới hơn. Cảnh báo Node 20 / Ubuntu 26 = "Việc treo" 1. Dòng này chưa commit — đi chung commit sau.
+    12. M9 (Dương/Duy Anh) tiếp tục song song với Phase 4: worker.py khối # M9, migration M9 do Dương viết — Phase 4 rebase +
+        kiểm alembic heads = 1. (Chưa commit — đi chung commit đầu 4a.)
   - **Kết quả (sandbox, sau bản sửa FAIL mục 7 — trước Việc treo 21):** unit **2772 passed** (2677 + gate3 37 + vpn-smoke 23 + N3 6 + FAIL 7: executor 15, B17 12,
     runner 2); mock **94**; `make lint` xanh (ruff; mypy 196/12/16; import-linter 9/9; gitleaks 61 commit sạch); `gitleaks dir`
     từng file/thư mục mới sạch; integration + e2e collect 238. DỪNG 3b đổi code `backend/app/`: `executor/{vpn,errors}.py`,
@@ -3789,6 +3793,263 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
 | DỪNG 3a | 29/09/2026 23:44 | 30/09/2026 00:17 (duyệt; `make test` 2915 / 94 / 77) |
 | DỪNG 3b | 30/09/2026 00:37 | 30/09/2026 14:3x (00:37–~02:05 S15–S17; chờ chốt Q-3h-10; 11:1x–11:3x sửa FAIL mục 7; 11:4x–12:0x Việc treo 21; 12:2x–14:3x stack + Q-3h-11) |
 
+## Phase 4 — chặng 4a: S0 (Q-4-U A+) + nợ kỹ thuật + `make verify` (30/09/2026, đang làm, chưa commit)
+
+Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi cùng commit đầu 4a) mục 3.3, 4.0–4.9. Bước 0: HEAD
+`5d0a990` = `origin/dev-tuananh`, không có commit M9 mới (không rebase); trong phiên Tuấn Anh commit + push `64ae2e0` (chỉ 3 file
+`docs/spec/claude/*`, không đụng S0). CI `5d0a990` (run `36686745332`) lấy theo PROGRESS — `gh` bị sandbox chặn (TLS keychain).
+
+- **DỪNG 1 = S0 (tầng B).** MẪU A chốt (Tuấn Anh 30/09/2026): S0-A1 **SỬA** — ghi chú bàn giao L2 đánh dấu tài liệu dưới ngưỡng;
+  S0-A2 đồng ý; S0-A3 **SỬA** — `procedure_available` đọc alias HIỆN HÀNH tại B11 (không dùng `kb_version` ghim ở B8), audit
+  `procedure_kb_version`, không thêm Việc treo; S0-A4, S0-A5 đồng ý; tự quyết 1–5 đồng ý + test wiring (Retriever thật, FakeRag
+  chỉ ở `tests/`). Code:
+  - `b08_retrieve`: bỏ nhánh B9 — RAG không lỗi → luôn `b10_route`; điểm log 3 thêm `above_threshold`.
+  - `b10_route`: `b10_need_type` trước; `info` + (rỗng / điểm < ngưỡng / thiếu điểm) → E3 `no_grounding`, step `B9`, event
+    `no_evidence` (y nhánh cũ), 0 `expand`/`b10_answer`; `action` → B11 bất kể điểm; cờ `GROUNDING_GATE_ACTIONS` (Settings khối
+    `# Phase 4`, `NodeDeps`, wiring) bật → hành động cũng qua B9. Mọi dòng audit B10 có `grounding{top_score, above_threshold,
+    kb_gap}`.
+  - `b11_slots`: sau `build_action` → `deps.rag.procedure_available(procedure_doc, ctx)` → không có: E3 `no_procedure` (kèm
+    `intended_action`/`facts` cho L2); `RetrievalSystemError` → E2 `rag_system_error`; audit `procedure_doc`,
+    `procedure_kb_version`. `REASON_DETAILS` + `no_procedure`.
+  - `ActionMeta.procedure_doc` bắt buộc (mẫu `DOC_ID_PATTERN`, một nguồn ở `domain/action.py` — không đặt ở `ticket_state.py`
+    như tự quyết 1 vì vòng import `ticket_state → action`); `config/action_metadata.yaml`: renew/reissue → KB-VPN-004,
+    check_vpn_status → KB-VPN-001. Không chép vào `Action` (hash không đổi).
+  - `rag`: `Retriever._pinned` (alias → `kb_version` → `pipeline_sha`, tách từ `retrieve`, dùng chung) +
+    `procedure_available` → `ProcedureCheck{available, kb_version, retries}`; `filters.procedure_filter` (qua `query_filter`);
+    `Stage` + `"procedure"`; hạn lượt `window(rag_deadline_s)`. `ingest/procedures.py`: `make ingest` CẢNH BÁO (không chặn)
+    procedure_doc không có / `enabled=false` / nhân viên không xem được.
+  - B12: estimator nhận KB qua `risk/estimator.evidence_for_estimator` (dưới ngưỡng / None → `[]`).
+  - S0-A1: `build_handoff(…, *, retrieval_threshold)` (B20 truyền `deps.constants`) — dưới ngưỡng/thiếu điểm → "Tài liệu KB gần
+    nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): …", đạt → câu cũ; mọi mã thoát.
+  - `gate3.py` tc09 → R17 (+R18 ngoài giờ) chờ duyệt, 1 phiếu, 0 ghi, B11 `procedure_doc=KB-VPN-004`, không dòng B9 (không duyệt
+    tiếp — Q-4-D); README stack, preset tc09/tc16 (chú thích).
+  - Test: `unit/test_s0_grounding.py` (s1–s6, s11–s16, S0-P4, S0-A1 qua B20, S0-A3 alias đổi hai chiều, M-S0-7, hạn lượt,
+    `procedure_available` trên SpyIndex, cảnh báo ingest, wiring); `test_final_handoff` (S0-A1 hai chiều × mọi mã E);
+    `test_config_files` (s16); e2e s8, s9 (s7 = h7, s10 = h2); integration c5 chạy B8 → B10 (giữ E3) + `procedure_available`
+    trên Qdrant thật. Test cũ đổi: 2 test node B8 (E3 → "luôn b10_route", S0-A2), `_state` B10 thêm `retrieval_score`, g25
+    cho step `B9` trong B10, dữ liệu `ActionMeta` thêm `procedure_doc`, `test_gate3` tc09.
+  - **Soát bảo mật (security-reviewer, theo lệnh DỪNG 1):** S1–S8 + B1–B8: **0 FAIL**, 5 NGHI. Đã sửa: NGHI-1 (`evidence_for_estimator`
+    NaN → `[]`: `not score >= threshold`; test NaN ở s11 và B10) và NGHI-5 (dòng audit B9 mới thiếu cột `kb_version` như dòng
+    B9 cũ → `goto(kb_version=…)` ở cả 2 nhánh B9; test). Chuyển Q: NGHI-2 (lọc theo từng chunk?), NGHI-3 (handoff của
+    `no_procedure`), NGHI-4 (B17 không kiểm lại quy trình). Agent tự khai: dùng `cat`/`sed -n`/`grep` ngoài danh sách lệnh (chỉ
+    đọc) và 1 lệnh `git grep` có pathspec `.env.example` (không in dòng nào).
+  - **Chốt MẪU B (Tuấn Anh 30/09/2026):** Q-4a-1 đồng ý — handoff `reason_detail == "no_procedure"` thêm câu cố định
+    `NO_PROCEDURE_NOTE` ("Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không
+    làm tay theo tài liệu cũ.") ở phần "vì sao escalate" + test (B8 đã tra KB-VPN-004 đạt ngưỡng 0,9 → B11 E3 `no_procedure`,
+    qua B20 thật) + M-S0-10; Q-4a-2 chấp nhận — không kiểm quy trình ở B17 (giữ S0-P5), HITL là lớp chặn, 4c `ApprovalView`
+    hiển thị `procedure_doc` + title; Q-4a-3 giữ S0-P9, xét lại Phase 6; `GROUNDING_GATE_ACTIONS` vào compose ở Phase 10.
+  - **Kết quả sandbox (30/09/2026, sau Q-4a-1):** unit **2918 passed** (mốc 2793); mock 94; ml 77; `make lint` xanh (ruff;
+    mypy 198/12/16; import-linter 9/9; gitleaks sạch); integration + e2e collect 248 (chưa chạy — Docker). Mutation
+    `scripts/mutation/mutate_4a.py` (unit, 1 lượt toàn bộ trên code cuối): **10/10 đỏ đúng dự đoán** (M-S0-1…8, M-S0-9 handoff
+    dưới ngưỡng, M-S0-10 câu `no_procedure`), md5 + `git diff --stat` khớp sau khôi phục, exit 0.
+  - **`make test` lần 1 (Tuấn Anh, 30/09/2026): 3165 passed / 1 FAILED** — `integration/test_rag_query_qdrant.py::
+    test_c14_empty_collection_gives_e3_no_rerank_call` (`KeyError: 'exit_code'`): test gọi RIÊNG node B8 mà chờ E3 ở B8 — sót
+    khi sửa theo S0-A2 (grep đầu phiên đã liệt kê file này, chỉ c5 được sửa). Sửa như c5: `_run_node` chạy B8 → B10 (preset
+    `b10_need_type=info`), GIỮ kỳ vọng E3 + audit `[B8 retrieved, B9 no_evidence]`.
+  - **`make test` lần 2 (Tuấn Anh, 30/09/2026): XANH** — backend **3166 passed** (unit + integration + e2e, 1m31s), mock 94,
+    ml 77 (5 deselected). `make up` xanh (health ok, kb ready). `make gate3 S=tc09` lần 1: **DỪNG chốt an toàn** —
+    `FAKE_SCENARIO` đặt trong container (cấu hình gate2 của `.env`, G4-24/Q-4-T). Không sửa `.env`: tạo lại backend + worker
+    bằng biến shell rỗng (compose nội suy `${FAKE_SCENARIO:-}` — biến shell thắng `--env-file`), chạy gate3, rồi trả về cấu
+    hình `.env` (đúng bước 5/8 của `make verify` mục 4.4).
+  - **gate3 trên stack (Tuấn Anh, 30/09/2026, TRONG GIỜ, reranker THẬT):** `tc09` **8 PASS / 0 FAIL** (16:45) — điểm truy hồi
+    0,0473 < 0,6, `grounding.kb_gap=true` → B11 `procedure_doc=KB-VPN-004` → R17 HITL → `S_PENDING_APPROVAL`, 1 phiếu
+    `pending`, 0 lời gọi ghi, 0 dòng audit B9 (Việc treo 17 hết trên stack). `tc16` **5 PASS / 0 FAIL** (16:47) — E3
+    `no_grounding`, tin mẫu "Mình chưa có thông tin về việc này…", 0 tin answer, 0 ghi. **DỪNG 1 đạt** (test xanh, tc09 →
+    `S_PENDING_APPROVAL`, tc16 → E3).
+  - **Commit `5ed423d`** "4a dung 1: S0 B9 chi cho cau tra loi, can cu hanh dong = procedure_doc (Q-4-U A+)" (47 file, gồm spec
+    phase4 v0.8 nguyên trạng), push `64ae2e0..5ed423d`; **CI xanh** run `36699045782` (3m38s, Tuấn Anh kiểm). Dòng này chưa
+    commit — đi chung commit DỪNG 2.
+
+- **DỪNG 2 = nợ kỹ thuật + `make verify` (tầng C, mục 4.1–4.9)** — bắt đầu 30/09/2026 sau CI xanh.
+  - **P5 (mypy `backend/tests`) — DỪNG theo P5 (> 80 lỗi), Q-4a-4 chờ Tuấn Anh.** `mypy backend/tests` trần dừng ngay ở lỗi cấu
+    hình (2 `conftest.py` trùng module) → chạy đúng gốc gói như pytest: `MYPYPATH=backend mypy --explicit-package-bases
+    --cache-dir .mypy_cache/tests backend/tests` → **235 lỗi / 44 file / 94 dòng code riêng biệt** (một dòng đếm nhiều lần khi
+    kiểu là union nhiều thành phần). Theo mã: union-attr 113, arg-type 69, var-annotated 20, return-value 6, attr-defined 6,
+    assignment 5, misc 3, call-arg 3, operator 2, dict-item 2, type-var/override/list-item/index/func-returns-value/call-overload
+    1 mỗi mã. 5 file nhiều nhất: `unit/test_rag_retriever.py` 99 (10 dòng — đọc `.key` trên phần tử `Filter.must` kiểu union
+    7 thành phần + `role: str`), `unit/test_b17_execute.py` 20 (`ExecutionResult(**dict[str, object])`), `fakes/auth.py` 16
+    (`replace(**dict)`), `unit/test_graph_static.py` 11, `unit/test_b10_route.py` 8. Chưa sửa gì.
+  - **Chốt Q-4a-4 = (A) sửa hết, giới hạn (Tuấn Anh 30/09/2026):** thứ tự P1 → P2–P3 → P4 → P7 → P6 → P5; P5 ≤ 90 phút; chỉ sửa
+    KIỂU; không ignore cả gói; ignore có lý do cùng dòng, mục tiêu ≤ 10; lệnh chuẩn vào `make lint`.
+  - **P1 CI:** `runs-on: ubuntu-24.04`; `actions/checkout@v5`, `actions/cache@v5`, `astral-sh/setup-uv@v7` — major THẤP NHẤT chạy
+    Node 24 (đọc `runs.using` trong `action.yml` trên GitHub 30/09/2026: checkout v5/v6/v7, cache v5/v6, setup-uv v7 = node24;
+    checkout v4, cache v4, setup-uv v4–v6 = node20); input đang dùng (`fetch-depth`, `python-version`, `enable-cache`, `path`,
+    `key`) còn nguyên. "Không còn annotation Node 20" chỉ kiểm được sau push.
+  - **P2–P3 HMAC:** `auth/username_hash.py` (`username_key`, `stored_username`); `TokenSigner.username_key()`; `AuthService`
+    tính khoá MỘT lần ở `__init__` (không sửa `main.py` — M9) và `_stored(username, user)` ở MỌI chỗ ghi `username_attempted`
+    (login_failed, account_locked ×2, mfa_failed, permission_denied role_unmappable, login_success), ở `count_failures` (khoá +
+    ngưỡng) và `bruteforce_alert(username=…)` — chỗ lọt thứ hai (Việc treo 10): username ma khoá → `alerts.subject =
+    "username:<gốc>"` + `detail.username` nguyên văn. Test: `unit/test_auth_username_hash.py` (4a-1…4a-4, khoá không trong repr,
+    thứ tự truy vấn store của nhánh ma không đổi), PG `test_4a1_ghost_username_hashed_on_postgres_and_nowhere_verbatim` (quét mọi
+    bảng như e9, đếm 5 qua view thật); 2 test cũ đổi kỳ vọng sang giá trị băm (ý giữ nguyên: khoá như người thật; 1 cảnh báo).
+    Mutation `mutate_4a.py --hmac`: M-4a-1, M-4a-2 ĐỎ đúng dự đoán (4 test mỗi cái), md5 khớp.
+  - **P4 `GIT_SHA`:** Makefile `GIT_SHA` chỉ khi `git status --porcelain --untracked-files=no` rỗng, `BUILD_BACKEND` cho mọi lần
+    build backend (up, ingest); Dockerfile `ARG GIT_SHA=""` + `ENV APP_GIT_SHA` sau các lớp phụ thuộc; `Settings.app_git_sha` (khối
+    `# Phase 4`) chỉ 40 hex chữ thường, sai dạng → None + 1 WARNING (không in giá trị), rỗng → None im lặng; `NodeDeps.commit_sha`
+    ← wiring → lineage B10 + B12. Test 4a-5, 4a-6 (+ wiring, Dockerfile/Makefile tĩnh).
+  - **P7 `make verify`:** `scripts/verify.sh` + target `verify`/`verify-status`, `.verify/` vào `.gitignore`. 4a-7: `FAKE_SCENARIO=""`/
+    `FAKE_NODE_DELAY=""` → None **đã có** (`env_ignore_empty=True`) + test. 4a-8: `bash -n` sạch (máy không có shellcheck) + 11 test
+    chạy thật script với make/compose/curl/gh/uv giả. **Sự cố:** tôi gõ `make -n verify` để xem lệnh → dòng recipe có biến MAKE
+    của make nên make CHẠY THẬT script (dry-run lan vào make con: lint/test/up chỉ in lệnh); lệnh thật duy nhất là `docker compose
+    --env-file .env exec -T backend printenv APP_ENV` → sandbox chặn (Docker + đọc `.env`) → dừng ở bước 3, không tạo lại container
+    nào, không sửa gì. Đã sửa: recipe dùng `MAKE_BIN=make` → `make -n verify` giờ chỉ in. `.verify/` còn bản chạy hỏng đó (ghi đè ở
+    lần chạy sau). Script sửa thêm: mọi hàm bước tự `|| return 1` (trong `if`/`||`, `set -e` không có hiệu lực).
+  - **P6 bench:** `tests/stack/bench_checkpoint.py` (Postgres 16 testcontainers riêng, `open_postgres_saver` + serde runtime,
+    state tổng hợp 5/20/50 KB, 10 khởi động + 200 lần) + test hàm thuần. Chưa có số đo — sandbox không tới Docker; chạy
+    `make verify … BENCH=1`.
+  - **P5 mypy tests (17:19 → 17:26):** 236 lỗi lúc bắt đầu (235 + 1 của file test mới) → **0**. Chỉ sửa kiểu: annotation,
+    `cast`, thu hẹp bằng `isinstance`/`assert … is not None`, helper `_conds` (Filter.must), `object.__setattr__` thay gán method
+    (khuôn `test_gate3`), lambda có `append(...) or` → hàm; `DyingAudit.record` (test_guard_pg) thêm tham số `lineage` chuyển tiếp
+    cho lớp cha (khớp chữ ký; B2 không ghi lineage). Không đổi kỳ vọng test nào. Dòng `# type: ignore` trong `backend/tests`:
+    HEAD 162 → 157 (bớt 8 dòng: method-assign ×4, no-any-return ×2, attr-defined, arg-type; thêm 3 dòng `call-arg` cho `_env_file`
+    có lý do cùng dòng: `test_b08_pg`, `test_rag_query_qdrant`, helper `test_4a_debts`). `mutate_3h.py` M-3h-25: chuỗi đích đổi
+    theo `cast` ở `vpn_smoke.py` — chạy lại `--only M-3h-25`: ĐỎ đúng dự đoán, md5 khớp. `make lint` thêm
+    `MYPYPATH=backend uv run mypy --explicit-package-bases --cache-dir .mypy_cache/tests backend/tests`.
+  - **Kết quả sandbox (30/09/2026 17:27):** unit **2954 passed**; `make lint` xanh (ruff; mypy app 199 / tests 182 / mock 12 / ml
+    16; import-linter 9/9; gitleaks sạch); integration + e2e collect 249.
+  - **Soát bảo mật HMAC (security-reviewer, theo lệnh DỪNG 2):** H1, H3, H4, H5 PASS; **H2 FAIL (thấp)**; H6 PASS nhưng hở 3 chỗ.
+    H2: username chưa có dòng `users` sai k lần (lưu `h:…`) rồi CÓ dòng `users` trong cửa sổ 10 phút (tự đăng nhập, hoặc cấp dưới
+    đăng nhập → `_ensure_manager` tạo dòng người quản lý) → các lần sau đếm nguyên văn, bỏ sót k lần băm → thêm tối đa
+    MAX_AUTH_FAILURES−1 lần đoán (trước thay đổi: đếm chung một giá trị). Không khoá oan ai. P2/P3 chưa nói về chuyển tiếp →
+    **Q-4a-5 → đã chốt (A), xem dưới**. H6 hở: (a) không có test chuyển tiếp; (b) `permission_denied` role_unmappable không có test kiểm
+    `username_attempted`; (c) test repr không kiểm `repr(TokenSigner)`. Agent tự khai dùng `cd`/`echo`/`sed -n`/`grep -n` trực
+    tiếp (chỉ đọc), không đụng `.env*`. Lượt trước bản sửa NGHI: M-S0-1 báo "khác dự đoán" vì danh sách dự đoán của tôi
+    thừa 1 test (handoff qua B20 — E3 đi đường B10 `no_evidence`, không đo cổng); đột biến vẫn bị s1/s4 giết → sửa danh sách.
+    `--e2e`/`--integration` của script chưa chạy (Docker, không bắt buộc).
+  - **Chốt Q-4a-5 = (A) sửa luôn (Tuấn Anh 30/09/2026) — đã làm:** `AuthService._failure_keys(username, user)`: username ma →
+    `(bản băm,)`; có dòng `users` → `(nguyên văn, bản băm)`; `_is_locked` + `_check_threshold` đếm bằng tuple đó.
+    `AuthStore.count_failures(usernames: tuple[str, ...], since)` (tuple để `str` trần không lọt mypy — fake khớp chuỗi con);
+    SQL `username_attempted IN :u` (`bindparam(expanding=True)`) — MỘT câu, tham số hoá; fake `in usernames`. Ghi KHÔNG đổi (vẫn
+    theo `known`) — bản băm của người có dòng chỉ dùng để đếm. Nhánh username ma: thứ tự gọi store như 3e (test P3 giữ nguyên).
+    Test mới: hợp đồng store `test_count_failures_sums_every_value_once` (in-memory + SQL); `test_q4a5a_…` (binh.tt sai 3 băm →
+    tự đăng nhập → sai 2 → khoá ở lần 5, alert nguyên văn, đúng mật khẩu sau đó 401 `still_locked`); `test_q4a5b_…` ×2 (dòng do
+    `_ensure_manager`: binh.tt→lan.dt, ha.lt→quan.tm); `test_q4a5c_…` (role_unmappable: chưa có dòng → băm, có dòng → nguyên văn,
+    route + detail); test repr thêm `repr/str(TokenSigner)` (không chứa khoá dẫn xuất lẫn khoá ký); `test_q4a5_residual_…` ghim
+    phần còn lại (dưới).
+  - **Soát bảo mật lượt 2 (security-reviewer, CHỈ H2 + H6, theo lệnh Q-4a-5):** **H2 PASS** (1) mọi đường đếm (`_is_locked`,
+    `_check_threshold` cả từ `_check_mfa`) đúng tập; (2) MỘT câu, tham số hoá, lặp giá trị không đếm đôi; (3) nhánh ma không
+    thêm truy vấn; (6) bản băm của người có dòng không bị ghi ra đâu. (5) = phần còn lại → tách Q-4a-6. (4) NGHI: AD trả
+    `username` khác chuỗi gõ (khớp không phân biệt hoa/thường) → bước 2 không thấy dòng, `_is_locked` đếm `(băm,)` còn
+    `mfa_failed` lưu nguyên văn → dò OTP không bị khoá ở bước 2 (HEAD: cùng đếm nguyên văn nên chặn). Hiện KHÔNG tới được:
+    `USERNAME_PATTERN` chỉ chữ thường + mock AD khớp tuyệt đối (tôi đã kiểm `api/auth.py:34`, `mock_services/app/ad.py`) → Việc
+    treo khi thay AD thật. **H6 PASS** (a)(b)(c) + hợp đồng store; **1 FAIL thấp: công thức băm không được ghim độc lập** (mọi
+    kỳ vọng tính bằng chính `stored_username`/`username_key` — tôi đã kiểm: đúng) → đổi nhãn / dùng thẳng khoá ký / đổi hàm băm
+    đều sống. **Đã sửa:** `test_4a4_known_answer_independent_of_product_code` (vector cố định tính bằng hmac/hashlib + công thức
+    viết lại độc lập, đi qua signer → service → sự kiện) + **M-4a-4** (khoá = thẳng khoá ký); q4a5c thêm vào kỳ vọng M-4a-1;
+    docstring port ghi "không rỗng".
+  - **Mutation `--hmac` 1 lượt trên code cuối:** M-4a-1 (11 đỏ), M-4a-2 (8), M-4a-3 (4 — đúng 4 test dự đoán), M-4a-4 (2) — **4/4
+    ĐỎ đúng dự đoán**, md5 `service.py` + `username_hash.py` khớp, `git diff --stat` khớp.
+  - **Phần còn lại sau Q-4a-5 (Q-4a-6, chờ Tuấn Anh):** username ma ĐÃ khoá theo cửa sổ trượt (≥ 5 lần) RỒI mới có dòng `users`
+    → `_is_locked` của người có dòng chỉ xét `locked_until` (chưa đặt) → lần kế tiếp tới AD MỘT lần (đúng mật khẩu + không bắt
+    buộc MFA → đăng nhập được), sai thì bị đếm (≥ 5) và khoá ngay. Trước Q-4a-5: tới 4 lần. Mỗi người gặp tối đa một lần (dòng
+    chỉ tạo một lần); nhỏ hơn khe tranh chấp có sẵn (request song song cùng qua bước 2). Hướng: (i) `_is_locked` nhánh có dòng
+    cũng đếm → +1 truy vấn MỌI lần đăng nhập + khoá trượt cả khi `locked_until` đã gỡ; (ii) `_upsert` khi dòng MỚI tạo: đếm lần
+    sai băm, đủ ngưỡng → `set_locked_until` — chỉ tốn truy vấn lúc tạo dòng; (iii) chấp nhận, giữ test ghim giới hạn 1. Không
+    tự làm (đổi hành vi ngoài phạm vi chốt).
+  - **Chốt Q-4a-6 = (ii) (Tuấn Anh 30/09/2026), làm trước verify — đã làm:**
+    - **Đường tạo dòng `users` (grep trước khi sửa):** mã chạy có ĐÚNG MỘT câu INSERT vào `users` — `SqlAuthStore.upsert_user`
+      (`auth/store.py`); `upsert_user` chỉ được gọi từ `AuthService._upsert`; `_upsert` gọi từ `_sync_login_user` (người đăng
+      nhập) và `_ensure_manager` (chuỗi quản lý ≤ 5 cấp). Migration 0001–0007: chỉ tạo bảng, `bulk_insert` duy nhất là
+      `exit_code_priority`. `mock_services` không có kết nối DB (`seed.json` "users" là AD giả trong bộ nhớ). CLI MFA
+      (`auth/mfa.py`) chỉ đọc dòng có sẵn. `db/kb.py`, `db/identity.py` chỉ SELECT. Chèn thẳng chỉ ở test (`graph_pg.py`,
+      `test_migration_0007`, `test_rag_ingest_pg`, `test_mfa_cli`, `test_auth_mfa`, fake). → không có đường vòng qua `_upsert`.
+    - **Store:** `upsert_user` viết lại — `INSERT … ON CONFLICT (user_id) DO NOTHING RETURNING` có dòng = VỪA tạo (role cũ None);
+      không → `SELECT role … FOR UPDATE` + `UPDATE … RETURNING` (chỉ thuộc tính AD). Bản cũ lấy "mới" từ SELECT FOR UPDATE
+      trước INSERT — trên dòng chưa có không khoá gì → hai lượt đồng thời cùng thấy "mới". Port `upsert_user` ghi rõ "None ⟺
+      chính lời gọi này tạo dòng". Thêm `last_failure_at(usernames, since)` — `max(occurred_at)` cùng điều kiện `_BY_USERNAMES`
+      với `count_failures`. Không đổi schema, không migration.
+    - **Service:** `_upsert` → `if previous_role is None: _carry_ghost_lock(user, now)`: `count_failures(_failure_keys(…))`
+      (port Q-4a-5) với `config.failure_window`/`config.max_failures` (như `_is_locked`), `>=` → `locked_until =
+      last_failure_at + config.lockout`. Không ghi sự kiện/cảnh báo mới (đã ghi lúc khoá trượt). Dòng đã có: không đếm.
+    - **Test viết trước, chạy thấy đỏ rồi mới sửa:** đỏ trước khi sửa = (a), (e), hợp đồng `last_failure_at` (3 — đúng lý do:
+      `locked_until` None / chưa có method); xanh trước khi sửa = (b), (c), (d), hợp đồng upsert đồng thời bản in-memory (ghim
+      hành vi giữ nguyên — để đột biến bắt). (a) lan.dt sai đủ ngưỡng → binh.tt tạo dòng 2 phút sau → `locked_until` = lần sai
+      cuối + khoá, lần sau (đúng mật khẩu) chặn, AD 0 lần gọi; 1 giây trước mốc còn khoá, sau mốc đăng nhập được — thay test
+      ghim "tới AD tối đa 1 lần" của Q-4a-5. (b) ngưỡng−1 → không khoá, tới AD. (c) lần đầu vừa rơi khỏi cửa sổ (biên `>`) →
+      không khoá. (d) dòng đã có + `locked_until` đặt sẵn + đủ lần sai → binh.tt đăng nhập lại: không `count_failures`/
+      `last_failure_at`, `locked_until` giữ nguyên (bảng `users` không có cột đếm lần sai — đếm từ view). (e) 2 nguyên văn
+      (bản ghi trước P2) + ngưỡng−2 băm → cộng đủ ngưỡng → khoá. Hợp đồng: 4 upsert đồng thời cùng user mới → đúng 1 None;
+      `last_failure_at` = max trên cả hai giá trị, `since` loại trừ, UTC.
+    - **Mutation `--hmac` 1 lượt (M-4a-1…8):** M-4a-5 bỏ phép đếm (2 đỏ: a, e), M-4a-6 `>=`→`>` (2: a, e), M-4a-7 đếm cả khi
+      dòng đã có (1: d), M-4a-8 (thêm) mốc từ now() (2: a, e); M-4a-1…4 vẫn đỏ đúng dự đoán — **8/8**, md5 `service.py` +
+      `username_hash.py` khớp, `git diff --stat` khớp, exit 0.
+    - **Soát bảo mật Q-4a-6 (security-reviewer, CHỈ diff Q-4a-6, theo lệnh):** **0 FAIL.** Q6-1 PASS (grep độc lập: một INSERT
+      `users`, chỉ qua `_upsert`); Q6-2 PASS logic / NGHI SQL; Q6-3, Q6-4, Q6-5 PASS; Q6-6 PASS có NGHI. Agent tự khai: không chạy
+      test/Docker, không đọc `.env*`; phần SQL là suy luận, chưa kiểm trên PG thật. Tôi đã kiểm và **sửa trong phạm vi Q-4a-6**:
+      - Q6-2 NGHI: `ON CONFLICT (user_id) DO NOTHING` → `username` (UNIQUE không phải arbiter) kiểm kiểu thường → hai lượt cùng
+        user mới qua bước kiểm trước có thể ném UniqueViolation (fail-closed, bản cũ cũng có) → test đồng thời SQL có thể chập
+        chờn. Đối chiếu `ExecInsertIndexTuples` (chỉ arbiter mới kiểm "partial"): đúng. **Sửa:** `on_conflict_do_nothing()`
+        không chỉ cột (mọi UNIQUE là arbiter; biên dịch ra `ON CONFLICT DO NOTHING`); trùng `username` với user_id KHÁC → 0 dòng
+        + không có dòng → `ValueError("UNIQUE users.username …")` như bản giả. Test hợp đồng mới
+        `test_upsert_username_taken_by_other_user_is_rejected` (dòng cũ nguyên vẹn).
+      - Q6-3 ghi chú: `if last is not None` là fail-open lý thuyết → `until = (last or now) + lockout` (fail-closed).
+      - Q6-5/Q6-6 hở test: (a) thêm "mang khoá không ghi `account_locked`/cảnh báo mới"; `_blocked_before_ad` kiểm ĐÚNG MỘT sự
+        kiện mới `account_locked{still_locked}` (không chỉ sự kiện cuối).
+      - Còn mở (không tự làm): **R1** (NGHI thấp) mang khoá KHÔNG cùng giao dịch với INSERT → khe 3 round-trip (count, max, set)
+        cho yêu cầu đăng nhập song song tới AD; carry lỗi sau khi INSERT commit → mất khoá (về mức trước Q-4a-6: 1 lần AD). Khe
+        TOCTOU sẵn có bước 2→3 lớn hơn. Đóng = dời đếm + đặt khoá vào giao dịch INSERT (đổi port `upsert_user`) → **Q-4a-7 →
+        chốt: Việc treo 23** (không đổi port ở 4a). **R2** (ngoài chốt (ii)) AD đổi username của người ĐÃ có dòng → UPDATE gắn
+        username mới, không mang khoá trượt của username mới → **Q-4a-8 → chốt: Việc treo 24** (+ giới hạn: mock AD không đổi
+        username). NGHI Q6-6: test đồng thời chỉ có nghĩa trên SQL (bản giả không nhường event loop); chưa có
+        đột biến cho store (quay lại SELECT-rồi-upsert — phụ thuộc tranh chấp, không chạy tất định). Upsert dòng đã có giờ 3
+        câu SQL thay vì 2 (sau khi AD đã xác thực, như nhau cho mọi người — không dò được username).
+    - **Mutation `--hmac` 1 lượt trên code cuối (sau sửa):** M-4a-1…8 **8/8 ĐỎ đúng dự đoán**, exit 0, md5 khớp, `git diff
+      --stat` khớp.
+    - **Kết quả sandbox (30/09/2026 18:50):** unit **2968 passed**; `make lint` xanh (lần 1 đỏ mypy `store.py` var-annotated →
+      thêm kiểu); integration + e2e collect **253** (+3 hợp đồng SQL — chưa chạy, Docker; chạy trong `make verify` bước 2).
+  - **`make verify G=23 BENCH=1` (Tuấn Anh, 30/09/2026 18:55:35 → 19:09:26, HEAD `5ed423d` + cây bẩn 91 mục, `.env`): XANH** —
+    `.verify/summary.txt`: 0 chuẩn bị PASS; 1 lint PASS (5s); 2 test PASS (2m08s: backend **3221 passed** = 2968 unit + 253
+    integration/e2e — gồm 3 hợp đồng SQL mới: upsert đồng thời, trùng username, `last_failure_at` — mock 94, ml 77 / 5 deselected);
+    3 up PASS (1m16s, APP_ENV=dev); 6 gate2 PASS (7m29s, **89 PASS / 0 FAIL**); 4 ingest PASS (5s, KB không đổi); 5 gate3 PASS
+    (2m32s, **72 PASS / 0 FAIL**); 7 bench PASS; 8 trả về `.env` PASS (backend + worker healthy, `/api/health` 200); 9 CI (gh)
+    PASS — run `36699045782` là CI của S0 (DỪNG 2 chưa push). `lineage.commit_sha` của lần chạy này = NULL (cây bẩn — đúng P4).
+  - **P6 số đo (Việc treo 16):** `aput` của `AsyncPostgresSaver` qua `open_postgres_saver` + serde runtime, Postgres 16
+    testcontainers trên colima (máy Tuấn Anh), state TỔNG HỢP, 10 lần khởi động bỏ + **200 mẫu/cỡ**, 30/09/2026 19:09:
+    5 KB (thực 5,2) p50 **0,97 ms** p95 **1,31 ms**; 20 KB (20,4) p50 1,00 p95 **2,07 ms**; 50 KB (50,2) p50 1,14 p95 **2,37 ms**.
+    p95 lớn nhất 2,37 ms < 50 ms → **không thành Q**. Chỉ đo một lần ghi checkpoint trên DB cục bộ (không mạng, không tải song
+    song) — không phải thời gian cả lượt; ước tính cũ "+10–50 ms/lượt" (~10 superstep) → theo số đo ≈ 10 × 1–2,4 ms ≈ 10–25 ms
+    (ước tính, chưa đo cả lượt).
+  - **gitleaks lúc commit DỪNG 2 (30/09/2026):** 1 phát hiện `generic-api-key` ở `KAT_KEY_K32` (`test_auth_username_hash.py`) —
+    báo nhầm: vector đáp án HMAC-SHA256 tính từ khoá test công khai `b"k"*32` + `GHOST` (kiểm lại bằng python: True, không in giá
+    trị). **Chốt D (Tuấn Anh):** `# gitleaks:allow` chỉ ở dòng đó + 1 dòng chú thích phía trên; không đổi tên/giá trị, không
+    `.gitleaksignore`. Chạy lại: file test 19 passed, M-4a-4 đỏ đúng (md5 khớp), gitleaks (lệnh của hook, phần đã stage) 0 phát hiện.
+  - **Mutation S0 chạy lại trên code cuối DỪNG 2 (30/09/2026 19:2x, sau P4 sửa lineage B10/B12 + P5):** `mutate_4a.py` M-S0-1…10
+    **10/10 ĐỎ đúng dự đoán**, md5 5 file đích khớp, `git diff --stat` khớp, exit 0. HMAC M-4a-1…8 8/8 (ở trên).
+  - **Kết quả sandbox sau Q-4a-5 + sửa H6 (30/09/2026 18:00):** unit **2961 passed** (+7 so với 2954); `make lint` xanh (ruff;
+    mypy app 199 / tests 182 / mock 12 / ml 16; import-linter 9/9; gitleaks sạch); integration + e2e collect **250** (+1: hợp
+    đồng SQL, chưa chạy — Docker).
+  - **Spec cần sửa (4a) — bản cuối (kèm MẪU B DỪNG 2, 30/09/2026):**
+    1. P1: bản chọn `checkout@v5`, `cache@v5`, `setup-uv@v7` — major thấp nhất có `runs.using: node24` (đọc `action.yml`
+       30/09/2026); input không đổi. "Không còn annotation Node 20" kiểm sau push.
+    2. P2/P3 — thêm quy tắc chuyển tiếp (Q-4a-5): "Đếm/khoá: username ma → `count_failures((băm,))`; username có dòng `users` →
+       `count_failures((nguyên văn, băm))` — MỘT câu SQL `IN`, port nhận `tuple[str, ...]`. Lý do: lần sai lưu băm lúc CHƯA có
+       dòng (trước khi chính người đó đăng nhập, hoặc trước khi `_ensure_manager` tạo dòng người quản lý khi cấp dưới đăng nhập)
+       phải còn được đếm sau khi dòng được tạo. Ghi `username_attempted` vẫn theo `known`." Thêm: "`bruteforce_alert` (subject
+       + `detail.username`) dùng cùng giá trị lưu"; "`permission_denied(role_unmappable)` theo cùng quy tắc — chưa có dòng →
+       băm dù mật khẩu đúng". Test 4.5 thêm 4a-9 (chuyển tiếp do tự đăng nhập), 4a-10 (do `_ensure_manager`), 4a-11
+       (role_unmappable), 4a-4 thêm "khớp vector tính độc lập (hmac/hashlib), không qua hàm của mã"; 4.6 thêm M-4a-3 "người có
+       dòng chỉ đếm nguyên văn" → 4a-9, 4a-10 và M-4a-4 "khoá HMAC = thẳng khoá ký" → 4a-4. Q-4a-6 (phần còn lại ≤ 1 lần AD).
+       Việc treo: AD thật khớp không phân biệt hoa/thường → chuẩn hoá username trước bước 2 (NGHI H2-4).
+       Q-4a-6 (ii): "Dòng `users` VỪA tạo (kết quả `INSERT … ON CONFLICT DO NOTHING RETURNING` — không chỉ cột, mọi UNIQUE là
+       arbiter; không SELECT trước) → đếm lần sai
+       trong cửa sổ bằng `count_failures(_failure_keys)`; ≥ MAX_AUTH_FAILURES → `locked_until` = lần sai cuối (`last_failure_at`,
+       cùng điều kiện) + LOCKOUT. Dòng đã có: không đếm, không ghi đè." Port `upsert_user`: "role cũ None ⟺ chính lời gọi tạo
+       dòng; trùng `username` với user_id khác → lỗi". Test 4a-12…16 = (a)…(e) + 3 hợp đồng store; M-4a-5…8. Còn lại → Việc
+       treo 23 (Q-4a-7: mang khoá chưa cùng giao dịch INSERT), 24 (Q-4a-8: AD đổi username của dòng đã có; mock AD không đổi).
+    3. P4: `app_git_sha` rỗng → `None` IM LẶNG (cây bẩn luôn truyền rỗng — WARNING mỗi lần `make up` là nhiễu); WARNING chỉ
+       khi sai dạng, không in giá trị. Dockerfile: `ARG`/`ENV` sau `USER app`, trước `EXPOSE`/`CMD` (sau mọi lớp cài).
+       `commit_sha` tới node qua `NodeDeps.commit_sha` (wiring ← Settings), node không đọc Settings. Makefile `BUILD_BACKEND`
+       dùng chung cho `up` và `ingest`.
+    4. P5: `uv run mypy backend/tests` trần dừng ở lỗi cấu hình (2 `conftest.py` trùng module) → lệnh đúng gốc gói:
+       `MYPYPATH=backend uv run mypy --explicit-package-bases --cache-dir .mypy_cache/tests backend/tests`. Đo: **235 lỗi / 94
+       dòng / 44 file** (> 80 → DỪNG, Q-4a-4 chốt sửa hết có giới hạn) → **0** (7 phút, chỉ sửa kiểu); `# type: ignore` trong
+       `backend/tests` 162 → 157; `DyingAudit.record` (test_guard_pg) thêm `lineage` cho khớp chữ ký. Đã vào `make lint`.
+    5. P6: `bench_checkpoint.py` (testcontainers `postgres:16`, `open_postgres_saver` + serde runtime, state tổng hợp 5/20/50 KB,
+       10 khởi động + 200 mẫu/cỡ) chạy ở `make verify BENCH=1` bước 7. Số đo 30/09/2026: p95 1,31 / 2,07 / 2,37 ms — < 50 ms.
+    6. P7 / 4.4: recipe `verify` gọi `MAKE_BIN=make bash scripts/verify.sh`, KHÔNG dùng `$(MAKE)` (dòng recipe có `$(MAKE)`
+       khiến `make -n verify` chạy thật); thêm `verify-status`; 4a-7 "đã có" (`env_ignore_empty=True`).
+  - `make test` (integration + e2e), gate2/gate3 trên stack: đã chạy trong `make verify G=23 BENCH=1` — XANH (ở trên).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -3813,8 +4074,8 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
 
 ## Việc treo
 
-1. CI: `actions/cache@v4`, `checkout@v4`, `setup-uv@v6` còn Node 20 (deprecated); `ubuntu-latest` → Ubuntu 26 từ
-   19/10/2026 — nâng trước 19/10.
+1. **[4a P1 — đã làm, chưa commit; kiểm "không còn annotation Node 20" sau push]** CI: `actions/cache@v4`, `checkout@v4`,
+   `setup-uv@v6` còn Node 20 (deprecated); `ubuntu-latest` → Ubuntu 26 từ 19/10/2026 — nâng trước 19/10.
 2. ~~Chưa commit, đi chung commit đầu 3c: dòng PROGRESS kết quả CI 3b (run `36344625601`) và `.env.example` (dòng chú
    thích `RAG_KEEP_OLD_COLLECTIONS`)~~ — **đã commit** trong `9680471`.
 3. ~~3e: nghiệm thu phải có test audit B8 detail.query đã che PII bằng guard thật.~~ — **đã trả ở 3e S2**
@@ -3843,7 +4104,8 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
    chỉ qua `SUM(llm_calls.cost_usd)` mỗi 60 s → sát trần, hai tiến trình có thể cùng tiêu phần còn lại (vượt tối đa ≈
    phần còn lại + chi tiêu 60 s của tiến trình kia). **Chốt trước mốc G: chia trần/2 mỗi tiến trình hoặc bảng giữ chỗ
    DB** (bảng mới → ngoài P7, phải hỏi). Tuấn Anh giữ ở đây (chốt DỪNG 3, 29/09/2026).
-10. **Phase 4 S0 — username đăng nhập không có trong `users` → lưu băm (chốt Q-3e-14, Tuấn Anh 29/09/2026).** Khi
+10. **[4a P2–P3 + Q-4a-5 + Q-4a-6 — đã làm, chưa commit; khoá dẫn xuất từ JWT_SIGNING_KEY (Q-4-S), KHÔNG thêm biến `.env`]**
+    **Phase 4 S0 — username đăng nhập không có trong `users` → lưu băm (chốt Q-3e-14, Tuấn Anh 29/09/2026).** Khi
     username **không** có dòng trong bảng `users`: `security_events.username_attempted` = `"h:"` + HMAC-SHA256(khoá riêng
     trong `Settings`, username) (hex — 66 ký tự ≤ `String(128)`, **không đổi schema**); username **có** trong `users`
     giữ nguyên văn. Lý do: mật khẩu chỉ gồm chữ thường + số gõ nhầm vào ô username vẫn khớp `USERNAME_PATTERN` (3e) và
@@ -3861,9 +4123,10 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
     ml, LLM, RAG, executor); truy vấn DB (audit, checkpoint, `effects.once`, B20) không nằm trong hạn — DB treo thì lượt vẫn có
     thể vượt `WORKER_STALE_TURN_SECONDS`. Cân nhắc `statement_timeout` cho role `app_rw` + cảnh báo M9 (Phase 7). Log INFO
     `tool:*` (`tools/registry.py`) có URL chứa định danh `user_id`/`device_id` — xét lại khi làm chính sách log (Phase 7).
-13. **`lineage.commit_sha` (chốt Q-3g-3, 29/09/2026).** 3g ghi `NULL` (chưa có nguồn). Lấy từ `GIT_SHA` lúc build image
+13. **[4a P4 — đã làm, chưa commit]** **`lineage.commit_sha` (chốt Q-3g-3, 29/09/2026).** 3g ghi `NULL` (chưa có nguồn). Lấy từ `GIT_SHA` lúc build image
     (build arg → biến môi trường → `Settings`), **trước mốc G**.
-14. mypy chưa soát `backend/tests` (lỗi kiểu có sẵn, vd `test_b11_pg.py:85`, `test_b11_slots.py:483`) — xử lý ở Phase 4 S0.
+14. **[4a P5 — đã làm, chưa commit: 235 → 0, vào `make lint`]** mypy chưa soát `backend/tests` (lỗi kiểu có sẵn, vd
+    `test_b11_pg.py:85`, `test_b11_slots.py:483`) — xử lý ở Phase 4 S0.
 15. **Việc giao cho 3h — từ lần thử subagent security-reviewer soát `fe15469` (B1–B8: 0 FAIL, B4/B5 N/A; chốt Tuấn Anh
     29/09/2026).**
     - **Commit đầu 3h** — chỉ sửa tài liệu, không đổi code: (N2) `graph/nodes/README.md:43` "nhánh injection không lưu câu trả
@@ -3880,10 +4143,11 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
       đó); lần chạy sau lấy md5 bản đã đột biến làm mốc "trước" nên không phát hiện; không có mốc xanh thì test đỏ sẵn bị tính
       là "giết được".
 
-16. **Đo thời gian thêm của `durability="sync"` (chốt DỪNG 2 3h, NGHI-3).** Ước tính +10–50 ms/lượt (chưa đo — ~10 superstep ×
+16. **[4a P6 — đã đo 30/09/2026: `aput` p95 ≤ 2,37 ms (50 KB, 200 mẫu) — mục "Phase 4 — chặng 4a"; chưa đo cả lượt trên gate3]**
+    **Đo thời gian thêm của `durability="sync"` (chốt DỪNG 2 3h, NGHI-3).** Ước tính +10–50 ms/lượt (chưa đo — ~10 superstep ×
     1 lần ghi checkpoint Postgres). Đo ở gate3 trên stack: so `turns.ended_at − started_at` trước/sau (hoặc span B17), ghi số
     mẫu + ngày.
-17. **B9 (grounding) chạy trước B10 (need_type) (Tuấn Anh ghi, duyệt DỪNG 3a 3h, 30/09/2026).** Yêu cầu HÀNH ĐỘNG có điểm truy
+17. **[4a S0 — đã làm, chưa commit: B9 chỉ cho câu trả lời, căn cứ hành động = `procedure_doc` ở B11 (Q-4-U A+)]** **B9 (grounding) chạy trước B10 (need_type) (Tuấn Anh ghi, duyệt DỪNG 3a 3h, 30/09/2026).** Yêu cầu HÀNH ĐỘNG có điểm truy
     hồi thấp bị E3 dù không cần KB (thấy ở h14: "cấp VPN cho LAP-9999…" 0,5 < 0,6 → E3 ở B9, không tới B12). An toàn nhưng giảm
     tự động; xem lại ở Phase 5 + khi chọn ngưỡng ở mốc G. Chưa sửa.
 18. **`ToolContractError` chép `ValidationError` có `input_value` (soát DỪNG 3b 3h, NGHI mục 8).** Registry
@@ -3899,6 +4163,21 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
 21. ~~**E9 ở node SAU B18 trên ticket đã có `begun` (còn lại của Q-3h-10).**~~ — **đã làm ở 3h DỪNG 3b** (chốt Tuấn Anh
     30/09/2026: boundary xét `begun` qua `RunContext.txlog` → E7; kèm sửa `runner._pending` — mục "Việc treo 21 — đã làm"). Q-3a-3
     (nhánh ĐỌC để lọt `ReadError` → E9) vẫn mở.
+22. **AD thật khớp username không phân biệt hoa/thường (soát 4a lượt 2, NGHI H2-4).** Nếu `IdentityProvider` trả `ad.username`
+    khác chuỗi gõ (dòng `users` lưu `Quan.TM`, gõ `quan.tm`) → bước 2 không thấy dòng → `_is_locked` đếm `(băm,)` còn `mfa_failed`
+    lưu nguyên văn → dò OTP không bị khoá ở bước 2; `locked_until` không được đọc. Hiện không tới được (`USERNAME_PATTERN` chỉ
+    chữ thường, mock AD khớp tuyệt đối). Khi thay AD thật: chuẩn hoá username (casefold) trước bước 2 + tra `users` theo chuẩn đó.
+23. **Mang khoá username ma chưa cùng giao dịch với INSERT dòng `users` (R1 soát Q-4a-6; chốt Q-4a-7 = Việc treo, Tuấn Anh
+    30/09/2026 — không đổi port `upsert_user` ở 4a).** `_carry_ghost_lock` chạy SAU khi INSERT đã commit (count → max → set, 3
+    round-trip): request đăng nhập song song rơi vào khe đó qua được bước 2 (dòng có, `locked_until` NULL) → tới AD. Lỗi DB trong
+    lúc mang khoá: không bị nuốt (`_sync_login_user` nằm trong `try` chỉ bắt `IdentityUnavailable`, `service.py:198–200` — Claude
+    chat kiểm) → request đó thất bại, NHƯNG dòng đã commit không khoá và không còn "mới" → về mức trước Q-4a-6 (1 lần tới AD, lần
+    sai kế tiếp `_check_threshold` khoá lại). Khe TOCTOU sẵn có bước 2→3 (mọi người dùng) lớn hơn. Đóng hẳn: đếm + `max` + đặt
+    `locked_until` trong CÙNG giao dịch INSERT (đổi port `upsert_user`).
+24. **AD đổi username của người ĐÃ có dòng `users` (R2 soát Q-4a-6; chốt Q-4a-8 = Việc treo, Tuấn Anh 30/09/2026).** UPDATE gắn
+    username mới vào dòng có sẵn — không phải "dòng vừa tạo" → không mang khoá trượt mà username mới (khi còn là username ma) đã
+    tích; lần kế tiếp tới AD (cùng loại lỗ với Q-4a-6). *Giới hạn đã biết:* mock AD không đổi username (seed cố định, không có
+    endpoint đổi tên) → không tái hiện được trên stack/test hiện tại; xét khi thay AD thật (cùng lúc Việc treo 22).
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

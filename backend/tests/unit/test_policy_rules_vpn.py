@@ -226,7 +226,7 @@ def test_hrule_bang_du_dong() -> None:
     """Quy ước 3.9: bảng tham số hoá không rỗng — đủ 9 dòng bảng 11.2 + 2 dòng P3, id không trùng."""
     ids = [p.id for p in BANG_11_2]
     assert len(ids) == len(set(ids)) >= 11
-    assert sum(1 for i in ids if i and i.startswith("P3-")) == 2
+    assert len([i for i in ids if isinstance(i, str) and i.startswith("P3-")]) == 2
 
 
 # ---- 2. C5: mỗi luật một ca khớp + ca suýt khớp, gọi thẳng evaluate ----------------------------------------------

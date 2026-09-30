@@ -8,12 +8,20 @@ from typing import Any
 import pytest
 import yaml
 from app.audit.final import resolution_path, summarize_final
-from app.audit.handoff import build_handoff, is_deny_case
+from app.audit.handoff import (
+    KB_ABOVE_THRESHOLD,
+    KB_BELOW_THRESHOLD,
+    NO_PROCEDURE_NOTE,
+    build_handoff,
+    is_deny_case,
+)
 from app.domain.exit_codes import ExitCode
 from app.domain.states import S_BLOCKED, S_ESCALATED, S_REJECTED, S_RESOLVED
+from app.domain.ticket_state import ChunkRef
 from app.graph.fakes import FAKE_ACTION, fake_requester, fake_risk
 from app.settings import (
     get_escalation_templates,
+    get_policy,
     get_settings,
     load_escalation_templates,
 )
@@ -21,6 +29,7 @@ from pydantic import ValidationError
 
 T0 = datetime(2026, 9, 26, 8, 0, tzinfo=UTC)
 TEMPLATES = get_escalation_templates()
+THRESHOLD = get_policy().constants.RETRIEVAL_THRESHOLD
 
 
 @pytest.mark.parametrize(
@@ -64,7 +73,7 @@ def test_handoff_four_parts_from_state() -> None:
         "intended_action": FAKE_ACTION, "risk": fake_risk("ESCALATE_L2"),
         "escalation_reason_detail": "rule_deny",
     }  # fmt: skip
-    note = build_handoff(state, TEMPLATES)
+    note = build_handoff(state, TEMPLATES, retrieval_threshold=THRESHOLD)
     assert note.request == "Cấp quyền [REDACTED] thư mục Finance"
     assert "access" in note.done_so_far and "check_folder_acl" in note.done_so_far
     assert "vpn_reset_session" in note.done_so_far  # Action nằm ở phần (2), không ở (1)
@@ -74,10 +83,61 @@ def test_handoff_four_parts_from_state() -> None:
 
 
 def test_handoff_minimal_state_is_never_empty() -> None:
-    note = build_handoff({"exit_code": "E2"}, TEMPLATES)
+    note = build_handoff({"exit_code": "E2"}, TEMPLATES, retrieval_threshold=THRESHOLD)
     assert note.request == "(không có nội dung yêu cầu)"
     assert note.done_so_far == "Chưa thực hiện bước xử lý nào."
     assert TEMPLATES.deny_warning not in note.next_for_l2
+
+
+def _chunk(doc: str) -> ChunkRef:
+    return ChunkRef(chunk_id=f"{doc}#v1#0", doc_id=doc, version=1, seq=0, title="T", heading_path="H", score=0.1,
+                    excerpt="x")  # fmt: skip
+
+
+BELOW_PREFIX = "Tài liệu KB gần nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): "
+
+
+@pytest.mark.parametrize("code", [c.value for c in ExitCode])
+@pytest.mark.parametrize("score", [None, 0.0, 0.047, "just_below"])
+def test_s0a1_handoff_kb_docs_below_threshold_are_marked_not_grounds(code: str, score: float | str | None) -> None:
+    """Chốt S0-A1: từ S0 B8 luôn ghi `retrieved` kể cả điểm thấp. Dưới ngưỡng / thiếu điểm → câu "KHÔNG dùng làm căn cứ",
+    KHÔNG có câu "tra được" — L2 không hiểu nhầm là KB có đáp án. Áp mọi mã thoát."""
+    value = THRESHOLD - 1e-9 if score == "just_below" else score
+    state = {"exit_code": code, "retrieved": [_chunk("KB-VPN-005"), _chunk("KB-VPN-001")], "retrieval_score": value}
+    done = build_handoff(state, TEMPLATES, retrieval_threshold=THRESHOLD).done_so_far
+    assert BELOW_PREFIX + "KB-VPN-001, KB-VPN-005." in done
+    assert KB_BELOW_THRESHOLD.format(docs="KB-VPN-001, KB-VPN-005") in done
+    assert "Tài liệu KB tra được" not in done
+
+
+@pytest.mark.parametrize("code", [c.value for c in ExitCode])
+@pytest.mark.parametrize("delta", [0.0, 0.2])
+def test_s0a1_handoff_kb_docs_at_or_above_threshold_keep_old_sentence(code: str, delta: float) -> None:
+    """Chiều ngược: đạt ngưỡng (bằng ngưỡng là đạt, như B9) → giữ câu cũ "Tài liệu KB tra được: …"."""
+    state = {"exit_code": code, "retrieved": [_chunk("KB-VPN-003")], "retrieval_score": min(1.0, THRESHOLD + delta)}
+    done = build_handoff(state, TEMPLATES, retrieval_threshold=THRESHOLD).done_so_far
+    assert KB_ABOVE_THRESHOLD.format(docs="KB-VPN-003") in done
+    assert "Tài liệu KB tra được: KB-VPN-003." in done and "dưới ngưỡng" not in done
+
+
+@pytest.mark.parametrize("reason", ["no_procedure", "no_grounding", "llm_layer_disabled", None])
+def test_q4a1_no_procedure_note_only_for_no_procedure(reason: str | None) -> None:
+    """Q-4a-1: E3 `no_procedure` → câu cố định "quy trình không có trong KB hiện hành — tài liệu đã tra không phải căn cứ"
+    (kể cả khi tài liệu đã tra đạt ngưỡng); lý do khác → không có câu đó."""
+    state = {"exit_code": "E3", "retrieved": [_chunk("KB-VPN-004")], "retrieval_score": THRESHOLD + 0.2,
+             "escalation_reason_detail": reason}  # fmt: skip
+    note = build_handoff(state, TEMPLATES, retrieval_threshold=THRESHOLD)
+    assert (NO_PROCEDURE_NOTE in note.why_escalated) is (reason == "no_procedure")
+    assert NO_PROCEDURE_NOTE == (
+        "Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không làm tay "
+        "theo tài liệu cũ."
+    )
+
+
+def test_s0a1_threshold_is_required_keyword() -> None:
+    """Không có ngưỡng mặc định trong hàm (một nguồn: `policy.json`, B20 truyền `deps.constants`)."""
+    with pytest.raises(TypeError):
+        build_handoff({"exit_code": "E3"}, TEMPLATES)  # type: ignore[call-arg]
 
 
 def test_only_e5_is_deny_case() -> None:

@@ -143,7 +143,7 @@ async def test_e7_password_notices_one_event_same_ticket_pg(db: PgUrls, rw: Asyn
         rows = (await conn.execute(text(
             "SELECT event_type, user_id, route, detail FROM security_events WHERE ticket_id = :t"), {"t": ticket},
         )).all()  # fmt: skip
-        stored = (await conn.execute(text("SELECT redacted_request FROM tickets WHERE ticket_id = :t"),
+        stored: Any = (await conn.execute(text("SELECT redacted_request FROM tickets WHERE ticket_id = :t"),
                                      {"t": ticket})).scalar_one()  # fmt: skip
     assert [tuple(row) for row in rows] == [("privacy_secret_redacted", "nv001", "/api/tickets", {"count": 1})]
     assert stored == "mật khẩu của tôi là [BÍ_MẬT_ĐÃ_ẨN] reset giúp"
@@ -338,11 +338,11 @@ class DyingAudit(AuditWriter):
         super().__init__(engine)
         self.armed = True
 
-    async def record(self, row: Mapping[str, Any]) -> bool:
+    async def record(self, row: Mapping[str, Any], *, lineage: Mapping[str, Any] | None = None) -> bool:
         if self.armed and row["step"] == "B2" and row["event"] == "injection_detected":
             self.armed = False
             raise Crash("SIGKILL sau security_event, trước audit + checkpoint của B2")
-        return await super().record(row)
+        return await super().record(row, lineage=lineage)  # chữ ký như lớp cha (B2 không ghi lineage)
 
 
 async def test_e15_rerun_b2_after_crash_single_injection_event_pg(db: PgUrls, rw: AsyncEngine) -> None:

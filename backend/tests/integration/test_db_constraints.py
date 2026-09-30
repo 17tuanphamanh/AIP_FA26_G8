@@ -52,7 +52,7 @@ def test_security_event_unknown_type_rejected(rw: Engine) -> None:
 
 def test_users_has_no_password_column(owner: Engine) -> None:
     with owner.connect() as conn:
-        cols = conn.execute(
+        cols: Any = conn.execute(
             text("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
         ).scalars()
         assert not [c for c in cols if "password" in c]
@@ -144,7 +144,7 @@ def test_audit_idempotency_key(rw: Engine, seeded: dict[str, str]) -> None:
         for event in ("user_replied", "user_replied", "action_built"):  # lần 2 = node chạy lại
             params = {"t": t, "step": "B11", "event": event, "turn": turn}
             conn.execute(text(AUDIT_IDEM), {**params, "k": _sha(t, "B11", event, turn, 0)})
-        rows = conn.execute(
+        rows: Any = conn.execute(
             text("SELECT event FROM audit_logs WHERE ticket_id = :t ORDER BY log_id"), {"t": t}
         ).scalars()
         assert list(rows) == ["user_replied", "action_built"]
@@ -291,7 +291,7 @@ def test_parent_closes_without_close_reason_and_is_excluded_from_rates(
             ),
             {"p": parent},
         ).scalar()
-    assert float(rate) == pytest.approx(0.5)  # tính cả cha sẽ ra 2/3
+    assert rate is not None and float(rate) == pytest.approx(0.5)  # tính cả cha sẽ ra 2/3
 
 
 def test_ticket_close_reason_checked(rw: Engine, seeded: dict[str, str]) -> None:
@@ -307,7 +307,7 @@ def test_ticket_close_reason_checked(rw: Engine, seeded: dict[str, str]) -> None
 
 def test_exit_code_priority_seeded(rw: Engine) -> None:
     with rw.connect() as conn:
-        rank = dict(conn.execute(text("SELECT exit_code, rank FROM exit_code_priority")).all())
+        rank: dict[str, int] = dict(conn.execute(text("SELECT exit_code, rank FROM exit_code_priority")).all())
     assert set(rank) == {f"E{i}" for i in range(10)}
     assert rank["E7"] == 1 and rank["E9"] == rank["E2"]  # B20 4.1; E9 ngang E2 [Chốt]
 

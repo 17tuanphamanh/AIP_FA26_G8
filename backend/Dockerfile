@@ -27,5 +27,10 @@ COPY backend/app ./backend/app
 RUN useradd --system --uid 10001 app
 USER app
 
+# Phase 4 P4: commit của image cho `lineage.commit_sha` — `make up`/`make ingest` truyền `--build-arg GIT_SHA` CHỈ khi cây
+# sạch (rỗng khi bẩn → Settings coi là None). Đặt CUỐI: đổi commit không phá cache các lớp cài phụ thuộc ở trên.
+ARG GIT_SHA=""
+ENV APP_GIT_SHA=$GIT_SHA
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:build", "--factory", "--host", "0.0.0.0", "--port", "8000"]

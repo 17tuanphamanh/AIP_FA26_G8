@@ -28,7 +28,7 @@ def test_0006_eval_status_check(pg: PgUrls) -> None:
             _insert(rw, V1, is_current=False)
             _insert(rw, V2, is_current=False, eval_status="unevaluated")
             with rw.connect() as conn:
-                rows = dict(conn.execute(text("SELECT kb_version, eval_status FROM kb_versions")).all())
+                rows: dict[str, str] = dict(conn.execute(text("SELECT kb_version, eval_status FROM kb_versions")).all())
             assert rows == {V1: "evaluated", V2: "unevaluated"}
         finally:
             rw.dispose()

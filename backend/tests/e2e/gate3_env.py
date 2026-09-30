@@ -242,13 +242,15 @@ async def worker(parts: Parts) -> AsyncIterator[WorkerJobs]:
 @asynccontextmanager
 async def gate3(
     pg: PgUrls, qdrant_url: str, mock: MockServer, *, clock: FakeClock, scripts: dict[str, Script],
-    proactive: bool = True, qdrant_override: str | None = None,
+    proactive: bool = True, qdrant_override: str | None = None, ml: FakeMlService | None = None,
 ) -> AsyncIterator[Parts]:  # fmt: skip
+    """`ml`: ml-service giả riêng (vd `FakeMlService(rerank_score=0.05)` — Phase 4 s8 ép điểm truy hồi thấp)."""
     rw = create_async_engine(pg.role("app_rw"))
     gw = make_gateway(scripts, clock=clock, store=SqlLlmStore(rw), trace=trace_parent,  # type: ignore[arg-type]
                       cache_mode="bypass")  # fmt: skip
     try:
-        yield Parts(pg, qdrant_url, mock, clock, gw, rw, proactive=proactive, qdrant_override=qdrant_override)
+        yield Parts(pg, qdrant_url, mock, clock, gw, rw, ml=ml or FakeMlService(), proactive=proactive,
+                    qdrant_override=qdrant_override)  # fmt: skip
     finally:
         await rw.dispose()
 

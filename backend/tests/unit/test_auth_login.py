@@ -13,8 +13,9 @@ from datetime import datetime, timedelta
 
 import pytest
 from app.auth.service import GENERIC_LOGIN_ERROR
+from app.auth.username_hash import stored_username, username_key
 from app.core.logging import JsonFormatter, RedactSecretsFilter
-from app.domain.alerts import BRUTEFORCE_RULE_ID
+from app.domain.alerts import BRUTEFORCE_RULE_ID, bruteforce_subject
 from tests.fakes.auth import (
     DEMO_PASSWORD,
     FakeAdUser,
@@ -28,6 +29,12 @@ from tests.unit.auth_helpers import AuthEnv, auth_env
 def env() -> Iterator[AuthEnv]:
     with auth_env() as e:
         yield e
+
+
+def _username_key(env: AuthEnv) -> bytes:
+    secret = env.settings.jwt_signing_key
+    assert secret is not None  # auth_settings luôn đặt khoá
+    return username_key(secret.get_secret_value().encode("utf-8"))
 
 
 def _cookie_header(env: AuthEnv, name: str, response_headers: list[str]) -> str:
@@ -126,11 +133,16 @@ def test_two_users_locked_same_instant_get_two_alerts(env: AuthEnv) -> None:
     assert {a.window_start for a in alerts} == {env.clock.now()}
 
 
-def test_unknown_username_lock_alert_uses_username_subject(env: AuthEnv) -> None:
+def test_unknown_username_lock_alert_uses_hashed_username_subject(env: AuthEnv) -> None:
+    """Phase 4 P2 (Việc treo 10 — `bruteforce_alert(username=…)`): username ma khoá → vẫn đúng 1 cảnh báo, nhưng `subject` và
+    `detail.username` dựng từ giá trị BĂM (trước đây `"username:khong.ton.tai"` nguyên văn vào bảng `alerts`)."""
     for _ in range(5):
         env.login("khong.ton.tai", "sai")
     [alert] = env.alerts.of(BRUTEFORCE_RULE_ID)
-    assert alert.subject == "username:khong.ton.tai" and alert.detail["user_id"] is None
+    stored = stored_username("khong.ton.tai", known=False, key=_username_key(env))
+    assert alert.subject == bruteforce_subject(None, stored) and alert.detail["user_id"] is None
+    assert alert.detail["username"] == stored
+    assert "khong.ton.tai" not in repr(alert)
 
 
 def test_failures_outside_window_do_not_lock(env: AuthEnv) -> None:
@@ -154,6 +166,8 @@ def test_mfa_enrolled_events_do_not_count_as_failures(env: AuthEnv) -> None:
 
 
 def test_locked_ghost_username_responds_exactly_like_locked_real_user(env: AuthEnv) -> None:
+    """Phase 4 P2–P3 (4a-3): username KHÔNG có dòng `users` lưu băm `"h:" + HMAC` — kỳ vọng đổi sang giá trị băm, ý test giữ
+    nguyên (khoá như người thật, đếm qua cùng giá trị)."""
     assert env.login("an.nv").status_code == 200  # user thật, có dòng users → khoá cứng
     for name in ("an.nv", "khong.ton.tai", "binh.tt"):  # binh.tt có trong AD, chưa có dòng users
         for _ in range(5):
@@ -166,8 +180,10 @@ def test_locked_ghost_username_responds_exactly_like_locked_real_user(env: AuthE
         assert r.json() == real.json() == {"detail": GENERIC_LOGIN_ERROR}
         assert r.headers.get("set-cookie") == real.headers.get("set-cookie") is None
     reasons = [(e.username_attempted, e.detail["reason"]) for e in env.sink.of("account_locked")]
-    for name in ("an.nv", "khong.ton.tai", "binh.tt"):
-        assert (name, "threshold") in reasons and (name, "still_locked") in reasons
+    key = _username_key(env)
+    for name, known in (("an.nv", True), ("khong.ton.tai", False), ("binh.tt", False)):
+        stored = stored_username(name, known=known, key=key)
+        assert (stored, "threshold") in reasons and (stored, "still_locked") in reasons
     env.clock.advance(timedelta(minutes=10, seconds=1))  # cửa sổ trượt qua
     assert env.login("binh.tt").status_code == 200
 

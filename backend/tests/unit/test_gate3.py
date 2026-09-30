@@ -7,7 +7,7 @@ import hashlib
 import subprocess
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -204,7 +204,7 @@ def test_env_probe_command_echoed_without_values() -> None:
 
 
 def _ctx_with_http(handler: Callable[[httpx.Request], httpx.Response]) -> tuple[gate3.Ctx, FakeRun, list[str]]:
-    run, out = FakeRun(), []
+    run, out = FakeRun(), cast(list[str], [])
     http = httpx.Client(base_url="http://127.0.0.1:8000", transport=httpx.MockTransport(handler))
     ctx = gate3.Ctx(shell=Shell(COMPOSE.split(), run=run, echo=out.append), http=http,
                     report=Report(echo=out.append), password="x")  # fmt: skip
@@ -248,7 +248,7 @@ class StopFails(FakeRun):
 
 
 def test_tc28_stop_failure_still_starts_qdrant() -> None:
-    run, out = StopFails(), []
+    run, out = StopFails(), cast(list[str], [])
     http = httpx.Client(base_url="http://127.0.0.1:8000", transport=httpx.MockTransport(_stack_handler()))
     ctx = gate3.Ctx(shell=Shell(COMPOSE.split(), run=run, echo=out.append), http=http,
                     report=Report(echo=out.append), password="x")  # fmt: skip
@@ -281,8 +281,9 @@ def test_tc28_failure_is_reported_and_run_continues() -> None:
     assert run.tails()[-1] == "start qdrant"
 
 
-def _tc09_ctx(stack: str) -> tuple[gate3.Ctx, list[str], list[tuple[str, str, str]]]:
-    """Ctx giả trả kết quả stack của tc09: `e3_b9` (reranker thật — Q-3h-11 c3) hoặc `pending` (kỳ vọng cũ R17 chờ duyệt)."""
+def _tc09_ctx(stack: str, *, in_hours: bool = True) -> tuple[gate3.Ctx, list[str], list[tuple[str, str, str]]]:
+    """Ctx giả trả kết quả stack của tc09: `pending` (Phase 4 S0-P7 — R17 chờ duyệt, B11 procedure_doc) hoặc `e3_b9` (hành vi 3h:
+    dừng ở B9 E3 `no_grounding`, reranker thật 0,047)."""
     out: list[str] = []
     opened: list[tuple[str, str, str]] = []
     ctx = gate3.Ctx(shell=Shell(COMPOSE.split(), run=FakeRun(), echo=out.append), http=None,  # type: ignore[arg-type]
@@ -291,11 +292,22 @@ def _tc09_ctx(stack: str) -> tuple[gate3.Ctx, list[str], list[tuple[str, str, st
     view = {"final_state": "S_ESCALATED" if e3 else None, "status": "S_ESCALATED" if e3 else "S_PENDING_APPROVAL",
             "exit_code": "E3" if e3 else None,
             "conversation": [{"kind": "escalation", "text": gate3.user_message("E3")}] if e3 else []}  # fmt: skip
-    audit = [{"step": "B8", "event": "retrieved"}] if not e3 else [{"step": "B9", "event": "no_evidence"}]
+    grounding = {"top_score": 0.047, "above_threshold": False, "kb_gap": True}
+    audit = [{"step": "B8", "event": "retrieved", "detail": {}}] + (
+        [{"step": "B10", "event": "needs_action", "detail": {"grounding": grounding}}]
+        + [{"step": "B9", "event": "no_evidence", "detail": {}}] if e3 else
+        [{"step": "B10", "event": "needs_action", "detail": {"grounding": grounding}},
+         {"step": "B11", "event": "action_built", "detail": {"procedure_doc": "KB-VPN-004"}}]
+    )  # fmt: skip
+    want = gate3.expected_risk("tc09", in_hours)
+    risk = [] if e3 else [{"matched_rule_id": want.rule, "route": want.route, "all_matched": sorted(want.all_matched)}]
+    def _open(who: str, preset: str, sentence: str) -> str:
+        opened.append((who, preset, sentence))
+        return "t9"
+
     stubs: dict[str, Any] = {
-        "mock_reset": lambda: None, "login_users": lambda: None,
-        "open": lambda who, preset, sentence: opened.append((who, preset, sentence)) or "t9",
-        "settle": lambda ticket, before: view, "mock_writes": lambda: 0,
+        "mock_reset": lambda: None, "login_users": lambda: None, "in_hours": lambda: in_hours, "open": _open,
+        "settle": lambda ticket, before: view, "mock_writes": lambda: 0, "risk": lambda ticket: risk,
         "escalation": lambda ticket: [["E3", "no_grounding"]] if e3 else [],
         "audit": lambda ticket: audit, "approvals": lambda ticket: [] if e3 else [{"status": "pending"}],
     }
@@ -304,18 +316,25 @@ def _tc09_ctx(stack: str) -> tuple[gate3.Ctx, list[str], list[tuple[str, str, st
     return ctx, out, opened
 
 
-def test_tc09_expects_e3_at_b9_prints_note_and_fails_old_hitl_result() -> None:
-    """Q-3h-11 c3: trên stack (reranker thật) tc09 dừng ở B9 E3 `no_grounding`, 0 phiếu duyệt, 0 ghi; in chú thích. Kết quả
-    kiểu cũ (R17 → chờ duyệt, 1 phiếu) giờ là FAIL — gate3 không xanh oan khi hành vi đổi."""
-    ctx, out, opened = _tc09_ctx("e3_b9")
+@pytest.mark.parametrize("in_hours", [True, False], ids=["trong-gio", "ngoai-gio"])
+def test_tc09_expects_pending_approval_and_fails_old_e3_result(in_hours: bool) -> None:
+    """Phase 4 S0-P7: tc09 (reranker thật, điểm 0,047) → R17 (+R18 ngoài giờ) → chờ duyệt, 1 phiếu, 0 ghi, B11 ghi
+    `procedure_doc=KB-VPN-004`. Kết quả kiểu 3h (E3 ở B9) giờ là FAIL — gate3 không xanh oan khi hành vi lùi lại."""
+    ctx, out, opened = _tc09_ctx("pending", in_hours=in_hours)
     gate3.tc09(ctx)
     assert opened == [(gate3.BINH, "tc09", gate3.TC09)]
-    assert "tc09: kỳ vọng E3 — Việc treo 17, HITL TC09 kiểm ở e2e h6" in out
     assert ctx.report.lines and all(line.ok for line in ctx.report.lines), out
-    ctx, out, _ = _tc09_ctx("pending")
+    names = {line.name for line in ctx.report.lines}
+    assert {"R17 → chờ duyệt", "1 phiếu pending", "B11 căn cứ quy trình (procedure_doc)", "không dừng ở B9"} <= names
+    ctx, out, _ = _tc09_ctx("e3_b9", in_hours=in_hours)
     gate3.tc09(ctx)
     failed = {line.name for line in ctx.report.lines if not line.ok}
-    assert {"→ E3", "escalations", "dừng ở B9 (audit no_evidence)", "0 dòng approvals"} <= failed, out
+    assert {"R17 → chờ duyệt", "1 phiếu pending", "B11 căn cứ quy trình (procedure_doc)"} <= failed, out
+
+
+def test_tc16_still_e3_template() -> None:
+    """S0-P7: tc16 (câu hỏi thông tin, KB không có MFA) vẫn E3 `no_grounding` + mẫu "Mình chưa có thông tin về việc này"."""
+    assert gate3.user_message("E3").startswith("Mình chưa có thông tin về việc này")
 
 
 # ---- Preset và KB fixture --------------------------------------------------------------------------------------------

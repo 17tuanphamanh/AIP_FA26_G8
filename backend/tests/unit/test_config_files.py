@@ -220,7 +220,7 @@ def _slots_file(tmp_path: Path, extra: str = "") -> Path:
 def test_missing_action_metadata_refuses_startup(tmp_path: Path) -> None:
     path = tmp_path / "action_metadata.yaml"
     path.write_text("vpn:\n  renew_vpn_cert: {reversible: true, reversibility: full, data_sensitivity: low, "
-                    "scope: single_device, privilege_level: standard_user}\n")  # thiếu 2 action
+                    "scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004}\n")  # thiếu 2 action
     with pytest.raises(RuntimeError, match="thiếu metadata cho vpn: \\['check_vpn_status', 'reissue_vpn_access'\\]"):
         check_intent_config(Settings(_env_file=None), get_slots(), load_action_metadata(path))  # type: ignore[call-arg]
 
@@ -239,7 +239,7 @@ def test_q3g7_rediagnose_flag_refuses_startup() -> None:
     check_intent_config(Settings(_env_file=None), get_slots(), get_action_metadata())  # type: ignore[call-arg]  # tắt → qua
 
 
-_META = "scope: single_device, privilege_level: standard_user"
+_META = "scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004"
 
 
 @pytest.mark.parametrize(
@@ -256,6 +256,31 @@ def test_bad_action_metadata_rejected(tmp_path: Path, body: str) -> None:
     path.write_text(body)
     with pytest.raises(ValidationError):
         load_action_metadata(path)
+
+
+_META_NO_DOC = "reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user"
+
+
+@pytest.mark.parametrize(
+    "tail", ["", ", procedure_doc: null", ", procedure_doc: KB-VPN-4", ", procedure_doc: kb-vpn-004",
+             ", procedure_doc: KB-XYZ-004", ", procedure_doc: 'KB-VPN-004 x'"],
+    ids=["thieu", "null", "sai-so-chu-so", "chu-thuong", "nhom-la", "duoi-thua"],
+)
+def test_s16_action_metadata_without_valid_procedure_doc_refuses_startup(tmp_path: Path, tail: str) -> None:
+    """s16 (Phase 4 S0-P10): `procedure_doc` BẮT BUỘC, đúng mẫu `doc_id` KB — thiếu/sai → không nạp được → backend/worker không
+    khởi động (`open_runtime` nạp `get_action_metadata()` trước DB). Đối chứng: bản đúng nạp được và giữ giá trị."""
+    path = tmp_path / "action_metadata.yaml"
+    path.write_text(f"vpn: {{renew_vpn_cert: {{{_META_NO_DOC}{tail}}}}}\n")
+    with pytest.raises(ValidationError, match="procedure_doc"):
+        load_action_metadata(path)
+    path.write_text(f"vpn: {{renew_vpn_cert: {{{_META_NO_DOC}, procedure_doc: KB-VPN-004}}}}\n")
+    assert load_action_metadata(path).of("vpn")["renew_vpn_cert"].procedure_doc == "KB-VPN-004"
+
+
+def test_s16_repo_action_metadata_procedure_docs_match_spec() -> None:
+    """S0-P10: `renew_vpn_cert`, `reissue_vpn_access` → KB-VPN-004; `check_vpn_status` → KB-VPN-001 (có trong KB fixture)."""
+    docs = {a: m.procedure_doc for a, m in get_action_metadata().of("vpn").items()}
+    assert docs == {"renew_vpn_cert": "KB-VPN-004", "reissue_vpn_access": "KB-VPN-004", "check_vpn_status": "KB-VPN-001"}
 
 
 def test_slot_named_like_fact_rejected(tmp_path: Path) -> None:

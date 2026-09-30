@@ -13,14 +13,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
 from app.core.clock import FakeClock
 from app.core.hashing import hash_action
 from app.core.turn_budget import TurnDeadline, bind_turn_deadline
-from app.domain.action import build_action
+from app.domain.action import FactValue, build_action
 from app.domain.context import RequesterContext
 from app.domain.facts import CERT_STATUSES, FACT_KEYS
 from app.domain.states import (
@@ -78,12 +78,13 @@ def _graph(
 
 async def _submit(h: GraphHarness, user: str, text: str) -> dict[str, Any]:
     h.tickets.register("t1", h.clock.now(), requester_id=user)
-    return (await h.runner.submit("t1", session_id=f"s-{user}", redacted_request=text)).values  # type: ignore[no-any-return]
+    return cast(dict[str, Any], (await h.runner.submit("t1", session_id=f"s-{user}", redacted_request=text)).values)
 
 
 async def _reply(h: GraphHarness, text: str) -> dict[str, Any]:
     """Sự kiện THÔ bơm thẳng vào runner (bỏ qua API/guard của API) — node tự che (P3)."""
-    return (await deliver_event(h.runner, "t1", S_CLARIFYING, {"kind": "user_reply", "text": text})).values  # type: ignore[no-any-return]
+    return cast(dict[str, Any], (await deliver_event(h.runner, "t1", S_CLARIFYING,
+                                                     {"kind": "user_reply", "text": text})).values)
 
 
 def _questions(v: dict[str, Any]) -> list[dict[str, Any]]:
@@ -266,7 +267,8 @@ async def test_e16_real_clarify_wait_injection_e0_no_extract() -> None:
     ("b11_clarify_question", lambda _: Unavailable(), "llm_unavailable"),
 ])  # fmt: skip
 async def test_question_llm_errors_e2(prompt: str, script: Script, reason: str) -> None:
-    h, _ = _graph("nv002", action=None, **{prompt: script})
+    scripts: dict[str, Any] = {prompt: script}
+    h, _ = _graph("nv002", action=None, **scripts)
     v = await _submit(h, "nv002", "VPN không vào được")
     assert (v["exit_code"], v["escalation_reason_detail"]) == ("E2", reason)
     assert _asked(h) == [] and h.deadlines.waits == []
@@ -294,7 +296,7 @@ def _ctx(user: str = "nv001") -> RequesterContext:
     )  # fmt: skip
 
 
-B6_LAP0342 = {"device_count": 1, "has_registered_device": True, "device_registered": True,
+B6_LAP0342: dict[str, FactValue] = {"device_count": 1, "has_registered_device": True, "device_registered": True,
               "device_owner_is_requester": True, "cert_status": "expired", "cert_days_to_expiry": -3,
               "last_connection_ok": False}  # fmt: skip
 

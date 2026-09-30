@@ -23,7 +23,9 @@ không bao giờ đọc (hay stat) file `.env` thật.
 
 import hashlib
 import json
+import logging
 import os
+import re
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -46,6 +48,10 @@ from app.domain.action import ActionMeta
 from app.domain.exit_codes import ExitCode
 from app.domain.policy import BusinessHours, Rule, check_rules
 from app.domain.slots import IntentSlots
+
+log = logging.getLogger(__name__)
+
+GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")  # Phase 4 P4: `APP_GIT_SHA` chỉ nhận SHA-1 đầy đủ, chữ thường
 
 
 def env_file_from_env() -> str | None:
@@ -183,6 +189,26 @@ class Settings(BaseSettings):
     )
     llm_cache_mode: Literal["default", "eval", "bypass"] = "default"  # P2 mục 8
     rediagnose_on_new_slot: bool = False  # D-20: tắt mặc định; bật → không khởi động (3g, Q-3g-7)
+
+    # ---- Phase 4 ----
+    # S0-P11 (Q-4-U A+, D-34): `true` → yêu cầu HÀNH ĐỘNG cũng phải qua cổng độ liên quan B9 như Phase 3 (ablation Phase 10,
+    # đối chiếu hành vi 3h). Mặc định `false`: B9 chỉ cho câu trả lời; căn cứ hành động = `procedure_doc` kiểm ở B11.
+    grounding_gate_actions: bool = False
+    # P4 (Việc treo 13): commit của image — `make up` build với `--build-arg GIT_SHA` CHỈ khi cây sạch (file tracked không đổi);
+    # `backend/Dockerfile` đặt `ENV APP_GIT_SHA`. Chỉ nhận 40 hex; khác → None + 1 dòng WARNING (không từ chối khởi động);
+    # rỗng (cây bẩn) → None. `lineage.commit_sha` lấy từ đây (qua `NodeDeps.commit_sha`).
+    app_git_sha: str | None = None
+
+    @field_validator("app_git_sha", mode="before")
+    @classmethod
+    def _git_sha_40_hex(cls, v: object) -> object:
+        # P4: sai dạng → None + WARNING (không in giá trị); không từ chối khởi động — lineage chỉ mất commit_sha.
+        if v is None or v == "":
+            return None
+        if isinstance(v, str) and GIT_SHA_RE.fullmatch(v):
+            return v
+        log.warning("APP_GIT_SHA không phải 40 ký tự hex — bỏ qua, lineage.commit_sha = NULL")
+        return None
 
     @field_validator("llm_backend", mode="before")
     @classmethod

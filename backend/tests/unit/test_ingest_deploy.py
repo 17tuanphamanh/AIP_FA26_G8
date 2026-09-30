@@ -13,7 +13,7 @@ REPO = Path(__file__).resolve().parents[3]
 
 def test_ingest_target_mounts_kb_read_only_without_deps() -> None:
     body = makefile_target("ingest")
-    assert "$(COMPOSE) build backend" in body
+    assert "$(BUILD_BACKEND)" in body  # Phase 4 P4: build backend qua biến chung (mang --build-arg GIT_SHA)
     assert "--no-deps" in body and "--rm" in body
     assert '"$(abspath $(KB_DIR)):/srv/kb:ro"' in body
     assert "python -m app.rag.ingest.cli --kb-dir /srv/kb $(ARGS)" in body

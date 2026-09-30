@@ -18,6 +18,7 @@ from uuid import uuid4
 import jwt
 from pydantic import SecretStr
 
+from app.auth.username_hash import username_key
 from app.core.clock import Clock
 from app.domain.context import Role
 
@@ -54,6 +55,10 @@ class TokenSigner:
     @property
     def ttl_seconds(self) -> int:
         return int(self._ttl.total_seconds())
+
+    def username_key(self) -> bytes:
+        """Khoá HMAC cho username ma (Q-4-S): dẫn xuất từ khoá ký, không lộ khoá ký ra ngoài signer."""
+        return username_key(self._key)
 
     def issue(self, *, user_id: str, role: Role, session_id: str, token_version: int) -> str:
         iat = int(self._clock.now().timestamp())
