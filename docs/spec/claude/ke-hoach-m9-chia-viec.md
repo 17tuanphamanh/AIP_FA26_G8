@@ -46,8 +46,8 @@ Luật: **chỉ chủ file được sửa file**. Người kia cần đổi → 
 | `backend/app/settings.py` (khối `# M9`) | Dương (A0) | Đọc. Cần thêm trường (vd múi giờ) → nhờ Dương |
 | `backend/app/db/session.py` (`Engines.monitor`) | Dương (A0) | Đọc |
 | `docker-compose.yml`, `.env.example` (phần M9) | Dương (A0) | Đọc |
-| `.importlinter` (hợp đồng M9) | Dương (A0) | Đọc. Hợp đồng áp cho cả `rules.py`, `evaluator.py` của Duy Anh |
-| `backend/app/main.py` (router M9) | Dương (A3) | Không đụng |
+| `.importlinter` (hợp đồng M9 + dòng chú thích đầu file đếm/liệt kê hợp đồng) | Dương (A0) | Đọc. Hợp đồng áp cho cả `rules.py`, `evaluator.py` của Duy Anh |
+| `backend/app/main.py` (khối `# M9`: handler 503 ở A0, router ở A3) | Dương (A0, A3) | Không đụng |
 | `backend/app/db/alembic/versions/*_monitor_*.py` | **Dương — chủ migration duy nhất** | Cần view/chỉ mục → nhờ Dương thêm (A1 hoặc A4) |
 | `backend/app/monitor/db.py`, `views.py`, `window.py` | Dương (A0) | Import dùng. Thiếu hàm cửa sổ → nhờ Dương |
 | `backend/app/monitor/metrics.py` (`METRIC_SOURCES`) | Dương (A1, A2) | Đọc (luật 13 kiểm nguồn `pending`) |
@@ -173,8 +173,9 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
   3. `db/session.py`: `Engines.monitor: AsyncEngine | None`; dựng khi có DSN; `dispose()` đóng cả nó.
   4. Compose: truyền DSN monitor cho `backend`, `worker`; `.env.example` thêm dòng mẫu (không bí mật thật).
   5. `monitor/db.py`, `monitor/views.py`, `monitor/window.py` đúng chữ ký mục 3.
-  6. Handler `MonitorUnavailable` → 503 `monitor_unavailable` (gắn trong `main.py`, khối `# M9`).
-  7. `.importlinter`: hợp đồng #2 thêm cấm `app.audit`, `app.approval`, `app.risk`, `app.api`, `app.guard`, `app.llm`, `app.rag`; hợp đồng mới: `app.graph`, `app.risk`, `app.executor`, `app.approval` không import `app.monitor`.
+  6. Handler `MonitorUnavailable` → 503, body `{"detail": "monitor_unavailable"}` (giống `runtime_unavailable`, `ticket_busy`) — gắn trong `main.py`, khối `# M9`.
+  7. `.importlinter`: hợp đồng #2 thêm cấm `app.audit`, `app.approval`, `app.risk`, `app.api`, `app.guard`, `app.llm`, `app.rag`; hợp đồng mới `monitor-only-api-worker` theo kế hoạch chung mục 4.2 (liệt kê mọi package trừ `api`, `monitor`, `main`, `worker` + test chống quên); sửa dòng chú thích đầu file (số hợp đồng + tên hợp đồng mới).
+  8. Câu hỏi / mâu thuẫn trong lúc làm → comment vào issue của chặng (không sửa `PROGRESS.md`); Tuấn Anh chuyển vào PROGRESS khi cần.
 - **Test:** thiếu DSN → `monitor_engine` ném lỗi, route thử trả 503; có DSN → `SELECT current_user` = `app_monitor`; `window`: ranh giới 23:59:59/00:00:00 giờ VN (= 16:59:59/17:00:00 UTC), thứ Hai, khung 5 phút.
 - **Mutation:** `monitor_engine` trả `engines.main` khi thiếu; `day_start` dùng UTC thay giờ VN; bỏ một dòng cấm import.
 - **Bẫy:** đừng sửa `Engines.main`/`lock`; đừng đặt DSN mặc định (mặc định = fail-open).
@@ -397,4 +398,5 @@ Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa co
 
 | Ngày | Thay đổi |
 |---|---|
+| 30/09/2026 | Chốt plan A0 (#7): `main.py` thuộc Dương cả A0 (handler) lẫn A3 (router); Dương sửa luôn chú thích đầu `.importlinter`; hợp đồng `monitor-only-api-worker` mở rộng theo kế hoạch chung 4.2; câu hỏi ghi vào comment issue thay vì PROGRESS |
 | 29/09/2026 | Tạo file: chia M9 thành luồng A (Lưu Dương, 5 chặng) và luồng B (Tạ Duy Anh, 4 chặng); bảng chủ file; hợp đồng hàm giữa hai luồng; lịch D1–D6 + thứ tự merge; kiểm lại nguồn dữ liệu (span tool chưa ghi → luật 5 pending; `refresh_reuse_detected` không có `token_family_id` → Q-M9-8; `lock_start` của auth ≠ `occurred_at` → luật 3 đối soát ±60 s); review chéo + cổng chéo |

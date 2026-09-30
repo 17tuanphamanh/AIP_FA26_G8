@@ -134,9 +134,13 @@ Một luật lỗi (exception) **không** được làm hỏng luật khác tron
 3. Cảnh báo chỉ **báo người**. Không luật nào tự đổi hành vi hệ thống (vd luật 1 vượt 40% → không đổi `THRESHOLD_LOW/HIGH`).
 4. M9 **không là nguồn dữ liệu cho M5**: không module nào ngoài `api`/`worker` import `app.monitor`.
 
-### 4.2. Hợp đồng import (M9-0 siết thêm) [Đề xuất]
+### 4.2. Hợp đồng import (M9-0 siết thêm) [Chốt A0, 30/09/2026]
 
-`.importlinter` #2 `monitor-read-only`: `app.monitor` không import `app.graph`, `app.executor`, `app.tools` (đã có) **+ `app.audit`, `app.approval`, `app.risk`, `app.api`, `app.guard`, `app.llm`, `app.rag`**. Thêm hợp đồng mới: `app.graph`, `app.risk`, `app.executor`, `app.approval` **không import `app.monitor`** (bất biến 4.1.4). Giá trị cấu hình M9 cần (vd `spend.cap_usd`) do worker đọc rồi truyền vào `RuleContext`.
+`.importlinter` #2 `monitor-read-only`: `app.monitor` không import `app.graph`, `app.executor`, `app.tools` (đã có) **+ `app.audit`, `app.approval`, `app.risk`, `app.api`, `app.guard`, `app.llm`, `app.rag`**.
+
+Hợp đồng mới `monitor-only-api-worker` (bất biến 4.1.4 — chỉ `app.api` và `app.worker` được import `app.monitor`): nguồn **liệt kê tường minh mọi package/module cấp một của `app` trừ `api`, `monitor`, `main`, `worker`** — hiện là `app.approval`, `app.audit`, `app.auth`, `app.core`, `app.db`, `app.domain`, `app.eval`, `app.executor`, `app.graph`, `app.guard`, `app.llm`, `app.ml`, `app.notify`, `app.rag`, `app.risk`, `app.tools`, `app.settings`, `app.heartbeat`. Kèm test unit (kiểu `test_write_adapters_listed.py`): quét `backend/app/`, mọi package/module cấp một ngoài 4 cái được miễn phải có trong danh sách nguồn — thêm package mới mà quên khai báo → test đỏ; danh sách quét phải không rỗng. Bản đề xuất trước (chỉ chặn `graph`, `risk`, `executor`, `approval`) để hở `audit`, `auth`, `guard`, `tools`… — lệch bất biến 4.1.4 (Q-M9-A0-2).
+
+Giá trị cấu hình M9 cần (vd `spend.cap_usd`) do worker đọc rồi truyền vào `RuleContext`.
 
 ### 4.3. Chỉ số [Chốt D-30]
 
@@ -408,5 +412,6 @@ make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin
 
 | Ngày | Thay đổi |
 |---|---|
+| 30/09/2026 | **v1.2** — chốt plan A0 (issue #7): mục 4.2 hợp đồng `monitor-only-api-worker` liệt kê mọi package trừ `api`/`monitor`/`main`/`worker` + test chống quên (Q-M9-A0-2); body 503 = `{"detail": "monitor_unavailable"}` (Q-M9-A0-1) |
 | 29/09/2026 | **v1.1** — chia cho hai người: Lưu Dương (luồng A) + Tạ Duy Anh (luồng B), chi tiết ở `claude/ke-hoach-m9-chia-viec.md`; mục 7.0 ánh xạ gói → chặng; kiểm lại nguồn: span tool chưa ghi DB (luật 5 pending, Q-M9-4 sửa), `refresh_reuse_detected` không có `token_family_id` (Q-M9-8 mới), `lock_start` của auth ≠ `occurred_at` (luật 3 đối soát ±60 s); migration chỉ Dương viết |
 | 29/09/2026 | v1.0 — Tạo file: kiểm repo tại `3f33ab2`, 8 chặng M9-0…M9-7, định nghĩa chỉ số, 16 luật (thêm luật 15 theo việc Phase 7 đã ghi, đề xuất luật 16 cho E7), ranh giới file, quy trình PR, câu hỏi Q-M9-1…7 |
