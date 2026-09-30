@@ -1,6 +1,8 @@
 """Migration 0002 (P7 2.3 bản 1.5): nới CHECK `security_events.event_type` thêm mfa_enrolled,
 mfa_reset; view `auth_failures` không đếm hai loại này; downgrade dừng rõ ràng khi đã có dòng."""
 
+from typing import Any
+
 import pytest
 from alembic import command
 from sqlalchemy import Connection, create_engine, text
@@ -36,7 +38,7 @@ def test_upgrade_accepts_mfa_types_and_view_excludes_them(pg: PgUrls) -> None:
                 for e in ("mfa_enrolled", "mfa_reset", "login_failed", "mfa_failed"):
                     _event(conn, e)
             with rw.connect() as conn:
-                types = conn.execute(
+                types: Any = conn.execute(
                     text("SELECT event_type FROM auth_failures ORDER BY event_id")
                 ).scalars()
                 assert list(types) == ["login_failed", "mfa_failed"]

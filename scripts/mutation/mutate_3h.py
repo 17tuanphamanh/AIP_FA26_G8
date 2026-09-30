@@ -147,7 +147,7 @@ _B18_SEND = (
     "            )  # fmt: skip\n"
 )
 _ROUTE = '        return Risk("R20", "AUTO", frozenset({"R20"})) if in_hours else Risk("R18", "HITL", frozenset({"R18", "R20"}))\n'
-_CAP = "    if type(cap) not in (int, float) or not cap <= CAP_MAX_USD:  # NaN, thiếu, > 1 → từ chối\n"
+_CAP = "    if type(cap) not in (int, float) or not cast(float, cap) <= CAP_MAX_USD:  # NaN, thiếu, > 1 → từ chối\n"  # P5 4a: cast
 _PROBE_ECHO = """    'if [ -n "$(printenv "$v")" ]; then echo "$v=1"; else echo "$v=0"; fi; done; '\n"""
 _MERGE_ANCHOR = "        added = {k: v for k, v in inferred.items() if k not in slots}"  # như mutate_3f.py M-3f-2
 _TC28_FINALLY = '    finally:\n        ctx.shell.compose("start", "qdrant")  # lỗi giữa chừng vẫn bật lại\n'

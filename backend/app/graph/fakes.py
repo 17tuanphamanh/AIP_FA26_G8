@@ -268,6 +268,8 @@ class NodeDeps:
     enable_proactive_diagnosis: bool = True
     # Phase 4 S0-P11: `GROUNDING_GATE_ACTIONS` (ablation) — B10 áp B9 cho cả nhánh hành động. Mặc định = Settings (tắt).
     grounding_gate_actions: bool = False
+    # Phase 4 P4: `lineage.commit_sha` (B10, B12) = `Settings.app_git_sha` (None = không biết — build từ cây bẩn/test).
+    commit_sha: str | None = None
     # 3g: output guard (phase3 10.3) — MỌI chữ LLM sắp lưu/gửi (thân B10, câu hỏi B11) qua đây (P4). Privacy guard THUẦN
     # (`redact_text`) — `clarify_wait` che lại câu trả lời trước khi gửi LLM/lưu (P3, Q-3g-4). Mặc định = cấu hình repo
     # (guard regex; KHÔNG BAO GIỜ mặc định bản không che); runtime dựng tường minh theo Settings (`graph/wiring._open`).

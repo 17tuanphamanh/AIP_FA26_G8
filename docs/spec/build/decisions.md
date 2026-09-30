@@ -2,7 +2,7 @@
 
 *Thuộc bộ `build/`. Đây là **nơi duy nhất** theo dõi trạng thái quyết định. Nhóm **tự quyết** mọi mục (không có vòng hỏi GVHD); mục nào đổi hành vi hoặc công nghệ so với tài liệu gốc thì **báo cáo** GVHD trong báo cáo tuần. `huong-dan-xay-dung-he-thong-2.md` Phase 0 gọi file này là `decisions.md`. Khi một mục được chốt: sửa cột "Trạng thái" ở đây, rồi áp patch tương ứng (nếu có) trong `claude/bo-sung-bo-tai-lieu-build.md`.*
 
-*Cập nhật: 25/09/2026.*
+*Cập nhật: 30/09/2026 (D-34, Q-4-A…U).*
 
 **Nguyên tắc chốt (áp cho mục 1, 2, 3):**
 
@@ -113,9 +113,9 @@ Mã Q giữ nguyên để không vỡ tham chiếu. Mỗi mục: bản **xây tr
 | Q13 | Đổi tên đề tài "Risk-Aware…" | **Giữ tên đã nộp trên Edunext**; dùng cụm "risk-aware" trong phần đóng góp của báo cáo | Đổi tên cần thủ tục, không đổi nội dung | — | — | Đã chốt |
 | Q14 | Fail-safe khi hết hạn duyệt | **Escalate, không tự làm** | Nguyên tắc 1: an toàn hơn tự động hóa | — | — | Đã chốt |
 
-**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
+**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
 
-## 3. Quyết định kỹ thuật D-01…D-33
+## 3. Quyết định kỹ thuật D-01…D-34
 
 Nội dung đầy đủ và lý do: `build/00-README.md` mục 4 và file được nêu trong từng quyết định. "Chốt trước" = phase phải chốt xong trước khi bắt đầu.
 
@@ -154,6 +154,7 @@ Nội dung đầy đủ và lý do: `build/00-README.md` mục 4 và file đư�
 | D-31 | Một tin tổng hợp cho yêu cầu nhiều ý: con không tự nhắn, cha gửi một tin mỗi lượt người dùng, xác nhận một lần qua cha | B5, B10, B11, B16, B18, B19, B20; DB 22 bảng (`child_notices`) | 5 | **Có** — báo đánh đổi "người dùng chờ ý chậm nhất" (nhóm đã chọn giữ đúng câu chốt) | Đã chốt (theo đặc tả) |
 | D-32 | B3 chạy model phân loại intent đa nhãn (nhóm tự huấn luyện) trước; LLM cho vùng lưng chừng, câu nhiều ý và khi chưa có model | B03-B05, B02, P2, P4, P11 | 3 | Nên báo | Đã chốt (theo đặc tả) |
 | D-33 | Backbone mDeBERTa-v3-base cho `intent-clf` và `injection-clf`; PhoBERT baseline intent; Prompt Guard 2 baseline RQ4 | P11, B02, P4 | 5 | Nên báo | Đã chốt (theo đặc tả) |
+| D-34 | **Tách căn cứ câu trả lời và căn cứ hành động (Q-4-U A+).** Căn cứ của **câu trả lời** = độ liên quan truy hồi (B9, `RETRIEVAL_THRESHOLD`) — chỉ áp khi `need_type=info`, kiểm trong B10 **trước** `expand`/`b10_answer`. Căn cứ của **hành động** = tài liệu quy trình `procedure_doc` khai cho `action_type` (`action_metadata.yaml`), kiểm **tất định** ở B11 trên KB đang chạy lúc đó (alias hiện hành, lọc theo role) — thiếu → E3 `no_procedure`. Hành động được quản bởi chính sách (M5) và con người (M6), không bởi độ giống văn bản. Chunk dưới ngưỡng không làm bằng chứng cho B14 (`evidence_for_estimator`). Ràng buộc Phase 6: không luật nào khớp + `kb_gap` → tối đa HITL, không AUTO. Không kiểm lại quy trình ở B17: nếu quy trình bị rút sau B11, **người duyệt (HITL) là lớp chặn** — màn xem phiếu (4c) hiển thị `procedure_doc`. Cờ `GROUNDING_GATE_ACTIONS` (mặc định tắt) giữ hành vi cũ cho ablation Phase 10. Lý do đo được: reranker xếp đúng tài liệu cho câu ra lệnh nhưng điểm 0,047 (tc09) so với 0,981 cho câu hỏi (tc05) | **Thứ tự luồng**: B9 nay nằm trong nhánh trả lời của B10; B08, B10, B11, B14, B20 (ghi chú bàn giao) | 4 | **Có** (đổi thứ tự bước [Chốt] B9 → B10) | Đã chốt 30/09/2026, hiện thực `5ed423d` |
 
 ## 4. Chế độ xây: code trước, gắn API sau
 
@@ -246,6 +247,13 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 3b | Q-3b-1…17 | Embed ingest nhóm 1; sha gồm front matter; ghi bù từ metadata collection; cổng (c) đánh giá lại bản cũ; `pipeline_sha` (3c so lúc truy vấn → E2); khoá advisory; hợp đồng `rag-lower-layer`; cổng kiểm dense-only tạm tới 3c; hậu kiểm 3b sau dự án (mục 1.5) | `phase3-thiet-ke-chi-tiet.md` mục 5.14 |
 | 3a | Q-3a-1…16 | torch CPU; `attempts` = số lần gọi lỗi; lỗi mạng khác → `connect` có retry; `NodeDeps.ml` bắt buộc; fake tầng HTTP; test sinh đôi + `ml_real`; worker chờ ml-service; lock luôn 40 hex; trần timeout < stale/2, rerank 10 s tạm, quyết ở 3c | `phase3-thiet-ke-chi-tiet.md` mục 4.12 |
 
+**Phase 4 (30/09/2026):** câu hỏi `Q-4-A…U` và lỗ hổng `G4-1…25` nằm ở `build/phase4-thiet-ke-chi-tiet.md` mục 2–3 (Tuấn Anh chốt: A…T đồng ý hết, U = phương án A+). Quyết định khi hiện thực từng chặng nằm ở mục chốt của chặng đó.
+
+| Chặng | Mã | Tóm tắt | Ở đâu |
+|---|---|---|---|
+| 4a S0 | Q-4-U, S0-P1…P11, S0-A1…A5, Q-4a-1…3 | D-34; handoff đánh dấu tài liệu dưới ngưỡng + câu cố định cho `no_procedure`; `procedure_available` đọc alias lúc B11; không kiểm quy trình ở B17 | `phase4-thiet-ke-chi-tiet.md` mục 4.0 + "Chốt khi hiện thực S0" |
+| 4b (sắp) | Q-4-L, M, N, P, Q, R | Xung đột → Trưởng BP [Chốt]; **R17/R18/R19 sẽ thêm điều kiện `device_owner_is_requester`** (máy người khác/không tồn tại → E5); đồng bộ `users` từ AD; chuỗi quản lý; seed `l1_lead` | mục 5 |
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -264,3 +272,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 28/09/2026 | Mục 4.1: Q-3b-1…17 (chặng 3b) |
 | 30/09/2026 | Mục 4.1: Q-3c…Q-3h (chặng 3c–3h, trỏ mục chốt tương ứng); §1.1: ghi chú điều kiện R16–R20 Phase 3 |
 | 30/09/2026 | Phase 3 đóng phần code (`c11b61f`, `61ad8ac`, CI `36684958734`); nợ nghiệm thu NỢ-3-1 (gate3 thành viên ngoài giờ), NỢ-3-2 (smoke LLM thật — dời mục 4 việc 2) gộp vào đợt kiểm tổng |
+| 30/09/2026 | D-34 (tách căn cứ câu trả lời / hành động, Q-4-U A+, commit `5ed423d`); mục 4.1 thêm Phase 4 (Q-4-A…U) |

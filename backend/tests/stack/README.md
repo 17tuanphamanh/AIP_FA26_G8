@@ -164,3 +164,10 @@ biến env `LLM_SPEND_CAP_USD`). **Không commit `llm.yaml` đã hạ cap** — 
 5. Trả `cap_usd` về 38, gỡ dòng `pricing` tạm, `.env` về `LLM_BACKEND=scripted` → `docker compose build backend worker` →
    `make up`.
 6. `git diff config/llm.yaml` phải RỖNG.
+
+## `make verify` (Phase 4, mục 4.4)
+
+Một lệnh cho mọi DỪNG: `make verify G=23` = lint → test → up → gate2 (tạo lại backend+worker với `FAKE_SCENARIO=approval`) →
+gate3 (tạo lại với `FAKE_SCENARIO` rỗng) → LUÔN trả backend+worker về cấu hình `.env`. `G=0` chỉ lint + test; `BENCH=1` thêm bench
+checkpoint (Postgres testcontainers). Kết quả: `.verify/summary.txt` (`make verify-status`) + `.verify/run-*.log`. Không đọc/sửa
+`.env`, không `down -v`.

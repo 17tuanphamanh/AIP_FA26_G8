@@ -34,7 +34,7 @@ from app.rag.ingest.config import ALIAS
 from app.rag.models import EvidenceBlock, RetrievalResult, RetrievalSystemError
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStoreTransient
-from app.risk.estimator import evidence_for_estimator
+from app.risk.estimator import PMethod, evidence_for_estimator
 from app.risk.models import RiskContext
 from app.settings import (
     Settings,
@@ -283,7 +283,7 @@ async def test_m_s0_7_restricted_procedure_employee_e3_l1_passes() -> None:
     nhân viên → E3 `no_procedure`; L1 (được xem restricted) → qua. Cùng tài liệu, chỉ khác vai trò."""
     meta = dict(get_action_metadata().root["vpn"])
     meta["renew_vpn_cert"] = meta["renew_vpn_cert"].model_copy(update={"procedure_doc": "KB-VPN-007"})
-    override = {"action_metadata": {"vpn": meta}}
+    override: dict[str, Any] = {"action_metadata": {"vpn": meta}}
     out, _ = await _b11(await _frag(), **override)
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E3", "no_procedure")
     out, _ = await _b11(await _frag(), _b11_state(_ctx(role="l1")), **override)
@@ -482,7 +482,7 @@ class RecordingEstimator:
     def __init__(self) -> None:
         self.seen: list[list[ChunkRef]] = []
 
-    async def estimate(self, action: Action, ctx: RiskContext, retrieved: Sequence[ChunkRef]) -> tuple[float, str]:
+    async def estimate(self, action: Action, ctx: RiskContext, retrieved: Sequence[ChunkRef]) -> tuple[float, PMethod]:
         self.seen.append(list(retrieved))
         raise LLMUnavailable("estimator giả — chỉ ghi nhận đầu vào")
 

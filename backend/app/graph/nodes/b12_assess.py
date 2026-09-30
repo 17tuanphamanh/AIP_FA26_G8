@@ -11,7 +11,7 @@ Input DUY NHẤT của M5: `intended_action` + `build_ctx(state, now, business_h
   `llm_layer_disabled`, "Không ước lượng được rủi ro → không tự làm". Estimator TRẢ về xác suất ở Phase 3 = cấu hình sai
   (lớp 2 chưa hiện thực) → ném lỗi → E9 qua boundary, không bao giờ tự làm (M-3h-9).
 - Điểm log 4 (3.6) qua `audit_detail` của chính lần `goto` + `policy_sha256` (3-Q29, `policy_version_id` NULL ở Phase 3);
-  dòng `lineage` cùng transaction audit (`goto(lineage=…)`, như B10 3g).
+  dòng `lineage` cùng transaction audit (`goto(lineage=…)`, như B10 3g); `commit_sha` = `deps.commit_sha` (Phase 4 P4).
 - Mỗi nhánh một `goto` với `step`/`exit_code`/`escalation_reason_detail` hằng (P1). `step="B13/B14"` như bản giả / mã giả B12 §5.
 """
 
@@ -53,7 +53,7 @@ def make(deps: NodeDeps) -> NodeFn:
         action = Action.model_validate(state["intended_action"])  # thiếu = bug B11 → E9
         ctx = build_ctx(state, current_run().clock.now(), deps.business_hours)
         verdict = evaluate(action, ctx)
-        lineage = {"policy_version_id": None, "kb_version": state.get("kb_version"), "commit_sha": None}
+        lineage = {"policy_version_id": None, "kb_version": state.get("kb_version"), "commit_sha": deps.commit_sha}
         if verdict.matched and verdict.decision is not None:
             decision = RiskDecision(
                 decided_by="rule", policy_decision=verdict.decision, matched_rule_id=verdict.rule_id,

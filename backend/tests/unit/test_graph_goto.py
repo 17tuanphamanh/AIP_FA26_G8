@@ -72,7 +72,7 @@ async def test_goto_matches_transition_table_for_every_pair(is_parent: bool) -> 
 
 APPROVED_HASH = hash_action(FAKE_ACTION)
 
-FORBIDDEN_CASES = {
+FORBIDDEN_CASES: dict[str, tuple[Any, str, dict[str, Any]]] = {
     "F1_rule_bypass": (state(S_ASSESSING, risk=fake_risk("HITL")), S_EXECUTING, {}),
     "F2_no_approval": (
         state(S_PENDING_APPROVAL, intended_action=FAKE_ACTION, action_plan_hash=APPROVED_HASH),

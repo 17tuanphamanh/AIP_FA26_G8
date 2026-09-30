@@ -7,7 +7,7 @@ import hashlib
 import subprocess
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -204,7 +204,7 @@ def test_env_probe_command_echoed_without_values() -> None:
 
 
 def _ctx_with_http(handler: Callable[[httpx.Request], httpx.Response]) -> tuple[gate3.Ctx, FakeRun, list[str]]:
-    run, out = FakeRun(), []
+    run, out = FakeRun(), cast(list[str], [])
     http = httpx.Client(base_url="http://127.0.0.1:8000", transport=httpx.MockTransport(handler))
     ctx = gate3.Ctx(shell=Shell(COMPOSE.split(), run=run, echo=out.append), http=http,
                     report=Report(echo=out.append), password="x")  # fmt: skip
@@ -248,7 +248,7 @@ class StopFails(FakeRun):
 
 
 def test_tc28_stop_failure_still_starts_qdrant() -> None:
-    run, out = StopFails(), []
+    run, out = StopFails(), cast(list[str], [])
     http = httpx.Client(base_url="http://127.0.0.1:8000", transport=httpx.MockTransport(_stack_handler()))
     ctx = gate3.Ctx(shell=Shell(COMPOSE.split(), run=run, echo=out.append), http=http,
                     report=Report(echo=out.append), password="x")  # fmt: skip
@@ -301,9 +301,12 @@ def _tc09_ctx(stack: str, *, in_hours: bool = True) -> tuple[gate3.Ctx, list[str
     )  # fmt: skip
     want = gate3.expected_risk("tc09", in_hours)
     risk = [] if e3 else [{"matched_rule_id": want.rule, "route": want.route, "all_matched": sorted(want.all_matched)}]
+    def _open(who: str, preset: str, sentence: str) -> str:
+        opened.append((who, preset, sentence))
+        return "t9"
+
     stubs: dict[str, Any] = {
-        "mock_reset": lambda: None, "login_users": lambda: None, "in_hours": lambda: in_hours,
-        "open": lambda who, preset, sentence: opened.append((who, preset, sentence)) or "t9",
+        "mock_reset": lambda: None, "login_users": lambda: None, "in_hours": lambda: in_hours, "open": _open,
         "settle": lambda ticket, before: view, "mock_writes": lambda: 0, "risk": lambda ticket: risk,
         "escalation": lambda ticket: [["E3", "no_grounding"]] if e3 else [],
         "audit": lambda ticket: audit, "approvals": lambda ticket: [] if e3 else [{"status": "pending"}],

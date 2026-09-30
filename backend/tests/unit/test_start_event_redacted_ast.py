@@ -178,7 +178,8 @@ def check_call(tree: ast.Module, fn: Fn, outer: list[Fn], call: ast.Call) -> tup
     if event is None:
         return [], []
     clean = _clean(fn, call.lineno, _redact_trusted(tree))
-    free, bad = [], []
+    free: list[str] = []
+    bad: list[str] = []
     for key, value in zip(event.keys, event.values, strict=True):
         if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
             raise Unparsable(f"{fn.name}:{call.lineno}: khoá sự kiện không phải chuỗi hằng (hoặc `**`)")

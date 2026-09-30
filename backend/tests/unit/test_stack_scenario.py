@@ -4,7 +4,7 @@ lẫn worker. Fail-closed theo APP_ENV: `test_app_env.py`."""
 
 import ast
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import yaml
@@ -47,7 +47,7 @@ def _branches(node: str) -> set[str]:
     found = {DEFAULT_OUTCOMES[node], "raise"}
     for cmp in ast.walk(tree):
         if isinstance(cmp, ast.Compare) and isinstance(cmp.left, ast.Name) and cmp.left.id == "outcome":
-            found |= {c.value for c in cmp.comparators if isinstance(c, ast.Constant)}
+            found |= {cast(str, c.value) for c in cmp.comparators if isinstance(c, ast.Constant)}
     return found
 
 

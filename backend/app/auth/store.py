@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, Table, func, select, text, update
+from sqlalchemy import Row, Table, bindparam, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -87,8 +87,12 @@ def _session_values(s: SessionRecord) -> dict[str, Any]:
     }
 
 
-_COUNT_BY_USERNAME = text(
-    "SELECT count(*) FROM auth_failures WHERE username_attempted = :u AND occurred_at > :since"
+_BY_USERNAMES = "FROM auth_failures WHERE username_attempted IN :u AND occurred_at > :since"  # một điều kiện cho cả hai câu
+_COUNT_BY_USERNAME = text(  # Q-4a-5: (nguyên văn, bản băm) trong CÙNG một câu — không thêm truy vấn
+    f"SELECT count(*) {_BY_USERNAMES}"
+).bindparams(bindparam("u", expanding=True))
+_LAST_FAILURE_BY_USERNAME = text(f"SELECT max(occurred_at) {_BY_USERNAMES}").bindparams(  # Q-4a-6
+    bindparam("u", expanding=True)
 )
 _COUNT_BY_IP = text("SELECT count(*) FROM auth_failures WHERE ip_prefix = :ip AND occurred_at > :since")
 
@@ -122,18 +126,38 @@ class SqlAuthStore:
             "is_privileged_account": sync.is_privileged_account,
             "last_synced_at": sync.synced_at,
         }
+        # Q-4a-6: "dòng mới" lấy từ kết quả INSERT … ON CONFLICT DO NOTHING RETURNING, KHÔNG từ SELECT trước (SELECT … FOR
+        # UPDATE trên dòng chưa có không khoá gì → hai lượt đồng thời cùng thấy "chưa có"). Lượt thua chờ lượt thắng commit,
+        # nhận 0 dòng → khoá dòng, đọc role cũ, UPDATE thuộc tính AD. ON CONFLICT KHÔNG chỉ cột: mọi chỉ mục UNIQUE (khoá chính
+        # VÀ `username`) đều là arbiter — chỉ định `user_id` thì `username` kiểm kiểu thường, hai lượt cùng user mới lọt qua bước
+        # kiểm trước có thể ném UniqueViolation (security-reviewer Q-4a-6). Trùng `username` với user_id KHÁC → 0 dòng và không
+        # có dòng user_id này → ValueError (fail-closed, như bản giả).
         async with self._engine.begin() as conn:
-            previous = (
+            created = (
+                await conn.execute(
+                    insert(_users)
+                    .values(**values, created_at=sync.synced_at)
+                    .on_conflict_do_nothing()
+                    .returning(*_users.c)
+                )
+            ).first()
+            if created is not None:
+                return _user(created), None
+            previous: str | None = (
                 await conn.execute(
                     select(_users.c.role).where(_users.c.user_id == sync.user_id).with_for_update()
                 )
             ).scalar_one_or_none()
-            ins = insert(_users).values(**values, created_at=sync.synced_at)
-            upsert = ins.on_conflict_do_update(
-                index_elements=[_users.c.user_id],
-                set_={k: ins.excluded[k] for k in values if k != "user_id"},
-            ).returning(*_users.c)
-            row = (await conn.execute(upsert)).one()
+            if previous is None:
+                raise ValueError("UNIQUE users.username: username đã thuộc user_id khác")
+            row = (
+                await conn.execute(
+                    update(_users)
+                    .where(_users.c.user_id == sync.user_id)
+                    .values(**{k: v for k, v in values.items() if k != "user_id"})
+                    .returning(*_users.c)
+                )
+            ).one()
         return _user(row), previous
 
     async def bump_token_version(self, user_id: str) -> int:
@@ -160,9 +184,14 @@ class SqlAuthStore:
 
     # ---- auth_failures ----
 
-    async def count_failures(self, username: str, since: datetime) -> int:
+    async def count_failures(self, usernames: tuple[str, ...], since: datetime) -> int:
         async with self._engine.connect() as conn:
-            return int((await conn.execute(_COUNT_BY_USERNAME, {"u": username, "since": since})).scalar_one())
+            return int((await conn.execute(_COUNT_BY_USERNAME, {"u": list(usernames), "since": since})).scalar_one())
+
+    async def last_failure_at(self, usernames: tuple[str, ...], since: datetime) -> datetime | None:
+        async with self._engine.connect() as conn:
+            params = {"u": list(usernames), "since": since}
+            return _utc((await conn.execute(_LAST_FAILURE_BY_USERNAME, params)).scalar_one())
 
     async def count_ip_failures(self, ip_prefix: str, since: datetime) -> int:
         async with self._engine.connect() as conn:

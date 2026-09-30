@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
+import httpx2
 import pyotp
 from app.auth.mfa import MfaCipher, enroll
 from app.auth.ports import AuthStore
@@ -53,7 +53,7 @@ class AuthEnv:
 
     def login(
         self, username: str, password: str = DEMO_PASSWORD, otp: str | None = None, **extra: Any
-    ) -> httpx.Response:
+    ) -> httpx2.Response:  # TestClient (starlette) dùng httpx2 khi có — kiểu thật của phản hồi
         body: dict[str, Any] = {"username": username, "password": password, **extra}
         if otp is not None:
             body["otp"] = otp
@@ -85,7 +85,7 @@ class AuthEnv:
         assert self.login(username).status_code == 401
         return self.token(username, otp=self.otp(self.enroll_mfa(username)))
 
-    def refresh(self) -> httpx.Response:
+    def refresh(self) -> httpx2.Response:
         csrf = self.client.cookies.get("csrf")
         return self.client.post("/api/auth/refresh", headers={"X-CSRF-Token": csrf or ""})
 

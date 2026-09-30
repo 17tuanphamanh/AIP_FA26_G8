@@ -9,7 +9,7 @@
 """
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -175,6 +175,7 @@ async def test_info_answer_sends_once_sets_confirm_deadline_and_lineage() -> Non
                                                                       "T1")  # fmt: skip
     [lin] = h.audit.lineage
     assert lin == {"prompt_id": "b10_answer", "prompt_version": "1", "model": "scripted", "kb_version": KBV,
+                   "commit_sha": None,  # Phase 4 P4: NodeDeps.commit_sha (test: None)
                    "ticket_id": "t1", "turn_id": "T1", "step": "B10", "created_at": h.clock.now()}  # fmt: skip
     row = _only(h)
     assert (row["event"], row["to_status"]) == ("deflected_info_only", S_CONFIRMING)
@@ -217,7 +218,8 @@ async def test_g8_action_goes_to_b11_without_answer() -> None:
 @pytest.mark.parametrize("prompt", ["b10_need_type", "b10_answer"])
 @pytest.mark.asyncio
 async def test_g9_schema_error_e2(prompt: str) -> None:
-    h, _ = _env(**{prompt: [BadJSON("{"), BadJSON("{")]})  # 1 lần sửa schema cũng hỏng
+    extra: dict[str, Any] = {prompt: [BadJSON("{"), BadJSON("{")]}  # 1 lần sửa schema cũng hỏng
+    h, _ = _env(**extra)
     out = await _node(h)
     assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (S_ESCALATED, "E2", "llm_schema_error")
     _nothing_sent(h)
@@ -237,7 +239,8 @@ async def test_q3g2_empty_citations_without_cannot_answer_is_schema_error_e2() -
 @pytest.mark.parametrize("prompt", ["b10_need_type", "b10_answer"])
 @pytest.mark.asyncio
 async def test_llm_unavailable_e2(prompt: str) -> None:
-    h, _ = _env(**{prompt: lambda _: Unavailable()})
+    extra: dict[str, Any] = {prompt: lambda _: Unavailable()}
+    h, _ = _env(**extra)
     out = await _node(h)
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E2", "llm_unavailable")
     _nothing_sent(h)
@@ -401,7 +404,7 @@ async def _graph(top_ids: list[str], *, need: str = "info", **overrides: Script)
     return h, gw
 
 
-def _answers(values: dict[str, Any]) -> list[dict[str, Any]]:
+def _answers(values: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [m for m in values.get("conversation") or [] if m.get("kind") == "answer"]
 
 

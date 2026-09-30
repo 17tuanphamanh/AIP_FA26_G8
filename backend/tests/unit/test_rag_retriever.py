@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 from app.core.clock import FakeClock
-from app.domain.context import RequesterContext
+from app.domain.context import RequesterContext, Role
 from app.domain.ticket_state import ChunkRef
 from app.ml import MlClient
 from app.ml.ports import MlContractError
@@ -20,6 +20,7 @@ from app.rag.retriever import RagConfig, Retriever, rank_and_dedupe, to_ref
 from app.rag.vector_store import CollectionNotFound, QdrantIndex, VectorStoreError
 from app.settings import get_settings
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue, Range
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.rag import SpyIndex, SpyPoint
 
@@ -39,7 +40,15 @@ def _cfg(**over: object) -> RagConfig:
     return RagConfig(**base)  # type: ignore[arg-type]
 
 
-def _ctx(role: str = "employee") -> RequesterContext:
+def _conds(flt: Filter) -> list[FieldCondition]:
+    """Điều kiện `must` của filter do `rag/filters.py` dựng — toàn `FieldCondition` (thu hẹp kiểu cho mypy)."""
+    must = flt.must if isinstance(flt.must, list) else [flt.must]
+    out = [c for c in must if isinstance(c, FieldCondition)]
+    assert len(out) == len(must)
+    return out
+
+
+def _ctx(role: Role = "employee") -> RequesterContext:
     return RequesterContext(
         user_id="u1", role=role, department="it", manager_id=None, employment_status="active",
         tenure_days=10, is_privileged_account=False, captured_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -268,11 +277,13 @@ async def test_c27_every_filter_has_enabled_and_sensitivity_and_intent_only_on_f
     assert res.fallback_tried is True
     assert len(spy.filters) == 2
     for flt in spy.filters:
-        by_key = {c.key: c.match for c in flt.must}
-        assert by_key["enabled"].value is True
-        assert set(by_key["sensitivity"].any) == {"public", "internal"}
-    assert "request_type" in {c.key for c in spy.filters[0].must}
-    assert "request_type" not in {c.key for c in spy.filters[1].must}
+        by_key = {c.key: c.match for c in _conds(flt)}
+        enabled, sensitivity = by_key["enabled"], by_key["sensitivity"]
+        assert isinstance(enabled, MatchValue) and isinstance(sensitivity, MatchAny)
+        assert enabled.value is True
+        assert set(sensitivity.any) == {"public", "internal"}
+    assert "request_type" in {c.key for c in _conds(spy.filters[0])}
+    assert "request_type" not in {c.key for c in _conds(spy.filters[1])}
 
 
 @pytest.mark.asyncio
@@ -283,10 +294,12 @@ async def test_c27_expand_filter_uses_role_sensitivity_and_doc_scope() -> None:
     ref = ChunkRef(chunk_id="D1#v1#0", doc_id="D1", version=1, seq=0, title="T", heading_path="H",
                    score=0.9, excerpt="abc")  # fmt: skip
     await r.expand_for_answer([ref], _ctx("l1"), kb_version=KBV)
-    by_key = {c.key: c for c in spy.filters[-1].must}
-    assert set(by_key["sensitivity"].match.any) == {"public", "internal", "restricted"}
-    assert by_key["doc_id"].match.value == "D1"
-    assert (by_key["seq"].range.gte, by_key["seq"].range.lte) == (-1, 1)
+    by_key = {c.key: c for c in _conds(spy.filters[-1])}
+    sensitivity, doc_id, seq = by_key["sensitivity"].match, by_key["doc_id"].match, by_key["seq"].range
+    assert isinstance(sensitivity, MatchAny) and isinstance(doc_id, MatchValue) and isinstance(seq, Range)
+    assert set(sensitivity.any) == {"public", "internal", "restricted"}
+    assert doc_id.value == "D1"
+    assert (seq.gte, seq.lte) == (-1, 1)
 
 
 # ---- c31: hết hạn (deadline) giữa lượt Qdrant → E2 stage=search, detail=deadline ------------------

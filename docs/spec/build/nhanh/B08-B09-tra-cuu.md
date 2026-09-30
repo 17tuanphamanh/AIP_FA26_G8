@@ -220,7 +220,7 @@ B8 và B9 tách rõ hai tình huống **[Chốt, vòng rà soát 2]**:
 - **`SYSTEM_ERROR`** (hạ tầng RAG hỏng) → E2.
 - **`NO_EVIDENCE`** (RAG chạy bình thường nhưng KB không có tài liệu phù hợp) → E3.
 
-**Hệ quả cần lưu ý [Suy luận]:** B9 nằm **trước** B10, nên cả yêu cầu **hành động** cũng phải có tài liệu KB đạt ngưỡng mới đi tiếp. Độ phủ KB vì vậy giới hạn trực tiếp tỉ lệ tự động hóa: mỗi `action_type` trong `ACTION_METADATA` phải có ít nhất một tài liệu KB tương ứng. Bảng kiểm "action_type ↔ tài liệu" nằm trong cổng K2.
+**Đổi ở Phase 4 (D-34, 30/09/2026):** ~~B9 nằm trước B10, nên cả yêu cầu hành động cũng phải có tài liệu KB đạt ngưỡng~~. Nay: B8 luôn đi B10 khi RAG không lỗi; **ngưỡng B9 chỉ áp cho câu trả lời** (`need_type=info`, kiểm trong B10 trước `expand`). Căn cứ của **hành động** là `procedure_doc` khai cho từng `action_type`, kiểm tất định ở B11 (thiếu → E3 `no_procedure`). Lý do: reranker chấm câu ra lệnh rất thấp dù xếp đúng tài liệu (tc09 0,047). Bảng kiểm K2 "action_type ↔ tài liệu" thay bằng `procedure_doc` + cảnh báo `make ingest`. Chi tiết: `phase4-thiet-ke-chi-tiet.md` mục 3.3, 4.0.
 
 ## 2. Sơ đồ cấu tạo
 
@@ -383,6 +383,16 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 6.8, 6.13; 
 - Việc treo 17: B9 chạy trước B10 → yêu cầu hành động có điểm truy hồi thấp bị E3 (h14) — xem lại Phase 5/mốc G.
 - Q-3h-11 (phase3 11.10 #17): `build_query` bỏ thẻ `[fake:…]` khỏi câu truy hồi. Việc treo 17 (B9 chặn yêu cầu hành động: tc09 0,047, có mục đúng cách nói vẫn 0,261) chuyển Phase 4 S0 (Q-4-U, phase4-thiet-ke-chi-tiet.md 3.3/4.0) — chưa giải quyết ở Phase 3.
 
+### Chốt khi hiện thực Phase 4 — S0 (30/09/2026, `5ed423d`)
+
+Phase 4 hiện thực theo `build/phase4-thiet-ke-chi-tiet.md` mục 3.3 và 4.0; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- **D-34:** B8 không còn nhánh B9; RAG không lỗi → luôn `b10_route`, điểm log 3 thêm `above_threshold`. Nhánh E2 `rag_system_error` giữ nguyên cho **mọi** yêu cầu. B9 (E3 `no_grounding`, step `B9`, event `no_evidence`) chạy trong B10 cho câu hỏi thông tin — cùng mã, cùng mẫu tin, ghi `kb_version`.
+- `RagPort.procedure_available(doc_id, ctx)` (stage `procedure`): alias hiện hành + `pipeline_sha` + `procedure_filter` = `base_filter` + `doc_id`, `limit=1`. `make ingest` cảnh báo (không chặn) khi `procedure_doc` thiếu/tắt/ngoài quyền nhân viên.
+- Điểm thiếu hoặc NaN coi như dưới ngưỡng (fail-closed) ở mọi nơi.
+- Ghi chú bàn giao L2: tài liệu dưới ngưỡng ghi "Tài liệu KB gần nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ…)".
+- Việc treo 17 **đóng**.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -391,3 +401,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 6.8, 6.13; 
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: chunk theo token (D-21), chọn ngưỡng có câu âm tính (D-22), chạy lại không lọc intent (D-23), KB mở rộng + ablation (D-25); ghi chú B9 chặn cả luồng hành động |
 | 30/09/2026 | 1.3 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 6.8, 6.13) |
+| 30/09/2026 | 1.4 | D-34: B9 chỉ áp câu trả lời (kiểm trong B10); căn cứ hành động = `procedure_doc` (B11); mục "Chốt khi hiện thực Phase 4 — S0"; Việc treo 17 đóng |

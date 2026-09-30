@@ -19,7 +19,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from tests.stack import gate2, gate3
@@ -83,7 +83,7 @@ def refusal(probe: Mapping[str, Any]) -> str | None:
     if backend == "scripted":
         return None
     cap = probe.get("cap_usd")
-    if type(cap) not in (int, float) or not cap <= CAP_MAX_USD:  # NaN, thiếu, > 1 → từ chối
+    if type(cap) not in (int, float) or not cast(float, cap) <= CAP_MAX_USD:  # NaN, thiếu, > 1 → từ chối
         return (f"LLM_BACKEND=real mà spend.cap_usd = {cap} > {CAP_MAX_USD:g} (config backend đang nạp) — hạ tạm "
                 "cap_usd trong config/llm.yaml rồi build lại (README mục \"Chạy smoke LLM thật\")")  # fmt: skip
     if probe.get("pricing_ok") is not True:

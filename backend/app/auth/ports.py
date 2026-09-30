@@ -71,7 +71,9 @@ class AuthStore(Protocol):
     async def get_user_by_username(self, username: str) -> UserRecord | None: ...
 
     async def upsert_user(self, sync: UserSync) -> tuple[UserRecord, str | None]:
-        """Ghi thuộc tính AD; trả (bản ghi mới, role cũ — None nếu dòng mới tạo)."""
+        """Ghi thuộc tính AD; trả (bản ghi mới, role cũ). Role cũ = None ⟺ CHÍNH lời gọi này tạo dòng — quyết định từ kết quả
+        INSERT … ON CONFLICT, không từ SELECT trước (Q-4a-6: hai lời gọi đồng thời cho cùng user mới → đúng một cái nhận None).
+        Dòng đã có: chỉ ghi thuộc tính AD — `locked_until`, `token_version`, `mfa_secret_enc` giữ nguyên."""
         ...
 
     async def bump_token_version(self, user_id: str) -> int: ...
@@ -79,8 +81,14 @@ class AuthStore(Protocol):
     async def set_mfa_secret(self, user_id: str, secret_enc: bytes) -> None: ...
 
     # ---- auth_failures ----
-    async def count_failures(self, username: str, since: datetime) -> int:
-        """Số dòng `auth_failures` của username (kể cả user không tồn tại) sau `since`."""
+    async def count_failures(self, usernames: tuple[str, ...], since: datetime) -> int:
+        """Số dòng `auth_failures` có `username_attempted` thuộc `usernames` (kể cả user không tồn tại) sau `since` — MỘT
+        câu SQL `IN (...)`. Tuple (không `Sequence`): một `str` trần không lọt qua mypy (fake sẽ khớp chuỗi con). Không rỗng
+        (`AuthService._failure_keys` luôn ≥ 1 phần tử) — hợp đồng không ghim tuple rỗng."""
+        ...
+
+    async def last_failure_at(self, usernames: tuple[str, ...], since: datetime) -> datetime | None:
+        """Thời điểm lần sai CUỐI — cùng điều kiện với `count_failures`; không có → None (Q-4a-6)."""
         ...
 
     async def count_ip_failures(self, ip_prefix: str, since: datetime) -> int: ...

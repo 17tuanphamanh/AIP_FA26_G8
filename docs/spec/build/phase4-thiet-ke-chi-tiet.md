@@ -1,6 +1,6 @@
 # Phase 4 — Thiết kế chi tiết (HITL: B15–B16, nhắc, xem phiếu, ghi đè, audit)
 
-*Thuộc bộ `build/`. Phiên bản **0.8 — 30/09/2026** — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
+*Thuộc bộ `build/`. Phiên bản **0.9 — 30/09/2026** (S0 đã hiện thực `5ed423d`, mục 4.0.1) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
 
 *Nhãn: **[Chốt]** spec đã chốt · **[Đề xuất]** chờ Tuấn Anh chốt · **[Suy luận]** rút từ code/spec, agent phải kiểm lại trên code.*
 
@@ -289,6 +289,27 @@ Ngược lại, **giữ** cổng độ giống cho hành động gây hại đo 
 
 **Spec cần sửa (S0):** agent in nguyên văn → Claude chat ghi `decisions.md` D-34, `B08-B09` §1, `B10` §5, NGU-CANH chú thích luồng, phase3 Việc treo 17 → đóng.
 
+#### 4.0.1. Chốt khi hiện thực S0 (30/09/2026, commit `5ed423d`)
+
+Khi 4.0 và 3.3 nói khác bảng này, **bảng này thắng**. Kết quả: `make test` backend 3166 · mock 94 · ml 77; mutation M-S0-1…10 10/10 (1 lượt, md5 khớp); security-reviewer 0 FAIL / 5 NGHI (NGHI-1, NGHI-5 sửa kèm test; còn lại → Q-4a-1…3); gate3 tc09 **8/0** (reranker thật 0,0473 → B11 `procedure_doc=KB-VPN-004` → R17 → `S_PENDING_APPROVAL`, 1 phiếu, 0 ghi — trong giờ; nhánh R17+R18 ngoài giờ mới kiểm ở unit), tc16 **5/0**.
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | S0-P10 | `procedure_available(doc_id, ctx) -> ProcedureCheck{available, kb_version, retries}` — **alias hiện hành tại B11** (alias → `kb_version` → kiểm `pipeline_sha`, như `retrieve`), **không** dùng `kb_version` ghim ở B8 (S0-A3: B11 có thể chạy sau lượt hỏi lại 24 h; KB vừa rút quy trình → E3). Lỗi alias/pipeline/Qdrant/hạn → `RetrievalSystemError("procedure")` (stage mới). `procedure_filter(role, doc_id)` ở `rag/filters.py`. Audit B11: `procedure_doc`, `procedure_kb_version`. E3 event `no_procedure` kèm `intended_action`/`facts`; E2 event `rag_system_error`, `retrieval_error="procedure"` |
+| 2 | S0-P10 | `DOC_ID_PATTERN` một nguồn ở `domain/action.py` (không ở `ticket_state.py` — vòng import); `rag/models.py` import lại |
+| 3 | S0-P10 ingest | Cảnh báo ở `rag/ingest/procedures.py`, stderr, ngay sau bước 3: thiếu / `enabled=false` / ngoài `allowed_sensitivity("employee")`; mã thoát không đổi |
+| 4 | S0-A1 | `build_handoff(state, templates, *, retrieval_threshold)` (B20 truyền `deps.constants.RETRIEVAL_THRESHOLD`): điểm thiếu hoặc < ngưỡng → "Tài liệu KB gần nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): …", áp mọi mã thoát. M-S0-9 |
+| 5 | Q-4a-1 | `reason_detail == "no_procedure"` → hằng `NO_PROCEDURE_NOTE` ở phần "vì sao escalate": "Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không làm tay theo tài liệu cũ." M-S0-10 |
+| 6 | S0-P2 | Nhánh E3 info ghi `need_type="info"`, nhánh cờ ghi `"action"`; cả hai truyền `kb_version` (cột audit như dòng B9 cũ — NGHI-5). Điểm log 3 (`query`, `top_score`, `kb_version`, `above_threshold`) ở dòng **B8 `retrieved`**, luôn có → 7.2 (audit_check) điểm 3 đọc dòng B8 |
+| 7 | S0-P2/P9 | Điểm thiếu hoặc **NaN** = dưới ngưỡng ở B10, B8 `above_threshold`, handoff, `evidence_for_estimator` (ở `risk/estimator.py`) — NGHI-1 |
+| 8 | S0-P5 | Test AST quét `b11_slots`, `risk/policy_engine`, `risk/context`, `domain/policy`, `b17_execute`, `executor/*`; B12 chỉ đọc `retrieved`/`retrieval_score` bên trong lời gọi `evidence_for_estimator` |
+| 9 | Q-4a-2 | **Không** kiểm quy trình ở B17 (giữ S0-P5). Quy trình bị rút sau B11 (chỉ ở nhánh chờ duyệt ≤ 30 phút) → **người duyệt là lớp chặn** → 4c P6: `ApprovalView` hiển thị `procedure_doc` + tiêu đề (D-34) |
+| 10 | Q-4a-3 | `evidence_for_estimator` xét theo điểm top (không lọc từng chunk) — xét lại ở Phase 6 |
+| 11 | Mutation | M-S0-1 bắt ở s1, s4 (s7/h7 tương đương — preset `cannot_answer` là lớp thứ hai); M-S0-2 bắt ở s2/s3 (unit), s8 (e2e); thêm M-S0-9, M-S0-10 |
+| 12 | Test | s7 = h7, s10 = h2 (giữ); c5 chạy B8 → B10 với preset info, vẫn E3; hai test node "E3 ở B8" → "B8 luôn → b10_route" (S0-A2) |
+| 13 | gate3 | tc09 cần `FAKE_APPROVER_ID` (B15 giả tới 4b) + `ha.lt` đã đăng nhập; chạy bằng biến shell `FAKE_SCENARIO=` (G4-24, tới khi có `make verify`) |
+| 14 | Phase 10 | `GROUNDING_GATE_ACTIONS` chưa có trong compose/`.env.example` — thêm khi làm ablation |
+
 **DỪNG 2 — nợ kỹ thuật + `make verify`. Mục tiêu:** trả hết nợ dồn về "Phase 4 S0" và dựng công cụ để mọi DỪNG sau chỉ cần **một** lệnh chạy của Tuấn Anh.
 **Đầu ra:** CI Node 24 + runner ghim; `make verify`; HMAC username ma; `lineage.commit_sha`; `mypy backend/tests` trong `make lint`; số đo `durability="sync"`.
 **Nghi thức (tầng C):** mutation tay 2 cái cho HMAC; security-reviewer soát phần HMAC.
@@ -509,7 +530,7 @@ def make(deps: NodeDeps) -> NodeFn:
 | P3 | Nhắc: hàm `WorkerJobs._scan_approval_reminders` gọi **ở cuối** `scan_deadlines` (`graph/worker_jobs.py`; **không** sửa `worker.py` — mục 0.2), lỗi của nó bắt riêng, không làm hỏng phần quét hạn. Mốc: `m1 = created_at + 0,5·(deadline − created_at)`, `m2 = created_at + 0,8·(deadline − created_at)`. `SqlApprovals.mark_reminder_once(approval_id, n, now) -> ReminderTarget \| None` = `UPDATE approvals SET reminder_n_at=:now WHERE approval_id=:id AND status='pending' AND reminder_n_at IS NULL AND deadline > :now RETURNING approver_id, backup_approver_id`. Chỉ gửi khi trả 1 dòng. Nhắc 1 → người duyệt; nhắc 2 → người duyệt + dự phòng (nếu có). Gửi qua `approvals.notify_approver(approval_id, user_id, kind="reminder_1"\|"reminder_2")` (Phase 4 vẫn log — hộp thư là API). Đã qua `m2` mà chưa nhắc 1 (worker chết lâu) → chỉ nhắc 2 (đặt cả hai cột) |
 | P4 | Dự phòng (Q-4-O): `may_decide_as` đúng khi `p.user_id == a.approver_id` **hoặc** (`p.user_id == a.backup_approver_id` **và** `a.reminder_2_at` không NULL); **và** không xung đột (P4 của 4b). Sự kiện mang `decided_as`. Không đổi `approver_id` của phiếu |
 | P5 | `GET /api/approvals?mine=1&status=pending\|approved\|rejected\|timeout` — `require("approval:decide")`; `mine` bắt buộc = 1 (khác → 422); trả tối đa 50 phiếu mà tôi là người duyệt hoặc dự phòng đủ điều kiện (P4): `approval_id, ticket_id, status, created_at, deadline, reminder_1_at, reminder_2_at, role_as, action_type, device_id` (`action_type`, `device_id` đọc từ cột `audit_logs.intended_action` của dòng B15 `queued` — không đọc checkpoint từng phiếu) |
-| P6 | `GET /api/approvals/{id}` → `ApprovalView {approval_id, ticket_id, status, deadline, requester{role, department}, request_summary (tickets.redacted_request[:500]), action (Action từ checkpoint), action_plan_hash, risk (RiskDecision), facts, role_as}`. Quyền: người duyệt / dự phòng đủ điều kiện → xem + ghi `first_viewed_at` (`UPDATE … WHERE first_viewed_at IS NULL AND status='pending'`); `manager` (có `audit:read:all`) → xem, **không** ghi; còn lại (L1 khác) → **404**; L2/nhân viên → 403 (tầng 2). `hash_action(action) != approvals.action_plan_hash` → **409 `plan_changed`**, không trả bản nào (G4-13) |
+| P6 | `GET /api/approvals/{id}` → `ApprovalView {approval_id, ticket_id, status, deadline, requester{role, department}, request_summary (tickets.redacted_request[:500]), action (Action từ checkpoint), action_plan_hash, risk (RiskDecision), facts, role_as, procedure{doc_id, title}}` — `procedure` từ `ActionMeta.procedure_doc` + tiêu đề tài liệu (D-34, Q-4a-2: người duyệt thấy căn cứ quy trình; không tìm thấy tiêu đề → chỉ `doc_id`, không chặn). Quyền: người duyệt / dự phòng đủ điều kiện → xem + ghi `first_viewed_at` (`UPDATE … WHERE first_viewed_at IS NULL AND status='pending'`); `manager` (có `audit:read:all`) → xem, **không** ghi; còn lại (L1 khác) → **404**; L2/nhân viên → 403 (tầng 2). `hash_action(action) != approvals.action_plan_hash` → **409 `plan_changed`**, không trả bản nào (G4-13) |
 | P7 | **Không migration** ở Phase 4 (mục 0.2 — tránh đụng chuỗi migration M9). Chỉ mục hộp thư → việc treo, làm khi có số đo chậm |
 
 ### 6.2. Test
@@ -616,6 +637,7 @@ Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutat
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 30/09/2026 | 0.1 | Tạo file: sự thật code `02ed795`; 10 lỗ hổng bổ sung G4-15…24; thuật toán chọn người duyệt theo [Chốt]; bảng test xung đột mới; 20 câu Q-4; chặng 4a đủ |
+| 30/09/2026 | 0.9 | S0 hiện thực `5ed423d`: mục 4.0.1 "Chốt khi hiện thực S0" (14 dòng); 4c P6 `ApprovalView.procedure`; D-34 ghi `decisions.md`, B08/B10/B11 thêm mục chốt Phase 4 |
 | 30/09/2026 | 0.8 | 4d P1: ghi đè cần đăng nhập lại ≤ 10 phút (`recent_login=True`, [Chốt] P6 §4 / P10 §3.2 — bổ sung từ chat Phase 7); thứ tự 413 → quyền → reauth → 404 → `can_override` → 409 → 422; test i14b + mutation |
 | 30/09/2026 | 0.7 | Tuấn Anh chốt Q-4-U = A+; thêm bảng kế hoạch tóm tắt đầu file; lịch 4a cập nhật mốc Phase 3 đóng `5d0a990` |
 | 30/09/2026 | 0.6 | Q-4-U phân tích sâu (3.3.1–3.3.5): số đo theo loại câu, tách căn cứ câu trả lời / căn cứ hành động, bảng kiểu thất bại; phương án A+ (`procedure_doc` + kiểm tất định ở B11 + cờ ablation); S0-P10, P11, test s12–s16, M-S0-6…8 |

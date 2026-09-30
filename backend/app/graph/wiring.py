@@ -199,7 +199,7 @@ async def _open(
         slots=get_slots(), action_metadata=get_action_metadata().root,
         enabled_intents=frozenset(settings.enabled_intents),
         enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
-        grounding_gate_actions=settings.grounding_gate_actions,
+        grounding_gate_actions=settings.grounding_gate_actions, commit_sha=settings.app_git_sha,
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
         privacy=guard_from_settings(settings),
     )  # fmt: skip

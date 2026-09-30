@@ -149,7 +149,7 @@ class InMemoryAuthStore:
         clash = await self.get_user_by_username(sync.username)
         if clash is not None and clash.user_id != sync.user_id:
             raise ValueError("UNIQUE users.username")
-        attrs = {
+        attrs: dict[str, Any] = {
             "username": sync.username, "full_name": sync.full_name, "role": sync.role,
             "department": sync.department, "manager_id": sync.manager_id,
             "employment_status": sync.employment_status, "hired_at": sync.hired_at,
@@ -173,12 +173,19 @@ class InMemoryAuthStore:
         self.users[user_id] = replace(self.users[user_id], mfa_secret_enc=secret_enc)
 
     # ---- auth_failures ----
-    async def count_failures(self, username: str, since: datetime) -> int:
+    async def count_failures(self, usernames: tuple[str, ...], since: datetime) -> int:
         return sum(
             1 for e in self.sink.events
-            if e.event_type in AUTH_FAILURE_TYPES and e.username_attempted == username
+            if e.event_type in AUTH_FAILURE_TYPES and e.username_attempted in usernames
             and e.occurred_at > since
         )  # fmt: skip
+
+    async def last_failure_at(self, usernames: tuple[str, ...], since: datetime) -> datetime | None:
+        times = [
+            e.occurred_at for e in self.sink.events
+            if e.event_type in AUTH_FAILURE_TYPES and e.username_attempted in usernames and e.occurred_at > since
+        ]  # fmt: skip
+        return _utc(max(times)) if times else None
 
     async def count_ip_failures(self, ip_prefix: str, since: datetime) -> int:
         return sum(

@@ -9,6 +9,7 @@ Chạy từ gốc repo:
   uv run python scripts/mutation/mutate_4a.py --e2e            # e2e cổng 3 (s8, h7) — Docker, không bắt buộc
   uv run python scripts/mutation/mutate_4a.py --integration    # c5 + procedure_available trên Qdrant thật — Docker, không bắt buộc
   uv run python scripts/mutation/mutate_4a.py --only "M-S0-5"
+  uv run python scripts/mutation/mutate_4a.py --hmac           # DỪNG 2 mục 4.6 M-4a-1, 2 + Q-4a-5 M-4a-3, 4 + Q-4a-6 M-4a-5…8
 
 Bảng: phase4 4.0 M-S0-1…8 + chốt S0-A1 M-S0-9 + chốt Q-4a-1 M-S0-10. Ghi chú:
 - M-S0-1 (bỏ ngưỡng nhánh info): e2e h7 (s7) VẪN XANH — preset h7 cho `b10_answer` trả `cannot_answer` → E3 `no_grounding` ở
@@ -40,6 +41,8 @@ B11 = "backend/app/graph/nodes/b11_slots.py"
 B12 = "backend/app/graph/nodes/b12_assess.py"
 FILTERS = "backend/app/rag/filters.py"
 HANDOFF = "backend/app/audit/handoff.py"
+AUTH = "backend/app/auth/service.py"
+USERNAME_HASH = "backend/app/auth/username_hash.py"
 
 UT = pt(*[
     f"backend/tests/unit/{name}.py"
@@ -49,6 +52,7 @@ UT = pt(*[
         "test_rag_expand", "test_graph_static",
     )
 ])  # fmt: skip
+AUTH_UT = pt("backend/tests/unit/test_auth_username_hash.py", "backend/tests/unit/test_auth_login.py")
 E2E = pt("backend/tests/e2e/test_gate3_vpn.py", "-k", "s8 or h7 or h6 or h2")
 IT = pt("backend/tests/integration/test_b08_pg.py")
 
@@ -156,7 +160,56 @@ INTEGRATION = [
                                         "test_s0_procedure_available_on_real_qdrant[restricted-employee]"]),
 ]  # fmt: skip
 
-MUTATIONS = E2E_MUTATIONS if "--e2e" in sys.argv else INTEGRATION if "--integration" in sys.argv else UNIT
+_STORED = "        return stored_username(username, known=user is not None, key=self._username_key)\n"
+_COUNT_LOCK = (
+    "        return await self.store.count_failures(self._failure_keys(username, user), since) >= self.config.max_failures\n"
+)
+_COUNT_THRESHOLD = "            self._failure_keys(username, user), now - self.config.failure_window\n"
+_FAILURE_KEYS = "        return (hashed,) if user is None else (username, hashed)\n"
+_DERIVE = "    return hmac.new(jwt_signing_key, USERNAME_KEY_LABEL, hashlib.sha256).digest()\n"
+_CARRY_IF = "        if previous_role is None:  # dòng VỪA tạo bởi chính lời gọi này (kết quả INSERT … ON CONFLICT — AuthStore.upsert_user)\n"
+_CARRY_COUNT = "        failures = await self.store.count_failures(keys, since)\n"
+_CARRY_GE = "        if failures >= self.config.max_failures:\n"
+_CARRY_UNTIL = "            until = (last or now) + self.config.lockout\n"
+Q4A6_CARRY = ["test_q4a6a_ghost_lock_carried_to_new_row_blocks_before_ad", "test_q4a6e_verbatim_and_hashed_failures_sum"]
+Q4A5 = ["test_q4a5a_ghost_failures_count_after_own_first_login",
+        "test_q4a5b_ghost_failures_count_after_row_created_by_ensure_manager[binh.tt-lan.dt]",
+        "test_q4a5b_ghost_failures_count_after_row_created_by_ensure_manager[ha.lt-quan.tm]"]  # fmt: skip
+HMAC = [  # phase4 mục 4.6 (mutation tay 2 cái — HMAC) + chốt Q-4a-5 (M-4a-3)
+    Mutation("M-4a-1 username ma lưu nguyên văn",
+             [one(AUTH, _STORED, "        return username  # MUTATION M-4a-1\n")],
+             AUTH_UT, ["test_4a1_ghost_username_is_stored_hashed_never_verbatim",
+                       "test_4a1_ghost_lock_event_and_alert_are_hashed",
+                       "test_q4a5c_role_unmappable_username_attempted_follows_users_row"]),
+    Mutation("M-4a-2 ghi dùng băm nhưng đếm khoá dùng chuỗi gốc",
+             [one(AUTH, _COUNT_LOCK,
+                  "        return await self.store.count_failures((username,), since) >= self.config.max_failures  # MUTATION\n"),
+              one(AUTH, _COUNT_THRESHOLD, "            (username,), now - self.config.failure_window  # MUTATION\n")],
+             AUTH_UT, ["test_4a3_ghost_locked_after_5_failures_like_real_user",
+                       "test_locked_ghost_username_responds_exactly_like_locked_real_user"]),
+    Mutation("M-4a-3 người đã có dòng users chỉ đếm nguyên văn (mất lần sai lưu băm trước chuyển tiếp — Q-4a-5)",
+             [one(AUTH, _FAILURE_KEYS, "        return (hashed,) if user is None else (username,)  # MUTATION M-4a-3\n")],
+             AUTH_UT, Q4A5),
+    Mutation("M-4a-4 khoá HMAC = thẳng khoá ký (mất tách miền Q-4-S — security-reviewer lượt 2, H6)",
+             [one(USERNAME_HASH, _DERIVE, "    return jwt_signing_key  # MUTATION M-4a-4\n")],
+             AUTH_UT, ["test_4a4_known_answer_independent_of_product_code"]),
+    # Q-4a-6 (chốt (ii)): mang khoá trượt của username ma sang `locked_until` khi dòng users VỪA tạo
+    Mutation("M-4a-5 bỏ phép đếm lúc tạo dòng",
+             [one(AUTH, _CARRY_COUNT, "        failures = 0  # MUTATION M-4a-5\n")], AUTH_UT, Q4A6_CARRY),
+    Mutation("M-4a-6 đủ ngưỡng: >= thành >",
+             [one(AUTH, _CARRY_GE, "        if failures > self.config.max_failures:  # MUTATION M-4a-6\n")], AUTH_UT, Q4A6_CARRY),
+    Mutation("M-4a-7 đếm cả khi dòng đã tồn tại",
+             [one(AUTH, _CARRY_IF, "        if True:  # MUTATION M-4a-7\n")],
+             AUTH_UT, ["test_q4a6d_existing_row_upsert_neither_counts_nor_overwrites_lock"]),
+    Mutation("M-4a-8 locked_until tính từ now() thay vì lần sai cuối",
+             [one(AUTH, _CARRY_UNTIL, "            until = now + self.config.lockout  # MUTATION M-4a-8\n")],
+             AUTH_UT, Q4A6_CARRY),
+]  # fmt: skip
+
+MUTATIONS = (
+    E2E_MUTATIONS if "--e2e" in sys.argv else INTEGRATION if "--integration" in sys.argv
+    else HMAC if "--hmac" in sys.argv else UNIT
+)  # fmt: skip
 if "--only" in sys.argv:
     prefix = sys.argv[sys.argv.index("--only") + 1]
     MUTATIONS = [m for m in MUTATIONS if m.name.startswith(prefix)]

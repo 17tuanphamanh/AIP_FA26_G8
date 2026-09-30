@@ -10,6 +10,7 @@ Mẫu giả cuối file chứng minh bộ kiểm bắt được vi phạm (khuô
 
 import ast
 from pathlib import Path
+from typing import cast
 
 APP = Path(__file__).resolve().parents[2] / "app"
 B03 = APP / "graph" / "nodes" / "b03_classify.py"
@@ -57,7 +58,7 @@ def check_b03(src: str) -> list[str]:
         for t in _targets(node):
             if any(isinstance(e, ast.Name) and e.id == "facts" or isinstance(e, ast.Subscript) for e in _flat(t)
                    if "facts" in _names(e)):  # fmt: skip
-                bad.append(f"dòng {node.lineno}: B3 gán facts")
+                bad.append(f"dòng {cast(ast.stmt, node).lineno}: B3 gán facts")
     return bad + [f"dòng {n}: facts.update…" for n in _mutating_calls(tree)]
 
 
@@ -71,7 +72,7 @@ def check_b06(src: str) -> list[str]:
         for t in _targets(node):
             for e in _flat(t):
                 if isinstance(e, ast.Subscript) and "facts" in _names(e.value):
-                    bad.append(f"dòng {node.lineno}: facts[...] = …")
+                    bad.append(f"dòng {cast(ast.stmt, node).lineno}: facts[...] = …")
                 elif isinstance(e, ast.Name) and e.id == "facts":
                     value = getattr(node, "value", None)
                     from_infer = (
@@ -79,7 +80,7 @@ def check_b06(src: str) -> list[str]:
                         and isinstance(value.func, ast.Attribute) and value.func.attr == "infer_vpn"
                     )  # fmt: skip
                     if not from_infer:
-                        bad.append(f"dòng {node.lineno}: facts gán ngoài infer_vpn")
+                        bad.append(f"dòng {cast(ast.stmt, node).lineno}: facts gán ngoài infer_vpn")
     return bad + [f"dòng {n}: facts.update…" for n in _mutating_calls(tree)]
 
 
@@ -93,9 +94,9 @@ def check_infer(src: str) -> list[str]:
                 value = getattr(node, "value", None)
                 if isinstance(e, ast.Subscript) and isinstance(e.value, ast.Name) and e.value.id == "facts":
                     if value is not None and (hit := _names(value) & TAINTED):
-                        bad.append(f"dòng {node.lineno}: facts[...] lấy từ {sorted(hit)}")
+                        bad.append(f"dòng {cast(ast.stmt, node).lineno}: facts[...] lấy từ {sorted(hit)}")
                 elif isinstance(e, ast.Name) and e.id == "facts" and not (value is not None and _is_empty_dict(value)):
-                    bad.append(f"dòng {node.lineno}: facts khởi tạo khác {{}}")
+                    bad.append(f"dòng {cast(ast.stmt, node).lineno}: facts khởi tạo khác {{}}")
     return bad + [f"dòng {n}: facts.update…" for n in _mutating_calls(fn)]
 
 

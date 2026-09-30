@@ -4,6 +4,8 @@ view, trigger, role; models và migration không lệch nhau (P7 mục 5 tiêu c
 Từ 0003 (Phase 2a) có thêm 4 bảng checkpoint LangGraph (`PostgresSaver.setup()`, P7 mục 3) — tính
 riêng, không thuộc 22 bảng nghiệp vụ và không nằm trong models.py."""
 
+from typing import Any
+
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -49,7 +51,7 @@ def test_upgrade_creates_exactly_22_tables(migrated: PgUrls) -> None:
         assert len(EXPECTED_TABLES) == 22
         assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)  # migration 0003
         assert _scalar(conn, "SELECT to_regclass('public.auth_failures')") == "auth_failures"
-        owners = conn.execute(
+        owners: Any = conn.execute(
             text("SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = 'public'")
         ).scalars()
         assert set(owners) == {"app_migrate"}

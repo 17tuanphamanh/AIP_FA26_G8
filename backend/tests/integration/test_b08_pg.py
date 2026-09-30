@@ -21,7 +21,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from app.core.clock import FakeClock
-from app.domain.context import RequesterContext
+from app.domain.context import RequesterContext, Role
 from app.domain.states import S_ESCALATED, S_RETRIEVING
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b08_retrieve, b10_route
@@ -53,7 +53,7 @@ MFA_QUESTION = "Làm sao bật xác thực 2 lớp MFA cho email?"  # S2 (PROGRE
 VPN_QUESTION = "VPN công ty dùng cổng nào?"  # c4 — top-1 KB-VPN-001 rõ ràng ≥ T
 
 
-def _ctx(role: str) -> RequesterContext:
+def _ctx(role: Role) -> RequesterContext:
     return RequesterContext(
         user_id="u1", role=role, department="it", manager_id=None, employment_status="active",
         tenure_days=10, is_privileged_account=False, captured_at=KB_TEST_NOW,
@@ -63,7 +63,7 @@ def _ctx(role: str) -> RequesterContext:
 async def _retriever(env: Env) -> Retriever:
     lexicon = load_lexicon(CONFIG_DIR)
     return Retriever(
-        env.index, env.fake.client(), RagConfig.from_settings(Settings(_env_file=None)),
+        env.index, env.fake.client(), RagConfig.from_settings(Settings(_env_file=None)),  # type: ignore[call-arg]  # _env_file: tham số riêng của pydantic-settings
         threshold=get_policy().constants.RETRIEVAL_THRESHOLD, pipeline_sha=pipeline_sha(CONFIG_DIR),
         lexicon=lexicon, clock=FakeClock(),
     )  # fmt: skip
@@ -117,7 +117,7 @@ async def test_c5_mfa_question_gives_e3_no_grounding(kb_env: Env) -> None:
      ("KB-VPN-007", "employee", False), ("KB-VPN-007", "l1", True), ("KB-VPN-009", "manager", False)],
     ids=["co", "public", "tat", "restricted-employee", "restricted-l1", "khong-co"],
 )  # fmt: skip
-async def test_s0_procedure_available_on_real_qdrant(kb_env: Env, doc: str, role: str, ok: bool) -> None:
+async def test_s0_procedure_available_on_real_qdrant(kb_env: Env, doc: str, role: Role, ok: bool) -> None:
     """S0-P10 + S0-A3 trên Qdrant THẬT: `procedure_filter` (base_filter + doc_id) đúng ngữ nghĩa Qdrant (SpyIndex chỉ mô phỏng),
     `kb_version` = collection mà alias đang trỏ."""
     retriever = await _retriever(kb_env)

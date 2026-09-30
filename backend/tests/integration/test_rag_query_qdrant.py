@@ -17,7 +17,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from app.core.clock import FakeClock
-from app.domain.context import RequesterContext
+from app.domain.context import RequesterContext, Role
 from app.domain.states import S_ESCALATED, S_RETRIEVING
 from app.domain.ticket_state import ChunkRef
 from app.graph.context import RunContext, bind_run
@@ -46,7 +46,7 @@ P006 = "chứng chỉ vpn trên máy em hết hạn rồi, xin cấp lại thế
 P007 = "tường lửa biên phải mở những cổng nào cho máy chủ vpn"  # role l1 mới thấy KB-VPN-007
 
 
-def _ctx(role: str) -> RequesterContext:
+def _ctx(role: Role) -> RequesterContext:
     return RequesterContext(
         user_id="u1", role=role, department="it", manager_id=None, employment_status="active",
         tenure_days=10, is_privileged_account=False, captured_at=KB_TEST_NOW,
@@ -54,7 +54,7 @@ def _ctx(role: str) -> RequesterContext:
 
 
 def _cfg() -> RagConfig:
-    return RagConfig.from_settings(Settings(_env_file=None))
+    return RagConfig.from_settings(Settings(_env_file=None))  # type: ignore[call-arg]  # _env_file: tham số riêng của pydantic-settings
 
 
 async def _retriever(env: Env, *, index: VectorIndex | None = None, threshold: float = THRESHOLD) -> Retriever:

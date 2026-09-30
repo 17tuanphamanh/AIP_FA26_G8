@@ -9,7 +9,7 @@ import json
 import shutil
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from app.guard.normalize import l0
@@ -326,7 +326,7 @@ def test_unreadable_json_refuses(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("env", ["dev", "prod"])
-def test_create_app_refuses_broken_pattern_file(tmp_path: Path, env: str) -> None:
+def test_create_app_refuses_broken_pattern_file(tmp_path: Path, env: Literal["dev", "prod"]) -> None:
     shutil.copytree(CONFIG, tmp_path / "config")
     _broken(tmp_path / "config", BROKEN["regex sai"])
     settings = Settings(_env_file=None, app_env=env, config_dir=tmp_path / "config")  # type: ignore[call-arg]

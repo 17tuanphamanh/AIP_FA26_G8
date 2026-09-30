@@ -27,10 +27,10 @@ CSRF_HEADER = "X-CSRF-Token"
 REFRESH_PATH = "/api/auth"
 
 
-# Tên đăng nhập AD (chữ thường, số, `.`, `_`, `-`). Username sai được ghi NGUYÊN VĂN vào
-# `security_events.username_attempted` (chống dò mật khẩu, P6) → gõ nhầm mật khẩu vào ô này thì mật khẩu nằm trong DB.
-# Ràng dạng định danh: có chữ hoa/ký tự đặc biệt/dấu cách → 422 `invalid_request`, không ghi sự kiện (PLAN-3e rà trường
-# tự do). Mật khẩu chỉ gồm chữ thường + số vẫn lọt — PLAN-3e Q-3e-14.
+# Tên đăng nhập AD (chữ thường, số, `.`, `_`, `-`). Ràng dạng định danh: có chữ hoa/ký tự đặc biệt/dấu cách → 422
+# `invalid_request`, không ghi sự kiện (PLAN-3e rà trường tự do). Username đúng dạng mà KHÔNG có dòng `users` (vd mật khẩu chỉ
+# gồm chữ thường + số gõ nhầm vào ô này — Q-3e-14) được lưu băm `"h:" + HMAC` ở `security_events.username_attempted` và cảnh
+# báo dò mật khẩu (`auth/username_hash.py`, Phase 4 P2); username có dòng `users` giữ nguyên văn.
 USERNAME_PATTERN = r"^[a-z][a-z0-9._-]{0,127}$"
 
 

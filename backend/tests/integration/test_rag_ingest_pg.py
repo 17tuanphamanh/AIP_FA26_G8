@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 import pytest_asyncio
@@ -116,7 +117,7 @@ async def test_b12_first_ingest_unevaluated(env: Env, rw: Engine, tmp_path: Path
     assert r.code == 0, r.err
     name = await _current(env)
     assert name is not None and name.startswith("kb_") and f"kb_version={name[3:]}" in r.out
-    n_chunks = int(_scalar(rw, "SELECT chunk_count FROM kb_versions WHERE kb_version = :v", v=name[3:]))  # type: ignore[arg-type]
+    n_chunks = int(cast(int, _scalar(rw, "SELECT chunk_count FROM kb_versions WHERE kb_version = :v", v=name[3:])))
     assert await env.index.count(name) == n_chunks > 0
     assert f"số đoạn: {n_chunks}" in r.out and "truncated=0" in r.out
     assert await env.index.payload_index_fields(name) == set(PAYLOAD_INDEXES)
@@ -126,8 +127,8 @@ async def test_b12_first_ingest_unevaluated(env: Env, rw: Engine, tmp_path: Path
     assert meta["pipeline_sha"] == pipeline_sha(CONFIG_DIR) and meta["eval_status"] == "unevaluated"
     with rw.connect() as conn:
         row = conn.execute(text("SELECT eval_status, is_current, doc_count, recall_at5 FROM kb_versions")).one()
-        docs = dict(conn.execute(text("SELECT doc_id, kb_version FROM kb_documents")).all())
-        owners = set(conn.execute(text("SELECT owner FROM kb_documents")).scalars())
+        docs: dict[str, str | None] = dict(conn.execute(text("SELECT doc_id, kb_version FROM kb_documents")).all())
+        owners: set[str | None] = set(conn.execute(text("SELECT owner FROM kb_documents")).scalars())
     assert tuple(row) == ("unevaluated", True, 5, None)
     assert len(docs) == 6 and docs["KB-VPN-002"] is None and docs["KB-VPN-001"] == name[3:]
     assert owners == {None}
@@ -160,7 +161,7 @@ async def test_b14_three_bumps_keep_two_old(env: Env, tmp_path: Path) -> None:
         assert r.code == 0, r.err
         seen.append(await _current(env))
     assert len(set(seen)) == 4  # mỗi lần alias đổi
-    assert await env.index.list_kb_collections() == sorted(seen[1:])  # đích alias + đúng 2 bản trước
+    assert await env.index.list_kb_collections() == sorted(cast(list[str], seen[1:]))  # đích alias + đúng 2 bản trước
     assert seen[0] is not None and seen[0] in r.out  # dòng "dọn: đã xoá kb_<bản đầu>"
 
 

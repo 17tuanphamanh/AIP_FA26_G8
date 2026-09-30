@@ -3,6 +3,7 @@
 `run_new` tới muộn không bao giờ chạy lại từ START đè lên thread đang có."""
 
 from datetime import timedelta
+from typing import Any, cast
 
 import pytest
 from app.db.tickets import NewTicket
@@ -127,7 +128,8 @@ async def test_killed_in_b1_every_time_goes_e9() -> None:
     await _create(h, "t1", "turn-1")
     await _die_four_times(h)
     row = _assert_e9_once(h, "t1", "turn-1")
-    assert row["detail"]["node"] == "b01_identity" and "no_checkpoint" not in row["detail"]
+    detail = cast(dict[str, Any], row["detail"])
+    assert detail["node"] == "b01_identity" and "no_checkpoint" not in detail
     assert h.ad.calls == 4  # B1 chạy 4 lần; lần thứ 5 bẻ thẳng sang B20
 
 
@@ -148,6 +150,6 @@ async def test_killed_before_first_checkpoint_every_time_goes_e9() -> None:
     await _create(h, "t1", "turn-1")
     await _die_four_times(h)
     row = _assert_e9_once(h, "t1", "turn-1")
-    assert row["detail"].items() >= {"recover_attempts": 3, "node": "b01_identity",
+    assert cast(dict[str, Any], row["detail"]).items() >= {"recover_attempts": 3, "node": "b01_identity",
                                      "no_checkpoint": True}.items()  # fmt: skip
     assert h.ad.calls == 0  # B1 chưa từng chạy

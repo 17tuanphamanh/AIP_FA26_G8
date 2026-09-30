@@ -126,7 +126,7 @@ async def test_agent_token_cannot_write_executor_can(mock_server: MockServer, re
         as_executor = ToolRegistry(vpn_write.write_handlers(exec_http),
                                    breakers=breaker_board(settings, clock), clock=clock)  # fmt: skip
         renewed = await as_executor.call("renew_vpn_cert", args, caller_step="B17")
-        assert renewed.error is None and renewed.data.status == "valid"
+        assert renewed.error is None and renewed.data is not None and renewed.data.status == "valid"
     finally:
         await agent_http.aclose()
         await exec_http.aclose()

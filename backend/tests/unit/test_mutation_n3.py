@@ -54,7 +54,7 @@ def test_clean_and_green_runs_each_distinct_command_once(tmp_path: Path, capsys:
 def test_every_mutation_leaves_the_mark(script: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", [script])
     module = _load(script)
-    for m in [*module.UNIT, *getattr(module, "E2E_MUTATIONS", []), *module.INTEGRATION]:
+    for m in [*module.UNIT, *getattr(module, "E2E_MUTATIONS", []), *module.INTEGRATION, *getattr(module, "HMAC", [])]:
         texts = {rel: (REPO / rel).read_text(encoding="utf-8") for rel, *_ in m.edits}
         for rel, old, new, count in m.edits:
             assert texts[rel].count(old) == count, (m.name, rel)

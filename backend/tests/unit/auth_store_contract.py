@@ -119,6 +119,27 @@ class AuthStoreContract:
         assert by_name is not None and by_name.user_id == uid
 
     @pytest.mark.asyncio
+    async def test_upsert_new_user_concurrently_reports_created_exactly_once(self, env: StoreEnv) -> None:
+        """Q-4a-6: "role cũ = None" ⟺ CHÍNH lời gọi này tạo dòng — quyết định từ kết quả INSERT … ON CONFLICT, không từ SELECT
+        trước (SELECT … FOR UPDATE trên dòng chưa có không khoá gì → hai lời gọi đồng thời cùng thấy "chưa có")."""
+        uid = _uid()
+        results = await asyncio.gather(*(env.store.upsert_user(_sync(env, uid)) for _ in range(4)))
+        assert sorted(previous is None for _, previous in results) == [False, False, False, True]
+        assert {previous for _, previous in results} == {None, "employee"}
+
+    @pytest.mark.asyncio
+    async def test_upsert_username_taken_by_other_user_is_rejected(self, env: StoreEnv) -> None:
+        """Trùng `username` với user_id KHÁC → lỗi (không ghi đè, không "tạo mới"); dòng cũ nguyên vẹn."""
+        first, other = _uid(), _uid()
+        await env.store.upsert_user(_sync(env, first))
+        clash = replace(_sync(env, other), username=f"name-{first}")
+        with pytest.raises(Exception):  # noqa: B017 — ValueError (SQL: ON CONFLICT DO NOTHING + không có dòng; giả)
+            await env.store.upsert_user(clash)
+        assert await env.store.get_user(other) is None
+        kept = await env.store.get_user_by_username(f"name-{first}")
+        assert kept is not None and kept.user_id == first
+
+    @pytest.mark.asyncio
     async def test_upsert_keeps_token_version_lock_and_mfa(self, env: StoreEnv) -> None:
         uid = _uid()
         await env.store.upsert_user(_sync(env, uid))
@@ -152,9 +173,45 @@ class AuthStoreContract:
                               detail={"by": "ops", "reason": "x"})  # fmt: skip
         await env.sink.record("mfa_reset", user_id=uid, username_attempted=name, ip_prefix=ip,
                               detail={"by": "ops", "reason": "x"})  # fmt: skip
-        assert await env.store.count_failures(name, since) == 2  # chỉ login_failed + mfa_failed
+        assert await env.store.count_failures((name,), since) == 2  # chỉ login_failed + mfa_failed
         assert await env.store.count_ip_failures(ip, since) == 2
-        assert await env.store.count_failures(name, env.clock.now()) == 0  # "sau since", không bằng
+        assert await env.store.count_failures((name,), env.clock.now()) == 0  # "sau since", không bằng
+
+    @pytest.mark.asyncio
+    async def test_count_failures_sums_every_value_once(self, env: StoreEnv) -> None:
+        """Q-4a-5: (nguyên văn, bản băm) trong MỘT câu `IN` — cộng đúng từng dòng một lần, không đếm tên khác, không đếm đôi
+        khi tuple lặp giá trị."""
+        raw, hashed, other = _uid("name"), "h:" + uuid.uuid4().hex * 2, _uid("name")
+        since = env.clock.now()
+        env.clock.advance(timedelta(seconds=1))
+        for name, n in ((raw, 2), (hashed, 3), (other, 4)):
+            for _ in range(n):
+                await env.sink.record("login_failed", username_attempted=name)
+        assert await env.store.count_failures((raw, hashed), since) == 5
+        assert await env.store.count_failures((hashed,), since) == 3
+        assert await env.store.count_failures((raw, raw), since) == 2
+        assert await env.store.count_failures((_uid("khong-co"),), since) == 0
+
+    @pytest.mark.asyncio
+    async def test_last_failure_at_is_max_over_values_after_since(self, env: StoreEnv) -> None:
+        """Q-4a-6: thời điểm lần sai CUỐI (view `auth_failures`) trên CẢ tập giá trị — cùng điều kiện với `count_failures`."""
+        raw, hashed, other = _uid("name"), "h:" + uuid.uuid4().hex * 2, _uid("name")
+        since = env.clock.now()
+        env.clock.advance(timedelta(seconds=1))
+        await env.sink.record("login_failed", username_attempted=hashed)
+        t_hashed = env.clock.now()
+        env.clock.advance(timedelta(seconds=1))
+        await env.sink.record("mfa_failed", username_attempted=raw)
+        t_raw = env.clock.now()
+        env.clock.advance(timedelta(seconds=1))
+        await env.sink.record("login_success", username_attempted=raw)  # không phải lần sai
+        await env.sink.record("login_failed", username_attempted=other)  # tên khác
+        last = await env.store.last_failure_at((raw, hashed), since)
+        assert last == t_raw
+        assert_utc(last)
+        assert await env.store.last_failure_at((hashed,), since) == t_hashed
+        assert await env.store.last_failure_at((raw, hashed), t_raw) is None  # "sau since", không bằng
+        assert await env.store.last_failure_at((_uid("khong-co"),), since) is None
 
     @pytest.mark.asyncio
     async def test_session_lookup_and_revoke(self, env: StoreEnv) -> None:

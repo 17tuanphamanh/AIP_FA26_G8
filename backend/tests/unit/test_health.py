@@ -2,8 +2,10 @@
 Không cần DB/Qdrant thật: kiểm tra tiêm vào create_app; kiểm Qdrant thật bằng respx."""
 
 import asyncio
+from typing import Any
 
 import httpx
+import httpx2
 import pytest
 import respx
 from app.main import _default_checks, create_app
@@ -43,7 +45,7 @@ async def kb_broken() -> str | None:
     raise httpx.ConnectError("qdrant chết")
 
 
-def _get(checks: dict[str, object], *, kb_probe: object = kb_missing, **over: object) -> httpx.Response:
+def _get(checks: dict[str, object], *, kb_probe: Any = kb_missing, **over: object) -> httpx2.Response:
     app = create_app(_settings(**over), health_checks=checks, runtime=no_runtime,  # type: ignore[arg-type]
                      kb_probe=kb_probe)  # fmt: skip
     with TestClient(app) as client:

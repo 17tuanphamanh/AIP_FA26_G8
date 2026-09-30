@@ -3,6 +3,7 @@
 Mỗi test dựng KB nhỏ trong `tmp_path` (thư mục tên `kb`, nên đường dẫn trong lỗi là `kb/vpn/…`)."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from app.core.clock import FakeClock
@@ -175,7 +176,7 @@ def test_b21_front_matter_domains_come_from_db_constants(field: str, values: tup
     ({"supersedes": "KB-VPN-901"}, "supersedes: không được trỏ về chính nó"),
     ({"supersedes": "KB-VPN-555"}, "supersedes: KB-VPN-555 không có trong KB"),
 ], ids=["sai-mau", "chinh-no", "khong-co"])  # fmt: skip
-def test_b22_supersedes(tmp_path: Path, over: dict[str, str], expected: str) -> None:
+def test_b22_supersedes(tmp_path: Path, over: dict[str, Any], expected: str) -> None:
     kb = _kb(tmp_path)
     write_doc(kb, "vpn/KB-VPN-901.md", **over)
     assert any(expected in e for e in _errors(kb)), _errors(kb)

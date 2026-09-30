@@ -179,7 +179,7 @@ def make(deps: NodeDeps) -> NodeFn:
         return await goto(
             state, S_CONFIRMING, next_node="confirm_wait", step="B10", event="deflected_info_only", audit_detail=info,
             lineage={"prompt_id": meta.prompt_id, "prompt_version": meta.prompt_version, "model": meta.model,
-                     "kb_version": kb_version},
+                     "kb_version": kb_version, "commit_sha": deps.commit_sha},  # P4: commit của image (Settings)
             need_type="info", answer_ref=ref, conversation=[answer_msg(body, ref, cited)],
         )  # fmt: skip
 

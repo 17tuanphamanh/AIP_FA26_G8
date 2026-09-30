@@ -437,7 +437,7 @@ def restart_all(ctx: Ctx) -> None:
     restart(ctx, full=True)
 
 
-WRONG_EVENT = {  # preset → (route, body) KHÔNG khớp trạng thái chờ của nó
+WRONG_EVENT: dict[str, tuple[str, dict[str, Any]]] = {  # preset → (route, body) KHÔNG khớp trạng thái chờ của nó
     "approval": ("messages", {"text": "x"}),
     "clarify": ("confirm", {"confirmed": True}),
     "confirm": ("messages", {"text": "x"}),
@@ -454,9 +454,10 @@ def late(ctx: Ctx) -> None:
         rep.eq(t, f"{preset}: trạng thái không đổi", WAIT_OF_PRESET[preset], ctx.view(t)["status"])
         rows = late_rows(ctx.audit(t))
         rep.eq(t, f"{preset}: đúng 1 late_event", 1, len(rows))
-        rep.rows(t, f"{preset}: late_event source=user, actual_status", rows,
-                 lambda r, s=WAIT_OF_PRESET[preset]: r["detail"].get("source") == "user"
-                 and r["detail"].get("actual_status") == s, "source=user, actual_status đúng")  # fmt: skip
+        def ok(r: Any, s: str = WAIT_OF_PRESET[preset]) -> bool:
+            return bool(r["detail"].get("source") == "user" and r["detail"].get("actual_status") == s)
+
+        rep.rows(t, f"{preset}: late_event source=user, actual_status", rows, ok, "source=user, actual_status đúng")
 
 
 def expire(ctx: Ctx) -> None:

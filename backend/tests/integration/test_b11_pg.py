@@ -82,7 +82,7 @@ async def test_g23_three_questions_three_distinct_effects_rerun_sends_nothing_pg
     rag: FakeRag = _rag()
     sent: list[tuple[str, str, str]] = []
     async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, audit=DieAfterSecondAsk(arw)) as rt:
-        assert (await rt.runner.run_new(ticket, turn)).status == S_CLARIFYING  # hỏi lượt 1
+        assert (res := await rt.runner.run_new(ticket, turn)) is not None and res.status == S_CLARIFYING  # hỏi lượt 1
         with pytest.raises(Crash):
             await deliver_event(rt.runner, ticket, S_CLARIFYING, {"kind": "user_reply", "text": "hôm nay trời đẹp quá"})
         sent += rt.notifier.sent

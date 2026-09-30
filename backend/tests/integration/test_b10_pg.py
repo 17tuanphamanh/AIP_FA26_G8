@@ -135,7 +135,7 @@ async def test_g1_resume_confirm_wait_twice_single_b10_notice_pg(migrated: PgUrl
     rag = await fixture_rag(["KB-VPN-001#v1#1"], clock)
     llm = make_gateway(vpn_scripts(need="info"), clock=clock).client  # type: ignore[arg-type]
     async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag) as rt:
-        assert (await rt.runner.run_new(ticket, turn)).status == S_CONFIRMING
+        assert (res := await rt.runner.run_new(ticket, turn)) is not None and res.status == S_CONFIRMING
     async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag,
                                audit=DieBeforeConfirmAudit(arw)) as rt:  # fmt: skip
         with pytest.raises(Crash):

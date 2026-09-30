@@ -77,7 +77,9 @@ async def test_d19_tag_selects_preset_else_default(tag: str | None, expected: st
 
 @pytest.mark.asyncio
 async def test_d19_unknown_tag_or_missing_prompt_is_script_exhausted() -> None:
-    for tags, match in (({"turn-1": "khong_co"}, "khong_co"), ({"turn-1": "vpn_demo"}, "b11_clarify_question")):
+    cases: tuple[tuple[dict[str, str | None], str], ...] = (
+        ({"turn-1": "khong_co"}, "khong_co"), ({"turn-1": "vpn_demo"}, "b11_clarify_question"))
+    for tags, match in cases:
         gw = make_gateway(providers={"scripted": PresetScriptedLLM(_presets(), FakeResolver(tags))},
                           trace=lambda: TRACE)  # fmt: skip
         with pytest.raises(ScriptExhausted, match=match):
