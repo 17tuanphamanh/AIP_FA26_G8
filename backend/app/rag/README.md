@@ -12,7 +12,10 @@ docs/spec/build/phase3-thiet-ke-chi-tiet.md mục 5 (ingest) + mục 6 (truy h�
   `VectorStoreTransient`/`CollectionNotFound`); `retriever.py` (`Retriever`, `RagConfig` — embed một lần/lượt,
   D-23 lọc intent rồi thử lại không intent, retry qua `tools.retry.call_with_retry`); `expand.py`
   (`expand_for_answer`/`trim_to_budget` — ghép láng giềng D-24, CÙNG collection với lượt truy hồi, không đọc
-  lại alias); `ports.py` (`RagPort` Protocol — bản thật `Retriever`, bản giả `tests/fakes/rag.FakeRag`);
+  lại alias); `Retriever.procedure_available` (Phase 4 S0-P10, B11 — tài liệu quy trình có trong KB HIỆN HÀNH: alias
+  → `pipeline_sha` như `retrieve`, `procedure_filter` = `base_filter` + `doc_id`, lỗi → stage `procedure`); `ports.py`
+  (`RagPort` Protocol — bản thật `Retriever`, bản giả `tests/fakes/rag.FakeRag`); `ingest/procedures.py` (`make ingest`
+  CẢNH BÁO `procedure_doc` thiếu/tắt/nhân viên không xem được — không chặn);
   `eval_cli.py` (`make eval-rag` — đo Recall/FG/MRR trên bản KB đang chạy, `--sweep` chỉ để quan sát, không
   chọn ngưỡng — D-22).
 - Test: unit (`backend/tests/unit/test_rag_*.py`, không cần Docker) · integration Qdrant/Postgres thật

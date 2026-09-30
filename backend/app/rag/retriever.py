@@ -10,6 +10,9 @@
 - **Embed một lần mỗi lượt** (Q-3c-3): vector dense + sparse dùng lại cho cả lần 1 và lần chạy lại D-23.
 - `rag/expand.py::expand` là thân của `Retriever.expand_for_answer` (tách file theo PLAN-3c mục 2) — nạp muộn để
   tránh vòng import module (`expand.py` nhập ngược `_Counter`/`_Transient`/`content_of` ở đây).
+- `procedure_available` (Phase 4 S0-P10, chốt S0-A3): kiểm tài liệu quy trình ở B11 trên KB HIỆN HÀNH — phân giải alias
+  bằng ĐÚNG đường của `retrieve` (`_pinned`: alias → `kb_version` → `pipeline_sha`), `procedure_filter` (có `base_filter`),
+  `scroll_window` limit 1. Mọi lỗi hệ thống → `RetrievalSystemError` stage `"procedure"` (E2).
 """
 
 import asyncio
@@ -26,11 +29,12 @@ from app.domain.context import RequesterContext
 from app.domain.ticket_state import ChunkRef
 from app.ml.ports import MlPort
 from app.rag.bm25 import ViLexicon, to_sparse, tokenize_vi
-from app.rag.filters import intent_filter, query_filter
+from app.rag.filters import intent_filter, procedure_filter, query_filter
 from app.rag.ingest.config import ALIAS, COLLECTION_RE
 from app.rag.models import (
     ChunkTruncatedError,
     EvidenceBlock,
+    ProcedureCheck,
     RetrievalQuery,
     RetrievalResult,
     RetrievalSystemError,
@@ -83,12 +87,13 @@ class _Transient(Exception):
 
 
 class _StageBox:
-    """Hộp chứa `stage` khả biến, truyền qua tham số — KHÔNG lưu trên `self` của `Retriever`."""
+    """Hộp chứa `stage` (và `kb_version` khi đã biết) khả biến, truyền qua tham số — KHÔNG lưu trên `self` của `Retriever`."""
 
-    __slots__ = ("value",)
+    __slots__ = ("kb_version", "value")
 
     def __init__(self, value: Stage) -> None:
         self.value: Stage = value
+        self.kb_version: str | None = None
 
 
 async def _call(clock: Clock, retries: _Counter, fn: Callable[..., Awaitable[Any]], *args: Any) -> Any:
@@ -190,33 +195,10 @@ class Retriever:
     ) -> RetrievalResult:
         retries = _Counter()
         stage = _StageBox("alias")
-        kb_version: str | None = None
         limit_s, turn_bound = window(self._cfg.deadline_s, self._clock, what="rag:retrieve")  # 9.0
         try:
             async with asyncio.timeout(limit_s):
-                if collection is not None:
-                    coll = collection
-                else:
-                    try:
-                        coll = await self._call(self._index.alias_target, ALIAS, retries=retries)
-                    except _Transient as e:
-                        raise RetrievalSystemError("search", retries.total, detail=str(e)) from e
-                    if coll is None:
-                        raise RetrievalSystemError("alias", retries.total)
-                if not _COLLECTION_RE.match(coll):
-                    raise RetrievalSystemError("alias", retries.total)
-                kb_version = coll.removeprefix("kb_")
-                stage.value = "pipeline"
-                try:
-                    meta = await self._call(self._index.get_metadata, coll, retries=retries)
-                except CollectionNotFound:
-                    raise RetrievalSystemError("alias", retries.total, kb_version=kb_version) from None
-                except _Transient as e:
-                    raise RetrievalSystemError(
-                        "search", retries.total, kb_version=kb_version, detail=str(e)
-                    ) from e
-                if meta.get("pipeline_sha") != self._pipeline_sha:
-                    raise RetrievalSystemError("pipeline", retries.total, kb_version=kb_version)
+                coll, kb_version = await self._pinned(collection, retries, stage)
                 stage.value = "embed"
                 dense, sparse = await self._embed(q, retries, kb_version)
                 first = await self._search(
@@ -236,7 +218,68 @@ class Retriever:
             if turn_bound:  # hết khung vì hạn cả lượt, không phải vì RAG chậm quá rag_deadline_s
                 raise TurnBudgetExceeded(f"rag:retrieve ({stage.value})") from None
             raise RetrievalSystemError(
-                stage.value, retries.total, kb_version=kb_version, detail="deadline"
+                stage.value, retries.total, kb_version=stage.kb_version, detail="deadline"
+            ) from None
+
+    async def _pinned(self, collection: str | None, retries: _Counter, stage: _StageBox) -> tuple[str, str]:
+        """Bước 1–2 của `retrieve`: collection (tham số, hoặc alias `kb_current`) → `kb_version` → kiểm `pipeline_sha`.
+        Dùng chung với `procedure_available` (S0-A3 — "đúng đường của retrieve"). `stage.kb_version` gán ngay khi biết, để
+        nhánh hết hạn của bên gọi ghi đúng bản KB."""
+        if collection is not None:
+            coll = collection
+        else:
+            try:
+                coll = await self._call(self._index.alias_target, ALIAS, retries=retries)
+            except _Transient as e:
+                raise RetrievalSystemError("search", retries.total, detail=str(e)) from e
+            if coll is None:
+                raise RetrievalSystemError("alias", retries.total)
+        if not _COLLECTION_RE.match(coll):
+            raise RetrievalSystemError("alias", retries.total)
+        kb_version = stage.kb_version = coll.removeprefix("kb_")
+        stage.value = "pipeline"
+        try:
+            meta = await self._call(self._index.get_metadata, coll, retries=retries)
+        except CollectionNotFound:
+            raise RetrievalSystemError("alias", retries.total, kb_version=kb_version) from None
+        except _Transient as e:
+            raise RetrievalSystemError("search", retries.total, kb_version=kb_version, detail=str(e)) from e
+        if meta.get("pipeline_sha") != self._pipeline_sha:
+            raise RetrievalSystemError("pipeline", retries.total, kb_version=kb_version)
+        return coll, kb_version
+
+    async def procedure_available(self, doc_id: str, ctx: RequesterContext) -> ProcedureCheck:
+        """S0-P10 + chốt S0-A3: tài liệu quy trình `doc_id` có trong KB HIỆN HÀNH (alias đọc LÚC NÀY — không dùng `kb_version`
+        ghim ở B8), enabled, `ctx.role` được xem. `scroll_window` limit 1 với `procedure_filter` (`base_filter` + `doc_id`).
+        Lỗi hệ thống (alias, pipeline, Qdrant sau retry, hết `rag_deadline_s`) → `RetrievalSystemError("procedure")` — nhãn
+        gốc giữ trong `detail`. Hết hạn cả lượt → `TurnBudgetExceeded` (9.0)."""
+        retries = _Counter()
+        stage = _StageBox("alias")
+        limit_s, turn_bound = window(self._cfg.deadline_s, self._clock, what="rag:procedure")  # 9.0
+        try:
+            async with asyncio.timeout(limit_s):
+                try:
+                    coll, kb_version = await self._pinned(None, retries, stage)
+                except RetrievalSystemError as e:
+                    detail = f"{e.stage}: {e.detail}" if e.detail else e.stage
+                    raise RetrievalSystemError("procedure", e.retries, kb_version=e.kb_version, detail=detail) from e
+                stage.value = "procedure"
+                try:
+                    pts = await self._call(
+                        self._index.scroll_window, coll, procedure_filter(ctx.role, doc_id), 1, retries=retries
+                    )
+                except CollectionNotFound:  # alias vừa đổi và bản cũ bị dọn giữa hai lời gọi
+                    raise RetrievalSystemError("procedure", retries.total, kb_version=kb_version) from None
+                except _Transient as e:
+                    raise RetrievalSystemError(
+                        "procedure", retries.total, kb_version=kb_version, detail=str(e)
+                    ) from e
+                return ProcedureCheck(available=bool(pts), kb_version=kb_version, retries=retries.total)
+        except TimeoutError:
+            if turn_bound:  # hết khung vì hạn cả lượt, không phải vì Qdrant chậm quá rag_deadline_s
+                raise TurnBudgetExceeded(f"rag:procedure ({stage.value})") from None
+            raise RetrievalSystemError(
+                "procedure", retries.total, kb_version=stage.kb_version, detail="deadline"
             ) from None
 
     async def _embed(self, q: RetrievalQuery, retries: _Counter, kb_version: str) -> tuple[list[float], Any]:

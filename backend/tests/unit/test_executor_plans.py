@@ -133,7 +133,8 @@ def test_h23_second_enabled_intent_without_plan_refuses() -> None:
     """h23 + B17 mục 13 "Hành động mới: thêm PLAN[type]… Thiếu PLAN phải là lỗi cấu hình khi khởi động"."""
     meta = _meta_copy()
     meta["account"] = {"unlock_account": ActionMeta(reversible=True, reversibility="full", data_sensitivity="low",
-                                                    scope="single_account", privilege_level="standard_user")}  # fmt: skip
+                                                    scope="single_account", privilege_level="standard_user",
+                                                    procedure_doc="KB-ACC-001")}  # fmt: skip
     with pytest.raises(RuntimeError, match="unlock_account"):
         check_plans(meta, ["vpn", "account"], plans=PLAN)
 

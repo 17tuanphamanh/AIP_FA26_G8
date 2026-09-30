@@ -17,11 +17,13 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db.models import KB_DOC_TYPES, KB_REQUEST_TYPES, KB_SENSITIVITY
+from app.domain.action import (
+    DOC_ID_PATTERN,  # một nguồn (domain.action); loader import lại từ đây như trước
+)
 from app.domain.ticket_state import ChunkRef
 
-type Stage = Literal["alias", "pipeline", "embed", "search", "rerank", "expand"]
-
-DOC_ID_PATTERN = r"^KB-(VPN|ACC|SW|ACS|GEN)-\d{3}$"
+# "procedure" (Phase 4 S0-P10): `Retriever.procedure_available` — mọi lỗi của lượt kiểm quy trình ở B11 mang nhãn này.
+type Stage = Literal["alias", "pipeline", "embed", "search", "rerank", "expand", "procedure"]
 
 
 def _one_of(value: str, allowed: tuple[str, ...]) -> str:
@@ -180,6 +182,17 @@ class RetrievalResult(BaseModel):
     fallback_tried: bool
     retries: int  # tổng số lần THỬ LẠI (Q-3c-10)
     query_truncated: bool
+
+
+class ProcedureCheck(BaseModel):
+    """Kết quả `Retriever.procedure_available` (Phase 4 S0-P10, chốt S0-A3): tài liệu quy trình có trong KB HIỆN HÀNH (alias tại
+    lúc B11 kiểm — không phải `kb_version` ghim ở B8), `enabled`, người gửi được xem (`base_filter`)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    available: bool
+    kb_version: str  # collection mà alias trỏ tới lúc kiểm — audit B11 `procedure_kb_version`
+    retries: int
 
 
 class RetrievalSystemError(Exception):

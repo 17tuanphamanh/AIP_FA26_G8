@@ -62,7 +62,9 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, "escalation_create", deps.escalations.create, step="B20",
                 ticket_id=ticket_id, exit_code=code,
                 reason_detail=state.get("escalation_reason_detail"),
-                handoff_note=build_handoff(state, deps.templates).model_dump(),
+                handoff_note=build_handoff(
+                    state, deps.templates, retrieval_threshold=deps.constants.RETRIEVAL_THRESHOLD
+                ).model_dump(),  # S0-A1: tài liệu dưới ngưỡng ghi rõ "không dùng làm căn cứ"
                 is_deny_case=is_deny_case(code), created_at=now,
             )  # fmt: skip
             text = deps.templates.of(code).user_message

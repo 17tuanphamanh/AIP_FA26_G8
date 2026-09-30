@@ -1,6 +1,6 @@
 # Preset `tc16` của ScriptedLLM trên stack dev — `make gate3` (phase3 11.6, PLAN-3h S15), thẻ [fake:tc16] cuối câu,
 # KHÔNG đặt FAKE_SCENARIO. nv001 "đăng ký MFA thế nào": KB fixture không có tài liệu MFA → E3 no_grounding ở B9
-# (điểm dưới ngưỡng) hoặc ở B10 (LLM tự nhận cannot_answer).
+# (điểm dưới ngưỡng — từ Phase 4 S0 kiểm SAU b10_need_type=info, trong node b10_route) hoặc ở B10 (cannot_answer).
 # Phản hồi TĨNH, kiểm schema lúc khởi động. KHÔNG dùng trong test (e2e cổng 3 dùng tests/fixtures/llm/vpn.py).
 b02_injection_judge: {is_attack: false, category: none, reason: "preset tc16"}
 b03_classify:

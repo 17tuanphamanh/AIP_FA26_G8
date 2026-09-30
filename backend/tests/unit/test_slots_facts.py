@@ -223,4 +223,4 @@ def test_build_action_takes_facts_only_from_facts() -> None:
 def test_action_meta_reversible_must_match() -> None:
     with pytest.raises(ValidationError):
         ActionMeta(reversible=True, reversibility="none", data_sensitivity="low", scope="single_device",
-                   privilege_level="standard_user")  # fmt: skip
+                   privilege_level="standard_user", procedure_doc="KB-VPN-004")  # fmt: skip

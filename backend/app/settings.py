@@ -184,6 +184,11 @@ class Settings(BaseSettings):
     llm_cache_mode: Literal["default", "eval", "bypass"] = "default"  # P2 mục 8
     rediagnose_on_new_slot: bool = False  # D-20: tắt mặc định; bật → không khởi động (3g, Q-3g-7)
 
+    # ---- Phase 4 ----
+    # S0-P11 (Q-4-U A+, D-34): `true` → yêu cầu HÀNH ĐỘNG cũng phải qua cổng độ liên quan B9 như Phase 3 (ablation Phase 10,
+    # đối chiếu hành vi 3h). Mặc định `false`: B9 chỉ cho câu trả lời; căn cứ hành động = `procedure_doc` kiểm ở B11.
+    grounding_gate_actions: bool = False
+
     @field_validator("llm_backend", mode="before")
     @classmethod
     def _llm_backend_value(cls, v: object) -> object:

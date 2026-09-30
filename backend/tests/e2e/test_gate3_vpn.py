@@ -6,7 +6,9 @@ Chạy qua API + runner + worker THẬT, mock THẬT (`seed.json`, `/_admin/call
 
 Mỗi ca khẳng định số lời gọi GHI (`POST /vpn/*`) đọc từ `GET /_admin/calls` của mock: 0 hoặc 1 — không suy từ log/audit.
 Câu yêu cầu chọn sao cho truy hồi thật (FakeMl rerank = tỉ lệ âm tiết câu hỏi có trong đoạn) vượt `RETRIEVAL_THRESHOLD`
-0,6 — vd h14 "cấp LẠI VPN cho MÁY LAP-9999…" (0,62; câu gốc 11.5 "cấp VPN cho LAP-9999…" chỉ 0,5 → E3 ở B9, không tới B12).
+0,6 — vd h14 "cấp LẠI VPN cho MÁY LAP-9999…" (0,62; câu gốc 11.5 "cấp VPN cho LAP-9999…" chỉ 0,5 → E3 ở B9 thời 3h). Từ Phase 4
+S0 (Q-4-U A+) điểm thấp không còn chặn yêu cầu HÀNH ĐỘNG (s8: `FakeMlService(rerank_score=0.05)`); B9 chỉ cho câu trả lời.
+Phase 4 S0: s7 = h7, s10 = h2 (không đổi); s8, s9 ở cuối file.
 
 h15/h15b — KHÔNG đoán mã, khẳng định bất biến (lời giao DỪNG 3): E7, `POST /vpn/certs/nv001/renew` đúng 1 lần, ghi chú bàn
 giao có câu "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay". `reason_detail` thực tế: API recover
@@ -48,6 +50,7 @@ from tests.e2e.gate3_env import (
     worker,
 )
 from tests.e2e.mock_server import MockServer
+from tests.fakes.fake_ml import FakeMlService
 from tests.fixtures.llm.vpn import DEVICE_ID, vpn_scripts
 from tests.integration.pg import PgUrls
 from tests.integration.scan import tables_containing
@@ -436,3 +439,38 @@ async def test_h19_canary_nowhere_after_full_h1(stack: Stack, caplog: pytest.Log
     rendered = [repr(c.rendered_messages) for c in p.gw.llm.calls]
     assert rendered and all(CANARY not in m for m in rendered)
     assert re.search(r"LAP-0342", str(v["conversation"]))
+
+
+# ---- Phase 4 S0 (Q-4-U A+, phase4 mục 4.0): s8, s9 ---------------------------------------------------------------------
+
+
+async def test_s8_tc09_low_rerank_score_still_pending_approval_no_write(stack: Stack) -> None:
+    """s8: reranker ép 0,05 cho MỌI đoạn (như reranker thật với câu mệnh lệnh — tc09 0,047) → B10 need_type=action → B11
+    (quy trình KB-VPN-004 có trong KB fixture) → R17 → chờ duyệt; 0 lời gọi ghi; không có dòng audit B9."""
+    async with gate3(stack.pg, stack.qdrant_url, stack.mock, clock=at_ict(10), ml=FakeMlService(rerank_score=0.05),
+                     scripts=vpn_scripts(action="reissue_vpn_access")) as p, api(p) as a:  # fmt: skip
+        t = await a.create(BINH, TC09)
+        v = await a.view(t, BINH)
+    assert v["status"] == S_PENDING_APPROVAL, v
+    b10 = await audit_detail(p.rw, t, "B10", "needs_action")
+    assert b10["grounding"] == {"top_score": 0.05, "above_threshold": False, "kb_gap": True}
+    b11 = await audit_detail(p.rw, t, "B11", "action_built")
+    assert b11["procedure_doc"] == "KB-VPN-004" and len(b11["procedure_kb_version"]) == 64
+    point4 = await audit_detail(p.rw, t, "B13/B14", "risk_decided")
+    assert (point4["matched_rule_id"], point4["route"]) == ("R17", "HITL")
+    assert not [e for e in await audit_events(p.rw, t) if e[0] == "B9"]
+    assert await rows(p.rw, "SELECT status FROM approvals WHERE ticket_id = :t", t=t) == [("pending",)]
+    assert await calls(stack.mock) == 0
+
+
+async def test_s9_action_request_qdrant_down_e2_not_e3(stack: Stack) -> None:
+    """s9: yêu cầu HÀNH ĐỘNG + Qdrant không kết nối được → vẫn E2 `rag_system_error` ở B8 (fail-closed), không E3, 0 ghi."""
+    async with gate3(stack.pg, stack.qdrant_url, stack.mock, clock=at_ict(10), scripts=vpn_scripts(),
+                     qdrant_override="http://127.0.0.1:9") as p, api(p) as a:  # fmt: skip
+        t = await a.create(AN, TC02)
+        v = await a.view(t, AN)
+    assert (v["final_state"], v["exit_code"]) == (S_ESCALATED, "E2")
+    assert (await escalation(p.rw, t))[1] == "rag_system_error"
+    assert ("B8", "retrieval_error") in await audit_events(p.rw, t)
+    assert p.gw.llm.calls_for("b10_need_type") == []  # dừng ở B8, không tới B10
+    assert await calls(stack.mock) == 0

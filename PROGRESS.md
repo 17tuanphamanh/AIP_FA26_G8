@@ -3565,6 +3565,10 @@ cả 5; 5 chỉnh (PLAN-3h mục 5).
     11. **Phase 3 đóng phần code; nợ NỢ-3-1, NỢ-3-2 (phase3 spec mục 13)** — Tuấn Anh chốt 30/09/2026. NỢ-3-1: thành viên chạy
         `make gate3 S=all` NGOÀI GIỜ; NỢ-3-2: smoke LLM thật (11.9). Hạn và rủi ro: bảng "Nợ nghiệm thu Phase 3" ở mục 13
         + `decisions.md`.
+        Commit `5d0a990` (PROGRESS + phase3 mục 13 + decisions.md), push `6311a0e..5d0a990`; CI xanh: push run `36686745332` (3m7s) + PR #16
+        run `36686972103` (`lint-test` 4m11s); run push của `6311a0e` (`36686400081`) bị huỷ vì có push mới hơn. Cảnh báo Node 20 / Ubuntu 26 = "Việc treo" 1. Dòng này chưa commit — đi chung commit sau.
+    12. M9 (Dương/Duy Anh) tiếp tục song song với Phase 4: worker.py khối # M9, migration M9 do Dương viết — Phase 4 rebase +
+        kiểm alembic heads = 1. (Chưa commit — đi chung commit đầu 4a.)
   - **Kết quả (sandbox, sau bản sửa FAIL mục 7 — trước Việc treo 21):** unit **2772 passed** (2677 + gate3 37 + vpn-smoke 23 + N3 6 + FAIL 7: executor 15, B17 12,
     runner 2); mock **94**; `make lint` xanh (ruff; mypy 196/12/16; import-linter 9/9; gitleaks 61 commit sạch); `gitleaks dir`
     từng file/thư mục mới sạch; integration + e2e collect 238. DỪNG 3b đổi code `backend/app/`: `executor/{vpn,errors}.py`,
@@ -3789,6 +3793,73 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
 | DỪNG 3a | 29/09/2026 23:44 | 30/09/2026 00:17 (duyệt; `make test` 2915 / 94 / 77) |
 | DỪNG 3b | 30/09/2026 00:37 | 30/09/2026 14:3x (00:37–~02:05 S15–S17; chờ chốt Q-3h-10; 11:1x–11:3x sửa FAIL mục 7; 11:4x–12:0x Việc treo 21; 12:2x–14:3x stack + Q-3h-11) |
 
+## Phase 4 — chặng 4a: S0 (Q-4-U A+) + nợ kỹ thuật + `make verify` (30/09/2026, đang làm, chưa commit)
+
+Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi cùng commit đầu 4a) mục 3.3, 4.0–4.9. Bước 0: HEAD
+`5d0a990` = `origin/dev-tuananh`, không có commit M9 mới (không rebase); trong phiên Tuấn Anh commit + push `64ae2e0` (chỉ 3 file
+`docs/spec/claude/*`, không đụng S0). CI `5d0a990` (run `36686745332`) lấy theo PROGRESS — `gh` bị sandbox chặn (TLS keychain).
+
+- **DỪNG 1 = S0 (tầng B).** MẪU A chốt (Tuấn Anh 30/09/2026): S0-A1 **SỬA** — ghi chú bàn giao L2 đánh dấu tài liệu dưới ngưỡng;
+  S0-A2 đồng ý; S0-A3 **SỬA** — `procedure_available` đọc alias HIỆN HÀNH tại B11 (không dùng `kb_version` ghim ở B8), audit
+  `procedure_kb_version`, không thêm Việc treo; S0-A4, S0-A5 đồng ý; tự quyết 1–5 đồng ý + test wiring (Retriever thật, FakeRag
+  chỉ ở `tests/`). Code:
+  - `b08_retrieve`: bỏ nhánh B9 — RAG không lỗi → luôn `b10_route`; điểm log 3 thêm `above_threshold`.
+  - `b10_route`: `b10_need_type` trước; `info` + (rỗng / điểm < ngưỡng / thiếu điểm) → E3 `no_grounding`, step `B9`, event
+    `no_evidence` (y nhánh cũ), 0 `expand`/`b10_answer`; `action` → B11 bất kể điểm; cờ `GROUNDING_GATE_ACTIONS` (Settings khối
+    `# Phase 4`, `NodeDeps`, wiring) bật → hành động cũng qua B9. Mọi dòng audit B10 có `grounding{top_score, above_threshold,
+    kb_gap}`.
+  - `b11_slots`: sau `build_action` → `deps.rag.procedure_available(procedure_doc, ctx)` → không có: E3 `no_procedure` (kèm
+    `intended_action`/`facts` cho L2); `RetrievalSystemError` → E2 `rag_system_error`; audit `procedure_doc`,
+    `procedure_kb_version`. `REASON_DETAILS` + `no_procedure`.
+  - `ActionMeta.procedure_doc` bắt buộc (mẫu `DOC_ID_PATTERN`, một nguồn ở `domain/action.py` — không đặt ở `ticket_state.py`
+    như tự quyết 1 vì vòng import `ticket_state → action`); `config/action_metadata.yaml`: renew/reissue → KB-VPN-004,
+    check_vpn_status → KB-VPN-001. Không chép vào `Action` (hash không đổi).
+  - `rag`: `Retriever._pinned` (alias → `kb_version` → `pipeline_sha`, tách từ `retrieve`, dùng chung) +
+    `procedure_available` → `ProcedureCheck{available, kb_version, retries}`; `filters.procedure_filter` (qua `query_filter`);
+    `Stage` + `"procedure"`; hạn lượt `window(rag_deadline_s)`. `ingest/procedures.py`: `make ingest` CẢNH BÁO (không chặn)
+    procedure_doc không có / `enabled=false` / nhân viên không xem được.
+  - B12: estimator nhận KB qua `risk/estimator.evidence_for_estimator` (dưới ngưỡng / None → `[]`).
+  - S0-A1: `build_handoff(…, *, retrieval_threshold)` (B20 truyền `deps.constants`) — dưới ngưỡng/thiếu điểm → "Tài liệu KB gần
+    nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): …", đạt → câu cũ; mọi mã thoát.
+  - `gate3.py` tc09 → R17 (+R18 ngoài giờ) chờ duyệt, 1 phiếu, 0 ghi, B11 `procedure_doc=KB-VPN-004`, không dòng B9 (không duyệt
+    tiếp — Q-4-D); README stack, preset tc09/tc16 (chú thích).
+  - Test: `unit/test_s0_grounding.py` (s1–s6, s11–s16, S0-P4, S0-A1 qua B20, S0-A3 alias đổi hai chiều, M-S0-7, hạn lượt,
+    `procedure_available` trên SpyIndex, cảnh báo ingest, wiring); `test_final_handoff` (S0-A1 hai chiều × mọi mã E);
+    `test_config_files` (s16); e2e s8, s9 (s7 = h7, s10 = h2); integration c5 chạy B8 → B10 (giữ E3) + `procedure_available`
+    trên Qdrant thật. Test cũ đổi: 2 test node B8 (E3 → "luôn b10_route", S0-A2), `_state` B10 thêm `retrieval_score`, g25
+    cho step `B9` trong B10, dữ liệu `ActionMeta` thêm `procedure_doc`, `test_gate3` tc09.
+  - **Soát bảo mật (security-reviewer, theo lệnh DỪNG 1):** S1–S8 + B1–B8: **0 FAIL**, 5 NGHI. Đã sửa: NGHI-1 (`evidence_for_estimator`
+    NaN → `[]`: `not score >= threshold`; test NaN ở s11 và B10) và NGHI-5 (dòng audit B9 mới thiếu cột `kb_version` như dòng
+    B9 cũ → `goto(kb_version=…)` ở cả 2 nhánh B9; test). Chuyển Q: NGHI-2 (lọc theo từng chunk?), NGHI-3 (handoff của
+    `no_procedure`), NGHI-4 (B17 không kiểm lại quy trình). Agent tự khai: dùng `cat`/`sed -n`/`grep` ngoài danh sách lệnh (chỉ
+    đọc) và 1 lệnh `git grep` có pathspec `.env.example` (không in dòng nào).
+  - **Chốt MẪU B (Tuấn Anh 30/09/2026):** Q-4a-1 đồng ý — handoff `reason_detail == "no_procedure"` thêm câu cố định
+    `NO_PROCEDURE_NOTE` ("Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không
+    làm tay theo tài liệu cũ.") ở phần "vì sao escalate" + test (B8 đã tra KB-VPN-004 đạt ngưỡng 0,9 → B11 E3 `no_procedure`,
+    qua B20 thật) + M-S0-10; Q-4a-2 chấp nhận — không kiểm quy trình ở B17 (giữ S0-P5), HITL là lớp chặn, 4c `ApprovalView`
+    hiển thị `procedure_doc` + title; Q-4a-3 giữ S0-P9, xét lại Phase 6; `GROUNDING_GATE_ACTIONS` vào compose ở Phase 10.
+  - **Kết quả sandbox (30/09/2026, sau Q-4a-1):** unit **2918 passed** (mốc 2793); mock 94; ml 77; `make lint` xanh (ruff;
+    mypy 198/12/16; import-linter 9/9; gitleaks sạch); integration + e2e collect 248 (chưa chạy — Docker). Mutation
+    `scripts/mutation/mutate_4a.py` (unit, 1 lượt toàn bộ trên code cuối): **10/10 đỏ đúng dự đoán** (M-S0-1…8, M-S0-9 handoff
+    dưới ngưỡng, M-S0-10 câu `no_procedure`), md5 + `git diff --stat` khớp sau khôi phục, exit 0.
+  - **`make test` lần 1 (Tuấn Anh, 30/09/2026): 3165 passed / 1 FAILED** — `integration/test_rag_query_qdrant.py::
+    test_c14_empty_collection_gives_e3_no_rerank_call` (`KeyError: 'exit_code'`): test gọi RIÊNG node B8 mà chờ E3 ở B8 — sót
+    khi sửa theo S0-A2 (grep đầu phiên đã liệt kê file này, chỉ c5 được sửa). Sửa như c5: `_run_node` chạy B8 → B10 (preset
+    `b10_need_type=info`), GIỮ kỳ vọng E3 + audit `[B8 retrieved, B9 no_evidence]`.
+  - **`make test` lần 2 (Tuấn Anh, 30/09/2026): XANH** — backend **3166 passed** (unit + integration + e2e, 1m31s), mock 94,
+    ml 77 (5 deselected). `make up` xanh (health ok, kb ready). `make gate3 S=tc09` lần 1: **DỪNG chốt an toàn** —
+    `FAKE_SCENARIO` đặt trong container (cấu hình gate2 của `.env`, G4-24/Q-4-T). Không sửa `.env`: tạo lại backend + worker
+    bằng biến shell rỗng (compose nội suy `${FAKE_SCENARIO:-}` — biến shell thắng `--env-file`), chạy gate3, rồi trả về cấu
+    hình `.env` (đúng bước 5/8 của `make verify` mục 4.4).
+  - **gate3 trên stack (Tuấn Anh, 30/09/2026, TRONG GIỜ, reranker THẬT):** `tc09` **8 PASS / 0 FAIL** (16:45) — điểm truy hồi
+    0,0473 < 0,6, `grounding.kb_gap=true` → B11 `procedure_doc=KB-VPN-004` → R17 HITL → `S_PENDING_APPROVAL`, 1 phiếu
+    `pending`, 0 lời gọi ghi, 0 dòng audit B9 (Việc treo 17 hết trên stack). `tc16` **5 PASS / 0 FAIL** (16:47) — E3
+    `no_grounding`, tin mẫu "Mình chưa có thông tin về việc này…", 0 tin answer, 0 ghi. **DỪNG 1 đạt** (test xanh, tc09 →
+    `S_PENDING_APPROVAL`, tc16 → E3). Chưa commit — chờ Tuấn Anh cho commit S0. Lượt trước bản sửa NGHI: M-S0-1 báo "khác dự đoán" vì danh sách dự đoán của tôi
+    thừa 1 test (handoff qua B20 — E3 đi đường B10 `no_evidence`, không đo cổng); đột biến vẫn bị s1/s4 giết → sửa danh sách.
+    `--e2e`/`--integration` của script chưa chạy (Docker, không bắt buộc).
+  - Chưa chạy: `make test` (integration + e2e), `make gate3 S=tc09`/`tc16` trên stack — lệnh cho Tuấn Anh ở MẪU B.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -3883,7 +3954,7 @@ sau vá N3 và 3h). "ĐỎ" = test nêu đỏ đúng lý do, md5 + `git diff --s
 16. **Đo thời gian thêm của `durability="sync"` (chốt DỪNG 2 3h, NGHI-3).** Ước tính +10–50 ms/lượt (chưa đo — ~10 superstep ×
     1 lần ghi checkpoint Postgres). Đo ở gate3 trên stack: so `turns.ended_at − started_at` trước/sau (hoặc span B17), ghi số
     mẫu + ngày.
-17. **B9 (grounding) chạy trước B10 (need_type) (Tuấn Anh ghi, duyệt DỪNG 3a 3h, 30/09/2026).** Yêu cầu HÀNH ĐỘNG có điểm truy
+17. **[4a S0 — đã làm, chưa commit: B9 chỉ cho câu trả lời, căn cứ hành động = `procedure_doc` ở B11 (Q-4-U A+)]** **B9 (grounding) chạy trước B10 (need_type) (Tuấn Anh ghi, duyệt DỪNG 3a 3h, 30/09/2026).** Yêu cầu HÀNH ĐỘNG có điểm truy
     hồi thấp bị E3 dù không cần KB (thấy ở h14: "cấp VPN cho LAP-9999…" 0,5 < 0,6 → E3 ở B9, không tới B12). An toàn nhưng giảm
     tự động; xem lại ở Phase 5 + khi chọn ngưỡng ở mốc G. Chưa sửa.
 18. **`ToolContractError` chép `ValidationError` có `input_value` (soát DỪNG 3b 3h, NGHI mục 8).** Registry

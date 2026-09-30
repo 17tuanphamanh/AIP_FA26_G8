@@ -16,6 +16,7 @@ from app.domain.context import RequesterContext
 from app.domain.ticket_state import ChunkRef
 from app.rag.models import (
     EvidenceBlock,
+    ProcedureCheck,
     RetrievalQuery,
     RetrievalResult,
     RetrievalSystemError,
@@ -40,6 +41,12 @@ class FakeRag:
     evidence: list[EvidenceBlock] = field(default_factory=list)
     retrieve_calls: list[tuple[RetrievalQuery, RequesterContext]] = field(default_factory=list)
     expand_calls: list[tuple[list[ChunkRef], RequesterContext]] = field(default_factory=list)
+    # Phase 4 S0-P10: `procedures` None = mọi tài liệu quy trình "có" (test không quan tâm B11 căn cứ); tập = chỉ các doc_id
+    # này có. `procedure_error` → ném (E2). `procedure_kb_version` = alias hiện hành giả lập.
+    procedures: set[str] | None = None
+    procedure_error: RetrievalSystemError | None = None
+    procedure_kb_version: str = "c" * 64
+    procedure_calls: list[tuple[str, RequesterContext]] = field(default_factory=list)
 
     async def retrieve(
         self, q: RetrievalQuery, ctx: RequesterContext, *, collection: str | None = None
@@ -55,6 +62,13 @@ class FakeRag:
     ) -> list[EvidenceBlock]:
         self.expand_calls.append((chunks, ctx))
         return self.evidence
+
+    async def procedure_available(self, doc_id: str, ctx: RequesterContext) -> ProcedureCheck:
+        self.procedure_calls.append((doc_id, ctx))
+        if self.procedure_error is not None:
+            raise self.procedure_error
+        ok = self.procedures is None or doc_id in self.procedures
+        return ProcedureCheck(available=ok, kb_version=self.procedure_kb_version, retries=0)
 
 
 # ---- SpyIndex (VectorIndex) ----------------------------------------------------------------------
@@ -110,6 +124,22 @@ class SpyIndex:
 
     def add_points(self, name: str, points: list[SpyPoint]) -> None:
         self._collections.setdefault(name, _Coll()).points.extend(points)
+
+    def edit_doc(self, name: str, doc_id: str, **fields: Any) -> int:
+        """Đổi payload mọi điểm của `doc_id` (vd `enabled=False`, `sensitivity="restricted"`) — trả số điểm đã đổi."""
+        pts = [pt for pt in self._coll(name).points if pt.payload.get("doc_id") == doc_id]
+        for pt in pts:
+            pt.payload.update(fields)
+        return len(pts)
+
+    def copy_collection(self, src: str, dst: str, *, drop_doc: str | None = None) -> None:
+        """Collection mới `dst` = bản sao `src` (metadata + điểm), bỏ mọi điểm của `drop_doc` — mô phỏng lần ingest mới."""
+        coll = self._coll(src)
+        self._collections[dst] = _Coll(
+            points=[SpyPoint(pt.id, dict(pt.payload), pt.score) for pt in coll.points
+                    if drop_doc is None or pt.payload.get("doc_id") != drop_doc],
+            metadata=dict(coll.metadata),
+        )  # fmt: skip
 
     def set_alias(self, alias: str, target: str | None) -> None:
         if target is None:

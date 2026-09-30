@@ -6,6 +6,7 @@ Cổng kiểm của ingest (3b) và `retrieve` (3c) cùng dùng hàm này.
 
 `query_filter(role, *extra)` là chỗ DUY NHẤT trong `app/rag/` được gọi `Filter(` — cả 3 đường truy hồi (lần 1, lần
 chạy lại D-23, `expand_for_answer` D-24) đi qua đây nên không đường nào dựng filter thiếu `base_filter` (c36).
+`procedure_filter` (Phase 4 S0-P10) — kiểm tài liệu quy trình ở B11 — cũng đi qua `query_filter`.
 """
 
 from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
@@ -35,3 +36,8 @@ def intent_filter(intent: str) -> FieldCondition:
 
 def query_filter(role: str, *extra: FieldCondition) -> Filter:
     return Filter(must=[*base_filter(role), *extra])
+
+
+def procedure_filter(role: str, doc_id: str) -> Filter:
+    """Tài liệu quy trình `doc_id` mà `role` được xem: `base_filter` (enabled + độ nhạy) + đúng `doc_id` (S0-P10)."""
+    return query_filter(role, FieldCondition(key="doc_id", match=MatchValue(value=doc_id)))

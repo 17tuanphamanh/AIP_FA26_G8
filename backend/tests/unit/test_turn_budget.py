@@ -162,6 +162,7 @@ CALL_SITES: dict[tuple[str, str], str] = {
     ("llm/client.py", "_run"): "window",  # deadline gateway = min(vai trò, hạn lượt)
     ("rag/retriever.py", "retrieve"): "window",
     ("rag/expand.py", "expand"): "window",
+    ("rag/retriever.py", "procedure_available"): "window",  # Phase 4 S0-P10: B11 kiểm tài liệu quy trình
     ("executor/vpn.py", "execute"): "cap_timeout",  # 3h P4: trọn timeout ghi của cả kế hoạch TRƯỚC begun
 }
 
@@ -220,6 +221,7 @@ NODE_CALL_SITES: dict[tuple[str, str], int] = {
     ("b10_route.py", "rag.expand_for_answer"): 1,  # 3g
     ("b11_slots.py", "llm.complete"): 1,  # 3g DỪNG 2: b11_clarify_question
     ("b11_slots.py", "directory.call"): 1,  # 3g DỪNG 2: validate_targets (2 tool song song, một điểm gọi)
+    ("b11_slots.py", "rag.procedure_available"): 1,  # Phase 4 S0-P10: căn cứ quy trình (Retriever.procedure_available)
     ("clarify_wait.py", "llm.complete"): 1,  # 3g DỪNG 2: b11_extract_slots
     ("b17_execute.py", "executor.execute"): 1,
     ("b17_execute.py", "directory.call"): 1,  # 3h: kiểm lại người (ad_get_user, B17_RECHECK — 2 người song song, một điểm gọi)

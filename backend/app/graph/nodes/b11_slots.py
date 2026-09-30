@@ -7,7 +7,12 @@
    `target_check_error`; 404/rỗng = dữ liệu (máy không tồn tại → `device_registered=false`, luật quyết). `infer_vpn` (tên
    thật) tính lại fact PHỤ THUỘC MÁY: bỏ mọi giá trị máy cũ, giữ fact theo người; BỎ `slots` mà `infer_vpn` trả (không tự đặt
    `action`/`device_id` — máy người khác không bao giờ sinh hành động). `build_action` chỉ từ slot đã sanitize + metadata +
-   facts (P8; key lạ → `FactKeyViolation` → E9) → `S_ASSESSING`.
+   facts (P8; key lạ → `FactKeyViolation` → E9).
+   **Căn cứ quy trình (Phase 4 S0-P10, Q-4-U A+, D-34):** sau `build_action`, TRƯỚC `goto(S_ASSESSING)`: tài liệu
+   `ActionMeta.procedure_doc` của `action_type` phải có trong KB HIỆN HÀNH (alias đọc lúc này — chốt S0-A3, không dùng
+   `kb_version` ghim ở B8), enabled, người gửi được xem (`RagPort.procedure_available`, `base_filter`). Không → E3
+   `no_procedure` (kèm `intended_action` để L2 thấy hành động dự kiến); `RetrievalSystemError` → E2 `rag_system_error`.
+   Có → `S_ASSESSING`; audit `procedure_doc` + `procedure_kb_version`.
 3. Đã hỏi đủ `MAX_CLARIFICATION_TURNS` lượt mà vẫn thiếu → E4 `clarification_exhausted`.
 4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` (`diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4)
    → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
@@ -35,13 +40,15 @@ from app.graph.ports import ToolResult
 from app.graph.tracing import NodeFn
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import QuestionOut
+from app.rag.models import RetrievalSystemError
 from app.tools.diagnosis import vpn
 from app.tools.retry import retries_of
 
 
 def _info(missing: list[str], turns: int) -> dict[str, Any]:
     return {"missing": missing, "turn": turns, "prompt": None, "llm_error": None, "guard": None, "tools_called": [],
-            "tool_retry_count": 0, "facts": None}  # fmt: skip
+            "tool_retry_count": 0, "facts": None, "procedure_doc": None, "procedure_kb_version": None,
+            "rag_error": None}  # fmt: skip
 
 
 def _error_kind(error: str) -> str:
@@ -88,9 +95,25 @@ def make(deps: NodeDeps) -> NodeFn:
         kept = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
         facts = kept | {k: v for k, v in fresh.items() if k in vpn.DEVICE_FACTS}
         info["facts"] = facts
-        action = build_action(
-            state["intent"], slots, facts, state["requester_context"], deps.action_metadata[state["intent"]]
-        )
+        metadata = deps.action_metadata[state["intent"]]
+        action = build_action(state["intent"], slots, facts, state["requester_context"], metadata)
+        info["procedure_doc"] = doc = metadata[action.type].procedure_doc
+        try:  # S0-P10: căn cứ của hành động = quy trình khai báo có mặt trong KB hiện hành (kiểm tất định, không độ giống)
+            check = await deps.rag.procedure_available(doc, state["requester_context"])
+        except RetrievalSystemError as exc:
+            info["rag_error"] = exc.stage
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B11", event="rag_system_error", audit_detail=info,
+                exit_code=ExitCode.E2.value, retrieval_error=exc.stage, tool_retry_count=retries,
+                escalation_reason_detail="rag_system_error",
+            )  # fmt: skip
+        info["procedure_kb_version"] = check.kb_version
+        if not check.available:
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B11", event="no_procedure", audit_detail=info,
+                exit_code=ExitCode.E3.value, intended_action=action, facts=facts, missing_slots=[],
+                tool_retry_count=retries, escalation_reason_detail="no_procedure",
+            )  # fmt: skip
         return await goto(
             state, S_ASSESSING, next_node="b12_assess", step="B11", event="action_built", audit_detail=info,
             intended_action=action, facts=facts, missing_slots=[], tool_retry_count=retries,

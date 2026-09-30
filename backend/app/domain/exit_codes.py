@@ -74,6 +74,8 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "exec_failed", "exec_interrupted",
     # Phase 3 mục 9.0 (3f S0): hạn cho cả lượt — boundary + B2/B3/B6
     "turn_budget_exceeded",
+    # Phase 4 S0-P10 (Q-4-U A+): B11 — tài liệu quy trình của action_type không có/tắt/không được xem trong KB hiện hành → E3
+    "no_procedure",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",

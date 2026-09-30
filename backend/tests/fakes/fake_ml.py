@@ -7,7 +7,8 @@ biệt được tài liệu đúng/sai:
 - Embed: NFC + chữ thường, tách âm tiết theo chữ/số, bỏ stopword nhỏ; băm từng âm tiết và từng cặp âm
   tiết liền nhau (`blake2b` — tất định giữa các process, khác `hash()`) → 1024 chiều, đếm tần suất, chuẩn
   hoá L2. Hai câu chung nhiều từ → cosine cao.
-- Rerank: |T(q) ∩ T(p)| / max(1, |T(q)|) trên tập âm tiết → đã nằm trong [0, 1].
+- Rerank: |T(q) ∩ T(p)| / max(1, |T(q)|) trên tập âm tiết → đã nằm trong [0, 1]. `rerank_score=<số>` (Phase 4 s8): mọi
+  đoạn trả đúng điểm đó — ép điểm truy hồi thấp như reranker thật với câu mệnh lệnh (tc09 0,047).
 - Count: ceil(1,5 × số âm tiết) + 2 — chỉ dùng khi test không kiểm giới hạn token thật.
 - `fail_next(endpoint, kind, times)`, `kind` ∈ {timeout, http_500, model_missing}; `truncate_all=True`.
 - `slow(endpoint, seconds, times)` (3f S0, hạn cả lượt): request tốn `seconds` giây trên FakeClock của `client(clock)`;
@@ -79,9 +80,10 @@ def cosine(a: list[float], b: list[float]) -> float:
 class FakeMlService:
     def __init__(
         self, *, truncate_all: bool = False, classify_p: float | None = None,
-        intent_probs: dict[str, float] | None = None,
+        intent_probs: dict[str, float] | None = None, rerank_score: float | None = None,
     ) -> None:  # fmt: skip
         self.truncate_all = truncate_all
+        self.rerank_score = rerank_score
         self.classify_p = classify_p
         self.intent_probs = intent_probs  # 3f: `/classify_intent` trả xác suất này (model "đã có") thay vì model_missing
         self.calls: Counter[str] = Counter()
@@ -140,7 +142,8 @@ class FakeMlService:
         elif endpoint == "rerank":
             passages = body["passages"]
             out = {
-                "scores": [rerank_score(body["query"], p) for p in passages],
+                "scores": [rerank_score(body["query"], p) if self.rerank_score is None else self.rerank_score
+                           for p in passages],
                 "truncated": [self.truncate_all] * len(passages),
                 "query_truncated": self.truncate_all, "model": "BAAI/bge-reranker-v2-m3",
             }  # fmt: skip

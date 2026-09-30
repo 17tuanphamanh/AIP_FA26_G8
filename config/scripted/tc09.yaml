@@ -1,6 +1,7 @@
 # Preset `tc09` của ScriptedLLM trên stack dev — `make gate3` (phase3 11.6, PLAN-3h S15), thẻ [fake:tc09] cuối câu,
 # KHÔNG đặt FAKE_SCENARIO. nv002 "cấp lại VPN cho máy PC-0977": gợi ý reissue_vpn_access, slot device_id →
-# PC-0977 chưa đăng ký → R17 (+R18 ngoài giờ) → chờ duyệt (3-Q38).
+# PC-0977 chưa đăng ký → R17 (+R18 ngoài giờ) → chờ duyệt (3-Q38). b10_need_type=action: từ Phase 4 S0 điểm truy hồi thấp
+# (reranker thật 0,047) không chặn hành động; B11 kiểm procedure_doc KB-VPN-004.
 # Phản hồi TĨNH, kiểm schema lúc khởi động. KHÔNG dùng trong test (e2e cổng 3 dùng tests/fixtures/llm/vpn.py).
 b02_injection_judge: {is_attack: false, category: none, reason: "preset tc09"}
 b03_classify:

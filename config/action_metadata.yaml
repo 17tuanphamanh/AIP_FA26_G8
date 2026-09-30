@@ -1,7 +1,9 @@
 # Thuộc tính rủi ro của từng hành động (phase3 mục 9.2; build_action → Action → M5). Nạp và kiểm ở
 # backend/app/settings.py (ActionMetadataFile, extra=forbid): mọi action_type trong slots.yaml phải có dòng ở đây —
 # thiếu → backend/worker từ chối khởi động (KHÔNG mặc định reversible). reversible phải khớp reversibility (none ↔ false).
+# procedure_doc (Phase 4 S0-P10, Q-4-U A+, D-34): doc_id tài liệu QUY TRÌNH của hành động — BẮT BUỘC (mẫu doc_id KB). B11 kiểm
+# tài liệu có, enabled, người gửi được xem trong KB hiện hành (alias) → không: E3 no_procedure. `make ingest` cảnh báo khi thiếu.
 vpn:
-  renew_vpn_cert:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user}
-  reissue_vpn_access: {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user}
-  check_vpn_status:   {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user}
+  renew_vpn_cert:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004}
+  reissue_vpn_access: {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004}
+  check_vpn_status:   {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-001}

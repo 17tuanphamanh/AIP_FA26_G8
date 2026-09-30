@@ -76,27 +76,31 @@ async def test_c15_node_top_score_equal_threshold_routes_to_b10() -> None:
     assert (out["status"], out["next"]) == (S_RETRIEVING, "b10_route")
     assert [c.chunk_id for c in out["retrieved"]] == ["KB-VPN-001#v1#0"]
     assert audit.events("t1") == [("B8", "retrieved")]
+    assert audit.rows[0]["detail"]["above_threshold"] is True  # S0-P1: bằng ngưỡng là đạt
     assert len(h.rag.retrieve_calls) == 1  # node thật gọi rag, không đọc deps.scenario
 
 
-async def test_node_empty_chunks_gives_e3_even_with_high_top_score() -> None:
-    """`not res.chunks` là điều kiện riêng — top_score cao mà rỗng chunk vẫn phải E3 (không có gì để trả)."""
+async def test_s0p1_empty_chunks_routes_to_b10_not_e3() -> None:
+    """S0-P1 (thay test 3c "rỗng chunk → E3 ở B8"): B8 không còn nhánh B9 — rỗng chunk (kể cả top_score cao) vẫn đi
+    `b10_route`, audit `above_threshold=false`. E3 `no_grounding` của câu hỏi thông tin nay ở B10 (s4)."""
     from app.rag.models import RetrievalResult
 
     h = _harness_with_rag(FakeRag(result=RetrievalResult(
         chunks=[], top_score=0.99, kb_version="a" * 64, intent_filter_fallback=False,
         fallback_tried=False, retries=0, query_truncated=False,
     )))  # fmt: skip
-    deps = h.deps()
     audit = MemoryAudit()
     with run(audit):
-        out = await b08_retrieve.make(deps)(_state())
-    assert (out["status"], out["exit_code"]) == (S_ESCALATED, "E3")
-    assert audit.events("t1") == [("B9", "no_evidence")]
+        out = await b08_retrieve.make(h.deps())(_state())
+    assert (out["status"], out["next"], out["retrieved"], out["retrieval_score"]) == (S_RETRIEVING, "b10_route", [], 0.99)
+    assert "exit_code" not in out and "escalation_reason_detail" not in out
+    assert audit.events("t1") == [("B8", "retrieved")]
+    assert audit.rows[0]["detail"]["above_threshold"] is False
 
 
-async def test_node_chunks_below_threshold_gives_e3() -> None:
-    """S14: nhánh E3 thứ hai — CÓ chunk nhưng top_score < ngưỡng (khác nhánh rỗng ở test trên)."""
+async def test_s0p1_chunks_below_threshold_route_to_b10_with_score() -> None:
+    """S0-P1 (thay test 3c "dưới ngưỡng → E3 ở B8"): CÓ chunk nhưng dưới ngưỡng → vẫn `b10_route`, state mang
+    `retrieved` + `retrieval_score` + `kb_version` để B10 quyết theo need_type; audit `above_threshold=false`."""
     from app.rag.models import RetrievalResult
 
     h = _harness_with_rag(FakeRag())
@@ -108,8 +112,12 @@ async def test_node_chunks_below_threshold_gives_e3() -> None:
     audit = MemoryAudit()
     with run(audit):
         out = await b08_retrieve.make(h.deps())(_state())
-    assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (S_ESCALATED, "E3", "no_grounding")
-    assert audit.events("t1") == [("B9", "no_evidence")]
+    assert (out["status"], out["next"]) == (S_RETRIEVING, "b10_route")
+    assert (out["retrieval_score"], out["kb_version"]) == (threshold - 0.01, "a" * 64)
+    assert [c.chunk_id for c in out["retrieved"]] == ["KB-VPN-001#v1#0"]
+    assert "exit_code" not in out
+    [row] = audit.rows
+    assert (row["step"], row["event"], row["detail"]["above_threshold"]) == ("B8", "retrieved", False)
 
 
 async def test_point3_query_comes_from_redacted_request_only() -> None:

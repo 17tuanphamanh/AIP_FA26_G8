@@ -1,5 +1,5 @@
 """Luật N3 của script mutation (`scripts/mutation/n3.py`; PROGRESS "Việc treo" 15, PLAN-3h S16): file đích còn chữ `MUTATION`
-→ dừng trước khi đột biến; mốc chưa đột biến đỏ → dừng; và mọi đột biến của `mutate_3g.py`/`mutate_3h.py` đều để lại dấu (không
+→ dừng trước khi đột biến; mốc chưa đột biến đỏ → dừng; và mọi đột biến của `mutate_3g.py`/`mutate_3h.py`/`mutate_4a.py` đều để lại dấu (không
 có dấu thì lần chạy bị giết giữa chừng để lại đột biến mà (a) không thấy)."""
 
 import importlib.util
@@ -50,7 +50,7 @@ def test_clean_and_green_runs_each_distinct_command_once(tmp_path: Path, capsys:
     assert "1 lệnh, đều xanh" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("script", ["mutate_3g", "mutate_3h"])
+@pytest.mark.parametrize("script", ["mutate_3g", "mutate_3h", "mutate_4a"])
 def test_every_mutation_leaves_the_mark(script: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", [script])
     module = _load(script)

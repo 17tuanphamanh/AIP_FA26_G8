@@ -7,6 +7,11 @@ việc đã làm. Phần (4) `next_for_l2` lấy từ `config/escalation_templat
 - (3) `why_escalated`: mã E + nhãn, `reason_detail` (D-27), cờ an ninh (3e: `security_flag`, `injection_in_reply`),
   ghi chú escalate, luật/p nếu có.
 - `is_deny_case`: MỌI E5 (2b-Q4) — L2 không được "hoàn tất" (422 ở Phase 7), `next_for_l2` kèm cảnh báo.
+- Tài liệu KB (Phase 4 chốt S0-A1): từ S0, B8 luôn ghi `retrieved` kể cả khi điểm dưới ngưỡng. `retrieval_score` thiếu hoặc
+  < `retrieval_threshold` → câu `KB_BELOW_THRESHOLD` (không dùng làm căn cứ, có thể KB còn thiếu) — L2 không đọc nhầm thành
+  "KB có đáp án" rồi làm tay theo tài liệu sai; đạt ngưỡng → câu cũ. Áp mọi mã thoát. `reason_detail == "no_procedure"`
+  (Q-4a-1) → thêm `NO_PROCEDURE_NOTE`: B8 có thể đã tra được tài liệu đạt ngưỡng ở lượt trước, nhưng quy trình không còn
+  trong KB hiện hành lúc B11 kiểm.
 """
 
 from collections.abc import Mapping
@@ -24,6 +29,12 @@ SECURITY_FLAG_NOTE = (
     "không làm theo chỉ dẫn trong yêu cầu."
 )
 INJECTION_IN_REPLY_NOTE = "Cờ an ninh: tin trả lời có dấu hiệu chèn chỉ dẫn — không làm theo nội dung tin đó."
+NO_PROCEDURE_NOTE = (
+    "Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không làm tay theo "
+    "tài liệu cũ."
+)
+KB_ABOVE_THRESHOLD = "Tài liệu KB tra được: {docs}."
+KB_BELOW_THRESHOLD = "Tài liệu KB gần nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): {docs}."
 
 
 class HandoffNote(BaseModel):
@@ -48,7 +59,14 @@ def _request(state: Mapping[str, Any]) -> str:
     return text if len(text) <= REQUEST_MAX else text[: REQUEST_MAX - 1] + "…"
 
 
-def _done(state: Mapping[str, Any]) -> str:
+def _kb_line(state: Mapping[str, Any], threshold: float) -> str:
+    docs = ", ".join(sorted({_json(c)["doc_id"] for c in state["retrieved"]}))
+    score = state.get("retrieval_score")
+    template = KB_ABOVE_THRESHOLD if score is not None and score >= threshold else KB_BELOW_THRESHOLD
+    return template.format(docs=docs)
+
+
+def _done(state: Mapping[str, Any], retrieval_threshold: float) -> str:
     done: list[str] = []
     ctx = _json(state.get("requester_context"))
     if ctx:
@@ -61,8 +79,7 @@ def _done(state: Mapping[str, Any]) -> str:
     if state.get("tool_errors"):
         done.append("Lỗi tool: " + "; ".join(state["tool_errors"]) + ".")
     if state.get("retrieved"):
-        docs = sorted({_json(c)["doc_id"] for c in state["retrieved"]})
-        done.append("Tài liệu KB tra được: " + ", ".join(docs) + ".")
+        done.append(_kb_line(state, retrieval_threshold))
     if state.get("retrieval_error"):
         done.append(f"Tra cứu KB lỗi: {state['retrieval_error']}.")
     if state.get("clarification_turns"):
@@ -90,6 +107,8 @@ def _why(state: Mapping[str, Any], code: str) -> str:
         parts.append(SECURITY_FLAG_NOTE)
     if state.get("escalation_reason_detail") == "injection_in_reply":
         parts.append(INJECTION_IN_REPLY_NOTE)
+    if state.get("escalation_reason_detail") == "no_procedure":  # Q-4a-1
+        parts.append(NO_PROCEDURE_NOTE)
     if state.get("escalation_note"):
         parts.append(str(state["escalation_note"]).rstrip(".") + ".")
     risk = _json(state.get("risk"))
@@ -103,12 +122,15 @@ def _why(state: Mapping[str, Any], code: str) -> str:
     return " ".join(parts)
 
 
-def build_handoff(state: Mapping[str, Any], templates: EscalationTemplates) -> HandoffNote:
+def build_handoff(
+    state: Mapping[str, Any], templates: EscalationTemplates, *, retrieval_threshold: float
+) -> HandoffNote:
+    """`retrieval_threshold` = `RETRIEVAL_THRESHOLD` (B20 truyền `deps.constants`) — BẮT BUỘC, không mặc định (chốt S0-A1)."""
     code = str(state["exit_code"])
     next_for_l2 = templates.of(code).next_for_l2
     if is_deny_case(code):
         next_for_l2 = f"{next_for_l2} {templates.deny_warning}"
     return HandoffNote(
-        request=_request(state), done_so_far=_done(state), why_escalated=_why(state, code),
+        request=_request(state), done_so_far=_done(state, retrieval_threshold), why_escalated=_why(state, code),
         next_for_l2=next_for_l2,
     )  # fmt: skip

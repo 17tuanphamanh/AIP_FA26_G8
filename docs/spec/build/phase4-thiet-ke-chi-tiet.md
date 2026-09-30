@@ -1,0 +1,625 @@
+# Phase 4 — Thiết kế chi tiết (HITL: B15–B16, nhắc, xem phiếu, ghi đè, audit)
+
+*Thuộc bộ `build/`. Phiên bản **0.8 — 30/09/2026** — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
+
+*Nhãn: **[Chốt]** spec đã chốt · **[Đề xuất]** chờ Tuấn Anh chốt · **[Suy luận]** rút từ code/spec, agent phải kiểm lại trên code.*
+
+**Kế hoạch tóm tắt (đọc trước):**
+
+| Thứ tự | Chặng | Nội dung | Tầng | DỪNG | Mở khi |
+|---|---|---|---|---|---|
+| 1 | **4a / S0** | B9 chỉ cho câu trả lời; căn cứ hành động = `procedure_doc` kiểm tất định ở B11; cờ ablation (mục 3.3, 4.0) | B | 1 | ngay |
+| 2 | **4a / nợ** | CI Node 24 + `ubuntu-24.04` (hạn 19/10); `make verify`; HMAC username ma; `commit_sha`; mypy tests; đo checkpoint (mục 4.1–4.9) | C | 1 | S0 commit + CI xanh |
+| 3 | **4b** | B15 thật theo [Chốt]; R17–R19 đòi chủ máy; đồng bộ `users`; chuỗi quản lý; seed `l1_lead`; B17 kiểm người duyệt; `effects.peek` (mục 5) | A | 2 | 4a xong |
+| 4 | **4c** | B16 báo từ chối + điểm log 6; nhắc 50/80%; dự phòng; API xem phiếu + hộp thư (mục 6) | B | 1–2 | 4b xong |
+| 5 | **4d** | Ghi đè; `audit_check`; e2e i1–i17; `make gate4` + biên bản thành viên (mục 7) | A | 2 | 4c xong |
+
+Mỗi chặng = **một phiên agent mới** (`/exit` → `claude` → `/model opus`). Chạy song song với M9 theo mục 0.2.
+
+---
+
+## 0. Cách dùng file này
+
+- Đây là **bản thiết kế hiện thực duy nhất của Phase 4**. Khi lệch với `B15-B16`, `B20`, `P6`, `P7` hoặc bản phân tích v0.2 → **file này thắng**, trừ bất biến toàn cục (13 điều) và mục **[Chốt]** gốc.
+- Code đã xanh ở Phase 1–3 mà khác chữ ở đây → agent **báo**, không tự sửa code cũ.
+- Agent đọc: mục 0.1, 1, 2 rồi **đúng mục của chặng**.
+
+### 0.1. Sự thật của code (`02ed795`) mà Phase 4 phải theo
+
+| Chủ đề | Code hiện có | Hệ quả cho Phase 4 |
+|---|---|---|
+| B15 | Node giả `graph/nodes/b15_prepare_approval.py`: `deps.approver_id` (`FAKE_APPROVER_ID`), `effects.once("approval_create")`, `effects.once("notify_approver")`, `goto(... audit_detail={approver_id, deadline})` | 4b thay thân node (giữ `make(deps)`); bản giả chuyển `graph/nodes/fake/` cho gate2 |
+| B16 | `approval_wait.py`: `interrupt` → `approvals.close(...)` → 3 nhánh; **không** báo người dùng khi từ chối; điểm log 6 thiếu trường | 4c |
+| `SqlApprovals` | `create(ticket, approver, deadline, hash)` — **chưa** nhận `backup_approver_id`, `conflict_detected`, `conflict_type`; `close` (điều kiện `pending`), `get`, `get_status`, `lock_row`; `ApprovalRow` chưa có `backup_approver_id`, `reminder_*`, `created_at` | 4b mở rộng `create`/`ApprovalRow` |
+| FK người duyệt | `approvals.approver_id`, `backup_approver_id`, `audit_logs.approver_id` là **FK `users`**; `users` chỉ có dòng khi người đó đã đăng nhập (hoặc được `_ensure_manager` kéo theo) | Người duyệt chưa đăng nhập → INSERT lỗi FK → **E9** (G4-17). `gate3` hiện phải cho `l1_01` đăng nhập trước |
+| Route duyệt | `api/approvals.py`: `may_decide_as` = có `approval:decide` **và** `a.approver_id == p.user_id` **và** không xung đột; `_action_targets` lấy `action.target` (VPN là chuỗi `device:…`) + `requested_for` | Người dự phòng **không** duyệt được (G4-18); hàm xung đột ở route và ở B15 phải là **một** hàm |
+| Xung đột | `auth/authz.py::approval_conflict(approver_id, ApprovalParties)` → `self` / `boss_of_approver` (chỉ sếp **trực tiếp**, từ `users.manager_id`) / `targets_approver` | B15 dùng lại hàm này (mở rộng, không viết hàm thứ hai) |
+| Quyền | `PERMS`: l1, manager có `approval:decide`, `decision:override`; l2 **không** có `approval:decide`. `can_override(p, t)` = có `decision:override` **và** không phải người gửi | Ghi đè dùng `decision:override` + `can_override` (v0.2 G4-9 ghi `override:create` — **sai**, bỏ) |
+| Token | `validate_access` đọc `users.employment_status` (DB app, đồng bộ AD khi login/refresh), cache ≤ 30 s | Người duyệt bị khoá trong AD mà token còn hạn vẫn duyệt được tới khi refresh (G4-19) |
+| `audit_logs` | Đã có cột điểm 5 (`approver_id, deadline, conflict_detected, action_plan_hash`), điểm 6 (`approval_result, note, response_time_seconds`), ghi đè (`original_decision, override_decision, overrider_id`), `idempotency_key` + `ux_audit_idem` | Không migration cho audit; ghi đè = 1 dòng `step="OVERRIDE"` |
+| B17 | Kiểm "đã duyệt" = state **và** `approvals.status='approved'`; hash; `ad_get_user(B17_RECHECK)` cho **người gửi + người hưởng lợi** — **không** kiểm người duyệt | 4b thêm người duyệt (G4-19) |
+| Luật VPN | R17/R18/R19 (`approval_required`) **không** đòi `device_owner_is_requester`; R20 (`allow`) có đòi | Máy người khác/máy không tồn tại ngoài giờ → HITL (G4-16). h14 hiện kỳ vọng `R17 → HITL` cho `LAP-9999` (máy không tồn tại) |
+| Seed AD | `l1_01`, `l1_02`, `l2_01` có `manager_id = it_mgr01`; `it_mgr01` không có sếp; chỉ `l1_01` có máy (`PC-0123`); `it_mgr01` không có máy | Ca "người gửi là sếp người duyệt → Trưởng BP duyệt" **không dựng được** (sếp trực tiếp của L1 chính là Trưởng BP) (G4-22) |
+| Worker | `graph/worker_jobs.py::scan_deadlines` 15 s (clarify/confirm/approval) → `deliver_event(timeout)` | 4c thêm `scan_approval_reminders` |
+| gate2 / gate3 | `make gate2` cần `FAKE_SCENARIO` **đặt** trong `.env`; `gate3.py` (3b, chưa commit) **dừng** nếu `FAKE_SCENARIO` đặt | Không chạy cả hai trên một `.env` → `make verify` phải tự đổi (mục 4.4) |
+| CI | `ubuntu-latest`; `actions/checkout@v4`, `actions/cache@v4`, `astral-sh/setup-uv@v6` (Node 20) | Việc treo 1, **hạn 19/10** |
+| Lineage | `b12_assess.py`: `commit_sha: None`; cột `lineage.commit_sha String(40)` | Việc treo 13 |
+| Username ma | `auth/service.py::_event` ghi `username_attempted=username` nguyên văn; `auth_failures` là **view** trên `security_events` (đếm khoá theo `username_attempted`) | Q-3e-14: băm một chỗ → đếm khoá tự dùng cùng giá trị |
+
+### 0.2. Chạy song song với M9 (Lưu Dương luồng A, Tạ Duy Anh luồng B) [Chốt phối hợp]
+
+Nguồn: `claude/ke-hoach-m9-chia-viec.md` mục 2 (chủ file). Phase 4 **không** sửa khối/file của M9, và thiết kế để **tránh** đụng:
+
+| Chỗ đụng | Chủ M9 | Phase 4 làm thế nào |
+|---|---|---|
+| `backend/app/worker.py` (đăng ký job) | Duy Anh (B1) | Phase 4 **không** sửa `worker.py`: nhắc duyệt (4c) chạy **bên trong** `WorkerJobs.scan_deadlines` ở `graph/worker_jobs.py` (cùng chu kỳ 15 s), không đăng ký job mới |
+| Migration `*_monitor_*` | Dương (chủ migration duy nhất của M9) | Phase 4 **không có migration** (bỏ `0008_approvals_inbox_idx` của bản 0.4 — chỉ mục hộp thư để sau, dữ liệu nhỏ). Sau mỗi lần rebase lên nhánh có merge M9: `uv run alembic heads` phải = 1 |
+| `backend/app/main.py` (khối `# M9`) | Dương | Phase 4 **không** sửa `main.py`: route xem phiếu thêm vào `api/approvals.py`, route ghi đè thêm vào `api/tickets.py` (router đã được include) |
+| `.importlinter` | Dương | Phase 4 không thêm hợp đồng; nếu buộc phải thêm module mới vào danh sách nguồn của hợp đồng có sẵn → sửa **đúng dòng** đó, ghi PLAN |
+| `settings.py`, `docker-compose.yml`, `.env.example` (khối `# M9`) | Dương | Phase 4 thêm trường/biến ở **khối riêng** có chú thích `# Phase 4` (4a: `app_git_sha`, validator `FAKE_*`; 4b: `APPROVAL_SLA_MINUTES_DEV`), không sửa khối `# M9` |
+
+**Luật cho mọi PLAN-4x:** Bước 0 `git fetch` + xem `origin/dev-tuananh` có merge M9 mới không; có → rebase trước khi code, chạy `alembic heads` = 1, `make test` mốc. Không sửa file/khối M9; xung đột khi rebase ở khối M9 → giữ bản M9, DỪNG báo.
+
+**M9 phụ thuộc Phase 4 (báo Dương/Duy Anh khi merge):** luật 7 `reflex_approval` cần `approvals.first_viewed_at` + `decided_at` — có từ **4c** (route xem phiếu); `override_count` có từ **4d** (`audit_logs step="OVERRIDE"`); S0 (4a) giữ nguyên step/event E3 (`B9`/`no_evidence`), thêm `detail.grounding.kb_gap` ở B10 (M9 có thể thêm chỉ số "yêu cầu hành động thiếu KB").
+
+---
+
+## 1. Phạm vi và cổng 4
+
+### 1.1. Trong phạm vi
+
+B15 thật (chọn người duyệt, xung đột lợi ích, người duyệt không hợp lệ), B16 đủ (tin từ chối, điểm log 6), nhắc 50/80%, API xem phiếu + hộp thư người duyệt, ghi đè (TC23), `scripts/audit_check.py`, e2e cổng 4, `make gate4`, và nợ kỹ thuật dồn về Phase 4 (4a).
+
+### 1.2. Ngoài phạm vi
+
+| Việc | Để khi nào |
+|---|---|
+| Luồng đăng ký máy (3-Q38) | Phase 5 (Q-4-D) |
+| Bảng `notifications`, kênh ngoài | Phase 7 (Q-4-E) |
+| Màn L1 (ép xem ≥ `MIN_REVIEW_SECONDS`) | Phase 7 |
+| Ca `targets_approver` e2e (vd reset tài khoản của người duyệt) | Phase 5 — Phase 4 test ở mức node B15 (Q-4-Q) |
+
+### 1.3. Cổng 4 — sửa chữ so với hướng dẫn §5 [Đề xuất]
+
+- TC27: "409, phiếu đánh dấu bỏ qua vì muộn" → **"409 + audit `late_event`; phiếu giữ `pending`, worker bắn timeout → E6"** (chốt 2b-3 Q2 — đổi `status` làm ticket kẹt, FN).
+- "Luật deny không bao giờ tạo phiếu": VPN **không có** luật `deny` → test bằng policy fixture tiêm vào test (luật `deny` giả), **không** thêm `deny` vào `config/policy.json` (G4-20).
+- TC19 + 2 ca xung đột: "Trưởng BP duyệt" với ca `self` và `boss_of_approver` (e2e); ca `targets_approver` ở test node B15 (1.2).
+- "Duyệt → thực thi" chạy trên biến thể VPN R19 (`nv003`) — R17 luôn E7 vì mock 409 máy chưa đăng ký (G4-2).
+
+---
+
+## 2. Quyết định Phase 4 (mã `Q-4-…`) — [Chốt 30/09/2026, Tuấn Anh: A…T đồng ý hết; U = A+]
+
+| Mã | Vấn đề | Chốt |
+|---|---|---|
+| Q-4-A | Mở Phase 4 khi nào | Ngay sau commit 3b; gate3 thành viên + smoke song song, xong trước khi đóng cổng 4 |
+| Q-4-B | Không có người duyệt hợp lệ | E5 `no_valid_approver`, 0 phiếu (thêm `reason_detail`, không thêm mã thoát) |
+| Q-4-C | TC07/TC08 | Biến thể VPN R19 (`nv003`) |
+| Q-4-D | Đăng ký máy | Không làm ở Phase 4; TC09 duyệt → E7 có handoff |
+| Q-4-E | Bảng `notifications` | Không thêm; hộp thư = `GET /api/approvals?mine=1` |
+| Q-4-F | Cổng 4 thủ công khi chưa có UI | `make gate4` qua API + biên bản, người không làm chính chạy |
+| Q-4-G *(sửa v0.2)* | G4-3 máy của người duyệt | **Không** thêm fact `device_owner_id`. Vá bằng Q-4-M (luật đòi chủ máy) + kiểm phòng thủ ở B15 |
+| Q-4-H | Lịch trực | `config/approvers.yaml` tĩnh theo intent |
+| Q-4-I | `make verify` | Làm ở 4a, dùng từ 4b |
+| Q-4-J | Phân tầng nghi thức A/B/C | Áp từ Phase 4 |
+| Q-4-K | Dữ liệu | Tuấn Anh hỏi nhóm hôm nay |
+| **Q-4-L** | Thứ tự chọn người duyệt (G4-15) | Theo [Chốt]: **xung đột → Trưởng BP**; người chính không hợp lệ → dự phòng; Trưởng BP cũng xung đột/không hợp lệ → E5 |
+| **Q-4-M** | R17–R19 không đòi chủ máy (G4-16) | Thêm `action.facts.device_owner_is_requester is_true` vào R17, R18, R19 → máy người khác / không tồn tại luôn E5. h14 đổi kỳ vọng R17/HITL → E5 |
+| **Q-4-N** | FK `users` của người duyệt (G4-17) | B15 upsert người duyệt từ AD bằng hàm đồng bộ dùng chung với auth (không tạo phiên) |
+| **Q-4-O** | Người dự phòng (G4-18) | Được quyết **sau khi đã nhắc lần 2** (`reminder_2_at IS NOT NULL`), cùng kiểm xung đột; audit `decided_as=backup` |
+| **Q-4-P** | Người duyệt bị khoá sau khi duyệt (G4-19) | B17 kiểm lại `decided_by` qua AD (`B17_RECHECK`): phải active + còn nhóm duyệt → sai: E5 `approver_no_longer_valid` |
+| **Q-4-Q** | Seed không dựng được ca "sếp của người duyệt" (G4-22) | Thêm `l1_lead` (Trưởng nhóm Helpdesk, nhóm IT-L1, sếp của `l1_01`, báo cáo `it_mgr01`) + 3 máy **chưa đăng ký**: `PC-0124` (`l1_01`), `LAP-0700` (`l1_lead`), `LAP-0900` (`it_mgr01`); `targets_approver` test ở node B15 |
+| **Q-4-R** | "Sếp" chỉ tính trực tiếp (G4-23) | `boss_of_approver` = người gửi nằm trong **chuỗi quản lý** của ứng viên (≤ 5 cấp, từ AD) — chặt hơn [Chốt] (giảm FN) |
+| **Q-4-S** | Khoá HMAC username ma (Q-3e-14) | Dẫn xuất từ `JWT_SIGNING_KEY` (`HMAC(jwt_key, "auth-username-v1")`) — **không** thêm biến `.env` mới (thành viên đang chạy gate3 không vỡ stack) |
+| **Q-4-T** | gate2/gate3 xung đột `FAKE_SCENARIO` (G4-24) | `make verify` tạo lại backend+worker bằng biến shell cho từng cổng rồi trả về cấu hình `.env`; kết quả ghi `.verify/summary.txt` để agent tự đọc |
+| **Q-4-U** | B9 chặn yêu cầu hành động (Việc treo 17, Q-3h-11: tc09 0,047) (G4-25) | **A+**: độ giống (B9) chỉ cho câu trả lời; căn cứ hành động = `procedure_doc` khai cho `action_type`, kiểm tất định có trong KB ở B11 (thiếu → E3 `no_procedure`); cờ `GROUNDING_GATE_ACTIONS` cho ablation. Mục 3.3. Ghi D-34 |
+
+---
+
+## 3. Lỗ hổng bổ sung (v0.3 của bản phân tích — soát code 30/09)
+
+| Mã | Mức | Lỗ hổng | Vá [Đề xuất] |
+|---|---|---|---|
+| **G4-15** | **Chặn** (lệch [Chốt]) | Mã giả v0.2 chọn `[primary, backup, head]` → `l1_01` tự gửi thì `l1_02` duyệt. [Chốt] B15 + cổng 4: có xung đột → **Trưởng BP IT** | Mục 3.1. Bảng test v0.2 §4 dòng 2, 4 **sai** — thay bằng 3.2 |
+| **G4-16** | **Chặn** (FN) | R17/R18/R19 không đòi chủ máy. `nv001` xin gia hạn máy `LAP-0417` (của `nv002`) lúc 20:00 → R18 → phiếu duyệt; ban ngày cùng ca → E5 (h11). `LAP-9999` (không tồn tại) → R17 → phiếu (h14 hiện chấp nhận). Người duyệt đồng ý thì chỉ nhờ mock trả 404 mới không ghi — hệ thống thật chưa chắc kiểm chủ máy | Q-4-M. Mọi ca máy không phải của người gửi → không luật nào → E5 (nhất quán ngày/đêm). B15 thêm chốt phòng thủ: hành động có đích máy mà `facts.device_owner_is_requester is not True` → E5 `approval_target_unverified`, 0 phiếu |
+| **G4-17** | **Chặn** (E9 khi vận hành) | Người duyệt/dự phòng chưa đăng nhập lần nào → không có dòng `users` → INSERT `approvals` lỗi FK → E9 | Q-4-N: B15 tra AD (`ad_get_user`, bước mới `B15_APPROVER`) → upsert `users` bằng hàm dùng chung với `AuthService` (tách `_upsert` + `role_from_groups` + `_ensure_manager` thành hàm công khai), không tạo phiên, không đổi token nếu role không đổi |
+| **G4-18** | Nên | Nhắc 80% "báo người dự phòng" nhưng route chỉ cho `approver_id` quyết → dự phòng nhận thông báo mà không làm gì được | Q-4-O |
+| **G4-19** | Nên (FN nhỏ) | Người duyệt bị khoá trong AD, token còn hạn → vẫn duyệt; B17 không kiểm lại người duyệt | Q-4-P (1 lời gọi AD song song với 2 lời gọi đã có) |
+| **G4-20** | Nên | Cổng 4 "deny không tạo phiếu" nhưng VPN không có `deny` | Policy fixture trong test (1.3) |
+| **G4-21** | Nên (tài liệu) | Hướng dẫn §5: TC27 "phiếu đánh dấu bỏ qua vì muộn" trái chốt 2b-3 Q2 | Sửa chữ cổng 4 (1.3) |
+| **G4-22** | **Chặn** (cổng 4 không đạt được) | Seed: sếp trực tiếp của mọi L1 là `it_mgr01` = Trưởng BP → ca "người gửi là sếp người duyệt → Trưởng BP duyệt" luôn thành tự duyệt → E5; `it_mgr01` không có máy nên không gửi được yêu cầu VPN | Q-4-Q (thêm seed mock, không đổi code) |
+| **G4-23** | Nên (FN) | `boss_of_approver` chỉ xét sếp trực tiếp. Sau Q-4-Q, `it_mgr01` gửi yêu cầu → `l1_01` (sếp trực tiếp là `l1_lead`) không xung đột → nhân viên duyệt cho sếp của sếp mình | Q-4-R. `it_mgr01` gửi → `l1_01` xung đột (chuỗi) → Trưởng BP = chính mình → **E5 `no_valid_approver`** |
+| **G4-24** | Nên (quy trình) | `make gate2` cần `FAKE_SCENARIO` đặt, `gate3` cần không đặt; agent không được sửa `.env` | Q-4-T, mục 4.4 |
+| **G4-25** | **Chặn** (cổng 4 + demo) | B9 trước B10 → yêu cầu hành động điểm rerank thấp ra E3, không tới M5 (tc09 0,047) | Q-4-U, mục 3.3, làm ở S0 |
+
+### 3.1. Thuật toán chọn người duyệt (thay mục 3.1 v0.2)
+
+```python
+async def choose_approver(roster, rc, action, facts) -> Choice | Refuse:
+    if action_has_device_target(action) and facts.get("device_owner_is_requester") is not True:
+        return Refuse("E5", "approval_target_unverified")                 # G4-16 phòng thủ
+    l1 = [await lookup(u) for u in (roster.primary, roster.backup)]       # ad_get_user(B15_APPROVER); lỗi AD → Refuse("E2","approver_lookup_error")
+    valid_l1 = [c for c in l1 if valid(c, role="l1")]                     # active + nhóm IT-L1 (G4-6)
+    first = valid_l1[0] if valid_l1 else None
+    conflict = conflict_type(rc, first, action) if first else None        # self | boss_of_approver (chuỗi, Q-4-R) | targets_approver
+    if first is None or conflict:                                         # [Chốt] xung đột → Trưởng BP; hết L1 hợp lệ → Trưởng BP
+        head = await lookup(roster.head)
+        if not valid(head, role="manager") or conflict_type(rc, head, action):
+            return Refuse("E5", "no_valid_approver")                      # Q-4-B, 0 phiếu
+        return Choice(approver=head, backup=None, conflict_detected=bool(conflict),
+                      conflict_type=conflict, reason="conflict" if conflict else "no_valid_l1")
+    backup = next((c for c in valid_l1[1:] if not conflict_type(rc, c, action)), None)
+    if backup is None:
+        head = await lookup(roster.head)
+        backup = head if valid(head, role="manager") and not conflict_type(rc, head, action) else None
+    return Choice(approver=first, backup=backup, conflict_detected=False, conflict_type=None)
+```
+
+`conflict_type` là **một** hàm dùng chung cho B15 và route duyệt (mở rộng `auth/authz.approval_conflict`), nhận chuỗi quản lý của ứng viên từ AD (B15) hoặc từ `users` (route).
+
+### 3.2. Bảng test xung đột (thay bảng v0.2 §4; test-writer viết từ bảng này ở 4b)
+
+Seed sau Q-4-Q dùng **máy chưa đăng ký** cho ca xung đột → khớp R17 ở **mọi giờ** (không phụ thuộc đồng hồ, `make gate4` chạy được ban ngày).
+
+| # | Người gửi | Hành động | Tình huống | Mong đợi |
+|---|---|---|---|---|
+| x1 | nv003 | renew LAP-0501 (của mình) | R19 | approver `l1_01`, backup `l1_02`, `conflict_detected=false`, `choice_reason=normal` |
+| x2 | l1_01 | renew PC-0124 (của mình, chưa đăng ký) | R17; `l1_01` → self | approver **`it_mgr01`**, backup None, `conflict_type=self` (TC19) |
+| x3 | l1_lead | renew LAP-0700 (của mình, chưa đăng ký) | R17; `l1_01` → boss (trực tiếp) | approver **`it_mgr01`**, `conflict_type=boss_of_approver` |
+| x4 | it_mgr01 | renew LAP-0900 (của mình, chưa đăng ký) | R17; `l1_01` → boss (chuỗi); head → self | **E5 `no_valid_approver`**, 0 phiếu |
+| x5 | nv001 | renew LAP-0417 (của nv002), 20:00 | không luật nào (Q-4-M) | E5 `llm_layer_disabled`, 0 phiếu |
+| x6 | nv001 | renew LAP-9999 (không tồn tại) | không luật nào (Q-4-M; h14 mới) | E5 `llm_layer_disabled`, 0 phiếu |
+| x7 | nv003 | renew LAP-0501 | `l1_01` disabled (`/_admin/users/l1_01/status`) | approver `l1_02`, backup `it_mgr01` |
+| x8 | nv003 | renew LAP-0501 | `l1_01`, `l1_02` disabled | approver `it_mgr01`, backup None, `choice_reason=no_valid_l1`, `conflict_detected=false` |
+| x9 | nv003 | renew LAP-0501 | AD lỗi 500 khi tra người duyệt — bơm lỗi bằng hook **ngay trước B15** (`deps.scenario.hook(state, "before_approver_lookup")` trong test), không bơm từ đầu (B1 cũng tra AD) | E2 `approver_lookup_error`, 0 phiếu |
+| x10 | nv003 | renew LAP-0501 | roster test đặt `primary: l2_01` | B15 loại `l2_01` (`wrong_group`) → approver `l1_02` (L2 không bao giờ duyệt) |
+| x11 | (node) | `requested_for=l1_01` dựng tay | `targets_approver` | approver `it_mgr01`, `conflict_type=targets_approver` |
+| x12 | (node) | đích máy, `device_owner_is_requester` thiếu/false | phòng thủ | E5 `approval_target_unverified`, 0 lời gọi AD, 0 phiếu |
+| x13 | — | luật `deny` (policy fixture) | — | không vào B15, 0 phiếu |
+| x14 | nv003 | như x1, B15 chạy lại sau khi đã tạo phiếu (giết process) | TC33 | đúng 1 phiếu, 1 `notify_approver`, approver giữ như phiếu cũ |
+| x14b | nv003 | như x14 nhưng AD lỗi lúc chạy lại | P9 `peek` | vẫn `S_PENDING_APPROVAL` với phiếu cũ, **không** E2, 0 lời gọi AD ở lần chạy lại |
+
+### 3.3. B9 cho yêu cầu hành động — Q-4-U (G4-25, Việc treo 17) [Chốt A+ 30/09/2026]
+
+#### 3.3.1. Bằng chứng đo được (phase3 11.10 #17, reranker thật `bge-reranker-v2-m3`, ngưỡng 0,6)
+
+| Câu | Loại câu | Tài liệu đúng | Hạng | Điểm |
+|---|---|---|---|---|
+| tc05 "VPN báo lỗi 809, hướng dẫn mình khắc phục với" | hỏi cách làm | KB-VPN-003 | 1 | 0,981 |
+| tc06 "vpn không vào được" (bỏ thẻ) | mô tả triệu chứng | — | — | 0,677 |
+| tc09 "cấp lại VPN cho máy PC-0977" | **ra lệnh** | KB-VPN-005 | **1** | **0,047** |
+| tc09 + thêm mục viết đúng cách nói vào KB-VPN-005 | ra lệnh | KB-VPN-005 (mục mới) | **1** | **0,261** |
+
+**Đọc số [Suy luận]:** reranker **xếp hạng đúng** (tài liệu đúng luôn đứng đầu) nhưng **thang điểm lệch theo loại câu**: reranker được huấn luyện trên cặp *câu hỏi → đoạn trả lời*; câu mệnh lệnh không "được trả lời" bởi đoạn quy trình nên điểm tuyệt đối thấp. Một ngưỡng duy nhất không phục vụ được cả hai loại câu. Sửa dữ liệu (0,047 → 0,261) không đủ; hạ ngưỡng xuống ~0,05 thì gần như mọi câu hỏi âm tính (không có đáp án trong KB) đều qua → trả lời bừa (vi phạm D-22: ≤ 5%). Đây là lỗi **đo sai đại lượng**, không phải lỗi ngưỡng.
+
+#### 3.3.2. [Chốt] gốc muốn gì — và đã có gì bảo đảm điều đó
+
+B08 §1 [Chốt]: *"Lấy đúng đoạn tài liệu nội bộ làm căn cứ cho mọi câu trả lời **và mọi hành động**."* Hai ý khác nhau:
+
+| Ý | Rủi ro nó chặn | Cơ chế hợp lý |
+|---|---|---|
+| Căn cứ cho **câu trả lời** | LLM bịa chính sách → người dùng làm sai quy trình bảo mật | Độ liên quan câu hỏi–đoạn (B9) + trích dẫn do code kiểm + prompt — **đúng đại lượng**, giữ nguyên |
+| Căn cứ cho **hành động** | Agent làm một việc công ty không có quy trình | Hỏi "hành động này có **quy trình** trong KB không" — câu hỏi **tất định về danh mục**, không phải độ giống văn bản giữa câu người dùng và đoạn KB |
+
+Những lớp **đã có** trên code chặn "làm việc không có quy trình": `action_types` là danh sách đóng (`slots.yaml`, `sanitize_slots` loại giá trị lạ); mỗi `action_type` phải có `ActionMeta` (thiếu → không khởi động) và `PLAN` (thiếu → không khởi động, h23); luật M5 quyết; B17 kiểm lại luật/hash/người. Tức phần "có được làm không" đã **tất định**. Thiếu đúng một mắt xích: nối mỗi `action_type` với **tài liệu quy trình** trong KB.
+
+#### 3.3.3. Phân tích theo kiểu thất bại (ưu tiên FN)
+
+| Nếu nhánh hành động bỏ cổng độ giống | Lớp nào chặn | Tăng FN? |
+|---|---|---|
+| Làm hành động không có trong danh mục | `action_types` đóng + `PLAN` + `ActionMeta` | Không |
+| Làm hành động có danh mục nhưng KB không còn quy trình (tài liệu bị tắt/xoá) | **Mới — A+ (P10):** kiểm `procedure_doc` có trong KB đang ghim → không → E3 `no_procedure` | Không |
+| Làm sai đối tượng (máy người khác, máy ma) | `facts` từ tool + R17–R20 đòi chủ máy (Q-4-M) + chốt B15 | Không |
+| Câu người dùng chứa injection đòi hành động | B2; M5 không đọc câu; slot qua `sanitize_slots` | Không |
+| Phase 6: lớp LLM cho AUTO khi KB không có căn cứ | S0-P9 (chunk dưới ngưỡng không vào B14) + ràng buộc D-34 (không luật + `kb_gap` → tối đa HITL) | Không |
+| Câu hỏi bị phân loại nhầm thành `action` | Đi B11: hỏi slot; không slot hợp lệ → E4; không sinh câu trả lời nào | Không (chỉ tốn lượt) |
+
+Ngược lại, **giữ** cổng độ giống cho hành động gây hại đo được: TC09/HITL không bao giờ tới M5 trên stack thật → cổng 4 và demo Obj 2 không chạy; E3 "thiếu KB" giả làm nhiễu tín hiệu bổ sung KB cho Trưởng BP; tăng tỉ lệ chuyển người vô ích (đi ngược luận điểm HAS-Bench > 40%).
+
+#### 3.3.4. Các phương án
+
+| | Cách | Kết luận |
+|---|---|---|
+| **A+ (CHỐT)** | (1) Cổng độ giống B9 chỉ cho `need_type=info` (như A). (2) **Căn cứ quy trình tất định** cho hành động: mỗi `action_type` khai `procedure_doc` (doc_id KB); B11 sau khi dựng `Action` kiểm tài liệu đó **có, bật, người gửi được xem** trong collection đã ghim ở B8 → không → E3 `no_procedure`; RAG lỗi → E2. Tin kết quả/phiếu duyệt ghi nguồn quy trình. (3) Cờ `GROUNDING_GATE_ACTIONS` (mặc định `false`; `true` = hành vi cũ) cho ablation ở Phase 10 | Giữ **cả hai** ý của [Chốt]; thay đại lượng sai bằng kiểm tất định; đo được bằng cờ |
+| A | Chỉ (1) | Làm mất ý "mọi hành động có căn cứ KB" của [Chốt] |
+| B | Ngưỡng riêng cho hành động | Vẫn là độ giống (đại lượng sai); cần dữ liệu chọn ngưỡng thứ hai → loại |
+| C | Dùng slot `action` B3/B6 thay `need_type` | Trộn tín hiệu; B6 tự suy action cả khi người dùng chỉ hỏi (TC06) → loại |
+| D | Hạ ngưỡng / viết lại KB | Đã thử (0,261); hạ ngưỡng tăng trả lời bừa → loại |
+| E | LLM viết lại câu lệnh thành câu hỏi rồi truy hồi | Tốn 1 lời gọi, mở thêm bề mặt injection vào truy hồi, "căn cứ" dựa trên câu do LLM sinh — vòng tròn → loại |
+
+#### 3.3.5. Ghi vào tài liệu gốc (khi S0 đóng)
+
+`decisions.md` **D-34**: *"Căn cứ của câu trả lời = độ liên quan truy hồi (B9, ngưỡng); căn cứ của hành động = quy trình được khai báo cho `action_type` và có mặt trong KB đang chạy (kiểm tất định ở B11). Hành động được quản bởi chính sách (M5) và con người (M6), không bởi độ giống văn bản."* Sửa `B08-B09` §1 (thay "hệ quả… phải có KB đạt ngưỡng" + bảng kiểm K2 "action_type ↔ tài liệu" → `procedure_doc` + kiểm ingest), `B10` §5, `B11` (bước kiểm quy trình), NGU-CANH §4.1/§6.1 chú thích. Luận điểm báo cáo: tách *grounding nội dung* khỏi *grounding hành động* — đóng góp thiết kế nhỏ nhưng rõ, có số đo 3.3.1 và ablation bằng cờ.
+
+**Giữ nguyên:** RAG lỗi → E2 cho mọi yêu cầu; không đổi `RETRIEVAL_THRESHOLD`; ngưỡng thật chọn khi có bộ kiểm tra của TV1.
+
+---
+
+## 4. Chặng 4a — S0 (B9 cho yêu cầu hành động) + nợ kỹ thuật + `make verify`
+
+**Hai DỪNG, một phiên agent:**
+- **DỪNG 1 = S0** (mục 4.0, tầng **B**: PLAN ngắn trong MẪU A, mutation 1 lượt, security-reviewer). Chặn cổng 4 → làm trước.
+- **DỪNG 2 = nợ kỹ thuật + `make verify`** (mục 4.1–4.9, tầng **C**).
+
+### 4.0. S0 — cổng căn cứ B9 chỉ cho nhánh trả lời (Q-4-U)
+
+**Mục tiêu:** yêu cầu hành động tới được M5/HITL dù điểm truy hồi thấp; câu trả lời vẫn bị chặn y như cũ khi không có căn cứ.
+**Đầu vào:** `b08_retrieve.py`, `b10_route.py` (code `02ed795` + 3b). **Đầu ra:** 2 node sửa, test S0, preset gate3 cập nhật.
+
+| Mã | Chốt |
+|---|---|
+| S0-P1 | `b08_retrieve`: **bỏ** nhánh B9. RAG không lỗi (kể cả rỗng, điểm thấp) → luôn `goto(S_RETRIEVING, next_node="b10_route", step="B8", event="retrieved", retrieved=…, retrieval_score=…, kb_version=…)`; điểm log 3 thêm `above_threshold: bool`. Nhánh E2 `rag_system_error` **giữ nguyên** |
+| S0-P2 | `b10_route`: `b10_need_type` chạy **trước** mọi kiểm ngưỡng (như hiện nay). `need.type == "info"` → nếu `not chunks or retrieval_score < deps.constants.RETRIEVAL_THRESHOLD` → `goto(S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", exit_code=E3, escalation_reason_detail="no_grounding", retrieval_score=…)` — **cùng** step/event/mã/`reason_detail` với nhánh cũ (B20, mẫu tin E3, M9 không đổi); 0 lời gọi `expand_for_answer`/`b10_answer`. Đạt ngưỡng → như cũ |
+| S0-P3 | `need.type == "action"` → B11 như cũ, **bất kể** điểm; audit B10 thêm `grounding = {"top_score", "above_threshold", "kb_gap": not above_threshold}` |
+| S0-P4 | Lỗi LLM ở `b10_need_type` → E2 như cũ (ca điểm thấp trước ra E3, nay E2 — ghi "spec cần sửa") |
+| S0-P5 | Test AST: `b11_slots`, `risk/policy_engine` (lớp luật), `b17_execute`, `executor/` **không** đọc `retrieved`/`retrieval_score` từ state; `b12_assess` chỉ đọc qua `evidence_for_estimator` (S0-P9). Liệt kê ≥ 4 module quét |
+| S0-P6 | Preset ScriptedLLM (`config/scripted/*.yaml`, fixture `vpn_scripts`): mọi ca E3 nay cần phản hồi `b10_need_type` (`info`). `ScriptExhausted` ở test cũ = thiếu preset, **không** phải lỗi logic — thêm preset, không đổi kỳ vọng E3 |
+| S0-P7 | `gate3.py` tc09: kỳ vọng trở lại 11.6 h6 — `S_PENDING_APPROVAL` (R17, thêm R18 nếu ngoài giờ), 0 lời gọi ghi; tc16 vẫn E3 + mẫu "Mình chưa có thông tin về việc này" |
+| S0-P9 | B12 → B14: hàm thuần `evidence_for_estimator(chunks, score, threshold)` trả `chunks` khi `score >= threshold`, không thì `[]`; `b12_assess` gọi estimator qua hàm này (không truyền thẳng `state["retrieved"]`). Ràng buộc ghi cho Phase 6 (D-34): không luật nào khớp + `kb_gap` → route tối đa HITL, không AUTO |
+| S0-P10 | Căn cứ quy trình: `ActionMeta` thêm `procedure_doc: str` (regex `doc_id` KB, **bắt buộc**); `config/action_metadata.yaml`: `renew_vpn_cert`, `reissue_vpn_access` → `KB-VPN-004` ("Gia hạn và cấp lại chứng chỉ VPN"), `check_vpn_status` → `KB-VPN-001`. **Không** chép vào `Action` (không đổi `action_plan_hash`). `RagPort.procedure_available(doc_id, ctx, *, kb_version) -> bool` = scroll `limit=1` trên `kb_<kb_version>` với `base_filter(ctx)` + `doc_id` (Filter chỉ dựng trong `rag/filters.py`). B11: sau `build_action`, trước `goto(S_ASSESSING)`: `False` → E3 `no_procedure` (step `B11`, `REASON_DETAILS` thêm); `RetrievalSystemError` → E2 `rag_system_error`. Audit B11 `procedure_doc`. `make ingest` in **cảnh báo** (không chặn) khi `procedure_doc` nào không có/bị tắt/`restricted` trong KB mới |
+| S0-P11 | Cờ `GROUNDING_GATE_ACTIONS: bool = False` (Settings, qua `NodeDeps`): `True` → nhánh action cũng áp ngưỡng B9 như cũ (ablation Phase 10, đối chiếu hành vi 3h). Test cả hai giá trị |
+| S0-P8 | Không đổi `RETRIEVAL_THRESHOLD`, không đổi thứ tự/logic B8 (D-23, retry), không thêm key `TicketState` (dùng `retrieval_score` sẵn có) |
+
+**Test:**
+
+| # | Test | Đạt khi |
+|---|---|---|
+| s1 | info + `top_score` < ngưỡng | E3 `no_grounding`, audit step `B9`, **1** lời gọi `b10_need_type`, **0** `b10_answer`, 0 `expand` |
+| s2 | action + `top_score` < ngưỡng | tới B11 (`S_RETRIEVING → …`), audit `kb_gap=true` |
+| s3 | action + 0 chunk | tới B11 |
+| s4 | info + 0 chunk | E3, 0 `expand` |
+| s5 | info + `top_score` đúng bằng ngưỡng | đi tiếp trả lời |
+| s6 | AST S0-P5 | sạch; quét ≥ 4 module |
+| s12 | Action hợp lệ, `procedure_doc` có trong KB | tới B12, audit B11 `procedure_doc=KB-VPN-004` |
+| s13 | KB đang ghim không có `KB-VPN-004` (fixture tắt tài liệu) | E3 `no_procedure`, 0 lời gọi ghi, 0 phiếu |
+| s14 | `procedure_available` lỗi Qdrant | E2 `rag_system_error` |
+| s15 | `GROUNDING_GATE_ACTIONS=true`, action điểm thấp | E3 `no_grounding` như 3h |
+| s16 | `action_metadata.yaml` thiếu `procedure_doc` | không khởi động |
+| s11 | `evidence_for_estimator`: điểm dưới / bằng / trên ngưỡng | `[]` / chunks / chunks; B12 với estimator giả ghi nhận đầu vào → nhận `[]` khi `kb_gap` |
+| s7 | e2e h7 (TC16) | vẫn E3 + mẫu tin cũ |
+| s8 | e2e TC09 với FakeMl ép điểm rerank 0,05 (hook `FakeMlService`) | `S_PENDING_APPROVAL`, 0 lời gọi ghi |
+| s9 | e2e yêu cầu hành động + Qdrant lỗi | E2 `rag_system_error` (giữ fail-closed) |
+| s10 | e2e TC04 (câu hỏi có căn cứ) | như g5, không đổi |
+
+**Mutation (1 lượt):** M-S0-1 bỏ kiểm ngưỡng ở nhánh info (s1, s7 đỏ) · M-S0-2 áp ngưỡng cho nhánh action (s2, s8 đỏ) · M-S0-3 `<` → `<=` (s5) · M-S0-4 kiểm ngưỡng **sau** `expand`/`b10_answer` (s1: số lời gọi `b10_answer` ≠ 0) · M-S0-5 B12 truyền thẳng `state["retrieved"]` cho estimator (s6, s11) · M-S0-6 bỏ kiểm `procedure_available` (s13) · M-S0-7 `procedure_available` không dùng `base_filter` (test: tài liệu quy trình `restricted` + người gửi employee → phải E3) · M-S0-8 cờ bị đảo nghĩa (s15).
+
+**security-reviewer (S0):** không đường nào gửi câu trả lời KB mà chưa qua ngưỡng **và** hậu kiểm trích dẫn; KB không là đầu vào lớp luật/B11/B17, và chunk dưới ngưỡng không tới B14; E2 ≠ E3 giữ nguyên; mẫu tin E3 không đổi.
+
+**DỪNG 1:** `! make verify` chưa có (làm ở DỪNG 2) → Tuấn Anh chạy `make test`, rồi `make up` + `make gate3 S=tc09` và `make gate3 S=tc16` như 3h. Đạt khi: test xanh; tc09 → `S_PENDING_APPROVAL`; tc16 → E3.
+
+**Spec cần sửa (S0):** agent in nguyên văn → Claude chat ghi `decisions.md` D-34, `B08-B09` §1, `B10` §5, NGU-CANH chú thích luồng, phase3 Việc treo 17 → đóng.
+
+**DỪNG 2 — nợ kỹ thuật + `make verify`. Mục tiêu:** trả hết nợ dồn về "Phase 4 S0" và dựng công cụ để mọi DỪNG sau chỉ cần **một** lệnh chạy của Tuấn Anh.
+**Đầu ra:** CI Node 24 + runner ghim; `make verify`; HMAC username ma; `lineage.commit_sha`; `mypy backend/tests` trong `make lint`; số đo `durability="sync"`.
+**Nghi thức (tầng C):** mutation tay 2 cái cho HMAC; security-reviewer soát phần HMAC.
+
+### 4.1. P-x chốt trước — DỪNG 2 (agent không hỏi lại)
+
+| Mã | Chốt |
+|---|---|
+| P1 | CI: `runs-on: ubuntu-24.04`; nâng `actions/checkout`, `actions/cache`, `astral-sh/setup-uv` lên major chạy **Node 24** (ứng viên: checkout@v5, cache@v5, setup-uv@v7 — agent ghi bản chọn + lý do; tiêu chí: run CI không còn annotation Node 20). Không đổi bước nào khác |
+| P2 | HMAC (Q-3e-14 + Q-4-S): một hàm `auth/username_hash.py::stored_username(username, *, known: bool, key: bytes) -> str` → `known` giữ nguyên, không → `"h:" + hmac_sha256(key, username).hexdigest()` (66 ký tự). `key = hmac.new(jwt_signing_key, b"auth-username-v1", sha256).digest()`, tính một lần lúc dựng `AuthService`. Áp ở **mọi** chỗ ghi `username_attempted` và ở `count_failures` (view `auth_failures` đọc `security_events` → đếm bằng cùng giá trị băm). **Không** thêm biến `.env`, không đổi schema |
+| P3 | `known` = username có dòng trong `users` (tra một lần mỗi lượt đăng nhập, đã có sẵn trong luồng login). Không lộ khác biệt ra ngoài: phản hồi và thời gian của username ma giữ như 3e |
+| P4 | `commit_sha`: `Makefile` tính `GIT_SHA := $(shell git rev-parse HEAD)` **chỉ khi** `git status --porcelain --untracked-files=no` rỗng (file tracked có thay đổi chưa commit → rỗng; file untracked như `PLAN-*.md` không tính — không thì máy Tuấn Anh không bao giờ "sạch"); `$(COMPOSE) build --build-arg GIT_SHA=$(GIT_SHA) backend`. `backend/Dockerfile`: `ARG GIT_SHA=""` + `ENV APP_GIT_SHA=$GIT_SHA` đặt **cuối** file (không phá cache lớp cài phụ thuộc). `Settings.app_git_sha: str \| None` — chỉ nhận `^[0-9a-f]{40}$`, khác → `None` + 1 dòng WARNING lúc khởi động (không từ chối khởi động). Mọi chỗ dựng `lineage` lấy từ `Settings` (hiện: `b12_assess.py`, lineage của B10 qua `goto`) |
+| P5 | mypy tests: chạy `uv run mypy backend/tests`. **≤ 80 lỗi** → sửa hết, thêm dòng `uv run mypy backend/tests` vào `make lint` (cache riêng nếu cần). **> 80** → DỪNG, báo số lỗi theo mã lỗi + 5 file nhiều nhất (Q). Cấm `ignore_errors = true` cả gói; `# type: ignore[mã]` chỉ khi kèm lý do trên cùng dòng |
+| P6 | `durability="sync"` (Việc treo 16): **không** đổi code runtime. Viết `backend/tests/stack/bench_checkpoint.py` đo `aput` của `AsyncPostgresSaver` trên **Postgres testcontainers** (cùng image `postgres:16`, cùng colima — không cần mật khẩu stack, không làm bẩn DB stack; agent không đọc `.env`) với state tổng hợp 5 / 20 / 50 KB × 200 lần → in p50/p95 từng cỡ. Chạy trong `make verify` bước tùy chọn `BENCH=1` (export `DOCKER_HOST`/`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` như `make test`). Ghi số vào PROGRESS; p95 > 50 ms → Q |
+| P7 | `make verify` theo mục 4.4. `FAKE_SCENARIO=""` phải được `Settings` coi là **không đặt** (validator rỗng → `None`, cả `FAKE_NODE_DELAY`) — thêm test đơn vị. Nếu đã đúng sẵn thì ghi "đã có" |
+| P8 | Không đụng: `.env*` (trừ `.env.example` — 4a không cần sửa), `docs/spec/`, logic node, luật. Việc treo khác (4, 9, 11, 12) không làm ở 4a |
+
+### 4.2. File
+
+```
+.github/workflows/ci.yml                  # P1
+Makefile                                  # verify, verify-status, GIT_SHA (P4, P7); .PHONY
+scripts/verify.sh                         # mục 4.4 (bash, set -euo pipefail)
+.gitignore                                # .verify/
+backend/Dockerfile                        # ARG/ENV GIT_SHA cuối file
+backend/app/settings.py                   # app_git_sha; FAKE_* rỗng → None
+backend/app/auth/username_hash.py         # P2 (mới)
+backend/app/auth/service.py               # _event, count_failures, các chỗ username_attempted
+backend/app/graph/nodes/b12_assess.py     # commit_sha từ Settings (qua deps, không đọc env trong node)
+backend/tests/stack/bench_checkpoint.py   # P6
+backend/tests/unit/…                      # test mục 4.5
+```
+
+### 4.3. Tuấn Anh / thành viên cần biết
+
+- Không thêm biến `.env` nào (Q-4-S). Thành viên chỉ cần pull + `make up` lại.
+- `lineage.commit_sha` chỉ có giá trị khi build từ cây sạch — chạy gate xác nhận trên cây sạch.
+
+### 4.4. `make verify` (Q-4-I, Q-4-T)
+
+**Gọi:** `make verify` (mặc định `G=3`) · `make verify G=2` · `make verify G=23` · `make verify G=0` (chỉ lint + test) · thêm `BENCH=1` cho P6. `G` là chuỗi chữ số, mỗi chữ số một cổng; 4d thêm chữ số `4` (mục 7.1 P6) — 4a viết vòng lặp theo chữ số để 4d chỉ thêm một nhánh.
+
+**Các bước** (dừng ở bước đỏ đầu tiên; bước 8 **luôn** chạy nếu đã qua bước 3):
+
+| # | Bước | Đạt khi |
+|---|---|---|
+| 0 | Chuẩn bị: `mkdir -p .verify`; ghi HEAD, `git status --porcelain \| wc -l`; kiểm có `.env` (**chỉ** `test -f`, không đọc) | luôn |
+| 1 | `make lint` | exit 0 |
+| 2 | `make test` → tách 3 dòng tổng của pytest (backend/mock/ml) | exit 0 |
+| 3 | `make up` (đã build + chờ mock, worker healthy, `/api/health`) | exit 0 |
+| 4 | (G có 3) `make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated` | exit 0 (kể cả "KB không đổi") |
+| 5 | (G có 3) `FAKE_SCENARIO= FAKE_NODE_DELAY= $(COMPOSE) up -d --force-recreate --no-deps backend worker` → chờ worker healthy + `/api/health` 200 (≤ 180 s) → `make gate3 S=all` | 0 FAIL |
+| 6 | (G có 2) `FAKE_SCENARIO=approval FAKE_NODE_DELAY=40 $(COMPOSE) up -d --force-recreate --no-deps backend worker` → chờ như 5 → `make gate2 S=all` | 0 FAIL |
+| 7 | (`BENCH=1`) `bench_checkpoint` | in số |
+| 8 | Trả về cấu hình `.env`: `$(COMPOSE) up -d --force-recreate --no-deps backend worker` (không biến shell) → chờ healthy | exit 0 |
+| 9 | `gh run list --branch <nhánh hiện tại> -L 1` — lỗi thì ghi "bỏ qua (gh)" | không bắt buộc |
+
+**Đầu ra:** `.verify/run-<YYYYmmdd-HHMMSS>.log` (toàn bộ) và `.verify/summary.txt` (ghi đè mỗi lần) dạng:
+
+```
+verify G=3 HEAD=<7 ký tự> dirty=<số file> bắt đầu=<giờ> kết thúc=<giờ>
+| # | Bước | Kết quả | Thời gian | Ghi chú |
+| 1 | lint | PASS | 41s | |
+| 2 | test | PASS | 9m12s | backend 2915 passed · mock 94 · ml 77 |
+| 5 | gate3 | PASS | 6m03s | 8/8 PASS, 0 FAIL |
+…
+KẾT LUẬN: XANH | ĐỎ ở bước <n> (<tên>) — 30 dòng cuối log: <đường dẫn>
+```
+
+**Luật:** không `down -v`, không `volume rm/prune`; không in giá trị biến môi trường (chỉ tên); không `set -x`; `APP_ENV` phải là `dev` (dùng lại chốt an toàn của gate2/gate3). `make verify-status` = in `.verify/summary.txt`. Lệnh `!` quá 120 s bị đẩy nền là **bình thường**: Tuấn Anh chỉ gõ `! make verify`, rồi báo agent "xong" — **agent tự đọc `.verify/summary.txt`** và dán vào MẪU B.
+
+### 4.5. Test
+
+| # | Test | Đạt khi |
+|---|---|---|
+| 4a-1 | Đăng nhập username ma `matkhau123` (không có trong `users`) | `security_events.username_attempted` = `h:` + 64 hex; chuỗi `matkhau123` không có ở bảng nào (quét như e9) |
+| 4a-2 | Username có trong `users` sai mật khẩu | lưu nguyên văn |
+| 4a-3 | Username ma sai 5 lần trong 10 phút | bị khoá như người thật (đếm qua view bằng giá trị băm); `test_locked_ghost_username_responds_exactly_like_locked_real_user` sửa kỳ vọng sang giá trị băm, ý test giữ nguyên |
+| 4a-4 | `stored_username` | cùng đầu vào + cùng khoá → cùng kết quả; khác `jwt_signing_key` → khác |
+| 4a-5 | `Settings.app_git_sha` | 40 hex → giữ; rỗng / `abc` / 41 ký tự → `None` |
+| 4a-6 | B12 lineage | `commit_sha` = giá trị Settings (có → ghi; `None` → NULL) |
+| 4a-7 | `FAKE_SCENARIO=""`, `FAKE_NODE_DELAY=""` | Settings coi là không đặt; `select_nodes` chọn node thật |
+| 4a-8 | `bash -n scripts/verify.sh` (+ `shellcheck` nếu máy có) | sạch |
+
+### 4.6. Mutation (tay, 2 cái — HMAC)
+
+| Mã | Phá | Test phải đỏ |
+|---|---|---|
+| M-4a-1 | Username ma lưu nguyên văn | 4a-1 |
+| M-4a-2 | Ghi dùng băm nhưng đếm khoá dùng chuỗi gốc | 4a-3 |
+
+### 4.7. Soát bảo mật (security-reviewer, chỉ phần HMAC)
+
+Bất biến kiểm: không còn đường ghi `username_attempted` nguyên văn cho username ma (grep mọi lời gọi `sink.record`/`_event`); khoá không log, không nằm trong `repr(Settings)`; thời gian phản hồi username ma không đổi đáng kể (không thêm truy vấn chỉ ở nhánh ma).
+
+### 4.8. DỪNG 2 của 4a — Tuấn Anh chạy
+
+`! make verify G=23` → agent đọc summary. Đạt khi: lint + test xanh, gate3 0 FAIL, gate2 0 FAIL, stack trở về cấu hình `.env`. Sau push: CI xanh, không annotation Node 20.
+
+### 4.9. Spec cần sửa (4a) — agent in nguyên văn khi xong
+
+Mục mẫu: CI (bản action đã chọn), P5 (số lỗi mypy đã sửa), P6 (số đo), mọi chỗ lệch 4.1–4.5.
+
+---
+
+## 5. Chặng 4b — B15 thật (tầng A)
+
+**Mục tiêu:** chọn đúng người duyệt theo [Chốt] (không ai tự duyệt, kể cả qua cấp bậc), không bao giờ tạo phiếu cho hành động mà người gửi không sở hữu đích, không E9 vì người duyệt chưa đăng nhập; B17 kiểm lại cả người duyệt.
+**Đầu vào:** 4a xong, CI xanh. **Đầu ra:** node `b15_prepare_approval` thật, `config/approvers.yaml`, luật R17–R19 mới, seed mock mới, `conflict_type` dùng chung, B17 kiểm người duyệt.
+**Nghi thức (tầng A):** PLAN-4b.md + MẪU A · **2 DỪNG** · test-writer viết test bảng 3.2 **trước** code · mutation ×2 lượt + md5 · security-reviewer mỗi DỪNG.
+
+### 5.1. P-x chốt trước
+
+| Mã | Chốt |
+|---|---|
+| P1 | `config/approvers.yaml`: `vpn: {primary: l1_01, backup: l1_02, head: it_mgr01}`. Model Pydantic `extra=forbid`, nạp lúc khởi động (`open_runtime`, cùng chỗ `check_intent_config`): mọi intent trong `ENABLED_INTENTS` phải có roster; 3 id khác nhau, khớp `^[a-z0-9_]{3,64}$`. Nhóm/AD **không** kiểm lúc khởi động (mock có thể chưa lên) — kiểm ở B15 |
+| P2 | `valid(ad, role)`: `employment_status == "active"` **và** `role_from_groups(ad.groups) == role` (`l1` cho primary/backup, `manager` cho head). `probation` **không** hợp lệ để duyệt. Không tìm thấy (404/rỗng) → không hợp lệ (`not_found`), **không** phải lỗi. Lỗi hệ thống sau retry → E2 `approver_lookup_error` |
+| P3 | Tra AD: `deps.directory.call("ad_get_user", {"user_id": …}, caller_step="B15_APPROVER")`; thêm `B15_APPROVER` vào `ad_get_user.allowed_steps` (hằng như `RECHECK_STEP`); cache trong một lần chạy node (một người tra một lần). Thêm điểm gọi vào `test_turn_budget.py::NODE_CALL_SITES` |
+| P4 | Chuỗi quản lý (Q-4-R): đi `manager_id` qua AD tối đa 5 cấp, chặn vòng; tra lỗi giữa chừng → E2; không tìm thấy → dừng chuỗi (coi như hết). `conflict_type(requester_id, cand_id, cand_chain, action)` là **hàm thuần** ở `domain/approval.py` (mới): `self` → `boss_of_approver` (requester ∈ chain) → `targets_approver` (`action.requested_for == cand_id`) → None. `auth/authz.approval_conflict` gọi hàm này (route dựng chain từ bảng `users`, ≤ 5 cấp) — **một** định nghĩa |
+| P5 | Đồng bộ `users` (Q-4-N): tách từ `AuthService` thành hàm công khai `auth/user_sync.py::sync_user_from_ad(store, idp_or_ad, ad_user, now)` (gồm `_ensure_manager` + `_upsert`, giữ nguyên hành vi đổi role → thu hồi phiên); `AuthService` gọi lại hàm này (không đổi hành vi login — test auth hiện có phải xanh). NodeDeps thêm port `approver_users: ApproverUsers` (`async ensure(ad_user) -> None`) — bắt buộc, không mặc định. Gọi `ensure` cho approver + backup **trước** `effects.once("approval_create")` |
+| P6 | Chốt phòng thủ (G4-16): hàm thuần `action_has_device_target(action)` = `action.target.startswith("device:")`; đúng mà `action.facts.get("device_owner_is_requester") is not True` → E5 `approval_target_unverified`, **trước** mọi lời gọi AD |
+| P7 | Luật (Q-4-M): thêm `{"fact": "action.facts.device_owner_is_requester", "op": "is_true"}` vào `conditions.all` của R17, R18, R19 trong `config/policy.json`. h-rule thêm 3 dòng: "ngoài giờ + máy người khác → E5", "thử việc + máy người khác → E5", "máy không tồn tại → E5". h14 đổi kỳ vọng: E5 `llm_layer_disabled`, vẫn `slot_fact_collision=true`, 0 lời gọi ghi, **0 phiếu**. **`test_h11_at_20h_r18_hitl_no_write`** (3h chấp nhận HITL cho máy người khác lúc 20:00) đổi thành E5 `llm_layer_disabled`, 0 phiếu — đổi tên test cho đúng nghĩa |
+| P8 | `SqlApprovals.create(ticket_id, approver_id, deadline, action_plan_hash, *, backup_approver_id, conflict_detected, conflict_type)`; `ApprovalRow` thêm `backup_approver_id, created_at, reminder_1_at, reminder_2_at, decided_at, conflict_type`. Port `Approvals` (fakes) đổi theo; node giả (fake B15) truyền giá trị mặc định (None/False/None) |
+| P9 | Chạy lại B15 (TC33): **`effects` hiện không có hàm đọc trước** (chỉ `once`). Thêm `effects.peek(state, kind, *, step, sub="") -> str \| None` (cùng `effect_key`, chỉ SELECT `side_effects.result_ref`). B15: sau chốt phòng thủ → `peek("approval_create")` có → **bỏ qua chọn người/tra AD/ensure**, dùng phiếu cũ (`approvals.get` → báo + `goto` theo `a.approver_id`). Lý do: chạy lại mà AD đang lỗi → E2 trong khi phiếu `pending` vẫn còn (phiếu mồ côi). Test x14b |
+| P10 | Điểm log 5: `goto(..., intended_action=action, audit_columns={"approver_id", "deadline", "conflict_detected"})` (`intended_action` là key sẵn có → cột `audit_logs.intended_action` có giá trị; 4c P5 đọc cột này. `audit_columns` là tham số mới của `goto`, chỉ nhận khoá trong hằng `_POINT_COLUMNS` = {approver_id, deadline, conflict_detected, response_time_seconds}; khoá khác → `ValueError`. Ghi đè 4d **không** đi qua `goto` — ghi bằng `AuditWriter` trực tiếp) + `action_plan_hash` (field sẵn có) + `audit_detail={backup_approver_id, conflict_type, choice_reason ∈ {normal, conflict, no_valid_l1}, rejected_candidates: [{user_id, reason ∈ {not_found, inactive, wrong_group, self, boss_of_approver, targets_approver}}], sla_minutes}`. Không chữ tự do |
+| P11 | `REASON_DETAILS` thêm `no_valid_approver`, `approver_lookup_error`, `approval_target_unverified`, `approver_no_longer_valid`. Nhánh E5/E2 của B15: `goto(S_ESCALATED, next_node="b20_audit", step="B15", …)`, `escalation_reason_detail` là **chuỗi hằng** (test AST) |
+| P12 | Hạn SLA: `deps.constants.SLA_MINUTES`; đè bằng `APPROVAL_SLA_MINUTES_DEV` (int 1–30) **chỉ** khi `APP_ENV ∈ {dev,test}` (`settings.require_dev_fakes`), env khác đặt → từ chối khởi động. **Thêm `APPROVAL_SLA_MINUTES_DEV: ${APPROVAL_SLA_MINUTES_DEV:-}` vào khối `x-backend-env` của `docker-compose.yml`** (không có dòng này thì biến shell của `make verify G=4` không vào container) + dòng rỗng có chú thích trong `.env.example`. Audit ghi `sla_minutes` thật đã dùng |
+| P13 | B17 (Q-4-P): khi `via_approval`, tra thêm `decided_by` của phiếu (từ `approvals.get`) song song với người gửi/người hưởng lợi (`B17_RECHECK`). Không `valid(ad, l1)` và không `valid(ad, manager)` → E5 `approver_no_longer_valid`, 0 lời gọi ghi; lỗi AD → E2 như nhánh sẵn có. `decided_by` None mà `approved` → E5 `recheck_failed` |
+| P14 | Seed mock (Q-4-Q) `mock_services/seed.json`: `l1_lead` (username `khoa.dv`, "Đặng Văn Khoa", "Trưởng nhóm Helpdesk", IT, groups `[IT-Users, IT-L1]`, `manager_id: it_mgr01`, active, `hired_days_ago: 1500`, password hash cùng cách seed hiện có — mật khẩu dev ghi ở đúng chỗ các mật khẩu dev khác đang ghi); `l1_01.manager_id` → `l1_lead`; máy `PC-0124` (l1_01), `LAP-0700` (l1_lead), `LAP-0900` (it_mgr01), cả 3 `registered: false`, không cert. Agent grep mọi test dựa vào `manager_id` của `l1_01` / số máy của `l1_01` và sửa kỳ vọng có lý do |
+| P15 | B15 giả → `graph/nodes/fake/b15_prepare_approval.py`; `select_nodes` như 3c; `FAKE_APPROVER_ID` chỉ còn phục vụ node giả (gate2). Node thật **không** gọi `deps.scenario.pick`, giữ `deps.scenario.hook(state, "after_approval_create")` (cho TC33 trên stack) |
+
+### 5.2. Mã giả node
+
+```python
+def make(deps: NodeDeps) -> NodeFn:
+    async def b15_prepare_approval(state):
+        rc, action = state["requester_context"], state["intended_action"]
+        if action_has_device_target(action) and action.facts.get("device_owner_is_requester") is not True:
+            return await goto(state, S_ESCALATED, next_node="b20_audit", step="B15", event="approval_refused",
+                              exit_code="E5", escalation_reason_detail="approval_target_unverified",
+                              audit_detail={"stage": "target_guard"})
+        try:
+            choice = await choose_approver(deps, deps.approvers[state["intent"]], rc, action)   # 3.1 + P2–P4
+        except ToolSystemError:
+            return await goto(..., exit_code="E2", escalation_reason_detail="approver_lookup_error", ...)
+        if isinstance(choice, Refuse):                                                          # no_valid_approver
+            return await goto(..., exit_code="E5", escalation_reason_detail="no_valid_approver",
+                              audit_detail={"rejected_candidates": choice.rejected})
+        for ad_user in choice.ad_users_to_sync:                                                 # approver + backup
+            await deps.approver_users.ensure(ad_user)                                           # P5 (FK)
+        h = hash_action(action); deadline = now + sla(deps)
+        a_id = await effects.once(state, "approval_create", deps.approvals.create, state["ticket_id"],
+                                  choice.approver.user_id, deadline, h, step="B15",
+                                  backup_approver_id=..., conflict_detected=..., conflict_type=...)
+        await deps.scenario.hook(state, "after_approval_create")
+        a = await deps.approvals.get(a_id)                                                      # P9
+        await effects.once(state, "notify_approver", deps.approvals.notify_approver, a_id, a.approver_id, step="B15")
+        return await goto(state, S_PENDING_APPROVAL, next_node="approval_wait", step="B15", event="queued",
+                          approval_id=a_id, action_plan_hash=h, intended_action=action,        # cột audit intended_action cho hộp thư 4c P5
+                          audit_columns={"approver_id": a.approver_id, "deadline": a.deadline,
+                                         "conflict_detected": ...},
+                          audit_detail=point5(...))                                             # P10
+    return b15_prepare_approval
+```
+
+### 5.3. Test (ngoài bảng 3.2)
+
+| # | Test | Đạt khi |
+|---|---|---|
+| b1 | `conflict_type` thuần: 3 loại + thứ tự ưu tiên + chain rỗng + vòng | đúng |
+| b2 | Route duyệt dùng cùng hàm: `l1_lead` gửi, phiếu (giả lập) giao `l1_01` → `l1_01` quyết | 403 |
+| b3 | Người duyệt chưa có dòng `users` (xoá trước khi chạy) | Phiếu tạo được; `users` có dòng approver + manager chain; **không** có dòng `sessions` mới |
+| b4 | `approvers.yaml` thiếu intent đang bật / trùng id / khoá lạ | Khởi động thất bại |
+| b5 | `APPROVAL_SLA_MINUTES_DEV` ở `APP_ENV=prod` | Khởi động thất bại |
+| b6 | B17: `decided_by` bị `disabled` (hook trước B17) | E5 `approver_no_longer_valid`, 0 lời gọi ghi |
+| b7 | B17: AD lỗi khi tra `decided_by` | E2 |
+| b8 | Điểm log 5 | Cột `approver_id, deadline, conflict_detected, action_plan_hash` không NULL; `detail` đủ khoá P10; không chữ tự do |
+| b9 | `goto(audit_columns={"foo": 1})` | `ValueError` |
+| b10 | Test auth hiện có (login, đổi role, `_ensure_manager`) | Xanh, không sửa kỳ vọng (trừ chỗ seed đổi `manager_id` của `l1_01` — ghi lý do) |
+
+### 5.4. Mutation bắt buộc
+
+| Mã | Phá | Test phải đỏ |
+|---|---|---|
+| M-4b-1 | Xung đột → chọn dự phòng thay Trưởng BP | x2, x3 |
+| M-4b-2 | Không kiểm xung đột cho Trưởng BP | x4 |
+| M-4b-3 | `boss_of_approver` chỉ sếp trực tiếp | x4 |
+| M-4b-4 | `valid()` bỏ kiểm `employment_status` | x7 |
+| M-4b-5 | Lỗi AD coi như "không hợp lệ" (đi tiếp) | x9 |
+| M-4b-6 | Bỏ điều kiện chủ máy ở R18 | h-rule "ngoài giờ + máy người khác" |
+| M-4b-7 | Bỏ điều kiện chủ máy ở R17 | x6 / h14 mới |
+| M-4b-8 | Bỏ chốt phòng thủ B15 | x12 |
+| M-4b-9 | Báo người duyệt vừa chọn thay vì `a.approver_id` | x14 |
+| M-4b-10 | B17 bỏ kiểm `decided_by` | b6 |
+| M-4b-11 | Route dùng hàm xung đột riêng chỉ sếp trực tiếp | b2 |
+| M-4b-12 | Không `ensure` người duyệt trước khi tạo phiếu | b3 (E9) |
+| M-4b-13 | Bỏ `peek`, chạy lại luôn chọn người/tra AD | x14b |
+| M-4b-14 | B15 không truyền `intended_action` vào `goto` | 4c c10 (danh sách thiếu `action_type`) / audit_check điểm 5 |
+
+### 5.5. DỪNG
+
+- **DỪNG 1:** P1, P2–P4 (`domain/approval.py`, chain, route dùng chung), P5 (tách `user_sync`), P7 (luật + h-rule + h14), P14 (seed), P12; test-writer viết test bảng 3.2 (đỏ trước). `make verify G=23`.
+- **DỪNG 2:** node thật (5.2, P6, P8–P11, P15), B17 (P13), mutation ×2, security-reviewer (bất biến: không tự duyệt; deny không phiếu; hết hạn không thực thi; mọi side effect B15 qua `effects.once`; không chữ tự do trong audit). `make verify G=23`.
+
+---
+
+## 6. Chặng 4c — B16 + nhắc + xem phiếu + dự phòng (tầng B)
+
+**Mục tiêu:** người dùng biết vì sao bị từ chối; người duyệt có hộp thư, xem đúng object đã băm, được nhắc đúng 1 lần mỗi mốc; người dự phòng duyệt được sau nhắc 2.
+**Nghi thức (tầng B):** PLAN ngắn · 1–2 DỪNG · mutation 1 lượt · test-writer cho IDOR xem phiếu · security-reviewer cuối chặng.
+
+### 6.1. P-x chốt trước
+
+| Mã | Chốt |
+|---|---|
+| P1 | B16 từ chối: sau `approvals.close`, `effects.once(state, "notify_user", deps.notifier.notify_user, ticket_id, text, "none", step="B16")` + `conversation=[rejection_msg(text, ref)]`. `MSG_KINDS` thêm `"rejection"` (khớp `NOTICE_KINDS` của DB). `text` theo mẫu, không LLM: "Yêu cầu {nhãn hành động} cho máy {device_id} chưa được duyệt. Lý do: {nhãn reason_code \| 'không nêu'}. Ghi chú của người duyệt: {note đã che}". `note` qua `deps.output_guard` — vi phạm → bỏ phần ghi chú, audit `note_suppressed=true` |
+| P2 | Điểm log 6 (cả 3 nhánh): cột `approval_result`, `note` (đã che; chỉ nhánh có note), `response_time_seconds` (= `ev.at − a.created_at`; timeout → NULL) qua `audit_columns`; `detail`: `view_duration`, `decided_without_view` (= `first_viewed_at` NULL), `decided_as ∈ {primary, backup}`, `reason_code`, `close_applied` (số dòng `close` cập nhật: 0/1) |
+| P3 | Nhắc: hàm `WorkerJobs._scan_approval_reminders` gọi **ở cuối** `scan_deadlines` (`graph/worker_jobs.py`; **không** sửa `worker.py` — mục 0.2), lỗi của nó bắt riêng, không làm hỏng phần quét hạn. Mốc: `m1 = created_at + 0,5·(deadline − created_at)`, `m2 = created_at + 0,8·(deadline − created_at)`. `SqlApprovals.mark_reminder_once(approval_id, n, now) -> ReminderTarget \| None` = `UPDATE approvals SET reminder_n_at=:now WHERE approval_id=:id AND status='pending' AND reminder_n_at IS NULL AND deadline > :now RETURNING approver_id, backup_approver_id`. Chỉ gửi khi trả 1 dòng. Nhắc 1 → người duyệt; nhắc 2 → người duyệt + dự phòng (nếu có). Gửi qua `approvals.notify_approver(approval_id, user_id, kind="reminder_1"\|"reminder_2")` (Phase 4 vẫn log — hộp thư là API). Đã qua `m2` mà chưa nhắc 1 (worker chết lâu) → chỉ nhắc 2 (đặt cả hai cột) |
+| P4 | Dự phòng (Q-4-O): `may_decide_as` đúng khi `p.user_id == a.approver_id` **hoặc** (`p.user_id == a.backup_approver_id` **và** `a.reminder_2_at` không NULL); **và** không xung đột (P4 của 4b). Sự kiện mang `decided_as`. Không đổi `approver_id` của phiếu |
+| P5 | `GET /api/approvals?mine=1&status=pending\|approved\|rejected\|timeout` — `require("approval:decide")`; `mine` bắt buộc = 1 (khác → 422); trả tối đa 50 phiếu mà tôi là người duyệt hoặc dự phòng đủ điều kiện (P4): `approval_id, ticket_id, status, created_at, deadline, reminder_1_at, reminder_2_at, role_as, action_type, device_id` (`action_type`, `device_id` đọc từ cột `audit_logs.intended_action` của dòng B15 `queued` — không đọc checkpoint từng phiếu) |
+| P6 | `GET /api/approvals/{id}` → `ApprovalView {approval_id, ticket_id, status, deadline, requester{role, department}, request_summary (tickets.redacted_request[:500]), action (Action từ checkpoint), action_plan_hash, risk (RiskDecision), facts, role_as}`. Quyền: người duyệt / dự phòng đủ điều kiện → xem + ghi `first_viewed_at` (`UPDATE … WHERE first_viewed_at IS NULL AND status='pending'`); `manager` (có `audit:read:all`) → xem, **không** ghi; còn lại (L1 khác) → **404**; L2/nhân viên → 403 (tầng 2). `hash_action(action) != approvals.action_plan_hash` → **409 `plan_changed`**, không trả bản nào (G4-13) |
+| P7 | **Không migration** ở Phase 4 (mục 0.2 — tránh đụng chuỗi migration M9). Chỉ mục hộp thư → việc treo, làm khi có số đo chậm |
+
+### 6.2. Test
+
+| # | Test | Đạt khi |
+|---|---|---|
+| c1 | Từ chối có note chứa SĐT | Người dùng nhận 1 tin `kind=rejection`, SĐT đã che; resume 2 lần → vẫn 1 `notify_user` B16 |
+| c2 | Điểm log 6 ba nhánh | Cột + detail đủ P2; timeout: `response_time_seconds` NULL |
+| c3 | Nhắc (FakeClock): 14 phút, 15, 16, 24, 25, 30 phút với SLA 30 | Nhắc 1 đúng 1 lần ở 15; nhắc 2 đúng 1 lần ở 24 (gửi 2 người); không nhắc sau hạn |
+| c4 | Hai worker cùng quét | Mỗi mốc đúng 1 thông báo |
+| c5 | Dự phòng quyết trước nhắc 2 / sau nhắc 2 | 403 / 202, `decided_as=backup` |
+| c6 | Dự phòng là người gửi (không thể theo 4b, dựng tay) | 403 |
+| c7 | Xem phiếu: người được giao / dự phòng trước nhắc 2 / L1 khác / manager / L2 / nhân viên | 200 + ghi / 404 / 404 / 200 không ghi / 403 / 403 |
+| c8 | Xem 2 lần | `first_viewed_at` giữ lần đầu |
+| c9 | Sửa `intended_action` trong checkpoint sau khi tạo phiếu | GET → 409 `plan_changed` |
+| c10 | Danh sách `mine=1` | Chỉ phiếu của tôi (+ dự phòng đủ điều kiện); `mine` thiếu → 422 |
+| c11 | Duyệt không xem | `decided_without_view=true`, `view_duration` null |
+
+### 6.3. Mutation (1 lượt)
+
+Bỏ `IS NULL` ở nhắc (c3/c4) · nhắc sau hạn (c3) · dự phòng không cần nhắc 2 (c5) · xem phiếu không kiểm người được giao (c7) · `ApprovalView` không so hash (c9) · manager xem cũng ghi `first_viewed_at` (c7) · tin từ chối gửi thẳng không qua `effects.once` (test AST + c1).
+
+---
+
+## 7. Chặng 4d — Ghi đè + `audit_check` + e2e cổng 4 + `make gate4` (tầng A)
+
+**Nghi thức (tầng A):** PLAN-4d.md · 2 DỪNG · mutation ×2 · security-reviewer.
+
+### 7.1. P-x chốt trước
+
+| Mã | Chốt |
+|---|---|
+| P1 | `POST /api/tickets/{id}/override` → **201**. Dùng `require("decision:override", recent_login=True)` — [Chốt P6 §4, P10 §3.2: ghi đè cần đăng nhập lại ≤ 10 phút]; cơ chế đã có ở `auth/deps.py` (403 `reauth_required` + `permission_denied` reason `reauth_required`, như route thu hồi phiên `api/auth.py`). Thứ tự: 413 → quyền → **reauth** → ticket không có / không đọc được → 404 → `can_override` sai (người gửi tự ghi đè) → 403 + `permission_denied` → ticket chưa kết thúc (`final_state` NULL) → 409 `ticket_open` → body sai → 422 (`invalid_request()` chung, không trả input) → guard L1 trên `note` (lỗi → 503) → ghi |
+| P2 | Body `extra=forbid`: `override_decision: Literal["AUTO","HITL","L2","ANSWER"]`, `reason_code: Literal["too_risky_for_auto","approval_unnecessary","should_not_escalate","wrong_answer","policy_gap","other"]`, `note: str ≤ 1000` (bắt buộc khi `reason_code="other"`) |
+| P3 | `original_decision` do server suy từ audit của ticket: có dòng `risk_decided` → `detail.route` (AUTO/HITL/L2); không có mà kết thúc qua B10 (`deflected_info_only`) → `ANSWER`; còn lại → `L2`. `override_decision == original_decision` → 422 `same_as_original` |
+| P4 | Ghi **1** dòng `audit_logs`: `step="OVERRIDE"`, `event="override_recorded"`, `from_status/to_status` NULL, cột `original_decision`, `override_decision`, `overrider_id` (qua `audit_columns` 4b P10), `note` (đã che), `detail={reason_code}`; `idempotency_key = sha256("override:" + ticket_id + ":" + overrider_id)` → người đó ghi lần 2 → **409 `already_overridden`** (đúng 1 dòng). **Không** đổi `tickets`, không checkpoint, không `start_event`, không executor |
+| P5 | `scripts/audit_check.py` (+ `make audit-check ARGS=…`): đầu vào danh sách `ticket_id` hoặc `--since <ISO>`; mỗi ticket → xác định điểm log áp dụng theo event có mặt (bảng 7.2) → kiểm cột/khoá bắt buộc; quét **mọi** cột text/jsonb của `audit_logs` (+ file log nếu `--log`) bằng luật `secret` của `config/privacy_patterns.json` + danh sách canary (`--canary`) → 0 kết quả. In bảng `ticket | điểm thiếu | trường thiếu`, thoát 1 khi có lỗi. Chỉ đọc (role `app_ro` nếu có, không thì `app_rw` chỉ SELECT) |
+| P6 | `make gate4` (khuôn gate3, chốt an toàn: `APP_ENV=dev`, URL 127.0.0.1, `LLM_BACKEND=scripted`, `FAKE_SCENARIO` không đặt, **`APPROVAL_SLA_MINUTES_DEV=2`** phải đặt — kiểm CÓ/KHÔNG). `make verify G=4` tạo lại backend+worker với `FAKE_SCENARIO= APPROVAL_SLA_MINUTES_DEV=2` rồi trả về `.env` như 4a |
+
+### 7.2. Điểm log áp dụng (cho `audit_check`)
+
+| Điểm | Áp dụng khi ticket có event | Cột / khoá bắt buộc |
+|---|---|---|
+| 1 | B3 `intent_classified` hoặc B4 (E1) | `intent` (trừ E1 oos), `confidence`, detail `layer`, `dropped_slot_keys` |
+| 2 | B6 `diagnosed` / B7 | detail `tools_called`, `tool_retry_count`, `facts` |
+| 3 | B8 / B9 | `query`, detail `top_score`, `kb_version` (trừ lỗi alias) |
+| 4 | `risk_decided` | `decided_by`, `policy_decision`, `risk_level`, `reason`, detail `route`, `policy_sha256` |
+| 5 | B15 `queued` | `approver_id`, `deadline`, `conflict_detected`, `action_plan_hash`, detail `choice_reason` |
+| 6 | B16 (approved/rejected/timeout) | `approval_result`, detail `decided_without_view`; `note` khi rejected; `response_time_seconds` trừ timeout |
+| 7 | B17 | `success`, `action_plan_hash_matched` (khi qua duyệt), detail `write_calls` |
+| 8 | ticket đã kết thúc | dòng B20 có `final_state`, `close_reason` hoặc `exit_code` |
+
+### 7.3. E2E cổng 4 (`backend/tests/e2e/test_gate4_hitl.py`)
+
+| # | Kịch bản | Đạt khi |
+|---|---|---|
+| i1 | TC07-vpn: nv003 renew LAP-0501 → `l1_01` duyệt | renew đúng 1 lời gọi; `S_CONFIRMING` → xác nhận → `S_RESOLVED`; điểm 1–8 đủ (audit_check) |
+| i2 | TC08-vpn: từ chối có note | `S_REJECTED`, `rejected_by_approver`, tin `rejection`, 0 lời gọi ghi |
+| i3 | Từ chối không note | 422, phiếu vẫn `pending` |
+| i4 | TC09: nv002 PC-0977 → duyệt | E7 `exec_failed`, handoff 4 phần "máy chưa đăng ký — L2 đăng ký máy" |
+| i5 | Bảng 3.2 x1–x9, x14 | như bảng |
+| i6 | TC20 (FakeClock +31 phút) | E6, 0 lời gọi ghi, phiếu `timeout` |
+| i7 | TC27: bấm sau hạn, trước chu kỳ quét | 409 + 1 `late_event`; phiếu vẫn `pending` → worker quét → E6 |
+| i8 | TC26: đổi `intended_action` sau khi duyệt (hook trước B17) | E5 `action_plan_changed_since_approval`, 0 lời gọi ghi |
+| i9 | Tranh chấp: 2 người (người duyệt + dự phòng sau nhắc 2) bấm đồng thời | đúng 1 lần thực thi; người sau 409 |
+| i10 | Luật deny (policy fixture) | 0 phiếu, E5 `is_deny_case` |
+| i11 | L2 gọi quyết định / xem phiếu | 403 / 403 |
+| i12 | Nhắc 50/80% (FakeClock) + dự phòng quyết | như c3, c5 |
+| i13 | TC23: ghi đè ticket i1 bởi `l1_02` (`AUTO`→… hoặc `HITL`→`L2`) | 201, 1 dòng OVERRIDE; `tickets` không đổi (so trước/sau); lần 2 → 409 |
+| i14 | Ghi đè: người gửi tự ghi đè / ticket đang mở / `same_as_original` / note có mật khẩu | 403 / 409 / 422 / note đã che |
+| i14b | Ghi đè khi lần đăng nhập gần nhất > 10 phút (FakeClock) | 403 `reauth_required`, 0 dòng `OVERRIDE`, 1 `permission_denied` reason `reauth_required`; đăng nhập lại → 201 |
+| i15 | TC33: giết sau `approval_create` → recover | 1 phiếu, 1 `notify_approver` |
+| i16 | Canary chạy hết i1 + i2 + i13 với mật khẩu trong câu và trong note | như e9 (0 lần) |
+| i17 | `audit_check` trên mọi ticket của file | 0 thiếu, 0 bí mật |
+
+### 7.4. `make gate4` — kịch bản (người không làm chính chạy)
+
+`g4-01` duyệt (i1) · `g4-02` từ chối + từ chối thiếu note (i2, i3) · `g4-03` hết hạn 2 phút: nhắc 1 (~60 s), nhắc 2 (~96 s), E6, 0 ghi · `g4-04` dự phòng `l1_02` quyết sau nhắc 2 · `g4-05` bấm muộn → 409 · `g4-06` TC19 `l1_01` PC-0124 → `it_mgr01`; `l1_01` quyết → 403 · `g4-07` `l1_lead` LAP-0700 → `it_mgr01` · `g4-08` `it_mgr01` LAP-0900 → E5, 0 phiếu · `g4-09` L2 quyết/xem → 403; L1 khác xem → 404 · `g4-10` xem lần đầu ghi `first_viewed_at` · `g4-11` ghi đè + lần 2 409 · `g4-12` `audit_check --since <giờ bắt đầu>` 0 lỗi. In bảng PASS/FAIL + biên bản `backend/tests/stack/bienban-gate4-<ngày>.md` (người chạy điền tên, máy, commit).
+
+### 7.5. Mutation bắt buộc
+
+Ghi đè đổi `tickets.final_state` (i13) · bỏ `recent_login=True` ở route ghi đè (i14b) · ghi đè lưu note chưa che (i14) · ghi đè cho ticket đang mở (i14) · bỏ idempotency ghi đè (i13) · timeout → `S_EXECUTING` (i6) · bấm muộn đổi status phiếu (i7) · `audit_check` bỏ quét bí mật (i16 cài canary thẳng vào `audit_logs.detail` bằng SQL → phải đỏ) · `audit_check` bỏ điểm 5 (i17 với dòng B15 thiếu `approver_id` giả lập).
+
+### 7.6. DỪNG
+
+- **DỪNG 1:** ghi đè (P1–P4) + `audit_check` (P5) + i13, i14, i17. `make verify G=23`.
+- **DỪNG 2:** e2e còn lại + `make gate4` + mutation ×2 + security-reviewer + "spec cần sửa (4d)". `make verify G=234` rồi **thành viên** chạy `make gate4 S=all`.
+
+---
+
+## 8. Lịch và thứ tự
+
+| Chặng | Ước lượng agent | Phụ thuộc | Người khác |
+|---|---|---|---|
+| 4a | ~4 giờ (S0 ~2 + nợ ~2) | Phase 3 đóng `5d0a990` (CI 36686745332 xanh) ✓; Q-4-U chốt ✓ | — |
+| 4b | ~4 giờ (2 DỪNG) | 4a | — |
+| 4c | ~3 giờ | 4b | — |
+| 4d | ~4 giờ (2 DỪNG) | 4c | Dương/Duy Anh chạy `make gate4` + ký biên bản |
+
+Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutation 4b/4d ×2, 4c ×1 đủ; `make gate4 S=all` 0 FAIL do người không làm chính chạy; spec "Chốt khi hiện thực 4a–4d"; `decisions.md` §1.1 (R17–R19 thêm chủ máy) + §4.1 (Q-4-A…T).
+
+## 9. Nhật ký
+
+| Ngày | Phiên bản | Thay đổi |
+|---|---|---|
+| 30/09/2026 | 0.1 | Tạo file: sự thật code `02ed795`; 10 lỗ hổng bổ sung G4-15…24; thuật toán chọn người duyệt theo [Chốt]; bảng test xung đột mới; 20 câu Q-4; chặng 4a đủ |
+| 30/09/2026 | 0.8 | 4d P1: ghi đè cần đăng nhập lại ≤ 10 phút (`recent_login=True`, [Chốt] P6 §4 / P10 §3.2 — bổ sung từ chat Phase 7); thứ tự 413 → quyền → reauth → 404 → `can_override` → 409 → 422; test i14b + mutation |
+| 30/09/2026 | 0.7 | Tuấn Anh chốt Q-4-U = A+; thêm bảng kế hoạch tóm tắt đầu file; lịch 4a cập nhật mốc Phase 3 đóng `5d0a990` |
+| 30/09/2026 | 0.6 | Q-4-U phân tích sâu (3.3.1–3.3.5): số đo theo loại câu, tách căn cứ câu trả lời / căn cứ hành động, bảng kiểu thất bại; phương án A+ (`procedure_doc` + kiểm tất định ở B11 + cờ ablation); S0-P10, P11, test s12–s16, M-S0-6…8 |
+| 30/09/2026 | 0.5 | Mục 0.2 phối hợp M9: không sửa `worker.py`/`main.py`/khối `# M9`; bỏ migration 0008; nhắc duyệt gọi trong `scan_deadlines`; khối `# Phase 4` riêng trong settings/compose; luật rebase + `alembic heads`=1; phụ thuộc M9 (luật 7 cần 4c, `override_count` cần 4d) |
+| 30/09/2026 | 0.4 | Soát lại với code (mục 9 bổ sung): `effects.peek` cho B15 chạy lại (tránh phiếu mồ côi khi AD lỗi); B15 truyền `intended_action` (hộp thư đọc cột audit); `GIT_SHA` bỏ qua file untracked; bench dùng testcontainers; compose phải truyền `APPROVAL_SLA_MINUTES_DEV`; x9 bơm lỗi AD bằng hook trước B15; `test_h11_at_20h` đổi thành E5; `_POINT_COLUMNS` bỏ cột ghi đè |
+| 30/09/2026 | 0.3 | Việc treo 17 thành việc chặn (Q-3h-11): thêm G4-25, Q-4-U, mục 3.3 (phân tích 4 phương án, đề xuất A: B9 chỉ áp nhánh trả lời), mục 4.0 S0 = DỪNG 1 của 4a |
+| 30/09/2026 | 0.2 | Tuấn Anh chốt 20 câu Q-4. Bảng 3.2 dùng máy chưa đăng ký (R17, không phụ thuộc giờ) + `PC-0124`; viết đủ 4b (P1–P15, mã giả, mutation 12), 4c (P1–P7), 4d (ghi đè, `audit_check`, e2e i1–i17, `make gate4`); lịch |

@@ -43,6 +43,7 @@ from app.rag.ingest.gate import (
 )
 from app.rag.ingest.kbversion import content_sha256, kb_version, pipeline_sha
 from app.rag.ingest.loader import load_kb
+from app.rag.ingest.procedures import procedure_warnings_for
 from app.rag.models import (
     Chunk,
     ChunkPayload,
@@ -136,6 +137,8 @@ async def _run(run: _Run) -> int:
     v = kb_version(docs)
     psha = pipeline_sha(d.config_dir)
     run.say(f"kb_version={v}")
+    for line in procedure_warnings_for(d.config_dir, docs):  # Phase 4 S0-P10: chỉ cảnh báo, không chặn
+        print(line, file=d.err)
     if opts.dry_run:
         return await _after_lock(run, docs, enabled, v, psha)
     # 3½ — một lượt ingest mỗi lúc (Q-3b-15)

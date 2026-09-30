@@ -21,7 +21,7 @@ from app.domain.context import RequesterContext
 from app.domain.states import S_ESCALATED, S_RETRIEVING
 from app.domain.ticket_state import ChunkRef
 from app.graph.context import RunContext, bind_run
-from app.graph.nodes import b08_retrieve
+from app.graph.nodes import b08_retrieve, b10_route
 from app.rag.bm25 import load_lexicon, to_sparse, tokenize_vi
 from app.rag.ingest.config import ALIAS
 from app.rag.ingest.kbversion import pipeline_sha
@@ -34,6 +34,8 @@ from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import embed_text
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.kb import CONFIG_DIR, KB_TEST_NOW, copy_kb
+from tests.fakes.llm import make_gateway
+from tests.fixtures.llm.vpn import vpn_scripts
 from tests.integration.pg import PgUrls
 from tests.integration.test_rag_ingest_pg import Env, _env
 
@@ -178,13 +180,17 @@ def _state(ctx: RequesterContext, **over: Any) -> dict[str, Any]:
     return base
 
 
-async def _run_node(retriever: Retriever, ctx: RequesterContext) -> dict[str, Any]:
-    h = GraphHarness()
+async def _run_node(retriever: Retriever, ctx: RequesterContext) -> tuple[dict[str, Any], MemoryAudit]:
+    """Phase 4 S0-P1/P2: B8 không còn nhánh B9 — chạy B8 → B10 (preset `b10_need_type=info`); B9 nằm trong `b10_route`."""
+    h = GraphHarness(llm=make_gateway({"b10_need_type": vpn_scripts(need="info")["b10_need_type"]}).client)
     h.rag = retriever  # type: ignore[assignment]
     deps = h.deps()
     audit = MemoryAudit()
     with _run_ctx(audit):
-        return await b08_retrieve.make(deps)(_state(ctx))
+        state = _state(ctx)
+        out = await b08_retrieve.make(deps)(state)
+        assert (out["status"], out["next"]) == (S_RETRIEVING, "b10_route")
+        return await b10_route.make(deps)({**state, **out}), audit
 
 
 async def test_c14_empty_collection_gives_e3_no_rerank_call(clean_qdrant: str, migrated: PgUrls) -> None:
@@ -199,8 +205,9 @@ async def test_c14_empty_collection_gives_e3_no_rerank_call(clean_qdrant: str, m
         res = await retriever.retrieve(q, _ctx("employee"))
         assert res.chunks == [] and res.top_score == 0.0
         assert env.fake.calls["rerank"] == 0
-        out = await _run_node(retriever, _ctx("employee"))
+        out, audit = await _run_node(retriever, _ctx("employee"))
         assert (out["status"], out["exit_code"]) == (S_ESCALATED, "E3")
+        assert audit.events("t1") == [("B8", "retrieved"), ("B9", "no_evidence")]
 
 
 # ---- c16: alias đổi NGAY TRONG hybrid_query đầu tiên — ghim kb_version của lượt đang chạy ----------

@@ -5,7 +5,8 @@ chunk KB).
   tokenizer thật — ranh giới chunk khác chút so với bge-m3, không sao: test kiểm cơ chế, không kiểm chất lượng truy hồi).
 - `FixtureRag` (`RagPort`): `retrieve` trả top-N cố định (test chọn `chunk_id`); `expand_for_answer` là
   `Retriever.expand_for_answer` THẬT trên `SpyIndex` chứa mọi chunk với payload như ingest (lọc quyền `base_filter` thật,
-  cửa sổ ±`RAG_NEIGHBOR_WINDOW`).
+  cửa sổ ±`RAG_NEIGHBOR_WINDOW`). `procedure_available` (Phase 4 S0-P10) cũng là `Retriever` THẬT: alias `kb_current` →
+  `COLL` (đổi được bằng `index.set_alias`), `procedure_filter` thật — KB-VPN-002 `enabled=false`, KB-VPN-007 `restricted`.
 """
 
 from dataclasses import dataclass, field
@@ -15,8 +16,16 @@ from app.domain.context import RequesterContext
 from app.domain.ticket_state import ChunkRef
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.chunker import chunk_doc
+from app.rag.ingest.config import ALIAS
 from app.rag.ingest.loader import load_kb
-from app.rag.models import Chunk, Doc, EvidenceBlock, RetrievalQuery, RetrievalResult
+from app.rag.models import (
+    Chunk,
+    Doc,
+    EvidenceBlock,
+    ProcedureCheck,
+    RetrievalQuery,
+    RetrievalResult,
+)
 from app.rag.retriever import RagConfig, Retriever
 from app.settings import get_settings
 from tests.fakes.fake_ml import FakeMlService
@@ -72,6 +81,9 @@ class FixtureRag:
         self.expand_calls.append(list(chunks))
         return await self.retriever.expand_for_answer(chunks, ctx, kb_version=kb_version, max_tokens=max_tokens)
 
+    async def procedure_available(self, doc_id: str, ctx: RequesterContext) -> ProcedureCheck:
+        return await self.retriever.procedure_available(doc_id, ctx)
+
 
 async def fixture_rag(top_ids: list[str], clock: FakeClock, *, evidence_max_tokens: int = 4000) -> FixtureRag:
     """`top_ids` theo thứ tự điểm giảm dần (0,95; 0,90; …)."""
@@ -79,6 +91,7 @@ async def fixture_rag(top_ids: list[str], clock: FakeClock, *, evidence_max_toke
     index = SpyIndex()
     index.add_collection(COLL, metadata={"pipeline_sha": "p" * 64})
     index.add_points(COLL, [SpyPoint(id=cid, payload=_payload(d, c)) for cid, (d, c) in chunks.items()])
+    index.set_alias(ALIAS, COLL)  # procedure_available đọc alias hiện hành (S0-A3)
     cfg = RagConfig(prefetch_k=20, rerank_k=20, top_n=5, intent_fallback=True, neighbor_window=1,
                     evidence_max_tokens=evidence_max_tokens, deadline_s=50.0)  # fmt: skip
     retriever = Retriever(index, FakeMlService().client(clock), cfg, threshold=0.6, pipeline_sha="p" * 64,

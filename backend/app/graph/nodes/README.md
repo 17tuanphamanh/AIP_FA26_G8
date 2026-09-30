@@ -33,7 +33,8 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   theo `core.turn_budget`). Hết hạn → E2 `turn_budget_exceeded` — boundary làm lưới chung; B2 (giữ `security_flag`),
   B3, B6 (giữ điểm log) bắt tường minh.
 - `b08_retrieve.py`: node THẬT (Phase 3 chặng 3c) — gọi `deps.rag.retrieve()` (`RagPort`, thật là
-  `rag.retriever.Retriever`), chỉ bắt `RetrievalSystemError` (E2); rỗng/dưới ngưỡng → E3 (B9). Bản GIẢ (Phase
+  `rag.retriever.Retriever`), chỉ bắt `RetrievalSystemError` (E2); RAG không lỗi → LUÔN `b10_route` (Phase 4 S0-P1: B9
+  chuyển vào `b10_route`, sau `b10_need_type`), điểm log 3 có `above_threshold`. Bản GIẢ (Phase
   2, đọc `deps.scenario`) nằm ở `graph/nodes/fake/b08_retrieve.py`. `graph/builder.py::select_nodes` (qua
   `FAKE_SCENARIO`) hoặc `real_nodes`/`fake_nodes` chọn bản nào chạy — xem `graph/wiring.py`.
 - `b02_screen.py`: node THẬT (Phase 3 chặng 3e) — L2 regex (`guard.injection.match`) → L3 `deps.ml.classify`
@@ -43,7 +44,9 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   `deps.scenario`, gate2 dùng) ở `graph/nodes/fake/b02_screen.py`.
 - `confirm_wait.py` (node chung, không có bản giả): `note` qua `guard.screen_reply` (L0 + L2) NGAY sau `interrupt()` —
   khớp → E0 `S_ESCALATED` `injection_in_reply`. KHÔNG gửi tin nào (câu trả lời B10 gửi ở B10 — M-3g-2).
-- `b10_route.py`: node THẬT (Phase 3 chặng 3g) — `b10_need_type` (fast): `action` → B11; `info` → `expand_for_answer`
+- `b10_route.py`: node THẬT (Phase 3 chặng 3g; Phase 4 S0) — `b10_need_type` (fast) TRƯỚC mọi kiểm ngưỡng: `action` → B11
+  BẤT KỂ điểm (cờ `GROUNDING_GATE_ACTIONS=true` → B9 như 3h); `info` → B9 (rỗng/dưới ngưỡng → E3 `no_grounding`, step `B9`,
+  event `no_evidence` — như nhánh cũ ở B8; 0 `expand`/`b10_answer`) → `expand_for_answer`
   trên `kb_version` đã ghim → `b10_answer` (strong) → gateway cắt khối → E3 `invalid_citation` (audit `evidence_truncated=true`); hậu kiểm bằng CODE
   (`domain.answer.check_citations`): `cannot_answer` → E3 `no_grounding`, trích ngoài anchor (top-5 ∩ khối thật sự gửi
   LLM, KHÔNG chunk liền kề) → E3 `invalid_citation` → `render_answer` theo mẫu → `guard.output` (E3
@@ -51,7 +54,9 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   transaction audit) → `S_CONFIRMING`.
 - `b11_slots.py`: node THẬT (3g, chỉ VPN) — đủ slot → `validate_targets` (tool có `device_id` trong `arg_slots`, LUÔN
   kiểm lại máy đích) → `infer_vpn` tính lại fact phụ thuộc máy, bỏ fact máy cũ, BỎ slot do `infer_vpn` trả →
-  `build_action`; thiếu → `b11_clarify_question` → output guard → `notify_user`/hạn clarify qua `effects.once` khoá
+  `build_action` → căn cứ quy trình (Phase 4 S0-P10): `procedure_doc` của `action_type` phải có trong KB HIỆN HÀNH (alias
+  đọc lúc này), enabled, người gửi được xem (`deps.rag.procedure_available`) — không → E3 `no_procedure`, lỗi RAG → E2
+  `rag_system_error`; thiếu → `b11_clarify_question` → output guard → `notify_user`/hạn clarify qua `effects.once` khoá
   riêng từng lượt hỏi (`sub=f"q{n}"`); hết `MAX_CLARIFICATION_TURNS` → E4. D-20 không có ở 3g (cờ bật → không khởi động).
 - `clarify_wait.py`: node THẬT (3g) — `interrupt()` là lệnh đầu; `screen_reply` → timeout E4 → che L1 (`redact_text`
   thuần) → `b11_extract_slots` với bản đã che → `sanitize_slots(text=bản đã che, allowed=missing)` → lạc đề 2 lần E4.
