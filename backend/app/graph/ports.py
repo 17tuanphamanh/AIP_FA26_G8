@@ -50,6 +50,10 @@ class EffectStore(Protocol):
         một transaction. Khoá đã có → trả `result_ref` cũ, KHÔNG gọi `call` (D-18)."""
         ...
 
+    async def peek(self, key: str) -> str | None:
+        """`result_ref` của khoá đã ghi (đã commit); chưa có → None. Chỉ SELECT (Phase 4 4b P9)."""
+        ...
+
 
 @dataclass
 class SpanRecord:

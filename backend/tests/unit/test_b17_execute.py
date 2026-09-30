@@ -56,6 +56,7 @@ pytestmark = pytest.mark.asyncio
 IN_HOURS = datetime(2026, 9, 29, 3, 0, tzinfo=UTC)  # thứ Ba 10:00 giờ VN
 AFTER_HOURS = datetime(2026, 9, 29, 13, 0, tzinfo=UTC)  # thứ Ba 20:00 giờ VN
 CANARY = "CANARY-B17-cau-nguoi-dung"
+APPROVER = "l1_01"  # 4b P13: người duyệt thật trong roster (config/approvers.yaml) — B17 kiểm lại người đã duyệt
 POINT7 = {"success", "steps_done", "failed_step", "rollback_status", "action_plan_hash_matched", "write_calls"}
 
 
@@ -93,7 +94,9 @@ class Env:
         self.clock = FakeClock(at)
         self.ad = FakeAd(*(users or (ad_user("nv001"),)))
         self.writes, self.txlog = FakeVpnWrites(self.clock), MemoryTxLog()
-        self.h = GraphHarness(clock=self.clock, ad=self.ad, txlog=self.txlog)  # B17 bước 0 và executor đọc CÙNG txlog
+        # B17 bước 0 và executor đọc CÙNG txlog. 4b P13: người duyệt = `l1_01` (roster — harness gộp vào AD, gieo dòng `users` cho
+        # FK phiếu): B17 tra lại người ĐÃ DUYỆT, người giả `l1-fake` (không có trong AD) nay là "không còn hợp lệ".
+        self.h = GraphHarness(clock=self.clock, ad=self.ad, txlog=self.txlog, approver_id=APPROVER)
         self.executor: Any = VpnExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
 
     @contextmanager
@@ -110,9 +113,11 @@ class Env:
             return await (wrap_node("b17_execute", fn) if boundary else fn)(state)  # type: ignore[no-any-return]
 
     async def approval(self, action: Action, *, decide: str | None) -> str:
-        a_id = await self.h.approvals.create("t1", "l1-fake", self.clock.now() + timedelta(minutes=30), hash_action(action))
+        a_id = await self.h.approvals.create(
+            "t1", APPROVER, self.clock.now() + timedelta(minutes=30), hash_action(action), backup_approver_id=None, conflict_detected=False, conflict_type=None,
+        )  # fmt: skip
         if decide is not None:
-            await self.h.approvals.close(a_id, decide, self.clock.now(), decided_by="l1-fake", note="ok")
+            await self.h.approvals.close(a_id, decide, self.clock.now(), decided_by=APPROVER, note="ok")
         return a_id
 
     def writes_total(self) -> int:
@@ -276,7 +281,9 @@ async def test_beneficiary_terminated_is_e5() -> None:
     a_id = await env.approval(action, decide="approved")
     out = await env.node(_approved_state(action, a_id))
     assert out["escalation_reason_detail"] == "person_no_longer_valid"
-    assert (env.detail("person_no_longer_valid")["role"], env.ad.calls) == ("beneficiary", 2)
+    # 4b P13/TQ-11: người đã duyệt (`l1_01`) tra trong CÙNG gather với người gửi + người hưởng lợi → 3 lời gọi (trước 4b: 2)
+    assert (env.detail("person_no_longer_valid")["role"], env.ad.calls) == ("beneficiary", 3)
+    assert env.ad.calls_by[APPROVER] == 1
     assert env.writes_total() == 0
 
 

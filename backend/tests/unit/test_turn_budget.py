@@ -225,6 +225,9 @@ NODE_CALL_SITES: dict[tuple[str, str], int] = {
     ("clarify_wait.py", "llm.complete"): 1,  # 3g DỪNG 2: b11_extract_slots
     ("b17_execute.py", "executor.execute"): 1,
     ("b17_execute.py", "directory.call"): 1,  # 3h: kiểm lại người (ad_get_user, B17_RECHECK — 2 người song song, một điểm gọi)
+    # Phase 4 4b P3: B15 tra người duyệt + chuỗi quản lý (ad_get_user, B15_APPROVER — qua memo, một điểm gọi). B17 P13 thêm người
+    # đã duyệt vào CÙNG gather — vẫn một điểm gọi.
+    ("b15_prepare_approval.py", "directory.call"): 1,
 }
 PORTS = frozenset({"llm", "rag", "directory", "ml", "executor"})
 
@@ -243,7 +246,7 @@ def _node_call_sites() -> dict[tuple[str, str], int]:
 
 def test_p7_node_external_call_sites_are_registered() -> None:
     found = _node_call_sites()
-    assert sum(found.values()) >= 14  # 3.9: danh sách không rỗng (3f: 8 → 3g DỪNG 1: 11 → DỪNG 2: 14)
+    assert sum(found.values()) >= 17  # 3.9: danh sách không rỗng (3f: 8 → 3g DỪNG 1: 11 → DỪNG 2: 14; trước 4b: 16 → 4b: 17)
     assert found == NODE_CALL_SITES
 
 

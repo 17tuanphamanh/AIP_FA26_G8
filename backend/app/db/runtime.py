@@ -92,6 +92,13 @@ class SqlEffectStore:
             )
             return ref
 
+    async def peek(self, key: str) -> str | None:
+        """Phase 4 4b P9: chỉ SELECT `side_effects.result_ref` — không ghi. Dòng của `run_once` đang dở (chưa commit) không thấy
+        được — process chết giữa chừng thì dòng đó cũng mất, chạy lại làm như chưa làm (D-18)."""
+        async with self._engine.connect() as conn:
+            row = await conn.execute(select(_EFFECTS.c.result_ref).where(_EFFECTS.c.effect_key == key))
+            return row.scalar_one_or_none()
+
 
 class SqlTurnStore:
     def __init__(self, engine: AsyncEngine) -> None:

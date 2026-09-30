@@ -10,8 +10,13 @@ Chốt an toàn (trước mọi HTTP; không qua → exit 2):
 3. `FAKE_SCENARIO` không đặt — đặt thì mọi node là bản giả của gate2, cổng 3 vô nghĩa → dừng.
 Biến môi trường chỉ được kiểm CÓ/KHÔNG (script in `TÊN=0|1`), không bao giờ in giá trị; `LLM_BACKEND` chỉ in nhãn enum.
 
-Cảnh báo (không dừng): thiếu `SVC_EXECUTOR_TOKEN` (B17 → RefusingExecutor → E7), thiếu `FAKE_APPROVER_ID` (không có người
-duyệt), KB đang chạy không phải KB fixture (`make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated`).
+Cảnh báo (không dừng): thiếu `SVC_EXECUTOR_TOKEN` (B17 → RefusingExecutor → E7), KB đang chạy không phải KB fixture
+(`make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated`).
+
+Phase 4 4b (Q-4b-7): B15 là node THẬT — người duyệt chọn theo `config/approvers.yaml` (vpn: `l1_01`, dự phòng `l1_02`, Trưởng BP
+`it_mgr01`), KHÔNG dùng `FAKE_APPROVER_ID` (biến đó chỉ còn cho B15 giả của gate2). Có phiếu (tc02/tc06 ngoài giờ, tc09) thì kiểm
+thêm: phiếu `approver_id=l1_01`, `backup_approver_id=l1_02`, `conflict_detected=false` (an.nv/binh.tt không vướng xung đột với
+`l1_01`) và dòng `audit_logs` B15 `queued` có cột `approver_id=l1_01`. Trong giờ tc02/tc06 không có phiếu — không ép.
 
 Route mong đợi tính theo giờ LÚC CHẠY (Q-3h-4, không có biến ép đồng hồ): `within_business_hours` của chính backend trên
 `config/policy.json`. Ngoài giờ, tc02/tc06 khớp R18 → `l1_01` duyệt qua API → B17 → renew đúng 1 lần → xác nhận → đóng.
@@ -59,7 +64,9 @@ from tests.stack.gate2 import (
     wait_for,
 )
 
-APPROVER, AN, BINH = "ha.lt", "an.nv", "binh.tt"  # l1_01 (đăng nhập TRƯỚC — dòng users cho phiếu duyệt), nv001, nv002
+APPROVER, AN, BINH = "ha.lt", "an.nv", "binh.tt"  # l1_01 (đăng nhập để DUYỆT, B15 tự ensure dòng users), nv001, nv002
+# Q-4b-7: người duyệt / dự phòng B15 thật chọn cho an.nv, binh.tt theo `config/approvers.yaml` (vpn: primary, backup)
+ROSTER_APPROVER, ROSTER_BACKUP = "l1_01", "l1_02"
 TURN_WAIT = 110.0  # giây chờ một lượt: TURN_BUDGET_S 100 + biên (ml-service thật: embed + rerank trên CPU)
 RENEW = "/vpn/certs/nv001/renew"
 AUTH = "/ad/authenticate"  # POST duy nhất của mock KHÔNG phải ghi (đăng nhập, require_read) — mọi POST khác đòi svc_executor
@@ -80,7 +87,7 @@ TC04_SOURCE = "KB-VPN-001#"  # preset tc04 trích KB-VPN-001#v1#1 (cổng kết 
 TC05_SOURCE = "KB-VPN-003#"  # preset tc05 trích KB-VPN-003#v1#0 (lỗi 809 — không kết nối được)
 
 # Biến kiểm CÓ/KHÔNG trong container backend. Script shell chỉ in `TÊN=0|1`; LLM_BACKEND chỉ in nhãn enum (lạ → `?`).
-FLAGS = ("SVC_EXECUTOR_TOKEN", "FAKE_SCENARIO", "FAKE_APPROVER_ID")
+FLAGS = ("SVC_EXECUTOR_TOKEN", "FAKE_SCENARIO")
 ENV_PROBE = (
     "for v in " + " ".join(FLAGS) + "; do "
     'if [ -n "$(printenv "$v")" ]; then echo "$v=1"; else echo "$v=0"; fi; done; '
@@ -210,6 +217,13 @@ class Ctx(gate2.Ctx):
             f"WHERE ticket_id = {q(ticket)}"
         ))  # fmt: skip
 
+    def queued_approvers(self, ticket: str) -> list[Any]:
+        """Cột `audit_logs.approver_id` của dòng B15 `queued` (điểm log 5, Q-4b-7)."""
+        return list(self.shell.sql(
+            "SELECT coalesce(json_agg(approver_id ORDER BY log_id), '[]') FROM audit_logs "
+            f"WHERE ticket_id = {q(ticket)} AND step = 'B15' AND event = 'queued'"
+        ))  # fmt: skip
+
     def count(self, table: str, ticket: str, where: str) -> int:
         return int(self.shell.sql(f"SELECT count(*) FROM {table} WHERE ticket_id = {q(ticket)} AND {where}"))
 
@@ -241,9 +255,6 @@ def warnings(ctx: Ctx, flags: Mapping[str, str]) -> None:
     if flags.get("SVC_EXECUTOR_TOKEN") != "1":
         ctx.report.echo("CẢNH BÁO: container backend không có SVC_EXECUTOR_TOKEN — B17 dùng RefusingExecutor → tc02/tc06 "
                         "ra E7 (thêm token vào .env rồi make up lại)")  # fmt: skip
-    if flags.get("FAKE_APPROVER_ID") != "1":
-        ctx.report.echo("CẢNH BÁO: container backend không có FAKE_APPROVER_ID — phiếu duyệt không có người duyệt "
-                        "(tc02/tc06 ngoài giờ)")  # fmt: skip
     try:
         running = (ctx.http.get("/api/health").json().get("kb") or {}).get("collection")
     except (httpx.HTTPError, ValueError):
@@ -260,6 +271,16 @@ def _check_risk(ctx: Ctx, t: str, tc: str, in_hours: bool) -> Risk:
     ctx.report.eq(t, f"B12 điểm log 4 ({'trong' if in_hours else 'ngoài'} giờ)",
                   [(want.rule, want.route, want.all_matched)], got)  # fmt: skip
     return want
+
+
+def _check_approver(ctx: Ctx, t: str, approvals: Sequence[Mapping[str, Any]]) -> None:
+    """Q-4b-7 — CHỈ khi có phiếu: B15 thật giao đúng người trong roster, không xung đột; audit điểm 5 có cột người duyệt."""
+    if not approvals:
+        return
+    rep = ctx.report
+    rep.eq(t, "B15 thật: người duyệt / dự phòng / xung đột theo roster", [(ROSTER_APPROVER, ROSTER_BACKUP, False)],
+           [(a.get("approver_id"), a.get("backup_approver_id"), a.get("conflict_detected")) for a in approvals])  # fmt: skip
+    rep.eq(t, "audit B15 queued: cột approver_id", [ROSTER_APPROVER], ctx.queued_approvers(t))
 
 
 def _same_window(ctx: Ctx, t: str, in_hours: bool) -> None:
@@ -283,6 +304,7 @@ def _renew(ctx: Ctx, tc: str, sentence: str) -> None:
         rep.eq(t, "0 lời gọi ghi trước khi duyệt (mock /_admin/calls)", 0, ctx.mock_writes())
         approvals = ctx.approvals(t)
         rep.eq(t, "1 phiếu pending", ["pending"], [a["status"] for a in approvals])
+        _check_approver(ctx, t, approvals)
         before = ctx.turn_count(t)
         r = ctx.post(f"/api/approvals/{approvals[0]['approval_id']}/decision", {"decision": "approved"}, ctx.l1)
         rep.eq(t, f"{APPROVER} duyệt → 202", 202, r.status_code)
@@ -361,7 +383,9 @@ def tc09(ctx: Ctx) -> None:
     v = ctx.settle(t, 0)
     _check_risk(ctx, t, "tc09", in_hours)
     rep.eq(t, "R17 → chờ duyệt", S_PENDING_APPROVAL, v["status"])
-    rep.eq(t, "1 phiếu pending", ["pending"], [a["status"] for a in ctx.approvals(t)])
+    approvals = ctx.approvals(t)
+    rep.eq(t, "1 phiếu pending", ["pending"], [a["status"] for a in approvals])
+    _check_approver(ctx, t, approvals)
     rep.eq(t, "0 lời gọi ghi (mock /_admin/calls)", 0, ctx.mock_writes())
     audit = ctx.audit(t)
     b11 = [r for r in audit if (r["step"], r["event"]) == ("B11", "action_built")]

@@ -290,7 +290,8 @@ class Ctx:
     def approvals(self, ticket: str) -> list[dict[str, Any]]:
         return list(self.shell.sql(
             "SELECT coalesce(json_agg(json_build_object('approval_id', approval_id, 'status', status, "
-            f"'decided_by', decided_by)), '[]') FROM approvals WHERE ticket_id = {q(ticket)}"
+            "'decided_by', decided_by, 'approver_id', approver_id, 'backup_approver_id', backup_approver_id, "
+            f"'conflict_detected', conflict_detected)), '[]') FROM approvals WHERE ticket_id = {q(ticket)}"
         ))  # fmt: skip
 
     def turns(self, ticket: str) -> list[dict[str, Any]]:

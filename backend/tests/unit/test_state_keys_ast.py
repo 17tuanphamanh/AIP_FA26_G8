@@ -17,7 +17,7 @@ from app.domain.exit_codes import REASON_DETAILS
 from app.domain.ticket_state import STATE_KEYS
 
 # Tham số riêng của chữ ký `goto()` — không đi vào `**fields` nên không phải state key.
-GOTO_OWN_PARAMS = frozenset({"next_node", "step", "event", "audit_detail", "lineage"})
+GOTO_OWN_PARAMS = frozenset({"next_node", "step", "event", "audit_detail", "lineage", "audit_columns"})  # 4b P10: audit_columns
 
 
 def _module_str_constants(tree: ast.Module) -> dict[str, str]:

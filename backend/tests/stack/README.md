@@ -58,7 +58,7 @@ câu. Người **không** làm chính chạy `make gate3 S=all` để xác nhậ
 
 ### Chuẩn bị
 
-1. `.env`: `APP_ENV=dev`, `LLM_BACKEND=scripted`, `FAKE_APPROVER_ID=l1_01`, `SVC_EXECUTOR_TOKEN` (≥ 32 ký tự, cùng giá trị
+1. `.env`: `APP_ENV=dev`, `LLM_BACKEND=scripted`, `SVC_EXECUTOR_TOKEN` (≥ 32 ký tự, cùng giá trị
    mock nhận), và **KHÔNG** đặt `FAKE_SCENARIO` lẫn `FAKE_NODE_DELAY` (comment CẢ HAI dòng — đặt `FAKE_SCENARIO` thì mọi
    node là bản giả của gate2; còn `FAKE_NODE_DELAY` mà thiếu `FAKE_SCENARIO` thì backend/worker từ chối khởi động,
    `graph/wiring.fake_scenario`). Chạy lại gate2 thì bật lại cả hai + `make up` — hai cổng dùng hai cấu hình `.env`.
@@ -78,8 +78,10 @@ make gate3 S=all           # preflight + 8 kịch bản (tc28 cuối: tắt/bậ
 cấm `down -v`/`volume rm|prune`) + `LLM_BACKEND` của backend phải là `scripted` (gate3 không gọi LLM thật) + `FAKE_SCENARIO`
 không đặt. Biến môi trường chỉ được dò CÓ/KHÔNG trong container (`TÊN=0|1`) — script không in giá trị nào.
 
-**Cảnh báo** (in đầu lần chạy, không dừng): thiếu `SVC_EXECUTOR_TOKEN` (B17 dùng RefusingExecutor → tc02/tc06 ra E7), thiếu
-`FAKE_APPROVER_ID`, KB đang chạy không phải KB fixture.
+**Cảnh báo** (in đầu lần chạy, không dừng): thiếu `SVC_EXECUTOR_TOKEN` (B17 dùng RefusingExecutor → tc02/tc06 ra E7), KB
+đang chạy không phải KB fixture. Từ Phase 4 4b B15 là node thật: người duyệt theo `config/approvers.yaml` (`l1_01`, dự phòng
+`l1_02`) — `FAKE_APPROVER_ID` không cần cho gate3 (giữ trong `.env` cho gate2). Có phiếu thì gate3 kiểm người duyệt/dự phòng/xung
+đột của phiếu và cột `approver_id` của dòng audit B15 `queued` (Q-4b-7).
 
 **Theo giờ lúc chạy** (Q-3h-4 — không có biến ép đồng hồ): dòng đầu in `Khung giờ lúc chạy: TRONG GIỜ | NGOÀI GIỜ` theo
 `business_hours` của `config/policy.json` (thứ Hai–Sáu 08:00–18:00, Asia/Ho_Chi_Minh). Kịch bản vắt qua mốc giờ → FAIL
@@ -99,8 +101,9 @@ không đặt. Biến môi trường chỉ được dò CÓ/KHÔNG trong contain
 FAIL thường gặp: tc04/tc05 E3 `invalid_citation` → chunk preset trích không nằm trong top-5 của reranker thật (sửa trích dẫn
 trong preset); tc05 E3 `no_grounding` ở B9 → điểm truy hồi thật dưới ngưỡng 0,6 (thẻ `[fake:…]` đã bị bỏ khỏi câu truy hồi
 — `core.fake_tag`); tc02/tc06/tc09 E3 `no_procedure` ở B11 → KB đang chạy không có/tắt tài liệu quy trình KB-VPN-004 (Phase 4
-S0-P10 — `make ingest` in cảnh báo `procedure_doc`); tc02/tc06 E7 → thiếu `SVC_EXECUTOR_TOKEN`; tc09 E9 ở B15 → thiếu
-`FAKE_APPROVER_ID` (B15 còn giả tới Phase 4b).
+S0-P10 — `make ingest` in cảnh báo `procedure_doc`); tc02/tc06 E7 → thiếu `SVC_EXECUTOR_TOKEN`; tc02/tc06 ngoài giờ/tc09 E2
+`approver_sync_unavailable` ở B15 → tiến trình backend/worker thiếu `JWT_SIGNING_KEY`; E5 `no_valid_approver` → người trong
+`config/approvers.yaml` không hợp lệ trong mock AD (sai nhóm, disabled).
 
 ## Demo VPN thứ Sáu
 

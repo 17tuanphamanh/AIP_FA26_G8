@@ -152,7 +152,7 @@ class AuthService:
         self._username_key = signer.username_key()  # P2: một lần lúc dựng service; không log, không vào Settings
         self._sync = AdUserSync(
             store=store, sink=sink, username_key=self._username_key,
-            lock=LockPolicy(config.failure_window, config.max_failures, config.lockout),
+            lock=lock_policy(config),
             on_sessions_revoked=self._evict_user,
         )  # fmt: skip
 
@@ -438,6 +438,11 @@ class AuthService:
     def _evict_user(self, user_id: str) -> None:
         for sid in [sid for sid, e in self._cache.items() if e.user.user_id == user_id]:
             del self._cache[sid]
+
+
+def lock_policy(config: AuthConfig) -> LockPolicy:
+    """Tham số khoá do dò mật khẩu cho `AdUserSync` — một chỗ chép từ `AuthConfig` (đăng nhập + B15 `ensure`, Phase 4 4b)."""
+    return LockPolicy(config.failure_window, config.max_failures, config.lockout)
 
 
 def auth_config(settings: Settings, policy_constants: PolicyConstants) -> AuthConfig:
