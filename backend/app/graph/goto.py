@@ -7,6 +7,9 @@
    → `IllegalTransition(F4)`. Ở domain chỉ kiểm được step/event không rỗng.
 4. Key trả về phải thuộc `TicketState` (`UnknownStateKey`) — kiểm TRƯỚC khi ghi audit. LangGraph bỏ im
    lặng key lạ; ví dụ mã giả B10/B17 đặt `resolution_path` (không có trong state) sẽ mất dữ liệu.
+5. `lineage=` (3g, Q-3g-3): các trường prompt/model/`kb_version` của bước (B10; B12 ở 3h) — goto thêm `ticket_id`,
+   `turn_id`, `step`, `created_at` rồi audit ghi dòng `lineage` TRONG CÙNG transaction với dòng audit (idempotent theo
+   ticket, lượt, bước, prompt). Không đi vào state.
 
 Lỗi ở đây (IllegalTransition) là bug → lọt tới boundary thành E9 (P1 mục 10).
 """
@@ -62,6 +65,7 @@ async def goto(
     step: str,
     event: str,
     audit_detail: Mapping[str, Any] | None = None,
+    lineage: Mapping[str, Any] | None = None,
     **fields: Any,
 ) -> dict[str, Any]:
     run = current_run()
@@ -87,7 +91,12 @@ async def goto(
         "detail": detail,
         **audit_columns(fields),
     }
-    present = await run.audit.record(row)
+    if lineage is None:
+        present = await run.audit.record(row)
+    else:
+        present = await run.audit.record(row, lineage={
+            **lineage, "ticket_id": state["ticket_id"], "turn_id": run.turn_id, "step": step, "created_at": row["created_at"],
+        })  # fmt: skip
     if to_status == S_RESOLVED and not present:
         raise IllegalTransition(frm, to_status, "F4_resolved_without_log")
     return {"status": to_status, "next": next_node, **fields}

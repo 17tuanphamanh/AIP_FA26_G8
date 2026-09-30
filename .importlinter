@@ -34,7 +34,8 @@ forbidden_modules =
 #    app.tools không nằm trong nguồn: registry khai báo tool ghi (P5).
 #    import-linter không nhận wildcard một phần tên (`*_write`) → liệt kê tường minh theo
 #    4 hệ thống ngoài của P5. Thêm adapter ghi mới thì thêm dòng ở đây — test
-#    backend/tests/unit/test_write_adapters_listed.py đỏ nếu quên.
+#    backend/tests/unit/test_write_adapters_listed.py đỏ nếu quên. 3h (P7): thêm `app.worker`, `app.heartbeat` — worker
+#    không bao giờ có đường (kể cả gián tiếp) tới adapter ghi; chỉ `app.main` (API) import `app.executor.wiring`.
 [importlinter:contract:write-adapters-only-executor]
 name = chi executor import tools.adapters.*_write
 type = forbidden
@@ -55,6 +56,8 @@ source_modules =
     app.notify
     app.rag
     app.risk
+    app.worker
+    app.heartbeat
 forbidden_modules =
     app.tools.adapters.ad_write
     app.tools.adapters.vpn_write

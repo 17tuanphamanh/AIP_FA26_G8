@@ -514,9 +514,18 @@ def finish(state, d):
 | Kết quả thực nghiệm không tái lập | `lineage` (policy, prompt, model, calibrator, commit), `LLM_CACHE_MODE` | Chạy không cache; policy version khác; calibrator fit lại |
 | Prompt B14 lọt câu người dùng | Test canary chụp prompt | `build_ctx` hoặc biến prompt thêm `redacted_request` → phải bị whitelist chặn |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 11.2, 11.3, 11.10; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Luật R16–R20 đầy đủ điều kiện (R20 đòi `device_registered` ∧ `device_owner_is_requester` ∧ ¬`ctx.target_is_other`); `business_hours` (Asia/Ho_Chi_Minh, `tzdata`); `DisabledEstimator` → E5 `llm_layer_disabled`.
+- DSL: `action` là chuỗi hoặc danh sách; nguồn `ctx.*`; danh sách trắng tên fact; kiểu chặt; thiếu fact → sai; `deny > approval_required > allow`; `check_policy_config` lúc khởi động.
+- `ctx.target_is_other` = cờ B6 OR (`requested_for ≠ requester` OR owner không phải True); `build_ctx` chỉ đọc `intended_action`, `requester_context`, `ctx_flags` + `now`.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 25/09/2026 | 1.0 | Tạo file; sửa công thức `t_low*` |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
+| 30/09/2026 | 1.2 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 11.2, 11.3, 11.10) |

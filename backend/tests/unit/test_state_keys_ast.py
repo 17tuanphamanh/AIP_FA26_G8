@@ -1,7 +1,7 @@
 """c33 (3c, Q-3c-14) — hai kiểm AST tĩnh, không chạy graph thật:
 
-1. Mọi tham số từ khoá của lời gọi `goto(...)` trong `graph/nodes/**` (trừ 4 tham số riêng của chữ ký
-   `goto` — `next_node`, `step`, `event`, `audit_detail` — vốn KHÔNG vào `**fields`/state) phải thuộc
+1. Mọi tham số từ khoá của lời gọi `goto(...)` trong `graph/nodes/**` (trừ 5 tham số riêng của chữ ký
+   `goto` — `next_node`, `step`, `event`, `audit_detail`, `lineage` (3g) — vốn KHÔNG vào `**fields`/state) phải thuộc
    `TicketState.STATE_KEYS`. `goto()` tự kiểm điều này lúc chạy (`check_state_keys`); bài test này bắt
    sớm lúc review/CI, không cần dựng RunContext.
 2. Mọi chuỗi gán cho tham số `escalation_reason_detail` trong toàn bộ `graph/**` (kể cả qua hằng số
@@ -17,7 +17,7 @@ from app.domain.exit_codes import REASON_DETAILS
 from app.domain.ticket_state import STATE_KEYS
 
 # Tham số riêng của chữ ký `goto()` — không đi vào `**fields` nên không phải state key.
-GOTO_OWN_PARAMS = frozenset({"next_node", "step", "event", "audit_detail"})
+GOTO_OWN_PARAMS = frozenset({"next_node", "step", "event", "audit_detail", "lineage"})
 
 
 def _module_str_constants(tree: ast.Module) -> dict[str, str]:

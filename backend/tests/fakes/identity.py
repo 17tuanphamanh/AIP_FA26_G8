@@ -73,9 +73,10 @@ class FakeAd:
         return user
 
 
-def fake_directory(ad: FakeAd, clock: Clock) -> ToolRegistry:
+def fake_directory(ad: FakeAd, clock: Clock, extra: Mapping[str, Any] | None = None) -> ToolRegistry:
+    """Registry THẬT trên AD giả; `extra` = handler tool khác (vd. VPN giả `tests/fakes/vpn.SeedVpn` cho B6, 3f)."""
     breakers = BreakerBoard(clock, failure_threshold=5, window_seconds=60, open_seconds=30)
-    return ToolRegistry({"ad_get_user": ad.ad_get_user}, breakers=breakers, clock=clock)
+    return ToolRegistry({"ad_get_user": ad.ad_get_user, **(extra or {})}, breakers=breakers, clock=clock)
 
 
 @dataclass

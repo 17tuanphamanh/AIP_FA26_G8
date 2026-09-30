@@ -407,6 +407,14 @@ def block(state, **info):
 | E2 ở B2 | Span `ml:classify` + `llm:b02_injection_judge` | Cả ml-service lẫn LLM đều không truy cập được |
 | Người dùng than bị chặn không rõ lý do | Chủ ý: thông báo trung tính | L1/Trưởng BP xem `security_events` để giải thích riêng |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 8, 8.9; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Bỏ Presidio; không lưu ánh xạ PII; privacy guard L0/L1 theo `config/privacy_patterns.json`; injection L2 regex + L4 judge; `screen_reply` (L0 + L2) cho tin trả lời.
+- Luật chung (8.9): mọi chữ được lưu phải qua guard / là enum / là định danh regex chặt.
+- Mọi nơi TẠO sự kiện có chữ người dùng (`/messages`, note `/confirm`, note route duyệt) phải che L1 trước khi vào runner; test AST N1 (10.7 #13, 11.10 #4).
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -414,3 +422,4 @@ def block(state, **info):
 | 25/09/2026 | 1.0 | Tạo file; B2 5 lớp (D-06), privacy guard trước khi lưu (D-07) |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | L3 dùng `injection-clf` do nhóm huấn luyện (mDeBERTa-v3-base, D-33, P11); Prompt Guard 2 chỉ làm baseline RQ4 |
+| 30/09/2026 | 1.3 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 8, 8.9) |

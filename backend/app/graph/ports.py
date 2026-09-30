@@ -25,11 +25,13 @@ __all__ = [
 
 
 class AuditSink(Protocol):
-    async def record(self, row: Mapping[str, Any]) -> bool:
+    async def record(self, row: Mapping[str, Any], *, lineage: Mapping[str, Any] | None = None) -> bool:
         """INSERT `audit_logs`; `idempotency_key` trùng → bỏ qua (ON CONFLICT DO NOTHING).
 
         Trả True nếu SAU lệnh ghi có dòng mang khoá đó (vừa ghi hoặc đã có) — kiểm trong CÙNG
-        transaction với INSERT (cấm 4, P1 mục 5.1.1). Dòng không khoá: luôn ghi, trả True."""
+        transaction với INSERT (cấm 4, P1 mục 5.1.1). Dòng không khoá: luôn ghi, trả True.
+        `lineage` (3g, Q-3g-3): dòng `lineage` của bước, ghi trong CÙNG transaction, idempotent theo
+        (ticket_id, turn_id, step, prompt_id)."""
         ...
 
 

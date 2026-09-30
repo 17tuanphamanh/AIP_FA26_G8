@@ -30,14 +30,13 @@ from app.core.clock import FakeClock
 from app.db.tickets import NewTicket, SqlTicketStore
 from app.domain.ticket_state import ChunkRef
 from app.graph.checkpoint import make_serde
-from app.graph.fakes import FakeScenario
 from app.graph.tracing import trace_parent
 from app.graph.worker_jobs import WorkerJobs
 from app.guard.privacy import NOTICE_SECRET, RedactionResult
 from app.llm.providers.scripted import Reply
 from app.llm.store import SqlLlmStore
 from app.main import create_app
-from app.rag.models import RetrievalResult
+from app.rag.models import EvidenceBlock, RetrievalResult
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -47,6 +46,7 @@ from tests.fakes.desk import ad_directory
 from tests.fakes.graph import Crash
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fixtures.llm.vpn import vpn_scripts
 from tests.integration.graph_pg import (
     REQUESTER,
     SESSION,
@@ -226,19 +226,22 @@ async def test_e9_canary_nowhere_after_full_ticket_pg(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     clock = FakeClock(EPOCH)
-    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)]}, clock=clock, store=SqlLlmStore(rw),  # type: ignore[arg-type]
-                      trace=trace_parent)  # fmt: skip
-    scenario = FakeScenario().plan_all(b11_slots=["missing", "complete"])
-    async with desk(db, clock=clock, scenario=scenario, nodes="real", llm=gw.client, rag=_good_rag()) as d:
-        l1, an = await d.token("ha.lt"), await d.token("an.nv")
-        r = await d.client.post("/api/tickets", json={"text": E9_TEXT}, headers=an)
+    vpn = vpn_scripts()
+    # 3g: B10/B11/clarify_wait thật — người gửi binh.tt (nv002, 2 máy) để B11 THẬT phải hỏi máy (trước: an.nv + B11 giả
+    # "missing"); câu trả lời nêu máy của chính binh (LAP-0417). Assert không đổi, thêm phần quét 3 prompt mới.
+    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], **{k: vpn[k] for k in (
+        "b03_classify", "b10_need_type", "b11_clarify_question", "b11_extract_slots")}},
+                      clock=clock, store=SqlLlmStore(rw), trace=trace_parent)  # type: ignore[arg-type]  # fmt: skip
+    async with desk(db, clock=clock, nodes="real", llm=gw.client, rag=_good_rag()) as d:
+        l1, binh = await d.token("ha.lt"), await d.token("binh.tt")
+        r = await d.client.post("/api/tickets", json={"text": E9_TEXT}, headers=binh)
         assert r.status_code == 202 and r.json()["notices"] == [NOTICE_SECRET]
         ticket = r.json()["ticket_id"]
         await d.app.state.background.drain()
         steps: list[tuple[str, dict[str, Any], dict[str, str]]] = [
-            (f"/api/tickets/{ticket}/messages", {"text": f"máy LAP-0342, pass: {CANARY}"}, an),
+            (f"/api/tickets/{ticket}/messages", {"text": f"máy LAP-0417, pass: {CANARY}"}, binh),
             ("decision", {"decision": "approved", "note": f"ok, mk: {CANARY}"}, l1),
-            (f"/api/tickets/{ticket}/confirm", {"confirmed": True, "note": f"xong, mật khẩu mới là {CANARY}"}, an),
+            (f"/api/tickets/{ticket}/confirm", {"confirmed": True, "note": f"xong, mật khẩu mới là {CANARY}"}, binh),
         ]
         for path, body, headers in steps:
             if path == "decision":
@@ -266,8 +269,57 @@ async def test_e9_canary_nowhere_after_full_ticket_pg(
     assert "[BÍ_MẬT_ĐÃ_ẨN]" in rendered[0]
     assert await _scalar(rw, "SELECT count(*) FROM llm_calls WHERE prompt_id = 'b02_injection_judge'") >= 1
     assert await _scalar(rw, "SELECT count(*) FROM spans WHERE name = 'llm:b02_injection_judge'") >= 1
+    # 3f: B3 thật cũng nhận câu (đã che) — quét cả prompt b03_classify (không mù: phải có lời gọi, có bản đã che)
+    b03 = [repr(c.rendered_messages) for c in gw.llm.calls if c.prompt_id == "b03_classify"]
+    assert b03 and all(CANARY not in m for m in b03) and "[BÍ_MẬT_ĐÃ_ẨN]" in b03[0]
+    assert await _scalar(rw, "SELECT count(*) FROM llm_calls WHERE prompt_id = 'b03_classify'") >= 1
+    assert await _scalar(rw, "SELECT count(*) FROM spans WHERE name = 'llm:b03_classify'") >= 1
     assert await _scalar(rw, "SELECT count(*) FROM security_events WHERE ticket_id = :t "
                              "AND event_type = 'privacy_secret_redacted'", t=ticket) == 4  # fmt: skip
+    # 3g: 3 prompt mới của luồng hỏi lại (b10_need_type, b11_clarify_question, b11_extract_slots) — có lời gọi, không canary;
+    # câu trả lời (đã che) có mặt trong prompt trích slot (quét không mù)
+    for prompt_id in ("b10_need_type", "b11_clarify_question", "b11_extract_slots"):
+        msgs = [repr(c.rendered_messages) for c in gw.llm.calls if c.prompt_id == prompt_id]
+        assert msgs and all(CANARY not in m for m in msgs), prompt_id
+        assert await _scalar(rw, "SELECT count(*) FROM llm_calls WHERE prompt_id = :p", p=prompt_id) >= 1
+    assert "[BÍ_MẬT_ĐÃ_ẨN]" in repr(gw.llm.calls_for("b11_extract_slots")[0].rendered_messages)
+
+
+async def test_e9b_canary_nowhere_after_answer_ticket_pg(
+    db: PgUrls, rw: AsyncEngine, caplog: pytest.LogCaptureFixture
+) -> None:
+    """3g (PLAN-3g e9b): luồng HỎI THÔNG TIN — câu hỏi có canary → B10 `b10_answer` (prompt nhận câu đã che) → trả lời có
+    trích dẫn → xác nhận (note có canary) → S_RESOLVED. Canary không ở bảng nào, checkpoint, log, `rendered_messages`."""
+    caplog.set_level(logging.DEBUG)
+    clock = FakeClock(EPOCH)
+    vpn = vpn_scripts(need="info")
+    gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)], **{k: vpn[k] for k in (
+        "b03_classify", "b10_need_type", "b10_answer")}},
+                      clock=clock, store=SqlLlmStore(rw), trace=trace_parent)  # type: ignore[arg-type]  # fmt: skip
+    rag = _good_rag()
+    [top] = rag.result.chunks  # type: ignore[union-attr]
+    rag.evidence = [EvidenceBlock(anchor_chunk_id=top.chunk_id, doc_id=top.doc_id, title=top.title,
+                                  heading_path=top.heading_path, score=top.score, text="Máy chủ dùng cổng 443.",
+                                  tokens=10)]  # fmt: skip
+    async with desk(db, clock=clock, nodes="real", llm=gw.client, rag=rag) as d:
+        an = await d.token("an.nv")
+        r = await d.client.post("/api/tickets", json={"text": f"VPN dùng cổng nào? mật khẩu của tôi là {CANARY}"},
+                                headers=an)  # fmt: skip
+        assert r.status_code == 202 and r.json()["notices"] == [NOTICE_SECRET]
+        ticket = r.json()["ticket_id"]
+        await d.app.state.background.drain()
+        r = await d.client.post(f"/api/tickets/{ticket}/confirm",
+                                json={"confirmed": True, "note": f"ổn rồi, mk: {CANARY}"}, headers=an)  # fmt: skip
+        assert r.status_code == 202 and r.json()["notices"] == [NOTICE_SECRET]
+        await d.app.state.background.drain()
+    assert await _scalar(rw, "SELECT final_state FROM tickets WHERE ticket_id = :t", t=ticket) == "S_RESOLVED"
+    assert await tables_containing(rw, CANARY) == []
+    assert CANARY not in await _decoded_checkpoints(rw, ticket)
+    assert CANARY not in caplog.text
+    answer = [repr(c.rendered_messages) for c in gw.llm.calls if c.prompt_id == "b10_answer"]
+    assert answer and all(CANARY not in m for m in answer) and "[BÍ_MẬT_ĐÃ_ẨN]" in answer[0]
+    assert await _scalar(rw, "SELECT count(*) FROM lineage WHERE ticket_id = :t AND prompt_id = 'b10_answer'",
+                         t=ticket) == 1  # fmt: skip
 
 
 async def _scalar(rw: AsyncEngine, sql: str, **params: Any) -> Any:

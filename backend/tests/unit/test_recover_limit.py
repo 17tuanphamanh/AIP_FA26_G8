@@ -3,7 +3,8 @@
 Worker tăng `recover_attempts` TRƯỚC khi chạy lại. Tối đa `max_recover_attempts` = 3 lần worker chạy
 lại (cộng lượt gốc = 4 lần chạy node); lần quét kế tiếp ngừng thử:
 - kẹt ở B20 → audit `finalize_failed_permanent` (1 dòng) + đóng lượt;
-- kẹt ở node khác → E9 `recover_exhausted` qua B20.
+- kẹt ở node khác → E9 `recover_exhausted` qua B20 — TRỪ KHI ticket đã có `transaction_log` `begun` (theo ticket, mọi lượt — chốt
+  FAIL mục 7 d, soát DỪNG 3b 3h): E7 `execution_interrupted` + câu "có thể đã gửi lệnh ghi…", không mẫu E9 "xử lý thủ công".
 Không dựa vào span lỗi: process bị giết (OOM/SIGKILL) không kịp ghi span.
 """
 
@@ -13,7 +14,11 @@ import pytest
 from app.domain.states import S_ESCALATED
 from app.graph.runner import FINALIZE_FAILED, RECOVER_EXHAUSTED
 from app.graph.worker_jobs import WorkerJobs
+from app.settings import get_escalation_templates
 from tests.fakes.graph import Crash, GraphHarness
+
+# Chép chữ (không import hằng của code): hằng đổi thì test phải đỏ
+MAY_HAVE_WRITTEN = "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay"
 
 
 def jobs(h: GraphHarness) -> WorkerJobs:
@@ -111,3 +116,43 @@ async def test_stuck_at_other_node_goes_e9_via_b20() -> None:
     assert h.approvals.count("t1") == 1  # effects.once: 4 lần chạy B15 vẫn 1 phiếu
     assert _turn(h, "t1")["ended_at"] is not None
     assert h.tickets.final("t1") is not None
+
+
+async def _exhaust_at_b15(h: GraphHarness) -> None:
+    def die(_: object) -> None:
+        raise Crash("OOM ở B15")
+
+    h.scenario.on("t1", "after_approval_create", die)
+    with pytest.raises(Crash):
+        await h.submit("t1")
+    for _ in range(3):
+        with pytest.raises(Crash):
+            await _scan(h)
+    assert await _scan(h) == 1
+
+
+@pytest.mark.asyncio
+async def test_fail7_recover_exhausted_with_begun_of_earlier_turn_is_e7_warning() -> None:
+    """(d)+(e): `begun` nằm ở LƯỢT TRƯỚC (T0), lượt đang kẹt là lượt sau → xét theo ticket → E7 + câu cảnh báo; handoff không có
+    mẫu E9 "xử lý thủ công"."""
+    h = GraphHarness()
+    await h.txlog.begin("t1", "T0", "renew_vpn_cert")
+    await _exhaust_at_b15(h)
+    snap = await h.runner.snapshot("t1")
+    assert (snap.values["exit_code"], snap.values["escalation_reason_detail"]) == ("E7", "execution_interrupted")
+    assert MAY_HAVE_WRITTEN in snap.values["escalation_note"]
+    [esc] = h.escalations.of("t1")
+    assert (esc["exit_code"], esc["reason_detail"]) == ("E7", "execution_interrupted")
+    assert MAY_HAVE_WRITTEN in esc["handoff_note"]["why_escalated"]
+    assert get_escalation_templates().of("E9").next_for_l2 not in str(esc["handoff_note"])
+    [row] = h.audit.of("t1", RECOVER_EXHAUSTED)
+    assert row["detail"]["begun"] is True and row["detail"]["node"] == "b15_prepare_approval"
+
+
+@pytest.mark.asyncio
+async def test_fail7_recover_exhausted_begun_of_other_ticket_stays_e9() -> None:
+    h = GraphHarness()
+    await h.txlog.begin("t0", "T0", "renew_vpn_cert")  # ticket KHÁC
+    await _exhaust_at_b15(h)
+    [esc] = h.escalations.of("t1")
+    assert (esc["exit_code"], esc["reason_detail"]) == ("E9", RECOVER_EXHAUSTED)

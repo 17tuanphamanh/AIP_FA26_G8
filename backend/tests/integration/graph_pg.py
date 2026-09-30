@@ -20,6 +20,7 @@ from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines, create_engines
 from app.db.tickets import SqlTicketStore
+from app.executor.txlog import SqlTxLog
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import FakeScenario, NodeDeps
@@ -36,6 +37,7 @@ from tests.fakes.graph import LOCKOUT, CountingExecutor, Crash, RecordingNotifie
 from tests.fakes.identity import FakeAd, ad_user, fake_directory
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fakes.vpn import SeedVpn
 
 REQUESTER = "nv-graph"
 APPROVER = "l1-fake"  # NodeDeps.approver_id mặc định
@@ -103,9 +105,10 @@ async def open_pg_runtime(
     ad = ad or FakeAd(ad_user(REQUESTER))
     ticket_store = tickets or SqlTicketStore(engines.main)
     deps = NodeDeps(
-        notifier=notifier, approvals=approvals, executor=executor, deadlines=deadlines,
+        notifier=notifier, approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock), deadlines=deadlines,
         constants=get_policy().constants, identity=SqlIdentityReads(engines.main),
-        directory=fake_directory(ad, clock), alerts=AlertWriter(engines.main, clock),
+        # 3f: B6 thật — VPN giả đọc mock_services/seed.json (tests/fakes/vpn.py)
+        directory=fake_directory(ad, clock, SeedVpn(clock).handlers()), alerts=AlertWriter(engines.main, clock),
         lockout=LOCKOUT, tickets=ticket_store,
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
         ml=FakeMlService().client(clock), rag=rag or FakeRag(), llm=llm or make_gateway(clock=clock).client,
@@ -120,7 +123,7 @@ async def open_pg_runtime(
                 turns=turns, audit=audit or AuditWriter(engines.main), effects=SqlEffectStore(engines.main),
                 spans=SqlSpanSink(engines.main), clock=clock, can_execute=can_execute,
                 turn_budget_s=settings.turn_budget_s, safety_margin_s=settings.safety_margin_s,
-                tickets=ticket_store,
+                tickets=ticket_store, txlog=deps.txlog,
             )  # fmt: skip
             yield PgRuntime(runner, engines, deadlines, turns, approvals, notifier, executor,
                             scenario, clock, ad, ticket_store)  # fmt: skip

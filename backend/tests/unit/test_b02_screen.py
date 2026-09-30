@@ -20,6 +20,7 @@ from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import SESSION
 from tests.fakes.llm import Gateway, make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fixtures.llm.vpn import vpn_scripts
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,7 +41,11 @@ def _rag() -> FakeRag:
 
 def _env(scripts: dict[str, Script] | None = None, ml: FakeMlService | None = None) -> tuple[GraphHarness, Gateway]:
     clock = FakeClock()
-    gw = make_gateway(scripts or {}, clock=clock)
+    # 3f: B3 thật đứng sau B2 — kịch bản b03_classify VPN chuẩn; 3g: B10 thật — b10_need_type (action → B11 giả) — không
+    # đổi assert nào của B2
+    vpn = vpn_scripts()
+    gw = make_gateway({"b03_classify": vpn["b03_classify"], "b10_need_type": vpn["b10_need_type"], **(scripts or {})},
+                      clock=clock)  # fmt: skip
     h = GraphHarness(clock=clock, nodes="real", llm=gw.client, ml=ml or FakeMlService(), rag=_rag())
     return h, gw
 
@@ -115,7 +120,8 @@ async def test_e12_judge_bypasses_cache() -> None:
     h, gw = _env({JUDGE: [Reply(NOT_ATTACK), Reply(NOT_ATTACK)]})
     await h.submit_as("t1", SESSION, text=NORMAL)
     await h.submit_as("t2", SESSION, text=NORMAL)
-    assert _judge_calls(gw) == 2 and gw.store.cache == {}
+    # 3f: B3 thật (prompt b03_classify, cache mặc định) nay có dòng cache riêng — judge vẫn KHÔNG có dòng nào
+    assert _judge_calls(gw) == 2 and [r for r in gw.store.cache.values() if r.prompt_id == JUDGE] == []
 
 
 # ---- e13: ml lỗi + LLM lỗi → E2 + security_flag, KHÔNG cho qua --------------------------------------------

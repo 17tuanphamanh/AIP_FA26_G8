@@ -34,6 +34,7 @@ from app.rag.models import RetrievalQuery, RetrievalSystemError
 from app.tools.breaker import BreakerBoard, CircuitBreaker
 from app.tools.models import UserDeviceRequiredIn, UserIn
 from app.tools.registry import ToolRegistry
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.identity import SESSION, ad_user
@@ -154,11 +155,12 @@ async def test_registry_write_needs_full_timeout() -> None:
     cert = {"serial": "S1", "device_id": "LAP-0342", "issued_at": "2026-01-01T00:00:00Z",
             "expires_at": "2027-01-01T00:00:00Z", "status": "valid", "days_to_expiry": 365}  # fmt: skip
     handler = SlowHandler(clock, result=cert)
-    reg, _ = _registry(clock, {"renew_vpn_cert": handler})
+    reg, board = _registry(clock, {"renew_vpn_cert": handler}, threshold=1)
     args = UserDeviceRequiredIn(user_id="nv001", device_id="LAP-0342")
     with turn(clock, 4.0), pytest.raises(TurnBudgetExceeded):
         await reg.call("renew_vpn_cert", args, caller_step="B17")
     assert handler.seen == []  # không gửi với timeout rút ngắn
+    assert board["vpn"].state == "closed"  # không gửi vì hết hạn ≠ lỗi hệ thống ngoài
     with turn(clock, 8.0):
         r = await reg.call("renew_vpn_cert", args, caller_step="B17")
     assert r.error is None and [t for t, _ in handler.seen] == [5.0]
@@ -308,7 +310,7 @@ async def test_b8_turn_budget_exceeded_goes_e2_via_boundary() -> None:
              "intent": "vpn", "slots": {}, "requester_context": _ctx(), "reasoning_loops": 2}  # fmt: skip
     audit = MemoryAudit()
     run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-                     clock=clock)  # fmt: skip
+                     clock=clock, txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run), turn(clock, 0.0):
         out = await node(state)
     assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (

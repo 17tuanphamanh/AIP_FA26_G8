@@ -1,0 +1,15 @@
+# Preset `tc04` của ScriptedLLM trên stack dev — `make gate3` (phase3 11.6, PLAN-3h S15), thẻ [fake:tc04] cuối câu,
+# KHÔNG đặt FAKE_SCENARIO. nv001 "VPN công ty dùng cổng nào?": hỏi thông tin → B10 trả lời trích KB-VPN-001#v1#1
+# ("Địa chỉ máy chủ và cổng kết nối" — chunk_id tất định của KB fixture, phải thuộc top-5 của truy hồi thật).
+# Phản hồi TĨNH, kiểm schema lúc khởi động. KHÔNG dùng trong test (e2e cổng 3 dùng tests/fixtures/llm/vpn.py).
+b02_injection_judge: {is_attack: false, category: none, reason: "preset tc04"}
+b03_classify:
+  intents: [{type: vpn, confidence: 0.92, span: "", action_hint: null, slots: {}}]
+  is_multi: false
+b10_need_type: {type: info, confidence: 0.9}
+b10_answer:
+  answer_markdown: "VPN công ty dùng IKEv2 (cổng UDP 500 và 4500); mạng chặn UDP thì dùng SSTP (cổng TCP 443)."
+  citations: ["KB-VPN-001#v1#1"]
+  cannot_answer: false
+b11_clarify_question: {text: "Bạn cho mình xin mã thiết bị (ví dụ LAP-0342) để kiểm tra chứng chỉ VPN nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}

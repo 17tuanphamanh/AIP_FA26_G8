@@ -1,6 +1,9 @@
 """Dựng runtime graph trên Postgres: store SQL + checkpoint + khoá + runner (composition root).
 
-Worker dùng `can_execute=False` (không có SVC_EXECUTOR_TOKEN — D-03, quyết định 26/09/2026). Node
+Worker dùng `can_execute=False` (không có SVC_EXECUTOR_TOKEN — D-03, quyết định 26/09/2026). Executor (3h, P7): chỉ `main.py`
+(API) dựng `VpnExecutor` rồi truyền `executor=` vào; không truyền (worker, API thiếu token) → `RefusingExecutor` đọc
+`transaction_log` (soát S12 NGHI-3: `begun` có sẵn → E7 `exec_interrupted`). Module này KHÔNG import
+`executor.wiring`/adapter ghi (hợp đồng import-linter 3). Node
 chưa có logic thật dùng port không làm gì (`fakes.LoggingNotifier`…); phase sau thay bằng dịch vụ thật.
 Phiếu duyệt ghi bảng `approvals` thật (`approval/store.SqlApprovals`, 2b-Q3) ở CẢ backend lẫn worker —
 worker bắn timeout thì B16 giả ghi `timeout` lên phiếu. Người duyệt của B15 giả = `FAKE_APPROVER_ID`,
@@ -12,7 +15,8 @@ ml-service (3a): `MlClient` thật (`ML_SERVICE_URL`, `ML_SERVICE_TOKEN`) — th
 TRƯỚC khi đụng DB (3-Q21), ở cả backend lẫn worker.
 Guard (3e): `check_guard` — file mẫu `config/privacy_patterns.json` (và mẫu injection) hỏng → không khởi động, trước DB.
 Intent (3f): `check_intent_config` — `ENABLED_INTENTS` ⊆ `slots.yaml` `intents`, mọi `action_type` có dòng trong
-`config/action_metadata.yaml`; sai → không khởi động, trước DB. Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
+`config/action_metadata.yaml`; sai → không khởi động, trước DB. Luật M5 (3h, Q-3h-1): `check_policy_config` cùng chỗ.
+Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 """
@@ -36,9 +40,12 @@ from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines
 from app.db.tickets import SqlTicketStore
+from app.executor.plans import check_plans
+from app.executor.txlog import SqlTxLog
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import open_postgres_saver
 from app.graph.fakes import (
+    Executor,
     FakeScenario,
     LoggingNotifier,
     NodeDeps,
@@ -56,7 +63,9 @@ from app.graph.ports import (
 )
 from app.graph.runner import Runner
 from app.graph.tracing import NodeFn, trace_parent
+from app.guard.output import OutputGuard
 from app.guard.patterns import check_guard
+from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
@@ -68,6 +77,7 @@ from app.rag.vector_store import QdrantIndex
 from app.settings import (
     Settings,
     check_intent_config,
+    check_policy_config,
     get_action_metadata,
     get_escalation_templates,
     get_policy,
@@ -117,6 +127,7 @@ async def open_runtime(
     *,
     can_execute: bool,
     directory: ToolCaller | None = None,
+    executor: Executor | None = None,
 ) -> AsyncIterator[Runtime]:
     approver_id = fake_approver(settings)  # trước mọi kết nối: sai môi trường → không khởi động
     scenario = fake_scenario(settings)  # như trên (2b-4)
@@ -125,6 +136,10 @@ async def open_runtime(
     check_guard(settings)  # như trên (3e): file mẫu guard hỏng → không khởi động
     # như trên (3f, phase3 9.2): intent bật phải có slot; mọi action_type phải có metadata
     check_intent_config(settings, get_slots(), get_action_metadata())
+    # như trên (3h, Q-3h-1): mỗi action_type thuộc đúng một intent; mọi action của luật ∈ action_types của intent luật đó
+    check_policy_config(get_policy(), get_slots(), get_action_metadata())
+    # như trên (3h, h23): mọi action_type của intent đang bật có PLAN hợp lệ (executor/plans.py) — cả worker lẫn backend
+    check_plans(get_action_metadata().root, settings.enabled_intents)
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
@@ -153,6 +168,7 @@ async def open_runtime(
         opened = _open(
             settings, engines, clock, can_execute=can_execute, directory=directory,
             approver_id=approver_id, scenario=scenario, ml=ml, rag=rag, llm=llm,
+            executor=executor if executor is not None else RefusingExecutor(SqlTxLog(engines.main, clock)),
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
 
@@ -166,20 +182,25 @@ def select_nodes(settings: Settings, deps: NodeDeps) -> dict[str, NodeFn]:
 @asynccontextmanager
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
-    approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort, llm: LlmPort,
+    approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort, llm: LlmPort, executor: Executor,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     turns = SqlTurnStore(engines.main)
     tickets = SqlTicketStore(engines.main)
     approvals = SqlApprovals(engines.main)
     deps = NodeDeps(
-        notifier=LoggingNotifier(), approvals=approvals, executor=RefusingExecutor(),
+        notifier=LoggingNotifier(), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
         templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
         scenario=scenario, security_events=SecurityEventWriter(engines.main, clock),
+        slots=get_slots(), action_metadata=get_action_metadata().root,
+        enabled_intents=frozenset(settings.enabled_intents),
+        enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
+        output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
+        privacy=guard_from_settings(settings),
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size
@@ -192,7 +213,7 @@ async def _open(
             concurrency=settings.graph_concurrency, can_execute=can_execute,
             rediagnose_on_new_slot=settings.rediagnose_on_new_slot,
             recursion_limit=settings.graph_recursion_limit,
-            max_recover_attempts=settings.max_recover_attempts, tickets=tickets,
+            max_recover_attempts=settings.max_recover_attempts, tickets=tickets, txlog=deps.txlog,
         )  # fmt: skip
         yield Runtime(runner=runner, deadlines=deadlines, turns=turns, tickets=tickets,
                       approvals=approvals)  # fmt: skip

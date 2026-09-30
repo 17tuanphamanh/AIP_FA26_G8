@@ -1,5 +1,6 @@
 """Bơm lỗi cho test E2/E7 và demo (P5 mục 7): `/_admin/faults` bật 500/429/timeout/latency theo
-tiền tố đường dẫn, có thể giới hạn số lần; `DELETE` tắt. `/_admin/reset` nạp lại seed.
+tiền tố đường dẫn, có thể giới hạn số lần; `DELETE` tắt. `/_admin/reset` nạp lại seed (và xoá bộ đếm
+`/_admin/calls` — `admin_calls.py`, 3h).
 
 `/_admin/*` không đòi token: mock chỉ nghe trong mạng Docker nội bộ (01 mục 2) — đây là cần gạt
 của người chạy test, không phải API của hệ thống ngoài.
@@ -125,9 +126,10 @@ async def remove_fault(fault_id: int, request: Request) -> dict[str, str]:
 
 @router.post("/reset")
 async def reset(request: Request) -> dict[str, Any]:
-    """Đặt lại dữ liệu từ seed.json và tắt mọi lỗi đang bơm (chế độ demo, [Chốt 16.5])."""
+    """Đặt lại dữ liệu từ seed.json, tắt mọi lỗi đang bơm (chế độ demo, [Chốt 16.5]) và xoá bộ đếm `/_admin/calls` (3h)."""
     reload: Callable[[], dict[str, int]] = request.app.state.reload
     counts = reload()
     table: FaultTable = request.app.state.faults
     table.clear()
+    request.app.state.calls.clear()
     return {"status": "reset", **counts}

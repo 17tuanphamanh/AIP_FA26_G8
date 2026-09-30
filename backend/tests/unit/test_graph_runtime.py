@@ -249,6 +249,19 @@ async def test_worker_recover_before_execute_goes_e7_without_executing() -> None
     assert r.waiting_at is None and _open_turns(h) == []
 
 
+MAY_HAVE_WRITTEN = "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay"
+
+
+def test_interrupted_notes_both_paths_say_write_may_have_happened() -> None:
+    """DỪNG 3 3h (h15/h15b): hai đường "gián đoạn" (worker bẻ trước B17 — `execution_interrupted`; B17 bước 0 thấy `begun`
+    — `exec_interrupted`) cùng bảo L2 là CÓ THỂ đã ghi: câu cũ của runner ("cần L2 kiểm tra trạng thái thật") không nói,
+    L2 có thể hiểu là chưa làm rồi làm tay lần hai. Enum giữ hai giá trị (Q-3h-3)."""
+    from app.graph.nodes import b17_execute
+
+    assert MAY_HAVE_WRITTEN in INTERRUPTED_NOTE
+    assert MAY_HAVE_WRITTEN in b17_execute.INTERRUPTED_NOTE
+
+
 @pytest.mark.asyncio
 async def test_backend_recover_may_rerun_execute() -> None:
     """Đối chứng: runner có credential (backend) thì recover chạy tiếp B17 như P1 mục 7."""

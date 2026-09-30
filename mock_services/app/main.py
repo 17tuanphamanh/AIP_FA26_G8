@@ -1,4 +1,6 @@
 """Mock hệ thống ngoài (P5 mục 7): AD, VPN, phần mềm, file server, `/_admin/faults`, seed.json.
+3h (phase3 3.7): `/_admin/calls` đếm lời gọi ở nơi nhận — middleware đếm đăng ký SAU middleware bơm lỗi nên nằm NGOÀI
+CÙNG (Starlette: middleware thêm sau bọc middleware thêm trước) → request bị bơm lỗi vẫn được đếm.
 
 Chạy: `uvicorn app.main:app --port 8100` (PYTHONPATH=mock_services). Token dịch vụ đọc từ env
 `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`, `SVC_WORKER_TOKEN`; thiếu thì endpoint cần token trả 503.
@@ -8,7 +10,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app import ad, admin_faults, fileserver, software, vpn
+from app import ad, admin_calls, admin_faults, fileserver, software, vpn
+from app.admin_calls import CallLog, count_middleware
 from app.admin_faults import FaultTable, fault_middleware
 from app.security import ServiceTokens
 from app.state import SEED_PATH, Now, build_state, load_seed, system_now
@@ -20,6 +23,7 @@ def create_app(
     app = FastAPI(title="servicedesk-mock")
     app.state.tokens = tokens if tokens is not None else ServiceTokens.from_env()
     app.state.faults = FaultTable()
+    app.state.calls = CallLog()
     app.state.dummy_hash = ad.dummy_hash()
 
     def reload() -> dict[str, int]:
@@ -31,12 +35,13 @@ def create_app(
     reload()  # seed sai schema → không khởi động
     app.state.reload = reload
     app.middleware("http")(fault_middleware)
+    app.middleware("http")(count_middleware)  # SAU fault_middleware = ngoài cùng (đếm cả request bị bơm lỗi)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    for module in (ad, vpn, software, fileserver, admin_faults):
+    for module in (ad, vpn, software, fileserver, admin_faults, admin_calls):
         app.include_router(module.router)
     return app
 

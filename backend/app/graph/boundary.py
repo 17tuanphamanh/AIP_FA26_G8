@@ -13,6 +13,11 @@
 - **Hết hạn cả lượt** (`core.turn_budget.TurnBudgetExceeded`, phase3 9.0, Q-3f-2): KHÔNG phải bug → E2
   `turn_budget_exceeded` (lưới chung cho node không tự bắt: B1, B8…; B2/B3/B6 bắt tường minh để giữ `security_flag`/điểm
   log). Không bao giờ cho qua, không E3, không E9.
+- **Ticket đã có `transaction_log` `begun`** (Việc treo 21, 3h DỪNG 3b): trạng thái chưa kết thúc/escalate → hỏi
+  `run.txlog.has_begun(ticket_id)` (theo TICKET, mọi lượt) TRƯỚC cả nhánh E2 lẫn E9. Có → E7 `execution_interrupted` +
+  `MAY_HAVE_WRITTEN` (audit như nhánh cũ + `"begun": True`): lệnh ghi có thể đã tới đích, mẫu E9 "xử lý thủ công" / E2 khiến L2
+  hiểu là "chưa làm". Vd `goto(S_CONFIRMING)` cuối B17 lỗi SAU khi ghi đã thành công, lỗi ở B19. `has_begun` ném lỗi → ném
+  tiếp (KHÔNG hạ xuống E9 — fail-closed): lượt không đóng, worker recover; cạn lượt thì runner `_give_up` xét `begun`.
 """
 
 import functools
@@ -25,6 +30,7 @@ from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import ExitCode
 from app.domain.states import S_ESCALATED, TERMINAL
 from app.domain.ticket_state import check_state_keys
+from app.executor.txlog import MAY_HAVE_WRITTEN
 from app.graph.context import current_run
 from app.graph.goto import audit_key, goto
 from app.graph.tracing import NodeFn, mark_error, short_traceback
@@ -44,19 +50,15 @@ def with_error_boundary(name: str, fn: NodeFn) -> NodeFn:
         except GraphBubbleUp:
             raise
         except Exception as exc:
-            if isinstance(exc, TurnBudgetExceeded) and state.get("status") not in TERMINAL | {S_ESCALATED}:
-                return await _turn_budget_exceeded(name, state, exc)
-            log.error(
-                "unhandled_exception tại %s (ticket %s): %s: %s",
-                name, state.get("ticket_id"), type(exc).__name__, exc,
-            )  # fmt: skip
-            mark_error(exc)
-            detail = {
-                "exception": f"{type(exc).__name__}: {exc}"[:500],
-                "traceback": short_traceback(exc),
-            }
             status = state.get("status")
-            if status in TERMINAL | {S_ESCALATED}:
+            open_ = status not in TERMINAL | {S_ESCALATED}
+            # Việc treo 21: TRƯỚC E2 lẫn E9. `has_begun` lỗi → nổi tiếp (fail-closed), không hạ xuống E9.
+            if open_ and await current_run().txlog.has_begun(state["ticket_id"]):
+                return await _after_begun(name, state, exc)
+            if open_ and isinstance(exc, TurnBudgetExceeded):
+                return await _turn_budget_exceeded(name, state, exc)
+            detail = _unhandled(name, state, exc)
+            if not open_:
                 run = current_run()
                 loop_seq = int(state.get("reasoning_loops", 0) or 0)
                 key = audit_key(state["ticket_id"], name, "unhandled_exception", run.turn_id, loop_seq)
@@ -77,10 +79,37 @@ def with_error_boundary(name: str, fn: NodeFn) -> NodeFn:
     return wrapped
 
 
-async def _turn_budget_exceeded(name: str, state: Any, exc: TurnBudgetExceeded) -> dict[str, Any]:
+def _unhandled(name: str, state: Any, exc: Exception) -> dict[str, Any]:
+    """Log + span `error` + audit detail của lỗi chưa lường trước (TC29)."""
+    log.error(
+        "unhandled_exception tại %s (ticket %s): %s: %s",
+        name, state.get("ticket_id"), type(exc).__name__, exc,
+    )  # fmt: skip
+    mark_error(exc)
+    return {"exception": f"{type(exc).__name__}: {exc}"[:500], "traceback": short_traceback(exc)}
+
+
+def _budget(name: str, state: Any, exc: TurnBudgetExceeded) -> dict[str, Any]:
     log.warning("turn_budget_exceeded tại %s (ticket %s): %s", name, state.get("ticket_id"), exc)
+    return {"node": name, "exception": f"{type(exc).__name__}: {exc}"[:500]}
+
+
+async def _turn_budget_exceeded(name: str, state: Any, exc: TurnBudgetExceeded) -> dict[str, Any]:
     return await goto(
         state, S_ESCALATED, next_node=AUDIT_NODE, step=name, event="turn_budget_exceeded",
-        audit_detail={"node": name, "exception": f"{type(exc).__name__}: {exc}"[:500]},
-        exit_code=ExitCode.E2.value, escalation_reason_detail="turn_budget_exceeded",
+        audit_detail=_budget(name, state, exc), exit_code=ExitCode.E2.value,
+        escalation_reason_detail="turn_budget_exceeded",
+    )  # fmt: skip
+
+
+async def _after_begun(name: str, state: Any, exc: Exception) -> dict[str, Any]:
+    """Ticket đã có `begun`: cùng event + audit detail như nhánh E2/E9 sẽ ghi, thêm `"begun": True`; ra E7."""
+    if isinstance(exc, TurnBudgetExceeded):
+        event, detail, what = "turn_budget_exceeded", _budget(name, state, exc), "Hết hạn lượt"
+    else:
+        event, detail, what = "unhandled_exception", _unhandled(name, state, exc), "Lỗi hệ thống không lường trước"
+    return await goto(
+        state, S_ESCALATED, next_node=AUDIT_NODE, step=name, event=event, audit_detail={**detail, "begun": True},
+        exit_code=ExitCode.E7.value, escalation_reason_detail="execution_interrupted",
+        escalation_note=f"{what} tại {name} sau khi transaction_log đã có begun: {MAY_HAVE_WRITTEN}.",
     )  # fmt: skip

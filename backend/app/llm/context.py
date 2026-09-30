@@ -139,3 +139,16 @@ def render(
             trimmed_messages += 1
         else:
             raise LLMBudgetExceeded(f"{prompt.id}: {est} token (ước tính) > budget_in {budget_in} sau khi cắt")
+
+
+def check_evidence_budget(prompt: Prompt, budget_in: int, evidence_max_tokens: int) -> None:
+    """f1 (PLAN-3g): khung prompt (bỏ mọi biến) + trần bằng chứng `RAG_EVIDENCE_MAX_TOKENS` phải ≤ `budget_in` của vai trò —
+    kiểm lúc khởi động. ƯỚC TÍNH, hai đơn vị: khung đếm `ceil(ký tự/3)` như gateway, bằng chứng đếm token tokenizer bge-m3
+    (chưa đo tỉ lệ). Lúc chạy gateway vẫn có thể cắt khối (câu hỏi dài, tỉ lệ khác) → B10 ra E3 `invalid_citation` với
+    `evidence_truncated=true` (không đoán anchor)."""
+    frame = estimate_tokens(PLACEHOLDER.sub("", prompt.spec.system)) + estimate_tokens(PLACEHOLDER.sub("", prompt.spec.user))
+    if frame + evidence_max_tokens > budget_in:
+        raise ValueError(
+            f"{prompt.id}: khung ~{frame} + RAG_EVIDENCE_MAX_TOKENS {evidence_max_tokens} > budget_in {budget_in} "
+            "— từ chối khởi động"
+        )

@@ -281,6 +281,12 @@ Backend mở span `ml:<endpoint>` phía client. ml-service trả header `X-Model
   - Đo RAM thật khi nạp đủ 4 model; không đủ → xem P11 mục 8.
   - Prompt Guard 2 (Llama 4 Community License) chỉ dùng cho lần chạy baseline RQ4.
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 4, 4.12; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- `/count_tokens` đếm cả token đặc biệt; cắt câu truy vấn 128 token khi rerank (`max_length=640`); `ML_SERVICE_TOKEN` bắt buộc; `make models`, `HF_HUB_OFFLINE=1`.
+
 ## 11. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -290,3 +296,4 @@ Backend mở span `ml:<endpoint>` phía client. ml-service trả header `X-Model
 | 25/09/2026 | 1.2 | Thêm `/count_tokens`, cờ `truncated` ở `/embed` và `/rerank`, test tương ứng (D-21) |
 | 25/09/2026 | 1.2 | Thêm `/classify_intent` (D-32); hai classifier là model nhóm tự huấn luyện, ONNX int8 (D-33, P11); 503 khi chưa có model |
 | 27/09/2026 | 1.3 | Chốt khi hiện thực Phase 3a: sentence-transformers thay FlagEmbedding; `ML_MAX_CONCURRENCY=1`; mục tiêu rerank < 2 s chỉ với GPU. Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 4 và 4.12; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]) |
+| 30/09/2026 | 1.4 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 4, 4.12) |

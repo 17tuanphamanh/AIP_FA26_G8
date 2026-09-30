@@ -40,8 +40,10 @@ def _settings(**over: Any) -> Settings:
 
 
 def _branches(node: str) -> set[str]:
-    """Các giá trị `outcome == "…"` mà node giả thật sự rẽ nhánh (đọc AST, không chép tay)."""
-    tree = ast.parse((NODES_DIR / f"{node}.py").read_text(encoding="utf-8"))
+    """Các giá trị `outcome == "…"` mà node giả thật sự rẽ nhánh (đọc AST, không chép tay). Node đã có bản thật: bản giả
+    nằm ở `graph/nodes/fake/` (3-Q32 cách A) — `StackScenario` chỉ lái bản giả."""
+    fake = NODES_DIR / "fake" / f"{node}.py"
+    tree = ast.parse((fake if fake.exists() else NODES_DIR / f"{node}.py").read_text(encoding="utf-8"))
     found = {DEFAULT_OUTCOMES[node], "raise"}
     for cmp in ast.walk(tree):
         if isinstance(cmp, ast.Compare) and isinstance(cmp.left, ast.Name) and cmp.left.id == "outcome":

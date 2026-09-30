@@ -1,0 +1,16 @@
+# Preset `tc05` của ScriptedLLM trên stack dev — `make gate3` (phase3 11.6, PLAN-3h S15), thẻ [fake:tc05] cuối câu,
+# KHÔNG đặt FAKE_SCENARIO. an.nv "VPN báo lỗi 809, hướng dẫn mình khắc phục với" (Q-3h-11 b): hướng dẫn → B10 trích KB-VPN-003#v1#0
+# ("Lỗi 809 là gì" — chunk_id tất định của KB fixture, phải thuộc top-5 của truy hồi thật).
+# Phản hồi TĨNH, kiểm schema lúc khởi động. KHÔNG dùng trong test (e2e cổng 3 dùng tests/fixtures/llm/vpn.py).
+b02_injection_judge: {is_attack: false, category: none, reason: "preset tc05"}
+b03_classify:
+  intents: [{type: vpn, confidence: 0.92, span: "", action_hint: null, slots: {}}]
+  is_multi: false
+b10_need_type: {type: info, confidence: 0.9}
+b10_answer:
+  answer_markdown: "Lỗi không kết nối được VPN thường do mạng đang dùng chặn cổng của IKEv2."
+  citations: ["KB-VPN-003#v1#0"]
+  steps: ["Kiểm tra máy vào được Internet.", "Thử mạng khác (hotspot điện thoại).", "Đổi giao thức sang SSTP trong ABC Connect."]
+  cannot_answer: false
+b11_clarify_question: {text: "Bạn cho mình xin mã thiết bị (ví dụ LAP-0342) để kiểm tra chứng chỉ VPN nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}

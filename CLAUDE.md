@@ -29,6 +29,16 @@ Lint : make lint
   nguyên nhân. Chỉ dùng lệnh `gh` chỉ đọc (`run list/view/watch`). Lệnh `gh` bị sandbox
   chặn (mạng/keychain) → báo người, không tự nới quyền.
 
+## Subagent
+
+- **Chỉ gọi khi:** (a) Tuấn Anh ra lệnh trong tin nhắn, hoặc (b) bước trong PLAN đã duyệt có
+  cột "Ai làm" ghi tên agent đó. Ngoài 2 trường hợp này: không gọi.
+- Trước MỖI lần gọi, báo 1 dòng: "Gọi <agent> — việc — file được đọc/ghi — theo bước S… của
+  PLAN / theo lệnh". Xong thì báo kết quả + agent chính đã kiểm lại gì (test-writer: `git diff --stat`).
+- Lõi (policy, evaluate, b12, b17, executor, txlog) và file dùng chung (ticket_state, fakes/NodeDeps,
+  builder, goto, specs.py, models.py, settings.py, Makefile, .importlinter) không bao giờ giao subagent.
+- Không dùng chế độ bypass permissions trong repo này (lớp "ask" với Task/Agent sẽ mất tác dụng).
+
 ## Ranh giới
 
 - Đổi phụ thuộc thì sửa `pyproject.toml` (`uv add` / `uv remove`, `uv.lock` đi kèm),
@@ -71,21 +81,11 @@ một lần, không bật thì không có gì gác:
 git config core.hooksPath .githooks
 ```
 
-- `.githooks/pre-commit` — hai bước, theo thứ tự:
-  1. **gitleaks, với mọi commit** (kể cả chỉ đổi `.md`): `gitleaks git --pre-commit
-     --staged --redact` soát phần đã stage, thấy chuỗi giống bí mật thì chặn. Không
-     thấy lệnh `gitleaks` thì cũng chặn và in hướng dẫn cài (`brew install gitleaks`)
-     — không im lặng cho qua. `gitleaks detect` trong `make lint` chỉ quét lịch sử,
-     tới lúc đó bí mật đã nằm trong commit rồi.
-  2. **pytest:** đụng file `.py`, `config/prompts/*` **hoặc** `config/policy.json` thì
-     `uv run pytest backend/tests/unit -q` phải xanh mới cho commit. Không thấy `uv`
-     hoặc `.venv` thì cũng chặn, thay vì báo "test đỏ" sai sự thật. Nó lấy **hợp** của
-     `git diff --cached` và `git diff HEAD` nên `git commit -a` không lách được.
-- `.githooks/commit-msg` — chặn `Co-Authored-By: Claude`, `Claude-Session`, link
-  `claude.ai`, `noreply@anthropic.com`, emoji robot. Lọc bỏ dòng `#` trước khi soi
-  nên `git commit -v` (nhét cả diff vào comment) không báo động giả.
-
-Cố tình bỏ qua cả hai: `git commit --no-verify`.
+Hook soát (chi tiết + lý do trong chú thích `.githooks/pre-commit`, `.githooks/commit-msg`):
+gitleaks với MỌI commit (thiếu `gitleaks` cũng chặn); đụng `.py`, `config/prompts/*`,
+`config/policy.json` thì unit test phải xanh; commit-msg chặn dấu vết AI.
+Cấm `git commit --no-verify`.
+Mỗi người cài hook một lần sau khi clone: `git config core.hooksPath .githooks`.
 
 `.claude/hooks/pre-commit-test.sh` chỉ là lớp mỏng gọi lại `.githooks/pre-commit`,
 để Claude chặn sớm hơn một nhịp. **Sửa luật soát thì sửa ở `.githooks/`**, đừng sửa

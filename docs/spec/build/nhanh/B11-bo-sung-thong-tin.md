@@ -436,6 +436,14 @@ async def clarify_wait(state):                                          # KHÔNG
 | Câu hỏi gửi 2 lần | Số lần `notify_user`; `side_effects` | Gửi trong `clarify_wait` thay vì ở `b11_slots`; gửi không qua `effects.once` |
 | Thiếu bản ghi `action_built` trong audit | Khóa idempotent | Khóa audit cũ không có `event` (vi phạm D-14 v1.2) |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 10.4, 10.7; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- `facts` chỉ từ tool (`infer_vpn`); `b11_extract_slots` + `sanitize_slots(..., text=câu trả lời đã che, allowed=missing)`.
+- `clarify_wait`: `screen_reply` → che L1 → LLM/slot/`conversation` chỉ dùng bản đã che.
+- `validate_targets` luôn kiểm lại máy đích trước `build_action`, bỏ fact máy cũ; câu hỏi LLM qua output guard; `effects.once` khoá riêng từng lượt hỏi; D-20 bật → không khởi động.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -444,3 +452,4 @@ async def clarify_wait(state):                                          # KHÔNG
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: gửi câu hỏi + đặt hạn qua `effects.once` (D-18); kích hoạt chẩn đoán lại (D-20, cờ tắt mặc định); ghi chú khóa audit mới |
 | 25/09/2026 | 1.3 | Ticket con gửi câu hỏi qua cha (`needs=answer`), không đặt hạn riêng (D-31) |
+| 30/09/2026 | 1.4 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 10.4, 10.7) |

@@ -363,3 +363,14 @@ Mỗi lời gọi (kể cả cache hit) ghi 1 span `llm:<prompt_id>` + 1 dòng `
 - **Phụ thuộc:** P7 (`llm_calls`, `llm_cache`, `lineage`); P1 (span).
 - **Phase:** 3 (router + cache + trace). Fallback local khi có phần cứng mức 1.
 - **Việc còn mở:** chọn model cụ thể bằng probe và điền bảng giá thật (Phase 3, N1 — hướng đa provider và trần 1 triệu đ đã chốt); mã lỗi cho structured-output (17.3).
+
+
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 7, 7.8; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Đóng việc mở §10: structured output lỗi → E2 `llm_schema_error`; không gọi được/hết trần → E2 `llm_unavailable`.
+- `LLM_BACKEND=scripted|real` (scripted bị chặn ngoài dev/test); `pricing` bắt buộc cho model thật.
+- Trần chi duy nhất là `spend.cap_usd` trong `config/llm.yaml` (Q-3d-3, không có biến env); giữ chỗ chi phí xấu nhất trước mỗi request trả phí; `make vpn-smoke` từ chối khi cap > 1 hoặc thiếu pricing (11.10 #14).
+- LLM hết khung vì hạn lượt → `TurnBudgetExceeded` (không phải `LLMUnavailable`) (9.8 #2).
+

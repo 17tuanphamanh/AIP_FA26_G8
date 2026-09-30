@@ -20,11 +20,13 @@ from app.approval.store import ApprovalRow
 from app.audit.writer import check_audit_row
 from app.core.clock import FakeClock
 from app.db.escalations import QueueItem
+from app.db.lineage import LINEAGE_KEY, check_lineage_row
 from app.db.runtime import DueWait, OpenTurn, as_ref
 from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.final import FinalSummary
+from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
 from app.graph.fakes import FakeScenario, NodeDeps
@@ -33,6 +35,7 @@ from app.graph.runner import Runner
 from app.llm import LlmPort
 from app.settings import Settings, get_escalation_templates, get_policy
 from langgraph.checkpoint.memory import InMemorySaver
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.identity import (
     REQUESTER,
@@ -45,6 +48,7 @@ from tests.fakes.identity import (
 )
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
+from tests.fakes.vpn import SeedVpn
 
 LOCKOUT = timedelta(minutes=15)
 
@@ -52,17 +56,24 @@ LOCKOUT = timedelta(minutes=15)
 class MemoryAudit:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
+        self.lineage: list[dict[str, Any]] = []  # bảng `lineage` giả — ghi cùng "transaction" với dòng audit (3g)
         self.drop = False  # True → mô phỏng INSERT không để lại dòng (kiểm cấm 4)
         self.crash_once: set[str] = set()  # event → process "chết" ngay TRƯỚC khi ghi dòng đó
 
-    async def record(self, row: Mapping[str, Any]) -> bool:
+    async def record(self, row: Mapping[str, Any], *, lineage: Mapping[str, Any] | None = None) -> bool:
         check_audit_row(row)
+        if lineage is not None:
+            check_lineage_row(lineage)
         if row["event"] in self.crash_once:
             self.crash_once.discard(row["event"])
             raise Crash(f"process chết trước khi ghi audit {row['event']}")
         key = row.get("idempotency_key")
         if self.drop:
             return False
+        if lineage is not None and not any(
+            all(r.get(k) == lineage.get(k) for k in LINEAGE_KEY) for r in self.lineage
+        ):  # như `db/lineage.insert_once`: NOT EXISTS (ticket, lượt, bước, prompt)
+            self.lineage.append(dict(lineage))
         if key is None or all(r.get("idempotency_key") != key for r in self.rows):
             self.rows.append(dict(row))
         return True
@@ -225,6 +236,10 @@ class MemoryApprovals:
     async def get(self, approval_id: str) -> ApprovalRow | None:
         return self._row(approval_id)
 
+    async def get_status(self, approval_id: str) -> str | None:
+        row = self._row(approval_id)
+        return None if row is None else row.status
+
     @asynccontextmanager
     async def lock_row(self, approval_id: str) -> AsyncIterator[ApprovalRow | None]:
         lock = self._row_locks.setdefault(approval_id, asyncio.Lock())
@@ -278,16 +293,21 @@ class Crash(BaseException):
 
 
 class CountingExecutor:
+    """Executor giả cho graph node GIẢ (gate2-kiểu) và test runtime: luôn thành công, đếm lời gọi theo ticket."""
+
     def __init__(self) -> None:
         self.calls: Counter[str] = Counter()
         self.crash_once: set[str] = set()  # ticket sẽ "chết" giữa lần thực thi đầu
 
-    async def execute(self, ticket_id: str, action: Action | None) -> bool:
+    async def execute(self, ticket_id: str, turn_id: str, action: Action) -> ExecutionResult:
         self.calls[ticket_id] += 1
         if ticket_id in self.crash_once:
             self.crash_once.discard(ticket_id)
             raise Crash(f"process chết khi đang thực thi {ticket_id}")
-        return True
+        return ExecutionResult(
+            success=True, steps_done=[action.type], failed_step=None, rollback_status="none_needed",
+            rollback_details=[], action_plan_hash_matched=None, handoff_note=None,
+        )  # fmt: skip
 
 
 def seed_priority() -> dict[str, tuple[int, str]]:
@@ -459,11 +479,14 @@ class GraphHarness:
     deadlines: MemoryDeadlines = field(default_factory=MemoryDeadlines)
     notifier: RecordingNotifier = field(default_factory=RecordingNotifier)
     executor: CountingExecutor = field(default_factory=CountingExecutor)
+    txlog: MemoryTxLog = field(default_factory=MemoryTxLog)  # B17 bước 0 (NGHI-2) — test đặt `begun` qua đây
     # B1 thật: phiên `s1` của `nv-fake` còn sống, AD có `nv-fake` (employee)
     identity: MemoryIdentity = field(default_factory=MemoryIdentity)
     ad: FakeAd = field(default_factory=lambda: FakeAd(ad_user()))
     alerts: MemoryAlerts = field(default_factory=MemoryAlerts)
-    directory: ToolCaller | None = None  # None = registry thật trên `FakeAd`; e2e gắn registry tới mock
+    directory: ToolCaller | None = None  # None = registry thật trên `FakeAd` + `vpn`; e2e gắn registry tới mock
+    vpn: SeedVpn | None = None  # B6 thật (3f): VPN giả đọc mock_services/seed.json — None = dựng theo `clock`
+    enable_proactive_diagnosis: bool = True  # ablation RQ3 (B6)
     max_recover_attempts: int = 3
     # Hạn cho cả lượt (9.0): mặc định = Settings (100 s / 2 s) — test FakeClock tua quá hạn trong một lượt sẽ ra E2
     turn_budget_s: float = field(default_factory=lambda: _DEFAULT_SETTINGS.turn_budget_s)
@@ -481,6 +504,8 @@ class GraphHarness:
     runner: Runner = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.vpn is None:
+            self.vpn = SeedVpn(self.clock)
         self.approvals = MemoryApprovals(self.deadlines)
         self.tickets = MemoryTickets(self.turns)
         self.escalations = MemoryEscalations(self.tickets)
@@ -494,13 +519,14 @@ class GraphHarness:
     def deps(self) -> NodeDeps:
         """Mỗi lần gọi = một "process": registry (và breaker) mới, như khởi động lại backend."""
         return NodeDeps(
-            notifier=self.notifier, approvals=self.approvals, executor=self.executor,
+            notifier=self.notifier, approvals=self.approvals, executor=self.executor, txlog=self.txlog,
             deadlines=self.deadlines, constants=get_policy().constants,
-            identity=self.identity, directory=self.directory or fake_directory(self.ad, self.clock),
+            identity=self.identity,
+            directory=self.directory or fake_directory(self.ad, self.clock, self.vpn.handlers() if self.vpn else None),
             alerts=self.alerts, lockout=LOCKOUT, tickets=self.tickets,
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
-            security_events=self.security_events,
+            security_events=self.security_events, enable_proactive_diagnosis=self.enable_proactive_diagnosis,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:
@@ -512,7 +538,7 @@ class GraphHarness:
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,
             recursion_limit=self.recursion_limit, max_recover_attempts=self.max_recover_attempts,
-            tickets=self.tickets,
+            tickets=self.tickets, txlog=self.txlog,
         )  # fmt: skip
 
     def restart(self, *, can_execute: bool | None = None) -> Runner:

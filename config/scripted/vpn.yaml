@@ -1,0 +1,12 @@
+# Preset `vpn` của ScriptedLLM trên stack dev (thẻ [fake:vpn] trong câu yêu cầu; 3f) — cho luồng VPN THẬT B2 → B3 → B6
+# khi KHÔNG đặt FAKE_SCENARIO (đặt FAKE_SCENARIO thì mọi node là bản giả của gate2 và thẻ lạ `vpn` → E9 có chủ ý).
+# B3 trả đúng 1 ý vpn, không slot → B6 tự tra máy theo người gửi (TC06). Phản hồi TĨNH (không theo câu) — không dùng trong
+# test (test dùng tests/fixtures/llm/vpn.py). Mỗi phản hồi được kiểm schema lúc khởi động.
+b02_injection_judge: {is_attack: false, category: none, reason: "preset vpn"}
+b03_classify:
+  intents: [{type: vpn, confidence: 0.9, span: "", action_hint: null, slots: {}}]
+  is_multi: false
+b10_need_type: {type: action, confidence: 0.9}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cho mình xin mã thiết bị (ví dụ LAP-0342) để kiểm tra chứng chỉ VPN nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}

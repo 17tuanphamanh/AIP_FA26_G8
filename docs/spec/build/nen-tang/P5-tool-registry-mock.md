@@ -340,6 +340,15 @@ class ToolResult:
   - Danh sách tool ghi ở mục 4 là suy luận. Chốt cùng lúc với 20 luật (T22a).
   - Bảng `arg_slots` là suy luận từ tên tool; chốt cùng mock endpoint (T05).
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 9.4, 11.4, 11.10; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Giữ `call_internal`; tool VPN dùng đúng tên trong `tools/specs.py` (`check_device_registered`/`check_vpn_cert_expiry` với `device_id` tùy chọn; ghi `renew_vpn_cert`, `reissue_vpn_access`, hoàn tác `revoke_vpn_cert`).
+- `ad_get_user` có nhãn bước `B17_RECHECK` (tool đọc không bao giờ khai báo `B17`); registry ghi riêng (token `svc_executor`) chỉ dựng ở API process.
+- Tool ghi không gửi nếu không đủ trọn timeout (9.8 #2); 404/409 của tool ghi là dữ liệu → E7 `exec_failed` có handoff.
+- Mock thêm `/_admin/calls`, `/_admin/calls/reset`, `/_admin/users/{id}/status` (chỉ dưới `/_admin`, 11.10 #12).
+
 ## 10. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -349,3 +358,4 @@ class ToolResult:
 | 25/09/2026 | 1.2 | Thêm `ToolSpec.arg_slots` + bảng cho 12 tool đọc (D-20); seed cho test D-15, D-20 |
 | 26/09/2026 | 1.3 | Chốt kiểu trả `ToolResult` của `registry.call` (không raise khi breaker mở → E2); sửa sơ đồ mục 2 |
 | 26/09/2026 | 1.4 | Chốt khi hiện thực Phase 1c: tool ghi 404/409 → E7 không tính breaker; breaker đếm theo lời gọi; thiếu slot bắt buộc = lỗi hợp đồng; mock thêm `GET /vpn/devices?owner_id=` |
+| 30/09/2026 | 1.5 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 9.4, 11.4, 11.10) |

@@ -1,6 +1,6 @@
 # Phase 3 — Thiết kế chi tiết (lát cắt VPN B1 → B20)
 
-*Thuộc bộ `build/`. Phiên bản 1.7 — 30/09/2026 (1.7: chốt khi hiện thực 3e, mục 8.9; thêm 9.0 hạn cho cả lượt; 1.6: chốt khi hiện thực 3d, mục 7.8; 1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
+*Thuộc bộ `build/`. Phiên bản 2.0 — 30/09/2026 (2.0: chốt khi hiện thực 3h, mục 11.10; 1.9: chốt khi hiện thực 3g, mục 10.7; 1.8: chốt khi hiện thực 3f, mục 9.8; 1.7: chốt khi hiện thực 3e, mục 8.9; thêm 9.0 hạn cho cả lượt; 1.6: chốt khi hiện thực 3d, mục 7.8; 1.5: chốt khi hiện thực 3c, mục 6.13; 1.4: chốt khi hiện thực 3b, mục 5.14; 1.3: hậu kiểm 3b sau dự án, mục 1.5; 1.2: chốt khi hiện thực 3a, mục 4.12; 1.1: đã rà soát với code trên máy, commit `2a9f3ee`, xem mục 0.1). Viết sau khi Phase 2 xong phần code (2b-4 commit `2a9f3ee`, CI 36274714302). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5.1, `decisions.md`, P1–P7, B02–B19, và phân tích lỗ hổng `claude/phase3-phan-tich-va-va-dac-ta.md` (mã `G-xx`).*
 
 ---
 
@@ -1673,6 +1673,41 @@ Lưu ý: khi người dùng tự nêu `device_id`, tool `check_device_registered
 | M-3f-5 | Máy không tồn tại → `device_registered=true` | f11 |
 | M-3f-6 | Đổi thứ tự kiểm ở B3 (intent chưa bật trước confidence) | f4 |
 
+### 9.8. Chốt khi hiện thực 3f (30/09/2026)
+
+Commit `3f33ab2` (DỪNG 1, CI 36505355921), `8b7bb92` (DỪNG 2, CI 36509949909), `605b973` (DỪNG 3) trên `dev-tuananh`.
+
+**Chốt trước khi code (P1–P4, Q-3f-1…7):**
+- **P1** giá trị slot > 100 ký tự → **bỏ** (không cắt — mã mẫu 3.2 cắt `[:100]` là sai). **P2** `device_id`, `error_code` chỉ giữ nếu xuất hiện trong `redacted_request` (khớp **biên token**, không phân biệt hoa thường — "LAP-04171" không cho ra "LAP-0417"); không có → `slot_not_in_text`. **P3** test AST: không đường nào gán `facts` từ slot/đầu ra LLM. **P4** `TURN_BUDGET_S` = 100, `SAFETY_MARGIN_S` = 2.
+- **Q-3f-1** `tool_retry_count` dùng `tools/retry.retries_of`: gọi thành công cộng `attempts`, gọi lỗi cộng `attempts − 1` (cùng quy tắc Q-3c-10 của RAG) — 9.4 "cộng thẳng" sai với code (`attempts` = số lần thử **thất bại**). f13 = 2.
+- **Q-3f-2** hết hạn lượt ở node không tự bắt (B1, B8…) → boundary đổi `TurnBudgetExceeded` thành **E2** (không E9). B2 (giữ `security_flag`), B3, B6 (ghi điểm log) bắt tường minh.
+- **Q-3f-3** `reason` chỉ giữ nếu là đoạn con của `redacted_request` sau casefold + gộp khoảng trắng. **Q-3f-4** `span` tương tự; không phải đoạn con → `span=None`, audit `span_not_in_text`. **Q-3f-5** `dropped_slot_keys` chỉ ghi key đã khai báo ∪ `FACT_KEYS`; key lạ → `"<unknown>"` + `dropped_unknown_count` (key do LLM đặt có thể chứa chữ người dùng).
+- **Q-3f-6** "≥ 2 ý" đếm trên **mọi** ý khi có ≥ 1 ý trong phạm vi → E1 `multi_intent_not_enabled`; prompt `b03_classify` **v2**: câu xã giao/đệm không là ý, việc ngoài phạm vi có yêu cầu là ý riêng. ScriptedLLM chỉ kiểm logic node; kiểm prompt thật dồn về mốc G.
+- **Q-3f-7** `rediagnose`/`changed_slots` 3f chỉ khai báo; B6 luôn gọi đủ 3 tool, ghi `rediagnose=False`; chọn tool theo slot vừa đổi làm ở **3g** cùng B11.
+
+**Sửa so với 3.x và 9.0–9.7 (thắng bản cũ khi lệch):**
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | 3.3, 3.4, 9.0 | 3.4 thêm `turn_budget_exceeded`. 3.3 thêm dòng "hết hạn cả lượt · `core.turn_budget` (4 lớp gọi ngoài) · B2/B3/B6 bắt tường minh, còn lại boundary · E2 (B2 kèm `security_flag`)". Quy tắc "boundary → E9" có **ngoại lệ** `TurnBudgetExceeded` → E2 |
+| 2 | 9.0 hiện thực | Hạn đặt ở `Runner._run/_divert` **trước semaphore** (thời gian chờ hàng đợi tính vào 100 s); contextvar ở `core/turn_budget.py` (không ở `RunContext` vì tools/ml/llm/rag không được import graph); validator `SAFETY_MARGIN_S < TURN_BUDGET_S < WORKER_STALE_TURN_SECONDS`. **Tool ghi không gửi nếu không đủ TRỌN timeout** (tránh "không biết đã ghi hay chưa"); hết hạn giữa chừng không tính lỗi vào circuit breaker (`record_abandoned`). LLM/RAG hết khung vì hạn lượt → `TurnBudgetExceeded` (không phải `LLMUnavailable`/`rag_system_error`). Test tĩnh: bảng trần lượt đầu cuối 3f (194 s, được cắt về 100 s) + AST 8 điểm gọi; f19 hai kịch bản (hết hạn ở tool B6 / ở ml rerank B8). **Truy vấn Postgres không nằm trong hạn** (nội bộ) — "Việc treo" 12 |
+| 3 | 3.2 `sanitize_slots` | Chữ ký thật `sanitize_slots(spec, raw, *, text, allowed=None)` (domain thuần) trả `(clean, dropped: key → lý do)`, lý do ∈ {`fact_key`, `unknown_key`, `too_long`, `bad_action`, `bad_value`, `slot_not_in_text`}. Danh sách slot phải có trong câu là hằng code. `value_rules.reason.max_len: 200` không bao giờ có hiệu lực (luật chung 100 chặt hơn). Slot trùng tên fact bị từ chối lúc nạp `slots.yaml` |
+| 4 | 3.1, 3.2 facts | `check_facts` kiểm key đóng **và kiểu chặt** (bool ≠ int; `cert_status` ∈ 4 giá trị). `build_action` raise `FactKeyViolation` (lớp con `AssertionError`, raise tường minh — còn hiệu lực dưới `python -O`) thay cho `assert` |
+| 5 | 3.6 điểm log | Điểm log 1 thêm `is_multi`, `ml_error`, `llm_error`, `dropped_slot_reasons`, `dropped_unknown_count`, `span_not_in_text`; `prompt` dạng `b03_classify@2`; không có câu người dùng hay giá trị slot. Điểm log 2 thêm `tool_errors` ở nhánh B7 |
+| 6 | 9.3 B3 | E1 dùng `step="B4"`, E2 và đường đi tiếp dùng `"B3"`. ml có kết quả ở Phase 3 vẫn xuống LLM (chỉ ghi `model_probs`). `enabled_intents` là trường `NodeDeps` kiểu `frozenset`. **Không dùng helper `esc/e1`** như mã giả: `escalation_reason_detail` phải là chuỗi hằng để test AST giải được — mỗi nhánh một lời gọi `goto` |
+| 7 | 9.4 B6 | `diagnostics` lưu JSON (`model_dump(mode="json")`), không thêm kiểu tool vào `STATE_TYPES` (checkpoint cũ không vỡ khi model tool đổi). `tool_errors` chỉ `"tool: LớpLỗi"` (chuỗi lỗi httpx có URL chứa `user_id`/`device_id`). `gather(return_exceptions=True)` — lỗi hợp đồng ưu tiên ném (E9), sau đó mới hết hạn lượt. `next = b11_slots` nếu state đang chẩn đoán lại |
+| 8 | 9.5 `infer_vpn` | Bỏ tham số `now` (không dùng). `last_connection_ok` theo lần kết nối **mới nhất theo `at`** (không tin thứ tự API). `device_id` chỉ là khoá tra cứu, không bao giờ là giá trị fact |
+| 9 | 9.6 test | f7–f14 hiện thực = unit (VPN giả đọc `mock_services/seed.json`, `tests/fakes/vpn.py`) + e2e trên mock thật (`tests/e2e/test_b06_vs_mock.py`); f17 = unit serde + PG (`test_b06_pg.py`). Thêm **f18** (P2) và **f19** (hạn lượt) |
+| 10 | 9.7 mutation | M-3f-9 bị bắt ở **f3** (không phải f10: tool cert chỉ trả cert của chính người gửi nên máy người khác luôn `cert_status=none` với seed thật). M-3f-7 tách 4 điểm gọi (7a tool, 7b ml, 7c LLM, 7d RAG). Thêm M-3f-8…19 (P2, lỗi tool = rỗng, boundary E9, diagnostics không JSON, log có câu người dùng, `tool_errors` có URL, span, đếm ý, key tự do vào audit, tool ghi timeout rút ngắn, cộng thẳng attempts) |
+| 11 | 0.1, 9.2 code thật | `REAL_NODE_MODULES` ở `graph/builder.py` (không phải `wiring.py`). `NodeDeps` thêm `slots`, `action_metadata`, `enabled_intents`, `enable_proactive_diagnosis`. `check_intent_config` gọi ở `open_runtime` trước DB (`ENABLED_INTENTS ⊆ slots.intents`, metadata đủ mọi `action_type`); `ActionMeta` kiểm `reversible` khớp `reversibility`. Preset stack `config/scripted/vpn.yaml` |
+| 12 | 8.7 (3e) e12 | `test_e12_judge_bypasses_cache` đổi `cache == {}` → "không dòng cache nào của judge" (B3 thật dùng cache mặc định, nay có dòng cache riêng) — ý test giữ nguyên |
+
+**Lưu ý cho 3h (bắt buộc):** action do **người dùng** nêu cho máy người khác vẫn giữ trong `slots` (là tham số). Luật M5 cho gia hạn/cấp lại VPN (R20) **phải đòi `facts.device_owner_is_requester = true`** (3-Q2), nếu không máy người khác sẽ được thao tác.
+
+**Việc treo mới:** 12 — truy vấn Postgres không nằm trong hạn lượt. Log INFO có sẵn từ Phase 1 ở `tools/registry.py` in chuỗi lỗi httpx có URL chứa `user_id`/`device_id` (định danh đã qua regex, không phải chữ tự do) — xét lại khi rà log ở Phase 4.
+
+**Kết quả 3f.** `make test` backend 2478 · mock 86 · ml 77; integration 161, e2e 37. e9 canary (thêm prompt b03): 0. Mutation unit **22/22** (3 lượt, mỗi lượt 59 dòng đỏ giống hệt), e2e 4/4, PG 1/1; md5 và `git diff --stat` khớp ở cả 5 lượt. `make gate2 S=all` 89/0. Soát bảo mật 6/6 PASS: không đường nào slot → facts; slot chỉ qua `sanitize_slots`; mọi lỗi hệ thống → E2; audit/log không có chữ người dùng; máy người khác không tự sinh action; hạn lượt áp cho mọi lời gọi ra ngoài (8 điểm).
+
 ---
 
 ## 10. Chặng 3g — B10, B11, output guard, tin nhắn
@@ -1836,6 +1871,36 @@ Action(type=slots["action"], target=f"device:{slots['device_id']}", requested_fo
 | M-3g-4 | `extract_slots` không giới hạn `allowed=missing` | g16 |
 | M-3g-5 | `>=` → `>` ở kiểm lượt hỏi | g13 |
 | M-3g-6 | Bỏ `output_guard` | g4 (unit) + e2e canary |
+
+### 10.7. Chốt khi hiện thực 3g (30/09/2026)
+
+Commit `50dcf19` (DỪNG 1), `d4e3ac2` (DỪNG 2), `ef33f17` (CLAUDE.md, CI 36529416702), DỪNG 3 (kèm spec v1.9) trên `dev-tuananh`.
+
+**Chốt trước khi code (P1–P10):** không helper `esc` — mỗi nhánh một `goto` với hằng (P1); `sanitize_slots(spec, raw, text=<câu trả lời đã che>, allowed=missing)` (P2); câu trả lời: `screen_reply` → che L1 → chỉ bản đã che vào LLM/slot/`conversation` (P3); mọi chữ LLM lưu/gửi qua output guard, gồm câu hỏi B11 (P4); khoá `effects.once` riêng từng lượt hỏi `sub=f"q{n}"` (P5); không giữ fact của máy cũ (P6); hạn lượt áp cho mọi lời gọi mới (P7); `Action` không có chữ tự do (P8); `sources` chỉ `chunk_id, title, heading_path` (P9); trả lời muộn → 409 + `late_event` (P10).
+
+**Sửa so với 10.1–10.6 (thắng bản cũ khi lệch):**
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | 10.3 `cannot_answer` | → E3 **`no_grounding`** (không phải `invalid_citation`, 7.8 #6 — Q-3g-1). Ca "citations rỗng" không tới được qua LLM (validator `AnswerOut` → E2 `llm_schema_error`) — kiểm ở hàm thuần `domain/answer.check_citations` (Q-3g-2) |
+| 2 | 10.3 anchor | `citations ⊆` `chunk_id` top-5 **∩** anchor của khối bằng chứng **thật sự gửi LLM** (`trim_to_budget` có thể bỏ khối). Gateway cắt khối (`trimmed_evidence > 0`) → E3 `invalid_citation`, audit `evidence_truncated=true` — không đoán anchor. Validator khởi động: khung `b10_answer` + `RAG_EVIDENCE_MAX_TOKENS` ≤ `budget_in` role strong. 0 khối bằng chứng → E3 `no_grounding`, 0 lời gọi `b10_answer` (Q-3g-11) |
+| 3 | 10.3 `lineage.record` | Không có hàm riêng: `goto(..., lineage={prompt_id, prompt_version, model, kb_version})` → `AuditWriter.record(row, lineage=…)` ghi dòng lineage **cùng transaction** với dòng audit; idempotent `INSERT … WHERE NOT EXISTS (ticket_id, turn_id, step, prompt_id)` (an toàn nhờ khoá ticket D-19), không migration. `commit_sha = NULL` — "Việc treo" 13 (lấy `GIT_SHA` lúc build image, trước mốc G) (Q-3g-3, Q-3g-10) |
+| 4 | 10.3 output guard | `OutputGuard.violation(text) → "secret" \| "canary" \| "system_prompt" \| None` (ghi audit loại, không ghi chữ). Luật bí mật dùng chính luật `secret` của `RegexPrivacyGuard` (PII không tính). (c) so sau L0 + casefold + gộp khoảng trắng, mọi cửa sổ 40 ký tự của từng dòng `system`. `OUTPUT_CANARIES` = `Settings.output_canaries` (mỗi chuỗi ≥ 8 ký tự). Luật mật khẩu chặn cả câu KB kiểu "Mật khẩu: tối thiểu 12 ký tự" — giữ (FN trước); test g26 canh toàn bộ KB fixture: 0 lần chặn (Q-3g-8) |
+| 5 | 10.2 tin nhắn | Khuôn ở `domain/messages.py`: `answer` có `needs="confirm"`, `question` có `needs="answer"`; `sources` đúng 3 khoá. `answer_ref` là key state mới duy nhất |
+| 6 | 10.4 `validate_targets` | **Luôn** kiểm lại máy đích ngay trước `build_action` (state không ghi facts thuộc máy nào): gọi song song tool có `device_id` trong `arg_slots` (`check_device_registered`, `check_vpn_cert_expiry`), `infer_vpn` tính lại `DEVICE_FACTS` = {`device_registered`, `device_owner_is_requester`, `cert_status`, `cert_days_to_expiry`}; **bỏ** giá trị máy cũ, giữ fact theo người (`device_count`, `has_registered_device`, `last_connection_ok`); **bỏ** slots do `infer_vpn` trả (không tự đặt action ở B11). Chỉ chạy khi đủ slot. Lỗi tool → E2 `target_check_error`. Không quay lại B6 (chuyển `→ S_DIAGNOSING` không có trong bảng 2.1 khi D-20 tắt) — P6 (a) |
+| 7 | 10.4 `clarify_wait` | Thứ tự: `screen_reply` (bản thô) → timeout → che L1 (`redact_text` thuần, không ghi sự kiện lần 2; idempotent — 205 mẫu 3e) → `b11_extract_slots` (bản đã che) → `sanitize_slots(…, text=bản đã che, allowed=missing)` (mã giả thiếu `text=`). Tin người dùng vào `conversation` là bản đã che, kể cả nhánh E2/E4; nhánh injection không lưu |
+| 8 | 10.4 B11 | Câu hỏi LLM qua output guard → E3 `output_guard_block`, 0 lần gửi (P4). `effects.once(..., sub=f"q{n}")` (P5). `intended_action` lưu model `Action` (có trong `STATE_TYPES`), không `model_dump`. `diagnostics_summary` = `facts` + `device_id` các máy **của người gửi** (không chữ tự do). Kiểm số lượt hỏi đặt **sau** kiểm slot thiếu (lượt trả lời thứ 3 đủ slot vẫn dựng được Action). Event: `asked`, `user_replied`, `action_built`, `clarification_exhausted`, `clarify_timeout`, `off_topic_twice`, `target_check_error` |
+| 9 | B11 §5, D-20 | 3g **không** hiện thực chẩn đoán lại; `REDIAGNOSE_ON_NEW_SLOT=true` → không khởi động (fail-closed). "Việc treo" 11 giữ (Q-3g-7) |
+| 10 | 9.0 hạn lượt | Bảng trần: đường B8→B10 = lượt đầu 3f + 145 s; đường hành động = lượt đầu 3f + 108 s; lượt trả lời 108 s (đều cắt về 100 s). Test AST điểm gọi ở node (`NODE_CALL_SITES` = 14) bên cạnh 8 điểm tầng dưới. B10, B11, `clarify_wait` bắt `TurnBudgetExceeded` tường minh (`step` hằng) → E2 |
+| 11 | 10.5 test | g12: câu trả lời phải có cả máy lẫn hành động ("PC-0977, gia hạn chứng chỉ VPN") vì `validate_targets` chỉ chạy khi đủ slot. g13 xen một lượt có slot để không chạm "lạc đề 2 lần" trước. g21 dựng state trực tiếp + ca luồng thật `nv001`, chẩn đoán chủ động tắt, "LAP-0417, gia hạn giúp mình" → Action có `device_owner_is_requester=false` (tiền đề h11). e9 đổi người gửi sang `binh.tt` (2 máy — B11 thật mới hỏi); thêm **e9b** (luồng hỏi–đáp). e9 + e9b phủ `b02_injection_judge`, `b03_classify`, `b10_need_type`, `b10_answer`, `b11_clarify_question`, `b11_extract_slots`. g8 đổi trạng thái cuối `S_PENDING_APPROVAL` → `S_CLARIFYING` (B11 thật). Thêm g19–g26 và 3 test hành vi ở DỪNG 3 (trích chunk liền kề đã có trong bằng chứng; khối neo ngoài top-5; hạn lượt ở `expand_for_answer`) |
+| 12 | 10.6 mutation | M-3g-1 đặt ở `check_citations`; M-3g-13 ở node (anchor = bằng chứng đã mở rộng). M-3g-7 = bỏ **cả** `sub` lẫn `turn_id` (khoá đã gồm `turn_id` — Q-3g-5); M-3g-7b (chỉ bỏ `sub`) **tương đương**. M-3g-14 tách 14a gateway / 14b registry / 14c expand. M-3g-6 phần "e2e canary" dời sang 3h. Thêm M-3g-15…17 |
+| 13 | 8.9 luật chung | LangGraph lưu giá trị resume (sự kiện `user_reply`) vào checkpoint — node không chặn được. **Luật:** mọi nơi TẠO sự kiện có chữ người dùng phải che L1 **trước** khi gửi vào runner — hiện có 3 nơi: `/messages` (câu trả lời), `/confirm` (`note`, `api/tickets.py`), route duyệt (`note`, `api/approvals.py`); cả 3 đã che. Test AST (3h) kiểm mọi lời gọi `start_event` có chữ người dùng đều đi sau bước che; node che lại chỉ bảo vệ `conversation` và prompt. e9 PG canh (canary không có trong checkpoint giải mã) |
+
+**Dồn về mốc G:** người có ≥ 2 máy chọn máy của mình vẫn phải tự nêu action (không suy từ cert ở B11) — chấp nhận ở Phase 3; probe 4 prompt b10/b11 với LLM thật.
+
+**Việc treo mới:** 13 — `lineage.commit_sha`; 14 — mypy chưa soát `backend/tests` (Phase 4 S0).
+
+**Kết quả 3g.** unit 2382; `make test` backend 2584 · mock 86 · ml 77; `make gate2 S=all` 89/0; CI xanh (`50dcf19`, `ef33f17`). Mutation unit **19/19** + 7b tương đương, PG **5/5** (g1, g2, g23) — mỗi loại 2 lượt giống hệt, md5 + `git diff --stat` khớp. Mục 8 (kiểm lượt hỏi sau kiểm slot thiếu) có test riêng `test_last_allowed_turn_reply_with_all_slots_builds_action` (đảo thứ tự → đỏ). Soát bảo mật 8/8 PASS: tin gửi qua `effects.once` khoá theo lượt; chữ LLM qua output guard; câu trả lời che trước khi lưu/gửi LLM; slot chỉ qua `sanitize_slots`; facts chỉ từ `infer_vpn`, không fact máy cũ; `Action` không chữ tự do; lỗi hệ thống → E2; GET ticket người khác → 404.
 
 ---
 
@@ -2001,6 +2066,40 @@ Sau khi `make gate3` 0 FAIL, Tuấn Anh:
 3. Ghi: tỉ lệ JSON hợp lệ lần đầu, số lần sửa schema, p95 mỗi prompt, tổng chi phí (`llm_calls.cost_usd`).
 4. Lỗi hợp đồng (schema lệch, tiếng Việt kém làm sai `intent`) → sửa prompt/schema **ngay**, tăng `version`, không đợi mốc G.
 
+### 11.10. Chốt khi hiện thực 3h (30/09/2026)
+
+Commit `80fd0eb` (DỪNG 1, CI 36562008999), `ed8c1e0` + `cede7eb` (DỪNG 2, CI 36598724464), `02ed795` (DỪNG 3a), DỪNG 3b trên `dev-tuananh`. Hạ tầng đi kèm: `7e64926` (chặn `.env*`: `.gitignore` + hook `chan-env.py`), `ddcdef7` (3 subagent dự án, `permissions.ask` Task/Agent).
+
+**Chốt trước khi code (P1–P9):** không helper `esc` (P1); `build_ctx` chỉ đọc `intended_action`, `requester_context`, `ctx_flags` + `now` do node truyền (P2); `ctx.target_is_other` = `requested_for ≠ requester` **hoặc** `facts.device_owner_is_requester` không phải `True` (thiếu = True) (P3); kiểm trọn timeout tool ghi **trước** INSERT `begun` (P4); h11 chạy trong giờ (P5); tin B18 / `handoff_note` chỉ từ enum/định danh/ngày (P6); `VpnExecutor` chỉ ở API process (P7); B17 kiểm lại bằng policy + Clock hiện hành, "đã duyệt" = state + bảng + hash (P8); ca demo h1, h2, h4, h6, h11 xanh trước (P9).
+
+**Sửa so với 11.1–11.9 (thắng bản cũ khi lệch):**
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | 11.2 DSL | Nguồn fact theo danh sách trắng (tên lạ → không khởi động); `value` kiểu chặt, số hữu hạn (NaN/Infinity bị từ chối, `bool` không so số); intent của luật suy từ `action_metadata.yaml`, `check_policy_config` gọi ở `open_runtime` trước DB (Q-3h-1); `tzdata` là phụ thuộc chính + kiểm nạp múi giờ lúc khởi động (Q-3h-5) |
+| 2 | 11.3 B12 | `step="B13/B14"` (MỘT chuỗi, như bản giả / mã giả B12 §5; event `risk_decided` / `llm_layer_disabled`); estimator trả p ở Phase 3 → E9 (không route theo p); `NodeDeps` thêm `business_hours`, `estimator`; `build_ctx(state, now, hours)` |
+| 3 | 11.3 / P3 | `target_is_other` = cờ B6 `ctx_flags.target_is_other` **OR** công thức P3 (cờ chỉ làm chặt) |
+| 4 | 10.7 #13 | Cổng tạo sự kiện cần quét gồm `start_event`, `deliver_event`, `resume`, `resume_locked`; test N1 fail-closed (`test_start_event_redacted_ast.py`); khoá kiểu chặt được miễn: `kind, approver_id, at, reason_code, view_duration` |
+| 5 | 11.7 | h21 nằm ở `test_policy_engine_signature.py` (cùng h22) |
+| 6 | 11.4 | `ExecutionResult.outputs: dict[str,str] = {}` (khoá đóng `{serial, expires_on}`, giá trị qua regex; checkpoint cũ không có trường vẫn nạp được — Q-3h-2); điểm log 7 = dòng audit `B18 executed_ok` (thành công) hoặc `B17 exec_failed|exec_interrupted` (lỗi); `check_plans` chỉ xét intent đang bật và đòi mẫu tin B18 cho mỗi hành động; `Step(tool, undo)` + `step_args`/`undo_args`; `RefusingExecutor` trả `ExecutionResult`; B17 có nhánh E2 `turn_budget_exceeded` |
+| 7 | 11.4 thứ tự B17 | **[0]** ticket đã có `transaction_log` `begun` ở **bất kỳ lượt nào** → E7 `exec_interrupted`, ghi chú "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay", 0 lời gọi ghi → **[1]** luật với policy + Clock hiện hành (`deny` → E5) + "đã duyệt" (state + bảng `approvals`) → **[2]** hash kế hoạch; không luật nào khớp, hoặc `approval_required` mà chưa "đã duyệt" → E5 `recheck_failed`; có `approval_id` thì luôn đòi state + bảng `approved` + hash khớp → **[3]** AD người (`B17_RECHECK`): `disabled/terminated`/lỗi → E5 `person_no_longer_valid` (lỗi hợp đồng → E9, hết hạn lượt → E2); mọi trường `requester.*` được luật tham chiếu (tính lúc khởi động) khác bản chụp B1 (dựng bằng `RequesterContext.from_ad` tại `captured_at`, không so `tenure_days` trôi) → E5 `recheck_failed` (Q-3h-7) → **[4]** P4 hạn lượt (trong executor) → **[5]** `begun` → gọi ghi. Mọi nhánh fail-closed trước lời gọi ghi; thứ tự chỉ quyết `reason_detail` khi nhiều điều kiện cùng sai (sửa theo code đã duyệt ở DỪNG 2 — Q-3h-9) |
+| 8 | 11.4 / P4 (NGHI-1) | P4 bảo đảm **0 lời gọi ghi**; có thể còn 1 dòng `begun` (INSERT ngoài hạn lượt) → lần chạy sau ra E7 (an toàn) |
+| 9 | 11.4 / P7 (NGHI-3) | `RefusingExecutor` (worker, API thiếu token) **bắt buộc** có txlog và đọc `begun` → E7; runner chạy graph với `durability="sync"` (LangGraph mặc định `async` — worker có thể tới B17 sau khi API đã ghi mà checkpoint chưa lưu); `handoff_note` chỉ có `device_id` qua regex (sai mẫu → `—`); `serial` không vào `handoff_note` (chỉ ở `ExecutionResult.outputs`/hoàn tác, qua regex); kế hoạch nhiều bước hết hạn lượt giữa chừng → hoàn tác + E7 (không E2) |
+| 10 | 3.3 / 3.4 / 11.5 (Q-3h-3, Q-3h-6) | Hai đường "gián đoạn": runner API recover (`can_execute=True`, B17 bước [0]) → E7 `exec_interrupted`; worker recover (`can_execute=False`, runner bẻ luồng trước B17) → E7 `execution_interrupted`. Cả hai ghi chú bàn giao có câu "có thể đã gửi lệnh ghi…" (`INTERRUPTED_NOTE` của runner sửa ở DỪNG 3a). Thêm **h15b** vào 11.5 |
+| 11 | 11.5 | h14 đổi câu thành "cấp lại VPN cho máy LAP-9999, device_registered=true" (câu gốc điểm truy hồi 0,5 < 0,6 → E3 ở B9, không tới B12); h7: E3 `no_grounding` ở B9 hoặc B10 (`cannot_answer`); h8 trong e2e = Qdrant không kết nối được phía client (`make gate3` tc28 tắt container thật); thêm h11 lúc 20:00 → R18 HITL, 0 ghi. **Tạm thời, không phải thiết kế cuối:** "máy người khác ngoài giờ → HITL" (`test_h11_at_20h_r18_hitl_no_write`) và h14 (máy chưa có → R17 HITL) sẽ đổi thành E5 ở Phase 4b (Q-4-M: R17–R19 thêm điều kiện `device_owner_is_requester`, `phase4-thiet-ke-chi-tiet.md`); 3b giữ nguyên test |
+| 12 | 3.7 mock | `/_admin/calls` đếm lúc nhận ở middleware ngoài cùng (kể cả request bị bơm lỗi, 401/403); không đếm `/_admin/*`, `/health`; phản hồi `{count, calls[{method, path, count, statuses}]}`; `/_admin/users/{id}/status` đổi trạng thái AD mock |
+| 13 | 11.6 gate3 (Q-3h-4) | Route mong đợi tính theo giờ lúc chạy, in "TRONG GIỜ/NGOÀI GIỜ" đầu bảng; ngoài giờ tc02/tc06 → R18 → `l1_01` duyệt qua API → renew = 1 → xác nhận → `S_RESOLVED`; tc28 stop/start Qdrant trong `finally`; không thêm biến ép đồng hồ ở stack |
+| 14 | 11.9 smoke | `make vpn-smoke` đọc **`spend.cap_usd` trong `config/llm.yaml` mà container đang nạp** (Q-3d-3 — không có biến `LLM_SPEND_CAP_USD`); `LLM_BACKEND=real` mà cap > 1 hoặc model thiếu pricing → từ chối. Chạy: hạ tạm `cap_usd: 1` → build → smoke → trả 38 → build → `git diff config/llm.yaml` rỗng (không commit bản hạ cap) |
+| 15 | 11.8 mutation | Thêm M-3h-10 (`target_is_other` chỉ so `requested_for`), M-3h-11 (`begun` trước kiểm hạn lượt), M-3h-12 (có `approval_id` mà bỏ đọc bảng), M-3h-13 (`outputs` không lọc regex), M-3h-14 (bỏ so `requester.*` AD mới vs B1), M-3h-15 (bước [0] chỉ kiểm lượt hiện tại), M-3h-16 (bỏ `durability="sync"`). Script mutation có chốt N3: file đích còn chữ `MUTATION` → dừng; chạy mốc xanh một lần trước, đỏ → dừng |
+| 16 | 3.3 / 11.4 (Q-3h-10, FAIL mục 7 soát DỪNG 3b) | **Ngoại lệ có chủ đích của luật "exception chưa lường trước → E9":** mọi `Exception` SAU `begin` ở B17 (đứt kết nối sau khi gửi, 2xx JSON hỏng/sai schema, lỗi khi hoàn tác) và mọi lỗi ở đoạn B18 sau khi ghi thành công → E7 `exec_interrupted` + câu "có thể đã gửi lệnh ghi…"; audit `cause` = CHỈ tên lớp lỗi, `write_calls` = cận trên. Registry không bắt thêm `TransportError` (để đứt kết nối ra `exec_interrupted`, không `exec_failed`). Lỗi trước `begun` vẫn E9; `CancelledError` không bắt. Ghi chú bàn giao với lỗi mơ hồ (`timeout`, `http_5xx`, `other`) thêm "có thể đã được áp dụng". Runner `recover_exhausted` trên ticket đã có `begun` (theo ticket, mọi lượt) → E7 `execution_interrupted` + câu đó. Boundary (`with_error_boundary`, trạng thái chưa kết thúc/escalate) hỏi `RunContext.txlog.has_begun` (bắt buộc, theo ticket) TRƯỚC cả nhánh E2 lẫn E9 → có thì E7 `execution_interrupted` + câu đó (bịt cả lỗi ở `goto(S_CONFIRMING)` cuối B17 sau khi ghi thành công và lỗi ở `confirm_wait`/B19); `has_begun` lỗi → ném tiếp, không hạ E9 (Việc treo 21, làm trong 3b). Runner `recover` lấy node còn dở bằng `_pending`: `snap.next`, không có thì `snap.tasks` (node chờ vừa resume mà ném lỗi có `next == ()` — trước đây bị coi là thread đã kết thúc, ticket kẹt ở trạng thái chờ). **Bất biến:** ticket đã có `begun` không bao giờ mang mẫu E9 "xử lý thủ công" hay E2. M-3h-28 (executor), M-3h-34 (boundary), M-3h-35 (`_pending`) |
+| 17 | 6.4 / 11.6 (Q-3h-11, gate3 lần 1 trên stack: 40 PASS / 19 FAIL) | (a) `build_query` bỏ thẻ `[fake:…]` khỏi câu truy hồi (thẻ chỉ để chọn preset ScriptedLLM); regex dời về một nguồn `app/core/fake_tag.py` (rag không được import llm/graph — hợp đồng import-linter 7), llm/graph import lại; tc06 có thẻ 0,073 → không thẻ 0,677 (reranker thật, ngưỡng 0,6); M-3h-36. (b) Câu tc05 của gate3/vpn-smoke = "VPN báo lỗi 809, hướng dẫn mình khắc phục với" (TC05 = KB-VPN-003 lỗi 809; câu cũ 0,567 → 0,981, chunk đầu `KB-VPN-003#v1#0`). (c) tc09 "cấp lại VPN cho máy PC-0977": 0,047; thử thêm mục đúng cách nói vào KB-VPN-005 (v2) → chunk mới đứng đầu nhưng chỉ 0,261 → hoàn tác về v1. Kết luận: với reranker thật, yêu cầu hành động xếp đúng tài liệu nhưng điểm không qua ngưỡng dành cho câu hỏi thông tin → đây là vấn đề thiết kế B9 (Việc treo 17), không vá bằng dữ liệu. **gate3 tc09 kỳ vọng E3 `no_grounding` ở B9, 0 lời gọi ghi** (C8 vẫn "0 FAIL"); đường HITL R17+R18 của TC09 chỉ được kiểm ở e2e h6 (FakeMl). Không hạ ngưỡng, không đổi thứ tự B9/B10 trong 3h — chuyển Phase 4 S0 (Q-4-U). tc13: gate3 kỳ vọng `S_BLOCKED` E0 theo e10 (3e) |
+
+**Việc treo mới:** 17 — B9 (grounding) chạy trước B10 (need_type) → yêu cầu hành động có điểm truy hồi thấp bị E3 dù không cần KB (h14); an toàn nhưng giảm tự động. **Nâng ưu tiên (Q-3h-11):** gate3 trên reranker thật đo tc09 0,047 / tc06 0,677 (sát ngưỡng 0,6) — KB thật cho demo gặp đúng rủi ro này. Thêm chứng cứ: KB-VPN-005 có mục đúng cách nói vẫn chỉ 0,261 — không vá được bằng dữ liệu. **Chuyển Phase 4 S0 (Q-4-U, `phase4-thiet-ke-chi-tiet.md` mục 3.3/4.0) — CHƯA giải quyết ở Phase 3:** demo HITL (TC09 R17+R18) trên stack thật đang dừng ở E3 B9; thiết kế B9 cho yêu cầu hành động do Phase 4 chốt (D-34) trước 4a. Code 3b giữ nguyên hành vi (gate3 tc09 = E3 `no_grounding`); ngưỡng thật vẫn chọn khi có bộ kiểm tra của TV1.
+
+**Quy trình:** 3h thử subagent dự án (`spec-reader`, `test-writer`, `security-reviewer`; gọi phải được duyệt). security-reviewer bắt 2 FAIL + 10 NGHI thật qua 3 lượt; test-writer viết 115 test từ bảng spec trước khi có code (42 đỏ đúng lý do ở h-rule). Giữ cho các chặng an toàn của Phase 4+.
+
+**Kết quả 3h (DỪNG 3b đóng 30/09/2026, commit `c11b61f` code + `61ad8ac` spec v2.0).** `make test` backend 3033 · mock 94 · ml 77 (unit 2793); mutation 3h: unit 38/38 ×3 lượt (có M-3h-28, 34, 35, 36), PG 4/4, e2e 7/7 + 2 tương đương (M-3h-1, M-3h-8) + M-3f-2 (phần e2e còn treo của 3f); e2e cổng 3 h1–h19 + h15b + h11@20:00 xanh (21; h11@20:00 và h14 là hành vi tạm, Phase 4b đổi thành E5 — #11); `make gate3 S=all` 63 PASS / 0 FAIL (Tuấn Anh, TRONG GIỜ 13:52 — tc09 = E3 theo #17); `make vpn-smoke` scripted 41/0 (0 USD); `make gate2 S=all` 89/0; soát bảo mật cuối (S17): 1 FAIL (FAIL mục 7 → #16) + 6 NGHI → sửa 4, 2 vào Việc treo. CI xanh run `36684958734`. *Phase 3 đóng phần code; nợ nghiệm thu NỢ-3-1 (gate3 thành viên ngoài giờ), NỢ-3-2 (smoke LLM thật) — mục 13.*
+
 ---
 
 ## 12. Dữ liệu chạy song song
@@ -2018,13 +2117,20 @@ Sau khi `make gate3` 0 FAIL, Tuấn Anh:
 
 ## 13. Nghiệm thu cổng 3 phần code
 
-- [ ] `make lint`, `make test` xanh; CI xanh.
-- [ ] e2e h1–h19 xanh.
-- [ ] Mọi mutation "bắt buộc" của 8 chặng bị bắt (bảng tổng trong PROGRESS).
-- [ ] `make gate2 S=all` 0 FAIL trên code cuối Phase 3 (hoặc biên bản chuyển preset).
-- [ ] `make gate3 S=all` 0 FAIL, chạy bởi người không làm chính.
-- [ ] Smoke LLM thật (11.9) đã chạy, số liệu ghi PROGRESS.
-- [ ] Spec: các file liệt kê ở mục 14 có dòng 5.1 trỏ về đây; `decisions.md` §4.1 có 3-Q1…Q40; P7 vẫn 22 bảng (không thêm `notifications`), ghi migration 0006 (kb) + migration `security_event`.
+- [x] `make lint`, `make test` xanh; CI xanh — run `36684958734` trên `61ad8ac` (gồm `c11b61f`), 3m52s, 30/09/2026.
+- [x] e2e h1–h19 xanh (+ h15b, h11@20:00; 30/09/2026).
+- [x] Mọi mutation "bắt buộc" của 8 chặng bị bắt (bảng tổng trong PROGRESS, mục 3h DỪNG 3b S16b).
+- [x] `make gate2 S=all` 0 FAIL trên code cuối Phase 3 — 89/0 trên `c11b61f`.
+- [ ] **NỢ-3-1** `make gate3 S=all` 0 FAIL, chạy bởi người không làm chính, NGOÀI GIỜ (nhánh R18 → duyệt → renew trên stack). *(Tuấn Anh 63/0 trong giờ, 30/09/2026. Dời theo quyết định Tuấn Anh 30/09/2026: gộp vào đợt kiểm tổng khi xây xong — xem "Nợ nghiệm thu" dưới.)*
+- [ ] **NỢ-3-2** Smoke LLM thật (11.9) đã chạy, số liệu ghi PROGRESS. *(Dời — xem "Nợ nghiệm thu" dưới.)*
+
+**Nợ nghiệm thu Phase 3 (Tuấn Anh chốt 30/09/2026 — kiểm một thể khi xây xong):** Phase 3 **đóng phần code** (`c11b61f`, `61ad8ac`, CI `36684958734`); hai ô trên chưa tick, không chặn Phase 4+.
+
+| Mã | Việc | Hạn muộn nhất | Rủi ro khi dời |
+|---|---|---|---|
+| NỢ-3-1 | Thành viên chạy `make gate3 S=all` ngoài giờ (đăng nhập ha.lt trước) | Cổng code Phase 7 (trước mốc G) | Thấp: nhánh ngoài giờ đã có unit + e2e h11@20:00; Phase 4b đổi hành vi R17–R19 nên kỳ vọng gate3 sẽ phải cập nhật trước khi chạy |
+| NỢ-3-2 | Smoke LLM thật 1 lần (11.9; README "Chạy smoke LLM thật"; hạ `cap_usd` 1 → trả 38, `git diff config/llm.yaml` rỗng) | **Trước khi Phase 5 viết thêm prompt** (khuyến nghị); muộn nhất mốc G | **Trung bình:** lệch với `decisions.md` §4 mục 2 ("chạy một lần khi xong cổng code Phase 3… không đợi mốc G"). Lỗi hợp đồng P2 với provider thật (JSON lệch schema, tiếng Việt, độ trễ) lộ muộn và phải sửa trên nhiều prompt hơn |
+- [x] Spec: các file liệt kê ở mục 14 có dòng 5.1 trỏ về đây; `decisions.md` §4.1 có 3-Q1…Q40; P7 vẫn 22 bảng (không thêm `notifications`), ghi migration 0006 (kb) + migration `security_event`.
 
 Phần cổng 3 cần LLM thật (demo 4 ca quay màn hình, intent ≥ 18/20, biểu đồ ngưỡng trên KB thật) → mốc G, trừ biểu đồ ngưỡng làm ngay khi TV1 xong bộ kiểm tra.
 
@@ -2058,6 +2164,9 @@ Mỗi file thêm mục **"5.1 Chốt khi hiện thực Phase 3"** gồm một c�
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 27/09/2026 | 1.0 | Tạo file: phạm vi, 36 quyết định, hợp đồng chung, 8 chặng 3a–3h |
+| 30/09/2026 | 2.0 | Mục 11.10: chốt khi hiện thực 3h (P1–P9, Q-3h-1…7, thứ tự B17 [0]→[5], begun theo ticket, durability sync, `ExecutionResult.outputs`, hai đường gián đoạn, gate3 theo giờ, vpn-smoke theo `spend.cap_usd`, M-3h-10…16); Việc treo 17 |
+| 30/09/2026 | 1.9 | Mục 10.7: chốt khi hiện thực 3g (P1–P10, Q-3g-1…11: `no_grounding` cho cannot_answer, anchor ∩ khối gửi LLM, lineage qua goto cùng transaction audit, `validate_targets` luôn kiểm lại máy đích và bỏ fact máy cũ, D-20 fail-closed, luật che trước khi tạo sự kiện; kết quả) |
+| 30/09/2026 | 1.8 | Mục 9.8: chốt khi hiện thực 3f (P1–P4, Q-3f-1…7, hạn cả lượt trước semaphore, tool ghi cần trọn timeout, sanitize_slots chữ ký thật, check_facts kiểu chặt, diagnostics JSON, R20 phải đòi device_owner_is_requester; kết quả) |
 | 30/09/2026 | 1.7 | Mục 8.9: chốt khi hiện thực 3e (L0 NFKC riêng, luật mật khẩu/entropy/SĐT, 2 đường rò 422, reason_code enum, username dạng chặt, SYS-02, TAU_PASS 0,10, Q-3e-14 HMAC ở Phase 4 S0; kết quả). Mục 9.0: hạn cho cả lượt (S0 của 3f) |
 | 29/09/2026 | 1.6 | Mục 7.8: chốt khi hiện thực 3d (16 mục sửa: MockTransport thay respx, strong max_retries=1, deadline_s, không nội suy env, MIN_LLM_CALL_SITES tạm 0, AnswerOut hai chiều, giữ chỗ trần chi, EVAL_MODE, ẩn base_url; kết quả) |
 | 28/09/2026 | 1.5 | Mục 6.13: chốt khi hiện thực 3c (Q-3c-1…8: 2 đường cổng kiểm, nới tiêu chí rerank, probe `/aliases`, giữ role lạ `public` và audit câu đã che; kết quả) |

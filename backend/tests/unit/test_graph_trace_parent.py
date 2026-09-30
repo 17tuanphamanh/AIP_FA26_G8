@@ -8,6 +8,7 @@ from app.graph.context import RunContext, bind_run
 from app.graph.tracing import trace_parent, traced
 from app.llm.ports import TraceParent
 from app.llm.schemas import NeedTypeOut
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.llm import make_gateway
 from tests.fakes.scripted_llm import Reply, ScriptExhausted
@@ -15,7 +16,7 @@ from tests.fakes.scripted_llm import Reply, ScriptExhausted
 
 def _ctx(spans: MemorySpans) -> RunContext:
     return RunContext(turn_id="T1", trace_id="a" * 32, audit=MemoryAudit(), effects=MemoryEffects(), spans=spans,
-                      clock=FakeClock())  # fmt: skip
+                      clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
 
 
 def test_outside_graph_turn_is_none() -> None:

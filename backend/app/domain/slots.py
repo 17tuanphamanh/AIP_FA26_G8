@@ -87,10 +87,15 @@ def _squash(text: str) -> str:
     return " ".join(text.casefold().split())
 
 
+def phrase_in_text(value: str, text: str) -> bool:
+    """Đoạn chữ tự do có nằm trong câu người dùng không — sau casefold + gộp khoảng trắng (Q-3f-3 `reason`, Q-3f-4 `span`)."""
+    return _squash(value) in _squash(text)
+
+
 def in_text(key: str, value: str, text: str) -> bool:
     """Giá trị có thật trong câu người dùng không (P2, Q-3f-3)."""
     if key in PHRASE_IN_TEXT:
-        return _squash(value) in _squash(text)
+        return phrase_in_text(value, text)
     return re.search(rf"(?<!\w){re.escape(value.casefold())}(?!\w)", text.casefold()) is not None
 
 

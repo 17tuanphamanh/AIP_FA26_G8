@@ -4,16 +4,18 @@ Kiểu phụ ChunkRef (B08), RiskDecision (B12 mục 4.1), ExecutionResult (B17)
 không được import rag/risk/executor. raw_request KHÔNG có trong state — chỉ redacted_request (D-07).
 """
 
+import re
 import typing
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from datetime import date
 from typing import Annotated, Any, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.action import Action
 from app.domain.context import RequesterContext
 
-# Chưa file nào định nghĩa cấu trúc tin nhắn; chốt khi làm B10/B11.
+# Khuôn tin nhắn: `domain/messages.py` (3g, phase3 10.2) — khoá đóng, `sources` chỉ 3 khoá.
 type Msg = dict[str, Any]
 
 
@@ -52,6 +54,26 @@ class RiskDecision(BaseModel):
     thresholds: tuple[float, float] | None
 
 
+# Kết quả tool ghi được mang theo tới B18 (Q-3h-2 A): khoá ĐÓNG, giá trị qua regex chặt — tin kết quả và ghi chú bàn giao chỉ
+# ghép từ enum/định danh/ngày (P6, luật 8.9). `serial` theo mẫu mock (`VPN-2025-0342`, bản mới cấp `VPN-NEW-0001`).
+EXEC_OUTPUT_PATTERNS: Mapping[str, re.Pattern[str]] = {
+    "serial": re.compile(r"VPN-(?:\d{4}|NEW)-\d{4,6}"),
+    "expires_on": re.compile(r"\d{4}-\d{2}-\d{2}"),
+}
+
+
+def _valid_output(key: str, value: object) -> bool:
+    pattern = EXEC_OUTPUT_PATTERNS.get(key)
+    if pattern is None or not isinstance(value, str) or not pattern.fullmatch(value):
+        return False
+    if key == "expires_on":
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+    return True
+
+
 class ExecutionResult(BaseModel):
     success: bool
     steps_done: list[str]
@@ -60,6 +82,16 @@ class ExecutionResult(BaseModel):
     rollback_details: list[tuple[str, str]]  # (step, "undone" | "UNDO_FAILED: …")
     action_plan_hash_matched: bool | None
     handoff_note: str | None
+    # Q-3h-2 (A): khoá lạ / giá trị sai mẫu bị BỎ (không lỗi, không vào tin). Mặc định {} — checkpoint cũ không có trường này
+    # vẫn nạp được.
+    outputs: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("outputs", mode="before")
+    @classmethod
+    def _closed_outputs(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(k): v for k, v in value.items() if _valid_output(str(k), v)}
 
 
 class TicketState(TypedDict, total=False):
@@ -84,8 +116,15 @@ class TicketState(TypedDict, total=False):
     intent: str | None
     intent_confidence: float | None
     span: str | None
-    slots: dict[str, Any]
+    slots: dict[str, Any]  # THAM SỐ người dùng/LLM (qua domain.slots.sanitize_slots) — KHÔNG là căn cứ cho luật (3-Q1)
+    # DỮ KIỆN cho luật M5 (phase3 3.2): chỉ key thuộc domain.facts.FACT_KEYS, CHỈ B6 (infer_vpn) và B11 validate_targets
+    # ghi; B3 đặt lại {}. Không đường nào từ slots/đầu ra LLM vào đây (G-01).
+    facts: dict[str, str | int | bool]
+    ctx_flags: dict[str, bool]  # {target_is_other} — B6 ghi, B12 build_ctx đọc (VPN Phase 3 luôn false)
+    rediagnose: bool  # D-20 (cờ tắt) — 3f chỉ khai báo, B6 ghi False; chế độ chẩn đoán lại ở 3g ("Việc treo" 11)
+    changed_slots: list[str]  # D-20 — B11 ghi ở 3g
     missing_slots: list[str]
+    # B6: kết quả 3 tool dạng JSON (`model_dump(mode="json")`, không phải model Pydantic — PLAN-3f mục 3); None = 404/rỗng
     diagnostics: dict[str, Any]
     tool_errors: list[str]
     tool_retry_count: int
@@ -95,6 +134,7 @@ class TicketState(TypedDict, total=False):
     kb_version: str | None
     intent_filter_fallback: bool
     need_type: Literal["info", "action"] | None
+    answer_ref: str | None  # B10 (3g): ref do `notify_user` trả cho câu trả lời — phase3 3.1
     # hành động + rủi ro + duyệt
     intended_action: Action | None
     action_plan_hash: str | None

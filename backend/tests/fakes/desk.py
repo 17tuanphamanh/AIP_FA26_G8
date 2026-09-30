@@ -10,7 +10,7 @@
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -157,15 +157,17 @@ async def desk_env(
     lock_timeout: float = 5.0,
     guard: Any = None,
     runtime: RuntimeFactory | None = None,
+    harness: Mapping[str, Any] | None = None,
     **settings_over: Any,
 ) -> AsyncIterator[DeskEnv]:
-    """`plan`: kết quả node giả cho MỌI ticket tạo qua API (`FakeScenario.plan_all`)."""
+    """`plan`: kết quả node giả cho MỌI ticket tạo qua API (`FakeScenario.plan_all`). `harness`: trường thêm cho
+    `GraphHarness` (vd. `nodes="real"`, `llm`, `rag` — 3g, g18)."""
     clock = FakeClock(EPOCH)
     sink = RecordingSink(clock)
     store = InMemoryAuthStore(sink)
     idp = FakeIdentityProvider()
     h = GraphHarness(clock=clock, identity=StoreIdentity(store), ad=ad_directory(seed_ad_users()),
-                     approver_id=APPROVER, lock_timeout=lock_timeout)  # fmt: skip
+                     approver_id=APPROVER, lock_timeout=lock_timeout, **(harness or {}))  # fmt: skip
     h.scenario.plan_all(**(plan or {}))
     guard = guard or MaskingGuard()
     settings = auth_settings(**settings_over)

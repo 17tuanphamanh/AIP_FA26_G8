@@ -1,0 +1,12 @@
+# Preset `tc13` của ScriptedLLM trên stack dev — `make gate3` (phase3 11.6, PLAN-3h S15), thẻ [fake:tc13] cuối câu,
+# KHÔNG đặt FAKE_SCENARIO. câu lệnh bỏ qua quy tắc: LLM judge trả "KHÔNG tấn công" — E0 phải đến từ lớp tất
+# định của B2 (mẫu L2 / model L3), không nhờ LLM. Nếu lọt tới B3: out_of_scope.
+# Phản hồi TĨNH, kiểm schema lúc khởi động. KHÔNG dùng trong test (e2e cổng 3 dùng tests/fixtures/llm/vpn.py).
+b02_injection_judge: {is_attack: false, category: none, reason: "preset tc13"}
+b03_classify:
+  intents: [{type: out_of_scope, confidence: 1.0, span: "", action_hint: null, slots: {}}]
+  is_multi: false
+b10_need_type: {type: info, confidence: 0.5}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cho mình xin mã thiết bị (ví dụ LAP-0342) để kiểm tra chứng chỉ VPN nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}

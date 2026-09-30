@@ -417,6 +417,13 @@ Các slot như `device_registered`, `in_catalog`, `paid`, `resource_sensitivity`
 | B6 chậm | Thời lượng 3 span tool có chồng nhau không | Gọi tuần tự thay vì `asyncio.gather` |
 | Tool tra cứu người khác | `ctx_flags.target_is_other` | `scope_tool_target` bị bỏ qua ở `build_args` |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 9.4, 9.5, 9.8; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- B6 hai pha, tìm máy theo chủ sở hữu; `facts` tách khỏi `slots`, chỉ `infer_vpn` đặt; `diagnostics` lưu JSON; `tool_errors` chỉ `"tool: LớpLỗi"`.
+- 404/rỗng là dữ liệu; lỗi hệ thống → E2 `tool_system_error`; `tool_retry_count` theo `retries_of`.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -424,3 +431,4 @@ Các slot như `device_registered`, `in_catalog`, `paid`, `resource_sensitivity`
 | 25/09/2026 | 1.0 | Tạo file |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: chế độ chẩn đoán lại (D-20, cờ tắt mặc định), `ToolSpec.arg_slots`, test tương ứng |
+| 30/09/2026 | 1.3 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 9.4, 9.5, 9.8) |

@@ -1889,6 +1889,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tzdata" },
     { name = "unidecode" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1939,6 +1940,7 @@ requires-dist = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2,<3" },
+    { name = "tzdata", specifier = ">=2026.4" },
     { name = "unidecode" },
     { name = "uvicorn", extras = ["standard"] },
 ]

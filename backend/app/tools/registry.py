@@ -13,7 +13,7 @@ raise, không tính vào breaker. Breaker đếm theo lời gọi registry (sau 
 
 Hạn cho cả lượt (phase3 9.0, PLAN-3f S0): kiểm TRƯỚC breaker (hết hạn → `TurnBudgetExceeded`, không gọi, không đụng
 breaker); tool đọc: timeout MỖI lần thử = `cap_timeout(spec.timeout_s)`, backoff không vượt phần còn lại; tool ghi: không
-đủ TRỌN `timeout_s` → không gửi (`full=True`). Bị bỏ giữa chừng vì hết hạn → `breaker.record_abandoned()` (không tính
+đủ TRỌN `timeout_s` → không gửi (`full=True`, MỘT chỗ duy nhất trong `_invoke`). Bị bỏ giữa chừng vì hết hạn → `breaker.record_abandoned()` (không tính
 lỗi). `TurnBudgetExceeded` luôn ném (không thành `ToolResult.error`): node/boundary → E2 `turn_budget_exceeded`.
 """
 
@@ -96,7 +96,7 @@ class ToolRegistry:
         if handler is None:
             raise ToolContractError(f"{name}: chưa gắn handler vào registry này")
 
-        cap_timeout(spec.timeout_s, self._clock, what=f"tool:{name}", full=spec.kind == "write")  # 9.0: trước breaker
+        cap_timeout(spec.timeout_s, self._clock, what=f"tool:{name}")  # 9.0: lượt đã hết → không đụng breaker
         breaker = self._breakers[spec.target_system]
         if not breaker.allow():
             result = ToolResult(name, None, CIRCUIT_OPEN, 0, False)

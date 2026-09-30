@@ -53,10 +53,13 @@ from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
 from app.db.session import Engines, create_engines, ping
+from app.executor.txlog import SqlTxLog
+from app.executor.vpn import VpnExecutor
+from app.executor.wiring import build_write_registry
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.patterns import check_guard
-from app.guard.privacy import NotRedactingGuard, PrivacyGuard, RegexPrivacyGuard
+from app.guard.privacy import PrivacyGuard, guard_from_settings
 from app.llm.wiring import check_llm
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
@@ -71,19 +74,34 @@ type RuntimeFactory = Callable[
 ]
 
 
-def _default_runtime(
+NO_EXECUTOR_WARNING = "B17 se tu choi thuc thi (khong co SVC_EXECUTOR_TOKEN)"
+
+
+@asynccontextmanager
+async def _default_runtime(
     settings: Settings, engines: Engines, clock: Clock, directory: ToolCaller | None
-) -> AbstractAsyncContextManager[Runtime]:
-    # Backend giữ SVC_EXECUTOR_TOKEN (D-03) → can_execute=True; worker thì không.
-    return open_runtime(settings, engines, clock, can_execute=True, directory=directory)
+) -> AsyncIterator[Runtime]:
+    """Backend giữ SVC_EXECUTOR_TOKEN (D-03) → can_execute=True; worker thì không. 3h (P7): CHỈ ở đây dựng registry GHI +
+    `VpnExecutor` (transaction_log trên engine chính). Không token → `RefusingExecutor` (B17 E7, 0 lời gọi ghi) + WARNING một
+    lần lúc khởi động. `FAKE_SCENARIO` (gate2, node giả) → giữ `RefusingExecutor` như Phase 2 (gate2 89/0 không đổi)."""
+    async with AsyncExitStack() as stack:
+        executor = None
+        if settings.svc_executor_token is None:
+            log.warning(NO_EXECUTOR_WARNING)
+        elif settings.fake_scenario is None:
+            write_registry, write_http = build_write_registry(settings, clock)
+            stack.push_async_callback(write_http.aclose)
+            executor = VpnExecutor(
+                write_registry, SqlTxLog(engines.main, clock), clock, tz=get_policy().business_hours.tz
+            )
+        yield await stack.enter_async_context(
+            open_runtime(settings, engines, clock, can_execute=True, directory=directory, executor=executor)
+        )
 
 
 def _default_guard(settings: Settings) -> PrivacyGuard:
     """Mặc định MỌI env: guard regex thật (3e). `PRIVACY_GUARD=none` chỉ dev/test (phase3 mục 8.3, e17)."""
-    if settings.privacy_guard == "none":
-        settings.require_dev_fakes("PRIVACY_GUARD=none (NotRedactingGuard — privacy guard không che)")
-        return NotRedactingGuard()
-    return RegexPrivacyGuard.from_settings(settings)
+    return guard_from_settings(settings)
 
 
 def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:

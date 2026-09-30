@@ -15,15 +15,18 @@ Các port side effect (`Notifier`, `Approvals`, `DeadlineStore`) luôn được 
 
 import asyncio
 import inspect
-import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from app.domain.action import Action
+from app.core.fake_tag import FAKE_TAG
+from app.domain.action import Action, ActionMeta
 from app.domain.context import RequesterContext
-from app.domain.ticket_state import RiskDecision
+from app.domain.policy import BusinessHours
+from app.domain.ticket_state import ExecutionResult, RiskDecision
+from app.executor.errors import ExecutionInterrupted
+from app.executor.txlog import TxLog
 from app.graph.ports import (
     AlertSink,
     DeadlineStore,
@@ -34,10 +37,21 @@ from app.graph.ports import (
     ToolCaller,
     ToolResult,
 )
+from app.guard.output import OutputGuard, default_output_guard
+from app.guard.privacy import TextRedactor, guard_from_settings
 from app.llm import LlmPort
 from app.ml import MlPort
 from app.rag.ports import RagPort
-from app.settings import EscalationTemplates, PolicyConstants, get_slots
+from app.risk.estimator import DisabledEstimator, RiskEstimator
+from app.settings import (
+    EscalationTemplates,
+    PolicyConstants,
+    SlotsFile,
+    get_action_metadata,
+    get_policy,
+    get_settings,
+    get_slots,
+)
 
 
 class Notifier(Protocol):
@@ -63,9 +77,19 @@ class Approvals(Protocol):
         """B16 ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`)."""
         ...
 
+    async def get_status(self, approval_id: str) -> str | None:
+        """B17 (3h, phase3 11.4 bước 1; P8): trạng thái phiếu trong BẢNG — "đã duyệt" = state + bảng + hash. None = không có."""
+        ...
+
 
 class Executor(Protocol):
-    async def execute(self, ticket_id: str, action: Action | None) -> bool: ...
+    """Điểm ghi duy nhất (B17, 3h — phase3 11.4): chạy `PLAN[action.type]` qua registry GHI (token svc_executor), mỗi bước có
+    dòng `transaction_log` `begun` TRƯỚC lời gọi; lỗi bước → hoàn tác nếu `reversible` → `ExecutionResult(success=False,
+    handoff_note=4 phần)`. Ticket đã có `begun` (mọi lượt) → ném `executor.errors.ExecutionInterrupted` (0 lời gọi ghi; B17
+    đã hỏi `NodeDeps.txlog` ở bước 0 — đây là lớp thứ hai). Không đủ TRỌN timeout ghi cho cả kế hoạch → `TurnBudgetExceeded` TRƯỚC `begun` (P4). Thật: `executor/vpn.py`
+    (chỉ API process — P7); worker và API thiếu token: `RefusingExecutor`."""
+
+    async def execute(self, ticket_id: str, turn_id: str, action: Action) -> ExecutionResult: ...
 
 
 DEFAULT_OUTCOMES: Mapping[str, str] = {
@@ -143,7 +167,6 @@ PAUSABLE_NODES = frozenset({
     "b12_assess", "b15_prepare_approval", "b17_execute",
 })  # fmt: skip
 PAUSE_POINTS = PAUSABLE_NODES | {"after_approval_create"}
-FAKE_TAG = re.compile(r"\[fake:([a-z0-9_]+)\]")
 
 
 @dataclass(frozen=True)
@@ -211,6 +234,9 @@ class NodeDeps:
     notifier: Notifier
     approvals: Approvals
     executor: Executor
+    # B17 bước 0 (chốt DỪNG 2, NGHI-2): ticket đã có `begun` ở bất kỳ lượt nào → E7 TRƯỚC mọi bước kiểm lại. Bắt buộc, không
+    # bản mặc định (mặc định "chưa có gì" = fail-open).
+    txlog: TxLog
     deadlines: DeadlineStore
     constants: PolicyConstants
     identity: IdentityReads  # B1: sessions + users.locked_until
@@ -232,6 +258,23 @@ class NodeDeps:
     approver_id: str | None = "l1-fake"
     # 3-Q13: slot nối vào câu truy hồi RAG (`build_query`, B8) — một nguồn `config/slots.yaml`.
     query_slots: tuple[str, ...] = field(default_factory=lambda: tuple(get_slots().query_slots))
+    # 3f: slot theo intent (B3 `sanitize_slots`), metadata hành động (B11 `build_action`, 3g), intent đang bật (B3, 3-Q27 —
+    # frozenset thay vì cả `Settings`: node chỉ cần đúng tập này), cờ ablation RQ3 (B6). Mặc định = cấu hình repo / Settings.
+    slots: SlotsFile = field(default_factory=get_slots)
+    action_metadata: Mapping[str, Mapping[str, ActionMeta]] = field(
+        default_factory=lambda: get_action_metadata().root
+    )
+    enabled_intents: frozenset[str] = frozenset({"vpn"})
+    enable_proactive_diagnosis: bool = True
+    # 3g: output guard (phase3 10.3) — MỌI chữ LLM sắp lưu/gửi (thân B10, câu hỏi B11) qua đây (P4). Privacy guard THUẦN
+    # (`redact_text`) — `clarify_wait` che lại câu trả lời trước khi gửi LLM/lưu (P3, Q-3g-4). Mặc định = cấu hình repo
+    # (guard regex; KHÔNG BAO GIỜ mặc định bản không che); runtime dựng tường minh theo Settings (`graph/wiring._open`).
+    output_guard: OutputGuard = field(default_factory=default_output_guard)
+    privacy: TextRedactor = field(default_factory=lambda: guard_from_settings(get_settings()))
+    # 3h (phase3 11.2, 11.3): giờ hành chính của luật R18 (`config/policy.json` — một nguồn); lớp 2 của M5 (B14) — Phase 3
+    # luôn `DisabledEstimator` (3-Q30: không luật nào khớp → E5 `llm_layer_disabled`).
+    business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
+    estimator: RiskEstimator = field(default_factory=DisabledEstimator)
 
 
 def fake_requester(user_id: str, now: datetime) -> RequesterContext:
@@ -266,11 +309,31 @@ class LoggingNotifier:
         return f"noop:{ticket_id}"
 
 
-class RefusingExecutor:
-    """Không thực thi gì: B17 thật (credential svc_executor) làm ở Phase 3."""
+REFUSED_NOTE = (
+    "Đã làm: chưa bước nào. Lỗi ở bước: — (tiến trình không có credential ghi SVC_EXECUTOR_TOKEN). Hoàn tác: không cần. "
+    "L2 cần làm tay: thực hiện hành động dự kiến trên hệ thống đích."
+)
 
-    async def execute(self, ticket_id: str, action: Action | None) -> bool:
-        return False
+
+class RefusingExecutor:
+    """Không thực thi gì (0 lời gọi ghi): worker (D-03, P7) và API thiếu `SVC_EXECUTOR_TOKEN` → B17 E7 `exec_failed`.
+
+    Soát S12 NGHI-3: checkpoint LangGraph mặc định `durability="async"` — API có thể chết SAU khi đã gửi lời gọi ghi của B17
+    mà checkpoint của node đứng trước (vd `approval_wait`) chưa lưu xong → worker phục hồi, chạy lại tới B17 NGAY trong worker.
+    Có `txlog` → đọc `transaction_log`: ticket đã có `begun` (mọi lượt) → `ExecutionInterrupted` (E7 `exec_interrupted`, "kiểm
+    tra trạng thái thật"), KHÔNG trả "chưa bước nào… làm tay" (L2 có thể làm lần 2). B17 bước 0 đã chặn trước — lớp thứ hai.
+    `txlog` BẮT BUỘC (soát lại DỪNG 2 NGHI-b: mặc định "không có txlog" = fail-open)."""
+
+    def __init__(self, txlog: TxLog) -> None:
+        self._txlog = txlog
+
+    async def execute(self, ticket_id: str, turn_id: str, action: Action) -> ExecutionResult:
+        if await self._txlog.has_begun(ticket_id):
+            raise ExecutionInterrupted(f"ticket {ticket_id}: transaction_log đã có begun")
+        return ExecutionResult(
+            success=False, steps_done=[], failed_step=None, rollback_status="not_attempted", rollback_details=[],
+            action_plan_hash_matched=None, handoff_note=REFUSED_NOTE,
+        )  # fmt: skip
 
 
 

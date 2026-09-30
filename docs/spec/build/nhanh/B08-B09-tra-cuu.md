@@ -375,6 +375,14 @@ async def b08_retrieve(state):
 | Trả lời dùng tài liệu restricted cho nhân viên | Filter `sensitivity` | `allowed_sensitivity(role)` sai; payload thiếu index; lần chạy lại D-23 quên giữ lọc |
 | Chậm | Thời lượng `rag:rerank`; tần suất `rag:search_nofilter` | K quá lớn; ml-service thiếu CPU; B3 phân sai nhiều làm lần chạy lại xảy ra thường xuyên |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 6.8, 6.13; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Bỏ `call_with_retry` bọc ngoài (retry một tầng trong `rag/`); không có cột `kb_gap_query` (câu truy vấn ở điểm log 3); `reason_detail='no_grounding'`.
+- Việc treo 17: B9 chạy trước B10 → yêu cầu hành động có điểm truy hồi thấp bị E3 (h14) — xem lại Phase 5/mốc G.
+- Q-3h-11 (phase3 11.10 #17): `build_query` bỏ thẻ `[fake:…]` khỏi câu truy hồi. Việc treo 17 (B9 chặn yêu cầu hành động: tc09 0,047, có mục đúng cách nói vẫn 0,261) chuyển Phase 4 S0 (Q-4-U, phase4-thiet-ke-chi-tiet.md 3.3/4.0) — chưa giải quyết ở Phase 3.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -382,3 +390,4 @@ async def b08_retrieve(state):
 | 25/09/2026 | 1.0 | Tạo file |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | Bản vá: chunk theo token (D-21), chọn ngưỡng có câu âm tính (D-22), chạy lại không lọc intent (D-23), KB mở rộng + ablation (D-25); ghi chú B9 chặn cả luồng hành động |
+| 30/09/2026 | 1.3 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 6.8, 6.13) |

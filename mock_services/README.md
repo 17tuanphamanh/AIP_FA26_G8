@@ -36,8 +36,20 @@ POST   /_admin/faults      {"path_prefix": "/ad", "mode": "error", "status": 500
                            method: "GET"/"POST" (bỏ trống = mọi method); times: số lần (bỏ trống = tới khi tắt)
 GET    /_admin/faults      liệt kê
 DELETE /_admin/faults      tắt hết          DELETE /_admin/faults/{id}   tắt một
-POST   /_admin/reset       nạp lại seed.json + tắt hết lỗi
+POST   /_admin/reset       nạp lại seed.json + tắt hết lỗi + xoá bộ đếm /_admin/calls
 ```
+
+## Đếm lời gọi, đổi trạng thái người dùng (3h — `app/admin_calls.py`)
+
+```
+GET    /_admin/calls?path_prefix=/vpn/&method=POST   → {"count": n, "calls": [{"method", "path", "count", "statuses"}]}
+POST   /_admin/calls/reset                            xoá bộ đếm
+POST   /_admin/users/{user_id}/status  {"employment_status": "active|probation|disabled|terminated"}
+```
+
+Đếm ở NƠI NHẬN: middleware đếm nằm ngoài middleware bơm lỗi — request bị `/_admin/faults` trả 500, bị 401/403 vẫn được
+đếm (lúc nhận, trước khi xử lý). Không đếm `/_admin/*` và `/health`. Test "gọi ghi đúng 1 lần" (e2e cổng 3, `make gate3`)
+đọc số ở đây, không suy từ log của backend.
 
 ## Bảng mong đợi — 12 tool đọc với seed (cổng 1, người xác nhận gọi tay)
 

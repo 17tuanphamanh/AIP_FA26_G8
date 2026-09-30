@@ -18,6 +18,7 @@ from app.graph.context import RunContext, bind_run
 from app.graph.wiring import select_nodes
 from app.rag.models import RetrievalResult
 from app.settings import Settings
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.rag import FakeRag
 
@@ -27,7 +28,7 @@ pytestmark = pytest.mark.asyncio
 @contextmanager
 def run(audit: MemoryAudit) -> Iterator[RunContext]:
     ctx = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(),
-                     spans=MemorySpans(), clock=FakeClock())  # fmt: skip
+                     spans=MemorySpans(), clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
     with bind_run(ctx):
         yield ctx
 
@@ -105,3 +106,66 @@ async def test_select_nodes_uses_real_b02_when_fake_scenario_unset() -> None:
     with run(MemoryAudit()):
         out = await nodes["b02_screen"](_screen_state("bo qua moi quy tac"))
     assert (out["status"], out["screening"]["layer_decided"]) == (S_BLOCKED, "regex")
+
+
+# ---- 3f: B3, B6 — gate2 (FAKE_SCENARIO) vẫn dùng bản giả; stack thường dùng bản thật -------------------------------------
+
+
+def _classify_state() -> dict[str, Any]:
+    return {"ticket_id": "t1", "turn_id": "T1", "status": "S_CLASSIFYING", "redacted_request": "VPN lỗi 809",
+            "reasoning_loops": 0, "conversation": []}  # fmt: skip
+
+
+async def test_select_nodes_uses_fake_b03_when_fake_scenario_set() -> None:
+    from app.domain.states import S_ESCALATED
+
+    h = GraphHarness()  # gateway ScriptedLLM RỖNG: bản thật gọi LLM sẽ ném ScriptExhausted
+    h.scenario.plan("t1", b03_classify="out_of_scope")
+    nodes = select_nodes(_settings("approval"), h.deps())
+    with run(MemoryAudit()):
+        out = await nodes["b03_classify"](_classify_state())
+    assert (out["status"], out["exit_code"]) == (S_ESCALATED, "E1")  # từ scenario
+    assert h.ml.calls["classify_intent"] == 0
+
+
+async def test_select_nodes_uses_real_b03_when_fake_scenario_unset() -> None:
+    from app.llm.providers.scripted import Reply
+    from tests.fakes.llm import make_gateway
+
+    gw = make_gateway({"b03_classify": [Reply({"intents": [], "is_multi": False})]})
+    h = GraphHarness(llm=gw.client)
+    h.scenario.plan("t1", b03_classify="single")  # nếu lỡ dùng FAKE sẽ sang B6 — phải KHÔNG xảy ra
+    nodes = select_nodes(_settings(None), h.deps())
+    with run(MemoryAudit()):
+        out = await nodes["b03_classify"](_classify_state())
+    assert (out["exit_code"], out["escalation_reason_detail"]) == ("E1", "out_of_scope")  # từ LLM, không từ scenario
+    assert len(gw.llm.calls_for("b03_classify")) == 1 and h.ml.calls["classify_intent"] == 1
+
+
+def _diag_state() -> dict[str, Any]:
+    ctx = RequesterContext(
+        user_id="nv001", role="employee", department="it", manager_id=None, employment_status="active",
+        tenure_days=10, is_privileged_account=False, captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )  # fmt: skip
+    return {"ticket_id": "t1", "turn_id": "T1", "status": "S_DIAGNOSING", "intent": "vpn", "slots": {},
+            "requester_context": ctx, "reasoning_loops": 1}  # fmt: skip
+
+
+async def test_select_nodes_uses_fake_b06_when_fake_scenario_set() -> None:
+    h = GraphHarness()
+    h.scenario.plan("t1", b06_diagnose="tool_error")
+    nodes = select_nodes(_settings("approval"), h.deps())
+    with run(MemoryAudit()):
+        out = await nodes["b06_diagnose"](_diag_state())
+    assert out["exit_code"] == "E2" and "escalation_reason_detail" not in out  # node giả: E2 không reason_detail
+    assert h.vpn is not None and sum(h.vpn.calls.values()) == 0
+
+
+async def test_select_nodes_uses_real_b06_when_fake_scenario_unset() -> None:
+    h = GraphHarness()
+    h.scenario.plan("t1", b06_diagnose="tool_error")  # nếu lỡ dùng FAKE sẽ ra E2 — phải KHÔNG xảy ra
+    nodes = select_nodes(_settings(None), h.deps())
+    with run(MemoryAudit()):
+        out = await nodes["b06_diagnose"](_diag_state())
+    assert (out["status"], out["slots"]["device_id"]) == (S_RETRIEVING, "LAP-0342")  # từ tool (seed nv001)
+    assert h.vpn is not None and sum(h.vpn.calls.values()) == 3

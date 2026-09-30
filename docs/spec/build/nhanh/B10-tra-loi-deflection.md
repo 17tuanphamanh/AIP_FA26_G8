@@ -386,6 +386,14 @@ async def b10_route(state):
 | Người dùng nhận 2 câu trả lời | Số lần gọi `notify_user`; `side_effects` kind `notify_user` | Gửi tin trong `confirm_wait` thay vì ở B10; gửi không qua `effects.once` |
 | Câu trả lời sai số liệu (cổng, thời hạn) | `kb-facts.md` so với tài liệu KB | Tài liệu KB lệch với facts; ingest bản cũ |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 10.2, 10.3, 10.7; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Tin gửi người dùng theo khuôn `effects.once("notify_user")` + `conversation` (kind answer/question/result/escalation) của B20.
+- `cannot_answer` → E3 `no_grounding`; trích dẫn ⊆ anchor top-5 ∩ khối gửi LLM; gateway cắt khối → E3 `invalid_citation`; 0 khối → E3 không gọi LLM.
+- Output guard (`guard/output.py`): luật bí mật + canary + đoạn ≥ 40 ký tự trùng dòng system prompt; áp cho mọi chữ LLM được lưu/gửi.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -395,3 +403,4 @@ async def b10_route(state):
 | 25/09/2026 | 1.2 | Bản vá: ghép chunk liền kề làm ngữ cảnh (D-24), gửi tin + đặt hạn qua `effects.once` (D-18) |
 | 25/09/2026 | 1.3 | Ticket con không tự gửi câu trả lời, để lại notice `needs=confirm` cho cha gom (D-31) |
 | 26/09/2026 | 1.4 | Bỏ việc B10 tự đặt `resolution_path`: key không có trong `TicketState` nên LangGraph bỏ im lặng; B20 suy ra tại một chỗ (Phase 2b-2) |
+| 30/09/2026 | 1.5 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 10.2, 10.3, 10.7) |

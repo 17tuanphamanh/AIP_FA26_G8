@@ -26,6 +26,7 @@ from app.llm.config import (
     load_llm_config,
     resolve,
 )
+from app.llm.context import check_evidence_budget
 from app.llm.ports import TraceSource
 from app.llm.providers.base import Provider
 from app.llm.providers.openai_compat import OpenAICompatProvider
@@ -39,6 +40,8 @@ from app.llm.store import SqlLlmStore
 from app.settings import Settings
 
 log = logging.getLogger(__name__)
+
+ANSWER_PROMPT = "b10_answer"  # prompt nhận `evidence` (B10) — f1
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,8 @@ def check_llm(settings: Settings) -> LlmSetup:
     check_timing(cfg, settings.worker_stale_turn_seconds)
     runtime = resolve(cfg, settings, backend)
     registry = load_prompts(settings.config_dir / "prompts")
+    answer = registry.get(ANSWER_PROMPT)  # f1 (PLAN-3g): bằng chứng B10 phải vừa khung vào của vai trò
+    check_evidence_budget(answer, cfg.roles[answer.spec.role].budget_in, settings.rag_evidence_max_tokens)
     presets = None
     if backend == "scripted":
         presets = load_presets(settings.llm_script_preset_dir or settings.config_dir / "scripted", registry)

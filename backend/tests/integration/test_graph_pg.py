@@ -8,15 +8,17 @@ import asyncio
 import os
 import subprocess
 import sys
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import psycopg
 import pytest
 import pytest_asyncio
 from alembic import command
+from app.audit.writer import AuditWriter
 from app.core.clock import FakeClock
 from app.domain.states import (
     S_CLARIFYING,
@@ -25,6 +27,7 @@ from app.domain.states import (
     S_PENDING_APPROVAL,
     S_RESOLVED,
 )
+from app.executor.txlog import SqlTxLog
 from app.graph.checkpoint import CHECKPOINT_TABLES
 from app.graph.late_event import LateEvent, deliver_event
 from app.graph.ports import TicketBusy
@@ -201,6 +204,70 @@ async def test_worker_recover_never_executes(db: PgUrls, rw: AsyncEngine) -> Non
         rw, "SELECT count(*) FROM audit_logs WHERE ticket_id=:t AND event='execution_interrupted'",
         t=ticket,
     ) == 1
+
+
+# ---- Việc treo 21 (3h DỪNG 3b): boundary xét `begun`; recover node chờ vừa resume mà lỗi ---------------------------------
+
+MAY_HAVE_WRITTEN = "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay"
+
+
+class FailingAudit(AuditWriter):
+    """Audit sập (`Exception`, không phải `Crash`) ở các event cho trước: `goto` của node ném lỗi ra boundary."""
+
+    def __init__(self, engine: AsyncEngine, *events: str) -> None:
+        super().__init__(engine)
+        self.events = set(events)
+
+    async def record(self, row: Mapping[str, Any], *, lineage: Mapping[str, Any] | None = None) -> bool:
+        if row["event"] in self.events:
+            raise RuntimeError("audit sập")
+        return await super().record(row, lineage=lineage)
+
+
+async def _confirming(db: PgUrls, rw: AsyncEngine, clock: FakeClock) -> tuple[str, str]:
+    ticket = await new_ticket(rw)
+    async with open_pg_runtime(db.role("app_rw"), clock=clock) as rt:
+        rt.scenario.plan(ticket, b12_assess="auto")
+        r = await rt.runner.submit(ticket, session_id=SESSION, redacted_request="x")
+    assert (r.status, r.waiting_at) == (S_CONFIRMING, "confirm_wait")
+    return ticket, r.turn_id
+
+
+@pytest.mark.asyncio
+async def test_t21_b19_error_on_ticket_with_begun_is_e7_on_postgres(db: PgUrls, rw: AsyncEngine) -> None:
+    """`begun` trong `transaction_log` thật (lượt submit) + lỗi ở B19 lượt resume → boundary hỏi `SqlTxLog` → E7."""
+    clock = FakeClock()
+    ticket, first = await _confirming(db, rw, clock)
+    await SqlTxLog(rw, clock).begin(ticket, first, "renew_vpn_cert")
+    async with open_pg_runtime(db.role("app_rw"), clock=clock, audit=FailingAudit(rw, "user_confirmed")) as rt:
+        r = await deliver_event(rt.runner, ticket, S_CONFIRMING, {"kind": "confirmed"})
+    assert (r.status, r.values["exit_code"], r.values["escalation_reason_detail"]) == (
+        S_ESCALATED, "E7", "execution_interrupted")  # fmt: skip
+    assert MAY_HAVE_WRITTEN in r.values["escalation_note"]
+    assert await scalar(
+        rw, "SELECT count(*) FROM audit_logs WHERE ticket_id=:t AND event='unhandled_exception' AND exit_code='E7' "
+        "AND step='confirm_wait' AND (detail->>'begun')::boolean", t=ticket,
+    ) == 1  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_t21_resumed_wait_node_error_recovered_on_postgres(db: PgUrls, rw: AsyncEngine) -> None:
+    """`AsyncPostgresSaver`: lỗi nổi ra khỏi B19 vừa resume (goto lẫn goto E9 cùng lỗi) → `snap.next == ()`; worker recover
+    chạy lại B19 với đúng giá trị resume → S_RESOLVED, không đóng lượt bỏ ticket kẹt ở S_CONFIRMING (runner `_pending`)."""
+    clock = FakeClock()
+    ticket, _ = await _confirming(db, rw, clock)
+    audit = FailingAudit(rw, "user_confirmed", "unhandled_exception")
+    async with open_pg_runtime(db.role("app_rw"), clock=clock, audit=audit) as rt:
+        with pytest.raises(RuntimeError, match="audit sập"):
+            await deliver_event(rt.runner, ticket, S_CONFIRMING, {"kind": "confirmed"})
+        snap = await rt.runner.snapshot(ticket)
+    assert snap.next == () and [t.name for t in snap.tasks] == ["confirm_wait"]
+    clock.advance(timedelta(minutes=3))
+    async with open_pg_runtime(db.role("app_rw"), clock=clock) as rt:
+        assert await WorkerJobs(rt.runner, rt.deadlines, rt.turns).scan_stale_turns() >= 1
+        snap = await rt.runner.snapshot(ticket)
+    assert (snap.values["status"], snap.values["close_reason"]) == (S_RESOLVED, "resolved_user_confirmed")
+    assert await scalar(rw, "SELECT count(*) FROM turns WHERE ticket_id=:t AND ended_at IS NULL", t=ticket) == 0
 
 
 # ---- TC29 + 10 ticket song song ------------------------------------------------------------
