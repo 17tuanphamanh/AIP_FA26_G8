@@ -7,9 +7,12 @@
 //      F2-1…4 chat nhân viên thật (an.nv) bằng câu tất định của `make gate3` (config/scripted/tc*.yaml, thẻ
 //      [fake:tcXX] cuối câu) — cần backend ở cấu hình gate3: LLM_BACKEND=scripted, KB fixture, KHÔNG FAKE_SCENARIO.
 //      Ca không có preset → BỎ QUA kèm lý do. Câu đã chọn ghi ở PLAN-fe.md (F2).
+//      F3-1…6 L2: DÙNG LẠI ticket E3 (F2-2) + E0 (F2-4) của cùng lượt → long.nh / ha.lt xem hàng đợi + chi tiết THẬT;
+//      an.nv (không có escalation:handle) → trang không có quyền + 403 thật khi gọi thẳng API; đóng ca = MSW (dev:mock,
+//      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
 //   c) dọn dẹp: tắt mọi server đã mở, đóng trình duyệt — kể cả khi lỗi hay Ctrl+C.
 // Đầu ra: .verify/summary.txt (bảng), .verify/run-<giờ>.log (chi tiết), .verify/<giờ>-<bước>.png khi FAIL,
-//         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png (1440×900, để so Bản 4).
+//         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png, l2-*.png (1440×900, để so Bản 4).
 // Mật khẩu demo đọc LÚC CHẠY từ mock_services/README.md mục "Dữ liệu demo" — không ghi cứng, không in;
 // mọi dòng ghi log/summary đi qua redact(). Không đọc .env.
 /* global document, indexedDB -- chỉ dùng bên trong page.evaluate (chạy ở trình duyệt); localStorage, sessionStorage
@@ -19,6 +22,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { checkQueueSnapshot } from "./lib/queue-check.mjs";
 
 const FE = fileURLToPath(new URL("../", import.meta.url));
 const REPO = join(FE, "..");
@@ -26,11 +30,12 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "F2";
+const BUILT = "F3";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
-const HEALTH = "http://127.0.0.1:8000/api/health";
+const BACKEND = "http://127.0.0.1:8000";
+const HEALTH = `${BACKEND}/api/health`;
 const MOCK_LABEL = "Dữ liệu minh hoạ";
 const NAV = { name: "Điều hướng chính" };
 const LOGIN_HEADING = { name: "Đăng nhập", level: 1 };
@@ -433,6 +438,138 @@ async function expectInRecent(page, id, who) {
   check(hrefs.includes(`/chat/${id}`), `${who}: "Gần đây" không có ticket vừa tạo (${hrefs.length} mục)`);
 }
 
+// ---------------------------------------------------------------- L2 (F3)
+
+const QUEUE_PATH = "/api/escalations/queue";
+const QUEUE_LIMIT = 200; // = QUEUE_LIMIT của src/api/escalations.ts (trần backend) — màn luôn gọi ?limit=200
+const QUEUE_HEADING = { name: "Hàng đợi escalate", level: 1 };
+const FORBIDDEN_HEADING = { name: "Bạn không có quyền xem trang này", level: 1 };
+const GONE_HEADING = { name: "Ca đã đóng hoặc không còn trong hàng đợi", level: 1 };
+const OVERFLOW_HEADING = { name: `Không tìm thấy ca trong ${QUEUE_LIMIT} ca đầu của hàng đợi`, level: 1 };
+const QUEUE_FULL = "hàng đợi dev đầy ca hạng cao — cần phân trang (nợ API #10)"; // 12b Q-fe-23
+const APPROVE_WORDS = /duyệt|đồng ý|phê duyệt/i; // [Chốt 2.2] — như vitest t34
+const HANDOFF_LABELS = ["Yêu cầu (đã che)", "Agent đã làm", "Lý do chuyển", "Việc cần làm"];
+const EMPTY_NOTE = "(không có)";
+const CLOSE_NOTE = "verify F3-6: xác nhận từ chối (minh hoạ)";
+const f3 = { e0: null, e3: null }; // ticket_id của F2-4 (E0) và F2-2 (E3) trong CÙNG lượt — F3 dùng lại, không tạo thêm
+
+const isQueueCall = (r) => r.request().method() === "GET" && new URL(r.url()).pathname === QUEUE_PATH;
+const isCloseCall = (r) => r.request().method() === "POST" && /^\/api\/escalations\/\d+\/close$/.test(new URL(r.url()).pathname);
+const rowOf = (page, ticketId) => page.locator(`[data-testid="queue-row"][data-ticket-id="${ticketId}"]`);
+
+/** Ghi lại mọi `GET /api/escalations/queue` của trang: query string + thân JSON lần gần nhất (so thứ tự, chẩn đoán). */
+function watchQueue(page) {
+  const seen = { last: null, searches: [] };
+  page.on("response", async (r) => {
+    if (!isQueueCall(r)) return;
+    seen.searches.push(new URL(r.url()).search);
+    if (r.status() !== 200) return;
+    try {
+      seen.last = await r.json();
+    } catch {
+      // trang đã chuyển đi giữa chừng
+    }
+  });
+  return seen;
+}
+
+/** Thân JSON của lần tải hàng đợi đầu tiên (chờ tối đa 20 s). */
+async function queueSnapshot(page, queue, who) {
+  const deadline = Date.now() + 20_000;
+  while (!queue.last && Date.now() < deadline) await page.waitForTimeout(250);
+  check(queue.last, `${who}: chưa tải được hàng đợi sau 20 s (${queue.searches.length} lời gọi ${QUEUE_PATH})`);
+  return queue.last;
+}
+
+/** Ticket mới của lượt này (F2) — theo thứ tự ưu tiên chọn: E3 (F2-2) rồi E0 (F2-4). */
+const newTickets = () => [
+  { id: f3.e3, code: "E3", from: "F2-2" },
+  { id: f3.e0, code: "E0", from: "F2-4" },
+];
+
+/**
+ * 12b Q-fe-23 (phương án D): hàng đợi dev có thể đầy ca CŨ hạng cao (backend trần 200, không phân trang — nợ API #10).
+ * Trả các ticket mới ĐANG HIỆN (ưu tiên E3, rồi E0); không cái nào hiện → FAIL với câu QUEUE_FULL.
+ */
+async function shownNewTickets(page, queue, who) {
+  const items = await queueSnapshot(page, queue, who);
+  const shown = newTickets().filter((t) => items.some((i) => i.ticket_id === t.id));
+  check(shown.length > 0, `${who}: ${QUEUE_FULL} — ${items.length} ca đang hiện, không có ca E3/E0 nào của lượt này`);
+  return shown;
+}
+
+/** Dòng của một ticket ĐANG có trong thân JSON hàng đợi. */
+async function waitRow(page, queue, ticketId, who) {
+  const items = await queueSnapshot(page, queue, who);
+  check(
+    items.some((i) => i.ticket_id === ticketId),
+    `${who}: ticket ${ticketId} không có trong ${items.length} ca đang hiện${items.length >= QUEUE_LIMIT ? ` — ${QUEUE_FULL}` : ""}`,
+  );
+  const row = rowOf(page, ticketId);
+  await row.waitFor({ timeout: 10_000 });
+  return row;
+}
+
+/** F3 cần ticket E0/E3 của F2 cùng lượt. Thiếu → BỎ QUA kèm lý do (không gửi thêm câu). */
+function needF2Tickets() {
+  const missing = [!f3.e3 && "E3 (F2-2)", !f3.e0 && "E0 (F2-4)"].filter(Boolean);
+  return missing.length ? { status: "BỎ QUA", note: `BỎ QUA — không có ticket ${missing.join(", ")} của lượt này (F2 bỏ qua/đỏ)` } : null;
+}
+
+/** [Chốt 2.2] L2 không có nút duyệt: quét mọi nút / radio trên màn (chữ + aria-label + title + value). Trả số nút đã quét. */
+async function expectNoApproveButtons(page, where) {
+  const labels = await page
+    .locator('button, [role="button"], [role="radio"], input[type="submit"], input[type="button"]')
+    .evaluateAll((els) =>
+      els.map((el) =>
+        [el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("value")]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim(),
+      ),
+    );
+  const bad = labels.filter((l) => APPROVE_WORDS.test(l));
+  check(bad.length === 0, `${where}: có nút "${bad[0]}" — L2 không được có nút duyệt [Chốt 2.2]`);
+  check(labels.length > 0, `${where}: không quét được nút nào (màn chưa hiện?)`);
+  return labels.length;
+}
+
+/** Mở chi tiết từ dòng hàng đợi, chờ 4 khối bàn giao. */
+async function openDetail(page, row) {
+  await row.click();
+  await page.waitForURL(/\/escalations\/\d+$/, { timeout: 10_000 });
+  await page.locator('[data-testid="handoff-row"]').first().waitFor({ timeout: 15_000 });
+}
+
+/**
+ * Đăng nhập bằng API (Node → backend trực tiếp, không qua trình duyệt) rồi gọi thẳng hàng đợi kèm Bearer → mã HTTP THẬT
+ * của backend (lớp quyền phía server, không phải RequirePerm của UI). Đăng xuất phiên API ngay sau đó.
+ */
+async function directQueueStatus(username) {
+  const login = await fetch(`${BACKEND}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  log(`POST /api/auth/login (${username}, API) → ${login.status}`);
+  check(login.status === 200, `đăng nhập API ${username} → ${login.status}`);
+  const token = (await login.json()).access_token;
+  check(typeof token === "string" && token.length > 0, "đăng nhập API không trả access_token");
+  secrets.push(token);
+  const auth = { Authorization: `Bearer ${token}` };
+  try {
+    const res = await fetch(`${BACKEND}${QUEUE_PATH}`, { headers: auth, signal: AbortSignal.timeout(10_000) });
+    const detail = (await res.json().catch(() => null))?.detail ?? null;
+    log(`GET ${QUEUE_PATH} (${username}, Bearer) → ${res.status} ${detail ?? ""}`);
+    return { status: res.status, detail };
+  } finally {
+    const out = await fetch(`${BACKEND}/api/auth/logout`, { method: "POST", headers: auth }).catch(() => null);
+    log(`POST /api/auth/logout (${username}, API) → ${out?.status ?? "lỗi mạng"}`);
+  }
+}
+
 async function backendUp() {
   try {
     const res = await fetch(HEALTH, { signal: AbortSignal.timeout(3000) });
@@ -674,6 +811,7 @@ await live("F2-2 escalate → tin escalation, không lộ S_*", () =>
     await expectNoStateCodes(page, "an.nv (escalate)");
     await expectPollingStopped(page, tickets, id, "an.nv");
     await shoot(page, "chat-escalated.png");
+    f3.e3 = id; // F3 dùng lại (hàng đợi L2)
     return { note: `S_ESCALATED (${view.exit_code}) → tin escalation + "Đã chuyển kỹ thuật viên hỗ trợ"; không mã S_*; polling dừng` };
   }),
 );
@@ -698,9 +836,213 @@ await live("F2-4 E0 → chỉ câu trung tính", () =>
     check(!banned, `màn E0 có chữ "${banned?.[0]}" — phải trung tính (KH 4.2 #3)`);
     await expectPollingStopped(page, tickets, id, "an.nv");
     await shoot(page, "chat-blocked.png");
+    f3.e0 = id; // F3 dùng lại (hàng đợi L2)
     return { note: 'S_BLOCKED → "Yêu cầu này không thể xử lý tự động"; không "tấn công/injection/phát hiện/chặn"; không mã S_*' };
   }),
 );
+
+// F3 — L2. Hàng đợi, chi tiết, hội thoại: API THẬT; đóng ca: MSW (chỉ F3-6, dev:mock). DÙNG LẠI ticket E3 (F2-2) và E0
+// (F2-4) của cùng lượt — không gửi thêm câu. Escalation chưa đóng được tới Phase 7 nên hàng đợi dev dài dần (trần 200 ca).
+const liveF3 = (name, fn) => live(name, () => needF2Tickets() ?? fn());
+
+await liveF3("F3-1 long.nh: hàng đợi đúng thứ tự server; ca E3 (F2-2) + E0 (F2-4) đúng nhóm hoặc ngoài 200 ca có cảnh báo", () =>
+  scenario("F3-1", async ({ page }) => {
+    const queue = watchQueue(page);
+    await signInAs(page, "long.nh"); // trang đầu theo quyền: /escalations (12b Q-fe-8)
+    await page.getByRole("heading", QUEUE_HEADING).waitFor();
+    const items = await queueSnapshot(page, queue, "long.nh");
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="queue-row"]').length === n, items.length, {
+      timeout: 10_000,
+    });
+    // Đọc TOÀN BỘ dòng đang hiện (tối đa 200) theo nhóm, đúng thứ tự hiển thị.
+    const groups = await page.locator('[data-testid="queue-group"]').evaluateAll((els) =>
+      els.map((g) => ({
+        priority: Number(g.dataset.priority),
+        name: g.querySelector("h2")?.textContent?.trim() ?? "",
+        rows: [...g.querySelectorAll('[data-testid="queue-row"]')].map((r) => ({
+          id: Number(r.dataset.escalationId),
+          ticket: r.dataset.ticketId,
+          code: r.dataset.exitCode,
+        })),
+      })),
+    );
+    const overflowShown = await page.getByTestId("queue-overflow").isVisible();
+    const result = checkQueueSnapshot({ groups, items, limit: QUEUE_LIMIT, overflowShown, tickets: newTickets() });
+    log(`F3-1 hàng đợi: ${items.length} ca, ${groups.length} nhóm [${groups.map((g) => `${g.priority}:${g.rows.length}`).join(" ")}]`);
+    check(result.problems.length === 0, result.problems.join("; "));
+    check(
+      queue.searches.length > 0 && queue.searches.every((q) => q === `?limit=${QUEUE_LIMIT}`),
+      `queue gọi với: ${queue.searches.join(", ")}`,
+    );
+    const count = (await page.getByTestId("queue-count").innerText()).trim();
+    check(count === `Đang hiện ${items.length} ca`, `đầu trang "${count}", cần "Đang hiện ${items.length} ca"`);
+    await expectNoApproveButtons(page, "hàng đợi (long.nh)");
+    await shoot(page, "l2-queue.png");
+    return {
+      note: `${items.length} ca, ${groups.length} nhóm, priority không giảm, dòng = thứ tự server, limit=200${overflowShown ? ', có cảnh báo "quá 200 ca"' : ""}; ${result.notes.join("; ")}`,
+    };
+  }),
+);
+
+await liveF3("F3-2 long.nh mở ca mới đang hiện (ưu tiên E3): đủ 4 khối bàn giao + hội thoại thật", () =>
+  scenario("F3-2", async ({ page }) => {
+    const tickets = watchTickets(page);
+    const queue = watchQueue(page);
+    const closes = [];
+    page.on("request", (r) => {
+      if (/\/close$/.test(new URL(r.url()).pathname)) closes.push(r.url());
+    });
+    await signInAs(page, "long.nh");
+    const [pick] = await shownNewTickets(page, queue, "long.nh");
+    await openDetail(page, await waitRow(page, queue, pick.id, "long.nh"));
+    const blocks = page.locator('[data-testid="handoff-row"]');
+    const labels = await blocks.locator("dt").allInnerTexts();
+    check(JSON.stringify(labels) === JSON.stringify(HANDOFF_LABELS), `nhãn 4 khối: ${labels.join(" | ")}`);
+    const values = (await blocks.locator("dd").allInnerTexts()).map((v) => v.trim());
+    const empty = HANDOFF_LABELS.filter((_, i) => !values[i] || values[i] === EMPTY_NOTE);
+    check(empty.length === 0, `khối bàn giao rỗng: ${empty.join(", ")}`);
+    await page.locator('[data-kind="escalation"]').waitFor({ timeout: 15_000 });
+    const view = tickets.views.get(pick.id);
+    check(view?.conversation?.some((m) => m?.kind === "escalation"), `GET /api/tickets/{id} không có tin escalation (${describeView(view)})`);
+    check((await page.getByTestId("deny-banner").count()) === 0, `ca ${pick.code} không được có banner E5`);
+    const completed = page.getByRole("radio", { name: /^Đã hoàn tất/ });
+    check((await completed.getAttribute("aria-disabled")) === null, `ca ${pick.code}: "Đã hoàn tất" không được khoá`);
+    const unavailable = (await page.getByTestId("close-unavailable").innerText()).trim();
+    check(unavailable === "Đóng ca có ở Phase 7", `dev không mock: dòng "${unavailable}", cần "Đóng ca có ở Phase 7"`);
+    check(await page.getByRole("button", { name: "Đóng escalation", exact: true }).isDisabled(), "dev không mock: nút đóng phải khoá");
+    await expectNoApproveButtons(page, `chi tiết ${pick.code} (long.nh)`);
+    await shoot(page, "l2-detail.png");
+    // P2: tải lại trang chi tiết → gọi lại queue limit=200 → vẫn tìm thấy ca theo escalation_id.
+    const url = page.url();
+    const before = queue.searches.length;
+    await page.reload({ waitUntil: "load" });
+    await expectSignedIn(page, "long.nh (tải lại chi tiết)");
+    await page.locator('[data-testid="handoff-row"]').first().waitFor({ timeout: 15_000 });
+    check(page.url() === url, `sau tải lại URL đổi thành ${page.url()}`);
+    check(queue.searches.slice(before).includes(`?limit=${QUEUE_LIMIT}`), "tải lại chi tiết không gọi lại queue limit=200");
+    const shownId = (await page.getByTestId("ticket-id").innerText()).trim();
+    check(shownId === pick.id, `mã ticket trên màn "${shownId}" ≠ ${pick.id}`);
+    check(closes.length === 0, `dev không mock mà vẫn gọi ${closes[0]}`);
+    return {
+      note: `ca ${pick.code} (${pick.from}): 4 khối đủ nội dung; hội thoại thật (GET /api/tickets/{id}) có tin escalation; không banner, "Đã hoàn tất" mở; nút đóng khoá + "Đóng ca có ở Phase 7", 0 lời gọi /close; tải lại → queue limit=200 → vẫn thấy ca`,
+    };
+  }),
+);
+
+await liveF3("F3-3 ha.lt (L1) vào được hàng đợi (escalation:handle)", () =>
+  scenario("F3-3", async ({ page }) => {
+    const queue = watchQueue(page);
+    await signInAs(page, "ha.lt");
+    const [res] = await Promise.all([
+      page.waitForResponse(isQueueCall, { timeout: 15_000 }),
+      page.getByRole("navigation", NAV).getByRole("link", { name: "Hàng đợi escalate", exact: true }).click(),
+    ]);
+    check(res.status() === 200, `GET ${QUEUE_PATH} (ha.lt) → ${res.status()}`);
+    await page.getByRole("heading", QUEUE_HEADING).waitFor();
+    const [pick] = await shownNewTickets(page, queue, "ha.lt");
+    await waitRow(page, queue, pick.id, "ha.lt");
+    const n = await expectNoApproveButtons(page, "hàng đợi (ha.lt)");
+    return { note: `GET queue → 200; thấy ca ${pick.code} của ${pick.from}; quét ${n} nút, không nút duyệt ("Chờ tôi duyệt" là link thanh bên)` };
+  }),
+);
+
+await live("F3-4 không có escalation:handle → trang không có quyền + 403 thật (an.nv thay quan.tm — Q-fe-20)", () =>
+  scenario("F3-4", async ({ page }) => {
+    const calls = [];
+    page.on("request", (r) => {
+      if (new URL(r.url()).pathname.startsWith("/api/escalations")) calls.push(new URL(r.url()).pathname);
+    });
+    await signInAs(page, "an.nv");
+    await page.goto(`${DEV}/escalations`, { waitUntil: "load" });
+    await expectSignedIn(page, "an.nv");
+    await page.getByRole("heading", FORBIDDEN_HEADING).waitFor({ timeout: 10_000 });
+    check(calls.length === 0, `trang không có quyền mà UI vẫn gọi ${calls[0]}`);
+    await shoot(page, "l2-forbidden.png");
+    const direct = await directQueueStatus("an.nv");
+    check(direct.status === 403, `gọi thẳng GET ${QUEUE_PATH} bằng token an.nv → ${direct.status}, cần 403`);
+    return {
+      note: `/escalations → "Bạn không có quyền xem trang này", UI không gọi API; gọi thẳng bằng token an.nv → 403 ${direct.detail ?? ""} (backend). quan.tm cần OTP nên kiểm tay (Q-fe-20)`,
+    };
+  }),
+);
+
+await liveF3("F3-5 không có nút duyệt trên mọi màn /escalations", () =>
+  scenario("F3-5", async ({ page }) => {
+    const queue = watchQueue(page);
+    await signInAs(page, "long.nh");
+    await page.getByRole("heading", QUEUE_HEADING).waitFor();
+    const shown = await shownNewTickets(page, queue, "long.nh");
+    const counts = [["hàng đợi", await expectNoApproveButtons(page, "hàng đợi")]];
+    for (const t of shown) {
+      await page.getByRole("link", { name: "Hàng đợi escalate", exact: true }).first().click();
+      await page.getByRole("heading", QUEUE_HEADING).waitFor();
+      await openDetail(page, await waitRow(page, queue, t.id, "long.nh"));
+      await page.locator('[data-kind="escalation"]').waitFor({ timeout: 15_000 });
+      counts.push([`chi tiết ${t.code}`, await expectNoApproveButtons(page, `chi tiết ${t.code}`)]);
+    }
+    // Ca không có: hàng đợi đủ 200 → màn báo "ngoài 200 ca đầu" (không khẳng định đã đóng), dưới 200 → "Ca đã đóng…".
+    queue.last = null; // lấy đúng thân JSON của lần tải sau khi mở trang
+    await page.goto(`${DEV}/escalations/0`, { waitUntil: "load" });
+    await expectSignedIn(page, "long.nh");
+    const gone = page.getByRole("heading", GONE_HEADING);
+    const overflow = page.getByRole("heading", OVERFLOW_HEADING);
+    await gone.or(overflow).first().waitFor({ timeout: 15_000 });
+    const full = (await queueSnapshot(page, queue, "long.nh")).length >= QUEUE_LIMIT;
+    check((await overflow.isVisible()) === full, `ca không có: ${full ? "đủ 200 ca mà không báo ngoài 200 ca đầu" : 'dưới 200 ca mà không báo "Ca đã đóng…"'}`);
+    counts.push([full ? "ca ngoài 200 ca đầu" : "ca không còn", await expectNoApproveButtons(page, "ca không có")]);
+    return {
+      note: `${counts.map(([w, n]) => `${w}: ${n} nút`).join(" · ")} — 0 nút khớp /duyệt|đồng ý|phê duyệt/; ca mới đã mở: ${shown.map((t) => t.code).join(", ")}`,
+    };
+  }),
+);
+
+// F3-6: dev server CÓ MSW (dev:mock) + backend thật. Cổng 5173 đang là dev F1 → tắt trước (kịch bản live cuối cùng).
+await step("F3-6 dev:mock: đóng ca mới đang hiện “Xác nhận từ chối” (minh hoạ) → ca vẫn còn", async () => {
+  if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt" };
+  const skip = needF2Tickets();
+  if (skip) return skip;
+  if (f1Server) {
+    await stopServer(f1Server);
+    f1Server = null;
+  }
+  const server = await startServer("dev:mock(F3)", [join(FE, "scripts", "dev-mock.mjs")], {}, DEV);
+  try {
+    return await scenario("F3-6", async ({ page, consoleLines }) => {
+      const queue = watchQueue(page);
+      await signInAs(page, "long.nh");
+      check(consoleLines.some((l) => l.includes("[MSW] Mocking enabled")), 'console không có "[MSW] Mocking enabled"');
+      const [pick] = await shownNewTickets(page, queue, "long.nh (dev:mock)");
+      await openDetail(page, await waitRow(page, queue, pick.id, "long.nh (dev:mock)"));
+      await page.getByRole("radio", { name: /^Xác nhận từ chối/ }).click();
+      await page.getByLabel("Ghi chú đóng", { exact: true }).fill(CLOSE_NOTE);
+      const [res] = await Promise.all([
+        page.waitForResponse(isCloseCall, { timeout: 15_000 }),
+        page.getByRole("button", { name: "Đóng escalation", exact: true }).click(),
+      ]);
+      check(res.status() === 202, `POST …/close → ${res.status()} (MSW phải trả 202; route thật chưa có)`);
+      const body = JSON.stringify(res.request().postDataJSON());
+      check(body === JSON.stringify({ close_result: "confirmed_denial", note: CLOSE_NOTE }), `body close sai dạng: ${body}`);
+      await page.getByText("Đã ghi nhận (minh hoạ)").waitFor({ timeout: 5_000 });
+      await expectNoApproveButtons(page, `chi tiết ${pick.code} (dev:mock)`);
+      await shoot(page, "l2-close-mock.png");
+      // Tải lại hàng đợi → ca VẪN còn (MSW không đụng dữ liệu thật).
+      queue.last = null;
+      await page.goto(`${DEV}/escalations`, { waitUntil: "load" });
+      await expectSignedIn(page, "long.nh (tải lại hàng đợi)");
+      await waitRow(page, queue, pick.id, "long.nh sau khi đóng (minh hoạ)");
+      return {
+        note: `ca ${pick.code} (${pick.from}): MSW → 202 (fromServiceWorker=${res.fromServiceWorker()}); body {close_result:"confirmed_denial", note}; "Đã ghi nhận (minh hoạ)"; tải lại hàng đợi → ca vẫn còn`,
+      };
+    });
+  } finally {
+    await stopServer(server);
+  }
+});
+
+await step("F3-7 ca E5 (deny): banner + khoá “Đã hoàn tất” + 422", async () => ({
+  status: "BỎ QUA",
+  note: "BỎ QUA — gate3 không có preset ra E5 — đã kiểm bằng t30/t32 (vitest)",
+}));
 
 // c) dọn dẹp — luôn chạy
 {

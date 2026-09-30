@@ -24,7 +24,8 @@ export default defineConfig(({ mode }) => ({
   // `npm run test`: test hàm thuần + component, KHÔNG gọi backend (fetch giả truyền qua tham số).
   test: {
     environment: "happy-dom",
-    include: ["src/**/*.test.{ts,tsx}"],
+    // scripts/**: hàm thuần của verify (vd lib/queue-check.mjs — quyết định F3-1, t38).
+    include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.mjs"],
     restoreMocks: true,
     unstubGlobals: true,
   },

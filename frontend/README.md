@@ -7,11 +7,12 @@ Kế hoạch chốt: `docs/spec/claude/ke-hoach-frontend-khung.md` (KH). Thiết
 |---|---|
 | `npm install` | cài đúng bản đã khoá trong `package-lock.json` |
 | `npm run dev` | dev server `http://localhost:5173`, `/api` proxy tới `http://127.0.0.1:8000` — KHÔNG có dữ liệu giả |
-| `npm run dev:mock` | như trên + MSW cho route chưa có (nhãn "Dữ liệu minh hoạ" ở góc) |
+| `npm run dev:mock` | như trên + MSW cho route chưa có (nhãn "Dữ liệu minh hoạ" ở góc). Hiện giả: `POST /api/escalations/:id/close` (F3, Phase 7) |
 | `npm run lint` · `npm run typecheck` · `npm run build` | eslint · tsc · vite build |
 | `npm run check:dist` | build rồi quét `dist/`: không có msw/mockServiceWorker, không tải ngoài origin |
 | `npm run check:style` | không mã màu ngoài token, không Storage / `dangerouslySetInnerHTML`, không CDN |
 | `npm run test` | vitest (từ F1) |
+| `npm run verify` | toàn bộ bước trên + Playwright (đăng nhập, chat, L2 thật khi backend chạy); kết quả ở `.verify/summary.txt` |
 | `npm run gen:api` | sinh `src/api/schema.gen.ts` từ `http://127.0.0.1:8000/openapi.json` (backend phải chạy) |
 
 ## Luật (KH mục 4)

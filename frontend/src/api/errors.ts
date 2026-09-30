@@ -52,6 +52,10 @@ const CODE_MESSAGES: Record<string, string> = {
   privacy_guard_unavailable: "Chưa gửi được — hệ thống kiểm tra nội dung đang bận, vui lòng thử lại.",
   ticket_busy: "Hệ thống đang bận, sẽ tự thử lại.",
   payload_too_large: "Nội dung quá dài.",
+  // Đóng escalation (B20 §4.3, P10 §3.4 — route Phase 7; hiện chỉ MSW trả).
+  deny_case_cannot_complete:
+    "Không đóng được: ca E5 không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
+  escalation_not_found: "Ca đã đóng hoặc không còn trong hàng đợi.",
 };
 
 export function errorMessage(error: ApiError | null): string {

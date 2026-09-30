@@ -70,6 +70,12 @@ export type EscalationQueueItem = {
   created_at: string;
 };
 
+// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + P10 §3.4 — `POST /api/escalations/{id}/close` CHƯA CÓ (Phase 7, T31).
+// Body phỏng đoán: đúng 2 khoá; ghi chú bắt buộc (≤ 1000 như ghi chú confirm). Ca deny + `completed` → 422
+// `deny_case_cannot_complete`. Xoá khi: T31 merge → gen:api (xoá cùng mocks/handlers/escalation-close.ts).
+export type EscalationCloseResult = "completed" | "confirmed_denial" | "reopened_as_new";
+export type EscalationCloseIn = { close_result: EscalationCloseResult; note: string };
+
 // Nguồn: backend/app/api/approvals.py ReasonCode — danh sách cố định (PLAN-3e Q-3e-13).
 // Xoá khi: route khai body trong openapi.
 export type ReasonCode =
