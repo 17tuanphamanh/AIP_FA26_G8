@@ -4052,11 +4052,10 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi
   - **Commit `f64fd86`** "4a dung 2: no ky thuat P1-P7 + make verify; HMAC username ma (Q-4a-5, Q-4a-6)", push lên `origin/dev-tuananh`;
     **CI xanh** run `36726470829` (Tuấn Anh kiểm). **4a ĐÓNG** — spec phase4 v1.0 (mục 4.10) đi cùng commit đầu 4b.
 
-## Phase 4 — chặng 4b: B15 thật (tầng A) (30/09/2026, DỪNG 1 xong (verify xanh 23:05, Claude chat duyệt) — đang DỪNG 2)
+## Phase 4 — chặng 4b: B15 thật (tầng A) (30/09 → 01/10/2026 — **4b ĐÓNG** (chờ CI): DỪNG 1 `cd3f094`, DỪNG 2 verify XANH 04:54)
 
-**TẠM DỪNG STACK theo yêu cầu Phase 7 (verify FE) — chờ Tuấn Anh báo "FE verify xong".** Tới lúc đó: không `make verify`/`make up`/
-`make gate*`/`docker compose`/build image/`make test` đầy đủ; chỉ unit + lint trong sandbox, test-writer, mutation, security-reviewer.
-Phần cần stack ghi "chờ stack".
+~~**TẠM DỪNG STACK theo yêu cầu Phase 7 (verify FE)**~~ — **đã gỡ (FE verify xong, Tuấn Anh báo 01/10/2026)**. Thứ tự DỪNG 2 giữ:
+S11 → S14 trước, rồi MẪU B + `make verify G=23` (stack đang không theo `.env` — `make verify` tự xử lý).
 
 Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.1** mục 5 (+ 3.1, 3.2, 4.10 #11) — **mục 5.6 (chốt DỪNG 1) thắng khi
 lệch**. Kế hoạch: `PLAN-4b.md` (untracked) — **DUYỆT
@@ -4155,6 +4154,137 @@ DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo
     (+R20) HITL → `ha.lt` duyệt qua route (chuỗi từ `users`) → 202 → renew đúng 1; **tc09** R17+R18 → `S_PENDING_APPROVAL`, 1 phiếu
     `pending` — **không đổi so với 4a**); 8 trả về `.env` PASS; 9 CI (gh) PASS — run `36731653667` completed success (CI của HEAD
     đang đẩy; DỪNG 1 chưa push). Điều kiện 3 đạt: luật + seed mới không đổi kết quả gate2/gate3.
+- **Commit DỪNG 1:** `cd3f094` (38 file, gitleaks sạch, hook unit xanh), push `origin/dev-tuananh` 30/09/2026 — **CI xanh** run
+  `36750953436` (Tuấn Anh kiểm).
+- **DỪNG 2 (30/09 → 01/10/2026 — `make verify G=23` XANH 04:40–04:54; Claude chat duyệt, cho commit + push). Mốc: HEAD `1f0f489`** — `dev-tuananh`
+  đã merge M9 A0 `4ebc41e` + B0 `7be1638` (kéo về trong cây này, 01/10/2026): 17 file M9, KHÔNG trùng 27 file 4b đang sửa, không
+  conflict marker, không migration (`uv run alembic heads` = 1, `0007`); `git diff HEAD` chỉ là phần 4b. Diff 4b không import `app.monitor`.
+  - **S10 khung:** `effects.peek` + `EffectStore.peek` (SQL: khung; `MemoryEffects`: thật); `goto(audit_columns=…)` khung +
+    `_POINT_COLUMNS` (hàm chép trường state → cột đổi tên `audit_columns` → `_state_columns` vì trùng tên tham số mới); P8
+    `SqlApprovals.create(…, *, backup_approver_id, conflict_detected, conflict_type)` (keyword bắt buộc) + `ApprovalRow` 6 trường P8
+    **+ `conflict_detected`** (nhánh `peek` suy `choice_reason` và ghi cột điểm log 5 từ phiếu cũ — 5.6 #8); port `Approvals.get`,
+    `ApproverUsers` (`available` + `ensure(ad_user, lookup, *, now)`); `NodeDeps.approvers`, `approver_users` bắt buộc;
+    `REASON_DETAILS` +5; B15 giả → `graph/nodes/fake/` (truyền None/False/None); B15 thật = khung (CHƯA vào `REAL_NODE_MODULES`);
+    `auth/user_sync.AuthApproverUsers` (`ensure` khung) + `auth/service.lock_policy`; wiring: roster + `approver_users`
+    (`SqlAuthStore` + `SecurityEventWriter` + `username_hash.username_key` — không qua `TokenSigner` để không thêm kiểm độ dài khoá
+    ở worker = không đổi điều kiện khởi động), thiếu `JWT_SIGNING_KEY` → WARNING; `_open(approvers=None)` tự nạp roster (e2e
+    `gate3_env` gọi thẳng `_open`). Harness: `MemoryApprovals` kiểm FK `approver_id/backup_approver_id` với bảng `users` giả
+    (`GraphHarness.auth_store`, gieo sẵn người duyệt GIẢ như `graph_pg` gieo `l1-fake`), `approver_users` = `AuthApproverUsers`
+    THẬT trên `InMemoryAuthStore` (`HARNESS_USERNAME_KEY`); `graph_pg` cùng khuôn trên PG. Test đổi CÁCH GỌI `create` (P8, không
+    đổi kỳ vọng): `test_b17_execute.py:113`, `integration/test_approval_store_pg.py:58`, `integration/test_txlog_pg.py:123`.
+    `make lint` xanh; unit **3127 passed / 2 failed** — `test_graph_static` ×2 (quét `goto` trong `nodes/*.py`: B15 thật còn khung
+    → xanh ở S12).
+  - **S10b (đo, chưa sửa):** tạm cắm B15 khung vào `REAL_NODE_MODULES` + ghi tên test chạm B15 (khôi phục `finally`, md5 khớp):
+    4 test unit chạm B15 thật (`test_b11_slots` g10/g12/g19, `test_s0_grounding` s2); integration `test_guard_pg` e9; e2e gate3 h6,
+    h10, s8. Đề xuất harness + Q-4b-7 (script cổng) — chờ Tuấn Anh.
+  - **Chốt S10b (Tuấn Anh, 30/09/2026):** harness DUYỆT, điều kiện: (1) x7, x8, x9, x10, "AD không có roster" dùng TƯỜNG MINH
+    `set_status` / `fail_ids` / `roster_in_ad=False` + thêm test `roster_in_ad=False` → E5 `no_valid_approver`, 0 phiếu; (2) test cần CẢ
+    route lẫn B15 thật viết ở PG; (3) `test_guard_pg::e9` vào danh sách "xác nhận khi verify". Tự quyết S10 a, b, c, d, f đồng ý; e
+    (`_open` tự nạp roster) đồng ý nếu đi qua `open_approvers` (kiểm schema + intent như `open_runtime`) — `wiring.py:236` → `settings.py:533-542` (mốc `1f0f489`).
+    **Q-4b-7 = A** (script cổng): gate3 bỏ `FAKE_APPROVER_ID`; kiểm mới CHỈ KHI có phiếu; `Ctx.approvals` gate2 chỉ THÊM trường.
+  - **Harness (theo chốt):** `GraphHarness` + `open_pg_runtime(roster_in_ad=True)` gộp `ROSTER_CHAIN` (`l1_01, l1_02, it_mgr01, l1_lead`
+    từ `seed.json`) vào AD giả chỉ khi test không truyền `directory`, `setdefault` (không đè người test tự dựng); `PgRuntime.deps` để test PG
+    gọi thẳng node. Unit sau harness: 3127 passed / 2 đỏ (`test_graph_static` như S10).
+  - **Q-4b-7:** `stack/gate3.py` — `FLAGS` bỏ `FAKE_APPROVER_ID` (+ khối cảnh báo, docstring), chú thích dòng 62, hằng
+    `ROSTER_APPROVER/ROSTER_BACKUP = l1_01/l1_02`, `Ctx.queued_approvers` (cột `approver_id` của audit B15 `queued`), `_check_approver`
+    (chỉ khi có phiếu: `(approver_id, backup_approver_id, conflict_detected) == (l1_01, l1_02, false)` + audit `queued` `approver_id=l1_01`)
+    gọi ở nhánh HITL của `_renew` và `tc09`. `gate2.Ctx.approvals` thêm 3 trường (không đổi kiểm). `Makefile:130-131`,
+    `stack/README.md:61, 82-84, 103` sửa chữ (FAIL thường gặp: E2 `approver_sync_unavailable` → thiếu `JWT_SIGNING_KEY`; E5
+    `no_valid_approver` → roster không hợp lệ trong mock AD). `.env`/`FAKE_APPROVER_ID` của gate2 giữ. `test_gate3.py`: `FLAGS_OK` +
+    test probe (không còn dòng `FAKE_APPROVER_ID`) đổi kỳ vọng theo Q-4b-7; stub tc09 thêm trường phiếu; +4 test (phiếu giao người khác,
+    audit `approver_id` NULL, không có dòng `queued` → FAIL; không phiếu → không kiểm). `test_gate3` 45 passed, `test_gate2` + vpn_smoke 68.
+  - **S11 test-writer (theo bước S11 PLAN):** 4 file mới, **67 test** — `test_b15_prepare_approval.py` 36, `test_b17_decided_by.py` 13,
+    `test_goto_audit_columns.py` 15, `integration/test_b15_pg.py` 3 (b3 PG, b8 PG, `test_x2_tc19_pg_route_and_real_b15_self_conflict_head_decides`
+    — test DUY NHẤT cần cả route lẫn B15 thật: `ha.lt` gửi PC-0124 → phiếu giao `it_mgr01` (self) → `ha.lt` quyết 403 → `quan.tm` 202).
+    Trước code: **59 đỏ / 5 xanh / 3 PG chỉ collect** — đỏ đúng lý do (30 `NotImplementedError` B15, 7 `effects.peek`, 6 `goto(audit_columns)`,
+    2 graph x1/x2 còn B15 giả `('l1-fake', None, None)`, 2 AST chưa có hằng/`once`, 12 B17 chưa kiểm `decided_by`); 0 đỏ vì
+    import/fixture. 5 xanh là test canh (meta bảng, x13 deny không tới B15, đường tự động không tra `decided_by`, hằng `_POINT_COLUMNS`,
+    `intended_action` sẵn chép sang cột). Nguồn dữ liệu: AD của roster từ harness (seed), x7/x8/probation `set_status`, x9 `fail_ids` trong
+    hook `before_approver_lookup`, x10 + L2 `seed_ad_records`, "AD không có roster" `roster_in_ad=False`, x14b `ad.down`, Q-4b-6 sửa tay
+    nhóm `l1_lead`; không dùng `seed_ad_users`. Tôi kiểm: `git status` chỉ 4 file mới, chạy lại bảng đỏ/xanh khớp. Agent tự khai: Bash
+    ngoài danh sách (grep/cat/`python3 -c`/`ruff format --check` — chỉ đọc file thuộc diện được đọc); đọc spec ngoài mục giao (dòng 1–182,
+    416–560); import (không mở) `auth.service.lock_policy`, `auth.user_sync.AuthApproverUsers`, `risk.models`. 12 diễn giải hợp đồng
+    (đáng soi: detail điểm 5 = đúng 6 khoá gồm `recovered`; x1 `rejected_candidates=[]`; x9 chỉ lỗi một người; b9 đòi message nêu tên
+    khoá; b3 PG dùng DB mới thay `DELETE FROM users`; TQ-11 `calls_by[l1_01] >= 1` cả khi người gửi hỏng; b6 gồm probation/404/đổi sang L2).
+  - **S12 code:** `effects.peek` (cùng biểu thức khoá với `once` — dòng khoá của `once` giữ NGUYÊN VĂN vì M-3g-7 bám), `SqlEffectStore.peek`
+    (chỉ SELECT `result_ref`), `MemoryEffects.peek`; `goto(audit_columns)` (khoá ngoài `_POINT_COLUMNS` → `ValueError` nêu tên khoá, TRƯỚC khi
+    ghi); `AuthApproverUsers.ensure` (sync None / `sync_user_from_ad` trả None → `RuntimeError`); B15 thật đúng thứ tự C5 (lời tra AD trong
+    `make()` qua `deps.directory.call` để `NODE_CALL_SITES` nhận), vào `REAL_NODE_MODULES`; B17 P13 (TQ-11: `decided_by` trong CÙNG
+    `gather`, xét SAU người gửi/người hưởng lợi; `detail` E5 `approver_no_longer_valid` = `user_id, role="approver", reason`). **Test cũ
+    đổi (lý do):**
+    - `test_b17_execute.py`: người duyệt `l1-fake` → `APPROVER = "l1_01"` (P13: B17 tra lại người ĐÃ DUYỆT; `l1-fake` không có trong AD →
+      sẽ thành "không còn hợp lệ"); `create` thêm 3 kwarg P8 (S10). `test_beneficiary_terminated_is_e5`: `ad.calls` 2 → 3 + `calls_by[l1_01]
+      == 1` (TQ-11: người đã duyệt tra CÙNG gather — kỳ vọng E5 `person_no_longer_valid` role `beneficiary` và 0 lời gọi ghi giữ nguyên).
+    - `test_state_keys_ast.py`: `GOTO_OWN_PARAMS` + `audit_columns` (tham số riêng mới của `goto`, P10).
+    - `test_turn_budget.py`: `NODE_CALL_SITES` + `("b15_prepare_approval.py", "directory.call"): 1` (P3); sàn tổng `>= 14` → `>= 17` (thực đếm trước 4b: 16).
+    - Không test nào chạm B15 thật phải đổi kỳ vọng: `test_b11_slots` g10/g12/g19, `test_s0_grounding` s2 xanh nhờ harness gộp roster.
+    Kết quả (chạy lại trên mốc `1f0f489`, 01/10/2026): unit **3242 passed** = 3197 của 4b (3129 + 64 mới + 4 gate3) + **45 của M9**
+    (`test_monitor_db` / `_evaluator_core` / `_import_contracts` / `_rules_core` / `_window`), mock **100**, `make lint` sạch (ruff; mypy
+    app 207 / tests 198 / mock 12 / ml 16; import-linter **10/10** — gồm hợp đồng M9 "chi api, worker import monitor"; gitleaks 0).
+    Integration + e2e collect 258 (= 253 của DỪNG 1 + 4 `test_b15_pg` (3 của S11 + 1 thêm ở S14) + 1 `test_monitor_db_pg`) — chạy ở
+    `make verify`.
+  - **S13 mutation `mutate_4b.py`** (+ M-4b-8, 9, 10, 12, 13, 14; neo `_GUARD/_PEEK/_NOTIFY/_ENSURE/_INTENDED/_DECIDED`, mỗi neo khớp đúng
+    1 lần): **lượt 1: 14/14 ĐỎ đúng dự đoán; lượt 2: 14/14** — số test đỏ giống nhau hai lượt (1: 10, 2: 5, 3: 4, 4: 20, 5: 7, 6: 12, 7: 11,
+    11: 2, 8: 2, 9: 5, 10: 7, 12: 19, 13: 5, 14: 2); md5 5 file (`api/approvals.py`, `domain/approval.py`, `b15`, `b17`, `policy.json`)
+    khớp, `git diff --stat` khớp, không còn chữ `MUTATION`. M-4b-9 và M-4b-13 bị cùng nhóm test giết (x14, x14b, 3 ca nhánh `peek`) — phần
+    "báo người vừa chọn" tương đương dưới `peek` (đúng lý do Q-4b-3 gộp vào "bỏ `peek`"). `--integration` (b3/b8 PG) chưa chạy — Docker.
+  - **S14 soát bảo mật (security-reviewer, theo bước S14 PLAN, chỉ đọc — `git diff HEAD` 27 file + 5 file mới):** **0 FAIL, 2 NGHI
+    (chung một gốc), 22 PASS** — C7-1…6 (trừ C7-4 NGHI), B1–B7, S14-a…j PASS (`peek` cùng `effect_key` với `once`, SQL chỉ SELECT;
+    `audit_columns` lạ → `ValueError` trước khi ghi; nhánh `peek` sau P6; khoá HMAC dẫn xuất như `TokenSigner`, WARNING không in khoá;
+    `_open` qua `open_approvers`; B15 giả chỉ khi `FAKE_SCENARIO`; harness `setdefault` + test `roster_in_ad=False`; gate3/gate2 không
+    in env; diff không đụng `worker.py`/`main.py`/M9/migration/4c/4d; test AST quét đúng node thật). Tôi kiểm lại trên code:
+    - **NGHI B8 / C7-4** (`auth/user_sync.py:118-127`, gọi từ `b15:123-124`): đúng — `ensure` người có role trong `users` khác AD thì
+      tăng `token_version`, thu hồi phiên, ghi `security_events.role_changed` NGAY trong node, không qua `effects.once`. Không lọt quyền
+      (`service.py:426` so `user.role != claims.role` — token role cũ bị chặn kể cả khi chết trước `bump`); chạy lại không nhân đôi (điều
+      kiện "role khác" tự khử sau lần ghi đầu); khe chết giữa `upsert_user` và `sink.record` giống hệt đăng nhập (có từ trước 4b ở `AuthService`; B15 dùng CHUNG
+      `AdUserSync` — điều kiện 2 của PLAN). PLAN A26/§6 ghi "`ensure` không side effect ra ngoài" là THIẾU → **Q-4b-8** (chưa sửa code).
+    - Ghi chú 3 (reviewer): đường `peek` của B15 thật chưa chạy trên PG (x14/x14b unit trên `MemoryEffects`; TC33 PG còn B15 giả) —
+      `SqlEffectStore.peek` là câu SQL mới DUY NHẤT của DỪNG 2 mà chưa có test PG → **đã thêm**
+      `test_b15_pg.py::test_x14_x14b_pg_rerun_after_kill_old_approval_via_sql_peek_no_ad` (agent chính viết — ngoài S11; `_run_b15`
+      thêm tham số `turn_id`): chết tại hook → `l1_01` disabled + AD sập → runtime mới cùng `turn_id` → phiếu cũ, 1 phiếu, 1 lần báo
+      `l1_01`, 0 lời gọi AD, `side_effects` `approval_create=1, notify_approver=1`, audit `queued` `recovered=true`. ruff + mypy sạch,
+      collect được; CHƯA chạy (Docker) — chạy ở `make verify`.
+    - Ghi chú 5: `graph/nodes/README.md` còn "B15 giả tới Phase 4" → sửa (B15 thật + bản giả cho gate2; B17 P13).
+    - Không sửa: ghi chú 1 (`b17:158` `if decided_by` / `:198` `is not None` — `decided_by == ""` → `KeyError` → E9, vẫn 0 lời gọi ghi;
+      FK `users` chặn từ gốc; sửa lõi sau mutation không đáng); ghi chú 2 (`peek` không kiểm lại `status`/hash phiếu — không có kịch bản:
+      khoá có `turn_id` + `loop_seq`, state cùng checkpoint; B17 kiểm hash + bảng); ghi chú 4 (P2/P13 không xét `account.enabled/locked` —
+      đúng đặc tả).
+    Sau S14: unit **3242 passed**, `make lint` sạch; 5 file đột biến md5 không đổi (không file app nào đổi ở S14) → mutation không chạy
+    lại. Agent tự khai: `grep -n`/`sed -n` thẳng trên file (không qua `git`), vài lệnh mở đầu `cd <repo> &&` — chỉ đọc.
+  - **Q-4b-8 (chốt A — xem dòng dưới):** `ensure` (B15) có thể ghi `role_changed` + thu hồi phiên ngoài `effects.once`. **A** chấp nhận,
+    ghi ngoại lệ bất biến B8/5.5 ("trừ `ensure` = đồng bộ `users` qua `AdUserSync` dùng chung với đăng nhập; sự kiện tự khử, không nhân
+    đôi khi chạy lại") + 1 test unit (ensure người có role cũ khác → đúng 1 `role_changed`; ensure lần 2 → 0). **B** B15 gọi
+    `AdUserSync` chế độ không phát sự kiện/không thu hồi phiên (phá "một định nghĩa"; mất dấu vết an ninh; phiên role cũ sống tới lần
+    verify kế). **C** bọc `ensure` trong `effects.once` (kind mới + test AST) — `SqlAuthStore` ghi bằng transaction riêng nên KHÔNG khép
+    được khe chết, chỉ thêm phức tạp. Đề xuất **A**.
+  - **MẪU B DỪNG 2: ĐẠT (chờ verify) — Tuấn Anh 01/10/2026. Q-4b-8 = A** — ngoại lệ bất biến B8/5.5: "`ensure` (đồng bộ `users` qua
+    `AdUserSync` dùng chung với đăng nhập) nằm ngoài `effects.once`; sự kiện tự hết điều kiện sau lần đầu, chạy lại không nhân đôi".
+    Việc treo 27 (`role_changed` không ghi nguồn login/B15). Test (agent chính viết, không Docker):
+    `test_b15_prepare_approval.py::test_q4b8_ensure_role_changed_once_then_no_repeat` — `l1_01` có dòng `users` role cũ `employee`,
+    `token_version=3`, 1 phiên sống → ticket t1 qua B15 thật: đúng 1 `role_changed` (employee → l1), `token_version` 4, phiên thu hồi
+    (`admin`); ticket t2 (lượt khác, không `peek`, `ensure` chạy lại thật — phiếu mới): 0 `role_changed` mới, `token_version` giữ 4.
+    Kiểm test bắt được (vá `AdUserSync._upsert` TRONG BỘ NHỚ, không sửa file): lần 2 vẫn phát → ĐỎ; bỏ nhánh đổi role → ĐỎ; không vá →
+    XANH. Không đổi code app (md5 5 file đột biến giữ). Sau đó (mốc `1f0f489`): unit **3243 passed** (= 3242 + 1; 45 của M9), mock
+    100, `make lint` sạch (mypy app 207 / tests 198 / mock 12 / ml 16; import-linter 10/10; gitleaks 0). **Sẵn sàng `make verify G=23`.**
+  - **`make verify G=23` (Tuấn Anh, 01/10/2026 04:40:23 → 04:54:15, HEAD `1f0f489` + cây bẩn 48 mục = 31 file sửa + 17 chưa track,
+    `.env`): XANH** — `.verify/summary.txt`: 0 chuẩn bị PASS; 1 lint PASS; 2 test PASS (backend **3501 passed** = 3243 unit + 258
+    integration/e2e, 0 skipped, 0 failed; mock 100; ml 77 / 5 deselected); 3 up PASS (APP_ENV=dev); 6 gate2 PASS (**89 PASS / 0 FAIL**
+    — không đổi); 4 ingest PASS (KB không đổi); 5 gate3 PASS (**78 PASS / 0 FAIL** = 72 cũ + 6 kiểm Q-4b-7); 8 trả về `.env` PASS; 9 CI
+    (gh) PASS — run `36777913760` (CI của HEAD `1f0f489`; DỪNG 2 chưa push). Mục "xác nhận khi verify" (3501 = đủ số đã collect, không
+    skip → mọi test dưới đây đã chạy và xanh):
+    - integration `test_guard_pg::test_e9_canary_nowhere_after_full_ticket_pg` (+ `e9b`) — B15 thật, chuỗi cũ; `test_b15_pg` ×4 (b3 PG,
+      b8 PG, x14+x14b PG qua `SqlEffectStore.peek` thật, x2/TC19 route + B15 thật); `test_monitor_db_pg` (M9); `test_graph_pg` TC33
+      (B15 giả).
+    - e2e `test_gate3_vpn` h6 (tc09 R17 chờ duyệt), h10 (R19 thử việc), s8 (tc09 điểm rerank thấp vẫn chờ duyệt).
+    - gate3 chạy NGOÀI GIỜ (04:51 ICT): tc02, tc06 (R18+R20 HITL) và tc09 (R17+R18) — cả 3: `B15 thật: người duyệt / dự phòng / xung
+      đột theo roster` = `('l1_01', 'l1_02', False)`, `audit B15 queued: cột approver_id` = `l1_01`. tc02/tc06: `ha.lt` (l1_01) duyệt →
+      202 → B17 (P13 tra `decided_by` = l1_01 hợp lệ) → `S_CONFIRMING`, POST renew đúng 1 lần, `transaction_log` begun, B18 write_calls 1.
+    - gate2 (B15 GIẢ, `FAKE_APPROVER_ID`) **89/0** — không đổi.
+  - **Chốt DỪNG 2 (Tuấn Anh / Claude chat 01/10/2026): ĐẠT** — verify XANH (04:40–04:54; backend 3501; gate2 89/0; gate3 78/0 ngoài giờ;
+    bước 8 trả về `.env` PASS). Spec `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** — mục **5.7** "Chốt khi hiện thực 4b DỪNG 2"
+    (thắng 5.1–5.6 khi lệch; sửa 5.6 #4, 4c P2, 4c P5, 4d P4) — Claude chat sửa, đi cùng commit DỪNG 2. Việc treo mở của 4b giữ nguyên:
+    **25, 26, 27**.
+- **Commit DỪNG 2:** 34 file (28 file 4b + 5 file mới + spec v1.2) — hash + CI ghi sau khi push. **4b ĐÓNG (chờ CI).** 4c chưa mở.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -4293,6 +4423,10 @@ DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo
 26. **`conflict_type` `targets_approver` chỉ so `action.requested_for` (soát DỪNG 1 4b NGHI S1e).** Đúng P4 và không đổi hành vi VPN
     (đích `device:…` không bao giờ trùng `user_id`). Phase 5 (intent tài khoản, `target="user:…"`) phải xét lại: đích là tài khoản của
     chính người duyệt mà không qua `requested_for` thì không bị bắt.
+27. **`security_events.role_changed` không ghi nguồn (đăng nhập hay B15 `ensure`) (Q-4b-8 = A, soát DỪNG 2 4b; chốt 01/10/2026).**
+    `AdUserSync._upsert` (`auth/user_sync.py`) dùng CHUNG cho `AuthService` và B15 ghi `detail={from, to}` — M9 không tách được đổi role
+    phát hiện lúc đăng nhập với lúc B15 đồng bộ người duyệt/chuỗi quản lý. Đổi cần sửa `AdUserSync` dùng chung (+ `check_event`
+    `role_changed`, test auth) — để sau Phase 4.
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

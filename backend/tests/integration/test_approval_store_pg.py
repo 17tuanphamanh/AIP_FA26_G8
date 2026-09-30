@@ -55,7 +55,7 @@ def _ticket(ticket_id: str, *, at: datetime = NOW) -> NewTicket:
 async def _approval(rw: AsyncEngine) -> tuple[str, str]:
     ticket = f"tk-{uuid4().hex[:8]}"
     await SqlTicketStore(rw).create(_ticket(ticket), turn_id=f"turn-{uuid4().hex[:8]}")
-    aid = await SqlApprovals(rw).create(ticket, APPROVER, NOW + timedelta(minutes=30), "h" * 64)
+    aid = await SqlApprovals(rw).create(ticket, APPROVER, NOW + timedelta(minutes=30), "h" * 64, backup_approver_id=None, conflict_detected=False, conflict_type=None)
     return ticket, aid
 
 

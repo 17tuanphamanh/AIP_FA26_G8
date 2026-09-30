@@ -20,8 +20,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+from app.approval.store import ApprovalRow
+from app.auth.ports import AdUser
 from app.core.fake_tag import FAKE_TAG
 from app.domain.action import Action, ActionMeta
+from app.domain.approval import Lookup, Roster
 from app.domain.context import RequesterContext
 from app.domain.policy import BusinessHours
 from app.domain.ticket_state import ExecutionResult, RiskDecision
@@ -60,8 +63,18 @@ class Notifier(Protocol):
 
 class Approvals(Protocol):
     async def create(
-        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
-    ) -> str: ...
+        self,
+        ticket_id: str,
+        approver_id: str,
+        deadline: datetime,
+        action_plan_hash: str,
+        *,
+        backup_approver_id: str | None,
+        conflict_detected: bool,
+        conflict_type: str | None,
+    ) -> str:
+        """B15 (qua `effects.once("approval_create")`). Phase 4 4b P8: 3 tham số keyword BẮT BUỘC (TQ-9)."""
+        ...
 
     async def notify_approver(self, approval_id: str, approver_id: str) -> str: ...
 
@@ -79,6 +92,28 @@ class Approvals(Protocol):
 
     async def get_status(self, approval_id: str) -> str | None:
         """B17 (3h, phase3 11.4 bước 1; P8): trạng thái phiếu trong BẢNG — "đã duyệt" = state + bảng + hash. None = không có."""
+        ...
+
+    async def get(self, approval_id: str) -> ApprovalRow | None:
+        """Phase 4 4b: B15 đọc lại phiếu sau `once` / nhánh `peek` (báo `a.approver_id`, điểm log 5); B17 lấy `decided_by` (P13)."""
+        ...
+
+
+class ApproverUsers(Protocol):
+    """Phase 4 4b P5 (Q-4-N, TQ-3): người duyệt/dự phòng B15 vừa chọn phải có dòng `users` TRƯỚC khi tạo phiếu (FK
+    `approvals.approver_id`, `backup_approver_id`, `audit_logs.approver_id`) — kể cả người chưa từng đăng nhập. Bản thật
+    `auth.user_sync.AuthApproverUsers` bọc `AdUserSync` (MỘT định nghĩa với đăng nhập): chuỗi quản lý qua `lookup` (có cache của
+    node, registry bước `B15_APPROVER`), mang khoá trượt của username ma khi dòng vừa tạo; KHÔNG tạo phiên, KHÔNG phát token,
+    không đổi `token_version` khi role không đổi. Không gọi qua `effects.once` (đồng bộ idempotent, không side effect ra ngoài)."""
+
+    @property
+    def available(self) -> bool:
+        """False = tiến trình thiếu `JWT_SIGNING_KEY` (khoá HMAC username ma) → B15 E2 `approver_sync_unavailable` TRƯỚC
+        `ensure`, 0 phiếu (Q-4b-5)."""
+        ...
+
+    async def ensure(self, ad_user: AdUser, lookup: Lookup[AdUser], *, now: datetime) -> None:
+        """Lỗi tra AD trong chuỗi quản lý → `ApproverLookupError` lan ra (B15 → E2)."""
         ...
 
 
@@ -253,6 +288,10 @@ class NodeDeps:
     llm: LlmPort
     # `security_events(injection_detected)` của B2 / tin trả lời (3e) — CHỈ qua `effects.once("security_event")`.
     security_events: SecurityEvents
+    # Phase 4 4b (P1, P5): roster người duyệt theo intent (`config/approvers.yaml`, đã kiểm lúc khởi động) + đồng bộ dòng `users`
+    # của người duyệt. Bắt buộc, không mặc định (mặc định = người duyệt "ai đó" / bỏ qua FK = fail-open).
+    approvers: Mapping[str, Roster]
+    approver_users: ApproverUsers
     scenario: FakeScenario = field(default_factory=FakeScenario)
     # B15 GIẢ: người duyệt cố định (`FAKE_APPROVER_ID`, chỉ dev/test). None → B15 ném → E9.
     approver_id: str | None = "l1-fake"

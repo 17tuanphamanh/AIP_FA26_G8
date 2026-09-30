@@ -4,6 +4,15 @@
 
 `GraphHarness.restart()` dựng graph + runner MỚI trên cùng checkpointer và cùng "DB" giả — mô phỏng
 khởi động lại backend (cổng 2).
+
+Phase 4 4b (TQ-6): bảng `users` giả (`GraphHarness.auth_store`, `InMemoryAuthStore`) dùng chung cho FK của phiếu duyệt
+(`MemoryApprovals` — `approver_id`/`backup_approver_id` phải có dòng, như Postgres) và `approver_users` (`AuthApproverUsers` THẬT
+bọc `AdUserSync` THẬT trên store đó, khoá HMAC `HARNESS_USERNAME_KEY`). Người duyệt GIẢ (`approver_id`, B15 giả) được gieo sẵn một
+dòng `users` (như `graph_pg` gieo `l1-fake`); người trong roster thì KHÔNG — B15 thật phải `ensure`.
+AD giả (`FakeAd`, khi test không truyền `directory`): harness GỘP thêm người trong roster + chuỗi quản lý của họ từ
+`mock_services/seed.json` (`ad_seed.ROSTER_CHAIN`, chuỗi P14 `l1_01 → l1_lead → it_mgr01`) — `FakeAd.add` không đè người test đã
+dựng. `roster_in_ad=False` → không gộp (ca "AD không có roster" → B15 E5 `no_valid_approver`). Test đổi trạng thái/lỗi của người
+trong roster thì làm TƯỜNG MINH: `h.ad.set_status(...)`, `h.ad.fail_ids`.
 """
 
 import asyncio
@@ -18,23 +27,31 @@ from typing import Any, Literal
 
 from app.approval.store import ApprovalRow
 from app.audit.writer import check_audit_row
-from app.core.clock import FakeClock
+from app.auth.models import UserRecord
+from app.auth.service import auth_config, lock_policy
+from app.auth.user_sync import AdUserSync, AuthApproverUsers
+from app.auth.username_hash import username_key
+from app.core.clock import Clock, FakeClock
 from app.db.escalations import QueueItem
 from app.db.lineage import LINEAGE_KEY, check_lineage_row
+from app.db.models import CONFLICT_TYPES
 from app.db.runtime import DueWait, OpenTurn, as_ref
 from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
+from app.domain.approval import Roster
 from app.domain.final import FinalSummary
 from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
-from app.graph.fakes import FakeScenario, NodeDeps
+from app.graph.fakes import ApproverUsers, FakeScenario, NodeDeps
 from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.llm import LlmPort
-from app.settings import Settings, get_escalation_templates, get_policy
+from app.settings import Settings, get_escalation_templates, get_policy, open_approvers
 from langgraph.checkpoint.memory import InMemorySaver
+from tests.fakes.ad_seed import ROSTER_CHAIN, seed_ad_records
+from tests.fakes.auth import InMemoryAuthStore, RecordingSink
 from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.identity import (
@@ -51,6 +68,8 @@ from tests.fakes.rag import FakeRag
 from tests.fakes.vpn import SeedVpn
 
 LOCKOUT = timedelta(minutes=15)
+# Khoá HMAC username ma của `approver_users` trong harness (4b, 4.10 #11) — test mang khoá trượt ghi lần sai bằng CÙNG khoá này.
+HARNESS_USERNAME_KEY = username_key(b"harness-jwt-signing-key-4b-000000")
 
 
 class MemoryAudit:
@@ -101,6 +120,10 @@ class MemoryEffects:
             self.rows[key] = {"ticket_id": ticket_id, "kind": kind, "step": step,
                               "turn_id": turn_id, "result_ref": ref}  # fmt: skip
             return ref
+
+    async def peek(self, key: str) -> str | None:
+        row = self.rows.get(key)
+        return None if row is None else row["result_ref"]
 
     def count(self, ticket_id: str, kind: str) -> int:
         return sum(1 for r in self.rows.values() if r["ticket_id"] == ticket_id and r["kind"] == kind)
@@ -189,24 +212,38 @@ class MemoryDeadlines:
 
 class MemoryApprovals:
     """Port approvals giả, ghi vào cùng bảng `approvals` giả mà worker đọc hạn. `lock_row` khoá
-    theo phiếu như `SELECT … FOR UPDATE` (giữ suốt khối `async with`)."""
+    theo phiếu như `SELECT … FOR UPDATE` (giữ suốt khối `async with`). Phase 4 4b (TQ-6): `users` (bảng `users` giả) có thì
+    `approver_id`/`backup_approver_id` chưa có dòng → `ValueError` như FK Postgres (M-4b-12 chết ở unit)."""
 
-    def __init__(self, deadlines: MemoryDeadlines) -> None:
+    def __init__(
+        self, deadlines: MemoryDeadlines, *, clock: Clock, users: Mapping[str, Any] | None = None
+    ) -> None:
         self._table = deadlines.approvals
+        self._clock = clock
+        self._users = users
         self.notified: list[tuple[str, str]] = []
         self._row_locks: dict[str, asyncio.Lock] = {}
         self.crash_on_create = False  # process "chết" ở lần tạo phiếu kế tiếp (chưa ghi gì)
 
     async def create(
-        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
-    ) -> str:
+        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str, *,
+        backup_approver_id: str | None, conflict_detected: bool, conflict_type: str | None,
+    ) -> str:  # fmt: skip
         if self.crash_on_create:
             self.crash_on_create = False
             raise Crash(f"process chết khi tạo phiếu cho {ticket_id}")
+        if self._users is not None:
+            for uid in (approver_id, backup_approver_id):
+                if uid is not None and uid not in self._users:
+                    raise ValueError(f"FK approvals → users: {uid} chưa có dòng users")  # như Postgres
+        if conflict_type is not None and conflict_type not in CONFLICT_TYPES:
+            raise ValueError(f"CHECK approvals.conflict_type: {conflict_type!r}")  # như Postgres
         approval_id = str(len(self._table) + 1)
         self._table[approval_id] = {"ticket_id": ticket_id, "approver_id": approver_id,
                                     "deadline": deadline, "status": "pending",
-                                    "action_plan_hash": action_plan_hash}  # fmt: skip
+                                    "action_plan_hash": action_plan_hash, "backup_approver_id": backup_approver_id,
+                                    "conflict_detected": conflict_detected, "conflict_type": conflict_type,
+                                    "created_at": self._clock.now()}  # fmt: skip
         return approval_id
 
     async def notify_approver(self, approval_id: str, approver_id: str) -> str:
@@ -231,6 +268,9 @@ class MemoryApprovals:
             approval_id=approval_id, ticket_id=a["ticket_id"], approver_id=a["approver_id"],
             status=a["status"], deadline=a["deadline"], decided_by=a.get("decided_by"),
             note=a.get("note"), first_viewed_at=a.get("first_viewed_at"),
+            backup_approver_id=a.get("backup_approver_id"), conflict_detected=bool(a.get("conflict_detected", False)),
+            conflict_type=a.get("conflict_type"), created_at=a.get("created_at", a["deadline"]),
+            reminder_1_at=a.get("reminder_1_at"), reminder_2_at=a.get("reminder_2_at"), decided_at=a.get("decided_at"),
         )  # fmt: skip
 
     async def get(self, approval_id: str) -> ApprovalRow | None:
@@ -498,6 +538,12 @@ class GraphHarness:
     # LLM gateway THẬT + ScriptedLLM rỗng (3d): node gọi LLM mà test chưa cấp kịch bản → ScriptExhausted → E9
     llm: LlmPort = field(default_factory=lambda: make_gateway().client)
     security_events: "MemorySecurityEvents" = field(default_factory=lambda: MemorySecurityEvents())
+    # Phase 4 4b (TQ-6): bảng `users` giả — None = harness tự dựng. Roster = `config/approvers.yaml`. `approver_users` None =
+    # `AuthApproverUsers(AdUserSync(auth_store))` THẬT; test Q-4b-5 truyền `AuthApproverUsers(None)`.
+    auth_store: InMemoryAuthStore | None = None
+    approvers: Mapping[str, Roster] = field(default_factory=lambda: open_approvers(_DEFAULT_SETTINGS).root)
+    approver_users: ApproverUsers | None = None
+    roster_in_ad: bool = True  # gộp `ROSTER_CHAIN` (seed.json) vào `ad` — chỉ khi `directory` None
     tickets: MemoryTickets = field(init=False)
     escalations: MemoryEscalations = field(init=False)
     approvals: MemoryApprovals = field(init=False)
@@ -507,7 +553,21 @@ class GraphHarness:
     def __post_init__(self) -> None:
         if self.vpn is None:
             self.vpn = SeedVpn(self.clock)
-        self.approvals = MemoryApprovals(self.deadlines)
+        if self.roster_in_ad and self.directory is None:
+            self.ad.add(*seed_ad_records(self.clock.now(), ROSTER_CHAIN))
+        if self.auth_store is None:
+            self.auth_store = InMemoryAuthStore(RecordingSink(self.clock))
+        if self.approver_id is not None and self.approver_id not in self.auth_store.users:
+            self.auth_store.users[self.approver_id] = UserRecord(
+                user_id=self.approver_id, username=self.approver_id, full_name=None, role="l1", department="it",
+                manager_id=None, employment_status="active", hired_at=None, is_privileged_account=False,
+            )  # người duyệt GIẢ của B15 giả (như `graph_pg` gieo `l1-fake`) — FK phiếu
+        if self.approver_users is None:
+            self.approver_users = AuthApproverUsers(AdUserSync(
+                store=self.auth_store, sink=self.auth_store.sink, username_key=HARNESS_USERNAME_KEY,
+                lock=lock_policy(auth_config(_DEFAULT_SETTINGS, get_policy().constants)),
+            ))  # fmt: skip
+        self.approvals = MemoryApprovals(self.deadlines, clock=self.clock, users=self.auth_store.users)
         self.tickets = MemoryTickets(self.turns)
         self.escalations = MemoryEscalations(self.tickets)
         self.lock = MemoryTicketLock(self.lock_timeout)
@@ -519,6 +579,7 @@ class GraphHarness:
 
     def deps(self) -> NodeDeps:
         """Mỗi lần gọi = một "process": registry (và breaker) mới, như khởi động lại backend."""
+        assert self.approver_users is not None  # __post_init__ dựng
         return NodeDeps(
             notifier=self.notifier, approvals=self.approvals, executor=self.executor, txlog=self.txlog,
             deadlines=self.deadlines, constants=get_policy().constants,
@@ -528,7 +589,8 @@ class GraphHarness:
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
             security_events=self.security_events, enable_proactive_diagnosis=self.enable_proactive_diagnosis,
-            grounding_gate_actions=self.grounding_gate_actions,
+            grounding_gate_actions=self.grounding_gate_actions, approvers=self.approvers,
+            approver_users=self.approver_users,
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:

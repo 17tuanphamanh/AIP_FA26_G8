@@ -12,7 +12,11 @@
 2. **Hash:** đi qua duyệt thì `action_plan_hash` phải có và bằng `hash_action(intended_action)` — thiếu/lệch → E5
    `action_plan_changed_since_approval` (cấm 3).
 3. **Người:** `ad_get_user` (`caller_step="B17_RECHECK"`, 3-Q37) cho người gửi và người hưởng lợi (bỏ trùng, song song) —
-   `disabled`/`terminated`, không có, hoặc lỗi AD → E5 `person_no_longer_valid` (D-15). `requester_context` chụp ở B1 có thể
+   `disabled`/`terminated`, không có, hoặc lỗi AD → E5 `person_no_longer_valid` (D-15). **Phase 4 4b P13 (Q-4b-1, TQ-11):** đi
+   qua duyệt thì tra thêm người ĐÃ DUYỆT (`approvals.get(...).decided_by`) trong CÙNG `gather` (một điểm gọi); `decided_by` None
+   mà phiếu `approved` → E5 `recheck_failed`. Xét người gửi/người hưởng lợi TRƯỚC (nhánh cũ giữ nguyên), rồi người đã duyệt: lỗi
+   AD → E2 `approver_lookup_error`; không còn hợp lệ l1 lẫn Trưởng BP (`domain.approval.invalid_reason`: không có, không
+   `active`, nhóm không ra l1/manager) → E5 `approver_no_longer_valid`. 0 lời gọi ghi. `requester_context` chụp ở B1 có thể
    cũ (người bị khoá trong lúc chờ hỏi lại/duyệt) — bước này đóng khe đó. **Q-3h-7:** mọi trường `requester.*` mà một luật
    bất kỳ trong policy tham chiếu (tính lúc dựng node = lúc khởi động; hiện chỉ `employment_status`) — dựng lại từ AD mới bằng
    chính `RequesterContext.from_ad` tại mốc `captured_at` của B1 — khác bản chụp → E5 `recheck_failed` (vd `active` →
@@ -41,6 +45,7 @@ from app.core.errors import DomainError
 from app.core.hashing import hash_action
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import Action
+from app.domain.approval import invalid_reason
 from app.domain.context import RequesterContext
 from app.domain.exit_codes import ExitCode
 from app.domain.messages import result_msg, result_text
@@ -115,6 +120,7 @@ def make(deps: NodeDeps) -> NodeFn:
         via_approval = bool(state.get("approval_id")) or state.get("approval_result") is not None
         approved = False
         matched: bool | None = None
+        decided_by: str | None = None
         if via_approval:
             db_status = await deps.approvals.get_status(state["approval_id"]) if state.get("approval_id") else None
             approved = state.get("approval_result") == "approved" and db_status == "approved"
@@ -133,6 +139,14 @@ def make(deps: NodeDeps) -> NodeFn:
                     audit_detail={**rule, "hash_old": approved_hash, "hash_new": current, "action_plan_hash_matched": False},
                     exit_code=ExitCode.E5.value, escalation_reason_detail="action_plan_changed_since_approval",
                 )  # fmt: skip
+            row = await deps.approvals.get(state["approval_id"])  # P13: AI đã duyệt
+            decided_by = None if row is None else row.decided_by
+            if decided_by is None:  # "đã duyệt" mà không biết người duyệt → không thực thi
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="recheck_failed",
+                    audit_detail={**rule, "recheck": "no_decided_by"}, exit_code=ExitCode.E5.value,
+                    escalation_reason_detail="recheck_failed",
+                )  # fmt: skip
         if not approved and (verdict.decision == "approval_required" or not verdict.matched):
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B17", event="recheck_failed",
@@ -141,8 +155,9 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
 
         people = list(dict.fromkeys([requester.user_id, action.requested_for]))  # [3] D-15 (sửa)
+        lookups = list(dict.fromkeys([*people, *([decided_by] if decided_by else [])]))  # P13: + người đã duyệt, CÙNG gather
         checks = await asyncio.gather(
-            *[deps.directory.call("ad_get_user", {"user_id": uid}, caller_step=RECHECK_STEP) for uid in people],
+            *[deps.directory.call("ad_get_user", {"user_id": uid}, caller_step=RECHECK_STEP) for uid in lookups],
             return_exceptions=True,
         )  # fmt: skip
         for outcome in checks:  # lỗi hợp đồng (bug) ném trước — E9; hết hạn lượt sau — E2
@@ -154,9 +169,10 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail={**rule, "stage": "recheck_person"}, exit_code=ExitCode.E2.value,
                 escalation_reason_detail="turn_budget_exceeded",
             )  # fmt: skip
+        found = dict(zip(lookups, checks, strict=True))
         ad_requester: Any = None
-        for uid, outcome in zip(people, checks, strict=True):
-            data, err, _ = outcome  # type: ignore[misc]
+        for uid in people:
+            data, err, _ = found[uid]  # type: ignore[misc]
             status = getattr(data, "employment_status", None)
             if err is not None or data is None or status in INVALID_PEOPLE:
                 return await goto(
@@ -178,6 +194,22 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail={**rule, "recheck": "requester_changed", "fields": changed, "rebuilt": fresh is not None},
                 exit_code=ExitCode.E5.value, escalation_reason_detail="recheck_failed",
             )  # fmt: skip
+
+        if decided_by is not None:  # P13 — SAU người gửi/người hưởng lợi
+            data, err, _ = found[decided_by]  # type: ignore[misc]
+            if err is not None:
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="approver_lookup_error",
+                    audit_detail={**rule, "user_id": decided_by, "role": "approver", "ad_error": True},
+                    exit_code=ExitCode.E2.value, escalation_reason_detail="approver_lookup_error",
+                )  # fmt: skip
+            reason = invalid_reason(data, "l1")
+            if reason is not None and invalid_reason(data, "manager") is not None:
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="approver_no_longer_valid",
+                    audit_detail={**rule, "user_id": decided_by, "role": "approver", "reason": reason},
+                    exit_code=ExitCode.E5.value, escalation_reason_detail="approver_no_longer_valid",
+                )  # fmt: skip
 
         try:  # [4–5]
             res = await deps.executor.execute(state["ticket_id"], run.turn_id, action)

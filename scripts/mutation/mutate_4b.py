@@ -1,7 +1,7 @@
 """Mutation tay chặng 4b (phase4 mục 5.4) — mỗi đột biến áp lên file thật, chạy bộ test, khôi phục trong `finally`, so md5 +
 `git diff --stat` trước/sau. Luật N3 (`n3.py`): file đích còn chữ `MUTATION` → dừng; mốc xanh một lần trước khi đột biến.
 
-  uv run python scripts/mutation/mutate_4b.py            # mọi đột biến unit hiện có (DỪNG 1: M-4b-1…7, 11)
+  uv run python scripts/mutation/mutate_4b.py            # mọi đột biến unit: M-4b-1…14 (DỪNG 1: 1…7, 11; DỪNG 2: 8, 9, 10, 12, 13, 14)
   uv run python scripts/mutation/mutate_4b.py --only M-4b-6
 
 Ghi chú:
@@ -10,6 +10,9 @@ Ghi chú:
 - M-4b-6/7 sửa `config/policy.json` (JSON không có chú thích — chữ `MUTATION` chèn vào `description` của luật bị phá, N3a).
 - M-4b-11 (Q-4b-2): route dùng chuỗi CHỈ sếp trực tiếp → b2 (`l1_lead`, sếp trực tiếp) vẫn 403; b2b (`it_mgr01`, chuỗi 2 cấp)
   và ca sếp cấp 5 phải đỏ.
+- DỪNG 2 (node B15 thật, B17 P13): M-4b-9 = "bỏ `peek` + báo người VỪA CHỌN" (Q-4b-3 — chỉ bỏ báo theo phiếu thì tương đương dưới
+  `peek`); M-4b-13 = chỉ bỏ `peek`; M-4b-12 giết ở unit nhờ FK giả của `MemoryApprovals` (PG: `test_b15_pg` b3 — chạy ở verify);
+  M-4b-14 giết ở b8 (Q-4b-4: cột `intended_action` có `type` + `target`).
 """
 
 import hashlib
@@ -32,12 +35,15 @@ def pt(*args: str) -> list[str]:
 APPROVAL = "backend/app/domain/approval.py"
 POLICY = "config/policy.json"
 ROUTE = "backend/app/api/approvals.py"
+B15 = "backend/app/graph/nodes/b15_prepare_approval.py"
+B17 = "backend/app/graph/nodes/b17_execute.py"
 
 UT = pt(*[
     f"backend/tests/unit/{name}.py"
     for name in (
         "test_approval_domain", "test_hrule_4b_owner", "test_policy_rules_vpn", "test_config_files", "test_b12_assess",
         "test_approvals_route_chain", "test_approvals_api", "test_authz",
+        "test_b15_prepare_approval", "test_b17_decided_by", "test_goto_audit_columns", "test_b17_execute",
     )
 ])  # fmt: skip
 
@@ -71,6 +77,14 @@ _R18 = (
     '     "description": "Ngoài giờ hành chính"},\n'
 )
 _ROUTE_CHAIN = "    return await manager_chain(user_id, me.manager_id if me else None, fetch_manager)\n"
+_GUARD = (
+    '        if action_has_device_target(action) and action.facts.get("device_owner_is_requester") is not True:  # [1] P6\n'
+)
+_PEEK = '        existing = await effects.peek(state, "approval_create", step="B15")  # [2] P9\n'
+_NOTIFY = '            state, "notify_approver", deps.approvals.notify_approver, approval_id, a.approver_id, step="B15",\n'
+_ENSURE = "                    await deps.approver_users.ensure(ad_user, lookup, now=now)\n"
+_INTENDED = "            approval_id=approval_id, action_plan_hash=hash_action(action), intended_action=action,\n"
+_DECIDED = "        if decided_by is not None:  # P13 — SAU người gửi/người hưởng lợi\n"
 
 X = "test_x_table_3_2_choose_approver"
 X2, X3, X4, X7 = (
@@ -80,6 +94,10 @@ X2, X3, X4, X7 = (
 X9 = [f"test_x9_lookup_error_raises_not_invalid[{i}]" for i in ("primary", "backup", "giua-chuoi-quan-ly-cua-l1_01",
                                                                  "truong-BP")]  # fmt: skip
 HRULE = "test_hrule_p7_not_own_device_no_rule_e5"
+X12 = "test_x12_device_target_owner_not_true_e5_before_any_ad_call"
+X14, X14B = "test_x14_rerun_after_kill_one_approval_notifies_old_approver_no_ad", "test_x14b_rerun_with_ad_down_keeps_old_approval_not_e2"
+B6 = "test_b6_decided_by_no_longer_valid_is_e5_zero_writes"
+B8 = "test_b8_point5_columns_not_null_closed_values_no_free_text"
 
 UNIT: list[Mutation] = [
     Mutation("M-4b-1 xung đột → chọn dự phòng thay Trưởng BP",
@@ -116,6 +134,26 @@ UNIT: list[Mutation] = [
              [one(ROUTE, _ROUTE_CHAIN, "    return (me.manager_id,) if me and me.manager_id else ()  # MUTATION M-4b-11\n")],
              UT, ["test_b2_requester_in_approver_chain_from_users_table_403[b2b-it_mgr01]",
                   "test_b2_chain_level_5_boss_403"]),
+    # ---- DỪNG 2: node B15 thật, B17 P13 ----
+    Mutation("M-4b-8 bỏ chốt phòng thủ B15 (P6)",
+             [one(B15, _GUARD, "        if False:  # MUTATION M-4b-8\n")],
+             UT, [f"{X12}[owner-thieu]", f"{X12}[owner-false]"]),
+    Mutation("M-4b-9 bỏ peek + báo người VỪA CHỌN thay vì a.approver_id (Q-4b-3)",
+             [one(B15, _PEEK, "        existing = None  # MUTATION M-4b-9 bỏ peek\n"),
+              one(B15, _NOTIFY, _NOTIFY.replace("a.approver_id", "(choice.approver.user_id if choice else a.approver_id)"))],
+             UT, [X14]),
+    Mutation("M-4b-10 B17 bỏ kiểm decided_by (P13)",
+             [one(B17, _DECIDED, "        if False:  # MUTATION M-4b-10\n")],
+             UT, [f"{B6}[b6-disabled]", "test_b7_ad_error_on_decided_by_only_is_e2_approver_lookup_error"]),
+    Mutation("M-4b-12 không ensure người duyệt trước khi tạo phiếu",
+             [one(B15, _ENSURE, "                    pass  # MUTATION M-4b-12\n")],
+             UT, ["test_b3_approver_without_users_row_gets_row_and_chain_no_session"]),
+    Mutation("M-4b-13 bỏ peek — chạy lại luôn chọn người/tra AD (P9)",
+             [one(B15, _PEEK, "        existing = None  # MUTATION M-4b-13\n")],
+             UT, [X14B]),
+    Mutation("M-4b-14 B15 không truyền intended_action vào goto (Q-4b-4)",
+             [one(B15, _INTENDED, "            approval_id=approval_id, action_plan_hash=hash_action(action),  # MUTATION M-4b-14\n")],
+             UT, [f"{B8}[x1-normal]"]),
 ]  # fmt: skip
 
 MUTATIONS = UNIT

@@ -76,6 +76,10 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "turn_budget_exceeded",
     # Phase 4 S0-P10 (Q-4-U A+): B11 — tài liệu quy trình của action_type không có/tắt/không được xem trong KB hiện hành → E3
     "no_procedure",
+    # Phase 4 4b (P11, Q-4b-1, Q-4b-5): B15 — không người duyệt hợp lệ (E5), tra AD người duyệt lỗi (E2 — cả B17 `decided_by`),
+    # đích chưa xác minh chủ (E5, P6), thiếu khoá HMAC để đồng bộ người duyệt (E2); B17 — người đã duyệt không còn hợp lệ (E5)
+    "no_valid_approver", "approver_lookup_error", "approval_target_unverified", "approver_sync_unavailable",
+    "approver_no_longer_valid",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",

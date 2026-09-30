@@ -127,7 +127,8 @@ gate2:
 	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate2 $(S)
 
 # Cổng 3 trên stack compose thật (phase3 11.6; backend/tests/stack/README.md). Node THẬT: .env KHÔNG đặt FAKE_SCENARIO,
-# LLM_BACKEND=scripted (preset config/scripted/tc*.yaml), có SVC_EXECUTOR_TOKEN + FAKE_APPROVER_ID; KB fixture:
+# LLM_BACKEND=scripted (preset config/scripted/tc*.yaml), có SVC_EXECUTOR_TOKEN (B15 thật chọn người duyệt theo
+# config/approvers.yaml — không cần FAKE_APPROVER_ID, biến đó chỉ cho gate2); KB fixture:
 # make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated. Route tính theo giờ lúc chạy (in đầu bảng).
 # tc28 tự `compose stop qdrant` rồi `start` lại. Ví dụ: make gate3 S=preflight | make gate3 S=tc02 | make gate3 S=all
 gate3:

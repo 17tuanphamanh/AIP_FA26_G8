@@ -1,7 +1,8 @@
 """Repository `approvals` (P7 2.6, B15-B16 mục 5) — 2b-Q3.
 
 - `create`: B15 gọi QUA `effects.once("approval_create")` → ghi trong CÙNG transaction với dòng
-  `side_effects` (`current_tx()`); process chết giữa chừng thì cả hai cùng mất hoặc cùng còn (D-18).
+  `side_effects` (`current_tx()`); process chết giữa chừng thì cả hai cùng mất hoặc cùng còn (D-18). Phase 4 4b P8: người dự
+  phòng + xung đột là tham số keyword BẮT BUỘC (TQ-9 — node quên truyền là lỗi kiểu, không lặng lẽ thành None/False).
 - `close`: B16 ghi kết quả — `UPDATE … WHERE status='pending'` nên chạy lại (resume, recover) không đổi
   gì (B15-B16 mục 5 "idempotent tự nhiên"). Route duyệt KHÔNG ghi quyết định, chỉ B16 ghi.
 - `lock_row`: route duyệt đọc phiếu `FOR UPDATE` trong transaction NGẮN (chỉ đọc + kiểm) rồi nhả,
@@ -40,6 +41,14 @@ class ApprovalRow:
     decided_by: str | None
     note: str | None
     first_viewed_at: datetime | None
+    # Phase 4 4b P8 (+ `conflict_detected`: nhánh `peek` của B15 suy `choice_reason` và ghi điểm log 5 từ phiếu cũ — 5.6 #8)
+    backup_approver_id: str | None
+    conflict_detected: bool
+    conflict_type: str | None
+    created_at: datetime
+    reminder_1_at: datetime | None
+    reminder_2_at: datetime | None
+    decided_at: datetime | None
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -51,6 +60,9 @@ def _row(r: Any) -> ApprovalRow:
         approval_id=str(r.approval_id), ticket_id=r.ticket_id, approver_id=r.approver_id,
         status=r.status, deadline=r.deadline.astimezone(UTC), decided_by=r.decided_by,
         note=r.note, first_viewed_at=_utc(r.first_viewed_at),
+        backup_approver_id=r.backup_approver_id, conflict_detected=r.conflict_detected, conflict_type=r.conflict_type,
+        created_at=r.created_at.astimezone(UTC), reminder_1_at=_utc(r.reminder_1_at), reminder_2_at=_utc(r.reminder_2_at),
+        decided_at=_utc(r.decided_at),
     )  # fmt: skip
 
 
@@ -70,13 +82,22 @@ class SqlApprovals:
             return await fn(own)
 
     async def create(
-        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
+        self,
+        ticket_id: str,
+        approver_id: str,
+        deadline: datetime,
+        action_plan_hash: str,
+        *,
+        backup_approver_id: str | None,
+        conflict_detected: bool,
+        conflict_type: str | None,
     ) -> str:
         async def run(conn: AsyncConnection) -> str:
             row = await conn.execute(
                 insert(_APPROVALS)
                 .values(ticket_id=ticket_id, approver_id=approver_id, deadline=deadline,
-                        action_plan_hash=action_plan_hash)
+                        action_plan_hash=action_plan_hash, backup_approver_id=backup_approver_id,
+                        conflict_detected=conflict_detected, conflict_type=conflict_type)
                 .returning(_APPROVALS.c.approval_id)
             )  # fmt: skip
             return str(row.scalar_one())

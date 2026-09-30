@@ -6,6 +6,9 @@ chết giữa side effect và checkpoint) → trả `result_ref` cũ, không là
 
 Hàm side effect muốn ghi DB CÙNG transaction với dòng `side_effects` (thông báo trong app, phiếu
 duyệt…) dùng `current_tx()` — không có thì tự mở transaction riêng.
+
+`peek` (Phase 4 4b P9): đọc `result_ref` của CÙNG khoá mà `once` sẽ dùng — chỉ SELECT, không ghi, không gọi gì. B15 chạy lại
+(TC33) thấy phiếu đã tạo thì bỏ qua chọn người/tra AD/ensure (AD đang lỗi lúc chạy lại không làm mồ côi phiếu `pending`).
 """
 
 import inspect
@@ -17,7 +20,7 @@ from app.db.models import SIDE_EFFECT_KINDS
 from app.db.runtime import current_tx
 from app.graph.context import current_run
 
-__all__ = ["current_tx", "effect_key", "once"]
+__all__ = ["current_tx", "effect_key", "once", "peek"]
 
 
 def effect_key(ticket_id: str, step: str, turn_id: str, loop_seq: int, kind: str, sub: str) -> str:
@@ -50,3 +53,12 @@ async def once(
         turn_id=run.turn_id,
         call=call,
     )
+
+
+async def peek(state: Mapping[str, Any], kind: str, *, step: str, sub: str = "") -> str | None:
+    """`result_ref` của side effect `kind` đã làm ở lượt này (cùng `effect_key` với `once`) — None = chưa làm."""
+    if kind not in SIDE_EFFECT_KINDS:
+        raise ValueError(f"effects.peek: kind lạ {kind!r} (P7 2.8)")
+    run = current_run()
+    loop_seq = int(state.get("reasoning_loops", 0) or 0)  # cùng biểu thức với `once` (dòng khoá của `once` giữ nguyên văn — M-3g-7)
+    return await run.effects.peek(effect_key(state["ticket_id"], step, run.turn_id, loop_seq, kind, sub))

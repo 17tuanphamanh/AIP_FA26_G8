@@ -19,10 +19,14 @@ Intent (3f): `check_intent_config` — `ENABLED_INTENTS` ⊆ `slots.yaml` `inten
 Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
+Người duyệt (4b): roster `config/approvers.yaml` (kiểm trước DB) → `NodeDeps.approvers`; `NodeDeps.approver_users` =
+`auth.user_sync.AuthApproverUsers` trên `SqlAuthStore` + `SecurityEventWriter` + khoá HMAC dẫn xuất từ `JWT_SIGNING_KEY`
+(`username_hash.username_key` — cùng hàm với `TokenSigner.username_key`). Thiếu khoá → WARNING, `available=False` (B15 → E2
+`approver_sync_unavailable` theo ticket) — KHÔNG đổi điều kiện khởi động (Q-4b-5).
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -34,12 +38,17 @@ from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.audit.writer import AuditWriter
+from app.auth.service import auth_config, lock_policy
+from app.auth.store import SqlAuthStore
+from app.auth.user_sync import AdUserSync, AuthApproverUsers
+from app.auth.username_hash import username_key
 from app.core.clock import Clock
 from app.db.escalations import SqlEscalationStore
 from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines
 from app.db.tickets import SqlTicketStore
+from app.domain.approval import Roster
 from app.executor.plans import check_plans
 from app.executor.txlog import SqlTxLog
 from app.graph.builder import build_graph, fake_nodes, real_nodes
@@ -144,7 +153,7 @@ async def open_runtime(
     # như trên (3h, h23): mọi action_type của intent đang bật có PLAN hợp lệ (executor/plans.py) — cả worker lẫn backend
     check_plans(get_action_metadata().root, settings.enabled_intents)
     # như trên (4b P1): `config/approvers.yaml` — mọi intent đang bật có người duyệt chính/dự phòng/Trưởng BP hợp lệ về dạng
-    open_approvers(settings)
+    approvers = open_approvers(settings).root
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
@@ -174,9 +183,22 @@ async def open_runtime(
             settings, engines, clock, can_execute=can_execute, directory=directory,
             approver_id=approver_id, scenario=scenario, ml=ml, rag=rag, llm=llm,
             executor=executor if executor is not None else RefusingExecutor(SqlTxLog(engines.main, clock)),
-            approval_sla_minutes=sla_minutes,
+            approval_sla_minutes=sla_minutes, approvers=approvers,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
+
+
+def approver_users(settings: Settings, engines: Engines, sink: SecurityEventWriter) -> AuthApproverUsers:
+    """B15 `ensure` (4b P5, TQ-3): `AdUserSync` trên bảng `users` thật, cùng tham số khoá với đăng nhập (`auth_config`). Thiếu
+    `JWT_SIGNING_KEY` → WARNING + `available=False` (Q-4b-5 — không đổi điều kiện khởi động). Khoá không log."""
+    if settings.jwt_signing_key is None:
+        log.warning("JWT_SIGNING_KEY chưa cấu hình — B15 không đồng bộ được người duyệt, ticket cần duyệt sẽ ra E2")
+        return AuthApproverUsers(None)
+    return AuthApproverUsers(AdUserSync(
+        store=SqlAuthStore(engines.main), sink=sink,
+        username_key=username_key(settings.jwt_signing_key.get_secret_value().encode("utf-8")),
+        lock=lock_policy(auth_config(settings, get_policy().constants)),
+    ))  # fmt: skip
 
 
 def select_nodes(settings: Settings, deps: NodeDeps) -> dict[str, NodeFn]:
@@ -189,9 +211,10 @@ def select_nodes(settings: Settings, deps: NodeDeps) -> dict[str, NodeFn]:
 async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
     approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort, llm: LlmPort, executor: Executor,
-    approval_sla_minutes: int | None = None,
+    approval_sla_minutes: int | None = None, approvers: Mapping[str, Roster] | None = None,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
+    security = SecurityEventWriter(engines.main, clock)
     turns = SqlTurnStore(engines.main)
     tickets = SqlTicketStore(engines.main)
     approvals = SqlApprovals(engines.main)
@@ -202,7 +225,7 @@ async def _open(
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
         tickets=tickets, escalations=SqlEscalationStore(engines.main),
         templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
-        scenario=scenario, security_events=SecurityEventWriter(engines.main, clock),
+        scenario=scenario, security_events=security,
         slots=get_slots(), action_metadata=get_action_metadata().root,
         enabled_intents=frozenset(settings.enabled_intents),
         enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
@@ -210,6 +233,8 @@ async def _open(
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
         privacy=guard_from_settings(settings),
         approval_sla_minutes=approval_sla_minutes if approval_sla_minutes is not None else get_policy().constants.SLA_MINUTES,
+        approvers=approvers if approvers is not None else open_approvers(settings).root,
+        approver_users=approver_users(settings, engines, security),
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

@@ -120,7 +120,7 @@ async def test_executor_with_pg_txlog_begun_then_interrupted(rw: AsyncEngine) ->
 async def test_get_status_reads_table(rw: AsyncEngine) -> None:
     ticket = await _ticket(rw)
     store = SqlApprovals(rw)
-    aid = await store.create(ticket, APPROVER, NOW + timedelta(minutes=30), "h" * 64)
+    aid = await store.create(ticket, APPROVER, NOW + timedelta(minutes=30), "h" * 64, backup_approver_id=None, conflict_detected=False, conflict_type=None)
     assert await store.get_status(aid) == "pending"
     await store.close(aid, "approved", NOW, decided_by=APPROVER, note=None)
     assert await store.get_status(aid) == "approved"

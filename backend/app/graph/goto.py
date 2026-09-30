@@ -10,6 +10,9 @@
 5. `lineage=` (3g, Q-3g-3): các trường prompt/model/`kb_version` của bước (B10; B12 ở 3h) — goto thêm `ticket_id`,
    `turn_id`, `step`, `created_at` rồi audit ghi dòng `lineage` TRONG CÙNG transaction với dòng audit (idempotent theo
    ticket, lượt, bước, prompt). Không đi vào state.
+6. `audit_columns=` (Phase 4 4b P10): cột điểm log KHÔNG phải khoá `TicketState` (người duyệt, hạn, xung đột — B15; thời gian
+   phản hồi — B16). Chỉ nhận khoá trong `_POINT_COLUMNS`; khoá khác → `ValueError` TRƯỚC khi ghi audit. Không vào state.
+   Hàm chép trường state sang cột cùng tên đổi tên `audit_columns` → `_state_columns` (tránh trùng tên tham số).
 
 Lỗi ở đây (IllegalTransition) là bug → lọt tới boundary thành E9 (P1 mục 10).
 """
@@ -38,6 +41,8 @@ _RISK_COLUMNS = (
     "decided_by", "policy_decision", "risk_level", "reason", "matched_rule_id",
     "calibrated_prob", "raw_prob", "p_method",
 )  # fmt: skip
+# Cột điểm log truyền thẳng qua `audit_columns=` (4b P10) — không phải trường state.
+_POINT_COLUMNS = frozenset({"approver_id", "deadline", "conflict_detected", "response_time_seconds"})
 
 
 def _json(value: Any) -> Any:
@@ -48,7 +53,7 @@ def audit_key(ticket_id: str, step: str, event: str, turn_id: str, loop_seq: int
     return sha256_key(ticket_id, step, event, turn_id, loop_seq)
 
 
-def audit_columns(fields: Mapping[str, Any]) -> dict[str, Any]:
+def _state_columns(fields: Mapping[str, Any]) -> dict[str, Any]:
     cols: dict[str, Any] = {k: _json(v) for k, v in fields.items() if k in _SAME_NAME_COLUMNS}
     risk = fields.get("risk")
     if risk is not None:
@@ -66,8 +71,11 @@ async def goto(
     event: str,
     audit_detail: Mapping[str, Any] | None = None,
     lineage: Mapping[str, Any] | None = None,
+    audit_columns: Mapping[str, Any] | None = None,
     **fields: Any,
 ) -> dict[str, Any]:
+    if audit_columns is not None and (unknown := sorted(set(audit_columns) - _POINT_COLUMNS)):
+        raise ValueError(f"goto: audit_columns lạ {unknown} — chỉ nhận {sorted(_POINT_COLUMNS)} (4b P10)")
     run = current_run()
     frm = state["status"]
     check_state_keys(("status", "next", *fields))
@@ -89,7 +97,8 @@ async def goto(
         "to_status": to_status,
         "created_at": run.clock.now(),
         "detail": detail,
-        **audit_columns(fields),
+        **_state_columns(fields),
+        **{k: _json(v) for k, v in (audit_columns or {}).items()},
     }
     if lineage is None:
         present = await run.audit.record(row)

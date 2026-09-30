@@ -38,7 +38,7 @@ from tests.unit.test_policy_rules_vpn import (
 
 COMPOSE = "docker compose --env-file .env"
 SECRET = "s3cr3t-" + "executor-token-value"  # ghép lúc chạy (gitleaks)
-FLAGS_OK = "SVC_EXECUTOR_TOKEN=1\nFAKE_SCENARIO=0\nFAKE_APPROVER_ID=1\nLLM_BACKEND=scripted\n"
+FLAGS_OK = "SVC_EXECUTOR_TOKEN=1\nFAKE_SCENARIO=0\nLLM_BACKEND=scripted\n"
 
 
 class FakeRun:
@@ -177,9 +177,10 @@ def _probe(env: dict[str, str]) -> str:
 
 
 def test_env_probe_prints_names_and_flags_only() -> None:
+    """Q-4b-7: `FAKE_APPROVER_ID` không còn được dò (B15 thật ở gate3) — đặt trong container cũng không in gì về nó."""
     out = _probe({"SVC_EXECUTOR_TOKEN": SECRET, "FAKE_APPROVER_ID": "l1_01", "LLM_BACKEND": "scripted"})
-    assert out.splitlines() == ["SVC_EXECUTOR_TOKEN=1", "FAKE_SCENARIO=0", "FAKE_APPROVER_ID=1", "LLM_BACKEND=scripted"]
-    assert SECRET not in out and "l1_01" not in out
+    assert out.splitlines() == ["SVC_EXECUTOR_TOKEN=1", "FAKE_SCENARIO=0", "LLM_BACKEND=scripted"]
+    assert SECRET not in out and "l1_01" not in out and "FAKE_APPROVER_ID" not in out
 
 
 def test_env_probe_unknown_backend_value_not_echoed() -> None:
@@ -281,7 +282,9 @@ def test_tc28_failure_is_reported_and_run_continues() -> None:
     assert run.tails()[-1] == "start qdrant"
 
 
-def _tc09_ctx(stack: str, *, in_hours: bool = True) -> tuple[gate3.Ctx, list[str], list[tuple[str, str, str]]]:
+def _tc09_ctx(
+    stack: str, *, in_hours: bool = True, approver: str = gate3.ROSTER_APPROVER, queued: list[Any] | None = None,
+) -> tuple[gate3.Ctx, list[str], list[tuple[str, str, str]]]:  # fmt: skip
     """Ctx giả trả kết quả stack của tc09: `pending` (Phase 4 S0-P7 — R17 chờ duyệt, B11 procedure_doc) hoặc `e3_b9` (hành vi 3h:
     dừng ở B9 E3 `no_grounding`, reranker thật 0,047)."""
     out: list[str] = []
@@ -309,8 +312,11 @@ def _tc09_ctx(stack: str, *, in_hours: bool = True) -> tuple[gate3.Ctx, list[str
         "mock_reset": lambda: None, "login_users": lambda: None, "in_hours": lambda: in_hours, "open": _open,
         "settle": lambda ticket, before: view, "mock_writes": lambda: 0, "risk": lambda ticket: risk,
         "escalation": lambda ticket: [["E3", "no_grounding"]] if e3 else [],
-        "audit": lambda ticket: audit, "approvals": lambda ticket: [] if e3 else [{"status": "pending"}],
-    }
+        "audit": lambda ticket: audit,
+        "approvals": lambda ticket: [] if e3 else [{"status": "pending", "approver_id": approver,
+                                                    "backup_approver_id": gate3.ROSTER_BACKUP, "conflict_detected": False}],
+        "queued_approvers": lambda ticket: [] if e3 else (queued if queued is not None else [approver]),
+    }  # fmt: skip
     for name, fn in stubs.items():
         object.__setattr__(ctx, name, fn)
     return ctx, out, opened
@@ -330,6 +336,25 @@ def test_tc09_expects_pending_approval_and_fails_old_e3_result(in_hours: bool) -
     gate3.tc09(ctx)
     failed = {line.name for line in ctx.report.lines if not line.ok}
     assert {"R17 → chờ duyệt", "1 phiếu pending", "B11 căn cứ quy trình (procedure_doc)"} <= failed, out
+
+
+@pytest.mark.parametrize(("approver", "queued"), [("l1_02", None), ("l1_01", [None]), ("l1_01", [])],
+                         ids=["phieu-giao-nguoi-khac", "audit-approver-null", "khong-co-dong-queued"])
+def test_tc09_q4b7_wrong_approver_or_missing_audit_column_fails(approver: str, queued: list[Any] | None) -> None:
+    """Q-4b-7: có phiếu thì B15 thật phải giao `l1_01` (dự phòng `l1_02`, không xung đột) và dòng audit B15 `queued` có cột
+    `approver_id=l1_01` — lệch một trong hai là FAIL (gate3 không xanh oan)."""
+    ctx, out, _ = _tc09_ctx("pending", approver=approver, queued=queued)
+    gate3.tc09(ctx)
+    failed = {line.name for line in ctx.report.lines if not line.ok}
+    assert failed & {"B15 thật: người duyệt / dự phòng / xung đột theo roster", "audit B15 queued: cột approver_id"}, out
+
+
+def test_tc09_no_approval_skips_q4b7_checks() -> None:
+    """Q-4b-7 CHỈ khi có phiếu: không phiếu (kết quả kiểu E3) thì không thêm dòng kiểm người duyệt (không ép)."""
+    ctx, out, _ = _tc09_ctx("e3_b9")
+    gate3.tc09(ctx)
+    names = {line.name for line in ctx.report.lines}
+    assert not names & {"B15 thật: người duyệt / dự phòng / xung đột theo roster", "audit B15 queued: cột approver_id"}, out
 
 
 def test_tc16_still_e3_template() -> None:

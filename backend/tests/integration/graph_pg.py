@@ -14,6 +14,9 @@ from app.approval.store import SqlApprovals
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.audit.writer import AuditWriter
+from app.auth.service import auth_config, lock_policy
+from app.auth.store import SqlAuthStore
+from app.auth.user_sync import AdUserSync, AuthApproverUsers
 from app.core.clock import FakeClock
 from app.db.escalations import SqlEscalationStore
 from app.db.identity import SqlIdentityReads
@@ -23,17 +26,24 @@ from app.db.tickets import SqlTicketStore
 from app.executor.txlog import SqlTxLog
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import open_postgres_saver
-from app.graph.fakes import FakeScenario, NodeDeps
+from app.graph.fakes import ApproverUsers, FakeScenario, NodeDeps
 from app.graph.lock import PgTicketLock
 from app.graph.runner import Runner
 from app.graph.wiring import Runtime
 from app.llm import LlmPort
 from app.rag.ports import RagPort
-from app.settings import Settings, get_escalation_templates, get_policy
+from app.settings import Settings, get_escalation_templates, get_policy, open_approvers
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tests.fakes.ad_seed import ROSTER_CHAIN, seed_ad_records
 from tests.fakes.fake_ml import FakeMlService
-from tests.fakes.graph import LOCKOUT, CountingExecutor, Crash, RecordingNotifier
+from tests.fakes.graph import (
+    HARNESS_USERNAME_KEY,
+    LOCKOUT,
+    CountingExecutor,
+    Crash,
+    RecordingNotifier,
+)
 from tests.fakes.identity import FakeAd, ad_user, fake_directory
 from tests.fakes.llm import make_gateway
 from tests.fakes.rag import FakeRag
@@ -53,9 +63,13 @@ class RecordingApprovals(SqlApprovals):
         self.crash_after_insert = False  # process "chết" SAU INSERT phiếu, TRƯỚC commit side_effects
 
     async def create(
-        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str
-    ) -> str:
-        approval_id = await super().create(ticket_id, approver_id, deadline, action_plan_hash)
+        self, ticket_id: str, approver_id: str, deadline: datetime, action_plan_hash: str, *,
+        backup_approver_id: str | None, conflict_detected: bool, conflict_type: str | None,
+    ) -> str:  # fmt: skip
+        approval_id = await super().create(
+            ticket_id, approver_id, deadline, action_plan_hash, backup_approver_id=backup_approver_id,
+            conflict_detected=conflict_detected, conflict_type=conflict_type,
+        )  # fmt: skip
         if self.crash_after_insert:
             self.crash_after_insert = False
             raise Crash(f"process chết giữa transaction tạo phiếu {approval_id}")
@@ -79,6 +93,7 @@ class PgRuntime:
     clock: FakeClock
     ad: FakeAd
     tickets: SqlTicketStore
+    deps: NodeDeps  # 4b: test PG gọi thẳng một node (vd B15 thật) trên CÙNG store SQL mà graph dùng
 
 
 @asynccontextmanager
@@ -96,14 +111,26 @@ async def open_pg_runtime(
     llm: LlmPort | None = None,
     nodes: Literal["fake", "real"] = "fake",
     audit: AuditWriter | None = None,
+    approver_users: ApproverUsers | None = None,
+    roster_in_ad: bool = True,
 ) -> AsyncIterator[PgRuntime]:
+    """`roster_in_ad` (4b): gộp người trong roster + chuỗi quản lý (seed.json, `ad_seed.ROSTER_CHAIN`) vào `ad` — như
+    `GraphHarness`; không đè người test đã dựng."""
     settings = Settings(database_url=rw_url, ticket_lock_timeout=lock_timeout)
     engines = create_engines(settings)
     scenario = scenario or FakeScenario()
     deadlines, turns = SqlDeadlineStore(engines.main), SqlTurnStore(engines.main)
     approvals, notifier, executor = RecordingApprovals(engines.main), RecordingNotifier(), CountingExecutor()
     ad = ad or FakeAd(ad_user(REQUESTER))
+    if roster_in_ad:
+        ad.add(*seed_ad_records(clock.now(), ROSTER_CHAIN))
     ticket_store = tickets or SqlTicketStore(engines.main)
+    security = SecurityEventWriter(engines.main, clock)
+    if approver_users is None:  # 4b: bảng `users` THẬT, cùng khoá HMAC với harness in-memory
+        approver_users = AuthApproverUsers(AdUserSync(
+            store=SqlAuthStore(engines.main), sink=security, username_key=HARNESS_USERNAME_KEY,
+            lock=lock_policy(auth_config(settings, get_policy().constants)),
+        ))  # fmt: skip
     deps = NodeDeps(
         notifier=notifier, approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock), deadlines=deadlines,
         constants=get_policy().constants, identity=SqlIdentityReads(engines.main),
@@ -113,7 +140,7 @@ async def open_pg_runtime(
         escalations=SqlEscalationStore(engines.main), templates=get_escalation_templates(),
         ml=FakeMlService().client(clock), rag=rag or FakeRag(), llm=llm or make_gateway(clock=clock).client,
         scenario=scenario, approver_id=approver_id,
-        security_events=SecurityEventWriter(engines.main, clock),
+        security_events=security, approvers=open_approvers(settings).root, approver_users=approver_users,
     )  # fmt: skip
     build_nodes = real_nodes if nodes == "real" else fake_nodes
     try:
@@ -126,7 +153,7 @@ async def open_pg_runtime(
                 tickets=ticket_store, txlog=deps.txlog,
             )  # fmt: skip
             yield PgRuntime(runner, engines, deadlines, turns, approvals, notifier, executor,
-                            scenario, clock, ad, ticket_store)  # fmt: skip
+                            scenario, clock, ad, ticket_store, deps)  # fmt: skip
     finally:
         await engines.dispose()
 
@@ -143,6 +170,7 @@ def pg_runtime_factory(
     llm: LlmPort | None = None,
     rag: RagPort | None = None,
     audit: AuditWriter | None = None,
+    roster_in_ad: bool = True,
 ) -> Callable[..., AbstractAsyncContextManager[Runtime]]:
     """`create_app(runtime=…)` trên Postgres thật: store SQL, `AsyncPostgresSaver`, B1 đọc bảng
     `sessions` thật (phiên do route đăng nhập ghi), AD giả qua registry thật, người duyệt giả mặc định
@@ -152,7 +180,7 @@ def pg_runtime_factory(
     async def factory(*_: Any) -> AsyncIterator[Runtime]:
         async with open_pg_runtime(
             rw_url, clock=clock, scenario=scenario, ad=ad, approver_id=approver_id,
-            can_execute=can_execute, nodes=nodes, llm=llm, rag=rag, audit=audit,
+            can_execute=can_execute, nodes=nodes, llm=llm, rag=rag, audit=audit, roster_in_ad=roster_in_ad,
         ) as rt:  # fmt: skip
             yield Runtime(runner=rt.runner, deadlines=rt.deadlines, turns=rt.turns,
                           tickets=rt.tickets, approvals=rt.approvals)  # fmt: skip

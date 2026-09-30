@@ -9,6 +9,9 @@ Mọi đường tạo dòng `users` trong mã chạy thật đi qua `_upsert` �
 `ensure` người duyệt cũng vậy, nên người duyệt từng bị khoá trượt khi còn là username ma vẫn bị khoá khi dòng được tạo.
 `on_sessions_revoked`: tiến trình có cache phiên (API — `AuthService._evict_user`) xoá cache ngay; tiến trình khác (worker) không có
 cache, phiên đã thu hồi hết hiệu lực ≤ `REVOCATION_CACHE_SECONDS` ở API (P6 "thu hồi ≤ 30 s").
+
+`AuthApproverUsers` (Phase 4 4b, TQ-3) — port `graph.fakes.ApproverUsers` của B15: bọc `AdUserSync` (không định nghĩa thứ hai).
+Thiếu `JWT_SIGNING_KEY` (không dẫn xuất được khoá HMAC username ma) → `available=False` (Q-4b-5: B15 ra E2 trước `ensure`).
 """
 
 import logging
@@ -143,3 +146,22 @@ class AdUserSync:
             await self.store.set_locked_until(user.user_id, until)
             return replace(user, locked_until=until)
         return user
+
+
+class AuthApproverUsers:
+    """B15 `ensure` người duyệt/dự phòng (Q-4-N): cùng `AdUserSync.sync_user_from_ad` với đăng nhập — chuỗi quản lý qua `lookup`
+    (hàm tra CÓ CACHE của node, registry bước `B15_APPROVER`), mang khoá trượt khi dòng vừa tạo. Không tạo phiên, không phát
+    token; `token_version` chỉ đổi khi role đổi (như đăng nhập). `sync=None` = thiếu khoá HMAC → `available=False`."""
+
+    def __init__(self, sync: AdUserSync | None) -> None:
+        self._sync = sync
+
+    @property
+    def available(self) -> bool:
+        return self._sync is not None
+
+    async def ensure(self, ad_user: AdUser, lookup: GetUser, *, now: datetime) -> None:
+        if self._sync is None:  # B15 kiểm `available` TRƯỚC (Q-4b-5) — tới đây là bug → E9
+            raise RuntimeError("AuthApproverUsers.ensure khi thiếu khoá HMAC username ma")
+        if await self._sync.sync_user_from_ad(lookup, ad_user, now) is None:  # B15 chỉ ensure người đã `valid` (ra role)
+            raise RuntimeError(f"AuthApproverUsers.ensure: nhóm AD của {ad_user.user_id} không ra role")

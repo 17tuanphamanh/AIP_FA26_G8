@@ -217,6 +217,11 @@ class Settings(BaseSettings):
         log.warning("APP_GIT_SHA không phải 40 ký tự hex — bỏ qua, lineage.commit_sha = NULL")
         return None
 
+    # ---- M9 (P9; kế hoạch M9 mục 4.1) ----
+    # DSN role app_monitor (chỉ SELECT). KHÔNG mặc định: thiếu/rỗng → route M9 trả 503 `monitor_unavailable`, job M9
+    # không chạy — không bao giờ rơi về app_rw (`monitor/db.py`). repr=False: DSN mang mật khẩu.
+    monitor_database_url: str | None = Field(default=None, repr=False)
+
     @field_validator("llm_backend", mode="before")
     @classmethod
     def _llm_backend_value(cls, v: object) -> object:

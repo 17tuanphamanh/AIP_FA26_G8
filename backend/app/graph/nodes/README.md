@@ -1,9 +1,13 @@
 Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xem docs/spec/build/01-kien-truc-project.md mục 3.
 
-- File ở đây là bản THẬT (b01, b02, b03, b06, b08, b10, b11, b12, b17, b20, các node `*_wait`), TRỪ `b15_prepare_approval.py`
-  (B15 giả tới Phase 4: người duyệt `FAKE_APPROVER_ID`, chưa xung đột lợi ích). Node có cả bản giả (gate2, `FAKE_SCENARIO`)
-  để bản giả ở `graph/nodes/fake/` (b02, b03, b06, b08, b10, b11, b12, b17, `clarify_wait`); `graph/builder.REAL_NODE_MODULES`
-  liệt kê bản thật.
+- File ở đây là bản THẬT (b01, b02, b03, b06, b08, b10, b11, b12, b15, b17, b20, các node `*_wait`). Node có cả bản giả (gate2,
+  `FAKE_SCENARIO`) để bản giả ở `graph/nodes/fake/` (b02, b03, b06, b08, b10, b11, b12, b15, b17, `clarify_wait`);
+  `graph/builder.REAL_NODE_MODULES` liệt kê bản thật. B15 giả (người duyệt `FAKE_APPROVER_ID`, không xét xung đột) chỉ còn cho
+  gate2 (Phase 4 4b P15).
+- `b15_prepare_approval.py`: node THẬT (Phase 4 chặng 4b, phase4 5.1–5.2, 5.6) — chốt phòng thủ đích `device:` chưa xác minh chủ →
+  E5 TRƯỚC mọi lời tra AD; `effects.peek("approval_create")` có (chạy lại) → dùng phiếu cũ, không chọn lại/tra AD; thiếu khoá HMAC
+  → E2; `domain.approval.choose_approver` (roster `config/approvers.yaml`, AD bước `B15_APPROVER`, xung đột cả chuỗi quản lý) →
+  `ensure` dòng `users` → `effects.once` tạo phiếu + báo `a.approver_id` → điểm log 5 (`audit_columns`, `intended_action`).
 - `b12_assess.py`: node THẬT (Phase 3 chặng 3h, phase3 11.3) — `build_ctx` (chỉ `intended_action`, `requester_context`,
   `ctx_flags` + Clock) → `risk.policy_engine.evaluate` (R16–R20, `config/policy.json`): allow → B17, approval_required →
   B15, deny → E5; không luật nào → `deps.estimator` (Phase 3 `DisabledEstimator`) → E5 `llm_layer_disabled`; estimator trả
@@ -11,7 +15,9 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
 - `b17_execute.py`: node THẬT (3h, phase3 11.4) — [0] ticket đã có `begun` (mọi lượt) → E7 `exec_interrupted` TRƯỚC mọi bước
   kiểm lại (NGHI-2); [1] luật + Clock hiện hành, "đã duyệt" = state + bảng `approvals` + hash;
   [2] hash; [3] `ad_get_user` (`B17_RECHECK`) cho người gửi + người hưởng lợi, trường `requester.*` luật dùng mà AD mới khác
-  bản chụp B1 → E5 `recheck_failed` (Q-3h-7); [4–5] `deps.executor` (API: `VpnExecutor`,
+  bản chụp B1 → E5 `recheck_failed` (Q-3h-7); Phase 4 4b P13: đi qua duyệt thì tra thêm người ĐÃ DUYỆT (`decided_by`) trong
+  cùng lời gọi song song — lỗi AD → E2 `approver_lookup_error`, không còn hợp lệ l1 lẫn Trưởng BP → E5
+  `approver_no_longer_valid`; [4–5] `deps.executor` (API: `VpnExecutor`,
   `transaction_log` `begun` trước mỗi lời gọi ghi; worker: `RefusingExecutor`) — `begun` có sẵn → E7 `exec_interrupted`,
   hết hạn lượt → E2, lỗi ghi → E7 `exec_failed` + ghi chú bàn giao 4 phần; [6] B18 tin `result` THEO MẪU + hạn confirm qua
   `effects.once` → `S_CONFIRMING`. Chốt FAIL mục 7 (3h DỪNG 3b): mọi lỗi (`Exception`) SAU `begin` — trong executor và ở

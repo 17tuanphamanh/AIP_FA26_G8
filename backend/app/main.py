@@ -22,7 +22,8 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontext
 from datetime import timedelta
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.approvals import router as approvals_router
 from app.api.auth import auth_error_handler
@@ -61,6 +62,7 @@ from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.patterns import check_guard
 from app.guard.privacy import PrivacyGuard, guard_from_settings
 from app.llm.wiring import check_llm
+from app.monitor.db import MonitorUnavailable
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
 from app.tools.adapters.ad_read import AdIdentityProvider
@@ -167,6 +169,10 @@ def _build_auth(
     )  # fmt: skip
 
 
+async def _monitor_unavailable(_: Request, exc: Exception) -> JSONResponse:  # M9 (A0): body giống `runtime_unavailable`
+    return JSONResponse({"detail": "monitor_unavailable"}, status_code=503)
+
+
 def create_app(
     settings: Settings | None = None,
     health_checks: Mapping[str, HealthCheck] | None = None,
@@ -254,6 +260,8 @@ def create_app(
     app.add_exception_handler(AuthError, auth_error_handler)
     install_graph_errors(app, lock_retry)
     install_request_errors(app)  # 422 không trả `input`, guard lỗi → 503 (phase3 mục 8.3)
+    # ---- M9 ---- thiếu MONITOR_DATABASE_URL → 503, không rơi về app_rw (kế hoạch M9 mục 4.1)
+    app.add_exception_handler(MonitorUnavailable, _monitor_unavailable)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
     app.include_router(auth_router)
