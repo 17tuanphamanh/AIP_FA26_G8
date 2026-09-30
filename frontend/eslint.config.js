@@ -46,6 +46,11 @@ export default defineConfig([
     },
   },
   {
+    // Test phải nhắc tới Storage/IndexedDB để gài spy chứng minh code KHÔNG dùng chúng (t5).
+    files: ["src/**/*.test.{ts,tsx}"],
+    rules: { "no-restricted-globals": "off", "no-restricted-properties": "off" },
+  },
+  {
     // Cấu hình + script chạy bằng Node (không vào bundle): được in ra terminal.
     files: ["*.{js,ts}", "scripts/**/*.mjs"],
     extends: [js.configs.recommended],

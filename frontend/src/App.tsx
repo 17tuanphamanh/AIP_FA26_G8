@@ -1,39 +1,67 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createBrowserRouter, Outlet, RouterProvider } from "react-router";
+import { useCallback } from "react";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router";
+import { AuthProvider } from "./auth/AuthProvider.tsx";
+import { LoginPage } from "./auth/LoginPage.tsx";
+import { CHAT_NAV, homePath, STAFF_NAV } from "./auth/permissions.ts";
+import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
+import { useAuth, useMe } from "./auth/useAuth.ts";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { NotFound } from "./routes/NotFound.tsx";
+import { Pending } from "./routes/Pending.tsx";
 
 const queryClient = new QueryClient();
 
-// F0: khung — thanh bên rỗng + vùng nội dung. Từ F1: đăng nhập, mục theo quyền, các màn theo vai trò.
-// F0 nhãn "Dữ liệu minh hoạ" đặt ở khung để kiểm cờ mock; từ F3 chỉ màn dùng handler giả mới đặt.
 function Shell() {
+  const me = useMe();
+  const { signOut } = useAuth();
   return (
     <div className="flex h-full">
-      <Sidebar />
-      <main className="min-w-0 grow">
+      <Sidebar me={me} onSignOut={signOut} />
+      <main className="min-w-0 grow overflow-y-auto">
         <Outlet />
       </main>
-      <MockDataBadge />
     </div>
   );
 }
 
-function Placeholder() {
-  return (
-    <div className="px-12 py-10">
-      <h1 className="text-title">ServiceDesk AI</h1>
-      <p className="mt-2 text-ink-2">Khung F0 — các màn được thêm từ F1.</p>
-    </div>
-  );
+function Home() {
+  return <Navigate to={homePath(useMe())} replace />;
 }
 
-const router = createBrowserRouter([{ element: <Shell />, children: [{ index: true, element: <Placeholder /> }] }]);
+// Màn của F2–F5 chưa dựng: route + quyền có sẵn, nội dung là <Pending>. Chặng sau thay element, giữ RequirePerm.
+const featureRoutes = [CHAT_NAV, ...STAFF_NAV].map((item) => ({
+  path: item.to.slice(1),
+  element: (
+    <RequirePerm perm={item.perm}>
+      <Pending title={item.label} stage={item.stage} />
+    </RequirePerm>
+  ),
+}));
+
+const router = createBrowserRouter([
+  { path: "/login", element: <LoginPage /> },
+  {
+    element: (
+      <RequireAuth>
+        <Shell />
+      </RequireAuth>
+    ),
+    children: [{ index: true, element: <Home /> }, ...featureRoutes, { path: "*", element: <NotFound /> }],
+  },
+]);
 
 export function App() {
+  // Hết phiên / đăng xuất → xoá dữ liệu đã tải của người cũ.
+  const clearCache = useCallback(() => queryClient.clear(), []);
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthProvider onSignedOut={clearCache}>
+        <RouterProvider router={router} />
+      </AuthProvider>
+      {/* F0–F2: nhãn toàn cục khi bật mock; từ F3 chỉ màn dùng handler giả mới đặt (KH 4.3 #4). */}
+      <MockDataBadge />
     </QueryClientProvider>
   );
 }

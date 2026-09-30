@@ -21,6 +21,8 @@ const RULES = [
   {
     name: "lưu trữ trình duyệt / HTML thô",
     paths: ["src"],
+    // Test được nhắc tới Storage để gài spy chứng minh code KHÔNG dùng (t5) — chỉ miễn cho *.test.*.
+    skip: /\.test\.[jt]sx?$/,
     pattern: /localStorage|sessionStorage|dangerouslySetInnerHTML/,
   },
   {
@@ -39,7 +41,7 @@ function walk(path) {
 const hits = [];
 for (const rule of RULES) {
   for (const file of rule.paths.flatMap((p) => walk(join(ROOT, p)))) {
-    if (!CODE_EXT.has(extname(file))) continue;
+    if (!CODE_EXT.has(extname(file)) || rule.skip?.test(file)) continue;
     readFileSync(file, "utf8")
       .split("\n")
       .forEach((line, i) => {

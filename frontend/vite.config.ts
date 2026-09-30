@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -19,5 +20,12 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       "/api": { target: "http://127.0.0.1:8000" },
     },
+  },
+  // `npm run test`: test hàm thuần + component, KHÔNG gọi backend (fetch giả truyền qua tham số).
+  test: {
+    environment: "happy-dom",
+    include: ["src/**/*.test.{ts,tsx}"],
+    restoreMocks: true,
+    unstubGlobals: true,
   },
 }));

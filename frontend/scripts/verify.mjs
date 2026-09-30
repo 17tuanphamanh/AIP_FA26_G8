@@ -3,12 +3,14 @@
 //   a) lint → typecheck → vitest → build → check:dist → check:style (gọi đúng script trong package.json)
 //   b) Playwright, Chromium headless, mỗi kịch bản một browser context MỚI (không còn service worker cũ):
 //      F0-1 dev không mock · F0-2 dev:mock · F0-3 preview (0 request ngoài origin, font từ /assets/)
-//      F1   đăng nhập thật — chỉ khi đã dựng F1 VÀ GET http://127.0.0.1:8000/api/health = 200
+//      F1-1…6 đăng nhập thật qua dev server → backend — chỉ BỎ QUA khi GET http://127.0.0.1:8000/api/health ≠ 200
 //   c) dọn dẹp: tắt mọi server đã mở, đóng trình duyệt — kể cả khi lỗi hay Ctrl+C.
-// Đầu ra: .verify/summary.txt (bảng), .verify/run-<giờ>.log (chi tiết), .verify/<giờ>-<bước>.png khi FAIL.
-// Mật khẩu demo (từ F1) đọc LÚC CHẠY từ mock_services/README.md mục "Dữ liệu demo" — không ghi cứng, không in;
+// Đầu ra: .verify/summary.txt (bảng), .verify/run-<giờ>.log (chi tiết), .verify/<giờ>-<bước>.png khi FAIL,
+//         .verify/login.png, login-otp.png, sidebar-<user>.png (1440×900, để so Bản 4).
+// Mật khẩu demo đọc LÚC CHẠY từ mock_services/README.md mục "Dữ liệu demo" — không ghi cứng, không in;
 // mọi dòng ghi log/summary đi qua redact(). Không đọc .env.
-/* global document -- chỉ dùng bên trong page.evaluate (chạy ở trình duyệt, không ở Node) */
+/* global document, indexedDB -- chỉ dùng bên trong page.evaluate (chạy ở trình duyệt); localStorage, sessionStorage
+   đã là biến toàn cục của Node ≥ 22 nhưng ở đây cũng chỉ đọc bên trong page.evaluate */
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,16 +22,24 @@ const REPO = join(FE, "..");
 const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
-// Chặng đã dựng xong. Kịch bản của chặng sau → BỎ QUA (không đỏ oan). Tăng khi xong chặng mới.
-const BUILT = "F0";
-const STAGES = ["F0", "F1", "F2", "F3", "F4", "F5", "F6"];
-const isBuilt = (stage) => STAGES.indexOf(stage) <= STAGES.indexOf(BUILT);
+// Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
+const BUILT = "F1";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
 const HEALTH = "http://127.0.0.1:8000/api/health";
 const MOCK_LABEL = "Dữ liệu minh hoạ";
 const NAV = { name: "Điều hướng chính" };
+const LOGIN_HEADING = { name: "Đăng nhập", level: 1 };
+const OTP_HEADING = { name: "Nhập mã xác thực", level: 1 };
+const VIEWPORT = { width: 1440, height: 900 }; // khung Bản 4
+
+// Tài khoản demo (KH 1.1) → điều thanh bên PHẢI có / KHÔNG được có theo permissions (P6 §5.1, 12b Q-fe-8).
+const ACCOUNTS = {
+  "an.nv": { home: "/chat", has: ["Yêu cầu mới"], lacks: ["Tổng quan", "Chính sách", "Chờ tôi duyệt", "Hàng đợi escalate"] },
+  "ha.lt": { home: "/approvals", has: ["Chờ tôi duyệt", "Hàng đợi escalate"], lacks: ["Chính sách", "Tổng quan", "Cảnh báo"] },
+  "long.nh": { home: "/escalations", has: ["Hàng đợi escalate"], lacks: ["Chờ tôi duyệt", "Chính sách", "Tổng quan"] },
+};
 
 const pad = (n) => String(n).padStart(2, "0");
 const started = new Date();
@@ -191,21 +201,35 @@ const scriptStep = (script, extra, note) => async () => {
 
 let browser = null;
 
-async function scenario(id, fn) {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const consoleLines = [];
+function watch(page, id, consoleLines) {
   page.on("console", (m) => {
     const line = `[${m.type()}] ${m.text()}`;
     consoleLines.push(line);
     log(`[${id} console] ${line}`);
   });
+  // Console chỉ ghi "Failed to load resource: 403" không kèm URL → ghi thêm phương thức + đường dẫn (không query, không thân).
+  page.on("response", (r) => {
+    if (r.status() >= 400) log(`[${id} http] ${r.request().method()} ${new URL(r.url()).pathname} → ${r.status()}`);
+  });
   page.on("pageerror", (e) => {
     consoleLines.push(`[pageerror] ${e.message}`);
     log(`[${id} pageerror] ${e.message}`);
   });
+}
+
+async function scenario(id, fn) {
+  const context = await browser.newContext({ viewport: VIEWPORT });
+  const page = await context.newPage();
+  const consoleLines = [];
+  watch(page, id, consoleLines);
+  // Tab thêm trong CÙNG context (dùng chung cookie) — cho kịch bản nhiều tab.
+  const newTab = async () => {
+    const tab = await context.newPage();
+    watch(tab, `${id}/tab${context.pages().length}`, consoleLines);
+    return tab;
+  };
   try {
-    const result = await fn({ page, consoleLines });
+    const result = await fn({ page, consoleLines, newTab });
     const errors = consoleLines.filter((l) => l.startsWith("[pageerror]"));
     check(errors.length === 0, `lỗi JS trên trang: ${errors[0]}`);
     return result;
@@ -221,6 +245,96 @@ async function scenario(id, fn) {
 
 const swCount = (page) => page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length);
 const mswLines = (lines) => lines.filter((l) => l.includes("[MSW]"));
+const shoot = (page, name) => page.screenshot({ path: join(OUT, name) });
+
+// ---------------------------------------------------------------- đăng nhập (F1)
+
+let password = null; // đọc lúc chạy, chỉ khi backend sống; đã nằm trong `secrets` → mọi log bị che
+
+const isLoginCall = (r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/auth/login";
+
+/** Điền form, bấm "Đăng nhập", chờ backend trả lời `POST /api/auth/login`. Trả mã HTTP (không đọc thân). */
+async function submitLogin(page, username, { screenshot } = {}) {
+  await page.goto(`${DEV}/login`, { waitUntil: "load" });
+  await page.getByRole("heading", LOGIN_HEADING).waitFor();
+  if (screenshot) await shoot(page, screenshot);
+  await page.getByLabel("Tên đăng nhập", { exact: true }).fill(username);
+  await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
+  const [response] = await Promise.all([
+    page.waitForResponse(isLoginCall, { timeout: 15_000 }),
+    page.getByRole("button", { name: "Đăng nhập", exact: true }).click(),
+  ]);
+  log(`POST /api/auth/login (${username}) → ${response.status()}`);
+  return response.status();
+}
+
+/**
+ * Kết quả SAU KHI bấm đăng nhập: thanh bên, màn OTP, hoặc thông báo lỗi. Tiêu đề "Đăng nhập" KHÔNG phải trạng thái
+ * cuối ở đây — nó vẫn hiện trong lúc chờ backend và chờ `/me`.
+ */
+async function afterSubmit(page, timeout = 15_000) {
+  const nav = page.getByRole("navigation", NAV);
+  const otp = page.getByRole("heading", OTP_HEADING);
+  const alert = page.getByRole("alert");
+  const settled = await nav.or(otp).or(alert).first().waitFor({ timeout }).then(
+    () => true,
+    () => false,
+  );
+  if (!settled) return `chưa có kết quả sau ${timeout / 1000} s`;
+  if (await nav.isVisible()) return "signedIn";
+  if (await otp.isVisible()) return "otp";
+  return `lỗi: "${(await alert.textContent())?.trim()}"`;
+}
+
+async function signInAs(page, username, options) {
+  const status = await submitLogin(page, username, options);
+  const state = await afterSubmit(page);
+  check(state === "signedIn", `${username}: không vào được (${state}; POST /api/auth/login → ${status})`);
+}
+
+/**
+ * Sau khi TẢI trang (không bấm gì): chờ trạng thái rõ ràng — đã vào (thanh bên), bị đưa về màn đăng nhập, hoặc lỗi.
+ * Lúc đang kiểm phiên, cả RequireAuth lẫn LoginPage chỉ hiện "Đang kiểm tra phiên…" (không có tiêu đề "Đăng nhập"),
+ * nên tiêu đề đó chỉ xuất hiện khi đã chắc là hết phiên.
+ */
+async function landing(page, timeout = 15_000) {
+  const nav = page.getByRole("navigation", NAV);
+  const login = page.getByRole("heading", LOGIN_HEADING);
+  const alert = page.getByRole("alert");
+  await nav.or(login).or(alert).first().waitFor({ timeout });
+  if (await nav.isVisible()) return "signedIn";
+  if (await alert.isVisible()) return `lỗi: "${(await alert.textContent())?.trim()}"`;
+  return "login";
+}
+
+async function expectSignedIn(page, who) {
+  const state = await landing(page);
+  check(state === "signedIn", `${who}: không vào được (${state})`);
+}
+
+async function expectStorageEmpty(page, who) {
+  const s = await page.evaluate(async () => ({
+    local: localStorage.length,
+    session: sessionStorage.length,
+    idb: (await indexedDB.databases()).length,
+  }));
+  check(s.local === 0 && s.session === 0 && s.idb === 0, `${who}: Storage không rỗng ${JSON.stringify(s)}`);
+}
+
+async function expectSidebar(page, username) {
+  const expected = ACCOUNTS[username];
+  const nav = page.getByRole("navigation", NAV);
+  const link = (label) => nav.getByRole("link", { name: label, exact: true });
+  for (const label of expected.has) check((await link(label).count()) === 1, `${username}: thiếu mục "${label}"`);
+  for (const label of expected.lacks) check((await link(label).count()) === 0, `${username}: KHÔNG được có mục "${label}"`);
+  const path = new URL(page.url()).pathname;
+  check(path === expected.home, `${username}: trang đầu ${path}, cần ${expected.home}`);
+}
+
+let f1Server = null;
+async function ensureF1Server() {
+  f1Server ??= await startServer("dev(F1)", [VITE], { VITE_API_MOCK: "0" }, DEV);
+}
 
 async function backendUp() {
   try {
@@ -265,7 +379,7 @@ await step("F0-1 dev không mock", async () => {
   try {
     return await scenario("F0-1", async ({ page, consoleLines }) => {
       await page.goto(DEV, { waitUntil: "load" });
-      await page.getByRole("navigation", NAV).waitFor();
+      await page.getByRole("heading", LOGIN_HEADING).waitFor(); // chưa đăng nhập → /login
       await page.waitForTimeout(1000); // chờ log muộn (nếu MSW lỡ bật)
       check(mswLines(consoleLines).length === 0, `console có "${mswLines(consoleLines)[0]}"`);
       check((await page.getByText(MOCK_LABEL).count()) === 0, `có nhãn "${MOCK_LABEL}"`);
@@ -305,7 +419,7 @@ await step("F0-3 preview", async () => {
       const requests = [];
       page.on("request", (r) => requests.push(r.url()));
       await page.goto(PREVIEW, { waitUntil: "networkidle" });
-      await page.getByRole("navigation", NAV).waitFor();
+      await page.getByRole("heading", LOGIN_HEADING).waitFor(); // chưa đăng nhập → /login
       // Trên Mac `-apple-system` đứng trước nên trình duyệt không cần Be Vietnam Pro → ép tải để chứng minh
       // font đi từ /assets/ cùng origin (KH 4.1 #7).
       const faces = await page.evaluate(async () => (await document.fonts.load('400 17px "Be Vietnam Pro"', "Tiếng Việt")).length);
@@ -332,13 +446,76 @@ await step("F0-3 preview", async () => {
   }
 });
 
-await step("F1 đăng nhập thật", async () => {
-  const backend = (await backendUp()) ? "backend 200" : "backend tắt";
-  if (!isBuilt("F1")) return { status: "BỎ QUA", note: `chưa tới chặng F1 (BUILT=${BUILT}); ${backend}` };
-  if (backend !== "backend 200") return { status: "BỎ QUA", note: "BỎ QUA — backend tắt" };
-  readDemoPassword();
-  throw new Error("kịch bản F1 chưa viết"); // viết cùng màn đăng nhập ở F1
-});
+// F1 — đăng nhập thật qua dev server (proxy /api → backend). Lý do BỎ QUA duy nhất: backend tắt.
+const backendOk = failedStep ? false : await backendUp();
+if (backendOk) password = readDemoPassword();
+const f1 = (name, fn) =>
+  step(name, async () => {
+    if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt" };
+    await ensureF1Server();
+    return fn();
+  });
+
+for (const [i, username] of Object.keys(ACCOUNTS).entries()) {
+  await f1(`F1-${i + 1} ${username}: thanh bên đúng quyền`, () =>
+    scenario(`F1-${i + 1}`, async ({ page }) => {
+      await signInAs(page, username, { screenshot: i === 0 ? "login.png" : undefined });
+      await expectSidebar(page, username);
+      await expectStorageEmpty(page, username);
+      await shoot(page, `sidebar-${username}.png`);
+      const { has, home } = ACCOUNTS[username];
+      return { note: `vào ${home}; có ${has.join(", ")}; không có mục ngoài quyền; Storage/IndexedDB rỗng` };
+    }),
+  );
+}
+
+await f1("F1-4 quan.tm không OTP → ô OTP", () =>
+  scenario("F1-4", async ({ page }) => {
+    // Chỉ thử MỘT lần mỗi lượt: nếu quan.tm chưa enroll MFA, backend đếm là 1 lần thất bại (5 lần/10 phút → khoá).
+    const status = await submitLogin(page, "quan.tm");
+    const state = await afterSubmit(page);
+    if (state !== "otp") {
+      throw new Error(`không sang bước OTP (${state}; POST /api/auth/login → ${status}) — nếu là "chưa được cài": enroll MFA cho quan.tm (CLI app.auth.mfa); mỗi lượt verify tính 1 lần thất bại`);
+    }
+    const boxes = await page.getByLabel(/^Chữ số \d$/).count();
+    check(boxes === 6, `bước OTP có ${boxes} ô, cần 6`);
+    await expectStorageEmpty(page, "quan.tm");
+    await shoot(page, "login-otp.png");
+    return { note: '401 mfa_required → màn "Nhập mã xác thực", 6 ô; không đăng nhập tiếp' };
+  }),
+);
+
+await f1("F1-5 tải lại trang → vẫn đăng nhập", () =>
+  scenario("F1-5", async ({ page }) => {
+    await signInAs(page, "an.nv");
+    await page.reload({ waitUntil: "load" });
+    await expectSignedIn(page, "an.nv (sau tải lại)");
+    check(new URL(page.url()).pathname !== "/login", "bị đưa về /login sau tải lại");
+    await expectStorageEmpty(page, "an.nv (sau tải lại)");
+    return { note: "F5 → refresh bằng cookie → vẫn ở trong; Storage/IndexedDB rỗng" };
+  }),
+);
+
+await f1("F1-6 2 tab tải lại cùng lúc × 5", () =>
+  scenario("F1-6", async ({ page, newTab }) => {
+    await signInAs(page, "an.nv");
+    const second = await newTab();
+    await second.goto(`${DEV}/`, { waitUntil: "load" });
+    await expectSignedIn(second, "tab 2");
+    const ROUNDS = 5;
+    for (let round = 1; round <= ROUNDS; round += 1) {
+      // Tải lại CẢ HAI cùng lúc → 2 lời gọi refresh đua nhau. Không có khoá xuyên tab thì refresh token cũ bị trình
+      // hai lần → backend thu hồi cả họ → cả 2 tab về /login. Chờ cả 2 vào xong mới sang vòng sau (không cắt ngang
+      // một refresh đang bay).
+      await Promise.all([page.reload({ waitUntil: "load" }), second.reload({ waitUntil: "load" })]);
+      const states = await Promise.all([landing(page), landing(second)]);
+      check(states.every((s) => s === "signedIn"), `vòng ${round}: tab 1 = ${states[0]}, tab 2 = ${states[1]}`);
+    }
+    await expectStorageEmpty(page, "tab 1");
+    await expectStorageEmpty(second, "tab 2");
+    return { note: `${ROUNDS} vòng tải lại đồng thời, cả 2 tab vẫn đăng nhập; Storage/IndexedDB rỗng` };
+  }),
+);
 
 // c) dọn dẹp — luôn chạy
 {
