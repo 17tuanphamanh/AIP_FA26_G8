@@ -177,7 +177,7 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 **Đánh đổi phải biết:** Phase 3 vốn dùng LLM thật để lộ lỗi tích hợp sớm; dồn về mốc G thì lỗi dạng "model trả JSON lệch schema, tiếng Việt kém, chậm" sẽ lộ muộn. Giảm rủi ro bằng hai việc rẻ:
 
 1. `ScriptedLLM` phải trả cả ca xấu: JSON sai một lần rồi đúng, thiếu trường, timeout, 429 — để nhánh xử lý lỗi (P2 mục 9–10) được test từ đầu.
-2. Khi xong cổng code Phase 3, chạy **một lần** luồng VPN với một model rẻ (tốn vài nghìn đồng, trong khoản 5 USD probe) để chắc hợp đồng P2 khớp provider thật. Không đạt thì sửa ngay, không đợi mốc G.
+2. Khi xong cổng code Phase 3, chạy **một lần** luồng VPN với một model rẻ (tốn vài nghìn đồng, trong khoản 5 USD probe) để chắc hợp đồng P2 khớp provider thật. Không đạt thì sửa ngay, không đợi mốc G. **Dời (Tuấn Anh chốt 30/09/2026) — nợ NỢ-3-2** (`phase3-thiet-ke-chi-tiet.md` mục 13): chạy trước khi Phase 5 viết thêm prompt (khuyến nghị), muộn nhất mốc G; đánh đổi: lỗi hợp đồng P2 với provider thật lộ muộn hơn.
 
 **Còn chặn:** không còn mục nào chặn việc viết code. N1 (chọn model) và N2 (VRAM) chỉ chặn mốc G.
 
@@ -263,3 +263,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 27/09/2026 | Mục 4.1: trỏ 3-Q1…Q40 và Q-3a-1…16 (chặng 3a) |
 | 28/09/2026 | Mục 4.1: Q-3b-1…17 (chặng 3b) |
 | 30/09/2026 | Mục 4.1: Q-3c…Q-3h (chặng 3c–3h, trỏ mục chốt tương ứng); §1.1: ghi chú điều kiện R16–R20 Phase 3 |
+| 30/09/2026 | Phase 3 đóng phần code (`c11b61f`, `61ad8ac`, CI `36684958734`); nợ nghiệm thu NỢ-3-1 (gate3 thành viên ngoài giờ), NỢ-3-2 (smoke LLM thật — dời mục 4 việc 2) gộp vào đợt kiểm tổng |

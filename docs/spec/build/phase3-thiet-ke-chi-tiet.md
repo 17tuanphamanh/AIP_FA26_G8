@@ -2086,7 +2086,7 @@ Commit `80fd0eb` (DỪNG 1, CI 36562008999), `ed8c1e0` + `cede7eb` (DỪNG 2, CI
 | 8 | 11.4 / P4 (NGHI-1) | P4 bảo đảm **0 lời gọi ghi**; có thể còn 1 dòng `begun` (INSERT ngoài hạn lượt) → lần chạy sau ra E7 (an toàn) |
 | 9 | 11.4 / P7 (NGHI-3) | `RefusingExecutor` (worker, API thiếu token) **bắt buộc** có txlog và đọc `begun` → E7; runner chạy graph với `durability="sync"` (LangGraph mặc định `async` — worker có thể tới B17 sau khi API đã ghi mà checkpoint chưa lưu); `handoff_note` chỉ có `device_id` qua regex (sai mẫu → `—`); `serial` không vào `handoff_note` (chỉ ở `ExecutionResult.outputs`/hoàn tác, qua regex); kế hoạch nhiều bước hết hạn lượt giữa chừng → hoàn tác + E7 (không E2) |
 | 10 | 3.3 / 3.4 / 11.5 (Q-3h-3, Q-3h-6) | Hai đường "gián đoạn": runner API recover (`can_execute=True`, B17 bước [0]) → E7 `exec_interrupted`; worker recover (`can_execute=False`, runner bẻ luồng trước B17) → E7 `execution_interrupted`. Cả hai ghi chú bàn giao có câu "có thể đã gửi lệnh ghi…" (`INTERRUPTED_NOTE` của runner sửa ở DỪNG 3a). Thêm **h15b** vào 11.5 |
-| 11 | 11.5 | h14 đổi câu thành "cấp lại VPN cho máy LAP-9999, device_registered=true" (câu gốc điểm truy hồi 0,5 < 0,6 → E3 ở B9, không tới B12); h7: E3 `no_grounding` ở B9 hoặc B10 (`cannot_answer`); h8 trong e2e = Qdrant không kết nối được phía client (`make gate3` tc28 tắt container thật); thêm h11 lúc 20:00 → R18 HITL, 0 ghi |
+| 11 | 11.5 | h14 đổi câu thành "cấp lại VPN cho máy LAP-9999, device_registered=true" (câu gốc điểm truy hồi 0,5 < 0,6 → E3 ở B9, không tới B12); h7: E3 `no_grounding` ở B9 hoặc B10 (`cannot_answer`); h8 trong e2e = Qdrant không kết nối được phía client (`make gate3` tc28 tắt container thật); thêm h11 lúc 20:00 → R18 HITL, 0 ghi. **Tạm thời, không phải thiết kế cuối:** "máy người khác ngoài giờ → HITL" (`test_h11_at_20h_r18_hitl_no_write`) và h14 (máy chưa có → R17 HITL) sẽ đổi thành E5 ở Phase 4b (Q-4-M: R17–R19 thêm điều kiện `device_owner_is_requester`, `phase4-thiet-ke-chi-tiet.md`); 3b giữ nguyên test |
 | 12 | 3.7 mock | `/_admin/calls` đếm lúc nhận ở middleware ngoài cùng (kể cả request bị bơm lỗi, 401/403); không đếm `/_admin/*`, `/health`; phản hồi `{count, calls[{method, path, count, statuses}]}`; `/_admin/users/{id}/status` đổi trạng thái AD mock |
 | 13 | 11.6 gate3 (Q-3h-4) | Route mong đợi tính theo giờ lúc chạy, in "TRONG GIỜ/NGOÀI GIỜ" đầu bảng; ngoài giờ tc02/tc06 → R18 → `l1_01` duyệt qua API → renew = 1 → xác nhận → `S_RESOLVED`; tc28 stop/start Qdrant trong `finally`; không thêm biến ép đồng hồ ở stack |
 | 14 | 11.9 smoke | `make vpn-smoke` đọc **`spend.cap_usd` trong `config/llm.yaml` mà container đang nạp** (Q-3d-3 — không có biến `LLM_SPEND_CAP_USD`); `LLM_BACKEND=real` mà cap > 1 hoặc model thiếu pricing → từ chối. Chạy: hạ tạm `cap_usd: 1` → build → smoke → trả 38 → build → `git diff config/llm.yaml` rỗng (không commit bản hạ cap) |
@@ -2098,7 +2098,7 @@ Commit `80fd0eb` (DỪNG 1, CI 36562008999), `ed8c1e0` + `cede7eb` (DỪNG 2, CI
 
 **Quy trình:** 3h thử subagent dự án (`spec-reader`, `test-writer`, `security-reviewer`; gọi phải được duyệt). security-reviewer bắt 2 FAIL + 10 NGHI thật qua 3 lượt; test-writer viết 115 test từ bảng spec trước khi có code (42 đỏ đúng lý do ở h-rule). Giữ cho các chặng an toàn của Phase 4+.
 
-**Kết quả 3h.** `make test` backend 2915 · mock 94 · ml 77 (DỪNG 3a); `make gate2 S=all` 89/0; e2e cổng 3 h1–h19 + h15b + h11@20:00 xanh (21). *(Bổ sung khi 3b đóng: mutation 3h unit/PG, `make gate3`, soát bảo mật cuối.)*
+**Kết quả 3h (DỪNG 3b đóng 30/09/2026, commit `c11b61f` code + `61ad8ac` spec v2.0).** `make test` backend 3033 · mock 94 · ml 77 (unit 2793); mutation 3h: unit 38/38 ×3 lượt (có M-3h-28, 34, 35, 36), PG 4/4, e2e 7/7 + 2 tương đương (M-3h-1, M-3h-8) + M-3f-2 (phần e2e còn treo của 3f); e2e cổng 3 h1–h19 + h15b + h11@20:00 xanh (21; h11@20:00 và h14 là hành vi tạm, Phase 4b đổi thành E5 — #11); `make gate3 S=all` 63 PASS / 0 FAIL (Tuấn Anh, TRONG GIỜ 13:52 — tc09 = E3 theo #17); `make vpn-smoke` scripted 41/0 (0 USD); `make gate2 S=all` 89/0; soát bảo mật cuối (S17): 1 FAIL (FAIL mục 7 → #16) + 6 NGHI → sửa 4, 2 vào Việc treo. CI xanh run `36684958734`. *Phase 3 đóng phần code; nợ nghiệm thu NỢ-3-1 (gate3 thành viên ngoài giờ), NỢ-3-2 (smoke LLM thật) — mục 13.*
 
 ---
 
@@ -2117,13 +2117,20 @@ Commit `80fd0eb` (DỪNG 1, CI 36562008999), `ed8c1e0` + `cede7eb` (DỪNG 2, CI
 
 ## 13. Nghiệm thu cổng 3 phần code
 
-- [ ] `make lint`, `make test` xanh; CI xanh.
-- [ ] e2e h1–h19 xanh.
-- [ ] Mọi mutation "bắt buộc" của 8 chặng bị bắt (bảng tổng trong PROGRESS).
-- [ ] `make gate2 S=all` 0 FAIL trên code cuối Phase 3 (hoặc biên bản chuyển preset).
-- [ ] `make gate3 S=all` 0 FAIL, chạy bởi người không làm chính.
-- [ ] Smoke LLM thật (11.9) đã chạy, số liệu ghi PROGRESS.
-- [ ] Spec: các file liệt kê ở mục 14 có dòng 5.1 trỏ về đây; `decisions.md` §4.1 có 3-Q1…Q40; P7 vẫn 22 bảng (không thêm `notifications`), ghi migration 0006 (kb) + migration `security_event`.
+- [x] `make lint`, `make test` xanh; CI xanh — run `36684958734` trên `61ad8ac` (gồm `c11b61f`), 3m52s, 30/09/2026.
+- [x] e2e h1–h19 xanh (+ h15b, h11@20:00; 30/09/2026).
+- [x] Mọi mutation "bắt buộc" của 8 chặng bị bắt (bảng tổng trong PROGRESS, mục 3h DỪNG 3b S16b).
+- [x] `make gate2 S=all` 0 FAIL trên code cuối Phase 3 — 89/0 trên `c11b61f`.
+- [ ] **NỢ-3-1** `make gate3 S=all` 0 FAIL, chạy bởi người không làm chính, NGOÀI GIỜ (nhánh R18 → duyệt → renew trên stack). *(Tuấn Anh 63/0 trong giờ, 30/09/2026. Dời theo quyết định Tuấn Anh 30/09/2026: gộp vào đợt kiểm tổng khi xây xong — xem "Nợ nghiệm thu" dưới.)*
+- [ ] **NỢ-3-2** Smoke LLM thật (11.9) đã chạy, số liệu ghi PROGRESS. *(Dời — xem "Nợ nghiệm thu" dưới.)*
+
+**Nợ nghiệm thu Phase 3 (Tuấn Anh chốt 30/09/2026 — kiểm một thể khi xây xong):** Phase 3 **đóng phần code** (`c11b61f`, `61ad8ac`, CI `36684958734`); hai ô trên chưa tick, không chặn Phase 4+.
+
+| Mã | Việc | Hạn muộn nhất | Rủi ro khi dời |
+|---|---|---|---|
+| NỢ-3-1 | Thành viên chạy `make gate3 S=all` ngoài giờ (đăng nhập ha.lt trước) | Cổng code Phase 7 (trước mốc G) | Thấp: nhánh ngoài giờ đã có unit + e2e h11@20:00; Phase 4b đổi hành vi R17–R19 nên kỳ vọng gate3 sẽ phải cập nhật trước khi chạy |
+| NỢ-3-2 | Smoke LLM thật 1 lần (11.9; README "Chạy smoke LLM thật"; hạ `cap_usd` 1 → trả 38, `git diff config/llm.yaml` rỗng) | **Trước khi Phase 5 viết thêm prompt** (khuyến nghị); muộn nhất mốc G | **Trung bình:** lệch với `decisions.md` §4 mục 2 ("chạy một lần khi xong cổng code Phase 3… không đợi mốc G"). Lỗi hợp đồng P2 với provider thật (JSON lệch schema, tiếng Việt, độ trễ) lộ muộn và phải sửa trên nhiều prompt hơn |
+- [x] Spec: các file liệt kê ở mục 14 có dòng 5.1 trỏ về đây; `decisions.md` §4.1 có 3-Q1…Q40; P7 vẫn 22 bảng (không thêm `notifications`), ghi migration 0006 (kb) + migration `security_event`.
 
 Phần cổng 3 cần LLM thật (demo 4 ca quay màn hình, intent ≥ 18/20, biểu đồ ngưỡng trên KB thật) → mốc G, trừ biểu đồ ngưỡng làm ngay khi TV1 xong bộ kiểm tra.
 

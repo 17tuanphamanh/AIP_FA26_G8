@@ -3560,6 +3560,11 @@ cả 5; 5 chỉnh (PLAN-3h mục 5).
        soat, dong chang" — file của 3b, stage đích danh; (2) "spec phase 3 v2.0, tro ve tu cac file build" — đúng 17 file
        `docs/spec/build/` (không sửa nội dung). Không stage: `docs/spec/build/phase4-thiet-ke-chi-tiet.md`, `PLAN-*.md`,
        `docs/spec/claude/*`, `docs/m9-giao-viec/*`, `.env*`.
+    10. **Commit + push:** `c11b61f` (59 file) + `61ad8ac` (17 file spec); Tuấn Anh push `02ed795..61ad8ac` lên `dev-tuananh`.
+        CI xanh: run `36684958734` (success, 3m52s, 30/09/2026 07:39 UTC).
+    11. **Phase 3 đóng phần code; nợ NỢ-3-1, NỢ-3-2 (phase3 spec mục 13)** — Tuấn Anh chốt 30/09/2026. NỢ-3-1: thành viên chạy
+        `make gate3 S=all` NGOÀI GIỜ; NỢ-3-2: smoke LLM thật (11.9). Hạn và rủi ro: bảng "Nợ nghiệm thu Phase 3" ở mục 13
+        + `decisions.md`.
   - **Kết quả (sandbox, sau bản sửa FAIL mục 7 — trước Việc treo 21):** unit **2772 passed** (2677 + gate3 37 + vpn-smoke 23 + N3 6 + FAIL 7: executor 15, B17 12,
     runner 2); mock **94**; `make lint` xanh (ruff; mypy 196/12/16; import-linter 9/9; gitleaks 61 commit sạch); `gitleaks dir`
     từng file/thư mục mới sạch; integration + e2e collect 238. DỪNG 3b đổi code `backend/app/`: `executor/{vpn,errors}.py`,
