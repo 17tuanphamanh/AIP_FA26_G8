@@ -3,6 +3,8 @@ import { NavLink } from "react-router";
 import type { Me } from "../api/types.ts";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
+import { titleOf, useSessionTickets } from "../routes/employee/sessionTickets.ts";
+import type { Tone } from "../routes/employee/status.ts";
 
 /** `onSignOut` trả false khi CHƯA đăng xuất được (mạng/5xx) — phải báo, phiên vẫn sống. */
 type SidebarProps = { me: Me; onSignOut: () => Promise<boolean> };
@@ -11,6 +13,33 @@ const itemClass = ({ isActive }: { isActive: boolean }) =>
   `flex h-9 items-center gap-2.5 rounded-lg px-3 text-secondary ${
     isActive ? "bg-selected font-semibold text-fpt-blue" : "text-ink hover:bg-group"
   }`;
+
+const DOT: Record<Tone, string> = {
+  processing: "bg-fpt-blue",
+  waiting: "bg-fpt-orange",
+  done: "bg-done",
+  closed: "bg-ink-3",
+};
+
+// "Gần đây" = ticket tạo trong phiên này (bộ nhớ, KH 4.6). Chấm: cam chờ bạn/IT, xanh lá xong, xám đã chuyển/dừng.
+function RecentTickets() {
+  const tickets = useSessionTickets();
+  if (tickets.length === 0) {
+    return <p className="px-3 py-1 text-label font-normal text-ink-2">Chưa có yêu cầu nào trong phiên này.</p>;
+  }
+  return (
+    <ul className="flex flex-col gap-1" aria-label="Yêu cầu gần đây">
+      {tickets.map((t) => (
+        <li key={t.ticket_id}>
+          <NavLink to={`/chat/${encodeURIComponent(t.ticket_id)}`} className={itemClass}>
+            <span className={`size-1.75 shrink-0 rounded-full ${DOT[t.tone]}`} aria-hidden="true" />
+            <span className="truncate">{titleOf(t)}</span>
+          </NavLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 // Thanh bên hợp nhất Bản 4 (B4Sidebar): 264 px, không có thanh trên. Mục theo `permissions` (KH 4.1 #8), không
 // theo tên role. Chuông ẩn tới Phase 7 (KH 4.6). Hồ sơ hiện `user_id` (Q-fe-9 — `me` chưa có tên).
@@ -40,6 +69,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
         <>
           <NavLink
             to={CHAT_NAV.to}
+            end
             className="mt-3 mb-2 flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-secondary font-semibold"
           >
             <span className="flex size-5 items-center justify-center rounded-full bg-send">
@@ -50,7 +80,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
             {CHAT_NAV.label}
           </NavLink>
           <span className="px-3 pt-3 pb-1 text-label text-ink-2">Gần đây</span>
-          {/* F2: ticket tạo trong phiên này (bộ nhớ, KH 4.6) */}
+          <RecentTickets />
         </>
       ) : null}
 

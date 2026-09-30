@@ -8,6 +8,9 @@ import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
 import { useAuth, useMe } from "./auth/useAuth.ts";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { ChatHome } from "./routes/employee/ChatHome.tsx";
+import { ChatRoute } from "./routes/employee/ChatPage.tsx";
+import { sessionTickets } from "./routes/employee/sessionTickets.ts";
 import { NotFound } from "./routes/NotFound.tsx";
 import { Pending } from "./routes/Pending.tsx";
 
@@ -30,8 +33,28 @@ function Home() {
   return <Navigate to={homePath(useMe())} replace />;
 }
 
-// Màn của F2–F5 chưa dựng: route + quyền có sẵn, nội dung là <Pending>. Chặng sau thay element, giữ RequirePerm.
-const featureRoutes = [CHAT_NAV, ...STAFF_NAV].map((item) => ({
+// F2: chat nhân viên (API thật). Màn của F3–F5 chưa dựng: route + quyền có sẵn, nội dung là <Pending>. Chặng sau
+// thay element, giữ RequirePerm.
+const chatRoutes = [
+  {
+    path: CHAT_NAV.to.slice(1),
+    element: (
+      <RequirePerm perm={CHAT_NAV.perm}>
+        <ChatHome />
+      </RequirePerm>
+    ),
+  },
+  {
+    path: `${CHAT_NAV.to.slice(1)}/:ticketId`,
+    element: (
+      <RequirePerm perm="ticket:read:own">
+        <ChatRoute />
+      </RequirePerm>
+    ),
+  },
+];
+
+const featureRoutes = STAFF_NAV.map((item) => ({
   path: item.to.slice(1),
   element: (
     <RequirePerm perm={item.perm}>
@@ -48,13 +71,16 @@ const router = createBrowserRouter([
         <Shell />
       </RequireAuth>
     ),
-    children: [{ index: true, element: <Home /> }, ...featureRoutes, { path: "*", element: <NotFound /> }],
+    children: [{ index: true, element: <Home /> }, ...chatRoutes, ...featureRoutes, { path: "*", element: <NotFound /> }],
   },
 ]);
 
 export function App() {
-  // Hết phiên / đăng xuất → xoá dữ liệu đã tải của người cũ.
-  const clearCache = useCallback(() => queryClient.clear(), []);
+  // Hết phiên / đăng xuất → xoá dữ liệu đã tải và lịch sử "Gần đây" của người cũ.
+  const clearCache = useCallback(() => {
+    queryClient.clear();
+    sessionTickets.clear();
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider onSignedOut={clearCache}>

@@ -3,6 +3,9 @@
 //    giá trị tuỳ ý của Tailwind cho màu/cỡ (`text-[…]`, `bg-[…]`…). Token chỉ khai ở src/styles/tokens.css.
 // 2. Không Local/SessionStorage, không dangerouslySetInnerHTML trong src (KH 4.1 #1, #5).
 // 3. Không Google Fonts / CDN trong src, index.html (KH 4.1 #7).
+// 4. Không plugin / API dựng HTML thô trong package.json, src (KH 4.1 #5). react-markdown 10 tự hiện HTML thô thành
+//    CHỮ — lớp bảo vệ đó mất ngay khi thêm plugin parse HTML (rehype-raw…), bật `allowDangerousHtml`, dùng thư viện
+//    biến chuỗi HTML thành phần tử React, hoặc ghi thẳng vào DOM (innerHTML…). Luật này giữ nó bằng máy.
 // Có kết quả → in `tệp:dòng`, thoát 1.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join, relative } from "node:path";
@@ -30,6 +33,13 @@ const RULES = [
     paths: ["src", "index.html"],
     pattern: /fonts\.googleapis|fonts\.gstatic|cdn\./i,
   },
+  {
+    name: "plugin/API dựng HTML thô",
+    paths: ["package.json", "src"],
+    exts: new Set([...CODE_EXT, ".json"]),
+    pattern:
+      /rehype-raw|rehype-dom-raw|allowDangerousHtml|remark-html|html-react-parser|react-html-parser|\binnerHTML\b|\bouterHTML\b|insertAdjacentHTML|document\.write\b/,
+  },
 ];
 
 function walk(path) {
@@ -41,7 +51,7 @@ function walk(path) {
 const hits = [];
 for (const rule of RULES) {
   for (const file of rule.paths.flatMap((p) => walk(join(ROOT, p)))) {
-    if (!CODE_EXT.has(extname(file)) || rule.skip?.test(file)) continue;
+    if (!(rule.exts ?? CODE_EXT).has(extname(file)) || rule.skip?.test(file)) continue;
     readFileSync(file, "utf8")
       .split("\n")
       .forEach((line, i) => {
@@ -55,4 +65,4 @@ if (hits.length > 0) {
   for (const hit of hits) console.error(`  ${hit}`);
   process.exit(1);
 }
-console.log("check:style: sạch (không mã màu ngoài token, không Storage/HTML thô, không CDN).");
+console.log("check:style: sạch (không mã màu ngoài token, không Storage/HTML thô, không CDN, không plugin HTML thô).");

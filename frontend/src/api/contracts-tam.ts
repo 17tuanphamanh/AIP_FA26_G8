@@ -33,6 +33,24 @@ export type ConversationItem =
       sources?: Source[];
     };
 
+// Nguồn: backend/app/api/tickets.py TicketView (response_model) — `conversation` là list[dict] nên phần tử để `unknown`,
+// component tự kiểm dạng (components/Conversation.tsx). Xoá khi: `npm run gen:api` chạy được (12b Q-fe-1) → dùng
+// kiểu của schema.gen.ts (conversation vẫn phải kiểm dạng).
+export type TicketView = {
+  ticket_id: string;
+  status: string;
+  waiting_for: "clarify" | "approval" | "confirm" | "reply" | null;
+  conversation: unknown[];
+  exit_code: string | null;
+  close_reason: string | null;
+  final_state: string | null;
+  created_at: string;
+  closed_at: string | null;
+};
+
+// Nguồn: backend/app/api/tickets.py ConfirmIn (extra="forbid", note ≤ 1000). Xoá khi: route khai body trong openapi.
+export type ConfirmIn = { confirmed: boolean; note?: string };
+
 // Nguồn: backend/app/audit/handoff.py HandoffNote (ghi chú bàn giao 4 phần, B20 mục 4.2).
 // Xoá khi: escalations/queue có response_model.
 export type HandoffNote = { request: string; done_so_far: string; why_escalated: string; next_for_l2: string };
