@@ -597,6 +597,14 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 | Con bị tạo hai lần | `side_effects` với `kind=child_create` | Tạo con không qua `effects.once`; id con không tất định |
 | Tách thừa ("cài Zoom" thành 2 ý) | `span` của từng intent | Prompt chưa có ví dụ câu một ý nhiều cụm từ |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 9.3, 9.8; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- `ENABLED_INTENTS` (Phase 3 chỉ `vpn`); thứ tự kiểm E1 cố định; ≥ 2 ý → E1 `multi_intent_not_enabled`.
+- `sanitize_slots(spec, raw, *, text, allowed=None)`: slot > 100 ký tự bị bỏ; `device_id`/`error_code` phải có trong câu (biên token); key trùng `FACT_KEYS` bị loại; slot không bao giờ thành fact.
+- Không helper `esc`: mỗi nhánh một `goto` với hằng.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -606,3 +614,4 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 | 25/09/2026 | 1.2 | Bản vá: cha đối soát con từ DB (D-17), tạo/submit con idempotent (D-18), tách `intent_low_confidence` (D-27); thêm TC32 |
 | 25/09/2026 | 1.3 | Một tin tổng hợp: con không tự nhắn, cha gửi một tin mỗi lượt, xác nhận qua cha (D-31); cha `close_reason=NULL`, chỉ số trên ticket lá (D-30); chuyển trạng thái của cha (D-29); thêm TC34–TC36 |
 | 25/09/2026 | 1.4 | B3 chạy model phân loại đa nhãn trước, LLM cho vùng lưng chừng và tách span (D-32); backbone mDeBERTa-v3-base (D-33) |
+| 30/09/2026 | 1.5 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 9.3, 9.8) |

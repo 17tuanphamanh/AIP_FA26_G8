@@ -320,6 +320,14 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 
 ---
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 4.2, 4.7; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Module `ml`, `core/textnorm`, `executor/`, `guard/output.py`; nhóm uv `ml` (sentence-transformers); gỡ presidio; thêm `mmh3`, `tzdata`.
+- `make models`, `make ingest`, `make test-ml`, `make gate3`, `make vpn-smoke`; README colima RAM.
+- `.claude/agents/` (spec-reader, test-writer, security-reviewer; gọi phải được duyệt), hook `.claude/hooks/chan-env.py` chặn đọc `.env*`.
+
 ## Lịch sử thay đổi
 
 | Phiên bản | Ngày | Thay đổi |
@@ -331,3 +339,4 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 | v1.6 | 27/09/2026 | Mục 7.1: thêm `make gate2` (chỉ dev, chốt 2b-4-Q7) |
 | v1.7 | 27/09/2026 | Chặng 3a: cây thư mục thêm `backend/app/ml/`, `scripts/`, `ml_service/models.lock.json`; mục 4.2 thêm `ml`; mục 4.3 hợp đồng `ml-only-core` (6 hợp đồng); mục 7.1 `make models`, `make test-ml`, `make ml-bench` |
 | v1.8 | 28/09/2026 | Chặng 3b: mục 4.3 hợp đồng `rag-lower-layer` (7 hợp đồng); `make ingest` mount `kb/`, `make tokenizer` |
+| v1.9 | 30/09/2026 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 4.2, 4.7) |

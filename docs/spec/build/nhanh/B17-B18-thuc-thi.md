@@ -433,6 +433,15 @@ async def b17_execute(state):
 | E9 thay vì E7 | Traceback trong span | Exception không bọc thành `ExecutionStepError` (bug trong `PLAN`) |
 | Gọi ghi 2 lần | Log mock + `transaction_log` | Retry ghi bị bật nhầm; phục hồi chạy lại B17 mà không kiểm bản ghi `begun` |
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 11.4, 11.10; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Tool ghi VPN có sẵn; `PLAN` + `check_plans` (có mẫu tin B18); cổng `Executor.execute(ticket_id, turn_id, action) -> ExecutionResult` (thêm `outputs` khoá đóng); `VpnExecutor` chỉ ở API process; `RefusingExecutor` bắt buộc có txlog.
+- Thứ tự B17 (theo code đã duyệt, Q-3h-9): [0] `begun` theo ticket → E7 `exec_interrupted` → [1] luật hiện hành (`deny` → E5) + "đã duyệt" (state + bảng `approvals`) → [2] hash → [3] AD người (`B17_RECHECK`) + so `requester.*` với bản chụp B1 → [4] hạn lượt trọn timeout → [5] `begun` → ghi.
+- Q-3h-10: mọi `Exception` sau `begin` và mọi lỗi ở đoạn B18 sau khi ghi → E7 `exec_interrupted` + câu "có thể đã gửi lệnh ghi…" (audit `cause` = tên lớp lỗi); lỗi trước `begun` vẫn E9. Bất biến: ticket đã có `begun` không mang mẫu E9 "xử lý thủ công".
+- Hai đường gián đoạn: API recover → `exec_interrupted`; worker recover → `execution_interrupted`; cả hai ghi chú "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay". Tin B18 / `handoff_note` chỉ ghép enum/định danh (regex)/ngày.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -442,3 +451,4 @@ async def b17_execute(state):
 | 25/09/2026 | 1.2 | Bản vá: D-15 kiểm cả người gửi lẫn người hưởng lợi (sửa L-07); thông báo + đặt hạn qua `effects.once` (D-18); phát hiện thực thi bị gián đoạn qua `transaction_log` |
 | 25/09/2026 | 1.3 | Thông báo kết quả của ticket con để lại notice `needs=confirm` cho cha gom (D-31) |
 | 26/09/2026 | 1.4 | Bỏ việc B18 tự đặt `resolution_path` (bị LangGraph bỏ im lặng); B20 suy ra (Phase 2b-2) |
+| 30/09/2026 | 1.5 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 11.4, 11.10) |

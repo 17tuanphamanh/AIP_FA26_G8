@@ -411,6 +411,14 @@ Chỉ số: Recall@5, MRR, nDCG@5, tỉ lệ trả lời bừa trên câu âm t�
   - Đo hệ số token/âm tiết thật trên KB của nhóm; nếu thấp hơn dự kiến, có thể nâng `CHUNK_TOKENS_MAX`.
   - D-25 làm tăng khối lượng soạn KB (≥ 50 tài liệu) — cần nhóm cân đối với luồng soạn kịch bản.
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 5, 6, 5.14, 6.13; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Retry một tầng trong `rag/`; ghim collection một lần mỗi lượt; cổng kiểm alias 3 trường hợp; giữ 2 collection cũ; `kb_documents.content_sha256`; câu truy vấn = `redacted_request` + `QUERY_SLOTS`.
+- `chunk_id` tất định `doc_id#v<version>#<seq>`; `expand_for_answer` ghép chunk liền kề chỉ làm ngữ cảnh — trích dẫn hợp lệ chỉ là anchor top-5 ∩ khối thật sự gửi LLM (10.7 #2).
+- Việc treo 17: B9 (ngưỡng) chạy trước B10 → yêu cầu hành động điểm thấp bị E3 — xem lại ở Phase 5/mốc G (11.10).
+
 ## 13. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -418,3 +426,4 @@ Chỉ số: Recall@5, MRR, nDCG@5, tỉ lệ trả lời bừa trên câu âm t�
 | 25/09/2026 | 1.0 | Tạo file |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0 |
 | 25/09/2026 | 1.2 | Bản vá lõi AI: chunk theo token (D-21); chọn ngưỡng có câu âm tính (D-22); chạy lại không lọc intent (D-23); ghép chunk liền kề cho B10 (D-24); KB có tài liệu gây nhiễu + ablation 4 cấu hình (D-25); từ điển viết tắt |
+| 30/09/2026 | 1.3 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 5, 6, 5.14, 6.13) |

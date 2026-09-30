@@ -455,6 +455,15 @@ Khi nhóm duyệt D-04, D-05, D-11, D-14, D-18, D-27, D-30, D-31:
 - Đổi tiêu đề "17 bảng" thành "22 bảng".
 - Thêm mục "Vòng review thứ tư — bảo mật và vận hành" ghi lý do như trên.
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 5.10, 8.2, 10.7, 11.10; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Migration kb (`content_sha256`, `chunk_count`, `eval_status`, index `is_current`); `side_effects.kind` thêm `security_event`.
+- **Không** thêm bảng `notifications` — vẫn 22 bảng; tin gửi người dùng theo khuôn `notify_user` + `conversation` (3-Q28).
+- `lineage` ghi cùng transaction với dòng audit, idempotent `NOT EXISTS (ticket_id, turn_id, step, prompt_id)`, không migration; `commit_sha` NULL tới Việc treo 13 (10.7 #3).
+- `transaction_log` dùng `begun/undone/undo_failed`; kiểm `begun` theo ticket (mọi lượt) ở B17 bước [0] (11.10 #7); `ExecutionResult.outputs` chỉ ở checkpoint, không đổi DB.
+
 ## 7. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -467,3 +476,4 @@ Khi nhóm duyệt D-04, D-05, D-11, D-14, D-18, D-27, D-30, D-31:
 | 26/09/2026 | 1.5 | `security_events.event_type` thêm `mfa_enrolled`, `mfa_reset` (migration 0002) |
 | 26/09/2026 | 1.6 | Mục 2.12: `alerts.subject` không DEFAULT, khóa chống trùng `(rule_id, subject, window_start)` (migration 0004, Phase 2b-1); tiêu chí 10 |
 | 26/09/2026 | 1.7 | Mục 2.13: `turns.recover_attempts` (migration 0005, Phase 2b-2); tiêu chí 11 |
+| 30/09/2026 | 1.8 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 5.10, 8.2, 10.7, 11.10) |

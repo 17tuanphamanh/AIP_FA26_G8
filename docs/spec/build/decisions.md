@@ -49,6 +49,9 @@ Giữ đúng các mã đã xuất hiện trong tài liệu: R01 (TC01), R04 (TC0
 | R19 | approval_required | VPN | Nhân viên mới chưa qua thử việc |
 | R20 | allow | VPN | Cấp lại cho thiết bị đã đăng ký |
 
+**Chốt Phase 3 (3-Q2, `phase3-thiet-ke-chi-tiet.md` 11.2, 11.10):** R20 áp cho `renew_vpn_cert` và `reissue_vpn_access`, điều kiện `device_registered` ∧ `device_owner_is_requester` ∧ ¬`ctx.target_is_other`; R16 (`check_vpn_status`) đòi ¬`ctx.target_is_other`; R17/R18/R19 = `approval_required`. Thiếu fact → điều kiện sai.
+
+
 Thứ tự số không ảnh hưởng kết quả: khớp cả `allow` và `approval_required` thì `approval_required` thắng, `deny` thắng tất cả (B12-B14 mục 10).
 
 ### 1.2. Kế hoạch chi LLM (N1)
@@ -234,6 +237,12 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 
 | Chặng | Mã | Tóm tắt | Ở đâu |
 |---|---|---|---|
+| 3h | Q-3h-1…11, P1–P9 | DSL chặt + `check_policy_config`; `target_is_other` (P3); thứ tự B17 [0]→[5], `begun` theo ticket; so `requester.*` AD mới vs B1; `durability="sync"`; `ExecutionResult.outputs`; hai đường gián đoạn; gate3 theo giờ; vpn-smoke theo `spend.cap_usd`; Q-3h-10: lỗi sau `begun` → E7 (ticket có `begun` không mang mẫu E9); Q-3h-11: câu truy hồi bỏ thẻ `[fake:…]`, gate3 tc09 = E3 (B9 chặn yêu cầu hành động — chuyển Phase 4 S0, Q-4-U) | `phase3-thiet-ke-chi-tiet.md` mục 11.10 |
+| 3g | Q-3g-1…12, P1–P10 | `cannot_answer` → `no_grounding`; anchor ∩ khối gửi LLM; lineage qua `goto` cùng transaction audit; `validate_targets` luôn kiểm lại, bỏ fact máy cũ; D-20 fail-closed; che L1 trước khi tạo sự kiện | mục 10.7 |
+| 3f | Q-3f-1…7, P1–P4 | Hạn cả lượt 100 s (trước semaphore); slot > 100 ký tự bỏ; slot phải có trong câu; slot không thành fact; R20 phải đòi `device_owner_is_requester` | mục 9.8 |
+| 3e | Q-3e-1…14 | Privacy guard L0/L1 (bỏ Presidio); injection L2 + L4 judge; `screen_reply`; luật chung 8.9; HMAC username → Phase 4 S0 | mục 8.9 |
+| 3d | Q-3d-1…8 | `llm.complete` + `ScriptedLLM` + prompt registry; trần chi `spend.cap_usd` (không env); giữ chỗ chi phí xấu nhất; `AnswerOut` hai chiều | mục 7.8 |
+| 3c | Q-3c-1…8 | 2 đường cổng kiểm; nới tiêu chí rerank; probe `/aliases`; giữ role lạ `public`; audit câu đã che | mục 6.13 |
 | 3b | Q-3b-1…17 | Embed ingest nhóm 1; sha gồm front matter; ghi bù từ metadata collection; cổng (c) đánh giá lại bản cũ; `pipeline_sha` (3c so lúc truy vấn → E2); khoá advisory; hợp đồng `rag-lower-layer`; cổng kiểm dense-only tạm tới 3c; hậu kiểm 3b sau dự án (mục 1.5) | `phase3-thiet-ke-chi-tiet.md` mục 5.14 |
 | 3a | Q-3a-1…16 | torch CPU; `attempts` = số lần gọi lỗi; lỗi mạng khác → `connect` có retry; `NodeDeps.ml` bắt buộc; fake tầng HTTP; test sinh đôi + `ml_real`; worker chờ ml-service; lock luôn 40 hex; trần timeout < stale/2, rerank 10 s tạm, quyết ở 3c | `phase3-thiet-ke-chi-tiet.md` mục 4.12 |
 
@@ -253,3 +262,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 28/09/2026 | Mục 1.3: ghi VRAM máy gaming thứ nhất (RTX 4050 Laptop 6 GB); **cổng 2 đạt** — Tạ Duy Anh chạy `make gate2 S=all` trên `2a9f3ee`: 89 PASS / 0 FAIL, threads đạt (20 ticket = 20 thread) |
 | 27/09/2026 | Mục 4.1: trỏ 3-Q1…Q40 và Q-3a-1…16 (chặng 3a) |
 | 28/09/2026 | Mục 4.1: Q-3b-1…17 (chặng 3b) |
+| 30/09/2026 | Mục 4.1: Q-3c…Q-3h (chặng 3c–3h, trỏ mục chốt tương ứng); §1.1: ghi chú điều kiện R16–R20 Phase 3 |

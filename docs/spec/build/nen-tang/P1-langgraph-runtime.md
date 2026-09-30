@@ -633,6 +633,16 @@ async def parent_reply_wait(state):                              # S_CONFIRMING 
   - D-30, D-31 chốt trước Phase 5 (ticket nhiều ý). Nhóm đã chọn giữ đúng câu "một tin nhắn" **[Chốt B5]**; nên báo GVHD đánh đổi ở mục 8.3.
   - Pin phiên bản LangGraph ở T01 và chạy test "khởi động lại" mỗi khi nâng phiên bản.
 
+### Chốt khi hiện thực Phase 3 (30/09/2026)
+
+Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 3.1, 9.0, 9.8, 10.7, 11.10; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- Bảng key `TicketState` Phase 3 (3.1); model trong state giữ Pydantic + `STATE_TYPES` (như code 2b).
+- Hạn cho cả lượt `TURN_BUDGET_S=100`, `SAFETY_MARGIN_S=2`, đặt trước semaphore; hết hạn → E2 `turn_budget_exceeded` (ngoại lệ của quy tắc boundary → E9) (9.0, 9.8).
+- `goto(..., lineage=…)` ghi lineage cùng transaction với audit (10.7 #3).
+- Runner chạy graph với `durability="sync"`; worker recover tới B17 → E7 `execution_interrupted` với ghi chú "có thể đã gửi lệnh ghi…" (11.10 #9–10).
+- 3h DỪNG 3b (phase3 11.10 #16): `RunContext.txlog` bắt buộc; `with_error_boundary` hỏi `begun` theo ticket trước nhánh E2/E9 → E7 `execution_interrupted` (lỗi `has_begun` → ném tiếp); runner `recover` lấy node còn dở qua `_pending` (`snap.next`, rỗng thì `snap.tasks`) — node chờ vừa resume mà ném lỗi không còn bị coi là thread đã kết thúc.
+
 ## 13. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -643,3 +653,4 @@ async def parent_reply_wait(state):                              # S_CONFIRMING 
 | 25/09/2026 | 1.3 | `ALLOWED_TRANSITIONS` tường minh với 3 quy tắc (D-29); đóng ticket cha, chỉ số trên ticket lá (D-30); vòng tổng hợp của cha, hộp thư con, `parent_reply_wait` (D-31); TC34–TC36 |
 | 26/09/2026 | 1.4 | Chốt Phase 2b-2: `goto()`/boundary chặn key ngoài `TicketState` (mục 5.1); giới hạn phục hồi bằng `turns.recover_attempts`, tăng trước khi recover (mục 7) |
 | 26/09/2026 | 1.5 | Chốt Phase 2b-3 (mục 7, 10): tạo ticket + `run_new` idempotent; sự kiện qua API trả 202 và giao khóa cho task nền; recover snapshot rỗng → chạy state đầu từ dòng `tickets` (không gọi `run_new`, tránh tự khóa chết), quá 3 lần → E9 qua B20; task nền và `CancelledError`; `/api/health` có `runtime` |
+| 30/09/2026 | 1.6 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 3.1, 9.0, 9.8, 10.7, 11.10) |
