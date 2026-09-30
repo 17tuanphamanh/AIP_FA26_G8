@@ -52,7 +52,10 @@ NEED = {"text": "gia hạn VPN", "evidence_titles": []}
 
 
 def test_d19_fake_tag_syntax_same_as_graph_scenario() -> None:
-    assert FAKE_TAG.pattern == GRAPH_FAKE_TAG.pattern
+    """Một nguồn (`core.fake_tag`, Q-3h-11 a): gate2, ScriptedLLM và câu truy hồi RAG dùng CÙNG đối tượng regex."""
+    from app.core.fake_tag import FAKE_TAG as CORE_FAKE_TAG
+
+    assert FAKE_TAG is GRAPH_FAKE_TAG is CORE_FAKE_TAG
 
 
 def test_d19_repo_default_preset_covers_all_prompts_and_validates() -> None:

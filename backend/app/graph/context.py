@@ -14,6 +14,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from app.core.clock import Clock
+from app.executor.txlog import TxLog
 from app.graph.ports import AuditSink, EffectStore, SpanSink
 
 
@@ -25,6 +26,9 @@ class RunContext:
     effects: EffectStore
     spans: SpanSink
     clock: Clock
+    # BẮT BUỘC (không mặc định "chưa có gì" — fail-open): boundary hỏi `begun` theo ticket trước khi hạ lỗi xuống E9/E2
+    # (Việc treo 21, 3h DỪNG 3b)
+    txlog: TxLog
     rediagnose_on_new_slot: bool = False  # D-20, cờ tắt mặc định
 
 

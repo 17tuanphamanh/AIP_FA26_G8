@@ -103,7 +103,7 @@ def _env(
 @contextmanager
 def _run(h: GraphHarness, turn_id: str = "T1") -> Iterator[RunContext]:
     ctx = RunContext(turn_id=turn_id, trace_id="0" * 32, audit=h.audit, effects=h.effects, spans=h.spans,
-                     clock=h.clock)  # fmt: skip
+                     clock=h.clock, txlog=h.txlog)  # fmt: skip
     with bind_run(ctx):
         yield ctx
 

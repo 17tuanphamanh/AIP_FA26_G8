@@ -21,6 +21,7 @@ from app.graph.nodes import b06_diagnose
 from app.tools.registry import ToolRegistry
 from app.tools.wiring import build_read_registry
 from tests.e2e.mock_server import MockServer
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 
 pytestmark = pytest.mark.asyncio
@@ -49,7 +50,7 @@ async def _diagnose(directory: tuple[ToolRegistry, FakeClock], st: dict[str, Any
     registry, clock = directory
     h = GraphHarness(clock=clock, directory=registry)
     run = RunContext(turn_id="T1", trace_id="0" * 32, audit=MemoryAudit(), effects=MemoryEffects(),
-                     spans=MemorySpans(), clock=clock)  # fmt: skip
+                     spans=MemorySpans(), clock=clock, txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run):
         return await wrap_node("b06_diagnose", b06_diagnose.make(h.deps()))(st)
 

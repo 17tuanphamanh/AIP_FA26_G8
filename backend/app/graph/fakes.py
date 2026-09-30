@@ -15,12 +15,12 @@ Các port side effect (`Notifier`, `Approvals`, `DeadlineStore`) luôn được 
 
 import asyncio
 import inspect
-import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+from app.core.fake_tag import FAKE_TAG
 from app.domain.action import Action, ActionMeta
 from app.domain.context import RequesterContext
 from app.domain.policy import BusinessHours
@@ -167,7 +167,6 @@ PAUSABLE_NODES = frozenset({
     "b12_assess", "b15_prepare_approval", "b17_execute",
 })  # fmt: skip
 PAUSE_POINTS = PAUSABLE_NODES | {"after_approval_create"}
-FAKE_TAG = re.compile(r"\[fake:([a-z0-9_]+)\]")
 
 
 @dataclass(frozen=True)

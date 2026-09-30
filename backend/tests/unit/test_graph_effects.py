@@ -8,6 +8,7 @@ import pytest
 from app.core.clock import FakeClock
 from app.graph import effects
 from app.graph.context import RunContext, bind_run
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 
 STATE = {"ticket_id": "t1", "turn_id": "T1", "status": "S_ASSESSING"}
@@ -16,7 +17,7 @@ STATE = {"ticket_id": "t1", "turn_id": "T1", "status": "S_ASSESSING"}
 @contextmanager
 def run(store: MemoryEffects, turn_id: str = "T1") -> Iterator[None]:
     with bind_run(RunContext(turn_id=turn_id, trace_id="0" * 32, audit=MemoryAudit(),
-                             effects=store, spans=MemorySpans(), clock=FakeClock())):  # fmt: skip
+                             effects=store, spans=MemorySpans(), clock=FakeClock(), txlog=MemoryTxLog())):  # fmt: skip
         yield
 
 

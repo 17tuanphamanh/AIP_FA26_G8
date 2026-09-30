@@ -8,10 +8,16 @@ VPN giả (`tests/fakes/executor.FakeVpnWrites`, đếm ở nơi nhận) + `tran
 - Lỗi ghi (5xx/404/409/timeout): 1 lời gọi (không retry — M-3h-6), `handoff_note` 4 phần chỉ từ mã tập đóng + định danh (P6).
 - Kế hoạch nhiều bước (Phase 5 — dựng PLAN riêng): lỗi bước 2 → hoàn tác bước 1 (`undone`/`undo_failed`); không reversible →
   `not_attempted`, 0 lời gọi hoàn tác.
+- Chốt FAIL mục 7 (soát DỪNG 3b): lỗi bất kỳ SAU `begin` (đứt kết nối sau khi gửi, 2xx JSON hỏng / sai schema, lỗi khi hoàn
+  tác) → `ExecutionInterrupted(cause=<tên lớp>, write_calls=<cận trên>)`, không POST lần 2; cùng lỗi TRƯỚC `begin` → nổi nguyên
+  (E9); `CancelledError` không bị nuốt; ghi chú bàn giao với lỗi mơ hồ (timeout/5xx) nói "có thể đã được áp dụng".
 PG (`begun` commit ngay, thấy từ kết nối khác): `integration/test_txlog_pg.py`. Node B17: `test_b17_execute.py`.
 """
 
+import asyncio
+import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -23,6 +29,7 @@ from app.executor.plans import Step
 from app.executor.vpn import VpnExecutor, error_kind
 from app.graph.fakes import RefusingExecutor
 from app.settings import get_action_metadata, get_policy
+from app.tools.registry import ToolContractError
 from tests.fakes.executor import FakeVpnWrites, MemoryTxLog, http_error
 
 pytestmark = pytest.mark.asyncio
@@ -257,3 +264,91 @@ async def test_s12_check_plans_requires_result_template(monkeypatch: pytest.Monk
     monkeypatch.setattr(plans_module, "RESULT_ACTIONS", frozenset({"renew_vpn_cert", "reissue_vpn_access"}))
     with pytest.raises(RuntimeError, match="check_vpn_status"):
         plans_module.check_plans(get_action_metadata().root, ["vpn"])
+
+
+# ---- Chốt FAIL mục 7 (soát DỪNG 3b): lỗi SAU begin → ExecutionInterrupted, không E9, không ghi lần 2 ------------------------
+
+SECRET_BODY = "than-phan-hoi-he-thong-ngoai-KHONG-duoc-chep"
+AFTER_BEGIN = ["ReadError", "RemoteProtocolError", "JSONDecodeError", "ToolContractError"]
+
+
+def fail_after_send(writes: FakeVpnWrites, kind: str, tool: str = "renew_vpn_cert") -> None:
+    """Lời gọi đã TỚI hệ thống ghi giả (đếm ở nơi nhận) rồi mới hỏng: đứt kết nối, 2xx thân không phải JSON (như
+    `resp.json()`), 2xx sai schema `Cert` (registry → `ToolContractError`). Mọi thông điệp mang chữ "của hệ thống ngoài"."""
+    if kind == "ToolContractError":
+        writes._issue = lambda a: {"serial": SECRET_BODY}  # type: ignore[method-assign]  # 2xx, thiếu trường Cert
+        return
+    errors = {
+        "ReadError": lambda: httpx.ReadError(SECRET_BODY),
+        "RemoteProtocolError": lambda: httpx.RemoteProtocolError(SECRET_BODY),
+        "JSONDecodeError": lambda: json.JSONDecodeError(SECRET_BODY, "<html>", 0),
+    }
+    writes.faults[tool] = errors[kind]
+
+
+@pytest.mark.parametrize("kind", AFTER_BEGIN)
+async def test_fail7_error_after_begin_is_interrupted_one_write(kind: str) -> None:
+    ex, writes, txlog, _ = _executor()
+    fail_after_send(writes, kind)
+    with pytest.raises(ExecutionInterrupted) as info:
+        await ex.execute("t1", "T1", _action())
+    assert (info.value.cause, info.value.write_calls) == (kind, 1)  # CHỈ tên lớp lỗi; cận trên số lời gọi ghi
+    assert SECRET_BODY not in str(info.value) and SECRET_BODY not in str(info.value.cause)
+    assert writes.calls == {"renew_vpn_cert": 1}  # không retry, không hoàn tác
+    assert txlog.statuses() == [("renew_vpn_cert", "begun")]
+    with pytest.raises(ExecutionInterrupted):  # chạy lại (recover): `begun` có → không POST lần 2
+        await ex.execute("t1", "T1", _action())
+    assert writes.calls == {"renew_vpn_cert": 1}
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [httpx.ReadError("x"), httpx.RemoteProtocolError("x"), json.JSONDecodeError("x", "", 0), ToolContractError("x")],
+    ids=AFTER_BEGIN,
+)  # fmt: skip
+async def test_fail7_same_errors_before_begin_propagate_unchanged(exc: Exception) -> None:
+    """Lỗi xảy ra TRƯỚC khi dòng `begun` có (INSERT hỏng) → chưa gửi gì → nổi nguyên (boundary E9 như cũ)."""
+    ex, writes, txlog, _ = _executor()
+
+    async def begin(*_: Any) -> None:
+        raise exc
+
+    txlog.begin = begin  # type: ignore[method-assign]
+    with pytest.raises(type(exc)) as info:
+        await ex.execute("t1", "T1", _action())
+    assert not isinstance(info.value, ExecutionInterrupted)
+    assert writes.calls == {} and txlog.rows == []
+
+
+async def test_fail7_cancelled_after_begin_is_not_swallowed() -> None:
+    """(a) chỉ bắt `Exception`: `CancelledError` (BaseException) phải đi tiếp — đường worker `execution_interrupted`."""
+    ex, writes, txlog, _ = _executor()
+    writes.faults["renew_vpn_cert"] = asyncio.CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        await ex.execute("t1", "T1", _action())
+    assert writes.calls == {"renew_vpn_cert": 1} and txlog.statuses() == [("renew_vpn_cert", "begun")]
+
+
+async def test_fail7_error_while_undoing_is_interrupted_counts_every_sent_write() -> None:
+    """Kế hoạch nhiều bước: bước 2 lỗi 5xx → hoàn tác bước 1 → lời gọi hoàn tác đứt kết nối → vẫn `ExecutionInterrupted`."""
+    ex, writes, _, _ = _executor(renew_vpn_cert=_two_steps())
+    writes.faults["reissue_vpn_access"] = lambda: http_error(500)
+    fail_after_send(writes, "ReadError", tool="revoke_vpn_cert")
+    with pytest.raises(ExecutionInterrupted) as info:
+        await ex.execute("t1", "T1", _action())
+    assert (info.value.cause, info.value.write_calls) == ("ReadError", 3)
+    assert writes.calls == {"renew_vpn_cert": 1, "reissue_vpn_access": 1, "revoke_vpn_cert": 1}
+
+
+@pytest.mark.parametrize(
+    ("fault", "maybe"),
+    [(lambda: httpx.ReadTimeout("x"), True), (lambda: http_error(500), True), (lambda: http_error(409), False),
+     (lambda: http_error(404), False), (lambda: httpx.ConnectError("x"), False)],
+    ids=["timeout", "500", "409", "404", "connect"],
+)  # fmt: skip
+async def test_fail7_ambiguous_error_note_says_may_have_been_applied(fault: Any, maybe: bool) -> None:
+    """Lỗi mơ hồ (timeout, 5xx): đích có thể đã nhận lệnh → ghi chú nói rõ; 404/409 (đích từ chối), connect (chưa gửi) thì không."""
+    ex, writes, _, _ = _executor()
+    writes.faults["renew_vpn_cert"] = fault
+    res = await ex.execute("t1", "T1", _action())
+    assert ("có thể đã được áp dụng" in (res.handoff_note or "")) is maybe

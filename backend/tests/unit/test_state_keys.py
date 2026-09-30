@@ -12,13 +12,14 @@ from app.domain.ticket_state import STATE_KEYS, UnknownStateKey, check_state_key
 from app.graph.boundary import with_error_boundary
 from app.graph.context import RunContext, bind_run
 from app.graph.goto import goto
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 
 
 @contextmanager
 def run(audit: MemoryAudit) -> Iterator[RunContext]:
     ctx = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(),
-                     spans=MemorySpans(), clock=FakeClock())  # fmt: skip
+                     spans=MemorySpans(), clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
     with bind_run(ctx):
         yield ctx
 

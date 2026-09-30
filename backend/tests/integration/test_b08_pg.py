@@ -29,6 +29,7 @@ from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.retriever import RagConfig, Retriever
 from app.settings import Settings, get_policy
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.kb import CONFIG_DIR, KB_TEST_NOW, copy_kb
 from tests.fakes.llm import make_gateway
@@ -82,7 +83,7 @@ async def kb_env(clean_qdrant: str, migrated: PgUrls, tmp_path: Path) -> AsyncIt
 def _run_ctx(audit: MemoryAudit) -> Any:
     ctx = RunContext(
         turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-        clock=FakeClock(),
+        clock=FakeClock(), txlog=MemoryTxLog(),
     )  # fmt: skip
     with bind_run(ctx):
         yield ctx

@@ -26,6 +26,7 @@ from app.domain.states import (
 from app.graph.context import RunContext, bind_run
 from app.graph.fakes import FAKE_ACTION, fake_risk
 from app.graph.goto import audit_key, goto
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 
 
@@ -33,7 +34,7 @@ from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 def run(audit: MemoryAudit, turn_id: str = "T1", rediag: bool = False) -> Iterator[RunContext]:
     ctx = RunContext(
         turn_id=turn_id, trace_id="0" * 32, audit=audit, effects=MemoryEffects(),
-        spans=MemorySpans(), clock=FakeClock(), rediagnose_on_new_slot=rediag,
+        spans=MemorySpans(), clock=FakeClock(), txlog=MemoryTxLog(), rediagnose_on_new_slot=rediag,
     )  # fmt: skip
     with bind_run(ctx):
         yield ctx

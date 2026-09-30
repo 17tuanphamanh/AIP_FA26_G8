@@ -18,6 +18,7 @@ from app.graph.context import RunContext, bind_run
 from app.graph.wiring import select_nodes
 from app.rag.models import RetrievalResult
 from app.settings import Settings
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.rag import FakeRag
 
@@ -27,7 +28,7 @@ pytestmark = pytest.mark.asyncio
 @contextmanager
 def run(audit: MemoryAudit) -> Iterator[RunContext]:
     ctx = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(),
-                     spans=MemorySpans(), clock=FakeClock())  # fmt: skip
+                     spans=MemorySpans(), clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
     with bind_run(ctx):
         yield ctx
 

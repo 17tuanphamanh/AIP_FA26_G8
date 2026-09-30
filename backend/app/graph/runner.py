@@ -14,7 +14,10 @@ trước được lưu song song với bước sau, nên process chết giữa B
 cùng đi qua Runner này. Lớp khác vẫn giữ: B17 bước 0 đọc `transaction_log` (NGHI-2).
 
 Đã kiểm với LangGraph 1.2: giá trị resume được ghi vào checkpoint trước khi node chạy, nên process
-chết giữa lượt resume thì `ainvoke(None)` chạy lại node chờ với đúng giá trị đó.
+chết giữa lượt resume thì `ainvoke(None)` chạy lại node chờ với đúng giá trị đó. **Node còn dở** lấy theo `_pending` (Việc treo
+21, 3h DỪNG 3b): node chờ vừa resume mà `Exception` nổi ra ngoài (boundary ném tiếp — `has_begun` lỗi, goto E9 lỗi) có
+`snap.next == ()` (LangGraph bỏ task đã có write `__resume__` khỏi `next`) dù chưa chạy xong — trước đây recover coi là "thread đã
+kết thúc", đóng lượt, ticket kẹt ở trạng thái chờ không ai xử lý.
 
 **Hạn cho cả lượt** (phase3 9.0, PLAN-3f S0): `_run`/`_divert` — nơi DUY NHẤT mọi lượt (submit, run_new, resume, recover,
 divert) đi qua — gắn `core.turn_budget.TurnDeadline(now + TURN_BUDGET_S, SAFETY_MARGIN_S)` TRƯỚC semaphore (thời gian chờ
@@ -27,7 +30,9 @@ chuyển `S_ESCALATED` E7 "thực thi bị gián đoạn" rồi chạy B20.
 **Giới hạn phục hồi** (2b-Q6, Q-B; migration 0005): `recover` tăng `turns.recover_attempts` TRƯỚC khi
 chạy lại (dưới khoá ticket) — process chết giữa lượt vẫn bị tính. Vượt `max_recover_attempts` (3):
 lượt kẹt ở B20 → audit `finalize_failed_permanent` + đóng lượt (M9 Phase 7 có luật cảnh báo); kẹt ở
-node khác → `S_ESCALATED` E9 `recover_exhausted` rồi chạy B20.
+node khác → `S_ESCALATED` E9 `recover_exhausted` rồi chạy B20 — TRỪ KHI ticket đã có `transaction_log` `begun` (xét theo
+TICKET, mọi lượt — chốt FAIL mục 7 d, soát DỪNG 3b 3h): khi đó E7 `execution_interrupted` + câu "có thể đã gửi lệnh ghi — L2
+kiểm trên hệ thống đích trước khi làm tay" (ticket đã có `begun` không bao giờ mang mẫu E9 "xử lý thủ công").
 
 **Lượt `submit` của API chạy nền** (2b-3): API ghi dòng `tickets` + dòng `turns` trong một transaction
 rồi giao `run_new(ticket_id, turn_id)` cho task nền. State đầu dựng từ dòng `tickets` (không truyền
@@ -58,6 +63,7 @@ from app.core.ids import new_trace_id, new_turn_id
 from app.core.turn_budget import TurnDeadline, bind_turn_deadline
 from app.domain.exit_codes import ExitCode
 from app.domain.states import S_ESCALATED, S_NEW
+from app.executor.txlog import MAY_HAVE_WRITTEN, TxLog
 from app.graph.builder import Graph
 from app.graph.context import RunContext, bind_run
 from app.graph.goto import audit_key, goto
@@ -79,10 +85,7 @@ DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module
 PARENT_WAIT = "parent_wait"
 # Worker không biết lời gọi ghi đã tới hệ thống đích hay chưa (có thể có `begun`) → cùng câu chốt với B17 bước 0 (DỪNG 3 3h,
 # h15b): L2 không được hiểu là "chưa làm". `reason_detail` giữ `execution_interrupted` (Q-3h-3).
-INTERRUPTED_NOTE = (
-    "Thực thi bị gián đoạn (worker không chạy lại B17): có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi "
-    "làm tay."
-)
+INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (worker không chạy lại B17): {MAY_HAVE_WRITTEN}."
 FINALIZE_FAILED = "finalize_failed_permanent"
 RECOVER_EXHAUSTED = "recover_exhausted"
 
@@ -115,6 +118,7 @@ class Runner:
         recursion_limit: int = 60,
         max_recover_attempts: int = 3,
         tickets: TicketReader | None = None,
+        txlog: TxLog,  # BẮT BUỘC (không mặc định "chưa có gì" — fail-open): recover cạn lượt xét `begun` theo ticket
     ) -> None:
         self.graph = graph
         self.audit = audit
@@ -129,6 +133,7 @@ class Runner:
         self._recursion_limit = recursion_limit
         self._max_recover = max_recover_attempts
         self._tickets = tickets
+        self._txlog = txlog
         self._turn_budget = timedelta(seconds=turn_budget_s)
         self._margin_s = safety_margin_s
 
@@ -146,7 +151,7 @@ class Runner:
     def _context(self, turn_id: str) -> RunContext:
         return RunContext(
             turn_id=turn_id, trace_id=new_trace_id(), audit=self.audit, effects=self._effects,
-            spans=self._spans, clock=self.clock, rediagnose_on_new_slot=self._rediagnose,
+            spans=self._spans, clock=self.clock, txlog=self._txlog, rediagnose_on_new_slot=self._rediagnose,
         )  # fmt: skip
 
     def _deadline(self) -> TurnDeadline:
@@ -239,17 +244,18 @@ class Runner:
             if attempts is None:
                 return None
             snap = await self.snapshot(ticket_id)
+            node = _pending(snap)
             if not snap.values and attempts <= self._max_recover:
                 # chết sau `tickets.create`, trước checkpoint đầu: chạy state đầu, GIỮ turn_id
                 result = await self._run_initial(ticket_id, turn_id)
             elif not snap.values:  # cạn lượt mà thread CHƯA từng có checkpoint (chết ở B1 mỗi lần)
                 result = await self._give_up_before_checkpoint(ticket_id, turn_id, attempts)
-            elif not snap.next:  # thread đã kết thúc, chỉ chưa kịp đóng turn
+            elif node is None:  # thread đã kết thúc, chỉ chưa kịp đóng turn
                 await self._turns.end(turn_id, self.clock.now())
                 result = await self._result(ticket_id, turn_id)
             elif attempts > self._max_recover:
-                result = await self._give_up(ticket_id, turn_id, snap, attempts)
-            elif not self._can_execute and EXECUTE_NODE in snap.next:
+                result = await self._give_up(ticket_id, turn_id, snap, node, attempts)
+            elif not self._can_execute and node == EXECUTE_NODE:
                 result = await self._divert(
                     ticket_id, turn_id, snap.values, as_node=EXECUTE_NODE, step="B17",
                     event="execution_interrupted", exit_code=ExitCode.E7.value,
@@ -270,6 +276,15 @@ class Runner:
         log.error("ticket %s: lượt %s chưa tạo được checkpoint sau %d lần phục hồi — E9",
                   ticket_id, turn_id, attempts - 1)  # fmt: skip
         values = _state_from_row(await self._row(ticket_id), turn_id)
+        if await self._txlog.has_begun(ticket_id):  # không thể xảy ra (B17 chạy sau nhiều checkpoint) — vẫn chặn
+            return await self._divert(
+                ticket_id, turn_id, values, seed=True, as_node=ENTRY, step="runner",
+                event=RECOVER_EXHAUSTED, exit_code=ExitCode.E7.value,
+                escalation_reason_detail="execution_interrupted",
+                escalation_note=f"Phục hồi lượt thất bại {attempts - 1} lần sau khi transaction_log đã có begun: "
+                                f"{MAY_HAVE_WRITTEN}.",
+                audit_detail={"recover_attempts": attempts - 1, "node": ENTRY, "no_checkpoint": True, "begun": True},
+            )  # fmt: skip
         return await self._divert(
             ticket_id, turn_id, values, seed=True, as_node=ENTRY, step="runner",
             event=RECOVER_EXHAUSTED, exit_code=ExitCode.E9.value,
@@ -279,11 +294,18 @@ class Runner:
         )  # fmt: skip
 
     async def _give_up(
-        self, ticket_id: str, turn_id: str, snap: StateSnapshot, attempts: int
+        self, ticket_id: str, turn_id: str, snap: StateSnapshot, node: str, attempts: int
     ) -> RunResult:
-        node = snap.next[0]
         log.error("ticket %s: lượt %s kẹt ở %s sau %d lần phục hồi — ngừng thử",
                   ticket_id, turn_id, node, attempts - 1)  # fmt: skip
+        if node != AUDIT and await self._txlog.has_begun(ticket_id):  # chốt FAIL mục 7 (d): theo ticket, mọi lượt
+            return await self._divert(
+                ticket_id, turn_id, snap.values, as_node=node, step="runner", event=RECOVER_EXHAUSTED,
+                exit_code=ExitCode.E7.value, escalation_reason_detail="execution_interrupted",
+                escalation_note=f"Phục hồi lượt thất bại {attempts - 1} lần tại {node} sau khi transaction_log đã có begun: "
+                                f"{MAY_HAVE_WRITTEN}.",
+                audit_detail={"recover_attempts": attempts - 1, "node": node, "begun": True},
+            )  # fmt: skip
         if node != AUDIT:
             return await self._divert(
                 ticket_id, turn_id, snap.values, as_node=node, step="runner", event=RECOVER_EXHAUSTED,
@@ -375,6 +397,15 @@ class Runner:
         )  # fmt: skip
         await self.graph.aupdate_state(cfg, {**values, **update} if seed else update, as_node=as_node)
         await self.graph.ainvoke(None, cfg, durability=DURABILITY)
+
+
+def _pending(snap: StateSnapshot) -> str | None:
+    """Node còn dở của lượt; None = thread đã kết thúc. `snap.next` bỏ task đã có write — node chờ vừa resume (write
+    `__resume__`) mà `Exception` nổi ra ngoài không có trong `next` nhưng vẫn nằm trong `snap.tasks` (kèm `error`), và
+    `ainvoke(None)` chạy lại nó với đúng giá trị resume (Việc treo 21 — xem docstring module)."""
+    if snap.next:
+        return snap.next[0]
+    return snap.tasks[0].name if snap.tasks else None
 
 
 def _initial_state(

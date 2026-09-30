@@ -30,6 +30,7 @@ from app.rag.retriever import RagConfig, Retriever
 from app.rag.vector_store import DENSE, SPARSE, VectorIndex
 from app.settings import Settings, get_policy
 from qdrant_client.models import PointStruct
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import embed_text
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.kb import CONFIG_DIR, KB_TEST_NOW, copy_kb
@@ -162,7 +163,7 @@ async def test_c12_no_alias_raises_stage_alias_no_ml_calls(clean_qdrant: str, mi
 def _run_ctx(audit: MemoryAudit) -> Any:
     ctx = RunContext(
         turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-        clock=FakeClock(),
+        clock=FakeClock(), txlog=MemoryTxLog(),
     )  # fmt: skip
     with bind_run(ctx):
         yield ctx

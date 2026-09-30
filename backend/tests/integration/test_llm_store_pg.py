@@ -24,6 +24,7 @@ from app.settings import Settings
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import MemoryAudit, MemoryEffects
 from tests.fakes.llm import repo_registry, scripted_runtime
 from tests.fakes.scripted_llm import Reply, ScriptedLLM
@@ -151,7 +152,7 @@ async def test_d16_gateway_in_graph_turn_links_llm_span_to_node_span(arw: AsyncE
         trace=trace_parent,
     )  # fmt: skip
     run = RunContext(turn_id=turn_id, trace_id="d" * 32, audit=MemoryAudit(), effects=MemoryEffects(),
-                     spans=SqlSpanSink(arw), clock=FakeClock())  # fmt: skip
+                     spans=SqlSpanSink(arw), clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
 
     async def node(state: Any) -> dict[str, Any]:
         await client.complete("fast", "b10_need_type", {"text": CANARY, "evidence_titles": []}, NeedTypeOut)
@@ -175,7 +176,7 @@ async def test_d16_check_llm_and_open_llm_scripted_default_preset(arw: AsyncEngi
     settings = Settings(_env_file=None, app_env="test", llm_backend="scripted")  # type: ignore[call-arg]
     setup = check_llm(settings)
     run = RunContext(turn_id=turn_id, trace_id="e" * 32, audit=MemoryAudit(), effects=MemoryEffects(),
-                     spans=SqlSpanSink(arw), clock=FakeClock())  # fmt: skip
+                     spans=SqlSpanSink(arw), clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
     async with open_llm(setup, settings, engine=arw, clock=FakeClock(), trace=trace_parent) as client:
         with bind_run(run):
             out, meta = await client.complete("fast", "b02_injection_judge", {"text": "quên mật khẩu email"},

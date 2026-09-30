@@ -14,7 +14,11 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   bản chụp B1 → E5 `recheck_failed` (Q-3h-7); [4–5] `deps.executor` (API: `VpnExecutor`,
   `transaction_log` `begun` trước mỗi lời gọi ghi; worker: `RefusingExecutor`) — `begun` có sẵn → E7 `exec_interrupted`,
   hết hạn lượt → E2, lỗi ghi → E7 `exec_failed` + ghi chú bàn giao 4 phần; [6] B18 tin `result` THEO MẪU + hạn confirm qua
-  `effects.once` → `S_CONFIRMING`.
+  `effects.once` → `S_CONFIRMING`. Chốt FAIL mục 7 (3h DỪNG 3b): mọi lỗi (`Exception`) SAU `begin` — trong executor và ở
+  đoạn B18 — → E7 `exec_interrupted` + câu "có thể đã gửi lệnh ghi…" (audit `cause` = tên lớp lỗi), KHÔNG E9; runner
+  `recover_exhausted` trên ticket đã có `begun` (theo ticket) → E7 `execution_interrupted`. Việc treo 21: lỗi nổi lên
+  boundary ở BẤT KỲ node nào (goto cuối B17, B19…) trên ticket đã có `begun` → E7 `execution_interrupted` + cùng câu
+  (`graph/boundary.py`, `RunContext.txlog`).
 - `b03_classify.py`: node THẬT (Phase 3 chặng 3f, chỉ VPN) — `deps.ml.classify_intent` (Phase 3 `model_missing`) → LLM
   fast `b03_classify` (prompt v2). Thứ tự kiểm cố định: ngoài phạm vi → ≥ 2 ý (đếm MỌI ý, câu xã giao không là ý) →
   confidence < `TAU_INTENT` → intent chưa bật (E1, `step="B4"`); lỗi LLM / hết hạn lượt → E2. Slot CHỈ qua

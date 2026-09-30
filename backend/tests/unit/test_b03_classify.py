@@ -21,6 +21,7 @@ from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b03_classify
 from app.llm.providers.scripted import BadJSON, Reply, Script, Unavailable
 from app.rag.models import RetrievalResult
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.identity import ad_user
@@ -257,7 +258,7 @@ def _node_state(**over: Any) -> dict[str, Any]:
 async def _call_node(h: GraphHarness, state: dict[str, Any]) -> tuple[dict[str, Any], MemoryAudit]:
     audit = MemoryAudit()
     run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-                     clock=h.clock)  # fmt: skip
+                     clock=h.clock, txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run):
         return await wrap_node("b03_classify", b03_classify.make(h.deps()))(state), audit
 

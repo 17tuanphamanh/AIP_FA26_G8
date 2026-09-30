@@ -10,6 +10,7 @@ from app.domain.states import S_CONFIRMING, S_RETRIEVING
 from app.graph.context import RunContext, bind_run
 from app.graph.goto import goto
 from sqlalchemy.dialects import postgresql
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 
 ROW = {"ticket_id": "t1", "turn_id": "T1", "step": "B10", "created_at": FakeClock().now(), "prompt_id": "b10_answer"}
@@ -46,7 +47,7 @@ async def test_insert_once_is_insert_select_where_not_exists() -> None:
 async def test_goto_passes_lineage_with_context_fields_and_keeps_it_out_of_state() -> None:
     audit, clock = MemoryAudit(), FakeClock()
     run = RunContext(turn_id="T7", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-                     clock=clock)  # fmt: skip
+                     clock=clock, txlog=MemoryTxLog())  # fmt: skip
     state = {"ticket_id": "t1", "status": S_RETRIEVING}
     with bind_run(run):
         out = await goto(state, S_CONFIRMING, next_node="confirm_wait", step="B10", event="deflected_info_only",
@@ -63,7 +64,7 @@ async def test_goto_passes_lineage_with_context_fields_and_keeps_it_out_of_state
 async def test_goto_rejects_bad_lineage_before_writing_audit() -> None:
     audit = MemoryAudit()
     run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-                     clock=FakeClock())  # fmt: skip
+                     clock=FakeClock(), txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run), pytest.raises(ValueError, match="cột lạ"):
         await goto({"ticket_id": "t1", "status": S_RETRIEVING}, S_CONFIRMING, next_node="confirm_wait", step="B10",
                    event="deflected_info_only", lineage={"answer_text": "không được lưu"})

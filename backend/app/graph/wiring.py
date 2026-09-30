@@ -213,7 +213,7 @@ async def _open(
             concurrency=settings.graph_concurrency, can_execute=can_execute,
             rediagnose_on_new_slot=settings.rediagnose_on_new_slot,
             recursion_limit=settings.graph_recursion_limit,
-            max_recover_attempts=settings.max_recover_attempts, tickets=tickets,
+            max_recover_attempts=settings.max_recover_attempts, tickets=tickets, txlog=deps.txlog,
         )  # fmt: skip
         yield Runtime(runner=runner, deadlines=deadlines, turns=turns, tickets=tickets,
                       approvals=approvals)  # fmt: skip

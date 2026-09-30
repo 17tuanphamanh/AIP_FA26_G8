@@ -16,6 +16,10 @@ from app.core.clock import Clock
 from app.db.models import TransactionLogEntry
 
 _TABLE: Table = TransactionLogEntry.__table__  # type: ignore[assignment]
+# Câu chốt 3h (h15/h15b; chốt FAIL mục 7 c; Việc treo 21): ticket đã có `begun` mà lượt bị bẻ sang escalate thì MỌI đường —
+# B17 (bước 0, lỗi sau `begin`, đoạn B18), runner (worker không chạy B17, cạn lượt), boundary — dùng đúng câu này: L2 không
+# được hiểu là "chưa làm" rồi làm tay lần hai. Một nguồn, không chép chữ.
+MAY_HAVE_WRITTEN = "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay"
 
 
 class TxLog(Protocol):

@@ -310,7 +310,7 @@ def _state(slots: dict[str, str], **over: Any) -> dict[str, Any]:
 @contextmanager
 def _run(h: GraphHarness) -> Iterator[None]:
     with bind_run(RunContext(turn_id="T1", trace_id="0" * 32, audit=h.audit, effects=h.effects, spans=h.spans,
-                             clock=h.clock)):  # fmt: skip
+                             clock=h.clock, txlog=h.txlog)):  # fmt: skip
         yield
 
 

@@ -20,6 +20,7 @@ from app.graph.builder import wrap_node
 from app.graph.checkpoint import make_serde
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b06_diagnose
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.vpn import SeedVpn
 
@@ -44,7 +45,7 @@ async def diagnose(st: dict[str, Any], **harness: Any) -> tuple[dict[str, Any], 
     h = GraphHarness(clock=clock, vpn=vpn, **harness)
     audit = MemoryAudit()
     run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-                     clock=clock)  # fmt: skip
+                     clock=clock, txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run):
         update = await wrap_node("b06_diagnose", b06_diagnose.make(h.deps()))(st)
     [row] = audit.rows

@@ -18,11 +18,14 @@
    chính `RequesterContext.from_ad` tại mốc `captured_at` của B1 — khác bản chụp → E5 `recheck_failed` (vd `active` →
    `probation` trong lúc chờ: bản chụp làm R19 trượt). Không dựng lại được (nhóm AD không còn ra role…) → cũng E5.
 4–5. `deps.executor.execute(ticket_id, turn_id, action)` (P7: `VpnExecutor` chỉ ở API; worker `RefusingExecutor`):
-   `ExecutionInterrupted` → E7 `exec_interrupted` (0 lời gọi ghi); `TurnBudgetExceeded` (P4 — trước `begun`) → E2
+   `ExecutionInterrupted` → E7 `exec_interrupted` (`begun` có từ trước: 0 lời gọi ghi; lỗi SAU `begin` của lần này — chốt FAIL
+   mục 7: audit `cause` = tên lớp lỗi, `write_calls` = cận trên); `TurnBudgetExceeded` (P4 — trước khi gửi) → E2
    `turn_budget_exceeded`; kết quả lỗi → E7 `exec_failed` + `execution` + `escalation_note = handoff_note` (4 phần — B20 chép
    vào ghi chú bàn giao).
 6. **B18:** điểm log 7 → `notify_user` (tin THEO MẪU, P6 — `domain.messages.result_text`) + hạn confirm qua `effects.once`
-   (`step="B18"`) → `conversation` `kind="result"` → `S_CONFIRMING`.
+   (`step="B18"`) → `conversation` `kind="result"` → `S_CONFIRMING`. Lệnh ghi ĐÃ thành công: lỗi (`Exception`) ở đoạn này → E7
+   `exec_interrupted` + câu "có thể đã gửi lệnh ghi…" (chốt FAIL mục 7 c — ticket đã có `begun` không bao giờ mang mẫu E9 "xử lý
+   thủ công"); `BaseException` (`CancelledError`) đi tiếp.
 
 Mỗi nhánh một `goto` với `step`/`exit_code`/`escalation_reason_detail` hằng (P1). Audit không có câu người dùng: chỉ định
 danh luật/người, enum, hash hex, số lời gọi ghi.
@@ -45,6 +48,7 @@ from app.domain.policy import referenced_facts
 from app.domain.states import S_CONFIRMING, S_ESCALATED
 from app.domain.ticket_state import ExecutionResult
 from app.executor.errors import ExecutionInterrupted
+from app.executor.txlog import MAY_HAVE_WRITTEN
 from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
@@ -56,9 +60,7 @@ from app.settings import get_policy
 from app.tools.specs import RECHECK_STEP
 
 INVALID_PEOPLE = frozenset({"disabled", "terminated"})
-INTERRUPTED_NOTE = (
-    "Thực thi bị gián đoạn (transaction_log đã có begun): có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay."
-)
+INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (transaction_log đã có begun): {MAY_HAVE_WRITTEN}."
 
 
 def _write_calls(res: ExecutionResult) -> int:
@@ -179,10 +181,11 @@ def make(deps: NodeDeps) -> NodeFn:
 
         try:  # [4–5]
             res = await deps.executor.execute(state["ticket_id"], run.turn_id, action)
-        except ExecutionInterrupted:
+        except ExecutionInterrupted as exc:  # `cause` chỉ là tên lớp lỗi (luật 8.9)
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B17", event="exec_interrupted",
-                audit_detail={**rule, "success": False, "write_calls": 0, "action_plan_hash_matched": matched},
+                audit_detail={**rule, "success": False, "write_calls": exc.write_calls, "cause": exc.cause,
+                              "action_plan_hash_matched": matched},
                 exit_code=ExitCode.E7.value, escalation_reason_detail="exec_interrupted", escalation_note=INTERRUPTED_NOTE,
             )  # fmt: skip
         except TurnBudgetExceeded:
@@ -200,14 +203,23 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
 
         # [6] B18 — tin theo mẫu (P6), gửi + đặt hạn qua effects.once TRƯỚC node chờ
-        text = result_text(action.type, str(action.params.get("device_id", "")), res.outputs, action.facts)
-        ref = await effects.once(
-            state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "confirm", step="B18",
-        )  # fmt: skip
-        deadline = run.clock.now() + timedelta(hours=deps.constants.CONFIRM_TIMEOUT_HOURS)
-        await effects.once(
-            state, "deadline_set", deps.deadlines.set, state["ticket_id"], "confirm", deadline, run.turn_id, step="B18",
-        )  # fmt: skip
+        try:
+            text = result_text(action.type, str(action.params.get("device_id", "")), res.outputs, action.facts)
+            ref = await effects.once(
+                state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "confirm", step="B18",
+            )  # fmt: skip
+            deadline = run.clock.now() + timedelta(hours=deps.constants.CONFIRM_TIMEOUT_HOURS)
+            await effects.once(
+                state, "deadline_set", deps.deadlines.set, state["ticket_id"], "confirm", deadline, run.turn_id, step="B18",
+            )  # fmt: skip
+        # Sau lời gọi ghi đã thành công, MỌI lỗi phải thành E7 có câu cảnh báo (chốt FAIL mục 7 c), không E9 "xử lý thủ công".
+        except Exception as exc:  # noqa: BLE001 — xem dòng trên
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B17", event="exec_interrupted",
+                audit_detail={**rule, **_point7(res), "stage": "b18", "cause": type(exc).__name__},
+                exit_code=ExitCode.E7.value, escalation_reason_detail="exec_interrupted", escalation_note=INTERRUPTED_NOTE,
+                execution=res,
+            )  # fmt: skip
         return await goto(
             state, S_CONFIRMING, next_node="confirm_wait", step="B18", event="executed_ok",
             audit_detail={**rule, **_point7(res)}, execution=res, conversation=[result_msg(text, ref)],

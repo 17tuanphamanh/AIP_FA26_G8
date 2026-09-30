@@ -11,13 +11,20 @@ registry ghi thật + hệ thống ghi VPN giả (đếm ở nơi nhận) + `tra
   vào tin (c — M-3h-13).
 - Chốt DỪNG 2: [0] NGHI-2 — ticket đã có `begun` (mọi lượt) → E7 TRƯỚC mọi bước kiểm lại (chạy lại sau khi đã ghi mà điều kiện
   đổi → E7, KHÔNG E5); Q-3h-7 — trường `requester.*` mà luật tham chiếu, AD mới khác bản chụp B1 → E5 `recheck_failed`.
+- Chốt FAIL mục 7 (soát DỪNG 3b): lỗi SAU `begin` (đứt kết nối, 2xx hỏng / sai schema) và lỗi ở đoạn B18 sau khi đã ghi → E7
+  `exec_interrupted` + câu "có thể đã gửi lệnh ghi…", audit `cause` = tên lớp lỗi, không POST lần 2, KHÔNG E9; cùng lỗi TRƯỚC
+  `begun` → E9 như cũ; `CancelledError` không bị nuốt.
+- Việc treo 21: `goto(S_CONFIRMING)` cuối B17 (ngoài try) lỗi SAU khi ghi thành công → boundary thấy `begun` → E7
+  `execution_interrupted` + câu cảnh báo, không E9 (các ca boundary khác: `test_boundary_begun.py`).
 """
 
-from collections.abc import Iterator
+import asyncio
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+import httpx
 import ormsgpack
 import pytest
 from app.core.clock import FakeClock
@@ -42,6 +49,7 @@ from langgraph.checkpoint.serde.jsonplus import EXT_PYDANTIC_V2
 from tests.fakes.executor import FakeVpnWrites, MemoryTxLog, http_error
 from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import FakeAd, ad_user
+from tests.unit.test_executor_vpn import AFTER_BEGIN, SECRET_BODY, fail_after_send
 
 pytestmark = pytest.mark.asyncio
 
@@ -91,7 +99,7 @@ class Env:
     @contextmanager
     def run(self) -> Iterator[None]:
         with bind_run(RunContext(turn_id="T1", trace_id="0" * 32, audit=self.h.audit, effects=self.h.effects,
-                                 spans=self.h.spans, clock=self.clock)):  # fmt: skip
+                                 spans=self.h.spans, clock=self.clock, txlog=self.txlog)):  # fmt: skip
             yield
 
     async def node(self, state: dict[str, Any], *, boundary: bool = False) -> dict[str, Any]:
@@ -547,3 +555,88 @@ async def test_s12_worker_refusing_executor_with_begun_is_exec_interrupted() -> 
     assert out["escalation_note"] == b17_execute.INTERRUPTED_NOTE
     detail = env.detail("exec_interrupted")
     assert detail["write_calls"] == 0 and "stage" not in detail and detail["matched_rule_id"] == "R20"
+
+
+# ---- Chốt FAIL mục 7 (soát DỪNG 3b) ---------------------------------------------------------------------------------------
+
+MAY_HAVE_WRITTEN = "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay"
+
+
+@pytest.mark.parametrize("kind", AFTER_BEGIN)
+async def test_fail7_error_after_begin_is_e7_warning_not_e9(kind: str) -> None:
+    env = Env(IN_HOURS)
+    fail_after_send(env.writes, kind)
+    out = await env.node(_state(), boundary=True)
+    assert (out["exit_code"], out["escalation_reason_detail"]) == ("E7", "exec_interrupted")
+    assert out["escalation_note"] == b17_execute.INTERRUPTED_NOTE and MAY_HAVE_WRITTEN in out["escalation_note"]
+    detail = env.detail("exec_interrupted")
+    assert (detail["cause"], detail["write_calls"]) == (kind, 1)  # chỉ tên lớp lỗi
+    assert SECRET_BODY not in repr(env.h.audit.rows) and env.h.audit.of("t1", "unhandled_exception") == []
+    assert env.writes.calls == {"renew_vpn_cert": 1}
+    rerun = await env.node(_state(), boundary=True)  # recover chạy lại B17: bước 0 thấy begun → E7, không POST lần 2
+    assert rerun["exit_code"] == "E7" and env.writes.calls == {"renew_vpn_cert": 1}
+
+
+@pytest.mark.parametrize("where", ["txlog.begin", "ad_recheck"])
+@pytest.mark.parametrize(
+    "exc", [httpx.ReadError("x"), httpx.RemoteProtocolError("x"), ValueError("x")], ids=["ReadError", "RemoteProtocol", "json"]
+)  # fmt: skip
+async def test_fail7_same_errors_before_begun_are_e9(where: str, exc: Exception) -> None:
+    env = Env(IN_HOURS)
+    if where == "ad_recheck":
+        env.ad.crash = exc  # lỗi ở bước [3] (đọc AD) — trước executor
+    else:
+
+        async def begin(*_: object) -> None:
+            raise exc
+
+        env.txlog.begin = begin  # type: ignore[method-assign]
+    out = await env.node(_state(), boundary=True)
+    assert (out["status"], out["exit_code"]) == (S_ESCALATED, "E9")
+    assert env.writes_total() == 0 and env.txlog.rows == []
+
+
+async def test_fail7_cancelled_after_begin_propagates_through_node() -> None:
+    env = Env(IN_HOURS)
+    env.writes.faults["renew_vpn_cert"] = asyncio.CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        await env.node(_state(), boundary=True)
+    assert env.writes.calls == {"renew_vpn_cert": 1} and env.h.audit.of("t1", "exec_interrupted") == []
+
+
+async def test_fail7_b18_error_after_successful_write_is_e7_not_e9() -> None:
+    """Ghi xong, gửi tin kết quả (B18) lỗi → E7 kèm câu cảnh báo và `execution`; không bao giờ E9 "xử lý thủ công"."""
+    env = Env(IN_HOURS)
+
+    async def notify_fails(*_: object) -> str:
+        raise RuntimeError(SECRET_BODY)
+
+    env.h.notifier.notify_user = notify_fails  # type: ignore[method-assign]
+    out = await env.node(_state(), boundary=True)
+    assert (out["exit_code"], out["escalation_reason_detail"]) == ("E7", "exec_interrupted")
+    assert MAY_HAVE_WRITTEN in out["escalation_note"] and out["execution"].success
+    detail = env.detail("exec_interrupted")
+    assert (detail["stage"], detail["cause"], detail["write_calls"]) == ("b18", "RuntimeError", 1)
+    assert SECRET_BODY not in repr(env.h.audit.rows) and env.writes.calls == {"renew_vpn_cert": 1}
+
+
+async def test_t21_final_goto_error_after_write_is_e7_not_e9() -> None:
+    """Việc treo 21: ghi xong, B18 xong, `goto(S_CONFIRMING)` cuối B17 (ngoài try) lỗi — audit sập → boundary thấy `begun` →
+    E7 `execution_interrupted` + câu cảnh báo; không E9, chạy lại B17 không POST lần 2."""
+    env = Env(IN_HOURS)
+    real = env.h.audit.record
+
+    async def record(row: Mapping[str, Any], **kw: Any) -> bool:
+        if row["event"] == "executed_ok":
+            raise RuntimeError("audit sập")
+        return await real(row, **kw)
+
+    env.h.audit.record = record  # type: ignore[method-assign]
+    out = await env.node(_state(), boundary=True)
+    assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (S_ESCALATED, "E7", "execution_interrupted")
+    assert MAY_HAVE_WRITTEN in out["escalation_note"]
+    [row] = env.h.audit.of("t1", "unhandled_exception")
+    assert (row["step"], row["exit_code"], row["detail"]["begun"]) == ("b17_execute", "E7", True)
+    assert env.writes.calls == {"renew_vpn_cert": 1} and env.h.notifier.count("t1") == 1
+    rerun = await env.node(_state(), boundary=True)  # recover chạy lại B17: bước 0 → E7, không POST lần 2
+    assert rerun["exit_code"] == "E7" and env.writes.calls == {"renew_vpn_cert": 1}

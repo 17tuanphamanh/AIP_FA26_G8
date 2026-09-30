@@ -34,6 +34,7 @@ from app.rag.models import RetrievalQuery, RetrievalSystemError
 from app.tools.breaker import BreakerBoard, CircuitBreaker
 from app.tools.models import UserDeviceRequiredIn, UserIn
 from app.tools.registry import ToolRegistry
+from tests.fakes.executor import MemoryTxLog
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.identity import SESSION, ad_user
@@ -309,7 +310,7 @@ async def test_b8_turn_budget_exceeded_goes_e2_via_boundary() -> None:
              "intent": "vpn", "slots": {}, "requester_context": _ctx(), "reasoning_loops": 2}  # fmt: skip
     audit = MemoryAudit()
     run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
-                     clock=clock)  # fmt: skip
+                     clock=clock, txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run), turn(clock, 0.0):
         out = await node(state)
     assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (

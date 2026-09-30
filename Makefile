@@ -21,7 +21,8 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 models ml-bench rerank-bench
+.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 vpn-smoke models ml-bench \
+	rerank-bench
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -117,6 +118,18 @@ tokenizer:
 S ?= preflight
 gate2:
 	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate2 $(S)
+
+# Cổng 3 trên stack compose thật (phase3 11.6; backend/tests/stack/README.md). Node THẬT: .env KHÔNG đặt FAKE_SCENARIO,
+# LLM_BACKEND=scripted (preset config/scripted/tc*.yaml), có SVC_EXECUTOR_TOKEN + FAKE_APPROVER_ID; KB fixture:
+# make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated. Route tính theo giờ lúc chạy (in đầu bảng).
+# tc28 tự `compose stop qdrant` rồi `start` lại. Ví dụ: make gate3 S=preflight | make gate3 S=tc02 | make gate3 S=all
+gate3:
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate3 $(S)
+
+# Smoke luồng VPN (phase3 11.9): tc02, tc04, tc05, tc06 với LLM_BACKEND hiện hành + số liệu llm_calls. Với real: TỪ CHỐI
+# khi spend.cap_usd (config container backend đang nạp) > 1 hoặc model chưa có pricing — README "Chạy smoke LLM thật".
+vpn-smoke:
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.vpn_smoke
 
 # Tải model của ml-service về $(MODELS_DIR), ghim revision HF ở ml_service/models.lock.json (lần đầu ghi
 # SHA — commit file lock; các lần sau tải đúng SHA đã ghim, lock lệch → dừng). Cần mạng tới huggingface.co,

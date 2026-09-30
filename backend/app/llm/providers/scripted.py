@@ -13,7 +13,6 @@ khi `APP_ENV` ∈ {dev, test} (`Settings.require_llm_backend`). Nằm trong `app
 """
 
 import json
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +24,7 @@ from sqlalchemy import Table, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.clock import Clock
+from app.core.fake_tag import FAKE_TAG
 from app.db.models import Ticket, Turn
 from app.llm.context import estimate_tokens
 from app.llm.errors import ScriptExhausted
@@ -34,7 +34,6 @@ from app.llm.registry import PromptRegistry
 
 NAME = "scripted"
 DEFAULT_PRESET = "default"
-FAKE_TAG = re.compile(r"\[fake:([a-z0-9_]+)\]")  # cùng cú pháp graph/fakes.FAKE_TAG (test đối chiếu)
 
 
 # ---- Bước kịch bản (7.5) -----------------------------------------------------------------------------------

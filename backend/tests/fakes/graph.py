@@ -538,7 +538,7 @@ class GraphHarness:
             concurrency=self.concurrency, can_execute=self.can_execute,
             rediagnose_on_new_slot=self.rediagnose_on_new_slot,
             recursion_limit=self.recursion_limit, max_recover_attempts=self.max_recover_attempts,
-            tickets=self.tickets,
+            tickets=self.tickets, txlog=self.txlog,
         )  # fmt: skip
 
     def restart(self, *, can_execute: bool | None = None) -> Runner:

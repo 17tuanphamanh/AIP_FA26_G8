@@ -18,6 +18,10 @@ Bảng: phase3 10.6 M-3g-1…6 + đề bài 3g M-3g-7…14 + PLAN-3g M-3g-15…1
 - M-3g-6 "e2e canary": 3g chưa có e2e (3h) — đo bằng g4 unit + node B10/B11 (P4).
 
 Mỗi đột biến chạy TRỌN các file test của chặng (không chỉ test dự đoán) để thấy cả test đỏ ngoài dự đoán.
+
+Luật N3 (vá ở 3h, `n3.py`): trước đột biến đầu tiên (a) file đích còn chữ `MUTATION` → dừng; (b) chạy mốc xanh một lần mỗi lệnh
+test — đỏ → dừng. Mọi file sau khi áp đột biến phải mang chữ `MUTATION` (thiếu → đột biến bị bỏ qua, tính là lỗi) — M-3g-4,
+M-3g-7/7b, M-3g-11 trước đây thay chữ không để dấu, nay thêm dấu vô hại (`(x, "MUTATION …")[0]`, dòng chú thích).
 """
 
 import hashlib
@@ -27,6 +31,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+import n3  # scripts/mutation/n3.py — cùng thư mục (sys.path[0] khi chạy script)
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -90,6 +96,7 @@ _EXPANDED = (
     "for b in evidence for d in (-1, 0, 1)}  # MUTATION M-3g-13 hậu kiểm trên bằng chứng đã mở rộng\n"
 )
 _SUB = '\n            sub=f"q{n}",'
+_NO_SUB = "\n            # MUTATION bỏ sub"
 _KEY = '        key=effect_key(state["ticket_id"], step, run.turn_id, loop_seq, kind, sub),\n'
 _SANITIZE = "got.slots, text=text, allowed=frozenset(missing)"
 _B11_ERRORS = 'for r in results if r.error is not None]:\n'
@@ -117,7 +124,7 @@ UNIT = [
              pt(*UT), ["test_graph_nodes_never_call_side_effects_directly", G2_UNIT,
                        "test_rerun_same_turn_sends_nothing_more_single_lineage"]),
     Mutation("M-3g-4 extract_slots không giới hạn allowed=missing",
-             [one(CLARIFY, _SANITIZE, "got.slots, text=text, allowed=None")],
+             [one(CLARIFY, _SANITIZE, 'got.slots, text=text, allowed=(None, "MUTATION M-3g-4")[0]')],
              pt(*UT), ["test_g16_fact_in_reply_dropped_device_facts_from_tool"]),
     Mutation("M-3g-5 >= → > ở kiểm lượt hỏi",
              [one(B11, "        if turns >= deps.constants.MAX_CLARIFICATION_TURNS:\n",
@@ -132,10 +139,10 @@ UNIT = [
                        "test_output_guard_blocks_before_sending", "test_g20_question_with_canary_blocked_e3_no_notify"]),
     Mutation("M-3g-7 khoá effects B11 không theo lượt (bỏ turn_id + bỏ sub)",
              [one(EFFECTS, _KEY, _KEY.replace("run.turn_id", '""').rstrip("\n") + "  # MUTATION M-3g-7\n"),
-              (B11, _SUB, "", 2)],
+              (B11, _SUB, _NO_SUB, 2)],
              pt(*UT), [G13, "test_g25_b11_effects_keyed_per_question_turn"]),
     Mutation("M-3g-7b chỉ bỏ sub (khoá vẫn có turn_id) — TƯƠNG ĐƯƠNG",
-             [(B11, _SUB, "", 2)],
+             [(B11, _SUB, _NO_SUB, 2)],
              pt(*UT), ["test_g25_b11_effects_keyed_per_question_turn"], keep_green=(G13,), equivalent=True),
     Mutation("M-3g-8 bỏ output guard ở câu hỏi B11",
              [one(B11, '        info["guard"] = deps.output_guard.violation(q.text)\n',
@@ -152,7 +159,8 @@ UNIT = [
              pt(*UT), ["test_g19_raw_reply_redacted_before_llm_and_conversation",
                        "test_extract_llm_errors_e2_reply_stored_redacted"]),
     Mutation("M-3g-11 sanitize_slots text=redacted_request thay vì câu trả lời",
-             [one(CLARIFY, _SANITIZE, 'got.slots, text=state["redacted_request"], allowed=frozenset(missing)')],
+             [one(CLARIFY, _SANITIZE,
+                  'got.slots, text=(state["redacted_request"], "MUTATION M-3g-11")[0], allowed=frozenset(missing)')],
              pt(*UT), ["test_g12_two_devices_ask_then_unregistered_pc"]),
     Mutation("M-3g-12 lỗi tool validate_targets bị cho qua",
              [one(B11, _B11_ERRORS, "for r in results if False]:  # MUTATION M-3g-12\n")],
@@ -222,6 +230,9 @@ def _hit(test: str, failed: list[str]) -> bool:
 def main() -> int:
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     files = sorted({rel for m in MUTATIONS for rel, *_ in m.edits})
+    stop = n3.guard(REPO, files, [m.cmd for m in MUTATIONS], env)  # N3: không dấu sót, mốc xanh
+    if stop is not None:
+        return stop
     before = {rel: md5(REPO / rel) for rel in files}
     for rel in files:
         print(f"md5 trước  {before[rel]}  {rel}")
@@ -237,6 +248,11 @@ def main() -> int:
             continue
         for rel, old, new, _ in m.edits:
             mutated[rel] = mutated[rel].replace(old, new)
+        unmarked = [rel for rel, text in mutated.items() if n3.MARK not in text]
+        if unmarked:
+            print(f"!! {m.name}: file đột biến thiếu chữ {n3.MARK!r} {unmarked} — bỏ qua (N3a không bắt được nếu bị giết)")
+            bad += 1
+            continue
         try:
             for rel, text in mutated.items():
                 (REPO / rel).write_text(text, encoding="utf-8")
