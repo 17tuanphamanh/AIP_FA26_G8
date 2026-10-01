@@ -1,6 +1,6 @@
 # Phase 4 — Thiết kế chi tiết (HITL: B15–B16, nhắc, xem phiếu, ghi đè, audit)
 
-*Thuộc bộ `build/`. Phiên bản **1.3 — 01/10/2026** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c DỪNG 1** mục 6.4) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
+*Thuộc bộ `build/`. Phiên bản **1.4 — 01/10/2026** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c xong**: DỪNG 1 `aac90b1` mục 6.4; DỪNG 2 mục 6.5) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
 
 *Nhãn: **[Chốt]** spec đã chốt · **[Đề xuất]** chờ Tuấn Anh chốt · **[Suy luận]** rút từ code/spec, agent phải kiểm lại trên code.*
 
@@ -624,6 +624,23 @@ Khi 6.1–6.3 hoặc 5.7 nói khác bảng này, **bảng này thắng**. Kết 
 | 7 | A12 | `approvals.created_at` theo giờ DB, `deadline` theo giờ app — chấp nhận (cùng máy); mốc nhắc theo `created_at`, hạn QUYẾT vẫn theo giờ app → không ảnh hưởng an toàn. Test PG tự đặt `created_at` |
 | 8 | Test cũ đổi | `test_goto_audit_columns.py` thêm khoá `note` (Q-4c-1); `test_guard_api.py` đổi chỗ import `ReasonCode` sang `domain.messages` (kỳ vọng giữ) |
 
+### 6.5. Chốt khi hiện thực 4c — DỪNG 2 (01/10/2026, mốc `aac90b1`)
+
+Khi 6.1–6.4 nói khác bảng này, **bảng này thắng**. Kết quả `make verify G=23` (15:56 → 16:11, HEAD `aac90b1` + cây chưa commit, `env=.env`): lint PASS (import-linter 10/10) · backend **3637** (= 3358 unit + 279 integration/e2e, trong đó 12 PG mới), 0 skip · mock 100 · ml 77 · gate2 **89/0** · gate3 **66/0** (TRONG giờ) · trả về `.env` PASS. Test-writer 66 test mới (unit 40 đỏ đúng lý do / 14 xanh canh trước code). Mutation DỪNG 2 **5/5** (unit M-4c-3, 4, 5, 6 + SQL M-4c-3b) → **cả 4c 10/10**; md5 khớp. Security-reviewer **0 FAIL / 5 NGHI** — 3 đã sửa (S4b, S1c, R1), 1 thành Q-4c-3, 2 thành Việc treo 28, 29.
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | P4 | MỘT hàm `auth/authz.approval_role(p, a) -> "primary" \| "backup" \| None` (có quyền + người được giao → `primary`; dự phòng **và** `reminder_2_at` không NULL → `backup`; xung đột → None). `may_decide_as` = `approval_role(...) is not None`. Route quyết, xem phiếu, hộp thư dùng chung hàm này. Sự kiện và thân 202 mang `decided_as` (giá trị do server tính, không lấy từ body) |
+| 2 | P5 (hộp thư) | Lọc vai trò bằng SQL ở `WHERE` **trước** `LIMIT 50` (không lọc sau khi đã cắt 50); lọc xung đột ở route → có thể trả < 50. `status` **không** bắt buộc (thiếu = mọi trạng thái). Lỗi `mine`/`status` → 422, kiểm **sau** bước quyền. Nối dòng audit B15 `queued` theo `ticket_id` **+** `action_plan_hash` (`LEFT JOIN LATERAL`). B15 giả (gate2) không ghi `intended_action` → `action_type`/`device_id` null |
+| 3 | P6 (xem phiếu) | `ApprovalView` **12** khoá (đúng 12 tên P6 kể; "13" trong PLAN là lỗi đếm). `role_as` ∈ {`primary`, `backup`, `viewer`} (`viewer` = manager). Thứ tự: quyền trước → không được xem → **404 cùng thân với id không tồn tại** → rồi mới so hash. So `hash_action(action)` với hash của **PHIẾU** (`ApprovalRow.action_plan_hash`), không với hash trong state; không có action → 409 `plan_changed`. Phiếu đã đóng vẫn xem được, **không** ghi `first_viewed_at`. Dự phòng = người gửi → 404 (c6 mở rộng). `procedure` null khi hành động không có trong `action_metadata`; tài liệu chỉ ở bản KB cũ → chỉ `doc_id` |
+| 4 | Route quyết (soát S4b) | Ghi chú từ chối **rỗng sau khi che** (vd chỉ ký tự vô hình U+200B, U+00AD) → 422 `rejected_requires_note`. B16 giữ `""` (dùng `is not None`, không đổi thành None) → không câu "Ghi chú…". Trước khi sửa: lọt `strip()` → `close` vi phạm CHECK `rejected_needs_note` → E9 |
+| 5 | Id phiếu (soát S1c) | `approval_id` trên đường dẫn chỉ nhận `[0-9]{1,18}`; khác (vd `"²"`, quá BIGINT) → **404**, không chạm DB (trước: 500) |
+| 6 | Test AST (soát R1) | `decided_as` **không** vào `TYPED_KEYS` (miễn trừ theo tên khoá toàn cục quá rộng). Luật hẹp `ROLE_KEYS`: chỉ nhận biến mà MỌI lần gán trước cổng là `approval_role(...)` import thẳng từ `app.auth.authz`. Self-check 5 ca |
+| 7 | Q-4c-3 = A | Route **quyết** giữ **403** + `permission_denied` cho phiếu có thật nhưng không được giao (đúng c5, c6, b2/b2b, g4-06); route **xem** trả 404. Lý do: id BIGINT tăng dần nên tồn tại phiếu vốn đoán được; 403 + `permission_denied` là tín hiệu dò phiếu cho M9. → Việc treo 30 |
+| 8 | Mutation thêm | **M-4c-3b** (SQL `inbox` bỏ `AND a.reminder_2_at IS NOT NULL`) → test PG lọc vai trò đỏ. Lớp IDOR ở SQL độc lập với `approval_role` (unit không giết được vì `approval_role` chặn lại) |
+| 9 | Log | `_audit_action` hỏng → `log.warning` chỉ id phiếu (nội dung không vào log) |
+| 10 | Việc treo mới | **28** `first_viewed_at` là MỘT cột cho cả phiếu → dự phòng mở, người chính duyệt không mở → `decided_without_view=false`; luật 7 M9 bỏ sót (cần lần xem theo người — migration, sau Phase 4; báo M9 khi xong). **29** B17 so hash với state, không với phiếu → **làm ở 4d** (7.1 P7). **30** đổi id phiếu sang UUID → thống nhất route quyết + xem về 404 |
+
 ---
 
 ## 7. Chặng 4d — Ghi đè + `audit_check` + e2e cổng 4 + `make gate4` (tầng A)
@@ -640,6 +657,7 @@ Khi 6.1–6.3 hoặc 5.7 nói khác bảng này, **bảng này thắng**. Kết 
 | P4 | Ghi **1** dòng `audit_logs`: `step="OVERRIDE"`, `event="override_recorded"`, `from_status/to_status` NULL, cột `original_decision`, `override_decision`, `overrider_id` (ghi **thẳng** bằng `AuditWriter` — không qua `goto`/`audit_columns`, vì `_POINT_COLUMNS` 4b chỉ có 4 khoá điểm 5–6; 5.7 #4), `note` (đã che), `detail={reason_code}`; `idempotency_key = sha256("override:" + ticket_id + ":" + overrider_id)` → người đó ghi lần 2 → **409 `already_overridden`** (đúng 1 dòng). **Không** đổi `tickets`, không checkpoint, không `start_event`, không executor |
 | P5 | `scripts/audit_check.py` (+ `make audit-check ARGS=…`): đầu vào danh sách `ticket_id` hoặc `--since <ISO>`; mỗi ticket → xác định điểm log áp dụng theo event có mặt (bảng 7.2) → kiểm cột/khoá bắt buộc; quét **mọi** cột text/jsonb của `audit_logs` (+ file log nếu `--log`) bằng luật `secret` của `config/privacy_patterns.json` + danh sách canary (`--canary`) → 0 kết quả. In bảng `ticket | điểm thiếu | trường thiếu`, thoát 1 khi có lỗi. Chỉ đọc (role `app_ro` nếu có, không thì `app_rw` chỉ SELECT) |
 | P6 | `make gate4` (khuôn gate3, chốt an toàn: `APP_ENV=dev`, URL 127.0.0.1, `LLM_BACKEND=scripted`, `FAKE_SCENARIO` không đặt, **`APPROVAL_SLA_MINUTES_DEV=2`** phải đặt — kiểm CÓ/KHÔNG). `make verify G=4` tạo lại backend+worker với `FAKE_SCENARIO= APPROVAL_SLA_MINUTES_DEV=2` rồi trả về `.env` như 4a |
+| P7 | **Việc treo 29 (từ 6.5 #10):** B17 so thêm `hash_action(action)` với `approvals.action_plan_hash` (`ApprovalRow` đã có trường, B17 đã đọc `row`) — lệch → E5 `action_plan_changed_since_approval`, 0 lời gọi ghi. Test cùng i8 (đổi hash phiếu bằng SQL) + mutation "B17 bỏ so hash phiếu" |
 
 ### 7.2. Điểm log áp dụng (cho `audit_check`)
 
@@ -687,7 +705,7 @@ Ghi đè đổi `tickets.final_state` (i13) · bỏ `recent_login=True` ở rout
 
 ### 7.6. DỪNG
 
-- **DỪNG 1:** ghi đè (P1–P4) + `audit_check` (P5) + i13, i14, i17. `make verify G=23`.
+- **DỪNG 1:** ghi đè (P1–P4) + `audit_check` (P5) + B17 so hash phiếu (P7) + i13, i14, i17, i8. `make verify G=23`.
 - **DỪNG 2:** e2e còn lại + `make gate4` + mutation ×2 + security-reviewer + "spec cần sửa (4d)". `make verify G=234` rồi **thành viên** chạy `make gate4 S=all`.
 
 ---
@@ -698,7 +716,7 @@ Ghi đè đổi `tickets.final_state` (i13) · bỏ `recent_login=True` ở rout
 |---|---|---|---|
 | 4a ✓ | S0 `5ed423d` + DỪNG 2 `f64fd86` (CI 36726470829 xanh) | Phase 3 đóng `5d0a990` ✓; Q-4-U chốt ✓ | — |
 | 4b ✓ | DỪNG 1 `cd3f094` (CI 36750953436) + DỪNG 2 `3b9d745` (CI 36783587264) | 4a | — |
-| 4c | ~3 giờ | 4b | — |
+| 4c ✓ | DỪNG 1 `aac90b1` (CI 36823466624) + DỪNG 2 mục 6.5 | 4b | — |
 | 4d | ~4 giờ (2 DỪNG) | 4c | Dương/Duy Anh chạy `make gate4` + ký biên bản |
 
 Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutation 4b/4d ×2, 4c ×1 đủ; `make gate4 S=all` 0 FAIL do người không làm chính chạy; spec "Chốt khi hiện thực 4a–4d"; `decisions.md` §1.1 (R17–R19 thêm chủ máy) + §4.1 (Q-4-A…T).
@@ -708,6 +726,7 @@ Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutat
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 30/09/2026 | 0.1 | Tạo file: sự thật code `02ed795`; 10 lỗ hổng bổ sung G4-15…24; thuật toán chọn người duyệt theo [Chốt]; bảng test xung đột mới; 20 câu Q-4; chặng 4a đủ |
+| 01/10/2026 | 1.4 | 4c DỪNG 2: mục 6.5 "Chốt khi hiện thực" (10 dòng: `approval_role` một định nghĩa, hộp thư lọc SQL trước LIMIT, `ApprovalView` 12 khoá + 404/hash phiếu, ghi chú rỗng sau che → 422, id lạ → 404, AST `ROLE_KEYS`, Q-4c-3 = A, M-4c-3b, Việc treo 28–30); 4d thêm P7 (Việc treo 29); lịch 4c ✓ |
 | 01/10/2026 | 1.3 | 4c DỪNG 1: mục 6.4 "Chốt khi hiện thực" (Q-4c-1 `note` vào `_POINT_COLUMNS` — sửa 5.7 #4; Q-4c-2 nhắc trên `SqlDeadlineStore` — sửa P3; `decided_at` nhánh timeout; c4 Barrier; A12); lịch 4b CI 36783587264 |
 | 01/10/2026 | 1.2 | 4b DỪNG 2: mục 5.7 "Chốt khi hiện thực" (12 dòng: thứ tự B15 thật, event nhánh E, `peek`, `audit_columns` + 6 khoá detail, Q-4b-4 khoá `type`, `available`, Q-4b-8 ngoại lệ `ensure`, P13 detail, harness, gate3 Q-4b-7, mutation, M9); sửa 5.6 #4; 4c P2 (chỉ `response_time_seconds` qua `audit_columns`), 4c P5 (`intended_action->>'type'`), 4d P4 (ghi đè qua `AuditWriter`) |
 | 30/09/2026 | 1.1 | 4b DỪNG 1: mục 5.6 "Chốt khi hiện thực" (Q-4b-1…6, TQ-2/3/4/7, thứ tự kiểm khởi động, P7 + test dựa lỗ G4-16, seed 17 người, Việc treo); P13 sửa chữ nhánh lỗi AD của `decided_by` → E2 |

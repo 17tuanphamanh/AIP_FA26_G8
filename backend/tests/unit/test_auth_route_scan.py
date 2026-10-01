@@ -60,6 +60,8 @@ TICKET_ROUTES = {  # 2b-3 — mỗi route có đúng permission này (không ch�
     ("POST", "/api/tickets/{ticket_id}/messages"): "ticket:message",
     ("POST", "/api/tickets/{ticket_id}/confirm"): "ticket:confirm",
     ("POST", "/api/approvals/{approval_id}/decision"): "approval:decide",
+    ("GET", "/api/approvals"): "approval:decide",  # 4c P5 hộp thư
+    ("GET", "/api/approvals/{approval_id}"): "approval:decide",  # 4c P6 xem phiếu
 }
 
 

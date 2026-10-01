@@ -14,16 +14,21 @@
   TQ-8): `new` (B15, mặc định — `result_ref` giữ `log:{id}`), `reminder_1`/`reminder_2` (worker nhắc 50 %/80 %). `log_approver_notice` là
   MỘT định nghĩa cho cả B15 (qua phương thức này) lẫn worker nhắc (`WorkerJobs`, Q-4c-2 = A — `worker.py` không truyền `SqlApprovals`).
 - `get_status` (3h): B17 kiểm "đã duyệt" = state + bảng + hash (phase3 11.4 bước 1, P8).
+- 4c DỪNG 2 (P5, P6 — route hộp thư/xem phiếu; `main.py` dựng `Desk` với chính lớp này nên truy vấn mới nằm ở đây): `inbox` (phiếu
+  tôi được giao + dự phòng SAU nhắc 2, nối `tickets` lấy người gửi + dòng audit B15 `queued` cùng `action_plan_hash` lấy
+  `intended_action` — không đọc checkpoint), `mark_viewed` (`first_viewed_at` chỉ lần đầu, chỉ khi `pending`), `procedure_title`
+  (tiêu đề tài liệu quy trình ở bản KB hiện hành).
 """
 
 import logging
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from sqlalchemy import Table, insert, select, update
+from sqlalchemy import Table, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.db.models import Approval
@@ -34,6 +39,35 @@ log = logging.getLogger(__name__)
 _APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 
 type NoticeKind = Literal["new", "reminder_1", "reminder_2"]
+
+# 4c P5: vai trò lọc Ở SQL (trước LIMIT); hành động của phiếu = dòng audit B15 `queued` CÙNG ticket + `action_plan_hash` (mới nhất) —
+# không đọc checkpoint từng phiếu (5.7 #5). Xung đột lợi ích lọc ở route (`authz.approval_role`).
+_INBOX_SQL = """
+SELECT a.approval_id, a.ticket_id, a.status, a.created_at, a.deadline, a.reminder_1_at, a.reminder_2_at,
+       a.approver_id, a.backup_approver_id, t.requester_id, q.intended_action
+FROM approvals a
+JOIN tickets t ON t.ticket_id = a.ticket_id
+LEFT JOIN LATERAL (
+    SELECT l.intended_action FROM audit_logs l
+    WHERE l.ticket_id = a.ticket_id AND l.step = 'B15' AND l.event = 'queued' AND l.action_plan_hash = a.action_plan_hash
+    ORDER BY l.created_at DESC, l.log_id DESC LIMIT 1
+) q ON true
+WHERE (a.approver_id = :me OR (a.backup_approver_id = :me AND a.reminder_2_at IS NOT NULL)) {status}
+ORDER BY a.created_at DESC, a.approval_id DESC
+LIMIT :limit
+"""
+_INBOX = text(_INBOX_SQL.format(status=""))
+_INBOX_BY_STATUS = text(_INBOX_SQL.format(status="AND a.status = :status"))
+# 4c P6: ghi lần xem ĐẦU, chỉ khi phiếu còn chờ.
+_MARK_VIEWED = text(
+    "UPDATE approvals SET first_viewed_at = :now WHERE approval_id = :id AND first_viewed_at IS NULL AND status = 'pending' "
+    "RETURNING approval_id"
+)
+# 4c P6: tài liệu ở bản KB HIỆN HÀNH (`kb_documents.kb_version` chỉ có ở tài liệu bật — Q-3b-2).
+_PROCEDURE_TITLE = text(
+    "SELECT d.title FROM kb_documents d JOIN kb_versions v ON v.kb_version = d.kb_version "
+    "WHERE v.is_current AND d.doc_id = :doc ORDER BY d.version DESC LIMIT 1"
+)
 
 
 async def log_approver_notice(approval_id: str, approver_id: str, kind: NoticeKind = "new") -> str:
@@ -60,6 +94,25 @@ class ApprovalRow:
     reminder_1_at: datetime | None
     reminder_2_at: datetime | None
     decided_at: datetime | None
+    action_plan_hash: str  # 4c P6: xem phiếu so `hash_action(action trong checkpoint)` với giá trị đã băm lúc tạo phiếu
+
+
+@dataclass(frozen=True)
+class InboxRow:
+    """Một dòng hộp thư (P5): cột phiếu + người gửi (lọc xung đột ở route) + `intended_action` của dòng audit B15 `queued` (None
+    khi B15 giả không ghi)."""
+
+    approval_id: str
+    ticket_id: str
+    status: str
+    created_at: datetime
+    deadline: datetime
+    reminder_1_at: datetime | None
+    reminder_2_at: datetime | None
+    approver_id: str
+    backup_approver_id: str | None
+    requester_id: str
+    intended_action: dict[str, Any] | None
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -73,12 +126,15 @@ def _row(r: Any) -> ApprovalRow:
         note=r.note, first_viewed_at=_utc(r.first_viewed_at),
         backup_approver_id=r.backup_approver_id, conflict_detected=r.conflict_detected, conflict_type=r.conflict_type,
         created_at=r.created_at.astimezone(UTC), reminder_1_at=_utc(r.reminder_1_at), reminder_2_at=_utc(r.reminder_2_at),
-        decided_at=_utc(r.decided_at),
+        decided_at=_utc(r.decided_at), action_plan_hash=r.action_plan_hash,
     )  # fmt: skip
 
 
+_PK = re.compile(r"[0-9]{1,18}")  # soát 4c S1c: `isdigit()` nhận "²" (int() ném → 500) và số > BIGINT; ≤ 18 chữ số < 2^63
+
+
 def _approval_pk(approval_id: str) -> int | None:
-    return int(approval_id) if approval_id.isdigit() else None
+    return int(approval_id) if _PK.fullmatch(approval_id) else None
 
 
 class SqlApprovals:
@@ -142,6 +198,32 @@ class SqlApprovals:
         async with self._engine.connect() as conn:
             r = (await conn.execute(select(_APPROVALS).where(_APPROVALS.c.approval_id == pk))).first()
         return None if r is None else _row(r)
+
+    async def inbox(self, user_id: str, status: str | None, limit: int) -> list[InboxRow]:
+        params: dict[str, Any] = {"me": user_id, "limit": limit}
+        if status is not None:
+            params["status"] = status
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(_INBOX_BY_STATUS if status is not None else _INBOX, params)
+            return [InboxRow(
+                approval_id=str(r.approval_id), ticket_id=r.ticket_id, status=r.status, created_at=r.created_at.astimezone(UTC),
+                deadline=r.deadline.astimezone(UTC), reminder_1_at=_utc(r.reminder_1_at),
+                reminder_2_at=_utc(r.reminder_2_at), approver_id=r.approver_id, backup_approver_id=r.backup_approver_id,
+                requester_id=r.requester_id, intended_action=r.intended_action,
+            ) for r in rows]  # fmt: skip
+
+    async def mark_viewed(self, approval_id: str, now: datetime) -> bool:
+        pk = _approval_pk(approval_id)
+        if pk is None:
+            return False
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(_MARK_VIEWED, {"id": pk, "now": now})).first()
+        return row is not None
+
+    async def procedure_title(self, doc_id: str) -> str | None:
+        async with self._engine.connect() as conn:
+            title = (await conn.execute(_PROCEDURE_TITLE, {"doc": doc_id})).scalar()
+        return None if title is None else str(title)
 
     async def get_status(self, approval_id: str) -> str | None:
         """B17 (3h, P8): "đã duyệt" đọc cả BẢNG, không chỉ state. Không có phiếu → None."""

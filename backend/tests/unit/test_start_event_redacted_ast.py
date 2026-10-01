@@ -27,6 +27,10 @@ APP = Path(app.__file__).parent
 SINKS = frozenset({"start_event", "deliver_event", "resume", "resume_locked"})
 EVENT_ARG = {"start_event": 3, "deliver_event": 3, "resume": 1, "resume_locked": 1}  # vị trí đối số sự kiện
 TYPED_KEYS = frozenset({"kind", "approver_id", "at", "reason_code", "view_duration"})
+# 4c P4 (soát S11 R1): `decided_as` KHÔNG miễn theo tên khoá (toàn cục) — chỉ nhận một TÊN mà MỌI lần gán trong hàm, trước cổng, là
+# `approval_role(...)` import thẳng từ `app.auth.authz` (Literal "primary" | "backup" do server tính).
+ROLE_KEYS = frozenset({"decided_as"})
+ROLE_FUNC, ROLE_MODULE = "approval_role", "app.auth.authz"
 REDACT_MODULE = "app.api.desk"
 EXPECTED_USER_TEXT = {
     ("api/tickets.py", "post_message", "text"), ("api/tickets.py", "confirm", "note"),
@@ -135,6 +139,23 @@ def _clean(fn: Fn, before: int, trusted: bool) -> set[str]:
     return clean
 
 
+def _role_names(tree: ast.Module, fn: Fn, before: int) -> set[str]:
+    """Tên chỉ được gán từ `approval_role(...)` (import thẳng, không bí danh) trước cổng — giá trị kiểu chặt do server tính."""
+    if not any(
+        isinstance(n, ast.ImportFrom) and n.module == ROLE_MODULE and any(a.name == ROLE_FUNC and a.asname is None for a in n.names)
+        for n in tree.body
+    ):
+        return set()
+    simple, other = _bindings(fn)
+
+    def is_role(value: ast.expr) -> bool:
+        value = value.value if isinstance(value, ast.Await) else value
+        return isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id == ROLE_FUNC
+
+    return {name for name, assigns in simple.items()
+            if name not in other and all(line < before for _, line in assigns) and all(is_role(v) for v, _ in assigns)}  # fmt: skip
+
+
 def _mutated(fn: Fn, name: str) -> bool:
     for n in _own_nodes(fn):
         if isinstance(n, ast.Subscript) and isinstance(n.ctx, ast.Store | ast.Del) and isinstance(n.value, ast.Name) \
@@ -178,12 +199,15 @@ def check_call(tree: ast.Module, fn: Fn, outer: list[Fn], call: ast.Call) -> tup
     if event is None:
         return [], []
     clean = _clean(fn, call.lineno, _redact_trusted(tree))
+    roles = _role_names(tree, fn, call.lineno)
     free: list[str] = []
     bad: list[str] = []
     for key, value in zip(event.keys, event.values, strict=True):
         if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
             raise Unparsable(f"{fn.name}:{call.lineno}: khoá sự kiện không phải chuỗi hằng (hoặc `**`)")
         if key.value in TYPED_KEYS or isinstance(value, ast.Constant):
+            continue
+        if key.value in ROLE_KEYS and isinstance(value, ast.Name) and value.id in roles:
             continue
         used = {n.id for n in ast.walk(value) if isinstance(n, ast.Name)}
         (free if used and used <= clean else bad).append(key.value)
@@ -273,6 +297,33 @@ _UNPARSABLE = {
     "dict-call": 'await start_event(r, "t", "S", dict(text=body.text))',
     "tham-so-helper": None,  # dựng riêng bên dưới
 }
+
+
+_ROLE_HEAD = "from app.auth.authz import approval_role\nfrom app.graph.late_event import start_event\n"
+_ROLE = {  # tên → (thân hàm, khoá chữ tự do KHÔNG sạch mong đợi)
+    "vai-tro-tu-approval-role": (('role = approval_role(p, a, x)\n    await start_event(r, "t", "S", {"kind": "approved", '
+                                  '"decided_as": role})'), []),
+    "decided-as-tu-body": ('await start_event(r, "t", "S", {"kind": "approved", "decided_as": body.role})', ["decided_as"]),
+    "gan-lai-tu-body": (('role = approval_role(p, a, x)\n    role = body.role\n'
+                         '    await start_event(r, "t", "S", {"decided_as": role})'), ["decided_as"]),
+    "gan-sau-cong": (('await start_event(r, "t", "S", {"decided_as": role})\n    role = approval_role(p, a, x)'), ["decided_as"]),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_ROLE))
+def test_n1_self_check_decided_as_only_from_approval_role(name: str) -> None:
+    """Soát S11 R1: `decided_as` chỉ sạch khi là tên gán từ `approval_role(...)` (import thẳng) — chữ người dùng → đỏ."""
+    body, keys = _ROLE[name]
+    src = _ROLE_HEAD + f"\nasync def route(d, r, body, p, a, x):\n    {body}\n"
+    [(_, bad)] = scan(ast.parse(src)).values()
+    assert bad == keys
+
+
+def test_n1_self_check_decided_as_alias_import_not_trusted() -> None:
+    src = ("from app.auth.authz import approval_role as ar\nfrom app.graph.late_event import start_event\n"
+           "\nasync def route(r, p, a, x):\n    role = ar(p, a, x)\n    await start_event(r, 't', 'S', {'decided_as': role})\n")
+    [(_, bad)] = scan(ast.parse(src)).values()
+    assert bad == ["decided_as"]
 
 
 def _one(src: str) -> tuple[list[str], list[str]]:

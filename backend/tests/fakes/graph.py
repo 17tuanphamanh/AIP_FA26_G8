@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from app.approval.store import ApprovalRow, NoticeKind
+from app.approval.store import ApprovalRow, InboxRow, NoticeKind
 from app.audit.writer import check_audit_row
 from app.auth.models import UserRecord
 from app.auth.service import auth_config, lock_policy
@@ -235,11 +235,15 @@ class MemoryApprovals:
     `approver_id`/`backup_approver_id` chưa có dòng → `ValueError` như FK Postgres (M-4b-12 chết ở unit)."""
 
     def __init__(
-        self, deadlines: MemoryDeadlines, *, clock: Clock, users: Mapping[str, Any] | None = None
-    ) -> None:
+        self, deadlines: MemoryDeadlines, *, clock: Clock, users: Mapping[str, Any] | None = None,
+        audit: "MemoryAudit | None" = None, tickets: "MemoryTickets | None" = None,
+    ) -> None:  # fmt: skip
         self._table = deadlines.approvals
         self._clock = clock
         self._users = users
+        self._audit = audit  # 4c P5: `inbox` lấy `intended_action` từ dòng audit B15 `queued` (như SQL)
+        self._tickets = tickets  # 4c P5: `inbox` lấy người gửi (như JOIN tickets)
+        self.titles: dict[str, str] = {}  # 4c P6: tiêu đề tài liệu quy trình theo doc_id (bảng kb_documents giả)
         self.notified: list[tuple[str, str]] = []  # B15 (`kind="new"`) — giữ 2-tuple như 4b
         self.reminded: list[tuple[str, str, str]] = []  # 4c P3: (approval_id, người nhận, reminder_1|reminder_2)
         self._row_locks: dict[str, asyncio.Lock] = {}
@@ -296,6 +300,7 @@ class MemoryApprovals:
             backup_approver_id=a.get("backup_approver_id"), conflict_detected=bool(a.get("conflict_detected", False)),
             conflict_type=a.get("conflict_type"), created_at=a.get("created_at", a["deadline"]),
             reminder_1_at=a.get("reminder_1_at"), reminder_2_at=a.get("reminder_2_at"), decided_at=a.get("decided_at"),
+            action_plan_hash=str(a.get("action_plan_hash", "")),
         )  # fmt: skip
 
     async def get(self, approval_id: str) -> ApprovalRow | None:
@@ -304,6 +309,37 @@ class MemoryApprovals:
     async def get_status(self, approval_id: str) -> str | None:
         row = self._row(approval_id)
         return None if row is None else row.status
+
+    async def inbox(self, user_id: str, status: str | None, limit: int) -> list[InboxRow]:
+        """Như SQL: vai trò lọc ở nguồn (được giao | dự phòng đã nhắc 2), [+ status], mới nhất trước."""
+        rows = []
+        for aid, a in self._table.items():
+            mine = a["approver_id"] == user_id or (a.get("backup_approver_id") == user_id and a.get("reminder_2_at") is not None)
+            if not mine or (status is not None and a["status"] != status):
+                continue
+            queued = [r for r in (self._audit.rows if self._audit else [])
+                      if (r["ticket_id"], r["step"], r["event"]) == (a["ticket_id"], "B15", "queued")
+                      and r.get("action_plan_hash") == a.get("action_plan_hash")]  # fmt: skip
+            ticket = self._tickets.rows.get(a["ticket_id"], {}) if self._tickets else {}
+            rows.append(InboxRow(
+                approval_id=aid, ticket_id=a["ticket_id"], status=a["status"], created_at=a.get("created_at", a["deadline"]),
+                deadline=a["deadline"], reminder_1_at=a.get("reminder_1_at"), reminder_2_at=a.get("reminder_2_at"),
+                approver_id=a["approver_id"], backup_approver_id=a.get("backup_approver_id"),
+                requester_id=str(ticket.get("requester_id", "")),
+                intended_action=queued[-1].get("intended_action") if queued else None,
+            ))  # fmt: skip
+        rows.sort(key=lambda r: r.created_at, reverse=True)
+        return rows[:limit]
+
+    async def mark_viewed(self, approval_id: str, now: datetime) -> bool:
+        a = self._table.get(approval_id)
+        if a is None or a["status"] != "pending" or a.get("first_viewed_at") is not None:
+            return False
+        a["first_viewed_at"] = now
+        return True
+
+    async def procedure_title(self, doc_id: str) -> str | None:
+        return self.titles.get(doc_id)
 
     @asynccontextmanager
     async def lock_row(self, approval_id: str) -> AsyncIterator[ApprovalRow | None]:
@@ -592,8 +628,9 @@ class GraphHarness:
                 store=self.auth_store, sink=self.auth_store.sink, username_key=HARNESS_USERNAME_KEY,
                 lock=lock_policy(auth_config(_DEFAULT_SETTINGS, get_policy().constants)),
             ))  # fmt: skip
-        self.approvals = MemoryApprovals(self.deadlines, clock=self.clock, users=self.auth_store.users)
         self.tickets = MemoryTickets(self.turns)
+        self.approvals = MemoryApprovals(self.deadlines, clock=self.clock, users=self.auth_store.users,
+                                         audit=self.audit, tickets=self.tickets)  # fmt: skip
         self.escalations = MemoryEscalations(self.tickets)
         self.lock = MemoryTicketLock(self.lock_timeout)
         if isinstance(self.identity, MemoryIdentity):

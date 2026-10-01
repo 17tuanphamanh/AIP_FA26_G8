@@ -2,8 +2,8 @@
 `finally`, so md5 + `git diff --stat` trước/sau. Luật N3 (`n3.py`): file đích còn chữ `MUTATION` → dừng; mốc xanh một lần trước khi
 đột biến.
 
-  uv run python scripts/mutation/mutate_4c.py                 # đột biến unit (DỪNG 1: M-4c-1a, 2a, 7)
-  uv run python scripts/mutation/mutate_4c.py --integration   # đột biến SQL nhắc (M-4c-1b, 2b) — Postgres testcontainers (Docker)
+  uv run python scripts/mutation/mutate_4c.py                 # đột biến unit (DỪNG 1: M-4c-1a, 2a, 7; DỪNG 2: M-4c-3…6)
+  uv run python scripts/mutation/mutate_4c.py --integration   # đột biến SQL (M-4c-1b, 2b nhắc; M-4c-3b hộp thư) — testcontainers
   uv run python scripts/mutation/mutate_4c.py --only M-4c-7
 
 Ghi chú:
@@ -34,15 +34,19 @@ def pt(*args: str) -> list[str]:
 DOMAIN = "backend/app/domain/approval.py"
 RUNTIME = "backend/app/db/runtime.py"
 B16 = "backend/app/graph/nodes/approval_wait.py"
+AUTHZ = "backend/app/auth/authz.py"
+ROUTE = "backend/app/api/approvals.py"
 
 UT = pt(*[
     f"backend/tests/unit/{name}.py"
     for name in (
         "test_approval_reminders", "test_b16_approval_wait", "test_rejection_text", "test_side_effects_ast",
         "test_graph_worker", "test_approvals_api", "test_goto_audit_columns",
+        "test_approvals_view", "test_approvals_inbox", "test_authz", "test_auth_idor",
     )
 ])  # fmt: skip
-IT = pt("backend/tests/integration/test_b16_reminders_pg.py")
+IT = pt("backend/tests/integration/test_b16_reminders_pg.py", "backend/tests/integration/test_approvals_view_pg.py")
+STORE = "backend/app/approval/store.py"
 
 
 class Mutation(NamedTuple):
@@ -61,7 +65,12 @@ def one(rel: str, old: str, new: str) -> tuple[str, str, str, int]:
 _R2_NULL = "        return 2 if reminder_2_at is None else None\n"
 _R1_NULL = "        return 1 if reminder_1_at is None else None\n"
 _DEADLINE = "    if now >= deadline:\n        return None\n"
+_SQL_INBOX = "WHERE (a.approver_id = :me OR (a.backup_approver_id = :me AND a.reminder_2_at IS NOT NULL)) {status}\n"
 _SQL_MARK = '        f"AND reminder_{n}_at IS NULL AND deadline > :now RETURNING approver_id, backup_approver_id"\n'
+_BACKUP = "    elif a.backup_approver_id is not None and a.backup_approver_id == p.user_id and a.reminder_2_at is not None:\n"
+_VIEW_ROLE = "    role = approval_role(p, a, parties)\n"
+_VIEW_HASH = "    if action is None or hash_action(action) != a.action_plan_hash:  # G4-13: không bao giờ trả object khác object đã băm\n"
+_VIEW_WRITE = "    if role is not None:  # chỉ người được giao / dự phòng đủ điều kiện ghi lần xem đầu; manager xem không ghi\n"
 _ONCE = (
     "        ref = await effects.once(\n"
     '            state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "none", step="B16"\n'
@@ -85,6 +94,21 @@ UNIT: list[Mutation] = [
              [one(B16, _ONCE, '        ref = await deps.notifier.notify_user(state["ticket_id"], text, "none")  # MUTATION M-4c-7\n')],
              UT, ["test_graph_nodes_never_call_side_effects_directly",
                   "test_c1_crash_after_notify_before_audit_rerun_sends_once"]),
+    # ---- DỪNG 2: dự phòng, xem phiếu (P4, P6) ----
+    Mutation("M-4c-3 dự phòng không cần nhắc 2",
+             [one(AUTHZ, _BACKUP, "    elif a.backup_approver_id is not None and a.backup_approver_id == p.user_id:  # MUTATION M-4c-3\n")],
+             UT, ["test_c5_backup_before_reminder2_decide_403_no_resume",
+                  "test_c7_backup_before_reminder2_view_404_same_as_missing"]),
+    Mutation("M-4c-4 xem phiếu không kiểm người được giao (mọi L1 = primary)",
+             [one(ROUTE, _VIEW_ROLE, '    role = approval_role(p, a, parties) or "primary"  # MUTATION M-4c-4\n')],
+             UT, ["test_c7_other_l1_view_404_same_as_missing"]),
+    Mutation("M-4c-5 ApprovalView không so hash",
+             [one(ROUTE, _VIEW_HASH, "    if action is None:  # MUTATION M-4c-5\n")],
+             UT, ["test_c9_plan_changed_409_no_view_no_write[chi-action]",
+                  "test_c9_plan_changed_409_no_view_no_write[action-va-hash-state]"]),
+    Mutation("M-4c-6 manager xem cũng ghi first_viewed_at",
+             [one(ROUTE, _VIEW_WRITE, "    if True:  # MUTATION M-4c-6\n")],
+             UT, ["test_c7_manager_not_assigned_view_200_viewer_no_write"]),
 ]  # fmt: skip
 
 INTEGRATION: list[Mutation] = [
@@ -96,6 +120,11 @@ INTEGRATION: list[Mutation] = [
              [one(RUNTIME, _SQL_MARK,
                   '        f"AND reminder_{n}_at IS NULL RETURNING approver_id, backup_approver_id"  # MUTATION M-4c-2b\n')],
              IT, [f"{NOT_AFTER}[dung-han]", f"{NOT_AFTER}[qua-han]"]),
+    # DỪNG 2 — lớp SQL độc lập với `approval_role` (IDOR hộp thư): chỉ test PG giết được
+    Mutation("M-4c-3b SQL inbox: dự phòng thấy phiếu trước nhắc 2",
+             [one(STORE, _SQL_INBOX,
+                  "WHERE (a.approver_id = :me OR a.backup_approver_id = :me) {status} -- MUTATION M-4c-3b\n")],
+             IT, ["test_c10_pg_inbox_role_filter_assigned_or_backup_after_reminder2"]),
 ]  # fmt: skip
 
 MUTATIONS = INTEGRATION if "--integration" in sys.argv else UNIT

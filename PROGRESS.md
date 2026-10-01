@@ -4287,7 +4287,7 @@ DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo
 - **Commit DỪNG 2:** `3b9d745` — 34 file (28 file 4b + 5 file mới + spec v1.2), push `origin/dev-tuananh` 01/10/2026 — **CI xanh** run
   `36783587264` (4m33s, Tuấn Anh kiểm). **4b ĐÓNG.**
 
-## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — DỪNG 1 XANH, đang DỪNG 2)
+## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — DỪNG 1 XANH `aac90b1`, DỪNG 2 XANH — chờ commit)
 
 Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 0.1, 0.2, 2; **5.6 + 5.7 thắng khi lệch**). Kế hoạch:
 `PLAN-4c.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4c.md` mục 9): Q-4c-1 = A, Q-4c-2 = A, TQ-1…14 + A1–A26 đồng ý, 2 DỪNG
@@ -4362,6 +4362,93 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     66/0 trong giờ, bước 8 trả về `.env` PASS; mutation 5/5 gồm 2 SQL). Spec `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.3** —
     mục **6.4** "Chốt khi hiện thực 4c DỪNG 1" (thắng 6.1–6.3 và 5.7 khi lệch; sửa 5.7 #4 theo Q-4c-1, P3 theo Q-4c-2) — Claude chat
     sửa, đi cùng commit DỪNG 1. Commit trước, rồi sang DỪNG 2.
+  - **Commit DỪNG 1:** `aac90b1` (23 file = 17 tracked + 5 mới + spec v1.3; gitleaks staged sạch; hook unit xanh), push `origin/dev-tuananh`
+    01/10/2026 (`97cd896..aac90b1`; fetch trước push: remote vẫn `97cd896`) — **CI xanh** run `36823466624` (4m28s; `gh` bị sandbox
+    chặn — Tuấn Anh kiểm).
+- **DỪNG 2 (01/10/2026) — P4 + P5 + P6 + IDOR:**
+  - **S7 khung:** `auth/authz.py` — `RoleAs`, `ApprovalLike` + `backup_approver_id`/`reminder_2_at`, `approval_role` (khung);
+    `approval/store.InboxRow` + `SqlApprovals.inbox/mark_viewed/procedure_title` (khung) + port `ApprovalRepo`; `api/approvals.py` —
+    `InboxItem` (10 khoá), `ApprovalView` (12 khoá), `RequesterView`, `ProcedureRef`, route `GET /api/approvals`,
+    `GET /api/approvals/{approval_id}` (khung, sau `require("approval:decide")`). Bản giả đủ thân: `MemoryApprovals.inbox` (vai trò lọc ở
+    nguồn, nối `MemoryAudit` dòng B15 `queued` cùng hash + `MemoryTickets`), `mark_viewed`, `procedure_title` (`titles`); harness dựng
+    `tickets` trước `approvals`. Test cũ đổi CÁCH DỰNG (kỳ vọng giữ): `test_authz.py` `A`, `test_auth_idor.py` `_Approval` thêm 2 trường
+    mặc định None; `test_auth_route_scan.py` ghim permission 2 route mới (`approval:decide`). Unit 3288 xanh. Hợp đồng PLAN 2.1 bổ sung
+    (node giả → `procedure`/`action_type` null; cách dựng dự phòng, c6, c9, PG).
+  - **S8 test-writer (theo bước S8 PLAN):** 3 file mới, **66 test** — `unit/test_approvals_view.py` 25 (c5 ×3, c6 ×2, c7 ×8, c8 ×4,
+    c9 ×3, ApprovalView ×5), `unit/test_approvals_inbox.py` 29 (c10), `integration/test_approvals_view_pg.py` 12 (`inbox` 6, `mark_viewed`
+    4, `procedure_title` 2 — collect được, chạy ở verify). Trước code (tôi chạy lại, khớp): unit **40 đỏ / 14 xanh** — đỏ đúng lý do (20
+    `NotImplementedError` route hộp thư, 18 route xem phiếu, c5 dự phòng sau nhắc 2 vẫn 403, thân 202 thiếu `decided_as`); 14 xanh là canh
+    (403 tầng 2 ×12, c5 dự phòng trước nhắc 2, c6 dự phòng = người gửi — `may_decide_as` cũ chỉ cho người được giao). 0 đỏ vì
+    import/fixture (test-writer thêm assert tiền điều kiện trước lời gọi route). Tôi kiểm: `git status` chỉ 3 file mới của nó.
+    Diễn giải hợp đồng đáng soi: **"ĐÚNG 13 khoá" của `ApprovalView` là lỗi đếm của tôi trong PLAN 2.1** — spec P6 kể 12 tên, model 12,
+    test theo 12 → đã sửa chữ PLAN + docstring model; thân 202 so ĐÚNG tập khoá; `status` lạ gồm `late_ignored` → 422; c6 mở rộng sang
+    xem phiếu (dự phòng = người gửi → 404); phiếu đã đóng người được giao xem → 200 không ghi; c9 3 biến thể (gồm đổi cả hash trong state —
+    bắt hiện thực so hash state thay vì hash phiếu); PG `inbox` lọc vai trò TRƯỚC `LIMIT`, bỏ dòng audit mồi (khác hash / khác bước /
+    khác sự kiện / khác ticket); `procedure_title` tài liệu chỉ ở bản KB cũ → None. Tự khai: đọc thêm `auth_helpers.py`, khuôn INSERT tay
+    ở `test_rag_ingest_pg.py`/`test_db_constraints.py`, `action_metadata.yaml`; traceback pytest lần đầu in vài dòng khung của
+    `api/approvals.py` (file cấm mở) — không lấy kỳ vọng từ đó.
+  - **S9 code:** `authz.approval_role` (có quyền + người được giao → `primary` | dự phòng VÀ `reminder_2_at` → `backup` | None; không
+    xung đột) — `may_decide_as` = khác None (một định nghĩa). `ApprovalRow` + `action_plan_hash` (xem phiếu so hash PHIẾU). SQL
+    `SqlApprovals.inbox` (vai trò lọc ở `WHERE` trước `LIMIT`, JOIN `tickets`, `LEFT JOIN LATERAL` dòng audit B15 `queued` cùng ticket +
+    `action_plan_hash`), `mark_viewed` (`… first_viewed_at IS NULL AND status='pending' RETURNING`), `procedure_title` (JOIN `kb_versions`
+    `is_current`). Route quyết: `decided_as = role` trong sự kiện + thân 202. Route hộp thư (TQ-10) và xem phiếu (TQ-11) như PLAN.
+    **Test cũ đổi (lý do):** `test_start_event_redacted_ast.py` — `TYPED_KEYS` + `decided_as` (giá trị do SERVER tính:
+    `approval_role` → Literal `primary|backup`, không phải chữ người dùng; test AST đỏ vì `decided_as` hết là hằng) — đưa security-reviewer
+    soát riêng (R1). Unit **3342 passed** (= 3288 + 54), `make lint` xanh (mypy tests 205), import-linter 10/10.
+  - **S10 mutation `mutate_4c.py` (1 lượt, unit):** **7/7 ĐỎ đúng dự đoán** (chạy lại cả 3 của DỪNG 1 + 4 mới): M-4c-3 (dự phòng không
+    cần nhắc 2 → c5 trước nhắc 2 + c7 xem trước nhắc 2), M-4c-4 (xem phiếu mọi L1 = primary → 4 đỏ: c6 xem, c7 dự phòng trước nhắc 2,
+    c7 manager, c7 L1 khác), M-4c-5 (không so hash → c9 ×2; biến thể "không action" vẫn 409 do `action is None` — đúng), M-4c-6 (manager
+    xem cũng ghi → c7 manager); md5 4 file (`api/approvals.py`, `auth/authz.py`, `domain/approval.py`, `approval_wait.py`) khớp, `git diff
+    --stat` khớp. Thêm **M-4c-3b** (`--integration`): SQL `inbox` bỏ `AND a.reminder_2_at IS NOT NULL` → PG
+    `test_c10_pg_inbox_role_filter_assigned_or_backup_after_reminder2` — lớp IDOR SQL độc lập với `approval_role` (unit không giết được vì
+    `approval_role` chặn lại). Chưa chạy (Docker).
+  - **S11 security-reviewer (theo bước S11 PLAN, chỉ đọc, `git diff a88617a -- backend scripts config` + 3 file test mới):** **0 FAIL,
+    5 NGHI**, còn lại PASS (S1 IDOR, S2 dự phòng, S3 object đã băm + quyền trước hash, S4 che note, S5 đúng 1 lần, S6, S7, S8 ranh giới,
+    S9 SQL bind; B1–B8 trong phạm vi). Reviewer KHÔNG chạy test (luật vai trò). Tôi kiểm lại trên code + xử lý:
+    - **NGHI S4b (lỗi 4c đưa vào — ĐÃ SỬA):** ghi chú chỉ gồm ký tự vô hình (U+200B, U+00AD) lọt `strip()` ở route, guard L0 xoá hết →
+      sự kiện `note=""` → B16 cũ coi rỗng là None → `close` vi phạm CHECK `rejected_needs_note` → E9 (kiểm thật: guard trả `''`). Sửa:
+      route 422 `rejected_requires_note` khi ghi chú ĐÃ CHE rỗng; B16 giữ `""` (`is not None`, không biến thành None), rỗng → không câu
+      ghi chú. Test `test_approval_review_s11.py` (4 ca S4b: 3 HTTP với guard THẬT + 1 B16) — đảo ngược bản sửa thì 4/4 đỏ (md5 khôi phục khớp).
+    - **NGHI S1c (ĐÃ SỬA):** `_approval_pk` dùng `isdigit()` → `"²"` qua, `int()` ném → 500; > BIGINT → 500. Sửa: chỉ `[0-9]{1,18}`.
+      Test 6 ca (không chạm DB).
+    - **NGHI R1 (ĐÃ SIẾT):** miễn trừ `decided_as` theo TÊN KHOÁ toàn cục quá rộng → bỏ khỏi `TYPED_KEYS`; luật hẹp `ROLE_KEYS`: chỉ nhận
+      tên mà MỌI lần gán trong hàm (trước cổng) là `approval_role(...)` import thẳng từ `app.auth.authz`. Self-check 5 ca (đạt; từ `body`;
+      gán lại từ `body`; gán sau cổng; import bí danh → đỏ).
+    - **Gợi ý R3 (ĐÃ LÀM):** `_audit_action` hỏng → `log.warning` chỉ id phiếu (test: nội dung không vào log).
+    - **NGHI S1b → Q-4c-3 = A (Tuấn Anh 01/10/2026):** route QUYẾT trả 403 cho phiếu có thật không được giao, 404 cho id không có → dò
+      được tồn tại phiếu (id BIGINT tăng dần). **Giữ 403** (đúng chữ spec c5, c6, b2/b2b, 2b-3, gate4 g4-06): id tăng dần nên tồn tại vốn
+      đoán được; 403 + `permission_denied` là tín hiệu dò phiếu cho M9. Việc treo 30.
+    - **NGHI R2b → Việc treo 28:** `first_viewed_at` là MỘT cột cho cả phiếu — dự phòng mở phiếu rồi người duyệt chính duyệt mà không mở →
+      `decided_without_view=false`; luật 7 M9 bỏ sót. Đúng chữ P2/P6; tách theo người cần schema (không migration ở Phase 4).
+    - **NGHI B4 → Việc treo 29 (ngoài diff 4c):** B17 so hash với `state.action_plan_hash`, không với `approvals.action_plan_hash` (route xem
+      phiếu đã so hash PHIẾU; `ApprovalRow` nay có trường này, B17 đã đọc `row`). Không có kịch bản trên code hiện tại — phòng thủ thêm lớp.
+    - Gợi ý S6 (B16 ép kiểu lại `decided_as`/`reason_code` từ sự kiện) — KHÔNG làm: sự kiện chỉ do route/worker server dựng (R2 PASS).
+    Sau sửa: unit **3358 passed** (= 3342 + 11 + 5 self-check), `make lint` xanh (mypy tests 206); mutation unit chạy lại **7/7** đỏ đúng
+    dự đoán, md5 khớp.
+  - **MẪU B DỪNG 2 (Tuấn Anh 01/10/2026): ĐẠT phần sandbox, chờ verify.** Q-4c-3 = A; Việc treo 28, 29 giữ như ghi. **CHỜ** Tuấn Anh báo
+    "stack rảnh" (stack dùng chung với FE) mới chạy `make verify G=23` → rồi `mutate_4c.py --integration` (M-4c-1b, 2b, 3b). Không commit.
+  - **`make verify G=23` (Tuấn Anh, 01/10/2026 15:56:56 → 16:11:08, HEAD `aac90b1` + cây bẩn 31 mục, `.env`): XANH** — lint PASS; test
+    PASS (backend **3637 passed** = 3358 unit + 279 integration/e2e = 267 cũ + **12 PG mới** `test_approvals_view_pg.py`, 0 skip; mock 100;
+    ml 77 / 5 deselected); up PASS; gate2 **89/0**; ingest PASS (KB không đổi); gate3 **66/0** (TRONG GIỜ 16:08 → tc02/tc06 AUTO, như
+    DỪNG 1); trả về `.env` PASS; CI (gh) PASS run `36823466624` (CI của HEAD `aac90b1`). Hai file `docs/spec/claude/ke-hoach-m9-*.md` đang
+    sửa (M9 luật 7) — việc M9, KHÔNG stage ở commit DỪNG 2 (Tuấn Anh commit riêng sau).
+  - **Mutation SQL `mutate_4c.py --integration` (Tuấn Anh, 01/10/2026, testcontainers — không đụng stack dev): 3/3 ĐỎ đúng dự đoán** —
+    mốc xanh trước (`test_b16_reminders_pg.py` + `test_approvals_view_pg.py`); M-4c-1b → c4 (hai worker) + `first_wins_second_none`;
+    M-4c-2b → `not_at_or_after_deadline[dung-han]`, `[qua-han]`; **M-4c-3b** (SQL `inbox` bỏ `reminder_2_at IS NOT NULL`) →
+    `test_c10_pg_inbox_role_filter_assigned_or_backup_after_reminder2`. md5 `approval/store.py` `269c981e…`, `db/runtime.py` `d4e141e8…`
+    trước = sau; `git diff --stat` khớp; không còn chữ `MUTATION`. **Mutation DỪNG 2 đủ: 5/5** (unit M-4c-3…6 + SQL 3b); **cả 4c: 10/10**.
+  - **DỪNG 2 XANH** (verify 15:56–16:11 + mutation 10/10 + security-reviewer 0 FAIL). Chờ lệnh commit.
+  - **Spec cần sửa (4c, DỪNG 2):**
+    - P4: `may_decide_as` = `approval_role(...)` khác None (một định nghĩa cho quyết / xem / hộp thư); thân 202 thêm `decided_as`.
+    - P5: lọc vai trò bằng SQL ở `WHERE` trước `LIMIT`, lọc xung đột ở route → có thể < 50; `status` không bắt buộc; 422
+      (`query.mine`/`query.status`) kiểm SAU bước quyền; nối dòng audit B15 `queued` theo `ticket_id` + `action_plan_hash`; B15 giả không
+      ghi `intended_action` → `action_type`/`device_id` null.
+    - P6: `ApprovalView` 12 khoá; `role_as` ∈ {primary, backup, viewer}; so hash với PHIẾU (`ApprovalRow.action_plan_hash`), không có
+      action → 409 `plan_changed`; phiếu đã đóng vẫn xem được, không ghi `first_viewed_at`; `procedure` null khi hành động không có trong
+      `action_metadata`.
+    - Route quyết: ghi chú từ chối rỗng SAU khi che (ký tự vô hình) → 422 `rejected_requires_note` (soát S4b); B16 giữ `""` (không None).
+    - Mutation thêm M-4c-3b (lớp SQL lọc vai trò của hộp thư, độc lập với `approval_role`).
+    - Q-4c-3 = A: route quyết giữ 403 cho phiếu có thật không được giao (Việc treo 30).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -4504,6 +4591,17 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     `AdUserSync._upsert` (`auth/user_sync.py`) dùng CHUNG cho `AuthService` và B15 ghi `detail={from, to}` — M9 không tách được đổi role
     phát hiện lúc đăng nhập với lúc B15 đồng bộ người duyệt/chuỗi quản lý. Đổi cần sửa `AdUserSync` dùng chung (+ `check_event`
     `role_changed`, test auth) — để sau Phase 4.
+28. **`approvals.first_viewed_at` là MỘT cột cho cả phiếu (soát 4c S11 R2b).** Dự phòng (sau nhắc 2) mở phiếu → ghi `first_viewed_at`;
+    người duyệt CHÍNH duyệt mà chưa mở → audit B16 `decided_without_view=false`, `view_duration>0` — luật 7 M9 (`reflex_approval`) bỏ sót
+    ca "duyệt không xem". Đúng chữ P2/P6. Đóng: lần xem theo người (bảng/cột mới — migration, sau Phase 4) hoặc route quyết so người
+    đã xem với người quyết. Báo M9.
+29. **B17 so hash với `state.action_plan_hash`, không với `approvals.action_plan_hash` (soát 4c S11 B4, ngoài diff 4c).** Route xem phiếu
+    (4c P6) đã so với hash của PHIẾU; `ApprovalRow.action_plan_hash` có từ 4c, B17 đã đọc `row` (`b17_execute.py:142`) → thêm so sánh gần
+    như không tốn gì. Không có kịch bản trên code hiện tại (chỉ B15 đặt cả hai; B16 → B17 không có điểm dừng chờ) — lớp phòng thủ thêm.
+    Đề xuất làm ở 4d (cùng i8 TC26).
+30. **Route quyết 403 / xem phiếu 404 cho phiếu không được giao (Q-4c-3 = A, soát 4c S11 S1b; chốt 01/10/2026).** `approval_id` BIGINT
+    tăng dần → tồn tại phiếu vốn đoán được; route quyết giữ 403 + `permission_denied` (tín hiệu dò phiếu cho M9). Nếu đổi id phiếu sang
+    UUID → thống nhất route quyết + xem phiếu về 404 (cùng thân với id không có).
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

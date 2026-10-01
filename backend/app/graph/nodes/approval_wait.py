@@ -57,7 +57,8 @@ def make(deps: NodeDeps) -> NodeFn:
     async def approval_wait(state: Any) -> dict[str, Any]:
         ev = interrupt({"wait": "approval", "approval_id": state.get("approval_id")})
         kind = ev["kind"]
-        note = deps.privacy.redact_text(str(ev["note"])).text if ev.get("note") else None  # [1] TQ-2
+        raw_note = ev.get("note")  # `None` ≠ "" (soát 4c S4b: che xong rỗng vẫn là ghi chú — CHECK rejected_needs_note)
+        note = deps.privacy.redact_text(str(raw_note)).text if raw_note is not None else None  # [1] TQ-2
         applied, a = 0, None
         if state.get("approval_id"):
             applied = await deps.approvals.close(
@@ -83,7 +84,7 @@ def make(deps: NodeDeps) -> NodeFn:
     ) -> dict[str, Any]:
         raw = state.get("intended_action")
         action = None if raw is None else Action.model_validate(raw)
-        shown = note if note is not None and deps.output_guard.violation(note) is None else None  # [3] output guard
+        shown = note if note and deps.output_guard.violation(note) is None else None  # [3] output guard; rỗng → không câu ghi chú
         text = rejection_text(
             action.type if action else "", str(action.params.get("device_id", "")) if action else "",
             ev.get("reason_code"), shown,
@@ -95,7 +96,7 @@ def make(deps: NodeDeps) -> NodeFn:
             state, S_REJECTED, next_node="b20_audit", step="B16", event="rejected",
             approval_result="rejected", close_reason=CloseReason.REJECTED_BY_APPROVER.value,
             conversation=[rejection_msg(text, ref)], audit_columns={**columns, "note": note},
-            audit_detail={**detail, "note_suppressed": note is not None and shown is None},
+            audit_detail={**detail, "note_suppressed": bool(note) and shown is None},
         )  # fmt: skip
 
     return approval_wait

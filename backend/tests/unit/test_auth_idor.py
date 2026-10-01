@@ -32,6 +32,8 @@ class _Approval:
     status: str
     deadline: datetime
     requester_id: str
+    backup_approver_id: str | None = None  # 4c P4: `ApprovalLike` thêm 2 trường (cách dựng — kỳ vọng không đổi)
+    reminder_2_at: datetime | None = None
 
 
 TICKETS = {"t-b": _Ticket("t-b", "nv002"), "t-a": _Ticket("t-a", "nv001")}

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow
+from app.approval.store import ApprovalRow, InboxRow
 from app.db.identity import LiveSession
 from app.db.runtime import DueReminder, DueWait, OpenTurn, ReminderTarget, WaitKind
 from app.db.tickets import NewEvents, NewTicket, TicketRow
@@ -215,3 +215,15 @@ class ApprovalRepo(Protocol):
         ...
 
     async def get(self, approval_id: str) -> ApprovalRow | None: ...
+
+    async def inbox(self, user_id: str, status: str | None, limit: int) -> list[InboxRow]:
+        """4c P5: phiếu `user_id` được giao HOẶC là dự phòng đã qua nhắc 2 (lọc vai trò ở SQL), [+ `status`], mới nhất trước, ≤ `limit`."""
+        ...
+
+    async def mark_viewed(self, approval_id: str, now: datetime) -> bool:
+        """4c P6: `first_viewed_at = now` NẾU đang NULL và phiếu `pending` — True khi ghi được (lần xem đầu)."""
+        ...
+
+    async def procedure_title(self, doc_id: str) -> str | None:
+        """4c P6: tiêu đề tài liệu `doc_id` ở bản KB hiện hành; không có → None (không chặn)."""
+        ...

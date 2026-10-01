@@ -4,12 +4,16 @@ tự trả mã HTTP và ghi `permission_denied`. Nhận Protocol theo cấu trú
 - `can_read_ticket` sai → route trả **404**, không 403: không lộ ticket có tồn tại (D-02, TC30).
 - `can_decide_approval` = `may_decide_as` (sai → 403) + còn `pending`, chưa quá hạn (route duyệt tách
   riêng phần này → 409 + `late_event`, TC27 — 2b-3 Q3).
+- `approval_role` (Phase 4 4c P4, TQ-9): MỘT định nghĩa "tôi quyết/xem phiếu này với vai trò gì" cho route quyết, xem phiếu, hộp
+  thư — `primary` (người được giao) | `backup` (dự phòng, CHỈ sau nhắc 2 — Q-4-O) | None; luôn kèm không xung đột lợi ích.
 - `can_close_escalation` → "forbidden" (403) hoặc "unprocessable" (422: L2 hoàn tất ca deny).
 """
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
+
+type RoleAs = Literal["primary", "backup"]
 
 from app.auth.models import Principal
 from app.domain.action import Action
@@ -29,6 +33,10 @@ class ApprovalLike(Protocol):
     def status(self) -> str: ...
     @property
     def deadline(self) -> datetime: ...
+    @property
+    def backup_approver_id(self) -> str | None: ...
+    @property
+    def reminder_2_at(self) -> datetime | None: ...
 
 
 @dataclass(frozen=True)
@@ -56,14 +64,25 @@ def approval_conflict(approver_id: str, parties: ApprovalParties) -> ConflictTyp
     return conflict_type(parties.requester_id, approver_id, parties.approver_chain, parties.action)
 
 
+def approval_role(p: Principal, a: ApprovalLike, parties: ApprovalParties) -> RoleAs | None:
+    """Có `approval:decide` + (người được giao → `primary` | dự phòng VÀ đã nhắc lần 2 → `backup`) + không xung đột (4b P4). None =
+    không được quyết/xem như người duyệt."""
+    if not p.has("approval:decide"):
+        return None
+    role: RoleAs
+    if a.approver_id == p.user_id:
+        role = "primary"
+    elif a.backup_approver_id is not None and a.backup_approver_id == p.user_id and a.reminder_2_at is not None:
+        role = "backup"
+    else:
+        return None
+    return role if approval_conflict(p.user_id, parties) is None else None
+
+
 def may_decide_as(p: Principal, a: ApprovalLike, parties: ApprovalParties) -> bool:
-    """Phần "ai" của `can_decide_approval`: có quyền, đúng người được giao, không xung đột → sai = 403.
-    Phần "khi nào" (còn `pending`, chưa quá hạn) route duyệt kiểm riêng → 409 (TC27, 2b-3 Q3)."""
-    return (
-        p.has("approval:decide")
-        and a.approver_id == p.user_id
-        and approval_conflict(p.user_id, parties) is None
-    )
+    """Phần "ai" của `can_decide_approval` (= `approval_role` khác None): có quyền, người được giao HOẶC dự phòng sau nhắc 2, không xung
+    đột → sai = 403. Phần "khi nào" (còn `pending`, chưa quá hạn) route duyệt kiểm riêng → 409 (TC27, 2b-3 Q3)."""
+    return approval_role(p, a, parties) is not None
 
 
 def can_decide_approval(
