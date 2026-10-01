@@ -4,12 +4,15 @@
   `side_effects` (`current_tx()`); process chết giữa chừng thì cả hai cùng mất hoặc cùng còn (D-18). Phase 4 4b P8: người dự
   phòng + xung đột là tham số keyword BẮT BUỘC (TQ-9 — node quên truyền là lỗi kiểu, không lặng lẽ thành None/False).
 - `close`: B16 ghi kết quả — `UPDATE … WHERE status='pending'` nên chạy lại (resume, recover) không đổi
-  gì (B15-B16 mục 5 "idempotent tự nhiên"). Route duyệt KHÔNG ghi quyết định, chỉ B16 ghi.
+  gì (B15-B16 mục 5 "idempotent tự nhiên"). Route duyệt KHÔNG ghi quyết định, chỉ B16 ghi. Trả số dòng đổi (0/1) — B16 ghi
+  `close_applied` vào điểm log 6 (4c P2, TQ-4). `decided_at` đặt ở MỌI nhánh đóng (approved/rejected/timeout — M9 luật 7).
 - `lock_row`: route duyệt đọc phiếu `FOR UPDATE` trong transaction NGẮN (chỉ đọc + kiểm) rồi nhả,
   trước khi giao sự kiện cho graph (khoá ticket riêng, D-19).
 - Bấm muộn (TC27, quyết định 2b-3 Q2): KHÔNG đổi `status` — phiếu `pending` quá hạn phải giữ `pending`
   để worker còn bắn timeout (E6); chỉ ghi audit `late_event` (`graph.late_event.record_late`).
-- `notify_approver`: thông báo trong app thật ở Phase 4 (bảng `notifications`); 2b chỉ log.
+- `notify_approver`: Phase 4 vẫn CHỈ log (hộp thư = `GET /api/approvals?mine=1`; bảng thông báo ở Phase 7 — Q-4-E). `kind` (4c P3,
+  TQ-8): `new` (B15, mặc định — `result_ref` giữ `log:{id}`), `reminder_1`/`reminder_2` (worker nhắc 50 %/80 %). `log_approver_notice` là
+  MỘT định nghĩa cho cả B15 (qua phương thức này) lẫn worker nhắc (`WorkerJobs`, Q-4c-2 = A — `worker.py` không truyền `SqlApprovals`).
 - `get_status` (3h): B17 kiểm "đã duyệt" = state + bảng + hash (phase3 11.4 bước 1, P8).
 """
 
@@ -18,7 +21,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Table, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -29,6 +32,14 @@ from app.db.runtime import current_tx
 log = logging.getLogger(__name__)
 
 _APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
+
+type NoticeKind = Literal["new", "reminder_1", "reminder_2"]
+
+
+async def log_approver_notice(approval_id: str, approver_id: str, kind: NoticeKind = "new") -> str:
+    """Thông báo cho người duyệt (Phase 4: chỉ log — không chữ người dùng, chỉ id + loại). `result_ref` của `new` giữ như 2b."""
+    log.info("phiếu duyệt %s → người duyệt %s (%s; thông báo trong app: Phase 7)", approval_id, approver_id, kind)
+    return f"log:{approval_id}" if kind == "new" else f"log:{approval_id}:{kind}"
 
 
 @dataclass(frozen=True)
@@ -104,9 +115,8 @@ class SqlApprovals:
 
         return await self._exec(run)
 
-    async def notify_approver(self, approval_id: str, approver_id: str) -> str:
-        log.info("phiếu duyệt %s → người duyệt %s (thông báo trong app: Phase 4)", approval_id, approver_id)
-        return f"log:{approval_id}"
+    async def notify_approver(self, approval_id: str, approver_id: str, kind: NoticeKind = "new") -> str:
+        return await log_approver_notice(approval_id, approver_id, kind)
 
     async def close(
         self,
@@ -116,13 +126,14 @@ class SqlApprovals:
         *,
         decided_by: str | None = None,
         note: str | None = None,
-    ) -> None:
+    ) -> int:
         async with self._engine.begin() as conn:
-            await conn.execute(
+            res = await conn.execute(
                 update(_APPROVALS)
                 .where(_APPROVALS.c.approval_id == int(approval_id), _APPROVALS.c.status == "pending")
                 .values(status=result, decided_at=at, decided_by=decided_by, note=note)
             )
+        return int(res.rowcount)
 
     async def get(self, approval_id: str) -> ApprovalRow | None:
         pk = _approval_pk(approval_id)

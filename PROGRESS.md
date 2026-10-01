@@ -4052,7 +4052,7 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` v0.7 (untracked, đi
   - **Commit `f64fd86`** "4a dung 2: no ky thuat P1-P7 + make verify; HMAC username ma (Q-4a-5, Q-4a-6)", push lên `origin/dev-tuananh`;
     **CI xanh** run `36726470829` (Tuấn Anh kiểm). **4a ĐÓNG** — spec phase4 v1.0 (mục 4.10) đi cùng commit đầu 4b.
 
-## Phase 4 — chặng 4b: B15 thật (tầng A) (30/09 → 01/10/2026 — **4b ĐÓNG** (chờ CI): DỪNG 1 `cd3f094`, DỪNG 2 verify XANH 04:54)
+## Phase 4 — chặng 4b: B15 thật (tầng A) (30/09 → 01/10/2026 — **4b ĐÓNG**: DỪNG 1 `cd3f094`, DỪNG 2 `3b9d745` — CI xanh run `36783587264`)
 
 ~~**TẠM DỪNG STACK theo yêu cầu Phase 7 (verify FE)**~~ — **đã gỡ (FE verify xong, Tuấn Anh báo 01/10/2026)**. Thứ tự DỪNG 2 giữ:
 S11 → S14 trước, rồi MẪU B + `make verify G=23` (stack đang không theo `.env` — `make verify` tự xử lý).
@@ -4284,7 +4284,84 @@ DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo
     bước 8 trả về `.env` PASS). Spec `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** — mục **5.7** "Chốt khi hiện thực 4b DỪNG 2"
     (thắng 5.1–5.6 khi lệch; sửa 5.6 #4, 4c P2, 4c P5, 4d P4) — Claude chat sửa, đi cùng commit DỪNG 2. Việc treo mở của 4b giữ nguyên:
     **25, 26, 27**.
-- **Commit DỪNG 2:** 34 file (28 file 4b + 5 file mới + spec v1.2) — hash + CI ghi sau khi push. **4b ĐÓNG (chờ CI).** 4c chưa mở.
+- **Commit DỪNG 2:** `3b9d745` — 34 file (28 file 4b + 5 file mới + spec v1.2), push `origin/dev-tuananh` 01/10/2026 — **CI xanh** run
+  `36783587264` (4m33s, Tuấn Anh kiểm). **4b ĐÓNG.**
+
+## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — DỪNG 1 XANH, đang DỪNG 2)
+
+Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 0.1, 0.2, 2; **5.6 + 5.7 thắng khi lệch**). Kế hoạch:
+`PLAN-4c.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4c.md` mục 9): Q-4c-1 = A, Q-4c-2 = A, TQ-1…14 + A1–A26 đồng ý, 2 DỪNG
+(DỪNG 1 = P1 + P2 + P3 + `decided_at`; DỪNG 2 = P4 + P5 + P6 + IDOR).
+
+- **Bước 0 (01/10/2026 11:28):** HEAD `3b9d745` (trên `1f0f489` = M9 A0 + B0). Trong phiên (11:43) Tuấn Anh commit + push `a88617a` "docs: M9
+  chot B1…" — CHỈ 5 file docs (01, P9, 3 file `claude/*m9*`), 0 file code → mốc không đổi; **mốc diff 4c = `a88617a`**. `git fetch`:
+  `origin/dev-tuananh` = HEAD → **không có merge M9 mới, không rebase**; `origin/main` chỉ thêm commit merge PR #16–19 (không khác nội dung — `git diff HEAD origin/main` rỗng).
+  `uv run alembic heads` = 1 (`0007`). Mốc sandbox: `make lint` xanh (ruff; mypy app 207 / tests 198 / mock 12 / ml 16; import-linter
+  **10/10**; gitleaks 0); unit **3243 passed** (lời giao ghi ~3244 — số thật 3243 = mốc 4b DỪNG 2). 3 file `docs/spec/claude/*m9*` sửa
+  dở lúc đầu phiên nay đã nằm trong `a88617a`.
+- **Câu hỏi (đã chốt — Tuấn Anh 01/10/2026; phương án ở `PLAN-4c.md` mục 4, điều kiện ở mục 9):**
+  - **Q-4c-1 = A** — `_POINT_COLUMNS` thêm `note` (5 khoá); `note` qua `audit_columns` là bản ĐÃ CHE (privacy guard trước `close`);
+    `approval_result` giữ là khoá state. **Spec cần sửa:** 5.7 #4 + 6.1 P2 ("`note` là khoá state sẵn có" → `audit_columns`), 7.1 P4
+    ("`_POINT_COLUMNS` 4 khoá" → 5).
+  - **Q-4c-2 = A** — `due_reminders` + `mark_reminder_once` (SQL nguyên văn P3) trên `SqlDeadlineStore` + port `DeadlineStore`; gửi nhắc qua
+    MỘT hàm log dùng chung với `SqlApprovals.notify_approver`; không sửa `worker.py`. **Spec cần sửa:** 6.1 P3 — chỗ đặt
+    `mark_reminder_once` `SqlApprovals` → `SqlDeadlineStore` (lý do: `worker.py` (M9) chỉ truyền runner/deadlines/turns cho `WorkerJobs`);
+    "đặt cả hai cột" = câu P3 n=2 rồi n=1 (không gửi). Docs M9 đã sửa theo (Tuấn Anh `97cd896`: "nhắc duyệt nằm trong
+    `scan_deadlines`, Phase 4 không sửa `worker.py`" — chỉ 2 file docs, không code; mốc diff 4c vẫn `a88617a`).
+  - Ghi chép gốc (lúc hỏi):
+    - **Q-4c-1** — spec 6.1 P2 / 5.7 #4 ghi "`note` là khoá state sẵn có", nhưng `TicketState` KHÔNG có `note` (`domain/ticket_state.py:97-158`;
+      kiểm `STATE_KEYS`: `note` False, `approval_result` True) → truyền `note=` vào `goto` ném `UnknownStateKey` (`graph/goto.py:81`).
+    - **Q-4c-2** — spec 6.1 P3 đặt nhắc trong `WorkerJobs` + `SqlApprovals.mark_reminder_once` + `approvals.notify_approver`, cấm sửa
+      `worker.py`; nhưng `worker.py:62-66` (M9) dựng `WorkerJobs(rt.runner, rt.deadlines, rt.turns, …)` — `WorkerJobs` không có đường tới
+      `SqlApprovals`. Docs M9 (`claude/ke-hoach-m9-chia-viec.md:337`, `ke-hoach-m9-monitor.md:68`) lại ghi "Phase 4 thêm job
+      `scan_approval_reminders` vào `worker.py`" — lệch spec 0.2.
+- **DỪNG 1 (01/10/2026) — P1 + P2 + P3 + `decided_at` — XANH:**
+  - **S1 khung:** `domain/messages.py` (`MSG_KINDS` + `rejection`; `ReasonCode` chuyển từ route sang đây — một nguồn; `ACTION_LABELS`,
+    `REASON_LABELS`, `rejection_text`/`rejection_msg`); `domain/approval.py` (`ReminderN`, `REMINDER_FRACTIONS = {1: 0.5, 2: 0.8}` — một
+    nguồn cho hàm thuần và câu lọc SQL, `next_reminder`); `goto._POINT_COLUMNS` + `note` (Q-4c-1); port `Approvals.close -> int`,
+    `notify_approver(…, kind="new")`; `DeadlineStore.due_reminders/mark_reminder_once` + `db/runtime.DueReminder/ReminderTarget`;
+    `approval/store.NoticeKind` + `log_approver_notice` (MỘT hàm log); `WorkerJobs(…, notify_approver=log_approver_notice)`,
+    `ScanReport.reminded/reminder_failed`, nhắc gọi ở CUỐI `scan_deadlines` trong `try` riêng. Bản giả đủ thân: `MemoryDeadlines` (2 truy
+    vấn nhắc cùng ngữ nghĩa SQL), `MemoryApprovals.close -> int` + `notify_approver(kind)` (`notified` giữ 2-tuple cho B15, nhắc vào
+    `reminded`), `graph_pg.RecordingApprovals`. Unit cũ 3243 xanh.
+  - **Test cũ đổi (lý do):** `test_goto_audit_columns.py` hằng `POINT_COLUMNS` + đúng khoá `note` (Q-4c-1; `approval_result` vẫn
+    `ValueError` nếu đưa vào `audit_columns`); `test_guard_api.py` import `ReasonCode` từ `domain.messages` (TQ-3 — kỳ vọng không đổi).
+  - **S2 test (tôi viết, trước thân):** unit 45 — `test_rejection_text.py` 10, `test_b16_approval_wait.py` 13 (c1 ×5 gồm chết sau
+    `notify_user`/chết khi gửi/câu chung/HTTP `desk_env`; c2 ×5; c11; d1 nhánh worker; d7 output guard), `test_approval_reminders.py` 22
+    (bảng `next_reminder` 11 + SLA 2 phút; c3; d2 ×3; d3 ×2; d5; d6 ×2; phiếu đã đóng). Trước thân: **38 đỏ / 7 xanh** — đỏ đúng lý do
+    (`NotImplementedError` ở B16/mẫu tin/`next_reminder`; thiếu khoá điểm log 6; B16 chưa gửi tin; `mark_fired` chưa có `decided_at`;
+    DID NOT RAISE Crash vì B16 chưa gửi); 7 xanh là test canh/khung (nhãn ×3, cách ly lỗi `due_reminders`, B15 không `kind`, 2 ca "không
+    nhắc"). Integration `test_b16_reminders_pg.py` 9 (collect được; chạy ở `make verify`): SQL `mark_reminder_once` (IS NULL, hạn, phiếu
+    đóng), `due_reminders`, **c4** (2 worker, 2 engine, `asyncio.Barrier` ép cả hai đọc trước khi đánh dấu — tất định), `close` trả số dòng,
+    d1 `mark_fired`, B16 từ chối qua graph trên PG (SĐT che ở `approvals.note` + `audit_logs.note` + tin; điểm log 6).
+  - **S3 code:** B16 (`approval_wait.py`, node chung — TQ-1): che L1 ghi chú → `close` (0/1) → `approvals.get` → điểm log 6 (TQ-5) →
+    từ chối: output guard → tin mẫu qua `effects.once("notify_user", step="B16")` → `goto(…, audit_columns={response_time_seconds, note})`.
+    Route: sự kiện thêm `decided_as="primary"` (DỪNG 2 đổi sang `approval_role`). `mark_fired` đặt `decided_at` (A11, SQL + giả).
+  - **S4 code:** `next_reminder`; `SqlDeadlineStore.due_reminders` (lọc thô) + `mark_reminder_once` (câu P3 NGUYÊN VĂN, n=1/2);
+    `WorkerJobs._scan_approval_reminders` (từng phiếu `try` riêng; đánh dấu TRƯỚC, gửi SAU; n=2 mà cột 1 còn NULL → câu P3 n=1 chỉ ghi sổ).
+  - **S5:** `make lint` xanh (ruff; mypy app 207 / tests 202 / mock 12 / ml 16; import-linter 10/10; gitleaks 0 + `gitleaks dir` 7 file
+    mới/sửa sạch); unit **3288 passed** (= 3243 + 45); mock 100. **Mutation unit `mutate_4c.py` (1 lượt): 3/3 ĐỎ đúng dự đoán** — M-4c-1a
+    (4 đỏ: bảng `next_reminder`), M-4c-2a (3 đỏ), M-4c-7 (3 đỏ: AST + c1 ×2); md5 `domain/approval.py`, `approval_wait.py` khớp, `git diff
+    --stat` khớp, không còn chữ `MUTATION`. **M-4c-1b, 2b (SQL) chưa chạy** — cần Docker: `mutate_4c.py --integration`.
+  - **`make verify G=23` (Tuấn Anh, 01/10/2026 12:28:57 → 12:42:21, HEAD `97cd896` + cây bẩn 35 mục, `.env`): XANH** — lint PASS; test
+    PASS (backend **3555 passed** = 3288 unit + 267 integration/e2e = 258 cũ + **9 PG mới** `test_b16_reminders_pg.py`, 0 skip; mock 100;
+    ml 77 / 5 deselected); up PASS; gate2 **89/0**; ingest PASS (KB không đổi); gate3 **66/0**; trả về `.env` PASS; CI (gh) PASS run
+    `36818003425` (CI của HEAD `97cd896`).
+    - **gate3 66 (không phải 78) — đã đối chiếu từng kịch bản:** chạy TRONG GIỜ (12:40) → tc02/tc06 khớp R20 → AUTO, không qua duyệt; mỗi
+      kịch bản mất 7 kiểm chỉ có ở nhánh ngoài giờ (R18 → chờ duyệt, 1 phiếu, 0 ghi trước duyệt, B15 roster, audit `queued`, `ha.lt`
+      duyệt 202, B12 ngoài giờ) và thêm 1 (B12 trong giờ) → 78 − 2×6 = 66. preflight 5, tc04 5, tc05 7, tc09 10, tc13 5, tc16 5, tc28 6
+      — GIỐNG HỆT lần 04:51. Hệ quả: lần này gate3 KHÔNG đi đường duyệt trên stack.
+    - **B16 mới trên stack thật** do gate2 phủ (node giả tới B15 + B16 chung): `restart` (duyệt sau restart → 202 → B16 `approved` →
+      B17), `expire` (worker bắn hạn → E6, phiếu `timeout`, 0 dòng B17). Nhánh TỪ CHỐI không có kịch bản cổng nào — phủ bằng
+      `test_b16_reminders_pg::test_b16_rejection_pg_note_masked_everywhere_point6` (PG thật, đã chạy trong 3555).
+  - **Mutation SQL `mutate_4c.py --integration` (Tuấn Anh, 01/10/2026, testcontainers — không đụng stack dev): 2/2 ĐỎ đúng dự đoán** —
+    mốc xanh trước; M-4c-1b (bỏ `reminder_n_at IS NULL`) → `test_mark_reminder_once_first_wins_second_none` + c4 (hai worker); M-4c-2b
+    (bỏ `deadline > :now`) → `test_mark_reminder_once_not_at_or_after_deadline[dung-han]`, `[qua-han]`; md5 `db/runtime.py`
+    `d4e141e8…` trước = sau, `git diff --stat` khớp, không còn chữ `MUTATION`. **Mutation DỪNG 1 đủ: 5/5** (unit 3 + SQL 2).
+  - **Chốt DỪNG 1 (Tuấn Anh / Claude chat 01/10/2026): ĐẠT — DỪNG 1 XANH** (verify 12:28–12:42: backend 3555, gate2 89/0, gate3
+    66/0 trong giờ, bước 8 trả về `.env` PASS; mutation 5/5 gồm 2 SQL). Spec `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.3** —
+    mục **6.4** "Chốt khi hiện thực 4c DỪNG 1" (thắng 6.1–6.3 và 5.7 khi lệch; sửa 5.7 #4 theo Q-4c-1, P3 theo Q-4c-2) — Claude chat
+    sửa, đi cùng commit DỪNG 1. Commit trước, rồi sang DỪNG 2.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

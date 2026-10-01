@@ -50,6 +50,11 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   `deps.scenario`, gate2 dùng) ở `graph/nodes/fake/b02_screen.py`.
 - `confirm_wait.py` (node chung, không có bản giả): `note` qua `guard.screen_reply` (L0 + L2) NGAY sau `interrupt()` —
   khớp → E0 `S_ESCALATED` `injection_in_reply`. KHÔNG gửi tin nào (câu trả lời B10 gửi ở B10 — M-3g-2).
+- `approval_wait.py` (B16 — node chung, không có bản giả; Phase 4 4c): `interrupt()` là lệnh đầu → che L1 ghi chú
+  (`redact_text` thuần) → `approvals.close` (0/1, `decided_at` cả 3 nhánh) → đọc lại phiếu → từ chối: output guard trên ghi chú
+  (chặn → bỏ câu ghi chú, `note_suppressed`) → tin THEO MẪU `kind=rejection` qua `effects.once("notify_user", step="B16")`.
+  Điểm log 6 cả 3 nhánh: `approval_result` (state), `note` + `response_time_seconds` qua `audit_columns`, `detail` số/enum/bool.
+  Hết hạn → E6, không bao giờ thực thi.
 - `b10_route.py`: node THẬT (Phase 3 chặng 3g; Phase 4 S0) — `b10_need_type` (fast) TRƯỚC mọi kiểm ngưỡng: `action` → B11
   BẤT KỂ điểm (cờ `GROUNDING_GATE_ACTIONS=true` → B9 như 3h); `info` → B9 (rỗng/dưới ngưỡng → E3 `no_grounding`, step `B9`,
   event `no_evidence` — như nhánh cũ ở B8; 0 `expand`/`b10_answer`) → `expand_for_answer`

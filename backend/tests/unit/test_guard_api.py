@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any, get_args
 
 import pytest
-from app.api.approvals import ReasonCode
 from app.api.auth import USERNAME_PATTERN
 from app.api.errors import GUARD_UNAVAILABLE
+from app.domain.messages import ReasonCode
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_PENDING_APPROVAL
 from app.guard.privacy import (
     NOTICE_PII,

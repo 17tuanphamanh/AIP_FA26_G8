@@ -1,6 +1,6 @@
 # Phase 4 — Thiết kế chi tiết (HITL: B15–B16, nhắc, xem phiếu, ghi đè, audit)
 
-*Thuộc bộ `build/`. Phiên bản **1.2 — 01/10/2026** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 mục 5.7) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
+*Thuộc bộ `build/`. Phiên bản **1.3 — 01/10/2026** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c DỪNG 1** mục 6.4) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
 
 *Nhãn: **[Chốt]** spec đã chốt · **[Đề xuất]** chờ Tuấn Anh chốt · **[Suy luận]** rút từ code/spec, agent phải kiểm lại trên code.*
 
@@ -609,6 +609,21 @@ Khi 5.1–5.6 (kể cả mã giả 5.2) nói khác bảng này, **bảng này th
 
 Bỏ `IS NULL` ở nhắc (c3/c4) · nhắc sau hạn (c3) · dự phòng không cần nhắc 2 (c5) · xem phiếu không kiểm người được giao (c7) · `ApprovalView` không so hash (c9) · manager xem cũng ghi `first_viewed_at` (c7) · tin từ chối gửi thẳng không qua `effects.once` (test AST + c1).
 
+### 6.4. Chốt khi hiện thực 4c — DỪNG 1 (01/10/2026, mốc `a88617a`; HEAD lúc verify `97cd896` = + 2 file docs M9)
+
+Khi 6.1–6.3 hoặc 5.7 nói khác bảng này, **bảng này thắng**. Kết quả `make verify G=23` (12:28 → 12:42, cây chưa commit, `env=.env`): lint PASS (import-linter 10/10) · backend **3555** · mock 100 · ml 77 · gate2 **89/0** (B16 dùng chung node giả — không đổi) · gate3 **66/0** (chạy TRONG giờ → tc02/tc06 không qua đường duyệt; 78 khi ngoài giờ) · trả về `.env` PASS. Unit 3288 (= 3243 + 45 mới; trước code 38 đỏ đúng lý do / 7 xanh canh). Mutation **5/5**: unit M-4c-1a, M-4c-2a, M-4c-7 + SQL (`mutate_4c.py --integration`, testcontainers) M-4c-1b (bỏ `reminder_n_at IS NULL` → c4 + "đánh dấu lần 2 trả None" đỏ), M-4c-2b (bỏ `deadline > :now` → 2 ca đúng hạn/quá hạn đỏ); md5 khớp.
+
+| # | Chỗ | Chốt |
+|---|---|---|
+| 1 | Q-4c-1 (sửa 5.7 #4) | `note` **không** phải khoá `TicketState` (chỉ `approval_result` là khoá state). `_POINT_COLUMNS` = **5 khoá**: `approver_id, deadline, conflict_detected, response_time_seconds, note`. `approval_result` đưa vào `audit_columns` vẫn `ValueError`. B16 che lại `note` bằng privacy guard (khuôn `clarify_wait`) **trước** `approvals.close` → phiếu, cột `audit_logs.note`, tin nhắn dùng CÙNG bản đã che (test SĐT ở graph, HTTP, PG). Output guard chặn → bỏ câu "Ghi chú…", `note_suppressed=true` |
+| 2 | Q-4c-2 (sửa P3) | Truy vấn nhắc đặt trên **`SqlDeadlineStore`** (`db/runtime.py`, vốn đã đọc/ghi `approvals` cho quét hạn) + port `DeadlineStore` (`graph/ports.py`) + bản giả — vì `worker.py` chỉ truyền `runner, deadlines, turns` và Phase 4 không sửa `worker.py` (M9 đã sửa tài liệu M9 8.1/1.4 cho khớp, `97cd896`). SQL `mark_reminder_once` giữ NGUYÊN VĂN P3 cho n=1, n=2. Gửi nhắc qua MỘT hàm `log_approver_notice` dùng chung với `SqlApprovals.notify_approver` |
+| 3 | P3 "đã qua m2 mà chưa nhắc 1" | Chạy câu P3 n=2 (gửi) rồi n=1 (chỉ ghi sổ, không gửi); `next_reminder` sau mốc 2 không bao giờ trả nhắc 1 → worker khác chen giữa không gửi nhắc 1 muộn |
+| 4 | A11 / M9 luật 7 | `SqlDeadlineStore.mark_fired` (worker đóng phiếu timeout, nhánh 409) nay đặt `decided_at` — trước 4c thiếu. Test unit + PG. `decided_at` có ở cả 3 nhánh |
+| 5 | c4 | Hai worker bị `asyncio.Barrier` ép cùng đọc phiếu trước khi đánh dấu → tranh chấp tất định, M-4c-1b luôn bị bắt |
+| 6 | P1 / P2 | `close` trả số dòng (0/1) → `close_applied`. Hành động không có nhãn (vd hành động giả gate2) → câu chung, không E9. `decided_as="primary"` cố định ở DỪNG 1 (chỉ người duyệt chính quyết được tới khi có P4) → DỪNG 2 thay bằng vai trò thật |
+| 7 | A12 | `approvals.created_at` theo giờ DB, `deadline` theo giờ app — chấp nhận (cùng máy); mốc nhắc theo `created_at`, hạn QUYẾT vẫn theo giờ app → không ảnh hưởng an toàn. Test PG tự đặt `created_at` |
+| 8 | Test cũ đổi | `test_goto_audit_columns.py` thêm khoá `note` (Q-4c-1); `test_guard_api.py` đổi chỗ import `ReasonCode` sang `domain.messages` (kỳ vọng giữ) |
+
 ---
 
 ## 7. Chặng 4d — Ghi đè + `audit_check` + e2e cổng 4 + `make gate4` (tầng A)
@@ -682,7 +697,7 @@ Ghi đè đổi `tickets.final_state` (i13) · bỏ `recent_login=True` ở rout
 | Chặng | Ước lượng agent | Phụ thuộc | Người khác |
 |---|---|---|---|
 | 4a ✓ | S0 `5ed423d` + DỪNG 2 `f64fd86` (CI 36726470829 xanh) | Phase 3 đóng `5d0a990` ✓; Q-4-U chốt ✓ | — |
-| 4b ✓ | DỪNG 1 `cd3f094` (CI 36750953436) + DỪNG 2 (verify xanh 01/10, mốc `1f0f489`) | 4a | — |
+| 4b ✓ | DỪNG 1 `cd3f094` (CI 36750953436) + DỪNG 2 `3b9d745` (CI 36783587264) | 4a | — |
 | 4c | ~3 giờ | 4b | — |
 | 4d | ~4 giờ (2 DỪNG) | 4c | Dương/Duy Anh chạy `make gate4` + ký biên bản |
 
@@ -693,6 +708,7 @@ Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutat
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 30/09/2026 | 0.1 | Tạo file: sự thật code `02ed795`; 10 lỗ hổng bổ sung G4-15…24; thuật toán chọn người duyệt theo [Chốt]; bảng test xung đột mới; 20 câu Q-4; chặng 4a đủ |
+| 01/10/2026 | 1.3 | 4c DỪNG 1: mục 6.4 "Chốt khi hiện thực" (Q-4c-1 `note` vào `_POINT_COLUMNS` — sửa 5.7 #4; Q-4c-2 nhắc trên `SqlDeadlineStore` — sửa P3; `decided_at` nhánh timeout; c4 Barrier; A12); lịch 4b CI 36783587264 |
 | 01/10/2026 | 1.2 | 4b DỪNG 2: mục 5.7 "Chốt khi hiện thực" (12 dòng: thứ tự B15 thật, event nhánh E, `peek`, `audit_columns` + 6 khoá detail, Q-4b-4 khoá `type`, `available`, Q-4b-8 ngoại lệ `ensure`, P13 detail, harness, gate3 Q-4b-7, mutation, M9); sửa 5.6 #4; 4c P2 (chỉ `response_time_seconds` qua `audit_columns`), 4c P5 (`intended_action->>'type'`), 4d P4 (ghi đè qua `AuditWriter`) |
 | 30/09/2026 | 1.1 | 4b DỪNG 1: mục 5.6 "Chốt khi hiện thực" (Q-4b-1…6, TQ-2/3/4/7, thứ tự kiểm khởi động, P7 + test dựa lỗ G4-16, seed 17 người, Việc treo); P13 sửa chữ nhánh lỗi AD của `decided_by` → E2 |
 | 30/09/2026 | 1.0 | 4a DỪNG 2 hiện thực `f64fd86`: mục 4.10 "Chốt khi hiện thực DỪNG 2" (11 dòng: Node 24 action, HMAC chuyển tiếp Q-4a-5, mang khoá Q-4a-6, `gitleaks:allow` cho vector đáp án, lệnh mypy tests, số đo bench, Việc treo 22–24); 4b P5 mang theo `_carry_ghost_lock` |

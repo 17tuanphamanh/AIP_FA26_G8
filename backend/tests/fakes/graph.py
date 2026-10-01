@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from app.approval.store import ApprovalRow
+from app.approval.store import ApprovalRow, NoticeKind
 from app.audit.writer import check_audit_row
 from app.auth.models import UserRecord
 from app.auth.service import auth_config, lock_policy
@@ -35,11 +35,11 @@ from app.core.clock import Clock, FakeClock
 from app.db.escalations import QueueItem
 from app.db.lineage import LINEAGE_KEY, check_lineage_row
 from app.db.models import CONFLICT_TYPES
-from app.db.runtime import DueWait, OpenTurn, as_ref
+from app.db.runtime import DueReminder, DueWait, OpenTurn, ReminderTarget, as_ref
 from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
-from app.domain.approval import Roster
+from app.domain.approval import REMINDER_FRACTIONS, ReminderN, Roster
 from app.domain.final import FinalSummary
 from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
@@ -178,7 +178,8 @@ class MemoryTurns:
 
 
 class MemoryDeadlines:
-    """`wait_deadlines` + phần `approvals` worker đọc (hạn duyệt)."""
+    """`wait_deadlines` + phần `approvals` worker đọc (hạn duyệt) + 2 truy vấn nhắc 4c P3 (cùng ngữ nghĩa câu SQL của
+    `SqlDeadlineStore`: lọc thô ở `due_reminders`, đánh dấu có điều kiện ở `mark_reminder_once`)."""
 
     def __init__(self) -> None:
         self.waits: list[dict[str, Any]] = []
@@ -200,10 +201,28 @@ class MemoryDeadlines:
                 if a["status"] == "pending" and a["deadline"] < now]  # fmt: skip
         return out[:limit]
 
+    async def due_reminders(self, now: datetime, limit: int) -> list[DueReminder]:
+        out = []
+        for aid, a in sorted(self.approvals.items(), key=lambda kv: kv[1]["deadline"]):
+            created, deadline = a.get("created_at", a["deadline"]), a["deadline"]
+            r1, r2 = a.get("reminder_1_at"), a.get("reminder_2_at")
+            if (a["status"] == "pending" and deadline > now and (r1 is None or r2 is None)
+                    and created + (deadline - created) * REMINDER_FRACTIONS[1] <= now):  # fmt: skip
+                out.append(DueReminder(aid, a["ticket_id"], created, deadline, r1, r2))
+        return out[:limit]
+
+    async def mark_reminder_once(self, approval_id: str, n: ReminderN, now: datetime) -> ReminderTarget | None:
+        a = self.approvals.get(approval_id)
+        col = f"reminder_{n}_at"
+        if a is None or a["status"] != "pending" or a.get(col) is not None or not a["deadline"] > now:
+            return None
+        a[col] = now
+        return ReminderTarget(a["approver_id"], a.get("backup_approver_id"))
+
     async def mark_fired(self, due: DueWait, at: datetime) -> None:
         if due.kind == "approval":
             if self.approvals[due.ref]["status"] == "pending":
-                self.approvals[due.ref]["status"] = "timeout"
+                self.approvals[due.ref].update(status="timeout", decided_at=at)  # như SQL (4c A11)
             return
         for w in self.waits:
             if (w["ticket_id"], w["kind"], w["created_turn"]) == (due.ticket_id, due.kind, due.ref):
@@ -221,7 +240,8 @@ class MemoryApprovals:
         self._table = deadlines.approvals
         self._clock = clock
         self._users = users
-        self.notified: list[tuple[str, str]] = []
+        self.notified: list[tuple[str, str]] = []  # B15 (`kind="new"`) — giữ 2-tuple như 4b
+        self.reminded: list[tuple[str, str, str]] = []  # 4c P3: (approval_id, người nhận, reminder_1|reminder_2)
         self._row_locks: dict[str, asyncio.Lock] = {}
         self.crash_on_create = False  # process "chết" ở lần tạo phiếu kế tiếp (chưa ghi gì)
 
@@ -246,19 +266,24 @@ class MemoryApprovals:
                                     "created_at": self._clock.now()}  # fmt: skip
         return approval_id
 
-    async def notify_approver(self, approval_id: str, approver_id: str) -> str:
+    async def notify_approver(self, approval_id: str, approver_id: str, kind: NoticeKind = "new") -> str:
+        if kind != "new":
+            self.reminded.append((approval_id, approver_id, kind))
+            return f"r{len(self.reminded)}"
         self.notified.append((approval_id, approver_id))
         return f"n{len(self.notified)}"
 
     async def close(
         self, approval_id: str, result: str, at: datetime, *, decided_by: str | None = None,
         note: str | None = None,
-    ) -> None:  # fmt: skip
+    ) -> int:  # fmt: skip
         row = self._table[approval_id]
-        if row["status"] == "pending":
-            if result == "rejected" and note is None:
-                raise ValueError("CHECK rejected_needs_note")  # như Postgres
-            row.update(status=result, decided_at=at, decided_by=decided_by, note=note)
+        if row["status"] != "pending":
+            return 0
+        if result == "rejected" and note is None:
+            raise ValueError("CHECK rejected_needs_note")  # như Postgres
+        row.update(status=result, decided_at=at, decided_by=decided_by, note=note)
+        return 1
 
     def _row(self, approval_id: str) -> ApprovalRow | None:
         a = self._table.get(approval_id)

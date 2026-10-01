@@ -47,6 +47,7 @@ from app.auth.deps import deny, require
 from app.auth.models import Principal
 from app.domain.action import Action
 from app.domain.approval import manager_chain
+from app.domain.messages import ReasonCode
 from app.domain.states import S_PENDING_APPROVAL
 from app.graph.late_event import record_late, start_event
 
@@ -55,17 +56,13 @@ router = APIRouter()
 
 NOTE_MAX = 1000
 type LateReason = Literal["expired", "already_decided"]
-# Mẫu lý do chọn nhanh (B15-B16 §4, P10 3.2 [Chốt 16.2] — spec chưa có danh sách; đề xuất ở PLAN-3e Q-3e-13).
-type ReasonCode = Literal[
-    "missing_info", "not_authorized", "policy_violation", "duplicate", "wrong_device", "security_concern", "other",
-]  # fmt: skip
 
 
 class DecisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal["approved", "rejected"]
     note: str | None = Field(default=None, max_length=NOTE_MAX)
-    reason_code: ReasonCode | None = None  # mã cố định — KHÔNG chuỗi tự do (không qua guard)
+    reason_code: ReasonCode | None = None  # mã cố định (domain.messages — một nguồn với nhãn tin từ chối B16) — KHÔNG chữ tự do
     view_started_at: datetime | None = None  # tuỳ chọn; chỉ log
 
 
@@ -134,6 +131,8 @@ async def decide(
         "kind": body.decision, "note": note, "approver_id": p.user_id, "at": now.isoformat(),
         "reason_code": body.reason_code,
         "view_duration": (now - first_viewed_at).total_seconds() if first_viewed_at else None,
+        # 4c P4: vai trò người quyết (điểm log 6 `decided_as`). DỪNG 1: `may_decide_as` chỉ cho người được giao → `primary`.
+        "decided_as": "primary",
     }  # fmt: skip
     await start_event(
         desk.runner, ticket_id, S_PENDING_APPROVAL, event, spawn=desk.background.spawn,
