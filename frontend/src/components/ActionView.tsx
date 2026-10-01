@@ -17,7 +17,8 @@ export function FlatTable({ value, testId }: { value: unknown; testId: string })
           className="flex justify-between gap-4 border-t border-line px-5 py-2.5 first:border-t-0"
         >
           <dt className="shrink-0 text-ink-2">{entry.key || "(gốc)"}</dt>
-          <dd className="min-w-0 text-right break-all">{entry.value}</dd>
+          {/* Ngắt ở ranh giới hợp lý; chỉ chuỗi liền quá dài (mã, đường dẫn) mới ngắt giữa — không cắt giữa chữ thường. */}
+          <dd className="min-w-0 text-right wrap-anywhere break-normal">{entry.value}</dd>
         </div>
       ))}
     </dl>

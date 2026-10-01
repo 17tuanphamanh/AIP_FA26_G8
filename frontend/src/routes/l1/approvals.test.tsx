@@ -26,10 +26,14 @@ import {
   isUrgent,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
+  isReflex,
+  REFLEX_MIN_SECONDS,
+  reflexText,
   remainingShort,
   sortByDeadline,
   TICKET_UNAVAILABLE,
   VIEW_NOT_FOUND_TEXT,
+  viewedSeconds,
 } from "./inbox.ts";
 import { TicketOverrideRoute } from "./TicketOverride.tsx";
 
@@ -116,6 +120,13 @@ function stubFetch(route: Route): Call[] {
 }
 
 const posts = (calls: Call[], suffix: string) => calls.filter((c) => c.method === "POST" && c.url.endsWith(suffix));
+
+/** F6 P3: xem phiếu dưới REFLEX_MIN_SECONDS mà bấm "Đồng ý" → hộp hỏi lại. Test của luồng gửi (F4) mô phỏng người duyệt
+ *  ĐÃ xem đủ lâu: dời `performance.now` (đồng hồ chống phản xạ) lên trước, vẫn đơn điệu. Gỡ sau mỗi test (restoreMocks). */
+function viewedLongEnough(seconds = REFLEX_MIN_SECONDS) {
+  const real = performance.now.bind(performance);
+  vi.spyOn(performance, "now").mockImplementation(() => real() + seconds * 1000);
+}
 
 const signedIn = (me: Me): AuthValue => ({
   state: { status: "signedIn", me },
@@ -456,7 +467,9 @@ describe("t44: từ chối thiếu lý do hoặc thiếu ghi chú → không g�
       return undefined;
     });
     renderAt("/approvals/r");
-    fireEvent.click(await screen.findByRole("button", { name: /^Đồng ý/ }));
+    const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    viewedLongEnough();
+    fireEvent.click(approve);
     expect((await screen.findByRole("alert")).textContent).toBe("Yêu cầu đã chuyển sang bước khác");
     await waitFor(() => expect(views).toBeGreaterThanOrEqual(2));
     expect(posts(calls, "/decision")).toHaveLength(1);
@@ -470,6 +483,7 @@ describe("t45: bấm Đồng ý 2 lần nhanh → đúng 1 request", () => {
     );
     renderAt("/approvals/r");
     const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    viewedLongEnough();
     fireEvent.click(approve);
     fireEvent.click(approve);
     fireEvent.click(approve);
@@ -763,7 +777,9 @@ describe("t51: decision 403 (xung đột lợi ích theo chuỗi quản lý — 
   it("Đồng ý → 403 forbidden → 'Bạn không có quyền…', không lộ lý do; thanh quyết định vẫn còn, không báo đã gửi", async () => {
     const calls = detailApi(() => json(403, { detail: "forbidden" }));
     renderAt("/approvals/r");
-    fireEvent.click(await screen.findByRole("button", { name: /^Đồng ý/ }));
+    const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    viewedLongEnough();
+    fireEvent.click(approve);
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(errorMessage(new ApiError(403, "forbidden")));
     expect(alert.textContent).toBe("Bạn không có quyền thực hiện thao tác này.");
@@ -771,5 +787,135 @@ describe("t51: decision 403 (xung đột lợi ích theo chuỗi quản lý — 
     expect(screen.queryByTestId("decision-sent")).toBeNull();
     expect((screen.getByRole("button", { name: /^Đồng ý/ }) as HTMLButtonElement).disabled).toBe(false);
     expect(posts(calls, "/decision")).toHaveLength(1);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t75 (F6 P3)
+
+/** Đồng hồ chống phản xạ giả: `performance.now` = giờ thật + độ dời; `elapse(s)` = người duyệt đã nhìn thêm s giây. */
+function reflexClock() {
+  const real = performance.now.bind(performance);
+  let offset = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => real() + offset);
+  return (seconds: number) => {
+    offset += seconds * 1000;
+  };
+}
+
+describe("t75: chống duyệt theo phản xạ — Đồng ý khi mới xem < 5 giây → hỏi lại; Từ chối không hỏi", () => {
+  it("hàm thuần: ngưỡng 5 giây là hằng một chỗ; đo bằng mốc performance.now; chưa có mốc → 0 (hỏi lại)", () => {
+    expect(REFLEX_MIN_SECONDS).toBe(5);
+    expect(isReflex(0)).toBe(true);
+    expect(isReflex(4.999)).toBe(true);
+    expect(isReflex(5)).toBe(false);
+    expect(isReflex(60)).toBe(false);
+    expect(viewedSeconds(null, 99_000)).toBe(0);
+    expect(viewedSeconds(1_000, 4_200)).toBeCloseTo(3.2);
+    expect(viewedSeconds(5_000, 1_000)).toBe(0); // không âm
+    expect(reflexText(3.7)).toBe("Bạn mới xem phiếu này 3 giây. Đã kiểm tra hành động, đối tượng và mã băm chưa?");
+    expect(reflexText(0.2)).toContain("1 giây");
+  });
+
+  it("< 5 s → hộp xác nhận, focus 'Xem lại'; 'Xem lại' → đóng, 0 POST; bấm lại → 'Vẫn đồng ý' → đúng 1 POST, body không thêm trường", async () => {
+    const elapse = reflexClock();
+    const calls = detailApi(() => json(202, { approval_id: "r", ticket_id: "t", status: "accepted", notices: [] }));
+    renderAt("/approvals/r");
+    const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    elapse(3.2);
+    fireEvent.click(approve);
+    const dialog = screen.getByRole("dialog", { name: "Xác nhận đồng ý" });
+    expect(within(dialog).getByTestId("reflex-text").textContent).toBe(
+      "Bạn mới xem phiếu này 3 giây. Đã kiểm tra hành động, đối tượng và mã băm chưa?",
+    );
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Xem lại" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Xem lại" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(posts(calls, "/decision")).toHaveLength(0);
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Đồng ý/ })); // vẫn < 5 s → hỏi lại
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Xác nhận đồng ý" })).getByRole("button", { name: "Vẫn đồng ý" }));
+    await screen.findByTestId("decision-sent");
+    const sent = posts(calls, "/decision");
+    expect(sent).toHaveLength(1);
+    expect(Object.keys(JSON.parse(sent[0]!.body!) as object).sort()).toStrictEqual(["decision", "view_started_at"]);
+  });
+
+  it("≥ 5 s → không hộp, gửi ngay đúng 1 POST", async () => {
+    const elapse = reflexClock();
+    const calls = detailApi(() => json(202, { approval_id: "r", ticket_id: "t", status: "accepted", notices: [] }));
+    renderAt("/approvals/r");
+    const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    elapse(REFLEX_MIN_SECONDS);
+    fireEvent.click(approve);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await screen.findByTestId("decision-sent");
+    expect(posts(calls, "/decision")).toHaveLength(1);
+  });
+
+  it("đồng hồ bắt đầu khi chi tiết HIỆN (GET 200), không tính thời gian chờ tải: tải 30 s rồi bấm ngay → vẫn hỏi lại", async () => {
+    const elapse = reflexClock();
+    let release: () => void = () => {};
+    const loaded = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stubFetch(async (method, url) => {
+      if (url === "/api/approvals/r") {
+        await loaded;
+        return json(200, viewOf("r"));
+      }
+      if (url.startsWith("/api/approvals?")) return json(200, [listItem("r")]);
+      return method === "POST" ? json(202, {}) : json(404, { detail: "not_found" });
+    });
+    renderAt("/approvals/r");
+    await screen.findByText("Đang tải phiếu…");
+    elapse(30); // phiếu tải chậm 30 giây
+    release();
+    fireEvent.click(await screen.findByRole("button", { name: /^Đồng ý/ }));
+    expect(screen.getByRole("dialog", { name: "Xác nhận đồng ý" })).toBeTruthy();
+  });
+
+  it("Từ chối ngay khi vừa mở phiếu (đủ lý do + ghi chú) → KHÔNG hỏi lại, đúng 1 POST rejected", async () => {
+    reflexClock(); // 0 giây
+    const calls = detailApi(() => json(202, { approval_id: "r", ticket_id: "t", status: "accepted", notices: [] }));
+    renderAt("/approvals/r");
+    fireEvent.click(await screen.findByRole("button", { name: "Từ chối" }));
+    const sheet = screen.getByRole("dialog", { name: "Từ chối yêu cầu" });
+    fireEvent.change(within(sheet).getByLabelText("Lý do"), { target: { value: "wrong_device" } });
+    fireEvent.change(within(sheet).getByLabelText("Lý do gửi người dùng"), { target: { value: "Sai máy" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Gửi từ chối" }));
+    await screen.findByTestId("decision-sent");
+    expect(screen.queryByRole("dialog", { name: "Xác nhận đồng ý" })).toBeNull();
+    const sent = posts(calls, "/decision");
+    expect(sent).toHaveLength(1);
+    expect((JSON.parse(sent[0]!.body!) as { decision: string }).decision).toBe("rejected");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t77 (F6 P5)
+
+describe("t77: thẩm mỹ F4 — bảng khoá–giá trị không ngắt giữa chữ; thanh quyết định nền đặc, ngoài vùng cuộn (Q-fe-32)", () => {
+  it("dd của bảng: wrap-anywhere + break-normal, không break-all; thanh: bg-white đặc + border-t + shrink-0, không sticky, KHÔNG nằm trong vùng cuộn", async () => {
+    detailApi(() => json(202, {}));
+    renderAt("/approvals/r");
+    const bar = await screen.findByTestId("decision-bar");
+    const values = [...document.querySelectorAll('[data-testid="risk-row"] dd, [data-testid="action-row"] dd, [data-testid="fact-row"] dd')];
+    expect(values.length).toBeGreaterThanOrEqual(3); // đủ 3 bảng: hành động, rủi ro, dữ kiện
+    for (const dd of values) {
+      const cls = dd.className.split(/\s+/);
+      expect(cls).toContain("wrap-anywhere");
+      expect(cls).toContain("break-normal");
+      expect(cls).not.toContain("break-all");
+    }
+    const barCls = bar.className.split(/\s+/);
+    expect(barCls).toEqual(expect.arrayContaining(["bg-white", "border-t", "shrink-0"]));
+    expect(barCls.some((c) => c.startsWith("bg-white/"))).toBe(false); // không nền trong suốt
+    expect(barCls).not.toContain("sticky");
+    const scroll = screen.getByTestId("approval-scroll");
+    expect(scroll.className.split(/\s+/)).toEqual(expect.arrayContaining(["overflow-y-auto", "min-h-0", "grow"]));
+    expect(scroll.contains(bar)).toBe(false);
+    expect(scroll.parentElement).toBe(bar.parentElement);
+    expect(scroll.querySelector("section")?.className.split(/\s+/)).toContain("pb-6");
   });
 });

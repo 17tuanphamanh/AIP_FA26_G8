@@ -9,25 +9,30 @@ import { hasPerm, ROLE_LABEL } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
 import { ActionView, FlatTable } from "../../components/ActionView.tsx";
 import { useServerNow } from "../../components/clock.ts";
+import { Modal } from "../../components/Modal.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
 import {
   actionLabel,
   approveBody,
   BACKUP_TEXT,
   DECISION_SENT,
+  isReflex,
   isUrgent,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
+  reflexText,
   rejectBody,
   remainingClock,
   STATUS_LABEL,
   VIEW_NOT_FOUND_TEXT,
+  viewedSeconds,
 } from "./inbox.ts";
 
 // B4L1Detail — `GET /api/approvals/{id}` (4c P6, CHƯA CÓ: MSW ở dev:mock). Hiện ĐÚNG object `action` đã băm (Bảng/JSON)
 // + mã băm đủ; căn cứ quy trình; risk/facts khoá–giá trị chung. 3 trạng thái KH 4.6: 409 `plan_changed` (chỉ một câu,
 // không object, không nút — G4-13), 404, dự phòng. Quyết định: `POST …/decision` THẬT (MSW chỉ chặn id `apv-demo-`,
-// Q-fe-5). Phiếu không còn `pending` → chỉ đọc.
+// Q-fe-5). Phiếu không còn `pending` → chỉ đọc. F6: chống duyệt theo phản xạ (P10 §3.2) — "Đồng ý" khi mới xem < 5 giây →
+// hỏi lại; thanh quyết định nằm NGOÀI vùng cuộn, nền đặc (12b Q-fe-32 — như Bản 4: không bao giờ đè nội dung).
 
 const BACK = (
   <Link to="/approvals" className="text-secondary text-fpt-blue">
@@ -123,15 +128,19 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const queryClient = useQueryClient();
   const createdAt = useCreatedAt(view);
   const startedAt = useRef<string | null>(null); // giờ (máy chủ) bắt đầu xem — chỉ để backend ghi log
+  const viewStart = useRef<number | null>(null); // mốc performance.now() khi chi tiết hiện xong — chống duyệt theo phản xạ
   const inFlight = useRef(false); // chặn bấm 2 lần trong cùng một nhịp (state chưa kịp cập nhật)
   const [sending, setSending] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<{ redacted: boolean } | null>(null);
+  const [reflex, setReflex] = useState<number | null>(null); // số giây đã xem khi hộp "xem lại" đang mở
 
+  // `Detail` chỉ render khi GET phiếu 200 → effect đầu tiên = lúc khối chi tiết hiện xong.
   useEffect(() => {
     startedAt.current ??= new Date(serverNow()).toISOString();
+    viewStart.current ??= performance.now();
   }, []);
 
   const reload = () => void queryClient.invalidateQueries({ queryKey: ["approvals"] });
@@ -165,6 +174,18 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
     }
   }
 
+  // CHỈ hỏi lại khi ĐỒNG Ý: đồng ý vội là chiều gây hại (hệ thống thực hiện hành động). Từ chối là hướng an toàn — không
+  // chặn thêm bước nào, để người duyệt không ngại từ chối khi còn nghi ngờ (không đẩy tăng ca bỏ sót).
+  function approve() {
+    if (inFlight.current || sent) return;
+    const seconds = viewedSeconds(viewStart.current, performance.now());
+    if (isReflex(seconds)) {
+      setReflex(seconds);
+      return;
+    }
+    void send(approveBody(startedAt.current), false);
+  }
+
   const pending = view.status === "pending";
   const actionType = view.action.type;
   const title = typeof actionType === "string" ? actionLabel(actionType) : "Hành động";
@@ -174,100 +195,102 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const procedureDoc = view.procedure?.doc_id ?? "(không có)";
 
   return (
-    <div className="flex min-h-full flex-col">
-      <section className="flex grow flex-col gap-6 px-12 pt-8 pb-6">
-        <div className="flex flex-col gap-1">
-          {BACK}
-          <div className="flex items-center gap-4">
-            <h1 className="min-w-0 grow text-title">
-              Phiếu <span className="font-mono">{view.approval_id}</span>
-            </h1>
-            <Deadline view={view} createdAt={createdAt} />
-          </div>
-          <p className="text-label font-normal text-ink-2">
-            Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
-          </p>
-        </div>
-
-        {view.role_as === "backup" ? (
-          <div role="note" data-testid="backup-banner" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
-            <b className="font-semibold">{BACKUP_TEXT}</b> — người duyệt chính chưa quyết sau lần nhắc thứ hai.
-          </div>
-        ) : null}
-        {!pending ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-group bg-group px-5 py-3.5">
-            <p role="status" data-testid="approval-readonly" className="grow">
-              Phiếu {STATUS_LABEL[view.status].toLowerCase()} — chỉ xem, không quyết định được nữa.
+    <div className="flex h-full min-h-0 flex-col">
+      <div data-testid="approval-scroll" className="min-h-0 grow overflow-y-auto">
+        <section className="flex flex-col gap-6 px-12 pt-8 pb-6">
+          <div className="flex flex-col gap-1">
+            {BACK}
+            <div className="flex items-center gap-4">
+              <h1 className="min-w-0 grow text-title">
+                Phiếu <span className="font-mono">{view.approval_id}</span>
+              </h1>
+              <Deadline view={view} createdAt={createdAt} />
+            </div>
+            <p className="text-label font-normal text-ink-2">
+              Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
             </p>
-            {/* Q-fe-24: lối vào ghi đè theo quyền + `ticket_id` của phiếu (ticket đã rời bước duyệt); server quyết. */}
-            {hasPerm(me, "decision:override") ? (
-              <Link
-                to={`/approvals/ticket/${encodeURIComponent(view.ticket_id)}`}
-                data-testid="override-link"
-                className="shrink-0 text-secondary font-semibold text-fpt-blue"
-              >
-                Xem ticket · Ghi đè…
-              </Link>
-            ) : null}
           </div>
-        ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <Block title="Hệ thống sẽ thực hiện chính xác">
-            <ActionView action={view.action} hash={view.action_plan_hash} title={title} />
-          </Block>
-          <aside className="flex flex-col gap-6">
-            <Block title="Yêu cầu của người gửi">
-              <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
-                {view.request_summary}
+          {view.role_as === "backup" ? (
+            <div role="note" data-testid="backup-banner" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
+              <b className="font-semibold">{BACKUP_TEXT}</b> — người duyệt chính chưa quyết sau lần nhắc thứ hai.
+            </div>
+          ) : null}
+          {!pending ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-group bg-group px-5 py-3.5">
+              <p role="status" data-testid="approval-readonly" className="grow">
+                Phiếu {STATUS_LABEL[view.status].toLowerCase()} — chỉ xem, không quyết định được nữa.
               </p>
-            </Block>
-            <Block title="Người gửi">
-              <dl className="overflow-hidden rounded-group border border-line text-secondary">
-                <div className="flex justify-between gap-4 px-5 py-3">
-                  <dt>Vai trò</dt>
-                  <dd className="text-ink-2">{role}</dd>
-                </div>
-                <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
-                  <dt>Phòng ban</dt>
-                  <dd className="text-ink-2">{view.requester.department}</dd>
-                </div>
-              </dl>
-            </Block>
-            <Block title="Căn cứ quy trình">
-              <p data-testid="procedure" className="flex flex-col rounded-group border border-line px-5 py-3">
-                <span>{procedureTitle || procedureDoc}</span>
-                {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
-              </p>
-            </Block>
-            <Block title="Đánh giá rủi ro">
-              <div className="overflow-hidden rounded-group border border-line">
-                <FlatTable value={view.risk} testId="risk-row" />
-              </div>
-            </Block>
-            <Block title="Dữ kiện đã kiểm">
-              <div className="overflow-hidden rounded-group border border-line">
-                <FlatTable value={view.facts} testId="fact-row" />
-              </div>
-            </Block>
-          </aside>
-        </div>
+              {/* Q-fe-24: lối vào ghi đè theo quyền + `ticket_id` của phiếu (ticket đã rời bước duyệt); server quyết. */}
+              {hasPerm(me, "decision:override") ? (
+                <Link
+                  to={`/approvals/ticket/${encodeURIComponent(view.ticket_id)}`}
+                  data-testid="override-link"
+                  className="shrink-0 text-secondary font-semibold text-fpt-blue"
+                >
+                  Xem ticket · Ghi đè…
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
 
-        {error ? (
-          <p role="alert" className="text-danger">
-            {error}
-          </p>
-        ) : null}
-        {sent ? (
-          <p role="status" data-testid="decision-sent" className="rounded-group bg-group px-5 py-3.5">
-            <b className="font-semibold">{DECISION_SENT}</b>
-            {sent.redacted ? ` · ${NOTICES_TEXT}` : ""}
-          </p>
-        ) : null}
-      </section>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <Block title="Hệ thống sẽ thực hiện chính xác">
+              <ActionView action={view.action} hash={view.action_plan_hash} title={title} />
+            </Block>
+            <aside className="flex flex-col gap-6">
+              <Block title="Yêu cầu của người gửi">
+                <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
+                  {view.request_summary}
+                </p>
+              </Block>
+              <Block title="Người gửi">
+                <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                  <div className="flex justify-between gap-4 px-5 py-3">
+                    <dt>Vai trò</dt>
+                    <dd className="text-ink-2">{role}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                    <dt>Phòng ban</dt>
+                    <dd className="text-ink-2">{view.requester.department}</dd>
+                  </div>
+                </dl>
+              </Block>
+              <Block title="Căn cứ quy trình">
+                <p data-testid="procedure" className="flex flex-col rounded-group border border-line px-5 py-3">
+                  <span>{procedureTitle || procedureDoc}</span>
+                  {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
+                </p>
+              </Block>
+              <Block title="Đánh giá rủi ro">
+                <div className="overflow-hidden rounded-group border border-line">
+                  <FlatTable value={view.risk} testId="risk-row" />
+                </div>
+              </Block>
+              <Block title="Dữ kiện đã kiểm">
+                <div className="overflow-hidden rounded-group border border-line">
+                  <FlatTable value={view.facts} testId="fact-row" />
+                </div>
+              </Block>
+            </aside>
+          </div>
+
+          {error ? (
+            <p role="alert" className="text-danger">
+              {error}
+            </p>
+          ) : null}
+          {sent ? (
+            <p role="status" data-testid="decision-sent" className="rounded-group bg-group px-5 py-3.5">
+              <b className="font-semibold">{DECISION_SENT}</b>
+              {sent.redacted ? ` · ${NOTICES_TEXT}` : ""}
+            </p>
+          ) : null}
+        </section>
+      </div>
 
       {pending && !sent ? (
-        <div className="sticky bottom-0 flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white/95 px-12">
+        <div data-testid="decision-bar" className="flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white px-12">
           <button
             type="button"
             onClick={() => {
@@ -282,13 +305,36 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
           <span className="grow text-label font-normal text-ink-2">Quyết định được ghi vào nhật ký kiểm toán.</span>
           <button
             type="button"
-            onClick={() => void send(approveBody(startedAt.current), false)}
+            onClick={approve}
             disabled={sending}
             className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white disabled:opacity-60"
           >
             {sending && !sheet ? "Đang gửi…" : "Đồng ý thực hiện"}
           </button>
         </div>
+      ) : null}
+
+      {pending && reflex !== null && !sent ? (
+        <Modal label="Xác nhận đồng ý" onClose={() => setReflex(null)}>
+          <h2 className="text-center text-heading">Xem kỹ trước khi đồng ý</h2>
+          <p data-testid="reflex-text">{reflexText(reflex)}</p>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Nút mặc định (focus) là "Xem lại": Enter / Esc vội không thành đồng ý. */}
+            <button type="button" autoFocus onClick={() => setReflex(null)} className="h-11 rounded-full bg-fpt-blue font-semibold text-white">
+              Xem lại
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setReflex(null);
+                void send(approveBody(startedAt.current), false);
+              }}
+              className="h-11 rounded-full bg-button-2 font-semibold text-fpt-blue"
+            >
+              Vẫn đồng ý
+            </button>
+          </div>
+        </Modal>
       ) : null}
 
       {pending && sheet && !sent ? (

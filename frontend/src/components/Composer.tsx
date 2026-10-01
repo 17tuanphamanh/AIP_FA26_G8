@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useId } from "react";
+import { type KeyboardEvent, type ReactNode, type Ref, useId } from "react";
 
 type ComposerProps = {
   /** Nhãn cho trình đọc màn hình (ẩn). */
@@ -17,6 +17,8 @@ type ComposerProps = {
   hint?: ReactNode;
   variant: "home" | "chat";
   autoFocus?: boolean;
+  /** Ô nhập — để trang đặt focus (vd sau khi bấm nút gợi ý nhanh). */
+  inputRef?: Ref<HTMLTextAreaElement>;
 };
 
 function SendIcon() {
@@ -29,7 +31,7 @@ function SendIcon() {
 
 // Ô nhập B4EmpHome (lớn, bo 24) / B4EmpChat (một dòng, dính đáy). Enter gửi, Shift+Enter xuống dòng; đang gõ dấu
 // tiếng Việt (IME đang ghép chữ) thì Enter KHÔNG gửi.
-export function Composer(props: ComposerProps) {
+export function Composer({ inputRef, ...props }: ComposerProps) {
   const id = useId();
   const errorId = `${id}-error`;
   const canSend = !!props.onSubmit && !props.disabled && !props.busy && props.value.trim().length > 0;
@@ -54,6 +56,7 @@ export function Composer(props: ComposerProps) {
           {props.label}
         </label>
         <textarea
+          ref={inputRef}
           id={id}
           rows={home ? 2 : 1}
           value={props.value}

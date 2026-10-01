@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { createTicket, TEXT_MAX, withBusyRetry } from "../../api/tickets.ts";
 import { Composer } from "../../components/Composer.tsx";
 import { describeSendError } from "./sendError.ts";
 import { sessionTickets } from "./sessionTickets.ts";
-
-// Gợi ý tĩnh (B4EmpHome) — bấm là điền vào ô, người dùng sửa rồi gửi. Nút gợi ý điền sẵn câu đầy đủ: F6.
-const SUGGESTIONS = ["Quên mật khẩu", "Lỗi VPN", "Cài phần mềm", "Xin quyền truy cập"];
+import { SUGGESTIONS } from "./suggestions.ts";
 
 function LockHint() {
   return (
@@ -20,7 +18,7 @@ function LockHint() {
   );
 }
 
-// B4EmpHome: lời chào không tên (12b Q-fe-9), ô nhập lớn 720 px, gợi ý. Chip "N yêu cầu đang chờ IT duyệt" của Bản 4
+// B4EmpHome: lời chào không tên (12b Q-fe-9), ô nhập lớn 720 px, 4 nút gợi ý nhanh (suggestions.ts). Chip "N yêu cầu đang chờ IT duyệt" của Bản 4
 // cần lịch sử từ server (Phase 7) → chưa hiện.
 export function ChatHome() {
   const navigate = useNavigate();
@@ -29,6 +27,21 @@ export function ChatHome() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [waitNote, setWaitNote] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const caretToEnd = useRef(false);
+
+  // Nút gợi ý (F6 P4): điền câu mẫu → focus ô nhập, con trỏ cuối câu để sửa tiếp. KHÔNG gửi.
+  function suggest(sample: string) {
+    caretToEnd.current = true;
+    setText(sample);
+    inputRef.current?.focus();
+  }
+  useEffect(() => {
+    const box = inputRef.current;
+    if (!caretToEnd.current || !box) return;
+    caretToEnd.current = false;
+    box.setSelectionRange(box.value.length, box.value.length);
+  }, [text]);
 
   async function submit() {
     const value = text.trim();
@@ -70,6 +83,7 @@ export function ChatHome() {
             error={fieldError}
             hint={<LockHint />}
             autoFocus
+            inputRef={inputRef}
           />
         </div>
         {waitNote || error ? (
@@ -80,12 +94,12 @@ export function ChatHome() {
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           {SUGGESTIONS.map((suggestion) => (
             <button
-              key={suggestion}
+              key={suggestion.label}
               type="button"
-              onClick={() => setText(suggestion)}
+              onClick={() => suggest(suggestion.text)}
               className="h-9 rounded-full border border-line bg-white px-3.5 text-secondary hover:bg-group"
             >
-              {suggestion}
+              {suggestion.label}
             </button>
           ))}
         </div>

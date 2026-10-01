@@ -21,9 +21,11 @@ export type Accepted = { ticket_id: string; status: string; notices: string[] };
 export type Source = { chunk_id: string; title: string; heading_path: string };
 
 // Nguồn: domain/messages.py (answer, question, result), graph/nodes/b20_audit.py (escalation); 4c thêm rejection.
-// `kind` lạ → hiện `text` như tin thường, không lỗi (12b Q-fe-2). Xoá khi: TicketView khai kiểu conversation.
+// `kind` lạ → hiện `text` như tin thường, không lỗi (12b Q-fe-2); `digest` (tin tổng hợp nhiều ý) — Đề xuất F6, kiểu
+// `DigestConversationItem` ở khối route CHƯA CÓ. Xoá khi: TicketView khai kiểu conversation.
 export type ConversationItem =
   | { role: "user"; text: string }
+  | DigestConversationItem
   | {
       role: "assistant";
       kind: "answer" | "question" | "result" | "escalation" | "rejection" | (string & {});
@@ -36,6 +38,8 @@ export type ConversationItem =
 // Nguồn: backend/app/api/tickets.py TicketView (response_model) — `conversation` là list[dict] nên phần tử để `unknown`,
 // component tự kiểm dạng (components/Conversation.tsx). Xoá khi: `npm run gen:api` chạy được (12b Q-fe-1) → dùng
 // kiểu của schema.gen.ts (conversation vẫn phải kiểm dạng).
+// `children_progress`: CHƯA CÓ ở backend — Đề xuất F6 cho T20 (kiểu `ChildProgress` dưới); thiếu/null = ticket thường.
+// Giao diện vẫn kiểm dạng từng phần tử (routes/employee/multi.ts `normalizeProgress`).
 export type TicketView = {
   ticket_id: string;
   status: string;
@@ -46,6 +50,7 @@ export type TicketView = {
   final_state: string | null;
   created_at: string;
   closed_at: string | null;
+  children_progress?: ChildProgress[] | null;
 };
 
 // Nguồn: backend/app/api/tickets.py ConfirmIn (extra="forbid", note ≤ 1000). Xoá khi: route khai body trong openapi.
@@ -111,6 +116,47 @@ export type Health = {
 };
 
 // ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
+
+// Yêu cầu nhiều ý (D-31) — Phase 5, T20. Toàn bộ khối này là [Đề xuất F6 — chốt ở T20]; hình dạng đầy đủ + chỗ
+// [Suy luận]: PLAN-fe mục 8 "Đề xuất hợp đồng cho T20". MSW: mocks/handlers/employee-multi.ts (chỉ id `tkt-demo-multi-`).
+
+// Nguồn: P1 §8.2–8.3 (khung tiến độ từng ý, không phải tin nhắn) + P10 §3.1 (`GET /api/tickets/{cha}` trả
+// `children_progress`) — Đề xuất F6. `title` = nhãn ngắn của ý do server đặt [Suy luận]; `outcome` chỉ khi `closed`.
+// Xoá khi: T20 merge (gen:api) — xoá cùng mocks/handlers/employee-multi.ts, mocks/fixtures/multi.ts.
+export type ChildProgressState = "processing" | "pending_approval" | "ready" | "needs_user" | "closed";
+export type ChildOutcome = "resolved" | "escalated" | "rejected" | "blocked";
+export type ChildProgress = {
+  child_id: string;
+  index: number;
+  title: string;
+  progress: ChildProgressState;
+  outcome: ChildOutcome | null;
+};
+
+// Nguồn: P1 §8.2 `compose_digest` (một tin / lượt, mỗi ý một khối "Ý n – …") + B03-B05 §5.4.1 (`needs` của notice) —
+// Đề xuất F6. `kind` theo notice của con: B10/B18 → result, B11 → question, B16 → rejection, B20 → escalation.
+// `options` (gợi ý trả lời, vd mã máy) [Suy luận]. `text` của tin = bản chữ thuần (dự phòng / kênh khác).
+// Xoá khi: T20 merge (gen:api).
+export type DigestItemKind = "result" | "question" | "rejection" | "escalation";
+export type DigestNeeds = "confirm" | "answer" | "none";
+export type DigestItem = {
+  child_id: string;
+  index: number;
+  title: string;
+  kind: DigestItemKind;
+  text: string;
+  needs: DigestNeeds;
+  options?: string[];
+  sources?: Source[];
+};
+export type DigestConversationItem = { role: "assistant"; kind: "digest"; round: number; text: string; items: DigestItem[] };
+
+// Nguồn: B19 §4 `ParentReplyIn` (khoá = child_ticket_id; `ConfirmIn | ClarifyAnswerIn`) + P1 §8.2 (mọi ý trong
+// `awaiting` phải có mặt, thiếu → 422) — Đề xuất F6: `{answer}` cho câu hỏi, `{confirmed, note?}` cho xác nhận (không gửi
+// `satisfaction` — "Có thể"). 202 = `Accepted`; 422 `fields: ["body.items.<child_id>…"]`; 409 trả muộn [Chốt 8.3].
+// Xoá khi: T20 merge (gen:api).
+export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
+export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
 
 // Nguồn: phase4-thiet-ke-chi-tiet.md §6.1 P5 (4c).
 // Xoá khi: 4c merge → gen:api (xoá cùng mocks/handlers/approvals.ts).

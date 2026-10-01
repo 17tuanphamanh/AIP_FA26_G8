@@ -139,6 +139,22 @@ export function rejectProblem(reason: ReasonCode | null, note: string): string |
   return null;
 }
 
+// ---------------------------------------------------------------- chống duyệt theo phản xạ (P10 §3.2 "Nên có", F6 P3)
+
+/** Xem phiếu chưa tới ngần này giây mà bấm "Đồng ý thực hiện" → hỏi xác nhận lại. Hằng DUY NHẤT của ngưỡng. */
+export const REFLEX_MIN_SECONDS = 5;
+
+/** Số giây đã xem, đo bằng `performance.now()` (đồng hồ đơn điệu — chỉnh giờ máy giữa chừng không làm sai). Chưa có
+ *  mốc bắt đầu → 0 (coi như chưa xem: hỏi lại). Chỉ để giao diện hỏi lại; body quyết định KHÔNG đổi — server tự tính
+ *  thời gian xem từ `first_viewed_at` (graph/nodes/approval_wait.py), `view_started_at` chỉ để log. */
+export const viewedSeconds = (startedAt: number | null, now: number): number =>
+  startedAt === null ? 0 : Math.max(0, (now - startedAt) / 1000);
+
+export const isReflex = (seconds: number): boolean => seconds < REFLEX_MIN_SECONDS;
+
+export const reflexText = (seconds: number): string =>
+  `Bạn mới xem phiếu này ${Math.max(1, Math.floor(seconds))} giây. Đã kiểm tra hành động, đối tượng và mã băm chưa?`;
+
 export const approveBody = (viewStartedAt: string | null): DecisionIn =>
   viewStartedAt ? { decision: "approved", view_started_at: viewStartedAt } : { decision: "approved" };
 

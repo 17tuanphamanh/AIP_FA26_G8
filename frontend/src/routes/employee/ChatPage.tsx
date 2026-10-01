@@ -7,14 +7,18 @@ import {
   confirmTicket,
   getTicket,
   NOTE_MAX,
+  replyTicket,
   sendMessage,
   TEXT_MAX,
   withBusyRetry,
 } from "../../api/tickets.ts";
-import type { Accepted, TicketView } from "../../api/types.ts";
+import type { Accepted, ParentReplyIn, TicketView } from "../../api/types.ts";
 import { Composer } from "../../components/Composer.tsx";
 import { Conversation } from "../../components/Conversation.tsx";
+import { DigestMessage, type SendResult } from "../../components/DigestMessage.tsx";
 import { normalizeConversation } from "../../components/messages.ts";
+import { ProgressStrip } from "../../components/ProgressStrip.tsx";
+import { latestRound, normalizeProgress, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel } from "./multi.ts";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
 import { FINAL_NOTE, POLL_PROCESSING_MS, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
@@ -40,6 +44,8 @@ const SETTLE_MAX_MS = 30_000;
 const progressOf = (v: TicketView) => `${v.status}|${v.waiting_for}|${v.final_state}|${v.conversation.length}`;
 
 // B4EmpChat + B4EmpStates (đã tinh chỉnh KH 4.6): một cột 720 px; polling theo KH mục 5; ô nhập theo `waiting_for`.
+// Ticket cha nhiều ý (F6, D-31 — có `children_progress`): dải tiến độ dưới header (không phải tin nhắn), tin tổng hợp
+// round lớn nhất có form khi `waiting_for = "reply"`, nhãn cha theo 12b Q-fe-34. Ticket thường: không nhánh nào đổi.
 export function ChatPage({ ticketId }: { ticketId: string }) {
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -91,7 +97,8 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     end.current?.scrollIntoView?.({ block: "end" });
   }, [messages.length, view?.waiting_for, view?.final_state]);
 
-  async function run(send: () => Promise<Accepted>) {
+  /** Gửi + hiện `notices` + gọi lại ngay; lỗi trả về cho nơi gọi tự hiện (ô nhập dưới, hay từng khối tin tổng hợp). */
+  async function submit(send: () => Promise<Accepted>): Promise<SendResult> {
     setSending(true);
     setFieldError(null);
     setError(null);
@@ -101,17 +108,26 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       setDraft("");
       if (view) setSentAt(progressOf(view));
       await queryClient.invalidateQueries({ queryKey }); // sau 202: gọi lại ngay một lần rồi theo nhịp
+      return { ok: true };
     } catch (e) {
-      const described = describeSendError(e);
-      setFieldError(described.field);
-      setError(described.message);
-      // 409 (sự kiện muộn — ticket đã sang bước khác): hiện `detail` + tải lại ticket.
+      // 409 (sự kiện muộn — ticket đã sang bước khác): tải lại ticket (câu báo do nơi gọi hiện).
       if (e instanceof ApiError && e.status === 409) void queryClient.invalidateQueries({ queryKey });
+      return { ok: false, error: e };
     } finally {
       setSending(false);
       setWaitNote(null);
     }
   }
+
+  async function run(send: () => Promise<Accepted>) {
+    const result = await submit(send);
+    if (result.ok) return;
+    const described = describeSendError(result.error);
+    setFieldError(described.field);
+    setError(described.message);
+  }
+
+  const sendReply = (body: ParentReplyIn) => submit(() => replyTicket(ticketId, body));
 
   if (query.isPending) {
     return <p className="px-12 py-10 text-ink-2">Đang tải yêu cầu…</p>;
@@ -135,6 +151,11 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   // Đang chờ backend nhận câu trả lời / xác nhận vừa gửi → không mở lại ô nhập, nút của bước cũ.
   const waiting = view.final_state || settling ? null : view.waiting_for;
   const composer = composerFor(view, waiting, settling);
+  // Nhiều ý (D-31): form CHỈ cho tin tổng hợp round lớn nhất và CHỈ khi cha đang chờ trả lời; tin cũ chỉ đọc.
+  const progress = normalizeProgress(view.children_progress);
+  const outcomes = Object.fromEntries((progress ?? []).map((p) => [p.child_id, p.outcome]));
+  const activeRound = waiting === "reply" ? latestRound(messages) : null;
+  const pillLabel = progress ? parentStatusLabel(view, progress) : statusLabel(view.final_state ?? view.status);
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -147,9 +168,10 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
         </span>
         <span role="status" className={`inline-flex h-7 shrink-0 items-center gap-2 rounded-full px-3 text-secondary ${PILL[tone].box}`}>
           <span className={`size-1.75 rounded-full ${PILL[tone].dot}`} aria-hidden="true" />
-          {statusLabel(view.final_state ?? view.status)}
+          {pillLabel}
         </span>
       </header>
+      {progress ? <ProgressStrip items={progress} /> : null}
 
       <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-8 pb-6">
         <div className="flex w-full max-w-(--chat-width) grow flex-col gap-6">
@@ -170,12 +192,24 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               {mine.request ?? REDACTED_NOTE}
             </p>
           ) : null}
-          <Conversation messages={messages} />
+          <Conversation
+            messages={messages}
+            renderDigest={(digest) => (
+              <DigestMessage
+                digest={digest}
+                outcomes={outcomes}
+                newRequestLink
+                form={digest.round === activeRound ? { sending, onSend: sendReply } : undefined}
+              />
+            )}
+          />
           <ActionPanel
             view={view}
             waiting={waiting}
             settling={settling}
             sending={sending}
+            parent={progress !== null}
+            replyShown={activeRound !== null}
             onConfirm={(ok) => void run(() => confirmTicket(ticketId, confirmBody(ok, ok ? undefined : draft)))}
           />
           {query.isError ? (
@@ -221,7 +255,7 @@ function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settl
   if (waiting === "clarify") return { enabled: true, label: "Trả lời", placeholder: "Trả lời câu hỏi ở trên…" };
   if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Nhắn thêm nếu chưa ổn…" };
   if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: "Đang chờ IT duyệt" };
-  if (waiting === "reply") return { enabled: false, label: "Tin nhắn", placeholder: "Yêu cầu nhiều ý — tính năng đang hoàn thiện" };
+  if (waiting === "reply") return { enabled: false, label: "Tin nhắn", placeholder: "Phản hồi trong khung ở trên" };
   return { enabled: false, label: "Tin nhắn", placeholder: `${statusLabel(view.status)}…` };
 }
 
@@ -230,14 +264,18 @@ type ActionPanelProps = {
   waiting: TicketView["waiting_for"];
   settling: boolean;
   sending: boolean;
+  /** Ticket cha nhiều ý (có `children_progress`) — câu theo 12b Q-fe-34. */
+  parent: boolean;
+  /** Tin tổng hợp đang có form trả lời (waiting_for = reply) — khi đó form nằm trong hội thoại. */
+  replyShown: boolean;
   onConfirm: (ok: boolean) => void;
 };
 
-function ActionPanel({ view, waiting, settling, sending, onConfirm }: ActionPanelProps) {
+function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-sheet bg-group p-5" data-testid="final-note">
-        <p>{FINAL_NOTE[view.final_state] ?? statusLabel(view.final_state)}</p>
+        <p>{parent ? PARENT_FINAL_NOTE : (FINAL_NOTE[view.final_state] ?? statusLabel(view.final_state))}</p>
         <Link to="/chat" className="font-semibold text-fpt-blue">
           Tạo yêu cầu mới
         </Link>
@@ -278,17 +316,18 @@ function ActionPanel({ view, waiting, settling, sending, onConfirm }: ActionPane
     );
   }
   if (waiting === "reply") {
-    return (
-      <div className="rounded-sheet bg-group p-5">
-        <p>Yêu cầu nhiều ý — tính năng đang hoàn thiện.</p>
-      </div>
+    // Form nằm trong tin tổng hợp. Không có tin nào đọc được (dữ liệu hỏng) → báo, không mở ô nhập nào.
+    return replyShown ? null : (
+      <p role="status" className="rounded-sheet bg-group p-5">
+        Chưa hiện được nội dung cần phản hồi. Vui lòng tải lại trang.
+      </p>
     );
   }
   if (waiting === "clarify") return null; // câu hỏi đã nằm trong hội thoại; ô trả lời ở dưới
   return (
     <p className="inline-flex items-center gap-2 text-secondary text-ink-2" data-testid="processing">
       <span className="size-1.75 animate-pulse rounded-full bg-fpt-blue" aria-hidden="true" />
-      {settling ? SENT_NOTE : statusLabel(view.status)}… Bạn không cần làm gì.
+      {settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}… Bạn không cần làm gì.
     </p>
   );
 }

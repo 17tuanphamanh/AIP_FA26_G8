@@ -1,27 +1,14 @@
-import type { Source } from "../api/types.ts";
+import type { ReactNode } from "react";
 import logoUrl from "../assets/logo.svg";
-import type { Message } from "./messages.ts";
+import { DigestMessage } from "./DigestMessage.tsx";
+import type { Digest, Message } from "./messages.ts";
 import { SafeMarkdown } from "./SafeMarkdown.tsx";
+import { Sources } from "./Sources.tsx";
 
 // Hội thoại theo `kind` (12b Q-fe-2): `answer` (Markdown đã lọc + nguồn), `question`, `result`, `escalation`,
 // `rejection` (4c) — và `kind` lạ → hiện `text` như tin thường, KHÔNG lỗi. Kiểm dạng từng tin: messages.ts.
-
-function Sources({ sources }: { sources: Source[] }) {
-  return (
-    <div className="flex flex-wrap gap-2" data-testid="sources">
-      <span className="sr-only">Nguồn tham khảo:</span>
-      {sources.map((s) => (
-        <span
-          key={s.chunk_id}
-          data-testid="source"
-          className="inline-flex h-7 items-center rounded-lg border border-line px-2.5 text-label font-normal"
-        >
-          {s.heading_path ? `${s.title} · ${s.heading_path}` : s.title}
-        </span>
-      ))}
-    </div>
-  );
-}
+// `digest` (tin tổng hợp nhiều ý, D-31): mặc định chỉ đọc; màn chat nhân viên truyền `renderDigest` để gắn form trả lời
+// cho tin round lớn nhất (routes/employee/ChatPage.tsx).
 
 function AssistantMessage({ message }: { message: Message }) {
   return (
@@ -39,7 +26,9 @@ function AssistantMessage({ message }: { message: Message }) {
   );
 }
 
-export function Conversation({ messages }: { messages: Message[] }) {
+type ConversationProps = { messages: Message[]; renderDigest?: (digest: Digest) => ReactNode };
+
+export function Conversation({ messages, renderDigest }: ConversationProps) {
   return (
     <div role="log" aria-live="polite" aria-label="Cuộc trò chuyện" className="flex flex-col gap-6">
       {messages.map((message, index) =>
@@ -51,6 +40,10 @@ export function Conversation({ messages }: { messages: Message[] }) {
           >
             {message.text}
           </p>
+        ) : message.digest ? (
+          <div key={index} data-kind="digest">
+            {renderDigest ? renderDigest(message.digest) : <DigestMessage digest={message.digest} />}
+          </div>
         ) : (
           <AssistantMessage key={index} message={message} />
         ),

@@ -1,8 +1,9 @@
-// Route ticket của nhân viên (KH 1.1; backend/app/api/tickets.py). Đều là route THẬT — F2 không dùng MSW.
+// Route ticket của nhân viên (KH 1.1; backend/app/api/tickets.py). Đều là route THẬT — F2 không dùng MSW. Ngoại lệ F6:
+// `/reply` (CHƯA CÓ, T20); MSW chỉ chặn GET + reply của id `tkt-demo-multi-` (mocks/handlers/employee-multi.ts).
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
-import type { Accepted, ConfirmIn, TicketView } from "./types.ts";
+import type { Accepted, ConfirmIn, ParentReplyIn, TicketView } from "./types.ts";
 
 /** Khớp `TEXT_MAX`, `NOTE_MAX` ở backend/app/api/tickets.py — chặn sớm ở ô nhập, backend vẫn kiểm (422). */
 export const TEXT_MAX = 4000;
@@ -30,6 +31,12 @@ export async function sendMessage(id: string, text: string): Promise<Accepted> {
 /** Chỉ khi `waiting_for = confirm`. */
 export async function confirmTicket(id: string, body: ConfirmIn): Promise<Accepted> {
   return (await api.request<Accepted>(`${ticketPath(id)}/confirm`, { method: "POST", json: body })).data;
+}
+
+/** Chỉ khi `waiting_for = reply` (ticket cha nhiều ý, D-31). Route CHƯA CÓ — Phase 5 T20; hiện chỉ MSW với id
+ *  `tkt-demo-multi-` (hình dạng đề xuất: PLAN-fe mục 8). Body dựng ở routes/employee/multi.ts `digestReplyBody`. */
+export async function replyTicket(id: string, body: ParentReplyIn): Promise<Accepted> {
+  return (await api.request<Accepted>(`${ticketPath(id)}/reply`, { method: "POST", json: body })).data;
 }
 
 /** Body `/confirm`: ĐÚNG khoá của `ConfirmIn` (backend `extra="forbid"`). Ghi chú rỗng → bỏ hẳn khoá `note`. */

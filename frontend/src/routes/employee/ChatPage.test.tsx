@@ -9,6 +9,7 @@ import { Sidebar } from "../../components/Sidebar.tsx";
 import { ChatHome } from "./ChatHome.tsx";
 import { ChatRoute } from "./ChatPage.tsx";
 import { DEFAULT_TITLE, REDACTED_NOTE, sessionTickets } from "./sessionTickets.ts";
+import { SUGGESTIONS } from "./suggestions.ts";
 
 afterEach(() => {
   cleanup();
@@ -186,6 +187,57 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
       expect(screen.getByText("Chưa có yêu cầu nào trong phiên này.")).toBeTruthy();
     } finally {
       unmount();
+    }
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t76 (F6 P4)
+
+describe("t76: nút gợi ý nhanh (B4EmpHome) — điền câu mẫu + focus ô nhập, KHÔNG gửi", () => {
+  it("4 nút đúng chữ Bản 4; bấm 'Lỗi VPN' → ô có câu mẫu, con trỏ cuối câu, focus ô nhập; 0 lời gọi mạng", async () => {
+    const fetchSpy = vi.fn(async () => json(500, {}));
+    vi.stubGlobal("fetch", fetchSpy);
+    const queryClient = new QueryClient();
+    const rendered = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/chat"]}>
+          <Routes>
+            <Route path="/chat" element={<ChatHome />} />
+            <Route path="/chat/:ticketId" element={<p>trang ticket</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    try {
+      const labels = SUGGESTIONS.map((s) => s.label);
+      expect(labels).toStrictEqual(["Quên mật khẩu", "Lỗi VPN", "Cài phần mềm", "Xin quyền truy cập"]);
+      for (const label of labels) expect(screen.getByRole("button", { name: label })).toBeTruthy();
+      const box = screen.getByLabelText("Mô tả vấn đề") as HTMLTextAreaElement;
+      (document.activeElement as HTMLElement | null)?.blur();
+
+      fireEvent.click(screen.getByRole("button", { name: "Lỗi VPN" }));
+      const sample = SUGGESTIONS.find((s) => s.label === "Lỗi VPN")!.text;
+      await waitFor(() => expect(box.value).toBe(sample));
+      expect(document.activeElement).toBe(box);
+      expect(box.selectionStart).toBe(sample.length);
+      // Bấm chip khác → THAY câu (không nối), vẫn không gửi; người dùng sửa được.
+      fireEvent.click(screen.getByRole("button", { name: "Quên mật khẩu" }));
+      await waitFor(() => expect(box.value).toBe(SUGGESTIONS[0]!.text));
+      fireEvent.change(box, { target: { value: `${box.value} Tài khoản email.` } });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(screen.queryByText("trang ticket")).toBeNull();
+    } finally {
+      rendered.unmount();
+      queryClient.clear();
+    }
+  });
+
+  it("câu mẫu là câu đầy đủ, không chứa dữ liệu cá nhân (tên tài khoản, mã máy, email, số)", () => {
+    for (const { label, text } of SUGGESTIONS) {
+      expect(text.length).toBeGreaterThan(label.length);
+      expect(text).toMatch(/^Tôi .+\.$/);
+      expect(text).not.toMatch(/\d|@|LAP-|PC-|an\.nv|nv0/i);
     }
   });
 });
