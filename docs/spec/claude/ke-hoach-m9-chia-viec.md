@@ -334,7 +334,7 @@ Phase 4 (4a–4d) đụng một số file mà M9 cũng sửa. Luật:
 
 | File | Phase 4 làm gì | Người M9 phải làm gì |
 |---|---|---|
-| `backend/app/worker.py` | Thêm job `scan_approval_reminders` (15 s) | **Duy Anh** giữ khối `# M9` riêng; xung đột khi rebase → giữ cả hai job, không gộp lịch, không đổi thứ tự job cũ |
+| `backend/app/worker.py` | **Không đụng** (spec phase4 mục 0.2). Nhắc duyệt 50/80% của 4c nằm **bên trong** `WorkerJobs.scan_deadlines` (`graph/worker_jobs.py`, chu kỳ 15 s sẵn có), truy vấn nhắc ở `SqlDeadlineStore` (`db/runtime.py`) | `worker.py` hoàn toàn thuộc **Duy Anh** — không có xung đột rebase từ Phase 4. Không sửa `graph/worker_jobs.py`, `db/runtime.py` |
 | `backend/app/db/alembic/versions/` | `0008_approvals_inbox_idx` | **Dương**: migration M9 không dùng số/tên `0008`; sau **mỗi** rebase chạy `uv run alembic heads` → phải = 1; ra 2 → chỉ sửa `down_revision` của migration M9 **chưa merge** |
 | `backend/app/settings.py` | 4a thêm khóa HMAC username (Q-3e-14) | **Dương**: khối `# M9` riêng; xung đột → giữ cả hai trường |
 | `backend/app/auth/*`, `api/approvals.py`, `approval/*`, `graph/**` | B15/B16 thật, nhắc, xem phiếu, ghi đè, HMAC | **Không đụng.** Luật 3/7/10 chỉ đọc kết quả qua DB |
@@ -423,6 +423,7 @@ Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa co
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | Sửa mục 8.1 theo phiên Phase 4: Phase 4 **không** sửa `worker.py` — nhắc duyệt nằm trong `WorkerJobs.scan_deadlines` |
 | 01/10/2026 | Bảng tiền tố test thêm 3 file A0; A3 đọc `audience` từ `REGISTRY`; A4 thêm `monitor` vào `/api/health`; spec `01` mục 4.2/4.3/8 và `P9` mục 3, 6.1 đã cập nhật theo "Spec cần sửa" của A0 |
 | 01/10/2026 | Chốt plan B1 (#13, Q-M9-B1-1…9): luật 2 mọi E0; luật 10 cửa sổ đóng `<=`; luật 3 chỉ đối soát sự kiện > 60 s; luật 15 không lọc lá; luật 11 subject `detail.version`/`event:<id>`; thiếu engine monitor → WARNING đầu + mỗi giờ; B1 giao 2 PR; chỉ mục qua A4; `audience` khai báo trong `@rule` (hợp đồng mục 3 mở rộng), không ghi `detail.audience` |
 | 01/10/2026 | Nhánh chốt `dev-luuduong` / `dev-duyanh` (thay `m9-*`), đầu chặng reset về `origin/dev-tuananh`; từ A1/B1 giao bằng PR (comment #6) |

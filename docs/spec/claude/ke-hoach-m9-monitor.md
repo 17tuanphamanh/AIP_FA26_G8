@@ -65,7 +65,7 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 | Runner recover (3h, M-3h-35) | Node còn dở lấy theo `_pending(snap)`; audit B20 `finalize_failed_permanent` **giữ nguyên** | Luật 15 không đổi |
 | Cờ node giả | `FAKE_NODE_DELAY` mà thiếu `FAKE_SCENARIO` → backend/worker **từ chối khởi động**; `FAKE_SCENARIO` bật → **toàn bộ** node giả (B2/B3 thật không chạy) | gate2 cần `FAKE_SCENARIO` (+ `FAKE_NODE_DELAY`) bật; gate3 và **cổng B của M9** cần **cả hai tắt** |
 | Phase 4 — migration | `0008_approvals_inbox_idx` (4b/4c) | Migration M9 **không** dùng số/tên `0008`; `down_revision` = head lúc rebase; sau mỗi rebase `alembic heads` = 1 (Dương) |
-| Phase 4 — worker | Job `scan_approval_reminders` (chu kỳ 15 s) thêm vào `worker.py` | Khối `# M9` của Duy Anh tách riêng; xung đột khi rebase → giữ cả hai job, không gộp lịch |
+| Phase 4 — worker | **Không sửa `worker.py`** (spec phase4 mục 0.2). Nhắc duyệt 50/80% (4c) nằm trong `WorkerJobs.scan_deadlines` (`graph/worker_jobs.py`, chu kỳ 15 s sẵn có); truy vấn ở `SqlDeadlineStore` (`db/runtime.py`) | `worker.py` thuộc riêng Duy Anh, không xung đột với Phase 4 |
 | Phase 4 — settings (4a) | Khóa HMAC cho username đăng nhập không có trong `users` (Q-3e-14): `security_events.username_attempted` = `"h:" + HMAC` | Luật 3 đối soát và luật 10 dùng **đúng giá trị auth truyền cho `bruteforce_alert` / ghi vào `security_events`** sau 4a; test lại ca username ma sau khi rebase qua 4a |
 | Phase 4 — xem phiếu (4c) | `first_viewed_at` ghi khi người được giao xem; audit B16 có `view_duration`, `decided_without_view`. **Trước 4c cột `first_viewed_at` luôn NULL** | Luật 7 hết pending sau 4c |
 | Phase 4 — ghi đè (4d) | `audit_logs` step `"OVERRIDE"` | `override_count` hết pending sau 4d |
@@ -429,6 +429,7 @@ make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | **v1.7** — mục 1.4: Phase 4 không sửa `worker.py` (nhắc duyệt trong `WorkerJobs.scan_deadlines`) |
 | 01/10/2026 | **v1.6** — chốt plan B1: luật 2 mọi E0; luật 15 không lọc lá; người nhận khai báo trong `@rule(..., audience=...)` thay cho `detail.audience` (cột người nhận ở bảng mục 6 là nguồn cho tham số này) |
 | 01/10/2026 | **v1.5** — nhánh làm việc chốt là `dev-luuduong`, `dev-duyanh` (thay `m9-*`); từ A1/B1 giao bằng PR vào `dev-tuananh` |
 | 01/10/2026 | **v1.4** — theo tin Phase 4: `override_count` từ step `OVERRIDE` (4d); `first_viewed_at` NULL tới 4c; 4b đổi số liệu (R17–R19 → E5 `llm_layer_disabled`, 5 `reason_detail` mới, điểm log 5 có cột mới, seed 17 người) |
