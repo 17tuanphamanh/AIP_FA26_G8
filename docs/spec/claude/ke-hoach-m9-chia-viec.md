@@ -11,7 +11,7 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 | | **Luồng A — Dashboard & dữ liệu đọc** | **Luồng B — Cảnh báo** |
 |---|---|---|
 | Người làm | **Lưu Dương** | **Tạ Duy Anh** |
-| Nhánh | `m9-luuduong` | `m9-duyanh` |
+| Nhánh | `dev-luuduong` | `dev-duyanh` |
 | Chặng | A0 nền chỉ-đọc · A1 view + chỉ số nghiệp vụ · A2 chỉ số AI · A3 API dashboard + cảnh báo · A4 health + hiệu năng + nghiệm thu | B0 khung luật thuần · B1 luật theo sự kiện + job 60 s · B2 luật tổng hợp + job giờ/ngày · B3 drift (Nên có) |
 | Đầu ra cuối | 4 route API có `response_model`, 3 view SQL, `/api/health` có `llm`, test 10.000 ticket < 2 giây | 16 luật cảnh báo chạy trong worker, ghi `alerts` qua M7, không trùng, không bỏ sót |
 | Ước lượng [Suy luận] | ~4,5 ngày | ~4,5 ngày (+0,75 ngày drift) |
@@ -59,7 +59,7 @@ Luật: **chỉ chủ file được sửa file**. Người kia cần đổi → 
 | `backend/app/worker.py` (job M9) | Duy Anh (B1) | Không đụng |
 | `backend/tests/integration/monitor_seed.py` (helper dựng dữ liệu) | Dương (A1) | Import dùng; cần helper mới → viết ở file của mình |
 | `backend/tests/integration/monitor_rules_seed.py` | Duy Anh (B1) | Import dùng |
-| Test `test_monitor_dash_*`, `test_dashboard_*`, `test_alerts_api_*`, `test_monitor_health_*`, `test_monitor_perf_*` | Dương | — |
+| Test `test_monitor_db*`, `test_monitor_window*`, `test_monitor_import_contracts*` (A0), `test_monitor_dash_*`, `test_dashboard_*`, `test_alerts_api_*`, `test_monitor_health_*`, `test_monitor_perf_*` | Dương | — |
 | Test `test_monitor_rules_*`, `test_monitor_evaluator_*`, `test_monitor_drift_*`, `test_monitor_jobs_*` | Duy Anh | — |
 | `PROGRESS.md`, `docs/spec/**`, `frontend/**`, mọi thứ ngoài bảng mục 2 của kế hoạch chung | **Không ai trong hai người** | Ghi "Spec cần sửa" trong PR; Tuấn Anh sửa |
 
@@ -115,7 +115,8 @@ class RuleContext:
     tz: ZoneInfo           # VN_TZ
     cap_usd: float         # config/llm.yaml spend.cap_usd — worker đọc, truyền vào
     warn_ratio: float      # spend.warn_ratio
-def rule(rule_id: str, every: Every) -> Callable[..., Any]   # decorator đăng ký vào REGISTRY
+type Audience = Literal["manager", "dev", "ops"]
+def rule(rule_id: str, every: Every, audience: tuple[Audience, ...]) -> Callable[..., Any]   # decorator đăng ký vào REGISTRY; audience BẮT BUỘC (Q-M9-B1-9), lưu trong RuleSpec — A3 đọc REGISTRY để lọc /api/alerts; KHÔNG ghi alerts.detail.audience
 # backend/app/monitor/evaluator.py
 @dataclass(frozen=True)
 class EvalResult:
@@ -212,12 +213,14 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
 - **Test:** manager/L1 own/L2/nhân viên; 2 L1 không thấy số nhau; ack 200 → 409 (giữ `acked_by`) → 404; L1 ack → 403; `acked_at` từ `Clock`; `from`/`to` sai → 422.
 - **Mutation:** bỏ lọc own; bỏ `AND status='open'`; ack dùng engine monitor.
 - **Việc thêm:** dữ liệu `alerts` cho test API dựng bằng `AlertWriter.raise_once` (không chờ luật của Duy Anh).
+- **Người nhận (Q-M9-B1-9):** `/api/alerts` lọc/hiển thị người nhận bằng `audience` khai báo trong `REGISTRY` của `monitor/rules.py` (`@rule(..., audience=...)`) — **không** đọc `alerts.detail.audience`. Luật chưa merge thì test dùng `REGISTRY` giả.
 
 ### A4 — Health + hiệu năng + nghiệm thu (0,75 ngày, Opus/Sonnet)
 
 - **Input:** A3 merge, B2 merge (để test hiệu năng có cả `alerts`).
 - **Output:** `/api/health` có `llm` (Q-M9-7) + cache 10 giây; test 10.000 ticket; migration chỉ mục bổ sung nếu cần (gồm chỉ mục Duy Anh đã xin); bảng nghiệm thu P9 §8 trong PR.
 - **Test:** 2 lần gọi trong 10 giây → mỗi phụ thuộc kiểm 1 lần; `llm` không đổi mã HTTP ở cả 4 trạng thái; 10.000 ticket mỗi truy vấn < 2 giây (in thời gian, ghi cấu hình máy).
+- **Thêm (Q-M9-B1-6):** `/api/health` có mục `monitor` (engine `app_monitor` có cấu hình và ping được hay không) — chỉ báo, không đổi mã 200/503; để thấy ngay khi tầng cảnh báo ngừng chạy vì thiếu DSN.
 - **Cổng thủ công luồng B:** Dương chạy phần xác nhận của B2 (mục 7.2).
 
 ---
@@ -229,7 +232,7 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
 - **Input:** chỉ cần code thuần Python + `domain/alerts.py` (`AlertDraft`, `SYSTEM_SUBJECT`, `bruteforce_alert`) **[Chốt]**. Không cần DB → bắt đầu ngay D1.
 - **Output:** `monitor/rules.py` (decorator `@rule`, `REGISTRY`, `RuleContext`, hàm tiện ích `hourly_median(counts_168h)`, `spike(count, median, factor=3, minimum=3)`), `monitor/evaluator.py` (`evaluate`, `EvalResult`), test unit.
 - **Việc:**
-  1. Chuẩn bị máy: Duy Anh đã dựng stack ở cổng 2 → chỉ cần `git fetch`, tạo `m9-duyanh` từ `origin/dev-tuananh`, `git config core.hooksPath .githooks`, `make test` xanh, dán số mốc.
+  1. Chuẩn bị máy: Duy Anh đã dựng stack ở cổng 2 → chỉ cần `git fetch`, tạo `dev-duyanh` từ `origin/dev-tuananh`, `git config core.hooksPath .githooks`, `make test` xanh, dán số mốc.
   2. `rules.py`: đăng ký luật theo `(rule_id, every)`; đăng ký trùng `rule_id` → lỗi ngay lúc import (test).
   3. `evaluate()`: lấy luật của `every`, gọi hàm lấy dữ liệu tương ứng (tạm là port/giao diện, B1 mới nối SQL), gọi hàm luật; **bắt lỗi theo từng luật**; luật có nguồn pending → `skipped_rules`.
   4. Tiện ích trung vị/spike thuần, test bằng số tay.
@@ -250,12 +253,12 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
 
 | # | Luật | Nguồn đã kiểm | Cách làm |
 |---|---|---|---|
-| 2 | `injection_detected` | **B2 thật (3e)**: audit step `B2` event `injection_detected` (`b02_screen.py`); lá `S_BLOCKED`, `exit_code='E0'`, `block_reason='injection_detected'` | subject `ticket_id`; `window_start` = `audit_logs.created_at` của dòng đó |
+| 2 | `injection_detected` | **Mọi E0** (Q-M9-B1-1): B2 thật (`S_BLOCKED`, audit step `B2` event `injection_detected`) **và** B11/B19 `injection_in_reply` (`S_ESCALATED` E0, `clarify_wait.py`, `confirm_wait.py`) | subject `ticket_id`; `window_start` = `created_at` nhỏ nhất của `audit_logs` có `exit_code='E0'` của ticket (không lọc step); `detail` có `step`, `reason_detail` |
 | 3 | `password_bruteforce` (đối soát) | `security_events.account_locked`, `detail.reason='threshold'`; auth ghi cảnh báo với `lock_start = now` của auth **khác** `occurred_at` của sự kiện (hai lần gọi đồng hồ) **[Chốt, kiểm code]**. **Phase 4a** đổi username ma thành `"h:" + HMAC` (Q-3e-14) → sau khi rebase qua 4a, dùng đúng giá trị auth truyền cho `bruteforce_alert`, test lại ca username ma | **Không** dựng khóa từ `occurred_at` (sẽ ra khóa khác → cảnh báo trùng). Đối soát: có dòng `alerts` `rule_id='password_bruteforce'`, `subject = bruteforce_subject(user_id, username)`, `abs(window_start − occurred_at) ≤ 60 s` → bỏ qua; không có → draft bằng `bruteforce_alert(..., lock_start=occurred_at, source="m9_reconcile")` |
 | 9 | `refresh_reuse` | `security_events.refresh_reuse_detected`, `detail = {revoked_sessions}` — **không có `token_family_id`** **[Chốt, kiểm code]** | subject = `user_id` (Q-M9-8); `window_start` = `occurred_at` → mỗi sự kiện một cảnh báo |
 | 10 | `permission_denied_burst` | `security_events.permission_denied` (có `user_id` hoặc `username_attempted`) | Đếm trượt 5 phút; > 10 → subject `user_id` (không có thì `username:<…>` như luật 3); `window_start` = `bucket_start(sự kiện thứ 11, 5)` |
 | 11 | `policy_saved` | `security_events.policy_saved` (chưa có nơi ghi — Phase 7) | subject = phiên bản trong `detail` (xác nhận khi Phase 7 có); test bằng fixture |
-| 15 | `finalize_failed` | audit step `B20` event `finalize_failed_permanent` (`graph/runner.py`) — 3h đổi cách recover (`_pending`, M-3h-35) nhưng event này **giữ nguyên** | subject `ticket_id`; window = `created_at` |
+| 15 | `finalize_failed` | audit step `B20` event `finalize_failed_permanent` (`graph/runner.py`) — event giữ nguyên sau 3h | subject `ticket_id`; window = `created_at`; **không lọc `v_leaf`** (Q-M9-B1-4: ngoại lệ có chủ ý của D-30 — ticket cha lỗi finalize cũng có thể biến mất khỏi hàng đợi) |
 | 16 | `execution_failed` | lá `exit_code='E7'` — **mọi** `reason_detail`: `exec_interrupted` (node B17, lượt API) và `execution_interrupted` (runner/boundary, worker recover) và lỗi thực thi khác; ticket có `transaction_log` `begun` luôn E7, không E9 (Q-3h-10) | subject `ticket_id`; window = `created_at` **nhỏ nhất** của dòng `audit_logs` có `exit_code='E7'` của ticket (không lọc step — hai đường ghi khác step); `detail.reason_detail` |
 
 - **Test:** mỗi luật: có / không / ngoài 24 giờ; 2 đối tượng cùng cửa sổ → 2 draft; chạy job 2 lần → không trùng; luật 3: auth đã ghi (window lệch vài ms so với `occurred_at`) → M9 **không** tạo thêm; xóa dòng của auth → M9 tạo đúng 1; worker "chết" 1 giờ (FakeClock) → vẫn bắt; một luật lỗi → luật khác vẫn ghi.
@@ -319,7 +322,7 @@ Kết quả dán vào issue epic (commit, máy, output). Tuấn Anh ghi "cổng 
 
 ## 8. Git hai người
 
-- Mỗi người **một nhánh**, cùng gốc `origin/dev-tuananh`: `m9-luuduong`, `m9-duyanh`. Không ai push lên nhánh người kia hay lên `dev-tuananh`.
+- Mỗi người **một nhánh**, cùng gốc `origin/dev-tuananh`: `dev-luuduong`, `dev-duyanh`. Không ai push lên nhánh người kia hay lên `dev-tuananh`.
 - **Mỗi chặng một PR** vào `dev-tuananh`, tiêu đề `[M9-A1] …` / `[M9-B1] …`, mô tả theo mẫu 8.2 kế hoạch chung, `Closes #<issue>`.
 - **Sau mỗi lần Tuấn Anh merge bất kỳ PR M9 nào**, người còn lại: `git fetch origin && git rebase origin/dev-tuananh` rồi `make lint` + unit. Có xung đột ở file không thuộc mình → dừng, hỏi chủ file (mục 2), không tự sửa.
 - **Migration chỉ Dương viết** → chuỗi Alembic của M9 không bao giờ tách nhánh giữa hai người. Dương vẫn phải kiểm `alembic heads` = 1 so với migration của Tuấn Anh (Phase 3–4 đang thêm).
@@ -338,6 +341,10 @@ Phase 4 (4a–4d) đụng một số file mà M9 cũng sửa. Luật:
 | `.github/workflows/ci.yml` | 4a nâng action Node 24 + ghim `ubuntu-24.04` | Không đụng; CI đỏ vì workflow → báo Tuấn Anh |
 
 Đụng file **ngoài** bảng chủ file mục 2 → **dừng, hỏi**, không tự sửa. Phase 4 merge commit mới vào `dev-tuananh` → cả hai rebase như sau mỗi PR M9.
+
+**Merge M9 vào thư mục làm việc của Tuấn Anh (chốt 01/10/2026, theo yêu cầu phiên Phase 4):** thư mục `~/Documents/AIP_FA26_G8` trên máy Tuấn Anh là nơi Phase 4 đang có thay đổi chưa commit. Trước mỗi lần `pull`/`merge` M9 **vào thư mục đó**, báo phiên Phase 4 một câu và chờ nó commit xong hoặc xác nhận không trùng file. Nếu merge bằng nút trên GitHub (PR), thư mục local không bị đụng — Phase 4 tự `pull` lúc nó rảnh.
+
+**Số liệu đổi do 4b (không phải lỗi):** R17–R19 với máy của người khác / máy không tồn tại → E5 `llm_layer_disabled`, 0 phiếu (trước ra HITL); `reason_detail` mới `no_valid_approver`, `approval_target_unverified`, `approver_no_longer_valid` (E5), `approver_lookup_error`, `approver_sync_unavailable` (E2). Fixture test đừng giả định "ngoài giờ → HITL". Chi tiết: kế hoạch chung mục 1.4.
 
 ---
 
@@ -384,7 +391,9 @@ Chặn bởi: <không | chờ merge #… | chờ trả lời Q-…>
 
 **Mỗi PR:** chờ "Peer OK" → checklist mục 9 kế hoạch chung → CI xanh → merge **đúng thứ tự mục 4** → comment epic "merged #…, người kia rebase".
 
-**Khi luồng chính có nguồn mới** (điểm log 4, ghi đè, B3 LLM, span tool, `policy_saved`, nhiều ý): tick ô trong epic + tag người phụ trách (chỉ số → Dương; luật → Duy Anh).
+**Khi luồng chính có nguồn mới** (điểm log 4, ghi đè — 4d, xem phiếu — 4c, B3 cascade — Phase 5, span tool, `policy_saved`, nhiều ý): tick ô trong epic + tag người phụ trách (chỉ số → Dương; luật → Duy Anh).
+
+**Trước khi merge M9 vào thư mục local:** báo phiên Phase 4 một câu (mục 8.1).
 
 ---
 
@@ -393,7 +402,7 @@ Chặn bởi: <không | chờ merge #… | chờ trả lời Q-…>
 **Dương — mở phiên chặng A (thay `<A-x>`, `<số issue>`):**
 ```
 Đọc CLAUDE.md, docs/spec/CLAUDE.md, rồi hai file: docs/spec/claude/ke-hoach-m9-chia-viec.md (đọc hết; tôi là Lưu Dương, luồng A) và docs/spec/claude/ke-hoach-m9-monitor.md (mục 2, 4, 5, 7.1, 10). Đặc tả: docs/spec/build/nen-tang/P9-monitor-M9.md.
-Phiên này: chặng <A-x>, issue #<số issue> (gh issue view <số issue>). Nhánh m9-luuduong.
+Phiên này: chặng <A-x>, issue #<số issue> (gh issue view <số issue>). Nhánh dev-luuduong.
 Luật: chỉ sửa file mà bảng mục 2 (file chia việc) ghi chủ là Dương, hoặc file mới trong vùng của tôi; giữ đúng chữ ký hợp đồng mục 3 (Duy Anh đang dựa vào); tôi là người duy nhất viết migration M9; M9 chỉ đọc (engine app_monitor, không fallback app_rw); mọi đếm ticket qua v_leaf; không đọc/in .env; không --no-verify; không nới sandbox; không sửa docs/spec/; lệnh cần Docker báo tôi chạy; stage đích danh; không commit/push khi tôi chưa bảo; commit tiếng Việt không dấu, không dòng AI.
 Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa code): file tạo/sửa (kèm chủ file), test (gồm ca ranh giới), mutation dự kiến (đột biến → test nào đỏ, assert nào), câu hỏi Q-M9-A-x-… kèm đề xuất. Trình bày markdown để tôi dán vào issue. Chưa code tới khi tôi báo "Duyệt".
 ```
@@ -401,7 +410,7 @@ Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa co
 **Duy Anh — mở phiên chặng B (thay `<B-x>`, `<số issue>`):**
 ```
 Đọc CLAUDE.md, docs/spec/CLAUDE.md, rồi hai file: docs/spec/claude/ke-hoach-m9-chia-viec.md (đọc hết; tôi là Tạ Duy Anh, luồng B) và docs/spec/claude/ke-hoach-m9-monitor.md (mục 2, 4, 6, 7.1, 10). Đặc tả: docs/spec/build/nen-tang/P9-monitor-M9.md.
-Phiên này: chặng <B-x>, issue #<số issue> (gh issue view <số issue>). Nhánh m9-duyanh.
+Phiên này: chặng <B-x>, issue #<số issue> (gh issue view <số issue>). Nhánh dev-duyanh.
 Luật: chỉ sửa file mà bảng mục 2 ghi chủ là Duy Anh, hoặc file mới trong vùng của tôi; KHÔNG viết migration (cần view/chỉ mục thì soạn yêu cầu để tôi gửi Dương); chỉ dùng hàm của luồng A đúng chữ ký hợp đồng mục 3, không tự tính lại chỉ số của A; hàm luật thuần (không I/O, chỉ dùng ctx.now); M9 chỉ đọc — ghi alerts chỉ qua audit.AlertWriter.raise_once, gọi từ worker; subject tường minh, window_start lấy từ DB, lookback 24 giờ cho luật sự kiện; không đọc/in .env; không --no-verify; không nới sandbox; không sửa docs/spec/; lệnh cần Docker báo tôi chạy; stage đích danh; không commit/push khi tôi chưa bảo; commit tiếng Việt không dấu, không dòng AI.
 Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa code): file tạo/sửa (kèm chủ file), test (gồm ca ranh giới và "2 đối tượng → 2 cảnh báo"), mutation dự kiến, câu hỏi Q-M9-B-x-… kèm đề xuất. Trình bày markdown để tôi dán vào issue. Chưa code tới khi tôi báo "Duyệt".
 ```
@@ -414,6 +423,10 @@ Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa co
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | Bảng tiền tố test thêm 3 file A0; A3 đọc `audience` từ `REGISTRY`; A4 thêm `monitor` vào `/api/health`; spec `01` mục 4.2/4.3/8 và `P9` mục 3, 6.1 đã cập nhật theo "Spec cần sửa" của A0 |
+| 01/10/2026 | Chốt plan B1 (#13, Q-M9-B1-1…9): luật 2 mọi E0; luật 10 cửa sổ đóng `<=`; luật 3 chỉ đối soát sự kiện > 60 s; luật 15 không lọc lá; luật 11 subject `detail.version`/`event:<id>`; thiếu engine monitor → WARNING đầu + mỗi giờ; B1 giao 2 PR; chỉ mục qua A4; `audience` khai báo trong `@rule` (hợp đồng mục 3 mở rộng), không ghi `detail.audience` |
+| 01/10/2026 | Nhánh chốt `dev-luuduong` / `dev-duyanh` (thay `m9-*`), đầu chặng reset về `origin/dev-tuananh`; từ A1/B1 giao bằng PR (comment #6) |
+| 01/10/2026 | A0 + B0 đã merge (`1f0f489`, CI 36777913760). Mục 8.1: báo phiên Phase 4 trước khi merge vào thư mục local; số liệu đổi do 4b; `override_count` chờ 4d, luật 7 chờ 4c |
 | 30/09/2026 | Đối chiếu lại `5d0a990` (Phase 3 đóng): `b3_llm_rate` ready, luật 13 skipped tới Phase 5 (Q-M9-9); luật 2 + cổng B dùng B2 thật (câu tấn công cố định, cờ node giả tắt, kỳ vọng `S_BLOCKED` E0); luật 16 gồm `exec_interrupted` + `execution_interrupted`; luật 15 không đổi; luật 7 pending tới 4c; `e1_split` 4 lý do; mục 8.1 phối hợp Phase 4 (worker, migration `0008`, settings HMAC) |
 | 30/09/2026 | Chốt plan A0 (#7): `main.py` thuộc Dương cả A0 (handler) lẫn A3 (router); Dương sửa luôn chú thích đầu `.importlinter`; hợp đồng `monitor-only-api-worker` mở rộng theo kế hoạch chung 4.2; câu hỏi ghi vào comment issue thay vì PROGRESS |
 | 29/09/2026 | Tạo file: chia M9 thành luồng A (Lưu Dương, 5 chặng) và luồng B (Tạ Duy Anh, 4 chặng); bảng chủ file; hợp đồng hàm giữa hai luồng; lịch D1–D6 + thứ tự merge; kiểm lại nguồn dữ liệu (span tool chưa ghi → luật 5 pending; `refresh_reuse_detected` không có `token_family_id` → Q-M9-8; `lock_start` của auth ≠ `occurred_at` → luật 3 đối soát ±60 s); review chéo + cổng chéo |

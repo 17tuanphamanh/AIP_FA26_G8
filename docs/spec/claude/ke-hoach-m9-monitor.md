@@ -49,7 +49,7 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 |---|---|---|
 | Điểm log 4 (B12–B14: `decided_by`, `policy_decision`, `risk_level`, `matched_rule_id`, `calibrated_prob`) | Phase 4–6 | Cột đã có trong `audit_logs` → viết view + test bằng fixture |
 | Phiếu duyệt thật, `first_viewed_at` (route xem phiếu `GET /api/approvals/{id}`), audit B16 `view_duration` + `decided_without_view` | Phase 4 (4b B15 thật, 4c xem phiếu + B16) | Luật 7 **pending** (skipped) tới khi 4c merge; test bằng fixture |
-| Ghi đè L1 | Phase 4 | Chỉ số `override_count` → `unavailable` tới khi có event |
+| Ghi đè L1 — `audit_logs` step `"OVERRIDE"` | Phase 4 chặng **4d** | `override_count` → `unavailable` tới 4d |
 | ~~B3 xuống LLM~~ — **đã có từ 3f**: audit điểm log 1 ghi ở step `B3` (và `B4` cho các ca E1) với `detail.layer`, `detail.model_version` | — | `b3_llm_rate` **ready** (mục 5.2). Nhưng Phase 3–4 **mọi** câu đều xuống LLM (nhánh model + `cascade_decide` là Phase 5) → tỉ lệ ≈ 100% → luật 13 để skipped tới Phase 5 (Q-M9-9) |
 | Ticket nhiều ý (D-31) | Phase 5 | Chỉ số nhiều ý → `unavailable` |
 | Span tool (bảng `spans`, `span_type='tool'`) — `tools/registry.py::_span` hiện **chỉ ghi log một dòng**, không ghi DB (kiểm 29/09) | Chưa xếp (Tuấn Anh quyết, Q-M9-4) | Luật 5 → pending, test bằng fixture |
@@ -67,7 +67,9 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 | Phase 4 — migration | `0008_approvals_inbox_idx` (4b/4c) | Migration M9 **không** dùng số/tên `0008`; `down_revision` = head lúc rebase; sau mỗi rebase `alembic heads` = 1 (Dương) |
 | Phase 4 — worker | Job `scan_approval_reminders` (chu kỳ 15 s) thêm vào `worker.py` | Khối `# M9` của Duy Anh tách riêng; xung đột khi rebase → giữ cả hai job, không gộp lịch |
 | Phase 4 — settings (4a) | Khóa HMAC cho username đăng nhập không có trong `users` (Q-3e-14): `security_events.username_attempted` = `"h:" + HMAC` | Luật 3 đối soát và luật 10 dùng **đúng giá trị auth truyền cho `bruteforce_alert` / ghi vào `security_events`** sau 4a; test lại ca username ma sau khi rebase qua 4a |
-| Phase 4 — xem phiếu (4c) | `first_viewed_at` ghi khi người được giao xem; audit B16 có `view_duration`, `decided_without_view` | Luật 7 hết pending sau 4c |
+| Phase 4 — xem phiếu (4c) | `first_viewed_at` ghi khi người được giao xem; audit B16 có `view_duration`, `decided_without_view`. **Trước 4c cột `first_viewed_at` luôn NULL** | Luật 7 hết pending sau 4c |
+| Phase 4 — ghi đè (4d) | `audit_logs` step `"OVERRIDE"` | `override_count` hết pending sau 4d |
+| Phase 4 — 4b (B15 thật, sau DỪNG 2) | R17/R18/R19 đòi "máy của chính người gửi": máy người khác / máy không tồn tại → **E5 `llm_layer_disabled`, 0 phiếu** (trước đây ra HITL). `reason_detail` mới: `no_valid_approver` (E5), `approval_target_unverified` (E5), `approver_no_longer_valid` (E5), `approver_lookup_error` (E2), `approver_sync_unavailable` (E2). Audit B15 `queued` (điểm log 5) có cột `approver_id`, `deadline`, `conflict_detected`; `detail`: `choice_reason` ∈ {`normal`, `conflict`, `no_valid_l1`}, `backup_approver_id`, `conflict_type`, `sla_minutes`, `recovered`. Seed mock 17 người (thêm `l1_lead`; `l1_01` báo cáo `l1_lead`) | Tỉ lệ HITL giảm, E5 tăng ở các ca R17–R19 — **đúng thiết kế, không phải lỗi**; fixture test của A1/A2 không được giả định "ngoài giờ → HITL". E2 do tra người duyệt lỗi **không** tính vào `e2_llm_count`. Dữ liệu điểm log 5 sẵn cho chỉ số xung đột lợi ích sau này (chưa nằm trong 5.1) |
 
 ---
 
@@ -198,7 +200,7 @@ Cửa sổ `[from, to)`, tính trên ticket lá có `created_at` trong cửa s�
 | `approval_expired_count` | #lá `exit_code = 'E6'` | `tickets` | [Chốt P9 §5] |
 | `decided_by_distribution` | đếm theo `decided_by` | `v_decisions` | [Chốt P9 §5] |
 | `top_matched_rules` | top 10 `matched_rule_id` | `v_decisions` | [Chốt P9 §5] |
-| `override_count` | số lần L1 ghi đè | event Phase 4 | `unavailable` tới Phase 4 |
+| `override_count` | số dòng `audit_logs` step `"OVERRIDE"` của lá trong cửa sổ | Phase 4d | `unavailable` tới 4d |
 | `e1_split` | E1 tách `out_of_scope` / `intent_low_confidence` | `escalations.reason_detail` (agent grep xác nhận) | [Chốt D-27] |
 | `e3_cases` | danh sách ca E3 (lỗ hổng KB): `ticket_id, intent, created_at, kb_version, request_excerpt` (≤ 200 ký tự) | `tickets`, `audit_logs` B9 | [Chốt P9 §5] |
 
@@ -234,7 +236,7 @@ P9 §6 có 14 luật + việc Phase 7 "luật cho `finalize_failed_permanent`". 
 | # | `rule_id` | Điều kiện | Nguồn | `subject` | `window_start` | Chu kỳ | `severity` / người nhận (`detail.audience`) |
 |---|---|---|---|---|---|---|---|
 | 1 | `escalation_rate_high` | `escalation_rate_weighted` 7 ngày > 0,40 | 5.1 | `""` | đầu ngày đánh giá | ngày | warning / manager |
-| 2 | `injection_detected` | mỗi lá `exit_code='E0'` (B2 thật từ 3e: `S_BLOCKED`, `block_reason='injection_detected'`) | `tickets` + audit step `B2` event `injection_detected` | `ticket_id` | `created_at` dòng audit B2 chặn | 60 s | critical / manager |
+| 2 | `injection_detected` | **mỗi lá `exit_code='E0'`** — B2 thật (`S_BLOCKED`) và B11/B19 `injection_in_reply` (`S_ESCALATED` E0) (Q-M9-B1-1) | `tickets` + `audit_logs` | `ticket_id` | `created_at` nhỏ nhất của `audit_logs` có `exit_code='E0'` của ticket (không lọc step) | 60 s | critical / manager |
 | 3 | `password_bruteforce` | **đối soát**: mỗi `security_events.account_locked` có `detail.reason='threshold'` mà chưa có cảnh báo khớp (±60 s) | `security_events`, `alerts` | qua `bruteforce_subject()` | `occurred_at` (chỉ khi chưa có cảnh báo khớp) | 60 s | critical / manager |
 | 4 | `e9_spike` | #E9 giờ qua > 3 × trung vị theo giờ 7 ngày, tối thiểu 3 ca | `tickets` | `""` | đầu giờ | 60 s | warning / dev |
 | 5 | `breaker_open` | có span tool `error = circuit_open` (Q-M9-4) — **nguồn pending** (span tool chưa ghi DB) | `spans` | tên tool | thời điểm span `circuit_open` đầu tiên của đợt | 60 s | warning / ops |
@@ -313,7 +315,7 @@ Thẻ việc chi tiết từng chặng, thứ tự merge, hợp đồng hàm: `c
 2. Agent đọc issue + tài liệu → **lập plan** (Plan Mode, chưa code): file tạo/sửa, test, mutation dự kiến, câu hỏi `Q-M9-x-…`.
 3. Người làm **dán plan vào comment của issue** → báo Tuấn Anh (và người kia nếu plan đụng hợp đồng hàm). Tuấn Anh (có Claude chat hỗ trợ) trả lời "Duyệt" hoặc sửa, chốt câu hỏi ngay trong issue.
 4. Agent code → `make lint` → unit → mutation logic → người làm chạy `make test` và mutation cần Docker.
-5. Agent rebase lên `origin/dev-tuananh` (8.3), push nhánh của mình (`m9-luuduong` / `m9-duyanh`), mở PR vào `dev-tuananh`, mô tả PR theo mẫu (8.2), rồi **dừng**.
+5. Agent rebase lên `origin/dev-tuananh` (8.3), push nhánh của mình (`dev-luuduong` / `dev-duyanh`), mở PR vào `dev-tuananh`, mô tả PR theo mẫu (8.2), rồi **dừng**.
 6. CI xanh → người kia review chéo ("Peer OK") → Tuấn Anh review theo mục 9 → merge đúng thứ tự (file chia việc mục 4). Có yêu cầu sửa → quay lại bước 4 **cùng phiên**.
 7. Merge xong → đóng issue, tick ô trong issue epic, mở phiên mới cho chặng sau.
 
@@ -332,7 +334,7 @@ Closes #<số issue>
 
 ### 8.3. Git
 
-- Nhánh làm: `m9-luuduong` (Dương), `m9-duyanh` (Duy Anh), cùng tạo từ `origin/dev-tuananh` mới nhất. Nhánh cũ `dev-luuduong`, `dev-duyanh` (khởi tạo) không dùng. Quy tắc hai người (chủ file, thứ tự merge, rebase sau mỗi merge): file chia việc mục 2, 4, 8.
+- Nhánh làm: `dev-luuduong` (Dương), `dev-duyanh` (Duy Anh) — **chốt 01/10/2026**: dùng lại hai nhánh sẵn có thay cho `m9-*` dự kiến trước. Đầu mỗi chặng đưa nhánh về `origin/dev-tuananh` (`git fetch origin && git reset --hard origin/dev-tuananh`, chỉ khi không còn thay đổi chưa commit). **Giao hàng bằng PR vào `dev-tuananh`** (A0/B0 đã đẩy thẳng nhánh — từ A1/B1 dùng PR). Quy tắc hai người (chủ file, thứ tự merge, rebase sau mỗi merge): file chia việc mục 2, 4, 8.
 - **Trước mỗi PR:** `git fetch origin && git rebase origin/dev-tuananh`. Xung đột ở `settings.py`, `main.py`, `worker.py`, `docker-compose.yml`, `.env.example` → giữ cả hai phía, chạy lại `make test`.
 - **Migration:** chỉ **Dương** viết migration M9. File M9 đặt `down_revision` = head hiện tại của `dev-tuananh`. Sau mỗi rebase: `uv run alembic heads` phải ra **đúng 1 head**; ra 2 → sửa `down_revision` trỏ vào head mới của Tuấn Anh. Không đổi số của migration đã merge.
 - Commit tiếng Việt không dấu, tác giả là chính người làm, không dòng AI. Không force-push lên `dev-tuananh`.
@@ -386,11 +388,11 @@ Người review không phải người làm → đúng nguyên tắc cổng **[C
 
 ---
 
-## 12. Chuẩn bị máy (Dương làm ở A0; Duy Anh ở B0 — Duy Anh đã dựng stack ở cổng 2 nên chỉ cần từ bước 3, nhánh `m9-duyanh`)
+## 12. Chuẩn bị máy (Dương làm ở A0; Duy Anh ở B0 — Duy Anh đã dựng stack ở cổng 2 nên chỉ cần từ bước 3, nhánh `dev-duyanh`)
 
 1. Cài: Git, Docker (Linux/WSL 2 hoặc colima trên Mac), `uv`, `gitleaks`, `gh`, Claude Code.
 2. `git clone https://github.com/17tuanphamanh/AIP_FA26_G8.git && cd AIP_FA26_G8`
-3. `git fetch origin && git switch -c m9-luuduong origin/dev-tuananh` (Duy Anh: `m9-duyanh`)
+3. `git fetch origin && git switch dev-luuduong && git reset --hard origin/dev-tuananh` (Duy Anh: `dev-duyanh`)
 4. `git config core.hooksPath .githooks` (không bật = hook không gác).
 5. Tạo `.env` **riêng** từ `.env.example` (sinh bí mật ngẫu nhiên; `APP_ENV=dev`, `LLM_BACKEND=scripted`). **Không** xin `.env` của Tuấn Anh qua chat.
 6. `uv sync` → `make up` → `make seed` → `make test` xanh **trước khi** sửa gì (ghi số test vào comment issue M9-0 làm mốc).
@@ -406,7 +408,7 @@ Người review không phải người làm → đúng nguyên tắc cổng **[C
 **Mở phiên chặng (thay `<M9-x>` và `<số issue>`):**
 ```
 Đọc CLAUDE.md, docs/spec/CLAUDE.md, rồi docs/spec/claude/ke-hoach-m9-monitor.md (đọc hết, đặc biệt mục 2, 4, 6, 7, 10) và docs/spec/build/nen-tang/P9-monitor-M9.md. Việc của phiên này: chặng <M9-x>, GitHub issue #<số issue> (đọc bằng: gh issue view <số issue>).
-Tôi là <Lưu Dương | Tạ Duy Anh>, làm trên nhánh <m9-luuduong | m9-duyanh>; Tuấn Anh review và merge.
+Tôi là <Lưu Dương | Tạ Duy Anh>, làm trên nhánh <dev-luuduong | dev-duyanh>; Tuấn Anh review và merge.
 Luật: không đọc/in .env; không --no-verify; không nới sandbox; chỉ sửa file trong bảng mục 2 (ngoài bảng thì dừng và hỏi); không sửa docs/spec/; M9 chỉ đọc (engine app_monitor, không fallback app_rw); mọi đếm ticket qua v_leaf; lệnh cần Docker thì báo tôi chạy; stage đích danh; không commit/push khi tôi chưa bảo; commit tiếng Việt không dấu, không dòng AI.
 Bước 1: lập plan (Plan Mode, chưa code): file tạo/sửa, test (gồm ca ranh giới), mutation dự kiến (đột biến → test nào đỏ, assert nào), câu hỏi Q-M9-x-… kèm đề xuất. Trình bày plan dạng markdown để tôi dán vào issue. Chưa code tới khi tôi báo "Duyệt".
 ```
@@ -418,7 +420,7 @@ Plan <M9-x> đã duyệt. Chốt: <dán các chốt từ issue>. Làm: code → 
 
 **Khi test xanh, chuẩn bị PR:**
 ```
-make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin && git rebase origin/dev-tuananh), kiểm alembic heads = 1, chạy lại make lint. Stage đích danh (kiểm không có .env*, __pycache__, .pyc, settings.local.json), commit, push nhánh của tôi. Soạn mô tả PR theo mẫu mục 8.2 để tôi mở PR vào dev-tuananh (nhánh của tôi: m9-luuduong hoặc m9-duyanh). Rồi DỪNG.
+make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin && git rebase origin/dev-tuananh), kiểm alembic heads = 1, chạy lại make lint. Stage đích danh (kiểm không có .env*, __pycache__, .pyc, settings.local.json), commit, push nhánh của tôi. Soạn mô tả PR theo mẫu mục 8.2 để tôi mở PR vào dev-tuananh (nhánh của tôi: dev-luuduong hoặc dev-duyanh). Rồi DỪNG.
 ```
 
 ---
@@ -427,6 +429,9 @@ make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | **v1.6** — chốt plan B1: luật 2 mọi E0; luật 15 không lọc lá; người nhận khai báo trong `@rule(..., audience=...)` thay cho `detail.audience` (cột người nhận ở bảng mục 6 là nguồn cho tham số này) |
+| 01/10/2026 | **v1.5** — nhánh làm việc chốt là `dev-luuduong`, `dev-duyanh` (thay `m9-*`); từ A1/B1 giao bằng PR vào `dev-tuananh` |
+| 01/10/2026 | **v1.4** — theo tin Phase 4: `override_count` từ step `OVERRIDE` (4d); `first_viewed_at` NULL tới 4c; 4b đổi số liệu (R17–R19 → E5 `llm_layer_disabled`, 5 `reason_detail` mới, điểm log 5 có cột mới, seed 17 người) |
 | 30/09/2026 | **v1.3** — đối chiếu lại code tại `5d0a990` (Phase 3 đóng): `b3_llm_rate` ready (đếm step B3 + B4, `detail.layer`), luật 13 skipped tới Phase 5 (Q-M9-9 mới); luật 2 nguồn B2 thật; luật 16 gồm `exec_interrupted` + `execution_interrupted`, window từ `audit_logs.exit_code`; luật 7 pending tới 4c, `decided_without_view` tính là < 5 s; mục 1.4 phối hợp Phase 4 |
 | 30/09/2026 | **v1.2** — chốt plan A0 (issue #7): mục 4.2 hợp đồng `monitor-only-api-worker` liệt kê mọi package trừ `api`/`monitor`/`main`/`worker` + test chống quên (Q-M9-A0-2); body 503 = `{"detail": "monitor_unavailable"}` (Q-M9-A0-1) |
 | 29/09/2026 | **v1.1** — chia cho hai người: Lưu Dương (luồng A) + Tạ Duy Anh (luồng B), chi tiết ở `claude/ke-hoach-m9-chia-viec.md`; mục 7.0 ánh xạ gói → chặng; kiểm lại nguồn: span tool chưa ghi DB (luật 5 pending, Q-M9-4 sửa), `refresh_reuse_detected` không có `token_family_id` (Q-M9-8 mới), `lock_start` của auth ≠ `occurred_at` (luật 3 đối soát ±60 s); migration chỉ Dương viết |

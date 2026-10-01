@@ -41,7 +41,7 @@ Mở `claude` ở gốc repo một lần, đồng ý *trust*.
 ```markdown
 # Luật riêng — Lưu Dương, M9 luồng A (Dashboard & dữ liệu đọc)
 
-Tôi là Lưu Dương. Nhánh: m9-luuduong (gốc origin/dev-tuananh). PR vào dev-tuananh; Tuấn Anh review cuối + merge; Tạ Duy Anh (luồng B) review chéo trước.
+Tôi là Lưu Dương. Nhánh: dev-luuduong (gốc origin/dev-tuananh). PR vào dev-tuananh; Tuấn Anh review cuối + merge; Tạ Duy Anh (luồng B) review chéo trước.
 
 Tài liệu (đọc đúng mục prompt chặng chỉ định, không đọc lan man):
 - docs/spec/claude/ke-hoach-m9-chia-viec.md — ai làm gì, chủ file (mục 2), hợp đồng hàm (mục 3), thẻ chặng A (mục 5)
@@ -80,7 +80,7 @@ Chặng A0, issue #<số> (gh issue view <số>). Đọc: file chia việc mục
 Mục tiêu: engine app_monitor fail-closed + giao window.py, views.py, db.py đúng hợp đồng mục 3 để Duy Anh dùng. Đây là đường găng của cả M9 — giữ nhỏ.
 Input: role app_monitor đã có (migration 0001, MONITOR_TABLES); PG_MONITOR_PASSWORD đã có ở service postgres. Output: settings.monitor_database_url, Engines.monitor, monitor/db.py, views.py, window.py, handler 503, .importlinter siết, compose + .env.example.
 Trước khi lập plan, kiểm và ghi file:dòng: (1) Engines + create_engines ở db/session.py; (2) cách main.py gắn exception handler (install_graph_errors, install_request_errors); (3) hợp đồng monitor-read-only hiện tại trong .importlinter; (4) env của service backend/worker trong docker-compose.yml.
-Bước 0: git fetch origin && git switch -c m9-luuduong origin/dev-tuananh (đã có nhánh thì rebase); đưa tôi lệnh make test để lấy số mốc.
+Bước 0: git fetch origin && git switch dev-luuduong && git reset --hard origin/dev-tuananh (đã có nhánh thì rebase); đưa tôi lệnh make test để lấy số mốc.
 Lập plan theo mẫu trong CLAUDE.local.md. Test bắt buộc: thiếu DSN → 503 và không dùng engines.main; có DSN → current_user = app_monitor; window: 16:59:59Z/17:00:00Z khác ngày VN, week_start thứ Hai, bucket_start 5 phút; thêm thử import app.audit vào app.monitor → lint đỏ. Mutation: trả engines.main khi thiếu; day_start theo UTC; bỏ 1 dòng cấm import.
 Chưa code tới khi tôi báo "Duyệt".
 ```
@@ -132,7 +132,7 @@ Chưa code tới khi tôi báo "Duyệt".
 ```markdown
 # Luật riêng — Tạ Duy Anh, M9 luồng B (Cảnh báo)
 
-Tôi là Tạ Duy Anh. Nhánh: m9-duyanh (gốc origin/dev-tuananh). PR vào dev-tuananh; Tuấn Anh review cuối + merge; Lưu Dương (luồng A) review chéo trước.
+Tôi là Tạ Duy Anh. Nhánh: dev-duyanh (gốc origin/dev-tuananh). PR vào dev-tuananh; Tuấn Anh review cuối + merge; Lưu Dương (luồng A) review chéo trước.
 
 Tài liệu (đọc đúng mục prompt chặng chỉ định):
 - docs/spec/claude/ke-hoach-m9-chia-viec.md — chủ file (mục 2), hợp đồng hàm (mục 3), thẻ chặng B + BẢNG NGUỒN ĐÃ KIỂM (mục 6)
@@ -172,7 +172,7 @@ Chặng B0, issue #<số> (gh issue view <số>). Đọc: file chia việc mục
 Mục tiêu: monitor/rules.py (Every, RuleContext, @rule, REGISTRY, hourly_median, spike) + monitor/evaluator.py (evaluate → EvalResult(drafts, failed_rules, skipped_rules)) ĐÚNG chữ ký hợp đồng mục 3. Thuần Python, KHÔNG cần DB — nguồn dữ liệu là một giao diện (Protocol) mà B1 sẽ nối SQL.
 Input: backend/app/domain/alerts.py (AlertDraft, SYSTEM_SUBJECT, bruteforce_alert) — đọc trước. Output: 2 module + test unit.
 Trước khi lập plan, kiểm và ghi file:dòng: (1) AlertDraft và kiểu Severity; (2) Clock của app (core/clock.py) để RuleContext.now dùng đúng kiểu; (3) cách repo viết Protocol/port (graph/ports.py) để làm giống.
-Bước 0: git fetch origin && git switch -c m9-duyanh origin/dev-tuananh; đưa tôi lệnh make test lấy số mốc. Khi A0 merge: rebase và dùng window.py của Dương, không tự viết lại.
+Bước 0: git fetch origin && git switch dev-duyanh && git reset --hard origin/dev-tuananh; đưa tôi lệnh make test lấy số mốc. Khi A0 merge: rebase và dùng window.py của Dương, không tự viết lại.
 Plan theo mẫu. Test bắt buộc: trùng rule_id → lỗi lúc import; luật A ném lỗi → luật B vẫn ra draft, failed_rules == ["A"]; hourly_median 168 giờ có giờ trống = 0; spike: bằng ngưỡng không báo, hơn 1 báo, dưới tối thiểu 3 không báo; hàm luật không gọi datetime.now (test hoặc kiểm AST). Mutation: bắt lỗi ngoài vòng lặp; trung vị bỏ giờ trống; spike dùng >=.
 Chưa code tới khi tôi báo "Duyệt".
 ```
@@ -264,5 +264,6 @@ Review chéo PR #<số> của <người kia> (chỉ đọc, không sửa, không
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | Nhánh `dev-luuduong` / `dev-duyanh` (thay `m9-*`); giao bằng PR vào `dev-tuananh` |
 | 30/09/2026 | Cập nhật theo Phase 3 đóng (`5d0a990`): A2 `b3_llm_rate` ready + danh sách khóa pending; B1 E7 hai reason_detail + HMAC 4a; B2 luật 7 chờ 4c, luật 13 skipped tới Phase 5 (Q-M9-9) |
 | 29/09/2026 | Tạo file: `CLAUDE.local.md` riêng cho Dương và Duy Anh (luật bền, mẫu plan), prompt mở phiên A0–A4, B0–B3 có "điểm phải xác nhận bằng grep", 8 prompt tình huống dùng chung |
