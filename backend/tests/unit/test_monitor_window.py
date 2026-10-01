@@ -1,6 +1,7 @@
 """M9 A0 — cửa sổ thời gian (hợp đồng mục 3; Q-M9-2: ngày/tuần theo giờ VN, mốc trả về kiểu UTC)."""
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from app.monitor.window import VN_TZ, bucket_start, day_start, hour_start, week_start
@@ -34,6 +35,19 @@ def test_week_start_is_monday_vn() -> None:
     for ws in (last_second, new_week):
         local = ws.astimezone(VN_TZ)
         assert (local.weekday(), local.hour, local.minute) == (0, 0, 0)
+
+
+def test_day_and_week_start_honor_tz_argument() -> None:
+    # X3: tham số `tz` phải được dùng — Tokyo (UTC+9) khác giờ VN (UTC+7) 2 tiếng
+    tokyo = ZoneInfo("Asia/Tokyo")
+    ts = utc(2026, 9, 30, 15, 30)  # 30/09 22:30 VN, 01/10 00:30 Tokyo
+    assert day_start(ts, tz=tokyo) == utc(2026, 9, 30, 15, 0)  # 01/10 00:00 Tokyo
+    assert day_start(ts) == utc(2026, 9, 29, 17, 0)  # 30/09 00:00 VN
+    sunday_tokyo = utc(2026, 10, 4, 15, 30)  # Chủ nhật 22:30 VN, thứ Hai 05/10 00:30 Tokyo
+    assert week_start(sunday_tokyo, tz=tokyo) == utc(2026, 10, 4, 15, 0)  # thứ Hai 05/10 00:00 Tokyo
+    assert week_start(sunday_tokyo) == utc(2026, 9, 27, 17, 0)  # thứ Hai 28/09 00:00 VN
+    local = week_start(sunday_tokyo, tz=tokyo).astimezone(tokyo)
+    assert (local.weekday(), local.hour, local.minute) == (0, 0, 0)
 
 
 def test_hour_start_truncates() -> None:
