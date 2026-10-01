@@ -68,7 +68,8 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 | Phase 4 — worker | **Không sửa `worker.py`** (spec phase4 mục 0.2). Nhắc duyệt 50/80% (4c) nằm trong `WorkerJobs.scan_deadlines` (`graph/worker_jobs.py`, chu kỳ 15 s sẵn có); truy vấn ở `SqlDeadlineStore` (`db/runtime.py`) | `worker.py` thuộc riêng Duy Anh, không xung đột với Phase 4 |
 | Phase 4 — settings (4a) | Khóa HMAC cho username đăng nhập không có trong `users` (Q-3e-14): `security_events.username_attempted` = `"h:" + HMAC` | Luật 3 đối soát và luật 10 dùng **đúng giá trị auth truyền cho `bruteforce_alert` / ghi vào `security_events`** sau 4a; test lại ca username ma sau khi rebase qua 4a |
 | Phase 4 — xem phiếu (4c, `aac90b1`) | `approvals.first_viewed_at` là **một cột chung** cho phiếu (lần xem đầu của người chính **hoặc** dự phòng sau nhắc 2; manager xem không ghi). `decided_at` có ở cả 3 nhánh (approved/rejected/timeout, kể cả worker đóng timeout). Audit B16 có `detail.decided_without_view`, `decided_as ∈ {primary, backup}`. Việc treo 28 của Phase 4: chưa sửa schema | Luật 7 lấy nguồn từ audit B16, ca mơ hồ tính là "< 5 giây" (mục 6). Hết pending khi 4c merge |
-| Phase 4 — ghi đè (4d) | `audit_logs` step `"OVERRIDE"` | `override_count` hết pending sau 4d |
+| Phase 4 — ghi đè (4d) | 1 dòng `audit_logs` step `"OVERRIDE"`, event `override_recorded`, cột `original_decision` / `override_decision` / `overrider_id`, `detail.reason_code`; không đổi `tickets` | `override_count` hết pending sau 4d |
+| Phase 4 — 4b, fixture | R17/R18/R19 đòi máy của chính người gửi: máy người khác / không tồn tại → **E5, 0 phiếu** (không còn HITL) | Fixture M9 không giả định "ngoài giờ → HITL" |
 | Phase 4 — 4b (B15 thật, sau DỪNG 2) | R17/R18/R19 đòi "máy của chính người gửi": máy người khác / máy không tồn tại → **E5 `llm_layer_disabled`, 0 phiếu** (trước đây ra HITL). `reason_detail` mới: `no_valid_approver` (E5), `approval_target_unverified` (E5), `approver_no_longer_valid` (E5), `approver_lookup_error` (E2), `approver_sync_unavailable` (E2). Audit B15 `queued` (điểm log 5) có cột `approver_id`, `deadline`, `conflict_detected`; `detail`: `choice_reason` ∈ {`normal`, `conflict`, `no_valid_l1`}, `backup_approver_id`, `conflict_type`, `sla_minutes`, `recovered`. Seed mock 17 người (thêm `l1_lead`; `l1_01` báo cáo `l1_lead`) | Tỉ lệ HITL giảm, E5 tăng ở các ca R17–R19 — **đúng thiết kế, không phải lỗi**; fixture test của A1/A2 không được giả định "ngoài giờ → HITL". E2 do tra người duyệt lỗi **không** tính vào `e2_llm_count`. Dữ liệu điểm log 5 sẵn cho chỉ số xung đột lợi ích sau này (chưa nằm trong 5.1) |
 
 ---
@@ -429,6 +430,7 @@ make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | **v1.10** — tin Phase 4 sau 4c: Phase 4 (cả 4d) không có migration, migration sau Phase 4 nối sau M9; mục 1.4 thêm chi tiết dòng `OVERRIDE` (4d) và lưu ý fixture R17–R19 → E5 |
 | 01/10/2026 | **v1.9** — chốt plan A1 (#8): migration M9 `0008_monitor_views` trỏ `0007` (Phase 4 không có migration); `weighted` chuẩn hoá lại khi nhóm 0 lá; lá nhiều dòng điểm log 4 → nhóm nhạy nhất; `e1_split` 4 lý do + `other`; `kb_version` dòng gần nhất khác null; L1 own 3 khóa |
 | 01/10/2026 | **v1.8** — luật 7 theo 4c: `first_viewed_at` là cột chung chính/dự phòng → nguồn chính là audit B16; ca mơ hồ tính là < 5 giây (ưu tiên không bỏ sót) |
 | 01/10/2026 | **v1.7** — mục 1.4: Phase 4 không sửa `worker.py` (nhắc duyệt trong `WorkerJobs.scan_deadlines`) |

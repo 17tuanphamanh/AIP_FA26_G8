@@ -116,14 +116,30 @@ class RuleContext:
     cap_usd: float         # config/llm.yaml spend.cap_usd — worker đọc, truyền vào
     warn_ratio: float      # spend.warn_ratio
 type Audience = Literal["manager", "dev", "ops"]
-def rule(rule_id: str, every: Every, audience: tuple[Audience, ...]) -> Callable[..., Any]   # decorator đăng ký vào REGISTRY; audience BẮT BUỘC (Q-M9-B1-9), lưu trong RuleSpec — A3 đọc REGISTRY để lọc /api/alerts; KHÔNG ghi alerts.detail.audience
+type RuleFn = Callable[[Any, RuleContext], list[AlertDraft]]     # hàm luật thuần (data, ctx) -> drafts, không I/O, không đọc đồng hồ
+@dataclass(frozen=True)
+class RuleSpec:
+    rule_id: str
+    every: Every
+    fn: RuleFn
+    audience: tuple[Audience, ...]
+REGISTRY: dict[str, RuleSpec]          # thứ tự đăng ký = thứ tự chạy; A3 đọc REGISTRY[rule_id].audience để lọc /api/alerts
+class DuplicateRuleError(ValueError)   # trùng rule_id → lỗi lúc import
+def rule[F: RuleFn](rule_id: str, every: Every, *, audience: tuple[Audience, ...]) -> Callable[[F], F]   # audience KEYWORD-ONLY, BẮT BUỘC, khác rỗng, không trùng (Q-M9-B1-9); KHÔNG ghi alerts.detail.audience
 # backend/app/monitor/evaluator.py
+class Loader(Protocol):
+    async def __call__(self, conn: AsyncConnection, ctx: RuleContext) -> object: ...   # chỉ SELECT; trả dataclass thuần hoặc Pending
+@dataclass(frozen=True)
+class Pending:
+    reason: str                        # nguồn chưa có node ghi → luật vào skipped_rules; KHÔNG trả dữ liệu rỗng thay
+def loader[L: Loader](rule_id: str) -> Callable[[L], L]   # mỗi rule_id đúng một loader; trùng → DuplicateRuleError
+class MissingLoaderError(LookupError)  # luật không có loader → failed_rules (to tiếng, không im lặng)
 @dataclass(frozen=True)
 class EvalResult:
     drafts: list[AlertDraft]
     failed_rules: list[str]                 # luật ném lỗi — log tên, không chặn luật khác
     skipped_rules: list[str]                # luật có nguồn pending
-async def evaluate(every: Every, conn: AsyncConnection, ctx: RuleContext) -> EvalResult
+async def evaluate(every: Every, conn: AsyncConnection, ctx: RuleContext) -> EvalResult   # mỗi loader chạy trong conn.begin_nested() (savepoint, B1); except Exception — CancelledError phải lan ra
 ```
 
 **Quy tắc khi hàm của A chưa merge:** Duy Anh viết luật 1/12/13 nhận **giá trị** (`WeightedRate`, `float | None`) làm tham số → test unit không cần DB. Phần gọi hàm của A nằm trong `rules_data.py`, chỉ nối khi A1/A2 đã merge.
@@ -195,6 +211,7 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
   6. Migration M9: `0008_monitor_views.py`, `revision = "0008"`, `down_revision = "0007"` (Q-M9-A1-1). Phase 4 **không có migration** (spec phase4 v0.5 mục 0.2 bỏ `0008_approvals_inbox_idx`). Sau mỗi rebase `alembic heads` = 1; nếu có migration khác cũng trỏ `0007` → chỉ sửa `down_revision` của M9 khi M9 **chưa merge**.
 - **Test:** "câu 2 ý" đếm 2 không 3; mỗi chỉ số dữ liệu tính tay; mẫu số 0 → `None`; `app_monitor` đọc 3 view, INSERT bị từ chối; migration up/down/up; `alembic heads` = 1.
 - **Mutation:** bỏ `is_parent = false`; đảo trọng số; nhóm "sensitive" nhận nhầm `allow`.
+- **Vá test A0 (từ kiểm thử độc lập 01/10, làm trong PR A1):** (X2) `test_monitor_import_contracts.py` assert 2 hợp đồng M9 **không** có `ignore_imports` và không bật `allow_indirect_imports` — hiện thêm `ignore_imports` thì lint vẫn KEPT, test vẫn xanh; (X3) `test_monitor_window.py` thêm ca `tz=ZoneInfo("Asia/Tokyo")` cho `day_start`, `week_start`.
 - **Giao cho Duy Anh:** báo trong issue epic "A1 merged — `escalation_rate_weighted`, `monitor_seed` dùng được".
 
 ### A2 — Chỉ số AI/LLMOps (1 ngày, Opus/Sonnet)
@@ -221,6 +238,7 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
 - **Output:** `/api/health` có `llm` (Q-M9-7) + cache 10 giây; test 10.000 ticket; migration chỉ mục bổ sung nếu cần (gồm chỉ mục Duy Anh đã xin); bảng nghiệm thu P9 §8 trong PR.
 - **Test:** 2 lần gọi trong 10 giây → mỗi phụ thuộc kiểm 1 lần; `llm` không đổi mã HTTP ở cả 4 trạng thái; 10.000 ticket mỗi truy vấn < 2 giây (in thời gian, ghi cấu hình máy).
 - **Thêm (Q-M9-B1-6):** `/api/health` có mục `monitor` (engine `app_monitor` có cấu hình và ping được hay không) — chỉ báo, không đổi mã 200/503; để thấy ngay khi tầng cảnh báo ngừng chạy vì thiếu DSN.
+- **Thêm (kiểm thử 01/10, mục 7):** kiểm DSN monitor **đúng role**: lúc ping `SELECT current_user` phải = `app_monitor`, khác → `monitor` báo `wrong_role` + log ERROR (đặt nhầm DSN `app_rw` thì M9 đang chạy với quyền ghi mà không ai biết). Lớp thứ hai: engine monitor đặt `default_transaction_read_only=on`. Test: DSN `app_rw` → `wrong_role`.
 - **Cổng thủ công luồng B:** Dương chạy phần xác nhận của B2 (mục 7.2).
 
 ---
@@ -263,6 +281,7 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
 
 - **Test:** mỗi luật: có / không / ngoài 24 giờ; 2 đối tượng cùng cửa sổ → 2 draft; chạy job 2 lần → không trùng; luật 3: auth đã ghi (window lệch vài ms so với `occurred_at`) → M9 **không** tạo thêm; xóa dòng của auth → M9 tạo đúng 1; worker "chết" 1 giờ (FakeClock) → vẫn bắt; một luật lỗi → luật khác vẫn ghi.
 - **Mutation:** subject luật 10 = `""`; `window_start` = `ctx.now`; lookback 60 s; luật 3 bỏ bước tra `alerts` ±60 s.
+- **Từ kiểm thử độc lập 01/10 (`ed5c46e`):** (X1) test loader ném `asyncio.CancelledError` → `evaluate` phải ném lại (đổi `except Exception` thành `BaseException` hiện không test nào đỏ); test PG `test_monitor_evaluator_savepoint_pg.py` phải xanh trên CI trước khi merge; khi tách loader sang `queries/rules_data.py` → đưa file đó vào `test_rule_functions_never_read_clock` (hoặc quét `inspect.getsourcefile(spec.fn)` của mọi `REGISTRY`).
 - **Cần Dương:** chỉ mục mới (nếu `EXPLAIN` cho thấy quét cả bảng) → comment issue A4.
 
 ### B2 — Luật tổng hợp + job giờ/ngày (1,5 ngày, Opus)
@@ -423,6 +442,7 @@ Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa co
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | Sau kiểm thử độc lập A0/B0 + `ed5c46e` (0 lỗi chặn merge, 14/14 đột biến chết, 3 sống): mục 3 bổ sung `RuleFn`, `RuleSpec`, `REGISTRY`, `DuplicateRuleError`, `Loader`, `Pending`, `loader`, `MissingLoaderError`, `audience` keyword-only, savepoint; A1 vá test X2/X3; A4 kiểm role `app_monitor`; B1 test `CancelledError` (X1) + quét đồng hồ file loader |
 | 01/10/2026 | Chốt plan A1 (#8, Q-M9-A1-1…6): migration M9 = `0008_monitor_views` trỏ `0007` (Phase 4 bỏ migration — sửa ghi chú `0008` cũ ở A1 và mục 8.1); `weighted` chuẩn hoá lại khi nhóm 0 lá, `None` chỉ khi 0 lá; nhiều dòng điểm log 4 → nhóm nhạy nhất; `e1_split` 4 lý do + `other`; `e3_cases.kb_version` = dòng audit gần nhất có giá trị; L1 own chỉ 3 khóa |
 | 01/10/2026 | Luật 7 (theo 4c): nguồn audit B16 (`decided_without_view`, `decided_as`), không dùng `first_viewed_at` làm nguồn chính; ca "đã nhắc 2 + người chính quyết" tính là < 5 giây; bỏ nhánh timeout |
 | 01/10/2026 | Sửa mục 8.1 theo phiên Phase 4: Phase 4 **không** sửa `worker.py` — nhắc duyệt nằm trong `WorkerJobs.scan_deadlines` |
