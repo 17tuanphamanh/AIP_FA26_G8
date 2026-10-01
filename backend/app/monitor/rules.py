@@ -15,6 +15,7 @@ người nhận sai. A3 đọc `REGISTRY` để lọc `/api/alerts`.
 
 import inspect
 import statistics
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -23,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.hashing import sha256_key
 from app.domain.alerts import (
+    BRUTEFORCE_RULE_ID,
     SUBJECT_MAX,
     AlertDraft,
     bruteforce_alert,
@@ -164,8 +166,10 @@ class SecurityEvent:
 
 @dataclass(frozen=True)
 class ExistingAlert:
-    """Luật 3 — dòng `alerts` `password_bruteforce` đã có (auth, B01 hoặc lần đối soát trước)."""
+    """Luật 3 — dòng `alerts` đã có (auth, B01 hoặc lần đối soát trước). `rule_id` KHÔNG có mặc định (Q-M9-B1-11):
+    loader phải mang theo để luật tự kiểm — cảnh báo luật khác cùng subject không được che đợt khoá (review #13)."""
 
+    rule_id: str
     subject: str
     window_start: datetime
 
@@ -231,7 +235,9 @@ def password_bruteforce(data: BruteforceData, ctx: RuleContext) -> list[AlertDra
     Auth ghi cảnh báo với `lock_start = now` của auth, còn `occurred_at` của sự kiện là MỘT LẦN GỌI ĐỒNG HỒ KHÁC
     (auth/service.py `_check_threshold`; audit/security_events.py) → hai mốc lệch vài ms. Dựng khoá từ `occurred_at`
     rồi trông vào ON CONFLICT sẽ ra khoá khác → cảnh báo trùng. Vì vậy: tìm cảnh báo cùng subject có
-    `|window_start − occurred_at| ≤ 60 s`; có → bỏ qua; không → draft `bruteforce_alert(lock_start=occurred_at)`.
+    `|window_start − occurred_at| ≤ 60 s` VÀ `rule_id = password_bruteforce` (luật tự kiểm, không trông vào loader:
+    cảnh báo `refresh_reuse` cùng user lệch < 60 s mà được tính là khớp thì đợt khoá bị bỏ sót); có → bỏ qua;
+    không → draft `bruteforce_alert(lock_start=occurred_at)`.
 
     Chỉ xét sự kiện cũ hơn 60 s (Q-M9-B1-3): auth ghi sự kiện rồi mới ghi cảnh báo, hai transaction — đọc vào khe
     giữa sẽ tạo bản trùng. Chờ 60 s chỉ làm lưới an toàn chậm một nhịp, không mất cảnh báo (lookback 24 giờ)."""
@@ -243,7 +249,10 @@ def password_bruteforce(data: BruteforceData, ctx: RuleContext) -> list[AlertDra
         username = e.username or ""
         subject = bruteforce_subject(e.user_id, username)
         if any(
-            a.subject == subject and abs(a.window_start - e.occurred_at) <= RECONCILE_TOLERANCE for a in data.alerts
+            a.rule_id == BRUTEFORCE_RULE_ID
+            and a.subject == subject
+            and abs(a.window_start - e.occurred_at) <= RECONCILE_TOLERANCE
+            for a in data.alerts
         ):
             continue
         drafts.append(
@@ -280,7 +289,12 @@ def permission_denied_burst(data: Sequence[SecurityEvent], ctx: RuleContext) -> 
 
     `data` có thể chứa sự kiện trước lookback (loader đọc lùi thêm 5 phút): chúng được ĐẾM để cửa sổ trượt đủ lịch
     sử, nhưng chỉ phát cảnh báo khi sự kiện kích hoạt nằm trong lookback. Một đợt vắt qua ranh giới khung 5 phút →
-    2 cảnh báo (báo thừa, chấp nhận)."""
+    2 cảnh báo (báo thừa, chấp nhận).
+
+    O(n log n) mỗi đối tượng (review #13: bản `sum(...)` cũ O(n²), 10k sự kiện ~5 s chặn event loop của worker — kẻ
+    tấn công spam route bị cấm là treo được job): sắp một lần, đếm `[t − 5 phút, t]` bằng `bisect` — `bisect_right`
+    tính cả sự kiện TRÙNG thời điểm `t` đứng sau. Kích hoạt cùng khung với lần trước thì bỏ qua sớm (khung chỉ tăng
+    theo thời gian → giữ đúng lần kích hoạt đầu của khung, như `_unique`)."""
     by_subject: dict[str, list[datetime]] = {}
     for e in data:
         # user_id; không có → `username:<…>` như luật 3 (quá 64 ký tự thì băm). Không có cả hai (writer hiện tại không
@@ -289,11 +303,16 @@ def permission_denied_burst(data: Sequence[SecurityEvent], ctx: RuleContext) -> 
     drafts: list[AlertDraft] = []
     for subject, times in by_subject.items():
         times.sort()
+        last_bucket: datetime | None = None
         for i in range(BURST_LIMIT, len(times)):
             t = times[i]
             if t - times[i - BURST_LIMIT] > BURST_WINDOW or not _recent(t, ctx):
                 continue
-            count = sum(1 for x in times if t - BURST_WINDOW <= x <= t)
+            bucket = bucket_start(t, BURST_MINUTES)
+            if bucket == last_bucket:
+                continue
+            last_bucket = bucket
+            count = bisect_right(times, t) - bisect_left(times, t - BURST_WINDOW)  # đóng hai đầu
             drafts.append(
                 AlertDraft(
                     rule_id="permission_denied_burst", subject=subject, window_start=bucket_start(t, BURST_MINUTES),

@@ -5,6 +5,7 @@ M9-B1: mỗi loader một savepoint (review #12) — kiểm bằng `FakeConn`; b
 Nguồn: file chia việc M9 mục 3 (hợp đồng `EvalResult`), mục 6 (B0); kế hoạch chung M9 mục 3.3, 4.4.
 """
 
+import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -169,6 +170,36 @@ async def test_each_loader_runs_in_its_own_savepoint() -> None:
     assert result == EvalResult(drafts=[b], failed_rules=["A"], skipped_rules=[])
     assert fake.events == [("savepoint", None), ("rollback", "Boom"), ("savepoint", None), ("release", None)]
     assert depth_seen == {"A": 1, "B": 1}
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_propagates_through_savepoint() -> None:
+    """X1: hủy job (`CancelledError` là BaseException) phải LAN RA qua savepoint, không bị nuốt thành `failed_rules`
+    — `except Exception` trong evaluate. Savepoint của luật bị hủy rollback; luật sau không chạy."""
+    fake = FakeConn()
+    called: list[str] = []
+
+    @rule("A", "minute", audience=AUD)
+    def rule_a(data: Any, ctx: RuleContext) -> list[AlertDraft]:
+        return []
+
+    @loader("A")
+    async def load_a(conn: AsyncConnection, ctx: RuleContext) -> object:
+        raise asyncio.CancelledError
+
+    @rule("B", "minute", audience=AUD)
+    def rule_b(data: Any, ctx: RuleContext) -> list[AlertDraft]:
+        return []
+
+    @loader("B")
+    async def load_b(conn: AsyncConnection, ctx: RuleContext) -> object:
+        called.append("B")
+        return None
+
+    with pytest.raises(asyncio.CancelledError):
+        await evaluate("minute", cast(AsyncConnection, fake), CTX)
+    assert fake.events == [("savepoint", None), ("rollback", "CancelledError")]
+    assert called == []
 
 
 # ---- nguồn pending, thiếu loader -----------------------------------------------------------------
