@@ -595,4 +595,35 @@ describe("client.ts", () => {
     expect(backend.count("/api/x")).toBe(1); // không gửi lại với token rỗng
     expect(onSessionEnd).not.toHaveBeenCalled();
   });
+
+  it("t52 (F5 P9): refresh trả token của NGƯỜI KHÁC (cookie bị ghi đè ở tab khác) → hết phiên, KHÔNG nhận token, không gửi lại", async () => {
+    // client.ts takeRefreshed: `sub` token mới ≠ người của phiên → endSession, không đổi danh tính lặng lẽ.
+    const jwt = (id: string, sub: string) => `h.${btoa(JSON.stringify({ sub, jti: id })).replace(/=+$/, "")}.s`;
+    const MINE = jwt("a", "l1_01");
+    const OTHERS = jwt("b", "nv001");
+    const posted: unknown[] = [];
+    const channel: AuthChannel = { post: (m) => posted.push(m), subscribe: () => {} };
+    const { client, backend, onSessionEnd } = setup(
+      (url, init) => {
+        if (url === "/api/auth/login") return tokenBody(MINE);
+        if (url === "/api/auth/refresh") return tokenBody(OTHERS);
+        // Backend nhận token người khác (đó là phiên hợp lệ của NGƯỜI KHÁC) — nếu client lỡ nhận thì request sẽ "thành công".
+        return bearer(init) === `Bearer ${OTHERS}` ? json(200, { owner: "nv001" }) : json(401, { detail: "unauthorized" });
+      },
+      { channel },
+    );
+    const login = await client.login("ha.lt", "pw");
+    expect(login).toStrictEqual({ ok: true, subject: "l1_01" });
+    await expect(client.request("/api/x")).rejects.toMatchObject({ status: 401 });
+    expect(backend.count("/api/auth/refresh")).toBe(1);
+    expect(backend.count("/api/x")).toBe(1); // không gửi lại bằng token của người khác
+    expect(onSessionEnd).toHaveBeenCalledTimes(1);
+    expect(backend.calls.some((c) => c.headers.get("Authorization") === `Bearer ${OTHERS}`)).toBe(false);
+    expect(posted).not.toContainEqual(expect.objectContaining({ token: OTHERS })); // không phát token đó sang tab khác
+    // Phiên đã hết: request sau không mang token nào, không refresh thêm.
+    await expect(client.request("/api/y")).rejects.toMatchObject({ status: 401 });
+    expect(backend.calls.find((c) => c.url === "/api/y")?.headers.get("Authorization")).toBeNull();
+    expect(backend.count("/api/auth/refresh")).toBe(1);
+    expect(onSessionEnd).toHaveBeenCalledTimes(1);
+  });
 });

@@ -2,6 +2,8 @@
 //   {detail: "<mã hoặc câu>"}                  — HTTPException, AuthError, 409 sự kiện muộn, 413
 //   {error: "<mã>", fields?: ["body.text", …]}  — 422 kiểm dữ liệu (`invalid_request`), 503 privacy guard
 // (backend/app/api/errors.py). Thân lỗi không bao giờ chứa giá trị người dùng gửi (chống rò qua 422).
+// F5 [Đề xuất — Phase 7]: 422 `invalid_policy` kèm `errors: [{loc, msg}]` (dạng lỗi Pydantic, `loc` tính từ gốc nội
+// dung chính sách) → `issues`.
 
 export class ApiError extends Error {
   readonly status: number;
@@ -11,28 +13,48 @@ export class ApiError extends Error {
   readonly fields: string[];
   /** Giây, từ header `Retry-After` (503 `ticket_busy`). */
   readonly retryAfter: number | null;
+  /** 422 `invalid_policy`: lỗi theo vị trí trong nội dung (chỉ phần tử đúng dạng `{loc, msg}`). */
+  readonly issues: Issue[];
 
-  constructor(status: number, code: string | null, fields: string[] = [], retryAfter: number | null = null) {
+  constructor(status: number, code: string | null, fields: string[] = [], retryAfter: number | null = null, issues: Issue[] = []) {
     super(`HTTP ${status}${code ? ` ${code}` : ""}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.fields = fields;
     this.retryAfter = retryAfter;
+    this.issues = issues;
   }
 }
 
-export function parseErrorBody(body: unknown): { code: string | null; fields: string[] } {
+export type Issue = { loc: (string | number)[]; msg: string };
+
+function parseIssues(raw: unknown): Issue[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (item === null || typeof item !== "object") return [];
+    const { loc, msg } = item as Record<string, unknown>;
+    if (typeof msg !== "string" || !Array.isArray(loc)) return [];
+    if (!loc.every((part) => typeof part === "string" || (typeof part === "number" && Number.isInteger(part)))) return [];
+    return [{ loc: loc as (string | number)[], msg }];
+  });
+}
+
+export function parseErrorBody(body: unknown): { code: string | null; fields: string[]; issues: Issue[] } {
   if (body !== null && typeof body === "object") {
     const b = body as Record<string, unknown>;
-    if (typeof b.detail === "string") return { code: b.detail, fields: [] };
+    if (typeof b.detail === "string") return { code: b.detail, fields: [], issues: [] };
     if (typeof b.error === "string") {
       const fields = Array.isArray(b.fields) ? b.fields.filter((f): f is string => typeof f === "string") : [];
-      return { code: b.error, fields: fields.map((f) => f.replace(/^body\./, "")) };
+      return { code: b.error, fields: fields.map((f) => f.replace(/^body\./, "")), issues: parseIssues(b.errors) };
     }
   }
-  return { code: null, fields: [] };
+  return { code: null, fields: [], issues: [] };
 }
+
+/** Starlette trả `{"detail":"Not Found"}` khi KHÔNG có route; route thật của repo dùng mã thường (`not_found`). */
+export const routeMissing = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 404 && error.code === "Not Found";
 
 export async function readApiError(res: Response): Promise<ApiError> {
   let body: unknown = null;
@@ -41,9 +63,9 @@ export async function readApiError(res: Response): Promise<ApiError> {
   } catch {
     // thân rỗng hoặc không phải JSON (vd proxy trả HTML) — chỉ còn mã HTTP
   }
-  const { code, fields } = parseErrorBody(body);
+  const { code, fields, issues } = parseErrorBody(body);
   const retryAfter = Number(res.headers.get("Retry-After"));
-  return new ApiError(res.status, code, fields, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null);
+  return new ApiError(res.status, code, fields, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, issues);
 }
 
 // Mã máy của backend → câu cho người dùng. Mã lạ: 409 có thể là câu tiếng Việt sẵn (`LateEvent.message`).
@@ -63,6 +85,11 @@ const CODE_MESSAGES: Record<string, string> = {
   ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
   already_overridden: "Bạn đã ghi đè ticket này rồi — mỗi người chỉ ghi đè một ticket một lần.",
   same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
+  // Tổng quan / cảnh báo (M9: thiếu kết nối monitor → 503, fail-closed — KH mục 5 dòng dashboard).
+  monitor_unavailable: "Số liệu tạm thời không có",
+  // Chính sách [Đề xuất F5 — Phase 7].
+  version_conflict: "Đã có phiên bản mới hơn — tải lại trước khi lưu",
+  invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
 };
 
 export function errorMessage(error: ApiError | null): string {

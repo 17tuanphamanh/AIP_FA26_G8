@@ -2,6 +2,7 @@
 // URL. Chỉ hiện câu trong bảng dưới — không bao giờ hiện chữ tuỳ ý lấy từ state.
 export const FLASH = {
   override_other_user: "Bạn đã đăng nhập bằng tài khoản khác — thao tác ghi đè đã huỷ.",
+  policy_other_user: "Bạn đã đăng nhập bằng tài khoản khác — thao tác trên chính sách đã huỷ.",
 } as const;
 
 export type FlashKey = keyof typeof FLASH;

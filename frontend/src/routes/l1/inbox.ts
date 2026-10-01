@@ -2,7 +2,7 @@
 // (giờ MÁY CHỦ: api/serverClock.ts). Tên khoá của `action` / `risk` / `facts` KHÔNG được đọc ở đây: phiếu hiện đúng
 // object đã băm, đủ mọi khoá (KH 4.2 #5), risk hiện khoá–giá trị chung (F4 P1).
 import { NOTE_MAX } from "../../api/approvals.ts";
-import { ApiError, errorMessage } from "../../api/errors.ts";
+import { ApiError, errorMessage, routeMissing } from "../../api/errors.ts";
 import type {
   ApprovalListItem,
   ApprovalStatus,
@@ -181,9 +181,6 @@ export function overrideBody(decision: OverrideDecision, reason: OverrideReasonC
   const text = note.trim();
   return text ? { override_decision: decision, reason_code: reason, note: text } : { override_decision: decision, reason_code: reason };
 }
-
-/** Starlette trả `{"detail":"Not Found"}` khi KHÔNG có route; route thật của repo dùng mã thường (`not_found`). */
-const routeMissing = (error: ApiError) => error.status === 404 && error.code === "Not Found";
 
 export function overrideErrorMessage(error: unknown): string {
   if (!(error instanceof ApiError)) return errorMessage(null);

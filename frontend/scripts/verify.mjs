@@ -12,9 +12,17 @@
 //      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
 //      F4-1…6 L1 trên dev:mock (hộp thư / xem phiếu / ghi đè chưa có ở backend — 4c, 4d) + backend thật (đăng nhập,
 //      ticket, decision cho id không phải fixture); F4-7, F4-8 dev KHÔNG mock. F4 không gửi câu chat nào.
+//      F5 Trưởng BP IT (quan.tm, bắt buộc OTP): CHỈ chạy khi VERIFY_MGR=1, NGAY SAU kiểm tĩnh (người đang ngồi máy) —
+//      Chromium CÓ GIAO DIỆN, MỘT context cho mọi bước quan.tm: điền tên + mật khẩu (che trong log), dừng ở màn OTP, NGƯỜI
+//      nhập mã trong 120 s (verify không đọc, không in, không chụp ô OTP; hết giờ, hoặc OTP bị từ chối 2 lần — tránh khoá
+//      tài khoản ở ngưỡng 5 lần/10 phút — → F5-1…6 BỎ QUA kèm đúng lý do, không thử lại). Thứ tự:
+//      F5-1 (trang đầu + thanh bên) → F5-6 (dev KHÔNG mock: trang "có từ A3/Phase 7") → chuyển dev:mock, cookie refresh
+//      giữ phiên (không nhập OTP lần 2) → F5-2 Tổng quan, F5-3 Cảnh báo, F5-4 503, F5-5 Chính sách. Không có VERIFY_MGR
+//      → F5-1…6 BỎ QUA. F5-7 (ha.lt, headless, cuối lượt) chạy cả khi không có VERIFY_MGR.
 //   c) dọn dẹp: tắt mọi server đã mở, đóng trình duyệt — kể cả khi lỗi hay Ctrl+C.
 // Đầu ra: .verify/summary.txt (bảng), .verify/run-<giờ>.log (chi tiết), .verify/<giờ>-<bước>.png khi FAIL,
-//         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png, l2-*.png, l1-*.png (1440×900, để so Bản 4).
+//         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png, l2-*.png, l1-*.png, mgr-*.png (1440×900, để so
+//         Bản 4). Ảnh của quan.tm chỉ chụp SAU khi đã vào (không bao giờ chụp màn OTP).
 // Mật khẩu demo đọc LÚC CHẠY từ mock_services/README.md mục "Dữ liệu demo" — không ghi cứng, không in;
 // mọi dòng ghi log/summary đi qua redact(). Không đọc .env.
 /* global document, indexedDB, getComputedStyle -- chỉ dùng bên trong page.evaluate (chạy ở trình duyệt); localStorage, sessionStorage
@@ -33,7 +41,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "F4";
+const BUILT = "F5";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -697,6 +705,106 @@ async function backendUp() {
   }
 }
 
+// ---------------------------------------------------------------- Trưởng BP IT (F5)
+
+// Chữ trên màn — trùng src/routes/manager/metrics.ts, policyText.ts (verify chạy bằng Node, không import TS).
+const VERIFY_MGR = process.env.VERIFY_MGR === "1";
+const MGR_SKIP = "BỎ QUA — cần VERIFY_MGR=1 (OTP do người nhập)";
+const OTP_WAIT = 120_000;
+const OTP_MAX_REJECTS = 2; // dừng F5 khi OTP bị từ chối lần thứ 2 (backend khoá ở 5 lần sai / 10 phút)
+const F5 = {
+  dashboardMissing: "Tổng quan có từ M9 (chặng A3)",
+  alertsMissing: "Cảnh báo có từ M9 (chặng A3)",
+  policyMissing: "Chính sách có từ Phase 7",
+  unavailable: "Chưa có dữ liệu",
+  monitorDown: "Số liệu tạm thời không có",
+  ackDone: "Đã xác nhận cảnh báo",
+  ackConflict: "Cảnh báo này đã được xác nhận trước đó",
+  ackGone: "Cảnh báo không còn",
+  restore: (v) => `Nội dung bản ${v} sẽ được áp dụng lại thành một phiên bản mới.`,
+};
+// Fixture MSW (src/mocks/fixtures/alerts.ts, policy.ts): 1001 ack thường · 9409 → 409 · 9404 → 404; chính sách bản "4"
+// (version_id 14) đang áp dụng, bản "2" (version_id 12) để quay lui. Cookie khoá 503: mocks/handlers/dashboard.ts.
+const ALERT = { normal: 1001, conflict: 9409, gone: 9404, unknownRule: 1007 };
+const MONITOR_COOKIE = "mock_monitor";
+const MGR_NAV = ["Tổng quan", "Cảnh báo", "Chính sách", "Chờ tôi duyệt"];
+const F5_API = /^\/api\/(?:dashboard|alerts|policy)(?:\/|$)/;
+
+/** Trạng thái phiên quan.tm dùng chung cho F5-1…6 (MỘT trình duyệt có giao diện, MỘT context). */
+const mgr = { browser: null, context: null, page: null, consoleLines: [], signedIn: false, skip: null };
+
+const lineIndex = (text, needle) => text.split("\n").findIndex((l) => l.includes(needle)) + 1;
+
+/** Bước F5 của quan.tm: BỎ QUA khi không có VERIFY_MGR / backend tắt / chưa vào được; kiểm 0 lỗi JS của riêng bước. */
+const mgrStep = (name, id, fn) =>
+  step(name, async () => {
+    if (!VERIFY_MGR) return { status: "BỎ QUA", note: MGR_SKIP };
+    if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt" };
+    if (!mgr.signedIn) return { status: "BỎ QUA", note: mgr.skip ?? "BỎ QUA — quan.tm chưa đăng nhập được (xem F5-1)" };
+    const from = mgr.consoleLines.length;
+    try {
+      const result = await fn(mgr);
+      const errors = mgr.consoleLines.slice(from).filter((l) => l.startsWith("[pageerror]"));
+      check(errors.length === 0, `lỗi JS trên trang: ${errors[0]}`);
+      return result;
+    } catch (error) {
+      const shot = join(OUT, `${STAMP}-${id}.png`);
+      await mgr.page.screenshot({ path: shot, fullPage: true }).catch(() => {}); // đã vào → không còn màn OTP
+      log(`ảnh chụp: ${shot}`);
+      throw error;
+    }
+  });
+
+/** Bấm mục thanh bên (điều hướng trong app — giữ nguyên trạng thái của handler giả, không tải lại trang). */
+async function navTo(page, label) {
+  await page.getByRole("navigation", NAV).getByRole("link", { name: label, exact: true }).click();
+}
+
+/** Bấm `click` và chờ response khớp `match`. */
+async function clickFor(page, match, click, timeout = 15_000) {
+  const [res] = await Promise.all([page.waitForResponse(match, { timeout }), click()]);
+  return res;
+}
+
+/**
+ * Như `clickFor` nhưng CHỈ nhận response của request phát ra từ lúc bắt đầu chờ (tức do cú bấm sinh ra) — bỏ qua
+ * response của request đã bay từ trước (vd tải lại khi màn mount). Request ghi nhận qua sự kiện "request" của trang.
+ */
+async function clickForFresh(page, match, click, timeout = 15_000) {
+  const fresh = new Set();
+  const onRequest = (request) => fresh.add(request);
+  page.on("request", onRequest);
+  try {
+    return await clickFor(page, (r) => fresh.has(r.request()) && match(r), click, timeout);
+  } finally {
+    page.off("request", onRequest);
+  }
+}
+
+/**
+ * Nút "Tải lại" của Tổng quan khi sẵn sàng: đang có request ngầm của số liệu (vd tải lại khi màn mount) thì nút
+ * là "Đang tải…" và bị khoá (DashboardPage: cả nhãn lẫn `disabled` theo `isFetching`) → chờ tới khi nút trở lại "Tải lại".
+ */
+async function reloadReady(page, timeout = 15_000) {
+  const button = page.getByRole("button", { name: "Tải lại", exact: true });
+  await button.waitFor({ state: "visible", timeout });
+  check(await button.isEnabled(), 'nút "Tải lại" hiện mà vẫn bị khoá');
+  return button;
+}
+
+const hasMonitorCookie = async (page) =>
+  (await page.evaluate(() => document.cookie)).split(/;\s*/).includes(`${MONITOR_COOKIE}=unavailable`);
+
+async function closeMgr() {
+  try {
+    await mgr.browser?.close();
+  } catch {
+    // đã đóng
+  }
+  mgr.browser = null;
+}
+
+// ---------------------------------------------------------------- chạy
 // ---------------------------------------------------------------- chạy
 
 log(`npm run verify — ${started.toISOString()} — chặng đã dựng: ${BUILT}`);
@@ -713,6 +821,280 @@ await step(
 await step("build", scriptStep("build", [], () => "vite build exit 0"));
 await step("check:dist", scriptStep("check:dist", [], (out) => lastLines(out, 1)));
 await step("check:style", scriptStep("check:style", [], (out) => lastLines(out, 1)));
+
+const backendOk = failedStep ? false : await backendUp();
+if (backendOk) password = readDemoPassword();
+
+// F5 — quan.tm, NGAY SAU kiểm tĩnh (người đang ngồi máy để nhập OTP). Chi tiết: đầu tệp.
+await step("F5-1 quan.tm đăng nhập (OTP do người nhập) → /dashboard; thanh bên có Tổng quan, Cảnh báo, Chính sách", async () => {
+  if (!VERIFY_MGR) return { status: "BỎ QUA", note: MGR_SKIP };
+  if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt" };
+  await ensureF1Server();
+  try {
+    mgr.browser = await chromium.launch({ headless: false });
+  } catch (error) {
+    throw new Error(`không mở được Chromium có giao diện (${String(error.message).split("\n")[0]})`, { cause: error });
+  }
+  mgr.context = await mgr.browser.newContext({ viewport: VIEWPORT });
+  mgr.page = await mgr.context.newPage();
+  watch(mgr.page, "F5", mgr.consoleLines);
+  const page = mgr.page;
+  const status = await submitLogin(page, "quan.tm"); // MỘT lần đăng nhập quan.tm mỗi lượt
+  const state = await afterSubmit(page);
+  check(state === "otp", `quan.tm: không sang bước OTP (${state}; POST /api/auth/login → ${status})`);
+  // Đếm lần OTP bị từ chối: 401 của POST /api/auth/login mà KHÔNG phải `mfa_required` (lần 401 đầu — chưa có otp — đã
+  // qua ở trên). Chỉ đọc mã lỗi trong THÂN RESPONSE, không đọc thân request (chứa OTP). Lần thứ OTP_MAX_REJECTS → dừng
+  // ngay: backend khoá tài khoản ở 5 lần sai / 10 phút (P6 §4) — để lại dư cho F1-4 và lượt sau.
+  let rejected = 0;
+  let stopWaiting = () => {};
+  const tooMany = new Promise((resolve) => (stopWaiting = resolve));
+  page.on("response", async (r) => {
+    if (!isLoginCall(r) || r.status() !== 401) return;
+    const detail = (await r.json().catch(() => null))?.detail ?? null;
+    if (detail === "mfa_required") return;
+    rejected += 1;
+    log(`OTP của quan.tm bị từ chối lần ${rejected} (401${detail ? ` ${detail}` : ""})`);
+    if (rejected >= OTP_MAX_REJECTS) stopWaiting("rejected");
+  });
+  console.log(
+    `\n>>> Nhập mã 6 số của quan.tm vào cửa sổ trình duyệt (${OTP_WAIT / 1000} giây).` +
+      `\n>>> Nhập mã 6 số MỘT lần rồi bấm Xác nhận. Sai thì chờ mã mới; tối đa ${OTP_MAX_REJECTS} lần.\n`,
+  );
+  log(`chờ người nhập OTP của quan.tm (tối đa ${OTP_WAIT / 1000} s, dừng sau ${OTP_MAX_REJECTS} lần bị từ chối) — verify không đọc, không chụp ô OTP`);
+  const outcome = await Promise.race([
+    page.waitForURL((url) => url.pathname === "/dashboard", { timeout: OTP_WAIT }).then(
+      () => "entered",
+      () => "timeout",
+    ),
+    tooMany,
+  ]);
+  if (outcome !== "entered") {
+    mgr.skip =
+      outcome === "rejected"
+        ? `BỎ QUA — OTP bị từ chối ${OTP_MAX_REJECTS} lần, dừng để tránh khoá tài khoản (ngưỡng 5 lần/10 phút)`
+        : rejected > 0
+          ? `BỎ QUA — hết ${OTP_WAIT / 1000} s chưa vào được (OTP bị từ chối ${rejected} lần) — không thử lại`
+          : `BỎ QUA — hết ${OTP_WAIT / 1000} s chưa vào được (chưa nhập OTP) — không thử lại`;
+    await closeMgr();
+    return { status: "BỎ QUA", note: mgr.skip };
+  }
+  await page.getByRole("navigation", NAV).waitFor({ timeout: 15_000 });
+  mgr.signedIn = true;
+  const nav = page.getByRole("navigation", NAV);
+  for (const label of MGR_NAV) check((await nav.getByRole("link", { name: label, exact: true }).count()) === 1, `thanh bên quan.tm thiếu "${label}"`);
+  await expectStorageEmpty(page, "quan.tm");
+  const errors = mgr.consoleLines.filter((l) => l.startsWith("[pageerror]"));
+  check(errors.length === 0, `lỗi JS trên trang: ${errors[0]}`);
+  await shoot(page, "mgr-sidebar.png");
+  return { note: `OTP do người nhập → trang đầu /dashboard (dashboard:read:all); thanh bên: ${MGR_NAV.join(", ")}; Storage/IndexedDB rỗng` };
+});
+
+await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts, /policy → trang \"có từ A3 / Phase 7\", không khối đỏ", "F5-6", async ({ page, consoleLines }) => {
+  check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+  const notes = [];
+  for (const [label, path, api, testId, title, shot] of [
+    ["Tổng quan", "/dashboard", "/api/dashboard/business", "dashboard-missing", F5.dashboardMissing, "mgr-a3.png"],
+    ["Cảnh báo", "/alerts", "/api/alerts", "alerts-missing", F5.alertsMissing, null],
+    ["Chính sách", "/policy", "/api/policy", "policy-missing", F5.policyMissing, "mgr-phase7.png"],
+  ]) {
+    const seen = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === api);
+    if (new URL(page.url()).pathname === path) await page.reload({ waitUntil: "load" });
+    else await navTo(page, label);
+    await expectSignedIn(page, `quan.tm ${path}`);
+    const body = await waitJson(page, seen, `GET ${api}`);
+    const code = seen.statuses[0];
+    if (code === 404) {
+      const box = page.getByTestId(testId);
+      await box.waitFor({ timeout: 10_000 });
+      const heading = (await box.getByRole("heading").innerText()).trim();
+      check(heading === title, `${path}: tiêu đề "${heading}", cần "${title}"`);
+      check(body?.detail === "Not Found", `${path}: 404 không phải "Not Found" của Starlette (${JSON.stringify(body)})`);
+      check((await page.locator("main [role=alert]").count()) === 0, `${path}: trang "có từ…" có khối lỗi đỏ (role=alert)`);
+      if (shot) await shoot(page, shot);
+      notes.push(`${path} → 404 → "${title}"`);
+    } else {
+      check(code === 200, `GET ${api} → ${code} (không phải 404 cũng không phải 200)`);
+      check((await page.getByTestId(testId).count()) === 0, `${path}: route đã có (200) mà vẫn hiện trang "có từ…"`);
+      notes.push(`${path} → 200 — route đã có, kiểm thật`);
+    }
+  }
+  return { note: `${notes.join(" · ")}; không khối đỏ` };
+});
+
+await mgrStep("F5-2 dev:mock Tổng quan: 3 khoảng gửi from/to kèm +07:00; override_count \"Chưa có dữ liệu\", tỉ lệ null \"—\"; tab AI", "F5-2", async ({ page, consoleLines }) => {
+  // Chuyển dev → dev:mock trong CÙNG context: cookie refresh (localhost) giữ phiên → không nhập OTP lần 2.
+  await page.goto("about:blank");
+  await ensureMockServer("dev:mock(F5)");
+  const windows = [];
+  page.on("request", (r) => {
+    if (r.method() === "GET" && new URL(r.url()).pathname === "/api/dashboard/business") {
+      const q = new URL(r.url()).searchParams;
+      windows.push([q.get("from"), q.get("to")]);
+    }
+  });
+  await page.goto(`${DEV}/dashboard`, { waitUntil: "load" });
+  await expectSignedIn(page, "quan.tm (dev:mock, khôi phục bằng cookie refresh)");
+  check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
+  await page.getByTestId("kpi").first().waitFor({ timeout: 15_000 });
+  const ranges = page.getByRole("tablist", { name: "Khoảng thời gian" });
+  for (const label of ["Hôm nay", "30 ngày", "7 ngày"]) {
+    await clickFor(page, (r) => pathOf(r) === "/api/dashboard/business" && r.status() === 200, () => ranges.getByRole("tab", { name: label, exact: true }).click());
+  }
+  await page.getByTestId("kpi").first().waitFor({ timeout: 10_000 });
+  check(windows.length >= 4, `chỉ thấy ${windows.length} lời gọi /api/dashboard/business (cần mặc định + 3 lần đổi khoảng)`);
+  for (const [from, to] of windows) {
+    check(/T00:00:00\.000\+07:00$/.test(from ?? ""), `from "${from}" không phải 00:00 kèm +07:00`);
+    check(/\+07:00$/.test(to ?? ""), `to "${to}" thiếu +07:00`);
+  }
+  const days = windows.map(([from, to]) => Math.ceil((Date.parse(to) - Date.parse(from)) / 86_400_000));
+  check(new Set(days).size === 3 && days.includes(1) && days.includes(7) && days.includes(30), `số ngày các khoảng: ${days.join(", ")}`);
+  const kpi = (metric) => page.locator(`[data-testid="kpi"][data-metric="${metric}"] [data-testid="kpi-value"]`);
+  const weighted = (await kpi("escalation_rate_weighted").innerText()).trim();
+  check(weighted === "—", `tỉ lệ null (escalation_rate_weighted) hiện "${weighted}", cần "—"`);
+  const override = (await page.getByTestId("metric-override_count").getByTestId("metric-value").innerText()).trim();
+  check(override === F5.unavailable, `override_count hiện "${override}", cần "${F5.unavailable}"`);
+  check(!/0/.test(weighted) && !/0/.test(override), `ô null/unavailable có chữ "0": "${weighted}" / "${override}"`);
+  const zero = (await kpi("approval_expired_count").innerText()).trim();
+  check(zero === "0", `số 0 thật (approval_expired_count) hiện "${zero}"`);
+  await shoot(page, "mgr-dashboard.png");
+  await page.getByRole("tablist", { name: "Loại số liệu" }).getByRole("tab", { name: "AI", exact: true }).click();
+  await page.getByTestId("ai-metric").first().waitFor({ timeout: 10_000 });
+  const rows = await page.getByTestId("ai-metric").count();
+  check(rows === 12, `tab AI có ${rows} chỉ số, cần 12`);
+  check((await page.getByTestId("ai-detail-row").count()) > 0, "tab AI không có bảng khoá–giá trị cho chỉ số dạng map/mảng");
+  await shoot(page, "mgr-dashboard-ai.png");
+  await page.getByRole("tablist", { name: "Loại số liệu" }).getByRole("tab", { name: "Nghiệp vụ", exact: true }).click();
+  return {
+    note: `${windows.length} lời gọi, mọi from = 00:00+07:00 và to kèm +07:00 (${[...new Set(days)].join("/")} ngày); escalation_rate_weighted "—", override_count "${F5.unavailable}" (không chữ 0), approval_expired_count "0"; tab AI ${rows} chỉ số`,
+  };
+});
+
+await mgrStep("F5-3 dev:mock Cảnh báo: \"Đã xem\" → biến khỏi \"Đang mở\" sau 200; id 409 → đã xác nhận; id 404 → không còn", "F5-3", async ({ page }) => {
+  await navTo(page, "Cảnh báo");
+  await page.getByRole("heading", { name: "Cảnh báo", level: 1 }).waitFor();
+  const row = (id) => page.locator(`[data-testid="alert-row"][data-alert-id="${id}"]`);
+  await row(ALERT.normal).waitFor({ timeout: 15_000 });
+  const unknown = (await row(ALERT.unknownRule).innerText()).trim();
+  check(unknown.includes("custom_rule_x"), `rule_id lạ không hiện nguyên mã: "${unknown}"`);
+  const ackOf = (id) => (r) => r.request().method() === "POST" && pathOf(r) === `/api/alerts/${id}/ack`;
+  const notice = page.getByTestId("ack-notice");
+  const ok = await clickFor(page, ackOf(ALERT.normal), () => row(ALERT.normal).getByRole("button", { name: "Đã xem", exact: true }).click());
+  check(ok.status() === 200, `ack ${ALERT.normal} → ${ok.status()}, cần 200`);
+  await row(ALERT.normal).waitFor({ state: "detached", timeout: 10_000 });
+  check((await notice.innerText()).trim() === F5.ackDone, `sau 200 hiện "${await notice.innerText()}"`);
+  const conflict = await clickFor(page, ackOf(ALERT.conflict), () => row(ALERT.conflict).getByRole("button", { name: "Đã xem", exact: true }).click());
+  check(conflict.status() === 409, `ack ${ALERT.conflict} → ${conflict.status()}, cần 409`);
+  await page.waitForFunction((t) => document.querySelector('[data-testid="ack-notice"]')?.textContent === t, F5.ackConflict, { timeout: 5_000 });
+  await row(ALERT.conflict).waitFor({ state: "detached", timeout: 10_000 }); // tải lại → đã có người xác nhận
+  const gone = await clickFor(page, ackOf(ALERT.gone), () => row(ALERT.gone).getByRole("button", { name: "Đã xem", exact: true }).click());
+  check(gone.status() === 404, `ack ${ALERT.gone} → ${gone.status()}, cần 404`);
+  await page.waitForFunction((t) => document.querySelector('[data-testid="ack-notice"]')?.textContent === t, F5.ackGone, { timeout: 5_000 });
+  await shoot(page, "mgr-alerts.png");
+  return { note: `${ALERT.normal} → 200 → rời "Đang mở", "${F5.ackDone}" · ${ALERT.conflict} → 409 "${F5.ackConflict}" · ${ALERT.gone} → 404 "${F5.ackGone}"; rule_id lạ hiện nguyên mã` };
+});
+
+await mgrStep("F5-4 dev:mock 503 monitor_unavailable (cookie mock_monitor) → \"Số liệu tạm thời không có\", không số cũ", "F5-4", async ({ page, context }) => {
+  // Lượt 7 đỏ vì đua: tải lại khi màn mount (cache đã cũ) còn bay lúc đặt cookie → bắt nhầm response 200 của nó, rồi
+  // `finally` xoá cookie trước khi request của cú bấm tới MSW. Nay: chờ hết tải ngầm → đặt cookie, kiểm cookie đã vào
+  // trang → chỉ nhận response của request do cú bấm sinh ra → xoá cookie SAU khi đã nhận response đó và kiểm xong màn.
+  // Bước đỏ giữa chừng → cookie ở lại context này, nhưng verify dừng và "Dọn dẹp" đóng trình duyệt (closeMgr).
+  const business = (r) => r.request().method() === "GET" && pathOf(r) === "/api/dashboard/business";
+  await navTo(page, "Tổng quan");
+  await page.getByTestId("kpi").first().waitFor({ timeout: 15_000 });
+  const reload = await reloadReady(page); // hết tải ngầm (tải lại khi mount) rồi mới đặt cookie
+  const before = await page.getByTestId("kpi").count();
+  await context.addCookies([{ name: MONITOR_COOKIE, value: "unavailable", url: DEV }]);
+  check(await hasMonitorCookie(page), `cookie chưa vào trang: document.cookie không có ${MONITOR_COOKIE}=unavailable`);
+  const down = await clickForFresh(page, business, () => reload.click());
+  check(down.status() === 503, `GET /api/dashboard/business (của cú bấm "Tải lại") → ${down.status()}, cần 503`);
+  const error = page.getByTestId("load-error");
+  await error.waitFor({ timeout: 10_000 });
+  check((await error.innerText()).includes(F5.monitorDown), `khối lỗi: "${await error.innerText()}"`);
+  for (const id of ["kpi", "bar-row", "e3-case", "metric-override_count"]) {
+    check((await page.getByTestId(id).count()) === 0, `503 mà vẫn còn "${id}" của lần tải trước`);
+  }
+  const main = await page.locator("main").innerText();
+  check(!/\d\s?%/.test(main), "503 mà trên màn vẫn còn số phần trăm");
+  await shoot(page, "mgr-503.png");
+  await context.clearCookies({ name: MONITOR_COOKIE }); // chỉ xoá cookie của mock — giữ cookie refresh
+  check(!(await hasMonitorCookie(page)), `xoá cookie mà document.cookie vẫn còn ${MONITOR_COOKIE}=unavailable`);
+  await reloadReady(page);
+  const back = await clickForFresh(page, business, () => reload.click());
+  check(back.status() === 200, `xoá cookie rồi GET /api/dashboard/business → ${back.status()}, cần 200`);
+  await page.getByTestId("kpi").first().waitFor({ timeout: 10_000 });
+  return {
+    note: `có ${before} ô số → cookie ${MONITOR_COOKIE}=unavailable (đã vào document.cookie) → cú bấm "Tải lại" → 503 → "${F5.monitorDown}", 0 ô số / thanh / ca E3 cũ, không còn "%"; xoá cookie → 200, số trở lại`,
+  };
+});
+
+await mgrStep("F5-5 dev:mock Chính sách: sai cú pháp → \"Dòng N\" + Lưu khoá; 422 đúng dòng; Lưu 201; quay lui → 201", "F5-5", async ({ page }) => {
+  await navTo(page, "Chính sách");
+  await page.getByRole("heading", { name: "Chính sách", level: 1 }).waitFor();
+  await page.getByTestId("version-row").first().waitFor({ timeout: 15_000 });
+  await shoot(page, "mgr-policy.png");
+  await page.getByRole("tab", { name: "JSON", exact: true }).click();
+  const area = page.getByLabel("Nội dung chính sách (JSON)");
+  const original = await area.inputValue();
+  const saveButton = page.getByRole("button", { name: /^Lưu/ });
+  const puts = [];
+  page.on("request", (r) => {
+    if (r.method() === "PUT" && pathOf(r) === "/api/policy") puts.push(r.postDataJSON());
+  });
+  // (1) Sai cú pháp: bỏ dấu phẩy sau SLA_MINUTES → lỗi ở dòng THRESHOLD_LOW.
+  const broken = original.replace('"SLA_MINUTES": 30,', '"SLA_MINUTES": 30');
+  check(broken !== original, "không tìm thấy dòng SLA_MINUTES trong chính sách giả");
+  await area.fill(broken);
+  const syntaxLine = lineIndex(broken, '"THRESHOLD_LOW"');
+  const first = (await page.getByTestId("policy-problem").first().innerText()).trim();
+  check(first.startsWith(`Dòng ${syntaxLine}, cột `), `lỗi cú pháp hiện "${first}", cần "Dòng ${syntaxLine}, cột …"`);
+  check(await saveButton.isDisabled(), "JSON sai cú pháp mà nút Lưu không khoá");
+  check((await saveButton.innerText()).trim() === "Lưu · còn 1 lỗi", `nút Lưu: "${await saveButton.innerText()}"`);
+  // (2) Sai nghĩa: ngưỡng dưới ≥ ngưỡng trên → 422 ở đúng dòng.
+  const bad = original.replace('"THRESHOLD_LOW": 0.25', '"THRESHOLD_LOW": 0.9');
+  await area.fill(bad);
+  const r422 = await clickFor(page, (r) => r.request().method() === "PUT" && pathOf(r) === "/api/policy", () => saveButton.click());
+  check(r422.status() === 422, `PUT sai nghĩa → ${r422.status()}, cần 422`);
+  const lowLine = lineIndex(bad, '"THRESHOLD_LOW"');
+  const expected = `Dòng ${lowLine} · Ngưỡng dưới 0.9 phải nhỏ hơn ngưỡng trên 0.75`;
+  await page.waitForFunction((t) => [...document.querySelectorAll('[data-testid="policy-problem"]')].some((el) => el.textContent === t), expected, { timeout: 5_000 });
+  const mark = await page.locator(`[data-testid="gutter-line"][data-line="${lowLine}"]`).getAttribute("data-mark");
+  check(mark === "error", `số dòng ${lowLine} không tô đỏ (data-mark=${mark})`);
+  check(puts[0]?.base_version_id === 14, `PUT thiếu/sai base_version_id: ${JSON.stringify(puts[0]?.base_version_id)}`);
+  await shoot(page, "mgr-policy-json-error.png");
+  // (3) Sửa đúng → 201 → lịch sử có bản mới đang áp dụng.
+  const good = original.replace('"SLA_MINUTES": 30', '"SLA_MINUTES": 35');
+  await area.fill(good);
+  const r201 = await clickFor(page, (r) => r.request().method() === "PUT" && pathOf(r) === "/api/policy", () => saveButton.click());
+  check(r201.status() === 201, `PUT đúng → ${r201.status()}, cần 201`);
+  const saved = await r201.json();
+  await page.waitForFunction((t) => document.querySelector('[data-testid="policy-message"]')?.textContent === t, `Đã lưu thành bản ${saved.version}.`, { timeout: 5_000 });
+  await page.locator(`[data-testid="version-row"][data-version="${saved.version}"][data-current="true"]`).waitFor({ timeout: 10_000 });
+  // (4) Quay lui bản "2" → hộp xác nhận → 201 → bản mới (khôi phục từ bản 2); bản 2 còn nguyên trong lịch sử.
+  await page.getByRole("button", { name: "Quay lui bản 2", exact: true }).click();
+  const confirmText = (await page.getByTestId("restore-confirm-text").innerText()).trim();
+  check(confirmText === F5.restore("2"), `hộp xác nhận: "${confirmText}"`);
+  const restored = await clickFor(page, (r) => r.request().method() === "POST" && /^\/api\/policy\/versions\/12\/restore$/.test(pathOf(r)), () =>
+    page.getByRole("button", { name: "Áp dụng lại", exact: true }).click(),
+  );
+  check(restored.status() === 201, `quay lui → ${restored.status()}, cần 201`);
+  const made = await restored.json();
+  await page.waitForFunction((t) => document.querySelector('[data-testid="policy-message"]')?.textContent === t, `Đã áp dụng lại nội dung bản 2 thành bản ${made.version}.`, { timeout: 5_000 });
+  const newest = page.locator(`[data-testid="version-row"][data-version="${made.version}"]`);
+  await newest.waitFor({ timeout: 10_000 });
+  check((await newest.getAttribute("data-current")) === "true", `bản ${made.version} không phải bản đang áp dụng`);
+  check((await newest.innerText()).includes("khôi phục từ bản 2"), `bản ${made.version} thiếu "khôi phục từ bản 2"`);
+  check((await page.locator('[data-testid="version-row"][data-version="2"]').count()) === 1, "bản 2 biến khỏi lịch sử sau quay lui");
+  await shoot(page, "mgr-policy-restore.png");
+  return {
+    note: `cú pháp → "Dòng ${syntaxLine}, cột …", Lưu khoá ("Lưu · còn 1 lỗi") · 422 → "${expected}", số dòng đỏ, base_version_id 14 · 201 → bản ${saved.version} đang áp dụng · quay lui bản 2 → "${F5.restore("2")}" → 201 → bản ${made.version} (khôi phục từ bản 2), bản 2 còn nguyên`,
+  };
+});
+
+// Hết phần quan.tm: đóng trình duyệt có giao diện, tắt dev server (F0-1 tự mở server riêng ở cổng 5173).
+await closeMgr();
+for (const child of [f1Server, mockServer]) if (child) await stopServer(child);
+f1Server = null;
+mockServer = null;
 
 // b) trình duyệt
 await step("Mở Chromium headless", async () => {
@@ -799,8 +1181,7 @@ await step("F0-3 preview", async () => {
 });
 
 // F1, F2 — backend thật qua dev server (proxy /api → backend). Lý do BỎ QUA duy nhất: backend tắt.
-const backendOk = failedStep ? false : await backendUp();
-if (backendOk) password = readDemoPassword();
+// (`backendOk` + mật khẩu demo đã lấy trước khối F5.)
 const live = (name, fn) =>
   step(name, async () => {
     if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt" };
@@ -1463,12 +1844,36 @@ await live("F4-8 ha.lt /approvals KHÔNG mock → “Hộp thư duyệt có từ
   }),
 );
 
+await live("F5-7 ha.lt (L1) → /dashboard, /alerts, /policy: trang không có quyền, 0 lời gọi; thanh bên không có 3 mục", () =>
+  scenario("F5-7", async ({ page }) => {
+    const calls = [];
+    page.on("request", (r) => {
+      if (F5_API.test(pathOf(r))) calls.push(pathOf(r));
+    });
+    await signInAs(page, "ha.lt");
+    const nav = page.getByRole("navigation", NAV);
+    for (const label of ["Tổng quan", "Cảnh báo", "Chính sách"]) {
+      check((await nav.getByRole("link", { name: label, exact: true }).count()) === 0, `thanh bên ha.lt có "${label}"`);
+    }
+    for (const path of ["/dashboard", "/alerts", "/policy"]) {
+      await page.goto(`${DEV}${path}`, { waitUntil: "load" });
+      await expectSignedIn(page, `ha.lt ${path}`);
+      await page.getByRole("heading", FORBIDDEN_HEADING).waitFor({ timeout: 10_000 });
+    }
+    await page.waitForTimeout(500);
+    check(calls.length === 0, `trang không có quyền mà UI vẫn gọi ${calls[0]}`);
+    await shoot(page, "mgr-forbidden-l1.png");
+    return { note: '/dashboard, /alerts, /policy → "Bạn không có quyền xem trang này"; 0 lời gọi /api/dashboard|alerts|policy; thanh bên không có Tổng quan / Cảnh báo / Chính sách' };
+  }),
+);
+
 // c) dọn dẹp — luôn chạy
 {
   const t0 = performance.now();
   const notes = [];
   try {
     await browser?.close();
+    await closeMgr();
   } catch (error) {
     notes.push(`đóng Chromium lỗi: ${error.message}`);
   }

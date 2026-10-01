@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { type ComponentType, useCallback } from "react";
 import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 import { LoginPage } from "./auth/LoginPage.tsx";
@@ -17,8 +17,10 @@ import { ApprovalQueue } from "./routes/l1/ApprovalQueue.tsx";
 import { TicketOverrideRoute } from "./routes/l1/TicketOverride.tsx";
 import { EscalationDetailRoute } from "./routes/l2/EscalationDetail.tsx";
 import { EscalationQueue } from "./routes/l2/EscalationQueue.tsx";
+import { Alerts } from "./routes/manager/Alerts.tsx";
+import { DashboardPage } from "./routes/manager/DashboardPage.tsx";
+import { PolicyEditor } from "./routes/manager/PolicyEditor.tsx";
 import { NotFound } from "./routes/NotFound.tsx";
-import { Pending } from "./routes/Pending.tsx";
 
 const queryClient = new QueryClient();
 
@@ -42,7 +44,7 @@ function Home() {
 
 // F2: chat nhân viên (API thật). F3: hàng đợi + chi tiết escalate (L1 + L2 — quyền escalation:handle). F4: hộp thư duyệt,
 // chi tiết phiếu (approval:decide — L1 + Trưởng BP IT; L2 không có → trang 403), xem ticket để ghi đè (decision:override).
-// Màn của F5 chưa dựng: route + quyền có sẵn, nội dung là <Pending>. Chặng sau thay element, giữ RequirePerm.
+// F5: Tổng quan (dashboard:read:all), Cảnh báo (alert:read), Chính sách (policy:read; sửa cần policy:edit) — Trưởng BP IT.
 const chatRoutes = [
   {
     path: CHAT_NAV.to.slice(1),
@@ -110,14 +112,23 @@ const approvalRoutes = [
   },
 ];
 
-const featureRoutes = STAFF_NAV.filter((item) => item !== ESCALATIONS && item !== APPROVALS).map((item) => ({
-  path: item.to.slice(1),
-  element: (
-    <RequirePerm perm={item.perm}>
-      <Pending title={item.label} stage={item.stage} />
-    </RequirePerm>
-  ),
-}));
+// F5 — Trưởng BP IT. Thiếu quyền → trang 403 TRƯỚC khi component mount → không gọi API nào (t64).
+const MANAGER_SCREENS: Record<string, ComponentType> = {
+  "/dashboard": DashboardPage,
+  "/alerts": Alerts,
+  "/policy": PolicyEditor,
+};
+const managerRoutes = STAFF_NAV.filter((item) => item.to in MANAGER_SCREENS).map((item) => {
+  const Screen = MANAGER_SCREENS[item.to]!;
+  return {
+    path: item.to.slice(1),
+    element: (
+      <RequirePerm perm={item.perm}>
+        <Screen />
+      </RequirePerm>
+    ),
+  };
+});
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -132,7 +143,7 @@ const router = createBrowserRouter([
       ...chatRoutes,
       ...escalationRoutes,
       ...approvalRoutes,
-      ...featureRoutes,
+      ...managerRoutes,
       { path: "*", element: <NotFound /> },
     ],
   },

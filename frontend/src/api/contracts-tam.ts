@@ -170,17 +170,86 @@ export type OverrideReasonCode =
 // Xoá khi: 4d merge → gen:api (xoá cùng mocks/handlers/override.ts).
 export type OverrideIn = { override_decision: OverrideDecision; reason_code: OverrideReasonCode; note?: string };
 
-// Nguồn: KH 3.2 ← ke-hoach-m9-monitor.md §5.1 — tên trường giữ nguyên, không tự đặt. Soát lại §5.1 khi vào F5.
-// Xoá khi: M9 A3 merge (gen:api) — xoá cùng mocks/handlers/dashboard.ts.
+// Nguồn: ke-hoach-m9-monitor.md §5.1 (tên trường giữ nguyên, không tự đặt) + §4.3 (`unavailable`: chỉ số chưa có nguồn →
+// null + tên ở mảng này; tỉ lệ mẫu số 0 → null). `from`/`to`: cửa sổ đã dùng (§4.5). Mọi chỉ số cho phép null.
+// Hình dạng `decided_by_distribution` (khoá `rule` | `llm` — domain/ticket_state.py RiskDecision), `e1_split` (khoá =
+// lý do E1, §1.4) là [Suy luận]. Route CHƯA CÓ — M9 A3.
+// Xoá khi: M9 A3 merge (gen:api) — xoá cùng mocks/handlers/dashboard.ts, mocks/fixtures/dashboard.ts.
+export type E3Case = { ticket_id: string; intent: string; created_at: string; kb_version: string; request_excerpt: string };
 export type BusinessDashboard = {
+  from: string;
+  to: string;
   automation_rate: number | null;
   escalation_rate_raw: number | null;
   escalation_rate_weighted: number | null;
   deflection_rate: number | null;
-  approval_expired_count: number;
-  decided_by_distribution: Record<string, number>;
-  top_matched_rules: { rule_id: string; count: number }[];
-  e1_split?: Record<string, number>;
-  e3_cases?: { ticket_id: string; intent: string; created_at: string; kb_version: string; request_excerpt: string }[];
+  approval_expired_count: number | null;
+  decided_by_distribution: Record<string, number> | null;
+  top_matched_rules: { rule_id: string; count: number }[] | null;
+  override_count: number | null;
+  e1_split: Record<string, number> | null;
+  e3_cases: E3Case[] | null;
   unavailable: string[];
 };
+
+// Nguồn: ke-hoach-m9-monitor.md §5.2. Tên trường giữ nguyên; HÌNH DẠNG từng trường là [Suy luận] (§5.2 chỉ có công thức)
+// → giao diện hiện theo DỮ LIỆU nhận được (số, chuỗi, map, mảng), không đoán cấu trúc sâu. Route CHƯA CÓ — M9 A3.
+// Xoá khi: M9 A3 merge (gen:api) — xoá cùng mocks/handlers/dashboard.ts.
+export type AiDashboard = {
+  from: string;
+  to: string;
+  tokens_per_ticket: number | null;
+  cost_per_day: unknown;
+  latency_p95_by_step: unknown;
+  cache_hit_rate: number | null;
+  json_invalid_first_try_rate: number | null;
+  fallback_rate: number | null;
+  e2_llm_count: number | null;
+  e9_count: number | null;
+  b2_llm_rate: number | null;
+  intent_filter_fallback_rate: number | null;
+  b3_llm_rate: number | null;
+  intent_model_version: string | null;
+  unavailable: string[];
+};
+
+// Nguồn: backend/app/db/models.py `Alert` (bảng `alerts`) + ke-hoach-m9-monitor.md §4.5 (ack: 200 trả cảnh báo đã ack |
+// 403 | 404 | 409 đã ack — không đổi `acked_by`). Danh sách là mảng [Suy luận]; "Tất cả" = không tham số status
+// (Q-fe-27). Route CHƯA CÓ — M9 A3. Xoá khi: A3 merge (gen:api) — xoá cùng mocks/handlers/alerts.ts.
+export type AlertSeverity = "critical" | "warning" | "info";
+export type AlertItem = {
+  alert_id: number;
+  rule_id: string;
+  subject: string;
+  severity: string;
+  value: number | null;
+  window_start: string;
+  status: "open" | "acked";
+  detail: Record<string, unknown>;
+  acked_by: string | null;
+  acked_at: string | null;
+  created_at: string;
+};
+
+// Nguồn: [Đề xuất F5 — chốt lại khi làm Phase 7] (Q-fe-26; PLAN-fe mục 7 #20, nợ API #11). P10 §3.3 chỉ có TÊN route;
+// tên trường bám cột bảng `policy_versions` (backend/app/db/models.py `PolicyVersion`: `version` String(16),
+// `policy_json` → `content`, `updated_by`, `updated_at`, `is_current`). Quay lui = TẠO phiên bản mới (append-only,
+// `restored_from` = version bản gốc). Xoá khi: Phase 7 có route (gen:api) — xoá cùng mocks/handlers/policy.ts.
+export type PolicyView = {
+  version_id: number;
+  version: string;
+  content: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string;
+  is_current: boolean;
+};
+export type PolicyVersionItem = {
+  version_id: number;
+  version: string;
+  updated_by: string | null;
+  updated_at: string;
+  is_current: boolean;
+  restored_from?: string | null;
+};
+export type PolicyPutIn = { content: Record<string, unknown>; base_version_id: number };
+export type PolicySaved = { version_id: number; version: string };
