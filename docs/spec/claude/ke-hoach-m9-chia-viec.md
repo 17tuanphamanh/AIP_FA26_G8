@@ -93,8 +93,8 @@ def bucket_start(ts: datetime, minutes: int) -> datetime          # khung 5 phú
 @dataclass(frozen=True)
 class WeightedRate:
     raw: float | None                        # #lá có exit_code / #lá
-    weighted: float | None                   # 70/20/10 — luật 1 dùng số này
-    by_group: Mapping[str, float | None]     # "routine" | "approval" | "sensitive"
+    weighted: float | None                   # 70/20/10 — luật 1 dùng số này; nhóm 0 lá → chuẩn hoá lại trọng số trên nhóm có lá; None chỉ khi cả cửa sổ 0 lá (Q-M9-A1-3)
+    by_group: Mapping[str, float | None]     # "routine" | "approval" | "sensitive"; nhóm 0 lá → None
     sensitivity: Mapping[str, float | None]  # "60/30/10", "80/15/5"
 async def escalation_rate_weighted(conn: AsyncConnection, frm: datetime, to: datetime) -> WeightedRate
 
@@ -190,9 +190,9 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
   1. Migration (`down_revision` = head `dev-tuananh`): `v_leaf`, `v_decisions`, `v_l2_queue`, `GRANT SELECT … TO app_monitor`, chỉ mục `tickets(created_at) WHERE is_parent=false` nếu thiếu; downgrade xóa sạch.
   2. `monitor_seed.py`: helper `leaf_ticket(...)`, `parent_with_children(n)`, `audit_point4(...)`, `approval(...)`, `escalation(...)` — **cả Duy Anh dùng**, viết docstring rõ tham số.
   3. `business.py` 10 chỉ số; lọc `own` theo Q-M9-5; `override_count` → pending.
-  4. Nhóm N3 theo Q-M9-1; trọng số + độ nhạy là hằng một chỗ.
-  5. `e1_split` tách **4** lý do E1 mà B3/B4 thật ghi (step `B4`): `intent_out_of_scope`, `multi_intent_not_enabled`, `intent_low_confidence`, `intent_not_enabled` — grep xác nhận `escalations.reason_detail` tương ứng, ghi vào plan.
-  6. Migration: Phase 4 dùng `0008_approvals_inbox_idx` → migration M9 **không** lấy số/tên `0008`; `down_revision` = head lúc rebase; kiểm lại `alembic heads` = 1 sau mỗi rebase.
+  4. Nhóm N3 theo Q-M9-1; trọng số + độ nhạy là hằng một chỗ. Lá có nhiều dòng điểm log 4 → lấy nhóm **nhạy nhất** (Q-M9-A1-4). Nhóm 0 lá → `by_group[g] = None`, `weighted` chuẩn hoá lại trên nhóm có lá; `None` chỉ khi cả cửa sổ 0 lá (Q-M9-A1-3).
+  5. `e1_split` tách **4** lý do E1 mà B3/B4 thật ghi (step `B4`): `intent_out_of_scope`, `multi_intent_not_enabled`, `intent_low_confidence`, `intent_not_enabled` — grep xác nhận `escalations.reason_detail` tương ứng, ghi vào plan. E1 có lý do ngoài 4 cái này → nhóm `other` (tổng các nhóm = số E1, không rơi ca nào).
+  6. Migration M9: `0008_monitor_views.py`, `revision = "0008"`, `down_revision = "0007"` (Q-M9-A1-1). Phase 4 **không có migration** (spec phase4 v0.5 mục 0.2 bỏ `0008_approvals_inbox_idx`). Sau mỗi rebase `alembic heads` = 1; nếu có migration khác cũng trỏ `0007` → chỉ sửa `down_revision` của M9 khi M9 **chưa merge**.
 - **Test:** "câu 2 ý" đếm 2 không 3; mỗi chỉ số dữ liệu tính tay; mẫu số 0 → `None`; `app_monitor` đọc 3 view, INSERT bị từ chối; migration up/down/up; `alembic heads` = 1.
 - **Mutation:** bỏ `is_parent = false`; đảo trọng số; nhóm "sensitive" nhận nhầm `allow`.
 - **Giao cho Duy Anh:** báo trong issue epic "A1 merged — `escalation_rate_weighted`, `monitor_seed` dùng được".
@@ -277,7 +277,7 @@ Chi tiết kỹ thuật (công thức, quyền, "đạt khi") ở kế hoạch c
 | 4 | `e9_spike` | lá `exit_code='E9'` theo giờ | `spike(count giờ qua, hourly_median(168h))`; window = `hour_start` |
 | 5 | `breaker_open` | **Span tool chưa được ghi vào bảng `spans`** — `tools/registry.py::_span` hiện chỉ ghi log một dòng **[Chốt, kiểm code]** | Viết luật trên hợp đồng dự kiến (span `span_type='tool'`, `status='error'`, `attributes.error='circuit_open'`) + test fixture; đánh dấu nguồn **pending** (`skipped_rules`), **không** sửa `tools/`. Tuấn Anh quyết khi nào ghi span tool (Q-M9-4) |
 | 6 | `e6_spike` | lá `exit_code='E6'` | như luật 4 |
-| 7 | `reflex_approval` | **Chờ Phase 4c**: route xem phiếu ghi `first_viewed_at`; audit B16 có `view_duration`, `decided_without_view` | ≥ 3 phiếu/ngày < 5 giây, một L1 → subject `user_id` L1. `decided_without_view = true` **tính là < 5 giây**; `first_viewed_at` NULL mà không có cờ đó → không tính (không đoán). Tới khi 4c merge: `is_pending("approval_view")` → `skipped_rules`; test bằng fixture |
+| 7 | `reflex_approval` | **Chờ Phase 4c merge** (`is_pending("approval_view")` → skipped tới lúc đó). Nguồn chính là **audit B16** (điểm log 6), **không** dùng `approvals.first_viewed_at` làm nguồn chính: cột này là **một cột chung cho cả phiếu** (ghi lần xem đầu của người duyệt chính **hoặc** người dự phòng sau nhắc 2; manager xem thì không ghi), nên ca "dự phòng mở phiếu, người chính duyệt mà không mở" sẽ bị tính là "đã xem" → bỏ sót. Cách đếm: chỉ quyết định của người (`approved`/`rejected`, bỏ `timeout`), nhóm theo người quyết. Một phiếu tính "xem < 5 giây" khi `detail.decided_without_view = true` **hoặc** `view_duration < 5` **hoặc** **không xác định được người đã xem** (`decided_as = 'primary'` mà phiếu đã nhắc 2, `reminder_2_at` khác NULL — lần xem có thể là của dự phòng). Ca không xác định đếm vào `detail.ambiguous_views` | Ưu tiên không bỏ sót: ca mơ hồ hiếm (chỉ khi đã nhắc 2, tức gần 80% SLA) và luật chỉ là cảnh báo cho Trưởng BP. Sửa tận gốc (ghi lần xem theo từng người) là Việc treo 28 của Phase 4 — khi có thì bỏ nhánh "không xác định" |
 | 12 | `b2_degraded` | `b2_llm_rate(ngày)` (A2) | > 0,30 |
 | 13 | `b3_degraded` | `b3_llm_rate` (A2) — nguồn **có** từ 3f, nhưng Phase 3–4 mọi câu đều xuống LLM (cascade là Phase 5) → ≈ 1,0 | Q-M9-9: `is_pending("b3_cascade")` → `skipped_rules` + log `cascade_not_enabled`. Viết sẵn điều kiện `> 0,30` và test bằng fixture; Phase 5 bỏ pending là chạy |
 | 14 | `llm_budget` | Σ `llm_calls.cost_usd` | ≥ `ctx.warn_ratio × ctx.cap_usd` → window = `day_start` (Q-M9-6), job giờ |
@@ -335,7 +335,7 @@ Phase 4 (4a–4d) đụng một số file mà M9 cũng sửa. Luật:
 | File | Phase 4 làm gì | Người M9 phải làm gì |
 |---|---|---|
 | `backend/app/worker.py` | **Không đụng** (spec phase4 mục 0.2). Nhắc duyệt 50/80% của 4c nằm **bên trong** `WorkerJobs.scan_deadlines` (`graph/worker_jobs.py`, chu kỳ 15 s sẵn có), truy vấn nhắc ở `SqlDeadlineStore` (`db/runtime.py`) | `worker.py` hoàn toàn thuộc **Duy Anh** — không có xung đột rebase từ Phase 4. Không sửa `graph/worker_jobs.py`, `db/runtime.py` |
-| `backend/app/db/alembic/versions/` | `0008_approvals_inbox_idx` | **Dương**: migration M9 không dùng số/tên `0008`; sau **mỗi** rebase chạy `uv run alembic heads` → phải = 1; ra 2 → chỉ sửa `down_revision` của migration M9 **chưa merge** |
+| `backend/app/db/alembic/versions/` | **Không có migration** (spec phase4 v0.5 mục 0.2 bỏ `0008_approvals_inbox_idx`; chỉ mục hộp thư để sau). Dương là chủ migration duy nhất của M9 | **Dương**: M9 lấy `0008_monitor_views` (`down_revision = "0007"`); sau **mỗi** rebase chạy `uv run alembic heads` → phải = 1; ra 2 → chỉ sửa `down_revision` của migration M9 **chưa merge** |
 | `backend/app/settings.py` | 4a thêm khóa HMAC username (Q-3e-14) | **Dương**: khối `# M9` riêng; xung đột → giữ cả hai trường |
 | `backend/app/auth/*`, `api/approvals.py`, `approval/*`, `graph/**` | B15/B16 thật, nhắc, xem phiếu, ghi đè, HMAC | **Không đụng.** Luật 3/7/10 chỉ đọc kết quả qua DB |
 | `.github/workflows/ci.yml` | 4a nâng action Node 24 + ghim `ubuntu-24.04` | Không đụng; CI đỏ vì workflow → báo Tuấn Anh |
@@ -423,6 +423,8 @@ Bước 1: rebase lên origin/dev-tuananh, rồi lập plan (Plan Mode, chưa co
 
 | Ngày | Thay đổi |
 |---|---|
+| 01/10/2026 | Chốt plan A1 (#8, Q-M9-A1-1…6): migration M9 = `0008_monitor_views` trỏ `0007` (Phase 4 bỏ migration — sửa ghi chú `0008` cũ ở A1 và mục 8.1); `weighted` chuẩn hoá lại khi nhóm 0 lá, `None` chỉ khi 0 lá; nhiều dòng điểm log 4 → nhóm nhạy nhất; `e1_split` 4 lý do + `other`; `e3_cases.kb_version` = dòng audit gần nhất có giá trị; L1 own chỉ 3 khóa |
+| 01/10/2026 | Luật 7 (theo 4c): nguồn audit B16 (`decided_without_view`, `decided_as`), không dùng `first_viewed_at` làm nguồn chính; ca "đã nhắc 2 + người chính quyết" tính là < 5 giây; bỏ nhánh timeout |
 | 01/10/2026 | Sửa mục 8.1 theo phiên Phase 4: Phase 4 **không** sửa `worker.py` — nhắc duyệt nằm trong `WorkerJobs.scan_deadlines` |
 | 01/10/2026 | Bảng tiền tố test thêm 3 file A0; A3 đọc `audience` từ `REGISTRY`; A4 thêm `monitor` vào `/api/health`; spec `01` mục 4.2/4.3/8 và `P9` mục 3, 6.1 đã cập nhật theo "Spec cần sửa" của A0 |
 | 01/10/2026 | Chốt plan B1 (#13, Q-M9-B1-1…9): luật 2 mọi E0; luật 10 cửa sổ đóng `<=`; luật 3 chỉ đối soát sự kiện > 60 s; luật 15 không lọc lá; luật 11 subject `detail.version`/`event:<id>`; thiếu engine monitor → WARNING đầu + mỗi giờ; B1 giao 2 PR; chỉ mục qua A4; `audience` khai báo trong `@rule` (hợp đồng mục 3 mở rộng), không ghi `detail.audience` |
