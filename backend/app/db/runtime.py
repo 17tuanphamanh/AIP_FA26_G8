@@ -1,6 +1,10 @@
 """Store SQL cho runtime graph (P1, P7 2.5, 2.8; HD17.1): `side_effects`, `turns`, `spans`,
 `wait_deadlines` (+ đọc hạn `approvals`). Khớp các Protocol ở `app/graph/ports.py` theo cấu trúc.
 
+Nhắc duyệt 50 %/80 % (Phase 4 4c P3, Q-4c-2 = A): `due_reminders` + `mark_reminder_once` nằm ở `SqlDeadlineStore` (cùng chỗ `due`/
+`mark_fired` vốn đã đọc/ghi `approvals`) vì `worker.py` chỉ truyền runner/deadlines/turns cho `WorkerJobs`. `mark_reminder_once` = ĐÚNG
+câu SQL P3 (`… reminder_n_at IS NULL AND deadline > :now RETURNING …`): hai worker cùng quét chỉ một bên nhận dòng → một thông báo.
+
 Mọi transaction ở đây ngắn (D-19): không store nào giữ transaction trong lúc graph chạy node.
 """
 
@@ -10,11 +14,12 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import Table, and_, func, insert, select, update
+from sqlalchemy import Table, TextClause, and_, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.db.models import Approval, SideEffect, Span, Ticket, Turn, WaitDeadline
+from app.domain.approval import REMINDER_FRACTIONS, ReminderN
 
 _EFFECTS: Table = SideEffect.__table__  # type: ignore[assignment]
 _TURNS: Table = Turn.__table__  # type: ignore[assignment]
@@ -42,6 +47,42 @@ class DueWait:
     ref: str  # created_turn (clarify/confirm) hoặc approval_id (approval)
     is_parent: bool = False
 
+
+@dataclass(frozen=True)
+class DueReminder:
+    """Phiếu `pending`, chưa tới hạn, đã qua mốc 1 mà còn ít nhất một cột nhắc NULL — worker tính nhắc nào bằng
+    `domain.approval.next_reminder`."""
+
+    approval_id: str
+    ticket_id: str
+    created_at: datetime
+    deadline: datetime
+    reminder_1_at: datetime | None
+    reminder_2_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ReminderTarget:
+    """`RETURNING approver_id, backup_approver_id` của `mark_reminder_once` — có dòng = bên này thắng, được gửi."""
+
+    approver_id: str
+    backup_approver_id: str | None
+
+
+# 4c P3: lọc THÔ (đã qua mốc 1, còn cột NULL, chưa tới hạn) — nhắc nào do `domain.approval.next_reminder` quyết.
+_DUE_REMINDERS = text(
+    "SELECT approval_id, ticket_id, created_at, deadline, reminder_1_at, reminder_2_at FROM approvals "
+    "WHERE status = 'pending' AND deadline > :now AND (reminder_1_at IS NULL OR reminder_2_at IS NULL) "
+    "AND created_at + (deadline - created_at) * :f1 <= :now ORDER BY deadline LIMIT :limit"
+)
+# 4c P3 — câu SQL NGUYÊN VĂN của spec (chốt Q-4c-2): có dòng trả về = bên này thắng, chỉ bên đó gửi.
+_MARK_REMINDER: dict[ReminderN, TextClause] = {
+    n: text(
+        f"UPDATE approvals SET reminder_{n}_at = :now WHERE approval_id = :id AND status = 'pending' "
+        f"AND reminder_{n}_at IS NULL AND deadline > :now RETURNING approver_id, backup_approver_id"
+    )
+    for n in (1, 2)
+}
 
 _TX: ContextVar[AsyncConnection | None] = ContextVar("effect_tx", default=None)
 
@@ -213,15 +254,26 @@ class SqlDeadlineStore:
             out += [DueWait(r.ticket_id, "approval", str(r.approval_id)) for r in approvals]
             return out
 
+    async def due_reminders(self, now: datetime, limit: int) -> list[DueReminder]:
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(_DUE_REMINDERS, {"now": now, "f1": REMINDER_FRACTIONS[1], "limit": limit})
+            return [DueReminder(str(r.approval_id), r.ticket_id, r.created_at, r.deadline, r.reminder_1_at, r.reminder_2_at)
+                    for r in rows]  # fmt: skip
+
+    async def mark_reminder_once(self, approval_id: str, n: ReminderN, now: datetime) -> ReminderTarget | None:
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(_MARK_REMINDER[n], {"id": int(approval_id), "now": now})).first()
+        return None if row is None else ReminderTarget(row.approver_id, row.backup_approver_id)
+
     async def mark_fired(self, due: DueWait, at: datetime) -> None:
         async with self._engine.begin() as conn:
             if due.kind == "approval":
                 # Node B16 đã ghi `timeout` khi giao được; ca 409 (ticket đã đi tiếp) thì đóng phiếu
-                # ở đây để worker không bắn lại mỗi chu kỳ.
+                # ở đây để worker không bắn lại mỗi chu kỳ. `decided_at` ở MỌI nhánh đóng phiếu (4c A11 — M9 luật 7).
                 await conn.execute(
                     update(_APPROVALS)
                     .where(and_(_APPROVALS.c.approval_id == int(due.ref), _APPROVALS.c.status == "pending"))
-                    .values(status="timeout")
+                    .values(status="timeout", decided_at=at)
                 )
                 return
             await conn.execute(

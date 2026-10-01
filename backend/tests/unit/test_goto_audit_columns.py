@@ -1,8 +1,8 @@
 """`goto(..., audit_columns=…)` và `effects.peek` — Phase 4 chặng 4b DỪNG 2 (PLAN-4b S11). Viết TỪ ĐẶC TẢ, trước code: phase4 mục
 5.1 P9 (`peek`), P10 (`audit_columns` + `_POINT_COLUMNS`), 5.3 b9.
 
-- b9: khoá ngoài `_POINT_COLUMNS` = {approver_id, deadline, conflict_detected, response_time_seconds} → `ValueError` TRƯỚC khi ghi
-  dòng audit (0 dòng).
+- b9: khoá ngoài `_POINT_COLUMNS` = {approver_id, deadline, conflict_detected, response_time_seconds, note} → `ValueError` TRƯỚC khi
+  ghi dòng audit (0 dòng). `note` thêm ở 4c (Q-4c-1 = A: `note` KHÔNG phải khoá `TicketState`, cột điểm log 6 ghi qua `audit_columns`).
 - P10: khoá hợp lệ → vào CỘT audit cùng tên, KHÔNG vào state trả về; `intended_action` (key sẵn có) → cột `intended_action` là dict JSON.
 - P9: `effects.peek(state, kind, *, step, sub="")` cùng khoá với `effects.once`; chưa làm → None; đã `once` → `result_ref`; không ghi
   dòng mới, không gọi hàm.
@@ -27,7 +27,8 @@ from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 
 pytestmark = pytest.mark.asyncio
 
-POINT_COLUMNS = frozenset({"approver_id", "deadline", "conflict_detected", "response_time_seconds"})  # P10
+# P10 + Q-4c-1 (4c): thêm đúng `note` (cột điểm log 6, không phải khoá state); `approval_result` vẫn là khoá state → không có ở đây.
+POINT_COLUMNS = frozenset({"approver_id", "deadline", "conflict_detected", "response_time_seconds", "note"})
 DEADLINE = datetime(2026, 9, 29, 3, 30, tzinfo=UTC)
 
 
@@ -67,7 +68,7 @@ def state(status: str, **extra: Any) -> dict[str, Any]:
 
 
 async def test_p10_point_columns_constant() -> None:
-    """P10: hằng `goto._POINT_COLUMNS` đúng 4 cột của điểm log 5/6."""
+    """P10 + Q-4c-1: hằng `goto._POINT_COLUMNS` đúng 5 cột của điểm log 5/6."""
     assert set(getattr(goto_module, "_POINT_COLUMNS", ())) == POINT_COLUMNS
 
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from app.approval.store import SqlApprovals
+from app.approval.store import NoticeKind, SqlApprovals
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.audit.writer import AuditWriter
@@ -60,6 +60,7 @@ class RecordingApprovals(SqlApprovals):
     def __init__(self, engine: AsyncEngine) -> None:
         super().__init__(engine)
         self.notified: list[tuple[str, str]] = []
+        self.reminded: list[tuple[str, str, str]] = []  # 4c P3
         self.crash_after_insert = False  # process "chết" SAU INSERT phiếu, TRƯỚC commit side_effects
 
     async def create(
@@ -75,7 +76,10 @@ class RecordingApprovals(SqlApprovals):
             raise Crash(f"process chết giữa transaction tạo phiếu {approval_id}")
         return approval_id
 
-    async def notify_approver(self, approval_id: str, approver_id: str) -> str:
+    async def notify_approver(self, approval_id: str, approver_id: str, kind: NoticeKind = "new") -> str:
+        if kind != "new":
+            self.reminded.append((approval_id, approver_id, kind))
+            return f"r{len(self.reminded)}"
         self.notified.append((approval_id, approver_id))
         return f"n{len(self.notified)}"
 

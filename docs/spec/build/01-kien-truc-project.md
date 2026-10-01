@@ -208,7 +208,8 @@ api ──► auth, guard(privacy), graph.runner, approval, audit(read), monitor
 graph ──► guard, llm, rag, tools, risk, approval, executor, audit, domain, core
 risk ──► llm, domain, core            (KHÔNG import guard, rag.raw, api)
 executor ──► tools(write adapters), risk.policy_engine, domain, core
-monitor ──► db (role app_monitor) , domain, core   (KHÔNG import graph, executor, tools)
+monitor ──► db (role app_monitor), domain, core   (KHÔNG import graph, executor, tools, audit, approval, risk, api, guard, llm, rag)
+(chỉ api, worker — và main, composition root — được import monitor; M9 A0)
 llm, rag, tools, guard, auth, audit ──► domain, core, db
 rag, guard, graph ──► ml
 ml ──► core (+ tools.retry)          (KHÔNG import module nghiệp vụ khác)
@@ -221,7 +222,8 @@ core ──► (không gì)
 | Hợp đồng | Chặn điều gì | Vì sao |
 |---|---|---|
 | `risk` không được import `guard`, `api`, hoặc đọc `raw_request` | M5 đọc câu người dùng | Bất biến chống injection **[Chốt 6.2]** |
-| `monitor` không được import `graph`, `executor`, `tools`, `graph.goto` | M9 ghi ngược | Ranh giới chỉ-đọc **[Chốt 17.9.1]** |
+| `monitor` không được import `graph`, `executor`, `tools`, `audit`, `approval`, `risk`, `api`, `guard`, `llm`, `rag` (`monitor-read-only`) | M9 ghi ngược hoặc đi vòng qua tầng ghi/nghiệp vụ | Ranh giới chỉ-đọc **[Chốt 17.9.1]**; mở rộng ở M9 A0 |
+| Chỉ `api`, `worker` (và `main`) được import `monitor` (`monitor-only-api-worker`): nguồn liệt kê **tường minh** mọi package/module cấp một của `app` trừ `api`, `monitor`, `main`, `worker`; kèm test chống quên `backend/tests/unit/test_monitor_import_contracts.py` (package mới chưa khai báo → đỏ) | M9 thành nguồn dữ liệu cho M5 / tầng nghiệp vụ | Bất biến "M9 không là nguồn dữ liệu cho M5" **[Chốt 17.9.1]**; M9 A0 (`claude/ke-hoach-m9-monitor.md` mục 4.2) |
 | Chỉ `executor` được import `tools.adapters.*_write` | Tool ghi bị gọi ngoài B17 | Điểm ghi duy nhất **[Chốt]**. Import-linter không nhận wildcard một phần tên → liệt kê từng module `{ad,vpn,software,fileserver}_write`; kèm test: mọi file `tools/adapters/*_write.py` phải có tên trong `.importlinter` |
 | `domain`, `core` không import module nghiệp vụ | Vòng phụ thuộc | Giữ lớp lõi thuần |
 | `ml` chỉ phụ thuộc `core` và `tools.retry` (`ml-only-core`) | Client ml kéo theo module nghiệp vụ | Giữ `ml` là adapter mỏng, dùng được từ `rag`, `guard`, `graph` (chốt 3a) |
@@ -313,7 +315,7 @@ Pin toàn bộ ở T01 bằng `uv lock`. Bảng dưới là danh sách thư vi�
 ## 8. Tiêu chí đạt của cấu trúc project (cổng T01)
 
 1. `make up` dựng đủ process của Phase 1 (postgres, mock, backend), `/api/health` trả 200.
-2. `make lint` xanh, bao gồm 7 hợp đồng import-linter ở mục 4.3 (3a thêm `ml-only-core`, 3b thêm `rag-lower-layer`); hợp đồng "không gọi thẳng side effect" là test AST trong `make test`.
+2. `make lint` xanh, bao gồm các hợp đồng import-linter ở mục 4.3 (3a thêm `ml-only-core`, 3b thêm `rag-lower-layer`, 3d thêm hai hợp đồng `llm`, M9 A0 thêm `monitor-only-api-worker` — **10 hợp đồng** tại `1f0f489`); hợp đồng "không gọi thẳng side effect" là test AST trong `make test`.
 3. Test chữ ký `policy_engine.evaluate(action, ctx)` xanh.
 4. `.env` nằm trong `.gitignore`; gitleaks không báo gì trên toàn repo.
 5. Image `backend` và `worker` là một; chỉ khác lệnh khởi động.
@@ -340,3 +342,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 4.2, 4.7; k
 | v1.7 | 27/09/2026 | Chặng 3a: cây thư mục thêm `backend/app/ml/`, `scripts/`, `ml_service/models.lock.json`; mục 4.2 thêm `ml`; mục 4.3 hợp đồng `ml-only-core` (6 hợp đồng); mục 7.1 `make models`, `make test-ml`, `make ml-bench` |
 | v1.8 | 28/09/2026 | Chặng 3b: mục 4.3 hợp đồng `rag-lower-layer` (7 hợp đồng); `make ingest` mount `kb/`, `make tokenizer` |
 | v1.9 | 30/09/2026 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 4.2, 4.7) |
+| v1.10 | 01/10/2026 | M9 A0 (`4ebc41e`, merge `1f0f489`): mục 4.2 + 4.3 — `monitor-read-only` cấm thêm `audit, approval, risk, api, guard, llm, rag`; hợp đồng mới `monitor-only-api-worker` + test chống quên; mục 8 đếm 10 hợp đồng |

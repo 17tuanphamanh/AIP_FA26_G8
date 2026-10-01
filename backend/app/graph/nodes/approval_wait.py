@@ -1,47 +1,102 @@
-"""Node chờ `S_PENDING_APPROVAL` + quyết định B16 (node GIẢ, Phase 2a; B16 thật ở Phase 4).
+"""Node chờ `S_PENDING_APPROVAL` + quyết định B16 — node CHUNG cho node giả lẫn node thật (Phase 4 4c, PLAN-4c TQ-1; khuôn
+`confirm_wait` 3g). KHÔNG side effect nào trước `interrupt()` — resume chạy lại node từ đầu.
 
-Không side effect trước `interrupt()`. Hết hạn → E6, KHÔNG BAO GIỜ tự thực thi (bất biến 5; chuyển
-cấm 2 chặn mọi ca `approval_result != "approved"`).
+Hết hạn → E6, KHÔNG BAO GIỜ tự thực thi (bất biến 5; chuyển cấm 2 chặn mọi ca `approval_result != "approved"`).
 
-Quyết định được ghi vào phiếu Ở ĐÂY (B15-B16 mục 5: `approvals.close` có điều kiện `status='pending'`),
-không ở route duyệt: người duyệt (`approver_id`) và lý do (`note`) đến từ sự kiện mà route dựng từ
-token + body (2b-3).
+Quyết định được ghi vào phiếu Ở ĐÂY (B15-B16 mục 5: `approvals.close` có điều kiện `status='pending'`, đặt `decided_at` ở cả 3
+nhánh), không ở route duyệt: người duyệt (`approver_id`), lý do (`note`, `reason_code`), vai trò (`decided_as`) đến từ sự kiện mà
+route dựng từ token + body (2b-3, 4c P4).
+
+Sau `interrupt()`, thứ tự cố định (phase4 6.1 P1, P2):
+1. Che L1 ghi chú bằng `redact_text` THUẦN (route đã che — node không tin đầu vào, khuôn `clarify_wait` Q-3g-4, TQ-2). Từ đây CHỈ
+   bản đã che được ghi vào phiếu, cột `audit_logs.note`, tin nhắn (Q-4c-1).
+2. `close` (trả 0/1 → `close_applied`) → đọc lại phiếu (`created_at`, `first_viewed_at`).
+3. Từ chối: output guard trên ghi chú (vi phạm → bỏ câu "Ghi chú…", `note_suppressed=true`) → tin THEO MẪU (`domain.messages`,
+   không LLM) qua `effects.once("notify_user", step="B16")` → `conversation` một tin `rejection` (D-31: một tin; B20 không gửi thêm
+   vì nhánh này không có `exit_code`).
+4. Điểm log 6 (cả 3 nhánh): cột `approval_result` (khoá state), `note` (chỉ từ chối) + `response_time_seconds` qua `audit_columns`
+   (= `ev.at − phiếu.created_at`; timeout NULL); `detail` chỉ số/enum/bool: `view_duration`, `decided_without_view`, `decided_as`,
+   `reason_code`, `close_applied` (+ `note_suppressed`). Nguồn (TQ-5): quyết định → sự kiện (route chụp dưới khoá lúc bấm); timeout →
+   `first_viewed_at` của phiếu.
 """
 
+from datetime import datetime
 from typing import Any
 
 from langgraph.types import interrupt
 
+from app.approval.store import ApprovalRow
+from app.domain.action import Action
 from app.domain.exit_codes import CloseReason, ExitCode
+from app.domain.messages import rejection_msg, rejection_text
 from app.domain.states import S_ESCALATED, S_EXECUTING, S_REJECTED
+from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
 
 
+def _point6(ev: dict[str, Any], kind: str, a: ApprovalRow | None, applied: int) -> dict[str, Any]:
+    if kind == "timeout":
+        return {"view_duration": None, "decided_without_view": a is None or a.first_viewed_at is None,
+                "decided_as": None, "reason_code": None, "close_applied": applied}  # fmt: skip
+    view = ev.get("view_duration")
+    return {"view_duration": view, "decided_without_view": view is None, "decided_as": ev.get("decided_as"),
+            "reason_code": ev.get("reason_code"), "close_applied": applied}  # fmt: skip
+
+
+def _response_time(ev: dict[str, Any], kind: str, a: ApprovalRow | None) -> float | None:
+    at = ev.get("at")
+    if kind == "timeout" or a is None or not at:
+        return None
+    return (datetime.fromisoformat(str(at)) - a.created_at).total_seconds()
+
+
 def make(deps: NodeDeps) -> NodeFn:
     async def approval_wait(state: Any) -> dict[str, Any]:
         ev = interrupt({"wait": "approval", "approval_id": state.get("approval_id")})
         kind = ev["kind"]
+        raw_note = ev.get("note")  # `None` ≠ "" (soát 4c S4b: che xong rỗng vẫn là ghi chú — CHECK rejected_needs_note)
+        note = deps.privacy.redact_text(str(raw_note)).text if raw_note is not None else None  # [1] TQ-2
+        applied, a = 0, None
         if state.get("approval_id"):
-            await deps.approvals.close(
-                state["approval_id"], kind, current_run().clock.now(),
-                decided_by=ev.get("approver_id"), note=ev.get("note"),
+            applied = await deps.approvals.close(
+                state["approval_id"], kind, current_run().clock.now(), decided_by=ev.get("approver_id"), note=note,
             )  # fmt: skip
+            a = await deps.approvals.get(state["approval_id"])
+        detail = _point6(ev, kind, a, applied)
+        columns: dict[str, Any] = {"response_time_seconds": _response_time(ev, kind, a)}
         if kind == "approved":
             return await goto(
                 state, S_EXECUTING, next_node="b17_execute", step="B16", event="approved",
-                approval_result="approved",
+                approval_result="approved", audit_columns=columns, audit_detail=detail,
             )  # fmt: skip
         if kind == "rejected":
-            return await goto(
-                state, S_REJECTED, next_node="b20_audit", step="B16", event="rejected",
-                approval_result="rejected", close_reason=CloseReason.REJECTED_BY_APPROVER.value,
-            )  # fmt: skip
+            return await _rejected(state, ev, note, columns, detail)
         return await goto(
             state, S_ESCALATED, next_node="b20_audit", step="B16", event="approval_timeout",
-            approval_result="timeout", exit_code=ExitCode.E6.value,
+            approval_result="timeout", exit_code=ExitCode.E6.value, audit_columns=columns, audit_detail=detail,
+        )  # fmt: skip
+
+    async def _rejected(
+        state: Any, ev: dict[str, Any], note: str | None, columns: dict[str, Any], detail: dict[str, Any]
+    ) -> dict[str, Any]:
+        raw = state.get("intended_action")
+        action = None if raw is None else Action.model_validate(raw)
+        shown = note if note and deps.output_guard.violation(note) is None else None  # [3] output guard; rỗng → không câu ghi chú
+        text = rejection_text(
+            action.type if action else "", str(action.params.get("device_id", "")) if action else "",
+            ev.get("reason_code"), shown,
+        )  # fmt: skip
+        ref = await effects.once(
+            state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "none", step="B16"
+        )
+        return await goto(
+            state, S_REJECTED, next_node="b20_audit", step="B16", event="rejected",
+            approval_result="rejected", close_reason=CloseReason.REJECTED_BY_APPROVER.value,
+            conversation=[rejection_msg(text, ref)], audit_columns={**columns, "note": note},
+            audit_detail={**detail, "note_suppressed": bool(note) and shown is None},
         )  # fmt: skip
 
     return approval_wait

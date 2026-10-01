@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow
+from app.approval.store import ApprovalRow, InboxRow
 from app.db.identity import LiveSession
-from app.db.runtime import DueWait, OpenTurn, WaitKind
+from app.db.runtime import DueReminder, DueWait, OpenTurn, ReminderTarget, WaitKind
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
+from app.domain.approval import ReminderN
 from app.domain.final import FinalSummary
 from app.tools.registry import ToolResult
 
@@ -102,7 +103,18 @@ class DeadlineStore(Protocol):
         `approvals.deadline` [Chốt], P7 2.5). Worker không đọc checkpoint."""
         ...
 
-    async def mark_fired(self, due: DueWait, at: datetime) -> None: ...
+    async def mark_fired(self, due: DueWait, at: datetime) -> None:
+        """Đánh dấu hạn đã bắn. Hạn duyệt (ca 409 — ticket đã đi tiếp): đóng phiếu `timeout` + `decided_at` (4c A11)."""
+        ...
+
+    async def due_reminders(self, now: datetime, limit: int) -> list[DueReminder]:
+        """4c P3 (Q-4c-2 = A): phiếu `pending`, `deadline > now`, đã qua mốc 1, còn cột nhắc NULL. Chỉ đọc."""
+        ...
+
+    async def mark_reminder_once(self, approval_id: str, n: ReminderN, now: datetime) -> ReminderTarget | None:
+        """Đặt `reminder_n_at = now` NẾU phiếu còn `pending`, cột đó NULL, chưa tới hạn — trả người nhận khi bên này thắng, None
+        khi không (worker khác đã đặt / phiếu đã đóng / quá hạn). Chỉ gửi khi có dòng."""
+        ...
 
 
 class TicketLock(Protocol):
@@ -203,3 +215,15 @@ class ApprovalRepo(Protocol):
         ...
 
     async def get(self, approval_id: str) -> ApprovalRow | None: ...
+
+    async def inbox(self, user_id: str, status: str | None, limit: int) -> list[InboxRow]:
+        """4c P5: phiếu `user_id` được giao HOẶC là dự phòng đã qua nhắc 2 (lọc vai trò ở SQL), [+ `status`], mới nhất trước, ≤ `limit`."""
+        ...
+
+    async def mark_viewed(self, approval_id: str, now: datetime) -> bool:
+        """4c P6: `first_viewed_at = now` NẾU đang NULL và phiếu `pending` — True khi ghi được (lần xem đầu)."""
+        ...
+
+    async def procedure_title(self, doc_id: str) -> str | None:
+        """4c P6: tiêu đề tài liệu `doc_id` ở bản KB hiện hành; không có → None (không chặn)."""
+        ...

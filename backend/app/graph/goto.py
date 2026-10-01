@@ -11,7 +11,8 @@
    `turn_id`, `step`, `created_at` rồi audit ghi dòng `lineage` TRONG CÙNG transaction với dòng audit (idempotent theo
    ticket, lượt, bước, prompt). Không đi vào state.
 6. `audit_columns=` (Phase 4 4b P10): cột điểm log KHÔNG phải khoá `TicketState` (người duyệt, hạn, xung đột — B15; thời gian
-   phản hồi — B16). Chỉ nhận khoá trong `_POINT_COLUMNS`; khoá khác → `ValueError` TRƯỚC khi ghi audit. Không vào state.
+   phản hồi, ghi chú ĐÃ CHE của người duyệt — B16, 4c Q-4c-1). Chỉ nhận khoá trong `_POINT_COLUMNS`; khoá khác → `ValueError` TRƯỚC
+   khi ghi audit. Không vào state.
    Hàm chép trường state sang cột cùng tên đổi tên `audit_columns` → `_state_columns` (tránh trùng tên tham số).
 
 Lỗi ở đây (IllegalTransition) là bug → lọt tới boundary thành E9 (P1 mục 10).
@@ -41,8 +42,8 @@ _RISK_COLUMNS = (
     "decided_by", "policy_decision", "risk_level", "reason", "matched_rule_id",
     "calibrated_prob", "raw_prob", "p_method",
 )  # fmt: skip
-# Cột điểm log truyền thẳng qua `audit_columns=` (4b P10) — không phải trường state.
-_POINT_COLUMNS = frozenset({"approver_id", "deadline", "conflict_detected", "response_time_seconds"})
+# Cột điểm log truyền thẳng qua `audit_columns=` (4b P10) — không phải trường state. `note` (4c Q-4c-1): cột điểm log 6.
+_POINT_COLUMNS = frozenset({"approver_id", "deadline", "conflict_detected", "response_time_seconds", "note"})
 
 
 def _json(value: Any) -> Any:

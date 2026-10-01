@@ -177,7 +177,7 @@ Không có mũi tên nào từ M9 quay lại Agent, Kiểm soát hay B17 **[Ch�
 | Thành phần | Công nghệ | Lý do |
 |---|---|---|
 | Truy vấn | SQL view trên Postgres, SQLAlchemy Core, role `app_monitor` | Quyền chỉ-đọc ép ở tầng DB **[Đề xuất D-05]** |
-| Ranh giới code | import-linter: `monitor` không import `graph`, `executor`, `tools` | **[Chốt 17.9.1]**, hợp đồng ở `01` mục 4.3 |
+| Ranh giới code | import-linter: `monitor` không import `graph`, `executor`, `tools`, `audit`, `approval`, `risk`, `api`, `guard`, `llm`, `rag`; chỉ `api`, `worker` (và `main`) import `monitor` (`monitor-only-api-worker`) | **[Chốt 17.9.1]**, hợp đồng ở `01` mục 4.3 (mở rộng ở M9 A0) |
 | Lịch đánh giá luật | APScheduler trong `worker` (60 giây cho luật tức thời, 02:00 hằng ngày cho drift) | Không thêm service **[Chốt]** |
 | Drift | PSI tự viết (numpy) | 10 dòng code, không cần thư viện |
 | Hiển thị | Frontend P10 | |
@@ -265,6 +265,23 @@ def escalation_rate_high(q) -> list[AlertDraft]:
 
 **Việc Phase 7 (đã ghi PROGRESS 2b):** thêm luật cho audit `finalize_failed_permanent` (B20 thử lại 3 lần vẫn lỗi — B20 mục 5.1); cảnh báo E0/E7/E9 ở bước 6 sơ đồ B20 do M9 làm qua luật 2 và 4.
 
+### 6.1. Chốt khi hiện thực M9 (A0, B0, plan B1 — 01/10/2026)
+
+Thiết kế hiện thực chi tiết, chia việc, câu hỏi Q-M9: `claude/ke-hoach-m9-monitor.md` (v1.6) và `claude/ke-hoach-m9-chia-viec.md`. Khi lệch với mục 6 ở trên, hai file đó thắng (trừ bất biến và mục [Chốt]).
+
+| Điểm | Chốt | Lý do |
+|---|---|---|
+| Engine | `monitor_engine(engines)`; thiếu `MONITOR_DATABASE_URL` → `MonitorUnavailable` → 503 `{"detail": "monitor_unavailable"}`; không bao giờ rơi về `app_rw` | Fail-closed — rơi về là mất rào chỉ-đọc mà không ai biết |
+| Hàm luật | Thuần, `(data, ctx: RuleContext) -> list[AlertDraft]`; dữ liệu qua `@loader` (chỉ SELECT); `evaluate` bắt lỗi theo từng luật; nguồn chưa có → `Pending` → `skipped_rules` | Một luật hỏng không làm mất cảnh báo của luật khác |
+| Savepoint (B1) | Mỗi luật chạy trong savepoint riêng; test Postgres "loader A lỗi SQL → luật B vẫn ra draft" | Một câu SQL lỗi làm hỏng cả transaction → mất cảnh báo cả job (FN) |
+| Người nhận | Khai báo bắt buộc `@rule(rule_id, every, audience=...)`; **không** ghi `alerts.detail.audience` | Một nguồn sự thật cạnh luật, đổi không cần sửa dữ liệu cũ |
+| Luật 2 | Mọi E0 (B2 + B11/B19 `injection_in_reply`); `window_start` = `created_at` nhỏ nhất của `audit_logs` có `exit_code='E0'` | Không chỉ bắt tấn công ở B2 |
+| Luật 3 | Đối soát: tra `alerts` ±60 s, chỉ xét sự kiện cũ hơn 60 s; không dựng khóa từ `occurred_at` | `lock_start` của auth ≠ `occurred_at` (hai lần gọi đồng hồ) |
+| Luật 9 | `subject = user_id` (sự kiện không có `token_family_id`) | Kiểm code 29/09 |
+| Luật 13 | Skipped tới Phase 5 (`b3_cascade` pending) | Chưa có cascade → tỉ lệ ≈ 100%, báo mỗi ngày = nhiễu |
+| Luật 15, 16 | Thêm `finalize_failed` (không lọc lá) và `execution_failed` (mọi E7) | B20 bước 6 yêu cầu cảnh báo E7; ticket cha lỗi finalize cũng phải báo |
+| Lookback | Luật theo sự kiện quét lại 24 giờ | Worker chết một lúc không mất cảnh báo; khóa chống trùng chặn bản sao |
+
 ## 7. API
 
 | Endpoint | Quyền | Ghi chú |
@@ -304,3 +321,4 @@ def escalation_rate_high(q) -> list[AlertDraft]:
 | 25/09/2026 | 1.1 | Thêm luật 13 (model intent xuống cấp) và chỉ số đường B3 (D-32) |
 | 25/09/2026 | 1.2 | Thêm luật 14 (sắp hết ngân sách LLM, N1) |
 | 26/09/2026 | 1.3 | Khóa chống trùng `(rule_id, subject, window_start)`, bảng `subject` cho 14 luật (luật 3 chốt ở Phase 2b-1, còn lại đề xuất); việc Phase 7: luật `finalize_failed_permanent` |
+| 01/10/2026 | 1.4 | Mục 3 ranh giới import mở rộng (M9 A0); mục 6.1 "Chốt khi hiện thực M9" trỏ về `claude/ke-hoach-m9-*.md` |

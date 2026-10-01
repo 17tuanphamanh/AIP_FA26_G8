@@ -8,10 +8,13 @@
   không tìm thấy (`None`) = `not_found`, KHÔNG phải lỗi. Lỗi hệ thống khi tra → `ApproverLookupError` (B15 → E2).
 - `choose_approver` theo [Chốt] B15 (Q-4-L): xung đột → Trưởng BP; hết L1 hợp lệ → Trưởng BP; Trưởng BP cũng xung đột/không
   hợp lệ → `Refuse` (E5 `no_valid_approver`, 0 phiếu). Mỗi người tra tối đa một lần (`memo_lookup`).
+- `next_reminder` (Phase 4 4c P3): mốc nhắc 50 % / 80 % của khoảng `created_at → deadline`. Đã qua mốc 2 thì KHÔNG BAO GIỜ nhắc 1
+  (worker chết lâu → chỉ nhắc 2); tới hạn thì không nhắc gì (hết hạn → E6, không nhắc muộn).
 """
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
@@ -24,9 +27,12 @@ InvalidReason = Literal["not_found", "inactive", "wrong_group"]
 RejectReason = Literal["not_found", "inactive", "wrong_group", "self", "boss_of_approver", "targets_approver"]
 ChoiceReason = Literal["normal", "conflict", "no_valid_l1"]
 ApproverRole = Literal["l1", "manager"]
+ReminderN = Literal[1, 2]
 
 MAX_CHAIN_DEPTH = 5  # Q-4-R: chuỗi quản lý tối đa 5 cấp (cùng giới hạn `_ensure_manager` của auth)
 ROSTER_ID = r"^[a-z0-9_]{3,64}$"  # P1
+# 4c P3 [Chốt B15-B16 §4: nhắc 50 % / 80 % SLA] — MỘT nguồn cho `next_reminder` và câu lọc `SqlDeadlineStore.due_reminders`.
+REMINDER_FRACTIONS: dict[ReminderN, float] = {1: 0.5, 2: 0.8}
 type RosterId = Annotated[str, StringConstraints(pattern=ROSTER_ID)]
 
 # Tra một người: None = không có (404/rỗng); lỗi hệ thống → ném `ApproverLookupError`.
@@ -205,3 +211,18 @@ async def choose_approver[U: AdAttributes](
         approver=first, backup=backup, conflict_detected=False, conflict_type=None, reason="normal",
         rejected=tuple(rejected),
     )  # fmt: skip
+
+
+def next_reminder(
+    created_at: datetime, deadline: datetime, reminder_1_at: datetime | None, reminder_2_at: datetime | None, now: datetime
+) -> ReminderN | None:
+    """Nhắc nào đến lượt lúc `now` (biên tính `>=`): `now >= deadline` → None; qua mốc 2 → 2 nếu chưa nhắc 2, không thì None
+    (KHÔNG nhắc 1 sau mốc 2); qua mốc 1 → 1 nếu chưa nhắc 1. Thuần — worker đánh dấu nguyên tử bằng `mark_reminder_once`."""
+    if now >= deadline:
+        return None
+    span = deadline - created_at
+    if now >= created_at + span * REMINDER_FRACTIONS[2]:
+        return 2 if reminder_2_at is None else None
+    if now >= created_at + span * REMINDER_FRACTIONS[1]:
+        return 1 if reminder_1_at is None else None
+    return None

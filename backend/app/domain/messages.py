@@ -1,6 +1,7 @@
 """Tin nhắn trong `conversation` (phase3 mục 10.2, 3-Q28 bản 1.1; chốt P9 3g) — theo khuôn B20 `{role, kind, text, ref}`.
 
-- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `escalation` (B20 — đã có). `needs` như tham số `notify_user`.
+- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có). `needs` như
+  tham số `notify_user`.
 - `sources` CHỈ ở `answer`, mỗi nguồn ĐÚNG 3 khoá `chunk_id`, `title`, `heading_path` — không đoạn trích, không bằng chứng
   đã mở rộng (P9).
 - Tin người dùng `{role: "user", text}`: `text` là bản ĐÃ CHE (P3) — node chỉ gọi `user_msg` với văn bản đã qua guard.
@@ -13,12 +14,12 @@
 import re
 from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Final
+from typing import Final, Literal
 
 from app.domain.action import FactValue
 from app.domain.ticket_state import ChunkRef, Msg
 
-MSG_KINDS: Final = ("answer", "question", "result", "escalation")
+MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
 SOURCE_KEYS: Final = ("chunk_id", "title", "heading_path")
 
 
@@ -77,3 +78,38 @@ def result_text(action_type: str, device_id: str, outputs: Mapping[str, str], fa
 
 def result_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "result", "text": text, "ref": ref, "needs": "confirm"}
+
+
+# Mẫu lý do chọn nhanh khi từ chối (B15-B16 §4, P10 3.2 [Chốt 16.2]; PLAN-3e Q-3e-13) — ô này KHÔNG qua privacy guard nên chỉ nhận
+# mã cố định. Route duyệt (`api/approvals.py`) và nhãn tin từ chối dùng CHUNG định nghĩa này.
+type ReasonCode = Literal[
+    "missing_info", "not_authorized", "policy_violation", "duplicate", "wrong_device", "security_concern", "other",
+]  # fmt: skip
+REASON_LABELS: Final[Mapping[str, str]] = {
+    "missing_info": "thiếu thông tin", "not_authorized": "không đủ thẩm quyền", "policy_violation": "trái chính sách",
+    "duplicate": "yêu cầu trùng lặp", "wrong_device": "sai máy", "security_concern": "lo ngại về bảo mật", "other": "lý do khác",
+}  # fmt: skip
+NO_REASON: Final = "không nêu"
+# Nhãn hành động — mọi `action_type` của `config/action_metadata.yaml` phải có (test d4).
+ACTION_LABELS: Final[Mapping[str, str]] = {
+    "renew_vpn_cert": "gia hạn chứng chỉ VPN",
+    "reissue_vpn_access": "cấp lại quyền truy cập VPN",
+    "check_vpn_status": "kiểm tra trạng thái VPN",
+}
+
+
+def rejection_text(action_type: str, device_id: str, reason_code: str | None, note: str | None) -> str:
+    """Tin từ chối theo mẫu (P1). `note` None = không kèm câu ghi chú (output guard chặn). `note` phải là bản ĐÃ CHE."""
+    label = ACTION_LABELS.get(action_type)
+    if label is None:
+        head = "Yêu cầu của bạn chưa được duyệt."
+    else:
+        device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+        head = f"Yêu cầu {label} cho {device} chưa được duyệt."
+    reason = REASON_LABELS.get(reason_code, NO_REASON) if reason_code is not None else NO_REASON
+    text = f"{head} Lý do: {reason}."
+    return text if note is None else f"{text} Ghi chú của người duyệt: {note}"
+
+
+def rejection_msg(text: str, ref: str | None) -> Msg:
+    return {"role": "assistant", "kind": "rejection", "text": text, "ref": ref, "needs": "none"}

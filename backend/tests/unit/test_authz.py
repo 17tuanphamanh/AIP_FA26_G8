@@ -36,6 +36,8 @@ class A:
     approver_id: str
     status: str = "pending"
     deadline: datetime = NOW + timedelta(minutes=30)
+    backup_approver_id: str | None = None  # 4c P4: `ApprovalLike` thêm 2 trường (cách dựng — kỳ vọng không đổi)
+    reminder_2_at: datetime | None = None
 
 
 @dataclass(frozen=True)

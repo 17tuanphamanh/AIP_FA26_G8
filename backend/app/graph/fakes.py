@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow
+from app.approval.store import ApprovalRow, NoticeKind
 from app.auth.ports import AdUser
 from app.core.fake_tag import FAKE_TAG
 from app.domain.action import Action, ActionMeta
@@ -76,7 +76,9 @@ class Approvals(Protocol):
         """B15 (qua `effects.once("approval_create")`). Phase 4 4b P8: 3 tham số keyword BẮT BUỘC (TQ-9)."""
         ...
 
-    async def notify_approver(self, approval_id: str, approver_id: str) -> str: ...
+    async def notify_approver(self, approval_id: str, approver_id: str, kind: NoticeKind = "new") -> str:
+        """B15 (qua `effects.once("notify_approver")`, `kind` mặc định `new`). 4c P3: `reminder_1`/`reminder_2` do worker gửi."""
+        ...
 
     async def close(
         self,
@@ -86,8 +88,9 @@ class Approvals(Protocol):
         *,
         decided_by: str | None = None,
         note: str | None = None,
-    ) -> None:
-        """B16 ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`)."""
+    ) -> int:
+        """B16 ghi kết quả vào phiếu (idempotent: chỉ đổi phiếu đang `pending`; đặt `decided_at`). Trả số dòng đổi (0/1) — 4c P2
+        `close_applied`."""
         ...
 
     async def get_status(self, approval_id: str) -> str | None:
