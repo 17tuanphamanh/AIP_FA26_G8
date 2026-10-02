@@ -280,11 +280,15 @@ def test_bruteforce_waits_60s_before_reconciling() -> None:
     assert len(password_bruteforce(BruteforceData([_lock(NOW - timedelta(seconds=60))], []), CTX)) == 1
 
 
-def test_bruteforce_several_alerts_same_subject_any_one_matches() -> None:
-    """Tra theo subject giữ MỌI cảnh báo của subject (nhiều đợt khoá/ngày): một cái khớp ±60 s là đủ."""
+@pytest.mark.parametrize("at", [0, 1, 3], ids=["dau", "giua", "cuoi"])
+def test_bruteforce_several_alerts_same_subject_any_one_matches(at: int) -> None:
+    """Tra theo subject giữ MỌI cảnh báo của subject (nhiều đợt khoá/ngày): một cái khớp ±60 s là đủ. Review #24: cảnh
+    báo khớp ở đầu / giữa / cuối danh sách — dict chỉ giữ cảnh báo cuối hoặc chỉ giữ cảnh báo đầu đều đỏ."""
     far = [_auth("u-1", T - timedelta(hours=k)) for k in (1, 2, 3)]
     assert len(password_bruteforce(BruteforceData([_lock(T)], far), CTX)) == 1
-    assert password_bruteforce(BruteforceData([_lock(T)], [*far, _auth("u-1", T + 3 * MS)]), CTX) == []
+    alerts = list(far)
+    alerts.insert(at, _auth("u-1", T + 3 * MS))
+    assert password_bruteforce(BruteforceData([_lock(T)], alerts), CTX) == []
 
 
 def test_bruteforce_many_locks_many_alerts_fast() -> None:

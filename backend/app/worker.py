@@ -97,7 +97,8 @@ async def run() -> None:
 # Nhịp log (review #24, Q-M9-B1-20): dòng tổng `nháp= ghi= trùng= lỗi= luật_lỗi=` — WARNING khi có lỗi ghi, hoặc khi
 # IncidentLog báo luật lỗi ở lượt này (lần đầu / tập luật lỗi đổi / mỗi giờ); INFO ở lượt chạy được đầu tiên và khi có
 # cảnh báo mới (kể cả khi luật lỗi mà IncidentLog không báo — Q-M9-B2-8); còn lại DEBUG (`core/logging.py` đã tắt INFO
-# APScheduler vì quá dày).
+# APScheduler vì quá dày). Q-M9-B1-24: dòng "luật bỏ qua (nguồn chưa có)" INFO khi tập luật bỏ qua đổi, còn lại DEBUG;
+# WARNING từng draft ghi lỗi qua IncidentLog theo (rule_id, tên lớp) — dòng tổng `lỗi=` vẫn WARNING mỗi lượt.
 
 MONITOR_RULES_MINUTE = "monitor_rules_minute"
 MONITOR_RULES_SECONDS = 60
@@ -157,6 +158,10 @@ class MonitorRulesJob:
         self._timeout_s = timeout_s
         self._incident = IncidentLog(clock)
         self._announced = False  # đã in dòng tổng lần nào chưa — lượt chạy được đầu tiên in INFO (D5 thấy job chạy)
+        # Q-M9-B1-24. Luật bỏ qua: tập ở lượt trước (nguồn chưa có là trạng thái đã biết, không phải sự cố → không nhắc
+        # mỗi giờ). Draft ghi lỗi: một IncidentLog cho mỗi (rule_id, tên lớp) còn lỗi ở lượt trước.
+        self._skipped: frozenset[str] = frozenset()
+        self._draft_errors: dict[tuple[str, str], IncidentLog] = {}
 
     async def minute(self) -> None:
         """Một lượt job 60 s. Không ném lỗi (trừ `CancelledError` — hủy job phải lan ra). Log chỉ tên luật, tên lớp
@@ -187,8 +192,11 @@ class MonitorRulesJob:
                 log.warning("%s: luật lỗi: %s", MONITOR_RULES_MINUTE, ", ".join(result.failed_rules))
         elif failures := self._incident.recovered():
             log.info("%s phục hồi sau %d lượt lỗi", MONITOR_RULES_MINUTE, failures)
-        if result.skipped_rules:
-            log.info("%s: luật bỏ qua (nguồn pending): %s", MONITOR_RULES_MINUTE, ", ".join(result.skipped_rules))
+        skipped = frozenset(result.skipped_rules)  # tập, không phải thứ tự: đổi thứ tự không phải đổi tập
+        if skipped:
+            log.log(logging.INFO if skipped != self._skipped else logging.DEBUG, "%s: luật bỏ qua (nguồn chưa có): %s",
+                    MONITOR_RULES_MINUTE, ", ".join(result.skipped_rules))  # fmt: skip
+        self._skipped = skipped  # gán cả tập rỗng: luật bỏ qua xuất hiện lại sau lượt rỗng → INFO ngay
         if errors or reported:
             level = logging.WARNING
         elif written or not self._announced:
@@ -201,20 +209,29 @@ class MonitorRulesJob:
 
     async def _write(self, drafts: list[AlertDraft]) -> tuple[int, int, int]:
         """Ghi từng draft → (ghi, trùng, lỗi). ghi = cảnh báo MỚI (raise_once True); trùng = khoá đã có (False) — quét
-        lại 24 giờ mỗi phút nên lượt sau gặp lại draft cũ."""
+        lại 24 giờ mỗi phút nên lượt sau gặp lại draft cũ.
+
+        Nhịp WARNING từng draft lỗi (Q-M9-B1-24): theo (rule_id, tên lớp) — lần đầu, khi lớp đổi, rồi mỗi giờ; còn lại
+        DEBUG. Khoá không lỗi ở lượt này bị bỏ → lỗi quay lại sau một lượt sạch báo ngay (nghiêng về báo thừa)."""
         written = duplicate = errors = 0
+        seen: dict[tuple[str, str], IncidentLog] = {}
         for draft in drafts:  # một draft lỗi không chặn draft khác (Q-M9-B1-15)
             try:
                 created = await self._writer.raise_once(draft)
             # Một draft lỗi không chặn draft khác (Q15); IntegrityError in cả tham số INSERT → chỉ log tên lớp.
             except Exception as exc:  # noqa: BLE001 — một draft (Q15)
                 errors += 1
-                log.warning("%s: ghi cảnh báo luật %s lỗi: %s", MONITOR_RULES_MINUTE, draft.rule_id, type(exc).__name__)
+                key = (draft.rule_id, type(exc).__name__)
+                incident = seen.setdefault(key, self._draft_errors.get(key) or IncidentLog(self._clock))
+                level = logging.WARNING if incident.failed(key) else logging.DEBUG
+                log.log(level, "%s: ghi cảnh báo luật %s lỗi: %s", MONITOR_RULES_MINUTE, draft.rule_id,
+                        type(exc).__name__)  # fmt: skip
             else:
                 if created:
                     written += 1
                 else:
                     duplicate += 1
+        self._draft_errors = seen  # hết giờ giữa chừng → không tới đây, giữ trạng thái cũ
         return written, duplicate, errors
 
 

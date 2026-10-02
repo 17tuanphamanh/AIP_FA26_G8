@@ -362,6 +362,77 @@ def test_draft_write_error_does_not_block_others(
     assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
 
 
+def draft_lines(caplog: pytest.LogCaptureFixture, level: int) -> list[str]:
+    """Dòng "ghi cảnh báo luật … lỗi" ở đúng mức `level`, theo thứ tự."""
+    return [r.getMessage() for r in m9_records(caplog, level) if "ghi cảnh báo luật" in r.getMessage()]
+
+
+def write_error(rule_id: str, exc: str) -> str:
+    return f"{MONITOR_RULES_MINUTE}: ghi cảnh báo luật {rule_id} lỗi: {exc}"
+
+
+def test_draft_write_warning_paced(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Q-M9-B1-24: một draft hỏng không còn in WARNING mỗi phút suốt 24 giờ. Theo (rule_id, tên lớp): WARNING lần đầu,
+    khi lớp đổi, qua 1 giờ, và ngay sau một lượt ghi được; còn lại DEBUG. Dòng tổng `lỗi=` vẫn đếm mọi lượt."""
+    clock = FakeClock(T0)
+    fail: list[BaseException | None] = [None]
+    writer = FakeWriter(lambda d: fail[0])
+    job = make_job(FakeEngine(), clock, writer)
+    fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
+    plan: list[tuple[int, type[Exception] | None]] = [  # (phút, lỗi ghi; None = ghi được)
+        (0, ValueError), (1, ValueError), (59, ValueError), (60, ValueError), (61, ValueError), (62, None),
+        (63, ValueError), (64, OSError), (65, OSError),
+    ]  # fmt: skip
+    warned: list[int] = []
+    debugged: list[int] = []
+    counted: list[str] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, exc in plan:
+            clock.set(T0 + at * MIN)
+            caplog.clear()
+            fail[0] = None if exc is None else exc(f"hỏng {SECRET}")
+            asyncio.run(job.minute())
+            warned.append(len(draft_lines(caplog, logging.WARNING)))
+            debugged.append(len(draft_lines(caplog, logging.DEBUG)))
+            ((_, message),) = summaries(caplog)
+            counted.append(message.split(" lỗi=")[1].split()[0])
+            assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
+    assert warned == [1, 0, 0, 1, 0, 0, 1, 1, 0]
+    assert debugged == [0, 1, 1, 0, 1, 0, 0, 0, 1]
+    assert counted == ["1", "1", "1", "1", "1", "0", "1", "1", "1"]
+
+
+def test_draft_write_warning_paced_per_rule_in_run(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Q-M9-B1-24: hai luật cùng lớp lỗi → hai WARNING (khoá có rule_id); hai draft cùng luật cùng lớp trong một lượt →
+    dòng log y hệt nên 1 WARNING + 1 DEBUG; `lỗi=` vẫn đếm đủ 3. Lượt sau cùng lỗi → chỉ DEBUG."""
+    drafts = [draft("refresh_reuse", "u-1"), draft("refresh_reuse", "u-2"), draft("injection_detected", "t-3"),
+              draft("finalize_failed", "t-4")]  # fmt: skip
+    writer = FakeWriter(lambda d: None if d.subject == "t-4" else ValueError(f"hỏng {d.detail}"))
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock, writer)
+    fake_evaluate(monkeypatch, EvalResult(drafts=drafts, failed_rules=[], skipped_rules=[]))
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        asyncio.run(job.minute())
+        assert draft_lines(caplog, logging.WARNING) == [
+            write_error("refresh_reuse", "ValueError"), write_error("injection_detected", "ValueError"),
+        ]  # fmt: skip
+        assert draft_lines(caplog, logging.DEBUG) == [write_error("refresh_reuse", "ValueError")]
+        assert summaries(caplog) == [(logging.WARNING, summary(4, 1, 0, 3, 0))]
+        assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
+        caplog.clear()
+        clock.set(T0 + MIN)
+        asyncio.run(job.minute())
+        assert draft_lines(caplog, logging.WARNING) == []
+        assert draft_lines(caplog, logging.DEBUG) == [
+            write_error("refresh_reuse", "ValueError"), write_error("refresh_reuse", "ValueError"),
+            write_error("injection_detected", "ValueError"),
+        ]  # fmt: skip
+        assert summaries(caplog) == [(logging.WARNING, summary(4, 0, 1, 3, 0))]
+    assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
+
+
 def test_summary_info_when_no_error(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
     with caplog.at_level(logging.INFO, logger="app.worker"):
@@ -607,7 +678,43 @@ def test_failed_and_skipped_rules_logged_by_name(
         asyncio.run(make_job(FakeEngine(), FakeClock(T0)).minute())
     messages = [r.getMessage() for r in m9_records(caplog)]
     assert f"{MONITOR_RULES_MINUTE}: luật lỗi: refresh_reuse, policy_saved" in messages
-    assert f"{MONITOR_RULES_MINUTE}: luật bỏ qua (nguồn pending): b3_degraded" in messages
+    assert f"{MONITOR_RULES_MINUTE}: luật bỏ qua (nguồn chưa có): b3_degraded" in messages
+
+
+def test_skipped_rules_line_cadence(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Q-M9-B1-24 + luật cứng 7: dòng "luật bỏ qua (nguồn chưa có)" INFO khi TẬP luật bỏ qua đổi (kể cả xuất hiện lại
+    sau một lượt rỗng); cùng tập (thứ tự khác không tính) → DEBUG, qua 1 giờ cũng không nhắc (nguồn chưa có là trạng
+    thái đã biết). Luật bỏ qua không nâng mức dòng tổng."""
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock)
+    b2, b3 = "b2_degraded", "b3_degraded"
+    plan: list[tuple[int, list[str]]] = [  # (phút, luật bỏ qua)
+        (0, [b3]), (1, [b3]), (2, [b3]), (3, [b2, b3]), (4, [b3, b2]), (65, [b3, b2]), (66, []), (67, [b3, b2]),
+    ]  # fmt: skip
+    lines: list[list[tuple[int, str]]] = []
+    levels: list[int] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, skipped in plan:
+            clock.set(T0 + at * MIN)
+            caplog.clear()
+            fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=[], skipped_rules=skipped))
+            asyncio.run(job.minute())
+            lines.append([(r.levelno, r.getMessage()) for r in m9_records(caplog) if "luật bỏ qua" in r.getMessage()])
+            ((level, _),) = summaries(caplog)
+            levels.append(level)
+    I, D = logging.INFO, logging.DEBUG  # viết tắt cho bảng mức
+    line = f"{MONITOR_RULES_MINUTE}: luật bỏ qua (nguồn chưa có): "
+    assert lines == [
+        [(I, line + "b3_degraded")],
+        [(D, line + "b3_degraded")],
+        [(D, line + "b3_degraded")],
+        [(I, line + "b2_degraded, b3_degraded")],
+        [(D, line + "b3_degraded, b2_degraded")],
+        [(D, line + "b3_degraded, b2_degraded")],
+        [],
+        [(I, line + "b3_degraded, b2_degraded")],
+    ]
+    assert levels == [I, D, D, D, D, D, D, D]  # lượt 1 INFO vì là lượt chạy được đầu tiên
 
 
 @pytest.mark.parametrize("where", ["connect", "evaluate", "writer"])
@@ -711,6 +818,12 @@ def test_bruteforce_loader_filters_threshold_and_rule_id() -> None:
     (_, locks), (_, alerts) = conn.calls
     assert (locks["event_type"], locks["reason"]) == ("account_locked", "threshold")
     assert alerts["rule_id"] == "password_bruteforce"
+
+
+def test_alerts_sql_filters_rule_id() -> None:
+    """Review #24: test trên chỉ thấy tham số bind — bỏ `rule_id = :rule_id` khỏi WHERE (bind thừa vẫn truyền) thì vẫn
+    xanh. Ghim mệnh đề trong SQL; luật 3 vẫn tự kiểm rule_id (lưới thứ hai, `test_monitor_rules_event.py`)."""
+    assert re.search(r"WHERE\s+rule_id = :rule_id AND", rules_data.ALERTS_SQL.text)
 
 
 def test_finalize_event_constant_matches_runner() -> None:
