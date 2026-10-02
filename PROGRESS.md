@@ -4454,7 +4454,7 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     - Mutation thêm M-4c-3b (lớp SQL lọc vai trò của hộp thư, độc lập với `approval_role`).
     - Q-4c-3 = A: route quyết giữ 403 cho phiếu có thật không được giao (Việc treo 30).
 
-## Phase 4 — chặng 4d: Ghi đè + `audit_check` + B17 so hash phiếu + e2e cổng 4 + `make gate4` (tầng A) (01–02/10/2026 — PLAN DUYỆT; DỪNG 1 commit, chờ verify trên cây gộp M9)
+## Phase 4 — chặng 4d: Ghi đè + `audit_check` + B17 so hash phiếu + e2e cổng 4 + `make gate4` (tầng A) (01–02/10/2026 — PLAN DUYỆT; DỪNG 1 `e510a6e` xanh trên cây gộp M9)
 
 Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 0.1, 0.2, 2, 4.4, 8; **5.7, 6.4, 6.5 thắng khi lệch**). Kế hoạch:
 `PLAN-4d.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4d.md` mục 9): Q-4d-1 = A, Q-4d-2 = A, TQ-1…13 + A1–A23
@@ -4476,7 +4476,7 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
     writer (`main.py:236-240`); `AuditWriter.record` không phân biệt dòng mới/cũ (`audit/writer.py:38-58`) → 409 `already_overridden` cần
     INSERT … RETURNING. Đề xuất A: `ApprovalRepo`/`SqlApprovals.decision_trail` + `record_override` (→ `AuditWriter.record_new`).
 
-- **DỪNG 1 (01–02/10/2026) — P1–P4 (ghi đè) + P5 (`audit_check`) + P7 (B17 so hash phiếu) — XANH PHẦN SANDBOX, commit; chờ `verify G=23` trên cây gộp M9:**
+- **DỪNG 1 (01–02/10/2026) — P1–P4 (ghi đè) + P5 (`audit_check`) + P7 (B17 so hash phiếu) — XANH (sandbox + verify cây gộp M9: gate2 89/0, gate3 66/0):**
   - **S1 khung:** `domain/override.py` (`Decision`, `OverrideReason`, `DecisionTrail`, `OverrideRecord.audit_row`, `original_decision`,
     `override_key`); `AuditWriter.record_new`; port `ApprovalRepo.decision_trail/record_override` + `SqlApprovals` (Q-4d-2 = A); route
     `POST /api/tickets/{ticket_id}/override` (`require("decision:override", recent_login=True)`); `app/audit/check.py` (lõi, chạy được
@@ -4553,6 +4553,30 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
        `test_auth_idor.py`, `test_tickets_api.py`, `test_body_limit.py`, `test_guard_api.py`, `test_approval_review_s11.py`,
        `integration/test_b10_pg.py`.
     6. Spec `phase4-thiet-ke-chi-tiet.md` v1.5 (mục 7.7) do Tuấn Anh cập nhật — đi cùng commit DỪNG 1, agent không sửa.
+  - **Commit + gộp M9 (02/10/2026 ~15:50):** commit `813d7a5` (4d DỪNG 1, 23 file = 22 + 1 dòng `backend/app/api/README.md`;
+    `audit/README.md` không có) + `8be2a3a` (docs M9, 3 file `docs/spec/claude/*` — ngoại lệ một lần theo lệnh); gitleaks phần staged sạch,
+    hook unit xanh cả hai. `git status` (bỏ untracked) rỗng → `git pull --rebase origin dev-tuananh` (không cần `--autostash`), 0 xung
+    đột, 17 file M9 không trùng file 4d → **`e510a6e`** + **`8637bba`** trên `1d5c92a`. `alembic heads` = 1 (`0008`); `make lint` xanh
+    (mypy app 213 / tests 221 / mock 12 / ml 16; import-linter 10/10; gitleaks 0); unit **3771** (= 3621 + 150 test M9 — hiệu số).
+    CHƯA push.
+  - **`make verify G=23` lượt 3 — cây gộp (Tuấn Anh, 02/10/2026 16:01:58 → 16:26:05, HEAD `8637bba`, 14 mục untracked): ĐỎ ở gate3 62/4**
+    — lint PASS; test PASS (backend **4103**, mock 100, ml 77 / 5 deselected); up PASS; gate2 **89/0** (10m05s); ingest PASS; gate3
+    **62/4** (9m48s); trả về `.env` PASS. tc02 lần này **11/11 xanh**. Cả 4 FAIL là **tc04** (ticket `96ff7f0a…`): `S_ESCALATED` E2
+    `turn_budget_exceeded` (dòng của boundary, step `b08_retrieve`, giây 433,9), không có B8/B9/B10, 0 lời gọi ghi.
+    **Nguyên nhân: Mac NGỦ giữa lượt (không phải 4d, không phải M9).** Bằng chứng: (1) span `node:b08_retrieve` (bọc cả boundary + `goto`,
+    `graph/builder.py:103`) đo `perf_counter` = **18 509 ms**, nhưng dòng audit `goto` ghi trong span đó có `created_at` (SystemClock) ở giây
+    433,9 → đồng hồ tường của VM nhảy ~415 s trong khi đồng hồ đơn điệu đứng yên = VM bị dừng; (2) `pmset -g log`: máy chạy PIN, tắt màn
+    hình 16:11:19, `Idle Sleep` 16:11:49 (76 s), `Maintenance Sleep` 16:13:50 (28 s), 16:15:03 (59 s), **16:16:47 → 16:23:45 (418 s)** —
+    khớp ~415 s; ba lần ngủ trong gate2 (163 s) khớp gate2 chậm 10m05s so với 7m14–7m29 các lượt trước; gate3 thường 2m19–2m41.
+    Hạn lượt tính theo đồng hồ tường (`core/turn_budget.py` `usable_s`) → hết hạn sau khi thức dậy → E2, 0 ghi (đúng thiết kế, an toàn).
+    Đối chiếu: lượt 2 (14:46:32 → 15:04:03) máy thức liên tục 14:46:08 → 15:14:20 → tc02 lượt đó KHÔNG do ngủ — chẩn đoán "rerank nguội"
+    (spec 7.7 #9) giữ nguyên. → **Q-4d-4 = A** (Tuấn Anh, chẩn đoán chấp nhận): chạy lại CHỈ gate3 trên cùng HEAD — `caffeinate -i make verify G=3`
+    (cắm sạc, mở nắp). DỪNG 2 thêm: `verify.sh` tự bọc `caffeinate -i` trên macOS + cảnh báo chạy pin; README thành viên ghi "cắm sạc,
+    mở nắp, chạy qua `make verify` hoặc `caffeinate -i`".
+  - **`caffeinate -i make verify G=3` (Tuấn Anh, 02/10/2026 17:11:43 → 17:17:22, HEAD `8637bba`, cắm sạc + mở nắp): XANH** — lint PASS;
+    test PASS (backend **4103**, mock 100, ml 77 / 5 deselected); up PASS; ingest PASS (KB không đổi); gate3 **66/0** (2m06s, trong giờ);
+    trả về `.env` PASS. **Verify cây gộp M9 (`8637bba`) ĐỦ:** lint + test (2 lượt) + gate2 **89/0** (lượt 16:01) + gate3 **66/0** (lượt
+    17:11). Mục DỪNG 1 4d xong phần stack; còn push + CI.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
