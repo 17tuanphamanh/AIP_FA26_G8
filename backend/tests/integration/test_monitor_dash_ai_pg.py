@@ -13,6 +13,7 @@ import pytest_asyncio
 from alembic import command
 from app.monitor.queries import ai
 from app.monitor.queries.ai import DayCost
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from tests.integration import monitor_seed as seed
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
@@ -42,18 +43,19 @@ async def mon(db: PgUrls) -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
-def win(day: int) -> tuple[datetime, datetime]:
-    frm = datetime(2030, 1, day, tzinfo=UTC)
+def win(day: int, month: int = 1) -> tuple[datetime, datetime]:
+    """Cửa sổ 1 ngày theo UTC: `[2030-<month>-<day> 00:00 UTC, +1 ngày)` (= 07:00 VN → 07:00 VN hôm sau)."""
+    frm = datetime(2030, month, day, tzinfo=UTC)
     return frm, frm + timedelta(days=1)
 
 
-def at(day: int, hours: int = 1) -> datetime:
-    return win(day)[0] + hours * H
+def at(day: int, hours: int = 1, month: int = 1) -> datetime:
+    return win(day, month)[0] + hours * H
 
 
-async def q(mon: AsyncEngine, fn: Callable[..., Awaitable[Any]], day: int) -> Any:
+async def q(mon: AsyncEngine, fn: Callable[..., Awaitable[Any]], day: int, month: int = 1) -> Any:
     async with mon.connect() as conn:
-        return await fn(conn, *win(day))
+        return await fn(conn, *win(day, month))
 
 
 async def done(conn: AsyncConnection, created_at: datetime, **kw: Any) -> str:
@@ -352,11 +354,218 @@ async def test_ai_metrics_all_keys_and_unavailable(rw: AsyncEngine, mon: AsyncEn
 
 @pytest.mark.asyncio
 async def test_window_bounds(rw: AsyncEngine, mon: AsyncEngine) -> None:
-    """Lá tạo đúng `frm` vào cửa sổ, đúng `to` không vào (E9 và lời gọi của nó)."""
-    frm, to = win(18)
+    """Lá tạo đúng `frm` vào cửa sổ, đúng `to` không vào (E9 và lời gọi của nó). Ngày 30/01 UTC [00:00, 31/01 00:00) = 07:00 VN;
+    lá `to` rơi vào 31/01 00:00, ngày không test nào dùng (R26 sửa kèm a: lá `to` ở ngày có test khác thì phụ thuộc thứ tự)."""
+    frm, to = win(30)
     async with rw.begin() as conn:
         inside, outside = await e_leaf(conn, frm, "E9"), await e_leaf(conn, to, "E9")
         await seed.llm_call_for(conn, inside, created_at=frm, cache_hit=True)
         await seed.llm_call_for(conn, outside, created_at=to, cache_hit=False)
-    assert await q(mon, ai.e9_count, 18) == 1
-    assert await q(mon, ai.cache_hit_rate, 18) == 1.0
+    assert await q(mon, ai.e9_count, 30) == 1
+    assert await q(mon, ai.cache_hit_rate, 30) == 1.0
+
+
+# ---- R26 (review PR #26, Tuấn Anh): cửa sổ theo lá, cost theo thời điểm lời gọi, nối khóa → hàm ----
+# Ngày dùng riêng: tháng 1: 2 (R26-3), 19 (R26-5), 22, 23 (R26-6); tháng 3: 2, 4, 6, 8 (R26-4); tháng 4: 10–11 (R26-2),
+# 20–21 (R26-1), 25–26 (thêm). Mọi mốc `tzinfo=UTC`; giờ VN = UTC + 7.
+
+
+@pytest.mark.asyncio
+async def test_cost_per_day_by_call_time(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-1: cost lọc theo thời điểm LỜI GỌI (Q-M9-A2-3), không theo `created_at` của lá. Cửa sổ [20/04 17:00 UTC (21/04
+    00:00 VN), 21/04 05:00 UTC (21/04 12:00 VN)). Lá A tạo 18/04 17:00 UTC (2 ngày trước `frm`), lời gọi 20/04 18:00 UTC
+    (21/04 01:00 VN) 0,5 → tính. Lá B tạo trong cửa sổ (20/04 18:00 UTC), lời gọi 21/04 06:00 UTC (21/04 13:00 VN, SAU
+    `to`, vẫn trong ngày VN) 2,0 → không tính. Lọc theo lá ra 2,0; bỏ WHERE ra 2,5."""
+    frm, to = datetime(2030, 4, 20, 17, tzinfo=UTC), datetime(2030, 4, 21, 5, tzinfo=UTC)
+    async with rw.begin() as conn:
+        a, b = await done(conn, frm - timedelta(days=2)), await done(conn, frm + H)
+        await seed.llm_call_for(conn, a, created_at=frm + H, cost_usd=0.5)
+        await seed.llm_call_for(conn, b, created_at=to + H, cost_usd=2.0)
+    async with mon.connect() as conn:
+        got = await ai.cost_per_day(conn, frm, to)
+    assert got == (DayCost(frm, 0.5),)
+
+
+@pytest.mark.asyncio
+async def test_cost_per_day_cut_mid_vn_day(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-2: cửa sổ bắt đầu GIỮA ngày VN: [10/04 05:00 UTC (12:00 VN), 11/04 05:00 UTC (12:00 VN)); 2 ngày VN: [09/04
+    17:00, 10/04 17:00) và [10/04 17:00, 11/04 17:00) UTC. Lá tạo đúng `frm`. Lời gọi: 10/04 04:59 UTC (trước `frm`) 9,0
+    → không; đúng `frm` 0,5 → tính (ngày 1); 11/04 04:59 UTC 0,25 → tính (ngày 2); đúng `to` 7,0 → không. Xóa
+    `WHERE c.created_at` hoặc lọc theo lá ra (9,5; 7,25)."""
+    frm, to = datetime(2030, 4, 10, 5, tzinfo=UTC), datetime(2030, 4, 11, 5, tzinfo=UTC)
+    minute = timedelta(minutes=1)
+    async with rw.begin() as conn:
+        leaf = await done(conn, frm)
+        for ts, cost in [(frm - minute, 9.0), (frm, 0.5), (to - minute, 0.25), (to, 7.0)]:
+            await seed.llm_call_for(conn, leaf, created_at=ts, cost_usd=cost)
+    async with mon.connect() as conn:
+        got = await ai.cost_per_day(conn, frm, to)
+    day1 = datetime(2030, 4, 9, 17, tzinfo=UTC)
+    assert got == (DayCost(day1, 0.5), DayCost(day1 + timedelta(days=1), 0.25))
+
+
+@pytest.mark.asyncio
+async def test_ai_metrics_key_to_function(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-3: `ai_metrics` nối khóa → hàm đúng; mỗi giá trị khác nhau theo cặp dễ nhầm (cache 0,75 / fallback 0,25; E2 2 /
+    E9 1). Ngày 02/01, mọi dòng 01:00 UTC (08:00 VN). Lá A (đã xong) 4 lời gọi (10 token, 0,1 USD): (cache, fallback, json) =
+    (T,T,F), (T,F,T), (T,F,T), (F,F,NULL). B2: llm ×1 + classifier ×4 → 0,2. B8: true ×3, false ×2 → 0,6. B3: llm ×2 + model
+    ×3 → 0,4 (dòng mới nhất `v-r26`). Span node 123 ms. 2 lá E2 `llm_unavailable`, 1 lá E9."""
+    async with rw.begin() as conn:
+        leaf = await done(conn, at(2))
+        for cache, fallback, valid in [(True, True, False), (True, False, True), (True, False, True), (False, False, None)]:
+            await seed.llm_call_for(
+                conn, leaf, created_at=at(2), tokens_in=10, tokens_out=0, cost_usd=0.1, cache_hit=cache,
+                used_fallback=fallback, json_valid_first_try=valid,
+            )  # fmt: skip
+        for layer in ["llm", *["classifier"] * 4]:
+            await audit(conn, leaf, "B2", "screened", at(2), **b2(layer))
+        for flag in (True, True, True, False, False):
+            await audit(conn, leaf, "B8", "retrieved", at(2), intent_filter_fallback=flag)
+        for layer in ("llm", "llm", "model", "model"):
+            await audit(conn, leaf, "B3", "intent_classified", at(2), layer=layer)
+        await audit(conn, leaf, "B3", "intent_classified", at(2, 3), layer="model", model_version="v-r26")
+        await node_span(conn, leaf, at(2), "node:b02_screen", 123)
+        await e_leaf(conn, at(2), "E2", "llm_unavailable")
+        await e_leaf(conn, at(2), "E2", "llm_unavailable")
+        await e_leaf(conn, at(2), "E9")
+    async with mon.connect() as conn:
+        got = await ai.ai_metrics(conn, *win(2))
+    values = got.values
+    assert list(values) == list(ai.AI_METRICS)
+    assert values["tokens_per_ticket"] == pytest.approx(40.0)
+    assert values["cache_hit_rate"] == pytest.approx(0.75)
+    assert values["fallback_rate"] == pytest.approx(0.25)
+    assert values["json_invalid_first_try_rate"] == pytest.approx(1 / 3)
+    assert values["b2_llm_rate"] == pytest.approx(0.2)
+    assert values["intent_filter_fallback_rate"] == pytest.approx(0.6)
+    assert values["b3_llm_rate"] == pytest.approx(0.4)
+    assert (values["e2_llm_count"], values["e9_count"]) == (2, 1)
+    assert values["intent_model_version"] == "v-r26"
+    assert values["latency_p95_by_step"] == {"node:b02_screen": pytest.approx(123.0)}
+    day = datetime(2030, 1, 1, 17, tzinfo=UTC)  # 02/01 00:00 VN
+    assert [(d.day_start, round(d.cost_usd, 6)) for d in values["cost_per_day"]] == [
+        (day, 0.4), (day + timedelta(days=1), 0.0),
+    ]  # fmt: skip
+    assert got.unavailable == PENDING
+
+
+def _leaf_times(frm: datetime, to: datetime) -> tuple[datetime, datetime, datetime, datetime, datetime]:
+    """(lá đúng `frm`, lá đúng `to`, lá trước `frm` 1 giờ, thời điểm trong cửa sổ, thời điểm sau `to`)."""
+    return frm, to, frm - H, frm + H, to + H
+
+
+@pytest.mark.asyncio
+async def test_b2_llm_rate_leaf_window(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-4 (b2): cửa sổ theo LÁ, hai chiều. Cửa sổ ngày 02/03 UTC [00:00, +1 ngày) = 07:00 VN. Lá đúng `frm` (tính): B2 llm +
+    classifier ghi SAU `to` → 1/2. Lá đúng `to` (không): 2 dòng llm ghi trong cửa sổ. Lá trước `frm` 1 giờ (không): 1 dòng
+    llm trong cửa sổ. Kỳ vọng 0,5; lọc theo thời điểm dòng ra 3/3 = 1,0."""
+    frm, to = win(2, 3)
+    t_frm, t_to, t_before, inside, after = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await audit(conn, in_leaf, "B2", "screened", after, **b2("llm"))
+        await audit(conn, in_leaf, "B2", "screened", after, **b2("classifier"))
+        await audit(conn, to_leaf, "B2", "screened", inside, **b2("llm"))
+        await audit(conn, to_leaf, "B2", "screened", inside, **b2("llm"))
+        await audit(conn, before_leaf, "B2", "screened", inside, **b2("llm"))
+    assert await q(mon, ai.b2_llm_rate, 2, 3) == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_b3_llm_rate_leaf_window(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-4 (b3): cửa sổ ngày 04/03 UTC. Lá đúng `frm`: B3 llm + B4 model ghi SAU `to` → 1/2. Lá đúng `to`: 2 dòng B3 model
+    trong cửa sổ; lá trước `frm` 1 giờ: 1 dòng B3 model trong cửa sổ (đều không tính). Kỳ vọng 0,5; lọc theo thời điểm dòng
+    ra 0/3 = 0,0."""
+    frm, to = win(4, 3)
+    t_frm, t_to, t_before, inside, after = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await audit(conn, in_leaf, "B3", "intent_classified", after, layer="llm")
+        await audit(conn, in_leaf, "B4", "intent_out_of_scope", after, layer="model")
+        await audit(conn, to_leaf, "B3", "intent_classified", inside, layer="model")
+        await audit(conn, to_leaf, "B3", "intent_classified", inside, layer="model")
+        await audit(conn, before_leaf, "B3", "intent_classified", inside, layer="model")
+    assert await q(mon, ai.b3_llm_rate, 4, 3) == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_latency_p95_leaf_window(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-4 (latency): cửa sổ ngày 06/03 UTC. Lá đúng `frm`: span node 100 ms bắt đầu SAU `to` → tính. Lá đúng `to`: span 900
+    ms và lá trước `frm` 1 giờ: span 700 ms, cả hai bắt đầu trong cửa sổ → không tính. Kỳ vọng 100; lọc theo thời điểm span
+    ra p95(700, 900) = 890."""
+    frm, to = win(6, 3)
+    t_frm, t_to, t_before, inside, after = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await node_span(conn, in_leaf, after, "node:b03_classify", 100)
+        await node_span(conn, to_leaf, inside, "node:b03_classify", 900)
+        await node_span(conn, before_leaf, inside, "node:b03_classify", 700)
+    assert await q(mon, ai.latency_p95_by_step, 6, 3) == {"node:b03_classify": pytest.approx(100.0)}
+
+
+@pytest.mark.asyncio
+async def test_tokens_per_ticket_leaf_window(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-4 (tokens): cửa sổ ngày 08/03 UTC, mọi lá đã xong. Lá đúng `frm`: lời gọi 100 token ghi SAU `to` → tính. Lá đúng
+    `to`: 1000 token và lá trước `frm` 1 giờ: 500 token, cả hai ghi trong cửa sổ → không tính. Kỳ vọng 100,0; lọc theo thời
+    điểm lời gọi ra 1500/2 = 750,0."""
+    frm, to = win(8, 3)
+    t_frm, t_to, t_before, inside, after = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await seed.llm_call_for(conn, in_leaf, created_at=after, tokens_in=100, tokens_out=0)
+        await seed.llm_call_for(conn, to_leaf, created_at=inside, tokens_in=1000, tokens_out=0)
+        await seed.llm_call_for(conn, before_leaf, created_at=inside, tokens_in=500, tokens_out=0)
+    assert await q(mon, ai.tokens_per_ticket, 8, 3) == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_tokens_per_ticket_null_column(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-5: token NULL một cột không làm mất cả dòng: (30 + NULL) và (NULL + 12) → 42 (cộng NULL ra NULL, `sum` bỏ qua →
+    0,0). Ngày 19/01 UTC, lá đã xong."""
+    async with rw.begin() as conn:
+        leaf = await done(conn, at(19))
+        await seed.llm_call_for(conn, leaf, created_at=at(19), tokens_in=30, tokens_out=None)
+        await seed.llm_call_for(conn, leaf, created_at=at(19), tokens_in=None, tokens_out=12)
+    assert await q(mon, ai.tokens_per_ticket, 19) == pytest.approx(42.0)
+
+
+@pytest.mark.asyncio
+async def test_e2_llm_count_latest_row_both_ways(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-6a: lấy dòng E2 MỚI NHẤT, hai chiều. Ngày 22/01 UTC. 2 lá X: E2 cũ `rag_system_error` (01:00 UTC = 08:00 VN), mới nhất
+    `llm_unavailable` (02:00 UTC) → đếm. 1 lá Y: `llm_unavailable` cũ, mới nhất `rag_system_error` → không. Kỳ vọng 2; lấy dòng
+    cũ nhất ra 1."""
+    async with rw.begin() as conn:
+        for _ in range(2):
+            x = await e_leaf(conn, at(22, 1), "E2", "rag_system_error")
+            await seed.escalation(conn, x, exit_code="E2", created_at=at(22, 2), reason_detail="llm_unavailable")
+        y = await e_leaf(conn, at(22, 1), "E2", "llm_unavailable")
+        await seed.escalation(conn, y, exit_code="E2", created_at=at(22, 2), reason_detail="rag_system_error")
+    assert await q(mon, ai.e2_llm_count, 22) == 2
+
+
+@pytest.mark.asyncio
+async def test_json_invalid_counts_running_leaf(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26-6b: lá ĐANG CHẠY có lời gọi JSON lỗi vẫn tính (Q-M9-A2-7, không lọc `final_state`). Ngày 23/01 UTC: lá đã xong 1 lời gọi
+    JSON đúng, lá đang chạy 1 lời gọi JSON lỗi → 1/2 = 0,5 (lọc `final_state` ra 0,0)."""
+    async with rw.begin() as conn:
+        fin, run = await done(conn, at(23)), await seed.leaf_ticket(conn, created_at=at(23))
+        await seed.llm_call_for(conn, fin, created_at=at(23), json_valid_first_try=True)
+        await seed.llm_call_for(conn, run, created_at=at(23), json_valid_first_try=False)
+    assert await q(mon, ai.json_invalid_first_try_rate, 23) == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_cost_per_day_day_start_utc(mon: AsyncEngine) -> None:
+    """(thêm) `DayCost.day_start` luôn tzinfo UTC, kể cả khi session DB đặt múi giờ khác. Cửa sổ 1 ngày VN [25/04 17:00 UTC,
+    +1 ngày), không dữ liệu. `datetime ==` chỉ so mốc tuyệt đối nên phải kiểm `tzinfo`; `SET LOCAL` chỉ sống tới hết transaction
+    (không rò sang test khác; engine `mon` còn là fixture riêng từng test); cuối test kiểm múi giờ session về như cũ."""
+    frm = datetime(2030, 4, 25, 17, tzinfo=UTC)
+    async with mon.connect() as conn:
+        before: str = (await conn.execute(text("SHOW TIME ZONE"))).scalar_one()
+    async with mon.begin() as conn:
+        await conn.execute(text("SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh'"))
+        got = await ai.cost_per_day(conn, frm, frm + timedelta(days=1))
+    async with mon.connect() as conn:
+        assert (await conn.execute(text("SHOW TIME ZONE"))).scalar_one() == before
+    assert got == (DayCost(frm, 0.0),)
+    assert got[0].day_start.tzinfo is UTC

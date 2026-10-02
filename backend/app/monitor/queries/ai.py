@@ -13,7 +13,7 @@
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -93,7 +93,8 @@ async def cost_per_day(
 ) -> tuple[DayCost, ...]:
     """Σ `cost_usd` theo ngày `tz` (Q-M9-2) của lời gọi có `llm_calls.created_at` trong `[frm, to)`; ngày không có lời
     gọi → 0.0 (đã đo, không chi). Ngày đầu/cuối bị cắt theo `frm`/`to`.
-    chi phí của ticket lá — khác tổng chi của luật 14 từ Phase 5"""
+    Là chi phí của ticket lá (qua `v_leaf`), khác tổng chi toàn bảng `llm_calls` mà luật 14 đọc; hai số lệch nhau từ
+    Phase 5 (Q-M9-A2-3)."""
     params = window_params(frm, to)
     starts = day_starts(frm, to, tz)
     params |= {"starts": starts, "ends": [*starts[1:], day_start(starts[-1] + _NEXT_DAY, tz)]}
@@ -104,7 +105,7 @@ async def cost_per_day(
         "WHERE c.created_at >= :frm AND c.created_at < :to) x ON x.created_at >= b.d AND x.created_at < b.e "
         "GROUP BY b.d ORDER BY b.d"
     ), params)).all()  # fmt: skip
-    return tuple(DayCost(day_start=d, cost_usd=float(cost)) for d, cost in rows)
+    return tuple(DayCost(day_start=d.astimezone(UTC), cost_usd=float(cost)) for d, cost in rows)
 
 
 async def latency_p95_by_step(conn: AsyncConnection, frm: datetime, to: datetime) -> dict[str, float]:

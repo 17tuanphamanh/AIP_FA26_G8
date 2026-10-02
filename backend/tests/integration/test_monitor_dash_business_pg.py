@@ -116,7 +116,7 @@ async def test_ratios_ignore_parent_with_different_outcome(rw: AsyncEngine, mon:
     weighted = await q(mon, b.escalation_rate_weighted, 16)
     assert weighted.raw == 1.0
     assert weighted.by_group == {"routine": 1.0, "approval": None, "sensitive": None}  # con không tới M5 → routine
-    assert weighted.weighted == 1.0
+    assert weighted.weighted == pytest.approx(1.0)  # weigh() nhân/chia float: 3 lá routine ra 0,9999999999999999
 
 
 @pytest.mark.asyncio
@@ -362,11 +362,11 @@ async def test_business_metrics_all_keys_and_unavailable(rw: AsyncEngine, mon: A
 
 @pytest.mark.asyncio
 async def test_window_bounds(rw: AsyncEngine, mon: AsyncEngine) -> None:
-    frm, to = win(15)
+    frm, to = win(25)  # lá `to` rơi vào 26/01 00:00 UTC (07:00 VN), ngày không test nào dùng (R26 sửa kèm a)
     async with rw.begin() as conn:
         await resolved(conn, frm)  # đúng frm → tính
         await escalated(conn, to, "E1")  # đúng to → không tính
-    assert await q(mon, b.escalation_rate_raw, 15) == 0.0  # đã đo, không có ca escalate (khác None)
+    assert await q(mon, b.escalation_rate_raw, 25) == 0.0  # đã đo, không có ca escalate (khác None)
 
 
 @pytest.mark.asyncio
