@@ -475,6 +475,77 @@ def test_failed_rules_not_recovery_and_cadence(
     assert [r.levelno for r in m9_records(caplog) if "phục hồi" in r.getMessage()] == [logging.INFO]
 
 
+def test_summary_level_cadence_failed_rules(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Q-M9-B1-20: luật lỗi không còn nâng dòng tổng lên WARNING mỗi lượt — chỉ ở lượt IncidentLog báo (lần đầu, tập luật
+    lỗi đổi, qua 1 giờ), trùng đúng với dòng "luật lỗi:". Các lượt còn lại (0 draft) → DEBUG. Thứ tự tên luật khác nhau
+    không phải tập đổi."""
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock)
+    a = sorted(B1_RULES)
+    plan: list[tuple[int, list[str]]] = [  # (phút, tập luật lỗi)
+        (0, a), (1, a), (2, a[::-1]), (3, a), (4, a[:1]), (5, a[:1]), (64, a[:1]), (65, a[:1]),
+    ]  # fmt: skip
+    levels: list[int] = []
+    rule_lines: list[int] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, failed in plan:
+            clock.set(T0 + at * MIN)
+            caplog.clear()
+            fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=failed, skipped_rules=[]))
+            asyncio.run(job.minute())
+            ((level, message),) = summaries(caplog)
+            assert message == summary(0, 0, 0, 0, len(failed))
+            levels.append(level)
+            rule_lines.append(len([r for r in m9_records(caplog, logging.WARNING) if "luật lỗi:" in r.getMessage()]))
+    W, D = logging.WARNING, logging.DEBUG  # viết tắt cho bảng mức
+    assert levels == [W, D, D, D, W, D, W, D]
+    assert rule_lines == [1, 0, 0, 0, 1, 0, 1, 0]  # dòng tổng WARNING đúng ở lượt có dòng "luật lỗi:"
+
+
+@pytest.mark.parametrize("with_failed_rules", [False, True])
+def test_summary_warning_every_run_when_write_errors(
+    with_failed_rules: bool, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`lỗi > 0` → dòng tổng WARNING MỌI lượt, không phụ thuộc IncidentLog. Ca có luật lỗi: lượt 2, 3 IncidentLog không
+    báo nhưng lỗi ghi vẫn giữ WARNING."""
+    clock = FakeClock(T0)
+    writer = FakeWriter(lambda d: ValueError("hỏng"))
+    job = make_job(FakeEngine(), clock, writer)
+    failed = ["refresh_reuse"] if with_failed_rules else []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at in (0, 1, 2):
+            clock.set(T0 + at * MIN)
+            fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=failed,
+                                                  skipped_rules=[]))  # fmt: skip
+            asyncio.run(job.minute())
+    assert summaries(caplog) == [(logging.WARNING, summary(1, 0, 0, 1, len(failed)))] * 3
+    assert len([r for r in m9_records(caplog, logging.WARNING) if "luật lỗi:" in r.getMessage()]) == len(failed)
+
+
+def test_summary_info_when_failed_rules_unreported_but_written(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Q-M9-B2-8 (mặc định, chờ anh Tuấn Anh xác nhận): luật lỗi mà IncidentLog KHÔNG báo + có cảnh báo mới → INFO (cảnh
+    báo mới phải thấy, WARNING sẽ phá nhịp đã giãn); lượt sau chỉ còn trùng → DEBUG. Lượt đầu (IncidentLog báo) → WARNING."""
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock)
+    failed = ["policy_saved"]
+    new = [draft("refresh_reuse", "u-1")]
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, drafts in ((0, []), (1, new), (2, new)):
+            clock.set(T0 + at * MIN)
+            fake_evaluate(monkeypatch, EvalResult(drafts=drafts, failed_rules=failed, skipped_rules=[]))
+            asyncio.run(job.minute())
+    assert summaries(caplog) == [
+        (logging.WARNING, summary(0, 0, 0, 0, 1)),
+        (logging.INFO, summary(1, 1, 0, 0, 1)),
+        (logging.DEBUG, summary(1, 0, 1, 0, 1)),
+    ]
+    assert [r.getMessage() for r in m9_records(caplog) if "luật lỗi:" in r.getMessage()] == [
+        f"{MONITOR_RULES_MINUTE}: luật lỗi: policy_saved"
+    ]  # chỉ ở lượt 0
+
+
 # ---- timeout một lượt ------------------------------------------------------------------------------------------------
 
 

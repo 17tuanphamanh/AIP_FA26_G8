@@ -94,8 +94,10 @@ async def run() -> None:
 # Import `rules_data` (đầu file, noqa F401) để đăng ký loader; `spend` đọc ở worker vì `app.monitor` không import
 # `app.llm`.
 # Không bỏ sót nhờ lookback 24 giờ của từng luật, không trùng nhờ khoá `(rule_id, subject, window_start)`.
-# Nhịp log (review #24): dòng tổng `nháp= ghi= trùng= lỗi= luật_lỗi=` — WARNING khi có lỗi ghi hoặc luật lỗi; INFO ở
-# lượt chạy được đầu tiên và khi có cảnh báo mới; còn lại DEBUG (`core/logging.py` đã tắt INFO APScheduler vì quá dày).
+# Nhịp log (review #24, Q-M9-B1-20): dòng tổng `nháp= ghi= trùng= lỗi= luật_lỗi=` — WARNING khi có lỗi ghi, hoặc khi
+# IncidentLog báo luật lỗi ở lượt này (lần đầu / tập luật lỗi đổi / mỗi giờ); INFO ở lượt chạy được đầu tiên và khi có
+# cảnh báo mới (kể cả khi luật lỗi mà IncidentLog không báo — Q-M9-B2-8); còn lại DEBUG (`core/logging.py` đã tắt INFO
+# APScheduler vì quá dày).
 
 MONITOR_RULES_MINUTE = "monitor_rules_minute"
 MONITOR_RULES_SECONDS = 60
@@ -178,14 +180,16 @@ class MonitorRulesJob:
             if self._incident.failed(key):
                 log.error("%s lỗi: %s sqlstate=%s", MONITOR_RULES_MINUTE, *key)
             return
+        reported = False  # IncidentLog có báo luật lỗi ở lượt này không — quyết mức dòng tổng bên dưới
         if result.failed_rules:  # luật lỗi KHÔNG phải lượt thành công — không phục hồi (review #24 mục 1)
-            if self._incident.failed(("luật_lỗi", frozenset(result.failed_rules))):
+            reported = self._incident.failed(("luật_lỗi", frozenset(result.failed_rules)))
+            if reported:
                 log.warning("%s: luật lỗi: %s", MONITOR_RULES_MINUTE, ", ".join(result.failed_rules))
         elif failures := self._incident.recovered():
             log.info("%s phục hồi sau %d lượt lỗi", MONITOR_RULES_MINUTE, failures)
         if result.skipped_rules:
             log.info("%s: luật bỏ qua (nguồn pending): %s", MONITOR_RULES_MINUTE, ", ".join(result.skipped_rules))
-        if errors or result.failed_rules:
+        if errors or reported:
             level = logging.WARNING
         elif written or not self._announced:
             level = logging.INFO
