@@ -2,7 +2,7 @@
 // (giờ MÁY CHỦ: api/serverClock.ts). Tên khoá của `action` / `risk` / `facts` KHÔNG được đọc ở đây: phiếu hiện đúng
 // object đã băm, đủ mọi khoá (KH 4.2 #5), risk hiện khoá–giá trị chung (F4 P1).
 import { NOTE_MAX } from "../../api/approvals.ts";
-import { ApiError, errorMessage, routeMissing } from "../../api/errors.ts";
+import { ApiError, errorMessage } from "../../api/errors.ts";
 import type {
   ApprovalListItem,
   ApprovalStatus,
@@ -80,6 +80,15 @@ export const STATUS_LABEL: Record<ApprovalStatus, string> = {
   timeout: "Hết hạn — đã chuyển L2",
 };
 
+/** Dải chỉ đọc của phiếu đã rời bước duyệt: câu viết riêng từng trạng thái — KHÔNG hạ chữ của nhãn ("L2" giữ hoa). */
+const READONLY_STATE: Partial<Record<ApprovalStatus, string>> = {
+  approved: "đã đồng ý",
+  rejected: "đã từ chối",
+  timeout: "hết hạn, đã chuyển L2",
+};
+export const readonlyText = (status: ApprovalStatus): string =>
+  `Phiếu ${READONLY_STATE[status] ?? "không còn chờ duyệt"} — chỉ xem, không quyết định được nữa.`;
+
 /** Phase 4 chỉ có intent VPN (KH 4.6). Loại lạ → hiện nguyên mã, không đoán nghĩa. */
 export const ACTION_LABEL: Record<string, string> = {
   renew_vpn_cert: "Cấp lại chứng chỉ VPN",
@@ -118,6 +127,11 @@ export const TICKET_UNAVAILABLE = "Chưa tải được chi tiết yêu cầu.";
 // ---------------------------------------------------------------- Bảng của object đã băm
 
 export type FlatEntry = { key: string; value: string };
+
+/** Giá trị ngắn (≤ ngần này ký tự HIỂN THỊ, gồm ngoặc kép của chuỗi JSON) không ngắt giữa chừng: không vừa cạnh khoá thì
+ *  CẢ giá trị xuống dòng dưới (lỗi F4: dấu `"` cuối của `"approval_required"` rơi riêng một dòng ở cột 360 px). */
+export const SHORT_VALUE_MAX = 24;
+export const isShortValue = (value: string): boolean => [...value].length <= SHORT_VALUE_MAX;
 
 /**
  * Trải phẳng ĐỦ mọi khoá (đệ quy): object lồng → "cha.con", mảng → "cha[0]"; object/mảng rỗng giữ một dòng "{}" / "[]"
@@ -217,12 +231,36 @@ export function overrideBody(decision: OverrideDecision, reason: OverrideReasonC
   return text ? { override_decision: decision, reason_code: reason, note: text } : { override_decision: decision, reason_code: reason };
 }
 
+export const OVERRIDE_DONE = "Đã ghi nhận ghi đè.";
+export const OVERRIDE_ORIGINAL_PREFIX = "Quyết định ban đầu của hệ thống: ";
+export const OVERRIDE_NOTE_INVALID = "Ghi chú không hợp lệ hoặc trống sau khi ẩn thông tin nhạy cảm — hãy viết lại ghi chú.";
+/** 403 `forbidden`: không có quyền HOẶC người gửi tự ghi đè — cùng một mã, client không phân biệt được (4d). */
+export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).";
+export const OVERRIDE_NOT_FOUND = "Không tìm thấy ticket hoặc bạn không được xem ticket này.";
+
+/** Nhãn của một quyết định ghi đè (như hộp chọn); giá trị lạ / thiếu → null — không đoán. */
+export const overrideDecisionLabel = (value: unknown): string | null =>
+  OVERRIDE_OPTIONS.find((option) => option.value === value)?.title ?? null;
+
+/** 422 `invalid_request` vì ghi chú (thiếu khi "Khác", quá dài, hoặc rỗng sau khi che). Backend trả `note`; `errors.ts` đã
+ *  bỏ tiền tố `body.` — nhận cả hai cho chắc. */
+const NOTE_FIELDS: ReadonlySet<string> = new Set(["note", "body.note"]);
+export const noteRejected = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 422 && error.code === "invalid_request" && error.fields.some((f) => NOTE_FIELDS.has(f));
+
 export function overrideErrorMessage(error: unknown): string {
   if (!(error instanceof ApiError)) return errorMessage(null);
-  if (routeMissing(error)) return "Ghi đè có từ Phase 4 (4d) — máy chủ chưa có chức năng này.";
-  if (error.status === 404) return "Không tìm thấy ticket hoặc bạn không được xem ticket này.";
+  if (noteRejected(error)) return OVERRIDE_NOTE_INVALID;
+  if (error.status === 403 && error.code === "forbidden") return OVERRIDE_FORBIDDEN;
+  if (error.status === 404) return OVERRIDE_NOT_FOUND; // kể cả "Not Found" (không có route) — không còn trang "có từ…"
   return errorMessage(error);
 }
+
+/** Lỗi của hộp ghi đè: câu + chỗ gắn (`note` → ngay dưới ô ghi chú; null → dòng lỗi chung). */
+export const overrideFailure = (error: unknown): { text: string; field: "note" | null } => ({
+  text: overrideErrorMessage(error),
+  field: noteRejected(error) ? "note" : null,
+});
 
 /** Mã ticket nhập tay: ký tự của mã ticket thật (uuid) và mã fixture; ≤ 64 (cột `tickets.ticket_id`). */
 export const TICKET_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;

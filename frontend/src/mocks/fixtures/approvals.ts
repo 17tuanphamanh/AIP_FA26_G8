@@ -216,13 +216,27 @@ function build(spec: Spec, base: number): ApprovalFixture {
 
 export const buildApprovalFixtures = (base: number): ApprovalFixture[] => SPECS.map((spec) => build(spec, base));
 
-// ---------------------------------------------------------------- ghi đè (4d)
+// ---------------------------------------------------------------- ghi đè (4d — route THẬT `e510a6e`)
 
-/** Ticket minh hoạ cho hộp ghi đè — không có ở backend (GET thật → 404). Kết quả cố định theo mã (F4 P2):
+/** Nguyên văn `NOTICE_SECRET` của privacy guard (backend/app/guard/privacy.py) — giao diện KHÔNG hiện, chỉ đếm. */
+const NOTICE_SECRET = "Vui lòng không gửi mật khẩu hoặc mã bí mật qua chat. Phần đó đã được ẩn và không được lưu.";
+
+export type DemoTicket = {
+  kind: "open" | "same" | "closed";
+  /** Quyết định gốc server suy từ audit — trả trong 201, chọn trùng → 422 same_as_original. */
+  original: OverrideDecision;
+  /** `notices` của 201 (ghi chú có bí mật bị che). */
+  notices: string[];
+  reauthFirst?: boolean;
+};
+
+/** Ticket minh hoạ cho hộp ghi đè — không có ở backend (GET thật → 404). Kết quả cố định theo mã (F4 P2, N4d P7):
  *  `open` → 409 ticket_open · `same` → 422 same_as_original · `reauth` → lần gọi ĐẦU mỗi phiên trang 403
- *  reauth_required, các lần sau như ticket đã kết thúc (quyết định gốc AUTO) → 201. */
-export const DEMO_TICKETS: Record<string, { kind: "open" | "same" | "closed"; original: OverrideDecision; reauthFirst?: boolean }> = {
-  [`${TICKET_DEMO_PREFIX}open`]: { kind: "open", original: "AUTO" },
-  [`${TICKET_DEMO_PREFIX}same`]: { kind: "same", original: "AUTO" },
-  [`${TICKET_DEMO_PREFIX}reauth`]: { kind: "closed", original: "AUTO", reauthFirst: true },
+ *  reauth_required, các lần sau như ticket đã kết thúc (gốc AUTO) → 201 · `notice` → đã kết thúc (gốc L2) → 201 có
+ *  `notices` một phần tử. */
+export const DEMO_TICKETS: Record<string, DemoTicket> = {
+  [`${TICKET_DEMO_PREFIX}open`]: { kind: "open", original: "AUTO", notices: [] },
+  [`${TICKET_DEMO_PREFIX}same`]: { kind: "same", original: "AUTO", notices: [] },
+  [`${TICKET_DEMO_PREFIX}reauth`]: { kind: "closed", original: "AUTO", notices: [], reauthFirst: true },
+  [`${TICKET_DEMO_PREFIX}notice`]: { kind: "closed", original: "L2", notices: [NOTICE_SECRET] },
 };

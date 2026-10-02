@@ -1,5 +1,5 @@
 // t49 + handler giả F4 (chỉ nạp ở dev:mock). Chạy handler trực tiếp bằng `getResponse` của MSW — không service worker,
-// không mạng. Lời gọi backend THẬT của handler (`/api/auth/me`, `/api/tickets/{id}` qua bypass) đi vào fetch giả.
+// không mạng. Lời gọi backend THẬT của handler (`/api/auth/me`, `/api/approvals` qua bypass) đi vào fetch giả.
 import { getResponse, isPassthroughResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import type { ApprovalListItem, Me } from "../../api/types.ts";
@@ -153,14 +153,16 @@ describe("handler ghi đè (4d P1–P4) — kết quả cho F4-6", () => {
     expect(await run("tkt-demo-reauth")).toStrictEqual([409, "already_overridden"]);
   });
 
-  it("ticket thật: không có → 404; chưa kết thúc → 409 ticket_open; đã kết thúc → 201; không có decision:override → 403", async () => {
-    stubBackend(L1, { "t-open": { final_state: null }, "t-done": { final_state: "S_RESOLVED" } });
-    const status = async (id: string) => (await getResponse(overrideHandlers, post(`/api/tickets/${id}/override`, body)))?.status;
-    expect(await status("t-none")).toBe(404);
-    expect(await status("t-open")).toBe(409);
-    expect(await status("t-done")).toBe(201);
+  // N4d P7: route 4d đã có → ticket thật KHÔNG còn được mock (trước đây: đọc ticket thật rồi tự trả 201 giả).
+  it("ticket thật (không tiền tố minh hoạ) → passthrough, 0 lời gọi; không có decision:override → 403 (id minh hoạ)", async () => {
+    const seen = stubBackend(L1, { "t-open": { final_state: null }, "t-done": { final_state: "S_RESOLVED" } });
+    for (const id of ["t-none", "t-open", "t-done"]) {
+      const res = await getResponse(overrideHandlers, post(`/api/tickets/${id}/override`, body));
+      expect(res === undefined || isPassthroughResponse(res)).toBe(true);
+    }
+    expect(seen).toStrictEqual([]);
     stubBackend(L2);
-    expect(await status("t-done")).toBe(403);
+    expect((await getResponse(overrideHandlers, post("/api/tickets/tkt-demo-notice/override", body)))?.status).toBe(403);
   });
 });
 
@@ -293,5 +295,66 @@ describe("t85: xem phiếu chỉ chặn id apv-demo-; id khác → passthrough; 
     const watcher = await decide("apv-demo-viewer");
     expect(watcher.status).toBe(403);
     expect(await watcher.json()).toStrictEqual({ detail: "forbidden" });
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t92 (N4d P7)
+
+describe("t92: handler ghi đè CHỈ chặn tiền tố tkt-demo-; id khác → passthrough; 201 đúng hình route thật; lỗi đúng tên trường + thứ tự code", () => {
+  const body = { override_decision: "HITL", reason_code: "too_risky_for_auto" };
+  const MGR: Me = { user_id: "mgr_01", role: "manager", permissions: ["approval:decide", "decision:override"] };
+  const send = async (id: string, b: unknown = body) => (await getResponse(overrideHandlers, post(`/api/tickets/${id}/override`, b)))!;
+  const result = async (id: string, b: unknown = body) => {
+    const res = await send(id, b);
+    return [res.status, await res.json()];
+  };
+
+  it.each([
+    ["uuid", crypto.randomUUID()],
+    ["id thường", "t-done"],
+    ["hoa", "TKT-DEMO-OPEN"],
+    ["tiền tố ở giữa", "x-tkt-demo-open"],
+    ["thiếu gạch cuối", "tkt-demo"],
+  ])("%s → passthrough, không gọi gì (kể cả /me), không 201 giả", async (_name, id) => {
+    const seen = stubBackend(L1, { [id]: { final_state: "S_RESOLVED" } });
+    const res = await getResponse(overrideHandlers, post(`/api/tickets/${id}/override`, body));
+    expect(res === undefined || isPassthroughResponse(res)).toBe(true);
+    expect(seen).toStrictEqual([]);
+  });
+
+  it("tkt-demo-notice: 422 đúng tên trường backend (không 'body.'); trùng gốc → 422 TRƯỚC 'che xong rỗng'; hợp lệ → 201 đúng 5 khoá + notices 1; lần 2 → 409; người khác → 201", async () => {
+    stubBackend(L1);
+    const id = "tkt-demo-notice";
+    const invalid = (fields: string[]) => [422, { error: "invalid_request", fields }];
+    expect(await result(id, { ...body, reason_code: "other" })).toStrictEqual(invalid(["note"]));
+    expect(await result(id, { ...body, reason_code: "other", note: "   " })).toStrictEqual(invalid(["note"]));
+    expect(await result(id, { ...body, force: true })).toStrictEqual(invalid(["<extra>"]));
+    expect(await result(id, { ...body, override_decision: "ESCALATE" })).toStrictEqual(invalid(["override_decision"]));
+    expect(await result(id, { ...body, note: "x".repeat(1001) })).toStrictEqual(invalid(["note"]));
+    expect(await result(id, [body])).toStrictEqual(invalid([""]));
+    // Gốc của tkt-demo-notice là L2: chọn L2 → same_as_original, kể cả khi ghi chú che xong sẽ rỗng (thứ tự code e510a6e).
+    expect(await result(id, { override_decision: "L2", reason_code: "other", note: "​" })).toStrictEqual([422, { detail: "same_as_original" }]);
+    // Ghi chú chỉ gồm ký tự loại Cf: qua kiểm strip, guard che xong rỗng → 422 note.
+    expect(await result(id, { ...body, reason_code: "other", note: "​⁠" })).toStrictEqual(invalid(["note"]));
+    const ok = await send(id, { ...body, note: "Có mật khẩu trong ghi chú" });
+    expect(ok.status).toBe(201);
+    expect(isPassthroughResponse(ok)).toBe(false);
+    expect(Number.isNaN(Date.parse(ok.headers.get("Date") ?? ""))).toBe(false);
+    const recorded = (await ok.json()) as Record<string, unknown>;
+    expect(Object.keys(recorded).sort()).toStrictEqual(["notices", "original_decision", "override_decision", "reason_code", "ticket_id"]);
+    expect(recorded).toMatchObject({ ticket_id: id, original_decision: "L2", override_decision: "HITL", reason_code: "too_risky_for_auto" });
+    expect(recorded.notices).toHaveLength(1);
+    expect(await result(id)).toStrictEqual([409, { detail: "already_overridden" }]); // mỗi người một lần / ticket
+    stubBackend(MGR);
+    expect((await send(id)).status).toBe(201); // người khác vẫn ghi được
+  });
+
+  it("thứ tự: không quyền → 403 trước mọi thứ; id minh hoạ không có → 404 trước thân; ticket còn mở → 409 trước 422", async () => {
+    stubBackend(L2);
+    expect((await send("tkt-demo-khong-co", [])).status).toBe(403);
+    stubBackend(L1);
+    expect(await result("tkt-demo-khong-co", [])).toStrictEqual([404, { detail: "not_found" }]);
+    expect(await result("tkt-demo-open", { force: true })).toStrictEqual([409, { detail: "ticket_open" }]);
+    expect(await result("tkt-demo-same", { ...body, override_decision: "L2" })).toStrictEqual([422, { detail: "same_as_original" }]);
   });
 });

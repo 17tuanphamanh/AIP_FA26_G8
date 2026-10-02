@@ -22,6 +22,7 @@ import {
   MISSING_VALUE,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
+  readonlyText,
   reflexText,
   rejectBody,
   remainingClock,
@@ -234,7 +235,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
           {!pending ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-group bg-group px-5 py-3.5">
               <p role="status" data-testid="approval-readonly" className="grow">
-                Phiếu {STATUS_LABEL[view.status].toLowerCase()} — chỉ xem, không quyết định được nữa.
+                {readonlyText(view.status)}
               </p>
               {/* Q-fe-24: lối vào ghi đè theo quyền + `ticket_id` của phiếu (ticket đã rời bước duyệt); server quyết. */}
               {hasPerm(me, "decision:override") ? (

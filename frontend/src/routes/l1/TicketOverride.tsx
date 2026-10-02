@@ -11,7 +11,7 @@ import { TICKET_ID_PATTERN, TICKET_UNAVAILABLE } from "./inbox.ts";
 // Xem ticket CHỈ ĐỌC để ghi đè (KH 4.6: tab "Hệ thống đã tự xử lý" ẩn tới Phase 7 → mở bằng mã ticket, hoặc từ phiếu đã
 // quyết). Hội thoại: `GET /api/tickets/{id}` THẬT (component chỉ đọc của F3, không mock). Q-fe-24 [Chốt]: nút "Ghi đè…"
 // hiện theo quyền `decision:override`, KHÔNG phụ thuộc GET ticket thành công — server quyết (404 / 409 `ticket_open`…).
-// GET lỗi (vd ticket minh hoạ `tkt-demo-*` không có ở backend → 404) → câu trung tính, không mã lỗi.
+// GET lỗi (vd ticket minh hoạ của dev:mock không có ở backend → 404) → câu trung tính, không mã lỗi. Ghi đè: route THẬT 4d.
 
 export function TicketOverrideRoute() {
   const { ticketId = "" } = useParams();

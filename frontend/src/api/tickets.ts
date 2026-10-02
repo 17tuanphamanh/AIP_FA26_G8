@@ -1,5 +1,5 @@
 // Route ticket của nhân viên (KH 1.1; backend/app/api/tickets.py). Đều là route THẬT — F2 không dùng MSW. Ngoại lệ F6:
-// `/reply` (CHƯA CÓ, T20); MSW chỉ chặn GET + reply của id `tkt-demo-multi-` (mocks/handlers/employee-multi.ts).
+// `/reply` (CHƯA CÓ, T20); MSW chỉ chặn GET + reply của id ticket nhiều ý minh hoạ (mocks/handlers/employee-multi.ts).
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
@@ -33,8 +33,8 @@ export async function confirmTicket(id: string, body: ConfirmIn): Promise<Accept
   return (await api.request<Accepted>(`${ticketPath(id)}/confirm`, { method: "POST", json: body })).data;
 }
 
-/** Chỉ khi `waiting_for = reply` (ticket cha nhiều ý, D-31). Route CHƯA CÓ — Phase 5 T20; hiện chỉ MSW với id
- *  `tkt-demo-multi-` (hình dạng đề xuất: PLAN-fe mục 8). Body dựng ở routes/employee/multi.ts `digestReplyBody`. */
+/** Chỉ khi `waiting_for = reply` (ticket cha nhiều ý, D-31). Route CHƯA CÓ — Phase 5 T20; hiện chỉ MSW với id ticket
+ *  nhiều ý minh hoạ (hình dạng đề xuất: PLAN-fe mục 8). Body dựng ở routes/employee/multi.ts `digestReplyBody`. */
 export async function replyTicket(id: string, body: ParentReplyIn): Promise<Accepted> {
   return (await api.request<Accepted>(`${ticketPath(id)}/reply`, { method: "POST", json: body })).data;
 }

@@ -9,12 +9,12 @@ import { INBOX_REFRESH_MS, inboxRefetchInterval, listApprovals, overrideTicket }
 import { type AuthChannel, createClient } from "../../api/client.ts";
 import { errorMessage, ApiError, GENERIC_LOGIN_ERROR } from "../../api/errors.ts";
 import { offsetFrom, recordServerDate, serverNow } from "../../api/serverClock.ts";
-import type { ApprovalListItem, ApprovalViewP4, Me } from "../../api/types.ts";
+import type { ApprovalListItem, ApprovalStatus, ApprovalViewP4, Me, OverrideIn } from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { useAuth } from "../../auth/useAuth.ts";
-import { ActionView } from "../../components/ActionView.tsx";
+import { ActionView, FlatTable } from "../../components/ActionView.tsx";
 import { FlashNotice } from "../../components/FlashNotice.tsx";
 import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { ApprovalDetailRoute } from "./ApprovalDetail.tsx";
@@ -27,14 +27,23 @@ import {
   decisionRole,
   INBOX_COUNT_STALE_TEXT,
   INBOX_STALE_TEXT,
+  isShortValue,
   isUrgent,
   NOTICES_TEXT,
+  OVERRIDE_DONE,
+  OVERRIDE_FORBIDDEN,
+  OVERRIDE_NOT_FOUND,
+  OVERRIDE_NOTE_INVALID,
+  overrideBody,
+  overrideErrorMessage,
   PLAN_CHANGED_TEXT,
   isReflex,
+  readonlyText,
   REFLEX_MIN_SECONDS,
   reflexText,
   remainingShort,
   RISK_MISSING_TEXT,
+  SHORT_VALUE_MAX,
   sortByDeadline,
   TICKET_UNAVAILABLE,
   VIEW_NOT_FOUND_TEXT,
@@ -591,11 +600,13 @@ describe("t47: ghi đè — 'Khác' thiếu ghi chú → không gửi; 409/422 �
     expect((within(dialog).getByLabelText("Ghi chú ghi đè") as HTMLTextAreaElement).value).toBe("Ca này lẽ ra tự làm được.");
   });
 
-  it("route chưa có (404 'Not Found') → 'Ghi đè có từ Phase 4 (4d)'", async () => {
+  // N4d P6: route 4d đã có → bỏ câu "có từ Phase 4"; 404 "Not Found" (không có route) đi đường không tìm thấy chung.
+  it("404 'Not Found' → câu không tìm thấy chung, không còn chữ 'Phase 4'", async () => {
     stubFetch((method) => (method === "POST" ? json(404, { detail: "Not Found" }) : undefined));
     const dialog = await openOverride("tkt-z");
     fillOverride(dialog, "Cần người duyệt", "policy_gap", "");
-    expect((await within(dialog).findByRole("alert")).textContent).toContain("Ghi đè có từ Phase 4 (4d)");
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(OVERRIDE_NOT_FOUND);
+    expect(dialog.textContent).not.toMatch(/Phase 4/);
   });
 });
 
@@ -1231,5 +1242,252 @@ describe("t87: đã có dữ liệu mà tải lại lỗi → GIỮ danh sách c
     await vi.advanceTimersByTimeAsync(INBOX_REFRESH_MS + 1_000); // pending tải lại → 200
     await waitFor(() => expect(countStale()).toBeNull());
     expect(screen.getByRole("tab", { name: /^Chờ duyệt/ }).textContent).toBe("Chờ duyệt · 1");
+  });
+});
+
+// ================================================================================================ N4d — nối thật 4d (ghi đè)
+// Hợp đồng: backend/app/api/tickets.py @e510a6e — 201 `{ticket_id, original_decision, override_decision, reason_code, notices}`;
+// lỗi 403 `forbidden` / `reauth_required`, 404, 409 `ticket_open` / `already_overridden`, 422 `invalid_request` (`fields`
+// KHÔNG có tiền tố `body.`) / `same_as_original`, 503 `privacy_guard_unavailable`.
+
+const RECORDED = {
+  ticket_id: "6a1c2e4f-0b3d-4e5f-8a7b-9c0d1e2f3a4b",
+  original_decision: "HITL",
+  override_decision: "L2",
+  reason_code: "should_not_escalate",
+  notices: [],
+};
+const OVERRIDE_BODY: OverrideIn = { override_decision: "L2", reason_code: "should_not_escalate" };
+
+// ------------------------------------------------------------------------------------------------ t88
+
+describe("t88: overrideTicket đọc CHẶT thân 201 — server đã trả 201 thì luôn là ĐÃ GHI (2xx khác → lỗi)", () => {
+  it("201 đủ thân → trả đúng OverrideRecorded; 1 POST đúng URL (mã hoá id), body đúng OverrideIn", async () => {
+    const calls = stubFetch((method) => (method === "POST" ? json(201, RECORDED) : undefined));
+    expect(await overrideTicket("tkt 1/x", OVERRIDE_BODY)).toStrictEqual(RECORDED);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "POST", url: "/api/tickets/tkt%201%2Fx/override" });
+    expect(JSON.parse(calls[0]!.body!)).toStrictEqual(OVERRIDE_BODY);
+  });
+
+  it.each([
+    ["{status:'recorded'} (thiếu ticket_id)", () => json(201, { status: "recorded" })],
+    ["ticket_id là số", () => json(201, { ...RECORDED, ticket_id: 7 })],
+    ["thiếu notices", () => json(201, { ticket_id: "t", original_decision: "HITL" })],
+    ["notices là chuỗi", () => json(201, { ...RECORDED, notices: "đã che" })],
+    ["mảng", () => json(201, [RECORDED])],
+    ["null", () => json(201, null)],
+    ["thân rỗng, không Content-Type", () => new Response(null, { status: 201 })],
+    ["text/plain", () => new Response("ok", { status: 201, headers: { "Content-Type": "text/plain" } })],
+  ])("201 %s → resolve null (đã ghi, không đọc được chi tiết) — KHÔNG ném", async (_name, response) => {
+    stubFetch((method) => (method === "POST" ? response() : undefined));
+    await expect(overrideTicket("t", OVERRIDE_BODY)).resolves.toBeNull();
+  });
+
+  // Q-fe-39 = A (chốt DỪNG 1 N4d): thân 201 mang Content-Type JSON mà rỗng/hỏng → client.ts ném khi đọc thân, KHÔNG phân
+  // biệt được với refresh hỏng (khi đó ghi đè CHƯA được ghi) → KHÔNG được bắt để báo "đã ghi". Gửi lại → 409
+  // already_overridden là đúng sự thật, không ghi trùng. Đừng "sửa" thành bắt SyntaxError.
+  it("Q-fe-39 = A: 201 Content-Type JSON mà thân rỗng → client ném → hộp hiện lỗi chung, KHÔNG 'Đã ghi nhận ghi đè'", async () => {
+    const empty = () => new Response("", { status: 201, headers: { "Content-Type": "application/json" } });
+    stubFetch((method) => (method === "POST" ? empty() : undefined));
+    await expect(overrideTicket("t", OVERRIDE_BODY)).rejects.toMatchObject({ name: "SyntaxError" });
+    const dialog = await openOverride("tkt-q39");
+    fillOverride(dialog, "Tự xử lý", "policy_gap", "");
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(errorMessage(null));
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    expect(dialog.textContent).not.toContain("Đã ghi nhận ghi đè");
+  });
+
+  // Q-fe-41 = A (chốt DỪNG 2 N4d): route chỉ trả 201 khi ghi; 2xx khác (proxy sai…) = không chắc đã ghi → báo lỗi.
+  it("Q-fe-41 = A: 200 + thân ĐÚNG dạng → ApiError 502 → hộp hiện lỗi chung, KHÔNG 'Đã ghi nhận ghi đè'; 202 / 204 cũng vậy", async () => {
+    stubFetch((method) => (method === "POST" ? json(200, RECORDED) : undefined));
+    await expect(overrideTicket("t", OVERRIDE_BODY)).rejects.toMatchObject({ status: 502, code: "unexpected_override_status" });
+    const dialog = await openOverride("tkt-q41");
+    fillOverride(dialog, "Tự xử lý", "policy_gap", "");
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(errorMessage(new ApiError(502, "unexpected_override_status")));
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    expect(dialog.textContent).not.toContain("Đã ghi nhận ghi đè");
+    for (const response of [() => json(202, RECORDED), () => new Response(null, { status: 204 })]) {
+      stubFetch((method) => (method === "POST" ? response() : undefined));
+      await expect(overrideTicket("t", OVERRIDE_BODY)).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  it("overrideBody: ghi chú rỗng / chỉ khoảng trắng → KHÔNG khoá note; có → note đã cắt khoảng trắng", () => {
+    expect(overrideBody("HITL", "policy_gap", "")).toStrictEqual({ override_decision: "HITL", reason_code: "policy_gap" });
+    expect(overrideBody("HITL", "policy_gap", " \n\t ")).toStrictEqual({ override_decision: "HITL", reason_code: "policy_gap" });
+    expect(overrideBody("L2", "other", "  Ca này nên chuyển L2.  ")).toStrictEqual({
+      override_decision: "L2",
+      reason_code: "other",
+      note: "Ca này nên chuyển L2.",
+    });
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t89
+
+describe("t89: sau 201 — câu xác nhận + quyết định ban đầu (server suy) + câu chung khi ghi chú bị che", () => {
+  const NOTE = "Ca này lẽ ra phải chuyển L2.";
+
+  async function sendWith(response: () => Response) {
+    stubFetch((method) => (method === "POST" ? response() : undefined));
+    const dialog = await openOverride("tkt-89");
+    fillOverride(dialog, "Chuyển L2", "should_not_escalate", NOTE);
+    const done = await within(dialog).findByTestId("override-done");
+    expect(done.getAttribute("role")).toBe("status");
+    expect(within(done).getByText(OVERRIDE_DONE)).toBeTruthy();
+    expect(done.textContent).not.toContain(NOTE); // không nhắc lại ghi chú
+    return done;
+  }
+
+  it("gốc HITL, notices [] → 'Quyết định ban đầu của hệ thống: Cần người duyệt'; KHÔNG câu notices", async () => {
+    const done = await sendWith(() => json(201, RECORDED));
+    expect(within(done).getByTestId("override-original").textContent).toBe("Quyết định ban đầu của hệ thống: Cần người duyệt");
+    expect(within(done).queryByTestId("override-notices")).toBeNull();
+    expect(done.textContent).not.toContain(NOTICES_TEXT);
+  });
+
+  it("notices ≠ [] → NOTICES_TEXT, KHÔNG nguyên văn notices; gốc AUTO → 'Tự xử lý'", async () => {
+    const done = await sendWith(() => json(201, { ...RECORDED, original_decision: "AUTO", notices: ["NGUYEN-VAN-NOTICE"] }));
+    expect(within(done).getByTestId("override-notices").textContent).toBe(NOTICES_TEXT);
+    expect(within(done).getByTestId("override-original").textContent).toBe("Quyết định ban đầu của hệ thống: Tự xử lý");
+    expect(document.body.textContent).not.toContain("NGUYEN-VAN-NOTICE");
+  });
+
+  it.each([
+    ["gốc lạ (mã route nội bộ)", { original_decision: "ESCALATE_L2" }],
+    ["gốc null", { original_decision: null }],
+    ["thiếu khoá gốc", { original_decision: undefined }],
+  ])("%s → chỉ câu xác nhận, KHÔNG dòng quyết định gốc, KHÔNG câu notices", async (_name, over) => {
+    const done = await sendWith(() => json(201, { ...RECORDED, ...over }));
+    expect(within(done).queryByTestId("override-original")).toBeNull();
+    expect(within(done).queryByTestId("override-notices")).toBeNull();
+    expect(done.textContent).toBe(OVERRIDE_DONE);
+  });
+
+  it("thân lạ ({status:'recorded'}) → vẫn 'Đã ghi nhận ghi đè.' (không báo lỗi giả), không chi tiết", async () => {
+    const done = await sendWith(() => json(201, { status: "recorded" }));
+    expect(done.textContent).toBe(OVERRIDE_DONE);
+    expect(within(screen.getByRole("dialog", { name: "Ghi đè quyết định" })).queryByRole("alert")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t90
+
+describe("t90: 422 invalid_request vì ghi chú → câu lỗi TẠI ô ghi chú; hộp không đóng, giữ dữ liệu đã nhập", () => {
+  it.each([["note"], ["body.note"]])("fields ['%s'] → câu P4 dưới ô ghi chú (aria-invalid, aria-describedby); không alert chung; sửa ghi chú → mất lỗi", async (field) => {
+    stubFetch((method) => (method === "POST" ? json(422, { error: "invalid_request", fields: [field] }) : undefined));
+    const dialog = await openOverride("tkt-90");
+    fillOverride(dialog, "Chỉ trả lời", "other", "​​"); // ký tự vô hình: qua kiểm ở client, server che xong rỗng
+    const error = await within(dialog).findByTestId("override-note-error");
+    expect(error.textContent).toBe(OVERRIDE_NOTE_INVALID);
+    expect(OVERRIDE_NOTE_INVALID).toBe("Ghi chú không hợp lệ hoặc trống sau khi ẩn thông tin nhạy cảm — hãy viết lại ghi chú.");
+    expect(error.getAttribute("role")).toBe("alert");
+    const note = within(dialog).getByLabelText("Ghi chú ghi đè") as HTMLTextAreaElement;
+    expect(note.getAttribute("aria-invalid")).toBe("true");
+    expect(note.getAttribute("aria-describedby")).toBe(error.id);
+    expect(within(dialog).getAllByRole("alert")).toHaveLength(1); // không thêm dòng lỗi chung
+    expect(screen.getByRole("dialog", { name: "Ghi đè quyết định" })).toBe(dialog); // hộp không đóng
+    expect(within(dialog).getByRole("radio", { name: /^Chỉ trả lời/ }).getAttribute("aria-checked")).toBe("true");
+    expect((within(dialog).getByLabelText("Lý do") as HTMLSelectElement).value).toBe("other");
+    expect(note.value).toBe("​​");
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    fireEvent.change(note, { target: { value: "Ghi chú mới" } });
+    expect(within(dialog).queryByTestId("override-note-error")).toBeNull();
+    expect(note.getAttribute("aria-invalid")).toBeNull();
+    expect(note.getAttribute("aria-describedby")).toBeNull();
+  });
+
+  it("fields ['override_decision'] → câu 422 chung, KHÔNG gắn ô ghi chú", async () => {
+    stubFetch((method) => (method === "POST" ? json(422, { error: "invalid_request", fields: ["override_decision"] }) : undefined));
+    const dialog = await openOverride("tkt-90b");
+    fillOverride(dialog, "Tự xử lý", "policy_gap", "ghi chú");
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(errorMessage(new ApiError(422, "invalid_request")));
+    expect(within(dialog).queryByTestId("override-note-error")).toBeNull();
+    expect(within(dialog).getByLabelText("Ghi chú ghi đè").getAttribute("aria-invalid")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t91
+
+describe("t91: câu lỗi của hộp ghi đè — 403 forbidden riêng; 404 (kể cả 'Not Found'); mã 4d → câu errors.ts", () => {
+  it.each([
+    ["403 forbidden (không quyền / tự ghi đè ticket của mình)", 403, { detail: "forbidden" }, OVERRIDE_FORBIDDEN],
+    ["404 not_found", 404, { detail: "not_found" }, OVERRIDE_NOT_FOUND],
+    ["404 'Not Found' (không có route)", 404, { detail: "Not Found" }, OVERRIDE_NOT_FOUND],
+    ["409 ticket_open", 409, { detail: "ticket_open" }, errorMessage(new ApiError(409, "ticket_open"))],
+    ["409 already_overridden", 409, { detail: "already_overridden" }, errorMessage(new ApiError(409, "already_overridden"))],
+    ["422 same_as_original", 422, { detail: "same_as_original" }, errorMessage(new ApiError(422, "same_as_original"))],
+    ["503 privacy_guard_unavailable", 503, { error: "privacy_guard_unavailable" }, errorMessage(new ApiError(503, "privacy_guard_unavailable"))],
+  ])("%s → đúng câu, không lỗi ô ghi chú, không báo đã ghi", async (_name, status, body, text) => {
+    stubFetch((method) => (method === "POST" ? json(status, body) : undefined));
+    const dialog = await openOverride("tkt-91");
+    fillOverride(dialog, "Tự xử lý", "approval_unnecessary", "");
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(text);
+    expect(within(dialog).queryByTestId("override-note-error")).toBeNull();
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/có từ Phase 4/);
+  });
+
+  it("hằng câu + overrideErrorMessage thuần: P5 đúng chữ; 403 mã khác → câu 403 chung; lỗi không phải ApiError → câu mất kết nối", () => {
+    expect(OVERRIDE_FORBIDDEN).toBe("Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).");
+    expect(OVERRIDE_NOT_FOUND).toBe("Không tìm thấy ticket hoặc bạn không được xem ticket này.");
+    expect(overrideErrorMessage(new ApiError(403, null))).toBe(errorMessage(new ApiError(403, null)));
+    expect(overrideErrorMessage(new ApiError(403, "reauth_required"))).toBe(errorMessage(new ApiError(403, "reauth_required")));
+    expect(overrideErrorMessage(new TypeError("Failed to fetch"))).toBe(errorMessage(null));
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t93
+
+describe("t93: thẩm mỹ — dải chỉ đọc giữ 'L2' viết hoa; bảng khoá–giá trị: giá trị ngắn không ngắt dòng", () => {
+  it("phiếu timeout → 'Phiếu hết hạn, đã chuyển L2 — …' (có 'L2', không 'l2'); câu từng trạng thái", async () => {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/to") return json(200, viewOf("to", { status: "timeout" }));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("to", { status: "timeout" })]);
+      return undefined;
+    });
+    renderAt("/approvals/to");
+    const strip = await screen.findByTestId("approval-readonly");
+    expect(strip.textContent).toBe("Phiếu hết hạn, đã chuyển L2 — chỉ xem, không quyết định được nữa.");
+    expect(strip.textContent).not.toMatch(/l2/);
+    expect(screen.getByTestId("approval-status").textContent).toBe("Hết hạn — đã chuyển L2");
+    expect(readonlyText("approved")).toBe("Phiếu đã đồng ý — chỉ xem, không quyết định được nữa.");
+    expect(readonlyText("rejected")).toBe("Phiếu đã từ chối — chỉ xem, không quyết định được nữa.");
+    expect(readonlyText("trạng_thái_lạ" as ApprovalStatus)).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
+  });
+
+  // Không `whitespace-nowrap`: ô nằm trong khung `overflow-hidden` — nowrap + ký tự rộng sẽ bị cắt đuôi không dấu hiệu
+  // (security-reviewer N4d NGHI-1). Ngắn = dòng flex-wrap: không vừa cạnh khoá thì cả giá trị xuống dòng dưới.
+  it("FlatTable: ≤ 24 ký tự hiển thị → dòng flex-wrap, ô ml-auto max-w-full; 25 → cạnh khoá như cũ; KHÔNG ô nào nowrap; MỌI ô giữ min-w-0 wrap-anywhere break-normal; chữ = JSON", () => {
+    const value = {
+      policy_decision: "approval_required", // "approval_required" có ngoặc = 19 — ca lỗi F4
+      exact: "x".repeat(22), // có ngoặc = đúng 24
+      over: "y".repeat(23), // có ngoặc = 25
+      prob: 0.5,
+      reason: "Nhân viên chưa qua thử việc", // có ngoặc = 29, có khoảng trắng
+    };
+    render(<FlatTable value={value} testId="kv" />);
+    const row = (key: string) => document.querySelector<HTMLElement>(`[data-testid="kv"][data-key="${key}"]`)!;
+    const cls = (el: Element) => el.className.split(/\s+/);
+    for (const key of ["policy_decision", "exact", "prob"]) {
+      expect(cls(row(key))).toContain("flex-wrap");
+      expect(cls(row(key).querySelector("dd")!)).toEqual(expect.arrayContaining(["ml-auto", "max-w-full"]));
+    }
+    for (const key of ["over", "reason"]) {
+      expect(cls(row(key))).not.toContain("flex-wrap");
+      expect(cls(row(key).querySelector("dd")!)).not.toContain("ml-auto");
+    }
+    for (const [key, raw] of Object.entries(value)) {
+      const dd = row(key).querySelector("dd")!;
+      expect(cls(dd)).toEqual(expect.arrayContaining(["min-w-0", "wrap-anywhere", "break-normal"]));
+      expect(cls(dd)).not.toContain("break-all");
+      expect(cls(dd).some((c) => c.startsWith("whitespace-") || c === "shrink-0")).toBe(false); // không bao giờ bị cắt
+      expect(dd.textContent).toBe(JSON.stringify(raw));
+    }
+    expect(SHORT_VALUE_MAX).toBe(24);
+    expect(isShortValue(`"${"x".repeat(22)}"`)).toBe(true);
+    expect(isShortValue(`"${"x".repeat(23)}"`)).toBe(false);
+    expect(isShortValue('"Ngoài giờ hành chính"')).toBe(true); // đếm theo ký tự, không theo byte
   });
 });

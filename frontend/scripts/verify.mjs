@@ -12,8 +12,10 @@
 //      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
 //      F4-1…6, F4-9 L1 trên dev:mock + backend thật: hộp thư = phiếu THẬT + phiếu minh hoạ (MSW gọi thật trước), xem phiếu /
 //      quyết định CHỈ mở id `apv-demo-…` (không bấm dòng thật — phiếu thật đang chờ mà mở là ghi first_viewed_at), ghi đè
-//      (4d chưa có) minh hoạ. F4-7, F4-8 dev KHÔNG mock: F4-8 kiểm hộp thư THẬT (4c) 4 trạng thái + mở MỘT phiếu thật đã
-//      quyết/hết hạn (chỉ đọc). F4 không gửi câu chat nào, không tạo/quyết phiếu thật.
+//      CHỈ gửi tới ticket minh hoạ `tkt-demo-…` (MSW). F4-7, F4-8, F4-10 dev KHÔNG mock: F4-8 kiểm hộp thư THẬT (4c) 4 trạng
+//      thái + mở MỘT phiếu thật đã quyết/hết hạn (chỉ đọc); F4-10 gửi ghi đè tới uuid NGẪU NHIÊN (không tồn tại) → 404 của
+//      route thật 4d — không ghi gì. F4 không gửi câu chat nào, không tạo/quyết phiếu thật, KHÔNG ghi đè ticket thật nào
+//      (201 thật = một dòng audit vĩnh viễn).
 //      F5 Trưởng BP IT (quan.tm, bắt buộc OTP): CHỈ chạy khi VERIFY_MGR=1, NGAY SAU kiểm tĩnh (người đang ngồi máy) —
 //      Chromium CÓ GIAO DIỆN, MỘT context cho mọi bước quan.tm: điền tên + mật khẩu (che trong log), dừng ở màn OTP, NGƯỜI
 //      nhập mã trong 120 s (verify không đọc, không in, không chụp ô OTP; hết giờ, hoặc OTP bị từ chối 2 lần — tránh khoá
@@ -46,7 +48,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "N4c";
+const BUILT = "N4d";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -631,18 +633,28 @@ const OVERRIDE_MSG = {
   ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
   same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
 };
+const OVERRIDE_ORIGINAL = "Quyết định ban đầu của hệ thống: "; // + nhãn OVERRIDE_OPTIONS (AUTO "Tự xử lý", L2 "Chuyển L2"…)
+const OVERRIDE_NOTE_INVALID = "Ghi chú không hợp lệ hoặc trống sau khi ẩn thông tin nhạy cảm — hãy viết lại ghi chú.";
+const OVERRIDE_NOT_FOUND = "Không tìm thấy ticket hoặc bạn không được xem ticket này.";
+const NOTICES_TEXT = "Ghi chú đã được ẩn bớt thông tin nhạy cảm";
+const READONLY_TIMEOUT = "Phiếu hết hạn, đã chuyển L2 — chỉ xem, không quyết định được nữa.";
+const NOTICE_TICKET = "tkt-demo-notice"; // fixture: đã kết thúc, gốc L2, 201 có notices
+const INVISIBLE_NOTE = "​​"; // ký tự loại Cf: qua kiểm ở client, guard (giả) che xong rỗng → 422 fields ["note"]
+const OVERRIDE_NOTE = "verify F4-6: ghi chú minh hoạ";
 const TICKET_UNAVAILABLE = "Chưa tải được chi tiết yêu cầu."; // Q-fe-24: GET ticket lỗi → câu trung tính
 const DANGER_RGB = "rgb(198, 40, 40)"; // token --color-danger #C62828
 const URGENT_RATIO = 0.2;
 // Fixture MSW (src/mocks/fixtures/approvals.ts): 01 thường + đỏ + có tiêu đề quy trình · 02 dự phòng (không tiêu đề)
 // · 03 không đỏ (dùng để từ chối) · 04 plan_changed · 08 thiếu dữ liệu (hộp thư action_type/device_id null; phiếu
-// phòng ban/rủi ro/căn cứ null) · viewer = phiếu giám sát (không nằm trong hộp thư). Ticket ghi đè: tkt-demo-open / -same / -reauth.
+// phòng ban/rủi ro/căn cứ null) · 07 hết hạn (dải chỉ đọc) · viewer = phiếu giám sát (không nằm trong hộp thư). Ticket ghi
+// đè: tkt-demo-open / -same / -reauth / -notice.
 const DEMO_PREFIX = "apv-demo-";
 const DEMO = {
   normal: "apv-demo-01",
   backup: "apv-demo-02",
   reject: "apv-demo-03",
   planChanged: "apv-demo-04",
+  timeout: "apv-demo-07",
   sparse: "apv-demo-08",
   viewer: "apv-demo-viewer",
 };
@@ -691,6 +703,44 @@ const sameKeys = (a, b) => a.length === b.length && [...a].sort().join("\n") ===
 const ddOf = (page, label) =>
   page.evaluate((l) => [...document.querySelectorAll("dt")].find((dt) => dt.textContent.trim() === l)?.nextElementSibling?.textContent.trim() ?? null, label);
 const decisionButtonsIn = async (page) => (await mainButtons(page)).filter((t) => /Đồng ý|Từ chối/.test(t));
+
+/**
+ * "Dòng rơi" của bảng khoá–giá trị (`selector` chọn các ô dd): ô hiển thị ≥ 2 dòng mà có dòng chỉ gồm 1 ký tự (không tính
+ * khoảng trắng) — lỗi F4: dấu `"` cuối của `"approval_required"` rơi riêng một dòng. Đo bằng Range từng ký tự, gom theo
+ * `top` của hộp ký tự (lệch < 6 px = cùng dòng). Ô một dòng (vd `0`) không tính. Trả các ô lỗi: khoá + số ký tự mỗi dòng.
+ */
+const strandedLines = (page, selector) =>
+  page.locator(selector).evaluateAll((els) =>
+    els.flatMap((dd) => {
+      const node = dd.firstChild;
+      if (!node || node.nodeType !== 3) return [];
+      const text = node.textContent ?? "";
+      const range = document.createRange();
+      const lines = [];
+      for (let i = 0; i < text.length; i += 1) {
+        if (/\s/.test(text[i])) continue;
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const top = range.getBoundingClientRect().top;
+        const line = lines.find((l) => Math.abs(l.top - top) < 6);
+        if (line) line.n += 1;
+        else lines.push({ top, n: 1 });
+      }
+      const counts = lines.map((l) => l.n);
+      return counts.length > 1 && counts.includes(1) ? [{ key: dd.parentElement?.dataset.key ?? "?", counts }] : [];
+    }),
+  );
+/** Ô giá trị bị cắt: chữ tràn khỏi ô, hoặc ô tràn khỏi phần nội dung của dòng (khung `overflow-hidden` sẽ cắt mất đuôi). */
+const clippedValues = (page, selector) =>
+  page.locator(selector).evaluateAll((els) =>
+    els.flatMap((dd) => {
+      const row = dd.parentElement;
+      const limit = row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight);
+      const clipped = dd.scrollWidth > dd.clientWidth + 1 || dd.getBoundingClientRect().right > limit + 1;
+      return clipped ? [row.dataset.key ?? "?"] : [];
+    }),
+  );
+const RISK_VALUES = '[data-testid="risk-row"] dd';
 const mswOn = (lines) => lines.some((l) => l.includes("[MSW] Mocking enabled"));
 
 /** Nút trong vùng nội dung (không tính thanh bên — nút đăng xuất). */
@@ -1572,9 +1622,10 @@ await step("F3-7 ca E5 (deny): banner + khoá “Đã hoàn tất” + 422", asy
   note: "BỎ QUA — gate3 không có preset ra E5 — đã kiểm bằng t30/t32 (vitest)",
 }));
 
-// F4 — L1. Hộp thư / xem phiếu / ghi đè CHƯA CÓ ở backend (4c, 4d) → F4-1…6 chạy trên dev:mock + backend thật (đăng nhập,
-// ticket, decision cho id không phải fixture). F4-7, F4-8: dev KHÔNG mock. Không gửi câu chat nào (không tạo ticket/phiếu
-// thật — câu tc09 sẽ tạo phiếu rồi hết hạn thành E6, làm hàng đợi dev đầy thêm).
+// F4 — L1. Hộp thư / xem phiếu (4c) và ghi đè (4d) là route THẬT; dev:mock chỉ giả id minh hoạ (`apv-demo-`, `tkt-demo-`) →
+// F4-1…6, F4-9 chạy trên dev:mock + backend thật (đăng nhập, hộp thư thật, decision cho id không phải fixture). F4-7, F4-8,
+// F4-10: dev KHÔNG mock. Không gửi câu chat nào (không tạo ticket/phiếu thật — câu tc09 sẽ tạo phiếu rồi hết hạn thành E6,
+// làm hàng đợi dev đầy thêm); không ghi đè ticket thật nào.
 const liveMock = (name, fn) =>
   step(name, async () => {
     if (!backendOk) return { status: "BỎ QUA", note: "BỎ QUA — backend tắt (cần đăng nhập thật)" };
@@ -1786,7 +1837,7 @@ await liveMock("F4-5 decision cho id KHÔNG tiền tố apv-demo- (dev:mock) →
   }),
 );
 
-await liveMock("F4-6 ghi đè: tkt-demo-open → 409; tkt-demo-same → 422; tkt-demo-reauth → đăng nhập lại (thật) → 201", () =>
+await liveMock("F4-6 ghi đè (chỉ id tkt-demo-*): open → 409; same → 422; reauth → đăng nhập lại (thật) → 201 + quyết định gốc; notice → 422 tại ô ghi chú → 201 + câu ẩn thông tin", () =>
   scenario("F4-6", async ({ page }) => {
     await signInAs(page, "ha.lt");
     await page.getByRole("heading", APPROVALS_HEADING).waitFor();
@@ -1826,15 +1877,61 @@ await liveMock("F4-6 ghi đè: tkt-demo-open → 409; tkt-demo-same → 422; tkt
     const loginServer = (await login.allHeaders()).server ?? null;
     check(login.status() === 200 && /uvicorn/i.test(loginServer ?? ""), `đăng nhập lại → ${login.status()} (server="${loginServer}"), cần 200 của backend thật`);
     check(second.status() === 201, `gửi lại sau đăng nhập → ${second.status()}, cần 201`);
+    const mockServer201 = (await second.allHeaders()).server ?? null;
+    check(!/uvicorn/i.test(mockServer201 ?? ""), `201 của tkt-demo-reauth lẽ ra do MSW trả, lại có header server="${mockServer201}"`);
     const done = dialog.getByRole("status");
     await done.waitFor({ timeout: 5_000 });
     check((await done.innerText()).includes("Đã ghi nhận ghi đè"), `sau 201 hiện "${await done.innerText()}"`);
+    const original = (await dialog.getByTestId("override-original").innerText()).trim();
+    check(original === `${OVERRIDE_ORIGINAL}Tự xử lý`, `tkt-demo-reauth (gốc AUTO): dòng gốc "${original}", cần "${OVERRIDE_ORIGINAL}Tự xử lý"`);
+    check((await dialog.getByTestId("override-notices").count()) === 0, "tkt-demo-reauth: notices rỗng mà vẫn hiện câu ẩn thông tin");
     await page.waitForTimeout(500);
     check(overrides.length === 2, `tkt-demo-reauth gửi ${overrides.length} lần, cần đúng 2 (gốc + 1 lần gửi lại)`);
     check((await page.getByTestId("me-user-id").innerText()).trim() === "l1_01", "sau đăng nhập lại không còn là ha.lt (l1_01)");
     await shoot(page, "l1-override.png");
-    results.push("tkt-demo-reauth → 403 → đăng nhập lại (backend thật 200) → gửi lại 1 lần → 201 “Đã ghi nhận ghi đè (minh hoạ)”");
-    return { note: `${results.join(" · ")} · GET ticket minh hoạ 404 → "${TICKET_UNAVAILABLE}", nút "Ghi đè…" vẫn có (Q-fe-24)` };
+    results.push(`tkt-demo-reauth → 403 → đăng nhập lại (backend thật 200) → gửi lại 1 lần → 201 (MSW) "Đã ghi nhận ghi đè." + "${original}"`);
+
+    // tkt-demo-notice: "Khác" + ghi chú chỉ ký tự vô hình → (guard giả) che xong rỗng → 422 fields ["note"] → lỗi TẠI ô ghi
+    // chú, hộp giữ nguyên → sửa ghi chú → 201 có notices → câu chung + quyết định gốc (L2).
+    const noticeDialog = await openTicketOverride(page, NOTICE_TICKET); // đã chọn "Cần người duyệt" + too_risky_for_auto
+    await page.locator("#override-reason").selectOption("other");
+    await page.locator("#override-note").fill(INVISIBLE_NOTE);
+    const bad = await sendOverride(page, noticeDialog, NOTICE_TICKET);
+    check(bad.status() === 422, `${NOTICE_TICKET} (ghi chú vô hình) → ${bad.status()}, cần 422`);
+    const badFields = (await bad.json().catch(() => null))?.fields ?? null;
+    check(Array.isArray(badFields) && sameKeys(badFields, ["note"]), `${NOTICE_TICKET}: 422 fields ${JSON.stringify(badFields)}, cần ["note"] (không tiền tố body.)`);
+    const noteError = (await noticeDialog.getByTestId("override-note-error").innerText({ timeout: 5_000 })).trim();
+    check(noteError === OVERRIDE_NOTE_INVALID, `lỗi ô ghi chú "${noteError}", cần "${OVERRIDE_NOTE_INVALID}"`);
+    check((await page.locator("#override-note").getAttribute("aria-invalid")) === "true", "ô ghi chú không có aria-invalid");
+    check((await noticeDialog.getByRole("alert").count()) === 1, "422 ghi chú mà còn thêm dòng lỗi chung");
+    check(
+      (await noticeDialog.getByRole("radio", { name: /^Cần người duyệt/ }).getAttribute("aria-checked")) === "true" &&
+        (await page.locator("#override-reason").inputValue()) === "other" &&
+        (await page.locator("#override-note").inputValue()) === INVISIBLE_NOTE,
+      "422 ghi chú làm mất lựa chọn / lý do / ghi chú đã nhập",
+    );
+    check((await noticeDialog.getByRole("status").count()) === 0, "422 mà hộp báo đã ghi");
+    await shoot(page, "l1-override-note-error.png");
+    await page.locator("#override-note").fill(OVERRIDE_NOTE);
+    const good = await sendOverride(page, noticeDialog, NOTICE_TICKET);
+    check(good.status() === 201, `${NOTICE_TICKET} (ghi chú thường) → ${good.status()}, cần 201`);
+    const goodServer = (await good.allHeaders()).server ?? null;
+    check(!/uvicorn/i.test(goodServer ?? ""), `201 của ${NOTICE_TICKET} lẽ ra do MSW trả, lại có header server="${goodServer}"`);
+    const recorded = await good.json();
+    check(
+      sameKeys(Object.keys(recorded), ["notices", "original_decision", "override_decision", "reason_code", "ticket_id"]) &&
+        recorded.original_decision === "L2" && recorded.notices.length === 1,
+      `201 sai hình dạng: ${JSON.stringify({ ...recorded, notices: recorded.notices?.length })}`,
+    );
+    await noticeDialog.getByTestId("override-done").waitFor({ timeout: 5_000 });
+    const noticesLine = (await noticeDialog.getByTestId("override-notices").innerText()).trim();
+    check(noticesLine === NOTICES_TEXT, `câu ẩn thông tin "${noticesLine}", cần "${NOTICES_TEXT}"`);
+    const noticeOriginal = (await noticeDialog.getByTestId("override-original").innerText()).trim();
+    check(noticeOriginal === `${OVERRIDE_ORIGINAL}Chuyển L2`, `${NOTICE_TICKET} (gốc L2): dòng gốc "${noticeOriginal}"`);
+    check(!(await page.locator("main").innerText()).includes(recorded.notices[0]), "màn hiện nguyên văn notices");
+    await shoot(page, "l1-override-notices.png");
+    results.push(`${NOTICE_TICKET}: "Khác" + ghi chú vô hình → 422 ["note"] → "${noteError}" tại ô ghi chú, giữ lựa chọn → sửa → 201 (MSW, notices 1) → "${NOTICES_TEXT}" + "${noticeOriginal}"`);
+    return { note: `${results.join(" · ")} · GET ticket minh hoạ 404 → "${TICKET_UNAVAILABLE}", nút "Ghi đè…" vẫn có (Q-fe-24); chỉ gửi tới id tkt-demo-*` };
   }),
 );
 
@@ -2123,7 +2220,7 @@ await liveMock("F6-5 ha.lt apv-demo-01 (page.clock): Đồng ý ngay → hộp, 
   }),
 );
 
-await liveMock("F6-6 ha.lt apv-demo-01: bảng khoá–giá trị overflow-wrap anywhere; thanh quyết định nền đặc, không che nội dung", () =>
+await liveMock("F6-6 ha.lt apv-demo-01: bảng khoá–giá trị overflow-wrap anywhere, 0 dòng rơi; thanh quyết định nền đặc, không che nội dung · apv-demo-07: dải chỉ đọc giữ “L2”", () =>
   scenario("F6-6", async ({ page }) => {
     await signInAs(page, "ha.lt");
     await page.goto(`${DEV}/approvals/${DEMO.normal}`, { waitUntil: "load" });
@@ -2152,8 +2249,28 @@ await liveMock("F6-6 ha.lt apv-demo-01: bảng khoá–giá trị overflow-wrap 
     });
     check(!layout.inside, "thanh quyết định nằm trong vùng cuộn");
     check(layout.lastBottom !== null && layout.lastBottom <= layout.barTop, `phần tử cuối (đáy ${layout.lastBottom}) bị thanh (đỉnh ${layout.barTop}) che`);
+    // N4d P8b: không ô nào của bảng rủi ro (cột 360 px) có dòng rơi chỉ 1 ký tự.
+    const riskRows = await page.getByTestId("risk-row").count();
+    const stranded = await strandedLines(page, RISK_VALUES);
+    check(riskRows > 0 && stranded.length === 0, `${DEMO.normal}: ${riskRows} dòng rủi ro, dòng rơi 1 ký tự: ${JSON.stringify(stranded[0])}`);
+    const clipped = await clippedValues(page, '[data-testid="risk-row"] dd, [data-testid="action-row"] dd, [data-testid="fact-row"] dd');
+    check(clipped.length === 0, `${DEMO.normal}: ô giá trị bị cắt: ${clipped.join(", ")}`);
     await shoot(page, "f6-l1-detail.png");
-    return { note: `${cells.length} ô giá trị: overflow-wrap anywhere, word-break normal; nền thanh ${background}; thanh ngoài vùng cuộn, đáy phần tử cuối ${Math.round(layout.lastBottom)} ≤ đỉnh thanh ${Math.round(layout.barTop)}` };
+    // N4d P8a: phiếu hết hạn (fixture) — dải chỉ đọc giữ "L2" viết hoa; bảng rủi ro không dòng rơi.
+    await page.goto(`${DEV}/approvals/${DEMO.timeout}`, { waitUntil: "load" });
+    await expectSignedIn(page, `ha.lt ${DEMO.timeout}`);
+    const readonly = (await page.getByTestId("approval-readonly").innerText({ timeout: 10_000 })).trim();
+    check(readonly === READONLY_TIMEOUT, `${DEMO.timeout}: dải chỉ đọc "${readonly}", cần "${READONLY_TIMEOUT}"`);
+    check(/\bL2\b/.test(readonly) && !/\bl2\b/.test(readonly), `${DEMO.timeout}: dải chỉ đọc hạ chữ "L2": "${readonly}"`);
+    check((await page.getByTestId("decision-bar").count()) === 0, `${DEMO.timeout} (hết hạn) vẫn có thanh quyết định`);
+    const strandedTimeout = await strandedLines(page, RISK_VALUES);
+    check(strandedTimeout.length === 0, `${DEMO.timeout}: bảng rủi ro có dòng rơi 1 ký tự: ${JSON.stringify(strandedTimeout[0])}`);
+    const clippedTimeout = await clippedValues(page, RISK_VALUES);
+    check(clippedTimeout.length === 0, `${DEMO.timeout}: ô rủi ro bị cắt: ${clippedTimeout.join(", ")}`);
+    await shoot(page, "f6-l1-readonly.png");
+    return {
+      note: `${cells.length} ô giá trị: overflow-wrap anywhere, word-break normal; nền thanh ${background}; thanh ngoài vùng cuộn, đáy phần tử cuối ${Math.round(layout.lastBottom)} ≤ đỉnh thanh ${Math.round(layout.barTop)}; ${riskRows} dòng rủi ro, 0 dòng rơi · ${DEMO.timeout}: "${readonly}", 0 thanh quyết định, 0 dòng rơi`,
+    };
   }),
 );
 
@@ -2256,7 +2373,15 @@ await live("F4-8 ha.lt /approvals KHÔNG mock → hộp thư THẬT (4c): 4 tr�
         check((await page.getByTestId("decision-bar").count()) === 0, `phiếu ${id} (${view.status}) vẫn có thanh quyết định`);
         const buttons = await decisionButtonsIn(page);
         check(buttons.length === 0, `phiếu ${id} có nút "${buttons[0]}"`);
-        opened = `${status} ${id} → 200: đủ khối, mã băm khớp, chỉ đọc (0 thanh quyết định), rủi ro ${view.risk ? "bảng" : "câu thay"}`;
+        // N4d P8: dải chỉ đọc không hạ chữ "L2"; bảng rủi ro không dòng rơi 1 ký tự.
+        const readonly = (await page.getByTestId("approval-readonly").innerText()).trim();
+        check(!/\bl2\b/.test(readonly), `phiếu ${id}: dải chỉ đọc hạ chữ "l2": "${readonly}"`);
+        if (view.status === "timeout") check(readonly === READONLY_TIMEOUT, `phiếu ${id} (timeout): dải "${readonly}", cần "${READONLY_TIMEOUT}"`);
+        const stranded = await strandedLines(page, RISK_VALUES);
+        check(stranded.length === 0, `phiếu ${id}: bảng rủi ro có dòng rơi 1 ký tự: ${JSON.stringify(stranded[0])}`);
+        const clipped = await clippedValues(page, RISK_VALUES);
+        check(clipped.length === 0, `phiếu ${id}: ô rủi ro bị cắt: ${clipped.join(", ")}`);
+        opened = `${status} ${id} → 200: đủ khối, mã băm khớp, chỉ đọc (0 thanh quyết định), rủi ro ${view.risk ? `bảng ${riskRows} dòng, 0 dòng rơi` : "câu thay"}; dải "${readonly}"`;
       } else if (code === 409) {
         await page.getByRole("heading", { name: PLAN_CHANGED, level: 1 }).waitFor({ timeout: 10_000 });
         opened = `${status} ${id} → 409 plan_changed: chỉ câu chặn`;
@@ -2271,6 +2396,44 @@ await live("F4-8 ha.lt /approvals KHÔNG mock → hộp thư THẬT (4c): 4 tr�
     check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
     const statuses = ["pending", "approved", "rejected", "timeout"].map((s) => `${s} 200 (${lists[s].length})`).join(", ");
     return { note: `4c thật: ${statuses}; server uvicorn; 0 [MSW]; 0 role=alert; 0 inbox-stale / inbox-count-stale; tab: ${shown.join(" · ")}; ${opened}` };
+  }),
+);
+
+// F4-10: chứng minh route ghi đè THẬT (4d) mà KHÔNG ghi gì — chỉ gửi tới uuid NGẪU NHIÊN (không có ticket nào như vậy) →
+// `_readable` trả 404 `not_found` TRƯỚC mọi bước ghi. TUYỆT ĐỐI không gửi ghi đè hợp lệ tới ticket thật (201 thật = một dòng
+// audit OVERRIDE vĩnh viễn, làm bẩn override_count của M9).
+await live("F4-10 ha.lt KHÔNG mock: ghi đè uuid ngẫu nhiên (không tồn tại) → 404 not_found của route thật 4d (uvicorn) → câu không tìm thấy; không ghi gì", () =>
+  scenario("F4-10", async ({ page, consoleLines }) => {
+    const id = randomUUID();
+    const overrides = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && /^\/api\/tickets\/[^/]+\/override$/.test(pathOf(r))) overrides.push(pathOf(r));
+    });
+    await signInAs(page, "ha.lt"); // vừa đăng nhập → recent_login (≤ 10 phút) đạt, không bị đòi đăng nhập lại
+    const dialog = await openTicketOverride(page, id);
+    const unavailable = (await page.getByTestId("ticket-unavailable").innerText({ timeout: 10_000 })).trim();
+    check(unavailable === TICKET_UNAVAILABLE, `GET ticket uuid ngẫu nhiên mà vùng hội thoại hiện "${unavailable}"`);
+    const res = await sendOverride(page, dialog, id);
+    const server = (await res.allHeaders()).server ?? null;
+    const detail = (await res.json().catch(() => null))?.detail ?? null;
+    log(`F4-10 POST /api/tickets/<uuid>/override → ${res.status()} ${detail} server=${server}`);
+    check(
+      !(res.status() === 404 && detail === "Not Found"),
+      'POST override → 404 "Not Found" của Starlette: image backend đang chạy CHƯA có route 4d — báo Tuấn Anh hỏi Phase 4 (không sửa verify)',
+    );
+    check(res.status() === 404 && detail === "not_found", `POST override (uuid ngẫu nhiên) → ${res.status()} ${detail}, cần 404 not_found của route thật`);
+    check(/uvicorn/i.test(server ?? ""), `response không có header server của backend thật (server="${server}")`);
+    const alert = (await dialog.getByRole("alert").innerText({ timeout: 5_000 })).trim();
+    check(alert === OVERRIDE_NOT_FOUND, `hộp ghi đè hiện "${alert}", cần "${OVERRIDE_NOT_FOUND}"`);
+    check((await dialog.getByRole("status").count()) === 0, "404 mà hộp báo đã ghi");
+    check((await page.getByRole("dialog", { name: "Xác nhận lại đăng nhập" }).count()) === 0, "vừa đăng nhập mà vẫn bị đòi đăng nhập lại");
+    await page.waitForTimeout(500);
+    check(overrides.length === 1, `gửi ${overrides.length} POST override, cần đúng 1`);
+    check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+    await shoot(page, "l1-override-real-404.png");
+    return {
+      note: `uuid ngẫu nhiên → 1 POST → 404 not_found (route thật 4d, server="${server}") → "${OVERRIDE_NOT_FOUND}"; không hộp đăng nhập lại; GET ticket 404 → "${TICKET_UNAVAILABLE}"; 0 [MSW]; không ghi gì`,
+    };
   }),
 );
 

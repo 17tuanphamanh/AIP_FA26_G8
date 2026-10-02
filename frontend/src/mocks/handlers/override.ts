@@ -1,38 +1,48 @@
-import { http } from "msw";
+import { http, passthrough } from "msw";
 import { NOTE_MAX } from "../../api/approvals.ts";
 import { DEMO_TICKETS, TICKET_DEMO_PREFIX } from "../fixtures/approvals.ts";
-import { invalid, readJson, realFetch, reply, requireAny } from "./shared.ts";
+import { invalid, readJson, reply, requireAny } from "./shared.ts";
 
-// `POST /api/tickets/{id}/override` (4d P1–P4) — route CHƯA CÓ. Ghi đè không đổi ticket, chỉ ghi nhật ký → ở đây chỉ nhớ
-// "ai đã ghi đè ticket nào" trong bộ nhớ trang (lần 2 → 409 already_overridden). Thứ tự như 4d P1: quyền → reauth → 404
-// → 409 ticket_open → 422 thân → 422 same_as_original → 409 already_overridden → 201.
-// - `tkt-demo-*`: kết quả cố định theo mã (fixtures/approvals.ts DEMO_TICKETS).
-// - Mã khác: đọc ticket THẬT (`GET /api/tickets/{id}` qua bypass, cùng token) → 404 / 409 ticket_open / 201.
-// Xoá file này khi 4d merge (gen:api).
+// `POST /api/tickets/{id}/override` — route THẬT (4d `e510a6e`, backend/app/api/tickets.py). Handler CHỈ chặn id có tiền
+// tố ticket minh hoạ (fixtures/approvals.ts DEMO_TICKETS); id khác → `passthrough()` NGAY, không gọi gì (kể cả `/me`) — mock
+// không che route thật, không bao giờ báo "đã ghi" cho ticket thật (N4d P7). Ghi đè không đổi ticket, chỉ ghi nhật ký → ở
+// đây chỉ nhớ "ai đã ghi đè ticket nào" trong bộ nhớ trang. Thứ tự kiểm theo CODE `e510a6e` (PLAN-fe mục 7 #36): quyền 403
+// → reauth 403 → 404 → 409 ticket_open → 422 thân → 422 `other` thiếu ghi chú → 422 same_as_original → [guard] 422 `other`
+// mà ghi chú rỗng sau khi che → 409 already_overridden → 201. Không giả: 403 người gửi tự ghi đè, 503 guard.
+// Xoá file này khi không còn cần minh hoạ.
 
 const DECISIONS = ["AUTO", "HITL", "L2", "ANSWER"];
 const REASONS = ["too_risky_for_auto", "approval_unnecessary", "should_not_escalate", "wrong_answer", "policy_gap", "other"];
 const KEYS = new Set(["override_decision", "reason_code", "note"]);
+const EXTRA_KEY = "<extra>"; // backend/app/api/errors.py: tên khoá thừa có thể là bí mật → không trả lại
 
-/** Kiểm thân như `OverrideIn` (extra="forbid"; note ≤ 1000, bắt buộc khi reason_code="other"). */
-export function overrideFields(body: unknown): string[] {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return ["body"];
+/**
+ * Kiểm thân như `parse_body(OverrideIn)` (extra="forbid", note ≤ 1000). Vị trí trường KHÔNG có tiền tố `body.` (route
+ * gọi `model_validate` trên dict); khoá thừa → `<extra>`; JSON hỏng → `[]`; thân không phải object → `[""]`.
+ * null = thân hợp lệ.
+ */
+export function overrideFields(body: unknown): string[] | null {
+  if (body === undefined) return [];
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return [""];
   const b = body as Record<string, unknown>;
-  const fields = Object.keys(b).filter((k) => !KEYS.has(k)).map((k) => `body.${k}`);
-  if (!DECISIONS.includes(b.override_decision as string)) fields.push("body.override_decision");
-  if (!REASONS.includes(b.reason_code as string)) fields.push("body.reason_code");
-  const note = b.note;
-  if (note != null && (typeof note !== "string" || note.length > NOTE_MAX)) fields.push("body.note");
-  else if (b.reason_code === "other" && !(typeof note === "string" && note.trim())) fields.push("body.note");
-  return fields;
+  const fields: string[] = [];
+  if (!DECISIONS.includes(b.override_decision as string)) fields.push("override_decision");
+  if (!REASONS.includes(b.reason_code as string)) fields.push("reason_code");
+  if (b.note != null && (typeof b.note !== "string" || b.note.length > NOTE_MAX)) fields.push("note");
+  if (Object.keys(b).some((k) => !KEYS.has(k))) fields.push(EXTRA_KEY);
+  return fields.length > 0 ? fields : null;
 }
 
+/** Như privacy guard (backend/app/guard/normalize.py): xoá ký tự loại `Cf` (zero-width, soft hyphen, word joiner…). */
+const visible = (text: string) => text.replace(/\p{Cf}/gu, "").trim();
+
 let reauthAsked = false; // `tkt-demo-reauth`: chỉ lần gọi ĐẦU mỗi phiên trang bị đòi đăng nhập lại
-const recorded = new Set<string>(); // `${user_id}:${ticket_id}` đã ghi đè (idempotency 4d P4)
+const recorded = new Set<string>(); // `${user_id}:${ticket_id}` đã ghi đè (mỗi người một lần / ticket)
 
 export const overrideHandlers = [
   http.post("/api/tickets/:id/override", async ({ request, params }) => {
     const ticketId = String(params.id);
+    if (!ticketId.startsWith(TICKET_DEMO_PREFIX)) return passthrough(); // ticket thật — route thật quyết (N4d P7)
     const who = await requireAny(request, ["decision:override"]);
     if ("response" in who) return who.response;
     const demo = DEMO_TICKETS[ticketId];
@@ -40,25 +50,22 @@ export const overrideHandlers = [
       reauthAsked = true;
       return reply({ detail: "reauth_required" }, 403);
     }
-    let original: string | null = null;
-    if (ticketId.startsWith(TICKET_DEMO_PREFIX)) {
-      if (!demo) return reply({ detail: "not_found" }, 404);
-      if (demo.kind === "open") return reply({ detail: "ticket_open" }, 409);
-      original = demo.original;
-    } else {
-      const res = await realFetch(request, `/api/tickets/${encodeURIComponent(ticketId)}`);
-      if (!res.ok) return reply(await res.json().catch(() => null), res.status); // 404 thật; 401 → client refresh
-      const view = (await res.json()) as { final_state?: string | null };
-      if (!view.final_state) return reply({ detail: "ticket_open" }, 409);
-    }
+    if (!demo) return reply({ detail: "not_found" }, 404);
+    if (demo.kind === "open") return reply({ detail: "ticket_open" }, 409);
     const body = await readJson(request);
     const fields = overrideFields(body);
-    if (fields.length > 0) return invalid(fields);
-    const choice = (body as { override_decision: string }).override_decision;
-    if (demo?.kind === "same" || choice === original) return reply({ detail: "same_as_original" }, 422);
+    if (fields !== null) return invalid(fields);
+    const { override_decision: choice, reason_code: reason, note } = body as { override_decision: string; reason_code: string; note?: string | null };
+    const text = note ?? "";
+    if (reason === "other" && !text.trim()) return invalid(["note"]);
+    if (demo.kind === "same" || choice === demo.original) return reply({ detail: "same_as_original" }, 422);
+    if (reason === "other" && !visible(text)) return invalid(["note"]); // che xong rỗng
     const key = `${who.me.user_id}:${ticketId}`;
     if (recorded.has(key)) return reply({ detail: "already_overridden" }, 409);
     recorded.add(key);
-    return reply({ ticket_id: ticketId, override_decision: choice, status: "recorded" }, 201);
+    return reply(
+      { ticket_id: ticketId, original_decision: demo.original, override_decision: choice, reason_code: reason, notices: demo.notices },
+      201,
+    );
   }),
 ];

@@ -1,14 +1,23 @@
-// Duyệt L1 (F4, nối thật N4c). Route THẬT ở backend/app/api/approvals.py (4c `b457e6e`): hộp thư
+// Duyệt L1 (F4, nối thật N4c, N4d). Route THẬT ở backend/app/api/approvals.py (4c `b457e6e`): hộp thư
 // `GET /api/approvals?mine=1&status=…` → `{items: [...]}`, xem phiếu `GET /api/approvals/{id}`, quyết định
-// `POST /api/approvals/{id}/decision`. Ghi đè (`POST /api/tickets/{id}/override`) CHƯA CÓ — 4d (MSW ở dev:mock; MSW tắt →
-// 404 "Not Found" → hộp ghi đè tự báo "có từ Phase 4 (4d)").
+// `POST /api/approvals/{id}/decision`. Ghi đè `POST /api/tickets/{id}/override` THẬT ở backend/app/api/tickets.py (4d
+// `e510a6e`) → 201 `{ticket_id, original_decision, override_decision, reason_code, notices}`; dev:mock chỉ giả id ticket
+// minh hoạ (mocks/handlers/override.ts), id khác tới backend thật.
 // Mọi response thành công của hộp thư / phiếu cập nhật độ lệch giờ máy chủ (header `Date`, serverClock.ts).
 import { queryOptions } from "@tanstack/react-query";
 import type { Client } from "./client.ts";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
 import { recordServerDate } from "./serverClock.ts";
-import type { ApprovalListItem, ApprovalStatus, ApprovalViewP4, DecisionAccepted, DecisionIn, OverrideIn } from "./types.ts";
+import type {
+  ApprovalListItem,
+  ApprovalStatus,
+  ApprovalViewP4,
+  DecisionAccepted,
+  DecisionIn,
+  OverrideIn,
+  OverrideRecorded,
+} from "./types.ts";
 
 /** Khớp `NOTE_MAX` ở backend/app/api/approvals.py và `note ≤ 1000` của ghi đè (4d P2). */
 export const NOTE_MAX = 1000;
@@ -51,9 +60,25 @@ export async function decideApproval(id: string, body: DecisionIn): Promise<Deci
   return (await api.request<DecisionAccepted>(`${approvalPath(id)}/decision`, { method: "POST", json: body })).data;
 }
 
-/** `client` mặc định là client dùng chung — CÙNG client với đăng nhập (đăng nhập lại khi 403 `reauth_required`). */
-export async function overrideTicket(ticketId: string, body: OverrideIn, client: Client = api): Promise<void> {
-  await client.request<unknown>(`/api/tickets/${encodeURIComponent(ticketId)}/override`, { method: "POST", json: body });
+/**
+ * Thân 201 của ghi đè: object có `ticket_id` chuỗi và `notices` mảng → đúng `OverrideRecorded`; khác → null. Không lọc
+ * `original_decision` ở đây — giá trị lạ / thiếu thì màn không hiện dòng quyết định gốc (`overrideDecisionLabel`).
+ */
+export function parseOverrideRecorded(body: unknown): OverrideRecorded | null {
+  return isRecord(body) && typeof body.ticket_id === "string" && Array.isArray(body.notices) ? (body as OverrideRecorded) : null;
+}
+
+/**
+ * `client` mặc định là client dùng chung — CÙNG client với đăng nhập (đăng nhập lại khi 403 `reauth_required`).
+ * CHỈ 201 (mã duy nhất route trả khi ghi) = ĐÃ GHI (không gỡ được); `null` = đã ghi nhưng thân không đọc được chi tiết (P2) —
+ * KHÔNG báo lỗi để người dùng khỏi gửi lại. Nguyên tắc: không chắc đã ghi → báo lỗi, không báo thành công giả; gửi lại → 409
+ * `already_overridden` là đúng sự thật, không ghi trùng. Vì vậy: 2xx khác 201 (proxy sai…) → `ApiError(502)` (Q-fe-41 = A);
+ * thân 201 JSON hỏng thì `client.request` ném trước khi tới đây → màn báo lỗi (Q-fe-39 = A).
+ */
+export async function overrideTicket(ticketId: string, body: OverrideIn, client: Client = api): Promise<OverrideRecorded | null> {
+  const res = await client.request<unknown>(`/api/tickets/${encodeURIComponent(ticketId)}/override`, { method: "POST", json: body });
+  if (res.status !== 201) throw new ApiError(502, "unexpected_override_status");
+  return parseOverrideRecorded(res.data);
 }
 
 export const inboxQuery = (status: ApprovalStatus) =>

@@ -162,10 +162,43 @@ export type Health = {
   kb: { alias: string; collection: string | null; status: "ready" | "missing" | "unknown" };
 };
 
+// Ghi đè `POST /api/tickets/{id}/override` (4d) — ghi một dòng audit OVERRIDE, KHÔNG đổi ticket. Thứ tự lỗi (code): 403
+// `forbidden` (không quyền) → 403 `reauth_required` (đăng nhập > 10 phút) → 404 `not_found` → 403 `forbidden` (người gửi tự
+// ghi đè — cùng mã, không phân biệt được) → 409 `ticket_open` → 422 `{error:"invalid_request", fields}` (tên trường KHÔNG có
+// tiền tố `body.`) → 422 `same_as_original` → 503 `privacy_guard_unavailable` → 422 `fields:["note"]` (`other` mà ghi chú
+// rỗng sau khi che) → 409 `already_overridden` (mỗi người một lần / ticket).
+
+// Nguồn: backend/app/api/tickets.py @e510a6e (`Decision` ở domain/override.py). Xoá khi: route có response_model (nợ API #3).
+export type OverrideDecision = "AUTO" | "HITL" | "L2" | "ANSWER";
+
+// Nguồn: backend/app/api/tickets.py @e510a6e (`OverrideReason` ở domain/override.py). Xoá khi: route có response_model (nợ API #3).
+export type OverrideReasonCode =
+  | "too_risky_for_auto"
+  | "approval_unnecessary"
+  | "should_not_escalate"
+  | "wrong_answer"
+  | "policy_gap"
+  | "other";
+
+// Nguồn: backend/app/api/tickets.py @e510a6e `OverrideIn` (extra="forbid"; `note` ≤ 1000, bắt buộc khi reason_code="other").
+// Xoá khi: route có response_model (nợ API #3).
+export type OverrideIn = { override_decision: OverrideDecision; reason_code: OverrideReasonCode; note?: string };
+
+// Nguồn: backend/app/api/tickets.py @e510a6e override() — JSONResponse 201; `original_decision` do SERVER suy từ audit;
+// `notices` = thông báo của privacy guard khi ghi chú có bí mật bị che (giao diện chỉ hiện câu chung).
+// Xoá khi: route có response_model (nợ API #3).
+export type OverrideRecorded = {
+  ticket_id: string;
+  original_decision: OverrideDecision;
+  override_decision: OverrideDecision;
+  reason_code: OverrideReasonCode;
+  notices: string[];
+};
+
 // ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
 
 // Yêu cầu nhiều ý (D-31) — Phase 5, T20. Toàn bộ khối này là [Đề xuất F6 — chốt ở T20]; hình dạng đầy đủ + chỗ
-// [Suy luận]: PLAN-fe mục 8 "Đề xuất hợp đồng cho T20". MSW: mocks/handlers/employee-multi.ts (chỉ id `tkt-demo-multi-`).
+// [Suy luận]: PLAN-fe mục 8 "Đề xuất hợp đồng cho T20". MSW: mocks/handlers/employee-multi.ts (chỉ id ticket nhiều ý minh hoạ).
 
 // Nguồn: P1 §8.2–8.3 (khung tiến độ từng ý, không phải tin nhắn) + P10 §3.1 (`GET /api/tickets/{cha}` trả
 // `children_progress`) — Đề xuất F6. `title` = nhãn ngắn của ý do server đặt [Suy luận]; `outcome` chỉ khi `closed`.
@@ -204,25 +237,6 @@ export type DigestConversationItem = { role: "assistant"; kind: "digest"; round:
 // Xoá khi: T20 merge (gen:api).
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
-
-// Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P2 (4d).
-// Xoá khi: 4d merge → gen:api (xoá cùng mocks/handlers/override.ts).
-export type OverrideDecision = "AUTO" | "HITL" | "L2" | "ANSWER";
-
-// Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P2 (4d).
-// Xoá khi: 4d merge → gen:api.
-export type OverrideReasonCode =
-  | "too_risky_for_auto"
-  | "approval_unnecessary"
-  | "should_not_escalate"
-  | "wrong_answer"
-  | "policy_gap"
-  | "other";
-
-// Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P1–P4 (4d, bản 1.0) — 201; 409 ticket_open / already_overridden;
-// 422 same_as_original; 403 reauth_required (P6 §4, 12b Q-fe-4). `note` ≤ 1000, bắt buộc khi reason_code="other".
-// Xoá khi: 4d merge → gen:api (xoá cùng mocks/handlers/override.ts).
-export type OverrideIn = { override_decision: OverrideDecision; reason_code: OverrideReasonCode; note?: string };
 
 // Nguồn: ke-hoach-m9-monitor.md §5.1 (tên trường giữ nguyên, không tự đặt) + §4.3 (`unavailable`: chỉ số chưa có nguồn →
 // null + tên ở mảng này; tỉ lệ mẫu số 0 → null). `from`/`to`: cửa sổ đã dùng (§4.5). Mọi chỉ số cho phép null.
