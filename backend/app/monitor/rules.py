@@ -14,6 +14,7 @@ người nhận sai. A3 đọc `REGISTRY` để lọc `/api/alerts`.
 """
 
 import inspect
+import math
 import statistics
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Mapping, Sequence
@@ -457,3 +458,34 @@ def b3_degraded(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
     """Luật 13 (D-32) — tỉ lệ lá xuống LLM ở B3 của ngày VN hôm trước > 0,30. `data` = `b3_llm_rate(conn,
     *prev_day_window(ctx))` (A2). Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
     return _degraded("b3_degraded", data, ctx)
+
+
+# ---- luật tổng hợp chu kỳ giờ (B2 — kế hoạch chung mục 6 luật 14; Q-M9-6) -------------------------------------------
+
+BUDGET_EPS = 1e-9  # Q-M9-B2-7: 38 × 0,8 = 30.400000000000002 → `30.4 >= 38*0.8` là False (đúng 80% không báo)
+
+
+@rule("llm_budget", "hourly", audience=("dev", "manager", "ops"))
+def llm_budget(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 14 (N1) — TỔNG chi LLM ≥ `warn_ratio × cap_usd` → cả nhóm. `data` = Σ `llm_calls.cost_usd` TOÀN BẢNG
+    (loader GĐ2: `COALESCE(sum, 0)`, không cửa sổ, không `v_leaf`) — cùng cách gateway tính trần (`llm/store.py`
+    `spend_total`): trần là của cả đồ án. KHÔNG phải chi phí theo ngày, KHÔNG dùng `cost_per_day` (A2, chỉ lá).
+    Đánh giá mỗi giờ; `window_start` = đầu ngày `tz` của `ctx.now` (Q-M9-6) → nhắc một lần mỗi ngày. Tổng chỉ tăng
+    (cost ≥ 0) nên worker chết qua nhiều ngày không làm mất cảnh báo đầu tiên.
+
+    Chờ chốt (#14):
+    - Q-M9-B2-7: so với `ngưỡng − BUDGET_EPS` (1e-9), không so `≥` trần — số thực làm đúng 80% không báo.
+    - Q-M9-B2-16: tổng `None`/NaN/inf/âm → `ValueError` (luật vào `failed_rules`), không trả `[]`: loader `COALESCE`
+      nên chỉ lỗi mới ra các giá trị này; trả `[]` là tắt im lặng luật ngân sách (FN).
+    - Q-M9-B2-17: một mức; vượt trần trong cùng ngày đã báo 80% là cùng khoá → không ra dòng mới."""
+    if data is None or not math.isfinite(data) or data < 0:
+        raise ValueError("luật llm_budget: tổng chi không hợp lệ")  # không in giá trị (chỉ tên luật)
+    if data >= ctx.warn_ratio * ctx.cap_usd - BUDGET_EPS:
+        return [
+            AlertDraft(
+                rule_id="llm_budget", subject=SYSTEM_SUBJECT, window_start=day_start(ctx.now, ctx.tz),
+                severity="critical", value=data,
+                detail={"spent_usd": data, "cap_usd": ctx.cap_usd, "warn_ratio": ctx.warn_ratio},
+            )
+        ]  # fmt: skip
+    return []

@@ -1,13 +1,16 @@
 """M9-B2 GĐ1 cụm 1: helper cửa sổ ngày (Q-M9-B2-1) + luật tổng hợp chu kỳ ngày 1 `escalation_rate_high`,
-12 `b2_degraded`, 13 `b3_degraded` — hàm thuần, nhận GIÁ TRỊ (loader + hàm A nối ở GĐ2).
+12 `b2_degraded`, 13 `b3_degraded`; cụm 2: luật tổng hợp chu kỳ giờ 14 `llm_budget` — hàm thuần, nhận GIÁ TRỊ
+(loader + hàm A nối ở GĐ2).
 
-Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 12, 13), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ B2).
+Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 12, 13, 14), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ B2),
+Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-7/16/17 (luật 14, chờ chốt ở #14).
 Mọi mốc kỳ vọng là HẰNG tính tay (giờ VN = UTC+7; Tokyo = UTC+9; Berlin CET = UTC+1, CEST = UTC+2), không tính bằng
 chính hàm đang test.
 """
 
 import ast
 import inspect
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -24,6 +27,7 @@ from app.monitor.rules import (
     b3_degraded,
     days_before,
     escalation_rate_high,
+    llm_budget,
     prev_day_window,
     rolling_7d_window,
 )
@@ -49,11 +53,11 @@ def wr(weighted: float | None, raw: float | None = None) -> WeightedRate:
     return WeightedRate(raw=weighted if raw is None else raw, weighted=weighted, by_group={}, sensitivity={})
 
 
-def _ok(rule_id: str, drafts: list[AlertDraft]) -> None:
+def _ok(rule_id: str, drafts: list[AlertDraft], severity: str = "warning") -> None:
     for d in drafts:
         assert d.rule_id == rule_id
         assert d.subject == SYSTEM_SUBJECT
-        assert d.severity == "warning"
+        assert d.severity == severity
         check_alert(d)  # bộ kiểm writer thật dùng (check_detail: không khoá nhạy cảm, không giá trị kiểu JWT)
         assert "audience" not in d.detail  # Q-M9-B1-9: người nhận chỉ nằm trong RuleSpec
 
@@ -220,6 +224,101 @@ def test_degraded_window_is_d0(
     assert draft.window_start == D0
 
 
+# ---- luật 14 llm_budget (ctx mặc định: cap 38, warn 0,8 → ngưỡng 30,4) ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("spent", "n"),
+    [
+        pytest.param(30.41, 1, id="over"),
+        pytest.param(30.39, 0, id="under"),
+        pytest.param(30.4, 1, id="equal-80pct"),  # `30.4 >= 38*0.8` là False → cần BUDGET_EPS (Q-M9-B2-7)
+        pytest.param(30.02, 0, id="79pct"),  # thẻ B2: 79% không báo
+        pytest.param(30.399999, 0, id="just-under"),  # epsilon không được rộng tới 1e-6
+    ],
+)
+def test_budget_threshold(spent: float, n: int) -> None:
+    """`tổng ≥ warn_ratio × cap_usd`; đúng bằng ngưỡng (80%) → báo."""
+    drafts = llm_budget(spent, CTX)
+    assert len(drafts) == n
+    _ok("llm_budget", drafts, severity="critical")
+
+
+@pytest.mark.parametrize(("spent", "n"), [(5.01, 1), (4.99, 0), (5.0, 1)])
+def test_budget_threshold_from_ctx(spent: float, n: int) -> None:
+    """Ngưỡng đọc từ `ctx` (cap 10, warn 0,5 → 5,0), không phải số viết cứng 38 × 0,8."""
+    ctx = RuleContext(now=NOW, tz=VN_TZ, cap_usd=10.0, warn_ratio=0.5)
+    assert len(llm_budget(spent, ctx)) == n
+
+
+@pytest.mark.parametrize("spent", [38.0, 1000.0])
+def test_budget_over_cap_single_draft(spent: float) -> None:
+    """Một mức (Q-M9-B2-17): vượt trần vẫn đúng 1 draft, không thêm draft "vượt cap"."""
+    drafts = llm_budget(spent, CTX)
+    assert len(drafts) == 1
+    _ok("llm_budget", drafts, severity="critical")
+
+
+def test_budget_zero_no_alert() -> None:
+    """0 = đã đo, chưa chi (loader `COALESCE`) → không báo, không lỗi."""
+    assert llm_budget(0.0, CTX) == []
+
+
+@pytest.mark.parametrize(
+    ("spent", "shown"),
+    [(None, "None"), (math.nan, "nan"), (math.inf, "inf"), (-0.01, "-0.01")],
+    ids=["none", "nan", "inf", "negative"],
+)
+def test_budget_invalid_raises(spent: float | None, shown: str) -> None:
+    """Q-M9-B2-16: tổng không hợp lệ → `ValueError` (luật vào `failed_rules`), không trả `[]` (tắt im lặng = FN).
+    Thông điệp không in giá trị: evaluator ghi nó vào log."""
+    with pytest.raises(ValueError) as exc:
+        llm_budget(spent, CTX)
+    assert shown not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 10, 2, 17, 0, tzinfo=UTC),  # 00:00 ngày 03/10 giờ VN
+        datetime(2026, 10, 3, 3, 30, tzinfo=UTC),  # 10:30 ngày 03/10 giờ VN
+        datetime(2026, 10, 3, 16, 59, 59, 999999, tzinfo=UTC),  # 23:59:59,999999 ngày 03/10 giờ VN
+    ],
+)
+def test_budget_window_is_d0(now: datetime) -> None:
+    """Q-M9-6: chạy mỗi giờ, `window_start` = đầu ngày VN → mọi lượt trong ngày ra đúng một khoá (không phải
+    `hour_start`, không phải `ctx.now`)."""
+    [draft] = llm_budget(30.4, ctx_at(now))
+    assert draft.window_start == D0
+
+
+def test_budget_window_flips_at_vn_midnight() -> None:
+    [before] = llm_budget(30.4, ctx_at(datetime(2026, 10, 2, 16, 59, 59, 999999, tzinfo=UTC)))  # 23:59:59 02/10 VN
+    [at] = llm_budget(30.4, ctx_at(datetime(2026, 10, 2, 17, 0, tzinfo=UTC)))  # 00:00 03/10 VN
+    assert before.window_start == D0_MINUS_1
+    assert at.window_start == D0
+
+
+def test_budget_window_follows_ctx_tz() -> None:
+    """19:00Z = 04:00 ngày 03/10 JST → đầu ngày 03/10 JST = 2026-10-02T15:00Z."""
+    [draft] = llm_budget(30.4, ctx_at(NOW, TOKYO))
+    assert draft.window_start == datetime(2026, 10, 2, 15, 0, tzinfo=UTC)
+
+
+def test_budget_detail_and_value() -> None:
+    [draft] = llm_budget(30.4, CTX)
+    assert draft.value == 30.4
+    assert dict(draft.detail) == {"spent_usd": 30.4, "cap_usd": 38.0, "warn_ratio": 0.8}
+    _ok("llm_budget", [draft], severity="critical")
+
+
+def test_registry_llm_budget() -> None:
+    """Bảng 16 luật (monitor.md mục 6): chu kỳ giờ; "cả nhóm" = cả 3 giá trị `Audience`."""
+    spec = REGISTRY["llm_budget"]
+    assert (spec.every, spec.audience) == ("hourly", ("dev", "manager", "ops"))
+    assert spec.fn is llm_budget
+
+
 # ---- chung -------------------------------------------------------------------------------------------------------
 
 
@@ -247,7 +346,7 @@ def test_aggregate_rules_use_system_subject() -> None:
     bare = [k.value.lineno for k in subjects if isinstance(k.value, ast.Constant) and k.value.value == ""]
     assert bare == []
     named = [k for k in subjects if isinstance(k.value, ast.Name) and k.value.id == "SYSTEM_SUBJECT"]
-    assert len(named) >= 2  # luật 1 + helper luật 12/13 — quét không rỗng
+    assert len(named) >= 3  # luật 1 + helper luật 12/13 + luật 14 — quét không rỗng
 
 
 def _is_type_checking(node: ast.If) -> bool:
