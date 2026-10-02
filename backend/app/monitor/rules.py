@@ -19,18 +19,22 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
 from app.core.hashing import sha256_key
 from app.domain.alerts import (
     BRUTEFORCE_RULE_ID,
     SUBJECT_MAX,
+    SYSTEM_SUBJECT,
     AlertDraft,
     bruteforce_alert,
     bruteforce_subject,
 )
-from app.monitor.window import bucket_start
+from app.monitor.window import bucket_start, day_start
+
+if TYPE_CHECKING:  # chỉ lấy KIỂU của luồng A (một nguồn); lúc chạy không nạp module I/O (sqlalchemy) vào luật thuần
+    from app.monitor.queries.business import WeightedRate
 
 type Every = Literal["minute", "hourly", "daily", "weekly"]
 EVERY_VALUES: tuple[str, ...] = get_args(Every.__value__)
@@ -371,3 +375,85 @@ def execution_failed(data: Sequence[TicketExit], ctx: RuleContext) -> list[Alert
     runner/boundary, `exec_failed`…). `window_start` = created_at nhỏ nhất của dòng E7 (không lọc step — hai đường
     ghi khác step); ticket còn dòng E7 trong lookback thì vẫn ra đúng khoá cũ dù dòng đầu đã quá 24 giờ."""
     return _ticket_exit_drafts("execution_failed", data, ctx)
+
+
+# ---- luật tổng hợp chu kỳ ngày, job 02:00 giờ VN (B2 — chốt Q-M9-B2-1 ở #14) ---------------------------------------
+#
+# Cửa sổ dữ liệu KẾT THÚC ở `d0 = day_start(ctx.now, ctx.tz)` (ngày VN trọn): job chạy 02:00 VN, đo `[d0, now)` thì chỉ
+# có 2 giờ đêm → gần như không có lá → chỉ số `None` → luật không bao giờ nổ (bỏ sót). `window_start` = `d0`: chạy lại
+# trong cùng ngày ra đúng khoá cũ. Loader (GĐ2) lấy mốc từ CHÍNH các helper dưới đây — một nguồn cho mốc.
+# Chỉ số `None` (không có lá) → không nổ, không phải lỗi. Chỉ đánh giá mốc `d0` (đánh giá bù N mốc: Q-M9-B2-15, chưa
+# duyệt).
+# Luật tổng hợp: subject luôn là hằng `SYSTEM_SUBJECT` (không viết chuỗi rỗng trần — test AST ghim).
+
+ESCALATION_THRESHOLD = 0.40  # luật 1: weighted > 0,40 (bằng ngưỡng → không báo)
+ESCALATION_DAYS = 7  # luật 1: 7 ngày VN trọn
+DEGRADED_THRESHOLD = 0.30  # luật 12, 13: > 0,30 (bằng ngưỡng → không báo)
+
+
+def days_before(d0: datetime, k: int, tz: ZoneInfo) -> datetime:
+    """00:00 theo `tz` của ngày lịch thứ `k` trước ngày chứa `d0`, kiểu UTC. Trừ `k` ngày trên giờ ĐỊA PHƯƠNG rồi chuẩn
+    hoá bằng `day_start` — KHÔNG trừ `24 h × k` trên UTC (ngày đổi giờ dài 23 giờ → rơi sang ngày trước nữa)."""
+    return day_start(d0.astimezone(tz) - timedelta(days=k), tz)
+
+
+def prev_day_window(ctx: RuleContext) -> tuple[datetime, datetime]:
+    """Luật 12, 13: `[d0 − 1 ngày, d0)` — trọn ngày VN hôm trước."""
+    d0 = day_start(ctx.now, ctx.tz)
+    return days_before(d0, 1, ctx.tz), d0
+
+
+def rolling_7d_window(ctx: RuleContext) -> tuple[datetime, datetime]:
+    """Luật 1: `[d0 − 7 ngày, d0)` — 7 ngày VN trọn."""
+    d0 = day_start(ctx.now, ctx.tz)
+    return days_before(d0, ESCALATION_DAYS, ctx.tz), d0
+
+
+@rule("escalation_rate_high", "daily", audience=("manager",))
+def escalation_rate_high(data: "WeightedRate | None", ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 1 — escalation rate CÓ TRỌNG SỐ (nhóm N3 70/20/10) của 7 ngày VN trọn > 0,40 → Trưởng BP. Đọc `weighted`,
+    không đọc `raw`: tỉ lệ thô bị nhóm đông (routine) chi phối, che tỉ lệ escalate cao của nhóm nhạy cảm.
+    `data` = `escalation_rate_weighted(conn, *rolling_7d_window(ctx))` (A1, loader GĐ2). 0 lá → `weighted` None."""
+    if data is None or data.weighted is None:
+        return []  # không có lá trong cửa sổ: không đo được, không phải lỗi
+    weighted = data.weighted
+    if weighted > ESCALATION_THRESHOLD:
+        _, d0 = rolling_7d_window(ctx)
+        return [
+            AlertDraft(
+                rule_id="escalation_rate_high", subject=SYSTEM_SUBJECT, window_start=d0, severity="warning",
+                value=weighted, detail={
+                    "weighted": weighted, "raw": data.raw, "threshold": ESCALATION_THRESHOLD, "days": ESCALATION_DAYS,
+                },
+            )
+        ]  # fmt: skip
+    return []
+
+
+def _degraded(rule_id: str, rate: float | None, ctx: RuleContext) -> list[AlertDraft]:
+    if rate is None:
+        return []  # không có lá trong ngày: không đo được, không phải lỗi
+    if rate > DEGRADED_THRESHOLD:
+        _, d0 = prev_day_window(ctx)
+        return [
+            AlertDraft(
+                rule_id=rule_id, subject=SYSTEM_SUBJECT, window_start=d0, severity="warning", value=rate,
+                detail={"rate": rate, "threshold": DEGRADED_THRESHOLD},
+            )
+        ]  # fmt: skip
+    return []
+
+
+@rule("b2_degraded", "daily", audience=("dev",))
+def b2_degraded(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 12 — tỉ lệ lá phải xuống LLM ở B2 của ngày VN hôm trước > 0,30. `data` = `b2_llm_rate(conn,
+    *prev_day_window(ctx))` (A2). Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b2_classifier")`, Q-M9-A2-8):
+    Phase 3–4 chưa có injection-clf nên số ≈ 1,0 — báo mỗi ngày một điều đã biết."""
+    return _degraded("b2_degraded", data, ctx)
+
+
+@rule("b3_degraded", "daily", audience=("dev",))
+def b3_degraded(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 13 (D-32) — tỉ lệ lá xuống LLM ở B3 của ngày VN hôm trước > 0,30. `data` = `b3_llm_rate(conn,
+    *prev_day_window(ctx))` (A2). Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
+    return _degraded("b3_degraded", data, ctx)
