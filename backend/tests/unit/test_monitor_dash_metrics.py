@@ -1,8 +1,9 @@
-"""M9 A1 — `metrics.py`: `METRIC_SOURCES` (chỉ khóa response, hai chiều), `PENDING_SOURCES` (Q-M9-A1-7), `is_pending`
-(khóa lạ → KeyError), hằng E1 nguyên văn `reason_detail`, hằng N3."""
+"""M9 A1, A2 — `metrics.py`: `METRIC_SOURCES` (chỉ khóa response, hai chiều, nghiệp vụ + AI), `PENDING_SOURCES`
+(Q-M9-A1-7, Q-M9-A2-8), `is_pending` (khóa lạ → KeyError), hằng E1 nguyên văn `reason_detail`, hằng N3."""
 
 import pytest
 from app.domain.exit_codes import REASON_DETAILS
+from app.domain.override import OVERRIDE_EVENT, OVERRIDE_STEP
 from app.monitor.metrics import (
     E1_OTHER,
     E1_REASONS,
@@ -12,18 +13,27 @@ from app.monitor.metrics import (
     PENDING_SOURCES,
     is_pending,
 )
+from app.monitor.queries.ai import AI_METRICS
 from app.monitor.queries.business import BUSINESS_METRICS
 
-PENDING_RULE_SOURCES = {"override_count", "multi_intent", "b3_cascade", "tool_spans"}
+PENDING_RULE_SOURCES = {"multi_intent", "b3_cascade", "tool_spans", "b2_classifier"}
+MULTI_INTENT_KEYS = {"multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"}
+PENDING_METRICS = MULTI_INTENT_KEYS
 
 
 def test_metric_sources_equal_response_keys_both_ways() -> None:
     assert len(BUSINESS_METRICS) == 10  # quét rỗng thì đỏ, không xanh giả
-    assert set(METRIC_SOURCES) == set(BUSINESS_METRICS)
+    assert len(AI_METRICS) == 14  # Q-M9-A2-6: 12 dòng bảng 5.2 = 14 khóa
+    assert not set(BUSINESS_METRICS) & set(AI_METRICS)
+    assert len(METRIC_SOURCES) >= 24
+    assert set(METRIC_SOURCES) == set(BUSINESS_METRICS) | set(AI_METRICS)
 
 
 def test_pending_sources_exact() -> None:
-    assert dict(PENDING_SOURCES) == dict.fromkeys(PENDING_RULE_SOURCES, "pending") | {"approval_view": "ready"}
+    assert dict(PENDING_SOURCES) == dict.fromkeys(PENDING_RULE_SOURCES, "pending") | {
+        "approval_view": "ready",
+        "override_count": "ready",  # 4d (e510a6e) đã ghi dòng OVERRIDE
+    }
     assert "policy_saved" not in PENDING_SOURCES  # luật 11 chạy truy vấn thật, không gọi is_pending
 
 
@@ -31,11 +41,19 @@ def test_is_pending_values() -> None:
     for key in PENDING_RULE_SOURCES:
         assert is_pending(key) is True, key
     assert is_pending("approval_view") is False
-    for key in set(METRIC_SOURCES) - {"override_count"}:
+    assert is_pending("override_count") is False  # có ở cả hai dict, cùng ready
+    for key in PENDING_METRICS:
+        assert is_pending(key) is True, key
+    for key in set(METRIC_SOURCES) - PENDING_METRICS:  # gồm b2_llm_rate, b3_llm_rate, intent_model_version (ready)
         assert is_pending(key) is False, key
 
 
-@pytest.mark.parametrize("key", ["policy_saved", "khong_co", "b3_llm_rate", ""])
+def test_multi_intent_metrics_follow_source() -> None:
+    for key in MULTI_INTENT_KEYS:
+        assert METRIC_SOURCES[key].status == PENDING_SOURCES["multi_intent"], key
+
+
+@pytest.mark.parametrize("key", ["policy_saved", "khong_co", "b3_llm_ratio", "multi_intent_rate", ""])
 def test_is_pending_unknown_key_raises(key: str) -> None:
     with pytest.raises(KeyError):
         is_pending(key)
@@ -53,7 +71,8 @@ def test_pending_metric_has_reason() -> None:
         assert source.tables, key
         assert (source.status == "pending") == (source.pending_reason is not None), key
     override = METRIC_SOURCES["override_count"]
-    assert (override.step, override.event) == ("OVERRIDE", "override_recorded")
+    assert (override.step, override.event) == (OVERRIDE_STEP, OVERRIDE_EVENT) == ("OVERRIDE", "override_recorded")
+    assert override.status == "ready" and override.pending_reason is None
 
 
 def test_e1_reasons_verbatim_reason_detail() -> None:

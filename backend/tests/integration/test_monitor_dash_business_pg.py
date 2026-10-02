@@ -116,7 +116,7 @@ async def test_ratios_ignore_parent_with_different_outcome(rw: AsyncEngine, mon:
     weighted = await q(mon, b.escalation_rate_weighted, 16)
     assert weighted.raw == 1.0
     assert weighted.by_group == {"routine": 1.0, "approval": None, "sensitive": None}  # con không tới M5 → routine
-    assert weighted.weighted == 1.0
+    assert weighted.weighted == pytest.approx(1.0)  # weigh() nhân/chia float: 3 lá routine ra 0,9999999999999999
 
 
 @pytest.mark.asyncio
@@ -339,9 +339,13 @@ async def test_zero_denominator_none(rw: AsyncEngine, mon: AsyncEngine) -> None:
         e1 = await q(mon, b.e1_split, day)
         assert e1.total == 0 and set(e1.shares.values()) == {None}
         assert await q(mon, b.approval_expired_count, day) == 0
+        assert await q(mon, b.override_count, day) == 0  # đếm → 0, không None
         assert await q(mon, b.e3_cases, day) == []
     assert await q(mon, b.decided_by_distribution, 12) == {}
     assert await q(mon, b.top_matched_rules, 12) == []
+    empty = await q(mon, b.business_metrics, 12)
+    assert empty.values["override_count"] == 0  # cửa sổ trống: 0, không None
+    assert empty.unavailable == ()  # không vào `unavailable`
 
 
 @pytest.mark.asyncio
@@ -351,15 +355,51 @@ async def test_business_metrics_all_keys_and_unavailable(rw: AsyncEngine, mon: A
         await resolved(conn, at)
     m = await q(mon, b.business_metrics, 14)
     assert tuple(m.values) == b.BUSINESS_METRICS
-    assert m.values["override_count"] is None  # pending tới 4d — null, không 0
-    assert m.unavailable == ("override_count",)
+    assert m.values["override_count"] == 0  # 4d đã nối: không dòng ghi đè → 0
+    assert m.unavailable == ()
     assert m.values["automation_rate"] == 1.0
 
 
 @pytest.mark.asyncio
 async def test_window_bounds(rw: AsyncEngine, mon: AsyncEngine) -> None:
-    frm, to = win(15)
+    frm, to = win(25)  # lá `to` rơi vào 26/01 00:00 UTC (07:00 VN), ngày không test nào dùng (R26 sửa kèm a)
     async with rw.begin() as conn:
         await resolved(conn, frm)  # đúng frm → tính
         await escalated(conn, to, "E1")  # đúng to → không tính
-    assert await q(mon, b.escalation_rate_raw, 15) == 0.0  # đã đo, không có ca escalate (khác None)
+    assert await q(mon, b.escalation_rate_raw, 25) == 0.0  # đã đo, không có ca escalate (khác None)
+
+
+@pytest.mark.asyncio
+async def test_override_count_rows_on_leaves(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """Đếm DÒNG ghi đè của lá, kỳ vọng 3: lá A (đã xong) 2 dòng (L1_A, L1_B) + lá B (ĐANG CHẠY, không lọc final_state) 1
+    dòng; ticket cha có 1 dòng → không tính (v_leaf). Dòng nhiễu không tính: step OVERRIDE nhưng event khác; event
+    `override_recorded` nhưng step khác. Hai dòng nhiễu ghi thẳng, không `idempotency_key`/`overrider_id` (key NULL nằm
+    ngoài `ux_audit_idem`)."""
+    t = win(20)[0] + timedelta(hours=1)  # 20/01 01:00 UTC = 08:00 VN, trong cửa sổ UTC [20/01, 21/01)
+    async with rw.begin() as conn:
+        a, running = await resolved(conn, t), await seed.leaf_ticket(conn, created_at=t)
+        parent, _ = await seed.parent_with_children(conn, 1, created_at=t)
+        await seed.override(conn, a, created_at=t, overrider_id=L1_A)
+        await seed.override(conn, a, created_at=t, overrider_id=L1_B)
+        await seed.override(conn, running, created_at=t, overrider_id=L1_A)
+        await seed.override(conn, parent, created_at=t, overrider_id=L1_A)
+        noise = {"reason_code": "policy_gap"}
+        await seed.audit_row(conn, a, step="OVERRIDE", event="override_denied", created_at=t, detail=noise)
+        await seed.audit_row(conn, running, step="B13/B14", event="override_recorded", created_at=t, detail=noise)
+    assert await q(mon, b.override_count, 20) == 3
+
+
+@pytest.mark.asyncio
+async def test_override_count_window_by_leaf_created_at(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """Cửa sổ theo `created_at` của LÁ (không theo dòng audit), `win()` cắt theo UTC: [22/01 00:00, 23/01 00:00) UTC.
+    Lá C tạo 22/01 01:00 UTC (08:00 VN) trong cửa sổ, 2 dòng ghi 23/01 02:00 UTC (09:00 VN, SAU `to`) → tính 2. Lá D tạo
+    21/01 23:00 UTC (22/01 06:00 VN, trước `frm` 1 giờ; theo giờ VN đã sang ngày 22 nhưng cửa sổ cắt theo UTC), 1 dòng ghi
+    22/01 01:00 UTC (trong cửa sổ) → không tính. Kỳ vọng 2; lọc theo `audit_logs.created_at` thì ra 1 (đỏ)."""
+    frm, to = win(22)
+    async with rw.begin() as conn:
+        c = await resolved(conn, frm + timedelta(hours=1))
+        d = await resolved(conn, datetime(2030, 1, 21, 23, tzinfo=UTC))
+        for who in (L1_A, L1_B):
+            await seed.override(conn, c, created_at=to + timedelta(hours=2), overrider_id=who)
+        await seed.override(conn, d, created_at=frm + timedelta(hours=1), overrider_id=L1_A)
+    assert await q(mon, b.override_count, 22) == 2
