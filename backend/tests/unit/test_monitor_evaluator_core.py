@@ -1,8 +1,11 @@
 """M9-B0: `evaluate` — bắt lỗi theo từng luật, nguồn pending, loader, kiểm draft. Không DB: loader giả.
+M9-B1: mỗi loader một savepoint (review #12) — kiểm bằng `FakeConn`; bản Postgres thật ở
+`tests/integration/test_monitor_evaluator_savepoint_pg.py`.
 
 Nguồn: file chia việc M9 mục 3 (hợp đồng `EvalResult`), mục 6 (B0); kế hoạch chung M9 mục 3.3, 4.4.
 """
 
+import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -17,12 +20,48 @@ from app.monitor.evaluator import (
     evaluate,
     loader,
 )
-from app.monitor.rules import REGISTRY, DuplicateRuleError, Every, RuleContext, rule
+from app.monitor.rules import (
+    REGISTRY,
+    Audience,
+    DuplicateRuleError,
+    Every,
+    RuleContext,
+    rule,
+)
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 NOW = datetime(2026, 9, 30, 8, 0, tzinfo=UTC)
 CTX = RuleContext(now=NOW, tz=ZoneInfo("Asia/Ho_Chi_Minh"), cap_usd=38.0, warn_ratio=0.8)
-CONN = cast(AsyncConnection, object())  # sentinel: evaluate chỉ chuyển tiếp cho loader, không dùng
+AUD: tuple[Audience, ...] = ("dev",)
+
+
+class FakeConn:
+    """Giả `AsyncConnection` vừa đủ cho `evaluate`: chỉ có `begin_nested()`. Ghi lại từng savepoint — mở, đóng bằng
+    RELEASE hay ROLLBACK (kèm tên lỗi) — và đang lồng bao nhiêu tầng."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str | None]] = []
+        self.depth = 0
+
+    def begin_nested(self) -> "_Savepoint":
+        return _Savepoint(self)
+
+
+class _Savepoint:
+    def __init__(self, conn: FakeConn) -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> None:
+        self._conn.depth += 1
+        self._conn.events.append(("savepoint", None))
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: object, tb: object) -> bool:
+        self._conn.depth -= 1
+        self._conn.events.append(("rollback", exc_type.__name__) if exc_type else ("release", None))
+        return False  # không nuốt lỗi — evaluate tự bắt theo từng luật
+
+
+CONN = cast(AsyncConnection, FakeConn())  # evaluate mở savepoint rồi chuyển tiếp cho loader
 
 
 @pytest.fixture(autouse=True)
@@ -44,7 +83,7 @@ def _draft(rule_id: str, subject: str = "t-1", window_start: datetime = NOW) -> 
 def _returns(rule_id: str, every: Every, drafts: list[AlertDraft]) -> None:
     """Đăng ký luật + loader: loader trả `None`, luật trả `drafts`."""
 
-    @rule(rule_id, every)
+    @rule(rule_id, every, audience=AUD)
     def fn(data: Any, ctx: RuleContext) -> list[AlertDraft]:
         return drafts
 
@@ -63,7 +102,7 @@ class Boom(RuntimeError):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("where", ["loader", "rule"])
 async def test_failing_rule_does_not_block_others(where: str) -> None:
-    @rule("A", "minute")
+    @rule("A", "minute", audience=AUD)
     def rule_a(data: Any, ctx: RuleContext) -> list[AlertDraft]:
         raise Boom("luật A hỏng")
 
@@ -99,6 +138,70 @@ async def test_draft_checks_naive_window_and_long_subject() -> None:
     assert [d.rule_id for d in result.drafts] == ["ok64"]
 
 
+@pytest.mark.asyncio
+async def test_each_loader_runs_in_its_own_savepoint() -> None:
+    """Review #12: loader A lỗi SQL làm transaction Postgres *aborted* → mọi loader sau cùng `conn` lỗi theo. Mỗi
+    loader phải chạy BÊN TRONG savepoint riêng; savepoint của A rollback, của B mở SAU khi A đã đóng."""
+    fake = FakeConn()
+    depth_seen: dict[str, int] = {}
+
+    @rule("A", "minute", audience=AUD)
+    def rule_a(data: Any, ctx: RuleContext) -> list[AlertDraft]:
+        return [_draft("A")]
+
+    @loader("A")
+    async def load_a(conn: AsyncConnection, ctx: RuleContext) -> object:
+        depth_seen["A"] = fake.depth
+        raise Boom("lỗi SQL giả")
+
+    b = _draft("B")
+
+    @rule("B", "minute", audience=AUD)
+    def rule_b(data: Any, ctx: RuleContext) -> list[AlertDraft]:
+        assert fake.depth == 0  # hàm luật thuần chạy NGOÀI savepoint
+        return [b]
+
+    @loader("B")
+    async def load_b(conn: AsyncConnection, ctx: RuleContext) -> object:
+        depth_seen["B"] = fake.depth
+        return None
+
+    result = await evaluate("minute", cast(AsyncConnection, fake), CTX)
+    assert result == EvalResult(drafts=[b], failed_rules=["A"], skipped_rules=[])
+    assert fake.events == [("savepoint", None), ("rollback", "Boom"), ("savepoint", None), ("release", None)]
+    assert depth_seen == {"A": 1, "B": 1}
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_propagates_through_savepoint() -> None:
+    """X1: hủy job (`CancelledError` là BaseException) phải LAN RA qua savepoint, không bị nuốt thành `failed_rules`
+    — `except Exception` trong evaluate. Savepoint của luật bị hủy rollback; luật sau không chạy."""
+    fake = FakeConn()
+    called: list[str] = []
+
+    @rule("A", "minute", audience=AUD)
+    def rule_a(data: Any, ctx: RuleContext) -> list[AlertDraft]:
+        return []
+
+    @loader("A")
+    async def load_a(conn: AsyncConnection, ctx: RuleContext) -> object:
+        raise asyncio.CancelledError
+
+    @rule("B", "minute", audience=AUD)
+    def rule_b(data: Any, ctx: RuleContext) -> list[AlertDraft]:
+        return []
+
+    @loader("B")
+    async def load_b(conn: AsyncConnection, ctx: RuleContext) -> object:
+        called.append("B")
+        return None
+
+    with pytest.raises(asyncio.CancelledError):
+        await evaluate("minute", cast(AsyncConnection, fake), CTX)
+    assert fake.events == [("savepoint", None), ("rollback", "CancelledError")]
+    assert called == []
+
+
 # ---- nguồn pending, thiếu loader -----------------------------------------------------------------
 
 
@@ -106,7 +209,7 @@ async def test_draft_checks_naive_window_and_long_subject() -> None:
 async def test_pending_source_goes_to_skipped() -> None:
     called: list[str] = []
 
-    @rule("pend", "daily")
+    @rule("pend", "daily", audience=AUD)
     def fn(data: Any, ctx: RuleContext) -> list[AlertDraft]:
         called.append("pend")
         return [_draft("pend")]
@@ -122,7 +225,7 @@ async def test_pending_source_goes_to_skipped() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_loader_is_failed_not_silent() -> None:
-    @rule("no_loader", "minute")
+    @rule("no_loader", "minute", audience=AUD)
     def fn(data: Any, ctx: RuleContext) -> list[AlertDraft]:
         return [_draft("no_loader")]
 
@@ -152,7 +255,7 @@ async def test_conn_and_ctx_passed_through() -> None:
     seen: dict[str, object] = {}
     payload = object()
 
-    @rule("pass", "hourly")
+    @rule("pass", "hourly", audience=AUD)
     def fn(data: Any, ctx: RuleContext) -> list[AlertDraft]:
         seen["data"], seen["rule_ctx"] = data, ctx
         return []

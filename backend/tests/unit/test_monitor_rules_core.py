@@ -1,4 +1,5 @@
 """M9-B0: khung luật thuần — đăng ký `@rule`, `RuleContext`, `hourly_median`, `spike`, luật không đọc đồng hồ.
+M9-B1: `audience` bắt buộc trong `@rule` (Q-M9-B1-9 ở #13).
 
 Nguồn: file chia việc M9 mục 3 (hợp đồng), mục 6 (B0); kế hoạch chung M9 mục 6 (trung vị 7 ngày, ranh giới spike).
 """
@@ -11,21 +12,22 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pytest
 from app.domain.alerts import AlertDraft
 from app.monitor import evaluator, rules
 from app.monitor.rules import (
     REGISTRY,
+    Audience,
     DuplicateRuleError,
     RuleContext,
     hourly_median,
     rule,
     spike,
 )
+from app.monitor.window import VN_TZ
 
-VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")  # sau khi A0 merge: dùng app.monitor.window.VN_TZ
+AUD: tuple[Audience, ...] = ("dev",)
 
 
 @pytest.fixture(autouse=True)
@@ -50,11 +52,11 @@ def test_duplicate_rule_id_fails_at_import(tmp_path: Path) -> None:
         """
         from app.monitor.rules import rule
 
-        @rule("dup_import", "minute")
+        @rule("dup_import", "minute", audience=("dev",))
         def first(data, ctx):
             return []
 
-        @rule("dup_import", "hourly")
+        @rule("dup_import", "hourly", audience=("dev",))
         def second(data, ctx):
             return []
         """
@@ -74,23 +76,72 @@ def _noop(data: Any, ctx: RuleContext) -> list[AlertDraft]:
 
 def test_rule_rejects_bad_every_empty_id_async_fn() -> None:
     with pytest.raises(ValueError):
-        rule("x", "yearly")(_noop)  # type: ignore[arg-type]
+        rule("x", "yearly", audience=AUD)(_noop)  # type: ignore[arg-type]
     with pytest.raises(ValueError):
-        rule("", "minute")(_noop)
+        rule("", "minute", audience=AUD)(_noop)
 
     async def io_rule(data: Any, ctx: RuleContext) -> list[AlertDraft]:
         return []
 
     with pytest.raises(TypeError):
-        rule("async_rule", "minute")(io_rule)  # type: ignore[type-var]
+        rule("async_rule", "minute", audience=AUD)(io_rule)  # type: ignore[type-var]
     assert REGISTRY == {}  # không luật nào lọt vào sổ
 
 
 def test_rule_returns_function_unchanged() -> None:
-    fn = rule("keep_fn", "daily")(_noop)
+    fn = rule("keep_fn", "daily", audience=("dev", "manager"))(_noop)
     assert fn is _noop
     assert REGISTRY["keep_fn"].every == "daily"
     assert REGISTRY["keep_fn"].fn is _noop
+    assert REGISTRY["keep_fn"].audience == ("dev", "manager")
+
+
+# ---- người nhận (Q-M9-B1-9: bắt buộc trong decorator, chỉ nằm trong RuleSpec) -------------------
+
+
+def test_rule_without_audience_fails_at_import() -> None:
+    with pytest.raises(TypeError):
+        rule("no_aud", "minute")(_noop)  # type: ignore[call-arg]
+    assert REGISTRY == {}
+
+
+@pytest.mark.parametrize(
+    ("audience", "error"),
+    [
+        ("dev", TypeError),  # chuỗi trần — sẽ thành ("d", "e", "v") nếu không chặn
+        (["dev"], TypeError),  # list — RuleSpec giữ tuple (frozen)
+        ((), ValueError),  # rỗng — cảnh báo không người nhận = không ai đọc
+        (("dev", "boss"), ValueError),  # giá trị lạ
+        (("Dev",), ValueError),  # sai hoa/thường cũng là lạ
+        (("dev", "dev"), ValueError),  # trùng
+    ],
+)
+def test_rule_bad_audience_fails_at_import(audience: Any, error: type[Exception]) -> None:
+    with pytest.raises(error):
+        rule("bad_aud", "minute", audience=audience)(_noop)
+    assert REGISTRY == {}
+
+
+def test_bad_audience_fails_when_module_imported(tmp_path: Path) -> None:
+    """Lỗi ngay LÚC IMPORT module khai báo luật, không đợi tới lúc chạy job."""
+    path = tmp_path / "bad_aud_mod.py"
+    path.write_text(
+        textwrap.dedent(
+            """
+            from app.monitor.rules import rule
+
+            @rule("bad_aud_import", "minute", audience=("ops", "ops"))
+            def fn(data, ctx):
+                return []
+            """
+        ),
+        encoding="utf-8",
+    )
+    spec = importlib.util.spec_from_file_location("bad_aud_mod", path)
+    assert spec is not None and spec.loader is not None
+    with pytest.raises(ValueError):
+        spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    assert "bad_aud_import" not in REGISTRY
 
 
 def test_rule_context_requires_aware_now() -> None:
