@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from app.monitor.metrics import N3_SENSITIVITY, N3_WEIGHTS
+from app.monitor.metrics import METRIC_SOURCES, N3_SENSITIVITY, N3_WEIGHTS
 from app.monitor.queries import business
 from app.monitor.queries.business import WeightedRate, escalation_rate_weighted, weigh
 
@@ -81,6 +81,14 @@ def test_own_keys_subset_of_business() -> None:
     assert business.OWN_KEYS == ("approval_expired_count", "decided_by_distribution", "top_matched_rules")
     assert set(business.OWN_KEYS) <= set(business.BUSINESS_METRICS)
     assert set(business.QUERIES) == set(business.BUSINESS_METRICS)
+
+
+def test_business_queries_none_iff_pending() -> None:
+    """Khóa chưa có truy vấn (None) ⇔ METRIC_SOURCES ghi pending; `override_count` đã nối (4d)."""
+    assert len(business.QUERIES) == 10  # quét rỗng thì đỏ, không xanh giả
+    for key, query in business.QUERIES.items():
+        assert (query is None) == (METRIC_SOURCES[key].status == "pending"), key
+    assert business.QUERIES["override_count"] is business.override_count
 
 
 BUSINESS_SRC = REPO / "backend" / "app" / "monitor" / "queries" / "business.py"

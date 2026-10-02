@@ -4,6 +4,7 @@
 - Cửa sổ `[frm, to)` tính theo `created_at` của lá. `frm`/`to` naive, hoặc `frm >= to` → `ValueError`.
 - Mẫu số mọi tỉ lệ: chỉ lá đã kết thúc (`final_state IS NOT NULL`) — lá đang chạy chưa biết kết cục.
 - Tỉ lệ có mẫu số 0 → `None`, không bao giờ 0 (kế hoạch M9 4.3). Nguồn pending → `null` + tên trong `unavailable`.
+- `override_count` đếm DÒNG audit (không lọc `final_state`), cửa sổ theo lá; cửa sổ trống → 0, không `None`.
 - Điểm log 4 = `v_decisions` (step `B13/B14`); `decided_by` là cột `audit_logs` (`rule`/`llm`), không phải
   `approvals.decided_by`.
 - Own (`approver_id`, Q-M9-5 / Q-M9-A1-6): chỉ tính lá có phiếu `approvals.approver_id = approver_id`, kể cả phiếu
@@ -18,6 +19,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.domain.override import OVERRIDE_EVENT, OVERRIDE_STEP
 from app.monitor.metrics import (
     E1_OTHER,
     E1_REASONS,
@@ -204,6 +206,19 @@ async def top_matched_rules(
     return [RuleCount(rule_id=rule_id, count=int(n)) for rule_id, n in rows]
 
 
+async def override_count(conn: AsyncConnection, frm: datetime, to: datetime) -> int:
+    """Số dòng ghi đè L1 của lá trong cửa sổ: dòng `audit_logs` do 4d ghi (`OVERRIDE_STEP`, `OVERRIDE_EVENT`), nối `v_leaf`.
+    Đếm DÒNG, không đếm ticket (một lá có thể bị nhiều người ghi đè); không lọc `final_state` (ghi đè chỉ có trên ticket đã
+    kết thúc, và đây là chỉ số theo dòng audit — Q-M9-A2-7). Cửa sổ theo `created_at` của LÁ như mọi chỉ số nghiệp vụ,
+    không theo thời điểm ghi đè: ghi đè muộn có thể làm số của kỳ cũ tăng (đã chốt). Cửa sổ trống → 0 (đã đo, không có)."""
+    params = {**_params(frm, to), "step": OVERRIDE_STEP, "event": OVERRIDE_EVENT}
+    row = await _scalar_row(conn, (
+        f"SELECT count(*) FROM audit_logs a JOIN {V_LEAF} t ON t.ticket_id = a.ticket_id "
+        f"WHERE {_LEAF_WINDOW} AND a.step = :step AND a.event = :event"
+    ), params)  # fmt: skip
+    return int(row[0])
+
+
 async def e1_split(conn: AsyncConnection, frm: datetime, to: datetime) -> E1Split:
     """Lá E1 tách theo `escalations.reason_detail` nguyên văn (dòng E1 mới nhất của lá) → 4 khóa `E1_REASONS` +
     `other` (reason_detail khác hoặc không có dòng); tổng = số lá E1 đã kết thúc."""
@@ -245,7 +260,7 @@ QUERIES: Mapping[str, Callable[..., Awaitable[Any]] | None] = {
     "approval_expired_count": approval_expired_count,
     "decided_by_distribution": decided_by_distribution,
     "top_matched_rules": top_matched_rules,
-    "override_count": None,  # Phase 4d: step OVERRIDE, event override_recorded
+    "override_count": override_count,
     "e1_split": e1_split,
     "e3_cases": e3_cases,
 }

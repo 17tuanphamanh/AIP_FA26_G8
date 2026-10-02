@@ -1,4 +1,4 @@
-"""Dựng dữ liệu cho test M9 (A1; A2 thêm `turn`, `span`, `llm_call`, `llm_call_for`; Duy Anh dùng ở B1/B2 — chữ ký giữ
+"""Dựng dữ liệu cho test M9 (A1; A2 thêm `turn`, `span`, `llm_call`, `llm_call_for`, `override`; Duy Anh dùng ở B1/B2 — chữ ký giữ
 ổn định, cần helper mới → viết ở file của mình).
 
 Cách dùng: mọi helper là `async`, nhận `AsyncConnection` của **app_rw** và **KHÔNG tự commit**. Test phải commit
@@ -7,8 +7,8 @@ chưa commit. `audit_logs` chỉ ghi thêm (trigger) → mỗi test dùng cửa 
 `ticket_id` duy nhất (mặc định `new_id()`), mỗi module một DB riêng (`pg.fresh_database`).
 
 Không giả định "ngoài giờ → HITL": điểm log 4 ghi thẳng giá trị truyền vào. Ca 4b R17/R18/R19 (máy người khác/không
-tồn tại) → `llm_disabled_case`: E5, 0 phiếu, không HITL. `override_count` pending tới 4d (step `OVERRIDE`, event
-`override_recorded`) → không có helper.
+tồn tại) → `llm_disabled_case`: E5, 0 phiếu, không HITL. Dòng ghi đè L1 (step `OVERRIDE`) → `override` (dùng
+`OverrideRecord` của domain, đủ `idempotency_key` như 4d ghi thật).
 """
 
 import json
@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from app.domain.override import OverrideRecord
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -324,3 +325,21 @@ async def llm_call_for(conn: AsyncConnection, ticket_id: str, *, created_at: dat
         duration_ms=100, span_type="llm",
     )  # fmt: skip
     return await llm_call(conn, span_id, created_at=created_at, **call_fields)
+
+
+# ---- A2: ghi đè L1 (4d) ----
+
+
+async def override(conn: AsyncConnection, ticket_id: str, *, created_at: datetime, overrider_id: str = SEED_APPROVERS[0]) -> int:
+    """Một dòng ghi đè như `domain/override.py` `OverrideRecord.audit_row()` (step `OVERRIDE`, event `override_recorded`,
+    có `idempotency_key` = sha256 của (ticket, người) → mỗi cặp (ticket, `overrider_id`) chỉ ghi được MỘT dòng). Tự tạo
+    user `overrider_id` vai `l1`. Trả `log_id`."""
+    await ensure_user(conn, overrider_id, role="l1")
+    row = OverrideRecord(
+        ticket_id=ticket_id, overrider_id=overrider_id, original_decision="HITL", override_decision="AUTO",
+        reason_code="policy_gap", note=None, created_at=created_at,
+    ).audit_row()  # fmt: skip
+    columns = {k: v for k, v in row.items() if k not in ("ticket_id", "step", "event", "created_at", "detail")}
+    return await audit_row(
+        conn, ticket_id, step=row["step"], event=row["event"], created_at=created_at, detail=row["detail"], **columns
+    )  # fmt: skip

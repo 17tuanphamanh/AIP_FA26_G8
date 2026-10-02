@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
 
+from app.domain.override import OVERRIDE_EVENT, OVERRIDE_STEP
+
 type Status = Literal["ready", "pending"]
 
 
@@ -41,7 +43,7 @@ METRIC_SOURCES: Mapping[str, MetricSource] = MappingProxyType({
     "approval_expired_count": _ready("tickets", "approvals"),
     "decided_by_distribution": _ready("audit_logs", step="B13/B14"),
     "top_matched_rules": _ready("audit_logs", step="B13/B14"),
-    "override_count": _pending("phase4d_override", "audit_logs", step="OVERRIDE", event="override_recorded"),
+    "override_count": _ready("tickets", "audit_logs", step=OVERRIDE_STEP, event=OVERRIDE_EVENT),  # 4d (e510a6e)
     "e1_split": _ready("tickets", "escalations", step="B4"),
     "e3_cases": _ready("tickets", "audit_logs"),
     # ---- dashboard AI/LLMOps (kế hoạch M9 5.2, A2) — lời gọi LLM nối llm_calls → spans → turns → v_leaf ----
@@ -62,7 +64,7 @@ METRIC_SOURCES: Mapping[str, MetricSource] = MappingProxyType({
 })  # fmt: skip
 
 PENDING_SOURCES: Mapping[str, Status] = MappingProxyType({
-    "override_count": "pending",  # Phase 4d: step OVERRIDE, event override_recorded
+    "override_count": "ready",  # 4d (e510a6e): step OVERRIDE, event override_recorded
     "multi_intent": "pending",  # Phase 5
     "b3_cascade": "pending",  # luật 13 (Q-M9-9): cascade model → LLM là Phase 5
     "tool_spans": "pending",  # luật 5 (Q-M9-4): span tool chưa ghi bảng `spans`
