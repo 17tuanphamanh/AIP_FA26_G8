@@ -22,7 +22,7 @@ export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
 .PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 vpn-smoke models ml-bench \
-	rerank-bench verify verify-status
+	rerank-bench verify verify-status audit-check
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
@@ -146,6 +146,13 @@ verify:
 
 verify-status:
 	@cat .verify/summary.txt 2>/dev/null || echo "chưa có .verify/summary.txt — chạy: make verify"
+
+# Phase 4 4d (P5, PLAN-4d TQ-5/6): kiểm 8 điểm log + quét bí mật trên audit_logs — CHỈ ĐỌC, chạy TRONG container backend (DSN của
+# compose: app_monitor nếu có, không thì app_rw READ ONLY; máy không đọc .env). In nhãn role, không in DSN/giá trị. Cần `make up` (image
+# mới có app/audit/check.py). Quét thêm log: `$(COMPOSE) logs --no-color backend worker | $(COMPOSE) exec -T backend python -m
+# app.audit.check --log - …`. Ví dụ: make audit-check ARGS="--since 2026-10-01T10:00:00+07:00" | make audit-check ARGS="<ticket_id>"
+audit-check:
+	$(COMPOSE) exec -T backend python -m app.audit.check $(ARGS)
 
 # Smoke luồng VPN (phase3 11.9): tc02, tc04, tc05, tc06 với LLM_BACKEND hiện hành + số liệu llm_calls. Với real: TỪ CHỐI
 # khi spend.cap_usd (config container backend đang nạp) > 1 hoặc model chưa có pricing — README "Chạy smoke LLM thật".

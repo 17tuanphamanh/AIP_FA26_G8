@@ -4287,7 +4287,7 @@ DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo
 - **Commit DỪNG 2:** `3b9d745` — 34 file (28 file 4b + 5 file mới + spec v1.2), push `origin/dev-tuananh` 01/10/2026 — **CI xanh** run
   `36783587264` (4m33s, Tuấn Anh kiểm). **4b ĐÓNG.**
 
-## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — DỪNG 1 XANH `aac90b1`, DỪNG 2 XANH — chờ commit)
+## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — **4c ĐÓNG**: DỪNG 1 `aac90b1`, DỪNG 2 `b457e6e` — CI xanh run `36885395186`)
 
 Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 0.1, 0.2, 2; **5.6 + 5.7 thắng khi lệch**). Kế hoạch:
 `PLAN-4c.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4c.md` mục 9): Q-4c-1 = A, Q-4c-2 = A, TQ-1…14 + A1–A26 đồng ý, 2 DỪNG
@@ -4437,7 +4437,11 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     M-4c-2b → `not_at_or_after_deadline[dung-han]`, `[qua-han]`; **M-4c-3b** (SQL `inbox` bỏ `reminder_2_at IS NOT NULL`) →
     `test_c10_pg_inbox_role_filter_assigned_or_backup_after_reminder2`. md5 `approval/store.py` `269c981e…`, `db/runtime.py` `d4e141e8…`
     trước = sau; `git diff --stat` khớp; không còn chữ `MUTATION`. **Mutation DỪNG 2 đủ: 5/5** (unit M-4c-3…6 + SQL 3b); **cả 4c: 10/10**.
-  - **DỪNG 2 XANH** (verify 15:56–16:11 + mutation 10/10 + security-reviewer 0 FAIL). Chờ lệnh commit.
+  - **DỪNG 2 XANH** (verify 15:56–16:11 + mutation 10/10 + security-reviewer 0 FAIL).
+  - **Commit DỪNG 2:** `b457e6e` (19 file = 12 tracked + 4 test mới + spec v1.4 mục 6.5 + 2 README; gitleaks staged sạch; hook unit
+    xanh). Tuấn Anh commit riêng `fc57772` (2 file docs M9: plan A1 + luật 7 đọc audit B16) trên đó. Push `origin/dev-tuananh`
+    01/10/2026 (`aac90b1..fc57772`; fetch trước push: remote vẫn `aac90b1`) — **CI xanh** run `36885395186` (4m57s, CI của `fc57772`
+    gồm cả `b457e6e`; `gh` bị sandbox chặn — Tuấn Anh kiểm).
   - **Spec cần sửa (4c, DỪNG 2):**
     - P4: `may_decide_as` = `approval_role(...)` khác None (một định nghĩa cho quyết / xem / hộp thư); thân 202 thêm `decided_as`.
     - P5: lọc vai trò bằng SQL ở `WHERE` trước `LIMIT`, lọc xung đột ở route → có thể < 50; `status` không bắt buộc; 422
@@ -4449,6 +4453,106 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     - Route quyết: ghi chú từ chối rỗng SAU khi che (ký tự vô hình) → 422 `rejected_requires_note` (soát S4b); B16 giữ `""` (không None).
     - Mutation thêm M-4c-3b (lớp SQL lọc vai trò của hộp thư, độc lập với `approval_role`).
     - Q-4c-3 = A: route quyết giữ 403 cho phiếu có thật không được giao (Việc treo 30).
+
+## Phase 4 — chặng 4d: Ghi đè + `audit_check` + B17 so hash phiếu + e2e cổng 4 + `make gate4` (tầng A) (01–02/10/2026 — PLAN DUYỆT; DỪNG 1 commit, chờ verify trên cây gộp M9)
+
+Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 0.1, 0.2, 2, 4.4, 8; **5.7, 6.4, 6.5 thắng khi lệch**). Kế hoạch:
+`PLAN-4d.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4d.md` mục 9): Q-4d-1 = A, Q-4d-2 = A, TQ-1…13 + A1–A23
+đồng ý, 4 điều kiện kèm (role READ ONLY cả hai đường có test PG; bản giả lưu hash phiếu; i17 rỗng → FAIL; bảng nối e2e ↔ mutation ở DỪNG 2).
+
+- **Bước 0 (01/10/2026):** đầu phiên HEAD `fc57772` (trên `b457e6e`, `aac90b1`); trong phiên Tuấn Anh commit + push **`b74da3f`** "docs: M9
+  sau kiem thu doc lap…" — CHỈ 2 file `docs/spec/claude/ke-hoach-m9-{chia-viec,monitor}.md`, 0 file code → **mốc diff 4d = `b74da3f`**.
+  `git fetch`: `origin/dev-tuananh` = HEAD (không merge M9 mới, không rebase). `uv run alembic heads` = 1 (`0007`). Mốc sandbox: `make lint`
+  xanh (ruff; mypy app 207 / tests 206 / mock 12 / ml 16; import-linter **10/10**; gitleaks 0); unit **3358 passed**. Cây: chỉ
+  `M PROGRESS.md` (mục 4c ĐÓNG — đi cùng commit đầu 4d).
+- **Câu hỏi (đã chốt — Tuấn Anh 01/10/2026; phương án ở `PLAN-4d.md` mục 4, chốt ở mục 9):** **Q-4d-1 = A** (kiểm đúng chỗ code
+  ghi, không sửa B3/B8/B17; Việc treo 31; spec 7.2 sửa theo bảng PLAN mục 4). **Q-4d-2 = A** (`AuditWriter.record_new`, khớp partial index
+  như `record()`; tên port lệch nghĩa → spec cần sửa). Ghi chép gốc:
+  - **Q-4d-1 (mâu thuẫn spec ↔ code)** — bảng 7.2 (cột bắt buộc cho `audit_check`) ghi điểm 1 `confidence`, điểm 3 `query`, điểm 7 `success` +
+    `action_plan_hash_matched` là CỘT; code (xanh từ Phase 3) chỉ ghi chúng vào `detail` (`b03_classify.py:36-41, 116`, `b08_retrieve.py:26-44`,
+    `b17_execute.py:80-85`), 4 cột đó chưa từng được ghi; cột `intent` chỉ có ở `intent_classified`. Theo chữ spec → `audit_check` báo thiếu
+    ở mọi ticket. Đề xuất A: kiểm đúng chỗ code ghi, sửa chữ 7.2.
+  - **Q-4d-2** — route ghi đè phải đọc + ghi `audit_logs` "thẳng bằng `AuditWriter`" nhưng `Desk` (dựng ở `main.py`, không sửa) không có
+    writer (`main.py:236-240`); `AuditWriter.record` không phân biệt dòng mới/cũ (`audit/writer.py:38-58`) → 409 `already_overridden` cần
+    INSERT … RETURNING. Đề xuất A: `ApprovalRepo`/`SqlApprovals.decision_trail` + `record_override` (→ `AuditWriter.record_new`).
+
+- **DỪNG 1 (01–02/10/2026) — P1–P4 (ghi đè) + P5 (`audit_check`) + P7 (B17 so hash phiếu) — XANH PHẦN SANDBOX, commit; chờ `verify G=23` trên cây gộp M9:**
+  - **S1 khung:** `domain/override.py` (`Decision`, `OverrideReason`, `DecisionTrail`, `OverrideRecord.audit_row`, `original_decision`,
+    `override_key`); `AuditWriter.record_new`; port `ApprovalRepo.decision_trail/record_override` + `SqlApprovals` (Q-4d-2 = A); route
+    `POST /api/tickets/{ticket_id}/override` (`require("decision:override", recent_login=True)`); `app/audit/check.py` (lõi, chạy được
+    `python -m app.audit.check`) + vỏ `scripts/audit_check.py` + Makefile `audit-check` (chạy TRONG container backend — TQ-5). Bản giả đủ
+    thân: `MemoryAudit.record_new`, `MemoryApprovals.decision_trail/record_override` (trên `MemoryAudit` đã nối). Unit cũ 3358 xanh.
+  - **S2 test-writer (theo bước S2 PLAN):** 8 file mới — unit `test_override_route.py` 67, `test_override_domain.py` 27,
+    `test_audit_check.py` 159, `test_b17_approval_hash.py` 9; PG `test_override_pg.py` 9, `test_audit_check_pg.py` 8; e2e
+    `test_gate4_hitl.py` 8 (+ `gate4_env.py`). Trước code (tôi chạy lại, khớp): unit **241 đỏ / 21 xanh** — đỏ đúng lý do
+    (`NotImplementedError` của khung route/domain/audit_check; h1 B17 vẫn thực thi khi hash phiếu lệch); 21 xanh canh (413, 403 tầng
+    quyền, 403 `reauth_required` — khung route đã có `require`; dataclass/hằng; `MemoryAudit.record_new`; h2/h3 hành vi cũ). PG/e2e:
+    collect được (chạy ở verify). Tôi kiểm `git status`: chỉ 8 file mới của nó dưới `backend/tests/`. Test-writer tự khai: dùng
+    `cat/sed/grep/python3` để đọc (ngoài luật "chỉ pytest/ls" của vai trò), một lần `python3` sửa chính file test của nó; traceback lỡ
+    in vài dòng khung file cấm (không lấy kỳ vọng). **Sửa hợp đồng (lỗi của tôi):** `fields` 422 của note là `["note"]` (như `parse_body`,
+    vd `test_guard_api.py` e8 `["text"]`), không phải `["body.note"]` — sửa PLAN 2.1/TQ-1 + hằng `NOTE_FIELD` của test.
+  - **S3 code:** route theo thứ tự P1 + TQ-2 (`same_as_original` TRƯỚC guard; 409 `already_overridden` quyết bằng `INSERT … RETURNING`);
+    `original_decision` (TQ-3: `ESCALATE_L2→L2`, thiếu `detail.route` → `policy_decision`); `AuditWriter.record_new` (cùng partial index như
+    `record`); SQL `decision_trail` (`risk_decided` mới nhất theo `log_id` + EXISTS B10) / `record_override`; B17 lớp 2 (TQ-9) ngay sau
+    `approvals.get`, trước mọi lời tra AD. Tôi viết **i8a** e2e (đổi `intended_action` trong checkpoint lúc chờ → E5 lớp 1, không
+    `hash_source`). **Test cũ đổi:** `test_auth_route_scan.py` thêm `test_override_route_requires_permission_and_reauth` (o9 — ghim
+    `("decision:override", None, True)`). **Điều kiện 2 (A12):** P7 KHÔNG làm đỏ test B17 cũ nào (`MemoryApprovals.create` đã lưu
+    `action_plan_hash`) → 0 test cũ đổi, không sửa bản giả.
+  - **S4 code:** `audit_check` theo bảng điểm PLAN mục 4 (Q-4d-1 = A); luật `secret` + canary, trúng có nhóm `v` là mặt nạ → bỏ qua;
+    `SCANNED_COLUMNS` từ kiểu cột model (trừ `ticket_id`); JSON đi từng lá (cả khoá); `readonly_engine` = `default_transaction_read_only=on`
+    theo phiên (Postgres ép, không phụ thuộc quyền role); `main`: DSN `MONITOR_DATABASE_URL` → app_monitor, không thì app_rw; in nhãn role
+    ra stderr, không in DSN; lỗi DB → chỉ tên lớp, mã 2.
+  - **S5:** `make lint` xanh (ruff; mypy app 209 / tests 214 / mock 12 / ml 16; import-linter **10/10**; gitleaks 0 + `gitleaks dir` 17 file
+    mới/sửa sạch); unit **3621 passed** (= 3358 + 1 o9 + 262 mới). **Mutation `mutate_4d.py` lượt 1 (unit): 11/11 ĐỎ đúng dự đoán** —
+    M-4d-2 (4 đỏ), 3 (2), 4 (3), 5 (5), 8 (38), 9 (6), 10 (4), 11 (12), 12 (3), 13 (38), 14 (3); M-4d-5 lần đầu "khác dự đoán" vì DỰ
+    ĐOÁN sai (row11 gửi lần 2 cùng giờ FakeClock → khoá đột biến vẫn trùng) — sửa dự đoán, chạy lại riêng: đỏ đúng. md5 4 file
+    trước = sau, `git diff --stat` khớp, không còn chữ `MUTATION`. **`--integration` (M-4d-1 SQL, M-4d-8/9 PG) chưa chạy** — cần Docker.
+  - Cây làm việc: thêm 4 file docs M9 đang sửa song song (`docs/spec/build/nen-tang/P9-monitor-M9.md`, `docs/spec/claude/ke-hoach-m9-
+    {chia-viec,monitor}.md`, `docs/spec/claude/prompt-m9-thanh-vien.md`) — không phải phiên này, không đụng, không stage.
+    Tuấn Anh commit riêng **`475fd1e`** (02/10/2026, CHỈ 4 file docs đó, 0 file code; hook unit xanh), push `origin/dev-tuananh`
+    (`b74da3f..475fd1e`) — **CI xanh** run `36974385952` (4m36s; `gh` bị sandbox chặn — Tuấn Anh kiểm)
+    → **mốc diff 4d = `475fd1e`** (security-reviewer S10 soát `git diff 475fd1e`).
+  - **`make verify G=23` lần 1 (Tuấn Anh, 02/10/2026 13:47:52 → 13:51:18, HEAD `475fd1e` + cây bẩn 35 mục, `.env`): ĐỎ ở bước 2** —
+    backend **1 failed, 3925 passed** (mọi test mới của test-writer XANH lần đầu chạy: PG 17, e2e i8b/i13/i14×3/i14b/i16/i17); đỏ DUY NHẤT
+    là **i8a do tôi viết**: đổi `intended_action` lúc phiếu còn chờ → ra **E9**, không E5 — cấm 3 (`F3_plan_hash_mismatch`,
+    `domain/states.py:143-148`) chặn `S_PENDING_APPROVAL → S_EXECUTING` ngay ở `goto` của B16 (log: `IllegalTransition … F3_plan_hash_mismatch`
+    tại `approval_wait`). Giả định TQ-10 "B17 là nơi DUY NHẤT so hash" SAI. Sửa (test, không đổi code): **i8a** dựng đúng khe "sau duyệt,
+    trước B17" — crash một lần ở `SqlTxLog.has_begun` đầu B17 (monkeypatch, sau checkpoint B16 `S_EXECUTING`) → `aupdate_state(...,
+    as_node="approval_wait")` đổi hành động → API `runner.recover` (khuôn h15 3h) → B17 lớp 1 E5; thêm **i8c** ghim lớp cấm 3 (đổi lúc chờ
+    → E9, B17 không chạy, 0 ghi). Bước 3+ không chạy (stack không đổi, không cần trả `.env`).
+  - **`make verify G=23` lần 2 (Tuấn Anh, 02/10/2026 14:46:32 → 15:04:03, HEAD `475fd1e` + cây bẩn 37 mục, `.env`): ĐỎ ở gate3** — lint
+    PASS; test PASS (backend **3927 passed** = 3621 unit + 306 integration/e2e — mọi test mới 4d xanh, gồm i8a mới, i8c; mock 100; ml 77 / 5
+    deselected); up PASS; gate2 **89/0**; ingest PASS (KB không đổi); gate3 **55/9** — CẢ 9 FAIL là tc02 (kịch bản ĐẦU của gate3); trả về `.env`
+    PASS. Chẩn đoán (Tuấn Anh chạy psql chỉ đọc): ticket `5bd409b1…` `B1 → B2 → B3 → B6 → B8 retrieval_error E2 → B20`, escalation
+    `rag_system_error`; dòng B8 `error_stage=rerank`, `retrieval_error=deadline`, retry 0, ở giây 49,4 của lượt — lời gọi rerank ĐẦU TIÊN của
+    gate3 sau 7,5 phút gate2 (node giả, không RAG) hết hạn trên CPU colima. Không phải code 4d (4d chỉ sửa B17 trên đường graph, sau B12).
+    Cùng gốc Việc treo 4 (`TIMEOUT_S["rerank"]` / `rag_rerank_k` chưa đo lại trên máy GPU). → chạy lại `G=3`.
+  - **Mutation `mutate_4d.py --integration` (Tuấn Anh, 02/10/2026, testcontainers — không đụng stack dev): 3/3 ĐỎ đúng dự đoán** — mốc
+    xanh trước; M-4d-1 (`record_override` thêm `UPDATE tickets SET final_state` cùng giao dịch) → `test_pg_record_override_one_row_idempotent_
+    per_person_tickets_unchanged`; M-4d-8 (PG, bỏ quét bí mật) → `test_pg_run_canary_planted_in_detail_hits_with_log_id` +
+    `test_pg_main_exit_codes_and_output_without_values`; M-4d-9 (PG, bỏ điểm 5) → `test_pg_run_b15_queued_without_approver_id_is_point5`.
+    md5 `approval/store.py` `08a1ddb0…`, `audit/check.py` `915c56e2…` trước = sau; `git diff --stat` khớp. **Mutation DỪNG 1 đủ: 14/14**
+    (unit 11 + PG 3).
+  - **Origin tiến (02/10/2026 ~15:10):** `origin/dev-tuananh` = `1d5c92a` (+6: merge PR #20 dev-duyanh, PR #22 dev-luuduong — M9 A1/B1, có
+    migration `0008_monitor_views`). Cây bẩn → KHÔNG tự pull/rebase; chờ Tuấn Anh chọn A (merge trước) / B (commit DỪNG 1 rồi merge).
+  - **Chốt DỪNG 1 (Tuấn Anh, 02/10/2026; spec v1.5 mục 7.7 — Tuấn Anh cập nhật):**
+    1. tc02 = rerank nguội — không phải 4d; không chạy lại riêng, không `verify G=3`. Gate3 đầy đủ lấy ở lượt `verify G=23` sau khi gộp M9.
+    2. Gộp M9 = **B**: commit DỪNG 1 (+ commit docs M9) rồi `git pull --rebase` lên `origin/dev-tuananh`; `alembic heads` = 1; KHÔNG push
+       trước khi verify trên cây gộp xanh.
+    3. KHÔNG nâng `TIMEOUT_S["rerank"]` / `rag_deadline_s`. DỪNG 2 thêm bước **làm nóng rerank** vào preflight của `gate3.py` và `gate4.py`
+       (một truy vấn RAG bỏ đi trước kịch bản đầu, không tính PASS/FAIL, không sửa code sản phẩm). **Việc treo 32**.
+    4. **Q-4d-3 (làm ĐẦU DỪNG 2):** B16 khi `approved` so `hash_action(intended_action)` với `state.action_plan_hash` VÀ
+       `approvals.action_plan_hash` TRƯỚC `goto(S_EXECUTING)`; lệch → `S_ESCALATED` step `B16` event `action_plan_changed_since_approval` E5,
+       detail `hash_source` (`state`|`approval`), `hash_old`, `hash_new`, `action_plan_hash_matched=False`; cấm F3 giữ làm lớp cuối; test
+       trước code; i8c đổi kỳ vọng E9 → E5; mutation "B16 bỏ so hash".
+    5. **Test-writer S2 có mở file cấm không (soát transcript của nó, 127 lời gọi tool):** KHÔNG — 0 lần Read/cat/sed/grep vào 7 file cấm
+       (`api/tickets.py`, `domain/override.py`, `approval/store.py`, `audit/writer.py`, `audit/check.py`, `scripts/audit_check.py`,
+       `b17_execute.py`). Lộ duy nhất: output pytest của chính nó in dòng `…/api/tickets.py:226: NotImplementedError: 4d S3` (tương tự
+       `domain/override.py`, `audit/check.py`) — đường dẫn + số dòng của KHUNG, không có thân. Đọc NGOÀI danh sách "được đọc" (không cấm):
+       `core/hashing.py`, `core/clock.py`, `guard/privacy.py`, grep `permission_denied` trong `audit/security_events.py`; test khuôn
+       `test_auth_idor.py`, `test_tickets_api.py`, `test_body_limit.py`, `test_guard_api.py`, `test_approval_review_s11.py`,
+       `integration/test_b10_pg.py`.
+    6. Spec `phase4-thiet-ke-chi-tiet.md` v1.5 (mục 7.7) do Tuấn Anh cập nhật — đi cùng commit DỪNG 1, agent không sửa.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -4602,6 +4706,14 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
 30. **Route quyết 403 / xem phiếu 404 cho phiếu không được giao (Q-4c-3 = A, soát 4c S11 S1b; chốt 01/10/2026).** `approval_id` BIGINT
     tăng dần → tồn tại phiếu vốn đoán được; route quyết giữ 403 + `permission_denied` (tín hiệu dò phiếu cho M9). Nếu đổi id phiếu sang
     UUID → thống nhất route quyết + xem phiếu về 404 (cùng thân với id không có).
+31. **4 cột `audit_logs` có trong schema nhưng chưa từng được ghi: `confidence`, `query`, `success`, `action_plan_hash_matched` (Q-4d-1 = A,
+    chốt 01/10/2026).** Dữ liệu nằm ở `detail` (`b03_classify.py` điểm 1, `b08_retrieve.py` điểm 3, `b17_execute.py` `_point7`); `audit_check`
+    (4d) kiểm đúng chỗ code ghi. Sau Phase 4 quyết: ghi cột (sửa B3/B8/B17) hay bỏ cột (migration). Tới lúc đó truy vấn đánh giá (RQ, M9)
+    đọc `detail`.
+32. **ml-service chưa tự làm nóng reranker khi khởi động (4d DỪNG 1 — gate3 tc02, chốt 02/10/2026; liên hệ Việc treo 4).** Lời gọi rerank
+    ĐẦU TIÊN sau khi ml-service rảnh lâu (gate3 chạy sau 7,5 phút gate2 không RAG) hết hạn `deadline` (giây 49,4, retry 0) → B8
+    `retrieval_error` E2. KHÔNG nới `TIMEOUT_S["rerank"]` / `rag_deadline_s`; DỪNG 2 4d chỉ thêm truy vấn làm nóng ở preflight `gate3.py`
+    / `gate4.py`. Đóng: ml-service chạy một lượt rerank giả khi khởi động (trước khi báo healthy) — ngoài Phase 4.
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

@@ -103,3 +103,10 @@ def test_admin_revoke_uses_role_constant_and_reauth() -> None:
     app = create_app(auth_settings(), health_checks={})
     [ctx] = [c for c in route_auth(app) if c.path == "/api/admin/users/{user_id}/revoke"]
     assert ctx.requirements == ((None, ADMIN_REVOKE_ROLES, True),)
+
+
+def test_override_route_requires_permission_and_reauth() -> None:
+    """4d P1 (o9): ghi đè = `decision:override` + đăng nhập lại ≤ 10 phút ([Chốt] P6 §4, P10 §3.2) — bỏ `recent_login` là đỏ."""
+    app = create_app(auth_settings(), health_checks={})
+    found = {(m, c.path): c.requirements for c in route_auth(app) for m in c.methods}
+    assert found[("POST", "/api/tickets/{ticket_id}/override")] == (("decision:override", None, True),)

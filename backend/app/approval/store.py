@@ -18,6 +18,9 @@
   tôi được giao + dự phòng SAU nhắc 2, nối `tickets` lấy người gửi + dòng audit B15 `queued` cùng `action_plan_hash` lấy
   `intended_action` — không đọc checkpoint), `mark_viewed` (`first_viewed_at` chỉ lần đầu, chỉ khi `pending`), `procedure_title`
   (tiêu đề tài liệu quy trình ở bản KB hiện hành).
+- 4d (P3, P4 — route ghi đè; Q-4d-2 = A, cùng lý do `main.py` dựng `Desk` với lớp này): `decision_trail` (đọc `audit_logs` để suy
+  `original_decision`), `record_override` (MỘT dòng `step="OVERRIDE"` qua `AuditWriter.record_new` — idempotent theo người ghi đè;
+  không đụng `tickets`).
 """
 
 import logging
@@ -31,8 +34,10 @@ from typing import Any, Literal
 from sqlalchemy import Table, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from app.audit.writer import AuditWriter
 from app.db.models import Approval
 from app.db.runtime import current_tx
+from app.domain.override import DecisionTrail, OverrideRecord
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +67,14 @@ _INBOX_BY_STATUS = text(_INBOX_SQL.format(status="AND a.status = :status"))
 _MARK_VIEWED = text(
     "UPDATE approvals SET first_viewed_at = :now WHERE approval_id = :id AND first_viewed_at IS NULL AND status = 'pending' "
     "RETURNING approval_id"
+)
+# 4d P3: căn cứ suy `original_decision` — dòng `risk_decided` MỚI NHẤT (route nằm trong `detail`, không phải cột) + có B10 hay không
+_RISK_DECIDED = text(
+    "SELECT detail->>'route' AS route, policy_decision FROM audit_logs "
+    "WHERE ticket_id = :t AND step = 'B13/B14' AND event = 'risk_decided' ORDER BY log_id DESC LIMIT 1"
+)
+_DEFLECTED = text(
+    "SELECT EXISTS (SELECT 1 FROM audit_logs WHERE ticket_id = :t AND step = 'B10' AND event = 'deflected_info_only')"
 )
 # 4c P6: tài liệu ở bản KB HIỆN HÀNH (`kb_documents.kb_version` chỉ có ở tài liệu bật — Q-3b-2).
 _PROCEDURE_TITLE = text(
@@ -224,6 +237,20 @@ class SqlApprovals:
         async with self._engine.connect() as conn:
             title = (await conn.execute(_PROCEDURE_TITLE, {"doc": doc_id})).scalar()
         return None if title is None else str(title)
+
+    async def decision_trail(self, ticket_id: str) -> DecisionTrail:
+        """4d P3: dòng `risk_decided` mới nhất (`log_id` lớn nhất) + có `B10 deflected_info_only` hay không."""
+        async with self._engine.connect() as conn:
+            risk = (await conn.execute(_RISK_DECIDED, {"t": ticket_id})).first()
+            deflected = bool((await conn.execute(_DEFLECTED, {"t": ticket_id})).scalar())
+        return DecisionTrail(
+            risk_route=None if risk is None else risk.route, risk_policy_decision=None if risk is None else risk.policy_decision,
+            has_risk_decided=risk is not None, deflected=deflected,
+        )  # fmt: skip
+
+    async def record_override(self, rec: OverrideRecord) -> bool:
+        """4d P4: `AuditWriter.record_new` — True = dòng mới, False = người này đã ghi đè ticket này."""
+        return await AuditWriter(self._engine).record_new(rec.audit_row())
 
     async def get_status(self, approval_id: str) -> str | None:
         """B17 (3h, P8): "đã duyệt" đọc cả BẢNG, không chỉ state. Không có phiếu → None."""
