@@ -267,7 +267,7 @@ def escalation_rate_high(q) -> list[AlertDraft]:
 
 ### 6.1. Chốt khi hiện thực M9 (A0, B0, plan B1 — 01/10/2026)
 
-Thiết kế hiện thực chi tiết, chia việc, câu hỏi Q-M9: `claude/ke-hoach-m9-monitor.md` (v1.6) và `claude/ke-hoach-m9-chia-viec.md`. Khi lệch với mục 6 ở trên, hai file đó thắng (trừ bất biến và mục [Chốt]).
+Thiết kế hiện thực chi tiết, chia việc, câu hỏi Q-M9: `claude/ke-hoach-m9-monitor.md` và `claude/ke-hoach-m9-chia-viec.md` (bản mới nhất). Khi lệch với mục 5–6 ở trên (vd `/api/health` không ping LLM thật — Q-M9-7; E1 tách 4 `reason_detail` + `other`; drift chạy hằng tuần; luật 14 người nhận = dev, manager, ops), hai file đó thắng (trừ bất biến và mục [Chốt]).
 
 | Điểm | Chốt | Lý do |
 |---|---|---|
@@ -321,4 +321,5 @@ Thiết kế hiện thực chi tiết, chia việc, câu hỏi Q-M9: `claude/ke-
 | 25/09/2026 | 1.1 | Thêm luật 13 (model intent xuống cấp) và chỉ số đường B3 (D-32) |
 | 25/09/2026 | 1.2 | Thêm luật 14 (sắp hết ngân sách LLM, N1) |
 | 26/09/2026 | 1.3 | Khóa chống trùng `(rule_id, subject, window_start)`, bảng `subject` cho 14 luật (luật 3 chốt ở Phase 2b-1, còn lại đề xuất); việc Phase 7: luật `finalize_failed_permanent` |
+| 01/10/2026 | 1.5 | Mục 6.1: hai file `claude/ke-hoach-m9-*.md` thắng cả khi lệch mục 5 (không chỉ mục 6), kèm ví dụ đã lệch |
 | 01/10/2026 | 1.4 | Mục 3 ranh giới import mở rộng (M9 A0); mục 6.1 "Chốt khi hiện thực M9" trỏ về `claude/ke-hoach-m9-*.md` |
