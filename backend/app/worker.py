@@ -94,9 +94,14 @@ async def run() -> None:
 # Import `rules_data` (đầu file, noqa F401) để đăng ký loader; `spend` đọc ở worker vì `app.monitor` không import
 # `app.llm`.
 # Không bỏ sót nhờ lookback 24 giờ của từng luật, không trùng nhờ khoá `(rule_id, subject, window_start)`.
+# Nhịp log (review #24): dòng tổng `nháp= ghi= trùng= lỗi= luật_lỗi=` — WARNING khi có lỗi ghi hoặc luật lỗi; INFO ở
+# lượt chạy được đầu tiên và khi có cảnh báo mới; còn lại DEBUG (`core/logging.py` đã tắt INFO APScheduler vì quá dày).
 
 MONITOR_RULES_MINUTE = "monitor_rules_minute"
 MONITOR_RULES_SECONDS = 60
+# Trần thời gian MỘT lượt (đọc + ghi), dưới chu kỳ 60 s: truy vấn treo + `max_instances=1` → mọi lượt sau bị bỏ, tầng
+# cảnh báo chết im lặng (review #24 mục 2). Hết giờ → `TimeoutError` vào nhánh ERROR như lỗi job khác.
+MONITOR_RUN_TIMEOUT_SECONDS = 50.0
 # Cùng giá trị với `common` của `schedule_jobs` (biến cục bộ — không sửa hàm đó; test so tham số job M9 với job gốc).
 # `misfire_grace_time` để mặc định của APScheduler (nhỏ): lượt bị trễ quá hạn có thể bị bỏ — chấp nhận, lượt sau quét
 # lại 24 giờ nên không mất cảnh báo.
@@ -109,10 +114,11 @@ class AlertSink(Protocol):
 
 
 class IncidentLog:
-    """Nhịp log cho sự cố kéo dài của tầng cảnh báo — dùng chung cho thiếu engine monitor (Q-M9-B1-6) và job lỗi
-    (Q-M9-B1-19): báo NGAY lần đầu và mỗi khi loại sự cố (`key`) đổi; cùng sự cố lặp lại → nhắc mỗi `every`; lượt chạy
-    thành công đầu tiên sau chuỗi lỗi → báo phục hồi. Log một lần rồi im thì worker chạy lâu không ai thấy cảnh báo đã
-    ngừng (FN cả tầng); log mỗi 60 s thì thành nhiễu."""
+    """Nhịp log cho sự cố kéo dài của tầng cảnh báo — dùng chung cho thiếu engine monitor (Q-M9-B1-6), job lỗi
+    (Q-M9-B1-19) và luật lỗi (review #24, key = tập tên luật lỗi): báo NGAY lần đầu và mỗi khi loại sự cố (`key`) đổi;
+    cùng sự cố lặp lại → nhắc mỗi `every`; lượt chạy thành công đầu tiên sau chuỗi lỗi (không luật nào lỗi) → báo phục
+    hồi. Log một lần rồi im thì worker chạy lâu không ai thấy cảnh báo đã ngừng (FN cả tầng); log mỗi 60 s thì thành
+    nhiễu."""
 
     def __init__(self, clock: Clock, every: timedelta = MONITOR_REMIND_EVERY) -> None:
         self._clock = clock
@@ -138,14 +144,17 @@ class IncidentLog:
 
 class MonitorRulesJob:
     def __init__(
-        self, engines: Engines, writer: AlertSink, clock: Clock, *, cap_usd: float, warn_ratio: float
+        self, engines: Engines, writer: AlertSink, clock: Clock, *, cap_usd: float, warn_ratio: float,
+        timeout_s: float = MONITOR_RUN_TIMEOUT_SECONDS,
     ) -> None:  # fmt: skip
         self._engines = engines
         self._writer = writer
         self._clock = clock
         self._cap_usd = cap_usd
         self._warn_ratio = warn_ratio
+        self._timeout_s = timeout_s
         self._incident = IncidentLog(clock)
+        self._announced = False  # đã in dòng tổng lần nào chưa — lượt chạy được đầu tiên in INFO (D5 thấy job chạy)
 
     async def minute(self) -> None:
         """Một lượt job 60 s. Không ném lỗi (trừ `CancelledError` — hủy job phải lan ra). Log chỉ tên luật, tên lớp
@@ -158,23 +167,39 @@ class MonitorRulesJob:
             return
         ctx = RuleContext(now=self._clock.now(), tz=VN_TZ, cap_usd=self._cap_usd, warn_ratio=self._warn_ratio)
         try:
-            async with engine.connect() as conn:  # một connection mỗi lượt; đóng = rollback (chỉ đọc)
-                result = await evaluate("minute", conn, ctx)
+            # Hết giờ: hủy bằng CancelledError (except Exception bên trong không bắt) → ra khỏi khối thành TimeoutError.
+            async with asyncio.timeout(self._timeout_s):  # đọc + ghi của một lượt (review #24 mục 2)
+                async with engine.connect() as conn:  # một connection mỗi lượt; đóng = rollback (chỉ đọc)
+                    result = await evaluate("minute", conn, ctx)
+                written, duplicate, errors = await self._write(result.drafts)
         # Job lỗi không làm sập worker; log tên lớp + SQLSTATE, không traceback (Q19). CancelledError lan ra.
         except Exception as exc:  # noqa: BLE001 — job lỗi (Q19)
             key = (type(exc).__name__, getattr(getattr(exc, "orig", None), "sqlstate", None))
             if self._incident.failed(key):
                 log.error("%s lỗi: %s sqlstate=%s", MONITOR_RULES_MINUTE, *key)
             return
-        failures = self._incident.recovered()
-        if failures:
+        if result.failed_rules:  # luật lỗi KHÔNG phải lượt thành công — không phục hồi (review #24 mục 1)
+            if self._incident.failed(("luật_lỗi", frozenset(result.failed_rules))):
+                log.warning("%s: luật lỗi: %s", MONITOR_RULES_MINUTE, ", ".join(result.failed_rules))
+        elif failures := self._incident.recovered():
             log.info("%s phục hồi sau %d lượt lỗi", MONITOR_RULES_MINUTE, failures)
-        if result.failed_rules:
-            log.warning("%s: luật lỗi: %s", MONITOR_RULES_MINUTE, ", ".join(result.failed_rules))
         if result.skipped_rules:
             log.info("%s: luật bỏ qua (nguồn pending): %s", MONITOR_RULES_MINUTE, ", ".join(result.skipped_rules))
-        written = errors = 0  # ghi = số cảnh báo MỚI (raise_once True); trùng khoá (False) không đếm — quét lại 24 giờ
-        for draft in result.drafts:  # một draft lỗi không chặn draft khác (Q-M9-B1-15)
+        if errors or result.failed_rules:
+            level = logging.WARNING
+        elif written or not self._announced:
+            level = logging.INFO
+        else:
+            level = logging.DEBUG
+        self._announced = True
+        log.log(level, "%s: nháp=%d ghi=%d trùng=%d lỗi=%d luật_lỗi=%d", MONITOR_RULES_MINUTE, len(result.drafts),
+                written, duplicate, errors, len(result.failed_rules))  # fmt: skip
+
+    async def _write(self, drafts: list[AlertDraft]) -> tuple[int, int, int]:
+        """Ghi từng draft → (ghi, trùng, lỗi). ghi = cảnh báo MỚI (raise_once True); trùng = khoá đã có (False) — quét
+        lại 24 giờ mỗi phút nên lượt sau gặp lại draft cũ."""
+        written = duplicate = errors = 0
+        for draft in drafts:  # một draft lỗi không chặn draft khác (Q-M9-B1-15)
             try:
                 created = await self._writer.raise_once(draft)
             # Một draft lỗi không chặn draft khác (Q15); IntegrityError in cả tham số INSERT → chỉ log tên lớp.
@@ -184,7 +209,9 @@ class MonitorRulesJob:
             else:
                 if created:
                     written += 1
-        log.log(logging.WARNING if errors else logging.INFO, "%s: ghi=%d lỗi=%d", MONITOR_RULES_MINUTE, written, errors)
+                else:
+                    duplicate += 1
+        return written, duplicate, errors
 
 
 def schedule_monitor_jobs(scheduler: AsyncIOScheduler, job: MonitorRulesJob) -> None:

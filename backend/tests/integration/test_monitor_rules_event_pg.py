@@ -154,13 +154,17 @@ async def test_future_event_drafts_same_key_twice(rule_id: str, rw: AsyncEngine,
 async def test_ticket_exit_first_row_older_than_24h(
     rule_id: str, code: str, first_step: str, first_reason: str, rw: AsyncEngine, mon: AsyncEngine
 ) -> None:
-    """Review #13: `first_at` = MIN trên MỌI dòng của ticket, KHÔNG cắt 24 giờ — dòng đầu ở `now − 30h`, dòng mới ở
-    `now − 1h` → `window_start = now − 30h` (cắt 24 giờ thì khoá đổi → cảnh báo trùng). step/reason của dòng đầu."""
+    """Review #13: `first_at` = MIN trên MỌI dòng mang mã của ticket, KHÔNG cắt 24 giờ — dòng đầu ở `now − 30h`, dòng
+    mới ở `now − 1h` → `window_start = now − 30h` (cắt 24 giờ thì khoá đổi → cảnh báo trùng). step/reason của dòng đầu.
+    Review #24 mục 4: thêm dòng audit KHÔNG mang mã, sớm hơn (bỏ `a.exit_code = :code` ở truy vấn ngoài → lấy nhầm dòng
+    này), và chèn dòng mới TRƯỚC dòng cũ (`ORDER BY log_id` thay `created_at` → lấy nhầm dòng mới)."""
     now = rs.day(6)
     async with rw.begin() as conn:
         ticket = await seed.leaf_ticket(conn, created_at=now - 31 * H, exit_code=code)
-        await rs.exit_row(conn, ticket, code=code, at=now - 30 * H, step=first_step, reason=first_reason)
-        await rs.exit_row(conn, ticket, code=code, at=now - H, step="runner", reason="execution_interrupted")
+        await seed.audit_row(conn, ticket, step="B1", event="transition", created_at=now - 30 * H - 30 * MIN)
+        new_log = await rs.exit_row(conn, ticket, code=code, at=now - H, step="runner", reason="execution_interrupted")
+        old_log = await rs.exit_row(conn, ticket, code=code, at=now - 30 * H, step=first_step, reason=first_reason)
+    assert new_log < old_log  # log_id BIGSERIAL tăng theo thứ tự chèn — tiền đề của ca ORDER BY log_id
     drafts = mine(await run(mon, now), rule_id, [ticket])
     assert [d.window_start for d in drafts] == [now - 30 * H]
     assert (drafts[0].detail["step"], drafts[0].detail["reason_detail"]) == (first_step, first_reason)

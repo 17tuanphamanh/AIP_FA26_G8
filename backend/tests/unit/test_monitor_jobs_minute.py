@@ -23,6 +23,7 @@ from app.db.models import SECURITY_EVENT_TYPES
 from app.db.session import Engines
 from app.domain.alerts import AlertDraft
 from app.graph.runner import FINALIZE_FAILED
+from app.llm.config import load_llm_config
 from app.monitor.evaluator import LOADERS, EvalResult
 from app.monitor.queries import rules_data
 from app.monitor.rules import LOOKBACK, REGISTRY, RuleContext
@@ -30,6 +31,8 @@ from app.monitor.window import VN_TZ
 from app.settings import Settings
 from app.worker import (
     MONITOR_RULES_MINUTE,
+    MONITOR_RULES_SECONDS,
+    MONITOR_RUN_TIMEOUT_SECONDS,
     IncidentLog,
     MonitorRulesJob,
     schedule_jobs,
@@ -192,17 +195,83 @@ def test_setup_monitor_jobs_reads_llm_yaml(tmp_path: Path, monkeypatch: pytest.M
     assert seen == [RuleContext(now=T0, tz=VN_TZ, cap_usd=12.0, warn_ratio=0.5)]
 
 
-def test_monitor_setup_error_keeps_three_jobs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """Điều kiện duyệt 1: dựng M9 lỗi (không có `llm.yaml`) → worker vẫn đủ 3 job gốc, đúng 1 ERROR (tên lớp)."""
-    settings = settings_with(tmp_path, tmp_path)  # thư mục trống
+@pytest.mark.parametrize("fault", ["missing", "schema", "add_job"])
+def test_monitor_setup_error_keeps_three_jobs(
+    fault: str, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Điều kiện duyệt 1: dựng M9 lỗi → worker vẫn đủ 3 job gốc, đúng 1 ERROR chỉ tên lớp. Ba nguồn lỗi (review #24 mục
+    3): không có `llm.yaml` (OSError), `llm.yaml` sai schema (ValidationError — không phải OSError), `add_job` ném — bắt
+    đột biến `except OSError` và `add_job` ra ngoài try. Thông điệp exception (có thể chứa giá trị cấu hình) không lọt log."""
+    if fault == "missing":
+        config_dir = tmp_path  # thư mục trống
+    else:
+        config_dir = llm_yaml(tmp_path, 38.0, 0.8)
+        if fault == "schema":
+            cfg = yaml.safe_load((config_dir / "llm.yaml").read_text(encoding="utf-8"))
+            cfg["spend"]["cap_usd"] = SECRET
+            (config_dir / "llm.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+    settings = settings_with(config_dir, tmp_path)
     scheduler = AsyncIOScheduler(timezone="UTC")
     schedule_jobs(scheduler, IdleJobs(), settings, FakeClock(T0))
-    with caplog.at_level(logging.INFO, logger="app.worker"):
+    if fault == "add_job":
+        exc: Exception = RuntimeError(f"add_job hỏng {SECRET}")
+
+        def broken_add_job(*args: object, **kwargs: object) -> None:
+            raise exc
+
+        monkeypatch.setattr(scheduler, "add_job", broken_add_job)
+    else:
+        try:
+            load_llm_config(config_dir / "llm.yaml")
+        except Exception as raised:  # noqa: BLE001 — lấy đúng exception mà worker gặp để so thông điệp
+            exc = raised
+        else:
+            pytest.fail("cấu hình hỏng phải ném lỗi")
+    expected_class = {"missing": "FileNotFoundError", "schema": "ValidationError", "add_job": "RuntimeError"}[fault]
+    assert type(exc).__name__ == expected_class
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
         assert setup_monitor_jobs(scheduler, settings, engines(FakeEngine()), FakeClock(T0)) is None
     assert {j.id for j in scheduler.get_jobs()} == {"heartbeat", "scan_deadlines", "scan_stale_turns"}
     errors = m9_records(caplog, logging.ERROR)
-    assert len(errors) == 1 and "FileNotFoundError" in errors[0].getMessage()
+    assert len(errors) == 1 and expected_class in errors[0].getMessage()
     assert errors[0].exc_info is None
+    assert all(str(exc) not in r.getMessage() and SECRET not in r.getMessage() for r in caplog.records)
+
+
+def test_run_calls_setup_monitor_jobs_after_schedule_jobs() -> None:
+    """Review #24 mục 3: xoá lời gọi `setup_monitor_jobs` trong `run()` thì worker chạy mà không có cảnh báo M9 — không
+    test nào khác đỏ. Kiểm tĩnh: đúng 1 lời gọi mỗi hàm, M9 dựng SAU 3 job gốc, cùng scheduler/settings/engines/clock."""
+    tree = ast.parse(inspect.getsource(worker.run))
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+    core = [c for c in calls if cast(ast.Name, c.func).id == "schedule_jobs"]
+    m9 = [c for c in calls if cast(ast.Name, c.func).id == "setup_monitor_jobs"]
+    assert len(core) == 1 and len(m9) == 1
+    assert m9[0].lineno > core[0].lineno
+    assert [ast.unparse(a) for a in m9[0].args] == ["scheduler", "settings", "engines", "clock"]
+
+
+def test_setup_monitor_job_writes_via_main_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review #24 mục 3: job do `setup_monitor_jobs` dựng ghi `alerts` bằng `engines.main` (app_rw) — `app_monitor` chỉ
+    đọc, ghi bằng nó thì mọi INSERT lỗi quyền. Test PG tự dựng writer nên không bắt được đột biến này."""
+
+    class SpyWriter(FakeWriter):
+        def __init__(self, engine: object, clock: object) -> None:
+            super().__init__()
+            self.engine = engine
+            built.append(self)
+
+    built: list[SpyWriter] = []
+    main, lock, mon = FakeEngine("main"), FakeEngine("lock"), FakeEngine("monitor")
+    monkeypatch.setattr(worker, "AlertWriter", SpyWriter)
+    job = setup_monitor_jobs(AsyncIOScheduler(timezone="UTC"), settings_with(REPO / "config", tmp_path),
+                             Engines(main=cast(Any, main), lock=cast(Any, lock), monitor=cast(Any, mon)),
+                             FakeClock(T0))  # fmt: skip
+    assert job is not None
+    fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
+    asyncio.run(job.minute())
+    (writer,) = built
+    assert writer.engine is main
+    assert [d.subject for d in writer.written] == ["u-1"]
 
 
 # ---- thiếu engine monitor / job lỗi: nhịp log chung ----------------------------------------------------------------
@@ -278,7 +347,7 @@ def test_draft_write_error_does_not_block_others(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Q-M9-B1-15: try/except TỪNG draft — draft 2 lỗi, draft 1 và 3 vẫn ghi. Log: rule_id + tên lớp, không traceback,
-    không giá trị `detail`; cuối lượt 1 dòng tổng `ghi=<n> lỗi=<m>` (WARNING khi m > 0)."""
+    không giá trị `detail`; cuối lượt 1 dòng tổng `nháp= ghi= trùng= lỗi= luật_lỗi=` (WARNING khi lỗi > 0)."""
     drafts = [draft("refresh_reuse", "u-1"), draft("injection_detected", "t-2"), draft("finalize_failed", "t-3")]
     writer = FakeWriter(lambda d: ValueError(f"hỏng {d.detail}") if d.subject == "t-2" else None)
     fake_evaluate(monkeypatch, EvalResult(drafts=drafts, failed_rules=[], skipped_rules=[]))
@@ -288,7 +357,7 @@ def test_draft_write_error_does_not_block_others(
     warnings = [r.getMessage() for r in m9_records(caplog, logging.WARNING)]
     assert warnings == [
         f"{MONITOR_RULES_MINUTE}: ghi cảnh báo luật injection_detected lỗi: ValueError",
-        f"{MONITOR_RULES_MINUTE}: ghi=2 lỗi=1",
+        f"{MONITOR_RULES_MINUTE}: nháp=3 ghi=2 trùng=0 lỗi=1 luật_lỗi=0",
     ]
     assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
 
@@ -297,26 +366,165 @@ def test_summary_info_when_no_error(caplog: pytest.LogCaptureFixture, monkeypatc
     fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
     with caplog.at_level(logging.INFO, logger="app.worker"):
         asyncio.run(make_job(FakeEngine(), FakeClock(T0)).minute())
-    assert [r.getMessage() for r in m9_records(caplog, logging.INFO)] == [f"{MONITOR_RULES_MINUTE}: ghi=1 lỗi=0"]
+    assert [r.getMessage() for r in m9_records(caplog, logging.INFO)] == [
+        f"{MONITOR_RULES_MINUTE}: nháp=1 ghi=1 trùng=0 lỗi=0 luật_lỗi=0"
+    ]
     assert m9_records(caplog, logging.WARNING) == []
 
 
+def summaries(caplog: pytest.LogCaptureFixture) -> list[tuple[int, str]]:
+    """(mức, nội dung) các dòng tổng của job, theo thứ tự."""
+    return [(r.levelno, r.getMessage()) for r in m9_records(caplog) if "nháp=" in r.getMessage()]
+
+
+def summary(n: int, written: int, duplicate: int, errors: int, failed: int) -> str:
+    return f"{MONITOR_RULES_MINUTE}: nháp={n} ghi={written} trùng={duplicate} lỗi={errors} luật_lỗi={failed}"
+
+
 def test_summary_counts_only_new_alerts(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`ghi` = số cảnh báo MỚI (`raise_once` trả True). Job quét lại 24 giờ mỗi phút → lượt sau gặp lại đúng các draft
-    cũ (trả False) → `ghi=0`, không phải `ghi=2` mỗi phút (dễ hiểu nhầm là đang sinh cảnh báo mới)."""
+    """`ghi` = số cảnh báo MỚI (`raise_once` trả True), `trùng` = khoá đã có (False). Job quét lại 24 giờ mỗi phút →
+    lượt sau gặp lại đúng các draft cũ → `ghi=0 trùng=2` ở DEBUG, không phải `ghi=2` mỗi phút."""
     old = [draft("refresh_reuse", "u-1"), draft("injection_detected", "t-2")]
     writer = FakeWriter()
     job = make_job(FakeEngine(), FakeClock(T0), writer)
-    with caplog.at_level(logging.INFO, logger="app.worker"):
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
         fake_evaluate(monkeypatch, EvalResult(drafts=old, failed_rules=[], skipped_rules=[]))
         asyncio.run(job.minute())
         asyncio.run(job.minute())
         fake_evaluate(monkeypatch, EvalResult(drafts=[*old, draft("finalize_failed", "t-3")], failed_rules=[],
                                               skipped_rules=[]))  # fmt: skip
         asyncio.run(job.minute())
-    summaries = [r.getMessage() for r in m9_records(caplog, logging.INFO) if "ghi=" in r.getMessage()]
-    assert summaries == [f"{MONITOR_RULES_MINUTE}: ghi={n} lỗi=0" for n in (2, 0, 1)]
+    assert summaries(caplog) == [
+        (logging.INFO, summary(2, 2, 0, 0, 0)),
+        (logging.DEBUG, summary(2, 0, 2, 0, 0)),
+        (logging.INFO, summary(3, 1, 2, 0, 0)),
+    ]
     assert len(writer.written) == 3
+
+
+def test_summary_three_cases_distinct(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review #24 mục 1: 0 draft / 37 draft đều đã có / 7/7 luật lỗi trước đây cùng in `ghi=0 lỗi=0` ở INFO. Sau lượt
+    khởi động, ba tình huống phải ra ba dòng tổng KHÁC nhau: hai lượt "không có gì mới" ở DEBUG, luật lỗi ở WARNING."""
+    old = [draft("refresh_reuse", f"u-{i}") for i in range(37)]
+    writer = FakeWriter()
+    job = make_job(FakeEngine(), FakeClock(T0), writer)
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        fake_evaluate(monkeypatch, EvalResult(drafts=old, failed_rules=[], skipped_rules=[]))
+        asyncio.run(job.minute())  # khởi động: 37 cảnh báo mới
+        caplog.clear()
+        cases: list[EvalResult] = [
+            EvalResult(drafts=[], failed_rules=[], skipped_rules=[]),
+            EvalResult(drafts=old, failed_rules=[], skipped_rules=[]),
+            EvalResult(drafts=[], failed_rules=sorted(B1_RULES), skipped_rules=[]),
+        ]
+        for result in cases:
+            fake_evaluate(monkeypatch, result)
+            asyncio.run(job.minute())
+    assert summaries(caplog) == [
+        (logging.DEBUG, summary(0, 0, 0, 0, 0)),
+        (logging.DEBUG, summary(37, 0, 37, 0, 0)),
+        (logging.WARNING, summary(0, 0, 0, 0, 7)),
+    ]
+    assert len(writer.written) == 37
+
+
+def test_first_run_info_then_debug(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nhịp log (review #24 mục 1): lượt chạy được đầu tiên sau khi worker lên → INFO (D5 thấy job chạy, dù 0 draft);
+    lượt không có gì mới → DEBUG; lượt có cảnh báo mới → INFO."""
+    empty = EvalResult(drafts=[], failed_rules=[], skipped_rules=[])
+    job = make_job(FakeEngine(), FakeClock(T0))
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for result in (empty, empty, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[],
+                                                skipped_rules=[]), empty):  # fmt: skip
+            fake_evaluate(monkeypatch, result)
+            asyncio.run(job.minute())
+    assert [level for level, _ in summaries(caplog)] == [logging.INFO, logging.DEBUG, logging.INFO, logging.DEBUG]
+
+
+def test_failed_rules_not_recovery_and_cadence(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review #24 mục 1: lượt có luật lỗi KHÔNG phải lượt thành công — không "phục hồi". `failed_rules` đi qua
+    IncidentLog, key = TẬP tên luật: báo lần đầu, khi tập đổi (thứ tự khác không tính), rồi mỗi giờ. Hết luật lỗi →
+    phục hồi, đếm cả lượt lỗi kết nối lẫn lượt luật lỗi."""
+
+    class Orig(Exception):
+        sqlstate = "08006"
+
+    clock = FakeClock(T0)
+    mon = FakeEngine()
+    job = make_job(mon, clock)
+    rules = sorted(B1_RULES)
+    plan: list[tuple[int, list[str] | None]] = [  # (phút, luật lỗi; None = mất kết nối)
+        (0, None), (1, rules), (2, rules[::-1]), (3, rules[:1]), (63, rules[:1]), (64, []),
+    ]  # fmt: skip
+    rule_warnings: list[int] = []
+    errors: list[int] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, failed in plan:
+            clock.set(T0 + at * MIN)
+            mon.fail = OperationalError("SELECT 1", {}, Orig()) if failed is None else None
+            fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=failed or [], skipped_rules=[]))
+            asyncio.run(job.minute())
+            rule_warnings.append(len([r for r in m9_records(caplog, logging.WARNING) if "luật lỗi:" in r.getMessage()]))
+            errors.append(len(m9_records(caplog, logging.ERROR)))
+    assert rule_warnings == [0, 1, 1, 2, 3, 3]
+    assert errors == [1, 1, 1, 1, 1, 1]
+    recovered = [r.getMessage() for r in m9_records(caplog) if "phục hồi" in r.getMessage()]
+    assert recovered == [f"{MONITOR_RULES_MINUTE} phục hồi sau 5 lượt lỗi"]  # đúng 1 lần, ở phút 64
+    assert [r.levelno for r in m9_records(caplog) if "phục hồi" in r.getMessage()] == [logging.INFO]
+
+
+# ---- timeout một lượt ------------------------------------------------------------------------------------------------
+
+
+def test_run_timeout_constant() -> None:
+    assert 0 < MONITOR_RUN_TIMEOUT_SECONDS < MONITOR_RULES_SECONDS
+
+
+@pytest.mark.parametrize("hang", ["evaluate", "writer"])
+def test_run_timeout_then_next_run_ok(
+    hang: str, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review #24 mục 2: truy vấn treo + `max_instances=1` → mọi lượt sau bị bỏ, tầng cảnh báo chết im lặng. Một lượt
+    bị chặn bởi timeout bọc CẢ đọc (`evaluate`) lẫn ghi (`raise_once`) → ERROR `TimeoutError`, lượt sau chạy bình
+    thường. `wait_for` 2 s là lưới an toàn: bỏ timeout thì test đỏ chứ không treo."""
+    runs = 0
+
+    async def forever() -> None:
+        await asyncio.Event().wait()
+
+    async def run_evaluate(every: str, conn: object, ctx: RuleContext) -> EvalResult:
+        if hang == "evaluate" and runs == 1:
+            await forever()
+        return EvalResult(drafts=[draft("refresh_reuse", f"u-{runs}")], failed_rules=[], skipped_rules=[])
+
+    class HangingWriter(FakeWriter):
+        async def raise_once(self, d: AlertDraft) -> bool:
+            if hang == "writer" and runs == 1:
+                await forever()
+            return await super().raise_once(d)
+
+    monkeypatch.setattr(worker, "evaluate", run_evaluate)
+    writer = HangingWriter()
+    job = MonitorRulesJob(engines(FakeEngine()), writer, FakeClock(T0), cap_usd=38.0, warn_ratio=0.8, timeout_s=0.05)
+
+    async def one_run() -> None:
+        nonlocal runs
+        runs += 1
+        await asyncio.wait_for(job.minute(), 2)
+
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        asyncio.run(one_run())
+        assert [r.getMessage() for r in m9_records(caplog, logging.ERROR)] == [
+            f"{MONITOR_RULES_MINUTE} lỗi: TimeoutError sqlstate=None"
+        ]
+        assert summaries(caplog) == [] and writer.written == []
+        asyncio.run(one_run())
+    assert len(m9_records(caplog, logging.ERROR)) == 1
+    assert [d.subject for d in writer.written] == ["u-2"]
+    assert f"{MONITOR_RULES_MINUTE} phục hồi sau 1 lượt lỗi" in [r.getMessage() for r in m9_records(caplog)]
+    assert summaries(caplog) == [(logging.INFO, summary(1, 1, 0, 0, 0))]
 
 
 def test_failed_and_skipped_rules_logged_by_name(
