@@ -16,23 +16,29 @@ import {
   approveBody,
   BACKUP_TEXT,
   DECISION_SENT,
+  decisionRole,
   isReflex,
   isUrgent,
+  MISSING_VALUE,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
   reflexText,
   rejectBody,
   remainingClock,
+  RISK_MISSING_TEXT,
   STATUS_LABEL,
   VIEW_NOT_FOUND_TEXT,
   viewedSeconds,
+  VIEWER_TEXT,
 } from "./inbox.ts";
 
-// B4L1Detail — `GET /api/approvals/{id}` (4c P6, CHƯA CÓ: MSW ở dev:mock). Hiện ĐÚNG object `action` đã băm (Bảng/JSON)
-// + mã băm đủ; căn cứ quy trình; risk/facts khoá–giá trị chung. 3 trạng thái KH 4.6: 409 `plan_changed` (chỉ một câu,
-// không object, không nút — G4-13), 404, dự phòng. Quyết định: `POST …/decision` THẬT (MSW chỉ chặn id `apv-demo-`,
-// Q-fe-5). Phiếu không còn `pending` → chỉ đọc. F6: chống duyệt theo phản xạ (P10 §3.2) — "Đồng ý" khi mới xem < 5 giây →
-// hỏi lại; thanh quyết định nằm NGOÀI vùng cuộn, nền đặc (12b Q-fe-32 — như Bản 4: không bao giờ đè nội dung).
+// B4L1Detail — `GET /api/approvals/{id}` (route THẬT 4c P6; dev:mock chỉ giả id phiếu minh hoạ). Hiện ĐÚNG object `action`
+// đã băm (Bảng/JSON) + mã băm đủ; căn cứ quy trình; risk/facts khoá–giá trị chung. Trạng thái KH 4.6: 409 `plan_changed`
+// (chỉ một câu, không object, không nút — G4-13), 404, dự phòng; N4c: người xem giám sát (`viewer`, hoặc `role_as` lạ) →
+// một dòng thông tin, KHÔNG có đường quyết định nào. Trường null (phòng ban, rủi ro, căn cứ) → "—" / câu thay, không khoá
+// quyết định: căn cứ để duyệt là object đã băm + mã băm. Quyết định: `POST …/decision` THẬT (MSW chỉ chặn id phiếu minh
+// hoạ, Q-fe-5). Phiếu không còn `pending` → chỉ đọc. F6: chống duyệt theo phản xạ (P10 §3.2) — "Đồng ý" khi mới xem < 5 giây
+// → hỏi lại; thanh quyết định nằm NGOÀI vùng cuộn, nền đặc (12b Q-fe-32 — như Bản 4: không bao giờ đè nội dung).
 
 const BACK = (
   <Link to="/approvals" className="text-secondary text-fpt-blue">
@@ -136,6 +142,10 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<{ redacted: boolean } | null>(null);
   const [reflex, setReflex] = useState<number | null>(null); // số giây đã xem khi hộp "xem lại" đang mở
+  const pending = view.status === "pending";
+  const role = decisionRole(view.role_as);
+  // Chỉ người được giao / dự phòng, phiếu còn chờ, mới có đường quyết định (thanh, hộp hỏi lại, sheet, hàm gửi).
+  const canDecide = pending && role !== "viewer";
 
   // `Detail` chỉ render khi GET phiếu 200 → effect đầu tiên = lúc khối chi tiết hiện xong.
   useEffect(() => {
@@ -146,7 +156,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const reload = () => void queryClient.invalidateQueries({ queryKey: ["approvals"] });
 
   async function send(body: DecisionIn, fromSheet: boolean) {
-    if (inFlight.current || sent) return;
+    if (inFlight.current || sent || !canDecide) return;
     inFlight.current = true;
     setSending(true);
     setError(null);
@@ -177,7 +187,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   // CHỈ hỏi lại khi ĐỒNG Ý: đồng ý vội là chiều gây hại (hệ thống thực hiện hành động). Từ chối là hướng an toàn — không
   // chặn thêm bước nào, để người duyệt không ngại từ chối khi còn nghi ngờ (không đẩy tăng ca bỏ sót).
   function approve() {
-    if (inFlight.current || sent) return;
+    if (inFlight.current || sent || !canDecide) return;
     const seconds = viewedSeconds(viewStart.current, performance.now());
     if (isReflex(seconds)) {
       setReflex(seconds);
@@ -186,10 +196,10 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
     void send(approveBody(startedAt.current), false);
   }
 
-  const pending = view.status === "pending";
   const actionType = view.action.type;
   const title = typeof actionType === "string" ? actionLabel(actionType) : "Hành động";
-  const role = ROLE_LABEL[view.requester.role as keyof typeof ROLE_LABEL] ?? view.requester.role;
+  const requesterRole = ROLE_LABEL[view.requester.role as keyof typeof ROLE_LABEL] ?? (view.requester.role || MISSING_VALUE);
+  const department = view.requester.department || MISSING_VALUE;
   // Thiếu cả `procedure` (lệch spec) → không vỡ màn: hiện "(không có)".
   const procedureTitle = view.procedure?.title?.trim();
   const procedureDoc = view.procedure?.doc_id ?? "(không có)";
@@ -211,10 +221,15 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
             </p>
           </div>
 
-          {view.role_as === "backup" ? (
+          {role === "backup" ? (
             <div role="note" data-testid="backup-banner" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
               <b className="font-semibold">{BACKUP_TEXT}</b> — người duyệt chính chưa quyết sau lần nhắc thứ hai.
             </div>
+          ) : null}
+          {role === "viewer" ? (
+            <p role="note" data-testid="viewer-note" className="rounded-group bg-group px-5 py-3.5">
+              {VIEWER_TEXT}
+            </p>
           ) : null}
           {!pending ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-group bg-group px-5 py-3.5">
@@ -248,11 +263,11 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                 <dl className="overflow-hidden rounded-group border border-line text-secondary">
                   <div className="flex justify-between gap-4 px-5 py-3">
                     <dt>Vai trò</dt>
-                    <dd className="text-ink-2">{role}</dd>
+                    <dd className="text-ink-2">{requesterRole}</dd>
                   </div>
                   <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                     <dt>Phòng ban</dt>
-                    <dd className="text-ink-2">{view.requester.department}</dd>
+                    <dd className="text-ink-2">{department}</dd>
                   </div>
                 </dl>
               </Block>
@@ -263,9 +278,15 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                 </p>
               </Block>
               <Block title="Đánh giá rủi ro">
-                <div className="overflow-hidden rounded-group border border-line">
-                  <FlatTable value={view.risk} testId="risk-row" />
-                </div>
+                {view.risk ? (
+                  <div className="overflow-hidden rounded-group border border-line">
+                    <FlatTable value={view.risk} testId="risk-row" />
+                  </div>
+                ) : (
+                  <p data-testid="risk-missing" className="rounded-group border border-line px-5 py-3 text-ink-2">
+                    {RISK_MISSING_TEXT}
+                  </p>
+                )}
               </Block>
               <Block title="Dữ kiện đã kiểm">
                 <div className="overflow-hidden rounded-group border border-line">
@@ -289,7 +310,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
         </section>
       </div>
 
-      {pending && !sent ? (
+      {canDecide && !sent ? (
         <div data-testid="decision-bar" className="flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white px-12">
           <button
             type="button"
@@ -314,7 +335,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
         </div>
       ) : null}
 
-      {pending && reflex !== null && !sent ? (
+      {canDecide && reflex !== null && !sent ? (
         <Modal label="Xác nhận đồng ý" onClose={() => setReflex(null)}>
           <h2 className="text-center text-heading">Xem kỹ trước khi đồng ý</h2>
           <p data-testid="reflex-text">{reflexText(reflex)}</p>
@@ -337,7 +358,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
         </Modal>
       ) : null}
 
-      {pending && sheet && !sent ? (
+      {canDecide && sheet && !sent ? (
         <RejectSheet
           sending={sending}
           serverError={sheetError}

@@ -10,8 +10,10 @@
 //      F3-1…6 L2: DÙNG LẠI ticket E3 (F2-2) + E0 (F2-4) của cùng lượt → long.nh / ha.lt xem hàng đợi + chi tiết THẬT;
 //      an.nv (không có escalation:handle) → trang không có quyền + 403 thật khi gọi thẳng API; đóng ca = MSW (dev:mock,
 //      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
-//      F4-1…6 L1 trên dev:mock (hộp thư / xem phiếu / ghi đè chưa có ở backend — 4c, 4d) + backend thật (đăng nhập,
-//      ticket, decision cho id không phải fixture); F4-7, F4-8 dev KHÔNG mock. F4 không gửi câu chat nào.
+//      F4-1…6, F4-9 L1 trên dev:mock + backend thật: hộp thư = phiếu THẬT + phiếu minh hoạ (MSW gọi thật trước), xem phiếu /
+//      quyết định CHỈ mở id `apv-demo-…` (không bấm dòng thật — phiếu thật đang chờ mà mở là ghi first_viewed_at), ghi đè
+//      (4d chưa có) minh hoạ. F4-7, F4-8 dev KHÔNG mock: F4-8 kiểm hộp thư THẬT (4c) 4 trạng thái + mở MỘT phiếu thật đã
+//      quyết/hết hạn (chỉ đọc). F4 không gửi câu chat nào, không tạo/quyết phiếu thật.
 //      F5 Trưởng BP IT (quan.tm, bắt buộc OTP): CHỈ chạy khi VERIFY_MGR=1, NGAY SAU kiểm tĩnh (người đang ngồi máy) —
 //      Chromium CÓ GIAO DIỆN, MỘT context cho mọi bước quan.tm: điền tên + mật khẩu (che trong log), dừng ở màn OTP, NGƯỜI
 //      nhập mã trong 120 s (verify không đọc, không in, không chụp ô OTP; hết giờ, hoặc OTP bị từ chối 2 lần — tránh khoá
@@ -44,7 +46,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "F6";
+const BUILT = "N4c";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -610,9 +612,20 @@ async function directQueueStatus(username) {
 
 // Chữ trên màn — trùng src/routes/l1/inbox.ts và src/api/errors.ts (verify chạy bằng Node, không import TS).
 const APPROVALS_HEADING = { name: "Chờ tôi duyệt", level: 1 };
-const INBOX_MISSING = "Hộp thư duyệt có từ Phase 4 (4c)";
 const PLAN_CHANGED = "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt";
+const VIEW_NOT_FOUND = "Không tìm thấy phiếu hoặc phiếu không giao cho bạn";
 const BACKUP_TEXT = "Bạn duyệt với vai trò dự phòng";
+const VIEWER_TEXT = "Bạn đang xem phiếu này với quyền giám sát — không thể quyết định.";
+const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
+const RISK_MISSING = "Chưa có đánh giá rủi ro cho phiếu này.";
+const MISSING_VALUE = "—";
+const NONE_LABEL = "(không có)"; // máy null ở dòng hộp thư, căn cứ quy trình null ở phiếu
+// Câu rỗng từng tab (routes/l1/ApprovalQueue.tsx EMPTY).
+const INBOX_TABS = [
+  { label: "Chờ duyệt", statuses: ["pending"], empty: "Không có phiếu nào chờ bạn duyệt" },
+  { label: "Đã quyết", statuses: ["approved", "rejected"], empty: "Chưa có phiếu nào đã quyết" },
+  { label: "Hết hạn", statuses: ["timeout"], empty: "Không có phiếu nào hết hạn" },
+];
 const DECISION_SENT = "Đã gửi quyết định";
 const OVERRIDE_MSG = {
   ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
@@ -622,8 +635,17 @@ const TICKET_UNAVAILABLE = "Chưa tải được chi tiết yêu cầu."; // Q-f
 const DANGER_RGB = "rgb(198, 40, 40)"; // token --color-danger #C62828
 const URGENT_RATIO = 0.2;
 // Fixture MSW (src/mocks/fixtures/approvals.ts): 01 thường + đỏ + có tiêu đề quy trình · 02 dự phòng (không tiêu đề)
-// · 03 không đỏ (dùng để từ chối) · 04 plan_changed. Ticket ghi đè: tkt-demo-open / -same / -reauth.
-const DEMO = { normal: "apv-demo-01", backup: "apv-demo-02", reject: "apv-demo-03", planChanged: "apv-demo-04" };
+// · 03 không đỏ (dùng để từ chối) · 04 plan_changed · 08 thiếu dữ liệu (hộp thư action_type/device_id null; phiếu
+// phòng ban/rủi ro/căn cứ null) · viewer = phiếu giám sát (không nằm trong hộp thư). Ticket ghi đè: tkt-demo-open / -same / -reauth.
+const DEMO_PREFIX = "apv-demo-";
+const DEMO = {
+  normal: "apv-demo-01",
+  backup: "apv-demo-02",
+  reject: "apv-demo-03",
+  planChanged: "apv-demo-04",
+  sparse: "apv-demo-08",
+  viewer: "apv-demo-viewer",
+};
 const REJECT_NOTE = "verify F4-3: từ chối (minh hoạ)";
 const OVERRIDE_REASON = "too_risky_for_auto";
 
@@ -665,6 +687,10 @@ function keyPaths(value, prefix = "") {
   return [prefix];
 }
 const sameKeys = (a, b) => a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+/** Ô giá trị (dd) của dòng có nhãn `label` (dt) trên màn chi tiết phiếu. */
+const ddOf = (page, label) =>
+  page.evaluate((l) => [...document.querySelectorAll("dt")].find((dt) => dt.textContent.trim() === l)?.nextElementSibling?.textContent.trim() ?? null, label);
+const decisionButtonsIn = async (page) => (await mainButtons(page)).filter((t) => /Đồng ý|Từ chối/.test(t));
 const mswOn = (lines) => lines.some((l) => l.includes("[MSW] Mocking enabled"));
 
 /** Nút trong vùng nội dung (không tính thanh bên — nút đăng xuất). */
@@ -1556,20 +1582,27 @@ const liveMock = (name, fn) =>
     return fn();
   });
 
-await liveMock("F4-1 ha.lt /approvals (dev:mock): sắp theo hạn, phiếu < 20% đỏ, phiếu dự phòng có huy hiệu", () =>
+await liveMock("F4-1 ha.lt /approvals (dev:mock): hộp thư = thật + minh hoạ {items}; sắp theo hạn TOÀN danh sách; < 20% đỏ; dự phòng có huy hiệu; dòng action_type null", () =>
   scenario("F4-1", async ({ page, consoleLines }) => {
     const inbox = watchJson(page, (r) => isInboxCall(r, "pending"));
     await signInAs(page, "ha.lt"); // trang đầu theo quyền: /approvals (12b Q-fe-8)
     check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
     await page.getByRole("heading", APPROVALS_HEADING).waitFor();
-    const items = await waitJson(page, inbox, "hộp thư");
-    check(Array.isArray(items) && items.length >= 4, `hộp thư giả có ${items?.length} phiếu chờ, cần ≥ 4`);
+    const body = await waitJson(page, inbox, "hộp thư");
+    check(Array.isArray(body?.items), `thân hộp thư không phải {items: mảng}: ${JSON.stringify(body)?.slice(0, 80)}`);
+    const items = body.items;
+    const demo = items.filter((i) => i.approval_id.startsWith(DEMO_PREFIX));
+    const real = items.length - demo.length;
+    check(demo.length >= 5, `hộp thư có ${demo.length} phiếu minh hoạ chờ, cần ≥ 5 (apv-demo-01…04, 08)`);
     await page.waitForFunction((n) => document.querySelectorAll('[data-testid="inbox-row"]').length === n, items.length, {
       timeout: 10_000,
     });
+    // CHỈ đọc dòng — không bấm dòng nào (dòng thật đang chờ mà mở là ghi first_viewed_at).
     const rows = await page.locator('[data-testid="inbox-row"]').evaluateAll((els) =>
       els.map((el) => ({
         id: el.dataset.approvalId,
+        href: el.getAttribute("href"),
+        text: el.textContent,
         urgent: el.dataset.urgent === "true",
         badge: el.querySelector('[data-testid="backup-badge"]')?.textContent?.trim() ?? null,
         color: getComputedStyle(el.querySelector('[data-testid="inbox-time"]')).color,
@@ -1579,7 +1612,9 @@ await liveMock("F4-1 ha.lt /approvals (dev:mock): sắp theo hạn, phiếu < 20
       .sort((a, b) => Date.parse(a.deadline) - Date.parse(b.deadline) || a.approval_id.localeCompare(b.approval_id))
       .map((i) => i.approval_id);
     check(JSON.stringify(rows.map((r) => r.id)) === JSON.stringify(byDeadline), `thứ tự dòng ${rows.map((r) => r.id)} ≠ theo hạn ${byDeadline}`);
-    check(JSON.stringify(items.map((i) => i.approval_id)) !== JSON.stringify(byDeadline), "MSW trả sẵn theo hạn — không chứng minh được giao diện tự sắp");
+    const demoIds = demo.map((i) => i.approval_id);
+    const demoByDeadline = byDeadline.filter((id) => demoIds.includes(id));
+    check(JSON.stringify(demoIds) !== JSON.stringify(demoByDeadline), "MSW trả phần minh hoạ sẵn theo hạn — không chứng minh được giao diện tự sắp");
     const now = Date.now();
     for (const item of items) {
       const d = Date.parse(item.deadline);
@@ -1590,14 +1625,21 @@ await liveMock("F4-1 ha.lt /approvals (dev:mock): sắp theo hạn, phiếu < 20
       const badge = item.role_as === "backup" ? "Dự phòng" : null;
       check(row.badge === badge, `${item.approval_id} (role_as=${item.role_as}): huy hiệu "${row.badge}", cần "${badge}"`);
     }
-    check(rows.some((r) => r.urgent) && rows.some((r) => !r.urgent), "fixture phải có cả phiếu đỏ lẫn không đỏ");
-    check(items.some((i) => i.role_as === "backup" && i.reminder_2_at), "fixture thiếu phiếu dự phòng có reminder_2_at");
-    const decisionButtons = (await mainButtons(page)).filter((t) => /Đồng ý|Từ chối/.test(t));
+    const demoRows = rows.filter((r) => demoIds.includes(r.id));
+    check(demoRows.some((r) => r.urgent) && demoRows.some((r) => !r.urgent), "fixture phải có cả phiếu đỏ lẫn không đỏ");
+    check(demo.some((i) => i.role_as === "backup" && i.reminder_2_at), "fixture thiếu phiếu dự phòng có reminder_2_at");
+    const sparseItem = demo.find((i) => i.approval_id === DEMO.sparse);
+    check(sparseItem?.action_type === null && sparseItem?.device_id === null, `${DEMO.sparse} phải có action_type/device_id null trong hộp thư`);
+    const sparseRow = rows.find((r) => r.id === DEMO.sparse);
+    check(sparseRow.text.includes(ACTION_UNKNOWN) && sparseRow.text.includes(NONE_LABEL), `${DEMO.sparse}: dòng "${sparseRow.text}" thiếu "${ACTION_UNKNOWN}" / "${NONE_LABEL}"`);
+    check(sparseRow.href === `/approvals/${DEMO.sparse}`, `${DEMO.sparse}: dòng không phải link tới phiếu (href=${sparseRow.href})`);
+    check(!rows.some((r) => r.id === DEMO.viewer), "phiếu giám sát lọt vào hộp thư");
+    const decisionButtons = await decisionButtonsIn(page);
     check(decisionButtons.length === 0, `hộp thư có nút quyết định "${decisionButtons[0]}" — chỉ ở chi tiết phiếu`);
     await shoot(page, "l1-queue.png");
     const urgent = rows.filter((r) => r.urgent).map((r) => r.id);
     return {
-      note: `${items.length} phiếu chờ; MSW trả theo created_at giảm dần → màn sắp theo hạn ${byDeadline.join(", ")}; đỏ (< 20%, ${DANGER_RGB}): ${urgent.join(", ")}; "Dự phòng": ${items.filter((i) => i.role_as === "backup").map((i) => i.approval_id).join(", ")}`,
+      note: `${items.length} dòng chờ (${real} thật + ${demo.length} minh hoạ); màn sắp theo hạn trên toàn danh sách; phần minh hoạ MSW trả theo created_at giảm dần; đỏ (< 20%, ${DANGER_RGB}): ${urgent.join(", ") || "—"}; "Dự phòng": ${items.filter((i) => i.role_as === "backup").map((i) => i.approval_id).join(", ")}; ${DEMO.sparse}: "${ACTION_UNKNOWN}", máy "${NONE_LABEL}", là link`,
     };
   }),
 );
@@ -1793,6 +1835,49 @@ await liveMock("F4-6 ghi đè: tkt-demo-open → 409; tkt-demo-same → 422; tkt
     await shoot(page, "l1-override.png");
     results.push("tkt-demo-reauth → 403 → đăng nhập lại (backend thật 200) → gửi lại 1 lần → 201 “Đã ghi nhận ghi đè (minh hoạ)”");
     return { note: `${results.join(" · ")} · GET ticket minh hoạ 404 → "${TICKET_UNAVAILABLE}", nút "Ghi đè…" vẫn có (Q-fe-24)` };
+  }),
+);
+
+await liveMock("F4-9 phiếu thiếu dữ liệu (apv-demo-08): “—”, câu rủi ro, “(không có)”, vẫn có thanh quyết định · phiếu giám sát (apv-demo-viewer): câu giám sát, 0 thanh, 0 POST", () =>
+  scenario("F4-9", async ({ page }) => {
+    const decisions = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && /^\/api\/approvals\/[^/]+\/decision$/.test(new URL(r.url()).pathname)) decisions.push(r.url());
+    });
+    await signInAs(page, "ha.lt");
+    // Phiếu thiếu dữ liệu — chỉ xem, không bấm quyết định.
+    await page.goto(`${DEV}/approvals/${DEMO.sparse}`, { waitUntil: "load" });
+    await expectSignedIn(page, `ha.lt ${DEMO.sparse}`);
+    await page.getByTestId("action-hash").waitFor({ timeout: 10_000 });
+    const department = await ddOf(page, "Phòng ban");
+    check(department === MISSING_VALUE, `phòng ban null hiện "${department}", cần "${MISSING_VALUE}"`);
+    const risk = (await page.getByTestId("risk-missing").innerText({ timeout: 5_000 })).trim();
+    check(risk === RISK_MISSING, `risk null hiện "${risk}", cần "${RISK_MISSING}"`);
+    check((await page.getByTestId("risk-row").count()) === 0, "risk null mà vẫn dựng bảng rủi ro");
+    const procedure = (await page.getByTestId("procedure").innerText()).trim();
+    check(procedure === NONE_LABEL, `procedure null hiện "${procedure}", cần "${NONE_LABEL}"`);
+    check((await page.getByTestId("decision-bar").count()) === 1, "phiếu có trường null mà mất thanh quyết định (P3: không khoá vì null)");
+    check((await page.getByTestId("viewer-note").count()) === 0, "phiếu primary mà hiện câu giám sát");
+    await shoot(page, "l1-detail-sparse.png");
+    // Phiếu giám sát — không có đường quyết định nào.
+    const views = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === `/api/approvals/${DEMO.viewer}`);
+    await page.goto(`${DEV}/approvals/${DEMO.viewer}`, { waitUntil: "load" });
+    await expectSignedIn(page, `ha.lt ${DEMO.viewer}`);
+    const note = (await page.getByTestId("viewer-note").innerText({ timeout: 10_000 })).trim();
+    check(note === VIEWER_TEXT, `câu giám sát "${note}", cần "${VIEWER_TEXT}"`);
+    const view = await waitJson(page, views, "xem phiếu giám sát");
+    check(view.role_as === "viewer" && view.status === "pending", `phiếu giám sát: role_as=${view.role_as}, status=${view.status}`);
+    check((await page.getByTestId("action-hash").innerText()).trim() === view.action_plan_hash, "phiếu giám sát không hiện đúng mã băm");
+    check((await page.getByTestId("decision-bar").count()) === 0, "phiếu giám sát vẫn có thanh quyết định");
+    const buttons = await decisionButtonsIn(page);
+    check(buttons.length === 0, `phiếu giám sát có nút "${buttons[0]}"`);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(1_000);
+    check(decisions.length === 0, `gửi ${decisions.length} quyết định, cần 0`);
+    await shoot(page, "l1-detail-viewer.png");
+    return {
+      note: `${DEMO.sparse}: phòng ban "${department}", "${risk}", căn cứ "${procedure}", 0 risk-row, thanh quyết định vẫn có · ${DEMO.viewer} (role_as viewer, pending): "${note}", mã băm đủ, 0 thanh, 0 nút Đồng ý/Từ chối, 0 POST`,
+    };
   }),
 );
 
@@ -2098,28 +2183,94 @@ await live("F4-7 long.nh (L2) → /approvals: trang không có quyền; thanh b�
   }),
 );
 
-await live("F4-8 ha.lt /approvals KHÔNG mock → “Hộp thư duyệt có từ Phase 4 (4c)” (hoặc danh sách thật nếu 4c đã có)", () =>
+await live("F4-8 ha.lt /approvals KHÔNG mock → hộp thư THẬT (4c): 4 trạng thái 200 {items}, server uvicorn; mở 1 phiếu thật đã quyết/hết hạn (chỉ đọc)", () =>
   scenario("F4-8", async ({ page, consoleLines }) => {
-    const inbox = watchJson(page, (r) => isInboxCall(r, "pending"));
+    const seen = {}; // status → { code, server, body } của response gần nhất
+    page.on("response", async (r) => {
+      if (r.request().method() !== "GET" || pathOf(r) !== "/api/approvals") return;
+      const status = new URL(r.url()).searchParams.get("status");
+      const server = (await r.allHeaders()).server ?? null;
+      const body = await r.json().catch(() => null);
+      seen[status] = { code: r.status(), server, body };
+    });
+    const waitStatus = async (status) => {
+      const deadline = Date.now() + 15_000;
+      while (!seen[status] && Date.now() < deadline) await page.waitForTimeout(250);
+      check(seen[status], `không thấy GET /api/approvals?mine=1&status=${status}`);
+      return seen[status];
+    };
+    const lists = {};
+    const expectInbox = (status, e) => {
+      check(e.code === 200, `GET /api/approvals?mine=1&status=${status} → ${e.code}, cần 200`);
+      check(Array.isArray(e.body?.items), `status=${status}: thân không có items là mảng (${JSON.stringify(e.body)?.slice(0, 80)})`);
+      check(/uvicorn/i.test(e.server ?? ""), `status=${status}: header server="${e.server}" — không phải backend thật`);
+      lists[status] = e.body.items;
+    };
     await signInAs(page, "ha.lt");
     await page.getByRole("heading", APPROVALS_HEADING).waitFor();
-    check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
-    const deadline = Date.now() + 15_000;
-    while (inbox.statuses.length === 0 && Date.now() < deadline) await page.waitForTimeout(250);
-    const status = inbox.statuses[0];
-    check(status !== undefined, "không thấy lời gọi GET /api/approvals?mine=1&status=pending");
-    if (status === 404) {
-      const box = page.getByTestId("inbox-missing");
-      await box.waitFor({ timeout: 10_000 });
-      const title = (await box.getByRole("heading").innerText()).trim();
-      check(title === INBOX_MISSING, `tiêu đề "${title}", cần "${INBOX_MISSING}"`);
-      check((await page.locator("main [role=alert]").count()) === 0, "trang Phase 4 có khối lỗi đỏ (role=alert)");
-      return { note: `backend chưa có route: GET /api/approvals → 404 → "${INBOX_MISSING}", không lỗi đỏ` };
+    const shown = [];
+    for (const tab of INBOX_TABS) {
+      if (tab.statuses[0] !== "pending") await page.getByRole("tab", { name: tab.label, exact: true }).click();
+      for (const status of tab.statuses) expectInbox(status, await waitStatus(status));
+      const ids = tab.statuses.flatMap((s) => lists[s].map((i) => i.approval_id));
+      if (ids.length === 0) {
+        await page.getByText(tab.empty, { exact: true }).waitFor({ timeout: 10_000 });
+      } else {
+        await page.waitForFunction((n) => document.querySelectorAll('[data-testid="inbox-row"]').length === n, ids.length, { timeout: 10_000 });
+        // CHỈ đọc id dòng — không bấm (dòng thật đang chờ mà mở là ghi first_viewed_at).
+        const rowIds = await page.locator('[data-testid="inbox-row"]').evaluateAll((els) => els.map((el) => el.dataset.approvalId));
+        check(sameKeys(rowIds, ids), `tab ${tab.label}: dòng ${rowIds.join(", ")} ≠ items ${ids.join(", ")}`);
+      }
+      check((await page.locator("main [role=alert]").count()) === 0, `tab ${tab.label}: có khối lỗi (role=alert)`);
+      // Mọi lời gọi đều 200 → không được có cảnh báo "danh sách có thể đã cũ" (Q-fe-38).
+      check((await page.getByTestId("inbox-stale").count()) === 0, `tab ${tab.label}: mọi lời gọi 200 mà vẫn có cảnh báo inbox-stale`);
+      check((await page.getByTestId("inbox-count-stale").count()) === 0, `tab ${tab.label}: mọi lời gọi 200 mà vẫn có cảnh báo inbox-count-stale`);
+      shown.push(`${tab.label} ${ids.length}`);
+      if (tab.statuses[0] === "pending") await shoot(page, "l1-real-queue.png");
     }
-    check(status === 200, `GET /api/approvals → ${status} (không phải 404 cũng không phải 200)`);
-    await page.locator('[data-testid="inbox-row"]').or(page.getByText("Không có phiếu nào chờ bạn duyệt")).first().waitFor({ timeout: 10_000 });
-    check((await page.getByTestId("inbox-missing").count()) === 0, "4c đã có (200) mà vẫn hiện trang Phase 4");
-    return { note: `4c đã có — kiểm thật: GET /api/approvals → 200, ${inbox.last?.length ?? "?"} phiếu, màn hiện danh sách` };
+    // Phiếu thật KHÔNG còn chờ (ưu tiên timeout → rejected → approved; phần tử đầu theo thứ tự server). Mở phiếu đã quyết /
+    // hết hạn không ghi gì (store.py _MARK_VIEWED chỉ khi status='pending'). TUYỆT ĐỐI không mở phiếu đang chờ.
+    const pick = ["timeout", "rejected", "approved"].map((status) => [status, lists[status][0]]).find(([, item]) => item);
+    let opened = "không có phiếu thật đã quyết/hết hạn — không mở phiếu nào";
+    if (pick) {
+      const [status, item] = pick;
+      check(item.status === status && item.status !== "pending", `danh sách status=${status} trả phiếu ${item.approval_id} có status "${item.status}" — KHÔNG mở`);
+      const id = item.approval_id;
+      const views = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === `/api/approvals/${encodeURIComponent(id)}`);
+      await page.goto(`${DEV}/approvals/${encodeURIComponent(id)}`, { waitUntil: "load" });
+      await expectSignedIn(page, `ha.lt /approvals/${id}`);
+      const deadline = Date.now() + 15_000;
+      while (views.statuses.length === 0 && Date.now() < deadline) await page.waitForTimeout(250);
+      const code = views.statuses[0];
+      if (code === 200) {
+        const view = await waitJson(page, views, "xem phiếu thật");
+        check(view.status !== "pending", `phiếu ${id} trả status pending — sai danh sách`);
+        const hash = (await page.getByTestId("action-hash").innerText({ timeout: 10_000 })).trim();
+        check(hash === view.action_plan_hash, `mã băm trên màn "${hash}" ≠ action_plan_hash`);
+        for (const block of ["request-summary", "procedure", "approval-readonly"]) {
+          check((await page.getByTestId(block).count()) === 1, `phiếu ${id}: thiếu khối ${block}`);
+        }
+        const riskRows = await page.getByTestId("risk-row").count();
+        const riskMissing = await page.getByTestId("risk-missing").count();
+        check(view.risk ? riskRows > 0 : riskMissing === 1, `phiếu ${id}: khối rủi ro sai (risk ${view.risk ? "có" : "null"}, ${riskRows} dòng, ${riskMissing} câu thay)`);
+        check((await page.getByTestId("decision-bar").count()) === 0, `phiếu ${id} (${view.status}) vẫn có thanh quyết định`);
+        const buttons = await decisionButtonsIn(page);
+        check(buttons.length === 0, `phiếu ${id} có nút "${buttons[0]}"`);
+        opened = `${status} ${id} → 200: đủ khối, mã băm khớp, chỉ đọc (0 thanh quyết định), rủi ro ${view.risk ? "bảng" : "câu thay"}`;
+      } else if (code === 409) {
+        await page.getByRole("heading", { name: PLAN_CHANGED, level: 1 }).waitFor({ timeout: 10_000 });
+        opened = `${status} ${id} → 409 plan_changed: chỉ câu chặn`;
+      } else if (code === 404) {
+        await page.getByRole("heading", { name: VIEW_NOT_FOUND, level: 1 }).waitFor({ timeout: 10_000 });
+        opened = `${status} ${id} → 404: "${VIEW_NOT_FOUND}"`;
+      } else {
+        check(false, `GET /api/approvals/${id} → ${code ?? "không có response"}, cần 200 / 409 / 404`);
+      }
+      await shoot(page, "l1-real-detail.png");
+    }
+    check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+    const statuses = ["pending", "approved", "rejected", "timeout"].map((s) => `${s} 200 (${lists[s].length})`).join(", ");
+    return { note: `4c thật: ${statuses}; server uvicorn; 0 [MSW]; 0 role=alert; 0 inbox-stale / inbox-count-stale; tab: ${shown.join(" · ")}; ${opened}` };
   }),
 );
 

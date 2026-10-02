@@ -85,12 +85,31 @@ export const ACTION_LABEL: Record<string, string> = {
   renew_vpn_cert: "Cấp lại chứng chỉ VPN",
   reissue_vpn_access: "Cấp lại truy cập VPN",
 };
-export const actionLabel = (type: string): string => ACTION_LABEL[type] ?? type;
+/** Hộp thư không biết hành động (`action_type` null — dòng audit B15 không có): dòng VẪN hiện, mở phiếu để xem object. */
+export const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
+export const actionLabel = (type: string | null): string => (type === null ? ACTION_UNKNOWN : (ACTION_LABEL[type] ?? type));
 
-export const INBOX_MISSING_TITLE = "Hộp thư duyệt có từ Phase 4 (4c)";
+/** Hộp thư đã có dữ liệu nhưng lần tải lại gần nhất lỗi (Q-fe-38): giữ danh sách cũ, báo có thể đã cũ + câu lỗi. */
+export const INBOX_STALE_TEXT = "Chưa cập nhật được hộp thư — danh sách dưới đây có thể đã cũ.";
+/** Đang ở tab khác "Chờ duyệt" mà truy vấn `pending` (nuôi số đếm trên tab — tín hiệu duy nhất về phiếu mới) tải lại lỗi. */
+export const INBOX_COUNT_STALE_TEXT = "Chưa cập nhật được số phiếu chờ duyệt — con số trên tab có thể đã cũ.";
+
+/** Ô thông tin không có giá trị (phòng ban null, vai trò rỗng). */
+export const MISSING_VALUE = "—";
+
 export const PLAN_CHANGED_TEXT = "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt";
 export const VIEW_NOT_FOUND_TEXT = "Không tìm thấy phiếu hoặc phiếu không giao cho bạn";
 export const BACKUP_TEXT = "Bạn duyệt với vai trò dự phòng";
+export const VIEWER_TEXT = "Bạn đang xem phiếu này với quyền giám sát — không thể quyết định.";
+export const RISK_MISSING_TEXT = "Chưa có đánh giá rủi ro cho phiếu này.";
+
+/**
+ * Vai trò của tôi với phiếu (`role_as` của xem phiếu). Chỉ `primary` / `backup` được quyết; `viewer` và MỌI giá trị lạ
+ * → `viewer` (fail-closed: không hiện đường quyết định khi không chắc). Server vẫn là nơi quyết quyền (403).
+ */
+export function decisionRole(roleAs: unknown): "primary" | "backup" | "viewer" {
+  return roleAs === "primary" || roleAs === "backup" ? roleAs : "viewer";
+}
 export const DECISION_SENT = "Đã gửi quyết định";
 export const NOTICES_TEXT = "Ghi chú đã được ẩn bớt thông tin nhạy cảm";
 /** Màn xem ticket để ghi đè: GET ticket lỗi (vd 404) → câu trung tính, không mã lỗi (Q-fe-24). */

@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { overrideTicket } from "../../api/approvals.ts";
+import { INBOX_REFRESH_MS, inboxRefetchInterval, listApprovals, overrideTicket } from "../../api/approvals.ts";
 import { type AuthChannel, createClient } from "../../api/client.ts";
 import { errorMessage, ApiError, GENERIC_LOGIN_ERROR } from "../../api/errors.ts";
 import { offsetFrom, recordServerDate, serverNow } from "../../api/serverClock.ts";
@@ -20,9 +20,13 @@ import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { ApprovalDetailRoute } from "./ApprovalDetail.tsx";
 import { ApprovalQueue } from "./ApprovalQueue.tsx";
 import {
+  ACTION_UNKNOWN,
+  actionLabel,
   BACKUP_TEXT,
   DECISION_SENT,
-  INBOX_MISSING_TITLE,
+  decisionRole,
+  INBOX_COUNT_STALE_TEXT,
+  INBOX_STALE_TEXT,
   isUrgent,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
@@ -30,10 +34,12 @@ import {
   REFLEX_MIN_SECONDS,
   reflexText,
   remainingShort,
+  RISK_MISSING_TEXT,
   sortByDeadline,
   TICKET_UNAVAILABLE,
   VIEW_NOT_FOUND_TEXT,
   viewedSeconds,
+  VIEWER_TEXT,
 } from "./inbox.ts";
 import { TicketOverrideRoute } from "./TicketOverride.tsx";
 
@@ -102,6 +108,8 @@ function viewOf(id: string, over: Partial<ApprovalViewP4> = {}): ApprovalViewP4 
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
+/** Thân hộp thư THẬT (4c `b457e6e`): `{items: [...]}`, không phải mảng trần. */
+const inbox = (items: ApprovalListItem[], headers: Record<string, string> = {}) => json(200, { items }, headers);
 
 type Call = { method: string; url: string; body: string | null; auth: string | null };
 type Route = (method: string, url: string) => Response | Promise<Response> | undefined;
@@ -168,7 +176,7 @@ describe("t39: hộp thư sắp theo deadline tăng dần ở client", () => {
   });
 
   it("màn hộp thư: server trả lộn thứ tự → dòng theo hạn; 'Chờ duyệt · 3'; dự phòng có huy hiệu; có dấu nhắc", async () => {
-    const calls = stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(200, [c, a, b]) : undefined));
+    const calls = stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? inbox([c, a, b]) : undefined));
     renderAt("/approvals");
     await screen.findAllByTestId("inbox-row");
     expect(rowIds()).toStrictEqual(["a", "b", "c"]);
@@ -190,9 +198,9 @@ describe("t39: hộp thư sắp theo deadline tăng dần ở client", () => {
     const approved = listItem("p", { status: "approved", deadline: at(-60) });
     const rejected = listItem("q", { status: "rejected", deadline: at(-90) });
     const calls = stubFetch((_method, url) => {
-      if (url.endsWith("status=pending")) return json(200, []);
-      if (url.endsWith("status=approved")) return json(200, [approved]);
-      if (url.endsWith("status=rejected")) return json(200, [rejected]);
+      if (url.endsWith("status=pending")) return inbox([]);
+      if (url.endsWith("status=approved")) return inbox([approved]);
+      if (url.endsWith("status=rejected")) return inbox([rejected]);
       return undefined;
     });
     renderAt("/approvals");
@@ -224,7 +232,7 @@ describe("t40: đồng hồ dùng giờ máy chủ = giờ máy + độ lệch t
 
   it("giờ máy nhanh 10 phút + header Date đúng giờ máy chủ → vẫn 'còn 5 phút', đỏ (còn 5/30)", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: T0 + 10 * MIN });
-    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(200, [item], { Date: new Date(T0).toUTCString() }) : undefined));
+    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? inbox([item], { Date: new Date(T0).toUTCString() }) : undefined));
     renderAt("/approvals");
     const time = await screen.findByTestId("inbox-time");
     expect(time.textContent).toBe("còn 5 phút");
@@ -233,7 +241,7 @@ describe("t40: đồng hồ dùng giờ máy chủ = giờ máy + độ lệch t
 
   it("thiếu header Date → độ lệch 0: giờ máy nhanh 10 phút thì thấy đã quá hạn", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: T0 + 10 * MIN });
-    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(200, [item]) : undefined));
+    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? inbox([item]) : undefined));
     renderAt("/approvals");
     expect((await screen.findByTestId("inbox-time")).textContent).toBe("đã quá hạn");
   });
@@ -243,7 +251,7 @@ describe("t40: đồng hồ dùng giờ máy chủ = giờ máy + độ lệch t
     const date = { Date: new Date(T0).toUTCString() };
     stubFetch((_method, url) => {
       if (url === "/api/approvals/d") return json(200, viewOf("d", { deadline: at(5) }), date);
-      if (url.startsWith("/api/approvals?")) return json(200, [item], date);
+      if (url.startsWith("/api/approvals?")) return inbox([item], date);
       return undefined;
     });
     renderAt("/approvals/d");
@@ -323,7 +331,7 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
   it("màn chi tiết: đủ khối — yêu cầu, người gửi, căn cứ quy trình, rủi ro (khoá–giá trị), dữ kiện, hành động, hash", async () => {
     stubFetch((_method, url) => {
       if (url === "/api/approvals/h") return json(200, viewOf("h"));
-      if (url.startsWith("/api/approvals?")) return json(200, [listItem("h")]);
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("h")]);
       return undefined;
     });
     renderAt("/approvals/h");
@@ -340,8 +348,8 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
 
   it("không có tiêu đề quy trình → hiện doc_id; dự phòng → dải 'Bạn duyệt với vai trò dự phòng'", async () => {
     stubFetch((_method, url) => {
-      if (url === "/api/approvals/k") return json(200, viewOf("k", { procedure: { doc_id: "KB-VPN-004" }, role_as: "backup" }));
-      if (url.startsWith("/api/approvals?")) return json(200, [listItem("k", { role_as: "backup" })]);
+      if (url === "/api/approvals/k") return json(200, viewOf("k", { procedure: { doc_id: "KB-VPN-004", title: null }, role_as: "backup" }));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("k", { role_as: "backup" })]);
       return undefined;
     });
     renderAt("/approvals/k");
@@ -376,7 +384,7 @@ describe("t43: 409 plan_changed → chỉ một câu, không object, không nút
   it("phiếu không còn pending → chỉ đọc: không nút Đồng ý / Từ chối, hiện kết quả", async () => {
     stubFetch((_method, url) => {
       if (url === "/api/approvals/ok") return json(200, viewOf("ok", { status: "approved" }));
-      if (url.startsWith("/api/approvals?")) return json(200, [listItem("ok", { status: "approved" })]);
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("ok", { status: "approved" })]);
       return undefined;
     });
     renderAt("/approvals/ok");
@@ -393,7 +401,7 @@ function detailApi(decision: () => Response | Promise<Response>) {
   return stubFetch((method, url) => {
     if (method === "POST" && url === "/api/approvals/r/decision") return decision();
     if (url === "/api/approvals/r") return json(200, viewOf("r"));
-    if (url.startsWith("/api/approvals?")) return json(200, [listItem("r")]);
+    if (url.startsWith("/api/approvals?")) return inbox([listItem("r")]);
     return undefined;
   });
 }
@@ -463,7 +471,7 @@ describe("t44: từ chối thiếu lý do hoặc thiếu ghi chú → không g�
         views += 1;
         return json(200, viewOf("r"));
       }
-      if (url.startsWith("/api/approvals?")) return json(200, [listItem("r")]);
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("r")]);
       return undefined;
     });
     renderAt("/approvals/r");
@@ -499,15 +507,14 @@ describe("t45: bấm Đồng ý 2 lần nhanh → đúng 1 request", () => {
 
 // ------------------------------------------------------------------------------------------------ t46 (+ P9)
 
-describe("t46: MSW tắt + hộp thư 404 (route chưa có) → trang 'có từ Phase 4', không lỗi đỏ", () => {
-  it("404 'Not Found' của Starlette → tiêu đề Phase 4 (4c); không alert, không tab; ô mã ticket vẫn dùng được", async () => {
+describe("t46: hộp thư 404 → đường lỗi chung (N4c P5: route 4c đã có, 404 là lỗi thật)", () => {
+  it("404 'Not Found' → 'Chưa tải được hộp thư: Không tìm thấy.' (role=alert); không trang Phase 4; tab vẫn có; ô mã ticket vẫn dùng được", async () => {
     const calls = stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(404, { detail: "Not Found" }) : undefined));
     renderAt("/approvals");
-    const box = await screen.findByTestId("inbox-missing");
-    expect(within(box).getByRole("heading").textContent).toBe(INBOX_MISSING_TITLE);
-    expect(INBOX_MISSING_TITLE).toBe("Hộp thư duyệt có từ Phase 4 (4c)");
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByRole("tablist")).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toBe("Chưa tải được hộp thư: Không tìm thấy.");
+    expect(screen.queryByTestId("inbox-missing")).toBeNull();
+    expect(document.body.textContent).not.toContain("Phase 4 (4c)");
+    expect(screen.getByRole("tablist")).toBeTruthy();
     expect(screen.getByLabelText("Mã ticket")).toBeTruthy();
     expect(calls[0]?.url).toBe("/api/approvals?mine=1&status=pending");
   });
@@ -758,7 +765,7 @@ describe("t50: GET ticket 404 → câu trung tính, nút ghi đè vẫn có theo
     stubFetch((_method, url) => {
       if (url === "/api/approvals/dq") return json(200, decided);
       if (url === "/api/approvals/pq") return json(200, viewOf("pq"));
-      if (url.startsWith("/api/approvals?")) return json(200, [listItem("dq", { status: "approved" }), listItem("pq")]);
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("dq", { status: "approved" }), listItem("pq")]);
       return undefined;
     });
     renderAt("/approvals/dq");
@@ -865,7 +872,7 @@ describe("t75: chống duyệt theo phản xạ — Đồng ý khi mới xem < 5
         await loaded;
         return json(200, viewOf("r"));
       }
-      if (url.startsWith("/api/approvals?")) return json(200, [listItem("r")]);
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("r")]);
       return method === "POST" ? json(202, {}) : json(404, { detail: "not_found" });
     });
     renderAt("/approvals/r");
@@ -917,5 +924,312 @@ describe("t77: thẩm mỹ F4 — bảng khoá–giá trị không ngắt giữa
     expect(scroll.contains(bar)).toBe(false);
     expect(scroll.parentElement).toBe(bar.parentElement);
     expect(scroll.querySelector("section")?.className.split(/\s+/)).toContain("pb-6");
+  });
+});
+
+// ================================================================================================ N4c — nối thật 4c
+// Hợp đồng: backend/app/api/approvals.py @b457e6e — hộp thư `{items: [...]}` (InboxItem 10 khoá, `action_type` /
+// `device_id` có thể null), xem phiếu `ApprovalView` (`department`, `risk`, `procedure` có thể null; `role_as` có `viewer`),
+// 202 decision thêm `decided_as`.
+
+// ------------------------------------------------------------------------------------------------ t79
+
+describe("t79: listApprovals nhận ĐÚNG MỘT hình dạng {items: [...]}; sai dạng → 502 invalid_inbox_body", () => {
+  it("{items:[…]} → trả mảng phần tử (giữ cả trường null); URL có mine=1&status=…", async () => {
+    const a = listItem("a");
+    const n = listItem("n", { action_type: null, device_id: null });
+    const calls = stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? inbox([a, n]) : undefined));
+    expect(await listApprovals("timeout")).toStrictEqual([a, n]);
+    expect(await listApprovals("pending")).toStrictEqual([a, n]);
+    expect(calls.map((c) => c.url)).toStrictEqual(["/api/approvals?mine=1&status=timeout", "/api/approvals?mine=1&status=pending"]);
+  });
+
+  const noDeadline: Partial<ApprovalListItem> = { ...listItem("b") };
+  delete noDeadline.deadline;
+  it.each([
+    ["mảng trần (dạng cũ của F4)", [listItem("a")]],
+    ["object rỗng {}", {}],
+    ["{items: null}", { items: null }],
+    ["items là object", { items: { a: listItem("a") } }],
+    ["thân null", null],
+    ["một phần tử thiếu deadline", { items: [listItem("a"), noDeadline] }],
+    ["deadline không phải chuỗi", { items: [{ ...listItem("a"), deadline: 1_700_000_000 }] }],
+    ["approval_id không phải chuỗi", { items: [{ ...listItem("a"), approval_id: 412 }] }],
+    ["một phần tử không phải object", { items: [listItem("a"), "b"] }],
+    ["phần tử null", { items: [null] }],
+  ])("%s → ApiError(502, invalid_inbox_body) — không đoán, không bỏ lặng phần tử", async (_name, body) => {
+    stubFetch(() => json(200, body));
+    const error = await listApprovals("pending").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect([(error as ApiError).status, (error as ApiError).code]).toStrictEqual([502, "invalid_inbox_body"]);
+  });
+
+  it("màn: thân mảng trần → câu lỗi chung, 0 dòng (không hiện dữ liệu đoán dạng)", async () => {
+    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(200, [listItem("a")]) : undefined));
+    renderAt("/approvals");
+    expect((await screen.findByRole("alert")).textContent).toBe("Chưa tải được hộp thư: Có lỗi xảy ra, vui lòng thử lại.");
+    expect(screen.queryAllByTestId("inbox-row")).toHaveLength(0);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t80
+
+describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn là link, vẫn sắp theo hạn và tô đỏ", () => {
+  it("actionLabel: null → câu P3; mã đã biết → nhãn; mã lạ → nguyên mã", () => {
+    expect(actionLabel(null)).toBe(ACTION_UNKNOWN);
+    expect(ACTION_UNKNOWN).toBe("Chưa rõ hành động — mở phiếu để xem");
+    expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
+    expect(actionLabel("hanh_dong_la")).toBe("hanh_dong_la");
+  });
+
+  it("màn: dòng null đứng đúng chỗ theo hạn, đỏ khi < 20%, nhãn P3 + '(không có)', bấm → mở phiếu", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: T0 });
+    const unknownUrgent = listItem("u", { action_type: null, device_id: null, created_at: at(-25), deadline: at(4) });
+    const unknownCalm = listItem("v", { action_type: null, device_id: null, created_at: at(-2), deadline: at(28) });
+    const normal = listItem("a", { created_at: at(-10), deadline: at(20) });
+    const calls = stubFetch((_method, url) => {
+      if (url === "/api/approvals/u") return json(200, viewOf("u"));
+      if (url.startsWith("/api/approvals?")) return inbox([unknownCalm, normal, unknownUrgent]);
+      return undefined;
+    });
+    renderAt("/approvals");
+    await screen.findAllByTestId("inbox-row");
+    expect(rowIds()).toStrictEqual(["u", "a", "v"]);
+    expect(screen.getByRole("tab", { name: /^Chờ duyệt/ }).textContent).toBe("Chờ duyệt · 3");
+    const [rowU, , rowV] = screen.getAllByTestId("inbox-row");
+    expect(rowU!.dataset.urgent).toBe("true");
+    expect(rowV!.dataset.urgent).toBe("false");
+    for (const row of [rowU!, rowV!]) {
+      expect(row.textContent).toContain(ACTION_UNKNOWN);
+      expect(row.textContent).toContain("Máy (không có)");
+    }
+    expect(rowU!.tagName).toBe("A");
+    expect(rowU!.getAttribute("href")).toBe("/approvals/u");
+    fireEvent.click(rowU!);
+    expect((await screen.findByTestId("request-summary")).textContent).toBe(viewOf("u").request_summary);
+    expect(calls.map((c) => c.url)).toContain("/api/approvals/u");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t81
+
+const NULL_VIEW: Partial<ApprovalViewP4> = { requester: { role: "employee", department: null }, risk: null, procedure: null };
+
+describe("t81: phiếu có phòng ban / rủi ro / căn cứ null → '—', câu rủi ro, '(không có)'; thanh quyết định VẪN có", () => {
+  const dd = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+
+  it("hiện thay thế đúng chỗ, không dựng bảng rỗng; Đồng ý gửi đúng body cũ", async () => {
+    const calls = stubFetch((method, url) => {
+      if (method === "POST" && url === "/api/approvals/z/decision") {
+        return json(202, { approval_id: "z", ticket_id: "t", status: "accepted", notices: [], decided_as: "primary" });
+      }
+      if (url === "/api/approvals/z") return json(200, viewOf("z", NULL_VIEW));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("z", { action_type: null, device_id: null })]);
+      return undefined;
+    });
+    renderAt("/approvals/z");
+    expect((await screen.findByTestId("risk-missing")).textContent).toBe(RISK_MISSING_TEXT);
+    expect(RISK_MISSING_TEXT).toBe("Chưa có đánh giá rủi ro cho phiếu này.");
+    expect(screen.queryAllByTestId("risk-row")).toHaveLength(0);
+    expect(screen.getByTestId("procedure").textContent).toBe("(không có)");
+    expect(dd("Phòng ban")).toBe("—");
+    expect(dd("Vai trò")).toBe("Nhân viên");
+    expect(screen.getByTestId("action-hash").textContent).toBe(viewOf("z").action_plan_hash); // căn cứ duyệt vẫn đủ
+    expect(screen.getAllByTestId("fact-row").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+    viewedLongEnough();
+    fireEvent.click(screen.getByRole("button", { name: /^Đồng ý/ }));
+    expect((await screen.findByTestId("decision-sent")).textContent).toBe(DECISION_SENT);
+    const sent = posts(calls, "/decision");
+    expect(sent).toHaveLength(1);
+    const body = JSON.parse(sent[0]!.body!) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toStrictEqual(["decision", "view_started_at"]);
+    expect(body.decision).toBe("approved");
+  });
+
+  it("vai trò người gửi rỗng (thiếu requester_context) → '—'", async () => {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/y") return json(200, viewOf("y", { requester: { role: "", department: "Finance" } }));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("y")]);
+      return undefined;
+    });
+    renderAt("/approvals/y");
+    await screen.findByTestId("request-summary");
+    expect(dd("Vai trò")).toBe("—");
+    expect(dd("Phòng ban")).toBe("Finance");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t82
+
+describe("t82: role_as viewer (hoặc giá trị lạ) → không đường quyết định nào; câu giám sát", () => {
+  it("decisionRole: chỉ primary/backup giữ nguyên; viewer và mọi giá trị lạ → viewer", () => {
+    expect(decisionRole("primary")).toBe("primary");
+    expect(decisionRole("backup")).toBe("backup");
+    for (const odd of ["viewer", "owner", "PRIMARY", "", null, undefined, 1, {}]) expect(decisionRole(odd)).toBe("viewer");
+  });
+
+  it.each([
+    ["viewer", "viewer"],
+    ["giá trị lạ 'owner' → như viewer", "owner"],
+  ])("%s: phiếu pending → câu giám sát, 0 thanh quyết định, 0 nút, 0 hộp, 0 POST", async (_name, roleAs) => {
+    const calls = stubFetch((method, url) => {
+      if (method === "POST") return json(202, { approval_id: "w", ticket_id: "t", status: "accepted", notices: [] });
+      if (url === "/api/approvals/w") return json(200, viewOf("w", { role_as: roleAs as ApprovalViewP4["role_as"] }));
+      if (url.startsWith("/api/approvals?")) return inbox([]);
+      return undefined;
+    });
+    renderAt("/approvals/w");
+    const note = await screen.findByTestId("viewer-note");
+    expect(note.textContent).toBe(VIEWER_TEXT);
+    expect(VIEWER_TEXT).toBe("Bạn đang xem phiếu này với quyền giám sát — không thể quyết định.");
+    expect(screen.getByTestId("action-hash").textContent).toBe(viewOf("w").action_plan_hash); // vẫn xem được đúng object
+    expect(screen.queryByTestId("decision-bar")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Đồng ý|Từ chối|Vẫn đồng ý|Gửi từ chối/ })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByTestId("backup-banner")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(posts(calls, "/decision")).toHaveLength(0);
+  });
+
+  it("backup vẫn như cũ: dải dự phòng + thanh quyết định, không câu giám sát", async () => {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/b") return json(200, viewOf("b", { role_as: "backup" }));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("b", { role_as: "backup" })]);
+      return undefined;
+    });
+    renderAt("/approvals/b");
+    expect((await screen.findByTestId("backup-banner")).textContent).toContain(BACKUP_TEXT);
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+    expect(screen.queryByTestId("viewer-note")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t83
+
+describe("t83: hộp thư 404 → đường lỗi chung; tự tải lại: 403 dừng, lỗi khác vẫn theo nhịp", () => {
+  it("inboxRefetchInterval: chỉ 403 dừng; 404 (cả 'Not Found'), 502, lỗi mạng, không lỗi → 30 s", () => {
+    expect(inboxRefetchInterval(new ApiError(403, "forbidden"))).toBe(false);
+    for (const error of [new ApiError(404, "Not Found"), new ApiError(404, "not_found"), new ApiError(502, "invalid_inbox_body"), new TypeError("mạng"), null]) {
+      expect(inboxRefetchInterval(error)).toBe(INBOX_REFRESH_MS);
+    }
+    expect(INBOX_REFRESH_MS).toBe(30_000);
+  });
+
+  async function inboxCallsAfter30s(status: number, code: string): Promise<[number, number, string]> {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const calls = stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(status, { detail: code }) : undefined));
+    renderAt("/approvals");
+    const alert = (await screen.findByRole("alert")).textContent ?? "";
+    const before = calls.length;
+    await vi.advanceTimersByTimeAsync(INBOX_REFRESH_MS + 1_000);
+    return [before, calls.length, alert];
+  }
+
+  it("404 → 'Chưa tải được hộp thư: Không tìm thấy.', không trang Phase 4; 30 s sau gọi lại", async () => {
+    const [before, after, alert] = await inboxCallsAfter30s(404, "Not Found");
+    expect(alert).toBe("Chưa tải được hộp thư: Không tìm thấy.");
+    expect(document.body.textContent).not.toMatch(/Phase 4 \(4c\)|chưa có danh sách phiếu duyệt/);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("403 → câu không có quyền; 30 s sau KHÔNG gọi lại", async () => {
+    const [before, after, alert] = await inboxCallsAfter30s(403, "forbidden");
+    expect(alert).toBe("Chưa tải được hộp thư: Bạn không có quyền thực hiện thao tác này.");
+    expect(after).toBe(before);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t86
+
+describe("t86: 202 có / thiếu decided_as → màn như cũ, không hiện decided_as", () => {
+  it.each([
+    ["có decided_as (4c)", { approval_id: "r", ticket_id: "t", status: "accepted", notices: [], decided_as: "backup" }],
+    ["thiếu decided_as (backend cũ)", { approval_id: "r", ticket_id: "t", status: "accepted", notices: [] }],
+  ])("%s → 'Đã gửi quyết định', thanh quyết định ẩn", async (_name, accepted) => {
+    detailApi(() => json(202, accepted));
+    renderAt("/approvals/r");
+    const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    viewedLongEnough();
+    fireEvent.click(approve);
+    expect((await screen.findByTestId("decision-sent")).textContent).toBe(DECISION_SENT);
+    expect(screen.queryByTestId("decision-bar")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/decided_as|backup/);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t87 (Q-fe-38)
+
+describe("t87: đã có dữ liệu mà tải lại lỗi → GIỮ danh sách cũ + cảnh báo 'có thể đã cũ' (role=status); tải lại thành công → mất", () => {
+  it("200 [A] → 500 (dòng A còn + cảnh báo) → 200 (mất) → 403 (cảnh báo còn, dừng tự tải lại)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const a = listItem("a");
+    const replies = [inbox([a]), json(500, { detail: "internal" }), inbox([a]), json(403, { detail: "forbidden" })];
+    const calls = stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? (replies.shift() ?? inbox([a])) : undefined));
+    const inboxCalls = () => calls.filter((c) => c.url.startsWith("/api/approvals?")).length;
+    const tick = async () => {
+      const before = inboxCalls();
+      await vi.advanceTimersByTimeAsync(INBOX_REFRESH_MS + 1_000);
+      return inboxCalls() - before;
+    };
+    const stale = () => screen.queryByTestId("inbox-stale");
+    renderAt("/approvals");
+    await screen.findByTestId("inbox-row");
+    expect(stale()).toBeNull();
+
+    expect(await tick()).toBe(1); // tải lại → 500
+    await waitFor(() => expect(stale()).not.toBeNull());
+    expect(stale()!.getAttribute("role")).toBe("status");
+    expect(stale()!.textContent).toBe(`${INBOX_STALE_TEXT} Có lỗi xảy ra, vui lòng thử lại.`);
+    expect(INBOX_STALE_TEXT).toBe("Chưa cập nhật được hộp thư — danh sách dưới đây có thể đã cũ.");
+    expect(rowIds()).toStrictEqual(["a"]); // phiếu đang chờ không bị ẩn
+    expect(screen.getByTestId("inbox-row").getAttribute("href")).toBe("/approvals/a"); // vẫn mở được
+    expect(screen.getByRole("tab", { name: /^Chờ duyệt/ }).textContent).toBe("Chờ duyệt · 1");
+    expect(screen.queryByRole("alert")).toBeNull(); // không lẫn với khối "Chưa tải được hộp thư"
+    expect(screen.queryByTestId("inbox-count-stale")).toBeNull(); // đang ở tab "Chờ duyệt": một lỗi → một dòng
+
+    expect(await tick()).toBe(1); // tải lại → 200
+    await waitFor(() => expect(stale()).toBeNull());
+    expect(rowIds()).toStrictEqual(["a"]);
+
+    expect(await tick()).toBe(1); // tải lại → 403
+    await waitFor(() => expect(stale()?.textContent).toBe(`${INBOX_STALE_TEXT} Bạn không có quyền thực hiện thao tác này.`));
+    expect(rowIds()).toStrictEqual(["a"]);
+    expect(await tick()).toBe(0); // 403 → nhịp tự tải lại dừng
+    expect(stale()).not.toBeNull();
+  });
+
+  it("đang ở tab 'Đã quyết': pending tải lại 500 → 'inbox-count-stale', số đếm cũ còn; tải lại 200 → mất", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const a = listItem("a");
+    const pendingReplies = [inbox([a]), json(500, { detail: "internal" }), inbox([a])];
+    const calls = stubFetch((_method, url) => {
+      if (url.endsWith("status=pending")) return pendingReplies.shift() ?? inbox([a]);
+      if (url.startsWith("/api/approvals?")) return inbox([]);
+      return undefined;
+    });
+    const pendingCalls = () => calls.filter((c) => c.url.endsWith("status=pending")).length;
+    const countStale = () => screen.queryByTestId("inbox-count-stale");
+    renderAt("/approvals");
+    await screen.findByTestId("inbox-row");
+    fireEvent.click(screen.getByRole("tab", { name: "Đã quyết" }));
+    await screen.findByText("Chưa có phiếu nào đã quyết");
+    expect(countStale()).toBeNull();
+
+    const before = pendingCalls();
+    await vi.advanceTimersByTimeAsync(INBOX_REFRESH_MS + 1_000); // pending tải lại → 500
+    expect(pendingCalls() - before).toBe(1);
+    await waitFor(() => expect(countStale()).not.toBeNull());
+    expect(countStale()!.getAttribute("role")).toBe("status");
+    expect(countStale()!.textContent).toBe(`${INBOX_COUNT_STALE_TEXT} Có lỗi xảy ra, vui lòng thử lại.`);
+    expect(INBOX_COUNT_STALE_TEXT).toBe("Chưa cập nhật được số phiếu chờ duyệt — con số trên tab có thể đã cũ.");
+    expect(screen.getByRole("tab", { name: /^Chờ duyệt/ }).textContent).toBe("Chờ duyệt · 1"); // số đếm cũ còn
+    expect(screen.queryByTestId("inbox-stale")).toBeNull(); // danh sách tab đang xem vẫn mới
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(INBOX_REFRESH_MS + 1_000); // pending tải lại → 200
+    await waitFor(() => expect(countStale()).toBeNull());
+    expect(screen.getByRole("tab", { name: /^Chờ duyệt/ }).textContent).toBe("Chờ duyệt · 1");
   });
 });

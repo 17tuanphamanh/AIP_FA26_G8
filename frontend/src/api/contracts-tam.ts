@@ -101,9 +101,56 @@ export type DecisionIn = {
   view_started_at?: string;
 };
 
-// Nguồn: backend/app/api/approvals.py decide() — JSONResponse 202.
-// Xoá khi: route khai response_model.
-export type DecisionAccepted = { approval_id: string; ticket_id: string; status: "accepted"; notices: string[] };
+// Nguồn: backend/app/api/approvals.py @b457e6e decide() dòng 222–223 — JSONResponse 202; `decided_as` (4c P4) chỉ để log,
+// giao diện không hiện; khai tuỳ chọn để backend cũ (thiếu khoá) vẫn đúng kiểu. Xoá khi: route khai response_model (nợ API #3).
+export type DecisionAccepted = {
+  approval_id: string;
+  ticket_id: string;
+  status: "accepted";
+  notices: string[];
+  decided_as?: "primary" | "backup";
+};
+
+// Nguồn: backend/app/api/approvals.py @b457e6e (InboxItem dòng 85–97, ApprovalView 110–124).
+// Xoá khi: route có response_model (nợ API #3).
+// Hộp thư `GET /api/approvals?mine=1[&status=…]` → `{items: [...]}` (KHÔNG phải mảng trần), ≤ 50 mục, server sắp
+// created_at giảm dần. `status` là cột `approvals.status`; `action_type` / `device_id` null khi dòng audit B15 không có
+// (B15 giả) hoặc đích không phải "device:…".
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "timeout";
+export type ApprovalListItem = {
+  approval_id: string;
+  ticket_id: string;
+  status: ApprovalStatus;
+  created_at: string;
+  deadline: string;
+  reminder_1_at: string | null;
+  reminder_2_at: string | null;
+  role_as: "primary" | "backup";
+  action_type: string | null;
+  device_id: string | null;
+};
+export type InboxResponse = { items: ApprovalListItem[] };
+
+// Xem phiếu `GET /api/approvals/{id}`: 404 `not_found` (không có / không giao cho tôi — cùng một 404), 409 `plan_changed`
+// (không trả object nào). Không có created_at → lấy từ hộp thư; giờ máy chủ từ header `Date` (KH 1.3 #5). `risk`
+// (RiskDecision) hiện khoá–giá trị chung, KHÔNG đọc tên trường. `procedure` null khi action_type không có trong
+// action_metadata; `title` null khi không tìm thấy tài liệu ở bản KB hiện hành. `viewer` = người có `audit:read:all` xem
+// phiếu không giao cho mình (không quyết được, không ghi lần xem đầu).
+export type ApprovalRoleAs = "primary" | "backup" | "viewer";
+export type ApprovalViewP4 = {
+  approval_id: string;
+  ticket_id: string;
+  status: ApprovalStatus;
+  deadline: string;
+  requester: { role: string; department: string | null };
+  request_summary: string;
+  action: Record<string, unknown>;
+  action_plan_hash: string;
+  risk: Record<string, unknown> | null;
+  facts: Record<string, unknown>;
+  role_as: ApprovalRoleAs;
+  procedure: { doc_id: string; title: string | null } | null;
+};
 
 // Nguồn: backend/app/api/health.py health() — JSONResponse; 200 "ok" / 503 "degraded"; `runtime` chỉ để báo.
 // Xoá khi: route có response_model.
@@ -157,45 +204,6 @@ export type DigestConversationItem = { role: "assistant"; kind: "digest"; round:
 // Xoá khi: T20 merge (gen:api).
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
-
-// Nguồn: phase4-thiet-ke-chi-tiet.md §6.1 P5 (4c).
-// Xoá khi: 4c merge → gen:api (xoá cùng mocks/handlers/approvals.ts).
-export type ApprovalStatus = "pending" | "approved" | "rejected" | "timeout";
-
-// Nguồn: phase4-thiet-ke-chi-tiet.md §6.1 P5 (4c) — `GET /api/approvals?mine=1&status=…`, tối đa 50.
-// Xoá khi: 4c merge → gen:api.
-export type ApprovalListItem = {
-  approval_id: string;
-  ticket_id: string;
-  status: ApprovalStatus;
-  created_at: string;
-  deadline: string;
-  reminder_1_at: string | null;
-  reminder_2_at: string | null;
-  role_as: "primary" | "backup";
-  action_type: string;
-  device_id: string | null;
-};
-
-// Nguồn: phase4-thiet-ke-chi-tiet.md §6.1 P6 (4c, bản 1.0) — thay ApprovalView phỏng đoán ở KH 3.2. Không có
-// server_now, không có created_at → giờ máy chủ từ header `Date` (KH 1.3 #5), created_at từ hộp thư.
-// `risk` (RiskDecision) chưa chốt cấu trúc cho giao diện → Record, hiện khoá–giá trị chung, KHÔNG đọc tên trường.
-// `procedure` từ ActionMeta.procedure_doc (D-34); không tìm thấy tiêu đề → chỉ `doc_id`. 409 `plan_changed`, 404, 403.
-// Xoá khi: 4c merge → gen:api (xoá cùng mocks/handlers/approvals.ts).
-export type ApprovalViewP4 = {
-  approval_id: string;
-  ticket_id: string;
-  status: ApprovalStatus;
-  deadline: string;
-  requester: { role: string; department: string };
-  request_summary: string;
-  action: Record<string, unknown>;
-  action_plan_hash: string;
-  risk: Record<string, unknown>;
-  facts: Record<string, unknown>;
-  role_as: "primary" | "backup";
-  procedure: { doc_id: string; title?: string | null };
-};
 
 // Nguồn: phase4-thiet-ke-chi-tiet.md §7.1 P2 (4d).
 // Xoá khi: 4d merge → gen:api (xoá cùng mocks/handlers/override.ts).

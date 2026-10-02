@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { inboxMissing, inboxQuery, inboxRefetchInterval } from "../../api/approvals.ts";
+import { inboxQuery, inboxRefetchInterval } from "../../api/approvals.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import type { ApprovalListItem } from "../../api/types.ts";
 import { hasPerm } from "../../auth/permissions.ts";
@@ -9,7 +9,8 @@ import { useMe } from "../../auth/useAuth.ts";
 import { useServerNow } from "../../components/clock.ts";
 import {
   actionLabel,
-  INBOX_MISSING_TITLE,
+  INBOX_COUNT_STALE_TEXT,
+  INBOX_STALE_TEXT,
   INBOX_TABS,
   type InboxTab,
   isUrgent,
@@ -19,10 +20,9 @@ import {
   TICKET_ID_PATTERN,
 } from "./inbox.ts";
 
-// B4L1Queue — hộp thư duyệt `GET /api/approvals?mine=1&status=…` (4c P5, CHƯA CÓ: MSW ở dev:mock). Sắp theo hạn ở
-// client. Tab "Hệ thống đã tự xử lý" ẩn tới Phase 7 (KH 4.6) → ô "Mã ticket" để mở màn ghi đè. List 404 = backend chưa
-// có route (spec: list không bao giờ 404) → trang "có từ Phase 4", không lỗi đỏ. Không nút duyệt ở danh sách — chỉ ở
-// chi tiết phiếu.
+// B4L1Queue — hộp thư duyệt `GET /api/approvals?mine=1&status=…` (route THẬT 4c P5; dev:mock gộp thêm phiếu minh hoạ).
+// Sắp theo hạn ở client. Tab "Hệ thống đã tự xử lý" ẩn tới Phase 7 (KH 4.6) → ô "Mã ticket" để mở màn ghi đè. Mọi lỗi
+// (kể cả 404 — route đã có nên 404 là lỗi thật) → câu lỗi chung. Không nút duyệt ở danh sách — chỉ ở chi tiết phiếu.
 
 export function ApprovalQueue() {
   const me = useMe();
@@ -36,9 +36,14 @@ export function ApprovalQueue() {
     })),
   });
 
-  const missing = inboxMissing(pending.error) || lists.some((q) => inboxMissing(q.error));
   const loading = lists.some((q) => q.data === undefined && q.isPending);
   const failed = lists.find((q) => q.data === undefined && q.isError);
+  // Đã có dữ liệu mà lần tải lại gần nhất lỗi (kể cả 403 — nhịp tự tải lại đã dừng): GIỮ danh sách cũ (không ẩn phiếu đang
+  // chờ, server vẫn quyết quyền khi mở) + báo có thể đã cũ. Lần tải lại sau thành công → isError hết → cảnh báo tự mất.
+  const stale = lists.find((q) => q.data !== undefined && q.isError);
+  // Số đếm "Chờ duyệt · N" là tín hiệu duy nhất về phiếu mới khi đang ở tab khác → truy vấn `pending` tải lại lỗi cũng phải
+  // báo. Đang ở tab "Chờ duyệt" thì `stale` ở trên đã báo cùng lỗi đó — không hiện hai dòng.
+  const countStale = tab !== "pending" && pending.data !== undefined && pending.isError;
   const items = lists.every((q) => q.data !== undefined) ? sortByDeadline(lists.flatMap((q) => q.data ?? [])) : null;
 
   return (
@@ -48,41 +53,44 @@ export function ApprovalQueue() {
           <h1 className="text-title">Chờ tôi duyệt</h1>
           <p className="text-ink-2">Hết hạn sẽ tự chuyển L2 — không bao giờ tự thực hiện.</p>
         </div>
-        {missing ? null : (
-          <div role="tablist" aria-label="Trạng thái phiếu" className="flex shrink-0 rounded-lg bg-segmented p-0.5">
-            {INBOX_TABS.map((t) => (
-              <button
-                key={t.tab}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.tab}
-                onClick={() => setTab(t.tab)}
-                className={`h-8 rounded-md px-4 text-secondary ${tab === t.tab ? "bg-white font-semibold shadow-input" : ""}`}
-              >
-                {t.label}
-                {t.tab === "pending" && pending.data ? ` · ${pending.data.length}` : ""}
-              </button>
-            ))}
-          </div>
-        )}
+        <div role="tablist" aria-label="Trạng thái phiếu" className="flex shrink-0 rounded-lg bg-segmented p-0.5">
+          {INBOX_TABS.map((t) => (
+            <button
+              key={t.tab}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.tab}
+              onClick={() => setTab(t.tab)}
+              className={`h-8 rounded-md px-4 text-secondary ${tab === t.tab ? "bg-white font-semibold shadow-input" : ""}`}
+            >
+              {t.label}
+              {t.tab === "pending" && pending.data ? ` · ${pending.data.length}` : ""}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {missing ? (
-        <div data-testid="inbox-missing" className="flex flex-col gap-1 rounded-group bg-group px-5 py-4">
-          <h2 className="text-heading">{INBOX_MISSING_TITLE}</h2>
-          <p className="text-ink-2">
-            Máy chủ chưa có danh sách phiếu duyệt. Khi chặng 4c được gộp, màn này tự hiện phiếu thật — không cần sửa giao
-            diện.
-          </p>
-        </div>
-      ) : loading ? (
+      {countStale ? (
+        <p role="status" data-testid="inbox-count-stale" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
+          {INBOX_COUNT_STALE_TEXT} {errorMessage(pending.error instanceof ApiError ? pending.error : null)}
+        </p>
+      ) : null}
+
+      {loading ? (
         <p className="text-ink-2">Đang tải hộp thư…</p>
       ) : failed ? (
         <p role="alert" className="text-danger">
           Chưa tải được hộp thư: {errorMessage(failed.error instanceof ApiError ? failed.error : null)}
         </p>
       ) : items ? (
-        <InboxList items={items} tab={tab} />
+        <>
+          {stale ? (
+            <p role="status" data-testid="inbox-stale" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
+              {INBOX_STALE_TEXT} {errorMessage(stale.error instanceof ApiError ? stale.error : null)}
+            </p>
+          ) : null}
+          <InboxList items={items} tab={tab} />
+        </>
       ) : null}
 
       {hasPerm(me, "decision:override") ? <OverrideEntry /> : null}
