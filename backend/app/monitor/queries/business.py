@@ -26,6 +26,11 @@ from app.monitor.metrics import (
     N3_WEIGHTS,
     is_pending,
 )
+from app.monitor.queries.common import DONE as _DONE
+from app.monitor.queries.common import LEAF_WINDOW as _LEAF_WINDOW
+from app.monitor.queries.common import ratio as _ratio
+from app.monitor.queries.common import scalar_row as _scalar_row
+from app.monitor.queries.common import window_params as _params
 from app.monitor.views import V_DECISIONS, V_LEAF
 
 BUSINESS_METRICS: tuple[str, ...] = (
@@ -46,8 +51,6 @@ _SEVERITY_SQL = (
 )
 _SEVERITY_GROUP: Mapping[int, str] = {1: "routine", 2: "approval", 3: "sensitive"}
 
-_LEAF_WINDOW = "t.created_at >= :frm AND t.created_at < :to"
-_DONE = "t.final_state IS NOT NULL"  # mẫu số tỉ lệ: chỉ lá đã kết thúc
 _OWN = "EXISTS (SELECT 1 FROM approvals ap WHERE ap.ticket_id = t.ticket_id AND ap.approver_id = :approver_id)"
 
 
@@ -87,19 +90,6 @@ class BusinessMetrics:
     unavailable: tuple[str, ...]
 
 
-def _params(frm: datetime, to: datetime) -> dict[str, Any]:
-    for ts in (frm, to):
-        if ts.tzinfo is None or ts.utcoffset() is None:
-            raise ValueError("cần datetime có múi giờ")
-    if frm >= to:
-        raise ValueError("cửa sổ rỗng: frm phải < to")
-    return {"frm": frm, "to": to}
-
-
-def _ratio(num: int, den: int) -> float | None:
-    return None if den == 0 else num / den
-
-
 def _own(params: dict[str, Any], approver_id: str | None) -> str:
     if approver_id is None:
         return ""
@@ -117,10 +107,6 @@ def weigh(counts: Mapping[str, tuple[int, int]], weights: Mapping[str, float]) -
             num += weights[group] * escalated / leaves
             den += weights[group]
     return None if den == 0 else num / den
-
-
-async def _scalar_row(conn: AsyncConnection, sql: str, params: dict[str, Any]) -> Any:
-    return (await conn.execute(text(sql), params)).one()
 
 
 async def automation_rate(conn: AsyncConnection, frm: datetime, to: datetime) -> float | None:

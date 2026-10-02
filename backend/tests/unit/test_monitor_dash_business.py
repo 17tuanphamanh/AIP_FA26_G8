@@ -97,16 +97,20 @@ def _docstrings(tree: ast.Module) -> set[int]:
     }
 
 
-def test_business_sql_never_reads_tickets_table() -> None:
-    """D-30 ghim tĩnh: SQL trong business.py không đọc bảng `tickets` (phải qua `v_leaf`). Quét mọi hằng chuỗi của AST
-    (gồm phần chữ của f-string; chú thích `#` không có trong AST), bỏ docstring; không phân biệt hoa thường."""
-    tree = ast.parse(BUSINESS_SRC.read_text(encoding="utf-8"))
+AI_SRC = REPO / "backend" / "app" / "monitor" / "queries" / "ai.py"
+
+
+@pytest.mark.parametrize(("src", "min_selects"), [(BUSINESS_SRC, 10), (AI_SRC, 8)], ids=["business", "ai"])
+def test_dash_sql_never_reads_tickets_table(src: Path, min_selects: int) -> None:
+    """D-30 ghim tĩnh: SQL trong business.py, ai.py không đọc bảng `tickets` (phải qua `v_leaf`). Quét mọi hằng chuỗi
+    của AST (gồm phần chữ của f-string; chú thích `#` không có trong AST), bỏ docstring; không phân biệt hoa thường."""
+    tree = ast.parse(src.read_text(encoding="utf-8"))
     skip = _docstrings(tree)
     sql = [
         n.value for n in ast.walk(tree)
         if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip
     ]  # fmt: skip
-    assert sum("select" in s.lower() for s in sql) >= 10  # quét rỗng thì đỏ, không xanh giả
+    assert sum("select" in s.lower() for s in sql) >= min_selects  # quét rỗng thì đỏ, không xanh giả
     hits = [s for s in sql if re.search(r"\b(from|join)\s+tickets\b", s, re.IGNORECASE)]
     assert hits == []
 

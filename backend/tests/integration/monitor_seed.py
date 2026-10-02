@@ -1,4 +1,5 @@
-"""Dựng dữ liệu cho test M9 (A1; Duy Anh dùng ở B1/B2 — chữ ký giữ ổn định, cần helper mới → viết ở file của mình).
+"""Dựng dữ liệu cho test M9 (A1; A2 thêm `turn`, `span`, `llm_call`, `llm_call_for`; Duy Anh dùng ở B1/B2 — chữ ký giữ
+ổn định, cần helper mới → viết ở file của mình).
 
 Cách dùng: mọi helper là `async`, nhận `AsyncConnection` của **app_rw** và **KHÔNG tự commit**. Test phải commit
 (`async with rw.begin() as conn: ...`) TRƯỚC khi đọc qua engine `app_monitor` — connection khác không thấy dữ liệu
@@ -251,3 +252,75 @@ async def llm_disabled_case(conn: AsyncConnection, *, created_at: datetime, **le
     )  # fmt: skip
     await escalation(conn, ticket, exit_code="E5", created_at=created_at, reason_detail="llm_layer_disabled")
     return ticket
+
+
+# ---- A2: lượt, span, lời gọi LLM (chuỗi llm_calls → spans → turns → tickets) ----
+
+
+async def turn(conn: AsyncConnection, ticket_id: str, *, started_at: datetime, event_type: str = "submit") -> str:
+    """Một dòng `turns` (`event_type` ∈ submit | resume | recover), đã kết thúc. Trả `turn_id`."""
+    turn_id = new_id("m9u")
+    await conn.execute(text(
+        "INSERT INTO turns (turn_id, ticket_id, event_type, started_at, ended_at) VALUES (:u, :t, :e, :s, :s)"
+    ), {"u": turn_id, "t": ticket_id, "e": event_type, "s": started_at})  # fmt: skip
+    return turn_id
+
+
+async def span(
+    conn: AsyncConnection,
+    turn_id: str,
+    *,
+    name: str,
+    started_at: datetime,
+    duration_ms: int | None,
+    span_type: str = "node",
+    status: str = "ok",
+) -> str:
+    """Một dòng `spans` như `graph/tracing.py` (node: `name="node:<tên>"`) hoặc `llm/client.py` (`span_type="llm"`,
+    `name="llm:<prompt_id>"`). Trả `span_id`."""
+    span_id = uuid4().hex
+    await conn.execute(text(
+        "INSERT INTO spans (span_id, trace_id, turn_id, span_type, name, started_at, duration_ms, status) "
+        "VALUES (:id, :trace, :u, :ty, :n, :s, :d, :st)"
+    ), {
+        "id": span_id, "trace": uuid4().hex, "u": turn_id, "ty": span_type, "n": name, "s": started_at,
+        "d": duration_ms, "st": status,
+    })  # fmt: skip
+    return span_id
+
+
+async def llm_call(
+    conn: AsyncConnection,
+    span_id: str,
+    *,
+    created_at: datetime,
+    tokens_in: int | None = 0,
+    tokens_out: int | None = 0,
+    cost_usd: float | None = 0.0,
+    cache_hit: bool = False,
+    json_valid_first_try: bool | None = True,
+    used_fallback: bool = False,
+    prompt_id: str = "b03_classify",
+) -> int:
+    """Một dòng `llm_calls` (các cột như `llm/client.py` `LlmCallRow`). `created_at` tường minh (bảng mặc định `now()`
+    của DB). Trả `call_id`."""
+    result = await conn.execute(text(
+        "INSERT INTO llm_calls (span_id, provider, model, prompt_id, prompt_version, tokens_in, tokens_out, cost_usd, "
+        "cache_hit, json_valid_first_try, used_fallback, created_at) VALUES (:s, 'seed', 'seed-model', :p, 'v1', "
+        ":ti, :to, :cost, :cache, :json, :fb, :c) RETURNING call_id"
+    ), {
+        "s": span_id, "p": prompt_id, "ti": tokens_in, "to": tokens_out, "cost": cost_usd, "cache": cache_hit,
+        "json": json_valid_first_try, "fb": used_fallback, "c": created_at,
+    })  # fmt: skip
+    return int(result.scalar_one())
+
+
+async def llm_call_for(conn: AsyncConnection, ticket_id: str, *, created_at: datetime, **call_fields: Any) -> int:
+    """Một lời gọi LLM của `ticket_id`: dựng lượt + span `llm` rồi `llm_calls`. `call_fields` = tham số keyword của
+    `llm_call` (trừ `created_at`). Trả `call_id`."""
+    turn_id = await turn(conn, ticket_id, started_at=created_at)
+    span_id = await span(
+        conn, turn_id, name=f"llm:{call_fields.get('prompt_id', 'b03_classify')}", started_at=created_at,
+        duration_ms=100, span_type="llm",
+    )  # fmt: skip
+    return await llm_call(conn, span_id, created_at=created_at, **call_fields)
