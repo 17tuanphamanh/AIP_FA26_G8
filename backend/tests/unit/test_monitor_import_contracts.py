@@ -43,6 +43,8 @@ def unlisted_sources(app_dir: Path, config_path: Path, package: str) -> list[str
 
 def test_monitor_read_only_forbids_required_modules() -> None:
     assert READ_ONLY_FORBIDDEN - _modules(CONFIG, READ_ONLY, "forbidden_modules") == set()
+    # X2: nguồn phải là CẢ package — thu hẹp thành `app.monitor.views` thì phần còn lại của monitor hết bị cấm
+    assert _modules(CONFIG, READ_ONLY, "source_modules") == {"app.monitor"}
 
 
 def test_monitor_only_api_worker_lists_every_top_level_module() -> None:

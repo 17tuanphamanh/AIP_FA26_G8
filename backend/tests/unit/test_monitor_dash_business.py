@@ -1,8 +1,10 @@
 """M9 A1 — phần thuần của `queries/business.py` (trọng số N3, hợp đồng mục 3, cửa sổ) + migration 0008 (tĩnh)."""
 
+import ast
 import dataclasses
 import importlib.util
 import inspect
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -79,6 +81,43 @@ def test_own_keys_subset_of_business() -> None:
     assert business.OWN_KEYS == ("approval_expired_count", "decided_by_distribution", "top_matched_rules")
     assert set(business.OWN_KEYS) <= set(business.BUSINESS_METRICS)
     assert set(business.QUERIES) == set(business.BUSINESS_METRICS)
+
+
+BUSINESS_SRC = REPO / "backend" / "app" / "monitor" / "queries" / "business.py"
+RATIO_FUNCS = ("automation_rate", "escalation_rate_raw", "deflection_rate", "escalation_rate_weighted")
+
+
+def _docstrings(tree: ast.Module) -> set[int]:
+    """id() của hằng chuỗi là docstring (câu đầu thân module/hàm/lớp) — văn xuôi, không phải SQL."""
+    owners = [tree, *(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef))]
+    return {
+        id(o.body[0].value)
+        for o in owners
+        if o.body and isinstance(o.body[0], ast.Expr) and isinstance(o.body[0].value, ast.Constant)
+    }
+
+
+def test_business_sql_never_reads_tickets_table() -> None:
+    """D-30 ghim tĩnh: SQL trong business.py không đọc bảng `tickets` (phải qua `v_leaf`). Quét mọi hằng chuỗi của AST
+    (gồm phần chữ của f-string; chú thích `#` không có trong AST), bỏ docstring; không phân biệt hoa thường."""
+    tree = ast.parse(BUSINESS_SRC.read_text(encoding="utf-8"))
+    skip = _docstrings(tree)
+    sql = [
+        n.value for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip
+    ]  # fmt: skip
+    assert sum("select" in s.lower() for s in sql) >= 10  # quét rỗng thì đỏ, không xanh giả
+    hits = [s for s in sql if re.search(r"\b(from|join)\s+tickets\b", s, re.IGNORECASE)]
+    assert hits == []
+
+
+def test_ratio_functions_read_v_leaf() -> None:
+    tree = ast.parse(BUSINESS_SRC.read_text(encoding="utf-8"))
+    funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name in RATIO_FUNCS}
+    assert set(funcs) == set(RATIO_FUNCS)
+    for name, fn in funcs.items():
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        assert "V_LEAF" in names, name
 
 
 def test_alembic_single_head_is_0008() -> None:

@@ -12,6 +12,7 @@ import pytest_asyncio
 from alembic import command
 from app.monitor.queries import business as b
 from app.monitor.queries.business import RuleCount
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from tests.integration import monitor_seed as seed
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
@@ -90,6 +91,32 @@ async def test_two_intent_sentence_counts_two(rw: AsyncEngine, mon: AsyncEngine)
     assert len(await q(mon, b.e3_cases, 1)) == 2
     weighted = await q(mon, b.escalation_rate_weighted, 1)  # 6 lá, đều escalate: approval 2/2, routine 4/4
     assert weighted.by_group == {"routine": 1.0, "approval": 1.0, "sensitive": None}
+
+
+@pytest.mark.asyncio
+async def test_ratios_ignore_parent_with_different_outcome(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """D-30 cho 4 chỉ số tỉ lệ: cha kết cục KHÁC con. Cha `S_RESOLVED` deflected, không phiếu, không escalation;
+    2 con E1 đã kết thúc. Chỉ lá: raw 2/2, automation 0/2, deflection 0/2. Đếm cả cha (đọc `tickets`) sẽ ra
+    2/3, 1/3, 1/3 → đỏ. (Khi cha cùng kết cục với con, tỉ lệ không đổi nên các test khác không bắt được.)
+    Có `UPDATE tickets` vì `parent_with_children` không nhận `resolution_path` cho cha; thiếu cha deflected thì
+    `deflection_rate` đọc nhầm `tickets` vẫn ra 0/3 = 0,0 → không bắt được."""
+    at = win(16)[0] + timedelta(hours=1)
+    async with rw.begin() as conn:
+        parent, _ = await seed.parent_with_children(
+            conn, 2, created_at=at, parent_final_state="S_RESOLVED", exit_code="E1", final_state="S_ESCALATED",
+            resolution_path="escalated",
+        )  # fmt: skip
+        # parent_with_children không nhận resolution_path cho cha → đặt tại chỗ (app_rw được UPDATE tickets)
+        await conn.execute(
+            text("UPDATE tickets SET resolution_path = 'deflected' WHERE ticket_id = :p AND is_parent"), {"p": parent}
+        )
+    assert await q(mon, b.escalation_rate_raw, 16) == 1.0
+    assert await q(mon, b.automation_rate, 16) == 0.0
+    assert await q(mon, b.deflection_rate, 16) == 0.0
+    weighted = await q(mon, b.escalation_rate_weighted, 16)
+    assert weighted.raw == 1.0
+    assert weighted.by_group == {"routine": 1.0, "approval": None, "sensitive": None}  # con không tới M5 → routine
+    assert weighted.weighted == 1.0
 
 
 @pytest.mark.asyncio
