@@ -1,0 +1,174 @@
+"""Dựng dữ liệu cho test luật cảnh báo M9 (B1 — luật theo sự kiện). Dùng thêm `monitor_seed` của Dương (không sửa).
+
+Quy ước giống `monitor_seed`: helper `async`, nhận `AsyncConnection` của **app_rw**, **không tự commit** — test seed trong
+`async with rw.begin()` rồi mới đọc qua engine `app_monitor`. Riêng `auth_lock` nhận engine (ghi bằng writer thật của
+auth, mỗi lần ghi một transaction như auth).
+
+Cô lập (Q-M9-B1-14): loader không có chặn trên theo `now` (Q-M9-B1-12) → test chạy trước thấy dữ liệu "tương lai" của
+test khác trong cùng DB. Vì vậy mỗi test một `day(k)` riêng, mọi đối tượng sinh bằng `new_id()`, và mọi assert (kể cả
+"0 draft / 0 dòng") chỉ xét subject của chính test.
+"""
+
+import json
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from app.audit.alerts import AlertWriter
+from app.audit.security_events import SecurityEventWriter
+from app.core.clock import FakeClock
+from app.db.security_events import check_event
+from app.domain.alerts import bruteforce_alert
+from app.monitor.window import bucket_start
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from tests.integration import monitor_seed as seed
+
+BASE = datetime(2031, 1, 1, 12, 0, tzinfo=UTC)
+B1_RULES: tuple[str, ...] = (
+    "injection_detected", "password_bruteforce", "refresh_reuse", "permission_denied_burst", "policy_saved",
+    "finalize_failed", "execution_failed",
+)  # fmt: skip
+_EXIT_CODE = {"injection_detected": "E0", "execution_failed": "E7"}
+_BURST_STEP = timedelta(seconds=10)  # luật 10: 11 sự kiện cách 10 s, sự kiện cuối ở `at`
+
+
+def day(k: int) -> datetime:
+    """Mốc `now` riêng cho test thứ k — cách nhau 3 ngày (> lookback 24 giờ + lùi 5 phút)."""
+    return BASE + timedelta(days=3 * k)
+
+
+async def security_event(
+    conn: AsyncConnection,
+    event_type: str,
+    *,
+    occurred_at: datetime,
+    user_id: str | None = None,
+    username: str | None = None,
+    detail: dict[str, Any] | None = None,
+) -> int:
+    """Một dòng `security_events` (bảng append-only). Kiểm như writer thật (`check_event`); `user_id` có FK → tạo user.
+    Trả `event_id`."""
+    payload = dict(detail or {})
+    check_event(event_type, payload)
+    if user_id is not None:
+        await seed.ensure_user(conn, user_id)
+    result = await conn.execute(text(
+        "INSERT INTO security_events (occurred_at, event_type, user_id, username_attempted, detail) "
+        "VALUES (:at, :t, :u, :n, CAST(:d AS jsonb)) RETURNING event_id"
+    ), {"at": occurred_at, "t": event_type, "u": user_id, "n": username, "d": json.dumps(payload)})  # fmt: skip
+    return int(result.scalar_one())
+
+
+async def alert(
+    conn: AsyncConnection,
+    *,
+    rule_id: str,
+    subject: str,
+    window_start: datetime,
+    severity: str = "critical",
+    detail: dict[str, Any] | None = None,
+) -> int:
+    """Một dòng `alerts` dựng tay (vd cảnh báo của luật khác cùng subject). Trả `alert_id`."""
+    result = await conn.execute(text(
+        "INSERT INTO alerts (rule_id, subject, severity, window_start, detail) "
+        "VALUES (:r, :s, :sev, :w, CAST(:d AS jsonb)) RETURNING alert_id"
+    ), {"r": rule_id, "s": subject, "sev": severity, "w": window_start, "d": json.dumps(detail or {})})  # fmt: skip
+    return int(result.scalar_one())
+
+
+async def auth_lock(
+    rw: AsyncEngine, *, user_id: str | None, username: str, at: datetime, skew: timedelta = timedelta(milliseconds=3)
+) -> datetime:
+    """Đợt khoá do auth ghi, ĐÚNG THỨ TỰ và đúng hàm của auth (`auth/service.py` `_check_threshold`): `lock_start = at`
+    (now của auth, lấy trước khi gọi AD) → sự kiện `account_locked` (threshold) ghi SAU, `occurred_at = at + skew` →
+    cảnh báo `bruteforce_alert(lock_start=at, source="login")`. Hai transaction riêng như auth. Trả `occurred_at`.
+    `user_id` (nếu có) phải đã tồn tại trong `users`."""
+    clock = FakeClock(at + skew)
+    await SecurityEventWriter(rw, clock).record(
+        "account_locked", user_id=user_id, username_attempted=username, detail={"reason": "threshold", "failures": 5}
+    )
+    await AlertWriter(rw, clock).raise_once(
+        bruteforce_alert(user_id=user_id, username=username, lock_start=at, source="login")
+    )
+    return at + skew
+
+
+async def exit_row(
+    conn: AsyncConnection, ticket_id: str, *, code: str, at: datetime, step: str | None = None,
+    reason: str | None = None,
+) -> int:  # fmt: skip
+    """Dòng `audit_logs` mang `exit_code` như `goto()` ghi: E0 ở B2 → cột `block_reason`; còn lại →
+    `detail.escalation_reason_detail` (`graph/goto.py` `_DETAIL_FIELDS`)."""
+    if code == "E0" and (step or "B2") == "B2":
+        return await seed.audit_row(
+            conn, ticket_id, step="B2", event="injection_detected", created_at=at, exit_code=code,
+            block_reason=reason or "injection_detected",
+        )  # fmt: skip
+    step = step or "B17"
+    detail = {"escalation_reason_detail": reason or ("injection_in_reply" if code == "E0" else "exec_interrupted")}
+    return await seed.audit_row(conn, ticket_id, step=step, event="transition", created_at=at, exit_code=code,
+                                detail=detail)  # fmt: skip
+
+
+async def finalize_row(conn: AsyncConnection, ticket_id: str, *, at: datetime, event: str = "finalize_failed_permanent") -> int:
+    """Dòng audit B20 như `graph/runner.py` ghi khi lượt kẹt ở B20 (`detail.node`)."""
+    return await seed.audit_row(conn, ticket_id, step="B20", event=event, created_at=at,
+                                detail={"node": "b20_audit", "recover_attempts": 3})  # fmt: skip
+
+
+async def seed_rule(conn: AsyncConnection, rule_id: str, *, at: datetime) -> tuple[str, datetime]:
+    """Một nguồn của luật `rule_id` tại thời điểm `at` (đối tượng mới, `new_id`). Trả `(subject, window_start kỳ vọng)`."""
+    if rule_id in _EXIT_CODE:
+        code = _EXIT_CODE[rule_id]
+        ticket = await seed.leaf_ticket(conn, created_at=at, exit_code=code)
+        await exit_row(conn, ticket, code=code, at=at)
+        return ticket, at
+    if rule_id == "finalize_failed":
+        ticket = await seed.leaf_ticket(conn, created_at=at)
+        await finalize_row(conn, ticket, at=at)
+        return ticket, at
+    if rule_id == "policy_saved":
+        version = seed.new_id("v")
+        await security_event(conn, "policy_saved", occurred_at=at, detail={"version": version})
+        return version, at
+    user = seed.new_id("u")
+    if rule_id == "password_bruteforce":
+        await security_event(conn, "account_locked", occurred_at=at, user_id=user,
+                             detail={"reason": "threshold", "failures": 5})  # fmt: skip
+        return user, at
+    if rule_id == "refresh_reuse":
+        await security_event(conn, "refresh_reuse_detected", occurred_at=at, user_id=user,
+                             detail={"revoked_sessions": 2})  # fmt: skip
+        return user, at
+    if rule_id == "permission_denied_burst":
+        for i in range(11):
+            await security_event(conn, "permission_denied", occurred_at=at - (10 - i) * _BURST_STEP, user_id=user)
+        return user, bucket_start(at, 5)
+    raise ValueError(f"luật lạ {rule_id!r}")
+
+
+async def seed_noise(conn: AsyncConnection, rule_id: str, *, at: datetime) -> str:
+    """Dữ liệu GẦN giống nguồn của luật nhưng KHÔNG được ra cảnh báo. Trả subject sẽ bị kiểm "0 draft"."""
+    if rule_id in _EXIT_CODE:
+        ticket = await seed.leaf_ticket(conn, created_at=at, exit_code="E5")
+        await exit_row(conn, ticket, code="E5", at=at, step="B12", reason="llm_layer_disabled")
+        return ticket
+    if rule_id == "finalize_failed":
+        ticket = await seed.leaf_ticket(conn, created_at=at)
+        await finalize_row(conn, ticket, at=at, event="unhandled_exception")
+        return ticket
+    if rule_id == "policy_saved":
+        version = seed.new_id("v")
+        await security_event(conn, "role_changed", occurred_at=at, detail={"version": version})
+        return version
+    user = seed.new_id("u")
+    if rule_id == "password_bruteforce":  # đang khoá (still_locked) — không phải lần khoá mới
+        await security_event(conn, "account_locked", occurred_at=at, user_id=user, detail={"reason": "still_locked"})
+    elif rule_id == "refresh_reuse":
+        await security_event(conn, "token_refreshed", occurred_at=at, user_id=user)
+    elif rule_id == "permission_denied_burst":  # 10 sự kiện / 5 phút — đúng ngưỡng, không vượt
+        for i in range(10):
+            await security_event(conn, "permission_denied", occurred_at=at - i * _BURST_STEP, user_id=user)
+    else:
+        raise ValueError(f"luật lạ {rule_id!r}")
+    return user

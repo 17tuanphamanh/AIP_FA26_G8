@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from app.domain.alerts import AlertDraft
 from app.monitor import evaluator, rules
+from app.monitor.queries import rules_data
 from app.monitor.rules import (
     REGISTRY,
     Audience,
@@ -198,9 +199,10 @@ def test_spike_boundaries(count: int, median: float, expected: bool) -> None:
 _CLOCK_ATTRS = {"now", "utcnow", "today", "time", "monotonic", "perf_counter"}
 
 
-@pytest.mark.parametrize("module", [rules, evaluator])
+@pytest.mark.parametrize("module", [rules, evaluator, rules_data])
 def test_rule_functions_never_read_clock(module: Any) -> None:
-    """Mốc thời gian duy nhất là `ctx.now` (Clock của app): chạy lại phải ra đúng khoá cũ."""
+    """Mốc thời gian duy nhất là `ctx.now` (Clock của app): chạy lại phải ra đúng khoá cũ. `rules_data` (loader GĐ2,
+    review #13 X1): mốc lookback cũng chỉ tính từ `ctx.now`."""
     tree = ast.parse(inspect.getsource(module))
     funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)]
     assert len(funcs) >= 3  # quét không rỗng

@@ -23,6 +23,7 @@ from app.domain.alerts import (
     bruteforce_subject,
 )
 from app.monitor import evaluator, rules
+from app.monitor.queries import rules_data
 from app.monitor.rules import (
     LOOKBACK,
     REGISTRY,
@@ -279,6 +280,32 @@ def test_bruteforce_waits_60s_before_reconciling() -> None:
     assert len(password_bruteforce(BruteforceData([_lock(NOW - timedelta(seconds=60))], []), CTX)) == 1
 
 
+def test_bruteforce_several_alerts_same_subject_any_one_matches() -> None:
+    """Tra theo subject giữ MỌI cảnh báo của subject (nhiều đợt khoá/ngày): một cái khớp ±60 s là đủ."""
+    far = [_auth("u-1", T - timedelta(hours=k)) for k in (1, 2, 3)]
+    assert len(password_bruteforce(BruteforceData([_lock(T)], far), CTX)) == 1
+    assert password_bruteforce(BruteforceData([_lock(T)], [*far, _auth("u-1", T + 3 * MS)]), CTX) == []
+
+
+def test_bruteforce_many_locks_many_alerts_fast() -> None:
+    """Review #20 mục 3: bản cũ duyệt khoá × cảnh báo. Đo 02/10 trên máy dev: 20k × 20k bản cũ 13,5 s, bản dict 0,06 s
+    → ngưỡng 1 s (bản cũ chậm hơn ngưỡng ~13 lần). Mỗi khoá/cảnh báo một subject riêng, không cái nào khớp → bản cũ phải
+    duyệt hết `alerts` cho mỗi khoá. Chạy tối đa 3 lần, dừng khi có một lần đạt (như test 50k)."""
+    n = 20_000
+    locks = [sec(i, T - timedelta(seconds=i % 3000), user_id=f"u-{i}", reason="threshold") for i in range(n)]
+    alerts = [_auth(f"x-{i}", T) for i in range(n)]
+    timings: list[float] = []
+    drafts: list[AlertDraft] = []
+    for _ in range(3):
+        start = time.perf_counter()
+        drafts = password_bruteforce(BruteforceData(locks, alerts), CTX)
+        timings.append(time.perf_counter() - start)
+        if timings[-1] < 1.0:
+            break
+    assert timings[-1] < 1.0, timings
+    assert len(drafts) == n  # nhanh không phải vì bỏ việc
+
+
 # ---- luật 9 ---------------------------------------------------------------------------------------
 
 
@@ -435,9 +462,10 @@ def test_permission_denied_matches_brute_force_reference(seed: int) -> None:
     assert got == _reference_burst(data, CTX)
 
 
-def test_permission_denied_50k_one_subject_under_1s() -> None:
+def test_permission_denied_50k_one_subject_under_5s() -> None:
     """(f) Review #13: bản O(n²) cũ ~116 s cho 50k (hàm đồng bộ → treo event loop worker). Chạy tối đa 3 lần, dừng
-    ngay khi có một lần < 1 s (Q-M9-B1-10). Đồng hồ chỉ dùng trong test — luật không đọc đồng hồ."""
+    ngay khi có một lần < 5 s (Q-M9-B1-10; nới 1 s → 5 s theo review #20 — vẫn cách bản cũ ~23 lần, tránh flaky trên CI).
+    Đồng hồ chỉ dùng trong test — luật không đọc đồng hồ."""
     n = 50_000
     data = [sec(i, NOW - i * (LOOKBACK / n)) for i in range(n)]
     timings: list[float] = []
@@ -446,9 +474,9 @@ def test_permission_denied_50k_one_subject_under_1s() -> None:
         start = time.perf_counter()
         drafts = permission_denied_burst(data, CTX)
         timings.append(time.perf_counter() - start)
-        if timings[-1] < 1.0:
+        if timings[-1] < 5.0:
             break
-    assert timings[-1] < 1.0, timings
+    assert timings[-1] < 5.0, timings
     assert drafts  # đợt dày suốt 24 giờ → có cảnh báo (nhanh không phải vì không làm gì)
 
 
@@ -512,16 +540,22 @@ def _message_ok(node: ast.expr) -> bool:
     return False
 
 
-@pytest.mark.parametrize("module", [rules, evaluator])
-def test_error_messages_carry_no_data(module: Any) -> None:
+@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 7)])
+def test_error_messages_carry_no_data(module: Any, min_async: int) -> None:
     """`evaluate` ghi `log.exception` (cả traceback) khi luật/loader lỗi — message chỉ được mang tên luật/hằng.
-    GĐ2 thêm `queries/rules_data.py` vào danh sách."""
+    GĐ2 (Q-M9-B1-17): thêm `queries/rules_data.py`; quét cả `async def` (loader là async — chỉ quét `def` thì loader
+    lọt). `rules_data` không có `raise` → "quét không rỗng" của nó là ≥ 7 hàm async (7 loader)."""
     tree = ast.parse(inspect.getsource(module))
     raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)]
-    assert raises  # quét không rỗng
+    if module is not rules_data:
+        assert raises  # quét không rỗng
     bad = [n.lineno for n in raises for a in [*n.exc.args, *(k.value for k in n.exc.keywords)] if not _message_ok(a)]  # type: ignore[union-attr]
     assert bad == []
-    scanned = [f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name not in _NUMERIC_ONLY]
+    scanned = [
+        f for f in ast.walk(tree)
+        if isinstance(f, ast.FunctionDef | ast.AsyncFunctionDef) and f.name not in _NUMERIC_ONLY
+    ]  # fmt: skip
+    assert len([f for f in scanned if isinstance(f, ast.AsyncFunctionDef)]) >= min_async
     parsers = [
         c.lineno for f in scanned for c in ast.walk(f)
         if isinstance(c, ast.Call)
