@@ -232,28 +232,32 @@ def injection_detected(data: Sequence[TicketExit], ctx: RuleContext) -> list[Ale
 def password_bruteforce(data: BruteforceData, ctx: RuleContext) -> list[AlertDraft]:
     """Luật 3 — ĐỐI SOÁT, lưới an toàn cho cảnh báo auth ghi lúc khoá (Chốt 2b-1).
 
-    Auth ghi cảnh báo với `lock_start = now` của auth, còn `occurred_at` của sự kiện là MỘT LẦN GỌI ĐỒNG HỒ KHÁC
-    (auth/service.py `_check_threshold`; audit/security_events.py) → hai mốc lệch vài ms. Dựng khoá từ `occurred_at`
-    rồi trông vào ON CONFLICT sẽ ra khoá khác → cảnh báo trùng. Vì vậy: tìm cảnh báo cùng subject có
-    `|window_start − occurred_at| ≤ 60 s` VÀ `rule_id = password_bruteforce` (luật tự kiểm, không trông vào loader:
-    cảnh báo `refresh_reuse` cùng user lệch < 60 s mà được tính là khớp thì đợt khoá bị bỏ sót); có → bỏ qua;
-    không → draft `bruteforce_alert(lock_start=occurred_at)`.
+    Auth ghi cảnh báo với `lock_start = now` của auth, lấy TRƯỚC khi gọi AD (auth/service.py `login`), còn `occurred_at`
+    của sự kiện là một lần gọi đồng hồ SAU đó (audit/security_events.py) → độ lệch = độ trễ AD (+ ghi DB), luôn
+    `window_start ≤ occurred_at`. Dựng khoá từ `occurred_at` rồi trông vào ON CONFLICT sẽ ra khoá khác → cảnh báo trùng.
+    Vì vậy: tìm cảnh báo cùng subject có `|window_start − occurred_at| ≤ 60 s` VÀ `rule_id = password_bruteforce` (luật
+    tự kiểm, không trông vào loader: cảnh báo `refresh_reuse` cùng user lệch < 60 s mà được tính là khớp thì đợt khoá
+    bị bỏ sót); có → bỏ qua; không → draft `bruteforce_alert(lock_start=occurred_at)`. AD chậm hơn 60 s → báo trùng
+    (báo thừa, chấp nhận — không bỏ sót).
 
     Chỉ xét sự kiện cũ hơn 60 s (Q-M9-B1-3): auth ghi sự kiện rồi mới ghi cảnh báo, hai transaction — đọc vào khe
-    giữa sẽ tạo bản trùng. Chờ 60 s chỉ làm lưới an toàn chậm một nhịp, không mất cảnh báo (lookback 24 giờ)."""
+    giữa sẽ tạo bản trùng. Chờ 60 s chỉ làm lưới an toàn chậm một nhịp, không mất cảnh báo (lookback 24 giờ).
+
+    Tra theo `dict[subject] → [window_start]` dựng một lần (review #20: duyệt khoá × cảnh báo, 5000 × 5000 ≈ 0,7 s chặn
+    event loop worker). Mỗi khoá vẫn duyệt tuyến tính các cảnh báo CỦA subject đó — chấp nhận (vài cảnh báo/người/
+    ngày)."""
     settled = ctx.now - RECONCILE_GRACE
+    known: dict[str, list[datetime]] = {}
+    for a in data.alerts:
+        if a.rule_id == BRUTEFORCE_RULE_ID:
+            known.setdefault(a.subject, []).append(a.window_start)
     drafts: list[AlertDraft] = []
     for e in data.locks:
         if not (_recent(e.occurred_at, ctx) and e.occurred_at <= settled):
             continue
         username = e.username or ""
         subject = bruteforce_subject(e.user_id, username)
-        if any(
-            a.rule_id == BRUTEFORCE_RULE_ID
-            and a.subject == subject
-            and abs(a.window_start - e.occurred_at) <= RECONCILE_TOLERANCE
-            for a in data.alerts
-        ):
+        if any(abs(w - e.occurred_at) <= RECONCILE_TOLERANCE for w in known.get(subject, ())):
             continue
         drafts.append(
             bruteforce_alert(user_id=e.user_id, username=username, lock_start=e.occurred_at, source="m9_reconcile")
@@ -324,9 +328,10 @@ def permission_denied_burst(data: Sequence[SecurityEvent], ctx: RuleContext) -> 
 
 @rule("policy_saved", "minute", audience=("manager",))
 def policy_saved(data: Sequence[SecurityEvent], ctx: RuleContext) -> list[AlertDraft]:
-    """Luật 11 — mỗi `policy_saved` một cảnh báo. Nguồn chưa có nơi ghi (Phase 7) → loader trả `Pending`; luật viết
-    sẵn, test bằng fixture. subject = `detail.version` (Q-M9-B1-5); thiếu → `event:<event_id>`; luôn ≤ 64 ký tự —
-    không bao giờ gộp hai lần lưu policy thành một cảnh báo."""
+    """Luật 11 — mỗi `policy_saved` một cảnh báo. Nguồn chưa có nơi ghi (Phase 7): loader vẫn chạy truy vấn thật (KHÔNG
+    gọi `is_pending` — `policy_saved` không có trong `PENDING_SOURCES`, chốt 02/10 ở #13) → 0 sự kiện, 0 draft.
+    subject = `detail.version` (Q-M9-B1-5); thiếu → `event:<event_id>`; luôn ≤ 64 ký tự — không bao giờ gộp hai lần lưu
+    policy thành một cảnh báo."""
     drafts = []
     for e in data:
         if not _recent(e.occurred_at, ctx):
