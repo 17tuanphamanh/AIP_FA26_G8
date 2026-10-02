@@ -1,8 +1,49 @@
-# Cổng 2, cổng 3 và smoke VPN trên stack compose thật
+# Cổng 2, cổng 3, cổng 4 và smoke VPN trên stack compose thật
 
-Ba script chạy trên máy dev, nói chuyện với backend `http://127.0.0.1:8000` và Postgres của compose (psql **trong**
-container postgres). Không nằm trong `make test`. Mục lục: [Cổng 2](#cổng-2-2b-4) · [Cổng 3](#cổng-3-make-gate3) ·
-[Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) · [Chạy smoke LLM thật](#chạy-smoke-llm-thật).
+Các script chạy trên máy dev, nói chuyện với backend `http://127.0.0.1:8000` và Postgres của compose (psql **trong**
+container postgres). Không nằm trong `make test`. Mục lục: [Thành viên chạy cổng 3 + 4](#thành-viên-chạy-cổng-3-rồi-cổng-4-một-trang) ·
+[Cổng 2](#cổng-2-2b-4) · [Cổng 3](#cổng-3-make-gate3) · [Cổng 4](#cổng-4-make-gate4) · [Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) ·
+[Chạy smoke LLM thật](#chạy-smoke-llm-thật).
+
+## Thành viên chạy cổng 3 rồi cổng 4 (một trang)
+
+Người chạy: thành viên **không** làm chính. Máy riêng, **NGOÀI GIỜ** hành chính (sau 18:00 hoặc cuối tuần — gate3 khi đó đi
+đường duyệt), **cắm sạc, mở nắp**, không để máy ngủ (Mac ngủ giữa lượt → E2 `turn_budget_exceeded`, đỏ oan). Thời gian: gate3
+~3 phút, gate4 ~10 phút (chưa kể `make up`).
+
+**Thứ tự bắt buộc: cổng 3 TRƯỚC, khi `.env` CHƯA có `APPROVAL_SLA_MINUTES_DEV`; xong mới thêm `APPROVAL_SLA_MINUTES_DEV=2`,
+`make up`, rồi cổng 4.** gate4 tự dừng nếu thiếu SLA=2; gate3 chạy với SLA=2 không phải cấu hình đã kiểm.
+
+`.env` là file bí mật: sửa bằng trình soạn thảo, KHÔNG `cat .env`, KHÔNG dán nội dung đi đâu (chat, ảnh chụp, issue).
+
+**0. Một lần sau khi pull:** `git pull` → `uv sync` → (máy chưa có model) `make models`.
+
+**1. Cổng 3**
+1. `.env`: `APP_ENV=dev`, `LLM_BACKEND=scripted`, có `SVC_EXECUTOR_TOKEN`; thêm `#` trước CẢ HAI dòng `FAKE_SCENARIO`,
+   `FAKE_NODE_DELAY`; thêm `#` trước dòng `APPROVAL_SLA_MINUTES_DEV` nếu có.
+2. `make up` (chờ báo `/api/health: …` và `worker: healthy`).
+3. `make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated`
+4. **Kiểm trước khi chạy:** `make gate3 S=preflight` → dòng đầu `Khung giờ lúc chạy: NGOÀI GIỜ`, dòng `làm nóng rerank: …`,
+   mọi dòng `PASS`, dòng cuối `==== … PASS, 0 FAIL ====`. Thấy `DỪNG (chốt an toàn)` → đọc lý do, sửa `.env`, `make up` lại.
+5. `caffeinate -i make gate3 S=all` → dòng cuối `==== N PASS, 0 FAIL ====`. Chụp dòng đó.
+
+**2. Cổng 4**
+1. `.env`: thêm dòng `APPROVAL_SLA_MINUTES_DEV=2` (giữ nguyên mọi thứ của bước 1).
+2. `make up` (BẮT BUỘC — container chỉ nạp biến khi tạo lại).
+3. **Kiểm trước khi chạy:** `make gate4 S=preflight` → có dòng `APPROVAL_SLA_MINUTES_DEV: backend=2, worker=2`, dòng `làm nóng
+   rerank: …`, mọi dòng `PASS`.
+4. `caffeinate -i make gate4 S=all` (~10 phút; g4-03/04/05 chờ hạn duyệt 2 phút THẬT — đừng ngắt).
+5. Cuối lần chạy script in `Biên bản: backend/tests/stack/bienban-gate4-<ngày>.md`.
+
+**3. Biên bản:** mở file đó, điền người chạy, máy, ký + ngày; bảng PASS/FAIL do script điền — KHÔNG sửa tay. Gửi Tuấn Anh file
+biên bản + ảnh chụp dòng tổng của gate3 và gate4. **KHÔNG commit** biên bản đã điền.
+
+**4. Có kịch bản đỏ:** KHÔNG tự sửa code, preset hay `.env` cho xanh. Chụp mọi dòng `FAIL …` (script in lại ở cuối) + khoảng
+30 dòng phía trên dòng FAIL đầu tiên, gửi kèm biên bản. Lý do môi trường hay gặp: `DỪNG (chốt an toàn)` (sai `.env` — sửa,
+`make up`, chạy lại); `CẢNH BÁO: làm nóng rerank lỗi` chỉ là cảnh báo; E2 `turn_budget_exceeded` (máy ngủ — cắm sạc, chạy lại);
+g4-04 "nhắc 2 tới khi đã quá hạn" (máy quá tải — chạy lại riêng `make gate4 S=g4-04`, ghi rõ trong tin gửi).
+
+**5. Trả máy về thường:** thêm `#` trước dòng `APPROVAL_SLA_MINUTES_DEV=2` → `make up`.
 
 ## Cổng 2 (2b-4)
 
@@ -105,6 +146,44 @@ S0-P10 — `make ingest` in cảnh báo `procedure_doc`); tc02/tc06 E7 → thi�
 `approver_sync_unavailable` ở B15 → tiến trình backend/worker thiếu `JWT_SIGNING_KEY`; E5 `no_valid_approver` → người trong
 `config/approvers.yaml` không hợp lệ trong mock AD (sai nhóm, disabled).
 
+## Cổng 4 (`make gate4`)
+
+`gate4.py` (phase4 7.1 P6, 7.4; PLAN-4d mục 11.5): 11 kịch bản HITL trên node THẬT (B15–B16, nhắc, xem phiếu, dự phòng, ghi đè,
+`audit_check`) với hạn duyệt rút ngắn `APPROVAL_SLA_MINUTES_DEV=2` — worker THẬT quét 15 s (nhắc 1 ~60 s, nhắc 2 ~96 s, hết hạn
+120 s). Preset `config/scripted/g4_*.yaml`. Kịch bản không phụ thuộc giờ chạy: chau.hm (thử việc) → R19; PC-0124/LAP-0700 chưa đăng
+ký → R17. **Không có g4-08** (Trưởng BP quan.tm tự gửi → E5 `no_valid_approver`): manager bắt buộc MFA, gate4 KHÔNG đăng nhập manager
+và KHÔNG ghi danh MFA trên stack (Q-4d-9 = B) — ca x4 kiểm ở e2e `test_i5_x4_…` + unit bảng 3.2.
+
+**Chuẩn bị:** như cổng 3 + `.env` có `APPROVAL_SLA_MINUTES_DEV=2` → `make up`. **Chốt an toàn** (exit 2 trước mọi HTTP): như
+gate3 + SLA của backend VÀ worker phải `=2` (script trong container chỉ in `SLA=2|0|khac`, không in giá trị). Trước kịch bản đầu:
+**làm nóng rerank** (một truy vấn bỏ đi gọi thẳng ml-service trong container backend — 0 ghi DB, không tính PASS/FAIL; lỗi chỉ
+cảnh báo) — gate3 cũng làm bước này.
+
+```
+make gate4 S=preflight     # health, worker, đăng nhập chau.hm, ha.lt, duc.pv, khoa.dv, long.nh (không manager — không MFA)
+make gate4 S=g4-01         # hoặc g4-02 … g4-12 trừ g4-08 (g4-11 chạy lẻ tự dựng ticket g4-01)
+make gate4 S=all           # ~10 phút, ghi biên bản bienban-gate4-<YYYYmmdd>.md
+```
+
+| Kịch bản | Đạt khi |
+|---|---|
+| `g4-01` | chau.hm LAP-0501 → phiếu (l1_01, dự phòng l1_02, không xung đột); hạn = 120 ± 3 s; ha.lt duyệt → renew nv003 đúng 1, tổng ghi 1, `transaction_log` `begun` → xác nhận → `S_RESOLVED` |
+| `g4-11` | duc.pv ghi đè ticket g4-01 HITL→L2 → 201; lần 2 → 409 `already_overridden`; 1 dòng `OVERRIDE`; dòng `tickets` không đổi |
+| `g4-02` | từ chối không note → 422 `rejected_requires_note`, phiếu `pending`; có note → `S_REJECTED`, 1 tin `rejection`, 0 ghi |
+| `g4-06` | ha.lt PC-0124 (TC19) → phiếu Trưởng BP `it_mgr01`, `conflict_type=self`; ha.lt quyết → 403 |
+| `g4-07` | khoa.dv LAP-0700 → `it_mgr01`, `boss_of_approver` |
+| `g4-09` | long.nh (L2) quyết/xem → 403; khoa.dv (L1 không được giao) xem → 404 giống hệt id không tồn tại |
+| `g4-10` | ha.lt xem → 200 `primary`, ghi `first_viewed_at`; xem lần 2 giữ nguyên; duyệt → B16 `decided_without_view=false` |
+| `g4-04` | duc.pv quyết trước nhắc 2 → 403; sau nhắc 2 → 202 `decided_as=backup` → thực thi 1 ghi |
+| `g4-03` | không ai quyết: nhắc 1 ≥ 50%, nhắc 2 ≥ 80% thời hạn, cả hai trước hạn; worker → E6, phiếu `timeout`, 0 ghi |
+| `g4-05` | bấm sau hạn → 409 + đúng 1 `late_event` (`expired`, hoặc `already_decided` nếu worker quét trước) → E6, 0 ghi |
+| `g4-12` | `audit_check <các ticket lần chạy này đã tạo>` trong container → `KẾT LUẬN: 0 thiếu, 0 bí mật` (đỏ → in nguyên bảng ticket/điểm/trường, không giá trị; chạy lẻ `S=g4-12` = chưa có ticket → FAIL); log backend+worker từ giờ bắt đầu 0 trúng luật bí mật |
+
+**`make audit-check` trên stack dev dùng chung:** `ARGS="--since <giờ>"` chọn MỌI ticket có dòng audit mới từ giờ đó rồi soát TOÀN BỘ
+dòng của ticket → trên stack đã chạy gate2 (node GIẢ — không ghi điểm log thật) hoặc còn ticket cũ (worker vẫn ghi dòng mới khi đóng hạn
+duyệt/xác nhận) sẽ báo thiếu ở các ticket đó, dù code đúng. Muốn soát MỘT lần chạy: truyền danh sách ticket
+(`make audit-check ARGS="<ticket_id> <ticket_id> …"`) — gate4 g4-12 làm đúng như vậy (Q-4d-10).
+
 ## Demo VPN thứ Sáu
 
 Trên stack đã chuẩn bị như mục Cổng 3 (`LLM_BACKEND=scripted`, không `FAKE_SCENARIO`, KB fixture). Cách nhanh: chạy từng
@@ -170,7 +249,8 @@ biến env `LLM_SPEND_CAP_USD`). **Không commit `llm.yaml` đã hạ cap** — 
 
 ## `make verify` (Phase 4, mục 4.4)
 
-Một lệnh cho mọi DỪNG: `make verify G=23` = lint → test → up → gate2 (tạo lại backend+worker với `FAKE_SCENARIO=approval`) →
-gate3 (tạo lại với `FAKE_SCENARIO` rỗng) → LUÔN trả backend+worker về cấu hình `.env`. `G=0` chỉ lint + test; `BENCH=1` thêm bench
-checkpoint (Postgres testcontainers). Kết quả: `.verify/summary.txt` (`make verify-status`) + `.verify/run-*.log`. Không đọc/sửa
-`.env`, không `down -v`.
+Một lệnh cho mọi DỪNG: `make verify G=234` = lint → test → up → gate2 (tạo lại backend+worker với `FAKE_SCENARIO=approval`) →
+ingest KB fixture (một lần) → gate3 (tạo lại với `FAKE_SCENARIO` và `APPROVAL_SLA_MINUTES_DEV` rỗng) → gate4 (bước 10, tạo lại với
+`APPROVAL_SLA_MINUTES_DEV=2`) → LUÔN trả backend+worker về cấu hình `.env`. `G=0` chỉ lint + test; `BENCH=1` thêm bench checkpoint
+(Postgres testcontainers). Trên macOS script tự giữ máy thức (`caffeinate -i -w <pid>` — hết khi verify thoát) và cảnh báo khi máy
+chạy pin. Kết quả: `.verify/summary.txt` (`make verify-status`) + `.verify/run-*.log`. Không đọc/sửa `.env`, không `down -v`.

@@ -6,7 +6,8 @@ máy không đọc `.env`); `python -m app.audit.check …`; vỏ `scripts/audit
 - Điểm áp dụng theo dòng có mặt trong ticket; trường bắt buộc kiểm ĐÚNG chỗ code ghi (Q-4d-1 = A — bảng PLAN-4d mục 4, không theo chữ
   cột của 7.2: `confidence`, `query`, `success`, `action_plan_hash_matched` nằm ở `detail`; Việc treo 31).
 - Bí mật: luật `kind="secret"` của `config/privacy_patterns.json` + canary, trên MỌI cột chuỗi/JSON của `audit_logs` (liệt kê từ kiểu cột
-  model) và file log. Trúng mà nhóm `v` là mặt nạ (`[BÍ_MẬT_ĐÃ_ẨN]`) = đã che → không tính. Không dùng luật `entropy` (hash hex 64).
+  model) và file log. Trúng mà nhóm `v` là mặt nạ (`[BÍ_MẬT_ĐÃ_ẨN]`) + CHỈ dấu câu/khoảng trắng = đã che → không tính; sau mặt nạ còn
+  chữ/số → TÍNH là trúng (Q-4d-8). Không dùng luật `entropy` (hash hex 64).
 - CHỈ ĐỌC: role `app_monitor` (`MONITOR_DATABASE_URL`) nếu đặt, không thì `app_rw`; cả hai trong giao dịch READ ONLY. In nhãn role,
   KHÔNG in DSN. Báo "bí mật ở cột X dòng Y (luật Z)" — KHÔNG BAO GIỜ in giá trị. Thoát 0 sạch, 1 có thiếu/bí mật, 2 tham số sai.
 """
@@ -36,6 +37,7 @@ SCANNED_COLUMNS: Final = tuple(
     c.name for c in _AUDIT.columns if isinstance(c.type, (String, JSON)) and c.name != "ticket_id"
 )
 _P1_E1_EXEMPT: Final = frozenset({"intent_out_of_scope", "multi_intent_not_enabled"})  # detail.intent/confidence là None (b03)
+_B16_PLAN_CHANGED: Final = "action_plan_changed_since_approval"  # B16 duyệt nhưng kế hoạch đã đổi (Q-4d-3) — vẫn là điểm 6
 _ABSENT: Final = object()
 
 
@@ -122,10 +124,12 @@ def _point(row: Mapping[str, Any], *, approved: bool) -> tuple[int, list[str]] |
         return 4, _lacks(row, ["decided_by", "policy_decision", "risk_level", "reason", "detail.route", "detail.policy_sha256"])
     if (step, event) == ("B15", "queued"):
         return 5, _lacks(row, ["approver_id", "deadline", "conflict_detected", "action_plan_hash", "detail.choice_reason"])
-    if step == "B16" and event in ("approved", "rejected", "approval_timeout"):
+    if step == "B16" and event in ("approved", "rejected", "approval_timeout", _B16_PLAN_CHANGED):
         need = ["approval_result"]
         if event != "approval_timeout":
             need += ["response_time_seconds", "detail.decided_as"] + (["note"] if event == "rejected" else [])
+        if event == _B16_PLAN_CHANGED:  # Q-4d-3: lần duyệt mà kế hoạch đã đổi — điểm 6 như approved + bằng chứng so hash
+            need += ["detail.hash_source", "detail.action_plan_hash_matched"]
         return 6, _lacks(row, need, ["detail.decided_without_view"])
     if (step, event) in (("B18", "executed_ok"), ("B17", "exec_failed"), ("B17", "exec_interrupted")):  # b17 `_point7`
         need = ["detail.write_calls"]
@@ -168,9 +172,12 @@ class SecretScanner:
         return found + (["canary"] if any(c in text for c in self._canaries) else [])
 
     def _masked(self, match: re.Match[str]) -> bool:
-        """Nhóm `v` (giá trị) bắt đầu bằng mặt nạ = guard đã che (vd "mật khẩu là [BÍ_MẬT_ĐÃ_ẨN]") — không phải lộ."""
+        """Q-4d-8 = B: nhóm `v` = mặt nạ + CHỈ dấu câu/khoảng trắng = guard đã che (vd "mật khẩu là [BÍ_MẬT_ĐÃ_ẨN]." — `v` của luật
+        `password` nuốt cả dấu câu dính liền). Sau mặt nạ còn chữ/số (vd `[BÍ_MẬT_ĐÃ_ẨN]abc123` — đường lách guard) → TÍNH là trúng."""
         value = match.groupdict().get("v")
-        return value is not None and value.startswith(self._mask)
+        if value is None or not value.startswith(self._mask):
+            return False
+        return not any(ch.isalnum() for ch in value[len(self._mask) :])
 
 
 def _strings(value: Any) -> Iterator[str]:

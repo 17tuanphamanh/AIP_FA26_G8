@@ -2,15 +2,17 @@
 bộ test, khôi phục trong `finally`, so md5 + `git diff --stat` trước/sau. Luật N3 (`n3.py`): file đích còn chữ `MUTATION` → dừng; mốc
 xanh một lần trước khi đột biến.
 
-  uv run python scripts/mutation/mutate_4d.py                 # đột biến unit (ghi đè, audit_check, B17 P7)
-  uv run python scripts/mutation/mutate_4d.py --integration   # đột biến bắt bằng PG (testcontainers) — M-4d-1 SQL, M-4d-8/9 ở PG
+  uv run python scripts/mutation/mutate_4d.py                 # đột biến unit (ghi đè, audit_check, B17 P7, B16 Q-4d-3, bấm muộn, hết hạn)
+  uv run python scripts/mutation/mutate_4d.py --integration   # đột biến bắt bằng PG + e2e (testcontainers, mock cổng local — ngoài sandbox)
   uv run python scripts/mutation/mutate_4d.py --only M-4d-10
 
 Ghi chú:
 - M-4d-1 ("ghi đè đổi `tickets.final_state`") đặt ở `SqlApprovals.record_override` (chỗ ghi THẬT) → chỉ test PG giết được: unit dùng
   `MemoryApprovals` (bản giả không bị đột biến). e2e i13 cũng giết (chạy ở `make verify`).
 - M-4d-8, M-4d-9 có cả lượt unit (hàm thuần) lẫn lượt PG (`run` trên Postgres thật) — hai lớp test độc lập.
-- M-4d-6 (timeout → `S_EXECUTING`), M-4d-7 (bấm muộn đổi status phiếu) thêm ở DỪNG 2 cùng e2e i6, i7.
+- DỪNG 2 (lượt 2, PLAN-4d mục 11.6): M-4d-6 (B16 timeout → `S_EXECUTING`), M-4d-7 (bấm muộn đổi status phiếu), M-4d-15 (B16 bỏ so
+  hash — Q-4d-3), M-4d-16 (B16 bỏ lớp phiếu), M-4d-17 (`audit_check` bỏ dòng B16 E5 khỏi điểm 6). Làn `--integration` thêm e2e: i6
+  (M-4d-6), i7 (M-4d-7), i8c + i8b (M-4d-15), i8b (M-4d-16), i8d (M-4d-10 — i8b nay do B16 bắt nên B17 lớp 2 cần ca riêng).
 - `--integration` chạy pytest trên testcontainers (KHÔNG đụng stack dev); như `make test`: có socket colima thì đặt `DOCKER_HOST` +
   `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` (Makefile dòng đầu) — không đọc `.env`.
 """
@@ -37,15 +39,19 @@ DOMAIN = "backend/app/domain/override.py"
 STORE = "backend/app/approval/store.py"
 CHECK = "backend/app/audit/check.py"
 B17 = "backend/app/graph/nodes/b17_execute.py"
+B16 = "backend/app/graph/nodes/approval_wait.py"
+DECIDE = "backend/app/api/approvals.py"
 
 UT = pt(*[
     f"backend/tests/unit/{name}.py"
     for name in (
         "test_override_route", "test_override_domain", "test_audit_check", "test_b17_approval_hash", "test_auth_route_scan",
-        "test_b17_execute", "test_b17_decided_by",
+        "test_b17_execute", "test_b17_decided_by", "test_b16_plan_hash", "test_b16_approval_wait", "test_graph_worker",
+        "test_approvals_api",
     )
 ])  # fmt: skip
 IT = pt("backend/tests/integration/test_override_pg.py", "backend/tests/integration/test_audit_check_pg.py")
+E2E = pt("backend/tests/e2e/test_gate4_hitl.py", "-k", "test_i6_ or test_i7_ or test_i8b_ or test_i8c_ or test_i8d_")
 
 
 class Mutation(NamedTuple):
@@ -73,6 +79,16 @@ _SCAN = "    found = []\n    for row in rows:\n"
 _P5 = '    if (step, event) == ("B15", "queued"):\n'
 _RULES = "                rules += [r for r in scanner.hits(text) if r not in rules]\n"
 _P7 = "            if row is not None and row.action_plan_hash != current:"
+_TIMEOUT = '            state, S_ESCALATED, next_node="b20_audit", step="B16", event="approval_timeout",\n'
+_LATE = "    if late is not None:\n        await record_late(\n"
+_B16_HASH = '        if kind == "approved" and (changed := _plan_mismatch(state, a)) is not None:  # [5] Q-4d-3\n'
+_B16_APPROVAL = "    if a is not None and a.action_plan_hash != new:\n"
+_P6_ROW = '    if step == "B16" and event in ("approved", "rejected", "approval_timeout", _B16_PLAN_CHANGED):\n'
+B16_HASH_TESTS = [
+    "test_q1_state_hash_mismatch_e5_at_b16_not_e9", "test_q2_approval_hash_mismatch_e5_at_b16",
+    "test_q4_both_layers_differ_reports_state_first", "test_q5_state_hash_missing_is_mismatch_hash_old_null",
+    "test_q6_crash_before_e5_audit_rerun_once",
+]  # fmt: skip
 
 OPEN = "test_o3_i14_open_ticket_409_ticket_open"
 SELF = "test_o3_i14_requester_self_override_403_permission_denied"
@@ -122,6 +138,24 @@ UNIT: list[Mutation] = [
              [one(DOMAIN, _ROUTE_MAP,
                   '_BY_ROUTE: Final[Mapping[str, Decision]] = {"AUTO": "AUTO", "HITL": "HITL", "ESCALATE_L2": "HITL"}  # MUTATION M-4d-14\n')],
              UT, ["test_o6_original_decision_table", "test_o6_route_original_decision_from_audit_trail[route-ESCALATE_L2]"]),
+    # ---- DỪNG 2 (lượt 2) ----
+    Mutation("M-4d-6 B16 hết hạn → S_EXECUTING",
+             [one(B16, _TIMEOUT, '            state, S_EXECUTING, next_node="b17_execute", step="B16", event="approval_timeout",  # MUTATION M-4d-6\n')],
+             UT, ["test_c2_point6_timeout_response_time_null", "test_approval_deadline_fires_e6_and_closes_approval",
+                  "test_late_click_before_scan"]),
+    Mutation("M-4d-7 bấm muộn đổi status phiếu",
+             [one(DECIDE, _LATE, "    if late is not None:\n        await desk.approvals.close(approval_id, \"timeout\", now)  # MUTATION M-4d-7\n"
+                                 "        await record_late(\n")],
+             UT, ["test_late_click_before_scan"]),
+    Mutation("M-4d-15 B16 bỏ so hash (Q-4d-3)",
+             [one(B16, _B16_HASH, "        if False and (changed := _plan_mismatch(state, a)) is not None:  # MUTATION M-4d-15\n")],
+             UT, B16_HASH_TESTS),
+    Mutation("M-4d-16 B16 bỏ lớp so hash PHIẾU",
+             [one(B16, _B16_APPROVAL, "    if False:  # MUTATION M-4d-16\n")],
+             UT, ["test_q2_approval_hash_mismatch_e5_at_b16"]),
+    Mutation("M-4d-17 audit_check bỏ dòng B16 E5 khỏi điểm 6",
+             [one(CHECK, _P6_ROW, '    if step == "B16" and event in ("approved", "rejected", "approval_timeout"):  # MUTATION M-4d-17\n')],
+             UT, ["test_q7_audit_check_point6_e5_row_missing_field"]),
 ]  # fmt: skip
 
 INTEGRATION: list[Mutation] = [
@@ -137,6 +171,24 @@ INTEGRATION: list[Mutation] = [
     Mutation("M-4d-9 (PG) audit_check bỏ điểm 5",
              [one(CHECK, _P5, "    if False:  # MUTATION M-4d-9\n")],
              IT, ["test_pg_run_b15_queued_without_approver_id_is_point5"]),
+    # ---- DỪNG 2: e2e (TQ-11 — răng của e2e i6, i7, i8b/c/d) ----
+    Mutation("M-4d-6 (e2e) B16 hết hạn → S_EXECUTING",
+             [one(B16, _TIMEOUT, '            state, S_EXECUTING, next_node="b17_execute", step="B16", event="approval_timeout",  # MUTATION M-4d-6\n')],
+             E2E, ["test_i6_tc20_timeout_e6_no_write_approval_timeout"]),
+    Mutation("M-4d-7 (e2e) bấm muộn đổi status phiếu",
+             [one(DECIDE, _LATE, "    if late is not None:\n        await desk.approvals.close(approval_id, \"timeout\", now)  # MUTATION M-4d-7\n"
+                                 "        await record_late(\n")],
+             E2E, ["test_i7_tc27_late_click_409_approval_still_pending_then_worker_e6"]),
+    Mutation("M-4d-15 (e2e) B16 bỏ so hash",
+             [one(B16, _B16_HASH, "        if False and (changed := _plan_mismatch(state, a)) is not None:  # MUTATION M-4d-15\n")],
+             E2E, ["test_i8c_intended_action_changed_while_pending_e5_at_b16_zero_writes",
+                   "test_i8b_approval_hash_changed_while_pending_e5_at_b16_zero_writes"]),
+    Mutation("M-4d-16 (e2e) B16 bỏ lớp so hash PHIẾU",
+             [one(B16, _B16_APPROVAL, "    if False:  # MUTATION M-4d-16\n")],
+             E2E, ["test_i8b_approval_hash_changed_while_pending_e5_at_b16_zero_writes"]),
+    Mutation("M-4d-10 (e2e) B17 bỏ so hash phiếu (lớp 2)",
+             [one(B17, _P7, "            if False:  # MUTATION M-4d-10")],
+             E2E, ["test_i8d_approval_hash_changed_after_b16_checkpoint_b17_layer2_e5"]),
 ]  # fmt: skip
 
 MUTATIONS = INTEGRATION if "--integration" in sys.argv else UNIT

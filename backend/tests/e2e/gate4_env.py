@@ -12,13 +12,16 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+import pyotp
 from app.audit.check import Report, SecretScanner, readonly_engine, run
+from app.auth.mfa import enroll, reset
 from app.domain.states import S_CONFIRMING, S_PENDING_APPROVAL, S_REJECTED, S_RESOLVED
 from app.settings import Settings
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tests.e2e.gate3_env import Api, calls, rows, scalar
 from tests.e2e.mock_server import MockServer
+from tests.fakes.demo import DEMO_PASSWORD
 from tests.integration.pg import PgUrls
 
 CHAU = "chau.hm"  # nv003 — probation → R19
@@ -46,6 +49,28 @@ async def execute(rw: AsyncEngine, sql: str, **params: Any) -> int:
 
 async def approval_id(rw: AsyncEngine, ticket: str) -> str:
     return str(await scalar(rw, "SELECT approval_id FROM approvals WHERE ticket_id = :t", t=ticket))
+
+
+async def login_manager(a: Api, username: str) -> dict[str, str]:
+    """Manager BẮT BUỘC MFA (`auth/service._check_mfa` — không nới): đăng nhập lần đầu → 401 `mfa_not_enrolled` (tạo dòng `users`) → ghi
+    danh bằng CHÍNH store/sink/cipher của app (`app.state.auth`, như CLI `app.auth.mfa enroll`; đã ghi danh ở test trước → `reset`) →
+    đăng nhập kèm OTP tính theo FakeClock của app. Secret chỉ sống trong tiến trình test, không in. (Q-4d-9: gate4 trên stack KHÔNG làm
+    việc này.)"""
+    auth = a.app.state.auth
+    assert auth is not None and auth.cipher is not None, "app chưa dựng AuthService có MfaCipher (MFA_ENC_KEY)"
+    first = await a.client.post("/api/auth/login", json={"username": username, "password": DEMO_PASSWORD})
+    detail = first.json().get("detail")
+    assert (first.status_code, detail) in {(401, "mfa_not_enrolled"), (401, "mfa_required")}, first.text
+    if detail == "mfa_not_enrolled":
+        done = await enroll(auth.store, auth.sink, auth.cipher, username=username, by="ops", reason="e2e cổng 4")
+    else:
+        done = await reset(auth.store, auth.sink, auth.cipher, username=username, by="ops", reason="e2e cổng 4",
+                           now=a.parts.clock.now())  # fmt: skip
+    otp = pyotp.TOTP(done.secret).at(a.parts.clock.now())
+    r = await a.client.post("/api/auth/login", json={"username": username, "password": DEMO_PASSWORD, "otp": otp})
+    assert r.status_code == 200, (username, r.status_code, r.json().get("detail"))
+    a.tokens[username] = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    return a.tokens[username]
 
 
 async def pending_hitl(a: Api, text_: str = HITL_TEXT) -> tuple[str, str]:

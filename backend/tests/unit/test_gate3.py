@@ -4,7 +4,9 @@ có/không (không bao giờ in giá trị), tc28 luôn bật lại Qdrant, pres
 thật chạy tay: `make gate3 S=…`."""
 
 import hashlib
+import os
 import subprocess
+import sys
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, cast
@@ -425,3 +427,70 @@ def test_ctx_sql_checks_ticket_id_before_query() -> None:
     with pytest.raises(StackError):
         ctx.txlog("x'; DROP TABLE tickets; --")
     assert len(seen) == 1
+
+
+# ---- Làm nóng rerank (4d DỪNG 2, spec 7.7 #9, PLAN-4d TQ-15) -------------------------------------------------------------------
+
+
+class WarmRun(FakeRun):
+    """Trả lời lệnh làm nóng (`backend python -c WARM`) theo `answer` (mã, đầu ra)."""
+
+    def __init__(self, answer: tuple[int, str]) -> None:
+        super().__init__()
+        self.answer = answer
+
+    def __call__(self, cmd: list[str], stdin: str | None) -> tuple[int, str]:
+        if cmd[-1] == gate3.WARM:
+            self.calls.append(cmd)
+            return self.answer
+        return super().__call__(cmd, stdin)
+
+
+def _warm_ctx(answer: tuple[int, str]) -> tuple[gate3.Ctx, WarmRun, list[str]]:
+    run, out = WarmRun(answer), cast(list[str], [])
+    ctx = gate3.Ctx(shell=Shell(COMPOSE.split(), run=run, echo=out.append), http=None,  # type: ignore[arg-type]
+                    report=Report(echo=out.append), password="x")  # fmt: skip
+    return ctx, run, out
+
+
+def test_warm_ok_prints_ms_not_counted_in_report() -> None:
+    ctx, run, out = _warm_ctx((0, "embed_ms=812 rerank_ms=31544\n"))
+    gate3.warm_rerank(ctx)
+    assert [c[len(COMPOSE.split()):-1] for c in run.calls] == [["exec", "-T", "backend", "python", "-c"]]
+    assert "làm nóng rerank: embed 812 ms, rerank 31544 ms (không tính PASS/FAIL)" in out
+    assert ctx.report.lines == []
+    assert not any(gate3.WARM in line for line in out)  # in nhãn lệnh, không in cả đoạn mã
+
+
+@pytest.mark.parametrize(("answer", "why"), [
+    ((0, "warm_error=ReadTimeout\n"), "ReadTimeout"), ((1, "Traceback …\n"), "StackError"), ((0, "rác\n"), "dau_ra_la"),
+    ((0, ""), "dau_ra_la"), ((0, f"warm_error={SECRET} x\n"), "dau_ra_la"),
+], ids=["timeout", "lenh-loi", "dau-ra-la", "rong", "khong-in-lai"])  # fmt: skip
+def test_warm_failure_is_warning_only_run_continues(answer: tuple[int, str], why: str) -> None:
+    ctx, _, out = _warm_ctx(answer)
+    gate3.warm_rerank(ctx)  # không ném
+    assert f"CẢNH BÁO: làm nóng rerank lỗi ({why}) — chạy tiếp" in out
+    assert ctx.report.lines == [] and all(SECRET not in line for line in out)
+
+
+def test_warm_script_never_prints_env_values() -> None:
+    """Chạy CHÍNH đoạn mã làm nóng với URL hỏng (không mạng): chỉ in tên lớp lỗi — không token, không URL."""
+    done = subprocess.run([sys.executable, "-c", gate3.WARM], capture_output=True, text=True, check=True, timeout=60,
+                          env={**os.environ, "ML_SERVICE_TOKEN": SECRET, "ML_SERVICE_URL": "khong-phai-url://x"})  # fmt: skip
+    assert gate3.parse_warm(done.stdout) == "UnsupportedProtocol", done.stdout
+    assert SECRET not in done.stdout + done.stderr and "khong-phai-url" not in done.stdout
+
+
+@pytest.mark.parametrize("argv", [["tc02"], ["all"]])
+def test_main_warms_once_before_first_scenario(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    run = WarmRun((0, "embed_ms=1 rerank_ms=2\n"))
+    seen: list[int] = []
+
+    def fake_scenarios(ctx: gate3.Ctx, names: list[str]) -> None:
+        seen.append(len([c for c in run.calls if c[-1] == gate3.WARM]))
+
+    monkeypatch.setattr(gate3, "warnings", lambda ctx, flags: None)  # không HTTP thật
+    monkeypatch.setattr(gate3, "run_scenarios", fake_scenarios)
+    code, out = _main(argv, run)
+    assert seen == [1]  # đúng một lần, TRƯỚC kịch bản đầu (kể cả S lẻ — không gắn vào `preflight`)
+    assert code == 1 and any(line.startswith("làm nóng rerank:") for line in out)  # 0 dòng Report → summary trả 1

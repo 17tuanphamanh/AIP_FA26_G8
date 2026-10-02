@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 vpn-smoke models ml-bench \
+.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 gate4 vpn-smoke models ml-bench \
 	rerank-bench verify verify-status audit-check
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
@@ -134,8 +134,15 @@ gate2:
 gate3:
 	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate3 $(S)
 
+# Cổng 4 trên stack compose thật (phase4 7.1 P6, 7.4; backend/tests/stack/README.md — thành viên chạy NGOÀI GIỜ, cắm sạc): như gate3
+# (KHÔNG FAKE_SCENARIO, LLM_BACKEND=scripted, preset config/scripted/g4_*.yaml, KB fixture) + .env đặt APPROVAL_SLA_MINUTES_DEV=2
+# (script dừng nếu backend/worker khác 2 — chỉ in nhãn). S=all ghi biên bản backend/tests/stack/bienban-gate4-<ngày>.md (KHÔNG commit
+# bản đã điền). Ví dụ: make gate4 S=preflight | make gate4 S=g4-01 | make gate4 S=all
+gate4:
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate4 $(S)
+
 # Phase 4 (mục 4.4, Q-4-I/Q-4-T): MỘT lệnh cho mọi DỪNG — lint → test → up → cổng theo G (chuỗi chữ số: 0 = chỉ lint+test,
-# 2 = gate2, 3 = gate3; 4d thêm 4) → LUÔN trả backend+worker về cấu hình .env. gate2/gate3 cần FAKE_SCENARIO ngược nhau →
+# 2 = gate2, 3 = gate3, 4 = gate4 với APPROVAL_SLA_MINUTES_DEV=2) → LUÔN trả backend+worker về cấu hình .env. gate2/gate3 cần FAKE_SCENARIO ngược nhau →
 # script tạo lại backend+worker bằng biến shell, không đọc/sửa .env. BENCH=1 thêm bench checkpoint (P6). Kết quả:
 # .verify/summary.txt (agent đọc) + .verify/run-*.log. Lệnh >120 s bị đẩy nền là bình thường — báo agent "xong".
 G ?= 3
@@ -151,8 +158,9 @@ verify-status:
 # compose: app_monitor nếu có, không thì app_rw READ ONLY; máy không đọc .env). In nhãn role, không in DSN/giá trị. Cần `make up` (image
 # mới có app/audit/check.py). Quét thêm log: `$(COMPOSE) logs --no-color backend worker | $(COMPOSE) exec -T backend python -m
 # app.audit.check --log - …`. Ví dụ: make audit-check ARGS="--since 2026-10-01T10:00:00+07:00" | make audit-check ARGS="<ticket_id>"
+# `@`: make KHÔNG in lại dòng lệnh — ARGS có thể chứa `--canary <chuỗi>` (soát 4d DỪNG 2 S6: audit_check không bao giờ in canary).
 audit-check:
-	$(COMPOSE) exec -T backend python -m app.audit.check $(ARGS)
+	@$(COMPOSE) exec -T backend python -m app.audit.check $(ARGS)
 
 # Smoke luồng VPN (phase3 11.9): tc02, tc04, tc05, tc06 với LLM_BACKEND hiện hành + số liệu llm_calls. Với real: TỪ CHỐI
 # khi spend.cap_usd (config container backend đang nạp) > 1 hoặc model chưa có pricing — README "Chạy smoke LLM thật".

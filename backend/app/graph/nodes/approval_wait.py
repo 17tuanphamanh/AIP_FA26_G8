@@ -18,6 +18,11 @@ Sau `interrupt()`, thứ tự cố định (phase4 6.1 P1, P2):
    (= `ev.at − phiếu.created_at`; timeout NULL); `detail` chỉ số/enum/bool: `view_duration`, `decided_without_view`, `decided_as`,
    `reason_code`, `close_applied` (+ `note_suppressed`). Nguồn (TQ-5): quyết định → sự kiện (route chụp dưới khoá lúc bấm); timeout →
    `first_viewed_at` của phiếu.
+5. **Duyệt mà kế hoạch đã đổi (Phase 4 4d Q-4d-3, TC26):** SAU `close` (phiếu vẫn `approved` — đúng quyết định của người duyệt), TRƯỚC
+   `goto(S_EXECUTING)`: `hash_action(intended_action)` phải bằng `state.action_plan_hash` (lớp state — đúng phép so của cấm F3) rồi bằng
+   `approvals.action_plan_hash` (lớp phiếu — cái người duyệt đã xem, 4c P6). Lệch → E5 `action_plan_changed_since_approval` ở B16, dòng
+   audit mang đủ điểm log 6 + `hash_source`, `hash_old`, `hash_new`, `action_plan_hash_matched=False`; B16 không gửi tin (B20 gửi mẫu
+   E5). Thiếu hành động = bug → không so, để cấm F3 chặn → E9 như cũ. Cấm F3 và hai lớp của B17 giữ làm lớp sau.
 """
 
 from datetime import datetime
@@ -26,6 +31,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from app.approval.store import ApprovalRow
+from app.core.hashing import hash_action
 from app.domain.action import Action
 from app.domain.exit_codes import CloseReason, ExitCode
 from app.domain.messages import rejection_msg, rejection_text
@@ -53,6 +59,19 @@ def _response_time(ev: dict[str, Any], kind: str, a: ApprovalRow | None) -> floa
     return (datetime.fromisoformat(str(at)) - a.created_at).total_seconds()
 
 
+def _plan_mismatch(state: Any, a: ApprovalRow | None) -> dict[str, Any] | None:
+    """[5] Q-4d-3: lớp state trước, lớp phiếu sau (như B17); cả hai lệch → `state`. Không có phiếu → bỏ lớp phiếu (như B17)."""
+    raw = state.get("intended_action")
+    if raw is None:  # bug (B15 không tạo phiếu khi thiếu hành động) → cấm F3 → E9
+        return None
+    new, old = hash_action(raw), state.get("action_plan_hash")
+    if not old or new != old:
+        return {"hash_source": "state", "hash_old": old, "hash_new": new, "action_plan_hash_matched": False}
+    if a is not None and a.action_plan_hash != new:
+        return {"hash_source": "approval", "hash_old": a.action_plan_hash, "hash_new": new, "action_plan_hash_matched": False}
+    return None
+
+
 def make(deps: NodeDeps) -> NodeFn:
     async def approval_wait(state: Any) -> dict[str, Any]:
         ev = interrupt({"wait": "approval", "approval_id": state.get("approval_id")})
@@ -67,6 +86,13 @@ def make(deps: NodeDeps) -> NodeFn:
             a = await deps.approvals.get(state["approval_id"])
         detail = _point6(ev, kind, a, applied)
         columns: dict[str, Any] = {"response_time_seconds": _response_time(ev, kind, a)}
+        if kind == "approved" and (changed := _plan_mismatch(state, a)) is not None:  # [5] Q-4d-3
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B16", event="action_plan_changed_since_approval",
+                approval_result="approved", exit_code=ExitCode.E5.value,
+                escalation_reason_detail="action_plan_changed_since_approval",
+                audit_columns=columns, audit_detail={**detail, **changed},
+            )  # fmt: skip
         if kind == "approved":
             return await goto(
                 state, S_EXECUTING, next_node="b17_execute", step="B16", event="approved",

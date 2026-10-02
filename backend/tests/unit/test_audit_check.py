@@ -327,9 +327,11 @@ def test_a3_canary_substring_case_sensitive() -> None:
 
 
 def test_a3_custom_rules_value_group_masked_not_counted() -> None:
-    """`SecretScanner(rules, mask=…)`: trúng có nhóm `v` mà `v` bắt đầu bằng mặt nạ → không tính; lần trúng sau chưa che vẫn tính."""
+    """`SecretScanner(rules, mask=…)`: nhóm `v` = mặt nạ + CHỈ dấu câu/khoảng trắng → không tính; sau mặt nạ còn chữ/số → TÍNH (Q-4d-8 = B,
+    sửa chữ 7.7 #6 "bắt đầu bằng mặt nạ" — `pw=[M]-x` trước đây không tính, nay tính); lần trúng sau chưa che vẫn tính."""
     s = SecretScanner([("pw", re.compile(r"pw=(?P<v>\S+)")), ("tok", re.compile(r"TOK\d{3}"))], mask="[M]")
-    assert s.hits("pw=[M]") == [] and s.hits("pw=[M]-x") == []
+    assert s.hits("pw=[M]") == [] and s.hits("pw=[M].") == [] and s.hits("pw=[M]),") == []
+    assert s.hits("pw=[M]abc123") == ["pw"] and s.hits("pw=[M]-x") == ["pw"]
     assert s.hits("pw=abc") == ["pw"]
     assert s.hits("pw=[M] rồi pw=abc") == ["pw"]
     assert s.hits("TOK123 TOK456") == ["tok"]
