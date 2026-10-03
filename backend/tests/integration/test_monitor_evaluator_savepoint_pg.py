@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from app.domain.alerts import AlertDraft
-from app.monitor.evaluator import LOADERS, evaluate, loader
+from app.monitor.evaluator import LOADERS, evaluate, loader, reset_log_pacing
 from app.monitor.rules import REGISTRY, RuleContext, rule
 from app.monitor.window import VN_TZ
 from sqlalchemy import text
@@ -29,7 +29,9 @@ def isolated_registry() -> Iterator[None]:
     saved_rules, saved_loaders = dict(REGISTRY), dict(LOADERS)
     REGISTRY.clear()
     LOADERS.clear()
+    reset_log_pacing()  # Q-M9-B2-9: tham số thứ 2 cùng NOW, cùng lỗi → không đặt lại thì ra DEBUG, không ERROR
     yield
+    reset_log_pacing()
     REGISTRY.clear()
     REGISTRY.update(saved_rules)
     LOADERS.clear()

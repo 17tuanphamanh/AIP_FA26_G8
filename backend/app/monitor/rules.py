@@ -473,7 +473,7 @@ def llm_budget(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
     Đánh giá mỗi giờ; `window_start` = đầu ngày `tz` của `ctx.now` (Q-M9-6) → nhắc một lần mỗi ngày. Tổng chỉ tăng
     (cost ≥ 0) nên worker chết qua nhiều ngày không làm mất cảnh báo đầu tiên.
 
-    Chờ chốt (#14):
+    Đã chốt (#14, comment 5959974287):
     - Q-M9-B2-7: so với `ngưỡng − BUDGET_EPS` (1e-9), không so `≥` trần — số thực làm đúng 80% không báo.
     - Q-M9-B2-16: tổng `None`/NaN/inf/âm → `ValueError` (luật vào `failed_rules`), không trả `[]`: loader `COALESCE`
       nên chỉ lỗi mới ra các giá trị này; trả `[]` là tắt im lặng luật ngân sách (FN).

@@ -3,7 +3,7 @@
 (loader + hàm A nối ở GĐ2).
 
 Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 12, 13, 14), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ B2),
-Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-7/16/17 (luật 14, chờ chốt ở #14).
+Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-7/16/17 (luật 14, đã chốt ở #14, comment 5959974287).
 Mọi mốc kỳ vọng là HẰNG tính tay (giờ VN = UTC+7; Tokyo = UTC+9; Berlin CET = UTC+1, CEST = UTC+2), không tính bằng
 chính hàm đang test.
 """
