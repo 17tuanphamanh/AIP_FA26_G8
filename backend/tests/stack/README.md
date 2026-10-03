@@ -9,12 +9,53 @@ container postgres). Không nằm trong `make test`. Mục lục: [Thành viên 
 
 Người chạy: thành viên **không** làm chính. Máy riêng, **NGOÀI GIỜ** hành chính (sau 18:00 hoặc cuối tuần — gate3 khi đó đi
 đường duyệt), **cắm sạc, mở nắp**, không để máy ngủ (Mac ngủ giữa lượt → E2 `turn_budget_exceeded`, đỏ oan). Thời gian: gate3
-~3 phút, gate4 ~10 phút (chưa kể `make up`).
+~3 phút, gate4 ~10 phút (chưa kể `make up`). **Không chạy việc nặng khác trong lúc chạy cổng** (build, trình duyệt nhiều tab,
+máy ảo…) — máy tải nặng làm ml-service hết giờ, ticket ra E2, kịch bản đỏ oan. Lần đầu cần `make models` (~4,3 GB tải về); Docker
+cần ~8 GB RAM.
 
-**Thứ tự bắt buộc: cổng 3 TRƯỚC, khi `.env` CHƯA có `APPROVAL_SLA_MINUTES_DEV`; xong mới thêm `APPROVAL_SLA_MINUTES_DEV=2`,
-`make up`, rồi cổng 4.** gate4 tự dừng nếu thiếu SLA=2; gate3 chạy với SLA=2 không phải cấu hình đã kiểm.
+**Thứ tự bắt buộc: cổng 3 TRƯỚC, khi `APPROVAL_SLA_MINUTES_DEV` trong `.env` còn trống (hoặc đã `#`); xong mới SỬA nó thành
+`APPROVAL_SLA_MINUTES_DEV=2`, `make up`, rồi cổng 4.** gate4 tự dừng nếu thiếu SLA=2; gate3 chạy với SLA=2 không phải cấu hình đã
+kiểm.
 
 `.env` là file bí mật: sửa bằng trình soạn thảo, KHÔNG `cat .env`, KHÔNG dán nội dung đi đâu (chat, ảnh chụp, issue).
+
+**Bước 0 — tạo `.env` (một lần).** Mỗi máy tự tạo `.env` từ `.env.example`, KHÔNG dùng chung `.env` giữa các máy. Cổng 3 + 4 chạy
+LLM giả nên KHÔNG cần khoá API. Từ gốc repo chạy nguyên khối sau:
+
+```bash
+cp -n .env.example .env && chmod 600 .env
+python3 - <<'EOF'
+import base64, pathlib, re, secrets
+p = pathlib.Path(".env")
+gen = {
+    "JWT_SIGNING_KEY": lambda: secrets.token_urlsafe(32),
+    "MFA_ENC_KEY": lambda: base64.b64encode(secrets.token_bytes(32)).decode(),
+    "SVC_AGENT_TOKEN": lambda: secrets.token_urlsafe(32),
+    "SVC_EXECUTOR_TOKEN": lambda: secrets.token_urlsafe(32),
+    "SVC_WORKER_TOKEN": lambda: secrets.token_urlsafe(32),
+    "ML_SERVICE_TOKEN": lambda: secrets.token_urlsafe(32),
+}
+out, done = [], []
+for line in p.read_text(encoding="utf-8").splitlines():
+    m = re.match(r"^([A-Z0-9_]+)=(.*)$", line)
+    if m and m.group(1) in gen and m.group(2).strip() == "":
+        line = f"{m.group(1)}={gen[m.group(1)]()}"
+        done.append(m.group(1))
+    elif m and m.group(1) in ("FAKE_SCENARIO", "FAKE_NODE_DELAY"):
+        line = "# " + line
+    out.append(line)
+p.write_text("\n".join(out) + "\n", encoding="utf-8")
+print("da sinh:", ", ".join(done) or "khong co bien nao trong")
+EOF
+```
+
+Đạt khi in `da sinh:` kèm đủ 6 tên biến (`JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`,
+`SVC_WORKER_TOKEN`, `ML_SERVICE_TOKEN`). **Không đổi các dòng `PG_*PASSWORD`** (giữ giá trị mẫu).
+
+*Máy đã có `.env` cũ:* đổi tên file cũ (ví dụ `mv .env .env.cu-<ngày>`) rồi chạy lại Bước 0. Nếu sau đó `make up` dừng ở alembic với
+`password authentication failed for user app_migrate` → volume Postgres cũ còn giữ mật khẩu cũ → **HỎI Tuấn Anh trước**. Khi được
+duyệt: `make down` → `docker volume ls --filter name=servicedesk` (phải đúng 2 tên) → `docker volume rm servicedesk_pgdata
+servicedesk_qdrant` → `make up` → `make ingest`. KHÔNG `down -v`, KHÔNG `volume prune`.
 
 **0. Một lần sau khi pull:** `git pull` → `uv sync` → (máy chưa có model) `make models`.
 
@@ -28,7 +69,8 @@ Người chạy: thành viên **không** làm chính. Máy riêng, **NGOÀI GI�
 5. `caffeinate -i make gate3 S=all` → dòng cuối `==== N PASS, 0 FAIL ====`. Chụp dòng đó.
 
 **2. Cổng 4**
-1. `.env`: thêm dòng `APPROVAL_SLA_MINUTES_DEV=2` (giữ nguyên mọi thứ của bước 1).
+1. `.env`: SỬA dòng có sẵn `APPROVAL_SLA_MINUTES_DEV=` thành `APPROVAL_SLA_MINUTES_DEV=2`, không thêm dòng thứ hai (giữ nguyên mọi
+   thứ của bước 1).
 2. `make up` (BẮT BUỘC — container chỉ nạp biến khi tạo lại).
 3. **Kiểm trước khi chạy:** `make gate4 S=preflight` → có dòng `APPROVAL_SLA_MINUTES_DEV: backend=2, worker=2`, dòng `làm nóng
    rerank: …`, mọi dòng `PASS`.
@@ -41,7 +83,9 @@ biên bản + ảnh chụp dòng tổng của gate3 và gate4. **KHÔNG commit**
 **4. Có kịch bản đỏ:** KHÔNG tự sửa code, preset hay `.env` cho xanh. Chụp mọi dòng `FAIL …` (script in lại ở cuối) + khoảng
 30 dòng phía trên dòng FAIL đầu tiên, gửi kèm biên bản. Lý do môi trường hay gặp: `DỪNG (chốt an toàn)` (sai `.env` — sửa,
 `make up`, chạy lại); `CẢNH BÁO: làm nóng rerank lỗi` chỉ là cảnh báo; E2 `turn_budget_exceeded` (máy ngủ — cắm sạc, chạy lại);
-g4-04 "nhắc 2 tới khi đã quá hạn" (máy quá tải — chạy lại riêng `make gate4 S=g4-04`, ghi rõ trong tin gửi).
+g4-04 "nhắc 2 tới khi đã quá hạn" (máy quá tải — chạy lại riêng `make gate4 S=g4-04`, ghi rõ trong tin gửi); g4-03/g4-05 FAIL
+`chờ duyệt: … thấy S_ESCALATED` + `cần đúng 1 phiếu, thấy 0` = ticket ra E2 do ml-service chậm (máy tải nặng) → tắt việc nặng, `make
+up`, chạy lại `S=all`. Chạy lại cùng ngày thì đổi tên biên bản cũ thành `…-lan1.md` trước (script ghi đè file cùng tên).
 
 **5. Trả máy về thường:** thêm `#` trước dòng `APPROVAL_SLA_MINUTES_DEV=2` → `make up`.
 

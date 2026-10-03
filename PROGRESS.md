@@ -4705,6 +4705,19 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
     + cây bẩn 39 mục): XANH** — lint PASS; test PASS (backend **4244** = 4186 + 58 M9 (29 unit + PG mới), mock 100, ml 77 / 5 deselected).
     Cổng stack không chạy lại (M9 chỉ đổi truy vấn dashboard, không trên đường graph — gate2/3/4 lấy ở lượt 22:39/23:39 trên `fe51980`).
   - **Trạng thái (03/10/2026): 4d DỪNG 2 commit — chờ biên bản Duy Anh.**
+  - **Commit + push DỪNG 2 (03/10/2026, `dev-tuananh`, `67cd5f9..567237a`):** `858573d` (22 file, 4d DỪNG 2 + spec v1.6 7.8) + `567237a`
+    (2 file `docs/spec/claude/ke-hoach-m9-*.md`, ngoại lệ một lần). CI `37040959717` (`567237a`) **xanh** 3m57s. **Gộp PR #24**
+    (`dev-duyanh`, M9: `worker.py`, `app/monitor/rules.py`, `app/monitor/queries/rules_data.py` + 6 file test monitor) —
+    `git pull --ff-only` `567237a..1455b55`, HEAD `1455b55`; CI `37041941104` (`1455b55`) **xanh** 5m32s. 9 file, 0 trùng 22 file
+    `858573d`; không migration (`alembic heads` = 1, `0008`). Sandbox trên cây gộp: `make lint` xanh (ruff sạch; mypy app 216 / tests 230
+    / mock 12 / ml 16; import-linter 10/10; gitleaks 0, 103 commit); unit **3905 passed**. **`make verify G=34` trên cây gộp (Tuấn Anh,
+    03/10/2026 00:51:51 → 01:06:26, HEAD `1455b55`, `.env`): XANH** — lint PASS; test PASS (backend **4344**, mock 100, ml 77 / 5
+    deselected); gate3 **78 PASS / 0 FAIL**; gate4 (SLA=2) **73 PASS / 0 FAIL**; làm nóng rerank gate3 embed 653 ms / rerank 1803 ms, gate4
+    embed 374 ms / rerank 1183 ms (không cảnh báo); g4-12 `audit_check` trên 9 ticket của lần chạy: mã 0, 0 thiếu, 0 bí mật; quét log
+    backend + worker 0 trúng; CI `37041941104` xanh. Biên bản `bienban-gate4-20261003.md` (untracked, không commit).
+  - **Trạng thái (03/10/2026): Phase 4 chờ biên bản Duy Anh (commit `1455b55`).**
+  - **Phase 4 ĐÓNG phần code 03/10/2026 — cổng 4 đạt (spec 7.9); NỢ-3-1 đã trả.** Tạ Duy Anh chạy trên máy riêng, commit `1455b55`:
+    gate3 78/0; gate4 lượt 2 73/0 (lượt 1 60/4: g4-03, g4-05 ra E2 vì ml-service hết giờ khi máy tải nặng).
   - **S11:** "Spec cần sửa (4d)" (trên) + MẪU B DỪNG 2 gửi Tuấn Anh (02/10/2026 ~21:2x). CHƯA commit. Chờ: `make verify G=234` (Tuấn Anh,
     báo FE trước) → `mutate_4d.py --integration` (PG + e2e) → Q-4d-6/7/8. Dự kiến stage 20 file (danh sách ở MẪU B); KHÔNG stage
     `docs/spec/claude/*` (2 file M9), `PLAN-4d.md`, biên bản đã điền.
@@ -4921,6 +4934,9 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
     `guard/privacy.py:160` — chuỗi `x[BÍ_MẬT_ĐÃ_ẨN]<chuỗi ngẫu nhiên ≥ 20>` lọt guard (vd vào `audit_logs.note` qua ghi đè); `audit_check`
     không dùng luật entropy nên không bắt. Lõi 3e — sửa (chỉ bỏ qua khi token đúng bằng mặt nạ, hoặc xoá mặt nạ rồi mới tính entropy) cùng
     soát lại bộ test e* của 3e; không sửa ở 4d.
+35. **Worker ~98% CPU sau một lượt gate4 chạy trực tiếp trên máy Duy Anh (03/10/2026) — chưa giải thích.** Postgres 0%, log im
+    05:15:31 → 05:22:16 UTC. Đã loại: `monitor_rules_minute` in 1 lần là đúng thiết kế; worker máy Tuấn Anh lúc rảnh 0,75%. Cần: `docker
+    stats` ngay sau gate4 + log worker + đếm turns chưa kết thúc.
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

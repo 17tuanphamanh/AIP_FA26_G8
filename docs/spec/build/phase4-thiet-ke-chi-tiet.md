@@ -1,6 +1,6 @@
 # Phase 4 — Thiết kế chi tiết (HITL: B15–B16, nhắc, xem phiếu, ghi đè, audit)
 
-*Thuộc bộ `build/`. Phiên bản **1.6 — 03/10/2026** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c xong**: DỪNG 1 `aac90b1` mục 6.4; DỪNG 2 `b457e6e` mục 6.5 · **4d**: DỪNG 1 `e510a6e` mục 7.7; DỪNG 2 mục 7.8) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
+*Thuộc bộ `build/`. Phiên bản **1.7 — 03/10/2026, cổng 4 ĐẠT** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c xong**: DỪNG 1 `aac90b1` mục 6.4; DỪNG 2 `b457e6e` mục 6.5 · **4d xong**: DỪNG 1 `e510a6e` mục 7.7; DỪNG 2 `858573d` mục 7.8 · **nghiệm thu** mục 7.9) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
 
 *Nhãn: **[Chốt]** spec đã chốt · **[Đề xuất]** chờ Tuấn Anh chốt · **[Suy luận]** rút từ code/spec, agent phải kiểm lại trên code.*
 
@@ -772,6 +772,22 @@ Khi 7.1–7.7 nói khác bảng này, **bảng này thắng**. Sandbox: lint PAS
 
 **`make gate4` — kịch bản (thay 7.4):** `g4-01` duyệt · `g4-11` ghi đè + lần 2 409 · `g4-02` từ chối + từ chối thiếu note · `g4-06` TC19 `l1_01` PC-0124 → `it_mgr01`; `l1_01` quyết → 403 · `g4-07` `l1_lead` LAP-0700 → `it_mgr01` · `g4-09` L2 quyết/xem → 403; L1 khác xem → 404 · `g4-10` xem lần đầu ghi `first_viewed_at` · `g4-04` dự phòng `l1_02` quyết sau nhắc 2 · `g4-03` hết hạn 2 phút: nhắc 1, nhắc 2, E6, 0 ghi · `g4-05` bấm muộn → 409 (dòng 12) · `g4-12` `audit_check` trên ticket của lần chạy + quét log (dòng 10). `g4-08` không có trên stack (dòng 8).
 
+### 7.9. Nghiệm thu cổng 3 + cổng 4 bởi người không làm chính (03/10/2026, commit `1455b55`)
+
+Người chạy: **Tạ Duy Anh**, máy riêng MSI Thin GF63 (Intel Core i5-12450H, RAM 16 GB, Docker/WSL được cấp 7,6 GB), Windows + WSL 2 Ubuntu, thứ Bảy (ngoài giờ), commit `1455b55` (0 tệp đã theo dõi đang sửa) = 4d DỪNG 2 `858573d` + docs `567237a` + PR #24 của M9. Biên bản đã ký của cả hai lượt lưu ở Project: `claude/bien-ban-cong-3-4-duy-anh-20261003.md` (bản đã điền không commit vào repo — TQ-17).
+
+| Việc | Kết quả | Ghi chú |
+|---|---|---|
+| `make gate3 S=all` | **78 PASS, 0 FAIL** | 78 kiểm = nhánh ngoài giờ (R18 → duyệt → gia hạn). **Trả NỢ-3-1** của Phase 3 |
+| `make gate4 S=all` lượt 1 (run `83026cac`, 12:11 → 12:17) | 60 PASS, **4 FAIL** | Mười kịch bản đầu và g4-12 xanh. g4-03, g4-05 mỗi cái 2 FAIL: ticket ra `B8/retrieval_error` **E2** (`error_stage=rerank`, 50 s sau B6; log backend `ml:embed` 3467 ms rồi hết giờ 3 lần) → không có phiếu duyệt → kiểm "chờ duyệt" FAIL + kịch bản dừng giữa chừng (`cần đúng 1 phiếu, thấy 0`), 9 kiểm bị bỏ |
+| `make gate4 S=all` lượt 2 (run `6bf9628f`, 15:42:58 → 15:51:18) | **73 PASS, 0 FAIL** — ĐẠT | Sau khi tắt việc nặng khác và `make up`. preflight 5 · g4-01 11 · g4-11 4 · g4-02 7 · g4-06 4 · g4-07 3 · g4-09 5 · g4-10 12 · g4-04 7 · g4-03 7 · g4-05 6 · g4-12 2. Khớp số máy Tuấn Anh (lượt 01:06, cùng commit) |
+
+**Đọc kết quả lượt 1.** Hệ thống xử lý an toàn: tra cứu KB lỗi → E2 → chuyển L2, không tạo phiếu, 0 lời gọi ghi — không phải False Negative. Cổng đỏ vì điều kiện của kịch bản không đạt (cần ticket tới `S_PENDING_APPROVAL`), cùng dấu vết với "rerank nguội" (7.7 #9, Việc treo 32). Nguyên nhân [Suy luận]: người chạy xác nhận máy đang chạy việc nặng khác, Docker 7,6 GB đã dùng swap; làm nóng ở preflight không đủ khi máy bị tranh CPU giữa lượt. Không sửa code, không nới `TIMEOUT_S` / `rag_deadline_s`.
+
+**Việc treo 35 (mở 03/10/2026).** Sau lượt 1, người chạy thấy container `worker` chiếm khoảng 98% CPU khi không còn test (Postgres 0%), log im từ 05:15:31 tới 05:22:16 UTC — trùng lúc g4-03 bắt đầu. Chưa giải thích được. Đã loại: (a) "`monitor_rules_minute` chỉ in một lần" là đúng thiết kế (lượt đầu INFO, sau DEBUG); (b) worker máy Tuấn Anh lúc rảnh 0,75% CPU (cùng commit) — nhưng trên máy Tuấn Anh `make verify` luôn tạo lại worker sau gate4 nên chưa loại được "kẹt sau một lượt gate4". Cần: `docker stats` ngay sau một lượt gate4 chạy trực tiếp (không qua `verify`) + log worker + số lượt `turns` chưa kết thúc. Ảnh hưởng nếu là lỗi thật: tra cứu KB chậm (E2 thừa) và quét hạn duyệt trễ; không mở đường thực thi sai (bấm muộn vẫn bị route chặn 409).
+
+**Bài học dựng máy thành viên** (đưa vào `backend/tests/stack/README.md` ở commit đóng): (1) "Bước 0 — tạo `.env`" từ `.env.example`, tự sinh 6 bí mật (`JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`, `SVC_WORKER_TOKEN`, `ML_SERVICE_TOKEN`), tắt `FAKE_SCENARIO`/`FAKE_NODE_DELAY`; không dùng chung `.env`. (2) Máy có `.env` cũ + volume Postgres cũ → `password authentication failed for user "app_migrate"` (script khởi tạo role chỉ chạy khi volume trống) → hỏi người làm chính rồi xoá đích danh `servicedesk_pgdata`, `servicedesk_qdrant` (không `down -v`, không `prune`). (3) Cổng 4: **sửa** dòng có sẵn `APPROVAL_SLA_MINUTES_DEV=` thành `=2`, không thêm dòng thứ hai. (4) Không chạy việc nặng khác trong lúc chạy cổng.
+
 ---
 
 ## 8. Lịch và thứ tự
@@ -781,15 +797,18 @@ Khi 7.1–7.7 nói khác bảng này, **bảng này thắng**. Sandbox: lint PAS
 | 4a ✓ | S0 `5ed423d` + DỪNG 2 `f64fd86` (CI 36726470829 xanh) | Phase 3 đóng `5d0a990` ✓; Q-4-U chốt ✓ | — |
 | 4b ✓ | DỪNG 1 `cd3f094` (CI 36750953436) + DỪNG 2 `3b9d745` (CI 36783587264) | 4a | — |
 | 4c ✓ | DỪNG 1 `aac90b1` (CI 36823466624) + DỪNG 2 `b457e6e` (CI 36885395186) | 4b | — |
-| 4d | DỪNG 1 `e510a6e` (+ `fe51980`, CI 36995043374) mục 7.7 · DỪNG 2 mục 7.8 (03/10; trên `67cd5f9`; máy Tuấn Anh: gate2 89/0, gate3 78/0, gate4 73/0) — **còn: biên bản của Duy Anh** | 4c | **Duy Anh** chạy `make gate3 S=all` + `make gate4 S=all` ngoài giờ + ký biên bản (trả NỢ-3-1) |
+| 4d ✓ | DỪNG 1 `e510a6e` (+ `fe51980`, CI 36995043374) mục 7.7 · DỪNG 2 `858573d` (+ docs `567237a`, CI 37040959717) mục 7.8 · cây gộp PR #24 `1455b55` (CI 37041941104; máy Tuấn Anh: backend 4344, gate3 78/0, gate4 73/0) | 4c | **Duy Anh ✓** 03/10 trên `1455b55`: gate3 78/0, gate4 73/0 (lượt 2), đã ký — mục 7.9 (NỢ-3-1 đã trả) |
 
 Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutation 4b/4d ×2, 4c ×1 đủ; `make gate4 S=all` 0 FAIL do người không làm chính chạy; spec "Chốt khi hiện thực 4a–4d"; `decisions.md` §1.1 (R17–R19 thêm chủ máy) + §4.1 (Q-4-A…T).
+
+**Cổng 4 ĐẠT (03/10/2026):** mọi điều kiện trên đã thoả — lint, test, CI xanh trên `1455b55`; e2e i1–i17; mutation 4b/4d ×2, 4c ×1; `make gate4 S=all` 0 FAIL do Tạ Duy Anh chạy (mục 7.9); mục "Chốt khi hiện thực" 4a–4d; `decisions.md` §1.1 + §4.1. Việc còn mở sau cổng: Việc treo 25–35 (PROGRESS), NỢ-3-2 (smoke LLM thật).
 
 ## 9. Nhật ký
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 30/09/2026 | 0.1 | Tạo file: sự thật code `02ed795`; 10 lỗ hổng bổ sung G4-15…24; thuật toán chọn người duyệt theo [Chốt]; bảng test xung đột mới; 20 câu Q-4; chặng 4a đủ |
+| 03/10/2026 | 1.7 | **Cổng 4 đạt:** mục 7.9 nghiệm thu bởi Tạ Duy Anh (gate3 78/0 — trả NỢ-3-1; gate4 lượt 1 60/4 do ml-service hết giờ khi máy tải nặng, lượt 2 73/0); Việc treo 35 (worker ~98% CPU sau gate4, chưa giải thích); bài học dựng máy thành viên → README; lịch 4d hash/CI; dòng "Cổng 4 ĐẠT" |
 | 03/10/2026 | 1.6 | 4d DỪNG 2: mục 7.8 "Chốt khi hiện thực" (17 dòng: Q-4d-3 hiện thực ở B16 + dòng điểm 6 mới, i8 bốn ca, luật viết e2e, Q-4d-8 = B sửa 7.7 #6, Q-4d-6/7 → Việc treo 33, 34, Q-4d-9 = B bỏ g4-08, Q-4d-10 = A g4-12 theo ticket lần chạy, TQ-15/16/17, `verify G=234` + caffeinate Q-4d-4, M-4d-15…17, gộp PR #26 M9 + hợp đồng `OVERRIDE_STEP/EVENT`); kịch bản gate4 thay 7.4; lịch 4d hash/CI |
 | 02/10/2026 | 1.5 | 4d DỪNG 1: mục 7.7 "Chốt khi hiện thực" (12 dòng + bảng điểm `audit_check` thay 7.2: Q-4d-1 = A, Q-4d-2 = A, thứ tự P1 thật, `ESCALATE_L2 → L2`, `audit_check` READ ONLY, B17 lớp 2, TC26 — cấm F3 ở B16 + Q-4d-3, rerank nguội + Việc treo 31, 32); lịch 4c hash/CI, 4d người chạy cổng = Duy Anh |
 | 01/10/2026 | 1.4 | 4c DỪNG 2: mục 6.5 "Chốt khi hiện thực" (10 dòng: `approval_role` một định nghĩa, hộp thư lọc SQL trước LIMIT, `ApprovalView` 12 khoá + 404/hash phiếu, ghi chú rỗng sau che → 422, id lạ → 404, AST `ROLE_KEYS`, Q-4c-3 = A, M-4c-3b, Việc treo 28–30); 4d thêm P7 (Việc treo 29); lịch 4c ✓ |
