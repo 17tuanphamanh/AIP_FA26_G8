@@ -1,7 +1,9 @@
 """M9 A2 — 12 chỉ số dashboard AI/LLMOps trên Postgres 16 thật, đọc bằng role `app_monitor` (kế hoạch M9 5.2, 4.3; chốt
 [C-A2] ở #9).
 
-Mỗi test một ngày riêng của tháng 1/2030 làm cửa sổ (`cost_per_day` dùng tháng 2); số kỳ vọng tính tay trong chú thích.
+Mỗi test một ngày (hoặc cửa sổ) riêng của năm 2030; số kỳ vọng tính tay trong chú thích. Tháng 1: các test chỉ số theo ngày
+(+ R26-3, R26-5, R26-6); tháng 2: `cost_per_day`; tháng 3: cửa sổ theo lá hai chiều (R26-4: 2, 4, 6, 8; R26b-1: 10, 12, 14;
+R26b-2: 16); tháng 4: cost theo thời điểm lời gọi (R26-1, R26-2) và `DayCost` UTC. Bảng ngày chi tiết ở khối R26 dưới.
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -366,8 +368,8 @@ async def test_window_bounds(rw: AsyncEngine, mon: AsyncEngine) -> None:
 
 
 # ---- R26 (review PR #26, Tuấn Anh): cửa sổ theo lá, cost theo thời điểm lời gọi, nối khóa → hàm ----
-# Ngày dùng riêng: tháng 1: 2 (R26-3), 19 (R26-5), 22, 23 (R26-6); tháng 3: 2, 4, 6, 8 (R26-4); tháng 4: 10–11 (R26-2),
-# 20–21 (R26-1), 25–26 (thêm). Mọi mốc `tzinfo=UTC`; giờ VN = UTC + 7.
+# Ngày dùng riêng: tháng 1: 2 (R26-3), 19 (R26-5), 22, 23 (R26-6); tháng 3: 2, 4, 6, 8 (R26-4), 10, 12, 14 (R26b-1), 16
+# (R26b-2); tháng 4: 10–11 (R26-2), 20–21 (R26-1), 25–26 (thêm). Mọi mốc `tzinfo=UTC`; giờ VN = UTC + 7.
 
 
 @pytest.mark.asyncio
@@ -516,6 +518,48 @@ async def test_tokens_per_ticket_leaf_window(rw: AsyncEngine, mon: AsyncEngine) 
         await seed.llm_call_for(conn, to_leaf, created_at=inside, tokens_in=1000, tokens_out=0)
         await seed.llm_call_for(conn, before_leaf, created_at=inside, tokens_in=500, tokens_out=0)
     assert await q(mon, ai.tokens_per_ticket, 8, 3) == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("fn", "day", "hit", "miss"),
+    [
+        (ai.cache_hit_rate, 10, {"cache_hit": True}, {"cache_hit": False}),
+        (ai.json_invalid_first_try_rate, 12, {"json_valid_first_try": False}, {"json_valid_first_try": True}),
+        (ai.fallback_rate, 14, {"used_fallback": True}, {"used_fallback": False}),
+    ],
+    ids=["cache_hit", "json_invalid", "fallback"],
+)  # fmt: skip
+async def test_call_rates_leaf_window(
+    rw: AsyncEngine, mon: AsyncEngine, fn: Callable[..., Awaitable[Any]], day: int, hit: dict[str, Any],
+    miss: dict[str, Any],
+) -> None:  # fmt: skip
+    """R26b-1 (`_call_rate`): cửa sổ theo LÁ, hai chiều. Cửa sổ ngày `day`/03 UTC. Lá đúng `frm` (tính): 1 lời gọi "trúng" ghi
+    SAU `to`. Lá đúng `to` và lá trước `frm` 1 giờ (không tính): mỗi lá 1 lời gọi "trượt" ghi trong cửa sổ. Kỳ vọng 1/1 = 1,0;
+    lọc theo `c.created_at` ra 0/2 = 0,0."""
+    frm, to = win(day, 3)
+    t_frm, t_to, t_before, inside, after = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await seed.llm_call_for(conn, in_leaf, created_at=after, **hit)
+        await seed.llm_call_for(conn, to_leaf, created_at=inside, **miss)
+        await seed.llm_call_for(conn, before_leaf, created_at=inside, **miss)
+    assert await q(mon, fn, day, 3) == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_intent_model_version_leaf_window(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26b-2: cửa sổ theo LÁ, hai chiều. Cửa sổ ngày 16/03 UTC. Lá đúng `frm`: dòng B3 `model_version="v-in"` ghi SAU `to` →
+    tính. Lá đúng `to` và lá trước `frm` 1 giờ: dòng B3 `"v-out"` ghi trong cửa sổ → không tính. Kỳ vọng "v-in"; lọc theo
+    `a.created_at` ra "v-out"."""
+    frm, to = win(16, 3)
+    t_frm, t_to, t_before, inside, after = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await audit(conn, in_leaf, "B3", "intent_classified", after, layer="llm", model_version="v-in")
+        await audit(conn, to_leaf, "B3", "intent_classified", inside, layer="llm", model_version="v-out")
+        await audit(conn, before_leaf, "B3", "intent_classified", inside, layer="llm", model_version="v-out")
+    assert await q(mon, ai.intent_model_version, 16, 3) == "v-in"
 
 
 @pytest.mark.asyncio
