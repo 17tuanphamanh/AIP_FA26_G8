@@ -3,11 +3,16 @@
 Mọi truy vấn M9 chạy trên role `app_monitor`. Thiếu DSN → `MonitorUnavailable` (route: 503
 `monitor_unavailable`, gắn ở `main.py`; job: bỏ qua). KHÔNG rơi về `engines.main` (app_rw) — rơi về là
 mất rào chỉ-đọc mà không ai biết.
+
+`read_snapshot` (A3, review PR #22): một response dashboard / danh sách cảnh báo = một giao dịch
+`REPEATABLE READ, READ ONLY` → mọi số trong response cùng một snapshot (không lệch nhau khi dữ liệu đang ghi).
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 if TYPE_CHECKING:
     from app.db.session import Engines
@@ -22,3 +27,12 @@ def monitor_engine(engines: "Engines") -> AsyncEngine:
     if engines.monitor is None:
         raise MonitorUnavailable("MONITOR_DATABASE_URL chưa đặt")
     return engines.monitor
+
+
+@asynccontextmanager
+async def read_snapshot(engines: "Engines") -> AsyncIterator[AsyncConnection]:
+    """Connection của engine monitor trong MỘT giao dịch `REPEATABLE READ, READ ONLY` (thiếu DSN → MonitorUnavailable)."""
+    async with monitor_engine(engines).connect() as conn:
+        await conn.execution_options(isolation_level="REPEATABLE READ", postgresql_readonly=True)
+        async with conn.begin():
+            yield conn

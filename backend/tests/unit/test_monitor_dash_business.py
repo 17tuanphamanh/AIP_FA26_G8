@@ -107,7 +107,7 @@ def _docstrings(tree: ast.Module) -> set[int]:
 
 QUERIES_DIR = REPO / "backend" / "app" / "monitor" / "queries"
 # File bắt buộc phải được nhận là "có SQL" — quét glob mà sót file (hoặc nhận nhầm là không có SQL) thì đỏ, không xanh giả.
-D30_REQUIRED = {"ai.py", "business.py", "rules_data.py"}
+D30_REQUIRED = {"ai.py", "alerts.py", "business.py", "rules_data.py"}
 _SQL_WORD = re.compile(r"\b(from|join|where)\b", re.IGNORECASE)
 _SELECT = re.compile(r"\bselect\b", re.IGNORECASE)
 _TICKETS = re.compile(r"\b(from|join)\s+tickets\b", re.IGNORECASE)
