@@ -1,9 +1,11 @@
 """M9-B2 GĐ1 cụm 1: helper cửa sổ ngày (Q-M9-B2-1) + luật tổng hợp chu kỳ ngày 1 `escalation_rate_high`,
 12 `b2_degraded`, 13 `b3_degraded`; cụm 2: luật tổng hợp chu kỳ giờ 14 `llm_budget` — hàm thuần, nhận GIÁ TRỊ
-(loader + hàm A nối ở GĐ2).
+(loader + hàm A nối ở GĐ2); cụm 4a: luật 60 s 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` — hàm thuần CHƯA đăng ký
+`@rule` (đăng ký cùng loader ở GĐ2, Q-M9-B2-10).
 
-Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 12, 13, 14), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ B2),
-Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-7/16/17 (luật 14, đã chốt ở #14, comment 5959974287).
+Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 4, 5, 6, 12, 13, 14; đoạn "Trung vị 7 ngày (luật 4, 6)"), Q-M9-4
+(luật 5: hợp đồng span dự kiến, "đợt" = chuỗi cách nhau < 60 s), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ B2),
+Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-2/5/7/12/16/17 (đã chốt ở #14, comment 5959974287).
 Mọi mốc kỳ vọng là HẰNG tính tay (giờ VN = UTC+7; Tokyo = UTC+9; Berlin CET = UTC+1, CEST = UTC+2), không tính bằng
 chính hàm đang test.
 """
@@ -11,25 +13,32 @@ chính hàm đang test.
 import ast
 import inspect
 import math
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 from app.audit.alerts import check_alert
-from app.domain.alerts import SYSTEM_SUBJECT, AlertDraft
+from app.domain.alerts import SUBJECT_MAX, SYSTEM_SUBJECT, AlertDraft
 from app.monitor import rules
 from app.monitor.queries.business import WeightedRate
 from app.monitor.rules import (
     REGISTRY,
     RuleContext,
+    TicketExit,
+    ToolSpan,
     b2_degraded,
     b3_degraded,
+    breaker_open,
     days_before,
+    e6_spike,
+    e9_spike,
     escalation_rate_high,
     llm_budget,
     prev_day_window,
     rolling_7d_window,
+    spike_hours,
+    spike_since,
 )
 from app.monitor.window import VN_TZ, day_start
 
@@ -319,6 +328,293 @@ def test_registry_llm_budget() -> None:
     assert spec.fn is llm_budget
 
 
+# ---- luật 4 e9_spike, 6 e6_spike (chu kỳ 60 s, Q-M9-B2-2; mốc = first_at, Q-M9-B2-5) ---------------------------------
+
+NOW_H = datetime(2026, 10, 3, 12, 30, tzinfo=UTC)
+H0 = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)  # giờ hiện tại
+H1 = datetime(2026, 10, 3, 11, 0, tzinfo=UTC)
+H3 = datetime(2026, 10, 3, 9, 0, tzinfo=UTC)
+H24 = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)  # giờ cũ nhất được đánh giá
+H25 = datetime(2026, 10, 2, 11, 0, tzinfo=UTC)
+SPIKE_SINCE = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)  # H24 − 168 giờ (7 ngày)
+CTX_H = ctx_at(NOW_H)
+
+SpikeFn = Callable[[Sequence[TicketExit], RuleContext], list[AlertDraft]]
+SPIKE: list[tuple[str, SpikeFn]] = [("e9_spike", e9_spike), ("e6_spike", e6_spike)]
+SPIKE_IDS = [r for r, _ in SPIKE]
+
+
+def ex(tid: str, first_at: datetime, last_at: datetime | None = None) -> TicketExit:
+    return TicketExit(tid, first_at, first_at if last_at is None else last_at, "B9", None)
+
+
+def cases(hour: datetime, n: int) -> list[TicketExit]:
+    """`n` lá ở giờ `hour`, phút 10, 11, … (giữa giờ)."""
+    return [ex(f"t-{hour:%m%d%H}-{i}", hour + timedelta(minutes=10 + i)) for i in range(n)]
+
+
+def one_per_hour(ks: range) -> list[TicketExit]:
+    """Một lá ở phút 30 của mỗi giờ `H0 − k giờ`, k ∈ `ks` — dựng lịch sử cho trung vị."""
+    return [ex(f"h-{k}", H0 - timedelta(hours=k, minutes=-30)) for k in ks]
+
+
+def _starts(drafts: list[AlertDraft]) -> list[datetime]:
+    return [d.window_start for d in drafts]
+
+
+def test_spike_hours_and_since() -> None:
+    """Q-M9-B2-2: giờ hiện tại + 24 giờ trước (25 giờ, cũ → mới); loader GĐ2 đọc từ 168 giờ trước giờ cũ nhất."""
+    hours = spike_hours(CTX_H)
+    assert len(hours) == 25
+    assert (hours[0], hours[1], hours[-1]) == (H24, datetime(2026, 10, 2, 13, 0, tzinfo=UTC), H0)
+    assert spike_since(CTX_H) == SPIKE_SINCE
+    at_mark = spike_hours(ctx_at(datetime(2026, 10, 3, 12, 0, tzinfo=UTC)))  # đúng mốc giờ → giờ đó là giờ hiện tại
+    assert (at_mark[0], at_mark[-1]) == (H24, H0)
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+@pytest.mark.parametrize(("n", "expected"), [(2, []), (3, [H0])], ids=["2-ca", "3-ca"])
+def test_spike_median0_threshold(rule_id: str, fn: SpikeFn, n: int, expected: list[datetime]) -> None:
+    """Trung vị 0: 2 ca → không báo (thẻ B2: "trung vị 0 và 2 ca → không báo"); đúng tối thiểu 3 → báo."""
+    drafts = fn(cases(H0, n), CTX_H)
+    assert _starts(drafts) == expected
+    _ok(rule_id, drafts)
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+@pytest.mark.parametrize(("n", "expected"), [(2, []), (3, []), (4, [H0])], ids=["duoi", "bang-3x1", "vuot"])
+def test_spike_median1_threshold(rule_id: str, fn: SpikeFn, n: int, expected: list[datetime]) -> None:
+    """85 giờ có 1 ca ở `H0 − k giờ`, k = 84…168 (gồm giờ cũ nhất `h − 168`) + 83 giờ trống → trung vị 1,0 (phần tử
+    84 và 85 đều là 1). Đúng bằng 3 × 1 → không báo; hơn 1 → báo."""
+    drafts = fn(one_per_hour(range(84, 169)) + cases(H0, n), CTX_H)
+    assert _starts(drafts) == expected
+    _ok(rule_id, drafts)
+    if drafts:
+        assert drafts[0].value == 4
+        assert dict(drafts[0].detail) == {"count": 4, "median": 1.0, "factor": 3, "minimum": 3}
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_median_excludes_current_hour(rule_id: str, fn: SpikeFn) -> None:
+    """84 giờ 1 ca ở k = 84…167 (k = 168 trống) → trung vị của `[H0 − 168 giờ, H0)` = 0,5; 3 ca ở H0 > 1,5 → báo.
+    Gộp cả H0 vào cửa sổ (85 giờ khác 0) thì trung vị 1,0 → 3 không vượt → mất cảnh báo."""
+    drafts = fn(one_per_hour(range(84, 168)) + cases(H0, 3), CTX_H)
+    assert _starts(drafts) == [H0]
+    assert drafts[0].detail["median"] == 0.5
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_window_is_hour_start_not_now(rule_id: str, fn: SpikeFn) -> None:
+    """`window_start` = đầu giờ (12:00), không phải `ctx.now` (12:30). Mốc có micro giây vẫn về đúng giờ."""
+    data = [
+        ex("a", datetime(2026, 10, 3, 12, 5, 0, 250000, tzinfo=UTC)),
+        ex("b", datetime(2026, 10, 3, 12, 10, 0, 500000, tzinfo=UTC)),
+        ex("c", datetime(2026, 10, 3, 12, 20, 0, 750000, tzinfo=UTC)),
+    ]
+    drafts = fn(data, CTX_H)
+    assert _starts(drafts) == [H0]
+    _ok(rule_id, drafts)
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+@pytest.mark.parametrize(
+    ("third", "expected"),
+    [
+        (datetime(2026, 10, 3, 12, 0, tzinfo=UTC), [H0]),  # đúng mốc 12:00:00 → thuộc giờ 12
+        (datetime(2026, 10, 3, 11, 59, 59, 999999, tzinfo=UTC), []),  # trước mốc 1 µs → thuộc giờ 11
+    ],
+    ids=["dung-moc", "truoc-moc-1us"],
+)
+def test_spike_hour_boundary(rule_id: str, fn: SpikeFn, third: datetime, expected: list[datetime]) -> None:
+    drafts = fn([*cases(H0, 2), ex("bien", third)], CTX_H)
+    assert _starts(drafts) == expected
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_previous_hour_caught(rule_id: str, fn: SpikeFn) -> None:
+    """Worker chết qua mốc giờ: đợt tăng ở 09:xx, lượt chạy lúc 12:30 vẫn báo, khoá = 09:00."""
+    assert _starts(fn(cases(H3, 3), CTX_H)) == [H3]
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+@pytest.mark.parametrize(("hour", "expected"), [(H24, [H24]), (H25, [])], ids=["H24", "H25"])
+def test_spike_24h_plus_current_edge(rule_id: str, fn: SpikeFn, hour: datetime, expected: list[datetime]) -> None:
+    """Giờ cũ nhất được đánh giá là 2026-10-02T12:00Z (24 giờ trước giờ hiện tại); 11:00Z đã ra ngoài."""
+    assert _starts(fn(cases(hour, 3), CTX_H)) == expected
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_two_hours_two_drafts(rule_id: str, fn: SpikeFn) -> None:
+    """Luật tổng hợp: các giờ phân biệt bằng `window_start` → 2 giờ vượt ngưỡng = 2 draft (theo thứ tự thời gian)."""
+    drafts = fn(cases(H1, 3) + cases(datetime(2026, 10, 3, 7, 0, tzinfo=UTC), 3), CTX_H)
+    assert _starts(drafts) == [datetime(2026, 10, 3, 7, 0, tzinfo=UTC), H1]
+    _ok(rule_id, drafts)
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_uses_first_at(rule_id: str, fn: SpikeFn) -> None:
+    """Q-M9-B2-5: mốc = dòng mang mã ĐẦU TIÊN của lá (`first_at`), không phải `last_at`."""
+    data = [
+        ex(f"t-{i}", datetime(2026, 10, 3, 10, 10 + i, tzinfo=UTC), datetime(2026, 10, 3, 12, 10 + i, tzinfo=UTC))
+        for i in range(3)
+    ]
+    assert _starts(fn(data, CTX_H)) == [datetime(2026, 10, 3, 10, 0, tzinfo=UTC)]
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_future_hour_later_caught(rule_id: str, fn: SpikeFn) -> None:
+    """Ca ở 13:xx (lệch đồng hồ) khi now = 12:30 → chưa đánh giá; tới 13:30 thì báo, khoá 13:00 — không mất."""
+    data = cases(datetime(2026, 10, 3, 13, 0, tzinfo=UTC), 3)
+    assert fn(data, CTX_H) == []
+    assert _starts(fn(data, ctx_at(datetime(2026, 10, 3, 13, 30, tzinfo=UTC)))) == [
+        datetime(2026, 10, 3, 13, 0, tzinfo=UTC)
+    ]
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+@pytest.mark.parametrize(
+    "now",
+    [
+        NOW_H,
+        datetime(2026, 10, 3, 12, 59, 59, 999999, tzinfo=UTC),
+        datetime(2026, 10, 3, 13, 10, tzinfo=UTC),  # đã qua giờ mới — 11:00 vẫn trong 24 giờ
+    ],
+)
+def test_spike_rerun_same_key(rule_id: str, fn: SpikeFn, now: datetime) -> None:
+    assert _starts(fn(cases(H1, 3), ctx_at(now))) == [H1]
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_empty(rule_id: str, fn: SpikeFn) -> None:
+    assert fn([], CTX_H) == []
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), SPIKE, ids=SPIKE_IDS)
+def test_spike_shuffled_same_result(rule_id: str, fn: SpikeFn) -> None:
+    data = cases(H1, 3) + cases(datetime(2026, 10, 3, 7, 0, tzinfo=UTC), 3)
+    assert fn(list(reversed(data)), CTX_H) == fn(data, CTX_H)
+
+
+# ---- luật 5 breaker_open (Q-M9-4: hợp đồng span dự kiến; Q-M9-B2-12: subject = spans.name) ---------------------------
+
+T = datetime(2026, 10, 3, 12, 20, tzinfo=UTC)
+AD = "tool:ad.reset_password"
+MAIL = "tool:mail.send"
+
+
+def sp(name: str, at: datetime) -> ToolSpan:
+    return ToolSpan(name=name, started_at=at)
+
+
+def _ok_tool(drafts: list[AlertDraft]) -> None:
+    for d in drafts:
+        assert d.rule_id == "breaker_open"
+        assert d.severity == "warning"
+        assert d.subject != SYSTEM_SUBJECT  # luật theo đối tượng: subject tường minh
+        check_alert(d)
+        assert "audience" not in d.detail
+
+
+def test_breaker_one_span_one_draft() -> None:
+    """Một span `circuit_open` là đủ: breaker đã mở."""
+    [draft] = breaker_open([sp(AD, T)], CTX_H)
+    assert (draft.subject, draft.window_start, draft.value) == (AD, T, 1)
+    assert dict(draft.detail) == {"count": 1}
+    _ok_tool([draft])
+
+
+def test_breaker_no_span() -> None:
+    assert breaker_open([], CTX_H) == []
+
+
+@pytest.mark.parametrize(
+    ("second", "expected"),
+    [
+        (datetime(2026, 10, 3, 12, 20, 59, 999999, tzinfo=UTC), [T]),  # khe < 60 s → cùng đợt
+        (datetime(2026, 10, 3, 12, 21, 0, tzinfo=UTC), [T, datetime(2026, 10, 3, 12, 21, 0, tzinfo=UTC)]),  # = 60 s
+    ],
+    ids=["59.999999s", "60s"],
+)
+def test_breaker_gap_boundary(second: datetime, expected: list[datetime]) -> None:
+    """Q-M9-4: "đợt" = chuỗi cách nhau < 60 s — đúng 60 s là đợt mới."""
+    drafts = breaker_open([sp(AD, T), sp(AD, second)], CTX_H)
+    assert _starts(drafts) == expected
+    _ok_tool(drafts)
+
+
+def test_breaker_gap_from_previous_span() -> None:
+    """Khe đo giữa hai span LIỀN NHAU (50 s, 50 s), không đo từ span đầu đợt (100 s)."""
+    data = [
+        sp(AD, T),
+        sp(AD, datetime(2026, 10, 3, 12, 20, 50, tzinfo=UTC)),
+        sp(AD, datetime(2026, 10, 3, 12, 21, 40, tzinfo=UTC)),
+    ]
+    [draft] = breaker_open(data, CTX_H)
+    assert (draft.window_start, draft.value) == (T, 3)
+
+
+def test_breaker_two_tools_same_window() -> None:
+    """Luật theo đối tượng: 2 tool cùng thời điểm → 2 draft (gộp = bỏ sót tool thứ hai)."""
+    drafts = breaker_open([sp(AD, T), sp(MAIL, T)], CTX_H)
+    assert sorted(d.subject for d in drafts) == [AD, MAIL]
+    assert _starts(drafts) == [T, T]
+
+
+def test_breaker_same_tool_two_bursts() -> None:
+    drafts = breaker_open([sp(AD, T), sp(AD, datetime(2026, 10, 3, 12, 10, tzinfo=UTC))], CTX_H)
+    assert _starts(drafts) == [datetime(2026, 10, 3, 12, 10, tzinfo=UTC), T]
+
+
+def test_breaker_subject_length() -> None:
+    """subject = tên khi 1…64 ký tự; dài hơn → `_bounded("tool", …)` (sha256 hex, 40 ký tự đầu — tính sẵn ngoài code
+    bằng `sha256sum` của chuỗi 65 chữ `a`); rỗng → `tool:` (không trùng SYSTEM_SUBJECT)."""
+    n64, n65, n128 = "a" * 64, "a" * 65, "b" * 128
+    drafts = breaker_open([sp(n64, T), sp(n65, T), sp(n128, T), sp("", T)], CTX_H)
+    subjects = [d.subject for d in drafts]
+    assert subjects[0] == n64
+    assert subjects[1] == "tool#635361c48bb9eab14198e76ea8ab7f1a41685d6a"
+    assert subjects[2].startswith("tool#") and len(subjects[2]) <= SUBJECT_MAX
+    assert subjects[2] != subjects[1]
+    assert subjects[3] == "tool:"
+    _ok_tool(drafts)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        # span cuối đúng now − 24 giờ → còn trong lookback (tính cả mốc biên)
+        ([datetime(2026, 10, 2, 12, 30, tzinfo=UTC)], [datetime(2026, 10, 2, 12, 30, tzinfo=UTC)]),
+        # sớm hơn 1 µs → ra ngoài
+        ([datetime(2026, 10, 2, 12, 29, 59, 999999, tzinfo=UTC)], []),
+        # đợt bắt đầu trước mốc, span cuối trong mốc → báo, khoá = span đầu đợt (ổn định giữa các lượt)
+        (
+            [datetime(2026, 10, 2, 12, 29, 30, tzinfo=UTC), datetime(2026, 10, 2, 12, 30, 20, tzinfo=UTC)],
+            [datetime(2026, 10, 2, 12, 29, 30, tzinfo=UTC)],
+        ),
+    ],
+    ids=["cuoi-dung-moc", "truoc-moc-1us", "vat-qua-moc"],
+)
+def test_breaker_lookback(data: list[datetime], expected: list[datetime]) -> None:
+    assert _starts(breaker_open([sp(AD, t) for t in data], CTX_H)) == expected
+
+
+def test_breaker_shuffled_and_duplicate_times() -> None:
+    data = [
+        sp(AD, datetime(2026, 10, 3, 12, 21, 40, tzinfo=UTC)),
+        sp(AD, T),
+        sp(AD, datetime(2026, 10, 3, 12, 20, 50, tzinfo=UTC)),
+        sp(AD, T),  # trùng thời điểm → cùng đợt
+    ]
+    [draft] = breaker_open(data, CTX_H)
+    assert (draft.window_start, draft.value) == (T, 4)
+
+
+def test_breaker_future_span_kept() -> None:
+    """Không chặn trên theo `now` (Q-M9-B1-12): span sau `now` (lệch đồng hồ) vẫn báo."""
+    future = datetime(2026, 10, 3, 12, 35, tzinfo=UTC)
+    assert _starts(breaker_open([sp(AD, future)], CTX_H)) == [future]
+
+
 # ---- chung -------------------------------------------------------------------------------------------------------
 
 
@@ -346,7 +642,7 @@ def test_aggregate_rules_use_system_subject() -> None:
     bare = [k.value.lineno for k in subjects if isinstance(k.value, ast.Constant) and k.value.value == ""]
     assert bare == []
     named = [k for k in subjects if isinstance(k.value, ast.Name) and k.value.id == "SYSTEM_SUBJECT"]
-    assert len(named) >= 3  # luật 1 + helper luật 12/13 + luật 14 — quét không rỗng
+    assert len(named) >= 4  # luật 1 + helper luật 12/13 + luật 14 + helper luật 4/6 — quét không rỗng
 
 
 def _is_type_checking(node: ast.If) -> bool:

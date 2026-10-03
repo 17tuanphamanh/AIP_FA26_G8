@@ -17,6 +17,7 @@ import inspect
 import math
 import statistics
 from bisect import bisect_left, bisect_right
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -32,7 +33,7 @@ from app.domain.alerts import (
     bruteforce_alert,
     bruteforce_subject,
 )
-from app.monitor.window import bucket_start, day_start
+from app.monitor.window import bucket_start, day_start, hour_start
 
 if TYPE_CHECKING:  # chỉ lấy KIỂU của luồng A (một nguồn); lúc chạy không nạp module I/O (sqlalchemy) vào luật thuần
     from app.monitor.queries.business import WeightedRate
@@ -489,3 +490,106 @@ def llm_budget(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
             )
         ]  # fmt: skip
     return []
+
+
+# ---- luật B2 chu kỳ 60 giây: 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` (chốt Q-M9-B2-2, 5, 12 ở #14) -------------
+#
+# CHƯA gắn `@rule`: đăng ký "minute" mà chưa có loader → `MissingLoaderError` → job phút ra `luật_lỗi` mỗi phút
+# (Q-M9-B2-10). `@rule` (4: dev, 5: ops, 6: manager — kế hoạch chung mục 6) và loader vào CÙNG một commit ở GĐ2.
+
+SPIKE_RECHECK_HOURS = 24  # Q-M9-B2-2: mỗi lượt đánh giá lại 24 giờ trước + giờ hiện tại
+SPIKE_FACTOR = 3  # luật 4, 6: count > 3 × trung vị
+SPIKE_MINIMUM = 3  # luật 4, 6: tối thiểu 3 ca
+HOUR = timedelta(hours=1)
+BREAKER_GAP = timedelta(seconds=60)  # luật 5 (Q-M9-4): "đợt" = chuỗi span cách nhau < 60 s
+
+
+def spike_hours(ctx: RuleContext) -> list[datetime]:
+    """Các giờ luật 4/6 đánh giá ở lượt này, cũ → mới: `hour_start(now) − 24 giờ … hour_start(now)` (25 giờ)."""
+    current = hour_start(ctx.now)
+    return [current - k * HOUR for k in range(SPIKE_RECHECK_HOURS, -1, -1)]
+
+
+def spike_since(ctx: RuleContext) -> datetime:
+    """Mốc dưới loader 4/6 (GĐ2) đọc: 168 giờ trước giờ cũ nhất được đánh giá — đủ trung vị cho mọi giờ."""
+    return spike_hours(ctx)[0] - HOURS_7D * HOUR
+
+
+def _spike_drafts(rule_id: str, data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
+    per_hour = Counter(hour_start(t.first_at) for t in data)
+    drafts: list[AlertDraft] = []
+    for h in spike_hours(ctx):
+        count = per_hour[h]
+        median = hourly_median([per_hour[h - k * HOUR] for k in range(1, HOURS_7D + 1)])  # [h − 168 giờ, h)
+        if spike(count, median, SPIKE_FACTOR, SPIKE_MINIMUM):
+            drafts.append(
+                AlertDraft(
+                    rule_id=rule_id, subject=SYSTEM_SUBJECT, window_start=h, severity="warning", value=count,
+                    detail={"count": count, "median": median, "factor": SPIKE_FACTOR, "minimum": SPIKE_MINIMUM},
+                )
+            )  # fmt: skip
+    return drafts
+
+
+def e9_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 4 — số lá E9 trong một giờ > 3 × trung vị theo giờ của 168 giờ TRƯỚC giờ đó (giờ trống = 0) VÀ ≥ 3 ca →
+    dev. Đúng bằng ngưỡng → không báo (kế hoạch chung mục 6).
+
+    Mốc của lá = `first_at` (MIN `created_at` các dòng E9 của lá, `_ticket_exits` qua `V_LEAF`), không phải
+    `tickets.created_at`, không gọi `e9_count` của A2 (Q-M9-B2-5). Chạy mỗi phút, đánh giá lại 24 giờ trước + giờ hiện
+    tại (Q-M9-B2-2): worker chết qua mốc giờ vẫn bắt được; `window_start` = đầu giờ được đánh giá (không phải
+    `ctx.now`) → chạy lại không trùng. Với một giờ cố định, cửa sổ trung vị cố định và số ca chỉ tăng → không dao động.
+    Giờ sau giờ hiện tại (lệch đồng hồ) chưa đánh giá; tới giờ đó thì được đánh giá, không mất.
+
+    Hạn chế đã biết (Q-M9-B2-2, không xử lý ở B2): đợt tăng vắt qua mốc giờ có thể không vượt ngưỡng ở cả hai giờ."""
+    return _spike_drafts("e9_spike", data, ctx)
+
+
+def e6_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 6 — như luật 4 với lá E6 → Trưởng BP. E6 ghi lúc HẾT HẠN chờ duyệt (sau `tickets.created_at` cả giờ
+    SLA): đếm theo giờ ra mã, đếm theo giờ tạo ticket thì giờ đã đánh giá không bao giờ thấy ca đến muộn (Q-M9-B2-5).
+    Cùng hạn chế đã biết của luật 4."""
+    return _spike_drafts("e6_spike", data, ctx)
+
+
+@dataclass(frozen=True)
+class ToolSpan:
+    """Luật 5 — một span tool `circuit_open`. Hợp đồng dự kiến (Q-M9-4): `spans.span_type='tool'`, `status='error'`,
+    `attributes.error='circuit_open'`. `tools/registry.py::_span` hiện chỉ ghi log → loader GĐ2 trả `Pending` theo
+    `is_pending("tool_spans")`; hàm luật không biết gì về pending (loader trả `Pending` → evaluator không gọi luật)."""
+
+    name: str  # spans.name (≤ 128 ký tự)
+    started_at: datetime
+
+
+def breaker_open(data: Sequence[ToolSpan], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 5 — mỗi ĐỢT `circuit_open` của một tool một cảnh báo → vận hành. Đợt = chuỗi span cùng tên mà hai span
+    LIỀN NHAU cách nhau < 60 s (đúng 60 s là đợt mới). `window_start` = `started_at` của span đầu đợt (lấy từ DB).
+
+    subject = `spans.name` (Q-M9-B2-12); dài hơn 64 ký tự hoặc rỗng → `_bounded("tool", …)` (rỗng thì thành `tool:`,
+    không trùng `SYSTEM_SUBJECT`). Báo khi span CUỐI của đợt còn trong lookback 24 giờ; không chặn trên theo `now`
+    (Q-M9-B1-12). Loader đọc từ `now − 24 giờ` nên đợt vắt qua mốc lookback có thể ra khoá mới — báo thừa một lần,
+    đã chấp nhận (Q-M9-B2-12). Breaker khoá theo hệ thống đích: nhiều tool cùng hệ thống → mỗi tool một cảnh báo
+    (báo thừa, không bỏ sót)."""
+    by_tool: dict[str, list[datetime]] = {}
+    for s in data:
+        by_tool.setdefault(s.name, []).append(s.started_at)
+    drafts: list[AlertDraft] = []
+    for name, times in by_tool.items():
+        times.sort()
+        bursts: list[list[datetime]] = []
+        for t in times:
+            if bursts and t - bursts[-1][-1] < BREAKER_GAP:
+                bursts[-1].append(t)
+            else:
+                bursts.append([t])
+        subject = name if 0 < len(name) <= SUBJECT_MAX else _bounded("tool", name)
+        for burst in bursts:
+            if _recent(burst[-1], ctx):
+                drafts.append(
+                    AlertDraft(
+                        rule_id="breaker_open", subject=subject, window_start=burst[0], severity="warning",
+                        value=len(burst), detail={"count": len(burst)},
+                    )
+                )  # fmt: skip
+    return _unique(drafts)
