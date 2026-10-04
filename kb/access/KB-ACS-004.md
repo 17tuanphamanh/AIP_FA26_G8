@@ -1,53 +1,57 @@
 ---
-doc_id: KB-ACS-003
+doc_id: KB-ACS-004
 version: 1
 request_type: access
-doc_type: policy
+doc_type: faq
 owner: it_mgr01
 updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
-title: "Quyền truy cập có thời hạn và gia hạn quyền"
-distractor: false
-tags: [access, quyền có thời hạn, gia hạn quyền, thư mục]
+title: "Thu hồi quyền khi chuyển phòng ban"
+distractor: true
+tags: [access, thu hồi quyền, chuyển phòng ban, quyền truy cập]
 ---
 
-## Quyền truy cập có thời hạn
+## Khi nào cần xem lại quyền truy cập
 
-Một yêu cầu quyền truy cập có thể liên quan đến việc sử dụng tài nguyên trong một khoảng thời gian nhất định.
+Khi người dùng thay đổi phòng ban, các quyền truy cập hiện có cần được xem xét lại để xác định quyền nào còn phù hợp với công việc hiện tại.
 
-Nguồn dữ liệu hiện tại chưa cung cấp số ngày cụ thể của quyền truy cập có thời hạn. Vì vậy tài liệu này không tự quy định quyền được cấp trong bao nhiêu ngày.
+Việc xem lại quyền sau khi chuyển phòng ban khác với việc xin một quyền truy cập mới.
 
-Nếu cần sử dụng một thời hạn cụ thể trong KB, giá trị đó cần được xác nhận bằng fact hoặc nguồn cấu hình hợp lệ trước khi bổ sung.
+Người dùng không nên tự giữ lại, cấp thêm hoặc thu hồi quyền nếu chưa xác định được chính sách áp dụng cho tài nguyên liên quan.
 
-Không tự sử dụng một số ngày chưa có trong kb-facts.md.
+Nếu không rõ một quyền truy cập còn cần thiết hay không, yêu cầu cần được chuyển cho IT kiểm tra.
 
-## Tài nguyên liên quan đến quyền truy cập
+## Phòng ban sở hữu các thư mục
 
-Các tài nguyên hiện tại gồm engineering/specs, finance/Q3, finance/public-reports, hr/salaries và shared/templates.
+engineering/specs thuộc Engineering.
 
-Mỗi tài nguyên có mức độ nhạy và phòng ban sở hữu riêng. Khi yêu cầu quyền có thời hạn hoặc gia hạn quyền, cần xác định đúng tài nguyên liên quan.
+finance/Q3 và finance/public-reports thuộc Finance.
 
-Không tự thay đổi sensitivity hoặc owner_department của tài nguyên khi tạo yêu cầu.
+hr/salaries thuộc HR.
 
-Nếu tài nguyên không có trong danh sách hiện tại, dữ liệu nguồn chưa đủ để xác định chính sách áp dụng.
+shared/templates thuộc IT.
 
-## Gia hạn quyền truy cập
+Phòng ban sở hữu tài nguyên là thông tin dùng để xác định đơn vị quản lý thư mục.
 
-Khi người dùng cần tiếp tục sử dụng một tài nguyên sau thời hạn hiện tại, yêu cầu gia hạn cần gắn với đúng tài nguyên mà người dùng đang sử dụng.
+Thông tin này không đồng nghĩa với việc mọi người dùng thuộc phòng ban đó tự động có quyền truy cập vào tài nguyên.
 
-Nguồn hiện tại chưa xác định thời điểm phải gửi yêu cầu gia hạn, số ngày được gia hạn hoặc số lần được phép gia hạn.
+## Xem xét quyền sau khi chuyển phòng ban
 
-Vì vậy tài liệu này không tự ghi các giá trị như gia hạn trước một số ngày hoặc kéo dài quyền thêm một số ngày cụ thể.
+Sau khi có thay đổi phòng ban, quyền truy cập vào các tài nguyên đã được cấp trước đó cần được kiểm tra lại.
 
-Các con số đó chỉ được thêm khi đã có fact tương ứng.
+Không nên tự kết luận rằng toàn bộ quyền phải bị thu hồi hoặc toàn bộ quyền được giữ nguyên.
 
-## Phê duyệt yêu cầu gia hạn
+Việc xử lý cần dựa trên chính sách áp dụng cho tài nguyên và nhu cầu truy cập hiện tại.
 
-Đối với yêu cầu thuộc quy trình cần duyệt, yêu cầu được duyệt trong 30 phút.
+Nếu chưa đủ thông tin để xác định quyền nào cần giữ hoặc thu hồi, người dùng không nên tự thay đổi quyền truy cập.
 
-Nguồn hiện tại chưa xác định người duyệt yêu cầu gia hạn hoặc điều kiện chi tiết để một yêu cầu gia hạn được chấp thuận.
+## Khi cần hỗ trợ
+
+Nếu không xác định được quyền nào cần được giữ hoặc thu hồi sau khi thay đổi phòng ban, người dùng cần liên hệ IT.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Nếu cần bổ sung thời hạn quyền, thời điểm gia hạn hoặc người duyệt, phải có thêm nguồn hợp lệ trước khi sửa bài.
+Khi gửi yêu cầu, cần ghi đúng tài nguyên liên quan để IT có thể kiểm tra quyền truy cập.
+
+Không tự tạo tên thư mục, không thay đổi mức độ nhạy của tài nguyên và không tự quyết định quyền truy cập khi chưa có thông tin xác nhận.

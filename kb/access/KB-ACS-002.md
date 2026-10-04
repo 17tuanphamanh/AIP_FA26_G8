@@ -14,7 +14,7 @@ tags: [access, thư mục, độ nhạy, phê duyệt]
 
 ## Các mức độ nhạy của thư mục
 
-Danh sách tài nguyên hiện tại sử dụng ba mức độ nhạy là low, medium và high.
+Các thư mục hiện tại sử dụng ba mức độ nhạy là low, medium và high.
 
 engineering/specs có mức độ nhạy medium.
 
@@ -22,38 +22,38 @@ finance/Q3 và hr/salaries có mức độ nhạy high.
 
 finance/public-reports và shared/templates có mức độ nhạy low.
 
-Mức độ nhạy phải được lấy đúng theo danh sách tài nguyên. Không tự thay đổi sensitivity dựa trên tên thư mục hoặc dựa trên đánh giá chủ quan về nội dung.
+Khi xử lý yêu cầu truy cập, cần sử dụng đúng mức độ nhạy đã được gán cho từng thư mục. Không tự thay đổi mức độ nhạy dựa trên tên thư mục hoặc nội dung suy đoán.
 
 ## Phòng ban sở hữu thư mục
 
-engineering/specs thuộc phòng Engineering.
+engineering/specs thuộc Engineering.
 
-finance/Q3 và finance/public-reports thuộc phòng Finance.
+finance/Q3 và finance/public-reports thuộc Finance.
 
-hr/salaries thuộc phòng HR.
+hr/salaries thuộc HR.
 
-shared/templates thuộc phòng IT.
+shared/templates thuộc IT.
 
-owner_department và sensitivity là hai thông tin khác nhau. Ví dụ, finance/Q3 và finance/public-reports đều thuộc Finance nhưng lần lượt có mức high và low.
+Phòng ban sở hữu và mức độ nhạy là hai thông tin riêng biệt.
 
-Vì vậy không nên suy luận mức độ nhạy chỉ từ phòng ban sở hữu.
+Ví dụ, finance/Q3 và finance/public-reports cùng thuộc Finance nhưng có mức độ nhạy khác nhau. Vì vậy không nên xác định mức độ nhạy chỉ dựa trên phòng ban sở hữu.
 
-## Ai duyệt quyền truy cập
+## Phê duyệt quyền truy cập
 
-Nguồn dữ liệu hiện tại chưa xác định người hoặc vai trò cụ thể chịu trách nhiệm duyệt quyền đối với từng thư mục.
+Yêu cầu quyền truy cập cần được xử lý theo chính sách áp dụng cho tài nguyên tương ứng.
 
-Do đó tài liệu này không khẳng định rằng trưởng phòng, quản lý trực tiếp, IT Manager hoặc owner_department là người duyệt.
+Yêu cầu được duyệt trong 30 phút.
 
-Đối với yêu cầu thuộc quy trình cần duyệt, yêu cầu được duyệt trong 30 phút.
+Thông tin hiện có về thư mục gồm đường dẫn, mức độ nhạy và phòng ban sở hữu. Những thông tin này cần được sử dụng đúng khi tạo và kiểm tra yêu cầu truy cập.
 
-SLA 30 phút chỉ xác định thời gian duyệt. Giá trị này không cho biết danh tính hoặc vai trò của người duyệt.
+Không tự thay đổi tài nguyên hoặc mức độ nhạy để làm thay đổi cách xử lý yêu cầu.
 
 ## Khi chưa xác định được người duyệt
 
-Nếu cần biết chính xác ai duyệt quyền cho thư mục low, medium hoặc high, cần sử dụng thêm nguồn dữ liệu hoặc cấu hình xác định quy tắc phê duyệt.
-
-Không tự suy luận rằng phòng ban sở hữu tài nguyên chính là người duyệt.
+Nếu người dùng chưa xác định được yêu cầu quyền cần được chuyển cho ai, cần liên hệ IT để được hướng dẫn.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Thông tin người duyệt chỉ nên được bổ sung vào KB sau khi có nguồn hợp lệ xác nhận.
+Không tự chỉ định một cá nhân hoặc một vai trò làm người duyệt nếu chưa có thông tin được xác nhận.
+
+Khi gửi yêu cầu, người dùng cần ghi đúng đường dẫn thư mục cần truy cập để IT có thể xác định tài nguyên liên quan.

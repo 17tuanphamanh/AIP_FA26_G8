@@ -4,7 +4,7 @@ version: 1
 request_type: software
 doc_type: howto
 owner: it_mgr01
-updated_at: 2026-10-03
+updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
 title: "Cập nhật phiên bản phần mềm đã cài"
@@ -12,40 +12,42 @@ distractor: true
 tags: [software, cập nhật, phiên bản, phần mềm đã cài]
 ---
 
-## Phần mềm thuộc catalog hiện tại
+## Xác định đúng phần mềm cần cập nhật
 
-Catalog hiện tại gồm 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code và Zoom Workplace.
+Khi cần cập nhật phần mềm đã cài, trước tiên người dùng cần xác định đúng phần mềm đang sử dụng.
 
-Khi người dùng hỏi về cập nhật phần mềm, trước tiên cần xác định đúng tên phần mềm đang nói tới.
+Danh mục hiện tại gồm 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code và Zoom Workplace.
 
-Nếu phần mềm không có trong danh sách này, dữ liệu hiện tại chỉ cho phép xác định đó là phần mềm ngoài danh mục. Không sử dụng tài liệu này để tự coi một phần mềm ngoài danh mục là phần mềm đã có trong catalog.
+Yêu cầu cập nhật một phần mềm đã cài cần được phân biệt với yêu cầu cài một phần mềm mới hoặc yêu cầu sử dụng phần mềm ngoài danh mục.
 
-## Trạng thái phê duyệt của phần mềm
+Không sử dụng tên của một phần mềm khác để thay cho phần mềm thực tế cần cập nhật.
 
-Adobe Acrobat Pro, AutoCAD và Microsoft Project có `requires_approval: true`.
+## Phân biệt các nhóm phần mềm
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace có `requires_approval: false`.
+Adobe Acrobat Pro, AutoCAD và Microsoft Project là các phần mềm cần phê duyệt khi cài và thuộc nhóm phần mềm có phí.
 
-Đây là trạng thái được ghi trong catalog hiện tại.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace không cần phê duyệt khi cài và thuộc nhóm phần mềm miễn phí.
 
-Tuy nhiên, danh sách giá trị hợp lệ không nói rằng việc cập nhật một phần mềm đã cài có giữ nguyên hay thay đổi yêu cầu phê duyệt này. Vì vậy bài này không tự kết luận rằng cập nhật luôn cần duyệt hoặc luôn không cần duyệt.
+Khi xử lý yêu cầu cập nhật, người dùng cần xác định đúng phần mềm trước khi tiếp tục.
+
+Không nên áp dụng thông tin của một phần mềm cho một phần mềm khác chỉ vì cả hai đều có trong danh mục.
 
 ## Phiên bản phần mềm
 
-Danh sách giá trị hợp lệ hiện tại không cung cấp số phiên bản của bất kỳ phần mềm nào trong catalog.
+Danh mục hiện tại không quy định số phiên bản cụ thể cho các phần mềm trong danh sách.
 
-Vì vậy không ghi rằng 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code hoặc Zoom Workplace phải được cập nhật lên một phiên bản cụ thể.
+Do đó, người dùng không nên tự ghi một số phiên bản cụ thể vào yêu cầu nếu chưa có thông tin được xác nhận.
 
-Không tự thêm số phiên bản, ngày phát hành hoặc phiên bản tối thiểu nếu chưa có fact hoặc nguồn hợp lệ.
+Yêu cầu nên nêu rõ phần mềm đang cần cập nhật thay vì tự suy đoán phiên bản phải sử dụng.
 
-Nếu cần ghi một số phiên bản vào KB, thông tin đó cần được xác nhận trước.
+Nếu cần xác định phiên bản cụ thể, thông tin đó cần được kiểm tra trước khi tiếp tục xử lý yêu cầu.
 
-## Giới hạn của tài liệu hiện tại
+## Phân biệt cập nhật với cài mới
 
-Nguồn hiện tại không mô tả thao tác cập nhật phần mềm, vị trí nút cập nhật, nguồn tải bản cập nhật hoặc cách xử lý khi cập nhật thất bại.
+Cập nhật phần mềm đã cài và cài một phần mềm mới là hai loại yêu cầu khác nhau.
 
-Vì vậy tài liệu này chỉ xác định phạm vi các phần mềm có trong catalog và trạng thái `requires_approval` hiện có.
+Nếu phần mềm không có trong danh mục hiện tại, yêu cầu đó không nên được xử lý như một bản cập nhật của một phần mềm đã được duyệt sẵn.
 
-Các bước cập nhật kỹ thuật chỉ nên được bổ sung khi có tài liệu nguồn mô tả chính xác cách cập nhật phần mềm.
+Nếu phần mềm đã có trong danh mục, người dùng cần ghi đúng tên phần mềm và mô tả rằng yêu cầu liên quan đến cập nhật phiên bản.
 
-Bài này được đánh dấu là tài liệu gây nhiễu để phân biệt yêu cầu cập nhật phần mềm với yêu cầu cài mới.
+Việc phân biệt đúng loại yêu cầu giúp tránh nhầm lẫn giữa cài mới, cập nhật và yêu cầu phần mềm ngoài danh mục.

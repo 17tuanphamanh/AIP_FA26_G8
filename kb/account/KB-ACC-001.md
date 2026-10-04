@@ -4,46 +4,46 @@ version: 1
 request_type: account
 doc_type: howto
 owner: it_mgr01
-updated_at: 2026-10-03
+updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
-title: Tự đặt lại mật khẩu tài khoản cá nhân
+title: "Tự đặt lại mật khẩu tài khoản cá nhân"
 distractor: false
 tags: [account, mật khẩu, đặt lại mật khẩu, tài khoản cá nhân]
 ---
 
-## Khi nào nên dùng quy trình đặt lại mật khẩu cá nhân
+## Khi nào sử dụng quy trình đặt lại mật khẩu cá nhân
 
-Quy trình này dành cho người dùng cần xử lý mật khẩu của chính tài khoản cá nhân đang được mình sử dụng. Ví dụ, nv001 là Kế toán viên thuộc phòng Finance và đang có trạng thái active. nv002 là Kỹ sư phần mềm thuộc phòng Engineering và cũng đang có trạng thái active.
+Quy trình này dành cho người dùng cần xử lý mật khẩu của chính tài khoản cá nhân mình đang sử dụng.
 
-Khi một người dùng như nv001 hoặc nv002 gặp vấn đề với mật khẩu của chính tài khoản mình, cần sử dụng quy trình dành cho tài khoản cá nhân. Không nên sử dụng quy trình này để yêu cầu đặt lại mật khẩu cho đồng nghiệp, tài khoản dịch vụ hoặc tài khoản có quyền đặc biệt.
+Trước khi thực hiện, người dùng cần xác định đúng tài khoản và đúng hệ thống đang gặp vấn đề. Không nên sử dụng quy trình dành cho tài khoản cá nhân để yêu cầu thay đổi mật khẩu cho đồng nghiệp, tài khoản dịch vụ hoặc tài khoản có quyền đặc biệt.
 
-Trước khi gửi yêu cầu, người dùng cần xác định đúng tài khoản đang gặp vấn đề và đúng hệ thống mình không thể đăng nhập.
+Nếu người dùng chỉ gặp vấn đề ở một hệ thống cụ thể, cần mô tả rõ hệ thống đó thay vì kết luận ngay rằng toàn bộ tài khoản có lỗi mật khẩu.
 
-## Cách gửi yêu cầu đặt lại mật khẩu
+## Thực hiện yêu cầu đặt lại mật khẩu
 
-Người dùng gửi yêu cầu qua hệ thống hỗ trợ IT và mô tả rõ tài khoản cá nhân nào đang gặp vấn đề. Không gửi mật khẩu hiện tại, mật khẩu cũ hoặc thông tin bí mật trong nội dung yêu cầu.
+Người dùng sử dụng chức năng đặt lại mật khẩu dành cho tài khoản cá nhân và cung cấp các thông tin mà hệ thống yêu cầu.
 
-Nếu hệ thống yêu cầu xác minh danh tính hoặc bổ sung thông tin, người dùng cần cung cấp đúng thông tin của chính tài khoản mình. Không sử dụng user_id của người khác để yêu cầu đặt lại mật khẩu.
+Không gửi mật khẩu hiện tại, mật khẩu cũ hoặc thông tin bí mật trong phần mô tả yêu cầu.
 
-Ví dụ, nv001 chỉ nên yêu cầu xử lý tài khoản của nv001. Tương tự, nv002 chỉ nên sử dụng quy trình này cho tài khoản của chính mình.
+Nếu hệ thống yêu cầu bổ sung thông tin, người dùng cần cung cấp thông tin của chính tài khoản mình. Không sử dụng thông tin của người khác để thực hiện yêu cầu đặt lại mật khẩu.
 
-Nếu không xác định được nguyên nhân lỗi đăng nhập, người dùng nên ghi lại thông báo lỗi để IT kiểm tra thay vì tự thử nhiều quy trình khác nhau.
+Nếu có thông báo lỗi trong quá trình thực hiện, người dùng nên ghi lại nội dung thông báo để phục vụ việc kiểm tra.
 
-## Sau khi mật khẩu được đặt lại
+## Sau khi đặt lại mật khẩu
 
 Sau khi quá trình đặt lại mật khẩu hoàn tất, người dùng đăng nhập lại bằng thông tin mới theo hướng dẫn của hệ thống.
 
-Nếu tài khoản vẫn không thể đăng nhập, cần kiểm tra lại trạng thái tài khoản. Trong hệ thống hiện có các trạng thái active, probation, disabled và terminated. Không nên coi mọi trường hợp đăng nhập thất bại đều là lỗi mật khẩu.
+Nếu vẫn không thể đăng nhập, cần kiểm tra thêm trạng thái của tài khoản. Hệ thống có thể có các trạng thái khác nhau như đang hoạt động, thử việc, bị vô hiệu hóa hoặc đã nghỉ việc.
 
-Ví dụ, nv003 có trạng thái probation và nv004 có trạng thái disabled. Những trường hợp này có thể cần IT kiểm tra thêm thay vì chỉ thực hiện lại quy trình đặt lại mật khẩu.
+Không nên coi mọi trường hợp không đăng nhập được đều là lỗi mật khẩu. Một số trạng thái tài khoản cần được IT kiểm tra trước khi tiếp tục xử lý.
 
-Không chia sẻ mật khẩu mới trong ticket, nhóm chat hoặc cho người dùng khác.
+Không chia sẻ mật khẩu mới trong ticket, nhóm chat hoặc các kênh trao đổi chung.
 
 ## Khi nào cần liên hệ IT
 
-Người dùng cần liên hệ IT khi không thể hoàn tất quy trình đặt lại mật khẩu, không xác định được trạng thái tài khoản hoặc vẫn không đăng nhập được sau khi thực hiện đúng hướng dẫn.
+Người dùng cần liên hệ IT khi không thể hoàn tất việc đặt lại mật khẩu, vẫn không thể đăng nhập sau khi đặt lại hoặc không xác định được trạng thái tài khoản.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Trong yêu cầu hỗ trợ, người dùng nên cung cấp user_id, hệ thống đang gặp vấn đề và nội dung thông báo lỗi nếu có. Không gửi mật khẩu hoặc thông tin bí mật cho IT.
+Khi gửi yêu cầu, nên cung cấp tên hệ thống đang gặp vấn đề và nội dung thông báo lỗi nếu có. Không cung cấp mật khẩu hoặc thông tin bí mật cho IT.
