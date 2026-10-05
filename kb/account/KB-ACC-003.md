@@ -4,44 +4,50 @@ version: 1
 request_type: account
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-10-03
+updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
-title: Quy trình đặt lại mật khẩu tài khoản quản trị
+title: "Quy trình đặt lại mật khẩu tài khoản quản trị"
 distractor: false
-tags: [account, tài khoản quản trị, tài khoản đặc quyền, mật khẩu, phê duyệt]
+tags: [account, tài khoản quản trị, mật khẩu, phê duyệt]
 ---
 
-## Tài khoản đặc quyền là gì
+## Khi nào áp dụng quy trình này
 
-Một số tài khoản trong hệ thống có quyền đặc biệt và không nên được xử lý giống tài khoản cá nhân thông thường.
+Quy trình này áp dụng cho yêu cầu đặt lại mật khẩu của tài khoản có quyền quản trị hoặc quyền đặc biệt.
 
-Trong danh sách giá trị hợp lệ, svc_backup là Service account thuộc bộ phận IT và được đánh dấu is_privileged_account là true. Đây là ví dụ về tài khoản cần được xử lý cẩn thận hơn khi có yêu cầu liên quan đến mật khẩu.
+Những tài khoản này không nên được xử lý giống tài khoản cá nhân thông thường. Người dùng không sử dụng quy trình tự đặt lại mật khẩu cá nhân để xử lý tài khoản quản trị.
 
-Không sử dụng quy trình tự đặt lại mật khẩu tài khoản cá nhân cho svc_backup hoặc tài khoản có quyền đặc biệt tương tự.
+Trước khi gửi yêu cầu, cần xác định đúng tài khoản cần xử lý và mô tả rõ lý do cần đặt lại mật khẩu.
+
+Không gửi mật khẩu hiện tại, mật khẩu cũ hoặc thông tin bí mật trong nội dung yêu cầu.
 
 ## Vì sao yêu cầu cần được phê duyệt
 
-Yêu cầu đặt lại mật khẩu cho tài khoản có quyền đặc biệt cần được đưa qua bước phê duyệt trước khi thực hiện.
+Đặt lại mật khẩu tài khoản quản trị có thể ảnh hưởng đến quyền truy cập vào các chức năng quan trọng của hệ thống.
 
-Việc phê duyệt giúp tránh thay đổi thông tin xác thực của tài khoản quan trọng mà chưa được kiểm tra. Người dùng không nên tìm cách bỏ qua bước này bằng cách gửi yêu cầu dưới dạng tài khoản cá nhân thông thường.
+Vì vậy, yêu cầu cần được xem xét và phê duyệt trước khi thực hiện.
 
-Tài liệu hiện tại không xác định cụ thể người nào là người duyệt, vì vậy không nên tự ghi tên người duyệt vào bài KB.
+Người dùng không nên tìm cách bỏ qua bước phê duyệt bằng cách gửi yêu cầu dưới dạng đặt lại mật khẩu tài khoản cá nhân.
 
-## Quy trình gửi yêu cầu
+Nếu chưa xác định được quy trình phù hợp, cần liên hệ IT để được hướng dẫn.
 
-Người gửi yêu cầu cần cung cấp đúng user_id của tài khoản đặc quyền cần xử lý và mô tả lý do cần đặt lại mật khẩu.
+## Gửi yêu cầu đặt lại mật khẩu
 
-Ví dụ, nếu yêu cầu liên quan đến svc_backup, cần nêu rõ tài khoản svc_backup thay vì mô tả chung chung là một tài khoản IT.
+Người gửi yêu cầu cần cung cấp đúng tài khoản quản trị cần xử lý và mô tả lý do yêu cầu đặt lại mật khẩu.
 
-Không cung cấp mật khẩu hiện tại, mật khẩu cũ hoặc bí mật khác trong ticket.
+Sau khi được tiếp nhận, yêu cầu được chuyển qua bước phê duyệt.
 
-Sau khi yêu cầu được tiếp nhận, yêu cầu được chuyển vào quy trình phê duyệt. Yêu cầu được duyệt trong 30 phút.
+Yêu cầu được duyệt trong 30 phút.
+
+Trong thời gian chờ xử lý, không tạo nhiều yêu cầu giống nhau và không sử dụng tài khoản khác để thay thế quyền của tài khoản đang gặp vấn đề.
 
 ## Sau khi yêu cầu được xử lý
 
-Sau khi yêu cầu được phê duyệt và xử lý xong, người có quyền sử dụng tài khoản thực hiện đăng nhập theo hướng dẫn được cung cấp.
+Sau khi yêu cầu được phê duyệt và việc đặt lại mật khẩu hoàn tất, người có quyền sử dụng tài khoản thực hiện đăng nhập theo hướng dẫn được cung cấp.
 
-Không chia sẻ thông tin xác thực của tài khoản đặc quyền qua ticket hoặc nhóm chat. Nếu tài khoản vẫn gặp lỗi sau khi xử lý, cần liên hệ IT để kiểm tra tiếp.
+Không chia sẻ thông tin xác thực qua ticket, nhóm chat hoặc các kênh trao đổi chung.
+
+Nếu tài khoản vẫn không hoạt động sau khi xử lý, cần liên hệ IT để kiểm tra thêm.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.

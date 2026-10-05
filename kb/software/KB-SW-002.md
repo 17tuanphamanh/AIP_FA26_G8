@@ -4,7 +4,7 @@ version: 1
 request_type: software
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-10-03
+updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
 title: "Yêu cầu phần mềm ngoài danh mục hoặc có phí"
@@ -14,42 +14,40 @@ tags: [software, ngoài danh mục, phần mềm có phí, phê duyệt]
 
 ## Phần mềm ngoài danh mục
 
-Catalog hiện tại gồm 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code và Zoom Workplace.
+Danh mục phần mềm hiện tại gồm 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code và Zoom Workplace.
 
-Phần mềm không xuất hiện trong danh sách này được xem là ngoài danh mục.
+Nếu phần mềm người dùng cần không nằm trong danh sách trên, phần mềm đó được xem là ngoài danh mục.
 
-Khi cần một phần mềm ngoài danh mục, người dùng cần ghi đúng tên phần mềm cần sử dụng. Không thay tên phần mềm đó bằng tên một phần mềm đã có trong catalog.
+Người dùng cần ghi đúng tên phần mềm mình thực sự cần sử dụng. Không sử dụng tên của một phần mềm khác đã có trong danh mục để thay thế.
 
-Danh sách giá trị hợp lệ hiện tại không cung cấp các ví dụ cụ thể về phần mềm ngoài danh mục, vì vậy bài này không tự bổ sung tên phần mềm khác.
+Yêu cầu phần mềm ngoài danh mục cần được phân biệt với yêu cầu cài một phần mềm đã được duyệt sẵn.
 
 ## Phần mềm có phí trong danh mục
 
-Adobe Acrobat Pro, AutoCAD và Microsoft Project có `license_type: paid`.
+Adobe Acrobat Pro, AutoCAD và Microsoft Project là các phần mềm có phí.
 
-Cả ba phần mềm trên đồng thời có `requires_approval: true`.
+Các phần mềm này cần được phê duyệt khi cài.
 
-Vì vậy, dù các phần mềm này đã có trong catalog, yêu cầu cài chúng vẫn thuộc nhóm cần duyệt theo dữ liệu hiện tại.
+Người dùng cần ghi đúng tên phần mềm cần sử dụng trong yêu cầu. Việc phần mềm đã nằm trong danh mục không có nghĩa là phần mềm đó được cài ngay mà không cần phê duyệt.
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace có `license_type: free` và `requires_approval: false`.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace là các phần mềm miễn phí và không cần phê duyệt khi cài.
 
-Không suy luận giá tiền cụ thể từ giá trị `paid`, vì dữ liệu hiện tại không cung cấp giá.
+## Thời gian phê duyệt
 
-## Thời gian duyệt
+Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
 
-Đối với các yêu cầu thuộc trường hợp cần duyệt, fact hiện tại cho phép sử dụng SLA duyệt.
+Trong thời gian chờ xử lý, người dùng không nên tạo nhiều yêu cầu giống nhau cho cùng một nhu cầu.
 
-Yêu cầu được duyệt trong 30 phút.
+Nếu chưa xác định được yêu cầu có thuộc trường hợp cần phê duyệt hay không, người dùng cần liên hệ IT để được hướng dẫn.
 
-Tài liệu hiện tại không xác định ai là người duyệt yêu cầu phần mềm. Vì vậy không ghi trưởng phòng, IT Manager hoặc bất kỳ vai trò cụ thể nào là người duyệt nếu chưa có nguồn bổ sung.
+Không tự thay đổi tên phần mềm trong yêu cầu để tránh bước phê duyệt.
 
-Tài liệu cũng không cung cấp số lượng giấy phép, thời gian cài đặt hoặc thứ tự các bước xử lý sau khi yêu cầu được duyệt.
+## Khi cần hỗ trợ
 
-## Thông tin cần giữ đúng với catalog
+Nếu phần mềm không có trong danh mục hoặc người dùng không xác định được cách gửi yêu cầu phù hợp, cần liên hệ IT.
 
-Người dùng cần sử dụng đúng tên phần mềm trong catalog.
+Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Adobe Acrobat Pro có tên catalog là adobe-acrobat-pro. AutoCAD có tên catalog là autocad. Microsoft Project có tên catalog là ms-project.
+Người dùng cần mô tả đúng tên phần mềm cần sử dụng và nhu cầu liên quan để IT có thể kiểm tra yêu cầu.
 
-7-Zip có tên catalog là 7zip. Microsoft Office có tên catalog là ms-office. Visual Studio Code có tên catalog là vscode. Zoom Workplace có tên catalog là zoom.
-
-Không tự thay đổi trạng thái `requires_approval` hoặc `license_type` của phần mềm trong nội dung KB.
+Không gửi thông tin bí mật trong nội dung yêu cầu.

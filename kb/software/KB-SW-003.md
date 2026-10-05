@@ -4,7 +4,7 @@ version: 1
 request_type: software
 doc_type: troubleshooting
 owner: it_mgr01
-updated_at: 2026-10-03
+updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
 title: "Lỗi cài đặt phần mềm thường gặp"
@@ -12,42 +12,42 @@ distractor: false
 tags: [software, cài đặt, lỗi cài đặt, troubleshooting]
 ---
 
-## Kiểm tra phần mềm có trong catalog hay không
+## Kiểm tra phần mềm có trong danh mục
 
-Khi một yêu cầu cài đặt phần mềm không thực hiện được, trước tiên cần xác định phần mềm đó có nằm trong catalog hiện tại hay không.
+Khi không thể cài phần mềm, trước tiên cần xác định phần mềm đó có nằm trong danh mục hiện tại hay không.
 
-Catalog hiện tại gồm 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code và Zoom Workplace.
+Danh mục gồm 7-Zip, Adobe Acrobat Pro, AutoCAD, Microsoft Office, Microsoft Project, Visual Studio Code và Zoom Workplace.
 
-Nếu phần mềm không xuất hiện trong danh sách này, phần mềm được xem là ngoài danh mục. Trường hợp đó không nên được xử lý giống một phần mềm đã có trong catalog.
+Nếu phần mềm không có trong danh sách này, yêu cầu cần được xử lý như phần mềm ngoài danh mục.
 
-Tài liệu hiện tại không cung cấp tên các phần mềm ngoài danh mục cụ thể.
+Không sử dụng tên một phần mềm khác trong danh mục để thay thế cho phần mềm thực tế cần cài.
 
-## Kiểm tra yêu cầu có cần duyệt hay không
+## Kiểm tra phần mềm có cần phê duyệt
 
-Adobe Acrobat Pro, AutoCAD và Microsoft Project có `requires_approval: true`.
+Adobe Acrobat Pro, AutoCAD và Microsoft Project cần được phê duyệt khi cài.
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace có `requires_approval: false`.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace không cần phê duyệt khi cài.
 
-Vì vậy, khi một yêu cầu liên quan đến Adobe Acrobat Pro, AutoCAD hoặc Microsoft Project chưa được xử lý, cần phân biệt trạng thái cần duyệt với một lỗi cài đặt kỹ thuật.
+Vì vậy, một yêu cầu cài Adobe Acrobat Pro, AutoCAD hoặc Microsoft Project đang chờ phê duyệt không nên được coi ngay là lỗi kỹ thuật của quá trình cài đặt.
 
-Yêu cầu được duyệt trong 30 phút.
+Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
 
-Tài liệu hiện tại không cung cấp trạng thái chi tiết của từng yêu cầu cài đặt thực tế.
+## Phân biệt lỗi cài đặt với trạng thái yêu cầu
 
-## Không tự suy đoán lỗi kỹ thuật
+Không phải mọi trường hợp phần mềm chưa được cài đều là lỗi kỹ thuật.
 
-Danh sách giá trị hợp lệ hiện tại không cung cấp mã lỗi cài đặt, nguyên nhân lỗi, thông báo lỗi, phiên bản hệ điều hành được hỗ trợ hoặc yêu cầu phần cứng cho các phần mềm.
+Trước khi yêu cầu xử lý lỗi, người dùng cần kiểm tra đúng tên phần mềm và xác định yêu cầu có đang chờ phê duyệt hay không.
 
-Vì vậy không nên tự kết luận rằng việc cài đặt thất bại là do thiếu dung lượng, thiếu quyền, lỗi mạng, lỗi bộ cài hoặc một nguyên nhân kỹ thuật cụ thể khác.
+Nếu phần mềm đã đủ điều kiện để xử lý nhưng quá trình cài đặt vẫn không hoàn tất, người dùng nên ghi lại thông báo lỗi xuất hiện trên màn hình.
 
-Khi cần bổ sung một lỗi kỹ thuật vào KB, lỗi đó cần có nguồn hợp lệ trước khi được viết vào tài liệu.
+Không tự thay đổi cấu hình hoặc cài một phần mềm khác để thay thế khi chưa có hướng dẫn.
 
-## Thông tin hiện có để phân loại yêu cầu
+## Khi nào cần liên hệ IT
 
-Thông tin hiện tại chỉ cho phép phân loại yêu cầu dựa trên tên phần mềm, việc phần mềm có trong catalog hay không, `requires_approval` và `license_type`.
+Nếu phần mềm có trong danh mục, yêu cầu đã được xử lý phù hợp nhưng việc cài đặt vẫn thất bại, người dùng cần liên hệ IT.
 
-Ví dụ, AutoCAD có trong catalog, `requires_approval: true` và `license_type: paid`.
+Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Visual Studio Code có trong catalog, `requires_approval: false` và `license_type: free`.
+Người dùng nên cung cấp đúng tên phần mềm và nội dung thông báo lỗi nếu có.
 
-Nếu cần hướng dẫn khắc phục một lỗi cài đặt cụ thể, dữ liệu hiện tại chưa đủ để viết bước xử lý kỹ thuật.
+Không gửi mật khẩu hoặc các thông tin bí mật trong yêu cầu hỗ trợ.

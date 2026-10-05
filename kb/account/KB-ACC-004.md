@@ -4,42 +4,46 @@ version: 1
 request_type: account
 doc_type: faq
 owner: it_mgr01
-updated_at: 2026-10-03
+updated_at: 2026-10-04
 sensitivity: internal
 enabled: true
-title: Đổi mật khẩu email khác đổi mật khẩu Windows
+title: "Đổi mật khẩu email khác đổi mật khẩu Windows"
 distractor: true
-tags: [account, email, windows, mật khẩu, đăng nhập]
+tags: [account, email, windows, mật khẩu]
 ---
 
-## Cần xác định đúng hệ thống đang gặp lỗi
+## Xác định đúng hệ thống đang gặp vấn đề
 
-Khi người dùng báo vấn đề về mật khẩu, cần xác định rõ hệ thống nào đang không đăng nhập được trước khi áp dụng một hướng dẫn.
+Khi người dùng gặp vấn đề về mật khẩu, trước tiên cần xác định hệ thống nào đang không đăng nhập được.
 
-Người dùng nên nêu rõ mình đang gặp lỗi ở email, Windows hay một hệ thống khác. Chỉ nói rằng “mật khẩu không dùng được” là chưa đủ để xác định quy trình phù hợp.
+Người dùng nên nêu rõ vấn đề xảy ra khi đăng nhập email, Windows hay một hệ thống khác. Chỉ mô tả rằng mật khẩu không sử dụng được là chưa đủ để xác định cách xử lý phù hợp.
 
-Danh sách giá trị hiện tại không mô tả cơ chế xác thực giữa email và Windows. Vì vậy không nên tự kết luận rằng hai hệ thống luôn sử dụng cùng một mật khẩu hoặc luôn sử dụng hai mật khẩu khác nhau.
+Không nên mặc định rằng việc thay đổi mật khẩu ở một hệ thống sẽ tự động giải quyết vấn đề đăng nhập ở hệ thống khác.
 
-## Không áp dụng nhầm hướng dẫn
+## Không sử dụng nhầm hướng dẫn
 
-Hướng dẫn dành cho một hệ thống không nên được áp dụng cho hệ thống khác khi chưa xác định chúng sử dụng cùng cơ chế xác thực.
+Hướng dẫn dành cho một loại tài khoản hoặc hệ thống không nên được áp dụng cho hệ thống khác khi chưa xác định được nguyên nhân.
 
-Ví dụ, người dùng không nên thực hiện quy trình dành cho email chỉ vì không đăng nhập được Windows. Tương tự, không nên tự đặt lại mật khẩu tài khoản cá nhân nếu lỗi thực tế liên quan đến một tài khoản đặc quyền hoặc tài khoản đã bị vô hiệu hóa.
+Ví dụ, nếu vấn đề xảy ra khi đăng nhập Windows, người dùng cần mô tả rõ vấn đề trên Windows thay vì chỉ yêu cầu đổi mật khẩu email.
 
-Việc xác định đúng loại tài khoản và hệ thống giúp IT chọn đúng quy trình xử lý.
+Tương tự, quy trình đặt lại mật khẩu tài khoản cá nhân không nên được sử dụng cho tài khoản quản trị hoặc tài khoản của người khác.
+
+Việc xác định đúng hệ thống giúp yêu cầu được chuyển đến cách xử lý phù hợp.
 
 ## Thông tin nên cung cấp khi yêu cầu hỗ trợ
 
-Khi gửi yêu cầu, người dùng nên cung cấp user_id, tên hệ thống không đăng nhập được và nội dung thông báo lỗi nếu có.
-
-Có thể sử dụng các user_id hợp lệ như nv001, nv002 hoặc nv003 khi xây dựng tình huống kiểm thử, nhưng trong vận hành thực tế người dùng cần cung cấp đúng user_id của chính mình.
+Khi gửi yêu cầu, người dùng nên mô tả rõ hệ thống đang không đăng nhập được và nội dung thông báo lỗi nếu có.
 
 Không cung cấp mật khẩu hiện tại hoặc mật khẩu cũ trong nội dung yêu cầu.
 
+Nếu vấn đề chỉ xảy ra ở một hệ thống, cần nêu rõ hệ thống đó để IT có thể kiểm tra đúng phạm vi.
+
+Nếu không xác định được loại tài khoản hoặc hệ thống liên quan, người dùng nên yêu cầu IT hỗ trợ trước khi thực hiện thêm các bước khác.
+
 ## Khi nào cần liên hệ IT
 
-Nếu người dùng không xác định được mình đang gặp lỗi ở email, Windows hay một hệ thống khác, nên liên hệ IT để được hướng dẫn.
+Người dùng cần liên hệ IT khi không xác định được hệ thống nào đang gặp vấn đề, khi việc thay đổi mật khẩu không giải quyết được lỗi đăng nhập hoặc khi xuất hiện thông báo lỗi chưa có hướng dẫn phù hợp.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-IT cần thông tin về tài khoản và hệ thống gặp lỗi để xác định cách xử lý. Không cần và không nên gửi mật khẩu cho IT.
+Trong yêu cầu, chỉ cần cung cấp thông tin về tài khoản, hệ thống gặp lỗi và nội dung lỗi. Không gửi mật khẩu cho IT.

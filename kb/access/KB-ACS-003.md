@@ -14,40 +14,40 @@ tags: [access, quyền có thời hạn, gia hạn quyền, thư mục]
 
 ## Quyền truy cập có thời hạn
 
-Một yêu cầu quyền truy cập có thể liên quan đến việc sử dụng tài nguyên trong một khoảng thời gian nhất định.
+Một yêu cầu quyền truy cập có thể được cấp cho nhu cầu sử dụng trong một khoảng thời gian nhất định.
 
-Nguồn dữ liệu hiện tại chưa cung cấp số ngày cụ thể của quyền truy cập có thời hạn. Vì vậy tài liệu này không tự quy định quyền được cấp trong bao nhiêu ngày.
+Khi gửi yêu cầu, người dùng cần xác định đúng tài nguyên cần truy cập và nhu cầu sử dụng quyền.
 
-Nếu cần sử dụng một thời hạn cụ thể trong KB, giá trị đó cần được xác nhận bằng fact hoặc nguồn cấu hình hợp lệ trước khi bổ sung.
+Nếu chưa xác định được thời hạn hoặc điều kiện áp dụng cho quyền truy cập, người dùng không nên tự đưa ra một khoảng thời gian.
 
-Không tự sử dụng một số ngày chưa có trong kb-facts.md.
+Trong trường hợp cần thêm hướng dẫn, người dùng cần liên hệ IT.
 
-## Tài nguyên liên quan đến quyền truy cập
+## Xác định đúng tài nguyên
 
-Các tài nguyên hiện tại gồm engineering/specs, finance/Q3, finance/public-reports, hr/salaries và shared/templates.
+Các tài nguyên hiện có gồm engineering/specs, finance/Q3, finance/public-reports, hr/salaries và shared/templates.
 
-Mỗi tài nguyên có mức độ nhạy và phòng ban sở hữu riêng. Khi yêu cầu quyền có thời hạn hoặc gia hạn quyền, cần xác định đúng tài nguyên liên quan.
+Khi yêu cầu quyền có thời hạn hoặc gia hạn quyền, người dùng cần ghi đúng tài nguyên liên quan.
 
-Không tự thay đổi sensitivity hoặc owner_department của tài nguyên khi tạo yêu cầu.
+Không tự thay đổi tên thư mục, mức độ nhạy hoặc phòng ban sở hữu của tài nguyên.
 
-Nếu tài nguyên không có trong danh sách hiện tại, dữ liệu nguồn chưa đủ để xác định chính sách áp dụng.
+Nếu tài nguyên cần sử dụng không xác định được, người dùng cần liên hệ IT trước khi tiếp tục yêu cầu.
 
 ## Gia hạn quyền truy cập
 
-Khi người dùng cần tiếp tục sử dụng một tài nguyên sau thời hạn hiện tại, yêu cầu gia hạn cần gắn với đúng tài nguyên mà người dùng đang sử dụng.
+Khi cần tiếp tục sử dụng tài nguyên sau thời hạn hiện tại, người dùng cần gửi yêu cầu gia hạn cho đúng tài nguyên đang sử dụng.
 
-Nguồn hiện tại chưa xác định thời điểm phải gửi yêu cầu gia hạn, số ngày được gia hạn hoặc số lần được phép gia hạn.
+Không nên tự tạo một khoảng thời gian gia hạn nếu chưa được hướng dẫn.
 
-Vì vậy tài liệu này không tự ghi các giá trị như gia hạn trước một số ngày hoặc kéo dài quyền thêm một số ngày cụ thể.
+Người dùng cần mô tả nhu cầu tiếp tục truy cập để yêu cầu được xem xét.
 
-Các con số đó chỉ được thêm khi đã có fact tương ứng.
+Nếu chưa xác định được thời hạn áp dụng hoặc cách gia hạn phù hợp, cần liên hệ IT để được hướng dẫn.
 
-## Phê duyệt yêu cầu gia hạn
+## Phê duyệt và hỗ trợ
 
-Đối với yêu cầu thuộc quy trình cần duyệt, yêu cầu được duyệt trong 30 phút.
+Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
 
-Nguồn hiện tại chưa xác định người duyệt yêu cầu gia hạn hoặc điều kiện chi tiết để một yêu cầu gia hạn được chấp thuận.
+Người dùng không nên gửi nhiều yêu cầu gia hạn giống nhau trong khi yêu cầu trước đang được xử lý.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Nếu cần bổ sung thời hạn quyền, thời điểm gia hạn hoặc người duyệt, phải có thêm nguồn hợp lệ trước khi sửa bài.
+Khi gửi yêu cầu, cần ghi đúng tài nguyên liên quan và mô tả nhu cầu truy cập. Không cung cấp thông tin bí mật trong nội dung yêu cầu.
