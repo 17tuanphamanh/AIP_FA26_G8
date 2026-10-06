@@ -3,7 +3,7 @@
 Các script chạy trên máy dev, nói chuyện với backend `http://127.0.0.1:8000` và Postgres của compose (psql **trong**
 container postgres). Không nằm trong `make test`. Mục lục: [Thành viên chạy cổng 3 + 4](#thành-viên-chạy-cổng-3-rồi-cổng-4-một-trang) ·
 [Cổng 2](#cổng-2-2b-4) · [Cổng 3](#cổng-3-make-gate3) · [Cổng 4](#cổng-4-make-gate4) · [Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) ·
-[Chạy smoke LLM thật](#chạy-smoke-llm-thật).
+[Chạy smoke LLM thật](#chạy-smoke-llm-thật) · [Đo CPU của worker](#đo-cpu-của-worker).
 
 ## Thành viên chạy cổng 3 rồi cổng 4 (một trang)
 
@@ -298,3 +298,23 @@ ingest KB fixture (một lần) → gate3 (tạo lại với `FAKE_SCENARIO` và
 `APPROVAL_SLA_MINUTES_DEV=2`) → LUÔN trả backend+worker về cấu hình `.env`. `G=0` chỉ lint + test; `BENCH=1` thêm bench checkpoint
 (Postgres testcontainers). Trên macOS script tự giữ máy thức (`caffeinate -i -w <pid>` — hết khi verify thoát) và cảnh báo khi máy
 chạy pin. Kết quả: `.verify/summary.txt` (`make verify-status`) + `.verify/run-*.log`. Không đọc/sửa `.env`, không `down -v`.
+
+## Đo CPU của worker
+
+**Không dùng MỘT mẫu `docker stats --no-stream`.** Healthcheck của worker (`python -m app.heartbeat`, compose `interval: 5s`) mỗi lần
+tốn 0,3–0,4 s CPU (nạp `app.settings`), còn `docker stats` chỉ lấy cửa sổ ~1 s: mẫu trùng probe ra 30–48% dù worker rảnh, không trùng
+ra 0% (Việc treo 35, đóng 06/10/2026 — tiến trình worker ≈ 0,13% trên cả hai máy, kể cả sau gate4). Đo bằng trung bình cgroup của
+container trong ≥ 30 s và tick của pid 1 (= `python -m app.worker`):
+
+```
+docker compose exec -T worker sh -c 'snap(){ for t in /proc/[0-9]*/task/*; do echo "$t $(cat $t/comm 2>/dev/null) | $(sed "s/.*) //" $t/stat 2>/dev/null | cut -d" " -f12,13)"; done; }; snap; date +%T; head -1 /sys/fs/cgroup/cpu.stat; sleep 30; date +%T; head -1 /sys/fs/cgroup/cpu.stat; echo ----; snap'
+```
+
+Đọc: Δ`usage_usec` / 30 000 000 = CPU cả container (100% = một lõi); tổng Δ(`utime` + `stime`) các dòng `/proc/1/task/*` / 3000 = CPU
+của worker (1 tick = 10 ms). Rảnh: container ~7% (gần hết là probe), pid 1 ≤ 0,2%. Chỉ khi pid 1 tăng mạnh mới là worker bận — dòng
+`/proc/1/task/<tid>` tăng nhiều nhất là luồng nóng (`task/1` = luồng chính, chạy vòng lặp sự kiện). Dòng có ở lần chụp đầu mà mất ở lần
+sau là tiến trình ngắn (probe). Chi phí một probe:
+
+```
+docker compose exec -T worker python -c "import resource,subprocess,time; t=time.monotonic(); subprocess.run(['python','-m','app.heartbeat']); r=resource.getrusage(resource.RUSAGE_CHILDREN); print(f'wall={time.monotonic()-t:.2f}s cpu={r.ru_utime+r.ru_stime:.2f}s')"
+```

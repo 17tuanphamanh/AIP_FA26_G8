@@ -4934,9 +4934,49 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
     `guard/privacy.py:160` — chuỗi `x[BÍ_MẬT_ĐÃ_ẨN]<chuỗi ngẫu nhiên ≥ 20>` lọt guard (vd vào `audit_logs.note` qua ghi đè); `audit_check`
     không dùng luật entropy nên không bắt. Lõi 3e — sửa (chỉ bỏ qua khi token đúng bằng mặt nạ, hoặc xoá mặt nạ rồi mới tính entropy) cùng
     soát lại bộ test e* của 3e; không sửa ở 4d.
-35. **Worker ~98% CPU sau một lượt gate4 chạy trực tiếp trên máy Duy Anh (03/10/2026) — chưa giải thích.** Postgres 0%, log im
+35. ~~**Worker ~98% CPU sau một lượt gate4 chạy trực tiếp trên máy Duy Anh (03/10/2026) — chưa giải thích.** Postgres 0%, log im
     05:15:31 → 05:22:16 UTC. Đã loại: `monitor_rules_minute` in 1 lần là đúng thiết kế; worker máy Tuấn Anh lúc rảnh 0,75%. Cần: `docker
-    stats` ngay sau gate4 + log worker + đếm turns chưa kết thúc.
+    stats` ngay sau gate4 + log worker + đếm turns chưa kết thúc.~~ — **ĐÓNG 06/10/2026 — sai số phép đo** (không phải lỗi: số % cao là
+    một mẫu `docker stats` trùng probe healthcheck; tiến trình worker ≈ 0,13% trên cả hai máy). Spec `build/phase4-thiet-ke-chi-tiet.md`
+    v1.8 mục 7.9; quy ước đo ở `backend/tests/stack/README.md` mục "Đo CPU của worker".
+    - **Phiên chẩn đoán 06/10/2026 (máy Tuấn Anh, macOS + colima, VM 7,7 GiB) — KHÔNG tái hiện.** HEAD `3549daa`; mã trong image
+      (`backend/app`, `config`, `pyproject.toml`, `uv.lock`, `backend/Dockerfile`) trùng `1455b55` (máy Duy Anh) — 2 commit sau chỉ đổi tài
+      liệu; image `servicedesk-backend:dev` dựng 03/10 21:33 +07 (sau `1455b55`). Stack không ai dùng, cắm sạc. Chỉ đo + đọc mã, không sửa mã.
+      `.env` máy này đang `LLM_BACKEND=real` → lần gọi gate4 đầu DỪNG ở chốt an toàn (0 ca chạy, 0 lời gọi LLM); tạo lại backend+worker bằng
+      biến shell `LLM_BACKEND=scripted FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=2` (không sửa `.env`). **gate4 1 lượt: 73 PASS
+      / 0 FAIL**, 03:07:42 → 03:15:56 UTC. Không chạy lượt 2. Đã trả backend+worker về `.env` (Bước 3: worker 0,00%, Postgres 0,01%).
+    - **Cách đo:** `docker stats --no-stream` (1 mẫu, cửa sổ ~1–2 s) + `usage_usec` cgroup của container worker trước/sau `sleep 30` + utime/stime
+      từng luồng `/proc/[0-9]*/task/*` (tick 10 ms). pid 1 = tiến trình `python -m app.worker`; cgroup = cả container (gồm tiến trình ngắn).
+      Số đo (`docker stats` | cgroup | pid 1):
+      - rảnh, cấu hình `.env` (real), 02:55:43 + 30 s: **32,44%** | 2,19 s = 7,3% | 0,06 s = 0,2%
+      - rảnh, scripted, 03:06:54 + 30 s: 0,00% | 2,04 s = 6,8% | 0,06 s = 0,2%
+      - **trong gate4** 03:07:24 → 03:16:50 (565 s): — | 39,7 s = 7,0% | 0,78 s = **0,14%**
+      - +0 (03:16:50 + 30 s): 0,00% | 2,07 s = 6,9% | 0,03 s = 0,1%
+      - **+1,4 → +20,7 phút** 03:17:20 → 03:36:38 (1158 s, bộ đếm tích luỹ — thay các mốc +1/+3/+5/+10 vì lệnh đo kế tiếp chạy lúc +20,7):
+        — | 80,3 s = 6,9% | 1,56 s = **0,13%** (worker bận 98% dù 1 phút thì pid 1 phải tăng ~60 s)
+      - +20,7 phút (03:36:38 + 30 s): 5,11% | 2,15 s = 7,2% | 0,02 s = 0,07%
+    - **Luồng nóng: không có.** pid 1 (luồng chính + luồng 7–11 + luồng 688 sinh trong gate4) gần 0 suốt. ~96% CPU của container là tiến trình
+      sống ngắn = **probe healthcheck `python -m app.heartbeat` mỗi 5 s** (`docker-compose.yml` worker.healthcheck `interval: 5s`). Đo thẳng 1 probe
+      trong container: **0,34 s CPU, 0,34 s wall** (nạp `app.settings` → pydantic, pydantic_settings, yaml, `app.domain.*` — `app/heartbeat.py:14–15`).
+      Kiểm chéo: 1158 s / 5 s × 0,34 s ≈ 78,7 s ≈ 80,3 s cgroup đo được. Mẫu `docker stats` trùng probe → ~30–35% (32,44% lúc rảnh, CHƯA chạy
+      gate4); không trùng → 0%.
+    - **Máy Duy Anh (WSL 2, `1455b55`, stack rảnh — Duy Anh đo, 06/10/2026, hai lệnh đo ở README):** một probe healthcheck = **0,44 / 0,41 /
+      0,42 s CPU** (3 lần); pid 1 tăng 8 tick = 0,08 s trong 60 s (**0,13%**); healthcheck `Interval` 5 s. Probe 0,42 s trong cửa sổ mẫu ~1 s của
+      `docker stats` = ~42% → khớp hai mẫu 42,62% và 48,18% sau lượt 2. Mẫu 98% (03/10, máy tải nặng + swap) là mẫu duy nhất không khớp trọn —
+      không tái hiện, không đo thêm.
+    - **Kết luận:** [Chốt — cả hai máy] tiến trình worker (pid 1) ≈ 0,13% CPU; % cao của worker trong `docker stats` = mẫu ~1 s trùng probe
+      healthcheck, không liên quan gate4.
+    - **Đã loại (máy này):** vòng lặp bận trong worker — job quét hạn 15 s, `scan_stale_turns` 60 s, `monitor_rules_minute` 60 s đều nằm trong pid 1:
+      0,13% suốt 19 phút sau gate4; luồng executor/pool — 0 tick; tiến trình mồ côi do `exec` của gate4 — gate4 chỉ `exec` `printenv` vào worker
+      (`backend/tests/stack/gate4.py:109`), hai lần chụp không có tiến trình lạ sống lâu.
+    - **Nguồn + ảnh hưởng:** healthcheck có từ Phase 2 chặng 2a (`9b310d4`) — KHÔNG thuộc Phase 4, KHÔNG thuộc khối M9. Chỉ hiệu năng: ~0,07 lõi thường
+      trực trên VM colima (~0,08 trên máy Duy Anh). Không chạm đường an toàn: trong gate4 nhắc 1/2 đúng mốc, hết hạn → E6 đúng (c3, i7 PASS), thực thi
+      đúng 1 lời gọi ghi.
+    - **Xử lý:** (a) **đã làm** — quy ước đo ở `backend/tests/stack/README.md` mục "Đo CPU của worker": trung bình cgroup ≥ 30 s hoặc tick pid 1, không
+      dùng 1 mẫu `docker stats` (kèm 2 lệnh đo). (b) **HOÃN đổi healthcheck** (`interval` 5 s → 15–30 s, vẫn < `WORKER_HEARTBEAT_MAX_AGE` 60 s; hoặc
+      probe không nạp `app.settings`, giữ một nguồn cho path + max_age) — gộp vào lần sửa `docker-compose.yml` kế tiếp, vì đổi compose thì phải chạy
+      lại cả ba cổng (gate2, gate3, gate4).
+    - Phụ: gate4 ghi `backend/tests/stack/bienban-gate4-20261006.md` (untracked, chưa điền, KHÔNG commit).
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).
