@@ -6,7 +6,8 @@ không tách được theo mốc thời gian như luật khác → MỖI TEST M�
 
 Hằng tính tay: `NOW = 2035-05-20T03:00Z` = 10:00 giờ VN ngày 20/05 → `day_start` = 00:00 VN 20/05 = `2035-05-19T17:00Z`.
 Ngưỡng `0,8 × 38 − 1e-9` (Q-M9-B2-7): 30,4 báo, 30,02 (79 %) không. Tổng hai số thực cộng theo thứ tự nào cũng ra cùng
-giá trị (10.4 + 20.0 = 30.4; 10.0 + 20.02 = 30.02). Để cụm 3 (cần job): chạy lại cùng ngày không thêm dòng.
+giá trị (10.4 + 20.0 = 30.4; 10.0 + 20.02 = 30.02). Cấp job (cụm 3: chạy lại cùng ngày không thêm dòng, sang ngày VN
+thêm đúng 1): `test_monitor_jobs_hourly_pg.py`.
 """
 
 from collections.abc import AsyncIterator, Iterator

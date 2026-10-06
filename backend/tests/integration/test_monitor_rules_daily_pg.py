@@ -8,7 +8,8 @@ quyết (`new_id`) và lọc theo 7 mốc ngày → dữ liệu của ca khác k
 
 Số kỳ vọng tính tay (comment từng ca), không gọi hàm đang test. Nguồn: kế hoạch chung M9 mục 6 (luật 1, 7, 12, 13);
 thẻ B2; chốt Q-M9-B2-1, 3, 6, 15 ở #14 (5955137864, 5955436721, 5959974287); đề xuất Q-M9-B2-23, 24 (plan cụm 2).
-Để cụm 3 (cần job): chạy hai lượt, ranh giới luật 1 với `policy_versions`, job đúng 19:00 UTC.
+Cấp job (cụm 3): chạy hai lượt, ranh giới luật 1 với `policy_versions`, worker nghỉ 2 mốc → `test_monitor_jobs_daily_pg.py`;
+job đúng 19:00 UTC → `tests/unit/test_monitor_jobs_periodic.py`.
 """
 
 from collections.abc import AsyncIterator, Iterator

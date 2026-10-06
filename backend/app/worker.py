@@ -5,7 +5,9 @@ Heartbeat (`app/heartbeat.py`) ghi file mỗi 10 giây bằng CHÍNH scheduler �
 file, quá 60 giây = unhealthy.
 Worker KHÔNG có SVC_EXECUTOR_TOKEN (D-03): runner dựng với `can_execute=False` — recover không bao giờ
 chạy B17, chuyển E7 "thực thi bị gián đoạn".
-M9 (B1): job `monitor_rules_minute` 60 giây chạy luật cảnh báo theo sự kiện — khối `# ---- M9` cuối file.
+M9 (B1): job `monitor_rules_minute` 60 giây chạy luật cảnh báo theo sự kiện; (B2) `monitor_rules_hourly` mỗi 3600
+giây và `monitor_rules_daily` 19:00 UTC (02:00 giờ VN), hai job này chạy bù một lượt lúc khởi động — khối `# ---- M9`
+cuối file.
 """
 
 import asyncio
@@ -28,7 +30,7 @@ from app.llm.config import load_llm_config
 from app.monitor.db import MonitorUnavailable, monitor_engine
 from app.monitor.evaluator import evaluate
 from app.monitor.queries import rules_data as _rules_data  # noqa: F401
-from app.monitor.rules import RuleContext
+from app.monitor.rules import Every, RuleContext
 from app.monitor.window import VN_TZ
 from app.settings import Settings, get_settings
 
@@ -87,9 +89,9 @@ async def run() -> None:
     log.info("worker dừng")
 
 
-# ---- M9 (B1, #13): job luật cảnh báo theo sự kiện ----------------------------------------------------------------
+# ---- M9 (B1, #13; B2, #14): job luật cảnh báo phút / giờ / ngày ---------------------------------------------------
 #
-# Mỗi 60 giây: `evaluate("minute")` trên MỘT connection của engine `app_monitor` (chỉ đọc) → mỗi draft ghi bằng
+# Job phút mỗi 60 giây: `evaluate("minute")` trên MỘT connection của engine `app_monitor` (chỉ đọc) → mỗi draft ghi bằng
 # `AlertWriter.raise_once` (engine chính, app_rw) — ghi chỉ ở đây, không bao giờ trong `app.monitor` [Chốt 17.9.2].
 # Import `rules_data` (đầu file, noqa F401) để đăng ký loader; `spend` đọc ở worker vì `app.monitor` không import
 # `app.llm`.
@@ -99,9 +101,33 @@ async def run() -> None:
 # cảnh báo mới (kể cả khi luật lỗi mà IncidentLog không báo — Q-M9-B2-8); còn lại DEBUG (`core/logging.py` đã tắt INFO
 # APScheduler vì quá dày). Q-M9-B1-24: dòng "luật bỏ qua (nguồn chưa có)" INFO khi tập luật bỏ qua đổi, còn lại DEBUG;
 # WARNING từng draft ghi lỗi qua IncidentLog theo (rule_id, tên lớp) — dòng tổng `lỗi=` vẫn WARNING mỗi lượt.
+#
+# B2 (#14): cùng class `MonitorRulesJob`, một instance cho mỗi chu kỳ (`every`) — IncidentLog, nhịp log riêng; ba job
+# dùng chung MỘT `AlertWriter`. Job giờ `evaluate("hourly")` (luật 14) interval 3600 s; job ngày `evaluate("daily")`
+# (luật 1, 7, 12, 13) cron 19:00 với `timezone="UTC"` TƯỜNG MINH (không theo múi giờ scheduler/máy) = 02:00 giờ VN.
+# Chốt Q-M9-B2-4 (#14 comment 5959974287): "chạy bù lúc khởi động. Job giờ `misfire_grace_time = 3600`. Job ngày để
+# `None` … Khoá theo `d0` nên chạy muộn không sinh trùng." Chạy bù = `next_run_time = clock.now()` lúc dựng: jobstore
+# trong bộ nhớ không biết lượt nào đã lỡ nên MỖI lần khởi động chạy ngay một lượt; trùng ngày/giờ với lượt đã có →
+# khoá `(rule_id, subject, window_start)` (luật 14 `day_start`, luật 1 `d0`, luật 7/12/13 mốc `r`) → `trùng`.
+# Job phút KHÔNG chạy bù (giữ nguyên B1: lượt đầu sau 60 s, quét lại 24 giờ). Ba job là ba task riêng (`max_instances`
+# tính theo từng job), mỗi lượt một connection monitor → job này chạy lâu không làm job khác lỡ lượt.
+# Hạn chế đã biết (Q-M9-B2-26, chờ anh Tuấn Anh): lượt ngày lỗi cả khối (mất kết nối, hết giờ) khi worker vẫn sống thì
+# không có lượt bù tới 19:00 hôm sau — luật 7/12/13 được đánh giá lại nhờ 7 mốc, luật 1 (chỉ `d0`) mất mốc ngày đó
+# (cửa sổ 7 ngày của mốc sau chồng 6/7); ERROR `monitor_rules_daily lỗi:` theo IncidentLog báo người trực.
+# Áp dụng CẢ cho lượt chạy bù lúc khởi động: APScheduler tính lượt kế ngay lúc nộp job, từ `next_run_time` của lượt bù,
+# không xét kết quả (`run()` nuốt lỗi) → lượt bù của job ngày lỗi cả khối (vd worker khởi động khi DB chưa sẵn sàng)
+# thì lượt kế là 19:00 UTC kế tiếp, không thử lại sớm hơn; job giờ thử lại sau 3600 giây. Hệ quả như trên.
 
 MONITOR_RULES_MINUTE = "monitor_rules_minute"
+MONITOR_RULES_HOURLY = "monitor_rules_hourly"
+MONITOR_RULES_DAILY = "monitor_rules_daily"
+MONITOR_JOB_IDS: dict[Every, str] = {
+    "minute": MONITOR_RULES_MINUTE, "hourly": MONITOR_RULES_HOURLY, "daily": MONITOR_RULES_DAILY,
+}  # fmt: skip
 MONITOR_RULES_SECONDS = 60
+MONITOR_HOURLY_SECONDS = 3600
+MONITOR_HOURLY_MISFIRE_SECONDS = 3600  # Q-M9-B2-4
+MONITOR_DAILY_HOUR_UTC = 19  # 02:00 giờ VN (Q-M9-2, thẻ B2)
 # Trần thời gian MỘT lượt (đọc + ghi), dưới chu kỳ 60 s: truy vấn treo + `max_instances=1` → mọi lượt sau bị bỏ, tầng
 # cảnh báo chết im lặng (review #24 mục 2). Hết giờ → `TimeoutError` vào nhánh ERROR như lỗi job khác.
 MONITOR_RUN_TIMEOUT_SECONDS = 50.0
@@ -148,8 +174,10 @@ class IncidentLog:
 class MonitorRulesJob:
     def __init__(
         self, engines: Engines, writer: AlertSink, clock: Clock, *, cap_usd: float, warn_ratio: float,
-        timeout_s: float = MONITOR_RUN_TIMEOUT_SECONDS,
+        timeout_s: float = MONITOR_RUN_TIMEOUT_SECONDS, every: Every = "minute",
     ) -> None:  # fmt: skip
+        self._every = every
+        self._name = MONITOR_JOB_IDS[every]  # tên job trong mọi dòng log
         self._engines = engines
         self._writer = writer
         self._clock = clock
@@ -163,39 +191,40 @@ class MonitorRulesJob:
         self._skipped: frozenset[str] = frozenset()
         self._draft_errors: dict[tuple[str, str], IncidentLog] = {}
 
-    async def minute(self) -> None:
-        """Một lượt job 60 s. Không ném lỗi (trừ `CancelledError` — hủy job phải lan ra). Log chỉ tên luật, tên lớp
-        exception và SQLSTATE — không traceback, không dữ liệu (luật cứng 8; `IntegrityError` in cả tham số INSERT)."""
+    async def run(self) -> None:
+        """Một lượt job M9 (phút / giờ / ngày theo `every`). Không ném lỗi (trừ `CancelledError` — hủy job phải lan ra).
+        Log chỉ tên job, tên luật, tên lớp exception và SQLSTATE — không traceback, không dữ liệu (luật cứng 8;
+        `IntegrityError` in cả tham số INSERT)."""
         try:
             engine = monitor_engine(self._engines)  # hợp đồng A0: thiếu DSN → MonitorUnavailable, KHÔNG rơi về main
         except MonitorUnavailable:
             if self._incident.failed(("MonitorUnavailable", None)):
-                log.warning("%s: thiếu MONITOR_DATABASE_URL — luật cảnh báo M9 KHÔNG chạy", MONITOR_RULES_MINUTE)
+                log.warning("%s: thiếu MONITOR_DATABASE_URL — luật cảnh báo M9 KHÔNG chạy", self._name)
             return
         ctx = RuleContext(now=self._clock.now(), tz=VN_TZ, cap_usd=self._cap_usd, warn_ratio=self._warn_ratio)
         try:
             # Hết giờ: hủy bằng CancelledError (except Exception bên trong không bắt) → ra khỏi khối thành TimeoutError.
             async with asyncio.timeout(self._timeout_s):  # đọc + ghi của một lượt (review #24 mục 2)
                 async with engine.connect() as conn:  # một connection mỗi lượt; đóng = rollback (chỉ đọc)
-                    result = await evaluate("minute", conn, ctx)
+                    result = await evaluate(self._every, conn, ctx)
                 written, duplicate, errors = await self._write(result.drafts)
         # Job lỗi không làm sập worker; log tên lớp + SQLSTATE, không traceback (Q19). CancelledError lan ra.
         except Exception as exc:  # noqa: BLE001 — job lỗi (Q19)
             key = (type(exc).__name__, getattr(getattr(exc, "orig", None), "sqlstate", None))
             if self._incident.failed(key):
-                log.error("%s lỗi: %s sqlstate=%s", MONITOR_RULES_MINUTE, *key)
+                log.error("%s lỗi: %s sqlstate=%s", self._name, *key)
             return
         reported = False  # IncidentLog có báo luật lỗi ở lượt này không — quyết mức dòng tổng bên dưới
         if result.failed_rules:  # luật lỗi KHÔNG phải lượt thành công — không phục hồi (review #24 mục 1)
             reported = self._incident.failed(("luật_lỗi", frozenset(result.failed_rules)))
             if reported:
-                log.warning("%s: luật lỗi: %s", MONITOR_RULES_MINUTE, ", ".join(result.failed_rules))
+                log.warning("%s: luật lỗi: %s", self._name, ", ".join(result.failed_rules))
         elif failures := self._incident.recovered():
-            log.info("%s phục hồi sau %d lượt lỗi", MONITOR_RULES_MINUTE, failures)
+            log.info("%s phục hồi sau %d lượt lỗi", self._name, failures)
         skipped = frozenset(result.skipped_rules)  # tập, không phải thứ tự: đổi thứ tự không phải đổi tập
         if skipped:
             log.log(logging.INFO if skipped != self._skipped else logging.DEBUG, "%s: luật bỏ qua (nguồn chưa có): %s",
-                    MONITOR_RULES_MINUTE, ", ".join(result.skipped_rules))  # fmt: skip
+                    self._name, ", ".join(result.skipped_rules))  # fmt: skip
         self._skipped = skipped  # gán cả tập rỗng: luật bỏ qua xuất hiện lại sau lượt rỗng → INFO ngay
         if errors or reported:
             level = logging.WARNING
@@ -204,12 +233,14 @@ class MonitorRulesJob:
         else:
             level = logging.DEBUG
         self._announced = True
-        log.log(level, "%s: nháp=%d ghi=%d trùng=%d lỗi=%d luật_lỗi=%d", MONITOR_RULES_MINUTE, len(result.drafts),
+        log.log(level, "%s: nháp=%d ghi=%d trùng=%d lỗi=%d luật_lỗi=%d", self._name, len(result.drafts),
                 written, duplicate, errors, len(result.failed_rules))  # fmt: skip
 
+    minute = run  # tên cũ: job phút đăng ký `job.minute` (schedule_monitor_jobs), test B1/B2 gọi `.minute()`
+
     async def _write(self, drafts: list[AlertDraft]) -> tuple[int, int, int]:
-        """Ghi từng draft → (ghi, trùng, lỗi). ghi = cảnh báo MỚI (raise_once True); trùng = khoá đã có (False) — quét
-        lại 24 giờ mỗi phút nên lượt sau gặp lại draft cũ.
+        """Ghi từng draft → (ghi, trùng, lỗi). ghi = cảnh báo MỚI (raise_once True); trùng = khoá đã có (False) — luật
+        quét lại cửa sổ cũ (24 giờ / cùng ngày / 7 mốc) nên lượt sau gặp lại draft cũ.
 
         Nhịp WARNING từng draft lỗi (Q-M9-B1-24): theo (rule_id, tên lớp) — lần đầu, khi lớp đổi, rồi mỗi giờ; còn lại
         DEBUG. Khoá không lỗi ở lượt này bị bỏ → lỗi quay lại sau một lượt sạch báo ngay (nghiêng về báo thừa)."""
@@ -224,7 +255,7 @@ class MonitorRulesJob:
                 key = (draft.rule_id, type(exc).__name__)
                 incident = seen.setdefault(key, self._draft_errors.get(key) or IncidentLog(self._clock))
                 level = logging.WARNING if incident.failed(key) else logging.DEBUG
-                log.log(level, "%s: ghi cảnh báo luật %s lỗi: %s", MONITOR_RULES_MINUTE, draft.rule_id,
+                log.log(level, "%s: ghi cảnh báo luật %s lỗi: %s", self._name, draft.rule_id,
                         type(exc).__name__)  # fmt: skip
             else:
                 if created:
@@ -239,23 +270,45 @@ def schedule_monitor_jobs(scheduler: AsyncIOScheduler, job: MonitorRulesJob) -> 
     scheduler.add_job(job.minute, id=MONITOR_RULES_MINUTE, seconds=MONITOR_RULES_SECONDS, **MONITOR_JOB_OPTIONS)
 
 
+def schedule_periodic_jobs(
+    scheduler: AsyncIOScheduler, hourly: MonitorRulesJob, daily: MonitorRulesJob, now: datetime
+) -> None:  # fmt: skip
+    """Job giờ + job ngày (Q-M9-B2-4). `next_run_time=now` = chạy bù một lượt ngay khi scheduler start. Job ngày truyền
+    `misfire_grace_time=None` TƯỜNG MINH (thiếu khoá thì APScheduler điền mặc định 1 giây → máy ngủ qua 02:00 là mất
+    ngày) và `timezone="UTC"` tường minh (không thì trigger lấy múi giờ của scheduler)."""
+    scheduler.add_job(
+        hourly.run, id=MONITOR_RULES_HOURLY, seconds=MONITOR_HOURLY_SECONDS, **MONITOR_JOB_OPTIONS,
+        misfire_grace_time=MONITOR_HOURLY_MISFIRE_SECONDS, next_run_time=now,
+    )  # fmt: skip
+    scheduler.add_job(
+        daily.run, id=MONITOR_RULES_DAILY, trigger="cron", hour=MONITOR_DAILY_HOUR_UTC, minute=0, timezone="UTC",
+        max_instances=1, coalesce=True, misfire_grace_time=None, next_run_time=now,
+    )  # fmt: skip
+
+
 def setup_monitor_jobs(
     scheduler: AsyncIOScheduler, settings: Settings, engines: Engines, clock: Clock
-) -> MonitorRulesJob | None:  # fmt: skip
-    """Dựng + đăng ký job M9. Lỗi (đọc `llm.yaml`, dựng writer, đăng ký job) → ERROR tên lớp, trả None; worker vẫn chạy
-    3 job gốc — hết hạn duyệt (E6) và phục hồi lượt dở quan trọng hơn cảnh báo (điều kiện duyệt #13). `cap_usd`,
-    `warn_ratio` đọc ở worker (`app.monitor` không import `app.llm`)."""
+) -> dict[Every, MonitorRulesJob] | None:  # fmt: skip
+    """Dựng + đăng ký 3 job M9 (phút, giờ, ngày — chung một writer). Lỗi (đọc `llm.yaml`, dựng writer, đăng ký job) →
+    ERROR tên lớp, trả None; worker vẫn chạy 3 job gốc — hết hạn duyệt (E6) và phục hồi lượt dở quan trọng hơn cảnh báo
+    (điều kiện duyệt #13). Đăng ký theo thứ tự phút → giờ → ngày; lỗi giữa chừng thì job đã đăng ký vẫn chạy (gỡ ra là
+    bỏ sót). `cap_usd`, `warn_ratio` đọc ở worker (`app.monitor` không import `app.llm`)."""
     try:
         spend = load_llm_config(settings.config_dir / "llm.yaml").spend
-        job = MonitorRulesJob(
-            engines, AlertWriter(engines.main, clock), clock, cap_usd=spend.cap_usd, warn_ratio=spend.warn_ratio
-        )
-        schedule_monitor_jobs(scheduler, job)
+        writer = AlertWriter(engines.main, clock)
+        jobs: dict[Every, MonitorRulesJob] = {
+            every: MonitorRulesJob(
+                engines, writer, clock, cap_usd=spend.cap_usd, warn_ratio=spend.warn_ratio, every=every
+            )
+            for every in ("minute", "hourly", "daily")
+        }
+        schedule_monitor_jobs(scheduler, jobs["minute"])
+        schedule_periodic_jobs(scheduler, jobs["hourly"], jobs["daily"], clock.now())
     # Dựng M9 lỗi không làm chết worker (điều kiện duyệt 1); lỗi cấu hình có thể in giá trị → chỉ log tên lớp.
     except Exception as exc:  # noqa: BLE001 — dựng job M9
-        log.error("không dựng được job M9 (%s) — worker chạy tiếp KHÔNG có cảnh báo M9", type(exc).__name__)
+        log.error("không dựng đủ job M9 (%s) — worker chạy tiếp, THIẾU cảnh báo M9", type(exc).__name__)
         return None
-    return job
+    return jobs
 
 
 if __name__ == "__main__":
