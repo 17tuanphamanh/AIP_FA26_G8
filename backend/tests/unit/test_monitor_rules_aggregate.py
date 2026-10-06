@@ -241,7 +241,7 @@ DEGRADED_IDS = [r for r, _ in DEGRADED]
 
 
 def at_marks(values: Mapping[datetime, float | None], marks: Sequence[datetime] = MARKS_VN) -> dict[datetime, Any]:
-    """Dữ liệu loader GĐ2 sẽ dựng: đủ 7 mốc, mốc không nêu = None (không có lá)."""
+    """Dữ liệu loader GĐ2 sẽ dựng: đủ 7 mốc, mốc không nêu = None (mẫu số 0 dòng audit, vd không có lá)."""
     return {r: None for r in marks} | dict(values)
 
 
@@ -259,7 +259,9 @@ def test_degraded_threshold(rule_id: str, fn: DegradedFn, rate: float, n: int) -
 
 @pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
 def test_degraded_none_no_alert_no_failure(rule_id: str, fn: DegradedFn) -> None:
-    """Không có lá trong ngày → chỉ số None → 0 draft, KHÔNG ném lỗi (lỗi = luật vào failed_rules mỗi ngày)."""
+    """Mẫu số 0 dòng audit trong ngày (vd không có lá) → chỉ số None → 0 draft, KHÔNG ném lỗi (lỗi = luật vào
+    failed_rules mỗi ngày). Tỉ lệ đếm theo dòng audit như `b2_llm_rate`/`b3_llm_rate` (theo dòng hay theo lá phân
+    biệt: chờ chốt Q-M9-B2-27)."""
     assert fn(at_marks({}), CTX) == []
 
 

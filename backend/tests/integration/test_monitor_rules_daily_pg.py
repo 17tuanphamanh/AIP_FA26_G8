@@ -325,9 +325,10 @@ async def test_degraded_pending_skipped(rw: AsyncEngine, mon: AsyncEngine) -> No
 async def test_degraded_ready_seven_marks(
     k: int, rule_id: str, key: str, point: Any, rw: AsyncEngine, mon: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Vá RIÊNG khoá nguồn sang ready: loader gọi hàm A thật trên 7 ngày VN. Lá `llm` tạo d0 − 12h (ngày của mốc d0) → 1/1;
-    lá `rule` tạo d0 − 2 ngày − 12h (mốc d0 − 2 ngày) → 0/1, không báo; lá `llm` tạo d0 − 5 ngày − 12h (mốc d0 − 5 ngày)
-    → 1/1. Mốc khác không có lá → None. → 2 draft, cũ → mới."""
+    """Vá RIÊNG khoá nguồn sang ready: loader gọi hàm A thật trên 7 ngày VN. Hàm A đếm DÒNG audit (`count(*)`), mỗi lá
+    ở đây có đúng 1 dòng nên số dòng = số lá (theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27). Lá tạo d0 − 12h
+    (mốc d0) có 1 dòng `llm` → 1/1 dòng; lá tạo d0 − 2 ngày − 12h (mốc d0 − 2 ngày) có 1 dòng `rule` → 0/1, không báo;
+    lá tạo d0 − 5 ngày − 12h (mốc d0 − 5 ngày) có 1 dòng `llm` → 1/1. Mốc khác 0 dòng → None. → 2 draft, cũ → mới."""
     real = rules_data.is_pending
     monkeypatch.setattr(rules_data, "is_pending", lambda name: False if name == key else real(name))
     now = rs.daily_now(k)

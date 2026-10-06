@@ -384,7 +384,7 @@ def execution_failed(data: Sequence[TicketExit], ctx: RuleContext) -> list[Alert
 # Cửa sổ dữ liệu KẾT THÚC ở `d0 = day_start(ctx.now, ctx.tz)` (ngày VN trọn): job chạy 02:00 VN, đo `[d0, now)` thì chỉ
 # có 2 giờ đêm → gần như không có lá → chỉ số `None` → luật không bao giờ nổ (bỏ sót). `window_start` = `d0`: chạy lại
 # trong cùng ngày ra đúng khoá cũ. Loader (GĐ2) lấy mốc từ CHÍNH các helper dưới đây — một nguồn cho mốc.
-# Chỉ số `None` (không có lá) → không nổ, không phải lỗi.
+# Chỉ số `None` (luật 1: không có lá; luật 12/13: mẫu số 0 dòng audit) → không nổ, không phải lỗi.
 # Đánh giá bù (Q-M9-B2-15, chốt #14 comment 5959974287, phương án nhẹ): luật 7, 12, 13 đánh giá `DAILY_MARKS` = 7 mốc
 # `r = d0 − k ngày` (k = 0…6), mỗi mốc lấy `[r − 1 ngày, r)`, `window_start = r` → worker chết qua vài mốc 02:00 thì
 # ngày bị lỡ vẫn được đánh giá; khoá theo `r` nên chạy lại không trùng. Luật 1 CHỈ `r = d0` (cửa sổ 7 ngày chồng nhau,
@@ -459,7 +459,7 @@ def _degraded(rule_id: str, data: Mapping[datetime, float | None], ctx: RuleCont
     for r in marks:
         rate = data[r]
         if rate is None:
-            continue  # không có lá trong ngày: không đo được, không phải lỗi
+            continue  # mẫu số 0 dòng audit trong ngày (vd không có lá): không đo được, không phải lỗi
         if rate > DEGRADED_THRESHOLD:
             drafts.append(
                 AlertDraft(
@@ -472,7 +472,10 @@ def _degraded(rule_id: str, data: Mapping[datetime, float | None], ctx: RuleCont
 
 @rule("b2_degraded", "daily", audience=("dev",))
 def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
-    """Luật 12 — tỉ lệ lá phải xuống LLM ở B2 của một ngày VN > 0,30. `data` = `{r: b2_llm_rate(conn,
+    """Luật 12 — tỉ lệ DÒNG audit step B2 do tầng LLM quyết của một ngày VN > 0,30, đúng cách `b2_llm_rate` (A2) đếm:
+    `count(*)` dòng B2 có `layer_decided = 'llm'` hoặc event `guard_unavailable` / dòng B2 có `layer_decided` hoặc
+    `guard_unavailable`, của lá tạo trong ngày — đếm dòng, không đếm lá phân biệt (một lá nhiều lượt B2 tính nhiều
+    lần). Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data` = `{r: b2_llm_rate(conn,
     *day_window(r, ctx.tz)) for r in daily_marks(ctx)}` (A2) — mỗi mốc vượt một draft, `window_start = r`
     (Q-M9-B2-15). Tập mốc lệch `daily_marks(ctx)` → `ValueError` (Q-M9-B2-20). Loader GĐ2 trả `Pending` tới Phase 5
     (`is_pending("b2_classifier")`, Q-M9-A2-8): Phase 3–4 chưa có injection-clf nên số ≈ 1,0 — báo mỗi ngày một điều
@@ -482,8 +485,10 @@ def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list
 
 @rule("b3_degraded", "daily", audience=("dev",))
 def b3_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
-    """Luật 13 (D-32) — tỉ lệ lá xuống LLM ở B3 của một ngày VN > 0,30. `data` như luật 12 với `b3_llm_rate` (A2).
-    Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
+    """Luật 13 (D-32) — tỉ lệ DÒNG audit điểm log 1 (step B3, B4) do tầng LLM quyết của một ngày VN > 0,30, đúng cách
+    `b3_llm_rate` (A2) đếm: `count(*)` dòng có `detail.layer = 'llm'` / dòng có `detail.layer` khác NULL, của lá tạo
+    trong ngày — đếm dòng, không đếm lá phân biệt. Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data`
+    như luật 12 với `b3_llm_rate`. Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
     return _degraded("b3_degraded", data, ctx)
 
 
