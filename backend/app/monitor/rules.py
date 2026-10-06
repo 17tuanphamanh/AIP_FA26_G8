@@ -614,8 +614,9 @@ def llm_budget(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
 
 # ---- luật B2 chu kỳ 60 giây: 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` (chốt Q-M9-B2-2, 5, 12 ở #14) -------------
 #
-# CHƯA gắn `@rule`: đăng ký "minute" mà chưa có loader → `MissingLoaderError` → job phút ra `luật_lỗi` mỗi phút
-# (Q-M9-B2-10). `@rule` (4: dev, 5: ops, 6: manager — kế hoạch chung mục 6) và loader vào CÙNG một commit ở GĐ2.
+# Đăng ký "minute" cùng commit với loader (Q-M9-B2-10): luật minute thiếu loader → `MissingLoaderError` → job phút ra
+# `luật_lỗi` mỗi phút. Người nhận theo kế hoạch chung mục 6: 4 → dev, 5 → ops, 6 → manager. Luật 5: loader trả `Pending`
+# tới khi `tool_spans` ready (`is_pending`, Q-M9-4) → `skipped_rules`, không báo.
 
 SPIKE_RECHECK_HOURS = 24  # Q-M9-B2-2: mỗi lượt đánh giá lại 24 giờ trước + giờ hiện tại
 SPIKE_FACTOR = 3  # luật 4, 6: count > 3 × trung vị
@@ -651,6 +652,7 @@ def _spike_drafts(rule_id: str, data: Sequence[TicketExit], ctx: RuleContext) ->
     return drafts
 
 
+@rule("e9_spike", "minute", audience=("dev",))
 def e9_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
     """Luật 4 — số lá E9 trong một giờ > 3 × trung vị theo giờ của 168 giờ TRƯỚC giờ đó (giờ trống = 0) VÀ ≥ 3 ca →
     dev. Đúng bằng ngưỡng → không báo (kế hoạch chung mục 6).
@@ -665,6 +667,7 @@ def e9_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
     return _spike_drafts("e9_spike", data, ctx)
 
 
+@rule("e6_spike", "minute", audience=("manager",))
 def e6_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
     """Luật 6 — như luật 4 với lá E6 → Trưởng BP. E6 ghi lúc HẾT HẠN chờ duyệt (sau `tickets.created_at` cả giờ
     SLA): đếm theo giờ ra mã, đếm theo giờ tạo ticket thì giờ đã đánh giá không bao giờ thấy ca đến muộn (Q-M9-B2-5).
@@ -682,6 +685,7 @@ class ToolSpan:
     started_at: datetime
 
 
+@rule("breaker_open", "minute", audience=("ops",))
 def breaker_open(data: Sequence[ToolSpan], ctx: RuleContext) -> list[AlertDraft]:
     """Luật 5 — mỗi ĐỢT `circuit_open` của một tool một cảnh báo → vận hành. Đợt = chuỗi span cùng tên mà hai span
     LIỀN NHAU cách nhau < 60 s (đúng 60 s là đợt mới). `window_start` = `started_at` của span đầu đợt (lấy từ DB).

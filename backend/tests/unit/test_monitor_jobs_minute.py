@@ -19,16 +19,17 @@ import pytest
 import yaml
 from app import worker
 from app.core.clock import FakeClock
-from app.db.models import SECURITY_EVENT_TYPES
+from app.db.models import SECURITY_EVENT_TYPES, SPAN_STATUSES, SPAN_TYPES
 from app.db.session import Engines
 from app.domain.alerts import AlertDraft
 from app.graph.runner import FINALIZE_FAILED
 from app.llm.config import load_llm_config
-from app.monitor.evaluator import LOADERS, EvalResult
+from app.monitor.evaluator import LOADERS, EvalResult, Pending
 from app.monitor.queries import rules_data
 from app.monitor.rules import LOOKBACK, REGISTRY, RuleContext
 from app.monitor.window import VN_TZ
 from app.settings import Settings
+from app.tools.registry import CIRCUIT_OPEN
 from app.worker import (
     MONITOR_RULES_MINUTE,
     MONITOR_RULES_SECONDS,
@@ -52,6 +53,8 @@ B1_RULES = {
     "injection_detected", "password_bruteforce", "refresh_reuse", "permission_denied_burst", "policy_saved",
     "finalize_failed", "execution_failed",
 }  # fmt: skip
+B2_MINUTE_RULES = {"e9_spike", "e6_spike", "breaker_open"}  # B2 GĐ2 cụm 1 (Q-M9-B2-2, 10)
+MINUTE_RULES = B1_RULES | B2_MINUTE_RULES
 
 
 # ---- đồ giả -----------------------------------------------------------------------------------------------------
@@ -743,16 +746,18 @@ def test_job_reads_via_monitor_engine_not_main(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_every_minute_rule_has_loader() -> None:
-    """Worker import `rules_data` → mọi luật `minute` có loader (thiếu → MissingLoaderError → failed_rules mỗi phút)."""
+    """Worker import `rules_data` → mọi luật `minute` có loader (thiếu → MissingLoaderError → failed_rules mỗi phút).
+    B2 GĐ2 cụm 1: luật 4, 5, 6 đăng ký `minute` CÙNG commit với loader (Q-M9-B2-10)."""
     minute = {r for r, spec in REGISTRY.items() if spec.every == "minute"}
-    assert minute == B1_RULES
+    assert minute == MINUTE_RULES
     assert minute <= set(LOADERS)
+    assert {LOADERS[r].__module__ for r in B2_MINUTE_RULES} == {rules_data.__name__}
     assert "from app.monitor.queries import rules_data" in inspect.getsource(worker)
 
 
 def _sql() -> dict[str, str]:
     found = {name: clause.text for name, clause in vars(rules_data).items() if isinstance(clause, TextClause)}
-    assert len(found) == 5  # quét không rỗng
+    assert len(found) == 6  # quét không rỗng; luật 4/6 dùng lại TICKET_EXIT_SQL, luật 5 thêm TOOL_SPAN_SQL
     return found
 
 
@@ -761,7 +766,8 @@ _UNWRITTEN_COLUMNS = ("confidence", "query", "success", "action_plan_hash_matche
 
 def test_rules_data_only_select() -> None:
     """Chỉ SELECT; không đụng bảng `tickets` trực tiếp (đếm qua `v_leaf`); không đọc 4 cột chưa ghi; KHÔNG chặn trên
-    theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 qua `v_leaf`, luật 15 thì không."""
+    theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 (và 4/6, cùng SQL) qua `v_leaf`, luật 15
+    thì không. Luật 5 đọc `spans`, không lọc lá (Q-M9-B2-22: breaker là sự cố hệ thống, không phải đếm ticket)."""
     sql = _sql()
     for name, body in sql.items():
         words = body.lower()
@@ -773,6 +779,7 @@ def test_rules_data_only_select() -> None:
         assert "cast(" not in words and "::" not in body, name  # không ép kiểu dữ liệu JSON
     assert "v_leaf" in sql["TICKET_EXIT_SQL"]
     assert "v_leaf" not in sql["FINALIZE_FAILED_SQL"]
+    assert "from spans" in sql["TOOL_SPAN_SQL"].lower() and "v_leaf" not in sql["TOOL_SPAN_SQL"]
 
 
 class RecordingConn:
@@ -786,7 +793,7 @@ class RecordingConn:
         return []
 
 
-_ALLOWED_BINDS = {"since", "code", "step", "event", "event_type", "reason", "rule_id"}
+_ALLOWED_BINDS = {"since", "code", "step", "event", "event_type", "reason", "rule_id", "span_type", "status", "error"}
 
 
 @pytest.mark.parametrize("rule_id", sorted(B1_RULES))
@@ -834,13 +841,75 @@ def test_finalize_event_constant_matches_runner() -> None:
 
 def test_policy_saved_loader_does_not_call_is_pending() -> None:
     """Chốt 02/10 (#13): `is_pending("policy_saved")` ném KeyError → luật 11 vào failed_rules mỗi phút. Loader chạy
-    truy vấn thật; chưa có nơi ghi → 0 sự kiện."""
-    tree = ast.parse(inspect.getsource(rules_data))
+    truy vấn thật; chưa có nơi ghi → 0 sự kiện. B2: module nay import `is_pending` (luật 5) → chỉ quét hàm loader 11;
+    toàn module xem `test_only_breaker_loader_calls_is_pending`."""
+    tree = ast.parse(inspect.getsource(rules_data.load_policy_saved))
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-    names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
-    assert len(names) > 10  # quét không rỗng
+    assert {"_events", "LOOKBACK"} <= names  # quét không rỗng
     assert "is_pending" not in names
     conn = RecordingConn()
     out = asyncio.run(LOADERS["policy_saved"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
     assert out == [] and conn.calls[0][1]["event_type"] == "policy_saved"
+
+
+# ---- loader B2 luật 60 s: 4 e9_spike, 6 e6_spike, 5 breaker_open (Q-M9-B2-2, 5, 10, 12; Q-M9-4) ---------------------
+
+# T0 = 2026-10-02T08:00Z → giờ cũ nhất được đánh giá 2026-10-01T08:00Z (24 giờ trước) → trừ 168 giờ (tính tay).
+SPIKE_SINCE_T0 = datetime(2026, 9, 24, 8, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(("rule_id", "code"), [("e9_spike", "E9"), ("e6_spike", "E6")])
+def test_spike_loader_binds_own_code(rule_id: str, code: str) -> None:
+    """Q-M9-B2-5: loader 4/6 dùng lại `TICKET_EXIT_SQL` (`first_at` qua `v_leaf`) với ĐÚNG mã của luật; mốc dưới =
+    `spike_since(ctx)` (đủ trung vị 168 giờ cho giờ cũ nhất), không phải `now − 24 giờ`."""
+    conn = RecordingConn()
+    out = asyncio.run(LOADERS[rule_id](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert out == []
+    [(sql, params)] = conn.calls
+    assert sql == rules_data.TICKET_EXIT_SQL.text
+    assert params == {"code": code, "since": SPIKE_SINCE_T0}
+
+
+def test_breaker_loader_pending_no_sql() -> None:
+    """Luật 5: nguồn `tool_spans` pending (span tool chưa ghi DB, Q-M9-4) → `Pending`, KHÔNG chạy SQL (luật vào
+    `skipped_rules`, không báo, không đoán)."""
+    conn = RecordingConn()
+    out = asyncio.run(LOADERS["breaker_open"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert out == Pending("tool_spans_not_recorded")
+    assert conn.calls == []
+
+
+def test_breaker_loader_ready_binds_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nhánh khi nguồn ready (vá riêng khoá `tool_spans`): đúng hợp đồng dự kiến Q-M9-4 — `span_type='tool'`,
+    `status='error'`, `attributes.error='circuit_open'`; đọc từ `now − 24 giờ` (Q-M9-B2-12). Giá trị là hằng có thật."""
+    real = rules_data.is_pending
+    monkeypatch.setattr(rules_data, "is_pending", lambda key: False if key == "tool_spans" else real(key))
+    conn = RecordingConn()
+    out = asyncio.run(LOADERS["breaker_open"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert out == []
+    [(sql, params)] = conn.calls
+    assert sql == rules_data.TOOL_SPAN_SQL.text
+    assert params == {
+        "span_type": "tool", "status": "error", "error": "circuit_open", "since": datetime(2026, 10, 1, 8, 0, tzinfo=UTC),
+    }  # fmt: skip
+    assert params["span_type"] in SPAN_TYPES and params["status"] in SPAN_STATUSES
+    assert set(params) <= _ALLOWED_BINDS
+
+
+def test_breaker_error_constant_matches_registry() -> None:
+    """`monitor` không import `tools` → hằng sao chép; lệch là luật 5 câm lặng khi nguồn ready (FN)."""
+    assert rules_data.BREAKER_ERROR == CIRCUIT_OPEN
+
+
+def test_only_breaker_loader_calls_is_pending() -> None:
+    """Chỉ luật có nguồn TỪNG pending mới gọi `is_pending` (hợp đồng mục 3): trong `rules_data` đúng một lời gọi, ở loader
+    luật 5, khoá hằng `tool_spans` (gõ sai → KeyError → failed_rules). Luật 11 không gọi (chốt 02/10 ở #13)."""
+    tree = ast.parse(inspect.getsource(rules_data))
+    calls = [
+        (fn.name, [a.value for a in call.args if isinstance(a, ast.Constant)])
+        for fn in ast.walk(tree) if isinstance(fn, ast.AsyncFunctionDef | ast.FunctionDef)
+        for call in ast.walk(fn)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "is_pending"
+    ]  # fmt: skip
+    assert calls == [("load_breaker_open", ["tool_spans"])]

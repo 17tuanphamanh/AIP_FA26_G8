@@ -172,3 +172,65 @@ async def seed_noise(conn: AsyncConnection, rule_id: str, *, at: datetime) -> st
     else:
         raise ValueError(f"luật lạ {rule_id!r}")
     return user
+
+
+# ---- B2 GĐ2 cụm 1: luật 60 s 4 `e9_spike`, 6 `e6_spike` (tổng hợp), 5 `breaker_open` --------------------------------
+#
+# Luật 4/6 đếm TOÀN HỆ THỐNG (subject `SYSTEM_SUBJECT`) → không cô lập được theo subject như B1: mỗi ca một mốc
+# `spike_now(k)` riêng, cách nhau 10 ngày > đọc lùi 192,5 giờ (`spike_since`) + 25 giờ đánh giá. Phút 30 của giờ.
+
+SPIKE_BASE = datetime(2032, 1, 1, 12, 30, tzinfo=UTC)
+SPIKE_SLOT = timedelta(days=10)
+# Dòng audit như code thật ghi: E9 `graph/boundary.py` (step = node, event unhandled_exception); E6
+# `graph/nodes/approval_wait.py` (step B16, event approval_timeout, approval_result timeout).
+_SPIKE_ROW: dict[str, dict[str, Any]] = {
+    "E9": {"step": "B9", "event": "unhandled_exception"},
+    "E6": {"step": "B16", "event": "approval_timeout", "approval_result": "timeout"},
+}
+
+
+def spike_now(k: int) -> datetime:
+    return SPIKE_BASE + k * SPIKE_SLOT
+
+
+async def spike_row(conn: AsyncConnection, ticket_id: str, code: str, *, at: datetime) -> int:
+    """Một dòng `audit_logs` mang mã E9/E6 của ticket có sẵn (vd dòng thứ hai của cùng lá)."""
+    return await seed.audit_row(conn, ticket_id, created_at=at, exit_code=code, **_SPIKE_ROW[code])
+
+
+async def spike_leaf(conn: AsyncConnection, code: str, *, at: datetime, created_at: datetime | None = None) -> str:
+    """Một lá ra mã `code` lúc `at` (ticket tạo lúc `created_at`, mặc định `at`). Trả `ticket_id`."""
+    ticket = await seed.leaf_ticket(conn, created_at=created_at or at, exit_code=code)
+    await spike_row(conn, ticket, code, at=at)
+    return ticket
+
+
+async def spike_leaves(conn: AsyncConnection, code: str, *, hour: datetime, n: int) -> list[str]:
+    """`n` lá ra mã ở giờ `hour`, phút 10, 11, …"""
+    return [await spike_leaf(conn, code, at=hour + timedelta(minutes=10 + i)) for i in range(n)]
+
+
+async def spike_parent(conn: AsyncConnection, code: str, *, at: datetime) -> str:
+    """Ticket CHA (`is_parent = true`) mang dòng mã — luật đếm qua `v_leaf` không được tính nó. Trả id cha."""
+    parent, _ = await seed.parent_with_children(conn, created_at=at, n=1, parent_exit_code=code)
+    await spike_row(conn, parent, code, at=at)
+    return parent
+
+
+async def tool_span(
+    conn: AsyncConnection, *, name: str, at: datetime, error: str = "circuit_open", span_type: str = "tool",
+    status: str = "error",
+) -> str:  # fmt: skip
+    """Span tool theo hợp đồng dự kiến của luật 5 (Q-M9-4): `attributes.error`. `monitor_seed.span` không ghi
+    `attributes` nên dựng riêng ở đây. Trả `span_id`."""
+    ticket = await seed.leaf_ticket(conn, created_at=at)
+    turn_id = await seed.turn(conn, ticket, started_at=at)
+    span_id = seed.new_id("sp")[:32]
+    await conn.execute(text(
+        "INSERT INTO spans (span_id, trace_id, turn_id, span_type, name, started_at, duration_ms, status, attributes) "
+        "VALUES (:id, :trace, :u, :ty, :n, :s, 0, :st, CAST(:a AS jsonb))"
+    ), {
+        "id": span_id, "trace": span_id, "u": turn_id, "ty": span_type, "n": name, "s": at, "st": status,
+        "a": json.dumps({"error": error}),
+    })  # fmt: skip
+    return span_id

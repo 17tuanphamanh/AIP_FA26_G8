@@ -1,7 +1,7 @@
 """M9-B2 GĐ1 cụm 1: helper cửa sổ ngày (Q-M9-B2-1) + luật tổng hợp chu kỳ ngày 1 `escalation_rate_high`,
 12 `b2_degraded`, 13 `b3_degraded`; cụm 2: luật tổng hợp chu kỳ giờ 14 `llm_budget` — hàm thuần, nhận GIÁ TRỊ
-(loader + hàm A nối ở GĐ2); cụm 4a: luật 60 s 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` — hàm thuần CHƯA đăng ký
-`@rule` (đăng ký cùng loader ở GĐ2, Q-M9-B2-10); cụm 4b: luật 7 `reflex_approval` (hàm thuần, `@rule` daily) + đánh
+(loader + hàm A nối ở GĐ2); cụm 4a: luật 60 s 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` — hàm thuần, đăng ký
+`minute` cùng loader ở GĐ2 cụm 1 (Q-M9-B2-10); cụm 4b: luật 7 `reflex_approval` (hàm thuần, `@rule` daily) + đánh
 giá 7 mốc ngày cho luật 7, 12, 13 (Q-M9-B2-15).
 
 Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 4, 5, 6, 7, 12, 13, 14; đoạn "Trung vị 7 ngày (luật 4, 6)"),
@@ -607,6 +607,19 @@ def _ok_tool(drafts: list[AlertDraft]) -> None:
         assert d.subject != SYSTEM_SUBJECT  # luật theo đối tượng: subject tường minh
         check_alert(d)
         assert "audience" not in d.detail
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "fn", "audience"),
+    [("e9_spike", e9_spike, ("dev",)), ("e6_spike", e6_spike, ("manager",)), ("breaker_open", breaker_open, ("ops",))],
+    ids=["e9_spike", "e6_spike", "breaker_open"],
+)
+def test_registry_minute_b2(rule_id: str, fn: Callable[..., list[AlertDraft]], audience: tuple[str, ...]) -> None:
+    """Bảng 16 luật (kế hoạch chung mục 6): luật 4, 5, 6 chu kỳ 60 s (Q-M9-B2-2); người nhận 4 → dev, 5 → vận hành,
+    6 → Trưởng BP (Q-M9-B2-10). `@rule` nằm trong `rules.py` (đăng ký khi import)."""
+    spec = REGISTRY[rule_id]
+    assert (spec.every, spec.audience) == ("minute", audience)
+    assert spec.fn is fn
 
 
 def test_breaker_one_span_one_draft() -> None:

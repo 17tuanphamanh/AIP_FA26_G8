@@ -1,4 +1,5 @@
-"""Loader dữ liệu cho luật cảnh báo M9 (B1: 7 luật theo sự kiện — file chia việc mục 6, kế hoạch chung 4.4, 6).
+"""Loader dữ liệu cho luật cảnh báo M9 (B1: 7 luật theo sự kiện; B2: luật 60 s 4, 5, 6 — file chia việc mục 6, kế hoạch
+chung 4.4, 6).
 
 Mỗi loader đọc qua `conn` của engine `app_monitor` (chỉ SELECT) và trả đúng kiểu dữ liệu mà hàm luật trong `rules.py`
 nhận. Chốt áp ở đây (#13, PR #20):
@@ -16,6 +17,12 @@ nhận. Chốt áp ở đây (#13, PR #20):
 - Không đọc 4 cột `audit_logs` chưa từng được ghi (`confidence`, `query`, `success`, `action_plan_hash_matched`).
 - Không ép kiểu dữ liệu đọc ra (lỗi ép kiểu in nguyên giá trị vào traceback); `->>` trả text, không CAST trên JSON.
   Tham số bind chỉ là mốc thời gian và hằng code — lỗi SQL in tham số cũng không lộ dữ liệu.
+- Luật 4/6 (B2, chốt #14 comment 5959974287): dùng lại `_ticket_exits` (`first_at` = thời điểm RA MÃ, qua `V_LEAF`;
+  Q-M9-B2-5), mốc dưới `spike_since(ctx)` của `rules.py` (168 giờ trước giờ cũ nhất được đánh giá — một nguồn cho mốc).
+  Không gộp hai lần đọc E9/E6: mỗi luật một loader, một savepoint — lỗi của luật này không kéo luật kia.
+- Luật 5: `is_pending("tool_spans")` → `Pending`, KHÔNG chạy SQL (span tool chưa ghi DB, Q-M9-4). Khi nguồn ready: đọc
+  `spans` theo hợp đồng dự kiến của Q-M9-4 từ `now − 24 giờ` (Q-M9-B2-12). Không lọc `V_LEAF` (Q-M9-B2-22, đề xuất):
+  breaker mở là sự cố của hệ thống đích, không phải chỉ số đếm ticket — như luật 15.
 """
 
 from collections.abc import Mapping
@@ -27,7 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.domain.alerts import BRUTEFORCE_RULE_ID
 from app.domain.exit_codes import ExitCode
-from app.monitor.evaluator import loader
+from app.monitor.evaluator import Pending, loader
+from app.monitor.metrics import is_pending
 from app.monitor.rules import (
     BURST_WINDOW,
     LOOKBACK,
@@ -38,12 +46,16 @@ from app.monitor.rules import (
     RuleContext,
     SecurityEvent,
     TicketExit,
+    ToolSpan,
+    spike_since,
 )
 from app.monitor.views import V_LEAF
 
 # graph/runner.py `FINALIZE_FAILED` — monitor không import graph; test đối chiếu hai hằng.
 FINALIZE_FAILED_STEP = "B20"
 FINALIZE_FAILED_EVENT = "finalize_failed_permanent"
+# tools/registry.py `CIRCUIT_OPEN` — monitor không import tools; test đối chiếu hai hằng.
+BREAKER_ERROR = "circuit_open"
 
 TICKET_EXIT_SQL = text(f"""
 SELECT DISTINCT ON (a.ticket_id)
@@ -83,6 +95,14 @@ SELECT rule_id, subject, window_start
 FROM alerts
 WHERE rule_id = :rule_id AND window_start >= :since
 ORDER BY window_start, alert_id
+""")
+
+TOOL_SPAN_SQL = text("""
+SELECT s.name, s.started_at
+FROM spans s
+WHERE s.span_type = :span_type AND s.status = :status AND s.attributes->>'error' = :error
+  AND s.started_at >= :since
+ORDER BY s.name, s.started_at, s.span_id
 """)
 
 
@@ -146,3 +166,24 @@ async def load_finalize_failed(conn: AsyncConnection, ctx: RuleContext) -> list[
 @loader("execution_failed")
 async def load_execution_failed(conn: AsyncConnection, ctx: RuleContext) -> list[TicketExit]:
     return await _ticket_exits(conn, ExitCode.E7, ctx.now - LOOKBACK)
+
+
+@loader("e9_spike")
+async def load_e9_spike(conn: AsyncConnection, ctx: RuleContext) -> list[TicketExit]:
+    return await _ticket_exits(conn, ExitCode.E9, spike_since(ctx))
+
+
+@loader("e6_spike")
+async def load_e6_spike(conn: AsyncConnection, ctx: RuleContext) -> list[TicketExit]:
+    return await _ticket_exits(conn, ExitCode.E6, spike_since(ctx))
+
+
+@loader("breaker_open")
+async def load_breaker_open(conn: AsyncConnection, ctx: RuleContext) -> list[ToolSpan] | Pending:
+    if is_pending("tool_spans"):
+        return Pending("tool_spans_not_recorded")
+    rows = await conn.execute(
+        TOOL_SPAN_SQL,
+        {"span_type": "tool", "status": "error", "error": BREAKER_ERROR, "since": ctx.now - LOOKBACK},
+    )
+    return [ToolSpan(r.name, r.started_at) for r in rows]

@@ -544,11 +544,11 @@ def _message_ok(node: ast.expr) -> bool:
     return False
 
 
-@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 7)])
+@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 10)])
 def test_error_messages_carry_no_data(module: Any, min_async: int) -> None:
     """`evaluate` ghi `log.exception` (cả traceback) khi luật/loader lỗi — message chỉ được mang tên luật/hằng.
     GĐ2 (Q-M9-B1-17): thêm `queries/rules_data.py`; quét cả `async def` (loader là async — chỉ quét `def` thì loader
-    lọt). `rules_data` không có `raise` → "quét không rỗng" của nó là ≥ 7 hàm async (7 loader)."""
+    lọt). `rules_data` không có `raise` → "quét không rỗng" của nó là ≥ 10 hàm async (7 loader B1 + 3 loader B2)."""
     tree = ast.parse(inspect.getsource(module))
     raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)]
     if module is not rules_data:

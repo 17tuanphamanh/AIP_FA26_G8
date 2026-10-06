@@ -82,7 +82,9 @@ async def test_rule_has_event_one_draft(rule_id: str, rw: AsyncEngine, mon: Asyn
     drafts = mine(result, rule_id, [subject])
     assert [(d.subject, d.window_start) for d in drafts] == [(subject, window)]
     assert drafts[0].window_start != now
-    assert result.failed_rules == [] and result.skipped_rules == []
+    # B2: luật 5 `breaker_open` luôn skipped tới khi `tool_spans` ready (Q-M9-4). Không ghim `== ["breaker_open"]`: lật
+    # nguồn sang ready (ngoài M9) không được làm đỏ test B1.
+    assert result.failed_rules == [] and set(result.skipped_rules) <= {"breaker_open"}
 
 
 @RULES
