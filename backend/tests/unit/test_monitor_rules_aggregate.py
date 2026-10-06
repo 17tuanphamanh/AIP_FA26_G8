@@ -1,11 +1,13 @@
 """M9-B2 GĐ1 cụm 1: helper cửa sổ ngày (Q-M9-B2-1) + luật tổng hợp chu kỳ ngày 1 `escalation_rate_high`,
 12 `b2_degraded`, 13 `b3_degraded`; cụm 2: luật tổng hợp chu kỳ giờ 14 `llm_budget` — hàm thuần, nhận GIÁ TRỊ
 (loader + hàm A nối ở GĐ2); cụm 4a: luật 60 s 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` — hàm thuần CHƯA đăng ký
-`@rule` (đăng ký cùng loader ở GĐ2, Q-M9-B2-10).
+`@rule` (đăng ký cùng loader ở GĐ2, Q-M9-B2-10); cụm 4b: luật 7 `reflex_approval` (hàm thuần, `@rule` daily) + đánh
+giá 7 mốc ngày cho luật 7, 12, 13 (Q-M9-B2-15).
 
-Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 4, 5, 6, 12, 13, 14; đoạn "Trung vị 7 ngày (luật 4, 6)"), Q-M9-4
-(luật 5: hợp đồng span dự kiến, "đợt" = chuỗi cách nhau < 60 s), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ B2),
-Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-2/5/7/12/16/17 (đã chốt ở #14, comment 5959974287).
+Nguồn: kế hoạch chung M9 mục 6 (bảng 16 luật: luật 1, 4, 5, 6, 7, 12, 13, 14; đoạn "Trung vị 7 ngày (luật 4, 6)"),
+Q-M9-4 (luật 5: hợp đồng span dự kiến, "đợt" = chuỗi cách nhau < 60 s), Q-M9-B2-1 (monitor.md mục Q-M9; chia-việc thẻ
+B2), Q-M9-6 (luật 14 nhắc mỗi ngày), Q-M9-B2-2/3/5/6/7/12/15/16/17 (đã chốt ở #14, comment 5959974287), Q-M9-B2-20/21
+(cụm 4b, Duy Anh đồng ý — nêu trong PR).
 Mọi mốc kỳ vọng là HẰNG tính tay (giờ VN = UTC+7; Tokyo = UTC+9; Berlin CET = UTC+1, CEST = UTC+2), không tính bằng
 chính hàm đang test.
 """
@@ -13,8 +15,9 @@ chính hàm đang test.
 import ast
 import inspect
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -24,18 +27,23 @@ from app.monitor import rules
 from app.monitor.queries.business import WeightedRate
 from app.monitor.rules import (
     REGISTRY,
+    ApprovalDecision,
     RuleContext,
     TicketExit,
     ToolSpan,
     b2_degraded,
     b3_degraded,
     breaker_open,
+    daily_marks,
+    daily_since,
+    day_window,
     days_before,
     e6_spike,
     e9_spike,
     escalation_rate_high,
     llm_budget,
     prev_day_window,
+    reflex_approval,
     rolling_7d_window,
     spike_hours,
     spike_since,
@@ -49,6 +57,9 @@ NOW = datetime(2026, 10, 2, 19, 0, tzinfo=UTC)  # job ngày: 02:00 ngày 03/10 g
 D0 = datetime(2026, 10, 2, 17, 0, tzinfo=UTC)  # 00:00 ngày 03/10 giờ VN
 D0_MINUS_1 = datetime(2026, 10, 1, 17, 0, tzinfo=UTC)  # 00:00 ngày 02/10 giờ VN
 D0_MINUS_7 = datetime(2026, 9, 25, 17, 0, tzinfo=UTC)  # 00:00 ngày 26/09 giờ VN
+D0_MINUS_2 = datetime(2026, 9, 30, 17, 0, tzinfo=UTC)  # 00:00 ngày 01/10 giờ VN
+# 7 mốc ngày của NOW (Q-M9-B2-15), cũ → mới: 00:00 ngày 27/09 … 03/10 giờ VN (VN không đổi giờ → luôn 17:00Z)
+MARKS_VN = [datetime(2026, 9, day, 17, 0, tzinfo=UTC) for day in (26, 27, 28, 29, 30)] + [D0_MINUS_1, D0]
 
 
 def ctx_at(now: datetime, tz: ZoneInfo = VN_TZ) -> RuleContext:
@@ -141,6 +152,39 @@ def test_windows_follow_ctx_tz() -> None:
     )
 
 
+# ---- 7 mốc ngày (Q-M9-B2-15) ---------------------------------------------------------------------------------------
+
+# Berlin, đổi giờ mùa xuân CN 29/03/2026 (02:00 CET → 03:00 CEST). now = 2026-03-31T00:00Z = 02:00 CEST ngày 31/03 →
+# d0 = 00:00 ngày 31/03 CEST. 00:00 ngày 25…29/03 còn CET (UTC+1) = 23:00Z hôm trước; 00:00 ngày 30, 31/03 là CEST (UTC+2)
+# = 22:00Z hôm trước.
+NOW_BERLIN = datetime(2026, 3, 31, 0, 0, tzinfo=UTC)
+MARKS_BERLIN_SPRING = [datetime(2026, 3, day, 23, 0, tzinfo=UTC) for day in (24, 25, 26, 27, 28)] + [
+    datetime(2026, 3, 29, 22, 0, tzinfo=UTC),
+    datetime(2026, 3, 30, 22, 0, tzinfo=UTC),
+]
+
+
+def test_daily_marks_vn() -> None:
+    """7 mốc, cũ → mới, phần tử cuối = d0; mốc dưới loader 7 = đầu cửa sổ của mốc cũ nhất (00:00 ngày 26/09 VN)."""
+    assert daily_marks(CTX) == MARKS_VN
+    assert daily_since(CTX) == D0_MINUS_7
+
+
+def test_daily_marks_berlin_spring() -> None:
+    """Trừ ngày LỊCH theo `tz` — bản `d0 − timedelta(days=k)` trên UTC ra 22:00Z cho mọi mốc trước 30/03."""
+    ctx = ctx_at(NOW_BERLIN, BERLIN)
+    assert daily_marks(ctx) == MARKS_BERLIN_SPRING
+    assert daily_since(ctx) == datetime(2026, 3, 23, 23, 0, tzinfo=UTC)  # 00:00 ngày 24/03 CET
+
+
+def test_day_window() -> None:
+    """Ngày 29/03 Berlin dài 23 giờ: `[00:00 29/03 CET, 00:00 30/03 CEST)`."""
+    assert day_window(datetime(2026, 3, 29, 22, 0, tzinfo=UTC), BERLIN) == (
+        datetime(2026, 3, 28, 23, 0, tzinfo=UTC), datetime(2026, 3, 29, 22, 0, tzinfo=UTC)
+    )
+    assert day_window(D0, VN_TZ) == (D0_MINUS_1, D0)
+
+
 # ---- luật 1 escalation_rate_high ---------------------------------------------------------------------------------
 
 
@@ -187,20 +231,25 @@ def test_escalation_detail_and_value() -> None:
 
 # ---- luật 12 b2_degraded, 13 b3_degraded -------------------------------------------------------------------------
 
-DEGRADED: list[tuple[str, Callable[[float | None, RuleContext], list[AlertDraft]]]] = [
+Rates = Mapping[datetime, float | None]
+DegradedFn = Callable[[Rates, RuleContext], list[AlertDraft]]
+DEGRADED: list[tuple[str, DegradedFn]] = [
     ("b2_degraded", b2_degraded),
     ("b3_degraded", b3_degraded),
 ]
 DEGRADED_IDS = [r for r, _ in DEGRADED]
 
 
+def at_marks(values: Mapping[datetime, float | None], marks: Sequence[datetime] = MARKS_VN) -> dict[datetime, Any]:
+    """Dữ liệu loader GĐ2 sẽ dựng: đủ 7 mốc, mốc không nêu = None (không có lá)."""
+    return {r: None for r in marks} | dict(values)
+
+
 @pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
 @pytest.mark.parametrize(("rate", "n"), [(0.31, 1), (0.29, 0), (0.30, 0)])
-def test_degraded_threshold(
-    rule_id: str, fn: Callable[[float | None, RuleContext], list[AlertDraft]], rate: float, n: int
-) -> None:
-    """`> 0,30`; đúng bằng ngưỡng → không báo."""
-    drafts = fn(rate, CTX)
+def test_degraded_threshold(rule_id: str, fn: DegradedFn, rate: float, n: int) -> None:
+    """`> 0,30`; đúng bằng ngưỡng → không báo. Chỉ mốc d0 có số → đúng kết quả của bản một mốc (cụm 1)."""
+    drafts = fn(at_marks({D0: rate}), CTX)
     assert len(drafts) == n
     _ok(rule_id, drafts)
     if drafts:
@@ -209,11 +258,9 @@ def test_degraded_threshold(
 
 
 @pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
-def test_degraded_none_no_alert_no_failure(
-    rule_id: str, fn: Callable[[float | None, RuleContext], list[AlertDraft]]
-) -> None:
+def test_degraded_none_no_alert_no_failure(rule_id: str, fn: DegradedFn) -> None:
     """Không có lá trong ngày → chỉ số None → 0 draft, KHÔNG ném lỗi (lỗi = luật vào failed_rules mỗi ngày)."""
-    assert fn(None, CTX) == []
+    assert fn(at_marks({}), CTX) == []
 
 
 @pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
@@ -225,12 +272,59 @@ def test_degraded_none_no_alert_no_failure(
         datetime(2026, 10, 3, 16, 59, 59, tzinfo=UTC),  # 23:59:59 ngày 03/10 giờ VN
     ],
 )
-def test_degraded_window_is_d0(
-    rule_id: str, fn: Callable[[float | None, RuleContext], list[AlertDraft]], now: datetime
-) -> None:
+def test_degraded_window_is_d0(rule_id: str, fn: DegradedFn, now: datetime) -> None:
     """`window_start` = d0 (đầu ngày đánh giá), không phải đầu ngày dữ liệu `d0 − 1 ngày`, không phải `ctx.now`."""
-    [draft] = fn(0.5, ctx_at(now))
+    [draft] = fn(at_marks({D0: 0.5}), ctx_at(now))
     assert draft.window_start == D0
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
+def test_degraded_two_marks_two_drafts(rule_id: str, fn: DegradedFn) -> None:
+    """Q-M9-B2-15: mỗi mốc vượt một draft, `window_start = r` (cũ → mới); mốc bằng ngưỡng / None → không draft."""
+    data = at_marks({D0_MINUS_1: 0.5, D0: 0.31, MARKS_VN[3]: 0.30, MARKS_VN[2]: None})
+    drafts = fn(data, CTX)
+    assert [(d.window_start, d.value) for d in drafts] == [(D0_MINUS_1, 0.5), (D0, 0.31)]
+    _ok(rule_id, drafts)
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
+def test_degraded_worker_missed_two_runs(rule_id: str, fn: DegradedFn) -> None:
+    """Worker chết sau lượt 02:00 ngày 01/10 VN, lỡ 2 lượt 02:00 ngày 02/10 và 03/10, khởi động lại 09:00 ngày 04/10 VN
+    (d0 = 2026-10-03T17:00Z) → ngày 01/10 VN ở giữa (mốc 2026-10-01T17:00Z, lượt lỡ thứ nhất) vẫn được đánh giá. Chạy
+    lại cùng ctx → bằng hệt; lượt 02:00 hôm sau (loader dựng lại mapping theo 7 mốc mới) → cùng khoá, không ra khoá
+    mới."""
+    middle = datetime(2026, 10, 1, 17, 0, tzinfo=UTC)
+    restart = ctx_at(datetime(2026, 10, 4, 2, 0, tzinfo=UTC))
+    marks = [datetime(2026, 9, day, 17, 0, tzinfo=UTC) for day in (27, 28, 29, 30)] + [
+        datetime(2026, 10, day, 17, 0, tzinfo=UTC) for day in (1, 2, 3)
+    ]
+    first = fn(at_marks({middle: 0.9}, marks), restart)
+    assert [d.window_start for d in first] == [middle]
+    assert fn(at_marks({middle: 0.9}, marks), restart) == first
+    next_day = ctx_at(datetime(2026, 10, 4, 19, 0, tzinfo=UTC))  # 02:00 ngày 05/10 VN
+    next_marks = [datetime(2026, 9, day, 17, 0, tzinfo=UTC) for day in (28, 29, 30)] + [
+        datetime(2026, 10, day, 17, 0, tzinfo=UTC) for day in (1, 2, 3, 4)
+    ]
+    assert [(d.subject, d.window_start) for d in fn(at_marks({middle: 0.9}, next_marks), next_day)] == [
+        (SYSTEM_SUBJECT, middle)
+    ]
+
+
+@pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
+@pytest.mark.parametrize(
+    "data",
+    [
+        {r: 0.5 for r in MARKS_VN[:-1]},  # thiếu mốc d0
+        at_marks({D0_MINUS_7: 0.5}),  # thừa mốc cũ hơn 7 mốc
+    ],
+    ids=["thieu-d0", "thua-moc"],
+)
+def test_degraded_marks_mismatch_raises(rule_id: str, fn: DegradedFn, data: Rates) -> None:
+    """Q-M9-B2-20: tập mốc lệch `daily_marks` → `ValueError` (luật vào failed_rules) — coi thiếu là None thì mốc đó im
+    lặng không bao giờ được đánh giá. Thông điệp không in giá trị."""
+    with pytest.raises(ValueError) as exc:
+        fn(data, CTX)
+    assert "0.5" not in str(exc.value)
 
 
 # ---- luật 14 llm_budget (ctx mặc định: cap 38, warn 0,8 → ngưỡng 30,4) ---------------------------------------------
@@ -613,6 +707,268 @@ def test_breaker_future_span_kept() -> None:
     """Không chặn trên theo `now` (Q-M9-B1-12): span sau `now` (lệch đồng hồ) vẫn báo."""
     future = datetime(2026, 10, 3, 12, 35, tzinfo=UTC)
     assert _starts(breaker_open([sp(AD, future)], CTX_H)) == [future]
+
+
+# ---- luật 7 reflex_approval (Q-M9-B2-3, 6, 15, 21; kế hoạch chung mục 6 luật 7) -------------------------------------
+#
+# Mặc định: mốc D0 → dữ liệu `[2026-10-01T17:00Z, 2026-10-02T17:00Z)` (ngày 02/10 VN); phiếu ở 10:00 ngày 02/10 VN.
+
+DAY = datetime(2026, 10, 2, 3, 0, tzinfo=UTC)  # 10:00 ngày 02/10 giờ VN
+REMINDED = datetime(2026, 10, 2, 2, 0, tzinfo=UTC)
+_UNSET: Any = object()
+
+
+def dec(
+    uid: str | None = "l1_01", at: datetime = DAY, *, view: Any = 1.0, without: Any = False, role: Any = "primary",
+    reminder2: datetime | None = None, status: str = "approved", b16: Any = _UNSET,
+) -> ApprovalDecision:  # fmt: skip
+    """Mặc định là phiếu "fast" (xem 1 giây); `view=10.0` → phiếu bình thường."""
+    detail = {"view_duration": view, "decided_without_view": without, "decided_as": role} if b16 is _UNSET else b16
+    return ApprovalDecision(status=status, decided_by=uid, decided_at=at, reminder_2_at=reminder2, b16=detail)
+
+
+def fast(n: int, uid: str | None = "l1_01", at: datetime = DAY) -> list[ApprovalDecision]:
+    return [dec(uid, at + timedelta(minutes=i)) for i in range(n)]
+
+
+def _ok_reflex(drafts: list[AlertDraft]) -> None:
+    for d in drafts:
+        assert d.rule_id == "reflex_approval"
+        assert d.severity == "warning"
+        assert d.subject != SYSTEM_SUBJECT  # luật theo đối tượng: subject tường minh
+        assert len(d.subject) <= SUBJECT_MAX
+        check_alert(d)
+        assert "audience" not in d.detail
+
+
+def _counts(drafts: list[AlertDraft]) -> list[tuple[str, int, int]]:
+    return [(d.subject, d.detail["count"], d.detail["ambiguous_views"]) for d in drafts]
+
+
+@pytest.mark.parametrize(("n", "expected"), [(2, 0), (3, 1), (4, 1)])
+def test_reflex_threshold(n: int, expected: int) -> None:
+    """≥ 3 phiếu "< 5 giây" của một người trong ngày; 2 → không báo, đúng 3 → báo."""
+    drafts = reflex_approval(fast(n), CTX)
+    assert len(drafts) == expected
+    _ok_reflex(drafts)
+    if drafts:
+        [d] = drafts
+        assert (d.subject, d.window_start, d.value) == ("l1_01", D0, n)
+        assert dict(d.detail) == {"count": n, "ambiguous_views": 0, "threshold": 3}
+
+
+@pytest.mark.parametrize(("view", "expected"), [(4.99, 1), (5.0, 0), (5.01, 0), (4, 1)], ids=str)
+def test_reflex_view_boundary(view: float, expected: int) -> None:
+    """`view_duration < 5`: đúng 5,0 không tính; số nguyên trong JSON cũng là số."""
+    assert len(reflex_approval([*fast(2), dec(view=view)], CTX)) == expected
+
+
+def test_reflex_not_viewed_counted() -> None:
+    """Không xem (`decided_without_view`) → tính, chắc chắn (không phải mơ hồ) — kể cả khi `view_duration` lệch."""
+    assert _counts(reflex_approval([dec(view=None, without=True) for _ in range(3)], CTX)) == [("l1_01", 3, 0)]
+    assert _counts(reflex_approval([*fast(2), dec(view=10.0, without=True)], CTX)) == [("l1_01", 3, 0)]
+
+
+def test_reflex_primary_after_reminder2_counted() -> None:
+    """Nhánh MƠ HỒ (mutation bắt buộc "bỏ nhánh mơ hồ", chia-việc thẻ B2): người chính quyết sau nhắc 2 — lần xem 10 giây
+    có thể là của dự phòng (`first_viewed_at` là cột chung) → tính, đếm vào `ambiguous_views`."""
+    drafts = reflex_approval([*fast(2), dec(view=10.0, reminder2=REMINDED)], CTX)
+    assert len(drafts) == 1
+    assert _counts(drafts) == [("l1_01", 3, 1)]
+
+
+def test_reflex_backup_after_reminder2_not_counted() -> None:
+    """Dự phòng quyết sau nhắc 2, xem 10 giây → không mơ hồ (dự phòng chỉ quyết được sau nhắc 2) → không tính."""
+    assert reflex_approval([*fast(2), dec(view=10.0, role="backup", reminder2=REMINDED)], CTX) == []
+
+
+def test_reflex_primary_no_reminder2_not_counted() -> None:
+    assert reflex_approval([*fast(2), dec(view=10.0)], CTX) == []
+
+
+def test_reflex_fast_beats_ambiguous() -> None:
+    """Đã nhắc 2 nhưng xem 3 giây → dưới 5 giây dù ai xem → tính, KHÔNG cộng `ambiguous_views`."""
+    data = [dec(at=DAY + timedelta(minutes=i), view=3.0, reminder2=REMINDED) for i in range(3)]
+    assert _counts(reflex_approval(data, CTX)) == [("l1_01", 3, 0)]
+
+
+def test_reflex_missing_b16_ambiguous() -> None:
+    """Q-M9-B2-6: phiếu không có dòng B16 khớp → mơ hồ → tính (báo thừa)."""
+    assert _counts(reflex_approval([*fast(2), dec(b16=None)], CTX)) == [("l1_01", 3, 1)]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        pytest.param({"view": "abc"}, id="view-str"),
+        pytest.param({"view": True}, id="view-bool"),
+        pytest.param({"view": None, "without": False}, id="view-none-without-false"),
+        pytest.param({"view": 10.0, "without": "yes"}, id="without-str"),
+        pytest.param({"view": 10.0, "role": None}, id="role-none"),
+        pytest.param({"view": 10.0, "role": "manager"}, id="role-manager"),
+        pytest.param({"b16": {}}, id="b16-rong"),
+        pytest.param({"view": math.nan}, id="view-nan"),
+        pytest.param({"view": math.inf}, id="view-inf"),
+        pytest.param({"view": -math.inf}, id="view-neg-inf"),
+    ],
+)
+def test_reflex_bad_type_ambiguous(bad: dict[str, Any]) -> None:
+    """Q-M9-B2-6: trường sai kiểu / tự mâu thuẫn / không hữu hạn → mơ hồ → tính, KHÔNG ném lỗi. NaN phải kiểm trước phép
+    so (`nan < 5` là False → rơi xuống "bình thường" = sót)."""
+    assert _counts(reflex_approval([*fast(2), dec(**bad)], CTX)) == [("l1_01", 3, 1)]
+
+
+def test_reflex_negative_view_fast() -> None:
+    """`view_duration` âm hữu hạn (lệch đồng hồ giữa route xem và route duyệt) → tính là < 5 giây (báo thừa)."""
+    assert _counts(reflex_approval([*fast(2), dec(view=-2.0)], CTX)) == [("l1_01", 3, 0)]
+
+
+@pytest.mark.parametrize("status", ["timeout", "late_ignored", "pending"])
+def test_reflex_non_human_status_not_counted(status: str) -> None:
+    """Chỉ quyết định của người (`approved`/`rejected`); luật tự lọc, không phó mặc loader."""
+    assert reflex_approval([*fast(2), dec(status=status)], CTX) == []
+
+
+def test_reflex_rejected_counted() -> None:
+    data = [dec(at=DAY + timedelta(minutes=i), status="rejected") for i in range(3)]
+    assert _counts(reflex_approval(data, CTX)) == [("l1_01", 3, 0)]
+
+
+def test_reflex_action_plan_changed_counted() -> None:
+    """4d dừng 2: duyệt mà kế hoạch đã đổi → dòng B16 event `action_plan_changed_since_approval`, `approval_result =
+    'approved'`, detail có thêm khoá hash → vẫn là một quyết định duyệt, được tính. GĐ1: lưới hồi quy; "không lọc theo
+    event" ghim ở SQL loader (GĐ2)."""
+    changed = {
+        "view_duration": 1.0, "decided_without_view": False, "decided_as": "primary", "reason_code": None,
+        "close_applied": 1, "hash_source": "state", "hash_old": "a" * 64, "hash_new": "b" * 64,
+        "action_plan_hash_matched": False,
+    }  # fmt: skip
+    assert _counts(reflex_approval([*fast(2), dec(b16=changed)], CTX)) == [("l1_01", 3, 0)]
+
+
+def test_reflex_two_approvals_same_ticket() -> None:
+    """Q-M9-B2-6: hai phiếu nối tiếp của MỘT ticket là hai phần tử, mỗi cái phân loại theo B16 của chính nó (phiếu 1 xem
+    10 giây = bình thường, phiếu 2 fast) — không gộp. LATERAL chọn đúng dòng B16 cho phiếu 2 ghim ở test PG (GĐ2)."""
+    first, second = dec(view=10.0), dec(at=DAY + timedelta(hours=1))
+    assert _counts(reflex_approval([first, second, *fast(2)], CTX)) == [("l1_01", 3, 0)]
+
+
+def test_reflex_two_users_two_drafts() -> None:
+    """Luật theo đối tượng: 2 người cùng ngày → 2 draft (gộp = bỏ sót người thứ hai)."""
+    drafts = reflex_approval(fast(3, "l1_01") + fast(3, "l1_02"), CTX)
+    assert [(d.subject, d.window_start) for d in drafts] == [("l1_01", D0), ("l1_02", D0)]
+    _ok_reflex(drafts)
+
+
+def test_reflex_users_not_merged() -> None:
+    assert reflex_approval(fast(2, "l1_01") + fast(2, "l1_02"), CTX) == []
+
+
+@pytest.mark.parametrize(
+    ("third", "expected"),
+    [
+        pytest.param(D0_MINUS_1, [D0], id="dung-d0-1"),
+        pytest.param(datetime(2026, 10, 2, 16, 59, 59, 999999, tzinfo=UTC), [D0], id="d0-1us"),
+        pytest.param(D0, [], id="dung-d0"),
+        pytest.param(NOW - timedelta(minutes=1), [], id="trong-d0-now"),
+    ],
+)
+def test_reflex_decided_at_boundary(third: datetime, expected: list[datetime]) -> None:
+    """Q-M9-B2-3: mốc D0 lấy `[d0 − 1 ngày, d0)`; dữ liệu `[d0, now)` chưa đánh giá (lượt ngày mai bắt)."""
+    assert [d.window_start for d in reflex_approval([*fast(2), dec(at=third)], CTX)] == expected
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 10, 2, 17, 0, tzinfo=UTC),  # 00:00 ngày 03/10 giờ VN
+        NOW,  # 02:00 — giờ job
+        datetime(2026, 10, 3, 16, 59, 59, tzinfo=UTC),  # 23:59:59 ngày 03/10 giờ VN
+    ],
+)
+def test_reflex_window_is_mark(now: datetime) -> None:
+    [draft] = reflex_approval(fast(3), ctx_at(now))
+    assert draft.window_start == D0
+
+
+def test_reflex_two_missed_days_two_drafts() -> None:
+    """Q-M9-B2-15: phản xạ ở ngày 01/10 và 02/10 VN → 2 draft, `window_start` lần lượt d0 − 1 ngày, d0."""
+    data = fast(3, at=datetime(2026, 10, 1, 3, 0, tzinfo=UTC)) + fast(3)
+    assert [d.window_start for d in reflex_approval(data, CTX)] == [D0_MINUS_1, D0]
+
+
+def test_reflex_worker_missed_two_runs_middle_day() -> None:
+    """Worker chết sau lượt 02:00 ngày 01/10 VN, lỡ 2 lượt, khởi động lại 09:00 ngày 04/10 VN: phản xạ ở ngày 01/10 VN
+    (ngày ở giữa) vẫn báo, khoá = 00:00 ngày 02/10 VN. Chạy lại / lượt hôm sau → cùng khoá."""
+    data = fast(3, at=datetime(2026, 10, 1, 3, 0, tzinfo=UTC))
+    restart = ctx_at(datetime(2026, 10, 4, 2, 0, tzinfo=UTC))
+    first = reflex_approval(data, restart)
+    assert [(d.subject, d.window_start) for d in first] == [("l1_01", D0_MINUS_1)]
+    assert reflex_approval(data, restart) == first
+    assert reflex_approval(data, ctx_at(datetime(2026, 10, 4, 19, 0, tzinfo=UTC))) == first
+
+
+@pytest.mark.parametrize(
+    ("at", "step", "expected"),
+    [
+        # 3 phiếu từ đúng mốc dưới trở về sau → cùng ngày 26/09 VN
+        pytest.param(D0_MINUS_7, timedelta(hours=1), [datetime(2026, 9, 26, 17, 0, tzinfo=UTC)], id="dung-daily-since"),
+        # 3 phiếu từ 1 µs trước mốc dưới trở về trước → cả 3 thuộc ngày 25/09 VN, cũ hơn 7 mốc
+        pytest.param(datetime(2026, 9, 25, 16, 59, 59, 999999, tzinfo=UTC), -timedelta(hours=1), [], id="cu-hon-7-moc"),
+    ],
+)
+def test_reflex_oldest_mark_edge(at: datetime, step: timedelta, expected: list[datetime]) -> None:
+    """Mốc cũ nhất 00:00 ngày 27/09 VN lấy `[00:00 26/09, 00:00 27/09)`; cũ hơn 7 mốc → bỏ."""
+    data = [dec(at=at + i * step) for i in range(3)]
+    assert [d.window_start for d in reflex_approval(data, CTX)] == expected
+
+
+def test_reflex_dst_short_day() -> None:
+    """Berlin ngày 29/03 dài 23 giờ `[2026-03-28T23:00Z, 2026-03-29T22:00Z)`. 23:30 CET ngày 28/03 (22:30Z) thuộc ngày
+    28/03 — cửa sổ trừ 24 giờ trên UTC sẽ kéo nó vào."""
+    ctx = ctx_at(NOW_BERLIN, BERLIN)
+    day29 = [dec(at=datetime(2026, 3, 29, 21, 59, 59, tzinfo=UTC)), dec(at=datetime(2026, 3, 29, 12, 0, tzinfo=UTC))]
+    late28 = dec(at=datetime(2026, 3, 28, 22, 30, tzinfo=UTC))
+    assert reflex_approval([*day29, late28], ctx) == []
+    start29 = dec(at=datetime(2026, 3, 28, 23, 0, tzinfo=UTC))  # 00:00 CET ngày 29/03
+    assert [d.window_start for d in reflex_approval([*day29, late28, start29], ctx)] == [
+        datetime(2026, 3, 29, 22, 0, tzinfo=UTC)
+    ]
+
+
+def test_reflex_subject_bounded() -> None:
+    """subject = người quyết khi 1…64 ký tự; NULL và rỗng GỘP vào `user:` (Q-M9-B2-21); 65 ký tự → `_bounded("user", …)`
+    (sha256 hex 40 ký tự đầu của 65 chữ `a` — tính sẵn ngoài code bằng `sha256sum`)."""
+    a64, a65 = "a" * 64, "a" * 65
+    data = fast(3, None) + fast(3, "") + fast(3, a64) + fast(3, a65)
+    drafts = reflex_approval(data, CTX)
+    assert sorted(_counts(drafts)) == sorted([
+        ("user:", 6, 0), (a64, 3, 0), ("user#635361c48bb9eab14198e76ea8ab7f1a41685d6a", 3, 0),
+    ])  # fmt: skip
+    _ok_reflex(drafts)
+
+
+def test_reflex_detail_exact_and_safe() -> None:
+    """`detail` chỉ số đếm + ngưỡng (kế hoạch chung 4.4.5): không id phiếu/ticket, không ghi chú, không thời gian xem."""
+    [draft] = reflex_approval([*fast(2), dec(b16=None)], CTX)
+    assert dict(draft.detail) == {"count": 3, "ambiguous_views": 1, "threshold": 3}
+    _ok_reflex([draft])
+
+
+def test_reflex_empty() -> None:
+    assert reflex_approval([], CTX) == []
+
+
+def test_reflex_shuffled_same_result() -> None:
+    data = fast(3, "l1_02") + fast(3, at=datetime(2026, 10, 1, 3, 0, tzinfo=UTC)) + fast(3, "l1_01")
+    assert reflex_approval(list(reversed(data)), CTX) == reflex_approval(data, CTX)
+
+
+def test_registry_reflex() -> None:
+    """Bảng 16 luật: luật 7 chu kỳ ngày → Trưởng BP; `@rule` nằm trong `rules.py` (đăng ký khi import)."""
+    spec = REGISTRY["reflex_approval"]
+    assert (spec.every, spec.audience) == ("daily", ("manager",))
+    assert spec.fn is reflex_approval
 
 
 # ---- chung -------------------------------------------------------------------------------------------------------
