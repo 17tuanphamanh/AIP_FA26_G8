@@ -2,7 +2,7 @@
 
 *Thuộc bộ `build/`. Đây là **nơi duy nhất** theo dõi trạng thái quyết định. Nhóm **tự quyết** mọi mục (không có vòng hỏi GVHD); mục nào đổi hành vi hoặc công nghệ so với tài liệu gốc thì **báo cáo** GVHD trong báo cáo tuần. `huong-dan-xay-dung-he-thong-2.md` Phase 0 gọi file này là `decisions.md`. Khi một mục được chốt: sửa cột "Trạng thái" ở đây, rồi áp patch tương ứng (nếu có) trong `claude/bo-sung-bo-tai-lieu-build.md`.*
 
-*Cập nhật: 30/09/2026 (D-34, Q-4-A…U).*
+*Cập nhật: 03/10/2026 (cổng 4 đạt — §1.1 chốt Phase 4, §4.1 dòng 4b–4d). Bản trong repo chưa có D-35…D-43 và các ghi chú Phase 5–6: chúng vào repo cùng spec Phase 5–6.*
 
 **Nguyên tắc chốt (áp cho mục 1, 2, 3):**
 
@@ -51,6 +51,8 @@ Giữ đúng các mã đã xuất hiện trong tài liệu: R01 (TC01), R04 (TC0
 
 **Chốt Phase 3 (3-Q2, `phase3-thiet-ke-chi-tiet.md` 11.2, 11.10):** R20 áp cho `renew_vpn_cert` và `reissue_vpn_access`, điều kiện `device_registered` ∧ `device_owner_is_requester` ∧ ¬`ctx.target_is_other`; R16 (`check_vpn_status`) đòi ¬`ctx.target_is_other`; R17/R18/R19 = `approval_required`. Thiếu fact → điều kiện sai.
 
+
+**Chốt Phase 4 (Q-4-M, 4b P7):** R17/R18/R19 thêm điều kiện `action.facts.device_owner_is_requester is_true` (máy người khác / không tồn tại → không luật nào → E5).
 
 Thứ tự số không ảnh hưởng kết quả: khớp cả `allow` và `approval_required` thì `approval_required` thắng, `deny` thắng tất cả (B12-B14 mục 10).
 
@@ -252,7 +254,9 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | Chặng | Mã | Tóm tắt | Ở đâu |
 |---|---|---|---|
 | 4a S0 | Q-4-U, S0-P1…P11, S0-A1…A5, Q-4a-1…3 | D-34; handoff đánh dấu tài liệu dưới ngưỡng + câu cố định cho `no_procedure`; `procedure_available` đọc alias lúc B11; không kiểm quy trình ở B17 | `phase4-thiet-ke-chi-tiet.md` mục 4.0 + "Chốt khi hiện thực S0" |
-| 4b (sắp) | Q-4-L, M, N, P, Q, R | Xung đột → Trưởng BP [Chốt]; **R17/R18/R19 sẽ thêm điều kiện `device_owner_is_requester`** (máy người khác/không tồn tại → E5); đồng bộ `users` từ AD; chuỗi quản lý; seed `l1_lead` | mục 5 |
+| 4b | Q-4-L, M, N, P, Q, R; Q-4b-1…8 | Xung đột → Trưởng BP [Chốt]; R17/R18/R19 thêm `device_owner_is_requester`; đồng bộ `users` từ AD; chuỗi quản lý; seed `l1_lead`; B17 kiểm người đã duyệt | mục 5, 5.6, 5.7 |
+| 4c | Q-4c-1…3 | `note` vào `_POINT_COLUMNS`; nhắc trên `SqlDeadlineStore`; giữ 403 route quyết | mục 6.4 |
+| 4d | Q-4d-1…10, TQ-14…17 | Ghi đè `POST /api/tickets/{id}/override` (1 dòng audit `OVERRIDE`, không đổi ticket, cần đăng nhập lại ≤ 10 phút); `audit_check` chỉ đọc, kiểm đúng chỗ code ghi (4 cột audit chưa từng được ghi → Việc treo 31); B16 so hash state + phiếu trước khi thực thi → E5 (Q-4d-3), B17 thêm lớp so hash phiếu; `make gate4` không đăng nhập manager (Q-4d-9), g4-12 theo ticket của lần chạy (Q-4d-10); làm nóng rerank ở preflight (Việc treo 32) | mục 7.7, 7.8, 7.9 |
 
 ## 5. Nhật ký
 
@@ -273,3 +277,5 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 30/09/2026 | Mục 4.1: Q-3c…Q-3h (chặng 3c–3h, trỏ mục chốt tương ứng); §1.1: ghi chú điều kiện R16–R20 Phase 3 |
 | 30/09/2026 | Phase 3 đóng phần code (`c11b61f`, `61ad8ac`, CI `36684958734`); nợ nghiệm thu NỢ-3-1 (gate3 thành viên ngoài giờ), NỢ-3-2 (smoke LLM thật — dời mục 4 việc 2) gộp vào đợt kiểm tổng |
 | 30/09/2026 | D-34 (tách căn cứ câu trả lời / hành động, Q-4-U A+, commit `5ed423d`); mục 4.1 thêm Phase 4 (Q-4-A…U) |
+| 01/10/2026 | §1.1: ghi chốt Phase 4 (R17–R19 đòi chủ máy); §4.1: dòng 4b, 4c |
+| 03/10/2026 | §4.1: dòng 4d. **Cổng 4 đạt, Phase 4 đóng phần code** — 4d DỪNG 2 `858573d` (CI `37040959717`), cây gộp PR #24 của M9 `1455b55` (CI `37041941104`). Tạ Duy Anh chạy trên máy riêng (Windows + WSL 2), commit `1455b55`, ngoài giờ: `make gate3 S=all` 78 PASS / 0 FAIL (**trả NỢ-3-1**); `make gate4 S=all` lượt 2 73 PASS / 0 FAIL (lượt 1: 60/4 — g4-03, g4-05 ra E2 vì ml-service hết giờ khi máy tải nặng; xử lý an toàn, không sửa code). Mở Việc treo 35 (worker ~98% CPU sau gate4, chưa giải thích). Chi tiết: `phase4-thiet-ke-chi-tiet.md` mục 7.9 |

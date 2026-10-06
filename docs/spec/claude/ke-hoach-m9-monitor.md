@@ -69,6 +69,8 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 | Phase 4 — settings (4a) | Khóa HMAC cho username đăng nhập không có trong `users` (Q-3e-14): `security_events.username_attempted` = `"h:" + HMAC` | Luật 3 đối soát và luật 10 dùng **đúng giá trị auth truyền cho `bruteforce_alert` / ghi vào `security_events`** sau 4a; test lại ca username ma sau khi rebase qua 4a |
 | Phase 4 — xem phiếu (4c, `aac90b1`) | `approvals.first_viewed_at` là **một cột chung** cho phiếu (lần xem đầu của người chính **hoặc** dự phòng sau nhắc 2; manager xem không ghi). `decided_at` có ở cả 3 nhánh (approved/rejected/timeout, kể cả worker đóng timeout). Audit B16 có `detail.decided_without_view`, `decided_as ∈ {primary, backup}`. Việc treo 28 của Phase 4: chưa sửa schema | Luật 7 lấy nguồn từ audit B16, ca mơ hồ tính là "< 5 giây" (mục 6). Hết pending khi 4c merge |
 | Phase 4 — ghi đè (4d) | 1 dòng `audit_logs` step `"OVERRIDE"`, event `override_recorded`, cột `original_decision` / `override_decision` / `overrider_id`, `detail.reason_code`; không đổi `tickets` | `override_count` hết pending sau 4d |
+| Phase 4 — 4d dừng 2 (`858573d`, 03/10) | `approval_wait` so hash kế hoạch trước khi thực thi: lệch → E5, dòng audit step `B16`, event `action_plan_changed_since_approval`, cột `approval_result='approved'`, đủ điểm log 6 trong `detail` | Luật 7 lọc theo cột `approval_result`, không theo `event` |
+| Phase 4 — hợp đồng cần giữ (03/10) | `OVERRIDE_STEP` / `OVERRIDE_EVENT` ở `app/domain/override.py` giữ nguyên, bên nào đổi phải báo trước; job `monitor_rules_minute` đã chạy trên worker mới cùng gate3 78/0, gate4 73/0, không ảnh hưởng đóng hạn / nhắc duyệt | M9 import hằng từ `app.domain.override` (không chép chuỗi); checklist demo: reset dữ liệu phải gồm bảng `alerts` |
 | Phase 4 — 4b, fixture | R17/R18/R19 đòi máy của chính người gửi: máy người khác / không tồn tại → **E5, 0 phiếu** (không còn HITL) | Fixture M9 không giả định "ngoài giờ → HITL" |
 | Phase 4 — 4d `audit_check` | Công cụ kiểm audit của 4d đọc DB bằng `MONITOR_DATABASE_URL` (role `app_monitor`) nếu có, không thì `app_rw` trong giao dịch READ ONLY; chỉ đọc `audit_logs`, `tickets` | Migration M9 **chỉ thêm** GRANT, không REVOKE quyền SELECT sẵn có của `app_monitor` (nhất là `audit_logs`, `tickets`) |
 | Phase 4 — 4 cột `audit_logs` chưa ghi (Việc treo 31) | `confidence`, `query`, `success`, `action_plan_hash_matched` có trong schema nhưng **chưa từng được ghi**; dữ liệu thật ở `detail.confidence`, `detail.query`, `detail.success`, `detail.action_plan_hash_matched` | M9 **không đọc** 4 cột này (đọc ra NULL = số sai im lặng); cần thì đọc từ `detail`. Quyết lại sau Phase 4 |
@@ -111,7 +113,7 @@ backend/app/monitor/
   drift.py       PSI (numpy) — chặng M9-7
 backend/app/api/dashboard.py   GET /api/dashboard/business, /api/dashboard/ai (response_model khai báo)
 backend/app/api/alerts.py      GET /api/alerts, POST /api/alerts/{id}/ack
-backend/app/audit/alerts.py    + ack(alert_id, user_id) — M7 ghi, không phải M9
+backend/app/audit/alerts.py    + AlertWriter.ack(alert_id, user_id) -> AckResult — M7 ghi, không phải M9
 ```
 
 ### 3.2. Luồng dữ liệu
@@ -178,8 +180,9 @@ Giá trị cấu hình M9 cần (vd `spend.cap_usd`) do worker đọc rồi truy
 ### 4.5. API
 
 - `response_model` Pydantic khai báo cho mọi route mới (để TV3 sinh kiểu tự động — Nợ API #3 ở kế hoạch frontend).
-- Thứ tự kiểm như route cũ: quyền → tài nguyên → 404/409. `POST /api/alerts/{id}/ack`: không có quyền → 403; không tồn tại → 404; đã ack → 409 (không ghi đè `acked_by` cũ).
-- Tham số `from`/`to`: bắt buộc có múi giờ, `from < to`, khoảng ≤ 90 ngày → sai thì 422. Mặc định 7 ngày gần nhất.
+- Thứ tự kiểm như route cũ: 401 → 403 → 422 → 503 (GET) / 404 → 409 (POST). Kiểm cửa sổ (`from < to`, độ dài, biên) nằm trong **thân handler**, sau dependency quyền — đặt trong dependency khai trước quyền thì 422 đi trước 401/403 (plan A3, 03/10). `POST /api/alerts/{id}/ack`: không có quyền → 403; không tồn tại → 404; đã ack → 409 (không ghi đè `acked_by` cũ).
+- Tham số `from`/`to`: bắt buộc có múi giờ, `from < to`, `to − from ≤ 90 ngày` (timedelta tuyệt đối; đúng 90 ngày → qua) → sai thì 422. Mặc định 7 ngày gần nhất; chỉ có một đầu (Q-M9-A3-5): thiếu `to` → `now` (Clock), thiếu `from` → `to − 7 ngày`. Chặn biên: `from ≥ 2000-01-01T00:00Z`, `to ≤ now + 1 ngày`, ngoài biên → 422 (không để `OverflowError` thành 500). Response trả lại `from`/`to` dạng UTC.
+- Shape dashboard (Q-M9-A3-3): business `{"scope":"all"|"own","from","to","metrics":{…},"unavailable":[…]}` (union phân biệt bằng `scope`; own chỉ có `OWN_KEYS`), ai `{"from","to","metrics":{14 khóa},"unavailable":[…]}`. `metrics` là model Pydantic tường minh, trường bắt buộc kiểu `T | None`; test hai chiều tập trường = `BUSINESS_METRICS` / `OWN_KEYS` / `AI_METRICS` (FastAPI lọc im lặng khóa ngoài `response_model`). OpenAPI khai `responses=` bằng thân lỗi thật (422 = `{"error","fields"}`).
 - Không trả `redacted_request` dài: danh sách ca E3 cắt 200 ký tự, chỉ cho `dashboard:read:all`.
 
 ### 4.6. Quy trình (giống luồng chính)
@@ -205,7 +208,7 @@ Cửa sổ `[from, to)`, tính trên ticket lá có `created_at` trong cửa s�
 | `top_matched_rules` | top 10 `matched_rule_id` | `v_decisions` | [Chốt P9 §5] |
 | `override_count` | số dòng `audit_logs` `step='OVERRIDE'`, `event='override_recorded'` của lá có `created_at` **của lá** trong cửa sổ — cùng lứa ticket với các chỉ số khác, **không** lọc theo thời điểm ghi đè (ghi đè muộn làm số kỳ cũ tăng thêm: chấp nhận). Một lá có thể nhiều dòng — mỗi người ghi đè một dòng; ghi đè không đổi `tickets` | `audit_logs` (4d, `e510a6e`) | **ready** từ 02/10 |
 | `e1_split` | E1 tách 4 lý do theo **đúng giá trị `escalations.reason_detail`** (không đặt tên khác): `out_of_scope`, `multi_intent_not_enabled`, `intent_low_confidence`, `intent_not_enabled`; lý do khác → `other` (tổng = số E1). `intent_out_of_scope` là tên **event audit**, không phải `reason_detail` (Q-M9-A1-2b) | `escalations.reason_detail` (agent grep xác nhận) | [Chốt D-27, mở rộng theo 3f] |
-| `e3_cases` | danh sách ca E3 (lỗ hổng KB): `ticket_id, intent, created_at, kb_version, request_excerpt` (≤ 200 ký tự) | `tickets`, `audit_logs` B9; `kb_version` = dòng audit gần nhất của lá có giá trị khác null, không có → `null` (Q-M9-A1-5) | [Chốt P9 §5] |
+| `e3_cases` | danh sách ca E3 (lỗ hổng KB): `ticket_id, intent, created_at, kb_version, request_excerpt` (≤ 200 ký tự); cắt 100 ca, trả `{"items": […], "truncated": bool}` (Q-M9-A3-4) | `tickets`, `audit_logs` B9; `kb_version` = dòng audit gần nhất của lá có giá trị khác null, không có → `null` (Q-M9-A1-5) | [Chốt P9 §5] |
 
 **Quy ước chung 5.1 (chốt 01/10 sau soát A1):** (a) mẫu số các **tỉ lệ theo kết cục ticket** (automation, escalation thô + trọng số, deflection) và `tokens_per_ticket` chỉ tính lá **đã kết thúc** (`final_state IS NOT NULL`); chỉ số theo lời gọi LLM / dòng audit / span ở 5.2 **không** lọc `final_state` (mỗi dòng đã có kết quả lúc ghi; lọc thì luật 12/13 đếm thiếu — Q-M9-A2-7) — ticket đang chạy dở chưa có `exit_code`, tính vào sẽ kéo tỉ lệ escalate xuống (luật 1 bỏ sót); (b) `automation_rate` theo đúng P8 §6.2, **gồm** ca deflected (đã tự giải quyết, không người) — trùng phần với `deflection_rate` là có chủ đích; (c) điểm log 4 = dòng `audit_logs` `step='B13/B14'` (cột `decided_by`, `policy_decision`, `risk_level`, `matched_rule_id`); bản kiểm lại ở B17 chỉ nằm trong `detail`, **không** đếm; (d) `decided_by_distribution`, `top_matched_rules` đếm **1 dòng / lá** — dòng nhạy nhất (Q-M9-A1-4), hòa thì dòng mới nhất; `decided_by` ở đây là cột của `audit_logs` (`rule`/`llm`), không phải `approvals.decided_by`; (e) 3 view tạo `WITH (security_invoker = true)` + GRANT SELECT `exit_code_priority` cho `app_monitor` — view không nâng quyền, REVOKE bảng gốc có hiệu lực; liệt kê cột tường minh (không `SELECT *`).
 
@@ -437,6 +440,7 @@ make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin
 
 | Ngày | Thay đổi |
 |---|---|
+| 03/10/2026 | **v1.18** — PR #26 (A2, `67cd5f9`) và PR #24 (B1 GĐ2, `1455b55`) đã merge; 4d dừng 2 (`858573d`) + hợp đồng Phase 4 cần giữ (mục 1.4); duyệt plan A3 (#10): Q-M9-A3-3…7 — shape dashboard, `e3_cases {items, truncated}`, cửa sổ một đầu + chặn biên, ack chỉ 3 cột + log `alert_acked`, `business_scope`; 4.5 ghi thứ tự 401→403→422 và kiểm cửa sổ trong thân handler |
 | 02/10/2026 | **v1.17** — Q-M9-B2-1: luật ngày (1, 12, 13) đo trên ngày VN trọn kết thúc ở `day_start(now)` (job chạy 02:00 VN, cửa sổ `[đầu ngày, now)` gần như rỗng); D5 của PR #24 đạt trên stack (`fe51980` + `87dce5b`: `nháp=7 ghi=7 trùng=0 lỗi=0 luật_lỗi=0`); review PR #26 (A2) ghi ở file chia việc; luật 7 lọc theo cột `approval_result` (tin Phase 4, 4d dừng 2) |
 | 02/10/2026 | **v1.16** — `override_count` chốt cửa sổ theo `created_at` của lá; Q-M9-A3-1: `/api/alerts` không ẩn theo `audience` (file chia việc, thẻ A3) |
 | 02/10/2026 | **v1.15** — 4d dừng 1 đã merge (`e510a6e`): nguồn ghi đè có thật → `override_count` ready (Dương lật `PENDING_SOURCES`, viết truy vấn + test); review PR #24 (B1 GĐ2) ghi ở file chia việc |
