@@ -1,4 +1,5 @@
-"""Dựng dữ liệu cho test luật cảnh báo M9 (B1 — luật theo sự kiện). Dùng thêm `monitor_seed` của Dương (không sửa).
+"""Dựng dữ liệu cho test luật cảnh báo M9 (B1 — luật theo sự kiện; B2 — luật 60 s 4, 5, 6, luật ngày 1, 7, 12, 13 và luật
+giờ 14). Dùng thêm `monitor_seed` của Dương (không sửa).
 
 Quy ước giống `monitor_seed`: helper `async`, nhận `AsyncConnection` của **app_rw**, **không tự commit** — test seed trong
 `async with rw.begin()` rồi mới đọc qua engine `app_monitor`. Riêng `auth_lock` nhận engine (ghi bằng writer thật của
@@ -234,3 +235,115 @@ async def tool_span(
         "a": json.dumps({"error": error}),
     })  # fmt: skip
     return span_id
+
+
+# ---- B2 GĐ2 cụm 2: luật ngày 1, 7, 12, 13 và luật giờ 14 ---------------------------------------------------------------
+#
+# Luật 1/12/13 đếm TOÀN HỆ THỐNG → mỗi ca một mốc `daily_now(k)` riêng, cách nhau 30 ngày (> 7 ngày đọc lùi + 7 mốc).
+# `daily_now(k)` luôn 19:00 UTC = 02:00 giờ VN (giờ job ngày) → `d0` = `daily_now(k) − 2 giờ`. Lá của luật 7/12/13 để
+# `final_state` NULL (đang chạy) → không vào mẫu số luật 1.
+
+DAILY_BASE = datetime(2033, 1, 10, 19, 0, tzinfo=UTC)
+DAILY_SLOT = timedelta(days=30)
+# `detail` điểm log 6 như `graph/nodes/approval_wait.py` `_point6` (nhánh quyết định của người).
+FAST_B16: dict[str, Any] = {
+    "view_duration": None, "decided_without_view": True, "decided_as": "primary", "reason_code": None,
+    "close_applied": 1,
+}  # fmt: skip
+NORMAL_B16: dict[str, Any] = {
+    "view_duration": 30.0, "decided_without_view": False, "decided_as": "primary", "reason_code": None,
+    "close_applied": 1,
+}  # fmt: skip
+_B16_EVENT = {"approved": "approved", "rejected": "rejected", "timeout": "approval_timeout"}  # approval_wait.py
+
+
+def daily_now(k: int) -> datetime:
+    return DAILY_BASE + k * DAILY_SLOT
+
+
+async def n3_leaf(conn: AsyncConnection, *, group: str, escalated: bool, created_at: datetime) -> str:
+    """Một lá ĐÃ KẾT THÚC cho `escalation_rate_weighted` (nhóm N3 theo điểm log 4 — Q-M9-1): `routine` không có dòng
+    điểm log 4, `approval` → `approval_required`, `sensitive` → `deny`. Escalate → `S_ESCALATED` + E5, còn lại
+    `S_RESOLVED`. Trả `ticket_id`."""
+    ticket = await seed.leaf_ticket(
+        conn, created_at=created_at, final_state="S_ESCALATED" if escalated else "S_RESOLVED",
+        exit_code="E5" if escalated else None,
+    )  # fmt: skip
+    decision = {"routine": None, "approval": "approval_required", "sensitive": "deny"}[group]
+    if decision is not None:
+        await seed.audit_point4(conn, ticket, created_at=created_at, policy_decision=decision)
+    return ticket
+
+
+async def b16_row(
+    conn: AsyncConnection, ticket_id: str, *, at: datetime, approval_result: str, event: str, detail: object
+) -> int:
+    """Dòng audit B16 (điểm log 6). `detail` có thể KHÔNG phải object JSON (mảng, chuỗi) — `monitor_seed.audit_row` chỉ
+    nhận dict nên ghi riêng ở đây. Trả `log_id`."""
+    result = await conn.execute(text(
+        "INSERT INTO audit_logs (ticket_id, step, event, created_at, approval_result, detail) "
+        "VALUES (:t, 'B16', :e, :c, :r, CAST(:d AS jsonb)) RETURNING log_id"
+    ), {"t": ticket_id, "e": event, "c": at, "r": approval_result, "d": json.dumps(detail)})  # fmt: skip
+    return int(result.scalar_one())
+
+
+async def reflex_decision(
+    conn: AsyncConnection,
+    *,
+    approver: str,
+    decided_at: datetime,
+    b16: object = FAST_B16,
+    with_b16: bool = True,
+    status: str = "approved",
+    event: str | None = None,
+    ticket_id: str | None = None,
+    created_at: datetime | None = None,
+    b16_at: datetime | None = None,
+    reminder_2_at: datetime | None = None,
+) -> str:
+    """Một phiếu đã quyết như code thật: `approvals` (`decided_by` = người quyết, `decided_at`; timeout thì không có người
+    quyết) + dòng B16 cột `approval_result = status` lúc `b16_at` (mặc định `decided_at + 1 s`). `with_b16=False` → không
+    có dòng B16. `ticket_id` có sẵn → phiếu thứ hai của ticket đó. Trả `ticket_id`."""
+    created = created_at or decided_at - timedelta(hours=1)
+    ticket = ticket_id or await seed.leaf_ticket(conn, created_at=created)
+    approval_id = await seed.approval(
+        conn, ticket, approver_id=approver, created_at=created, status=status,
+        decided_by=None if status == "timeout" else approver, decided_at=decided_at,
+        note="ghi chú thử" if status == "rejected" else None,
+    )  # fmt: skip
+    if reminder_2_at is not None:
+        await conn.execute(
+            text("UPDATE approvals SET reminder_2_at = :r WHERE approval_id = :a"), {"r": reminder_2_at, "a": approval_id}
+        )
+    if with_b16:
+        await b16_row(
+            conn, ticket, at=b16_at or decided_at + timedelta(seconds=1), approval_result=status,
+            event=event or _B16_EVENT[status], detail=b16,
+        )  # fmt: skip
+    return ticket
+
+
+async def b2_point(conn: AsyncConnection, *, created_at: datetime, layer: str) -> str:
+    """Lá có dòng B2 `detail.screening.layer_decided = layer` (nguồn `b2_llm_rate`). Trả `ticket_id`."""
+    ticket = await seed.leaf_ticket(conn, created_at=created_at)
+    await seed.audit_row(conn, ticket, step="B2", event="screened", created_at=created_at,
+                         detail={"screening": {"layer_decided": layer}})  # fmt: skip
+    return ticket
+
+
+async def b3_point(conn: AsyncConnection, *, created_at: datetime, layer: str) -> str:
+    """Lá có dòng điểm log 1 step B3 `detail.layer = layer` (nguồn `b3_llm_rate`). Trả `ticket_id`."""
+    ticket = await seed.leaf_ticket(conn, created_at=created_at)
+    await seed.audit_row(conn, ticket, step="B3", event="intent_classified", created_at=created_at,
+                         detail={"layer": layer})  # fmt: skip
+    return ticket
+
+
+async def llm_cost(conn: AsyncConnection, *, cost_usd: float | None, at: datetime, parent: bool = False) -> int:
+    """Một lời gọi LLM tốn `cost_usd` lúc `at`, của một lá (mặc định) hoặc của ticket CHA (luật 14 cộng cả hai — tổng
+    toàn bảng như gateway). Trả `call_id`."""
+    if parent:
+        ticket, _ = await seed.parent_with_children(conn, created_at=at, n=1)
+    else:
+        ticket = await seed.leaf_ticket(conn, created_at=at)
+    return await seed.llm_call_for(conn, ticket, created_at=at, cost_usd=cost_usd)

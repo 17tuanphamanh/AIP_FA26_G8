@@ -757,7 +757,9 @@ def test_every_minute_rule_has_loader() -> None:
 
 def _sql() -> dict[str, str]:
     found = {name: clause.text for name, clause in vars(rules_data).items() if isinstance(clause, TextClause)}
-    assert len(found) == 6  # quét không rỗng; luật 4/6 dùng lại TICKET_EXIT_SQL, luật 5 thêm TOOL_SPAN_SQL
+    # quét không rỗng; luật 4/6 dùng lại TICKET_EXIT_SQL, luật 5 thêm TOOL_SPAN_SQL; luật 14 LLM_SPEND_SQL, luật 7
+    # REFLEX_SQL (luật 1, 12, 13 gọi hàm của luồng A, không có SQL riêng)
+    assert len(found) == 8
     return found
 
 
@@ -767,7 +769,9 @@ _UNWRITTEN_COLUMNS = ("confidence", "query", "success", "action_plan_hash_matche
 def test_rules_data_only_select() -> None:
     """Chỉ SELECT; không đụng bảng `tickets` trực tiếp (đếm qua `v_leaf`); không đọc 4 cột chưa ghi; KHÔNG chặn trên
     theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 (và 4/6, cùng SQL) qua `v_leaf`, luật 15
-    thì không. Luật 5 đọc `spans`, không lọc lá (Q-M9-B2-22: breaker là sự cố hệ thống, không phải đếm ticket)."""
+    thì không. Luật 5 đọc `spans`, không lọc lá (Q-M9-B2-22: breaker là sự cố hệ thống, không phải đếm ticket).
+    Luật 14: tổng toàn bảng `llm_calls` — không cửa sổ, không nối, không `v_leaf` (Q-M9-6, như `spend_total`). Luật 7: gốc
+    `approvals`, không lọc lá (Q-M9-B2-24 đề xuất: luật đếm phiếu, không đếm ticket)."""
     sql = _sql()
     for name, body in sql.items():
         words = body.lower()
@@ -780,6 +784,9 @@ def test_rules_data_only_select() -> None:
     assert "v_leaf" in sql["TICKET_EXIT_SQL"]
     assert "v_leaf" not in sql["FINALIZE_FAILED_SQL"]
     assert "from spans" in sql["TOOL_SPAN_SQL"].lower() and "v_leaf" not in sql["TOOL_SPAN_SQL"]
+    spend = sql["LLM_SPEND_SQL"].lower()
+    assert "from llm_calls" in spend and not re.search(r"\b(where|join|v_leaf)\b", spend)
+    assert "from approvals" in sql["REFLEX_SQL"].lower() and "v_leaf" not in sql["REFLEX_SQL"]
 
 
 class RecordingConn:
@@ -793,7 +800,9 @@ class RecordingConn:
         return []
 
 
-_ALLOWED_BINDS = {"since", "code", "step", "event", "event_type", "reason", "rule_id", "span_type", "status", "error"}
+_ALLOWED_BINDS = {
+    "since", "code", "step", "event", "event_type", "reason", "rule_id", "span_type", "status", "error", "decisions",
+}  # fmt: skip
 
 
 @pytest.mark.parametrize("rule_id", sorted(B1_RULES))
@@ -842,7 +851,7 @@ def test_finalize_event_constant_matches_runner() -> None:
 def test_policy_saved_loader_does_not_call_is_pending() -> None:
     """Chốt 02/10 (#13): `is_pending("policy_saved")` ném KeyError → luật 11 vào failed_rules mỗi phút. Loader chạy
     truy vấn thật; chưa có nơi ghi → 0 sự kiện. B2: module nay import `is_pending` (luật 5) → chỉ quét hàm loader 11;
-    toàn module xem `test_only_breaker_loader_calls_is_pending`."""
+    toàn module xem `test_only_pending_source_loaders_call_is_pending`."""
     tree = ast.parse(inspect.getsource(rules_data.load_policy_saved))
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
@@ -902,9 +911,10 @@ def test_breaker_error_constant_matches_registry() -> None:
     assert rules_data.BREAKER_ERROR == CIRCUIT_OPEN
 
 
-def test_only_breaker_loader_calls_is_pending() -> None:
-    """Chỉ luật có nguồn TỪNG pending mới gọi `is_pending` (hợp đồng mục 3): trong `rules_data` đúng một lời gọi, ở loader
-    luật 5, khoá hằng `tool_spans` (gõ sai → KeyError → failed_rules). Luật 11 không gọi (chốt 02/10 ở #13)."""
+def test_only_pending_source_loaders_call_is_pending() -> None:
+    """Chỉ luật có nguồn TỪNG pending mới gọi `is_pending` (hợp đồng mục 3, file chia việc :111, :113), mỗi loader một lời
+    gọi với khoá HẰNG (gõ sai → KeyError → failed_rules): luật 5 `tool_spans`, luật 7 `approval_view` (pending tới 4c), luật
+    12 `b2_classifier`, luật 13 `b3_cascade`. Luật 11 không gọi (chốt 02/10 ở #13); luật 1, 14 không có nguồn pending."""
     tree = ast.parse(inspect.getsource(rules_data))
     calls = [
         (fn.name, [a.value for a in call.args if isinstance(a, ast.Constant)])
@@ -912,4 +922,9 @@ def test_only_breaker_loader_calls_is_pending() -> None:
         for call in ast.walk(fn)
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "is_pending"
     ]  # fmt: skip
-    assert calls == [("load_breaker_open", ["tool_spans"])]
+    assert calls == [
+        ("load_breaker_open", ["tool_spans"]),
+        ("load_reflex_approval", ["approval_view"]),
+        ("load_b2_degraded", ["b2_classifier"]),
+        ("load_b3_degraded", ["b3_cascade"]),
+    ]

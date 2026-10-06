@@ -1,5 +1,5 @@
-"""Loader dữ liệu cho luật cảnh báo M9 (B1: 7 luật theo sự kiện; B2: luật 60 s 4, 5, 6 — file chia việc mục 6, kế hoạch
-chung 4.4, 6).
+"""Loader dữ liệu cho luật cảnh báo M9 (B1: 7 luật theo sự kiện; B2: luật 60 s 4, 5, 6, luật giờ 14, luật ngày 1, 7, 12,
+13 — file chia việc mục 6, kế hoạch chung 4.4, 6).
 
 Mỗi loader đọc qua `conn` của engine `app_monitor` (chỉ SELECT) và trả đúng kiểu dữ liệu mà hàm luật trong `rules.py`
 nhận. Chốt áp ở đây (#13, PR #20):
@@ -23,9 +23,35 @@ nhận. Chốt áp ở đây (#13, PR #20):
 - Luật 5: `is_pending("tool_spans")` → `Pending`, KHÔNG chạy SQL (span tool chưa ghi DB, Q-M9-4). Khi nguồn ready: đọc
   `spans` theo hợp đồng dự kiến của Q-M9-4 từ `now − 24 giờ` (Q-M9-B2-12). Không lọc `V_LEAF` (Q-M9-B2-22, đề xuất):
   breaker mở là sự cố của hệ thống đích, không phải chỉ số đếm ticket — như luật 15.
+- Luật 14 (job giờ; Q-M9-6, Q-M9-B2-7/16/17): Σ `llm_calls.cost_usd` TOÀN BẢNG, `COALESCE(…, 0)`, không cửa sổ, không
+  `V_LEAF`, không tham số bind — cùng cách gateway tính trần (`llm/store.py` `spend_total`; monitor không import `llm`).
+  `cost_usd` là `double precision` → psycopg trả `float`, không chuyển kiểu.
+- Luật 1: gọi `escalation_rate_weighted(conn, *rolling_7d_window(ctx))` của A1, trả nguyên `WeightedRate` — không tự
+  tính lại (một nguồn sự thật). Chỉ mốc `d0` (Q-M9-B2-15).
+- Luật 12/13: `is_pending("b2_classifier")` / `is_pending("b3_cascade")` → `Pending`, KHÔNG gọi hàm A (Q-M9-B2-1,
+  Q-M9-9). Khi ready: `{r: rate(conn, *day_window(r, tz)) for r in daily_marks(ctx)}` — dict dựng từ chính
+  `daily_marks` (Q-M9-B2-15, 20). [Đề xuất] Q-M9-B2-25: lý do Pending của luật 12 `injection_clf_not_enabled` là tên tự
+  đặt (luật 13 `cascade_not_enabled` theo Q-M9-9).
+- Luật 7 (Q-M9-B2-3, 6, 15): gốc `approvals`, `status ∈ HUMAN_DECISIONS`, `decided_at ≥ daily_since(ctx)`; LATERAL lấy
+  dòng B16 đầu tiên cùng `ticket_id`, cột `approval_result = status` (không theo `event` — ca
+  `action_plan_changed_since_approval` vẫn khớp), `created_at ≥ phiếu.created_at`. Không có dòng → `b16 = None`;
+  `detail` không phải object → `{}`.
+  [Đề xuất] Q-M9-B2-23: thêm chặn trên — dòng B16 phải có `created_at` TRƯỚC `COALESCE(decided_at, created_at)` của
+  phiếu kế tiếp cùng ticket (so nghiêm ngặt: `decided_at` và `created_at` dòng B16 cùng lấy `clock.now()`, có thể bằng
+  nhau). Không có chặn này thì phiếu thiếu B16 mượn dòng của phiếu sau → có thể xếp "bình thường" (sót); có chặn thì ca
+  đó thành mơ hồ (báo thừa). Với CHẶN TRÊN, lệch đồng hồ (phiếu sau còn pending → `next_start` là `now()` của DB) chỉ
+  làm mất dòng khớp → mơ hồ, tức báo thừa.
+  Hạn chế đã biết của MỐC DƯỚI Q-M9-B2-6 (nêu trong PR): `a.created_at` theo đồng hồ app, `approvals.created_at` là
+  `now()` của DB — lệch có hai hướng: (1) DB nhanh hơn app → dòng B16 của chính phiếu rơi dưới mốc → mơ hồ (báo thừa);
+  (2) app nhanh hơn DB quá khoảng giữa dòng B16 của phiếu trước và lúc tạo phiếu sau → dòng B16 của phiếu TRƯỚC lọt qua
+  mốc dưới của phiếu SAU → phiếu sau nối nhầm → CÓ THỂ SÓT. Hướng (2) hiện không xảy ra: một lá có tối đa một phiếu
+  (`domain/states.py`: không đường nào quay lại `S_PENDING_APPROVAL`).
+  [Đề xuất] Q-M9-B2-24: KHÔNG lọc `V_LEAF` — D-30 áp cho luật đếm ticket, luật 7 đếm PHIẾU theo người quyết; ticket cha
+  không có phiếu (states.py), sau này có thì lọc là sót. `is_pending("approval_view")` (nguồn từng pending tới 4c, file
+  chia việc mục 3); [Đề xuất] Q-M9-B2-25: lý do `approval_view_not_recorded` là tên tự đặt.
 """
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -36,10 +62,14 @@ from app.domain.alerts import BRUTEFORCE_RULE_ID
 from app.domain.exit_codes import ExitCode
 from app.monitor.evaluator import Pending, loader
 from app.monitor.metrics import is_pending
+from app.monitor.queries.ai import b2_llm_rate, b3_llm_rate
+from app.monitor.queries.business import WeightedRate, escalation_rate_weighted
 from app.monitor.rules import (
     BURST_WINDOW,
+    HUMAN_DECISIONS,
     LOOKBACK,
     RECONCILE_TOLERANCE,
+    ApprovalDecision,
     BruteforceData,
     ExistingAlert,
     FinalizeFailed,
@@ -47,6 +77,10 @@ from app.monitor.rules import (
     SecurityEvent,
     TicketExit,
     ToolSpan,
+    daily_marks,
+    daily_since,
+    day_window,
+    rolling_7d_window,
     spike_since,
 )
 from app.monitor.views import V_LEAF
@@ -56,6 +90,10 @@ FINALIZE_FAILED_STEP = "B20"
 FINALIZE_FAILED_EVENT = "finalize_failed_permanent"
 # tools/registry.py `CIRCUIT_OPEN` — monitor không import tools; test đối chiếu hai hằng.
 BREAKER_ERROR = "circuit_open"
+# graph/late_event.py `WAITS["approval_wait"]` — bước ghi điểm log 6; monitor không import graph; test đối chiếu.
+APPROVAL_STEP = "B16"
+
+type DayRate = Callable[[AsyncConnection, datetime, datetime], Awaitable[float | None]]
 
 TICKET_EXIT_SQL = text(f"""
 SELECT DISTINCT ON (a.ticket_id)
@@ -103,6 +141,37 @@ FROM spans s
 WHERE s.span_type = :span_type AND s.status = :status AND s.attributes->>'error' = :error
   AND s.started_at >= :since
 ORDER BY s.name, s.started_at, s.span_id
+""")
+
+LLM_SPEND_SQL = text("""
+SELECT COALESCE(SUM(c.cost_usd), 0) AS spent
+FROM llm_calls c
+""")
+
+# `next_start` = mốc bắt đầu của phiếu KẾ TIẾP cùng ticket (Q-M9-B2-23): `lead` trên MỌI phiếu của ticket (kể cả
+# pending/timeout), nên lớp trong lấy mọi phiếu của các ticket có quyết định từ `since`. Viết `next_start > …` (không `<`).
+REFLEX_SQL = text("""
+SELECT p.status, p.decided_by, p.decided_at, p.reminder_2_at, b.log_id AS b16_log_id, b.detail AS b16_detail
+FROM (
+    SELECT q.ticket_id, q.approval_id, q.status, q.decided_by, q.decided_at, q.reminder_2_at, q.created_at,
+           lead(COALESCE(q.decided_at, q.created_at))
+               OVER (PARTITION BY q.ticket_id ORDER BY q.created_at, q.approval_id) AS next_start
+    FROM approvals q
+    WHERE q.ticket_id IN (
+        SELECT d.ticket_id FROM approvals d WHERE d.status = ANY(:decisions) AND d.decided_at >= :since
+    )
+) p
+LEFT JOIN LATERAL (
+    SELECT a.log_id, a.detail
+    FROM audit_logs a
+    WHERE a.ticket_id = p.ticket_id AND a.step = :step AND a.approval_result = p.status
+      AND a.created_at >= p.created_at
+      AND (p.next_start IS NULL OR p.next_start > a.created_at)
+    ORDER BY a.created_at, a.log_id
+    LIMIT 1
+) b ON true
+WHERE p.status = ANY(:decisions) AND p.decided_at >= :since
+ORDER BY p.decided_at, p.approval_id
 """)
 
 
@@ -187,3 +256,50 @@ async def load_breaker_open(conn: AsyncConnection, ctx: RuleContext) -> list[Too
         {"span_type": "tool", "status": "error", "error": BREAKER_ERROR, "since": ctx.now - LOOKBACK},
     )
     return [ToolSpan(r.name, r.started_at) for r in rows]
+
+
+# ---- B2 luật giờ / ngày: 14 llm_budget; 1 escalation_rate_high, 7 reflex_approval, 12 b2_degraded, 13 b3_degraded ----
+
+
+@loader("llm_budget")
+async def load_llm_budget(conn: AsyncConnection, ctx: RuleContext) -> float:
+    return (await conn.execute(LLM_SPEND_SQL)).scalar_one()
+
+
+@loader("escalation_rate_high")
+async def load_escalation_rate_high(conn: AsyncConnection, ctx: RuleContext) -> WeightedRate:
+    return await escalation_rate_weighted(conn, *rolling_7d_window(ctx))
+
+
+@loader("reflex_approval")
+async def load_reflex_approval(conn: AsyncConnection, ctx: RuleContext) -> list[ApprovalDecision] | Pending:
+    if is_pending("approval_view"):
+        return Pending("approval_view_not_recorded")
+    rows = await conn.execute(
+        REFLEX_SQL, {"since": daily_since(ctx), "step": APPROVAL_STEP, "decisions": list(HUMAN_DECISIONS)}
+    )
+    return [
+        ApprovalDecision(
+            status=r.status, decided_by=r.decided_by, decided_at=r.decided_at, reminder_2_at=r.reminder_2_at,
+            b16=None if r.b16_log_id is None else _detail(r.b16_detail),
+        )
+        for r in rows
+    ]  # fmt: skip
+
+
+async def _daily_rates(conn: AsyncConnection, ctx: RuleContext, rate: DayRate) -> dict[datetime, float | None]:
+    return {r: await rate(conn, *day_window(r, ctx.tz)) for r in daily_marks(ctx)}
+
+
+@loader("b2_degraded")
+async def load_b2_degraded(conn: AsyncConnection, ctx: RuleContext) -> dict[datetime, float | None] | Pending:
+    if is_pending("b2_classifier"):
+        return Pending("injection_clf_not_enabled")
+    return await _daily_rates(conn, ctx, b2_llm_rate)
+
+
+@loader("b3_degraded")
+async def load_b3_degraded(conn: AsyncConnection, ctx: RuleContext) -> dict[datetime, float | None] | Pending:
+    if is_pending("b3_cascade"):
+        return Pending("cascade_not_enabled")
+    return await _daily_rates(conn, ctx, b3_llm_rate)

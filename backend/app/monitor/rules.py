@@ -501,6 +501,13 @@ type ReflexKind = Literal["fast", "ambiguous", "normal"]
 class ApprovalDecision:
     """Luật 7 — một quyết định trên phiếu (gốc `approvals`, mỗi phần tử một phiếu) + `detail` dòng audit B16 khớp
     (loader GĐ2: LATERAL cùng ticket_id, `approval_result = status`, `created_at ≥ phiếu.created_at` — Q-M9-B2-6).
+    [Đề xuất] Q-M9-B2-23: dòng B16 còn phải có `created_at` TRƯỚC (nghiêm ngặt) `COALESCE(decided_at, created_at)` của
+    phiếu kế tiếp cùng ticket — phiếu thiếu B16 không mượn dòng của phiếu sau (mượn thì có thể xếp "bình thường" = sót).
+    Với chặn trên, lệch đồng hồ (phiếu sau còn pending → mốc là `now()` của DB) chỉ làm mất dòng khớp → mơ hồ (báo thừa).
+    Hạn chế đã biết của MỐC DƯỚI Q-M9-B2-6 (nêu trong PR): dòng B16 theo đồng hồ app, `approvals.created_at` là `now()`
+    của DB — (1) DB nhanh hơn app → dòng B16 của chính phiếu rơi dưới mốc → mơ hồ (báo thừa); (2) app nhanh hơn DB quá
+    khoảng giữa dòng B16 của phiếu trước và lúc tạo phiếu sau → dòng của phiếu TRƯỚC lọt qua mốc dưới của phiếu SAU →
+    phiếu sau nối nhầm → CÓ THỂ SÓT. (2) hiện không xảy ra: một lá có tối đa một phiếu (`domain/states.py`).
     Không mang `approval_id`/`ticket_id`: luật không đọc; nối B16 đúng phiếu là việc của SQL."""
 
     status: str  # approvals.status — luật TỰ lọc HUMAN_DECISIONS (loader cũng lọc)
@@ -552,7 +559,7 @@ def reflex_approval(data: Sequence[ApprovalDecision], ctx: RuleContext) -> list[
 
     Đánh giá 7 mốc ngày (Q-M9-B2-15): mỗi mốc `r` lấy phiếu có `decided_at ∈ [r − 1 ngày, r)` (Q-M9-B2-3),
     `window_start = r` — chạy lại không trùng; worker chết qua vài mốc 02:00 vẫn đánh giá ngày bị lỡ. `data` = phiếu có
-    `decided_at ≥ daily_since(ctx)` (loader GĐ2).
+    `decided_at ≥ daily_since(ctx)` (loader GĐ2; chặn trên nối B16 theo phiếu kế tiếp — [Đề xuất] Q-M9-B2-23).
 
     subject = người quyết (`decided_by`); nhóm theo subject ĐÃ tính (Q-M9-B2-21: NULL và rỗng gộp vào `user:` — tách
     theo phiếu thì không bao giờ đủ 3). Báo thừa có chủ ý: thiếu B16 / sai kiểu → tính; hai phiếu nối tiếp của một
