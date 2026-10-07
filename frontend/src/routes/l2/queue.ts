@@ -112,3 +112,124 @@ export function closeProblem(result: EscalationCloseResult | null, note: string,
   if (text.length > CLOSE_NOTE_MAX) return `Ghi chú đóng tối đa ${CLOSE_NOTE_MAX} ký tự.`;
   return null;
 }
+
+// ---- Tìm nhanh + phân trang trong nhóm (phía trình duyệt, CHỈ trên các ca đã tải; không sắp lại thứ tự server) ----
+
+/** Cỡ trang trong MỘT nhóm của hàng đợi. */
+export const GROUP_PAGE_SIZE = 10;
+/** Ô tìm tối đa 100 ký tự. Chữ tìm chỉ dùng để so chuỗi — không thành RegExp, không dựng HTML. */
+export const SEARCH_MAX = 100;
+/** Đang tìm mà hàng đợi đã chạm trần → nói rõ phạm vi tìm (ca ngoài 200 ca đầu không tìm được — nợ API #10). */
+export const SEARCH_LIMIT_NOTE = ` · chỉ tìm trong ${QUEUE_LIMIT} ca đã tải`;
+export const NO_MATCH_TEXT = "Không có ca nào khớp ô tìm";
+/** 0 ca khớp khi đã chạm trần: KHÔNG khẳng định ca không tồn tại. */
+export const NO_MATCH_FULL_TEXT = `Không có ca nào khớp trong ${QUEUE_LIMIT} ca đã tải — ca cần tìm có thể nằm ngoài danh sách.`;
+
+/** Chữ thường, bỏ dấu tiếng Việt, đ → d: gõ "an ninh" khớp "An ninh", "tu choi" khớp "từ chối". */
+export function foldText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .trim();
+}
+
+/** Các từ của ô tìm (đã `foldText`). Rỗng = không tìm. Dùng chung cho "đang tìm" và bộ lọc. */
+export function searchWords(query: string): string[] {
+  return foldText(query).split(/\s+/).filter(Boolean);
+}
+
+/** Chuỗi để tìm của một ca: mã E, nhãn nhóm, lý do (1 dòng), mã ticket, số ca, người đang xử lý. */
+export function searchText(item: EscalationQueueItem): string {
+  return foldText(
+    [item.exit_code, item.label, reasonLine(item), item.ticket_id, `#${item.escalation_id}`, item.assigned_to ?? ""].join(" "),
+  );
+}
+
+/** Lọc theo ô tìm: MỌI từ (cách nhau bằng khoảng trắng) phải có trong `searchText`. Ô trống → giữ nguyên. Giữ thứ tự server. */
+export function filterQueue(items: readonly EscalationQueueItem[], query: string): EscalationQueueItem[] {
+  const words = searchWords(query);
+  if (words.length === 0) return [...items];
+  return items.filter((item) => {
+    const hay = searchText(item);
+    return words.every((w) => hay.includes(w));
+  });
+}
+
+export function pageCount(total: number, size = GROUP_PAGE_SIZE): number {
+  return Number.isFinite(total) && total > 0 ? Math.ceil(total / size) : 1;
+}
+
+/** Trang hợp lệ gần nhất (số ca đổi sau khi lọc / tự tải lại → trang đang đứng có thể vượt trang cuối). Không phải số hữu
+ *  hạn → 1; số lẻ → cắt phần lẻ. */
+export function clampPage(page: number, total: number, size = GROUP_PAGE_SIZE): number {
+  if (!Number.isFinite(page)) return 1;
+  return Math.min(Math.max(1, Math.trunc(page)), pageCount(total, size));
+}
+
+/** Trạng thái xem hàng đợi — CHỈ trong bộ nhớ, khoá theo `priority`: nhóm thu gọn, trang đang đứng (vắng = trang 1), thẻ
+ *  nhóm đang chọn (null = "Tất cả"). */
+export type QueueView = {
+  collapsed: ReadonlySet<number>;
+  pages: Readonly<Record<number, number>>;
+  active: number | null;
+};
+/** Mặc định: mọi nhóm mở, trang 1, thẻ "Tất cả". */
+export const EMPTY_VIEW: QueueView = { collapsed: new Set<number>(), pages: {}, active: null };
+
+/**
+ * Dọn trạng thái xem theo danh sách `list` vừa tải: nhóm không còn → bỏ khỏi `collapsed` và `pages` (hết ca rồi có ca mới
+ * thì nhóm sinh ra MỞ, trang 1); trang vượt trang cuối → LƯU trang hợp lệ gần nhất (nhóm lớn lại không tự nhảy về trang
+ * cũ); thẻ đang chọn không còn → "Tất cả". Không có gì đổi → trả CHÍNH `view` (màn so tham chiếu, không setState lặp).
+ */
+export function pruneQueueView(view: QueueView, list: readonly EscalationQueueItem[]): QueueView {
+  const sizes = new Map<number, number>();
+  for (const group of groupQueue(list)) sizes.set(group.priority, Math.max(sizes.get(group.priority) ?? 0, group.items.length));
+  const collapsed = [...view.collapsed].filter((priority) => sizes.has(priority));
+  const pages: Record<number, number> = {};
+  for (const [key, page] of Object.entries(view.pages)) {
+    const size = sizes.get(Number(key));
+    if (size !== undefined) pages[Number(key)] = clampPage(page, size);
+  }
+  const active = view.active !== null && sizes.has(view.active) ? view.active : null;
+  const samePages =
+    Object.keys(pages).length === Object.keys(view.pages).length &&
+    Object.entries(pages).every(([key, page]) => view.pages[Number(key)] === page);
+  if (collapsed.length === view.collapsed.size && samePages && active === view.active) return view;
+  return { collapsed: new Set(collapsed), pages, active };
+}
+
+// ---- Ca mới ở nhóm đang khuất (Q-fe-43): thẻ nhóm + thu gọn có thể che ca mới đến lúc tự tải lại → con số là tín hiệu duy
+// nhất, nên báo thành một dòng riêng. Chỉ theo trạng thái ĐÃ LƯU; "nằm ở trang sau" KHÔNG tính (ca mới vốn ở cuối nhóm, đã có
+// "· N ca" + thanh trang). Không dùng bảng hạng ưu tiên nào ở frontend.
+
+/** Nhóm `priority` có bị che theo trạng thái đã lưu: đang thu gọn, hoặc đang chọn thẻ của nhóm khác. */
+export function isHidden(priority: number, view: QueueView): boolean {
+  return view.collapsed.has(priority) || (view.active !== null && view.active !== priority);
+}
+
+export const NO_IDS: ReadonlySet<number> = new Set<number>();
+
+/**
+ * Tập `escalation_id` của ca mới còn phải báo. `before` = danh sách chưa lọc lần trước (null = lần tải đầu → không ca nào là
+ * mới), `after` = danh sách chưa lọc hiện tại, `view` = trạng thái đã lưu. Ca mới = có trong `after`, không có trong `before`
+ * (so theo id) và đang khuất → thêm (cộng dồn). Ca đã báo mà nay hiện ra (tự mở nhóm / đổi thẻ) hoặc rời hàng đợi → bỏ HẲN (ẩn
+ * lại sau đó không báo lại). Không đổi → trả đúng `missed` (màn so tham chiếu, không setState lặp).
+ */
+export function trackMissed(
+  missed: ReadonlySet<number>,
+  before: readonly EscalationQueueItem[] | null,
+  after: readonly EscalationQueueItem[],
+  view: QueueView,
+): ReadonlySet<number> {
+  const old = before === null ? null : new Set(before.map((item) => item.escalation_id));
+  const next = new Set<number>();
+  for (const item of after) {
+    if (!isHidden(item.priority, view)) continue;
+    const id = item.escalation_id;
+    if (missed.has(id) || (old !== null && !old.has(id))) next.add(id);
+  }
+  if (next.size === missed.size && [...next].every((id) => missed.has(id))) return missed;
+  return next;
+}

@@ -10,6 +10,9 @@
 //      F3-1…6 L2: DÙNG LẠI ticket E3 (F2-2) + E0 (F2-4) của cùng lượt → long.nh / ha.lt xem hàng đợi + chi tiết THẬT;
 //      an.nv (không có escalation:handle) → trang không có quyền + 403 thật khi gọi thẳng API; đóng ca = MSW (dev:mock,
 //      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
+//      N-L2Q: màn chỉ hiện 10 ca đầu mỗi nhóm và ca mới nằm CUỐI nhóm → ticket của lượt được tìm bằng Ô TÌM (gõ ticket_id;
+//      ô tìm chỉ trong bộ nhớ → mỗi lần quay lại /escalations gõ lại). F3-8 (chỉ đọc, sau F3-5, dev không mock): phân trang
+//      trong nhóm, thu gọn nhóm, tìm rồi xoá ô — không ghi gì.
 //      F4-1…6, F4-9 L1 trên dev:mock + backend thật: hộp thư = phiếu THẬT + phiếu minh hoạ (MSW gọi thật trước), xem phiếu /
 //      quyết định CHỈ mở id `apv-demo-…` (không bấm dòng thật — phiếu thật đang chờ mà mở là ghi first_viewed_at), ghi đè
 //      CHỈ gửi tới ticket minh hoạ `tkt-demo-…` (MSW). F4-7, F4-8, F4-10 dev KHÔNG mock: F4-8 kiểm hộp thư THẬT (4c) 4 trạng
@@ -40,7 +43,15 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
-import { checkQueueSnapshot } from "./lib/queue-check.mjs";
+import {
+  checkQueueSnapshot,
+  checkSearchHit,
+  noMatchFullText,
+  PAGE_SIZE,
+  pagerLabel,
+  searchCountText,
+  serverGroups,
+} from "./lib/queue-check.mjs";
 
 const FE = fileURLToPath(new URL("../", import.meta.url));
 const REPO = join(FE, "..");
@@ -48,7 +59,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "N4d";
+const BUILT = "N-L2Q";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -529,13 +540,62 @@ async function shownNewTickets(page, queue, who) {
   return shown;
 }
 
-/** Dòng của một ticket ĐANG có trong thân JSON hàng đợi. */
+/** Số dòng của màn mặc định (mọi nhóm mở, trang 1): mỗi nhóm liên tiếp của server tối đa PAGE_SIZE dòng. */
+const firstPageRows = (items) => serverGroups(items).reduce((n, g) => n + Math.min(PAGE_SIZE, g.items.length), 0);
+
+/** Đọc các nhóm đang hiện theo thứ tự hiển thị (tên, "· N ca", mở/thu gọn, dòng, chữ thanh trang). */
+const readQueueGroups = (page) =>
+  page.locator('[data-testid="queue-group"]').evaluateAll((els) =>
+    els.map((g) => ({
+      priority: Number(g.dataset.priority),
+      name: g.querySelector('[data-testid="queue-group-name"]')?.textContent?.trim() ?? "",
+      count: g.querySelector('[data-testid="queue-group-count"]')?.textContent?.trim() ?? "",
+      expanded: g.querySelector('[data-testid="queue-group-toggle"]')?.getAttribute("aria-expanded") === "true",
+      rows: [...g.querySelectorAll('[data-testid="queue-row"]')].map((r) => ({
+        id: Number(r.dataset.escalationId),
+        ticket: r.dataset.ticketId,
+        code: r.dataset.exitCode,
+      })),
+      pager: g.querySelector('[data-testid="queue-pager"] span')?.textContent?.trim() ?? null,
+    })),
+  );
+
+/**
+ * Gõ `text` vào ô tìm của hàng đợi (chữ tìm chỉ nằm trong bộ nhớ của màn → mỗi lần quay lại /escalations phải gõ lại),
+ * chờ dòng đếm, đọc màn: dòng đếm, các dòng đang hiện (kèm priority của nhóm), khung "quá 200 ca", câu không khớp khi chạm trần.
+ */
+async function searchQueue(page, text) {
+  const box = page.getByTestId("queue-search");
+  await box.waitFor({ timeout: 10_000 });
+  await box.fill(text);
+  await page.getByTestId("queue-search-count").waitFor({ timeout: 5_000 });
+  const value = await box.inputValue();
+  check(value === text, `ô tìm giữ "${value}" sau khi gõ "${text}"`);
+  return page.evaluate((noMatchFull) => {
+    const noMatch = [...document.querySelectorAll("p")].some((p) => p.textContent?.trim() === noMatchFull);
+    return {
+      countText: document.querySelector('[data-testid="queue-search-count"]')?.textContent?.trim() ?? null,
+      rows: [...document.querySelectorAll('[data-testid="queue-row"]')].map((r) => ({
+        ticket: r.dataset.ticketId,
+        code: r.dataset.exitCode,
+        priority: Number(r.closest('[data-testid="queue-group"]')?.dataset.priority),
+      })),
+      overflowShown: document.querySelector('[data-testid="queue-overflow"]') !== null,
+      noMatchFullShown: noMatch,
+    };
+  }, noMatchFullText(QUEUE_LIMIT));
+}
+
+/** Dòng của một ticket ĐANG có trong thân JSON hàng đợi — tìm bằng ô tìm (ca mới nằm cuối nhóm, thường không ở trang 1). */
 async function waitRow(page, queue, ticketId, who) {
   const items = await queueSnapshot(page, queue, who);
   check(
     items.some((i) => i.ticket_id === ticketId),
     `${who}: ticket ${ticketId} không có trong ${items.length} ca đang hiện${items.length >= QUEUE_LIMIT ? ` — ${QUEUE_FULL}` : ""}`,
   );
+  const seen = await searchQueue(page, ticketId);
+  const want = searchCountText(1, items.length, QUEUE_LIMIT);
+  check(seen.countText === want, `${who}: gõ ${ticketId} vào ô tìm → "${seen.countText}", cần "${want}"`);
   const row = rowOf(page, ticketId);
   await row.waitFor({ timeout: 10_000 });
   return row;
@@ -1423,41 +1483,48 @@ await live("F2-4 E0 → chỉ câu trung tính", () =>
 // (F2-4) của cùng lượt — không gửi thêm câu. Escalation chưa đóng được tới Phase 7 nên hàng đợi dev dài dần (trần 200 ca).
 const liveF3 = (name, fn) => live(name, () => needF2Tickets() ?? fn());
 
-await liveF3("F3-1 long.nh: hàng đợi đúng thứ tự server; ca E3 (F2-2) + E0 (F2-4) đúng nhóm hoặc ngoài 200 ca có cảnh báo", () =>
+await liveF3("F3-1 long.nh: mặc định = 10 ca đầu mỗi nhóm theo thứ tự server; ca E3 (F2-2) + E0 (F2-4) tìm bằng ô tìm đúng nhóm, hoặc ngoài 200 ca có cảnh báo", () =>
   scenario("F3-1", async ({ page }) => {
     const queue = watchQueue(page);
     await signInAs(page, "long.nh"); // trang đầu theo quyền: /escalations (12b Q-fe-8)
     await page.getByRole("heading", QUEUE_HEADING).waitFor();
     const items = await queueSnapshot(page, queue, "long.nh");
-    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="queue-row"]').length === n, items.length, {
+    const shownRows = firstPageRows(items);
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="queue-row"]').length === n, shownRows, {
       timeout: 10_000,
     });
-    // Đọc TOÀN BỘ dòng đang hiện (tối đa 200) theo nhóm, đúng thứ tự hiển thị.
-    const groups = await page.locator('[data-testid="queue-group"]').evaluateAll((els) =>
-      els.map((g) => ({
-        priority: Number(g.dataset.priority),
-        name: g.querySelector("h2")?.textContent?.trim() ?? "",
-        rows: [...g.querySelectorAll('[data-testid="queue-row"]')].map((r) => ({
-          id: Number(r.dataset.escalationId),
-          ticket: r.dataset.ticketId,
-          code: r.dataset.exitCode,
-        })),
-      })),
-    );
+    // Màn mặc định: mọi nhóm mở, trang 1 → mỗi nhóm = đúng PAGE_SIZE ca ĐẦU của nhóm đó trong thân response.
+    const groups = await readQueueGroups(page);
     const overflowShown = await page.getByTestId("queue-overflow").isVisible();
     const result = checkQueueSnapshot({ groups, items, limit: QUEUE_LIMIT, overflowShown, tickets: newTickets() });
-    log(`F3-1 hàng đợi: ${items.length} ca, ${groups.length} nhóm [${groups.map((g) => `${g.priority}:${g.rows.length}`).join(" ")}]`);
+    log(`F3-1 hàng đợi: ${items.length} ca, ${groups.length} nhóm [${groups.map((g) => `${g.priority}:${g.rows.length}${g.count}`).join(" ")}]`);
     check(result.problems.length === 0, result.problems.join("; "));
     check(
       queue.searches.length > 0 && queue.searches.every((q) => q === `?limit=${QUEUE_LIMIT}`),
       `queue gọi với: ${queue.searches.join(", ")}`,
     );
-    const count = (await page.getByTestId("queue-count").innerText()).trim();
-    check(count === `Đang hiện ${items.length} ca`, `đầu trang "${count}", cần "Đang hiện ${items.length} ca"`);
+    const header = `Đang hiện ${items.length} ca`;
+    const count = async () => (await page.getByTestId("queue-count").innerText()).trim();
+    check((await count()) === header, `đầu trang "${await count()}", cần "${header}"`);
     await expectNoApproveButtons(page, "hàng đợi (long.nh)");
     await shoot(page, "l2-queue.png");
+    // Ticket mới của lượt: gõ ticket_id vào ô tìm (ca mới nằm CUỐI nhóm — thường không ở trang 1). Vắng mà đủ 200 → màn
+    // phải nói rõ "chỉ tìm trong 200 ca đã tải" + câu "có thể nằm ngoài danh sách" + khung cảnh báo (Q-fe-23).
+    const hits = [];
+    for (const t of [...result.present, ...result.outside]) {
+      const seen = await searchQueue(page, t.id);
+      const problems = checkSearchHit({ ticket: t, item: t.item, total: items.length, limit: QUEUE_LIMIT, ...seen });
+      check(problems.length === 0, problems.join("; "));
+      check((await count()) === header, `đang tìm mà đầu trang thành "${await count()}" (phải tính trên tổng)`);
+      hits.push(`${t.code} → "${seen.countText}"${t.item ? ` (nhóm ${seen.rows[0].priority})` : ""}`);
+    }
+    await page.getByTestId("queue-search").fill("");
+    check((await page.getByTestId("queue-search-count").count()) === 0, "xoá ô tìm mà dòng đếm còn");
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="queue-row"]').length === n, shownRows, {
+      timeout: 10_000,
+    });
     return {
-      note: `${items.length} ca, ${groups.length} nhóm, priority không giảm, dòng = thứ tự server, limit=200${overflowShown ? ', có cảnh báo "quá 200 ca"' : ""}; ${result.notes.join("; ")}`,
+      note: `${items.length} ca, ${groups.length} nhóm, priority không giảm, mỗi nhóm = ${PAGE_SIZE} ca đầu theo thứ tự server (${shownRows} dòng), "· N ca" + thanh trang đúng, limit=200${overflowShown ? ', có cảnh báo "quá 200 ca"' : ""}; ${result.notes.join("; ")}; ô tìm: ${hits.join(" · ")}; xoá ô → mất dòng đếm`,
     };
   }),
 );
@@ -1571,6 +1638,107 @@ await liveF3("F3-5 không có nút duyệt trên mọi màn /escalations", () =>
     return {
       note: `${counts.map(([w, n]) => `${w}: ${n} nút`).join(" · ")} — 0 nút khớp /duyệt|đồng ý|phê duyệt/; ca mới đã mở: ${shown.map((t) => t.code).join(", ")}`,
     };
+  }),
+);
+
+// F3-8 (N-L2Q): CHỈ ĐỌC, dev không mock — chạy TRƯỚC khi F3-6 chuyển cổng 5173 sang dev:mock. Không cần ticket của F2.
+await live("F3-8 long.nh (chỉ đọc): mọi nhóm > 10 ca đi hết các trang = đúng nhóm của server; thu gọn giữ '· N ca'; tìm ca ở trang cuối rồi xoá ô", () =>
+  scenario("F3-8", async ({ page }) => {
+    const queue = watchQueue(page);
+    // Đếm mọi lời gọi ghi tới /api/ TỪ TRƯỚC khi đăng nhập: trang đầu của long.nh chính là /escalations, nên màn hàng đợi đã
+    // mount trong lúc signInAs chạy. Chỉ bỏ qua ĐÚNG hai đường của phiên: đăng nhập + làm mới phiên (logout, logout-all… vẫn đếm).
+    const SESSION_CALLS = new Set(["/api/auth/login", "/api/auth/refresh"]);
+    const writes = [];
+    page.on("request", (r) => {
+      const path = new URL(r.url()).pathname;
+      if (r.method() !== "GET" && path.startsWith("/api/") && !SESSION_CALLS.has(path)) writes.push(`${r.method()} ${path}`);
+    });
+    await signInAs(page, "long.nh");
+    await page.getByRole("heading", QUEUE_HEADING).waitFor();
+    const url = page.url();
+    const items = await queueSnapshot(page, queue, "long.nh");
+    check(items.length > 0, "hàng đợi rỗng — F3-8 cần ít nhất 1 ca");
+    const server = serverGroups(items);
+    const shownRows = firstPageRows(items);
+    const rowsAll = () => page.locator('[data-testid="queue-row"]').count();
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="queue-row"]').length === n, shownRows, {
+      timeout: 10_000,
+    });
+    const groupLoc = (priority) => page.locator(`[data-testid="queue-group"][data-priority="${priority}"]`);
+    const idsOf = (loc) =>
+      loc.locator('[data-testid="queue-row"]').evaluateAll((els) => els.map((e) => Number(e.dataset.escalationId)));
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const notes = [];
+
+    // 1) Phân trang trong nhóm: đi HẾT mọi trang của MỌI nhóm > PAGE_SIZE ca (Sau tới trang cuối) → mỗi trang đúng chữ thanh
+    //    trang + đúng PAGE_SIZE ca của server ở vị trí đó; ghép các trang = đúng nhóm trong thân response, không thiếu, không lặp.
+    //    Xong bấm Đầu → trả nhóm về trang 1 trước các kiểm sau.
+    const bigs = server.filter((grp) => grp.items.length > PAGE_SIZE);
+    for (const big of bigs) {
+      const g = groupLoc(big.priority);
+      const pager = g.getByTestId("queue-pager");
+      const size = big.items.length;
+      const pages = Math.ceil(size / PAGE_SIZE);
+      const wantAll = big.items.map((i) => i.escalation_id);
+      const walked = [];
+      for (let p = 1; p <= pages; p += 1) {
+        if (p > 1) await pager.getByRole("button", { name: "Sau", exact: true }).click();
+        const label = (await pager.locator("span").innerText()).trim();
+        check(label === pagerLabel(p, size), `nhóm priority ${big.priority} trang ${p}: thanh trang "${label}", cần "${pagerLabel(p, size)}"`);
+        const got = await idsOf(g);
+        const want = wantAll.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE);
+        check(same(got, want), `nhóm priority ${big.priority} trang ${p}: ${got.length} dòng khác ca ${(p - 1) * PAGE_SIZE + 1}–${(p - 1) * PAGE_SIZE + want.length} của server`);
+        walked.push(...got);
+        if (p === 2 && big === bigs[0]) await shoot(page, "l2-queue-page2.png");
+      }
+      check(await pager.getByRole("button", { name: "Sau", exact: true }).isDisabled(), `nhóm priority ${big.priority}: trang cuối mà "Sau" chưa khoá`);
+      check(new Set(walked).size === walked.length, `nhóm priority ${big.priority}: đi hết ${pages} trang thấy ca lặp`);
+      check(same(walked, wantAll), `nhóm priority ${big.priority}: ghép ${pages} trang được ${walked.length} ca ≠ ${size} ca của server (thiếu / lệch thứ tự)`);
+      await pager.getByRole("button", { name: "Đầu", exact: true }).click();
+      check(same(await idsOf(g), wantAll.slice(0, PAGE_SIZE)), `nhóm priority ${big.priority}: bấm Đầu mà không về ${PAGE_SIZE} ca đầu`);
+      notes.push(`phân trang nhóm priority ${big.priority}: ${pages} trang, ghép = ${size} ca của server, chữ thanh trang đúng từng trang`);
+    }
+    if (bigs.length === 0) notes.push(`phân trang: không đủ dữ liệu (không nhóm nào > ${PAGE_SIZE} ca)`);
+    const big = bigs[0];
+
+    // 2) Thu gọn một nhóm: 0 dòng của nhóm đó, "· N ca" còn, aria-expanded=false; mở lại → đúng 10 ca đầu.
+    const fold = big ?? server[0];
+    const g = groupLoc(fold.priority);
+    const toggle = g.getByTestId("queue-group-toggle");
+    const size = fold.items.length;
+    await toggle.click();
+    check((await toggle.getAttribute("aria-expanded")) === "false", `nhóm priority ${fold.priority}: thu gọn mà aria-expanded vẫn true`);
+    check((await g.locator('[data-testid="queue-row"]').count()) === 0, `nhóm priority ${fold.priority} thu gọn mà còn dòng`);
+    const folded = (await g.getByTestId("queue-group-count").innerText()).trim();
+    check(folded === `· ${size} ca`, `nhóm thu gọn hiện "${folded}", cần "· ${size} ca"`);
+    await toggle.click();
+    check((await toggle.getAttribute("aria-expanded")) === "true", `nhóm priority ${fold.priority}: mở lại mà aria-expanded vẫn false`);
+    check(same(await idsOf(g), fold.items.slice(0, PAGE_SIZE).map((i) => i.escalation_id)), `nhóm priority ${fold.priority}: mở lại không đúng ${PAGE_SIZE} ca đầu`);
+    notes.push(`thu gọn nhóm priority ${fold.priority}: 0 dòng, "${folded}" còn; mở lại → ${PAGE_SIZE} ca đầu`);
+
+    // 3) Tìm một ca ở trang CUỐI của nhóm lớn (hoặc ca cuối hàng đợi) → "Khớp 1 / N ca" + đúng dòng; xoá ô → mất dòng đếm, đủ dòng.
+    const target = big ? big.items.at(-1) : items.at(-1);
+    const seen = await searchQueue(page, target.ticket_id);
+    const want = searchCountText(1, items.length, QUEUE_LIMIT);
+    check(seen.countText === want, `tìm ${target.ticket_id} → "${seen.countText}", cần "${want}"`);
+    check(seen.rows.length === 1 && seen.rows[0].ticket === target.ticket_id, `tìm ${target.ticket_id} mà màn hiện ${seen.rows.length} dòng`);
+    check(seen.rows[0].priority === target.priority, `ca tìm được nằm ở nhóm ${seen.rows[0].priority}, server trả ${target.priority}`);
+    const header = (await page.getByTestId("queue-count").innerText()).trim();
+    check(header === `Đang hiện ${items.length} ca`, `đang tìm mà đầu trang thành "${header}"`);
+    await shoot(page, "l2-queue-search.png");
+    await page.getByTestId("queue-search").fill("");
+    check((await page.getByTestId("queue-search-count").count()) === 0, "xoá ô tìm mà dòng đếm còn");
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="queue-row"]').length === n, shownRows, {
+      timeout: 10_000,
+    });
+    notes.push(`tìm ca #${target.escalation_id} (${big ? `trang ${Math.ceil(big.items.length / PAGE_SIZE)} của nhóm ${big.priority}` : "ca cuối"}) → "${seen.countText}"; xoá ô → mất dòng đếm, lại ${await rowsAll()} dòng`);
+
+    // Chỉ đọc + chỉ trong bộ nhớ: URL không đổi, không lời gọi ghi nào, hàng đợi chỉ gọi ?limit=200.
+    check(page.url() === url, `URL đổi thành ${page.url()} (chữ tìm / trang không được lên URL)`);
+    check(writes.length === 0, `F3-8 phải chỉ đọc, có ${writes.join(", ")}`);
+    check(queue.searches.every((q) => q === `?limit=${QUEUE_LIMIT}`), `queue gọi với: ${queue.searches.join(", ")}`);
+    await expectNoApproveButtons(page, "hàng đợi (F3-8)");
+    return { note: `${items.length} ca, ${server.length} nhóm; ${notes.join(" · ")}; URL không đổi, 0 lời gọi ghi` };
   }),
 );
 
