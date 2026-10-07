@@ -1,0 +1,1417 @@
+id: HB01-v1
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- IT ơi reset giúp mật khẩu cho nv001 với, bạn ấy quên mật khẩu đăng nhập.
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB01-v2
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- nhờ helpdesk đặt lại password cho nv001, bạn ấy báo không nhớ mật khẩu nữa
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB01-v3
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- nv001 quên mk rồi, mình gửi yêu cầu reset hộ bạn ấy được không
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB01-v4
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- chào IT, xử lý giúp reset mật khẩu tài khoản nv001 nhé, người dùng đang không nhớ mật khẩu
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB01-v5
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- reset pw giup nv001 voi a, user nay bao quen pass
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB01-v6
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- mình đang hỗ trợ nv001 nhưng bạn ấy quên mật khẩu, nhờ bên IT đặt lại giúp
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB01-v7
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T15:25:00+07:00'
+faults: []
+turns:
+- IT hỗ trợ reset password tài khoản nv001 giúp mình, bạn ấy vừa báo quên mật khẩu
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v1
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- mình đang có quyền truy cập những thư mục nào vậy
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v2
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT kiểm tra giúp hiện tài khoản của mình có quyền gì trên các folder dùng chung
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v3
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- cho mình xem các quyền thư mục hiện tại với
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v4
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- mình muốn biết hiện giờ mình được đọc hay ghi những thư mục nào
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v5
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- check quyen folder hien tai cua minh giup nhe
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v6
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- tài khoản mình đang có access vào đâu, nhờ IT tra giúp
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB02-v7
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T15:25:00+07:00'
+faults: []
+turns:
+- mình chỉ muốn xem quyền hiện có, không xin thêm quyền nhé
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v1
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- cho mình quyền write thư mục finance/public-reports trong 30 ngày nhé
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v2
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT cấp quyền ghi finance/public-reports cho mình 30 ngày được không
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v3
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- minh can quyen write vao finance/public-reports trong 30 ngay
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v4
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- nhờ mở quyền ghi cho mình ở folder finance/public-reports, thời hạn 30 ngày
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v5
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- mình cần sửa nội dung trong finance/public-reports, cấp write cho mình 30 ngày nhé
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v6
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- helpdesk hỗ trợ cấp quyền write folder finance/public-reports cho mình trong 30 ngày
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB03-v7
+family: HB03
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T15:25:00+07:00'
+faults: []
+turns:
+- xin quyền ghi finance/public-reports 30 ngày cho tài khoản của mình
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v1
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- mình cần cài AutoCAD trên LAP-0417 để làm việc
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v2
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT cai AutoCAD giup minh vao LAP-0417 nhe
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v3
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- cho mình yêu cầu cài autocad trên laptop LAP-0417
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v4
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- máy LAP-0417 của mình cần AutoCAD, nhờ helpdesk cài giúp
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v5
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- mình muốn cài phần mềm AutoCAD lên LAP-0417
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v6
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- cần autocad cho công việc, IT triển khai lên LAP-0417 giúp mình
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB04-v7
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T15:25:00+07:00'
+faults: []
+turns:
+- nhờ cài AutoCAD vào máy LAP-0417 của mình ạ
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB05-v1
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- chứng chỉ VPN trên LAP-0501 sắp hết hạn, gia hạn giúp mình
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB05-v2
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT oi gia han cert VPN may LAP-0501 giup minh voi
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB05-v3
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- LAP-0501 báo chứng chỉ VPN gần hết hạn, nhờ gia hạn
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB05-v4
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- mình cần renew chứng chỉ VPN cho laptop LAP-0501
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB05-v5
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- nhờ xử lý gia hạn VPN cert cho LAP-0501, máy của mình
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB05-v6
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- giúp mình gia hạn chứng chỉ VPN trên máy LAP-0501 nhé
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB06-v1
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- VPN trên LAP-0610 không dùng được nữa, nhờ cấp lại quyền VPN cho mình
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    last_connection_ok: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB06-v2
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT cấp lại VPN access cho LAP-0610 giúp mình với
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    last_connection_ok: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB06-v3
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- máy LAP-0610 của mình mất quyền VPN rồi, hỗ trợ cấp lại nhé
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    last_connection_ok: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB06-v4
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- nhờ reissue VPN access cho thiết bị LAP-0610
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    last_connection_ok: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB06-v5
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- VPN LAP-0610 hiện không vào được, bên IT cấp lại truy cập giúp mình
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    last_connection_ok: false
+labels:
+  annotator_1: null
+  annotator_2: null
+---
+id: HB06-v6
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- helpdesk hỗ trợ cấp lại VPN cho LAP-0610 của mình được không
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    last_connection_ok: false
+labels:
+  annotator_1: null
+  annotator_2: null

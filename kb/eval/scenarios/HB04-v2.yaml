@@ -1,0 +1,32 @@
+id: HB04-v2
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT cai AutoCAD giup minh vao LAP-0417 nhe
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0417
+  facts:
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: null
+  annotator_2: null

@@ -1,0 +1,35 @@
+id: HB05-v2
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- IT oi gia han cert VPN may LAP-0501 giup minh voi
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    device_registered: true
+    device_owner_is_requester: true
+    has_registered_device: true
+    device_count: 1
+    cert_days_to_expiry: 5
+    cert_status: valid
+labels:
+  annotator_1: null
+  annotator_2: null
