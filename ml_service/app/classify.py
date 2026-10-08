@@ -1,14 +1,23 @@
-"""POST /classify (injection-clf, B2 L3) — Phase 3 chưa có model của nhóm (P11, Phase 5).
+"""POST /classify (injection-clf, B2 L3) — trả lời lỗi của endpoint; tính điểm ở `guard.py`.
 
-Luôn trả 503 `{"error": "model_missing"}` (Q-3a-13), kể cả khi thư mục model có mặt: chưa có loader ONNX
-thì không giả vờ đã nạp. Backend thấy `model_missing` thì đi đường LLM ngay, không retry (3-Q7).
-Thứ tự: token (401) → body (422) → 503.
+- `GUARD_MODEL_DIR` không đặt → 503 `{"error": "model_missing"}` như Phase 3 (Q-3a-13): backend thấy `model_missing` thì
+  đi đường LLM ngay, không retry (3-Q7). `/classify_intent` dùng chung (phần 2 ML-GAN chưa nạp model).
+- Có model → `{p_malicious, windows, model, version}`. Văn bản cần > `MAX_WINDOWS` cửa sổ → 422 `too_many_windows`
+  (không chấm một phần, không cắt âm thầm; không vọng lại văn bản).
+Thứ tự: token (401) → body (422) → 503 / điểm.
 """
 
 from fastapi.responses import JSONResponse
+
+from app.guard import MAX_WINDOWS
 
 MODEL_MISSING = {"error": "model_missing"}
 
 
 def model_missing() -> JSONResponse:
     return JSONResponse(MODEL_MISSING, status_code=503)
+
+
+def too_many_windows(count: int) -> JSONResponse:
+    body = {"error": "too_many_windows", "windows": count, "max_windows": MAX_WINDOWS}
+    return JSONResponse(body, status_code=422)

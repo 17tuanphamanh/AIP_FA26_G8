@@ -40,6 +40,8 @@ data/*
 training/data/
 # model của ml-service — tải bằng `make models` (ghim revision ở ml_service/models.lock.json, lock thì commit)
 /models/
+# model của nhóm (P11, ML-GAN): ml_models/<model>/<phiên bản>/ — file tải từ Drive, không commit; README thì giữ
+/ml_models/*/*/
 training/runs/
 
 # ket qua chay

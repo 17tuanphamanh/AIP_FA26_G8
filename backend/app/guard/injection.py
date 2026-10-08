@@ -6,7 +6,8 @@ bất kỳ bản nào → `ScreenHit(id, group)`. Thuần, không gọi mạng, 
 
 `TAU_BLOCK`, `TAU_PASS`: hai ngưỡng L3 của node `b02_screen` — hằng module ở Phase 3 (chưa có model `injection-clf`);
 Phase 5 chuyển sang `constants`/`thresholds.json` của model (B02 mục 7). `TAU_PASS` = 0,10 theo phase3 8.5 (B02 §7 ghi
-0,20 — lệch, "spec cần sửa").
+0,20 — lệch, "spec cần sửa"). ML-GAN: hai ngưỡng chỉ có hiệu lực khi `B2_CLASSIFIER_MODE=active`; `shadow` (mặc định)
+chỉ ghi điểm.
 """
 
 from dataclasses import dataclass

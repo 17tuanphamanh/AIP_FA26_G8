@@ -1,5 +1,5 @@
-"""Giao diện của model đã nạp — `loader.load_models` dựng bản thật (sentence-transformers), test tiêm
-bản giả (không cần torch). Code xử lý (`tokens`, `embed`, `rerank`) chỉ biết các Protocol này."""
+"""Giao diện của model đã nạp — `loader.load_models` dựng bản thật (sentence-transformers, transformers), test tiêm
+bản giả (không cần torch). Code xử lý (`tokens`, `embed`, `rerank`, `guard`) chỉ biết các Protocol này."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -9,6 +9,7 @@ from app.lock import ModelRef
 
 EMBED_LABEL = "bge-m3"  # tên trong header X-Model-Version (P4 mục 7, thiết kế 3a mục 4.3)
 RERANK_LABEL = "reranker"
+GUARD_LABEL = "injection-clf"  # trường `model` của /classify (P11 mục 4.3, backend `ClassifyOut`)
 
 
 class Tokenizer(Protocol):
@@ -33,6 +34,24 @@ class Reranker(Protocol):
         ...
 
 
+class GuardScorer(Protocol):
+    def logits(self, windows: list[list[int]]) -> list[list[float]]:
+        """Logit THÔ mỗi cửa sổ (id đã có cls/sep), một hàng mỗi lớp theo `id2label` — softmax áp ở `guard.py`."""
+        ...
+
+
+@dataclass(frozen=True)
+class Guard:
+    """Model chặn tấn công (injection-clf, B2 L3) đã nạp."""
+
+    tokenizer: Tokenizer  # XLM-R của model: tách id KHÔNG thêm token đặc biệt, không cắt
+    scorer: GuardScorer
+    cls_id: int
+    sep_id: int
+    injection_index: int  # vị trí lớp "INJECTION" trong hàng logit — lấy từ config.json `id2label`
+    version: str  # tên thư mục phiên bản, vd "v3-seed123"
+
+
 @dataclass(frozen=True)
 class Models:
     tokenizer: Tokenizer  # bge-m3: đếm token, cờ truncated của /embed
@@ -42,6 +61,7 @@ class Models:
     embed: ModelRef
     rerank: ModelRef
     dim: int
+    guard: Guard | None = None  # None = GUARD_MODEL_DIR không đặt → /classify 503 model_missing
 
     @property
     def version(self) -> str:
