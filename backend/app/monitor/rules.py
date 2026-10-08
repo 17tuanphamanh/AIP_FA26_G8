@@ -14,23 +14,29 @@ người nhận sai. A3 đọc `REGISTRY` để lọc `/api/alerts`.
 """
 
 import inspect
+import math
 import statistics
 from bisect import bisect_left, bisect_right
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, TypeGuard, get_args
 from zoneinfo import ZoneInfo
 
 from app.core.hashing import sha256_key
 from app.domain.alerts import (
     BRUTEFORCE_RULE_ID,
     SUBJECT_MAX,
+    SYSTEM_SUBJECT,
     AlertDraft,
     bruteforce_alert,
     bruteforce_subject,
 )
-from app.monitor.window import bucket_start
+from app.monitor.window import bucket_start, day_start, hour_start
+
+if TYPE_CHECKING:  # chỉ lấy KIỂU của luồng A (một nguồn); lúc chạy không nạp module I/O (sqlalchemy) vào luật thuần
+    from app.monitor.queries.business import WeightedRate
 
 type Every = Literal["minute", "hourly", "daily", "weekly"]
 EVERY_VALUES: tuple[str, ...] = get_args(Every.__value__)
@@ -371,3 +377,355 @@ def execution_failed(data: Sequence[TicketExit], ctx: RuleContext) -> list[Alert
     runner/boundary, `exec_failed`…). `window_start` = created_at nhỏ nhất của dòng E7 (không lọc step — hai đường
     ghi khác step); ticket còn dòng E7 trong lookback thì vẫn ra đúng khoá cũ dù dòng đầu đã quá 24 giờ."""
     return _ticket_exit_drafts("execution_failed", data, ctx)
+
+
+# ---- luật tổng hợp chu kỳ ngày, job 02:00 giờ VN (B2 — chốt Q-M9-B2-1 ở #14) ---------------------------------------
+#
+# Cửa sổ dữ liệu KẾT THÚC ở `d0 = day_start(ctx.now, ctx.tz)` (ngày VN trọn): job chạy 02:00 VN, đo `[d0, now)` thì chỉ
+# có 2 giờ đêm → gần như không có lá → chỉ số `None` → luật không bao giờ nổ (bỏ sót). `window_start` = `d0`: chạy lại
+# trong cùng ngày ra đúng khoá cũ. Loader (GĐ2) lấy mốc từ CHÍNH các helper dưới đây — một nguồn cho mốc.
+# Chỉ số `None` (luật 1: không có lá; luật 12/13: mẫu số 0 dòng audit) → không nổ, không phải lỗi.
+# Đánh giá bù (Q-M9-B2-15, chốt #14 comment 5959974287, phương án nhẹ): luật 7, 12, 13 đánh giá `DAILY_MARKS` = 7 mốc
+# `r = d0 − k ngày` (k = 0…6), mỗi mốc lấy `[r − 1 ngày, r)`, `window_start = r` → worker chết qua vài mốc 02:00 thì
+# ngày bị lỡ vẫn được đánh giá; khoá theo `r` nên chạy lại không trùng. Luật 1 CHỈ `r = d0` (cửa sổ 7 ngày chồng nhau,
+# bù sẽ ra nhiều cảnh báo cho cùng một hiện tượng).
+# Luật tổng hợp: subject luôn là hằng `SYSTEM_SUBJECT` (không viết chuỗi rỗng trần — test AST ghim).
+
+ESCALATION_THRESHOLD = 0.40  # luật 1: weighted > 0,40 (bằng ngưỡng → không báo)
+ESCALATION_DAYS = 7  # luật 1: 7 ngày VN trọn
+DEGRADED_THRESHOLD = 0.30  # luật 12, 13: > 0,30 (bằng ngưỡng → không báo)
+DAILY_MARKS = 7  # Q-M9-B2-15: luật 7, 12, 13 đánh giá 7 mốc ngày gần nhất (kể cả d0)
+
+
+def days_before(d0: datetime, k: int, tz: ZoneInfo) -> datetime:
+    """00:00 theo `tz` của ngày lịch thứ `k` trước ngày chứa `d0`, kiểu UTC. Trừ `k` ngày trên giờ ĐỊA PHƯƠNG rồi chuẩn
+    hoá bằng `day_start` — KHÔNG trừ `24 h × k` trên UTC (ngày đổi giờ dài 23 giờ → rơi sang ngày trước nữa)."""
+    return day_start(d0.astimezone(tz) - timedelta(days=k), tz)
+
+
+def day_window(r: datetime, tz: ZoneInfo) -> tuple[datetime, datetime]:
+    """`[r − 1 ngày lịch, r)` — ngày `tz` trọn kết thúc ở mốc `r` (ngày đổi giờ dài 23/25 giờ vẫn đúng)."""
+    return days_before(r, 1, tz), r
+
+
+def daily_marks(ctx: RuleContext) -> list[datetime]:
+    """Các mốc luật 7, 12, 13 đánh giá ở lượt này, CŨ → MỚI: `r = days_before(d0, k)`, k = 6…0; phần tử cuối = `d0`."""
+    d0 = day_start(ctx.now, ctx.tz)
+    return [days_before(d0, k, ctx.tz) for k in range(DAILY_MARKS - 1, -1, -1)]
+
+
+def daily_since(ctx: RuleContext) -> datetime:
+    """Mốc dưới loader 7 (GĐ2) đọc: đầu cửa sổ của mốc cũ nhất = `days_before(d0, 7)`."""
+    return days_before(day_start(ctx.now, ctx.tz), DAILY_MARKS, ctx.tz)
+
+
+def prev_day_window(ctx: RuleContext) -> tuple[datetime, datetime]:
+    """`[d0 − 1 ngày, d0)` — trọn ngày VN hôm trước (cửa sổ của mốc `d0`)."""
+    return day_window(day_start(ctx.now, ctx.tz), ctx.tz)
+
+
+def rolling_7d_window(ctx: RuleContext) -> tuple[datetime, datetime]:
+    """Luật 1: `[d0 − 7 ngày, d0)` — 7 ngày VN trọn."""
+    d0 = day_start(ctx.now, ctx.tz)
+    return days_before(d0, ESCALATION_DAYS, ctx.tz), d0
+
+
+@rule("escalation_rate_high", "daily", audience=("manager",))
+def escalation_rate_high(data: "WeightedRate | None", ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 1 — escalation rate CÓ TRỌNG SỐ (nhóm N3 70/20/10) của 7 ngày VN trọn > 0,40 → Trưởng BP. Đọc `weighted`,
+    không đọc `raw`: tỉ lệ thô bị nhóm đông (routine) chi phối, che tỉ lệ escalate cao của nhóm nhạy cảm.
+    `data` = `escalation_rate_weighted(conn, *rolling_7d_window(ctx))` (A1, loader GĐ2). 0 lá → `weighted` None."""
+    if data is None or data.weighted is None:
+        return []  # không có lá trong cửa sổ: không đo được, không phải lỗi
+    weighted = data.weighted
+    if weighted > ESCALATION_THRESHOLD:
+        _, d0 = rolling_7d_window(ctx)
+        return [
+            AlertDraft(
+                rule_id="escalation_rate_high", subject=SYSTEM_SUBJECT, window_start=d0, severity="warning",
+                value=weighted, detail={
+                    "weighted": weighted, "raw": data.raw, "threshold": ESCALATION_THRESHOLD, "days": ESCALATION_DAYS,
+                },
+            )
+        ]  # fmt: skip
+    return []
+
+
+def _degraded(rule_id: str, data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
+    marks = daily_marks(ctx)
+    if set(data) != set(marks):  # Q-M9-B2-20: loader dựng dict từ chính daily_marks → lệch là bug, không im lặng
+        raise ValueError(f"luật {rule_id}: mốc dữ liệu lệch daily_marks")  # không in giá trị
+    drafts: list[AlertDraft] = []
+    for r in marks:
+        rate = data[r]
+        if rate is None:
+            continue  # mẫu số 0 dòng audit trong ngày (vd không có lá): không đo được, không phải lỗi
+        if rate > DEGRADED_THRESHOLD:
+            drafts.append(
+                AlertDraft(
+                    rule_id=rule_id, subject=SYSTEM_SUBJECT, window_start=r, severity="warning", value=rate,
+                    detail={"rate": rate, "threshold": DEGRADED_THRESHOLD},
+                )
+            )  # fmt: skip
+    return drafts
+
+
+@rule("b2_degraded", "daily", audience=("dev",))
+def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 12 — tỉ lệ DÒNG audit step B2 do tầng LLM quyết của một ngày VN > 0,30, đúng cách `b2_llm_rate` (A2) đếm:
+    `count(*)` dòng B2 có `layer_decided = 'llm'` hoặc event `guard_unavailable` / dòng B2 có `layer_decided` hoặc
+    `guard_unavailable`, của lá tạo trong ngày — đếm dòng, không đếm lá phân biệt (một lá nhiều lượt B2 tính nhiều
+    lần). Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data` = `{r: b2_llm_rate(conn,
+    *day_window(r, ctx.tz)) for r in daily_marks(ctx)}` (A2) — mỗi mốc vượt một draft, `window_start = r`
+    (Q-M9-B2-15). Tập mốc lệch `daily_marks(ctx)` → `ValueError` (Q-M9-B2-20). Loader GĐ2 trả `Pending` tới Phase 5
+    (`is_pending("b2_classifier")`, Q-M9-A2-8): Phase 3–4 chưa có injection-clf nên số ≈ 1,0 — báo mỗi ngày một điều
+    đã biết."""
+    return _degraded("b2_degraded", data, ctx)
+
+
+@rule("b3_degraded", "daily", audience=("dev",))
+def b3_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 13 (D-32) — tỉ lệ DÒNG audit điểm log 1 (step B3, B4) do tầng LLM quyết của một ngày VN > 0,30, đúng cách
+    `b3_llm_rate` (A2) đếm: `count(*)` dòng có `detail.layer = 'llm'` / dòng có `detail.layer` khác NULL, của lá tạo
+    trong ngày — đếm dòng, không đếm lá phân biệt. Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data`
+    như luật 12 với `b3_llm_rate`. Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
+    return _degraded("b3_degraded", data, ctx)
+
+
+# ---- luật 7 `reflex_approval` (kế hoạch chung mục 6 luật 7; chốt Q-M9-B2-3, 6, 15 ở #14; Q-M9-B2-21 đề xuất cụm 4b) --
+
+REFLEX_MIN = 3  # ≥ 3 phiếu "< 5 giây" của một người trong một ngày
+REFLEX_SECONDS = 5.0  # view_duration < 5 (đúng 5,0 → không tính)
+HUMAN_DECISIONS = ("approved", "rejected")  # bỏ timeout / late_ignored / pending (approvals.status)
+APPROVER_ROLES = ("primary", "backup")  # auth/authz.py `approval_role`
+
+type ReflexKind = Literal["fast", "ambiguous", "normal"]
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """Luật 7 — một quyết định trên phiếu (gốc `approvals`, mỗi phần tử một phiếu) + `detail` dòng audit B16 khớp
+    (loader GĐ2: LATERAL cùng ticket_id, `approval_result = status`, `created_at ≥ phiếu.created_at` — Q-M9-B2-6).
+    [Đề xuất] Q-M9-B2-23: dòng B16 còn phải có `created_at` TRƯỚC (nghiêm ngặt) `COALESCE(decided_at, created_at)` của
+    phiếu kế tiếp cùng ticket — phiếu thiếu B16 không mượn dòng của phiếu sau (mượn thì có thể xếp "bình thường" = sót).
+    Với chặn trên, lệch đồng hồ (phiếu sau còn pending → mốc là `now()` của DB) chỉ làm mất dòng khớp → mơ hồ (báo thừa).
+    Hạn chế đã biết của MỐC DƯỚI Q-M9-B2-6 (nêu trong PR): dòng B16 theo đồng hồ app, `approvals.created_at` là `now()`
+    của DB — (1) DB nhanh hơn app → dòng B16 của chính phiếu rơi dưới mốc → mơ hồ (báo thừa); (2) app nhanh hơn DB quá
+    khoảng giữa dòng B16 của phiếu trước và lúc tạo phiếu sau → dòng của phiếu TRƯỚC lọt qua mốc dưới của phiếu SAU →
+    phiếu sau nối nhầm → CÓ THỂ SÓT. (2) hiện không xảy ra: một lá có tối đa một phiếu (`domain/states.py`).
+    Không mang `approval_id`/`ticket_id`: luật không đọc; nối B16 đúng phiếu là việc của SQL."""
+
+    status: str  # approvals.status — luật TỰ lọc HUMAN_DECISIONS (loader cũng lọc)
+    decided_by: str | None  # người quyết (dòng B16 không có người quyết)
+    decided_at: datetime  # xếp vào mốc (Q-M9-B2-3)
+    reminder_2_at: datetime | None
+    b16: Mapping[str, Any] | None  # detail dòng B16; None = không có dòng khớp
+
+
+def _seconds(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _reflex_kind(d: ApprovalDecision) -> ReflexKind:
+    """Thứ tự cố định: chắc chắn "< 5 giây" (fast) xét TRƯỚC mơ hồ — đã nhắc 2 mà xem < 5 giây thì dưới 5 giây dù ai xem,
+    không cộng vào `ambiguous_views`. Không ép kiểu (lỗi ép kiểu in giá trị vào traceback)."""
+    if d.b16 is None:
+        return "ambiguous"  # Q-M9-B2-6: không có dòng B16 → mơ hồ (báo thừa)
+    without, view, role = d.b16.get("decided_without_view"), d.b16.get("view_duration"), d.b16.get("decided_as")
+    if without is True:
+        return "fast"  # không xem (kế hoạch chung mục 6)
+    if _seconds(view):
+        if not math.isfinite(view):
+            return "ambiguous"  # NaN/±inf: sai kiểu → mơ hồ; không kiểm thì `nan < 5` là False → sót
+        if view < REFLEX_SECONDS:
+            return "fast"  # âm hữu hạn (lệch đồng hồ giữa route xem và route duyệt) vẫn tính: báo thừa
+    if not isinstance(without, bool) or not _seconds(view) or role not in APPROVER_ROLES:
+        return "ambiguous"  # Q-M9-B2-6: trường sai kiểu / tự mâu thuẫn → mơ hồ (báo thừa)
+    if role == "primary" and d.reminder_2_at is not None:
+        return "ambiguous"  # first_viewed_at là cột chung: lần xem có thể là của dự phòng (Việc treo 28 Phase 4)
+    return "normal"
+
+
+def _approver_subject(user_id: str | None) -> str:
+    """user_id khi 1…64 ký tự; NULL/rỗng → `user:` (gộp chung, Q-M9-B2-21); dài hơn → băm (`_bounded`)."""
+    return user_id if user_id and len(user_id) <= SUBJECT_MAX else _bounded("user", user_id or "")
+
+
+@rule("reflex_approval", "daily", audience=("manager",))
+def reflex_approval(data: Sequence[ApprovalDecision], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 7 — một người quyết có ≥ 3 phiếu "xem < 5 giây" trong một ngày VN → Trưởng BP. Nguồn chính là audit B16,
+    KHÔNG dùng `approvals.first_viewed_at` (cột chung chính/dự phòng). Chỉ quyết định của người (`approved`/`rejected`);
+    lọc theo cột `approval_result` ở loader, không theo `event` — ca `action_plan_changed_since_approval` (4d dừng 2)
+    vẫn là một quyết định duyệt.
+
+    Một phiếu bị tính khi: không xem (`decided_without_view`), `view_duration < 5`, hoặc MƠ HỒ — người chính quyết sau
+    nhắc 2 (lần xem có thể của dự phòng), không có dòng B16, trường sai kiểu hay không hữu hạn (Q-M9-B2-6). Ca mơ hồ
+    đếm vào `detail.ambiguous_views`.
+
+    Đánh giá 7 mốc ngày (Q-M9-B2-15): mỗi mốc `r` lấy phiếu có `decided_at ∈ [r − 1 ngày, r)` (Q-M9-B2-3),
+    `window_start = r` — chạy lại không trùng; worker chết qua vài mốc 02:00 vẫn đánh giá ngày bị lỡ. `data` = phiếu có
+    `decided_at ≥ daily_since(ctx)` (loader GĐ2; chặn trên nối B16 theo phiếu kế tiếp — [Đề xuất] Q-M9-B2-23).
+
+    subject = người quyết (`decided_by`); nhóm theo subject ĐÃ tính (Q-M9-B2-21: NULL và rỗng gộp vào `user:` — tách
+    theo phiếu thì không bao giờ đủ 3). Báo thừa có chủ ý: thiếu B16 / sai kiểu → tính; hai phiếu nối tiếp của một
+    ticket → hai phiếu; `view_duration` âm → tính. `detail` chỉ có số đếm và ngưỡng."""
+    drafts: list[AlertDraft] = []
+    for r in daily_marks(ctx):
+        lo, hi = day_window(r, ctx.tz)
+        per: dict[str, tuple[int, int]] = {}
+        for d in data:
+            if d.status not in HUMAN_DECISIONS or not lo <= d.decided_at < hi:
+                continue
+            kind = _reflex_kind(d)
+            if kind == "normal":
+                continue
+            subject = _approver_subject(d.decided_by)
+            count, ambiguous = per.get(subject, (0, 0))
+            per[subject] = (count + 1, ambiguous + (kind == "ambiguous"))
+        for subject, (count, ambiguous) in sorted(per.items()):
+            if count >= REFLEX_MIN:
+                drafts.append(
+                    AlertDraft(
+                        rule_id="reflex_approval", subject=subject, window_start=r, severity="warning", value=count,
+                        detail={"count": count, "ambiguous_views": ambiguous, "threshold": REFLEX_MIN},
+                    )
+                )  # fmt: skip
+    return drafts
+
+
+# ---- luật tổng hợp chu kỳ giờ (B2 — kế hoạch chung mục 6 luật 14; Q-M9-6) -------------------------------------------
+
+BUDGET_EPS = 1e-9  # Q-M9-B2-7: 38 × 0,8 = 30.400000000000002 → `30.4 >= 38*0.8` là False (đúng 80% không báo)
+
+
+@rule("llm_budget", "hourly", audience=("dev", "manager", "ops"))
+def llm_budget(data: float | None, ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 14 (N1) — TỔNG chi LLM ≥ `warn_ratio × cap_usd` → cả nhóm. `data` = Σ `llm_calls.cost_usd` TOÀN BẢNG
+    (loader GĐ2: `COALESCE(sum, 0)`, không cửa sổ, không `v_leaf`) — cùng cách gateway tính trần (`llm/store.py`
+    `spend_total`): trần là của cả đồ án. KHÔNG phải chi phí theo ngày, KHÔNG dùng `cost_per_day` (A2, chỉ lá).
+    Đánh giá mỗi giờ; `window_start` = đầu ngày `tz` của `ctx.now` (Q-M9-6) → nhắc một lần mỗi ngày. Tổng chỉ tăng
+    (cost ≥ 0) nên worker chết qua nhiều ngày không làm mất cảnh báo đầu tiên.
+
+    Đã chốt (#14, comment 5959974287):
+    - Q-M9-B2-7: so với `ngưỡng − BUDGET_EPS` (1e-9), không so `≥` trần — số thực làm đúng 80% không báo.
+    - Q-M9-B2-16: tổng `None`/NaN/inf/âm → `ValueError` (luật vào `failed_rules`), không trả `[]`: loader `COALESCE`
+      nên chỉ lỗi mới ra các giá trị này; trả `[]` là tắt im lặng luật ngân sách (FN).
+    - Q-M9-B2-17: một mức; vượt trần trong cùng ngày đã báo 80% là cùng khoá → không ra dòng mới."""
+    if data is None or not math.isfinite(data) or data < 0:
+        raise ValueError("luật llm_budget: tổng chi không hợp lệ")  # không in giá trị (chỉ tên luật)
+    if data >= ctx.warn_ratio * ctx.cap_usd - BUDGET_EPS:
+        return [
+            AlertDraft(
+                rule_id="llm_budget", subject=SYSTEM_SUBJECT, window_start=day_start(ctx.now, ctx.tz),
+                severity="critical", value=data,
+                detail={"spent_usd": data, "cap_usd": ctx.cap_usd, "warn_ratio": ctx.warn_ratio},
+            )
+        ]  # fmt: skip
+    return []
+
+
+# ---- luật B2 chu kỳ 60 giây: 4 `e9_spike`, 6 `e6_spike`, 5 `breaker_open` (chốt Q-M9-B2-2, 5, 12 ở #14) -------------
+#
+# Đăng ký "minute" cùng commit với loader (Q-M9-B2-10): luật minute thiếu loader → `MissingLoaderError` → job phút ra
+# `luật_lỗi` mỗi phút. Người nhận theo kế hoạch chung mục 6: 4 → dev, 5 → ops, 6 → manager. Luật 5: loader trả `Pending`
+# tới khi `tool_spans` ready (`is_pending`, Q-M9-4) → `skipped_rules`, không báo.
+
+SPIKE_RECHECK_HOURS = 24  # Q-M9-B2-2: mỗi lượt đánh giá lại 24 giờ trước + giờ hiện tại
+SPIKE_FACTOR = 3  # luật 4, 6: count > 3 × trung vị
+SPIKE_MINIMUM = 3  # luật 4, 6: tối thiểu 3 ca
+HOUR = timedelta(hours=1)
+BREAKER_GAP = timedelta(seconds=60)  # luật 5 (Q-M9-4): "đợt" = chuỗi span cách nhau < 60 s
+
+
+def spike_hours(ctx: RuleContext) -> list[datetime]:
+    """Các giờ luật 4/6 đánh giá ở lượt này, cũ → mới: `hour_start(now) − 24 giờ … hour_start(now)` (25 giờ)."""
+    current = hour_start(ctx.now)
+    return [current - k * HOUR for k in range(SPIKE_RECHECK_HOURS, -1, -1)]
+
+
+def spike_since(ctx: RuleContext) -> datetime:
+    """Mốc dưới loader 4/6 (GĐ2) đọc: 168 giờ trước giờ cũ nhất được đánh giá — đủ trung vị cho mọi giờ."""
+    return spike_hours(ctx)[0] - HOURS_7D * HOUR
+
+
+def _spike_drafts(rule_id: str, data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
+    per_hour = Counter(hour_start(t.first_at) for t in data)
+    drafts: list[AlertDraft] = []
+    for h in spike_hours(ctx):
+        count = per_hour[h]
+        median = hourly_median([per_hour[h - k * HOUR] for k in range(1, HOURS_7D + 1)])  # [h − 168 giờ, h)
+        if spike(count, median, SPIKE_FACTOR, SPIKE_MINIMUM):
+            drafts.append(
+                AlertDraft(
+                    rule_id=rule_id, subject=SYSTEM_SUBJECT, window_start=h, severity="warning", value=count,
+                    detail={"count": count, "median": median, "factor": SPIKE_FACTOR, "minimum": SPIKE_MINIMUM},
+                )
+            )  # fmt: skip
+    return drafts
+
+
+@rule("e9_spike", "minute", audience=("dev",))
+def e9_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 4 — số lá E9 trong một giờ > 3 × trung vị theo giờ của 168 giờ TRƯỚC giờ đó (giờ trống = 0) VÀ ≥ 3 ca →
+    dev. Đúng bằng ngưỡng → không báo (kế hoạch chung mục 6).
+
+    Mốc của lá = `first_at` (MIN `created_at` các dòng E9 của lá, `_ticket_exits` qua `V_LEAF`), không phải
+    `tickets.created_at`, không gọi `e9_count` của A2 (Q-M9-B2-5). Chạy mỗi phút, đánh giá lại 24 giờ trước + giờ hiện
+    tại (Q-M9-B2-2): worker chết qua mốc giờ vẫn bắt được; `window_start` = đầu giờ được đánh giá (không phải
+    `ctx.now`) → chạy lại không trùng. Với một giờ cố định, cửa sổ trung vị cố định và số ca chỉ tăng → không dao động.
+    Giờ sau giờ hiện tại (lệch đồng hồ) chưa đánh giá; tới giờ đó thì được đánh giá, không mất.
+
+    Hạn chế đã biết (Q-M9-B2-2, không xử lý ở B2): đợt tăng vắt qua mốc giờ có thể không vượt ngưỡng ở cả hai giờ."""
+    return _spike_drafts("e9_spike", data, ctx)
+
+
+@rule("e6_spike", "minute", audience=("manager",))
+def e6_spike(data: Sequence[TicketExit], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 6 — như luật 4 với lá E6 → Trưởng BP. E6 ghi lúc HẾT HẠN chờ duyệt (sau `tickets.created_at` cả giờ
+    SLA): đếm theo giờ ra mã, đếm theo giờ tạo ticket thì giờ đã đánh giá không bao giờ thấy ca đến muộn (Q-M9-B2-5).
+    Cùng hạn chế đã biết của luật 4."""
+    return _spike_drafts("e6_spike", data, ctx)
+
+
+@dataclass(frozen=True)
+class ToolSpan:
+    """Luật 5 — một span tool `circuit_open`. Hợp đồng dự kiến (Q-M9-4): `spans.span_type='tool'`, `status='error'`,
+    `attributes.error='circuit_open'`. `tools/registry.py::_span` hiện chỉ ghi log → loader GĐ2 trả `Pending` theo
+    `is_pending("tool_spans")`; hàm luật không biết gì về pending (loader trả `Pending` → evaluator không gọi luật)."""
+
+    name: str  # spans.name (≤ 128 ký tự)
+    started_at: datetime
+
+
+@rule("breaker_open", "minute", audience=("ops",))
+def breaker_open(data: Sequence[ToolSpan], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 5 — mỗi ĐỢT `circuit_open` của một tool một cảnh báo → vận hành. Đợt = chuỗi span cùng tên mà hai span
+    LIỀN NHAU cách nhau < 60 s (đúng 60 s là đợt mới). `window_start` = `started_at` của span đầu đợt (lấy từ DB).
+
+    subject = `spans.name` (Q-M9-B2-12); dài hơn 64 ký tự hoặc rỗng → `_bounded("tool", …)` (rỗng thì thành `tool:`,
+    không trùng `SYSTEM_SUBJECT`). Báo khi span CUỐI của đợt còn trong lookback 24 giờ; không chặn trên theo `now`
+    (Q-M9-B1-12). Loader đọc từ `now − 24 giờ` nên đợt vắt qua mốc lookback có thể ra khoá mới — báo thừa một lần,
+    đã chấp nhận (Q-M9-B2-12). Breaker khoá theo hệ thống đích: nhiều tool cùng hệ thống → mỗi tool một cảnh báo
+    (báo thừa, không bỏ sót)."""
+    by_tool: dict[str, list[datetime]] = {}
+    for s in data:
+        by_tool.setdefault(s.name, []).append(s.started_at)
+    drafts: list[AlertDraft] = []
+    for name, times in by_tool.items():
+        times.sort()
+        bursts: list[list[datetime]] = []
+        for t in times:
+            if bursts and t - bursts[-1][-1] < BREAKER_GAP:
+                bursts[-1].append(t)
+            else:
+                bursts.append([t])
+        subject = name if 0 < len(name) <= SUBJECT_MAX else _bounded("tool", name)
+        for burst in bursts:
+            if _recent(burst[-1], ctx):
+                drafts.append(
+                    AlertDraft(
+                        rule_id="breaker_open", subject=subject, window_start=burst[0], severity="warning",
+                        value=len(burst), detail={"count": len(burst)},
+                    )
+                )  # fmt: skip
+    return _unique(drafts)

@@ -280,11 +280,15 @@ def test_bruteforce_waits_60s_before_reconciling() -> None:
     assert len(password_bruteforce(BruteforceData([_lock(NOW - timedelta(seconds=60))], []), CTX)) == 1
 
 
-def test_bruteforce_several_alerts_same_subject_any_one_matches() -> None:
-    """Tra theo subject giữ MỌI cảnh báo của subject (nhiều đợt khoá/ngày): một cái khớp ±60 s là đủ."""
+@pytest.mark.parametrize("at", [0, 1, 3], ids=["dau", "giua", "cuoi"])
+def test_bruteforce_several_alerts_same_subject_any_one_matches(at: int) -> None:
+    """Tra theo subject giữ MỌI cảnh báo của subject (nhiều đợt khoá/ngày): một cái khớp ±60 s là đủ. Review #24: cảnh
+    báo khớp ở đầu / giữa / cuối danh sách — dict chỉ giữ cảnh báo cuối hoặc chỉ giữ cảnh báo đầu đều đỏ."""
     far = [_auth("u-1", T - timedelta(hours=k)) for k in (1, 2, 3)]
     assert len(password_bruteforce(BruteforceData([_lock(T)], far), CTX)) == 1
-    assert password_bruteforce(BruteforceData([_lock(T)], [*far, _auth("u-1", T + 3 * MS)]), CTX) == []
+    alerts = list(far)
+    alerts.insert(at, _auth("u-1", T + 3 * MS))
+    assert password_bruteforce(BruteforceData([_lock(T)], alerts), CTX) == []
 
 
 def test_bruteforce_many_locks_many_alerts_fast() -> None:
@@ -540,11 +544,12 @@ def _message_ok(node: ast.expr) -> bool:
     return False
 
 
-@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 7)])
+@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 15)])
 def test_error_messages_carry_no_data(module: Any, min_async: int) -> None:
     """`evaluate` ghi `log.exception` (cả traceback) khi luật/loader lỗi — message chỉ được mang tên luật/hằng.
     GĐ2 (Q-M9-B1-17): thêm `queries/rules_data.py`; quét cả `async def` (loader là async — chỉ quét `def` thì loader
-    lọt). `rules_data` không có `raise` → "quét không rỗng" của nó là ≥ 7 hàm async (7 loader)."""
+    lọt). `rules_data` không có `raise` → "quét không rỗng" của nó là ≥ 15 hàm async (7 loader B1 + 3 loader B2 phút +
+    5 loader B2 giờ/ngày)."""
     tree = ast.parse(inspect.getsource(module))
     raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)]
     if module is not rules_data:

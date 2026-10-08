@@ -19,16 +19,17 @@ import pytest
 import yaml
 from app import worker
 from app.core.clock import FakeClock
-from app.db.models import SECURITY_EVENT_TYPES
+from app.db.models import SECURITY_EVENT_TYPES, SPAN_STATUSES, SPAN_TYPES
 from app.db.session import Engines
 from app.domain.alerts import AlertDraft
 from app.graph.runner import FINALIZE_FAILED
 from app.llm.config import load_llm_config
-from app.monitor.evaluator import LOADERS, EvalResult
+from app.monitor.evaluator import LOADERS, EvalResult, Pending
 from app.monitor.queries import rules_data
 from app.monitor.rules import LOOKBACK, REGISTRY, RuleContext
 from app.monitor.window import VN_TZ
 from app.settings import Settings
+from app.tools.registry import CIRCUIT_OPEN
 from app.worker import (
     MONITOR_RULES_MINUTE,
     MONITOR_RULES_SECONDS,
@@ -52,6 +53,8 @@ B1_RULES = {
     "injection_detected", "password_bruteforce", "refresh_reuse", "permission_denied_burst", "policy_saved",
     "finalize_failed", "execution_failed",
 }  # fmt: skip
+B2_MINUTE_RULES = {"e9_spike", "e6_spike", "breaker_open"}  # B2 GĐ2 cụm 1 (Q-M9-B2-2, 10)
+MINUTE_RULES = B1_RULES | B2_MINUTE_RULES
 
 
 # ---- đồ giả -----------------------------------------------------------------------------------------------------
@@ -187,11 +190,13 @@ def test_setup_monitor_jobs_reads_llm_yaml(tmp_path: Path, monkeypatch: pytest.M
     """`cap_usd`, `warn_ratio` đọc từ `<config_dir>/llm.yaml` ở WORKER; `now` từ Clock của app; tz = VN_TZ."""
     clock = FakeClock(T0)
     scheduler = AsyncIOScheduler(timezone="UTC")
-    job = setup_monitor_jobs(scheduler, settings_with(llm_yaml(tmp_path, 12.0, 0.5), tmp_path), engines(FakeEngine()),
-                             clock)  # fmt: skip
-    assert job is not None and [j.id for j in scheduler.get_jobs()] == [MONITOR_RULES_MINUTE]
+    jobs = setup_monitor_jobs(scheduler, settings_with(llm_yaml(tmp_path, 12.0, 0.5), tmp_path), engines(FakeEngine()),
+                              clock)  # fmt: skip
+    # B2 GĐ2 cụm 3: setup đăng ký 3 job M9 theo thứ tự phút → giờ → ngày (job giờ/ngày: test_monitor_jobs_periodic.py)
+    assert jobs is not None
+    assert [j.id for j in scheduler.get_jobs()] == [MONITOR_RULES_MINUTE, "monitor_rules_hourly", "monitor_rules_daily"]
     seen = fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=[], skipped_rules=[]))
-    asyncio.run(job.minute())
+    asyncio.run(jobs["minute"].minute())
     assert seen == [RuleContext(now=T0, tz=VN_TZ, cap_usd=12.0, warn_ratio=0.5)]
 
 
@@ -263,13 +268,14 @@ def test_setup_monitor_job_writes_via_main_engine(tmp_path: Path, monkeypatch: p
     built: list[SpyWriter] = []
     main, lock, mon = FakeEngine("main"), FakeEngine("lock"), FakeEngine("monitor")
     monkeypatch.setattr(worker, "AlertWriter", SpyWriter)
-    job = setup_monitor_jobs(AsyncIOScheduler(timezone="UTC"), settings_with(REPO / "config", tmp_path),
-                             Engines(main=cast(Any, main), lock=cast(Any, lock), monitor=cast(Any, mon)),
-                             FakeClock(T0))  # fmt: skip
-    assert job is not None
+    jobs = setup_monitor_jobs(AsyncIOScheduler(timezone="UTC"), settings_with(REPO / "config", tmp_path),
+                              Engines(main=cast(Any, main), lock=cast(Any, lock), monitor=cast(Any, mon)),
+                              FakeClock(T0))  # fmt: skip
+    assert jobs is not None
     fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
-    asyncio.run(job.minute())
-    (writer,) = built
+    asyncio.run(jobs["minute"].minute())
+    (writer,) = built  # MỘT writer dùng chung cho 3 job M9 (B2 GĐ2 cụm 3)
+    assert {id(j._writer) for j in jobs.values()} == {id(writer)}
     assert writer.engine is main
     assert [d.subject for d in writer.written] == ["u-1"]
 
@@ -359,6 +365,77 @@ def test_draft_write_error_does_not_block_others(
         f"{MONITOR_RULES_MINUTE}: ghi cảnh báo luật injection_detected lỗi: ValueError",
         f"{MONITOR_RULES_MINUTE}: nháp=3 ghi=2 trùng=0 lỗi=1 luật_lỗi=0",
     ]
+    assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
+
+
+def draft_lines(caplog: pytest.LogCaptureFixture, level: int) -> list[str]:
+    """Dòng "ghi cảnh báo luật … lỗi" ở đúng mức `level`, theo thứ tự."""
+    return [r.getMessage() for r in m9_records(caplog, level) if "ghi cảnh báo luật" in r.getMessage()]
+
+
+def write_error(rule_id: str, exc: str) -> str:
+    return f"{MONITOR_RULES_MINUTE}: ghi cảnh báo luật {rule_id} lỗi: {exc}"
+
+
+def test_draft_write_warning_paced(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Q-M9-B1-24: một draft hỏng không còn in WARNING mỗi phút suốt 24 giờ. Theo (rule_id, tên lớp): WARNING lần đầu,
+    khi lớp đổi, qua 1 giờ, và ngay sau một lượt ghi được; còn lại DEBUG. Dòng tổng `lỗi=` vẫn đếm mọi lượt."""
+    clock = FakeClock(T0)
+    fail: list[BaseException | None] = [None]
+    writer = FakeWriter(lambda d: fail[0])
+    job = make_job(FakeEngine(), clock, writer)
+    fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
+    plan: list[tuple[int, type[Exception] | None]] = [  # (phút, lỗi ghi; None = ghi được)
+        (0, ValueError), (1, ValueError), (59, ValueError), (60, ValueError), (61, ValueError), (62, None),
+        (63, ValueError), (64, OSError), (65, OSError),
+    ]  # fmt: skip
+    warned: list[int] = []
+    debugged: list[int] = []
+    counted: list[str] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, exc in plan:
+            clock.set(T0 + at * MIN)
+            caplog.clear()
+            fail[0] = None if exc is None else exc(f"hỏng {SECRET}")
+            asyncio.run(job.minute())
+            warned.append(len(draft_lines(caplog, logging.WARNING)))
+            debugged.append(len(draft_lines(caplog, logging.DEBUG)))
+            ((_, message),) = summaries(caplog)
+            counted.append(message.split(" lỗi=")[1].split()[0])
+            assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
+    assert warned == [1, 0, 0, 1, 0, 0, 1, 1, 0]
+    assert debugged == [0, 1, 1, 0, 1, 0, 0, 0, 1]
+    assert counted == ["1", "1", "1", "1", "1", "0", "1", "1", "1"]
+
+
+def test_draft_write_warning_paced_per_rule_in_run(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Q-M9-B1-24: hai luật cùng lớp lỗi → hai WARNING (khoá có rule_id); hai draft cùng luật cùng lớp trong một lượt →
+    dòng log y hệt nên 1 WARNING + 1 DEBUG; `lỗi=` vẫn đếm đủ 3. Lượt sau cùng lỗi → chỉ DEBUG."""
+    drafts = [draft("refresh_reuse", "u-1"), draft("refresh_reuse", "u-2"), draft("injection_detected", "t-3"),
+              draft("finalize_failed", "t-4")]  # fmt: skip
+    writer = FakeWriter(lambda d: None if d.subject == "t-4" else ValueError(f"hỏng {d.detail}"))
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock, writer)
+    fake_evaluate(monkeypatch, EvalResult(drafts=drafts, failed_rules=[], skipped_rules=[]))
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        asyncio.run(job.minute())
+        assert draft_lines(caplog, logging.WARNING) == [
+            write_error("refresh_reuse", "ValueError"), write_error("injection_detected", "ValueError"),
+        ]  # fmt: skip
+        assert draft_lines(caplog, logging.DEBUG) == [write_error("refresh_reuse", "ValueError")]
+        assert summaries(caplog) == [(logging.WARNING, summary(4, 1, 0, 3, 0))]
+        assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
+        caplog.clear()
+        clock.set(T0 + MIN)
+        asyncio.run(job.minute())
+        assert draft_lines(caplog, logging.WARNING) == []
+        assert draft_lines(caplog, logging.DEBUG) == [
+            write_error("refresh_reuse", "ValueError"), write_error("refresh_reuse", "ValueError"),
+            write_error("injection_detected", "ValueError"),
+        ]  # fmt: skip
+        assert summaries(caplog) == [(logging.WARNING, summary(4, 0, 1, 3, 0))]
     assert all(r.exc_info is None and SECRET not in r.getMessage() for r in caplog.records)
 
 
@@ -475,6 +552,77 @@ def test_failed_rules_not_recovery_and_cadence(
     assert [r.levelno for r in m9_records(caplog) if "phục hồi" in r.getMessage()] == [logging.INFO]
 
 
+def test_summary_level_cadence_failed_rules(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Q-M9-B1-20: luật lỗi không còn nâng dòng tổng lên WARNING mỗi lượt — chỉ ở lượt IncidentLog báo (lần đầu, tập luật
+    lỗi đổi, qua 1 giờ), trùng đúng với dòng "luật lỗi:". Các lượt còn lại (0 draft) → DEBUG. Thứ tự tên luật khác nhau
+    không phải tập đổi."""
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock)
+    a = sorted(B1_RULES)
+    plan: list[tuple[int, list[str]]] = [  # (phút, tập luật lỗi)
+        (0, a), (1, a), (2, a[::-1]), (3, a), (4, a[:1]), (5, a[:1]), (64, a[:1]), (65, a[:1]),
+    ]  # fmt: skip
+    levels: list[int] = []
+    rule_lines: list[int] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, failed in plan:
+            clock.set(T0 + at * MIN)
+            caplog.clear()
+            fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=failed, skipped_rules=[]))
+            asyncio.run(job.minute())
+            ((level, message),) = summaries(caplog)
+            assert message == summary(0, 0, 0, 0, len(failed))
+            levels.append(level)
+            rule_lines.append(len([r for r in m9_records(caplog, logging.WARNING) if "luật lỗi:" in r.getMessage()]))
+    W, D = logging.WARNING, logging.DEBUG  # viết tắt cho bảng mức
+    assert levels == [W, D, D, D, W, D, W, D]
+    assert rule_lines == [1, 0, 0, 0, 1, 0, 1, 0]  # dòng tổng WARNING đúng ở lượt có dòng "luật lỗi:"
+
+
+@pytest.mark.parametrize("with_failed_rules", [False, True])
+def test_summary_warning_every_run_when_write_errors(
+    with_failed_rules: bool, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`lỗi > 0` → dòng tổng WARNING MỌI lượt, không phụ thuộc IncidentLog. Ca có luật lỗi: lượt 2, 3 IncidentLog không
+    báo nhưng lỗi ghi vẫn giữ WARNING."""
+    clock = FakeClock(T0)
+    writer = FakeWriter(lambda d: ValueError("hỏng"))
+    job = make_job(FakeEngine(), clock, writer)
+    failed = ["refresh_reuse"] if with_failed_rules else []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at in (0, 1, 2):
+            clock.set(T0 + at * MIN)
+            fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=failed,
+                                                  skipped_rules=[]))  # fmt: skip
+            asyncio.run(job.minute())
+    assert summaries(caplog) == [(logging.WARNING, summary(1, 0, 0, 1, len(failed)))] * 3
+    assert len([r for r in m9_records(caplog, logging.WARNING) if "luật lỗi:" in r.getMessage()]) == len(failed)
+
+
+def test_summary_info_when_failed_rules_unreported_but_written(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Q-M9-B2-8 (mặc định, chờ anh Tuấn Anh xác nhận): luật lỗi mà IncidentLog KHÔNG báo + có cảnh báo mới → INFO (cảnh
+    báo mới phải thấy, WARNING sẽ phá nhịp đã giãn); lượt sau chỉ còn trùng → DEBUG. Lượt đầu (IncidentLog báo) → WARNING."""
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock)
+    failed = ["policy_saved"]
+    new = [draft("refresh_reuse", "u-1")]
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, drafts in ((0, []), (1, new), (2, new)):
+            clock.set(T0 + at * MIN)
+            fake_evaluate(monkeypatch, EvalResult(drafts=drafts, failed_rules=failed, skipped_rules=[]))
+            asyncio.run(job.minute())
+    assert summaries(caplog) == [
+        (logging.WARNING, summary(0, 0, 0, 0, 1)),
+        (logging.INFO, summary(1, 1, 0, 0, 1)),
+        (logging.DEBUG, summary(1, 0, 1, 0, 1)),
+    ]
+    assert [r.getMessage() for r in m9_records(caplog) if "luật lỗi:" in r.getMessage()] == [
+        f"{MONITOR_RULES_MINUTE}: luật lỗi: policy_saved"
+    ]  # chỉ ở lượt 0
+
+
 # ---- timeout một lượt ------------------------------------------------------------------------------------------------
 
 
@@ -536,7 +684,43 @@ def test_failed_and_skipped_rules_logged_by_name(
         asyncio.run(make_job(FakeEngine(), FakeClock(T0)).minute())
     messages = [r.getMessage() for r in m9_records(caplog)]
     assert f"{MONITOR_RULES_MINUTE}: luật lỗi: refresh_reuse, policy_saved" in messages
-    assert f"{MONITOR_RULES_MINUTE}: luật bỏ qua (nguồn pending): b3_degraded" in messages
+    assert f"{MONITOR_RULES_MINUTE}: luật bỏ qua (nguồn chưa có): b3_degraded" in messages
+
+
+def test_skipped_rules_line_cadence(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Q-M9-B1-24 + luật cứng 7: dòng "luật bỏ qua (nguồn chưa có)" INFO khi TẬP luật bỏ qua đổi (kể cả xuất hiện lại
+    sau một lượt rỗng); cùng tập (thứ tự khác không tính) → DEBUG, qua 1 giờ cũng không nhắc (nguồn chưa có là trạng
+    thái đã biết). Luật bỏ qua không nâng mức dòng tổng."""
+    clock = FakeClock(T0)
+    job = make_job(FakeEngine(), clock)
+    b2, b3 = "b2_degraded", "b3_degraded"
+    plan: list[tuple[int, list[str]]] = [  # (phút, luật bỏ qua)
+        (0, [b3]), (1, [b3]), (2, [b3]), (3, [b2, b3]), (4, [b3, b2]), (65, [b3, b2]), (66, []), (67, [b3, b2]),
+    ]  # fmt: skip
+    lines: list[list[tuple[int, str]]] = []
+    levels: list[int] = []
+    with caplog.at_level(logging.DEBUG, logger="app.worker"):
+        for at, skipped in plan:
+            clock.set(T0 + at * MIN)
+            caplog.clear()
+            fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=[], skipped_rules=skipped))
+            asyncio.run(job.minute())
+            lines.append([(r.levelno, r.getMessage()) for r in m9_records(caplog) if "luật bỏ qua" in r.getMessage()])
+            ((level, _),) = summaries(caplog)
+            levels.append(level)
+    I, D = logging.INFO, logging.DEBUG  # viết tắt cho bảng mức
+    line = f"{MONITOR_RULES_MINUTE}: luật bỏ qua (nguồn chưa có): "
+    assert lines == [
+        [(I, line + "b3_degraded")],
+        [(D, line + "b3_degraded")],
+        [(D, line + "b3_degraded")],
+        [(I, line + "b2_degraded, b3_degraded")],
+        [(D, line + "b3_degraded, b2_degraded")],
+        [(D, line + "b3_degraded, b2_degraded")],
+        [],
+        [(I, line + "b3_degraded, b2_degraded")],
+    ]
+    assert levels == [I, D, D, D, D, D, D, D]  # lượt 1 INFO vì là lượt chạy được đầu tiên
 
 
 @pytest.mark.parametrize("where", ["connect", "evaluate", "writer"])
@@ -565,16 +749,20 @@ def test_job_reads_via_monitor_engine_not_main(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_every_minute_rule_has_loader() -> None:
-    """Worker import `rules_data` → mọi luật `minute` có loader (thiếu → MissingLoaderError → failed_rules mỗi phút)."""
+    """Worker import `rules_data` → mọi luật `minute` có loader (thiếu → MissingLoaderError → failed_rules mỗi phút).
+    B2 GĐ2 cụm 1: luật 4, 5, 6 đăng ký `minute` CÙNG commit với loader (Q-M9-B2-10)."""
     minute = {r for r, spec in REGISTRY.items() if spec.every == "minute"}
-    assert minute == B1_RULES
+    assert minute == MINUTE_RULES
     assert minute <= set(LOADERS)
+    assert {LOADERS[r].__module__ for r in B2_MINUTE_RULES} == {rules_data.__name__}
     assert "from app.monitor.queries import rules_data" in inspect.getsource(worker)
 
 
 def _sql() -> dict[str, str]:
     found = {name: clause.text for name, clause in vars(rules_data).items() if isinstance(clause, TextClause)}
-    assert len(found) == 5  # quét không rỗng
+    # quét không rỗng; luật 4/6 dùng lại TICKET_EXIT_SQL, luật 5 thêm TOOL_SPAN_SQL; luật 14 LLM_SPEND_SQL, luật 7
+    # REFLEX_SQL (luật 1, 12, 13 gọi hàm của luồng A, không có SQL riêng)
+    assert len(found) == 8
     return found
 
 
@@ -583,7 +771,10 @@ _UNWRITTEN_COLUMNS = ("confidence", "query", "success", "action_plan_hash_matche
 
 def test_rules_data_only_select() -> None:
     """Chỉ SELECT; không đụng bảng `tickets` trực tiếp (đếm qua `v_leaf`); không đọc 4 cột chưa ghi; KHÔNG chặn trên
-    theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 qua `v_leaf`, luật 15 thì không."""
+    theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 (và 4/6, cùng SQL) qua `v_leaf`, luật 15
+    thì không. Luật 5 đọc `spans`, không lọc lá (Q-M9-B2-22: breaker là sự cố hệ thống, không phải đếm ticket).
+    Luật 14: tổng toàn bảng `llm_calls` — không cửa sổ, không nối, không `v_leaf` (Q-M9-6, như `spend_total`). Luật 7: gốc
+    `approvals`, không lọc lá (Q-M9-B2-24 đề xuất: luật đếm phiếu, không đếm ticket)."""
     sql = _sql()
     for name, body in sql.items():
         words = body.lower()
@@ -595,6 +786,10 @@ def test_rules_data_only_select() -> None:
         assert "cast(" not in words and "::" not in body, name  # không ép kiểu dữ liệu JSON
     assert "v_leaf" in sql["TICKET_EXIT_SQL"]
     assert "v_leaf" not in sql["FINALIZE_FAILED_SQL"]
+    assert "from spans" in sql["TOOL_SPAN_SQL"].lower() and "v_leaf" not in sql["TOOL_SPAN_SQL"]
+    spend = sql["LLM_SPEND_SQL"].lower()
+    assert "from llm_calls" in spend and not re.search(r"\b(where|join|v_leaf)\b", spend)
+    assert "from approvals" in sql["REFLEX_SQL"].lower() and "v_leaf" not in sql["REFLEX_SQL"]
 
 
 class RecordingConn:
@@ -608,7 +803,9 @@ class RecordingConn:
         return []
 
 
-_ALLOWED_BINDS = {"since", "code", "step", "event", "event_type", "reason", "rule_id"}
+_ALLOWED_BINDS = {
+    "since", "code", "step", "event", "event_type", "reason", "rule_id", "span_type", "status", "error", "decisions",
+}  # fmt: skip
 
 
 @pytest.mark.parametrize("rule_id", sorted(B1_RULES))
@@ -642,6 +839,12 @@ def test_bruteforce_loader_filters_threshold_and_rule_id() -> None:
     assert alerts["rule_id"] == "password_bruteforce"
 
 
+def test_alerts_sql_filters_rule_id() -> None:
+    """Review #24: test trên chỉ thấy tham số bind — bỏ `rule_id = :rule_id` khỏi WHERE (bind thừa vẫn truyền) thì vẫn
+    xanh. Ghim mệnh đề trong SQL; luật 3 vẫn tự kiểm rule_id (lưới thứ hai, `test_monitor_rules_event.py`)."""
+    assert re.search(r"WHERE\s+rule_id = :rule_id AND", rules_data.ALERTS_SQL.text)
+
+
 def test_finalize_event_constant_matches_runner() -> None:
     """`monitor` không import `graph` → hằng sao chép; lệch tên event là luật 15 câm lặng (FN)."""
     assert rules_data.FINALIZE_FAILED_EVENT == FINALIZE_FAILED
@@ -650,13 +853,81 @@ def test_finalize_event_constant_matches_runner() -> None:
 
 def test_policy_saved_loader_does_not_call_is_pending() -> None:
     """Chốt 02/10 (#13): `is_pending("policy_saved")` ném KeyError → luật 11 vào failed_rules mỗi phút. Loader chạy
-    truy vấn thật; chưa có nơi ghi → 0 sự kiện."""
-    tree = ast.parse(inspect.getsource(rules_data))
+    truy vấn thật; chưa có nơi ghi → 0 sự kiện. B2: module nay import `is_pending` (luật 5) → chỉ quét hàm loader 11;
+    toàn module xem `test_only_pending_source_loaders_call_is_pending`."""
+    tree = ast.parse(inspect.getsource(rules_data.load_policy_saved))
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-    names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
-    assert len(names) > 10  # quét không rỗng
+    assert {"_events", "LOOKBACK"} <= names  # quét không rỗng
     assert "is_pending" not in names
     conn = RecordingConn()
     out = asyncio.run(LOADERS["policy_saved"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
     assert out == [] and conn.calls[0][1]["event_type"] == "policy_saved"
+
+
+# ---- loader B2 luật 60 s: 4 e9_spike, 6 e6_spike, 5 breaker_open (Q-M9-B2-2, 5, 10, 12; Q-M9-4) ---------------------
+
+# T0 = 2026-10-02T08:00Z → giờ cũ nhất được đánh giá 2026-10-01T08:00Z (24 giờ trước) → trừ 168 giờ (tính tay).
+SPIKE_SINCE_T0 = datetime(2026, 9, 24, 8, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(("rule_id", "code"), [("e9_spike", "E9"), ("e6_spike", "E6")])
+def test_spike_loader_binds_own_code(rule_id: str, code: str) -> None:
+    """Q-M9-B2-5: loader 4/6 dùng lại `TICKET_EXIT_SQL` (`first_at` qua `v_leaf`) với ĐÚNG mã của luật; mốc dưới =
+    `spike_since(ctx)` (đủ trung vị 168 giờ cho giờ cũ nhất), không phải `now − 24 giờ`."""
+    conn = RecordingConn()
+    out = asyncio.run(LOADERS[rule_id](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert out == []
+    [(sql, params)] = conn.calls
+    assert sql == rules_data.TICKET_EXIT_SQL.text
+    assert params == {"code": code, "since": SPIKE_SINCE_T0}
+
+
+def test_breaker_loader_pending_no_sql() -> None:
+    """Luật 5: nguồn `tool_spans` pending (span tool chưa ghi DB, Q-M9-4) → `Pending`, KHÔNG chạy SQL (luật vào
+    `skipped_rules`, không báo, không đoán)."""
+    conn = RecordingConn()
+    out = asyncio.run(LOADERS["breaker_open"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert out == Pending("tool_spans_not_recorded")
+    assert conn.calls == []
+
+
+def test_breaker_loader_ready_binds_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nhánh khi nguồn ready (vá riêng khoá `tool_spans`): đúng hợp đồng dự kiến Q-M9-4 — `span_type='tool'`,
+    `status='error'`, `attributes.error='circuit_open'`; đọc từ `now − 24 giờ` (Q-M9-B2-12). Giá trị là hằng có thật."""
+    real = rules_data.is_pending
+    monkeypatch.setattr(rules_data, "is_pending", lambda key: False if key == "tool_spans" else real(key))
+    conn = RecordingConn()
+    out = asyncio.run(LOADERS["breaker_open"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert out == []
+    [(sql, params)] = conn.calls
+    assert sql == rules_data.TOOL_SPAN_SQL.text
+    assert params == {
+        "span_type": "tool", "status": "error", "error": "circuit_open", "since": datetime(2026, 10, 1, 8, 0, tzinfo=UTC),
+    }  # fmt: skip
+    assert params["span_type"] in SPAN_TYPES and params["status"] in SPAN_STATUSES
+    assert set(params) <= _ALLOWED_BINDS
+
+
+def test_breaker_error_constant_matches_registry() -> None:
+    """`monitor` không import `tools` → hằng sao chép; lệch là luật 5 câm lặng khi nguồn ready (FN)."""
+    assert rules_data.BREAKER_ERROR == CIRCUIT_OPEN
+
+
+def test_only_pending_source_loaders_call_is_pending() -> None:
+    """Chỉ luật có nguồn TỪNG pending mới gọi `is_pending` (hợp đồng mục 3, file chia việc :111, :113), mỗi loader một lời
+    gọi với khoá HẰNG (gõ sai → KeyError → failed_rules): luật 5 `tool_spans`, luật 7 `approval_view` (pending tới 4c), luật
+    12 `b2_classifier`, luật 13 `b3_cascade`. Luật 11 không gọi (chốt 02/10 ở #13); luật 1, 14 không có nguồn pending."""
+    tree = ast.parse(inspect.getsource(rules_data))
+    calls = [
+        (fn.name, [a.value for a in call.args if isinstance(a, ast.Constant)])
+        for fn in ast.walk(tree) if isinstance(fn, ast.AsyncFunctionDef | ast.FunctionDef)
+        for call in ast.walk(fn)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "is_pending"
+    ]  # fmt: skip
+    assert calls == [
+        ("load_breaker_open", ["tool_spans"]),
+        ("load_reflex_approval", ["approval_view"]),
+        ("load_b2_degraded", ["b2_classifier"]),
+        ("load_b3_degraded", ["b3_cascade"]),
+    ]
