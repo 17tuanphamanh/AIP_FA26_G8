@@ -9,13 +9,14 @@ import { useMe } from "../../auth/useAuth.ts";
 import { AlertRow } from "../../components/AlertRow.tsx";
 import { Segmented } from "../../components/Segmented.tsx";
 import { Forbidden } from "../Forbidden.tsx";
-import { ALERTS_MISSING_TITLE, DASHBOARD_ALERT_LIMIT, MONITOR_DOWN_TEXT, sortAlerts } from "./metrics.ts";
-import { LoadError, MissingPanel, MockNote } from "./panels.tsx";
+import { ALERTS_MISSING_TITLE, ALERTS_TRUNCATED_TEXT, DASHBOARD_ALERT_LIMIT, MONITOR_DOWN_TEXT, sortAlerts } from "./metrics.ts";
+import { LoadError, MissingPanel } from "./panels.tsx";
 import { type AckNotice, useAlertAck } from "./useAlertAck.ts";
 
 // Cảnh báo (P10 §3.3, P9 §7): `GET /api/alerts?status=open` | "Tất cả" (không tham số — Q-fe-27) + "Đã xem"
-// (`POST /api/alerts/{id}/ack`). Route CHƯA CÓ — M9 A3 (MSW ở dev:mock). Bản 4 chưa vẽ màn riêng → theo khối
-// "Cảnh báo đang mở" của B4MgrDashboard. Cảnh báo chỉ báo người — không thao tác nào đổi hành vi hệ thống.
+// (`POST /api/alerts/{id}/ack`). Route thật M9 A3 (không còn MSW): thân `{items, truncated}` — server chỉ trả 200 cảnh
+// báo mới nhất, `truncated` → băng báo (không phân trang). Bản 4 chưa vẽ màn riêng → theo khối "Cảnh báo đang mở" của
+// B4MgrDashboard. Cảnh báo chỉ báo người — không thao tác nào đổi hành vi hệ thống.
 
 const FILTERS: readonly { key: AlertFilter; label: string }[] = [
   { key: "open", label: "Đang mở" },
@@ -71,7 +72,6 @@ export function Alerts() {
         </div>
         {missing ? null : <Segmented label="Lọc cảnh báo" options={FILTERS} value={filter} onChange={setFilter} />}
       </div>
-      {missing ? null : <MockNote text="cảnh báo thật có từ M9 (chặng A3)" />}
       <Notice notice={ack.notice} />
       {missing ? (
         <MissingPanel testId="alerts-missing" title={ALERTS_MISSING_TITLE} text={MISSING_TEXT} />
@@ -80,13 +80,23 @@ export function Alerts() {
       ) : query.isPending ? (
         <p className="text-ink-2">Đang tải cảnh báo…</p>
       ) : (
-        <AlertList items={sortAlerts(query.data)} filter={filter} canAck={canAck} ack={ack} />
+        <>
+          {query.data.truncated ? (
+            <p role="status" data-testid="alerts-truncated" className="rounded-group bg-group px-5 py-3 text-secondary text-ink-2">
+              {ALERTS_TRUNCATED_TEXT}
+            </p>
+          ) : null}
+          <AlertList items={sortAlerts(query.data.items)} filter={filter} canAck={canAck} ack={ack} />
+        </>
       )}
     </section>
   );
 }
 
-/** Khối "Cảnh báo đang mở" của Tổng quan (B4MgrDashboard): tối đa 5 dòng, link "Tất cả" → /alerts. */
+/**
+ * Khối "Cảnh báo đang mở" của Tổng quan (B4MgrDashboard): tối đa 5 dòng, link "Tất cả" → /alerts. Đếm ở tiêu đề = số
+ * server trả; `truncated` → "200+" (còn cảnh báo mở ngoài 200 — không nói "200" khi thật ra nhiều hơn).
+ */
 export function OpenAlertsBlock() {
   const me = useMe();
   const canAck = hasPerm(me, "alert:read");
@@ -107,12 +117,12 @@ export function OpenAlertsBlock() {
     );
   } else if (query.isPending) {
     body = <p className="px-4 py-3 text-secondary text-ink-2">Đang tải cảnh báo…</p>;
-  } else if (query.data.length === 0) {
+  } else if (query.data.items.length === 0) {
     body = <p className="px-4 py-3 text-secondary text-ink-2">Không có cảnh báo đang mở.</p>;
   } else {
     body = (
       <ul aria-label="Cảnh báo đang mở">
-        {sortAlerts(query.data)
+        {sortAlerts(query.data.items)
           .slice(0, DASHBOARD_ALERT_LIMIT)
           .map((alert) => (
             <AlertRow key={alert.alert_id} alert={alert} onAck={ack.ack} acking={ack.pending.has(alert.alert_id)} compact />
@@ -125,7 +135,7 @@ export function OpenAlertsBlock() {
     <section aria-labelledby="open-alerts-heading" data-testid="open-alerts" className="flex flex-col gap-2">
       <div className="flex items-center px-1">
         <h2 id="open-alerts-heading" className="grow text-label text-ink-2">
-          Cảnh báo đang mở{query.data && !query.isError ? ` · ${query.data.length}` : ""}
+          Cảnh báo đang mở{query.data && !query.isError ? ` · ${query.data.items.length}${query.data.truncated ? "+" : ""}` : ""}
         </h2>
         <Link to="/alerts" className="text-label text-fpt-blue">
           Tất cả

@@ -22,10 +22,14 @@
 //      F5 Trưởng BP IT (quan.tm, bắt buộc OTP): CHỈ chạy khi VERIFY_MGR=1, NGAY SAU kiểm tĩnh (người đang ngồi máy) —
 //      Chromium CÓ GIAO DIỆN, MỘT context cho mọi bước quan.tm: điền tên + mật khẩu (che trong log), dừng ở màn OTP, NGƯỜI
 //      nhập mã trong 120 s (verify không đọc, không in, không chụp ô OTP; hết giờ, hoặc OTP bị từ chối 2 lần — tránh khoá
-//      tài khoản ở ngưỡng 5 lần/10 phút — → F5-1…6 BỎ QUA kèm đúng lý do, không thử lại). Thứ tự:
-//      F5-1 (trang đầu + thanh bên) → F5-6 (dev KHÔNG mock: trang "có từ A3/Phase 7") → chuyển dev:mock, cookie refresh
-//      giữ phiên (không nhập OTP lần 2) → F5-2 Tổng quan, F5-3 Cảnh báo, F5-4 503, F5-5 Chính sách. Không có VERIFY_MGR
-//      → F5-1…6 BỎ QUA. F5-7 (ha.lt, headless, cuối lượt) chạy cả khi không có VERIFY_MGR.
+//      tài khoản ở ngưỡng 5 lần/10 phút — → F5-1…6 BỎ QUA kèm đúng lý do, không thử lại). Thứ tự (N-A3 — Tổng quan +
+//      Cảnh báo là route THẬT M9 A3): F5-1 (trang đầu + thanh bên) → F5-6 (dev KHÔNG mock: /dashboard, /alerts 200; /policy
+//      "có từ Phase 7") → F5-2 Tổng quan số thật (so data-state + số dòng với thân response), F5-3 Cảnh báo CHỈ ĐỌC (không
+//      bấm "Đã xem" — ack thật là ghi thật), F5-4 hai GET sai tham số → 422, đều dev KHÔNG mock → chuyển dev:mock, cookie
+//      refresh giữ phiên (không nhập OTP lần 2) → F5-5 Chính sách. F5-3/F5-4 gửi thẳng ĐÚNG 3 lời gọi không ghi gì (ack id
+//      không tồn tại → 404; 2 GET → 422) bằng Bearer đọc từ request GET của chính SPA (Q-fe-44 = A; token vào `secrets`,
+//      không refresh / logout bằng nó). 503 `monitor_unavailable` → ĐỎ "stack thiếu kết nối app_monitor". Không có
+//      VERIFY_MGR → F5-1…6 BỎ QUA. F5-7 (ha.lt, headless, cuối lượt) chạy cả khi không có VERIFY_MGR.
 //      F6-1…6 trên dev:mock + backend thật (đăng nhập): tin tổng hợp nhiều ý (MSW chỉ id `tkt-demo-multi-`, an.nv), nút gợi
 //      ý nhanh (/chat), chống duyệt theo phản xạ (ha.lt, `page.clock` giả cả performance.now), thẩm mỹ bảng + thanh quyết
 //      định. Không gửi câu chat nào (chip chỉ điền chữ).
@@ -59,7 +63,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "N-L2Q";
+const BUILT = "N-A3";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -856,18 +860,44 @@ const F5 = {
   alertsMissing: "Cảnh báo có từ M9 (chặng A3)",
   policyMissing: "Chính sách có từ Phase 7",
   unavailable: "Chưa có dữ liệu",
-  monitorDown: "Số liệu tạm thời không có",
-  ackDone: "Đã xác nhận cảnh báo",
-  ackConflict: "Cảnh báo này đã được xác nhận trước đó",
-  ackGone: "Cảnh báo không còn",
+  empty: "—",
+  alertsTruncated: "Chỉ hiện 200 cảnh báo mới nhất — còn cảnh báo cũ hơn chưa hiện.",
   restore: (v) => `Nội dung bản ${v} sẽ được áp dụng lại thành một phiên bản mới.`,
 };
-// Fixture MSW (src/mocks/fixtures/alerts.ts, policy.ts): 1001 ack thường · 9409 → 409 · 9404 → 404; chính sách bản "4"
-// (version_id 14) đang áp dụng, bản "2" (version_id 12) để quay lui. Cookie khoá 503: mocks/handlers/dashboard.ts.
-const ALERT = { normal: 1001, conflict: 9409, gone: 9404, unknownRule: 1007 };
-const MONITOR_COOKIE = "mock_monitor";
+// Fixture MSW (src/mocks/fixtures/policy.ts): chính sách bản "4" (version_id 14) đang áp dụng, bản "2" (version_id 12) để
+// quay lui. Tổng quan + Cảnh báo là route THẬT M9 A3 (N-A3) — không còn fixture: verify chỉ ĐỌC và so màn với thân thật.
 const MGR_NAV = ["Tổng quan", "Cảnh báo", "Chính sách", "Chờ tôi duyệt"];
 const F5_API = /^\/api\/(?:dashboard|alerts|policy)(?:\/|$)/;
+// Tập khoá `metrics` của route thật (backend/app/api/dashboard.py @3f15afb, `extra="forbid"`) — chép riêng, không import app.
+const BUSINESS_KEYS = [
+  "automation_rate", "escalation_rate_raw", "escalation_rate_weighted", "deflection_rate", "approval_expired_count",
+  "decided_by_distribution", "top_matched_rules", "override_count", "e1_split", "e3_cases",
+];
+const AI_KEYS = [
+  "tokens_per_ticket", "cost_per_day", "latency_p95_by_step", "cache_hit_rate", "json_invalid_first_try_rate", "fallback_rate",
+  "e2_llm_count", "e9_count", "b2_llm_rate", "intent_filter_fallback_rate", "b3_llm_rate", "intent_model_version",
+  "multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn",
+];
+const KPI_KEYS = ["automation_rate", "escalation_rate_weighted", "deflection_rate", "approval_expired_count"];
+const MULTI_INTENT_KEYS = ["multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"];
+// Gửi thẳng (Q-fe-44 = A): ĐÚNG 3 lời gọi, không cái nào ghi gì — ack id không tồn tại (= 2^53 − 1, hợp lệ ≤ 2^63 − 1) → 404;
+// hai GET sai tham số → 422 (quyền kiểm TRƯỚC 422/404 nên phải có Bearer).
+const ACK_NONE = "/api/alerts/9007199254740991/ack";
+const WINDOW_NO_TZ = "/api/dashboard/business?from=2026-10-01T00:00:00";
+const STATUS_EMPTY = "/api/alerts?status=";
+const DIRECT_CALLS = new Set([`POST ${ACK_NONE}`, `GET ${WINDOW_NO_TZ}`, `GET ${STATUS_EMPTY}`]);
+const wholeVi = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
+
+/** Trạng thái màn PHẢI có theo thân (ke-hoach-m9 §4.3): tên trong unavailable / khoá thiếu → unavailable; null → empty. */
+const stateFor = (unavailable, name, value) =>
+  unavailable.includes(name) || value === undefined ? "unavailable" : value === null ? "empty" : "value";
+const usableIn = (body, name) => stateFor(body.unavailable, name, body.metrics[name]) === "value";
+const sumOf = (map) => Object.values(map).reduce((s, n) => s + (Number.isFinite(n) ? n : 0), 0);
+/** "25/09 00:00" theo giờ VN (UTC+7, không đổi giờ) — viết riêng, không dùng code app. */
+function vnStamp(iso) {
+  const d = new Date(Date.parse(iso) + 7 * 3_600_000);
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
 
 /** Trạng thái phiên quan.tm dùng chung cho F5-1…6 (MỘT trình duyệt có giao diện, MỘT context). */
 const mgr = { browser: null, context: null, page: null, consoleLines: [], signedIn: false, skip: null };
@@ -894,7 +924,7 @@ const mgrStep = (name, id, fn) =>
     }
   });
 
-/** Bấm mục thanh bên (điều hướng trong app — giữ nguyên trạng thái của handler giả, không tải lại trang). */
+/** Bấm mục thanh bên (điều hướng trong app — không tải lại trang). */
 async function navTo(page, label) {
   await page.getByRole("navigation", NAV).getByRole("link", { name: label, exact: true }).click();
 }
@@ -905,34 +935,78 @@ async function clickFor(page, match, click, timeout = 15_000) {
   return res;
 }
 
-/**
- * Như `clickFor` nhưng CHỈ nhận response của request phát ra từ lúc bắt đầu chờ (tức do cú bấm sinh ra) — bỏ qua
- * response của request đã bay từ trước (vd tải lại khi màn mount). Request ghi nhận qua sự kiện "request" của trang.
- */
-async function clickForFresh(page, match, click, timeout = 15_000) {
-  const fresh = new Set();
-  const onRequest = (request) => fresh.add(request);
-  page.on("request", onRequest);
-  try {
-    return await clickFor(page, (r) => fresh.has(r.request()) && match(r), click, timeout);
-  } finally {
-    page.off("request", onRequest);
+/** Thân JSON của response route M9. 503 `monitor_unavailable` → ĐỎ kèm nguyên nhân stack (không đổi thành BỎ QUA). */
+async function m9Body(res, what, expected = 200) {
+  const body = await res.json().catch(() => null);
+  if (res.status() === 503 && body?.detail === "monitor_unavailable") {
+    throw new Error(`${what} → 503 monitor_unavailable — stack thiếu kết nối app_monitor`);
   }
+  check(res.status() === expected, `${what} → ${res.status()}${body?.detail ? ` ${body.detail}` : ""}, cần ${expected}`);
+  check(body !== null && typeof body === "object", `${what}: thân không phải JSON object`);
+  return body;
+}
+
+/** Nút "Tải lại" của Tổng quan trở lại (hết "Đang tải…") = truy vấn của tab đang xem đã xong — màn hiện đúng thân vừa nhận. */
+const dashboardIdle = (page) => page.getByRole("button", { name: "Tải lại", exact: true }).waitFor({ timeout: 15_000 });
+
+/** Danh sách cảnh báo trên màn có đúng `n` dòng (n = 0 → câu rỗng của bộ lọc). */
+async function alertRowsShown(page, n, emptyText) {
+  if (n === 0) {
+    await page.getByText(emptyText, { exact: true }).waitFor({ timeout: 10_000 });
+    return;
+  }
+  const ok = await page
+    .waitForFunction((want) => document.querySelectorAll('[data-testid="alert-row"]').length === want, n, { timeout: 10_000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  check(ok, `màn hiện ${await page.getByTestId("alert-row").count()} dòng cảnh báo, thân có ${n}`);
 }
 
 /**
- * Nút "Tải lại" của Tổng quan khi sẵn sàng: đang có request ngầm của số liệu (vd tải lại khi màn mount) thì nút
- * là "Đang tải…" và bị khoá (DashboardPage: cả nhãn lẫn `disabled` theo `isFetching`) → chờ tới khi nút trở lại "Tải lại".
+ * Q-fe-44 = A: Bearer của quan.tm đọc từ header Authorization của MỘT request GET mà chính SPA gửi TRONG bước (khớp
+ * `match`). Đưa vào `secrets` NGAY khi đọc được — trước mọi log; không ghi ra file, không in, không vào ghi chú bước;
+ * KHÔNG dùng để refresh / logout (phiên của SPA phải còn cho F5-5). Không đọc được → bước ĐỎ, không rơi về cách khác.
  */
-async function reloadReady(page, timeout = 15_000) {
-  const button = page.getByRole("button", { name: "Tải lại", exact: true });
-  await button.waitFor({ state: "visible", timeout });
-  check(await button.isEnabled(), 'nút "Tải lại" hiện mà vẫn bị khoá');
-  return button;
+function bearerFrom(page, match) {
+  let token = null;
+  const reads = [];
+  const onRequest = (request) => {
+    if (token !== null || request.method() !== "GET" || !match(new URL(request.url()))) return;
+    reads.push(
+      request.allHeaders().then(
+        (headers) => {
+          const value = /^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1];
+          if (value && token === null) {
+            secrets.push(value);
+            token = value;
+          }
+        },
+        () => {},
+      ),
+    );
+  };
+  page.on("request", onRequest);
+  return {
+    async take() {
+      page.off("request", onRequest);
+      await Promise.all(reads);
+      check(token !== null, "không đọc được header Authorization (Bearer) từ request GET nào của SPA trong bước — không gửi thẳng (Q-fe-44)");
+      return token;
+    },
+  };
 }
 
-const hasMonitorCookie = async (page) =>
-  (await page.evaluate(() => document.cookie)).split(/;\s*/).includes(`${MONITOR_COOKIE}=unavailable`);
+/** Gửi thẳng tới backend (Node → 127.0.0.1:8000, như directQueueStatus). Chỉ 3 lời gọi đã chốt; log: phương thức, đường dẫn, mã, detail/error. */
+async function directCall(method, path, token) {
+  check(DIRECT_CALLS.has(`${method} ${path}`), `verify chỉ gửi thẳng 3 lời gọi đã chốt (Q-fe-44), không phải ${method} ${path}`);
+  const res = await fetch(`${BACKEND}${path}`, { method, headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+  const body = await res.json().catch(() => null);
+  const code = body?.detail ?? body?.error ?? null;
+  log(`${method} ${path} (quan.tm, gửi thẳng, Bearer của SPA) → ${res.status}${code ? ` ${code}` : ""}`);
+  return { status: res.status, body, code };
+}
 
 async function closeMgr() {
   try {
@@ -1028,13 +1102,14 @@ await step("F5-1 quan.tm đăng nhập (OTP do người nhập) → /dashboard; 
   return { note: `OTP do người nhập → trang đầu /dashboard (dashboard:read:all); thanh bên: ${MGR_NAV.join(", ")}; Storage/IndexedDB rỗng` };
 });
 
-await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts, /policy → trang \"có từ A3 / Phase 7\", không khối đỏ", "F5-6", async ({ page, consoleLines }) => {
+await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts → route thật A3 (200, không trang \"có từ…\"); /policy → \"có từ Phase 7\"", "F5-6", async ({ page, consoleLines }) => {
   check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
   const notes = [];
-  for (const [label, path, api, testId, title, shot] of [
-    ["Tổng quan", "/dashboard", "/api/dashboard/business", "dashboard-missing", F5.dashboardMissing, "mgr-a3.png"],
-    ["Cảnh báo", "/alerts", "/api/alerts", "alerts-missing", F5.alertsMissing, null],
-    ["Chính sách", "/policy", "/api/policy", "policy-missing", F5.policyMissing, "mgr-phase7.png"],
+  for (const [label, path, api, testId, title, expected, ready] of [
+    // `ready`: màn đã dựng xong từ thân 200 (có dòng / câu rỗng) hoặc báo lỗi tải — rồi mới kiểm.
+    ["Tổng quan", "/dashboard", "/api/dashboard/business", "dashboard-missing", F5.dashboardMissing, 200, (p) => p.getByTestId("kpi")],
+    ["Cảnh báo", "/alerts", "/api/alerts", "alerts-missing", F5.alertsMissing, 200, (p) => p.getByTestId("alert-row").or(p.getByText("Không có cảnh báo đang mở.", { exact: true }))],
+    ["Chính sách", "/policy", "/api/policy", "policy-missing", F5.policyMissing, 404, null],
   ]) {
     const seen = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === api);
     if (new URL(page.url()).pathname === path) await page.reload({ waitUntil: "load" });
@@ -1042,132 +1117,222 @@ await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts, /policy → trang \"c�
     await expectSignedIn(page, `quan.tm ${path}`);
     const body = await waitJson(page, seen, `GET ${api}`);
     const code = seen.statuses[0];
-    if (code === 404) {
+    if (code === 503 && body?.detail === "monitor_unavailable") throw new Error(`GET ${api} → 503 monitor_unavailable — stack thiếu kết nối app_monitor`);
+    check(code === expected, `GET ${api} → ${code}${body?.detail ? ` ${body.detail}` : ""}, cần ${expected}`);
+    if (expected === 404) {
       const box = page.getByTestId(testId);
       await box.waitFor({ timeout: 10_000 });
       const heading = (await box.getByRole("heading").innerText()).trim();
       check(heading === title, `${path}: tiêu đề "${heading}", cần "${title}"`);
       check(body?.detail === "Not Found", `${path}: 404 không phải "Not Found" của Starlette (${JSON.stringify(body)})`);
       check((await page.locator("main [role=alert]").count()) === 0, `${path}: trang "có từ…" có khối lỗi đỏ (role=alert)`);
-      if (shot) await shoot(page, shot);
+      await shoot(page, "mgr-phase7.png");
       notes.push(`${path} → 404 → "${title}"`);
     } else {
-      check(code === 200, `GET ${api} → ${code} (không phải 404 cũng không phải 200)`);
-      check((await page.getByTestId(testId).count()) === 0, `${path}: route đã có (200) mà vẫn hiện trang "có từ…"`);
-      notes.push(`${path} → 200 — route đã có, kiểm thật`);
+      await ready(page).or(page.getByTestId("load-error")).first().waitFor({ timeout: 15_000 });
+      check((await page.getByTestId(testId).count()) === 0, `${path}: route thật đã có (200) mà vẫn hiện trang "${title}"`);
+      check((await page.getByTestId("load-error").count()) === 0, `${path}: GET ${api} 200 mà màn báo lỗi tải (thân sai hình dạng?)`);
+      notes.push(`${path} → 200 (route thật A3)`);
     }
   }
   return { note: `${notes.join(" · ")}; không khối đỏ` };
 });
 
-await mgrStep("F5-2 dev:mock Tổng quan: 3 khoảng gửi from/to kèm +07:00; override_count \"Chưa có dữ liệu\", tỉ lệ null \"—\"; tab AI", "F5-2", async ({ page, consoleLines }) => {
-  // Chuyển dev → dev:mock trong CÙNG context: cookie refresh (localhost) giữ phiên → không nhập OTP lần 2.
-  await page.goto("about:blank");
-  await ensureMockServer("dev:mock(F5)");
+await mgrStep("F5-2 dev KHÔNG mock Tổng quan (số thật): from/to +07:00 · data-state + số dòng khớp thân response · tab AI 14 chỉ số", "F5-2", async ({ page, consoleLines }) => {
+  check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+  const isBusiness = (r) => r.request().method() === "GET" && pathOf(r) === "/api/dashboard/business";
   const windows = [];
-  page.on("request", (r) => {
-    if (r.method() === "GET" && new URL(r.url()).pathname === "/api/dashboard/business") {
-      const q = new URL(r.url()).searchParams;
-      windows.push([q.get("from"), q.get("to")]);
+  const onRequest = (r) => {
+    const url = new URL(r.url());
+    if (r.method() !== "GET" || url.pathname !== "/api/dashboard/business") return;
+    windows.push([url.searchParams.get("from"), url.searchParams.get("to"), [...url.searchParams.keys()].sort().join(",")]);
+  };
+  page.on("request", onRequest);
+  let body;
+  try {
+    await m9Body(await clickFor(page, isBusiness, () => navTo(page, "Tổng quan")), "GET /api/dashboard/business");
+    await page.getByTestId("kpi").first().waitFor({ timeout: 15_000 });
+    const ranges = page.getByRole("tablist", { name: "Khoảng thời gian" });
+    for (const label of ["Hôm nay", "30 ngày", "7 ngày"]) {
+      const res = await clickFor(page, isBusiness, () => ranges.getByRole("tab", { name: label, exact: true }).click());
+      body = await m9Body(res, `GET /api/dashboard/business (${label})`);
     }
-  });
-  await page.goto(`${DEV}/dashboard`, { waitUntil: "load" });
-  await expectSignedIn(page, "quan.tm (dev:mock, khôi phục bằng cookie refresh)");
-  check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
-  await page.getByTestId("kpi").first().waitFor({ timeout: 15_000 });
-  const ranges = page.getByRole("tablist", { name: "Khoảng thời gian" });
-  for (const label of ["Hôm nay", "30 ngày", "7 ngày"]) {
-    await clickFor(page, (r) => pathOf(r) === "/api/dashboard/business" && r.status() === 200, () => ranges.getByRole("tab", { name: label, exact: true }).click());
+  } finally {
+    page.off("request", onRequest);
   }
+  await dashboardIdle(page);
   await page.getByTestId("kpi").first().waitFor({ timeout: 10_000 });
+  // (1) cửa sổ gửi đi: chỉ from + to, from = 00:00 +07:00, to kèm +07:00; 3 khoảng 1 / 7 / 30 ngày.
   check(windows.length >= 4, `chỉ thấy ${windows.length} lời gọi /api/dashboard/business (cần mặc định + 3 lần đổi khoảng)`);
-  for (const [from, to] of windows) {
+  for (const [from, to, keys] of windows) {
+    check(keys === "from,to", `query của /api/dashboard/business có "${keys}", chỉ được from,to`);
     check(/T00:00:00\.000\+07:00$/.test(from ?? ""), `from "${from}" không phải 00:00 kèm +07:00`);
     check(/\+07:00$/.test(to ?? ""), `to "${to}" thiếu +07:00`);
   }
   const days = windows.map(([from, to]) => Math.ceil((Date.parse(to) - Date.parse(from)) / 86_400_000));
   check(new Set(days).size === 3 && days.includes(1) && days.includes(7) && days.includes(30), `số ngày các khoảng: ${days.join(", ")}`);
-  const kpi = (metric) => page.locator(`[data-testid="kpi"][data-metric="${metric}"] [data-testid="kpi-value"]`);
-  const weighted = (await kpi("escalation_rate_weighted").innerText()).trim();
-  check(weighted === "—", `tỉ lệ null (escalation_rate_weighted) hiện "${weighted}", cần "—"`);
-  const override = (await page.getByTestId("metric-override_count").getByTestId("metric-value").innerText()).trim();
-  check(override === F5.unavailable, `override_count hiện "${override}", cần "${F5.unavailable}"`);
-  check(!/0/.test(weighted) && !/0/.test(override), `ô null/unavailable có chữ "0": "${weighted}" / "${override}"`);
-  const zero = (await kpi("approval_expired_count").innerText()).trim();
-  check(zero === "0", `số 0 thật (approval_expired_count) hiện "${zero}"`);
-  await shoot(page, "mgr-dashboard.png");
-  await page.getByRole("tablist", { name: "Loại số liệu" }).getByRole("tab", { name: "AI", exact: true }).click();
-  await page.getByTestId("ai-metric").first().waitFor({ timeout: 10_000 });
-  const rows = await page.getByTestId("ai-metric").count();
-  check(rows === 12, `tab AI có ${rows} chỉ số, cần 12`);
-  check((await page.getByTestId("ai-detail-row").count()) > 0, "tab AI không có bảng khoá–giá trị cho chỉ số dạng map/mảng");
-  await shoot(page, "mgr-dashboard-ai.png");
-  await page.getByRole("tablist", { name: "Loại số liệu" }).getByRole("tab", { name: "Nghiệp vụ", exact: true }).click();
-  return {
-    note: `${windows.length} lời gọi, mọi from = 00:00+07:00 và to kèm +07:00 (${[...new Set(days)].join("/")} ngày); escalation_rate_weighted "—", override_count "${F5.unavailable}" (không chữ 0), approval_expired_count "0"; tab AI ${rows} chỉ số`,
-  };
-});
-
-await mgrStep("F5-3 dev:mock Cảnh báo: \"Đã xem\" → biến khỏi \"Đang mở\" sau 200; id 409 → đã xác nhận; id 404 → không còn", "F5-3", async ({ page }) => {
-  await navTo(page, "Cảnh báo");
-  await page.getByRole("heading", { name: "Cảnh báo", level: 1 }).waitFor();
-  const row = (id) => page.locator(`[data-testid="alert-row"][data-alert-id="${id}"]`);
-  await row(ALERT.normal).waitFor({ timeout: 15_000 });
-  const unknown = (await row(ALERT.unknownRule).innerText()).trim();
-  check(unknown.includes("custom_rule_x"), `rule_id lạ không hiện nguyên mã: "${unknown}"`);
-  const ackOf = (id) => (r) => r.request().method() === "POST" && pathOf(r) === `/api/alerts/${id}/ack`;
-  const notice = page.getByTestId("ack-notice");
-  const ok = await clickFor(page, ackOf(ALERT.normal), () => row(ALERT.normal).getByRole("button", { name: "Đã xem", exact: true }).click());
-  check(ok.status() === 200, `ack ${ALERT.normal} → ${ok.status()}, cần 200`);
-  await row(ALERT.normal).waitFor({ state: "detached", timeout: 10_000 });
-  check((await notice.innerText()).trim() === F5.ackDone, `sau 200 hiện "${await notice.innerText()}"`);
-  const conflict = await clickFor(page, ackOf(ALERT.conflict), () => row(ALERT.conflict).getByRole("button", { name: "Đã xem", exact: true }).click());
-  check(conflict.status() === 409, `ack ${ALERT.conflict} → ${conflict.status()}, cần 409`);
-  await page.waitForFunction((t) => document.querySelector('[data-testid="ack-notice"]')?.textContent === t, F5.ackConflict, { timeout: 5_000 });
-  await row(ALERT.conflict).waitFor({ state: "detached", timeout: 10_000 }); // tải lại → đã có người xác nhận
-  const gone = await clickFor(page, ackOf(ALERT.gone), () => row(ALERT.gone).getByRole("button", { name: "Đã xem", exact: true }).click());
-  check(gone.status() === 404, `ack ${ALERT.gone} → ${gone.status()}, cần 404`);
-  await page.waitForFunction((t) => document.querySelector('[data-testid="ack-notice"]')?.textContent === t, F5.ackGone, { timeout: 5_000 });
-  await shoot(page, "mgr-alerts.png");
-  return { note: `${ALERT.normal} → 200 → rời "Đang mở", "${F5.ackDone}" · ${ALERT.conflict} → 409 "${F5.ackConflict}" · ${ALERT.gone} → 404 "${F5.ackGone}"; rule_id lạ hiện nguyên mã` };
-});
-
-await mgrStep("F5-4 dev:mock 503 monitor_unavailable (cookie mock_monitor) → \"Số liệu tạm thời không có\", không số cũ", "F5-4", async ({ page, context }) => {
-  // Lượt 7 đỏ vì đua: tải lại khi màn mount (cache đã cũ) còn bay lúc đặt cookie → bắt nhầm response 200 của nó, rồi
-  // `finally` xoá cookie trước khi request của cú bấm tới MSW. Nay: chờ hết tải ngầm → đặt cookie, kiểm cookie đã vào
-  // trang → chỉ nhận response của request do cú bấm sinh ra → xoá cookie SAU khi đã nhận response đó và kiểm xong màn.
-  // Bước đỏ giữa chừng → cookie ở lại context này, nhưng verify dừng và "Dọn dẹp" đóng trình duyệt (closeMgr).
-  const business = (r) => r.request().method() === "GET" && pathOf(r) === "/api/dashboard/business";
-  await navTo(page, "Tổng quan");
-  await page.getByTestId("kpi").first().waitFor({ timeout: 15_000 });
-  const reload = await reloadReady(page); // hết tải ngầm (tải lại khi mount) rồi mới đặt cookie
-  const before = await page.getByTestId("kpi").count();
-  await context.addCookies([{ name: MONITOR_COOKIE, value: "unavailable", url: DEV }]);
-  check(await hasMonitorCookie(page), `cookie chưa vào trang: document.cookie không có ${MONITOR_COOKIE}=unavailable`);
-  const down = await clickForFresh(page, business, () => reload.click());
-  check(down.status() === 503, `GET /api/dashboard/business (của cú bấm "Tải lại") → ${down.status()}, cần 503`);
-  const error = page.getByTestId("load-error");
-  await error.waitFor({ timeout: 10_000 });
-  check((await error.innerText()).includes(F5.monitorDown), `khối lỗi: "${await error.innerText()}"`);
-  for (const id of ["kpi", "bar-row", "e3-case", "metric-override_count"]) {
-    check((await page.getByTestId(id).count()) === 0, `503 mà vẫn còn "${id}" của lần tải trước`);
+  // (2) thân thật của lần "7 ngày": khung A3.
+  check(body.scope === "all", `scope "${body.scope}", cần "all" (dashboard:read:all)`);
+  check(Array.isArray(body.unavailable) && body.metrics && sameKeys(Object.keys(body.metrics), BUSINESS_KEYS), `metrics có khoá [${Object.keys(body.metrics ?? {}).join(", ")}] — khác 10 khoá của A3`);
+  const m = body.metrics;
+  const shownWindow = (await page.getByTestId("dashboard-window").innerText()).trim();
+  check(shownWindow.startsWith(`Từ ${vnStamp(body.from)} đến ${vnStamp(body.to)}`), `dòng cửa sổ "${shownWindow}" ≠ from/to của thân (${vnStamp(body.from)} → ${vnStamp(body.to)})`);
+  // (3) ô số: data-state theo thân; null / unavailable không bao giờ có chữ "0"; số đếm hiện đúng.
+  const states = [];
+  for (const name of KPI_KEYS) {
+    const raw = m[name];
+    const value = name === "escalation_rate_weighted" && raw !== null && raw !== undefined ? raw.weighted : raw;
+    const want = stateFor(body.unavailable, name, value);
+    const tile = page.locator(`[data-testid="kpi"][data-metric="${name}"]`);
+    const got = await tile.getAttribute("data-state");
+    const shown = (await tile.getByTestId("kpi-value").innerText()).trim();
+    check(got === want, `ô ${name}: data-state "${got}", thân cần "${want}"`);
+    if (want === "unavailable") check(shown === F5.unavailable, `ô ${name} (unavailable) hiện "${shown}", cần "${F5.unavailable}"`);
+    if (want === "empty") check(shown === F5.empty, `ô ${name} (null) hiện "${shown}", cần "${F5.empty}"`);
+    if (want !== "value") check(!/0/.test(shown), `ô ${name} (${want}) có chữ "0": "${shown}"`);
+    if (want === "value" && name === "approval_expired_count") check(shown === wholeVi.format(value), `ô ${name} hiện "${shown}", thân ${value}`);
+    states.push(`${name} ${got}`);
   }
-  const main = await page.locator("main").innerText();
-  check(!/\d\s?%/.test(main), "503 mà trên màn vẫn còn số phần trăm");
-  await shoot(page, "mgr-503.png");
-  await context.clearCookies({ name: MONITOR_COOKIE }); // chỉ xoá cookie của mock — giữ cookie refresh
-  check(!(await hasMonitorCookie(page)), `xoá cookie mà document.cookie vẫn còn ${MONITOR_COOKIE}=unavailable`);
-  await reloadReady(page);
-  const back = await clickForFresh(page, business, () => reload.click());
-  check(back.status() === 200, `xoá cookie rồi GET /api/dashboard/business → ${back.status()}, cần 200`);
-  await page.getByTestId("kpi").first().waitFor({ timeout: 10_000 });
+  const override = page.getByTestId("metric-override_count");
+  const overrideWant = stateFor(body.unavailable, "override_count", m.override_count);
+  const overrideGot = await override.getAttribute("data-state");
+  const overrideShown = (await override.getByTestId("metric-value").innerText()).trim();
+  check(overrideGot === overrideWant, `override_count: data-state "${overrideGot}", thân cần "${overrideWant}"`);
+  check(
+    overrideWant === "value" ? overrideShown === wholeVi.format(m.override_count) : !/0/.test(overrideShown),
+    `override_count hiện "${overrideShown}" (thân ${JSON.stringify(m.override_count)})`,
+  );
+  // (4) số dòng từng khối = số phần tử của thân (không cắt, không thêm).
+  const countIn = (section, testId) => page.locator(`section[aria-labelledby="${section}"] [data-testid="${testId}"]`).count();
+  const want = {
+    "decided-by": usableIn(body, "decided_by_distribution") && sumOf(m.decided_by_distribution) > 0 ? Object.keys(m.decided_by_distribution).length : 0,
+    "weighted-group": usableIn(body, "escalation_rate_weighted") ? Object.keys(m.escalation_rate_weighted.by_group).length : 0,
+    "rule-row": usableIn(body, "top_matched_rules") ? m.top_matched_rules.length : 0,
+    e1: usableIn(body, "e1_split") && sumOf(m.e1_split.counts) > 0 ? Object.keys(m.e1_split.counts).length : 0,
+    "e3-case": usableIn(body, "e3_cases") ? m.e3_cases.items.length : 0,
+    "e3-truncated": usableIn(body, "e3_cases") && m.e3_cases.truncated ? 1 : 0,
+  };
+  const got = {
+    "decided-by": await countIn("decided-by", "bar-row"),
+    "weighted-group": await countIn("weighted-groups", "weighted-group"),
+    "rule-row": await countIn("top-rules", "rule-row"),
+    e1: await countIn("e1-split", "bar-row"),
+    "e3-case": await countIn("e3-cases", "e3-case"),
+    "e3-truncated": await countIn("e3-cases", "e3-truncated"),
+  };
+  check(JSON.stringify(got) === JSON.stringify(want), `số dòng trên màn ${JSON.stringify(got)} ≠ theo thân ${JSON.stringify(want)}`);
+  await shoot(page, "mgr-dashboard.png");
+  // (5) tab AI: đúng 14 khoá theo thứ tự, data-state theo thân; multi_intent vẫn chưa có nguồn (Phase 5).
+  const isAi = (r) => r.request().method() === "GET" && pathOf(r) === "/api/dashboard/ai";
+  const types = page.getByRole("tablist", { name: "Loại số liệu" });
+  const ai = await m9Body(await clickFor(page, isAi, () => types.getByRole("tab", { name: "AI", exact: true }).click()), "GET /api/dashboard/ai");
+  await dashboardIdle(page);
+  await page.getByTestId("ai-metric").first().waitFor({ timeout: 10_000 });
+  check(Array.isArray(ai.unavailable) && ai.metrics && sameKeys(Object.keys(ai.metrics), AI_KEYS), `metrics AI có khoá [${Object.keys(ai.metrics ?? {}).join(", ")}] — khác 14 khoá của A3`);
+  const rows = await page.getByTestId("ai-metric").evaluateAll((els) => els.map((el) => [el.dataset.metric, el.dataset.state]));
+  check(rows.map(([name]) => name).join(",") === AI_KEYS.join(","), `tab AI: ${rows.length} dòng [${rows.map(([name]) => name).join(", ")}], cần đúng 14 khoá A3 theo thứ tự`);
+  for (const [name, state] of rows) {
+    const wantState = stateFor(ai.unavailable, name, ai.metrics[name]);
+    check(state === wantState, `tab AI ${name}: data-state "${state}", thân cần "${wantState}"`);
+  }
+  for (const name of MULTI_INTENT_KEYS) {
+    check(ai.unavailable.includes(name), `${name} không còn trong unavailable của server (Phase 5 đã có nguồn?) — cập nhật verify`);
+  }
+  if (stateFor(ai.unavailable, "cost_per_day", ai.metrics.cost_per_day) === "value") {
+    const n = await page.getByTestId("ai-cost-day").count();
+    check(n === ai.metrics.cost_per_day.length, `cost_per_day: màn ${n} dòng, thân ${ai.metrics.cost_per_day.length} điểm`);
+  }
+  if (stateFor(ai.unavailable, "latency_p95_by_step", ai.metrics.latency_p95_by_step) === "value") {
+    const n = await page.getByTestId("ai-latency-step").count();
+    check(n === Object.keys(ai.metrics.latency_p95_by_step).length, `latency_p95_by_step: màn ${n} dòng, thân ${Object.keys(ai.metrics.latency_p95_by_step).length} bước`);
+  }
+  await shoot(page, "mgr-dashboard-ai.png");
+  await types.getByRole("tab", { name: "Nghiệp vụ", exact: true }).click();
   return {
-    note: `có ${before} ô số → cookie ${MONITOR_COOKIE}=unavailable (đã vào document.cookie) → cú bấm "Tải lại" → 503 → "${F5.monitorDown}", 0 ô số / thanh / ca E3 cũ, không còn "%"; xoá cookie → 200, số trở lại`,
+    note:
+      `${windows.length} lời gọi, chỉ from/to, from = 00:00+07:00, to kèm +07:00 (${[...new Set(days)].join("/")} ngày) · 7 ngày: ${states.join(", ")}, ` +
+      `override_count ${overrideGot}; số dòng khớp thân ${JSON.stringify(got)} · AI 14 dòng đúng thứ tự, data-state khớp, multi_intent unavailable`,
   };
 });
 
-await mgrStep("F5-5 dev:mock Chính sách: sai cú pháp → \"Dòng N\" + Lưu khoá; 422 đúng dòng; Lưu 201; quay lui → 201", "F5-5", async ({ page }) => {
-  await navTo(page, "Chính sách");
+await mgrStep("F5-3 dev KHÔNG mock Cảnh báo (chỉ đọc): 1 GET ?status=open, \"Tất cả\" không tham số, số dòng + băng truncated khớp thân; gửi thẳng ack id không có → 404", "F5-3", async ({ page, consoleLines }) => {
+  check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+  // Không bấm "Đã xem" nào — ack trên stack thật là ghi thật (P12). Chỉ đọc + MỘT POST gửi thẳng tới id không tồn tại.
+  const alertCalls = [];
+  const onRequest = (r) => {
+    const url = new URL(r.url());
+    if (url.pathname.startsWith("/api/alerts")) alertCalls.push(`${r.method()} ${url.pathname}${url.search}`);
+  };
+  page.on("request", onRequest);
+  const bearer = bearerFrom(page, (url) => url.pathname === "/api/alerts");
+  const isList = (r) => r.request().method() === "GET" && pathOf(r) === "/api/alerts";
+  const rows = page.getByTestId("alert-row");
+  const banner = page.getByTestId("alerts-truncated");
+  const checkShape = (list, what) => check(Array.isArray(list.items) && typeof list.truncated === "boolean", `${what}: thân không phải {items, truncated}`);
+  const checkList = async (list, what) => {
+    check((await rows.count()) === list.items.length, `${what}: màn ${await rows.count()} dòng, thân ${list.items.length}`);
+    check((await banner.count()) === (list.truncated ? 1 : 0), `${what}: băng truncated ${await banner.count()} — thân truncated=${list.truncated}`);
+    if (list.truncated) check((await banner.innerText()).trim() === F5.alertsTruncated, `${what}: băng "${await banner.innerText()}"`);
+  };
+  let open;
+  let all;
+  try {
+    open = await m9Body(await clickFor(page, isList, () => navTo(page, "Cảnh báo")), "GET /api/alerts?status=open");
+    checkShape(open, '"Đang mở"');
+    await page.getByRole("heading", { name: "Cảnh báo", level: 1 }).waitFor();
+    await alertRowsShown(page, open.items.length, "Không có cảnh báo đang mở.");
+    await page.waitForTimeout(500); // bắt lời gọi thừa (nếu có) sau lần tải khi mount
+    const mountCalls = [...alertCalls];
+    check(mountCalls.length === 1 && mountCalls[0] === "GET /api/alerts?status=open", `vào Cảnh báo: lời gọi ${JSON.stringify(mountCalls)}, cần đúng ["GET /api/alerts?status=open"]`);
+    await checkList(open, '"Đang mở"');
+    await shoot(page, "mgr-alerts.png");
+    const allRes = await clickFor(page, isList, () => page.getByRole("tablist", { name: "Lọc cảnh báo" }).getByRole("tab", { name: "Tất cả", exact: true }).click());
+    const allUrl = new URL(allRes.url());
+    check(allUrl.search === "", `"Tất cả" gửi ${allUrl.pathname}${allUrl.search}, cần /api/alerts không tham số`);
+    all = await m9Body(allRes, "GET /api/alerts");
+    checkShape(all, '"Tất cả"');
+    await alertRowsShown(page, all.items.length, "Chưa có cảnh báo nào.");
+    await checkList(all, '"Tất cả"');
+    await shoot(page, "mgr-alerts-all.png");
+    check(!alertCalls.some((c) => !c.startsWith("GET ")), `trang gửi ${alertCalls.find((c) => !c.startsWith("GET "))} — F5-3 chỉ đọc`);
+  } finally {
+    page.off("request", onRequest);
+  }
+  const token = await bearer.take();
+  const direct = await directCall("POST", ACK_NONE, token);
+  check(direct.status === 404 && direct.code === "not_found", `POST ${ACK_NONE} (gửi thẳng) → ${direct.status} ${direct.code ?? ""}, cần 404 not_found`);
+  return {
+    note:
+      `vào Cảnh báo: đúng 1 GET /api/alerts?status=open → ${open.items.length} dòng = thân, truncated ${open.truncated} ↔ băng · ` +
+      `"Tất cả" GET /api/alerts (không tham số) → ${all.items.length} dòng = thân, truncated ${all.truncated} ↔ băng · 0 POST từ trang · ` +
+      `gửi thẳng POST ${ACK_NONE} (Bearer của SPA) → 404 not_found`,
+  };
+});
+
+await mgrStep("F5-4 dev KHÔNG mock: gửi thẳng from thiếu múi giờ → 422 query.from; ?status= rỗng → 422 (không qua giao diện)", "F5-4", async ({ page }) => {
+  const bearer = bearerFrom(page, (url) => url.pathname === "/api/dashboard/business");
+  const isBusiness = (r) => r.request().method() === "GET" && pathOf(r) === "/api/dashboard/business";
+  await m9Body(await clickFor(page, isBusiness, () => navTo(page, "Tổng quan")), "GET /api/dashboard/business");
+  const token = await bearer.take();
+  const window = await directCall("GET", WINDOW_NO_TZ, token);
+  const fields = Array.isArray(window.body?.fields) ? window.body.fields : [];
+  check(
+    window.status === 422 && window.code === "invalid_request" && fields.includes("query.from"),
+    `GET ${WINDOW_NO_TZ} → ${window.status} ${window.code ?? ""} (query.from ${fields.includes("query.from") ? "có" : "không có"} trong fields), cần 422 invalid_request + query.from`,
+  );
+  const status = await directCall("GET", STATUS_EMPTY, token);
+  check(status.status === 422 && status.code === "invalid_request", `GET ${STATUS_EMPTY} → ${status.status} ${status.code ?? ""}, cần 422 invalid_request`);
+  return { note: `gửi thẳng (Bearer đọc từ GET /api/dashboard/business của SPA): GET ${WINDOW_NO_TZ} → 422 invalid_request [query.from] · GET ${STATUS_EMPTY} → 422 invalid_request` };
+});
+
+await mgrStep("F5-5 dev:mock Chính sách: sai cú pháp → \"Dòng N\" + Lưu khoá; 422 đúng dòng; Lưu 201; quay lui → 201", "F5-5", async ({ page, consoleLines }) => {
+  // Chuyển dev → dev:mock trong CÙNG context: cookie refresh (localhost) giữ phiên → không nhập OTP lần 2. Chính sách vẫn
+  // là MSW (Phase 7); Tổng quan + Cảnh báo ở dev:mock cũng đi backend thật (không còn handler) — bước này không mở chúng.
+  await page.goto("about:blank");
+  await ensureMockServer("dev:mock(F5)");
+  await page.goto(`${DEV}/policy`, { waitUntil: "load" });
+  await expectSignedIn(page, "quan.tm (dev:mock, khôi phục bằng cookie refresh)");
+  check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
   await page.getByRole("heading", { name: "Chính sách", level: 1 }).waitFor();
   await page.getByTestId("version-row").first().waitFor({ timeout: 15_000 });
   await shoot(page, "mgr-policy.png");

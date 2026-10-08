@@ -1,13 +1,16 @@
 // F5 — Trưởng BP IT: Tổng quan (nghiệp vụ + AI), Cảnh báo + "Đã xem", Chính sách (sửa JSON, lỗi từng dòng, lịch sử, quay
-// lui). Không gọi backend: fetch giả trả đúng hình dạng kế hoạch M9 §5.1–5.2, §4.5 (dashboard/alerts) và hợp đồng
+// lui). Không gọi backend: fetch giả trả đúng hình dạng route thật M9 A3 @3f15afb (dashboard/alerts — N-A3) và hợp đồng
 // [Đề xuất F5 — Q-fe-26] (policy).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isAlertItem, parseAlerts } from "../../api/alerts.ts";
 import { createClient } from "../../api/client.ts";
-import type { AiDashboard, AlertItem, BusinessDashboard, Me, PolicyVersionItem, PolicyView } from "../../api/types.ts";
+import { parseAi, parseBusiness } from "../../api/dashboard.ts";
+import { ApiError } from "../../api/errors.ts";
+import type { AiDashboard, AiMetrics, AlertItem, AlertList, BusinessDashboard, BusinessMetrics, Me, PolicyVersionItem, PolicyView } from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { homePath, STAFF_NAV } from "../../auth/permissions.ts";
@@ -23,11 +26,17 @@ import {
   ACK_GONE_TEXT,
   ALERT_LABEL,
   alertLabel,
+  audienceLabel,
   DASHBOARD_MISSING_TITLE,
+  E1_LABEL,
   EMPTY_NOTE,
+  labelOf,
   metricText,
   MONITOR_DOWN_TEXT,
+  ownEntry,
   POLICY_MISSING_TITLE,
+  severityDot,
+  severityLabel,
   sortAlerts,
   UNAVAILABLE_TEXT,
 } from "./metrics.ts";
@@ -103,28 +112,51 @@ const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------------------------------------ dữ liệu
 
-const BUSINESS: BusinessDashboard = {
-  from: "2026-09-25T00:00:00.000+07:00",
-  to: "2026-10-01T12:05:09.123+07:00",
+// Hình dạng THẬT của M9 A3 @3f15afb (backend/app/api/dashboard.py, alerts.py): chỉ số trong `metrics`, `from`/`to` ở UTC.
+const METRICS: BusinessMetrics = {
   automation_rate: 0.63,
   escalation_rate_raw: 0.16,
-  escalation_rate_weighted: null, // null KHÔNG nằm trong unavailable → "—"
+  escalation_rate_weighted: {
+    raw: 0.16,
+    weighted: 0.142,
+    by_group: { routine: 0.1, approval: 0.25, sensitive: null }, // nhóm 0 lá → null → "—"
+    sensitivity: { "60/30/10": 0.142, "80/15/5": 0.151 },
+  },
   deflection_rate: 0.21,
   approval_expired_count: 0, // 0 thật → "0"
   decided_by_distribution: { rule: 223, llm: 63 },
   top_matched_rules: [{ rule_id: "R20", count: 96 }],
-  override_count: null, // nằm trong unavailable → "Chưa có dữ liệu"
-  e1_split: { out_of_scope: 9 },
-  e3_cases: [{ ticket_id: "t-e3", intent: "software", created_at: "2026-09-29T03:00:00Z", kb_version: "v12", request_excerpt: "In lỗi <b>x</b> ở tầng 3" }],
-  unavailable: ["override_count"],
+  override_count: 0, // 0 thật → "0" (nguồn có từ 4d)
+  e1_split: {
+    total: 9,
+    counts: { out_of_scope: 6, intent_low_confidence: 0, multi_intent_not_enabled: 0, intent_not_enabled: 1, other: 2 },
+    shares: { out_of_scope: 0.667, intent_low_confidence: 0, multi_intent_not_enabled: 0, intent_not_enabled: 0.111, other: 0.222 },
+  },
+  e3_cases: {
+    items: [{ ticket_id: "t-e3", intent: "software", created_at: "2026-09-29T03:00:00Z", kb_version: "v12", request_excerpt: "In lỗi <b>x</b> ở tầng 3" }],
+    truncated: false,
+  },
 };
+const BUSINESS: BusinessDashboard = {
+  from: "2026-09-24T17:00:00Z",
+  to: "2026-10-01T05:05:09.123000Z",
+  unavailable: [],
+  scope: "all",
+  metrics: METRICS,
+};
+const business = (metrics: Partial<BusinessMetrics> = {}, unavailable: string[] = []): BusinessDashboard => ({
+  ...BUSINESS,
+  unavailable,
+  metrics: { ...METRICS, ...metrics },
+});
 
-const AI: AiDashboard = {
-  from: BUSINESS.from,
-  to: BUSINESS.to,
+const AI_METRICS_BODY: AiMetrics = {
   tokens_per_ticket: null,
-  cost_per_day: [{ day: "2026-09-30", cost_usd: 0.42 }],
-  latency_p95_by_step: { B3: 820, B10: 2400 },
+  cost_per_day: [
+    { day_start: "2026-09-29T17:00:00Z", cost_usd: 0.42 }, // 00:00 VN 30/09
+    { day_start: "2026-09-30T17:00:00Z", cost_usd: 0 }, // 00:00 VN 01/10 — chưa hết ngày lúc `to`
+  ],
+  latency_p95_by_step: { B3: 820.4, B10: 2400 },
   cache_hit_rate: 0.31,
   json_invalid_first_try_rate: 0,
   fallback_rate: 0.02,
@@ -134,13 +166,36 @@ const AI: AiDashboard = {
   intent_filter_fallback_rate: null,
   b3_llm_rate: 1,
   intent_model_version: "intent-clf-2026.09.20",
-  unavailable: ["intent_filter_fallback_rate"],
+  multi_intent_first_stop_to_reply_s: null,
+  multi_intent_messages_per_turn: null,
 };
+const AI: AiDashboard = {
+  from: BUSINESS.from,
+  to: BUSINESS.to,
+  unavailable: ["multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"],
+  metrics: AI_METRICS_BODY,
+};
+const ai = (metrics: Partial<AiMetrics> = {}, over: Partial<AiDashboard> = {}): AiDashboard => ({ ...AI, ...over, metrics: { ...AI_METRICS_BODY, ...metrics } });
 
 function alert(alert_id: number, rule_id: string, severity: string, minutesAgo: number, over: Partial<AlertItem> = {}): AlertItem {
   const at = new Date(Date.parse("2026-10-01T05:00:00Z") - minutesAgo * 60_000).toISOString();
-  return { alert_id, rule_id, subject: "", severity, value: null, window_start: at, status: "open", detail: {}, acked_by: null, acked_at: null, created_at: at, ...over };
+  return {
+    alert_id,
+    rule_id,
+    subject: "",
+    severity,
+    value: null,
+    window_start: at,
+    status: "open",
+    detail: {},
+    audience: ["manager"],
+    acked_by: null,
+    acked_at: null,
+    created_at: at,
+    ...over,
+  };
 }
+const alertList = (items: AlertItem[], truncated = false): AlertList => ({ items, truncated });
 
 /** Route giả của dashboard + cảnh báo. `state` đổi được giữa chừng (503 sau khi đã có số…). */
 function dashboardServer(state: { business?: () => Response; ai?: () => Response; alerts?: () => Response } = {}) {
@@ -148,7 +203,7 @@ function dashboardServer(state: { business?: () => Response; ai?: () => Response
     const path = pathOf(url);
     if (path === "/api/dashboard/business") return state.business ? state.business() : json(200, BUSINESS);
     if (path === "/api/dashboard/ai") return state.ai ? state.ai() : json(200, AI);
-    if (path === "/api/alerts" && method === "GET") return state.alerts ? state.alerts() : json(200, []);
+    if (path === "/api/alerts" && method === "GET") return state.alerts ? state.alerts() : json(200, alertList([]));
     return undefined;
   });
 }
@@ -209,11 +264,8 @@ describe("t53 (P4): from/to theo giờ Việt Nam, luôn kèm +07:00", () => {
 
 describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 thật → '0' — KHÔNG BAO GIỜ 0 thay cho null", () => {
   it("metricText: thứ tự unavailable → thiếu trường → null → số", () => {
-    expect(metricText("override_count", null, ["override_count"], "count")).toStrictEqual({
-      state: "unavailable",
-      text: UNAVAILABLE_TEXT,
-      note: "Nguồn có từ Phase 4 (chặng 4d)",
-    });
+    // override_count đã có nguồn thật (4d) → hết chú thích "Nguồn có từ Phase 4"; tên trong unavailable vẫn thắng.
+    expect(metricText("override_count", null, ["override_count"], "count")).toStrictEqual({ state: "unavailable", text: UNAVAILABLE_TEXT, note: null });
     // Tên trong unavailable thắng cả khi server lỡ trả 0.
     expect(metricText("override_count", 0, ["override_count"], "count").text).toBe(UNAVAILABLE_TEXT);
     expect(metricText("deflection_rate", undefined, [], "rate").text).toBe(UNAVAILABLE_TEXT);
@@ -228,7 +280,9 @@ describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 t
   });
 
   it("màn Tổng quan: override_count 'Chưa có dữ liệu', tỉ lệ null '—', số 0 thật '0'; hai ô đầu không có chữ '0'", async () => {
-    dashboardServer();
+    const weightedNull = { raw: 0.16, weighted: null, by_group: { routine: null, approval: null, sensitive: null }, sensitivity: { "60/30/10": null } };
+    const body = business({ escalation_rate_weighted: weightedNull, override_count: null }, ["override_count"]);
+    dashboardServer({ business: () => json(200, body) });
     renderAt("/dashboard");
     const tiles = await screen.findAllByTestId("kpi");
     const tile = (name: string) => tiles.find((t) => t.dataset.metric === name)!;
@@ -250,26 +304,28 @@ describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 t
 
 // ------------------------------------------------------------------------------------------------ t55
 
-describe("t55: tab AI hiện theo DỮ LIỆU (số, map, mảng, chuỗi) — không đoán cấu trúc sâu", () => {
-  it("map/mảng → bảng khoá–giá trị; tỉ lệ; 0 thật; unavailable; null; chuỗi phiên bản", async () => {
+describe("t55: tab AI — 14 chỉ số đúng thứ tự backend; tỉ lệ, 0 thật, null, unavailable, chuỗi phiên bản", () => {
+  it("14 dòng = khoá của AiMetrics; mỗi dòng có data-state; from kèm +07:00", async () => {
     const calls = dashboardServer();
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
     fireEvent.click(screen.getByRole("tab", { name: "AI" }));
     const rows = await screen.findAllByTestId("ai-metric");
-    expect(rows).toHaveLength(12);
+    expect(rows.map((r) => r.dataset.metric)).toStrictEqual(Object.keys(AI_METRICS_BODY));
+    expect(rows).toHaveLength(14);
     const row = (name: string) => rows.find((r) => r.dataset.metric === name)!;
-    const keys = (name: string) => within(row(name)).queryAllByTestId("ai-detail-row").map((r) => r.dataset.key);
-    expect(keys("latency_p95_by_step")).toStrictEqual(["B3", "B10"]);
-    expect(keys("cost_per_day")).toStrictEqual(["[0].day", "[0].cost_usd"]);
-    expect(row("cache_hit_rate").textContent).toMatch(/31\s%/);
-    expect(row("json_invalid_first_try_rate").textContent).toMatch(/0\s%/);
-    expect(row("e9_count").textContent).toContain("0");
-    expect(row("intent_filter_fallback_rate").textContent).toContain(UNAVAILABLE_TEXT);
-    expect(row("tokens_per_ticket").textContent).toContain("—");
-    expect(row("intent_model_version").textContent).toContain("intent-clf-2026.09.20");
-    const ai = calls.find((c) => pathOf(c.url) === "/api/dashboard/ai")!;
-    expect(queryOf(ai.url).get("from")).toMatch(/\+07:00$/);
+    const value = (name: string) => row(name).lastElementChild!.textContent;
+    expect(value("cache_hit_rate")).toMatch(/^31\s%$/);
+    expect(value("json_invalid_first_try_rate")).toMatch(/^0\s%$/);
+    expect(value("e9_count")).toBe("0");
+    expect(value("e2_llm_count")).toBe("1");
+    expect([row("intent_filter_fallback_rate").dataset.state, value("intent_filter_fallback_rate")]).toStrictEqual(["empty", `—${EMPTY_NOTE}`]);
+    expect([row("tokens_per_ticket").dataset.state, value("tokens_per_ticket")]).toStrictEqual(["empty", `—${EMPTY_NOTE}`]);
+    expect(row("multi_intent_messages_per_turn").dataset.state).toBe("unavailable");
+    expect(value("intent_model_version")).toBe("intent-clf-2026.09.20");
+    expect(row("intent_model_version").dataset.state).toBe("value");
+    const aiCall = calls.find((c) => pathOf(c.url) === "/api/dashboard/ai")!;
+    expect(queryOf(aiCall.url).get("from")).toMatch(/\+07:00$/);
   });
 });
 
@@ -289,6 +345,7 @@ describe("t56 (P5): 503 → 'Số liệu tạm thời không có', KHÔNG số c
     expect(MONITOR_DOWN_TEXT).toBe("Số liệu tạm thời không có");
     expect(screen.queryAllByTestId("kpi")).toHaveLength(0);
     expect(screen.queryAllByTestId("bar-row")).toHaveLength(0);
+    expect(screen.queryAllByTestId("weighted-group")).toHaveLength(0);
     expect(screen.queryAllByTestId("e3-case")).toHaveLength(0);
     expect(screen.queryByTestId("metric-override_count")).toBeNull();
     expect(document.body.textContent).not.toMatch(/63\s%|223/);
@@ -355,7 +412,7 @@ describe("t57 (P6): nhãn 16 luật; 'Đã xem' chỉ gỡ SAU 200; 409 / 404 c�
     const gate = new Promise<void>((r) => (release = r));
     const calls = stubFetch(async (method, url) => {
       const path = pathOf(url);
-      if (path === "/api/alerts" && method === "GET") return json(200, open);
+      if (path === "/api/alerts" && method === "GET") return json(200, alertList(open));
       const id = /^\/api\/alerts\/(\d+)\/ack$/.exec(path)?.[1];
       if (method === "POST" && id === "1001") {
         await gate;
@@ -438,7 +495,7 @@ describe("t58: khối 'Cảnh báo đang mở' trên Tổng quan — tối đa 5
       alert(6, "injection_detected", "critical", 5),
       alert(7, "escalation_rate_high", "warning", 6),
     ];
-    dashboardServer({ alerts: () => json(200, open) });
+    dashboardServer({ alerts: () => json(200, alertList(open)) });
     renderAt("/dashboard");
     const block = await screen.findByTestId("open-alerts");
     await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(5));
@@ -507,9 +564,14 @@ function policyRoutes(state: PolicyState): Handler {
 const puts = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && pathOf(c.url) === "/api/policy");
 const restores = (calls: Call[]) => calls.filter((c) => c.method === "POST" && /\/restore$/.test(pathOf(c.url)));
 
+/**
+ * Tab "JSON" có ngay khi màn mount, còn ô JSON chỉ có SAU khi GET /api/policy về (nháp nạp từ server) → chờ chính ô đó.
+ * Lấy đồng bộ (`getBy…`) là đua với response: t61 "người khác" từng đỏ 1/6 lượt dưới tải (N4d) — làm chậm GET 5 ms thì
+ * mọi test dùng hàm này đỏ ngay bằng "Unable to find a label".
+ */
 async function openJson() {
   fireEvent.click(await screen.findByRole("tab", { name: "JSON" }));
-  return screen.getByLabelText<HTMLTextAreaElement>("Nội dung chính sách (JSON)");
+  return screen.findByLabelText<HTMLTextAreaElement>("Nội dung chính sách (JSON)");
 }
 const saveButton = () => screen.getByRole("button", { name: /^Lưu/ });
 const lineOf = (text: string, needle: string) => text.split("\n").findIndex((l) => l.includes(needle)) + 1;
@@ -845,5 +907,668 @@ describe("t64: L1 (ha.lt) không vào được 3 màn Trưởng BP IT — 0 lờ
     const mgr = labels(MGR);
     for (const name of ["Tổng quan", "Cảnh báo", "Chính sách", "Chờ tôi duyệt"]) expect(mgr).toContain(name);
     expect(homePath(MGR)).toBe("/dashboard");
+  });
+});
+
+// ================================================================================================ N-A3 — route thật M9 A3
+
+/** Chữ của phần tử, NBSP (giữa số và "%"/"ms") → dấu cách thường để so chuỗi. */
+const text = (el: Element | null | undefined) => (el?.textContent ?? "").replace(/\u00a0/g, " ");
+const alertRow = (id: number) => document.querySelector<HTMLElement>(`[data-testid="alert-row"][data-alert-id="${id}"]`);
+const alertGets = (calls: Call[]) => calls.filter((c) => c.method === "GET" && pathOf(c.url) === "/api/alerts");
+const apiErrorOf = (fn: () => unknown): ApiError | null => {
+  try {
+    fn();
+  } catch (e) {
+    return e instanceof ApiError ? e : null;
+  }
+  return null;
+};
+const without = <T extends object>(value: T, key: keyof T) => Object.fromEntries(Object.entries(value).filter(([k]) => k !== key));
+
+// ------------------------------------------------------------------------------------------------ t109
+
+describe("t109 (P2): parseAlerts / isAlertItem — MỘT hình dạng {items, truncated}; sai một chỗ → 502 invalid_alerts_body", () => {
+  const ok = alert(1, "drift", "info", 0, { audience: ["manager", "ops"], detail: { n: 1 }, value: 3.5 });
+  const is502 = (body: unknown) => {
+    const e = apiErrorOf(() => parseAlerts(body));
+    return e !== null && e.status === 502 && e.code === "invalid_alerts_body";
+  };
+
+  it("đúng hình dạng → trả nguyên items + truncated; audience lạ / rỗng, cảnh báo đã ack vẫn hợp lệ", () => {
+    expect(parseAlerts({ items: [ok], truncated: true })).toStrictEqual({ items: [ok], truncated: true });
+    expect(parseAlerts({ items: [], truncated: false })).toStrictEqual({ items: [], truncated: false });
+    expect(isAlertItem({ ...ok, status: "acked", acked_by: "it_mgr01", acked_at: "2026-10-01T05:00:00Z", audience: [] })).toBe(true);
+    expect(isAlertItem({ ...ok, audience: ["pager"] })).toBe(true);
+    expect(isAlertItem({ ...ok, alert_id: Number.MAX_SAFE_INTEGER })).toBe(true);
+  });
+
+  it.each([
+    ["mảng trần (hình dạng cũ)", [ok]],
+    ["thiếu truncated", { items: [ok] }],
+    ["truncated là chuỗi", { items: [ok], truncated: "false" }],
+    ["items là object", { items: { 0: ok }, truncated: false }],
+    ["null", null],
+  ])("thân %s → 502", (_name, body) => {
+    expect(is502(body)).toBe(true);
+  });
+
+  it.each([
+    ["alert_id 2^53 (không an toàn — JS đã làm tròn)", { alert_id: 2 ** 53 }],
+    ["alert_id 0", { alert_id: 0 }],
+    ["alert_id 1.5", { alert_id: 1.5 }],
+    ["alert_id chuỗi", { alert_id: "2" }],
+    ["status lạ", { status: "closed" }],
+    ["value chuỗi", { value: "3" }],
+    ["detail null", { detail: null }],
+    ["detail mảng", { detail: [] }],
+    ["audience không phải mảng", { audience: "manager" }],
+    ["audience có số", { audience: ["manager", 1] }],
+    ["acked_by là số", { acked_by: 7 }],
+    ["thiếu created_at", { created_at: undefined }],
+  ])("MỘT cảnh báo có %s → cả danh sách 502 (không lặng lẽ bỏ dòng)", (_name, over) => {
+    const bad = { ...ok, alert_id: 2, ...over };
+    expect(isAlertItem(bad)).toBe(false);
+    expect(is502({ items: [ok, bad], truncated: false })).toBe(true);
+  });
+
+  it("màn Cảnh báo: thân mảng trần → khối lỗi, 0 dòng cảnh báo", async () => {
+    stubFetch((method, url) => (method === "GET" && pathOf(url) === "/api/alerts" ? json(200, [ok]) : undefined));
+    renderAt("/alerts");
+    expect(text(await screen.findByTestId("load-error"))).toContain("Chưa tải được cảnh báo");
+    expect(screen.queryAllByTestId("alert-row")).toHaveLength(0);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t110
+
+describe("t110 (P3): 'Đang mở' = /api/alerts?status=open, 'Tất cả' = /api/alerts — không audience, limit, tham số rỗng", () => {
+  it("màn Cảnh báo (2 bộ lọc) + khối Tổng quan: đúng 2 URL, chỉ GET", async () => {
+    const calls = dashboardServer({ alerts: () => json(200, alertList([alert(1, "drift", "info", 0)])) });
+    renderAt("/alerts");
+    await waitFor(() => expect(alertRow(1)).not.toBeNull());
+    fireEvent.click(screen.getByRole("tab", { name: "Tất cả" }));
+    await waitFor(() => expect(alertGets(calls).some((c) => c.url === "/api/alerts")).toBe(true));
+    await waitFor(() => expect(alertRow(1)).not.toBeNull());
+    cleanup();
+    renderAt("/dashboard");
+    const block = await screen.findByTestId("open-alerts");
+    await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(1));
+    const urls = calls.filter((c) => pathOf(c.url).startsWith("/api/alerts")).map((c) => `${c.method} ${c.url}`);
+    expect(new Set(urls)).toStrictEqual(new Set(["GET /api/alerts?status=open", "GET /api/alerts"]));
+    expect(urls.filter((u) => u === "GET /api/alerts?status=open").length).toBeGreaterThanOrEqual(2); // màn Cảnh báo + khối Tổng quan
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t111
+
+describe("t111 (P4): truncated → băng 'Chỉ hiện 200 cảnh báo mới nhất…' (cả 2 bộ lọc); khối Tổng quan đếm '200+'", () => {
+  const BANNER = "Chỉ hiện 200 cảnh báo mới nhất — còn cảnh báo cũ hơn chưa hiện.";
+  const many = Array.from({ length: 200 }, (_, i) => alert(i + 1, "drift", "info", i));
+
+  it("màn Cảnh báo: truncated → băng role=status ở 'Đang mở' và 'Tất cả'", async () => {
+    const calls = dashboardServer({ alerts: () => json(200, alertList(many.slice(0, 3), true)) });
+    renderAt("/alerts");
+    const banner = await screen.findByTestId("alerts-truncated");
+    expect([banner.getAttribute("role"), banner.textContent]).toStrictEqual(["status", BANNER]);
+    fireEvent.click(screen.getByRole("tab", { name: "Tất cả" }));
+    await waitFor(() => expect(alertGets(calls).some((c) => c.url === "/api/alerts")).toBe(true));
+    expect((await screen.findByTestId("alerts-truncated")).textContent).toBe(BANNER);
+    expect(screen.getAllByTestId("alert-row")).toHaveLength(3);
+  });
+
+  it("màn Cảnh báo: truncated false → không băng", async () => {
+    dashboardServer({ alerts: () => json(200, alertList(many.slice(0, 3), false)) });
+    renderAt("/alerts");
+    await waitFor(() => expect(screen.getAllByTestId("alert-row")).toHaveLength(3));
+    expect(screen.queryByTestId("alerts-truncated")).toBeNull();
+  });
+
+  it("khối Tổng quan: 200 cảnh báo + truncated → '· 200+', 5 dòng; 3 cảnh báo không truncated → '· 3'", async () => {
+    dashboardServer({ alerts: () => json(200, alertList(many, true)) });
+    renderAt("/dashboard");
+    let block = await screen.findByTestId("open-alerts");
+    await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(5));
+    expect(within(block).getByRole("heading").textContent).toBe("Cảnh báo đang mở · 200+");
+    cleanup();
+    dashboardServer({ alerts: () => json(200, alertList(many.slice(0, 3), false)) });
+    renderAt("/dashboard");
+    block = await screen.findByTestId("open-alerts");
+    await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(3));
+    expect(within(block).getByRole("heading").textContent).toBe("Cảnh báo đang mở · 3");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t112
+
+describe("t112 (P5): audience → nhãn người nhận (chỉ bản đầy đủ); giá trị lạ hiện nguyên; KHÔNG lọc theo audience", () => {
+  it("5 cảnh báo đủ loại audience → đủ 5 dòng, nhãn đúng; khối gọn của Tổng quan không có nhãn", async () => {
+    const items = [
+      alert(1, "password_bruteforce", "critical", 1, { audience: ["manager"] }),
+      alert(2, "finalize_failed", "critical", 2, { audience: ["dev"] }),
+      alert(3, "execution_failed", "warning", 3, { audience: ["manager", "ops"] }),
+      alert(4, "x_rule", "info", 4, { audience: ["pager"] as unknown as AlertItem["audience"] }),
+      alert(5, "y_rule", "info", 5, { audience: [] }),
+    ];
+    dashboardServer({ alerts: () => json(200, alertList(items)) });
+    renderAt("/alerts");
+    await waitFor(() => expect(screen.getAllByTestId("alert-row")).toHaveLength(5));
+    const audience = (id: number) => alertRow(id)?.querySelector('[data-testid="alert-audience"]')?.textContent ?? null;
+    expect([1, 2, 3, 4, 5].map(audience)).toStrictEqual([
+      "Người nhận: Trưởng BP IT",
+      "Người nhận: Dev",
+      "Người nhận: Trưởng BP IT, Vận hành",
+      "Người nhận: pager",
+      null,
+    ]);
+    cleanup();
+    renderAt("/dashboard");
+    const block = await screen.findByTestId("open-alerts");
+    await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(5));
+    expect(within(block).queryAllByTestId("alert-audience")).toHaveLength(0);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t113
+
+describe("t113 (P6): ack — 200 đọc được mới gỡ; 200 không đọc được / 409 / 404 → câu riêng + ĐÚNG 1 lần tải lại", () => {
+  /** Server giả: danh sách theo `status`; POST theo id. `hold` chặn GET tải lại sau ack (soi cache trước khi server trả). */
+  function ackServer() {
+    const items = [
+      alert(1001, "password_bruteforce", "critical", 1, { subject: "nv004" }),
+      alert(1002, "e9_spike", "warning", 2),
+      alert(1003, "e6_spike", "warning", 3),
+      alert(1004, "drift", "info", 4),
+      alert(1005, "b2_degraded", "info", 5),
+      alert(9409, "refresh_reuse", "critical", 5),
+      alert(9404, "permission_denied_burst", "warning", 6),
+      alert(9405, "policy_saved", "info", 7),
+    ];
+    const state = { hold: null as Promise<void> | null, acks: 0, allDown: false };
+    const ackedNow = (a: AlertItem): AlertItem => ({ ...a, status: "acked", acked_by: "it_mgr01", acked_at: "2026-10-01T05:10:00Z" });
+    const calls = stubFetch(async (method, url) => {
+      const path = pathOf(url);
+      if (path === "/api/alerts" && method === "GET") {
+        if (state.hold) await state.hold;
+        const status = queryOf(url).get("status");
+        if (status !== "open" && state.allDown) return json(503, { detail: "monitor_unavailable" });
+        return json(200, alertList(status === "open" ? items.filter((a) => a.status === "open") : items, true));
+      }
+      const id = Number(/^\/api\/alerts\/(\d+)\/ack$/.exec(path)?.[1]);
+      if (method !== "POST" || !id) return undefined;
+      state.acks += 1;
+      const i = items.findIndex((a) => a.alert_id === id);
+      const target = items[i]!;
+      if (id === 9409) {
+        items[i] = { ...target, status: "acked", acked_by: "it_mgr02" }; // người khác xác nhận trước
+        return json(409, { detail: "already_acked" });
+      }
+      if (id === 9404) {
+        items.splice(i, 1);
+        return json(404, { detail: "not_found" });
+      }
+      if (id === 9405) return json(404, { detail: "Not Found" });
+      if (id === 1005) return json(200, target); // đúng hình dạng, đúng id nhưng status vẫn "open" — server KHÔNG ghi
+      items[i] = ackedNow(target); // 1001–1004: server ĐÃ ghi
+      if (id === 1002) return new Response("{", { status: 200, headers: { "Content-Type": "application/json" } }); // JSON hỏng
+      if (id === 1003) return json(200, { status: "acked" }); // sai hình dạng
+      if (id === 1004) return json(200, ackedNow({ ...target, alert_id: 77 })); // khác id
+      return json(200, items[i]);
+    });
+    return { calls, state };
+  }
+  const clickAck = (id: number) => fireEvent.click(within(alertRow(id)!).getByRole("button", { name: "Đã xem" }));
+  const notice = () => screen.getByTestId("ack-notice");
+
+  it("200 đọc được → rời 'Đang mở' NGAY bằng cache (giữ truncated) trước khi tải lại về; 'Tất cả' hiện 'Đã xem · it_mgr01'", async () => {
+    const { calls, state } = ackServer();
+    const client = renderAt("/alerts");
+    await waitFor(() => expect(alertRow(1001)).not.toBeNull());
+    let release: () => void = () => {};
+    state.hold = new Promise<void>((r) => (release = r));
+    const before = alertGets(calls).length;
+    clickAck(1001);
+    await waitFor(() => expect(notice().textContent).toBe("Đã xác nhận cảnh báo"));
+    expect(notice().getAttribute("role")).toBe("status");
+    expect(alertRow(1001)).toBeNull();
+    const cached = client.getQueryData<AlertList>(["alerts", "open"])!;
+    expect([cached.truncated, cached.items.some((a) => a.alert_id === 1001)]).toStrictEqual([true, false]);
+    expect(screen.getByTestId("alerts-truncated")).toBeTruthy();
+    await waitFor(() => expect(alertGets(calls).length).toBe(before + 1));
+    state.hold = null;
+    release();
+    fireEvent.click(screen.getByRole("tab", { name: "Tất cả" }));
+    await waitFor(() => expect(alertRow(1001)?.dataset.status).toBe("acked"));
+    expect(text(within(alertRow(1001)!).getByTestId("alert-acked"))).toMatch(/^Đã xem · it_mgr01 · /);
+  });
+
+  it.each([
+    [1002, "JSON hỏng", true],
+    [1003, "sai hình dạng", true],
+    [1004, "khác id", true],
+    [1005, "status vẫn 'open'", false],
+  ])("200 thân %s (%s) → KHÔNG báo thành công, KHÔNG sửa cache, câu role=alert + ĐÚNG 1 lần tải lại", async (id, _name, serverAcked) => {
+    const { calls, state } = ackServer();
+    const client = renderAt("/alerts");
+    await waitFor(() => expect(alertRow(id)).not.toBeNull());
+    let release: () => void = () => {};
+    state.hold = new Promise<void>((r) => (release = r));
+    const before = alertGets(calls).length;
+    clickAck(id);
+    await waitFor(() => expect(notice().textContent).toBe("Đã gửi xác nhận nhưng không đọc được phản hồi — danh sách đã tải lại."));
+    expect(notice().getAttribute("role")).toBe("alert");
+    // Trước khi lần tải lại về: cache "Đang mở" còn nguyên cảnh báo (không đoán là đã ack).
+    expect(client.getQueryData<AlertList>(["alerts", "open"])!.items.some((a) => a.alert_id === id)).toBe(true);
+    expect(alertRow(id)).not.toBeNull();
+    await waitFor(() => expect(alertGets(calls).length).toBe(before + 1));
+    state.hold = null;
+    release();
+    // Lần tải lại cho thấy sự thật của server: đã ghi → rời "Đang mở"; chưa ghi → vẫn còn.
+    if (serverAcked) await waitFor(() => expect(alertRow(id)).toBeNull());
+    else await waitFor(() => expect(alertGets(calls).length).toBe(before + 1));
+    await tick(30);
+    if (!serverAcked) expect(alertRow(id)?.dataset.status).toBe("open");
+    expect(alertGets(calls).length).toBe(before + 1);
+    expect(screen.queryByText("Đã xác nhận cảnh báo")).toBeNull();
+  });
+
+  it("409 → 'đã được xác nhận trước đó' + ĐÚNG 1 GET tải lại (không đọc acked_by); 404 not_found → 'không còn' + 1 GET", async () => {
+    const { calls } = ackServer();
+    renderAt("/alerts");
+    await waitFor(() => expect(alertRow(9409)).not.toBeNull());
+    let before = alertGets(calls).length;
+    clickAck(9409);
+    await waitFor(() => expect(notice().textContent).toBe("Cảnh báo này đã được xác nhận trước đó"));
+    await waitFor(() => expect(alertGets(calls).length).toBe(before + 1));
+    await waitFor(() => expect(alertRow(9409)).toBeNull());
+    await tick(30);
+    expect(alertGets(calls).length).toBe(before + 1);
+    expect(document.body.textContent).not.toContain("it_mgr02");
+    before = alertGets(calls).length;
+    clickAck(9404);
+    await waitFor(() => expect(notice().textContent).toBe("Cảnh báo không còn"));
+    await waitFor(() => expect(alertGets(calls).length).toBe(before + 1));
+    await tick(30);
+    expect(alertGets(calls).length).toBe(before + 1);
+  });
+
+  it("'Tất cả' đang LỖI → ack 200 ở 'Đang mở' KHÔNG biến nó thành danh sách cũ trước lỗi (security-reviewer 3b)", async () => {
+    const { state } = ackServer();
+    const client = renderAt("/alerts");
+    await waitFor(() => expect(alertRow(1001)).not.toBeNull());
+    fireEvent.click(screen.getByRole("tab", { name: "Tất cả" }));
+    await waitFor(() => expect(screen.getAllByTestId("alert-row")).toHaveLength(8));
+    state.allDown = true;
+    await client.invalidateQueries({ queryKey: ["alerts", "all"] }); // lần tải lại của "Tất cả" gặp 503
+    expect(text(await screen.findByTestId("load-error"))).toContain(MONITOR_DOWN_TEXT);
+    fireEvent.click(screen.getByRole("tab", { name: "Đang mở" }));
+    await waitFor(() => expect(alertRow(1001)).not.toBeNull());
+    clickAck(1001);
+    await waitFor(() => expect(notice().textContent).toBe("Đã xác nhận cảnh báo"));
+    expect(client.getQueryState(["alerts", "all"])?.status).toBe("error");
+    fireEvent.click(screen.getByRole("tab", { name: "Tất cả" }));
+    expect(screen.queryAllByTestId("alert-row")).toHaveLength(0);
+    expect(text(await screen.findByTestId("load-error"))).toContain(MONITOR_DOWN_TEXT);
+    await tick(30);
+    expect(screen.queryAllByTestId("alert-row")).toHaveLength(0);
+  });
+
+  it("404 'Not Found' của Starlette (route ack chưa có) → câu 'có từ A3', KHÔNG tải lại; bấm 2 lần cùng nhịp → 1 POST", async () => {
+    const { calls, state } = ackServer();
+    renderAt("/alerts");
+    await waitFor(() => expect(alertRow(9405)).not.toBeNull());
+    const before = alertGets(calls).length;
+    const button = within(alertRow(9405)!).getByRole("button", { name: "Đã xem" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(notice().textContent).toBe("Cảnh báo có từ M9 (chặng A3) — máy chủ chưa có chức năng này."));
+    await tick(30);
+    expect([state.acks, alertGets(calls).length]).toStrictEqual([1, before]);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t114
+
+describe("t114 (P7): parseBusiness / parseAi — khung + scope 'all' + hình dạng lồng; khoá chỉ số THIẾU không làm 502", () => {
+  const is502 = (fn: () => unknown) => {
+    const e = apiErrorOf(fn);
+    return e !== null && e.status === 502 && e.code === "invalid_dashboard_body";
+  };
+  const withMetric = (name: string, value: unknown) => ({ ...BUSINESS, metrics: { ...METRICS, [name]: value } });
+  const withAiMetric = (name: string, value: unknown) => ({ ...AI, metrics: { ...AI_METRICS_BODY, [name]: value } });
+
+  it("đúng → trả nguyên; mọi chỉ số null → nhận; khoá thiếu / metrics rỗng → vẫn nhận", () => {
+    expect(parseBusiness(BUSINESS)).toStrictEqual(BUSINESS);
+    expect(parseAi(AI)).toStrictEqual(AI);
+    const allNull = Object.fromEntries(Object.keys(METRICS).map((k) => [k, null]));
+    expect(parseBusiness({ ...BUSINESS, metrics: allNull }).metrics).toStrictEqual(allNull);
+    expect(parseBusiness({ ...BUSINESS, metrics: without(METRICS, "deflection_rate") }).metrics.deflection_rate).toBeUndefined();
+    expect(parseBusiness({ ...BUSINESS, metrics: {} }).metrics).toStrictEqual({});
+    expect(parseAi({ ...AI, metrics: without(AI_METRICS_BODY, "cost_per_day") }).metrics.cost_per_day).toBeUndefined();
+  });
+
+  it.each([
+    ["scope 'own' (L1)", { ...BUSINESS, scope: "own" }],
+    ["thiếu scope", without(BUSINESS, "scope")],
+    ["hình dạng phẳng cũ (chỉ số ở gốc, không metrics)", { ...without(BUSINESS, "metrics"), ...METRICS }],
+    ["metrics null", { ...BUSINESS, metrics: null }],
+    ["metrics mảng", { ...BUSINESS, metrics: [] }],
+    ["thiếu unavailable", without(BUSINESS, "unavailable")],
+    ["unavailable có số", { ...BUSINESS, unavailable: [1] }],
+    ["from là số", { ...BUSINESS, from: 0 }],
+    ["thân là mảng", [BUSINESS]],
+    ["escalation_rate_weighted là số (cũ)", withMetric("escalation_rate_weighted", 0.14)],
+    ["weighted thiếu by_group", withMetric("escalation_rate_weighted", without(METRICS.escalation_rate_weighted!, "by_group"))],
+    ["by_group có giá trị chuỗi", withMetric("escalation_rate_weighted", { ...METRICS.escalation_rate_weighted!, by_group: { routine: "10%" } })],
+    ["sensitivity null", withMetric("escalation_rate_weighted", { ...METRICS.escalation_rate_weighted!, sensitivity: null })],
+    ["weighted.weighted chuỗi", withMetric("escalation_rate_weighted", { ...METRICS.escalation_rate_weighted!, weighted: "0.1" })],
+    ["decided_by_distribution là mảng", withMetric("decided_by_distribution", [223, 63])],
+    ["top_matched_rules là object", withMetric("top_matched_rules", { R20: 96 })],
+    ["top_matched_rules count chuỗi", withMetric("top_matched_rules", [{ rule_id: "R20", count: "96" }])],
+    ["e1_split phẳng cũ (không total/counts)", withMetric("e1_split", { out_of_scope: 9 })],
+    ["e1_split counts có chuỗi", withMetric("e1_split", { ...METRICS.e1_split!, counts: { other: "2" } })],
+    ["e3_cases là mảng (cũ)", withMetric("e3_cases", METRICS.e3_cases!.items)],
+    ["e3_cases thiếu truncated", withMetric("e3_cases", { items: [] })],
+    ["e3 ca có request_excerpt số", withMetric("e3_cases", { items: [{ ...METRICS.e3_cases!.items[0]!, request_excerpt: 1 }], truncated: false })],
+  ])("business: %s → 502", (_name, body) => {
+    expect(is502(() => parseBusiness(body))).toBe(true);
+  });
+
+  it.each([
+    ["hình dạng phẳng cũ (không metrics)", { ...without(AI, "metrics"), ...AI_METRICS_BODY }],
+    ["thiếu unavailable", without(AI, "unavailable")],
+    ["to là null", { ...AI, to: null }],
+    ["cost_per_day kiểu cũ {day, cost_usd}", withAiMetric("cost_per_day", [{ day: "2026-09-30", cost_usd: 0.42 }])],
+    ["cost_per_day cost chuỗi", withAiMetric("cost_per_day", [{ day_start: "2026-09-29T17:00:00Z", cost_usd: "0.42" }])],
+    ["cost_per_day là object", withAiMetric("cost_per_day", { "2026-09-30": 0.42 })],
+    ["latency_p95_by_step có chuỗi", withAiMetric("latency_p95_by_step", { B3: "820" })],
+    ["latency_p95_by_step là mảng", withAiMetric("latency_p95_by_step", [820])],
+  ])("ai: %s → 502", (_name, body) => {
+    expect(is502(() => parseAi(body))).toBe(true);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t115
+
+describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng số = .weighted, nhóm rủi ro, độ nhạy, E1 'other', E3 truncated", () => {
+  const kpi = (name: string) => document.querySelector<HTMLElement>(`[data-testid="kpi"][data-metric="${name}"]`)!;
+  const kpiValue = (name: string) => text(within(kpi(name)).getByTestId("kpi-value"));
+
+  it("ô số + khối mới với dữ liệu thật đầy đủ", async () => {
+    dashboardServer();
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính ticket lá.");
+    expect([kpiValue("automation_rate"), kpiValue("escalation_rate_weighted"), kpiValue("deflection_rate"), kpiValue("approval_expired_count")]).toStrictEqual([
+      "63 %",
+      "14,2 %",
+      "21 %",
+      "0",
+    ]);
+    expect(text(kpi("escalation_rate_weighted"))).toContain("thô 16 %");
+    const groups = screen.getAllByTestId("weighted-group");
+    expect(groups.map((g) => [g.dataset.key, text(g.firstElementChild), text(g.lastElementChild)])).toStrictEqual([
+      ["routine", "Thường", "10 %"],
+      ["approval", "Cần duyệt", "25 %"],
+      ["sensitive", "Nhạy cảm", "—"], // nhóm 0 lá → null → "—", KHÔNG "0 %"
+    ]);
+    expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Độ nhạy trọng số: 60/30/10: 14,2 % · 80/15/5: 15,1 %");
+    const e1 = within(screen.getByRole("region", { name: /Ca không xác định được ý định/ })).getAllByTestId("bar-row");
+    expect(e1.map((r) => r.dataset.key)).toStrictEqual(["out_of_scope", "intent_low_confidence", "multi_intent_not_enabled", "intent_not_enabled", "other"]);
+    expect(text(e1[4]!.firstElementChild)).toBe("Lý do khác");
+    expect(screen.getAllByTestId("rule-row")).toHaveLength(1);
+    const override = screen.getByTestId("metric-override_count");
+    expect([override.dataset.state, text(override)]).toStrictEqual(["value", "Số lần L1 ghi đè: 0"]);
+    expect(screen.getAllByTestId("e3-case")).toHaveLength(1);
+    expect(text(screen.getByTestId("e3-case"))).toContain("software · 29/09 · KB v12 · t-e3");
+    expect(screen.queryByTestId("e3-truncated")).toBeNull();
+  });
+
+  it("nhóm lạ hiện nguyên khoá; độ nhạy null → '—'; E3 truncated → băng; ý định / KB null → 'chưa rõ ý định', không 'KB'", async () => {
+    const body = business({
+      escalation_rate_weighted: { raw: 0.16, weighted: null, by_group: { routine: 0.1, experimental: 0.5 }, sensitivity: { "60/30/10": null } },
+      e3_cases: {
+        items: [{ ticket_id: "t-e3b", intent: null, created_at: "2026-09-29T17:30:00Z", kb_version: null, request_excerpt: "Không thấy tài liệu" }],
+        truncated: true,
+      },
+    });
+    dashboardServer({ business: () => json(200, body) });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    expect([kpi("escalation_rate_weighted").dataset.state, kpiValue("escalation_rate_weighted")]).toStrictEqual(["empty", "—"]);
+    expect(screen.getAllByTestId("weighted-group").map((g) => text(g))).toStrictEqual(["Thường10 %", "experimental50 %"]);
+    expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Độ nhạy trọng số: 60/30/10: —");
+    const banner = screen.getByTestId("e3-truncated");
+    expect([banner.getAttribute("role"), banner.textContent]).toStrictEqual(["status", "Chỉ hiện 100 ca mới nhất."]);
+    const e3 = text(screen.getByTestId("e3-case"));
+    expect(e3).toContain("chưa rõ ý định · 30/09 · t-e3b");
+    expect(e3).not.toContain("KB");
+  });
+
+  it("cửa sổ rỗng (0 ticket): tỉ lệ '—', nhóm '—', không thanh, không luật, không ca E3 — không chữ '0 %' nào", async () => {
+    const body = business({
+      automation_rate: null,
+      escalation_rate_raw: null,
+      escalation_rate_weighted: { raw: null, weighted: null, by_group: { routine: null, approval: null, sensitive: null }, sensitivity: { "60/30/10": null, "80/15/5": null } },
+      deflection_rate: null,
+      approval_expired_count: 0,
+      decided_by_distribution: {},
+      top_matched_rules: [],
+      override_count: 0,
+      e1_split: { total: 0, counts: { out_of_scope: 0, intent_low_confidence: 0, multi_intent_not_enabled: 0, intent_not_enabled: 0, other: 0 }, shares: {} },
+      e3_cases: { items: [], truncated: false },
+    });
+    dashboardServer({ business: () => json(200, body) });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    expect(["automation_rate", "escalation_rate_weighted", "deflection_rate"].map(kpiValue)).toStrictEqual(["—", "—", "—"]);
+    expect(text(kpi("escalation_rate_weighted"))).toContain("thô —");
+    expect(screen.getAllByTestId("weighted-group").map((g) => text(g.lastElementChild))).toStrictEqual(["—", "—", "—"]);
+    expect(screen.queryAllByTestId("bar-row")).toHaveLength(0);
+    expect(screen.getAllByText("Không có ticket trong khoảng này.")).toHaveLength(2); // decided_by + E1
+    expect(screen.getByText("Không có luật nào khớp trong khoảng này.")).toBeTruthy();
+    expect(screen.getByText("Không có ca E3 trong khoảng này.")).toBeTruthy();
+    expect(text(document.querySelector("main") ?? document.body)).not.toMatch(/\b0 %/);
+  });
+
+  it("khoá chỉ số thiếu → 'Chưa có dữ liệu' + 'Máy chủ không trả chỉ số này' (không 0); tên trong unavailable → 'Chưa có dữ liệu'", async () => {
+    const body = { ...business({}, ["override_count"]), metrics: without({ ...METRICS, override_count: null }, "deflection_rate") };
+    dashboardServer({ business: () => json(200, body) });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    expect([kpi("deflection_rate").dataset.state, kpiValue("deflection_rate")]).toStrictEqual(["unavailable", "Chưa có dữ liệu"]);
+    expect(text(kpi("deflection_rate"))).toContain("Máy chủ không trả chỉ số này");
+    const override = screen.getByTestId("metric-override_count");
+    expect([override.dataset.state, text(override)]).toStrictEqual(["unavailable", "Số lần L1 ghi đè: Chưa có dữ liệu"]);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t116
+
+describe("t116 (P9): tab AI — cost_per_day theo ngày VN (T17:00Z → hôm sau), mọi điểm, 'chưa hết ngày'; latency; null; Phase 5", () => {
+  const openAi = async () => {
+    await screen.findAllByTestId("kpi");
+    fireEvent.click(screen.getByRole("tab", { name: "AI" }));
+    return screen.findAllByTestId("ai-metric");
+  };
+  const row = (name: string) => document.querySelector<HTMLElement>(`[data-testid="ai-metric"][data-metric="${name}"]`)!;
+  const value = (name: string) => text(row(name).lastElementChild);
+  const days = Array.from({ length: 8 }, (_, i) => new Date(Date.parse("2026-09-23T17:00:00Z") + i * 86_400_000).toISOString().replace(".000Z", "Z"));
+  const costs = [0.1, 0.123456, 0, 1.5, 0.00004, 2, 0.3, 0];
+
+  it("8 điểm → 8 dòng 'dd/MM · USD' theo giờ VN; chỉ điểm cuối 'chưa hết ngày'; latency làm tròn ms", async () => {
+    const body = ai({ cost_per_day: days.map((day_start, i) => ({ day_start, cost_usd: costs[i]! })) });
+    dashboardServer({ ai: () => json(200, body) });
+    renderAt("/dashboard");
+    await openAi();
+    expect(screen.getAllByTestId("ai-cost-day").map((li) => text(li))).toStrictEqual([
+      "24/09 · 0,1",
+      "25/09 · 0,1235",
+      "26/09 · 0",
+      "27/09 · 1,5",
+      "28/09 · < 0,0001",
+      "29/09 · 2",
+      "30/09 · 0,3",
+      "01/10 · 0 · chưa hết ngày",
+    ]);
+    expect(row("cost_per_day").dataset.state).toBe("value");
+    expect(screen.getAllByTestId("ai-latency-step").map((li) => text(li))).toStrictEqual(["B3 · 820 ms", "B10 · 2.400 ms"]);
+  });
+
+  it("latency {} và cost [] → 'Không có dữ liệu trong khoảng này.'; cost null → '—'; intent null → '—' + 'Chưa ghi nhận phiên bản model'", async () => {
+    dashboardServer({ ai: () => json(200, ai({ latency_p95_by_step: {}, cost_per_day: [], intent_model_version: null })) });
+    renderAt("/dashboard");
+    await openAi();
+    expect([row("latency_p95_by_step").dataset.state, value("latency_p95_by_step")]).toStrictEqual(["value", "Không có dữ liệu trong khoảng này."]);
+    expect(value("cost_per_day")).toBe("Không có dữ liệu trong khoảng này.");
+    expect([row("intent_model_version").dataset.state, value("intent_model_version")]).toStrictEqual(["empty", "—Chưa ghi nhận phiên bản model"]);
+    cleanup();
+    dashboardServer({ ai: () => json(200, ai({ cost_per_day: null })) });
+    renderAt("/dashboard");
+    await openAi();
+    expect([row("cost_per_day").dataset.state, value("cost_per_day")]).toStrictEqual(["empty", `—${EMPTY_NOTE}`]);
+  });
+
+  it("multi_intent (pending, trong unavailable) → 'Chưa có dữ liệu' + 'Nguồn có từ Phase 5', không số 0", async () => {
+    dashboardServer();
+    renderAt("/dashboard");
+    await openAi();
+    for (const name of ["multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"]) {
+      expect([row(name).dataset.state, value(name)]).toStrictEqual(["unavailable", "Chưa có dữ liệuNguồn có từ Phase 5"]);
+    }
+    expect(text(row("multi_intent_first_stop_to_reply_s").firstElementChild)).toContain("Nhiều ý: từ lúc dừng đầu tới câu trả lời (giây)");
+    expect(text(row("multi_intent_messages_per_turn").firstElementChild)).toContain("Nhiều ý: số tin mỗi lượt");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t117
+
+describe("t117 (P10): lỗi tải — 422 cửa sổ, 500 không phải JSON, 502 thân sai, 503 monitor; không số nào hiện kèm", () => {
+  const WINDOW_INVALID = "Khoảng thời gian không hợp lệ — kiểm tra ngày giờ của máy rồi tải lại.";
+  const GENERIC = "Có lỗi xảy ra, vui lòng thử lại.";
+  const invalid = () => json(422, { error: "invalid_request", fields: ["query.from"] });
+  const crash = () => new Response("Internal Server Error", { status: 500, headers: { "Content-Type": "text/plain" } });
+
+  it.each([
+    ["422 invalid_request (query.from)", invalid, WINDOW_INVALID],
+    ["500 text/plain", crash, GENERIC],
+    ["200 hình dạng phẳng cũ → 502", () => json(200, { ...without(BUSINESS, "metrics"), ...METRICS }), GENERIC],
+  ])("Nghiệp vụ %s → khối lỗi đúng câu, 0 ô số", async (_name, response, expected) => {
+    dashboardServer({ business: response });
+    renderAt("/dashboard");
+    const error = await screen.findByTestId("load-error");
+    expect(text(error)).toBe(`Chưa tải được số liệu${expected}`);
+    expect(screen.queryAllByTestId("kpi")).toHaveLength(0);
+    expect(screen.queryAllByTestId("weighted-group")).toHaveLength(0);
+  });
+
+  it("tab AI: 422 → câu cửa sổ; 500 → câu chung", async () => {
+    dashboardServer({ ai: invalid });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    fireEvent.click(screen.getByRole("tab", { name: "AI" }));
+    expect(text(await screen.findByTestId("load-error"))).toBe(`Chưa tải được số liệu AI${WINDOW_INVALID}`);
+    cleanup();
+    dashboardServer({ ai: crash });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    fireEvent.click(screen.getByRole("tab", { name: "AI" }));
+    expect(text(await screen.findByTestId("load-error"))).toBe(`Chưa tải được số liệu AI${GENERIC}`);
+    expect(screen.queryAllByTestId("ai-metric")).toHaveLength(0);
+  });
+
+  it("màn Cảnh báo: 503 monitor_unavailable → 'Số liệu tạm thời không có'; 500 text/plain → câu chung; khối Tổng quan 503 → role=alert", async () => {
+    dashboardServer({ alerts: () => json(503, { detail: "monitor_unavailable" }) });
+    renderAt("/alerts");
+    expect(text(await screen.findByTestId("load-error"))).toContain(MONITOR_DOWN_TEXT);
+    cleanup();
+    dashboardServer({ alerts: crash });
+    renderAt("/alerts");
+    expect(text(await screen.findByTestId("load-error"))).toBe(`Chưa tải được cảnh báo${GENERIC}`);
+    cleanup();
+    dashboardServer({ alerts: () => json(503, { detail: "monitor_unavailable" }) });
+    renderAt("/dashboard");
+    const block = await screen.findByTestId("open-alerts");
+    await waitFor(() => expect(within(block).getByRole("alert").textContent).toBe(MONITOR_DOWN_TEXT));
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t119
+
+describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'constructor' / 'toString' từ server hiện nguyên, màn không vỡ", () => {
+  /** Object có khoá RIÊNG "__proto__" (viết `{"__proto__": …}` trong mã JS là đổi prototype, không phải tạo khoá). */
+  const ownKeys = (raw: string) => JSON.parse(raw) as Record<string, number>;
+  const noLeak = () => {
+    expect(document.body.textContent).not.toMatch(/function |\[object /);
+  };
+
+  it("labelOf / ownEntry / alertLabel / severityLabel / severityDot / audienceLabel; sắp xếp coi mức lạ là cuối", () => {
+    expect([alertLabel("constructor"), alertLabel("injection_detected")]).toStrictEqual(["constructor", "Yêu cầu bị chặn vì nghi chèn lệnh (E0)"]);
+    expect([severityLabel("__proto__"), severityLabel("toString"), severityLabel("critical")]).toStrictEqual(["__proto__", "toString", "Nghiêm trọng"]);
+    expect([severityDot("__proto__"), severityDot("constructor"), severityDot("critical")]).toStrictEqual(["bg-ink-3", "bg-ink-3", "bg-danger"]);
+    expect([audienceLabel("toString"), audienceLabel("manager")]).toStrictEqual(["toString", "Trưởng BP IT"]);
+    expect(labelOf(E1_LABEL, "hasOwnProperty")).toBe("hasOwnProperty");
+    expect(ownEntry<number>({ a: 1 }, "valueOf", 3)).toBe(3);
+    const sorted = sortAlerts([alert(1, "x", "__proto__", 0), alert(2, "x", "info", 5), alert(3, "x", "constructor", 1), alert(4, "x", "critical", 9)]);
+    expect(sorted.map((a) => a.alert_id)).toStrictEqual([4, 2, 1, 3]);
+  });
+
+  it("màn Cảnh báo: severity '__proto__', rule_id 'constructor', audience ['toString'] → hiện nguyên chuỗi, không vỡ", async () => {
+    const items = [
+      alert(1, "constructor", "__proto__", 0, { audience: ["toString"] as unknown as AlertItem["audience"], subject: "valueOf" }),
+      alert(2, "toString", "critical", 1),
+    ];
+    dashboardServer({ alerts: () => json(200, alertList(items)) });
+    renderAt("/alerts");
+    await waitFor(() => expect(screen.getAllByTestId("alert-row")).toHaveLength(2));
+    expect(screen.getAllByTestId("alert-row").map((r) => r.dataset.alertId)).toStrictEqual(["2", "1"]);
+    const row = alertRow(1)!;
+    expect(row.dataset.severity).toBe("__proto__");
+    expect(text(row)).toContain("constructor — mức __proto__");
+    expect(text(within(row).getByTestId("alert-audience"))).toBe("Người nhận: toString");
+    expect(row.querySelector('[aria-hidden="true"]')!.className).toContain("bg-ink-3");
+    expect(text(alertRow(2))).toContain("toString — mức Nghiêm trọng");
+    noLeak();
+  });
+
+  it("màn Tổng quan: khoá '__proto__' / 'constructor' / 'toString' trong by_group, decided_by, e1 counts → hiện nguyên khoá", async () => {
+    const body = business({
+      escalation_rate_weighted: { raw: 0.16, weighted: 0.142, by_group: ownKeys('{"__proto__": 0.5, "routine": 0.1}'), sensitivity: { "60/30/10": 0.142 } },
+      decided_by_distribution: ownKeys('{"__proto__": 3, "constructor": 2}'),
+      e1_split: { total: 1, counts: ownKeys('{"toString": 1, "other": 0}'), shares: {} },
+    });
+    expect(JSON.stringify(body)).toContain('"__proto__":0.5'); // khoá thật sự đi qua dây
+    dashboardServer({ business: () => json(200, body) });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    expect(screen.getAllByTestId("weighted-group").map((g) => [g.dataset.key, text(g.firstElementChild)])).toStrictEqual([
+      ["__proto__", "__proto__"],
+      ["routine", "Thường"],
+    ]);
+    const bars = (section: string) =>
+      [...document.querySelectorAll<HTMLElement>(`section[aria-labelledby="${section}"] [data-testid="bar-row"]`)].map((r) => text(r.firstElementChild));
+    expect(bars("decided-by")).toStrictEqual(["__proto__", "constructor"]);
+    expect(bars("e1-split")).toStrictEqual(["toString", "Lý do khác"]);
+    noLeak();
+  });
+
+  it("Chính sách (tab Bảng): hằng số khoá '__proto__' / 'constructor' → nhãn là chính khoá; luật type 'constructor' / '__proto__' → 'Không hợp lệ'", async () => {
+    const content = JSON.parse(
+      '{"constants": {"__proto__": 1, "constructor": 2, "SLA_MINUTES": 30}, "rules": [' +
+        '{"id": "R1", "type": "constructor"}, {"id": "R2", "type": "__proto__"}, {"id": "R3", "type": "toString"}, {"id": "R4", "type": "allow"}]}',
+    ) as Record<string, unknown>;
+    stubFetch(policyRoutes({ current: () => view({ content }) }));
+    renderAt("/policy");
+    await waitFor(() => expect(screen.getAllByTestId("constant-row")).toHaveLength(3));
+    const rows = screen.getAllByTestId("constant-row");
+    expect(rows.map((r) => [r.dataset.key, text(r.querySelector("span > span"))])).toStrictEqual([
+      ["__proto__", "__proto__"],
+      ["constructor", "constructor"],
+      ["SLA_MINUTES", "Hạn duyệt (phút)"],
+    ]);
+    const rules = screen.getAllByTestId("rule-row").map((r) => text(r.lastElementChild));
+    expect(rules).toStrictEqual(["Không hợp lệ (constructor)", "Không hợp lệ (__proto__)", "Không hợp lệ (toString)", "Cho phép"]);
+    for (const r of screen.getAllByTestId("rule-row").slice(0, 3)) expect(r.lastElementChild!.className).toContain("text-danger");
+    noLeak();
   });
 });

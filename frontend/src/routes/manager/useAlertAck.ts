@@ -2,15 +2,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { ackAlert } from "../../api/alerts.ts";
 import { ApiError, errorMessage, routeMissing } from "../../api/errors.ts";
-import type { AlertItem } from "../../api/types.ts";
-import { ACK_CONFLICT_TEXT, ACK_DONE_TEXT, ACK_GONE_TEXT, ALERTS_MISSING_TITLE } from "./metrics.ts";
+import type { AlertList } from "../../api/types.ts";
+import { ACK_CONFLICT_TEXT, ACK_DONE_TEXT, ACK_GONE_TEXT, ACK_UNREADABLE_TEXT, ALERTS_MISSING_TITLE } from "./metrics.ts";
 
 export type AckNotice = { tone: "ok" | "error"; text: string };
 
 /**
  * "Đã xem" (P9 §7 — thao tác duy nhất với cảnh báo; F5 P6): KHÔNG optimistic — cảnh báo chỉ rời danh sách "Đang mở"
- * SAU khi server trả 200. 409 (đã có người xác nhận) / 404 (không còn) → câu riêng + tải lại danh sách. Chặn bấm 2 lần
- * theo id (ref — state chưa kịp cập nhật trong cùng một nhịp).
+ * SAU khi server trả 200 ĐỌC ĐƯỢC (cảnh báo đã ack, đúng id). 200 mà thân không đọc được → không sửa cache, không báo
+ * thành công, tải lại. 409 (đã có người xác nhận — không đọc `acked_by` của thân lỗi) / 404 (không còn) → câu riêng + tải
+ * lại danh sách. Chặn bấm 2 lần theo id (ref — state chưa kịp cập nhật trong cùng một nhịp).
  */
 export function useAlertAck() {
   const queryClient = useQueryClient();
@@ -34,9 +35,20 @@ export function useAlertAck() {
     setNotice(null);
     try {
       const acked = await ackAlert(id);
-      // Server đã ghi nhận → mới gỡ khỏi "Đang mở" và cập nhật "Tất cả" bằng bản server trả.
-      queryClient.setQueryData<AlertItem[]>(["alerts", "open"], (old) => old?.filter((a) => a.alert_id !== id));
-      queryClient.setQueryData<AlertItem[]>(["alerts", "all"], (old) => old?.map((a) => (a.alert_id === id ? acked : a)));
+      if (acked === null) {
+        setNotice({ tone: "error", text: ACK_UNREADABLE_TEXT });
+        reload();
+        return;
+      }
+      // Server đã ghi nhận → mới gỡ khỏi "Đang mở" và cập nhật "Tất cả" bằng bản server trả (giữ `truncated`). CHỈ sửa bộ
+      // lọc đang có dữ liệu tốt: `setQueryData` lên query đang LỖI sẽ biến nó thành success với danh sách cũ trước lỗi (KH
+      // mục 5 — không hiện số cũ) → bộ lọc đó để `reload()` đánh dấu cũ, mở ra là tải lại.
+      const edit = (filter: "open" | "all", next: (items: AlertList["items"]) => AlertList["items"]) => {
+        if (queryClient.getQueryState(["alerts", filter])?.status !== "success") return;
+        queryClient.setQueryData<AlertList>(["alerts", filter], (old) => old && { ...old, items: next(old.items) });
+      };
+      edit("open", (items) => items.filter((a) => a.alert_id !== id));
+      edit("all", (items) => items.map((a) => (a.alert_id === id ? acked : a)));
       setNotice({ tone: "ok", text: ACK_DONE_TEXT });
       reload();
     } catch (e) {

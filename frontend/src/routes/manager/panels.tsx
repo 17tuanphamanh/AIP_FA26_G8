@@ -13,16 +13,22 @@ export function MissingPanel({ testId, title, text }: { testId: string; title: s
 }
 
 /**
- * Lỗi tải số liệu. 503 `monitor_unavailable` (fail-closed của M9) → "Số liệu tạm thời không có". Nơi gọi KHÔNG được hiện
+ * Lỗi tải số liệu. 503 `monitor_unavailable` (fail-closed của M9) → "Số liệu tạm thời không có". `invalid`: câu riêng cho
+ * 422 (Tổng quan: cửa sổ from/to bị từ chối — không có ô nào để "đánh dấu" như câu 422 chung). Nơi gọi KHÔNG được hiện
  * kèm dữ liệu cũ (KH mục 5) — component này chỉ có chữ.
  */
-export function LoadError({ error, what }: { error: unknown; what: string }) {
+export function LoadError({ error, what, invalid }: { error: unknown; what: string; invalid?: string }) {
   const api = error instanceof ApiError ? error : null;
   const down = api?.status === 503;
+  const detail = down
+    ? "Kết nối tới dữ liệu giám sát đang gián đoạn — thử tải lại sau."
+    : api?.status === 422 && invalid
+      ? invalid
+      : errorMessage(api);
   return (
     <div role="alert" data-testid="load-error" className="flex flex-col gap-1 rounded-group bg-danger-bg px-5 py-4 text-danger-ink">
       <p className="font-semibold">{down ? MONITOR_DOWN_TEXT : `Chưa tải được ${what}`}</p>
-      <p className="text-secondary">{down ? "Kết nối tới dữ liệu giám sát đang gián đoạn — thử tải lại sau." : errorMessage(api)}</p>
+      <p className="text-secondary">{detail}</p>
     </div>
   );
 }

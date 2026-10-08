@@ -1,8 +1,8 @@
-// Tổng quan Trưởng BP IT (F5): `GET /api/dashboard/business`, `GET /api/dashboard/ai` (P9 §7, ke-hoach-m9-monitor.md
-// §4.5, §5.1–5.2) — route CHƯA CÓ (M9 A3). MSW bật → handler giả (mocks/handlers/dashboard.ts); MSW tắt → backend: chưa
-// có route → 404 "Not Found" của Starlette (`routeMissing`) → màn "có từ M9 (chặng A3)". 503 `monitor_unavailable`
-// (fail-closed của M9) → "Số liệu tạm thời không có" — KHÔNG hiện số cũ (KH mục 5): không `placeholderData`, màn bỏ
-// `data` khi có lỗi. `from`/`to` bắt buộc có múi giờ (§4.5) — dựng ở routes/manager/range.ts.
+// Tổng quan Trưởng BP IT (F5) — route thật M9 A3 @3f15afb (backend/app/api/dashboard.py): `GET /api/dashboard/business`,
+// `GET /api/dashboard/ai` → `{from, to, unavailable, [scope,] metrics}` (chỉ số nằm trong `metrics`, KHÔNG ở gốc). 503
+// `monitor_unavailable` (fail-closed của M9) → "Số liệu tạm thời không có" — KHÔNG hiện số cũ (KH mục 5): không
+// `placeholderData`, màn bỏ `data` khi có lỗi. `from`/`to` bắt buộc có múi giờ (thiếu → 422 `query.from`) — dựng ở
+// routes/manager/range.ts. Thân sai hình dạng → 502 `invalid_dashboard_body`: không dựng màn từ dữ liệu không rõ.
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
 import type { AiDashboard, BusinessDashboard } from "./types.ts";
@@ -12,18 +12,73 @@ export type DashboardKind = "business" | "ai";
 
 const query = (w: DashboardWindow) => `from=${encodeURIComponent(w.from)}&to=${encodeURIComponent(w.to)}`;
 
-/** Thân phải là object có mảng `unavailable` (§4.3) — thiếu thì không dựng màn từ dữ liệu không rõ (fail-closed). */
-function checked<T>(data: unknown): T {
-  if (data === null || typeof data !== "object" || !Array.isArray((data as { unavailable?: unknown }).unavailable)) {
-    throw new ApiError(502, "invalid_dashboard_body");
-  }
-  return data as T;
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const isNumber = (value: unknown) => typeof value === "number";
+const isNumberOrNull = (value: unknown) => value === null || typeof value === "number";
+/** Object mà mọi giá trị qua `ok` (object rỗng hợp lệ). */
+const isMapOf = (value: unknown, ok: (v: unknown) => boolean) => isRecord(value) && Object.values(value).every(ok);
+
+/**
+ * Chỉ số có hình dạng lồng: khoá CÓ MẶT thì phải đúng dạng (hoặc null); khoá THIẾU không làm hỏng cả màn — ô đó hiện
+ * "Máy chủ không trả chỉ số này" (`metricText`). Chỉ số số đơn (tỉ lệ, đếm) không kiểm ở đây: `metricText` tự hiện.
+ */
+type Shape = (value: unknown) => boolean;
+const nullable = (shape: Shape): Shape => (value) => value === null || shape(value);
+
+const BUSINESS_SHAPES: Record<string, Shape> = {
+  escalation_rate_weighted: nullable(
+    (v) => isRecord(v) && isNumberOrNull(v.weighted) && isMapOf(v.by_group, isNumberOrNull) && isMapOf(v.sensitivity, isNumberOrNull),
+  ),
+  decided_by_distribution: nullable((v) => isMapOf(v, isNumber)),
+  top_matched_rules: nullable((v) => Array.isArray(v) && v.every((r) => isRecord(r) && typeof r.rule_id === "string" && isNumber(r.count))),
+  e1_split: nullable((v) => isRecord(v) && isNumber(v.total) && isMapOf(v.counts, isNumber)),
+  e3_cases: nullable(
+    (v) =>
+      isRecord(v) &&
+      typeof v.truncated === "boolean" &&
+      Array.isArray(v.items) &&
+      v.items.every(
+        (c) =>
+          isRecord(c) &&
+          typeof c.ticket_id === "string" &&
+          typeof c.created_at === "string" &&
+          typeof c.request_excerpt === "string" &&
+          (c.intent === null || c.intent === undefined || typeof c.intent === "string") &&
+          (c.kb_version === null || c.kb_version === undefined || typeof c.kb_version === "string"),
+      ),
+  ),
+};
+
+const AI_SHAPES: Record<string, Shape> = {
+  cost_per_day: nullable((v) => Array.isArray(v) && v.every((d) => isRecord(d) && typeof d.day_start === "string" && isNumber(d.cost_usd))),
+  latency_p95_by_step: nullable((v) => isMapOf(v, isNumber)),
+};
+
+/** Khung chung: `from`/`to` chuỗi, `unavailable` mảng chuỗi, `metrics` object; khoá có mặt của `metrics` đúng `shapes`. */
+function framed(body: unknown, shapes: Record<string, Shape>): body is { metrics: Record<string, unknown> } {
+  if (!isRecord(body) || typeof body.from !== "string" || typeof body.to !== "string") return false;
+  if (!Array.isArray(body.unavailable) || !body.unavailable.every((n) => typeof n === "string")) return false;
+  const metrics = body.metrics;
+  if (!isRecord(metrics)) return false;
+  return Object.entries(shapes).every(([name, ok]) => metrics[name] === undefined || ok(metrics[name]));
+}
+
+/** `scope` phải là "all" (`dashboard:read:all`): "own" (L1) có tập chỉ số khác — màn này không dựng từ nó. */
+export function parseBusiness(body: unknown): BusinessDashboard {
+  if (!framed(body, BUSINESS_SHAPES) || (body as { scope?: unknown }).scope !== "all") throw new ApiError(502, "invalid_dashboard_body");
+  return body as unknown as BusinessDashboard;
+}
+
+export function parseAi(body: unknown): AiDashboard {
+  if (!framed(body, AI_SHAPES)) throw new ApiError(502, "invalid_dashboard_body");
+  return body as unknown as AiDashboard;
 }
 
 export async function getBusinessDashboard(w: DashboardWindow): Promise<BusinessDashboard> {
-  return checked<BusinessDashboard>((await api.request<unknown>(`/api/dashboard/business?${query(w)}`)).data);
+  return parseBusiness((await api.request<unknown>(`/api/dashboard/business?${query(w)}`)).data);
 }
 
 export async function getAiDashboard(w: DashboardWindow): Promise<AiDashboard> {
-  return checked<AiDashboard>((await api.request<unknown>(`/api/dashboard/ai?${query(w)}`)).data);
+  return parseAi((await api.request<unknown>(`/api/dashboard/ai?${query(w)}`)).data);
 }

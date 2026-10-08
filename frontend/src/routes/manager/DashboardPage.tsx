@@ -6,14 +6,14 @@ import { Forbidden } from "../Forbidden.tsx";
 import { AiDashboardView } from "./AiDashboard.tsx";
 import { OpenAlertsBlock } from "./Alerts.tsx";
 import { BusinessKpis, BusinessSections, E3Section } from "./BusinessDashboard.tsx";
-import { DASHBOARD_MISSING_TITLE } from "./metrics.ts";
-import { LoadError, MissingPanel, MockNote } from "./panels.tsx";
+import { DASHBOARD_MISSING_TITLE, WINDOW_INVALID_TEXT } from "./metrics.ts";
+import { LoadError, MissingPanel } from "./panels.tsx";
 import { aiQuery, businessQuery, DEFAULT_RANGE, RANGES, type RangeKey, vnDateTime } from "./range.ts";
 
 // B4MgrDashboard — trang đầu của Trưởng BP IT (`dashboard:read:all`, 12b Q-fe-8). Tab "Nghiệp vụ | AI" trong CÙNG trang
-// (F5 P1). Route CHƯA CÓ — M9 A3: MSW ở dev:mock; dev thật → 404 "Not Found" → "Tổng quan có từ M9 (chặng A3)" (không
-// khối lỗi đỏ). Lỗi (vd 503 `monitor_unavailable`) → CHỈ hiện lỗi, KHÔNG số cũ: TanStack Query giữ `data` cũ khi tải lại
-// cùng khoá thất bại → luôn kiểm `isError` TRƯỚC khi đọc `data` (F5 P5; KH mục 5).
+// (F5 P1). Route thật M9 A3 (không còn MSW). Backend cũ chưa có route → 404 "Not Found" → "Tổng quan có từ M9 (chặng A3)"
+// (không khối lỗi đỏ). Lỗi (503 `monitor_unavailable`, 422 cửa sổ, 500…) → CHỈ hiện lỗi, KHÔNG số cũ: TanStack Query giữ
+// `data` cũ khi tải lại cùng khoá thất bại → luôn kiểm `isError` TRƯỚC khi đọc `data` (F5 P5; KH mục 5).
 
 type Tab = "business" | "ai";
 const TABS: readonly { key: Tab; label: string }[] = [
@@ -68,8 +68,6 @@ export function DashboardPage() {
             >
               {active.isFetching ? "Đang tải…" : "Tải lại"}
             </button>
-            <span className="grow" />
-            <MockNote text="số liệu thật có từ M9 (chặng A3)" />
           </div>
           {tab === "business" ? <BusinessTab query={business} /> : <AiTab query={ai} />}
         </>
@@ -86,7 +84,7 @@ function BusinessTab({ query }: { query: Q<Parameters<typeof BusinessKpis>[0]["d
   return (
     <>
       {query.isError ? (
-        <LoadError error={query.error} what="số liệu" />
+        <LoadError error={query.error} what="số liệu" invalid={WINDOW_INVALID_TEXT} />
       ) : data ? (
         <BusinessKpis data={data} />
       ) : (
@@ -104,7 +102,7 @@ function BusinessTab({ query }: { query: Q<Parameters<typeof BusinessKpis>[0]["d
 }
 
 function AiTab({ query }: { query: Q<Parameters<typeof AiDashboardView>[0]["data"]> }) {
-  if (query.isError) return <LoadError error={query.error} what="số liệu AI" />;
+  if (query.isError) return <LoadError error={query.error} what="số liệu AI" invalid={WINDOW_INVALID_TEXT} />;
   if (query.data === undefined) return <p className="text-ink-2">Đang tải số liệu…</p>;
   return <AiDashboardView data={query.data} />;
 }

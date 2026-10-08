@@ -15,10 +15,22 @@ export const DASHBOARD_MISSING_TITLE = "Tổng quan có từ M9 (chặng A3)";
 export const ALERTS_MISSING_TITLE = "Cảnh báo có từ M9 (chặng A3)";
 export const POLICY_MISSING_TITLE = "Chính sách có từ Phase 7";
 
-/** Chỉ số biết trước khi nào có nguồn (ke-hoach-m9-monitor.md §1.3, §5.1–5.2). */
+/** Chỉ số biết trước khi nào có nguồn (ke-hoach-m9-monitor.md §1.3, §5.2; backend monitor/metrics.py "pending"). */
 const SOURCE_HINT: Record<string, string> = {
-  override_count: "Nguồn có từ Phase 4 (chặng 4d)",
+  multi_intent_first_stop_to_reply_s: "Nguồn có từ Phase 5",
+  multi_intent_messages_per_turn: "Nguồn có từ Phase 5",
 };
+
+/**
+ * Tra bảng theo khoá RIÊNG của bảng (`Object.hasOwn`), không đi qua prototype: khoá do server trả hoặc người gõ (severity,
+ * rule_id, audience, khoá map…) như "__proto__" / "constructor" / "toString" mà tra `X[k]` sẽ ra object/hàm của
+ * Object.prototype → React vỡ màn hoặc hiện "function …". Không có → `fallback`.
+ */
+export function ownEntry<T>(table: Readonly<Record<string, T>>, key: string, fallback: NoInfer<T>): T {
+  return Object.hasOwn(table, key) ? (table[key] as T) : fallback;
+}
+/** Nhãn theo khoá; khoá lạ → hiện nguyên khoá. */
+export const labelOf = (table: Readonly<Record<string, string>>, key: string): string => ownEntry(table, key, key);
 
 const NBSP = " ";
 const decimal = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 });
@@ -30,6 +42,20 @@ export function formatRate(value: number): string {
   const pct = value * 100;
   if (pct !== 0 && Math.abs(pct) < 0.05) return `<${NBSP}0,1${NBSP}%`;
   return `${decimal.format(pct)}${NBSP}%`;
+}
+
+const usd = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 4 });
+
+/** Chi phí USD: tối đa 4 chữ số thập phân; 0 thật → "0"; khác 0 mà làm tròn ra 0 → "< 0,0001". */
+export function formatUsd(value: number): string {
+  if (value !== 0 && Math.abs(value) < 0.00005) return `<${NBSP}0,0001`;
+  return usd.format(value);
+}
+
+/** Độ trễ: làm tròn tới ms; khác 0 mà làm tròn ra 0 → "< 1 ms". */
+export function formatMs(value: number): string {
+  if (value !== 0 && Math.abs(value) < 0.5) return `<${NBSP}1${NBSP}ms`;
+  return `${integer.format(Math.round(value))}${NBSP}ms`;
 }
 
 export function formatNumber(value: number, kind: MetricKind): string {
@@ -44,7 +70,7 @@ export function formatNumber(value: number, kind: MetricKind): string {
  * dạng theo loại (0 thật → "0" / "0 %").
  */
 export function metricText(name: string, value: unknown, unavailable: readonly string[], kind: MetricKind): MetricText {
-  if (unavailable.includes(name)) return { state: "unavailable", text: UNAVAILABLE_TEXT, note: SOURCE_HINT[name] ?? null };
+  if (unavailable.includes(name)) return { state: "unavailable", text: UNAVAILABLE_TEXT, note: ownEntry<string | null>(SOURCE_HINT, name, null) };
   if (value === undefined) return { state: "unavailable", text: UNAVAILABLE_TEXT, note: "Máy chủ không trả chỉ số này" };
   if (value === null) return { state: "empty", text: EMPTY_TEXT, note: EMPTY_NOTE };
   if (typeof value === "number" && Number.isFinite(value)) return { state: "value", text: formatNumber(value, kind), note: null };
@@ -54,19 +80,26 @@ export function metricText(name: string, value: unknown, unavailable: readonly s
 /** `decided_by` (domain/ticket_state.py RiskDecision: "rule" | "llm"); khoá lạ → hiện nguyên. */
 export const DECIDED_BY_LABEL: Record<string, string> = { rule: "Luật cứng", llm: "Lớp AI" };
 
-/** Lý do E1 (ke-hoach-m9-monitor.md §1.4 — 4 lý do của B3/B4) [Suy luận nhãn]; khoá lạ → hiện nguyên. */
+/** Lý do E1 (backend monitor/metrics.py E1_REASONS + "other") [Suy luận nhãn]; khoá lạ → hiện nguyên. */
 export const E1_LABEL: Record<string, string> = {
   out_of_scope: "Ngoài phạm vi hỗ trợ",
   intent_low_confidence: "Chưa chắc ý định",
   multi_intent_not_enabled: "Nhiều ý (chưa bật)",
   intent_not_enabled: "Ý định chưa bật",
+  other: "Lý do khác",
 };
 
-/** Tab AI (§5.2): thứ tự + nhãn + loại. Trường có hình dạng [Suy luận] (map, mảng) hiện theo dữ liệu. */
+/**
+ * Nhóm rủi ro của `escalation_rate_weighted.by_group`. Nhãn KHÔNG ghi con số trọng số — trọng số là của backend
+ * (monitor/metrics.py), frontend không chép (chép là sớm muộn lệch). Khoá lạ → hiện nguyên.
+ */
+export const WEIGHT_GROUP_LABEL: Record<string, string> = { routine: "Thường", approval: "Cần duyệt", sensitive: "Nhạy cảm" };
+
+/** Tab AI (§5.2; backend api/dashboard.py `AiMetrics` — đủ 14 khoá, đúng thứ tự): nhãn + loại. */
 export const AI_METRICS: readonly { name: string; label: string; kind: MetricKind }[] = [
   { name: "tokens_per_ticket", label: "Token mỗi ticket", kind: "number" },
   { name: "cost_per_day", label: "Chi phí theo ngày (USD)", kind: "number" },
-  { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước (ms)", kind: "number" },
+  { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước", kind: "number" },
   { name: "cache_hit_rate", label: "Tỉ lệ trúng cache", kind: "rate" },
   { name: "json_invalid_first_try_rate", label: "JSON lỗi ở lần gọi đầu", kind: "rate" },
   { name: "fallback_rate", label: "Phải dùng model dự phòng", kind: "rate" },
@@ -76,7 +109,14 @@ export const AI_METRICS: readonly { name: string; label: string; kind: MetricKin
   { name: "intent_filter_fallback_rate", label: "B8 phải nới bộ lọc ý định", kind: "rate" },
   { name: "b3_llm_rate", label: "B3 phải xuống LLM", kind: "rate" },
   { name: "intent_model_version", label: "Phiên bản model ý định", kind: "number" },
+  { name: "multi_intent_first_stop_to_reply_s", label: "Nhiều ý: từ lúc dừng đầu tới câu trả lời (giây)", kind: "number" },
+  { name: "multi_intent_messages_per_turn", label: "Nhiều ý: số tin mỗi lượt", kind: "number" },
 ];
+export const AI_NO_DATA_TEXT = "Không có dữ liệu trong khoảng này.";
+export const INTENT_MODEL_MISSING_NOTE = "Chưa ghi nhận phiên bản model";
+export const DAY_OPEN_NOTE = "chưa hết ngày";
+export const E3_TRUNCATED_TEXT = "Chỉ hiện 100 ca mới nhất.";
+export const WINDOW_INVALID_TEXT = "Khoảng thời gian không hợp lệ — kiểm tra ngày giờ của máy rồi tải lại.";
 
 // ---------------------------------------------------------------- cảnh báo
 
@@ -99,18 +139,18 @@ export const ALERT_LABEL: Record<string, string> = {
   finalize_failed: "Ghi kết thúc ticket thất bại",
   execution_failed: "Thực thi thất bại (E7)",
 };
-export const alertLabel = (ruleId: string): string => ALERT_LABEL[ruleId] ?? ruleId;
+export const alertLabel = (ruleId: string): string => labelOf(ALERT_LABEL, ruleId);
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 export const SEVERITY_LABEL: Record<string, string> = { critical: "Nghiêm trọng", warning: "Cần chú ý", info: "Thông tin" };
 /** Chỉ token (tokens.css): critical → danger, warning → cam, info/lạ → xám. */
 export const SEVERITY_DOT: Record<string, string> = { critical: "bg-danger", warning: "bg-fpt-orange", info: "bg-ink-3" };
-export const severityDot = (severity: string): string => SEVERITY_DOT[severity] ?? "bg-ink-3";
-export const severityLabel = (severity: string): string => SEVERITY_LABEL[severity] ?? severity;
+export const severityDot = (severity: string): string => ownEntry(SEVERITY_DOT, severity, "bg-ink-3");
+export const severityLabel = (severity: string): string => labelOf(SEVERITY_LABEL, severity);
 
 /** Q-fe-27: critical → warning → info (lạ xuống cuối), rồi `window_start` giảm dần — ca nghiêm trọng luôn ở trên. */
 export function sortAlerts(items: readonly AlertItem[]): AlertItem[] {
-  const rank = (a: AlertItem) => SEVERITY_RANK[a.severity] ?? 3;
+  const rank = (a: AlertItem) => ownEntry(SEVERITY_RANK, a.severity, 3);
   const at = (a: AlertItem) => {
     const t = Date.parse(a.window_start);
     return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
@@ -118,6 +158,12 @@ export function sortAlerts(items: readonly AlertItem[]): AlertItem[] {
   return [...items].sort((a, b) => rank(a) - rank(b) || at(b) - at(a) || b.alert_id - a.alert_id);
 }
 
+/** `audience` (backend monitor/rules.py) — NHÃN người nhận, không lọc, không phải quyền. Giá trị lạ → hiện nguyên. */
+export const AUDIENCE_LABEL: Record<string, string> = { manager: "Trưởng BP IT", dev: "Dev", ops: "Vận hành" };
+export const audienceLabel = (audience: string): string => labelOf(AUDIENCE_LABEL, audience);
+
+export const ALERTS_TRUNCATED_TEXT = "Chỉ hiện 200 cảnh báo mới nhất — còn cảnh báo cũ hơn chưa hiện.";
+export const ACK_UNREADABLE_TEXT = "Đã gửi xác nhận nhưng không đọc được phản hồi — danh sách đã tải lại.";
 export const ACK_CONFLICT_TEXT = "Cảnh báo này đã được xác nhận trước đó";
 export const ACK_GONE_TEXT = "Cảnh báo không còn";
 export const ACK_DONE_TEXT = "Đã xác nhận cảnh báo";

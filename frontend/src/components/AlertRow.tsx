@@ -1,12 +1,13 @@
 import { useState } from "react";
 import type { AlertItem } from "../api/types.ts";
-import { alertLabel, formatNumber, severityDot, severityLabel } from "../routes/manager/metrics.ts";
+import { alertLabel, audienceLabel, formatNumber, severityDot, severityLabel } from "../routes/manager/metrics.ts";
 import { vnDateTime } from "../routes/manager/range.ts";
 import { FlatTable } from "./ActionView.tsx";
 
 // Một dòng cảnh báo (B4MgrDashboard khối "Cảnh báo đang mở"; màn Cảnh báo). Nhãn tiếng Việt theo `rule_id` (lạ → mã
 // nguyên); chấm màu theo severity (chỉ token); `subject` là id → hiện nguyên; `detail` (JSONB) → bảng khoá–giá trị CHỮ
-// THÔ (không Markdown/HTML). Nút "Đã xem" chỉ khi còn mở và người xem được ack.
+// THÔ (không Markdown/HTML). `audience` → nhãn người nhận (chỉ bản đầy đủ; nhãn, không lọc). Nút "Đã xem" chỉ khi còn mở
+// và người xem được ack.
 export function AlertRow({
   alert,
   onAck,
@@ -48,6 +49,11 @@ export function AlertRow({
             {vnDateTime(alert.window_start)}
             {typeof alert.value === "number" ? ` · giá trị ${formatNumber(alert.value, "number")}` : ""}
           </span>
+          {!compact && alert.audience.length > 0 ? (
+            <span data-testid="alert-audience" className="text-label font-normal text-ink-2">
+              Người nhận: {alert.audience.map(audienceLabel).join(", ")}
+            </span>
+          ) : null}
           {alert.status === "acked" ? (
             <span data-testid="alert-acked" className="text-label font-normal text-ink-2">
               Đã xem{alert.acked_by ? ` · ${alert.acked_by}` : ""}

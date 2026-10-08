@@ -1,5 +1,6 @@
 import type { Issue } from "../../api/errors.ts";
 import { FlatTable } from "../../components/ActionView.tsx";
+import { labelOf, ownEntry } from "./metrics.ts";
 import type { PolicyCheck } from "./policyText.ts";
 
 // Tab "Bảng" của B4MgrPolicy — CHỈ XEM (sửa ở tab JSON; PLAN-fe mục 7 #21), dựng từ JSON ĐANG có trong ô sửa. Giá trị
@@ -23,7 +24,8 @@ const CONSTANT_LABEL: Record<string, string> = {
   CONFIRM_TIMEOUT_HOURS: "Chờ người dùng xác nhận (giờ)",
 };
 
-const RULE_TYPE: Record<string, { label: string; tone: string }> = {
+type RuleType = { label: string; tone: string };
+const RULE_TYPE: Record<string, RuleType> = {
   allow: { label: "Cho phép", tone: "text-ink-2" },
   approval_required: { label: "Cần duyệt", tone: "font-semibold text-orange-ink" },
   deny: { label: "Cấm", tone: "font-semibold text-danger" },
@@ -78,7 +80,7 @@ export function PolicyTable({ check, issues }: { check: PolicyCheck; issues: rea
                   className={`flex items-center justify-between gap-4 border-t border-line px-5 py-3 first:border-t-0 ${flags.length ? "bg-danger-bg" : ""}`}
                 >
                   <span className="flex min-w-0 flex-col">
-                    <span>{CONSTANT_LABEL[key] ?? key}</span>
+                    <span>{labelOf(CONSTANT_LABEL, key)}</span>
                     <span className="font-mono text-label font-normal text-ink-2">{key}</span>
                     <Flag messages={flags} />
                   </span>
@@ -102,7 +104,8 @@ export function PolicyTable({ check, issues }: { check: PolicyCheck; issues: rea
           <ul className="overflow-hidden rounded-group border border-line">
             {rules.map((rule, index) => {
               const r = isRecord(rule) ? rule : {};
-              const type = RULE_TYPE[String(r.type)];
+              // Khoá riêng (Object.hasOwn): type "constructor" / "__proto__" phải ra "Không hợp lệ", không phải hàm của prototype.
+              const type = ownEntry<RuleType | undefined>(RULE_TYPE, String(r.type), undefined);
               const flags = issuesAt(issues, "rules", index);
               return (
                 <li

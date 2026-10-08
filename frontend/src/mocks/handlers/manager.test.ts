@@ -1,18 +1,16 @@
-// t65 — handler giả F5 (chỉ nạp ở dev:mock): dashboard, alerts, policy. Chạy handler trực tiếp bằng `getResponse` của
-// MSW — không service worker, không mạng. Lời gọi backend THẬT của handler (`/api/auth/me` qua bypass) đi vào fetch giả.
+// t65 — handler giả F5 (chỉ nạp ở dev:mock): policy (Phase 7). Dashboard + alerts đã là route thật M9 A3 — handler giả và
+// phần t65 của chúng đã xoá (N-A3). Chạy handler trực tiếp bằng `getResponse` của MSW — không service worker, không mạng.
+// Lời gọi backend THẬT của handler (`/api/auth/me` qua bypass) đi vào fetch giả.
 import { getResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AlertItem, BusinessDashboard, Me, PolicyVersionItem, PolicyView } from "../../api/types.ts";
-import { ALERT_ACKED_ELSEWHERE_ID, ALERT_GONE_ID } from "../fixtures/alerts.ts";
+import type { Me, PolicyVersionItem, PolicyView } from "../../api/types.ts";
 import { POLICY_JSON } from "../fixtures/policy.ts";
-import { alertHandlers, resetAlerts } from "./alerts.ts";
-import { dashboardHandlers, MONITOR_COOKIE, monitorDown, parseWindow } from "./dashboard.ts";
+import { handlers } from "./index.ts";
 import { policyHandlers, policyIssues, resetPolicy } from "./policy.ts";
 
 const BASE = ["ticket:create", "ticket:read:own"];
 const MGR: Me = { user_id: "it_mgr01", role: "manager", permissions: [...BASE, "policy:read", "policy:edit", "dashboard:read:all", "alert:read"] };
 const READER: Me = { ...MGR, permissions: MGR.permissions.filter((p) => p !== "policy:edit") };
-const L1: Me = { user_id: "l1_01", role: "l1", permissions: [...BASE, "approval:decide", "dashboard:read:own"] };
 
 const url = (path: string) => new URL(path, location.href).toString();
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -35,87 +33,8 @@ const send = (method: string, path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-const W7 = "from=2026-09-25T00:00:00.000%2B07:00&to=2026-10-01T12:00:00.000%2B07:00";
-
 beforeEach(() => {
-  resetAlerts();
   resetPolicy();
-});
-
-
-describe("t65: handler dashboard (M9 §4.5, §5.1) — quyền, from/to, 503 bằng cookie, fixture đủ 3 ca P3", () => {
-  it("L1 (chỉ dashboard:read:own) → 403; thiếu múi giờ / from ≥ to / > 90 ngày → 422", async () => {
-    stubMe(L1);
-    expect((await getResponse(dashboardHandlers, get(`/api/dashboard/business?${W7}`)))?.status).toBe(403);
-    expect(parseWindow(url("/api/dashboard/business?from=2026-09-25T00:00:00&to=2026-10-01T12:00:00%2B07:00"))).toStrictEqual({ fields: ["query.from"] });
-    expect(parseWindow(url("/api/dashboard/business?from=2026-10-01T00:00:00%2B07:00&to=2026-09-01T00:00:00%2B07:00"))).toStrictEqual({ fields: ["query.from", "query.to"] });
-    expect(parseWindow(url("/api/dashboard/business?from=2026-01-01T00:00:00%2B07:00&to=2026-10-01T00:00:00%2B07:00"))).toStrictEqual({ fields: ["query.from", "query.to"] });
-    stubMe(MGR);
-    expect((await getResponse(dashboardHandlers, get("/api/dashboard/business?from=2026-09-25&to=2026-10-01")))?.status).toBe(422);
-  });
-
-  it("7 ngày: override_count ∈ unavailable (null); escalation_rate_weighted null ∉ unavailable; approval_expired_count = 0 thật; E3 tkt-demo-", async () => {
-    stubMe(MGR);
-    const res = (await getResponse(dashboardHandlers, get(`/api/dashboard/business?${W7}`)))!;
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as BusinessDashboard;
-    expect(body.from).toBe("2026-09-25T00:00:00.000+07:00");
-    expect(body.unavailable).toStrictEqual(["override_count"]);
-    expect(body.override_count).toBeNull();
-    expect(body.escalation_rate_weighted).toBeNull();
-    expect(body.approval_expired_count).toBe(0);
-    expect(body.e3_cases?.every((c) => c.ticket_id.startsWith("tkt-demo-"))).toBe(true);
-  });
-
-  it(`khoá ${MONITOR_COOKIE}=unavailable → monitorDown (503 monitor_unavailable); giá trị khác / không có → không`, async () => {
-    // Trình duyệt: MSW đọc `cookies` từ document.cookie (request same-origin). Trong Node (vitest) MSW không có kho cookie
-    // và happy-dom bỏ header Cookie → kiểm hàm quyết định ở đây; đường đọc cookie thật do verify F5-4 kiểm.
-    expect(monitorDown({ [MONITOR_COOKIE]: "unavailable" })).toBe(true);
-    expect(monitorDown({ [MONITOR_COOKIE]: "1" })).toBe(false);
-    expect(monitorDown({})).toBe(false);
-    stubMe(MGR);
-    expect((await getResponse(dashboardHandlers, get(`/api/dashboard/ai?${W7}`)))?.status).toBe(200);
-  });
-});
-
-describe("t65: handler alerts (§4.5) — ack 200 → 409 lần 2 (acked_by giữ người đầu); id đặc biệt 409 / 404", () => {
-  const ack = (id: number) => getResponse(alertHandlers, send("POST", `/api/alerts/${id}/ack`));
-  const openIds = async () => ((await (await getResponse(alertHandlers, get("/api/alerts?status=open")))!.json()) as AlertItem[]).map((a) => a.alert_id);
-
-  it("không có alert:read → 403; status lạ → 422; trả theo alert_id tăng dần (giao diện tự sắp mức độ)", async () => {
-    stubMe(L1);
-    expect((await getResponse(alertHandlers, get("/api/alerts?status=open")))?.status).toBe(403);
-    stubMe(MGR);
-    expect((await getResponse(alertHandlers, get("/api/alerts?status=x")))?.status).toBe(422);
-    const ids = await openIds();
-    expect(ids).toStrictEqual([...ids].sort((a, b) => a - b));
-    expect(ids).toContain(ALERT_ACKED_ELSEWHERE_ID);
-    expect(ids).toContain(ALERT_GONE_ID);
-  });
-
-  it("ack 1001 → 200 acked_by = người gọi; lần 2 → 409, acked_by không đổi; id lạ → 404", async () => {
-    stubMe(MGR);
-    const first = (await ack(1001))!;
-    expect(first.status).toBe(200);
-    const acked = (await first.json()) as AlertItem;
-    expect([acked.status, acked.acked_by]).toStrictEqual(["acked", "it_mgr01"]);
-    stubMe({ ...MGR, user_id: "it_mgr02" });
-    const again = (await ack(1001))!;
-    expect(again.status).toBe(409);
-    const all = (await (await getResponse(alertHandlers, get("/api/alerts")))!.json()) as AlertItem[];
-    expect(all.find((a) => a.alert_id === 1001)?.acked_by).toBe("it_mgr01");
-    expect((await ack(123456))?.status).toBe(404);
-    expect(await openIds()).not.toContain(1001);
-  });
-
-  it("ALERT_ACKED_ELSEWHERE_ID → 409 rồi danh sách mở không còn; ALERT_GONE_ID → 404 rồi biến mất hẳn", async () => {
-    stubMe(MGR);
-    expect((await ack(ALERT_ACKED_ELSEWHERE_ID))?.status).toBe(409);
-    expect(await openIds()).not.toContain(ALERT_ACKED_ELSEWHERE_ID);
-    expect((await ack(ALERT_GONE_ID))?.status).toBe(404);
-    const all = (await (await getResponse(alertHandlers, get("/api/alerts")))!.json()) as AlertItem[];
-    expect(all.some((a) => a.alert_id === ALERT_GONE_ID)).toBe(false);
-  });
 });
 
 describe("t65: handler policy (Q-fe-26) — 4 phiên bản; PUT 409/422/201; quay lui = TẠO bản mới, bản cũ nguyên", () => {
@@ -180,5 +99,30 @@ describe("t65: handler policy (Q-fe-26) — 4 phiên bản; PUT 409/422/201; qua
     const view = await current();
     expect((view.content as { constants: { SLA_MINUTES: number } }).constants.SLA_MINUTES).toBe(20); // nội dung bản 2
     expect((await getResponse(policyHandlers, send("POST", "/api/policy/versions/999/restore")))?.status).toBe(404);
+  });
+});
+
+describe("t118 (P11): route thật M9 A3 không còn handler giả — dashboard, alerts đi thẳng backend ở dev:mock", () => {
+  it("getResponse(handlers) của 5 lời gọi Tổng quan / Cảnh báo → undefined (không handler nào khớp)", async () => {
+    stubMe(MGR);
+    const window = "from=2026-09-25T00:00:00.000%2B07:00&to=2026-10-01T12:00:00.000%2B07:00";
+    for (const request of [
+      get("/api/alerts?status=open"),
+      get("/api/alerts"),
+      send("POST", "/api/alerts/1/ack"),
+      get(`/api/dashboard/business?${window}`),
+      get(`/api/dashboard/ai?${window}`),
+    ]) {
+      expect(await getResponse(handlers, request)).toBeUndefined();
+    }
+  });
+
+  it("4 file mock đã xoá không còn; không file nguồn nào (ngoài test) import chúng", () => {
+    const sources = import.meta.glob<string>(["/src/**/*.{ts,tsx}", "!/src/**/*.test.{ts,tsx}"], { query: "?raw", import: "default", eager: true });
+    const files = Object.keys(sources);
+    expect(files.length).toBeGreaterThan(50); // glob thật sự đọc được mã nguồn
+    expect(files.filter((f) => /\/mocks\/(handlers|fixtures)\/(alerts|dashboard)\.ts$/.test(f))).toStrictEqual([]);
+    const importsDeleted = /from\s+["'][^"']*\/(handlers|fixtures)\/(alerts|dashboard)(\.ts)?["']/;
+    expect(files.filter((f) => importsDeleted.test(sources[f]!))).toStrictEqual([]);
   });
 });

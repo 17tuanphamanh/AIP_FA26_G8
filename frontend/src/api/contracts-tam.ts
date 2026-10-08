@@ -1,4 +1,5 @@
-// Kiểu VIẾT TAY (KH mục 3.2): route chưa có ở backend, hoặc route trả `dict` nên openapi không sinh được kiểu.
+// Kiểu VIẾT TAY (KH mục 3.2): route chưa có ở backend, route trả `dict` nên openapi không sinh được kiểu, hoặc route mới
+// có mà kiểu sinh chưa thành nguồn (M9 A3 — soi hai chiều ở schema.check.ts).
 // Mỗi kiểu 2 dòng: `Nguồn:` (file code hoặc mục spec) và `Xoá khi:`. Route CHƯA CÓ = phỏng đoán theo spec,
 // chấp nhận sửa khi backend ra. Component KHÔNG import file này — chỉ import `./types.ts`.
 
@@ -195,6 +196,79 @@ export type OverrideRecorded = {
   notices: string[];
 };
 
+// ---------------------------------------------------------------- Route ĐÃ CÓ — M9 A3 (viết tay tới khi gen:api)
+
+// ĐÃ CHỐT theo M9 A3 3f15afb: backend/app/api/alerts.py (`AlertView` đúng 12 khoá, `AlertList`), api/dashboard.py
+// (`BusinessAll` + `BusinessAllMetrics`, `AiDashboard` + `AiMetrics`: model `extra="forbid"`, mọi khoá luôn có mặt, giá trị
+// `T | None`), monitor/queries/{business,ai}.py (WeightedRate, RuleCount, E1Split, E3Case, E3Cases, DayCost). Thời gian là
+// chuỗi ISO 8601 có múi giờ (`from`/`to` trả ở UTC). Kiểu viết tay ở đây được soi hai chiều với openapi ở
+// src/api/schema.check.ts (N-A3 PHẦN 2). Nhánh `scope: "own"` (L1) chưa dùng — để chặng màn L1.
+// Xoá khi: gen:api thành nguồn kiểu cho 4 route này (dùng thẳng `components["schemas"]`).
+export type AlertAudience = "manager" | "dev" | "ops";
+export type AlertItem = {
+  alert_id: number;
+  rule_id: string;
+  subject: string;
+  severity: string;
+  value: number | null;
+  window_start: string;
+  status: "open" | "acked";
+  detail: Record<string, unknown>;
+  audience: AlertAudience[];
+  acked_by: string | null;
+  acked_at: string | null;
+  created_at: string;
+};
+/** `truncated`: còn cảnh báo ngoài `limit` (mặc định 200) — không phân trang, giao diện hiện băng. */
+export type AlertList = { items: AlertItem[]; truncated: boolean };
+
+/** `by_group` khoá "routine" | "approval" | "sensitive" (nhóm 0 lá → null); `sensitivity` khoá "60/30/10", "80/15/5". */
+export type WeightedRate = {
+  raw: number | null;
+  weighted: number | null;
+  by_group: Record<string, number | null>;
+  sensitivity: Record<string, number | null>;
+};
+export type RuleCount = { rule_id: string; count: number };
+/** `counts`: 4 lý do E1 + "other"; `shares` = count / total (total 0 → null). */
+export type E1Split = { total: number; counts: Record<string, number>; shares: Record<string, number | null> };
+export type E3Case = { ticket_id: string; intent: string | null; created_at: string; kb_version: string | null; request_excerpt: string };
+/** `truncated`: còn ca ngoài trần 100 ca mới nhất. */
+export type E3Cases = { items: E3Case[]; truncated: boolean };
+export type BusinessMetrics = {
+  automation_rate: number | null;
+  escalation_rate_raw: number | null;
+  escalation_rate_weighted: WeightedRate | null;
+  deflection_rate: number | null;
+  approval_expired_count: number | null;
+  decided_by_distribution: Record<string, number> | null;
+  top_matched_rules: RuleCount[] | null;
+  override_count: number | null;
+  e1_split: E1Split | null;
+  e3_cases: E3Cases | null;
+};
+export type BusinessDashboard = { from: string; to: string; unavailable: string[]; scope: "all"; metrics: BusinessMetrics };
+
+/** `day_start` = 00:00 giờ VN của ngày, viết ở UTC (vd "2026-09-29T17:00:00Z" là ngày 30/09). */
+export type DayCost = { day_start: string; cost_usd: number };
+export type AiMetrics = {
+  tokens_per_ticket: number | null;
+  cost_per_day: DayCost[] | null;
+  latency_p95_by_step: Record<string, number> | null;
+  cache_hit_rate: number | null;
+  json_invalid_first_try_rate: number | null;
+  fallback_rate: number | null;
+  e2_llm_count: number | null;
+  e9_count: number | null;
+  b2_llm_rate: number | null;
+  intent_filter_fallback_rate: number | null;
+  b3_llm_rate: number | null;
+  intent_model_version: string | null;
+  multi_intent_first_stop_to_reply_s: number | null;
+  multi_intent_messages_per_turn: number | null;
+};
+export type AiDashboard = { from: string; to: string; unavailable: string[]; metrics: AiMetrics };
+
 // ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
 
 // Yêu cầu nhiều ý (D-31) — Phase 5, T20. Toàn bộ khối này là [Đề xuất F6 — chốt ở T20]; hình dạng đầy đủ + chỗ
@@ -237,67 +311,6 @@ export type DigestConversationItem = { role: "assistant"; kind: "digest"; round:
 // Xoá khi: T20 merge (gen:api).
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
-
-// Nguồn: ke-hoach-m9-monitor.md §5.1 (tên trường giữ nguyên, không tự đặt) + §4.3 (`unavailable`: chỉ số chưa có nguồn →
-// null + tên ở mảng này; tỉ lệ mẫu số 0 → null). `from`/`to`: cửa sổ đã dùng (§4.5). Mọi chỉ số cho phép null.
-// Hình dạng `decided_by_distribution` (khoá `rule` | `llm` — domain/ticket_state.py RiskDecision), `e1_split` (khoá =
-// lý do E1, §1.4) là [Suy luận]. Route CHƯA CÓ — M9 A3.
-// Xoá khi: M9 A3 merge (gen:api) — xoá cùng mocks/handlers/dashboard.ts, mocks/fixtures/dashboard.ts.
-export type E3Case = { ticket_id: string; intent: string; created_at: string; kb_version: string; request_excerpt: string };
-export type BusinessDashboard = {
-  from: string;
-  to: string;
-  automation_rate: number | null;
-  escalation_rate_raw: number | null;
-  escalation_rate_weighted: number | null;
-  deflection_rate: number | null;
-  approval_expired_count: number | null;
-  decided_by_distribution: Record<string, number> | null;
-  top_matched_rules: { rule_id: string; count: number }[] | null;
-  override_count: number | null;
-  e1_split: Record<string, number> | null;
-  e3_cases: E3Case[] | null;
-  unavailable: string[];
-};
-
-// Nguồn: ke-hoach-m9-monitor.md §5.2. Tên trường giữ nguyên; HÌNH DẠNG từng trường là [Suy luận] (§5.2 chỉ có công thức)
-// → giao diện hiện theo DỮ LIỆU nhận được (số, chuỗi, map, mảng), không đoán cấu trúc sâu. Route CHƯA CÓ — M9 A3.
-// Xoá khi: M9 A3 merge (gen:api) — xoá cùng mocks/handlers/dashboard.ts.
-export type AiDashboard = {
-  from: string;
-  to: string;
-  tokens_per_ticket: number | null;
-  cost_per_day: unknown;
-  latency_p95_by_step: unknown;
-  cache_hit_rate: number | null;
-  json_invalid_first_try_rate: number | null;
-  fallback_rate: number | null;
-  e2_llm_count: number | null;
-  e9_count: number | null;
-  b2_llm_rate: number | null;
-  intent_filter_fallback_rate: number | null;
-  b3_llm_rate: number | null;
-  intent_model_version: string | null;
-  unavailable: string[];
-};
-
-// Nguồn: backend/app/db/models.py `Alert` (bảng `alerts`) + ke-hoach-m9-monitor.md §4.5 (ack: 200 trả cảnh báo đã ack |
-// 403 | 404 | 409 đã ack — không đổi `acked_by`). Danh sách là mảng [Suy luận]; "Tất cả" = không tham số status
-// (Q-fe-27). Route CHƯA CÓ — M9 A3. Xoá khi: A3 merge (gen:api) — xoá cùng mocks/handlers/alerts.ts.
-export type AlertSeverity = "critical" | "warning" | "info";
-export type AlertItem = {
-  alert_id: number;
-  rule_id: string;
-  subject: string;
-  severity: string;
-  value: number | null;
-  window_start: string;
-  status: "open" | "acked";
-  detail: Record<string, unknown>;
-  acked_by: string | null;
-  acked_at: string | null;
-  created_at: string;
-};
 
 // Nguồn: [Đề xuất F5 — chốt lại khi làm Phase 7] (Q-fe-26; PLAN-fe mục 7 #20, nợ API #11). P10 §3.3 chỉ có TÊN route;
 // tên trường bám cột bảng `policy_versions` (backend/app/db/models.py `PolicyVersion`: `version` String(16),
