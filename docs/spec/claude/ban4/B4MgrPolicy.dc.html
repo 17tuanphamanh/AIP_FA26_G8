@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — chính sách</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}a{color:#0055A4}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <dc-import name="B4Sidebar" role="manager" active="policy" hint-size="264px,900px"></dc-import>
+  <main style="flex-grow: 1; padding: 40px 48px; display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+    <div style="display: flex; align-items: flex-end; gap: 12px;">
+      <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+        <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em;">Chính sách</h1>
+        <p style="margin: 0; font-size: 17px; line-height: 26px; color: #6E6E73;">Bản nháp 14 · đang áp dụng bản 13</p>
+      </div>
+      <div role="tablist" style="display: flex; padding: 2px; border-radius: 9px; background: #EEEEF0;">
+        <button type="button" role="tab" aria-selected="{{visSel}}" onClick="{{toVis}}" style="{{tabVis}}">Bảng</button>
+        <button type="button" role="tab" aria-selected="{{jsonSel}}" onClick="{{toJson}}" style="{{tabJson}}">JSON</button>
+      </div>
+      <button type="button" style="height: 44px; padding: 0 20px; border-radius: 22px; border: none; background: #F2F2F7; color: #0055A4; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Mô phỏng</button>
+      <button type="button" disabled style="height: 44px; padding: 0 20px; border-radius: 22px; border: none; background: #E5E5EA; color: #6E6E73; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Lưu · còn 2 lỗi</button>
+    </div>
+
+    <div style="flex-grow: 1; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; min-height: 0;">
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <sc-if value="{{isVis}}" hint-placeholder-val="{{true}}">
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <section style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Hằng số</span>
+              <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; padding: 12px 20px; font-size: 17px; line-height: 22px;"><span>Hạn duyệt</span><span style="color: #6E6E73;">30 phút</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 20px; border-top: 1px solid #E5E5EA; font-size: 17px; line-height: 22px;"><span>Hỏi lại tối đa</span><span style="color: #6E6E73;">3 lần</span></div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-top: 1px solid #E5E5EA; background: #FFF7F7; font-size: 17px; line-height: 22px;"><span style="display: flex; flex-direction: column;"><span>Ngưỡng dưới</span><span style="font-size: 13px; line-height: 18px; color: #C62828;">Phải nhỏ hơn ngưỡng trên</span></span><span style="color: #C62828; font-weight: 600;">0,85</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 12px 20px; border-top: 1px solid #E5E5EA; font-size: 17px; line-height: 22px;"><span>Ngưỡng trên</span><span style="color: #6E6E73;">0,75</span></div>
+              </div>
+            </section>
+            <section style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Luật · 7 / 20 đang hiện</span>
+              <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+                <sc-for list="{{rules}}" as="r" hint-placeholder-count="7">
+                  <div style="display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 16px; align-items: center; height: 44px; padding: 0 20px; border-top: {{r.sep}}; background: {{r.bg}};">
+                    <span style="font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 13px; line-height: 18px; color: #6E6E73;">{{r.id}}</span>
+                    <span style="font-size: 15px; line-height: 20px;">{{r.desc}}</span>
+                    <span style="font-size: 15px; line-height: 20px; color: {{r.tc}}; font-weight: {{r.tw}};">{{r.type}}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+        <sc-if value="{{isJson}}" hint-placeholder-val="{{false}}">
+          <section style="border: 1px solid #E5E5EA; border-radius: 16px; padding: 8px 0; font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 13px; line-height: 26px;">
+            <sc-for list="{{lines}}" as="l" hint-placeholder-count="14">
+              <div style="display: flex; background: {{l.bg}};"><span style="width: 48px; flex-shrink: 0; text-align: right; padding-right: 16px; box-sizing: border-box; color: {{l.num}};">{{l.n}}</span><span style="white-space: pre; flex-grow: 1;">{{l.text}}</span><sc-if value="{{l.err}}" hint-placeholder-val="{{false}}"><span style="margin-right: 16px; color: #C62828; font: 600 13px/26px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">{{l.msg}}</span></sc-if></div>
+            </sc-for>
+          </section>
+        </sc-if>
+      </div>
+
+      <aside style="display: flex; flex-direction: column; gap: 20px;">
+        <section style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Cần sửa trước khi lưu</span>
+          <div role="alert" style="border-radius: 16px; background: #FCEBEB; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 20px; color: #7A1C1C;">
+            <span>Dòng 5 · ngưỡng dưới 0,85 phải nhỏ hơn 0,75</span>
+            <span>Dòng 11 · R18 có loại “aproval_required” không hợp lệ</span>
+          </div>
+        </section>
+        <section style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Lịch sử phiên bản</span>
+          <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+            <sc-for list="{{versions}}" as="v" hint-placeholder-count="4">
+              <div style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: {{v.sep}};"><span style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-size: 15px; line-height: 20px; font-weight: {{v.w}};">{{v.name}}</span><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">{{v.meta}}</span></span><sc-if value="{{v.canRestore}}" hint-placeholder-val="{{false}}"><a href="#" style="font-size: 13px; line-height: 18px; text-decoration: none;">Quay lui</a></sc-if></div>
+            </sc-for>
+          </div>
+          <span style="font-size: 13px; line-height: 18px; color: #6E6E73; padding: 0 4px;">Lưu hoặc quay lui cần nhập lại mã 6 số nếu đã quá 10 phút.</span>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 'vis' }; }
+  renderVals() {
+    const isVis = this.state.tab === 'vis';
+    const on = 'height: 32px; padding: 0 16px; border-radius: 7px; border: none; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.1); color: #1D1D1F; font: 600 15px/20px -apple-system, BlinkMacSystemFont, \'Be Vietnam Pro\', sans-serif;';
+    const off = 'height: 32px; padding: 0 16px; border-radius: 7px; border: none; background: transparent; color: #1D1D1F; font: 400 15px/20px -apple-system, BlinkMacSystemFont, \'Be Vietnam Pro\', sans-serif;';
+    const label = { allow: 'Cho phép', approval_required: 'Cần duyệt', deny: 'Cấm' };
+    const color = { allow: '#6E6E73', approval_required: '#B4500B', deny: '#C62828' };
+    const raw = [
+      ['R07', 'approval_required', 'Quyền mới vào dữ liệu nhạy cảm'], ['R12', 'deny', 'Cấp quyền cho tài khoản bị vô hiệu hoá vì bảo mật'],
+      ['R16', 'allow', 'Kiểm tra trạng thái VPN của chính mình'], ['R17', 'approval_required', 'VPN — thiết bị chưa đăng ký'],
+      ['R18', 'approval_required', 'VPN — ngoài giờ hành chính', true], ['R19', 'approval_required', 'VPN — nhân viên chưa qua thử việc'],
+      ['R20', 'allow', 'VPN — cấp lại cho thiết bị đã đăng ký của mình']
+    ];
+    const src = ['{', '  "version": 14,', '  "constants": {', '    "SLA_MINUTES": 30,', '    "THRESHOLD_LOW": 0.85,', '    "THRESHOLD_HIGH": 0.75,', '    "RETRIEVAL_THRESHOLD": 0.6', '  },', '  "rules": [', '    {"id": "R17", "type": "approval_required", "intent": "vpn", …},', '    {"id": "R18", "type": "aproval_required", "intent": "vpn", …},', '    …', '  ]', '}'];
+    const errs = { 5: 'phải nhỏ hơn THRESHOLD_HIGH', 11: 'type không hợp lệ' };
+    return {
+      isVis, isJson: !isVis, visSel: isVis ? 'true' : 'false', jsonSel: isVis ? 'false' : 'true', tabVis: isVis ? on : off, tabJson: isVis ? off : on,
+      toVis: () => this.setState({ tab: 'vis' }), toJson: () => this.setState({ tab: 'json' }),
+      rules: raw.map(([id, type, desc, err], i) => ({ id, desc, type: err ? 'Không hợp lệ' : label[type], tc: err ? '#C62828' : color[type], tw: err || type !== 'allow' ? '600' : '400', bg: err ? '#FFF7F7' : 'transparent', sep: i ? '1px solid #E5E5EA' : 'none' })),
+      lines: src.map((text, i) => { const n = i + 1, e = errs[n]; return { n, text, err: !!e, msg: e || '', bg: e ? '#FFF7F7' : 'transparent', num: e ? '#C62828' : '#AEAEB2' }; }),
+      versions: [
+        ['Bản nháp 14', 'Đang sửa', false, '600'], ['Bản 13 · đang áp dụng', 'Trần Minh Quân · 27/09', false, '600'],
+        ['Bản 12', 'Trần Minh Quân · 25/09', true, '400'], ['Bản 11', 'Trần Minh Quân · 24/09', true, '400']
+      ].map(([name, meta, canRestore, w], i) => ({ name, meta, canRestore, w, sep: i ? '1px solid #E5E5EA' : 'none' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

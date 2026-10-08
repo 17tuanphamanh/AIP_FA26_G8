@@ -4785,6 +4785,11 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 
+**Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
+5 PASS / 0 FAIL khi đè `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=`; stack đã trả về đúng `.env`). `.env` VẪN giữ
+`FAKE_SCENARIO`/`FAKE_NODE_DELAY` (cấu hình gate2) → chạy gate3/gate4 tay phải đè hai biến này bằng biến shell (như `scripts/verify.sh`)
+hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + worker bằng biến shell `LLM_BACKEND=real`, KHÔNG sửa `.env`.
+
 ---
 
 ## Việc treo
@@ -4938,7 +4943,7 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
     05:15:31 → 05:22:16 UTC. Đã loại: `monitor_rules_minute` in 1 lần là đúng thiết kế; worker máy Tuấn Anh lúc rảnh 0,75%. Cần: `docker
     stats` ngay sau gate4 + log worker + đếm turns chưa kết thúc.~~ — **ĐÓNG 06/10/2026 — sai số phép đo** (không phải lỗi: số % cao là
     một mẫu `docker stats` trùng probe healthcheck; tiến trình worker ≈ 0,13% trên cả hai máy). Spec `build/phase4-thiet-ke-chi-tiet.md`
-    v1.8 mục 7.9; quy ước đo ở `backend/tests/stack/README.md` mục "Đo CPU của worker".
+    v1.8 mục 7.9; quy ước đo ở `backend/tests/stack/README.md` mục "Đo CPU của worker". Commit đóng `632e05a`, CI xanh run `37419528676`.
     - **Phiên chẩn đoán 06/10/2026 (máy Tuấn Anh, macOS + colima, VM 7,7 GiB) — KHÔNG tái hiện.** HEAD `3549daa`; mã trong image
       (`backend/app`, `config`, `pyproject.toml`, `uv.lock`, `backend/Dockerfile`) trùng `1455b55` (máy Duy Anh) — 2 commit sau chỉ đổi tài
       liệu; image `servicedesk-backend:dev` dựng 03/10 21:33 +07 (sau `1455b55`). Stack không ai dùng, cắm sạc. Chỉ đo + đọc mã, không sửa mã.
