@@ -25,10 +25,12 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.alerts import router as alerts_router
 from app.api.approvals import router as approvals_router
 from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
+from app.api.dashboard import router as dashboard_router
 from app.api.desk import Desk, retry_after
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
@@ -262,6 +264,9 @@ def create_app(
     install_request_errors(app)  # 422 không trả `input`, guard lỗi → 503 (phase3 mục 8.3)
     # ---- M9 ---- thiếu MONITOR_DATABASE_URL → 503, không rơi về app_rw (kế hoạch M9 mục 4.1)
     app.add_exception_handler(MonitorUnavailable, _monitor_unavailable)
+    app.state.m9_clock = clock  # A3: mốc mặc định cửa sổ dashboard + `acked_at` (Clock của app, test tiêm FakeClock)
+    app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
+    app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
     app.include_router(auth_router)

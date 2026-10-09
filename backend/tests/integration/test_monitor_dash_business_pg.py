@@ -88,7 +88,7 @@ async def test_two_intent_sentence_counts_two(rw: AsyncEngine, mon: AsyncEngine)
     assert await q(mon, b.top_matched_rules, 1) == [RuleCount("R01", 2)]
     e1 = await q(mon, b.e1_split, 1)
     assert (e1.total, e1.counts["out_of_scope"]) == (2, 2)
-    assert len(await q(mon, b.e3_cases, 1)) == 2
+    assert len((await q(mon, b.e3_cases, 1)).items) == 2
     weighted = await q(mon, b.escalation_rate_weighted, 1)  # 6 lá, đều escalate: approval 2/2, routine 4/4
     assert weighted.by_group == {"routine": 1.0, "approval": 1.0, "sensitive": None}
 
@@ -315,12 +315,30 @@ async def test_e3_cases_fields(rw: AsyncEngine, mon: AsyncEngine) -> None:
             conn, 1, created_at=t0 + timedelta(hours=2), parent_exit_code="E3", parent_final_state="S_ESCALATED",
             exit_code="E3", final_state="S_ESCALATED",
         )  # fmt: skip
-    cases = await q(mon, b.e3_cases, 11)
+    got = await q(mon, b.e3_cases, 11)
+    assert got.truncated is False
+    cases = got.items
     assert [c.ticket_id for c in cases] == [child, no_kb, a]  # mới nhất trước, không có cha
     last = cases[2]
     assert (last.intent, last.kb_version, last.request_excerpt) == ("vpn", "b" * 64, "x" * 200)
     assert last.created_at == t0
     assert cases[1].kb_version is None  # không có kb_version → null, vẫn giữ ca
+
+
+@pytest.mark.asyncio
+async def test_e3_cases_truncated_101(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """A3 (review PR #22, Q-M9-A3-4): ngày 18 có 101 lá E3 → 100 mục, `truncated=true`, mất đúng ca CŨ nhất; ngày 19 có
+    đúng 100 → 100 mục, `false` (biên)."""
+    t18, t19 = win(18)[0], win(19)[0]
+    async with rw.begin() as conn:
+        day18 = [await escalated(conn, t18 + i * MIN, "E3") for i in range(101)]
+        for i in range(100):
+            await escalated(conn, t19 + i * MIN, "E3")
+    got = await q(mon, b.e3_cases, 18)
+    assert (len(got.items), got.truncated) == (100, True)
+    assert [c.ticket_id for c in got.items] == day18[:0:-1]  # mới nhất trước, ca đầu tiên (cũ nhất) bị cắt
+    got = await q(mon, b.e3_cases, 19)
+    assert (len(got.items), got.truncated) == (100, False)
 
 
 @pytest.mark.asyncio
@@ -340,7 +358,7 @@ async def test_zero_denominator_none(rw: AsyncEngine, mon: AsyncEngine) -> None:
         assert e1.total == 0 and set(e1.shares.values()) == {None}
         assert await q(mon, b.approval_expired_count, day) == 0
         assert await q(mon, b.override_count, day) == 0  # đếm → 0, không None
-        assert await q(mon, b.e3_cases, day) == []
+        assert await q(mon, b.e3_cases, day) == b.E3Cases(items=(), truncated=False)
     assert await q(mon, b.decided_by_distribution, 12) == {}
     assert await q(mon, b.top_matched_rules, 12) == []
     empty = await q(mon, b.business_metrics, 12)

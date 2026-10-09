@@ -105,22 +105,47 @@ def _docstrings(tree: ast.Module) -> set[int]:
     }
 
 
-AI_SRC = REPO / "backend" / "app" / "monitor" / "queries" / "ai.py"
+QUERIES_DIR = REPO / "backend" / "app" / "monitor" / "queries"
+# File bắt buộc phải được nhận là "có SQL" — quét glob mà sót file (hoặc nhận nhầm là không có SQL) thì đỏ, không xanh giả.
+D30_REQUIRED = {"ai.py", "alerts.py", "business.py", "rules_data.py"}
+_SQL_WORD = re.compile(r"\b(from|join|where)\b", re.IGNORECASE)
+_SELECT = re.compile(r"\bselect\b", re.IGNORECASE)
+_TICKETS = re.compile(r"\b(from|join)\s+tickets\b", re.IGNORECASE)
 
 
-@pytest.mark.parametrize(("src", "min_selects"), [(BUSINESS_SRC, 10), (AI_SRC, 8)], ids=["business", "ai"])
-def test_dash_sql_never_reads_tickets_table(src: Path, min_selects: int) -> None:
-    """D-30 ghim tĩnh: SQL trong business.py, ai.py không đọc bảng `tickets` (phải qua `v_leaf`). Quét mọi hằng chuỗi
-    của AST (gồm phần chữ của f-string; chú thích `#` không có trong AST), bỏ docstring; không phân biệt hoa thường."""
-    tree = ast.parse(src.read_text(encoding="utf-8"))
+def _d30_scan(source: str) -> tuple[bool, list[str]]:
+    """(file có SQL không, danh sách vi phạm D-30). Quét mọi hằng chuỗi của AST (gồm phần chữ của f-string; chú thích `#`
+    không có trong AST), bỏ docstring; không phân biệt hoa thường. "Có SQL" = có hằng chứa `from`/`join`/`where`. Vi phạm:
+    `tickets` (đọc thẳng bảng `tickets` thay vì qua `v_leaf`), `no_select` (có SQL mà không có SELECT nào)."""
+    tree = ast.parse(source)
     skip = _docstrings(tree)
     sql = [
         n.value for n in ast.walk(tree)
         if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip
     ]  # fmt: skip
-    assert sum("select" in s.lower() for s in sql) >= min_selects  # quét rỗng thì đỏ, không xanh giả
-    hits = [s for s in sql if re.search(r"\b(from|join)\s+tickets\b", s, re.IGNORECASE)]
-    assert hits == []
+    has_sql = any(_SQL_WORD.search(s) for s in sql)
+    violations = [f"tickets: {s.strip()[:80]}" for s in sql if _TICKETS.search(s)]
+    if has_sql and not any(_SELECT.search(s) for s in sql):
+        violations.append("no_select")
+    return has_sql, violations
+
+
+def test_d30_glob_scans_queries() -> None:
+    """D-30 ghim tĩnh cho MỌI file `monitor/queries/*.py` (P13, duyệt plan A3): SQL không đọc thẳng `tickets`; file có SQL
+    phải có ≥ 1 SELECT."""
+    files = sorted(QUERIES_DIR.glob("*.py"))
+    scanned = {f.name: _d30_scan(f.read_text(encoding="utf-8")) for f in files}
+    with_sql = {name for name, (has_sql, _) in scanned.items() if has_sql}
+    assert with_sql >= D30_REQUIRED
+    assert {name: v for name, (_, v) in scanned.items() if v} == {}
+
+
+def test_d30_scanner_catches_violations() -> None:
+    """Canh chính bộ quét: đọc thẳng `tickets` và "có SQL mà không SELECT" phải bị bắt; docstring không tính là SQL."""
+    assert _d30_scan('Q = "SELECT t.ticket_id FROM v_leaf t"') == (True, [])
+    assert _d30_scan('Q = f"SELECT 1 FROM tickets t WHERE {x}"') == (True, ["tickets: SELECT 1 FROM tickets t WHERE"])
+    assert _d30_scan('Q = "UPDATE alerts SET status = 1 WHERE alert_id = 2"') == (True, ["no_select"])
+    assert _d30_scan('"""Đọc FROM tickets."""\nX = 1') == (False, [])
 
 
 def test_ratio_functions_read_v_leaf() -> None:
