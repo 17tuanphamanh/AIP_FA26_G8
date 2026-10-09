@@ -3,7 +3,7 @@
 
 Mỗi test một ngày (hoặc cửa sổ) riêng của năm 2030; số kỳ vọng tính tay trong chú thích. Tháng 1: các test chỉ số theo ngày
 (+ R26-3, R26-5, R26-6); tháng 2: `cost_per_day`; tháng 3: cửa sổ theo lá hai chiều (R26-4: 2, 4, 6, 8; R26b-1: 10, 12, 14;
-R26b-2: 16); tháng 4: cost theo thời điểm lời gọi (R26-1, R26-2) và `DayCost` UTC. Bảng ngày chi tiết ở khối R26 dưới.
+R26b-2: 16, 18); tháng 4: cost theo thời điểm lời gọi (R26-1, R26-2) và `DayCost` UTC. Bảng ngày chi tiết ở khối R26 dưới.
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -368,8 +368,8 @@ async def test_window_bounds(rw: AsyncEngine, mon: AsyncEngine) -> None:
 
 
 # ---- R26 (review PR #26, Tuấn Anh): cửa sổ theo lá, cost theo thời điểm lời gọi, nối khóa → hàm ----
-# Ngày dùng riêng: tháng 1: 2 (R26-3), 19 (R26-5), 22, 23 (R26-6); tháng 3: 2, 4, 6, 8 (R26-4), 10, 12, 14 (R26b-1), 16
-# (R26b-2); tháng 4: 10–11 (R26-2), 20–21 (R26-1), 25–26 (thêm). Mọi mốc `tzinfo=UTC`; giờ VN = UTC + 7.
+# Ngày dùng riêng: tháng 1: 2 (R26-3), 19 (R26-5), 22, 23 (R26-6); tháng 3: 2, 4, 6, 8 (R26-4), 10, 12, 14 (R26b-1), 16,
+# 18 (R26b-2); tháng 4: 10–11 (R26-2), 20–21 (R26-1), 25–26 (thêm). Mọi mốc `tzinfo=UTC`; giờ VN = UTC + 7.
 
 
 @pytest.mark.asyncio
@@ -560,6 +560,22 @@ async def test_intent_model_version_leaf_window(rw: AsyncEngine, mon: AsyncEngin
         await audit(conn, to_leaf, "B3", "intent_classified", inside, layer="llm", model_version="v-out")
         await audit(conn, before_leaf, "B3", "intent_classified", inside, layer="llm", model_version="v-out")
     assert await q(mon, ai.intent_model_version, 16, 3) == "v-in"
+
+
+@pytest.mark.asyncio
+async def test_intent_model_version_leaf_window_newest_out(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """R26b-2, chiều còn lại (review PR #30, 8): dòng của lá NGOÀI cửa sổ MỚI HƠN dòng của lá trong cửa sổ. Cửa sổ ngày 18/03
+    UTC. Lá đúng `frm`: B3 `"v-in-18"` lúc `frm + 1h`. Lá đúng `to` và lá trước `frm` 1 giờ: B3 `"v-out-18"` lúc `frm + 2h`
+    (mới hơn) → vẫn "v-in-18". Bỏ cận dưới hoặc cận trên của cửa sổ lá thì `ORDER BY … LIMIT 1` ra "v-out-18" (hoặc dòng của
+    test khác). Tên riêng ngày 18 — không trùng "v-in" của ngày 16."""
+    frm, to = win(18, 3)
+    t_frm, t_to, t_before, inside, _ = _leaf_times(frm, to)
+    async with rw.begin() as conn:
+        in_leaf, to_leaf, before_leaf = await done(conn, t_frm), await done(conn, t_to), await done(conn, t_before)
+        await audit(conn, in_leaf, "B3", "intent_classified", inside, layer="llm", model_version="v-in-18")
+        for leaf in (to_leaf, before_leaf):
+            await audit(conn, leaf, "B3", "intent_classified", inside + H, layer="llm", model_version="v-out-18")
+    assert await q(mon, ai.intent_model_version, 18, 3) == "v-in-18"
 
 
 @pytest.mark.asyncio
