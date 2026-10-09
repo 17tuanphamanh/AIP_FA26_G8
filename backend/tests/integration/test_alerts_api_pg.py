@@ -6,6 +6,9 @@
   dòng còn `open`, log `alert_acked` (qua `JsonFormatter` thật).
 - HTTP (app thật, auth giả): manager thấy cảnh báo luật `("dev",)`; ack 200 → 409 → 404 đúng chữ; ack không cần DSN monitor;
   thời gian ISO 8601 có múi giờ; `detail` không phải object → `{}`; bảng rỗng; GET chạy trong snapshot `app_monitor`.
+- Review PR #30 lượt 1: route nối đủ `status`/`audience`/`limit`/`truncated`, mặc định 200; lọc `status` trước `LIMIT`;
+  `acked_by` chỉ từ token; dòng lạ (`severity`, `detail.audience`) không làm 500; GET trả đúng giá trị cột; thử lại vẫn `open`
+  → log ERROR `alert_ack_still_open`.
 
 Database riêng cho module; mỗi test xoá sạch `alerts` trước (bảng không có cửa sổ thời gian để tách test). Dữ liệu dựng bằng
 `AlertWriter.raise_once` (thẻ A3), `created_at` theo `FakeClock`. `acked_by` có FK `users` → `ensure_user` trước.
@@ -214,6 +217,23 @@ async def test_status_and_audience_parenthesized(rw: AsyncEngine, mon: AsyncEngi
     await writer.ack(stray, "mgr-a")
     await _raise(writer, rw, "r_mgr", "m")
     assert _rules(await _list(mon, status="open", audience="manager")) == ["r_mgr"]
+
+
+async def test_status_filter_before_limit(rw: AsyncEngine, mon: AsyncEngine, clock: FakeClock) -> None:
+    """Review PR #30 (2): lọc `status` bằng SQL TRƯỚC `LIMIT`. 1 dòng `open` CŨ + 4 dòng `acked` mới hơn: `status=open&limit=2`
+    vẫn ra dòng `open`, `truncated=false` (lọc bằng Python sau `LIMIT` ra 0 mục, `truncated=true`); `status=acked&limit=2` → 2
+    dòng mới nhất, `truncated=true`."""
+    writer = AlertWriter(rw, clock)
+    opened = await _raise(writer, rw, "r_mgr", "old-open")
+    acked = []
+    for i in range(4):
+        clock.set(T0 + timedelta(hours=1, minutes=i))
+        acked.append(await _raise(writer, rw, "r_mgr", f"acked-{i}"))
+        assert (await writer.ack(acked[-1], "mgr-a")).outcome == "acked"
+    page = await _list(mon, status="open", limit=2)
+    assert ([r.alert_id for r in page.rows], page.truncated) == ([opened], False)
+    page = await _list(mon, status="acked", limit=2)
+    assert ([r.alert_id for r in page.rows], page.truncated) == ([acked[3], acked[2]], True)
 
 
 # ---- ghi: AlertWriter.ack ---------------------------------------------------------------------------------------------
@@ -514,3 +534,101 @@ async def test_routes_run_in_snapshot_alerts(env: Http, monkeypatch: pytest.Monk
     monkeypatch.setattr("app.api.alerts.list_alerts", spy)
     assert await _alerts(env, await env.token(MANAGER)) == (200, {"items": [], "truncated": False})
     assert seen == [("repeatable read", "on", "app_monitor")]
+
+
+# ---- HTTP: review PR #30 (Tuấn Anh, lượt 1) — code đã đúng, các test dưới giữ cho khỏi lùi --------------------------------
+
+
+async def test_route_params_status_audience_limit(rw: AsyncEngine, env: Http, clock: FakeClock) -> None:
+    """Review PR #30 (1): route nối đúng `status` / `audience` / `limit` / `truncated` xuống truy vấn (REGISTRY thật). a = luật 15
+    `finalize_failed` ("dev") mở; b = `execution_failed` ("manager", "ops") đã ack; c = luật lạ (→ "manager") mở; c mới nhất.
+    Route bỏ một tham số, hoặc luôn `truncated=false`, thì một trong các lời gọi dưới ra sai."""
+    writer = AlertWriter(rw, clock)
+    a = await _raise(writer, rw, "finalize_failed", "p-dev")
+    clock.advance(timedelta(minutes=1))
+    b = await _raise(writer, rw, "execution_failed", "p-acked")
+    assert (await writer.ack(b, "mgr-a")).outcome == "acked"
+    clock.advance(timedelta(minutes=1))
+    c = await _raise(writer, rw, "zzz_luat_la", "p-x")
+    token = await env.token(MANAGER)
+
+    async def ids(**params: Any) -> tuple[list[int], bool]:
+        status, body = await _alerts(env, token, **params)
+        assert status == 200, body
+        return [i["alert_id"] for i in body["items"]], body["truncated"]
+
+    assert await ids() == ([c, b, a], False)
+    assert await ids(status="open") == ([c, a], False)
+    assert await ids(status="acked") == ([b], False)
+    assert await ids(audience="dev") == ([a], False)
+    assert await ids(audience="ops") == ([b], False)
+    assert await ids(limit=1) == ([c], True)
+
+
+async def test_route_default_limit_200(rw: AsyncEngine, env: Http) -> None:
+    """Review PR #30 (1): không tham số → `limit` mặc định 200 (chốt Q-M9-A3-2): 201 dòng → 200 mục, mới nhất trước,
+    `truncated=true` (dòng cũ nhất bị cắt)."""
+    async with rw.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO alerts (rule_id, subject, window_start, severity, detail, created_at) "
+            "SELECT 'r_mgr', 'bulk-' || g, :w, 'warning', CAST('{}' AS jsonb), "
+            "CAST(:w AS timestamptz) + g * interval '1 minute' FROM generate_series(1, 201) AS g"
+        ), {"w": T0})  # fmt: skip
+    status, body = await _alerts(env, await env.token(MANAGER))
+    assert status == 200, body
+    assert (len(body["items"]), body["truncated"]) == (200, True)
+    subjects = [i["subject"] for i in body["items"]]
+    assert (subjects[0], subjects[-1]) == ("bulk-201", "bulk-2")
+
+
+async def test_ack_ignores_acked_by_input(rw: AsyncEngine, env: Http, clock: FakeClock) -> None:
+    """Review PR #30 (3): `acked_by` = người trong token, không nhận từ query hay body. `mgr-a` / `mgr-b` là user có thật trong
+    `users` — lấy nhầm từ input thì vẫn ghi được (không vấp FK), nên test thấy được."""
+    writer = AlertWriter(rw, clock)
+    by_query = await _raise(writer, rw, "r_mgr", "by-query")
+    by_body = await _raise(writer, rw, "r_mgr", "by-body")
+    headers = _bearer(await env.token(MANAGER))
+    sent = (
+        (by_query, await env.client.post(f"{LIST}/{by_query}/ack", params={"acked_by": "mgr-a"}, headers=headers)),
+        (by_body, await env.client.post(f"{LIST}/{by_body}/ack", json={"acked_by": "mgr-b"}, headers=headers)),
+    )
+    for alert_id, r in sent:
+        assert (r.status_code, r.json()["acked_by"]) == (200, "it_mgr01"), r.text
+        assert (await _row(rw, alert_id))[:2] == ("acked", "it_mgr01")
+
+
+async def test_odd_row_severity_and_detail_audience(rw: AsyncEngine, env: Http) -> None:
+    """Review PR #30 (4): một dòng lạ không làm 500 cả danh sách — `severity` ngoài info/warning/critical (cột không có CHECK)
+    → 200, trả nguyên giá trị. `detail.audience` có trong dòng nhưng nhãn vẫn lấy từ `REGISTRY` (luật 15 → `["dev"]`);
+    `detail` giữ nguyên."""
+    async with rw.begin() as conn:
+        for subject, rule_id, severity, detail in (
+            ("odd", "finalize_failed", "zzz-la", '{"audience": ["ops"]}'),
+            ("ok", "r_mgr", "warning", "{}"),
+        ):
+            await conn.execute(text(
+                "INSERT INTO alerts (rule_id, subject, window_start, severity, detail, created_at) "
+                "VALUES (:r, :s, :w, :sev, CAST(:d AS jsonb), :w)"
+            ), {"r": rule_id, "s": subject, "w": T0, "sev": severity, "d": detail})  # fmt: skip
+    status, body = await _alerts(env, await env.token(MANAGER))
+    assert status == 200, body
+    by_subject = {i["subject"]: i for i in body["items"]}
+    assert set(by_subject) == {"odd", "ok"}
+    odd = by_subject["odd"]
+    assert (odd["severity"], odd["audience"], odd["detail"]) == ("zzz-la", ["dev"], {"audience": ["ops"]})
+
+
+async def test_list_returns_column_values(rw: AsyncEngine, env: Http, clock: FakeClock) -> None:
+    """Review PR #30 (5): GET trả ĐÚNG giá trị từng cột. `window_start` = T0 khác `created_at` = T0 + 30 phút; sau ack
+    (T0 + 45 phút, `mgr-a`) có `acked_by`, `acked_at`."""
+    writer = AlertWriter(rw, clock)
+    clock.set(T0 + timedelta(minutes=30))
+    alert_id = await _raise(writer, rw, "r_mgr", "cols")
+    clock.set(T0 + timedelta(minutes=45))
+    assert (await writer.ack(alert_id, "mgr-a")).outcome == "acked"
+    status, body = await _alerts(env, await env.token(MANAGER))
+    assert status == 200, body
+    [item] = body["items"]
+    assert (item["alert_id"], item["status"], item["acked_by"]) == (alert_id, "acked", "mgr-a")
+    times = [datetime.fromisoformat(item[k]) for k in ("window_start", "created_at", "acked_at")]
+    assert times == [T0, T0 + timedelta(minutes=30), T0 + timedelta(minutes=45)]

@@ -3,7 +3,8 @@
 - 401 không token; 403 cho L1, L2, nhân viên (chỉ manager có `alert:read`) + `permission_denied`; L1 ack id không tồn tại vẫn
   403 (không lộ id có hay không). Marker `("alert:read", None, False)` cho cả hai route.
 - 422 thân `{"error": "invalid_request", "fields": [...]}`: `status` lạ / rỗng, `audience` lạ, `limit` ngoài 1–200, id ack
-  không phải số / ≤ 0 / quá BIGINT.
+  không phải số / ≤ 0 / quá BIGINT; `status=` / `audience=` / `limit=` rỗng (ghi chú FE). Tham số sai mà không token / sai
+  quyền → 401 / 403, không 422 (review PR #30).
 - GET hợp lệ mà thiếu DSN monitor → 503 `monitor_unavailable`.
 - Thuần: `audience_of` (luật lạ → `("manager",)`), `AlertView` đúng 12 khoá, `detail` không phải object → `{}`.
 - `REGISTRY` khi API import đã đủ mọi luật worker chạy (subprocess — tránh `REGISTRY` đã đầy do test khác import trước).
@@ -124,6 +125,28 @@ def test_ack_bad_id_422(env: AuthEnv) -> None:
     for alert_id in ("abc", "0", str(2**63)):
         r = env.client.post(f"/api/alerts/{alert_id}/ack", headers=env.bearer(token))
         assert (r.status_code, r.json()) == (422, _invalid("path.alert_id")), alert_id
+
+
+@pytest.mark.parametrize("param", ["status", "audience", "limit"])
+def test_empty_params_422(env: AuthEnv, param: str) -> None:
+    """Ghi chú FE: tham số rỗng → 422, không phải "không lọc" / mặc định — muốn vậy thì KHÔNG gửi tham số. (Không có DSN
+    monitor: qua được kiểm tham số thì ra 503, nên 422 ở đây đúng là do tham số rỗng.)"""
+    assert _manager_get(env, **{param: ""}) == (422, _invalid(f"query.{param}"))
+
+
+def test_order_401_403_before_422(env: AuthEnv) -> None:
+    """Review PR #30 (nhỏ): thứ tự 401 → 403 → 422 trên cả hai route alerts — tham số sai không được trả 422 trước khi kiểm
+    token / quyền. L1 ack id không phải số vẫn 403."""
+    bad_get: dict[str, str | int] = {"status": "closed", "limit": 0}
+    bad_ack = ACK.format(alert_id="abc")
+    for headers, expected in (
+        ({}, (401, {"detail": "unauthorized"})),
+        (env.bearer(env.token("long.nh")), (403, {"detail": "forbidden"})),
+    ):
+        for r in (env.client.get(LIST, params=bad_get, headers=headers), env.client.post(bad_ack, headers=headers)):
+            assert (r.status_code, r.json()) == expected, r.request.url
+    r = env.client.post(bad_ack, headers=env.bearer(env.token("ha.lt")))
+    assert (r.status_code, r.json()) == (403, {"detail": "forbidden"})
 
 
 def test_get_valid_503_monitor_unavailable(env: AuthEnv) -> None:
