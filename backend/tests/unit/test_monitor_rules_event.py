@@ -22,7 +22,7 @@ from app.domain.alerts import (
     bruteforce_alert,
     bruteforce_subject,
 )
-from app.monitor import evaluator, rules
+from app.monitor import drift, evaluator, rules
 from app.monitor.queries import rules_data
 from app.monitor.rules import (
     LOOKBACK,
@@ -544,7 +544,7 @@ def _message_ok(node: ast.expr) -> bool:
     return False
 
 
-@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 15)])
+@pytest.mark.parametrize(("module", "min_async"), [(rules, 0), (evaluator, 0), (rules_data, 15), (drift, 0)])
 def test_error_messages_carry_no_data(module: Any, min_async: int) -> None:
     """`evaluate` ghi `log.exception` (cả traceback) khi luật/loader lỗi — message chỉ được mang tên luật/hằng.
     GĐ2 (Q-M9-B1-17): thêm `queries/rules_data.py`; quét cả `async def` (loader là async — chỉ quét `def` thì loader
