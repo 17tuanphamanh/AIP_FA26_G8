@@ -7,6 +7,7 @@
 - Quyền business: nhân viên, L2 → 403 + `permission_denied`. AI: L1 → 403.
 - Model `metrics` tường minh: tập trường = hằng chỉ số, mọi trường bắt buộc và nhận `None` (Q-M9-A3-3).
 - OpenAPI: thân lỗi thật (422 = `InvalidRequestBody`, không phải `HTTPValidationError`), GET có 503, POST ack có 404/409.
+- `from=` / `to=` rỗng → 422 (ghi chú FE).
 
 Không có `MONITOR_DATABASE_URL` (autouse) → mọi request qua được kiểm tham số đều dừng ở 503: phân biệt "422" với "đã qua".
 `auth_env` dùng FakeClock `EPOCH` (2099-09-26 08:00 UTC) làm "now".
@@ -179,6 +180,15 @@ def test_window_year_9999_422(env: AuthEnv, route: str) -> None:
 def test_window_naive_422(env: AuthEnv, route: str) -> None:
     status, body = _get(env, route, env.manager_token(), **{"from": "2099-09-20T00:00:00"})
     assert (status, body) == (422, {"error": "invalid_request", "fields": ["query.from"]})
+
+
+@pytest.mark.parametrize(
+    ("route", "param"), [(r, p) for r in ROUTES for p in ("from", "to")], ids=["business-from", "business-to", "ai-from", "ai-to"]
+)
+def test_empty_window_param_422(env: AuthEnv, route: str, param: str) -> None:
+    """Ghi chú FE: `from=` / `to=` rỗng → 422, không phải cửa sổ mặc định — muốn mặc định thì KHÔNG gửi tham số."""
+    status, body = _get(env, route, env.manager_token(), **{param: ""})
+    assert (status, body) == (422, {"error": "invalid_request", "fields": [f"query.{param}"]})
 
 
 @pytest.mark.parametrize("route", ROUTES)
