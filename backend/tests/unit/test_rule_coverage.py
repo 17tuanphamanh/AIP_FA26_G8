@@ -189,7 +189,11 @@ def test_r4_bang_tong_khong_in_expected_route(tmp_path: Path, capsys: pytest.Cap
     CSV ghi từng kịch bản với cột `id, family, rule_decision, matched_rule_id, all_matched, expected_route`."""
     out_csv = tmp_path / "out.csv"
     rc, out = _run([str(MAU), "--seed", str(SEED), "--csv", str(out_csv)], capsys)
-    assert "expected_route" not in _bang_tong(out)
+    bang = _bang_tong(out)
+    assert "expected_route" not in bang
+    # chốt Q-T22a-6: không giá trị nhãn nào (3 mức [Chốt 8.1] + mọi expected_route của 3 kịch bản mẫu) lọt vào bảng tổng
+    nhan = {"AUTO", "HITL", "ESCALATE_L2"} | {_mau(n)["gold"]["expected_route"] for n in ("T22A-L1", "T22A-R01", "T22A-R12")}
+    assert not [x for x in nhan if x in bang], bang
     assert rc == 0
     with out_csv.open(encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
@@ -205,22 +209,21 @@ def test_r4_bang_tong_khong_in_expected_route(tmp_path: Path, capsys: pytest.Cap
     }  # fmt: skip
 
 
-# ---- Q-T22a-1 (PLAN-T22a mục 9): ca chờ DỪNG 2 — GỠ HẾT ở DỪNG 2 ------------------------------------------------------------
-# `rule_coverage.py` là stub tới DỪNG 2 (P9) và r1/r3/r4 còn cần R01–R15 (P8) → đánh dấu ở MỘT chỗ dưới. strict + raises như
-# `test_policy_rules_all.py`. Không đổi kỳ vọng.
-CHO_DUNG2: frozenset[str] = frozenset({
-    "test_r1_ba_kich_ban_mau_l1_none_r01_allow_r12_deny",
-    "test_r1b_approval_required_khong_bi_dem_vao_none",
-    *(f"test_r2_loi_kich_ban_thoat_1[{i}]" for i in (
-        "r2-fact-sai-kieu", "r2-fact-ngoai-tap-gia-tri", "r2-fact-ngoai-FACT_KEYS", "r2-requester-khong-co-trong-seed",
-    )),
-    "test_r3_fact_lech_seed_canh_bao_thoat_0",
-    "test_r4_bang_tong_khong_in_expected_route",
-})  # fmt: skip
+# ---- r5 — quét đệ quy bỏ thư mục con bắt đầu "_" (PLAN-T22a TQ-9, chốt sau DỪNG 1) -------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="chờ DỪNG 2: rule_coverage (P9) + R01–R15 (P8)"))  # fmt: skip
+def test_r5_thu_muc_con_gach_duoi_bi_bo_chi_dem_file_o_goc(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """r5: `eval/scenarios` sẽ chứa cả D1 (ở gốc) lẫn `_mau/` → truyền thư mục gốc thì CHỈ đếm file ở gốc, bỏ `_mau/`."""
+    mau = tmp_path / "_mau"
+    mau.mkdir()
+    for name in ("T22A-L1", "T22A-R01", "T22A-R12"):
+        _ghi(mau, _mau(name))
+    goc = _mau("T22A-R01")
+    goc.update(id="T22A-GOC", family="GOC")
+    _ghi(tmp_path, goc)
+    rc, out = _run([str(tmp_path), "--seed", str(SEED)], capsys)
+    rows = _rows(out)
+    assert rows.get("GOC") == [1, 1, 0, 0, 0, 0], out
+    assert rows.get(TONG) == [1, 1, 0, 0, 0, 0], out
+    assert not {"L1", "R01", "R12"} & set(rows), out
+    assert rc == 0

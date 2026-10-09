@@ -216,6 +216,11 @@ BANG_4_7 = [
     pytest.param(_ca("G-EXTEND", facts={"target_user_status": "disabled", "target_disable_reason": "security"},
                      decision=DENY, rule_id="R12", khop="R12"), id="e13-R12-extend-deny"),
     pytest.param(_ca("G-EXTEND", params={"duration_days": "30"}), id="e14-R10-duration_days-str-30"),
+    # e15 (chốt Q-T22a-7): duration_days ngoài khoảng 1–365 / bool → coi như THIẾU (P3) → R10 không khớp; bắt M-T22a-10
+    pytest.param(_ca("G-EXTEND", params={"duration_days": 0}), id="e15-R10-duration_days-0"),
+    pytest.param(_ca("G-EXTEND", params={"duration_days": -1}), id="e15-R10-duration_days-am-1"),
+    pytest.param(_ca("G-EXTEND", params={"duration_days": 400}), id="e15-R10-duration_days-400"),
+    pytest.param(_ca("G-EXTEND", params={"duration_days": True}), id="e15-R10-duration_days-True"),
     # ---- f* — software/install_software: R11 (allow), R13, R14, R15 ----
     pytest.param(_ca("G-INSTALL", decision=AUTO, rule_id="R11", khop="R11"), id="f1-R11-khop"),
     pytest.param(_ca("G-INSTALL", facts={"in_catalog": False}, decision=HITL, rule_id="R13", khop="R13"),
@@ -520,28 +525,3 @@ def test_h8_procedure_doc_6_hanh_dong_dung_bang_4_2() -> None:
     got = {(intent, a): root[intent][a].procedure_doc for intent, a in PROCEDURE_DOC_4_2}
     assert got == PROCEDURE_DOC_4_2
 
-
-# ---- Q-T22a-1 (PLAN-T22a mục 9): ca chờ DỪNG 2 — GỠ HẾT ở DỪNG 2 ------------------------------------------------------------
-# DỪNG 1 commit trước khi có R01–R15 (P8) mà hook pre-commit chạy cả unit → ĐÚNG các ca cần luật mới đánh dấu xfail ở MỘT chỗ dưới.
-# strict: ca nào bất ngờ xanh → đỏ; raises: chỉ AssertionError/NotImplementedError (đỏ vì lỗi khác không bị nuốt). Không đổi kỳ vọng.
-CHO_DUNG2: frozenset[str] = frozenset({
-    *(f"test_bang_4_7_luat_a_den_f[{i}]" for i in (
-        "a1-R01-khop", "a7-R01+R04-privilege-admin-R04", "a9-R03-service-true", "a10-R05-status-terminated",
-        "a12-R03+R04+R05-R03-dung-truoc", "b1-R02-khop", "b9-R02+R04-privilege-admin-R04", "c1-R06-khop",
-        "d2-R07-sensitivity-high", "d3-R08-permission_level-full", "d4-R09-same_department-false", "d5-R07+R08+R09-R07",
-        "d6-R12-disabled-security-deny", "d7-R12+R07-chat-nhat-thang-deny", "e1-R10-khop", "e3-R10-dung-90-ngay-lte",
-        "e6-R09-extend-khac-phong", "e13-R12-extend-deny", "f1-R11-khop", "f2-R13-in_catalog-false",
-        "f3-R14-license_paid-true", "f4-R15-requires_local_admin-true", "f5-R11+R14-paid-R11-khong-khop",
-        "f6-R13+R14+R15-R13",
-    )),
-    *(f"test_p8_luat_r01_r15_dung_bang_4_4[R{n:02d}]" for n in range(1, 16)),
-    "test_h1_dung_20_luat_r01_r20_7_12_1",
-    "test_h3_khong_dieu_kien_nao_tham_chieu_action_target",
-})  # fmt: skip
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="chờ DỪNG 2: R01–R15 (P8)"))  # fmt: skip
