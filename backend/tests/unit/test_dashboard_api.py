@@ -6,15 +6,18 @@
   handler, sau quyền. Cửa sổ hợp lệ mà thiếu DSN monitor → 503 (đã qua kiểm tham số, không rơi về `engines.main`).
 - Quyền business: nhân viên, L2 → 403 + `permission_denied`. AI: L1 → 403.
 - Model `metrics` tường minh: tập trường = hằng chỉ số, mọi trường bắt buộc và nhận `None` (Q-M9-A3-3).
-- OpenAPI: thân lỗi thật (422 = `InvalidRequestBody`, không phải `HTTPValidationError`), GET có 503, POST ack có 404/409.
+- OpenAPI: thân lỗi thật (422 = `InvalidRequestBody`, không phải `HTTPValidationError`), GET có 503, POST ack có 404/409;
+  phần OpenAPI của 4 path A3 = fixture `openapi_m9_a3.json` (hợp đồng FE, review PR #30).
 - `from=` / `to=` rỗng → 422 (ghi chú FE).
 
 Không có `MONITOR_DATABASE_URL` (autouse) → mọi request qua được kiểm tham số đều dừng ở 503: phân biệt "422" với "đã qua".
 `auth_env` dùng FakeClock `EPOCH` (2099-09-26 08:00 UTC) làm "now".
 """
 
+import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 from types import UnionType
 from typing import Any, get_args
 
@@ -266,3 +269,47 @@ def test_openapi_error_bodies() -> None:
         assert ref(ack, "post", code).endswith("/ErrorDetail")
     body = spec["components"]["schemas"]["InvalidRequestBody"]
     assert set(body["required"]) == {"error", "fields"}
+
+
+# ---- OpenAPI: hợp đồng FE (review PR #30, 7) --------------------------------------------------------------------------
+
+OPENAPI_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "openapi_m9_a3.json"
+A3_PATHS = (*ROUTES, "/api/alerts", "/api/alerts/{alert_id}/ack")
+_SCHEMA_REF = "#/components/schemas/"
+
+
+def a3_openapi(spec: dict[str, Any]) -> dict[str, Any]:
+    """Phần OpenAPI của 4 path A3 + mọi schema chúng tham chiếu (bao đóng `$ref`, giữ thứ tự của app). Bỏ `openapi`/`info`:
+    đổi version app không phải đổi API.
+
+    Sinh lại fixture (chỉ khi CỐ Ý đổi API — FE code theo file này), từ thư mục `backend/` (env như `conftest.py` gốc):
+        uv run python -c "import json, os, secrets; os.environ.update(APP_ENV_FILE='', APP_ENV='test', \\
+        LLM_BACKEND='scripted', ML_SERVICE_TOKEN=secrets.token_urlsafe(32)); from app.main import create_app; \\
+        from tests.unit.auth_helpers import auth_settings; from tests.unit.test_dashboard_api import OPENAPI_FIXTURE, \\
+        a3_openapi; OPENAPI_FIXTURE.write_text(json.dumps(a3_openapi(create_app(auth_settings(), health_checks={}) \\
+        .openapi()), indent=2, ensure_ascii=False) + '\\n', encoding='utf-8')"
+    """
+    paths = {p: spec["paths"][p] for p in A3_PATHS}
+    schemas: dict[str, Any] = spec["components"]["schemas"]
+    seen: set[str] = set()
+    todo: list[Any] = [paths]
+    while todo:
+        node = todo.pop()
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith(_SCHEMA_REF) and (name := ref.removeprefix(_SCHEMA_REF)) not in seen:
+                seen.add(name)
+                todo.append(schemas[name])
+            todo.extend(node.values())
+        elif isinstance(node, list):
+            todo.extend(node)
+    return {"paths": paths, "components": {"schemas": {k: v for k, v in schemas.items() if k in seen}}}
+
+
+def test_openapi_a3_matches_fixture() -> None:
+    """Hợp đồng 200 + lỗi của 4 path A3 = `fixtures/openapi_m9_a3.json` (khớp `openapi.json` trong mô tả PR #30). Bỏ
+    `response_model` ở route trả `Any`, đổi kiểu trường, đổi mặc định… → đỏ; đổi API thì sửa fixture CÓ CHỦ Ý (lệnh trong
+    `a3_openapi`)."""
+    expected = json.loads(OPENAPI_FIXTURE.read_text(encoding="utf-8"))
+    assert (len(expected["paths"]), len(expected["components"]["schemas"])) == (4, 18)  # fixture rỗng / thiếu thì đỏ
+    assert a3_openapi(create_app(auth_settings(), health_checks={}).openapi()) == expected
