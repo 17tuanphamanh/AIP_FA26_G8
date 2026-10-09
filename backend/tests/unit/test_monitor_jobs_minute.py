@@ -774,7 +774,7 @@ def test_rules_data_only_select() -> None:
     theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 (và 4/6, cùng SQL) qua `v_leaf`, luật 15
     thì không. Luật 5 đọc `spans`, không lọc lá (Q-M9-B2-22: breaker là sự cố hệ thống, không phải đếm ticket).
     Luật 14: tổng toàn bảng `llm_calls` — không cửa sổ, không nối, không `v_leaf` (Q-M9-6, như `spend_total`). Luật 7: gốc
-    `approvals`, không lọc lá (Q-M9-B2-24 đề xuất: luật đếm phiếu, không đếm ticket)."""
+    `approvals`, không lọc lá (Q-M9-B2-24, chốt PR #31: luật đếm phiếu, không đếm ticket)."""
     sql = _sql()
     for name, body in sql.items():
         words = body.lower()

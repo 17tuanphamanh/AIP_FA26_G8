@@ -475,7 +475,7 @@ def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list
     """Luật 12 — tỉ lệ DÒNG audit step B2 do tầng LLM quyết của một ngày VN > 0,30, đúng cách `b2_llm_rate` (A2) đếm:
     `count(*)` dòng B2 có `layer_decided = 'llm'` hoặc event `guard_unavailable` / dòng B2 có `layer_decided` hoặc
     `guard_unavailable`, của lá tạo trong ngày — đếm dòng, không đếm lá phân biệt (một lá nhiều lượt B2 tính nhiều
-    lần). Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data` = `{r: b2_llm_rate(conn,
+    lần). Theo dòng audit: chốt Q-M9-B2-27 (PR #31, một nguồn với A2). `data` = `{r: b2_llm_rate(conn,
     *day_window(r, ctx.tz)) for r in daily_marks(ctx)}` (A2) — mỗi mốc vượt một draft, `window_start = r`
     (Q-M9-B2-15). Tập mốc lệch `daily_marks(ctx)` → `ValueError` (Q-M9-B2-20). Loader GĐ2 trả `Pending` tới Phase 5
     (`is_pending("b2_classifier")`, Q-M9-A2-8): Phase 3–4 chưa có injection-clf nên số ≈ 1,0 — báo mỗi ngày một điều
@@ -487,12 +487,12 @@ def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list
 def b3_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
     """Luật 13 (D-32) — tỉ lệ DÒNG audit điểm log 1 (step B3, B4) do tầng LLM quyết của một ngày VN > 0,30, đúng cách
     `b3_llm_rate` (A2) đếm: `count(*)` dòng có `detail.layer = 'llm'` / dòng có `detail.layer` khác NULL, của lá tạo
-    trong ngày — đếm dòng, không đếm lá phân biệt. Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data`
+    trong ngày — đếm dòng, không đếm lá phân biệt. Theo dòng audit: chốt Q-M9-B2-27 (PR #31, một nguồn với A2). `data`
     như luật 12 với `b3_llm_rate`. Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
     return _degraded("b3_degraded", data, ctx)
 
 
-# ---- luật 7 `reflex_approval` (kế hoạch chung mục 6 luật 7; chốt Q-M9-B2-3, 6, 15 ở #14; Q-M9-B2-21 đề xuất cụm 4b) --
+# ---- luật 7 `reflex_approval` (kế hoạch chung mục 6 luật 7; chốt Q-M9-B2-3, 6, 15 ở #14; Q-M9-B2-21 chốt PR #31) -----
 
 REFLEX_MIN = 3  # ≥ 3 phiếu "< 5 giây" của một người trong một ngày
 REFLEX_SECONDS = 5.0  # view_duration < 5 (đúng 5,0 → không tính)
@@ -506,7 +506,7 @@ type ReflexKind = Literal["fast", "ambiguous", "normal"]
 class ApprovalDecision:
     """Luật 7 — một quyết định trên phiếu (gốc `approvals`, mỗi phần tử một phiếu) + `detail` dòng audit B16 khớp
     (loader GĐ2: LATERAL cùng ticket_id, `approval_result = status`, `created_at ≥ phiếu.created_at` — Q-M9-B2-6).
-    [Đề xuất] Q-M9-B2-23: dòng B16 còn phải có `created_at` TRƯỚC (nghiêm ngặt) `COALESCE(decided_at, created_at)` của
+    Q-M9-B2-23 (chốt PR #31): dòng B16 phải có `created_at` TRƯỚC (nghiêm ngặt) `COALESCE(decided_at, created_at)` của
     phiếu kế tiếp cùng ticket — phiếu thiếu B16 không mượn dòng của phiếu sau (mượn thì có thể xếp "bình thường" = sót).
     Với chặn trên, lệch đồng hồ (phiếu sau còn pending → mốc là `now()` của DB) chỉ làm mất dòng khớp → mơ hồ (báo thừa).
     Hạn chế đã biết của MỐC DƯỚI Q-M9-B2-6 (nêu trong PR): dòng B16 theo đồng hồ app, `approvals.created_at` là `now()`
@@ -564,7 +564,7 @@ def reflex_approval(data: Sequence[ApprovalDecision], ctx: RuleContext) -> list[
 
     Đánh giá 7 mốc ngày (Q-M9-B2-15): mỗi mốc `r` lấy phiếu có `decided_at ∈ [r − 1 ngày, r)` (Q-M9-B2-3),
     `window_start = r` — chạy lại không trùng; worker chết qua vài mốc 02:00 vẫn đánh giá ngày bị lỡ. `data` = phiếu có
-    `decided_at ≥ daily_since(ctx)` (loader GĐ2; chặn trên nối B16 theo phiếu kế tiếp — [Đề xuất] Q-M9-B2-23).
+    `decided_at ≥ daily_since(ctx)` (loader GĐ2; chặn trên nối B16 theo phiếu kế tiếp — Q-M9-B2-23).
 
     subject = người quyết (`decided_by`); nhóm theo subject ĐÃ tính (Q-M9-B2-21: NULL và rỗng gộp vào `user:` — tách
     theo phiếu thì không bao giờ đủ 3). Báo thừa có chủ ý: thiếu B16 / sai kiểu → tính; hai phiếu nối tiếp của một

@@ -260,8 +260,7 @@ def test_degraded_threshold(rule_id: str, fn: DegradedFn, rate: float, n: int) -
 @pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
 def test_degraded_none_no_alert_no_failure(rule_id: str, fn: DegradedFn) -> None:
     """Mẫu số 0 dòng audit trong ngày (vd không có lá) → chỉ số None → 0 draft, KHÔNG ném lỗi (lỗi = luật vào
-    failed_rules mỗi ngày). Tỉ lệ đếm theo dòng audit như `b2_llm_rate`/`b3_llm_rate` (theo dòng hay theo lá phân
-    biệt: chờ chốt Q-M9-B2-27)."""
+    failed_rules mỗi ngày). Tỉ lệ đếm theo dòng audit như `b2_llm_rate`/`b3_llm_rate` (chốt Q-M9-B2-27)."""
     assert fn(at_marks({}), CTX) == []
 
 

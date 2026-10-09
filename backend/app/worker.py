@@ -111,9 +111,10 @@ async def run() -> None:
 # khoá `(rule_id, subject, window_start)` (luật 14 `day_start`, luật 1 `d0`, luật 7/12/13 mốc `r`) → `trùng`.
 # Job phút KHÔNG chạy bù (giữ nguyên B1: lượt đầu sau 60 s, quét lại 24 giờ). Ba job là ba task riêng (`max_instances`
 # tính theo từng job), mỗi lượt một connection monitor → job này chạy lâu không làm job khác lỡ lượt.
-# Hạn chế đã biết (Q-M9-B2-26, chờ anh Tuấn Anh): lượt ngày lỗi cả khối (mất kết nối, hết giờ) khi worker vẫn sống thì
-# không có lượt bù tới 19:00 hôm sau — luật 7/12/13 được đánh giá lại nhờ 7 mốc, luật 1 (chỉ `d0`) mất mốc ngày đó
-# (cửa sổ 7 ngày của mốc sau chồng 6/7); ERROR `monitor_rules_daily lỗi:` theo IncidentLog báo người trực.
+# Hạn chế đã biết (Q-M9-B2-26, chốt PR #31: giữ 19:00 UTC và ghi chú này; thử lại 02:00–06:00 để sau, khi gặp thật):
+# lượt ngày lỗi cả khối (mất kết nối, hết giờ) khi worker vẫn sống thì không có lượt bù tới 19:00 hôm sau — luật
+# 7/12/13 được đánh giá lại nhờ 7 mốc, luật 1 (chỉ `d0`) mất mốc ngày đó (cửa sổ 7 ngày của mốc sau chồng 6/7); ERROR
+# `monitor_rules_daily lỗi:` theo IncidentLog báo người trực.
 # Áp dụng CẢ cho lượt chạy bù lúc khởi động: APScheduler tính lượt kế ngay lúc nộp job, từ `next_run_time` của lượt bù,
 # không xét kết quả (`run()` nuốt lỗi) → lượt bù của job ngày lỗi cả khối (vd worker khởi động khi DB chưa sẵn sàng)
 # thì lượt kế là 19:00 UTC kế tiếp, không thử lại sớm hơn; job giờ thử lại sau 3600 giây. Hệ quả như trên.

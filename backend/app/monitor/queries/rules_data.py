@@ -21,7 +21,7 @@ nhận. Chốt áp ở đây (#13, PR #20):
   Q-M9-B2-5), mốc dưới `spike_since(ctx)` của `rules.py` (168 giờ trước giờ cũ nhất được đánh giá — một nguồn cho mốc).
   Không gộp hai lần đọc E9/E6: mỗi luật một loader, một savepoint — lỗi của luật này không kéo luật kia.
 - Luật 5: `is_pending("tool_spans")` → `Pending`, KHÔNG chạy SQL (span tool chưa ghi DB, Q-M9-4). Khi nguồn ready: đọc
-  `spans` theo hợp đồng dự kiến của Q-M9-4 từ `now − 24 giờ` (Q-M9-B2-12). Không lọc `V_LEAF` (Q-M9-B2-22, đề xuất):
+  `spans` theo hợp đồng dự kiến của Q-M9-4 từ `now − 24 giờ` (Q-M9-B2-12). Không lọc `V_LEAF` (Q-M9-B2-22, chốt PR #31):
   breaker mở là sự cố của hệ thống đích, không phải chỉ số đếm ticket — như luật 15.
 - Luật 14 (job giờ; Q-M9-6, Q-M9-B2-7/16/17): Σ `llm_calls.cost_usd` TOÀN BẢNG, `COALESCE(…, 0)`, không cửa sổ, không
   `V_LEAF`, không tham số bind — cùng cách gateway tính trần (`llm/store.py` `spend_total`; monitor không import `llm`).
@@ -30,13 +30,13 @@ nhận. Chốt áp ở đây (#13, PR #20):
   tính lại (một nguồn sự thật). Chỉ mốc `d0` (Q-M9-B2-15).
 - Luật 12/13: `is_pending("b2_classifier")` / `is_pending("b3_cascade")` → `Pending`, KHÔNG gọi hàm A (Q-M9-B2-1,
   Q-M9-9). Khi ready: `{r: rate(conn, *day_window(r, tz)) for r in daily_marks(ctx)}` — dict dựng từ chính
-  `daily_marks` (Q-M9-B2-15, 20). [Đề xuất] Q-M9-B2-25: lý do Pending của luật 12 `injection_clf_not_enabled` là tên tự
-  đặt (luật 13 `cascade_not_enabled` theo Q-M9-9).
+  `daily_marks` (Q-M9-B2-15, 20). Q-M9-B2-25 (chốt PR #31): lý do Pending của luật 12 `injection_clf_not_enabled`
+  (luật 13 `cascade_not_enabled` theo Q-M9-9).
 - Luật 7 (Q-M9-B2-3, 6, 15): gốc `approvals`, `status ∈ HUMAN_DECISIONS`, `decided_at ≥ daily_since(ctx)`; LATERAL lấy
   dòng B16 đầu tiên cùng `ticket_id`, cột `approval_result = status` (không theo `event` — ca
   `action_plan_changed_since_approval` vẫn khớp), `created_at ≥ phiếu.created_at`. Không có dòng → `b16 = None`;
   `detail` không phải object → `{}`.
-  [Đề xuất] Q-M9-B2-23: thêm chặn trên — dòng B16 phải có `created_at` TRƯỚC `COALESCE(decided_at, created_at)` của
+  Q-M9-B2-23 (chốt PR #31): thêm chặn trên — dòng B16 phải có `created_at` TRƯỚC `COALESCE(decided_at, created_at)` của
   phiếu kế tiếp cùng ticket (so nghiêm ngặt: `decided_at` và `created_at` dòng B16 cùng lấy `clock.now()`, có thể bằng
   nhau). Không có chặn này thì phiếu thiếu B16 mượn dòng của phiếu sau → có thể xếp "bình thường" (sót); có chặn thì ca
   đó thành mơ hồ (báo thừa). Với CHẶN TRÊN, lệch đồng hồ (phiếu sau còn pending → `next_start` là `now()` của DB) chỉ
@@ -46,9 +46,9 @@ nhận. Chốt áp ở đây (#13, PR #20):
   (2) app nhanh hơn DB quá khoảng giữa dòng B16 của phiếu trước và lúc tạo phiếu sau → dòng B16 của phiếu TRƯỚC lọt qua
   mốc dưới của phiếu SAU → phiếu sau nối nhầm → CÓ THỂ SÓT. Hướng (2) hiện không xảy ra: một lá có tối đa một phiếu
   (`domain/states.py`: không đường nào quay lại `S_PENDING_APPROVAL`).
-  [Đề xuất] Q-M9-B2-24: KHÔNG lọc `V_LEAF` — D-30 áp cho luật đếm ticket, luật 7 đếm PHIẾU theo người quyết; ticket cha
-  không có phiếu (states.py), sau này có thì lọc là sót. `is_pending("approval_view")` (nguồn từng pending tới 4c, file
-  chia việc mục 3); [Đề xuất] Q-M9-B2-25: lý do `approval_view_not_recorded` là tên tự đặt.
+  Q-M9-B2-24 (chốt PR #31): KHÔNG lọc `V_LEAF` — D-30 áp cho luật đếm ticket, luật 7 đếm PHIẾU theo người quyết;
+  ticket cha không có phiếu (states.py), sau này có thì lọc là sót. `is_pending("approval_view")` (nguồn từng pending
+  tới 4c, file chia việc mục 3); Q-M9-B2-25 (chốt PR #31): lý do `approval_view_not_recorded`.
 """
 
 from collections.abc import Awaitable, Callable, Mapping

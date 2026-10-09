@@ -3,8 +3,8 @@
 bằng bản giả ghi `(conn, frm, to)` — test chỉ kiểm loader GỌI đúng hàm, đúng cửa sổ, không tự tính lại.
 
 Nguồn: kế hoạch chung M9 mục 6 (luật 1, 7, 12, 13, 14); file chia việc mục 3 (hợp đồng hàm A, `is_pending`), thẻ B2;
-chốt Q-M9-B2-1, 3, 6, 7, 15, 16, 17 ở #14 (comment 5955137864, 5955436721, 5959974287). Đề xuất Q-M9-B2-23, 24, 25 (plan
-cụm 2). Bản Postgres: `tests/integration/test_monitor_rules_daily_pg.py`, `test_monitor_rules_budget_pg.py`.
+chốt Q-M9-B2-1, 3, 6, 7, 15, 16, 17 ở #14 (comment 5955137864, 5955436721, 5959974287); Q-M9-B2-23, 24, 25 ở PR #31.
+Bản Postgres: `tests/integration/test_monitor_rules_daily_pg.py`, `test_monitor_rules_budget_pg.py`.
 
 Mốc tính tay với `NOW = 2026-10-02T19:00Z` (02:00 giờ VN ngày 03/10, VN không đổi giờ): `d0` = 00:00 VN 03/10 =
 `2026-10-02T17:00Z`; `d0 − 7 ngày = 2026-09-25T17:00Z`.
