@@ -4765,6 +4765,41 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
         (truyền id) 0 thiếu, 0 bí mật; mã ≠ 0 in nguyên bảng; danh sách rỗng → FAIL"; quét log `compose logs --since <giờ bắt đầu>` giữ. 7.1
         P5 ghi chú: `--since` chọn ticket theo HOẠT ĐỘNG (có dòng mới) → trên stack dev dùng chung kéo theo ticket node giả gate2/ticket cũ.
 
+## Phase 6 (làm sớm) — chặng 6A: decision_math + calibrator (tầng B) (09/10/2026 — DỪNG xanh: verify G=0, mutation 12/12; chưa gộp) — chưa tính qua cổng 6
+
+Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.6** mục 4. Kế hoạch `PLAN-6A.md` (untracked) — **DUYỆT 09/10/2026**: Q-6A-1 = A
+(nhãn float → ValueError), Q-6A-2 = A (`CostMatrix` đóng băng sâu), bổ sung B1–B5. Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh
+`m5-tuananh`, HEAD `3ff63e1`.
+
+- **Bước 0:** HEAD/nhánh/status đúng; numpy 2.5.3 · scipy 1.18.1 · scikit-learn 1.9.1 · pydantic 2.13.5 (khớp spec); `uv lock --check` đạt;
+  `make lint` xanh (import-linter 10/10, gitleaks 0); unit mốc **4125 passed, 4 skipped** (4 = `tokenizer_real`, worktree không có tokenizer).
+- **Làm:** `backend/app/risk/decision_math.py` (4.2: `CostMatrix`/`DEFAULT_COST` đóng băng sâu + `field_serializer`, `t_low_star`,
+  `route_for`, `expected_cost`, `select_thresholds` — tìm cặp bằng numpy, chi phí cặp thắng tính lại bằng `expected_cost` (B1),
+  `sensitivity`, CP một phía, `ece` (P5/B4), `brier`, `auc`); `backend/app/risk/calibrator.py` (4.3: `LeakageError`, `LabeledSample`,
+  `FitInfo`, `CalibratorParams`, `Calibrator`, Platt/temperature theo P8, sắp mẫu trước fit, `data_sha256`/`version` tất định, lưu/nạp
+  JSON với regex kiểm trước khi ghép đường dẫn); `pyproject.toml` khối mypy P11 (`uv lock --check` vẫn đạt).
+- **Test (viết trước code):** `test_decision_math.py` (dm1–dm12), `test_calibrator.py` (cb1–cb8), `test_risk_no_eval_import.py` (P10 +
+  cấm import động trong `app/risk`). Lượt đỏ với khung: 125 đỏ / 10 xanh (115 `NotImplementedError`, 10 "DID NOT RAISE" — validator chưa
+  viết; 10 xanh = AST + kiểm schema có sẵn trong khung). Sau code + cứng hoá theo soát bảo mật: 142/142 xanh (unit 4267); sau
+  Q-6A-4 (cb9 + cb7 đối chứng): **160/160 xanh**; unit **4285 passed, 4 skipped** (= 4125 + 160).
+- **Số đối chiếu spec 4.5 (đo 09/10, máy Mac arm):** dm9 → (0,09; 1,00), chi phí 0,94565, 0,03 s; bộ H `sensitivity` → cả 3 tỉ lệ
+  (0,09; 0,60), 1,3; CP 0/60 = 0,0487029133, 1/20 = 0,2161061642, 2/60 = 0,1012358949; cb2 a = 0,486581, b = 0,011491, T = 2,055188, ECE
+  0,109665 → 0,011005 / 0,012080; cb3 tham chiếu a = 0,510537, b = 0,277071, chênh fit < 2e-8; bản có phạt lệch a 0,0153 — khớp spec.
+- **Mutation** `scripts/mutation/mutate_6a.py`: **12/12 đỏ đúng dự đoán** (M-6A-11 bỏ so digest khi nạp, M-6A-12 bỏ chặn a ≤ 0 khi
+  fit — thêm theo Q-6A-4), md5 + `git diff --stat` khớp sau khôi phục.
+- **security-reviewer** (diff 6A): 6/6 bất biến PASS; đã sửa theo đề xuất: chụp `samples` một lần, `type(version) is str`, lỗi nạp
+  file không mang `ValidationError` gốc (chỉ loc + loại), cấm import động trong `app/risk`, `--only` rỗng → mã 2, thêm ca test.
+- **Chốt sau MẪU B (Tuấn Anh 09/10):** **Q-6A-3 = B** — không hàm bọc (`LabeledSample.y` nhị phân ≠ gold 3 lớp; đổi hợp đồng #32);
+  docstring `select_thresholds`/`sensitivity` ghi người gọi (T27) tự `require_calibration_split`. **Q-6A-4 = A** — validator
+  `CalibratorParams`: platt a > 0, T ∈ T_BOUNDS (đóng), eps = EPS; `load_calibrator` tính lại đuôi băm `version`; `fit_platt` từ chối
+  a ≤ 0, `fit_temperature` từ chối T cách biên < 1e-3 (dữ liệu nghịch n = 200: a = −0,538, T = 20,0). security-reviewer vòng 2: 0 FAIL,
+  3 NGHI thấp — đuôi băm 8 hex chỉ chống sửa nhầm, không phải chữ ký (đã ghi ở docstring); `model_construct`/`model_copy` bỏ qua
+  validator (app không dùng); a ≈ 0⁺ vẫn qua (đề xuất cổng độ phân biệt ở T27).
+- **Chờ:** `make verify G=0` (Tuấn Anh); commit cục bộ khi được bảo; Dương soát dm3–dm8 + chữ ký API (issue #32).
+- Spec v0.7 mục 4.10
+- `test_calibrator.py:334` thêm `# gitleaks:allow` (chuỗi version sai cố ý cho cb7, có `/etc/passwd` → `gitleaks protect --staged`
+  báo nhầm `generic-api-key`; tiền lệ `test_auth_username_hash.py:86`).
+
 ## Phase 5 (làm sớm) — chặng T22a: đủ 20 luật (tầng A) (09/10/2026 — DỪNG 1 `6ab716e`, DỪNG 2 chưa commit) — chưa tính qua cổng 5
 
 Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.1f** mục 4 (+ 0, 1, 2); `decisions.md` §1.1, D-34, D-41, D-43. Kế hoạch:
