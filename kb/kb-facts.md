@@ -26,7 +26,7 @@ facts:
 
   - id: vpn_ikev2_ports
     applies_to: [vpn]
-    regex: '(?i)IKEv2[^.\n]{0,60}?UDP\s*(\d{2,5})(?:\s*(?:và|,)\s*(\d{2,5}))?'
+    regex: '(?i)IKEv2[^.\n]{0,60}?UDP\s*(\d{2,5})(?:\s*(?:và|,)\s*(\d{2,5}))?|UDP\s*(\d{2,5})(?:\s*(?:và|,)\s*(\d{2,5}))?[^.\n]{0,40}?IKEv2'
     allowed: ["500", "4500"]
     note: Giao thức chính IKEv2 dùng UDP 500 và 4500
 
@@ -38,7 +38,7 @@ facts:
 
   - id: vpn_client_min_version
     applies_to: [vpn]
-    regex: '(?i)ABC Connect[^.\n]{0,20}?(?:phiên bản|bản)\s*(\d+\.\d+)'
+    regex: '(?i)ABC Connect[^.\n]{0,20}?(?:phiên bản|bản)\s*(\d+\.\d+)|phiên bản\s+(?:thấp hơn|cũ hơn|dưới|tối thiểu|từ)\s+(\d+\.\d+)'
     allowed: ["3.2"]
     note: Phiên bản ứng dụng tối thiểu
 
@@ -66,7 +66,7 @@ facts:
 
   - id: approval_sla_minutes
     applies_to: [vpn, account, software, access, general]
-    regex: '(?i)duyệt[^.\n]{0,40}?trong\s*(\d{1,3})\s*phút'
+    regex: '(?i)(?:duyệt|SLA)[^.\n]{0,40}?(\d{1,3})\s*phút'
     allowed: ["30"]
     note: Khớp SLA_MINUTES
 
