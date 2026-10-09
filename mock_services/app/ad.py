@@ -50,6 +50,8 @@ def user_view(user: User, account_type: str = "ad") -> dict[str, Any]:
         "employment_status": user.employment_status,
         "hired_at": user.hired_at,
         "is_privileged_account": user.is_privileged_account,
+        "is_service_account": user.is_service_account,  # Phase 5 T22a P7
+        "disable_reason": user.disable_reason,  # Phase 5 T22a P7
         "account": {
             "account_type": account_type,
             "enabled": account.enabled,

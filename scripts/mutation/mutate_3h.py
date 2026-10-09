@@ -107,7 +107,7 @@ _ESTIMATE = '        raise LLMUnavailable("lớp LLM rủi ro (B14) chưa bật 
 _TARGET = (
     '        flags.get("target_is_other", False) is not False\n'
     "        or action.requested_for != requester.user_id\n"
-    '        or action.facts.get("device_owner_is_requester") is not True\n'
+    '        or (device_target and action.facts.get("device_owner_is_requester") is not True)\n'
 )
 _P4 = '        cap_timeout(need, self._clock, what="executor:plan", full=True)  # P4 — TRƯỚC begun\n'
 _BEGAN = "            progress.began = True\n"

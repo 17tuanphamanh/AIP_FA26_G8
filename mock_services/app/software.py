@@ -41,6 +41,7 @@ async def catalog(name: str, request: Request) -> dict[str, Any]:
         "paid": e.license_type == "paid",
         "version": e.version,
         "requires_approval": e.requires_approval,
+        "requires_local_admin": e.requires_local_admin,  # Phase 5 T22a P7
     }
 
 

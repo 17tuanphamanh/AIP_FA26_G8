@@ -2,7 +2,7 @@
 
 *Thuộc bộ `build/`. Đây là **nơi duy nhất** theo dõi trạng thái quyết định. Nhóm **tự quyết** mọi mục (không có vòng hỏi GVHD); mục nào đổi hành vi hoặc công nghệ so với tài liệu gốc thì **báo cáo** GVHD trong báo cáo tuần. `huong-dan-xay-dung-he-thong-2.md` Phase 0 gọi file này là `decisions.md`. Khi một mục được chốt: sửa cột "Trạng thái" ở đây, rồi áp patch tương ứng (nếu có) trong `claude/bo-sung-bo-tai-lieu-build.md`.*
 
-*Cập nhật: 03/10/2026 (cổng 4 đạt — §1.1 chốt Phase 4, §4.1 dòng 4b–4d). Bản trong repo chưa có D-35…D-43 và các ghi chú Phase 5–6: chúng vào repo cùng spec Phase 5–6.*
+*Cập nhật: 09/10/2026 (Q-5-6 `procedure_doc` theo K2 thật; vào repo cùng spec Phase 5 ở chặng T22a; trước đó 03/10: cổng 4 đạt — §4.1 dòng 4d; 01/10: D-35…D-43 Phase 5–6, Q-5-1…5, Q-6-1…9).*
 
 **Nguyên tắc chốt (áp cho mục 1, 2, 3):**
 
@@ -51,8 +51,9 @@ Giữ đúng các mã đã xuất hiện trong tài liệu: R01 (TC01), R04 (TC0
 
 **Chốt Phase 3 (3-Q2, `phase3-thiet-ke-chi-tiet.md` 11.2, 11.10):** R20 áp cho `renew_vpn_cert` và `reissue_vpn_access`, điều kiện `device_registered` ∧ `device_owner_is_requester` ∧ ¬`ctx.target_is_other`; R16 (`check_vpn_status`) đòi ¬`ctx.target_is_other`; R17/R18/R19 = `approval_required`. Thiếu fact → điều kiện sai.
 
-
 **Chốt Phase 4 (Q-4-M, 4b P7):** R17/R18/R19 thêm điều kiện `action.facts.device_owner_is_requester is_true` (máy người khác / không tồn tại → không luật nào → E5).
+
+**Phase 5 — T22a [Đề xuất điều kiện, chốt khi đóng T22a]:** điều kiện đầy đủ R01–R15 ở `build/phase5-thiet-ke-chi-tiet.md` mục 4.4 (R09 = tài nguyên **phòng ban khác**, Q-5-4; R10 đòi cùng phòng, độ nhạy ≠ high, tài khoản đích active/probation, ≤ 90 ngày; R12 áp cả gia hạn quyền).
 
 Thứ tự số không ảnh hưởng kết quả: khớp cả `allow` và `approval_required` thì `approval_required` thắng, `deny` thắng tất cả (B12-B14 mục 10).
 
@@ -115,9 +116,9 @@ Mã Q giữ nguyên để không vỡ tham chiếu. Mỗi mục: bản **xây tr
 | Q13 | Đổi tên đề tài "Risk-Aware…" | **Giữ tên đã nộp trên Edunext**; dùng cụm "risk-aware" trong phần đóng góp của báo cáo | Đổi tên cần thủ tục, không đổi nội dung | — | — | Đã chốt |
 | Q14 | Fail-safe khi hết hạn duyệt | **Escalate, không tự làm** | Nguyên tắc 1: an toàn hơn tự động hóa | — | — | Đã chốt |
 
-**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
+**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, **D-38**, **D-41**, **D-43**, cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
 
-## 3. Quyết định kỹ thuật D-01…D-34
+## 3. Quyết định kỹ thuật D-01…D-43
 
 Nội dung đầy đủ và lý do: `build/00-README.md` mục 4 và file được nêu trong từng quyết định. "Chốt trước" = phase phải chốt xong trước khi bắt đầu.
 
@@ -157,6 +158,15 @@ Nội dung đầy đủ và lý do: `build/00-README.md` mục 4 và file đư�
 | D-32 | B3 chạy model phân loại intent đa nhãn (nhóm tự huấn luyện) trước; LLM cho vùng lưng chừng, câu nhiều ý và khi chưa có model | B03-B05, B02, P2, P4, P11 | 3 | Nên báo | Đã chốt (theo đặc tả) |
 | D-33 | Backbone mDeBERTa-v3-base cho `intent-clf` và `injection-clf`; PhoBERT baseline intent; Prompt Guard 2 baseline RQ4 | P11, B02, P4 | 5 | Nên báo | Đã chốt (theo đặc tả) |
 | D-34 | **Tách căn cứ câu trả lời và căn cứ hành động (Q-4-U A+).** Căn cứ của **câu trả lời** = độ liên quan truy hồi (B9, `RETRIEVAL_THRESHOLD`) — chỉ áp khi `need_type=info`, kiểm trong B10 **trước** `expand`/`b10_answer`. Căn cứ của **hành động** = tài liệu quy trình `procedure_doc` khai cho `action_type` (`action_metadata.yaml`), kiểm **tất định** ở B11 trên KB đang chạy lúc đó (alias hiện hành, lọc theo role) — thiếu → E3 `no_procedure`. Hành động được quản bởi chính sách (M5) và con người (M6), không bởi độ giống văn bản. Chunk dưới ngưỡng không làm bằng chứng cho B14 (`evidence_for_estimator`). Ràng buộc Phase 6: không luật nào khớp + `kb_gap` → tối đa HITL, không AUTO. Không kiểm lại quy trình ở B17: nếu quy trình bị rút sau B11, **người duyệt (HITL) là lớp chặn** — màn xem phiếu (4c) hiển thị `procedure_doc`. Cờ `GROUNDING_GATE_ACTIONS` (mặc định tắt) giữ hành vi cũ cho ablation Phase 10. Lý do đo được: reranker xếp đúng tài liệu cho câu ra lệnh nhưng điểm 0,047 (tc09) so với 0,981 cho câu hỏi (tc05) | **Thứ tự luồng**: B9 nay nằm trong nhánh trả lời của B10; B08, B10, B11, B14, B20 (ghi chú bàn giao) | 4 | **Có** (đổi thứ tự bước [Chốt] B9 → B10) | Đã chốt 30/09/2026, hiện thực `5ed423d` |
+| D-35 | **T22a lên đầu Phase 5, làm sớm sau commit 4d** ("chưa tính qua cổng 5"). Cổng D2 đếm "ca đi xuống LLM" bằng `scripts/rule_coverage.py` chạy lớp luật trên `gold.action` + `gold.facts` (2 trường mới của schema kịch bản P8 §4.1) | Thứ tự Phase 5; schema kịch bản; P8 §4.1, §4.3 | 5 | Không | Đã chốt hướng 01/10 (Q-5-1, Q-5-5) — chữ chốt khi đóng T22a |
+| D-36 | **Phase 6 làm sớm phần thuần** (6A toán + calibrator, 6B estimator + chiến lược) trước cổng 5 + D2, "chưa tính qua cổng 6". Phase 6 **không** fit calibrator trên dữ liệu thật (T37, Phase 10, người không xây M5) | Lịch Phase 6 | 6 | Không | Đã chốt hướng 01/10 (Q-6-1) |
+| D-37 | **Một nguồn toán quyết định:** `app/risk/decision_math.py` (t_low*, quét lưới, Clopper–Pearson, ECE, Brier, AUC) + `app/risk/calibrator.py` (Platt, temperature, `LeakageError`); `eval/metrics.py` (T29), `eval/calibrate.py` (T27) import lại, không viết lần hai; test AST cấm `app.risk → app.eval` | P8 §2 (`stats.py`, `metrics.py`), B12 §3 | 6 | Không | Đã chốt hướng 01/10 (Q-6-2) |
+| D-38 | **Chưa hiệu chỉnh thì không tự làm:** `calibrator_version = null` → `p > t_high` → chuyển L2, còn lại chờ duyệt; `reason` ghi "chưa hiệu chỉnh" | Hành vi M5 lớp 2 tới T37 | 6 | **Có** (đổi hành vi so với B12 §5) | Đã chốt hướng 01/10 (Q-6-3) |
+| D-39 | **Cache B14:** prompt `b14_*` để `cache: default`; estimator truyền `cache_policy="bypass"` khi `EVAL_MODE=false` (vận hành không bao giờ cache); hỏi nhiều lần k = 5 = 5 lời gọi có biến `sample_idx` trong thân prompt (khoá cache khác nhau); `huong-dan` "hỏi 7 lần" sửa thành k = 5 | P2 §7–8, B12 §5.1 | 6 | Không | Đã chốt hướng 01/10 (Q-6-6) |
+| D-40 | **`reason` của lớp LLM ghép theo mẫu** từ `factors` (tập mã đóng `FactorCode`); không lưu `rationale` tự do của LLM | B12 §4.1, audit điểm 4 | 6 | Không | Đã chốt hướng 01/10 (Q-6-5) |
+| D-41 | **DSL thêm nguồn `action.params`** (danh sách trắng đích danh `permission_level`, `duration_days`); **`requested_for` = người bị tác động**; `build_ctx`: vế chủ máy chỉ áp cho đích `device:`; R09 "vượt cấp quản lý" = tài nguyên phòng ban khác (fact `same_department`) | B12 §4.2, B11 §4, `risk/context.py` | 5 | **Có** (định nghĩa R09) | Đã chốt hướng 01/10 (Q-5-3, Q-5-4) |
+| D-42 | **B17 chấp nhận AUTO do LLM** khi `risk.decided_by=llm ∧ route=AUTO ∧ action_plan_hash` (B12 đặt) khớp `hash_action(action)`; còn lại "không luật khớp, chưa duyệt" vẫn E5 | B17 (sau T24), B12 | 6 | Không | Đã chốt hướng 01/10 (Q-6-7) — làm ở 6C |
+| D-43 | **Tách vai người gán nhãn:** người gán nhãn (Dương, Duy Anh) không xác nhận cổng luật M5 và không đọc lý do rủi ro; hai việc đó giao Quân. Xác nhận 6A (toán) giao Dương | Phân việc cổng 5, 6 | 5 | **Có** | Đã chốt hướng 01/10 |
 
 ## 4. Chế độ xây: code trước, gắn API sau
 
@@ -258,6 +268,8 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 4c | Q-4c-1…3 | `note` vào `_POINT_COLUMNS`; nhắc trên `SqlDeadlineStore`; giữ 403 route quyết | mục 6.4 |
 | 4d | Q-4d-1…10, TQ-14…17 | Ghi đè `POST /api/tickets/{id}/override` (1 dòng audit `OVERRIDE`, không đổi ticket, cần đăng nhập lại ≤ 10 phút); `audit_check` chỉ đọc, kiểm đúng chỗ code ghi (4 cột audit chưa từng được ghi → Việc treo 31); B16 so hash state + phiếu trước khi thực thi → E5 (Q-4d-3), B17 thêm lớp so hash phiếu; `make gate4` không đăng nhập manager (Q-4d-9), g4-12 theo ticket của lần chạy (Q-4d-10); làm nóng rerank ở preflight (Việc treo 32) | mục 7.7, 7.8, 7.9 |
 
+**Phase 5–6 (01/10/2026):** câu hỏi `Q-5-1…6`, `Q-6-1…9` (Tuấn Anh đồng ý theo khuyến nghị; Q-6-8 `full_auto` hoãn tới trước 6C) và lỗ hổng `G5-1…7`, `G6-1…7` nằm ở `claude/phase5-6-phan-tich-va-chia-chang.md`, `build/phase5-thiet-ke-chi-tiet.md` mục 2, `build/phase6-thiet-ke-chi-tiet.md` mục 2. Quyết định kỹ thuật D-35…D-43 ở mục 3. **Q-5-6 (09/10):** `procedure_doc` của 6 hành động mới theo K2 thật — `reset_password` KB-ACC-001, `unlock_account` KB-ACC-002, `install_software` KB-SW-001, `view_permissions` KB-ACS-005, `grant_permission` KB-ACS-001, `extend_permission` KB-ACS-003 (`phase5-thiet-ke-chi-tiet.md` bảng 4.2).
+
 ## 5. Nhật ký
 
 | Ngày | Thay đổi |
@@ -277,5 +289,6 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 30/09/2026 | Mục 4.1: Q-3c…Q-3h (chặng 3c–3h, trỏ mục chốt tương ứng); §1.1: ghi chú điều kiện R16–R20 Phase 3 |
 | 30/09/2026 | Phase 3 đóng phần code (`c11b61f`, `61ad8ac`, CI `36684958734`); nợ nghiệm thu NỢ-3-1 (gate3 thành viên ngoài giờ), NỢ-3-2 (smoke LLM thật — dời mục 4 việc 2) gộp vào đợt kiểm tổng |
 | 30/09/2026 | D-34 (tách căn cứ câu trả lời / hành động, Q-4-U A+, commit `5ed423d`); mục 4.1 thêm Phase 4 (Q-4-A…U) |
-| 01/10/2026 | §1.1: ghi chốt Phase 4 (R17–R19 đòi chủ máy); §4.1: dòng 4b, 4c |
+| 01/10/2026 | §1.1: ghi chốt Phase 4 (R17–R19 đòi chủ máy) + trỏ điều kiện R01–R15 (T22a); §3: D-35…D-43 (Phase 5–6, chốt hướng — chữ chốt khi đóng từng chặng); §4.1: dòng 4b, 4c và Phase 5–6; mục báo GVHD thêm D-38, D-41, D-43 |
 | 03/10/2026 | §4.1: dòng 4d. **Cổng 4 đạt, Phase 4 đóng phần code** — 4d DỪNG 2 `858573d` (CI `37040959717`), cây gộp PR #24 của M9 `1455b55` (CI `37041941104`). Tạ Duy Anh chạy trên máy riêng (Windows + WSL 2), commit `1455b55`, ngoài giờ: `make gate3 S=all` 78 PASS / 0 FAIL (**trả NỢ-3-1**); `make gate4 S=all` lượt 2 73 PASS / 0 FAIL (lượt 1: 60/4 — g4-03, g4-05 ra E2 vì ml-service hết giờ khi máy tải nặng; xử lý an toàn, không sửa code). Mở Việc treo 35 (worker ~98% CPU sau gate4, chưa giải thích). Chi tiết: `phase4-thiet-ke-chi-tiet.md` mục 7.9 |
+| 09/10/2026 | §4.1: Q-5-6 (`procedure_doc` 6 hành động mới theo K2 thật, 18 bài). Bản này (có D-35…D-43) vào repo cùng spec Phase 5 ở chặng T22a, thay bản repo cũ chỉ có phần Phase 4 |

@@ -4765,6 +4765,33 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
         (truyền id) 0 thiếu, 0 bí mật; mã ≠ 0 in nguyên bảng; danh sách rỗng → FAIL"; quét log `compose logs --since <giờ bắt đầu>` giữ. 7.1
         P5 ghi chú: `--since` chọn ticket theo HOẠT ĐỘNG (có dòng mới) → trên stack dev dùng chung kéo theo ticket node giả gate2/ticket cũ.
 
+## Phase 5 (làm sớm) — chặng T22a: đủ 20 luật (tầng A) (09/10/2026, chưa commit) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.1f** mục 4 (+ 0, 1, 2); `decisions.md` §1.1, D-34, D-41, D-43. Kế hoạch:
+`PLAN-T22a.md` (untracked) — **DUYỆT 09/10/2026**: Q-T22a-1 = A (ca chờ DỪNG 2 gom MỘT hằng `CHO_DUNG2` + MỘT fixture `xfail(strict,
+raises=(AssertionError, NotImplementedError))` mỗi file — DỪNG 2 gỡ hết), Q-T22a-2 = A (access đúng B11 §0.3, không slot `action` — nợ
+T20), Q-T22a-3 = A (account `optional: [reason, target_user]`), Q-T22a-4 = A (test P7); sửa TQ-7 (seed model mock cũng KHÔNG mặc định);
+TQ-8 bổ sung (trạng thái đích ≠ disabled → `disable_reason` luôn null).
+
+- **Bước 0 (09/10/2026):** HEAD `3ff63e1`; `status -uno` chỉ ` M docs/spec/build/decisions.md`; spec 0.1f; `grep -c "D-4[0-3]"` = 10;
+  `alembic heads` = 1 (`0008`); mốc sandbox: `make lint` xanh (mypy app 216 / tests 239 / mock 12 / ml 16; import-linter **10/10**;
+  gitleaks 0); unit **4129 passed**.
+- **DỪNG 1 (sandbox xanh, chờ verify + commit):**
+  - test-writer viết TRƯỚC code bảng 4.7 (`test_policy_rules_all.py`, `test_build_ctx_targets.py`, `test_rule_coverage.py` — 98 item)
+    + 3 kịch bản `eval/scenarios/_mau/T22A-{L1,R01,R12}.yaml`. Chạy trước code: **89 đỏ / 9 xanh**, mọi ca đỏ vì "luật/fact/nguồn
+    chưa có" (0 lỗi import/fixture).
+  - P2 12 fact + `FACT_VALUE_SETS`; P3 nguồn `action.params` (`PARAM_TYPES`, `param_ok`); P5 `build_ctx` vế chủ máy chỉ cho đích
+    `device:`; P6 khai báo `account`/`software`/`access` (không bật) + 6 dòng metadata (bảng 4.2) + 6 nhãn; P7 3 trường (model tool +
+    mock + `seed.json` tường minh) + endpoint quản trị đặt `disable_reason` theo trạng thái đích.
+  - 4.7b: 11 test sửa ở 5 file + 2 test xanh lại nhờ `messages.py` và `_TARGET` của `mutate_3h.py` (không sửa file test của chúng).
+  - Sau code: unit **4184 passed, 49 xfailed** (49 = ca chờ R01–R15/`rule_coverage`, danh sách `CHO_DUNG2`); mock **106 passed**;
+    `make lint` xanh (mypy tests 243); `backend/app/risk/models.py` không đổi.
+  - Mutation lượt 1 (`scripts/mutation/mutate_t22a.py`): M-T22a-8 (g1, g5), M-T22a-9 (g4), M-T22a-12 (h7) ĐỎ đúng dự đoán; kiểm chéo
+    M-3h-10, M-4b-6, M-4b-7 ĐỎ đúng dự đoán; md5 + `git diff --stat` khớp.
+  - security-reviewer (S11, diff DỪNG 1): 8/8 PASS, 0 FAIL; 4 NGHI chuyển câu hỏi (Q-T22a-5…7 ở MẪU B): R11 dựa tiền tố
+    `device:` của đích (T20), không gì kiểm `target == user:<requested_for>` (T20), R10 không ràng buộc `permission_level` (DỪNG 2/T24),
+    r4 chỉ dò chữ `expected_route` (DỪNG 2).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

@@ -19,7 +19,7 @@ query_slots:
   - error_code
 
 intents:
-  vpn:                                             # Phase 3 chỉ khai báo vpn; Phase 5 thêm 3 loại
+  vpn:                                             # Phase 3; Phase 5 T22a khai báo thêm 3 loại dưới (CHƯA bật)
     required: [device_id, action]
     optional: [reason, error_code]
     action_types: [renew_vpn_cert, reissue_vpn_access, check_vpn_status]   # 3-Q38
@@ -27,3 +27,29 @@ intents:
       device_id:  {pattern: '^[A-Z]{2,4}-\d{3,5}$'}
       error_code: {pattern: '^(0x[0-9A-Fa-f]{4,8}|\d{3,4})$'}
       reason:     {max_len: 200}                   # luật chung 100 ký tự (P1) chặt hơn — ghi "spec cần sửa (3f)"
+
+  # Phase 5 T22a (phase5 mục 4.1 P6, 4.2): KHAI BÁO, KHÔNG BẬT — ENABLED_INTENTS giữ [vpn] (B3 bỏ intent chưa bật, 3-Q27). Slot
+  # bắt buộc/tùy chọn theo B11 §0.3 [Chốt]; account thêm target_user tùy chọn (4.2, Q-T22a-3); access chưa có slot action
+  # (Q-T22a-2 — nợ T20); value_rules theo 4.2 (+ device_id của software như vpn — PLAN-T22a TQ-6).
+  account:
+    required: [account_type, action]
+    optional: [reason, target_user]
+    action_types: [reset_password, unlock_account]
+    value_rules:
+      account_type: {pattern: '^(ad|email|erp)$'}
+      target_user:  {pattern: '^[a-z0-9_]{3,64}$'}
+  software:
+    required: [software_name, device_id]
+    optional: [version, justification]
+    action_types: [install_software]
+    value_rules:
+      software_name: {pattern: '^[A-Za-z0-9][A-Za-z0-9 .+#-]{0,63}$'}
+      device_id:     {pattern: '^[A-Z]{2,4}-\d{3,5}$'}
+  access:
+    required: [resource_path, permission_level, duration]
+    optional: [justification]
+    action_types: [view_permissions, grant_permission, extend_permission]
+    value_rules:
+      resource_path:    {pattern: '^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}$'}
+      permission_level: {pattern: '^(read|write|full)$'}
+      duration:         {pattern: '^\d{1,3}$'}

@@ -412,8 +412,10 @@ SPEC_11_2 = {
 
 
 def test_hrule_policy_json_khop_spec_11_2() -> None:
-    """phase3 11.2: config/policy.json có đúng business_hours và 5 luật R16–R20 như khối JSON của spec."""
+    """phase3 11.2: config/policy.json có đúng business_hours và 5 luật R16–R20 như khối JSON của spec (T22a 4.7b: so 5 luật
+    theo id — file nay có thêm R01–R15; đếm đủ 20 luật ở h1 `test_policy_rules_all.py`)."""
     raw = json.loads((REPO / "config" / "policy.json").read_text(encoding="utf-8"))
+    vpn = {"R16", "R17", "R18", "R19", "R20"}
     assert raw["business_hours"] == SPEC_11_2["business_hours"]
-    assert raw["rules"] == SPEC_11_2["rules"]
-    assert len(get_policy().rules) == 5
+    assert [r for r in raw["rules"] if r["id"] in vpn] == SPEC_11_2["rules"]
+    assert len([r for r in get_policy().rules if r.id in vpn]) == 5

@@ -48,6 +48,8 @@ class User:
     employment_status: str
     hired_at: date
     is_privileged_account: bool
+    is_service_account: bool  # Phase 5 T22a P7
+    disable_reason: str | None  # Phase 5 T22a P7 — chỉ khi disabled; endpoint quản trị đặt lại khi đổi trạng thái
     password_hash: str
     accounts: dict[str, Account]
     lockouts: list[Lockout]
@@ -89,6 +91,7 @@ class CatalogEntry:
     license_type: str
     version: str
     requires_approval: bool
+    requires_local_admin: bool  # Phase 5 T22a P7
 
 
 @dataclass
@@ -168,6 +171,8 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
             employment_status=u.employment_status,
             hired_at=ago(u.hired_days_ago).date(),
             is_privileged_account=u.is_privileged_account,
+            is_service_account=u.is_service_account,
+            disable_reason=u.disable_reason,
             password_hash=u.password_hash,
             accounts={
                 kind: Account(
@@ -213,7 +218,9 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
             for c in seed.connections
         ],
         catalog={
-            c.name: CatalogEntry(c.name, c.display_name, c.license_type, c.version, c.requires_approval)
+            c.name: CatalogEntry(
+                c.name, c.display_name, c.license_type, c.version, c.requires_approval, c.requires_local_admin
+            )
             for c in seed.catalog
         },
         licenses={p.name: LicensePool(p.name, p.total, p.used) for p in seed.licenses},

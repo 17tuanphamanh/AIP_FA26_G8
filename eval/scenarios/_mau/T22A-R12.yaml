@@ -1,0 +1,27 @@
+# Kịch bản mẫu cho test scripts/rule_coverage.py (phase5-thiet-ke-chi-tiet.md mục 4.6, 4.7 r1) — R12 deny:
+# trưởng phòng Kinh doanh xin cấp quyền cho nv004 (disabled, disable_reason security — P7, bảng 4.3).
+# shared/templates thuộc phòng IT, nv004 thuộc Sales → R09 cũng khớp; deny thắng. Dữ kiện khớp mock_services/seed.json.
+id: T22A-R12
+family: R12
+source: goc
+requester: {user_id: sales_head, role: employee, dept: Sales, tenure_days: 2400}
+at: "2026-09-29T10:00:00+07:00"
+faults: []
+turns:
+  - "cấp giúp quyền đọc thư mục shared/templates 30 ngày cho bạn Dũng (nv004) bên mình"
+gold:
+  intents: [access]
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: E5
+  action:
+    type: grant_permission
+    target: "folder:shared/templates"
+    requested_for: nv004
+    params: {permission_level: read, duration_days: 30}
+  facts:
+    target_user_status: disabled
+    target_disable_reason: security
+    resource_sensitivity: low
+    same_department: false
+    has_permission_record: false
