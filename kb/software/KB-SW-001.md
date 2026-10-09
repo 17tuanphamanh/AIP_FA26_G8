@@ -24,11 +24,11 @@ Không sử dụng tên của một phần mềm khác trong danh mục để th
 
 ## Phần mềm không cần phê duyệt khi cài
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace không cần phê duyệt khi cài.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace là phần mềm miễn phí trong danh mục hiện tại.
 
-Các phần mềm này được ghi nhận là phần mềm miễn phí trong danh mục hiện tại.
+Một yêu cầu cài phần mềm không cần phê duyệt chỉ khi đồng thời là phần mềm miễn phí, có trong danh mục được phép, được cài trên máy của chính người dùng và không cần quyền quản trị máy để cài đặt.
 
-Khi yêu cầu đúng một trong các phần mềm này, người dùng không cần thực hiện bước phê duyệt dành cho nhóm phần mềm có phí.
+Nếu thiếu bất kỳ điều kiện nào, yêu cầu được xử lý theo quy trình cài phần mềm phù hợp.
 
 Người dùng vẫn cần chọn đúng tên phần mềm để hệ thống xác định chính xác yêu cầu cần xử lý.
 
@@ -40,7 +40,7 @@ Các phần mềm này được ghi nhận là phần mềm có phí trong danh 
 
 Việc một phần mềm đã có trong danh mục không có nghĩa là phần mềm đó luôn được cài mà không qua phê duyệt.
 
-Yêu cầu được duyệt trong 30 phút.
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 Người dùng cần ghi đúng tên phần mềm cần sử dụng để yêu cầu được phân loại chính xác.
 

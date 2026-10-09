@@ -22,7 +22,7 @@ finance/Q3 và hr/salaries có mức độ nhạy high.
 
 finance/public-reports và shared/templates có mức độ nhạy low.
 
-Khi xử lý yêu cầu truy cập, cần sử dụng đúng mức độ nhạy đã được gán cho từng thư mục. Không tự thay đổi mức độ nhạy dựa trên tên thư mục hoặc nội dung suy đoán.
+Khi xử lý yêu cầu truy cập, dùng đúng mức độ nhạy đã được gán cho từng thư mục. Nếu mức độ nhạy chưa rõ, IT kiểm tra bản ghi tài nguyên trước khi phân loại yêu cầu.
 
 ## Phòng ban sở hữu thư mục
 
@@ -40,20 +40,20 @@ Ví dụ, finance/Q3 và finance/public-reports cùng thuộc Finance nhưng có
 
 ## Phê duyệt quyền truy cập
 
-Yêu cầu quyền truy cập cần được xử lý theo chính sách áp dụng cho tài nguyên tương ứng.
+Người duyệt là nhân viên IT Helpdesk đang trực; có nhân viên dự phòng khi cần. Trưởng phòng sở hữu thư mục và chủ dữ liệu không đóng vai trò người duyệt.
 
-Yêu cầu được duyệt trong 30 phút.
+Nếu người duyệt đồng thời là người gửi yêu cầu, là cấp trên của người gửi hoặc là người được cấp quyền trong yêu cầu, yêu cầu được chuyển cho Trưởng bộ phận IT xử lý. Người gửi không cần tự chọn người duyệt.
 
-Thông tin hiện có về thư mục gồm đường dẫn, mức độ nhạy và phòng ban sở hữu. Những thông tin này cần được sử dụng đúng khi tạo và kiểm tra yêu cầu truy cập.
+Mức độ nhạy và phòng ban liên quan chỉ xác định yêu cầu có cần phê duyệt hay không, không quyết định ai phê duyệt. Yêu cầu quyền mới vào thư mục có mức độ nhạy high, quyền toàn quyền hoặc quyền mới vào thư mục thuộc phòng ban khác cần phê duyệt; xem quyền hiện có không cần phê duyệt và gia hạn được xem xét tùy trường hợp.
 
-Không tự thay đổi tài nguyên hoặc mức độ nhạy để làm thay đổi cách xử lý yêu cầu.
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 ## Khi chưa xác định được người duyệt
 
-Nếu người dùng chưa xác định được yêu cầu quyền cần được chuyển cho ai, cần liên hệ IT để được hướng dẫn.
+Yêu cầu được chuyển vào hàng đợi IT Helpdesk để nhân viên đang trực xử lý; nhân viên dự phòng thay thế khi cần.
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Không tự chỉ định một cá nhân hoặc một vai trò làm người duyệt nếu chưa có thông tin được xác nhận.
+Nếu phát hiện xung đột lợi ích trong quá trình phân công, yêu cầu được chuyển cho Trưởng bộ phận IT.
 
 Khi gửi yêu cầu, người dùng cần ghi đúng đường dẫn thư mục cần truy cập để IT có thể xác định tài nguyên liên quan.

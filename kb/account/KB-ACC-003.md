@@ -38,7 +38,7 @@ Người gửi yêu cầu cần cung cấp đúng tài khoản quản trị cầ
 
 Sau khi được tiếp nhận, yêu cầu được chuyển qua bước phê duyệt.
 
-Yêu cầu được duyệt trong 30 phút.
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 Trong thời gian chờ xử lý, không tạo nhiều yêu cầu giống nhau và không sử dụng tài khoản khác để thay thế quyền của tài khoản đang gặp vấn đề.
 

@@ -26,7 +26,7 @@ Không sử dụng tên của một phần mềm khác để thay cho phần m�
 
 Adobe Acrobat Pro, AutoCAD và Microsoft Project là các phần mềm cần phê duyệt khi cài và thuộc nhóm phần mềm có phí.
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace không cần phê duyệt khi cài và thuộc nhóm phần mềm miễn phí.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace thuộc nhóm phần mềm miễn phí. Với yêu cầu cài mới, việc cài không cần phê duyệt chỉ khi phần mềm có trong danh mục được phép, cài trên máy của chính người dùng và không cần quyền quản trị máy để cài đặt.
 
 Khi xử lý yêu cầu cập nhật, người dùng cần xác định đúng phần mềm trước khi tiếp tục.
 

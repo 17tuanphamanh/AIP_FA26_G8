@@ -36,9 +36,11 @@ Nếu không xác định được đúng tên thư mục, người dùng cần 
 
 Khi gửi yêu cầu, người dùng cần mô tả rõ thư mục cần truy cập và nhu cầu sử dụng.
 
-Không tự thay đổi tên thư mục, phòng ban sở hữu hoặc mức độ nhạy của tài nguyên trong yêu cầu.
+Ghi đường dẫn thư mục, phòng ban sở hữu và mức độ nhạy theo thông tin hiện có; nếu không xác định được, liên hệ IT để kiểm tra trước khi gửi yêu cầu.
 
-Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
+Xem quyền hiện có không cần phê duyệt. Yêu cầu quyền mới vào thư mục có mức độ nhạy high, yêu cầu quyền toàn quyền hoặc yêu cầu quyền mới vào thư mục thuộc phòng ban khác cần phê duyệt; yêu cầu gia hạn được xem xét tùy trường hợp. Tài khoản bị vô hiệu hóa vì lý do bảo mật không được cấp mới hoặc gia hạn quyền.
+
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 Nếu chưa xác định được cách xử lý phù hợp, người dùng cần chờ hướng dẫn thay vì gửi nhiều yêu cầu giống nhau.
 
@@ -50,4 +52,4 @@ Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
 Người dùng nên cung cấp đúng tên thư mục và mô tả nhu cầu truy cập để IT kiểm tra.
 
-Không tự tạo tên tài nguyên hoặc tự thay đổi thông tin của thư mục.
+Nếu chưa có thông tin tài nguyên, hãy cung cấp nhu cầu sử dụng để IT kiểm tra tên thư mục và thông tin liên quan.

@@ -18,7 +18,7 @@ Khi người dùng thay đổi phòng ban, các quyền truy cập hiện có c�
 
 Việc xem lại quyền sau khi chuyển phòng ban khác với việc xin một quyền truy cập mới.
 
-Người dùng không nên tự giữ lại, cấp thêm hoặc thu hồi quyền nếu chưa xác định được chính sách áp dụng cho tài nguyên liên quan.
+Người dùng gửi yêu cầu nêu đúng tài nguyên và nhu cầu hiện tại; IT Helpdesk kiểm tra chính sách trước khi giữ, cấp thêm hoặc thu hồi quyền.
 
 Nếu không rõ một quyền truy cập còn cần thiết hay không, yêu cầu cần được chuyển cho IT kiểm tra.
 
@@ -40,11 +40,11 @@ Thông tin này không đồng nghĩa với việc mọi người dùng thuộc 
 
 Sau khi có thay đổi phòng ban, quyền truy cập vào các tài nguyên đã được cấp trước đó cần được kiểm tra lại.
 
-Không nên tự kết luận rằng toàn bộ quyền phải bị thu hồi hoặc toàn bộ quyền được giữ nguyên.
+IT Helpdesk xem xét từng quyền theo nhu cầu công việc hiện tại, thay vì mặc định thu hồi hoặc giữ nguyên toàn bộ quyền.
 
-Việc xử lý cần dựa trên chính sách áp dụng cho tài nguyên và nhu cầu truy cập hiện tại.
+Việc xử lý do nhân viên IT Helpdesk đang trực thực hiện, có nhân viên dự phòng khi cần. Mức độ nhạy và phòng ban liên quan chỉ xác định có cần phê duyệt hay không, không quyết định người phê duyệt; trưởng phòng sở hữu thư mục và chủ dữ liệu không là người phê duyệt.
 
-Nếu chưa đủ thông tin để xác định quyền nào cần giữ hoặc thu hồi, người dùng không nên tự thay đổi quyền truy cập.
+Nếu người duyệt đồng thời là người gửi, là cấp trên của người gửi hoặc là người được cấp quyền trong yêu cầu, yêu cầu được chuyển cho Trưởng bộ phận IT xử lý.
 
 ## Khi cần hỗ trợ
 
@@ -52,6 +52,4 @@ Nếu không xác định được quyền nào cần được giữ hoặc thu 
 
 Khi cần hỗ trợ, liên hệ IT qua máy lẻ 1234.
 
-Khi gửi yêu cầu, cần ghi đúng tài nguyên liên quan để IT có thể kiểm tra quyền truy cập.
-
-Không tự tạo tên thư mục, không thay đổi mức độ nhạy của tài nguyên và không tự quyết định quyền truy cập khi chưa có thông tin xác nhận.
+Khi gửi yêu cầu, cần ghi đúng tài nguyên liên quan để IT Helpdesk có thể kiểm tra quyền truy cập và áp dụng quy trình phù hợp.

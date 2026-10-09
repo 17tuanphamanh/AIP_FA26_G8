@@ -30,17 +30,17 @@ Các phần mềm này cần được phê duyệt khi cài.
 
 Người dùng cần ghi đúng tên phần mềm cần sử dụng trong yêu cầu. Việc phần mềm đã nằm trong danh mục không có nghĩa là phần mềm đó được cài ngay mà không cần phê duyệt.
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace là các phần mềm miễn phí và không cần phê duyệt khi cài.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace là phần mềm miễn phí trong danh mục. Việc cài không cần phê duyệt chỉ khi đồng thời cài trên máy của chính người dùng và không cần quyền quản trị máy để cài đặt; nếu không, yêu cầu được xử lý theo quy trình phù hợp.
 
 ## Thời gian phê duyệt
 
-Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 Trong thời gian chờ xử lý, người dùng không nên tạo nhiều yêu cầu giống nhau cho cùng một nhu cầu.
 
 Nếu chưa xác định được yêu cầu có thuộc trường hợp cần phê duyệt hay không, người dùng cần liên hệ IT để được hướng dẫn.
 
-Không tự thay đổi tên phần mềm trong yêu cầu để tránh bước phê duyệt.
+Giữ đúng tên phần mềm thực tế cần dùng để IT phân loại yêu cầu và áp dụng bước phê duyệt phù hợp.
 
 ## Khi cần hỗ trợ
 

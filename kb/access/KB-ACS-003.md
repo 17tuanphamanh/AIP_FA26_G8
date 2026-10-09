@@ -14,11 +14,11 @@ tags: [access, quyền có thời hạn, gia hạn quyền, thư mục]
 
 ## Quyền truy cập có thời hạn
 
-Một yêu cầu quyền truy cập có thể được cấp cho nhu cầu sử dụng trong một khoảng thời gian nhất định.
+Mỗi yêu cầu quyền truy cập phải ghi rõ số ngày cần sử dụng quyền. Quyền có thời hạn tự hết hiệu lực vào ngày hết hạn.
 
-Khi gửi yêu cầu, người dùng cần xác định đúng tài nguyên cần truy cập và nhu cầu sử dụng quyền.
+Một số quyền cũ có thể ghi `permissions.expires_in_days = null`; giá trị này nghĩa là "Không thời hạn", không phải thiếu dữ liệu, chưa thiết lập hoặc quyền đã hết hạn.
 
-Nếu chưa xác định được thời hạn hoặc điều kiện áp dụng cho quyền truy cập, người dùng không nên tự đưa ra một khoảng thời gian.
+Khi gửi yêu cầu, người dùng cần xác định đúng tài nguyên, nhu cầu sử dụng quyền và số ngày cần dùng.
 
 Trong trường hợp cần thêm hướng dẫn, người dùng cần liên hệ IT.
 
@@ -28,15 +28,15 @@ Các tài nguyên hiện có gồm engineering/specs, finance/Q3, finance/public
 
 Khi yêu cầu quyền có thời hạn hoặc gia hạn quyền, người dùng cần ghi đúng tài nguyên liên quan.
 
-Không tự thay đổi tên thư mục, mức độ nhạy hoặc phòng ban sở hữu của tài nguyên.
+Mức độ nhạy và phòng ban liên quan được dùng để xác định yêu cầu có cần phê duyệt hay không: quyền mới vào thư mục high, quyền toàn quyền hoặc quyền mới vào thư mục thuộc phòng ban khác cần phê duyệt; xem quyền hiện có không cần phê duyệt và gia hạn được xem xét tùy trường hợp. Chưa có ngưỡng số ngày cụ thể để quyết định việc phê duyệt; quy tắc chi tiết chờ Phase 5.
 
 Nếu tài nguyên cần sử dụng không xác định được, người dùng cần liên hệ IT trước khi tiếp tục yêu cầu.
 
 ## Gia hạn quyền truy cập
 
-Khi cần tiếp tục sử dụng tài nguyên sau thời hạn hiện tại, người dùng cần gửi yêu cầu gia hạn cho đúng tài nguyên đang sử dụng.
+Muốn tiếp tục sử dụng sau khi quyền hết hạn, người dùng phải gửi yêu cầu gia hạn cho đúng tài nguyên trước ngày hết hạn.
 
-Không nên tự tạo một khoảng thời gian gia hạn nếu chưa được hướng dẫn.
+Yêu cầu gia hạn cần nêu rõ nhu cầu tiếp tục sử dụng và số ngày cần gia hạn.
 
 Người dùng cần mô tả nhu cầu tiếp tục truy cập để yêu cầu được xem xét.
 
@@ -44,7 +44,7 @@ Nếu chưa xác định được thời hạn áp dụng hoặc cách gia hạn
 
 ## Phê duyệt và hỗ trợ
 
-Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 Người dùng không nên gửi nhiều yêu cầu gia hạn giống nhau trong khi yêu cầu trước đang được xử lý.
 

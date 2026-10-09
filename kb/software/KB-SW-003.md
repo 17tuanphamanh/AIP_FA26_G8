@@ -26,11 +26,11 @@ Không sử dụng tên một phần mềm khác trong danh mục để thay th�
 
 Adobe Acrobat Pro, AutoCAD và Microsoft Project cần được phê duyệt khi cài.
 
-7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace không cần phê duyệt khi cài.
+7-Zip, Microsoft Office, Visual Studio Code và Zoom Workplace là phần mềm miễn phí trong danh mục. Việc cài không cần phê duyệt chỉ khi đồng thời cài trên máy của chính người dùng và không cần quyền quản trị máy để cài đặt.
 
 Vì vậy, một yêu cầu cài Adobe Acrobat Pro, AutoCAD hoặc Microsoft Project đang chờ phê duyệt không nên được coi ngay là lỗi kỹ thuật của quá trình cài đặt.
 
-Đối với yêu cầu cần phê duyệt, yêu cầu được duyệt trong 30 phút.
+Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 
 ## Phân biệt lỗi cài đặt với trạng thái yêu cầu
 
