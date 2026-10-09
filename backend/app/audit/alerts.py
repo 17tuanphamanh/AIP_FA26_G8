@@ -9,8 +9,9 @@ gọi, bằng engine `app_rw` (route truyền `engines.main`), không qua `app.m
 `UPDATE … WHERE status = 'open'` — hai người ack cùng lúc thì giao dịch sau chờ khoá dòng, Postgres kiểm lại `WHERE`
 trên bản mới (READ COMMITTED) → 0 dòng → `already_acked`; `acked_by`/`acked_at` của người đầu giữ nguyên. Không
 "SELECT rồi UPDATE". 0 dòng mà dòng vẫn `open` → thử lại UPDATE đúng một lần (không trả 409 cho cảnh báo còn mở); vẫn
-`open` → `RuntimeError`. Dấu vết: 3 cột `status`, `acked_by`, `acked_at` + 1 dòng log INFO `alert_acked` (`alert_id`,
-`rule_id`, `user_id` nằm trong message — `JsonFormatter` bỏ `extra`; không ghi `subject`, `detail`).
+`open` → 1 dòng ERROR `alert_ack_still_open` (`alert_id`, trong message và `extra`) rồi `RuntimeError` (Q-M9-A3-9: 500).
+Dấu vết: 3 cột `status`, `acked_by`, `acked_at` + 1 dòng log INFO `alert_acked` (`alert_id`, `rule_id`, `user_id` nằm
+trong message — `JsonFormatter` bỏ `extra`; không ghi `subject`, `detail`).
 """
 
 import logging
@@ -91,6 +92,7 @@ class AlertWriter:
                     return AckResult("not_found", None)
                 if status == "acked":
                     return AckResult("already_acked", None)
+                log.error("alert_ack_still_open alert_id=%s", alert_id, extra={"alert_id": alert_id})
                 raise RuntimeError(f"alerts {alert_id}: vẫn '{status}' sau khi thử lại ack")
         fields = {"alert_id": alert_id, "rule_id": row["rule_id"], "user_id": user_id}
         log.info("alert_acked alert_id=%s rule_id=%s user_id=%s", *fields.values(), extra=fields)

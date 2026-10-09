@@ -326,6 +326,30 @@ async def test_ack_logs_alert_acked(rw: AsyncEngine, clock: FakeClock, caplog: p
         assert leaked not in out
 
 
+async def test_ack_still_open_logs_error(rw: AsyncEngine, clock: FakeClock, caplog: pytest.LogCaptureFixture) -> None:
+    """Q-M9-A3-9 (review PR #30): thử lại vẫn `open` → đúng 1 dòng ERROR `alert_ack_still_open` có `alert_id` (trong message —
+    `JsonFormatter` bỏ `extra` — và trong `extra`) ngay trước `RuntimeError`; không có `alert_acked`. Trượt 1 lần rồi ack được
+    → không có dòng ERROR."""
+    writer = AlertWriter(rw, clock)
+    once = await _raise(writer, rw, "r_mgr", "once")
+    stuck = await _raise(writer, rw, "r_mgr", "stuck")
+    caplog.set_level(logging.INFO, logger="app.audit.alerts")
+
+    def errors() -> list[logging.LogRecord]:
+        return [r for r in caplog.records if r.name == "app.audit.alerts" and r.levelno >= logging.ERROR]
+
+    assert (await _MissingWriter(rw, clock, misses=1).ack(once, "mgr-a")).outcome == "acked"
+    assert errors() == []
+    with pytest.raises(RuntimeError):
+        await _MissingWriter(rw, clock, misses=2).ack(stuck, "mgr-a")
+    [record] = errors()
+    assert (record.levelno, record.getMessage().split()[0]) == (logging.ERROR, "alert_ack_still_open")
+    assert record.alert_id == stuck  # type: ignore[attr-defined]
+    assert f"alert_id={stuck}" in json.loads(JsonFormatter().format(record))["msg"]
+    acked = [r for r in caplog.records if r.getMessage().startswith("alert_acked")]
+    assert [r.alert_id for r in acked] == [once]  # type: ignore[attr-defined]
+
+
 # ---- HTTP (app thật, auth giả, FakeClock dùng chung với writer của test) ------------------------------------------------
 
 
