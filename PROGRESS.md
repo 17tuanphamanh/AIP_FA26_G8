@@ -4944,6 +4944,40 @@ preset kịch bản). Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`
   - N1 (Q-6B-6): P3 `intended_action = Action.model_dump` đầy đủ đưa `Action.params` lấy từ câu người dùng (vd `software_name`) vào prompt B14 — 6C phải thêm danh sách trắng `params` theo `action_type` + mẫu chặt trong `estimator_vars` + test canary trước khi nối B12 → estimator cho intent software/access.
 - **Chờ:** `make verify G=0` DỪNG 2; commit thứ hai khi được bảo; PR `m5-tuananh → dev-tuananh` (phiên git).
 
+## Phase 5 — chặng T23a: B2 lớp 3 shadow (đóng ml-gan) (tầng A) (10/10/2026, 1 DỪNG — verify G=234 XANH, commit 1 B2 + commit 2 json_object) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.2** mục 6 (+ 0, 1, 2); `decisions.md` D-44, D-45, §4.1 Q-5-9. Kế hoạch:
+`PLAN-T23a.md` (untracked) — **DUYỆT 10/10/2026**: Q-T23a-1 = A (thêm `"too_many_windows"` vào `MlError`, `ml/ports.py` vào commit 1, không
+đổi gì khác ở ports.py), Q-T23a-2 = A (không sửa `b02_screen.py`; t2 kiểm `ml_error` ở nhánh E2), Q-T23a-3 = A (không thêm kiểm đường
+dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
+
+- **Bước 0 (10/10/2026):** HEAD `d42d5c4`; cây = thay đổi chưa commit của `f045e30` (18 ` M` + 2 `??`) + 2 file spec; spec 0.2;
+  `grep -c "D-4[4-6]"` = 11; `alembic heads` = 1 (`0008`). Mốc: unit **4582 passed**; ml **122 passed** (5 deselected); mock **106**;
+  `make lint` **đỏ** — mypy `ml_service/app/loader.py:92,99` (kiểu tokenizer transformers 5.x ≠ Protocol `Tokenizer`; `.venv` máy có
+  nhóm `ml`, CI không), phần còn lại xanh (import-linter 10/10, gitleaks 0).
+- **Đã làm:** TQ-1 `cast(Tokenizer, …)` trong `_load_guard` (chỉ kiểu); P10 giữ `ml_models/*-clf/`, bỏ `/ml_models/*/*/` → `.gitignore`
+  về đúng `d42d5c4` (không vào commit), `test_ml_deploy.py` khẳng định một cách viết; P4 `ml/client.py` — `/classify` 422
+  `too_many_windows` → `MlResult(error="too_many_windows")` không retry, 422 khác / endpoint khác giữ `MlContractError`; P9 chú thích
+  "Phase 5 (T23a, ML-GAN — D-44)" ở `settings.py` ×2, compose ×2, `.env.example` (không dời vị trí, ngoài khối M9).
+- **Test viết trước code:** t1 (`test_ml_client.py`: 1 ca giá trị + 5 ca 422 khác), t2 (`test_b02_screen.py`: shadow/active × L4 / E2,
+  đi qua `MlClient` thật), t3 (`test_guard.py`: guard nạp + `INTENT_MODEL_DIR` đặt → `/classify_intent` vẫn 503), TQ-8 (`B2_CLASSIFIER_MODE=""`
+  → shadow). Trước code: t1 + 4 ca t2 **đỏ đúng lý do** (`MlContractError: HTTP 422` → E9 qua boundary); 5 ca 422 khác, t3, TQ-8 xanh
+  (khẳng định hành vi có sẵn). Sau code: unit **4593 passed** (+11), ml **123 passed** (+1), mock **106**; `make lint` **xanh**.
+- **Mutation lượt 1** (`scripts/mutation/mutate_t23a.py`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp.
+  Lượt 2: ngày đệm trước cổng 5.
+- **security-reviewer** (diff `d42d5c4`..cây, trừ `docs/`, `llm/`): 8/8 PASS, 0 FAIL (`.env.example` agent chính tự kiểm: 13 dòng thêm đều
+  là chú thích, không đụng khối M9). NGHI: hàng chờ chung ml-service (classify 48 cửa sổ CPU vs timeout 2 s + retry, `to_thread` không
+  huỷ); `active` bỏ L4 khi p ≤ τ_pass với τ chưa hiệu chỉnh; backend `ClassifyOut.p_malicious` không chặn miền [0,1]/NaN; SHA chỉ phủ
+  `model.safetensors` và là tuỳ chọn; `GUARD_MODEL_DIR` không bị ép dưới `/ml_models` (Q-T23a-3 → nợ); traceback 500 của `/classify`
+  có thể mang chuỗi nếu tokenizer ném lỗi kèm đầu vào.
+- **verify G=234 XANH** (13:32–13:53, mặc định không nạp model): lint; backend 5126 passed · mock 106 · ml 123 (5 deselected); gate2
+  89/0, gate3 78/0, gate4 73/0; backend+worker trả về theo `.env`; CI `38025826031` success. Đo với model thật (6.4 "Tuỳ chọn"): chưa làm.
+- MẪU B duyệt 10/10: 11 mục "Spec cần sửa (T23a)" ghi nhận (P9 NodeDeps; `thresholds.json` trước `active`; hàng chờ chung chưa đo; t2
+  `ml_error` chỉ ở E2; đường dẫn model; phạm vi P1 + `ports.py` docstring; `*-clf`; miền `p_malicious`; phạm vi SHA; traceback 500; đích
+  M-T23a-6) — không chặn commit.
+- **Chờ:** push (phiên git). Báo M9 khi gộp: `b2_classifier`,
+  `b3_cascade` giữ `pending` (P8) — không đổi gì ở M9.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

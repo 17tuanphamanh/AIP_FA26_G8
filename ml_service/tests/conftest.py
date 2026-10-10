@@ -6,8 +6,12 @@ Loader giả: không torch, không model. Tokenizer giả tách theo khoảng tr
 XLM-RoBERTa của bge-m3. Test sinh đôi (a3f, a4f, a6f) gọi code thật `tokens.py`, `rerank.py` qua HTTP.
 
 Test `ml_real` (model thật, `make test-ml`) nằm ở `test_real_models.py`.
+
+Model chặn tấn công giả (ML-GAN): `FakeGuardScorer` trả logit sao cho softmax ở vị trí INJECTION = điểm của từ "nóng"
+cao nhất trong cửa sổ (`hot`, mặc định `BASE`) — test biết cửa sổ nào chứa câu đáng ngờ mà không cần torch.
 """
 
+import math
 import secrets
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -17,13 +21,14 @@ from typing import Any
 import pytest
 from app.lock import ModelRef
 from app.main import create_app
-from app.models import Models
+from app.models import Guard, Models
 from app.settings import MlSettings
 from fastapi.testclient import TestClient
 
 CLS, SEP = 0, 2
 REV_E = "a" * 40
 REV_R = "b" * 40
+BASE = 0.01  # điểm INJECTION của cửa sổ không chứa từ "nóng"
 
 
 class FakeTokenizer:
@@ -76,19 +81,57 @@ class FakeReranker:
 
 
 @dataclass
+class FakeGuardScorer:
+    """Model 2 lớp giả: lớp INJECTION ở vị trí `inj_pos` của hàng logit (như `id2label` của config.json)."""
+
+    tok: FakeTokenizer
+    hot: dict[str, float] = field(default_factory=dict)
+    inj_pos: int = 1
+    batches: list[list[list[int]]] = field(default_factory=list)
+
+    def logits(self, windows: list[list[int]]) -> list[list[float]]:
+        self.batches.append([list(w) for w in windows])
+        rows = []
+        for w in windows:
+            p = max((self.hot.get(self.tok.decode([i]), BASE) for i in w if i not in (CLS, SEP)), default=BASE)
+            row = [math.log(1 - p), math.log(p)]  # softmax([log(1-p), log(p)]) = [1-p, p]
+            rows.append(row if self.inj_pos == 1 else row[::-1])
+        return rows
+
+    @property
+    def windows(self) -> list[list[int]]:
+        return [w for batch in self.batches for w in batch]
+
+
+@dataclass
 class FakeLoader:
     embedder: FakeEmbedder = field(default_factory=FakeEmbedder)
     reranker: FakeReranker = field(default_factory=FakeReranker)
+    tok: FakeTokenizer = field(default_factory=FakeTokenizer)
+    guard: Guard | None = None  # None = GUARD_MODEL_DIR không đặt
     loads: int = 0
 
     def __call__(self, settings: MlSettings) -> Models:
         self.loads += 1
-        tok = FakeTokenizer()
         return Models(
-            tokenizer=tok, rerank_tokenizer=tok, embedder=self.embedder, reranker=self.reranker,
+            tokenizer=self.tok, rerank_tokenizer=self.tok, embedder=self.embedder, reranker=self.reranker,
             embed=ModelRef("BAAI/bge-m3", REV_E), rerank=ModelRef("BAAI/bge-reranker-v2-m3", REV_R),
-            dim=4,
+            dim=4, guard=self.guard,
         )  # fmt: skip
+
+
+def guarded(
+    hot: dict[str, float] | None = None, inj_pos: int = 1, index: int | None = None
+) -> tuple[FakeLoader, FakeGuardScorer]:
+    """Loader giả CÓ model chặn tấn công (như GUARD_MODEL_DIR=…/injection-clf/v3-seed123 đã nạp). `index` = chỉ số lớp
+    INJECTION mà service dùng (mặc định khớp `inj_pos` của model giả)."""
+    loader = FakeLoader()
+    scorer = FakeGuardScorer(loader.tok, hot or {}, inj_pos)
+    loader.guard = Guard(
+        tokenizer=loader.tok, scorer=scorer, cls_id=CLS, sep_id=SEP,
+        injection_index=inj_pos if index is None else index, version="v3-seed123",
+    )  # fmt: skip
+    return loader, scorer
 
 
 @pytest.fixture(scope="session")

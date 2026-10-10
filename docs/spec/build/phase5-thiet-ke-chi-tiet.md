@@ -1,6 +1,6 @@
 # Phase 5 — Thiết kế chi tiết (đủ 4 loại yêu cầu: T22a luật, T20 phân loại + tách ý, T23 B2, T24 executor + hoàn tác)
 
-*Thuộc bộ `build/`. Phiên bản **0.1f — 09/10/2026** (bảng 4.2 `procedure_doc` **chốt theo K2 thật** 18 bài; mục 0.2 theo luật git 4.0 + thư mục chính dùng chung + giao thức Phase 5–6 (sửa 13:00); mốc code `3ff63e1`). Lớp luật T22a đã **dựng thử trên engine thật** ở bản sao sạch của `1455b55`: 57 ca của bảng 4.7 đúng cả 57; lượt thử lộ 13 test cũ + 2 file ngoài danh sách phải đổi — mục 4.7b. **T22a viết đủ để code ngay**; T20, T23, T24 ở mức khung (P-x chốt khi mở chặng, sau khi soát code mới nhất). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Code đã đọc trên máy tại `aac90b1`; soát lại tại `1455b55` (03/10) và `3ff63e1` (09/10): mọi file T22a sửa (`policy.json`, `slots.yaml`, `action_metadata.yaml`, `domain/*`, `risk/*`, `tools/`, `mock_services/`, `scripts/`) **không đổi** từ `632e05a`; `3ff63e1` chỉ thêm tài liệu + M9 B2 (`backend/app/monitor/`, khối M9 của `worker.py`); cổng kiểm gồm cả gate4 (`make verify G=234`).*
+*Thuộc bộ `build/`. Phiên bản **0.2 — 10/10/2026** (0.2: **T22a đóng** `2ffb005`; kế hoạch sau T22a theo phiên PHAN-TICH-P5 — T23a viết đủ để code ngay (mục 6), T20 tách T20a/T20b, bật intent dời sang T24, lịch mục 8; D-44…D-46. Bản 0.1f — 09/10/2026 (bảng 4.2 `procedure_doc` **chốt theo K2 thật** 18 bài; mục 0.2 theo luật git 4.0 + thư mục chính dùng chung + giao thức Phase 5–6 (sửa 13:00); mốc code `3ff63e1`). Lớp luật T22a đã **dựng thử trên engine thật** ở bản sao sạch của `1455b55`: 57 ca của bảng 4.7 đúng cả 57; lượt thử lộ 13 test cũ + 2 file ngoài danh sách phải đổi — mục 4.7b. **T22a viết đủ để code ngay**; T20, T23, T24 ở mức khung (P-x chốt khi mở chặng, sau khi soát code mới nhất). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Code đã đọc trên máy tại `aac90b1`; soát lại tại `1455b55` (03/10) và `3ff63e1` (09/10): mọi file T22a sửa (`policy.json`, `slots.yaml`, `action_metadata.yaml`, `domain/*`, `risk/*`, `tools/`, `mock_services/`, `scripts/`) **không đổi** từ `632e05a`; `3ff63e1` chỉ thêm tài liệu + M9 B2 (`backend/app/monitor/`, khối M9 của `worker.py`); cổng kiểm gồm cả gate4 (`make verify G=234`).*
 
 *Nhãn: **[Chốt]** spec gốc đã chốt · **[Chốt 01/10]**, **[Chốt 09/10]** Tuấn Anh chốt ngày đó · **[Đề xuất]** Claude chat đề xuất, Tuấn Anh soát khi duyệt PLAN · **[Suy luận]** agent phải kiểm lại trên code.*
 
@@ -413,49 +413,90 @@ Mọi chỗ lệch 4.1–4.7; `decisions.md` §1.1 (bảng 20 luật kèm điề
 
 ---
 
-## 5. Chặng T20 — 4 intent + tách ý (khung)
+## 5. Chặng T20 — tách T20a (đơn ý) / T20b (nhiều ý) [Chốt 10/10 — phiên PHAN-TICH-P5]
 
-**Mục tiêu:** agent nhận đủ 4 loại yêu cầu, yêu cầu nhiều ý tách ticket con và trả **một** tin tổng hợp mỗi lượt (D-31).
-**Đầu vào:** T22a đẩy, K2 gộp (PR #29: 18 bài, đủ 6 `procedure_doc` bảng 4.2), quyết `ml-gan` (model `intent-clf` gắn chưa; chưa → đường LLM, ghi nợ), **6B đã gộp** (T20 rebase lên, sửa số đếm `test_llm_prompts` + `TABLE_7_4` + preset theo tổng thật — giao thức Phase 5–6 mục 2.3). **Đầu ra:** B3 4 intent, B5 cha/con, B6 `infer_account/software/access`, B11 `build_action` 4 intent + `validate_targets`, `ENABLED_INTENTS` = 4 intent, roster `approvers.yaml` 3 intent mới.
-**Tầng:** B; phần B5 (gom tin cha/con, `child_notices`, xác nhận một lần) **A**. **Model:** Opus. **DỪNG:** 2.
+**Vì sao tách:** soát code 10/10 (`.verify/phan-tich-p5/bao-cao.md` mục 5) ước cả T20 **19–25 giờ** (bản 0.1f ghi 6–8): B5 cha/con mới có hạ tầng dữ liệu (cột `parent_ticket_id`, `child_notices`, `wake_parent`, 409 cho con) — `parent_wait`/`parent_reply_wait` còn là node **giả** (`builder.py` `_NODE_MODULES`), chưa có `b05_split`, `compose_digest`, `POST /reply`. **Bật `ENABLED_INTENTS` không làm được ở T20**: `check_plans` (`executor/plans.py:60–64`) từ chối khởi động khi intent bật thiếu `PLAN`/mẫu B18 → bật ở **T24** (Q-5-7). T24 chỉ cần T20a.
 
-**Chốt sẵn [Đề xuất — xét lại khi mở chặng]:**
-- B6: fact theo bảng 4.3, tool theo `specs.py` `DIAGNOSIS_TOOLS`; 404/rỗng là dữ liệu, không lỗi; lỗi sau retry → E2. Fact không đọc được → **không đặt** (để luật không khớp).
-- B11: `build_action` theo P4 (`requested_for` = người bị tác động); `target` theo dạng `user:` / `folder:` / `device:`; `validate_targets` qua AD/file server.
-- Kiểm `targets_approver` với Action account (G5-7): test node B15 "đặt lại mật khẩu cho tài khoản của `l1_01`" → người duyệt `it_mgr01`.
-- `approvers.yaml`: thêm `account`, `software`, `access` (KB đã viết mô hình người duyệt: IT Helpdesk trực primary/backup; xung đột lợi ích → Trưởng BP IT).
-- Prompt B3/B11 cho 3 intent: thêm/sửa file `config/prompts/*.yaml` (không sửa `llm/`); sửa prompt có sẵn → sha đổi → khoá preset/cache đổi, kiểm 3 test preset. Trước khi mở T20: tin P5→P6 danh sách prompt id / lớp schema / khoá preset mới.
-- `rejection_text` ghép "cho máy …" → sửa cho đích không phải máy (nợ từ T22a 4.7b).
-- Bật nguồn `b3_cascade` → báo Duy Anh + Dương (mục 0.2).
-- Cổng 5 tự động phần T20: TC01, TC03, TC12, TC13, TC16, TC28; 6 trường hợp ticket cha.
+### 5.1. T20a — đơn ý cho account / software / access (khung — viết đủ 11–12/10)
+**Đầu vào:** 6B gộp; T23a đẩy (dùng chung thư mục chính, tuần tự); K2 (#29) gộp + ingest. **Đầu ra:** B3 prompt (ví dụ 6 hành động; sha/preset đổi → phối hợp 6B ở `test_llm_prompts`); B6 `infer_account/software/access` thuần theo bảng 4.3 + `TOOL_MAP` mở rộng (D-46); B11 `build_action` 4 intent (đích `user:`/`folder:`/`device:`; `duration` → `params.duration_days`; slot `action` cho access + bắt buộc theo `action_type` — Q-T22a-2) + `validate_targets`; fact **`existing_permission_level`** (Q-5-8) + R10 `in [read, write]` (Q-T22a-8, khuôn T22a: test thiếu fact + mutation); roster `approvers.yaml` 3 intent (+ test B15 `l1_01` → `it_mgr01`, G5-7); `rejection_text` theo đích. **Bất biến nợ T22a:** `install_software` luôn đích `device:<id>`; account/access `target == f"user:{requested_for}"` hoặc `folder:` đúng thư mục. **Hợp đồng `params`** chốt trong spec T20a để T24 không sửa `build_action`. **Không** bật `ENABLED_INTENTS` (test bật bằng tiêm `enabled_intents` + `plans=`). **Tầng A** (B11, R10) + B; Opus; **2 DỪNG** (DỪNG 1: B6 + fact/R10; DỪNG 2: B11 + roster); ~9–12 giờ.
 
-## 6. Chặng T23 — B2 lớp 3 (khung)
+### 5.2. T20b — nhiều ý (khung — viết spec 16/10)
+**Đầu vào:** T24 đẩy (ticket con chạy được tới B17 thật). **Đầu ra:** `b05_split`, `create_child`/`mark_parent_once`, `parent_wait`/`parent_reply_wait` thật, notifier ghi `child_notices`, `compose_digest` + bảng 6 trường hợp đóng cha, quét đối soát ở worker (ngoài khối M9), `POST /api/tickets/{cha}/reply` + 4 điểm hợp đồng FE (`claude/viec-cho-phase5.md` mục 5, chốt 10/10: (a) `title` server ghép từ `ACTION_LABELS`, ý chưa có Action → nhãn loại yêu cầu; (b) giữ `options`, chưa phát; (c) ý ngoài `awaiting` → 422 kèm `child_id`, cha hết chờ → 409; (d) backend ghi tin người dùng đã che). **Q5 mở:** con vào ở B6 (B03 §5.3 [Đề xuất]) hay quay lại B3 (bảng 2.1 [Chốt `S_CLASSIFYING`]) — chốt khi viết spec. Đụng file lõi (`routing.py`, `builder.py`, `runner.py`, `wiring.py`) → không giao subagent. **Tầng A**; Opus; **2 DỪNG**; ~9–12 giờ.
 
-**Đầu vào:** quyết nhánh `ml-gan` (đã nạp `injection-clf` v3-seed123 vào ml-service, công tắc `b2_classifier_mode` mặc định `shadow`; chồng file với T23: `b02_screen.py`, `guard/injection.py`). **Đầu ra:** B2 đủ 5 lớp (D-06); ngưỡng lớp 3 cấu hình; thông báo trung tính. **Tầng A, Opus, 1–2 DỪNG.** Song song T20 được (khác file). Nếu gộp `ml-gan`: T23 thu hẹp còn "điều kiện chuyển `shadow` → `active` + cổng đo" (model chặn nhầm 10/22 câu thường có nhãn che → chưa được bật). Chưa có model → giữ đường `model_missing` → L4, ghi nợ, không chặn cổng 5 tự động. Cổng 5 thủ công 13/15, ≤ 1/30 dồn mốc G. Bật nguồn `b2_classifier` → báo Duy Anh + Dương (mục 0.2).
+## 6. Chặng T23a — đóng nhánh `ml-gan`: B2 lớp 3 chế độ `shadow` (tầng A, Opus, 1 DỪNG) [Chốt 10/10]
 
-## 7. Chặng T24 — executor + hoàn tác (khung)
+**Mục tiêu:** đưa phần đã viết của `ml-gan` (`f045e30`) vào `dev-tuananh` sau khi đủ test, mutation, soát bảo mật — **không đổi hành vi mặc định** của hệ thống.
+**Mở 10/10 chiều** (6B đã gộp sớm — `d42d5c4`). **Đầu vào:** thư mục chính ở `d42d5c4` (A3 + 6B; cherry-pick `f045e30` thử lại trên `d42d5c4`: sạch, tự gộp `test_llm_client.py`) **cộng** thay đổi chưa commit của `f045e30` (phiên git `cherry-pick --no-commit` rồi bỏ stage — đã thử 10/10: sạch, 20 file, không xung đột) + 2 file spec. **Đầu ra:** 2 commit cục bộ (mục 6.4) + phiếu push.
+**Không thuộc T23a:** model phân loại của Duy (`/classify_intent` giữ 503 — D-44, Q7); chuyển `active`; `thresholds.json`; ONNX; cascade B3; sửa M9.
 
-**Đầu vào:** T20. **Đầu ra:** `PLAN` + mẫu tin B18 cho `reset_password`, `unlock_account`, `install_software`, `view_permissions`, `grant_permission`, `extend_permission`; `TransactionLog` hoàn tác theo `reversibility` từng bước; license có phí (`assign_paid_license`, `reversible=none`) lỗi khi cài → **không** gọi hoàn tác (cổng 5 [Chốt]); handoff E7 4 phần (đã làm tới đâu, hoàn tác tới đâu, L2 làm tay gì). **Tầng A, Opus, 2 DỪNG.** Mutation: hoàn tác hành động không hoàn tác được; bỏ kiểm `reversibility`; retry lệnh ghi. **Lưu ý cho 6C:** T24 là chặng cuối sửa `b17_execute.py` trước khi 6C thêm nhánh chấp nhận AUTO do LLM (G6-1) — khi T24 đẩy, báo Phase 6 "6C mở được".
+### 6.1. P-T23a (agent không hỏi lại)
+
+| Mã | Chốt |
+|---|---|
+| **P1** | Phạm vi code = đúng 20 file của `f045e30` + `backend/app/ml/client.py` (P4) + test tương ứng + `scripts/mutation/mutate_t23a.py` + `PROGRESS.md` + 2 file spec. Không thêm tính năng ngoài `f045e30` |
+| **P2** | **Mặc định không đổi hành vi (D-44):** `B2_CLASSIFIER_MODE` mặc định `shadow`; compose `GUARD_MODEL_DIR: ${GUARD_MODEL_DIR:-}` rỗng → `/classify` 503 `model_missing` như Phase 3; `/classify_intent` luôn 503 |
+| **P3** | `shadow`: gọi L3, ghi `p_mal` + `clf_mode` vào `screening`/audit (kể cả nhánh E2), **không** chặn/cho qua theo điểm — luôn xuống L4. `active`: hành vi 0,90/0,10 như Phase 3. Giá trị lạ → không khởi động (backend VÀ worker) |
+| **P4** | **Q-5-9:** `ml/client.py` — `/classify` trả 422 `{"error":"too_many_windows",…}` → `MlResult(error="too_many_windows")` (B2 coi là lỗi L3 → L4, KHÔNG E9); mọi 422 khác (và 401/413/404, sai schema) giữ `MlContractError`. Không đổi timeout/retry |
+| **P5** | Fail-closed khi nạp model (giữ code `f045e30`): thư mục thiếu / thiếu file / SHA lệch (khi đặt) / có `.bin .pt .pth .pkl .pickle .ckpt .py` (quét đệ quy) / thiếu nhãn INJECTION / tokenizer tự cắt → ml-service **không khởi động**; kiểm trước `import torch`; `use_safetensors=True, trust_remote_code=False, local_files_only=True` |
+| **P6** | Tự cắt cửa sổ (không dùng `stride`/`return_overflowing_tokens` của thư viện — làm mất nội dung, ML-KIEM 03/10); điểm = **max** các cửa sổ; > 48 cửa sổ → 422, không chấm một phần |
+| **P7** | Không văn bản người dùng trong log/phản hồi/audit (chỉ `chars`, `windows`, `ms`, `p_mal`, `clf_mode`) |
+| **P8** | M9: **không sửa**; `b2_classifier`, `b3_cascade` giữ `pending` (shadow → tỉ lệ L4 ≈ 1,0 — bỏ `pending` sẽ cảnh báo giả). Không đụng khối `# M9` |
+| **P9** | Trường mới ở `settings.py`/compose/`.env.example` có chú thích `Phase 5 (T23a)`; giữ vị trí `f045e30` (ngoài khối M9). B2 đọc `get_settings().b2_classifier_mode` một lần trong `make` — giữ như `f045e30` (lệch quy ước NodeDeps — ghi "Spec cần sửa", không sửa `fakes.py`/NodeDeps) |
+| **P10** | `.gitignore`: hai luật trùng ý (`/ml_models/*/*/` của `ml-gan`, `ml_models/*-clf/` của dev) → giữ **một** cách viết không làm lộ file model; `ml_models/README.md` (đang track) vẫn track. Báo lựa chọn trong MẪU A |
+| **P11** | `json_object` (`llm/providers/openai_compat.py` + `test_llm_client.py`) là **commit riêng** (commit 2), không trộn với B2. Không sửa file `llm/` khác |
+
+### 6.2. Test (đã có trong `f045e30` — chạy lại trên cây mới; thêm 3 nhóm)
+Có sẵn (soát 10/10, chưa chạy): 503 khi không đặt; hình dạng hợp đồng; max không mean; phủ đủ N token (≥ 3 cửa sổ, đáng ngờ ở cửa sổ cuối); 48 chấm / 49 → 422; chỉ số lớp theo `id2label`; thiếu nhãn INJECTION; SHA lệch (kể cả trước torch); không văn bản trong log; shadow 0,95/0,05/0,5 → cả ba L4, `p_mal` trong audit; shadow + LLM lỗi → E2 giữ `p_mal`; active → E0/qua/L4; mode lạ; mặc định shadow; compose truyền biến cho backend + worker.
+**Thêm:** (t1) client: 422 `too_many_windows` → `MlResult.error == "too_many_windows"`, 422 khác → `MlContractError`; (t2) B2 với lỗi `too_many_windows` ở `shadow` và `active` → L4 (không E9), audit `ml_error`; (t3) test khẳng định `/classify_intent` vẫn 503 khi đặt `GUARD_MODEL_DIR` (không vô tình bật intent). Mọi test cũ khác đỏ trên cây mới → DỪNG hỏi.
+
+### 6.3. Mutation (`scripts/mutation/mutate_t23a.py`, khuôn `mutate_4c.py` + `n3.py`, md5; 1 lượt ở T23a, lượt 2 ở ngày đệm trước cổng 5)
+
+| Mã | Phá | Test phải đỏ |
+|---|---|---|
+| M-T23a-1 | Chỉ chấm cửa sổ đầu | `test_suspicious_tail_in_last_window_is_scored` |
+| M-T23a-2 | `shadow` vẫn chặn ≥ TAU_BLOCK | `test_shadow_classifier_never_decides[0.95]` |
+| M-T23a-3 | `shadow` vẫn cho qua ≤ TAU_PASS | `[0.05]`, `test_shadow_low_score_attack_still_judged_by_llm` |
+| M-T23a-4 | Mặc định → `active` | `test_mode_defaults_to_shadow` |
+| M-T23a-5 | max → mean | `test_max_over_windows_not_mean` |
+| M-T23a-6 | Lật chỉ số lớp | `test_class_index_from_id2label` |
+| M-T23a-7 | Bỏ kiểm SHA | `test_sha_mismatch_refuses` |
+| M-T23a-8 | Vượt trần cắt bớt vẫn trả điểm | `test_48_windows_scored_49_rejected_without_scoring` |
+| M-T23a-9 | 422 `too_many_windows` → `MlContractError` (về E9) | t1, t2 |
+
+### 6.4. Commit, soát, verify
+- **Commit 1** (B2 L3 + P4 + mutation + test + `PROGRESS.md` + 2 file spec): message không nhắc "intent". **Commit 2** (`json_object`). Stage đích danh.
+- **security-reviewer** một lần trước commit, chỉ diff T23a: (1) không nạp pickle/không exec file trong `ml_models/`; (2) đường dẫn model không thoát thư mục mount; (3) không văn bản người dùng trong log/phản hồi/audit; (4) mọi lỗi nạp → không khởi động, mọi lỗi chấm → L4 (không "cho qua"); (5) `shadow` không có nhánh nào quyết định theo `p_mal`; (6) mặc định không nạp + mặc định `shadow`; (7) không đụng khối M9/`monitor/*`, `risk/*`, `policy.json`, `config/prompts`, `config/scripted`.
+- **Verify:** `make verify G=234` qua phiếu "dùng stack" (mặc định không nạp model → phải xanh như trước). **Tuỳ chọn, không chặn commit:** đo với model thật (Tuấn Anh tự thêm 3 dòng `.env`: `GUARD_MODEL_DIR`, `GUARD_MODEL_SHA256`, `B2_CLASSIFIER_MODE=shadow`) — 5 câu đối chiếu điểm của Dương (lệch ≤ 0,01), `docker stats`, `make gate3 S="preflight tc04"`; xong gỡ 3 dòng.
+- **Spec cần sửa (T23a):** in nguyên văn trong MẪU B (gồm: P9 lệch NodeDeps; B02 §7 / P11 §4.3 `thresholds.json` là nợ trước `active`; độ trễ hàng chờ chung rerank chưa đo).
+
+## 7. Chặng T24 — executor + hoàn tác + **bật 4 intent** (khung)
+
+**Đầu vào:** **T20a**. **Đầu ra:** `PLAN` + mẫu tin B18 cho `reset_password`, `unlock_account`, `install_software`, `view_permissions`, `grant_permission`, `extend_permission`; `TransactionLog` hoàn tác theo `reversibility` từng bước; license có phí (`assign_paid_license`, `reversible=none`) lỗi khi cài → **không** gọi hoàn tác (cổng 5 [Chốt]); handoff E7 4 phần; **bật `ENABLED_INTENTS` 4 intent** (Q-5-7) + e2e TC đơn ý của cổng 5 (TC01, TC03, TC07, TC08, TC12, TC13, TC15–TC18, TC21). Giữ hợp đồng `ExtendIn` không nhận mức quyền (Q-T22a-8). **Tầng A, Opus, 2 DỪNG.** Mutation: hoàn tác hành động không hoàn tác được; bỏ kiểm `reversibility`; retry lệnh ghi. **Lưu ý cho 6C:** T24 là chặng cuối sửa `b17_execute.py` trước 6C (G6-1) — khi T24 đẩy, báo Phase 6 "6C mở được".
 
 ---
 
-## 8. Lịch và thứ tự (làm mới 09/10 — bản đầy đủ ở `claude/phase5-6-phan-tich-va-chia-chang.md` v0.6 mục 5)
+## 8. Lịch và thứ tự [làm mới 10/10 — phiên PHAN-TICH-P5 + Tuấn Anh chốt]
 
-| Chặng | Ước lượng agent | Ngày dự kiến | Phụ thuộc | Người khác |
+| Ngày | Chặng | Tầng / DỪNG | Phụ thuộc | Phase 6 |
 |---|---|---|---|---|
-| T22a | ~4–5 giờ (2 DỪNG) | DỪNG 1 09/10, DỪNG 2 10/10 | — (điều kiện đạt 09/10) | Quân soát bảng luật + chỉnh KB sau DỪNG 2 |
-| (6B — Phase 6) | — | 11–12/10 | T22a đẩy + 6A gộp | — |
-| T20 | ~6–8 giờ | 13–14/10 | T22a đẩy, #29 gộp, quyết `ml-gan`, 6B gộp | — |
-| T23 | ~3 giờ | 15/10 | quyết `ml-gan` | — |
-| T24 | ~5–6 giờ | 16–17/10 | T20 | — |
-| Cổng 5 | — | ~18/10 | T22a–T24 | Thành viên không code chạy + ký biên bản |
+| 09/10 | ~~T22a~~ xong `2ffb005` | A / 2 | — | 6A gộp |
+| 10 sáng | — | — | — | **6B** xong DỪNG 1 + 2, gộp `d42d5c4` (12:28) |
+| **10 chiều** | **T23a** (thư mục chính) | A / 1 | 6B đã gộp; phiên git cherry-pick `f045e30` không commit | — |
+| 11–12 | (Claude chat: spec T20a, áp 17 mục "Spec cần sửa (T22a)") | — | — | — |
+| 13–14 | **T20a** | A+B / 2 | 6B gộp, K2 gộp + ingest (T23a khác file — không bắt buộc đẩy trước, nhưng thư mục chính dùng tuần tự) | — |
+| 15–16 | **T24** + bật 4 intent | A / 2 | T20a | — |
+| 16 | (Claude chat: spec T20b, chốt Q5) | — | — | — |
+| 17–18 | **T20b** | A / 2 | T24 | 6C (DỪNG lệch ngày với T20b) |
+| 19 | Đệm + mutation lượt 2 (T23a, T24) | — | — | — |
+| **~20–21** | **Cổng 5** | — | T22a–T24, T20b | — |
 
-Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự động đủ; mutation T22a/T23/T24 ×2, T20 ×1 (phần A ×2); thành viên chạy `make verify` + biên bản; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-35, D-41.
+Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự động đủ; mutation T22a/T23a/T24 ×2, T20a/T20b ×1 (phần A ×2); thành viên chạy `make verify` + biên bản; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-35, D-41, D-44…46. **Bỏ khỏi Phase 5 (D-44):** model phân loại của Duy + cascade B3 — làm sau cổng 5 khi có τ_hi/τ_lo + SHA.
 
 ## 9. Nhật ký
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
+| 10/10/2026 | 0.2 | T22a đóng (`2ffb005`). Kế hoạch sau T22a theo phiên PHAN-TICH-P5 (soát code chỉ đọc) + Tuấn Anh chốt: mục 5 tách T20a/T20b (ước 19–25 giờ, bật intent dời sang T24 — Q-5-7); mục 6 **T23a viết đủ** (đóng `ml-gan`, `shadow`, mặc định không nạp, 422 → L4 — Q-5-9, 9 mutation, `json_object` commit riêng); mục 7 T24 bật 4 intent; mục 8 lịch mới (cổng 5 ~20–21/10); model của Duy ra khỏi Phase 5 (D-44). 17 mục "Spec cần sửa (T22a)" CHƯA áp — làm 11–12/10 |
 | 09/10/2026 | 0.1f (sửa 13:00) | Mục 0.2 viết lại theo luật git 4.0 (agent không tự pull/push/stack; phiếu cho phiên git), khoá thư mục chính tới hết DỪNG cuối, cấm ingest khi chặng mở, giao thức Phase 5–6 (2 agent, `PROGRESS.md`, `app.eval`, thứ tự 6B → T20, T24 → 6C); 0.1 thêm `RiskContext`, hằng `mutate_3h.py`; P5/P11 thêm cấm `risk/models.py`, `config/scripted`, `app.eval`; 4.9 thêm bất biến (8); 4.10 nêu bàn giao DỪNG 1 + phiếu push; T20 phụ thuộc 6B; lịch mục 8 theo lịch chung v0.6. **Lời mở chặng thắng mục 0.2 về thao tác git/stack** |
 | 09/10/2026 | 0.1f (sửa 01:20) | Mục 0.2: khoá thư mục chính tới hết DỪNG 2 (commit + push); cấm `make ingest` khi chặng còn mở. Tuấn Anh chốt bảng 4.2 `procedure_doc` theo K2 thật (Q-5-6): `view_permissions` → KB-ACS-005, `grant_permission` → KB-ACS-001; sửa 4.11, dòng `test_s0_grounding` ở 4.7b, thêm ca h8; mốc `3ff63e1` (file T22a không đổi); 0.1 thêm dòng `approvers.yaml`; T20/T23 cập nhật đầu vào (`ml-gan`, K2 PR #29) |
 | 06/10/2026 | 0.1e | Kiểm kỹ lần 3: dựng thử P7 (không vỡ test nào; chốt vị trí 3 trường ở model tool); sửa 2 `value_rules` sai (tên phần mềm, đường dẫn thư mục có chữ hoa); `target_lock_reason` theo giá trị thật của mock; K2 qua `load_kb` |

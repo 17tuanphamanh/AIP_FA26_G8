@@ -6,7 +6,9 @@
   tự nó không bắt loại này.
 - 503 `{"error": "model_missing"}` → trả ngay `error="model_missing"`, KHÔNG retry (không tốn 3 s mỗi ticket
   khi nhóm chưa có model).
-- 401/413/422/404, response sai schema, một văn bản vượt giới hạn byte → raise `MlContractError`. Thông điệp
+- Phase 5 (T23a, P4 — Q-5-9): `/classify` 422 `{"error": "too_many_windows"}` (văn bản > 48 cửa sổ, ml-service không chấm một
+  phần) → trả ngay `error="too_many_windows"`, KHÔNG retry — lỗi lớp 3 như `model_missing`, B2 xuống L4 (không E9).
+- 401/413/422 khác/404, response sai schema, một văn bản vượt giới hạn byte → raise `MlContractError`. Thông điệp
   chỉ có endpoint + mã HTTP, không kèm body (body có thể chứa văn bản người dùng).
 - Tự chia lô theo số phần tử (khớp `ml_service/app/schemas.py`) VÀ theo byte (dưới giới hạn 256 KB của
   ml-service): lô lỗi đầu tiên → dừng, trả lỗi; `attempts` cộng dồn qua các lô (Q-3a-12).
@@ -75,12 +77,21 @@ def batches(items: list[str], max_items: int, budget: int) -> list[list[str]]:
     return out
 
 
-def _is_model_missing(response: httpx.Response) -> bool:
+def _error_code(response: httpx.Response) -> object:
+    """`body["error"]` của ml-service (`model_missing`, `too_many_windows`); body khác → None."""
     try:
         body = response.json()
     except ValueError:
-        return False
-    return isinstance(body, dict) and body.get("error") == "model_missing"
+        return None
+    return body.get("error") if isinstance(body, dict) else None
+
+
+def _is_l3_error(endpoint: str, response: httpx.Response) -> bool:
+    """Lỗi trả như GIÁ TRỊ, không retry: 503 `model_missing` (mọi endpoint phân loại) và 422 `too_many_windows` CHỈ của
+    `/classify` (T23a P4) — 422 khác vẫn là lỗi hợp đồng."""
+    if response.status_code == 503:
+        return _error_code(response) == "model_missing"
+    return endpoint == "classify" and response.status_code == 422 and _error_code(response) == "too_many_windows"
 
 
 class MlClient:
@@ -182,7 +193,7 @@ class MlClient:
             except httpx.TransportError as e:  # Q-3a-3: đứt giữa chừng = mất kết nối, có retry
                 kind = "connect"
                 raise httpx.ConnectError(f"{type(e).__name__}: {e}") from e
-            if response.status_code == 503 and _is_model_missing(response):
+            if _is_l3_error(endpoint, response):
                 return response  # không raise → call_with_retry trả ngay, không retry
             if response.status_code >= 500 or response.status_code == 429:
                 kind = "http_5xx"
@@ -202,6 +213,8 @@ class MlClient:
         version = response.headers.get(MODEL_VERSION_HEADER)
         if response.status_code == 503:
             return MlResult(None, "model_missing", attempts, version)
+        if response.status_code == 422:  # chỉ tới đây khi `_is_l3_error` (too_many_windows của /classify)
+            return MlResult(None, "too_many_windows", attempts, version)
         try:
             data = model.model_validate(response.json())
         except (ValueError, ValidationError) as e:

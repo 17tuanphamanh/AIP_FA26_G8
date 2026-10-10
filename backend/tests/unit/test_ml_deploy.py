@@ -28,8 +28,11 @@ def test_ml_service_internal_only_models_read_only() -> None:
     svc = compose()["services"]["ml-service"]
     assert "ports" not in svc  # không bind 8200 ra host (P4 mục 5)
     assert svc["build"] == {"context": ".", "dockerfile": "ml_service/Dockerfile"}
-    assert svc["volumes"] == ["${MODELS_DIR:-./models}:/models:ro"]
-    assert svc["healthcheck"]["start_period"] == "180s"
+    assert svc["volumes"] == [
+        "${MODELS_DIR:-./models}:/models:ro",
+        "${TEAM_MODELS_DIR:-./ml_models}:/ml_models:ro",  # ML-GAN: model của nhóm, chỉ đọc
+    ]
+    assert svc["healthcheck"]["start_period"] == "240s"  # ML-GAN chốt 4: thêm SHA-256 + nạp model của nhóm
     assert "8200/health" in " ".join(svc["healthcheck"]["test"])
 
 
@@ -44,17 +47,26 @@ def test_ml_token_required_everywhere_without_default() -> None:
 
 def test_no_empty_numeric_env_passed_to_ml_service() -> None:
     """Chuỗi rỗng cho trường số là lỗi cấu hình: ML_MAX_CONCURRENCY không truyền, không `:-}`.
-    ML_THREADS TRUYỀN tường minh từ Q-3a-16 (S9, PLAN-3c mục 6.2) — mặc định "4" (tier ②), không rỗng."""
+    ML_THREADS TRUYỀN tường minh từ Q-3a-16 (S9, PLAN-3c mục 6.2) — mặc định "4" (tier ②), không rỗng.
+    ML-GAN: ba biến model của nhóm (đường dẫn / chuỗi, rỗng = không nạp) là các biến DUY NHẤT được rỗng."""
     env = compose()["services"]["ml-service"]["environment"]
-    assert set(env) == {"ML_SERVICE_TOKEN", "MODELS_DIR", "ML_THREADS"}
+    optional = {"GUARD_MODEL_DIR", "GUARD_MODEL_SHA256", "INTENT_MODEL_DIR"}
+    assert set(env) == {"ML_SERVICE_TOKEN", "MODELS_DIR", "ML_THREADS"} | optional
     assert env["ML_THREADS"] == "${ML_THREADS:-4}"
-    assert not any(str(v).endswith(":-}") for v in env.values())
+    assert {k for k, v in env.items() if str(v).endswith(":-}")} == optional
+    assert all(env[k] == f"${{{k}:-}}" for k in optional)
 
 
 def test_rag_rerank_k_passed_through_backend_env() -> None:
     """Q-3a-16 (S9): RAG_RERANK_K ghi đè được qua env, mặc định "10" (tier ②), không rỗng."""
     env = compose()["x-backend-env"]
     assert env["RAG_RERANK_K"] == "${RAG_RERANK_K:-10}"
+
+
+@pytest.mark.parametrize("name", ["backend", "worker"])
+def test_b2_classifier_mode_passed_to_backend_and_worker(name: str) -> None:
+    """ML-GAN: rỗng = mặc định `shadow` ở settings.py (một nguồn); backend và worker cùng giá trị."""
+    assert compose()["services"][name]["environment"]["B2_CLASSIFIER_MODE"] == "${B2_CLASSIFIER_MODE:-}"
 
 
 @pytest.mark.parametrize("name", ["backend", "worker"])
@@ -114,4 +126,8 @@ def test_env_example_token_blank_and_no_empty_numbers() -> None:
 def test_models_dir_ignored_lock_tracked() -> None:
     ignore = (REPO / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "/models/" in ignore
+    # Phase 5 (T23a, P10): MỘT cách viết cho model của nhóm — chặn cả thư mục `<model>-clf/` (kể cả mã tham khảo .py của
+    # thành viên ở cấp `<model>/`); ml_models/README.md ở gốc vẫn tracked
+    assert "ml_models/*-clf/" in ignore
+    assert "/ml_models/*/*/" not in ignore
     assert not any("models.lock" in line for line in ignore if not line.startswith("#"))
