@@ -29,6 +29,7 @@ def pt(*args: str) -> list[str]:
 
 EST = "backend/app/risk/estimator.py"
 PROMPT = "config/prompts/b14_risk_estimate.yaml"
+STRAT = "backend/app/risk/strategy.py"
 UT = pt(*[f"backend/tests/unit/{name}.py" for name in ("test_risk_estimator", "test_risk_strategy", "test_llm_prompts")])
 
 
@@ -58,6 +59,10 @@ _ALL5 = (
 _VARS = "allowed_vars: [intended_action, risk_context, evidence]\n"
 _BODY = "  Trích đoạn quy định liên quan:\n  {{ evidence }}\n"
 _CTX = '            "within_business_hours": ctx.within_business_hours,\n'
+_UNCAL = '        if route == "AUTO":\n            route = "HITL"  # D-38: chưa hiệu chỉnh — raw > t_high → L2, còn lại HITL\n'
+_KBGAP = '    demoted = kb_gap and route == "AUTO"\n'
+_CHECK = "    if strategy in EVAL_ONLY and not eval_mode:\n"
+_GUARD = '    return not v.matched or v.decision == "allow"\n'
 
 LUOT1: list[Mutation] = [
     Mutation("M-6B-1 luôn cache_policy=\"default\"",
@@ -82,7 +87,20 @@ LUOT1: list[Mutation] = [
              UT, ["test_es2_risk_context_drops_time_and_identity"]),
 ]  # fmt: skip
 
-LUOT2: list[Mutation] = []  # M-6B-4, 5, 6, 9 (strategy) — thêm ở DỪNG 2
+LUOT2: list[Mutation] = [
+    Mutation("M-6B-4 chưa hiệu chỉnh vẫn so t_low (cho AUTO)",
+             [one(STRAT, _UNCAL, "        pass  # MUTATION M-6B-4: bỏ bước hạ AUTO → HITL khi chưa hiệu chỉnh\n")],
+             UT, ["test_st7_uncalibrated_never_auto[0.01-HITL-medium]"]),
+    Mutation("M-6B-5 bỏ bước kb_gap",
+             [one(STRAT, _KBGAP, "    demoted = False  # MUTATION M-6B-5\n")],
+             UT, ["test_st5_kb_gap_demotes_auto_to_hitl"]),
+    Mutation("M-6B-6 check_strategy cho llm_only khi không eval",
+             [one(STRAT, _CHECK, '    if strategy in EVAL_ONLY - {"llm_only"} and not eval_mode:  # MUTATION M-6B-6\n')],
+             UT, ["test_st15_check_strategy_eval_only_blocked_outside_eval"]),
+    Mutation("M-6B-9 hybrid_guarded gọi LLM cả khi luật approval_required",
+             [one(STRAT, _GUARD, '    return not v.matched or v.decision in ("allow", "approval_required")  # MUTATION M-6B-9\n')],
+             UT, ["test_st13_guarded_approval_required_rule_hitl_no_llm"]),
+]  # fmt: skip
 
 ALL = sorted(LUOT1 + LUOT2, key=lambda m: int(m.name.split()[0].rsplit("-", 1)[1]))
 MUTATIONS = LUOT1 if "--luot" in sys.argv and sys.argv[sys.argv.index("--luot") + 1 :][:1] == ["1"] else ALL
