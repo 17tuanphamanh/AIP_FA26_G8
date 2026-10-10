@@ -58,3 +58,39 @@ jobs:
 
       - name: make test (unit + integration + e2e + mock)
         run: make test
+
+  # Frontend (G5, 10/10/2026): kiểm tĩnh + vitest + kiểm bản build — KHÔNG chạy verify (cần stack + OTP người nhập).
+  # Node 24: package-lock.json cần npm 11 (npm 10 lỗi `npm ci` EUSAGE quanh msw). setup-node v5 = major thấp nhất chạy
+  # Node 24 theo `runs.using` trong action.yml (kiểm lại trên GitHub như header). Không cần secret, không cần Docker.
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci (theo package-lock.json)
+        run: npm ci
+
+      - name: lint (eslint)
+        run: npm run lint
+
+      - name: typecheck (tsc app + node)
+        run: npm run typecheck
+
+      - name: check:style (token thiết kế)
+        run: npm run check:style
+
+      - name: test (vitest)
+        run: npm test
+
+      - name: check:dist (vite build + không lọt mock/dữ liệu giả vào bản build)
+        run: npm run check:dist
