@@ -1,0 +1,7 @@
+# thu vien va ban build — sinh lai duoc (KH muc 11.4, khong sua .gitignore goc)
+node_modules/
+dist/
+*.tsbuildinfo
+*.local
+# ket qua npm run verify (log, summary, screenshot) — Q-fe-12
+.verify/
