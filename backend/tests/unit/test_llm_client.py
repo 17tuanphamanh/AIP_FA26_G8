@@ -165,7 +165,7 @@ async def test_openai_compat_json_object_mode() -> None:
 def test_smoke_check_llm_scripted_loads_presets() -> None:
     setup = check_llm(Settings(_env_file=None, app_env="test", llm_backend="scripted"))  # type: ignore[call-arg]
     assert setup.presets is not None and "default" in setup.presets
-    assert set(setup.presets["default"]) == {p.id for p in setup.registry}  # default đủ 6 prompt
+    assert set(setup.presets["default"]) == {p.id for p in setup.registry}  # default đủ 8 prompt
 
 
 # ---- d1 (P2 §13) -------------------------------------------------------------------------------------

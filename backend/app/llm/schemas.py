@@ -1,4 +1,4 @@
-"""Schema đầu ra của 6 prompt Phase 3 (phase3 mục 7.4). Tên class = trường `schema:` của `config/prompts/<id>.yaml`;
+"""Schema đầu ra của 6 prompt Phase 3 (phase3 mục 7.4) + 2 prompt B14 của Phase 6 (phase6 5.1 P7). Tên class = trường `schema:` của `config/prompts/<id>.yaml`;
 registry từ chối khởi động nếu tên không có trong `SCHEMAS`.
 
 `extra="forbid"`: trường ngoài schema → sai schema → một lần sửa (P2 mục 9) — b03 "không trả trường ngoài schema".
@@ -7,6 +7,8 @@ registry từ chối khởi động nếu tên không có trong `SCHEMAS`.
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.domain.risk_factors import FactorCode
 
 _OUT = ConfigDict(extra="forbid")
 
@@ -88,7 +90,34 @@ class ExtractSlotsOut(BaseModel):
     off_topic: bool
 
 
+class RiskEstimateOut(BaseModel):
+    """B14 tự nêu — `b14_risk_estimate` (phase6 P7). `rationale` chỉ để LLM lập luận; estimator KHÔNG đưa nó ra ngoài
+    (không vào `RiskEstimate`, audit, log — Q-6-5)."""
+
+    model_config = _OUT
+
+    prob_needs_human: float = Field(ge=0, le=1, allow_inf_nan=False)
+    factors: list[FactorCode] = Field(max_length=5)
+    rationale: str = Field(max_length=600)
+
+    @model_validator(mode="after")
+    def _unique_factors(self) -> "RiskEstimateOut":
+        if len(set(self.factors)) != len(self.factors):
+            raise ValueError("factors không được trùng mã")
+        return self
+
+
+class RiskVoteOut(BaseModel):
+    """B14 hỏi 5 lần — `b14_risk_vote` (phase6 P6, P7): một phiếu nhị phân."""
+
+    model_config = _OUT
+
+    needs_human: bool
+    factors: list[FactorCode] = Field(max_length=3)
+
+
 SCHEMAS: dict[str, type[BaseModel]] = {
     cls.__name__: cls
-    for cls in (InjectionJudgeOut, ClassifyOut, NeedTypeOut, AnswerOut, QuestionOut, ExtractSlotsOut)
+    for cls in (InjectionJudgeOut, ClassifyOut, NeedTypeOut, AnswerOut, QuestionOut, ExtractSlotsOut, RiskEstimateOut,
+                RiskVoteOut)
 }

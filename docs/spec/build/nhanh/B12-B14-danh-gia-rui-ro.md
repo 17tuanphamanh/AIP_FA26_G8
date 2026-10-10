@@ -340,8 +340,9 @@ class RiskDecision(BaseModel):
 ```
 
 - **Toán tử:** `eq`, `ne`, `in`, `not_in`, `lt`, `lte`, `gt`, `gte`, `is_true`, `is_false`; nhóm `all` / `any`.
-- **Nguồn `fact`:** `action.*`, `action.facts.*`, `requester.*`, `time.*`.
+- **Nguồn `fact`:** `action.*`, `action.facts.*` (chỉ `FACT_KEYS`), `action.params.*` (chỉ `permission_level` ∈ {read, write, full} và `duration_days` int 1–365 — danh sách trắng `PARAM_TYPES`; giá trị sai kiểu/ngoài tập bị lọc ở `fact_view` → coi như **thiếu**), `requester.*`, `time.*`, `ctx.target_is_other`. *(Phase 5 T22a P3, D-41; `split_fact` thử nguồn dài nhất trước nên `action.params.*` không bị `action.*` nuốt.)*
 - **Thiếu fact → điều kiện = False** **[Chốt]**. Vì vậy luật `allow` không bao giờ khớp nhờ thiếu dữ liệu.
+- `target_is_other` (B12 `build_ctx`): vế 'chủ máy ≠ người gửi' chỉ áp khi `action.target` bắt đầu `device:` (Phase 5 T22a P5); cờ B6 và `requested_for ≠ người gửi` áp mọi đích.
 
 ## 5. Luồng xử lý chi tiết
 
@@ -529,3 +530,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 11.2, 11.3,
 | 25/09/2026 | 1.0 | Tạo file; sửa công thức `t_low*` |
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 30/09/2026 | 1.2 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 11.2, 11.3, 11.10) |
+| 09/10/2026 | 1.3 | Mục 4.2: nguồn `fact` thêm `action.params.*` (danh sách trắng `PARAM_TYPES`) và `ctx.target_is_other`; `target_is_other` chỉ xét chủ máy khi đích là `device:` — theo Phase 5 T22a (`2ffb005`) |
