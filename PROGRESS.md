@@ -4892,6 +4892,40 @@ TQ-8 bổ sung (trạng thái đích ≠ disabled → `disable_reason` luôn nul
   17. **Theo dõi Phase 6** (soát DỪNG 2 ghi chú): cấp/gia hạn quyền cho người `terminated` không khớp luật nào (R12 chỉ `disabled` +
       `security`) → đi lớp LLM; an toàn hiện nhờ D-38 (chưa calibrator thì lớp LLM không AUTO).
 
+## Phase 6 (làm sớm) — chặng 6B: estimator LLM + strategy (tầng A) (10/10/2026 — DỪNG 1 xanh, chưa commit) — chưa tính qua cổng 6
+
+Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.8** mục 5. Kế hoạch `PLAN-6B.md` (gitignore) — **DUYỆT 10/10/2026**:
+Q-6B-1 = A (st xfail strict từng test ở DỪNG 1), Q-6B-2 = A, Q-6B-3 = A, Q-6B-4 = A (giới hạn), Sửa 1 (test bảng `_ROUTE`/`_LEVEL`
+strategy = B12), Sửa 2 (st6 ngưỡng = `cal.transform(...)` — lệch spec, ổn định Mac arm/CI x86); Q-6B-5 = A (thêm preset b14 vào 11
+preset kịch bản). Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `2ffb005`.
+
+- **Bước 0:** HEAD/nhánh/status đúng (3 file docs ` M`); `make lint` xanh; unit mốc **4394 passed, 4 skipped**.
+- **DỪNG 1 — làm:** `domain/risk_factors.py` (`FactorCode`, 13 mã), `risk/factors.py` (`FACTOR_LABELS`), `llm/schemas.py` (+ `RiskEstimateOut`,
+  `RiskVoteOut`), 2 prompt `b14_risk_estimate`/`b14_risk_vote` v1, `risk/estimator.py` (`RiskEstimate`, Protocol trả `RiskEstimate`,
+  `estimator_vars`, `LlmRiskEstimator` tự nêu + k = 5; `DisabledEstimator` giữ nguyên dòng raise → `mutate_3h.py` không sửa),
+  `risk/strategy.py` (KHUNG — hàm ném `NotImplementedError`), `tests/fakes/risk_estimator.py`, preset P12 ở **13** file `config/scripted/`.
+  Sửa test có sẵn: `test_llm_prompts.py` (2 test d10: 6 → 8, `TABLE_7_4` +2 dòng, đổi tên "six" → "eight"), `test_s0_grounding.py`
+  (chỉ chú thích kiểu `RecordingEstimator.estimate` + import), chữ "6" → "8" ở `config/prompts/README.md:16`, `test_llm_client.py:168`.
+- **Test có sẵn đỏ khi thêm 2 prompt: 7** (spec 5.9 ghi 5): 2 d10 + 3 test preset (default/vpn) + `test_gate3.py:370`, `test_gate4.py:65`
+  (đòi mọi preset kịch bản đủ khoá) — đều xanh lại sau S1.
+- **Test (test-writer, viết trước code):** `test_risk_estimator.py` (es1–es10 + tq: TQ-4, TQ-5, 13 mã trong 2 prompt, `FACTOR_LABELS`),
+  `test_risk_strategy.py` (st1–st18 + TQ-14 — `xfail(raises=NotImplementedError, strict=True)` từng test; test bảng `_ROUTE`/`_LEVEL` không xfail).
+  Lượt đỏ: 27 đỏ (26 `NotImplementedError`, 1 es10 assert vì stub chưa có lời gọi), 12 xanh (tĩnh), 41 xfail. Sau code estimator:
+  **39 passed, 41 xfailed**; unit **4433 passed, 4 skipped, 41 xfailed** (= 4394 + 39).
+- **Mutation lượt 1** (`scripts/mutation/mutate_6b.py --luot 1`): **5/5** đỏ đúng dự đoán (M-6B-1, 2, 3, 7, 8; M-6B-2 dạng `sample_idx` hằng 0,
+  M-6B-7 sửa YAML thật); md5 + `git diff --stat` khớp. `test_mutation_n3` xanh; `mutate_3h.py --only M-3h-9` đỏ đúng dự đoán.
+- **security-reviewer (DỪNG 1):** 9/9 PASS, 0 FAIL; NGHI để 6C/T20: N1 `Action.params` (vd `software_name` là chuỗi con câu người dùng,
+  regex cho phép từ ngữ) vào nguyên `intended_action` theo P3 → khả năng chèn lệnh vào prompt B14 khi bật intent software; N2 `eval_mode`
+  của estimator và gateway phải cùng nguồn Settings; N3 cache eval lưu cả `rationale` (hành vi gateway sẵn có); N4 `decide` phải từ chối
+  raw NaN (DỪNG 2: `route_for` đã ném), `trimmed_evidence` vs `kb_gap`.
+- **Nợ (Q-6B-6 = A, Tuấn Anh 10/10):**
+  - N1 (Q-6B-6): Action.params có giá trị lấy từ câu người dùng (software_name cho phép chữ + dấu cách, 64 ký tự) đi thẳng vào prompt B14. CHẶN (việc 6C): không nối B12 → estimator cho intent software/access khi chưa có danh sách trắng params theo action_type + mẫu chặt trong estimator_vars + test canary trong giá trị slot. Hiện an toàn vì chỉ VPN bật, params VPN = device_id mẫu ^[A-Z]{2,4}-\d{3,5}$. Bật intent ở T24 vẫn an toàn vì B12 còn DisabledEstimator → E5.
+  - N2 (6C): `eval_mode` của `LlmRiskEstimator` và của gateway lấy cùng một nguồn `Settings.EVAL_MODE` + test wiring.
+  - N3 (6C): cache eval ghi cả `rationale` vào `llm_cache` (gateway lưu nguyên `model_dump`) — xác nhận P2/P7 chấp nhận hoặc bỏ `rationale` trước khi ghi.
+  - N4 (6C): gateway cắt hết bằng chứng (`trimmed_evidence`) mà `kb_gap` không biết — cân nhắc coi là `kb_gap`; thử preset 0,9 qua calibrator thật trên stack.
+- **DỪNG 1 duyệt (Tuấn Anh 10/10):** chấp nhận lệch st6 (ngưỡng = `cal.transform`), chú thích kiểu `test_s0_grounding`, fixture es3 `target_user_status`, 2 lần test-writer lệch luật (đã soát lại).
+- **Chờ:** commit DỪNG 1; DỪNG 2 (`strategy.py`, mutation lượt 2).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

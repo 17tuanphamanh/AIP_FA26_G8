@@ -13,6 +13,6 @@ không khởi động):
   văn bản người dùng không đoán trước được dấu đóng khối.
 - Renderer thay `{{ biến }}` MỘT lượt: giá trị chứa `{{ … }}` được giữ nguyên chữ. Không có Jinja, không điều kiện/vòng lặp.
 
-Sửa xong: `uv run pytest backend/tests/unit -q -k llm` (d10 kiểm đủ 6 file, biến, schema). Chất lượng câu trả lời chỉ
+Sửa xong: `uv run pytest backend/tests/unit -q -k llm` (d10 kiểm đủ 8 file, biến, schema). Chất lượng câu trả lời chỉ
 đo được với LLM thật ở mốc G (PROGRESS "Dồn về mốc G"). Phản hồi giả cho stack dev (`LLM_BACKEND=scripted`) ở
 `config/scripted/*.yaml` — phải hợp lệ với schema của prompt (kiểm lúc khởi động).
