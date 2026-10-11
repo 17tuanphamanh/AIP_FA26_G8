@@ -106,6 +106,34 @@ async def test_a12_contract_errors_raise(code: int) -> None:
     assert "BI-MAT" not in str(exc.value)  # thông điệp không kèm body
 
 
+# ---- Phase 5 (T23a, P4 — Q-5-9): /classify 422 too_many_windows = lỗi lớp 3 (giá trị) → B2 xuống L4, không E9 ------------
+
+TOO_MANY = {"error": "too_many_windows", "windows": 49, "max_windows": 48}
+
+
+async def test_t23a_classify_too_many_windows_is_value() -> None:
+    t = Scripted(httpx.Response(422, json=TOO_MANY), ok())
+    r = await make(t).classify("văn bản rất dài")
+    assert (t.calls, r.error, r.attempts, r.data) == (1, "too_many_windows", 0, None)  # không retry
+
+
+@pytest.mark.parametrize(("endpoint", "response"), [
+    ("classify", httpx.Response(422, json={"detail": "văn bản người dùng BI-MAT"})),  # 422 kiểm body của FastAPI
+    ("classify", httpx.Response(422, json={"error": "khac"})),
+    ("classify", httpx.Response(422, text="khong-phai-json")),
+    ("embed", httpx.Response(422, json=TOO_MANY)),  # chỉ /classify có trần cửa sổ
+    ("classify_intent", httpx.Response(422, json=TOO_MANY)),
+])  # fmt: skip
+async def test_t23a_other_422_still_contract_error(endpoint: str, response: httpx.Response) -> None:
+    t = Scripted(response)
+    client = make(t)
+    call = client.embed(["a"]) if endpoint == "embed" else getattr(client, endpoint)("a")
+    with pytest.raises(MlContractError, match="HTTP 422") as exc:
+        await call
+    assert t.calls == 1
+    assert "BI-MAT" not in str(exc.value)
+
+
 async def test_404_is_contract_error_not_empty() -> None:
     t = Scripted(httpx.Response(404))
     with pytest.raises(MlContractError, match="404"):

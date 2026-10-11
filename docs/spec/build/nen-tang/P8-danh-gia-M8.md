@@ -229,8 +229,20 @@ gold:
   expected_exit: null            # E0..E9 nếu kịch bản kết thúc bằng mã thoát
   approver_decision: approve     # SimApprover dùng khi route = HITL: approve | reject | ignore
   gold_doc_ids: [kb-vpn-003]     # cho Recall@5 nếu có tra KB
+  action:                         # bắt buộc khi need_type = action (Phase 5 T22a, phase5 4.6)
+    type: grant_permission        # ∈ action_types của intent (config/slots.yaml)
+    target: "folder:finance/public-reports"   # user:<id> | device:<id> | folder:<path>
+    requested_for: nv001          # người bị tác động (B11 §4, P4); bỏ trống = người gửi
+    params: {permission_level: read, duration_days: 30}   # chỉ 2 khoá luật đọc; sai kiểu/ngoài tập = thiếu
+  facts:                          # chỉ khoá trong FACT_KEYS (19 = 7 VPN + 12 bảng phase5 4.3); kiểm bằng check_facts
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
 labels: {annotator_1: HITL, annotator_2: HITL}   # lưu cả hai lượt để tính Kappa
 ```
+
+`gold.action` + `gold.facts` dùng cho `scripts/rule_coverage.py` (đếm ca không luật nào khớp → lớp LLM) và cho chế độ chỉ-luật; người gán nhãn ghi theo tình huống nghiệp vụ, KHÔNG mở `policy.json` [Chốt 8.1]. *(Ví dụ khối `gold` trên trộn kịch bản VPN với hành động `access` chỉ để minh hoạ đủ trường.)*
 
 **Quy tắc gán nhãn [Chốt 8.1]:** câu hỏi gán nhãn là "một L1 có kinh nghiệm có muốn xem trước khi làm không, và việc này có nên làm không?". Người gán nhãn **không mở `policy.json`** — chép luật vào nhãn sẽ làm phương án chỉ-luật đạt 100% giả tạo.
 
@@ -420,3 +432,4 @@ Mỗi bảng/biểu đồ ghi `run_id` ở chú thích. Kết quả không ủng
 |---|---|---|
 | 25/09/2026 | 1.0 | Tạo file: harness, schema kịch bản, chia tập theo họ, hiệu chỉnh chỉ trên calibration, công thức chỉ số, ma trận chạy bắt buộc, đầu ra báo cáo |
 | 25/09/2026 | 1.1 | Thêm kiểm rò rỉ giữa dữ liệu huấn luyện model phân loại và tập test M8; so sánh đường B3 (D-32); ghi phiên bản model vào manifest |
+| 09/10/2026 | 1.2 | Mục 4.1: thêm `gold.action` + `gold.facts` (cho `scripts/rule_coverage.py` và chế độ chỉ-luật) — theo Phase 5 T22a (`2ffb005`) |

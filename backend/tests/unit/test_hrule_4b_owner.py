@@ -219,8 +219,9 @@ def test_hrule_p7_policy_json_r17_r18_r19_carry_owner_condition() -> None:
     rules = {r["id"]: r for r in raw["rules"]}
     for rid in ("R17", "R18", "R19"):
         assert owner in rules[rid]["conditions"]["all"], rid
-    assert set(rules) == {"R16", "R17", "R18", "R19", "R20"}
-    assert [r.id for r in get_policy().rules] == ["R16", "R17", "R18", "R19", "R20"]
+    vpn = ["R16", "R17", "R18", "R19", "R20"]  # T22a 4.7b: file nay có thêm R01–R15 — R16–R20 vẫn có mặt, đúng thứ tự
+    assert set(vpn) <= set(rules)
+    assert [r.id for r in get_policy().rules if r.id in vpn] == vpn
 
 
 # ---- 3. x5, x6 cấp graph --------------------------------------------------------------------------------------------------

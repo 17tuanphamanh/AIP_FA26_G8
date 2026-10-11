@@ -4800,6 +4800,184 @@ Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.6** mục 4. K�
 - `test_calibrator.py:334` thêm `# gitleaks:allow` (chuỗi version sai cố ý cho cb7, có `/etc/passwd` → `gitleaks protect --staged`
   báo nhầm `generic-api-key`; tiền lệ `test_auth_username_hash.py:86`).
 
+## Phase 5 (làm sớm) — chặng T22a: đủ 20 luật (tầng A) (09/10/2026 — DỪNG 1 `6ab716e`, DỪNG 2 chưa commit) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.1f** mục 4 (+ 0, 1, 2); `decisions.md` §1.1, D-34, D-41, D-43. Kế hoạch:
+`PLAN-T22a.md` (untracked) — **DUYỆT 09/10/2026**: Q-T22a-1 = A (ca chờ DỪNG 2 gom MỘT hằng `CHO_DUNG2` + MỘT fixture `xfail(strict,
+raises=(AssertionError, NotImplementedError))` mỗi file — DỪNG 2 gỡ hết), Q-T22a-2 = A (access đúng B11 §0.3, không slot `action` — nợ
+T20), Q-T22a-3 = A (account `optional: [reason, target_user]`), Q-T22a-4 = A (test P7); sửa TQ-7 (seed model mock cũng KHÔNG mặc định);
+TQ-8 bổ sung (trạng thái đích ≠ disabled → `disable_reason` luôn null).
+
+- **Bước 0 (09/10/2026):** HEAD `3ff63e1`; `status -uno` chỉ ` M docs/spec/build/decisions.md`; spec 0.1f; `grep -c "D-4[0-3]"` = 10;
+  `alembic heads` = 1 (`0008`); mốc sandbox: `make lint` xanh (mypy app 216 / tests 239 / mock 12 / ml 16; import-linter **10/10**;
+  gitleaks 0); unit **4129 passed**.
+- **DỪNG 1 — commit `6ab716e`** (verify G=234 XANH 14:22–14:45: backend 4673 passed / 49 xfailed, mock 106, ml 77; gate2 89/0, gate3 66/0, gate4 73/0):
+  - test-writer viết TRƯỚC code bảng 4.7 (`test_policy_rules_all.py`, `test_build_ctx_targets.py`, `test_rule_coverage.py` — 98 item)
+    + 3 kịch bản `eval/scenarios/_mau/T22A-{L1,R01,R12}.yaml`. Chạy trước code: **89 đỏ / 9 xanh**, mọi ca đỏ vì "luật/fact/nguồn
+    chưa có" (0 lỗi import/fixture).
+  - P2 12 fact + `FACT_VALUE_SETS`; P3 nguồn `action.params` (`PARAM_TYPES`, `param_ok`); P5 `build_ctx` vế chủ máy chỉ cho đích
+    `device:`; P6 khai báo `account`/`software`/`access` (không bật) + 6 dòng metadata (bảng 4.2) + 6 nhãn; P7 3 trường (model tool +
+    mock + `seed.json` tường minh) + endpoint quản trị đặt `disable_reason` theo trạng thái đích.
+  - 4.7b: 11 test sửa ở 5 file + 2 test xanh lại nhờ `messages.py` và `_TARGET` của `mutate_3h.py` (không sửa file test của chúng).
+  - Sau code: unit **4184 passed, 49 xfailed** (49 = ca chờ R01–R15/`rule_coverage`, danh sách `CHO_DUNG2`); mock **106 passed**;
+    `make lint` xanh (mypy tests 243); `backend/app/risk/models.py` không đổi.
+  - Mutation lượt 1 (`scripts/mutation/mutate_t22a.py`): M-T22a-8 (g1, g5), M-T22a-9 (g4), M-T22a-12 (h7) ĐỎ đúng dự đoán; kiểm chéo
+    M-3h-10, M-4b-6, M-4b-7 ĐỎ đúng dự đoán; md5 + `git diff --stat` khớp.
+  - security-reviewer (S11, diff DỪNG 1): 8/8 PASS, 0 FAIL; 4 NGHI chuyển câu hỏi (Q-T22a-5…7 ở MẪU B): R11 dựa tiền tố
+    `device:` của đích (T20), không gì kiểm `target == user:<requested_for>` (T20), R10 không ràng buộc `permission_level` (DỪNG 2/T24),
+    r4 chỉ dò chữ `expected_route` (DỪNG 2).
+- **DỪNG 2 (sandbox xanh, chờ verify + commit):** chốt sau MẪU B DỪNG 1 — Q-T22a-5/6/7 đồng ý, luật Phase 6 cấm import động trong
+  `backend/app/risk/**`, thêm r5.
+  - P8 R01–R15 nguyên văn bảng 4.4, thứ tự R01…R20 (`policy.json` +77 dòng, 0 dòng xoá); P9 `scripts/rule_coverage.py` đủ (4.6 + TQ-9,
+    loader theo đường dẫn, không `get_settings()`); P10 h3 xanh. Gỡ hết `CHO_DUNG2` (`grep -c xfail` = 0 ở 3 file test mới); thêm e15
+    (×4), siết r4, thêm r5. Unit **4238 passed, 0 xfailed**; mock **106**; `make lint` xanh; grep import động `backend/app/risk/` rỗng.
+  - Mutation lượt 2: đủ 13 mã (M-T22a-1…12 + 5b) ĐỎ đúng dự đoán (M-T22a-8: g1, g5, a1, c1; M-T22a-10: e15-0, e15-−1); md5 5 file đích +
+    `git diff --stat` khớp. e15-True/400 không bắt M-T22a-10 (lớp DSL chặn lần hai) — ghi Spec cần sửa 9.
+  - security-reviewer (S17, diff `6ab716e`..cây): 8/8 PASS, 0 FAIL; soát từng luật allow R01, R02, R06, R10, R11 — đủ điều kiện dương so
+    với luật chặt hơn cùng hành động; 3 NGHI: R10 không ràng buộc mức quyền (Q-T22a-8), R11 dựa tiền tố `device:` và `target` vs
+    `requested_for` (nợ T20, đã ghi DỪNG 1).
+  - Chốt sau MẪU B DỪNG 2 (Tuấn Anh 09/10): **Q-T22a-8 = C ở T22a + A ở T20** — không đổi bảng 4.4 trong T22a; T20 thêm fact
+    `existing_permission_level` (nguồn `check_current_permissions`) + R10 đòi `in [read, write]`, KHÔNG bật intent `access` trước khi có
+    điều kiện này (thiếu fact → R10 không khớp → lớp LLM). Mục 17 (terminated + access → LLM, an toàn nhờ D-38) chuyển Phase 6. Lệch
+    mutation 4 mã + bước kiểm JSON: chấp nhận.
+  **Spec cần sửa (T22a)** (phase5 4.13 — Claude chat sửa, không sửa ở chặng này):
+  1. **B11 §0.3 + §4** (Q-T22a-3): account `optional` thêm `target_user` (4.2 đã ghi; slots.yaml đã khai báo).
+  2. **B11 §0.3 + §4, phase5 mục 5 (nợ T20)** (Q-T22a-2): access chưa có slot `action` để chọn `view_permissions` /
+     `grant_permission` / `extend_permission`; slot bắt buộc phải theo `action_type` (`view_permissions` không cần
+     `permission_level`/`duration`); `build_action` hiện chỉ dựng đích `device:`.
+  3. **phase5 4.5** (Q-T22a-4): thêm `backend/tests/unit/test_tool_models_p7.py`, `mock_services/tests/test_seed.py`,
+     `mock_services/tests/test_admin_calls.py` (test P7); 5 file test cũ của 4.7b.
+  4. **phase5 4.1 P7** (sửa TQ-7, TQ-8): seed model mock cũng KHÔNG mặc định 3 trường (bắt buộc có khoá; `seed.json` tường minh 17 người
+     + 7 mục); endpoint quản trị nhận `disable_reason` tùy chọn ∈ {security, other}, trạng thái đích ≠ disabled → luôn null.
+  5. **phase5 4.2 `value_rules`** (TQ-6): software `device_id` dùng mẫu VPN `^[A-Z]{2,4}-\d{3,5}$`; `reason`/`version`/
+     `justification` không có luật riêng (luật chung 100 ký tự).
+  6. **phase5 4.10** (Q-T22a-1): hook pre-commit chạy toàn unit trên cây làm việc → ca chờ DỪNG 2 gom MỘT hằng `CHO_DUNG2` + MỘT
+     fixture `xfail(strict=True, raises=(AssertionError, NotImplementedError))` mỗi file; DỪNG 2 gỡ hết (`grep -c xfail` = 0). Nên ghi
+     thành quy ước cho mọi chặng tầng A 2 DỪNG có test viết trước code.
+  7. **phase5 4.7 (khuôn)** (TQ-1, TQ-2): ca a*–f* dựng ctx qua `build_ctx` từ state dựng tay (không "RiskContext dựng tay") — f10/f11
+     và M-T22a-8 (a1, c1) đòi vậy; h7 hai vế (giá trị hợp lệ không ném + ngoài tập ném "ngoài tập giá trị").
+  8. **phase5 4.7 (bảng)**: thêm **e15** (G-EXTEND, `duration_days` ∈ {0, −1, 400, True} → none), **r1b** (thêm kịch bản R07 —
+     approval_required không bị đếm vào none), **r4 siết** (bảng tổng không chứa AUTO/HITL/ESCALATE_L2 + mọi `expected_route` của 3 mẫu),
+     **r5** (thư mục con tên bắt đầu `_` bị bỏ khi quét đệ quy, chỉ đếm file ở gốc), test nội dung R01–R15 theo 4.4 (P8), h4 cổng 5
+     (R01–R15 đều có ca khớp). Ghi chú: f3 và f5 cùng đầu vào; G-GRANT ghi `has_permission_record=false` trong khi seed nv001 đã có
+     dòng quyền `finance/public-reports` (mẫu L1 dùng `true` theo seed).
+  9. **phase5 4.8**: M-T22a-10 kỳ vọng **e15 (0, −1)** thay d10/e14 — engine so kiểu chặt nên `"FULL"`, `1`, `"30"`, `True` không
+     khớp dù lọt `fact_view` (lớp DSL chặn lần hai; e15-400 cũng không bắt vì 400 > 90); d10/e14 giữ là ca "không ném lỗi".
+     M-T22a-11 kỳ vọng **r1b (+ r3)** thay r1 (3 mẫu không có ca approval_required). M-T22a-3 kỳ vọng **f8** (f7 thiếu `in_catalog`
+     không liên quan `license_paid`). M-T22a-5 kỳ vọng **e8** (ca thiếu `same_department` trong e7–e12).
+  10. **phase5 4.6 + 4.1 P9** (TQ-9): `main(argv) -> int`; "dùng `app.settings`" sửa thành "dùng loader theo đường dẫn (`load_policy`,
+      `load_action_metadata`, `intents_of_actions`) — KHÔNG `get_settings()` (đọc `.env`)"; tự chèn `backend/` vào `sys.path`; quét đệ quy
+      bỏ thư mục con `_*` trừ khi truyền thẳng; khoá `params` ngoài `PARAM_TYPES` nhận str/int/bool; `requested_for` không có trong seed
+      → không đối chiếu fact `target_*`; đối chiếu seed theo `params.account_type` (mặc định `ad`), `params.software_name`, đích
+      `folder:`/`device:`; định dạng bảng `| họ | số kịch bản | allow | approval_required | deny | none (→ LLM) | lỗi |` + dòng `Tổng`;
+      CSV `rule_decision` thêm `error`, `no_action`.
+  11. **Nợ T20** (Q-T22a-5, soát DỪNG 1 NGHI a, b): (a) R11 an toàn nhờ vế chủ máy của `build_ctx` chỉ áp cho đích `device:` — T20 ghim
+      test "`install_software` luôn có đích `device:<id>`"; (b) `build_ctx` chỉ so `requested_for` với người gửi, luật cấm đọc
+      `action.target` (h3) — T20 ghim bất biến `target == f"user:{requested_for}"` cho account (tương tự access). Không đổi luật.
+  12. **Nợ T20** (4.7b): `ACTION_LABELS` có 6 nhãn; `rejection_text` ghép "cho máy …" sai nghĩa với đích `user:`/`folder:`.
+  13. **phase5 4.4 R10 + nợ T24/B17** (soát DỪNG 1 NGHI c, DỪNG 2 NGHI-A — Q-T22a-8): R10 không ràng buộc mức quyền. (a) `extend` kèm
+      `params.permission_level="full"` → R10 AUTO trong khi `grant` cùng ca bị R08 bắt duyệt; hiện tool `extend_permission` (`ExtendIn`,
+      `tools/models.py:93-94`) không nhận mức quyền → gia hạn giữ mức cũ, nên T24 phải giữ hợp đồng đó. (b) Không fact nào mô tả MỨC
+      của dòng quyền cũ, `has_permission_record` tính cả dòng đã hết hạn → gia hạn một quyền `full` (kể cả hết hạn lâu) vẫn AUTO.
+      Phương án: thêm fact `existing_permission_level` + R10 đòi `in [read, write]`, hoặc R08 áp cả `extend_permission`.
+      **Chốt 09/10: T20 thêm fact existing_permission_level (nguồn check_current_permissions) + R10 đòi in [read, write]; T20 KHÔNG bật
+      intent access trước khi có điều kiện này; thiếu fact → R10 không khớp → lớp LLM.**
+  14. **`decisions.md` §1.1**: bảng 20 luật kèm điều kiện (chép phase5 4.4) — "[Đề xuất điều kiện, chốt khi đóng T22a]" → chốt;
+      **D-41** chữ chốt; **P8 §4.1** schema `gold.action {type, target, requested_for?, params}`, `gold.facts`; **B12 §4.2** nguồn
+      `action.params` (danh sách trắng 2 khoá, sai kiểu/ngoài tập = thiếu); **B11 §4** quy ước `requested_for` = người bị tác động (P4).
+  15. **Việc treo 19 → đóng** (h3 ghim "không luật nào dùng `action.target`", giữ trong danh sách trắng DSL). **Việc treo 26 → giữ mở cho
+      T20** (`targets_approver` chỉ so `requested_for`; cùng gốc mục 11b).
+  16. **import-linter**: chưa có hợp đồng cấm `app.risk → app.eval` — bất biến đang giữ bằng test AST Phase 6
+      (`test_risk_no_eval_import.py`) + grep import động trước commit.
+  17. **Theo dõi Phase 6** (soát DỪNG 2 ghi chú): cấp/gia hạn quyền cho người `terminated` không khớp luật nào (R12 chỉ `disabled` +
+      `security`) → đi lớp LLM; an toàn hiện nhờ D-38 (chưa calibrator thì lớp LLM không AUTO).
+
+## Phase 6 (làm sớm) — chặng 6B: estimator LLM + strategy (tầng A) (10/10/2026 — DỪNG 1 `d8e3cbe`, DỪNG 2 xanh chưa commit; chưa gộp) — chưa tính qua cổng 6
+
+Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.8** mục 5. Kế hoạch `PLAN-6B.md` (gitignore) — **DUYỆT 10/10/2026**:
+Q-6B-1 = A (st xfail strict từng test ở DỪNG 1), Q-6B-2 = A, Q-6B-3 = A, Q-6B-4 = A (giới hạn), Sửa 1 (test bảng `_ROUTE`/`_LEVEL`
+strategy = B12), Sửa 2 (st6 ngưỡng = `cal.transform(...)` — lệch spec, ổn định Mac arm/CI x86); Q-6B-5 = A (thêm preset b14 vào 11
+preset kịch bản). Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `2ffb005`.
+
+- **Bước 0:** HEAD/nhánh/status đúng (3 file docs ` M`); `make lint` xanh; unit mốc **4394 passed, 4 skipped**.
+- **DỪNG 1 — làm:** `domain/risk_factors.py` (`FactorCode`, 13 mã), `risk/factors.py` (`FACTOR_LABELS`), `llm/schemas.py` (+ `RiskEstimateOut`,
+  `RiskVoteOut`), 2 prompt `b14_risk_estimate`/`b14_risk_vote` v1, `risk/estimator.py` (`RiskEstimate`, Protocol trả `RiskEstimate`,
+  `estimator_vars`, `LlmRiskEstimator` tự nêu + k = 5; `DisabledEstimator` giữ nguyên dòng raise → `mutate_3h.py` không sửa),
+  `risk/strategy.py` (KHUNG — hàm ném `NotImplementedError`), `tests/fakes/risk_estimator.py`, preset P12 ở **13** file `config/scripted/`.
+  Sửa test có sẵn: `test_llm_prompts.py` (2 test d10: 6 → 8, `TABLE_7_4` +2 dòng, đổi tên "six" → "eight"), `test_s0_grounding.py`
+  (chỉ chú thích kiểu `RecordingEstimator.estimate` + import), chữ "6" → "8" ở `config/prompts/README.md:16`, `test_llm_client.py:168`.
+- **Test có sẵn đỏ khi thêm 2 prompt: 7** (spec 5.9 ghi 5): 2 d10 + 3 test preset (default/vpn) + `test_gate3.py:370`, `test_gate4.py:65`
+  (đòi mọi preset kịch bản đủ khoá) — đều xanh lại sau S1.
+- **Test (test-writer, viết trước code):** `test_risk_estimator.py` (es1–es10 + tq: TQ-4, TQ-5, 13 mã trong 2 prompt, `FACTOR_LABELS`),
+  `test_risk_strategy.py` (st1–st18 + TQ-14 — `xfail(raises=NotImplementedError, strict=True)` từng test; test bảng `_ROUTE`/`_LEVEL` không xfail).
+  Lượt đỏ: 27 đỏ (26 `NotImplementedError`, 1 es10 assert vì stub chưa có lời gọi), 12 xanh (tĩnh), 41 xfail. Sau code estimator:
+  **39 passed, 41 xfailed**; unit **4433 passed, 4 skipped, 41 xfailed** (= 4394 + 39).
+- **Mutation lượt 1** (`scripts/mutation/mutate_6b.py --luot 1`): **5/5** đỏ đúng dự đoán (M-6B-1, 2, 3, 7, 8; M-6B-2 dạng `sample_idx` hằng 0,
+  M-6B-7 sửa YAML thật); md5 + `git diff --stat` khớp. `test_mutation_n3` xanh; `mutate_3h.py --only M-3h-9` đỏ đúng dự đoán.
+- **security-reviewer (DỪNG 1):** 9/9 PASS, 0 FAIL; NGHI để 6C/T20: N1 `Action.params` (vd `software_name` là chuỗi con câu người dùng,
+  regex cho phép từ ngữ) vào nguyên `intended_action` theo P3 → khả năng chèn lệnh vào prompt B14 khi bật intent software; N2 `eval_mode`
+  của estimator và gateway phải cùng nguồn Settings; N3 cache eval lưu cả `rationale` (hành vi gateway sẵn có); N4 `decide` phải từ chối
+  raw NaN (DỪNG 2: `route_for` đã ném), `trimmed_evidence` vs `kb_gap`.
+- **Nợ (Q-6B-6 = A, Tuấn Anh 10/10):**
+  - N1 (Q-6B-6): Action.params có giá trị lấy từ câu người dùng (software_name cho phép chữ + dấu cách, 64 ký tự) đi thẳng vào prompt B14. CHẶN (việc 6C): không nối B12 → estimator cho intent software/access khi chưa có danh sách trắng params theo action_type + mẫu chặt trong estimator_vars + test canary trong giá trị slot. Hiện an toàn vì chỉ VPN bật, params VPN = device_id mẫu ^[A-Z]{2,4}-\d{3,5}$. Bật intent ở T24 vẫn an toàn vì B12 còn DisabledEstimator → E5.
+  - N2 (6C): `eval_mode` của `LlmRiskEstimator` và của gateway lấy cùng một nguồn `Settings.EVAL_MODE` + test wiring.
+  - N3 (6C): cache eval ghi cả `rationale` vào `llm_cache` (gateway lưu nguyên `model_dump`) — xác nhận P2/P7 chấp nhận hoặc bỏ `rationale` trước khi ghi.
+  - N4 (6C): gateway cắt hết bằng chứng (`trimmed_evidence`) mà `kb_gap` không biết — cân nhắc coi là `kb_gap`; thử preset 0,9 qua calibrator thật trên stack.
+- **DỪNG 1 duyệt (Tuấn Anh 10/10):** chấp nhận lệch st6 (ngưỡng = `cal.transform`), chú thích kiểu `test_s0_grounding`, fixture es3 `target_user_status`, 2 lần test-writer lệch luật (đã soát lại).
+- **DỪNG 1:** `make verify G=0` XANH (HEAD 2ffb005, 10/10 09:36–09:39; backend 4922 passed, 4 skipped, 41 xfailed) → commit `d8e3cbe`.
+- **DỪNG 2 — làm:** `risk/strategy.py` (`check_strategy`, `needs_rules`, `needs_llm`, `decide` theo bảng 5.3; đường chưa hiệu chỉnh =
+  `route_for` rồi hạ AUTO → HITL; kb_gap hạ AUTO → HITL; `reason` theo 4 mẫu); gỡ toàn bộ xfail (`grep -n xfail` rỗng) → st1–st18 +
+  TQ-14 xanh. Theo soát bảo mật lần 2: `_verdict` từ chối thêm verdict KHÔNG khớp mà có `decision`/`rule_id` (fail-closed; `evaluate`
+  không sinh dạng này) + 25 test bổ sung do agent chính viết (chưa hiệu chỉnh / kb_gap không AUTO ở cả 4 đường LLM; raw NaN/inf/1,2/−0,1
+  và ngưỡng ngược → `ValueError`; calibrator ném lỗi → lỗi đi lên; verdict lệch → `ValueError`). Unit **4499 passed, 4 skipped** (= 4433 + 41 + 25).
+- **Mutation lượt 2** (`mutate_6b.py`): **9/9** đỏ đúng dự đoán; md5 + `git diff --stat` khớp; `test_mutation_n3` xanh.
+- **security-reviewer lần 2:** 10/10 PASS, 0 FAIL. Nợ 6C thêm:
+  - N5 (6C): `decide`/`needs_*` không biết `EVAL_MODE` — `check_strategy` phải chạy ở `open_runtime` (API + worker) + test cả 2 tiến trình; cân nhắc B12 tự kiểm `EVAL_MODE` trước khi theo `FullAutoBypass`.
+  - N6 (6C): P12 "luôn L2" chỉ đúng khi chưa hiệu chỉnh — có calibrator (vd Platt a=1, b=−4: 0,9 → ~0,14) thì preset 0,9 có thể ra AUTO trên stack → chốt preset theo kịch bản hoặc test stack với calibrator=None.
+- **Spec cần sửa (6B):**
+  - (5.10 gốc) `huong-dan` §7.2, §14.2, §15.1: "hỏi 7 lần" → k = 5 (G6-3); B12 §5: kiểu trả về `RiskEstimate`, đường chưa hiệu chỉnh (không AUTO), `reason` theo mẫu 5.3; P2 §7: `b14_*` `cache: default` + `cache_policy="bypass"` khi vận hành, biến `sample_idx` trong thân prompt.
+  - phase6 5.9: test có sẵn đỏ khi thêm 2 prompt là **7** (thêm `test_gate3.py:370`, `test_gate4.py:65`); 5.1 P11/P12 + 5.4: preset b14 ở **13** file `config/scripted/` (default, vpn + 8 `tc*` + 3 `g4_*`).
+  - phase6 5.6 st6: ca biên lấy ngưỡng bằng `cal.transform(0.10)`, `cal.transform(0.75)` (Platt a=1, b=0) — lệch spec st6, lý do: ổn định giữa Mac arm và CI x86.
+  - phase6 0.1 dòng "Prompt registry": d10 đếm **8** file; 5.4: `mutate_3h.py` KHÔNG phải sửa (dòng raise của `DisabledEstimator` giữ nguyên); thêm `test_s0_grounding.py` (chú thích kiểu `RecordingEstimator`), chữ "6" → "8" ở `config/prompts/README.md`, `test_llm_client.py`.
+  - phase6 5.1 P1: constructor `LlmRiskEstimator(llm, *, p_method, eval_mode)`; P6: yếu tố đếm tối đa 1 lần/phiếu, k = 5 chờ đủ 5 lời gọi rồi ném lỗi của `sample_idx` nhỏ nhất; 5.7 M-6B-2 áp dạng `sample_idx` hằng 0.
+  - phase6 5.3: verdict lệch (`matched` ≠ có `decision`/`rule_id`) và chiến lược lạ → `ValueError`.
+  - N1 (Q-6B-6): P3 `intended_action = Action.model_dump` đầy đủ đưa `Action.params` lấy từ câu người dùng (vd `software_name`) vào prompt B14 — 6C phải thêm danh sách trắng `params` theo `action_type` + mẫu chặt trong `estimator_vars` + test canary trước khi nối B12 → estimator cho intent software/access.
+- **Chờ:** `make verify G=0` DỪNG 2; commit thứ hai khi được bảo; PR `m5-tuananh → dev-tuananh` (phiên git).
+
+## Phase 5 — chặng T23a: B2 lớp 3 shadow (đóng ml-gan) (tầng A) (10/10/2026, 1 DỪNG — verify G=234 XANH, commit 1 B2 + commit 2 json_object) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.2** mục 6 (+ 0, 1, 2); `decisions.md` D-44, D-45, §4.1 Q-5-9. Kế hoạch:
+`PLAN-T23a.md` (untracked) — **DUYỆT 10/10/2026**: Q-T23a-1 = A (thêm `"too_many_windows"` vào `MlError`, `ml/ports.py` vào commit 1, không
+đổi gì khác ở ports.py), Q-T23a-2 = A (không sửa `b02_screen.py`; t2 kiểm `ml_error` ở nhánh E2), Q-T23a-3 = A (không thêm kiểm đường
+dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
+
+- **Bước 0 (10/10/2026):** HEAD `d42d5c4`; cây = thay đổi chưa commit của `f045e30` (18 ` M` + 2 `??`) + 2 file spec; spec 0.2;
+  `grep -c "D-4[4-6]"` = 11; `alembic heads` = 1 (`0008`). Mốc: unit **4582 passed**; ml **122 passed** (5 deselected); mock **106**;
+  `make lint` **đỏ** — mypy `ml_service/app/loader.py:92,99` (kiểu tokenizer transformers 5.x ≠ Protocol `Tokenizer`; `.venv` máy có
+  nhóm `ml`, CI không), phần còn lại xanh (import-linter 10/10, gitleaks 0).
+- **Đã làm:** TQ-1 `cast(Tokenizer, …)` trong `_load_guard` (chỉ kiểu); P10 giữ `ml_models/*-clf/`, bỏ `/ml_models/*/*/` → `.gitignore`
+  về đúng `d42d5c4` (không vào commit), `test_ml_deploy.py` khẳng định một cách viết; P4 `ml/client.py` — `/classify` 422
+  `too_many_windows` → `MlResult(error="too_many_windows")` không retry, 422 khác / endpoint khác giữ `MlContractError`; P9 chú thích
+  "Phase 5 (T23a, ML-GAN — D-44)" ở `settings.py` ×2, compose ×2, `.env.example` (không dời vị trí, ngoài khối M9).
+- **Test viết trước code:** t1 (`test_ml_client.py`: 1 ca giá trị + 5 ca 422 khác), t2 (`test_b02_screen.py`: shadow/active × L4 / E2,
+  đi qua `MlClient` thật), t3 (`test_guard.py`: guard nạp + `INTENT_MODEL_DIR` đặt → `/classify_intent` vẫn 503), TQ-8 (`B2_CLASSIFIER_MODE=""`
+  → shadow). Trước code: t1 + 4 ca t2 **đỏ đúng lý do** (`MlContractError: HTTP 422` → E9 qua boundary); 5 ca 422 khác, t3, TQ-8 xanh
+  (khẳng định hành vi có sẵn). Sau code: unit **4593 passed** (+11), ml **123 passed** (+1), mock **106**; `make lint` **xanh**.
+- **Mutation lượt 1** (`scripts/mutation/mutate_t23a.py`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp.
+  Lượt 2: ngày đệm trước cổng 5.
+- **security-reviewer** (diff `d42d5c4`..cây, trừ `docs/`, `llm/`): 8/8 PASS, 0 FAIL (`.env.example` agent chính tự kiểm: 13 dòng thêm đều
+  là chú thích, không đụng khối M9). NGHI: hàng chờ chung ml-service (classify 48 cửa sổ CPU vs timeout 2 s + retry, `to_thread` không
+  huỷ); `active` bỏ L4 khi p ≤ τ_pass với τ chưa hiệu chỉnh; backend `ClassifyOut.p_malicious` không chặn miền [0,1]/NaN; SHA chỉ phủ
+  `model.safetensors` và là tuỳ chọn; `GUARD_MODEL_DIR` không bị ép dưới `/ml_models` (Q-T23a-3 → nợ); traceback 500 của `/classify`
+  có thể mang chuỗi nếu tokenizer ném lỗi kèm đầu vào.
+- **verify G=234 XANH** (13:32–13:53, mặc định không nạp model): lint; backend 5126 passed · mock 106 · ml 123 (5 deselected); gate2
+  89/0, gate3 78/0, gate4 73/0; backend+worker trả về theo `.env`; CI `38025826031` success. Đo với model thật (6.4 "Tuỳ chọn"): chưa làm.
+- MẪU B duyệt 10/10: 11 mục "Spec cần sửa (T23a)" ghi nhận (P9 NodeDeps; `thresholds.json` trước `active`; hàng chờ chung chưa đo; t2
+  `ml_error` chỉ ở E2; đường dẫn model; phạm vi P1 + `ports.py` docstring; `*-clf`; miền `p_malicious`; phạm vi SHA; traceback 500; đích
+  M-T23a-6) — không chặn commit.
+- **Chờ:** push (phiên git). Báo M9 khi gộp: `b2_classifier`,
+  `b3_cascade` giữ `pending` (P8) — không đổi gì ở M9.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

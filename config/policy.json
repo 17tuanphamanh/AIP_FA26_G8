@@ -16,6 +16,83 @@
   },
   "business_hours": {"tz": "Asia/Ho_Chi_Minh", "weekdays": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00"},
   "rules": [
+    {"id": "R01", "type": "allow", "intent": "account", "action": "reset_password",
+     "conditions": {"all": [
+      {"fact": "ctx.target_is_other", "op": "is_false"},
+      {"fact": "action.facts.target_account_privilege", "op": "eq", "value": "standard_user"},
+      {"fact": "action.facts.target_is_service_account", "op": "is_false"},
+      {"fact": "action.facts.target_user_status", "op": "in", "value": ["active", "probation"]}]},
+     "description": "Đặt lại mật khẩu tài khoản thường của chính mình"},
+    {"id": "R02", "type": "allow", "intent": "account", "action": "unlock_account",
+     "conditions": {"all": [
+      {"fact": "ctx.target_is_other", "op": "is_false"},
+      {"fact": "action.facts.target_account_locked", "op": "is_true"},
+      {"fact": "action.facts.target_lock_reason", "op": "eq", "value": "bad_password"},
+      {"fact": "action.facts.target_account_privilege", "op": "eq", "value": "standard_user"},
+      {"fact": "action.facts.target_is_service_account", "op": "is_false"},
+      {"fact": "action.facts.target_user_status", "op": "in", "value": ["active", "probation"]}]},
+     "description": "Mở khoá tài khoản thường của chính mình bị khoá do nhập sai mật khẩu"},
+    {"id": "R03", "type": "approval_required", "intent": "account", "action": ["reset_password", "unlock_account"],
+     "conditions": {"all": [
+      {"fact": "action.facts.target_is_service_account", "op": "is_true"}]},
+     "description": "Thao tác trên tài khoản dịch vụ cần người duyệt"},
+    {"id": "R04", "type": "approval_required", "intent": "account", "action": ["reset_password", "unlock_account"],
+     "conditions": {"all": [
+      {"fact": "action.facts.target_account_privilege", "op": "eq", "value": "admin"}]},
+     "description": "Thao tác trên tài khoản quản trị cần người duyệt"},
+    {"id": "R05", "type": "approval_required", "intent": "account", "action": ["reset_password", "unlock_account"],
+     "conditions": {"all": [
+      {"fact": "action.facts.target_user_status", "op": "eq", "value": "terminated"}]},
+     "description": "Thao tác trên tài khoản của người đã nghỉ việc cần người duyệt"},
+    {"id": "R06", "type": "allow", "intent": "access", "action": "view_permissions",
+     "conditions": {"all": [
+      {"fact": "ctx.target_is_other", "op": "is_false"}]},
+     "description": "Xem quyền hiện có của chính mình"},
+    {"id": "R07", "type": "approval_required", "intent": "access", "action": "grant_permission",
+     "conditions": {"all": [
+      {"fact": "action.facts.resource_sensitivity", "op": "eq", "value": "high"}]},
+     "description": "Cấp quyền mới vào dữ liệu nhạy cảm cần người duyệt"},
+    {"id": "R08", "type": "approval_required", "intent": "access", "action": "grant_permission",
+     "conditions": {"all": [
+      {"fact": "action.params.permission_level", "op": "eq", "value": "full"}]},
+     "description": "Cấp quyền quản trị (toàn quyền) thư mục cần người duyệt"},
+    {"id": "R09", "type": "approval_required", "intent": "access", "action": ["grant_permission", "extend_permission"],
+     "conditions": {"all": [
+      {"fact": "action.facts.same_department", "op": "is_false"}]},
+     "description": "Cấp/gia hạn quyền vào tài nguyên phòng ban khác (vượt cấp quản lý) cần người duyệt"},
+    {"id": "R10", "type": "allow", "intent": "access", "action": "extend_permission",
+     "conditions": {"all": [
+      {"fact": "ctx.target_is_other", "op": "is_false"},
+      {"fact": "action.facts.has_permission_record", "op": "is_true"},
+      {"fact": "action.facts.same_department", "op": "is_true"},
+      {"fact": "action.facts.resource_sensitivity", "op": "in", "value": ["low", "medium"]},
+      {"fact": "action.facts.target_user_status", "op": "in", "value": ["active", "probation"]},
+      {"fact": "action.params.duration_days", "op": "lte", "value": 90}]},
+     "description": "Gia hạn quyền cũ (≤ 90 ngày) vào thư mục không nhạy cảm của phòng mình"},
+    {"id": "R11", "type": "allow", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "ctx.target_is_other", "op": "is_false"},
+      {"fact": "action.facts.in_catalog", "op": "is_true"},
+      {"fact": "action.facts.license_paid", "op": "is_false"},
+      {"fact": "action.facts.requires_local_admin", "op": "is_false"}]},
+     "description": "Cài phần mềm miễn phí trong danh mục lên máy của mình"},
+    {"id": "R12", "type": "deny", "intent": "access", "action": ["grant_permission", "extend_permission"],
+     "conditions": {"all": [
+      {"fact": "action.facts.target_user_status", "op": "eq", "value": "disabled"},
+      {"fact": "action.facts.target_disable_reason", "op": "eq", "value": "security"}]},
+     "description": "Cấm cấp quyền cho tài khoản bị vô hiệu hoá vì lý do bảo mật"},
+    {"id": "R13", "type": "approval_required", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.in_catalog", "op": "is_false"}]},
+     "description": "Cài phần mềm ngoài danh mục cần người duyệt"},
+    {"id": "R14", "type": "approval_required", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.license_paid", "op": "is_true"}]},
+     "description": "Cài phần mềm có phí license cần người duyệt"},
+    {"id": "R15", "type": "approval_required", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.requires_local_admin", "op": "is_true"}]},
+     "description": "Cài phần mềm cần quyền quản trị máy cần người duyệt"},
     {"id": "R16", "type": "allow", "intent": "vpn", "action": "check_vpn_status",
      "conditions": {"all": [
       {"fact": "ctx.target_is_other", "op": "is_false"}]},

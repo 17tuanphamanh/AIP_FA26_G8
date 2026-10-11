@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.ad import get_user, mock_state
 from app.admin_faults import UNFAULTABLE
-from app.seed_model import EmploymentStatus
+from app.seed_model import DisableReason, EmploymentStatus
 
 router = APIRouter(prefix="/_admin")
 
@@ -85,10 +85,14 @@ async def reset_calls(request: Request) -> dict[str, str]:
 class StatusIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     employment_status: EmploymentStatus
+    disable_reason: DisableReason | None = None  # Phase 5 T22a P7 (TQ-8) — chỉ có nghĩa khi chuyển sang disabled
 
 
 @router.post("/users/{user_id}/status")
 async def set_status(user_id: str, body: StatusIn, request: Request) -> dict[str, str]:
+    """Phase 5 T22a P7: `disable_reason` theo trạng thái ĐÍCH — sang `disabled` lấy lý do gửi kèm (không kèm → null: R12 và R10
+    đều không khớp); trạng thái khác → LUÔN null (bỏ lý do gửi kèm). Hình dạng phản hồi giữ nguyên."""
     user = get_user(mock_state(request), user_id)  # không có → 404
     user.employment_status = body.employment_status
+    user.disable_reason = body.disable_reason if body.employment_status == "disabled" else None
     return {"user_id": user.user_id, "employment_status": user.employment_status}

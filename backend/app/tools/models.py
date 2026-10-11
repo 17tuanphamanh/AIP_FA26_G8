@@ -126,7 +126,14 @@ class AdUser(_Out):
 
 
 class AccountStatus(AdUser):
-    """`check_account_status` — cùng endpoint với `ad_get_user`, kèm tài khoản theo `account_type`."""
+    """`check_account_status` — cùng endpoint với `ad_get_user`, kèm tài khoản theo `account_type`.
+
+    Phase 5 T22a P7 (G5-3): `is_service_account`, `disable_reason` — nguồn của fact `target_is_service_account`,
+    `target_disable_reason` (R01–R03, R12). BẮT BUỘC, không mặc định: mock/AD cũ thiếu trường → `ToolContractError` rõ ràng,
+    không âm thầm coi là "không phải tài khoản dịch vụ" (R01/R02 sẽ AUTO nhầm). Không đặt ở `AdUser` (B1 không cần)."""
+
+    is_service_account: bool
+    disable_reason: Literal["security", "other"] | None  # chỉ có giá trị khi employment_status == "disabled"
 
 
 class Lockout(_Out):
@@ -210,6 +217,8 @@ class CatalogEntry(_Out):
     paid: bool
     version: str
     requires_approval: bool
+    # Phase 5 T22a P7: nguồn của fact `requires_local_admin` (R11, R15) — BẮT BUỘC, không mặc định (thiếu → lỗi rõ, không coi là false)
+    requires_local_admin: bool
 
 
 class LicenseInfo(_Out):

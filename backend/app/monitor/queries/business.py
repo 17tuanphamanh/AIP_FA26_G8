@@ -87,6 +87,12 @@ class E3Case:
 
 
 @dataclass(frozen=True)
+class E3Cases:
+    items: tuple[E3Case, ...]  # mới nhất trước, tối đa E3_CASES_LIMIT
+    truncated: bool  # còn ca ngoài E3_CASES_LIMIT (review PR #22, Q-M9-A3-4) — không cắt im lặng
+
+
+@dataclass(frozen=True)
 class BusinessMetrics:
     values: Mapping[str, Any]  # all: đủ 10 khóa; own: đúng OWN_KEYS
     unavailable: tuple[str, ...]
@@ -234,9 +240,9 @@ async def e1_split(conn: AsyncConnection, frm: datetime, to: datetime) -> E1Spli
     return E1Split(total=total, counts=counts, shares={k: _ratio(v, total) for k, v in counts.items()})
 
 
-async def e3_cases(conn: AsyncConnection, frm: datetime, to: datetime) -> list[E3Case]:
-    """Lá E3 (lỗ hổng KB), mới nhất trước, tối đa 100."""
-    params = {**_params(frm, to), "limit": E3_CASES_LIMIT, "excerpt": EXCERPT_MAX}
+async def e3_cases(conn: AsyncConnection, frm: datetime, to: datetime) -> E3Cases:
+    """Lá E3 (lỗ hổng KB), mới nhất trước, tối đa 100; lấy 101 dòng để biết còn ca ngoài giới hạn (`truncated`)."""
+    params = {**_params(frm, to), "limit": E3_CASES_LIMIT + 1, "excerpt": EXCERPT_MAX}
     rows = (await conn.execute(text(
         "SELECT t.ticket_id, t.intent, t.created_at, "
         "(SELECT a.kb_version FROM audit_logs a WHERE a.ticket_id = t.ticket_id AND a.kb_version IS NOT NULL "
@@ -244,10 +250,11 @@ async def e3_cases(conn: AsyncConnection, frm: datetime, to: datetime) -> list[E
         f"FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND t.exit_code = 'E3' "
         "ORDER BY t.created_at DESC, t.ticket_id LIMIT :limit"
     ), params)).all()  # fmt: skip
-    return [
+    items = tuple(
         E3Case(ticket_id=tid, intent=intent, created_at=at, kb_version=kb, request_excerpt=excerpt)
-        for tid, intent, at, kb, excerpt in rows
-    ]
+        for tid, intent, at, kb, excerpt in rows[:E3_CASES_LIMIT]
+    )
+    return E3Cases(items=items, truncated=len(rows) > E3_CASES_LIMIT)
 
 
 # Khóa → truy vấn `(conn, frm, to)`; khóa trong OWN_KEYS nhận thêm `approver_id=`. None = chưa có nguồn: khóa đó PHẢI

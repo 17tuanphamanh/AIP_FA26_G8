@@ -8,6 +8,13 @@ hành động (`reversible`, `scope`…) lấy từ `config/action_metadata.yaml
 Phase 4 S0 (Q-4-U A+, D-34): `ActionMeta.procedure_doc` = `doc_id` tài liệu QUY TRÌNH trong KB cho hành động — căn cứ của
 hành động là quy trình được khai báo và có mặt trong KB đang chạy (B11 kiểm tất định), không phải độ giống văn bản (B9).
 KHÔNG chép vào `Action` (`action_plan_hash` không đổi).
+
+Phase 5 T22a (D-41):
+- **`requested_for` = NGƯỜI BỊ TÁC ĐỘNG** (P4): account — chủ tài khoản đích; access — người được cấp/gia hạn/xem quyền; software, vpn —
+  người gửi (chủ máy kiểm bằng fact `device_owner_is_requester`). Fact `target_*` (`domain/facts.py`) mô tả người này.
+- **`PARAM_TYPES`** (P3, Q-5-3): danh sách TRẮNG khoá `params` mà luật M5 được đọc (nguồn DSL `action.params`). `params` là đúng thứ B17
+  thực thi và đã băm vào `action_plan_hash` → luật xét đúng hành động thật. Sai kiểu / ngoài tập → `param_ok` False → luật coi như
+  THIẾU (điều kiện sai), không ném lỗi.
 """
 
 from collections.abc import Mapping
@@ -27,6 +34,20 @@ type Sensitivity = Literal["low", "medium", "high"]
 # Mẫu `doc_id` KB — MỘT nguồn cho ingest (`rag.models.FrontMatter`, loader) và `ActionMeta.procedure_doc`. Nằm ở domain vì
 # domain không được import rag (import-linter 4); không đặt ở `ticket_state.py` vì module đó import `Action` (vòng).
 DOC_ID_PATTERN = r"^KB-(VPN|ACC|SW|ACS|GEN)-\d{3}$"
+
+# P3: khoá `params` luật được đọc → kiểu CHẶT (`bool` không phải `int`) + tập/khoảng giá trị.
+PARAM_TYPES: Mapping[str, type] = {"permission_level": str, "duration_days": int}
+PERMISSION_LEVELS: frozenset[str] = frozenset({"read", "write", "full"})
+DURATION_DAYS_MIN, DURATION_DAYS_MAX = 1, 365
+
+
+def param_ok(key: str, value: object) -> bool:
+    """Giá trị `params[key]` có được đưa cho luật không — khoá ngoài `PARAM_TYPES`, sai kiểu, ngoài tập → False (coi như thiếu)."""
+    if key == "permission_level":
+        return type(value) is str and value in PERMISSION_LEVELS
+    if key == "duration_days":
+        return type(value) is int and DURATION_DAYS_MIN <= value <= DURATION_DAYS_MAX
+    return False  # khoá ngoài PARAM_TYPES (vd device_id, software_name) — luật không đọc
 
 
 class ActionMeta(BaseModel):
@@ -51,7 +72,7 @@ class ActionMeta(BaseModel):
 class Action(BaseModel, frozen=True):
     type: str  # reset_password, grant_permission, install_software…
     target: str  # "user:nv001", "folder:finance/Q3", "device:LAP-0342"
-    requested_for: str  # user_id người hưởng lợi
+    requested_for: str  # user_id người BỊ TÁC ĐỘNG (P4, D-41) — xem docstring module
     scope: Scope
     privilege_level: PrivilegeLevel
     reversible: bool  # từ ACTION_METADATA [Chốt]

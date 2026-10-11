@@ -10,7 +10,7 @@ from typing import Literal, Protocol
 
 from app.ml.models import ClassifyOut, CountOut, EmbedOut, IntentOut, RerankOut
 
-type MlError = Literal["timeout", "http_5xx", "connect", "model_missing"]
+type MlError = Literal["timeout", "http_5xx", "connect", "model_missing", "too_many_windows"]
 
 
 class MlContractError(Exception):

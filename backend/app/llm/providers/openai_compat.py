@@ -5,11 +5,15 @@
   exception (traceback span E9 không được chứa gì ngoài loại lỗi).
 - SDK 3.x dùng `httpx2` → test tiêm `http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(...))` và đếm
   request ở handler (respx không chặn được httpx2).
+- `json_mode: json_object` (LLM-JSON, provider chỉ nhận `{"type": "json_object"}`, vd. DeepSeek): response_format không
+  mang schema → thêm vào CUỐI system message (không có thì chèn một system message ở đầu) yêu cầu trả đúng một đối tượng
+  json theo JSON Schema của lời gọi. Dựng list mới, không sửa `req.messages`. `json_schema`: messages gửi y nguyên.
 - Logger `httpx2` ghi NGUYÊN URL ở mức INFO (`HTTP Request: POST http://user:pass@host/v1?api-key=…`) → nâng lên
   WARNING (S9). `httpx2` chỉ SDK openai dùng (test AST ở test_llm_security.py); log `openai` ở DEBUG không có thân
   request (đã dò 29/09/2026 với openai 3.19.2).
 """
 
+import json
 import logging
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -32,6 +36,11 @@ from app.llm.providers.base import (
 )
 
 logging.getLogger("httpx2").setLevel(logging.WARNING)  # base_url có thể mang khoá — xem docstring
+
+JSON_OBJECT_NOTE = (
+    "Trả lời bằng đúng MỘT đối tượng json hợp lệ theo JSON Schema dưới đây, không thêm trường nào khác, "
+    "không viết gì ngoài đối tượng json đó.\nJSON Schema:\n"
+)
 
 
 class OpenAICompatProvider:
@@ -60,11 +69,22 @@ class OpenAICompatProvider:
         return {"type": "json_schema", "json_schema": {"name": req.schema_name, "schema": req.json_schema,
                                                         "strict": False}}  # fmt: skip
 
+    def _messages(self, req: ProviderRequest) -> list[dict[str, str]]:
+        if self._json_mode != "json_object":
+            return req.messages
+        note = JSON_OBJECT_NOTE + json.dumps(req.json_schema, ensure_ascii=False)
+        first = next((i for i, m in enumerate(req.messages) if m.get("role") == "system"), None)
+        if first is None:
+            return [{"role": "system", "content": note}, *req.messages]
+        system = req.messages[first]
+        return [*req.messages[:first], {**system, "content": f"{system['content']}\n\n{note}"},
+                *req.messages[first + 1 :]]  # fmt: skip
+
     async def chat(self, req: ProviderRequest) -> ProviderResponse:
         try:
             r = await self._client.chat.completions.create(
                 model=req.model,
-                messages=cast(Any, req.messages),
+                messages=cast(Any, self._messages(req)),
                 max_tokens=req.max_tokens,
                 temperature=req.temperature,
                 response_format=cast(Any, self._response_format(req)),

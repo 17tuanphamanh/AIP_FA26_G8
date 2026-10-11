@@ -1,0 +1,91 @@
+/*
+ * Token thiết kế Bản 4 — NGUỒN DUY NHẤT về màu, cỡ chữ, font (KH mục 4.5 [Chốt 29/09]; 12b Q-fe-7).
+ * Tailwind 4 đọc thẳng khối @theme dưới đây. Palette và thang chữ mặc định bị xoá (`initial`) nên
+ * lớp ngoài token (vd `bg-red-500`, `text-sm`) không tồn tại. Component KHÔNG viết mã màu/cỡ chữ riêng
+ * (`npm run check:style` chặn mã hex trong src/routes, src/components).
+ */
+@import "tailwindcss";
+
+@theme static {
+  --color-*: initial;
+  --text-*: initial;
+  --font-*: initial;
+
+  /* Font — SF Pro trên Mac/iPhone; Be Vietnam Pro tự host (KH 4.1 #7) cho máy khác. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Be Vietnam Pro", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", monospace;
+
+  /* Thang chữ 5 cỡ — không thêm cỡ khác. */
+  --text-title: 34px;
+  --text-title--line-height: 41px;
+  --text-title--font-weight: 700;
+  --text-title--letter-spacing: -0.02em;
+  --text-heading: 22px;
+  --text-heading--line-height: 28px;
+  --text-heading--font-weight: 600;
+  --text-body: 17px;
+  --text-body--line-height: 26px;
+  --text-body--font-weight: 400;
+  --text-secondary: 15px;
+  --text-secondary--line-height: 20px;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-label--font-weight: 600;
+
+  /* Chữ. `ink-3` chỉ cho biểu tượng / số dòng — không dùng cho chữ cần đọc. */
+  --color-ink: #1d1d1f;
+  --color-ink-2: #6e6e73;
+  --color-ink-3: #aeaeb2;
+
+  /* Nền, viền. */
+  --color-white: #ffffff;
+  --color-group: #f5f5f7;
+  --color-line: #e5e5ea;
+  --color-segmented: #eeeef0;
+  --color-button-2: #f2f2f7;
+  --color-sidebar: #f7f8fa; /* 12b Q-fe-7 */
+  --color-selected: #e6eef7; /* 12b Q-fe-7 — #0055A4 trên nền này ≈ 6,5:1 */
+
+  /* FPT. */
+  --color-fpt-blue: #0055a4; /* mọi nút chính, link */
+  --color-fpt-orange: #f37021; /* logo, chấm "chờ con người" */
+  --color-send: #e8630a; /* nút gửi */
+  --color-orange-ink: #b4500b; /* chữ cam, chỉ trên nền orange-bg */
+  --color-orange-bg: #fff4ec;
+  --color-done: #4db848; /* chấm xong */
+
+  /* Nguy hiểm. */
+  --color-danger: #c62828;
+  --color-danger-bg: #fcebeb;
+  --color-danger-ink: #7a1c1c;
+
+  /* Bo góc (Bản 4). Nút viên thuốc cao 44 dùng `rounded-full`. */
+  --radius-group: 16px;
+  --radius-sheet: 20px;
+  --radius-input: 24px;
+
+  /* Bóng ô nhập lớn (B4EmpHome, B4EmpChat). */
+  --shadow-input: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.04);
+}
+
+/* Kích thước bố cục (KH 4.5): dùng qua `w-(--sidebar-width)`, `max-w-(--chat-width)`. */
+:root {
+  --sidebar-width: 264px;
+  --chat-width: 720px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-white);
+    color: var(--color-ink);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+}

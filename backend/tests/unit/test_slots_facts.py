@@ -40,10 +40,15 @@ def _requester(user_id: str = "nv001") -> RequesterContext:
 
 
 def test_fact_keys_closed_list() -> None:
+    """Danh sách ĐÓNG: 7 fact VPN (3f) + 12 fact Phase 5 T22a (phase5 bảng 4.3) = 19."""
     assert FACT_KEYS == {
         "device_count", "has_registered_device", "device_registered", "device_owner_is_requester",
         "cert_status", "cert_days_to_expiry", "last_connection_ok",
+        "target_account_privilege", "target_is_service_account", "target_user_status", "target_disable_reason",
+        "target_account_locked", "target_lock_reason", "in_catalog", "license_paid", "requires_local_admin",
+        "resource_sensitivity", "same_department", "has_permission_record",
     }  # fmt: skip
+    assert len(FACT_KEYS) == 19
 
 
 def test_no_slot_is_named_like_a_fact() -> None:
