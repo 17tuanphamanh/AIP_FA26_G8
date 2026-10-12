@@ -1,6 +1,6 @@
 import type { Issue } from "../../api/errors.ts";
 import { FlatTable } from "../../components/ActionView.tsx";
-import { labelOf, ownEntry } from "./metrics.ts";
+import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import type { PolicyCheck } from "./policyText.ts";
 
 // Tab "Bảng" của B4MgrPolicy — CHỈ XEM (sửa ở tab JSON; PLAN-fe mục 7 #21), dựng từ JSON ĐANG có trong ô sửa. Giá trị

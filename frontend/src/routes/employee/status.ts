@@ -1,6 +1,7 @@
 // Trạng thái ticket cho NHÂN VIÊN (KH mục 5, 4.2): nhãn thường, KHÔNG BAO GIỜ hiện mã `S_*`; E0 (`S_BLOCKED`) chỉ câu
 // trung tính, không chữ nào gợi ý đã phát hiện tấn công [Chốt 7.1]. 14 trạng thái: backend/app/domain/states.py.
 import type { TicketView } from "../../api/types.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 
 export const STATUS_LABEL: Readonly<Record<string, string>> = {
   S_NEW: "Đang tiếp nhận yêu cầu",
@@ -23,7 +24,7 @@ export const STATUS_LABEL: Readonly<Record<string, string>> = {
 export const UNKNOWN_STATUS_LABEL = "Đang xử lý yêu cầu";
 
 export function statusLabel(status: string | null | undefined): string {
-  return (status && STATUS_LABEL[status]) || UNKNOWN_STATUS_LABEL;
+  return (status && ownEntry(STATUS_LABEL, status, "")) || UNKNOWN_STATUS_LABEL;
 }
 
 /** Câu dưới hội thoại khi ticket đã kết thúc (B4EmpStates). Nhãn nào không có ở đây → dùng `statusLabel`. */

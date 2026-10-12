@@ -18,6 +18,7 @@ import {
   digestFieldErrors,
   digestReplyBody,
   EMPTY_DRAFT,
+  itemLabel,
   latestRound,
   normalizeProgress,
   PARENT_DONE,
@@ -591,5 +592,106 @@ describe("t74: ticket thường (không children_progress) — hành vi F2 khôn
     expect((await screen.findByTestId("final-note")).textContent).toContain(FINAL_NOTE.S_RESOLVED!);
     expect(pill()).toContain("Đã hoàn tất");
     expect(document.body.textContent).not.toContain("các ý");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t125 (N-PROTO P3)
+
+describe("t125: child_id / kind '__proto__' / 'constructor' / 'toString' — khoá riêng khi đọc VÀ khi ghi", () => {
+  const ODD: DigestItem[] = [
+    { child_id: "constructor", index: 1, title: "Cài Visio", kind: "question", needs: "answer", text: "Máy nào?", options: ["LAP-0342"] },
+    { child_id: "__proto__", index: 2, title: "Mật khẩu email", kind: "result", needs: "confirm", text: "Đã gửi đường dẫn." },
+    { child_id: "toString", index: 3, title: "Máy in", kind: "question", needs: "answer", text: "Tầng mấy?" },
+  ];
+  const ids = ODD.map((i) => i.child_id);
+  /** Object có khoá RIÊNG "__proto__" (viết literal `{"__proto__": …}` trong mã JS là đổi prototype). */
+  const own = <T,>(raw: string) => JSON.parse(raw) as Record<string, T>;
+  const oddView = (items: DigestItem[]) =>
+    view({
+      conversation: [{ ...DIGEST, items }],
+      children_progress: items.map((i) => ({ child_id: i.child_id, index: i.index, title: i.title, progress: "needs_user", outcome: null })) as TicketView["children_progress"],
+    });
+  const childErrors = () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    return () => spy.mock.calls.filter((args) => args.some((a) => String(a).includes("React child")));
+  };
+
+  it("itemLabel: kind prototype → nhãn 'Đã xử lý' như kind lạ; kind hợp lệ giữ nhãn", () => {
+    for (const kind of ["__proto__", "constructor", "toString"]) {
+      expect(itemLabel({ kind: kind as DigestItem["kind"] }, null)).toBe("Đã xử lý");
+    }
+    expect(itemLabel({ kind: "question" }, null)).toBe("Cần bạn trả lời");
+  });
+
+  it("checkDigest: chưa trả lời → lỗi ở ĐỦ 3 khoá riêng (lỗi '__proto__' không bị nuốt); nháp đủ → không lỗi", () => {
+    const errors = checkDigest(ODD, {});
+    expect(Object.keys(errors)).toStrictEqual(ids);
+    expect(errors).toStrictEqual(
+      own(`{"constructor": "${REPLY_MISSING_CHOICE}", "__proto__": "${REPLY_MISSING_CONFIRM}", "toString": "${REPLY_MISSING_ANSWER}"}`),
+    );
+    const drafts = own<typeof EMPTY_DRAFT>(
+      '{"constructor": {"choice": null, "note": "", "answer": "LAP-0342"}, "__proto__": {"choice": true, "note": "", "answer": ""},' +
+        ' "toString": {"choice": null, "note": "", "answer": "Tầng 3"}}',
+    );
+    expect(checkDigest(ODD, drafts)).toStrictEqual({});
+  });
+
+  it("digestReplyBody: body JSON có đủ 3 khoá, đúng giá trị; nháp thiếu → nháp rỗng (không đọc prototype)", () => {
+    const drafts = own<typeof EMPTY_DRAFT>(
+      '{"constructor": {"choice": null, "note": "", "answer": " LAP-0342 "}, "__proto__": {"choice": false, "note": " vẫn lỗi ", "answer": ""}}',
+    );
+    expect(JSON.stringify(digestReplyBody(ODD, drafts))).toBe(
+      '{"items":{"constructor":{"answer":"LAP-0342"},"__proto__":{"confirmed":false,"note":"vẫn lỗi"},"toString":{"answer":""}}}',
+    );
+    expect(JSON.stringify(digestReplyBody(ODD, {}))).toBe('{"items":{"constructor":{"answer":""},"__proto__":{"confirmed":false},"toString":{"answer":""}}}');
+  });
+
+  it("digestFieldErrors: 422 fields theo 3 khoá → lỗi ở đúng 3 khoá riêng", () => {
+    const { byChild, general } = digestFieldErrors(["items.__proto__.note", "items.constructor", "items.toString.answer"], ids);
+    expect(general).toBe(false);
+    expect(byChild).toStrictEqual(own(`{"__proto__": "${REPLY_NOTE_TOO_LONG}", "constructor": "${REPLY_INVALID}", "toString": "${REPLY_INVALID}"}`));
+  });
+
+  it("màn: gửi trống → lỗi dưới đủ 3 khối, 0 POST; gõ/chọn → lỗi khối đó mất; gửi → body đúng 3 khoá", async () => {
+    const errors = childErrors();
+    const calls = stubApi(() => oddView(ODD));
+    renderChat();
+    fireEvent.click(await sendButton());
+    expect(ids.map(blockError)).toStrictEqual([REPLY_MISSING_CHOICE, REPLY_MISSING_CONFIRM, REPLY_MISSING_ANSWER]);
+    expect(ids.map((id) => block(id).querySelector("span.shrink-0")?.textContent)).toStrictEqual(["Cần bạn trả lời", "Đã xử lý", "Cần bạn trả lời"]);
+
+    const first = within(block("constructor")).getByLabelText("Trả lời ý 1") as HTMLTextAreaElement;
+    fireEvent.change(first, { target: { value: "LAP-0342 tầng 2" } });
+    expect(first.value).toBe("LAP-0342 tầng 2");
+    expect(blockError("constructor")).toBeNull();
+    fireEvent.click(within(block("__proto__")).getByRole("button", { name: "Đã ổn" }));
+    expect(blockError("__proto__")).toBeNull();
+    fireEvent.change(within(block("toString")).getByLabelText("Trả lời ý 3"), { target: { value: " Tầng 3 " } });
+    expect(blockError("toString")).toBeNull();
+    await settle();
+    expect(replies(calls)).toHaveLength(0);
+
+    fireEvent.click(await sendButton());
+    await waitFor(() => expect(replies(calls)).toHaveLength(1));
+    expect(replies(calls)[0]!.body).toBe(
+      '{"items":{"constructor":{"answer":"LAP-0342 tầng 2"},"__proto__":{"confirmed":true},"toString":{"answer":"Tầng 3"}}}',
+    );
+    expect(errors()).toHaveLength(0);
+    expect(document.body.textContent).not.toMatch(/function |\[object /);
+  });
+
+  it("màn: khối 'constructor' xác nhận — 'Chưa ổn' không ghi chú → body {confirmed:false} (nháp đủ trường, không lấy từ prototype)", async () => {
+    const calls = stubApi(() => oddView([{ ...ODD[1]!, child_id: "constructor", index: 1 }]));
+    renderChat();
+    await sendButton();
+    fireEvent.click(within(block("constructor")).getByRole("button", { name: "Chưa ổn" }));
+    expect((within(block("constructor")).getByLabelText(/Ghi chú cho ý 1/) as HTMLTextAreaElement).value).toBe("");
+    fireEvent.click(await sendButton());
+    await waitFor(() => expect(replies(calls)).toHaveLength(1));
+    expect(replies(calls)[0]!.body).toBe('{"items":{"constructor":{"confirmed":false}}}');
+  });
+
+  it("khối hợp lệ (child_id thường) vẫn như cũ", () => {
+    expect(checkDigest([ITEMS[0]!], {})).toStrictEqual({ [C1]: REPLY_MISSING_CONFIRM });
   });
 });

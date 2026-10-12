@@ -11,6 +11,7 @@ import { ActionView, FlatTable } from "../../components/ActionView.tsx";
 import { useServerNow } from "../../components/clock.ts";
 import { Modal } from "../../components/Modal.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
+import { ownEntry } from "../../lib/lookup.ts";
 import {
   actionLabel,
   approveBody,
@@ -103,7 +104,7 @@ function Deadline({ view, createdAt }: { view: ApprovalViewP4; createdAt: string
   if (view.status !== "pending") {
     return (
       <span data-testid="approval-status" className="shrink-0 rounded-full bg-group px-3.5 py-1.5 text-secondary font-semibold">
-        {STATUS_LABEL[view.status]}
+        {ownEntry(STATUS_LABEL, view.status, "")}
       </span>
     );
   }
@@ -199,7 +200,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
 
   const actionType = view.action.type;
   const title = typeof actionType === "string" ? actionLabel(actionType) : "Hành động";
-  const requesterRole = ROLE_LABEL[view.requester.role as keyof typeof ROLE_LABEL] ?? (view.requester.role || MISSING_VALUE);
+  const requesterRole = ownEntry(ROLE_LABEL, view.requester.role, view.requester.role || MISSING_VALUE);
   const department = view.requester.department || MISSING_VALUE;
   // Thiếu cả `procedure` (lệch spec) → không vỡ màn: hiện "(không có)".
   const procedureTitle = view.procedure?.title?.trim();

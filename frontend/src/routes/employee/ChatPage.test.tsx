@@ -241,3 +241,84 @@ describe("t76: nút gợi ý nhanh (B4EmpHome) — điền câu mẫu + focus ô
     }
   });
 });
+
+// ------------------------------------------------------------------------------------------------ t121, t123 (N-PROTO)
+
+/** Mở /chat/:id với GET ticket trả `respond()`; trả hàm gỡ. Ghi console.error để bắt cảnh báo "not valid as a React child". */
+function mountTicket(respond: () => Response) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => (url === `/api/tickets/${ID}` ? respond() : json(404, { detail: "not_found" }))),
+  );
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const queryClient = new QueryClient();
+  const rendered = render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/chat/${ID}`]}>
+        <Routes>
+          <Route path="/chat/:ticketId" element={<ChatRoute />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const reactChildErrors = () => consoleError.mock.calls.filter((args) => args.some((a) => String(a).includes("React child")));
+  return {
+    reactChildErrors,
+    done: () => {
+      rendered.unmount();
+      queryClient.clear();
+    },
+  };
+}
+const noLeak = () => expect(document.body.textContent).not.toMatch(/function |\[object /);
+
+describe("t121 (render): lỗi tải ticket với mã '__proto__' / 'constructor' / 'toString' → câu chung theo status", () => {
+  it.each(["__proto__", "constructor", "toString"])("500 {detail: %j} → 'Có lỗi xảy ra, vui lòng thử lại.'", async (code) => {
+    const page = mountTicket(() => json(500, { detail: code }));
+    try {
+      expect((await screen.findByRole("heading", { name: "Chưa tải được yêu cầu." })).nextElementSibling?.textContent).toBe(
+        "Có lỗi xảy ra, vui lòng thử lại.",
+      );
+      expect(page.reactChildErrors()).toHaveLength(0);
+      noLeak();
+    } finally {
+      page.done();
+    }
+  });
+
+  it("mã hợp lệ (503 ticket_busy) vẫn ra câu riêng", async () => {
+    const page = mountTicket(() => json(503, { detail: "ticket_busy" }));
+    try {
+      expect((await screen.findByRole("heading", { name: "Chưa tải được yêu cầu." })).nextElementSibling?.textContent).toBe(
+        "Hệ thống đang bận, sẽ tự thử lại.",
+      );
+    } finally {
+      page.done();
+    }
+  });
+});
+
+describe("t123: final_state '__proto__' / 'constructor' / 'toString' → câu kết thúc = nhãn trạng thái lạ, màn không vỡ", () => {
+  it.each(["__proto__", "constructor", "toString"])("final_state %j → 'Đang xử lý yêu cầu' (câu cuối + nhãn header)", async (state) => {
+    const page = mountTicket(() => json(200, view({ status: state, waiting_for: null, final_state: state })));
+    try {
+      expect((await screen.findByTestId("final-note")).firstElementChild?.textContent).toBe("Đang xử lý yêu cầu");
+      expect(document.querySelector('header [role="status"]')?.textContent).toBe("Đang xử lý yêu cầu");
+      expect(page.reactChildErrors()).toHaveLength(0);
+      noLeak();
+    } finally {
+      page.done();
+    }
+  });
+
+  it("final_state hợp lệ (S_RESOLVED) vẫn ra câu kết thúc cũ", async () => {
+    const page = mountTicket(() => json(200, view({ status: "S_RESOLVED", waiting_for: null, final_state: "S_RESOLVED" })));
+    try {
+      expect((await screen.findByTestId("final-note")).firstElementChild?.textContent).toBe(
+        "Yêu cầu đã hoàn tất. Cần thêm gì, bạn tạo yêu cầu mới nhé.",
+      );
+    } finally {
+      page.done();
+    }
+  });
+});

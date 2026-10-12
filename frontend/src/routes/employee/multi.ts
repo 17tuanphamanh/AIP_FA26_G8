@@ -5,6 +5,7 @@ import { ApiError, errorMessage } from "../../api/errors.ts";
 import { NOTE_MAX, TEXT_MAX } from "../../api/tickets.ts";
 import type { ChildOutcome, ChildProgressState, DigestItem, ParentReplyIn, ParentReplyItem, TicketView } from "../../api/types.ts";
 import type { Message } from "../../components/messages.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 import { statusLabel, type Tone } from "./status.ts";
 
 // ---------------------------------------------------------------- dải tiến độ (P1 §8.3 — không phải tin nhắn)
@@ -108,7 +109,7 @@ const ITEM_LABEL: Readonly<Record<DigestItem["kind"], string>> = {
 /** Nhãn góc phải của khối (Bản 4). Ý có `outcome:"blocked"` → câu trung tính, bất kể `kind` [Chốt 7.1]. */
 export function itemLabel(item: Pick<DigestItem, "kind">, outcome: string | null | undefined): string {
   if (outcome === "blocked") return OUTCOME_LABEL.blocked;
-  return ITEM_LABEL[item.kind] ?? ITEM_LABEL.result;
+  return ownEntry(ITEM_LABEL, item.kind, ITEM_LABEL.result);
 }
 
 // ---------------------------------------------------------------- form trả lời
@@ -126,47 +127,49 @@ export const REPLY_ANSWER_TOO_LONG = `Câu trả lời tối đa ${TEXT_MAX} ký
 export const REPLY_NOTE_TOO_LONG = `Ghi chú tối đa ${NOTE_MAX} ký tự.`;
 export const REPLY_INVALID = "Phản hồi cho ý này chưa hợp lệ — kiểm tra lại.";
 
+/** Nháp của một khối theo `child_id` (khoá server) — khoá RIÊNG: id "constructor" / "__proto__" không ra hàm/object
+ *  của prototype. Các hàm dưới GHI theo `child_id` qua `Object.fromEntries` (tạo khoá riêng; gán `obj["__proto__"] = …` là
+ *  đổi prototype — khoá mất khỏi lỗi và khỏi body JSON). */
+export const draftOf = (drafts: Drafts, childId: string): DraftItem => ownEntry(drafts, childId, EMPTY_DRAFT);
+
 /** Chỉ các khối cần người dùng (`needs ≠ "none"`) — đúng tập `awaiting` của cha (P1 §8.2). */
 export const awaitingItems = (items: readonly DigestItem[]) => items.filter((i) => i.needs !== "none");
 
 /** Kiểm PHÍA MÁY KHÁCH trước khi gửi: mọi khối cần người dùng phải có lựa chọn / câu trả lời. Trả lỗi theo `child_id`
  *  (rỗng = gửi được). Server vẫn kiểm (422). */
 export function checkDigest(items: readonly DigestItem[], drafts: Drafts): Record<string, string> {
-  const errors: Record<string, string> = {};
+  const errors: [string, string][] = [];
   for (const item of awaitingItems(items)) {
-    const draft = drafts[item.child_id] ?? EMPTY_DRAFT;
+    const draft = draftOf(drafts, item.child_id);
+    const fail = (message: string) => errors.push([item.child_id, message]);
     if (item.needs === "confirm") {
-      if (draft.choice === null) errors[item.child_id] = REPLY_MISSING_CONFIRM;
-      else if (draft.choice === false && draft.note.trim().length > NOTE_MAX) errors[item.child_id] = REPLY_NOTE_TOO_LONG;
+      if (draft.choice === null) fail(REPLY_MISSING_CONFIRM);
+      else if (draft.choice === false && draft.note.trim().length > NOTE_MAX) fail(REPLY_NOTE_TOO_LONG);
     } else {
       const answer = draft.answer.trim();
-      if (!answer) errors[item.child_id] = item.options?.length ? REPLY_MISSING_CHOICE : REPLY_MISSING_ANSWER;
-      else if (answer.length > TEXT_MAX) errors[item.child_id] = REPLY_ANSWER_TOO_LONG;
+      if (!answer) fail(item.options?.length ? REPLY_MISSING_CHOICE : REPLY_MISSING_ANSWER);
+      else if (answer.length > TEXT_MAX) fail(REPLY_ANSWER_TOO_LONG);
     }
   }
-  return errors;
+  return Object.fromEntries(errors);
 }
 
 /** Body `/reply`: CHỈ khối `needs ≠ "none"` (ý bị từ chối / đã chuyển không có mặt). Câu trả lời đã trim; ghi chú chỉ khi
  *  "Chưa ổn" và không rỗng (rỗng → bỏ hẳn khoá, như `/confirm`). Gọi sau `checkDigest` rỗng. */
 export function digestReplyBody(items: readonly DigestItem[], drafts: Drafts): ParentReplyIn {
-  const body: Record<string, ParentReplyItem> = {};
-  for (const item of awaitingItems(items)) {
-    const draft = drafts[item.child_id] ?? EMPTY_DRAFT;
-    if (item.needs === "answer") {
-      body[item.child_id] = { answer: draft.answer.trim() };
-    } else {
-      const note = draft.choice === false ? draft.note.trim() : "";
-      body[item.child_id] = note ? { confirmed: false, note } : { confirmed: draft.choice === true };
-    }
-  }
-  return { items: body };
+  const body = awaitingItems(items).map((item): [string, ParentReplyItem] => {
+    const draft = draftOf(drafts, item.child_id);
+    if (item.needs === "answer") return [item.child_id, { answer: draft.answer.trim() }];
+    const note = draft.choice === false ? draft.note.trim() : "";
+    return [item.child_id, note ? { confirmed: false, note } : { confirmed: draft.choice === true }];
+  });
+  return { items: Object.fromEntries(body) };
 }
 
 /** 422 `fields` (đã bỏ `body.`, errors.ts) → lỗi tại ĐÚNG khối theo `child_id` (`items.<cid>` hoặc `items.<cid>.…`).
  *  Field không thuộc khối nào (`items`, `items.<extra>`, `body`…) → `general`. */
 export function digestFieldErrors(fields: readonly string[], childIds: readonly string[]) {
-  const byChild: Record<string, string> = {};
+  const byChild: [string, string][] = [];
   let general = fields.length === 0;
   for (const field of fields) {
     const cid = childIds.find((id) => field === `items.${id}` || field.startsWith(`items.${id}.`));
@@ -175,9 +178,9 @@ export function digestFieldErrors(fields: readonly string[], childIds: readonly 
       continue;
     }
     const rest = field.slice(`items.${cid}`.length).split(".");
-    byChild[cid] = rest.includes("note") ? REPLY_NOTE_TOO_LONG : REPLY_INVALID;
+    byChild.push([cid, rest.includes("note") ? REPLY_NOTE_TOO_LONG : REPLY_INVALID]);
   }
-  return { byChild, general };
+  return { byChild: Object.fromEntries(byChild), general };
 }
 
 /** Lỗi của `/reply` → lỗi theo khối + câu chung (dưới nút "Gửi phản hồi"). 422 có `fields` → đúng khối, field không

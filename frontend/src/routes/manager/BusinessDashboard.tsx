@@ -1,11 +1,11 @@
 import type { BusinessDashboard as Business, BusinessMetrics, E3Cases } from "../../api/types.ts";
+import { labelOf } from "../../lib/lookup.ts";
 import {
   DECIDED_BY_LABEL,
   E1_LABEL,
   E3_TRUNCATED_TEXT,
   EMPTY_TEXT,
   formatRate,
-  labelOf,
   type MetricKind,
   metricText,
   WEIGHT_GROUP_LABEL,

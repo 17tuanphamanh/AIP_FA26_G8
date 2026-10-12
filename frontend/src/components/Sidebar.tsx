@@ -3,6 +3,7 @@ import { NavLink } from "react-router";
 import type { Me } from "../api/types.ts";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
+import { ownEntry } from "../lib/lookup.ts";
 import { titleOf, useSessionTickets } from "../routes/employee/sessionTickets.ts";
 import type { Tone } from "../routes/employee/status.ts";
 
@@ -58,7 +59,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
 
       {staff ? (
         <>
-          <span className="px-3 pt-4 pb-1 text-label text-ink-2">{ROLE_HEADING[me.role]}</span>
+          <span className="px-3 pt-4 pb-1 text-label text-ink-2">{ownEntry(ROLE_HEADING, me.role, "")}</span>
           {STAFF_NAV.filter((item) => hasPerm(me, item.perm)).map((item) => (
             <NavLink key={item.to} to={item.to} className={itemClass}>
               {item.label}
@@ -101,7 +102,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
           <span className="truncate text-secondary font-semibold" data-testid="me-user-id">
             {me.user_id}
           </span>
-          <span className="truncate text-label font-normal text-ink-2">{ROLE_LABEL[me.role]}</span>
+          <span className="truncate text-label font-normal text-ink-2">{ownEntry(ROLE_LABEL, me.role, "")}</span>
         </span>
         {/* Q-fe-16: Bản 4 không vẽ nút đăng xuất → nút biểu tượng 32 px để nhãn vai trò giữ một dòng. */}
         <button
