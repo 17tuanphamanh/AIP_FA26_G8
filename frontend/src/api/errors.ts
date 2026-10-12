@@ -1,3 +1,5 @@
+import { ownEntry } from "../lib/lookup.ts";
+
 // Lỗi HTTP → thông báo tiếng Việt (KH mục 5; 12b Q-fe-3). Backend trả HAI dạng thân lỗi:
 //   {detail: "<mã hoặc câu>"}                  — HTTPException, AuthError, 409 sự kiện muộn, 413
 //   {error: "<mã>", fields?: ["body.text", …]}  — 422 kiểm dữ liệu (`invalid_request`), 503 privacy guard
@@ -94,7 +96,9 @@ const CODE_MESSAGES: Record<string, string> = {
 
 export function errorMessage(error: ApiError | null): string {
   if (error === null) return "Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.";
-  if (error.code && CODE_MESSAGES[error.code]) return CODE_MESSAGES[error.code]!;
+  // Khoá riêng: mã "constructor" / "__proto__" của server là mã lạ, không phải hàm của prototype.
+  const known = error.code ? ownEntry<string | null>(CODE_MESSAGES, error.code, null) : null;
+  if (known) return known;
   switch (error.status) {
     case 401:
       return "Phiên đăng nhập đã hết. Vui lòng đăng nhập lại.";

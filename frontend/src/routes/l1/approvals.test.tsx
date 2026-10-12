@@ -1491,3 +1491,69 @@ describe("t93: thẩm mỹ — dải chỉ đọc giữ 'L2' viết hoa; bảng 
     expect(isShortValue('"Ngoài giờ hành chính"')).toBe(true); // đếm theo ký tự, không theo byte
   });
 });
+
+// ------------------------------------------------------------------------------------------------ t124 (N-PROTO)
+
+describe("t124: L1 — status / action_type / vai trò người gửi '__proto__' / 'constructor' / 'toString' → dự phòng, màn không vỡ", () => {
+  const PROTO_KEYS = ["__proto__", "constructor", "toString"];
+  const childErrors = () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    return () => spy.mock.calls.filter((args) => args.some((a) => String(a).includes("React child")));
+  };
+  const noLeak = () => expect(document.body.textContent).not.toMatch(/function |\[object /);
+
+  it("readonlyText / actionLabel: khoá prototype → câu 'không còn chờ duyệt' / hiện nguyên mã; khoá hợp lệ giữ nhãn cũ", () => {
+    for (const key of PROTO_KEYS) {
+      expect(readonlyText(key as ApprovalStatus)).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
+      expect(actionLabel(key)).toBe(key);
+    }
+    expect(readonlyText("rejected")).toBe("Phiếu đã từ chối — chỉ xem, không quyết định được nữa.");
+    expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
+  });
+
+  it.each(PROTO_KEYS)("chi tiết phiếu: status %j → nhãn trạng thái trống + dải chỉ đọc chung; vai trò người gửi cùng khoá → hiện nguyên", async (key) => {
+    const errors = childErrors();
+    stubFetch((_method, url) =>
+      url === "/api/approvals/p"
+        ? json(200, viewOf("p", { status: key as ApprovalStatus, requester: { role: key, department: null }, action: { ...NESTED_ACTION, type: key } }))
+        : undefined,
+    );
+    renderAt("/approvals/p");
+    expect((await screen.findByTestId("approval-status")).textContent).toBe("");
+    expect(screen.getByTestId("approval-readonly").textContent).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
+    expect(screen.getByText("Vai trò", { selector: "dt" }).nextElementSibling?.textContent).toBe(key);
+    expect(screen.getByText(key, { selector: "p.text-heading" })).toBeTruthy(); // tiêu đề hành động = nguyên mã
+    expect(errors()).toHaveLength(0);
+    noLeak();
+  });
+
+  it("chi tiết phiếu: status + vai trò hợp lệ vẫn ra nhãn cũ", async () => {
+    stubFetch((_method, url) =>
+      url === "/api/approvals/q" ? json(200, viewOf("q", { status: "approved", requester: { role: "l2", department: null } })) : undefined,
+    );
+    renderAt("/approvals/q");
+    expect((await screen.findByTestId("approval-status")).textContent).toBe("Đã đồng ý");
+    expect(screen.getByText("Vai trò", { selector: "dt" }).nextElementSibling?.textContent).toBe("Kỹ thuật viên L2");
+  });
+
+  it("hộp thư tab 'Đã quyết': status prototype → ô thời gian trống, action_type → nguyên mã; status hợp lệ giữ nhãn", async () => {
+    const errors = childErrors();
+    const odd = PROTO_KEYS.map((key, i) => listItem(`o${i}`, { status: key as ApprovalStatus, action_type: key, deadline: at(i) }));
+    stubFetch((_method, url) => {
+      if (url.endsWith("status=approved")) return inbox([...odd, listItem("ok", { status: "approved", deadline: at(9) })]);
+      if (url.startsWith("/api/approvals?")) return inbox([]);
+      return undefined;
+    });
+    renderAt("/approvals");
+    fireEvent.click(await screen.findByRole("tab", { name: "Đã quyết" }));
+    await waitFor(() => expect(rowIds()).toStrictEqual(["o0", "o1", "o2", "ok"]));
+    const rows = screen.getAllByTestId("inbox-row");
+    PROTO_KEYS.forEach((key, i) => {
+      expect(within(rows[i]!).getByTestId("inbox-time").textContent).toBe("");
+      expect(rows[i]!.textContent).toContain(key);
+    });
+    expect(within(rows[3]!).getByTestId("inbox-time").textContent).toBe("Đã đồng ý");
+    expect(errors()).toHaveLength(0);
+    noLeak();
+  });
+});

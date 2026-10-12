@@ -7,11 +7,12 @@ import {
   checkDigest,
   digestLead,
   digestReplyBody,
+  draftOf,
   type DraftItem,
-  EMPTY_DRAFT,
   itemLabel,
   replyErrorView,
 } from "../routes/employee/multi.ts";
+import { ownEntry } from "../lib/lookup.ts";
 import type { Digest } from "./messages.ts";
 import { SafeMarkdown } from "./SafeMarkdown.tsx";
 import { Sources } from "./Sources.tsx";
@@ -52,10 +53,12 @@ export function DigestMessage({ digest, outcomes = {}, form, newRequestLink = fa
   const [general, setGeneral] = useState<string | null>(null);
   const inFlight = useRef(false); // chặn bấm 2 lần trong cùng một nhịp (state `sending` chưa kịp cập nhật)
 
+  // Mọi state ở đây khoá theo `child_id` của server → đọc/kiểm khoá RIÊNG (`Object.hasOwn`); ghi bằng khoá tính
+  // (`[childId]` trong object literal, spread) luôn tạo khoá riêng, kể cả "__proto__".
   function update(childId: string, patch: Partial<DraftItem>) {
-    setDrafts((d) => ({ ...d, [childId]: { ...(d[childId] ?? EMPTY_DRAFT), ...patch } }));
+    setDrafts((d) => ({ ...d, [childId]: { ...draftOf(d, childId), ...patch } }));
     setErrors((e) => {
-      if (!(childId in e)) return e;
+      if (!Object.hasOwn(e, childId)) return e;
       const rest = { ...e };
       delete rest[childId];
       return rest;
@@ -93,11 +96,11 @@ export function DigestMessage({ digest, outcomes = {}, form, newRequestLink = fa
             <DigestBlock
               key={item.child_id}
               item={item}
-              outcome={outcomes[item.child_id]}
+              outcome={ownEntry<string | null | undefined>(outcomes, item.child_id, undefined)}
               active={active}
               sending={form?.sending ?? false}
-              draft={drafts[item.child_id] ?? EMPTY_DRAFT}
-              error={errors[item.child_id] ?? null}
+              draft={draftOf(drafts, item.child_id)}
+              error={ownEntry<string | null>(errors, item.child_id, null)}
               onChange={(patch) => update(item.child_id, patch)}
               newRequestLink={newRequestLink}
             />

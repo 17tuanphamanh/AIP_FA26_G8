@@ -5,6 +5,7 @@
 //   object. Nó KHÔNG BAO GIỜ khoá nút Lưu khi JSON.parse đã đọc được (lệch nhau → chỉ bỏ đánh dấu dòng).
 // - Kiểm NGHĨA (ngưỡng, loại luật, id trùng…) là việc của server (422) — không viết lại validator ở đây (hai nguồn luật).
 // Dòng/cột tính từ 1; xuống dòng = "\n" (textarea luôn chuẩn hoá về "\n").
+import { ownEntry } from "../../lib/lookup.ts";
 
 export type JsonNode =
   | { kind: "object"; line: number; members: { key: string; line: number; value: JsonNode }[] }
@@ -69,8 +70,9 @@ export function locate(text: string): Located {
       }
       if (c === "\\") {
         const e = text[i + 1];
-        if (e !== undefined && ESCAPES[e] !== undefined) {
-          out += ESCAPES[e];
+        const escaped = e === undefined ? undefined : ownEntry<string | undefined>(ESCAPES, e, undefined);
+        if (escaped !== undefined) {
+          out += escaped;
           i += 2;
         } else if (e === "u" && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
           out += String.fromCharCode(parseInt(text.slice(i + 2, i + 6), 16));
