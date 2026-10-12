@@ -4287,7 +4287,7 @@ DỪNG 1 xanh với luật + seed mới, gate3 tc09/gate2 đổi → DỪNG báo
 - **Commit DỪNG 2:** `3b9d745` — 34 file (28 file 4b + 5 file mới + spec v1.2), push `origin/dev-tuananh` 01/10/2026 — **CI xanh** run
   `36783587264` (4m33s, Tuấn Anh kiểm). **4b ĐÓNG.**
 
-## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — DỪNG 1 XANH `aac90b1`, DỪNG 2 XANH — chờ commit)
+## Phase 4 — chặng 4c: B16 báo từ chối + nhắc 50/80% + dự phòng + API xem phiếu (tầng B) (01/10/2026 — **4c ĐÓNG**: DỪNG 1 `aac90b1`, DỪNG 2 `b457e6e` — CI xanh run `36885395186`)
 
 Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 0.1, 0.2, 2; **5.6 + 5.7 thắng khi lệch**). Kế hoạch:
 `PLAN-4c.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4c.md` mục 9): Q-4c-1 = A, Q-4c-2 = A, TQ-1…14 + A1–A26 đồng ý, 2 DỪNG
@@ -4437,7 +4437,11 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     M-4c-2b → `not_at_or_after_deadline[dung-han]`, `[qua-han]`; **M-4c-3b** (SQL `inbox` bỏ `reminder_2_at IS NOT NULL`) →
     `test_c10_pg_inbox_role_filter_assigned_or_backup_after_reminder2`. md5 `approval/store.py` `269c981e…`, `db/runtime.py` `d4e141e8…`
     trước = sau; `git diff --stat` khớp; không còn chữ `MUTATION`. **Mutation DỪNG 2 đủ: 5/5** (unit M-4c-3…6 + SQL 3b); **cả 4c: 10/10**.
-  - **DỪNG 2 XANH** (verify 15:56–16:11 + mutation 10/10 + security-reviewer 0 FAIL). Chờ lệnh commit.
+  - **DỪNG 2 XANH** (verify 15:56–16:11 + mutation 10/10 + security-reviewer 0 FAIL).
+  - **Commit DỪNG 2:** `b457e6e` (19 file = 12 tracked + 4 test mới + spec v1.4 mục 6.5 + 2 README; gitleaks staged sạch; hook unit
+    xanh). Tuấn Anh commit riêng `fc57772` (2 file docs M9: plan A1 + luật 7 đọc audit B16) trên đó. Push `origin/dev-tuananh`
+    01/10/2026 (`aac90b1..fc57772`; fetch trước push: remote vẫn `aac90b1`) — **CI xanh** run `36885395186` (4m57s, CI của `fc57772`
+    gồm cả `b457e6e`; `gh` bị sandbox chặn — Tuấn Anh kiểm).
   - **Spec cần sửa (4c, DỪNG 2):**
     - P4: `may_decide_as` = `approval_role(...)` khác None (một định nghĩa cho quyết / xem / hộp thư); thân 202 thêm `decided_as`.
     - P5: lọc vai trò bằng SQL ở `WHERE` trước `LIMIT`, lọc xung đột ở route → có thể < 50; `status` không bắt buộc; 422
@@ -4449,6 +4453,530 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     - Route quyết: ghi chú từ chối rỗng SAU khi che (ký tự vô hình) → 422 `rejected_requires_note` (soát S4b); B16 giữ `""` (không None).
     - Mutation thêm M-4c-3b (lớp SQL lọc vai trò của hộp thư, độc lập với `approval_role`).
     - Q-4c-3 = A: route quyết giữ 403 cho phiếu có thật không được giao (Việc treo 30).
+
+## Phase 4 — chặng 4d: Ghi đè + `audit_check` + B17 so hash phiếu + e2e cổng 4 + `make gate4` (tầng A) (01–02/10/2026 — PLAN DUYỆT; DỪNG 1 `e510a6e` xanh trên cây gộp M9)
+
+Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 0.1, 0.2, 2, 4.4, 8; **5.7, 6.4, 6.5 thắng khi lệch**). Kế hoạch:
+`PLAN-4d.md` (untracked) — **DUYỆT 01/10/2026** (chốt ở `PLAN-4d.md` mục 9): Q-4d-1 = A, Q-4d-2 = A, TQ-1…13 + A1–A23
+đồng ý, 4 điều kiện kèm (role READ ONLY cả hai đường có test PG; bản giả lưu hash phiếu; i17 rỗng → FAIL; bảng nối e2e ↔ mutation ở DỪNG 2).
+
+- **Bước 0 (01/10/2026):** đầu phiên HEAD `fc57772` (trên `b457e6e`, `aac90b1`); trong phiên Tuấn Anh commit + push **`b74da3f`** "docs: M9
+  sau kiem thu doc lap…" — CHỈ 2 file `docs/spec/claude/ke-hoach-m9-{chia-viec,monitor}.md`, 0 file code → **mốc diff 4d = `b74da3f`**.
+  `git fetch`: `origin/dev-tuananh` = HEAD (không merge M9 mới, không rebase). `uv run alembic heads` = 1 (`0007`). Mốc sandbox: `make lint`
+  xanh (ruff; mypy app 207 / tests 206 / mock 12 / ml 16; import-linter **10/10**; gitleaks 0); unit **3358 passed**. Cây: chỉ
+  `M PROGRESS.md` (mục 4c ĐÓNG — đi cùng commit đầu 4d).
+- **Câu hỏi (đã chốt — Tuấn Anh 01/10/2026; phương án ở `PLAN-4d.md` mục 4, chốt ở mục 9):** **Q-4d-1 = A** (kiểm đúng chỗ code
+  ghi, không sửa B3/B8/B17; Việc treo 31; spec 7.2 sửa theo bảng PLAN mục 4). **Q-4d-2 = A** (`AuditWriter.record_new`, khớp partial index
+  như `record()`; tên port lệch nghĩa → spec cần sửa). Ghi chép gốc:
+  - **Q-4d-1 (mâu thuẫn spec ↔ code)** — bảng 7.2 (cột bắt buộc cho `audit_check`) ghi điểm 1 `confidence`, điểm 3 `query`, điểm 7 `success` +
+    `action_plan_hash_matched` là CỘT; code (xanh từ Phase 3) chỉ ghi chúng vào `detail` (`b03_classify.py:36-41, 116`, `b08_retrieve.py:26-44`,
+    `b17_execute.py:80-85`), 4 cột đó chưa từng được ghi; cột `intent` chỉ có ở `intent_classified`. Theo chữ spec → `audit_check` báo thiếu
+    ở mọi ticket. Đề xuất A: kiểm đúng chỗ code ghi, sửa chữ 7.2.
+  - **Q-4d-2** — route ghi đè phải đọc + ghi `audit_logs` "thẳng bằng `AuditWriter`" nhưng `Desk` (dựng ở `main.py`, không sửa) không có
+    writer (`main.py:236-240`); `AuditWriter.record` không phân biệt dòng mới/cũ (`audit/writer.py:38-58`) → 409 `already_overridden` cần
+    INSERT … RETURNING. Đề xuất A: `ApprovalRepo`/`SqlApprovals.decision_trail` + `record_override` (→ `AuditWriter.record_new`).
+
+- **DỪNG 1 (01–02/10/2026) — P1–P4 (ghi đè) + P5 (`audit_check`) + P7 (B17 so hash phiếu) — XANH (sandbox + verify cây gộp M9: gate2 89/0, gate3 66/0):**
+  - **S1 khung:** `domain/override.py` (`Decision`, `OverrideReason`, `DecisionTrail`, `OverrideRecord.audit_row`, `original_decision`,
+    `override_key`); `AuditWriter.record_new`; port `ApprovalRepo.decision_trail/record_override` + `SqlApprovals` (Q-4d-2 = A); route
+    `POST /api/tickets/{ticket_id}/override` (`require("decision:override", recent_login=True)`); `app/audit/check.py` (lõi, chạy được
+    `python -m app.audit.check`) + vỏ `scripts/audit_check.py` + Makefile `audit-check` (chạy TRONG container backend — TQ-5). Bản giả đủ
+    thân: `MemoryAudit.record_new`, `MemoryApprovals.decision_trail/record_override` (trên `MemoryAudit` đã nối). Unit cũ 3358 xanh.
+  - **S2 test-writer (theo bước S2 PLAN):** 8 file mới — unit `test_override_route.py` 67, `test_override_domain.py` 27,
+    `test_audit_check.py` 159, `test_b17_approval_hash.py` 9; PG `test_override_pg.py` 9, `test_audit_check_pg.py` 8; e2e
+    `test_gate4_hitl.py` 8 (+ `gate4_env.py`). Trước code (tôi chạy lại, khớp): unit **241 đỏ / 21 xanh** — đỏ đúng lý do
+    (`NotImplementedError` của khung route/domain/audit_check; h1 B17 vẫn thực thi khi hash phiếu lệch); 21 xanh canh (413, 403 tầng
+    quyền, 403 `reauth_required` — khung route đã có `require`; dataclass/hằng; `MemoryAudit.record_new`; h2/h3 hành vi cũ). PG/e2e:
+    collect được (chạy ở verify). Tôi kiểm `git status`: chỉ 8 file mới của nó dưới `backend/tests/`. Test-writer tự khai: dùng
+    `cat/sed/grep/python3` để đọc (ngoài luật "chỉ pytest/ls" của vai trò), một lần `python3` sửa chính file test của nó; traceback lỡ
+    in vài dòng khung file cấm (không lấy kỳ vọng). **Sửa hợp đồng (lỗi của tôi):** `fields` 422 của note là `["note"]` (như `parse_body`,
+    vd `test_guard_api.py` e8 `["text"]`), không phải `["body.note"]` — sửa PLAN 2.1/TQ-1 + hằng `NOTE_FIELD` của test.
+  - **S3 code:** route theo thứ tự P1 + TQ-2 (`same_as_original` TRƯỚC guard; 409 `already_overridden` quyết bằng `INSERT … RETURNING`);
+    `original_decision` (TQ-3: `ESCALATE_L2→L2`, thiếu `detail.route` → `policy_decision`); `AuditWriter.record_new` (cùng partial index như
+    `record`); SQL `decision_trail` (`risk_decided` mới nhất theo `log_id` + EXISTS B10) / `record_override`; B17 lớp 2 (TQ-9) ngay sau
+    `approvals.get`, trước mọi lời tra AD. Tôi viết **i8a** e2e (đổi `intended_action` trong checkpoint lúc chờ → E5 lớp 1, không
+    `hash_source`). **Test cũ đổi:** `test_auth_route_scan.py` thêm `test_override_route_requires_permission_and_reauth` (o9 — ghim
+    `("decision:override", None, True)`). **Điều kiện 2 (A12):** P7 KHÔNG làm đỏ test B17 cũ nào (`MemoryApprovals.create` đã lưu
+    `action_plan_hash`) → 0 test cũ đổi, không sửa bản giả.
+  - **S4 code:** `audit_check` theo bảng điểm PLAN mục 4 (Q-4d-1 = A); luật `secret` + canary, trúng có nhóm `v` là mặt nạ → bỏ qua;
+    `SCANNED_COLUMNS` từ kiểu cột model (trừ `ticket_id`); JSON đi từng lá (cả khoá); `readonly_engine` = `default_transaction_read_only=on`
+    theo phiên (Postgres ép, không phụ thuộc quyền role); `main`: DSN `MONITOR_DATABASE_URL` → app_monitor, không thì app_rw; in nhãn role
+    ra stderr, không in DSN; lỗi DB → chỉ tên lớp, mã 2.
+  - **S5:** `make lint` xanh (ruff; mypy app 209 / tests 214 / mock 12 / ml 16; import-linter **10/10**; gitleaks 0 + `gitleaks dir` 17 file
+    mới/sửa sạch); unit **3621 passed** (= 3358 + 1 o9 + 262 mới). **Mutation `mutate_4d.py` lượt 1 (unit): 11/11 ĐỎ đúng dự đoán** —
+    M-4d-2 (4 đỏ), 3 (2), 4 (3), 5 (5), 8 (38), 9 (6), 10 (4), 11 (12), 12 (3), 13 (38), 14 (3); M-4d-5 lần đầu "khác dự đoán" vì DỰ
+    ĐOÁN sai (row11 gửi lần 2 cùng giờ FakeClock → khoá đột biến vẫn trùng) — sửa dự đoán, chạy lại riêng: đỏ đúng. md5 4 file
+    trước = sau, `git diff --stat` khớp, không còn chữ `MUTATION`. **`--integration` (M-4d-1 SQL, M-4d-8/9 PG) chưa chạy** — cần Docker.
+  - Cây làm việc: thêm 4 file docs M9 đang sửa song song (`docs/spec/build/nen-tang/P9-monitor-M9.md`, `docs/spec/claude/ke-hoach-m9-
+    {chia-viec,monitor}.md`, `docs/spec/claude/prompt-m9-thanh-vien.md`) — không phải phiên này, không đụng, không stage.
+    Tuấn Anh commit riêng **`475fd1e`** (02/10/2026, CHỈ 4 file docs đó, 0 file code; hook unit xanh), push `origin/dev-tuananh`
+    (`b74da3f..475fd1e`) — **CI xanh** run `36974385952` (4m36s; `gh` bị sandbox chặn — Tuấn Anh kiểm)
+    → **mốc diff 4d = `475fd1e`** (security-reviewer S10 soát `git diff 475fd1e`).
+  - **`make verify G=23` lần 1 (Tuấn Anh, 02/10/2026 13:47:52 → 13:51:18, HEAD `475fd1e` + cây bẩn 35 mục, `.env`): ĐỎ ở bước 2** —
+    backend **1 failed, 3925 passed** (mọi test mới của test-writer XANH lần đầu chạy: PG 17, e2e i8b/i13/i14×3/i14b/i16/i17); đỏ DUY NHẤT
+    là **i8a do tôi viết**: đổi `intended_action` lúc phiếu còn chờ → ra **E9**, không E5 — cấm 3 (`F3_plan_hash_mismatch`,
+    `domain/states.py:143-148`) chặn `S_PENDING_APPROVAL → S_EXECUTING` ngay ở `goto` của B16 (log: `IllegalTransition … F3_plan_hash_mismatch`
+    tại `approval_wait`). Giả định TQ-10 "B17 là nơi DUY NHẤT so hash" SAI. Sửa (test, không đổi code): **i8a** dựng đúng khe "sau duyệt,
+    trước B17" — crash một lần ở `SqlTxLog.has_begun` đầu B17 (monkeypatch, sau checkpoint B16 `S_EXECUTING`) → `aupdate_state(...,
+    as_node="approval_wait")` đổi hành động → API `runner.recover` (khuôn h15 3h) → B17 lớp 1 E5; thêm **i8c** ghim lớp cấm 3 (đổi lúc chờ
+    → E9, B17 không chạy, 0 ghi). Bước 3+ không chạy (stack không đổi, không cần trả `.env`).
+  - **`make verify G=23` lần 2 (Tuấn Anh, 02/10/2026 14:46:32 → 15:04:03, HEAD `475fd1e` + cây bẩn 37 mục, `.env`): ĐỎ ở gate3** — lint
+    PASS; test PASS (backend **3927 passed** = 3621 unit + 306 integration/e2e — mọi test mới 4d xanh, gồm i8a mới, i8c; mock 100; ml 77 / 5
+    deselected); up PASS; gate2 **89/0**; ingest PASS (KB không đổi); gate3 **55/9** — CẢ 9 FAIL là tc02 (kịch bản ĐẦU của gate3); trả về `.env`
+    PASS. Chẩn đoán (Tuấn Anh chạy psql chỉ đọc): ticket `5bd409b1…` `B1 → B2 → B3 → B6 → B8 retrieval_error E2 → B20`, escalation
+    `rag_system_error`; dòng B8 `error_stage=rerank`, `retrieval_error=deadline`, retry 0, ở giây 49,4 của lượt — lời gọi rerank ĐẦU TIÊN của
+    gate3 sau 7,5 phút gate2 (node giả, không RAG) hết hạn trên CPU colima. Không phải code 4d (4d chỉ sửa B17 trên đường graph, sau B12).
+    Cùng gốc Việc treo 4 (`TIMEOUT_S["rerank"]` / `rag_rerank_k` chưa đo lại trên máy GPU). → chạy lại `G=3`.
+  - **Mutation `mutate_4d.py --integration` (Tuấn Anh, 02/10/2026, testcontainers — không đụng stack dev): 3/3 ĐỎ đúng dự đoán** — mốc
+    xanh trước; M-4d-1 (`record_override` thêm `UPDATE tickets SET final_state` cùng giao dịch) → `test_pg_record_override_one_row_idempotent_
+    per_person_tickets_unchanged`; M-4d-8 (PG, bỏ quét bí mật) → `test_pg_run_canary_planted_in_detail_hits_with_log_id` +
+    `test_pg_main_exit_codes_and_output_without_values`; M-4d-9 (PG, bỏ điểm 5) → `test_pg_run_b15_queued_without_approver_id_is_point5`.
+    md5 `approval/store.py` `08a1ddb0…`, `audit/check.py` `915c56e2…` trước = sau; `git diff --stat` khớp. **Mutation DỪNG 1 đủ: 14/14**
+    (unit 11 + PG 3).
+  - **Origin tiến (02/10/2026 ~15:10):** `origin/dev-tuananh` = `1d5c92a` (+6: merge PR #20 dev-duyanh, PR #22 dev-luuduong — M9 A1/B1, có
+    migration `0008_monitor_views`). Cây bẩn → KHÔNG tự pull/rebase; chờ Tuấn Anh chọn A (merge trước) / B (commit DỪNG 1 rồi merge).
+  - **Chốt DỪNG 1 (Tuấn Anh, 02/10/2026; spec v1.5 mục 7.7 — Tuấn Anh cập nhật):**
+    1. tc02 = rerank nguội — không phải 4d; không chạy lại riêng, không `verify G=3`. Gate3 đầy đủ lấy ở lượt `verify G=23` sau khi gộp M9.
+    2. Gộp M9 = **B**: commit DỪNG 1 (+ commit docs M9) rồi `git pull --rebase` lên `origin/dev-tuananh`; `alembic heads` = 1; KHÔNG push
+       trước khi verify trên cây gộp xanh.
+    3. KHÔNG nâng `TIMEOUT_S["rerank"]` / `rag_deadline_s`. DỪNG 2 thêm bước **làm nóng rerank** vào preflight của `gate3.py` và `gate4.py`
+       (một truy vấn RAG bỏ đi trước kịch bản đầu, không tính PASS/FAIL, không sửa code sản phẩm). **Việc treo 32**.
+    4. **Q-4d-3 (làm ĐẦU DỪNG 2):** B16 khi `approved` so `hash_action(intended_action)` với `state.action_plan_hash` VÀ
+       `approvals.action_plan_hash` TRƯỚC `goto(S_EXECUTING)`; lệch → `S_ESCALATED` step `B16` event `action_plan_changed_since_approval` E5,
+       detail `hash_source` (`state`|`approval`), `hash_old`, `hash_new`, `action_plan_hash_matched=False`; cấm F3 giữ làm lớp cuối; test
+       trước code; i8c đổi kỳ vọng E9 → E5; mutation "B16 bỏ so hash".
+    5. **Test-writer S2 có mở file cấm không (soát transcript của nó, 127 lời gọi tool):** KHÔNG — 0 lần Read/cat/sed/grep vào 7 file cấm
+       (`api/tickets.py`, `domain/override.py`, `approval/store.py`, `audit/writer.py`, `audit/check.py`, `scripts/audit_check.py`,
+       `b17_execute.py`). Lộ duy nhất: output pytest của chính nó in dòng `…/api/tickets.py:226: NotImplementedError: 4d S3` (tương tự
+       `domain/override.py`, `audit/check.py`) — đường dẫn + số dòng của KHUNG, không có thân. Đọc NGOÀI danh sách "được đọc" (không cấm):
+       `core/hashing.py`, `core/clock.py`, `guard/privacy.py`, grep `permission_denied` trong `audit/security_events.py`; test khuôn
+       `test_auth_idor.py`, `test_tickets_api.py`, `test_body_limit.py`, `test_guard_api.py`, `test_approval_review_s11.py`,
+       `integration/test_b10_pg.py`.
+    6. Spec `phase4-thiet-ke-chi-tiet.md` v1.5 (mục 7.7) do Tuấn Anh cập nhật — đi cùng commit DỪNG 1, agent không sửa.
+  - **Commit + gộp M9 (02/10/2026 ~15:50):** commit `813d7a5` (4d DỪNG 1, 23 file = 22 + 1 dòng `backend/app/api/README.md`;
+    `audit/README.md` không có) + `8be2a3a` (docs M9, 3 file `docs/spec/claude/*` — ngoại lệ một lần theo lệnh); gitleaks phần staged sạch,
+    hook unit xanh cả hai. `git status` (bỏ untracked) rỗng → `git pull --rebase origin dev-tuananh` (không cần `--autostash`), 0 xung
+    đột, 17 file M9 không trùng file 4d → **`e510a6e`** + **`8637bba`** trên `1d5c92a`. `alembic heads` = 1 (`0008`); `make lint` xanh
+    (mypy app 213 / tests 221 / mock 12 / ml 16; import-linter 10/10; gitleaks 0); unit **3771** (= 3621 + 150 test M9 — hiệu số).
+    CHƯA push.
+  - **`make verify G=23` lượt 3 — cây gộp (Tuấn Anh, 02/10/2026 16:01:58 → 16:26:05, HEAD `8637bba`, 14 mục untracked): ĐỎ ở gate3 62/4**
+    — lint PASS; test PASS (backend **4103**, mock 100, ml 77 / 5 deselected); up PASS; gate2 **89/0** (10m05s); ingest PASS; gate3
+    **62/4** (9m48s); trả về `.env` PASS. tc02 lần này **11/11 xanh**. Cả 4 FAIL là **tc04** (ticket `96ff7f0a…`): `S_ESCALATED` E2
+    `turn_budget_exceeded` (dòng của boundary, step `b08_retrieve`, giây 433,9), không có B8/B9/B10, 0 lời gọi ghi.
+    **Nguyên nhân: Mac NGỦ giữa lượt (không phải 4d, không phải M9).** Bằng chứng: (1) span `node:b08_retrieve` (bọc cả boundary + `goto`,
+    `graph/builder.py:103`) đo `perf_counter` = **18 509 ms**, nhưng dòng audit `goto` ghi trong span đó có `created_at` (SystemClock) ở giây
+    433,9 → đồng hồ tường của VM nhảy ~415 s trong khi đồng hồ đơn điệu đứng yên = VM bị dừng; (2) `pmset -g log`: máy chạy PIN, tắt màn
+    hình 16:11:19, `Idle Sleep` 16:11:49 (76 s), `Maintenance Sleep` 16:13:50 (28 s), 16:15:03 (59 s), **16:16:47 → 16:23:45 (418 s)** —
+    khớp ~415 s; ba lần ngủ trong gate2 (163 s) khớp gate2 chậm 10m05s so với 7m14–7m29 các lượt trước; gate3 thường 2m19–2m41.
+    Hạn lượt tính theo đồng hồ tường (`core/turn_budget.py` `usable_s`) → hết hạn sau khi thức dậy → E2, 0 ghi (đúng thiết kế, an toàn).
+    Đối chiếu: lượt 2 (14:46:32 → 15:04:03) máy thức liên tục 14:46:08 → 15:14:20 → tc02 lượt đó KHÔNG do ngủ — chẩn đoán "rerank nguội"
+    (spec 7.7 #9) giữ nguyên. → **Q-4d-4 = A** (Tuấn Anh, chẩn đoán chấp nhận): chạy lại CHỈ gate3 trên cùng HEAD — `caffeinate -i make verify G=3`
+    (cắm sạc, mở nắp). DỪNG 2 thêm: `verify.sh` tự bọc `caffeinate -i` trên macOS + cảnh báo chạy pin; README thành viên ghi "cắm sạc,
+    mở nắp, chạy qua `make verify` hoặc `caffeinate -i`".
+  - **`caffeinate -i make verify G=3` (Tuấn Anh, 02/10/2026 17:11:43 → 17:17:22, HEAD `8637bba`, cắm sạc + mở nắp): XANH** — lint PASS;
+    test PASS (backend **4103**, mock 100, ml 77 / 5 deselected); up PASS; ingest PASS (KB không đổi); gate3 **66/0** (2m06s, trong giờ);
+    trả về `.env` PASS. **Verify cây gộp M9 (`8637bba`) ĐỦ:** lint + test (2 lượt) + gate2 **89/0** (lượt 16:01) + gate3 **66/0** (lượt
+    17:11). Mục DỪNG 1 4d xong phần stack; còn push + CI.
+  - **Push (02/10/2026 17:2x):** `fe51980` "4d dung 1: ghi ket qua verify tren cay gop M9" (chỉ `PROGRESS.md`); `git fetch` → origin vẫn
+    `1d5c92a` → push `1d5c92a..fe51980` (`e510a6e` 4d DỪNG 1 → `8637bba` docs M9 → `fe51980`). **CI xanh** run `36995043374` (3m19s; `gh`
+    bị sandbox chặn — Tuấn Anh kiểm). Nhả stack cho FE; gửi FE hợp đồng `POST /api/tickets/{ticket_id}/override`. **4d DỪNG 1 ĐÓNG.**
+
+- **DỪNG 2 — Bước 0 + PLAN bổ sung (02/10/2026, phiên mới; CHỜ DUYỆT, chưa sửa code):** HEAD `fe51980` = `origin/dev-tuananh` (0 lệch);
+  cây (bỏ untracked): `M PROGRESS.md` (dòng push/CI trên — đi cùng commit đầu DỪNG 2) + 2 file `docs/spec/claude/ke-hoach-m9-*.md` của phiên
+  M9 (không đụng, không stage — Tuấn Anh commit riêng); `alembic heads` = 1 (`0008`); `make lint` xanh (mypy app 213 / tests 221 / mock 12 /
+  ml 16; import-linter 10/10; gitleaks 94 commit, 0); unit **3771 passed**. PLAN bổ sung = `PLAN-4d.md` mục 11: Q-4d-3 (B16 so hash state →
+  phiếu TRƯỚC `goto(S_EXECUTING)`, TQ-14 a/b/c), làm nóng rerank bằng lệnh trong container backend (TQ-15), e2e i1–i7/i9–i12/i15 + i8d,
+  `make gate4` (g4-01…12, preset `g4_*.yaml`, biên bản, README thành viên), mutation lượt 2 (+ M-4d-15…17), Q-4d-5 (mốc diff soát bảo mật).
+- **PLAN bổ sung DỪNG 2 DUYỆT (Tuấn Anh, 02/10/2026):** TQ-14 a/b/c, i8b → step B16 + i8d, TQ-15, TQ-16, TQ-17, M-4d-15/16/17; **Q-4d-5 = mốc
+  diff soát bảo mật `1d5c92a`**. Điều kiện: (1) q1–q7 đỏ/xanh TRƯỚC khi sửa `approval_wait.py`; (2) unit cũ đỏ vì lớp phiếu → sửa DỮ LIỆU
+  test, liệt kê; (3) MẪU B có đoạn "tin báo M9" luật 7; (4) README thành viên ghi rõ thứ tự gate3 (chưa SLA) → thêm SLA=2, `make up` → gate4
+  + lệnh kiểm trước khi chạy.
+  - **S7a — test Q-4d-3 trước code** (`tests/unit/test_b16_plan_hash.py`, 13 test; chạy TRƯỚC khi sửa `approval_wait.py`): q1 ĐỎ (E9 —
+    `IllegalTransition … F3_plan_hash_mismatch`), q2 ĐỎ (`S_CONFIRMING` — B17 giả thực thi), q3 xanh (đối chứng), q4 ĐỎ (E9), q5 ĐỎ (E9),
+    q6 ĐỎ (`DID NOT RAISE Crash` — không có dòng B16 E5), q7 đối chứng xanh, q7 ×6 ĐỎ (`[]` — dòng chưa thuộc điểm nào). Đúng cột
+    "Trước code" PLAN 11.2. e2e (test-trước, chạy ở verify): i8b → step B16 `hash_source=approval`; i8c → E5 B16 `hash_source=state`
+    (không `unhandled_exception`); i8d mới (crash đầu B17 sau checkpoint B16 + đổi hash phiếu → `recover` → B17 lớp 2).
+  - **S7a code:** `approval_wait.py` `_plan_mismatch` (lớp state = phép so của F3, rồi lớp phiếu; thiếu hành động → None, F3 → E9) + nhánh
+    `approved` SAU `close` → `goto(S_ESCALATED)` step B16 E5, `approval_result="approved"`, `audit_columns` (response_time_seconds), detail
+    `_point6` + 4 khoá hash. `audit/check.py` điểm 6 nhận `B16/action_plan_changed_since_approval` (+ `detail.hash_source`,
+    `detail.action_plan_hash_matched`). Sau code: 13/13 xanh; **unit 3784** (= 3771 + 13) — 0 test cũ đỏ vì lớp phiếu (điều kiện 2:
+    không có dữ liệu test nào phải sửa). PG/e2e cũ duyệt mà không đổi state (rà tĩnh: `test_graph_pg`, `test_b15_pg`, `test_guard_pg`,
+    `test_tickets_http_pg`, `test_b16_reminders_pg` — nhánh từ chối) → dự kiến không đổi; chạy thật ở verify.
+  - **S7b làm nóng + chống ngủ:** `gate3.warm_rerank` (lệnh `python -c` trong container backend → `/embed` + `/rerank` 10 đoạn, timeout
+    120 s, in `embed_ms/rerank_ms` | `warm_error=<lớp>`; lỗi → CẢNH BÁO) gọi trong `main` trước kịch bản đầu; `verify.sh` `keep_awake`
+    (Darwin + `caffeinate -i -w $$` nền; `pmset` chạy pin → CẢNH BÁO, ghi chú dòng 0 summary). Unit: +9 `test_gate3.py` (làm nóng OK/lỗi
+    5 kiểu/đoạn mã không in token-URL/một lần trước kịch bản đầu với `S=tc02` và `S=all`), +3 `test_verify_script.py` (stub `uname`,
+    `caffeinate`, `pmset`).
+  - **S7 e2e** (`test_gate4_hitl.py`, collect 29 = 10 cũ + i8d + 18): i1, i2, i3, i4, i5 (x1, x2, x3, x7, x8 tham số hoá + x4 + x9; x5/x6
+    = e2e cổng 3 h11_at_20h/h14 có sẵn), i6, i7, i9, i10, i11, i12, i15. i9/i12 đặt `approvals.created_at` = giờ FakeClock (mốc nhắc theo
+    cột giờ DB — 6.4 #7, khuôn `test_b16_reminders_pg`). Chưa chạy (cần testcontainers + cổng local) → verify.
+  - **S8 gate4:** `tests/stack/gate4.py` (chốt SLA backend + worker `=2|=0|=khac`; g4-01…12; biên bản chỉ khi `S=all`); preset
+    `config/scripted/g4_{0501,0124,0700,0900}.yaml`; Makefile `gate4`; `verify.sh` `KNOWN_GATES="0234"`, `recreate` 3 biến (gate2/gate3 SLA
+    rỗng, gate4 `2`), `ensure_ingest` một lần, gate4 = bước 10, bước 8 `-u APPROVAL_SLA_MINUTES_DEV`; `bienban-gate4-MAU.md`; README: mục
+    "Thành viên chạy cổng 3 rồi cổng 4 (một trang)" (thứ tự gate3 chưa SLA → thêm SLA=2 → `make up` → gate4; lệnh kiểm `S=preflight`
+    trước mỗi cổng) + mục kỹ thuật "Cổng 4" + `make verify G=234`. Unit: `test_gate4.py` 27; `test_verify_script.py` +4 (G=234, G=4,
+    gate4 đỏ → bước 10 + trả `.env`, G=45 bị từ chối). **Test cũ đổi:** `test_verify_script.py` `test_g23_…`, `test_red_gate_…` (stub
+    compose ghi thêm `SLA=…`, kỳ vọng `recreate` có biến SLA — TQ-12).
+  - `make lint` xanh (mypy app 213 / tests 224 / mock 12 / ml 16; import-linter 10/10; gitleaks 0); **unit 3827 passed**.
+  - **S9 mutation lượt 2 (unit, `mutate_4d.py`): 16/16 ĐỎ đúng dự đoán** — M-4d-2 (4), 3 (2), 4 (3), 5 (5), 8 (38), 9 (6), 10 (4), 11 (12),
+    12 (3), 13 (38), 14 (3) như lượt 1; mới: **M-4d-6** (B16 hết hạn → `S_EXECUTING`; F2 chặn → E9) 4 đỏ (`test_late_click_before_scan`,
+    `test_c2_point6_timeout_response_time_null`, `test_c2_timeout_after_view_decided_without_view_false`,
+    `test_approval_deadline_fires_e6_and_closes_approval`); **M-4d-7** (bấm muộn `close(timeout)`) 2 đỏ (`test_late_click_before_scan`,
+    `test_deadline_boundary_409`); **M-4d-15** (B16 bỏ so hash) 5 đỏ (q1, q2, q4, q5, q6); **M-4d-16** (bỏ lớp phiếu) 1 đỏ (q2); **M-4d-17**
+    (`audit_check` bỏ dòng B16 E5 khỏi điểm 6) 6 đỏ (q7 ×6). md5 6 file đích trước = sau, `git diff --stat` khớp, không còn `MUTATION`.
+    Lần chạy ĐẦU cũng 16/16 + md5 khớp nhưng báo `git diff --stat` khác — do tôi sửa `PROGRESS.md` trong lúc script chạy; chạy lại
+    không đụng file tracked → sạch (rc 0). **Làn `--integration` (PG M-4d-1/8/9 + e2e M-4d-6/7/15/16/10 → i6, i7, i8c, i8b, i8d) chưa
+    chạy** — cần testcontainers + cổng local (Tuấn Anh).
+  - `gitleaks dir` 20 file (19 file DỪNG 2 + PROGRESS): 0.
+  - **S10 security-reviewer** (chỉ đọc, mốc `1d5c92a` + 8 file mới; 61 lời gọi tool): S1–S5, S7–S12 **PASS**; **S6 FAIL (thấp)**; 6 NGHI.
+    Xử lý:
+    - S6 FAIL — `Makefile` recipe `audit-check` không có `@` → make in lại `--canary <giá trị>`: **đã sửa** (`@`).
+    - NGHI-2 — `verify.sh` `trap … INT TERM` thiếu HUP (đóng terminal/mất ssh → không trả `.env`): **đã sửa** (`INT TERM HUP`).
+    - NGHI-6 — g4-12 `compose logs` lỗi → `StackError` mang đuôi log được in: **đã sửa** (FAIL chỉ dòng đầu) + test.
+    - Ghi chú S10 (nhánh thiếu hành động chưa ghim): **thêm q8** (`intended_action=None` lúc duyệt → không so → F3 → E9, 0 thực thi).
+    - NGHI-3 — lỗi DB khi INSERT ghi đè → traceback SQLAlchemy kèm `[parameters: … 'note': …]` (note ĐÃ che) vào log: **Q-4d-6** (đổi
+      hợp đồng HTTP đã gửi FE / hoặc sửa engine) — chưa sửa.
+    - NGHI-5 — `guard/privacy.py:160` luật entropy bỏ qua token chứa mặt nạ (có từ 3e, lõi privacy): **Q-4d-7** — chưa sửa.
+    - NGHI-4 — `audit_check._masked` dùng `startswith(mask)` → `[BÍ_MẬT_ĐÃ_ẨN]Abc123` coi như đã che: tôi sửa thử (phần sau mặt nạ có
+      chữ/số → trúng) → **đỏ test cũ** `test_a3_custom_rules_value_group_masked_not_counted` (ghim `pw=[M]-x` không tính — đúng chữ TQ-7 /
+      spec 7.7 #6 "bắt đầu bằng mặt nạ") → mâu thuẫn mục đã chốt → **HOÀN NGUYÊN**, thành **Q-4d-8**. md5 6 file đích sau hoàn nguyên =
+      md5 lần mutation sạch → kết quả 16/16 áp nguyên.
+    Sau xử lý: `make lint` xanh; **unit 3829** (= 3827 + q8 + g4-12 `logs` lỗi); `gitleaks dir` các file sửa thêm: 0.
+  - **Q mới (DỪNG — chờ Tuấn Anh):**
+    - **Q-4d-6** (NGHI-3): A) route ghi đè bọc `record_override` — lỗi DB → log tên lớp, 503 `{"error":"audit_unavailable"}` (thêm 1 mã vào
+      hợp đồng FE đã nhận); B) `create_async_engine(..., hide_parameters=True)` ở `db/session.py` (mọi route — `db/session` có khối M9, chỉ
+      sửa nếu được cho phép); C) Việc treo 33, xử lý cùng log toàn hệ thống sau Phase 4. **Đề xuất C** (note trong log đã qua guard; lộ chỉ khi
+      DB lỗi đúng lúc INSERT; cùng lớp lỗi với mọi INSERT khác của app — nên sửa một chỗ cho cả hệ thống, không vá riêng route ghi đè).
+    - **Q-4d-7** (NGHI-5): luật entropy của guard bỏ qua token có mặt nạ → `x[BÍ_MẬT_ĐÃ_ẨN]<chuỗi ngẫu nhiên ≥20>` lọt guard. A) sửa guard
+      (chỉ bỏ qua khi token = mặt nạ) + test 3e; B) Việc treo 34. **Đề xuất B** (lõi privacy 3e, ngoài phạm vi 4d; cần soát lại bộ test e*
+      của 3e).
+    - **Q-4d-8** (NGHI-4): A) giữ chốt 7.7 #6 ("bắt đầu bằng mặt nạ" — có thể bỏ sót `v` = mặt nạ + đuôi chữ/số khi có đường lách guard);
+      B) đổi chốt: `v` = mặt nạ + chỉ dấu câu mới bỏ qua (luật `password` có `v=\S+` nên không dùng `==`), sửa test a3 `pw=[M]-x` → trúng.
+      **Đề xuất B** (bộ dò chặt hơn; guard luôn thay nguyên `v` nên không báo nhầm dữ liệu thật — đã thử: đỏ đúng 1 test cũ ghim chữ chốt).
+  - **Chốt Q (Tuấn Anh, 02/10/2026):** Q-4d-6 = C (Việc treo 33); Q-4d-7 → Việc treo 34; **Q-4d-8 = B, làm trước verify:** `_masked` chỉ
+    bỏ qua khi nhóm `v` = mặt nạ + CHỈ dấu câu/khoảng trắng; còn chữ/số sau mặt nạ → trúng. Đã sửa `audit/check.py` (`_masked` + docstring
+    module) + test a3 (`pw=[M]-x` nay TÍNH; thêm `pw=[M].`, `pw=[M]),` → bỏ qua; `pw=[M]abc123` → trúng). Chạy (TRƯỚC khi nhận lời dặn
+    "trong lúc FE verify không chạy nặng"): unit **3829** xanh, `make lint` xanh, mutation `--only` M-4d-8 (38 đỏ), 9 (6), 13 (38), 17 (6) — đủ
+    ĐỎ đúng dự đoán; md5 `audit/check.py` `769ff82c…` trước = sau ở cả 4 lượt, `git diff --stat` khớp. Chạy lại cả ba khi Tuấn Anh báo
+    "FE xong".
+  - **`make verify G=234` lần 1 (Tuấn Anh, 02/10/2026 21:45:40 → 21:48:35, HEAD `fe51980` + cây bẩn 37 mục, `.env`): ĐỎ ở bước 2** —
+    lint PASS; backend **3 failed, 4177 passed** (mọi e2e DỪNG 2 khác xanh lần đầu: i8b/i8c/i8d, i1–i4, i5 x1–x3/x7/x8/x9, i7, i10, i11,
+    i12, i15); bước 3+ không chạy. Ba đỏ đều do TEST tôi viết: **i6** `scan_deadlines().delivered == 9` (DB e2e dùng chung — phiếu chờ của
+    test trước cũng hết hạn); **i9** dòng `late_event` của người bấm sau mang `step="B16"` (đúng thiết kế); **i5_x4** quan.tm (manager) đăng
+    nhập → 401 `mfa_not_enrolled` (manager bắt buộc MFA). Cùng gốc MFA: gate4 trên stack (preflight + g4-08 đăng nhập quan.tm) cũng sẽ vướng
+    → **Q-4d-9**.
+  - **Chốt (Tuấn Anh):** sửa 3 test (chỉ test) + **Q-4d-9 = B**. Đã sửa: `gate4_env.login_manager` (lần đầu 401 `mfa_not_enrolled` → `enroll`
+    — đã ghi danh thì `reset` — bằng `app.state.auth` store/sink/cipher → đăng nhập kèm OTP theo FakeClock; không nới auth, không sửa
+    `gate3_env.py`); i6, i7 bỏ đếm `delivered`; i9 khẳng định tập B16 = {`approved`, `late_event`}; soát thêm giả định "chỉ có ticket của
+    tôi": i11 `permission_denied` của l2_01 so phần TĂNG THÊM (i12 lọc theo `approval_id`, i15/i3/i7 theo ticket — giữ). gate4: bỏ quan.tm
+    khỏi `USERS`, bỏ g4-08 + `NO_APPROVER`; xoá preset `config/scripted/g4_0900.yaml` (file tôi tạo trong phiên này, untracked — không còn
+    dùng); `test_gate4.py` (ALL không g4-08 + test "không manager/MFA trong gate4"); README, mẫu biên bản. Rà `gate4.py`: mọi người
+    gửi/xem là l1/l2/nhân viên trong seed (đã đăng nhập được ở e2e), `it_mgr01` chỉ là người được giao (B15 tra AD + ensure, không đăng
+    nhập) → không còn chỗ cần OTP/người chưa seed. Rủi ro còn lại chỉ thấy trên stack: g4-12 quét `compose logs` thật bằng luật `secret`.
+  - Sau sửa: `make lint` xanh; unit **3830** (+ test "gate4 không manager/MFA"). **e2e riêng `test_gate4_hitl.py` (Tuấn Anh, ngoài sandbox,
+    testcontainers): 29/29 xanh** (29 dấu chấm, 0 F/E). Tiếp: `make verify G=234`.
+  - **`make verify G=234` lần 2 (Tuấn Anh, 02/10/2026 22:39:59 → 23:01:26, HEAD `fe51980` + cây bẩn 38 mục, `.env`): ĐỎ ở bước 10** — lint
+    PASS; test PASS (backend **4181**, mock 100, ml 77 / 5 deselected); up PASS; gate2 **89/0**; ingest PASS (KB không đổi); gate3 **78/0**
+    (ngoài giờ, có làm nóng rerank); **gate4 72/1** — mọi kiểm g4-01…g4-11 + quét log xanh; FAIL duy nhất g4-12 `audit_check --since` mã 1;
+    trả về `.env` PASS. Chẩn đoán (Tuấn Anh chạy `make audit-check ARGS="--since 2026-10-02T15:52:47Z"`, chỉ đọc): 55 thiếu / 0 bí mật trên
+    25 ticket — 13 ticket thiếu đều KHÔNG phải của gate4: 9 ticket gate2 cùng lượt (node GIẢ — không ghi điểm log thật) + 4 ticket cũ từ
+    30/09 (code trước 4c); ticket gate4: 0 thiếu. Gốc: `--since` chọn mọi ticket có dòng audit MỚI (worker đóng hạn duyệt/xác nhận của
+    ticket cũ) rồi soát TOÀN BỘ dòng → trên stack dùng chung kéo theo ticket node giả/cũ. → **gate4 lấy ở lượt `G=4`.**
+  - **Q-4d-10 = A (Tuấn Anh):** g4-12 chạy `audit_check` trên ĐÚNG danh sách ticket lần chạy đã tạo (`ctx.owner`, id qua `q()`; lệnh bọc
+    `sh -c 'python -m app.audit.check "$@" 2>&1; echo audit_check_exit=$?'` để lấy NGUYÊN bảng + mã); không `--since`; quét log
+    `compose logs --since` giữ; KHÔNG đổi công cụ `audit_check`. Mã ≠ 0 → in nguyên bảng (chỉ dòng `| …`, `bí mật:`, `KẾT LUẬN` — không
+    giá trị); danh sách rỗng (chạy lẻ `S=g4-12`) → FAIL rõ lý do, không gọi audit_check. README: ghi chú `make audit-check --since` trên stack
+    đã chạy gate2/còn ticket cũ. Unit `test_gate4.py` +5 (parse bảng, đúng id/không `--since`, mã 1 in bảng, rỗng → FAIL, chạy thật
+    `AUDIT_SH` với `python` giả) + sửa test `logs` lỗi theo lệnh mới.
+  - **`make verify G=4` (Tuấn Anh, 02/10/2026 23:39:07 → 23:51:33, HEAD `fe51980` + cây bẩn 38 mục, `.env`): XANH** — lint PASS; test PASS
+    (backend **4186**, mock 100, ml 77 / 5 deselected); up PASS; ingest PASS (KB không đổi); **gate4 73/0** (8m21s; chốt SLA `backend=2,
+    worker=2`; làm nóng rerank embed 525 ms / rerank 1594 ms; g4-12 `audit_check` trên 9 ticket của lần chạy: mã 0, 0 thiếu, 0 bí mật; quét
+    log 0 trúng); trả về `.env` PASS; biên bản `backend/tests/stack/bienban-gate4-20261002.md` (KHÔNG commit). **Verify DỪNG 2 ĐỦ** (cùng HEAD
+    + cây đang sửa): lint + test (lượt 22:39 + 23:39) + gate2 **89/0** + gate3 **78/0** (lượt 22:39) + gate4 **73/0** (lượt 23:39).
+  - **Mutation `mutate_4d.py --integration` (Tuấn Anh, 03/10/2026, testcontainers + mock cổng local): 8/8 ĐỎ đúng dự đoán** — mốc xanh 2 lệnh
+    (PG + e2e `-k` i6/i7/i8b/i8c/i8d); M-4d-1 (SQL) → `test_pg_record_override_one_row_idempotent_per_person_tickets_unchanged`; M-4d-8 (PG)
+    → 2 đỏ; M-4d-9 (PG) → 1; **e2e:** M-4d-6 → i6 + i7; M-4d-7 → i7; M-4d-15 → i8b + i8c; M-4d-16 → i8b; M-4d-10 → **i8d**. md5 5 file đích
+    trước = sau, `git diff --stat` khớp. **Mutation 4d lượt 2 đủ:** unit 16/16 (+ 4 mã `audit/check.py` chạy lại sau Q-4d-8) + tích hợp
+    8/8.
+  - **Gộp M9 (Tuấn Anh, 03/10/2026 ~00:0x): `git pull --ff-only origin dev-tuananh` `fe51980..67cd5f9`** (merge PR #26 dev-luuduong — M9 A2:
+    `app/monitor/*`, `test_monitor_*`, `monitor_seed.py`; nối `override_count` qua `app.domain.override`). 0 file trùng 21 file DỪNG 2; không
+    migration (`alembic heads` = 1, `0008`). Sandbox trên cây gộp: `make lint` xanh (mypy app 215 / tests 226; import-linter 10/10;
+    gitleaks 0); unit **3864** (= 3835 + 29 M9). **`make verify G=0` trên cây gộp (Tuấn Anh, 03/10/2026 00:17:12 → 00:19:57, HEAD `67cd5f9`
+    + cây bẩn 39 mục): XANH** — lint PASS; test PASS (backend **4244** = 4186 + 58 M9 (29 unit + PG mới), mock 100, ml 77 / 5 deselected).
+    Cổng stack không chạy lại (M9 chỉ đổi truy vấn dashboard, không trên đường graph — gate2/3/4 lấy ở lượt 22:39/23:39 trên `fe51980`).
+  - **Trạng thái (03/10/2026): 4d DỪNG 2 commit — chờ biên bản Duy Anh.**
+  - **Commit + push DỪNG 2 (03/10/2026, `dev-tuananh`, `67cd5f9..567237a`):** `858573d` (22 file, 4d DỪNG 2 + spec v1.6 7.8) + `567237a`
+    (2 file `docs/spec/claude/ke-hoach-m9-*.md`, ngoại lệ một lần). CI `37040959717` (`567237a`) **xanh** 3m57s. **Gộp PR #24**
+    (`dev-duyanh`, M9: `worker.py`, `app/monitor/rules.py`, `app/monitor/queries/rules_data.py` + 6 file test monitor) —
+    `git pull --ff-only` `567237a..1455b55`, HEAD `1455b55`; CI `37041941104` (`1455b55`) **xanh** 5m32s. 9 file, 0 trùng 22 file
+    `858573d`; không migration (`alembic heads` = 1, `0008`). Sandbox trên cây gộp: `make lint` xanh (ruff sạch; mypy app 216 / tests 230
+    / mock 12 / ml 16; import-linter 10/10; gitleaks 0, 103 commit); unit **3905 passed**. **`make verify G=34` trên cây gộp (Tuấn Anh,
+    03/10/2026 00:51:51 → 01:06:26, HEAD `1455b55`, `.env`): XANH** — lint PASS; test PASS (backend **4344**, mock 100, ml 77 / 5
+    deselected); gate3 **78 PASS / 0 FAIL**; gate4 (SLA=2) **73 PASS / 0 FAIL**; làm nóng rerank gate3 embed 653 ms / rerank 1803 ms, gate4
+    embed 374 ms / rerank 1183 ms (không cảnh báo); g4-12 `audit_check` trên 9 ticket của lần chạy: mã 0, 0 thiếu, 0 bí mật; quét log
+    backend + worker 0 trúng; CI `37041941104` xanh. Biên bản `bienban-gate4-20261003.md` (untracked, không commit).
+  - **Trạng thái (03/10/2026): Phase 4 chờ biên bản Duy Anh (commit `1455b55`).**
+  - **Phase 4 ĐÓNG phần code 03/10/2026 — cổng 4 đạt (spec 7.9); NỢ-3-1 đã trả.** Tạ Duy Anh chạy trên máy riêng, commit `1455b55`:
+    gate3 78/0; gate4 lượt 2 73/0 (lượt 1 60/4: g4-03, g4-05 ra E2 vì ml-service hết giờ khi máy tải nặng).
+  - **S11:** "Spec cần sửa (4d)" (trên) + MẪU B DỪNG 2 gửi Tuấn Anh (02/10/2026 ~21:2x). CHƯA commit. Chờ: `make verify G=234` (Tuấn Anh,
+    báo FE trước) → `mutate_4d.py --integration` (PG + e2e) → Q-4d-6/7/8. Dự kiến stage 20 file (danh sách ở MẪU B); KHÔNG stage
+    `docs/spec/claude/*` (2 file M9), `PLAN-4d.md`, biên bản đã điền.
+  - **Spec cần sửa (4d) — bản cuối DỪNG 2 (để Tuấn Anh/Claude chat ghi mục "Chốt khi hiện thực 4d — DỪNG 2"; agent không sửa
+    `docs/spec/`):**
+    1. 7.7 bảng điểm `audit_check` dòng 6: thêm dòng áp dụng `B16/action_plan_changed_since_approval` — đòi như `approved` (cột
+       `approval_result`, `response_time_seconds`; `detail.decided_as`; khoá `detail.decided_without_view`) + `detail.hash_source`,
+       `detail.action_plan_hash_matched` khác null.
+    2. 7.7 #8 (Q-4d-3 hiện thực): B16 nhánh `approved`, SAU `close` (phiếu `approved`, `decided_by`, `decided_at` — TQ-14a), TRƯỚC
+       `goto(S_EXECUTING)`: lớp state = đúng phép so của cấm F3 (`hash_action(intended_action)` thô vs `state.action_plan_hash`; thiếu hash
+       → lệch, `hash_old` null), rồi lớp phiếu (`approvals.action_plan_hash`; không có phiếu → bỏ lớp); cả hai lệch → `state`; thiếu hành
+       động → không so (F3 → E9). E5 ở B16: `approval_result="approved"`, `escalation_reason_detail=action_plan_changed_since_approval`,
+       detail 5 khoá điểm 6 + `hash_source`, `hash_old`, `hash_new`, `action_plan_hash_matched=false`; B16 không gửi tin, B20 gửi mẫu E5.
+    3. 7.3 i8 tách bốn ca: **i8a** đổi hành động SAU duyệt (crash đầu B17) → B17 lớp 1; **i8b** đổi hash phiếu lúc chờ → B16 lớp phiếu
+       (trước Q-4d-3: B17 lớp 2); **i8c** đổi hành động lúc chờ → B16 lớp state (trước: F3 → E9); **i8d** đổi hash phiếu SAU checkpoint
+       B16 (crash đầu B17 + recover) → B17 lớp 2.
+    4. 7.3 i5: x5, x6 dùng e2e cổng 3 có sẵn (`test_h11_at_20h_…`, `test_h14_g01_…`); x14 = i15; x7/x8 khoá người duyệt trên mock SAU
+       khi ha.lt đăng nhập; x9 bơm 500 đúng `GET /ad/users/l1_01`.
+    5. 7.3 i9/i12 (và mọi test nhắc dùng FakeClock): mốc nhắc tính từ `approvals.created_at` (giờ DB — 6.4 #7) → test đặt lại cột đó
+       bằng giờ app lúc tạo phiếu.
+    6. 7.4 g4-05 (TQ-16): trên stack có worker thật, kiểm bất biến — 409 + đúng 1 `late_event` (`expired` | `already_decided`) → E6, 0
+       ghi; "phiếu vẫn `pending` sau bấm muộn" ghim ở e2e i7 + unit `test_late_click_before_scan` + M-4d-7.
+    7. 7.1 P6 / 7.4: chốt SLA kiểm ở backend VÀ worker (`=2|=0|=khac`); preset `config/scripted/g4_{0501,0124,0700,0900}.yaml`; thứ tự
+       `S=all`: preflight → g4-01 → g4-11 → g4-02 → g4-06 → g4-07 → g4-08 → g4-09 → g4-10 → g4-04 → g4-03 → g4-05 → g4-12; g4-12 =
+       `audit_check --since` TRONG container + `scan_log` trên `compose logs` (máy); biên bản chỉ khi `S=all`, người chạy/máy/chữ ký để
+       trống (TQ-17), mẫu `backend/tests/stack/bienban-gate4-MAU.md`.
+    8. 7.7 #9 (làm nóng rerank, TQ-15): lệnh `python -c` TRONG container backend gọi thẳng ml-service (`/embed` 1 câu + `/rerank` 10 đoạn,
+       timeout 120 s), một lần mỗi lần chạy gate3/gate4, sau chốt an toàn, trước kịch bản đầu (kể cả `S` lẻ); 0 ghi DB; lỗi → cảnh báo.
+    9. 4.4 `make verify`: `G=234`; `recreate <FAKE_SCENARIO> <FAKE_NODE_DELAY> <SLA>` (gate2/gate3 SLA rỗng, gate4 `2`); ingest KB một
+       lần trước cổng đầu cần (3|4); gate4 = bước 10; bước 8 gỡ thêm `APPROVAL_SLA_MINUTES_DEV`; macOS `caffeinate -i -w <pid>` + cảnh báo
+       chạy pin (Q-4d-4).
+    10. 7.5 mutation thêm: M-4d-15 (B16 bỏ so hash), M-4d-16 (B16 bỏ lớp phiếu), M-4d-17 (`audit_check` bỏ dòng B16 E5 khỏi điểm 6);
+        M-4d-6 chỗ đột biến = `goto` nhánh timeout của B16; M-4d-7 = route quyết `close(timeout)` trong nhánh bấm muộn.
+    11. 7.6 / 8: README thành viên (`backend/tests/stack/README.md` mục đầu) — thứ tự gate3 (chưa SLA) → thêm SLA=2 + `make up` → gate4,
+        `S=preflight` trước mỗi cổng.
+    12. 7.7 #6 (Q-4d-8 = B — Tuấn Anh sửa spec): "trúng mà nhóm `v` bắt đầu bằng mặt nạ `secret_mask` = đã che → bỏ qua" đổi thành
+        "nhóm `v` = mặt nạ + CHỈ dấu câu/khoảng trắng = đã che → bỏ qua; sau mặt nạ còn chữ/số → TÍNH là trúng" (luật `password` có `v`
+        nuốt cả dấu câu dính liền nên không so bằng `==`).
+    13. 7.4 g4-08 (Q-4d-9 = B): BỎ khỏi `make gate4` — Trưởng BP (manager) bắt buộc MFA, script cổng không đăng nhập manager và không
+        ghi danh MFA trên stack; ca x4 kiểm ở e2e `test_i5_x4_…` (ghi danh MFA trong tiến trình test qua `app.state.auth`, OTP theo
+        FakeClock) + unit bảng 3.2 x4. Preflight gate4 đăng nhập 5 người (chau.hm, ha.lt, duc.pv, khoa.dv, long.nh); preset `g4_0900.yaml`
+        bỏ. 7.3: e2e dùng chung DB cả module → kiểm theo ticket/phiếu của test, không đếm toàn cục (`scan_deadlines().delivered`,
+        `permission_denied` theo người); `late_event` của người bấm sau mang `step="B16"` (graph/late_event.py:67).
+    14. 7.4 g4-12 (Q-4d-10 = A): "`audit_check --since <giờ bắt đầu>` 0 lỗi" đổi thành "`audit_check` trên ĐÚNG các ticket lần chạy đã tạo
+        (truyền id) 0 thiếu, 0 bí mật; mã ≠ 0 in nguyên bảng; danh sách rỗng → FAIL"; quét log `compose logs --since <giờ bắt đầu>` giữ. 7.1
+        P5 ghi chú: `--since` chọn ticket theo HOẠT ĐỘNG (có dòng mới) → trên stack dev dùng chung kéo theo ticket node giả gate2/ticket cũ.
+
+## Phase 6 (làm sớm) — chặng 6A: decision_math + calibrator (tầng B) (09/10/2026 — DỪNG xanh: verify G=0, mutation 12/12; chưa gộp) — chưa tính qua cổng 6
+
+Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.6** mục 4. Kế hoạch `PLAN-6A.md` (untracked) — **DUYỆT 09/10/2026**: Q-6A-1 = A
+(nhãn float → ValueError), Q-6A-2 = A (`CostMatrix` đóng băng sâu), bổ sung B1–B5. Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh
+`m5-tuananh`, HEAD `3ff63e1`.
+
+- **Bước 0:** HEAD/nhánh/status đúng; numpy 2.5.3 · scipy 1.18.1 · scikit-learn 1.9.1 · pydantic 2.13.5 (khớp spec); `uv lock --check` đạt;
+  `make lint` xanh (import-linter 10/10, gitleaks 0); unit mốc **4125 passed, 4 skipped** (4 = `tokenizer_real`, worktree không có tokenizer).
+- **Làm:** `backend/app/risk/decision_math.py` (4.2: `CostMatrix`/`DEFAULT_COST` đóng băng sâu + `field_serializer`, `t_low_star`,
+  `route_for`, `expected_cost`, `select_thresholds` — tìm cặp bằng numpy, chi phí cặp thắng tính lại bằng `expected_cost` (B1),
+  `sensitivity`, CP một phía, `ece` (P5/B4), `brier`, `auc`); `backend/app/risk/calibrator.py` (4.3: `LeakageError`, `LabeledSample`,
+  `FitInfo`, `CalibratorParams`, `Calibrator`, Platt/temperature theo P8, sắp mẫu trước fit, `data_sha256`/`version` tất định, lưu/nạp
+  JSON với regex kiểm trước khi ghép đường dẫn); `pyproject.toml` khối mypy P11 (`uv lock --check` vẫn đạt).
+- **Test (viết trước code):** `test_decision_math.py` (dm1–dm12), `test_calibrator.py` (cb1–cb8), `test_risk_no_eval_import.py` (P10 +
+  cấm import động trong `app/risk`). Lượt đỏ với khung: 125 đỏ / 10 xanh (115 `NotImplementedError`, 10 "DID NOT RAISE" — validator chưa
+  viết; 10 xanh = AST + kiểm schema có sẵn trong khung). Sau code + cứng hoá theo soát bảo mật: 142/142 xanh (unit 4267); sau
+  Q-6A-4 (cb9 + cb7 đối chứng): **160/160 xanh**; unit **4285 passed, 4 skipped** (= 4125 + 160).
+- **Số đối chiếu spec 4.5 (đo 09/10, máy Mac arm):** dm9 → (0,09; 1,00), chi phí 0,94565, 0,03 s; bộ H `sensitivity` → cả 3 tỉ lệ
+  (0,09; 0,60), 1,3; CP 0/60 = 0,0487029133, 1/20 = 0,2161061642, 2/60 = 0,1012358949; cb2 a = 0,486581, b = 0,011491, T = 2,055188, ECE
+  0,109665 → 0,011005 / 0,012080; cb3 tham chiếu a = 0,510537, b = 0,277071, chênh fit < 2e-8; bản có phạt lệch a 0,0153 — khớp spec.
+- **Mutation** `scripts/mutation/mutate_6a.py`: **12/12 đỏ đúng dự đoán** (M-6A-11 bỏ so digest khi nạp, M-6A-12 bỏ chặn a ≤ 0 khi
+  fit — thêm theo Q-6A-4), md5 + `git diff --stat` khớp sau khôi phục.
+- **security-reviewer** (diff 6A): 6/6 bất biến PASS; đã sửa theo đề xuất: chụp `samples` một lần, `type(version) is str`, lỗi nạp
+  file không mang `ValidationError` gốc (chỉ loc + loại), cấm import động trong `app/risk`, `--only` rỗng → mã 2, thêm ca test.
+- **Chốt sau MẪU B (Tuấn Anh 09/10):** **Q-6A-3 = B** — không hàm bọc (`LabeledSample.y` nhị phân ≠ gold 3 lớp; đổi hợp đồng #32);
+  docstring `select_thresholds`/`sensitivity` ghi người gọi (T27) tự `require_calibration_split`. **Q-6A-4 = A** — validator
+  `CalibratorParams`: platt a > 0, T ∈ T_BOUNDS (đóng), eps = EPS; `load_calibrator` tính lại đuôi băm `version`; `fit_platt` từ chối
+  a ≤ 0, `fit_temperature` từ chối T cách biên < 1e-3 (dữ liệu nghịch n = 200: a = −0,538, T = 20,0). security-reviewer vòng 2: 0 FAIL,
+  3 NGHI thấp — đuôi băm 8 hex chỉ chống sửa nhầm, không phải chữ ký (đã ghi ở docstring); `model_construct`/`model_copy` bỏ qua
+  validator (app không dùng); a ≈ 0⁺ vẫn qua (đề xuất cổng độ phân biệt ở T27).
+- **Chờ:** `make verify G=0` (Tuấn Anh); commit cục bộ khi được bảo; Dương soát dm3–dm8 + chữ ký API (issue #32).
+- Spec v0.7 mục 4.10
+- `test_calibrator.py:334` thêm `# gitleaks:allow` (chuỗi version sai cố ý cho cb7, có `/etc/passwd` → `gitleaks protect --staged`
+  báo nhầm `generic-api-key`; tiền lệ `test_auth_username_hash.py:86`).
+
+## Phase 5 (làm sớm) — chặng T22a: đủ 20 luật (tầng A) (09/10/2026 — DỪNG 1 `6ab716e`, DỪNG 2 chưa commit) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.1f** mục 4 (+ 0, 1, 2); `decisions.md` §1.1, D-34, D-41, D-43. Kế hoạch:
+`PLAN-T22a.md` (untracked) — **DUYỆT 09/10/2026**: Q-T22a-1 = A (ca chờ DỪNG 2 gom MỘT hằng `CHO_DUNG2` + MỘT fixture `xfail(strict,
+raises=(AssertionError, NotImplementedError))` mỗi file — DỪNG 2 gỡ hết), Q-T22a-2 = A (access đúng B11 §0.3, không slot `action` — nợ
+T20), Q-T22a-3 = A (account `optional: [reason, target_user]`), Q-T22a-4 = A (test P7); sửa TQ-7 (seed model mock cũng KHÔNG mặc định);
+TQ-8 bổ sung (trạng thái đích ≠ disabled → `disable_reason` luôn null).
+
+- **Bước 0 (09/10/2026):** HEAD `3ff63e1`; `status -uno` chỉ ` M docs/spec/build/decisions.md`; spec 0.1f; `grep -c "D-4[0-3]"` = 10;
+  `alembic heads` = 1 (`0008`); mốc sandbox: `make lint` xanh (mypy app 216 / tests 239 / mock 12 / ml 16; import-linter **10/10**;
+  gitleaks 0); unit **4129 passed**.
+- **DỪNG 1 — commit `6ab716e`** (verify G=234 XANH 14:22–14:45: backend 4673 passed / 49 xfailed, mock 106, ml 77; gate2 89/0, gate3 66/0, gate4 73/0):
+  - test-writer viết TRƯỚC code bảng 4.7 (`test_policy_rules_all.py`, `test_build_ctx_targets.py`, `test_rule_coverage.py` — 98 item)
+    + 3 kịch bản `eval/scenarios/_mau/T22A-{L1,R01,R12}.yaml`. Chạy trước code: **89 đỏ / 9 xanh**, mọi ca đỏ vì "luật/fact/nguồn
+    chưa có" (0 lỗi import/fixture).
+  - P2 12 fact + `FACT_VALUE_SETS`; P3 nguồn `action.params` (`PARAM_TYPES`, `param_ok`); P5 `build_ctx` vế chủ máy chỉ cho đích
+    `device:`; P6 khai báo `account`/`software`/`access` (không bật) + 6 dòng metadata (bảng 4.2) + 6 nhãn; P7 3 trường (model tool +
+    mock + `seed.json` tường minh) + endpoint quản trị đặt `disable_reason` theo trạng thái đích.
+  - 4.7b: 11 test sửa ở 5 file + 2 test xanh lại nhờ `messages.py` và `_TARGET` của `mutate_3h.py` (không sửa file test của chúng).
+  - Sau code: unit **4184 passed, 49 xfailed** (49 = ca chờ R01–R15/`rule_coverage`, danh sách `CHO_DUNG2`); mock **106 passed**;
+    `make lint` xanh (mypy tests 243); `backend/app/risk/models.py` không đổi.
+  - Mutation lượt 1 (`scripts/mutation/mutate_t22a.py`): M-T22a-8 (g1, g5), M-T22a-9 (g4), M-T22a-12 (h7) ĐỎ đúng dự đoán; kiểm chéo
+    M-3h-10, M-4b-6, M-4b-7 ĐỎ đúng dự đoán; md5 + `git diff --stat` khớp.
+  - security-reviewer (S11, diff DỪNG 1): 8/8 PASS, 0 FAIL; 4 NGHI chuyển câu hỏi (Q-T22a-5…7 ở MẪU B): R11 dựa tiền tố
+    `device:` của đích (T20), không gì kiểm `target == user:<requested_for>` (T20), R10 không ràng buộc `permission_level` (DỪNG 2/T24),
+    r4 chỉ dò chữ `expected_route` (DỪNG 2).
+- **DỪNG 2 (sandbox xanh, chờ verify + commit):** chốt sau MẪU B DỪNG 1 — Q-T22a-5/6/7 đồng ý, luật Phase 6 cấm import động trong
+  `backend/app/risk/**`, thêm r5.
+  - P8 R01–R15 nguyên văn bảng 4.4, thứ tự R01…R20 (`policy.json` +77 dòng, 0 dòng xoá); P9 `scripts/rule_coverage.py` đủ (4.6 + TQ-9,
+    loader theo đường dẫn, không `get_settings()`); P10 h3 xanh. Gỡ hết `CHO_DUNG2` (`grep -c xfail` = 0 ở 3 file test mới); thêm e15
+    (×4), siết r4, thêm r5. Unit **4238 passed, 0 xfailed**; mock **106**; `make lint` xanh; grep import động `backend/app/risk/` rỗng.
+  - Mutation lượt 2: đủ 13 mã (M-T22a-1…12 + 5b) ĐỎ đúng dự đoán (M-T22a-8: g1, g5, a1, c1; M-T22a-10: e15-0, e15-−1); md5 5 file đích +
+    `git diff --stat` khớp. e15-True/400 không bắt M-T22a-10 (lớp DSL chặn lần hai) — ghi Spec cần sửa 9.
+  - security-reviewer (S17, diff `6ab716e`..cây): 8/8 PASS, 0 FAIL; soát từng luật allow R01, R02, R06, R10, R11 — đủ điều kiện dương so
+    với luật chặt hơn cùng hành động; 3 NGHI: R10 không ràng buộc mức quyền (Q-T22a-8), R11 dựa tiền tố `device:` và `target` vs
+    `requested_for` (nợ T20, đã ghi DỪNG 1).
+  - Chốt sau MẪU B DỪNG 2 (Tuấn Anh 09/10): **Q-T22a-8 = C ở T22a + A ở T20** — không đổi bảng 4.4 trong T22a; T20 thêm fact
+    `existing_permission_level` (nguồn `check_current_permissions`) + R10 đòi `in [read, write]`, KHÔNG bật intent `access` trước khi có
+    điều kiện này (thiếu fact → R10 không khớp → lớp LLM). Mục 17 (terminated + access → LLM, an toàn nhờ D-38) chuyển Phase 6. Lệch
+    mutation 4 mã + bước kiểm JSON: chấp nhận.
+  **Spec cần sửa (T22a)** (phase5 4.13 — Claude chat sửa, không sửa ở chặng này):
+  1. **B11 §0.3 + §4** (Q-T22a-3): account `optional` thêm `target_user` (4.2 đã ghi; slots.yaml đã khai báo).
+  2. **B11 §0.3 + §4, phase5 mục 5 (nợ T20)** (Q-T22a-2): access chưa có slot `action` để chọn `view_permissions` /
+     `grant_permission` / `extend_permission`; slot bắt buộc phải theo `action_type` (`view_permissions` không cần
+     `permission_level`/`duration`); `build_action` hiện chỉ dựng đích `device:`.
+  3. **phase5 4.5** (Q-T22a-4): thêm `backend/tests/unit/test_tool_models_p7.py`, `mock_services/tests/test_seed.py`,
+     `mock_services/tests/test_admin_calls.py` (test P7); 5 file test cũ của 4.7b.
+  4. **phase5 4.1 P7** (sửa TQ-7, TQ-8): seed model mock cũng KHÔNG mặc định 3 trường (bắt buộc có khoá; `seed.json` tường minh 17 người
+     + 7 mục); endpoint quản trị nhận `disable_reason` tùy chọn ∈ {security, other}, trạng thái đích ≠ disabled → luôn null.
+  5. **phase5 4.2 `value_rules`** (TQ-6): software `device_id` dùng mẫu VPN `^[A-Z]{2,4}-\d{3,5}$`; `reason`/`version`/
+     `justification` không có luật riêng (luật chung 100 ký tự).
+  6. **phase5 4.10** (Q-T22a-1): hook pre-commit chạy toàn unit trên cây làm việc → ca chờ DỪNG 2 gom MỘT hằng `CHO_DUNG2` + MỘT
+     fixture `xfail(strict=True, raises=(AssertionError, NotImplementedError))` mỗi file; DỪNG 2 gỡ hết (`grep -c xfail` = 0). Nên ghi
+     thành quy ước cho mọi chặng tầng A 2 DỪNG có test viết trước code.
+  7. **phase5 4.7 (khuôn)** (TQ-1, TQ-2): ca a*–f* dựng ctx qua `build_ctx` từ state dựng tay (không "RiskContext dựng tay") — f10/f11
+     và M-T22a-8 (a1, c1) đòi vậy; h7 hai vế (giá trị hợp lệ không ném + ngoài tập ném "ngoài tập giá trị").
+  8. **phase5 4.7 (bảng)**: thêm **e15** (G-EXTEND, `duration_days` ∈ {0, −1, 400, True} → none), **r1b** (thêm kịch bản R07 —
+     approval_required không bị đếm vào none), **r4 siết** (bảng tổng không chứa AUTO/HITL/ESCALATE_L2 + mọi `expected_route` của 3 mẫu),
+     **r5** (thư mục con tên bắt đầu `_` bị bỏ khi quét đệ quy, chỉ đếm file ở gốc), test nội dung R01–R15 theo 4.4 (P8), h4 cổng 5
+     (R01–R15 đều có ca khớp). Ghi chú: f3 và f5 cùng đầu vào; G-GRANT ghi `has_permission_record=false` trong khi seed nv001 đã có
+     dòng quyền `finance/public-reports` (mẫu L1 dùng `true` theo seed).
+  9. **phase5 4.8**: M-T22a-10 kỳ vọng **e15 (0, −1)** thay d10/e14 — engine so kiểu chặt nên `"FULL"`, `1`, `"30"`, `True` không
+     khớp dù lọt `fact_view` (lớp DSL chặn lần hai; e15-400 cũng không bắt vì 400 > 90); d10/e14 giữ là ca "không ném lỗi".
+     M-T22a-11 kỳ vọng **r1b (+ r3)** thay r1 (3 mẫu không có ca approval_required). M-T22a-3 kỳ vọng **f8** (f7 thiếu `in_catalog`
+     không liên quan `license_paid`). M-T22a-5 kỳ vọng **e8** (ca thiếu `same_department` trong e7–e12).
+  10. **phase5 4.6 + 4.1 P9** (TQ-9): `main(argv) -> int`; "dùng `app.settings`" sửa thành "dùng loader theo đường dẫn (`load_policy`,
+      `load_action_metadata`, `intents_of_actions`) — KHÔNG `get_settings()` (đọc `.env`)"; tự chèn `backend/` vào `sys.path`; quét đệ quy
+      bỏ thư mục con `_*` trừ khi truyền thẳng; khoá `params` ngoài `PARAM_TYPES` nhận str/int/bool; `requested_for` không có trong seed
+      → không đối chiếu fact `target_*`; đối chiếu seed theo `params.account_type` (mặc định `ad`), `params.software_name`, đích
+      `folder:`/`device:`; định dạng bảng `| họ | số kịch bản | allow | approval_required | deny | none (→ LLM) | lỗi |` + dòng `Tổng`;
+      CSV `rule_decision` thêm `error`, `no_action`.
+  11. **Nợ T20** (Q-T22a-5, soát DỪNG 1 NGHI a, b): (a) R11 an toàn nhờ vế chủ máy của `build_ctx` chỉ áp cho đích `device:` — T20 ghim
+      test "`install_software` luôn có đích `device:<id>`"; (b) `build_ctx` chỉ so `requested_for` với người gửi, luật cấm đọc
+      `action.target` (h3) — T20 ghim bất biến `target == f"user:{requested_for}"` cho account (tương tự access). Không đổi luật.
+  12. **Nợ T20** (4.7b): `ACTION_LABELS` có 6 nhãn; `rejection_text` ghép "cho máy …" sai nghĩa với đích `user:`/`folder:`.
+  13. **phase5 4.4 R10 + nợ T24/B17** (soát DỪNG 1 NGHI c, DỪNG 2 NGHI-A — Q-T22a-8): R10 không ràng buộc mức quyền. (a) `extend` kèm
+      `params.permission_level="full"` → R10 AUTO trong khi `grant` cùng ca bị R08 bắt duyệt; hiện tool `extend_permission` (`ExtendIn`,
+      `tools/models.py:93-94`) không nhận mức quyền → gia hạn giữ mức cũ, nên T24 phải giữ hợp đồng đó. (b) Không fact nào mô tả MỨC
+      của dòng quyền cũ, `has_permission_record` tính cả dòng đã hết hạn → gia hạn một quyền `full` (kể cả hết hạn lâu) vẫn AUTO.
+      Phương án: thêm fact `existing_permission_level` + R10 đòi `in [read, write]`, hoặc R08 áp cả `extend_permission`.
+      **Chốt 09/10: T20 thêm fact existing_permission_level (nguồn check_current_permissions) + R10 đòi in [read, write]; T20 KHÔNG bật
+      intent access trước khi có điều kiện này; thiếu fact → R10 không khớp → lớp LLM.**
+  14. **`decisions.md` §1.1**: bảng 20 luật kèm điều kiện (chép phase5 4.4) — "[Đề xuất điều kiện, chốt khi đóng T22a]" → chốt;
+      **D-41** chữ chốt; **P8 §4.1** schema `gold.action {type, target, requested_for?, params}`, `gold.facts`; **B12 §4.2** nguồn
+      `action.params` (danh sách trắng 2 khoá, sai kiểu/ngoài tập = thiếu); **B11 §4** quy ước `requested_for` = người bị tác động (P4).
+  15. **Việc treo 19 → đóng** (h3 ghim "không luật nào dùng `action.target`", giữ trong danh sách trắng DSL). **Việc treo 26 → giữ mở cho
+      T20** (`targets_approver` chỉ so `requested_for`; cùng gốc mục 11b).
+  16. **import-linter**: chưa có hợp đồng cấm `app.risk → app.eval` — bất biến đang giữ bằng test AST Phase 6
+      (`test_risk_no_eval_import.py`) + grep import động trước commit.
+  17. **Theo dõi Phase 6** (soát DỪNG 2 ghi chú): cấp/gia hạn quyền cho người `terminated` không khớp luật nào (R12 chỉ `disabled` +
+      `security`) → đi lớp LLM; an toàn hiện nhờ D-38 (chưa calibrator thì lớp LLM không AUTO).
+
+## Phase 6 (làm sớm) — chặng 6B: estimator LLM + strategy (tầng A) (10/10/2026 — DỪNG 1 `d8e3cbe`, DỪNG 2 xanh chưa commit; chưa gộp) — chưa tính qua cổng 6
+
+Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.8** mục 5. Kế hoạch `PLAN-6B.md` (gitignore) — **DUYỆT 10/10/2026**:
+Q-6B-1 = A (st xfail strict từng test ở DỪNG 1), Q-6B-2 = A, Q-6B-3 = A, Q-6B-4 = A (giới hạn), Sửa 1 (test bảng `_ROUTE`/`_LEVEL`
+strategy = B12), Sửa 2 (st6 ngưỡng = `cal.transform(...)` — lệch spec, ổn định Mac arm/CI x86); Q-6B-5 = A (thêm preset b14 vào 11
+preset kịch bản). Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `2ffb005`.
+
+- **Bước 0:** HEAD/nhánh/status đúng (3 file docs ` M`); `make lint` xanh; unit mốc **4394 passed, 4 skipped**.
+- **DỪNG 1 — làm:** `domain/risk_factors.py` (`FactorCode`, 13 mã), `risk/factors.py` (`FACTOR_LABELS`), `llm/schemas.py` (+ `RiskEstimateOut`,
+  `RiskVoteOut`), 2 prompt `b14_risk_estimate`/`b14_risk_vote` v1, `risk/estimator.py` (`RiskEstimate`, Protocol trả `RiskEstimate`,
+  `estimator_vars`, `LlmRiskEstimator` tự nêu + k = 5; `DisabledEstimator` giữ nguyên dòng raise → `mutate_3h.py` không sửa),
+  `risk/strategy.py` (KHUNG — hàm ném `NotImplementedError`), `tests/fakes/risk_estimator.py`, preset P12 ở **13** file `config/scripted/`.
+  Sửa test có sẵn: `test_llm_prompts.py` (2 test d10: 6 → 8, `TABLE_7_4` +2 dòng, đổi tên "six" → "eight"), `test_s0_grounding.py`
+  (chỉ chú thích kiểu `RecordingEstimator.estimate` + import), chữ "6" → "8" ở `config/prompts/README.md:16`, `test_llm_client.py:168`.
+- **Test có sẵn đỏ khi thêm 2 prompt: 7** (spec 5.9 ghi 5): 2 d10 + 3 test preset (default/vpn) + `test_gate3.py:370`, `test_gate4.py:65`
+  (đòi mọi preset kịch bản đủ khoá) — đều xanh lại sau S1.
+- **Test (test-writer, viết trước code):** `test_risk_estimator.py` (es1–es10 + tq: TQ-4, TQ-5, 13 mã trong 2 prompt, `FACTOR_LABELS`),
+  `test_risk_strategy.py` (st1–st18 + TQ-14 — `xfail(raises=NotImplementedError, strict=True)` từng test; test bảng `_ROUTE`/`_LEVEL` không xfail).
+  Lượt đỏ: 27 đỏ (26 `NotImplementedError`, 1 es10 assert vì stub chưa có lời gọi), 12 xanh (tĩnh), 41 xfail. Sau code estimator:
+  **39 passed, 41 xfailed**; unit **4433 passed, 4 skipped, 41 xfailed** (= 4394 + 39).
+- **Mutation lượt 1** (`scripts/mutation/mutate_6b.py --luot 1`): **5/5** đỏ đúng dự đoán (M-6B-1, 2, 3, 7, 8; M-6B-2 dạng `sample_idx` hằng 0,
+  M-6B-7 sửa YAML thật); md5 + `git diff --stat` khớp. `test_mutation_n3` xanh; `mutate_3h.py --only M-3h-9` đỏ đúng dự đoán.
+- **security-reviewer (DỪNG 1):** 9/9 PASS, 0 FAIL; NGHI để 6C/T20: N1 `Action.params` (vd `software_name` là chuỗi con câu người dùng,
+  regex cho phép từ ngữ) vào nguyên `intended_action` theo P3 → khả năng chèn lệnh vào prompt B14 khi bật intent software; N2 `eval_mode`
+  của estimator và gateway phải cùng nguồn Settings; N3 cache eval lưu cả `rationale` (hành vi gateway sẵn có); N4 `decide` phải từ chối
+  raw NaN (DỪNG 2: `route_for` đã ném), `trimmed_evidence` vs `kb_gap`.
+- **Nợ (Q-6B-6 = A, Tuấn Anh 10/10):**
+  - N1 (Q-6B-6): Action.params có giá trị lấy từ câu người dùng (software_name cho phép chữ + dấu cách, 64 ký tự) đi thẳng vào prompt B14. CHẶN (việc 6C): không nối B12 → estimator cho intent software/access khi chưa có danh sách trắng params theo action_type + mẫu chặt trong estimator_vars + test canary trong giá trị slot. Hiện an toàn vì chỉ VPN bật, params VPN = device_id mẫu ^[A-Z]{2,4}-\d{3,5}$. Bật intent ở T24 vẫn an toàn vì B12 còn DisabledEstimator → E5.
+  - N2 (6C): `eval_mode` của `LlmRiskEstimator` và của gateway lấy cùng một nguồn `Settings.EVAL_MODE` + test wiring.
+  - N3 (6C): cache eval ghi cả `rationale` vào `llm_cache` (gateway lưu nguyên `model_dump`) — xác nhận P2/P7 chấp nhận hoặc bỏ `rationale` trước khi ghi.
+  - N4 (6C): gateway cắt hết bằng chứng (`trimmed_evidence`) mà `kb_gap` không biết — cân nhắc coi là `kb_gap`; thử preset 0,9 qua calibrator thật trên stack.
+- **DỪNG 1 duyệt (Tuấn Anh 10/10):** chấp nhận lệch st6 (ngưỡng = `cal.transform`), chú thích kiểu `test_s0_grounding`, fixture es3 `target_user_status`, 2 lần test-writer lệch luật (đã soát lại).
+- **DỪNG 1:** `make verify G=0` XANH (HEAD 2ffb005, 10/10 09:36–09:39; backend 4922 passed, 4 skipped, 41 xfailed) → commit `d8e3cbe`.
+- **DỪNG 2 — làm:** `risk/strategy.py` (`check_strategy`, `needs_rules`, `needs_llm`, `decide` theo bảng 5.3; đường chưa hiệu chỉnh =
+  `route_for` rồi hạ AUTO → HITL; kb_gap hạ AUTO → HITL; `reason` theo 4 mẫu); gỡ toàn bộ xfail (`grep -n xfail` rỗng) → st1–st18 +
+  TQ-14 xanh. Theo soát bảo mật lần 2: `_verdict` từ chối thêm verdict KHÔNG khớp mà có `decision`/`rule_id` (fail-closed; `evaluate`
+  không sinh dạng này) + 25 test bổ sung do agent chính viết (chưa hiệu chỉnh / kb_gap không AUTO ở cả 4 đường LLM; raw NaN/inf/1,2/−0,1
+  và ngưỡng ngược → `ValueError`; calibrator ném lỗi → lỗi đi lên; verdict lệch → `ValueError`). Unit **4499 passed, 4 skipped** (= 4433 + 41 + 25).
+- **Mutation lượt 2** (`mutate_6b.py`): **9/9** đỏ đúng dự đoán; md5 + `git diff --stat` khớp; `test_mutation_n3` xanh.
+- **security-reviewer lần 2:** 10/10 PASS, 0 FAIL. Nợ 6C thêm:
+  - N5 (6C): `decide`/`needs_*` không biết `EVAL_MODE` — `check_strategy` phải chạy ở `open_runtime` (API + worker) + test cả 2 tiến trình; cân nhắc B12 tự kiểm `EVAL_MODE` trước khi theo `FullAutoBypass`.
+  - N6 (6C): P12 "luôn L2" chỉ đúng khi chưa hiệu chỉnh — có calibrator (vd Platt a=1, b=−4: 0,9 → ~0,14) thì preset 0,9 có thể ra AUTO trên stack → chốt preset theo kịch bản hoặc test stack với calibrator=None.
+- **Spec cần sửa (6B):**
+  - (5.10 gốc) `huong-dan` §7.2, §14.2, §15.1: "hỏi 7 lần" → k = 5 (G6-3); B12 §5: kiểu trả về `RiskEstimate`, đường chưa hiệu chỉnh (không AUTO), `reason` theo mẫu 5.3; P2 §7: `b14_*` `cache: default` + `cache_policy="bypass"` khi vận hành, biến `sample_idx` trong thân prompt.
+  - phase6 5.9: test có sẵn đỏ khi thêm 2 prompt là **7** (thêm `test_gate3.py:370`, `test_gate4.py:65`); 5.1 P11/P12 + 5.4: preset b14 ở **13** file `config/scripted/` (default, vpn + 8 `tc*` + 3 `g4_*`).
+  - phase6 5.6 st6: ca biên lấy ngưỡng bằng `cal.transform(0.10)`, `cal.transform(0.75)` (Platt a=1, b=0) — lệch spec st6, lý do: ổn định giữa Mac arm và CI x86.
+  - phase6 0.1 dòng "Prompt registry": d10 đếm **8** file; 5.4: `mutate_3h.py` KHÔNG phải sửa (dòng raise của `DisabledEstimator` giữ nguyên); thêm `test_s0_grounding.py` (chú thích kiểu `RecordingEstimator`), chữ "6" → "8" ở `config/prompts/README.md`, `test_llm_client.py`.
+  - phase6 5.1 P1: constructor `LlmRiskEstimator(llm, *, p_method, eval_mode)`; P6: yếu tố đếm tối đa 1 lần/phiếu, k = 5 chờ đủ 5 lời gọi rồi ném lỗi của `sample_idx` nhỏ nhất; 5.7 M-6B-2 áp dạng `sample_idx` hằng 0.
+  - phase6 5.3: verdict lệch (`matched` ≠ có `decision`/`rule_id`) và chiến lược lạ → `ValueError`.
+  - N1 (Q-6B-6): P3 `intended_action = Action.model_dump` đầy đủ đưa `Action.params` lấy từ câu người dùng (vd `software_name`) vào prompt B14 — 6C phải thêm danh sách trắng `params` theo `action_type` + mẫu chặt trong `estimator_vars` + test canary trước khi nối B12 → estimator cho intent software/access.
+- **Chờ:** `make verify G=0` DỪNG 2; commit thứ hai khi được bảo; PR `m5-tuananh → dev-tuananh` (phiên git).
+
+## Phase 5 — chặng T23a: B2 lớp 3 shadow (đóng ml-gan) (tầng A) (10/10/2026, 1 DỪNG — verify G=234 XANH, commit 1 B2 + commit 2 json_object) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.2** mục 6 (+ 0, 1, 2); `decisions.md` D-44, D-45, §4.1 Q-5-9. Kế hoạch:
+`PLAN-T23a.md` (untracked) — **DUYỆT 10/10/2026**: Q-T23a-1 = A (thêm `"too_many_windows"` vào `MlError`, `ml/ports.py` vào commit 1, không
+đổi gì khác ở ports.py), Q-T23a-2 = A (không sửa `b02_screen.py`; t2 kiểm `ml_error` ở nhánh E2), Q-T23a-3 = A (không thêm kiểm đường
+dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
+
+- **Bước 0 (10/10/2026):** HEAD `d42d5c4`; cây = thay đổi chưa commit của `f045e30` (18 ` M` + 2 `??`) + 2 file spec; spec 0.2;
+  `grep -c "D-4[4-6]"` = 11; `alembic heads` = 1 (`0008`). Mốc: unit **4582 passed**; ml **122 passed** (5 deselected); mock **106**;
+  `make lint` **đỏ** — mypy `ml_service/app/loader.py:92,99` (kiểu tokenizer transformers 5.x ≠ Protocol `Tokenizer`; `.venv` máy có
+  nhóm `ml`, CI không), phần còn lại xanh (import-linter 10/10, gitleaks 0).
+- **Đã làm:** TQ-1 `cast(Tokenizer, …)` trong `_load_guard` (chỉ kiểu); P10 giữ `ml_models/*-clf/`, bỏ `/ml_models/*/*/` → `.gitignore`
+  về đúng `d42d5c4` (không vào commit), `test_ml_deploy.py` khẳng định một cách viết; P4 `ml/client.py` — `/classify` 422
+  `too_many_windows` → `MlResult(error="too_many_windows")` không retry, 422 khác / endpoint khác giữ `MlContractError`; P9 chú thích
+  "Phase 5 (T23a, ML-GAN — D-44)" ở `settings.py` ×2, compose ×2, `.env.example` (không dời vị trí, ngoài khối M9).
+- **Test viết trước code:** t1 (`test_ml_client.py`: 1 ca giá trị + 5 ca 422 khác), t2 (`test_b02_screen.py`: shadow/active × L4 / E2,
+  đi qua `MlClient` thật), t3 (`test_guard.py`: guard nạp + `INTENT_MODEL_DIR` đặt → `/classify_intent` vẫn 503), TQ-8 (`B2_CLASSIFIER_MODE=""`
+  → shadow). Trước code: t1 + 4 ca t2 **đỏ đúng lý do** (`MlContractError: HTTP 422` → E9 qua boundary); 5 ca 422 khác, t3, TQ-8 xanh
+  (khẳng định hành vi có sẵn). Sau code: unit **4593 passed** (+11), ml **123 passed** (+1), mock **106**; `make lint` **xanh**.
+- **Mutation lượt 1** (`scripts/mutation/mutate_t23a.py`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp.
+  Lượt 2: ngày đệm trước cổng 5.
+- **security-reviewer** (diff `d42d5c4`..cây, trừ `docs/`, `llm/`): 8/8 PASS, 0 FAIL (`.env.example` agent chính tự kiểm: 13 dòng thêm đều
+  là chú thích, không đụng khối M9). NGHI: hàng chờ chung ml-service (classify 48 cửa sổ CPU vs timeout 2 s + retry, `to_thread` không
+  huỷ); `active` bỏ L4 khi p ≤ τ_pass với τ chưa hiệu chỉnh; backend `ClassifyOut.p_malicious` không chặn miền [0,1]/NaN; SHA chỉ phủ
+  `model.safetensors` và là tuỳ chọn; `GUARD_MODEL_DIR` không bị ép dưới `/ml_models` (Q-T23a-3 → nợ); traceback 500 của `/classify`
+  có thể mang chuỗi nếu tokenizer ném lỗi kèm đầu vào.
+- **verify G=234 XANH** (13:32–13:53, mặc định không nạp model): lint; backend 5126 passed · mock 106 · ml 123 (5 deselected); gate2
+  89/0, gate3 78/0, gate4 73/0; backend+worker trả về theo `.env`; CI `38025826031` success. Đo với model thật (6.4 "Tuỳ chọn"): chưa làm.
+- MẪU B duyệt 10/10: 11 mục "Spec cần sửa (T23a)" ghi nhận (P9 NodeDeps; `thresholds.json` trước `active`; hàng chờ chung chưa đo; t2
+  `ml_error` chỉ ở E2; đường dẫn model; phạm vi P1 + `ports.py` docstring; `*-clf`; miền `p_malicious`; phạm vi SHA; traceback 500; đích
+  M-T23a-6) — không chặn commit.
+- **Chờ:** push (phiên git). Báo M9 khi gộp: `b2_classifier`,
+  `b3_cascade` giữ `pending` (P8) — không đổi gì ở M9.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -4469,6 +4997,11 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
 | 3g | Người có ≥ 2 máy chọn máy của mình vẫn phải tự nêu `action` (không suy từ cert khi `validate_targets` kiểm lại máy) — chấp nhận ở Phase 3 (ít tự động = an toàn hơn); đo số lượt hỏi thêm với LLM thật | PLAN-3g g12 |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
+
+**Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
+5 PASS / 0 FAIL khi đè `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=`; stack đã trả về đúng `.env`). `.env` VẪN giữ
+`FAKE_SCENARIO`/`FAKE_NODE_DELAY` (cấu hình gate2) → chạy gate3/gate4 tay phải đè hai biến này bằng biến shell (như `scripts/verify.sh`)
+hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + worker bằng biến shell `LLM_BACKEND=real`, KHÔNG sửa `.env`.
 
 ---
 
@@ -4595,13 +5128,73 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.2** mục 6 (+ 
     người duyệt CHÍNH duyệt mà chưa mở → audit B16 `decided_without_view=false`, `view_duration>0` — luật 7 M9 (`reflex_approval`) bỏ sót
     ca "duyệt không xem". Đúng chữ P2/P6. Đóng: lần xem theo người (bảng/cột mới — migration, sau Phase 4) hoặc route quyết so người
     đã xem với người quyết. Báo M9.
-29. **B17 so hash với `state.action_plan_hash`, không với `approvals.action_plan_hash` (soát 4c S11 B4, ngoài diff 4c).** Route xem phiếu
+29. ~~**B17 so hash với `state.action_plan_hash`, không với `approvals.action_plan_hash` (soát 4c S11 B4, ngoài diff 4c).** Route xem phiếu
     (4c P6) đã so với hash của PHIẾU; `ApprovalRow.action_plan_hash` có từ 4c, B17 đã đọc `row` (`b17_execute.py:142`) → thêm so sánh gần
     như không tốn gì. Không có kịch bản trên code hiện tại (chỉ B15 đặt cả hai; B16 → B17 không có điểm dừng chờ) — lớp phòng thủ thêm.
-    Đề xuất làm ở 4d (cùng i8 TC26).
+    Đề xuất làm ở 4d (cùng i8 TC26).~~ — **ĐÓNG** (4d: DỪNG 1 P7 B17 lớp 2 `e510a6e`; DỪNG 2 Q-4d-3 B16 so state + phiếu trước
+    `S_EXECUTING`; e2e i8b, i8d; M-4d-10, 15, 16).
 30. **Route quyết 403 / xem phiếu 404 cho phiếu không được giao (Q-4c-3 = A, soát 4c S11 S1b; chốt 01/10/2026).** `approval_id` BIGINT
     tăng dần → tồn tại phiếu vốn đoán được; route quyết giữ 403 + `permission_denied` (tín hiệu dò phiếu cho M9). Nếu đổi id phiếu sang
     UUID → thống nhất route quyết + xem phiếu về 404 (cùng thân với id không có).
+31. **4 cột `audit_logs` có trong schema nhưng chưa từng được ghi: `confidence`, `query`, `success`, `action_plan_hash_matched` (Q-4d-1 = A,
+    chốt 01/10/2026).** Dữ liệu nằm ở `detail` (`b03_classify.py` điểm 1, `b08_retrieve.py` điểm 3, `b17_execute.py` `_point7`); `audit_check`
+    (4d) kiểm đúng chỗ code ghi. Sau Phase 4 quyết: ghi cột (sửa B3/B8/B17) hay bỏ cột (migration). Tới lúc đó truy vấn đánh giá (RQ, M9)
+    đọc `detail`.
+32. **ml-service chưa tự làm nóng reranker khi khởi động (4d DỪNG 1 — gate3 tc02, chốt 02/10/2026; liên hệ Việc treo 4).** Lời gọi rerank
+    ĐẦU TIÊN sau khi ml-service rảnh lâu (gate3 chạy sau 7,5 phút gate2 không RAG) hết hạn `deadline` (giây 49,4, retry 0) → B8
+    `retrieval_error` E2. KHÔNG nới `TIMEOUT_S["rerank"]` / `rag_deadline_s`; DỪNG 2 4d chỉ thêm truy vấn làm nóng ở preflight `gate3.py`
+    / `gate4.py`. Đóng: ml-service chạy một lượt rerank giả khi khởi động (trước khi báo healthy) — ngoài Phase 4.
+33. **Lỗi DB lúc INSERT có thể đưa tham số câu lệnh (gồm `note` ĐÃ CHE của ghi đè) vào log (soát 4d DỪNG 2 NGHI-3; Q-4d-6 = C, chốt
+    02/10/2026).** Postgres timeout/restart đúng lúc `record_override` INSERT → `DBAPIError` không bắt → traceback SQLAlchemy kèm
+    `[parameters: …]`. Cùng lớp lỗi với mọi INSERT khác của app. Sửa đúng = `create_async_engine(..., hide_parameters=True)` toàn hệ thống
+    (`db/session.py` — có khối M9) → sau Phase 4, phối hợp M9. Không sửa route, không thêm mã 503.
+34. **Luật `entropy` của privacy guard bỏ qua token có chứa mặt nạ (soát 4d DỪNG 2 NGHI-5; Q-4d-7, chốt 02/10/2026).**
+    `guard/privacy.py:160` — chuỗi `x[BÍ_MẬT_ĐÃ_ẨN]<chuỗi ngẫu nhiên ≥ 20>` lọt guard (vd vào `audit_logs.note` qua ghi đè); `audit_check`
+    không dùng luật entropy nên không bắt. Lõi 3e — sửa (chỉ bỏ qua khi token đúng bằng mặt nạ, hoặc xoá mặt nạ rồi mới tính entropy) cùng
+    soát lại bộ test e* của 3e; không sửa ở 4d.
+35. ~~**Worker ~98% CPU sau một lượt gate4 chạy trực tiếp trên máy Duy Anh (03/10/2026) — chưa giải thích.** Postgres 0%, log im
+    05:15:31 → 05:22:16 UTC. Đã loại: `monitor_rules_minute` in 1 lần là đúng thiết kế; worker máy Tuấn Anh lúc rảnh 0,75%. Cần: `docker
+    stats` ngay sau gate4 + log worker + đếm turns chưa kết thúc.~~ — **ĐÓNG 06/10/2026 — sai số phép đo** (không phải lỗi: số % cao là
+    một mẫu `docker stats` trùng probe healthcheck; tiến trình worker ≈ 0,13% trên cả hai máy). Spec `build/phase4-thiet-ke-chi-tiet.md`
+    v1.8 mục 7.9; quy ước đo ở `backend/tests/stack/README.md` mục "Đo CPU của worker". Commit đóng `632e05a`, CI xanh run `37419528676`.
+    - **Phiên chẩn đoán 06/10/2026 (máy Tuấn Anh, macOS + colima, VM 7,7 GiB) — KHÔNG tái hiện.** HEAD `3549daa`; mã trong image
+      (`backend/app`, `config`, `pyproject.toml`, `uv.lock`, `backend/Dockerfile`) trùng `1455b55` (máy Duy Anh) — 2 commit sau chỉ đổi tài
+      liệu; image `servicedesk-backend:dev` dựng 03/10 21:33 +07 (sau `1455b55`). Stack không ai dùng, cắm sạc. Chỉ đo + đọc mã, không sửa mã.
+      `.env` máy này đang `LLM_BACKEND=real` → lần gọi gate4 đầu DỪNG ở chốt an toàn (0 ca chạy, 0 lời gọi LLM); tạo lại backend+worker bằng
+      biến shell `LLM_BACKEND=scripted FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=2` (không sửa `.env`). **gate4 1 lượt: 73 PASS
+      / 0 FAIL**, 03:07:42 → 03:15:56 UTC. Không chạy lượt 2. Đã trả backend+worker về `.env` (Bước 3: worker 0,00%, Postgres 0,01%).
+    - **Cách đo:** `docker stats --no-stream` (1 mẫu, cửa sổ ~1–2 s) + `usage_usec` cgroup của container worker trước/sau `sleep 30` + utime/stime
+      từng luồng `/proc/[0-9]*/task/*` (tick 10 ms). pid 1 = tiến trình `python -m app.worker`; cgroup = cả container (gồm tiến trình ngắn).
+      Số đo (`docker stats` | cgroup | pid 1):
+      - rảnh, cấu hình `.env` (real), 02:55:43 + 30 s: **32,44%** | 2,19 s = 7,3% | 0,06 s = 0,2%
+      - rảnh, scripted, 03:06:54 + 30 s: 0,00% | 2,04 s = 6,8% | 0,06 s = 0,2%
+      - **trong gate4** 03:07:24 → 03:16:50 (565 s): — | 39,7 s = 7,0% | 0,78 s = **0,14%**
+      - +0 (03:16:50 + 30 s): 0,00% | 2,07 s = 6,9% | 0,03 s = 0,1%
+      - **+1,4 → +20,7 phút** 03:17:20 → 03:36:38 (1158 s, bộ đếm tích luỹ — thay các mốc +1/+3/+5/+10 vì lệnh đo kế tiếp chạy lúc +20,7):
+        — | 80,3 s = 6,9% | 1,56 s = **0,13%** (worker bận 98% dù 1 phút thì pid 1 phải tăng ~60 s)
+      - +20,7 phút (03:36:38 + 30 s): 5,11% | 2,15 s = 7,2% | 0,02 s = 0,07%
+    - **Luồng nóng: không có.** pid 1 (luồng chính + luồng 7–11 + luồng 688 sinh trong gate4) gần 0 suốt. ~96% CPU của container là tiến trình
+      sống ngắn = **probe healthcheck `python -m app.heartbeat` mỗi 5 s** (`docker-compose.yml` worker.healthcheck `interval: 5s`). Đo thẳng 1 probe
+      trong container: **0,34 s CPU, 0,34 s wall** (nạp `app.settings` → pydantic, pydantic_settings, yaml, `app.domain.*` — `app/heartbeat.py:14–15`).
+      Kiểm chéo: 1158 s / 5 s × 0,34 s ≈ 78,7 s ≈ 80,3 s cgroup đo được. Mẫu `docker stats` trùng probe → ~30–35% (32,44% lúc rảnh, CHƯA chạy
+      gate4); không trùng → 0%.
+    - **Máy Duy Anh (WSL 2, `1455b55`, stack rảnh — Duy Anh đo, 06/10/2026, hai lệnh đo ở README):** một probe healthcheck = **0,44 / 0,41 /
+      0,42 s CPU** (3 lần); pid 1 tăng 8 tick = 0,08 s trong 60 s (**0,13%**); healthcheck `Interval` 5 s. Probe 0,42 s trong cửa sổ mẫu ~1 s của
+      `docker stats` = ~42% → khớp hai mẫu 42,62% và 48,18% sau lượt 2. Mẫu 98% (03/10, máy tải nặng + swap) là mẫu duy nhất không khớp trọn —
+      không tái hiện, không đo thêm.
+    - **Kết luận:** [Chốt — cả hai máy] tiến trình worker (pid 1) ≈ 0,13% CPU; % cao của worker trong `docker stats` = mẫu ~1 s trùng probe
+      healthcheck, không liên quan gate4.
+    - **Đã loại (máy này):** vòng lặp bận trong worker — job quét hạn 15 s, `scan_stale_turns` 60 s, `monitor_rules_minute` 60 s đều nằm trong pid 1:
+      0,13% suốt 19 phút sau gate4; luồng executor/pool — 0 tick; tiến trình mồ côi do `exec` của gate4 — gate4 chỉ `exec` `printenv` vào worker
+      (`backend/tests/stack/gate4.py:109`), hai lần chụp không có tiến trình lạ sống lâu.
+    - **Nguồn + ảnh hưởng:** healthcheck có từ Phase 2 chặng 2a (`9b310d4`) — KHÔNG thuộc Phase 4, KHÔNG thuộc khối M9. Chỉ hiệu năng: ~0,07 lõi thường
+      trực trên VM colima (~0,08 trên máy Duy Anh). Không chạm đường an toàn: trong gate4 nhắc 1/2 đúng mốc, hết hạn → E6 đúng (c3, i7 PASS), thực thi
+      đúng 1 lời gọi ghi.
+    - **Xử lý:** (a) **đã làm** — quy ước đo ở `backend/tests/stack/README.md` mục "Đo CPU của worker": trung bình cgroup ≥ 30 s hoặc tick pid 1, không
+      dùng 1 mẫu `docker stats` (kèm 2 lệnh đo). (b) **HOÃN đổi healthcheck** (`interval` 5 s → 15–30 s, vẫn < `WORKER_HEARTBEAT_MAX_AGE` 60 s; hoặc
+      probe không nạp `app.settings`, giữ một nguồn cho path + max_age) — gộp vào lần sửa `docker-compose.yml` kế tiếp, vì đổi compose thì phải chạy
+      lại cả ba cổng (gate2, gate3, gate4).
+    - Phụ: gate4 ghi `backend/tests/stack/bienban-gate4-20261006.md` (untracked, chưa điền, KHÔNG commit).
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).

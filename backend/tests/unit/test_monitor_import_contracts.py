@@ -43,6 +43,8 @@ def unlisted_sources(app_dir: Path, config_path: Path, package: str) -> list[str
 
 def test_monitor_read_only_forbids_required_modules() -> None:
     assert READ_ONLY_FORBIDDEN - _modules(CONFIG, READ_ONLY, "forbidden_modules") == set()
+    # X2: nguồn phải là CẢ package — thu hẹp thành `app.monitor.views` thì phần còn lại của monitor hết bị cấm
+    assert _modules(CONFIG, READ_ONLY, "source_modules") == {"app.monitor"}
 
 
 def test_monitor_only_api_worker_lists_every_top_level_module() -> None:
@@ -53,6 +55,16 @@ def test_monitor_only_api_worker_lists_every_top_level_module() -> None:
 def test_monitor_only_api_worker_sources_equal_scan() -> None:
     assert _modules(CONFIG, ONLY_API_WORKER, "source_modules") == top_level_modules(APP_DIR, "app")
     assert _modules(CONFIG, ONLY_API_WORKER, "forbidden_modules") == {"app.monitor"}
+
+
+def test_monitor_contracts_have_no_escape_hatch() -> None:
+    # X2 (kiểm thử độc lập 01/10): thêm `ignore_imports` thì lint vẫn KEPT → hợp đồng hở mà không test nào đỏ.
+    cfg = configparser.ConfigParser()
+    cfg.read(CONFIG, encoding="utf-8")
+    for contract in (READ_ONLY, ONLY_API_WORKER):
+        section = cfg[contract]
+        assert "ignore_imports" not in section, contract
+        assert not section.getboolean("allow_indirect_imports", fallback=False), contract
 
 
 def test_checker_catches_unlisted_package(tmp_path: Path) -> None:

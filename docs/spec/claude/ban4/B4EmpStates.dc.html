@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — trạng thái yêu cầu</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}a{color:#0055A4}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <dc-import name="B4Sidebar" role="employee" active="folder" hint-size="264px,900px"></dc-import>
+  <main style="flex-grow: 1; padding: 40px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em;">Trạng thái trong cuộc trò chuyện</h1>
+      <p style="margin: 0; font-size: 17px; line-height: 26px; color: #6E6E73;">Mỗi trạng thái nói rõ đang ở đâu, chờ ai, bạn cần làm gì.</p>
+    </div>
+    <div style="flex-grow: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 20px;">
+
+      <section style="background: #F5F5F7; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Đang xử lý</span>
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 17px; line-height: 22px; font-weight: 600;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #0055A4;"></span>Đang kiểm tra hệ thống…</span>
+        <div style="background: #FFFFFF; border-radius: 12px; overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Tài khoản AD</span><span style="color: #1E7B34;">Xong</span></div>
+          <div style="display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Thiết bị</span><span style="color: #1E7B34;">Xong</span></div>
+          <div style="display: flex; justify-content: space-between; padding: 10px 14px; font-size: 15px; line-height: 20px;"><span>Chứng chỉ VPN</span><span style="color: #6E6E73;">Đang kiểm tra</span></div>
+        </div>
+        <span style="margin-top: auto; font-size: 13px; line-height: 18px; color: #6E6E73;">Bạn không cần làm gì.</span>
+      </section>
+
+      <section style="background: #F5F5F7; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Cần bạn bổ sung</span>
+        <p style="margin: 0; font-size: 17px; line-height: 26px;">Anh cần cài phần mềm lên máy nào?</p>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #0055A4; background: #FFFFFF; color: #0055A4; font: 600 15px/20px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">LAP-0342</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #0055A4; background: #FFFFFF; color: #0055A4; font: 600 15px/20px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">PC-1107</button>
+        </div>
+        <span style="margin-top: auto; font-size: 13px; line-height: 18px; color: #6E6E73;">Còn 2 lần hỏi. Quá 24 giờ sẽ chuyển kỹ thuật viên.</span>
+      </section>
+
+      <section style="background: #FFF4EC; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #B4500B;">Chờ IT duyệt</span>
+        <p style="margin: 0; font-size: 17px; line-height: 26px;">Yêu cầu cần IT duyệt vì liên quan quyền vào thư mục có dữ liệu tài chính.</p>
+        <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: #B4500B;">24:10</span><span style="font-size: 15px; line-height: 20px; color: #6E6E73;">còn lại</span></div>
+        <span style="margin-top: auto; font-size: 13px; line-height: 18px; color: #6E6E73;">Bạn có thể rời trang — kết quả sẽ có trong Thông báo.</span>
+      </section>
+
+      <section style="background: #F5F5F7; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Đã chuyển kỹ thuật viên</span>
+        <p style="margin: 0; font-size: 17px; line-height: 26px;">Kỹ thuật viên sẽ liên hệ bạn. Bạn sẽ nhận thông báo khi có kết quả.</p>
+        <a href="#" style="margin-top: auto; font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;">Tạo yêu cầu mới liên quan</a>
+      </section>
+
+      <section style="background: #F5F5F7; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Không xử lý tự động</span>
+        <p style="margin: 0; font-size: 17px; line-height: 26px;">Yêu cầu này không thể xử lý tự động. Vui lòng liên hệ bộ phận IT nếu bạn vẫn cần hỗ trợ.</p>
+        <span style="margin-top: auto; font-size: 13px; line-height: 18px; color: #6E6E73;">Câu trung tính — không gợi ý “phát hiện tấn công”.</span>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-bottom: 8px;">Thông báo</span>
+        <div style="display: grid; grid-template-columns: 7px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid #E5E5EA;"><span style="margin-top: 7px; width: 7px; height: 7px; border-radius: 50%; background: #F37021;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 15px; line-height: 20px;">IT chưa duyệt “Quyền thư mục Kế toán”</span><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">Kèm lý do · 10 phút trước</span></span></div>
+        <div style="display: grid; grid-template-columns: 7px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid #E5E5EA;"><span style="margin-top: 7px; width: 7px; height: 7px; border-radius: 50%; background: #F37021;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 15px; line-height: 20px;">Kỹ thuật viên đã đóng “Máy in tầng 3”</span><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">Hôm qua</span></span></div>
+        <div style="display: grid; grid-template-columns: 7px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid #E5E5EA;"><span style="margin-top: 7px; width: 7px; height: 7px; border-radius: 50%; background: #E5E5EA;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 15px; line-height: 20px; color: #6E6E73;">“Cài Microsoft Visio” đã hoàn tất</span><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">24/09</span></span></div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

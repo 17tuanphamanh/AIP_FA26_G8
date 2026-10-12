@@ -16,6 +16,7 @@ from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.approval import ReminderN
 from app.domain.final import FinalSummary
+from app.domain.override import DecisionTrail, OverrideRecord
 from app.tools.registry import ToolResult
 
 # bản ghi dữ liệu dùng chung với store SQL
@@ -208,7 +209,8 @@ class TicketRepo(TicketStore, Protocol):
 
 
 class ApprovalRepo(Protocol):
-    """Phần `approval/store.SqlApprovals` mà route duyệt dùng (2b-Q3)."""
+    """Phần `approval/store.SqlApprovals` mà route duyệt dùng (2b-Q3). 4d (Q-4d-2 = A): cả route ghi đè (`api/tickets.py`) — `Desk`
+    dựng ở `main.py` (M9, không sửa) chỉ có `tickets`/`approvals`, và `SqlApprovals` đã đọc `audit_logs` từ 4c (hộp thư)."""
 
     def lock_row(self, approval_id: str) -> AbstractAsyncContextManager[ApprovalRow | None]:
         """Transaction ngắn, khoá hàng (`FOR UPDATE`) suốt khối `async with`."""
@@ -226,4 +228,14 @@ class ApprovalRepo(Protocol):
 
     async def procedure_title(self, doc_id: str) -> str | None:
         """4c P6: tiêu đề tài liệu `doc_id` ở bản KB hiện hành; không có → None (không chặn)."""
+        ...
+
+    async def decision_trail(self, ticket_id: str) -> DecisionTrail:
+        """4d P3 (Q-4d-2 = A): dòng `B13/B14 risk_decided` MỚI NHẤT của ticket (`detail.route`, cột `policy_decision`) + có dòng
+        `B10 deflected_info_only` hay không — để route ghi đè suy `original_decision`."""
+        ...
+
+    async def record_override(self, rec: OverrideRecord) -> bool:
+        """4d P4: ghi MỘT dòng `audit_logs` `step="OVERRIDE"` (qua `AuditWriter.record_new`) — True = dòng mới; người này đã ghi đè
+        ticket này (trùng `idempotency_key`) → False. KHÔNG đụng `tickets`, checkpoint, lượt."""
         ...

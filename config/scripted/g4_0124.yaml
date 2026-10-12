@@ -1,0 +1,15 @@
+# Preset `g4_0124` của ScriptedLLM trên stack dev — `make gate4` (phase4 mục 7.4, PLAN-4d mục 11.5), thẻ [fake:g4_0124] cuối câu,
+# KHÔNG đặt FAKE_SCENARIO. ha.lt (l1_01) "gia hạn VPN cho máy PC-0124" (máy của mình, chưa đăng ký) → R17 → xung đột self → Trưởng BP it_mgr01 (g4-06, TC19).
+# Khuôn tc02.yaml: 1 ý vpn, gợi ý renew_vpn_cert, slot device_id đúng chữ trong câu (sanitize_slots giữ) → B6 → B11 đủ slot → B12.
+# Phản hồi TĨNH, kiểm schema lúc khởi động. KHÔNG dùng trong test (e2e cổng 4 dùng tests/fixtures/llm/vpn.py).
+b02_injection_judge: {is_attack: false, category: none, reason: "preset g4_0124"}
+b03_classify:
+  intents: [{type: vpn, confidence: 0.92, span: "", action_hint: renew_vpn_cert, slots: {device_id: PC-0124}}]
+  is_multi: false
+b10_need_type: {type: action, confidence: 0.9}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cho mình xin mã thiết bị (ví dụ PC-0124) để kiểm tra chứng chỉ VPN nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}
+# Phase 6 P12 [Chốt 09/10]: giá trị an toàn — khi 6C nối B12, ca không luật nào khớp vẫn ra chuyển L2 (0,9 > t_high).
+b14_risk_estimate: {prob_needs_human: 0.9, factors: [missing_facts], rationale: "preset"}
+b14_risk_vote: {needs_human: true, factors: [missing_facts]}

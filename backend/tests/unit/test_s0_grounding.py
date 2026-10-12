@@ -34,7 +34,7 @@ from app.rag.ingest.config import ALIAS
 from app.rag.models import EvidenceBlock, RetrievalResult, RetrievalSystemError
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStoreTransient
-from app.risk.estimator import PMethod, evidence_for_estimator
+from app.risk.estimator import RiskEstimate, evidence_for_estimator
 from app.risk.models import RiskContext
 from app.settings import (
     Settings,
@@ -482,7 +482,7 @@ class RecordingEstimator:
     def __init__(self) -> None:
         self.seen: list[list[ChunkRef]] = []
 
-    async def estimate(self, action: Action, ctx: RiskContext, retrieved: Sequence[ChunkRef]) -> tuple[float, PMethod]:
+    async def estimate(self, action: Action, ctx: RiskContext, retrieved: Sequence[ChunkRef]) -> RiskEstimate:
         self.seen.append(list(retrieved))
         raise LLMUnavailable("estimator giả — chỉ ghi nhận đầu vào")
 
@@ -611,9 +611,20 @@ def _fixture_docs() -> list[Any]:
 
 
 def test_ingest_procedure_warnings_repo_config_on_fixture_kb_is_clean() -> None:
+    """Phase 5 T22a 4.7b: KB fixture chỉ có VPN → VPN sạch (0 dòng `vpn/`); 6 hành động khai báo (chưa bật) cảnh báo ĐÚNG 6 dòng,
+    mỗi mã bảng 4.2 [Chốt 09/10] một dòng (hàm gộp theo `doc_id` — 6 hành động 6 mã khác nhau). KB thật có K2 → 0 dòng."""
     from app.rag.ingest.procedures import procedure_warnings
 
-    assert procedure_warnings(_fixture_docs(), get_action_metadata().root) == []
+    lines = procedure_warnings(_fixture_docs(), get_action_metadata().root)
+    assert not [line for line in lines if "vpn/" in line]
+    expected = {
+        "KB-ACC-001": "account/reset_password", "KB-ACC-002": "account/unlock_account",
+        "KB-SW-001": "software/install_software", "KB-ACS-005": "access/view_permissions",
+        "KB-ACS-001": "access/grant_permission", "KB-ACS-003": "access/extend_permission",
+    }  # fmt: skip
+    assert len(lines) == 6
+    for doc_id, action in expected.items():
+        assert [line for line in lines if f"procedure_doc {doc_id} ({action}) không có trong KB" in line], doc_id
 
 
 def test_ingest_procedure_warnings_missing_disabled_restricted() -> None:
@@ -658,5 +669,6 @@ async def test_ingest_prints_procedure_warning_without_blocking(tmp_path: Path) 
                       rag=unused)  # fmt: skip
     assert await run_ingest(IngestOptions(FIXTURE_KB, dry_run=True), deps) == 1
     lines = err.getvalue().splitlines()
-    assert lines[0].startswith("cảnh báo: procedure_doc KB-VPN-009 (vpn/check_vpn_status) không có trong KB")
+    # T22a 4.7b: thêm cảnh báo của 6 hành động mới (KB fixture chỉ VPN) → tìm dòng VPN-009, không ghim vị trí
+    assert [line for line in lines if line.startswith("cảnh báo: procedure_doc KB-VPN-009 (vpn/check_vpn_status) không có trong KB")]
     assert "bước 4: đọc kb_documents lỗi" in err.getvalue()  # dừng vì repo giả, sau cảnh báo

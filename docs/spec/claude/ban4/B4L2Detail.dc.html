@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — L2 bàn giao và đóng</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}a{color:#0055A4}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <dc-import name="B4Sidebar" role="l2" active="escalations" hint-size="264px,900px"></dc-import>
+  <main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <a href="B4L2Queue.dc.html" style="font-size: 15px; line-height: 20px; text-decoration: none;">‹ Hàng đợi escalate</a>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em; flex-grow: 1;">Nguyễn Văn An · E5</h1>
+        <span style="font-size: 15px; line-height: 20px; color: #6E6E73;">Kế toán · chờ 9 phút</span>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; min-height: 0;">
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div style="padding: 14px 20px; border-radius: 14px; background: #FCEBEB; font-size: 17px; line-height: 26px; color: #7A1C1C;"><b style="font-weight: 600;">Luật R12 chặn hành động này.</b> Không thực hiện lại — chỉ xác nhận từ chối hoặc mở ticket mới sau khi xác minh.</div>
+        <section style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Ghi chú bàn giao</span>
+          <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+            <sc-for list="{{notes}}" as="n" hint-placeholder-count="4">
+              <div style="display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 16px; padding: 12px 20px; border-top: {{n.sep}};"><span style="font-size: 15px; line-height: 26px; color: #6E6E73;">{{n.k}}</span><span style="font-size: 17px; line-height: 26px;">{{n.v}}</span></div>
+            </sc-for>
+          </div>
+        </section>
+        <section style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Hội thoại</span>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="align-self: flex-end; max-width: 80%; background: #F2F2F7; padding: 10px 16px; border-radius: 18px; font-size: 17px; line-height: 26px;">Cho tài khoản em.lv quyền vào thư mục Kinh doanh để lấy lại file ạ.</div>
+            <div style="align-self: flex-start; max-width: 80%; font-size: 17px; line-height: 26px; color: #3A3A3C;">Đã chuyển kỹ thuật viên hỗ trợ.</div>
+          </div>
+        </section>
+      </div>
+
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Đóng escalation</span>
+        <div role="radiogroup" aria-label="Kết quả" style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+          <div aria-disabled="true" style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; color: #AEAEB2;"><span style="flex-grow: 1; display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 22px;">Đã hoàn tất</span><span style="font-size: 13px; line-height: 18px;">Không dùng với ca bị cấm</span></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></div>
+          <sc-for list="{{opts}}" as="o" hint-placeholder-count="2">
+            <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 20px; border: none; border-top: 1px solid #E5E5EA; background: #FFFFFF; text-align: left; font-family: inherit; color: #1D1D1F;"><span style="flex-grow: 1; display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 22px;">{{o.title}}</span><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">{{o.desc}}</span></span><span style="{{o.check}}">✓</span></button>
+          </sc-for>
+        </div>
+        <label for="n4" style="position: absolute; left: -9999px;">Ghi chú đóng</label>
+        <textarea id="n4" rows="4" placeholder="Ghi chú đóng" style="margin-top: 8px; border: 1px solid #E5E5EA; border-radius: 16px; padding: 12px 20px; font: 400 17px/26px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif; resize: none;">Đã gọi người gửi: em.lv đã nghỉ việc. Hướng dẫn xin file qua trưởng phòng Kinh doanh.</textarea>
+        <span style="flex-grow: 1;"></span>
+        <button type="button" style="height: 50px; border-radius: 25px; border: none; background: #0055A4; color: #FFFFFF; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Đóng escalation</button>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { picked: 'confirmed_denial' }; }
+  renderVals() {
+    const notes = [
+      ['Agent đã làm', 'Xác định yêu cầu cấp quyền thư mục Kinh doanh cho em.lv; tra AD: tài khoản bị vô hiệu hoá.'],
+      ['Kết quả', 'Luật R12 khớp → từ chối. Không có thao tác ghi nào.'],
+      ['Lý do chuyển', 'Hành động bị cấm theo chính sách, cần người xác minh.'],
+      ['Việc cần làm', 'Liên hệ người gửi; nếu hợp lệ, hướng dẫn tạo yêu cầu đúng.']
+    ].map(([k, v], i) => ({ k, v, sep: i ? '1px solid #E5E5EA' : 'none' }));
+    const list = [
+      { id: 'confirmed_denial', title: 'Xác nhận từ chối', desc: 'Giữ nguyên quyết định của luật' },
+      { id: 'reopened_as_new', title: 'Mở ticket mới', desc: 'Chạy lại từ đầu, liên kết ticket này' }
+    ];
+    return { notes, opts: list.map((o) => { const on = this.state.picked === o.id; return { title: o.title, desc: o.desc, on: on ? 'true' : 'false', pick: () => this.setState({ picked: o.id }),
+      check: 'font-size: 17px; font-weight: 600; color: #0055A4; visibility: ' + (on ? 'visible' : 'hidden') + ';' }; }) };
+  }
+}
+</script>
+</body>
+</html>

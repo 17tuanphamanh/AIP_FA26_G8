@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
+from app.domain.policy import Conditions
 from app.settings import (
     ActionMetadataFile,
     Settings,
@@ -104,11 +106,20 @@ SPEC_11_2: dict[str, Any] = {
 }  # fmt: skip
 
 
+VPN_RULE_IDS = ("R16", "R17", "R18", "R19", "R20")
+
+
+def _rule_at(raw: dict[str, Any], rule_id: str) -> int:
+    """Vị trí luật theo id — Phase 5 T22a (4.7b) thêm R01–R15 trước R16, không lấy theo vị trí cố định nữa."""
+    return next(i for i, r in enumerate(raw["rules"]) if r["id"] == rule_id)
+
+
 def test_policy_json_rules_are_exactly_spec_11_2() -> None:
+    """R16–R20 vẫn NGUYÊN VĂN khối JSON spec 11.2 + thứ tự (T22a 4.7b: so 5 luật theo id; đếm 20 luật ở h1)."""
     raw = json.loads((REPO / "config" / "policy.json").read_text())
     assert raw["business_hours"] == SPEC_11_2["business_hours"]
-    assert raw["rules"] == SPEC_11_2["rules"]
-    assert [r.id for r in get_policy().rules] == ["R16", "R17", "R18", "R19", "R20"]
+    assert [r for r in raw["rules"] if r["id"] in VPN_RULE_IDS] == SPEC_11_2["rules"]
+    assert [r.id for r in get_policy().rules if r.id in VPN_RULE_IDS] == list(VPN_RULE_IDS)
     check_policy_config(get_policy(), get_slots(), get_action_metadata())
 
 
@@ -166,17 +177,21 @@ def test_bad_rules_or_hours_rejected(tmp_path: Path, name: str) -> None:
 
 def test_nested_any_group_accepted(tmp_path: Path) -> None:
     def nest(r: dict[str, Any]) -> None:
-        r["rules"][4]["conditions"] = {"all": [{"any": [{"fact": "ctx.target_is_other", "op": "is_false"}]},
-                                               {"fact": "action.facts.device_registered", "op": "is_true"}]}  # fmt: skip
+        r["rules"][_rule_at(r, "R20")]["conditions"] = {
+            "all": [{"any": [{"fact": "ctx.target_is_other", "op": "is_false"}]},
+                    {"fact": "action.facts.device_registered", "op": "is_true"}]}  # fmt: skip
 
-    assert load_policy(_with(tmp_path, nest)).rules[4].id == "R20"
+    r20 = next(rule for rule in load_policy(_with(tmp_path, nest)).rules if rule.id == "R20")
+    assert r20.conditions.all_ is not None and isinstance(r20.conditions.all_[0], Conditions)
 
 
 def test_q3h1_rule_action_outside_intent_refuses_start(tmp_path: Path) -> None:
-    policy = load_policy(_with(tmp_path, lambda r: r["rules"][1].update(action=["renew_vpn_cert", "reset_password"])))
+    # T22a 4.7b: `reset_password`/`account` nay đã khai báo → dùng hành động/intent KHÔNG khai báo (`print_document`, `printer`)
+    policy = load_policy(_with(tmp_path, lambda r: r["rules"][_rule_at(r, "R17")].update(
+        action=["renew_vpn_cert", "print_document"])))  # fmt: skip
     with pytest.raises(RuntimeError, match="R17"):
         check_policy_config(policy, get_slots(), get_action_metadata())
-    policy = load_policy(_with(tmp_path, lambda r: r["rules"][1].update(intent="account")))
+    policy = load_policy(_with(tmp_path, lambda r: r["rules"][_rule_at(r, "R17")].update(intent="printer")))
     with pytest.raises(RuntimeError, match="R17"):
         check_policy_config(policy, get_slots(), get_action_metadata())
 
@@ -224,16 +239,19 @@ def _slots_file(tmp_path: Path, extra: str = "") -> Path:
 
 
 def test_missing_action_metadata_refuses_startup(tmp_path: Path) -> None:
+    # T22a 4.7b: file tạm giữ đủ 3 intent mới (thông điệp báo intent đầu tiên theo chữ cái), chỉ thiếu 2 hành động VPN
+    meta = get_action_metadata().model_dump()
+    meta["vpn"] = {"renew_vpn_cert": meta["vpn"]["renew_vpn_cert"]}  # thiếu 2 action
     path = tmp_path / "action_metadata.yaml"
-    path.write_text("vpn:\n  renew_vpn_cert: {reversible: true, reversibility: full, data_sensitivity: low, "
-                    "scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004}\n")  # thiếu 2 action
+    path.write_text(yaml.safe_dump(meta, allow_unicode=True))
     with pytest.raises(RuntimeError, match="thiếu metadata cho vpn: \\['check_vpn_status', 'reissue_vpn_access'\\]"):
         check_intent_config(Settings(_env_file=None), get_slots(), load_action_metadata(path))  # type: ignore[call-arg]
 
 
 def test_enabled_intent_without_slots_refuses_startup() -> None:
-    settings = Settings(_env_file=None, enabled_intents=["vpn", "account"])  # type: ignore[call-arg]
-    with pytest.raises(RuntimeError, match="account"):
+    # T22a 4.7b: `account` nay đã khai báo (chưa bật) → dùng intent không khai báo
+    settings = Settings(_env_file=None, enabled_intents=["vpn", "printer"])  # type: ignore[call-arg]
+    with pytest.raises(RuntimeError, match="printer"):
         check_intent_config(settings, get_slots(), get_action_metadata())
 
 
@@ -347,7 +365,8 @@ async def test_q3h1_open_runtime_refuses_bad_policy_before_db(monkeypatch: pytes
     from app.graph import wiring
     from pydantic import SecretStr
 
-    typo = load_policy(_with(tmp_path, lambda r: r["rules"][2].update(action=["renew_vpn_cert", "reissue_vpn_acess"])))
+    typo = load_policy(_with(tmp_path, lambda r: r["rules"][_rule_at(r, "R18")].update(
+        action=["renew_vpn_cert", "reissue_vpn_acess"])))  # fmt: skip
     monkeypatch.setattr(wiring, "get_policy", lambda: typo)
     settings = Settings(  # type: ignore[call-arg]
         _env_file=None, app_env="dev", llm_backend="scripted", ml_service_token=SecretStr("t" * 32),

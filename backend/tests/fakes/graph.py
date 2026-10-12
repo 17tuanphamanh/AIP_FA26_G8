@@ -41,6 +41,7 @@ from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.approval import REMINDER_FRACTIONS, ReminderN, Roster
 from app.domain.final import FinalSummary
+from app.domain.override import DecisionTrail, OverrideRecord
 from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
@@ -95,6 +96,17 @@ class MemoryAudit:
             self.lineage.append(dict(lineage))
         if key is None or all(r.get("idempotency_key") != key for r in self.rows):
             self.rows.append(dict(row))
+        return True
+
+    async def record_new(self, row: Mapping[str, Any]) -> bool:
+        """Như `AuditWriter.record_new` (4d P4): True CHỈ khi vừa ghi dòng mới; khoá đã có → False; thiếu khoá → ValueError."""
+        check_audit_row(row)
+        key = row.get("idempotency_key")
+        if key is None:
+            raise ValueError("audit_logs.record_new: thiếu idempotency_key")
+        if any(r.get("idempotency_key") == key for r in self.rows):
+            return False
+        self.rows.append(dict(row))
         return True
 
     def events(self, ticket_id: str) -> list[tuple[str, str]]:
@@ -340,6 +352,21 @@ class MemoryApprovals:
 
     async def procedure_title(self, doc_id: str) -> str | None:
         return self.titles.get(doc_id)
+
+    async def decision_trail(self, ticket_id: str) -> DecisionTrail:
+        """Như SQL (4d P3): dòng `B13/B14 risk_decided` ghi SAU CÙNG (thứ tự ghi = `log_id`) + có `B10 deflected_info_only`."""
+        rows = [r for r in (self._audit.rows if self._audit else []) if r["ticket_id"] == ticket_id]
+        risk = [r for r in rows if (r["step"], r["event"]) == ("B13/B14", "risk_decided")]
+        last = risk[-1] if risk else {}
+        return DecisionTrail(
+            risk_route=(last.get("detail") or {}).get("route"), risk_policy_decision=last.get("policy_decision"),
+            has_risk_decided=bool(risk), deflected=any((r["step"], r["event"]) == ("B10", "deflected_info_only") for r in rows),
+        )  # fmt: skip
+
+    async def record_override(self, rec: OverrideRecord) -> bool:
+        """Như SQL (4d P4): một dòng `step="OVERRIDE"` vào CHÍNH `MemoryAudit` của harness — không đụng `tickets`."""
+        assert self._audit is not None, "MemoryApprovals cần audit (harness nối sẵn)"
+        return await self._audit.record_new(rec.audit_row())
 
     @asynccontextmanager
     async def lock_row(self, approval_id: str) -> AsyncIterator[ApprovalRow | None]:

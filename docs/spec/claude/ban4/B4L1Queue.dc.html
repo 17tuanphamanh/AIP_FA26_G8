@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — L1 chờ tôi duyệt</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}a{color:#0055A4}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <dc-import name="B4Sidebar" role="l1" active="approvals" hint-size="264px,900px"></dc-import>
+  <main style="flex-grow: 1; padding: 40px 48px; display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+    <div style="display: flex; align-items: flex-end; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+        <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em;">Chờ tôi duyệt</h1>
+        <p style="margin: 0; font-size: 17px; line-height: 26px; color: #6E6E73;">Hết hạn sẽ tự chuyển L2 — không bao giờ tự thực hiện.</p>
+      </div>
+      <div role="tablist" style="display: flex; padding: 2px; border-radius: 9px; background: #EEEEF0;">
+        <button type="button" role="tab" aria-selected="{{aSel}}" onClick="{{showPending}}" style="{{tabA}}">Chờ duyệt · 5</button>
+        <button type="button" role="tab" aria-selected="{{bSel}}" onClick="{{showAuto}}" style="{{tabB}}">Hệ thống đã tự xử lý</button>
+      </div>
+    </div>
+
+    <sc-if value="{{isPending}}" hint-placeholder-val="{{true}}">
+      <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+          <a href="B4L1Detail.dc.html" style="display: grid; grid-template-columns: 120px minmax(0, 1fr) 20px; gap: 20px; align-items: center; padding: 16px 20px; border-bottom: 1px solid #E5E5EA; text-decoration: none; color: #1D1D1F;">
+            <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: {{r.w}}; color: {{r.c}}; font-variant-numeric: tabular-nums;"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{r.dot}};"></span>{{r.left}}</span>
+            <span style="display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 26px;">{{r.req}}</span><span style="font-size: 15px; line-height: 20px; color: #6E6E73;">{{r.name}} · {{r.dept}} · {{r.basis}}</span></span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+          </a>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{isAuto}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p style="margin: 0; font-size: 15px; line-height: 20px; color: #6E6E73;">Việc hệ thống đã tự làm hôm nay. Thấy sai thì ghi đè kèm lý do — ghi vào nhật ký để đánh giá lại.</p>
+        <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+          <sc-for list="{{autos}}" as="a" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 16px 20px; border-bottom: 1px solid #E5E5EA;">
+              <span style="font-size: 15px; line-height: 20px; color: #6E6E73;">{{a.time}}</span>
+              <span style="display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 26px;">{{a.what}}</span><span style="font-size: 15px; line-height: 20px; color: #6E6E73;">{{a.meta}}</span></span>
+              <button type="button" style="height: 36px; padding: 0 16px; border-radius: 18px; border: none; background: #F2F2F7; color: #0055A4; font: 600 15px/20px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Ghi đè…</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 'pending' }; }
+  renderVals() {
+    const p = this.state.tab === 'pending';
+    const on = 'height: 32px; padding: 0 16px; border-radius: 7px; border: none; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.1); color: #1D1D1F; font: 600 15px/20px -apple-system, BlinkMacSystemFont, \'Be Vietnam Pro\', sans-serif;';
+    const off = 'height: 32px; padding: 0 16px; border-radius: 7px; border: none; background: transparent; color: #1D1D1F; font: 400 15px/20px -apple-system, BlinkMacSystemFont, \'Be Vietnam Pro\', sans-serif;';
+    const row = (left, urgent, req, name, dept, basis) => ({ left, req, name, dept, basis, c: urgent ? '#C62828' : '#1D1D1F', w: urgent ? '600' : '400', dot: urgent ? '#C62828' : '#F37021' });
+    return {
+      isPending: p, isAuto: !p, aSel: p ? 'true' : 'false', bSel: p ? 'false' : 'true', tabA: p ? on : off, tabB: p ? off : on,
+      showPending: () => this.setState({ tab: 'pending' }), showAuto: () => this.setState({ tab: 'auto' }),
+      rows: [
+        row('còn 4 phút', true, 'Thêm Nguyễn Văn An vào nhóm grp-erp-2026, thành viên, 90 ngày', 'Nguyễn Văn An', 'Kế toán', 'AI · rủi ro 0,62'),
+        row('còn 13 phút', false, 'Cài phần mềm có phí license', 'Trần Thị Bình', 'Kỹ thuật', 'Luật R14'),
+        row('còn 19 phút', false, 'Cấp lại chứng chỉ VPN', 'Hoàng Minh Châu', 'Kế toán · thử việc', 'Luật R19'),
+        row('còn 24 phút', false, 'Cấp lại truy cập VPN ngoài giờ', 'Ngô Thanh Sơn', 'Kinh doanh', 'Luật R18'),
+        row('còn 28 phút', false, 'Quyền đọc thư mục Kế toán chung', 'Bùi Thị Hoa', 'Kinh doanh', 'Luật R07')
+      ],
+      autos: [
+        { time: '08:42', what: 'Cấp lại chứng chỉ VPN cho LAP-0342', meta: 'Nguyễn Văn An · Luật R20 cho phép' },
+        { time: '08:15', what: 'Đặt lại mật khẩu email', meta: 'Phan Thu Giang · Luật R01 cho phép' },
+        { time: '07:58', what: 'Cài Microsoft Visio lên PC-1107', meta: 'Trần Thị Bình · Luật R11 cho phép' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

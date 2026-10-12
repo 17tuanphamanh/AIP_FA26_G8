@@ -15,6 +15,14 @@ ghi TRƯỚC `start_event` (lỗi ghi → 503).
 
 `GET /api/tickets/{id}` → `TicketView`: đã có `final_state` thì `status` lấy từ `tickets`, còn mở thì từ
 checkpoint; `waiting_for` CHỈ từ checkpoint; đọc checkpoint lỗi → 503 (không đoán).
+
+`POST /api/tickets/{id}/override` → 201 (Phase 4 4d P1–P4, TC23; PLAN-4d 2.1): người có `decision:override` ghi lại "đáng lẽ quyết
+khác" cho ticket ĐÃ kết thúc — KHÔNG đổi kết quả ticket (một dòng `audit_logs` `step="OVERRIDE"` qua `desk.approvals.record_override`;
+không đụng `tickets`, checkpoint, lượt, `start_event`, executor). Thứ tự: 413 → quyền → đăng nhập lại ≤ 10 phút (`recent_login`, 403
+`reauth_required`) → 404 (không có / không đọc được) → người gửi tự ghi đè 403 + `permission_denied` → còn mở 409 `ticket_open` → body
+422 (`other` thiếu note → `fields: ["note"]`) → trùng quyết định gốc (server suy từ audit, P3) 422 `same_as_original` → guard trên
+`note` (503; có bí mật → `privacy_secret_redacted`) → `other` mà note rỗng SAU khi che 422 → ghi; người này đã ghi đè → 409
+`already_overridden` (khoá idempotency theo ticket + người, quyết bằng INSERT).
 """
 
 import logging
@@ -33,11 +41,18 @@ from app.api.desk import (
     record_redacted,
     redact,
 )
-from app.auth.authz import can_read_ticket
+from app.api.errors import InvalidRequest
+from app.auth.authz import can_override, can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
 from app.core.ids import new_ticket_id, new_turn_id
 from app.db.tickets import NewTicket, TicketRow
+from app.domain.override import (
+    Decision,
+    OverrideReason,
+    OverrideRecord,
+    original_decision,
+)
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW
 from app.graph.late_event import start_event
 
@@ -70,6 +85,15 @@ class ConfirmIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmed: bool
     note: str | None = Field(default=None, max_length=NOTE_MAX)
+
+
+class OverrideIn(BaseModel):
+    """4d P2: mã cố định (không chữ tự do ngoài `note`, mà `note` qua privacy guard trước khi vào audit)."""
+
+    model_config = ConfigDict(extra="forbid")
+    override_decision: Decision
+    reason_code: OverrideReason
+    note: str | None = Field(default=None, max_length=NOTE_MAX)  # BẮT BUỘC khi reason_code="other" (kiểm trong route)
 
 
 class Accepted(BaseModel):
@@ -204,3 +228,40 @@ async def confirm(
         session_id=p.session_id,
     )  # fmt: skip
     return _accepted(ticket_id, S_CONFIRMING, redacted.notices if redacted is not None else [])
+
+
+@router.post("/api/tickets/{ticket_id}/override", status_code=201)
+async def override(
+    ticket_id: str,
+    request: Request,
+    p: Annotated[Principal, Depends(require("decision:override", recent_login=True))],
+    desk: Annotated[Desk, Depends(get_desk)],
+) -> JSONResponse:
+    row = await _readable(request, p, desk, ticket_id)
+    if not can_override(p, row):  # người gửi tự ghi đè
+        await deny(request, p, "decision:override", ticket_id=ticket_id, reason="self_override")
+        raise HTTPException(403, "forbidden")
+    if row.final_state is None:
+        raise HTTPException(409, "ticket_open")
+    body = await parse_body(request, OverrideIn)
+    if body.reason_code == "other" and not (body.note and body.note.strip()):
+        raise InvalidRequest(["note"])
+    original = original_decision(await desk.approvals.decision_trail(ticket_id))
+    if body.override_decision == original:
+        raise HTTPException(422, "same_as_original")  # trước guard: yêu cầu chắc chắn bị từ chối thì không gửi note qua guard
+    redacted = await redact(desk, request, body.note) if body.note else None
+    if redacted is not None:
+        await record_redacted(desk, request, p, ticket_id, redacted)
+    note = redacted.text if redacted is not None and redacted.text.strip() else None
+    if body.reason_code == "other" and note is None:  # chỉ ký tự vô hình → che xong rỗng (khuôn soát 4c S4b)
+        raise InvalidRequest(["note"])
+    rec = OverrideRecord(
+        ticket_id=ticket_id, overrider_id=p.user_id, original_decision=original, override_decision=body.override_decision,
+        reason_code=body.reason_code, note=note, created_at=desk.clock.now(),
+    )  # fmt: skip
+    if not await desk.approvals.record_override(rec):  # trùng khoá (ticket, người) — quyết bằng kết quả INSERT, không kiểm trước
+        raise HTTPException(409, "already_overridden")
+    return JSONResponse({
+        "ticket_id": ticket_id, "original_decision": original, "override_decision": body.override_decision,
+        "reason_code": body.reason_code, "notices": redacted.notices if redacted is not None else [],
+    }, status_code=201)  # fmt: skip

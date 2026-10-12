@@ -4,9 +4,11 @@ bước đỏ đầu tiên, summary cho agent đọc. Không đụng stack, khô
 """
 
 import os
+import re
 import shutil
 import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -19,20 +21,26 @@ echo "make $*" >>"$STUB_LOG"
 target="$1"
 case "$target" in
   test) printf '3166 passed in 90.98s (0:01:30)\n94 passed in 5.17s\n77 passed, 5 deselected in 0.49s\n' ;;
-  gate2|gate3) echo "==== 8 PASS, 0 FAIL ====" ;;
+  gate2|gate3|gate4) echo "==== 8 PASS, 0 FAIL ====" ;;
   ingest) echo "kb_version=abc" ;;
 esac
 case " ${STUB_FAIL:-} " in *" $target "*) echo "giả: $target đỏ" >&2; exit 1 ;; esac
 exit 0
 """
 COMPOSE_STUB = r"""#!/usr/bin/env bash
-echo "compose $* | FAKE_SCENARIO=${FAKE_SCENARIO-<unset>} FAKE_NODE_DELAY=${FAKE_NODE_DELAY-<unset>}" >>"$STUB_LOG"
+echo "compose $* | FAKE_SCENARIO=${FAKE_SCENARIO-<unset>} FAKE_NODE_DELAY=${FAKE_NODE_DELAY-<unset>} SLA=${APPROVAL_SLA_MINUTES_DEV-<unset>}" >>"$STUB_LOG"
 if [[ "$*" == *"printenv APP_ENV"* ]]; then echo "${STUB_APPENV:-dev}"; fi
 exit 0
 """
 UV_STUB = r"""#!/usr/bin/env bash
 echo "uv $*" >>"$STUB_LOG"
 printf '5 KB p50=1.0ms p95=2.0ms\n20 KB p50=2.0ms p95=3.0ms\n50 KB p50=4.0ms p95=6.0ms\n'
+"""
+# Q-4d-4: hệ điều hành / caffeinate / nguồn điện GIẢ — không để máy chạy test (macOS) gọi caffeinate, pmset thật.
+UNAME_STUB = '#!/usr/bin/env bash\necho "${STUB_UNAME:-Linux}"\n'
+CAFFEINATE_STUB = '#!/usr/bin/env bash\necho "caffeinate $*" >>"$STUB_LOG"\n'
+PMSET_STUB = r"""#!/usr/bin/env bash
+printf "Now drawing from '%s'\n -InternalBattery-0 (id=1)\t80%%; discharging\n" "${STUB_POWER:-AC Power}"
 """
 
 
@@ -43,7 +51,10 @@ def _stub(bin_dir: Path, name: str, body: str) -> Path:
     return path
 
 
-def _run(tmp_path: Path, *, g: str, bench: str = "0", fail: str = "", appenv: str = "dev") -> tuple[int, list[str], str]:
+def _run(
+    tmp_path: Path, *, g: str, bench: str = "0", fail: str = "", appenv: str = "dev", uname: str = "Linux",
+    power: str = "AC Power",
+) -> tuple[int, list[str], str]:  # fmt: skip
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     make = _stub(bin_dir, "make", MAKE_STUB)
@@ -51,6 +62,9 @@ def _run(tmp_path: Path, *, g: str, bench: str = "0", fail: str = "", appenv: st
     _stub(bin_dir, "uv", UV_STUB)
     _stub(bin_dir, "curl", "#!/usr/bin/env bash\nexit 0\n")
     _stub(bin_dir, "gh", "#!/usr/bin/env bash\nexit 1\n")
+    _stub(bin_dir, "uname", UNAME_STUB)
+    _stub(bin_dir, "pmset", PMSET_STUB)
+    _stub(bin_dir, "caffeinate", CAFFEINATE_STUB)
     work = tmp_path / "repo"
     work.mkdir(exist_ok=True)
     log = tmp_path / "calls.log"
@@ -58,7 +72,8 @@ def _run(tmp_path: Path, *, g: str, bench: str = "0", fail: str = "", appenv: st
     env = {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path), "G": g, "BENCH": bench,
         "MAKE_BIN": str(make), "COMPOSE": str(compose), "STUB_LOG": str(log), "STUB_FAIL": fail, "STUB_APPENV": appenv,
-        "FAKE_SCENARIO": "tu-shell-cha", "FAKE_NODE_DELAY": "7",  # biến shell cha — bước 8 phải gỡ
+        "STUB_UNAME": uname, "STUB_POWER": power,
+        "FAKE_SCENARIO": "tu-shell-cha", "FAKE_NODE_DELAY": "7", "APPROVAL_SLA_MINUTES_DEV": "9",  # biến shell cha — bước 8 phải gỡ
     }  # fmt: skip
     out = subprocess.run(["bash", str(SCRIPT)], cwd=work, env=env, capture_output=True, text=True, timeout=60, check=False)
     summary = (work / ".verify" / "summary.txt").read_text(encoding="utf-8")
@@ -92,10 +107,10 @@ def test_g23_order_env_per_gate_and_restore(tmp_path: Path) -> None:
     makes = [c for c in calls if c.startswith("make ")]
     assert makes == ["make lint", "make test", "make up", "make gate2 S=all",
                      "make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated", "make gate3 S=all"]  # fmt: skip
-    assert _ups(calls) == [
-        "FAKE_SCENARIO=approval FAKE_NODE_DELAY=40",  # gate2: đặt
-        "FAKE_SCENARIO= FAKE_NODE_DELAY=",  # gate3: rỗng = không đặt (Settings env_ignore_empty)
-        "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset>",  # bước 8: gỡ cả biến của shell cha → đúng .env
+    assert _ups(calls) == [  # 4d DỪNG 2: thêm APPROVAL_SLA_MINUTES_DEV — gate2/gate3 rỗng (= 30 phút mặc định), bước 8 gỡ
+        "FAKE_SCENARIO=approval FAKE_NODE_DELAY=40 SLA=",  # gate2: đặt
+        "FAKE_SCENARIO= FAKE_NODE_DELAY= SLA=",  # gate3: rỗng = không đặt (Settings env_ignore_empty)
+        "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset> SLA=<unset>",  # bước 8: gỡ cả biến của shell cha → đúng .env
     ]
     ups = [c for c in calls if c.startswith("compose up")]
     assert len(ups) == 3 and all("up -d --force-recreate --no-deps --wait --wait-timeout 180 backend worker |" in c
@@ -111,7 +126,7 @@ def test_red_gate_still_restores_env_and_reports_step(tmp_path: Path) -> None:
     rc, calls, summary = _run(tmp_path, g="32", fail="gate3")
     assert rc != 0
     assert "make gate2 S=all" not in calls  # dừng ở bước đỏ đầu tiên
-    assert _ups(calls)[-1] == "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset>"  # bước 8 vẫn chạy
+    assert _ups(calls)[-1] == "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset> SLA=<unset>"  # bước 8 vẫn chạy
     assert "KẾT LUẬN: ĐỎ ở bước 5 (gate3)" in summary and "---- 30 dòng cuối của bước 5 ----" in summary
     assert "giả: gate3 đỏ" in summary and "| 8 | trả về .env | PASS |" in summary
 
@@ -137,10 +152,79 @@ def test_bench_step_optional(tmp_path: Path) -> None:
     assert "| 7 | bench | PASS |" in summary and "50 KB p50=4.0ms p95=6.0ms" in summary
 
 
-@pytest.mark.parametrize("g", ["2a", "5", "1"])  # G rỗng = mặc định 3 (không phải lỗi)
+@pytest.mark.parametrize("g", ["2a", "5", "1", "45"])  # G rỗng = mặc định 3 (không phải lỗi)
 def test_bad_g_rejected_before_anything(tmp_path: Path, g: str) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     out = subprocess.run(["bash", str(SCRIPT)], cwd=tmp_path, capture_output=True, text=True, timeout=30, check=False,
                          env={"PATH": os.environ["PATH"], "G": g, "MAKE_BIN": "false", "COMPOSE": "false"})  # fmt: skip
     assert out.returncode == 2 and not (tmp_path / ".verify").exists()
+
+
+# ---- Q-4d-4: macOS giữ máy thức + cảnh báo chạy pin ----------------------------------------------------------------------------
+
+
+def _caffeinate_lines(tmp_path: Path) -> list[str]:
+    """`caffeinate` chạy NỀN — đợi tối đa 3 s cho stub ghi xong (script chính có thể thoát trước)."""
+    log = tmp_path / "calls.log"
+    for _ in range(30):
+        found = [c for c in log.read_text(encoding="utf-8").splitlines() if c.startswith("caffeinate")]
+        if found:
+            return found
+        time.sleep(0.1)
+    return []
+
+
+def test_q4d4_darwin_caffeinate_bound_to_script_pid_ac_power_no_warning(tmp_path: Path) -> None:
+    rc, _, summary = _run(tmp_path, g="0", uname="Darwin")
+    assert rc == 0
+    [line] = _caffeinate_lines(tmp_path)
+    assert re.fullmatch(r"caffeinate -i -w \d+", line), line  # -w <pid của verify.sh>: hết khi script thoát, không giữ máy
+    assert "| 0 | chuẩn bị | PASS |" in summary and "caffeinate bật" in summary and "CẢNH BÁO" not in summary
+
+
+def test_q4d4_battery_power_warns_in_summary(tmp_path: Path) -> None:
+    rc, _, summary = _run(tmp_path, g="0", uname="Darwin", power="Battery Power")
+    assert rc == 0 and "CẢNH BÁO chạy pin" in summary
+    log = next((tmp_path / "repo" / ".verify").glob("run-*.log")).read_text(encoding="utf-8")
+    assert "CẢNH BÁO: máy đang chạy PIN" in log
+
+
+def test_q4d4_not_macos_no_caffeinate_no_power_note(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="0", uname="Linux", power="Battery Power")
+    assert rc == 0 and not [c for c in calls if c.startswith("caffeinate")]
+    assert "caffeinate" not in summary and "CẢNH BÁO" not in summary
+
+
+# ---- 4d DỪNG 2: cổng 4 (P6, PLAN-4d TQ-12) ------------------------------------------------------------------------------------
+
+
+def test_g234_gate4_sla_2_only_for_gate4_ingest_once_restore(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="234")
+    assert rc == 0
+    makes = [c for c in calls if c.startswith("make ")]
+    assert makes == ["make lint", "make test", "make up", "make gate2 S=all",
+                     "make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated", "make gate3 S=all",
+                     "make gate4 S=all"]  # fmt: skip  # ingest MỘT lần trước cổng đầu cần KB (3)
+    assert _ups(calls) == [
+        "FAKE_SCENARIO=approval FAKE_NODE_DELAY=40 SLA=",
+        "FAKE_SCENARIO= FAKE_NODE_DELAY= SLA=",
+        "FAKE_SCENARIO= FAKE_NODE_DELAY= SLA=2",  # gate4: CHỈ bước này hạn duyệt 2 phút
+        "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset> SLA=<unset>",  # bước 8: trả về .env
+    ]
+    for row in ("| 4 | ingest | PASS |", "| 5 | gate3 | PASS |", "| 10 | gate4 | PASS |", "| 8 | trả về .env | PASS |"):
+        assert row in summary
+    assert summary.count("| 4 | ingest |") == 1 and "KẾT LUẬN: XANH" in summary
+
+
+def test_g4_alone_ingests_first(tmp_path: Path) -> None:
+    rc, calls, _ = _run(tmp_path, g="4")
+    makes = [c for c in calls if c.startswith("make ")]
+    assert rc == 0 and makes[-2:] == ["make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated", "make gate4 S=all"]
+
+
+def test_red_gate4_reports_step_10_and_restores(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="34", fail="gate4")
+    assert rc != 0 and "KẾT LUẬN: ĐỎ ở bước 10 (gate4)" in summary
+    assert _ups(calls)[-1] == "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset> SLA=<unset>"
+    assert "| 8 | trả về .env | PASS |" in summary

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — chat nhân viên</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}a{color:#0055A4}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <dc-import name="B4Sidebar" role="employee" active="vpn" hint-size="264px,900px"></dc-import>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0;">
+    <header style="height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid #E5E5EA;">
+      <span style="font-size: 17px; line-height: 22px; font-weight: 600; flex-grow: 1;">Lỗi VPN — chứng chỉ không hợp lệ</span>
+      <span role="status" style="display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px; border-radius: 14px; background: #FFF4EC; color: #B4500B; font-size: 15px; line-height: 20px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #F37021;"></span>Chờ bạn xác nhận</span>
+    </header>
+    <main style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 32px 0 24px; min-height: 0;">
+      <div style="width: 720px; flex-grow: 1; display: flex; flex-direction: column; gap: 24px;">
+        <div style="align-self: flex-end; max-width: 520px; background: #F2F2F7; padding: 12px 18px; border-radius: 20px; font-size: 17px; line-height: 26px;">ABC Connect báo “Chứng chỉ không hợp lệ” từ sáng nay, em không vào được phần mềm kế toán ạ.</div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="24" height="24" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="9" fill="#0055A4"></rect><path d="M9 10h18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9l-5 4v-4H9a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3z" fill="#FFFFFF"></path><path d="M12.5 17.5l3.4 3.4 6.6-6.6" fill="none" stroke="#F37021" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <button type="button" onClick="{{toggle}}" aria-expanded="{{openStr}}" style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; border: none; background: #F2F2F7; color: #1D1D1F; font: 400 15px/20px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Đã kiểm tra 4 hệ thống · 1 vấn đề <span style="color: #6E6E73;">{{chev}}</span></button>
+          </div>
+          <sc-if value="{{open}}" hint-placeholder-val="{{false}}">
+            <div style="margin-left: 34px; background: #F5F5F7; border-radius: 14px; overflow: hidden;">
+              <div style="display: flex; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Tài khoản AD</span><span style="color: #6E6E73;">Hoạt động</span></div>
+              <div style="display: flex; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Thiết bị LAP-0342</span><span style="color: #6E6E73;">Đã đăng ký · của anh An</span></div>
+              <div style="display: flex; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Chứng chỉ VPN</span><span style="color: #C62828; font-weight: 600;">Hết hạn 2 ngày trước</span></div>
+              <div style="display: flex; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Máy chủ VPN</span><span style="color: #6E6E73;">Bình thường</span></div>
+              <div style="padding: 10px 16px; font-size: 13px; line-height: 18px; color: #6E6E73;">Luật R20 cho phép tự cấp lại · đã cấp lại lúc 08:42</div>
+            </div>
+          </sc-if>
+          <div style="margin-left: 34px; display: flex; flex-direction: column; gap: 12px;">
+            <p style="margin: 0; font-size: 17px; line-height: 26px;">Chứng chỉ VPN trên máy <b style="font-weight: 600;">LAP-0342</b> đã hết hạn. Vì đây là thiết bị đã đăng ký của anh, hệ thống đã cấp lại chứng chỉ tự động. Anh làm giúp em hai bước:</p>
+            <ol style="margin: 0; padding-left: 22px; font-size: 17px; line-height: 26px;"><li>Mở ABC Connect, chọn <b style="font-weight: 600;">Chứng chỉ</b> — dòng “Trạng thái” không còn ghi “Hết hạn”.</li><li>Kết nối lại VPN như bình thường.</li></ol>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="#" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #E5E5EA; font-size: 13px; line-height: 18px; text-decoration: none; color: #1D1D1F;">KB-VPN-001 · Tổng quan dịch vụ VPN</a>
+              <a href="#" style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #E5E5EA; font-size: 13px; line-height: 18px; text-decoration: none; color: #1D1D1F;">KB-VPN-003 · Xử lý lỗi VPN 809</a>
+            </div>
+          </div>
+          <div style="margin-left: 34px; margin-top: 4px; padding: 16px 16px 16px 20px; border-radius: 18px; background: #F5F5F7; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 17px; line-height: 22px; font-weight: 600; flex-grow: 1;">Anh đã kết nối lại được chưa?</span>
+            <button type="button" style="height: 44px; padding: 0 20px; border-radius: 22px; border: none; background: #FFFFFF; color: #1D1D1F; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Chưa ổn</button>
+            <button type="button" style="height: 44px; padding: 0 22px; border-radius: 22px; border: none; background: #0055A4; color: #FFFFFF; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Đã ổn</button>
+          </div>
+        </div>
+
+        <span style="flex-grow: 1;"></span>
+        <div style="border: 1px solid #E5E5EA; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.04); padding: 8px 8px 8px 20px; display: flex; align-items: center; gap: 8px;">
+          <label for="m4" style="position: absolute; left: -9999px;">Tin nhắn</label>
+          <input id="m4" placeholder="Nhắn thêm nếu chưa ổn…" style="flex-grow: 1; height: 40px; border: none; background: transparent; font: 400 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">
+          <button type="button" aria-label="Gửi" style="width: 40px; height: 40px; border-radius: 20px; border: none; background: #E8630A; display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { open: false }; }
+  renderVals() {
+    const open = this.state.open;
+    return { open, openStr: open ? 'true' : 'false', chev: open ? '▾' : '▸', toggle: () => this.setState({ open: !open }) };
+  }
+}
+</script>
+</body>
+</html>

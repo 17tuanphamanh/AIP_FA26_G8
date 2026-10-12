@@ -41,7 +41,7 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 
 ### 1.2. Chưa có — M9 làm
 
-`backend/app/monitor/` hiện **chỉ có `README.md` + `__init__.py`**. Chưa có: engine `app_monitor` trong app (settings chưa có DSN monitor; compose chưa truyền `PG_MONITOR_PASSWORD` cho backend/worker), view SQL, truy vấn chỉ số, route `/api/dashboard/*`, `/api/alerts`, luật cảnh báo, job worker.
+*(Cập nhật 01/10: A0 + B0 đã merge `1f0f489` — `monitor/` có `db.py`, `views.py`, `window.py`, `rules.py`, `evaluator.py`; đoạn dưới là hiện trạng lúc tạo file.)* `backend/app/monitor/` lúc đó **chỉ có `README.md` + `__init__.py`**. Chưa có: engine `app_monitor` trong app (settings chưa có DSN monitor; compose chưa truyền `PG_MONITOR_PASSWORD` cho backend/worker), view SQL, truy vấn chỉ số, route `/api/dashboard/*`, `/api/alerts`, luật cảnh báo, job worker.
 
 ### 1.3. Nguồn dữ liệu chưa được node nào ghi (vì luồng chính mới ở Phase 3)
 
@@ -49,7 +49,7 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 |---|---|---|
 | Điểm log 4 (B12–B14: `decided_by`, `policy_decision`, `risk_level`, `matched_rule_id`, `calibrated_prob`) | Phase 4–6 | Cột đã có trong `audit_logs` → viết view + test bằng fixture |
 | Phiếu duyệt thật, `first_viewed_at` (route xem phiếu `GET /api/approvals/{id}`), audit B16 `view_duration` + `decided_without_view` | Phase 4 (4b B15 thật, 4c xem phiếu + B16) | Luật 7 **pending** (skipped) tới khi 4c merge; test bằng fixture |
-| Ghi đè L1 — `audit_logs` step `"OVERRIDE"` | Phase 4 chặng **4d** | `override_count` → `unavailable` tới 4d |
+| Ghi đè L1 — `audit_logs` step `"OVERRIDE"` | **Đã có** từ 4d dừng 1 (`e510a6e`, 02/10): `domain/override.py` `OVERRIDE_STEP`/`OVERRIDE_EVENT`, mỗi người ghi đè một ticket tối đa một dòng | `override_count` **ready** — Dương nối nguồn (v1.15) |
 | ~~B3 xuống LLM~~ — **đã có từ 3f**: audit điểm log 1 ghi ở step `B3` (và `B4` cho các ca E1) với `detail.layer`, `detail.model_version` | — | `b3_llm_rate` **ready** (mục 5.2). Nhưng Phase 3–4 **mọi** câu đều xuống LLM (nhánh model + `cascade_decide` là Phase 5) → tỉ lệ ≈ 100% → luật 13 để skipped tới Phase 5 (Q-M9-9) |
 | Ticket nhiều ý (D-31) | Phase 5 | Chỉ số nhiều ý → `unavailable` |
 | Span tool (bảng `spans`, `span_type='tool'`) — `tools/registry.py::_span` hiện **chỉ ghi log một dòng**, không ghi DB (kiểm 29/09) | Chưa xếp (Tuấn Anh quyết, Q-M9-4) | Luật 5 → pending, test bằng fixture |
@@ -69,7 +69,12 @@ Ký hiệu: **[Chốt]** = đã có trong spec/code; **[Suy luận]** = rút ra 
 | Phase 4 — settings (4a) | Khóa HMAC cho username đăng nhập không có trong `users` (Q-3e-14): `security_events.username_attempted` = `"h:" + HMAC` | Luật 3 đối soát và luật 10 dùng **đúng giá trị auth truyền cho `bruteforce_alert` / ghi vào `security_events`** sau 4a; test lại ca username ma sau khi rebase qua 4a |
 | Phase 4 — xem phiếu (4c, `aac90b1`) | `approvals.first_viewed_at` là **một cột chung** cho phiếu (lần xem đầu của người chính **hoặc** dự phòng sau nhắc 2; manager xem không ghi). `decided_at` có ở cả 3 nhánh (approved/rejected/timeout, kể cả worker đóng timeout). Audit B16 có `detail.decided_without_view`, `decided_as ∈ {primary, backup}`. Việc treo 28 của Phase 4: chưa sửa schema | Luật 7 lấy nguồn từ audit B16, ca mơ hồ tính là "< 5 giây" (mục 6). Hết pending khi 4c merge |
 | Phase 4 — ghi đè (4d) | 1 dòng `audit_logs` step `"OVERRIDE"`, event `override_recorded`, cột `original_decision` / `override_decision` / `overrider_id`, `detail.reason_code`; không đổi `tickets` | `override_count` hết pending sau 4d |
+| Phase 4 — 4d dừng 2 (`858573d`, 03/10) | `approval_wait` so hash kế hoạch trước khi thực thi: lệch → E5, dòng audit step `B16`, event `action_plan_changed_since_approval`, cột `approval_result='approved'`, đủ điểm log 6 trong `detail` | Luật 7 lọc theo cột `approval_result`, không theo `event` |
+| Phase 4 — hợp đồng cần giữ (03/10) | `OVERRIDE_STEP` / `OVERRIDE_EVENT` ở `app/domain/override.py` giữ nguyên, bên nào đổi phải báo trước; job `monitor_rules_minute` đã chạy trên worker mới cùng gate3 78/0, gate4 73/0, không ảnh hưởng đóng hạn / nhắc duyệt | M9 import hằng từ `app.domain.override` (không chép chuỗi); checklist demo: reset dữ liệu phải gồm bảng `alerts` |
+| Phase 4 đóng (`12e8e19`, 03/10) | Cổng 3 + cổng 4 đạt trên `1455b55` (Duy Anh chạy: gate3 78/0, gate4 73/0), tức đã có job `monitor_rules_minute`. Phase 4 mở **Việc treo 35**: worker khoảng 98% CPU sau một lượt gate4 trên máy Duy Anh, chưa giải thích được, chưa có căn cứ quy cho job M9 | Merge vào `dev-tuananh` bình thường, không cần báo trước. Job M9 mỗi 60 giây chạy một lượt rồi trả, không có vòng lặp chờ; cách tách nguyên nhân: chạy worker không có `MONITOR_DATABASE_URL` (job M9 tự bỏ qua) rồi đo lại CPU. B2 **không** thêm `ms=` (bỏ 08/10: Việc treo 35 đã đóng ở `632e05a` — CPU cao là mẫu `docker stats` trùng healthcheck) |
 | Phase 4 — 4b, fixture | R17/R18/R19 đòi máy của chính người gửi: máy người khác / không tồn tại → **E5, 0 phiếu** (không còn HITL) | Fixture M9 không giả định "ngoài giờ → HITL" |
+| Phase 4 — 4d `audit_check` | Công cụ kiểm audit của 4d đọc DB bằng `MONITOR_DATABASE_URL` (role `app_monitor`) nếu có, không thì `app_rw` trong giao dịch READ ONLY; chỉ đọc `audit_logs`, `tickets` | Migration M9 **chỉ thêm** GRANT, không REVOKE quyền SELECT sẵn có của `app_monitor` (nhất là `audit_logs`, `tickets`) |
+| Phase 4 — 4 cột `audit_logs` chưa ghi (Việc treo 31) | `confidence`, `query`, `success`, `action_plan_hash_matched` có trong schema nhưng **chưa từng được ghi**; dữ liệu thật ở `detail.confidence`, `detail.query`, `detail.success`, `detail.action_plan_hash_matched` | M9 **không đọc** 4 cột này (đọc ra NULL = số sai im lặng); cần thì đọc từ `detail`. Quyết lại sau Phase 4 |
 | Phase 4 — 4b (B15 thật, sau DỪNG 2) | R17/R18/R19 đòi "máy của chính người gửi": máy người khác / máy không tồn tại → **E5 `llm_layer_disabled`, 0 phiếu** (trước đây ra HITL). `reason_detail` mới: `no_valid_approver` (E5), `approval_target_unverified` (E5), `approver_no_longer_valid` (E5), `approver_lookup_error` (E2), `approver_sync_unavailable` (E2). Audit B15 `queued` (điểm log 5) có cột `approver_id`, `deadline`, `conflict_detected`; `detail`: `choice_reason` ∈ {`normal`, `conflict`, `no_valid_l1`}, `backup_approver_id`, `conflict_type`, `sla_minutes`, `recovered`. Seed mock 17 người (thêm `l1_lead`; `l1_01` báo cáo `l1_lead`) | Tỉ lệ HITL giảm, E5 tăng ở các ca R17–R19 — **đúng thiết kế, không phải lỗi**; fixture test của A1/A2 không được giả định "ngoài giờ → HITL". E2 do tra người duyệt lỗi **không** tính vào `e2_llm_count`. Dữ liệu điểm log 5 sẵn cho chỉ số xung đột lợi ích sau này (chưa nằm trong 5.1) |
 
 ---
@@ -104,12 +109,12 @@ backend/app/monitor/
     ai.py        chỉ số AI/LLMOps (mục 5.2)
     rules_data.py  dữ liệu luật cần (đếm theo cửa sổ, sự kiện mới) — tách khỏi hàm luật
   metrics.py     dataclass kết quả + danh mục chỉ số ↔ nguồn (METRIC_SOURCES) để dựng `unavailable`
-  rules.py       @rule(id, every) + hàm THUẦN (dữ liệu đã truy vấn, RuleContext) → list[AlertDraft]
+  rules.py       @rule(rule_id, every, *, audience=...) + hàm THUẦN (dữ liệu đã truy vấn, RuleContext) → list[AlertDraft]
   evaluator.py   chạy các luật đến hạn: đọc qua queries (engine monitor) → trả list[AlertDraft]; KHÔNG ghi
   drift.py       PSI (numpy) — chặng M9-7
 backend/app/api/dashboard.py   GET /api/dashboard/business, /api/dashboard/ai (response_model khai báo)
 backend/app/api/alerts.py      GET /api/alerts, POST /api/alerts/{id}/ack
-backend/app/audit/alerts.py    + ack(alert_id, user_id) — M7 ghi, không phải M9
+backend/app/audit/alerts.py    + AlertWriter.ack(alert_id, user_id) -> AckResult — M7 ghi, không phải M9; ack xong ghi 1 dòng log INFO `alert_acked alert_id=… rule_id=… user_id=…` (3 trường nằm trong message vì JsonFormatter bỏ `extra`)
 ```
 
 ### 3.2. Luồng dữ liệu
@@ -176,8 +181,9 @@ Giá trị cấu hình M9 cần (vd `spend.cap_usd`) do worker đọc rồi truy
 ### 4.5. API
 
 - `response_model` Pydantic khai báo cho mọi route mới (để TV3 sinh kiểu tự động — Nợ API #3 ở kế hoạch frontend).
-- Thứ tự kiểm như route cũ: quyền → tài nguyên → 404/409. `POST /api/alerts/{id}/ack`: không có quyền → 403; không tồn tại → 404; đã ack → 409 (không ghi đè `acked_by` cũ).
-- Tham số `from`/`to`: bắt buộc có múi giờ, `from < to`, khoảng ≤ 90 ngày → sai thì 422. Mặc định 7 ngày gần nhất.
+- Thứ tự kiểm như route cũ: 401 → 403 → 422 → 503 (GET) / 404 → 409 (POST). Kiểm cửa sổ (`from < to`, độ dài, biên) nằm trong **thân handler**, sau dependency quyền — đặt trong dependency khai trước quyền thì 422 đi trước 401/403 (plan A3, 03/10). `POST /api/alerts/{id}/ack`: không có quyền → 403; không tồn tại → 404; đã ack → 409 (không ghi đè `acked_by` cũ).
+- Tham số `from`/`to`: bắt buộc có múi giờ, `from < to`, `to − from ≤ 90 ngày` (timedelta tuyệt đối; đúng 90 ngày → qua) → sai thì 422. Mặc định 7 ngày gần nhất; chỉ có một đầu (Q-M9-A3-5): thiếu `to` → `now` (Clock), thiếu `from` → `to − 7 ngày`. Chặn biên: `from ≥ 2000-01-01T00:00Z`, `to ≤ now + 1 ngày`, ngoài biên → 422 (không để `OverflowError` thành 500). Response trả lại `from`/`to` dạng UTC.
+- Shape dashboard (Q-M9-A3-3): business `{"scope":"all"|"own","from","to","metrics":{…},"unavailable":[…]}` (union phân biệt bằng `scope`; own chỉ có `OWN_KEYS`), ai `{"from","to","metrics":{14 khóa},"unavailable":[…]}`. `metrics` là model Pydantic tường minh, trường bắt buộc kiểu `T | None`; test hai chiều tập trường = `BUSINESS_METRICS` / `OWN_KEYS` / `AI_METRICS` (FastAPI lọc im lặng khóa ngoài `response_model`). OpenAPI khai `responses=` bằng thân lỗi thật (422 = `{"error","fields"}`).
 - Không trả `redacted_request` dài: danh sách ca E3 cắt 200 ký tự, chỉ cho `dashboard:read:all`.
 
 ### 4.6. Quy trình (giống luồng chính)
@@ -201,9 +207,11 @@ Cửa sổ `[from, to)`, tính trên ticket lá có `created_at` trong cửa s�
 | `approval_expired_count` | #lá `exit_code = 'E6'` | `tickets` | [Chốt P9 §5] |
 | `decided_by_distribution` | đếm theo `decided_by` | `v_decisions` | [Chốt P9 §5] |
 | `top_matched_rules` | top 10 `matched_rule_id` | `v_decisions` | [Chốt P9 §5] |
-| `override_count` | số dòng `audit_logs` step `"OVERRIDE"` của lá trong cửa sổ | Phase 4d | `unavailable` tới 4d |
-| `e1_split` | E1 tách 4 lý do: `intent_out_of_scope`, `multi_intent_not_enabled`, `intent_low_confidence`, `intent_not_enabled`; lý do khác → `other` (tổng = số E1) | `escalations.reason_detail` (agent grep xác nhận) | [Chốt D-27, mở rộng theo 3f] |
-| `e3_cases` | danh sách ca E3 (lỗ hổng KB): `ticket_id, intent, created_at, kb_version, request_excerpt` (≤ 200 ký tự) | `tickets`, `audit_logs` B9; `kb_version` = dòng audit gần nhất của lá có giá trị khác null, không có → `null` (Q-M9-A1-5) | [Chốt P9 §5] |
+| `override_count` | số dòng `audit_logs` `step='OVERRIDE'`, `event='override_recorded'` của lá có `created_at` **của lá** trong cửa sổ — cùng lứa ticket với các chỉ số khác, **không** lọc theo thời điểm ghi đè (ghi đè muộn làm số kỳ cũ tăng thêm: chấp nhận). Một lá có thể nhiều dòng — mỗi người ghi đè một dòng; ghi đè không đổi `tickets` | `audit_logs` (4d, `e510a6e`) | **ready** từ 02/10 |
+| `e1_split` | E1 tách 4 lý do theo **đúng giá trị `escalations.reason_detail`** (không đặt tên khác): `out_of_scope`, `multi_intent_not_enabled`, `intent_low_confidence`, `intent_not_enabled`; lý do khác → `other` (tổng = số E1). `intent_out_of_scope` là tên **event audit**, không phải `reason_detail` (Q-M9-A1-2b) | `escalations.reason_detail` (agent grep xác nhận) | [Chốt D-27, mở rộng theo 3f] |
+| `e3_cases` | danh sách ca E3 (lỗ hổng KB): `ticket_id, intent, created_at, kb_version, request_excerpt` (≤ 200 ký tự); cắt 100 ca, trả `{"items": […], "truncated": bool}` (Q-M9-A3-4) | `tickets`, `audit_logs` B9; `kb_version` = dòng audit gần nhất của lá có giá trị khác null, không có → `null` (Q-M9-A1-5) | [Chốt P9 §5] |
+
+**Quy ước chung 5.1 (chốt 01/10 sau soát A1):** (a) mẫu số các **tỉ lệ theo kết cục ticket** (automation, escalation thô + trọng số, deflection) và `tokens_per_ticket` chỉ tính lá **đã kết thúc** (`final_state IS NOT NULL`); chỉ số theo lời gọi LLM / dòng audit / span ở 5.2 **không** lọc `final_state` (mỗi dòng đã có kết quả lúc ghi; lọc thì luật 12/13 đếm thiếu — Q-M9-A2-7) — ticket đang chạy dở chưa có `exit_code`, tính vào sẽ kéo tỉ lệ escalate xuống (luật 1 bỏ sót); (b) `automation_rate` theo đúng P8 §6.2, **gồm** ca deflected (đã tự giải quyết, không người) — trùng phần với `deflection_rate` là có chủ đích; (c) điểm log 4 = dòng `audit_logs` `step='B13/B14'` (cột `decided_by`, `policy_decision`, `risk_level`, `matched_rule_id`); bản kiểm lại ở B17 chỉ nằm trong `detail`, **không** đếm; (d) `decided_by_distribution`, `top_matched_rules` đếm **1 dòng / lá** — dòng nhạy nhất (Q-M9-A1-4), hòa thì dòng mới nhất; `decided_by` ở đây là cột của `audit_logs` (`rule`/`llm`), không phải `approvals.decided_by`; (e) 3 view tạo `WITH (security_invoker = true)` + GRANT SELECT `exit_code_priority` cho `app_monitor` — view không nâng quyền, REVOKE bảng gốc có hiệu lực; liệt kê cột tường minh (không `SELECT *`).
 
 **Quyền:** `dashboard:read:all` → toàn bộ; `dashboard:read:own` (L1) → chỉ các chỉ số liên quan phiếu **giao cho mình** (Q-M9-5), trường không áp dụng → không trả (không trả 0, không trả `null`) — L1 nhận đúng 3 khóa liệt kê trong plan A1 (Q-M9-A1-6); quyền khác → 403.
 
@@ -219,10 +227,12 @@ Cửa sổ `[from, to)`, tính trên ticket lá có `created_at` trong cửa s�
 | `fallback_rate` | tỉ lệ `used_fallback = true` | `llm_calls` |
 | `e2_llm_count` | #lá `exit_code='E2'` có `escalations.reason_detail` thuộc tập lý do LLM (agent liệt kê từ code, vd `llm_unavailable`, hằng một chỗ) | `tickets`, `escalations` |
 | `e9_count` | #lá `exit_code = 'E9'` | `tickets` |
-| `b2_llm_rate` | tỉ lệ lượt B2 có `layer_decided = 'llm'` (L4) | `audit_logs` step `B2`, trường sàng lọc trong `detail` (agent xác nhận đường JSON) |
+| `b2_llm_rate` | tỉ lệ lượt B2 **xuống L4**: tử = dòng có `layer_decided = 'llm'` **hoặc** `event = 'guard_unavailable'` (L4 được gọi rồi lỗi); mẫu = dòng có `layer_decided` khác NULL **hoặc** `guard_unavailable`; dòng `turn_budget_exceeded` ở ngoài cả hai (Q-M9-A2-5 — loại `guard_unavailable` thì LLM sập làm số tụt về 0, luật 12 im lặng) | `audit_logs` step `B2`, `detail->'screening'->>'layer_decided'` |
 | `intent_filter_fallback_rate` | tỉ lệ B8 `intent_filter_fallback = true` | `audit_logs` step `B8` (D-23) |
 | `b3_llm_rate`, `intent_model_version` | tỉ lệ dòng điểm log 1 có `detail.layer = 'llm'` trên mọi dòng điểm log 1 có `detail.layer` khác NULL — **đếm cả step `B3` và `B4`** (các ca E1 ghi ở `B4`); `intent_model_version` = `detail.model_version` gần nhất khác NULL (NULL khi ml-service `model_missing`) | `audit_logs` step `B3`, `B4` (`graph/nodes/b03_classify.py`) | **ready** từ 3f. Phase 3–4 giá trị ≈ 1,0 là đúng thực tế, không phải lỗi |
 | `multi_intent_*` | thời gian con đầu tiên dừng → cha gửi tin; tin/lượt (= 1) | Phase 5 | `unavailable` |
+
+**Phạm vi 5.2 (chốt 02/10, Q-M9-A2-3):** mọi chỉ số 5.2 nối về `v_leaf` (`llm_calls → spans → turns → v_leaf`; dòng audit theo `ticket_id`). `cost_per_day` vì vậy là chi phí của ticket lá, **không** phải tổng chi mà luật 14 đọc (toàn bảng `llm_calls`). Phase 3–4 hai số bằng nhau (chưa có ticket cha thật). `e2_llm_count` dùng `E2_LLM_REASONS = {llm_unavailable, llm_schema_error, screening_unavailable}`. `intent_filter_fallback_rate` so chuỗi `= 'true'`, không ép kiểu JSON. Khóa response: 14 (gồm `multi_intent_first_stop_to_reply_s`, `multi_intent_messages_per_turn` — pending).
 
 ### 5.3. `unavailable`
 
@@ -234,26 +244,35 @@ Cửa sổ `[from, to)`, tính trên ticket lá có `created_at` trong cửa s�
 
 P9 §6 có 14 luật + việc Phase 7 "luật cho `finalize_failed_permanent`". Kế hoạch này thêm luật 16 (E7) — xem Q-M9-3.
 
-| # | `rule_id` | Điều kiện | Nguồn | `subject` | `window_start` | Chu kỳ | `severity` / người nhận (`detail.audience`) |
+| # | `rule_id` | Điều kiện | Nguồn | `subject` | `window_start` | Chu kỳ | `severity` / người nhận (tham số `audience` của `@rule`, không ghi `detail`) |
 |---|---|---|---|---|---|---|---|
-| 1 | `escalation_rate_high` | `escalation_rate_weighted` 7 ngày > 0,40 | 5.1 | `""` | đầu ngày đánh giá | ngày | warning / manager |
+| 1 | `escalation_rate_high` | `escalation_rate_weighted` 7 ngày VN trọn `[d0 − 7 ngày, d0)`, `d0 = day_start(now)` (Q-M9-B2-1) > 0,40 | 5.1 | `""` | đầu ngày đánh giá | ngày | warning / manager |
 | 2 | `injection_detected` | **mỗi lá `exit_code='E0'`** — B2 thật (`S_BLOCKED`) và B11/B19 `injection_in_reply` (`S_ESCALATED` E0) (Q-M9-B1-1) | `tickets` + `audit_logs` | `ticket_id` | `created_at` nhỏ nhất của `audit_logs` có `exit_code='E0'` của ticket (không lọc step) | 60 s | critical / manager |
-| 3 | `password_bruteforce` | **đối soát**: mỗi `security_events.account_locked` có `detail.reason='threshold'` mà chưa có cảnh báo khớp (±60 s) | `security_events`, `alerts` | qua `bruteforce_subject()` | `occurred_at` (chỉ khi chưa có cảnh báo khớp) | 60 s | critical / manager |
-| 4 | `e9_spike` | #E9 giờ qua > 3 × trung vị theo giờ 7 ngày, tối thiểu 3 ca | `tickets` | `""` | đầu giờ | 60 s | warning / dev |
-| 5 | `breaker_open` | có span tool `error = circuit_open` (Q-M9-4) — **nguồn pending** (span tool chưa ghi DB) | `spans` | tên tool | thời điểm span `circuit_open` đầu tiên của đợt | 60 s | warning / ops |
-| 6 | `e6_spike` | #E6 giờ qua > 3 × trung vị 7 ngày, tối thiểu 3 | `tickets` | `""` | đầu giờ | 60 s | warning / manager |
-| 7 | `reflex_approval` | một L1 có ≥ 3 phiếu trong ngày bị tính "xem < 5 giây" — xem cột nguồn | audit B16 (`detail.decided_without_view`, `decided_as`, `view_duration`) + `approvals.reminder_2_at`; **không** dùng `first_viewed_at` làm nguồn chính (cột chung chính/dự phòng — Việc treo 28 Phase 4). Phiếu tính "< 5 giây" khi không xem, xem < 5 giây, hoặc không xác định được người xem (`decided_as='primary'` và đã nhắc 2); bỏ nhánh `timeout` | `user_id` người quyết | đầu ngày | ngày | warning / manager — **pending tới 4c** |
+| 3 | `password_bruteforce` | **đối soát**: mỗi `security_events.account_locked` có `detail.reason='threshold'` mà chưa có cảnh báo khớp (±60 s); chỉ xét sự kiện có `occurred_at ≤ now − 60 s` (Q-M9-B1-3) | `security_events`, `alerts` | qua `bruteforce_subject()` | `occurred_at` (chỉ khi chưa có cảnh báo khớp) | 60 s | critical / manager |
+| 4 | `e9_spike` | #E9 giờ qua > 3 × trung vị theo giờ 7 ngày, tối thiểu 3 ca; mỗi lượt đánh giá 24 giờ gần nhất + giờ hiện tại (Q-M9-B2-2); mốc giờ = thời điểm ra mã, `MIN audit_logs.created_at` của dòng E9 mỗi lá (Q-M9-B2-5) | `audit_logs` + `v_leaf` | `""` | đầu giờ | 60 s | warning / dev |
+| 5 | `breaker_open` | có span tool `error = circuit_open` (Q-M9-4) — **nguồn pending** (span tool chưa ghi DB) | `spans` | `spans.name`, dài hơn 64 ký tự thì rút bằng `_bounded()` (Q-M9-B2-12) | thời điểm span `circuit_open` đầu tiên của đợt | 60 s | warning / ops |
+| 6 | `e6_spike` | #E6 giờ qua > 3 × trung vị 7 ngày, tối thiểu 3; đánh giá và mốc giờ như luật 4 (E6 xảy ra sau SLA, đếm theo giờ tạo ticket sẽ sót) | `audit_logs` + `v_leaf` | `""` | đầu giờ | 60 s | warning / manager |
+| 7 | `reflex_approval` | một L1 có ≥ 3 phiếu trong ngày bị tính "xem < 5 giây" — xem cột nguồn | audit B16 (`detail.decided_without_view`, `decided_as`, `view_duration`) + `approvals.reminder_2_at`; **không** dùng `first_viewed_at` làm nguồn chính (cột chung chính/dự phòng — Việc treo 28 Phase 4). Phiếu tính "< 5 giây" khi không xem, xem < 5 giây, hoặc không xác định được người xem (`decided_as='primary'` và đã nhắc 2); bỏ nhánh `timeout`. Lọc quyết định của người bằng **cột `approval_result IN ('approved','rejected')`**, không lọc theo `event` (4d dừng 2: ca duyệt mà kế hoạch đã đổi ghi step `B16`, event `action_plan_changed_since_approval`, `approval_result='approved'` — lọc `event='approved'` thì bỏ sót) | `user_id` người quyết | đầu ngày | ngày | warning / manager — 4c đã merge (`b457e6e`) → **hết pending**, làm ở B2 |
 | 8 | `drift` | PSI > 0,2 ở bất kỳ phân bố nào (M9-7) | 5.x | tên phân bố | đầu tuần | tuần | warning / manager |
 | 9 | `refresh_reuse` | mỗi `refresh_reuse_detected` | `security_events` (`detail` chỉ có `revoked_sessions`) | `user_id` (Q-M9-8) | `occurred_at` | 60 s | critical / manager |
-| 10 | `permission_denied_burst` | > 10 `permission_denied` trong 5 phút trượt, một người | `security_events` | `user_id` | đầu khung 5 phút chứa sự kiện thứ 11 | 60 s | warning / manager |
-| 11 | `policy_saved` | mỗi `policy_saved` | `security_events` | phiên bản policy | thời điểm lưu | 60 s | info / manager |
-| 12 | `b2_degraded` | `b2_llm_rate` trong ngày > 0,30 | 5.2 | `""` | đầu ngày | ngày | warning / dev |
-| 13 | `b3_degraded` | `b3_llm_rate` trong ngày > 0,30 (D-32) | 5.2 | `""` | đầu ngày | ngày | warning / dev — **skipped tới Phase 5** (Q-M9-9) |
-| 14 | `llm_budget` | Σ `llm_calls.cost_usd` ≥ `warn_ratio` (0,8) × `cap_usd` (38) — `config/llm.yaml` `spend` | `llm_calls` | `""` | đầu ngày (Q-M9-6) | giờ | critical / dev + cả nhóm |
+| 10 | `permission_denied_burst` | > 10 `permission_denied` trong 5 phút trượt, một người | `security_events` | `user_id`; không có → `username:<…>` qua `bruteforce_subject()` | đầu khung 5 phút chứa sự kiện thứ 11 | 60 s | warning / manager |
+| 11 | `policy_saved` | mỗi `policy_saved` | `security_events` | `detail.version`; không có → `event:<id>` | thời điểm lưu | 60 s | info / manager |
+| 12 | `b2_degraded` | `b2_llm_rate` của **ngày VN hôm trước** `[d0 − 1 ngày, d0)` (Q-M9-B2-1) > 0,30; đánh giá 7 mốc `r = d0 − k ngày`, k = 0…6, `window_start = r` (Q-M9-B2-15); tỉ lệ theo dòng audit như A2 (Q-M9-B2-27) | 5.2 | `""` | đầu ngày | ngày | warning / dev — **skipped tới khi có `injection-clf`** (Phase 5, `is_pending("b2_classifier")`; Q-M9-A2-8: Phase 3–4 L3 luôn `model_missing` → số ≈ 1,0, luật sẽ nổ mỗi ngày) |
+| 13 | `b3_degraded` | `b3_llm_rate` của **ngày VN hôm trước** `[d0 − 1 ngày, d0)` (Q-M9-B2-1) > 0,30 (D-32); 7 mốc như luật 12 (Q-M9-B2-15); theo dòng audit (Q-M9-B2-27) | 5.2 | `""` | đầu ngày | ngày | warning / dev — **skipped tới Phase 5** (Q-M9-9) |
+| 14 | `llm_budget` | Σ `llm_calls.cost_usd` ≥ `warn_ratio` (0,8) × `cap_usd` (38) − 1e-9 (Q-M9-B2-7: `38 × 0,8` ra `30,400000000000002`, so trần thì đúng 80% không báo) — `config/llm.yaml` `spend`; tổng `None`/NaN/inf/âm → `ValueError`, luật vào `failed_rules` (Q-M9-B2-16); một mức duy nhất, vượt 100% trong cùng ngày không ra dòng mới (Q-M9-B2-17) | `llm_calls` | `""` | đầu ngày (Q-M9-6) | giờ | critical / dev, manager, ops ("cả nhóm" = cả 3 giá trị `Audience`) |
 | 15 | `finalize_failed` | mỗi audit `finalize_failed_permanent` | `audit_logs` | `ticket_id` | thời điểm audit | 60 s | critical / dev |
 | 16 | `execution_failed` **[Chốt Q-M9-3]** | mỗi lá `exit_code='E7'` — gồm mọi `reason_detail`: `exec_interrupted` (node B17, lượt API) và `execution_interrupted` (runner/boundary, worker recover) và các lỗi thực thi khác; ticket có `transaction_log` `begun` **luôn** ra E7, không E9 (Q-3h-10) | `tickets` + `audit_logs` | `ticket_id` | `created_at` nhỏ nhất của dòng `audit_logs` có `exit_code='E7'` của ticket (không lọc theo step — hai đường ghi khác step) | 60 s | critical / manager + ops; `detail` kèm `reason_detail` |
 
 **Luật 3 — không viết lại cơ chế cũ.** Auth đã ghi cảnh báo lúc khóa, B1 ghi lại cùng khóa **[Chốt 2b-1]**. Luật 3 của M9 chỉ là **lưới an toàn**. Kiểm code 29/09: auth ghi cảnh báo với `lock_start = now` của auth, còn `security_events.occurred_at` lấy từ **một lần gọi đồng hồ khác** → hai giá trị lệch nhau (vài micro/mili giây) **[Chốt, kiểm code]**. Vì vậy **không** dựng khóa từ `occurred_at` rồi trông vào `ON CONFLICT` (sẽ ra khóa khác → cảnh báo trùng). Cách làm: với mỗi `account_locked` (threshold) trong 24 giờ, tìm dòng `alerts` có `rule_id='password_bruteforce'`, `subject = bruteforce_subject(user_id, username)` và `|window_start − occurred_at| ≤ 60 s`; có → bỏ qua; không có → draft `bruteforce_alert(..., lock_start=occurred_at, source="m9_reconcile")`. Test bắt buộc: auth đã ghi (lệch vài ms) → M9 chạy → vẫn **1** dòng; xóa dòng của auth trong test → M9 tạo đúng 1 dòng.
+
+**Chốt plan B2 (03/10, issue #14):**
+
+- **Chu kỳ (Q-M9-B2-2):** luật 4, 5, 6 chạy ở job phút, khoá theo `hour_start`; job giờ chỉ còn luật 14. Hạn chế đã biết, ghi trong docstring: đợt tăng vắt qua mốc giờ có thể không vượt ngưỡng ở cả hai giờ.
+- **Luật 7 (Q-M9-B2-3, B2-6):** phiếu có `approvals.decided_at ∈ [d0 − 1 ngày, d0)`, `window_start = d0`. Gốc là bảng `approvals` lọc `status IN ('approved','rejected')`; LATERAL lấy dòng audit B16 đầu tiên cùng `ticket_id`, `approval_result = status`, `created_at ≥` thời điểm tạo phiếu. Không có dòng B16 hoặc trường sai kiểu → tính là mơ hồ (báo thừa). Test: ticket có hai phiếu nối tiếp; ca `action_plan_changed_since_approval`.
+- **Đánh giá bù (Q-M9-B2-15, phương án nhẹ):** luật 7, 12, 13 mỗi lượt đánh giá 7 mốc ngày gần nhất (`r = d0 − k ngày`, k = 0…6, cửa sổ `[r − 1 ngày, r)`, `window_start = r`); luật 1 chỉ `r = d0` (cửa sổ 7 ngày chồng nhau, bù sẽ ra nhiều cảnh báo cho một hiện tượng). Test: worker nghỉ 2 mốc thì ngày ở giữa vẫn được đánh giá, chạy lại không trùng.
+- **Lịch và chạy bù (Q-M9-B2-4):** chạy bù một lượt lúc worker khởi động; job giờ `misfire_grace_time = 3600`; job ngày `None` (máy ngủ qua 02:00 mà worker còn sống thì vẫn chạy khi tỉnh; khoá theo `d0` nên không trùng).
+- **Nhịp log (Q-M9-B2-9, B2-14):** traceback của luật lỗi in lần đầu, khi lớp lỗi đổi và mỗi giờ (theo `ctx.now`); các lượt còn lại DEBUG, không ERROR. Dòng luật `Pending` ở evaluator: INFO lần đầu và khi lý do đổi, còn lại DEBUG; worker giãn dòng "luật bỏ qua" của mình. Trạng thái giãn nhịp đặt lại được trong test.
+- **Giao hàng (Q-M9-B2-10):** một PR gồm GĐ0, GĐ1, GĐ2 (luật đăng ký `minute` mà chưa có loader sẽ ra `luật_lỗi` mỗi phút).
 
 **Trung vị 7 ngày (luật 4, 6):** đếm theo từng giờ trong 168 giờ trước giờ đang xét (giờ không có ca = 0), lấy trung vị; điều kiện `count > 3 × median AND count ≥ 3`. Test ranh giới: đúng bằng ngưỡng → không báo; hơn 1 → báo.
 
@@ -375,6 +394,7 @@ Người review không phải người làm → đúng nguyên tắc cổng **[C
 | Q-M9-9 | Luật 13: nguồn có từ 3f nhưng Phase 3–4 **mọi** câu B3 đều xuống LLM (chưa có cascade model → LLM, Phase 5) → `b3_llm_rate` ≈ 1,0 → luật báo mỗi ngày | Luật 13 **skipped** với lý do `cascade_not_enabled` tới Phase 5: `METRIC_SOURCES` có khóa `b3_cascade` trạng thái `pending`, luật kiểm `is_pending("b3_cascade")`. Chỉ số `b3_llm_rate` trên dashboard vẫn hiện (ready) | Cảnh báo báo mỗi ngày một điều đã biết = nhiễu, làm người ta bỏ qua cảnh báo thật. Không phải FN: chưa có model để "xuống cấp" |
 | Q-M9-8 | Luật 9 `refresh_reuse`: `subject` là gì? P9 ghi `token_family_id` nhưng `security_events.detail` chỉ có `revoked_sessions` (kiểm code 29/09) | `subject = user_id`, `window_start = occurred_at` → mỗi sự kiện một cảnh báo; **không** sửa auth để thêm trường | Không đụng `auth/`; mỗi lần dùng lại token đã là sự cố riêng, không cần gộp theo họ token |
 | Q-M9-7 | `/api/health` kiểm LLM thế nào? | Không gọi LLM thật: báo `llm: scripted` / `real:configured` / `real:missing_pricing` / `spend_cap_reached` từ cấu hình gateway + trần chi; chỉ **báo**, không đổi mã 200/503 (như `kb`) | Ping LLM thật tốn tiền và ngân sách < 1 triệu đồng; health gọi mỗi 10 giây |
+| Q-M9-B2-1 | Luật chạy ở job ngày (1, 12, 13) gọi chỉ số với cửa sổ nào? Job chạy 02:00 giờ VN | Cửa sổ dữ liệu **kết thúc ở `d0 = day_start(ctx.now)`**: luật 12/13 `[d0 − 1 ngày, d0)`, luật 1 `[d0 − 7 ngày, d0)`. `window_start` (khóa chống trùng) vẫn là `d0`. Mốc ngày lấy bằng `window.day_start` | `[d0, now)` chỉ có 2 giờ sau nửa đêm → gần như không có lá → chỉ số `None` → luật không bao giờ nổ (bỏ sót). Trọn ngày còn cho kết quả không đổi khi chạy lại |
 
 ---
 
@@ -430,6 +450,15 @@ make test xanh (<số> passed). Rebase lên origin/dev-tuananh (git fetch origin
 
 | Ngày | Thay đổi |
 |---|---|
+| 03/10/2026 | **v1.19** — chốt plan B2 (#14, Q-M9-B2-2…17): luật 4/5/6 ở job phút, mốc giờ luật 4/6 theo thời điểm ra mã, luật 7 gốc `approvals`, đánh giá bù 7 mốc ngày cho luật 7/12/13, luật 14 so có dung sai + giá trị lỗi → `ValueError`, nhịp log; review PR #30 (A3) và Q-M9-A3-9 ghi ở file chia việc; Phase 4 đóng (`12e8e19`) + Việc treo 35 (mục 1.4) |
+| 03/10/2026 | **v1.18** — PR #26 (A2, `67cd5f9`) và PR #24 (B1 GĐ2, `1455b55`) đã merge; 4d dừng 2 (`858573d`) + hợp đồng Phase 4 cần giữ (mục 1.4); duyệt plan A3 (#10): Q-M9-A3-3…7 — shape dashboard, `e3_cases {items, truncated}`, cửa sổ một đầu + chặn biên, ack chỉ 3 cột + log `alert_acked`, `business_scope`; 4.5 ghi thứ tự 401→403→422 và kiểm cửa sổ trong thân handler |
+| 02/10/2026 | **v1.17** — Q-M9-B2-1: luật ngày (1, 12, 13) đo trên ngày VN trọn kết thúc ở `day_start(now)` (job chạy 02:00 VN, cửa sổ `[đầu ngày, now)` gần như rỗng); D5 của PR #24 đạt trên stack (`fe51980` + `87dce5b`: `nháp=7 ghi=7 trùng=0 lỗi=0 luật_lỗi=0`); review PR #26 (A2) ghi ở file chia việc; luật 7 lọc theo cột `approval_result` (tin Phase 4, 4d dừng 2) |
+| 02/10/2026 | **v1.16** — `override_count` chốt cửa sổ theo `created_at` của lá; Q-M9-A3-1: `/api/alerts` không ẩn theo `audience` (file chia việc, thẻ A3) |
+| 02/10/2026 | **v1.15** — 4d dừng 1 đã merge (`e510a6e`): nguồn ghi đè có thật → `override_count` ready (Dương lật `PENDING_SOURCES`, viết truy vấn + test); review PR #24 (B1 GĐ2) ghi ở file chia việc |
+| 02/10/2026 | **v1.14** — chốt plan A2 (#9): 5.2 mọi chỉ số qua `v_leaf` (D-30, bất biến 13); `b2_llm_rate` tính cả `guard_unavailable`; `E2_LLM_REASONS` gồm `screening_unavailable`; 5.1(a) chỉ áp cho tỉ lệ theo kết cục ticket; luật 12 skipped tới Phase 5 (`b2_classifier`); **việc treo Phase 5:** lời gọi LLM và dòng B2/B3 của ticket cha bị loại khỏi chỉ số 5.2 → `cost_per_day` < tổng chi luật 14 — cần quyết phạm vi D-30 khi bật nhiều ý |
+| 01/10/2026 | **v1.13** — soát song song (3 agent): quy ước chung 5.1 (mẫu số chỉ lá đã kết thúc, `automation_rate` gồm deflected, điểm log 4 = step `B13/B14`, đếm 1 dòng/lá, view `security_invoker`); luật 7 hết pending (4c merge); bảng mục 6: `audience` thay `detail.audience`, luật 3 chờ 60 s, luật 10/11 subject dự phòng, luật 14 = dev/manager/ops |
+| 01/10/2026 | **v1.12** — tin Phase 4 (4d): `audit_check` đọc qua `app_monitor` → M9 không REVOKE SELECT `audit_logs`/`tickets`; 4 cột `audit_logs` (`confidence`, `query`, `success`, `action_plan_hash_matched`) chưa ghi → đọc từ `detail` (Việc treo 31) |
+| 01/10/2026 | **v1.11** — Q-M9-A1-2b: khóa `e1_split` = giá trị `reason_detail` nguyên văn (`out_of_scope`, không phải tên event `intent_out_of_scope`); không ánh xạ tên |
 | 01/10/2026 | **v1.10** — tin Phase 4 sau 4c: Phase 4 (cả 4d) không có migration, migration sau Phase 4 nối sau M9; mục 1.4 thêm chi tiết dòng `OVERRIDE` (4d) và lưu ý fixture R17–R19 → E5 |
 | 01/10/2026 | **v1.9** — chốt plan A1 (#8): migration M9 `0008_monitor_views` trỏ `0007` (Phase 4 không có migration); `weighted` chuẩn hoá lại khi nhóm 0 lá; lá nhiều dòng điểm log 4 → nhóm nhạy nhất; `e1_split` 4 lý do + `other`; `kb_version` dòng gần nhất khác null; L1 own 3 khóa |
 | 01/10/2026 | **v1.8** — luật 7 theo 4c: `first_viewed_at` là cột chung chính/dự phòng → nguồn chính là audit B16; ca mơ hồ tính là < 5 giây (ưu tiên không bỏ sót) |

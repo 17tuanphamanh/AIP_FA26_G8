@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — hệ thống thiết kế</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #FFFFFF; padding: 72px 96px; display: grid; grid-template-columns: 420px minmax(0, 1fr); column-gap: 96px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <div style="display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="9" fill="#0055A4"></rect><path d="M9 10h18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9l-5 4v-4H9a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3z" fill="#FFFFFF"></path><path d="M12.5 17.5l3.4 3.4 6.6-6.6" fill="none" stroke="#F37021" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <span style="font-size: 17px; line-height: 22px; font-weight: 600;">ServiceDesk AI</span>
+    </div>
+    <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em;">Gọn như Apple.<br>Dễ như một cuộc trò chuyện.<br><span style="color: #0055A4;">Màu</span> <span style="color: #F37021;">FPT</span>.</h1>
+    <p style="margin: 0; font-size: 17px; line-height: 26px; color: #6E6E73;">Thanh bên chứa mọi thứ bạn cần quay lại. Vùng giữa chỉ còn một việc: đọc và trả lời. Màu thương hiệu dùng tiết kiệm để dẫn mắt.</p>
+    <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 8px;">
+      <span style="font-size: 17px; line-height: 26px;"><b style="font-weight: 600;">Apple</b> — font hệ thống, thang chữ HIG, khoảng trắng rộng, nút bo tròn, danh sách nhóm.</span>
+      <span style="font-size: 17px; line-height: 26px;"><b style="font-weight: 600;">Dễ dùng</b> — thanh bên + lịch sử, ô nhập lớn ở giữa, chi tiết mở khi cần.</span>
+      <span style="font-size: 17px; line-height: 26px;"><b style="font-weight: 600;">FPT</b> — xanh #0055A4 cho hành động, cam #F37021 cho điểm nhấn và “chờ con người”.</span>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 40px;">
+    <section style="display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Thang chữ · 5 cỡ theo Apple HIG</span>
+      <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; padding: 14px 20px; border-bottom: 1px solid #E5E5EA;"><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">34 / 41 · 700</span><span style="font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em;">Tiêu đề lớn</span></div>
+        <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; padding: 14px 20px; border-bottom: 1px solid #E5E5EA;"><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">22 / 28 · 600</span><span style="font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em;">Tiêu đề nhóm</span></div>
+        <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; padding: 14px 20px; border-bottom: 1px solid #E5E5EA;"><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">17 / 26 · 400</span><span style="font-size: 17px; line-height: 26px;">Nội dung, nút, ô nhập, tin nhắn</span></div>
+        <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; padding: 14px 20px; border-bottom: 1px solid #E5E5EA;"><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">15 / 20 · 400</span><span style="font-size: 15px; line-height: 20px; color: #6E6E73;">Thông tin phụ, thanh bên, nhãn nhỏ</span></div>
+        <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; padding: 14px 20px;"><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">13 / 18 · 600</span><span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Tiêu đề nhóm danh sách, chú thích</span></div>
+      </div>
+      <span style="font-size: 13px; line-height: 18px; color: #6E6E73;">Font: hệ thống Apple (SF Pro) trên Mac/iPhone; Be Vietnam Pro trên máy khác.</span>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Nút · bo tròn · cao 44</span>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <button type="button" style="height: 44px; padding: 0 22px; border-radius: 22px; border: none; background: #0055A4; color: #FFFFFF; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Đồng ý thực hiện</button>
+        <button type="button" style="height: 44px; padding: 0 22px; border-radius: 22px; border: none; background: #F2F2F7; color: #0055A4; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Để sau</button>
+        <button type="button" style="height: 44px; padding: 0 22px; border-radius: 22px; border: none; background: #FCEBEB; color: #C62828; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Từ chối</button>
+        <button type="button" aria-label="Gửi" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: #E8630A; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73;">Màu</span>
+      <div style="display: flex; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 6px;"><div style="width: 96px; height: 56px; border-radius: 12px; background: #0055A4;"></div><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">#0055A4 hành động</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><div style="width: 96px; height: 56px; border-radius: 12px; background: #F37021;"></div><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">#F37021 điểm nhấn</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><div style="width: 96px; height: 56px; border-radius: 12px; background: #1D1D1F;"></div><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">#1D1D1F chữ</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><div style="width: 96px; height: 56px; border-radius: 12px; background: #6E6E73;"></div><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">#6E6E73 chữ phụ</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><div style="width: 96px; height: 56px; border-radius: 12px; background: #F5F5F7; border: 1px solid #E5E5EA; box-sizing: border-box;"></div><span style="font-size: 13px; line-height: 18px; color: #6E6E73;">#F5F5F7 nền nhóm</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

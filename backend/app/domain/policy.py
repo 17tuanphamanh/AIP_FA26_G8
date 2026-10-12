@@ -4,7 +4,8 @@
 {"all" | "any": [điều kiện | nhóm lồng]}, "description"}`; điều kiện `{"fact": "<nguồn>.<tên>", "op", "value"?}`.
 
 **Nguồn fact** (danh sách TRẮNG — tên ngoài danh sách → nạp policy thất bại, không khởi động): `action.*` (trường của
-`Action`), `action.facts.*` (chỉ `FACT_KEYS`), `requester.*` (`RequesterContext`), `time.*` (`within_business_hours`),
+`Action`), `action.facts.*` (chỉ `FACT_KEYS`), `action.params.*` (chỉ `PARAM_TYPES` — Phase 5 T22a P3, D-41; giá trị sai kiểu/ngoài
+tập bị lọc ở `fact_view` → coi như thiếu), `requester.*` (`RequesterContext`), `time.*` (`within_business_hours`),
 `ctx.*` (`target_is_other`). Không có nguồn nào chứa câu người dùng, slot hay hội thoại.
 
 **Lúc chạy** [Chốt]: fact thiếu → điều kiện SAI (kể cả `is_false`, `ne`, `not_in`) — luật `allow` không bao giờ khớp nhờ
@@ -36,6 +37,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.domain.action import PARAM_TYPES
 from app.domain.facts import FACT_KEYS
 
 type Decision = Literal["allow", "approval_required", "deny"]
@@ -53,6 +55,7 @@ FACT_SOURCES: Mapping[str, frozenset[str]] = {
         "type", "target", "requested_for", "scope", "privilege_level", "reversible", "reversibility", "data_sensitivity",
     }),
     "action.facts": FACT_KEYS,
+    "action.params": frozenset(PARAM_TYPES),  # T22a P3 — split_fact thử nguồn dài nhất trước: không bị "action" nuốt
     "requester": frozenset({
         "user_id", "role", "department", "employment_status", "tenure_days", "is_privileged_account",
     }),

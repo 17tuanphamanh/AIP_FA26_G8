@@ -95,6 +95,14 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
     "renew_vpn_cert": "gia hạn chứng chỉ VPN",
     "reissue_vpn_access": "cấp lại quyền truy cập VPN",
     "check_vpn_status": "kiểm tra trạng thái VPN",
+    # Phase 5 T22a (phase5 4.7b, test d4): nhãn cho 6 hành động khai báo (chưa bật). Nợ T20: `rejection_text` ghép "cho máy …"
+    # — sai nghĩa với đích không phải máy (`user:`, `folder:`).
+    "reset_password": "đặt lại mật khẩu",
+    "unlock_account": "mở khoá tài khoản",
+    "install_software": "cài đặt phần mềm",
+    "view_permissions": "xem quyền truy cập",
+    "grant_permission": "cấp quyền truy cập",
+    "extend_permission": "gia hạn quyền truy cập",
 }
 
 

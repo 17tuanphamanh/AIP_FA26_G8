@@ -8,14 +8,15 @@ hành động suy từ `config/action_metadata.yaml` (`settings.action_intents`,
 
 from collections.abc import Mapping, Sequence
 
-from app.domain.action import Action
+from app.domain.action import Action, param_ok
 from app.domain.policy import FactView, Rule, rule_matches, strictest
 from app.risk.models import RiskContext, RuleVerdict
 from app.settings import action_intents, get_policy
 
 
 def fact_view(action: Action, ctx: RiskContext) -> FactView:
-    """Khung nhìn fact cho DSL — chỉ từ `Action` và `RiskContext` (không có nguồn nào chứa chữ người dùng)."""
+    """Khung nhìn fact cho DSL — chỉ từ `Action` và `RiskContext` (không có nguồn nào chứa chữ người dùng). `action.params`: chỉ khoá
+    trong danh sách trắng `PARAM_TYPES`, đúng kiểu và tập giá trị (T22a P3)."""
     return {
         "action": {
             "type": action.type, "target": action.target, "requested_for": action.requested_for,
@@ -23,6 +24,7 @@ def fact_view(action: Action, ctx: RiskContext) -> FactView:
             "reversibility": action.reversibility, "data_sensitivity": action.data_sensitivity,
         },
         "action.facts": dict(action.facts),
+        "action.params": {k: v for k, v in action.params.items() if param_ok(k, v)},  # T22a P3: sai kiểu/ngoài tập = thiếu
         "requester": ctx.requester.model_dump(
             include={"user_id", "role", "department", "employment_status", "tenure_days", "is_privileged_account"}
         ),

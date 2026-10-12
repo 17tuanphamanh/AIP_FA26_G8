@@ -26,9 +26,15 @@ chứng chỉ LAP-0342 làm tc06 không còn gì để chẩn đoán nếu khôn
 Chốt Q-3h-11 (lần chạy stack đầu, 30/09/2026): thẻ `[fake:…]` không vào câu truy hồi (`core.fake_tag`, B8); câu tc05 nhắc "lỗi
 809". Phase 4 S0-P7 (Q-4-U A+, D-34): tc09 trở lại kỳ vọng 11.6 h6 — điểm truy hồi thấp với reranker THẬT (0,047) không còn
 chặn yêu cầu HÀNH ĐỘNG (B9 chỉ cho câu trả lời); B11 kiểm quy trình KB-VPN-004 → R17 (+R18 ngoài giờ) → chờ duyệt, 0 ghi.
+
+Phase 4 4d DỪNG 2 (spec 7.7 #9, PLAN-4d TQ-15): **làm nóng rerank** MỘT lần mỗi lần chạy, sau chốt an toàn, TRƯỚC kịch bản đầu (kể cả
+`S=tc02` lẻ) — lệnh `python -c` trong container backend gọi THẲNG ml-service (`/embed` 1 câu, `/rerank` 10 đoạn, timeout dài để lần
+gọi nguội chạy XONG), token/URL lấy từ env của container, chỉ in số ms hoặc tên lớp lỗi; 0 ghi DB, không tính PASS/FAIL, lỗi → cảnh
+báo rồi chạy tiếp. Không sửa `TIMEOUT_S["rerank"]` / `rag_deadline_s` (Việc treo 32: ml-service tự làm nóng khi khởi động).
 """
 
 import os
+import re
 import shlex
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -94,6 +100,30 @@ ENV_PROBE = (
     'case "$(printenv LLM_BACKEND)" in scripted) echo LLM_BACKEND=scripted;; real) echo LLM_BACKEND=real;; '
     "*) echo LLM_BACKEND=?;; esac"
 )
+
+# Làm nóng rerank (TQ-15): chạy TRONG container backend — đúng đường mạng + token của lượt thật. Không dùng `MlClient` (timeout rerank
+# 18 s sẽ cắt chính lần gọi nguội). Câu/đoạn tổng hợp, không dữ liệu thật; 10 đoạn = `rag_rerank_k` mặc định (một lô của truy vấn thật).
+WARM_TIMEOUT_S = 120
+WARM_QUERY = "kết nối VPN báo lỗi chứng chỉ hết hạn, gia hạn thế nào"
+WARM_PASSAGE = "Để gia hạn chứng chỉ VPN, mở ứng dụng kết nối, chọn mục cài đặt rồi làm theo hướng dẫn."
+WARM_PASSAGES = 10
+WARM = f"""
+import os, time
+import httpx
+try:
+    headers = {{"X-Service-Token": os.environ["ML_SERVICE_TOKEN"]}}
+    with httpx.Client(base_url=os.environ["ML_SERVICE_URL"], headers=headers, timeout={WARM_TIMEOUT_S}) as client:
+        t0 = time.perf_counter()
+        client.post("/embed", json={{"texts": [{WARM_QUERY!r}]}}).raise_for_status()
+        t1 = time.perf_counter()
+        client.post("/rerank", json={{"query": {WARM_QUERY!r}, "passages": [{WARM_PASSAGE!r}] * {WARM_PASSAGES}}}).raise_for_status()
+        t2 = time.perf_counter()
+    print(f"embed_ms={{(t1 - t0) * 1000:.0f}} rerank_ms={{(t2 - t1) * 1000:.0f}}")
+except Exception as exc:
+    print(f"warm_error={{type(exc).__name__}}")
+"""
+_WARM_OK = re.compile(r"^embed_ms=(\d+) rerank_ms=(\d+)$")
+_WARM_ERR = re.compile(r"^warm_error=([A-Za-z_][A-Za-z0-9_]{0,60})$")
 
 
 # ---- Route mong đợi theo giờ lúc chạy (Q-3h-4) — hàm thuần, có unit test ------------------------------------------
@@ -262,6 +292,30 @@ def warnings(ctx: Ctx, flags: Mapping[str, str]) -> None:
     if running != fixture_collection():
         ctx.report.echo("CẢNH BÁO: KB đang chạy không phải KB fixture — chạy: "
                         "make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated")  # fmt: skip
+
+
+def parse_warm(out: str) -> tuple[int, int] | str:
+    """Dòng cuối khớp mẫu → (embed_ms, rerank_ms) | tên lớp lỗi; khác → "dau_ra_la" (không in lại đầu ra)."""
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    last = lines[-1] if lines else ""
+    if m := _WARM_OK.match(last):
+        return int(m.group(1)), int(m.group(2))
+    if m := _WARM_ERR.match(last):
+        return m.group(1)
+    return "dau_ra_la"
+
+
+def warm_rerank(ctx: Ctx) -> None:
+    """MỘT truy vấn làm nóng bỏ đi (TQ-15) — không vào `Report`; lỗi/hết hạn/đầu ra lạ chỉ CẢNH BÁO rồi chạy tiếp."""
+    shown = f"{shlex.join([*ctx.shell.compose_base, 'exec', '-T', 'backend', 'python', '-c'])} <làm nóng rerank>"
+    try:
+        got = parse_warm(ctx.shell.run([*ctx.shell.compose_base, "exec", "-T", "backend", "python", "-c", WARM], shown=shown))
+    except (StackError, OSError) as exc:
+        got = type(exc).__name__
+    if isinstance(got, tuple):
+        ctx.report.echo(f"làm nóng rerank: embed {got[0]} ms, rerank {got[1]} ms (không tính PASS/FAIL)")
+    else:
+        ctx.report.echo(f"CẢNH BÁO: làm nóng rerank lỗi ({got}) — chạy tiếp")
 
 
 def _check_risk(ctx: Ctx, t: str, tc: str, in_hours: bool) -> Risk:
@@ -511,6 +565,7 @@ def main(argv: Sequence[str], *, run: Run = subprocess_run, env: Mapping[str, st
         echo(f"gate3 run {ctx.run_id}: {names}")
         header(ctx)
         warnings(ctx, flags)
+        warm_rerank(ctx)  # TQ-15: trước kịch bản đầu, một lần
         stopped = run_scenarios(ctx, names)
         if stopped is not None:
             return stopped

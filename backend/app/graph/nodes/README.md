@@ -54,7 +54,9 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   (`redact_text` thuần) → `approvals.close` (0/1, `decided_at` cả 3 nhánh) → đọc lại phiếu → từ chối: output guard trên ghi chú
   (chặn → bỏ câu ghi chú, `note_suppressed`) → tin THEO MẪU `kind=rejection` qua `effects.once("notify_user", step="B16")`.
   Điểm log 6 cả 3 nhánh: `approval_result` (state), `note` + `response_time_seconds` qua `audit_columns`, `detail` số/enum/bool.
-  Hết hạn → E6, không bao giờ thực thi.
+  Hết hạn → E6, không bao giờ thực thi. Duyệt mà kế hoạch đã đổi (4d Q-4d-3, TC26): SAU `close(approved)`, TRƯỚC `S_EXECUTING`, so
+  `hash_action(intended_action)` với hash state (phép so của cấm F3) rồi hash PHIẾU → lệch: E5 `action_plan_changed_since_approval` ở
+  B16 (`hash_source` state|approval, `hash_old`, `hash_new`, đủ điểm 6); cấm F3 và hai lớp của B17 giữ làm lớp sau.
 - `b10_route.py`: node THẬT (Phase 3 chặng 3g; Phase 4 S0) — `b10_need_type` (fast) TRƯỚC mọi kiểm ngưỡng: `action` → B11
   BẤT KỂ điểm (cờ `GROUNDING_GATE_ACTIONS=true` → B9 như 3h); `info` → B9 (rỗng/dưới ngưỡng → E3 `no_grounding`, step `B9`,
   event `no_evidence` — như nhánh cũ ở B8; 0 `expand`/`b10_answer`) → `expand_for_answer`

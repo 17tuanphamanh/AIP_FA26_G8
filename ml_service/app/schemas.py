@@ -52,5 +52,12 @@ class ClassifyIn(_In):  # P4 mục 4 — model injection-clf (Phase 5)
     text: str = Field(min_length=1)
 
 
+class ClassifyOut(BaseModel):  # khớp `backend/app/ml/models.py` ClassifyOut (test đọc bằng AST)
+    p_malicious: float  # max trên mọi cửa sổ của xác suất lớp INJECTION
+    windows: int
+    model: str
+    version: str
+
+
 class IntentIn(_In):  # P4 mục 4 — model intent-clf (Phase 5, D-32)
     text: str = Field(min_length=1)

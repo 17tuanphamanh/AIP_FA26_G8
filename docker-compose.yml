@@ -46,6 +46,10 @@ x-backend-env: &backend-env
   # Phase 4 (4b P12): hạn duyệt rút ngắn (phút, 1–30) CHỈ cho APP_ENV dev/test — môi trường khác đặt → từ chối khởi động.
   # Rỗng = dùng SLA_MINUTES của config/policy.json. `make verify` truyền bằng biến shell (không sửa .env).
   APPROVAL_SLA_MINUTES_DEV: ${APPROVAL_SLA_MINUTES_DEV:-}
+  # Phase 5 (T23a, ML-GAN — D-44): shadow | active — rỗng = mặc định `shadow` của settings.py (model chặn tấn công
+  # chỉ ghi điểm). Backend và worker PHẢI thấy cùng giá trị (worker chạy lại lượt dở cũng đi qua B2). Giá trị khác →
+  # từ chối khởi động.
+  B2_CLASSIFIER_MODE: ${B2_CLASSIFIER_MODE:-}
 
 services:
   postgres:
@@ -127,6 +131,10 @@ services:
   # 8200 ra host (P4 mục 5). ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở ml_service/app/settings.py
   # (một nguồn); truyền chuỗi rỗng cho trường số là lỗi cấu hình. ML_THREADS TRUYỀN tường minh (khác quy ước
   # trên) từ Q-3a-16 (S9, PLAN-3c mục 6.2): mặc định 4 = tier ② đo trên CPU dev — không rỗng.
+  # Phase 5 (T23a, ML-GAN — D-44): model phân loại của nhóm (P11) ở TEAM_MODELS_DIR (mặc định ./ml_models) mount
+  # read-only vào /ml_models.
+  # GUARD_MODEL_DIR / INTENT_MODEL_DIR là đường dẫn TRONG container; rỗng = không nạp → /classify, /classify_intent
+  # 503 model_missing như Phase 3. GUARD_MODEL_SHA256 đặt thì model.safetensors lệch → ml-service không khởi động.
   ml-service:
     build:
       context: .
@@ -136,15 +144,20 @@ services:
       ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:?ML_SERVICE_TOKEN phai khai bao trong .env}
       MODELS_DIR: /models
       ML_THREADS: ${ML_THREADS:-4}
+      GUARD_MODEL_DIR: ${GUARD_MODEL_DIR:-}
+      GUARD_MODEL_SHA256: ${GUARD_MODEL_SHA256:-}
+      INTENT_MODEL_DIR: ${INTENT_MODEL_DIR:-}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
+      - ${TEAM_MODELS_DIR:-./ml_models}:/ml_models:ro
     healthcheck:
-      # 200 chỉ khi đã nạp + warm-up xong; nạp 2 model CPU mất tới vài phút lần đầu.
+      # 200 chỉ khi đã nạp + warm-up xong; nạp 2 model CPU mất tới vài phút lần đầu. ML-GAN: thêm SHA-256 file 1,1 GB
+      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan).
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health').status==200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 180s
+      start_period: 240s
 
 volumes:
   pgdata:

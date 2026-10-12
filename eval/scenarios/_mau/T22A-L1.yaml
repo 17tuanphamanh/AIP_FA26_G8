@@ -1,0 +1,25 @@
+# Kịch bản mẫu cho test scripts/rule_coverage.py (phase5-thiet-ke-chi-tiet.md mục 4.6, 4.7 r1) — họ L1 của §8.2:
+# cấp quyền mới thư mục độ nhạy thấp, cùng phòng → không luật nào khớp (đi lớp LLM). Dữ kiện khớp mock_services/seed.json.
+id: T22A-L1
+family: L1
+source: ho_bo_sung
+requester: {user_id: nv001, role: employee, dept: Finance, tenure_days: 980}
+at: "2026-09-29T10:00:00+07:00"
+faults: []
+turns:
+  - "cho mình xin quyền đọc thư mục finance/public-reports trong 30 ngày"
+gold:
+  intents: [access]
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  action:
+    type: grant_permission
+    target: "folder:finance/public-reports"
+    requested_for: nv001
+    params: {permission_level: read, duration_days: 30}
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active

@@ -78,3 +78,34 @@ def test_plaintext_password_is_rejected() -> None:
     raw["users"][0]["password_hash"] = DEMO_PASSWORD
     with pytest.raises(ValidationError, match="argon2id"):
         SeedData.model_validate(raw)
+
+
+# ---- Phase 5 T22a P7 (G5-3): 3 trường mới, bắt buộc có khoá — phase5 bảng 4.3 cột "Seed ví dụ" ---------------------------
+
+
+def test_t22a_p7_service_account_disable_reason_local_admin(seed: SeedData) -> None:
+    users = {u.user_id: u for u in seed.users}
+    assert {u.user_id for u in seed.users if u.is_service_account} == {"svc_backup"}
+    assert {u.user_id: u.disable_reason for u in seed.users if u.disable_reason is not None} == {"nv004": "security"}
+    assert users["nv004"].employment_status == "disabled"
+    assert {c.name for c in seed.catalog if c.requires_local_admin} == {"autocad"}
+
+
+def test_t22a_p7_every_user_and_catalog_entry_has_explicit_keys() -> None:
+    """Khoá TƯỜNG MINH ở mọi người/mục (không mặc định): thiếu khoá thì seed không nạp — không âm thầm thành false (R01/R02/R11)."""
+    raw = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    assert all({"is_service_account", "disable_reason"} <= set(u) for u in raw["users"])
+    assert all("requires_local_admin" in c for c in raw["catalog"])
+    for section, key in (("users", "is_service_account"), ("users", "disable_reason"), ("catalog", "requires_local_admin")):
+        broken = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+        del broken[section][0][key]
+        with pytest.raises(ValidationError, match=key):
+            SeedData.model_validate(broken)
+
+
+def test_t22a_p7_disable_reason_only_when_disabled() -> None:
+    raw = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    active = next(u for u in raw["users"] if u["employment_status"] == "active")
+    active["disable_reason"] = "security"
+    with pytest.raises(ValidationError, match="disable_reason chỉ có khi"):
+        SeedData.model_validate(raw)

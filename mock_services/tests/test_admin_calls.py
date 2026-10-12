@@ -74,3 +74,36 @@ def test_set_status_rejects_unknown_user_value_and_extra_keys(client: TestClient
     assert client.post("/_admin/users/nv001/status",
                        json={"employment_status": "disabled", "role": "admin"}).status_code == 422  # fmt: skip
     assert client.post("/_admin/faults", json={"path_prefix": "/_admin/users", "mode": "error"}).status_code == 422
+
+
+# ---- Phase 5 T22a P7 (TQ-8): disable_reason theo trạng thái ĐÍCH -----------------------------------------------------------
+
+
+def _reason(client: TestClient, agent: dict[str, str], user_id: str) -> object:
+    body = client.get(f"/ad/users/{user_id}", headers=agent).json()
+    assert "is_service_account" in body
+    return body["disable_reason"]
+
+
+def test_t22a_p7_leaving_disabled_clears_reason(client: TestClient, agent: dict[str, str]) -> None:
+    assert _reason(client, agent, "nv004") == "security"  # seed
+    r = client.post("/_admin/users/nv004/status", json={"employment_status": "active"})
+    assert r.json() == {"user_id": "nv004", "employment_status": "active"}  # hình dạng phản hồi giữ nguyên
+    assert _reason(client, agent, "nv004") is None
+    client.post("/_admin/reset")
+    assert _reason(client, agent, "nv004") == "security"
+
+
+def test_t22a_p7_to_disabled_takes_reason_or_null(client: TestClient, agent: dict[str, str]) -> None:
+    assert client.post("/_admin/users/nv001/status", json={"employment_status": "disabled"}).status_code == 200
+    assert _reason(client, agent, "nv001") is None  # không kèm lý do → null (R12, R10 đều không khớp)
+    client.post("/_admin/users/nv001/status", json={"employment_status": "disabled", "disable_reason": "other"})
+    assert _reason(client, agent, "nv001") == "other"
+
+
+def test_t22a_p7_non_disabled_target_drops_sent_reason(client: TestClient, agent: dict[str, str]) -> None:
+    r = client.post("/_admin/users/nv001/status", json={"employment_status": "probation", "disable_reason": "security"})
+    assert r.status_code == 200
+    assert _reason(client, agent, "nv001") is None
+    bad = client.post("/_admin/users/nv001/status", json={"employment_status": "disabled", "disable_reason": "hacked"})
+    assert bad.status_code == 422  # chỉ nhận {security, other}

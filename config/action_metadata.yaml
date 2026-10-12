@@ -7,3 +7,15 @@ vpn:
   renew_vpn_cert:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004}
   reissue_vpn_access: {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-004}
   check_vpn_status:   {reversible: true, reversibility: full, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-VPN-001}
+# Phase 5 T22a (phase5 bảng 4.2; procedure_doc [Chốt 09/10] theo K2 thật): 3 intent khai báo, CHƯA bật — check_intent_config đòi
+# metadata cho mọi action_type đã khai báo trong slots.yaml (bật hay không). data_sensitivity/privilege_level tĩnh [Chốt B11 §0.3];
+# độ nhạy thật của tài nguyên và quyền tài khoản đích nằm ở fact (domain/facts.py) — luật đọc fact, không đọc hai trường này.
+account:
+  reset_password:     {reversible: true, reversibility: partial, data_sensitivity: medium, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACC-001}
+  unlock_account:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACC-002}
+software:
+  install_software:   {reversible: true, reversibility: partial, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-SW-001}
+access:
+  view_permissions:   {reversible: true, reversibility: full, data_sensitivity: low, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACS-005}
+  grant_permission:   {reversible: true, reversibility: full, data_sensitivity: medium, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACS-001}
+  extend_permission:  {reversible: true, reversibility: full, data_sensitivity: medium, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACS-003}

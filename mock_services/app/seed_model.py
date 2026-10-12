@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 EmploymentStatus = Literal["active", "probation", "disabled", "terminated"]
+DisableReason = Literal["security", "other"]
 AdGroup = Literal["IT-Users", "IT-L1", "IT-Manager", "IT-L2"]
 AccountType = Literal["ad", "email", "erp"]
 PrivilegeLevel = Literal["standard_user", "elevated", "admin"]
@@ -46,6 +47,10 @@ class SeedUser(_Strict):
     employment_status: EmploymentStatus
     hired_days_ago: int = Field(ge=0)
     is_privileged_account: bool = False
+    # Phase 5 T22a P7 (G5-3): BẮT BUỘC có khoá, không mặc định — một người thiếu khoá không được âm thầm thành "không phải tài
+    # khoản dịch vụ" (R01/R02 AUTO nhầm). `disable_reason` chỉ có giá trị khi `employment_status == "disabled"`.
+    is_service_account: bool
+    disable_reason: DisableReason | None
     password_hash: str  # argon2id của mật khẩu demo — KHÔNG bao giờ trả ra API
     accounts: dict[AccountType, SeedAccount]
     lockouts: list[SeedLockout] = []
@@ -56,6 +61,8 @@ class SeedUser(_Strict):
             raise ValueError(f"{self.user_id}: password_hash phải là argon2id")
         if "ad" not in self.accounts:
             raise ValueError(f"{self.user_id}: thiếu tài khoản 'ad'")
+        if self.disable_reason is not None and self.employment_status != "disabled":
+            raise ValueError(f"{self.user_id}: disable_reason chỉ có khi employment_status=disabled")
         return self
 
 
@@ -97,6 +104,7 @@ class SeedCatalogEntry(_Strict):
     license_type: Literal["free", "paid"]
     version: str
     requires_approval: bool
+    requires_local_admin: bool  # Phase 5 T22a P7 — bắt buộc có khoá (R11/R15), không mặc định
 
 
 class SeedLicensePool(_Strict):

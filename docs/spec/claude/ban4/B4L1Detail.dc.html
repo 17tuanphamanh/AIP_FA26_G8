@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Bản 4 — L1 chi tiết duyệt</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;display=swap">
+<style>body{margin:0}a{color:#0055A4}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Be Vietnam Pro', 'Segoe UI', sans-serif; color: #1D1D1F;">
+  <dc-import name="B4Sidebar" role="l1" active="approvals" hint-size="264px,900px"></dc-import>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; position: relative;">
+    <main style="flex-grow: 1; padding: 32px 48px 24px; display: flex; flex-direction: column; gap: 24px; min-height: 0;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <a href="B4L1Queue.dc.html" style="font-size: 15px; line-height: 20px; text-decoration: none;">‹ Chờ tôi duyệt</a>
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em; flex-grow: 1;">Phiếu #A-0192</h1>
+          <span style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 16px; background: #FCEBEB; color: #C62828; font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">Còn 03:58 / 30 phút</span>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; min-height: 0;">
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Hệ thống sẽ thực hiện chính xác</span>
+          <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+            <div style="padding: 18px 20px; border-bottom: 1px solid #E5E5EA; font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em;">Thêm Nguyễn Văn An vào nhóm grp-erp-2026 với quyền thành viên trong 90 ngày.</div>
+            <div style="display: flex; align-items: center; padding: 10px 20px; border-bottom: 1px solid #E5E5EA; background: #FAFAFC;">
+              <span style="font-size: 15px; line-height: 20px; color: #6E6E73; flex-grow: 1;">Đủ mọi trường của object đã băm</span>
+              <div role="tablist" style="display: flex; padding: 2px; border-radius: 8px; background: #EEEEF0;"><button type="button" role="tab" aria-selected="{{fSel}}" onClick="{{showF}}" style="{{tabF}}">Bảng</button><button type="button" role="tab" aria-selected="{{jSel}}" onClick="{{showJ}}" style="{{tabJ}}">JSON</button></div>
+            </div>
+            <sc-if value="{{isF}}" hint-placeholder-val="{{true}}">
+              <div>
+                <sc-for list="{{fields}}" as="f" hint-placeholder-count="8">
+                  <div style="display: flex; justify-content: space-between; gap: 16px; padding: 10px 20px; border-bottom: 1px solid #F0F0F3; font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 15px; line-height: 20px;"><span style="color: #6E6E73;">{{f.k}}</span><span>{{f.v}}</span></div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{isJ}}" hint-placeholder-val="{{false}}">
+              <pre style="margin: 0; padding: 16px 20px; font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 13px; line-height: 20px; color: #1D1D1F;">{{json}}</pre>
+            </sc-if>
+            <div style="padding: 12px 20px; font-size: 13px; line-height: 18px; color: #6E6E73;">Mã băm sha256:9f2c7e…41a0e · nội dung đổi sau khi duyệt thì hệ thống dừng và chuyển L2.</div>
+          </div>
+        </section>
+
+        <aside style="display: flex; flex-direction: column; gap: 24px;">
+          <section style="display: flex; flex-direction: column; gap: 12px;">
+            <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Vì sao cần bạn</span>
+            <div style="border: 1px solid #E5E5EA; border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+              <span style="font-size: 15px; line-height: 20px; color: #6E6E73;">Không luật nào khớp → AI đánh giá rủi ro</span>
+              <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em;">0,62</span><span style="font-size: 15px; line-height: 20px; color: #6E6E73;">đã hiệu chỉnh</span></div>
+              <div style="position: relative; height: 6px; border-radius: 3px; background: #E5E5EA;"><span style="position: absolute; left: 25%; width: 50%; height: 6px; background: #FFD8BF;"></span><span style="position: absolute; left: calc(62% - 7px); top: -4px; width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; border: 2px solid #0055A4; box-sizing: border-box;"></span></div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; line-height: 18px; color: #6E6E73;"><span>Tự xử lý</span><span>Cần duyệt 0,25–0,75</span><span>L2</span></div>
+              <span style="font-size: 15px; line-height: 20px; padding-top: 12px; border-top: 1px solid #E5E5EA;">Nhóm chứa tài liệu hợp đồng; người được thêm chưa thuộc dự án.</span>
+            </div>
+          </section>
+          <section style="display: flex; flex-direction: column; gap: 12px;">
+            <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #6E6E73; padding-left: 4px;">Người gửi</span>
+            <div style="border: 1px solid #E5E5EA; border-radius: 16px; overflow: hidden;">
+              <div style="display: flex; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px;"><span>Nguyễn Văn An</span><span style="color: #6E6E73;">Kế toán · chính thức</span></div>
+              <div style="padding: 12px 20px; border-bottom: 1px solid #E5E5EA; font-size: 15px; line-height: 20px; color: #3A3A3C;">“Cho em vào nhóm dự án ERP-2026 để nhận tài liệu triển khai ạ.”</div>
+              <div style="display: flex; justify-content: space-between; padding: 12px 20px; font-size: 15px; line-height: 20px;"><span>Xung đột lợi ích</span><span style="color: #6E6E73;">Không</span></div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+    <div style="height: 76px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 48px; border-top: 1px solid #E5E5EA; background: rgba(255,255,255,0.96);">
+      <button type="button" onClick="{{openReject}}" style="height: 44px; padding: 0 22px; border-radius: 22px; border: none; background: #FCEBEB; color: #C62828; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Từ chối</button>
+      <span style="flex-grow: 1; font-size: 13px; line-height: 18px; color: #6E6E73;">Quyết định được ghi vào nhật ký kiểm toán.</span>
+      <button type="button" style="height: 44px; padding: 0 24px; border-radius: 22px; border: none; background: #0055A4; color: #FFFFFF; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Đồng ý thực hiện</button>
+    </div>
+
+    <sc-if value="{{rejectOpen}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center;">
+        <div role="dialog" aria-label="Từ chối yêu cầu" style="width: 480px; box-sizing: border-box; background: #FFFFFF; border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 24px 64px rgba(0,0,0,0.18);">
+          <h2 style="margin: 0; font-size: 22px; line-height: 28px; font-weight: 600; text-align: center;">Từ chối yêu cầu</h2>
+          <div style="background: #F5F5F7; border-radius: 12px; overflow: hidden;">
+            <label for="rc4" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #E5E5EA; font-size: 17px; line-height: 22px;">Lý do<select id="rc4" style="border: none; background: transparent; font: 400 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif; color: #6E6E73;"><option>Thiếu thông tin</option><option>Không có thẩm quyền</option><option>Trái chính sách</option><option>Yêu cầu trùng</option><option>Sai thiết bị</option><option>Lo ngại bảo mật</option><option>Khác</option></select></label>
+            <label for="rn4" style="position: absolute; left: -9999px;">Lý do gửi người dùng</label>
+            <textarea id="rn4" rows="4" placeholder="Lý do gửi người dùng (bắt buộc)" style="width: 100%; box-sizing: border-box; border: none; background: transparent; padding: 12px 16px; font: 400 17px/26px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif; resize: none;">Cần chị Lan (chủ nhóm) xác nhận anh tham gia dự án.</textarea>
+          </div>
+          <span style="font-size: 13px; line-height: 18px; color: #6E6E73; text-align: center;">Lý do hiển thị nguyên văn cho người gửi.</span>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;"><button type="button" onClick="{{closeReject}}" style="height: 44px; border-radius: 22px; border: none; background: #F2F2F7; color: #1D1D1F; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Huỷ</button><button type="button" style="height: 44px; border-radius: 22px; border: none; background: #C62828; color: #FFFFFF; font: 600 17px/22px -apple-system, BlinkMacSystemFont, 'Be Vietnam Pro', sans-serif;">Gửi từ chối</button></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { json: false, rejectOpen: false }; }
+  renderVals() {
+    const obj = { action_type: 'add_group_member', intent: 'access', requested_for: 'nv001', target: 'grp-erp-2026', params: { role: 'member', duration_days: 90 }, facts: { resource_sensitivity: 'medium', target_is_other: false } };
+    const flat = [];
+    const walk = (o, p) => Object.keys(o).forEach((k) => { const v = o[k]; const key = p ? p + '.' + k : k; if (v && typeof v === 'object') walk(v, key); else flat.push({ k: key, v: JSON.stringify(v) }); });
+    walk(obj, '');
+    const j = this.state.json;
+    const on = 'height: 28px; padding: 0 12px; border-radius: 6px; border: none; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font: 600 13px/18px -apple-system, BlinkMacSystemFont, \'Be Vietnam Pro\', sans-serif; color: #1D1D1F;';
+    const off = 'height: 28px; padding: 0 12px; border-radius: 6px; border: none; background: transparent; font: 400 13px/18px -apple-system, BlinkMacSystemFont, \'Be Vietnam Pro\', sans-serif; color: #1D1D1F;';
+    return { fields: flat, json: JSON.stringify(obj, null, 2), isF: !j, isJ: j, fSel: j ? 'false' : 'true', jSel: j ? 'true' : 'false', tabF: j ? off : on, tabJ: j ? on : off,
+      showF: () => this.setState({ json: false }), showJ: () => this.setState({ json: true }),
+      rejectOpen: this.state.rejectOpen, openReject: () => this.setState({ rejectOpen: true }), closeReject: () => this.setState({ rejectOpen: false }) };
+  }
+}
+</script>
+</body>
+</html>

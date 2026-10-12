@@ -6,6 +6,8 @@ transaction — goto() dựa vào kết quả này cho chuyển cấm 4 (→ S_R
 
 `lineage` (3g, Q-3g-3): dòng lineage của bước (B10) ghi TRONG CÙNG transaction với dòng audit — idempotent theo
 (ticket_id, turn_id, step, prompt_id) (`db/lineage.insert_once`).
+
+`record_new` (Phase 4 4d): như `record` nhưng trả "vừa ghi dòng mới hay chưa" — ghi đè cần phân biệt lần đầu (201) với lần 2 (409).
 """
 
 from collections.abc import Mapping
@@ -56,3 +58,21 @@ class AuditWriter:
             )
             found = await conn.execute(select(_TABLE.c.log_id).where(_TABLE.c.idempotency_key == key))
             return found.first() is not None
+
+    async def record_new(self, row: Mapping[str, Any]) -> bool:
+        """Phase 4 4d P4 (ghi đè, Q-4d-2 = A): `INSERT … ON CONFLICT DO NOTHING RETURNING` trên CÙNG partial index như `record` —
+        True CHỈ khi lệnh này vừa ghi dòng mới; khoá đã có → False (route trả 409). Dòng không có `idempotency_key` → `ValueError`."""
+        check_audit_row(row)
+        if row.get("idempotency_key") is None:
+            raise ValueError("audit_logs.record_new: thiếu idempotency_key")
+        async with self._engine.begin() as conn:
+            inserted = await conn.execute(
+                pg_insert(_TABLE)
+                .values(**row)
+                .on_conflict_do_nothing(
+                    index_elements=["idempotency_key"],
+                    index_where=text("idempotency_key IS NOT NULL"),
+                )
+                .returning(_TABLE.c.log_id)
+            )
+            return inserted.first() is not None

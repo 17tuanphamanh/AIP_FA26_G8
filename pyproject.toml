@@ -121,3 +121,8 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["torch.*", "sentence_transformers.*", "transformers.*", "huggingface_hub.*"]
 ignore_missing_imports = true
+
+# scipy, scikit-learn (M5 lớp 2: risk/decision_math.py, risk/calibrator.py) không có type stub / py.typed.
+[[tool.mypy.overrides]]
+module = ["scipy.*", "sklearn.*"]
+ignore_missing_imports = true

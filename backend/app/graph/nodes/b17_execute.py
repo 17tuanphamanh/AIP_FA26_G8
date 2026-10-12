@@ -10,7 +10,9 @@
    → E5 `recheck_failed`, BẤT KỂ luật hiện hành (M-3h-7, M-3h-12). `approval_required` hoặc không luật nào khớp mà không "đã
    duyệt" → E5 `recheck_failed` (tự quyết 1 PLAN-3h: Phase 3 không có lớp LLM ở đây).
 2. **Hash:** đi qua duyệt thì `action_plan_hash` phải có và bằng `hash_action(intended_action)` — thiếu/lệch → E5
-   `action_plan_changed_since_approval` (cấm 3).
+   `action_plan_changed_since_approval` (cấm 3). **Phase 4 4d P7 (Việc treo 29):** lớp thứ hai — `hash_action(intended_action)` còn phải
+   bằng `approvals.action_plan_hash` của PHIẾU (cái người duyệt đã xem, 4c P6); lệch → cùng E5, `detail.hash_source="approval"`, 0 lời
+   gọi ghi, TRƯỚC mọi lời tra AD.
 3. **Người:** `ad_get_user` (`caller_step="B17_RECHECK"`, 3-Q37) cho người gửi và người hưởng lợi (bỏ trùng, song song) —
    `disabled`/`terminated`, không có, hoặc lỗi AD → E5 `person_no_longer_valid` (D-15). **Phase 4 4b P13 (Q-4b-1, TQ-11):** đi
    qua duyệt thì tra thêm người ĐÃ DUYỆT (`approvals.get(...).decided_by`) trong CÙNG `gather` (một điểm gọi); `decided_by` None
@@ -140,6 +142,13 @@ def make(deps: NodeDeps) -> NodeFn:
                     exit_code=ExitCode.E5.value, escalation_reason_detail="action_plan_changed_since_approval",
                 )  # fmt: skip
             row = await deps.approvals.get(state["approval_id"])  # P13: AI đã duyệt
+            if row is not None and row.action_plan_hash != current:  # [2b] 4d P7: hai lớp — so thêm hash của PHIẾU (Việc treo 29)
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="action_plan_changed_since_approval",
+                    audit_detail={**rule, "hash_source": "approval", "hash_old": row.action_plan_hash, "hash_new": current,
+                                  "action_plan_hash_matched": False},
+                    exit_code=ExitCode.E5.value, escalation_reason_detail="action_plan_changed_since_approval",
+                )  # fmt: skip
             decided_by = None if row is None else row.decided_by
             if decided_by is None:  # "đã duyệt" mà không biết người duyệt → không thực thi
                 return await goto(

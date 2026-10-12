@@ -23,7 +23,7 @@ from app.llm.errors import (
     PromptVariableError,
 )
 from app.llm.ports import TraceParent
-from app.llm.providers.base import parse_retry_after
+from app.llm.providers.base import ProviderRequest, parse_retry_after
 from app.llm.providers.openai_compat import OpenAICompatProvider
 from app.llm.registry import load_prompts
 from app.llm.schemas import AnswerOut, InjectionJudgeOut, NeedTypeOut, QuestionOut
@@ -162,10 +162,70 @@ async def test_openai_compat_json_object_mode() -> None:
     assert server.bodies()[0]["response_format"] == {"type": "json_object"}
 
 
+# ---- LLM-JSON: json_object không mang schema → schema nằm trong system message (DeepSeek: chỉ json_object, prompt phải
+# có chữ "json") -----------------------------------------------------------------------------------------------------
+
+SCHEMA = NeedTypeOut.model_json_schema()
+SCHEMA_TEXT = json.dumps(SCHEMA, ensure_ascii=False)
+
+
+def provider_req(messages: list[dict[str, str]]) -> ProviderRequest:
+    return ProviderRequest(
+        prompt_id="b10_need_type", model="m-cloud_a", messages=messages, json_schema=SCHEMA,
+        schema_name="NeedTypeOut", max_tokens=400, temperature=0, timeout_s=8.0, attempt=0, variables={}, trace=None,
+    )  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_json_object_appends_schema_to_system_message() -> None:
+    server = Server(ok(NEED_OK))
+    messages = [{"role": "system", "content": "Phân loại nhu cầu."}, {"role": "user", "content": "gia hạn VPN"}]
+    before = json.loads(json.dumps(messages))
+    req = provider_req(messages)
+    await openai_provider(server, json_mode="json_object").chat(req)
+    sent = server.bodies()[0]["messages"]
+    assert [m["role"] for m in sent] == ["system", "user"]
+    assert sent[0]["content"].startswith("Phân loại nhu cầu.")  # đoạn thêm nằm ở CUỐI system message
+    assert sent[0]["content"].endswith(SCHEMA_TEXT) and "json" in sent[0]["content"]
+    assert sent[1] == before[1]
+    assert req.messages is messages and messages == before  # không sửa tại chỗ
+
+
+@pytest.mark.asyncio
+async def test_json_object_without_system_message_inserts_one_first() -> None:
+    server = Server(ok(NEED_OK))
+    messages = [{"role": "user", "content": "gia hạn VPN"}]
+    await openai_provider(server, json_mode="json_object").chat(provider_req(messages))
+    sent = server.bodies()[0]["messages"]
+    assert [m["role"] for m in sent] == ["system", "user"]
+    assert SCHEMA_TEXT in sent[0]["content"] and "json" in sent[0]["content"]
+    assert sent[1] == {"role": "user", "content": "gia hạn VPN"} and messages == [sent[1]]
+
+
+@pytest.mark.asyncio
+async def test_json_schema_mode_sends_messages_unchanged() -> None:
+    server = Server(ok(NEED_OK))
+    messages = [{"role": "system", "content": "Phân loại nhu cầu."}, {"role": "user", "content": "gia hạn VPN"}]
+    await openai_provider(server).chat(provider_req(messages))
+    (body,) = server.bodies()
+    assert body["messages"] == messages
+    assert body["response_format"]["json_schema"]["schema"] == SCHEMA
+
+
+@pytest.mark.asyncio
+async def test_json_object_through_gateway_carries_schema() -> None:
+    server = Server(ok(NEED_OK))
+    gw = make_gateway(runtime=runtime((target("cloud_a"),)),
+                      providers={"cloud_a": openai_provider(server, json_mode="json_object")})  # fmt: skip
+    await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
+    system = server.bodies()[0]["messages"][0]
+    assert system["role"] == "system" and SCHEMA_TEXT in system["content"]
+
+
 def test_smoke_check_llm_scripted_loads_presets() -> None:
     setup = check_llm(Settings(_env_file=None, app_env="test", llm_backend="scripted"))  # type: ignore[call-arg]
     assert setup.presets is not None and "default" in setup.presets
-    assert set(setup.presets["default"]) == {p.id for p in setup.registry}  # default đủ 6 prompt
+    assert set(setup.presets["default"]) == {p.id for p in setup.registry}  # default đủ 8 prompt
 
 
 # ---- d1 (P2 §13) -------------------------------------------------------------------------------------

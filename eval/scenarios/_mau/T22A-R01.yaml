@@ -1,0 +1,24 @@
+# Kịch bản mẫu cho test scripts/rule_coverage.py (phase5-thiet-ke-chi-tiet.md mục 4.6, 4.7 r1) — R01 allow:
+# nv001 đặt lại mật khẩu tài khoản AD thường của chính mình. `requested_for` bỏ trống = người gửi (P4).
+# Dữ kiện khớp mock_services/seed.json.
+id: T22A-R01
+family: R01
+source: goc
+requester: {user_id: nv001, role: employee, dept: Finance, tenure_days: 980}
+at: "2026-09-29T10:00:00+07:00"
+faults: []
+turns:
+  - "mình quên mật khẩu đăng nhập máy (tài khoản AD), đặt lại giúp mình với"
+gold:
+  intents: [account]
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  action:
+    type: reset_password
+    target: "user:nv001"
+    params: {account_type: ad}
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active

@@ -3,11 +3,13 @@
 #
 #   make verify              # G=3 (mặc định)
 #   make verify G=23         # gate2 + gate3 (theo thứ tự chữ số)
+#   make verify G=234        # + gate4 (APPROVAL_SLA_MINUTES_DEV=2 chỉ cho bước gate4 — 4d DỪNG 2)
 #   make verify G=0          # chỉ lint + test (không đụng stack)
 #   make verify G=3 BENCH=1  # thêm bench checkpoint (P6 — Postgres testcontainers, không dùng DB stack)
 #
-# gate2 cần FAKE_SCENARIO ĐẶT, gate3 cần KHÔNG đặt (G4-24) — script tạo lại backend+worker bằng BIẾN SHELL cho từng cổng
-# (compose nội suy `${FAKE_SCENARIO:-}`, biến shell thắng `--env-file`), không bao giờ đọc/sửa `.env` (chỉ `test -f`).
+# gate2 cần FAKE_SCENARIO ĐẶT, gate3/gate4 cần KHÔNG đặt (G4-24); gate4 cần APPROVAL_SLA_MINUTES_DEV=2, gate2/gate3 rỗng (= mặc định
+# 30 phút — kết quả không phụ thuộc .env có đặt hay không, PLAN-4d TQ-12) — script tạo lại backend+worker bằng BIẾN SHELL cho từng
+# cổng (compose nội suy `${FAKE_SCENARIO:-}`, biến shell thắng `--env-file`), không bao giờ đọc/sửa `.env` (chỉ `test -f`).
 # Bước 8 (trả backend+worker về cấu hình `.env`) LUÔN chạy nếu đã qua bước 3, kể cả khi đỏ giữa chừng hoặc Ctrl-C.
 #
 # Luật: không `down -v`, không `volume rm|prune`; không in giá trị biến môi trường (chỉ tên/nhãn enum); không `set -x`;
@@ -16,6 +18,9 @@
 #
 # Mọi hàm bước được gọi trong `if`/`||` — ở đó `set -e` KHÔNG có hiệu lực, nên MỖI lệnh con tự `|| return 1` (không thì một
 # lệnh con đỏ mà lệnh sau xanh → cả bước "xanh oan").
+#
+# Phase 4 4d DỪNG 2 (Q-4d-4): trên macOS tự giữ máy thức (`caffeinate -i -w $$` — hết khi script thoát) và CẢNH BÁO khi chạy pin
+# (Mac ngủ giữa lượt → hạn lượt theo đồng hồ tường hết → E2 `turn_budget_exceeded`). Không có `caffeinate` → bỏ qua.
 
 set -euo pipefail
 
@@ -25,7 +30,7 @@ COMPOSE="${COMPOSE:-docker compose --env-file .env}"  # chuỗi lệnh — CỐ 
 MAKE="${MAKE_BIN:-make}"  # Makefile truyền MAKE_BIN (không dùng biến MAKE của make — xem chú thích target verify)
 HEALTH_URL="http://127.0.0.1:8000/api/health"
 WAIT_S=180
-KNOWN_GATES="023"  # 4d thêm "4": thêm chữ số ở đây + một nhánh `4)` trong run_gate
+KNOWN_GATES="0234"
 
 if ! [[ "$G" =~ ^[0-9]+$ ]]; then
   echo "G phải là chuỗi chữ số (vd 3, 23, 0) — nhận: '$G'" >&2
@@ -48,11 +53,33 @@ FAILED_NAME=""
 FAILED_OUT=""
 RESTORE=0
 RESTORED=0
+INGESTED=0
 STEP_DUR=0
 START_HMS="$(date +%H:%M:%S)"
+POWER_NOTE=""
 : >"$LOG"
 
 say() { printf '%s\n' "$*" | tee -a "$LOG"; }
+
+keep_awake() { # Q-4d-4 — chỉ macOS; mọi lỗi ở đây chỉ là ghi chú, không dừng verify
+  if [[ "$(uname -s 2>/dev/null || true)" != "Darwin" ]]; then
+    return 0
+  fi
+  if command -v caffeinate >/dev/null 2>&1; then
+    caffeinate -i -w $$ >/dev/null 2>&1 &
+    say "caffeinate: bật (giữ máy thức tới khi verify thoát)"
+    POWER_NOTE="caffeinate bật"
+  else
+    say "caffeinate: không có — bỏ qua"
+    POWER_NOTE="không có caffeinate"
+  fi
+  local batt
+  batt="$({ pmset -g batt 2>/dev/null || true; } | head -1)" || batt=""
+  if [[ "$batt" == *"Battery Power"* ]]; then
+    say "CẢNH BÁO: máy đang chạy PIN — cắm sạc, mở nắp (Mac ngủ giữa lượt → E2 turn_budget_exceeded)"
+    POWER_NOTE="$POWER_NOTE; CẢNH BÁO chạy pin"
+  fi
+}
 
 fmt_dur() {
   local s=$1
@@ -104,9 +131,9 @@ wait_health() {
   return 1
 }
 
-recreate() { # recreate <FAKE_SCENARIO> <FAKE_NODE_DELAY> — tạo lại backend+worker với biến shell (rỗng = không đặt)
+recreate() { # recreate <FAKE_SCENARIO> <FAKE_NODE_DELAY> <APPROVAL_SLA_MINUTES_DEV> — tạo lại backend+worker với biến shell (rỗng = không đặt)
   # shellcheck disable=SC2086  # $COMPOSE là chuỗi lệnh, cần tách từ
-  env FAKE_SCENARIO="$1" FAKE_NODE_DELAY="$2" \
+  env FAKE_SCENARIO="$1" FAKE_NODE_DELAY="$2" APPROVAL_SLA_MINUTES_DEV="$3" \
     $COMPOSE up -d --force-recreate --no-deps --wait --wait-timeout "$WAIT_S" backend worker || return 1
   wait_health || return 1
 }
@@ -124,12 +151,13 @@ check_app_env() { # chốt an toàn như gate2/gate3: APP_ENV của backend = de
 
 step_up() { "$MAKE" up || return 1; check_app_env || return 1; }
 step_ingest() { "$MAKE" ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated || return 1; }
-step_gate3() { recreate "" "" || return 1; "$MAKE" gate3 S=all || return 1; }
-step_gate2() { recreate approval 40 || return 1; "$MAKE" gate2 S=all || return 1; }
+step_gate3() { recreate "" "" "" || return 1; "$MAKE" gate3 S=all || return 1; }
+step_gate2() { recreate approval 40 "" || return 1; "$MAKE" gate2 S=all || return 1; }
+step_gate4() { recreate "" "" 2 || return 1; "$MAKE" gate4 S=all || return 1; }
 step_bench() { PYTHONPATH=backend uv run python -m tests.stack.bench_checkpoint || return 1; }
-step_restore() { # bước 8 — không biến shell nào đè FAKE_* → đúng cấu hình .env
+step_restore() { # bước 8 — không biến shell nào đè FAKE_* / APPROVAL_SLA_MINUTES_DEV → đúng cấu hình .env
   # shellcheck disable=SC2086
-  env -u FAKE_SCENARIO -u FAKE_NODE_DELAY \
+  env -u FAKE_SCENARIO -u FAKE_NODE_DELAY -u APPROVAL_SLA_MINUTES_DEV \
     $COMPOSE up -d --force-recreate --no-deps --wait --wait-timeout "$WAIT_S" backend worker || return 1
   wait_health || return 1
 }
@@ -148,19 +176,27 @@ restore() {
   fi
 }
 
+ensure_ingest() { # bước 4 — MỘT lần trước cổng đầu tiên cần KB fixture (3 hoặc 4)
+  local out=".verify/step4.out"
+  if ((INGESTED == 1)); then
+    return 0
+  fi
+  if run_step 4 "ingest KB fixture" "$out" step_ingest; then
+    add_row 4 ingest PASS "$STEP_DUR" "$({ grep -E 'KB không đổi|kb_version=' "$out" || true; } | tail -1 | cut -c1-90)"
+    INGESTED=1
+  else
+    add_row 4 ingest FAIL "$STEP_DUR" ""
+    fail 4 ingest "$out"
+    return 1
+  fi
+}
+
 run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả 1
   local out
   case "$1" in
     0) return 0 ;;
     3)
-      out=".verify/step4.out"
-      if run_step 4 "ingest KB fixture" "$out" step_ingest; then
-        add_row 4 ingest PASS "$STEP_DUR" "$({ grep -E 'KB không đổi|kb_version=' "$out" || true; } | tail -1 | cut -c1-90)"
-      else
-        add_row 4 ingest FAIL "$STEP_DUR" ""
-        fail 4 ingest "$out"
-        return 1
-      fi
+      ensure_ingest || return 1
       out=".verify/step5.out"
       if run_step 5 "gate3 (FAKE_SCENARIO không đặt)" "$out" step_gate3; then
         add_row 5 gate3 PASS "$STEP_DUR" "$(gate_totals "$out")"
@@ -177,6 +213,17 @@ run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả
       else
         add_row 6 gate2 FAIL "$STEP_DUR" "$(gate_totals "$out")"
         fail 6 gate2 "$out"
+        return 1
+      fi
+      ;;
+    4)
+      ensure_ingest || return 1
+      out=".verify/step10.out"
+      if run_step 10 "gate4 (FAKE_SCENARIO không đặt, APPROVAL_SLA_MINUTES_DEV=2)" "$out" step_gate4; then
+        add_row 10 gate4 PASS "$STEP_DUR" "$(gate_totals "$out")"
+      else
+        add_row 10 gate4 FAIL "$STEP_DUR" "$(gate_totals "$out")"
+        fail 10 gate4 "$out"
         return 1
       fi
       ;;
@@ -214,11 +261,13 @@ on_signal() {
   finish
   exit 130
 }
-trap on_signal INT TERM
+trap on_signal INT TERM HUP # HUP: đóng terminal / mất ssh giữa chừng vẫn trả stack về .env (soát 4d DỪNG 2)
 
 main() {
-  local out i
-  if test -f .env; then add_row 0 "chuẩn bị" PASS 0 ".env có"; else add_row 0 "chuẩn bị" PASS 0 "không có .env — dùng .env.example"; fi
+  local out i note
+  keep_awake
+  if test -f .env; then note=".env có"; else note="không có .env — dùng .env.example"; fi
+  add_row 0 "chuẩn bị" PASS 0 "$note${POWER_NOTE:+; $POWER_NOTE}"
 
   out=".verify/step1.out"
   if run_step 1 lint "$out" "$MAKE" lint; then add_row 1 lint PASS "$STEP_DUR" ""; else

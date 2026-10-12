@@ -193,6 +193,10 @@ class Settings(BaseSettings):
     )
     llm_cache_mode: Literal["default", "eval", "bypass"] = "default"  # P2 mục 8
     rediagnose_on_new_slot: bool = False  # D-20: tắt mặc định; bật → không khởi động (3g, Q-3g-7)
+    # Phase 5 (T23a, ML-GAN — D-44): quyền quyết định của model chặn tấn công ở B2 L3. `shadow` (mặc định): vẫn gọi
+    # /classify, ghi `p_mal` vào `screening`, nhưng không chặn/cho qua theo điểm — mọi câu không khớp mẫu xuống L4.
+    # `active`: ≥ TAU_BLOCK chặn, ≤ TAU_PASS qua. Giá trị khác → không khởi động. Node B2 đọc MỘT lần lúc dựng graph (backend VÀ worker).
+    b2_classifier_mode: Literal["shadow", "active"] = "shadow"
 
     # ---- Phase 4 ----
     # S0-P11 (Q-4-U A+, D-34): `true` → yêu cầu HÀNH ĐỘNG cũng phải qua cổng độ liên quan B9 như Phase 3 (ablation Phase 10,
