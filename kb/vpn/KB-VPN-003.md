@@ -1,6 +1,6 @@
 ---
 doc_id: KB-VPN-003
-version: 1
+version: 2
 request_type: vpn
 doc_type: troubleshooting
 owner: it_mgr01

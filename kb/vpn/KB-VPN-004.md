@@ -1,6 +1,6 @@
 ---
 doc_id: KB-VPN-004
-version: 1
+version: 2
 request_type: vpn
 doc_type: policy
 owner: it_mgr01
