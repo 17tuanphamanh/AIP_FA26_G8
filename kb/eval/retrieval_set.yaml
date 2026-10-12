@@ -1,0 +1,366 @@
+# Bo cau kiem tra truy hoi — dinh dang docs/spec/build/kb-mau/retrieval_set.mau.yaml
+# Cau nhap do LLM soan tu de muc, Duong soat, chua chinh sua cau; da kiem trung cum tu voi than bai.
+# Chua co cap cau restricted (mau dong 11: role l1 co dap an + role employee dap an rong) vi KB chua co bai
+#   restricted. Bai restricted dau tien vao KB phai di kem cap cau nay trong cung PR.
+# Viec treo: FG = 0 tren ca dai nguong 0,30–0,90 (make eval-rag ARGS=--sweep, 05/10) -> chua tach duoc nguong;
+#   can them cau am tinh kho truoc khi chon nguong D-22.
+version: 1
+kb_scope: [vpn, account, software, access]
+items:
+  - id: P001
+    query: "vpn mở port mấy"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001]
+
+  - id: P002
+    query: "vao vpn cty thi dung app gi, ban cu co dung duoc ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-001]
+
+  - id: P003
+    query: "lap win mới cài vpn cần chuẩn bị gì trc ko ad"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-002]
+
+  - id: P004
+    query: "Em vừa cài xong phần mềm vpn trên máy công ty theo lời anh trưởng nhóm nhưng mở ra không biết bấm vào đâu để vào mạng nội bộ, có ai chỉ em từng bước được không ạ"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-002]
+
+  - id: P005
+    query: "vpn báo lổi 809 là bị gì vậy"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+
+  - id: P006
+    query: "mình đang đi công tác, wifi khách sạn vẫn lướt web bình thường mà bật vpn lên thì cứ quay quay rồi báo không kết nối được, ở nhà thì vẫn vào được, giờ phải làm sao"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-003]
+
+  - id: P007
+    query: "cert vpn hạn bao lâu"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-004]
+
+  - id: P008
+    query: "may cu bi hong, doi sang may moi thi chung chi vpn lay lai kieu gi"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-004]
+
+  - id: P009
+    query: "mới mua lap, muốn dùng vpn thì có phải đki gì ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-005]
+
+  - id: P010
+    query: "Cho em hỏi khi đăng ký máy mới để dùng VPN thì có cần chờ ai phê duyệt không, và thường mất bao lâu ạ?"
+    intent: vpn
+    role: employee
+    expected_doc_ids: [KB-VPN-005]
+
+  - id: P011
+    query: "quên mk đăng nhập rồi, tự reset dc ko ad"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-001]
+
+  - id: P012
+    query: "vua duoc reset mat khau xong, gio dang nhap bang mk nao, co phai doi lai ko"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-001]
+
+  - id: P013
+    query: "tk bị khoá rồi"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-002]
+
+  - id: P014
+    query: "Mình nghỉ thai sản 6 tháng, hôm nay đi làm lại thì đăng nhập máy không được, báo tài khoản không còn hoạt động, mình cần làm gì để dùng lại ạ"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-002]
+
+  - id: P015
+    query: "Em quên mật khẩu tài khoản admin dùng để quản trị server, cho em hỏi thủ tục lấy lại như thế nào ạ?"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-003]
+
+  - id: P016
+    query: "sao rết pass tài khoản quản trị mà củng phải đợi duyệt vậy, gấp lắm"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-003]
+
+  - id: P017
+    query: "hôm qua mình đổi mật khẩu outlook trên điện thoại, sáng nay mở máy ở văn phòng gõ mật khẩu mới thì không vào được, gõ mật khẩu cũ lại vào được, vậy là sao, mình đổi nhầm chỗ à"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-004]
+
+  - id: P018
+    query: "loi mat khau muon nho IT xu ly thi phai gui kem nhung gi"
+    intent: account
+    role: employee
+    expected_doc_ids: [KB-ACC-004]
+
+  - id: P019
+    query: "list phần mềm được cài?"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-001]
+
+  - id: P020
+    query: "cài mấy pm thông dụng kiểu trình duyệt, giải nén có cần xin duyệt ko"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-001]
+
+  - id: P021
+    query: "phan mem minh can khong co trong danh sach cua cty thi xin cai kieu gi"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-002]
+
+  - id: P022
+    query: "Phòng mình cần một phần mềm thiết kế phải mua bản quyền, sếp đồng ý rồi, giờ gửi yêu cầu lên thì thường chờ khoảng bao lâu mới được cài, có cách nào nhanh hơn không"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-002]
+
+  - id: P023
+    query: "cài phần mềm toàn bị lỗi"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-003]
+
+  - id: P024
+    query: "cài phần mền bị lỗi thì báo IT nhửng thông tin j"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-003]
+
+  - id: P025
+    query: "muốn lên bản mới của pm đang dùng thì làm sao ad"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-004]
+
+  - id: P026
+    query: "Phần mềm em đã được duyệt cài từ trước, giờ có bản mới thì em có phải xin duyệt lại không ạ?"
+    intent: software
+    role: employee
+    expected_doc_ids: [KB-SW-004]
+
+  - id: P027
+    query: "cty minh co nhung o dia chung nao de luu tai lieu"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-001]
+
+  - id: P028
+    query: "Mình ở phòng kinh doanh, cần mở mấy file báo giá nằm trong thư mục của phòng kế toán để đối chiếu cuối tháng, giờ phải xin quyền ở đâu và điền những gì"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-001]
+
+  - id: P029
+    query: "xin quyền folder ai duyệt"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-002]
+
+  - id: P030
+    query: "folder mật thì xin quyền có khác folder thường ko"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-002]
+
+  - id: P031
+    query: "quyền vào thư mục đc cấp thì xài đến khi nào hết hạng"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-003]
+
+  - id: P032
+    query: "Tuần sau quyền vào thư mục dự án của mình hết rồi mà dự án còn kéo dài thêm 2 tháng nữa, mình muốn dùng tiếp thì phải làm thế nào, có cần ai duyệt lại không"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-003]
+
+  - id: N001
+    query: "cài vpn cty trên ubuntu 22.04 được ko"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N002
+    query: "điện thoại android có vào vpn công ty được không"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N003
+    query: "bên đối tác sang làm dự án cùng, có cấp vpn cho họ vào hệ thống mình được không"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N004
+    query: "vpn vẫn kết nối được mà chậm kinh khủng, tải file nội bộ mất cả tiếng, cứ 15 phút lại tự ngắt"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N005
+    query: "bat vpn roi co xem youtube duoc ko hay phai tat"
+    intent: vpn
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N006
+    query: "muốn bật xác minh 2 bước cho tk email thì làm sao"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N007
+    query: "tên hiển thị trong email bị sai dấu, sửa thế nào"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N008
+    query: "tuần sau có bạn mới vào team, ai tạo tài khoản cho bạn ấy"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N009
+    query: "mật khẩu bao nhiêu ngày thì bắt buộc phải đổi"
+    intent: account
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N010
+    query: "cài office báo lỗi 1603 là sao"
+    intent: software
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N011
+    query: "cài phần mềm cty lên máy tính riêng ở nhà được ko"
+    intent: software
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N012
+    query: "muốn gỡ phần mềm không dùng nữa ra khỏi máy thì có phải báo ai không"
+    intent: software
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N013
+    query: "lỡ tay xóa mất file trong thư mục chung, lấy lại được không"
+    intent: access
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N014
+    query: "xin quyền vào hệ thống CRM để xem khách hàng thì gửi cho ai"
+    intent: access
+    role: employee
+    expected_doc_ids: []
+    near_topic: true
+
+  - id: N015
+    query: "máy in tầng 2 hết mực rồi"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N016
+    query: "đặt phòng họp chiều mai ở đâu"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N017
+    query: "man hinh may tinh bi soc ngang"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N018
+    query: "xin nghỉ phép 3 ngày gửi cho ai"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N019
+    query: "tháng này lương bị trừ thuế tncn nhiều quá, hỏi ai"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N020
+    query: "wifi tầng 5 yếu quá"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N021
+    query: "chuột bị liệt nút trái, xin cái mới"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: N022
+    query: "điều hòa phòng họp không mát"
+    intent: out_of_scope
+    role: employee
+    expected_doc_ids: []
+    near_topic: false
+
+  - id: P033
+    query: "tháng sau em chuyển sang phòng marketing thì quyền thư mục phòng cũ có bị mất ko"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-004]
+
+  - id: P034
+    query: "Mình vừa được điều chuyển từ phòng kế toán sang phòng kinh doanh từ đầu tuần mà vẫn mở được thư mục của phòng kế toán cũ, như vậy có sao không, có cần báo ai không"
+    intent: access
+    role: employee
+    expected_doc_ids: [KB-ACS-004]

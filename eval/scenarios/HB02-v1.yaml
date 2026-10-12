@@ -1,0 +1,32 @@
+id: HB02-v1
+family: HB02
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- mình đang có quyền truy cập những thư mục nào vậy
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+    target_account_privilege: standard_user
+    target_is_service_account: false
+labels:
+  annotator_1: null
+  annotator_2: null
