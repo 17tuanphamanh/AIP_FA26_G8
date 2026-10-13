@@ -7,8 +7,15 @@
 3. LLM fast `b03_classify` (`ClassifyOut`): `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded`
    → E2 `llm_unavailable`; hết hạn cả lượt (ở ml hoặc LLM) → E2 `turn_budget_exceeded`.
 4. Thứ tự kiểm CỐ ĐỊNH (mỗi ca E1 đúng một `reason_detail`): không ý nào trong phạm vi → `out_of_scope` → có ≥ 2 ý (đếm
-   MỌI ý, kể cả ý ngoài phạm vi — Q-3f-6; câu xã giao không phải ý, prompt v2) → `multi_intent_not_enabled` → confidence <
+   MỌI ý, kể cả ý ngoài phạm vi — Q-3f-6; câu xã giao không phải ý, prompt v2) → B4/B5 nhiều ý (dưới) → confidence <
    `TAU_INTENT` → `intent_low_confidence` → intent ∉ `ENABLED_INTENTS` → `intent_not_enabled`.
+   **Nhiều ý (Phase 5 T20b P2, P3; D-49; phase5 5.2.2–5.2.3):** phán TỪNG ý theo bảng 5.2.2 (`out_of_scope` → `span` rỗng/không
+   nằm trong câu → `split_span_invalid` → confidence thấp → intent chưa bật → chạy được). ≥ 1 ý chạy được → tách MỌI ý: mỗi ý
+   `effects.once("child_create", tickets.create_child, sub=cid)` (dòng `tickets` con, id `<cha>-<i>`), `mark_parent_once`, `goto`
+   `S_CLASSIFYING → S_CLASSIFYING` (`step="B5"`, `split_into_<n>_children`) → `parent_wait` với `is_parent`, `children`, `child_seeds`
+   (seed bền TRƯỚC khi con chạy — `parent_wait` khởi động con). Slot của ý: `sanitize_slots(text=span của ý)`; `target_user` bị bỏ →
+   `ctx_flags.target_is_other` của CHÍNH con đó. 0 ý chạy được → cả câu E1 (`step="B4"`): `reason_detail` của ý ĐẦU TIÊN trong phạm
+   vi theo bảng 5.2.2 (Q-T20b-2 = B — không còn `multi_intent_not_enabled`). Điểm log 1 của cha thêm `children` (số), `verdicts`.
 5. Còn lại: `sanitize_slots` (3-Q1; P1, P2, Q-3f-3) → `S_DIAGNOSING` → B6, `facts={}` (B3 KHÔNG BAO GIỜ ghi fact — G-01).
    `span` chỉ giữ khi là đoạn con của câu người dùng (Q-3f-4).
 6. Q-T20a-4 (Phase 5 T20a, duyệt DỪNG 1): `target_user` bị `sanitize_slots` bỏ (BẤT KỲ lý do — sai mẫu như họ tên, không có trong
@@ -21,20 +28,25 @@ slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `sp
 slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi khác (`ScriptExhausted`, `MlContractError`…) → E9.
 """
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Final
 
 from app.core.turn_budget import TurnBudgetExceeded
+from app.domain.children import child_id
 from app.domain.exit_codes import ExitCode
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
-from app.domain.states import S_DIAGNOSING, S_ESCALATED
+from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
+from app.graph import effects
+from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
 from app.guard.normalize import l0
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
-from app.llm.schemas import ClassifyOut
+from app.llm.schemas import ClassifyOut, IntentItem
 
 RECENT_MESSAGES = 4  # B03 mục 2: ≤ 4 tin gần nhất
+RUNNABLE: Final = "runnable"  # kết quả bảng 5.2.2 #5 — ý chạy được (các kết quả khác là `reason_detail` E1 của con)
 
 
 def _point1() -> dict[str, Any]:
@@ -99,12 +111,8 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope", audit_detail=info,
                 exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="out_of_scope",
             )  # fmt: skip
-        if len(out.intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — Phase 5 → B5 tách ticket con
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B4", event="multi_intent_not_enabled",
-                audit_detail=info, exit_code=ExitCode.E1.value, reasoning_loops=loops,
-                escalation_reason_detail="multi_intent_not_enabled",
-            )  # fmt: skip
+        if len(out.intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — T20b: phán từng ý → B5 tách ticket con
+            return await _split(state, out.intents, text, loops, info)
         it = in_scope[0]
         info["intent"], info["confidence"] = it.type, it.confidence
         if it.confidence < deps.constants.TAU_INTENT:  # D-27: không chắc thì không đoán
@@ -127,6 +135,84 @@ def make(deps: NodeDeps) -> NodeFn:
             state, S_DIAGNOSING, next_node="b06_diagnose", step="B3", event="intent_classified", audit_detail=info,
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
             **flags,
+        )  # fmt: skip
+
+    def _verdict(it: IntentItem, text: str) -> str:
+        """Bảng 5.2.2 — thứ tự kiểm CỐ ĐỊNH, mỗi ý đúng một kết quả (hằng trong `VERDICTS`)."""
+        if it.type == "out_of_scope":
+            return "out_of_scope"
+        if not it.span.strip() or not phrase_in_text(it.span, text):
+            return "split_span_invalid"
+        if it.confidence < deps.constants.TAU_INTENT:
+            return "intent_low_confidence"
+        if it.type not in deps.enabled_intents:
+            return "intent_not_enabled"
+        return RUNNABLE
+
+    def _seed(state: Any, cid: str, it: IntentItem, verdict: str, text: str, loops: int) -> dict[str, Any]:
+        """Seed của con (bảng 5.2.3) — KHÔNG `requester_context` (ChildOps đọc lại từ state cha), KHÔNG `risk`/`action`, `facts={}`
+        (G-01). Slot chỉ lấy trong `span` của CHÍNH ý (P2 — chống "mượn" đích của ý khác)."""
+        span_ok = bool(it.span.strip()) and phrase_in_text(it.span, text)
+        seed: dict[str, Any] = {
+            "ticket_id": cid, "parent_ticket_id": state["ticket_id"], "session_id": state.get("session_id"),
+            "redacted_request": it.span if span_ok else state["redacted_request"], "status": S_CLASSIFYING,
+            "span": it.span if span_ok else None, "slots": {}, "facts": {}, "conversation": [], "clarification_turns": 0,
+            "off_topic_streak": 0, "reasoning_loops": loops, "is_parent": False, "children": [],
+        }  # fmt: skip
+        if verdict != "out_of_scope":
+            seed.update(intent=it.type, intent_confidence=it.confidence)
+        if verdict != RUNNABLE:
+            # `verdict` ∈ hằng của `_verdict` (bảng 5.2.2) — `ChildOps` kiểm lại ∈ `E1_REASONS` (4 hằng bảng 5.2.2) và `exit_code == "E1"`
+            # trước khi gieo (test AST chỉ quét tham số `escalation_reason_detail=` dạng hằng)
+            seed["exit_code"], seed["escalation_reason_detail"] = ExitCode.E1.value, verdict
+            return seed
+        raw = {**it.slots, **({"action": it.action_hint} if it.action_hint else {})}
+        slots, dropped = sanitize_slots(deps.slots.intents[it.type], raw, text=l0(it.span))  # P2: text = span của ý
+        seed["slots"] = slots
+        if "target_user" in dropped:  # Q-T20a-4 áp TỪNG con
+            seed["ctx_flags"] = {"target_is_other": True}
+        return seed
+
+    async def _split(state: Any, intents: Sequence[IntentItem], text: str, loops: int, info: dict[str, Any]) -> dict[str, Any]:
+        """B4/B5 (P2, P3; D-49): ≥ 1 ý chạy được → tách MỌI ý; 0 ý chạy được → cả câu E1 (Q-T20b-2 = B)."""
+        verdicts = [_verdict(it, text) for it in intents]
+        info.update(children=len(intents), verdicts=verdicts)
+        if RUNNABLE not in verdicts:
+            return await _whole_e1(state, intents, verdicts, loops, info)
+        parent, run = state["ticket_id"], current_run()
+        seeds: dict[str, dict[str, Any]] = {}
+        for i, (it, verdict) in enumerate(zip(intents, verdicts, strict=True), start=1):
+            cid = child_id(parent, i)
+            seeds[cid] = _seed(state, cid, it, verdict, text, loops)
+            await effects.once(
+                state, "child_create", deps.tickets.create_child, cid, parent_id=parent,
+                redacted_request=seeds[cid]["redacted_request"], created_at=run.clock.now(), step="B5", sub=cid,
+            )  # fmt: skip
+        await deps.tickets.mark_parent_once(parent)  # D-30 — idempotent
+        return await goto(
+            state, S_CLASSIFYING, next_node="parent_wait", step="B5", event=f"split_into_{len(seeds)}_children",
+            audit_detail=info, is_parent=True, children=list(seeds), child_seeds=seeds, reasoning_loops=loops,
+        )  # fmt: skip
+
+    async def _whole_e1(
+        state: Any, intents: Sequence[IntentItem], verdicts: Sequence[str], loops: int, info: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Q-T20b-2 = B: `reason_detail` của Ý ĐẦU TIÊN trong phạm vi theo bảng 5.2.2 (ý ngoài phạm vi đã loại ở nhánh trước)."""
+        it, verdict = next((it, v) for it, v in zip(intents, verdicts, strict=True) if it.type != "out_of_scope")
+        info["intent"], info["confidence"] = it.type, it.confidence
+        if verdict == "split_span_invalid":
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B4", event="split_span_invalid", audit_detail=info,
+                exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="split_span_invalid",
+            )  # fmt: skip
+        if verdict == "intent_low_confidence":
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_low_confidence", audit_detail=info,
+                exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="intent_low_confidence",
+            )  # fmt: skip
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_not_enabled", audit_detail=info,
+            exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="intent_not_enabled",
         )  # fmt: skip
 
     return b03_classify

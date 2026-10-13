@@ -78,6 +78,7 @@ from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
+from app.notify.child import ChildAwareNotifier
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ports import RagPort
@@ -219,7 +220,7 @@ async def _open(
     tickets = SqlTicketStore(engines.main)
     approvals = SqlApprovals(engines.main)
     deps = NodeDeps(
-        notifier=LoggingNotifier(), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
+        notifier=ChildAwareNotifier.on_engine(engines.main, LoggingNotifier()), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),

@@ -159,6 +159,12 @@ def load_presets(directory: Path, registry: PromptRegistry) -> dict[str, dict[st
     return presets
 
 
+def child_preset(parent_tag: str | None, child_id: str) -> str | None:
+    """Phase 5 T20b P13: preset của ticket CON (câu = `span`, không thẻ) = thẻ của CHA + hậu tố `-<i>` (`i` = đoạn sau dấu `-` cuối của
+    `child_id`): `tc34` + `<cha>-2` → `tc34-2`. Cha không thẻ → None (preset `default`)."""
+    raise NotImplementedError("T20b S14")
+
+
 class PresetResolver(Protocol):
     async def tag_for(self, trace: TraceParent | None) -> str | None: ...
 

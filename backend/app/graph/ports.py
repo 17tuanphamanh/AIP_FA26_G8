@@ -3,7 +3,7 @@
 `backend/tests/fakes/graph.py` để test graph không cần Postgres.
 """
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -11,10 +11,18 @@ from typing import Any, Protocol
 
 from app.approval.store import ApprovalRow, InboxRow
 from app.db.identity import LiveSession
-from app.db.runtime import DueReminder, DueWait, OpenTurn, ReminderTarget, WaitKind
+from app.db.runtime import (
+    DueReminder,
+    DueWait,
+    OpenTurn,
+    OrphanChild,
+    ReminderTarget,
+    WaitKind,
+)
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.approval import ReminderN
+from app.domain.children import ChildProgressRow, ChildView
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
 from app.tools.registry import ToolResult
@@ -112,6 +120,18 @@ class DeadlineStore(Protocol):
         """4c P3 (Q-4c-2 = A): phiếu `pending`, `deadline > now`, đã qua mốc 1, còn cột nhắc NULL. Chỉ đọc."""
         ...
 
+    async def parents_to_wake(self, limit: int) -> list[str]:
+        """Phase 5 T20b P12 (a) (DỪNG 2), chỉ đọc DB: cha `is_parent`, `final_state IS NULL` mà MỌI con đã dừng theo DB (có `final_state`
+        hoặc có notice chưa gửi `needs ≠ none`) HOẶC có con chưa có dòng `turns` (chưa khởi động)."""
+        ...
+
+    async def orphan_children(self, limit: int) -> list[OrphanChild]:
+        """Phase 5 T20b P12 (b) (DỪNG 2; mở rộng Q-T20b-5 (iii)): con `final_state IS NULL` mà cha ĐÃ có `final_state`, có notice
+        `needs ≠ none` (ĐÃ gửi hay chưa — con đã nhận digest rồi đứng chờ cũng tính) — `needs` = của notice đó mới nhất; con đang có phiếu
+        duyệt `pending` → bỏ (chờ L1, không chờ người dùng; giao `timeout` sẽ chỉ ra `late_event` mỗi chu kỳ). Worker không đọc
+        checkpoint."""
+        ...
+
     async def mark_reminder_once(self, approval_id: str, n: ReminderN, now: datetime) -> ReminderTarget | None:
         """Đặt `reminder_n_at = now` NẾU phiếu còn `pending`, cột đó NULL, chưa tới hạn — trả người nhận khi bên này thắng, None
         khi không (worker khác đã đặt / phiếu đã đóng / quá hạn). Chỉ gửi khi có dòng."""
@@ -172,6 +192,31 @@ class TicketStore(TicketReader, Protocol):
         """Ghi nếu `final_state IS NULL`; luôn trả dòng ĐANG CÓ (vừa ghi hoặc từ lần trước)."""
         ...
 
+    # ---- Phase 5 T20b (P3, P7; TQ-6): ticket con — B5 tạo, `parent_wait` đối soát từ DB (D-17) -----------------------------
+
+    async def create_child(self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime) -> str:
+        """Dòng `tickets` của con: chép `requester_id/role/dept`, `session_id` từ dòng cha; `parent_ticket_id = parent_id`; KHÔNG dòng
+        `turns` (lượt đầu do `ChildOps.start` mở). CHỈ gọi qua `effects.once("child_create", sub=child_id)` (D-18). Trả `child_id`."""
+        ...
+
+    async def mark_parent_once(self, ticket_id: str) -> bool:
+        """`tickets.is_parent = true` chỉ khi đang false (idempotent) — True khi vừa đổi (D-30: chỉ số lọc `is_parent = false`)."""
+        ...
+
+    async def children_view(
+        self, parent_id: str, children: Sequence[str], *, delivered_round: int | None = None
+    ) -> list[ChildView]:
+        """Theo thứ tự `children`: `final_state` (None khi con còn lượt `turns` mở — B20 của con chưa xong) + notice CHƯA gửi
+        (`delivered_at IS NULL`, cũ → mới) — chỉ DB (D-17).
+        `delivered_round=n`: thay vào đó CHỈ notice đã gửi ở vòng `n` — `parent_wait` chạy lại cùng lượt sau khi tin vòng `n` đã gửi
+        (`deliver_round` đã commit, checkpoint chưa có) dựng lại ĐÚNG tin đó, không gom notice mới tới sau (soát S10 B-iii)."""
+        ...
+
+    async def deliver_round(self, parent_id: str, round_no: int, notice_ids: Sequence[int], at: datetime) -> str:
+        """`delivered_round = round_no`, `delivered_at = at` cho đúng `notice_ids` (của `parent_id`, còn chưa gửi) — trong transaction
+        của `effects.once("notify_user", sub=f"round:{n}")` (P7). Trả ref của tin tổng hợp."""
+        ...
+
 
 class EscalationStore(Protocol):
     """`db/escalations.SqlEscalationStore.create` — chỉ gọi qua `effects.once("escalation_create")`."""
@@ -205,6 +250,11 @@ class TicketRepo(TicketStore, Protocol):
         self, ticket: NewTicket, *, turn_id: str, security_events: NewEvents = ()
     ) -> None:
         """`security_events` (event_type, detail) INSERT cùng transaction (3e, phase3 mục 8.3)."""
+        ...
+
+    async def children_progress_rows(self, parent_id: str, children: Sequence[str]) -> list[ChildProgressRow]:
+        """Phase 5 T20b P11 (DỪNG 2): mỗi con (theo thứ tự `children`) — `final_state`, có phiếu `approvals.status='pending'`, có notice
+        chưa gửi `needs ≠ none` của `parent_id`. Chỉ DB."""
         ...
 
 

@@ -41,7 +41,8 @@ lượt còn mở, snapshot rỗng → `recover` chạy state đầu với CÙNG
 đã có state (recover chạy trước, hoặc lượt đầu chết giữa chừng) → không làm gì: không bao giờ chạy lại
 từ START đè lên thread đang có.
 
-**`wake_parent` sau khi nhả khoá** (2b-Q7, lệch mã giả B20): thread con kết thúc → runner đánh thức cha
+**`wake_parent` sau khi nhả khoá** (2b-Q7, lệch mã giả B20): thread con kết thúc (Phase 5 T20b P6: hoặc dừng ở `clarify_wait`/
+`confirm_wait`) → runner đánh thức cha
 khi KHÔNG còn giữ khoá con (gọi trong B20 có thể deadlock: con giữ khoá con chờ khoá cha, cha chuyển sự
 kiện xuống con). Chỉ là tín hiệu (D-17): lỗi thì log, cha tự đối soát ở `parent_wait` (Phase 5 thêm job
 đối soát cha khi mọi con đã có `final_state`).
@@ -49,7 +50,7 @@ kiện xuống con). Chỉ là tín hiệu (D-17): lỗi thì log, cha tự đ�
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -83,6 +84,7 @@ log = logging.getLogger(__name__)
 EXECUTE_NODE = "b17_execute"
 DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module
 PARENT_WAIT = "parent_wait"
+CHILD_STOPS = frozenset({None, "clarify_wait", "confirm_wait"})  # T20b P6: con kết thúc (None) / dừng chờ người dùng → đánh thức cha
 # Worker không biết lời gọi ghi đã tới hệ thống đích hay chưa (có thể có `begun`) → cùng câu chốt với B17 bước 0 (DỪNG 3 3h,
 # h15b): L2 không được hiểu là "chưa làm". `reason_detail` giữ `execution_interrupted` (Q-3h-3).
 INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (worker không chạy lại B17): {MAY_HAVE_WRITTEN}."
@@ -136,6 +138,11 @@ class Runner:
         self._txlog = txlog
         self._turn_budget = timedelta(seconds=turn_budget_s)
         self._margin_s = safety_margin_s
+        from app.graph.children import (
+            ChildOps,  # import cục bộ: children.py tham chiếu Runner (T20b P4)
+        )
+
+        self.children = ChildOps(self)
 
     # ---- tiện ích -----------------------------------------------------------------------------
 
@@ -152,6 +159,7 @@ class Runner:
         return RunContext(
             turn_id=turn_id, trace_id=new_trace_id(), audit=self.audit, effects=self._effects,
             spans=self._spans, clock=self.clock, txlog=self._txlog, rediagnose_on_new_slot=self._rediagnose,
+            children=self.children,
         )  # fmt: skip
 
     def _deadline(self) -> TurnDeadline:
@@ -197,6 +205,8 @@ class Runner:
             snap = await self.snapshot(ticket_id)
             if snap.values:
                 return None  # không chạy lại từ START đè lên thread đang có
+            if await self._unstarted_child(ticket_id, turn_id):
+                return None
             result = await self._run_initial(ticket_id, turn_id)
         await self.after_turn(result)
         return result
@@ -208,6 +218,14 @@ class Runner:
         if row is None:
             raise LookupError(f"không có dòng tickets {ticket_id}")
         return row
+
+    async def _unstarted_child(self, ticket_id: str, turn_id: str) -> bool:
+        """T20b P4: ticket CON chưa có thread → đóng lượt, không chạy gì (không bao giờ chạy con từ B1) — khởi động con là việc của
+        cha (`parent_wait` → `ChildOps.start_missing`, một đường code). Gọi khi đang giữ khoá và snapshot rỗng."""
+        if (await self._row(ticket_id)).parent_ticket_id is None:
+            return False
+        await self._turns.end(turn_id, self.clock.now())
+        return True
 
     async def _run_initial(self, ticket_id: str, turn_id: str) -> RunResult:
         row = await self._row(ticket_id)
@@ -245,6 +263,8 @@ class Runner:
                 return None
             snap = await self.snapshot(ticket_id)
             node = _pending(snap)
+            if not snap.values and await self._unstarted_child(ticket_id, turn_id):
+                return None
             if not snap.values and attempts <= self._max_recover:
                 # chết sau `tickets.create`, trước checkpoint đầu: chạy state đầu, GIỮ turn_id
                 result = await self._run_initial(ticket_id, turn_id)
@@ -331,9 +351,10 @@ class Runner:
     # ---- ticket con → cha (D-17) --------------------------------------------------------------
 
     async def after_turn(self, result: RunResult) -> None:
-        """Gọi SAU khi nhả khoá ticket (2b-Q7). Thread con đã kết thúc → đánh thức cha."""
+        """Gọi SAU khi nhả khoá ticket (2b-Q7). Thread con đã kết thúc HOẶC dừng chờ người dùng (`clarify_wait`/`confirm_wait` —
+        T20b P6, P1 §6.1) → đánh thức cha. Dừng ở `approval_wait` (chờ L1) không phải điểm dừng (D-31) → không đánh thức."""
         parent = result.values.get("parent_ticket_id")
-        if result.waiting_at is not None or not parent:
+        if result.waiting_at not in CHILD_STOPS or not parent:
             return
         try:
             await self.wake_parent(parent)
@@ -363,16 +384,36 @@ class Runner:
     async def _invoke(self, ticket_id: str, turn_id: str, graph_input: Any, cfg: RunnableConfig) -> None:
         async with self._sem:
             with bind_run(self._context(turn_id)):
-                try:
-                    await self.graph.ainvoke(graph_input, cfg, durability=DURABILITY)
-                except GraphRecursionError:
-                    log.error("ticket %s vượt recursion_limit → E9", ticket_id)
-                    snap = await self.graph.aget_state(cfg)
-                    await self._divert_bound(
-                        ticket_id, snap.values, as_node=snap.next[0] if snap.next else AUDIT,
-                        step="runner", event="recursion_limit", exit_code=ExitCode.E9.value,
-                        escalation_note="Vượt giới hạn số bước của graph (recursion_limit)",
-                    )  # fmt: skip
+                await self.invoke_bound(ticket_id, graph_input)
+
+    async def invoke_bound(self, ticket_id: str, graph_input: Any) -> None:
+        """`ainvoke` trong RunContext ĐÃ gắn (lượt thường qua `_invoke`; lượt con lồng qua `run_nested_locked`)."""
+        cfg = self.config(ticket_id)
+        try:
+            await self.graph.ainvoke(graph_input, cfg, durability=DURABILITY)
+        except GraphRecursionError:
+            log.error("ticket %s vượt recursion_limit → E9", ticket_id)
+            snap = await self.graph.aget_state(cfg)
+            await self._divert_bound(
+                ticket_id, snap.values, as_node=snap.next[0] if snap.next else AUDIT,
+                step="runner", event="recursion_limit", exit_code=ExitCode.E9.value,
+                escalation_note="Vượt giới hạn số bước của graph (recursion_limit)",
+            )  # fmt: skip
+
+    async def run_nested_locked(
+        self, ticket_id: str, *, event_type: str, session_id: str | None, work: Callable[[str], Awaitable[None]]
+    ) -> RunResult:
+        """Lượt LỒNG của ticket con trong lượt của cha (T20b P4, P8; TQ-3) — gọi khi ĐANG giữ khoá CON (cha giữ khoá cha): dòng
+        `turns` mới, `RunContext` + hạn lượt MỚI, KHÔNG lấy `Semaphore` (cha đang giữ một chỗ), KHÔNG `after_turn` (cha tự đối soát
+        ngay sau — tránh deadlock 2b-Q7). `work(turn_id)` chạy graph của con. Lỗi nổi ra ngoài → lượt con để MỞ (worker phục hồi)."""
+        turn_id = new_turn_id()
+        await self._turns.start(
+            turn_id=turn_id, ticket_id=ticket_id, session_id=session_id, event_type=event_type, at=self.clock.now()
+        )
+        with bind_turn_deadline(self._deadline()), bind_run(self._context(turn_id)):
+            await work(turn_id)
+        await self._turns.end(turn_id, self.clock.now())
+        return await self._result(ticket_id, turn_id)
 
     async def _divert(
         self, ticket_id: str, turn_id: str, values: Mapping[str, Any], **kwargs: Any

@@ -38,6 +38,20 @@ def expected_status(due: DueWait) -> str:
     return S_CONFIRMING if due.is_parent else _EXPECTED[due.kind]
 
 
+PARENT_RECONCILE_INTERVAL = 60  # giây — Phase 5 T20b P12: lưới an toàn của vòng cha (B03 §7, hằng code, không biến .env)
+
+
+@dataclass
+class ParentScanReport:
+    """Phase 5 T20b P12: `woken` = lời gọi `wake_parent` đã chạy (kể cả no-op); `timeouts` = con mồ côi đã nhận `timeout`."""
+
+    woken: int = 0
+    timeouts: int = 0
+    late: int = 0
+    busy: int = 0
+    failed: int = 0
+
+
 @dataclass
 class ScanReport:
     delivered: int = 0
@@ -134,3 +148,9 @@ class WorkerJobs:
             except Exception:
                 log.exception("recover ticket %s lỗi", turn.ticket_id)
         return recovered
+
+    async def scan_parents(self) -> ParentScanReport:
+        """Phase 5 T20b P12 (mỗi `PARENT_RECONCILE_INTERVAL` giây, DỪNG 2): (a) `deadlines.parents_to_wake` → `runner.wake_parent` (no-op
+        nếu cha không ở `parent_wait`); (b) `deadlines.orphan_children` → `deliver_event(con, S_CLARIFYING|S_CONFIRMING theo needs,
+        {"kind": "timeout"}, source="worker")`. Mỗi mục try/except riêng (một ticket lỗi không chặn ticket khác)."""
+        raise NotImplementedError("T20b S13")

@@ -2,7 +2,7 @@
 
 *Thuộc bộ `build/`. Đây là **nơi duy nhất** theo dõi trạng thái quyết định. Nhóm **tự quyết** mọi mục (không có vòng hỏi GVHD); mục nào đổi hành vi hoặc công nghệ so với tài liệu gốc thì **báo cáo** GVHD trong báo cáo tuần. `huong-dan-xay-dung-he-thong-2.md` Phase 0 gọi file này là `decisions.md`. Khi một mục được chốt: sửa cột "Trạng thái" ở đây, rồi áp patch tương ứng (nếu có) trong `claude/bo-sung-bo-tai-lieu-build.md`.*
 
-*Cập nhật: 13/10/2026 (D-48 thực thi/hoàn tác theo bước — spec T24; T20a đóng; D-47 hợp đồng `Action` 4 intent — spec T20a; §1.1 điều kiện R01–R15 chốt theo T22a + R10 bổ sung ở T20a; D-35, D-41 chữ chốt). Trước đó 10/10/2026 (D-44…D-46 + Q-5-7…9 — kế hoạch Phase 5 sau T22a, phiên PHAN-TICH-P5; 09/10: Q-5-6 `procedure_doc` theo K2 thật; vào repo cùng spec Phase 5 ở chặng T22a; trước đó 03/10: cổng 4 đạt — §4.1 dòng 4d; 01/10: D-35…D-43 Phase 5–6, Q-5-1…5, Q-6-1…9).*
+*Cập nhật: 13/10/2026 (D-49 ticket con vào B6 + tách ý lẫn — spec T20b; T24 đóng `457239d`; D-48 thực thi/hoàn tác theo bước — spec T24; T20a đóng; D-47 hợp đồng `Action` 4 intent — spec T20a; §1.1 điều kiện R01–R15 chốt theo T22a + R10 bổ sung ở T20a; D-35, D-41 chữ chốt). Trước đó 10/10/2026 (D-44…D-46 + Q-5-7…9 — kế hoạch Phase 5 sau T22a, phiên PHAN-TICH-P5; 09/10: Q-5-6 `procedure_doc` theo K2 thật; vào repo cùng spec Phase 5 ở chặng T22a; trước đó 03/10: cổng 4 đạt — §4.1 dòng 4d; 01/10: D-35…D-43 Phase 5–6, Q-5-1…5, Q-6-1…9).*
 
 **Nguyên tắc chốt (áp cho mục 1, 2, 3):**
 
@@ -118,9 +118,9 @@ Mã Q giữ nguyên để không vỡ tham chiếu. Mỗi mục: bản **xây tr
 
 **Q-6-8 (`full_auto`) — chốt C (10/10/2026):** B12 không dựng `RiskDecision`; điểm log 4 ghi `decided_by = NULL`, `detail = {strategy: "full_auto", route: "AUTO"}`; `risk = None`; đi `S_EXECUTING`. B17 giữ nguyên kiểm lại luật (ca `approval_required`/`deny` → E5). Không migration, không nới B17. `audit_check` chỉ chấp nhận `decided_by` NULL khi `detail.strategy = "full_auto"`. Chỉ chạy khi `EVAL_MODE`. (phase6 v0.9 mục 6.1)
 
-**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, **D-38**, **D-41**, **D-43**, **D-44**, **D-45**, **D-46**, cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
+**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, **D-38**, **D-41**, **D-43**, **D-44**, **D-45**, **D-46**, **D-49** (mục a), cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
 
-## 3. Quyết định kỹ thuật D-01…D-46
+## 3. Quyết định kỹ thuật D-01…D-49
 
 Nội dung đầy đủ và lý do: `build/00-README.md` mục 4 và file được nêu trong từng quyết định. "Chốt trước" = phase phải chốt xong trước khi bắt đầu.
 
@@ -174,6 +174,7 @@ Nội dung đầy đủ và lý do: `build/00-README.md` mục 4 và file đư�
 | D-46 | **`TOOL_MAP` (B6) mở rộng:** kiểu `tuple[str, ...]`; `access` thêm `check_account_status` (trạng thái/phòng ban/lý do vô hiệu của `requested_for`), `software` thêm `check_device_registered` (chủ máy). Lý do: fact bảng 4.3 Phase 5 cần hai tool này; giữ nguyên tắc "fact chỉ từ tool ở B6", không để B11 thu fact | B6 mục 0.3 [Chốt cũ], `tools/specs.py` | 5 | Không | Đã chốt 10/10 (làm ở T20a) |
 | D-47 | **Hợp đồng dựng `Action` cho 4 intent (T20a):** bảng `PARAMS_BY_ACTION` một nguồn (`domain/action.py`) — mỗi `action_type` có đúng tập khoá `params`; không slot chữ tự do (`reason`, `justification`, `version`) nào vào `params` (nợ N1 của 6B); `extend_permission` không mang mức quyền; tên phần mềm chuẩn hoá không dấu cách; `requested_for` của account **và access** = `target_user` nếu có (access cần để R12 chạm được đầu-cuối — tài khoản bị vô hiệu không tự đăng nhập xin quyền); `target_user`, `resource_path`, `software_name` phải có trong câu người dùng (chống LLM bịa đích); slot bắt buộc theo hành động (`required_by_action`); fact 3 intent mới tính lại toàn bộ ở B11 từ slot cuối | B11 §0.3, §4; B06; P6→P5 #8 (danh sách trắng 6C) | 5 | Không | **Đã chốt 13/10** (Tuấn Anh duyệt PLAN-T20a, Q-T20a-2) |
 | D-48 | **Thực thi + hoàn tác theo từng bước (T24):** `install_software` có phí = ① `assign_paid_license` (không hoàn tác được) → ② `install_software` (hoàn tác `uninstall_software`); bước ① có khi `license_paid is not False` (**thiếu fact → coi như có phí**); cài lỗi sau khi đã cấp license → **không gọi hoàn tác** (license không thu hồi qua tool) + ghi chú bàn giao nói rõ license đã cấp. Executor chung `PlanExecutor`: bước không hoàn tác được ghi `not_reversible`, không gọi; mọi bước đã xong đều không hoàn tác được → `not_attempted`. Tin B18 + ghi chú bàn giao theo mẫu từng hành động, chỉ ghép định danh qua regex | B17 §3–5; `executor/*`; cổng 5 "phần mềm có phí lỗi khi cài" | 5 | Không | **Đã chốt 13/10** (duyệt PLAN-T24; + Q-T24-6: `same_department` chỉ bỏ khi cả hai phòng ban rỗng; Q-T24-7: `version` chỉ số chấm, `software` trong tin lấy từ `params`) |
+| D-49 | **Yêu cầu nhiều ý (T20b):** (a) **Q5** — ticket con bắt đầu ở **B6**, intent + slot lấy từ phần tử B3 của cha (seed bền trong checkpoint cha trước khi con chạy), không chạy lại B1/B2/B3 → không tốn thêm LLM, không lệch phân loại với cha, con không tự tách tiếp, con không bao giờ `S_BLOCKED` (theo B03 §5.3, P1 §8 — thay cách hiểu "con quay lại B3" của bảng 2.1); (b) **ý lẫn** — câu ≥ 2 ý có ít nhất 1 ý chạy được thì tách **mọi** ý; ý ngoài phạm vi / `confidence < TAU_INTENT` / intent chưa bật / `span` không có trong câu thành ticket con đóng ngay E1 (`reason_detail` riêng, mới: `split_span_invalid`); 0 ý chạy được → cả câu E1 như cũ; (c) slot của mỗi ý chỉ lấy trong `span` của chính ý; (d) tổ hợp con đủ 3 loại kết quả → cha `S_RESOLVED` + `PARTIALLY_ESCALATED` [Đề xuất] | B03 §5.2–5.4, P1 §8, bảng 2.1; phase5 §5.2 | 5 | Nên báo (a) | **Đã chốt 13/10** (a), (b) — Tuấn Anh; (c), (d) theo spec T20b, soát ở PLAN |
 
 ## 4. Chế độ xây: code trước, gắn API sau
 
@@ -303,3 +304,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 10/10/2026 | §2: Q-6-8 `full_auto` chốt C (yêu cầu P6→P5 #9, nguyên văn); D-44: kết quả thresholds/cascade của Duy (val/test) |
 | 13/10/2026 | §1.1: điều kiện R01–R15 chốt theo T22a (`2ffb005`) + R10 thêm `existing_permission_level` ở T20a; §3: D-35, D-41 chữ chốt; D-47 (hợp đồng `Action` 4 intent — chốt khi duyệt PLAN-T20a 13/10); §4.1: dòng T20a |
 | 13/10/2026 | §3: D-48 (chốt khi duyệt PLAN-T24 + Q-T24-6/7); §4.1: T20a đóng `03b4450`, dòng T24 |
+| 13/10/2026 | §3: D-49 (T20b — con vào B6, tách ý lẫn thành con E1; Q5 đóng) |

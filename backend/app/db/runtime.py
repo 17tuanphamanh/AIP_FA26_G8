@@ -8,7 +8,8 @@ câu SQL P3 (`… reminder_n_at IS NULL AND deadline > :now RETURNING …`): hai
 Mọi transaction ở đây ngắn (D-19): không store nào giữ transaction trong lúc graph chạy node.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -29,6 +30,7 @@ _APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 
 RESULT_REF_MAX = 128  # side_effects.result_ref VARCHAR(128)
+CHILD_SKIP = "child:skip"  # Phase 5 T20b P5: `deadlines.set` của ticket con không ghi gì — hạn do cha giữ (`result_ref` của `deadline_set`)
 
 type WaitKind = Literal["clarify", "confirm", "approval"]
 
@@ -46,6 +48,14 @@ class DueWait:
     kind: WaitKind
     ref: str  # created_turn (clarify/confirm) hoặc approval_id (approval)
     is_parent: bool = False
+
+
+@dataclass(frozen=True)
+class OrphanChild:
+    """Phase 5 T20b P12 (b): con đang chờ người dùng mà cha đã kết thúc — worker giao `timeout` (`needs` → trạng thái chờ)."""
+
+    ticket_id: str
+    needs: Literal["answer", "confirm"]
 
 
 @dataclass(frozen=True)
@@ -91,6 +101,33 @@ def current_tx() -> AsyncConnection | None:
     """Kết nối đang mở transaction của `effects.once` — hàm side effect ghi DB cùng transaction với
     dòng `side_effects` (P1 mục 5.3: thông báo trong app nằm cùng transaction)."""
     return _TX.get()
+
+
+@dataclass(frozen=True)
+class EffectCall:
+    """Side effect đang chạy trong `effects.once` (Phase 5 T20b P5): `ChildAwareNotifier` ghi `child_notices.source_step` +
+    `effect_key` từ đây (không truyền qua chữ ký `notify_user`)."""
+
+    step: str
+    key: str
+
+
+_EFFECT: ContextVar[EffectCall | None] = ContextVar("effect_call", default=None)
+
+
+def current_effect() -> EffectCall | None:
+    """Bước + khoá của side effect đang chạy; None ngoài `effects.once`. `effects.once` đặt quanh `call()` (TQ-2 — một chỗ cho cả
+    store SQL lẫn store giả của test)."""
+    return _EFFECT.get()
+
+
+@contextmanager
+def bind_effect(step: str, key: str) -> Iterator[EffectCall]:
+    token = _EFFECT.set(call := EffectCall(step, key))
+    try:
+        yield call
+    finally:
+        _EFFECT.reset(token)
 
 
 def as_ref(value: Any) -> str | None:
@@ -211,22 +248,29 @@ class SqlDeadlineStore:
         self._engine = engine
 
     async def set(self, ticket_id: str, kind: str, deadline: datetime, created_turn: str) -> str:
+        """Phase 5 T20b: ticket CON → không ghi gì, trả `CHILD_SKIP` (P5 (b) — hạn do cha giữ, D-31); ticket CHA → thay MỌI hạn
+        `wait_deadlines` chưa bắn của cha, cả `clarify` lẫn `confirm` (Q-T20b-3 = A: hạn vòng trước khác loại không được bắn vào vòng
+        sau — mọi hạn của cha đều giao `timeout` với `S_CONFIRMING`); ticket thường → như cũ (cùng loại). Không đụng hạn duyệt."""
         conn = current_tx()
         if conn is not None:
-            await self._set(conn, ticket_id, kind, deadline, created_turn)
-        else:
-            async with self._engine.begin() as own:
-                await self._set(own, ticket_id, kind, deadline, created_turn)
-        return created_turn
+            return await self._set(conn, ticket_id, kind, deadline, created_turn)
+        async with self._engine.begin() as own:
+            return await self._set(own, ticket_id, kind, deadline, created_turn)
 
     @staticmethod
     async def _set(
         conn: AsyncConnection, ticket_id: str, kind: str, deadline: datetime, created_turn: str
-    ) -> None:
-        # Hạn cũ chưa bắn của cùng ticket + kind bị thay: không để hạn vòng trước cắt ngang vòng sau.
+    ) -> str:
+        who = (await conn.execute(
+            select(_TICKETS.c.parent_ticket_id, _TICKETS.c.is_parent).where(_TICKETS.c.ticket_id == ticket_id)
+        )).first()  # fmt: skip
+        if who is not None and who.parent_ticket_id is not None:
+            return CHILD_SKIP
+        same = (_WAITS.c.ticket_id == ticket_id, _WAITS.c.fired_at.is_(None))
+        # Hạn cũ chưa bắn bị thay: không để hạn vòng trước cắt ngang vòng sau (cha: mọi loại; còn lại: cùng loại).
         await conn.execute(
             update(_WAITS)
-            .where(_WAITS.c.ticket_id == ticket_id, _WAITS.c.kind == kind, _WAITS.c.fired_at.is_(None))
+            .where(*same, *(() if who is not None and who.is_parent else (_WAITS.c.kind == kind,)))
             .values(fired_at=func.now())
         )
         await conn.execute(
@@ -234,6 +278,7 @@ class SqlDeadlineStore:
             .values(ticket_id=ticket_id, kind=kind, deadline=deadline, created_turn=created_turn)
             .on_conflict_do_nothing()
         )
+        return created_turn
 
     async def due(self, now: datetime, limit: int) -> list[DueWait]:
         async with self._engine.connect() as conn:
@@ -259,6 +304,12 @@ class SqlDeadlineStore:
             rows = await conn.execute(_DUE_REMINDERS, {"now": now, "f1": REMINDER_FRACTIONS[1], "limit": limit})
             return [DueReminder(str(r.approval_id), r.ticket_id, r.created_at, r.deadline, r.reminder_1_at, r.reminder_2_at)
                     for r in rows]  # fmt: skip
+
+    async def parents_to_wake(self, limit: int) -> list[str]:
+        raise NotImplementedError("T20b S13")
+
+    async def orphan_children(self, limit: int) -> list[OrphanChild]:
+        raise NotImplementedError("T20b S13")
 
     async def mark_reminder_once(self, approval_id: str, n: ReminderN, now: datetime) -> ReminderTarget | None:
         async with self._engine.begin() as conn:

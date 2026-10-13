@@ -5,7 +5,7 @@ Thứ tự (lệch mã giả có chủ đích — quyết định Q-C 2b-2):
 2. Điểm log 8 ghi từ CHÍNH dòng đó (khoá idempotent theo lượt). Mã giả ghi audit trước: B20 lỗi giữa
    hai bước rồi chạy lại sau vài phút thì audit giữ `total_duration` lần 1, `tickets` giữ lần sau — hai
    nguồn lệch nhau. Làm ngược lại thì audit và `tickets` luôn giống hệt.
-3. Có `exit_code` (cha không bao giờ có — D-30): `effects.once("escalation_create")` (priority lấy từ
+3. Có `exit_code` (cha đóng bình thường không bao giờ có — D-30; cha đi đường lỗi CÓ — T20b Q-T20b-5): `effects.once("escalation_create")` (priority lấy từ
    bảng `exit_code_priority`, ghi chú bàn giao 4 phần theo mẫu) + `effects.once("notify_user")` với tin
    theo mã [Chốt 7.1]. Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
    nên chạy lại cũng chỉ có một tin.
@@ -28,6 +28,10 @@ from app.graph.goto import audit_key
 from app.graph.tracing import NodeFn
 
 POINT_8_EVENT = "closed"
+# Phase 5 T20b Q-T20b-5 (i) — lệch D-30 CÓ CHỦ ĐÍCH: cha chỉ có `exit_code` khi đi đường LỖI (E2 hạ tầng / E9 boundary, recover cạn,
+# E7 khi `begun`…); khi đó cha có escalation + tin theo mã như ticket lá, MỌI mã (duyệt MẪU B lượt 2: bỏ giới hạn E2/E9), để L2 và người
+# dùng THẤY (cha lỗi có thể để con treo). Cha đóng bình thường (tổng hợp từ con — `parent_wait`) không bao giờ có `exit_code` → không
+# escalation (D-30 giữ nguyên).
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -57,7 +61,7 @@ def make(deps: NodeDeps) -> NodeFn:
 
         update: dict[str, Any] = {"next": END}
         code = state.get("exit_code")
-        if code and not state.get("is_parent"):
+        if code:  # cha chỉ có `exit_code` khi đi đường LỖI (T20b Q-T20b-5) — mọi mã đều escalate
             await effects.once(
                 state, "escalation_create", deps.escalations.create, step="B20",
                 ticket_id=ticket_id, exit_code=code,

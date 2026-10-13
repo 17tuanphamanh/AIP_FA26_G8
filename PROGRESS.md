@@ -5211,6 +5211,72 @@ chẩn đoán → "chưa đọc được danh sách quyền", rỗng thật → 
   báo Phase 6 "6C mở được"; báo M9 (Dương/Duy Anh): 4 intent bật → phân bố intent đổi; báo thành viên: `ENABLED_INTENTS` trong `.env` không
   tác dụng trên stack (compose không truyền — Q-T24-9); Quân: HB04 kỳ vọng thật là E7 (`assign_paid_license` 409).
 
+## Phase 5 — chặng T20b: nhiều ý (tầng A) (13–14/10/2026, DỪNG 1 xanh sandbox) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.5** mục 5.2; `decisions.md` D-17, D-18, D-29, D-30, D-31, **D-49**. Kế hoạch:
+`PLAN-T20b.md` (untracked) — **DUYỆT 13/10/2026**: Q-T20b-1 = A (`wiring.py` 2 dòng: import + dòng notifier), Q-T20b-2 = B (≥ 2 ý, 0 ý chạy
+được → `out_of_scope` hoặc `reason_detail` của ý ĐẦU TIÊN trong phạm vi theo bảng 5.2.2; code mới không còn `multi_intent_not_enabled`),
+Q-T20b-3 = A (đặt hạn cho CHA thay mọi hạn `wait_deadlines` chưa bắn của cả hai loại; không đụng hạn duyệt), Q-T20b-4 = A (thêm
+`tickets.deliver_round` vào `SIDE_EFFECT_FUNCS`); TQ-5 nhận (con khởi động ở worker → E7 `REFUSED_NOTE`, ghi nợ).
+
+- **Bước 0:** HEAD `90ee85d`; `status -uno` chỉ 2 file spec; spec 0.5; `grep -c D-49` = 5; `alembic heads` = 1 (`0009`); `make lint` xanh;
+  unit **5206 passed**.
+- **DỪNG 1 (sandbox xanh):**
+  - S1 bề mặt + stub `NotImplementedError` (`domain/children.py`, `graph/children.py` ChildOps, `notify/child.py`, `db/notices.py`, node cha
+    thật; bản giả cha chuyển `graph/nodes/fake/`), `TicketState.child_seeds`, `REASON_DETAILS += split_span_invalid`, contextvar
+    `current_effect()` (đặt trong `effects.once`), store giả `tests/fakes/graph.py` (dòng con, `child_notices` giả, `MemoryNoticeStore`,
+    hạn con/cha). Context dùng Protocol `ChildPort` (import TYPE_CHECKING làm gãy hợp đồng "graph.nodes.* không import lẫn nhau").
+  - S2 test-writer viết TRƯỚC code bảng 5.2.8 (11 file `test_t20b_*` + `_t20b.py` + `integration/test_t20b_pg.py`; sửa
+    `test_b03_classify.py` theo Q-T20b-2, `test_side_effects_ast.py` theo Q-T20b-4). Trước code: **97 đỏ / 5222 xanh / 22 xfail** (1 đỏ cũ
+    biết trước `test_graph_static` vì node cha là stub). Agent chính sửa lint 6 lỗi + mypy 3 lỗi trong file test, 1 lỗi test (`test_t20b_digest`
+    thiếu tham số `needs`), 1 KeyError ở c2 (`ok.get("exit_code")`).
+  - S3–S8: B3 phán ý + B5 (seed, `child_create` qua `effects.once`, `mark_parent_once`); `ChildOps.start_missing`/`deliver` (lượt con LỒNG:
+    khoá con, `turns`, RunContext + hạn mới, không Semaphore, không `after_turn`); `recover`/`run_new` con chưa có thread → đóng lượt;
+    `ChildAwareNotifier` + `SqlNoticeStore`; `SqlDeadlineStore.set` (con `child:skip`, cha thay 2 loại); `after_turn` đánh thức khi con dừng ở
+    `clarify_wait`/`confirm_wait`; `parent_wait`/`parent_reply_wait` thật; `compose_digest`, `aggregate_children`, `reply_text`.
+  - security-reviewer (5.2.10 mục 1–5, 7–10 + 2 grep): 5 PASS, 2 PASS+NGHI, **2 FAIL** (8: lấy khoá con đã khởi động / cạn lock pool → cha
+    E9; 9: cha E9 im lặng — D-30 bỏ escalation của cha). Sửa ngay phần hiện thực: không lấy khoá con đã khởi động + `TicketBusy` → bỏ qua; lượt
+    lồng lỗi trước checkpoint con → không ghi `child_submit`; chạy lại sau khi đã gửi → `children_view(delivered_round=n)` (không gom notice
+    mới); siết kiểm seed E1. Agent chính viết 3 test hồi quy `test_t20b_s10_fixes.py` (đỏ khi bỏ từng chỗ sửa — đã thử). Phần cần chốt →
+    Q-T20b-5…7.
+  - Sau code: unit **5322 passed, 22 xfailed** (`CHO_DUNG2`); `make lint` xanh (import-linter 10/10, gitleaks 0).
+  - Mutation lượt 1 (`scripts/mutation/mutate_t20b.py`): **M-T20b-1…10 ĐỎ đúng dự đoán**; md5 7 file đích + `git diff --stat` khớp.
+- **Duyệt MẪU B DỪNG 1 (13–14/10/2026), có điều kiện:**
+  - Q-T20b-5 = A (lệch D-30 CÓ CHỦ ĐÍCH → "Spec cần sửa (T20b)"): (i) cha có `exit_code` (chỉ đường lỗi) → B20 tạo escalation + tin theo mã
+    — lượt 3 bỏ giới hạn E2/E9, MỌI mã; (ii) `db/escalations.list_open`: `is_parent = false OR tickets.exit_code IS NOT NULL` (view/chỉ số M9
+    KHÔNG đổi — `v_l2_queue` của M9 vẫn không có cha lỗi, lệch có chủ đích); (iii) P12(b) mở rộng: con chưa kết thúc, cha đã kết thúc, có
+    notice `needs≠none` ĐÃ gửi hay chưa → worker giao `timeout` (DỪNG 2; store giả + docstring đã theo; con đang có phiếu `pending` → bỏ —
+    tránh `late_event` mỗi chu kỳ).
+  - Q-T20b-6 = A giới hạn: `start_missing` — pool khoá hết chờ như `TicketBusy` → bỏ qua con, ghi audit; `deliver` — thử lại 1 s × 5 rồi ném.
+    Nợ: mỗi cha đang chạy cần 2 kết nối khoá; tăng pool (`settings.py`) để sau cổng 5.
+  - Q-T20b-7 = A (DỪNG 2): P12(a) = "số dòng `child_submit` của cha < số con" (bắt cả con có `turns` mà thread rỗng — FAIL-2 lượt 2).
+  - DỪNG 2 thêm: kiểm cache runtime của `b03_classify` khi B3 chạy lại lúc phục hồi (khoá cache, môi trường tắt) → không bảo đảm thì Q.
+- **Soát lượt 2 (mục 3, 8, 9, 10):** PASS 3, 8(a)(b)(d)(e), 9, 10; **FAIL-1** `deliver` báo "đã giao" khi lượt lồng lỗi trước khi con nhận
+  resume (câu trả lời mất, cha treo im lặng); **FAIL-2** con "failed" có dòng `turns` → P12(a) cũ không bắt (để DỪNG 2 cùng Q-T20b-7);
+  NGHI: notice bị nuốt (B20 con ghi `final_state` trước notice escalation), cha mang mã ngoài E2/E9 im lặng, `start_busy` mất ở nhánh
+  interrupt + "failed" không ghi, chú thích b03 sai tên tập.
+- **Duyệt lượt 2 → sửa lượt 3 (14/10):** FAIL-1 = A — `deliver` so mốc `(checkpoint_id, next)` của con trước/sau lượt lồng (đã kiểm LangGraph:
+  resume được nhận rồi node lỗi thì `checkpoint_id` GIỮ NGUYÊN, `next` đổi — so mỗi `checkpoint_id` sẽ sai): không đổi → ném (cha E9, thấy
+  được); đổi → không ném, lượt con mở cho worker. `children_view`: con "kết thúc" = `final_state` VÀ không còn lượt mở. B20: mọi `exit_code`
+  của cha. Audit `B5 children_not_started {busy, failed}` ghi TRƯỚC interrupt. Chú thích b03 (`E1_REASONS`). Test: `test_t20b_q5_q6.py`
+  (9 + 1 xfail s3 mở rộng), `integration/test_t20b_q5_pg.py` (3 ca); đột biến tạm từng chỗ sửa → đúng test đỏ.
+- **Sau lượt 3:** unit **5331 passed, 23 xfailed**; `make lint` xanh; mutation lượt 1 **10/10 ĐỎ đúng dự đoán** (md5 + diff khớp).
+- **Soát lượt 3 (mục 8(c), 9 trên phần sửa):** 0 FAIL. NGHI-1 (8c): `_first` của LangGraph ghi `__resume__` + `turn_id` lên checkpoint cũ —
+  DB lỗi SAU đó, TRƯỚC write của task → `(checkpoint_id, next)` không đổi → `deliver` ném (cha E9) nhưng resume còn nằm chờ, worker recover
+  con xử lý tiếp sau khi cha E9 (không mất sự kiện, có escalation; L2 có thể làm trùng) — đề xuất thêm `values.turn_id` vào mốc + test có
+  lỗi tiêm sau `_first` → **việc DỪNG 2**. NGHI-2 (9): con cạn lượt phục hồi ở B20 (`_give_up` nhánh AUDIT, `waiting_at='b20_audit'`) hoặc
+  `wake_parent` lỗi bị nuốt → không ai đánh thức cha → P12(a) chỉ "`child_submit` < số con" không bắt → **ràng buộc DỪNG 2**: P12(a) = (`child_submit`
+  < số con) OR (mọi con đã dừng theo CÙNG điều kiện `children_view`: `final_state` VÀ không lượt mở, hoặc notice chưa gửi `needs≠none`); cân
+  nhắc `after_turn` đánh thức cha khi `_give_up` ở AUDIT. Nhỏ: pool CHÍNH hết chờ ở `turns.start` của `deliver` bị gắn nhãn "bận" (thử lại
+  có trần → E9, vô hại); audit `children_not_started` khoá theo lượt (lần 2 cùng lượt khác danh sách bị bỏ, lần 1 đã ghi).
+- **Nợ (không chặn DỪNG 1):** span các ý chồng nhau (slot "đích" của ý này có thể nằm trong span ý kia — M5 vẫn đánh giá đích thật);
+  `redacted_request` của con = chuỗi `span` LLM trả (không cắt đúng đoạn câu); B3 chạy lại khi phục hồi gọi LLM lần hai (DỪNG 2 kiểm cache);
+  con `needs=confirm` của cha lỗi nhận timeout worker → `resolved_auto_timeout_48h` dù người dùng chưa thấy kết quả (phương án ở MẪU B DỪNG
+  2); M9 `E1_REASONS` không có `split_span_invalid` (vào nhóm `other`, không sửa `monitor/*`).
+- **Spec cần sửa (T20b) — gom dần:** 5.2.0 dòng B3 là `b03_classify.py:102` (không `:98`); TQ-2 contextvar đặt ở `effects.once`; Q-T20b-3
+  (hạn cha thay 2 loại); P7 thêm "chạy lại sau khi đã gửi vòng n → dựng lại từ notice vòng n" + `children_view` coi lượt mở là chưa kết thúc;
+  Q-T20b-5 lệch D-30 có chủ đích (cha lỗi có escalation, `list_open` thấy cha lỗi); `child_submit` chỉ ghi khi thật sự khởi động.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
