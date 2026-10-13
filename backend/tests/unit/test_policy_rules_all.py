@@ -503,8 +503,8 @@ def test_h5_khoi_dong_voi_cau_hinh_that() -> None:
 
 
 def test_h6_khong_bat_intent_moi() -> None:
-    """h6 (P6, P11): `enabled_intents` mặc định vẫn đúng `["vpn"]`."""
-    assert Settings(_env_file=None).enabled_intents == ["vpn"]  # type: ignore[call-arg]
+    """h6 (P6, P11 của T22a): T22a không bật intent mới. T24 P1 (Q-5-7) bật đủ 4 — giá trị ghim đổi theo."""
+    assert Settings(_env_file=None).enabled_intents == ["vpn", "account", "software", "access"]  # type: ignore[call-arg]
 
 
 # ---- h7 — check_facts kiểm tập giá trị (P2) ------------------------------------------------------------------------------

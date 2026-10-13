@@ -113,7 +113,7 @@ def test_p1_repo_approvers_yaml_vpn_roster() -> None:
     assert vpn is not None
     assert (vpn.primary, vpn.backup, vpn.head) == ("l1_01", "l1_02", "it_mgr01")
     settings = _settings()
-    assert settings.enabled_intents == ["vpn"]
+    assert settings.enabled_intents == ["vpn", "account", "software", "access"]  # T24 P1 (trước T24: ["vpn"])
     check_approvers_config(settings, approvers)  # không ném
 
 
@@ -173,9 +173,25 @@ async def test_b4_open_runtime_refuses_bad_approvers_before_db(
 async def test_b4_open_runtime_accepts_repo_approvers_copy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Đối chứng b4: bản sao nguyên vẹn `config/` → `open_runtime` chạy hết (saver in-memory) — tức ca hỏng ở trên đỏ ĐÚNG vì
     `approvers.yaml`. Nhóm AD không kiểm lúc khởi động (P1): roster trỏ người không có trong AD vẫn khởi động được."""
-    await _deps_of(monkeypatch, _runtime_settings(_config_copy(tmp_path, f"vpn: {ROSTER_OK}\n")))
+    # T24 (Q-T24-8 = A): giữ ý — roster vpn hợp lệ (kể cả người không có trong AD) → khởi động; ca 4 intent mặc định = w2
+    # (`test_enable_intents_t24.py`). Mặc định giờ là 4 intent → truyền tường minh `enabled_intents=["vpn"]`.
+    await _deps_of(monkeypatch, _runtime_settings(_config_copy(tmp_path, f"vpn: {ROSTER_OK}\n"), enabled_intents=["vpn"]))
     ghost = _config_copy(tmp_path / "ghost", "vpn: {primary: khong_co_1, backup: khong_co_2, head: khong_co_3}\n")
-    await _deps_of(monkeypatch, _runtime_settings(ghost))
+    await _deps_of(monkeypatch, _runtime_settings(ghost, enabled_intents=["vpn"]))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("can_execute", [False, True], ids=["worker", "backend"])
+async def test_t24_default_four_intents_vpn_only_roster_refuses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, can_execute: bool
+) -> None:
+    """T24 (Q-T24-8, chiều ngược — fail-closed): settings MẶC ĐỊNH (4 intent) + `approvers.yaml` chỉ có vpn → `open_runtime` từ chối
+    TRƯỚC DB, thông điệp nêu đủ 3 intent thiếu roster."""
+    monkeypatch.delenv("ENABLED_INTENTS", raising=False)
+    settings = _runtime_settings(_config_copy(tmp_path, f"vpn: {ROSTER_OK}\n"))
+    assert settings.enabled_intents == ["vpn", "account", "software", "access"]
+    await _refused(monkeypatch, settings, can_execute=can_execute,
+                   match=r"approvers\.yaml thiếu người duyệt cho intent đang bật \['access', 'account', 'software'\]")
 
 
 # ---- b5 / P12: APPROVAL_SLA_MINUTES_DEV -------------------------------------------------------------------------------

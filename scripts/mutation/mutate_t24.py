@@ -6,8 +6,10 @@ lần trước khi đột biến.
   uv run python scripts/mutation/mutate_t24.py --only M-T24-3
   uv run python scripts/mutation/mutate_t24.py --only M-T24-1,M-T24-9   # nhiều mã, so ĐÚNG mã (không theo tiền tố)
 
-Lượt 1 (DỪNG 1 — bản này): M-T24-1…9. M-T24-4: `Action` không mang người gửi → đột biến giả lập "dùng người gửi" bằng hằng `nv001`
-(người gửi của mọi ca p4; `requested_for` của ca ≠ nv001).
+Lượt 1 (DỪNG 1): M-T24-1…9. M-T24-4: `Action` không mang người gửi → đột biến giả lập "dùng người gửi" bằng hằng `nv001` (người
+gửi của mọi ca p4; `requested_for` của ca ≠ nv001). Lượt 2 (DỪNG 2 — bản này): đủ 12 mã — M-T24-1…9 lần 2 + M-T24-10 (mặc định
+`enabled_intents` về `["vpn"]` → w2), -11 (registry thiếu `fileserver_write` → w1), -12 (Q-T24-6 = A: `same_department` với chuỗi rỗng →
+True — đỏ cả ca hai phía rỗng lẫn hai ca một phía rỗng).
 
 Mỗi đột biến chạy TRỌN bộ test của chặng (không chỉ test dự đoán) để thấy cả test đỏ ngoài dự đoán.
 """
@@ -35,6 +37,7 @@ MESSAGES = "backend/app/domain/messages.py"
 B17 = "backend/app/graph/nodes/b17_execute.py"
 WIRING = "backend/app/executor/wiring.py"
 ACCESS = "backend/app/tools/diagnosis/access.py"
+SETTINGS = "backend/app/settings.py"
 
 UT = pt(*[
     f"backend/tests/unit/{name}.py"
@@ -42,7 +45,7 @@ UT = pt(*[
         "test_plans_t24", "test_executor_t24", "test_handoff_t24", "test_messages_t24", "test_b17_t24", "test_registry_t24",
         "test_access_n8", "test_n7_rejection_pin", "test_enable_intents_t24", "test_executor_vpn", "test_executor_plans",
         "test_b17_execute", "test_b17_approval_hash", "test_b17_decided_by", "test_infer_access", "test_policy_rules_all",
-        "test_approvers_t20a", "test_rejection_text", "test_turn_budget",
+        "test_approvers_t20a", "test_rejection_text", "test_turn_budget", "test_config_files", "test_approvers_config",
     )
 ])  # fmt: skip
 
@@ -71,6 +74,7 @@ _OUT_CHECK = (
 )
 _L2 = '        f"L2 cần làm tay: {manual}."\n'
 _NONE_RULE = '            if meta.reversibility == "none" and undoable:\n'
+_DEFAULT_INTENTS = '    enabled_intents: list[str] = Field(default_factory=lambda: ["vpn", "account", "software", "access"], min_length=1)\n'
 _FILESERVER = "        **fileserver_write.write_handlers(http),\n"
 _N8_GUARD = '        if status is not None and (res.owner_department or status.department):  # T24 N8 (Q-T24-6): hai phía rỗng ≠ "cùng phòng"\n'
 _SAME_DEPT = '            facts["same_department"] = res.owner_department == status.department\n'
@@ -114,6 +118,11 @@ UNIT = [
              [one(B17, _WRITE_CALLS, _WRITE_CALLS.replace('if s == "undone" or (', 'if s in ("undone", "not_reversible") or (')
                   .rstrip("\n") + "  # MUTATION M-T24-9\n")],
              UT, ["test_x10_write_calls_does_not_count_not_reversible"]),
+    Mutation("M-T24-10 mặc định enabled_intents về ['vpn']",
+             [one(SETTINGS, _DEFAULT_INTENTS, '    enabled_intents: list[str] = Field(default_factory=lambda: ["vpn"], min_length=1)'
+                                              "  # MUTATION M-T24-10\n")],
+             UT, ["test_w2_default_enabled_intents_four_and_startup_checks",
+                  "test_w2_open_runtime_default_settings_four_intents"]),
     Mutation("M-T24-11 registry ghi thiếu fileserver_write",
              [one(WIRING, _FILESERVER, "        # MUTATION M-T24-11 bỏ fileserver_write\n")],
              UT, ["test_w1_every_write_tool_has_handler_one_post"]),

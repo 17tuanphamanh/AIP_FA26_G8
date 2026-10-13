@@ -5071,7 +5071,7 @@ không chứa `vpn`); thêm: đối chiếu `seed_tools` ↔ mock, "Spec cần s
   16. N8: `access.same_department` so `owner_department == department` — hai chuỗi rỗng cho `True`; seed/mock hiện không có phòng ban
       rỗng.
 
-## Phase 5 — chặng T24: executor + hoàn tác + bật 4 intent (tầng A) (13/10/2026, DỪNG 1 commit 1) — chưa tính qua cổng 5
+## Phase 5 — chặng T24: executor + hoàn tác + bật 4 intent (tầng A) (13/10/2026, DỪNG 1 `216c89d`, DỪNG 2 verify G=2345 lượt 2 + G=5 lượt 3 XANH, commit 2) — chưa tính qua cổng 5
 
 Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.4** mục 7 (+ 0, 1.3, 4.2, 5.1.3, 5.1.11); `decisions.md` **D-48**, D-47,
 §4.1 (Q-5-7, Q-T22a-8). Kế hoạch: `PLAN-T24.md` (untracked) — **DUYỆT 13/10/2026**: Q-T24-1…5 = A (1: `verify.sh` nạp KB thật `kb/`
@@ -5108,7 +5108,108 @@ chẩn đoán → "chưa đọc được danh sách quyền", rỗng thật → 
   (m2 thêm `version-ten-mien`, `software-tool-tra-khac`; m1 `install-thieu-outputs`, `install-params-sai-mau`) → "Spec cần sửa (T24)".
   NGHI-1 (B18 đọc dòng quyền từ `diagnostics` của B6 — đúng khi `rf`/path không đổi sau B6) ghi nợ. Sau sửa: unit **5018 passed,
   2 xfailed**; lint xanh; M-T24-6, -11, -12 ĐỎ đúng dự đoán, md5 + `git diff --stat` khớp. `decisions.md` bản D-48 "Đã chốt 13/10"
-  (md5 `fc238a79…`) vào commit 1.
+  (md5 `fc238a79…`) vào commit 1. **Commit 1 = `216c89d`** (message ghi "177 test mới" — đếm đúng là 178 = 5020 − 4842).
+- **DỪNG 2 (sandbox xanh, chưa commit):**
+  - S13 `settings.enabled_intents` mặc định `["vpn","account","software","access"]`; gỡ `CHO_DUNG2` (w2 xanh); 4 test ghim mặc định đổi
+    giá trị (`test_config_files`, `test_approvers_config::test_p1_…`, `test_policy_rules_all::test_h6_…`, `test_approvers_t20a::test_h2_…`);
+    `.env.example:129–130` chú thích. **Test cũ ngoài danh sách đỏ → DỪNG hỏi → Q-T24-8 = A:** `test_b4_open_runtime_accepts_repo_approvers_copy`
+    truyền `enabled_intents=["vpn"]` (giữ ý roster vpn hợp lệ → khởi động; 4 intent mặc định = w2) + ca ghim ngược
+    `test_t24_default_four_intents_vpn_only_roster_refuses` (mặc định 4 intent + roster chỉ vpn → từ chối, nêu đủ 3 intent).
+  - S14 9 preset `config/scripted/{tc01,tc03,tc07,tc08,tc17,tc18,tc21a,tc21b,hb04}.yaml` (đủ 8 khoá như `default.yaml`, `b14_*` an toàn);
+    13 preset cũ không đổi.
+  - S15 `backend/tests/stack/gate5.py` (bảng 7.6 + preflight + `g5-audit`; chốt an toàn như gate3 + probe nhãn `INTENTS=du|thieu|?` +
+    KB thật); `test_gate5.py` 32 ca (gồm đối chiếu bảng luật mong đợi với chuỗi node THẬT B3→B12 trên bản giả seed — 8/8 khớp);
+    `Makefile` đích `gate5`; `scripts/verify.sh` chữ số 5 + nạp KB THẬT `kb/` (bước 11) ngay trước gate5 (bước 12), nhớ KB đang nạp
+    (Q-T24-1 — sau `G=2345` stack ở KB thật, **bỏ bước "nạp lại KB thật sau commit 2"**); `test_verify_script.py` G sai `"5","45"` →
+    `"6","46"` + 5 ca T24; README stack mục cổng 5.
+  - Unit **5059 passed** (0 xfail); `make lint` xanh.
+  - Mutation lượt 2: **12/12 ĐỎ đúng dự đoán** (M-T24-1…9 lần 2 + M-T24-10, -11, -12); md5 7 file đích + `git diff --stat` khớp.
+  - security-reviewer (đủ 9 mục 7.8 + import động `risk/` rỗng + `git diff 03b4450 -- config/policy.json backend/app/risk` rỗng + gate5/verify
+    không in giá trị): **0 FAIL**. NGHI-5 (mới, agent chính kiểm lại đúng): `docker-compose.yml` không truyền `ENABLED_INTENTS` (không
+    `env_file`) → trên stack `.env` KHÔNG thu hẹp được intent (trước T24 vô hại vì mặc định chỉ vpn) → sửa chữ `.env.example`, gate5, README
+    cho đúng thực tế; đổi compose = Q-T24-9 (file cấm). NGHI-1 vẫn nợ.
+- **Duyệt MẪU B DỪNG 2 (13/10/2026):** Q-T24-9 = A — KHÔNG sửa `docker-compose.yml` ở T24. "Spec cần sửa (T24)": thêm
+  `ENABLED_INTENTS` vào `x-backend-env` phải xử lý chuỗi rỗng = dùng mặc định (`enabled_intents` là list `min_length=1` — rỗng làm
+  backend/worker không khởi động) + test riêng; làm ở T20b hoặc ngày đệm. Stack rảnh (phiên git P36) → `make verify G=2345`.
+- **Verify lần 1 (13/10 11:48–13:03, HEAD `216c89d` + DỪNG 2 chưa commit) — HỎNG do máy ngủ (gập nắp giữa lượt), không tính:** lint, test
+  (backend 5606 · mock 106 · ml 123), up, gate2 89/0, ingest fixture, gate3 66/0 PASS; gate4 **16/14** (g4-01/02/03/04/06/11 ra
+  `S_ESCALATED` thay vì chờ duyệt, g4-09/10 HTTP 401 token hết hạn giữa kịch bản, gate4 54 phút) — cùng đường duyệt g4-07/g4-05 (chạy sau
+  khi mở máy) PASS, g4-12 audit sạch → kết luận máy ngủ; dừng trước KB thật/gate5. `bienban-gate4-20261013.md` (bản XANH của T20a sáng
+  nay, gitignore) bị ghi đè — lượt 2 ghi đè lại bản xanh.
+- **Verify lần 2 (13/10 13:05–13:49, nắp mở) — ĐỎ ở bước 12 (gate5):** lint, test (backend 5606 · mock 106 · ml 123), up, gate2 **89/0**,
+  ingest fixture (KB không đổi), gate3 **66/0**, gate4 **73/0**, ingest KB THẬT `kb/` PASS (`kb_version=3362c39b…`, 18m57s), gate5
+  **87 PASS / 16 FAIL**, trả `.env` PASS, CI (gh) success. Stack kết thúc ở **KB thật**.
+  - gate5 xanh: preflight 6/0, tc03 12/0, tc08 8/0, tc17 5/0, tc21a 13/0, **tc21b 20/0** (cổng 5 "phần mềm có phí lỗi khi cài → không gọi
+    hoàn tác": assign 1, install 1, 0 uninstall, tổng ghi 2, ghi chú license), hb04 18/0, g5-audit 2/0 (9 ticket: 0 thiếu, 0 bí mật).
+  - gate5 đỏ: **chỉ 3 ca account** — tc01 0/9, tc07 1/4, tc18 2/3 (tc18 ra **E1 `out_of_scope`** thay vì E2). **Nguyên nhân (tái hiện
+    cục bộ bằng `RegexPrivacyGuard` thật, không cần stack):** luật bí mật `password` (`config/privacy_patterns.json`, Q-3e-4/9: "mật khẩu"
+    + ≤ 4 từ đệm + `:`/`=` → che giá trị) khớp "mật khẩu tài khoản AD **[fake:**tc01]" — dấu `:` của thẻ preset bị hiểu là "mật khẩu: <giá
+    trị>" → `tc01]` bị che `[BÍ_MẬT_ĐÃ_ẨN]` → mất thẻ → ScriptedLLM dùng preset `default` (out_of_scope) → E1. Lỗi của DỮ LIỆU KỊCH BẢN
+    gate5 (câu account + thẻ cuối câu), không phải code T24 hay kỳ vọng bảng 7.6; thêm dấu chấm cuối câu ("…tài khoản AD. [fake:tc01]")
+    → guard không che, thẻ còn (đã thử cục bộ). Theo lời giao: KHÔNG sửa, báo **Q-T24-10**.
+  - Biên bản `backend/tests/stack/bienban-gate5-20261013.md` (script ghi, KHÔNG ĐẠT 16 FAIL) — `.gitignore` chỉ chặn `bienban-gate4-2*.md`
+    nên file này hiện untracked (không stage).
+- **Summary nguyên văn — verify lần 1** (`.verify/run-20261013-114814.log`; HỎNG do máy ngủ khi gập nắp giữa lượt — gate4 16/14:
+  g4-01/02/03/04/06/11 `chờ duyệt … thấy S_ESCALATED` + `cần đúng 1 phiếu, thấy 0`, g4-09/10 HTTP 401 token hết hạn giữa kịch bản; cùng code
+  với lượt 2; dạng lỗi đúng như README stack dòng 86–88 "E2 `turn_budget_exceeded` (máy ngủ …)"):
+  ```
+  verify G=2345 BENCH=0 HEAD=216c89d dirty=37 env=.env bắt đầu=11:48:14 kết thúc=13:03:39
+  | # | Bước | Kết quả | Thời gian | Ghi chú |
+  | 0 | chuẩn bị | PASS | 0s | .env có; caffeinate bật |
+  | 1 | lint | PASS | 5s |  |
+  | 2 | test | PASS | 3m21s | backend 5606 passed · mock 106 passed · ml 123 passed, 5 deselected |
+  | 3 | up | PASS | 1m42s | APP_ENV=dev |
+  | 6 | gate2 | PASS | 7m14s | 89 PASS, 0 FAIL |
+  | 4 | ingest | PASS | 5m47s | xong: kb_version=c88b47a2c38958836ba4d73e2928070f8ea71a431641fc7ed1317b210fa593a9, collect |
+  | 5 | gate3 | PASS | 2m18s | 66 PASS, 0 FAIL |
+  | 10 | gate4 | FAIL | 54m49s | 16 PASS, 14 FAIL |
+  | 8 | trả về .env | PASS | 7s | backend+worker theo .env |
+  | 9 | CI (gh) | PASS | 0s | completed success 38335521086 |
+  KẾT LUẬN: ĐỎ ở bước 10 (gate4) — 30 dòng cuối log: .verify/run-20261013-114814.log
+  ```
+- **Summary nguyên văn — verify lần 2** (`.verify/run-20261013-130515.log`; nắp mở):
+  ```
+  verify G=2345 BENCH=0 HEAD=216c89d dirty=38 env=.env bắt đầu=13:05:15 kết thúc=13:49:13
+  | # | Bước | Kết quả | Thời gian | Ghi chú |
+  | 0 | chuẩn bị | PASS | 0s | .env có; caffeinate bật |
+  | 1 | lint | PASS | 6s |  |
+  | 2 | test | PASS | 3m22s | backend 5606 passed · mock 106 passed · ml 123 passed, 5 deselected |
+  | 3 | up | PASS | 44s | APP_ENV=dev |
+  | 6 | gate2 | PASS | 7m08s | 89 PASS, 0 FAIL |
+  | 4 | ingest | PASS | 4s | KB không đổi — alias kb_current → kb_c88b47a2c38958836ba4d73e2928070f8ea71a431641fc7ed1317 |
+  | 5 | gate3 | PASS | 2m06s | 66 PASS, 0 FAIL |
+  | 10 | gate4 | PASS | 8m07s | 73 PASS, 0 FAIL |
+  | 11 | ingest KB thật | PASS | 18m57s | xong: kb_version=3362c39bb358e70401daa7924115587eb37478cb37ea89ea2889b3c70e73006a, collect |
+  | 12 | gate5 | FAIL | 3m15s | 87 PASS, 16 FAIL |
+  | 8 | trả về .env | PASS | 8s | backend+worker theo .env |
+  | 9 | CI (gh) | PASS | 0s | completed success 38335521086 |
+  KẾT LUẬN: ĐỎ ở bước 12 (gate5) — 30 dòng cuối log: .verify/run-20261013-130515.log
+  ```
+- **Duyệt sau verify lần 2 (13/10/2026):** Q-T24-10 = A — `gate5.py` TC01/TC07/TC18 thêm dấu chấm cuối câu (kỳ vọng bảng 7.6 giữ
+  nguyên); `test_gate5.py` thêm `test_q_t24_10_tag_survives_real_privacy_guard` (9 câu + thẻ qua `RegexPrivacyGuard` thật: thẻ còn, 0 bí
+  mật) + ca đối chứng ghim nguyên nhân (câu không dấu chấm → mất thẻ); README stack ghi chú. "Spec cần sửa (T24)": câu kịch bản có "mật
+  khẩu" không được để thẻ `[fake:…]` trong vòng 4 từ sau mà không có dấu câu cắt. Q-T24-11 = A — `.gitignore` thêm
+  `backend/tests/stack/bienban-gate5-2*.md` (cạnh dòng gate4). Sau sửa: unit **5069 passed**; `make lint` xanh. Verify lại `G=5` (phiên git P37).
+- **Verify lần 3 — `G=5` XANH (13/10 14:15–14:21, `.verify/run-*` của lượt này; app code như lượt 2, gate2/3/4 xanh ở lượt 2):** gate5
+  **115 PASS / 0 FAIL** (preflight 6, tc01 10, tc03 12, tc07 16, tc08 8, tc17 5, tc18 5, tc21a 13, tc21b 20, hb04 18, g5-audit 2 — 0 thiếu,
+  0 bí mật). Biên bản `backend/tests/stack/bienban-gate5-20261013.md` (ĐẠT, gitignore — không commit). Stack kết thúc ở KB THẬT
+  (`kb_3362c39b…`) — không cần nạp lại. Summary nguyên văn:
+  ```
+  verify G=5 BENCH=0 HEAD=216c89d dirty=38 env=.env bắt đầu=14:15:30 kết thúc=14:21:15
+  | # | Bước | Kết quả | Thời gian | Ghi chú |
+  | 0 | chuẩn bị | PASS | 0s | .env có; caffeinate bật |
+  | 1 | lint | PASS | 5s |  |
+  | 2 | test | PASS | 3m08s | backend 5616 passed · mock 106 passed · ml 123 passed, 5 deselected |
+  | 3 | up | PASS | 34s | APP_ENV=dev |
+  | 11 | ingest KB thật | PASS | 4s | KB không đổi — alias kb_current → kb_3362c39bb358e70401daa7924115587eb37478cb37ea89ea2889b |
+  | 12 | gate5 | PASS | 1m44s | 115 PASS, 0 FAIL |
+  | 8 | trả về .env | PASS | 7s | backend+worker theo .env |
+  | 9 | CI (gh) | PASS | 0s | completed success 38335521086 |
+  KẾT LUẬN: XANH
+  ```
+- **Duyệt verify DỪNG 2 (13/10/2026):** G=2345 lượt 2 (gate2/3/4 xanh) + G=5 lượt 3 (gate5 115/0) → commit 2. **Chờ:** push (phiên git) +
+  báo Phase 6 "6C mở được"; báo M9 (Dương/Duy Anh): 4 intent bật → phân bố intent đổi; báo thành viên: `ENABLED_INTENTS` trong `.env` không
+  tác dụng trên stack (compose không truyền — Q-T24-9); Quân: HB04 kỳ vọng thật là E7 (`assign_paid_license` 409).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -5129,6 +5230,7 @@ chẩn đoán → "chưa đọc được danh sách quyền", rỗng thật → 
 | 3g | Người có ≥ 2 máy chọn máy của mình vẫn phải tự nêu `action` (không suy từ cert khi `validate_targets` kiểm lại máy) — chấp nhận ở Phase 3 (ít tự động = an toàn hơn); đo số lượt hỏi thêm với LLM thật | PLAN-3g g12 |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 5 T20a | Probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật: slot + `action_hint` đúng bảng 5.1.4, slot chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; đo tỉ lệ LLM bỏ trống `target_user` khi câu nhắm người khác (bỏ trống → cờ Q-T20a-4 không bật); chạy lại kịch bản VPN với quy tắc người khác (N5). **Chưa đo.** | phase5 5.1.1 P9, Q-T20a-4 |
+| 5 T24 | TC07/TC08 với LLM thật: `b03_classify` v3 ra account/`reset_password` + `target_user=svc_backup` đúng chữ ("đặt lại mật khẩu AD cho svc_backup") và access/`grant_permission` + `permission_level=read`, `duration=30` từ "quyền đọc … 30 ngày"; chạy lại `make gate5 S="tc07 tc08"` với `LLM_BACKEND=real` (bỏ thẻ preset) → cùng luật R03 (+R04) / R07 (+R09), cùng đường duyệt/từ chối. **Chưa đo.** | phase5 7.6, 1.3 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
