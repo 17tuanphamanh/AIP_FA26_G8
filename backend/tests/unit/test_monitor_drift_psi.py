@@ -1,4 +1,5 @@
-"""M9-B3 cụm 2 — `monitor/drift.py`: PSI, `DriftScore`, `score`, `score_shares`. Không DB.
+"""M9-B3 cụm 2 — `monitor/drift.py`: PSI, `DriftScore`, `score`, `score_shares`; cụm 3 thêm `score_rate` (escalation:
+tỉ lệ của A1 + số mẫu, chốt Q-M9-B3-2 ở #15 comment 12/10). Không DB.
 
 Nguồn: issue #15 (PSI tay khớp, sai số ≤ 1e-6; bin rỗng dùng epsilon cố định), mặc định đã gửi ở issue #15: Q-M9-B3-5
 (epsilon 1e-4 hai phía, không chuẩn hoá lại), Q-M9-B3-6 phương án A (một phía 0 mẫu → None), Q-M9-B3-8.
@@ -20,6 +21,7 @@ from app.monitor.drift import (
     DriftScore,
     psi,
     score,
+    score_rate,
     score_shares,
 )
 
@@ -174,6 +176,63 @@ def test_score_shares_unknown_n() -> None:
     result = score_shares([0.5, 0.5], [0.6, 0.4])
     assert abs(result.psi - PSI_TWO_BINS) <= TOL
     assert (result.n_expected, result.n_actual) == (None, None)
+
+
+# ---- score_rate (cụm 3: escalation = tỉ lệ của A1 + số lá đã kết thúc) -------------------------------------------------
+
+
+def test_score_rate_hand() -> None:
+    """p = 0,5 → [0,5; 0,5]; p = 0,6 → [0,6; 0,4] — cùng ca PSI_TWO_BINS; số mẫu đi theo vào DriftScore."""
+    result = score_rate(0.5, 100, 0.6, 50)
+    assert result is not None
+    assert abs(result.psi - PSI_TWO_BINS) <= TOL
+    assert (result.n_expected, result.n_actual) == (100, 50)
+    assert type(result.psi) is float
+
+
+@pytest.mark.parametrize(
+    ("p_e", "n_e", "p_a", "n_a"),
+    [(None, 10, 0.5, 10), (0.5, 10, None, 10), (0.5, 0, 0.5, 10), (0.5, 10, 0.5, 0)],
+    ids=["p_moc_none", "p_do_none", "n_moc_0", "n_do_0"],
+)
+def test_score_rate_not_measurable(p_e: Any, n_e: int, p_a: Any, n_a: int) -> None:
+    """Q-M9-B3-6 (A) như `score`: một phía 0 mẫu (hoặc A trả None — 0 lá) → None, không phải DriftScore(0.0, …)."""
+    assert score_rate(p_e, n_e, p_a, n_a) is None
+
+
+def test_score_rate_one_sample_side_is_measured() -> None:
+    """Ngưỡng mặc định max(1, 0 × 2) = 1: đúng 1 mẫu một phía → đo được. [1; 0] vs [0,75; 0,25] = 2,0271496162 (cùng số
+    tay với `test_score_one_sample_side_is_measured`)."""
+    result = score_rate(1.0, 1, 0.75, 4)
+    assert result is not None
+    assert abs(result.psi - 2.0271496162) <= TOL
+    assert (result.n_expected, result.n_actual) == (1, 4)
+
+
+def test_score_rate_min_samples_constant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cùng hằng với `score`: phương án B → 2 bin × 20 = 40 mẫu mỗi phía."""
+    monkeypatch.setattr(drift, "MIN_SAMPLES_PER_BIN", 20)
+    assert score_rate(0.5, 39, 0.5, 40) is None
+    assert score_rate(0.5, 40, 0.5, 39) is None
+    assert score_rate(0.5, 40, 0.5, 40) == DriftScore(0.0, 40, 40)
+
+
+@pytest.mark.parametrize(
+    ("args", "exc", "message"),
+    [
+        ((0.5, True, 0.5, 10), TypeError, "score_rate: số mẫu không phải số nguyên"),
+        ((0.5, 10, 0.5, 10.0), TypeError, "score_rate: số mẫu không phải số nguyên"),
+        ((0.5, -1, 0.5, 10), ValueError, "score_rate: số mẫu âm"),
+        (("0.5", 10, 0.5, 10), TypeError, "score_rate: tỉ lệ không phải số thực"),
+        ((0.5, 10, True, 10), TypeError, "score_rate: tỉ lệ không phải số thực"),
+        ((0.5, 10, 1.5, 10), ValueError, "psi: tỉ lệ âm"),
+    ],
+    ids=["n_bool", "n_float", "n_am", "p_chuoi", "p_bool", "p_ngoai_dai"],
+)
+def test_score_rate_rejects(args: Any, exc: type[Exception], message: str) -> None:
+    with pytest.raises(exc) as info:
+        score_rate(*args)
+    assert str(info.value) == message
 
 
 @pytest.mark.parametrize(

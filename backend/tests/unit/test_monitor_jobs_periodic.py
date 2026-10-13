@@ -22,7 +22,13 @@ from app import worker
 from app.core.clock import FakeClock
 from app.db.session import Engines
 from app.domain.alerts import AlertDraft
-from app.monitor.evaluator import LOADERS, EvalResult, Pending, reset_log_pacing
+from app.monitor.evaluator import (
+    LOADERS,
+    EvalResult,
+    Pending,
+    evaluate,
+    reset_log_pacing,
+)
 from app.monitor.rules import REGISTRY, RuleContext
 from app.monitor.window import VN_TZ
 from app.settings import Settings
@@ -38,6 +44,7 @@ MINUTE_ID, HOURLY_ID, DAILY_ID = "monitor_rules_minute", "monitor_rules_hourly",
 CORE_IDS = {"heartbeat", "scan_deadlines", "scan_stale_turns"}
 HOURLY_RULES = {"llm_budget"}
 DAILY_RULES = {"escalation_rate_high", "b2_degraded", "b3_degraded", "reflex_approval"}
+WEEKLY_RULES = {"drift"}  # B3 cụm 3: luật 8; job tuần là cụm 4
 MINUTE_RULES = {
     "injection_detected", "password_bruteforce", "refresh_reuse", "permission_denied_burst", "policy_saved",
     "finalize_failed", "execution_failed", "e9_spike", "e6_spike", "breaker_open",
@@ -251,8 +258,10 @@ def test_periodic_job_evaluates_own_every(
 
 def test_job_rule_sets_match_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """U5. `evaluate` THẬT, mọi loader thay bằng bản giả ghi tên + trả `Pending`: tập luật mỗi job chạy BẰNG tập luật
-    `REGISTRY` theo `every` và bằng hằng viết tay; ba job phủ đúng `REGISTRY`. Luật giờ/ngày đều có loader thật."""
-    assert HOURLY_RULES | DAILY_RULES <= set(LOADERS)
+    `REGISTRY` theo `every` và bằng hằng viết tay; các job phủ đúng `REGISTRY`. Luật giờ/ngày/tuần đều có loader thật.
+    B3 cụm 3: luật tuần 8 đã đăng ký nhưng job tuần là cụm 4 → tập luật tuần chạy bằng `evaluate("weekly")` THẬT gọi
+    trực tiếp (cụm 4: thay bằng `jobs["weekly"].run()`)."""
+    assert HOURLY_RULES | DAILY_RULES | WEEKLY_RULES <= set(LOADERS)
     called: list[str] = []
 
     def probe(rule_id: str) -> Any:
@@ -271,8 +280,15 @@ def test_job_rule_sets_match_registry(tmp_path: Path, monkeypatch: pytest.Monkey
         asyncio.run(jobs[every].run())
         ran[every] = set(called)
         assert ran[every] == {r for r, spec in REGISTRY.items() if spec.every == every}, every
-    assert (ran["minute"], ran["hourly"], ran["daily"]) == (MINUTE_RULES, HOURLY_RULES, DAILY_RULES)
-    assert ran["minute"] | ran["hourly"] | ran["daily"] == set(REGISTRY)
+    called.clear()
+    result = asyncio.run(evaluate("weekly", cast(Any, FakeEngine()), RuleContext(T0, VN_TZ, 12.0, 0.5)))
+    ran["weekly"] = set(called)
+    assert result.skipped_rules == sorted(WEEKLY_RULES) and result.failed_rules == []
+    assert ran["weekly"] == {r for r, spec in REGISTRY.items() if spec.every == "weekly"}
+    assert (ran["minute"], ran["hourly"], ran["daily"], ran["weekly"]) == (
+        MINUTE_RULES, HOURLY_RULES, DAILY_RULES, WEEKLY_RULES,
+    )  # fmt: skip
+    assert ran["minute"] | ran["hourly"] | ran["daily"] | ran["weekly"] == set(REGISTRY)
 
 
 # ---- U6–U9: lỗi không lan, ghi qua writer, tên job trong log ---------------------------------------------------------

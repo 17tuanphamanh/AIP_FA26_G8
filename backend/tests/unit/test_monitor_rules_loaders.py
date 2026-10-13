@@ -119,6 +119,13 @@ def test_hourly_daily_rules_have_loader() -> None:
     assert set(LOADERS) == set(REGISTRY)
 
 
+def test_weekly_rules_have_loader() -> None:
+    """B3 cụm 3: luật tuần 8 `drift` có loader ở `rules_data` (chi tiết loader: `test_monitor_rules_weekly.py`)."""
+    weekly = {r for r, spec in REGISTRY.items() if spec.every == "weekly"}
+    assert weekly == {"drift"}
+    assert {LOADERS[r].__module__ for r in weekly} == {rules_data.__name__}
+
+
 # ---- luật 14 llm_budget -------------------------------------------------------------------------------------------------
 
 

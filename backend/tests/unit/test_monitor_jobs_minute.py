@@ -13,19 +13,22 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 import yaml
 from app import worker
 from app.core.clock import FakeClock
-from app.db.models import SECURITY_EVENT_TYPES, SPAN_STATUSES, SPAN_TYPES
+from app.db.models import INTENTS, SECURITY_EVENT_TYPES, SPAN_STATUSES, SPAN_TYPES
 from app.db.session import Engines
 from app.domain.alerts import AlertDraft
+from app.domain.override import OVERRIDE_EVENT, OVERRIDE_STEP
 from app.graph.runner import FINALIZE_FAILED
 from app.llm.config import load_llm_config
 from app.monitor.evaluator import LOADERS, EvalResult, Pending
 from app.monitor.queries import rules_data
+from app.monitor.queries.business import WeightedRate
 from app.monitor.rules import LOOKBACK, REGISTRY, RuleContext
 from app.monitor.window import VN_TZ
 from app.settings import Settings
@@ -761,12 +764,21 @@ def test_every_minute_rule_has_loader() -> None:
 def _sql() -> dict[str, str]:
     found = {name: clause.text for name, clause in vars(rules_data).items() if isinstance(clause, TextClause)}
     # quét không rỗng; luật 4/6 dùng lại TICKET_EXIT_SQL, luật 5 thêm TOOL_SPAN_SQL; luật 14 LLM_SPEND_SQL, luật 7
-    # REFLEX_SQL (luật 1, 12, 13 gọi hàm của luồng A, không có SQL riêng)
-    assert len(found) == 8
+    # REFLEX_SQL (luật 1, 12, 13 gọi hàm của luồng A, không có SQL riêng); B3 luật 8: 5 câu đếm bin DRIFT_* (escalation
+    # gọi hàm A1, không có SQL riêng)
+    assert len(found) == 13
     return found
 
 
 _UNWRITTEN_COLUMNS = ("confidence", "query", "success", "action_plan_hash_matched")  # kế hoạch chung 1.4
+_JSON_KEY = re.compile(r"->>?\s*'[^']*'")  # truy cập khoá JSON `->'k'` / `->>'k'` — khoá JSON không phải cột
+# Q-M9-B3-15 [Đề xuất] — miễn trừ ĐÍCH DANH kiểm `<`: Q-M9-B1-12 cấm chặn trên THEO `now` ở luật sự kiện (sự kiện có thời
+# điểm sau `now` do lệch đồng hồ vẫn phải được đọc). Cửa sổ drift là tuần ĐÃ KHÉP `[frm, to)`, `to` là mốc tuần cố định
+# tính từ `week_start`, không phải `now`; biểu thức bin top_score cần `< 0`. Kiểm không có `:now` vẫn áp cho TẤT CẢ.
+DRIFT_SQL = {"DRIFT_INTENT_SQL", "DRIFT_CONFIDENCE_SQL", "DRIFT_TOP_SCORE_SQL", "DRIFT_DONE_SQL", "DRIFT_OVERRIDE_SQL"}
+# Q-M9-B3-16 [Đề xuất] — miễn trừ ĐÍCH DANH kiểm `::`: `::numeric` chỉ trong nhánh THEN sau `jsonb_typeof(...) = 'number'`
+# (số JSONB luôn ép được → không có lỗi ép kiểu in giá trị). `cast(` vẫn cấm cho tất cả.
+DRIFT_CAST_SQL = {"DRIFT_CONFIDENCE_SQL": "confidence", "DRIFT_TOP_SCORE_SQL": "top_score"}
 
 
 def test_rules_data_only_select() -> None:
@@ -774,16 +786,34 @@ def test_rules_data_only_select() -> None:
     theo `now` (Q-M9-B1-12 — không có `<`, không có tham số `now`); luật 2/16 (và 4/6, cùng SQL) qua `v_leaf`, luật 15
     thì không. Luật 5 đọc `spans`, không lọc lá (Q-M9-B2-22: breaker là sự cố hệ thống, không phải đếm ticket).
     Luật 14: tổng toàn bảng `llm_calls` — không cửa sổ, không nối, không `v_leaf` (Q-M9-6, như `spend_total`). Luật 7: gốc
-    `approvals`, không lọc lá (Q-M9-B2-24, chốt PR #31: luật đếm phiếu, không đếm ticket)."""
+    `approvals`, không lọc lá (Q-M9-B2-24, chốt PR #31: luật đếm phiếu, không đếm ticket).
+    B3 luật 8: miễn trừ đích danh `DRIFT_SQL` khỏi kiểm `<` (Q-M9-B3-15) và `DRIFT_CAST_SQL` khỏi kiểm `::` (Q-M9-B3-16),
+    kèm kiểm dương; kiểm cột chưa ghi bỏ qua truy cập khoá JSON (`detail->'confidence'` không phải cột `confidence`)."""
     sql = _sql()
+    assert DRIFT_SQL <= set(sql) and set(DRIFT_CAST_SQL) <= DRIFT_SQL  # gõ sai tên miễn trừ → đỏ
     for name, body in sql.items():
         words = body.lower()
+        columns = _JSON_KEY.sub("", words)
         assert words.strip().startswith("select"), name
         assert not re.search(r"\b(insert|update|delete|truncate|create|alter|drop|grant)\b", words), name
         assert not re.search(r"\btickets\b", words), name
-        assert not [c for c in _UNWRITTEN_COLUMNS if re.search(rf"\b{c}\b", words)], name
-        assert "<" not in body and ":now" not in body, name
-        assert "cast(" not in words and "::" not in body, name  # không ép kiểu dữ liệu JSON
+        assert not [c for c in _UNWRITTEN_COLUMNS if re.search(rf"\b{c}\b", columns)], name
+        assert "a.confidence" not in words, name
+        assert ":now" not in body, name
+        if name not in DRIFT_SQL:
+            assert "<" not in body, name
+        assert "cast(" not in words, name
+        if name not in DRIFT_CAST_SQL:
+            assert "::" not in body, name  # không ép kiểu dữ liệu JSON
+    for name in DRIFT_SQL:  # chặn trên chỉ là mốc tuần `:to`; `<` khác chỉ là so bin `< 0`
+        assert "t.created_at < :to" in sql[name], name
+        assert set(re.findall(r"<\s*[^\s)]+", sql[name].replace("t.created_at < :to", ""))) <= {"< 0"}, name
+    for name, key in DRIFT_CAST_SQL.items():
+        body, guard = sql[name], f"jsonb_typeof(a.detail->'{key}') = 'number' THEN"
+        assert body.count(guard) == 1 and body.count("jsonb_typeof") == 1, name
+        assert body.count("::") == body.count("::numeric") >= 1, name
+        assert body.index(guard) < body.index("::numeric"), name
+    assert "detail->'confidence'" in sql["DRIFT_CONFIDENCE_SQL"]
     assert "v_leaf" in sql["TICKET_EXIT_SQL"]
     assert "v_leaf" not in sql["FINALIZE_FAILED_SQL"]
     assert "from spans" in sql["TOOL_SPAN_SQL"].lower() and "v_leaf" not in sql["TOOL_SPAN_SQL"]
@@ -917,7 +947,9 @@ def test_breaker_error_constant_matches_registry() -> None:
 def test_only_pending_source_loaders_call_is_pending() -> None:
     """Chỉ luật có nguồn TỪNG pending mới gọi `is_pending` (hợp đồng mục 3, file chia việc :111, :113), mỗi loader một lời
     gọi với khoá HẰNG (gõ sai → KeyError → failed_rules): luật 5 `tool_spans`, luật 7 `approval_view` (pending tới 4c), luật
-    12 `b2_classifier`, luật 13 `b3_cascade`. Luật 11 không gọi (chốt 02/10 ở #13); luật 1, 14 không có nguồn pending."""
+    12 `b2_classifier`, luật 13 `b3_cascade`. Luật 11 không gọi (chốt 02/10 ở #13); luật 1, 14 không có nguồn pending.
+    B3 luật 8: `drift_counts` gọi `override_count` (pending tới 4d) — chỉ bỏ phân bố override, không bỏ cả luật (Q-M9-B3-3);
+    `load_drift` không gọi lại (đọc `DriftCounts.pending`)."""
     tree = ast.parse(inspect.getsource(rules_data))
     calls = [
         (fn.name, [a.value for a in call.args if isinstance(a, ast.Constant)])
@@ -930,4 +962,59 @@ def test_only_pending_source_loaders_call_is_pending() -> None:
         ("load_reflex_approval", ["approval_view"]),
         ("load_b2_degraded", ["b2_classifier"]),
         ("load_b3_degraded", ["b3_cascade"]),
+        ("drift_counts", ["override_count"]),
     ]
+
+
+# ---- B3 luật 8 drift: tham số bind ------------------------------------------------------------------------------------
+
+# T0 = 2026-10-02T08:00Z = 15:00 thứ Sáu 02/10 giờ VN → W = 00:00 thứ Hai 28/09 VN = 2026-09-27T17:00Z (tính tay). Ba cửa
+# sổ: [09-06T17, 09-13T17), [09-13T17, 09-20T17), [09-20T17, 09-27T17).
+DRIFT_WINDOWS_T0 = [
+    (datetime(2026, 9, d, 17, 0, tzinfo=UTC), datetime(2026, 9, d + 7, 17, 0, tzinfo=UTC)) for d in (6, 13, 20)
+]
+_DRIFT_BINDS = {"frm", "to", "intents", "steps", "e3", "step", "event"}
+
+
+class _DriftResult:
+    def all(self) -> list[Any]:
+        return []
+
+    def one(self) -> Any:
+        return SimpleNamespace(n=0, hit=0)
+
+
+class DriftRecordingConn:
+    """Như RecordingConn nhưng kết quả có `all()`/`one()` (câu đếm của luật 8)."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def execute(self, clause: TextClause, params: dict[str, Any]) -> _DriftResult:
+        self.calls.append((clause.text, params))
+        return _DriftResult()
+
+
+def test_drift_loader_binds_only_windows_and_constants(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tham số bind của luật 8 chỉ là mốc tuần (3 cửa sổ tay) + hằng code; KHÔNG có `now`/`since` (không đọc theo `now`).
+    Không nới `_ALLOWED_BINDS` của luật sự kiện — bộ khoá riêng của drift."""
+
+    async def no_rate(conn: object, frm: datetime, to: datetime) -> WeightedRate:
+        return WeightedRate(raw=None, weighted=None, by_group={}, sensitivity={})
+
+    monkeypatch.setattr(rules_data, "escalation_rate_weighted", no_rate)
+    conn = DriftRecordingConn()
+    asyncio.run(LOADERS["drift"](cast(Any, conn), RuleContext(T0, VN_TZ, 38.0, 0.8)))
+    assert len(conn.calls) == 3 * 5
+    assert sorted({(p["frm"], p["to"]) for _, p in conn.calls}) == DRIFT_WINDOWS_T0
+    for sql, params in conn.calls:
+        assert set(params) <= _DRIFT_BINDS and {"frm", "to"} <= set(params), sql
+        assert all(isinstance(v, str | datetime | list) for v in params.values())
+    by_sql = {sql: {k: v for k, v in params.items() if k not in ("frm", "to")} for sql, params in conn.calls}
+    assert by_sql == {
+        rules_data.DRIFT_INTENT_SQL.text: {"intents": list(INTENTS)},
+        rules_data.DRIFT_CONFIDENCE_SQL.text: {"steps": ["B3", "B4"]},
+        rules_data.DRIFT_TOP_SCORE_SQL.text: {"steps": ["B8"]},
+        rules_data.DRIFT_DONE_SQL.text: {"e3": "E3"},
+        rules_data.DRIFT_OVERRIDE_SQL.text: {"step": OVERRIDE_STEP, "event": OVERRIDE_EVENT},
+    }

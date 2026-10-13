@@ -49,41 +49,66 @@ nhận. Chốt áp ở đây (#13, PR #20):
   Q-M9-B2-24 (chốt PR #31): KHÔNG lọc `V_LEAF` — D-30 áp cho luật đếm ticket, luật 7 đếm PHIẾU theo người quyết;
   ticket cha không có phiếu (states.py), sau này có thì lọc là sót. `is_pending("approval_view")` (nguồn từng pending
   tới 4c, file chia việc mục 3); Q-M9-B2-25 (chốt PR #31): lý do `approval_view_not_recorded`.
+- Luật 8 `drift` (B3, chốt #15 comment 12/10): `drift_counts(conn, frm, to)` đếm 6 phân bố của MỘT tuần (công khai —
+  dashboard dùng lại, Q-M9-B3-4/9); `drift_scores` ra PSI (Q-M9-B3-8); loader đánh giá `weekly_marks(ctx)`. Mọi câu qua
+  `V_LEAF` (D-30); mốc bin là hằng code, không đọc `config/` (Q-M9-B3-2). Ba ngoại lệ có chủ ý so với quy ước trên:
+  (1) Chặn trên `t.created_at < :to` (Q-M9-B3-15): `to` là mốc tuần ĐÃ KHÉP tính từ `week_start`, không phải `now` —
+  Q-M9-B1-12 cấm chặn trên theo `now` ở luật sự kiện; không có tham số `now`.
+  (2) Đọc KHOÁ JSON `detail->'confidence'` (điểm log 1), không phải cột `audit_logs.confidence` (cột chưa từng ghi).
+  (3) Ép `::numeric` CHỈ trong nhánh `THEN` sau `jsonb_typeof(...) = 'number'` (Q-M9-B3-16): số JSONB luôn ép được sang
+  `numeric`, `CASE` không chạy nhánh khi điều kiện sai → không có lỗi ép kiểu in giá trị; chuỗi/bool/`null`/`detail` không
+  phải object bị loại. `numeric` (không `float8`): không tràn, 0,3 rơi đúng bin [0,3; 0,4).
+  Tham số bind: mốc tuần + hằng code (`intents`, `steps`, `e3`, `step`, `event`). `escalation` gọi
+  `escalation_rate_weighted(...).raw` của A1 (không tự đếm lại); số mẫu = số lá đã kết thúc, CÙNG mẫu số (`DRIFT_DONE`,
+  `DRIFT_LEAF_WINDOW` bằng chữ với `common.DONE`, `common.LEAF_WINDOW` — test đối chiếu). `is_pending("override_count")`
+  (nguồn pending tới 4d) chỉ bỏ phân bố `override`, không bỏ cả luật (Q-M9-B3-3).
 """
 
-from collections.abc import Awaitable, Callable, Mapping
+import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.db.models import INTENTS
 from app.domain.alerts import BRUTEFORCE_RULE_ID
 from app.domain.exit_codes import ExitCode
+from app.domain.override import OVERRIDE_EVENT, OVERRIDE_STEP
+from app.monitor.drift import DriftScore, score, score_rate
 from app.monitor.evaluator import Pending, loader
 from app.monitor.metrics import is_pending
 from app.monitor.queries.ai import b2_llm_rate, b3_llm_rate
 from app.monitor.queries.business import WeightedRate, escalation_rate_weighted
 from app.monitor.rules import (
     BURST_WINDOW,
+    DRIFT_DISTRIBUTIONS,
     HUMAN_DECISIONS,
     LOOKBACK,
     RECONCILE_TOLERANCE,
     ApprovalDecision,
     BruteforceData,
+    DriftWeek,
     ExistingAlert,
     FinalizeFailed,
     RuleContext,
     SecurityEvent,
     TicketExit,
     ToolSpan,
+    baseline_window,
     daily_marks,
     daily_since,
     day_window,
     rolling_7d_window,
     spike_since,
+    week_window,
+    weekly_marks,
 )
 from app.monitor.views import V_LEAF
+
+log = logging.getLogger(__name__)
 
 # graph/runner.py `FINALIZE_FAILED` — monitor không import graph; test đối chiếu hai hằng.
 FINALIZE_FAILED_STEP = "B20"
@@ -303,3 +328,186 @@ async def load_b3_degraded(conn: AsyncConnection, ctx: RuleContext) -> dict[date
     if is_pending("b3_cascade"):
         return Pending("cascade_not_enabled")
     return await _daily_rates(conn, ctx, b3_llm_rate)
+
+
+# ---- B3 luật tuần: 8 drift (chốt Q-M9-B3-1…11 ở #15) -------------------------------------------------------------------
+#
+# Mốc bin CỐ ĐỊNH trong code (Q-M9-B3-2, tách vai D-43: không đọc `config/`). Hằng render vào SQL lúc import (như `V_LEAF`).
+
+# Cùng chữ với `queries/common.py` `LEAF_WINDOW`, `DONE` (A) — test đối chiếu: e3_rate và số mẫu escalation phải CÙNG mẫu
+# số với `escalation_rate_weighted(...).raw`. Không import lúc chạy: `common` ngoài hợp đồng mục 3.
+DRIFT_LEAF_WINDOW = "t.created_at >= :frm AND t.created_at < :to"
+DRIFT_DONE = "t.final_state IS NOT NULL"
+DRIFT_NONE = "none"  # intent NULL (chưa phân loại, ngoài phạm vi)
+DRIFT_OTHER = "other"  # intent ngoài INTENTS
+DRIFT_INTENT_BINS: tuple[str, ...] = (*INTENTS, DRIFT_NONE, DRIFT_OTHER)
+UNIT_LO = 0  # confidence, top_score: UNIT_BINS bin đều trên [UNIT_LO; UNIT_HI], bin cuối đóng (1,0 vào bin 10)
+UNIT_HI = 1
+UNIT_BINS = 10
+CONFIDENCE_STEPS: tuple[str, ...] = ("B3", "B4")  # điểm log 1 (ca E1 ghi ở B4) — như `ai.b3_llm_rate`
+TOP_SCORE_STEP = "B8"  # điểm log 3 (`graph/nodes/b08_retrieve.py` `point3`)
+TOP_SCORE_BINS = UNIT_BINS + 2  # thêm bin < UNIT_LO (chỉ số 0) và bin > UNIT_HI (chỉ số UNIT_BINS + 1)
+
+
+def _json_number(key: str) -> tuple[str, str]:
+    """(điều kiện, giá trị) của khoá `detail.<key>`: chỉ ép `::numeric` sau khi `jsonb_typeof` xác nhận là số."""
+    return f"jsonb_typeof(a.detail->'{key}') = 'number'", f"(a.detail->'{key}')::numeric"
+
+
+def _unit_bucket(value: str) -> str:
+    return f"width_bucket({value}, {UNIT_LO}, {UNIT_HI}, {UNIT_BINS})"
+
+
+_CONF_IS_NUM, _CONF = _json_number("confidence")
+_TOP_IS_NUM, _TOP = _json_number("top_score")
+# Q-M9-B3-12 [Đề xuất]: confidence ngoài [0; 1] KẸP vào bin biên (1 hoặc UNIT_BINS) — bỏ thì sót lệch kiểu "model trả 1,5".
+_CONF_BIN = (
+    f"CASE WHEN {_CONF_IS_NUM} THEN LEAST(GREATEST({_unit_bucket(_CONF)}, 1), {UNIT_BINS}) END"
+)
+_TOP_BIN = (
+    f"CASE WHEN {_TOP_IS_NUM} THEN CASE WHEN {_TOP} < {UNIT_LO} THEN 0 WHEN {_TOP} > {UNIT_HI} THEN {UNIT_BINS + 1} "
+    f"ELSE LEAST({_unit_bucket(_TOP)}, {UNIT_BINS}) END END"
+)
+
+
+def _audit_bins_sql(bin_expr: str) -> str:
+    """Đếm theo DÒNG audit (Q-M9-B2-27) của lá tạo trong tuần; dòng không phải số (bin NULL) bị loại."""
+    return f"""
+SELECT s.bin, count(*) AS n
+FROM (
+    SELECT {bin_expr} AS bin
+    FROM audit_logs a
+    JOIN {V_LEAF} t ON t.ticket_id = a.ticket_id
+    WHERE {DRIFT_LEAF_WINDOW} AND a.step = ANY(:steps)
+) s
+WHERE s.bin IS NOT NULL
+GROUP BY s.bin
+"""
+
+
+# Lá TẠO trong tuần (theo bảng chốt Q-M9-B3-2, không lọc kết thúc — Q-M9-B3-14): lá chưa qua B3 có intent NULL → "none".
+DRIFT_INTENT_SQL = text(f"""
+SELECT CASE WHEN t.intent IS NULL THEN '{DRIFT_NONE}' WHEN t.intent = ANY(:intents) THEN t.intent
+            ELSE '{DRIFT_OTHER}' END AS bin,
+       count(*) AS n
+FROM {V_LEAF} t
+WHERE {DRIFT_LEAF_WINDOW}
+GROUP BY 1
+""")
+
+DRIFT_CONFIDENCE_SQL = text(_audit_bins_sql(_CONF_BIN))
+DRIFT_TOP_SCORE_SQL = text(_audit_bins_sql(_TOP_BIN))
+
+DRIFT_DONE_SQL = text(f"""
+SELECT count(*) AS n, count(*) FILTER (WHERE t.exit_code = :e3) AS hit
+FROM {V_LEAF} t
+WHERE {DRIFT_LEAF_WINDOW} AND {DRIFT_DONE}
+""")
+
+DRIFT_OVERRIDE_SQL = text(f"""
+SELECT count(*) AS n,
+       count(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM audit_logs a WHERE a.ticket_id = t.ticket_id AND a.step = :step AND a.event = :event
+       )) AS hit
+FROM {V_LEAF} t
+WHERE {DRIFT_LEAF_WINDOW} AND {DRIFT_DONE}
+""")
+
+
+@dataclass(frozen=True)
+class DriftCounts:
+    """Số đếm 6 phân bố của MỘT tuần (`drift_counts`). `bins`: tên phân bố → số đếm theo bin, thứ tự cố định (`intent`
+    theo `DRIFT_INTENT_BINS`; `confidence` UNIT_BINS bin; `top_score` TOP_SCORE_BINS bin; `e3_rate`, `override` = (có,
+    không)). `escalation` không có số đếm: tỉ lệ `escalation_raw` của A1 + `leaves_done` (mẫu số chung). Phân bố có nguồn
+    pending nằm trong `pending`, không có trong `bins`."""
+
+    bins: Mapping[str, tuple[int, ...]]
+    escalation_raw: float | None
+    leaves_done: int
+    pending: tuple[str, ...]
+
+
+def _bin_counts(rows: Sequence[Any], size: int, offset: int) -> tuple[int, ...]:
+    """Dòng `(chỉ số bin, số đếm)` → tuple đủ `size` bin (bin không có dòng = 0). Chỉ số ngoài dải → lỗi (SQL lệch mốc
+    bin là bug, không gộp im lặng)."""
+    counts = [0] * size
+    for index, n in rows:
+        if not isinstance(index, int) or not 0 <= index - offset < size:
+            raise ValueError("drift_counts: chỉ số bin ngoài dải")
+        counts[index - offset] += n
+    return tuple(counts)
+
+
+def _intent_counts(rows: Sequence[Any]) -> tuple[int, ...]:
+    counts = dict.fromkeys(DRIFT_INTENT_BINS, 0)
+    for name, n in rows:
+        if name not in counts:
+            raise ValueError("drift_counts: bin intent lạ")
+        counts[name] += n
+    return tuple(counts.values())
+
+
+async def drift_counts(conn: AsyncConnection, frm: datetime, to: datetime) -> DriftCounts:
+    """Đếm 6 phân bố của luật 8 trong cửa sổ `[frm, to)` theo `created_at` của LÁ (`v_leaf`). Công khai: dashboard
+    (khối `drift`, Q-M9-B3-4) gọi cùng hàm cho tuần mốc/tuần đo rồi `drift_scores`. `frm`/`to` naive hoặc `frm >= to` →
+    `ValueError` trước khi chạm DB. `override` pending (`is_pending("override_count")`) → không chạy câu ghi đè."""
+    for ts in (frm, to):
+        if ts.tzinfo is None or ts.utcoffset() is None:
+            raise ValueError("drift_counts: cần datetime có múi giờ")
+    if frm >= to:
+        raise ValueError("drift_counts: cửa sổ rỗng")
+    window = {"frm": frm, "to": to}
+    intent = (await conn.execute(DRIFT_INTENT_SQL, {**window, "intents": list(INTENTS)})).all()
+    confidence = (await conn.execute(DRIFT_CONFIDENCE_SQL, {**window, "steps": list(CONFIDENCE_STEPS)})).all()
+    top_score = (await conn.execute(DRIFT_TOP_SCORE_SQL, {**window, "steps": [TOP_SCORE_STEP]})).all()
+    done = (await conn.execute(DRIFT_DONE_SQL, {**window, "e3": ExitCode.E3.value})).one()
+    bins: dict[str, tuple[int, ...]] = {
+        "intent": _intent_counts(intent),
+        "confidence": _bin_counts(confidence, UNIT_BINS, 1),
+        "top_score": _bin_counts(top_score, TOP_SCORE_BINS, 0),
+        "e3_rate": (done.hit, done.n - done.hit),
+    }
+    pending: tuple[str, ...] = ()
+    if is_pending("override_count"):
+        pending = ("override",)
+    else:
+        row = (await conn.execute(DRIFT_OVERRIDE_SQL, {**window, "step": OVERRIDE_STEP, "event": OVERRIDE_EVENT})).one()
+        bins["override"] = (row.hit, row.n - row.hit)
+    raw = (await escalation_rate_weighted(conn, frm, to)).raw
+    return DriftCounts(bins=bins, escalation_raw=raw, leaves_done=done.n, pending=pending)
+
+
+def drift_scores(expected: DriftCounts, actual: DriftCounts) -> DriftWeek:
+    """Tuần mốc (`expected`) so tuần đo (`actual`) → PSI từng phân bố (thuần, không I/O). Phân bố pending ở một trong hai
+    phía → `skipped`. `escalation` → `score_rate` trên tỉ lệ của A với số mẫu `leaves_done`; còn lại → `score`."""
+    skipped = tuple(name for name in DRIFT_DISTRIBUTIONS if name in expected.pending or name in actual.pending)
+    scores: dict[str, DriftScore | None] = {}
+    for name in DRIFT_DISTRIBUTIONS:
+        if name in skipped:
+            continue
+        if name == "escalation":
+            scores[name] = score_rate(
+                expected.escalation_raw, expected.leaves_done, actual.escalation_raw, actual.leaves_done
+            )
+        else:
+            scores[name] = score(expected.bins[name], actual.bins[name])
+    return DriftWeek(scores=scores, skipped=skipped)
+
+
+@loader("drift")
+async def load_drift(conn: AsyncConnection, ctx: RuleContext) -> dict[datetime, DriftWeek]:
+    """`{m: drift_scores(tuần mốc, tuần đo)}` cho `m ∈ weekly_marks(ctx)` (dict dựng từ chính `weekly_marks`). Đếm theo
+    cửa sổ, mỗi cửa sổ một lần: tuần `[W − 14, W − 7)` vừa là tuần đo của mốc `W − 7` vừa là tuần mốc của `W` → 3 lượt
+    đếm, hai mốc thấy cùng số. Nguồn ghi đè pending → log INFO (Q-M9-B3-13), luật vẫn chạy 5 phân bố còn lại."""
+    cache: dict[tuple[datetime, datetime], DriftCounts] = {}
+    out: dict[datetime, DriftWeek] = {}
+    for m in weekly_marks(ctx):
+        pair: list[DriftCounts] = []
+        for window in (baseline_window(m, ctx.tz), week_window(m, ctx.tz)):
+            if window not in cache:
+                cache[window] = await drift_counts(conn, *window)
+            pair.append(cache[window])
+        out[m] = drift_scores(*pair)
+    if any(counts.pending for counts in cache.values()):
+        log.info("luật drift bỏ phân bố override: nguồn chưa có (override_count)")
+    return out

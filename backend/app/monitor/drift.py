@@ -1,14 +1,17 @@
 """Drift M9 (luật 8, chặng B3 — issue #15) — PSI giữa phân bố tuần mốc và tuần đo; THUẦN: không I/O, không đồng hồ,
 không log.
 
-Chỉ phần toán. Bin, tên phân bố, cửa sổ tuần và SQL đếm thuộc cụm 3 (chờ chốt Q-M9-B3-1…3); luật 8 nhận `DriftScore` đã
-tính và chỉ so ngưỡng (Q-M9-B3-8) — test "bằng đúng 0,2" làm được trên số PSI, không dựng nổi phân bố cho PSI đúng 0,2.
+Chỉ phần toán. Bin, tên phân bố, cửa sổ tuần và SQL đếm ở `rules.py` / `queries/rules_data.py` (cụm 3, chốt Q-M9-B3-1…3
+ở #15); luật 8 nhận `DriftScore` đã tính và chỉ so ngưỡng (Q-M9-B3-8) — test "bằng đúng 0,2" làm được trên số PSI, không
+dựng nổi phân bố cho PSI đúng 0,2.
 
 - `psi(expected, actual)`: hai dãy TỈ LỆ (tổng 1) → PSI.
 - `score(expected_counts, actual_counts)`: hai dãy SỐ ĐẾM → `DriftScore` (kèm số mẫu), hoặc `None` khi không đủ mẫu.
-- `score_shares(expected, actual)`: phân bố chỉ có tỉ lệ, không có số đếm (vd escalation từ `escalation_rate_raw` của A1,
-  cụm 3 dựng `[p, 1 − p]`) → `DriftScore` với số mẫu `None`. `p` là `None` (0 lá) thì cụm 3 gán `None` cho phân bố, không
-  gọi hàm này.
+- `score_shares(expected, actual)`: hai dãy tỉ lệ, không biết số mẫu → `DriftScore` với số mẫu `None`.
+- `score_rate(p_e, n_e, p_a, n_a)`: phân bố 2 bin cho bằng MỘT tỉ lệ `p` + số mẫu `n` (escalation: `p` =
+  `escalation_rate_weighted(...).raw` của A1, `n` = số lá đã kết thúc — chốt Q-M9-B3-2). PSI tính trên đúng `p` của A (không
+  dựng lại số đếm `round(p·n)`: job đọc READ COMMITTED nên `n` của B có thể lệch `n` của A vài lá → số đếm bịa); `n` chỉ để
+  ghi `detail` và áp quy tắc số mẫu tối thiểu như `score`.
 
 Kiểm đầu vào TRƯỚC khi đưa vào numpy: numpy ép chuỗi lỗi thì in nguyên giá trị vào thông điệp. Thông điệp lỗi chỉ là
 hằng, không mang dữ liệu (test AST `test_monitor_rules_event.py::test_error_messages_carry_no_data`). Không gọi `float(…)`
@@ -17,7 +20,7 @@ hằng, không mang dữ liệu (test AST `test_monitor_rules_event.py::test_err
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from numbers import Integral, Real
 
 import numpy as np
@@ -106,3 +109,30 @@ def score_shares(expected: Sequence[float], actual: Sequence[float]) -> DriftSco
     """Hai dãy TỈ LỆ (không có số đếm) → `DriftScore(psi(expected, actual), None, None)`. Không áp `MIN_SAMPLES_PER_BIN`
     vì không biết số mẫu."""
     return DriftScore(psi(expected, actual), None, None)
+
+
+def _is_count(value: object) -> bool:
+    return isinstance(value, Integral) and not isinstance(value, bool)
+
+
+def score_rate(
+    p_expected: float | None, n_expected: int, p_actual: float | None, n_actual: int
+) -> DriftScore | None:
+    """Phân bố 2 bin `[p, 1 − p]` mỗi phía → `DriftScore(psi, n_expected, n_actual)`.
+
+    `None` (không đo được) khi một phía `p` là `None` (0 lá theo A) hoặc có ít hơn `max(1, MIN_SAMPLES_PER_BIN × MIN_BINS)`
+    mẫu — cùng quy tắc với `score` trên 2 bin. `n` không phải số nguyên (gồm `bool`) → `TypeError`, âm → `ValueError`;
+    `p` không phải số thực → `TypeError`; `p` ngoài [0; 1] → `ValueError` (từ `psi`). Sai số so với bản đếm: `1 − p` lệch
+    `(n − k)/n` ≤ 1 ulp → PSI lệch cỡ 1e-15."""
+    if not (_is_count(n_expected) and _is_count(n_actual)):
+        raise TypeError("score_rate: số mẫu không phải số nguyên")
+    if n_expected < 0 or n_actual < 0:
+        raise ValueError("score_rate: số mẫu âm")
+    if not all(p is None or _is_real(p) for p in (p_expected, p_actual)):
+        raise TypeError("score_rate: tỉ lệ không phải số thực")
+    if p_expected is None or p_actual is None:
+        return None
+    if min(n_expected, n_actual) < max(1, MIN_SAMPLES_PER_BIN * MIN_BINS):
+        return None
+    shares = score_shares([p_expected, 1 - p_expected], [p_actual, 1 - p_actual])
+    return replace(shares, n_expected=n_expected, n_actual=n_actual)
