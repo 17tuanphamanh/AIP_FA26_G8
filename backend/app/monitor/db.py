@@ -17,6 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 if TYPE_CHECKING:
     from app.db.session import Engines
 
+# Role DB duy nhất M9 được chạy (A4, Q-M9-B1-6): `/api/health` so `SELECT current_user` với hằng này — đặt nhầm DSN
+# `app_rw` thì báo `wrong_role` thay vì để M9 chạy với quyền ghi mà không ai biết.
+MONITOR_ROLE = "app_monitor"
+
 
 class MonitorUnavailable(Exception):
     """Chưa cấu hình `MONITOR_DATABASE_URL`."""
