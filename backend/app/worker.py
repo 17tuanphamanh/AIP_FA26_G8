@@ -6,8 +6,8 @@ file, quá 60 giây = unhealthy.
 Worker KHÔNG có SVC_EXECUTOR_TOKEN (D-03): runner dựng với `can_execute=False` — recover không bao giờ
 chạy B17, chuyển E7 "thực thi bị gián đoạn".
 M9 (B1): job `monitor_rules_minute` 60 giây chạy luật cảnh báo theo sự kiện; (B2) `monitor_rules_hourly` mỗi 3600
-giây và `monitor_rules_daily` 19:00 UTC (02:00 giờ VN), hai job này chạy bù một lượt lúc khởi động — khối `# ---- M9`
-cuối file.
+giây và `monitor_rules_daily` 19:00 UTC (02:00 giờ VN); (B3) `monitor_rules_weekly` Chủ nhật 19:00 UTC (02:00 thứ Hai
+giờ VN) — ba job này chạy bù một lượt lúc khởi động — khối `# ---- M9` cuối file.
 """
 
 import asyncio
@@ -89,7 +89,7 @@ async def run() -> None:
     log.info("worker dừng")
 
 
-# ---- M9 (B1, #13; B2, #14): job luật cảnh báo phút / giờ / ngày ---------------------------------------------------
+# ---- M9 (B1, #13; B2, #14; B3, #15): job luật cảnh báo phút / giờ / ngày / tuần ------------------------------------
 #
 # Job phút mỗi 60 giây: `evaluate("minute")` trên MỘT connection của engine `app_monitor` (chỉ đọc) → mỗi draft ghi bằng
 # `AlertWriter.raise_once` (engine chính, app_rw) — ghi chỉ ở đây, không bao giờ trong `app.monitor` [Chốt 17.9.2].
@@ -102,14 +102,14 @@ async def run() -> None:
 # APScheduler vì quá dày). Q-M9-B1-24: dòng "luật bỏ qua (nguồn chưa có)" INFO khi tập luật bỏ qua đổi, còn lại DEBUG;
 # WARNING từng draft ghi lỗi qua IncidentLog theo (rule_id, tên lớp) — dòng tổng `lỗi=` vẫn WARNING mỗi lượt.
 #
-# B2 (#14): cùng class `MonitorRulesJob`, một instance cho mỗi chu kỳ (`every`) — IncidentLog, nhịp log riêng; ba job
+# B2 (#14): cùng class `MonitorRulesJob`, một instance cho mỗi chu kỳ (`every`) — IncidentLog, nhịp log riêng; bốn job
 # dùng chung MỘT `AlertWriter`. Job giờ `evaluate("hourly")` (luật 14) interval 3600 s; job ngày `evaluate("daily")`
 # (luật 1, 7, 12, 13) cron 19:00 với `timezone="UTC"` TƯỜNG MINH (không theo múi giờ scheduler/máy) = 02:00 giờ VN.
 # Chốt Q-M9-B2-4 (#14 comment 5959974287): "chạy bù lúc khởi động. Job giờ `misfire_grace_time = 3600`. Job ngày để
 # `None` … Khoá theo `d0` nên chạy muộn không sinh trùng." Chạy bù = `next_run_time = clock.now()` lúc dựng: jobstore
 # trong bộ nhớ không biết lượt nào đã lỡ nên MỖI lần khởi động chạy ngay một lượt; trùng ngày/giờ với lượt đã có →
 # khoá `(rule_id, subject, window_start)` (luật 14 `day_start`, luật 1 `d0`, luật 7/12/13 mốc `r`) → `trùng`.
-# Job phút KHÔNG chạy bù (giữ nguyên B1: lượt đầu sau 60 s, quét lại 24 giờ). Ba job là ba task riêng (`max_instances`
+# Job phút KHÔNG chạy bù (giữ nguyên B1: lượt đầu sau 60 s, quét lại 24 giờ). Bốn job là bốn task riêng (`max_instances`
 # tính theo từng job), mỗi lượt một connection monitor → job này chạy lâu không làm job khác lỡ lượt.
 # Hạn chế đã biết (Q-M9-B2-26, chốt PR #31: giữ 19:00 UTC và ghi chú này; thử lại 02:00–06:00 để sau, khi gặp thật):
 # lượt ngày lỗi cả khối (mất kết nối, hết giờ) khi worker vẫn sống thì không có lượt bù tới 19:00 hôm sau — luật
@@ -118,17 +118,31 @@ async def run() -> None:
 # Áp dụng CẢ cho lượt chạy bù lúc khởi động: APScheduler tính lượt kế ngay lúc nộp job, từ `next_run_time` của lượt bù,
 # không xét kết quả (`run()` nuốt lỗi) → lượt bù của job ngày lỗi cả khối (vd worker khởi động khi DB chưa sẵn sàng)
 # thì lượt kế là 19:00 UTC kế tiếp, không thử lại sớm hơn; job giờ thử lại sau 3600 giây. Hệ quả như trên.
+#
+# B3 (#15): job tuần `evaluate("weekly")` (luật 8 `drift`) cron Chủ nhật 19:00 UTC, `timezone="UTC"` tường minh = 02:00
+# thứ Hai giờ VN. Chốt Q-M9-B3-10 (#15 comment 6127685951 đồng ý mặc định ở comment 6110081162): "job tuần cron
+# `day_of_week="sun", hour=19, timezone="UTC"`, `misfire_grace_time=None`, chạy bù lúc khởi động, giống job ngày."
+# `day_of_week` là chuỗi `"sun"`, không dùng số (APScheduler 3.x: 0 = thứ Hai). Chạy bù như job ngày; trùng mốc với lượt
+# đã có → khoá `(drift, phân bố, mốc)` → `trùng`. Q-M9-B3-7: mỗi lượt đánh giá 2 mốc `W − 7 ngày`, `W`.
+# Hạn chế đã biết (như Q-M9-B2-26; Q-M9-B3-17 [Đề xuất]: không thử lại trong tuần): lượt tuần lỗi cả khối khi worker
+# vẫn sống → lượt kế là Chủ nhật 19:00 UTC tuần sau; nhờ 2 mốc, mốc của lượt lỗi vẫn được đánh giá ở lượt đó (trễ tới 7
+# ngày, không mất); lỗi HAI lượt liền thì mốc đầu rơi khỏi 2 mốc → mất. Lượt bù lúc khởi động lỗi cũng chờ tới Chủ nhật
+# tuần sau (trừ khi worker khởi động lại). ERROR `monitor_rules_weekly lỗi:` mỗi lượt lỗi (cách nhau > 1 giờ).
 
 MONITOR_RULES_MINUTE = "monitor_rules_minute"
 MONITOR_RULES_HOURLY = "monitor_rules_hourly"
 MONITOR_RULES_DAILY = "monitor_rules_daily"
+MONITOR_RULES_WEEKLY = "monitor_rules_weekly"
 MONITOR_JOB_IDS: dict[Every, str] = {
     "minute": MONITOR_RULES_MINUTE, "hourly": MONITOR_RULES_HOURLY, "daily": MONITOR_RULES_DAILY,
+    "weekly": MONITOR_RULES_WEEKLY,
 }  # fmt: skip
 MONITOR_RULES_SECONDS = 60
 MONITOR_HOURLY_SECONDS = 3600
 MONITOR_HOURLY_MISFIRE_SECONDS = 3600  # Q-M9-B2-4
 MONITOR_DAILY_HOUR_UTC = 19  # 02:00 giờ VN (Q-M9-2, thẻ B2)
+MONITOR_WEEKLY_DAY = "sun"  # chuỗi, không phải số (APScheduler 3.x: 0 = thứ Hai)
+MONITOR_WEEKLY_HOUR_UTC = 19  # Chủ nhật 19:00 UTC = 02:00 thứ Hai giờ VN (Q-M9-B3-10)
 # Trần thời gian MỘT lượt (đọc + ghi), dưới chu kỳ 60 s: truy vấn treo + `max_instances=1` → mọi lượt sau bị bỏ, tầng
 # cảnh báo chết im lặng (review #24 mục 2). Hết giờ → `TimeoutError` vào nhánh ERROR như lỗi job khác.
 MONITOR_RUN_TIMEOUT_SECONDS = 50.0
@@ -272,11 +286,13 @@ def schedule_monitor_jobs(scheduler: AsyncIOScheduler, job: MonitorRulesJob) -> 
 
 
 def schedule_periodic_jobs(
-    scheduler: AsyncIOScheduler, hourly: MonitorRulesJob, daily: MonitorRulesJob, now: datetime
+    scheduler: AsyncIOScheduler, hourly: MonitorRulesJob, daily: MonitorRulesJob, weekly: MonitorRulesJob,
+    now: datetime,
 ) -> None:  # fmt: skip
-    """Job giờ + job ngày (Q-M9-B2-4). `next_run_time=now` = chạy bù một lượt ngay khi scheduler start. Job ngày truyền
-    `misfire_grace_time=None` TƯỜNG MINH (thiếu khoá thì APScheduler điền mặc định 1 giây → máy ngủ qua 02:00 là mất
-    ngày) và `timezone="UTC"` tường minh (không thì trigger lấy múi giờ của scheduler)."""
+    """Job giờ + job ngày (Q-M9-B2-4) + job tuần (Q-M9-B3-10), đăng ký theo thứ tự đó. `next_run_time=now` = chạy bù một
+    lượt ngay khi scheduler start. Job ngày và job tuần truyền `misfire_grace_time=None` TƯỜNG MINH (thiếu khoá thì
+    APScheduler điền mặc định 1 giây → máy ngủ qua 02:00 là mất lượt) và `timezone="UTC"` tường minh (không thì trigger
+    lấy múi giờ của scheduler)."""
     scheduler.add_job(
         hourly.run, id=MONITOR_RULES_HOURLY, seconds=MONITOR_HOURLY_SECONDS, **MONITOR_JOB_OPTIONS,
         misfire_grace_time=MONITOR_HOURLY_MISFIRE_SECONDS, next_run_time=now,
@@ -285,15 +301,20 @@ def schedule_periodic_jobs(
         daily.run, id=MONITOR_RULES_DAILY, trigger="cron", hour=MONITOR_DAILY_HOUR_UTC, minute=0, timezone="UTC",
         max_instances=1, coalesce=True, misfire_grace_time=None, next_run_time=now,
     )  # fmt: skip
+    scheduler.add_job(
+        weekly.run, id=MONITOR_RULES_WEEKLY, trigger="cron", day_of_week=MONITOR_WEEKLY_DAY,
+        hour=MONITOR_WEEKLY_HOUR_UTC, minute=0, timezone="UTC", max_instances=1, coalesce=True,
+        misfire_grace_time=None, next_run_time=now,
+    )  # fmt: skip
 
 
 def setup_monitor_jobs(
     scheduler: AsyncIOScheduler, settings: Settings, engines: Engines, clock: Clock
 ) -> dict[Every, MonitorRulesJob] | None:  # fmt: skip
-    """Dựng + đăng ký 3 job M9 (phút, giờ, ngày — chung một writer). Lỗi (đọc `llm.yaml`, dựng writer, đăng ký job) →
-    ERROR tên lớp, trả None; worker vẫn chạy 3 job gốc — hết hạn duyệt (E6) và phục hồi lượt dở quan trọng hơn cảnh báo
-    (điều kiện duyệt #13). Đăng ký theo thứ tự phút → giờ → ngày; lỗi giữa chừng thì job đã đăng ký vẫn chạy (gỡ ra là
-    bỏ sót). `cap_usd`, `warn_ratio` đọc ở worker (`app.monitor` không import `app.llm`)."""
+    """Dựng + đăng ký 4 job M9 (phút, giờ, ngày, tuần — chung một writer). Lỗi (đọc `llm.yaml`, dựng writer, đăng ký
+    job) → ERROR tên lớp, trả None; worker vẫn chạy 3 job gốc — hết hạn duyệt (E6) và phục hồi lượt dở quan trọng hơn
+    cảnh báo (điều kiện duyệt #13). Đăng ký theo thứ tự phút → giờ → ngày → tuần; lỗi giữa chừng thì job đã đăng ký vẫn
+    chạy (gỡ ra là bỏ sót). `cap_usd`, `warn_ratio` đọc ở worker (`app.monitor` không import `app.llm`)."""
     try:
         spend = load_llm_config(settings.config_dir / "llm.yaml").spend
         writer = AlertWriter(engines.main, clock)
@@ -301,10 +322,10 @@ def setup_monitor_jobs(
             every: MonitorRulesJob(
                 engines, writer, clock, cap_usd=spend.cap_usd, warn_ratio=spend.warn_ratio, every=every
             )
-            for every in ("minute", "hourly", "daily")
+            for every in ("minute", "hourly", "daily", "weekly")  # tường minh: thêm chu kỳ phải sửa có chủ đích
         }
         schedule_monitor_jobs(scheduler, jobs["minute"])
-        schedule_periodic_jobs(scheduler, jobs["hourly"], jobs["daily"], clock.now())
+        schedule_periodic_jobs(scheduler, jobs["hourly"], jobs["daily"], jobs["weekly"], clock.now())
     # Dựng M9 lỗi không làm chết worker (điều kiện duyệt 1); lỗi cấu hình có thể in giá trị → chỉ log tên lớp.
     except Exception as exc:  # noqa: BLE001 — dựng job M9
         log.error("không dựng đủ job M9 (%s) — worker chạy tiếp, THIẾU cảnh báo M9", type(exc).__name__)

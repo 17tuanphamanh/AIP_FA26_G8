@@ -195,9 +195,11 @@ def test_setup_monitor_jobs_reads_llm_yaml(tmp_path: Path, monkeypatch: pytest.M
     scheduler = AsyncIOScheduler(timezone="UTC")
     jobs = setup_monitor_jobs(scheduler, settings_with(llm_yaml(tmp_path, 12.0, 0.5), tmp_path), engines(FakeEngine()),
                               clock)  # fmt: skip
-    # B2 GĐ2 cụm 3: setup đăng ký 3 job M9 theo thứ tự phút → giờ → ngày (job giờ/ngày: test_monitor_jobs_periodic.py)
+    # B3 cụm 4: setup đăng ký 4 job M9 theo thứ tự phút → giờ → ngày → tuần (giờ/ngày/tuần: test_monitor_jobs_periodic.py)
     assert jobs is not None
-    assert [j.id for j in scheduler.get_jobs()] == [MONITOR_RULES_MINUTE, "monitor_rules_hourly", "monitor_rules_daily"]
+    assert [j.id for j in scheduler.get_jobs()] == [
+        MONITOR_RULES_MINUTE, "monitor_rules_hourly", "monitor_rules_daily", "monitor_rules_weekly",
+    ]  # fmt: skip
     seen = fake_evaluate(monkeypatch, EvalResult(drafts=[], failed_rules=[], skipped_rules=[]))
     asyncio.run(jobs["minute"].minute())
     assert seen == [RuleContext(now=T0, tz=VN_TZ, cap_usd=12.0, warn_ratio=0.5)]
@@ -277,7 +279,7 @@ def test_setup_monitor_job_writes_via_main_engine(tmp_path: Path, monkeypatch: p
     assert jobs is not None
     fake_evaluate(monkeypatch, EvalResult(drafts=[draft("refresh_reuse", "u-1")], failed_rules=[], skipped_rules=[]))
     asyncio.run(jobs["minute"].minute())
-    (writer,) = built  # MỘT writer dùng chung cho 3 job M9 (B2 GĐ2 cụm 3)
+    (writer,) = built  # MỘT writer dùng chung cho 4 job M9 (B2 GĐ2 cụm 3, B3 cụm 4)
     assert {id(j._writer) for j in jobs.values()} == {id(writer)}
     assert writer.engine is main
     assert [d.subject for d in writer.written] == ["u-1"]
