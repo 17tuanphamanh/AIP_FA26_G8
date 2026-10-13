@@ -118,10 +118,12 @@ def test_p1_repo_approvers_yaml_vpn_roster() -> None:
 
 
 def test_b4_enabled_intent_without_roster_refuses(tmp_path: Path) -> None:
-    """b4: intent trong ENABLED_INTENTS thiếu roster → RuntimeError nêu `approvers.yaml`."""
+    """b4: intent trong ENABLED_INTENTS thiếu roster → RuntimeError nêu `approvers.yaml`. Đổi ở T20a (P10, Q-T20a-1 c): `account`
+    nay có roster → dùng intent KHÔNG có roster (`printer`), giữ ý."""
     approvers = load_approvers(REPO / "config" / "approvers.yaml")
+    assert approvers.of("printer") is None
     with pytest.raises(RuntimeError, match="approvers.yaml") as info:
-        check_approvers_config(_settings(enabled_intents=["vpn", "account"]), approvers)
+        check_approvers_config(_settings(enabled_intents=["vpn", "printer"]), approvers)
     assert not isinstance(info.value, NotImplementedError)
     path = tmp_path / "approvers.yaml"
     path.write_text(f"account: {ROSTER_OK}\n", encoding="utf-8")

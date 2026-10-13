@@ -18,6 +18,7 @@ import { Conversation } from "../../components/Conversation.tsx";
 import { DigestMessage, type SendResult } from "../../components/DigestMessage.tsx";
 import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
+import { ownEntry } from "../../lib/lookup.ts";
 import { latestRound, normalizeProgress, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel } from "./multi.ts";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
@@ -275,7 +276,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onC
   if (view.final_state) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-sheet bg-group p-5" data-testid="final-note">
-        <p>{parent ? PARENT_FINAL_NOTE : (FINAL_NOTE[view.final_state] ?? statusLabel(view.final_state))}</p>
+        <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
         <Link to="/chat" className="font-semibold text-fpt-blue">
           Tạo yêu cầu mới
         </Link>

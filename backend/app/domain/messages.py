@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Final, Literal
 
-from app.domain.action import FactValue
+from app.domain.action import Action, FactValue
 from app.domain.ticket_state import ChunkRef, Msg
 
 MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
@@ -45,6 +45,10 @@ def user_msg(redacted_text: str) -> Msg:
 
 
 DEVICE_ID: Final = re.compile(r"[A-Z]{2,4}-\d{3,5}")  # cùng mẫu `value_rules.device_id` (slots.yaml)
+# T20a P11 — cùng mẫu `value_rules.target_user` / `value_rules.resource_path` (slots.yaml; test m1 ghim bằng nhau): định danh
+# chỉ được ghép vào tin khi qua mẫu (5.1.8 mục 8 — không chép chữ người dùng ngoài định danh đã qua regex).
+USER_ID: Final = re.compile(r"[a-z0-9_]{3,64}")
+RESOURCE_PATH: Final = re.compile(r"(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}")
 CERT_STATUS_TEXT: Final = {"valid": "còn hiệu lực", "expired": "đã hết hạn", "revoked": "đã bị thu hồi", "none": "chưa có"}
 ASK_CONFIRM: Final = "Bạn thử kết nối lại rồi xác nhận giúp mình nhé."
 RESULT_ACTIONS: Final = frozenset({"renew_vpn_cert", "reissue_vpn_access", "check_vpn_status"})  # có mẫu ở `result_text`
@@ -95,8 +99,7 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
     "renew_vpn_cert": "gia hạn chứng chỉ VPN",
     "reissue_vpn_access": "cấp lại quyền truy cập VPN",
     "check_vpn_status": "kiểm tra trạng thái VPN",
-    # Phase 5 T22a (phase5 4.7b, test d4): nhãn cho 6 hành động khai báo (chưa bật). Nợ T20: `rejection_text` ghép "cho máy …"
-    # — sai nghĩa với đích không phải máy (`user:`, `folder:`).
+    # Phase 5 T22a (phase5 4.7b, test d4): nhãn cho 6 hành động khai báo (chưa bật). T20a P11: cụm đích theo `target_phrase`.
     "reset_password": "đặt lại mật khẩu",
     "unlock_account": "mở khoá tài khoản",
     "install_software": "cài đặt phần mềm",
@@ -106,14 +109,30 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
 }
 
 
-def rejection_text(action_type: str, device_id: str, reason_code: str | None, note: str | None) -> str:
-    """Tin từ chối theo mẫu (P1). `note` None = không kèm câu ghi chú (output guard chặn). `note` phải là bản ĐÃ CHE."""
+def target_phrase(action: Action, requester_id: str) -> str:
+    """T20a P11: cụm chỉ đích của hành động cho tin từ chối, theo tiền tố `action.target`. `device:<id>` → "máy <id>" (sai mẫu →
+    "máy của bạn" — giữ chữ VPN cũ); `user:<id>` → "tài khoản của bạn" (id == người gửi) / "tài khoản <id>" (sai mẫu → "tài khoản
+    được yêu cầu"); `folder:<path>` → "thư mục <path>" (sai mẫu → "thư mục được yêu cầu"); tiền tố lạ → "" (câu chung)."""
+    kind, _, ident = action.target.partition(":")
+    if kind == "device":
+        return f"máy {ident}" if DEVICE_ID.fullmatch(ident) else "máy của bạn"
+    if kind == "user":
+        if not USER_ID.fullmatch(ident):
+            return "tài khoản được yêu cầu"
+        return "tài khoản của bạn" if ident == requester_id else f"tài khoản {ident}"
+    if kind == "folder":
+        return f"thư mục {ident}" if RESOURCE_PATH.fullmatch(ident) else "thư mục được yêu cầu"
+    return ""
+
+
+def rejection_text(action_type: str, target_phrase: str, reason_code: str | None, note: str | None) -> str:
+    """Tin từ chối theo mẫu (P1). `target_phrase` = `target_phrase(action, requester_id)` (T20a P11); rỗng hoặc hành động không
+    nhãn → câu chung. `note` None = không kèm câu ghi chú (output guard chặn). `note` phải là bản ĐÃ CHE."""
     label = ACTION_LABELS.get(action_type)
-    if label is None:
+    if label is None or not target_phrase:
         head = "Yêu cầu của bạn chưa được duyệt."
     else:
-        device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
-        head = f"Yêu cầu {label} cho {device} chưa được duyệt."
+        head = f"Yêu cầu {label} cho {target_phrase} chưa được duyệt."
     reason = REASON_LABELS.get(reason_code, NO_REASON) if reason_code is not None else NO_REASON
     text = f"{head} Lý do: {reason}."
     return text if note is None else f"{text} Ghi chú của người duyệt: {note}"

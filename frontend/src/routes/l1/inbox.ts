@@ -12,6 +12,7 @@ import type {
   OverrideReasonCode,
   ReasonCode,
 } from "../../api/types.ts";
+import { labelOf, ownEntry } from "../../lib/lookup.ts";
 
 // ---------------------------------------------------------------- hộp thư
 
@@ -87,7 +88,7 @@ const READONLY_STATE: Partial<Record<ApprovalStatus, string>> = {
   timeout: "hết hạn, đã chuyển L2",
 };
 export const readonlyText = (status: ApprovalStatus): string =>
-  `Phiếu ${READONLY_STATE[status] ?? "không còn chờ duyệt"} — chỉ xem, không quyết định được nữa.`;
+  `Phiếu ${ownEntry<string | undefined>(READONLY_STATE, status, undefined) ?? "không còn chờ duyệt"} — chỉ xem, không quyết định được nữa.`;
 
 /** Phase 4 chỉ có intent VPN (KH 4.6). Loại lạ → hiện nguyên mã, không đoán nghĩa. */
 export const ACTION_LABEL: Record<string, string> = {
@@ -96,7 +97,7 @@ export const ACTION_LABEL: Record<string, string> = {
 };
 /** Hộp thư không biết hành động (`action_type` null — dòng audit B15 không có): dòng VẪN hiện, mở phiếu để xem object. */
 export const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
-export const actionLabel = (type: string | null): string => (type === null ? ACTION_UNKNOWN : (ACTION_LABEL[type] ?? type));
+export const actionLabel = (type: string | null): string => (type === null ? ACTION_UNKNOWN : labelOf(ACTION_LABEL, type));
 
 /** Hộp thư đã có dữ liệu nhưng lần tải lại gần nhất lỗi (Q-fe-38): giữ danh sách cũ, báo có thể đã cũ + câu lỗi. */
 export const INBOX_STALE_TEXT = "Chưa cập nhật được hộp thư — danh sách dưới đây có thể đã cũ.";

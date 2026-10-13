@@ -67,7 +67,8 @@
       {"fact": "action.facts.same_department", "op": "is_true"},
       {"fact": "action.facts.resource_sensitivity", "op": "in", "value": ["low", "medium"]},
       {"fact": "action.facts.target_user_status", "op": "in", "value": ["active", "probation"]},
-      {"fact": "action.params.duration_days", "op": "lte", "value": 90}]},
+      {"fact": "action.params.duration_days", "op": "lte", "value": 90},
+      {"fact": "action.facts.existing_permission_level", "op": "in", "value": ["read", "write"]}]},
      "description": "Gia hạn quyền cũ (≤ 90 ngày) vào thư mục không nhạy cảm của phòng mình"},
     {"id": "R11", "type": "allow", "intent": "software", "action": "install_software",
      "conditions": {"all": [

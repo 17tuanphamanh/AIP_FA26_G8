@@ -17,6 +17,7 @@ import { homePath, STAFF_NAV } from "../../auth/permissions.ts";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { useAuth } from "../../auth/useAuth.ts";
 import { FlashNotice } from "../../components/FlashNotice.tsx";
+import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
 import { Alerts } from "./Alerts.tsx";
 import { DashboardPage } from "./DashboardPage.tsx";
@@ -30,10 +31,8 @@ import {
   DASHBOARD_MISSING_TITLE,
   E1_LABEL,
   EMPTY_NOTE,
-  labelOf,
   metricText,
   MONITOR_DOWN_TEXT,
-  ownEntry,
   POLICY_MISSING_TITLE,
   severityDot,
   severityLabel,
@@ -1570,5 +1569,33 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
     expect(rules).toStrictEqual(["Không hợp lệ (constructor)", "Không hợp lệ (__proto__)", "Không hợp lệ (toString)", "Cho phép"]);
     for (const r of screen.getAllByTestId("rule-row").slice(0, 3)) expect(r.lastElementChild!.className).toContain("text-danger");
     noLeak();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t126 (N-PROTO)
+
+describe("t126: thanh bên — me.role '__proto__' / 'constructor' / 'toString' (server) → nhãn vai trò trống, màn không vỡ", () => {
+  /** [tiêu đề khu IT, nhãn vai trò dưới user_id]. */
+  const roleTexts = (me: Me) => {
+    const view = render(
+      <MemoryRouter>
+        <Sidebar me={me} onSignOut={async () => true} />
+      </MemoryRouter>,
+    );
+    const heading = view.container.querySelector("nav > span.text-label")?.textContent ?? null;
+    const label = within(view.container).getByTestId("me-user-id").nextElementSibling?.textContent ?? null;
+    view.unmount();
+    return [heading, label];
+  };
+
+  it.each(["__proto__", "constructor", "toString"])("role %j → ['', ''], không cảnh báo React child, không lộ hàm", (role) => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(roleTexts({ ...L1, role: role as Me["role"] })).toStrictEqual(["", ""]);
+    expect(consoleError.mock.calls.filter((args) => args.some((a) => String(a).includes("React child")))).toHaveLength(0);
+  });
+
+  it("role hợp lệ vẫn ra nhãn cũ", () => {
+    expect(roleTexts(L1)).toStrictEqual(["Người duyệt L1", "IT Helpdesk L1"]);
+    expect(roleTexts(MGR)).toStrictEqual(["Trưởng bộ phận IT", "Trưởng bộ phận IT"]);
   });
 });

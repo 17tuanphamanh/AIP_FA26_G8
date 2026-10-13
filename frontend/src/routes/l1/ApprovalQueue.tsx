@@ -7,6 +7,7 @@ import type { ApprovalListItem } from "../../api/types.ts";
 import { hasPerm } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
 import { useServerNow } from "../../components/clock.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 import {
   actionLabel,
   INBOX_COUNT_STALE_TEXT,
@@ -135,7 +136,7 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
           className={`inline-flex items-center gap-2 text-secondary tabular-nums ${urgent ? "font-semibold text-danger" : ""}`}
         >
           <span className={`size-1.75 shrink-0 rounded-full ${urgent ? "bg-danger" : pending ? "bg-fpt-orange" : "bg-ink-3"}`} aria-hidden="true" />
-          {pending ? remainingShort(item.deadline, now) : STATUS_LABEL[item.status]}
+          {pending ? remainingShort(item.deadline, now) : ownEntry(STATUS_LABEL, item.status, "")}
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="truncate">{actionLabel(item.action_type)}</span>

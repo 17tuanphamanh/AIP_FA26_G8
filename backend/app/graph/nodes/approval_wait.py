@@ -33,8 +33,9 @@ from langgraph.types import interrupt
 from app.approval.store import ApprovalRow
 from app.core.hashing import hash_action
 from app.domain.action import Action
+from app.domain.context import RequesterContext
 from app.domain.exit_codes import CloseReason, ExitCode
-from app.domain.messages import rejection_msg, rejection_text
+from app.domain.messages import rejection_msg, rejection_text, target_phrase
 from app.domain.states import S_ESCALATED, S_EXECUTING, S_REJECTED
 from app.graph import effects
 from app.graph.context import current_run
@@ -111,10 +112,10 @@ def make(deps: NodeDeps) -> NodeFn:
         raw = state.get("intended_action")
         action = None if raw is None else Action.model_validate(raw)
         shown = note if note and deps.output_guard.violation(note) is None else None  # [3] output guard; rỗng → không câu ghi chú
-        text = rejection_text(
-            action.type if action else "", str(action.params.get("device_id", "")) if action else "",
-            ev.get("reason_code"), shown,
-        )  # fmt: skip
+        who = state.get("requester_context")
+        requester = RequesterContext.model_validate(who).user_id if who is not None else ""
+        phrase = target_phrase(action, requester) if action else ""  # T20a P11 (TQ-16): không có hành động → câu chung
+        text = rejection_text(action.type if action else "", phrase, ev.get("reason_code"), shown)
         ref = await effects.once(
             state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "none", step="B16"
         )

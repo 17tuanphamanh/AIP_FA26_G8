@@ -11,6 +11,9 @@ Sau `interrupt()`, thứ tự cố định:
    CÂU TRẢ LỜI, chỉ nhận slot đang thiếu, key fact bị bỏ — 3-Q1). Không slot sạch hoặc LLM báo lạc đề → `off_topic_streak`+1;
    2 lần liên tiếp → E4 `off_topic_twice` [Chốt].
 5. Còn lại → `S_CLARIFYING` → `b11_slots` (hỏi tiếp hoặc dựng Action).
+   Q-T20a-6 (Phase 5 T20a, duyệt DỪNG 2): `target_user` bị `sanitize_slots` bỏ (BẤT KỲ lý do, kể cả `unknown_key` vì không phải
+   slot đang thiếu) → người dùng nhắm NGƯỜI KHÁC ở lượt trả lời → ghi `ctx_flags={"target_is_other": True}` (như B3, Q-T20a-4);
+   không thêm giá trị slot vào audit. B11 không ghi `ctx_flags`; B12 `build_ctx` đọc.
 
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt → E2 `turn_budget_exceeded` (bắt tường minh, `step="B11"`).
 Audit `detail`: key slot bị bỏ + lý do (chỉ key đã khai báo — Q-3f-5), cờ lạc đề — không câu người dùng, không giá trị slot.
@@ -97,9 +100,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E4.value, off_topic_streak=streak, conversation=[user_msg(text)],
                 escalation_reason_detail="off_topic_twice",
             )  # fmt: skip
+        flags = {"ctx_flags": {"target_is_other": True}} if "target_user" in dropped else {}  # Q-T20a-6
         return await goto(
             state, S_CLARIFYING, next_node="b11_slots", step="B11", event="user_replied", audit_detail=info,
             slots={**(state.get("slots") or {}), **clean}, off_topic_streak=streak, conversation=[user_msg(text)],
+            **flags,
         )  # fmt: skip
 
     return clarify_wait

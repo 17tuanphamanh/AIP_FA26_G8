@@ -26,8 +26,10 @@ from app.domain.facts import FACT_KEYS
 
 MAX_VALUE_LEN = 100  # P1: dài hơn → bỏ cả giá trị
 # P2 + Q-3f-3 — hằng CODE, không cấu hình được (sửa slots.yaml không tắt được luật chống bịa slot).
-TOKEN_IN_TEXT = frozenset({"device_id", "error_code"})
-PHRASE_IN_TEXT = frozenset({"reason"})
+# T20a P5: `target_user`, `resource_path`, `software_name` quyết AI/CÁI GÌ bị tác động — LLM tự điền là đổi đích hành động. Slot chuẩn
+# hoá (`account_type`, `permission_level`, `duration`, `action`) không đòi có trong câu; `value_rules` chặn ngoài tập.
+TOKEN_IN_TEXT = frozenset({"device_id", "error_code", "target_user", "resource_path"})
+PHRASE_IN_TEXT = frozenset({"reason", "software_name"})
 MUST_APPEAR_IN_TEXT = TOKEN_IN_TEXT | PHRASE_IN_TEXT
 UNKNOWN_KEY = "<unknown>"
 
@@ -66,6 +68,8 @@ class IntentSlots(BaseModel):
     optional: tuple[str, ...] = ()
     action_types: tuple[str, ...] = Field(min_length=1)
     value_rules: dict[str, ValueRule] = Field(default_factory=dict)
+    # T20a P4 (Q-T22a-2): slot bắt buộc thêm theo `action` (khoá ∈ action_types, giá trị ⊆ optional).
+    required_by_action: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> "IntentSlots":
@@ -76,7 +80,18 @@ class IntentSlots(BaseModel):
             raise ValueError("slot khai báo trùng giữa required/optional")
         if extra := sorted(set(self.value_rules) - keys):
             raise ValueError(f"value_rules cho slot không khai báo: {extra}")
+        if bad := sorted(set(self.required_by_action) - set(self.action_types)):
+            raise ValueError(f"required_by_action cho action không khai báo: {bad}")
+        for action, needed in sorted(self.required_by_action.items()):
+            if extra := sorted(set(needed) - set(self.optional)):
+                raise ValueError(f"required_by_action[{action}] ngoài optional: {extra}")
         return self
+
+    def missing(self, slots: Mapping[str, object]) -> list[str]:
+        """T20a P4: slot còn thiếu — `required` rồi (khi đã có `action`) `required_by_action[action]`, theo thứ tự khai báo."""
+        action = slots.get("action")
+        by_action = self.required_by_action.get(action, ()) if isinstance(action, str) else ()
+        return [s for s in (*self.required, *by_action) if s not in slots]
 
     @property
     def keys(self) -> frozenset[str]:

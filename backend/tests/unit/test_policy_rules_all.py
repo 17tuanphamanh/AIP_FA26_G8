@@ -97,10 +97,12 @@ GOC: dict[str, Goc] = {
         "resource_sensitivity": "low", "same_department": True, "has_permission_record": False,
         "target_user_status": "active",
     }),
+    # T20a (phase5 5.1.6 r4, P1): thêm fact `existing_permission_level="read"` — R10 mới đòi `in [read, write]`. Giữ
+    # `params.permission_level` (TQ-15: ca luật dựng tay, luật không đọc khoá này cho extend).
     "G-EXTEND": Goc(NV001, "extend_permission", "folder:finance/public-reports", "nv001",
                     {"permission_level": "read", "duration_days": 30}, {
         "has_permission_record": True, "same_department": True, "resource_sensitivity": "low",
-        "target_user_status": "active",
+        "target_user_status": "active", "existing_permission_level": "read",
     }),
     "G-INSTALL": Goc(NV001, "install_software", "device:LAP-0342", "nv001", {}, {
         "in_catalog": True, "license_paid": False, "requires_local_admin": False,
@@ -221,6 +223,12 @@ BANG_4_7 = [
     pytest.param(_ca("G-EXTEND", params={"duration_days": -1}), id="e15-R10-duration_days-am-1"),
     pytest.param(_ca("G-EXTEND", params={"duration_days": 400}), id="e15-R10-duration_days-400"),
     pytest.param(_ca("G-EXTEND", params={"duration_days": True}), id="e15-R10-duration_days-True"),
+    # ---- r* — T20a P1 (phase5 5.1.6 r1–r3): R10 thêm `F.existing_permission_level in [read, write]` (M-T20a-1) ----
+    pytest.param(_ca("G-EXTEND", facts={"existing_permission_level": "write"}, decision=AUTO, rule_id="R10", khop="R10"),
+                 id="r1-R10-existing_permission_level-write"),
+    pytest.param(_ca("G-EXTEND", facts={"existing_permission_level": "full"}),
+                 id="r2-R10-existing_permission_level-full"),
+    pytest.param(_ca("G-EXTEND", bo=("existing_permission_level",)), id="r3-R10-thieu-existing_permission_level"),
     # ---- f* — software/install_software: R11 (allow), R13, R14, R15 ----
     pytest.param(_ca("G-INSTALL", decision=AUTO, rule_id="R11", khop="R11"), id="f1-R11-khop"),
     pytest.param(_ca("G-INSTALL", facts={"in_catalog": False}, decision=HITL, rule_id="R13", khop="R13"),
@@ -291,7 +299,9 @@ ALLOW_FACTS_4_4: dict[str, tuple[str, ...]] = {
     "R01": ("target_account_privilege", "target_is_service_account", "target_user_status"),
     "R02": ("target_account_locked", "target_lock_reason", "target_account_privilege", "target_is_service_account",
             "target_user_status"),
-    "R10": ("has_permission_record", "same_department", "resource_sensitivity", "target_user_status", "duration_days"),
+    # T20a P1 (Q-T20a-1 d): + `existing_permission_level` (ca r3)
+    "R10": ("has_permission_record", "same_department", "resource_sensitivity", "target_user_status", "duration_days",
+            "existing_permission_level"),
     "R11": ("in_catalog", "license_paid", "requires_local_admin"),
 }  # fmt: skip
 
@@ -384,6 +394,7 @@ BANG_4_4: dict[str, tuple[str, str, set[str], list[tuple[str, str, str]], str]] 
         _c(_OTHER, "is_false"), _c(_F + "has_permission_record", "is_true"), _c(_F + "same_department", "is_true"),
         _c(_F + "resource_sensitivity", "in", ["low", "medium"]), _c(_F + "target_user_status", "in", _ACTIVE),
         _c(_P + "duration_days", "lte", 90),
+        _c(_F + "existing_permission_level", "in", ["read", "write"]),  # T20a P1 (Q-T20a-1 d, bảng 4.4 v0.3)
     ], "Gia hạn quyền cũ (≤ 90 ngày) vào thư mục không nhạy cảm của phòng mình"),
     "R11": (AUTO, "software", {"install_software"}, [
         _c(_OTHER, "is_false"), _c(_F + "in_catalog", "is_true"), _c(_F + "license_paid", "is_false"),

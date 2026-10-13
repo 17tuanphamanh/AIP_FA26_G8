@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { QUEUE_LIMIT, QUEUE_REFRESH_MS, queueQuery, queueRefetchInterval } from "../../api/escalations.ts";
 import type { EscalationQueueItem } from "../../api/types.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 import {
   DENY_BADGE,
   EMPTY_VIEW,
@@ -262,7 +263,7 @@ function QueueGroups({
       {groups.map((group) => {
         if (current !== null && group.priority !== current) return null;
         const total = group.items.length;
-        const page = clampPage(view.pages[group.priority] ?? 1, total);
+        const page = clampPage(ownEntry<number>(view.pages, String(group.priority), 1), total);
         const start = (page - 1) * GROUP_PAGE_SIZE;
         const open = !view.collapsed.has(group.priority);
         return (

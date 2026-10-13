@@ -49,3 +49,11 @@ describe("trạng thái ticket (nhân viên)", () => {
     }
   });
 });
+
+// t122 (N-PROTO P2): trạng thái do server trả tra theo khoá riêng — khoá prototype = trạng thái lạ.
+describe("t122: statusLabel — '__proto__' / 'constructor' / 'toString' → câu chung", () => {
+  it("3 khoá prototype → UNKNOWN_STATUS_LABEL (chuỗi); trạng thái hợp lệ giữ nhãn cũ", () => {
+    for (const status of ["__proto__", "constructor", "toString"]) expect(statusLabel(status)).toBe(UNKNOWN_STATUS_LABEL);
+    expect(statusLabel("S_RESOLVED")).toBe("Đã hoàn tất");
+  });
+});

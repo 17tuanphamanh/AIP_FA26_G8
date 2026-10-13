@@ -39,6 +39,7 @@ POINT1_KEYS = {"layer", "intent", "confidence", "is_multi", "model_probs", "mode
                "slot_fact_collision", "span_not_in_text"}  # fmt: skip
 
 
+
 def item(type_: str = "vpn", confidence: float = 0.9, *, span: str = TEXT, action: str | None = None,
          slots: dict[str, str] | None = None) -> dict[str, Any]:  # fmt: skip
     return {"type": type_, "confidence": confidence, "span": span, "action_hint": action, "slots": slots or {}}
@@ -227,8 +228,9 @@ async def test_point1_on_every_branch_without_user_text(script: Script) -> None:
 
 
 async def test_point1_records_prompt_version() -> None:
+    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 (DỪNG 2)."""
     _, row, _, _ = await _run([out(item("vpn", 0.9))])
-    assert row["detail"]["prompt"] == "b03_classify@2" and row["detail"]["layer"] == "llm"
+    assert row["detail"]["prompt"] == "b03_classify@3" and row["detail"]["layer"] == "llm"
 
 
 async def test_model_result_in_phase3_still_goes_llm() -> None:

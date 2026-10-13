@@ -2,6 +2,7 @@
 // Chỉ số (ke-hoach-m9-monitor.md §4.3 [Chốt]): "chưa có nguồn" (tên trong `unavailable`) ≠ "đã đo, không có ca" (null)
 // ≠ "đã đo, bằng 0" (0). KHÔNG BAO GIỜ hiện 0 thay cho null/unavailable — 0 là sai sự thật và che lỗ hổng.
 import type { AlertItem } from "../../api/types.ts";
+import { labelOf, ownEntry } from "../../lib/lookup.ts";
 
 export type MetricKind = "rate" | "count" | "number";
 export type MetricState = "value" | "empty" | "unavailable";
@@ -20,17 +21,6 @@ const SOURCE_HINT: Record<string, string> = {
   multi_intent_first_stop_to_reply_s: "Nguồn có từ Phase 5",
   multi_intent_messages_per_turn: "Nguồn có từ Phase 5",
 };
-
-/**
- * Tra bảng theo khoá RIÊNG của bảng (`Object.hasOwn`), không đi qua prototype: khoá do server trả hoặc người gõ (severity,
- * rule_id, audience, khoá map…) như "__proto__" / "constructor" / "toString" mà tra `X[k]` sẽ ra object/hàm của
- * Object.prototype → React vỡ màn hoặc hiện "function …". Không có → `fallback`.
- */
-export function ownEntry<T>(table: Readonly<Record<string, T>>, key: string, fallback: NoInfer<T>): T {
-  return Object.hasOwn(table, key) ? (table[key] as T) : fallback;
-}
-/** Nhãn theo khoá; khoá lạ → hiện nguyên khoá. */
-export const labelOf = (table: Readonly<Record<string, string>>, key: string): string => ownEntry(table, key, key);
 
 const NBSP = " ";
 const decimal = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 });
