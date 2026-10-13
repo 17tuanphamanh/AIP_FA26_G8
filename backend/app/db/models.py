@@ -338,6 +338,7 @@ class Approval(Base):
             unique=True,
             postgresql_where=text("status = 'pending'"),
         ),
+        Index("ix_approvals_ticket", "ticket_id"),  # M9 A4, migration 0009
     )
 
     approval_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -446,6 +447,11 @@ class AuditLog(Base):
         ),
         Index("ix_audit_logs_ticket", "ticket_id", "created_at"),
         Index("ix_audit_logs_step_created_at", "step", "created_at"),  # P9 mục 4
+        Index(  # M9 A4, migration 0009
+            "ix_audit_logs_exit_created_at",
+            "created_at",
+            postgresql_where=text("exit_code IS NOT NULL"),
+        ),
     )
 
     log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

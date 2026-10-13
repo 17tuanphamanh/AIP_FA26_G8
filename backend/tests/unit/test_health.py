@@ -58,6 +58,8 @@ def test_all_ok_returns_200() -> None:
     assert r.json() == {
         "status": "ok", "checks": {"db": "ok", "qdrant": "ok"}, "failed": [], "runtime": "down",
         "kb": {"alias": "kb_current", "collection": None, "status": "missing"},
+        # M9 (A4): `LLM_BACKEND=scripted` do conftest gốc đặt cho mọi test; test này không có DSN monitor.
+        "llm": "scripted", "monitor": "not_configured",
     }  # fmt: skip
 
 
