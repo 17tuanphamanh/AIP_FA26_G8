@@ -5,7 +5,7 @@ Mẫu: "Yêu cầu {nhãn hành động} cho {máy X | máy của bạn} chưa �
 
 T20a (phase5 5.1.1 P11, PLAN-T20a TQ-16): đối số thứ 2 của `rejection_text` đổi từ `device_id` sang CỤM ĐÍCH (`target_phrase(action,
 requester_id)` — "máy LAP-0501", "máy của bạn"…). Đổi CHỮ KÝ GỌI ở `test_rejection_text_template`; chuỗi kỳ vọng của các ca VPN GIỮ
-NGUYÊN. Ca DỪNG 2 gom ở `CHO_DUNG2` (phase5 4.10).
+NGUYÊN. (Viết trước code ở DỪNG 1, chờ DỪNG 2 — đã gỡ chờ.)
 """
 
 from typing import get_args
@@ -23,16 +23,6 @@ from app.domain.messages import (
     target_phrase,
 )
 from app.settings import get_action_metadata
-
-# T20a DỪNG 2 (phase5 5.1.9): `target_phrase` + chữ ký mới của `rejection_text` — xfail(strict) tới khi hiện thực.
-CHO_DUNG2 = frozenset({"test_rejection_text_template"})
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 def _vpn_action(action_type: str, target: str) -> Action:

@@ -36,15 +36,6 @@ from tests.unit._t20a import Env, rc
 REPO = Path(__file__).resolve().parents[3]
 FOUR = ["vpn", "account", "software", "access"]
 
-# T20a DỪNG 2 (phase5 5.1.9, P10): roster 3 intent mới — xfail(strict) tới khi sửa `approvers.yaml` (phase5 4.10).
-CHO_DUNG2 = frozenset({"test_b1_reset_password_for_l1_01_goes_to_head_conflict", "test_b2_repo_approvers_four_intents"})
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 def _settings(**over: Any) -> Settings:

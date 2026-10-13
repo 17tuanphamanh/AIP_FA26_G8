@@ -4,7 +4,7 @@ Backoff chạy trên FakeClock; HTTP thật. Bản đơn vị (VPN giả đọc 
 
 T20a e1 (phase5 5.1.6): cùng node B6 cho account / software / access trên mock thật — fact phải khớp bảng i/s/c (kỳ vọng chép từ
 5.1.2 + seed, như `tests/unit/test_infer_{account,software,access}.py`); seed khác → đỏ, báo Q. `enabled_intents` tiêm 4 intent
-(`dataclasses.replace`). Ca T20a gom `CHO_DUNG2` (xfail strict — DỪNG 2 gỡ). Không chạy được trong sandbox (uvicorn mở cổng).
+(`dataclasses.replace`). Ca T20a (e1) viết ở DỪNG 1, chạy từ DỪNG 2. Không chạy được trong sandbox (uvicorn mở cổng).
 """
 
 import dataclasses
@@ -62,15 +62,6 @@ async def _diagnose(directory: tuple[ToolRegistry, FakeClock], st: dict[str, Any
 
 FOUR = frozenset({"vpn", "account", "software", "access"})
 
-# T20a DỪNG 2 (phase5 5.1.9): e1 — B6 nhánh DIAGNOSERS chưa có → xfail(strict) (phase5 4.10).
-CHO_DUNG2 = frozenset({"test_e1_t20a_b6_vs_mock"})
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 async def test_f7_nv001_no_device(directory: tuple[ToolRegistry, FakeClock]) -> None:

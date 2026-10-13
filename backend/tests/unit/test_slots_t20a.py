@@ -2,8 +2,8 @@
 
 Viết TỪ ĐẶC TẢ, trước code. `config/slots.yaml` theo P4: access `required: [action]`, optional `[resource_path, permission_level,
 duration, target_user, justification]`, `value_rules.target_user` như account, `required_by_action` cho grant/extend; software thêm
-`action` vào optional; `duration` `^[1-9]\\d{0,2}$`. P5: `TOKEN_IN_TEXT` ⊇ {device_id, error_code, target_user, resource_path};
-`PHRASE_IN_TEXT` = {reason, software_name}.
+`action` vào optional; `duration` `^[1-9][0-9]{0,2}$` (duyệt DỪNG 1: `[0-9]`, không `\\d`); p7 `resource_path` chặn "."/"..".
+P5: `TOKEN_IN_TEXT` ⊇ {device_id, error_code, target_user, resource_path}; `PHRASE_IN_TEXT` = {reason, software_name}.
 """
 
 from pathlib import Path
@@ -88,10 +88,11 @@ def test_p4_access_slots_by_action() -> None:
 
 def test_p4_software_accepts_action_slot_and_duration_rule() -> None:
     """P4: software thêm `action` vào optional (action_hint `install_software` không bị bỏ `unknown_key`); duration
-    `^[1-9]\\d{0,2}$`; account, vpn không đổi."""
+    `^[1-9][0-9]{0,2}$`; account, vpn không đổi."""
     sw = SLOTS.intents["software"]
     assert "action" in sw.optional and sw.required == ("software_name", "device_id")
-    assert SLOTS.intents["access"].value_rules["duration"].pattern == r"^[1-9]\d{0,2}$"
+    # Duyệt DỪNG 1 (MẪU B mục 5): `[0-9]` thay `\d` — `\d` của Python khớp chữ số Unicode ("9٠" → int 90). Giữ ý ghim mẫu.
+    assert SLOTS.intents["access"].value_rules["duration"].pattern == r"^[1-9][0-9]{0,2}$"
     assert (SLOTS.intents["account"].required, SLOTS.intents["account"].optional) == (
         ("account_type", "action"), ("reason", "target_user"))
     assert (SLOTS.intents["vpn"].required, SLOTS.intents["vpn"].optional) == (("device_id", "action"),
@@ -157,7 +158,7 @@ def test_p5_slots_kept(intent: str, raw: dict[str, str], text: str) -> None:
 
 @pytest.mark.parametrize("value", ["0", "00", "030", "1000", "-1", "3.5", "ba mươi"])
 def test_p6_duration_bad_value(value: str) -> None:
-    """p6 (P4): `duration="0"` (và số 0 đầu / > 3 chữ số / không phải số) → `bad_value` (mẫu `^[1-9]\\d{0,2}$`)."""
+    """p6 (P4): `duration="0"` (và số 0 đầu / > 3 chữ số / không phải số) → `bad_value` (mẫu `^[1-9][0-9]{0,2}$`)."""
     clean, dropped = sanitize_slots(SLOTS.intents["access"], {"duration": value}, text=f"gia hạn {value} ngày")
     assert clean == {} and dropped == {"duration": "bad_value"}
 
@@ -166,6 +167,33 @@ def test_p6_duration_bad_value(value: str) -> None:
 def test_p6_duration_ok(value: str) -> None:
     clean, _ = sanitize_slots(SLOTS.intents["access"], {"duration": value}, text="gia hạn")
     assert clean == {"duration": value}
+
+
+@pytest.mark.parametrize("value", ["9\u0660", "\u0663\u0660", "\uff13\uff10", "3\u0966"])
+def test_p6_duration_unicode_digits_bad_value(value: str) -> None:
+    """Duyệt DỪNG 1 (gia cố security-reviewer): chữ số Unicode (Ả Rập, toàn khổ, Devanagari) → `bad_value` — `int("9٠") == 90`
+    nên `\\d` sẽ cho qua một số ngày người dùng không thấy được."""
+    assert int(value) > 0  # chính là ca nguy hiểm: Python đổi được sang số
+    clean, dropped = sanitize_slots(SLOTS.intents["access"], {"duration": value}, text=f"gia hạn {value} ngày")
+    assert clean == {} and dropped == {"duration": "bad_value"}
+
+
+# ---- p7: resource_path chặn đoạn "." / ".." (duyệt DỪNG 1) -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["finance/..", "a/./b", "finance/../hr", "finance/.", "..", "./finance", "a/b/.."])
+def test_p7_resource_path_dot_segments_bad_value(value: str) -> None:
+    """p7: đoạn đường dẫn "." hoặc ".." → `bad_value` (không bao giờ tới tool/`params.resource_path`)."""
+    clean, dropped = sanitize_slots(SLOTS.intents["access"], {"resource_path": value}, text=f"quyền thư mục {value}")
+    assert clean == {} and dropped == {"resource_path": "bad_value"}
+
+
+@pytest.mark.parametrize("value", ["finance/Q3", "finance/public-reports", "engineering/specs", "a/b.c", "a/..b",
+                                   "finance/Q3/2026.v1"])  # fmt: skip
+def test_p7_resource_path_ok(value: str) -> None:
+    """p7: đường dẫn hợp lệ vẫn qua — "finance/Q3" (seed) và tên có dấu chấm không phải đoạn "."/".."."""
+    clean, dropped = sanitize_slots(SLOTS.intents["access"], {"resource_path": value}, text=f"quyền thư mục {value}")
+    assert clean == {"resource_path": value} and dropped == {}
 
 
 # ---- h1 (phần fact mới — P1) ----------------------------------------------------------------------------------------------------

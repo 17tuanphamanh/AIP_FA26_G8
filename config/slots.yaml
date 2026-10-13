@@ -34,8 +34,10 @@ intents:
   # của software như vpn — PLAN-T22a TQ-6).
   # T20a (phase5 5.1.1 P4, Q-T22a-2): access có slot `action` bắt buộc + slot bắt buộc theo hành động (required_by_action: khoá ∈
   # action_types, giá trị ⊆ optional — sai thì không khởi động) + target_user (người được cấp quyền, D-47); software nhận `action`
-  # (action_hint của B3 không bị bỏ unknown_key); duration ^[1-9]\d{0,2}$ (0 ngày bị bỏ ngay ở slot). target_user, resource_path,
-  # software_name còn phải có thật trong câu người dùng (domain/slots.py, luật trong code).
+  # (action_hint của B3 không bị bỏ unknown_key); duration ^[1-9][0-9]{0,2}$ (0 ngày bị bỏ ngay ở slot; [0-9] chứ không \d — \d
+  # của Python khớp cả chữ số Unicode "9٠" → int 90, duyệt DỪNG 1). resource_path chặn đoạn "." / ".." ("finance/..", "a/./b" —
+  # duyệt DỪNG 1, p7). target_user, resource_path, software_name còn phải có thật trong câu người dùng (domain/slots.py, luật trong
+  # code).
   account:
     required: [account_type, action]
     optional: [reason, target_user]
@@ -58,7 +60,7 @@ intents:
       grant_permission:  [resource_path, permission_level, duration]
       extend_permission: [resource_path, duration]
     value_rules:
-      resource_path:    {pattern: '^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}$'}
+      resource_path:    {pattern: '^(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}$'}
       permission_level: {pattern: '^(read|write|full)$'}
-      duration:         {pattern: '^[1-9]\d{0,2}$'}
+      duration:         {pattern: '^[1-9][0-9]{0,2}$'}
       target_user:      {pattern: '^[a-z0-9_]{3,64}$'}

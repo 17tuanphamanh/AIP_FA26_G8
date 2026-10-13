@@ -11,6 +11,11 @@
   resource_path, target_user, account_type, rf}; không `facts.update/setdefault/|=`. Mỗi hàm quét phải có ≥ 1 phép gán
   `facts[...]` (quét không rỗng) — bỏ ngưỡng cũ "infer_vpn ≥ 7" vì phần máy chuyển sang `device_facts`. B6: `facts` chỉ nhận từ
   tách tuple của lời gọi `.infer_vpn(...)` HOẶC `.infer(...)` (nhánh `DIAGNOSERS`).
+- Siết khi duyệt DỪNG 1 (NGHI c của security-reviewer — agent chính viết): (1) TAINT LAN qua biến trung gian — tên nào được gán từ
+  biểu thức có dùng tên đã nhiễm như GIÁ TRỊ thì cũng nhiễm (lặp tới điểm cố định; cả vòng `for`, `:=`); ngoại lệ DUY NHẤT là dùng làm
+  KHOÁ LỌC: phép so có biến của chính comprehension trong điều kiện `if` (`[p for p in rows if p.path == path]`) hoặc tham số của
+  `device_facts(...)` (hàm đã quét riêng). Soát S16 (N4) thêm: bí danh `f = facts`, khoá `facts[<tên nhiễm>]`. (2) Mọi câu `return` của hàm quét phải trả tuple 2 phần tử, phần tử 2 là đúng tên `facts`
+  (chặn `return {}, {**slots}`). Không lần theo luồng điều khiển (`if path: facts[...] = True`) — giới hạn ghi ở "Spec cần sửa".
 Mẫu giả cuối file chứng minh bộ kiểm bắt được vi phạm (khuôn `test_side_effects_ast.py`).
 """
 
@@ -109,6 +114,62 @@ def _calls_device_facts(value: ast.AST | None) -> bool:
     return (isinstance(f, ast.Name) and f.id == "device_facts") or (isinstance(f, ast.Attribute) and f.attr == "device_facts")
 
 
+def _value_names(node: ast.AST) -> set[str]:
+    """Tên dùng như GIÁ TRỊ trong biểu thức — bỏ qua điều kiện `if` của comprehension (khoá lọc) và lời gọi `device_facts(...)`."""
+    out: set[str] = set()
+
+    def visit(n: ast.AST) -> None:
+        if _calls_device_facts(n):
+            return
+        if isinstance(n, ast.comprehension):
+            visit(n.target)
+            visit(n.iter)
+            bound = _names(n.target)
+            for cond in n.ifs:  # khoá lọc CHỈ khi là phép so có biến của chính comprehension (`p.path == path`)
+                if not (isinstance(cond, ast.Compare) and _names(cond) & bound):
+                    visit(cond)  # `if slots.get('a')` — điều kiện không lọc phần tử nào = rửa giá trị → tính là giá trị
+            return
+        if isinstance(n, ast.Name):
+            out.add(n.id)
+        for c in ast.iter_child_nodes(n):
+            visit(c)
+
+    visit(node)
+    return out
+
+
+def _tainted(fn: ast.FunctionDef) -> frozenset[str]:
+    """TAINTED ∪ mọi tên (trừ `facts`) được gán từ biểu thức dùng tên nhiễm như giá trị — lặp tới điểm cố định."""
+    tainted = set(TAINTED)
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
+                value, targets = node.value, ([node.target] if not isinstance(node, ast.Assign) else node.targets)
+            elif isinstance(node, ast.For):
+                value, targets = node.iter, [node.target]
+            else:
+                continue
+            if value is None or not _value_names(value) & tainted:
+                continue
+            for t in targets:
+                for e in _flat(t):
+                    if isinstance(e, ast.Name) and e.id != "facts" and e.id not in tainted:
+                        tainted.add(e.id)
+                        changed = True
+    return frozenset(tainted)
+
+
+def _bad_returns(fn: ast.FunctionDef) -> list[str]:
+    """Mọi `return` phải là tuple 2 phần tử, phần tử 2 đúng tên `facts`."""
+    return [
+        f"dòng {r.lineno}: return không trả (…, facts)" for r in ast.walk(fn) if isinstance(r, ast.Return)
+        and not (isinstance(r.value, ast.Tuple) and len(r.value.elts) == 2
+                 and isinstance(r.value.elts[1], ast.Name) and r.value.elts[1].id == "facts")
+    ]  # fmt: skip
+
+
 def _infer_fn(tree: ast.AST, name: str) -> ast.FunctionDef:
     [fn] = [f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name == name]
     return fn
@@ -116,16 +177,21 @@ def _infer_fn(tree: ast.AST, name: str) -> ast.FunctionDef:
 
 def check_infer(src: str, name: str = "infer_vpn") -> list[str]:
     """Hàm `name` trong `src`: `facts` chỉ gán `{}` hoặc là phần tử tuple từ `device_facts(...)`; vế phải `facts[...] = …` không
-    nhắc tên TAINTED; không facts.update/setdefault/|=."""
+    nhắc tên nhiễm (TAINTED + lan qua biến trung gian); không facts.update/setdefault/|=; `return` trả (…, facts)."""
     fn = _infer_fn(ast.parse(src), name)
-    bad: list[str] = []
+    tainted = _tainted(fn)
+    bad: list[str] = _bad_returns(fn)
     for node in ast.walk(fn):
         for t in _targets(node):
             for e in _flat(t):
                 value = getattr(node, "value", None)
                 if isinstance(e, ast.Subscript) and isinstance(e.value, ast.Name) and e.value.id == "facts":
-                    if value is not None and (hit := _names(value) & TAINTED):
+                    if value is not None and (hit := _names(value) & tainted):
                         bad.append(f"dòng {cast(ast.stmt, node).lineno}: facts[...] lấy từ {sorted(hit)}")
+                    if hit := _names(e.slice) & tainted:  # khoá fact lấy từ slot (`facts[slots['k']] = True`)
+                        bad.append(f"dòng {cast(ast.stmt, node).lineno}: khoá facts[...] lấy từ {sorted(hit)}")
+                elif isinstance(e, ast.Name) and e.id != "facts" and isinstance(value, ast.Name) and value.id == "facts":
+                    bad.append(f"dòng {cast(ast.stmt, node).lineno}: bí danh của facts ({e.id} = facts)")
                 elif isinstance(e, ast.Name) and e.id == "facts":
                     empty = value is not None and _is_empty_dict(value) and not isinstance(node, ast.AugAssign)
                     from_device = (isinstance(node, ast.Assign) and isinstance(t, ast.Tuple)
@@ -223,3 +289,39 @@ def test_t2_checkers_catch_violations() -> None:
                        "    facts['device_registered'] = device_id is not None\n", "device_facts")  # fmt: skip
     # quét không rỗng: hàm không có phép gán nào → 0 phép gán (test t2 đòi ≥ 1)
     assert _fact_writes("def infer_access(d, *, requester_id, slots):\n    return {}, {}\n", "infer_access") == []
+
+
+def test_t2_checkers_catch_laundering_and_returns() -> None:
+    """Siết NGHI c (duyệt DỪNG 1): taint lan qua biến trung gian / vòng for / `:=`; `return` phải trả đúng tên `facts`. Khoá lọc trong
+    điều kiện comprehension và tham số `device_facts(...)` KHÔNG làm nhiễm (code thật dùng — không báo nhầm)."""
+    head = "def infer_access(d, *, requester_id, slots):\n"
+    # lan qua biến trung gian (tên không nằm trong TAINTED gốc)
+    assert check_infer(head + "    x = slots['resource_path']\n    y = x.lower()\n    facts = {}\n"
+                       "    facts['resource_sensitivity'] = y\n    return {}, facts\n", "infer_access")  # fmt: skip
+    assert check_infer(head + "    alias = slots\n    facts = {}\n    facts['in_catalog'] = alias.get('n') == 'zoom'\n"
+                       "    return {}, facts\n", "infer_access")  # fmt: skip
+    assert check_infer(head + "    flag = slots.get('action') == 'grant_permission'\n    facts = {}\n"
+                       "    facts['has_permission_record'] = flag\n    return {}, facts\n", "infer_access")  # fmt: skip
+    assert check_infer(head + "    facts = {}\n    for v in slots.values():\n        facts['resource_sensitivity'] = v\n"
+                       "    return {}, facts\n", "infer_access")  # fmt: skip
+    assert check_infer(head + "    facts = {}\n    if (p := slots.get('x')):\n        facts['resource_sensitivity'] = p\n"
+                       "    return {}, facts\n", "infer_access")  # fmt: skip
+    # soát S16 (N4): bí danh facts, khoá từ slot, rửa qua `if` không lọc phần tử
+    assert check_infer(head + "    facts = {}\n    f = facts\n    f['x'] = slots['x']\n    return {}, facts\n", "infer_access")
+    assert check_infer(head + "    facts = {}\n    facts[slots['k']] = True\n    return {}, facts\n", "infer_access")
+    assert check_infer(head + "    facts = {}\n    flag = any(True for _ in [0] if slots.get('a'))\n"
+                       "    facts['has_permission_record'] = flag\n    return {}, facts\n", "infer_access")  # fmt: skip
+    # return không trả đúng tên facts
+    assert check_infer(head + "    facts = {}\n    facts['x'] = d['r'].v\n    return {}, {**slots}\n", "infer_access")
+    assert check_infer(head + "    facts = {}\n    facts['x'] = d['r'].v\n    return {}, dict(slots)\n", "infer_access")
+    assert check_infer(head + "    facts = {}\n    facts['x'] = d['r'].v\n    return facts\n", "infer_access")
+    # KHÔNG báo nhầm: khoá lọc trong comprehension / next(generator), tham số device_facts
+    ok = (head + "    path = slots.get('resource_path')\n    perms = d['p']\n    facts = {}\n"
+          "    rows = [p for p in perms.root if p.path == path]\n    facts['has_permission_record'] = bool(rows)\n"
+          "    dev = next((x for x in d['devs'] if x.device_id == slots.get('device_id')), None)\n"
+          "    facts['device_registered'] = dev is not None and dev.registered\n    return {}, facts\n")  # fmt: skip
+    assert check_infer(ok, "infer_access") == []
+    ok_dev = ("def infer_software(d, *, requester_id, slots):\n"
+              "    inferred, facts = device_facts(d['x'], requester_id=requester_id, device_id=slots.get('device_id'))\n"
+              "    facts['in_catalog'] = d['c'] is not None\n    return inferred, facts\n")  # fmt: skip
+    assert check_infer(ok_dev, "infer_software") == []

@@ -10,24 +10,18 @@ from typing import Any
 
 import pytest
 from app.domain.action import Action
-from app.domain.messages import rejection_text, target_phrase
+from app.domain.messages import (
+    DEVICE_ID,
+    RESOURCE_PATH,
+    USER_ID,
+    rejection_text,
+    target_phrase,
+)
 from app.domain.states import S_PENDING_APPROVAL, S_REJECTED
 from app.graph.late_event import deliver_event
-from app.settings import get_action_metadata
+from app.settings import get_action_metadata, get_slots
 from tests.fakes.graph import GraphHarness
 from tests.unit.test_b16_approval_wait import _event, _pending
-
-# T20a DỪNG 2 (phase5 5.1.9): toàn bộ file — xfail(strict) tới khi hiện thực `target_phrase` + `rejection_text` mới (phase5 4.10).
-CHO_DUNG2 = frozenset({
-    "test_m1_target_phrase", "test_m1_rejection_text_uses_phrase", "test_m2_b16_rejects_grant_permission_folder_phrase",
-})  # fmt: skip
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 def _action(action_type: str, target: str, requested_for: str = "nv001", params: dict[str, Any] | None = None) -> Action:
@@ -105,3 +99,14 @@ async def test_m2_b16_rejects_grant_permission_folder_phrase() -> None:
         "Yêu cầu cấp quyền truy cập cho thư mục finance/Q3 chưa được duyệt. Lý do: trái chính sách."
     ), msg["text"]
     assert "máy" not in msg["text"]
+
+
+def test_m1_phrase_patterns_equal_slots_yaml() -> None:
+    """5.1.8 mục 8 (agent chính thêm, DỪNG 2): mẫu định danh ghép vào tin == `value_rules` của `slots.yaml` (một luật, hai chỗ — lệch
+    nhau thì tin từ chối nhận định danh mà slot không nhận, hoặc ngược lại). Có cả ca chặn đoạn "."/".." (p7)."""
+    rules = get_slots().intents
+    assert f"^{USER_ID.pattern}$" == rules["account"].value_rules["target_user"].pattern
+    assert f"^{USER_ID.pattern}$" == rules["access"].value_rules["target_user"].pattern
+    assert f"^{RESOURCE_PATH.pattern}$" == rules["access"].value_rules["resource_path"].pattern
+    assert f"^{DEVICE_ID.pattern}$" == rules["vpn"].value_rules["device_id"].pattern
+    assert target_phrase(_action("grant_permission", "folder:finance/.."), "nv001") == "thư mục được yêu cầu"

@@ -4978,7 +4978,7 @@ dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
 - **Chờ:** push (phiên git). Báo M9 khi gộp: `b2_classifier`,
   `b3_cascade` giữ `pending` (P8) — không đổi gì ở M9.
 
-## Phase 5 — chặng T20a: đơn ý account/software/access (tầng A+B) (13–14/10/2026, DỪNG 1 commit 1, DỪNG 2 đang làm) — chưa tính qua cổng 5
+## Phase 5 — chặng T20a: đơn ý account/software/access (tầng A+B) (13/10/2026, DỪNG 1 `52c8349`, DỪNG 2 verify G=234 XANH, commit 2) — chưa tính qua cổng 5
 
 Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.3** mục 5.1 (+ 0, 1, 2, 4.3, 4.4, 4.14); `decisions.md` D-41, D-46, **D-47**
 (Đã chốt 13/10), §4.1. Kế hoạch: `PLAN-T20a.md` (untracked) — **DUYỆT 13/10/2026**: Q-T20a-1 = A (đổi đúng 4 test cũ ngoài danh sách
@@ -5009,6 +5009,67 @@ không chứa `vpn`); thêm: đối chiếu `seed_tools` ↔ mock, "Spec cần s
   Q-T20a-4 = A ở DỪNG 2 (`target_user` bị bỏ → `ctx_flags.target_is_other=True` ở B3, B6 không ghi đè, prompt b03 v3 thêm quy tắc
   người khác; g10, n7, M-T20a-15). Thêm DỪNG 2: siết test AST (NGHI c), ca account giống n3 (NGHI d), `duration` `[0-9]`,
   `resource_path` chặn đoạn `.`/`..` (p7).
+- **DỪNG 2 (verify G=234 XANH 13/10/2026, commit 2):**
+  - S11 B6 nhánh `DIAGNOSERS` (`diag` = `ToolResult.data`, `phase` device/lookup) — VPN giữ nguyên dòng cũ; B11 `spec.missing` (P4) +
+    `_build` 3 intent: `module.target_calls` → E2 `target_check_error` → `module.infer` THAY TOÀN BỘ fact, slot suy ra bỏ.
+  - S12 prompt `b03_classify` **v3** (bảng 5.1.4 + quy tắc người khác → `target_user`), `b11_extract_slots` **v2** (slot chuẩn hoá về giá
+    trị chuẩn); `approvers.yaml` account/software/access = roster VPN; `messages.target_phrase` + `rejection_text(action_type,
+    target_phrase, …)` + `approval_wait._rejected`.
+  - Q-T20a-4 đủ 3 chỗ: B3 `target_user` bị bỏ → `ctx_flags.target_is_other=True`; B6 giữ cờ ở nhánh ablation/VPN/DIAGNOSERS; prompt v3.
+    Test mới (agent chính viết theo lệnh duyệt): g10 ×2, n7 ×5, ca account kiểu n3 (NGHI d), p7 ×13, chữ số Unicode `duration` ×4,
+    ghim mẫu `messages` = `slots.yaml`, mẫu giả AST lan taint/`return` (NGHI c), h3 quy tắc người khác. Q-T20a-3: `test_b06_diagnose`
+    intent lạ `account` → `printer`. Test cũ đổi thêm: `test_slots_t20a` ghim mẫu `duration` mới (giữ ý).
+  - S13 gỡ hết `CHO_DUNG2` (`grep -c xfail` = 0 ở mọi file T20a). Unit **4840 passed, 0 xfail** (= 4762 + 50 hết chờ + 28 mới).
+    `make lint` xanh (mypy 4 gói, import-linter 10/10, gitleaks 0).
+  - S14 mutation lượt 2 (`mutate_t20a.py`, 16 mã — 14 của 5.1.7 + M-T20a-15 duyệt + M-T20a-16 agent thêm): **15/16 ĐỎ đúng dự đoán**;
+    **M-T20a-7 ĐỎ khác dự đoán** — a7 ×3 + g2 đỏ, g8 KHÔNG đỏ (module chẩn đoán gọi `requested_for_of` riêng → fact vẫn của nv004 →
+    R12 vẫn deny; g8 không kiểm `requested_for`) → Q-T20a-5. md5 10 file đích + `git diff --stat` khớp.
+  - S15 `rule_coverage.py eval/scenarios`: 40 kịch bản — allow 13, approval_required 13, deny 0, none 14, lỗi 0.
+  - S16 security-reviewer (diff `6cf1091` → cây, 9 mục 5.1.8 + import động + `policy.json`): **9/9 PASS, 0 FAIL**, 8 NGHI. Agent chính
+    kiểm lại: N1 đúng (người khác nêu ở lượt trả lời hỏi lại → `clarify_wait` bỏ `target_user` `unknown_key`, cờ không bật) → Q-T20a-6;
+    N6 đúng (`device_id` vẫn `\d` — "LAP-١٢٣٤" qua); N4 đúng (3 lỗ AST: bí danh `facts`, khoá từ slot, rửa qua `if`) → đã vá trong
+    `test_facts_ast.py` (siết NGHI c đã duyệt), unit vẫn 4840.
+  - **Duyệt MẪU B DỪNG 2 (13/10/2026):** Q-T20a-5 = A (g8 kiểm `requested_for == nv004`); Q-T20a-6 = A (`clarify_wait`: `target_user`
+    bị bỏ — kể cả `unknown_key` — → `ctx_flags.target_is_other=True`; B11 không ghi `ctx_flags`; test g11 ×2 gồm ca đối chứng R01;
+    M-T20a-17); Q-T20a-7 = B (giữ `\d` của `device_id`). Mutation chạy lại M-T20a-7, -15, -16, -17: **4/4 ĐỎ đúng dự đoán** (M-7 nay
+    đỏ cả g8 — 5 test; M-17 đỏ g11), md5 4 file đích + `git diff --stat` khớp.
+  - S17 `make verify G=234` (phiên git P32, 08:29–08:55, HEAD `52c8349` + cây DỪNG 2): **KẾT LUẬN XANH** — lint PASS; test backend
+    5389 passed (gồm e2e — e1 `test_e1_t20a_b6_vs_mock` 14 ca trên mock thật) · mock 106 · ml 123 (5 deselected); gate2 89/0; ingest
+    `kb_version=c88b47a2…` (KB fixture); gate3 66/0; gate4 73/0; trả về `.env` PASS; CI PASS. Stack đang KB fixture — nạp lại KB thật
+    qua phiên git SAU commit 2.
+  - Duyệt verify DỪNG 2 (13/10/2026): gate3 66 PASS (T23a 78) — do nhánh giờ: chạy trong giờ → R20 AUTO, ít bước kiểm hơn nhánh ngoài
+    giờ R18 HITL; cùng 9 kịch bản, 0 FAIL.
+- **Dồn về mốc G (T20a):** probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật — slot + `action_hint` đúng bảng 5.1.4, slot
+  chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; câu nhắm NGƯỜI KHÁC luôn có `target_user` (đo tỉ lệ LLM bỏ
+  trống `target_user` khi câu nhắm người khác — bỏ trống thì cờ Q-T20a-4 không bật). **Chưa đo.**
+- **Spec cần sửa (T20a)** (không chặn commit):
+  1. A12: `clarify_wait` chỉ nhận slot đang thiếu → người dùng không sửa được slot đã có (vd `resource_path` B3 trích sai) — nợ UX
+     cho T20b/sau; T20a không sửa code.
+  2. TQ-3: `DIAGNOSERS` không chứa `vpn` (bảng 5.1.5 có) — `vpn.calls(requester, device_id)` có chữ ký khác, test cũ ghim.
+  3. B3 "không đổi code" (5.1.5) — đã đổi theo Q-T20a-4 (cờ `target_is_other`); chú thích `ticket_state.ctx_flags` "B6 ghi" nay là
+     B3 đặt True / B6 giữ (file cấm sửa ở T20a).
+  4. NGHI b: biên token `\w` nhận giá trị bị LLM cắt ngắn (`finance/Q3` trong "finance/Q3-archive", `Zoom` trong "ZoomIt") — fact vẫn
+     tính đúng trên đích sẽ thực thi, không vượt luật; cân nhắc biên chặt hơn cho `resource_path`/`software_name`.
+  5. R11 không đòi `device_registered` (luật T22a) — cài phần mềm lên máy chưa đăng ký của chính mình vẫn AUTO; không sửa ở T20a,
+     chuyển Quân soát.
+  6. a12: VPN thiếu `device_id` nay `ValueError` (P7 "thiếu slot → ValueError") thay `KeyError` — cùng về E9.
+  7. `build_action` thêm `_check_params` (kiểm lại `params` theo `PARAMS_BY_ACTION`) và `IntentSlots.missing()` — ngoài chữ spec, hiện
+     thực bất biến (d) và P4.
+  8. `duration` `^[1-9][0-9]{0,2}$` (spec P4 ghi `\d`), `resource_path` chặn đoạn `.`/`..` (spec 4.2 chưa có) — duyệt DỪNG 1.
+  9. Test AST lan taint không theo luồng điều khiển (`if path: facts[...] = True` không bị bắt) — giới hạn đã ghi trong test.
+  10. TQ-15: ca luật dựng tay G-EXTEND (`test_policy_rules_all`) giữ `params.permission_level="read"` — luật không đọc, nhưng khác hợp
+      đồng `extend_permission` 5.1.3 (không có `permission_level`).
+  11. Q-T20a-6: `clarify_wait` "không đổi code" (5.1.5) — đã đổi: `target_user` bị bỏ ở lượt trả lời (kể cả `unknown_key`) →
+      `ctx_flags.target_is_other=True` (như B3).
+  12. Q-T20a-7 = B: `device_id` (`slots.yaml`) và `messages.DEVICE_ID` vẫn `\d` (luật Phase 3) — chữ số Unicode ("LAP-١٢٣٤") qua
+      mẫu; tool trả 404 → không fact → không allow; tin từ chối có thể ghép mã đó. Để chặng sau.
+  13. N3: slot chuẩn hoá không đòi có trong câu (P5) → LLM tự điền (vd `duration=30`, `account_type=ad`) → R10/R01 AUTO không hỏi lại;
+      vẫn trong quyền tự làm của người gửi và ≤ 90 ngày.
+  14. N5: quy tắc "người khác → `target_user`" của prompt v3 áp cho mọi intent — VPN/software nhận `target_user` bị bỏ `unknown_key`
+      → cờ bật → R16/R20/R11 không AUTO (chặt hơn; hành vi VPN có thể khác eval cũ — chạy lại ở mốc G).
+  15. N7: `approval_wait._rejected` thiếu `requester_context` → `requester=""` → đích chính người gửi hiện "tài khoản <id>" (chỉ chữ).
+  16. N8: `access.same_department` so `owner_department == department` — hai chuỗi rỗng cho `True`; seed/mock hiện không có phòng ban
+      rỗng.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -5028,6 +5089,7 @@ không chứa `vpn`); thêm: đối chiếu `seed_tools` ↔ mock, "Spec cần s
 | 3g | Probe 4 prompt `b10_need_type`, `b10_answer`, `b11_clarify_question`, `b11_extract_slots` (v1, **chưa đo**) với LLM thật: phân loại info/action, trích dẫn đúng `anchor_chunk_id`, `cannot_answer` khi thiếu căn cứ, câu hỏi không đòi bí mật; tỉ lệ `invalid_citation`/`output_guard_block` trên KB thật (luật 4 có thể chặn câu KB chính sách mật khẩu — Q-3g-8) | PLAN-3g |
 | 3g | Người có ≥ 2 máy chọn máy của mình vẫn phải tự nêu `action` (không suy từ cert khi `validate_targets` kiểm lại máy) — chấp nhận ở Phase 3 (ít tự động = an toàn hơn); đo số lượt hỏi thêm với LLM thật | PLAN-3g g12 |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
+| 5 T20a | Probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật: slot + `action_hint` đúng bảng 5.1.4, slot chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; đo tỉ lệ LLM bỏ trống `target_user` khi câu nhắm người khác (bỏ trống → cờ Q-T20a-4 không bật); chạy lại kịch bản VPN với quy tắc người khác (N5). **Chưa đo.** | phase5 5.1.1 P9, Q-T20a-4 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
@@ -5121,9 +5183,11 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     trị tham số (input) — vào thông điệp; lỗi nổi lên boundary → audit `unhandled_exception` (`exception`, `traceback`) + `log.error`.
     Có từ 1c, mọi tool. Nhánh GHI đã đóng ở Q-3h-10 (`cause` chỉ tên lớp); nhánh ĐỌC còn. Đề xuất: `e.errors(include_input=False)`
     (chỉ `loc` + `type`) hoặc `hide_input_in_errors=True` cho model đầu ra tool — Phase 4 S0.
-19. **`action.target` trong danh sách trắng DSL (soát DỪNG 3b, ghi chú mục 1).** `action.target` = `"device:" + slot device_id`
+19. ~~**`action.target` trong danh sách trắng DSL (soát DỪNG 3b, ghi chú mục 1).**~~ — **đóng ở T20a (13/10/2026):** test h3 của T22a
+    (`test_policy_rules_all.py`, "không luật nào tham chiếu `action.target`") giữ xanh với R10 mới; `action.target` của 4 intent dựng
+    một nguồn ở `build_action` + bất biến (a)–(c) 5.1.3 ghim bằng a13. (Nội dung cũ: `action.target` = `"device:" + slot device_id`
     (đã qua `validate_targets`), chưa luật nào dùng. Khi Phase 5 thêm 15 luật: ghim test "policy.json không tham chiếu
-    `action.target`" hoặc bỏ khỏi danh sách trắng tới khi có luật cần.
+    `action.target`" hoặc bỏ khỏi danh sách trắng tới khi có luật cần.)
 20. **e2e cổng 3 đếm ghi dưới `/vpn/` (soát DỪNG 3b, NGHI).** `e2e/gate3_env.calls` mặc định `/vpn/` — không thấy ghi sang AD/file/
     phần mềm. gate3 đã đổi sang "mọi POST trừ `/ad/authenticate`"; e2e đổi cùng cách khi chạy lại e2e (Docker).
 21. ~~**E9 ở node SAU B18 trên ticket đã có `begun` (còn lại của Q-3h-10).**~~ — **đã làm ở 3h DỪNG 3b** (chốt Tuấn Anh
@@ -5149,9 +5213,12 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     quản lý mà route duyệt dựng từ bảng `users` (`api/approvals.py::_chain_from_users`) có thể **cụt** (vd `l1_lead` thuộc cả IT-L1 lẫn
     IT-Manager → `l1_01.manager_id = NULL` → `it_mgr01` gửi, phiếu giao `l1_01` → route 202). Lớp chặn chính là B15 thật (chuỗi từ AD,
     không lọc role — DỪNG 2 có test). Đóng hẳn: phân biệt hai nghĩa trong schema (cần migration) — sau Phase 4.
-26. **`conflict_type` `targets_approver` chỉ so `action.requested_for` (soát DỪNG 1 4b NGHI S1e).** Đúng P4 và không đổi hành vi VPN
-    (đích `device:…` không bao giờ trùng `user_id`). Phase 5 (intent tài khoản, `target="user:…"`) phải xét lại: đích là tài khoản của
-    chính người duyệt mà không qua `requested_for` thì không bị bắt.
+26. ~~**`conflict_type` `targets_approver` chỉ so `action.requested_for` (soát DỪNG 1 4b NGHI S1e).**~~ — **đóng ở T20a bằng b1
+    (13/10/2026):** `requested_for` của account/access = người bị tác động (D-47, P6) và `target == f"user:{requested_for}"` (bất biến
+    (b), a13) → đích tài khoản luôn đi qua `requested_for`; `test_approvers_t20a::test_b1_…` — `reset_password` cho `l1_01`, người gửi
+    nv005 → `it_mgr01`, `reason=conflict`. (Nội dung cũ: đúng P4 và không đổi hành vi VPN (đích `device:…` không bao giờ trùng
+    `user_id`). Phase 5 (intent tài khoản, `target="user:…"`) phải xét lại: đích là tài khoản của chính người duyệt mà không qua
+    `requested_for` thì không bị bắt.)
 27. **`security_events.role_changed` không ghi nguồn (đăng nhập hay B15 `ensure`) (Q-4b-8 = A, soát DỪNG 2 4b; chốt 01/10/2026).**
     `AdUserSync._upsert` (`auth/user_sync.py`) dùng CHUNG cho `AuthService` và B15 ghi `detail={from, to}` — M9 không tách được đổi role
     phát hiện lúc đăng nhập với lúc B15 đồng bộ người duyệt/chuỗi quản lý. Đổi cần sửa `AdUserSync` dùng chung (+ `check_event`

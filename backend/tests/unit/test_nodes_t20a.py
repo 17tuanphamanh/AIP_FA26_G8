@@ -1,5 +1,5 @@
 """T20a — node B6 / B11 THẬT cho account, software, access (phase5 5.1.1 P3, P4; 5.1.5; 5.1.6 n1–n5, p2–p4; PLAN-T20a TQ-2,
-TQ-11, TQ-12, TQ-17). Viết TỪ ĐẶC TẢ, trước code — DỪNG 2 (`CHO_DUNG2`).
+TQ-11, TQ-12, TQ-17). Viết TỪ ĐẶC TẢ, trước code — hiện thực ở DỪNG 2.
 
 Mức node như `test_b06_diagnose.py` (RunContext + `bind_run` + `wrap_node` — lỗi chưa lường trước → E9 → assert đỏ, không lọt
 exception lạ). Registry THẬT trên `tests/unit/_t20a.Env` (AD giả đọc seed + `SeedVpn` + `SeedTools`) truyền `GraphHarness(directory=…)`;
@@ -37,24 +37,6 @@ FOUR = frozenset({"vpn", "account", "software", "access"})
 POINT2_KEYS = {"phase", "slots_inferred", "tools_called", "facts", "rediagnose"}  # điểm log 2 (như VPN — TQ-17)
 QUESTION = "Bạn cần quyền này trong bao nhiêu ngày?"
 
-# T20a DỪNG 2 (phase5 5.1.9): toàn bộ file — xfail(strict) tới khi B6/B11 có nhánh DIAGNOSERS (phase5 4.10).
-CHO_DUNG2 = frozenset({
-    "test_n1_b6_three_intents_seed", "test_n1_b6_software_named_device_phase_device", "test_n2_b6_tool_500_e2",
-    "test_n3_b11_access_recomputes_all_facts_for_final_path", "test_n3_b11_drops_stale_folder_facts_on_unknown_path",
-    "test_n4_b6_infers_device_b11_builds_device_target", "test_n5_b11_tool_error_e2_target_check_error",
-    "test_n5_b11_missing_procedure_doc_e3_no_procedure", "test_p2_b11_grant_missing_duration_asks_duration",
-    "test_p2_b11_grant_missing_duration_last_turn_e4", "test_p2_b11_grant_only_action_asks_in_declared_order",
-    "test_p3_b11_view_permissions_no_question_builds_action",
-})  # fmt: skip
-# p4 (`test_p4_b11_access_without_action_asks_action`) KHÔNG chờ DỪNG 2: `slots.yaml` access `required: [action]` (DỪNG 1) đã đủ để B11 cũ
-# hỏi `action` — để trong CHO_DUNG2 thì xfail strict XPASS (soát S8 DỪNG 1).
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 class Nodes:
@@ -67,15 +49,15 @@ class Nodes:
                               rag=rag or FakeRag())  # fmt: skip
         self.audit = MemoryAudit()
 
-    async def run(self, name: str, module: ModuleType, state: Mapping[str, Any]) -> dict[str, Any]:
-        deps = dataclasses.replace(self.h.deps(), enabled_intents=FOUR)
+    async def run(self, name: str, module: ModuleType, state: Mapping[str, Any], **over: Any) -> dict[str, Any]:
+        deps = dataclasses.replace(self.h.deps(), enabled_intents=FOUR, **over)
         run = RunContext(turn_id="T1", trace_id="0" * 32, audit=self.audit, effects=MemoryEffects(), spans=MemorySpans(),
                          clock=self.env.clock, txlog=MemoryTxLog())  # fmt: skip
         with bind_run(run):
             return dict(await wrap_node(name, module.make(deps))(dict(state)))
 
-    async def b6(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        return await self.run("b06_diagnose", b06_diagnose, state)
+    async def b6(self, state: Mapping[str, Any], **over: Any) -> dict[str, Any]:
+        return await self.run("b06_diagnose", b06_diagnose, state, **over)
 
     async def b11(self, state: Mapping[str, Any]) -> dict[str, Any]:
         return await self.run("b11_slots", b11_slots, state)
@@ -335,3 +317,52 @@ async def test_p4_b11_access_without_action_asks_action() -> None:
     n = Nodes()
     out = await n.b11(b11_state("nv001", "access", {"resource_path": "finance/Q3"}))
     assert (out.get("status"), out.get("missing_slots")) == (S_CLARIFYING, ["action"]), n.audit.rows
+
+
+# ---- Thêm khi duyệt DỪNG 1 (agent chính viết — lệnh duyệt 13/10, không qua test-writer) ----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_n3_account_b6_ad_lookup_b11_recomputes_for_email() -> None:
+    """NGHI d (security-reviewer DỪNG 1): B6 tra theo `ad` khi chưa có `account_type` (TQ-8) → fact AD của nv007 (không khoá);
+    người dùng trả lời `account_type=email` → B11 tra lại theo `email` và THAY toàn bộ fact (khoá `bad_password`) — không để fact AD
+    áp cho thao tác email."""
+    n = Nodes()
+    st = b6_state("nv007", "account", {"action": "unlock_account"})
+    u6 = await n.b6(st)
+    assert u6["status"] == S_RETRIEVING, n.audit.rows
+    assert u6["facts"]["target_account_locked"] is False  # gợi ý của B6 theo ad
+    st = {**st, **u6, "slots": {**u6["slots"], "account_type": "email"}, "redacted_request": "mở khoá email",
+          "clarification_turns": 1}  # fmt: skip
+    out = await n.b11(st)
+    assert out["status"] == S_ASSESSING, n.audit.rows
+    assert out["facts"] == {"target_user_status": "active", "target_is_service_account": False,
+                            "target_account_locked": True, "target_lock_reason": "bad_password",
+                            "target_account_privilege": "standard_user"}  # fmt: skip
+    assert out["intended_action"].facts == out["facts"]
+    assert out["intended_action"].params == {"account_type": "email"}
+    b11_lookups = [a.get("account_type") for t, a in n.env.tools.seen if t == "check_account_status"]
+    assert b11_lookups == ["ad", "email"]  # B6 theo ad, B11 theo email
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("intent", "slots", "over"),
+    [
+        pytest.param("vpn", {"device_id": "LAP-0342"}, {}, id="n7-vpn"),
+        pytest.param("account", {"account_type": "ad", "action": "reset_password"}, {}, id="n7-account"),
+        pytest.param("access", EXTEND_PR, {}, id="n7-access"),
+        pytest.param("software", {"software_name": "Zoom"}, {}, id="n7-software"),
+        pytest.param("account", {"account_type": "ad"}, {"enable_proactive_diagnosis": False}, id="n7-ablation"),
+    ],
+)
+async def test_n7_b6_keeps_target_is_other_from_b3(intent: str, slots: dict[str, str], over: dict[str, Any]) -> None:
+    """n7 (Q-T20a-4 điểm 2, M-T20a-15): B3 đã đặt `ctx_flags.target_is_other=True` → B6 GIỮ True ở nhánh VPN, nhánh `DIAGNOSERS` và
+    nhánh ablation; không có cờ → False như cũ (n1)."""
+    n = Nodes()
+    st = {**b6_state("nv001", intent, slots), "ctx_flags": {"target_is_other": True}}
+    update = await n.b6(st, **over)
+    assert update.get("status") == S_RETRIEVING, n.audit.rows
+    assert update["ctx_flags"] == {"target_is_other": True}
+    plain = await Nodes().b6(b6_state("nv001", intent, slots), **over)
+    assert plain["ctx_flags"] == {"target_is_other": False}

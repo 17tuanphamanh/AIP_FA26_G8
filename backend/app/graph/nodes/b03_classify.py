@@ -11,6 +11,10 @@
    `TAU_INTENT` → `intent_low_confidence` → intent ∉ `ENABLED_INTENTS` → `intent_not_enabled`.
 5. Còn lại: `sanitize_slots` (3-Q1; P1, P2, Q-3f-3) → `S_DIAGNOSING` → B6, `facts={}` (B3 KHÔNG BAO GIỜ ghi fact — G-01).
    `span` chỉ giữ khi là đoạn con của câu người dùng (Q-3f-4).
+6. Q-T20a-4 (Phase 5 T20a, duyệt DỪNG 1): `target_user` bị `sanitize_slots` bỏ (BẤT KỲ lý do — sai mẫu như họ tên, không có trong
+   câu…) nghĩa là người dùng nhắm NGƯỜI KHÁC mà định danh không dùng được → không để `requested_for` âm thầm thành người gửi (luật
+   allow chạy trên chính họ): ghi `ctx_flags={"target_is_other": True}` (B6 không ghi đè; B12 `build_ctx` đọc). Không thêm giá trị
+   slot vào audit — điểm log 1 đã có key bị bỏ.
 
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
@@ -118,9 +122,11 @@ def make(deps: NodeDeps) -> NodeFn:
         slots, dropped = sanitize_slots(deps.slots.intents[it.type], raw, text=text)  # 3-Q1: cửa DUY NHẤT
         span = it.span if it.span.strip() and phrase_in_text(it.span, text) else None  # Q-3f-4
         info.update(audit_dropped(dropped, known), span_not_in_text=bool(it.span.strip()) and span is None)
+        flags = {"ctx_flags": {"target_is_other": True}} if "target_user" in dropped else {}  # Q-T20a-4
         return await goto(
             state, S_DIAGNOSING, next_node="b06_diagnose", step="B3", event="intent_classified", audit_detail=info,
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
+            **flags,
         )  # fmt: skip
 
     return b03_classify

@@ -38,15 +38,6 @@ POINT1_KEYS = {"layer", "intent", "confidence", "is_multi", "model_probs", "mode
                "llm_error", "dropped_slot_keys", "dropped_slot_reasons", "dropped_unknown_count",
                "slot_fact_collision", "span_not_in_text"}  # fmt: skip
 
-# T20a DỪNG 2 (phase5 5.1.9, P9): prompt `b03_classify` v3 — xfail(strict) tới khi đổi prompt (phase5 4.10).
-CHO_DUNG2 = frozenset({"test_point1_records_prompt_version"})
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
-                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 def item(type_: str = "vpn", confidence: float = 0.9, *, span: str = TEXT, action: str | None = None,
@@ -237,7 +228,7 @@ async def test_point1_on_every_branch_without_user_text(script: Script) -> None:
 
 
 async def test_point1_records_prompt_version() -> None:
-    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 — DỪNG 2 (`CHO_DUNG2`)."""
+    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 (DỪNG 2)."""
     _, row, _, _ = await _run([out(item("vpn", 0.9))])
     assert row["detail"]["prompt"] == "b03_classify@3" and row["detail"]["layer"] == "llm"
 

@@ -6,3 +6,17 @@ vpn:
   primary: l1_01
   backup: l1_02
   head: it_mgr01
+# Phase 5 T20a (phase5 5.1.1 P10, Q-4-H): 3 intent khai báo (CHƯA bật) dùng chung roster VPN — nhóm 4 người không có roster riêng
+# theo loại. Khởi động chỉ kiểm intent trong ENABLED_INTENTS → thêm dòng ở đây không đổi khởi động VPN.
+account:
+  primary: l1_01
+  backup: l1_02
+  head: it_mgr01
+software:
+  primary: l1_01
+  backup: l1_02
+  head: it_mgr01
+access:
+  primary: l1_01
+  backup: l1_02
+  head: it_mgr01
