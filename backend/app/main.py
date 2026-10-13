@@ -56,8 +56,8 @@ from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
 from app.db.session import Engines, create_engines, ping
+from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
-from app.executor.vpn import VpnExecutor
 from app.executor.wiring import build_write_registry
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
@@ -86,7 +86,7 @@ async def _default_runtime(
     settings: Settings, engines: Engines, clock: Clock, directory: ToolCaller | None
 ) -> AsyncIterator[Runtime]:
     """Backend giữ SVC_EXECUTOR_TOKEN (D-03) → can_execute=True; worker thì không. 3h (P7): CHỈ ở đây dựng registry GHI +
-    `VpnExecutor` (transaction_log trên engine chính). Không token → `RefusingExecutor` (B17 E7, 0 lời gọi ghi) + WARNING một
+    `PlanExecutor` (transaction_log trên engine chính). Không token → `RefusingExecutor` (B17 E7, 0 lời gọi ghi) + WARNING một
     lần lúc khởi động. `FAKE_SCENARIO` (gate2, node giả) → giữ `RefusingExecutor` như Phase 2 (gate2 89/0 không đổi)."""
     async with AsyncExitStack() as stack:
         executor = None
@@ -95,7 +95,7 @@ async def _default_runtime(
         elif settings.fake_scenario is None:
             write_registry, write_http = build_write_registry(settings, clock)
             stack.push_async_callback(write_http.aclose)
-            executor = VpnExecutor(
+            executor = PlanExecutor(
                 write_registry, SqlTxLog(engines.main, clock), clock, tz=get_policy().business_hours.tz
             )
         yield await stack.enter_async_context(

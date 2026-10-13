@@ -132,11 +132,12 @@ def test_h23_metadata_action_without_plan_refuses() -> None:
 def test_h23_second_enabled_intent_without_plan_refuses() -> None:
     """h23 + B17 mục 13 "Hành động mới: thêm PLAN[type]… Thiếu PLAN phải là lỗi cấu hình khi khởi động"."""
     meta = _meta_copy()
-    meta["account"] = {"unlock_account": ActionMeta(reversible=True, reversibility="full", data_sensitivity="low",
-                                                    scope="single_account", privilege_level="standard_user",
-                                                    procedure_doc="KB-ACC-001")}  # fmt: skip
-    with pytest.raises(RuntimeError, match="unlock_account"):
-        check_plans(meta, ["vpn", "account"], plans=PLAN)
+    # T24: `unlock_account` đã có PLAN (bảng 7.2) → ca này dùng hành động KHÔNG có PLAN để giữ đúng ý "intent bật thứ hai thiếu PLAN"
+    meta["printer"] = {"fix_printer": ActionMeta(reversible=True, reversibility="full", data_sensitivity="low",
+                                                 scope="single_device", privilege_level="standard_user",
+                                                 procedure_doc="KB-ACC-001")}  # fmt: skip
+    with pytest.raises(RuntimeError, match="fix_printer"):
+        check_plans(meta, ["vpn", "printer"], plans=PLAN)
 
 
 @pytest.mark.parametrize(

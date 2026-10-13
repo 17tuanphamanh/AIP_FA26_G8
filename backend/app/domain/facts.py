@@ -36,6 +36,8 @@ FACT_TYPES: Mapping[str, type] = {
     "resource_sensitivity": str,  # check_resource_sensitivity.sensitivity
     "same_department": bool,  # owner_department của thư mục == phòng ban (AD) của requested_for (Q-5-4, R09)
     "has_permission_record": bool,  # check_current_permissions — có dòng quyền (còn hạn hoặc hết hạn)
+    # ---- Phase 5 T20a (P1, Q-5-8, Q-T22a-8) ----
+    "existing_permission_level": str,  # check_current_permissions — mức CAO NHẤT (read < write < full) mọi dòng của đúng thư mục
 }
 FACT_KEYS: frozenset[str] = frozenset(FACT_TYPES)
 CERT_STATUSES: frozenset[str] = frozenset({"valid", "expired", "revoked", "none"})
@@ -47,6 +49,7 @@ FACT_VALUE_SETS: Mapping[str, frozenset[str]] = {
     "target_disable_reason": frozenset({"security", "other"}),
     "target_lock_reason": frozenset({"bad_password", "admin", "inactivity", "other"}),
     "resource_sensitivity": frozenset({"low", "medium", "high"}),
+    "existing_permission_level": frozenset({"read", "write", "full"}),
 }
 
 

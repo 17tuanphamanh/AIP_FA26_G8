@@ -182,8 +182,8 @@ class Settings(BaseSettings):
     reauth_minutes: int = Field(default=10, ge=1)  # xác nhận lại: đăng nhập trong N phút gần nhất
     revocation_cache_seconds: float = Field(default=30.0, ge=0)  # thu hồi có hiệu lực ≤ N giây
 
-    # ---- Phạm vi intent (3-Q27, phase3 3.5) — Phase 5 mở 3 loại còn lại ----
-    enabled_intents: list[str] = Field(default_factory=lambda: ["vpn"], min_length=1)
+    # ---- Phạm vi intent (3-Q27, phase3 3.5) — Phase 5 T24 P1 (Q-5-7): bật đủ 4 loại ----
+    enabled_intents: list[str] = Field(default_factory=lambda: ["vpn", "account", "software", "access"], min_length=1)
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False

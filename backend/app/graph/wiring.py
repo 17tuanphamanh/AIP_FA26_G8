@@ -1,7 +1,7 @@
 """Dựng runtime graph trên Postgres: store SQL + checkpoint + khoá + runner (composition root).
 
 Worker dùng `can_execute=False` (không có SVC_EXECUTOR_TOKEN — D-03, quyết định 26/09/2026). Executor (3h, P7): chỉ `main.py`
-(API) dựng `VpnExecutor` rồi truyền `executor=` vào; không truyền (worker, API thiếu token) → `RefusingExecutor` đọc
+(API) dựng `PlanExecutor` rồi truyền `executor=` vào; không truyền (worker, API thiếu token) → `RefusingExecutor` đọc
 `transaction_log` (soát S12 NGHI-3: `begun` có sẵn → E7 `exec_interrupted`). Module này KHÔNG import
 `executor.wiring`/adapter ghi (hợp đồng import-linter 3). Node
 chưa có logic thật dùng port không làm gì (`fakes.LoggingNotifier`…); phase sau thay bằng dịch vụ thật.

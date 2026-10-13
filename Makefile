@@ -21,7 +21,7 @@ ifneq ($(wildcard $(DOCKER_DESKTOP_BIN)/docker-credential-desktop),)
 export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
-.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 gate4 vpn-smoke models ml-bench \
+.PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 gate4 gate5 vpn-smoke models ml-bench \
 	rerank-bench verify verify-status audit-check
 
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
@@ -141,8 +141,15 @@ gate3:
 gate4:
 	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate4 $(S)
 
+# Cổng 5 tự động — phần ĐƠN Ý (phase5 7.6, T24 P8; backend/tests/stack/README.md): node THẬT (KHÔNG FAKE_SCENARIO, LLM_BACKEND=scripted,
+# preset config/scripted/{tc01,tc03,tc07,tc08,tc17,tc18,tc21a,tc21b,hb04}.yaml), ENABLED_INTENTS đủ 4 intent, KB THẬT (make ingest — KB_DIR
+# mặc định kb; `make verify G=…5` tự nạp). S=all ghi biên bản backend/tests/stack/bienban-gate5-<ngày>.md (KHÔNG commit bản đã điền).
+# Ví dụ: make gate5 S=preflight | make gate5 S=tc21b | make gate5 S=all
+gate5:
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.stack.gate5 $(S)
+
 # Phase 4 (mục 4.4, Q-4-I/Q-4-T): MỘT lệnh cho mọi DỪNG — lint → test → up → cổng theo G (chuỗi chữ số: 0 = chỉ lint+test,
-# 2 = gate2, 3 = gate3, 4 = gate4 với APPROVAL_SLA_MINUTES_DEV=2) → LUÔN trả backend+worker về cấu hình .env. gate2/gate3 cần FAKE_SCENARIO ngược nhau →
+# 2 = gate2, 3 = gate3, 4 = gate4 với APPROVAL_SLA_MINUTES_DEV=2, 5 = gate5 trên KB THẬT — T24 Q-T24-1) → LUÔN trả backend+worker về cấu hình .env. gate2/gate3 cần FAKE_SCENARIO ngược nhau →
 # script tạo lại backend+worker bằng biến shell, không đọc/sửa .env. BENCH=1 thêm bench checkpoint (P6). Kết quả:
 # .verify/summary.txt (agent đọc) + .verify/run-*.log. Lệnh >120 s bị đẩy nền là bình thường — báo agent "xong".
 G ?= 3

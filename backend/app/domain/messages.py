@@ -7,17 +7,21 @@
 - Tin người dùng `{role: "user", text}`: `text` là bản ĐÃ CHE (P3) — node chỉ gọi `user_msg` với văn bản đã qua guard.
 - Tin kết quả B18 (3h, phase3 11.4 bước 6; P6): theo MẪU, không LLM — chỉ ghép enum (`cert_status`), định danh máy (regex),
   số ngày và ngày hết hạn từ `ExecutionResult.outputs` (đã lọc regex ở model — Q-3h-2). `action_type` lạ → `ValueError` (E9).
+  T24 (P4, bảng 7.3): thêm 6 mẫu account/software/access; `result_text` tự lọc lại `outputs` theo `EXEC_OUTPUT_PATTERNS` và định
+  danh trong `params` theo mẫu (lớp thứ hai); `{đích}` = `person_phrase` (Q-T24-2); `view_permissions` đọc dòng quyền từ
+  `diagnostics` của B6 qua `permission_rows` (≤ 10 dòng; không có dữ liệu → "chưa đọc được" — Q-T24-5).
 
 `conversation` giữ 20 tin cuối (reducer `append_capped(20)` ở `ticket_state.py`); `GET /api/tickets/{id}` đọc từ checkpoint.
 """
 
 import re
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Final, Literal
+from zoneinfo import ZoneInfo
 
-from app.domain.action import FactValue
-from app.domain.ticket_state import ChunkRef, Msg
+from app.domain.action import SOFTWARE_NAME, Action, FactValue
+from app.domain.ticket_state import EXEC_OUTPUT_PATTERNS, ChunkRef, Msg
 
 MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
 SOURCE_KEYS: Final = ("chunk_id", "title", "heading_path")
@@ -45,9 +49,23 @@ def user_msg(redacted_text: str) -> Msg:
 
 
 DEVICE_ID: Final = re.compile(r"[A-Z]{2,4}-\d{3,5}")  # cùng mẫu `value_rules.device_id` (slots.yaml)
+# T20a P11 — cùng mẫu `value_rules.target_user` / `value_rules.resource_path` (slots.yaml; test m1 ghim bằng nhau): định danh
+# chỉ được ghép vào tin khi qua mẫu (5.1.8 mục 8 — không chép chữ người dùng ngoài định danh đã qua regex).
+USER_ID: Final = re.compile(r"[a-z0-9_]{3,64}")
+RESOURCE_PATH: Final = re.compile(r"(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}")
 CERT_STATUS_TEXT: Final = {"valid": "còn hiệu lực", "expired": "đã hết hạn", "revoked": "đã bị thu hồi", "none": "chưa có"}
 ASK_CONFIRM: Final = "Bạn thử kết nối lại rồi xác nhận giúp mình nhé."
-RESULT_ACTIONS: Final = frozenset({"renew_vpn_cert", "reissue_vpn_access", "check_vpn_status"})  # có mẫu ở `result_text`
+RESULT_ACTIONS: Final = frozenset({
+    "renew_vpn_cert", "reissue_vpn_access", "check_vpn_status",
+    "reset_password", "unlock_account", "install_software", "view_permissions", "grant_permission", "extend_permission",
+})  # có mẫu ở `result_text` — T24 P4: đủ 9  # fmt: skip
+# T24 bảng 7.3 / 7.4: `{loại}` của tài khoản (enum `account_type`)
+ACCOUNT_TYPE_TEXT: Final[Mapping[str, str]] = {"ad": "đăng nhập (AD)", "email": "email", "erp": "ERP"}
+PERMISSION_LEVELS: Final = frozenset({"read", "write", "full"})
+MAX_PERMISSION_ROWS: Final = 10
+ASK_CONFIRM_LOGIN: Final = "Bạn đăng nhập thử rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_OPEN: Final = "Bạn mở thử rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_VIEW: Final = "Bạn xem đã đủ chưa rồi xác nhận giúp mình nhé."
 
 
 def _until(outputs: Mapping[str, str]) -> str:
@@ -55,7 +73,116 @@ def _until(outputs: Mapping[str, str]) -> str:
     return f", hiệu lực tới {date.fromisoformat(expires):%d/%m/%Y}" if expires else ""
 
 
-def result_text(action_type: str, device_id: str, outputs: Mapping[str, str], facts: Mapping[str, FactValue]) -> str:
+# T24 P4 (TQ-8): một dòng quyền cho mẫu `view_permissions` — (đường dẫn qua `RESOURCE_PATH`, mức enum, ngày hết hạn địa phương
+# hoặc None = không thời hạn). Dựng bằng `permission_rows` từ `diagnostics` của B6 (dữ liệu tool).
+type PermRow = tuple[str, str, date | None]
+
+
+def person_phrase(requested_for: str, requester_id: str) -> str:
+    """T24 (Q-T24-2): cụm chỉ NGƯỜI bị tác động cho `{đích}` của tin kết quả B18 — người gửi → "bạn"; khác → mã nhân viên (qua
+    `USER_ID`); sai mẫu → "người được yêu cầu"."""
+    if requested_for == requester_id:
+        return "bạn"
+    return requested_for if USER_ID.fullmatch(requested_for) else "người được yêu cầu"
+
+
+def _local_date(raw: object, tz: ZoneInfo) -> date | None:
+    """ISO datetime (có múi giờ; không có → coi là UTC) → ngày địa phương. Sai kiểu → TypeError, sai dạng → ValueError."""
+    if not isinstance(raw, str):
+        raise TypeError("expires_at không phải chuỗi")
+    at = datetime.fromisoformat(raw)
+    return (at if at.tzinfo is not None else at.replace(tzinfo=UTC)).astimezone(tz).date()
+
+
+def permission_rows(raw: object, tz: str) -> tuple[PermRow, ...] | None:
+    """T24 P4 (TQ-8, Q-T24-5): `diagnostics["check_current_permissions"]` (B6, JSON) → các dòng hợp lệ. Không phải danh sách
+    (thiếu khoá, None = 404/không chẩn đoán) → None ("chưa đọc được"); danh sách → dòng sai mẫu bị bỏ (chưa cắt 10)."""
+    if not isinstance(raw, list):
+        return None
+    zone = ZoneInfo(tz)
+    rows: list[PermRow] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        path, level, expires = item.get("path"), item.get("level"), item.get("expires_at")
+        if not isinstance(path, str) or not RESOURCE_PATH.fullmatch(path) or level not in PERMISSION_LEVELS:
+            continue
+        try:
+            day = None if expires is None else _local_date(expires, zone)
+        except (TypeError, ValueError):
+            continue
+        rows.append((path, str(level), day))
+    return tuple(rows)
+
+
+def _out(outputs: Mapping[str, str], key: str) -> str | None:
+    """Giá trị `outputs[key]` CHỈ khi qua mẫu P4 (lớp thứ hai sau `ExecutionResult`); ngày phải là ngày thật."""
+    value = outputs.get(key)
+    pattern = EXEC_OUTPUT_PATTERNS.get(key)
+    if not isinstance(value, str) or pattern is None or not pattern.fullmatch(value):
+        return None
+    if key == "expires_on":
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return None
+    return value
+
+
+def _dmy(iso: str | None) -> str | None:
+    return None if iso is None else f"{date.fromisoformat(iso):%d/%m/%Y}"
+
+
+def _new_action_text(
+    action: Action, outputs: Mapping[str, str], requester_id: str, rows: Sequence[PermRow] | None
+) -> str:
+    """6 mẫu T24 (bảng 7.3) — chỉ enum, định danh qua mẫu, ngày; thiếu giá trị → bỏ cụm."""
+    p = action.params
+    who = person_phrase(action.requested_for, requester_id)
+    kind = ACCOUNT_TYPE_TEXT.get(str(p.get("account_type")))
+    account = f"tài khoản {kind} của {who}" if kind else f"tài khoản của {who}"
+    path_raw = str(p.get("resource_path", ""))
+    folder = f"thư mục {path_raw}" if RESOURCE_PATH.fullmatch(path_raw) else "thư mục được yêu cầu"
+    until = _dmy(_out(outputs, "expires_on"))
+    if action.type == "reset_password":
+        via = _out(outputs, "delivered_via")
+        sent = f"Mật khẩu tạm đã gửi qua {via}" if via else "Mật khẩu tạm đã gửi"
+        return f"Đã đặt lại mật khẩu {account}. {sent}; cần đổi ở lần đăng nhập tới. {ASK_CONFIRM_LOGIN}"
+    if action.type == "unlock_account":
+        return f"Đã mở khoá {account}. {ASK_CONFIRM_LOGIN}"
+    if action.type == "install_software":
+        raw_software = str(p.get("software_name", ""))  # Q-T24-7: tên đã chuẩn hoá của Action, KHÔNG lấy tên hệ thống ngoài trả về
+        software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
+        version = _out(outputs, "version")
+        device_id = str(p.get("device_id", ""))
+        device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+        return f"Đã cài {software}{f' phiên bản {version}' if version else ''} lên {device}. {ASK_CONFIRM_OPEN}"
+    if action.type == "view_permissions":
+        if rows is None:
+            return (f"Mình chưa đọc được danh sách quyền truy cập của {who}. "
+                    "Bạn liên hệ IT để kiểm lại rồi xác nhận giúp mình nhé.")  # fmt: skip
+        shown = [r for r in rows if RESOURCE_PATH.fullmatch(r[0]) and r[1] in PERMISSION_LEVELS][:MAX_PERMISSION_ROWS]
+        listed = "; ".join(
+            f"{path} ({level}, {f'hết hạn {day:%d/%m/%Y}' if day is not None else 'không thời hạn'})"
+            for path, level, day in shown
+        )
+        return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {ASK_CONFIRM_VIEW}"
+    if action.type == "grant_permission":
+        level = _out(outputs, "level")
+        return (f"Đã cấp quyền {f'{level} ' if level else ''}{folder} cho {who}"
+                f"{f', hiệu lực tới {until}' if until else ''}. {ASK_CONFIRM_OPEN}")  # fmt: skip
+    if action.type == "extend_permission":
+        return f"Đã gia hạn quyền {folder} của {who}{f' tới {until}' if until else ''}. {ASK_CONFIRM_OPEN}"
+    raise ValueError(f"không có mẫu tin kết quả cho {action.type!r}")
+
+
+def result_text(
+    action: Action, outputs: Mapping[str, str], facts: Mapping[str, FactValue], *, requester_id: str,
+    rows: Sequence[PermRow] | None = (),
+) -> str:  # fmt: skip
+    """Tin kết quả B18 theo MẪU (P6; T24 P4 bảng 7.3). `rows` chỉ dùng cho `view_permissions` (None = chưa đọc được)."""
+    action_type = action.type
+    device_id = str(action.params.get("device_id", ""))
     device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
     if action_type == "renew_vpn_cert":
         return f"Đã gia hạn chứng chỉ VPN cho {device}{_until(outputs)}. {ASK_CONFIRM}"
@@ -73,7 +200,7 @@ def result_text(action_type: str, device_id: str, outputs: Mapping[str, str], fa
         last = "thành công" if conn is True else "không thành công" if conn is False else "chưa có dữ liệu"
         return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. "
                 "Bạn xem thông tin này đã đủ chưa rồi xác nhận giúp mình nhé.")  # fmt: skip
-    raise ValueError(f"không có mẫu tin kết quả cho {action_type!r}")
+    return _new_action_text(action, outputs, requester_id, rows)
 
 
 def result_msg(text: str, ref: str | None) -> Msg:
@@ -95,8 +222,7 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
     "renew_vpn_cert": "gia hạn chứng chỉ VPN",
     "reissue_vpn_access": "cấp lại quyền truy cập VPN",
     "check_vpn_status": "kiểm tra trạng thái VPN",
-    # Phase 5 T22a (phase5 4.7b, test d4): nhãn cho 6 hành động khai báo (chưa bật). Nợ T20: `rejection_text` ghép "cho máy …"
-    # — sai nghĩa với đích không phải máy (`user:`, `folder:`).
+    # Phase 5 T22a (phase5 4.7b, test d4): nhãn cho 6 hành động khai báo (chưa bật). T20a P11: cụm đích theo `target_phrase`.
     "reset_password": "đặt lại mật khẩu",
     "unlock_account": "mở khoá tài khoản",
     "install_software": "cài đặt phần mềm",
@@ -106,14 +232,30 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
 }
 
 
-def rejection_text(action_type: str, device_id: str, reason_code: str | None, note: str | None) -> str:
-    """Tin từ chối theo mẫu (P1). `note` None = không kèm câu ghi chú (output guard chặn). `note` phải là bản ĐÃ CHE."""
+def target_phrase(action: Action, requester_id: str) -> str:
+    """T20a P11: cụm chỉ đích của hành động cho tin từ chối, theo tiền tố `action.target`. `device:<id>` → "máy <id>" (sai mẫu →
+    "máy của bạn" — giữ chữ VPN cũ); `user:<id>` → "tài khoản của bạn" (id == người gửi) / "tài khoản <id>" (sai mẫu → "tài khoản
+    được yêu cầu"); `folder:<path>` → "thư mục <path>" (sai mẫu → "thư mục được yêu cầu"); tiền tố lạ → "" (câu chung)."""
+    kind, _, ident = action.target.partition(":")
+    if kind == "device":
+        return f"máy {ident}" if DEVICE_ID.fullmatch(ident) else "máy của bạn"
+    if kind == "user":
+        if not USER_ID.fullmatch(ident):
+            return "tài khoản được yêu cầu"
+        return "tài khoản của bạn" if ident == requester_id else f"tài khoản {ident}"
+    if kind == "folder":
+        return f"thư mục {ident}" if RESOURCE_PATH.fullmatch(ident) else "thư mục được yêu cầu"
+    return ""
+
+
+def rejection_text(action_type: str, target_phrase: str, reason_code: str | None, note: str | None) -> str:
+    """Tin từ chối theo mẫu (P1). `target_phrase` = `target_phrase(action, requester_id)` (T20a P11); rỗng hoặc hành động không
+    nhãn → câu chung. `note` None = không kèm câu ghi chú (output guard chặn). `note` phải là bản ĐÃ CHE."""
     label = ACTION_LABELS.get(action_type)
-    if label is None:
+    if label is None or not target_phrase:
         head = "Yêu cầu của bạn chưa được duyệt."
     else:
-        device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
-        head = f"Yêu cầu {label} cho {device} chưa được duyệt."
+        head = f"Yêu cầu {label} cho {target_phrase} chưa được duyệt."
     reason = REASON_LABELS.get(reason_code, NO_REASON) if reason_code is not None else NO_REASON
     text = f"{head} Lý do: {reason}."
     return text if note is None else f"{text} Ghi chú của người duyệt: {note}"

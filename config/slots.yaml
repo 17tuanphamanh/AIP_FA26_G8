@@ -4,8 +4,9 @@
 # ToolSpec.arg_slots phải là tập con của danh sách này — sai thì import tools lỗi (P5 mục 4).
 # intents (3f, phase3 mục 3.2 — 3-Q1 tách slots/facts): slot người dùng/LLM được phép nêu cho từng intent. Key ngoài
 # required ∪ optional, key trùng tên fact (FACT_KEYS), action ngoài action_types, giá trị sai value_rules hoặc dài > 100 ký
-# tự đều bị BỎ (domain/slots.sanitize_slots). device_id, error_code, reason còn phải có thật trong câu người dùng (luật
-# trong code, không cấu hình ở đây). Mọi action_type phải có dòng trong action_metadata.yaml — thiếu → không khởi động.
+# tự đều bị BỎ (domain/slots.sanitize_slots). device_id, error_code, reason (+ T20a: target_user, resource_path, software_name)
+# còn phải có thật trong câu người dùng (luật trong code, không cấu hình ở đây). Mọi action_type phải có dòng trong
+# action_metadata.yaml — thiếu → không khởi động.
 tool_arg_slots:
   - target_user
   - account_type
@@ -29,8 +30,14 @@ intents:
       reason:     {max_len: 200}                   # luật chung 100 ký tự (P1) chặt hơn — ghi "spec cần sửa (3f)"
 
   # Phase 5 T22a (phase5 mục 4.1 P6, 4.2): KHAI BÁO, KHÔNG BẬT — ENABLED_INTENTS giữ [vpn] (B3 bỏ intent chưa bật, 3-Q27). Slot
-  # bắt buộc/tùy chọn theo B11 §0.3 [Chốt]; account thêm target_user tùy chọn (4.2, Q-T22a-3); access chưa có slot action
-  # (Q-T22a-2 — nợ T20); value_rules theo 4.2 (+ device_id của software như vpn — PLAN-T22a TQ-6).
+  # bắt buộc/tùy chọn theo B11 §0.3 [Chốt]; account thêm target_user tùy chọn (4.2, Q-T22a-3); value_rules theo 4.2 (+ device_id
+  # của software như vpn — PLAN-T22a TQ-6).
+  # T20a (phase5 5.1.1 P4, Q-T22a-2): access có slot `action` bắt buộc + slot bắt buộc theo hành động (required_by_action: khoá ∈
+  # action_types, giá trị ⊆ optional — sai thì không khởi động) + target_user (người được cấp quyền, D-47); software nhận `action`
+  # (action_hint của B3 không bị bỏ unknown_key); duration ^[1-9][0-9]{0,2}$ (0 ngày bị bỏ ngay ở slot; [0-9] chứ không \d — \d
+  # của Python khớp cả chữ số Unicode "9٠" → int 90, duyệt DỪNG 1). resource_path chặn đoạn "." / ".." ("finance/..", "a/./b" —
+  # duyệt DỪNG 1, p7). target_user, resource_path, software_name còn phải có thật trong câu người dùng (domain/slots.py, luật trong
+  # code).
   account:
     required: [account_type, action]
     optional: [reason, target_user]
@@ -40,16 +47,20 @@ intents:
       target_user:  {pattern: '^[a-z0-9_]{3,64}$'}
   software:
     required: [software_name, device_id]
-    optional: [version, justification]
+    optional: [action, version, justification]
     action_types: [install_software]
     value_rules:
       software_name: {pattern: '^[A-Za-z0-9][A-Za-z0-9 .+#-]{0,63}$'}
       device_id:     {pattern: '^[A-Z]{2,4}-\d{3,5}$'}
   access:
-    required: [resource_path, permission_level, duration]
-    optional: [justification]
+    required: [action]
+    optional: [resource_path, permission_level, duration, target_user, justification]
     action_types: [view_permissions, grant_permission, extend_permission]
+    required_by_action:
+      grant_permission:  [resource_path, permission_level, duration]
+      extend_permission: [resource_path, duration]
     value_rules:
-      resource_path:    {pattern: '^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}$'}
+      resource_path:    {pattern: '^(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}$'}
       permission_level: {pattern: '^(read|write|full)$'}
-      duration:         {pattern: '^\d{1,3}$'}
+      duration:         {pattern: '^[1-9][0-9]{0,2}$'}
+      target_user:      {pattern: '^[a-z0-9_]{3,64}$'}

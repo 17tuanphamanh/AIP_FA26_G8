@@ -1,7 +1,7 @@
 """B17 so `hash_action(action)` với hash của PHIẾU (`approvals.action_plan_hash`) — Phase 4 chặng 4d P7 (Việc treo 29, phase4 mục 6.5
 #10, 7.1 P7). Viết TỪ ĐẶC TẢ trước thân code: PLAN-4d mục 2.1 "B17 (P7)", mục 3 h1–h3, TQ-9, TQ-10.
 
-Khuôn `test_b17_execute.Env` / `test_b17_decided_by.Env`: node B17 THẬT, `VpnExecutor` thật trên hệ thống ghi VPN giả (đếm ở nơi
+Khuôn `test_b17_execute.Env` / `test_b17_decided_by.Env`: node B17 THẬT, `PlanExecutor` thật trên hệ thống ghi VPN giả (đếm ở nơi
 nhận), AD giả sau registry đọc thật; harness gộp roster (l1_01…) vào AD và gieo dòng `users` của người duyệt (FK phiếu). Phiếu tạo
 bằng `h.approvals.create(..., hash_action(action), ...)` rồi `close(approved, decided_by=l1_01)`; đổi hash PHIẾU bằng
 `h.approvals._table[aid]["action_plan_hash"]` (bản giả của `UPDATE approvals SET action_plan_hash = …`).
@@ -26,7 +26,7 @@ from app.domain.action import Action
 from app.domain.context import RequesterContext
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_EXECUTING
 from app.domain.ticket_state import ExecutionResult
-from app.executor.vpn import VpnExecutor
+from app.executor.plan_executor import PlanExecutor
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b17_execute
 from app.settings import get_action_metadata, get_policy
@@ -76,7 +76,7 @@ class Env:
         self.ad = FakeAd(ad_user("nv001"))
         self.writes, self.txlog = FakeVpnWrites(self.clock), MemoryTxLog()
         self.h = GraphHarness(clock=self.clock, ad=self.ad, txlog=self.txlog, approver_id=APPROVER)
-        self.executor: Any = VpnExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
+        self.executor: Any = PlanExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
 
     @contextmanager
     def run(self) -> Iterator[None]:

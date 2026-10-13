@@ -23,12 +23,13 @@
    bất kỳ trong policy tham chiếu (tính lúc dựng node = lúc khởi động; hiện chỉ `employment_status`) — dựng lại từ AD mới bằng
    chính `RequesterContext.from_ad` tại mốc `captured_at` của B1 — khác bản chụp → E5 `recheck_failed` (vd `active` →
    `probation` trong lúc chờ: bản chụp làm R19 trượt). Không dựng lại được (nhóm AD không còn ra role…) → cũng E5.
-4–5. `deps.executor.execute(ticket_id, turn_id, action)` (P7: `VpnExecutor` chỉ ở API; worker `RefusingExecutor`):
+4–5. `deps.executor.execute(ticket_id, turn_id, action)` (P7: `PlanExecutor` chỉ ở API; worker `RefusingExecutor`):
    `ExecutionInterrupted` → E7 `exec_interrupted` (`begun` có từ trước: 0 lời gọi ghi; lỗi SAU `begin` của lần này — chốt FAIL
    mục 7: audit `cause` = tên lớp lỗi, `write_calls` = cận trên); `TurnBudgetExceeded` (P4 — trước khi gửi) → E2
    `turn_budget_exceeded`; kết quả lỗi → E7 `exec_failed` + `execution` + `escalation_note = handoff_note` (4 phần — B20 chép
    vào ghi chú bàn giao).
-6. **B18:** điểm log 7 → `notify_user` (tin THEO MẪU, P6 — `domain.messages.result_text`) + hạn confirm qua `effects.once`
+6. **B18:** điểm log 7 → `notify_user` (tin THEO MẪU, P6 — `domain.messages.result_text`; T24: `view_permissions` kèm dòng quyền
+   từ `diagnostics` B6 qua `permission_rows`) + hạn confirm qua `effects.once`
    (`step="B18"`) → `conversation` `kind="result"` → `S_CONFIRMING`. Lệnh ghi ĐÃ thành công: lỗi (`Exception`) ở đoạn này → E7
    `exec_interrupted` + câu "có thể đã gửi lệnh ghi…" (chốt FAIL mục 7 c — ticket đã có `begun` không bao giờ mang mẫu E9 "xử lý
    thủ công"); `BaseException` (`CancelledError`) đi tiếp.
@@ -50,7 +51,7 @@ from app.domain.action import Action
 from app.domain.approval import invalid_reason
 from app.domain.context import RequesterContext
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import result_msg, result_text
+from app.domain.messages import permission_rows, result_msg, result_text
 from app.domain.policy import referenced_facts
 from app.domain.states import S_CONFIRMING, S_ESCALATED
 from app.domain.ticket_state import ExecutionResult
@@ -71,10 +72,11 @@ INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (transaction_log đã có beg
 
 
 def _write_calls(res: ExecutionResult) -> int:
-    """Số lời gọi ghi THẬT (điểm log 7): bước đã xong + bước lỗi + lần hoàn tác đã gửi."""
+    """Số lời gọi ghi THẬT (điểm log 7): bước đã xong + bước lỗi + lần hoàn tác đã gửi. T24 P3: `not_reversible` (bước không
+    hoàn tác được — không gọi gì) và `UNDO_FAILED: turn_budget_exceeded` (registry chặn TRƯỚC khi gửi) không tính."""
     undo_sent = sum(
         1 for _, s in res.rollback_details
-        if s == "undone" or (s.startswith("UNDO_FAILED: ") and s not in ("UNDO_FAILED: no_undo", "UNDO_FAILED: turn_budget_exceeded"))
+        if s == "undone" or (s.startswith("UNDO_FAILED: ") and s != "UNDO_FAILED: turn_budget_exceeded")
     )  # fmt: skip
     return len(res.steps_done) + (1 if res.failed_step else 0) + undo_sent
 
@@ -245,7 +247,12 @@ def make(deps: NodeDeps) -> NodeFn:
 
         # [6] B18 — tin theo mẫu (P6), gửi + đặt hạn qua effects.once TRƯỚC node chờ
         try:
-            text = result_text(action.type, str(action.params.get("device_id", "")), res.outputs, action.facts)
+            # T24 P4: dòng quyền từ chẩn đoán B6 (dữ liệu tool, qua mẫu) — None = chưa đọc được (Q-T24-5)
+            rows = (
+                permission_rows((state.get("diagnostics") or {}).get("check_current_permissions"), deps.business_hours.tz)
+                if action.type == "view_permissions" else ()
+            )  # fmt: skip
+            text = result_text(action, res.outputs, action.facts, requester_id=requester.user_id, rows=rows)
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "confirm", step="B18",
             )  # fmt: skip

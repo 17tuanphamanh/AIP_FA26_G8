@@ -1,4 +1,4 @@
-"""B17–B18 thật (phase3 mục 11.4; PLAN-3h S11; chốt P1, P4, P6, P7, P8, Q-3h-2) — node gọi trực tiếp, `VpnExecutor` thật trên
+"""B17–B18 thật (phase3 mục 11.4; PLAN-3h S11; chốt P1, P4, P6, P7, P8, Q-3h-2) — node gọi trực tiếp, `PlanExecutor` thật trên
 registry ghi thật + hệ thống ghi VPN giả (đếm ở nơi nhận) + `transaction_log` trong bộ nhớ; AD giả sau registry đọc thật.
 
 - [1] luật + Clock HIỆN HÀNH (P8); "đã duyệt" = state + BẢNG + hash — "state approved + DB pending → E5" ở cả giờ hành chính
@@ -36,7 +36,7 @@ from app.domain.policy import Rule, referenced_facts
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_EXECUTING
 from app.domain.ticket_state import ExecutionResult
 from app.executor.errors import ExecutionInterrupted
-from app.executor.vpn import VpnExecutor
+from app.executor.plan_executor import PlanExecutor
 from app.graph.builder import wrap_node
 from app.graph.checkpoint import make_serde
 from app.graph.context import RunContext, bind_run
@@ -97,7 +97,7 @@ class Env:
         # B17 bước 0 và executor đọc CÙNG txlog. 4b P13: người duyệt = `l1_01` (roster — harness gộp vào AD, gieo dòng `users` cho
         # FK phiếu): B17 tra lại người ĐÃ DUYỆT, người giả `l1-fake` (không có trong AD) nay là "không còn hợp lệ".
         self.h = GraphHarness(clock=self.clock, ad=self.ad, txlog=self.txlog, approver_id=APPROVER)
-        self.executor: Any = VpnExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
+        self.executor: Any = PlanExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
 
     @contextmanager
     def run(self) -> Iterator[None]:

@@ -1,13 +1,18 @@
-"""B11 — node THẬT, Phase 3 chỉ VPN (phase3 mục 10.4; PLAN-3g chốt P4–P8, P6 (a), Q-3g-6, Q-3g-7, f4). Node giả (Phase 2,
+"""B11 — node THẬT, VPN (Phase 3) + account/software/access (T20a) (phase3 mục 10.4; PLAN-3g chốt P4–P8, P6 (a), Q-3g-6, Q-3g-7, f4). Node giả (Phase 2,
 `FAKE_SCENARIO`): `graph/nodes/fake/b11_slots.py`. Node chờ: `graph/nodes/clarify_wait.py`.
 
-1. `missing` = slot bắt buộc (`config/slots.yaml`) chưa có trong `slots`.
+1. `missing` = slot bắt buộc (`config/slots.yaml`) chưa có trong `slots` — T20a P4: `IntentSlots.missing` = `required` thiếu + (khi
+   đã có slot `action`) `required_by_action[action]` thiếu, theo thứ tự khai báo (VPN không có `required_by_action` → như cũ).
 2. Đủ slot → `validate_targets` (P6 (a)): gọi SONG SONG đúng các tool có `device_id` trong `arg_slots`
    (`check_device_registered`, `check_vpn_cert_expiry`; `caller_step="B11"`) cho `slots.device_id`. Lỗi hệ thống → E2
    `target_check_error`; 404/rỗng = dữ liệu (máy không tồn tại → `device_registered=false`, luật quyết). `infer_vpn` (tên
    thật) tính lại fact PHỤ THUỘC MÁY: bỏ mọi giá trị máy cũ, giữ fact theo người; BỎ `slots` mà `infer_vpn` trả (không tự đặt
    `action`/`device_id` — máy người khác không bao giờ sinh hành động). `build_action` chỉ từ slot đã sanitize + metadata +
    facts (P8; key lạ → `FactKeyViolation` → E9).
+   **T20a (phase5 5.1.5):** VPN giữ nguyên từng dòng trên. Intent trong `DIAGNOSERS` (account, software, access):
+   `module.target_calls(requester, slots)` (đủ bộ tool trên slot cuối) → lỗi hệ thống → E2 `target_check_error` →
+   `facts = module.infer(...)` THAY TOÀN BỘ fact của B6 (mọi fact của 3 intent phụ thuộc slot cuối: `rf`, path, tên, máy,
+   `account_type`) → slot suy ra BỎ → `build_action` → căn cứ quy trình như dưới.
    **Căn cứ quy trình (Phase 4 S0-P10, Q-4-U A+, D-34):** sau `build_action`, TRƯỚC `goto(S_ASSESSING)`: tài liệu
    `ActionMeta.procedure_doc` của `action_type` phải có trong KB HIỆN HÀNH (alias đọc lúc này — chốt S0-A3, không dùng
    `kb_version` ghim ở B8), enabled, người gửi được xem (`RagPort.procedure_available`, `base_filter`). Không → E3
@@ -41,7 +46,7 @@ from app.graph.tracing import NodeFn
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import QuestionOut
 from app.rag.models import RetrievalSystemError
-from app.tools.diagnosis import vpn
+from app.tools.diagnosis import DIAGNOSERS, vpn
 from app.tools.retry import retries_of
 
 
@@ -67,7 +72,7 @@ def make(deps: NodeDeps) -> NodeFn:
     async def b11_slots(state: Any) -> dict[str, Any]:
         spec = deps.slots.intents[state["intent"]]
         slots = dict(state.get("slots") or {})
-        missing = [s for s in spec.required if s not in slots]
+        missing = spec.missing(slots)  # T20a P4
         info = _info(missing, int(state.get("clarification_turns") or 0))
         try:
             return await (_ask(state, missing, info) if missing else _build(state, slots, info))
@@ -79,7 +84,14 @@ def make(deps: NodeDeps) -> NodeFn:
 
     async def _build(state: Any, slots: dict[str, Any], info: dict[str, Any]) -> dict[str, Any]:
         requester = state["requester_context"].user_id
-        calls = vpn.target_calls(requester, slots["device_id"])
+        intent = state["intent"]
+        module = DIAGNOSERS.get(intent)
+        if intent != "vpn" and module is None:  # B3 chỉ cho qua intent đã bật — không có bộ chẩn đoán là bug → E9
+            raise ValueError(f"b11_slots không có bộ chẩn đoán cho intent {intent!r}")
+        if module is None:
+            calls = vpn.target_calls(requester, slots["device_id"])
+        else:
+            calls = module.target_calls(requester, slots)
         info["tools_called"] = [t for t, _ in calls]
         results = await _gather(calls)
         retries = sum(retries_of(r.attempts, failed=r.error is not None) for r in results)
@@ -90,13 +102,17 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail={**info, "tool_errors": errors}, exit_code=ExitCode.E2.value, tool_errors=errors,
                 tool_retry_count=retries, escalation_reason_detail="target_check_error",
             )  # fmt: skip
-        diag = {t: None for t in vpn.TOOLS} | {r.tool: (None if r.empty else r.data) for r in results}
-        _, fresh = vpn.infer_vpn(diag, requester_id=requester, device_id=slots["device_id"])  # slots trả về: BỎ (P6)
-        kept = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
-        facts = kept | {k: v for k, v in fresh.items() if k in vpn.DEVICE_FACTS}
+        if module is None:  # VPN (3g P6 (a)) — không đổi
+            diag = {t: None for t in vpn.TOOLS} | {r.tool: (None if r.empty else r.data) for r in results}
+            _, fresh = vpn.infer_vpn(diag, requester_id=requester, device_id=slots["device_id"])  # slots trả về: BỎ (P6)
+            kept = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
+            facts = kept | {k: v for k, v in fresh.items() if k in vpn.DEVICE_FACTS}
+        else:  # T20a: thay TOÀN BỘ fact của B6 theo slot cuối; slot suy ra BỎ (như VPN P6 (a))
+            diag = {t: None for t in module.TOOLS} | {r.tool: r.data for r in results}
+            _, facts = module.infer(diag, requester_id=requester, slots=slots)
         info["facts"] = facts
-        metadata = deps.action_metadata[state["intent"]]
-        action = build_action(state["intent"], slots, facts, state["requester_context"], metadata)
+        metadata = deps.action_metadata[intent]
+        action = build_action(intent, slots, facts, state["requester_context"], metadata)
         info["procedure_doc"] = doc = metadata[action.type].procedure_doc
         try:  # S0-P10: căn cứ của hành động = quy trình khai báo có mặt trong KB hiện hành (kiểm tất định, không độ giống)
             check = await deps.rag.procedure_available(doc, state["requester_context"])

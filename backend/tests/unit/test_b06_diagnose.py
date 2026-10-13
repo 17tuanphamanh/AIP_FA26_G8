@@ -191,7 +191,8 @@ async def test_q3f7_rediagnose_flag_routes_back_to_b11_and_resets() -> None:
 
 
 async def test_unknown_intent_is_a_bug_e9() -> None:
-    update, row, vpn = await diagnose(state("nv001", intent="account"))
+    # Q-T20a-3 = A: "account" có bộ chẩn đoán từ T20a (DIAGNOSERS) → dùng intent không khai báo, giữ ý "intent lạ là bug"
+    update, row, vpn = await diagnose(state("nv001", intent="printer"))
     assert (update["exit_code"], row["event"]) == ("E9", "unhandled_exception")
     assert sum(vpn.calls.values()) == 0
 

@@ -1,0 +1,16 @@
+# Preset `tc01` của ScriptedLLM trên stack dev — `make gate5` (phase5 mục 7.6, PLAN-T24 S14), thẻ [fake:tc01] cuối câu,
+# KHÔNG đặt FAKE_SCENARIO. nv001 "đặt lại mật khẩu tài khoản AD": account/reset_password, account_type=ad → B6 → B11 đủ slot → R01 AUTO → reset nv001 đúng 1 lần.
+# Slot đích (target_user, resource_path, software_name) đúng chữ trong câu (sanitize_slots giữ); slot chuẩn hoá theo bảng 5.1.4.
+# Phản hồi TĨNH, kiểm schema lúc khởi động. Đủ mọi khoá prompt của preset cũ (kể cả b14_*, giá trị an toàn của default.yaml).
+# KHÔNG dùng trong test.
+b02_injection_judge: {is_attack: false, category: none, reason: "preset tc01"}
+b03_classify:
+  intents: [{type: account, confidence: 0.92, span: "", action_hint: reset_password, slots: {account_type: ad}}]
+  is_multi: false
+b10_need_type: {type: action, confidence: 0.9}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cần đặt lại mật khẩu tài khoản nào (AD, email hay ERP) nhé?"}
+b11_extract_slots: {slots: {}, off_topic: true}
+# Phase 6 P12 [Chốt 09/10]: giá trị an toàn — khi 6C nối B12, ca không luật nào khớp vẫn ra chuyển L2 (0,9 > t_high).
+b14_risk_estimate: {prob_needs_human: 0.9, factors: [missing_facts], rationale: "preset"}
+b14_risk_vote: {needs_human: true, factors: [missing_facts]}

@@ -125,12 +125,13 @@ SPECS: tuple[ToolSpec, ...] = (
     _write("restore_permission_expiry", "files", m.RestoreExpiryIn, m.PermissionEntry),
 )
 
-# Bản đồ tool chẩn đoán theo intent [Chốt B6 mục 0.3] — B6 chọn tool bằng code, không để LLM chọn.
-TOOL_MAP: Mapping[str, tuple[str, str, str]] = {
+# Bản đồ tool chẩn đoán theo intent [Chốt B6 mục 0.3] — B6 chọn tool bằng code, không để LLM chọn. T20a (D-46): `access` thêm
+# `check_account_status` (trạng thái/phòng ban/lý do vô hiệu của `requested_for`), `software` thêm `check_device_registered` (chủ máy).
+TOOL_MAP: Mapping[str, tuple[str, ...]] = {
     "account": ("check_account_status", "check_lockout_history", "check_privilege_level"),
     "vpn": ("check_device_registered", "check_vpn_cert_expiry", "check_last_connection"),
-    "software": ("check_catalog_entry", "check_license_available", "check_installed_list"),
-    "access": ("check_current_permissions", "check_resource_sensitivity", "check_manager_chain"),
+    "software": ("check_catalog_entry", "check_license_available", "check_installed_list", "check_device_registered"),
+    "access": ("check_current_permissions", "check_resource_sensitivity", "check_manager_chain", "check_account_status"),
 }
 
 
