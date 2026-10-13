@@ -4978,6 +4978,38 @@ dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
 - **Chờ:** push (phiên git). Báo M9 khi gộp: `b2_classifier`,
   `b3_cascade` giữ `pending` (P8) — không đổi gì ở M9.
 
+## Phase 5 — chặng T20a: đơn ý account/software/access (tầng A+B) (13–14/10/2026, DỪNG 1 commit 1, DỪNG 2 đang làm) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.3** mục 5.1 (+ 0, 1, 2, 4.3, 4.4, 4.14); `decisions.md` D-41, D-46, **D-47**
+(Đã chốt 13/10), §4.1. Kế hoạch: `PLAN-T20a.md` (untracked) — **DUYỆT 13/10/2026**: Q-T20a-1 = A (đổi đúng 4 test cũ ngoài danh sách
+5.1.6: MUST_APPEAR, `b03_classify@3`, b4 `printer`, R10 ở BANG_4_4/ALLOW_FACTS_4_4), Q-T20a-2 = A; TQ-1…17 duyệt (kể cả `DIAGNOSERS`
+không chứa `vpn`); thêm: đối chiếu `seed_tools` ↔ mock, "Spec cần sửa" ghi A12 (`clarify_wait` chỉ nhận slot đang thiếu).
+
+- **Bước 0 (13/10/2026):** HEAD `6cf1091`; `status -uno` chỉ 2 file spec; spec 0.3; `grep -c D-47` = 4; `alembic heads` = 1 (`0008`);
+  `make lint` xanh (import-linter 10/10, gitleaks 0); unit **4593 passed**. e2e `test_b06_vs_mock.py` không chạy được trong sandbox
+  (`PermissionError` khi mở cổng) → e1 xác nhận ở `make verify`.
+- **DỪNG 1 (sandbox xanh, commit 1):**
+  - S1 stub hợp đồng (chữ ký cuối, `NotImplementedError`) + `PARAMS_BY_ACTION` → unit cũ vẫn 4593.
+  - S2 test-writer viết TRƯỚC code toàn bảng 5.1.6 (209 test mới, 10 file + `tests/fakes/seed_tools.py` + helper `_t20a.py`) + sửa 6 file
+    test cũ đúng danh sách. Trước code: **154 đỏ / 4607 xanh / 51 xfail, 0 lỗi import/fixture** — đỏ vì NotImplementedError, intent chưa
+    hỗ trợ, fact chưa có, R10 thiếu điều kiện, chưa có validator.
+  - S3 đối chiếu `seed_tools.py` ↔ `mock_services/app/{ad,software,fileserver,seed_model}.py`: khớp mọi điểm (404 user lạ / thiếu
+    `account_type`, catalog/license 404, installed 404 máy lạ, permissions 404 chỉ khi user lạ + lọc path strip `/` + trả dòng hết
+    hạn, resources 404, mặc định tài khoản privilege `standard_user`/locked false/enabled true/30 ngày) — không phải sửa bản giả.
+  - S4–S6: P1 fact `existing_permission_level` + R10; P2 `TOOL_MAP` `tuple[str, ...]`; P5 `TOKEN_IN_TEXT`/`PHRASE_IN_TEXT`; P4 schema
+    (`required_by_action` + validator, `IntentSlots.missing`, `slots.yaml`); P3 `vpn.device_facts` + 3 module chẩn đoán; P7–P8
+    `build_action` 4 intent (`requested_for_of`, `normalize_software_name`, `_check_params` kiểm lại `PARAMS_BY_ACTION`).
+  - Sau code: unit **4762 passed, 50 xfailed** (`CHO_DUNG2`); `make lint` xanh. `test_p4_b11_access_without_action_asks_action` gỡ khỏi
+    `CHO_DUNG2` (XPASS: `slots.yaml` access `required: [action]` đủ cho B11 cũ). 4 lỗi I001 + 4 lỗi mypy (thu hẹp kiểu) trong file test
+    mới sửa cơ học.
+  - Mutation lượt 1 (`scripts/mutation/mutate_t20a.py`): **M-T20a-1…10 ĐỎ đúng dự đoán** (kỳ vọng chỉ test DỪNG 1 — TQ-13); md5 5 file
+    đích + `git diff --stat` khớp. TQ-14: `mutate_t22a.py` chỉnh chuỗi đích R10 → M-T22a-4, -5, -5b chạy lại ĐỎ đúng dự đoán.
+  - security-reviewer (diff DỪNG 1, 5.1.8 mục 1–5, 7 + import động + file cấm): **0 FAIL**, 4 NGHI (MẪU B mục 5/7).
+- **Duyệt DỪNG 1 (13/10/2026):** Q-T20a-3 = A (`test_b06_diagnose::test_unknown_intent_is_a_bug_e9` đổi `account` → `printer`);
+  Q-T20a-4 = A ở DỪNG 2 (`target_user` bị bỏ → `ctx_flags.target_is_other=True` ở B3, B6 không ghi đè, prompt b03 v3 thêm quy tắc
+  người khác; g10, n7, M-T20a-15). Thêm DỪNG 2: siết test AST (NGHI c), ca account giống n3 (NGHI d), `duration` `[0-9]`,
+  `resource_path` chặn đoạn `.`/`..` (p7).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

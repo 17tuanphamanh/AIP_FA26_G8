@@ -1,8 +1,13 @@
 """f7–f14 (thiết kế Phase 3 mục 9.6; PLAN-3f S5) — node B6 THẬT trên mock hệ thống ngoài THẬT (uvicorn, `seed.json`):
 registry tool đọc thật → HTTP thật → mock. Seed khác bảng mong đợi → test đỏ (không sửa seed/test cho khớp — báo Q).
 Backoff chạy trên FakeClock; HTTP thật. Bản đơn vị (VPN giả đọc cùng seed): `tests/unit/test_b06_diagnose.py`.
+
+T20a e1 (phase5 5.1.6): cùng node B6 cho account / software / access trên mock thật — fact phải khớp bảng i/s/c (kỳ vọng chép từ
+5.1.2 + seed, như `tests/unit/test_infer_{account,software,access}.py`); seed khác → đỏ, báo Q. `enabled_intents` tiêm 4 intent
+(`dataclasses.replace`). Ca T20a gom `CHO_DUNG2` (xfail strict — DỪNG 2 gỡ). Không chạy được trong sandbox (uvicorn mở cổng).
 """
 
+import dataclasses
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -53,6 +58,19 @@ async def _diagnose(directory: tuple[ToolRegistry, FakeClock], st: dict[str, Any
                      spans=MemorySpans(), clock=clock, txlog=MemoryTxLog())  # fmt: skip
     with bind_run(run):
         return await wrap_node("b06_diagnose", b06_diagnose.make(h.deps()))(st)
+
+
+FOUR = frozenset({"vpn", "account", "software", "access"})
+
+# T20a DỪNG 2 (phase5 5.1.9): e1 — B6 nhánh DIAGNOSERS chưa có → xfail(strict) (phase5 4.10).
+CHO_DUNG2 = frozenset({"test_e1_t20a_b6_vs_mock"})
+
+
+@pytest.fixture(autouse=True)
+def _cho_dung2(request: pytest.FixtureRequest) -> None:
+    if request.node.name in CHO_DUNG2 or getattr(request.node, "originalname", None) in CHO_DUNG2:
+        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError),
+                                              reason="T20a DỪNG 2"))  # fmt: skip
 
 
 async def test_f7_nv001_no_device(directory: tuple[ToolRegistry, FakeClock]) -> None:
@@ -115,3 +133,72 @@ async def test_f14_three_tools_300ms_in_parallel(
             (await admin.delete("/_admin/faults")).raise_for_status()
     assert u["status"] == S_RETRIEVING
     assert elapsed < 0.5, f"B6 mất {elapsed:.2f}s — 3 tool 300 ms phải chạy song song"
+
+
+# ---- T20a e1: account / software / access trên mock thật -------------------------------------------------------------------
+
+_EXTEND = {"action": "extend_permission", "duration": "30"}
+# (user, intent, slots, fact kỳ vọng — chép bảng 5.1.6 i/s/c, slots suy ra kỳ vọng)
+E1 = [
+    pytest.param("nv001", "account", {"account_type": "ad", "action": "reset_password"},
+                 {"target_account_privilege": "standard_user", "target_is_service_account": False,
+                  "target_user_status": "active", "target_account_locked": False}, {}, id="e1-i1-nv001-ad"),
+    pytest.param("nv007", "account", {"account_type": "email", "action": "unlock_account"},
+                 {"target_account_privilege": "standard_user", "target_is_service_account": False,
+                  "target_user_status": "active", "target_account_locked": True, "target_lock_reason": "bad_password"},
+                 {}, id="e1-i2-nv007-email-khoa"),
+    pytest.param("svc_backup", "account", {"account_type": "ad"},
+                 {"target_account_privilege": "admin", "target_is_service_account": True, "target_user_status": "active",
+                  "target_account_locked": False}, {}, id="e1-i4-svc_backup"),
+    pytest.param("nv001", "account", {"account_type": "ad", "target_user": "nv004"},
+                 {"target_account_privilege": "standard_user", "target_is_service_account": False,
+                  "target_user_status": "disabled", "target_disable_reason": "security", "target_account_locked": False},
+                 {}, id="e1-i5-nv004-qua-target_user"),
+    pytest.param("nv005", "account", {"account_type": "erp"}, {}, {}, id="e1-i8-nv005-erp-404"),
+    pytest.param("nv001", "software", {"software_name": "Zoom", "device_id": "LAP-0342"},
+                 {"in_catalog": True, "license_paid": False, "requires_local_admin": False, "device_registered": True,
+                  "device_owner_is_requester": True}, {}, id="e1-s1-zoom-LAP-0342"),
+    pytest.param("nv001", "software", {"software_name": "AutoCAD", "device_id": "LAP-0342"},
+                 {"in_catalog": True, "license_paid": True, "requires_local_admin": True, "device_registered": True,
+                  "device_owner_is_requester": True}, {}, id="e1-s2-autocad"),
+    pytest.param("nv001", "software", {"software_name": "Photoshop", "device_id": "LAP-0342"},
+                 {"in_catalog": False, "device_registered": True, "device_owner_is_requester": True}, {},
+                 id="e1-s3-photoshop-404"),
+    pytest.param("nv001", "software", {"software_name": "Zoom"},
+                 {"in_catalog": True, "license_paid": False, "requires_local_admin": False, "device_count": 1,
+                  "has_registered_device": True, "device_registered": True, "device_owner_is_requester": True},
+                 {"device_id": "LAP-0342"}, id="e1-s4-suy-may"),
+    pytest.param("nv001", "access", {**_EXTEND, "resource_path": "finance/public-reports"},
+                 {"resource_sensitivity": "low", "same_department": True, "has_permission_record": True,
+                  "existing_permission_level": "read", "target_user_status": "active"}, {}, id="e1-c1-public-reports"),
+    pytest.param("nv002", "access", {**_EXTEND, "resource_path": "/finance/Q3/"},
+                 {"resource_sensitivity": "high", "same_department": False, "has_permission_record": True,
+                  "existing_permission_level": "read", "target_user_status": "active"}, {}, id="e1-c2-c6-nv002-Q3-het-han"),
+    pytest.param("nv001", "access", {"action": "grant_permission", "resource_path": "engineering/specs",
+                                     "permission_level": "read", "duration": "30"},
+                 {"resource_sensitivity": "medium", "same_department": False, "has_permission_record": False,
+                  "target_user_status": "active"}, {}, id="e1-c3-engineering-specs"),
+    pytest.param("nv001", "access", {**_EXTEND, "resource_path": "finance/khong-co"},
+                 {"has_permission_record": False, "target_user_status": "active"}, {}, id="e1-c5-thu-muc-la"),
+    pytest.param("nv001", "access", {"action": "view_permissions"}, {"target_user_status": "active"}, {},
+                 id="e1-c7-view"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("user", "intent", "slots", "facts", "inferred"), E1)
+async def test_e1_t20a_b6_vs_mock(
+    directory: tuple[ToolRegistry, FakeClock], user: str, intent: str, slots: dict[str, str], facts: dict[str, Any],
+    inferred: dict[str, str],
+) -> None:  # fmt: skip
+    """e1: B6 THẬT (nhánh DIAGNOSERS) trên mock thật → `S_RETRIEVING`, fact khớp bảng i/s/c, slot suy ra bổ sung."""
+    registry, clock = directory
+    h = GraphHarness(clock=clock, directory=registry)
+    deps = dataclasses.replace(h.deps(), enabled_intents=FOUR)
+    st = {**_state(user, slots), "intent": intent, "facts": {}}
+    run = RunContext(turn_id="T1", trace_id="0" * 32, audit=MemoryAudit(), effects=MemoryEffects(),
+                     spans=MemorySpans(), clock=clock, txlog=MemoryTxLog())  # fmt: skip
+    with bind_run(run):
+        u = await wrap_node("b06_diagnose", b06_diagnose.make(deps))(st)
+    assert u.get("status") == S_RETRIEVING, (u.get("exit_code"), u.get("escalation_reason_detail"))
+    assert u["facts"] == facts and set(u["facts"]) <= FACT_KEYS
+    assert u["slots"] == {**slots, **inferred}

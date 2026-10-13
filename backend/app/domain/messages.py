@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Final, Literal
 
-from app.domain.action import FactValue
+from app.domain.action import Action, FactValue
 from app.domain.ticket_state import ChunkRef, Msg
 
 MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
@@ -104,6 +104,11 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
     "grant_permission": "cấp quyền truy cập",
     "extend_permission": "gia hạn quyền truy cập",
 }
+
+
+def target_phrase(action: Action, requester_id: str) -> str:
+    """T20a P11: cụm chỉ đích của hành động cho tin từ chối ("máy …", "tài khoản …", "thư mục …")."""
+    raise NotImplementedError("T20a DỪNG 2")
 
 
 def rejection_text(action_type: str, device_id: str, reason_code: str | None, note: str | None) -> str:

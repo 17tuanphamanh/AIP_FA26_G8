@@ -11,15 +11,17 @@
   người khác KHÔNG BAO GIỜ tự sinh hành động (G-02).
 - `last_connection_ok`: lần kết nối MỚI NHẤT (theo `at`, không tin thứ tự trả về) là `success`; rỗng → không đặt.
 
+Phần MÁY tách thành `device_facts` (T20a P3, TQ-4) — dùng chung với `software.infer_software`; hành vi VPN không đổi.
+
 `device_id` (có thể do người dùng nêu) chỉ là KHOÁ TRA CỨU — không bao giờ là giá trị của một fact; `slots` trả về chỉ để
 B6 bổ sung slot người dùng chưa nêu. Test AST P3 (`test_facts_ast.py`): không phép gán `facts[...]` nào lấy từ slot.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from app.domain.facts import FACT_KEYS
-from app.tools.models import CertList, ConnectionList, DeviceList
+from app.tools.models import CertList, ConnectionList, Device, DeviceList
 from app.tools.specs import REGISTRY
 
 TOOLS = ("check_device_registered", "check_vpn_cert_expiry", "check_last_connection")  # = tools.specs.TOOL_MAP["vpn"]
@@ -46,12 +48,12 @@ def target_calls(requester_id: str, device_id: str) -> list[tuple[str, dict[str,
     return [(t, {"user_id": requester_id, "device_id": device_id}) for t in TARGET_TOOLS]
 
 
-def infer_vpn(
-    diag: Mapping[str, Any], *, requester_id: str, device_id: str | None
+def device_facts(
+    devices: Sequence[Device], *, requester_id: str, device_id: str | None
 ) -> tuple[dict[str, str], dict[str, str | int | bool]]:
-    devices = diag["check_device_registered"].root if isinstance(diag["check_device_registered"], DeviceList) else []
-    certs = diag["check_vpn_cert_expiry"].root if isinstance(diag["check_vpn_cert_expiry"], CertList) else []
-    conns = diag["check_last_connection"].root if isinstance(diag["check_last_connection"], ConnectionList) else []
+    """T20a P3 (TQ-4): phần MÁY của `infer_vpn`, dùng chung với `infer_software` — `devices` = đầu ra `check_device_registered`
+    (rỗng khi 404). Không nêu máy → `device_count`, `has_registered_device`; ĐÚNG 1 máy mới suy slot `device_id` (≥ 2 → để B11 hỏi).
+    Có máy (nêu hoặc suy) → `device_registered` (tồn tại và registered), `device_owner_is_requester` (`owner_id == người gửi`)."""
     slots: dict[str, str] = {}
     facts: dict[str, str | int | bool] = {}
     if device_id is None:  # tra theo người: danh sách máy của chính họ
@@ -64,6 +66,18 @@ def infer_vpn(
         dev = next((d for d in devices if d.device_id == device_id), None)
         facts["device_registered"] = dev is not None and dev.registered
         facts["device_owner_is_requester"] = dev is not None and dev.owner_id == requester_id
+    return slots, facts
+
+
+def infer_vpn(
+    diag: Mapping[str, Any], *, requester_id: str, device_id: str | None
+) -> tuple[dict[str, str], dict[str, str | int | bool]]:
+    devices = diag["check_device_registered"].root if isinstance(diag["check_device_registered"], DeviceList) else []
+    certs = diag["check_vpn_cert_expiry"].root if isinstance(diag["check_vpn_cert_expiry"], CertList) else []
+    conns = diag["check_last_connection"].root if isinstance(diag["check_last_connection"], ConnectionList) else []
+    slots, facts = device_facts(devices, requester_id=requester_id, device_id=device_id)
+    device_id = slots.get("device_id", device_id)
+    if device_id is not None:
         mine = sorted((c for c in certs if c.device_id == device_id), key=lambda c: c.issued_at, reverse=True)
         facts["cert_status"] = mine[0].status if mine else "none"
         if mine:

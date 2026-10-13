@@ -68,7 +68,8 @@ _R01_PRIV = _OTHER + '      {"fact": "action.facts.target_account_privilege", "o
 _R02_LOCK = '      {"fact": "action.facts.target_lock_reason", "op": "eq", "value": "bad_password"},\n'
 _R11_PAID = '      {"fact": "action.facts.license_paid", "op": "is_false"},\n'
 _R10_STATUS = '      {"fact": "action.facts.target_user_status", "op": "in", "value": ["active", "probation"]},\n'
-_R10_DAYS = _R10_STATUS + '      {"fact": "action.params.duration_days", "op": "lte", "value": 90}]},\n'
+# T20a (PLAN-T20a TQ-14): R10 thêm điều kiện cuối `existing_permission_level` → dòng `duration_days` không còn đóng `]},`.
+_R10_DAYS = '      {"fact": "action.params.duration_days", "op": "lte", "value": 90},\n'
 _R10_SAME = '      {"fact": "action.facts.same_department", "op": "is_true"},\n'
 _R12_TYPE = '{"id": "R12", "type": "deny",'
 _R09_ACTION = '{"id": "R09", "type": "approval_required", "intent": "access", "action": ["grant_permission", "extend_permission"],'
@@ -106,7 +107,7 @@ UNIT: list[Mutation] = [
              [one(POLICY_JSON, _R11_PAID, ""), mark("R11", "M-T22a-3")],
              UT, [f"{B}[f8-R11-thieu-license_paid]"]),
     Mutation("M-T22a-4 R10 bỏ duration_days lte 90",
-             [one(POLICY_JSON, _R10_DAYS, _R10_STATUS[:-2] + "]},\n"), mark("R10", "M-T22a-4")],
+             [one(POLICY_JSON, _R10_DAYS, ""), mark("R10", "M-T22a-4")],
              UT, [f"{B}[e2-R10-180-ngay-ho-L4]", f"{B}[e4-R10-91-ngay]"]),
     Mutation("M-T22a-5 R10 bỏ same_department is_true",
              [one(POLICY_JSON, _R10_SAME, ""), mark("R10", "M-T22a-5")],
