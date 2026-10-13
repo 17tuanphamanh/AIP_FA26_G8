@@ -8,7 +8,8 @@ luôn từ đầu ra tool (test AST `test_facts_ast.py`).
 
 - `check_account_status(rf)` → `target_user_status`, `target_disable_reason` (khác null); `department` cho `same_department`. 404 → không đặt.
 - `check_resource_sensitivity(path)` (khi có path) → `resource_sensitivity`; `same_department` = `owner_department == department` của
-  `rf` — CHỈ khi có cả hai (thư mục lạ → không luật nào khớp → lớp LLM; KHÔNG BAO GIỜ đặt giá trị "an toàn" giả).
+  `rf` — CHỈ khi có cả hai (thư mục lạ → không luật nào khớp → lớp LLM; KHÔNG BAO GIỜ đặt giá trị "an toàn" giả). T24 N8 (Q-T24-6):
+  CẢ HAI phòng ban rỗng → không đặt ("" == "" không phải "cùng phòng"); MỘT phía rỗng → `False` (R09 vẫn bắt, không xuống lớp 2).
 - `check_current_permissions(rf, path?)` khi có path: dòng `p.path == path` (còn hạn và hết hạn) → `has_permission_record`;
   `existing_permission_level` = mức CAO NHẤT (read < write < full — Q-5-8) khi có dòng. 404 → không đặt; rỗng → `False`.
 - `check_manager_chain(rf)` → chỉ `diagnostics`.
@@ -65,7 +66,7 @@ def infer_access(
             facts["target_disable_reason"] = status.disable_reason
     if path is not None and res is not None:
         facts["resource_sensitivity"] = res.sensitivity
-        if status is not None:
+        if status is not None and (res.owner_department or status.department):  # T24 N8 (Q-T24-6): hai phía rỗng ≠ "cùng phòng"
             facts["same_department"] = res.owner_department == status.department
     if path is not None and perms is not None:
         rows = [p for p in perms.root if p.path == path]

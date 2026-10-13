@@ -59,6 +59,12 @@ class RiskDecision(BaseModel):
 EXEC_OUTPUT_PATTERNS: Mapping[str, re.Pattern[str]] = {
     "serial": re.compile(r"VPN-(?:\d{4}|NEW)-\d{4,6}"),
     "expires_on": re.compile(r"\d{4}-\d{2}-\d{2}"),
+    # Phase 5 T24 P4: kết quả tool ghi account/software/access (mock `ad.py`, `software.py`, `fileserver.py`)
+    "delivered_via": re.compile(r"email|sms"),
+    "version": re.compile(r"[0-9]+(\.[0-9]+){0,3}"),  # Q-T24-7: chỉ số + dấu chấm (không nhận chuỗi kiểu tên miền)
+    "level": re.compile(r"read|write|full"),
+    "software": re.compile(r"[a-z0-9][a-z0-9.+#-]{0,63}"),  # cùng mẫu `domain.action.SOFTWARE_NAME`
+    "license_id": re.compile(r"LIC-[a-z0-9.+#-]{1,64}-[0-9]{3}"),
 }
 
 

@@ -17,7 +17,7 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   [2] hash; [3] `ad_get_user` (`B17_RECHECK`) cho người gửi + người hưởng lợi, trường `requester.*` luật dùng mà AD mới khác
   bản chụp B1 → E5 `recheck_failed` (Q-3h-7); Phase 4 4b P13: đi qua duyệt thì tra thêm người ĐÃ DUYỆT (`decided_by`) trong
   cùng lời gọi song song — lỗi AD → E2 `approver_lookup_error`, không còn hợp lệ l1 lẫn Trưởng BP → E5
-  `approver_no_longer_valid`; [4–5] `deps.executor` (API: `VpnExecutor`,
+  `approver_no_longer_valid`; [4–5] `deps.executor` (API: `PlanExecutor`,
   `transaction_log` `begun` trước mỗi lời gọi ghi; worker: `RefusingExecutor`) — `begun` có sẵn → E7 `exec_interrupted`,
   hết hạn lượt → E2, lỗi ghi → E7 `exec_failed` + ghi chú bàn giao 4 phần; [6] B18 tin `result` THEO MẪU + hạn confirm qua
   `effects.once` → `S_CONFIRMING`. Chốt FAIL mục 7 (3h DỪNG 3b): mọi lỗi (`Exception`) SAU `begin` — trong executor và ở

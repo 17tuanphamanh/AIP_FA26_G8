@@ -1,6 +1,6 @@
 # Phase 5 — Thiết kế chi tiết (đủ 4 loại yêu cầu: T22a luật, T20 phân loại + tách ý, T23 B2, T24 executor + hoàn tác)
 
-*Thuộc bộ `build/`. Phiên bản **0.3 — 13/10/2026** (0.3: **T23a đóng** `a463150`; **T20a viết đủ** (mục 5.1, soát code tại `6cf1091` — K2 PR #29 đã gộp + ingest); áp 17 mục "Spec cần sửa (T22a)" (mục 4.14 + sửa tại chỗ 4.1 P7/P9, 4.2, 4.5, 4.7, 4.8, 4.10) và 11 mục "Spec cần sửa (T23a)" (mục 6.5); lịch mục 8. Bản 0.2 — 10/10: T22a đóng `2ffb005`, T20 tách T20a/T20b, bật intent dời sang T24, D-44…D-46. Bản 0.1f — 09/10: `procedure_doc` theo K2, luật git 4.0. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34, D-41, D-44…D-47; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Mốc code: T22a dựng trên `3ff63e1`; T23a trên `d42d5c4`; T20a trên `6cf1091`.*
+*Thuộc bộ `build/`. Phiên bản **0.4 — 13/10/2026** (0.4: **T20a đóng** `03b4450` — mục 5.1.11 chốt khi hiện thực (16 mục); **T24 viết đủ** (mục 7, soát code tại `03b4450`). 0.3: **T23a đóng** `a463150`; **T20a viết đủ** (mục 5.1, soát code tại `6cf1091` — K2 PR #29 đã gộp + ingest); áp 17 mục "Spec cần sửa (T22a)" (mục 4.14 + sửa tại chỗ 4.1 P7/P9, 4.2, 4.5, 4.7, 4.8, 4.10) và 11 mục "Spec cần sửa (T23a)" (mục 6.5); lịch mục 8. Bản 0.2 — 10/10: T22a đóng `2ffb005`, T20 tách T20a/T20b, bật intent dời sang T24, D-44…D-46. Bản 0.1f — 09/10: `procedure_doc` theo K2, luật git 4.0. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34, D-41, D-44…D-47; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Mốc code: T22a dựng trên `3ff63e1`; T23a trên `d42d5c4`; T20a trên `6cf1091`.*
 
 *Nhãn: **[Chốt]** spec gốc đã chốt · **[Chốt 01/10]**, **[Chốt 09/10]** Tuấn Anh chốt ngày đó · **[Đề xuất]** Claude chat đề xuất, Tuấn Anh soát khi duyệt PLAN · **[Suy luận]** agent phải kiểm lại trên code.*
 
@@ -10,8 +10,8 @@
 |---|---|---|---|---|---|---|
 | 1 | **T22a** | 15 luật R01–R15 + fact mới + nguồn `action.params` + `build_ctx` theo đích + khai báo 3 intent (không bật) + seed 3 trường + `rule_coverage.py` (mục 4) | **A** | 2 | **Opus** | Cây chính sạch + bảng 4.2 chốt + đã pull `3ff63e1` — **đạt 09/10** (làm sớm — "chưa tính qua cổng 5") |
 | 2 | **T23a** | B2 lớp 3 `shadow` — đóng `ml-gan` (mục 6) — **ĐÓNG** `a463150` | **A** | 1 | **Opus** | 6B gộp — đạt 10/10 |
-| 3 | **T20a** | B6/B11 + `Action` đơn ý cho account/software/access, fact `existing_permission_level` + R10, roster, tin từ chối theo đích (mục 5.1) — **không bật intent** | **A** + B | 2 | **Opus** | T23a đẩy + K2 gộp + ingest — **đạt 12/10** (`6cf1091`) |
-| 4 | **T24** | `PLAN` + hoàn tác 6 hành động mới + **bật 4 intent** (mục 7) | **A** | 2 | **Opus** | T20a |
+| 3 | **T20a** | B6/B11 + `Action` đơn ý cho account/software/access, fact `existing_permission_level` + R10, roster, tin từ chối theo đích (mục 5.1) — **ĐÓNG** `03b4450` | **A** + B | 2 | **Opus** | đạt 12/10 |
+| 4 | **T24** | `PLAN` + hoàn tác 6 hành động mới + B18 + **bật 4 intent** + `make gate5` (mục 7) | **A** | 2 | **Opus** | T20a — **đạt 13/10** (`03b4450`) |
 | 5 | **T20b** | Nhiều ý: B5 tách ticket cha/con (D-31) (mục 5.2) | **A** | 2 | **Opus** | T24 |
 
 Mỗi chặng = **một phiên agent mới**. Tối đa 2 phiên coding agent cùng lúc trên cả dự án (lịch: `claude/phase5-6-phan-tich-va-chia-chang.md` mục 5).
@@ -445,7 +445,7 @@ Mở `config/policy.json` bản đã commit + bảng §6.3 (`NGU-CANH-DAY-DU.md`
 
 **Vì sao tách:** soát code 10/10 (`.verify/phan-tich-p5/bao-cao.md` mục 5) ước cả T20 **19–25 giờ** (bản 0.1f ghi 6–8): B5 cha/con mới có hạ tầng dữ liệu (cột `parent_ticket_id`, `child_notices`, `wake_parent`, 409 cho con) — `parent_wait`/`parent_reply_wait` còn là node **giả** (`builder.py` `_NODE_MODULES`), chưa có `b05_split`, `compose_digest`, `POST /reply`. **Bật `ENABLED_INTENTS` không làm được ở T20**: `check_plans` (`executor/plans.py:60–64`) từ chối khởi động khi intent bật thiếu `PLAN`/mẫu B18 → bật ở **T24** (Q-5-7). T24 chỉ cần T20a.
 
-### 5.1. T20a — đơn ý cho account / software / access (tầng A + B, Opus, 2 DỪNG) [viết đủ 13/10 — soát code tại `6cf1091`]
+### 5.1. T20a — đơn ý cho account / software / access (tầng A + B, Opus, 2 DỪNG) [viết đủ 13/10 — soát code tại `6cf1091`] — **ĐÓNG** (`52c8349` + `03b4450`, verify G=234 xanh, CI xanh)
 
 **Mục tiêu:** một ticket **đơn ý** thuộc `account`, `software`, `access` đi được B3 → B6 → B11 → B12 với `Action` đúng hợp đồng, fact đọc từ tool thật, luật R01–R15 quyết đúng. **Không bật** intent (T24 bật — Q-5-7); test bật bằng tiêm `enabled_intents`.
 **Đầu vào:** thư mục chính ở `6cf1091` (T23a `a463150` + FE PR #35 + K2 PR #29 + KB-VPN-002…005 v2), cây sạch; KB thật đã nạp (`kb_version=3362c39b…`, 18 bài — đủ 6 `procedure_doc` bảng 4.2). **Đầu ra:** 2 commit cục bộ (mỗi DỪNG một) + phiếu push.
@@ -662,6 +662,20 @@ Lượt 1 ở DỪNG 1 (mã có đích đã code), lượt 2 + đủ 14 ở DỪ
 - **Phase 6:** bảng 5.1.3 ở MẪU B DỪNG 1; số "none" của `rule_coverage` trên D1 ở MẪU B DỪNG 2.
 - **M9:** T20a không đổi phân bố intent (chưa bật) — báo khi T24 bật.
 
+#### 5.1.11. Chốt khi hiện thực T20a (MẪU B DỪNG 1 + 2, 13/10) — thay chữ ở 5.1.1–5.1.9 khi lệch
+
+| # | Chốt | Thay chỗ |
+|---|---|---|
+| 1 | **Q-T20a-4 + Q-T20a-6:** `target_user` bị `sanitize_slots` bỏ (bất kỳ lý do) ở **B3** hoặc ở lượt trả lời (**`clarify_wait`**) → `ctx_flags.target_is_other=True`; **B6 giữ cờ** (không ghi đè, mọi nhánh); prompt v3 dặn "làm cho người khác → luôn điền `target_user`". Lý do: "reset mật khẩu cho Nguyễn Văn A" từng chạy R01 trên **chính người gửi**. Test g10, g11, n7; mutation M-T20a-15…17 | 5.1.5 ("B3/`clarify_wait` không đổi code") |
+| 2 | `DIAGNOSERS` (`tools/diagnosis/__init__.py`) chỉ 3 intent mới; VPN giữ nhánh cũ (chữ ký `vpn.calls` khác, test cũ ghim) | 5.1.5 |
+| 3 | `build_action` thêm `_check_params` (kiểm lại theo `PARAMS_BY_ACTION`); `IntentSlots.missing()`; `requested_for_of()` một nguồn; VPN thiếu `device_id` → `ValueError` (thay `KeyError`, cùng E9) | 5.1.1 P7, P4 |
+| 4 | `duration` `^[1-9][0-9]{0,2}$` (không `\d` — chữ số Unicode); `resource_path` chặn đoạn `.`/`..` | 5.1.1 P4; 4.2 |
+| 5 | Q-T20a-5: g8 kiểm `requested_for == "nv004"` | 5.1.6 g8 |
+| 6 | Mutation đủ **17** mã (M-T20a-15 B6 ghi đè cờ, -16 B3 không đặt cờ, -17 `clarify_wait` không đặt cờ) | 5.1.7 |
+| 7 | `rule_coverage` D1: 40 kịch bản → allow 13 / approval 13 / deny 0 / **none 14** (HB01, HB03) | 5.1.9 |
+| **Nợ (không chặn)** | A12 `clarify_wait` chỉ nhận slot đang thiếu (nợ UX → T20b); biên token `\w` nhận giá trị bị cắt ngắn (NGHI b); `device_id`/`DEVICE_ID` vẫn `\d` (Q-T20a-7 = B); N3 LLM tự điền slot chuẩn hoá → AUTO không hỏi lại (trong quyền tự làm, ≤ 90 ngày); N5 quy tắc "người khác" áp cả VPN (chặt hơn — chạy lại ở mốc G); N7 tin từ chối thiếu `requester_context` (chỉ chữ); N8 `same_department` hai chuỗi rỗng → **sửa ở T24 P9**; test AST không theo luồng điều khiển; G-EXTEND dựng tay giữ `permission_level` | — |
+| **Chuyển Quân** | R11 không đòi `device_registered` (luật T22a) — soát "giữ/thêm" | — |
+
 ### 5.2. T20b — nhiều ý (khung — viết spec 16/10)
 **Đầu vào:** T24 đẩy (ticket con chạy được tới B17 thật). **Đầu ra:** `b05_split`, `create_child`/`mark_parent_once`, `parent_wait`/`parent_reply_wait` thật, notifier ghi `child_notices`, `compose_digest` + bảng 6 trường hợp đóng cha, quét đối soát ở worker (ngoài khối M9), `POST /api/tickets/{cha}/reply` + 4 điểm hợp đồng FE (`claude/viec-cho-phase5.md` mục 5, chốt 10/10: (a) `title` server ghép từ `ACTION_LABELS`, ý chưa có Action → nhãn loại yêu cầu; (b) giữ `options`, chưa phát; (c) ý ngoài `awaiting` → 422 kèm `child_id`, cha hết chờ → 409; (d) backend ghi tin người dùng đã che). **Q5 mở:** con vào ở B6 (B03 §5.3 [Đề xuất]) hay quay lại B3 (bảng 2.1 [Chốt `S_CLASSIFYING`]) — chốt khi viết spec. Đụng file lõi (`routing.py`, `builder.py`, `runner.py`, `wiring.py`) → không giao subagent. **Tầng A**; Opus; **2 DỪNG**; ~9–12 giờ.
 
@@ -727,9 +741,158 @@ Có sẵn (soát 10/10, chưa chạy): 503 khi không đặt; hình dạng hợp
 | 10 | Traceback 500 của `/classify` có thể mang chuỗi nếu tokenizer ném lỗi kèm đầu vào | Nợ trước `active` (bắt lỗi, trả mã chung) |
 | 11 | Đích M-T23a-6 (lật chỉ số lớp) | ghi nhận — test `test_class_index_from_id2label` bắt |
 
-## 7. Chặng T24 — executor + hoàn tác + **bật 4 intent** (khung)
+## 7. Chặng T24 — executor + hoàn tác 6 hành động mới + **bật 4 intent** + `make gate5` (tầng A, Opus, 2 DỪNG) [viết đủ 13/10 — soát code tại `03b4450`]
 
-**Đầu vào:** **T20a**. **Đầu ra:** `PLAN` + mẫu tin B18 cho `reset_password`, `unlock_account`, `install_software`, `view_permissions`, `grant_permission`, `extend_permission`; `TransactionLog` hoàn tác theo `reversibility` từng bước; license có phí (`assign_paid_license`, `reversible=none`) lỗi khi cài → **không** gọi hoàn tác (cổng 5 [Chốt]); handoff E7 4 phần; **bật `ENABLED_INTENTS` 4 intent** (Q-5-7) + e2e TC đơn ý của cổng 5 (TC01, TC03, TC07, TC08, TC12, TC13, TC15–TC18, TC21). Giữ hợp đồng `ExtendIn` không nhận mức quyền (Q-T22a-8). **Tầng A, Opus, 2 DỪNG.** Mutation: hoàn tác hành động không hoàn tác được; bỏ kiểm `reversibility`; retry lệnh ghi. **Lưu ý cho 6C:** T24 là chặng cuối sửa `b17_execute.py` trước 6C (G6-1) — khi T24 đẩy, báo Phase 6 "6C mở được".
+**Mục tiêu:** ticket đơn ý của 4 intent chạy **đầu-cuối trên stack** tới B17 thật: ghi đúng một lần, hoàn tác theo từng bước, tin kết quả B18 theo mẫu, ghi chú bàn giao E7 đủ 4 phần; `ENABLED_INTENTS` mặc định 4 intent; cổng 5 tự động phần đơn ý xanh bằng `make gate5`.
+**Đầu vào:** thư mục chính ở `03b4450` (T20a), cây sạch, KB thật đã nạp. **Đầu ra:** 2 commit cục bộ + phiếu push. **Khi đẩy:** báo Phase 6 "6C mở được" (T24 là chặng cuối sửa `b17_execute.py` trước 6C — G6-1).
+**Nghi thức:** `PLAN-T24.md` + MẪU A · 2 DỪNG · test-writer viết bảng 7.5 trước code (`CHO_DUNG2` + `xfail(strict)`) · mutation (phần A ×2) + md5 · security-reviewer mỗi DỪNG. **Model:** Opus.
+
+### 7.0. Sự thật của code tại `03b4450`
+
+| Chủ đề | Code hiện có | Hệ quả |
+|---|---|---|
+| PLAN | `executor/plans.py`: `PLAN` chỉ 3 hành động VPN; `step_args`/`undo_args` chỉ VPN; `check_plans` đòi `meta.reversible == (spec.reversible ∈ {full, partial})` **cho từng bước** | Kế hoạch nhiều bước có bước không hoàn tác được (license trả phí) sẽ bị từ chối khởi động → nới luật kiểm (P2) |
+| Executor | `executor/vpn.py` `VpnExecutor`: chạy tuần tự, `begun` trước mỗi bước, gọi đúng 1 lần, lỗi → `_rollback` ngược; bước `undo=None` khi hoàn tác → ghi `"UNDO_FAILED: no_undo"`; `_handoff` viết riêng cho VPN ("chứng chỉ… VPN gateway"); `_outputs` chỉ `serial`, `expires_on` | P3, P5 |
+| Registry ghi | `executor/wiring.build_write_registry` chỉ nạp `vpn_write.write_handlers`; adapter `ad_write`, `software_write`, `fileserver_write` **đã có** (đủ 12 tool ghi + hoàn tác) | P6 |
+| Mock ghi | `install` không đòi license; `licenses/{name}/assign` 409 `not_a_paid_license` / `no_license_available`; `reset-password`, `unlock`, `lock` 404 khi thiếu `account_type`; `grant` 404 thư mục lạ; `extend` 404 khi chưa có dòng quyền, trả `previous_expires_at` | Bảng 7.2 |
+| B18 | `messages.result_text(action_type, device_id, outputs, facts)` chỉ 3 hành động VPN; `RESULT_ACTIONS` 3 phần tử; `ticket_state.EXEC_OUTPUT_PATTERNS` chỉ `serial`, `expires_on` | P4 |
+| B17 | Kiểm lại luật/duyệt/hash/người (`ad_get_user` người gửi + `requested_for` + người duyệt) — **chung cho mọi intent**, không cần sửa logic; chỉ đổi lời gọi `result_text` | P4 |
+| Bật intent | `settings.enabled_intents` mặc định `["vpn"]` (`settings.py:186`); `.env.example:130` chú thích; roster 4 intent có (T20a); `check_plans` + `RESULT_ACTIONS` chặn khởi động khi thiếu | P1 |
+| Stack | `tests/stack/gate3.py`, `gate4.py` (khuôn), preset `config/scripted/*.yaml` (13 file, có khoá `b14_*` của 6B) | P8, P9 |
+
+### 7.1. P-T24 (agent không hỏi lại)
+
+| Mã | Chốt |
+|---|---|
+| **P1** | **Bật 4 intent (Q-5-7):** `settings.enabled_intents` mặc định `["vpn", "account", "software", "access"]`; `.env.example` sửa chú thích. Khởi động phải qua `check_intent_config`, `check_approvers_config`, `check_plans` với 4 intent. `NodeDeps.enabled_intents` (test) **không đổi** (`{"vpn"}`) — test cũ không đổi hành vi. Máy nào `.env` đặt `ENABLED_INTENTS` tường minh → Tuấn Anh tự sửa (agent không đọc `.env`) — ghi trong MẪU B |
+| **P2** | **PLAN 6 hành động + bước có điều kiện:** `Step` thêm `when: Literal["always", "paid_license"] = "always"`; `plan_for(action) -> tuple[Step, ...]` lọc theo `when` — `"paid_license"` giữ khi `action.facts.get("license_paid") is not False` (**thiếu fact → coi như có phí**: không bao giờ cài phần mềm có phí mà chưa cấp license). Bảng 7.2. `check_plans` sửa: mỗi bước là tool ghi đã khai báo; `step.undo == spec.undo_tool`; metadata `reversibility == "none"` ⇒ không bước nào có `undo`; `reversible` ⇒ **ít nhất một** bước hoàn tác được; hành động không ghi (PLAN rỗng) chỉ được là hành động chỉ đọc (`check_vpn_status`, `view_permissions`). Giữ: thiếu PLAN / thiếu mẫu B18 → không khởi động |
+| **P3** | **Executor chung (đổi tên `VpnExecutor` → `PlanExecutor`, file `executor/plan_executor.py`; `executor/vpn.py` xoá, cập nhật import ở `main.py` (dòng import, ngoài khối `# M9`) và test):** giữ nguyên mọi bất biến 3h (has_begun → E7; đủ timeout TRỌN trước `begun`; `begun` commit riêng trước mỗi bước; gọi ĐÚNG 1 lần; lỗi sau `begun` → `ExecutionInterrupted`; P6 chữ lỗi tập đóng). **Hoàn tác theo từng bước:** bước `undo=None` → **không gọi**, ghi `(tool, "not_reversible")` (thay `"UNDO_FAILED: no_undo"`); mọi bước đã xong đều `not_reversible` → `rollback_status="not_attempted"`; `action.reversible=False` → `not_attempted` như cũ. `_write_calls` (B17) không đếm `not_reversible` |
+| **P4** | **B18 theo mẫu (không LLM):** `result_text(action, outputs, facts, *, requester_id, rows=())` thay chữ ký cũ (VPN giữ **nguyên chữ**); mẫu 6 hành động ở bảng 7.3; `RESULT_ACTIONS` đủ 9. `EXEC_OUTPUT_PATTERNS` thêm `delivered_via` `^(email|sms)$`, `version` `^[0-9A-Za-z.+-]{1,32}$`, `level` `^(read|write|full)$`, `software` `^[a-z0-9][a-z0-9.+#-]{0,63}$`, `license_id` `^LIC-[a-z0-9.+#-]{1,64}-[0-9]{3}$` (khoá lạ / sai mẫu bị BỎ như cũ). `view_permissions`: `rows` = `state["diagnostics"]["check_current_permissions"]` (B6, dữ liệu tool) — tối đa 10 dòng, mỗi dòng chỉ `path` qua `RESOURCE_PATH`, `level` enum, ngày hết hạn; dòng sai mẫu bị bỏ; không có → câu "chưa thấy quyền nào" [Suy luận — agent kiểm B6 có lưu `diagnostics` cho access] |
+| **P5** | **Ghi chú bàn giao E7 4 phần theo hành động** (`handoff_note`: "Đã làm / Lỗi ở bước (mã) / Hoàn tác / L2 cần làm tay") — phần "L2 làm tay" theo bảng 7.4; giữ câu "có thể đã được áp dụng" cho `timeout`/`http_5xx`/`other`. Chỉ ghép tên tool, mã lỗi tập đóng, định danh qua regex (`USER_ID`, `DEVICE_ID`, `RESOURCE_PATH`, tên phần mềm chuẩn hoá), ngày |
+| **P6** | **Registry ghi đủ 4 hệ thống:** `build_write_registry` nạp `ad_write` + `vpn_write` + `software_write` + `fileserver_write` (token `svc_executor`, breaker riêng); test: mọi tool ghi trong `REGISTRY` có handler. Hợp đồng import-linter 3 không đổi |
+| **P7** | **Tham số ghi chỉ từ `Action`** (`step_args`/`undo_args`, bảng 7.2): `user_id = action.requested_for` (không bao giờ người gửi); `extend_permission` **không** gửi mức quyền (`ExtendIn` giữ nguyên — Q-T22a-8); `reset_password`/`unlock_account` `account_type` từ `params`; `assign_paid_license(user_id=requested_for, software_name=params.software_name)` |
+| **P8** | **`make gate5`** (`tests/stack/gate5.py`, khuôn gate3/gate4; `Makefile` + `scripts/verify.sh` nhận `G` có chữ số 5, vd `G=2345`): kịch bản bảng 7.6. Preset mới `config/scripted/{tc01,tc03,tc07,tc08,tc17,tc18,tc21a,tc21b,hb04}.yaml` — **mỗi file đủ mọi khoá prompt của 13 preset cũ, kể cả `b14_*`** (chép giá trị an toàn của `default.yaml`). **Không sửa 13 preset cũ.** Lỗi hệ thống giả qua `/_admin/faults` của mock (như gate3) |
+| **P9** | **Nợ an toàn nhỏ từ T20a (làm luôn):** N8 — `access.same_department` chỉ đặt khi **cả hai** phòng ban khác rỗng; N7 — `approval_wait._rejected` thiếu `requester_context` → coi đích là "người khác" chỉ ở chữ (không đổi hành vi) — **chỉ ghi test ghim**, không sửa |
+| **P10** | **Không** sửa: `risk/*`, `b12_assess.py`, `policy.json`, `domain/facts.py`, `tools/diagnosis/*` (trừ N8), `config/prompts/*`, 13 preset cũ, `llm/*`, M9 (`monitor/*`, khối `# M9`, `worker.py`), `.importlinter`, migration, `docker-compose.yml`, `.env*`, `pyproject.toml`/`uv.lock`, `kb/*`, `eval/scenarios/*`. Sửa được (agent chính, không giao subagent): `executor/*`, `b17_execute.py`, `domain/messages.py`, `domain/ticket_state.py` (chỉ `EXEC_OUTPUT_PATTERNS`), `settings.py` (chỉ mặc định `enabled_intents`), `Makefile`, `scripts/verify.sh`, `main.py` (chỉ dòng import executor) |
+
+### 7.2. PLAN 6 hành động mới (P2, P7)
+
+| `action_type` | Bước (thứ tự) | `undo` | Tham số bước (từ `Action`) | Mock: lỗi dữ liệu |
+|---|---|---|---|---|
+| `reset_password` | `reset_password` | `lock_account` (partial) | `user_id=rf`, `account_type` | 404 thiếu tài khoản loại đó |
+| `unlock_account` | `unlock_account` | `lock_account` | như trên | như trên |
+| `install_software` | ① `assign_paid_license` (`when="paid_license"`) ② `install_software` | ① **không** (reversible none) ② `uninstall_software` | ① `user_id=rf`, `software_name` ② `device_id`, `software_name` | ① 409 `no_license_available`/`not_a_paid_license`; ② 404 máy/phần mềm lạ |
+| `view_permissions` | `()` — không ghi | — | — | — |
+| `grant_permission` | `grant_permission` | `revoke_permission` | `user_id=rf`, `resource_path`, `level=permission_level`, `duration_days` | 404 thư mục lạ |
+| `extend_permission` | `extend_permission` | `restore_permission_expiry(expires_at=previous_expires_at)` | `user_id=rf`, `resource_path`, `duration_days` (không mức quyền) | 404 chưa có dòng quyền |
+
+**Vì sao license trước, cài sau [Đề xuất]:** giữ chỗ license trước (409 hết license → dừng, chưa ghi gì); cài lỗi sau khi đã cấp license → **không gọi hoàn tác** (license không thu hồi được qua tool) → đúng câu cổng 5 "phần mềm có phí lỗi khi cài → không gọi hoàn tác" [Chốt `huong-dan` §5.1]. Hoàn tác thật (`undone`) chỉ xảy ra ở kế hoạch nhiều bước có bước hoàn tác được đứng trước bước lỗi — 6 hành động hiện tại không có ca đó trên stack; cơ chế `undone`/`partial`/`undo_failed` được ghim ở mức executor bằng PLAN tiêm (test x6–x8).
+
+### 7.3. Mẫu tin B18 (P4) — VPN giữ nguyên chữ
+
+| Hành động | Mẫu (`{…}` = giá trị đã qua regex; thiếu → bỏ cụm) |
+|---|---|
+| `reset_password` | "Đã đặt lại mật khẩu tài khoản {loại} của {đích}. Mật khẩu tạm đã gửi qua {email}; cần đổi ở lần đăng nhập tới. Bạn đăng nhập thử rồi xác nhận giúp mình nhé." |
+| `unlock_account` | "Đã mở khoá tài khoản {loại} của {đích}. Bạn đăng nhập thử rồi xác nhận giúp mình nhé." |
+| `install_software` | "Đã cài {software}{ phiên bản version} lên máy {device_id}. Bạn mở thử rồi xác nhận giúp mình nhé." |
+| `view_permissions` | "Quyền truy cập hiện có của {đích}: {path} ({level}, hết hạn {dd/mm/yyyy} \| không thời hạn); … Bạn xem đã đủ chưa rồi xác nhận giúp mình nhé." (≤ 10 dòng; không dòng → "chưa thấy quyền nào") |
+| `grant_permission` | "Đã cấp quyền {level} thư mục {path} cho {đích}{, hiệu lực tới dd/mm/yyyy}. Bạn mở thử rồi xác nhận giúp mình nhé." |
+| `extend_permission` | "Đã gia hạn quyền thư mục {path} của {đích} tới dd/mm/yyyy. Bạn mở thử rồi xác nhận giúp mình nhé." |
+
+`{loại}`: `ad` → "đăng nhập (AD)", `email` → "email", `erp` → "ERP". `{đích}`: `messages.target_phrase` (T20a P11). Không chữ nào lấy từ câu người dùng ngoài định danh đã qua mẫu.
+
+### 7.4. Phần "L2 cần làm tay" của ghi chú bàn giao (P5)
+
+| Hành động | Lỗi | Câu |
+|---|---|---|
+| reset/unlock | 404 | "tài khoản {loại} của {rf} không tồn tại — xác minh lại với người dùng" |
+| reset/unlock | khác | "kiểm tài khoản {loại} của {rf} trên AD; thực hiện {hành động} bằng tay nếu vẫn cần" |
+| install ① | 409 | "hết license {software} (hoặc không phải phần mềm có phí) — xin thêm license rồi cài lại" |
+| install ② | sau khi ① xong | "license {software} ĐÃ cấp cho {rf} và KHÔNG được thu hồi tự động — cài bằng tay hoặc thu hồi license" |
+| install ② | 404 | "máy {device_id} hoặc phần mềm {software} không có trên hệ thống — xác minh lại" |
+| grant | 404 | "thư mục {path} không tồn tại — xác minh lại đường dẫn" |
+| extend | 404 | "{rf} chưa có quyền trên {path} — không gia hạn được, cân nhắc cấp mới (cần duyệt)" |
+| mọi hành động | `timeout`/`http_5xx`/`other` | tiền tố "lệnh ở bước {tool} có thể đã được áp dụng — kiểm trên hệ thống đích trước khi làm lại" (giữ 3h) |
+
+### 7.5. Test (test-writer viết TRƯỚC code)
+
+| # | Ca | Kỳ vọng |
+|---|---|---|
+| **p1** | `check_plans` với 4 intent bật, PLAN thật | xanh |
+| p2 | PLAN thiếu `grant_permission` / bước `undo` sai / hành động `reversibility none` có bước `undo` / hành động `reversible` mà không bước nào hoàn tác được / PLAN rỗng cho hành động ghi | `RuntimeError` (không khởi động) |
+| p3 | `plan_for` install `license_paid=False` / `True` / **thiếu** | (install) / (assign, install) / (assign, install) |
+| p4 | `step_args` 6 hành động (bảng 7.2) — `user_id` luôn `requested_for` (account `target_user=nv005`, người gửi nv001 → `nv005`); extend không có khoá mức quyền | đúng |
+| p5 | `undo_args`: `lock_account(user_id, account_type, reason="admin")`, `uninstall_software(device_id, software_name)`, `revoke_permission(user_id, resource_path)`, `restore_permission_expiry(…, expires_at=previous_expires_at)` | đúng |
+| **x1** | Executor install có phí: assign OK, install 500 | 2 lời gọi ghi, 0 hoàn tác; `rollback_status="not_attempted"`; details `[("assign_paid_license","not_reversible")]`; handoff có câu license 7.4 + "có thể đã được áp dụng" |
+| x2 | install có phí: assign 409 | 1 lời gọi; `none_needed`; handoff "hết license" |
+| x3 | install free: install 500 | 1 lời gọi; `none_needed`; "có thể đã được áp dụng" |
+| x4 | reset OK / grant OK / extend OK | `success`, `outputs` đúng khoá + mẫu (P4) |
+| x5 | `view_permissions` | 0 lời gọi ghi, 0 `begun`, `success` |
+| x6 | PLAN tiêm 2 bước hoàn tác được, bước 2 lỗi 409 | bước 1 `undone`, `rollback_status="undone"`, 3 lời gọi |
+| x7 | như x6, hoàn tác lỗi | `undo_failed` + `transaction_log.undo_failed` |
+| x8 | PLAN tiêm 3 bước (hoàn tác được, không hoàn tác được, lỗi) | `partial`: bước 1 `undone`, bước 2 `not_reversible` |
+| x9 | mọi bất biến 3h giữ (has_begun → E7; thiếu timeout trước begun → E2; lỗi sau begun → `ExecutionInterrupted`) | test VPN cũ của executor xanh, chỉ đổi tên lớp/import |
+| x10 | `_write_calls` | không đếm `not_reversible` |
+| **m1** | `result_text` 6 mẫu bảng 7.3 + 3 mẫu VPN (chữ cũ y nguyên) | đúng |
+| m2 | outputs sai mẫu (`version="1.0; rm -rf"`, `level="admin"`, path có `..`) | bị bỏ, không vào tin |
+| m3 | `view_permissions` rows: 12 dòng → 10; dòng path sai mẫu bị bỏ; không dòng | đúng |
+| m4 | handoff 4 phần mỗi hành động × lỗi bảng 7.4 | chứa đủ "Đã làm", "Lỗi ở bước", "Hoàn tác", "L2 cần làm tay" |
+| **w1** | `build_write_registry`: mọi tool ghi trong `REGISTRY` có handler | xanh |
+| w2 | `settings.enabled_intents` mặc định 4 intent; `open_runtime` thật (DB test) khởi động với 4 intent | xanh |
+| w3 | `NodeDeps.enabled_intents` mặc định vẫn `{"vpn"}` | xanh |
+| **n8** | `same_department` khi một phòng ban rỗng | không đặt |
+| **g\*** | `make gate5` — bảng 7.6 | xanh |
+
+**Test cũ được đổi:** `test_executor_vpn.py` (tên lớp/import, đổi tên file theo lớp mới nếu cần; `"UNDO_FAILED: no_undo"` → `"not_reversible"` nếu có ca); `test_executor_plans.py` (luật `check_plans` mới — giữ mọi ca từ chối cũ còn đúng ý); `test_messages*`/`test_b17*` chỉ chữ ký `result_text`; test ghim mặc định `enabled_intents` nếu có. Test cũ khác đỏ → DỪNG hỏi.
+
+### 7.6. `make gate5` — cổng 5 tự động phần đơn ý (P8)
+
+| Mã | Người gửi · câu (preset) | Kỳ vọng |
+|---|---|---|
+| tc01 | nv001 "đặt lại mật khẩu tài khoản AD" | R01 AUTO → `POST /ad/users/nv001/reset-password` đúng 1 lần → tin result → xác nhận → `S_RESOLVED` |
+| tc03 | nv001 "cài Zoom" (máy suy LAP-0342) | R11 AUTO → 1 lời gọi install, 0 assign → `S_RESOLVED` |
+| tc07 | nv001 "đặt lại mật khẩu AD cho svc_backup" | `approval_required` R03 (all R03, R04) → phiếu l1_01 → duyệt → B17 kiểm lại người gửi + `svc_backup` → reset `svc_backup` 1 lần |
+| tc08 | nv002 "xin quyền đọc finance/Q3 30 ngày" | `approval_required` R07 (all R07, R09) → l1_01 **từ chối** có lý do → `S_REJECTED`, tin "Yêu cầu cấp quyền truy cập cho thư mục finance/Q3 chưa được duyệt. Lý do: …", **0 lời gọi ghi** |
+| tc17 | nv001 "cài utorrent" | catalog 404 = dữ liệu (không E2) → `in_catalog=False` → R13 → chờ duyệt (`S_PENDING_APPROVAL`), 0 ghi |
+| tc18 | nv001 "đặt lại mật khẩu AD", fault 500 trên tiền tố `/ad/users/nv001/privilege` (`check_privilege_level`; **không** đặt lỗi trên `/ad/users/nv001` — B1 dùng chung, sẽ ra E2 ở B1 thay vì B7) | B7 → E2 `tool_system_error`, tin mẫu E2, 0 ghi |
+| tc21a | nv001 "cài Zoom", fault install 500 | E7 `exec_failed`, 1 lời gọi ghi, ghi chú bàn giao 4 phần có "có thể đã được áp dụng" |
+| tc21b | nv001 "cài Adobe Acrobat Pro" → R14 → duyệt → assign OK, fault install 500 | E7, **0 lời gọi hoàn tác** (không `uninstall`, không thu hồi license), handoff câu license 7.4 — *cổng 5 "phần mềm có phí lỗi khi cài → không gọi hoàn tác"* |
+| hb04 | nv001 "cài AutoCAD" → R14 → duyệt → assign 409 `no_license_available` | E7, 1 lời gọi ghi, handoff "hết license" (đúng dữ liệu D1 HB04 — báo Quân sửa `expected_exit`) |
+
+Mỗi kịch bản: đếm lời gọi ghi qua `/_admin/calls` của mock; audit đủ điểm log áp dụng (1, 2, 4, 7, 8 — và 5/6 khi duyệt); không câu người dùng trong audit. Kết quả mỗi lượt ghi `tests/stack/bienban-gate5-<ngày>.md` theo khuôn gate4. **TC12** (nhiều ý) thuộc T20b; TC13, TC15, TC16, TC28 đã xanh ở gate2/gate3 (không lặp).
+
+### 7.7. Mutation (`scripts/mutation/mutate_t24.py`, khuôn `mutate_t20a.py`)
+
+| Mã | Phá | Test phải đỏ | Lượt |
+|---|---|---|---|
+| M-T24-1 | Hoàn tác gọi cả bước không hoàn tác được | x1, x8 | ×2 |
+| M-T24-2 | `plan_for` bỏ bước license | p3, x1, x2 | ×2 |
+| M-T24-3 | thiếu `license_paid` → coi như miễn phí | p3 | ×2 |
+| M-T24-4 | `step_args` dùng người gửi thay `requested_for` | p4 | ×2 |
+| M-T24-5 | extend gửi mức quyền | p4 | ×2 |
+| M-T24-6 | `result_text` chép giá trị không qua regex | m2 | ×2 |
+| M-T24-7 | handoff bỏ phần "L2 cần làm tay" | m4 | ×2 |
+| M-T24-8 | `check_plans` bỏ luật "reversibility none ⇒ không undo" | p2 | ×2 |
+| M-T24-9 | `_write_calls` đếm `not_reversible` | x10 | ×2 |
+| M-T24-10 | mặc định `enabled_intents` về `["vpn"]` | w2 | ×1 |
+| M-T24-11 | registry ghi thiếu `fileserver_write` | w1 | ×1 |
+| M-T24-12 | `same_department` với chuỗi rỗng → True | n8 | ×1 |
+
+### 7.8. Soát bảo mật (security-reviewer)
+
+(1) B17 vẫn là điểm ghi duy nhất (import-linter 3 + test); (2) mỗi bước ghi gọi đúng 1 lần, không retry; (3) tham số ghi chỉ từ `Action`, `user_id` = `requested_for`; (4) không bao giờ gọi hoàn tác cho bước không hoàn tác được; (5) thiếu `license_paid` → có bước license (không cài phần mềm có phí khi chưa cấp license); (6) tin B18 + ghi chú bàn giao + `transaction_log.detail` không chép chữ hệ thống ngoài/người dùng ngoài định danh qua mẫu (luật 8.9); (7) mật khẩu tạm không bao giờ vào phản hồi/tin/audit (mock không trả — test ghim `ResetPasswordResult` không có trường mật khẩu); (8) bật 4 intent không làm khởi động với cấu hình thiếu (fail-closed còn nguyên); (9) không đụng file cấm P10; grep import động `backend/app/risk/` rỗng.
+
+### 7.9. DỪNG
+
+- **DỪNG 1 — executor + B18 (không cần stack):** P2–P7, P9 (N8) + test p*, x*, m*, w1, n8 + mutation lượt 1 (M-T24-1…9) + security-reviewer (1–7, 9) + `make lint` + unit. Commit cục bộ.
+- **DỪNG 2 — bật intent + gate5:** P1, P8 + w2, w3, g* + gỡ xfail + mutation lượt 2 (đủ 12) + security-reviewer đủ 9 + `make verify G=2345` qua phiếu stack (gate5 lần đầu chạy trên stack — có thể phải chỉnh preset; **không** sửa kỳ vọng bảng 7.6 khi chưa hỏi) + biên bản gate5 + "Spec cần sửa (T24)" + dòng "Dồn về mốc G" (TC07/TC08 với LLM thật). Commit + phiếu push + **báo Phase 6 "6C mở được"**. Sau verify: nạp lại KB thật qua phiên git.
+
+### 7.10. Tuấn Anh / thành viên cần biết
+
+- **`.env`:** nếu máy nào đặt `ENABLED_INTENTS` tường minh thì xoá dòng đó (mặc định mới đã đủ 4) — Tuấn Anh báo thành viên sau push.
+- **Quân:** HB04 (AutoCAD hết license) — kỳ vọng thật là E7 (`assign_paid_license` 409), không phải `expected_exit: null`.
+- **Phase 6:** preset mới (9 file) có khoá `b14_*` giá trị an toàn của `default.yaml` — 6C sửa `b14_*` thì sửa cả 9 file; T24 sửa `b17_execute.py` (chữ ký `result_text`) → 6C rebase sau T24.
+- **M9:** sau push, phân bố intent đổi (4 intent bật) — báo Dương/Duy Anh.
 
 ---
 
@@ -741,8 +904,8 @@ Có sẵn (soát 10/10, chưa chạy): 503 khi không đặt; hình dạng hợp
 | 10/10 | ~~T23a~~ xong `a463150` | A / 1 | 6B gộp `d42d5c4` | 6B gộp |
 | 11–12/10 | (FE PR #27/#35; K2 PR #29 gộp + ingest `6cf1091` 23:30 12/10) | — | — | — |
 | 13/10 sáng | (Claude chat: spec T20a v0.3 — Tuấn Anh duyệt) | — | — | — |
-| **13 chiều–14** | **T20a** | A+B / 2 | `6cf1091` | — |
-| 15–16 | **T24** + bật 4 intent | A / 2 | T20a | — |
+| 13/10 | ~~T20a~~ xong `03b4450` (09:30) | A+B / 2 | `6cf1091` | — |
+| **13 chiều–15** | **T24** + bật 4 intent + gate5 | A / 2 | `03b4450` | báo "6C mở được" khi đẩy |
 | 16 | (Claude chat: spec T20b, chốt Q5) | — | — | — |
 | 17–18 | **T20b** | A / 2 | T24 | 6C: PLAN 17, DỪNG 1 19, DỪNG 2 20 (P6→P5 #8 — không hai DỪNG tầng A cùng ngày) |
 | 19 | Đệm + mutation lượt 2 (T23a, T24) | — | — | — |
@@ -754,6 +917,7 @@ Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự độ
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
+| 13/10/2026 | 0.4 | T20a đóng (`52c8349` + `03b4450`); 5.1.11 chốt khi hiện thực (Q-T20a-4/6 cờ `target_is_other` ở B3 + `clarify_wait`, 17 mutation, D1 none 14/40, nợ); **mục 7 T24 viết đủ** (PLAN 6 hành động + bước license có điều kiện, `PlanExecutor` hoàn tác theo bước, B18 6 mẫu, ghi chú bàn giao theo hành động, registry ghi 4 hệ thống, bật 4 intent, `make gate5` 9 kịch bản, 12 mutation); lịch: T24 13 chiều–15 |
 | 13/10/2026 | 0.3 | **T20a viết đủ** (mục 5.1: 12 P-x, bảng tool → fact, hợp đồng `PARAMS_BY_ACTION`, ~70 ca test, 14 mutation, 9 mục soát, 2 DỪNG) trên code `6cf1091`; access thêm slot `target_user` (R12 chạm được đầu-cuối) [Đề xuất]; áp 17 mục "Spec cần sửa (T22a)" (4.13 → 4.14 + sửa tại chỗ) và 11 mục T23a (6.5); T23a đóng; lịch mục 8 (T20a 13–14) |
 | 10/10/2026 | 0.2 | T22a đóng (`2ffb005`). Kế hoạch sau T22a theo phiên PHAN-TICH-P5 (soát code chỉ đọc) + Tuấn Anh chốt: mục 5 tách T20a/T20b (ước 19–25 giờ, bật intent dời sang T24 — Q-5-7); mục 6 **T23a viết đủ** (đóng `ml-gan`, `shadow`, mặc định không nạp, 422 → L4 — Q-5-9, 9 mutation, `json_object` commit riêng); mục 7 T24 bật 4 intent; mục 8 lịch mới (cổng 5 ~20–21/10); model của Duy ra khỏi Phase 5 (D-44). 17 mục "Spec cần sửa (T22a)" CHƯA áp — làm 11–12/10 |
 | 09/10/2026 | 0.1f (sửa 13:00) | Mục 0.2 viết lại theo luật git 4.0 (agent không tự pull/push/stack; phiếu cho phiên git), khoá thư mục chính tới hết DỪNG cuối, cấm ingest khi chặng mở, giao thức Phase 5–6 (2 agent, `PROGRESS.md`, `app.eval`, thứ tự 6B → T20, T24 → 6C); 0.1 thêm `RiskContext`, hằng `mutate_3h.py`; P5/P11 thêm cấm `risk/models.py`, `config/scripted`, `app.eval`; 4.9 thêm bất biến (8); 4.10 nêu bàn giao DỪNG 1 + phiếu push; T20 phụ thuộc 6B; lịch mục 8 theo lịch chung v0.6. **Lời mở chặng thắng mục 0.2 về thao tác git/stack** |

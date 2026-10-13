@@ -2,7 +2,7 @@
 PLAN-4d mục 2.1 "e2e", mục 3, mục 9 điều kiện 3) + i8a, i8c (agent chính). DỪNG 2 (PLAN-4d mục 11): Q-4d-3 — i8b/i8c nay E5 ở B16,
 i8d (B17 lớp 2 sau crash + recover); i1–i7, i9–i12, i15 (agent chính — kiểm hành vi 4b/4c đã có, răng chứng bằng bảng nối MẪU B).
 
-Môi trường = `gate3_env` (create_app + `_open` node THẬT + `VpnExecutor`, mock THẬT, Postgres + Qdrant testcontainer, KB ingest thật,
+Môi trường = `gate3_env` (create_app + `_open` node THẬT + `PlanExecutor`, mock THẬT, Postgres + Qdrant testcontainer, KB ingest thật,
 ScriptedLLM `vpn_scripts`, FakeClock) + bước HITL chung ở `gate4_env`. Ca HITL chuẩn: nv003 `chau.hm` "gia hạn VPN cho máy LAP-0501"
 → R19 (mọi giờ) → phiếu l1_01 (`ha.lt`), dự phòng l1_02 (`duc.pv`). Lời gọi GHI đếm ở NƠI NHẬN (mock).
 

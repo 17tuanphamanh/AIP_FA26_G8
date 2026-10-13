@@ -5071,6 +5071,45 @@ không chứa `vpn`); thêm: đối chiếu `seed_tools` ↔ mock, "Spec cần s
   16. N8: `access.same_department` so `owner_department == department` — hai chuỗi rỗng cho `True`; seed/mock hiện không có phòng ban
       rỗng.
 
+## Phase 5 — chặng T24: executor + hoàn tác + bật 4 intent (tầng A) (13/10/2026, DỪNG 1 commit 1) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.4** mục 7 (+ 0, 1.3, 4.2, 5.1.3, 5.1.11); `decisions.md` **D-48**, D-47,
+§4.1 (Q-5-7, Q-T22a-8). Kế hoạch: `PLAN-T24.md` (untracked) — **DUYỆT 13/10/2026**: Q-T24-1…5 = A (1: `verify.sh` nạp KB thật `kb/`
+trước gate5 — sau verify stack ở KB thật, bỏ bước "nạp lại KB thật sau commit 2"; 2: `person_phrase` cho `{đích}` của bảng 7.3; 3: sửa 2
+dòng chú thích `.env.example:129–130`; 4: duyệt danh sách file/test ngoài 7.5/P10 (đổi tên/đường/giá trị ghim); 5: không có dữ liệu
+chẩn đoán → "chưa đọc được danh sách quyền", rỗng thật → câu spec). D-48 + 3 đề xuất spec (license trước, TC21, view_permissions từ
+`diagnostics` B6) chốt theo PLAN.
+
+- **Bước 0 (13/10/2026):** HEAD `03b4450`; `status -uno` chỉ 2 file spec; spec 0.4; `grep -c D-48` = 4; `alembic heads` = 1 (`0008`);
+  `make lint` xanh (import-linter 10/10, gitleaks 0); unit **4842 passed**.
+- **DỪNG 1 (sandbox xanh):**
+  - S1 đổi tên thuần `executor/vpn.py` → `executor/plan_executor.py`, `VpnExecutor` → `PlanExecutor` (giữ nguyên chữ mọi dòng đích của
+    `mutate_3h.py`; hằng `VPN` của script trỏ file mới); import/docstring ở `main.py` (ngoài `# M9`), `graph/wiring.py`,
+    `graph/nodes/README.md`, `executor/README.md`, 5 file test/e2e/integration, khoá AST `test_turn_budget.py` → unit vẫn **4842**.
+    `graph/fakes.py:127` (file cấm) còn chữ `executor/vpn.py` → "Spec cần sửa".
+  - S2 khai báo bề mặt (`Step.when`, `READ_ONLY_ACTIONS`, `plan_for`, `result_text(action, outputs, facts, *, requester_id, rows)`,
+    `person_phrase`, `permission_rows` — stub `NotImplementedError`) → unit cũ 4842.
+  - S3 test-writer viết TRƯỚC code bảng 7.5 (p1–p5, x1–x10, m1–m4, w1, n8 + ghim n7; w2 gom `CHO_DUNG2` xfail strict, w3 xanh sẵn để
+    ngoài): 9 file + helper `_t24.py`, 172 test. Trước code: **143 đỏ / 27 xanh / 2 xfail** — đỏ vì `NotImplementedError`, `KeyError` PLAN
+    chưa có hành động, khoá outputs chưa có, registry chưa có handler, N8 chưa sửa. Agent chính kiểm `git status`: chỉ file mới.
+  - S4–S9: PLAN 6 hành động (bảng 7.2) + `plan_for` (thiếu `license_paid` → có bước license) + `step_args`/`undo_args` (`user_id` =
+    `requested_for`, extend không gửi mức quyền) + `check_plans` luật mới; `PlanExecutor` hoàn tác theo bước (`not_reversible`, không
+    gọi), `outputs` gộp mọi bước, ghi chú bàn giao theo bảng 7.4; B18 6 mẫu + `RESULT_ACTIONS` 9 + `EXEC_OUTPUT_PATTERNS` 5 khoá; B17
+    `_write_calls` + dòng quyền từ `diagnostics`; registry ghi 4 hệ thống; N8.
+  - Test cũ đổi thêm: `test_executor_plans.py::test_h23_second_enabled_intent_without_plan_refuses` — `unlock_account` đã có PLAN →
+    đổi sang hành động không có PLAN (`printer`/`fix_printer`) để giữ đúng ý (file thuộc danh sách 7.5).
+  - Sau code: unit **5013 passed, 2 xfailed** (`CHO_DUNG2`); `make lint` xanh (mypy 227 / 275 / 12 / 17, import-linter 10/10, gitleaks 0).
+  - Mutation lượt 1 (`scripts/mutation/mutate_t24.py`): **M-T24-1…9 ĐỎ đúng dự đoán**; md5 4 file đích + `git diff --stat` khớp.
+  - security-reviewer (7.8 mục 1–7, 9 + import động `risk/` rỗng + `git diff 03b4450 -- config/policy.json backend/app/risk` rỗng):
+    **0 FAIL**, 4 NGHI (NGHI-3 thiếu test ghim mật khẩu → đã thêm `test_s7_reset_password_result_has_no_password_field`).
+- **Duyệt MẪU B DỪNG 1 (13/10/2026):** Q-T24-6 = A — `same_department` chỉ BỎ khi CẢ HAI phòng ban rỗng, một phía rỗng → `False`
+  (R09 vẫn khớp; `test_n8_*_empty_false` thay 2 ca "không đặt"; M-T24-12 đỏ cả 3 ca). Q-T24-7 = A — `EXEC_OUTPUT_PATTERNS["version"]`
+  = `[0-9]+(\.[0-9]+){0,3}`; `{software}` của tin B18 lấy từ `action.params.software_name` (đã chuẩn hoá), không lấy tên tool trả về
+  (m2 thêm `version-ten-mien`, `software-tool-tra-khac`; m1 `install-thieu-outputs`, `install-params-sai-mau`) → "Spec cần sửa (T24)".
+  NGHI-1 (B18 đọc dòng quyền từ `diagnostics` của B6 — đúng khi `rf`/path không đổi sau B6) ghi nợ. Sau sửa: unit **5018 passed,
+  2 xfailed**; lint xanh; M-T24-6, -11, -12 ĐỎ đúng dự đoán, md5 + `git diff --stat` khớp. `decisions.md` bản D-48 "Đã chốt 13/10"
+  (md5 `fc238a79…`) vào commit 1.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

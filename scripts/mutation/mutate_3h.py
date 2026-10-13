@@ -17,7 +17,7 @@ thẻ `[fake:…]` khỏi câu truy hồi). Ghi chú:
 - M-3h-1 (bỏ điều kiện owner của R20): h11 VẪN XANH — `ctx.target_is_other` (P3) tính owner≠True là "người khác", R20 đòi
   `target_is_other is_false` → hai lớp. Unit: test ghim policy.json + ca C5 dựng `RiskContext` tay đỏ. Lượt `--e2e` ghi là
   "tương đương" với h11 (h11 phải xanh).
-- M-3h-5 = bỏ kiểm `begun` ở CẢ bước [0] của B17 lẫn `VpnExecutor` (điểm ghi) → h15 ghi 2 lần. 5a / 5b: từng lớp một.
+- M-3h-5 = bỏ kiểm `begun` ở CẢ bước [0] của B17 lẫn `PlanExecutor` (điểm ghi; trước T24 là `VpnExecutor`) → h15 ghi 2 lần. 5a / 5b: từng lớp một.
 - M-3h-8: DSL đọc `action.facts` qua `fact_view`, không đọc `RiskContext.facts` — đột biến chỉ bị test AST h21 bắt; e2e h14
   VẪN XANH vì `sanitize_slots` đã bỏ khoá fact khỏi slot ở B3 (lượt `--e2e` ghi "tương đương" với h14).
 - M-3h-15 (bước [0] chỉ xét lượt hiện tại): `TxLog.has_begun(ticket_id)` không nhận lượt (chốt DỪNG 2) — muốn lùi phải đổi cả
@@ -50,7 +50,7 @@ POLICY = "backend/app/domain/policy.py"
 CONTEXT = "backend/app/risk/context.py"
 ESTIMATOR = "backend/app/risk/estimator.py"
 B17 = "backend/app/graph/nodes/b17_execute.py"
-VPN = "backend/app/executor/vpn.py"
+VPN = "backend/app/executor/plan_executor.py"  # T24: đổi tên từ executor/vpn.py (VpnExecutor → PlanExecutor)
 TXLOG = "backend/app/executor/txlog.py"
 MEM_TXLOG = "backend/tests/fakes/executor.py"
 FAKES = "backend/app/graph/fakes.py"
@@ -202,7 +202,7 @@ UNIT = [
     Mutation("M-3h-5a chỉ bỏ bước [0] của B17 (executor còn chặn)", [_M5[0]],
              UT, ["test_nghi2_rerun_after_write_is_e7_not_e5", "test_nghi2_begun_of_other_turn_is_e7_before_recheck",
                   "test_nghi2_step0_runs_even_without_intended_action"]),
-    Mutation("M-3h-5b chỉ bỏ kiểm begun ở VpnExecutor (bước [0] còn chặn)", [_M5[1]],
+    Mutation("M-3h-5b chỉ bỏ kiểm begun ở PlanExecutor (bước [0] còn chặn)", [_M5[1]],
              UT, ["test_begun_exists_interrupted_zero_writes", "test_begun_of_other_turn_also_blocks",
                   "test_begun_blocks_even_empty_plan"]),
     Mutation("M-3h-6 thử lại lệnh ghi khi lỗi",
