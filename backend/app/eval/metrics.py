@@ -1,4 +1,5 @@
-"""Công thức chỉ số M8 (P8 §6) — hàm thuần trên `PredictionRecord` (hợp đồng v1, `predictions.py`). S2: §6.1; S3: §6.2.
+"""Công thức chỉ số M8 (P8 §6) — hàm thuần trên `PredictionRecord` (hợp đồng v1, `predictions.py`). S2: §6.1; S3: §6.2;
+S5: §6.3.
 
 Quy ước (chốt #32, 13/10):
 - Danh sách bản ghi rỗng → `ValueError` (như `decision_math`). Mẫu số con = 0 → `None`, không trả 0 giả.
@@ -9,14 +10,15 @@ Quy ước (chốt #32, 13/10):
 """
 
 import math
-from collections.abc import Mapping, Sequence
+from collections import Counter
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, Literal
 
 import numpy as np
 
-from app.db.models import EXIT_CODES
+from app.db.models import EXIT_CODES, INTENTS
 from app.domain.states import S_RESOLVED
 from app.eval.predictions import PredictionRecord
 from app.risk.decision_math import (
@@ -302,4 +304,129 @@ def efficiency(
         deflection=Rate(sum(1 for r in leaves if r.resolution_path == DEFLECTED_PATH), n),
         clarification=Mean(float(sum(r.clarification_turns for r in leaves)), n),
         one_turn=Rate(sum(1 for r in leaves if r.clarification_turns == 0 and r.close_reason == ONE_TURN_CLOSE_REASON), n),
+    )
+
+
+# ---- §6.3 chất lượng truy hồi và intent (P8:375) ---------------------------------------------------------------------
+
+TOP_K: Final = 5  # P8:375 "@5"; = `GATE_TOP_DOCS` của cổng ingest (test đồng bộ — Q3: không import `gate` ở đây)
+
+
+def _gold_set(gold: Collection[str]) -> set[str]:
+    """Tập tài liệu đúng (khử trùng). Rỗng → ValueError: Recall và IDCG không xác định."""
+    gold_set = set(gold)
+    if not gold_set:
+        raise ValueError("gold: rỗng — Recall/MRR/nDCG không xác định")
+    return gold_set
+
+
+def first_hit_rank(gold: Collection[str], ranked: Sequence[str], k: int = TOP_K) -> int | None:
+    """Hạng 1-gốc THEO VỊ TRÍ trong `ranked[:k]` của tài liệu đúng đầu tiên; không có → None. Cắt theo vị trí, không khử trùng
+    trước khi cắt — như `gate.metrics()` (Phase 3) [Đề xuất E2]."""
+    gold_set = set(gold)
+    return next((i for i, d in enumerate(ranked[:k], start=1) if d in gold_set), None)
+
+
+def recall_at_k(gold: Collection[str], ranked: Sequence[str], k: int = TOP_K) -> float:
+    """Recall@k chuẩn = |gold ∩ top k| / |gold| (M3, chốt #32). Khi có đúng 1 tài liệu đúng → = hit@k của cổng ingest."""
+    gold_set = _gold_set(gold)
+    return len(gold_set & set(ranked[:k])) / len(gold_set)
+
+
+def reciprocal_rank_at_k(gold: Collection[str], ranked: Sequence[str], k: int = TOP_K) -> float:
+    """1 / hạng của tài liệu đúng đầu tiên trong top k; ngoài top k → 0 (như `gate.metrics()`)."""
+    _gold_set(gold)
+    rank = first_hit_rank(gold, ranked, k)
+    return 1.0 / rank if rank is not None else 0.0
+
+
+def ndcg_at_k(gold: Collection[str], ranked: Sequence[str], k: int = TOP_K) -> float:
+    """nDCG@k nhị phân: DCG = Σ_{i≤k} rel_i / log2(i+1), rel_i = 1 nếu doc thứ i đúng VÀ chưa gặp trong top k (doc trùng chỉ
+    tính lần đầu, bản trùng vẫn chiếm chỗ); IDCG = Σ_{i=1}^{min(|gold|, k)} 1 / log2(i+1) [Đề xuất, duyệt #32]."""
+    gold_set = _gold_set(gold)
+    seen: set[str] = set()
+    dcg = 0.0
+    for i, d in enumerate(ranked[:k], start=1):
+        if d in gold_set and d not in seen:
+            dcg += 1.0 / math.log2(i + 1)
+        seen.add(d)
+    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(len(gold_set), k) + 1))
+    return dcg / idcg
+
+
+@dataclass(frozen=True)
+class RetrievalMetrics:
+    """P8:375 — trung bình Recall@5, MRR@5, nDCG@5 trên `n` lá có `gold_doc_ids` và đã tới B8. `n_no_retrieval` = lá có gold
+    mà `doc_ids is None` (không tới B8, ngoài mẫu); `n_no_gold` = lá `gold_doc_ids` rỗng (ngoài mẫu [Đề xuất E1])."""
+
+    n: int
+    n_no_retrieval: int
+    n_no_gold: int
+    recall5: Mean
+    mrr5: Mean
+    ndcg5: Mean
+
+
+def retrieval(records: Records, k: int = TOP_K) -> RetrievalMetrics:
+    """P8:375 — Recall@5, MRR@5, nDCG@5 theo `gold_doc_ids` (điểm log 3). Rỗng 3 mức (chỉnh 2, #32): (a) không lá nào có
+    `gold_doc_ids` → ValueError; (b) có gold mà `doc_ids == ()` → trượt (0), vẫn trong mẫu; (c) `doc_ids is None` → ngoài mẫu,
+    đếm `n_no_retrieval`. Lá `gold_doc_ids` rỗng (câu không có đáp án — false-grounding, ngoài v1) → ngoài mẫu, đếm `n_no_gold`
+    [Đề xuất E1]. Mẫu rỗng sau (c) → `Mean(…, 0)` → None."""
+    _require(records)
+    rows: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    no_gold = no_retrieval = 0
+    for r in records:
+        if not r.gold_doc_ids:
+            no_gold += 1
+        elif r.doc_ids is None:
+            no_retrieval += 1
+        else:
+            rows.append((r.gold_doc_ids, r.doc_ids))
+    if no_gold == len(records):
+        raise ValueError("gold_doc_ids: không lá nào có tài liệu đúng — không đo được truy hồi")
+    n = len(rows)
+    return RetrievalMetrics(
+        n=n,
+        n_no_retrieval=no_retrieval,
+        n_no_gold=no_gold,
+        recall5=Mean(float(sum(recall_at_k(g, d, k) for g, d in rows)), n),
+        mrr5=Mean(float(sum(reciprocal_rank_at_k(g, d, k) for g, d in rows)), n),
+        ndcg5=Mean(float(sum(ndcg_at_k(g, d, k) for g, d in rows)), n),
+    )
+
+
+@dataclass(frozen=True)
+class IntentMetrics:
+    """P8:375 — Intent macro-F1 trên `n` lá có `gold_intent`. `f1_by_class` gồm `INTENTS` + nhãn gold ngoài tập đó; None = lớp
+    vắng cả gold lẫn pred (loại khỏi trung bình, như §6.1). `n_pred_none` = lá có gold mà `intent` None (tính là sai)."""
+
+    n: int
+    n_no_gold: int
+    n_pred_none: int
+    f1_by_class: Mapping[str, float | None]
+    macro_f1: float
+
+
+def intent_quality(records: Records) -> IntentMetrics:
+    """P8:375 — Intent macro-F1: pred = `intent` (= `tickets.intent` của lá, chỉnh 4), gold = `gold_intent` [Đề xuất E3]:
+    lá `gold_intent` None → loại, đếm `n_no_gold`; không lá nào có → ValueError. `intent` None → đoán sai (cộng #gold lớp gold,
+    không cộng #pred lớp nào). F1 lớp = 2·TP / (#pred + #gold) (TP = 0 → 0)."""
+    _require(records)
+    labelled = [(r.gold_intent, r.intent) for r in records if r.gold_intent is not None]
+    if not labelled:
+        raise ValueError("gold_intent: không lá nào có nhãn intent — không đo được intent macro-F1")
+    tp = Counter(g for g, p in labelled if g == p)
+    n_gold = Counter(g for g, _ in labelled)
+    n_pred = Counter(p for _, p in labelled if p is not None)
+    classes = (*INTENTS, *sorted(set(n_gold) - set(INTENTS)))
+    f1: dict[str, float | None] = {
+        c: 2 * tp[c] / (n_pred[c] + n_gold[c]) if n_pred[c] + n_gold[c] else None for c in classes
+    }
+    scored = [v for v in f1.values() if v is not None]
+    return IntentMetrics(
+        n=len(labelled),
+        n_no_gold=len(records) - len(labelled),
+        n_pred_none=sum(1 for _, p in labelled if p is None),
+        f1_by_class=MappingProxyType(f1),
+        macro_f1=sum(scored) / len(scored),
     )
