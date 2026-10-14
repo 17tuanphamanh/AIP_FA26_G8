@@ -29,6 +29,7 @@ INIT = "backend/app/eval/__init__.py"
 PRED = "backend/app/eval/predictions.py"
 CONF = "backend/tests/unit/eval/conftest.py"
 MET = "backend/app/eval/metrics.py"
+STA = "backend/app/eval/stats.py"
 # Thư mục eval TRƯỚC file cô lập: conftest eval được nạp lúc thu thập, trước khi test cô lập chạy.
 UT = pt("backend/tests/unit/eval", "backend/tests/unit/test_eval_mode_isolation.py")
 
@@ -266,7 +267,66 @@ S3: list[Mutation] = [
              UT, ["test_mix_frozen"]),
 ]  # fmt: skip
 
-ALL = S1 + S2 + S3
+
+# ---- S4: stats.py — bootstrap theo họ ---------------------------------------------------------------------------------
+
+_DRAW = "        v = statistic(_take(units, rng.integers(0, k, size=k)))  # đơn vị lấy mẫu = họ\n"
+_SORT_FAM = "    names = sorted(groups)\n"
+_RNG = "    return np.random.default_rng(seed)\n"
+_ALPHA = "    alpha = (1.0 - level) / 2.0\n"
+_PAIR_B = "        b = statistic(_take(units_b, idx))\n"
+_NONE_SKIP = "        if v is None:\n            undefined += 1\n        else:\n            values.append(v)\n"
+_POINT = "    point = statistic(_take(units, np.arange(k)))\n"
+_INTERVAL = "    lo, hi = _interval(values, level)\n"
+_SAME_FAM = "    if names_a != names_b:\n"
+_NBOOT = "    if isinstance(n_boot, bool) or not isinstance(n_boot, Integral) or n_boot < 1:\n"
+_ZERO = "    contains_zero = lo <= 0.0 <= hi if lo is not None and hi is not None else None\n"
+
+
+def _st(old: str, new: str, tag: str) -> tuple[str, str, str, int]:
+    return one(STA, old, new.rstrip("\n") + f"  # MUTATION {tag}\n")
+
+
+S4: list[Mutation] = [
+    Mutation("M-T29-47 lấy mẫu theo lá thay vì theo họ",
+             [_st(_DRAW, "        v = statistic(_take([[r] for u in units for r in u], rng.integers(0, sum(map(len, units)),"
+                         " size=sum(map(len, units)))))\n", "M-T29-47")],
+             UT, ["test_bootstrap_resamples_families"]),
+    Mutation("M-T29-48 bỏ sắp xếp tên họ (giữ thứ tự đầu vào)",
+             [_st(_SORT_FAM, "    names = list(groups)\n", "M-T29-48")],
+             UT, ["test_bootstrap_input_order_invariant", "test_paired_input_order_invariant"]),
+    Mutation("M-T29-49 bỏ seed (RNG ngẫu nhiên theo hệ thống)",
+             [_st(_RNG, "    return np.random.default_rng()\n", "M-T29-49")],
+             UT, ["test_bootstrap_deterministic_seed", "test_defaults"]),
+    Mutation("M-T29-50 seed cố định khác, bỏ qua tham số",
+             [_st(_RNG, "    return np.random.default_rng(12345)\n", "M-T29-50")],
+             UT, ["test_bootstrap_deterministic_seed"]),
+    Mutation("M-T29-51 phân vị 5/95 thay vì 2,5/97,5",
+             [_st(_ALPHA, "    alpha = 1.0 - level\n", "M-T29-51")],
+             UT, ["test_percentile_hand"]),
+    Mutation("M-T29-52 paired dùng 2 dãy họ độc lập",
+             [_st(_PAIR_B, "        b = statistic(_take(units_b, rng.integers(0, k, size=k)))\n", "M-T29-52")],
+             UT, ["test_paired_same_family_sequence"]),
+    Mutation("M-T29-53 lần None coi là 0 thay vì bỏ",
+             [one(STA, _NONE_SKIP, "        values.append(0.0 if v is None else v)  # MUTATION M-T29-53\n")],
+             UT, ["test_bootstrap_undefined_counted"]),
+    Mutation("M-T29-54 point = trung bình các lần rút thay vì dữ liệu gốc",
+             [_st(_POINT, "    point: float | None = None\n", "M-T29-54"),
+              one(STA, _INTERVAL, _INTERVAL + "    point = float(np.mean(values)) if values else None  # MUTATION M-T29-54\n")],
+             UT, ["test_point_is_on_original_data"]),
+    Mutation("M-T29-55 paired bỏ kiểm tập họ A = B",
+             [_st(_SAME_FAM, "    if False:\n", "M-T29-55")],
+             UT, ["test_paired_family_mismatch"]),
+    # ---- bổ sung (ngoài danh sách tối thiểu S4) ----
+    Mutation("M-T29-56 bỏ kiểm n_boot ≥ 1",
+             [_st(_NBOOT, "    if isinstance(n_boot, bool) or not isinstance(n_boot, Integral):\n", "M-T29-56")],
+             UT, ["test_bad_args_raise[kwargs0-n_boot]", "test_bad_args_raise[kwargs1-n_boot]"]),
+    Mutation("M-T29-57 contains_zero dùng bất đẳng thức chặt",
+             [_st(_ZERO, "    contains_zero = lo < 0.0 < hi if lo is not None and hi is not None else None\n", "M-T29-57")],
+             UT, ["test_paired_identical_zero_width"]),
+]  # fmt: skip
+
+ALL = S1 + S2 + S3 + S4
 MUTATIONS = ALL
 if "--only" in sys.argv:
     at = sys.argv.index("--only") + 1
