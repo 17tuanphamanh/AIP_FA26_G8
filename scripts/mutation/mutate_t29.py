@@ -28,6 +28,7 @@ def pt(*args: str) -> list[str]:
 INIT = "backend/app/eval/__init__.py"
 PRED = "backend/app/eval/predictions.py"
 CONF = "backend/tests/unit/eval/conftest.py"
+MET = "backend/app/eval/metrics.py"
 # Thư mục eval TRƯỚC file cô lập: conftest eval được nạp lúc thu thập, trước khi test cô lập chạy.
 UT = pt("backend/tests/unit/eval", "backend/tests/unit/test_eval_mode_isolation.py")
 
@@ -133,7 +134,75 @@ S1: list[Mutation] = [
              UT, ["test_eval_mode_restored_after_conftest", "test_eval_mode_not_visible_outside_eval_tests"]),
 ]  # fmt: skip
 
-ALL = S1
+
+# ---- S2: metrics.py §6.1 ------------------------------------------------------------------------------------------------
+
+_PAIRS = "    return [(r.expected_route, r.route) for r in records if r.route is not None]\n"
+_FNR = '    fnr = Rate(sum(1 for pred in need if pred == "AUTO"), len(need))\n'
+_CP = "    upper = clopper_pearson_upper(fnr.k, fnr.n) if fnr.n else None\n"
+_FPR = '    fpr = Rate(sum(1 for pred in auto if pred != "AUTO"), len(auto))\n'
+_CONF_ADD = "        counts[gold][pred] += 1\n"
+_F1_ZERO = "            out[c] = 0.0\n"
+_PRESENT = "    present = [v for v in per_class.values() if v is not None]\n"
+_COST = "    return Mean(float(sum(cost.costs[gold][pred] for gold, pred in pairs)), len(pairs))\n"
+_LLM = '    llm = [r for r in records if r.decided_by == "llm"]\n'
+_Y = '    labels = np.array([r.expected_route != "AUTO" for r, _ in rows], dtype=bool)\n'
+_WHICH = '    return r.raw_prob if which == "raw" else r.calibrated_prob\n'
+_MIX = "    if len(methods) > 1:\n"
+_M5_BY = "    m5 = [r for r in records if r.route is not None]\n"
+_REQ = "    if len(records) == 0:\n"
+
+
+def _swap(old: str, new: str, tag: str) -> tuple[str, str, str, int]:
+    return one(MET, old, new.rstrip("\n") + f"  # MUTATION {tag}\n")
+
+
+S2: list[Mutation] = [
+    Mutation("M-T29-19 FNR: pred == AUTO → pred != AUTO",
+             [_swap(_FNR, _FNR.replace('pred == "AUTO"', 'pred != "AUTO"'), "M-T29-19")],
+             UT, ["test_fnr_hand", "test_fnr_zero_of_60"]),
+    Mutation("M-T29-20 bỏ lọc route None (§6.1 tính cả lá không tới M5)",
+             [_swap(_PAIRS, "    return [(r.expected_route, r.route) for r in records]  # type: ignore[misc]\n", "M-T29-20")],
+             UT, ["test_fnr_excludes_route_none", "test_mean_route_cost_excludes_route_none"]),
+    Mutation("M-T29-21 CP truyền (n, k)",
+             [_swap(_CP, "    upper = clopper_pearson_upper(fnr.n, fnr.k) if fnr.n else None\n", "M-T29-21")],
+             UT, ["test_fnr_hand", "test_fnr_zero_of_60"]),
+    Mutation("M-T29-22 FPR: mẫu số = mọi ca tới M5",
+             [_swap(_FPR, _FPR.replace("len(auto))", "len(pairs))"), "M-T29-22")],
+             UT, ["test_fpr_hand"]),
+    Mutation("M-T29-23 ma trận chuyển vị [pred][gold]",
+             [_swap(_CONF_ADD, "        counts[pred][gold] += 1\n", "M-T29-23")],
+             UT, ["test_confusion_orientation"]),
+    Mutation("M-T29-24 macro-F1 gộp lớp vắng (tính 0)",
+             [_swap(_PRESENT, "    present = [v if v is not None else 0.0 for v in per_class.values()]\n", "M-T29-24")],
+             UT, ["test_macro_f1_absent_class"]),
+    Mutation("M-T29-25 F1 lớp 0/0 → loại thay vì 0",
+             [_swap(_F1_ZERO, "            out[c] = None\n", "M-T29-25")],
+             UT, ["test_macro_f1_zero_division"]),
+    Mutation("M-T29-26 chi phí cost[pred][gold]",
+             [_swap(_COST, _COST.replace("cost.costs[gold][pred]", "cost.costs[pred][gold]"), "M-T29-26")],
+             UT, ["test_mean_route_cost_asymmetric", "test_mean_route_cost_hand"]),
+    Mutation("M-T29-27 ECE/Brier bỏ lọc decided_by = llm",
+             [_swap(_LLM, "    llm = list(records)\n", "M-T29-27")],
+             UT, ["test_ece_brier_llm_only"]),
+    Mutation("M-T29-28 y = gold == AUTO",
+             [_swap(_Y, _Y.replace('!= "AUTO"', '== "AUTO"'), "M-T29-28")],
+             UT, ["test_ece_brier_llm_only", "test_raw_vs_calibrated"]),
+    Mutation("M-T29-29 dùng raw thay calibrated",
+             [_swap(_WHICH, "    return r.raw_prob\n", "M-T29-29")],
+             UT, ["test_raw_vs_calibrated"]),
+    Mutation("M-T29-30 bỏ chặn trộn p_method",
+             [_swap(_MIX, "    if False:\n", "M-T29-30")],
+             UT, ["test_mixed_p_method_rejected"]),
+    Mutation("M-T29-31 decided_by: mẫu số = mọi lá",
+             [_swap(_M5_BY, "    m5 = list(records)\n", "M-T29-31")],
+             UT, ["test_decided_by_distribution_hand"]),
+    Mutation("M-T29-32 bỏ kiểm danh sách rỗng",
+             [_swap(_REQ, "    if False:\n", "M-T29-32")],
+             UT, ["test_empty_records_raises"]),
+]  # fmt: skip
+
+ALL = S1 + S2
 MUTATIONS = ALL
 if "--only" in sys.argv:
     at = sys.argv.index("--only") + 1
