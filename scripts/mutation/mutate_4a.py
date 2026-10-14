@@ -86,10 +86,10 @@ _INFO_BLOCK = (
 _AFTER_ANSWER = '        info["prompt"], info["trimmed_evidence"] = f"{meta.prompt_id}@{meta.prompt_version}", meta.trimmed_evidence\n'
 _ACTION_GATE = "            if deps.grounding_gate_actions and not above:  # S0-P11: ablation — hành vi 3h (B9 chặn cả hành động)\n"
 _ABOVE = "    above = bool(chunks) and score is not None and score >= threshold\n"
-_EVIDENCE = (
-    "            evidence = evidence_for_estimator(\n"
-    '                state.get("retrieved") or [], state.get("retrieval_score"), deps.constants.RETRIEVAL_THRESHOLD\n'
-    "            )  # S0-P9\n"
+_EVIDENCE = (  # 6C: khối nằm trong `if needs_llm(...)` của B12 → thụt 16 (đồng bộ chuỗi gốc, giữ ý đột biến)
+    "                evidence = evidence_for_estimator(\n"
+    '                    state.get("retrieved") or [], state.get("retrieval_score"), deps.constants.RETRIEVAL_THRESHOLD\n'
+    "                )  # S0-P9\n"
 )
 _PROCEDURE = "        if not check.available:\n"
 _PROC_FILTER = '    return query_filter(role, FieldCondition(key="doc_id", match=MatchValue(value=doc_id)))'
@@ -121,7 +121,7 @@ UNIT: list[Mutation] = [
               one(B10, _AFTER_ANSWER, _AFTER_ANSWER + _INFO_BLOCK)],
              UT, [S1, S4]),
     Mutation("M-S0-5 B12 truyền thẳng state[\"retrieved\"] cho estimator",
-             [one(B12, _EVIDENCE, '            evidence = state.get("retrieved") or []  # MUTATION M-S0-5\n')],
+             [one(B12, _EVIDENCE, '                evidence = state.get("retrieved") or []  # MUTATION M-S0-5\n')],
              UT, ["test_s6_b12_reads_retrieval_only_through_evidence_for_estimator",
                   "test_s11_b12_passes_only_grounded_chunks_to_estimator[kb_gap]"]),
     Mutation("M-S0-6 bỏ kiểm procedure_available ở B11",

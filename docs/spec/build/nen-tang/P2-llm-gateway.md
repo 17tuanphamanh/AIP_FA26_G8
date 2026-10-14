@@ -374,3 +374,11 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 7, 7.8; khi
 - Trần chi duy nhất là `spend.cap_usd` trong `config/llm.yaml` (Q-3d-3, không có biến env); giữ chỗ chi phí xấu nhất trước mỗi request trả phí; `make vpn-smoke` từ chối khi cap > 1 hoặc thiếu pricing (11.10 #14).
 - LLM hết khung vì hạn lượt → `TurnBudgetExceeded` (không phải `LLMUnavailable`) (9.8 #2).
 
+### Chốt khi hiện thực Phase 6 — 6B (10/10/2026)
+
+Phase 6 chặng 6B hiện thực theo `build/phase6-thiet-ke-chi-tiet.md` mục 5, 5.11; khi lệch, file đó thắng (trừ bất biến và mục [Chốt]).
+
+- **§4 `n`:** gateway chỉ nhận `n = 1` (`n ≠ 1` → `ValueError`). "Hỏi nhiều lần" k = 5 = **5 lời gọi `n = 1`** (`asyncio.gather`), mỗi lời có biến `sample_idx` (0…4) nằm **trong thân** prompt → khoá cache khác nhau (Q-6-6, D-39).
+- **§5, §8 cache B14:** 2 prompt `b14_risk_estimate`, `b14_risk_vote` để `cache: default` trong file prompt; **estimator** truyền `cache_policy="bypass"` khi `EVAL_MODE=false` (vận hành không bao giờ cache B14) và `"default"` khi đánh giá (cache eval tái lập). Không dùng danh sách `no_cache_prompts`.
+- **§6, §7 prompt + whitelist:** thêm `b14_risk_vote` (câu hỏi nhị phân, schema `RiskVoteOut`). `allowed_vars` của `b14_risk_estimate` = `[intended_action, risk_context, evidence]`, của `b14_risk_vote` thêm `sample_idx` — dựng **chỉ** qua hàm thuần `risk/estimator.estimator_vars`; `risk_context` bỏ `now`, `captured_at`, `user_id`, `manager_id`. Schema `RiskEstimateOut {prob_needs_human, factors: list[FactorCode] ≤ 5, rationale ≤ 600}` — `rationale` không ra khỏi estimator.
+- **Nợ 6C (N1):** `intended_action` hiện là `Action.model_dump` đầy đủ → giá trị slot chữ tự do trong `Action.params` (vd `software_name`) vào prompt; 6C thêm danh sách trắng `params` theo `action_type` trước khi nối estimator cho software/access.

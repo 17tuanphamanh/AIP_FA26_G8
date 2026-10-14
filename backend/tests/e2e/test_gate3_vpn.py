@@ -179,22 +179,25 @@ async def test_h11_g02_other_persons_device_no_rule_e5_no_write(stack: Stack) ->
         values = await a.state(t)
     assert values["intended_action"].facts["device_owner_is_requester"] is False
     assert (v["final_state"], v["exit_code"]) == (S_ESCALATED, "E5")
-    assert (await escalation(p.rw, t))[:2] == ("E5", "llm_layer_disabled")
-    assert ("B13/B14", "llm_layer_disabled") in await audit_events(p.rw, t)
+    assert (await escalation(p.rw, t))[:2] == ("E5", "llm_high_risk")  # 6C (6.3): B14 thật, b14 = 0,9 chưa hiệu chỉnh → L2
+    events = await audit_events(p.rw, t)
+    assert ("B13/B14", "risk_decided") in events and ("B13/B14", "llm_layer_disabled") not in events
     assert await calls(stack.mock) == 0
 
 
 async def test_h11_at_20h_other_persons_device_e5_no_approval_no_write(stack: Stack) -> None:
     """Phase 4 P7 (Q-4-M, G4-16; bảng 3.2 x5): máy người khác (LAP-0417 của nv002) lúc 20:00 — R18 nay đòi chủ máy → không luật nào
-    → E5 `llm_layer_disabled` như ban ngày (h11); 0 phiếu, 0 lời gọi ghi. (3h chấp nhận R18 → HITL ở ca này — đã bỏ.)"""
+    → lớp LLM (6C: b14 = 0,9, chưa hiệu chỉnh) → E5 `llm_high_risk` như ban ngày (h11); 0 phiếu, 0 lời gọi ghi. (3h chấp nhận R18 →
+    HITL ở ca này — đã bỏ.)"""
     async with gate3(stack.pg, stack.qdrant_url, stack.mock, clock=at_ict(20), scripts=vpn_scripts()) as p, api(p) as a:
         t = await a.create(AN, G02)
         v = await a.view(t, AN)
         values = await a.state(t)
     assert values["intended_action"].facts["device_owner_is_requester"] is False
     assert (v["final_state"], v["exit_code"]) == (S_ESCALATED, "E5"), v
-    assert (await escalation(p.rw, t))[:2] == ("E5", "llm_layer_disabled")
-    assert ("B13/B14", "llm_layer_disabled") in await audit_events(p.rw, t)
+    assert (await escalation(p.rw, t))[:2] == ("E5", "llm_high_risk")  # 6C (6.3): B14 thật, b14 = 0,9 chưa hiệu chỉnh → L2
+    events = await audit_events(p.rw, t)
+    assert ("B13/B14", "risk_decided") in events and ("B13/B14", "llm_layer_disabled") not in events
     assert await scalar(p.rw, "SELECT count(*) FROM approvals WHERE ticket_id = :t", t=t) == 0
     assert await calls(stack.mock) == 0
 
@@ -319,7 +322,8 @@ def _classify_with_fact_slot(v: Mapping[str, Any]) -> Step:
 
 async def test_h14_g01_fact_in_slot_dropped_unknown_device_e5_no_approval_no_write(stack: Stack) -> None:
     """h14 (G-01) + Phase 4 P7 (Q-4-M, G4-16; bảng 3.2 x6): slot `device_registered=true` bị loại (vẫn `slot_fact_collision`);
-    LAP-9999 không tồn tại → R17 nay đòi chủ máy → không luật nào → E5 `llm_layer_disabled`, 0 phiếu, 0 lời gọi ghi (3h: R17 → HITL)."""
+    LAP-9999 không tồn tại → R17 nay đòi chủ máy → không luật nào → lớp LLM (6C: b14 = 0,9) → E5 `llm_high_risk`, 0 phiếu, 0 lời gọi
+    ghi (3h: R17 → HITL)."""
     async with gate3(stack.pg, stack.qdrant_url, stack.mock, clock=at_ict(10),
                      scripts=vpn_scripts(b03_classify=_classify_with_fact_slot)) as p, api(p) as a:  # fmt: skip
         t = await a.create(AN, G01)
@@ -332,8 +336,9 @@ async def test_h14_g01_fact_in_slot_dropped_unknown_device_e5_no_approval_no_wri
     assert (action.params["device_id"], action.facts["device_registered"]) == ("LAP-9999", False)
     assert action.facts.get("device_owner_is_requester") is not True
     assert (v["final_state"], v["exit_code"]) == (S_ESCALATED, "E5"), v
-    assert (await escalation(p.rw, t))[:2] == ("E5", "llm_layer_disabled")
-    assert ("B13/B14", "llm_layer_disabled") in await audit_events(p.rw, t)
+    assert (await escalation(p.rw, t))[:2] == ("E5", "llm_high_risk")  # 6C (6.3): B14 thật, b14 = 0,9 chưa hiệu chỉnh → L2
+    events = await audit_events(p.rw, t)
+    assert ("B13/B14", "risk_decided") in events and ("B13/B14", "llm_layer_disabled") not in events
     assert await scalar(p.rw, "SELECT count(*) FROM approvals WHERE ticket_id = :t", t=t) == 0
     assert await calls(stack.mock) == 0
 
