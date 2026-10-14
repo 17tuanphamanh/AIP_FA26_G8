@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 from app.domain.alerts import AlertDraft
-from app.monitor import evaluator, rules
+from app.monitor import drift, evaluator, rules
 from app.monitor.queries import rules_data
 from app.monitor.rules import (
     REGISTRY,
@@ -199,10 +199,10 @@ def test_spike_boundaries(count: int, median: float, expected: bool) -> None:
 _CLOCK_ATTRS = {"now", "utcnow", "today", "time", "monotonic", "perf_counter"}
 
 
-@pytest.mark.parametrize("module", [rules, evaluator, rules_data])
+@pytest.mark.parametrize("module", [rules, evaluator, rules_data, drift])
 def test_rule_functions_never_read_clock(module: Any) -> None:
     """Mốc thời gian duy nhất là `ctx.now` (Clock của app): chạy lại phải ra đúng khoá cũ. `rules_data` (loader GĐ2,
-    review #13 X1): mốc lookback cũng chỉ tính từ `ctx.now`."""
+    review #13 X1): mốc lookback cũng chỉ tính từ `ctx.now`. `drift` (B3 cụm 2): PSI thuần, không đọc đồng hồ."""
     tree = ast.parse(inspect.getsource(module))
     funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)]
     assert len(funcs) >= 3  # quét không rỗng
@@ -216,10 +216,12 @@ def test_rule_functions_never_read_clock(module: Any) -> None:
     assert "time" not in imported
 
 
-def test_rules_module_has_no_io_imports() -> None:
-    tree = ast.parse(inspect.getsource(rules))
+@pytest.mark.parametrize("module", [rules, drift])
+def test_pure_modules_have_no_io_imports(module: Any) -> None:
+    """`rules` (hàm luật) và `drift` (PSI, B3 cụm 2) thuần: không DB, không mạng, không asyncio, không log."""
+    tree = ast.parse(inspect.getsource(module))
     imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     imported |= {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     assert imported  # quét không rỗng
-    banned = ("sqlalchemy", "app.db", "httpx", "asyncio")
+    banned = ("sqlalchemy", "app.db", "httpx", "asyncio", "logging")
     assert [m for m in imported if m.startswith(banned)] == []

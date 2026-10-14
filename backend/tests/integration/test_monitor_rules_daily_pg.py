@@ -7,7 +7,7 @@ quyết (`new_id`) và lọc theo 7 mốc ngày → dữ liệu của ca khác k
 `failed_rules == []` và luật 12/13 nằm trong `skipped_rules` (nguồn pending tới Phase 5).
 
 Số kỳ vọng tính tay (comment từng ca), không gọi hàm đang test. Nguồn: kế hoạch chung M9 mục 6 (luật 1, 7, 12, 13);
-thẻ B2; chốt Q-M9-B2-1, 3, 6, 15 ở #14 (5955137864, 5955436721, 5959974287); đề xuất Q-M9-B2-23, 24 (plan cụm 2).
+thẻ B2; chốt Q-M9-B2-1, 3, 6, 15 ở #14 (5955137864, 5955436721, 5959974287); Q-M9-B2-23, 24 chốt ở PR #31.
 Cấp job (cụm 3): chạy hai lượt, ranh giới luật 1 với `policy_versions`, worker nghỉ 2 mốc → `test_monitor_jobs_daily_pg.py`;
 job đúng 19:00 UTC → `tests/unit/test_monitor_jobs_periodic.py`.
 """
@@ -238,8 +238,8 @@ async def test_reflex_two_approvals_same_ticket(rw: AsyncEngine, mon: AsyncEngin
 
 @pytest.mark.asyncio
 async def test_reflex_previous_approval_without_b16(rw: AsyncEngine, mon: AsyncEngine) -> None:
-    """[Đề xuất] Q-M9-B2-23: U.p1 (tạo d0−20h, quyết d0−19h) KHÔNG có dòng B16; U.p2 (tạo d0−18h, quyết d0−17h) có dòng
-    B16 bình thường ghi ĐÚNG lúc `decided_at` của p2 (cùng `clock.now()`, có thể bằng nhau). Chặn trên của p1 =
+    """Q-M9-B2-23 (chốt PR #31): U.p1 (tạo d0−20h, quyết d0−19h) KHÔNG có dòng B16; U.p2 (tạo d0−18h, quyết d0−17h)
+    có dòng B16 bình thường ghi ĐÚNG lúc `decided_at` của p2 (cùng `clock.now()`, có thể bằng nhau). Chặn trên của p1 =
     `decided_at` p2 = d0−17h; `d0−17h > d0−17h` sai → dòng đó KHÔNG thuộc p1 → p1 mơ hồ; p2 nối dòng của mình (bình
     thường). G: Y1, Y2 nhanh + U.p1 mơ hồ → count 3, ambiguous 1. Bỏ chặn trên, hoặc so `>=`, thì p1 mượn dòng bình
     thường của p2 → count 2 → không báo (sót)."""
@@ -326,7 +326,7 @@ async def test_degraded_ready_seven_marks(
     k: int, rule_id: str, key: str, point: Any, rw: AsyncEngine, mon: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Vá RIÊNG khoá nguồn sang ready: loader gọi hàm A thật trên 7 ngày VN. Hàm A đếm DÒNG audit (`count(*)`), mỗi lá
-    ở đây có đúng 1 dòng nên số dòng = số lá (theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27). Lá tạo d0 − 12h
+    ở đây có đúng 1 dòng nên số dòng = số lá (theo dòng audit — chốt Q-M9-B2-27). Lá tạo d0 − 12h
     (mốc d0) có 1 dòng `llm` → 1/1 dòng; lá tạo d0 − 2 ngày − 12h (mốc d0 − 2 ngày) có 1 dòng `rule` → 0/1, không báo;
     lá tạo d0 − 5 ngày − 12h (mốc d0 − 5 ngày) có 1 dòng `llm` → 1/1. Mốc khác 0 dòng → None. → 2 draft, cũ → mới."""
     real = rules_data.is_pending

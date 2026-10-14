@@ -347,3 +347,54 @@ async def llm_cost(conn: AsyncConnection, *, cost_usd: float | None, at: datetim
     else:
         ticket = await seed.leaf_ticket(conn, created_at=at)
     return await seed.llm_call_for(conn, ticket, created_at=at, cost_usd=cost_usd)
+
+
+# ---- B3 cụm 3: luật tuần 8 drift ------------------------------------------------------------------------------------
+#
+# Luật 8 đếm TOÀN HỆ THỐNG theo tuần → mỗi ca một `weekly_now(k)` riêng. `WEEKLY_BASE` = 2036-01-06T19:00Z = 02:00 thứ Hai
+# 07/01/2036 giờ VN (giờ job tuần, cụm 4; lịch: 01/01/2036 là thứ Ba). `W = weekly_now(k) − 2 giờ`. Mỗi lượt đọc lùi 3
+# tuần `[W − 21 ngày, W)` → cách nhau 8 tuần là không chồng (và sau mọi mốc của B1/B2: 2031–2035).
+
+WEEKLY_BASE = datetime(2036, 1, 6, 19, 0, tzinfo=UTC)
+WEEKLY_SLOT = timedelta(weeks=8)
+
+
+def weekly_now(k: int) -> datetime:
+    return WEEKLY_BASE + k * WEEKLY_SLOT
+
+
+def week_mark(k: int) -> datetime:
+    """`W` của ca k: 00:00 thứ Hai VN = `weekly_now(k) − 2 giờ` (VN không đổi giờ)."""
+    return weekly_now(k) - timedelta(hours=2)
+
+
+async def drift_leaf(
+    conn: AsyncConnection, *, created_at: datetime, intent: str | None = None, done: bool = True,
+    exit_code: str | None = None, override: bool = False,
+) -> str:  # fmt: skip
+    """Một lá cho luật 8: `done` → đã kết thúc (`S_RESOLVED`, hoặc `S_ESCALATED` khi có `exit_code`), không thì đang chạy
+    (`final_state` NULL). `override` → thêm một dòng ghi đè như 4d (`monitor_seed.override`). Trả `ticket_id`."""
+    final_state = None if not done else "S_ESCALATED" if exit_code else "S_RESOLVED"
+    ticket = await seed.leaf_ticket(
+        conn, created_at=created_at, intent=intent, exit_code=exit_code, final_state=final_state
+    )
+    if override:
+        await seed.override(conn, ticket, created_at=created_at + timedelta(hours=1))
+    return ticket
+
+
+async def drift_leaves(conn: AsyncConnection, n: int, *, created_at: datetime, **fields: Any) -> list[str]:
+    """`n` lá giống nhau, cách nhau 1 phút từ `created_at`."""
+    return [await drift_leaf(conn, created_at=created_at + timedelta(minutes=i), **fields) for i in range(n)]
+
+
+async def audit_raw(
+    conn: AsyncConnection, ticket_id: str, *, step: str, event: str, created_at: datetime, detail_json: str
+) -> int:
+    """Dòng audit với `detail` là JSON TÙY Ý (số, chuỗi, mảng, object có khoá sai kiểu) — `monitor_seed.audit_row` chỉ
+    nhận dict. `detail_json` là chuỗi JSON đã dựng sẵn. Trả `log_id`."""
+    result = await conn.execute(text(
+        "INSERT INTO audit_logs (ticket_id, step, event, created_at, detail) "
+        "VALUES (:t, :s, :e, :c, CAST(:d AS jsonb)) RETURNING log_id"
+    ), {"t": ticket_id, "s": step, "e": event, "c": created_at, "d": detail_json})  # fmt: skip
+    return int(result.scalar_one())
