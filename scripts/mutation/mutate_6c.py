@@ -1,10 +1,11 @@
 """Mutation tay chặng 6C (phase6 mục 6.5, PLAN-6C TQ-12, TQ-15, TQ-16) — 2 lượt: lượt 1 (DỪNG 1) M-6C-2, 3, 4, 5, 7, 8, 9 (khởi động,
-B12 đường LLM, `audit_check`, N1, `kb_gap`); lượt 2 (DỪNG 2) đủ M-6C-1…9 (+ B17 D-42, B12 `action_plan_hash`). Khuôn `mutate_6b.py`:
+B12 đường LLM, `audit_check`, N1, `kb_gap`) + M-6C-10, 11, 12 (Q-6C-8, 9); lượt 2 (DỪNG 2) đủ M-6C-1…14 (+ B17 D-42, B12
+`action_plan_hash`, Q-6C-10, Q-6C-12). Khuôn `mutate_6b.py`:
 mỗi đột biến áp lên file thật, chạy lệnh unit, khôi phục trong `finally`, so md5 + `git diff --stat` trước/sau. Luật N3 (`n3.py`):
 file đích còn chữ `MUTATION` → dừng; mốc xanh một lần trước khi đột biến.
 
   uv run python scripts/mutation/mutate_6c.py --luot 1
-  uv run python scripts/mutation/mutate_6c.py              # lượt 2: cả 9
+  uv run python scripts/mutation/mutate_6c.py              # lượt 2: cả 14
   uv run python scripts/mutation/mutate_6c.py --only M-6C-3
 
 M-6C-3 bỏ kiểm chiến lược ở CẢ `open_runtime` lẫn lớp thứ hai trong `_open` (cũng trước DB — bỏ một chỗ là đột biến tương đương).
@@ -34,9 +35,10 @@ WIRING = "backend/app/graph/wiring.py"
 CHECK = "backend/app/audit/check.py"
 EST = "backend/app/risk/estimator.py"
 STRAT = "backend/app/risk/strategy.py"
+B17 = "backend/app/graph/nodes/b17_execute.py"
 UT = pt(*[f"backend/tests/unit/{name}.py" for name in (
     "test_m5_startup", "test_b12_llm", "test_audit_check_m5", "test_estimator_vars_n1", "test_b12_assess", "test_audit_check",
-    "test_risk_estimator", "test_b12_llm_guards",
+    "test_risk_estimator", "test_b12_llm_guards", "test_b17_llm_auto", "test_chain_m5", "test_b17_llm_guards",
 )])  # fmt: skip
 
 
@@ -79,7 +81,8 @@ LUOT1: list[Mutation] = [
              UT, ["test_c3_no_match_uncalibrated_low_raw_goes_hitl_b15"]),
     Mutation("M-6C-5 estimator_vars giữ software_name",
              [one(EST, _PARAM_ELSE, '    return key == "software_name"  # MUTATION M-6C-5\n')],
-             UT, ["test_c16_intended_action_whitelisted[software]", "test_c16_canary_absent_from_vars_json[software]"]),
+             UT, ["test_c16_intended_action_whitelisted[software]", "test_c16_canary_absent_from_vars_json[software]",
+                  "test_c15_canary_never_reaches_b14_prompt[software-llm_only-software_name-self_report]"]),
     Mutation("M-6C-7 audit_check chấp nhận decided_by NULL không ghi chú",
              [one(CHECK, _NULL_OK, "    if decided_by is None:  # MUTATION M-6C-7\n")],
              UT, ["test_c13_null_without_annotation_missing_decided_by"]),
@@ -104,7 +107,31 @@ LUOT1: list[Mutation] = [
              UT, ["test_q6c9_unknown_action_type_is_e9_estimator_not_called"]),
 ]  # fmt: skip
 
-LUOT2: list[Mutation] = []  # DỪNG 2: M-6C-1 (B17 hash lệch), M-6C-6 (B12 không đặt action_plan_hash)
+_LLM_AUTO = ('        risk.decided_by == "llm" and risk.route == "AUTO" and state.get("action_plan_hash") == '
+             'hash_action(action)\n')  # fmt: skip
+_SET_HASH = '            llm_auto = {"action_plan_hash": hash_action(action)}  # D-42: B17 nhận AUTO do LLM chỉ khi hash khớp\n'
+_VIA_LLM = "        via_llm = not via_approval and not verdict.matched and llm_auto(state, action)  # 6C P6 (D-42)\n"
+_CALIBRATED = "        and risk.calibrated_prob is not None  # Q-6C-10\n"
+
+LUOT2: list[Mutation] = [  # DỪNG 2 (B17 D-42, B12 action_plan_hash) — chạy cùng LUOT1 thành lượt 2
+    Mutation("M-6C-1 B17 nhận LLM-AUTO khi hash lệch",
+             [one(B17, _LLM_AUTO, '        risk.decided_by == "llm" and risk.route == "AUTO"  # MUTATION M-6C-1\n')],
+             UT, ["test_c10_llm_auto_condition_missing_is_e5_recheck_failed[a-hash-lech]",
+                  "test_c10_hash_of_other_action_is_e5"]),
+    Mutation("M-6C-6 B12 không đặt action_plan_hash ở ca AUTO",
+             [one(B12, _SET_HASH, "            llm_auto = {}  # MUTATION M-6C-6\n")],
+             UT, ["test_c5_calibrated_low_p_with_evidence_auto_sets_action_plan_hash",
+                  "test_c18_llm_auto_cases_continue_to_b17_and_execute"]),
+    # ---- chốt thêm sau soát bảo mật DỪNG 2 (Q-6C-10, Q-6C-12 — Tuấn Anh 14/10) ----
+    Mutation("M-6C-13 B17 via_llm bỏ vế not verdict.matched (Q-6C-12)",
+             [one(B17, _VIA_LLM, "        via_llm = not via_approval and llm_auto(state, action)  # MUTATION M-6C-13\n")],
+             UT, ["test_c11_llm_auto_access_full_r08_approval_required_is_e5",
+                  "test_c11_llm_auto_now_after_hours_r18_approval_required_is_e5",
+                  "test_c11_llm_auto_policy_now_approval_required_monkeypatched_is_e5"]),
+    Mutation("M-6C-14 B17 llm_auto bỏ vế calibrated_prob (Q-6C-10)",
+             [one(B17, _CALIBRATED, "        and True  # MUTATION M-6C-14\n")],
+             UT, ["test_q6c10_llm_auto_without_calibrated_prob_is_e5_not_executed"]),
+]  # fmt: skip
 
 ALL = sorted(LUOT1 + LUOT2, key=lambda m: int(m.name.split()[0].rsplit("-", 1)[1]))
 MUTATIONS = LUOT1 if "--luot" in sys.argv and sys.argv[sys.argv.index("--luot") + 1 :][:1] == ["1"] else ALL
@@ -134,7 +161,7 @@ def _hit(test: str, failed: list[str]) -> bool:
 
 def main() -> int:
     if not MUTATIONS:  # `--only` sai tên → không đột biến nào chạy; trả 0 là "xanh rỗng"
-        print("DỪNG: không có đột biến nào khớp `--only`/`--luot` (mã: M-6C-1 … M-6C-12)")
+        print("DỪNG: không có đột biến nào khớp `--only`/`--luot` (mã: M-6C-1 … M-6C-14)")
         return 2
     env = test_env()
     files = sorted({rel for m in MUTATIONS for rel, *_ in m.edits})

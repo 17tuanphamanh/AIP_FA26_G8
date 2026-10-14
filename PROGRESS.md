@@ -5383,7 +5383,7 @@ Q-T20b-3 = A (đặt hạn cho CHA thay mọi hạn `wait_deadlines` chưa bắn
     `child_create`) giữ `final_state NULL` mãi (không thread, không notice — P12 (b) không bắt). Thấy được qua escalation cha (mã
     `not_started` trong ghi chú bàn giao — Q-T20b-9 (i)). Phương án sau: B20 của cha lỗi đóng các con chưa khởi động (E-code riêng).
 
-## Phase 6 — chặng 6C: nối lớp LLM vào B12 + B17 (tầng A) (14/10/2026, DỪNG 1 verify G=0 xanh — commit 1; DỪNG 2 sau rebase) — chưa tính qua cổng 6
+## Phase 6 — chặng 6C: nối lớp LLM vào B12 + B17 (tầng A) (14/10/2026, DỪNG 1 `f030926` verify G=0 xanh, rebase lên `c45b079`; DỪNG 2 verify G=0 xanh 14/10 — commit 2; chờ push + PR) — chưa tính qua cổng 6
 
 Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v1.0** mục 6. Kế hoạch `PLAN-6C.md` (gitignore) — **DUYỆT 13/10/2026**:
 Q-6C-1 = B (nguồn chiến lược DUY NHẤT `Settings.strategy`/env `STRATEGY`, không thêm `M5_STRATEGY`; `manual` từ chối mọi chế độ),
@@ -5423,7 +5423,53 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
 - **Báo M9 (Dương):** mã E5 mới `llm_high_risk` (`event="risk_decided"`); khoá `detail` điểm 4 mới (`calibrated_prob`, `thresholds`,
   `factors`, `kb_gap`, `calibrator_version`, `strategy` khi EVAL); dòng điểm 4 `decided_by` NULL ở `full_auto` (EVAL, DỪNG 2).
 - **verify DỪNG 1 (14/10/2026):** `make verify G=0` XANH trên HEAD `457239d` dirty=26 — lint PASS; backend 5756 passed / 4 skipped, mock 106, ml 123 (5 deselected); unit 5209 passed / 4 skipped; mutation lượt 1 10/10, md5 khớp.
-- **Chờ:** trình MẪU B DỪNG 1 ngày 17/10 + `make verify G=0`; commit 1 khi được bảo; DỪNG 2 (B17 D-42, `full_auto`, c9–c12, c15, c18).
+- **Sau rebase (14/10/2026):** DỪNG 1 = `f030926` trên `origin/dev-tuananh` `c45b079` (chưa push); lint xanh; unit **5696 passed / 4
+  skipped** (mốc mới, gồm `tests/unit/eval` T29); `llm_layer_disabled` chỉ còn chỗ đã biết; ca T20b p4/q5 xanh. Quan sát `/api/health`
+  (A4): runtime từ chối khởi động (`STRATEGY=llm_only` không EVAL; `manual` EVAL tắt/bật) → HTTP 200 `status: ok`, `runtime: down`,
+  gọi lại trong 10 s (cache A4) như cũ; route ticket 503 (`desk=None`).
+- **DỪNG 2 — làm (14/10/2026):** B17 D-42 (`llm_auto(state, action)`: `risk.decided_by == "llm"` ∧ `route == "AUTO"` ∧
+  `action_plan_hash == hash_action(action)`; chỉ khi không qua duyệt ∧ luật hiện hành không khớp — kiểm lại luật vẫn chạy trước, kiểm
+  người giữ; điểm 7 `action_plan_hash_matched` True); B12 `full_auto` (Q-6-8 = C: `risk=None`, `detail` đúng 3 khoá, không
+  `action_plan_hash`, → B17) thay `NotImplementedError`; docstring B17 + README.
+- **Test DỪNG 2 (test-writer, trước code):** `test_b17_llm_auto.py` (c9–c12, 37) + `test_chain_m5.py` (c15, c18, 33). Lượt đỏ **18 đỏ / 52
+  xanh** (đỏ do hành vi: B17 E5 thay vì thực thi; `full_auto` E9 `NotImplementedError`). Sau code: unit **5766 passed / 4 skipped** (=
+  5696 + 70); lint xanh. Họ §8.2: không họ nào ra `rule` với seed hiện có (họ "mở khoá không do nhập sai" dùng `set_lock` trong bộ nhớ).
+- **Chốt NGHI DỪNG 2 (Tuấn Anh 14/10):** Q-6C-10 = A (`llm_auto` thêm vế `risk.calibrated_prob is not None`; không sửa `ticket_state.py`),
+  Q-6C-11 = A (test `risk` dict hỏng → E9), Q-6C-12 = A (đột biến bỏ vế `not verdict.matched`). Agent chính viết
+  `test_b17_llm_guards.py` (3 test). Unit **5769 passed / 4 skipped**; lint xanh.
+- **Mutation lượt 2** (`mutate_6c.py`): **14/14** đỏ đúng dự đoán (M-6C-1…14; M-6C-13 → 3 test c11 `approval_required` đỏ, M-6C-14 →
+  test Q-6C-10 đỏ); md5 + `git diff --stat` khớp; M-6C-5 đỏ cả c15 lẫn c16;
+  M-6C-6 bị c5 + c18 (AUTO → B17) bắt (c9 mức node tự dựng state nên không bắt được). `test_mutation_n3` xanh; `mutate_3h.py` 28 đột
+  biến vẫn đỏ đúng; chuỗi gốc mọi script đụng B12/B17 còn khớp.
+- **security-reviewer (DỪNG 2):** 8/8 bất biến 6.6 + 4 mục thêm PASS, 0 FAIL. 3 NGHI → Q-6C-10/11/12 (đã chốt A, làm ở trên).
+  Soát riêng phần Q-6C-10/11/12: 6/6 PASS, 0 FAIL; 3 NGHI chữ đã sửa (thông điệp `--only` "M-6C-14", docstring B17 nhắc
+  `calibrated_prob`, test Q-6C-11 kiểm thêm dòng `unhandled_exception` của B17 là `ValidationError`) — chạy lại lint, unit 5769, mutation
+  14/14 sau khi sửa.
+- **Spec cần sửa (6C)** (phase6 mục 6 — chưa sửa `docs/spec/`):
+  - 6.1 P1, 6.4 c1 (Q-6C-1): nguồn chiến lược = `Settings.strategy`/env `STRATEGY` (không `M5_STRATEGY`); `manual` từ chối ở mọi chế độ.
+  - 6.1 P3 (Q-6C-2): `llm_high_risk` thêm vào `REASON_DETAILS` (`domain/exit_codes.py` — ngoài danh sách 6.2).
+  - 6.1 P5, P7 (Q-6C-3): `detail.strategy` ghi ở MỌI đường điểm 4 khi EVAL; `rule` + `policy_decision` NULL hợp lệ chỉ khi
+    `detail.strategy == "rule_only"` ∧ `detail.route == "HITL"`.
+  - 6.1 P9 (Q-6C-4, Q-6C-8): `kb_gap = min(len(evidence), MAX_EVIDENCE) - evidence_trimmed <= 0`; `evidence_trimmed` không phải `int` thật
+    (kể cả `bool`) hoặc âm → `kb_gap`.
+  - 6.1 P3 (Q-6C-9): trước B14, B12 kiểm lại `check_facts(action.facts)` + `action.type ∈ PARAMS_BY_ACTION` — lệch → E9, estimator không gọi.
+  - 6.1 P11, 6.3 (Q-6C-5): `b14_*` 0,9 thêm vào `tests/fixtures/llm/vpn.py` (e2e đi đường estimator thật).
+  - 6.4 c15, c18 (Q-6C-6): mức chuỗi node trong bộ nhớ (B3 → B12 → B17, gateway thật, EVAL), không e2e testcontainers.
+  - 6.1 P8: mẫu `[0-9]` thay `\d` (chữ số Unicode); `duration_days` `int` (không `bool`) 1…999; khoá trượt mẫu bị BỎ (không ném).
+  - 6.2: `settings.py` không import `app.risk.calibrator` (import-linter) — `VERSION_PATTERN` kiểm ở `open_runtime` qua `load_calibrator`.
+  - 6.1 P6 (Q-6C-10): D-42 thêm vế `risk.calibrated_prob is not None`; `risk` hỏng → E9 (Q-6C-11).
+  - 6.5: thêm M-6C-10…14 (Q-6C-8, 9, 12, 10); M-6C-3 bỏ kiểm ở cả `open_runtime` lẫn `_open`; M-6C-6 bị c5 + c18 (AUTO → B17) bắt —
+    c9 mức node không bắt được (tự dựng state) — Tuấn Anh chấp nhận 14/10.
+  - 6.3: es2 (N1) + es9 (`evidence_trimmed`) của 6B đổi kỳ vọng.
+  - Nợ/quan sát: N3 `llm_cache` lưu `rationale` khi EVAL; N7 tên khoá `facts` lạ vào `audit.detail.exception`/log (`FactKeyViolation`) —
+    vô hại khi khoá do code đặt, phải lọc nếu khoá đến từ đầu ra LLM; API runtime từ chối khởi động → route 503 + `/api/health` 200
+    `runtime: down` (3 cấu hình, cache 10 s A4), worker thoát; `llm_only` (EVAL) ca `deny` có thể vào B15 — B17 chặn.
+- **Báo M9 (Dương) — bổ sung DỪNG 2:** `decided_by` NULL ở dòng điểm 4 khi `full_auto` (EVAL; `detail` đúng 3 khoá); `/api/health` vẫn
+  HTTP 200 khi runtime down (chỉ `runtime: down`).
+- **verify DỪNG 2 (14/10/2026):** `make verify G=0` XANH trên HEAD `f030926` dirty=8 — lint PASS; backend 6388 passed / 4 skipped, mock
+  106, ml 123 (5 deselected); unit 5769 passed / 4 skipped; mutation lượt 2 14/14, md5 khớp (dòng CI là lượt cũ trên remote — 6C chưa push).
+- **Chờ:** commit 2 (cục bộ) → PHIẾU push + PR `m5-tuananh` → `dev-tuananh` (chưa gộp — chờ stack `make verify G=2345` trên
+  `pull/<N>/merge`).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 

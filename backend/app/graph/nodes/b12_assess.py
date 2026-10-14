@@ -12,7 +12,9 @@ Input DUY NHẤT của M5: `intended_action` + `build_ctx(state, now, business_h
   Có ước lượng → `kb_gap` trên phần bằng chứng THỰC gửi (Q-6C-4: ≤ `MAX_EVIDENCE` khối, trừ khối gateway cắt) → `decide`
   (calibrator None → không bao giờ AUTO, D-38; `kb_gap` → tối đa HITL, D-34). AUTO → B17 + `action_plan_hash` (D-42 — B17 chỉ nhận
   AUTO do LLM khi hash khớp); HITL → B15; chuyển L2 → E5 `llm_high_risk`.
-- `full_auto` (Q-6-8 = C, chỉ EVAL_MODE): 6C DỪNG 2 — tạm thời `NotImplementedError` → E9 (không bao giờ tự làm).
+- `full_auto` (Q-6-8 = C, chỉ EVAL_MODE — `check_strategy` lúc khởi động): không luật, không estimator, không `RiskDecision`
+  (`risk=None` → cột `decided_by` NULL); điểm 4 `detail` đúng 3 khoá `{strategy, route: AUTO, policy_sha256}`; → B17 (không
+  `action_plan_hash`) — B17 kiểm lại luật: `deny`/`approval_required`/không khớp → E5, chỉ `allow` thực thi.
 - Điểm log 4 (3.6) qua `audit_detail` của chính lần `goto` + `policy_sha256`; ca LLM thêm `calibrated_prob`, `thresholds`, `factors`,
   `kb_gap`, `calibrator_version` (6C P5); `detail.strategy` ở mọi đường khi EVAL_MODE (Q-6C-3). Dòng `lineage` cùng transaction
   audit; ca LLM thêm `prompt_id`, `prompt_version`, `model`, `calibrator_version`, `p_method`. Không lưu `rationale` (D-40).
@@ -103,8 +105,12 @@ def make(deps: NodeDeps) -> NodeFn:
             deps.strategy, verdict, est, calibrator=deps.calibrator, thresholds=(c.THRESHOLD_LOW, c.THRESHOLD_HIGH),
             kb_gap=gap,
         )  # fmt: skip
-        if isinstance(outcome, FullAutoBypass):
-            raise NotImplementedError("full_auto (Q-6-8 = C) — 6C DỪNG 2")
+        if isinstance(outcome, FullAutoBypass):  # 6C P4 (Q-6-8 = C): không `RiskDecision` → cột `decided_by` NULL; B17 kiểm lại luật
+            return await goto(
+                state, S_EXECUTING, next_node="b17_execute", step="B13/B14", event="risk_decided",
+                audit_detail={"strategy": "full_auto", "route": "AUTO", "policy_sha256": policy_sha256()}, lineage=lineage,
+                risk=None,
+            )  # fmt: skip
         decision = outcome
         detail = {**_point4(decision, all_matched), **mode}
         llm_auto: dict[str, Any] = {}
