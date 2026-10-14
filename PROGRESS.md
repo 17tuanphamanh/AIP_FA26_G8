@@ -4765,6 +4765,13 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
         (truyền id) 0 thiếu, 0 bí mật; mã ≠ 0 in nguyên bảng; danh sách rỗng → FAIL"; quét log `compose logs --since <giờ bắt đầu>` giữ. 7.1
         P5 ghi chú: `--since` chọn ticket theo HOẠT ĐỘNG (có dòng mới) → trên stack dev dùng chung kéo theo ticket node giả gate2/ticket cũ.
 
+## M9 — tầng monitor (Lưu Dương luồng A, Tạ Duy Anh luồng B) (14/10/2026 — **cổng M9 A, B ĐẠT**; B3 gộp `ddfc539`)
+
+- Chia việc, hợp đồng hàm, chốt Q-M9: `claude/ke-hoach-m9-chia-viec.md`, `claude/ke-hoach-m9-monitor.md`; đặc tả `build/nen-tang/P9-monitor-M9.md` (1.6).
+- Đã gộp vào `dev-tuananh`: A0–A4 (A4 ở PR #38), B0–B2, **B3 — PR #37 → `ddfc539`** (luật 8 drift PSI + job tuần `monitor_rules_weekly`, CI xanh; #15 đóng).
+- **Cổng B — ĐẠT** (Dương chạy). **Cổng A — ĐẠT** (Duy Anh, trên `90ee85d` — đã gồm A4; ghi nhận ở #6, 14/10).
+- Còn (không chặn cổng 5): khối `drift` dashboard (Dương, #45, Q-M9-B3-4); seed perf A4 ghi `detail.confidence` / `detail.top_score` (Dương, PR A riêng — review #37); D5 của B3: log worker có `monitor_rules_weekly`, không traceback — kiểm ở lượt chạy thử 6C / verify 17/10.
+
 ## Phase 6 (làm sớm) — chặng 6A: decision_math + calibrator (tầng B) (09/10/2026 — DỪNG xanh: verify G=0, mutation 12/12; chưa gộp) — chưa tính qua cổng 6
 
 Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.6** mục 4. Kế hoạch `PLAN-6A.md` (untracked) — **DUYỆT 09/10/2026**: Q-6A-1 = A
