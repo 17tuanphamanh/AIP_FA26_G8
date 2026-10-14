@@ -118,7 +118,7 @@ Mã Q giữ nguyên để không vỡ tham chiếu. Mỗi mục: bản **xây tr
 
 **Q-6-8 (`full_auto`) — chốt C (10/10/2026):** B12 không dựng `RiskDecision`; điểm log 4 ghi `decided_by = NULL`, `detail = {strategy: "full_auto", route: "AUTO"}`; `risk = None`; đi `S_EXECUTING`. B17 giữ nguyên kiểm lại luật (ca `approval_required`/`deny` → E5). Không migration, không nới B17. `audit_check` chỉ chấp nhận `decided_by` NULL khi `detail.strategy = "full_auto"`. Chỉ chạy khi `EVAL_MODE`. (phase6 v0.9 mục 6.1)
 
-**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, **D-38**, **D-41**, **D-43**, **D-44**, **D-45**, **D-46**, **D-49** (mục a), cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
+**Mục cần báo cáo GVHD (không cần GVHD quyết):** D-01, D-07, D-08 (đổi hành vi hoặc công nghệ đã ghi), D-13, D-22, D-25, D-29, D-30, D-32, D-33, **D-34**, **D-38**, **D-41**, **D-43**, **D-44**, **D-45**, **D-46**, **D-49** (mục a, e), cùng Q6 và Q12 — xem cột "Báo GVHD" ở mục 3.
 
 ## 3. Quyết định kỹ thuật D-01…D-49
 
@@ -306,3 +306,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 13/10/2026 | §3: D-48 (chốt khi duyệt PLAN-T24 + Q-T24-6/7); §4.1: T20a đóng `03b4450`, dòng T24 |
 | 13/10/2026 | §3: D-49 (T20b — con vào B6, tách ý lẫn thành con E1; Q5 đóng) |
 | 14/10/2026 | §3: D-49 bổ sung (e) cha lỗi có escalation — lệch D-30 có chủ đích (Q-T20b-5), (f) `audit_check` điểm 8 cho cha (Q-T20b-13); (c)–(f) chốt; T20b đóng `8a7c697` |
+| 14/10/2026 | §2: danh sách báo GVHD thêm D-49 (e) — cha lỗi có escalation, lệch D-30 (D-30 thuộc loại "Nên báo") |
