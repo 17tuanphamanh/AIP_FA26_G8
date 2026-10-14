@@ -202,7 +202,71 @@ S2: list[Mutation] = [
              UT, ["test_empty_records_raises"]),
 ]  # fmt: skip
 
-ALL = S1 + S2
+
+# ---- S3: metrics.py §6.2 ------------------------------------------------------------------------------------------------
+
+_AUTOMATED = "    return r.final_state == RESOLVED_STATE and not r.has_approval and r.exit_code is None\n"
+_BY_GROUP = "    by_group = {g: [r for r in records if n3_group(r.expected_route) == g] for g in GROUPS}\n"
+_MIX_CONST = 'check_mix({"routine": 0.7, "approval": 0.2, "sensitive": 0.1})  # P8:399, N3\n'
+_WEIGHTED = "    value = None if missing else sum(frozen[g] * rates[g].k / rates[g].n for g in present)\n"
+_DEFLECT = "        deflection=Rate(sum(1 for r in leaves if r.resolution_path == DEFLECTED_PATH), n),\n"
+_ONE_TURN = "r.clarification_turns == 0 and r.close_reason == ONE_TURN_CLOSE_REASON), n),\n"
+_LEAVES = "    leaves = list(records)  # P8:342 — mọi lá, gồm lá không tới M5 (Q7)\n"
+_MIX_SUM = "    if abs(sum(mix.values()) - 1.0) > MIX_TOL:\n"
+_MIX_NEG = "    if any(not math.isfinite(w) or w < 0 for w in mix.values()):\n"
+_MIX_KEYS = "    if set(mix) != set(GROUPS):\n"
+_MIX_COPY = "    return MappingProxyType({g: float(mix[g]) for g in GROUPS})\n"
+_ESCALATED = "    return r.exit_code is not None\n"
+
+S3: list[Mutation] = [
+    Mutation("M-T29-33 automation bỏ điều kiện không phiếu duyệt",
+             [_swap(_AUTOMATED, _AUTOMATED.replace(" and not r.has_approval", ""), "M-T29-33")],
+             UT, ["test_automation_hand"]),
+    Mutation("M-T29-34 automation bỏ điều kiện không exit_code",
+             [_swap(_AUTOMATED, _AUTOMATED.replace(" and r.exit_code is None", ""), "M-T29-34")],
+             UT, ["test_automation_hand"]),
+    Mutation("M-T29-35 nhóm theo route thay expected_route",
+             [_swap(_BY_GROUP, _BY_GROUP.replace("n3_group(r.expected_route)", "n3_group(r.route)"), "M-T29-35")],
+             UT, ["test_group_by_gold_not_pred", "test_escalation_weighted_hand"]),
+    Mutation("M-T29-36 đổi trọng số approval 0,2 ↔ sensitive 0,1",
+             [one(MET, _MIX_CONST, 'check_mix({"routine": 0.7, "approval": 0.1, "sensitive": 0.2})  # MUTATION M-T29-36\n')],
+             UT, ["test_escalation_weighted_hand", "test_mix_defaults"]),
+    Mutation("M-T29-37 nhóm rỗng → chuẩn hoá lại thay vì None",
+             [_swap(_WEIGHTED, "    value = (sum(frozen[g] * rates[g].k / rates[g].n for g in present)"
+                               " / sum(frozen[g] for g in present)) if present else None\n", "M-T29-37")],
+             UT, ["test_weighted_empty_group"]),
+    Mutation("M-T29-38 deflection: mẫu số = lá có route",
+             [_swap(_DEFLECT, _DEFLECT.replace("), n),", "), len([r for r in leaves if r.route is not None])),"),
+                    "M-T29-38")],
+             UT, ["test_deflection_hand"]),
+    Mutation("M-T29-39 giải quyết một lượt: == 0 → <= 1",
+             [one(MET, _ONE_TURN, _ONE_TURN.replace("== 0", "<= 1").rstrip("\n") + "  # MUTATION M-T29-39\n")],
+             UT, ["test_one_turn_requires_both"]),
+    Mutation("M-T29-40 giải quyết một lượt: bỏ điều kiện close_reason",
+             [one(MET, _ONE_TURN, "r.clarification_turns == 0), n),  # MUTATION M-T29-40\n")],
+             UT, ["test_one_turn_requires_both"]),
+    Mutation("M-T29-41 loại lá không tới M5 khỏi mẫu số §6.2",
+             [_swap(_LEAVES, "    leaves = [r for r in records if r.route is not None]\n", "M-T29-41")],
+             UT, ["test_no_action_cases_in_denominator", "test_automation_hand"]),
+    Mutation("M-T29-42 mix: bỏ kiểm tổng = 1",
+             [_swap(_MIX_SUM, "    if False:\n", "M-T29-42")],
+             UT, ["test_mix_validation[tong-0.9]", "test_mix_validation[tong-1.1]"]),
+    # ---- bổ sung (ngoài danh sách tối thiểu S3) ----
+    Mutation("M-T29-43 escalation thô bỏ E0",
+             [_swap(_ESCALATED, '    return r.exit_code not in (None, "E0")\n', "M-T29-43")],
+             UT, ["test_escalation_raw_hand"]),
+    Mutation("M-T29-44 mix: bỏ kiểm trọng số âm / không hữu hạn",
+             [_swap(_MIX_NEG, "    if False:\n", "M-T29-44")],
+             UT, ["test_mix_validation[am]"]),
+    Mutation("M-T29-45 mix: bỏ kiểm đủ đúng 3 nhóm",
+             [_swap(_MIX_KEYS, "    if False:\n", "M-T29-45")],
+             UT, ["test_mix_validation[thieu-nhom]", "test_mix_validation[thua-nhom]"]),
+    Mutation("M-T29-46 mix: giữ tham chiếu dict của người gọi",
+             [_swap(_MIX_COPY, "    return MappingProxyType(mix)\n", "M-T29-46")],
+             UT, ["test_mix_frozen"]),
+]  # fmt: skip
+
+ALL = S1 + S2 + S3
 MUTATIONS = ALL
 if "--only" in sys.argv:
     at = sys.argv.index("--only") + 1

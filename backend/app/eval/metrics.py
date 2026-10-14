@@ -1,19 +1,23 @@
-"""Công thức chỉ số M8 (P8 §6) — hàm thuần trên `PredictionRecord` (hợp đồng v1, `predictions.py`). S2: §6.1.
+"""Công thức chỉ số M8 (P8 §6) — hàm thuần trên `PredictionRecord` (hợp đồng v1, `predictions.py`). S2: §6.1; S3: §6.2.
 
 Quy ước (chốt #32, 13/10):
 - Danh sách bản ghi rỗng → `ValueError` (như `decision_math`). Mẫu số con = 0 → `None`, không trả 0 giả.
 - §6.1 chỉ tính trên lá có điểm log 4 (`route ≠ None`, P8:342); "cần người" = `expected_route ≠ AUTO` (P8:346).
+- §6.2 tính trên MỌI lá (P8:342), kể cả lá không tới M5 (Q7).
 - CP, ECE, Brier, ma trận chi phí IMPORT từ `app.risk.decision_math` — không viết lại (D-37).
 - Tỉ lệ trả `Rate(k, n)` để báo cáo và tính tay; `value = k/n`.
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal
+from typing import Final, Literal
 
 import numpy as np
 
+from app.db.models import EXIT_CODES
+from app.domain.states import S_RESOLVED
 from app.eval.predictions import PredictionRecord
 from app.risk.decision_math import (
     DEFAULT_COST,
@@ -186,4 +190,116 @@ def decided_by_distribution(records: Records) -> DecidedByDistribution:
         rule=Rate(sum(1 for r in m5 if r.decided_by == "rule"), n),
         llm=Rate(sum(1 for r in m5 if r.decided_by == "llm"), n),
         missing=Rate(sum(1 for r in m5 if r.decided_by is None), n),
+    )
+
+
+# ---- §6.2 hiệu quả và trải nghiệm ------------------------------------------------------------------------------------
+
+type Group = Literal["routine", "approval", "sensitive"]
+GROUPS: tuple[Group, ...] = ("routine", "approval", "sensitive")
+_GROUP_OF: Mapping[Route, Group] = MappingProxyType({"AUTO": "routine", "HITL": "approval", "ESCALATE_L2": "sensitive"})
+MIX_TOL = 1e-9
+type MixLike = Mapping[Group, float] | Mapping[str, float]  # hằng đóng băng hoặc dict của người gọi
+
+# Chuỗi P8 §6.2 — phải thuộc hằng DB (FINAL_STATES, RESOLUTION_PATHS, CLOSE_REASONS; test đồng bộ).
+RESOLVED_STATE: Final = S_RESOLVED  # P8:364
+DEFLECTED_PATH: Final = "deflected"  # P8:366
+ONE_TURN_CLOSE_REASON: Final = "resolved_user_confirmed"  # P8:368
+
+
+def check_mix(mix: MixLike) -> Mapping[Group, float]:
+    """Phân bố vận hành: đủ đúng 3 nhóm, mỗi trọng số hữu hạn ≥ 0, tổng = 1 (± MIX_TOL) → bản sao đóng băng; sai → ValueError."""
+    if set(mix) != set(GROUPS):
+        raise ValueError("mix: phải có đúng 3 nhóm routine, approval, sensitive")
+    if any(not math.isfinite(w) or w < 0 for w in mix.values()):
+        raise ValueError("mix: mỗi trọng số phải hữu hạn và ≥ 0")
+    if abs(sum(mix.values()) - 1.0) > MIX_TOL:
+        raise ValueError("mix: tổng trọng số phải bằng 1")
+    return MappingProxyType({g: float(mix[g]) for g in GROUPS})
+
+
+OPERATING_MIX: Mapping[Group, float] = check_mix({"routine": 0.7, "approval": 0.2, "sensitive": 0.1})  # P8:399, N3
+SENSITIVITY_MIXES: Mapping[str, Mapping[Group, float]] = MappingProxyType({  # P8:365 — độ nhạy N3
+    "60/30/10": check_mix({"routine": 0.6, "approval": 0.3, "sensitive": 0.1}),
+    "80/15/5": check_mix({"routine": 0.8, "approval": 0.15, "sensitive": 0.05}),
+})  # fmt: skip
+
+
+def n3_group(expected_route: Route) -> Group:
+    """Nhóm N3 theo nhãn GOLD (#32 mục 5): AUTO → routine, HITL → approval, ESCALATE_L2 → sensitive. Không phụ thuộc phương án
+    đang đo (Full-auto không qua M5 vẫn chia nhóm như mọi phương án khác).
+
+    Khác M9 (`monitor/queries/business.py`): M9 chia theo quyết định M5 (`policy_decision`/`risk_level` của điểm log 4) vì dữ liệu
+    vận hành không có gold. M8 và M9 không dùng chung code [Chốt 17.9.4] — không import `app.monitor`."""
+    return _GROUP_OF[expected_route]
+
+
+@dataclass(frozen=True)
+class WeightedRate:
+    """Escalation trên phân bố vận hành giả định: Σ_g mix[g]·rate_g, rate_g = escalation thô trong nhóm g. Nhóm rỗng →
+    `value` None + `missing_groups` (Q5) — không chuẩn hoá lại trên nhóm còn lại."""
+
+    mix: Mapping[Group, float]
+    by_group: Mapping[Group, Rate]
+    missing_groups: tuple[Group, ...]
+    value: float | None
+
+
+@dataclass(frozen=True)
+class EfficiencyMetrics:
+    """P8 §6.2 trên `n_leaves` lá. Độ trễ, chi phí LLM, tin/lượt (P8:369–371) → v2 (M1)."""
+
+    n_leaves: int
+    automation: Rate
+    escalation: Rate
+    exit_codes: Mapping[str, Rate]
+    escalation_weighted: WeightedRate
+    escalation_sensitivity: Mapping[str, WeightedRate]
+    deflection: Rate
+    clarification: Mean
+    one_turn: Rate
+
+
+def _escalated(r: PredictionRecord) -> bool:
+    """P8:365 — có `exit_code` (mọi mã, gồm E0 — Q9)."""
+    return r.exit_code is not None
+
+
+def _automated(r: PredictionRecord) -> bool:
+    """P8:364 — đóng S_RESOLVED mà không qua người: "không phiếu duyệt" = `not has_approval`, "không escalation" =
+    `exit_code is None` [Đề xuất, duyệt #32]."""
+    return r.final_state == RESOLVED_STATE and not r.has_approval and r.exit_code is None
+
+
+def escalation_weighted(records: Records, mix: MixLike) -> WeightedRate:
+    _require(records)
+    frozen = check_mix(mix)
+    by_group = {g: [r for r in records if n3_group(r.expected_route) == g] for g in GROUPS}
+    rates = {g: Rate(sum(1 for r in rows if _escalated(r)), len(rows)) for g, rows in by_group.items()}
+    missing = tuple(g for g in GROUPS if rates[g].n == 0)
+    present = [g for g in GROUPS if g not in missing]
+    value = None if missing else sum(frozen[g] * rates[g].k / rates[g].n for g in present)
+    return WeightedRate(frozen, MappingProxyType(rates), missing, value)
+
+
+def efficiency(
+    records: Records,
+    mix: MixLike = OPERATING_MIX,
+    sensitivity_mixes: Mapping[str, MixLike] = SENSITIVITY_MIXES,
+) -> EfficiencyMetrics:
+    """P8 §6.2 (P8:364–368): Automation, Escalation thô + phân bố theo `exit_code` + có trọng số (mix chính và các bộ độ nhạy),
+    Deflection, Lượt hỏi lại TB, Giải quyết một lượt. Mẫu số = mọi lá. Cờ "cảnh báo > 40%" (P8:365) thuộc báo cáo."""
+    _require(records)
+    leaves = list(records)  # P8:342 — mọi lá, gồm lá không tới M5 (Q7)
+    n = len(leaves)
+    return EfficiencyMetrics(
+        n_leaves=n,
+        automation=Rate(sum(1 for r in leaves if _automated(r)), n),
+        escalation=Rate(sum(1 for r in leaves if _escalated(r)), n),
+        exit_codes=MappingProxyType({c: Rate(sum(1 for r in leaves if r.exit_code == c), n) for c in EXIT_CODES}),
+        escalation_weighted=escalation_weighted(leaves, mix),
+        escalation_sensitivity=MappingProxyType({k: escalation_weighted(leaves, m) for k, m in sensitivity_mixes.items()}),
+        deflection=Rate(sum(1 for r in leaves if r.resolution_path == DEFLECTED_PATH), n),
+        clarification=Mean(float(sum(r.clarification_turns for r in leaves)), n),
+        one_turn=Rate(sum(1 for r in leaves if r.clarification_turns == 0 and r.close_reason == ONE_TURN_CLOSE_REASON), n),
     )
