@@ -144,10 +144,12 @@ def _point8(ticket_id: str, rows: Sequence[Mapping[str, Any]]) -> list[Missing]:
     if not closed:
         return [Missing(ticket_id, 8, None, ("B20/closed",))]
     # Phase 5 T20b Q-T20b-13 = A: ticket CHA đóng bình thường (D-30) không `close_reason`/`exit_code` — đạt khi `detail.aggregate_status`
-    # ∈ `AGGREGATE_STATUSES` (giá trị lạ / thiếu cả ba → vẫn thiếu)
+    # ∈ `AGGREGATE_STATUSES` (giá trị lạ / thiếu cả ba → vẫn thiếu), CHỈ khi ticket là CHA. "Là cha" lấy từ chính `rows` (dòng audit của
+    # ticket): có dòng B5 `split_into_<n>_children` (B3/B5 tách ý — `b03_classify._split`); lá và con không bao giờ có dòng này.
+    parent = any(r.get("step") == "B5" and re.fullmatch(r"split_into_\d+_children", str(r.get("event"))) for r in rows)
     lacks = [
         _lacks(r, ["final_state"]) + ([] if r.get("close_reason") is not None or r.get("exit_code") is not None
-                                      or _get(r, "detail.aggregate_status") in AGGREGATE_STATUSES
+                                      or parent and _get(r, "detail.aggregate_status") in AGGREGATE_STATUSES
                                       else ["close_reason|exit_code"])
         for r in closed
     ]  # fmt: skip

@@ -222,18 +222,30 @@ def test_a1_point8_exit_code_instead_of_close_reason_ok() -> None:
     assert required(T, [row], final_state="S_ESCALATED") == []
 
 
+SPLIT = _row(18, "B5", "split_into_2_children", {"children": 2, "verdicts": ["runnable", "runnable"]})  # dòng tách ý — chỉ ticket CHA
+
+
 def test_a1_point8_parent_valid_aggregate_status_ok() -> None:
     """T20b Q-T20b-13 = A: cha đóng bình thường (D-30) không `close_reason`/`exit_code` — `detail.aggregate_status` hợp lệ → đạt."""
     row = _row(19, "B20", "closed", {"resolution_path": None, "aggregate_status": "PARTIALLY_REJECTED"}, final_state="S_RESOLVED")
-    assert required(T, [row], final_state="S_RESOLVED") == []
+    assert required(T, [copy.deepcopy(SPLIT), row], final_state="S_RESOLVED") == []
 
 
 @pytest.mark.parametrize("detail", [{"aggregate_status": "SOMETHING_ELSE"}, {"aggregate_status": None}, {}],
                          ids=["la", "null", "thieu"])  # fmt: skip
 def test_a1_point8_parent_bad_or_missing_aggregate_status_still_missing(detail: dict[str, Any]) -> None:
-    """T20b Q-T20b-13 = A: `aggregate_status` lạ / null / vắng và không `close_reason`, `exit_code` → vẫn thiếu điểm 8."""
+    """T20b Q-T20b-13 = A: cha mà `aggregate_status` lạ / null / vắng và không `close_reason`, `exit_code` → vẫn thiếu điểm 8."""
     row = _row(19, "B20", "closed", detail, final_state="S_RESOLVED")
-    [m] = required(T, [row], final_state="S_RESOLVED")
+    [m] = required(T, [copy.deepcopy(SPLIT), row], final_state="S_RESOLVED")
+    assert (m.point, m.log_id, m.fields) == (8, 19, ("close_reason|exit_code",))
+
+
+@pytest.mark.parametrize("first", [P1_B3, _row(1, "B5", "child_started")], ids=["la", "con"])
+def test_a1_point8_non_parent_with_aggregate_status_still_missing(first: dict[str, Any]) -> None:
+    """T20b Q-T20b-13 (bổ sung phiên git): ticket KHÔNG phải cha (lá / con — không có dòng B5 `split_into_<n>_children`) có
+    `detail.aggregate_status` hợp lệ mà thiếu `close_reason` lẫn `exit_code` → VẪN thiếu điểm 8."""
+    row = _row(19, "B20", "closed", {"aggregate_status": "ALL_RESOLVED"}, final_state="S_RESOLVED")
+    [m] = required(T, [copy.deepcopy(first), row], final_state="S_RESOLVED")
     assert (m.point, m.log_id, m.fields) == (8, 19, ("close_reason|exit_code",))
 
 

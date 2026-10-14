@@ -5281,7 +5281,8 @@ Q-T20b-3 = A (đặt hạn cho CHA thay mọi hạn `wait_deadlines` chưa bắn
   `redact_reply_items` (Q-T20b-8); mốc `deliver` = `(checkpoint_id, next, turn_id)`; ghi chú bàn giao cha lỗi có mã trạng thái từng con
   (Q-T20b-9 i); `child_submit` ghi bù khi con đã có thread (Q-T20b-11); `child_create.result_ref` = `<cid>|<n>|<type>`, B3 chạy lại lệch →
   E9 cha (Q-T20b-12); NỢ con chưa khởi động của cha lỗi treo `final_state NULL` (NGHI mục 4). Q-T20b-13: điểm log 8 (`audit_check`,
-  phase4 7.2) với ticket CHA (D-30) đạt bằng `detail.aggregate_status ∈ AGGREGATE_STATUSES` thay cho `close_reason|exit_code`.
+  phase4 7.2) với ticket CHA (D-30 — nhận qua dòng audit B5 `split_into_<n>_children`) đạt bằng `detail.aggregate_status ∈
+  AGGREGATE_STATUSES` thay cho `close_reason|exit_code`; lá/con vẫn đòi `close_reason|exit_code`.
 - **Commit 1 = `14316ad`** (47 file, hook pre-commit xanh).
 - **DỪNG 2 (14/10, sandbox; chưa commit):** chốt mở DỪNG 2: NGHI-1 = nhận (mốc `deliver` = `(checkpoint_id, next, values.turn_id)` — đã kiểm
   LangGraph: lỗi DB ngay sau write NULL `__resume__`+`turn_id` → chỉ `values.turn_id` đổi), NGHI-2 = nhận (P12(a) 2 vế), FAIL-2 cùng P12.
@@ -5372,6 +5373,12 @@ Q-T20b-3 = A (đặt hạn cho CHA thay mọi hạn `wait_deadlines` chưa bắn
     commit 1; grep import động `risk/` rỗng). NGHI ghi nợ: (1) `_budgeted` chỉ bắt `TimeoutError` — lỗi khác ở bước đọc con mồ côi làm
     bỏ bước đánh thức cha ở chu kỳ đó (đường chính `after_turn` vẫn chạy); (2) ≥ 20 con khớp `_ORPHAN_CHILDREN` mà luôn `LateEvent` có thể
     bỏ đói con tạo sau (chưa dựng được trạng thái đó từ code); (3) file untracked `docs/spec/claude/*` có từ trước phiên T20b, không stage.
+  - **Commit 2 = `5df24c7`.** Thiếu phần bổ sung Q-T20b-13 của phiên git → **commit 3** (không amend): `_point8` chỉ nới khi ticket LÀ CHA.
+    Nguồn "là cha": chính `rows` (dòng `audit_logs` của ticket mà `_point8` đã nhận) có dòng B5 `split_into_<n>_children` (`b03_classify
+    ._split`; lá và con không có) — KHÔNG đọc `tickets.is_parent` vì phải sửa `load`/`run`/`required` (ngoài `_point8`). `test_audit_check.py`
+    +2 ca (lá / con có `aggregate_status` hợp lệ, thiếu `close_reason`/`exit_code` → vẫn thiếu); 2 ca cũ giữ (thêm dòng tách ý cho cha).
+    Gỡ điều kiện cha → ca mới đỏ. Unit **5405 passed**, lint xanh. Verify G=5 (13:49–13:57): **XANH** — backend 6024 passed, gate5
+    **227 PASS, 0 FAIL**.
   - **Nợ — NGHI mục 4 (DỪNG 2):** con CHƯA khởi động của cha lỗi (cha E-code trước khi `start_missing` chạy hết, hoặc B3 E9 sau khi đã
     `child_create`) giữ `final_state NULL` mãi (không thread, không notice — P12 (b) không bắt). Thấy được qua escalation cha (mã
     `not_started` trong ghi chú bàn giao — Q-T20b-9 (i)). Phương án sau: B20 của cha lỗi đóng các con chưa khởi động (E-code riêng).
