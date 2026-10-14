@@ -4964,7 +4964,8 @@ dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
   → shadow). Trước code: t1 + 4 ca t2 **đỏ đúng lý do** (`MlContractError: HTTP 422` → E9 qua boundary); 5 ca 422 khác, t3, TQ-8 xanh
   (khẳng định hành vi có sẵn). Sau code: unit **4593 passed** (+11), ml **123 passed** (+1), mock **106**; `make lint` **xanh**.
 - **Mutation lượt 1** (`scripts/mutation/mutate_t23a.py`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp.
-  Lượt 2: ngày đệm trước cổng 5.
+  Lượt 2 (14/10, trên `c45b079`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp. Đỏ thêm ngoài
+  dự đoán (bộ test gác rộng hơn, không phải lỗi): M-2 +1, M-4 +7, M-5 +1, M-6 +3, M-7 +1, M-8 +2, M-9 +2.
 - **security-reviewer** (diff `d42d5c4`..cây, trừ `docs/`, `llm/`): 8/8 PASS, 0 FAIL (`.env.example` agent chính tự kiểm: 13 dòng thêm đều
   là chú thích, không đụng khối M9). NGHI: hàng chờ chung ml-service (classify 48 cửa sổ CPU vs timeout 2 s + retry, `to_thread` không
   huỷ); `active` bỏ L4 khi p ≤ τ_pass với τ chưa hiệu chỉnh; backend `ClassifyOut.p_malicious` không chặn miền [0,1]/NaN; SHA chỉ phủ
