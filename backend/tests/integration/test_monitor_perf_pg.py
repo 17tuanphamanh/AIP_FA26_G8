@@ -6,8 +6,8 @@ bằng `app_migrate`. Mọi truy vấn đọc qua engine THẬT của app (`crea
 
 Ba nhóm test:
 1. **< 2 giây** — mỗi truy vấn dashboard (business all + own, ai, response trọn 30/7 ngày, `/api/alerts`), 4 lượt
-   `TICKET_EXIT_SQL` (luật 2/16 nhìn lại 24 h, luật 4/6 nhìn lại 192 h) và 3 lượt job luật (`evaluate` phút/giờ/ngày —
-   code Duy Anh, chỉ gọi; Q-M9-A4-10, B3 chưa merge nên chưa có `weekly`). Mỗi lượt còn phải ĐO TRÊN DỮ LIỆU THẬT:
+   `TICKET_EXIT_SQL` (luật 2/16 nhìn lại 24 h, luật 4/6 nhìn lại 192 h) và 4 lượt job luật (`evaluate` phút/giờ/ngày/tuần —
+   code Duy Anh, chỉ gọi; Q-M9-A4-10: A4 vào trước, B3 bổ sung `weekly`). Mỗi lượt còn phải ĐO TRÊN DỮ LIỆU THẬT:
    giá trị rỗng (None / 0 / tập rỗng) → đỏ, vì đo trên tập rỗng không chứng minh gì.
 2. **Chỉ mục 0009, hai lớp EXPLAIN** (Q-M9-A4-7):
    - lớp 1 — DÙNG ĐƯỢC: `SET LOCAL enable_seqscan = off` → plan phải có đúng tên chỉ mục, cho MỌI chỉ mục và mọi lượt
@@ -227,7 +227,7 @@ async def test_ticket_exit_sql_under_2s(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("every", ["minute", "hourly", "daily"])
+@pytest.mark.parametrize("every", ["minute", "hourly", "daily", "weekly"])
 async def test_rule_jobs_under_2s(perf: PgUrls, every: Any) -> None:
     """Một lượt job luật trên engine monitor (như `worker.MonitorRulesJob.run`, không ghi): < 2 giây, không luật lỗi."""
     engines = create_engines(_settings(perf))
