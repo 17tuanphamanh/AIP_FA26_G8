@@ -281,6 +281,8 @@ _INTERVAL = "    lo, hi = _interval(values, level)\n"
 _SAME_FAM = "    if names_a != names_b:\n"
 _NBOOT = "    if isinstance(n_boot, bool) or not isinstance(n_boot, Integral) or n_boot < 1:\n"
 _ZERO = "    contains_zero = lo <= 0.0 <= hi if lo is not None and hi is not None else None\n"
+_SAME_SCN = "    if {r.scenario_id for r in records_a} != {r.scenario_id for r in records_b}:\n"
+_SAME_SPLIT = "    if {r.split for r in records_a} != {r.split for r in records_b}:\n"
 
 
 def _st(old: str, new: str, tag: str) -> tuple[str, str, str, int]:
@@ -324,9 +326,56 @@ S4: list[Mutation] = [
     Mutation("M-T29-57 contains_zero dùng bất đẳng thức chặt",
              [_st(_ZERO, "    contains_zero = lo < 0.0 < hi if lo is not None and hi is not None else None\n", "M-T29-57")],
              UT, ["test_paired_identical_zero_width"]),
+    # ---- S5 lượt 1: review #42 — paired đòi cùng tập scenario_id và cùng split ----
+    Mutation("M-T29-58 paired bỏ kiểm tập scenario_id A = B",
+             [_st(_SAME_SCN, "    if False:\n", "M-T29-58")],
+             UT, ["test_paired_scenario_mismatch"]),
+    Mutation("M-T29-59 paired bỏ kiểm split A = B",
+             [_st(_SAME_SPLIT, "    if False:\n", "M-T29-59")],
+             UT, ["test_paired_split_mismatch"]),
 ]  # fmt: skip
 
-ALL = S1 + S2 + S3 + S4
+# ---- S5 lượt 2: metrics.py §6.3 ---------------------------------------------------------------------------------------
+
+_RECALL = "    return len(gold_set & set(ranked[:k])) / len(gold_set)\n"
+_RR = "    rank = first_hit_rank(gold, ranked, k)\n"
+_DCG = "            dcg += 1.0 / math.log2(i + 1)\n"
+_IDCG = "    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(len(gold_set), k) + 1))\n"
+_SEEN = "        if d in gold_set and d not in seen:\n"
+_NO_RETR = "        elif r.doc_ids is None:\n"
+_APPEND = "            rows.append((r.gold_doc_ids, r.doc_ids))\n"
+_LABELLED = "    labelled = [(r.gold_intent, r.intent) for r in records if r.gold_intent is not None]\n"
+
+S5: list[Mutation] = [
+    Mutation("M-T29-60 recall = hit@5 thay vì |gold ∩ top5| / |gold|",
+             [_swap(_RECALL, "    return float(bool(gold_set & set(ranked[:k])))\n", "M-T29-60")],
+             UT, ["test_recall_multi_gold", "test_retrieval_hand"]),
+    Mutation("M-T29-61 MRR không cắt ở hạng 5",
+             [_swap(_RR, "    rank = first_hit_rank(gold, ranked, len(ranked))\n", "M-T29-61")],
+             UT, ["test_mrr_cut_at_5", "test_retrieval_hand"]),
+    Mutation("M-T29-62 nDCG chia log2(i) thay vì log2(i+1)",
+             [_swap(_DCG, "            dcg += 1.0 / math.log2(i)\n", "M-T29-62")],
+             UT, ["test_ndcg_hand"]),
+    Mutation("M-T29-63 IDCG không cắt ở min(|gold|, 5)",
+             [_swap(_IDCG, _IDCG.replace("min(len(gold_set), k)", "len(gold_set)"), "M-T29-63")],
+             UT, ["test_ndcg_idcg_cut"]),
+    Mutation("M-T29-64 doc_id trùng tính 2 lần",
+             [_swap(_SEEN, "        if d in gold_set:\n", "M-T29-64")],
+             UT, ["test_ndcg_duplicate_first_only"]),
+    Mutation("M-T29-65 (b) doc_ids == () bị loại thay vì trượt",
+             [_swap(_NO_RETR, "        elif not r.doc_ids:\n", "M-T29-65")],
+             UT, ["test_empty_retrieved_is_miss", "test_retrieval_hand"]),
+    Mutation("M-T29-66 (c) doc_ids None tính 0 thay vì loại",
+             [_swap(_NO_RETR, "        elif False:\n", "M-T29-66"),
+              _swap(_APPEND, "            rows.append((r.gold_doc_ids, r.doc_ids or ()))\n", "M-T29-66")],
+             UT, ["test_no_retrieval_excluded", "test_retrieval_hand"]),
+    Mutation("M-T29-67 intent pred None bị loại thay vì tính sai",
+             [_swap(_LABELLED, _LABELLED.replace("if r.gold_intent is not None]",
+                                                 "if r.gold_intent is not None and r.intent is not None]"), "M-T29-67")],
+             UT, ["test_intent_pred_none_is_wrong", "test_intent_macro_f1_hand"]),
+]  # fmt: skip
+
+ALL = S1 + S2 + S3 + S4 + S5
 MUTATIONS = ALL
 if "--only" in sys.argv:
     at = sys.argv.index("--only") + 1
