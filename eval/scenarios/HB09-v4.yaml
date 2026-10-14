@@ -10,6 +10,8 @@ at: '2026-10-13T11:10:00+07:00'
 faults: []
 turns:
 - mình kèm nv003 tuần này, bạn ấy quên pass đăng nhập, IT đặt lại hộ được không
+- on_question_about: account_type
+  reply: tài khoản đăng nhập Windows (AD)
 - on_confirm: true
 gold:
   intents:

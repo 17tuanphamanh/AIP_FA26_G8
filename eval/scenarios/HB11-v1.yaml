@@ -2,10 +2,10 @@ id: HB11-v1
 family: HB11
 source: ho_bo_sung
 requester:
-  user_id: nv002
+  user_id: hr_head
   role: employee
-  dept: engineering
-  tenure_days: 720
+  dept: hr
+  tenure_days: 2800
 at: '2026-10-14T09:05:00+07:00'
 faults: []
 turns:
@@ -23,8 +23,8 @@ gold:
   - KB-ACC-002
   action:
     type: unlock_account
-    target: user:nv002
-    requested_for: nv002
+    target: user:hr_head
+    requested_for: hr_head
     params:
       account_type: ad
   facts:

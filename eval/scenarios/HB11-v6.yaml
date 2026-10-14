@@ -2,14 +2,16 @@ id: HB11-v6
 family: HB11
 source: ho_bo_sung
 requester:
-  user_id: nv002
+  user_id: hr_head
   role: employee
-  dept: engineering
-  tenure_days: 720
+  dept: hr
+  tenure_days: 2800
 at: '2026-10-14T15:30:00+07:00'
 faults: []
 turns:
 - mình cần mở khoá tài khoản công ty, bị khoá tự động vì lâu không đăng nhập
+- on_question_about: account_type
+  reply: tài khoản đăng nhập Windows (AD)
 - on_confirm: true
 gold:
   intents:
@@ -22,8 +24,8 @@ gold:
   - KB-ACC-002
   action:
     type: unlock_account
-    target: user:nv002
-    requested_for: nv002
+    target: user:hr_head
+    requested_for: hr_head
     params:
       account_type: ad
   facts:

@@ -2,15 +2,15 @@ id: HB12-v6
 family: HB12
 source: ho_bo_sung
 requester:
-  user_id: nv005
+  user_id: eng_head
   role: employee
-  dept: sales
-  tenure_days: 450
+  dept: engineering
+  tenure_days: 2600
 at: '2026-10-14T15:30:00+07:00'
 faults: []
 turns:
-- tài khoản mail của mình đột nhiên bị khoá bởi admin, mình cần gửi báo giá gấp, mở
-  giúp
+- tài khoản mail của mình đột nhiên bị khoá bởi admin, mình cần gửi tài liệu thiết
+  kế gấp, mở giúp
 - on_confirm: true
 gold:
   intents:
@@ -23,8 +23,8 @@ gold:
   - KB-ACC-002
   action:
     type: unlock_account
-    target: user:nv005
-    requested_for: nv005
+    target: user:eng_head
+    requested_for: eng_head
     params:
       account_type: email
   facts:

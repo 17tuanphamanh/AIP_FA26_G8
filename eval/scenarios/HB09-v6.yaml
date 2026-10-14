@@ -10,6 +10,8 @@ at: '2026-10-13T15:30:00+07:00'
 faults: []
 turns:
 - nv003 quên mật khẩu tài khoản công ty, mình gửi giúp yêu cầu đặt lại mật khẩu
+- on_question_about: account_type
+  reply: tài khoản đăng nhập Windows (AD)
 - on_confirm: true
 gold:
   intents:

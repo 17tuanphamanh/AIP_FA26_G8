@@ -2,10 +2,10 @@ id: HB12-v1
 family: HB12
 source: ho_bo_sung
 requester:
-  user_id: nv005
+  user_id: eng_head
   role: employee
-  dept: sales
-  tenure_days: 450
+  dept: engineering
+  tenure_days: 2600
 at: '2026-10-14T09:05:00+07:00'
 faults: []
 turns:
@@ -23,8 +23,8 @@ gold:
   - KB-ACC-002
   action:
     type: unlock_account
-    target: user:nv005
-    requested_for: nv005
+    target: user:eng_head
+    requested_for: eng_head
     params:
       account_type: email
   facts:
