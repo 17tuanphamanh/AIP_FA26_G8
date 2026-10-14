@@ -1,0 +1,38 @@
+id: HB13-v5
+family: HB13
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-15T14:05:00+07:00'
+faults: []
+turns:
+- mình đang chỉ đọc được finance/public-reports, xin quyền write 180 ngày
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv001
+    params:
+      permission_level: write
+      duration_days: 180
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null

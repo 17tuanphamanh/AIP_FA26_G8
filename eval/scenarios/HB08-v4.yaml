@@ -1,0 +1,39 @@
+id: HB08-v4
+family: HB08
+source: ho_bo_sung
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-12T11:10:00+07:00'
+faults: []
+turns:
+- nhờ IT mở quyền xem thư mục finance/public-reports cho tài khoản của em, thời hạn
+  30 ngày
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv003
+    params:
+      permission_level: read
+      duration_days: 30
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: false
+    target_user_status: probation
+labels:
+  annotator_1: null
+  annotator_2: null
