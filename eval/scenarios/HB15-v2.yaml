@@ -1,0 +1,36 @@
+id: HB15-v2
+family: HB15
+source: ho_bo_sung
+requester:
+  user_id: fin_head
+  role: employee
+  dept: finance
+  tenure_days: 3300
+at: '2026-10-16T09:40:00+07:00'
+faults: []
+turns:
+- chị là trưởng phòng kế toán, nhờ IT reset mật khẩu ERP cho nv001
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+    params:
+      account_type: erp
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null

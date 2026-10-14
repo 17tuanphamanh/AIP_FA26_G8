@@ -1,0 +1,36 @@
+id: HB09-v6
+family: HB09
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-13T15:30:00+07:00'
+faults: []
+turns:
+- nv003 quên mật khẩu tài khoản công ty, mình gửi giúp yêu cầu đặt lại mật khẩu
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv003
+    requested_for: nv003
+    params:
+      account_type: ad
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: probation
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null

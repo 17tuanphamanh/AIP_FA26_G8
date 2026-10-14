@@ -1,0 +1,38 @@
+id: HB16-v3
+family: HB16
+source: ho_bo_sung
+requester:
+  user_id: fin_head
+  role: employee
+  dept: finance
+  tenure_days: 3300
+at: '2026-10-16T10:25:00+07:00'
+faults: []
+turns:
+- cap quyen doc finance/public-reports cho nv003 60 ngay giup chi
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv003
+    params:
+      permission_level: read
+      duration_days: 60
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: false
+    target_user_status: probation
+labels:
+  annotator_1: null
+  annotator_2: null
