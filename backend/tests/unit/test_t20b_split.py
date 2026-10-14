@@ -1,7 +1,7 @@
 """T20b — phán từng ý ở B3 → B5 tách ticket con (phase5 5.2.2, 5.2.8 v1–v9; P2, P3; Q-T20b-2 = B). Viết TỪ ĐẶC TẢ trước code.
 
 Graph THẬT trên harness (`_t20b.make_flow`: node thật + `InMemorySaver` + ScriptedLLM qua gateway thật + registry đọc seed), 4 intent
-bật (tiêm qua `IntentsHarness`). Cha = `T1`, con = `T1-<i>`. Mọi ca thuộc DỪNG 1 — không xfail.
+bật (tiêm qua `IntentsHarness`). Cha = `T1`, con = `T1-<i>`. Mọi ca thuộc DỪNG 1.
 """
 
 from typing import Any
@@ -30,13 +30,8 @@ from tests.unit._t20b import (
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 VERDICTS = {"runnable", "out_of_scope", "split_span_invalid", "intent_low_confidence", "intent_not_enabled"}

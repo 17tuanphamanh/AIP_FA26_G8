@@ -16,6 +16,12 @@ Kịch bản (`S=all` theo thứ tự `ALL`): preflight · tc01 R01 AUTO reset �
 duyệt → reset svc_backup · tc08 R07 (+R09) TỪ CHỐI → 0 ghi · tc17 catalog 404 → R13 chờ duyệt · tc18 500 ở check_privilege_level → B7
 E2 · tc21a cài lỗi 500 → E7 · tc21b có phí: license OK, cài lỗi → E7, 0 hoàn tác · hb04 AutoCAD hết license 409 → E7 · g5-audit
 `audit_check` trên đúng ticket của lần chạy + quét log. `S=all` ghi biên bản `bienban-gate5-<YYYYmmdd>.md` (không commit bản đã điền).
+
+T20b — nhiều ý (phase5 5.2.7, PLAN-T20b S15): preset cha `tcNN` + preset con `tcNN-<i>` (resolver P13). tc34 (= TC12) reset + Adobe:
+0 tin tới cha trước khi duyệt → duyệt → 1 digest → `/reply` → `ALL_RESOLVED` · tc35 câu hỏi ở ý 2 → 2 vòng → `ALL_RESOLVED` · tc36 "Chưa
+ổn" ý 1 → `PARTIALLY_ESCALATED` · tc32 ý ngoài phạm vi → con E1 ngay → `PARTIALLY_ESCALATED` · tc12r L1 từ chối ý 2 → `PARTIALLY_REJECTED`.
+Mỗi kịch bản: số tin assistant của cha = số lượt người dùng (D-31), `/messages`·`/confirm` lên con → 409, `/reply` thiếu/thừa ý → 422 và
+0 `child_event`, `children_progress` theo mốc; con được gắn chủ để `g5-audit` soát đủ điểm log của từng con.
 """
 
 import json
@@ -75,6 +81,19 @@ TC21A = ("tc21a", AN, "cài Zoom")
 TC21B = ("tc21b", AN, "cài Adobe Acrobat Pro")
 HB04 = ("hb04", AN, "cài AutoCAD")
 TICKET_PRESETS = (TC01, TC03, TC07, TC08, TC17, TC18, TC21A, TC21B, HB04)
+# T20b (phase5 5.2.7): câu nhiều ý — preset cha `tcNN` + preset con `tcNN-<i>` (resolver P13). Câu có "mật khẩu" kết thúc bằng dấu chấm
+# (Q-T24-10). License Adobe Acrobat Pro dùng chung với tc21b — `mock_reset` trước mỗi kịch bản.
+TC34 = ("tc34", AN, "đặt lại mật khẩu tài khoản AD giúp mình, tiện cài luôn Adobe Acrobat Pro.")
+TC35 = ("tc35", AN, "đặt lại mật khẩu AD và gia hạn quyền thư mục finance/public-reports.")
+TC36 = ("tc36", AN, "đặt lại mật khẩu tài khoản AD giúp mình, tiện cài luôn Adobe Acrobat Pro.")
+TC32 = ("tc32", AN, "đặt lại mật khẩu AD, tiện sửa máy in tầng 3 giúp mình.")
+TC12R = ("tc12r", AN, "đặt lại mật khẩu tài khoản AD giúp mình, tiện cài luôn Adobe Acrobat Pro.")
+MULTI_PRESETS = (TC34, TC35, TC36, TC32, TC12R)
+# Preset con theo kịch bản (`<cha>-<i>`): tc32 con 2 ngoài phạm vi → E1 ngay, không gọi LLM → không preset `tc32-2`
+CHILD_PRESETS: Mapping[str, tuple[str, ...]] = {
+    "tc34": ("tc34-1", "tc34-2"), "tc35": ("tc35-1", "tc35-2"), "tc36": ("tc36-1", "tc36-2"), "tc32": ("tc32-1",),
+    "tc12r": ("tc12r-1", "tc12r-2"),
+}  # fmt: skip
 
 # Đường mock (lời gọi ghi đếm ở nơi nhận)
 RESET_NV001 = "/ad/users/nv001/reset-password"
@@ -85,7 +104,9 @@ LICENSES = "/software/licenses/"
 ASSIGN_ACROBAT = "/software/licenses/adobe-acrobat-pro/assign"
 ASSIGN_AUTOCAD = "/software/licenses/autocad/assign"
 PRIVILEGE_NV001 = "/ad/users/nv001/privilege"  # check_privilege_level — KHÔNG bơm lỗi ở /ad/users/nv001 (B1 dùng chung → E2 ở B1)
+EXTEND_NV001 = "/files/permissions/nv001/extend"
 REJECT_NOTE = "Thư mục tài chính quý 3 chỉ cấp cho phòng Tài chính"
+UNRESOLVED_NOTE = "vẫn chưa đăng nhập được"
 TC08_HEAD = "Yêu cầu cấp quyền truy cập cho thư mục finance/Q3 chưa được duyệt. Lý do: "
 
 
@@ -418,6 +439,191 @@ def hb04(ctx: Ctx) -> None:
     _point7(ctx, t, "exec_failed", "B17", 1)
 
 
+# ---- Nhiều ý (T20b, bảng 5.2.7) — đếm tin assistant trong `conversation` CHA = số lượt người dùng (D-31) ----------------------------
+
+
+def _children(ctx: Ctx, t: str, n: int) -> list[str]:
+    """Id con tất định `<cha>-<i>`; gắn chủ = chủ cha (GET con bằng token người gửi; `g5-audit` soát cả con)."""
+    cids = [f"{t}-{i}" for i in range(1, n + 1)]
+    for c in cids:
+        ctx.owner[c] = ctx.owner[t]
+    return cids
+
+
+def _assistant(v: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [m for m in v.get("conversation") or [] if m.get("role") == "assistant"]
+
+
+def _digests(v: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return gate3.msgs(v, "digest")
+
+
+def _progress(v: Mapping[str, Any]) -> list[str]:
+    return [p["progress"] for p in v.get("children_progress") or []]
+
+
+def _child_events(ctx: Ctx, t: str) -> int:
+    return ctx.count("side_effects", t, "kind = 'child_event'")
+
+
+def _digest_round(ctx: Ctx, t: str, v: Mapping[str, Any], rnd: int, kinds: Sequence[str]) -> None:
+    rep = ctx.report
+    ds = _digests(v)
+    rep.eq(t, f"tin digest vòng {rnd}: số tin = {rnd}", rnd, len(ds))
+    if ds:
+        rep.eq(t, f"digest vòng {rnd}: loại các khối theo ý", list(kinds), [i["kind"] for i in ds[-1]["items"]])
+        rep.eq(t, f"digest vòng {rnd}: round", rnd, ds[-1].get("round"))
+
+
+def _guards(ctx: Ctx, t: str, cids: Sequence[str], items: Mapping[str, Any]) -> None:
+    """Mỗi kịch bản (5.2.7): `/messages`, `/confirm` lên con → 409; `/reply` thiếu (hoặc thừa) ý → 422, KHÔNG con nào nhận sự kiện."""
+    rep = ctx.report
+    token = ctx.tokens[ctx.owner[t]]
+    rep.eq(cids[0], "/messages lên con → 409", 409, ctx.post(f"/api/tickets/{cids[0]}/messages", {"text": "x"}, token).status_code)
+    rep.eq(cids[0], "/confirm lên con → 409", 409, ctx.post(f"/api/tickets/{cids[0]}/confirm", {"confirmed": True}, token).status_code)
+    events = _child_events(ctx, t)
+    keys = list(items)
+    bad = {k: items[k] for k in keys[:-1]} if len(keys) > 1 else {**items, f"{t}-9": {"confirmed": True}}
+    r = ctx.post(f"/api/tickets/{t}/reply", {"items": bad}, token)
+    rep.eq(t, "/reply thiếu/thừa ý → 422", 422, r.status_code)
+    rep.eq(t, "/reply 422: 0 child_event", events, _child_events(ctx, t))
+
+
+def _reply(ctx: Ctx, t: str, items: Mapping[str, Any]) -> dict[str, Any]:
+    before = ctx.turn_count(t)
+    r = ctx.post(f"/api/tickets/{t}/reply", {"items": dict(items)}, ctx.tokens[ctx.owner[t]])
+    ctx.report.eq(t, "/reply → 202", 202, r.status_code)
+    return ctx.settle(t, before)
+
+
+def _decide_child(ctx: Ctx, t: str, child: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    """L1 quyết phiếu của con → con chạy tiếp → `after_turn` đánh thức cha → chờ lượt của CHA đóng."""
+    before = ctx.turn_count(t)
+    r, _ = ctx.decide(child, body)
+    ctx.report.eq(child, f"{HA} quyết phiếu con → 202", 202, r.status_code)
+    return ctx.settle(t, before)
+
+
+def _parent_closed(ctx: Ctx, t: str, v: Mapping[str, Any], final: str, agg: str, assistant: int) -> None:
+    rep = ctx.report
+    rep.eq(t, f"cha đóng {final}/{agg}", (final, agg), (v["final_state"], ctx.shell.sql(
+        f"SELECT to_json(aggregate_status) FROM tickets WHERE ticket_id = {q(t)}")))  # fmt: skip
+    rep.eq(t, "cha: close_reason NULL, exit_code NULL (D-30)", (None, None), (v["close_reason"], v["exit_code"]))
+    rep.eq(t, "cha: 0 escalations", [], ctx.escalation(t))
+    rep.eq(t, "số tin assistant của cha = số lượt người dùng (D-31)", assistant, len(_assistant(v)))
+    rep.eq(t, "children_progress cuối: mọi con closed", ["closed"] * len(_progress(v)), _progress(v))
+
+
+def _child_final(ctx: Ctx, c: str, final: str, close_reason: str | None, code: str | None) -> None:
+    cv = ctx.view(c)
+    ctx.report.eq(c, "con đóng", (final, close_reason, code), (cv["final_state"], cv["close_reason"], cv["exit_code"]))
+
+
+def _tc34_like(ctx: Ctx, spec: tuple[str, str, str]) -> tuple[str, list[str], dict[str, Any]]:
+    """Chung tc34 / tc36 / tc12r tới lúc con 2 chờ duyệt: con 1 R01 AUTO → reset 1 lần → `confirm_wait`; con 2 R14 → phiếu; 0 tin tới
+    cha trước khi duyệt; `children_progress` = [ready, pending_approval]."""
+    rep = ctx.report
+    _begin(ctx)
+    t, v = ctx.ticket(spec)
+    c1, c2 = _children(ctx, t, 2)
+    rep.eq(t, "cha ở parent_wait (chưa đủ con dừng)", "S_CLASSIFYING", v["status"])
+    rep.eq(t, "0 tin assistant trước khi duyệt (D-31)", 0, len(_assistant(v)))
+    rep.eq(t, "children_progress lúc chờ duyệt", ["ready", "pending_approval"], _progress(v))
+    rep.eq(c1, "con 1 chờ xác nhận", S_CONFIRMING, ctx.view(c1)["status"])
+    rep.eq(c1, f"POST {RESET_NV001} đúng 1 lần", 1, ctx.calls(RESET_NV001))
+    rep.eq(c2, "con 2 chờ duyệt", S_PENDING_APPROVAL, ctx.view(c2)["status"])
+    rep.eq(c2, "con 2: 0 lời gọi ghi trước duyệt", 0, ctx.calls(ASSIGN_ACROBAT) + ctx.calls(INSTALL))
+    return t, [c1, c2], v
+
+
+def tc34(ctx: Ctx) -> None:
+    """tc12 / tc34 (5.2.7): duyệt con 2 → assign + install → cha 1 digest 2 khối `result` → `/reply` cả hai "Đã ổn" → 2 con
+    `resolved_user_confirmed` → tin tổng kết → cha `S_RESOLVED`/`ALL_RESOLVED`; tin assistant của cha = 2."""
+    rep = ctx.report
+    t, (c1, c2), _ = _tc34_like(ctx, TC34)
+    v = _decide_child(ctx, t, c2, {"decision": "approved"})
+    rep.eq(c2, "duyệt → assign 1 + install 1", (1, 1), (ctx.calls(ASSIGN_ACROBAT), ctx.calls(INSTALL)))
+    _digest_round(ctx, t, v, 1, ["result", "result"])
+    rep.eq(t, "children_progress sau digest", ["needs_user", "needs_user"], _progress(v))
+    items = {c1: {"confirmed": True}, c2: {"confirmed": True}}
+    _guards(ctx, t, [c1, c2], items)
+    v = _reply(ctx, t, items)
+    for c in (c1, c2):
+        _child_final(ctx, c, S_RESOLVED, "resolved_user_confirmed", None)
+    _parent_closed(ctx, t, v, S_RESOLVED, "ALL_RESOLVED", 2)
+    rep.eq(t, "tổng lời gọi ghi = 3 (reset + assign + install)", 3, ctx.mock_writes())
+
+
+def tc35(ctx: Ctx) -> None:
+    """tc35: thiếu `duration` ở ý 2 → digest vòng 1 `result` + `question` → `/reply` {ý 1 confirmed, ý 2 "30"} → con 2 R10 AUTO →
+    extend 1 lần → digest vòng 2 (`result` ý 2) → `/reply` {ý 2 confirmed} → `ALL_RESOLVED`; tin assistant của cha = 3."""
+    rep = ctx.report
+    _begin(ctx)
+    t, v = ctx.ticket(TC35)
+    c1, c2 = _children(ctx, t, 2)
+    _digest_round(ctx, t, v, 1, ["result", "question"])
+    rep.eq(t, "children_progress sau digest vòng 1", ["needs_user", "needs_user"], _progress(v))
+    items = {c1: {"confirmed": True}, c2: {"answer": "30"}}
+    _guards(ctx, t, [c1, c2], items)
+    v = _reply(ctx, t, items)
+    _child_final(ctx, c1, S_RESOLVED, "resolved_user_confirmed", None)
+    rep.eq(c2, f"POST {EXTEND_NV001} đúng 1 lần", 1, ctx.calls(EXTEND_NV001))
+    _digest_round(ctx, t, v, 2, ["result"])
+    v = _reply(ctx, t, {c2: {"confirmed": True}})
+    _child_final(ctx, c2, S_RESOLVED, "resolved_user_confirmed", None)
+    _parent_closed(ctx, t, v, S_RESOLVED, "ALL_RESOLVED", 3)
+
+
+def tc36(ctx: Ctx) -> None:
+    """tc36: như tc34, trả lời {ý 1 "Chưa ổn" + ghi chú, ý 2 "Đã ổn"} → con 1 E8, con 2 `resolved_user_confirmed`; cha
+    `S_RESOLVED`/`PARTIALLY_ESCALATED`; 1 dòng `escalations` (con 1), 0 cho cha."""
+    rep = ctx.report
+    t, (c1, c2), _ = _tc34_like(ctx, TC36)
+    v = _decide_child(ctx, t, c2, {"decision": "approved"})
+    _digest_round(ctx, t, v, 1, ["result", "result"])
+    items = {c1: {"confirmed": False, "note": UNRESOLVED_NOTE}, c2: {"confirmed": True}}
+    _guards(ctx, t, [c1, c2], items)
+    v = _reply(ctx, t, items)
+    _child_final(ctx, c1, S_ESCALATED, None, "E8")
+    _child_final(ctx, c2, S_RESOLVED, "resolved_user_confirmed", None)
+    rep.eq(c1, "escalations con 1", [["E8", None]], ctx.escalation(c1))
+    _parent_closed(ctx, t, v, S_RESOLVED, "PARTIALLY_ESCALATED", 2)
+
+
+def tc32(ctx: Ctx) -> None:
+    """tc32: ý 2 ngoài phạm vi → con 2 E1 `out_of_scope` ngay (không B6); digest vòng 1 `result` + `escalation` → `/reply` {ý 1
+    confirmed} → cha `PARTIALLY_ESCALATED`."""
+    rep = ctx.report
+    _begin(ctx)
+    t, v = ctx.ticket(TC32)
+    c1, c2 = _children(ctx, t, 2)
+    _digest_round(ctx, t, v, 1, ["result", "escalation"])
+    rep.eq(c2, "con 2 E1 out_of_scope ngay", [["E1", "out_of_scope"]], ctx.escalation(c2))
+    rep.eq(c2, "con 2 không chạy B6", [], [r for r in ctx.audit(c2) if r["step"] in ("B6", "B7")])
+    items = {c1: {"confirmed": True}}
+    _guards(ctx, t, [c1, c2], items)
+    v = _reply(ctx, t, items)
+    _child_final(ctx, c1, S_RESOLVED, "resolved_user_confirmed", None)
+    _parent_closed(ctx, t, v, S_RESOLVED, "PARTIALLY_ESCALATED", 2)
+
+
+def tc12r(ctx: Ctx) -> None:
+    """tc12r: như tc34, L1 TỪ CHỐI ý 2 → con 2 `S_REJECTED` (notice `rejection`, `needs=none`) → digest `result` + `rejection` →
+    `/reply` {ý 1} → cha `S_RESOLVED`/`PARTIALLY_REJECTED`; 0 lời gọi ghi cho ý 2."""
+    rep = ctx.report
+    t, (c1, c2), _ = _tc34_like(ctx, TC12R)
+    v = _decide_child(ctx, t, c2, {"decision": "rejected", "reason_code": "policy_violation", "note": REJECT_NOTE})
+    _child_final(ctx, c2, S_REJECTED, "rejected_by_approver", None)
+    rep.eq(c2, "0 lời gọi ghi cho ý 2", 0, ctx.calls(ASSIGN_ACROBAT) + ctx.calls(INSTALL))
+    _digest_round(ctx, t, v, 1, ["result", "rejection"])
+    items = {c1: {"confirmed": True}}
+    _guards(ctx, t, [c1, c2], items)
+    v = _reply(ctx, t, items)
+    _child_final(ctx, c1, S_RESOLVED, "resolved_user_confirmed", None)
+    _parent_closed(ctx, t, v, S_RESOLVED, "PARTIALLY_REJECTED", 2)
+    rep.eq(t, "tổng lời gọi ghi = 1 (chỉ reset)", 1, ctx.mock_writes())
+
+
 def g5_audit(ctx: Ctx) -> None:
     """Khuôn g4-12 (Q-4d-10 = A): `audit_check <ticket của lần chạy>` trong container → mã 0, `0 thiếu, 0 bí mật` (đủ điểm log áp
     dụng 1, 2, 4, 7, 8 — 5/6 khi duyệt; không câu người dùng); log backend+worker từ lúc bắt đầu → 0 trúng luật bí mật."""
@@ -449,7 +655,8 @@ def g5_audit(ctx: Ctx) -> None:
 
 SCENARIOS: dict[str, Callable[[Ctx], None]] = {
     "preflight": preflight, "tc01": tc01, "tc03": tc03, "tc07": tc07, "tc08": tc08, "tc17": tc17, "tc18": tc18,
-    "tc21a": tc21a, "tc21b": tc21b, "hb04": hb04, "g5-audit": g5_audit,
+    "tc21a": tc21a, "tc21b": tc21b, "hb04": hb04, "tc34": tc34, "tc35": tc35, "tc36": tc36, "tc32": tc32, "tc12r": tc12r,
+    "g5-audit": g5_audit,
 }  # fmt: skip
 ALL = list(SCENARIOS)  # g5-audit cuối: quét mọi ticket của lần chạy
 

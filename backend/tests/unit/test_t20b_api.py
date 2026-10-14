@@ -5,7 +5,7 @@ Trạng thái cha dựng bằng graph THẬT (`_t20b.make_flow`, cha `T1` của 
 `tests/fakes/desk.desk_env`) lên CHÍNH runner/store của harness đó (`harness_runtime`). Người: an.nv = nv001 (chủ), binh.tt = nv002,
 ha.lt = l1_01 (l1, không phải chủ).
 
-DỪNG 2: ca a* gom `CHO_DUNG2` (`xfail(strict)`). Ghim (xanh sẵn, không xfail): `/messages`, `/confirm` lên ticket con → 409 (a4 phần cũ).
+Ca a* thuộc DỪNG 2 (đã làm). Ghim từ trước: `/messages`, `/confirm` lên ticket con → 409 (a4 phần cũ).
 """
 
 from collections.abc import AsyncIterator
@@ -48,27 +48,9 @@ from tests.unit._t20b import (
 from tests.unit.auth_helpers import BASE_URL, auth_settings
 from tests.unit.test_guard_api import CANARY, PASSWORD_TEXT, SwitchGuard
 
-CHO_DUNG2 = frozenset({
-    "test_a1_reply_valid_202_parent_resumes",
-    "test_a2_items_must_equal_awaiting_422",
-    "test_a3_reply_when_not_waiting_reply_409_one_late_event",
-    "test_a3_reply_on_normal_ticket_409_one_late_event",
-    "test_a4_reply_on_child_ticket_409_child_message",
-    "test_a5_reply_not_owner_403_stranger_404_missing_404",
-    "test_a6_secret_in_answer_redacted_everywhere",
-    "test_a6_masking_guard_answer_reaches_child_masked",
-    "test_a7_children_progress_pure_five_states",
-    "test_a7_get_parent_children_progress_milestones",
-    "test_a7_get_normal_ticket_children_progress_null",
-})  # fmt: skip
-
 NOT_FOUND = {"detail": "not_found"}
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 pytestmark = pytest.mark.asyncio
@@ -230,7 +212,7 @@ async def test_a4_reply_on_child_ticket_409_child_message() -> None:
 
 @pytest.mark.parametrize(("route", "body"), [("messages", {"text": "x"}), ("confirm", {"confirmed": True})])
 async def test_a4_messages_confirm_on_child_ticket_409_pinned(route: str, body: dict[str, Any]) -> None:
-    """a4 (đã có, ghim — không xfail): `/messages`, `/confirm` lên ticket con → 409 "hội thoại chung"."""
+    """a4 (đã có, ghim): `/messages`, `/confirm` lên ticket con → 409 "hội thoại chung"."""
     f = await control_reset()
     f.h.tickets.rows["T1"]["parent_ticket_id"] = "cha-1"
     async with api(f) as a:
@@ -350,3 +332,18 @@ async def test_a7_get_normal_ticket_children_progress_null() -> None:
         an = await a.token("an.nv")
         view = await a.get(an)
         assert "children_progress" in view and view["children_progress"] is None
+
+
+@pytest.mark.parametrize("key", ["MatKhau=Abc@123", "T2-1", "T1-x", "T1-123", "T1-MatKhau123-1", "T1--1"])
+async def test_reply_foreign_or_free_text_keys_not_echoed_in_422(key: str) -> None:
+    """Soát DỪNG 2 mục 6 (B7): khoá `items` không có dạng `<cha>-<i>` → 422 `fields == ["body.items"]`, KHÔNG dội lại khoá (chữ tự do
+    chưa qua guard); 0 `child_event`, không `late_event`, cha vẫn chờ."""
+    f = await tc35()
+    async with api(f) as a:
+        an = await a.token("an.nv")
+        r = await a.reply(an, {**VALID, key: {"answer": "x"}})
+        await a.drain()
+        assert r.status_code == 422 and r.json() == {"error": "invalid_request", "fields": ["body.items"]}, r.text
+        assert key not in r.text
+        assert f.h.effects.count("T1", "child_event") == 0 and a.late("T1") == []
+        assert (await f.waiting("T1")) == "parent_reply_wait"

@@ -15,23 +15,33 @@ cảnh báo E0/E7/E9 (M9 Phase 7, P9 luật 2, 4); hộp thư `child_notices` c�
 Exception ở đây: boundary ghi audit rồi ném tiếp → worker chạy lại, có giới hạn (2b-Q6).
 """
 
+import logging
 from typing import Any
 
 from langgraph.graph import END
 
 from app.audit.final import summarize_final
-from app.audit.handoff import build_handoff, is_deny_case
+from app.audit.handoff import HandoffNote, build_handoff, is_deny_case
+from app.domain.children import (
+    CHILDREN_STATUS_UNAVAILABLE,
+    HANDOFF_CHILDREN,
+    handoff_children_line,
+)
 from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
 from app.graph.goto import audit_key
 from app.graph.tracing import NodeFn
 
+log = logging.getLogger(__name__)
 POINT_8_EVENT = "closed"
 # Phase 5 T20b Q-T20b-5 (i) — lệch D-30 CÓ CHỦ ĐÍCH: cha chỉ có `exit_code` khi đi đường LỖI (E2 hạ tầng / E9 boundary, recover cạn,
 # E7 khi `begun`…); khi đó cha có escalation + tin theo mã như ticket lá, MỌI mã (duyệt MẪU B lượt 2: bỏ giới hạn E2/E9), để L2 và người
 # dùng THẤY (cha lỗi có thể để con treo). Cha đóng bình thường (tổng hợp từ con — `parent_wait`) không bao giờ có `exit_code` → không
-# escalation (D-30 giữ nguyên).
+# escalation (D-30 giữ nguyên). Q-T20b-9 (i): ghi chú bàn giao của cha lỗi thêm vào `done_so_far` MÃ trạng thái từng con (đọc DB —
+# `tickets.children_status`; chỉ mã + id con, không chữ người dùng) để L2 tự kiểm con nào đã chạy B17 / đang chờ người dùng / chưa
+# khởi động; nhãn `close_reason` của con KHÔNG đổi. Danh sách con đọc từ DB theo `parent_ticket_id`, KHÔNG theo `state.children` (cha E9
+# ngay ở B3 chạy lại — `SplitChanged` — chưa có `children` trong checkpoint mà dòng con đã tạo; soát lượt 4 mục 4); ticket lá → không dòng.
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -62,13 +72,15 @@ def make(deps: NodeDeps) -> NodeFn:
         update: dict[str, Any] = {"next": END}
         code = state.get("exit_code")
         if code:  # cha chỉ có `exit_code` khi đi đường LỖI (T20b Q-T20b-5) — mọi mã đều escalate
+            note = build_handoff(
+                state, deps.templates, retrieval_threshold=deps.constants.RETRIEVAL_THRESHOLD
+            )  # S0-A1: tài liệu dưới ngưỡng ghi rõ "không dùng làm căn cứ"
+            note = await _with_children(note, ticket_id)  # Q-T20b-9 (i) — no-op khi không có con
             await effects.once(
                 state, "escalation_create", deps.escalations.create, step="B20",
                 ticket_id=ticket_id, exit_code=code,
                 reason_detail=state.get("escalation_reason_detail"),
-                handoff_note=build_handoff(
-                    state, deps.templates, retrieval_threshold=deps.constants.RETRIEVAL_THRESHOLD
-                ).model_dump(),  # S0-A1: tài liệu dưới ngưỡng ghi rõ "không dùng làm căn cứ"
+                handoff_note=note.model_dump(),
                 is_deny_case=is_deny_case(code), created_at=now,
             )  # fmt: skip
             text = deps.templates.of(code).user_message
@@ -79,5 +91,18 @@ def make(deps: NodeDeps) -> NodeFn:
                 {"role": "assistant", "kind": "escalation", "text": text, "ref": ref}
             ]
         return update
+
+    async def _with_children(note: HandoffNote, ticket_id: str) -> HandoffNote:
+        """Đọc trạng thái con lỗi (DB) → ghi mã cố định, KHÔNG chặn escalation (soát lượt 4 NGHI (a)); log chỉ tên lớp lỗi."""
+        try:
+            rows = await deps.tickets.children_status(ticket_id)
+        except Exception as exc:  # noqa: BLE001 — chỉ phần phụ của ghi chú bàn giao; escalation phải tạo được
+            log.warning("B20 %s: đọc trạng thái ticket con lỗi (%s) — ghi %s", ticket_id, type(exc).__name__, CHILDREN_STATUS_UNAVAILABLE)
+            line = HANDOFF_CHILDREN.format(items=CHILDREN_STATUS_UNAVAILABLE)
+        else:
+            if not rows:
+                return note
+            line = handoff_children_line(rows)
+        return note.model_copy(update={"done_so_far": f"{note.done_so_far} {line}"})
 
     return b20_audit

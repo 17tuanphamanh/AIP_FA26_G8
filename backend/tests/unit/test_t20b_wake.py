@@ -20,13 +20,8 @@ from tests.unit._t20b import TC34, adobe_item, classify, make_flow, reset_item
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 class RecordingLock(MemoryTicketLock):

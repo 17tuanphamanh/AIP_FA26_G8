@@ -7,7 +7,7 @@ trước code (không mở `db/notices.py`, `notify/*`, thân `children_view`/`d
 - `SqlDeadlineStore.set`: con → `child:skip`, 0 dòng; cha → thay hạn chưa bắn của CẢ HAI loại; thường → chỉ cùng loại; không đụng
   `approvals`.
 - `parents_to_wake` / `orphan_children` (P12, chỉ đọc DB); `SqlPresetResolver` cho ticket con (P13).
-Chỉ chạy ở verify/CI (testcontainers) — không xfail.
+Chỉ chạy ở verify/CI (testcontainers).
 """
 
 from collections.abc import AsyncIterator, Iterator
@@ -88,9 +88,14 @@ async def _children(rw: AsyncEngine, parent: str, n: int, *, started: bool = Tru
     out = []
     for i in range(1, n + 1):
         cid = f"{parent}-{i}"
-        await store.create_child(cid, parent_id=parent, redacted_request=f"ý {i}", created_at=NOW)
-        if started:
+        await store.create_child(cid, parent_id=parent, redacted_request=f"ý {i}", created_at=NOW, intents=n, intent_type="vpn")
+        if started:  # như `ChildOps.start_missing`: lượt `submit` của con + dòng `child_submit` của cha (Q-T20b-7 = A, P12 (a) vế 1)
             await _turn(rw, cid)
+            async with rw.begin() as conn:
+                await conn.execute(text(
+                    "INSERT INTO side_effects (effect_key, ticket_id, kind, step, turn_id, result_ref) "
+                    "VALUES (:k, :p, 'child_submit', 'B5', 'turn-cha', :r)"
+                ), {"k": uuid4().hex + uuid4().hex, "p": parent, "r": f"started:{cid}"})  # fmt: skip
         out.append(cid)
     await store.mark_parent_once(parent)
     return out
@@ -138,7 +143,10 @@ async def test_create_child_copies_parent_no_turn_pk(rw: AsyncEngine) -> None:
     store = SqlTicketStore(rw)
     parent = await _parent(rw)
     cid = f"{parent}-1"
-    assert await store.create_child(cid, parent_id=parent, redacted_request="đặt lại mật khẩu", created_at=NOW) == cid
+    ref = await store.create_child(
+        cid, parent_id=parent, redacted_request="đặt lại mật khẩu", created_at=NOW, intents=2, intent_type="account"
+    )
+    assert ref == f"{cid}|2|account"  # Q-T20b-12: `result_ref` của `child_create`
     row, prow = await store.get(cid), await store.get(parent)
     assert row is not None and prow is not None
     assert (row.parent_ticket_id, row.requester_id, row.session_id, row.redacted_request, row.is_parent) == (
@@ -146,7 +154,7 @@ async def test_create_child_copies_parent_no_turn_pk(rw: AsyncEngine) -> None:
     assert await scalar(rw, "SELECT requester_role FROM tickets WHERE ticket_id=:t", t=cid) == "employee"
     assert await scalar(rw, "SELECT count(*) FROM turns WHERE ticket_id=:t", t=cid) == 0
     with pytest.raises((IntegrityError, ValueError)):
-        await store.create_child(cid, parent_id=parent, redacted_request="x", created_at=NOW)
+        await store.create_child(cid, parent_id=parent, redacted_request="x", created_at=NOW, intents=2, intent_type="account")
 
 
 async def test_mark_parent_once_idempotent(rw: AsyncEngine) -> None:
@@ -204,6 +212,8 @@ async def test_children_view_deliver_round_only_given_ids_once(rw: AsyncEngine) 
     await _notice(rw, c1, "B18", "confirm", "Đã đặt lại")
     await _notice(rw, c2, "B11", "answer", "Máy nào?")
     await store.finalize_once(c3, _final("S_ESCALATED"))
+    async with rw.begin() as conn:  # B20 của con xong → lượt đóng (`children_view`: kết thúc = `final_state` VÀ không lượt mở — NGHI lượt 2)
+        await conn.execute(text("UPDATE turns SET ended_at = now() WHERE ticket_id = :t"), {"t": c3})
     view = await store.children_view(parent, [c1, c2, c3])
     assert [(v.child_id, v.index, v.final_state, [(n.kind, n.needs, n.body) for n in v.pending]) for v in view] == [
         (c1, 1, None, [("result", "confirm", "Đã đặt lại")]), (c2, 2, None, [("question", "answer", "Máy nào?")]),
@@ -273,13 +283,15 @@ async def test_n4_deadline_child_skip_parent_replaces_both_kinds_normal_same_kin
 
 
 async def test_s_parents_to_wake_and_orphan_children(rw: AsyncEngine) -> None:
-    """P12 (a): cha `final_state IS NULL` mà mọi con đã dừng theo DB (final hoặc notice chưa gửi `needs≠none`) HOẶC có con chưa có
-    dòng `turns` → chọn; con chờ duyệt (không notice) → không. (b): cha đã kết thúc, con chưa kết thúc có notice chưa gửi `needs≠none`
+    """P12 (a) (Q-T20b-7 = A + NGHI-2): cha `final_state IS NULL` mà mọi con đã dừng theo DB (final VÀ không lượt mở, hoặc notice chưa gửi
+    `needs≠none`) HOẶC số `child_submit` của cha < số con → chọn; con chờ duyệt (không notice) → không. (b): cha đã kết thúc, con chưa kết thúc có notice chưa gửi `needs≠none`
     → `OrphanChild(con, needs mới nhất)`."""
     store, dl = SqlTicketStore(rw), SqlDeadlineStore(rw)
     stopped = await _parent(rw)
     s1, s2 = await _children(rw, stopped, 2)
     await store.finalize_once(s1, _final())
+    async with rw.begin() as conn:  # B20 của con xong → lượt đóng (P12 (a) vế 2: `final_state` VÀ không lượt mở)
+        await conn.execute(text("UPDATE turns SET ended_at = now() WHERE ticket_id = :t"), {"t": s1})
     await _notice(rw, s2, "B18", "confirm")
     unstarted = await _parent(rw)
     await _children(rw, unstarted, 1, started=False)
@@ -295,7 +307,9 @@ async def test_s_parents_to_wake_and_orphan_children(rw: AsyncEngine) -> None:
     await store.finalize_once(closed, _final("S_ESCALATED", parent=True))
     woken = set(await dl.parents_to_wake(1000))
     assert {stopped, unstarted} <= woken and busy not in woken and closed not in woken
-    orphans = [o for o in await dl.orphan_children(1000) if o.ticket_id in (o1, o2, o3, b1, s2)]
+    later = datetime.now(UTC) + timedelta(hours=24, minutes=1)  # Q-T20b-9 (ii): chỉ khi đã quá hạn thường (o1: notice chưa gửi → created_at)
+    orphans = [o for o in await dl.orphan_children(later, 1000, clarify_hours=24, confirm_hours=48)
+               if o.ticket_id in (o1, o2, o3, b1, s2)]  # fmt: skip
     assert orphans == [OrphanChild(o1, "answer")]
 
 

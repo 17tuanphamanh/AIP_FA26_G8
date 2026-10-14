@@ -48,7 +48,14 @@ from app.db.security_events import check_event
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.action import Action
 from app.domain.approval import REMINDER_FRACTIONS, ReminderN, Roster
-from app.domain.children import ChildProgressRow, ChildView, Notice, child_index
+from app.domain.children import (
+    ChildHandoffRow,
+    ChildProgressRow,
+    ChildView,
+    Notice,
+    child_index,
+    child_ref,
+)
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
 from app.domain.ticket_state import ExecutionResult
@@ -207,6 +214,7 @@ class MemoryDeadlines:
         self.waits: list[dict[str, Any]] = []
         self.approvals: dict[str, dict[str, Any]] = {}
         self.tickets: MemoryTickets | None = None  # harness nối — Phase 5 T20b: con/cha theo dòng `tickets` giả
+        self.effects: MemoryEffects | None = None  # harness nối — P12 (a) đếm `child_submit` của cha
 
     async def set(self, ticket_id: str, kind: str, deadline: datetime, created_turn: str) -> str:
         """Như `SqlDeadlineStore.set`. Phase 5 T20b: ticket CON → không ghi, trả `CHILD_SKIP` (P5 — hạn do cha giữ); ticket CHA → thay
@@ -250,30 +258,44 @@ class MemoryDeadlines:
                 if n["child_ticket_id"] == child_id and n["delivered_at"] is None and n["needs"] != "none"]  # fmt: skip
 
     async def parents_to_wake(self, limit: int) -> list[str]:
-        """Như SQL (P12 a): cha chưa kết thúc mà mọi con đã dừng theo DB, hoặc có con chưa có dòng `turns`."""
-        assert self.tickets is not None
+        """Như SQL (P12 a, 2 vế): cha chưa kết thúc mà (1) số `child_submit` (khác `result_ref`) < số con, HOẶC (2) mọi con đã dừng theo
+        điều kiện `children_view` (`final` VÀ không lượt mở, hoặc notice chưa gửi `needs≠none`)."""
+        assert self.tickets is not None and self.effects is not None
         out = []
         for tid, r in self.tickets.rows.items():
             kids = self._children(tid)
             if not r["is_parent"] or r["final"] is not None or not kids:
                 continue
-            done = all(self.tickets.rows[c]["final"] is not None or self._pending_needs(c) for c in kids)
-            unstarted = any(not self.tickets._turns.of(c) for c in kids)
-            if done or unstarted:
+            submitted = {e["result_ref"] for e in self.effects.rows.values() if e["ticket_id"] == tid and e["kind"] == "child_submit"}
+
+            def ended(c: str) -> bool:
+                assert self.tickets is not None
+                return self.tickets.rows[c]["final"] is not None and all(
+                    t["ended_at"] is not None for t in self.tickets._turns.of(c))  # fmt: skip
+
+            if len(submitted) < len(kids) or all(ended(c) or self._pending_needs(c) for c in kids):
                 out.append(tid)
         return out[:limit]
 
-    async def orphan_children(self, limit: int) -> list[OrphanChild]:
+    async def orphan_children(
+        self, now: datetime, limit: int, *, clarify_hours: int, confirm_hours: int
+    ) -> list[OrphanChild]:
         """Như SQL (P12 b, mở rộng Q-T20b-5 (iii)): con chưa kết thúc, cha đã có `final_state`, có notice `needs≠none` (ĐÃ gửi hay chưa)
-        — `needs` của notice đó MỚI NHẤT; con đang có phiếu duyệt `pending` (đang chờ L1, không chờ người dùng) → bỏ."""
+        — `needs` của notice đó MỚI NHẤT; con đang có phiếu duyệt `pending` (đang chờ L1, không chờ người dùng) → bỏ. Q-T20b-9 (ii): chỉ
+        khi `delivered_at` (chưa gửi → `created_at`) của notice đó + hạn thường (`answer` 24 h / `confirm` 48 h) ≤ `now`."""
         assert self.tickets is not None
         out = []
         for tid, r in self.tickets.rows.items():
             parent = r["parent_ticket_id"]
-            asking = [n["needs"] for n in self.tickets.notices if n["child_ticket_id"] == tid and n["needs"] != "none"]
+            asking = sorted((n for n in self.tickets.notices if n["child_ticket_id"] == tid and n["needs"] != "none"),
+                            key=lambda n: (n["created_at"], n["notice_id"]))  # fmt: skip
             waiting_l1 = any(a["ticket_id"] == tid and a["status"] == "pending" for a in self.approvals.values())
-            if parent and r["final"] is None and asking and not waiting_l1 and self.tickets.rows[parent]["final"] is not None:
-                out.append(OrphanChild(tid, asking[-1]))  # type: ignore[arg-type]
+            if not (parent and r["final"] is None and asking and not waiting_l1 and self.tickets.rows[parent]["final"] is not None):
+                continue
+            last = asking[-1]
+            hours = clarify_hours if last["needs"] == "answer" else confirm_hours
+            if (last["delivered_at"] or last["created_at"]) <= now - timedelta(hours=hours):
+                out.append(OrphanChild(tid, last["needs"]))
         return out[:limit]
 
     async def mark_reminder_once(self, approval_id: str, n: ReminderN, now: datetime) -> ReminderTarget | None:
@@ -517,6 +539,8 @@ class MemoryTickets:
         self.notices: list[dict[str, Any]] = []
         self.created_children: list[str] = []  # thứ tự `create_child` (đếm "đúng 2 dòng con" — D-18)
         self.approvals_table: dict[str, dict[str, Any]] = {}  # = `MemoryDeadlines.approvals` (harness nối) — `children_progress_rows`
+        self.effects: MemoryEffects | None = None  # harness nối — `started_children`, `children_status` đọc dòng `child_submit`
+        self.txlog: MemoryTxLog | None = None  # harness nối — `children_status.executed`
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -589,8 +613,11 @@ class MemoryTickets:
 
     # ---- Phase 5 T20b (P3, P7) — cùng ngữ nghĩa `SqlTicketStore` ----------------------------------------------------------
 
-    async def create_child(self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime) -> str:
-        """Như SQL `INSERT … SELECT` từ dòng cha: chép người gửi/phiên; trùng khoá → `ValueError` (PK); KHÔNG dòng `turns`."""
+    async def create_child(
+        self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime, intents: int, intent_type: str
+    ) -> str:
+        """Như SQL `INSERT … SELECT` từ dòng cha: chép người gửi/phiên; trùng khoá → `ValueError` (PK); KHÔNG dòng `turns`. Trả
+        `child_ref` (Q-T20b-12)."""
         if child_id in self.rows:
             raise ValueError("PK tickets")
         parent = self.rows[parent_id]
@@ -600,7 +627,7 @@ class MemoryTickets:
             requester_dept=parent["requester_dept"],
         )  # fmt: skip
         self.created_children.append(child_id)
-        return child_id
+        return child_ref(child_id, intents, intent_type)
 
     async def mark_parent_once(self, ticket_id: str) -> bool:
         row = self.rows[ticket_id]
@@ -646,6 +673,28 @@ class MemoryTickets:
 
     def notices_of(self, child_id: str) -> list[dict[str, Any]]:
         return [n for n in self.notices if n["child_ticket_id"] == child_id]
+
+    async def started_children(self, parent_id: str) -> frozenset[str]:
+        """Như SQL: `result_ref` `started:<con>` của các dòng `child_submit` của cha (mọi lượt)."""
+        assert self.effects is not None
+        return frozenset(e["result_ref"].removeprefix("started:") for e in self.effects.rows.values()
+                         if e["ticket_id"] == parent_id and e["kind"] == "child_submit")  # fmt: skip
+
+    async def children_status(self, parent_id: str) -> list[ChildHandoffRow]:
+        """Như SQL `_HANDOFF_ROWS` (Q-T20b-9 (i)): mọi dòng có `parent_ticket_id = parent_id`, theo `index`."""
+        assert self.txlog is not None
+        started = await self.started_children(parent_id)
+        out = []
+        for cid in sorted((t for t, r in self.rows.items() if r["parent_ticket_id"] == parent_id), key=child_index):
+            final: FinalSummary | None = self.rows[cid]["final"]
+            asking = sorted((n for n in self.notices if n["child_ticket_id"] == cid and n["needs"] != "none"),
+                            key=lambda n: (n["created_at"], n["notice_id"]))  # fmt: skip
+            out.append(ChildHandoffRow(
+                cid, cid in started, final.final_state if final else None, any(r["ticket_id"] == cid for r in self.txlog.rows),
+                any(a["ticket_id"] == cid and a["status"] == "pending" for a in self.approvals_table.values()),
+                asking[-1]["needs"] if asking else None,
+            ))  # fmt: skip
+        return out
 
 
 class MemoryNoticeStore:
@@ -810,6 +859,8 @@ class GraphHarness:
         self.tickets = MemoryTickets(self.turns)
         self.deadlines.tickets = self.tickets  # Phase 5 T20b: con không đặt hạn, cha thay hạn mọi loại (Q-T20b-3)
         self.tickets.approvals_table = self.deadlines.approvals
+        self.deadlines.effects = self.effects
+        self.tickets.effects, self.tickets.txlog = self.effects, self.txlog
         self.notices = MemoryNoticeStore(self.tickets, self.clock)
         self.approvals = MemoryApprovals(self.deadlines, clock=self.clock, users=self.auth_store.users,
                                          audit=self.audit, tickets=self.tickets)  # fmt: skip

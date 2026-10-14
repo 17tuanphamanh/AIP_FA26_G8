@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
-from app.domain.slots import sanitize_slots
+from app.domain.slots import phrase_in_text, sanitize_slots
 from app.domain.ticket_state import RiskDecision
 from app.guard.patterns import PRIVACY_FILE, load_privacy_patterns
 from app.guard.privacy import RegexPrivacyGuard
@@ -25,6 +25,9 @@ SCRIPTED = REPO / "config" / "scripted"
 OLD_PRESETS = frozenset({"default", "g4_0124", "g4_0501", "g4_0700", "tc02", "tc04", "tc05", "tc06", "tc09", "tc13", "tc16", "tc28",
                          "vpn"})  # fmt: skip
 NEW_PRESETS = frozenset({"tc01", "tc03", "tc07", "tc08", "tc17", "tc18", "tc21a", "tc21b", "hb04"})
+# T20b (phase5 5.2.7): 5 kịch bản nhiều ý — preset cha + preset con `<cha>-<i>`
+MULTI = frozenset({"tc34", "tc35", "tc36", "tc32", "tc12r"})
+T20B_PRESETS = MULTI | {c for cs in gate5.CHILD_PRESETS.values() for c in cs}
 
 
 class IntentsRun(FakeRun):
@@ -52,12 +55,12 @@ def _main(argv: list[str], run: FakeRun) -> tuple[int, list[str]]:
 
 def test_all_order_preflight_first_audit_last_every_table_7_6_case() -> None:
     assert gate5.ALL[0] == "preflight" and gate5.ALL[-1] == "g5-audit" and len(set(gate5.ALL)) == len(gate5.ALL)
-    assert set(gate5.ALL) == {"preflight", "g5-audit", *NEW_PRESETS}  # bảng 7.6: 9 kịch bản
+    assert set(gate5.ALL) == {"preflight", "g5-audit", *NEW_PRESETS, *MULTI}  # bảng 7.6: 9 kịch bản + T20b bảng 5.2.7: 5 kịch bản
 
 
 def test_nine_new_presets_old_thirteen_untouched() -> None:
     """P8: 9 preset MỚI; 13 preset cũ vẫn đủ (không xoá/đổi tên)."""
-    assert {f.stem for f in SCRIPTED.glob("*.yaml")} == OLD_PRESETS | NEW_PRESETS
+    assert {f.stem for f in SCRIPTED.glob("*.yaml")} == OLD_PRESETS | NEW_PRESETS | T20B_PRESETS
     assert {p for p, _, _ in gate5.TICKET_PRESETS} == NEW_PRESETS
 
 
@@ -140,6 +143,70 @@ async def test_expected_risk_matches_real_chain_on_seed(preset: str, who: str, s
     want = gate5.EXPECTED[preset]
     got = (risk.matched_rule_id, risk.route, frozenset(row["detail"]["all_matched"]))
     assert got == (want.rule, want.route, want.all_matched), preset
+
+
+# ---- T20b: preset nhiều ý (bảng 5.2.7) ----------------------------------------------------------------------------------------
+
+# Luật mong đợi của từng con (bảng 5.2.7): (preset con, ý của preset cha, slot thêm sau câu hỏi B11, luật, route)
+CHILD_RISK: tuple[tuple[str, str, int, dict[str, str], str, str], ...] = (
+    ("tc34-1", "tc34", 0, {}, "R01", "AUTO"), ("tc34-2", "tc34", 1, {}, "R14", "HITL"),
+    ("tc35-1", "tc35", 0, {}, "R01", "AUTO"), ("tc35-2", "tc35", 1, {"duration": "30"}, "R10", "AUTO"),
+    ("tc32-1", "tc32", 0, {}, "R01", "AUTO"),
+)  # fmt: skip
+
+
+def _intents(preset: str) -> list[dict[str, Any]]:
+    return list(yaml.safe_load((SCRIPTED / f"{preset}.yaml").read_text(encoding="utf-8"))["b03_classify"]["intents"])
+
+
+def test_t20b_multi_presets_and_children_complete() -> None:
+    """Mỗi kịch bản nhiều ý có preset cha (≥ 2 ý) + đủ preset con cho MỌI ý chạy được (ý ngoài phạm vi không gọi LLM — không preset)."""
+    assert {p for p, _, _ in gate5.MULTI_PRESETS} == MULTI == set(gate5.CHILD_PRESETS)
+    for parent, children in gate5.CHILD_PRESETS.items():
+        intents = _intents(parent)
+        assert len(intents) >= 2, parent
+        runnable = [i for i, it in enumerate(intents, start=1) if it["type"] != "out_of_scope"]
+        assert children == tuple(f"{parent}-{i}" for i in runnable), parent
+
+
+@pytest.mark.parametrize(("preset", "who", "sentence"), gate5.MULTI_PRESETS, ids=[p for p, _, _ in gate5.MULTI_PRESETS])
+def test_t20b_spans_in_sentence_and_slots_survive_span_sanitize(preset: str, who: str, sentence: str) -> None:
+    """Span của MỌI ý nằm trong đúng câu gate5 gửi (không thì con E1 `split_span_invalid`); slot của ý chạy được qua
+    `sanitize_slots(text=span)` không bị bỏ (P2 — slot chỉ lấy trong span của CHÍNH ý); `action_hint` ∈ `action_types`."""
+    for it in _intents(preset):
+        assert it["span"] and phrase_in_text(it["span"], f"{sentence} [fake:{preset}]"), (preset, it["span"])
+        if it["type"] == "out_of_scope":
+            continue
+        spec = get_slots().intents[it["type"]]
+        assert it["action_hint"] in spec.action_types
+        raw = {**it["slots"], "action": it["action_hint"]}
+        clean, dropped = sanitize_slots(spec, raw, text=it["span"])
+        assert dropped == {} and set(clean) == set(raw), (preset, dropped)
+    assert who == gate5.AN
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("preset", "who", "sentence"), gate5.MULTI_PRESETS, ids=[p for p, _, _ in gate5.MULTI_PRESETS])
+async def test_t20b_tag_survives_real_privacy_guard(preset: str, who: str, sentence: str) -> None:
+    """Q-T24-10 áp cho câu nhiều ý: thẻ `[fake:<cha>]` qua privacy guard THẬT còn nguyên, 0 bí mật."""
+    redacted = await _guard().redact(f"{sentence} [fake:{preset}]")
+    assert redacted.secrets_found == 0, redacted.text
+    assert FAKE_TAG.search(redacted.text).group(1) == preset  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("child", "parent", "index", "extra", "rule", "route"), CHILD_RISK, ids=[c[0] for c in CHILD_RISK])
+async def test_t20b_child_expected_risk_matches_real_chain_on_seed(
+    child: str, parent: str, index: int, extra: dict[str, str], rule: str, route: str
+) -> None:
+    """Luật của từng con (bảng 5.2.7) khớp chuỗi node THẬT B3 → B6 → B11 → B12 trên seed giả với câu = SPAN của ý (con vào B6 với
+    slot của ý; slot thêm = câu trả lời B11 của preset con) — lần chạy stack đầu không lệch vì kỳ vọng sai."""
+    it = _intents(parent)[index]
+    data = yaml.safe_load((SCRIPTED / f"{child}.yaml").read_text(encoding="utf-8"))
+    assert data["b11_extract_slots"]["slots"] == extra, child
+    state, _audit, _ = await chain("nv001", it["span"], it["type"], it["action_hint"], {**it["slots"], **extra})
+    risk = RiskDecision.model_validate(state["risk"])
+    assert (risk.matched_rule_id, risk.route) == (rule, route), child
 
 
 # ---- Chốt an toàn ENABLED_INTENTS: chỉ in nhãn --------------------------------------------------------------------------------

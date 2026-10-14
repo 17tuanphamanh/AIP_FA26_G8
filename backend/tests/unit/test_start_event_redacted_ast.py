@@ -1,8 +1,8 @@
 """N1 (PROGRESS "Việc treo" 15; phase3 10.7 #13; PLAN-3h S5) — mọi sự kiện resume mang chữ người dùng phải được che L1
 (`redact(...)`) TRƯỚC khi vào runner: LangGraph lưu giá trị resume vào checkpoint trước khi node chạy, node không che kịp.
 
-Hiện có đúng 3 nơi (đều đã che): `/messages` `text` và `/confirm` `note` (`api/tickets.py`), route duyệt `note`
-(`api/approvals.py`). Test để người sau sửa route (hay thêm nơi tạo sự kiện mới) mà bỏ bước che thì đỏ ngay.
+Hiện có đúng 4 nơi (đều đã che): `/messages` `text`, `/confirm` `note` và `/reply` `items` (`api/tickets.py` — Phase 5 T20b), route
+duyệt `note` (`api/approvals.py`). Test để người sau sửa route (hay thêm nơi tạo sự kiện mới) mà bỏ bước che thì đỏ ngay.
 
 Bộ quét FAIL-CLOSED (siết sau soát S7 — 9 dạng lọt im lặng của bản đầu):
 1. Cổng resume = `SINKS` (`start_event`, `deliver_event`, `resume`, `resume_locked`). Không được import bí danh, truyền hàm cổng
@@ -12,7 +12,9 @@ Bộ quét FAIL-CLOSED (siết sau soát S7 — 9 dạng lọt im lặng của b
 3. Mọi khoá là chuỗi hằng (không `**`, không khoá biến). Khoá thuộc `TYPED_KEYS` (giá trị kiểu chặt do model API ép: enum,
    định danh token, thời điểm server) được tự do; MỌI khoá khác phải là hằng hoặc dẫn xuất CHỈ từ kết quả `redact(...)`.
 4. "Sạch" = tên mà MỌI lần gán trong hàm đều là `[await] redact(...)` (hoặc `… if … else None`) hoặc chỉ dùng tên sạch;
-   `redact` phải là hàm import từ `app.api.desk` (không tin theo tên); lời gọi `redact` đứng trước cổng.
+   `redact` phải là hàm import từ `app.api.desk` (không tin theo tên); lời gọi `redact` đứng trước cổng. T20b Q-T20b-8 = A: hàm che
+   tin được = `REDACT_FUNCS` (`redact`, `redact_reply_items` — che TỪNG ý của `/reply`, kết quả chỉ có chữ đã che/bool/None), cùng luật
+   import thẳng không bí danh.
 5. Mỗi lời gọi cổng xét riêng (không gộp theo tên hàm).
 """
 
@@ -32,9 +34,10 @@ TYPED_KEYS = frozenset({"kind", "approver_id", "at", "reason_code", "view_durati
 ROLE_KEYS = frozenset({"decided_as"})
 ROLE_FUNC, ROLE_MODULE = "approval_role", "app.auth.authz"
 REDACT_MODULE = "app.api.desk"
+REDACT_FUNCS = frozenset({"redact", "redact_reply_items"})  # T20b Q-T20b-8 = A
 EXPECTED_USER_TEXT = {
     ("api/tickets.py", "post_message", "text"), ("api/tickets.py", "confirm", "note"),
-    ("api/approvals.py", "decide", "note"),
+    ("api/approvals.py", "decide", "note"), ("api/tickets.py", "reply", "items"),
 }  # fmt: skip
 
 type Fn = ast.FunctionDef | ast.AsyncFunctionDef
@@ -81,20 +84,21 @@ def _params(fn: Fn) -> set[str]:
     return {x.arg for x in [*a.posonlyargs, *a.args, *a.kwonlyargs]}
 
 
-def _redact_trusted(tree: ast.Module) -> bool:
-    return any(
-        isinstance(n, ast.ImportFrom) and n.module == REDACT_MODULE
-        and any(a.name == "redact" and a.asname is None for a in n.names)
-        for n in tree.body
+def _redact_trusted(tree: ast.Module) -> frozenset[str]:
+    """Tên hàm che (∈ `REDACT_FUNCS`) import thẳng từ `app.api.desk`, không bí danh."""
+    return frozenset(
+        a.name for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == REDACT_MODULE
+        for a in n.names if a.name in REDACT_FUNCS and a.asname is None
     )  # fmt: skip
 
 
-def _is_redact_form(value: ast.expr, trusted: bool) -> bool:
-    """`[await] redact(...)` hoặc `[await] redact(...) if … else None` — không nhận biểu thức trộn."""
+def _is_redact_form(value: ast.expr, trusted: frozenset[str]) -> bool:
+    """`[await] redact(...)` hoặc `[await] redact(...) if … else None` (hoặc hàm che khác trong `trusted`) — không nhận biểu thức
+    trộn."""
 
     def call(e: ast.expr) -> bool:
         e = e.value if isinstance(e, ast.Await) else e
-        return trusted and isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id == "redact"
+        return isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id in trusted
 
     if isinstance(value, ast.IfExp):
         return call(value.body) and isinstance(value.orelse, ast.Constant) and value.orelse.value is None
@@ -119,7 +123,7 @@ def _bindings(fn: Fn) -> tuple[dict[str, list[tuple[ast.expr, int]]], set[str]]:
     return simple, other
 
 
-def _clean(fn: Fn, before: int, trusted: bool) -> set[str]:
+def _clean(fn: Fn, before: int, trusted: frozenset[str]) -> set[str]:
     simple, other = _bindings(fn)
     clean: set[str] = set()
     changed = True
@@ -374,3 +378,32 @@ def test_n1_self_check_untrusted_redact_is_not_clean() -> None:
 )
 def test_n1_self_check_alias_is_red(src: str) -> None:
     assert _sink_references(ast.parse(src))
+
+
+# ---- T20b Q-T20b-8 = A: `redact_reply_items` được tin như `redact` (import thẳng từ `app.api.desk`), không hơn ----------------------
+
+_REPLY_HEAD = "from app.api.desk import redact_reply_items\nfrom app.graph.late_event import start_event\n"
+_REPLY = {  # tên → (đầu file, thân hàm, (khoá sạch, khoá KHÔNG sạch) mong đợi)
+    "khuon-route-that": (_REPLY_HEAD, ('redacted = await redact_reply_items(d, q, body.items)\n'
+                                       '    await start_event(r, "t", "S", {"kind": "reply", "items": redacted.items})'),
+                         (["items"], [])),
+    "items-tho": (_REPLY_HEAD, 'await start_event(r, "t", "S", {"kind": "reply", "items": body.items})', ([], ["items"])),
+    "bi-danh": ("from app.api.desk import redact_reply_items as rr\nfrom app.graph.late_event import start_event\n",
+                ('redacted = await rr(d, q, body.items)\n    await start_event(r, "t", "S", {"items": redacted.items})'),
+                ([], ["items"])),
+    "ham-cung-ten-tu-dinh-nghia": (("from app.graph.late_event import start_event\n\nasync def redact_reply_items(d, q, x):\n"
+                                    "    return x\n"),
+                                   ('redacted = await redact_reply_items(d, q, body.items)\n'
+                                    '    await start_event(r, "t", "S", {"items": redacted.items})'), ([], ["items"])),
+    "gan-lai-sau-che": (_REPLY_HEAD, ('redacted = await redact_reply_items(d, q, body.items)\n    redacted = body\n'
+                                      '    await start_event(r, "t", "S", {"items": redacted.items})'), ([], ["items"])),
+    "che-sau-cong": (_REPLY_HEAD, ('await start_event(r, "t", "S", {"items": redacted.items})\n'
+                                   '    redacted = await redact_reply_items(d, q, body.items)'), ([], ["items"])),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_REPLY))
+def test_n1_self_check_redact_reply_items_trusted_only_as_redact(name: str) -> None:
+    head, body, expected = _REPLY[name]
+    results = scan(ast.parse(head + f"\nasync def route(d, q, r, body):\n    {body}\n"))
+    assert ("route" in {fn for fn, _ in results}) and expected in [v for (fn, _), v in results.items() if fn == "route"]

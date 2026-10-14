@@ -2,7 +2,7 @@
 
 - Q5 (i)+(ii): cha lỗi (E9) → B20 tạo ĐÚNG 1 escalation của cha (+ tin theo mã), cha hiện trong `list_open`; cha đóng bình thường → 0
   escalation của cha, không hiện (D-30 giữ nguyên ở đường thường).
-- Q5 (iii) (s3 mở rộng, DỪNG 2 — `CHO_DUNG2`): con đã nhận digest rồi đứng chờ ở `clarify_wait` (notice ĐÃ gửi) + cha E9 → `scan_parents`
+- Q5 (iii) (s3 mở rộng, DỪNG 2): con đã nhận digest rồi đứng chờ ở `clarify_wait` (notice ĐÃ gửi) + cha E9 → `scan_parents`
   giao `timeout` → con E4 `clarify_timeout`.
 - Q6: `start_missing` — pool khoá hết chờ → bỏ qua con đó, cha ghi audit `children_not_started` (`detail.busy`) TRƯỚC interrupt, không E9;
   lần sau khởi động được.
@@ -11,6 +11,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -37,13 +38,8 @@ from tests.unit._t20b import (
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2 = frozenset({"test_q5_iii_child_waiting_after_digest_parent_e9_gets_worker_timeout"})
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 class PoolExhaustedLock(MemoryTicketLock):
@@ -104,7 +100,11 @@ async def test_q5_iii_child_waiting_after_digest_parent_e9_gets_worker_timeout()
     r = await f.deliver("T1", S_CONFIRMING, {"kind": "reply", "items": {"T1-1": {"confirmed": True}, "T1-2": {"answer": "30"}}})
     assert r.values.get("exit_code") == "E9"
     assert (await f.waiting("T1-2")) == "clarify_wait"
-    await WorkerJobs(f.h.runner, f.h.deadlines, f.h.turns).scan_parents()
+    jobs = WorkerJobs(f.h.runner, f.h.deadlines, f.h.turns)
+    assert (await jobs.scan_parents()).timeouts == 0  # Q-T20b-9 (ii): chưa quá hạn thường (24 h từ lúc gửi) → chưa giao
+    assert (await f.waiting("T1-2")) == "clarify_wait"
+    f.h.clock.advance(timedelta(hours=24, seconds=1))
+    assert (await jobs.scan_parents()).timeouts == 1
     c2 = await f.values("T1-2")
     assert (c2["status"], c2["exit_code"], c2["escalation_reason_detail"]) == (S_ESCALATED, "E4", "clarify_timeout")
 
@@ -223,3 +223,92 @@ async def test_q6_failed_child_recorded_before_interrupt() -> None:
     await f.submit(TC34)
     [row] = f.h.audit.of("T1", "children_not_started")
     assert row["detail"] == {"busy": [], "failed": ["T1-2"]}
+
+
+async def test_nghi1_db_fails_right_after_resume_null_writes_deliver_does_not_raise() -> None:
+    """Soát lượt 3 NGHI-1: LangGraph đã ghi write NULL (`__resume__` + `turn_id`) rồi DB lỗi trước mọi write khác → `checkpoint_id`, `next`
+    KHÔNG đổi, chỉ `values.turn_id` đổi → `deliver` KHÔNG ném (resume nằm chờ — worker recover tiêu nó), lượt con còn mở; recover xong
+    con đóng `resolved_user_confirmed`."""
+    f = make_flow(classify(reset_item(), adobe_item()))
+    await f.submit(TC34)
+    saver = f.h.saver
+    put_writes, put = saver.aput_writes, saver.aput
+    calls: list[int] = []
+
+    async def flaky_writes(*args: Any, **kw: Any) -> Any:
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("DB chập ngay sau khi ghi resume")
+        return await put_writes(*args, **kw)
+
+    async def flaky_put(*args: Any, **kw: Any) -> Any:
+        if calls:
+            raise RuntimeError("DB chập ngay sau khi ghi resume")
+        return await put(*args, **kw)
+
+    saver.aput_writes, saver.aput = flaky_writes, flaky_put  # type: ignore[method-assign]
+    out = await f.h.runner.children.deliver("T1-1", "confirm", {"kind": "confirmed", "note": None})
+    saver.aput_writes, saver.aput = put_writes, put  # type: ignore[method-assign]
+    assert out == "delivered"
+    snap = await f.h.runner.snapshot("T1-1")
+    assert snap.next == ("confirm_wait",)  # checkpoint/next chưa đổi — chỉ write NULL đã ghi
+    [turn] = [t["turn_id"] for t in f.h.turns.of("T1-1") if t["ended_at"] is None]
+    assert snap.values["turn_id"] == turn
+    await f.h.runner.recover("T1-1", turn)
+    assert (await f.values("T1-1"))["close_reason"] == "resolved_user_confirmed"
+
+
+# ---- DỪNG 2: P12 (a) hai vế — FAIL-2 (lượt 2) + NGHI-2 (lượt 3) -------------------------------------------------------------------
+
+
+async def test_fail2_child_failed_before_first_checkpoint_has_turns_parent_woken_restarts() -> None:
+    """FAIL-2: con 2 khởi động lỗi TRƯỚC checkpoint đầu (có dòng `turns`, thread rỗng; worker `recover` chỉ đóng lượt, không đánh thức
+    cha) → `scan_parents` vế (1) "`child_submit` < số con" đánh thức cha → `parent_wait` khởi động lại con 2."""
+    f = make_flow(classify(reset_item(), adobe_item()))
+    graph = f.h.runner.graph
+    original = graph.aupdate_state
+
+    async def broken(config: Any, values: Any, *args: Any, **kw: Any) -> Any:
+        if config["configurable"]["thread_id"] == "T1-2":
+            raise RuntimeError("lỗi DB tạm thời khi gieo con 2")
+        return await original(config, values, *args, **kw)
+
+    graph.aupdate_state = broken  # type: ignore[method-assign]
+    await f.submit(TC34)
+    graph.aupdate_state = original  # type: ignore[method-assign]
+    assert f.h.turns.of("T1-2") and (await f.h.runner.snapshot("T1-2")).values == {}
+    [turn] = [t["turn_id"] for t in f.h.turns.of("T1-2") if t["ended_at"] is None]
+    assert await f.h.runner.recover("T1-2", turn) is None  # worker đóng lượt con rỗng, KHÔNG đánh thức cha
+    report = await WorkerJobs(f.h.runner, f.h.deadlines, f.h.turns).scan_parents()
+    assert report.woken == 1
+    assert (await f.h.runner.snapshot("T1-2")).values  # con 2 đã khởi động lại (audit `child_started` của lần hỏng đầu vẫn còn)
+    assert f.h.effects.count("T1", "child_submit") == 2
+
+
+async def test_nghi2_child_exhausts_recovery_at_b20_parent_woken_and_closes() -> None:
+    """NGHI-2: con 2 (E1) ghi `final_state` rồi B20 lỗi mãi → cạn phục hồi (`_give_up` ở B20 đóng lượt, `waiting_at='b20_audit'` — không
+    `after_turn` đánh thức cha) → `scan_parents` vế (2) "mọi con đã dừng theo `children_view`" đánh thức cha → cha đóng."""
+    f = make_flow(classify(reset_item(), oos_item()), max_recover_attempts=1)
+    create = f.h.escalations.create
+
+    async def broken(**kw: Any) -> str:
+        if kw["ticket_id"] == "T1-2":
+            raise RuntimeError("escalation của con 2 lỗi mãi")
+        return await create(**kw)
+
+    f.h.escalations.create = broken  # type: ignore[method-assign]
+    await f.submit(TC32)
+    await f.deliver("T1-1", S_CONFIRMING, {"kind": "confirmed", "note": None})  # con 1 kết thúc TRƯỚC → đánh thức cha: con 2 còn lượt mở
+    assert f.h.tickets.final("T1") is None and (await f.waiting("T1")) == "parent_wait"
+    for _ in range(3):  # worker phục hồi con 2 tới khi cạn lượt — lần cuối `_give_up` ở B20 đóng lượt, KHÔNG đánh thức cha
+        open_turns = [t["turn_id"] for t in f.h.turns.of("T1-2") if t["ended_at"] is None]
+        if not open_turns:
+            break
+        try:
+            await f.h.runner.recover("T1-2", open_turns[0])
+        except RuntimeError:
+            pass  # B20 ném tiếp (lượt mở) — worker `scan_stale_turns` bắt và thử lại chu kỳ sau
+    assert f.h.audit.of("T1-2", "finalize_failed_permanent") and f.h.tickets.final("T1-2") is not None
+    assert f.h.tickets.final("T1") is None and (await f.waiting("T1")) == "parent_wait"  # cha kẹt nếu không có lưới
+    report = await WorkerJobs(f.h.runner, f.h.deadlines, f.h.turns).scan_parents()
+    assert report.woken == 1 and f.h.tickets.final("T1") is not None

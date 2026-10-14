@@ -59,6 +59,12 @@ def child_id(parent_id: str, index: int) -> str:
     return f"{parent_id}-{index}"
 
 
+def child_ref(cid: str, intents: int, intent_type: str) -> str:
+    """`result_ref` của `effects.once("child_create")` (Q-T20b-12): `<con>|<số ý>|<loại ý>` — B3 chạy lại cùng lượt (cache LLM không bảo
+    đảm cùng kết quả) so ref cũ với kết quả mới; lệch số ý / loại ý → ném (cha E9, thấy được — Q-T20b-5)."""
+    return f"{cid}|{intents}|{intent_type}"
+
+
 def child_index(cid: str) -> int:
     """`i` của `<cha>-<i>` (id cha là uuid có dấu `-` — lấy đoạn SAU dấu `-` cuối)."""
     return int(cid.rsplit("-", 1)[1])
@@ -123,4 +129,63 @@ def children_progress(
     (`S_RESOLVED`→`resolved`, `S_ESCALATED`→`escalated`, `S_REJECTED`→`rejected`); phiếu `pending` → `pending_approval`; notice chưa
     gửi `needs≠none` → `ready`; `awaiting` (cha đang ở `parent_reply_wait`, None nếu không) chứa con → `needs_user`; còn lại →
     `processing`. `outcome` = None khi chưa `closed`. `title` = `titles[child_id]` (route tính bằng `messages.child_title(seed)`)."""
-    raise NotImplementedError("T20b S12")
+    out: list[dict[str, Any]] = []
+    for row in sorted(rows, key=lambda r: child_index(r.child_id)):
+        outcome = _OUTCOMES.get(row.final_state) if row.final_state is not None else None
+        if row.final_state is not None:
+            progress: Progress = "closed"
+        elif row.pending_approval:
+            progress = "pending_approval"
+        elif row.ready:
+            progress = "ready"
+        elif awaiting is not None and row.child_id in awaiting:
+            progress = "needs_user"
+        else:
+            progress = "processing"
+        out.append({"child_id": row.child_id, "index": child_index(row.child_id), "title": titles.get(row.child_id, ""),
+                    "progress": progress, "outcome": outcome})  # fmt: skip
+    return out
+
+
+_OUTCOMES: Final[Mapping[str, Outcome]] = {S_RESOLVED: "resolved", S_ESCALATED: "escalated", S_REJECTED: "rejected"}
+
+
+# ---- trạng thái từng con trong ghi chú bàn giao của cha lỗi (Q-T20b-9 (i)) ------------------------------------------------------------
+
+HANDOFF_CHILDREN: Final = "Ticket con (mã trạng thái): {items}."
+CHILDREN_STATUS_UNAVAILABLE: Final = "children_status_unavailable"  # đọc trạng thái con lỗi DB — escalation vẫn tạo (soát lượt 4 NGHI (a))
+
+
+@dataclass(frozen=True)
+class ChildHandoffRow:
+    """Một con theo DB (cha đi đường lỗi — B20 của cha): có dòng `child_submit` của cha, `final_state`, có dòng `transaction_log` (B17
+    đã bắt đầu lệnh ghi), có phiếu duyệt `pending`, `needs` của notice `needs ≠ none` mới nhất (đã gửi hay chưa; None = không có)."""
+
+    child_id: str
+    started: bool
+    final_state: str | None
+    executed: bool
+    pending_approval: bool
+    needs: NoticeNeeds | None
+
+
+def child_handoff_code(row: ChildHandoffRow) -> str:
+    """Mã trạng thái (CHỈ mã — không chữ người dùng): `not_started` | `closed:<final_state>` | `pending_approval` | `awaiting_confirm` |
+    `awaiting_answer` | `processing`; thêm `+executed` khi B17 đã bắt đầu lệnh ghi (L2 tự kiểm hệ thống đích trước khi làm tay)."""
+    if not row.started:
+        code = "not_started"
+    elif row.final_state is not None:
+        code = f"closed:{row.final_state}"
+    elif row.pending_approval:
+        code = "pending_approval"
+    elif row.needs in ("confirm", "answer"):
+        code = f"awaiting_{row.needs}"
+    else:
+        code = "processing"
+    return f"{code}+executed" if row.executed else code
+
+
+def handoff_children_line(rows: Sequence[ChildHandoffRow]) -> str:
+    """Câu mẫu thêm vào `done_so_far` của escalation cha lỗi — theo `index`."""
+    ordered = sorted(rows, key=lambda r: child_index(r.child_id))
+    return HANDOFF_CHILDREN.format(items="; ".join(f"{r.child_id}={child_handoff_code(r)}" for r in ordered))

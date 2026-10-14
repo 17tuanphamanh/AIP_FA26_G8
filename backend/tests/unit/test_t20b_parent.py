@@ -3,7 +3,7 @@ trước code (không mở `graph/nodes/parent_wait.py`, `graph/children.py`).
 
 Graph THẬT trên harness `_t20b` (2 thread cha/con thật). Kịch bản theo bảng 5.2.7: TC34 (con 1 R01 → `confirm_wait`, con 2 R14 → chờ
 duyệt), TC35 (con 1 → `confirm_wait`, con 2 thiếu `duration` → `clarify_wait`), "tất cả kết thúc ngay" (con 1 người khác → E5, con 2 ngoài
-phạm vi → E1). Đếm tin ở `conversation` của CHA (`role == "assistant"`). Mọi ca thuộc DỪNG 1 — không xfail (p5 ở `test_t20b_digest.py`).
+phạm vi → E1). Đếm tin ở `conversation` của CHA (`role == "assistant"`). Mọi ca thuộc DỪNG 1 (p5 ở `test_t20b_digest.py`).
 """
 
 from typing import Any
@@ -30,13 +30,8 @@ from tests.unit._t20b import (
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 def digests(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:

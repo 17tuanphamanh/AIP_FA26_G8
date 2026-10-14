@@ -6,12 +6,17 @@ lần trước khi đột biến.
   uv run python scripts/mutation/mutate_t20b.py --only M-T20b-3
   uv run python scripts/mutation/mutate_t20b.py --only M-T20b-1,M-T20b-9   # nhiều mã, so ĐÚNG mã (không theo tiền tố)
 
-Lượt 1 (DỪNG 1): M-T20b-1…10 (mã có đích đã code ở DỪNG 1). Lượt 2 (DỪNG 2): đủ 14 mã.
+Lượt 1 (DỪNG 1): M-T20b-1…10 (mã có đích đã code ở DỪNG 1). Lượt 2 (DỪNG 2 — bản này): đủ 14 mã = M-T20b-1…10 lần 2 + M-T20b-11 (`/reply`
+bỏ `validate` items ≡ awaiting), -12 (`parent_wait` không `goto` quay lại sau `interrupt`), -13 (`after_turn` chỉ đánh thức khi con kết
+thúc), -14 (cờ `target_is_other` của một ý áp cho MỌI con — "con kế thừa ctx_flags của ý khác").
 - M-T20b-4 "con ở approval_wait tính là đã dừng" = `stopped()` luôn True (con chờ duyệt không có notice nào).
 - M-T20b-6 đích là `SqlDeadlineStore` (SQL) — test n4 dùng kết nối GIẢ qua `current_tx` (PLAN TQ-7) nên đỏ được trong sandbox.
 - M-T20b-7 "không đánh dấu delivered_round" = `parent_wait` truyền danh sách notice rỗng cho `deliver_round`.
 - M-T20b-8 đảo ưu tiên ở cả hai chỗ phụ thuộc thứ tự: dòng MIXED và nhãn khi có đủ 3 loại.
 - M-T20b-10 bỏ CẢ hai lớp chống giao lại: kiểm node/trạng thái trong `ChildOps.deliver` và `peek("child_event")` ở `parent_reply_wait`.
+
+Sau duyệt MẪU B DỪNG 2 (Q-T20b-8…12): chạy lại 12 mã có file đích vừa sửa (`--only` M-T20b-1…4,6…12,14); chuỗi đích M-T20b-3
+(`ref = …`, thêm `intents`/`intent_type` — Q-T20b-12) và M-T20b-11 (`redacted.items` — Q-T20b-8) cập nhật theo code.
 
 Mỗi đột biến chạy TRỌN bộ test của chặng (không chỉ test dự đoán) để thấy cả test đỏ ngoài dự đoán.
 """
@@ -40,13 +45,15 @@ RUNTIME = "backend/app/db/runtime.py"
 PARENT_WAIT = "backend/app/graph/nodes/parent_wait.py"
 REPLY_WAIT = "backend/app/graph/nodes/parent_reply_wait.py"
 CHILD_OPS = "backend/app/graph/children.py"
+API = "backend/app/api/tickets.py"
+RUNNER = "backend/app/graph/runner.py"
 
 UT = pt(*[
     f"backend/tests/unit/{name}.py"
     for name in (
         "test_t20b_split", "test_t20b_seed", "test_t20b_notify", "test_t20b_wake", "test_t20b_parent", "test_t20b_reply",
         "test_t20b_digest", "test_t20b_flows", "test_t20b_api", "test_t20b_scan", "test_t20b_resolver", "test_t20b_s10_fixes",
-        "test_t20b_q5_q6", "test_b03_classify",
+        "test_t20b_q5_q6", "test_t20b_dung2_fixes", "test_gate5", "test_b03_classify",
         "test_side_effects_ast", "test_state_keys_ast", "test_graph_static", "test_graph_runtime", "test_b20_audit",
     )
 ])  # fmt: skip
@@ -68,9 +75,10 @@ def one(rel: str, old: str, new: str) -> tuple[str, str, str, int]:
 _SPLIT_LOOP = "        for i, (it, verdict) in enumerate(zip(intents, verdicts, strict=True), start=1):\n"
 _SPAN_TEXT = "        slots, dropped = sanitize_slots(deps.slots.intents[it.type], raw, text=l0(it.span))  # P2: text = span của ý\n"
 _CREATE = (
-    "            await effects.once(\n"
+    "            ref = await effects.once(\n"
     '                state, "child_create", deps.tickets.create_child, cid, parent_id=parent,\n'
     '                redacted_request=seeds[cid]["redacted_request"], created_at=run.clock.now(), step="B5", sub=cid,\n'
+    "                intents=len(intents), intent_type=it.type,\n"
     "            )  # fmt: skip\n"
 )
 _STOPPED = '    return view.final_state is not None or any(n.needs != "none" for n in view.pending)\n'
@@ -81,6 +89,10 @@ _MIXED = '        return S_ESCALATED, "MIXED"\n'
 _THREE = '    return S_RESOLVED, "PARTIALLY_ESCALATED" if esc else "PARTIALLY_REJECTED"\n'
 _DONE = '            done: dict[str, Any] = {"aggregate_status": agg, "parent_round": rnd, "conversation": [digest.msg]}\n'
 _DELIVER_CHECK = '                    if snap.values.get("status") != status or snap.next != (node,):\n'
+_VALIDATE = '            session_id=p.session_id, wait_node="parent_reply_wait", validate=_items_match(redacted.items),\n'
+_WOKEN = '            return await goto(state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="parent_woken")\n'
+_STOPS = 'CHILD_STOPS = frozenset({None, "clarify_wait", "confirm_wait"})'
+_FLAG = '        if "target_user" in dropped:  # Q-T20a-4 áp TỪNG con\n'
 _EVENT_PEEK = '            if await effects.peek(state, "child_event", step="B5", sub=sub) is not None:\n'
 
 UNIT = [
@@ -92,9 +104,9 @@ UNIT = [
              [one(B03, _SPAN_TEXT, _SPAN_TEXT.replace("text=l0(it.span))", "text=text)").rstrip("\n") + "  # MUTATION M-T20b-2\n")],
              UT, ["test_v6_slot_only_in_other_span_dropped"]),
     Mutation("M-T20b-3 child_create gọi thẳng, không effects.once",
-             [one(B03, _CREATE, "            await deps.tickets.create_child(  # MUTATION M-T20b-3\n"
+             [one(B03, _CREATE, "            ref = await deps.tickets.create_child(  # MUTATION M-T20b-3\n"
                                 '                cid, parent_id=parent, redacted_request=seeds[cid]["redacted_request"], '
-                                "created_at=run.clock.now(),\n"
+                                "created_at=run.clock.now(), intents=len(intents), intent_type=it.type,\n"
                                 "            )  # fmt: skip\n")],
              UT, ["test_k1_crash_after_child_create_before_parent_checkpoint"]),
     Mutation("M-T20b-4 con ở approval_wait tính là đã dừng",
@@ -122,6 +134,19 @@ UNIT = [
              [one(CHILD_OPS, _DELIVER_CHECK, "                    if False:  # MUTATION M-T20b-10\n"),
               one(REPLY_WAIT, _EVENT_PEEK, "            if False:  # MUTATION M-T20b-10\n")],
              UT, ["test_r3_rerun_after_child1_delivered_child1_not_twice_child2_receives"]),
+    Mutation("M-T20b-11 /reply bỏ kiểm items ≡ awaiting",
+             [one(API, _VALIDATE, _VALIDATE.replace("validate=_items_match(redacted.items),", "validate=None,").rstrip("\n")
+                  + "  # MUTATION M-T20b-11\n")],
+             UT, ["test_a2_items_must_equal_awaiting_422"]),
+    Mutation("M-T20b-12 parent_wait không goto quay lại sau interrupt",
+             [one(PARENT_WAIT, _WOKEN, "            pass  # MUTATION M-T20b-12\n")],
+             UT, ["test_p1_one_child_stopped_other_in_approval_wait_parent_waits_zero_messages"]),
+    Mutation("M-T20b-13 after_turn không đánh thức khi con dừng ở node chờ",
+             [one(RUNNER, _STOPS, "CHILD_STOPS = frozenset({None})  # MUTATION M-T20b-13")],
+             UT, ["test_w1_child_stops_at_clarify_wait_wakes_parent_after_release", "test_w1_child_stops_at_confirm_wait_wakes_parent"]),
+    Mutation("M-T20b-14 con kế thừa ctx_flags của ý khác (cờ áp cho mọi con)",
+             [one(B03, _FLAG, "        if True:  # MUTATION M-T20b-14\n")],
+             UT, ["test_v7_target_user_dropped_flag_only_on_that_child"]),
 ]  # fmt: skip
 
 MUTATIONS = UNIT

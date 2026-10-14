@@ -2,11 +2,14 @@
 
 - (ii) `SqlEscalationStore.list_open`: `is_parent = false OR tickets.exit_code IS NOT NULL` — cha lỗi (E9 đã finalize) HIỆN; cha đóng
   bình thường (không `exit_code`) và cha chưa finalize KHÔNG hiện; ticket lá như cũ.
-- (iii) `SqlDeadlineStore.orphan_children` (DỪNG 2 — `CHO_DUNG2`): con chờ người dùng mà notice ĐÃ gửi + cha đã kết thúc → chọn (`needs`
-  của notice `needs≠none` mới nhất); con đang có phiếu duyệt `pending` → bỏ.
+- (iii) `SqlDeadlineStore.orphan_children` (DỪNG 2): con chờ người dùng mà notice ĐÃ gửi + cha đã kết thúc → chọn (`needs`
+  của notice `needs≠none` mới nhất); con đang có phiếu duyệt `pending` → bỏ. Q-T20b-9 (ii): chỉ khi đã quá hạn thường (24 h / 48 h) tính
+  từ `delivered_at` (chưa gửi → `created_at`) của notice đó.
+- Q-T20b-9 (i) `children_status` + Q-T20b-11 `started_children` (sau duyệt MẪU B DỪNG 2).
 """
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -14,6 +17,7 @@ from alembic import command
 from app.db.escalations import SqlEscalationStore
 from app.db.runtime import OrphanChild, SqlDeadlineStore
 from app.db.tickets import SqlTicketStore
+from app.domain.children import ChildHandoffRow, handoff_children_line
 from app.domain.final import FinalSummary
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -23,13 +27,8 @@ from tests.integration.test_t20b_pg import NOW, _children, _final, _notice, _par
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2 = frozenset({"test_q5_iii_orphan_children_includes_delivered_notice_skips_pending_approval"})
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 @pytest.fixture(scope="module")
@@ -88,8 +87,66 @@ async def test_q5_iii_orphan_children_includes_delivered_notice_skips_pending_ap
                                 "VALUES (:t, :u, now() + interval '30 minutes', 'pending', :h)"),
                            {"t": approving, "u": APPROVER, "h": "a" * 64})  # fmt: skip
     await tickets.finalize_once(parent, _parent_e9())
-    orphans = [o for o in await SqlDeadlineStore(rw).orphan_children(1000) if o.ticket_id in (waiting, approving)]
+    later = datetime.now(UTC) + timedelta(hours=24, minutes=1)
+    orphans = [o for o in await SqlDeadlineStore(rw).orphan_children(later, 1000, clarify_hours=24, confirm_hours=48)
+               if o.ticket_id in (waiting, approving)]  # fmt: skip
     assert orphans == [OrphanChild(waiting, "answer")]
+
+
+async def _orphans(rw: AsyncEngine, ids: tuple[str, ...]) -> list[OrphanChild]:
+    found = await SqlDeadlineStore(rw).orphan_children(datetime.now(UTC), 1000, clarify_hours=24, confirm_hours=48)
+    return [o for o in found if o.ticket_id in ids]
+
+
+async def test_q9_ii_orphan_only_after_normal_deadline_from_delivered_or_created(rw: AsyncEngine) -> None:
+    """Q-T20b-9 (ii): hỏi lại 24 h tính từ `delivered_at`; xác nhận 48 h tính từ `created_at` khi notice CHƯA gửi; chưa tới → không chọn."""
+    tickets = SqlTicketStore(rw)
+    parent = await _parent(rw)
+    asked, done = await _children(rw, parent, 2)
+    await _notice(rw, asked, "B11", "answer")
+    await _notice(rw, done, "B18", "confirm")
+    await tickets.finalize_once(parent, _parent_e9())
+    ids = (asked, done)
+
+    async def shift(child: str, column: str, hours: int) -> None:
+        async with rw.begin() as conn:
+            await conn.execute(text(f"UPDATE child_notices SET {column} = now() - make_interval(hours => CAST(:h AS integer)) "
+                                    "WHERE child_ticket_id = :c"), {"h": hours, "c": child})  # fmt: skip
+
+    async with rw.begin() as conn:  # notice hỏi lại đã gửi (vòng 1) — tạo từ 30 h trước nhưng mới GỬI 23 h trước
+        await conn.execute(text("UPDATE child_notices SET delivered_round = 1, delivered_at = now() - interval '23 hours', "
+                                "created_at = now() - interval '30 hours' WHERE child_ticket_id = :c"), {"c": asked})  # fmt: skip
+    await shift(done, "created_at", 47)
+    assert await _orphans(rw, ids) == []  # hỏi lại: 23 h từ lúc gửi; xác nhận: 47 h từ lúc tạo
+    await shift(asked, "delivered_at", 25)
+    assert await _orphans(rw, ids) == [OrphanChild(asked, "answer")]
+    await shift(done, "created_at", 49)
+    assert {o.ticket_id for o in await _orphans(rw, ids)} == {asked, done}
+
+
+async def test_q9_i_children_status_and_q11_started_children(rw: AsyncEngine) -> None:
+    """Q-T20b-9 (i): mã trạng thái từng con từ DB (chỉ mã + id); Q-T20b-11: `started_children` = con có dòng `child_submit`."""
+    tickets = SqlTicketStore(rw)
+    parent = await _parent(rw)
+    c1, c2 = await _children(rw, parent, 2)
+    c3 = f"{parent}-3"
+    await tickets.create_child(c3, parent_id=parent, redacted_request="ý 3", created_at=NOW, intents=3, intent_type="vpn")
+    await tickets.finalize_once(c1, _final())
+    async with rw.begin() as conn:
+        await conn.execute(text("INSERT INTO transaction_log (ticket_id, turn_id, step_name, status) "
+                                "VALUES (:t, 'x', 'vpn_reset', 'begun')"), {"t": c1})  # fmt: skip
+    await _notice(rw, c2, "B18", "confirm")
+    assert await tickets.started_children(parent) == frozenset({c1, c2})
+    rows = await tickets.children_status(parent)
+    assert rows == [
+        ChildHandoffRow(c1, True, "S_RESOLVED", True, False, None),
+        ChildHandoffRow(c2, True, None, False, False, "confirm"),
+        ChildHandoffRow(c3, False, None, False, False, None),
+    ]
+    assert await tickets.children_status(c1) == []  # ticket lá: không con
+    assert handoff_children_line(rows) == (
+        f"Ticket con (mã trạng thái): {c1}=closed:S_RESOLVED+executed; {c2}=awaiting_confirm; {c3}=not_started."
+    )
 
 
 async def test_nghi_children_view_final_with_open_turn_not_ended(rw: AsyncEngine) -> None:

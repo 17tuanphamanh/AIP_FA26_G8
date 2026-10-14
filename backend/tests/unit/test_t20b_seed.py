@@ -2,7 +2,7 @@
 
 Graph THẬT trên harness `_t20b`. Giả lập process chết bằng `Crash` (BaseException — boundary không bắt, LangGraph không kịp ghi
 checkpoint của node đang chạy): `MemoryAudit.crash_once` (chết ngay TRƯỚC khi ghi dòng audit) hoặc thay `turns.start`. Chạy lại =
-`h.restart()` (process mới, cùng checkpoint/DB giả) + `runner.recover` lượt còn mở. Mọi ca thuộc DỪNG 1 — không xfail.
+`h.restart()` (process mới, cùng checkpoint/DB giả) + `runner.recover` lượt còn mở. Mọi ca thuộc DỪNG 1.
 """
 
 from datetime import timedelta
@@ -28,13 +28,8 @@ from tests.unit._t20b import (
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 SEED_KEYS = {

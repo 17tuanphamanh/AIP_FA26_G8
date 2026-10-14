@@ -7,7 +7,7 @@
   `wait_deadlines`; thường/cha → có INSERT. Không phụ thuộc thứ tự/số câu SELECT.
 - n1/n4 trên graph (harness `_t20b`): notice của con có `effect_key` = khoá dòng `side_effects`; `h.notifier` không có dòng của con;
   con không có dòng `wait_deadlines`.
-Mọi ca thuộc DỪNG 1 — không xfail.
+Mọi ca thuộc DỪNG 1.
 """
 
 from collections.abc import Iterator
@@ -36,13 +36,8 @@ from tests.fakes.graph import (
 from tests.unit._t20b import TC34, adobe_item, classify, make_flow, reset_item
 
 T0 = datetime(2026, 10, 15, 3, 0, tzinfo=UTC)
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 # bước → (kind, needs mà node gửi) — P5 (a) + 5.2.0 "Notifier"

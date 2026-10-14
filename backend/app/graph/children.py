@@ -13,6 +13,8 @@ D-19): cha ghi `child_submit` / `child_event` qua `effects.once` SAU khi chạy,
   `goto` từ `S_CLASSIFYING`: ý chạy được → `S_DIAGNOSING`/`b06_diagnose`, `event="child_started"`; ý E1 → `S_ESCALATED`/`b20_audit`,
   `event="child_not_runnable"`; `step="B5"`) → `ainvoke(None)` → đóng lượt. `requester_context` đọc từ state cha. Sau đó — CHỈ khi
   lần này thật sự khởi động — `effects.once("child_submit", sub=cid)` (`peek` trước: đã ghi ở lượt này → bỏ) — một dòng/con.
+  `recorded` = con đã có dòng `child_submit` ở BẤT KỲ lượt nào (`tickets.started_children`, node cha đọc) → bỏ qua luôn. Con có thread
+  mà CHƯA có dòng (chết giữa lượt lồng và lúc ghi) → ghi bù `child_submit` (Q-T20b-11 — P12 (a) vế 1 không đánh thức cha mãi).
 - `deliver(cid, needs, payload)`: dưới khoá con — con đang đúng trạng thái + đúng node chờ (`answer` → `S_CLARIFYING`/`clarify_wait`;
   `confirm` → `S_CONFIRMING`/`confirm_wait`) → resume lồng → `"delivered"`; lệch (đã giao ở lần chạy trước, hoặc con đã đi tiếp) →
   `"skipped"`, KHÔNG `late_event`. `TicketBusy` → thử lại sau `busy_delay_s` × `busy_retries` rồi ném (E9 cha — hiếm).
@@ -20,7 +22,7 @@ D-19): cha ghi `child_submit` / `child_event` qua `effects.once` SAU khi chạy,
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final, Literal
 
@@ -76,17 +78,19 @@ class ChildOps:
         self._busy_retries = busy_retries
         self._busy_delay_s = busy_delay_s
 
-    async def start_missing(self, parent: Mapping[str, Any]) -> StartReport:
+    async def start_missing(self, parent: Mapping[str, Any], *, recorded: Collection[str]) -> StartReport:
         """Khởi động mọi con chưa có thread (idempotent). `started` = con vừa khởi động ở lần gọi này; `busy` = con chưa khởi động được vì
-        khoá con đang bị giữ / pool khoá hết chờ (Q-T20b-6 — bỏ qua, lần đối soát sau thử lại; cha ghi tên vào `audit_detail`)."""
+        khoá con đang bị giữ / pool khoá hết chờ (Q-T20b-6 — bỏ qua, lần đối soát sau thử lại; cha ghi tên vào `audit_detail`).
+        `recorded` = con đã có dòng `child_submit` (mọi lượt) — bỏ qua; con đã có thread mà chưa có dòng → ghi bù (Q-T20b-11)."""
         report = StartReport()
         seeds: Mapping[str, Mapping[str, Any]] = parent.get("child_seeds") or {}
         for cid in parent.get("children") or []:
-            if await effects.peek(parent, "child_submit", step="B5", sub=cid) is not None:
-                continue  # lượt này đã khởi động + ghi (chạy lại cùng lượt — D-18)
+            if cid in recorded or await effects.peek(parent, "child_submit", step="B5", sub=cid) is not None:
+                continue  # đã khởi động + ghi (lượt trước, hoặc chạy lại cùng lượt — D-18)
             outcome = await self._start(parent, cid, seeds[cid])
-            if outcome == "started":
-                report.started.append(cid)
+            if outcome in ("started", "exists"):  # "exists" ở đây = có thread mà thiếu dòng `child_submit` → ghi bù (Q-T20b-11)
+                if outcome == "started":
+                    report.started.append(cid)
                 await effects.once(parent, "child_submit", _started, cid, step="B5", sub=cid)
             elif outcome == "busy":
                 report.busy.append(cid)
@@ -167,11 +171,13 @@ class ChildOps:
             log.exception("lượt lồng của ticket con %s lỗi — để worker phục hồi", cid)
 
 
-def _progress(snap: StateSnapshot) -> tuple[Any, tuple[str, ...]]:
-    """Mốc "con đã nhận sự kiện chưa": `checkpoint_id` + `next`. Đã kiểm với LangGraph 1.2: resume được nhận rồi node lỗi thì
-    `checkpoint_id` GIỮ NGUYÊN (giá trị resume là write chờ trên checkpoint cũ) nhưng `next` đổi (`('confirm_wait',)` → `()` — khuôn
-    `runner._pending`); chưa nhận (lỗi trước `ainvoke`, vd `turns.start`) → cả hai không đổi."""
-    return snap.config.get("configurable", {}).get("checkpoint_id"), tuple(snap.next)
+def _progress(snap: StateSnapshot) -> tuple[Any, tuple[str, ...], Any]:
+    """Mốc "con đã nhận sự kiện chưa": `checkpoint_id` + `next` + `values.turn_id`. Đã kiểm với LangGraph 1.2: resume được nhận rồi node
+    lỗi thì `checkpoint_id` GIỮ NGUYÊN (giá trị resume là write chờ trên checkpoint cũ) nhưng `next` đổi (`('confirm_wait',)` → `()` —
+    khuôn `runner._pending`); DB lỗi NGAY SAU khi LangGraph ghi write NULL (`__resume__` + `turn_id` của lượt — `Command(update=…)`) mà
+    trước write của task thì `checkpoint_id` và `next` đều không đổi, chỉ `values.turn_id` đổi (soát lượt 3 NGHI-1) — resume vẫn nằm chờ,
+    worker recover sẽ tiêu nó; chưa nhận gì (lỗi trước `ainvoke`, vd `turns.start`) → cả ba không đổi."""
+    return snap.config.get("configurable", {}).get("checkpoint_id"), tuple(snap.next), snap.values.get("turn_id")
 
 
 def _started(cid: str) -> str:

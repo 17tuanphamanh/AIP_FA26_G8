@@ -8,7 +8,7 @@ task, nên node LangGraph thấy giá trị runner đặt trước `ainvoke` (đ
 turn_id cũ kể cả khi process chết trước checkpoint đầu tiên của lượt resume (D-18).
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -36,7 +36,7 @@ class ChildPort(Protocol):
     """`graph.children.ChildOps` theo cấu trúc (Phase 5 T20b P4, P8) — khai báo ở đây để `context` không import `children`/`runner`
     (node import `context`; import-linter "graph.nodes.* không import lẫn nhau" đếm cả import TYPE_CHECKING)."""
 
-    async def start_missing(self, parent: Mapping[str, Any]) -> "StartLike": ...
+    async def start_missing(self, parent: Mapping[str, Any], *, recorded: Collection[str]) -> "StartLike": ...
 
     async def deliver(self, child_id: str, needs: str, payload: Mapping[str, Any]) -> str: ...
 

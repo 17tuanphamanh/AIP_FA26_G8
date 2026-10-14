@@ -38,13 +38,8 @@ from tests.unit._t20b import (
 
 pytestmark = pytest.mark.asyncio
 
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail (phần DỪNG 2 của 5.2.7 ở test_t20b_api.py)
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 def digests(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -162,7 +162,7 @@ def load_presets(directory: Path, registry: PromptRegistry) -> dict[str, dict[st
 def child_preset(parent_tag: str | None, child_id: str) -> str | None:
     """Phase 5 T20b P13: preset của ticket CON (câu = `span`, không thẻ) = thẻ của CHA + hậu tố `-<i>` (`i` = đoạn sau dấu `-` cuối của
     `child_id`): `tc34` + `<cha>-2` → `tc34-2`. Cha không thẻ → None (preset `default`)."""
-    raise NotImplementedError("T20b S14")
+    return None if parent_tag is None else f"{parent_tag}-{child_id.rsplit('-', 1)[1]}"
 
 
 class PresetResolver(Protocol):
@@ -175,7 +175,8 @@ _RESOLVER_CACHE_MAX = 1024
 
 
 class SqlPresetResolver:
-    """`turn_id → tickets.redacted_request` → thẻ `[fake:<preset>]` (backend và worker thấy như nhau)."""
+    """`turn_id → tickets.redacted_request` → thẻ `[fake:<preset>]` (backend và worker thấy như nhau). T20b P13: ticket CON (câu = `span`,
+    không thẻ) → thẻ của CHA + `-<i>` (`child_preset`); preset con thiếu → `ScriptExhausted` như cũ."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -185,16 +186,25 @@ class SqlPresetResolver:
         if trace is None:
             return None
         if trace.turn_id not in self._cache:
+            parent = _TICKETS.alias("parent")
             async with self._engine.connect() as conn:
-                row = await conn.execute(
-                    select(_TICKETS.c.redacted_request)
-                    .select_from(_TURNS.join(_TICKETS, _TURNS.c.ticket_id == _TICKETS.c.ticket_id))
+                row = (await conn.execute(
+                    select(_TICKETS.c.ticket_id, _TICKETS.c.redacted_request, parent.c.redacted_request.label("parent_request"))
+                    .select_from(_TURNS.join(_TICKETS, _TURNS.c.ticket_id == _TICKETS.c.ticket_id)
+                                 .outerjoin(parent, parent.c.ticket_id == _TICKETS.c.parent_ticket_id))
                     .where(_TURNS.c.turn_id == trace.turn_id)
-                )
-                found = FAKE_TAG.search(row.scalar_one_or_none() or "")
+                )).first()  # fmt: skip
+            tag = None
+            if row is not None:
+                found = FAKE_TAG.search(row.redacted_request or "")
+                if found:
+                    tag = found.group(1)
+                elif row.parent_request is not None:  # ticket con (T20b P13)
+                    up = FAKE_TAG.search(row.parent_request)
+                    tag = child_preset(up.group(1) if up else None, row.ticket_id)
             if len(self._cache) >= _RESOLVER_CACHE_MAX:
                 self._cache.clear()
-            self._cache[trace.turn_id] = found.group(1) if found else None
+            self._cache[trace.turn_id] = tag
         return self._cache[trace.turn_id]
 
 

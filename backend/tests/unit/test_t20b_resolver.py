@@ -18,15 +18,9 @@ from app.llm.providers.base import ProviderRequest
 from app.llm.providers.scripted import PresetScriptedLLM, child_preset, load_presets
 from tests.fakes.llm import repo_registry
 
-CHO_DUNG2 = frozenset({"test_h1_child_preset_parent_tag_plus_index"})
-
 SCRIPTED = Path(__file__).resolve().parents[3] / "config" / "scripted"
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 
 @pytest.mark.parametrize(

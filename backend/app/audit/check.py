@@ -25,7 +25,7 @@ from typing import Any, Final
 from sqlalchemy import JSON, String, Table, select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.db.models import AuditLog, Ticket
+from app.db.models import AGGREGATE_STATUSES, AuditLog, Ticket
 from app.guard.patterns import privacy_patterns
 from app.settings import get_settings
 
@@ -143,8 +143,11 @@ def _point8(ticket_id: str, rows: Sequence[Mapping[str, Any]]) -> list[Missing]:
     closed = [r for r in rows if (r.get("step"), r.get("event")) == ("B20", "closed")]
     if not closed:
         return [Missing(ticket_id, 8, None, ("B20/closed",))]
+    # Phase 5 T20b Q-T20b-13 = A: ticket CHA đóng bình thường (D-30) không `close_reason`/`exit_code` — đạt khi `detail.aggregate_status`
+    # ∈ `AGGREGATE_STATUSES` (giá trị lạ / thiếu cả ba → vẫn thiếu)
     lacks = [
         _lacks(r, ["final_state"]) + ([] if r.get("close_reason") is not None or r.get("exit_code") is not None
+                                      or _get(r, "detail.aggregate_status") in AGGREGATE_STATUSES
                                       else ["close_reason|exit_code"])
         for r in closed
     ]  # fmt: skip

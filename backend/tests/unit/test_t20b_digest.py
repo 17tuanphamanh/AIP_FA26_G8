@@ -3,7 +3,7 @@
 Phủ: m1 (`compose_digest`: tiêu đề `ACTION_LABELS` / nhãn loại / ý E1, thứ tự `index`, vòng cuối chỉ câu tổng kết), m2 (hình dạng tin
 `digest`, `items[].kind` ∈ 4 giá trị FE), p5 (`aggregate_children` 6 dòng + dòng đủ 3 loại, bảng 5.2.5; con chưa kết thúc / `S_BLOCKED`
 → `ValueError`), câu tổng kết (`summary_text`), `stopped`/`needs_of` (5.2.4), `reply_text` (P8, hợp đồng FE (d)).
-Mọi ca thuộc DỪNG 1 — không xfail.
+Mọi ca thuộc DỪNG 1.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -36,13 +36,8 @@ from app.domain.messages import (
 from app.domain.states import S_BLOCKED, S_ESCALATED, S_REJECTED, S_RESOLVED
 
 T0 = datetime(2026, 10, 15, 3, 0, tzinfo=UTC)
-CHO_DUNG2: frozenset[str] = frozenset()  # mọi ca thuộc DỪNG 1 — không xfail
 
 
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
 
 P = "P1"
 ITEM_KEYS = {"child_id", "index", "title", "kind", "text", "needs"}

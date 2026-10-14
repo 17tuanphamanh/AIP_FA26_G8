@@ -2,7 +2,7 @@
 `scan_parents`, `parents_to_wake`, `orphan_children` SQL).
 
 Graph THẬT trên harness `_t20b`; worker = `WorkerJobs(h.runner, h.deadlines, h.turns)` (khuôn `test_graph_runtime`). `MemoryDeadlines`
-đã mô phỏng hai truy vấn chỉ-đọc-DB (`parents_to_wake`, `orphan_children`). DỪNG 2: mọi ca vào `CHO_DUNG2` trừ hằng chu kỳ (ghim).
+đã mô phỏng hai truy vấn chỉ-đọc-DB (`parents_to_wake`, `orphan_children`). Mọi ca thuộc DỪNG 2.
 """
 
 from datetime import timedelta
@@ -28,19 +28,6 @@ from tests.unit._t20b import (
     reset_item,
 )
 
-CHO_DUNG2 = frozenset({
-    "test_s1_all_children_stopped_by_db_wakes_parent_once",
-    "test_s1_parent_not_at_parent_wait_is_noop",
-    "test_s2_unstarted_child_wake_starts_it",
-    "test_s3_parent_closed_child_waiting_gets_worker_timeout",
-})  # fmt: skip
-
-
-@pytest.fixture(autouse=True)
-def _cho_dung2(request: pytest.FixtureRequest) -> None:
-    if request.node.originalname in CHO_DUNG2:
-        request.applymarker(pytest.mark.xfail(strict=True, raises=(AssertionError, NotImplementedError), reason="T20b DỪNG 2"))
-
 
 def jobs(f: Flow) -> WorkerJobs:
     return WorkerJobs(f.h.runner, f.h.deadlines, f.h.turns)
@@ -49,7 +36,7 @@ def jobs(f: Flow) -> WorkerJobs:
 def test_parent_reconcile_interval_60s() -> None:
     """P12 + 5.2.12: `PARENT_RECONCILE_INTERVAL` là hằng code 60 s (không biến `.env`)."""
     assert PARENT_RECONCILE_INTERVAL == 60
-    assert set(ParentScanReport.__dataclass_fields__) == {"woken", "timeouts", "late", "busy", "failed"}
+    assert set(ParentScanReport.__dataclass_fields__) == {"woken", "timeouts", "late", "busy", "failed", "deferred"}  # Q-T20b-10
 
 
 class WakeCounter:
@@ -143,6 +130,9 @@ async def test_s3_parent_closed_child_waiting_gets_worker_timeout() -> None:
         aggregate_status="ALL_ESCALATED", auto_closed=False, intent=None, slots=None, total_turns=1,
         total_duration_seconds=300, closed_at=f.h.clock.now(),
     ))  # fmt: skip
+    assert (await jobs(f).scan_parents()).timeouts == 0  # Q-T20b-9 (ii): chưa quá 48 h từ lúc notice được tạo/gửi → chưa giao
+    assert (await f.waiting("T1-1")) == "confirm_wait"
+    f.h.clock.advance(timedelta(hours=48))
     report = await jobs(f).scan_parents()
     assert report.timeouts == 1
     c1 = await f.values("T1-1")

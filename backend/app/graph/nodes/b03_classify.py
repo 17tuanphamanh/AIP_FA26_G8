@@ -16,6 +16,9 @@
    (seed bền TRƯỚC khi con chạy — `parent_wait` khởi động con). Slot của ý: `sanitize_slots(text=span của ý)`; `target_user` bị bỏ →
    `ctx_flags.target_is_other` của CHÍNH con đó. 0 ý chạy được → cả câu E1 (`step="B4"`): `reason_detail` của ý ĐẦU TIÊN trong phạm
    vi theo bảng 5.2.2 (Q-T20b-2 = B — không còn `multi_intent_not_enabled`). Điểm log 1 của cha thêm `children` (số), `verdicts`.
+   **Chạy lại cùng lượt (Q-T20b-12):** cache LLM không bảo đảm cùng kết quả (bypass, model dự phòng, chết trước khi ghi cache…) —
+   `child_create` trả `<con>|<số ý>|<loại ý>`; lần chạy lại thấy ref cũ lệch (số ý / loại ý), hoặc không còn tách mà con 1 đã được tạo
+   → `SplitChanged` (E9 của cha — boundary; thấy được nhờ Q-T20b-5), KHÔNG tạo thêm con hay đổi seed.
 5. Còn lại: `sanitize_slots` (3-Q1; P1, P2, Q-3f-3) → `S_DIAGNOSING` → B6, `facts={}` (B3 KHÔNG BAO GIỜ ghi fact — G-01).
    `span` chỉ giữ khi là đoạn con của câu người dùng (Q-3f-4).
 6. Q-T20a-4 (Phase 5 T20a, duyệt DỪNG 1): `target_user` bị `sanitize_slots` bỏ (BẤT KỲ lý do — sai mẫu như họ tên, không có trong
@@ -32,7 +35,7 @@ from collections.abc import Sequence
 from typing import Any, Final
 
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.children import child_id
+from app.domain.children import child_id, child_ref
 from app.domain.exit_codes import ExitCode
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
 from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
@@ -47,6 +50,10 @@ from app.llm.schemas import ClassifyOut, IntentItem
 
 RECENT_MESSAGES = 4  # B03 mục 2: ≤ 4 tin gần nhất
 RUNNABLE: Final = "runnable"  # kết quả bảng 5.2.2 #5 — ý chạy được (các kết quả khác là `reason_detail` E1 của con)
+
+
+class SplitChanged(RuntimeError):
+    """B3 chạy lại cùng lượt ra cách tách KHÁC lần trước (đã tạo con) — Q-T20b-12. Thông điệp chỉ có id/số/loại ý, không chữ người dùng."""
 
 
 def _point1() -> dict[str, Any]:
@@ -106,6 +113,10 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         info["prompt"], info["is_multi"] = f"{meta.prompt_id}@{meta.prompt_version}", out.is_multi
         in_scope = [i for i in out.intents if i.type != "out_of_scope"]
+        if not _splits(out.intents, text):  # Q-T20b-12: lần trước đã tách (con 1 đã tạo) mà lần này không → không đi tiếp đường khác
+            first = child_id(state["ticket_id"], 1)
+            if await effects.peek(state, "child_create", step="B5", sub=first) is not None:
+                raise SplitChanged(f"B3 chạy lại: lần trước đã tách ticket con, lần này {len(out.intents)} ý không tách")
         if not in_scope:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope", audit_detail=info,
@@ -149,6 +160,11 @@ def make(deps: NodeDeps) -> NodeFn:
             return "intent_not_enabled"
         return RUNNABLE
 
+    def _splits(intents: Sequence[IntentItem], text: str) -> bool:
+        """Có đi `_split` và tạo con không: ≥ 1 ý trong phạm vi, ≥ 2 ý, ≥ 1 ý chạy được (bảng 5.2.2)."""
+        return len(intents) >= 2 and any(i.type != "out_of_scope" for i in intents) \
+            and any(_verdict(it, text) == RUNNABLE for it in intents)  # fmt: skip
+
     def _seed(state: Any, cid: str, it: IntentItem, verdict: str, text: str, loops: int) -> dict[str, Any]:
         """Seed của con (bảng 5.2.3) — KHÔNG `requester_context` (ChildOps đọc lại từ state cha), KHÔNG `risk`/`action`, `facts={}`
         (G-01). Slot chỉ lấy trong `span` của CHÍNH ý (P2 — chống "mượn" đích của ý khác)."""
@@ -184,10 +200,13 @@ def make(deps: NodeDeps) -> NodeFn:
         for i, (it, verdict) in enumerate(zip(intents, verdicts, strict=True), start=1):
             cid = child_id(parent, i)
             seeds[cid] = _seed(state, cid, it, verdict, text, loops)
-            await effects.once(
+            ref = await effects.once(
                 state, "child_create", deps.tickets.create_child, cid, parent_id=parent,
                 redacted_request=seeds[cid]["redacted_request"], created_at=run.clock.now(), step="B5", sub=cid,
+                intents=len(intents), intent_type=it.type,
             )  # fmt: skip
+            if ref != child_ref(cid, len(intents), it.type):  # Q-T20b-12: lần trước tách khác (số ý / loại ý) → không đè, E9 cha
+                raise SplitChanged(f"B3 chạy lại: {cid} đã tạo với {ref!r}, lần này {len(intents)} ý, ý {i} loại {it.type}")
         await deps.tickets.mark_parent_once(parent)  # D-30 — idempotent
         return await goto(
             state, S_CLASSIFYING, next_node="parent_wait", step="B5", event=f"split_into_{len(seeds)}_children",

@@ -22,7 +22,7 @@ from app.db.runtime import (
 from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.approval import ReminderN
-from app.domain.children import ChildProgressRow, ChildView
+from app.domain.children import ChildHandoffRow, ChildProgressRow, ChildView
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
 from app.tools.registry import ToolResult
@@ -121,14 +121,19 @@ class DeadlineStore(Protocol):
         ...
 
     async def parents_to_wake(self, limit: int) -> list[str]:
-        """Phase 5 T20b P12 (a) (DỪNG 2), chỉ đọc DB: cha `is_parent`, `final_state IS NULL` mà MỌI con đã dừng theo DB (có `final_state`
-        hoặc có notice chưa gửi `needs ≠ none`) HOẶC có con chưa có dòng `turns` (chưa khởi động)."""
+        """Phase 5 T20b P12 (a), chỉ đọc DB: cha `is_parent`, `final_state IS NULL` mà (1) số con đã khởi động (dòng `child_submit` của cha,
+        khác `result_ref`) < số con (Q-T20b-7 — bắt cả con có `turns` mà thread rỗng), HOẶC (2) MỌI con đã dừng theo đúng điều kiện
+        `children_view` (`final_state` VÀ không còn lượt mở, hoặc notice chưa gửi `needs ≠ none`) — NGHI-2."""
         ...
 
-    async def orphan_children(self, limit: int) -> list[OrphanChild]:
+    async def orphan_children(
+        self, now: datetime, limit: int, *, clarify_hours: int, confirm_hours: int
+    ) -> list[OrphanChild]:
         """Phase 5 T20b P12 (b) (DỪNG 2; mở rộng Q-T20b-5 (iii)): con `final_state IS NULL` mà cha ĐÃ có `final_state`, có notice
         `needs ≠ none` (ĐÃ gửi hay chưa — con đã nhận digest rồi đứng chờ cũng tính) — `needs` = của notice đó mới nhất; con đang có phiếu
-        duyệt `pending` → bỏ (chờ L1, không chờ người dùng; giao `timeout` sẽ chỉ ra `late_event` mỗi chu kỳ). Worker không đọc
+        duyệt `pending` → bỏ (chờ L1, không chờ người dùng; giao `timeout` sẽ chỉ ra `late_event` mỗi chu kỳ). Q-T20b-9 (ii): CHỈ khi đã
+        quá hạn thường tính từ `delivered_at` của notice đó (chưa gửi → `created_at`): `answer` → `clarify_hours`, `confirm` →
+        `confirm_hours` — nhãn `close_reason` của con (`resolved_auto_timeout_48h`, E4 hết hạn hỏi lại) giữ đúng nghĩa. Worker không đọc
         checkpoint."""
         ...
 
@@ -194,9 +199,12 @@ class TicketStore(TicketReader, Protocol):
 
     # ---- Phase 5 T20b (P3, P7; TQ-6): ticket con — B5 tạo, `parent_wait` đối soát từ DB (D-17) -----------------------------
 
-    async def create_child(self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime) -> str:
+    async def create_child(
+        self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime, intents: int, intent_type: str
+    ) -> str:
         """Dòng `tickets` của con: chép `requester_id/role/dept`, `session_id` từ dòng cha; `parent_ticket_id = parent_id`; KHÔNG dòng
-        `turns` (lượt đầu do `ChildOps.start` mở). CHỈ gọi qua `effects.once("child_create", sub=child_id)` (D-18). Trả `child_id`."""
+        `turns` (lượt đầu do `ChildOps.start` mở). CHỈ gọi qua `effects.once("child_create", sub=child_id)` (D-18). Trả
+        `domain.children.child_ref(child_id, intents, intent_type)` = `result_ref` (Q-T20b-12)."""
         ...
 
     async def mark_parent_once(self, ticket_id: str) -> bool:
@@ -215,6 +223,15 @@ class TicketStore(TicketReader, Protocol):
     async def deliver_round(self, parent_id: str, round_no: int, notice_ids: Sequence[int], at: datetime) -> str:
         """`delivered_round = round_no`, `delivered_at = at` cho đúng `notice_ids` (của `parent_id`, còn chưa gửi) — trong transaction
         của `effects.once("notify_user", sub=f"round:{n}")` (P7). Trả ref của tin tổng hợp."""
+        ...
+
+    async def started_children(self, parent_id: str) -> frozenset[str]:
+        """Con đã có dòng `child_submit` của cha ở BẤT KỲ lượt nào (`result_ref = started:<con>`) — Q-T20b-11. Chỉ đọc."""
+        ...
+
+    async def children_status(self, parent_id: str) -> list[ChildHandoffRow]:
+        """Trạng thái từng con cho ghi chú bàn giao của ticket lỗi (Q-T20b-9 (i)) — chỉ DB: MỌI dòng `tickets` có `parent_ticket_id =
+        parent_id` (kể cả con đã `child_create` mà checkpoint cha chưa có `children` — soát lượt 4 mục 4), theo `index`; không con → []."""
         ...
 
 

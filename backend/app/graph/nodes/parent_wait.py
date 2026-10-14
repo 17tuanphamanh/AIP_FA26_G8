@@ -38,7 +38,8 @@ def make(deps: NodeDeps) -> NodeFn:
         run = current_run()
         if run.children is None:
             raise RuntimeError("RunContext không có ChildOps — parent_wait chỉ chạy qua Runner")
-        started = await run.children.start_missing(state)  # P4 — idempotent, TRƯỚC đối soát
+        recorded = await deps.tickets.started_children(state["ticket_id"])  # Q-T20b-11: dòng `child_submit` mọi lượt
+        started = await run.children.start_missing(state, recorded=recorded)  # P4 — idempotent, TRƯỚC đối soát
         if started.busy or started.failed:  # Q-T20b-6 / soát S10 B-ii: ghi TRƯỚC mọi nhánh (kể cả interrupt) — thấy được
             loop_seq = int(state.get("reasoning_loops") or 0)
             await run.audit.record({
