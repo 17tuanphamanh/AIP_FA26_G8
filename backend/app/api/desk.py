@@ -7,11 +7,15 @@ Privacy guard (3e, phase3 mục 8.3): `redact` bọc `desk.guard.redact` — exc
 lỗi (không body, không traceback) → `PrivacyGuardUnavailable` (503). `record_redacted` ghi `privacy_secret_redacted`
 cho tin nhắn sau (messages/confirm/quyết định duyệt) TRƯỚC `start_event`; lỗi ghi → 503, không `start_event`. Tạo
 ticket thì sự kiện đi cùng transaction `tickets.create` (không qua đây).
+
+`redact_reply_items` (Phase 5 T20b, Q-T20b-8 = A): che TỪNG ý của `/reply` qua `redact`, trả `items` CHỈ gồm chữ đã che (`answer`,
+`note`), `confirmed` (bool) và None — test AST N1 tin hàm này như tin `redact` (import thẳng từ module này, không bí danh).
 """
 
 import json
 import logging
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -103,3 +107,41 @@ async def record_redacted(
     except Exception as exc:  # noqa: BLE001 — ghi sự kiện lỗi → 503, không start_event (8.3)
         log.error("ghi %s lỗi: route=%s loại=%s", SECRET_EVENT, route_of(request), type(exc).__name__)
         raise PrivacyGuardUnavailable from None
+
+
+REPLY_ANSWER_KEYS = frozenset({"answer"})
+REPLY_CONFIRM_KEYS = frozenset({"confirmed", "note"})
+
+
+@dataclass(frozen=True)
+class RedactedReply:
+    """`/reply` sau privacy guard: `items[child_id]` = `{"answer": <đã che>}` hoặc `{"confirmed": bool, "note": <đã che> | None}`;
+    `result` gộp mọi ý (`secrets_found` cộng dồn, `notices` không lặp, `text` rỗng) — ghi MỘT `privacy_secret_redacted`."""
+
+    items: dict[str, dict[str, Any]]
+    result: RedactionResult
+
+
+async def redact_reply_items(desk: Desk, request: Request, items: Mapping[str, BaseModel]) -> RedactedReply:
+    """Fail-closed: ý có trường khác `{answer}` / `{confirmed, note?}`, hoặc `confirmed` không phải bool → `ValueError` (route đã kiểm
+    hình dạng bằng `extra="forbid"`; đây là lớp thứ hai để kết quả CHỈ có chữ đã qua `redact`)."""
+    out: dict[str, dict[str, Any]] = {}
+    secrets = 0
+    notices: list[str] = []
+    for cid, item in items.items():
+        raw = item.model_dump()
+        done: RedactionResult | None
+        if raw.keys() == REPLY_ANSWER_KEYS and isinstance(raw["answer"], str):
+            done = await redact(desk, request, raw["answer"])
+            out[cid] = {"answer": done.text}
+        elif raw.keys() <= REPLY_CONFIRM_KEYS and isinstance(raw.get("confirmed"), bool) \
+                and isinstance(raw.get("note"), str | None):  # fmt: skip
+            note = raw.get("note")
+            done = await redact(desk, request, note) if note else None
+            out[cid] = {"confirmed": raw["confirmed"], "note": done.text if done is not None else None}
+        else:
+            raise ValueError("ý của /reply có trường lạ")  # không nêu tên trường (khoá có thể là chữ người dùng)
+        if done is not None:
+            secrets += done.secrets_found
+            notices += [n for n in done.notices if n not in notices]
+    return RedactedReply(out, RedactionResult(text="", secrets_found=secrets, pii_map_id=None, notices=notices))

@@ -83,4 +83,6 @@ REASON_DETAILS: frozenset[str] = frozenset({
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",
+    # Phase 5 T20b (P2, bảng 5.2.2, D-49): `span` của một ý (câu nhiều ý) rỗng hoặc không nằm trong câu → con E1
+    "split_span_invalid",
 })  # fmt: skip

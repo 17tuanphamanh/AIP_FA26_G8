@@ -1,20 +1,28 @@
-"""PLAN — "làm gì" cho từng `action_type` (B17 §3, phase3 11.4). Chỉ metadata: KHÔNG import adapter ghi (hợp đồng
-import-linter 3) — node B17 và `graph/wiring` đọc được module này.
+"""PLAN — "làm gì" cho từng `action_type` (B17 §3, phase3 11.4; Phase 5 T24 bảng 7.2, D-48). Chỉ metadata: KHÔNG import adapter
+ghi (hợp đồng import-linter 3) — node B17 và `graph/wiring` đọc được module này.
 
 - `renew_vpn_cert` → 1 bước `renew_vpn_cert`, hoàn tác `revoke_vpn_cert(serial của bước cấp)`.
 - `reissue_vpn_access` → 1 bước `reissue_vpn_access`, hoàn tác như trên.
-- `check_vpn_status` → `()` (3-Q31: không ghi, không `transaction_log`).
+- `check_vpn_status`, `view_permissions` → `()` (3-Q31: không ghi, không `transaction_log`).
+- `reset_password` / `unlock_account` → 1 bước, hoàn tác `lock_account(reason="admin")` (reset: partial — mật khẩu cũ không về).
+- `install_software` → ① `assign_paid_license` (CHỈ khi `license_paid is not False` — thiếu fact coi như CÓ phí: không bao giờ cài
+  phần mềm có phí khi chưa cấp license; KHÔNG hoàn tác được) → ② `install_software` (hoàn tác `uninstall_software`). License trước:
+  hết license → dừng khi chưa ghi gì; cài lỗi sau khi đã cấp license → không gọi hoàn tác (D-48, cổng 5).
+- `grant_permission` → hoàn tác `revoke_permission`; `extend_permission` (KHÔNG gửi mức quyền — Q-T22a-8) → hoàn tác
+  `restore_permission_expiry(previous_expires_at của bước gia hạn)`.
 
-`check_plans` (h23) — fail-closed lúc khởi động (`graph/wiring.open_runtime`, cả backend lẫn worker): mọi `action_type` của
-intent đang bật trong `action_metadata.yaml` phải có PLAN; mỗi bước là tool GHI đã khai báo (`tools/specs.py`), `undo` đúng
-`undo_tool` của tool đó; hành động `reversible` mà bước có tool hoàn tác được thì phải khai báo `undo`; có mẫu tin kết quả
-B18 (`domain.messages.RESULT_ACTIONS`). Thiếu PLAN phải là lỗi
-cấu hình khi khởi động, không phải E9 lúc chạy (B17 §13).
+Tham số ghi CHỈ từ `Action` (P7): `user_id` luôn là `requested_for` (người bị tác động), không bao giờ người gửi.
+
+`check_plans` (h23; T24 P2) — fail-closed lúc khởi động (`graph/wiring.open_runtime`, cả backend lẫn worker): mọi `action_type` của
+intent đang bật trong `action_metadata.yaml` phải có PLAN + mẫu tin kết quả B18 (`domain.messages.RESULT_ACTIONS`); mỗi bước là tool
+GHI đã khai báo (`tools/specs.py`), `undo` đúng `undo_tool` của tool đó; metadata `reversibility: none` ⇒ không bước nào có `undo`;
+`reversible` ⇒ ít nhất MỘT bước hoàn tác được; PLAN rỗng ⇔ hành động chỉ đọc (`READ_ONLY_ACTIONS`). Thiếu PLAN phải là lỗi cấu
+hình khi khởi động, không phải E9 lúc chạy (B17 §13).
 """
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from app.domain.action import Action, ActionMeta
 from app.domain.messages import RESULT_ACTIONS
@@ -25,28 +33,71 @@ from app.tools.specs import REGISTRY, ToolSpec
 class Step:
     tool: str  # tool ghi (kind=write, allowed_steps {"B17"})
     undo: str | None = None  # tool hoàn tác (cũng là tool ghi) — None khi không hoàn tác được
+    # T24 P2 (D-48): bước có điều kiện — "paid_license" chỉ giữ khi `action.facts.get("license_paid") is not False`
+    when: Literal["always", "paid_license"] = "always"
 
 
 PLAN: Mapping[str, tuple[Step, ...]] = {
     "renew_vpn_cert": (Step("renew_vpn_cert", undo="revoke_vpn_cert"),),
     "reissue_vpn_access": (Step("reissue_vpn_access", undo="revoke_vpn_cert"),),
     "check_vpn_status": (),
+    "reset_password": (Step("reset_password", undo="lock_account"),),
+    "unlock_account": (Step("unlock_account", undo="lock_account"),),
+    "install_software": (
+        Step("assign_paid_license", undo=None, when="paid_license"),
+        Step("install_software", undo="uninstall_software"),
+    ),
+    "view_permissions": (),
+    "grant_permission": (Step("grant_permission", undo="revoke_permission"),),
+    "extend_permission": (Step("extend_permission", undo="restore_permission_expiry"),),
 }
 
 
+# T24 P2: hành động CHỈ ĐỌC — PLAN rỗng hợp lệ duy nhất (không ghi, không `transaction_log`).
+READ_ONLY_ACTIONS: frozenset[str] = frozenset({"check_vpn_status", "view_permissions"})
+
+
+def plan_for(action: Action, plans: Mapping[str, tuple[Step, ...]] | None = None) -> tuple[Step, ...]:
+    """T24 P2: các bước của `action` sau khi lọc `when`. `action.type` không có trong PLAN → KeyError (E9)."""
+    steps = (PLAN if plans is None else plans)[action.type]
+    paid = action.facts.get("license_paid") is not False  # thiếu fact → coi như CÓ phí (D-48)
+    return tuple(s for s in steps if s.when == "always" or (s.when == "paid_license" and paid))
+
+
 def step_args(tool: str, action: Action) -> dict[str, Any]:
-    """Tham số bước ghi — CHỈ từ `Action` (người hưởng lợi + định danh máy đã qua `sanitize_slots`). Tool lạ → KeyError (E9)."""
-    builders = {
-        "renew_vpn_cert": lambda a: {"user_id": a.requested_for, "device_id": a.params["device_id"]},
-        "reissue_vpn_access": lambda a: {"user_id": a.requested_for, "device_id": a.params["device_id"]},
-    }
-    return builders[tool](action)
+    """Tham số bước ghi — CHỈ từ `Action` (P7): `user_id` = `requested_for`; định danh/tham số từ `params` (đã qua `sanitize_slots`
+    + `PARAMS_BY_ACTION`). `extend_permission` không gửi mức quyền. Tool lạ → KeyError (E9)."""
+    p = action.params
+    user = {"user_id": action.requested_for}
+    builders: dict[str, Any] = {
+        "renew_vpn_cert": lambda: {**user, "device_id": p["device_id"]},
+        "reissue_vpn_access": lambda: {**user, "device_id": p["device_id"]},
+        "reset_password": lambda: {**user, "account_type": p["account_type"]},
+        "unlock_account": lambda: {**user, "account_type": p["account_type"]},
+        "assign_paid_license": lambda: {**user, "software_name": p["software_name"]},
+        "install_software": lambda: {"device_id": p["device_id"], "software_name": p["software_name"]},
+        "grant_permission": lambda: {**user, "resource_path": p["resource_path"], "level": p["permission_level"],
+                                     "duration_days": p["duration_days"]},
+        "extend_permission": lambda: {**user, "resource_path": p["resource_path"], "duration_days": p["duration_days"]},
+    }  # fmt: skip
+    return dict(builders[tool]())
 
 
 def undo_args(undo: str, action: Action, result: Any) -> dict[str, Any]:
-    """Tham số hoàn tác: `revoke_vpn_cert(user_id, serial)` — serial lấy từ kết quả bước cấp (`tools.models.Cert`)."""
-    builders = {"revoke_vpn_cert": lambda a, r: {"user_id": a.requested_for, "serial": r.serial}}
-    return builders[undo](action, result)
+    """Tham số hoàn tác — từ `Action` + kết quả bước được hoàn tác (`tools.models`): `revoke_vpn_cert(user_id, serial)`,
+    `lock_account(user_id, account_type, reason="admin")`, `uninstall_software(device_id, software_name)`,
+    `revoke_permission(user_id, resource_path)`, `restore_permission_expiry(user_id, resource_path, expires_at=previous_expires_at)`."""
+    p = action.params
+    user = {"user_id": action.requested_for}
+    builders: dict[str, Any] = {
+        "revoke_vpn_cert": lambda: {**user, "serial": result.serial},
+        "lock_account": lambda: {**user, "account_type": p["account_type"], "reason": "admin"},
+        "uninstall_software": lambda: {"device_id": p["device_id"], "software_name": p["software_name"]},
+        "revoke_permission": lambda: {**user, "resource_path": p["resource_path"]},
+        "restore_permission_expiry": lambda: {**user, "resource_path": p["resource_path"],
+                                              "expires_at": result.previous_expires_at},
+    }  # fmt: skip
+    return dict(builders[undo]())
 
 
 def check_plans(
@@ -63,11 +114,21 @@ def check_plans(
                 raise RuntimeError(f"PLAN thiếu action_type {action_type!r} (intent {intent!r}) — từ chối khởi động")
             if action_type not in RESULT_ACTIONS:  # soát S12 NGHI-6c: không để ghi xong rồi mới E9 vì thiếu mẫu tin B18
                 raise RuntimeError(f"thiếu mẫu tin kết quả B18 cho {action_type!r} (domain/messages.py) — từ chối khởi động")
-            for step in plans[action_type]:
+            steps = plans[action_type]
+            if not steps:  # T24 P2: PLAN rỗng chỉ cho hành động chỉ đọc
+                if action_type not in READ_ONLY_ACTIONS:
+                    raise RuntimeError(f"PLAN[{action_type}] rỗng nhưng không phải hành động chỉ đọc — từ chối khởi động")
+                continue
+            if action_type in READ_ONLY_ACTIONS:
+                raise RuntimeError(f"PLAN[{action_type}]: hành động chỉ đọc không được có bước ghi")
+            for step in steps:
                 spec = specs.get(step.tool)
                 if spec is None or spec.kind != "write":
                     raise RuntimeError(f"PLAN[{action_type}]: {step.tool!r} không phải tool ghi đã khai báo")
                 if step.undo != spec.undo_tool:
                     raise RuntimeError(f"PLAN[{action_type}]: undo {step.undo!r} ≠ undo_tool {spec.undo_tool!r} của {step.tool}")
-                if meta.reversible != (spec.reversible in ("full", "partial")):
-                    raise RuntimeError(f"PLAN[{action_type}]: reversible của metadata lệch tool {step.tool}")
+            undoable = [s for s in steps if s.undo is not None]
+            if meta.reversibility == "none" and undoable:
+                raise RuntimeError(f"PLAN[{action_type}]: metadata reversibility none nhưng bước {undoable[0].tool} có undo")
+            if meta.reversible and not undoable:
+                raise RuntimeError(f"PLAN[{action_type}]: metadata reversible nhưng không bước nào hoàn tác được")

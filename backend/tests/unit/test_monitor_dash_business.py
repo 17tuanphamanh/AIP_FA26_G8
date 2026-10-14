@@ -5,6 +5,7 @@ import dataclasses
 import importlib.util
 import inspect
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -105,36 +106,186 @@ def _docstrings(tree: ast.Module) -> set[int]:
     }
 
 
-QUERIES_DIR = REPO / "backend" / "app" / "monitor" / "queries"
+MONITOR_DIR = REPO / "backend" / "app" / "monitor"
+QUERIES_DIR = MONITOR_DIR / "queries"
 # File bắt buộc phải được nhận là "có SQL" — quét glob mà sót file (hoặc nhận nhầm là không có SQL) thì đỏ, không xanh giả.
 D30_REQUIRED = {"ai.py", "alerts.py", "business.py", "rules_data.py"}
 _SQL_WORD = re.compile(r"\b(from|join|where)\b", re.IGNORECASE)
 _SELECT = re.compile(r"\bselect\b", re.IGNORECASE)
-_TICKETS = re.compile(r"\b(from|join)\s+tickets\b", re.IGNORECASE)
+_FROM_JOIN = re.compile(r"\b(?:from|join)\b", re.IGNORECASE)
+# Từ khoá kết thúc danh sách bảng sau FROM/JOIN (ở độ sâu ngoặc 0). `inner/left/right/full/cross` mở JOIN kế tiếp.
+_STOP = re.compile(
+    r"\b(?:where|join|on|using|group|order|limit|offset|having|window|union|except|intersect|returning"
+    r"|inner|left|right|full|cross|natural|for|fetch)\b",
+    re.IGNORECASE,
+)
+_SKIP_PREFIX = re.compile(r"^(?:lateral|only)\b", re.IGNORECASE)
+_IDENT = re.compile(r'^[A-Za-z_"][\w".$]*')
+_WORD_CHAR = re.compile(r"\w")
+_EXPR = "__expr__"  # chỗ trống cho phần f-string không giải được (không bao giờ khớp tên bảng)
+_MAX_RENDER = 64  # trần số tổ hợp khi một tên có nhiều giá trị — tránh nổ tổ hợp
 
 
-def _d30_scan(source: str) -> tuple[bool, list[str]]:
-    """(file có SQL không, danh sách vi phạm D-30). Quét mọi hằng chuỗi của AST (gồm phần chữ của f-string; chú thích `#`
-    không có trong AST), bỏ docstring; không phân biệt hoa thường. "Có SQL" = có hằng chứa `from`/`join`/`where`. Vi phạm:
-    `tickets` (đọc thẳng bảng `tickets` thay vì qua `v_leaf`), `no_select` (có SQL mà không có SELECT nào)."""
+def _render(node: ast.expr, consts: Mapping[str, set[str]]) -> set[str]:
+    """Mọi chuỗi mà một hằng/f-string có thể mang. `f"… {T} …"` với `T = "tickets"` → `"… tickets …"`;
+    phần không giải được (`{x}`, `{obj.attr}`, lời gọi) → `__expr__`. Nhờ vậy `FROM {T}` bị bắt như `FROM tickets`."""
+    if isinstance(node, ast.Constant):
+        return {node.value} if isinstance(node.value, str) else set()
+    if not isinstance(node, ast.JoinedStr):
+        return set()
+    out = {""}
+    for part in node.values:
+        if isinstance(part, ast.Constant) and isinstance(part.value, str):
+            pieces = {part.value}
+        elif isinstance(part, ast.FormattedValue) and isinstance(part.value, ast.Name):
+            pieces = consts.get(part.value.id, {_EXPR})
+        else:
+            pieces = {_EXPR}
+        out = {a + b for a in out for b in pieces}
+        if len(out) > _MAX_RENDER:
+            return {_EXPR}
+    return out
+
+
+def _assigned_strings(tree: ast.Module, consts: dict[str, set[str]]) -> None:
+    """Gom `NAME = "…"` / `NAME = f"…"` ở MỌI phạm vi (module, hàm, lớp) vào `consts` — hai vòng để f-string
+    dùng được tên khai trước đó."""
+    for pure in (True, False):
+        for node in ast.walk(tree):
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets = [node.target]
+            else:
+                continue
+            value = node.value
+            assert value is not None
+            if pure != isinstance(value, ast.Constant):
+                continue
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    consts.setdefault(t.id, set()).update(_render(value, consts))
+
+
+def _module_strings(sources: Mapping[str, str]) -> dict[str, dict[str, set[str]]]:
+    """Hằng chuỗi của từng module (để giải tên lấy qua `from app.monitor.x import NAME`)."""
+    out: dict[str, dict[str, set[str]]] = {}
+    for name, src in sources.items():
+        consts: dict[str, set[str]] = {}
+        _assigned_strings(ast.parse(src), consts)
+        out[name] = consts
+    return out
+
+
+def _cut(rest: str) -> str:
+    """Phần danh sách bảng ngay sau FROM/JOIN: dừng ở từ khoá SQL hoặc dấu `)` đóng ra ngoài, tại độ sâu 0."""
+    depth = 0
+    for i, ch in enumerate(rest):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            if depth == 0:
+                return rest[:i]
+            depth -= 1
+        elif depth == 0 and (i == 0 or not _WORD_CHAR.match(rest[i - 1])) and _STOP.match(rest, i):
+            return rest[:i]
+    return rest
+
+
+def _split_commas(segment: str) -> list[str]:
+    """Tách join bằng dấu phẩy — CHỈ dấu phẩy ở độ sâu ngoặc 0 (`unnest(a, b)`, `b(d, e)` không bị tách)."""
+    items, depth, start = [], 0, 0
+    for i, ch in enumerate(segment):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(segment[start:i])
+            start = i + 1
+    items.append(segment[start:])
+    return items
+
+
+def _table_name(item: str) -> str | None:
+    """Tên bảng của một mục trong danh sách FROM/JOIN, đã bỏ schema và dấu ngoặc kép. Subquery, lời gọi hàm
+    (`unnest(...)`) → None."""
+    text = _SKIP_PREFIX.sub("", item.strip()).strip()
+    m = _IDENT.match(text)
+    if not m:
+        return None  # `( SELECT … ) p`, `{…}` chưa giải…
+    name, after = m.group(0), text[m.end() :].lstrip()
+    if after.startswith("("):
+        return None  # lời gọi hàm, không phải bảng
+    return name.replace('"', "").split(".")[-1].lower()
+
+
+def _tables(sql: str) -> list[str]:
+    return [
+        name
+        for m in _FROM_JOIN.finditer(sql)
+        for item in _split_commas(_cut(sql[m.end() :]))
+        if (name := _table_name(item)) is not None
+    ]
+
+
+def _d30_scan(source: str, modules: Mapping[str, str] | None = None) -> tuple[bool, list[str]]:
+    """(file có SQL không, danh sách vi phạm D-30). Quét mọi hằng chuỗi và f-string đã ghép của AST (chú thích `#`
+    không có trong AST), bỏ docstring; không phân biệt hoa thường.
+
+    Siết ở A4 (review PR #30) — bắt cả: `FROM public.tickets`, `FROM "tickets"`, join bằng dấu phẩy
+    (`FROM v_leaf l, tickets t`) và `FROM {T}` với `T = "tickets"` (gán trong file hoặc lấy qua
+    `from app.monitor.… import T`). Vi phạm: `tickets` (đọc thẳng bảng thay vì qua `v_leaf`),
+    `no_select` (có SQL mà không có SELECT nào)."""
     tree = ast.parse(source)
-    skip = _docstrings(tree)
+    # Hằng con của f-string không quét riêng: bản đã ghép của chính f-string đó mới là chuỗi SQL thật.
+    skip = _docstrings(tree) | {
+        id(c) for n in ast.walk(tree) if isinstance(n, ast.JoinedStr) for c in ast.walk(n) if c is not n
+    }
+    consts: dict[str, set[str]] = {}
+    if modules:
+        by_module = _module_strings(modules)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module in by_module:
+                for alias in node.names:
+                    if (values := by_module[node.module].get(alias.name)) is not None:
+                        consts.setdefault(alias.asname or alias.name, set()).update(values)
+    _assigned_strings(tree, consts)
     sql = [
-        n.value for n in ast.walk(tree)
-        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip
-    ]  # fmt: skip
+        s
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Constant | ast.JoinedStr) and id(n) not in skip
+        for s in _render(n, consts)
+    ]
     has_sql = any(_SQL_WORD.search(s) for s in sql)
-    violations = [f"tickets: {s.strip()[:80]}" for s in sql if _TICKETS.search(s)]
+    violations = [f"tickets: {s.strip()[:80]}" for s in sql if "tickets" in _tables(s)]
     if has_sql and not any(_SELECT.search(s) for s in sql):
         violations.append("no_select")
     return has_sql, violations
 
 
+def _monitor_sources() -> dict[str, str]:
+    """`app.monitor.*` → mã nguồn, để giải tên hằng lấy qua import (vd `V_LEAF` của `views.py`)."""
+    return {
+        "app." + ".".join(p.relative_to(MONITOR_DIR.parent).with_suffix("").parts): p.read_text(encoding="utf-8")
+        for p in sorted(MONITOR_DIR.rglob("*.py"))
+    }
+
+
+def _scan_dir(root: Path, modules: Mapping[str, str] | None = None) -> dict[str, tuple[bool, list[str]]]:
+    """Quét ĐỆ QUY (`rglob`) — file trong thư mục con của `queries/` cũng bị soát."""
+    return {
+        str(p.relative_to(root)): _d30_scan(p.read_text(encoding="utf-8"), modules)
+        for p in sorted(root.rglob("*.py"))
+    }
+
+
 def test_d30_glob_scans_queries() -> None:
-    """D-30 ghim tĩnh cho MỌI file `monitor/queries/*.py` (P13, duyệt plan A3): SQL không đọc thẳng `tickets`; file có SQL
-    phải có ≥ 1 SELECT."""
-    files = sorted(QUERIES_DIR.glob("*.py"))
-    scanned = {f.name: _d30_scan(f.read_text(encoding="utf-8")) for f in files}
+    """D-30 ghim tĩnh cho MỌI file `monitor/queries/**.py` (P13, duyệt plan A3; `rglob` từ A4): SQL không đọc thẳng
+    `tickets`; file có SQL phải có ≥ 1 SELECT."""
+    scanned = _scan_dir(QUERIES_DIR, _monitor_sources())
+    assert scanned, "không quét được file nào — bộ quét sai đường dẫn"
     with_sql = {name for name, (has_sql, _) in scanned.items() if has_sql}
     assert with_sql >= D30_REQUIRED
     assert {name: v for name, (_, v) in scanned.items() if v} == {}
@@ -143,9 +294,108 @@ def test_d30_glob_scans_queries() -> None:
 def test_d30_scanner_catches_violations() -> None:
     """Canh chính bộ quét: đọc thẳng `tickets` và "có SQL mà không SELECT" phải bị bắt; docstring không tính là SQL."""
     assert _d30_scan('Q = "SELECT t.ticket_id FROM v_leaf t"') == (True, [])
-    assert _d30_scan('Q = f"SELECT 1 FROM tickets t WHERE {x}"') == (True, ["tickets: SELECT 1 FROM tickets t WHERE"])
+    # f-string: thông điệp là chuỗi ĐÃ GHÉP, phần không giải được thành `__expr__` (A4)
+    assert _d30_scan('Q = f"SELECT 1 FROM tickets t WHERE {x}"') == (
+        True, ["tickets: SELECT 1 FROM tickets t WHERE __expr__"]
+    )  # fmt: skip
     assert _d30_scan('Q = "UPDATE alerts SET status = 1 WHERE alert_id = 2"') == (True, ["no_select"])
     assert _d30_scan('"""Đọc FROM tickets."""\nX = 1') == (False, [])
+
+
+# ---- A4 (review PR #30): 5 dạng bộ quét cũ còn lọt ----------------------------------------------
+
+
+def test_d30_catches_schema_qualified() -> None:
+    """`FROM public.tickets` — bộ quét cũ (`\\bfrom\\s+tickets\\b`) không bắt vì có tiền tố schema."""
+    assert _d30_scan('Q = "SELECT 1 FROM public.tickets t"')[1] != []
+    assert _d30_scan('Q = "SELECT 1 FROM public.tickets t"')[1][0].startswith("tickets: ")
+
+
+def test_d30_catches_quoted() -> None:
+    """Tên trong ngoặc kép, có và không có schema."""
+    assert _d30_scan('Q = \'SELECT 1 FROM "tickets" t\'')[1] != []
+    assert _d30_scan('Q = \'SELECT 1 FROM public."tickets"\'')[1] != []
+    assert _d30_scan('Q = \'SELECT 1 FROM "public"."tickets"\'')[1] != []
+
+
+def test_d30_catches_comma_join() -> None:
+    """Join bằng dấu phẩy: mục đầu là view hợp lệ nên bộ quét cũ cho qua."""
+    assert _d30_scan('Q = "SELECT 1 FROM v_leaf l, tickets t WHERE l.ticket_id = t.ticket_id"')[1] != []
+    assert _d30_scan('Q = "SELECT 1 FROM v_leaf l, public.tickets t"')[1] != []
+
+
+def test_d30_catches_fstring_name() -> None:
+    """`FROM {T}` với `T = "tickets"` — bộ quét cũ xét từng hằng rời nên chỉ thấy `"SELECT 1 FROM "`.
+    Giải cả tên gán trong file, tên gán trong HÀM, và tên lấy qua `from app.monitor.… import T`."""
+    assert _d30_scan('T = "tickets"\nQ = f"SELECT 1 FROM {T}"')[1] != []
+    assert _d30_scan('def q():\n    T = "tickets"\n    return f"SELECT 1 FROM {T} t"')[1] != []
+    src = "from app.monitor.views import T\nQ = f'SELECT 1 FROM {T}'"
+    assert _d30_scan(src, {"app.monitor.views": 'T = "tickets"'})[1] != []
+    assert _d30_scan(src, {"app.monitor.views": 'T = "v_leaf"'})[1] == []  # view thì không vi phạm
+    # tên có NHIỀU giá trị: chỉ một giá trị xấu cũng đủ đỏ
+    assert _d30_scan('T = "v_leaf"\nif x:\n    T = "tickets"\nQ = f"SELECT 1 FROM {T}"')[1] != []
+
+
+def test_d30_catches_subdir(tmp_path: Path) -> None:
+    """File trong thư mục con của `queries/` — bộ quét cũ dùng `glob("*.py")` nên bỏ qua."""
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "x.py").write_text('Q = "SELECT 1 FROM tickets t"', encoding="utf-8")
+    scanned = _scan_dir(tmp_path)
+    assert [name for name, (_, v) in scanned.items() if v] == [str(Path("sub") / "x.py")]
+
+
+# Dạng SQL CÓ THẬT trong `queries/` (đã grep, kèm nơi dùng) — đỏ ở đây thì `test_d30_glob_scans_queries` cũng đỏ oan.
+D30_REAL_SHAPES = [
+    pytest.param(
+        'Q = "SELECT 1 FROM unnest(CAST(:a AS timestamptz[]), CAST(:b AS timestamptz[])) AS b(d, e)"',
+        id="ai.py:103 unnest + AS b(d, e)",
+    ),
+    pytest.param('Q = "SELECT x.n FROM (SELECT count(*) AS n FROM v_leaf t) x"', id="ai.py:104 subquery ) x"),
+    pytest.param(
+        'Q = "SELECT g.sev FROM (SELECT t.exit_code FROM v_leaf t) g"', id="business.py:144-147 subquery ) g"
+    ),
+    pytest.param(
+        'Q = "SELECT p.status FROM (SELECT q.ticket_id, q.status, '
+        "lead(COALESCE(q.decided_at, q.created_at)) OVER (PARTITION BY q.ticket_id ORDER BY q.created_at) "
+        'AS next_start FROM approvals q) p"',
+        id="rules_data.py:155-162 subquery nhieu cot + window",
+    ),
+    pytest.param(
+        'Q = "SELECT 1 FROM approvals q LEFT JOIN LATERAL (SELECT 1 FROM audit_logs a) b ON true"',
+        id="rules_data.py:164 LEFT JOIN LATERAL",
+    ),
+]
+# Ca TỔNG HỢP — KHÔNG có trong `queries/` hôm nay (đã grep: không `EXTRACT`, `USING`, `ONLY`, `tickets_total`,
+# và alias thật là `b(d, e)` chứ không phải `b(d, tickets)`). Giữ để canh nguyên tắc bóc tên bảng: SQL hợp lệ thêm
+# sau này không bị đỏ oan.
+D30_SYNTHETIC_SHAPES = [
+    # cột trong alias ĐƯỢC PHÉP tên `tickets` — tách dấu phẩy không theo độ sâu ngoặc sẽ đỏ oan ở đây
+    pytest.param('Q = "SELECT 1 FROM unnest(:a) AS b(d, tickets)"', id="alias co cot ten tickets"),
+    pytest.param('Q = "SELECT tickets_total FROM v_leaf t"', id="cot co tien to tickets"),
+    pytest.param('Q = "SELECT EXTRACT(epoch FROM t.created_at) FROM v_leaf t"', id="EXTRACT(... FROM ...)"),
+    pytest.param('Q = "SELECT 1 FROM v_leaf t JOIN escalations e USING (ticket_id)"', id="JOIN ... USING"),
+    pytest.param('Q = "SELECT 1 FROM ONLY v_leaf t"', id="FROM ONLY"),
+]
+
+
+@pytest.mark.parametrize("src", D30_REAL_SHAPES)
+def test_d30_no_false_positive_real_shapes(src: str) -> None:
+    """Dạng SQL thật trong `queries/`: dấu phẩy trong ngoặc, subquery, LATERAL — không được tính là vi phạm."""
+    assert _d30_scan(src)[1] == []
+
+
+@pytest.mark.parametrize("src", D30_SYNTHETIC_SHAPES)
+def test_d30_no_false_positive_synthetic(src: str) -> None:
+    """Ca tổng hợp (chưa có trong repo): SQL hợp lệ vẫn phải xanh."""
+    assert _d30_scan(src)[1] == []
+
+
+def test_d30_tables_helper() -> None:
+    """Bóc tên bảng: bỏ schema và ngoặc kép, bỏ qua subquery/lời gọi hàm, tách dấu phẩy ở độ sâu 0."""
+    assert _tables("SELECT 1 FROM public.tickets t JOIN v_leaf l ON true") == ["tickets", "v_leaf"]
+    assert _tables('SELECT 1 FROM "tickets", v_leaf l') == ["tickets", "v_leaf"]
+    assert _tables("SELECT 1 FROM (SELECT 1 FROM alerts) x") == ["alerts"]
+    assert _tables("SELECT 1 FROM unnest(a, b) AS c(d, e)") == []
 
 
 def test_ratio_functions_read_v_leaf() -> None:
@@ -157,9 +407,11 @@ def test_ratio_functions_read_v_leaf() -> None:
         assert "V_LEAF" in names, name
 
 
-def test_alembic_single_head_is_0008() -> None:
+def test_alembic_single_head_is_0009() -> None:
+    """A4: head duy nhất là `0009` (chỉ mục M9), nối thẳng sau `0008` (view M9) — chuỗi M9 không rẽ nhánh."""
     script = ScriptDirectory.from_config(Config(str(REPO / "alembic.ini")))
-    assert script.get_heads() == ["0008"]
+    assert script.get_heads() == ["0009"]
+    assert script.get_revision("0009").down_revision == "0008"  # type: ignore[union-attr]
     assert script.get_revision("0008").down_revision == "0007"  # type: ignore[union-attr]
 
 

@@ -1,4 +1,4 @@
-"""`VpnExecutor` (phase3 11.4 bước 4–5; PLAN-3h S9; chốt P4, P6, Q-3h-2) — registry GHI thật (retries=0) trên hệ thống ghi
+"""`PlanExecutor` (phase3 11.4 bước 4–5; PLAN-3h S9; chốt P4, P6, Q-3h-2) — registry GHI thật (retries=0) trên hệ thống ghi
 VPN giả (`tests/fakes/executor.FakeVpnWrites`, đếm ở nơi nhận) + `transaction_log` trong bộ nhớ.
 
 - Thành công: `begun` TRƯỚC lời gọi, ghi đúng 1 lần, `outputs` (serial, ngày hết hạn theo giờ địa phương).
@@ -25,8 +25,8 @@ from app.core.clock import FakeClock
 from app.core.turn_budget import TurnBudgetExceeded, TurnDeadline, bind_turn_deadline
 from app.domain.action import Action
 from app.executor.errors import ExecutionInterrupted
+from app.executor.plan_executor import PlanExecutor, error_kind
 from app.executor.plans import Step
-from app.executor.vpn import VpnExecutor, error_kind
 from app.graph.fakes import RefusingExecutor
 from app.settings import get_action_metadata, get_policy
 from app.tools.registry import ToolContractError
@@ -50,10 +50,10 @@ def _action(action_type: str = "renew_vpn_cert", *, reversible: bool | None = No
     )  # fmt: skip
 
 
-def _executor(**plans: tuple[Step, ...]) -> tuple[VpnExecutor, FakeVpnWrites, MemoryTxLog, FakeClock]:
+def _executor(**plans: tuple[Step, ...]) -> tuple[PlanExecutor, FakeVpnWrites, MemoryTxLog, FakeClock]:
     clock = FakeClock(NOW)
     writes, txlog = FakeVpnWrites(clock), MemoryTxLog()
-    ex = VpnExecutor(writes.registry(), txlog, clock, tz=get_policy().business_hours.tz, plans=plans or None)
+    ex = PlanExecutor(writes.registry(), txlog, clock, tz=get_policy().business_hours.tz, plans=plans or None)
     return ex, writes, txlog, clock
 
 

@@ -40,8 +40,14 @@ def create_engines(settings: Settings) -> Engines:
         pool_pre_ping=True,
         connect_args={"options": f"-c lock_timeout={lock_timeout_ms}"},
     )
+    # M9 (A4): lớp hai sau quyền của role — mọi giao dịch trên engine monitor mặc định READ ONLY, nên DSN đặt nhầm
+    # sang `app_rw` vẫn không ghi được (lỗi 25006).
     monitor = (
-        create_async_engine(settings.monitor_database_url, pool_pre_ping=True)
+        create_async_engine(
+            settings.monitor_database_url,
+            pool_pre_ping=True,
+            connect_args={"options": "-c default_transaction_read_only=on"},
+        )
         if settings.monitor_database_url is not None
         else None
     )

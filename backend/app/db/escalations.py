@@ -4,7 +4,8 @@
   `side_effects` (`current_tx()`), nên chạy lại B20 không tạo dòng thứ hai. `priority` lấy bằng
   `INSERT … SELECT rank FROM exit_code_priority` — bảng seed là nguồn duy nhất (B20 5.1), không có
   hằng ưu tiên thứ hai trong code.
-- `list_open`: chưa đóng (`closed_at IS NULL`), chỉ ticket lá (`is_parent = false`, D-30), sắp theo
+- `list_open`: chưa đóng (`closed_at IS NULL`), ticket lá (`is_parent = false`, D-30) HOẶC ticket cha có `exit_code` (cha lỗi E2/E9 —
+  Phase 5 T20b Q-T20b-5 (ii): L2 phải THẤY cha lỗi; view/chỉ số M9 không đổi), sắp theo
   `priority, created_at, escalation_id`.
 """
 
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, literal, select
+from sqlalchemy import Table, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.db.models import Escalation, ExitCodePriority, Ticket
@@ -92,7 +93,7 @@ class SqlEscalationStore:
             )
             .join(_PRIO, _PRIO.c.exit_code == _ESC.c.exit_code)
             .join(_TICKETS, _TICKETS.c.ticket_id == _ESC.c.ticket_id)
-            .where(_ESC.c.closed_at.is_(None), _TICKETS.c.is_parent.is_(False))
+            .where(_ESC.c.closed_at.is_(None), or_(_TICKETS.c.is_parent.is_(False), _TICKETS.c.exit_code.is_not(None)))
             .order_by(_ESC.c.priority, _ESC.c.created_at, _ESC.c.escalation_id)
             .limit(limit)
         )

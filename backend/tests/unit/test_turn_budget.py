@@ -163,7 +163,7 @@ CALL_SITES: dict[tuple[str, str], str] = {
     ("rag/retriever.py", "retrieve"): "window",
     ("rag/expand.py", "expand"): "window",
     ("rag/retriever.py", "procedure_available"): "window",  # Phase 4 S0-P10: B11 kiểm tài liệu quy trình
-    ("executor/vpn.py", "execute"): "cap_timeout",  # 3h P4: trọn timeout ghi của cả kế hoạch TRƯỚC begun
+    ("executor/plan_executor.py", "execute"): "cap_timeout",  # 3h P4: trọn timeout ghi của cả kế hoạch TRƯỚC begun
 }
 
 

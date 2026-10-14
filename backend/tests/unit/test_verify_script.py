@@ -21,7 +21,7 @@ echo "make $*" >>"$STUB_LOG"
 target="$1"
 case "$target" in
   test) printf '3166 passed in 90.98s (0:01:30)\n94 passed in 5.17s\n77 passed, 5 deselected in 0.49s\n' ;;
-  gate2|gate3|gate4) echo "==== 8 PASS, 0 FAIL ====" ;;
+  gate2|gate3|gate4|gate5) echo "==== 8 PASS, 0 FAIL ====" ;;
   ingest) echo "kb_version=abc" ;;
 esac
 case " ${STUB_FAIL:-} " in *" $target "*) echo "giả: $target đỏ" >&2; exit 1 ;; esac
@@ -152,7 +152,7 @@ def test_bench_step_optional(tmp_path: Path) -> None:
     assert "| 7 | bench | PASS |" in summary and "50 KB p50=4.0ms p95=6.0ms" in summary
 
 
-@pytest.mark.parametrize("g", ["2a", "5", "1", "45"])  # G rỗng = mặc định 3 (không phải lỗi)
+@pytest.mark.parametrize("g", ["2a", "6", "1", "46"])  # G rỗng = mặc định 3 (không phải lỗi). T24: 5 = gate5 → hợp lệ
 def test_bad_g_rejected_before_anything(tmp_path: Path, g: str) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -228,3 +228,53 @@ def test_red_gate4_reports_step_10_and_restores(tmp_path: Path) -> None:
     assert rc != 0 and "KẾT LUẬN: ĐỎ ở bước 10 (gate4)" in summary
     assert _ups(calls)[-1] == "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset> SLA=<unset>"
     assert "| 8 | trả về .env | PASS |" in summary
+
+
+# ---- Phase 5 T24 (P8, Q-T24-1): gate5 trên KB THẬT --------------------------------------------------------------------------------
+
+FIXTURE_INGEST = "make ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated"
+REAL_INGEST = "make ingest KB_DIR=kb"
+RESTORED = "FAKE_SCENARIO=<unset> FAKE_NODE_DELAY=<unset> SLA=<unset>"
+
+
+def test_t24_g2345_real_kb_ingested_right_before_gate5_and_restore(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="2345")
+    assert rc == 0
+    makes = [c for c in calls if c.startswith("make ")]
+    assert makes == ["make lint", "make test", "make up", "make gate2 S=all", FIXTURE_INGEST, "make gate3 S=all",
+                     "make gate4 S=all", REAL_INGEST, "make gate5 S=all"]  # fmt: skip
+    assert _ups(calls) == [
+        "FAKE_SCENARIO=approval FAKE_NODE_DELAY=40 SLA=",
+        "FAKE_SCENARIO= FAKE_NODE_DELAY= SLA=",
+        "FAKE_SCENARIO= FAKE_NODE_DELAY= SLA=2",
+        "FAKE_SCENARIO= FAKE_NODE_DELAY= SLA=",  # gate5: node thật, hạn duyệt mặc định
+        RESTORED,
+    ]
+    for row in ("| 4 | ingest | PASS |", "| 11 | ingest KB thật | PASS |", "| 12 | gate5 | PASS |", "| 8 | trả về .env | PASS |"):
+        assert row in summary
+    assert "KẾT LUẬN: XANH" in summary
+
+
+def test_t24_g5_alone_ingests_only_real_kb(tmp_path: Path) -> None:
+    rc, calls, _ = _run(tmp_path, g="5")
+    makes = [c for c in calls if c.startswith("make ")]
+    assert rc == 0 and FIXTURE_INGEST not in makes and makes[-2:] == [REAL_INGEST, "make gate5 S=all"]
+
+
+def test_t24_g53_reingests_fixture_after_real_kb(tmp_path: Path) -> None:
+    """Cổng cần KB khác KB đang nạp → nạp lại (gate3 sau gate5 cần KB fixture)."""
+    rc, calls, _ = _run(tmp_path, g="53")
+    makes = [c for c in calls if c.startswith("make ")]
+    assert rc == 0 and makes[3:] == [REAL_INGEST, "make gate5 S=all", FIXTURE_INGEST, "make gate3 S=all"]
+
+
+def test_t24_g234_without_5_never_ingests_real_kb(tmp_path: Path) -> None:
+    """G không có 5 → hành vi verify.sh giữ nguyên (không nạp KB thật)."""
+    _, calls, _ = _run(tmp_path, g="234")
+    assert REAL_INGEST not in calls
+
+
+def test_t24_red_gate5_reports_step_12_and_restores(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="5", fail="gate5")
+    assert rc != 0 and "KẾT LUẬN: ĐỎ ở bước 12 (gate5)" in summary
+    assert _ups(calls)[-1] == RESTORED and "| 8 | trả về .env | PASS |" in summary

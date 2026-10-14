@@ -24,6 +24,7 @@ from datetime import timedelta
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.alerts import router as alerts_router
 from app.api.approvals import router as approvals_router
@@ -35,7 +36,14 @@ from app.api.desk import Desk, retry_after
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
-from app.api.health import HealthCheck, KbProbe
+from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe dựng dưới đây
+    HealthCheck,
+    KbProbe,
+    LlmProbe,
+    LlmStatus,
+    MonitorProbe,
+    MonitorStatus,
+)
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
 from app.api.tickets import router as tickets_router
@@ -56,15 +64,24 @@ from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
 from app.db.session import Engines, create_engines, ping
+from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
-from app.executor.vpn import VpnExecutor
 from app.executor.wiring import build_write_registry
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.patterns import check_guard
 from app.guard.privacy import PrivacyGuard, guard_from_settings
+from app.llm.config import (  # M9 (A4): đọc cấu hình, KHÔNG gọi provider
+    ROLES,
+    LlmConfig,
+    Price,
+    load_llm_config,
+)
+from app.llm.store import (
+    SqlLlmStore,  # M9 (A4): cùng SUM(llm_calls.cost_usd) gateway dùng để áp trần chi
+)
 from app.llm.wiring import check_llm
-from app.monitor.db import MonitorUnavailable
+from app.monitor.db import MONITOR_ROLE, MonitorUnavailable, monitor_engine
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
 from app.tools.adapters.ad_read import AdIdentityProvider
@@ -86,7 +103,7 @@ async def _default_runtime(
     settings: Settings, engines: Engines, clock: Clock, directory: ToolCaller | None
 ) -> AsyncIterator[Runtime]:
     """Backend giữ SVC_EXECUTOR_TOKEN (D-03) → can_execute=True; worker thì không. 3h (P7): CHỈ ở đây dựng registry GHI +
-    `VpnExecutor` (transaction_log trên engine chính). Không token → `RefusingExecutor` (B17 E7, 0 lời gọi ghi) + WARNING một
+    `PlanExecutor` (transaction_log trên engine chính). Không token → `RefusingExecutor` (B17 E7, 0 lời gọi ghi) + WARNING một
     lần lúc khởi động. `FAKE_SCENARIO` (gate2, node giả) → giữ `RefusingExecutor` như Phase 2 (gate2 89/0 không đổi)."""
     async with AsyncExitStack() as stack:
         executor = None
@@ -95,7 +112,7 @@ async def _default_runtime(
         elif settings.fake_scenario is None:
             write_registry, write_http = build_write_registry(settings, clock)
             stack.push_async_callback(write_http.aclose)
-            executor = VpnExecutor(
+            executor = PlanExecutor(
                 write_registry, SqlTxLog(engines.main, clock), clock, tz=get_policy().business_hours.tz
             )
         yield await stack.enter_async_context(
@@ -173,6 +190,96 @@ def _build_auth(
 
 async def _monitor_unavailable(_: Request, exc: Exception) -> JSONResponse:  # M9 (A0): body giống `runtime_unavailable`
     return JSONResponse({"detail": "monitor_unavailable"}, status_code=503)
+
+
+# ---- M9 (A4): trạng thái `llm` + `monitor` của /api/health -----------------------------------------------
+# Q-M9-7: KHÔNG gọi LLM thật (ping tốn tiền, health gọi mỗi 10 giây) — chỉ đọc `config/llm.yaml`, env model và
+# SUM(llm_calls.cost_usd). Hàm dưới đây thuần (không I/O) để test phủ cả 4 giá trị; probe mới đụng DB.
+
+
+def llm_targets(cfg: LlmConfig, settings: Settings) -> tuple[str | None, ...]:
+    """Tên model của MỌI đích khi `real` (2 vai trò + fallback). `None` = env chưa đặt (vd FAST_MODEL)."""
+    out: list[str | None] = []
+    for r in ROLES:
+        out.append(getattr(settings, cfg.roles[r].model_setting) or None)
+        out.extend(f.model for f in cfg.fallback[r])
+    return tuple(out)
+
+
+def _llm_priced(models: tuple[str | None, ...], pricing: Mapping[str, Price]) -> bool:
+    return all(m is not None and m in pricing for m in models)
+
+
+def _llm_paid(models: tuple[str | None, ...], pricing: Mapping[str, Price]) -> bool:
+    """Có đích TRẢ PHÍ (giá > 0) — chỉ loại này bị trần chi chặn (`llm/config.py` `Price.paid`)."""
+    return any(m is not None and m in pricing and pricing[m].paid for m in models)
+
+
+def llm_needs_spend(
+    backend: str | None, models: tuple[str | None, ...], pricing: Mapping[str, Price]
+) -> bool:
+    """Có cần đọc tổng chi không — `scripted` và cấu hình thiếu giá thì không đụng DB."""
+    return backend == "real" and _llm_priced(models, pricing) and _llm_paid(models, pricing)
+
+
+def llm_status(
+    backend: str | None,
+    models: tuple[str | None, ...],
+    pricing: Mapping[str, Price],
+    spent_usd: float | None,
+    cap_usd: float,
+) -> LlmStatus:
+    """`spent_usd=None` = chưa đọc / đọc lỗi. Trần chi so `>=` như `llm/spend.py`; health KHÔNG thấy phần giữ chỗ
+    của các request đang bay, nên gateway có thể đã `over` trong khi đây còn báo `real:configured`."""
+    if backend is None:  # chỉ ở test: process thật đã bị `require_llm_backend` chặn khởi động
+        return "unknown"
+    if backend == "scripted":  # giá 0 → trần chi không áp (Q-3d-4)
+        return "scripted"
+    if not _llm_priced(models, pricing):
+        return "real:missing_pricing"
+    if not _llm_paid(models, pricing):
+        return "real:configured"
+    if spent_usd is None:  # không biết đã chi bao nhiêu → không báo "sẵn sàng" (fail-closed như SpendTracker)
+        return "unknown"
+    return "spend_cap_reached" if spent_usd >= cap_usd else "real:configured"
+
+
+def _default_llm_probe(settings: Settings, app: FastAPI) -> LlmProbe:
+    """KHÔNG dựng provider, KHÔNG gọi `resolve`/`open_llm`, không một request HTTP nào."""
+
+    async def probe() -> LlmStatus:
+        cfg = load_llm_config(settings.config_dir / "llm.yaml")
+        backend, models = settings.llm_backend, llm_targets(cfg, settings)
+        spent: float | None = None
+        if llm_needs_spend(backend, models, cfg.pricing):
+            try:
+                spent = await SqlLlmStore(app.state.engines.main).spend_total()
+            except Exception as exc:  # noqa: BLE001 — không đọc được tổng chi → "unknown", không làm hỏng health
+                log.warning("không đọc được tổng chi LLM cho /api/health: %s", type(exc).__name__)
+        return llm_status(backend, models, cfg.pricing, spent, cfg.spend.cap_usd)
+
+    return probe
+
+
+def _default_monitor_probe(app: FastAPI) -> MonitorProbe:
+    """Q-M9-B1-6 + kiểm thử 01/10 mục 7: engine `app_monitor` có cấu hình và ping được hay không, và ĐÚNG role —
+    DSN đặt nhầm sang `app_rw` thì M9 đang chạy với quyền ghi mà không ai biết. CHỈ đi qua engine monitor
+    (`monitor_engine` ném `MonitorUnavailable` khi thiếu DSN), không bao giờ rơi về `engines.main`."""
+
+    async def probe() -> MonitorStatus:
+        try:
+            engine = monitor_engine(app.state.engines)
+        except MonitorUnavailable:
+            return "not_configured"
+        async with engine.connect() as conn:
+            user = (await conn.execute(text("SELECT current_user"))).scalar()
+        if user != MONITOR_ROLE:
+            # Tên role không phải bí mật; KHÔNG log DSN. Mỗi lần làm mới cache (≤ 1 dòng/10 giây khi có người gọi).
+            log.error("monitor DSN sai role: %s — M9 phải chạy bằng %s", user, MONITOR_ROLE)
+            return "wrong_role"
+        return "ok"
+
+    return probe
 
 
 def create_app(
@@ -265,6 +372,9 @@ def create_app(
     # ---- M9 ---- thiếu MONITOR_DATABASE_URL → 503, không rơi về app_rw (kế hoạch M9 mục 4.1)
     app.add_exception_handler(MonitorUnavailable, _monitor_unavailable)
     app.state.m9_clock = clock  # A3: mốc mặc định cửa sổ dashboard + `acked_at` (Clock của app, test tiêm FakeClock)
+    # A4: `llm`, `monitor` của /api/health — chỉ báo, không đổi mã. Test gán đè `app.state.*_probe` (như `kb_probe`).
+    app.state.llm_probe = _default_llm_probe(settings, app)
+    app.state.monitor_probe = _default_monitor_probe(app)
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)

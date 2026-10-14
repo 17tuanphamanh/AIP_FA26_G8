@@ -56,9 +56,10 @@ LUAT_GIT.md
 # make verify (Phase 4 mục 4.4): kết quả chạy trên máy — không commit
 .verify/
 
-# Kế hoạch phiên agent và biên bản gate4 theo ngày — quy ước KHÔNG commit (PROGRESS, Makefile:139)
+# Kế hoạch phiên agent và biên bản gate4/gate5 theo ngày — quy ước KHÔNG commit (PROGRESS, Makefile:139)
 PLAN-*.md
 backend/tests/stack/bienban-gate4-2*.md
+backend/tests/stack/bienban-gate5-2*.md
 # Tài liệu quay demo, model đã train (tải riêng theo P11) — không commit
 Claude outputs/
 docs/demo-video/

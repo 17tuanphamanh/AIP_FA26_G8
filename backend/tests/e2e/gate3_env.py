@@ -2,7 +2,7 @@
 
 Chạy THẬT: `create_app` (auth qua AD của mock, guard regex mặc định, route ticket/duyệt), runtime ghép bằng CHÍNH
 `graph.wiring._open` (store SQL, `AsyncPostgresSaver`, `PgTicketLock`, node thật), registry đọc (svc_agent) + registry GHI
-(svc_executor) + `VpnExecutor` tới mock THẬT (subprocess, `seed.json`), `Retriever` thật trên Qdrant (testcontainer) với KB
+(svc_executor) + `PlanExecutor` tới mock THẬT (subprocess, `seed.json`), `Retriever` thật trên Qdrant (testcontainer) với KB
 fixture ingest thật, worker = runtime thứ hai `can_execute=False` + `WorkerJobs`. Giả: `FakeMlService` (ml-service),
 ScriptedLLM (`vpn_scripts`) sau gateway thật (`SqlLlmStore` → `llm_calls`), FakeClock.
 
@@ -24,8 +24,8 @@ from typing import Any
 import httpx
 from app.core.clock import Clock, FakeClock
 from app.db.session import Engines, create_engines
+from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
-from app.executor.vpn import VpnExecutor
 from app.executor.wiring import build_write_registry
 from app.graph.fakes import FakeScenario, RefusingExecutor
 from app.graph.ports import ToolCaller
@@ -128,7 +128,7 @@ async def open_gate3_runtime(
     parts: Parts, settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool,
     directory: ToolCaller | None,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
-    """Như `main._default_runtime` + `graph.wiring.open_runtime`, chỉ thay ml/LLM bằng bản giả. API: `VpnExecutor` (registry
+    """Như `main._default_runtime` + `graph.wiring.open_runtime`, chỉ thay ml/LLM bằng bản giả. API: `PlanExecutor` (registry
     ghi svc_executor); worker: `RefusingExecutor` — đúng P7."""
     async with AsyncExitStack() as stack:
         qdrant = AsyncQdrantClient(url=settings.qdrant_url, timeout=int(settings.rag_qdrant_timeout_s),
@@ -148,7 +148,7 @@ async def open_gate3_runtime(
         if can_execute:
             write_registry, write_http = build_write_registry(settings, clock)
             stack.push_async_callback(write_http.aclose)
-            executor: Any = VpnExecutor(CrashAfterWrite(write_registry, parts.crash), txlog, clock,
+            executor: Any = PlanExecutor(CrashAfterWrite(write_registry, parts.crash), txlog, clock,
                                         tz=get_policy().business_hours.tz)  # fmt: skip
         else:
             executor = RefusingExecutor(txlog)

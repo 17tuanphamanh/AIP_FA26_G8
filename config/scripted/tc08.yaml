@@ -1,0 +1,16 @@
+# Preset `tc08` của ScriptedLLM trên stack dev — `make gate5` (phase5 mục 7.6, PLAN-T24 S14), thẻ [fake:tc08] cuối câu,
+# KHÔNG đặt FAKE_SCENARIO. binh.tt (nv002) "xin quyền đọc finance/Q3 30 ngày": access/grant_permission, slot chuẩn hoá (read, 30) → R07 + R09 → l1_01 TỪ CHỐI → S_REJECTED, 0 ghi.
+# Slot đích (target_user, resource_path, software_name) đúng chữ trong câu (sanitize_slots giữ); slot chuẩn hoá theo bảng 5.1.4.
+# Phản hồi TĨNH, kiểm schema lúc khởi động. Đủ mọi khoá prompt của preset cũ (kể cả b14_*, giá trị an toàn của default.yaml).
+# KHÔNG dùng trong test.
+b02_injection_judge: {is_attack: false, category: none, reason: "preset tc08"}
+b03_classify:
+  intents: [{type: access, confidence: 0.92, span: "", action_hint: grant_permission, slots: {resource_path: finance/Q3, permission_level: read, duration: "30"}}]
+  is_multi: false
+b10_need_type: {type: action, confidence: 0.9}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cần quyền gì (đọc/ghi) trên thư mục nào, trong bao nhiêu ngày nhé?"}
+b11_extract_slots: {slots: {}, off_topic: true}
+# Phase 6 P12 [Chốt 09/10]: giá trị an toàn — khi 6C nối B12, ca không luật nào khớp vẫn ra chuyển L2 (0,9 > t_high).
+b14_risk_estimate: {prob_needs_human: 0.9, factors: [missing_facts], rationale: "preset"}
+b14_risk_vote: {needs_human: true, factors: [missing_facts]}

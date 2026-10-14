@@ -227,7 +227,7 @@ def test_every_action_type_has_metadata_and_repo_config_passes() -> None:
     for intent, spec in get_slots().intents.items():
         assert set(spec.action_types) <= set(meta.of(intent)), intent
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    assert settings.enabled_intents == ["vpn"]
+    assert settings.enabled_intents == ["vpn", "account", "software", "access"]  # T24 P1: bật 4 intent (trước T24: ["vpn"])
     check_intent_config(settings, get_slots(), meta)
 
 

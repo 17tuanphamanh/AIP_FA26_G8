@@ -66,10 +66,15 @@ def _env(b03: Script, *, ml: FakeMlService | None = None, **harness: Any) -> tup
     return h, gw
 
 
+def _is_point1(r: dict[str, Any]) -> bool:
+    """Điểm log 1 của ticket: dòng B3/B4 (đơn ý, E1 cả câu) hoặc dòng B5 `split_into_<n>_children` (T20b P2/P3 — tách ý)."""
+    return r["step"] in ("B3", "B4") or (r["step"] == "B5" and str(r["event"]).startswith("split_into_"))
+
+
 async def _run(b03: Script, text: str = TEXT, **kw: Any) -> tuple[dict[str, Any], dict[str, Any], GraphHarness, Gateway]:
     h, gw = _env(b03, **kw)
     v = (await h.submit_as("t1", SESSION_NV001, text=text)).values
-    [row] = [r for r in h.audit.rows if r["ticket_id"] == "t1" and r["step"] in ("B3", "B4")]
+    [row] = [r for r in h.audit.rows if r["ticket_id"] == "t1" and _is_point1(r)]
     return v, row, h, gw
 
 
@@ -85,15 +90,13 @@ def _b03_calls(gw: Gateway) -> int:
     [
         (out(), "out_of_scope"),  # rỗng
         (out(item("out_of_scope", 0.95)), "out_of_scope"),
-        (out(item("vpn", 0.9), item("account", 0.9)), "multi_intent_not_enabled"),
         (out(item("vpn", 0.4)), "intent_low_confidence"),
         (out(item("account", 0.9)), "intent_not_enabled"),
         # thứ tự CỐ ĐỊNH: ý chưa bật nhưng confidence thấp → low_confidence (kiểm confidence trước — M-3f-6)
         (out(item("account", 0.4)), "intent_low_confidence"),
-        # nhiều ý kể cả confidence thấp → multi (kiểm số ý trước confidence)
-        (out(item("vpn", 0.3), item("software", 0.3)), "multi_intent_not_enabled"),
-        # Q-3f-6: vpn + ý ngoài phạm vi = 2 ý → không âm thầm bỏ phần máy in
-        (out(item("vpn", 0.9), item("out_of_scope", 0.9)), "multi_intent_not_enabled"),
+        # T20b (Q-T20b-2 = B, đổi từ `multi_intent_not_enabled`): ≥ 2 ý mà 0 ý chạy được → cả câu E1 với `reason_detail` của ý
+        # ĐẦU TIÊN trong phạm vi (vpn 0,3 → confidence thấp). Ca ≥ 2 ý có ý chạy được nay TÁCH (test_t20b_split_* bên dưới).
+        (out(item("vpn", 0.3), item("software", 0.3)), "intent_low_confidence"),
         # chỉ ý ngoài phạm vi (kể cả 2 ý) → out_of_scope (kiểm trước số ý)
         (out(item("out_of_scope", 0.9), item("out_of_scope", 0.8)), "out_of_scope"),
     ],
@@ -128,10 +131,36 @@ async def test_q3f6_small_talk_is_not_an_intent() -> None:
 
 
 async def test_q3f6_out_of_scope_request_is_second_intent() -> None:
+    """Q-3f-6 (không âm thầm bỏ phần máy in) — T20b đổi kỳ vọng (Q-T20b-2 = B, P2 "ý lẫn = tách"): vpn + ý ngoài phạm vi → TÁCH
+    2 con; con 2 đóng ngay E1 `out_of_scope` (có `escalations`), thay cho E1 `multi_intent_not_enabled` cả câu."""
     text = "VPN lỗi, tiện sửa máy in giúp em"
-    v, _, _, _ = await _run([out(item("vpn", 0.9, span="VPN lỗi"), item("out_of_scope", 0.9, span="tiện sửa máy in"))],
-                         text=text)  # fmt: skip
-    assert (v["exit_code"], v["escalation_reason_detail"]) == ("E1", "multi_intent_not_enabled")
+    v, row, h, _ = await _run([out(item("vpn", 0.9, span="VPN lỗi"), item("out_of_scope", 0.9, span="tiện sửa máy in"))],
+                              text=text)  # fmt: skip
+    assert (row["step"], row["event"]) == ("B5", "split_into_2_children")
+    assert row["detail"]["verdicts"] == ["runnable", "out_of_scope"]
+    assert v.get("exit_code") is None and v["children"] == ["t1-1", "t1-2"]
+    [esc] = h.escalations.of("t1-2")
+    assert (esc["exit_code"], esc["reason_detail"]) == ("E1", "out_of_scope")
+
+
+async def test_t20b_split_two_intents_one_not_enabled() -> None:
+    """T20b (thay ca f4 cũ `vpn + account → multi_intent_not_enabled`): harness chỉ bật `vpn` → ý account không chạy được nhưng ý vpn
+    chạy được → TÁCH 2 con (con 2 E1 `intent_not_enabled`), không còn E1 cả câu."""
+    v, row, h, _ = await _run([out(item("vpn", 0.9), item("account", 0.9))])
+    assert (row["step"], row["event"], row["from_status"], row["to_status"]) == (
+        "B5", "split_into_2_children", S_CLASSIFYING, S_CLASSIFYING)  # fmt: skip
+    assert row["detail"]["verdicts"] == ["runnable", "intent_not_enabled"] and row["detail"]["children"] == 2
+    assert v["is_parent"] is True and v["children"] == ["t1-1", "t1-2"]
+    [esc] = h.escalations.of("t1-2")
+    assert (esc["exit_code"], esc["reason_detail"]) == ("E1", "intent_not_enabled")
+
+
+async def test_t20b_never_multi_intent_not_enabled() -> None:
+    """Q-T20b-2 = B: code mới KHÔNG BAO GIỜ ra `multi_intent_not_enabled` (giá trị vẫn nằm trong `REASON_DETAILS`)."""
+    scripts: list[Script] = [[out(item("vpn", 0.3), item("software", 0.3))], [out(item("vpn", 0.9), item("access", 0.9))]]
+    for script in scripts:
+        _, _, h, _ = await _run(script)
+        assert all(r.get("event") != "multi_intent_not_enabled" for r in h.audit.rows)
 
 
 async def test_q3f6_prompt_v2_says_small_talk_is_not_an_intent() -> None:

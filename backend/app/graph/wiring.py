@@ -1,7 +1,7 @@
 """Dựng runtime graph trên Postgres: store SQL + checkpoint + khoá + runner (composition root).
 
 Worker dùng `can_execute=False` (không có SVC_EXECUTOR_TOKEN — D-03, quyết định 26/09/2026). Executor (3h, P7): chỉ `main.py`
-(API) dựng `VpnExecutor` rồi truyền `executor=` vào; không truyền (worker, API thiếu token) → `RefusingExecutor` đọc
+(API) dựng `PlanExecutor` rồi truyền `executor=` vào; không truyền (worker, API thiếu token) → `RefusingExecutor` đọc
 `transaction_log` (soát S12 NGHI-3: `begun` có sẵn → E7 `exec_interrupted`). Module này KHÔNG import
 `executor.wiring`/adapter ghi (hợp đồng import-linter 3). Node
 chưa có logic thật dùng port không làm gì (`fakes.LoggingNotifier`…); phase sau thay bằng dịch vụ thật.
@@ -78,6 +78,7 @@ from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
+from app.notify.child import ChildAwareNotifier
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ports import RagPort
@@ -219,7 +220,7 @@ async def _open(
     tickets = SqlTicketStore(engines.main)
     approvals = SqlApprovals(engines.main)
     deps = NodeDeps(
-        notifier=LoggingNotifier(), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
+        notifier=ChildAwareNotifier.on_engine(engines.main, LoggingNotifier()), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),

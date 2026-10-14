@@ -4,7 +4,7 @@
   `targets_approver` với l1_01 → Trưởng BP `it_mgr01`, `choice_reason=conflict` (khuôn x11 của `test_b15_prepare_approval.py`).
 - b2: `config/approvers.yaml` thật — 4 intent có roster (account/software/access = roster vpn); `check_approvers_config` xanh với
   `enabled_intents` 4 intent (tiêm vào Settings, KHÔNG bật thật).
-- h2: `check_policy_config`, `check_intent_config`, `check_plans` với `ENABLED_INTENTS=["vpn"]` xanh; mặc định vẫn `["vpn"]`.
+- h2: `check_policy_config`, `check_intent_config`, `check_plans` với `ENABLED_INTENTS` mặc định xanh (T24 P1: mặc định 4 intent).
 """
 
 from collections.abc import Iterator
@@ -103,10 +103,10 @@ def test_b2_repo_approvers_four_intents() -> None:
 
 
 def test_h2_startup_checks_with_vpn_only() -> None:
-    """h2 (P12): settings thật `ENABLED_INTENTS=["vpn"]` → `check_policy_config`, `check_intent_config`, `check_plans`,
-    `check_approvers_config` xanh; mặc định vẫn `["vpn"]` (không bật intent nào ở T20a)."""
+    """h2 (P12): settings thật (mặc định) → `check_policy_config`, `check_intent_config`, `check_plans`, `check_approvers_config`
+    xanh. T20a không bật intent; T24 P1 bật đủ 4 — giá trị ghim đổi theo (tên test giữ nguyên)."""
     settings = _settings()
-    assert settings.enabled_intents == ["vpn"]
+    assert settings.enabled_intents == ["vpn", "account", "software", "access"]  # T24 P1 (trước T24: ["vpn"] — T20a chưa bật)
     check_policy_config(get_policy(), get_slots(), get_action_metadata())
     check_intent_config(settings, get_slots(), get_action_metadata())
     check_plans(get_action_metadata().root, settings.enabled_intents)

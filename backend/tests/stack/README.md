@@ -1,8 +1,9 @@
-# Cổng 2, cổng 3, cổng 4 và smoke VPN trên stack compose thật
+# Cổng 2, cổng 3, cổng 4, cổng 5 (đơn ý) và smoke VPN trên stack compose thật
 
 Các script chạy trên máy dev, nói chuyện với backend `http://127.0.0.1:8000` và Postgres của compose (psql **trong**
 container postgres). Không nằm trong `make test`. Mục lục: [Thành viên chạy cổng 3 + 4](#thành-viên-chạy-cổng-3-rồi-cổng-4-một-trang) ·
-[Cổng 2](#cổng-2-2b-4) · [Cổng 3](#cổng-3-make-gate3) · [Cổng 4](#cổng-4-make-gate4) · [Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) ·
+[Cổng 2](#cổng-2-2b-4) · [Cổng 3](#cổng-3-make-gate3) · [Cổng 4](#cổng-4-make-gate4) · [Cổng 5](#cổng-5-make-gate5--phần-đơn-ý) ·
+[Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) ·
 [Chạy smoke LLM thật](#chạy-smoke-llm-thật) · [Đo CPU của worker](#đo-cpu-của-worker).
 
 ## Thành viên chạy cổng 3 rồi cổng 4 (một trang)
@@ -228,6 +229,40 @@ dòng của ticket → trên stack đã chạy gate2 (node GIẢ — không ghi 
 duyệt/xác nhận) sẽ báo thiếu ở các ticket đó, dù code đúng. Muốn soát MỘT lần chạy: truyền danh sách ticket
 (`make audit-check ARGS="<ticket_id> <ticket_id> …"`) — gate4 g4-12 làm đúng như vậy (Q-4d-10).
 
+## Cổng 5 (`make gate5`) — phần đơn ý
+
+`gate5.py` (phase5 mục 7.6, T24 P8): 9 kịch bản đơn ý của account / software / access trên node THẬT tới B17 thật (ghi đúng 1 lần,
+hoàn tác theo bước, tin B18 theo mẫu, ghi chú bàn giao E7 4 phần). Preset `config/scripted/{tc01,tc03,tc07,tc08,tc17,tc18,tc21a,tc21b,
+hb04}.yaml`. Không luật nào của 3 intent mới phụ thuộc giờ → kịch bản không phụ thuộc giờ chạy. Lỗi hệ thống giả bơm qua `/_admin/faults`
+của mock (theo tiền tố đường dẫn); mock nạp lại seed trước mỗi kịch bản. Câu có "mật khẩu" kết thúc bằng dấu chấm (Q-T24-10): luật bí
+mật `password` hiểu "mật khẩu … [fake:" + `:` là "mật khẩu: <giá trị>" và che mất tên preset → preset `default` → E1.
+
+**Chuẩn bị:** như cổng 3 (KHÔNG `FAKE_SCENARIO`, `LLM_BACKEND=scripted`, có `SVC_EXECUTOR_TOKEN`) + **KB THẬT** (`make ingest` — KB fixture
+chỉ có bài VPN nên B11 ra E3 `no_procedure`) + `ENABLED_INTENTS` đủ 4 intent (mặc định từ T24; `docker-compose.yml` KHÔNG truyền biến này nên `.env` không đổi được — thiếu = image
+cũ, `make up` dựng lại).
+**Chốt an toàn** (exit 2 trước kịch bản): như gate3 + ENABLED_INTENTS của backend VÀ worker đủ 4 (script trong container chỉ in nhãn
+`INTENTS=du|thieu|?`) + KB đang chạy là KB thật `kb/`. `make verify G=…5` tự nạp KB thật ngay trước gate5 (Q-T24-1) — sau lượt chạy
+stack ở KB thật; muốn chạy lại gate3/gate4 tay phải nạp lại KB fixture.
+
+```
+make gate5 S=preflight     # health, KB thật, worker, đăng nhập ha.lt, an.nv, binh.tt
+make gate5 S=tc21b         # hoặc tc01 tc03 tc07 tc08 tc17 tc18 tc21a hb04 g5-audit
+make gate5 S=all           # ghi biên bản bienban-gate5-<YYYYmmdd>.md (KHÔNG commit bản đã điền)
+```
+
+| Kịch bản | Đạt khi |
+|---|---|
+| `tc01` | an.nv "đặt lại mật khẩu tài khoản AD." → R01 AUTO → `POST /ad/users/nv001/reset-password` đúng 1, tổng ghi 1 → tin result → xác nhận → `S_RESOLVED` |
+| `tc03` | an.nv "cài Zoom" (máy LAP-0342 do B6 suy) → R11 AUTO → 1 install, 0 `POST /software/licenses/*` → xác nhận → `S_RESOLVED` |
+| `tc07` | an.nv "đặt lại mật khẩu AD cho svc_backup." → R03 (+R04) → phiếu l1_01 → duyệt → B17 tra lại AD nv001 + svc_backup → reset svc_backup đúng 1, 0 reset nv001 |
+| `tc08` | binh.tt "xin quyền đọc finance/Q3 30 ngày" → R07 (+R09) → l1_01 từ chối có lý do → `S_REJECTED`, tin "Yêu cầu cấp quyền truy cập cho thư mục finance/Q3 chưa được duyệt. Lý do: …", 0 ghi |
+| `tc17` | an.nv "cài utorrent" → catalog 404 là dữ liệu (không E2) → R13 → chờ duyệt, 0 ghi, 0 escalation |
+| `tc18` | 500 ở `/ad/users/nv001/privilege` (check_privilege_level) → B7 E2 `tool_system_error`, tin mẫu E2, 0 ghi |
+| `tc21a` | "cài Zoom" + install 500 → E7 `exec_failed`, 1 lời gọi ghi, ghi chú bàn giao 4 phần có "có thể đã được áp dụng" |
+| `tc21b` | "cài Adobe Acrobat Pro" → R14 → duyệt → assign OK, install 500 → E7, 0 uninstall, tổng ghi 2, ghi chú "license … ĐÃ cấp … KHÔNG được thu hồi tự động" (cổng 5 "phần mềm có phí lỗi khi cài → không gọi hoàn tác") |
+| `hb04` | "cài AutoCAD" → R14 (+R15) → duyệt → assign 409 `no_license_available` → E7, 1 lời gọi ghi, ghi chú "hết license autocad" |
+| `g5-audit` | `audit_check <các ticket lần chạy này đã tạo>` → `KẾT LUẬN: 0 thiếu, 0 bí mật`; log backend+worker từ giờ bắt đầu 0 trúng luật bí mật |
+
 ## Demo VPN thứ Sáu
 
 Trên stack đã chuẩn bị như mục Cổng 3 (`LLM_BACKEND=scripted`, không `FAKE_SCENARIO`, KB fixture). Cách nhanh: chạy từng
@@ -295,7 +330,8 @@ biến env `LLM_SPEND_CAP_USD`). **Không commit `llm.yaml` đã hạ cap** — 
 
 Một lệnh cho mọi DỪNG: `make verify G=234` = lint → test → up → gate2 (tạo lại backend+worker với `FAKE_SCENARIO=approval`) →
 ingest KB fixture (một lần) → gate3 (tạo lại với `FAKE_SCENARIO` và `APPROVAL_SLA_MINUTES_DEV` rỗng) → gate4 (bước 10, tạo lại với
-`APPROVAL_SLA_MINUTES_DEV=2`) → LUÔN trả backend+worker về cấu hình `.env`. `G=0` chỉ lint + test; `BENCH=1` thêm bench checkpoint
+`APPROVAL_SLA_MINUTES_DEV=2`) → (T24, `G=2345`) ingest KB THẬT `kb/` (bước 11) → gate5 (bước 12, tạo lại với biến rỗng) → LUÔN
+trả backend+worker về cấu hình `.env`. Script nhớ KB đang nạp, chỉ nạp lại khi cổng kế tiếp cần KB khác; G không có 5 → như cũ. `G=0` chỉ lint + test; `BENCH=1` thêm bench checkpoint
 (Postgres testcontainers). Trên macOS script tự giữ máy thức (`caffeinate -i -w <pid>` — hết khi verify thoát) và cảnh báo khi máy
 chạy pin. Kết quả: `.verify/summary.txt` (`make verify-status`) + `.verify/run-*.log`. Không đọc/sửa `.env`, không `down -v`.
 

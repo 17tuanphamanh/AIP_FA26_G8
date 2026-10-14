@@ -2,7 +2,7 @@
 P13 (Q-4-P, G4-19), 5.3 b6/b7, 5.6 #1 (Q-4b-1: lỗi AD khi tra `decided_by` → E2; TQ-11: xét người gửi/người hưởng lợi TRƯỚC,
 `decided_by` SAU, trong MỘT `gather`).
 
-Khuôn `test_b17_execute.Env`: node B17 thật, `VpnExecutor` thật trên hệ thống ghi VPN giả (đếm ở nơi nhận), AD giả sau registry
+Khuôn `test_b17_execute.Env`: node B17 thật, `PlanExecutor` thật trên hệ thống ghi VPN giả (đếm ở nơi nhận), AD giả sau registry
 đọc thật; harness gộp người trong roster (l1_01, l1_02, l1_lead, it_mgr01 — seed.json). Phiếu tạo bằng `h.approvals.create(...)`
 (FK: người duyệt có dòng `users` giả — gieo tay) rồi `close(approved, decided_by=…)`. Đổi trạng thái / lỗi của người đã duyệt làm
 TƯỜNG MINH (`set_status`, `fail_ids`, xoá khỏi AD, `seed_ad_records`).
@@ -28,7 +28,7 @@ from app.core.hashing import hash_action
 from app.domain.action import Action
 from app.domain.context import RequesterContext, role_from_groups
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_EXECUTING
-from app.executor.vpn import VpnExecutor
+from app.executor.plan_executor import PlanExecutor
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b17_execute
 from app.settings import get_action_metadata, get_policy
@@ -79,7 +79,7 @@ class Env:
         self.ad = FakeAd(*(users or (ad_user("nv001"),)))
         self.writes, self.txlog = FakeVpnWrites(self.clock), MemoryTxLog()
         self.h = GraphHarness(clock=self.clock, ad=self.ad, txlog=self.txlog)
-        self.executor: Any = VpnExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
+        self.executor: Any = PlanExecutor(self.writes.registry(), self.txlog, self.clock, tz=get_policy().business_hours.tz)
 
     @contextmanager
     def run(self) -> Iterator[None]:

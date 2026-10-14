@@ -4,7 +4,7 @@
   còn lại nếu process chết sau lời gọi ghi). Chạy dưới role `app_rw` (quyền CRUD `transaction_log` từ 0001).
 - `has_begun` theo ticket (MỌI lượt — chốt DỪNG 2, NGHI-2); `undone` / `undo_failed` + `detail`; CHECK trạng thái chỉ nhận
   begun/undone/undo_failed.
-- Chuỗi đầy đủ: `VpnExecutor` thật + txlog PG + ghi VPN giả — `begun` có trước lời gọi; chạy lại cùng lượt → `ExecutionInterrupted`.
+- Chuỗi đầy đủ: `PlanExecutor` thật + txlog PG + ghi VPN giả — `begun` có trước lời gọi; chạy lại cùng lượt → `ExecutionInterrupted`.
 - `get_status`: phiếu pending/approved; không có → None (B17 "đã duyệt" đọc BẢNG — P8).
 Database riêng cho module (dòng append-only không xoá được giữa các test).
 """
@@ -21,8 +21,8 @@ from app.core.clock import FakeClock
 from app.db.tickets import NewTicket, SqlTicketStore
 from app.domain.action import Action
 from app.executor.errors import ExecutionInterrupted
+from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
-from app.executor.vpn import VpnExecutor
 from app.settings import get_action_metadata, get_policy
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -107,7 +107,7 @@ async def test_executor_with_pg_txlog_begun_then_interrupted(rw: AsyncEngine) ->
     ticket = await _ticket(rw)
     clock = FakeClock(NOW)
     writes = FakeVpnWrites(clock)
-    ex = VpnExecutor(writes.registry(), SqlTxLog(rw, clock), clock, tz=get_policy().business_hours.tz)
+    ex = PlanExecutor(writes.registry(), SqlTxLog(rw, clock), clock, tz=get_policy().business_hours.tz)
     assert (await ex.execute(ticket, "T1", _action())).success
     assert await scalar(rw, "SELECT count(*) FROM transaction_log WHERE ticket_id=:t AND status='begun'", t=ticket) == 1
     with pytest.raises(ExecutionInterrupted):  # "recover" cùng lượt

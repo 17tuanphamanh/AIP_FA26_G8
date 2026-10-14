@@ -4,6 +4,7 @@
 #   make verify              # G=3 (mặc định)
 #   make verify G=23         # gate2 + gate3 (theo thứ tự chữ số)
 #   make verify G=234        # + gate4 (APPROVAL_SLA_MINUTES_DEV=2 chỉ cho bước gate4 — 4d DỪNG 2)
+#   make verify G=2345       # + gate5 (Phase 5 T24): nạp KB THẬT (kb/) ngay trước gate5 → sau lượt chạy stack ở KB thật (Q-T24-1)
 #   make verify G=0          # chỉ lint + test (không đụng stack)
 #   make verify G=3 BENCH=1  # thêm bench checkpoint (P6 — Postgres testcontainers, không dùng DB stack)
 #
@@ -13,7 +14,8 @@
 # Bước 8 (trả backend+worker về cấu hình `.env`) LUÔN chạy nếu đã qua bước 3, kể cả khi đỏ giữa chừng hoặc Ctrl-C.
 #
 # Luật: không `down -v`, không `volume rm|prune`; không in giá trị biến môi trường (chỉ tên/nhãn enum); không `set -x`;
-# APP_ENV của backend phải là `dev`. Đầu ra: `.verify/run-<giờ>.log` (toàn bộ) + `.verify/summary.txt` (ghi đè) — agent đọc
+# APP_ENV của backend phải là `dev`. KB: gate3/gate4 cần KB fixture, gate5 cần KB THẬT (6 bài quy trình account/software/access — KB
+# fixture chỉ có VPN → B11 S0-P10 ra E3); script nhớ KB đang nạp và chỉ nạp lại khi cổng kế tiếp cần KB khác (G không có 5 → như cũ). Đầu ra: `.verify/run-<giờ>.log` (toàn bộ) + `.verify/summary.txt` (ghi đè) — agent đọc
 # summary. Biến vào (từ Makefile): G, BENCH, COMPOSE, MAKE_BIN. Tương thích bash 3.2 (macOS).
 #
 # Mọi hàm bước được gọi trong `if`/`||` — ở đó `set -e` KHÔNG có hiệu lực, nên MỖI lệnh con tự `|| return 1` (không thì một
@@ -30,7 +32,7 @@ COMPOSE="${COMPOSE:-docker compose --env-file .env}"  # chuỗi lệnh — CỐ 
 MAKE="${MAKE_BIN:-make}"  # Makefile truyền MAKE_BIN (không dùng biến MAKE của make — xem chú thích target verify)
 HEALTH_URL="http://127.0.0.1:8000/api/health"
 WAIT_S=180
-KNOWN_GATES="0234"
+KNOWN_GATES="02345"
 
 if ! [[ "$G" =~ ^[0-9]+$ ]]; then
   echo "G phải là chuỗi chữ số (vd 3, 23, 0) — nhận: '$G'" >&2
@@ -53,7 +55,7 @@ FAILED_NAME=""
 FAILED_OUT=""
 RESTORE=0
 RESTORED=0
-INGESTED=0
+KB_NOW="" # KB script đã nạp trong lượt này: "" | fixture | real (T24 Q-T24-1)
 STEP_DUR=0
 START_HMS="$(date +%H:%M:%S)"
 POWER_NOTE=""
@@ -151,9 +153,11 @@ check_app_env() { # chốt an toàn như gate2/gate3: APP_ENV của backend = de
 
 step_up() { "$MAKE" up || return 1; check_app_env || return 1; }
 step_ingest() { "$MAKE" ingest KB_DIR=backend/tests/fixtures/kb ARGS=--allow-unevaluated || return 1; }
+step_ingest_real() { "$MAKE" ingest KB_DIR=kb || return 1; } # T24 Q-T24-1: KB thật cho gate5
 step_gate3() { recreate "" "" "" || return 1; "$MAKE" gate3 S=all || return 1; }
 step_gate2() { recreate approval 40 "" || return 1; "$MAKE" gate2 S=all || return 1; }
 step_gate4() { recreate "" "" 2 || return 1; "$MAKE" gate4 S=all || return 1; }
+step_gate5() { recreate "" "" "" || return 1; "$MAKE" gate5 S=all || return 1; }
 step_bench() { PYTHONPATH=backend uv run python -m tests.stack.bench_checkpoint || return 1; }
 step_restore() { # bước 8 — không biến shell nào đè FAKE_* / APPROVAL_SLA_MINUTES_DEV → đúng cấu hình .env
   # shellcheck disable=SC2086
@@ -176,17 +180,32 @@ restore() {
   fi
 }
 
-ensure_ingest() { # bước 4 — MỘT lần trước cổng đầu tiên cần KB fixture (3 hoặc 4)
+ensure_ingest() { # bước 4 — trước cổng cần KB fixture (3 hoặc 4) khi KB đang nạp không phải fixture (G không có 5: MỘT lần)
   local out=".verify/step4.out"
-  if ((INGESTED == 1)); then
+  if [[ "$KB_NOW" == "fixture" ]]; then
     return 0
   fi
   if run_step 4 "ingest KB fixture" "$out" step_ingest; then
     add_row 4 ingest PASS "$STEP_DUR" "$({ grep -E 'KB không đổi|kb_version=' "$out" || true; } | tail -1 | cut -c1-90)"
-    INGESTED=1
+    KB_NOW=fixture
   else
     add_row 4 ingest FAIL "$STEP_DUR" ""
     fail 4 ingest "$out"
+    return 1
+  fi
+}
+
+ensure_ingest_real() { # bước 11 — trước gate5 khi KB đang nạp không phải KB thật (T24 Q-T24-1)
+  local out=".verify/step11.out"
+  if [[ "$KB_NOW" == "real" ]]; then
+    return 0
+  fi
+  if run_step 11 "ingest KB thật (kb/)" "$out" step_ingest_real; then
+    add_row 11 "ingest KB thật" PASS "$STEP_DUR" "$({ grep -E 'KB không đổi|kb_version=' "$out" || true; } | tail -1 | cut -c1-90)"
+    KB_NOW=real
+  else
+    add_row 11 "ingest KB thật" FAIL "$STEP_DUR" ""
+    fail 11 "ingest KB thật" "$out"
     return 1
   fi
 }
@@ -224,6 +243,17 @@ run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả
       else
         add_row 10 gate4 FAIL "$STEP_DUR" "$(gate_totals "$out")"
         fail 10 gate4 "$out"
+        return 1
+      fi
+      ;;
+    5)
+      ensure_ingest_real || return 1
+      out=".verify/step12.out"
+      if run_step 12 "gate5 (FAKE_SCENARIO không đặt, KB thật)" "$out" step_gate5; then
+        add_row 12 gate5 PASS "$STEP_DUR" "$(gate_totals "$out")"
+      else
+        add_row 12 gate5 FAIL "$STEP_DUR" "$(gate_totals "$out")"
+        fail 12 gate5 "$out"
         return 1
       fi
       ;;

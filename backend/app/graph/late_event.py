@@ -20,6 +20,8 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Final, Literal
 
+from langgraph.types import StateSnapshot
+
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW, S_PENDING_APPROVAL
 from app.graph.runner import Runner, RunResult
 
@@ -52,6 +54,18 @@ class TicketNotFound(LookupError):
 
 class InvalidEvent(ValueError):
     """Loại sự kiện không hợp lệ cho node chờ (API → 422)."""
+
+
+class InvalidReply(ValueError):
+    """Phase 5 T20b P11: `items` của `/reply` không khớp ĐÚNG `awaiting` của cha (thiếu / thừa / sai loại so với `needs`) — kiểm DƯỚI
+    khoá cha (`start_event(validate=…)`). `fields` = vị trí trường (`body.items.<child_id>`), không giá trị người gửi. Route → 422."""
+
+    def __init__(self, fields: list[str]) -> None:
+        super().__init__("invalid_reply")
+        self.fields = fields
+
+
+type Validate = Callable[[StateSnapshot], None]
 
 
 async def record_late(
@@ -87,8 +101,10 @@ async def _guard(
     source: Source,
     missing_is_late: bool,
     late_extra: Mapping[str, Any] | None,
-) -> None:
-    """Gọi khi ĐANG giữ khoá ticket. Không đúng trạng thái chờ → `late_event` + `LateEvent`."""
+    wait_node: str | None = None,
+) -> StateSnapshot:
+    """Gọi khi ĐANG giữ khoá ticket. Không đúng trạng thái chờ (hoặc không dừng ở ĐÚNG `wait_node` khi có — T20b P11: `/reply` chỉ
+    nhận ở `parent_reply_wait`, ticket thường ở `confirm_wait` cũng `S_CONFIRMING`) → `late_event` + `LateEvent`. Trả snapshot."""
     snap = await runner.snapshot(ticket_id)
     if not snap.values and not missing_is_late:
         raise TicketNotFound(ticket_id)
@@ -96,7 +112,7 @@ async def _guard(
     status = snap.values.get("status", S_NEW) if snap.values else S_NEW
     waiting = snap.next[0] if snap.next else None
     spec = WAITS.get(waiting) if waiting else None
-    if status != expected_status or spec is None or spec[0] != expected_status:
+    if status != expected_status or spec is None or spec[0] != expected_status or (wait_node is not None and waiting != wait_node):
         await record_late(
             runner, ticket_id, expected_status=expected_status, actual_status=status,
             event_kind=str(event.get("kind")), source=source, extra=late_extra,
@@ -104,6 +120,7 @@ async def _guard(
         raise LateEvent(ticket_id, expected_status, status)
     if event.get("kind") not in spec[2]:
         raise InvalidEvent(f"{waiting} không nhận sự kiện {event.get('kind')!r}")
+    return snap
 
 
 async def deliver_event(
@@ -151,8 +168,12 @@ async def start_event(
     source: Source = "user",
     session_id: str | None = None,
     late_extra: Mapping[str, Any] | None = None,
+    wait_node: str | None = None,
+    validate: Validate | None = None,
 ) -> None:
-    """API: guard đồng bộ (LateEvent/InvalidEvent/TicketBusy ném ra cho route), lượt resume chạy nền.
+    """API: guard đồng bộ (LateEvent/InvalidEvent/TicketBusy ném ra cho route), lượt resume chạy nền. T20b P11: `wait_node` — chỉ nhận
+    khi dừng ở đúng node đó; `validate(snapshot)` gọi SAU guard, vẫn dưới khoá (ném `InvalidReply` → request nhả khoá như mọi nhánh từ
+    chối, KHÔNG `late_event`, không giao gì).
 
     Trả về khi task nền đã NHẬN khoá — sự kiện đến sau phải chờ lượt này xong rồi mới gặp guard."""
     cm = runner.hold(ticket_id)
@@ -160,8 +181,10 @@ async def start_event(
     handoff = _Handoff(cm)
     handed = False
     try:
-        await _guard(runner, ticket_id, expected_status, event, source=source,
-                     missing_is_late=True, late_extra=late_extra)  # fmt: skip
+        snap = await _guard(runner, ticket_id, expected_status, event, source=source,
+                            missing_is_late=True, late_extra=late_extra, wait_node=wait_node)  # fmt: skip
+        if validate is not None:
+            validate(snap)
 
         async def run() -> None:
             try:
@@ -183,6 +206,6 @@ async def wake_parent(runner: Runner, parent_id: str) -> RunResult | None:
 
 
 __all__ = [
-    "InvalidEvent", "LateEvent", "Spawn", "TicketNotFound", "deliver_event", "record_late",
+    "InvalidEvent", "InvalidReply", "LateEvent", "Spawn", "TicketNotFound", "Validate", "deliver_event", "record_late",
     "start_event", "wake_parent",
 ]  # fmt: skip
