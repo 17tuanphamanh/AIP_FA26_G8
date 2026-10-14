@@ -136,12 +136,17 @@ def paired_family_bootstrap_diff(
     level: float = LEVEL,
 ) -> PairedDiffCI:
     """Hiệu stat(A) − stat(B) với bootstrap GHÉP CẶP theo họ (P8:380): mỗi lần rút dùng CÙNG một dãy họ cho A và B. Hai lần
-    chạy phải trên cùng tập họ (cùng split) → khác → ValueError. Lần mà một bên None → bỏ, đếm. Có thể bỏ (P8:427)."""
+    chạy phải cùng tập họ, cùng tập `scenario_id` (vd một lần rơi ticket → khác) và cùng `split` (review #42) → khác →
+    ValueError. Lần mà một bên None → bỏ, đếm. Có thể bỏ (P8:427)."""
     _check_args(n_boot, seed, level)
     names_a, units_a = _family_units(records_a)
     names_b, units_b = _family_units(records_b)
     if names_a != names_b:
         raise ValueError("records_a, records_b: tập họ khác nhau — hai lần chạy phải trên cùng tập họ")
+    if {r.scenario_id for r in records_a} != {r.scenario_id for r in records_b}:
+        raise ValueError("records_a, records_b: tập scenario_id khác nhau — hai lần chạy phải trên cùng tập kịch bản")
+    if {r.split for r in records_a} != {r.split for r in records_b}:
+        raise ValueError("records_a, records_b: split khác nhau — không so hai lần chạy trên hai tập dữ liệu khác")
     k = len(names_a)
     pa, pb = statistic(_take(units_a, np.arange(k))), statistic(_take(units_b, np.arange(k)))
     point = pa - pb if pa is not None and pb is not None else None

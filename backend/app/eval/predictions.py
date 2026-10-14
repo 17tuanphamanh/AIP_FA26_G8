@@ -8,23 +8,29 @@ Mỗi dòng = một **ticket lá** (D-30) của một lần chạy. Tên trườ
 | `scenario_id`, `family` | `id`, `family` của kịch bản | gắn gold; bootstrap theo họ (§6.4) |
 | `ticket_id`, `parent_ticket_id` | `tickets` (lá: `is_parent = false`) | khoá duy nhất; nhóm lá theo yêu cầu (M1) |
 | `expected_route` | `gold.expected_route` | FNR, FPR, accuracy, macro-F1, chi phí, nhãn y ECE/Brier, nhóm 70/20/10 |
-| `route` | `audit_logs.detail.route` dòng B12 (điểm log 4 — KHÔNG phải cột) | pred §6.1; `None` = không tới M5 → ngoài mẫu số §6.1 |
-| `decided_by`, `raw_prob`, `calibrated_prob`, `p_method` | cột `audit_logs` dòng B12 | ECE/Brier (chỉ `llm`): trước = `raw_prob`, sau = `calibrated_prob`, CÙNG lần chạy test |
+| `route` | `audit_logs.detail.route` dòng điểm log 4 (KHÔNG phải cột; dòng = dưới đây) | pred §6.1; `None` = không tới M5 → ngoài mẫu số §6.1 |
+| `decided_by`, `raw_prob`, `calibrated_prob`, `p_method` | cột `audit_logs` dòng điểm log 4 | ECE/Brier (chỉ `llm`): trước = `raw_prob`, sau = `calibrated_prob`, CÙNG lần chạy test |
 | `final_state`, `exit_code`, `close_reason`, `resolution_path` | `tickets` (điểm log 8) | Automation, Escalation, Deflection, Giải quyết một lượt |
 | `has_approval` | có dòng `approvals` của lá | Automation ("không phiếu duyệt") |
 | `clarification_turns` | dòng B11 của lá (dưới đây) | Lượt hỏi lại TB (RQ3), Giải quyết một lượt |
 | `intent`, `gold_intent` | `tickets.intent` của lá; `gold.intents` | Intent macro-F1 (§6.3) |
 | `doc_ids`, `gold_doc_ids` | cột `audit_logs.doc_ids` dòng B8 (theo hạng); `gold.gold_doc_ids` | Recall@5, MRR@5, nDCG@5 (§6.3) |
 
-Luật cho runner (chốt #32, 13/10):
+Luật cho runner (chốt #32, 13/10; đính chính review #42):
+- Dòng điểm log 4 = `audit_logs` `step = 'B13/B14'` (node `b12_assess`; event `risk_decided` hoặc `llm_layer_disabled`) — KHÔNG
+  phải `step = 'B12'` (lọc `'B12'` → `route = None` cho mọi lá).
 - `clarification_turns = max(detail.turn + (event == "asked"))` trên các dòng `audit_logs` `step='B11'` của lá; không có dòng B11
   → 0. `detail.turn` là số câu đã hỏi TRƯỚC lần B11 đó (b11_slots.py); dạng max không đếm đôi dòng ghi lại khi chạy lại.
-- Mỗi lá tối đa một lần B12 (`S_ASSESSING` không có đường quay lại): nhiều dòng điểm log 4 cùng `route` → giữ một; khác `route`
-  → lỗi (`ValueError`), không chọn.
+  Bỏ qua dòng B11 KHÔNG có `detail.turn` (dòng của `clarify_wait` khi hết hạn / chặn injection): dạng max trong SQL tự bỏ NULL,
+  code Python phải kiểm.
+- Mỗi lá tối đa một lần node `b12_assess` (`S_ASSESSING` không có đường quay lại): nhiều dòng điểm log 4 (`step = 'B13/B14'`)
+  cùng `route` → giữ một; khác `route` → lỗi (`ValueError`), không chọn.
 - B8 nhiều dòng (chỉ khi `REDIAGNOSE_ON_NEW_SLOT`, mặc định tắt) → dòng cuối theo `created_at`. Lá không tới B8 → `doc_ids = None`.
 - `intent` = `tickets.intent` của lá (lá con T20b không chạy B3 riêng).
 - Kịch bản nhiều ý (lá có `parent_ticket_id`) bị `load_predictions` từ chối tới khi P8 §4.1 có `gold.leaves` (Q-T29-1).
 - Độ trễ, chi phí LLM, tin/lượt (P8:369–371) KHÔNG ở đây — v2, bản ghi cấp yêu cầu gốc (M1).
+- `strict=True`: `doc_ids` (JSONB) và `gold_doc_ids` (YAML) đọc ra là `list` → `model_validate` từ chối; đổi sang `tuple` hoặc
+  dựng bản ghi qua JSON (`model_dump_json` / `model_validate_json` nhận mảng JSON).
 
 Lỗi đầu vào → `ValueError` (`ValidationError` là lớp con); thông điệp nêu tên trường / số dòng, KHÔNG in giá trị dữ liệu.
 """

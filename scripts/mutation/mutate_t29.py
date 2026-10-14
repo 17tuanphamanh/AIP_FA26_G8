@@ -281,6 +281,8 @@ _INTERVAL = "    lo, hi = _interval(values, level)\n"
 _SAME_FAM = "    if names_a != names_b:\n"
 _NBOOT = "    if isinstance(n_boot, bool) or not isinstance(n_boot, Integral) or n_boot < 1:\n"
 _ZERO = "    contains_zero = lo <= 0.0 <= hi if lo is not None and hi is not None else None\n"
+_SAME_SCN = "    if {r.scenario_id for r in records_a} != {r.scenario_id for r in records_b}:\n"
+_SAME_SPLIT = "    if {r.split for r in records_a} != {r.split for r in records_b}:\n"
 
 
 def _st(old: str, new: str, tag: str) -> tuple[str, str, str, int]:
@@ -324,6 +326,13 @@ S4: list[Mutation] = [
     Mutation("M-T29-57 contains_zero dùng bất đẳng thức chặt",
              [_st(_ZERO, "    contains_zero = lo < 0.0 < hi if lo is not None and hi is not None else None\n", "M-T29-57")],
              UT, ["test_paired_identical_zero_width"]),
+    # ---- S5 lượt 1: review #42 — paired đòi cùng tập scenario_id và cùng split ----
+    Mutation("M-T29-58 paired bỏ kiểm tập scenario_id A = B",
+             [_st(_SAME_SCN, "    if False:\n", "M-T29-58")],
+             UT, ["test_paired_scenario_mismatch"]),
+    Mutation("M-T29-59 paired bỏ kiểm split A = B",
+             [_st(_SAME_SPLIT, "    if False:\n", "M-T29-59")],
+             UT, ["test_paired_split_mismatch"]),
 ]  # fmt: skip
 
 ALL = S1 + S2 + S3 + S4

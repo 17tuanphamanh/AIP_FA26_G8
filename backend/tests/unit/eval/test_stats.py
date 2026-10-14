@@ -24,11 +24,19 @@ from app.eval.stats import (
 _ids = itertools.count()
 
 
-def leaf(family: str, escalated: bool, *, gold: str = "HITL", route: str | None = "HITL") -> PredictionRecord:
+def leaf(
+    family: str,
+    escalated: bool,
+    *,
+    gold: str = "HITL",
+    route: str | None = "HITL",
+    scenario: str | None = None,
+    split: str = "test",
+) -> PredictionRecord:
     i = next(_ids)
     data: dict[str, Any] = {
-        "run_id": "0123456789ab", "strategy": "hybrid", "split": "test",
-        "scenario_id": f"S-{i}", "family": family, "ticket_id": f"T-{i:05d}", "parent_ticket_id": None,
+        "run_id": "0123456789ab", "strategy": "hybrid", "split": split,
+        "scenario_id": scenario or f"S-{i}", "family": family, "ticket_id": f"T-{i:05d}", "parent_ticket_id": None,
         "expected_route": gold, "route": route, "decided_by": "rule" if route is not None else None,
         "raw_prob": None, "calibrated_prob": None, "p_method": None,
         "final_state": "S_ESCALATED" if escalated else "S_RESOLVED", "exit_code": "E1" if escalated else None,
@@ -180,9 +188,11 @@ def test_bootstrap_with_metric_none() -> None:
 
 def paired_sets() -> tuple[list[PredictionRecord], list[PredictionRecord]]:
     """4 họ × 2 lá. Esc theo họ: A = (2, 1, 1, 2), B = (1, 0, 0, 1) → mỗi họ A hơn B đúng 1 lá esc.
-    Gốc: A 6/8 = 0,75; B 2/8 = 0,25; hiệu 0,5. Cùng dãy họ → mọi lần rút k_A − k_B = 4 trên 8 lá → hiệu = 0,5 đúng."""
-    a = [leaf(f, i < k) for f, k in zip(("f1", "f2", "f3", "f4"), (2, 1, 1, 2), strict=True) for i in range(2)]
-    b = [leaf(f, i < k) for f, k in zip(("f1", "f2", "f3", "f4"), (1, 0, 0, 1), strict=True) for i in range(2)]
+    Gốc: A 6/8 = 0,75; B 2/8 = 0,25; hiệu 0,5. Cùng dãy họ → mọi lần rút k_A − k_B = 4 trên 8 lá → hiệu = 0,5 đúng.
+    A và B cùng tập scenario_id (`<họ>-<i>`) và cùng split — hai lần chạy trên cùng kịch bản."""
+    fams = ("f1", "f2", "f3", "f4")
+    a = [leaf(f, i < k, scenario=f"{f}-{i}") for f, k in zip(fams, (2, 1, 1, 2), strict=True) for i in range(2)]
+    b = [leaf(f, i < k, scenario=f"{f}-{i}") for f, k in zip(fams, (1, 0, 0, 1), strict=True) for i in range(2)]
     return a, b
 
 
@@ -228,6 +238,27 @@ def test_paired_family_mismatch() -> None:
         paired_family_bootstrap_diff(a, [*b, leaf("f5", True)], esc, n_boot=10)
     with pytest.raises(ValueError, match="họ"):
         paired_family_bootstrap_diff(a, b[:6], esc, n_boot=10)  # thiếu f4
+
+
+def test_paired_scenario_mismatch() -> None:
+    # Cùng tập họ nhưng B thay 1 kịch bản của f2 bằng kịch bản khác cùng họ (vd một lần chạy rơi ticket) → lỗi.
+    a, b = paired_sets()
+    swapped = [*b[:2], b[2].model_copy(update={"scenario_id": "S-khac"}), *b[3:]]
+    assert {r.family for r in swapped} == {r.family for r in a}
+    with pytest.raises(ValueError, match="scenario_id") as e:
+        paired_family_bootstrap_diff(a, swapped, esc, n_boot=10)
+    assert "S-khac" not in str(e.value) and "f2-0" not in str(e.value)  # không in giá trị
+    with pytest.raises(ValueError, match="scenario_id"):
+        paired_family_bootstrap_diff(a, b[:-1], esc, n_boot=10)  # f4 còn 1 lá: cùng họ, thiếu 1 kịch bản
+
+
+def test_paired_split_mismatch() -> None:
+    # Cùng họ, cùng scenario_id, khác split → lỗi (không so số calibration với số test).
+    a, b = paired_sets()
+    b_cal = [r.model_copy(update={"split": "calibration"}) for r in b]
+    with pytest.raises(ValueError, match="split") as e:
+        paired_family_bootstrap_diff(a, b_cal, esc, n_boot=10)
+    assert "calibration" not in str(e.value) and "test" not in str(e.value)  # không in giá trị
 
 
 # ---- tham số sai -----------------------------------------------------------------------------------------------------------
