@@ -16,17 +16,22 @@ gold:
   - software
   need_type: action
   expected_route: null
-  expected_exit: null
+  expected_exit: E7
   approver_decision: approve
   gold_doc_ids:
   - KB-SW-002
   action:
     type: install_software
     target: device:LAP-0417
+    params:
+      software_name: AutoCAD
+      device_id: LAP-0417
   facts:
     in_catalog: true
     license_paid: true
     requires_local_admin: true
+    device_registered: true
+    device_owner_is_requester: true
 labels:
   annotator_1: null
   annotator_2: null
