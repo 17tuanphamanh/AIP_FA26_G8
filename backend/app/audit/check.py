@@ -39,6 +39,8 @@ SCANNED_COLUMNS: Final = tuple(
 _P1_E1_EXEMPT: Final = frozenset({"intent_out_of_scope", "multi_intent_not_enabled"})  # detail.intent/confidence là None (b03)
 _B16_PLAN_CHANGED: Final = "action_plan_changed_since_approval"  # B16 duyệt nhưng kế hoạch đã đổi (Q-4d-3) — vẫn là điểm 6
 _ABSENT: Final = object()
+# Dòng điểm log 4 (b12_assess `_point4`) — một nguồn cho `audit_check` và `m5_review` (phase6 7.1 P2).
+POINT4_KEY: Final = ("B13/B14", "risk_decided")
 
 
 @dataclass(frozen=True)
@@ -140,7 +142,7 @@ def _point(row: Mapping[str, Any], *, approved: bool) -> tuple[int, list[str]] |
         return 3, _lacks(row, ["detail.query"] + ([] if alias else ["kb_version"]))
     if (step, event) == ("B9", "no_evidence"):  # b10_route — `grounding`
         return 3, _lacks(row, ["kb_version"], ["detail.grounding.top_score"])
-    if (step, event) == ("B13/B14", "risk_decided"):  # b12_assess `_point4` + `_RISK_COLUMNS` của goto
+    if (step, event) == POINT4_KEY:  # b12_assess `_point4` + `_RISK_COLUMNS` của goto
         return 4, _lacks(row, _point4_need(row))
     if (step, event) == ("B15", "queued"):
         return 5, _lacks(row, ["approver_id", "deadline", "conflict_detected", "action_plan_hash", "detail.choice_reason"])

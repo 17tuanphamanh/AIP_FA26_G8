@@ -5391,7 +5391,7 @@ Q-T20b-3 = A (đặt hạn cho CHA thay mọi hạn `wait_deadlines` chưa bắn
     `child_create`) giữ `final_state NULL` mãi (không thread, không notice — P12 (b) không bắt). Thấy được qua escalation cha (mã
     `not_started` trong ghi chú bàn giao — Q-T20b-9 (i)). Phương án sau: B20 của cha lỗi đóng các con chưa khởi động (E-code riêng).
 
-## Phase 6 — chặng 6C: nối lớp LLM vào B12 + B17 (tầng A) (14/10/2026, DỪNG 1 `f030926` verify G=0 xanh, rebase lên `c45b079`; DỪNG 2 verify G=0 xanh 14/10 — commit 2; chờ push + PR) — chưa tính qua cổng 6
+## Phase 6 — chặng 6C: nối lớp LLM vào B12 + B17 (tầng A) (14/10/2026, DỪNG 1 `f030926` + DỪNG 2 `b7cb1a4`; đã gộp `5f2ece2` (PR #44); chạy thử stack trên cây gộp `28bfef7`: backend 6546, gate2 89/0, gate3 78/0, gate4 73/0, gate5 227/0) — chưa tính qua cổng 6
 
 Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v1.0** mục 6. Kế hoạch `PLAN-6C.md` (gitignore) — **DUYỆT 13/10/2026**:
 Q-6C-1 = B (nguồn chiến lược DUY NHẤT `Settings.strategy`/env `STRATEGY`, không thêm `M5_STRATEGY`; `manual` từ chối mọi chế độ),
@@ -5476,8 +5476,35 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
   HTTP 200 khi runtime down (chỉ `runtime: down`).
 - **verify DỪNG 2 (14/10/2026):** `make verify G=0` XANH trên HEAD `f030926` dirty=8 — lint PASS; backend 6388 passed / 4 skipped, mock
   106, ml 123 (5 deselected); unit 5769 passed / 4 skipped; mutation lượt 2 14/14, md5 khớp (dòng CI là lượt cũ trên remote — 6C chưa push).
-- **Chờ:** commit 2 (cục bộ) → PHIẾU push + PR `m5-tuananh` → `dev-tuananh` (chưa gộp — chờ stack `make verify G=2345` trên
-  `pull/<N>/merge`).
+- **Chờ:** đã gộp `5f2ece2` (PR #44) vào `dev-tuananh`; chờ Quân xác nhận #44 (`make verify G=0` trên máy mình + đọc c9–c11, c15).
+
+## Phase 6 — chặng 6D: công cụ đọc lý do + probe p (tầng B) (15/10/2026, 1 DỪNG trên `78a25cd` — verify G=0 xanh, mutation 6/6; chưa commit) — chưa tính qua cổng 6
+
+- **Việc (spec phase6 v1.1 mục 7):** `backend/app/audit/m5_review.py` (`Point4`, `point4_rows`, `pick`/`sample_reasons`,
+  `template_reasons`, `concentration`, `histogram`, `probe_report`, `open_engine` READ ONLY, `load_point4`, `sample_main`, `probe_main`,
+  `python -m app.audit.m5_review sample|probe`); vỏ `scripts/sample_reasons.py`, `scripts/probe_p_distribution.py`; `audit/check.py` chỉ
+  thêm hằng `POINT4_KEY` (dùng ở dòng điểm 4, logic không đổi); test r1–r10 (`test_m5_review.py`, 42 test) + r11
+  (`test_m5_review_pg.py`, 3 test testcontainers); `scripts/mutation/mutate_6d.py`.
+- **Chốt MẪU A (Tuấn Anh 15/10):** Q-6D-1 = A (thoát 1 chỉ khi tổng < n; thiếu câu llm → stderr "thiếu câu llm: k/m", thoát 0) ·
+  Q-6D-2 = C (giữ nguyên chữ `reason`, kể cả chứa mã luật; r5 chỉ kiểm canary ở TRƯỜNG `ticket_id`/`route`/`rule_id`/`expected_route`) ·
+  Q-6D-3 = A (probe: 0 có khuyến nghị · 1 n < 20 · 2 lỗi DB · 3 không phải `real` — 3 thắng 1) · Q-6D-4 = A (`llm_backend` ≠ `real`, kể
+  cả None → cảnh báo + 3) · Q-6D-5 = A (`python -m app.audit.m5_review` trong image; không sửa Makefile/Dockerfile) · Q-6D-6 = A
+  (M-6D-6 làn `--integration`, Tuấn Anh chạy ngoài sandbox).
+- **Test:** lượt đỏ 42/42 do `NotImplementedError` (khung đủ chữ ký, không lỗi import) → xanh 42/42; unit 5906 → **5948 passed** /
+  4 skipped (+42); lint xanh (mypy, import-linter 10/10, gitleaks 0). r11: 3/3 xanh (mốc của `mutate_6d.py --integration`, Tuấn Anh
+  chạy ngoài sandbox).
+- **Mutation lượt 1: 6/6** — M-6D-1…5 (unit) đỏ đúng dự đoán; M-6D-6 (`--integration`, Tuấn Anh chạy 15/10) đỏ đúng
+  `test_r11_open_engine_refuses_insert`, mốc r11 xanh 3/3 trên Postgres testcontainers; md5 `m5_review.py`
+  `f4da37cc8e82c102a10419ddc07a5424` trước = sau, `git diff --stat` khớp.
+- **Lệch spec / Spec cần sửa (6D):** r7 "6/10" mâu thuẫn `n < 20 → None` → test dùng 12/20, 18/30 (và 14/20, 21/30); r5 theo Q-6D-2 = C;
+  hai định nghĩa "dòng điểm log 4" (`check.py` chỉ `risk_decided` — `eval/predictions.py:23` nhận cả `llm_layer_disabled`) chưa thống
+  nhất một nguồn; `LLM_BACKEND` của tiến trình probe có thể khác backend đã sinh dữ liệu.
+- **security-reviewer (15/10):** 5/5 PASS (chỉ đọc qua `open_engine`; stdout chỉ `reason`; không DSN/detail; không ghi DB; chỉ ghi
+  `--key-out`/`--csv`), 0 FAIL. Ghi nhận thấp (không sửa — cùng khuôn `audit/check.py`, `mutate_6a.py`): `get_settings()` ngoài `try`
+  (bí mật đều `SecretStr`); mutation khôi phục bằng `write_text` (CRLF trên Windows); exception ngoài dự kiến thoát 1 trùng nghĩa "thiếu".
+- **verify (15/10/2026):** `make verify G=0` XANH trên HEAD `78a25cd` dirty=9 — lint PASS; backend 6587 passed / 4 skipped, mock
+  106, ml 123 (5 deselected) (dòng CI là lượt cũ trên remote — 6D chưa push).
+- **Chờ:** commit cục bộ khi được bảo → PHIẾU push + PR `m5-tuananh` → `dev-tuananh` + gộp (phiên git).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
