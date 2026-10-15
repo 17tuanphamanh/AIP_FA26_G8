@@ -23,6 +23,9 @@ Người duyệt (4b): roster `config/approvers.yaml` (kiểm trước DB) → `
 `auth.user_sync.AuthApproverUsers` trên `SqlAuthStore` + `SecurityEventWriter` + khoá HMAC dẫn xuất từ `JWT_SIGNING_KEY`
 (`username_hash.username_key` — cùng hàm với `TokenSigner.username_key`). Thiếu khoá → WARNING, `available=False` (B15 → E2
 `approver_sync_unavailable` theo ticket) — KHÔNG đổi điều kiện khởi động (Q-4b-5).
+M5 lớp 2 (Phase 6 6C, P1/P10, N2/N5): chiến lược = `Settings.strategy` (Q-6C-1 = B — `manual` bị từ chối ở mọi chế độ, còn lại
+`check_strategy`) và calibrator (`m5.calibrator_version` → CHỈ `load_calibrator`; null → None = không AUTO) kiểm TRƯỚC DB ở cả backend
+lẫn worker; `NodeDeps.estimator` = `LlmRiskEstimator` trên cùng gateway, `eval_mode` cùng nguồn Settings với gateway (N2).
 """
 
 import logging
@@ -78,11 +81,15 @@ from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
+from app.notify.child import ChildAwareNotifier
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ports import RagPort
 from app.rag.retriever import RagConfig, Retriever
 from app.rag.vector_store import QdrantIndex
+from app.risk.calibrator import Calibrator, load_calibrator
+from app.risk.estimator import LlmRiskEstimator
+from app.risk.strategy import Strategy, check_strategy
 from app.settings import (
     Settings,
     approval_sla_minutes,
@@ -97,6 +104,9 @@ from app.settings import (
 from app.tools.wiring import build_read_registry
 
 log = logging.getLogger(__name__)
+
+CALIBRATOR_DIR = "calibrators"  # 6C P10: <config_dir>/calibrators/<version>.json (6A P9)
+MANUAL_REFUSED = "STRATEGY=manual: manual chỉ tính giải tích ở harness M8, không chạy hệ thống — từ chối khởi động"
 
 
 @dataclass(frozen=True)
@@ -130,6 +140,31 @@ def fake_scenario(settings: Settings) -> FakeScenario:
     return StackScenario(settings.fake_scenario, delay=settings.fake_node_delay or 0.0)
 
 
+def m5_strategy(settings: Settings) -> Strategy:
+    """6C P1 (Q-6C-1 = B): chiến lược M5 từ `Settings.strategy`. `manual` (P8 — chỉ tính giải tích ở harness) → từ chối ở MỌI chế
+    độ; chiến lược chỉ-để-so-sánh khi không EVAL_MODE → `StrategyNotAllowed` (cổng 6). Gọi ở `open_runtime` TRƯỚC DB (backend +
+    worker, N5) và lại ở `_open` (lớp thứ hai cho nơi dựng runtime không qua `open_runtime`)."""
+    strategy = settings.strategy
+    if strategy == "manual":
+        raise RuntimeError(MANUAL_REFUSED)
+    check_strategy(strategy, eval_mode=settings.eval_mode)
+    return strategy
+
+
+def open_calibrator(settings: Settings, version: str | None) -> Calibrator | None:
+    """6C P10: `m5.calibrator_version` null → None (chưa hiệu chỉnh — D-38, không bao giờ AUTO); khác null → CHỈ `load_calibrator`
+    (kiểm `VERSION_PATTERN` trước khi ghép đường dẫn, kiểm đuôi băm — 6A). Sai mẫu / thiếu file / file hỏng → không khởi động
+    (thông điệp chỉ nêu loại lỗi)."""
+    if version is None:
+        return None
+    try:
+        return load_calibrator(version, settings.config_dir / CALIBRATOR_DIR)
+    except (ValueError, OSError) as exc:
+        raise RuntimeError(
+            f"calibrator (policy.json m5.calibrator_version) không nạp được: {type(exc).__name__} — từ chối khởi động"
+        ) from None
+
+
 @asynccontextmanager
 async def open_runtime(
     settings: Settings,
@@ -154,6 +189,10 @@ async def open_runtime(
     check_plans(get_action_metadata().root, settings.enabled_intents)
     # như trên (4b P1): `config/approvers.yaml` — mọi intent đang bật có người duyệt chính/dự phòng/Trưởng BP hợp lệ về dạng
     approvers = open_approvers(settings).root
+    # như trên (Phase 6 6C P1, N5): chiến lược M5 — `manual` từ chối, chiến lược so sánh chỉ khi EVAL_MODE — cả worker lẫn backend
+    m5_strategy(settings)
+    # như trên (6C P10): calibrator CHỈ qua `load_calibrator`; null → None (không AUTO); lỗi → không khởi động
+    calibrator = open_calibrator(settings, get_policy().m5.calibrator_version)
     async with AsyncExitStack() as stack:
         ml_http = httpx.AsyncClient(base_url=settings.ml_service_url)
         stack.push_async_callback(ml_http.aclose)
@@ -184,6 +223,7 @@ async def open_runtime(
             approver_id=approver_id, scenario=scenario, ml=ml, rag=rag, llm=llm,
             executor=executor if executor is not None else RefusingExecutor(SqlTxLog(engines.main, clock)),
             approval_sla_minutes=sla_minutes, approvers=approvers,
+            calibrator=calibrator,
         )  # fmt: skip
         yield await stack.enter_async_context(opened)
 
@@ -212,6 +252,7 @@ async def _open(
     settings: Settings, engines: Engines, clock: Clock, *, can_execute: bool, directory: ToolCaller,
     approver_id: str | None, scenario: FakeScenario, ml: MlPort, rag: RagPort, llm: LlmPort, executor: Executor,
     approval_sla_minutes: int | None = None, approvers: Mapping[str, Roster] | None = None,
+    calibrator: Calibrator | None = None,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
     deadlines = SqlDeadlineStore(engines.main)
     security = SecurityEventWriter(engines.main, clock)
@@ -219,7 +260,7 @@ async def _open(
     tickets = SqlTicketStore(engines.main)
     approvals = SqlApprovals(engines.main)
     deps = NodeDeps(
-        notifier=LoggingNotifier(), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
+        notifier=ChildAwareNotifier.on_engine(engines.main, LoggingNotifier()), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
@@ -235,6 +276,8 @@ async def _open(
         approval_sla_minutes=approval_sla_minutes if approval_sla_minutes is not None else get_policy().constants.SLA_MINUTES,
         approvers=approvers if approvers is not None else open_approvers(settings).root,
         approver_users=approver_users(settings, engines, security),
+        estimator=LlmRiskEstimator(llm, p_method=get_policy().m5.p_method, eval_mode=settings.eval_mode),
+        calibrator=calibrator, strategy=m5_strategy(settings), eval_mode=settings.eval_mode,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

@@ -8,14 +8,37 @@ task, nên node LangGraph thấy giá trị runner đặt trước `ainvoke` (đ
 turn_id cũ kể cả khi process chết trước checkpoint đầu tiên của lượt resume (D-18).
 """
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 from app.core.clock import Clock
 from app.executor.txlog import TxLog
 from app.graph.ports import AuditSink, EffectStore, SpanSink
+
+
+class StartLike(Protocol):
+    """`graph.children.StartReport` theo cấu trúc: con vừa khởi động / chưa khởi động được vì khoá (Q-T20b-6)."""
+
+    @property
+    def started(self) -> list[str]: ...
+
+    @property
+    def busy(self) -> list[str]: ...
+
+    @property
+    def failed(self) -> list[str]: ...
+
+
+class ChildPort(Protocol):
+    """`graph.children.ChildOps` theo cấu trúc (Phase 5 T20b P4, P8) — khai báo ở đây để `context` không import `children`/`runner`
+    (node import `context`; import-linter "graph.nodes.* không import lẫn nhau" đếm cả import TYPE_CHECKING)."""
+
+    async def start_missing(self, parent: Mapping[str, Any], *, recorded: Collection[str]) -> "StartLike": ...
+
+    async def deliver(self, child_id: str, needs: str, payload: Mapping[str, Any]) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -30,6 +53,8 @@ class RunContext:
     # (Việc treo 21, 3h DỪNG 3b)
     txlog: TxLog
     rediagnose_on_new_slot: bool = False  # D-20, cờ tắt mặc định
+    # Phase 5 T20b (P4, P8): khởi động con / chuyển sự kiện xuống con — runner gắn; node cha đọc `current_run().children`
+    children: ChildPort | None = None
 
 
 _RUN: ContextVar[RunContext | None] = ContextVar("graph_run", default=None)

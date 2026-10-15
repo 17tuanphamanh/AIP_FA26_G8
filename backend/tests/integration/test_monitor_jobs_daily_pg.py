@@ -229,8 +229,8 @@ async def test_worker_down_two_marks_catchup(
 async def test_degraded_skipped_no_rows(
     rw: AsyncEngine, mon: AsyncEngine, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Luật 12/13: có dữ liệu vượt ngưỡng thật (dòng audit B2 và B3 do tầng LLM quyết — hàm A đếm dòng; theo dòng hay
-    theo lá phân biệt: chờ chốt Q-M9-B2-27) mà job vẫn bỏ qua cả hai (nguồn pending tới Phase 5) → không có dòng
+    """Luật 12/13: có dữ liệu vượt ngưỡng thật (dòng audit B2 và B3 do tầng LLM quyết — hàm A đếm dòng; theo dòng audit
+    — chốt Q-M9-B2-27) mà job vẫn bỏ qua cả hai (nguồn pending tới Phase 5) → không có dòng
     `alerts` nào của hai luật trên TOÀN bảng (module này không vá `is_pending`)."""
     now = rs.daily_now(4)
     d0 = now - 2 * H

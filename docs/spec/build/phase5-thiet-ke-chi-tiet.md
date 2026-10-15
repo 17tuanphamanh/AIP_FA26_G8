@@ -1,6 +1,6 @@
 # Phase 5 — Thiết kế chi tiết (đủ 4 loại yêu cầu: T22a luật, T20 phân loại + tách ý, T23 B2, T24 executor + hoàn tác)
 
-*Thuộc bộ `build/`. Phiên bản **0.4 — 13/10/2026** (0.4: **T20a đóng** `03b4450` — mục 5.1.11 chốt khi hiện thực (16 mục); **T24 viết đủ** (mục 7, soát code tại `03b4450`). 0.3: **T23a đóng** `a463150`; **T20a viết đủ** (mục 5.1, soát code tại `6cf1091` — K2 PR #29 đã gộp + ingest); áp 17 mục "Spec cần sửa (T22a)" (mục 4.14 + sửa tại chỗ 4.1 P7/P9, 4.2, 4.5, 4.7, 4.8, 4.10) và 11 mục "Spec cần sửa (T23a)" (mục 6.5); lịch mục 8. Bản 0.2 — 10/10: T22a đóng `2ffb005`, T20 tách T20a/T20b, bật intent dời sang T24, D-44…D-46. Bản 0.1f — 09/10: `procedure_doc` theo K2, luật git 4.0. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34, D-41, D-44…D-47; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Mốc code: T22a dựng trên `3ff63e1`; T23a trên `d42d5c4`; T20a trên `6cf1091`.*
+*Thuộc bộ `build/`. Phiên bản **0.7 — 14/10/2026** (0.7: mục 7.11 chốt khi hiện thực T24 (viết bù; nợ compose `ENABLED_INTENTS`). 0.6: **T20b đóng** `14316ad` + `5df24c7` + `8a7c697` (verify G=2345 lần 3 gate2/3/4 xanh + G=5 gate5 227/0) — mục 5.2.13 chốt khi hiện thực (Q-T20b-1…13); lịch mục 8 (6C DỪNG 15/16, cổng 5 ~17/10). 0.5: **T24 đóng** `457239d` (CI xanh, PR #39 → main `e000d03`); **T20b viết đủ** (mục 5.2, soát code tại `90ee85d`; Q5 = con vào B6, ý lẫn = tách — Tuấn Anh chốt 13/10). 0.4: **T20a đóng** `03b4450` — mục 5.1.11 chốt khi hiện thực (16 mục); **T24 viết đủ** (mục 7, soát code tại `03b4450`). 0.3: **T23a đóng** `a463150`; **T20a viết đủ** (mục 5.1, soát code tại `6cf1091` — K2 PR #29 đã gộp + ingest); áp 17 mục "Spec cần sửa (T22a)" (mục 4.14 + sửa tại chỗ 4.1 P7/P9, 4.2, 4.5, 4.7, 4.8, 4.10) và 11 mục "Spec cần sửa (T23a)" (mục 6.5); lịch mục 8. Bản 0.2 — 10/10: T22a đóng `2ffb005`, T20 tách T20a/T20b, bật intent dời sang T24, D-44…D-46. Bản 0.1f — 09/10: `procedure_doc` theo K2, luật git 4.0. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34, D-41, D-44…D-47; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Mốc code: T22a dựng trên `3ff63e1`; T23a trên `d42d5c4`; T20a trên `6cf1091`.*
 
 *Nhãn: **[Chốt]** spec gốc đã chốt · **[Chốt 01/10]**, **[Chốt 09/10]** Tuấn Anh chốt ngày đó · **[Đề xuất]** Claude chat đề xuất, Tuấn Anh soát khi duyệt PLAN · **[Suy luận]** agent phải kiểm lại trên code.*
 
@@ -11,8 +11,8 @@
 | 1 | **T22a** | 15 luật R01–R15 + fact mới + nguồn `action.params` + `build_ctx` theo đích + khai báo 3 intent (không bật) + seed 3 trường + `rule_coverage.py` (mục 4) | **A** | 2 | **Opus** | Cây chính sạch + bảng 4.2 chốt + đã pull `3ff63e1` — **đạt 09/10** (làm sớm — "chưa tính qua cổng 5") |
 | 2 | **T23a** | B2 lớp 3 `shadow` — đóng `ml-gan` (mục 6) — **ĐÓNG** `a463150` | **A** | 1 | **Opus** | 6B gộp — đạt 10/10 |
 | 3 | **T20a** | B6/B11 + `Action` đơn ý cho account/software/access, fact `existing_permission_level` + R10, roster, tin từ chối theo đích (mục 5.1) — **ĐÓNG** `03b4450` | **A** + B | 2 | **Opus** | đạt 12/10 |
-| 4 | **T24** | `PLAN` + hoàn tác 6 hành động mới + B18 + **bật 4 intent** + `make gate5` (mục 7) | **A** | 2 | **Opus** | T20a — **đạt 13/10** (`03b4450`) |
-| 5 | **T20b** | Nhiều ý: B5 tách ticket cha/con (D-31) (mục 5.2) | **A** | 2 | **Opus** | T24 |
+| 4 | **T24** | `PLAN` + hoàn tác 6 hành động mới + B18 + **bật 4 intent** + `make gate5` (mục 7) — **ĐÓNG** `457239d` | **A** | 2 | **Opus** | đạt 13/10 |
+| 5 | **T20b** | Nhiều ý: B5 tách ticket con (con vào B6), vòng cha một tin mỗi lượt (D-31), `POST /reply`, gate5 nhiều ý (mục 5.2) — **ĐÓNG** `8a7c697` | **A** | 2 | **Opus** | đạt 13/10 |
 
 Mỗi chặng = **một phiên agent mới**. Tối đa 2 phiên coding agent cùng lúc trên cả dự án (lịch: `claude/phase5-6-phan-tich-va-chia-chang.md` mục 5).
 
@@ -673,11 +673,256 @@ Lượt 1 ở DỪNG 1 (mã có đích đã code), lượt 2 + đủ 14 ở DỪ
 | 5 | Q-T20a-5: g8 kiểm `requested_for == "nv004"` | 5.1.6 g8 |
 | 6 | Mutation đủ **17** mã (M-T20a-15 B6 ghi đè cờ, -16 B3 không đặt cờ, -17 `clarify_wait` không đặt cờ) | 5.1.7 |
 | 7 | `rule_coverage` D1: 40 kịch bản → allow 13 / approval 13 / deny 0 / **none 14** (HB01, HB03) | 5.1.9 |
-| **Nợ (không chặn)** | A12 `clarify_wait` chỉ nhận slot đang thiếu (nợ UX → T20b); biên token `\w` nhận giá trị bị cắt ngắn (NGHI b); `device_id`/`DEVICE_ID` vẫn `\d` (Q-T20a-7 = B); N3 LLM tự điền slot chuẩn hoá → AUTO không hỏi lại (trong quyền tự làm, ≤ 90 ngày); N5 quy tắc "người khác" áp cả VPN (chặt hơn — chạy lại ở mốc G); N7 tin từ chối thiếu `requester_context` (chỉ chữ); N8 `same_department` hai chuỗi rỗng → **sửa ở T24 P9**; test AST không theo luồng điều khiển; G-EXTEND dựng tay giữ `permission_level` | — |
+| **Nợ (không chặn)** | A12 `clarify_wait` chỉ nhận slot đang thiếu (nợ UX — **không** thuộc T20b, để sau cổng 5); biên token `\w` nhận giá trị bị cắt ngắn (NGHI b); `device_id`/`DEVICE_ID` vẫn `\d` (Q-T20a-7 = B); N3 LLM tự điền slot chuẩn hoá → AUTO không hỏi lại (trong quyền tự làm, ≤ 90 ngày); N5 quy tắc "người khác" áp cả VPN (chặt hơn — chạy lại ở mốc G); N7 tin từ chối thiếu `requester_context` (chỉ chữ); N8 `same_department` hai chuỗi rỗng → **sửa ở T24 P9**; test AST không theo luồng điều khiển; G-EXTEND dựng tay giữ `permission_level` | — |
 | **Chuyển Quân** | R11 không đòi `device_registered` (luật T22a) — soát "giữ/thêm" | — |
 
-### 5.2. T20b — nhiều ý (khung — viết spec 16/10)
-**Đầu vào:** T24 đẩy (ticket con chạy được tới B17 thật). **Đầu ra:** `b05_split`, `create_child`/`mark_parent_once`, `parent_wait`/`parent_reply_wait` thật, notifier ghi `child_notices`, `compose_digest` + bảng 6 trường hợp đóng cha, quét đối soát ở worker (ngoài khối M9), `POST /api/tickets/{cha}/reply` + 4 điểm hợp đồng FE (`claude/viec-cho-phase5.md` mục 5, chốt 10/10: (a) `title` server ghép từ `ACTION_LABELS`, ý chưa có Action → nhãn loại yêu cầu; (b) giữ `options`, chưa phát; (c) ý ngoài `awaiting` → 422 kèm `child_id`, cha hết chờ → 409; (d) backend ghi tin người dùng đã che). **Q5 mở:** con vào ở B6 (B03 §5.3 [Đề xuất]) hay quay lại B3 (bảng 2.1 [Chốt `S_CLASSIFYING`]) — chốt khi viết spec. Đụng file lõi (`routing.py`, `builder.py`, `runner.py`, `wiring.py`) → không giao subagent. **Tầng A**; Opus; **2 DỪNG**; ~9–12 giờ.
+### 5.2. T20b — nhiều ý: B5 tách ticket con + vòng ticket cha + `POST /reply` (tầng A, Opus, 2 DỪNG) [viết đủ 13/10 — soát code tại `90ee85d`] — **ĐÓNG** (`14316ad` + `5df24c7` + `8a7c697`, verify xanh, đẩy 14/10)
+
+**Mục tiêu:** câu có ≥ 2 ý đi được đầu-cuối trên stack: B3 phán từng ý → B5 tạo ticket con (mỗi ý một thread, một `Action`, M5 đánh giá riêng) → con chạy từ **B6** → con không nhắn người dùng mà để lại notice → cha gửi **một** tin tổng hợp mỗi lượt người dùng → người dùng trả lời **một lần** cho mọi ý qua `POST /api/tickets/{cha}/reply` → cha chuyển từng phần xuống đúng con → cha đóng theo bảng 6 trường hợp (D-17, D-18, D-29, D-30, D-31).
+**Đầu vào:** thư mục chính ở `90ee85d` (T24 `457239d` + PR #38 M9 A4, migration `0009`), cây sạch, KB thật đã nạp, 4 intent bật. **Đầu ra:** 2 commit cục bộ (mỗi DỪNG một) + phiếu push. **Không migration** (bảng/cột/CHECK đã có từ `0001`/`0007`).
+**Nghi thức (tầng A):** `PLAN-T20b.md` + MẪU A · **2 DỪNG** · test-writer viết bảng 5.2.8 **trước** code (`CHO_DUNG2` + `xfail(strict)`) · mutation (phần A ×2) + md5 · security-reviewer mỗi DỪNG. Đụng file lõi (`runner.py`, `late_event.py`, `effects`/`db/runtime.py`, `parent_wait`, `ticket_state`) → **không giao subagent** phần code (test-writer chỉ viết test từ bảng). **Model:** Opus.
+**Chốt của Tuấn Anh (13/10):** **Q5 = con vào thẳng B6** (seed từ kết quả B3 của cha — B03 §5.3, P1 §8; không chạy lại B1/B2/B3); **ý lẫn = tách**, ý ngoài phạm vi / không chắc / chưa bật thành ticket con đóng ngay E1 (không bỏ sót phần nào, khớp TC32).
+
+#### 5.2.0. Sự thật của code tại `90ee85d` (agent kiểm lại ở Bước 0)
+
+| Chủ đề | Code hiện có | Hệ quả cho T20b |
+|---|---|---|
+| DB | `tickets.parent_ticket_id` (FK), `is_parent`, `aggregate_status` (CHECK 6 giá trị B03 §5.4); `child_notices` (`kind` ∈ answer/question/result/rejection/escalation, `needs` ∈ none/answer/confirm, `effect_key` UNIQUE, cặp `delivered_round`/`delivered_at`, chỉ mục `pending`); `side_effects.kind` có `child_create`, `child_submit`, `child_event`; `tickets` **không** append-only (B20 `finalize_once` UPDATE) | **Không migration.** Agent kiểm `child_notices` không thuộc `APPEND_ONLY` (cần UPDATE `delivered_*`) — thuộc thì DỪNG hỏi |
+| State | `TicketState`: `parent_ticket_id`, `is_parent`, `children`, `parent_round`, `awaiting` | Thêm đúng **1** khoá `child_seeds` (P3) — `check_state_keys` chặn khoá lạ |
+| Chuyển trạng thái | `states.PARENT_ONLY` (quy tắc 3 D-29): `CLASSIFYING↔CONFIRMING`, `CLASSIFYING/CONFIRMING → RESOLVED/REJECTED/ESCALATED` khi `is_parent`; `(S_CLASSIFYING, S_CLASSIFYING)` có trong bảng 2.1 | Không sửa `states.py` |
+| Routing | `b03_classify → {b06_diagnose, parent_wait}`; `parent_wait → {parent_wait, parent_reply_wait}`; `parent_reply_wait → {parent_wait}`; cả hai trong `WAIT_NODES` (B5) | Không sửa `routing.py` |
+| Node cha | `parent_wait.py`, `parent_reply_wait.py` là node **GIẢ** (đọc `deps.scenario`); `builder._NODE_MODULES` dùng chung cho đường giả và thật, `REAL_NODE_MODULES` không ghi đè | Viết bản thật; bản giả chuyển sang `graph/nodes/fake/` (khuôn 3-Q32 cách A) để `make gate2` giữ nguyên |
+| B3 | `b03_classify.py:98` — `len(out.intents) >= 2` → E1 `multi_intent_not_enabled` (đếm MỌI ý, kể cả ngoài phạm vi — Q-3f-6) | Thay bằng phán ý + B5 (P2) |
+| Runner | `submit(parent_ticket_id=)`; `after_turn` chỉ đánh thức cha khi thread con **kết thúc**; `wake_parent` chỉ resume khi `snap.next == ("parent_wait",)`; `_run_initial` dựng state từ dòng `tickets` rồi chạy từ `ENTRY` (B1); `_divert_bound(seed=True)` đã có khuôn `aupdate_state(as_node=…)` + `ainvoke(None)` | P4, P6 |
+| Notifier | `wiring.py:222` `LoggingNotifier()` (noop) — tin nằm trong `conversation` của checkpoint; `notify_user` đi qua `effects.once` ở B10 (`confirm`), B11 (`answer`), B16 (`none`), B18 (`confirm`), B20 (`none`); `run_once` đặt `_TX` (contextvar) cho hàm side effect | P5 |
+| Hạn chờ | B10/B11/B17 đặt `deadlines.set` (24 h / 48 h) qua `effects.once`; `worker_jobs.expected_status`: cha → `S_CONFIRMING` (đã có) | Con **không** đặt hạn (P5) |
+| API | `_owned_leaf`: ticket con → 409 "Vui lòng trả lời trong hội thoại chung"; `WAITING_FOR` có `parent_reply_wait → "reply"`; **chưa** có route `/reply`; `late_event.WAITS["parent_reply_wait"] = (S_CONFIRMING, "B5", {reply, timeout})` | P11 |
+| B20 / audit | `audit/final.resolution_path`: cha → NULL; `b20_audit`: không escalation/tin cho cha (`if code and not is_parent`) | Không sửa |
+| ScriptedLLM | `SqlPresetResolver`: thẻ `[fake:…]` từ `tickets.redacted_request` của ticket đang chạy — con (`span`, không thẻ) → `default` | P13 |
+| Mã thoát | `domain/exit_codes.REASON_DETAILS` (test AST quét mọi chuỗi gán `escalation_reason_detail`) | Thêm `split_span_invalid` (P2) |
+| Nhãn | `messages.ACTION_LABELS` (:221) | Tiêu đề ý (P9) |
+
+#### 5.2.1. P-T20b (agent không hỏi lại)
+
+| Mã | Chốt |
+|---|---|
+| **P1** | **Q5 [Chốt 13/10]:** con bắt đầu ở **B6** với intent + slot từ phần tử `IntentItem` của cha (bảng 5.2.3); con **không** chạy B1/B2/B3 (B1 đã xác lập danh tính, B2 đã sàng lọc **cả câu** — `span` là đoạn con của câu đã sàng lọc). Hệ quả: con không bao giờ `S_BLOCKED`; con không tự tách tiếp; một lần LLM B3 cho cả câu |
+| **P2** | **Phán ý (B3 → B5) [Chốt 13/10 "ý lẫn = tách"]:** bảng 5.2.2. `len(intents) == 1` → đường đơn ý hiện có (**không đổi một dòng**). `len(intents) ≥ 2` và **≥ 1 ý chạy được** → tách **mọi** ý (ý không chạy được thành con đóng ngay E1 với `reason_detail` của ý đó). `≥ 2` mà **0 ý chạy được** → cả câu E1 như hiện nay (không tạo con): không ý nào trong phạm vi → `out_of_scope`; còn lại → `reason_detail` của ý đầu theo thứ tự kiểm cũ. Thứ tự ý = thứ tự LLM trả (= `index` 1..n) |
+| **P3** | **B5 hai pha (D-18, seed bền trước khi con chạy):** (a) trong `b03_classify` (bước B5): mỗi ý `effects.once("child_create", tickets.create_child, …, step="B5", sub=cid)` (dòng `tickets` con, **không** dòng `turns`); `tickets.mark_parent_once(cha)` (UPDATE `is_parent=true` chỉ khi đang false, idempotent); `goto(S_CLASSIFYING, next_node="parent_wait", step="B5", event=f"split_into_{n}_children", is_parent=True, children=[…], child_seeds={cid: seed}, reasoning_loops=loops)`. (b) `parent_wait` mỗi lần chạy **khởi động** mọi con chưa có thread (P4) **trước** khi đối soát. Không con nào chạy trước khi checkpoint của cha có `child_seeds` |
+| **P4** | **Khởi động con (`ChildOps.start`, ở tầng runner, không qua NodeDeps):** `cid = f"{cha}-{i}"` (tất định). Dưới khoá con: thread đã có state → bỏ qua (đã khởi động); chưa → mở lượt `turns(event_type="submit")` → `aupdate_state(cfg, seed_state + goto(...), as_node="b03_classify")` (khuôn `_divert_bound(seed=True)`; `goto` từ `S_CLASSIFYING` → `S_DIAGNOSING`/`next=b06_diagnose`, `event="child_started"`, hoặc → `S_ESCALATED`/`next=b20_audit`/E1, `event="child_not_runnable"`, `step="B5"`) → `ainvoke(None)` **lồng** (không lấy thêm `Semaphore`, không gọi `after_turn` — cha tự đối soát ngay sau) → đóng lượt. Ghi `effects.once("child_submit", sub=cid)` **sau** khi chạy (peek trước: đã có → bỏ). `recover`/`run_new` gặp ticket con **chưa có thread** → đóng lượt, trả `None` (khởi động là việc của cha — một đường code). `ChildOps` dựng trong `Runner` (import cục bộ), đưa vào `RunContext` (`current_run().children`) → **không sửa `wiring.py`/`fakes.py` cho phần này** |
+| **P5** | **Con không nhắn, không đặt hạn (D-31) — chỉ đổi tầng hạ tầng, logic nhánh giữ nguyên:** (a) `notify/` thêm `ChildAwareNotifier` (thay `LoggingNotifier` ở `wiring.py:222` — **dòng duy nhất** T20b sửa trong `wiring.py`): trong transaction của `effects.once` (`current_tx()`), đọc `parent_ticket_id` của `ticket_id`; ticket thường/cha → như cũ (`noop:…`); ticket con → INSERT `child_notices(parent, child, source_step, kind, needs, body=text, effect_key)` → trả `notice:<id>`. `source_step` + `effect_key` lấy từ contextvar mới mà `run_once` đặt cùng `_TX` (`db/runtime.py`); `kind` theo bước: B10 → `answer`, B11 → `question`, B16 → `rejection`, B18 → `result`, B20 → `escalation` (bước khác → `ValueError` = E9, thấy được). (b) `SqlDeadlineStore.set` cho ticket con → không ghi, trả `child:skip` (hạn do cha giữ). (c) Tin của con **vẫn** vào `conversation` của checkpoint con (nội bộ, không ai hiển thị) — không sửa B10/B11/B16/B17/B18/B20 |
+| **P6** | **Đánh thức cha:** `Runner.after_turn` của ticket con gọi `wake_parent` khi thread con **kết thúc** hoặc **dừng ở `clarify_wait`/`confirm_wait`** (P1 §6.1); không đánh thức khi dừng ở `approval_wait`. Lượt con chạy lồng từ cha (P4, P8) không gọi `after_turn` (cha đang giữ khoá cha — tránh deadlock 2b-Q7) |
+| **P7** | **`parent_wait` thật** (mã giả 5.2.4): khởi động con thiếu (P4) → `children_view` từ **DB** (D-17: `tickets.final_state` + `child_notices` chưa gửi; không đọc checkpoint con) → chưa đủ con dừng → `interrupt` rồi `goto` quay lại chính node → đủ → vòng `rnd = parent_round + 1`, `compose_digest` (P9) → `effects.once("notify_user", …, sub=f"round:{rnd}")`, trong **cùng** transaction đánh dấu `delivered_round=rnd` cho đúng các notice vừa gom → mọi con đã kết thúc: `aggregate_children` (P10) → `goto(final, next_node="b20_audit", event="children_aggregated", aggregate_status=…)`; còn ý chờ người dùng: hạn `clarify` (có ít nhất một `needs=answer`, 24 h) hoặc `confirm` (48 h) qua `effects.once("deadline_set", sub=f"round:{rnd}")` → `goto(S_CONFIRMING, next_node="parent_reply_wait", event="digest_sent", awaiting={cid: needs})`. Tin tổng hợp vào `conversation` của **cha** (FE đọc) |
+| **P8** | **`parent_reply_wait` thật:** `interrupt` → sự kiện `reply` (`items`) hoặc `timeout` → với từng `cid` trong `awaiting` (thứ tự `index`): `payload` = timeout → `{"kind":"timeout"}`; `needs=answer` → `{"kind":"user_reply","text":answer}`; `needs=confirm` → `{"kind":"confirmed"/"unresolved","note":…}` → `peek("child_event", sub=f"{cid}:{rnd}")` có → bỏ; chưa → `ChildOps.deliver(cid, expected, payload)` → `effects.once("child_event", sub=f"{cid}:{rnd}")` ghi lại. `deliver` dưới khoá con: con đúng trạng thái + đúng node chờ (`answer` → `S_CLARIFYING`/`clarify_wait`, `confirm` → `S_CONFIRMING`/`confirm_wait`) → `resume_locked` **lồng** (không `after_turn`); lệch → **bỏ qua, không `late_event`** (đã giao ở lần chạy trước mà LangGraph đã ghi giá trị resume, hoặc con đã đi tiếp) — ghi tên con vào `audit_detail.skipped`; `TicketBusy` → thử lại 1 s × 5 rồi ném (E9 cha — hiếm). Ghi **một** tin người dùng vào `conversation` của cha (đã che, ghép theo thứ tự ý: "Ý 1: Đã ổn · Ý 2: <câu trả lời>", "Chưa ổn — <ghi chú>") — hợp đồng FE (d). `goto(S_CLASSIFYING, next_node="parent_wait", event="reply_dispatched" | "reply_timeout")` |
+| **P9** | **`compose_digest` thuần, theo mẫu, không LLM:** mỗi ý một khối theo `index`; tiêu đề = `ACTION_LABELS[seed.slots.action]` nếu có, không thì nhãn loại yêu cầu (`account` "Tài khoản", `vpn` "VPN", `software` "Phần mềm", `access` "Quyền truy cập", ý E1 "Yêu cầu khác") — **không** để LLM đặt (chốt 10/10 (a)); thân = `body` của notice (đã là chữ mẫu/đã qua output guard ở node con); ý đã gửi ở vòng trước và chưa có notice mới thì không lặp lại. Vòng cuối không còn notice nào → chỉ câu tổng kết theo `aggregate_status` (bảng 5.2.5). Hình dạng tin: hợp đồng FE 5.2.6 |
+| **P10** | **`aggregate_children` thuần** — bảng 5.2.5 (6 trường hợp [Chốt B5] + tổ hợp đủ 3 loại [Đề xuất]); ưu tiên ESCALATED > REJECTED > RESOLVED; chỉ gọi khi mọi con có `final_state`. Cha: không `exit_code`, `close_reason=NULL`, không `escalations` (D-30 — `b20_audit`/`audit/final` đã đúng, test ghim) |
+| **P11** | **API** (bảng 5.2.6): `POST /api/tickets/{cha}/reply` + `GET /api/tickets/{cha}` thêm `children_progress`. Kiểm `items` khớp **đúng** `awaiting` (thiếu/thừa → 422) **dưới khoá cha**, sau guard: `start_event` thêm tham số tuỳ chọn `validate(snapshot)` gọi sau `_guard` (ném `InvalidReply` → 422, nhả khoá như các nhánh từ chối khác) |
+| **P12** | **Lưới an toàn ở worker** (`worker_jobs.scan_parents`, mỗi `PARENT_RECONCILE_INTERVAL=60s`, lịch trong `schedule_jobs` — **ngoài khối M9**): chỉ đọc DB (worker không đọc checkpoint): (a) cha `final_state IS NULL` mà mọi con đã dừng theo DB **hoặc** có con chưa có dòng `turns` (chưa khởi động) → `runner.wake_parent` (no-op nếu cha không ở `parent_wait`); (b) con `final_state IS NULL` có notice `needs≠none` mà cha đã có `final_state` → `deliver_event(con, …, {"kind":"timeout"}, source="worker")` — con không bao giờ treo vì cha lỗi (P1 §8.2) |
+| **P13** | **ScriptedLLM cho con trên stack:** `SqlPresetResolver` — ticket con không có thẻ → lấy thẻ của **cha** + hậu tố `-<i>` (`[fake:tc34]` → preset `tc34-1`, `tc34-2`); preset con thiếu → `ScriptExhausted` (E9 thấy được, như cũ). Chỉ `llm/providers/scripted.py` (dev/test), không đụng gateway |
+| **P14** | **Không** sửa: `b12_assess.py`, `b17_execute.py`, `risk/*`, `config/policy.json`, `settings.py`, `audit/check.py`, `graph/fakes.py` (NodeDeps), `executor/*`, `tools/*`, `domain/action.py`, `domain/facts.py`, `domain/slots.py`, `domain/states.py`, `graph/routing.py`, `config/prompts/*` (b03 v3 đã dặn tách ý + `span`), khoá `b14_*` của preset, `llm/*` ngoài `providers/scripted.py`, migration, M9 (`monitor/*`, khối `# M9`, `worker.py` khối M9, `.importlinter`), `docker-compose.yml`, `.env*`, `pyproject.toml`/`uv.lock`, `kb/*`, `eval/scenarios/*`. `wiring.py`: **chỉ** dòng notifier (P5) — đã báo Phase 6 (6C cũng sửa `wiring.py`, khác dòng). Sửa được (agent chính): `b03_classify.py` (nhánh ≥ 2 ý), `parent_wait.py`, `parent_reply_wait.py`, `graph/nodes/fake/*` (chuyển bản giả), `builder.py` (bảng node), `runner.py`, `graph/context.py`, `late_event.py` (`validate`), `db/tickets.py`, `db/runtime.py`, `graph/ports.py`, `notify/*`, `domain/ticket_state.py` (khoá `child_seeds`), `domain/exit_codes.py` (`split_span_invalid`), `domain/messages.py` (digest), `api/tickets.py`, `worker_jobs.py` + `worker.py` (dòng lịch ngoài M9), `llm/providers/scripted.py`, `config/scripted/*` (preset mới), `tests/stack/gate5.py`, `Makefile`/`verify.sh` nếu cần |
+
+#### 5.2.2. Phán từng ý (P2) — thứ tự kiểm cố định, mỗi ý đúng một kết quả
+
+| # | Điều kiện của ý (theo thứ tự) | Kết quả của con | `reason_detail` |
+|---|---|---|---|
+| 1 | `type == "out_of_scope"` | E1 ngay | `out_of_scope` |
+| 2 | `span` rỗng hoặc **không** là đoạn con của câu (`phrase_in_text`) | E1 ngay; `redacted_request` của con = **cả câu** (L2 đọc được) | `split_span_invalid` (mới) |
+| 3 | `confidence < TAU_INTENT` | E1 ngay | `intent_low_confidence` |
+| 4 | `type ∉ enabled_intents` | E1 ngay | `intent_not_enabled` |
+| 5 | còn lại | **chạy được** → B6 | — |
+
+Ý chạy được: `slots, dropped = sanitize_slots(spec, raw, text=span)` (cửa duy nhất — `text` là **span của ý**, không phải cả câu: slot của ý này phải nằm trong đoạn của chính nó); `target_user` bị bỏ → `ctx_flags.target_is_other=True` của con (Q-T20a-4 áp từng con). Điểm log 1 của cha: như hiện nay + `is_multi`, `children` (số), `verdicts` (danh sách mã kết quả theo `index`) — không câu, không giá trị slot.
+
+#### 5.2.3. Seed của con (P1, P3, P4)
+
+| Khoá state con | Giá trị |
+|---|---|
+| `ticket_id` / `parent_ticket_id` | `f"{cha}-{i}"` / `cha` |
+| `session_id`, `requester_context` | chép từ cha (bản frozen của B1) |
+| `redacted_request` | `span` của ý (ý #2 bảng 5.2.2: cả câu) — cũng là cột `tickets.redacted_request` của dòng con (`create_child`) |
+| `status` trước `goto` | `S_CLASSIFYING` (để `goto` ghi đúng chuyển `CLASSIFYING → DIAGNOSING` / `→ ESCALATED`) |
+| `intent`, `intent_confidence`, `span` | từ `IntentItem` (ý E1 #1: không đặt `intent`) |
+| `slots`, `facts`, `ctx_flags` | slot đã sanitize (5.2.2), `facts={}` (B3/B5 **không bao giờ** ghi fact — G-01), cờ theo ý |
+| `conversation`, `clarification_turns`, `off_topic_streak`, `reasoning_loops`, `is_parent`, `children` | `[]`, `0`, `0`, `loops` của cha, `False`, `[]` |
+| E1 (ý #1–#4) | thêm `exit_code="E1"`, `escalation_reason_detail` theo bảng 5.2.2 → B20 của con ghi `escalations` + notice `escalation` (mẫu E1 7.1) |
+
+`child_seeds[cid]` (trong state cha) = các giá trị trên **trừ** `requester_context` (đọc lại từ state cha lúc khởi động) — không câu nào khác ngoài `span`.
+
+#### 5.2.4. Vòng của cha (P7, P8) — mã giả chốt
+
+```python
+async def parent_wait(state):                                   # S_CLASSIFYING (cha)
+    await children.start_missing(state)                         # P4 — idempotent, trước đối soát
+    view = await tickets.children_view(state["children"])       # DB: final_state + notice chưa gửi (D-17)
+    # stopped(c) = c.final is not None or any(n.needs != "none" for n in c.pending)
+    if not all(stopped(c) for c in view):
+        interrupt({"wait": "children"})
+        return await goto(state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="parent_woken")
+    rnd = (state.get("parent_round") or 0) + 1
+    digest = compose_digest(view, seeds=state["child_seeds"], round=rnd)        # thuần (P9)
+    await effects.once(state, "notify_user", notices.deliver_round, state["ticket_id"], digest,
+                       step="B5", sub=f"round:{rnd}")          # đánh dấu delivered_round CÙNG transaction
+    if all(c.final for c in view):
+        final, agg = aggregate_children(view)                  # P10
+        return await goto(state, final, next_node="b20_audit", step="B5", event="children_aggregated",
+                          aggregate_status=agg, parent_round=rnd, conversation=[digest_msg(digest)])
+    kind = "clarify" if any(n.needs == "answer" for c in view for n in c.pending) else "confirm"
+    await effects.once(state, "deadline_set", deadlines.set, state["ticket_id"], kind, deadline_of(kind),
+                       run.turn_id, step="B5", sub=f"round:{rnd}")
+    return await goto(state, S_CONFIRMING, next_node="parent_reply_wait", step="B5", event="digest_sent",
+                      parent_round=rnd, awaiting={c.id: c.needs for c in view if not c.final},
+                      conversation=[digest_msg(digest)])
+```
+
+`c.needs` của con chưa kết thúc = `needs` của notice **mới nhất** chưa gửi (một con dừng ở một điểm chờ một lúc). Con ở `approval_wait` (không notice `needs≠none` chưa gửi, chưa `final`) = **chưa dừng** (D-31: chờ L1 không phải điểm dừng). Hạn: `CLARIFY_TIMEOUT` / `CONFIRM_TIMEOUT` của `policy.json` (không hằng mới).
+
+#### 5.2.5. Đóng cha (P10) và câu tổng kết (P9)
+
+| Kết quả các con | Cha | `aggregate_status` | Câu tổng kết (vòng cuối) |
+|---|---|---|---|
+| Tất cả RESOLVED | `S_RESOLVED` | `ALL_RESOLVED` | "Cả {n} yêu cầu đã hoàn tất." |
+| ≥ 1 ESCALATED, còn lại RESOLVED | `S_RESOLVED` | `PARTIALLY_ESCALATED` | "Đã xong {r}/{n} yêu cầu; phần còn lại đã chuyển kỹ thuật viên." |
+| Tất cả ESCALATED | `S_ESCALATED` | `ALL_ESCALATED` | "Các yêu cầu đã được chuyển kỹ thuật viên." |
+| ≥ 1 REJECTED, còn lại RESOLVED | `S_RESOLVED` | `PARTIALLY_REJECTED` | "Đã xong {r}/{n} yêu cầu; có yêu cầu không được duyệt." |
+| Tất cả REJECTED | `S_REJECTED` | `ALL_REJECTED` | "Các yêu cầu không được duyệt." |
+| ESCALATED + REJECTED, không RESOLVED | `S_ESCALATED` | `MIXED` | "Các yêu cầu không xử lý tự động được (chuyển kỹ thuật viên hoặc không được duyệt)." |
+| **[Đề xuất]** đủ cả 3 loại (≥ 1 mỗi loại) | `S_RESOLVED` | `PARTIALLY_ESCALATED` | như dòng 2 — có RESOLVED nên cha RESOLVED; ESCALATED > REJECTED nên nhãn `PARTIALLY_ESCALATED` (cổng 5 "tổ hợp có cả 3 loại") |
+
+Con `S_BLOCKED` không xảy ra (P1) — gặp → `ValueError` (E9 cha, thấy được). Câu tổng kết thuần mẫu, `{n}`, `{r}` là số.
+
+#### 5.2.6. Hợp đồng API + FE (P11 — 4 điểm chốt 10/10, `claude/viec-cho-phase5.md` mục 5)
+
+- **Tin tổng hợp** trong `conversation` của cha: `{role:"assistant", kind:"digest", round, text, items:[{child_id, index, title, kind, text, needs}]}` — `kind` của item = `kind` notice (`answer` hiển thị như `result`: FE nhận `result|question|rejection|escalation` → B10 `answer` map sang `result`); `text` (cấp tin) = các khối nối "Ý {index} – {title}: {text}" + câu tổng kết nếu có. `options`, `sources`: **chưa phát** (giữ trường trong kiểu FE — chốt (b); nợ: nguồn trích của B10 con chưa vào digest).
+- **`GET /api/tickets/{cha}`** thêm `children_progress: [{child_id, index, title, progress, outcome}] | null` (ticket thường → `null`): con có `final_state` → `closed` + `outcome` (`resolved`/`escalated`/`rejected`); con có phiếu duyệt `pending` → `pending_approval`; con có notice chưa gửi `needs≠none` → `ready`; con chờ người dùng sau khi tin đã gửi (cha ở `parent_reply_wait`, con ∈ `awaiting`) → `needs_user`; còn lại → `processing`. Chỉ từ DB + checkpoint **cha** (không đọc checkpoint con).
+- **`POST /api/tickets/{cha}/reply`** (quyền `ticket:message`, chủ ticket): body `{items: {[child_id]: {answer: str 1..4000} | {confirmed: bool, note?: str ≤ 1000}}}`, `extra="forbid"` mọi tầng. Thứ tự kiểm (khuôn `/messages`): 413 → quyền → 404 → 403 (không phải chủ) → 409 `CHILD_MESSAGE` (gọi vào ticket con) → 422 hình dạng body → privacy guard từng `answer`/`note` (503 khi guard lỗi; bí mật → `privacy_secret_redacted`) → `start_event(cha, S_CONFIRMING, {"kind":"reply","items":…}, validate=…)`: không ở `parent_reply_wait` → 409 `LateEvent`; `items` ≠ đúng tập `awaiting` (thiếu, thừa, sai loại so với `needs`) → 422 `{error:"invalid_request", fields:["body.items.<child_id>"]}` (chốt (c) — chặt). 202 `{ticket_id, status, notices}`.
+- Tin người dùng ghép (chốt (d)) do **node** ghi (P8), không do route.
+- Ticket con: `/messages`, `/confirm` → 409 (đã có, test ghim); `/reply` lên con → 409 `CHILD_MESSAGE`; `/reply` lên ticket thường → 409 `LateEvent` (không ở `parent_reply_wait`).
+
+#### 5.2.7. `make gate5` thêm kịch bản nhiều ý (preset `tcNN` cho cha + `tcNN-<i>` cho từng con)
+
+| Mã | Người gửi · câu | Kỳ vọng |
+|---|---|---|
+| tc12 / tc34 | nv001 "đặt lại mật khẩu tài khoản AD giúp mình, tiện cài luôn Adobe Acrobat Pro" | 2 con. Con 1 R01 AUTO → reset 1 lần → dừng `confirm_wait`. Con 2 R14 → phiếu → **0 tin** tới cha trước khi duyệt (đếm `conversation` cha) → duyệt → assign + install → dừng. Cha: **1** tin digest 2 khối `result` → `/reply` cả hai "Đã ổn" → 2 con `resolved_user_confirmed` → tin tổng kết → cha `S_RESOLVED`/`ALL_RESOLVED`, `close_reason IS NULL`, `exit_code IS NULL`. **Số tin assistant của cha = số lượt người dùng (2)** |
+| tc35 | nv001 "đặt lại mật khẩu AD và gia hạn quyền thư mục finance/public-reports" (thiếu `duration`) | Digest vòng 1: `result` + `question` → `/reply` {ý 1 confirmed, ý 2 answer "30"} → con 2 B11 → R10 AUTO → extend 1 lần → dừng → digest vòng 2 (`result` ý 2) → `/reply` {ý 2 confirmed} → `ALL_RESOLVED`; số tin assistant cha = 3 = số lượt người dùng |
+| tc36 | như tc34 nhưng trả lời {ý 1 "Chưa ổn" + ghi chú, ý 2 "Đã ổn"} | con 1 E8, con 2 `resolved_user_confirmed`; cha `S_RESOLVED`/`PARTIALLY_ESCALATED`, `close_reason NULL`; 1 dòng `escalations` (con 1), 0 cho cha |
+| tc32 | nv001 "đặt lại mật khẩu AD, tiện sửa máy in tầng 3 giúp mình" | con 2 E1 `out_of_scope` ngay (không B6); digest vòng 1: `result` (ý 1) + `escalation` (ý 2) → `/reply` {ý 1 confirmed} → cha `PARTIALLY_ESCALATED` |
+| tc12r | như tc34, L1 **từ chối** ý 2 | con 2 `S_REJECTED` (notice `rejection`, `needs=none`) → digest: `result` + `rejection` → `/reply` {ý 1} → cha `S_RESOLVED`/`PARTIALLY_REJECTED`; 0 lời gọi ghi cho ý 2 |
+
+License Adobe Acrobat Pro dùng chung với tc21b — đặt lại dữ liệu mock trước mỗi kịch bản theo khuôn gate5 (hết license → con 2 E7, không phải lỗi T20b). Mỗi kịch bản thêm: `/messages`, `/confirm` lên con → 409; `/reply` thiếu/thừa ý → 422 và **không** con nào nhận sự kiện; audit đủ điểm log của từng con; `GET` cha có `children_progress` đúng ở từng mốc (ít nhất: `pending_approval` lúc chờ duyệt, `ready`/`needs_user` sau digest, `closed` cuối).
+
+#### 5.2.8. Test (test-writer viết TRƯỚC code — từ bảng này, không nhìn code hiện thực)
+
+| # | Ca | Kỳ vọng |
+|---|---|---|
+| **v1** | Phán ý: 2 ý trong phạm vi chạy được | 2 con, cả hai `child_started` → B6; `children == [cha-1, cha-2]` |
+| v2 | 1 ý trong phạm vi + 1 `out_of_scope` | tách; con 2 E1 `out_of_scope`, không chạy B6 |
+| v3 | 2 ý, cả hai `out_of_scope` | **không** tách; cả câu E1 `out_of_scope` (như cũ) |
+| v4 | 2 ý, một `confidence < TAU_INTENT` / một intent chưa bật (tiêm `enabled_intents`) | con đó E1 `intent_low_confidence` / `intent_not_enabled`; con kia chạy |
+| v5 | `span` không có trong câu | con E1 `split_span_invalid`, `redacted_request` = cả câu |
+| v6 | slot của ý 2 nằm ở đoạn của ý 1 (vd `device_id` chỉ có trong span 1) | ý 2 không nhận slot đó (`sanitize_slots(text=span)`) |
+| v7 | ý `account` có `target_user` sai mẫu | `ctx_flags.target_is_other=True` ở **con đó**, con kia không |
+| v8 | 1 ý (đơn ý) | hành vi cũ y nguyên — toàn bộ test B3/gate cũ xanh **không sửa kỳ vọng** |
+| v9 | 3 ý / 4 ý | 3 / 4 con, `index` theo thứ tự LLM |
+| **c1** | Seed con (bảng 5.2.3) | đúng từng khoá; `facts == {}`; `requester_context` == của cha; không khoá lạ (`check_state_keys`) |
+| c2 | `goto` con | audit `child_started` (`CLASSIFYING → DIAGNOSING`, step B5) / `child_not_runnable` (`→ ESCALATED`, E1) |
+| c3 | `start` hai lần cùng `cid` | lần 2 không chạy gì (thread đã có state); 1 dòng `turns` submit |
+| c4 | `recover` một ticket con chưa có thread | đóng lượt, không chạy B1 |
+| **k1** | Ném lỗi sau `child_create` của con 2, trước checkpoint cha (giả lập chết) → chạy lại | đúng 2 dòng `tickets` con, mỗi con chạy **1** lần (D-18); `side_effects` `child_create` 2 dòng |
+| k2 | Ném lỗi giữa lượt lồng của con 1 (sau `start`, trước `child_submit`) → chạy lại cha | con 1 không chạy lại từ đầu (thread đã có state); con 2 vẫn khởi động |
+| **n1** | Con B18 `notify_user` | 1 dòng `child_notices` (`kind=result`, `needs=confirm`, `source_step=B18`, `effect_key` = khoá của `effects.once`); `notify_user` của ticket thường vẫn `noop:` (không dòng notice) |
+| n2 | Con B11 / B16 / B10 / B20 | `question/answer`, `rejection/none`, `answer/confirm`, `escalation/none` |
+| n3 | Chạy lại node con (cùng lượt) | không nhân đôi notice (`effect_key` UNIQUE) |
+| n4 | `deadlines.set` cho con / cho cha / ticket thường | con: không dòng `wait_deadlines`; cha, ticket thường: như cũ |
+| **w1** | Con dừng `confirm_wait` / `clarify_wait` / kết thúc (lượt thường, qua `start_event`) | `wake_parent` được gọi **sau khi nhả khoá con** |
+| w2 | Con dừng `approval_wait` | không đánh thức |
+| w3 | Lượt lồng từ cha | không `after_turn` (không tự khoá chết — test có hạn thời gian) |
+| **p1** | `parent_wait`: con 1 dừng, con 2 ở `approval_wait` | `interrupt`, 0 tin; đánh thức sớm → quay lại chính node, vẫn 0 tin |
+| p2 | Mọi con dừng | đúng 1 tin `digest` vòng 1; notice vừa gom có `delivered_round=1`; hạn `confirm` (chỉ xác nhận) hoặc `clarify` (có câu hỏi); `awaiting` đúng |
+| p3 | Chạy lại `parent_wait` sau khi đã gửi (cùng lượt) | không gửi lại, không đánh dấu lại |
+| p4 | Mọi con kết thúc trước khi cha tới `parent_wait` (TC32 nhanh) | cha đóng ngay đúng `aggregate_status`, 1 tin, không cần `wake` (D-17) |
+| p5 | `aggregate_children` 6 dòng + dòng đủ 3 loại (bảng 5.2.5) | đúng `final`, `aggregate_status` |
+| p6 | Cha đóng | `close_reason IS NULL`, `exit_code IS NULL`, 0 `escalations` của cha; `resolution_path` NULL; truy vấn `is_parent=false` không đếm cha (D-30) |
+| **r1** | `parent_reply_wait` `reply` {ý 1 confirmed, ý 2 answer} | con 1 nhận `confirmed`, con 2 nhận `user_reply` đúng chữ đã che; 2 dòng `child_event`; 1 tin user ghép trong `conversation` cha |
+| r2 | `timeout` của cha | mọi con trong `awaiting` nhận `timeout` → con ở `clarify_wait` E4 `clarify_timeout`, con ở `confirm_wait` `resolved_auto_timeout_48h` |
+| r3 | Chạy lại `parent_reply_wait` sau khi đã giao cho con 1 (giả lập chết) | con 1 **không** nhận lần 2 (`peek`/lệch node → bỏ, không `late_event`); con 2 nhận |
+| r4 | `note` "Chưa ổn" có chuỗi injection | con E0 `injection_in_reply` (logic `confirm_wait` cũ áp ở con) |
+| **a1** | `POST /reply` hợp lệ | 202; cha resume `reply` |
+| a2 | thiếu ý / ý ngoài `awaiting` / `answer` cho ý `needs=confirm` | 422 `fields` đúng `child_id`; 0 `child_event` |
+| a3 | cha không ở `parent_reply_wait` / ticket thường | 409 + 1 dòng `late_event` |
+| a4 | `/reply`, `/messages`, `/confirm` lên ticket con | 409 `CHILD_MESSAGE` |
+| a5 | không phải chủ / id giả | 403 / 404 (khuôn TC30) |
+| a6 | `answer` có bí mật | bản che vào con + `conversation`; `privacy_secret_redacted` |
+| a7 | `GET` cha `children_progress` ở 5 tình trạng; ticket thường | đúng `progress`/`outcome`; `null` |
+| **s1** | `scan_parents` (a): cha ở `parent_wait`, mọi con đã dừng theo DB | `wake_parent` 1 lần; cha chưa ở `parent_wait` → no-op |
+| s2 | (a): con chưa có dòng `turns` | đánh thức → cha khởi động con |
+| s3 | (b): cha đã đóng, con có notice `needs≠none` | con nhận `timeout` (`source="worker"`) |
+| **m1** | `compose_digest`: tiêu đề từ `ACTION_LABELS` / nhãn loại / ý E1; thứ tự `index`; vòng cuối chỉ câu tổng kết | đúng mẫu 5.2.5, không chữ ngoài notice + mẫu |
+| m2 | Hình dạng tin `digest` (5.2.6) | khoá đúng; `items[].kind` ∈ 4 giá trị FE |
+| **h1** | ScriptedLLM resolver: ticket con không thẻ | preset `<thẻ cha>-<i>`; thiếu → `ScriptExhausted` |
+| h2 | 13 preset cũ + 9 preset T24 + preset mới cùng tập khoá | xanh (`b14_*` không đổi giá trị) |
+| **g\*** | `make gate5` bảng 5.2.7 | xanh |
+
+**Test cũ được phép đổi (ghi lý do từng dòng ở MẪU B):** test ghim "≥ 2 ý → E1 `multi_intent_not_enabled`" (B3) → nay chỉ còn khi 0 ý chạy được (v3); test node giả `parent_wait`/`parent_reply_wait` (chuyển import sang `graph/nodes/fake/`); test `after_turn` (thêm điều kiện dừng ở node chờ); test ghim tập `REASON_DETAILS` (+1). Test cũ khác đỏ → DỪNG hỏi.
+
+#### 5.2.9. Mutation (`scripts/mutation/mutate_t20b.py`, khuôn `mutate_t24.py`, md5 + `git diff --stat`)
+
+| Mã | Phá | Test phải đỏ | Lượt |
+|---|---|---|---|
+| M-T20b-1 | Ý `out_of_scope` bị bỏ im lặng (không tạo con E1) | v2, tc32 | ×2 |
+| M-T20b-2 | `sanitize_slots(text=cả câu)` thay vì `span` | v6 | ×2 |
+| M-T20b-3 | `child_create` gọi thẳng, không `effects.once` | k1 | ×2 |
+| M-T20b-4 | Con ở `approval_wait` tính là đã dừng | p1, tc34 | ×2 |
+| M-T20b-5 | Notifier của con gửi thẳng (không ghi `child_notices`) | n1 | ×2 |
+| M-T20b-6 | Con đặt hạn riêng | n4 | ×2 |
+| M-T20b-7 | Không đánh dấu `delivered_round` | p2, p3 | ×2 |
+| M-T20b-8 | `aggregate_children` đảo ưu tiên (REJECTED > ESCALATED) | p5 | ×2 |
+| M-T20b-9 | Cha ghi `exit_code` | p6 | ×2 |
+| M-T20b-10 | `deliver` giao lại khi đã giao (bỏ kiểm node/peek) | r3 | ×2 |
+| M-T20b-11 | `/reply` bỏ kiểm `items` ≡ `awaiting` | a2 | ×2 |
+| M-T20b-12 | `parent_wait` không `goto` quay lại sau `interrupt` | p1 | ×1 |
+| M-T20b-13 | `after_turn` không đánh thức khi con dừng ở node chờ | w1 | ×1 |
+| M-T20b-14 | Con kế thừa `ctx_flags` của ý khác | v7 | ×1 |
+
+Lượt 1 ở DỪNG 1 (mã có đích đã code), lượt 2 + đủ 14 ở DỪNG 2.
+
+#### 5.2.10. Soát bảo mật (security-reviewer mỗi DỪNG, chỉ diff T20b)
+
+(1) Mỗi con có `Action` riêng qua M5 — không đường nào để kết quả rủi ro của con này áp cho con khác (seed không chép `risk`, `action`, `facts`); (2) con không bao giờ chạy B17 nhờ dữ liệu của cha: `facts={}` ở seed, B6/B11 tính lại; (3) slot của ý chỉ lấy trong `span` của chính ý (chống "mượn" đích của ý khác); (4) ý không chạy được luôn thành E1 có `escalations` — không ý nào bị bỏ im lặng; (5) con không nhắn trực tiếp: mọi `notify_user` của con ra `child_notices` (grep + test AST: không đường gửi nào khác); (6) `/reply`: chủ ticket, privacy guard trước mọi thứ ghi/giao, `extra=forbid`, `items` ≡ `awaiting` dưới khoá; (7) tin digest chỉ ghép chữ mẫu + `body` notice (đã qua mẫu/output guard ở con) + số; không chữ người dùng ngoài tin user đã che (P8); (8) không khoá chết: không chỗ nào giữ khoá con rồi chờ khoá cha (đọc `runner.py`, `late_event.py`); (9) cha không `exit_code`/`escalations`; chỉ số M9 không đổi (view `v_leaf`); (10) không đụng file cấm P14 (`git diff --stat`), `wiring.py` chỉ 1 dòng; grep import động `backend/app/risk/` rỗng.
+
+#### 5.2.11. DỪNG
+
+- **DỪNG 1 (15/10) — B5 + vòng cha trên graph (không cần stack):** P1–P10 (P11–P13 thuộc DỪNG 2); test-writer viết **toàn bộ** bảng 5.2.8 (ca DỪNG 2 gom `CHO_DUNG2` + `xfail(strict)`); xanh: v*, c*, k*, n*, w*, p*, r1–r4, m*. Integration bằng Runner thật + `InMemorySaver` + ScriptedLLM + bản giả store (2 thread cha/con thật, đếm tin ở `conversation` cha). Mutation lượt 1 (M-T20b-1…10). security-reviewer mục 1–5, 7–10. `make lint` + unit. Commit cục bộ. **MẪU B in danh sách file đã sửa trong `wiring.py`/`runner.py`/`late_event.py`** (để phiên git xếp rebase 6C).
+- **DỪNG 2 (16/10) — API + worker + stack:** P11, P12, P13 + preset + gate5 nhiều ý (5.2.7) + a*, s*, h*, g* + gỡ hết `xfail` + mutation lượt 2 (đủ 14) + security-reviewer đủ 10 mục + `make verify G=2345` qua phiếu stack (gate5 nhiều ý chạy lần đầu — có thể phải chỉnh preset; **không** sửa kỳ vọng 5.2.7 khi chưa hỏi) + biên bản gate5 + "Spec cần sửa (T20b)" + dòng "Dồn về mốc G" (bộ 10 câu nhiều ý với LLM thật: tách đúng ≥ 9/10 — B03 §11). Commit + phiếu push. Sau verify: nạp lại KB thật qua phiên git.
+
+#### 5.2.12. Tuấn Anh / thành viên cần biết
+
+- **Phase 6:** T20b sửa `wiring.py` **1 dòng** (notifier, P5) — khác chỗ 6C sửa (NodeDeps/`check_strategy`/calibrator); không sửa `fakes.py`, `settings.py`, `b12`, `b17`, `audit/check.py`, `risk/*`. Ca không luật khớp ở con vẫn qua B12 như ticket thường → sau 6C ra E5 `llm_high_risk` ở con (cha chỉ tổng hợp). T20b đẩy trước 6C (P6→P5 #14).
+- **Frontend:** 4 điểm hợp đồng (5.2.6) không đổi so với chốt 10/10 trừ: `items[].kind="answer"` của B10 hiển thị như `result`; `options`, `sources` chưa phát. Chặng FE "nối thật Phase 5" bỏ MSW `employee-multi` sau khi T20b gộp.
+- **M9 (Dương, Duy Anh):** chỉ số vẫn trên ticket lá (`v_leaf`); thêm tỉ lệ câu nhiều ý / số tin trên lượt người dùng là việc M9 sau cổng 5 (B03 §9) — không chặn.
+- **Quân:** D2 nên có ≥ 10 câu nhiều ý (B03 §11 "bộ 10 câu nhiều ý") — gồm ý lẫn ngoài phạm vi, một ý cần duyệt, một ý thiếu thông tin.
+- Không thêm biến `.env`; `PARENT_RECONCILE_INTERVAL` là hằng code 60 s (B03 §7 [Đề xuất D-17]).
+
+#### 5.2.13. Chốt khi hiện thực T20b (MẪU A, MẪU B DỪNG 1 + 2, 13–14/10) — thay chữ ở 5.2.0–5.2.12 khi lệch
+
+| # | Chốt | Thay chỗ |
+|---|---|---|
+| 1 | Dòng B3 cũ là `b03_classify.py:102` (không `:98`) | 5.2.0 |
+| 2 | Q-T20b-1: `wiring.py` sửa **2 dòng** (import + `notifier=ChildAwareNotifier.on_engine(engines.main, LoggingNotifier())`) | P5, P14 |
+| 3 | Q-T20b-2 = B: ≥ 2 ý mà 0 ý chạy được → không ý nào trong phạm vi: `out_of_scope`; còn lại: `reason_detail` của **ý đầu tiên trong phạm vi** theo bảng 5.2.2. Code mới **không** gán `multi_intent_not_enabled` (giá trị giữ trong `REASON_DETAILS`) | P2 |
+| 4 | Q-T20b-3: hạn của **cha** — đặt hạn mới thì thay mọi hạn chưa bắn của **cả hai** loại (`clarify`/`confirm`); không đụng hạn duyệt | P7 |
+| 5 | TQ-2: contextvar khoá/bước của side effect đặt ở `effects.once` (không ở `run_once`) | P5 |
+| 6 | P7: chạy lại `parent_wait` sau khi đã gửi vòng n → dựng lại đúng notice vòng n (không gom notice mới); `children_view`: con "kết thúc" = có `final_state` **và** không còn lượt mở | P7, 5.2.4 |
+| 7 | **Q-T20b-5 — lệch D-30 có chủ đích:** cha có `exit_code` (đường lỗi, **mọi** mã) → B20 tạo escalation + tin theo mã; `db/escalations.list_open` = `is_parent = false OR tickets.exit_code IS NOT NULL` (view/chỉ số M9 không đổi). Ghi chú bàn giao của cha lỗi có mã trạng thái từng con (`awaiting_confirm[+executed]`, `awaiting_answer`, `pending_approval`, `processing`, `not_started`, `closed:<…>`; đọc lỗi → `children_status_unavailable`) — Q-T20b-9 (i) | P10, 5.2.5 |
+| 8 | Q-T20b-6: `start_missing` — hết chờ pool khoá như `TicketBusy` → bỏ qua con, audit `children_not_started {busy, failed}` (ghi trước `interrupt`); `deliver` — thử lại 1 s × 5 rồi ném (E9 cha) | P4, P8 |
+| 9 | FAIL-1 + NGHI-1: `deliver` so mốc `(checkpoint_id, next, values.turn_id)` của con trước/sau lượt lồng — không đổi → ném; đổi mà lượt con lỗi → không ném (lượt con mở, worker chạy tiếp) | P8 |
+| 10 | `child_submit` chỉ ghi khi lượt đó thật sự khởi động con; con đã có thread mà thiếu dòng → ghi bù (Q-T20b-11) | P4 |
+| 11 | P12 chạy **trong** `scan_deadlines` (không thêm job `worker.py` — test M9 ghim tập job): (a) cha được đánh thức khi `child_submit` < số con **hoặc** mọi con đã dừng theo `children_view`; (b) con mồ côi (cha đã kết thúc, notice `needs≠none` đã gửi hay chưa) chỉ nhận `timeout` **sau hạn thường** (24 h / 48 h từ `delivered_at`, chưa gửi thì `created_at`) — Q-T20b-9 (ii); tối đa 20 cha + 20 con mỗi lượt, ngân sách riêng từng bước, không huỷ lượt graph giữa chừng (Q-T20b-10) | P12 |
+| 12 | P11: `start_event(wait_node=…, validate=…)` + `InvalidReply`; khoá `items` phải dạng `<cha>-<1–2 chữ số>`, 422 **không** dội lại khoá (`fields:["body.items"]`); che chữ qua `api/desk.redact_reply_items` (Q-T20b-8, test AST N1 công nhận helper) | P11, 5.2.6 |
+| 13 | Q-T20b-12: `child_create.result_ref` = `<cid>\|<n>\|<type>`; B3 chạy lại khi phục hồi mà lệch số ý / loại ý / không còn tách → E9 cha (cache `b03_classify` không bảo đảm cùng kết quả) | P3 |
+| 14 | **Q-T20b-13:** `audit/check._point8` (code Phase 4) — ticket **cha** (nhận qua dòng audit B5 `split_into_<n>_children`) đạt điểm log 8 bằng `detail.aggregate_status ∈ AGGREGATE_STATUSES` thay cho `close_reason\|exit_code`; lá/con vẫn đòi `close_reason\|exit_code` | P14, 5.2.10 |
+| 15 | Mutation đủ 14 mã, 14/14 đỏ; gate5 nhiều ý 5 kịch bản xanh lần đầu không chỉnh preset | 5.2.9, 5.2.7 |
+| **Nợ (không chặn)** | Con chưa khởi động của cha lỗi treo `final_state NULL` (ghi chú bàn giao có `not_started`); mỗi cha đang chạy cần 2 kết nối khoá (tăng pool — `settings.py` — sau cổng 5); span các ý chồng nhau; `redacted_request` của con = chuỗi `span` LLM trả; `scan_parents` chỉ bắt `TimeoutError` khi đọc con mồ côi; nguồn trích B10 của con chưa vào digest; M9 `E1_REASONS` chưa có `split_span_invalid` (vào nhóm `other`) | — |
+| **Dồn về mốc G** | Bộ 10 câu nhiều ý với LLM thật: tách đúng ≥ 9/10 (B03 §11), kèm kiểm span thật nằm trong câu | — |
 
 ## 6. Chặng T23a — đóng nhánh `ml-gan`: B2 lớp 3 chế độ `shadow` (tầng A, Opus, 1 DỪNG) [Chốt 10/10] — **ĐÓNG** (`6ad51c1` + `a463150`, CI xanh)
 
@@ -741,7 +986,7 @@ Có sẵn (soát 10/10, chưa chạy): 503 khi không đặt; hình dạng hợp
 | 10 | Traceback 500 của `/classify` có thể mang chuỗi nếu tokenizer ném lỗi kèm đầu vào | Nợ trước `active` (bắt lỗi, trả mã chung) |
 | 11 | Đích M-T23a-6 (lật chỉ số lớp) | ghi nhận — test `test_class_index_from_id2label` bắt |
 
-## 7. Chặng T24 — executor + hoàn tác 6 hành động mới + **bật 4 intent** + `make gate5` (tầng A, Opus, 2 DỪNG) [viết đủ 13/10 — soát code tại `03b4450`]
+## 7. Chặng T24 — executor + hoàn tác 6 hành động mới + **bật 4 intent** + `make gate5` (tầng A, Opus, 2 DỪNG) [viết đủ 13/10 — soát code tại `03b4450`] — **ĐÓNG** (`216c89d` + `457239d`, verify G=2345 + G=5 xanh, CI xanh)
 
 **Mục tiêu:** ticket đơn ý của 4 intent chạy **đầu-cuối trên stack** tới B17 thật: ghi đúng một lần, hoàn tác theo từng bước, tin kết quả B18 theo mẫu, ghi chú bàn giao E7 đủ 4 phần; `ENABLED_INTENTS` mặc định 4 intent; cổng 5 tự động phần đơn ý xanh bằng `make gate5`.
 **Đầu vào:** thư mục chính ở `03b4450` (T20a), cây sạch, KB thật đã nạp. **Đầu ra:** 2 commit cục bộ + phiếu push. **Khi đẩy:** báo Phase 6 "6C mở được" (T24 là chặng cuối sửa `b17_execute.py` trước 6C — G6-1).
@@ -894,9 +1139,27 @@ Mỗi kịch bản: đếm lời gọi ghi qua `/_admin/calls` của mock; audit
 - **Phase 6:** preset mới (9 file) có khoá `b14_*` giá trị an toàn của `default.yaml` — 6C sửa `b14_*` thì sửa cả 9 file; T24 sửa `b17_execute.py` (chữ ký `result_text`) → 6C rebase sau T24.
 - **M9:** sau push, phân bố intent đổi (4 intent bật) — báo Dương/Duy Anh.
 
+### 7.11. Chốt khi hiện thực T24 (PLAN-T24 duyệt, MẪU B DỪNG 1 + 2, verify — 13/10; viết bù 14/10) — thay chữ ở 7.0–7.10 khi lệch
+
+| # | Chốt | Thay chỗ |
+|---|---|---|
+| 1 | Q-T24-1: `scripts/verify.sh` nạp **KB thật** `kb/` (bước 11) ngay trước gate5 (bước 12) → sau lượt có chữ số 5 stack kết thúc ở KB thật; **bỏ** bước "nạp lại KB thật sau verify" (lượt không có 5 vẫn để stack ở KB fixture) | 7.9, P8 |
+| 2 | Q-T24-2: `{đích}` của bảng 7.3 dùng `messages.person_phrase` (không `target_phrase`) | 7.3 |
+| 3 | Q-T24-5: `view_permissions` không có dữ liệu chẩn đoán → "chưa đọc được danh sách quyền"; rỗng thật → câu "chưa thấy quyền nào" | P4, 7.3 |
+| 4 | Q-T24-6: `same_department` chỉ **bỏ** khi **cả hai** phòng ban rỗng; một phía rỗng → `False` (R09 vẫn khớp) | P9 (thay "chỉ đặt khi cả hai khác rỗng"), 7.5 n8 |
+| 5 | Q-T24-7: `EXEC_OUTPUT_PATTERNS["version"]` = `[0-9]+(\.[0-9]+){0,3}`; `{software}` của tin B18 lấy từ `action.params.software_name` (đã chuẩn hoá), không từ tên tool trả về | P4 |
+| 6 | S1: `executor/vpn.py` → `executor/plan_executor.py`, `VpnExecutor` → `PlanExecutor`; `graph/fakes.py:127` (file cấm T24) còn chữ `executor/vpn.py` — sửa khi có chặng được đụng `fakes.py` | P3 |
+| 7 | Q-T24-8: `test_b4_open_runtime_accepts_repo_approvers_copy` truyền `enabled_intents=["vpn"]` + ca ghim ngược `test_t24_default_four_intents_vpn_only_roster_refuses` (4 intent mặc định + roster chỉ vpn → không khởi động) | 7.5 (test cũ được đổi) |
+| 8 | **Q-T24-10:** luật bí mật `password` (`config/privacy_patterns.json`: "mật khẩu" + ≤ 4 từ + `:`/`=`) che phần sau dấu `:` của thẻ `[fake:tcNN]` → mất thẻ → preset `default`. Câu kịch bản stack có "mật khẩu" phải có dấu câu cắt trước thẻ (gate5 TC01/TC07/TC18 thêm dấu chấm cuối câu; kỳ vọng 7.6 không đổi); `test_q_t24_10_tag_survives_real_privacy_guard` ghim | 7.6, README stack |
+| 9 | Q-T24-11: `.gitignore` chặn `backend/tests/stack/bienban-gate5-2*.md` (như gate4) — biên bản gate không commit | 7.6 |
+| 10 | Preset mới 9 file đủ 8 khoá như `default.yaml` (`b14_*` an toàn); 13 preset cũ không đổi | P8 |
+| 11 | Mutation lượt 1 9/9 + lượt 2 **12/12** ĐỎ; verify G=2345 lượt 2 (gate2 89/0, gate3 66/0, gate4 73/0) + G=5 lượt 3 gate5 **115/0** (lượt 1 hỏng do máy ngủ — không tính; lượt 2 gate5 đỏ do #8) | 7.7, 7.6 |
+| **Nợ (không chặn)** | **NGHI-5 / Q-T24-9:** `docker-compose.yml` không truyền `ENABLED_INTENTS` (không `env_file`) → trên stack `.env` **không** thu hẹp được intent; khi thêm vào `x-backend-env` phải xử lý chuỗi rỗng = dùng mặc định (`enabled_intents` list `min_length=1`) + test riêng — chưa làm (T20b cấm compose); làm trước Phase 10 (ablation có thể cần tắt intent). **NGHI-1:** B18 `view_permissions` đọc dòng quyền từ `diagnostics` của B6 — đúng khi `requested_for`/path không đổi sau B6 | — |
+| **Dồn về mốc G** | TC07/TC08 với LLM thật (7.9) | — |
+
 ---
 
-## 8. Lịch và thứ tự [làm mới 13/10]
+## 8. Lịch và thứ tự [làm mới 14/10]
 
 | Ngày | Chặng | Tầng / DỪNG | Phụ thuộc | Phase 6 |
 |---|---|---|---|---|
@@ -905,11 +1168,12 @@ Mỗi kịch bản: đếm lời gọi ghi qua `/_admin/calls` của mock; audit
 | 11–12/10 | (FE PR #27/#35; K2 PR #29 gộp + ingest `6cf1091` 23:30 12/10) | — | — | — |
 | 13/10 sáng | (Claude chat: spec T20a v0.3 — Tuấn Anh duyệt) | — | — | — |
 | 13/10 | ~~T20a~~ xong `03b4450` (09:30) | A+B / 2 | `6cf1091` | — |
-| **13 chiều–15** | **T24** + bật 4 intent + gate5 | A / 2 | `03b4450` | báo "6C mở được" khi đẩy |
-| 16 | (Claude chat: spec T20b, chốt Q5) | — | — | — |
-| 17–18 | **T20b** | A / 2 | T24 | 6C: PLAN 17, DỪNG 1 19, DỪNG 2 20 (P6→P5 #8 — không hai DỪNG tầng A cùng ngày) |
-| 19 | Đệm + mutation lượt 2 (T23a, T24) | — | — | — |
-| **~20–21** | **Cổng 5** | — | T22a–T24, T20b | — |
+| 13/10 | ~~T24~~ xong `457239d` (CI xanh); PR #39 → main `e000d03`; PR #38 M9 A4 → `dev-tuananh` = `90ee85d` | A / 2 | `03b4450` | đã báo "6C mở được" (tin #10) |
+| 13/10 tối | (Claude chat: spec T20b v0.5 — Q5 chốt) | — | — | — |
+| 13–14/10 | ~~T20b~~ xong: DỪNG 1 `14316ad` (14/10 01:00), DỪNG 2 `5df24c7` + `8a7c697`, đẩy 14/10 (sớm 2 ngày) | A / 2 | `90ee85d` | 6C MẪU A 14 |
+| 15 | Commit docs (spec v0.6 + D-49) qua phiên git; mutation lượt 2 T23a (khoá thư mục chính ~1,5 giờ, tầng B) | B | `8d2aa6e` | **6C DỪNG 1** |
+| 16 | — | — | — | **6C DỪNG 2** → gộp (quyết 21:00) |
+| **17** | **Cổng 5** — một lượt `make verify G=2345` trên HEAD (T20b + 6C + PR chờ) dùng chung mốc main nếu 6C gộp trước 16/10 21:00; trễ → cổng 5 riêng 17–18 | — | T22a–T24, T20b, 6C | 6C gộp |
 
 Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự động đủ; mutation T22a/T23a/T24 ×2, T20a/T20b ×1 (phần A ×2); thành viên chạy `make verify` + biên bản; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-35, D-41, D-44…46. **Bỏ khỏi Phase 5 (D-44):** model phân loại của Duy + cascade B3 — làm sau cổng 5 khi có τ_hi/τ_lo + SHA.
 
@@ -917,6 +1181,9 @@ Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự độ
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
+| 14/10/2026 | 0.7 | Mục **7.11** chốt khi hiện thực T24 (viết bù từ `PROGRESS.md` mục T24: Q-T24-1…11, đổi tên `PlanExecutor`, nợ compose `ENABLED_INTENTS` + NGHI-1) — đủ "Chốt khi hiện thực" 5 chặng cho cổng 5 |
+| 14/10/2026 | 0.6 | **T20b đóng** (`14316ad` + `5df24c7` + `8a7c697`, verify G=2345 lần 3 + G=5 xanh, đẩy 14/10); mục 5.2.13 chốt khi hiện thực (Q-T20b-1…13: wiring 2 dòng, ý lẫn ra mã của ý đầu, hạn cha thay 2 loại, cha lỗi có escalation — lệch D-30 có chủ đích, mốc `deliver`, P12 trong `scan_deadlines` + hạn thường cho con mồ côi, `/reply` che qua helper, B3 chạy lại lệch → E9, `audit_check` điểm 8 cho cha); nợ + dồn mốc G; lịch: 6C DỪNG 15/16, cổng 5 ~17/10 |
+| 13/10/2026 | 0.5 | T24 đóng (`216c89d` + `457239d`); **mục 5.2 T20b viết đủ** trên code `90ee85d`: Q5 = con vào B6 (seed từ B3 cha, không chạy lại B1–B3), ý lẫn = tách (ý không chạy được → con E1, `split_span_invalid` mới), B5 hai pha + `ChildOps` ở runner, notifier ghi `child_notices` + con không đặt hạn, `after_turn` đánh thức khi con dừng ở node chờ, `parent_wait`/`parent_reply_wait` thật, `compose_digest` + bảng đóng cha (+ tổ hợp đủ 3 loại [Đề xuất]), `POST /reply` + `children_progress`, lưới an toàn worker, preset con `<thẻ>-<i>`, gate5 5 kịch bản nhiều ý, ~55 ca test, 14 mutation, 10 mục soát; không migration; `wiring.py` 1 dòng; lịch: T20b DỪNG 15/16, 6C DỪNG 17/18, cổng 5 ~19–20 |
 | 13/10/2026 | 0.4 | T20a đóng (`52c8349` + `03b4450`); 5.1.11 chốt khi hiện thực (Q-T20a-4/6 cờ `target_is_other` ở B3 + `clarify_wait`, 17 mutation, D1 none 14/40, nợ); **mục 7 T24 viết đủ** (PLAN 6 hành động + bước license có điều kiện, `PlanExecutor` hoàn tác theo bước, B18 6 mẫu, ghi chú bàn giao theo hành động, registry ghi 4 hệ thống, bật 4 intent, `make gate5` 9 kịch bản, 12 mutation); lịch: T24 13 chiều–15 |
 | 13/10/2026 | 0.3 | **T20a viết đủ** (mục 5.1: 12 P-x, bảng tool → fact, hợp đồng `PARAMS_BY_ACTION`, ~70 ca test, 14 mutation, 9 mục soát, 2 DỪNG) trên code `6cf1091`; access thêm slot `target_user` (R12 chạm được đầu-cuối) [Đề xuất]; áp 17 mục "Spec cần sửa (T22a)" (4.13 → 4.14 + sửa tại chỗ) và 11 mục T23a (6.5); T23a đóng; lịch mục 8 (T20a 13–14) |
 | 10/10/2026 | 0.2 | T22a đóng (`2ffb005`). Kế hoạch sau T22a theo phiên PHAN-TICH-P5 (soát code chỉ đọc) + Tuấn Anh chốt: mục 5 tách T20a/T20b (ước 19–25 giờ, bật intent dời sang T24 — Q-5-7); mục 6 **T23a viết đủ** (đóng `ml-gan`, `shadow`, mặc định không nạp, 422 → L4 — Q-5-9, 9 mutation, `json_object` commit riêng); mục 7 T24 bật 4 intent; mục 8 lịch mới (cổng 5 ~20–21/10); model của Duy ra khỏi Phase 5 (D-44). 17 mục "Spec cần sửa (T22a)" CHƯA áp — làm 11–12/10 |

@@ -8,7 +8,10 @@
 1. **Kiểm lại luật** với policy + Clock HIỆN HÀNH (P8): `deny` → E5 `recheck_failed`. Ticket đi qua duyệt (`approval_id` hoặc
    `approval_result` có) → "đã duyệt" = `approval_result == "approved"` **và** bảng `approvals` `approved` (`get_status`) — lệch
    → E5 `recheck_failed`, BẤT KỂ luật hiện hành (M-3h-7, M-3h-12). `approval_required` hoặc không luật nào khớp mà không "đã
-   duyệt" → E5 `recheck_failed` (tự quyết 1 PLAN-3h: Phase 3 không có lớp LLM ở đây).
+   duyệt" → E5 `recheck_failed`. **Phase 6 6C P6 (D-42):** ngoại lệ DUY NHẤT — không qua duyệt, luật hiện hành không khớp, và
+   `risk` là AUTO do LLM (`decided_by="llm"`, `route="AUTO"`, có `calibrated_prob` — Q-6C-10) với `action_plan_hash` B12 đặt bằng hash
+   hành động hiện tại → đi
+   tiếp (kiểm người vẫn chạy), điểm log 7 `action_plan_hash_matched` True. `full_auto` (`risk` None) không có ngoại lệ.
 2. **Hash:** đi qua duyệt thì `action_plan_hash` phải có và bằng `hash_action(intended_action)` — thiếu/lệch → E5
    `action_plan_changed_since_approval` (cấm 3). **Phase 4 4d P7 (Việc treo 29):** lớp thứ hai — `hash_action(intended_action)` còn phải
    bằng `approvals.action_plan_hash` của PHIẾU (cái người duyệt đã xem, 4c P6); lệch → cùng E5, `detail.hash_source="approval"`, 0 lời
@@ -54,7 +57,7 @@ from app.domain.exit_codes import ExitCode
 from app.domain.messages import permission_rows, result_msg, result_text
 from app.domain.policy import referenced_facts
 from app.domain.states import S_CONFIRMING, S_ESCALATED
-from app.domain.ticket_state import ExecutionResult
+from app.domain.ticket_state import ExecutionResult, RiskDecision
 from app.executor.errors import ExecutionInterrupted
 from app.executor.txlog import MAY_HAVE_WRITTEN
 from app.graph import effects
@@ -87,6 +90,20 @@ def _point7(res: ExecutionResult) -> dict[str, Any]:
         "rollback_status": res.rollback_status, "action_plan_hash_matched": res.action_plan_hash_matched,
         "write_calls": _write_calls(res),
     }  # fmt: skip
+
+
+def llm_auto(state: Any, action: Action) -> bool:
+    """6C P6 (D-42): AUTO do LLM ở B12 — `risk.decided_by == "llm"` ∧ `risk.route == "AUTO"` ∧ `action_plan_hash` (B12 đặt) bằng
+    `hash_action` của hành động ĐANG chạy. `risk` None/vắng (`full_auto`, state cũ) → False; `risk` hỏng → ValidationError → E9.
+    Q-6C-10: thêm `calibrated_prob` có giá trị — B12 chỉ ra AUTO do LLM khi đã hiệu chỉnh (D-38); thiếu = state lạ → không thực thi."""
+    raw = state.get("risk")
+    if raw is None:
+        return False
+    risk = RiskDecision.model_validate(raw)
+    return (
+        risk.decided_by == "llm" and risk.route == "AUTO" and state.get("action_plan_hash") == hash_action(action)
+        and risk.calibrated_prob is not None  # Q-6C-10
+    )  # fmt: skip
 
 
 def watched_requester_fields() -> tuple[str, ...]:
@@ -158,12 +175,14 @@ def make(deps: NodeDeps) -> NodeFn:
                     audit_detail={**rule, "recheck": "no_decided_by"}, exit_code=ExitCode.E5.value,
                     escalation_reason_detail="recheck_failed",
                 )  # fmt: skip
-        if not approved and (verdict.decision == "approval_required" or not verdict.matched):
+        via_llm = not via_approval and not verdict.matched and llm_auto(state, action)  # 6C P6 (D-42)
+        if not approved and not via_llm and (verdict.decision == "approval_required" or not verdict.matched):
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B17", event="recheck_failed",
                 audit_detail={**rule, "recheck": "not_approved"}, exit_code=ExitCode.E5.value,
                 escalation_reason_detail="recheck_failed",
             )  # fmt: skip
+        matched = True if via_llm else matched  # điểm log 7 `action_plan_hash_matched` (TQ-10)
 
         people = list(dict.fromkeys([requester.user_id, action.requested_for]))  # [3] D-15 (sửa)
         lookups = list(dict.fromkeys([*people, *([decided_by] if decided_by else [])]))  # P13: + người đã duyệt, CÙNG gather

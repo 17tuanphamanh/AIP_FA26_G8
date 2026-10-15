@@ -234,7 +234,7 @@ gold:
     target: "folder:finance/public-reports"   # user:<id> | device:<id> | folder:<path>
     requested_for: nv001          # người bị tác động (B11 §4, P4); bỏ trống = người gửi
     params: {permission_level: read, duration_days: 30}   # chỉ 2 khoá luật đọc; sai kiểu/ngoài tập = thiếu
-  facts:                          # chỉ khoá trong FACT_KEYS (19 = 7 VPN + 12 bảng phase5 4.3); kiểm bằng check_facts
+  facts:                          # chỉ khoá trong FACT_KEYS (20 = 7 VPN + 13 — thêm existing_permission_level, phase5 v0.3 T20a); kiểm bằng check_facts
     resource_sensitivity: low
     same_department: true
     has_permission_record: true
@@ -433,3 +433,4 @@ Mỗi bảng/biểu đồ ghi `run_id` ở chú thích. Kết quả không ủng
 | 25/09/2026 | 1.0 | Tạo file: harness, schema kịch bản, chia tập theo họ, hiệu chỉnh chỉ trên calibration, công thức chỉ số, ma trận chạy bắt buộc, đầu ra báo cáo |
 | 25/09/2026 | 1.1 | Thêm kiểm rò rỉ giữa dữ liệu huấn luyện model phân loại và tập test M8; so sánh đường B3 (D-32); ghi phiên bản model vào manifest |
 | 09/10/2026 | 1.2 | Mục 4.1: thêm `gold.action` + `gold.facts` (cho `scripts/rule_coverage.py` và chế độ chỉ-luật) — theo Phase 5 T22a (`2ffb005`) |
+| 13/10/2026 | 1.3 | §4.1: `FACT_KEYS` 20 fact (thêm `existing_permission_level` — Phase 5 T20a, D-47); họ kịch bản gia hạn quyền cần `gold.facts.existing_permission_level` |

@@ -25,7 +25,7 @@ from typing import Any, Final
 from sqlalchemy import JSON, String, Table, select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.db.models import AuditLog, Ticket
+from app.db.models import AGGREGATE_STATUSES, AuditLog, Ticket
 from app.guard.patterns import privacy_patterns
 from app.settings import get_settings
 
@@ -105,6 +105,26 @@ def _lacks(row: Mapping[str, Any], set_: Sequence[str], keys: Sequence[str] = ()
     return out + [f for f in keys if _get(row, f) is _ABSENT]
 
 
+_P4_RULE: Final = ("decided_by", "policy_decision", "risk_level", "reason", "detail.route", "detail.policy_sha256")
+_P4_LLM: Final = ("decided_by", "risk_level", "reason", "detail.route", "detail.policy_sha256", "raw_prob", "p_method",
+                  "detail.thresholds")  # fmt: skip
+
+
+def _point4_need(row: Mapping[str, Any]) -> list[str]:
+    """Điểm 4 theo `decided_by` (phase6 6C P7, Q-6-8 điều kiện 1, Q-6C-3). `llm`: không đòi `policy_decision`, đòi `raw_prob`,
+    `p_method`, `detail.thresholds`. NULL CHỈ hợp lệ khi ghi chú `detail.strategy == "full_auto"` ∧ `detail.route == "AUTO"`;
+    `rule` + `policy_decision` NULL CHỈ khi `detail.strategy == "rule_only"` ∧ `detail.route == "HITL"`. Còn lại (kể cả NULL
+    không ghi chú) → danh sách luật (thiếu `decided_by`/`policy_decision`)."""
+    decided_by, strategy, route = row.get("decided_by"), _get(row, "detail.strategy"), _get(row, "detail.route")
+    if decided_by == "llm":
+        return list(_P4_LLM)
+    if decided_by is None and strategy == "full_auto" and route == "AUTO":
+        return ["detail.policy_sha256"]
+    if decided_by == "rule" and row.get("policy_decision") is None and strategy == "rule_only" and route == "HITL":
+        return [f for f in _P4_RULE if f != "policy_decision"]
+    return list(_P4_RULE)
+
+
 def _point(row: Mapping[str, Any], *, approved: bool) -> tuple[int, list[str]] | None:
     """Điểm 1–7 theo bảng PLAN-4d mục 4 (Q-4d-1 = A: kiểm ĐÚNG chỗ code ghi). Dòng không thuộc bảng → None."""
     step, event = row.get("step"), row.get("event")
@@ -121,7 +141,7 @@ def _point(row: Mapping[str, Any], *, approved: bool) -> tuple[int, list[str]] |
     if (step, event) == ("B9", "no_evidence"):  # b10_route — `grounding`
         return 3, _lacks(row, ["kb_version"], ["detail.grounding.top_score"])
     if (step, event) == ("B13/B14", "risk_decided"):  # b12_assess `_point4` + `_RISK_COLUMNS` của goto
-        return 4, _lacks(row, ["decided_by", "policy_decision", "risk_level", "reason", "detail.route", "detail.policy_sha256"])
+        return 4, _lacks(row, _point4_need(row))
     if (step, event) == ("B15", "queued"):
         return 5, _lacks(row, ["approver_id", "deadline", "conflict_detected", "action_plan_hash", "detail.choice_reason"])
     if step == "B16" and event in ("approved", "rejected", "approval_timeout", _B16_PLAN_CHANGED):
@@ -143,8 +163,13 @@ def _point8(ticket_id: str, rows: Sequence[Mapping[str, Any]]) -> list[Missing]:
     closed = [r for r in rows if (r.get("step"), r.get("event")) == ("B20", "closed")]
     if not closed:
         return [Missing(ticket_id, 8, None, ("B20/closed",))]
+    # Phase 5 T20b Q-T20b-13 = A: ticket CHA đóng bình thường (D-30) không `close_reason`/`exit_code` — đạt khi `detail.aggregate_status`
+    # ∈ `AGGREGATE_STATUSES` (giá trị lạ / thiếu cả ba → vẫn thiếu), CHỈ khi ticket là CHA. "Là cha" lấy từ chính `rows` (dòng audit của
+    # ticket): có dòng B5 `split_into_<n>_children` (B3/B5 tách ý — `b03_classify._split`); lá và con không bao giờ có dòng này.
+    parent = any(r.get("step") == "B5" and re.fullmatch(r"split_into_\d+_children", str(r.get("event"))) for r in rows)
     lacks = [
         _lacks(r, ["final_state"]) + ([] if r.get("close_reason") is not None or r.get("exit_code") is not None
+                                      or parent and _get(r, "detail.aggregate_status") in AGGREGATE_STATUSES
                                       else ["close_reason|exit_code"])
         for r in closed
     ]  # fmt: skip

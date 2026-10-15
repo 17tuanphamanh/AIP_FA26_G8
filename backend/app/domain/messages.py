@@ -16,11 +16,13 @@
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Final, Literal
+from typing import Any, Final, Literal
 from zoneinfo import ZoneInfo
 
 from app.domain.action import SOFTWARE_NAME, Action, FactValue
+from app.domain.children import ChildView, summary_text
 from app.domain.ticket_state import EXEC_OUTPUT_PATTERNS, ChunkRef, Msg
 
 MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
@@ -263,3 +265,72 @@ def rejection_text(action_type: str, target_phrase: str, reason_code: str | None
 
 def rejection_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "rejection", "text": text, "ref": ref, "needs": "none"}
+
+
+# ---- Tin tổng hợp của ticket cha (Phase 5 T20b P8, P9 — phase5 5.2.5, 5.2.6; D-31) ----------------------------------------------
+# Thuần, theo mẫu, KHÔNG LLM (chốt 10/10 (a)). Tiêu đề ý: `ACTION_LABELS[seed.slots.action]` nếu có, không thì nhãn loại yêu cầu theo
+# `seed.intent`; ý E1 (không có `intent`) → `OTHER_LABEL`. Chữ cái đầu viết hoa ("Đặt lại mật khẩu").
+INTENT_LABELS: Final[Mapping[str, str]] = {
+    "account": "Tài khoản", "vpn": "VPN", "software": "Phần mềm", "access": "Quyền truy cập",
+}  # fmt: skip
+OTHER_LABEL: Final = "Yêu cầu khác"
+# `items[].kind` FE nhận (5.2.6): notice `answer` (B10) hiển thị như `result`.
+DIGEST_ITEM_KINDS: Final = ("result", "question", "rejection", "escalation")
+CONFIRMED_TEXT: Final = "Đã ổn"
+UNRESOLVED_TEXT: Final = "Chưa ổn"
+
+
+@dataclass(frozen=True)
+class Digest:
+    """Tin `digest` của một vòng + id các notice vừa gom (cha đánh dấu `delivered_round` CÙNG transaction với `notify_user`)."""
+
+    msg: Msg
+    notice_ids: tuple[int, ...]
+
+
+def child_title(seed: Mapping[str, Any]) -> str:
+    """Tiêu đề khối của một ý (P9) từ seed của con (bảng 5.2.3) — không bao giờ do LLM đặt."""
+    action = (seed.get("slots") or {}).get("action")
+    label = ACTION_LABELS.get(action) if isinstance(action, str) else None
+    if label is None:
+        intent = seed.get("intent")
+        label = INTENT_LABELS.get(intent, OTHER_LABEL) if isinstance(intent, str) else OTHER_LABEL
+    return label[:1].upper() + label[1:]
+
+
+def compose_digest(view: Sequence[ChildView], seeds: Mapping[str, Mapping[str, Any]], *, round_no: int) -> Digest:
+    """Tin tổng hợp vòng `round_no` (P9, 5.2.6): `{role:"assistant", kind:"digest", round, text, items:[{child_id, index, title,
+    kind, text, needs}]}`. Mỗi notice chưa gửi một item, theo `index` rồi thứ tự tạo; con không có notice mới → không lặp lại.
+    `text` = các khối "Ý {index} – {title}: {body}" nối xuống dòng, + câu tổng kết (bảng 5.2.5) khi MỌI con đã kết thúc (vòng cuối không
+    còn notice nào → chỉ câu tổng kết). Không chữ nào ngoài `body` notice + mẫu + số."""
+    items: list[dict[str, Any]] = []
+    ids: list[int] = []
+    for child in sorted(view, key=lambda c: c.index):
+        title = child_title(seeds.get(child.child_id) or {})
+        for n in sorted(child.pending, key=lambda n: (n.created_at, n.notice_id)):
+            items.append({
+                "child_id": child.child_id, "index": child.index, "title": title,
+                "kind": "result" if n.kind == "answer" else n.kind, "text": n.body, "needs": n.needs,
+            })  # fmt: skip
+            ids.append(n.notice_id)
+    lines = [f"Ý {it['index']} – {it['title']}: {it['text']}" for it in items]
+    if all(c.final_state is not None for c in view):
+        lines.append(summary_text(view))
+    msg = {"role": "assistant", "kind": "digest", "round": round_no, "text": "\n".join(lines), "items": items}
+    return Digest(msg, tuple(ids))
+
+
+def reply_text(items: Sequence[tuple[int, Mapping[str, Any]]]) -> str:
+    """Tin người dùng ghép của `/reply` (P8, chốt (d)) — `(index, mục ĐÃ CHE của body)` theo thứ tự `index`: `{"answer": s}` →
+    "Ý i: s"; `{"confirmed": True}` → "Ý i: Đã ổn"; `{"confirmed": False, "note": g}` → "Ý i: Chưa ổn — g" (ghi chú rỗng/None →
+    "Ý i: Chưa ổn"). Nối bằng " · "."""
+    parts = []
+    for index, item in sorted(items, key=lambda x: x[0]):
+        if "answer" in item:
+            parts.append(f"Ý {index}: {item['answer']}")
+        elif item.get("confirmed"):
+            parts.append(f"Ý {index}: {CONFIRMED_TEXT}")
+        else:
+            note = str(item.get("note") or "").strip()
+            parts.append(f"Ý {index}: {UNRESOLVED_TEXT} — {note}" if note else f"Ý {index}: {UNRESOLVED_TEXT}")
+    return " · ".join(parts)
