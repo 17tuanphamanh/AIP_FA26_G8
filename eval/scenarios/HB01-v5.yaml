@@ -11,7 +11,7 @@ faults: []
 turns:
 - reset pw giup nv001 voi a, user nay bao quen pass
 - on_question_about: account_type
-  reply: tài khoản đăng nhập Windows (AD)
+  reply: tai khoan dang nhap Windows (AD)
 - on_confirm: true
 gold:
   intents:
