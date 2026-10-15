@@ -367,14 +367,29 @@ class PolicyConstants(BaseModel):
         return self
 
 
+class M5Config(BaseModel):
+    """Khối `m5` của policy.json (phase6 6.1 P2): cách lấy p của B14 + phiên bản calibrator. `calibrator_version` null = chưa
+    hiệu chỉnh → không bao giờ AUTO (D-38). Mẫu `VERSION_PATTERN` (6A) KHÔNG kiểm ở đây: `settings` không được import `app.risk`
+    (`llm`, `rag`, `monitor` import settings — hợp đồng import-linter); `graph/wiring.open_runtime` nạp bằng `load_calibrator`
+    (kiểm mẫu TRƯỚC khi ghép đường dẫn) trước DB → sai mẫu vẫn là không khởi động. `p_method` chép tập của `risk.estimator.PMethod`
+    (cùng lý do) — test so khớp."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    p_method: Literal["self_report", "sampling_k5"]
+    calibrator_version: str | None = Field(min_length=1, max_length=64)  # độ dài cột lineage.calibrator_version
+
+
 class PolicyFile(BaseModel):
     """Schema của policy.json. 3h: `business_hours` + `rules` (Phase 3 chỉ R16–R20 — phase3 11.2; 15 luật còn lại ở
-    Phase 5). `thresholds`, `cost_matrix`… (B12–B14 mục 7) chưa có — khoá lạ bị từ chối để không ai tưởng đã có hiệu lực."""
+    Phase 5). Phase 6 6C: khối `m5` (P2) BẮT BUỘC. `thresholds`, `cost_matrix`… (B12–B14 mục 7) chưa có — khoá lạ bị từ chối
+    để không ai tưởng đã có hiệu lực."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     constants: PolicyConstants
     business_hours: BusinessHours
+    m5: M5Config
     rules: tuple[Rule, ...] = Field(min_length=1)
 
     @model_validator(mode="after")

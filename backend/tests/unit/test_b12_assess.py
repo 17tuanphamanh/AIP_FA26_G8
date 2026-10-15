@@ -147,8 +147,9 @@ async def test_estimator_schema_error_is_e5() -> None:
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E5", "llm_layer_disabled")
 
 
-async def test_estimator_returning_probability_is_e9_never_auto() -> None:
-    """M-3h-9: lớp 2 chưa hiện thực — trả p (kể cả 0) là cấu hình sai → E9 qua boundary, không bao giờ `S_EXECUTING`."""
+async def test_estimator_returning_wrong_type_is_e9_never_auto() -> None:
+    """M-3h-9 (6C TQ-14): estimator trả sai kiểu (tuple thay cho `RiskEstimate`) là bug → E9 qua boundary, không bao giờ
+    `S_EXECUTING` (Phase 3 chặn mọi giá trị trả về; 6C nối B14 thật — chỉ `RiskEstimate` đi tiếp qua `strategy.decide`)."""
     spy = SpyEstimator(result=(0.0, "self_report"))
     out, _, _ = await _node(_state(intended_action=_action(owner=False)), estimator=spy, boundary=True)
     assert spy.calls == 1

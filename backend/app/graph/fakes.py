@@ -45,7 +45,9 @@ from app.guard.privacy import TextRedactor, guard_from_settings
 from app.llm import LlmPort
 from app.ml import MlPort
 from app.rag.ports import RagPort
+from app.risk.calibrator import Calibrator
 from app.risk.estimator import DisabledEstimator, RiskEstimator
+from app.risk.strategy import Strategy
 from app.settings import (
     EscalationTemplates,
     PolicyConstants,
@@ -317,10 +319,16 @@ class NodeDeps:
     # (guard regex; KHÔNG BAO GIỜ mặc định bản không che); runtime dựng tường minh theo Settings (`graph/wiring._open`).
     output_guard: OutputGuard = field(default_factory=default_output_guard)
     privacy: TextRedactor = field(default_factory=lambda: guard_from_settings(get_settings()))
-    # 3h (phase3 11.2, 11.3): giờ hành chính của luật R18 (`config/policy.json` — một nguồn); lớp 2 của M5 (B14) — Phase 3
-    # luôn `DisabledEstimator` (3-Q30: không luật nào khớp → E5 `llm_layer_disabled`).
+    # 3h (phase3 11.2, 11.3): giờ hành chính của luật R18 (`config/policy.json` — một nguồn). Lớp 2 của M5 (B14): mặc định
+    # `DisabledEstimator` (ném → E5 `llm_layer_disabled`); runtime (`graph/wiring._open`, Phase 6 6C) dựng `LlmRiskEstimator`.
     business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
     estimator: RiskEstimator = field(default_factory=DisabledEstimator)
+    # Phase 6 6C (P1, P10): calibrator nạp lúc khởi động (`m5.calibrator_version`) — None = chưa hiệu chỉnh → không bao giờ AUTO
+    # (D-38); chiến lược M5 = `Settings.strategy` đã qua `check_strategy` (Q-6C-1); `eval_mode` = `Settings.eval_mode` — điểm log
+    # 4 ghi `detail.strategy` chỉ khi đánh giá (Q-6C-3). Mặc định = an toàn (không AUTO do LLM, chiến lược vận hành).
+    calibrator: Calibrator | None = None
+    strategy: Strategy = "hybrid"
+    eval_mode: bool = False
     # Phase 4 4b P12: hạn duyệt (phút) HIỆU LỰC = `APPROVAL_SLA_MINUTES_DEV` (chỉ dev/test) hoặc `SLA_MINUTES` của policy.json — wiring
     # tính, node không đọc Settings. Mặc định = policy.json.
     approval_sla_minutes: int = field(default_factory=lambda: get_policy().constants.SLA_MINUTES)

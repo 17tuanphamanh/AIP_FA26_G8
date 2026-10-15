@@ -10,10 +10,13 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   `ensure` dòng `users` → `effects.once` tạo phiếu + báo `a.approver_id` → điểm log 5 (`audit_columns`, `intended_action`).
 - `b12_assess.py`: node THẬT (Phase 3 chặng 3h, phase3 11.3) — `build_ctx` (chỉ `intended_action`, `requester_context`,
   `ctx_flags` + Clock) → `risk.policy_engine.evaluate` (R16–R20, `config/policy.json`): allow → B17, approval_required →
-  B15, deny → E5; không luật nào → `deps.estimator` (Phase 3 `DisabledEstimator`) → E5 `llm_layer_disabled`; estimator trả
-  xác suất → E9. Điểm log 4 + `policy_sha256` + `lineage` qua `goto`.
+  B15, deny → E5; không luật nào → `deps.estimator` (Phase 6 6C: `LlmRiskEstimator`) → `risk.strategy.decide` (AUTO → B17 +
+  `action_plan_hash`, HITL → B15, L2 → E5 `llm_high_risk`); lỗi estimator → E5 `llm_layer_disabled`; `full_auto` (EVAL) → B17,
+  `risk` None, điểm 4 `decided_by` NULL. Điểm log 4 + `policy_sha256` +
+  `lineage` qua `goto`.
 - `b17_execute.py`: node THẬT (3h, phase3 11.4) — [0] ticket đã có `begun` (mọi lượt) → E7 `exec_interrupted` TRƯỚC mọi bước
-  kiểm lại (NGHI-2); [1] luật + Clock hiện hành, "đã duyệt" = state + bảng `approvals` + hash;
+  kiểm lại (NGHI-2); [1] luật + Clock hiện hành, "đã duyệt" = state + bảng `approvals` + hash; Phase 6 6C (D-42): không qua
+  duyệt + không luật khớp chỉ đi tiếp khi `risk` là AUTO do LLM và `action_plan_hash` khớp (`full_auto` không có ngoại lệ);
   [2] hash; [3] `ad_get_user` (`B17_RECHECK`) cho người gửi + người hưởng lợi, trường `requester.*` luật dùng mà AD mới khác
   bản chụp B1 → E5 `recheck_failed` (Q-3h-7); Phase 4 4b P13: đi qua duyệt thì tra thêm người ĐÃ DUYỆT (`decided_by`) trong
   cùng lời gọi song song — lỗi AD → E2 `approver_lookup_error`, không còn hợp lệ l1 lẫn Trưởng BP → E5
