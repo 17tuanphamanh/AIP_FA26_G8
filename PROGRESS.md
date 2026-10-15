@@ -5479,6 +5479,16 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
 - **Chờ:** commit 2 (cục bộ) → PHIẾU push + PR `m5-tuananh` → `dev-tuananh` (chưa gộp — chờ stack `make verify G=2345` trên
   `pull/<N>/merge`).
 
+## Phase 5 — Cổng 5 (15/10/2026) — phần tự động ĐẠT; chờ thành viên chạy `make verify` + biên bản
+
+- **Lượt chính thức** (Tuấn Anh chốt 15/10; dùng chung mốc PR `dev-tuananh` → `main`): `make verify G=2345` 15/10 00:22:47–01:12:08, máy Tuấn Anh, `.env` thật (`STRATEGY=hybrid`, `EVAL_MODE=false`). Commit tạm lúc chạy `a2346e9` (không push); cây `28bfef7` trùng từng byte cây của **`5f2ece2`** (HEAD `dev-tuananh` sau gộp PR #44 6C). `78a25cd` sau đó chỉ sửa `.githooks/pre-commit`.
+- Kết quả (`.verify/run-20261015-002247.log`): lint PASS; test backend 6546 · mock 106 · ml 123 (5 deselected); gate2 89/0; gate3 **78/0**; gate4 73/0; ingest KB thật (`kb_3362c39b…`); gate5 **227/0** — đơn ý 113 (preflight 6, tc01 10, tc03 12, tc07 16, tc08 8, tc17 5, tc18 5, tc21a 13, tc21b 20, hb04 18), nhiều ý 112 (tc34 26, tc35 21, tc36 24, tc32 16, tc12r 25), g5-audit 2. Bước CI của verify bỏ qua (gh); CI `5f2ece2` **xanh** (run 38660791290, phiên git xác nhận). Stack kết thúc ở KB thật.
+- Đối chứng trên `e62b40b` (chưa 6C, 14/10 23:28–00:21): cùng số (gate3 78/0, gate5 227/0) → gộp 6C không đổi kết quả cổng.
+- gate3 78 (mốc 13–14/10: 66) — không phải đổi code: gate3 theo giờ (Q-3h); lượt chạy **ngoài giờ** đi thêm nhánh R18 → chờ duyệt, +6 phép kiểm × 2 kịch bản (so log 13/10 với 15/10: cùng 9 kịch bản, phần còn lại giống hệt).
+- Biên bản `backend/tests/stack/bienban-gate5-20261015.md` (ĐẠT, script ghi) — `.gitignore`, không commit bản đã điền.
+- Điều kiện cổng 5 (phase5 mục 8): lint/test/CI ✓; cổng 5 tự động ✓ (đơn ý TC01/03/07/08/17/18/21 + HB04; nhiều ý: ALL_RESOLVED, PARTIALLY_ESCALATED, PARTIALLY_REJECTED trên stack — 6 trường hợp + tổ hợp 3 loại ghim ở unit T20b p5; 20 luật khớp/suýt khớp ở unit T22a); mutation T22a/T23a/T24 ×2, T20a/T20b phần A ×2 ✓; "Chốt khi hiện thực" 5 chặng + `decisions.md` ✓ (`c973b55`). **Còn:** một thành viên chạy `make verify G=2345` trên máy riêng, đúng HEAD đã chốt, ghi biên bản → khi có thì đổi tiêu đề mục này thành "Cổng 5 ĐẠT".
+- Phần thủ công (intent macro-F1, chặn tấn công, Recall@5, E7 4 phần, 10 câu nhiều ý): mục "Dồn về mốc G".
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
