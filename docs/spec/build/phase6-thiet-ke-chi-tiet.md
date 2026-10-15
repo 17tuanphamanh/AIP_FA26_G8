@@ -1,6 +1,6 @@
 # Phase 6 — Thiết kế chi tiết (M5 lớp LLM: toán quyết định, calibrator, estimator, chiến lược, nối B12)
 
-*Thuộc bộ `build/`. Phiên bản **1.0 — 13/10/2026** (1.0: **6C viết chi tiết** — mục 6, soát `457239d`; 0.9: Q-6-8 chốt C + 3 điều kiện 6C; **6B đã hiện thực** — mục 5.11; 0.8: soát mục 5 trên `fe61fa3` — sửa P1 chỗ estimator giả, P12 chốt, thêm es10; 0.7: **6A đã hiện thực** — mục 4.10 "Chốt khi hiện thực"; 0.6 chỉ cập nhật phối hợp/git theo luật 4.0 của phiên git — mục 0.2, 4.8, 5.9, 8; **nội dung kỹ thuật 6A/6B giữ nguyên từ 0.5**; code nền soát lại tại `3ff63e1`: file 6A/6B dựa vào không đổi). Bản 0.5 — 06/10/2026: soát lại với code `1455b55`; **6A đã chạy thử bằng cài đặt tham chiếu trên đúng bản thư viện đã khoá** — mọi số ở 4.5–4.6 khớp; sửa P8, 4.3, cb3, cb5 theo kết quả chạy; nơi chạy = worktree riêng, mục 0.2. **6A và 6B viết đủ để code ngay**; 6C, 6D ở mức khung (P-x chốt khi mở chặng). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 6, §7.2–7.4; `B12-B14` v1.2 (§3, §4.1, §5, §5.1–5.2, §11); `P8` v1.1 (§5.3, §6.1, §9); `P2` (gateway, prompt registry, cache); `decisions.md` Q8, Q9, D-34; `claude/phase5-6-phan-tich-va-chia-chang.md` v0.1 (G6-x, D-35…D-43, lịch). Code đã đọc trên máy tại `aac90b1`, soát lại tại `1455b55` (03/10) và `3ff63e1` (09/10): các file 6A/6B dựa vào — `risk/*`, `b12_assess.py`, `llm/*`, `config/prompts`, `policy.json`, `.importlinter`, `pyproject`/`uv.lock` — **không đổi** từ `aac90b1`.*
+*Thuộc bộ `build/`. Phiên bản **1.1 — 14/10/2026** (1.1: **6C đã hiện thực** — mục 6.9; **6D viết chi tiết** — mục 7; 1.0: **6C viết chi tiết** — mục 6, soát `457239d`; 0.9: Q-6-8 chốt C + 3 điều kiện 6C; **6B đã hiện thực** — mục 5.11; 0.8: soát mục 5 trên `fe61fa3` — sửa P1 chỗ estimator giả, P12 chốt, thêm es10; 0.7: **6A đã hiện thực** — mục 4.10 "Chốt khi hiện thực"; 0.6 chỉ cập nhật phối hợp/git theo luật 4.0 của phiên git — mục 0.2, 4.8, 5.9, 8; **nội dung kỹ thuật 6A/6B giữ nguyên từ 0.5**; code nền soát lại tại `3ff63e1`: file 6A/6B dựa vào không đổi). Bản 0.5 — 06/10/2026: soát lại với code `1455b55`; **6A đã chạy thử bằng cài đặt tham chiếu trên đúng bản thư viện đã khoá** — mọi số ở 4.5–4.6 khớp; sửa P8, 4.3, cb3, cb5 theo kết quả chạy; nơi chạy = worktree riêng, mục 0.2. **6A và 6B viết đủ để code ngay**; 6C, 6D ở mức khung (P-x chốt khi mở chặng). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 6, §7.2–7.4; `B12-B14` v1.2 (§3, §4.1, §5, §5.1–5.2, §11); `P8` v1.1 (§5.3, §6.1, §9); `P2` (gateway, prompt registry, cache); `decisions.md` Q8, Q9, D-34; `claude/phase5-6-phan-tich-va-chia-chang.md` v0.1 (G6-x, D-35…D-43, lịch). Code đã đọc trên máy tại `aac90b1`, soát lại tại `1455b55` (03/10) và `3ff63e1` (09/10): các file 6A/6B dựa vào — `risk/*`, `b12_assess.py`, `llm/*`, `config/prompts`, `policy.json`, `.importlinter`, `pyproject`/`uv.lock` — **không đổi** từ `aac90b1`.*
 
 *Nhãn: **[Chốt]** spec gốc · **[Chốt 01/10]** Tuấn Anh chốt Q-6-x ngày 01/10/2026 · **[Đề xuất]** Tuấn Anh soát khi duyệt PLAN · **[Suy luận]** agent kiểm lại trên code.*
 
@@ -638,14 +638,107 @@ Ca "không luật nào khớp" trên stack/ScriptedLLM nay đi estimator thật:
 3. Báo cáo (T29/Phase 10): FNR, chi phí của `full_auto` đọc ở điểm 4 (đúng); automation rate của `full_auto` ghi chú "theo định nghĩa = 100 % ca có hành động; B17 vẫn chặn khi chạy thử" — không đọc từ điểm 8.
 
 
+### 6.9. Chốt khi hiện thực (6C) — 14/10/2026, `m5-tuananh`: `f030926` (DỪNG 1) + `b7cb1a4` (DỪNG 2) trên `c45b079`, PR #44
+
+**Kết quả:** `make verify G=0` XANH cả 2 DỪNG (DỪNG 1 trên `457239d`: backend 5756 passed; DỪNG 2 sau rebase lên `c45b079`: backend **6388 passed / 4 skipped**, mock 106, ml 123; unit 5769); lint xanh (import-linter 10/10, gitleaks 0); mutation lượt 1 **10/10**, lượt 2 **14/14** đỏ đúng dự đoán, md5 khớp, `test_mutation_n3` xanh; security-reviewer 4 lượt (DỪNG 1, Q-6C-8/9, DỪNG 2, Q-6C-10/11/12), **0 FAIL**. Rebase DỪNG 1 (`145bfaa` → `f030926`) lên nền A4 + T20b + T29 sạch: 4 file chung (`wiring.py`, `exit_codes.py`, `audit/check.py`, `PROGRESS.md`) không chồng dòng (gộp thử `git merge-file`). Chạy thử stack `G=2345` trên `pull/44/merge` trước khi gộp (15–16/10).
+
+**Khác/thêm so với 6.1–6.5 (đã duyệt):**
+1. **Q-6C-1 = B (P1):** không thêm `M5_STRATEGY` — nguồn chiến lược duy nhất là `Settings.strategy` (env `STRATEGY`, đã có trong compose/`.env.example`/Makefile); `manual` (chỉ tính giải tích ở harness M8) bị **từ chối ở mọi chế độ**; kiểm ở `open_runtime` trước DB **và** lần hai ở `_open` (M-6C-3 phải bỏ cả hai mới đỏ).
+2. **Q-6C-2 = A:** `llm_high_risk` thêm vào `REASON_DETAILS` (`domain/exit_codes.py` — ngoài danh sách 6.2).
+3. **Q-6C-3 = A (P5, P7):** `detail.strategy` ghi ở **mọi** đường điểm 4 khi `EVAL_MODE`; `audit_check` chấp nhận `decided_by=rule` + `policy_decision` NULL **chỉ** khi `rule_only` ∧ HITL.
+4. **Q-6C-4 = A + Q-6C-8 = A (P9):** `evidence_sent = min(len(evidence), MAX_EVIDENCE)`; `kb_gap = evidence_sent − evidence_trimmed ≤ 0`; `evidence_trimmed` không phải `int` thật (kể cả `bool`) hoặc âm → `kb_gap = True`.
+5. **Q-6C-5 = A:** `tests/fixtures/llm/vpn.py` thêm `b14_*` 0,9 (ngoài 6.2).
+6. **Q-6C-6 = A:** c15/c18 ở mức chuỗi node trong bộ nhớ, gateway thật, đi từ câu người dùng ở B2/B3 tới B14 (không e2e testcontainers).
+7. **Q-6C-9 = A (mới):** trước B14, B12 gọi lại `check_facts(action.facts)` và đòi `action.type ∈ PARAMS_BY_ACTION`; lệch → E9 (lỗi code — không rơi vào nhánh lỗi estimator `llm_layer_disabled`), estimator không được gọi.
+8. **Q-6C-10 = A (mới, D-42 chặt hơn):** B17 `llm_auto` đòi thêm `risk.calibrated_prob is not None` — LLM-AUTO chưa hiệu chỉnh không thực thi kể cả khi state bị ghi sai (D-38 ở cửa thực thi). Không sửa `ticket_state.py`. **Q-6C-11 = A:** `risk` dạng dict hỏng ở B17 → E9, 0 ghi, 0 `begun`.
+9. **P8 (N1):** mẫu dùng `[0-9]` thay `\d`; `duration_days` 1…999; khoá trượt mẫu thì **bỏ** (không ném).
+10. **TQ-4:** `settings.py` không import `app.risk.calibrator` (import-linter); `VERSION_PATTERN` kiểm trong `load_calibrator` ở `open_runtime` (vẫn trước DB).
+11. **Test cũ đổi kỳ vọng:** `test_gate3_vpn.py` 3 ca (h11, h11@20:00, LAP-9999) E5 `llm_layer_disabled` → `llm_high_risk` + `risk_decided`; es2 (N1), es9 (+`evidence_trimmed`) của 6B; `test_b12_assess.py:150` chỉ tên + docstring. Script cổng, `eval/`, preset, frontend, seed M9: không sửa.
+12. **6.5 mutation:** thêm M-6C-10 (bỏ chặn `evidence_trimmed` sai kiểu), M-6C-11 (bỏ `check_facts` trước B14), M-6C-12 (bỏ kiểm `type`), M-6C-13 (bỏ vế `not verdict.matched` trong `via_llm` → 3 ca c11 đỏ), M-6C-14 (bỏ vế `calibrated_prob` → test Q-6C-10 đỏ). M-6C-6 bị **c5 + c18** bắt (không phải c9 — c9 ở mức node tự dựng state có sẵn hash). M-6C-5 đỏ ở c15 + c16. `mutate_4a.py` M-S0-5 đồng bộ chuỗi gốc.
+
+**Ghi nhận (không sửa ở 6C):**
+- **N3:** `llm_cache` lưu cả `rationale` khi EVAL (`llm/client.py`, ngoài phạm vi).
+- **N7 (mới):** tên khoá facts lạ lọt vào `audit.detail.exception`/log (`FactKeyViolation` dùng chung với B11) — vô hại khi khoá do code đặt; **phải lọc** nếu sau này khoá đến từ đầu ra LLM.
+- **Khởi động từ chối:** API → runtime 503 ở route ticket/duyệt, tiến trình không thoát; **`/api/health` vẫn HTTP 200** (`status: ok`, `runtime: down`, cache 10 s của A4 không đổi) — mã HTTP chỉ theo phụ thuộc DB/Qdrant/mock/ml; worker thoát. → báo M9.
+- **`llm_only` (EVAL):** không chạy luật ở B12 nên ca `deny` có thể vào B15; B17 vẫn chặn — đúng mục đích đo "chỉ LLM, không luật".
+- Họ §8.2 "mở khoá không do nhập sai" trong c18 khoá tài khoản tạm bằng `set_lock` trong bộ nhớ (không sửa `seed.json`); không họ nào ra rule với seed hiện có.
+
+**Báo M9 (Dương) — gộp vào tin Phase 5 gửi sau 17/10:** mã E5 mới `llm_high_risk` (`event="risk_decided"`); khoá `detail` điểm 4 mới (`calibrated_prob`, `thresholds`, `factors`, `kb_gap`, `calibrator_version`, `strategy` khi EVAL); `decided_by` NULL ở `full_auto` (EVAL, `detail` đúng 3 khoá `strategy`, `route`, `policy_sha256`); `/api/health` 200 khi runtime down.
+
+**Xác nhận (cổng 6):** Quân chạy `make verify G=0` trên máy mình + đọc bảng c15 (canary) và c9–c11 (B17).
+
+
 ---
 
-## 7. Chặng 6D — probe + cổng 6 (khung, tầng B, Sonnet)
+## 7. Chặng 6D — công cụ đọc lý do + probe p (tầng B, Sonnet, 1 DỪNG)
 
-1. `scripts/probe_p_distribution.py`: chạy `hybrid` với `EVAL_MODE=true`, `LLM_CACHE_MODE=eval` trên ~30 kịch bản D2 mà `rule_coverage.py` báo "none"; đọc `raw_prob` từ điểm log 4; vẽ histogram (PNG + CSV); quy tắc **"> 60 % giá trị (làm tròn 2 chữ số) dồn vào 2 mức → khuyến nghị `sampling_k5`"** [Chốt]; in kết luận. **Chạy thật ở mốc G** bởi người không xây M5 (Duy Anh); Tuấn Anh ghi `p_method` vào `policy.json` theo kết quả.
-2. `scripts/sample_reasons.py --n 10 --seed <số>`: lấy ngẫu nhiên 10 dòng điểm log 4 (cả luật lẫn LLM) của một lượt chạy ScriptedLLM trên D2, in **chỉ** `reason` (không in `expected_route`, không in điều kiện luật).
-3. **Quân** đọc 10 lý do, đánh dấu từng câu "hiểu được / không hiểu", ghi biên bản [Chốt cổng 6 thủ công]. Câu không hiểu → sửa mẫu `reason` (5.3) hoặc `description` luật.
-4. Checklist cổng 6 + "Chốt khi hiện thực" 6A–6D + `decisions.md` D-36…D-40, D-42.
+**Mục tiêu:** hai công cụ **chỉ đọc** cho phần **thủ công** của cổng 6: (a) lấy mẫu lý do rủi ro cho người không xây M5 đọc; (b) đo phân phối `raw_prob` để chọn `p_method`. Không đổi hành vi hệ thống.
+**Đầu vào:** 6C đã gộp (PR #44) — `m5-tuananh` fast-forward lên `dev-tuananh` sau gộp (phiếu phiên git). **Đầu ra:** 1 module + 2 vỏ script + test. Không node, không DB schema, không cấu hình, không prompt.
+**Nghi thức (tầng B):** PLAN ngắn trong MẪU A · **1 DỪNG** · mutation 1 lượt + md5 · security-reviewer cuối chặng (chỉ: không rò dữ liệu, chỉ đọc). **Model: Sonnet.** Worktree `-m5`, chỉ `make verify G=0`.
+**Sự thật code (soát `b7cb1a4`, 14/10):** dòng điểm log 4 = `audit_logs` có `(step, event) == ("B13/B14", "risk_decided")` (`audit/check.py:143`); đọc DB chỉ-đọc qua `audit/check.readonly_engine` + `load(engine, since=…)`; DSN theo Settings (`MONITOR_DATABASE_URL` → `DATABASE_URL`), không in DSN (khuôn `audit_check.main`); vỏ script khuôn `scripts/audit_check.py`. **Không có `matplotlib`** trong `pyproject` (không thêm phụ thuộc) → histogram dạng CSV + thanh chữ.
+
+### 7.1. P-x chốt trước
+
+| Mã | Chốt |
+|---|---|
+| P1 | **Một module** `backend/app/audit/m5_review.py` (cạnh `check.py`, tái dùng `readonly_engine`, `load`, `_since`); **không** đặt trong `app/eval` (gói T27/T29) hay `app/risk` (lõi M5 không đọc DB). Hàm thuần tách khỏi lớp DB để test không cần Postgres |
+| P2 | **`point4_rows(by_ticket) -> list[Point4]`** — `Point4(frozen)`: `ticket_id`, `decided_by` (`rule`/`llm`/None), `route`, `reason`, `raw_prob`, `p_method`. Chọn đúng bộ lọc điểm 4 của `check.py` (một nguồn: hằng `POINT4_KEY = ("B13/B14", "risk_decided")` dùng chung — sửa `check.py` chỉ để dùng hằng, không đổi logic) |
+| P3 | **`sample_reasons(rows, *, n, seed, min_llm) -> list[str]`:** bỏ trùng theo **nguyên văn** `reason` (giữ lần đầu theo `log_id`); lấy ngẫu nhiên `random.Random(seed)`; cố gắng ≥ `min_llm` câu `decided_by="llm"` nếu có đủ, phần còn lại từ luật; thiếu thì lấy hết và báo số thật. Trả **chỉ chuỗi** `reason` — không `ticket_id`, không `route`, không `rule_id`, không `expected_route` |
+| P4 | **`template_reasons() -> list[str]`:** 4 mẫu `reason` của 5.3 (đã hiệu chỉnh; chưa hiệu chỉnh; hạ AUTO → HITL do `kb_gap`; `hybrid_guarded` + allow) dựng bằng **chính hàm của `risk/strategy.py`** với số ví dụ cố định (không viết lại chữ) — để người đọc thấy cả đường HITL/AUTO mà stack (chưa hiệu chỉnh, preset 0,9) không sinh ra |
+| P5 | **Vỏ `scripts/sample_reasons.py --since <ISO> --n 10 --seed <số> [--min-llm 3] [--templates] [--key-out <file>]`:** in danh sách đánh số 1…n (+ 4 mẫu nếu `--templates`, đánh dấu "mẫu"); `--key-out` ghi riêng file `số → ticket_id, decided_by, route` cho **Tuấn Anh** đối chiếu (không đưa người đọc). Mã thoát: 0 đủ n; 1 thiếu (in số thật); 2 lỗi DB (chỉ in tên lớp lỗi) |
+| P6 | **`concentration(values, *, top=2, threshold=0.60) -> Concentration`:** làm tròn 2 chữ số, đếm tần suất, `share = tổng 2 mức nhiều nhất / n`; `recommend = "sampling_k5" if share > threshold else "self_report"` [Chốt "> 60 %" — **bằng 60 % → `self_report`**]; `n < 20` → `recommend = None` ("không đủ dữ liệu"); NaN/ngoài [0, 1] → `ValueError` |
+| P7 | **Vỏ `scripts/probe_p_distribution.py --since <ISO> [--csv <file>]`:** lấy `raw_prob` của dòng điểm 4 `decided_by="llm"`; in bảng 10 bin (0,0–0,1 … 0,9–1,0) dạng thanh `#`, `n`, 2 mức nhiều nhất + `share`, khuyến nghị; `--csv` ghi `bin_lo,bin_hi,count`. **Nếu `Settings.llm_backend == "scripted"`** → in dòng cảnh báo đầu tiên "DỮ LIỆU GIẢ (ScriptedLLM) — không dùng để chọn p_method" và mã thoát 3 (vẫn in bảng) |
+| P8 | **Chỉ đọc:** mọi truy vấn qua `readonly_engine`; không ghi file nào ngoài `--csv`/`--key-out` người dùng chỉ định; không in DSN, không in `.env`, không in `detail` thô |
+| P9 | **Không đụng:** node, wiring, Settings, `policy.json`, prompt, preset, migration, `app/monitor/*`, `app/eval/*`, `app/risk/*` (chỉ **gọi** hàm của `strategy.py`), `pyproject.toml`/`uv.lock` |
+
+### 7.2. File
+
+```
+backend/app/audit/m5_review.py            # P1–P4, P6 (+ async load_point4(engine, since))
+backend/app/audit/check.py                # chỉ thêm hằng POINT4_KEY và dùng nó (P2)
+scripts/sample_reasons.py                 # P5 (vỏ, khuôn audit_check.py)
+scripts/probe_p_distribution.py           # P7 (vỏ)
+backend/tests/unit/test_m5_review.py      # r1–r10
+backend/tests/integration/test_m5_review_pg.py   # r11 (testcontainers)
+scripts/mutation/mutate_6d.py
+```
+
+### 7.3. Test
+
+| # | Test | Đạt khi |
+|---|---|---|
+| r1 | `point4_rows` | chỉ lấy dòng `("B13/B14","risk_decided")`; dòng điểm 3/7/8 bị bỏ; giữ `decided_by` NULL (full_auto) |
+| r2 | Bỏ trùng | 6 dòng cùng 1 `reason` + 4 câu khác → tối đa 5 câu khác nhau |
+| r3 | Tất định | cùng `seed` → cùng danh sách; khác `seed` → khác (trên ≥ 20 câu) |
+| r4 | `min_llm` | 3 câu llm + 20 câu luật, `n=10, min_llm=3` → đủ 3 llm; 1 câu llm → 1 llm + 9 luật, báo thiếu |
+| r5 | Không rò | đầu ra (và stdout của vỏ) **không** chứa `ticket_id`, `route`, `rule_id`, `R0`–`R20`, khoá `expected_route` — kiểm bằng chuỗi canary đặt trong các trường đó |
+| r6 | `template_reasons` | 4 câu; khớp **từng ký tự** với `reason` do `strategy.decide` sinh ở cùng tham số (không chép tay chuỗi) |
+| r7 | `concentration` biên | 6/10 giá trị ở 2 mức (= 60 %) → `self_report`; 7/10 → `sampling_k5`; n = 19 → `None`; [0,9]×20 → `sampling_k5`, share 1,0 |
+| r8 | Làm tròn | 0,904 và 0,896 cùng mức 0,90 |
+| r9 | Đầu vào xấu | NaN, 1,2, −0,1 → `ValueError` (thông điệp không chứa giá trị) |
+| r10 | Cảnh báo dữ liệu giả | `llm_backend="scripted"` → dòng cảnh báo đầu + mã 3; `"real"` → không cảnh báo |
+| r11 | Postgres thật (chỉ đọc) | chèn 12 dòng audit (luật + llm + NULL) → `load_point4` trả đúng; thử `INSERT` qua engine → lỗi `read_only_sql_transaction` |
+
+### 7.4. Mutation (1 lượt, md5)
+
+| Mã | Phá | Test phải đỏ |
+|---|---|---|
+| M-6D-1 | `share >= threshold` | r7 |
+| M-6D-2 | Bỏ bỏ-trùng | r2 |
+| M-6D-3 | Đầu ra kèm `route` | r5 |
+| M-6D-4 | Bỏ cảnh báo ScriptedLLM | r10 |
+| M-6D-5 | Bỏ làm tròn 2 chữ số | r8 |
+| M-6D-6 | Engine không READ ONLY | r11 |
+
+### 7.5. DỪNG
+
+**DỪNG duy nhất:** code + test + mutation (6/6) + security-reviewer (chỉ đọc; không rò `ticket_id`/route/luật/DSN; không ghi DB). `make verify G=0` trong `-m5`. Commit cục bộ khi được bảo → phiếu push + PR → gộp (phiên git).
+
+### 7.6. Sau 6D — phần thủ công của cổng 6
+
+1. **Đọc lý do (Quân) [Chốt cổng 6]:** sau lượt `G=2345` chung (17/10 — DB stack có ticket của gate 3/4/5), Tuấn Anh chạy (khuôn `audit_check.py` — trong container backend hoặc trên máy với `PYTHONPATH=backend`): `sample_reasons.py --since <giờ bắt đầu lượt> --n 10 --seed <số> --min-llm 3 --templates --key-out <file riêng>` → gửi Quân **chỉ** danh sách câu (10 + 4 mẫu). Quân đánh dấu từng câu "hiểu được / không hiểu" + 1 dòng góp ý, ký biên bản. Câu không hiểu → sửa mẫu `reason` (5.3, chặng sau) hoặc `description` luật (báo Phase 5). Dương, Duy Anh **không** nhận danh sách này (D-43).
+2. **Probe p (mốc G, LLM thật):** người không xây M5 (Duy Anh) chạy `hybrid` + `EVAL_MODE=true` + `LLM_CACHE_MODE=eval` trên ~30 kịch bản D2 mà `rule_coverage.py` báo "none" → `probe_p_distribution.py --since … --csv …` → Tuấn Anh ghi `m5.p_method` vào `policy.json` theo khuyến nghị; ghi vào "Dồn về mốc G" của PROGRESS. Chạy trên ScriptedLLM chỉ để thử công cụ (mã 3).
+3. **Checklist cổng 6** (phiên Phase 6 giữ, `claude/` Project): tự động 1.1 (6A dm1–dm8; 6B st15; 6C c1, c3–c5, c15, c18) · mutation 6A 12/12, 6B 9/9, 6C 14/14, 6D 6/6 · xác nhận người: Dương (dm3–dm8, #32), Duy Anh (6B verify), Quân (6C c9–c11, c15 + biên bản 10 lý do) · probe → mốc G · spec "Chốt khi hiện thực" 6A–6D · `decisions.md` D-36…D-40, D-42 (Phase 5 ghi).
 
 ---
 
@@ -655,15 +748,16 @@ Ca "không luật nào khớp" trên stack/ScriptedLLM nay đi estimator thật:
 |---|---|---|---|
 | 6A | ~3 giờ, 09/10 (worktree `-m5`) | 4d commit | Dương soát số (issue #32) |
 | 6B | ~5 giờ, DỪNG 1 10/10, DỪNG 2 11/10 | 6A, P12 chốt | Duy Anh chạy verify |
-| 6C | ~6 giờ; MẪU A 14/10 · DỪNG 1 17/10 · DỪNG 2 18/10 (T20b DỪNG 15, 16); gộp sau T20b | 6B, **T24**, Q-6-8 = C | Quân chạy `make verify G=0` + đọc c9–c11, c15; G=2345 qua phiếu stack sau gộp |
-| 6D | ~2 giờ, ~15/10 | 6C, D2 | Quân đọc lý do; probe thật ở mốc G (Duy Anh) |
+| 6C | DỪNG 1 + DỪNG 2 14/10 (kéo sớm — Phase 5 đồng ý tin #16–#18); PR #44; chạy thử `G=2345` trên `pull/44/merge` 15–16/10; gộp trước 16/10 21:00 | 6B, **T24**, Q-6-8 = C | Quân chạy `make verify G=0` + đọc c9–c11, c15; lượt `G=2345` chung 17/10 (cổng 5 + mốc main) |
+| 6D | ~2 giờ, mở sau khi #44 gộp (~16–17/10) | 6C gộp; đọc lý do sau lượt `G=2345` 17/10; probe thật ở mốc G | Quân đọc 10 lý do + 4 mẫu; probe thật (Duy Anh) |
 
-Cổng 6 đạt khi: phần tự động 1.1 xanh; mutation 6A ×1, 6B ×2, 6C ×2; Quân ký biên bản đọc lý do; probe ghi vào "Dồn về mốc G" của PROGRESS; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-36…D-40, D-42.
+Cổng 6 đạt khi: phần tự động 1.1 xanh; mutation 6A ×1, 6B ×2, 6C ×2, 6D ×1; Quân ký biên bản đọc lý do; probe ghi vào "Dồn về mốc G" của PROGRESS; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-36…D-40, D-42.
 
 ## 9. Nhật ký
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
+| 14/10/2026 | 1.1 | 6C hiện thực (`f030926` + `b7cb1a4`, PR #44): mục 6.9 "Chốt khi hiện thực" (Q-6C-1…12, mutation 14/14, N7, health 200, báo M9). Mục 7 (6D) viết chi tiết: `audit/m5_review.py` + 2 script chỉ đọc, P1–P9, r1–r11, M-6D-1…6, phần thủ công cổng 6 (Quân đọc 10 lý do + 4 mẫu; probe ở mốc G; checklist). Lịch 8 cập nhật |
 | 13/10/2026 | 1.0 | Mục 6 (6C) viết chi tiết trên `457239d` (sau T24): sự thật code 6.0, P1–P12 (chiến lược + `check_strategy` cả API/worker, khối `m5`, B12 đường LLM, `llm_high_risk`, `full_auto` C, điểm 4 + lineage, B17 D-42, `audit_check`, N1 danh sách trắng gồm `target`/`requested_for`, N4 `trimmed_evidence`, calibrator, N6 preset), hồi quy, 18 test, 9 mutation, 8 bất biến, 2 DỪNG. Q-6-8 chuyển 6.8 |
 | 10/10/2026 | 0.9 | 6B hiện thực (`d8e3cbe` + `6fda378`): mục 5.11 "Chốt khi hiện thực" + nợ N1–N6 chuyển 6C. Q-6-8 chốt **C** (Tuấn Anh 10/10): `decided_by` NULL + `detail.strategy = "full_auto"`; thêm 3 điều kiện bắt buộc cho 6C (mục 6.8). Không đổi mục 4–5 |
 | 09/10/2026 | 0.8 | Soát mục 5 trên `fe61fa3` (+ T22a DỪNG 1 `6ab716e`; soát lại 21:30 trên `2ffb005` = T22a đã gộp: không đụng `llm/`, `config/prompts`, `config/scripted`, `risk/estimator.py`, `graph/`; `mutate_3h.py` chỉ đổi dòng 110 `_TARGET` — M-3h-9 `_ESTIMATE` nguyên; 6B mở trên `2ffb005`): P1 — estimator giả không ở `tests/fakes` mà `NodeDeps` ở `app/graph/fakes.py`; thêm file giả mới; P12 chốt 0,9; thêm es10 (test d10 chỉ quét `graph/nodes/`). Các chỗ khác của mục 5 khớp code: `SCHEMAS` dict (`llm/schemas.py:91`), 6 prompt + preset `default.yaml`/`vpn.yaml`, `test_llm_prompts.py:68` đếm 6 + `TABLE_7_4` (:42) + `…schema_set_has_six_classes` (:84), 3 test preset tồn tại, `llm/context._evidence` đòi 5 khoá, `ChunkRef` (`domain/ticket_state.py:33`) có `chunk_id…excerpt`, `LlmPort.complete` (`llm/ports.py:47`), `cache_key` (`llm/cache.py:28`), ScriptedLLM nhận kịch bản dạng hàm (`providers/scripted.py:69`) |
