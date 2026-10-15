@@ -1,0 +1,37 @@
+id: HB14-v2
+family: HB14
+source: ho_bo_sung
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-15T09:40:00+07:00'
+faults: []
+turns:
+- IT gia hạn giúp mình quyền ở engineering/specs 180 ngày, dự án còn kéo dài
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-003
+  action:
+    type: extend_permission
+    target: folder:engineering/specs
+    requested_for: nv002
+    params:
+      duration_days: 180
+  facts:
+    resource_sensitivity: medium
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+    existing_permission_level: write
+labels:
+  annotator_1: null
+  annotator_2: null

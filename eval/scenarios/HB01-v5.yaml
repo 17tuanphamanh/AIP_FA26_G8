@@ -10,6 +10,8 @@ at: '2026-10-07T13:15:00+07:00'
 faults: []
 turns:
 - reset pw giup nv001 voi a, user nay bao quen pass
+- on_question_about: account_type
+  reply: tai khoan dang nhap Windows (AD)
 - on_confirm: true
 gold:
   intents:
@@ -24,6 +26,8 @@ gold:
     type: reset_password
     target: user:nv001
     requested_for: nv001
+    params:
+      account_type: ad
   facts:
     target_account_privilege: standard_user
     target_is_service_account: false

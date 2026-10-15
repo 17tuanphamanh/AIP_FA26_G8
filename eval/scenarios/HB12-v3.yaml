@@ -1,0 +1,37 @@
+id: HB12-v3
+family: HB12
+source: ho_bo_sung
+requester:
+  user_id: eng_head
+  role: employee
+  dept: engineering
+  tenure_days: 2600
+at: '2026-10-14T10:25:00+07:00'
+faults: []
+turns:
+- email cua minh bi admin khoa, khong phai do sai pass, mo lai giup minh
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-002
+  action:
+    type: unlock_account
+    target: user:eng_head
+    requested_for: eng_head
+    params:
+      account_type: email
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: true
+    target_lock_reason: admin
+labels:
+  annotator_1: null
+  annotator_2: null

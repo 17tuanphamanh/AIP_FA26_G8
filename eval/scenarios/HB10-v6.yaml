@@ -1,0 +1,37 @@
+id: HB10-v6
+family: HB10
+source: ho_bo_sung
+requester:
+  user_id: sales_head
+  role: employee
+  dept: sales
+  tenure_days: 2400
+at: '2026-10-13T15:30:00+07:00'
+faults: []
+turns:
+- 'anh gửi yêu cầu thay nv005: đặt lại mật khẩu email công ty cho bạn ấy'
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  - KB-ACC-004
+  action:
+    type: reset_password
+    target: user:nv005
+    requested_for: nv005
+    params:
+      account_type: email
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: false
+labels:
+  annotator_1: null
+  annotator_2: null

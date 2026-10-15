@@ -33,6 +33,7 @@ gold:
     same_department: true
     has_permission_record: true
     target_user_status: active
+    existing_permission_level: read
 labels:
   annotator_1: null
   annotator_2: null

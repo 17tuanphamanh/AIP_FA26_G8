@@ -1,0 +1,39 @@
+id: HB11-v6
+family: HB11
+source: ho_bo_sung
+requester:
+  user_id: hr_head
+  role: employee
+  dept: hr
+  tenure_days: 2800
+at: '2026-10-14T15:30:00+07:00'
+faults: []
+turns:
+- mình cần mở khoá tài khoản công ty, bị khoá tự động vì lâu không đăng nhập
+- on_question_about: account_type
+  reply: tài khoản đăng nhập Windows (AD)
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-002
+  action:
+    type: unlock_account
+    target: user:hr_head
+    requested_for: hr_head
+    params:
+      account_type: ad
+  facts:
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+    target_account_locked: true
+    target_lock_reason: inactivity
+labels:
+  annotator_1: null
+  annotator_2: null
