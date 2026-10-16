@@ -5525,7 +5525,7 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
 PLAN-V16 duyệt 16/10 (kèm 5 sửa: hết hạn → INFO; `conclusion` "" và "null" = chưa có kết luận; giữ `from None`; canary trên
 LogRecord gốc; liệt kê P6). Q-V16-1 có `revoke=<enum>`; Q-V16-2 "bỏ qua (không có git)"; Q-V16-3 13 mục untracked trong
 `docs/` không thuộc V16. **Không đổi hành vi xác thực**: cùng 401, cùng `{"detail":"unauthorized"}`, cùng `WWW-Authenticate: Bearer`,
-cùng điều kiện nhận token. Chưa commit.
+cùng điều kiện nhận token. Commit `68c7f7d` (dev-tuananh, chưa push).
 
 - **Log lý do 401** (`auth/service.py` `_reject`): mỗi đường 401 của `validate_access` ghi đúng 1 dòng
   `validate_access 401 reason=<mã>[ revoke=<enum>] cached=<true|false>`. Mã: `token_invalid:<chuỗi TokenError>`, `session_missing`,
@@ -5562,7 +5562,11 @@ cùng điều kiện nhận token. Chưa commit.
   Soát lại riêng diff `tokens.py` bản cuối (có `_skew`, Q-V16-5): (a)–(d) đều PASS; `_skew` chỉ có thể ném OverflowError (đã bắt);
   lưu ý thông tin (không sửa): claim lớn nhưng vừa float (vd 10**300, phải có khoá ký) → thông điệp dài ~300 chữ số; biên exp == now
   hiện "hết hạn (+0.000s)".
-- **Verify trên stack**: chưa chạy (Bước 6, sau commit).
+- **Verify trên stack** 16/10 17:50:53–18:41:08 (`make verify G=2345` ngoài sandbox, HEAD `68c7f7d`, dirty=13 = 13 mục untracked
+  `docs/`): **KẾT LUẬN XANH**. lint PASS; test backend **6634 passed** (đủ integration + e2e) · mock 106 · ml 123 (5 deselected);
+  gate2 **91/0**; gate3 **78/0** (ngoài giờ); gate4 **73/0** (g4-10 PASS lượt này); gate5 **227/0**; bước 11 KB thật
+  `kb_version=3362c39b…`; bước 8 trả về `.env` PASS; bước 9 BỎ QUA "chưa có CI cho HEAD 68c7f7d; CI của HEAD; cây có 13 thay đổi
+  chưa commit". Không cổng nào đỏ → không sinh `run-*-step<N>-logs.txt`. Log: `.verify/run-20261016-175053.log`, `.verify/summary.txt`.
 - **Spec cần sửa** (chỉ liệt kê): `build/phase4-thiet-ke-chi-tiet.md` mục 4.4 — dòng bước 9 (`--branch … -L 1` → `--commit HEAD` +
   6 ca ánh xạ), thêm "cổng đỏ → lưu `run-*-step<N>-logs.txt` trước bước 8", mẫu summary thêm dòng trỏ log; `build/phase5-thiet-ke-chi-tiet.md`
   mục 7.9/7.11 (Q-T24-1) — file log bước 12 khi gate5 đỏ; `build/nen-tang/P6-auth-bao-mat.md` mục 7 (dòng "Log", :295) — thêm
