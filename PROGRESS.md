@@ -5478,7 +5478,7 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
   106, ml 123 (5 deselected); unit 5769 passed / 4 skipped; mutation lượt 2 14/14, md5 khớp (dòng CI là lượt cũ trên remote — 6C chưa push).
 - **Chờ:** đã gộp `5f2ece2` (PR #44) vào `dev-tuananh`; chờ Quân xác nhận #44 (`make verify G=0` trên máy mình + đọc c9–c11, c15).
 
-## Phase 6 — chặng 6D: công cụ đọc lý do + probe p (tầng B) (15/10/2026, 1 DỪNG trên `78a25cd` — verify G=0 xanh, mutation 6/6; chưa commit) — chưa tính qua cổng 6
+## Phase 6 — chặng 6D: công cụ đọc lý do + probe p (tầng B) (15/10/2026, 1 DỪNG `8c3ce2b` trên `78a25cd` — verify G=0 xanh, mutation 6/6; đã gộp `1b4b16b` (PR #47)) — chưa tính qua cổng 6
 
 - **Việc (spec phase6 v1.1 mục 7):** `backend/app/audit/m5_review.py` (`Point4`, `point4_rows`, `pick`/`sample_reasons`,
   `template_reasons`, `concentration`, `histogram`, `probe_report`, `open_engine` READ ONLY, `load_point4`, `sample_main`, `probe_main`,
@@ -5504,7 +5504,7 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
   (bí mật đều `SecretStr`); mutation khôi phục bằng `write_text` (CRLF trên Windows); exception ngoài dự kiến thoát 1 trùng nghĩa "thiếu".
 - **verify (15/10/2026):** `make verify G=0` XANH trên HEAD `78a25cd` dirty=9 — lint PASS; backend 6587 passed / 4 skipped, mock
   106, ml 123 (5 deselected) (dòng CI là lượt cũ trên remote — 6D chưa push).
-- **Chờ:** commit cục bộ khi được bảo → PHIẾU push + PR `m5-tuananh` → `dev-tuananh` + gộp (phiên git).
+- **Chờ:** cổng 6 — Quân đọc 10 lý do + 4 mẫu; xác nhận người 6A (Dương #32), 6B (Duy Anh), 6C (Quân #44); probe p ở mốc G; checklist ở Project claude/checklist-cong-6.md.
 
 ## Phase 5 — Cổng 5 ĐẠT (15/10/2026) — lượt chính thức + thành viên chạy trên máy riêng
 
