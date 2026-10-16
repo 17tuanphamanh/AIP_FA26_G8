@@ -196,7 +196,10 @@
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$s9m1jPGOXPWv2X2hn3AcUQ$mfXP3aUpPEAKHTMvuztF2tWTnX5Unxn5Ve9TtmyT+CQ",
       "accounts": {
         "ad": {},
-        "email": {}
+        "email": {
+          "locked": true,
+          "lock_reason": "admin"
+        }
       },
       "lockouts": []
     },
@@ -402,7 +405,10 @@
       "disable_reason": null,
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$/AZqt6sWPrgtshr1HLuIBQ$HSyjhS0rEpcRIPsdnAcS/HJRuNTvx9MVaqCP0WzeazA",
       "accounts": {
-        "ad": {},
+        "ad": {
+          "locked": true,
+          "lock_reason": "inactivity"
+        },
         "email": {}
       },
       "lockouts": []
@@ -444,7 +450,7 @@
       "device_id": "LAP-0417",
       "owner_id": "nv002",
       "kind": "laptop",
-      "os": "Ubuntu 24.04",
+      "os": "Windows 11",
       "registered": true,
       "registered_days_ago": 700
     },
@@ -749,7 +755,7 @@
       "path": "engineering/specs",
       "level": "write",
       "granted_days_ago": 700,
-      "expires_in_days": null
+      "expires_in_days": 10
     },
     {
       "user_id": "nv002",

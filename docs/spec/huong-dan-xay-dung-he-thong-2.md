@@ -4,6 +4,8 @@
 
 *Cập nhật 25/09/2026: sửa công thức `t_low*` ở mục 7.3; thêm mục 18 trỏ sang bộ `build/`.*
 
+*Cập nhật 10/10/2026 (Phase 6, G6-3): "hỏi nhiều lần" thống nhất k = 5 ở mục 7.2, 14.2, 15.1, 15.2 (trước ghi 7); mục 9 — 8 test toán quyết định hiện thực ở Phase 6 chặng 6A, không có sẵn trong scaffold.*
+
 ---
 
 ## Mục lục
@@ -553,7 +555,7 @@ Nhiều luật cùng khớp → luật chặt nhất thắng (`deny` > `approval
 | Cách | Làm thế nào | Ưu | Nhược |
 |---|---|---|---|
 | Tự nêu (gốc) | LLM trả con số trong JSON | Một lời gọi, mọi provider | Giá trị thô (0.1/0.7/0.9), hiệu chỉnh kém |
-| Hỏi nhiều lần | Hỏi 7 lần, temperature 0.7; p = tỉ lệ lần trả lời "cần người" | Không cần logprob, p mịn hơn | Tốn 7 lời gọi |
+| Hỏi nhiều lần | Hỏi 5 lần (k = 5), temperature 0.7; p = tỉ lệ lần trả lời "cần người" | Không cần logprob, p mịn hơn | Tốn 5 lời gọi |
 | Xác suất token | Trả lời một token "Có"/"Không"; p = xác suất chuẩn hóa của "Có" | Mịn nhất, một lời gọi | Cần provider cho đọc logprob (LLM local có) |
 
 Cách nào cũng qua cùng calibrator Platt hoặc temperature scaling, fit trên tập calibration. Vì vậy M5 luôn hoàn chỉnh dù RQ2 có được làm hay không.
@@ -641,7 +643,7 @@ Kiểm thử tách hai việc: test chứng minh hệ thống chạy đúng lu�
 
 **Công cụ:** pytest, respx (giả lập HTTP), FakeClock (tua giờ để test hạn 30 phút/24 giờ/48 giờ trong vài giây), mock `/_admin/faults` (bơm lỗi 500, 429, timeout), ScriptedLLM.
 
-Hiện đã có sẵn 245 test hợp đồng và 8 test toán quyết định chạy xanh trong scaffold. Chi tiết: `docs/03-quality/testing.md`.
+Hiện đã có sẵn 245 test hợp đồng trong scaffold; 8 test toán quyết định định nghĩa ở `build/phase6-thiet-ke-chi-tiet.md` mục 4.6, hiện thực ở Phase 6 chặng 6A (`test_decision_math.py` dm1–dm8). Chi tiết: `docs/03-quality/testing.md`.
 
 ---
 
@@ -794,7 +796,7 @@ Mục tiêu thiết kế lấy gấp 10 lần con số này: **110 ticket/giờ 
 |---|---|---|
 | LLM B2, B3, B10 (phân loại) | 3 lời gọi nối tiếp | 1–3 giây mỗi lời gọi |
 | LLM B10 trả lời hoặc B11 hỏi lại | 1 | 1–4 giây |
-| LLM B14 (chỉ khi không luật nào khớp) | 1, hoặc 7 nếu "hỏi nhiều lần" | 1–3 giây; 7 lời gọi chạy song song |
+| LLM B14 (chỉ khi không luật nào khớp) | 1, hoặc 5 nếu "hỏi nhiều lần" | 1–3 giây; 5 lời gọi chạy song song |
 | Embedding câu hỏi (CPU) | 1 | 0,1–0,3 giây |
 | Rerank 20 đoạn (CPU) | 1 | 1–3 giây — dễ thành điểm nghẽn |
 | Tool chẩn đoán gọi mock | 3 | vài chục ms |
@@ -850,14 +852,14 @@ Với đơn giá minh họa — fast 0,25/1,0 USD và strong 3/15 USD mỗi 1 tr
 - strong ≈ 1.200 token vào + 143 token ra ≈ 0,006 USD;
 - tổng ≈ 0,007 USD/ticket ≈ 8 USD/tháng cho 1.200 ticket (quy mô mục 14.1).
 
-Nếu B14 dùng "hỏi nhiều lần" (7 lời gọi), cộng thêm khoảng 0,012 USD/ticket. Chuyển vai trò fast sang LLM local làm phần fast gần như bằng 0, đổi lại cần GPU.
+Nếu B14 dùng "hỏi nhiều lần" (5 lời gọi), cộng thêm khoảng 0,008 USD/ticket. Chuyển vai trò fast sang LLM local làm phần fast gần như bằng 0, đổi lại cần GPU.
 
 ### 15.2. Chi phí thực nghiệm
 
 | Khoản | Ước lượng |
 |---|---|
 | Ma trận RQ1 + ablation: khoảng 10 lần chạy × 180 kịch bản | 180 × 10 × ~0,01–0,02 USD ≈ 20–40 USD |
-| RQ2 (tùy chọn): 3 cách lấy p, gồm "hỏi nhiều lần" 7 lời gọi, trên calibration + test | ≈ 10–20 USD |
+| RQ2 (tùy chọn): 3 cách lấy p, gồm "hỏi nhiều lần" 5 lời gọi, trên calibration + test | ≈ 10–20 USD |
 | Probe, sửa prompt trong lúc phát triển | ≈ 20–40 USD |
 | **Tổng** | **khoảng 50–100 USD với giá minh họa** |
 

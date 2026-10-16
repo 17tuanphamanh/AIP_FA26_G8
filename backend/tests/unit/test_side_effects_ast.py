@@ -20,6 +20,7 @@ SIDE_EFFECT_FUNCS = frozenset({
     "notify_user",
     "deadlines.set",
     "tickets.create_child",  # backend/app/db/tickets.py
+    "tickets.deliver_round",  # parent_wait — qua effects.once("notify_user") cùng transaction đánh dấu notice (T20b P7)
     "escalations.create",  # B20 — qua effects.once("escalation_create") (D-18)
     "security_events.record",  # B2, clarify_wait, confirm_wait — qua effects.once("security_event") (3e, 8.2)
     "runner.submit",

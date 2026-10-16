@@ -33,9 +33,10 @@ from app.domain.alerts import (
     bruteforce_alert,
     bruteforce_subject,
 )
-from app.monitor.window import bucket_start, day_start, hour_start
+from app.monitor.window import bucket_start, day_start, hour_start, week_start
 
 if TYPE_CHECKING:  # chỉ lấy KIỂU của luồng A (một nguồn); lúc chạy không nạp module I/O (sqlalchemy) vào luật thuần
+    from app.monitor.drift import DriftScore  # numpy — chỉ loader nạp
     from app.monitor.queries.business import WeightedRate
 
 type Every = Literal["minute", "hourly", "daily", "weekly"]
@@ -475,7 +476,7 @@ def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list
     """Luật 12 — tỉ lệ DÒNG audit step B2 do tầng LLM quyết của một ngày VN > 0,30, đúng cách `b2_llm_rate` (A2) đếm:
     `count(*)` dòng B2 có `layer_decided = 'llm'` hoặc event `guard_unavailable` / dòng B2 có `layer_decided` hoặc
     `guard_unavailable`, của lá tạo trong ngày — đếm dòng, không đếm lá phân biệt (một lá nhiều lượt B2 tính nhiều
-    lần). Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data` = `{r: b2_llm_rate(conn,
+    lần). Theo dòng audit: chốt Q-M9-B2-27 (PR #31, một nguồn với A2). `data` = `{r: b2_llm_rate(conn,
     *day_window(r, ctx.tz)) for r in daily_marks(ctx)}` (A2) — mỗi mốc vượt một draft, `window_start = r`
     (Q-M9-B2-15). Tập mốc lệch `daily_marks(ctx)` → `ValueError` (Q-M9-B2-20). Loader GĐ2 trả `Pending` tới Phase 5
     (`is_pending("b2_classifier")`, Q-M9-A2-8): Phase 3–4 chưa có injection-clf nên số ≈ 1,0 — báo mỗi ngày một điều
@@ -487,12 +488,12 @@ def b2_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list
 def b3_degraded(data: Mapping[datetime, float | None], ctx: RuleContext) -> list[AlertDraft]:
     """Luật 13 (D-32) — tỉ lệ DÒNG audit điểm log 1 (step B3, B4) do tầng LLM quyết của một ngày VN > 0,30, đúng cách
     `b3_llm_rate` (A2) đếm: `count(*)` dòng có `detail.layer = 'llm'` / dòng có `detail.layer` khác NULL, của lá tạo
-    trong ngày — đếm dòng, không đếm lá phân biệt. Tính theo dòng hay theo lá phân biệt: chờ chốt Q-M9-B2-27. `data`
+    trong ngày — đếm dòng, không đếm lá phân biệt. Theo dòng audit: chốt Q-M9-B2-27 (PR #31, một nguồn với A2). `data`
     như luật 12 với `b3_llm_rate`. Loader GĐ2 trả `Pending` tới Phase 5 (`is_pending("b3_cascade")`, Q-M9-9)."""
     return _degraded("b3_degraded", data, ctx)
 
 
-# ---- luật 7 `reflex_approval` (kế hoạch chung mục 6 luật 7; chốt Q-M9-B2-3, 6, 15 ở #14; Q-M9-B2-21 đề xuất cụm 4b) --
+# ---- luật 7 `reflex_approval` (kế hoạch chung mục 6 luật 7; chốt Q-M9-B2-3, 6, 15 ở #14; Q-M9-B2-21 chốt PR #31) -----
 
 REFLEX_MIN = 3  # ≥ 3 phiếu "< 5 giây" của một người trong một ngày
 REFLEX_SECONDS = 5.0  # view_duration < 5 (đúng 5,0 → không tính)
@@ -506,7 +507,7 @@ type ReflexKind = Literal["fast", "ambiguous", "normal"]
 class ApprovalDecision:
     """Luật 7 — một quyết định trên phiếu (gốc `approvals`, mỗi phần tử một phiếu) + `detail` dòng audit B16 khớp
     (loader GĐ2: LATERAL cùng ticket_id, `approval_result = status`, `created_at ≥ phiếu.created_at` — Q-M9-B2-6).
-    [Đề xuất] Q-M9-B2-23: dòng B16 còn phải có `created_at` TRƯỚC (nghiêm ngặt) `COALESCE(decided_at, created_at)` của
+    Q-M9-B2-23 (chốt PR #31): dòng B16 phải có `created_at` TRƯỚC (nghiêm ngặt) `COALESCE(decided_at, created_at)` của
     phiếu kế tiếp cùng ticket — phiếu thiếu B16 không mượn dòng của phiếu sau (mượn thì có thể xếp "bình thường" = sót).
     Với chặn trên, lệch đồng hồ (phiếu sau còn pending → mốc là `now()` của DB) chỉ làm mất dòng khớp → mơ hồ (báo thừa).
     Hạn chế đã biết của MỐC DƯỚI Q-M9-B2-6 (nêu trong PR): dòng B16 theo đồng hồ app, `approvals.created_at` là `now()`
@@ -564,7 +565,7 @@ def reflex_approval(data: Sequence[ApprovalDecision], ctx: RuleContext) -> list[
 
     Đánh giá 7 mốc ngày (Q-M9-B2-15): mỗi mốc `r` lấy phiếu có `decided_at ∈ [r − 1 ngày, r)` (Q-M9-B2-3),
     `window_start = r` — chạy lại không trùng; worker chết qua vài mốc 02:00 vẫn đánh giá ngày bị lỡ. `data` = phiếu có
-    `decided_at ≥ daily_since(ctx)` (loader GĐ2; chặn trên nối B16 theo phiếu kế tiếp — [Đề xuất] Q-M9-B2-23).
+    `decided_at ≥ daily_since(ctx)` (loader GĐ2; chặn trên nối B16 theo phiếu kế tiếp — Q-M9-B2-23).
 
     subject = người quyết (`decided_by`); nhóm theo subject ĐÃ tính (Q-M9-B2-21: NULL và rỗng gộp vào `user:` — tách
     theo phiếu thì không bao giờ đủ 3). Báo thừa có chủ ý: thiếu B16 / sai kiểu → tính; hai phiếu nối tiếp của một
@@ -729,3 +730,87 @@ def breaker_open(data: Sequence[ToolSpan], ctx: RuleContext) -> list[AlertDraft]
                     )
                 )  # fmt: skip
     return _unique(drafts)
+
+
+# ---- luật 8 `drift`, chu kỳ tuần (B3 — chốt Q-M9-B3-1…11 ở #15, comment 12/10) -----------------------------------------
+#
+# Tuần đo của mốc `m` = `[m − 7 ngày, m)`, tuần mốc = `[m − 14 ngày, m − 7 ngày)` (Q-M9-B3-1 (a)); `W = week_start(now)`.
+# Job chạy 02:00 thứ Hai VN (cụm 4) — đo `[W, now)` thì chỉ có 2 giờ (cùng lý do Q-M9-B2-1). Đánh giá 2 mốc `W − 7 ngày`
+# và `W` (Q-M9-B3-7): lượt tuần bị lỡ vẫn được đánh giá, trễ một tuần; khoá theo mốc nên chạy lại không trùng. Phần "tuần
+# đo" của hai mốc không chồng nhau → không báo trùng một hiện tượng. Trừ ngày LỊCH theo `tz` (`days_before`), không trừ
+# 168 giờ trên UTC. Loader tính PSI (`drift.score`, `drift.score_rate`); luật chỉ so ngưỡng (Q-M9-B3-8).
+
+DRIFT_THRESHOLD = 0.2  # luật 8: PSI > 0,2 (bằng ngưỡng → không báo)
+WEEKLY_MARKS = 2  # Q-M9-B3-7: mốc W − 1 tuần và W
+WEEK_DAYS = 7
+# Q-M9-B3-2: 6 phân bố — tên là `subject` của cảnh báo (một nguồn cho luật, loader và dashboard).
+DRIFT_DISTRIBUTIONS: tuple[str, ...] = ("intent", "confidence", "top_score", "e3_rate", "escalation", "override")
+
+
+def week_window(m: datetime, tz: ZoneInfo) -> tuple[datetime, datetime]:
+    """Tuần ĐO của mốc `m`: `[m − 7 ngày lịch, m)` (tuần VN trọn kết thúc ở `m`)."""
+    return days_before(m, WEEK_DAYS, tz), m
+
+
+def baseline_window(m: datetime, tz: ZoneInfo) -> tuple[datetime, datetime]:
+    """Tuần MỐC của mốc `m`: `[m − 14 ngày lịch, m − 7 ngày lịch)` — tuần liền trước tuần đo (Q-M9-B3-1 (a))."""
+    return days_before(m, 2 * WEEK_DAYS, tz), days_before(m, WEEK_DAYS, tz)
+
+
+def weekly_marks(ctx: RuleContext) -> list[datetime]:
+    """Các mốc luật 8 đánh giá ở lượt này, CŨ → MỚI: `W − 7 ngày lịch`, `W` với `W = week_start(ctx.now, ctx.tz)`."""
+    w = week_start(ctx.now, ctx.tz)
+    return [days_before(w, WEEK_DAYS * k, ctx.tz) for k in range(WEEKLY_MARKS - 1, -1, -1)]
+
+
+@dataclass(frozen=True)
+class DriftWeek:
+    """Luật 8 — kết quả của MỘT mốc: PSI từng phân bố (`None` = một phía 0 mẫu, không đo được) + phân bố bỏ qua vì nguồn
+    pending (Q-M9-B3-3: chỉ bỏ phân bố đó, không bỏ cả luật). `scores` và `skipped` rời nhau, hợp lại đúng
+    `DRIFT_DISTRIBUTIONS` — luật kiểm, lệch là bug của loader (lặng lẽ thiếu một phân bố = bỏ sót)."""
+
+    scores: Mapping[str, "DriftScore | None"]
+    skipped: tuple[str, ...]
+
+
+@rule("drift", "weekly", audience=("manager",))
+def drift(data: Mapping[datetime, DriftWeek], ctx: RuleContext) -> list[AlertDraft]:
+    """Luật 8 — PSI của một phân bố giữa tuần mốc và tuần đo > 0,2 → Trưởng BP. Mỗi (mốc, phân bố) vượt một draft:
+    subject = tên phân bố, `window_start` = mốc `m` (không phải `ctx.now`). Bằng đúng 0,2 → không báo.
+
+    `data` = `{m: DriftWeek}` cho `m ∈ weekly_marks(ctx)` (loader `rules_data.load_drift`); tập mốc lệch → `ValueError`.
+    Phân bố: `intent` (lá tạo trong tuần), `confidence` (dòng audit B3/B4), `top_score` (dòng audit B8), `e3_rate`,
+    `escalation` (`escalation_rate_weighted(...).raw` của A1, số mẫu = số lá đã kết thúc), `override` (lá đã kết thúc có
+    dòng ghi đè) — mọi đếm ticket qua `v_leaf`.
+
+    Hạn chế đã biết:
+    - Chỉ bắt lệch TUẦN-SO-TUẦN, không bắt lệch chậm và đều qua nhiều tuần (Q-M9-B3-1 (a): tuần mốc cuốn chiếu).
+    - Q-M9-B3-6 (A): không đặt cỡ mẫu tối thiểu, chỉ bỏ khi một phía 0 mẫu; `detail` ghi số mẫu hai phía. Mô phỏng (hai
+      tuần cùng một phân bố, không lệch thật, 2000 lần): tỉ lệ PSI > 0,2 chỉ do ngẫu nhiên với 10 bin là 98% / 86% / 38% /
+      2% khi mỗi tuần 30 / 50 / 100 / 200 mẫu; với 2 bin là 7% khi 30, 2% khi 50 — ít dữ liệu thì báo nhầm nhiều.
+    - Số mẫu của `escalation` đếm bằng câu SQL riêng, job đọc READ COMMITTED → có thể lệch mẫu số của A vài lá (lá kết
+      thúc giữa hai câu); PSI vẫn tính trên đúng tỉ lệ của A."""
+    marks = weekly_marks(ctx)
+    if set(data) != set(marks):
+        raise ValueError("luật drift: mốc dữ liệu lệch weekly_marks")  # không in giá trị
+    drafts: list[AlertDraft] = []
+    for m in marks:
+        week = data[m]
+        names, skipped = set(week.scores), set(week.skipped)
+        if names & skipped or names | skipped != set(DRIFT_DISTRIBUTIONS):
+            raise ValueError("luật drift: phân bố lệch DRIFT_DISTRIBUTIONS")
+        for name in DRIFT_DISTRIBUTIONS:
+            score = week.scores.get(name)
+            if score is None:
+                continue  # bỏ qua vì pending, hoặc một phía 0 mẫu: không đo được, không phải lỗi
+            if score.psi > DRIFT_THRESHOLD:
+                drafts.append(
+                    AlertDraft(
+                        rule_id="drift", subject=name, window_start=m, severity="warning", value=score.psi,
+                        detail={
+                            "psi": score.psi, "threshold": DRIFT_THRESHOLD, "n_expected": score.n_expected,
+                            "n_actual": score.n_actual,
+                        },
+                    )
+                )  # fmt: skip
+    return drafts

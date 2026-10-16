@@ -108,6 +108,8 @@ class TicketState(TypedDict, total=False):
     children: list[str]
     parent_round: int  # chỉ ticket cha (D-31)
     awaiting: dict[str, str]  # chỉ ticket cha (D-31): ý đang chờ người dùng
+    # chỉ ticket cha (Phase 5 T20b P3): seed bền của từng con (bảng 5.2.3, trừ `requester_context`) — ghi ở B5 TRƯỚC khi con chạy
+    child_seeds: dict[str, dict[str, Any]]
     session_id: str
     turn_id: str
     # người gửi — do B1 chụp, chỉ đọc sau đó

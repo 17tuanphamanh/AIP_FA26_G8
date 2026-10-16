@@ -260,8 +260,7 @@ def test_degraded_threshold(rule_id: str, fn: DegradedFn, rate: float, n: int) -
 @pytest.mark.parametrize(("rule_id", "fn"), DEGRADED, ids=DEGRADED_IDS)
 def test_degraded_none_no_alert_no_failure(rule_id: str, fn: DegradedFn) -> None:
     """Mẫu số 0 dòng audit trong ngày (vd không có lá) → chỉ số None → 0 draft, KHÔNG ném lỗi (lỗi = luật vào
-    failed_rules mỗi ngày). Tỉ lệ đếm theo dòng audit như `b2_llm_rate`/`b3_llm_rate` (theo dòng hay theo lá phân
-    biệt: chờ chốt Q-M9-B2-27)."""
+    failed_rules mỗi ngày). Tỉ lệ đếm theo dòng audit như `b2_llm_rate`/`b3_llm_rate` (chốt Q-M9-B2-27)."""
     assert fn(at_marks({}), CTX) == []
 
 
@@ -1022,7 +1021,8 @@ def _is_type_checking(node: ast.If) -> bool:
 
 def test_rules_imports_queries_only_for_typing() -> None:
     """`rules.py` là hàm thuần, KHÔNG I/O: kiểu `WeightedRate` của luồng A chỉ import trong `if TYPE_CHECKING` — lúc
-    chạy không nạp `queries/*` (sqlalchemy, hàm truy vấn) vào luật."""
+    chạy không nạp `queries/*` (sqlalchemy, hàm truy vấn) vào luật. B3: `DriftScore` (`app.monitor.drift`, numpy) cũng chỉ
+    trong `TYPE_CHECKING` — API import `rules` để lấy `REGISTRY`, không cần numpy."""
     tree = ast.parse(inspect.getsource(rules))
     typing_only = {
         id(n) for block in ast.walk(tree) if isinstance(block, ast.If) and _is_type_checking(block)
@@ -1036,3 +1036,11 @@ def test_rules_imports_queries_only_for_typing() -> None:
     ]  # fmt: skip
     assert queries  # quét không rỗng: WeightedRate được import (cho kiểu)
     assert [n.lineno for n in queries if id(n) not in typing_only] == []
+    drift_imports = [
+        n for n in ast.walk(tree)
+        if (isinstance(n, ast.ImportFrom) and (n.module or "").startswith("app.monitor.drift"))
+        or (isinstance(n, ast.ImportFrom) and n.module == "app.monitor" and any(a.name == "drift" for a in n.names))
+        or (isinstance(n, ast.Import) and any(a.name.startswith("app.monitor.drift") for a in n.names))
+    ]  # fmt: skip
+    assert drift_imports  # quét không rỗng: DriftScore được import (cho kiểu)
+    assert [n.lineno for n in drift_imports if id(n) not in typing_only] == []

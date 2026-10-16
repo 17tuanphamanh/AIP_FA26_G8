@@ -91,7 +91,7 @@ def test_volume_deleting_commands_refused(cmd: str) -> None:
 
 @pytest.mark.parametrize("cmd", [
     "docker compose down", "docker compose restart backend", "docker compose kill -s SIGKILL backend",
-    "docker compose stop worker", "make up",
+    "docker compose stop worker", "docker compose start backend", "make up",
     "docker compose exec -T postgres psql -v ON_ERROR_STOP=1",  # -v của psql, không phải down
 ])  # fmt: skip
 def test_normal_commands_allowed(cmd: str) -> None:
@@ -259,3 +259,99 @@ def test_reads_after_202_always_wait_for_turn() -> None:
     assert not hasattr(gate2.Ctx, "settled") and "settled" not in waits
     assert waits["closed"] == {"expire", "late_click"}
     assert {"preflight", "_three_waits", "restart", "late_click", "_kill", "tc29"} <= waits["after_event"]
+
+
+# ---- Chế độ giả qua khởi động lại (lỗi thật verify G=2 lượt 1, 15/10/2026) -------------------
+# `up -d backend` sau SIGKILL nội suy lại `${FAKE_SCENARIO:-}` từ .env → .env không có FAKE_* là backend bị
+# tạo lại chạy node thật, kill-b15 + tc29 ra S_ESCALATED.
+
+
+class ModeRun(FakeRun):
+    """FakeRun + lệnh đọc chế độ giả lần lượt trả từng phần tử `modes` (phần tử cuối lặp lại); psql trả 0."""
+
+    def __init__(self, modes: list[str]) -> None:
+        super().__init__()
+        self.modes = modes
+
+    def __call__(self, cmd: list[str], stdin: str | None) -> tuple[int, str]:
+        if cmd[-1] == gate2.FAKE_MODE_SH:
+            self.calls.append(cmd)
+            return 0, self.modes.pop(0) if len(self.modes) > 1 else self.modes[0]
+        if "postgres" in cmd:
+            self.calls.append(cmd)
+            return 0, "0\n"
+        return super().__call__(cmd, stdin)
+
+
+class StubCtx(gate2.Ctx):
+    """HTTP + DB đóng sẵn; chỉ lệnh compose/make đi qua Shell thật (ModeRun ghi lại)."""
+
+    def login_all(self) -> None:
+        self.tokens = {gate2.APPROVER: {}, gate2.EMPLOYEE: {}}
+
+    def create(self, preset: str, label: str) -> str:
+        return f"tk-{preset}"
+
+    def health_up(self, timeout: float = 120) -> None:
+        pass
+
+    def after_event(self, ticket: str, turns_before: int, timeout: float = 30,
+                    interval: float = 0.5) -> dict[str, Any]:  # fmt: skip
+        return {"status": gate2.S_PENDING_APPROVAL, "final_state": None, "exit_code": None, "close_reason": None}
+
+    def post(self, path: str, body: Any, headers: Any) -> Any:
+        return type("R", (), {"status_code": 202})()
+
+    def turns(self, ticket: str) -> list[dict[str, Any]]:
+        return [{"turn_id": "u-1", "ended": False, "recover_attempts": 0}]
+
+    def ticket_lock_count(self, ticket: str) -> int:
+        return 0
+
+    def approvals(self, ticket: str) -> list[dict[str, Any]]:
+        return [{"approval_id": "a-1", "status": "pending", "decided_by": None}]
+
+    def effects(self, ticket: str) -> list[str]:
+        return ["approval_create"]
+
+    def audit(self, ticket: str) -> list[dict[str, Any]]:
+        return [{"step": "B3", "event": "intent_classified", "detail": {}}]
+
+
+def _stub(modes: list[str]) -> tuple[StubCtx, ModeRun, list[str]]:
+    run, out = ModeRun(modes), cast(list[str], [])
+    ctx = StubCtx(shell=Shell(COMPOSE.split(), run=run, echo=lambda _: None), http=None,  # type: ignore[arg-type]
+                  report=Report(echo=out.append), password="x")  # fmt: skip
+    return ctx, run, out
+
+
+@pytest.mark.parametrize("scenario", [gate2.kill, gate2.kill_b15])
+def test_kill_restarts_backend_with_start_not_up(scenario: Any) -> None:
+    ctx, run, out = _stub(["approval|40"])
+    scenario(ctx)
+    cmds = [" ".join(c) for c in run.calls]
+    killed, started = f"{COMPOSE} kill -s SIGKILL backend", f"{COMPOSE} start backend"
+    assert killed in cmds and started in cmds and cmds.index(killed) < cmds.index(started)
+    assert not any("up -d backend" in c for c in cmds)
+    assert any(line.startswith("PASS") and "chế độ giả giữ nguyên" in line for line in out)
+
+
+def test_kill_reports_fake_mode_lost_after_restart() -> None:
+    ctx, _, out = _stub(["approval|40", "|"])
+    gate2.kill(ctx)
+    assert any(line.startswith("FAIL") and "chế độ giả giữ nguyên" in line for line in out)
+
+
+def test_restart_all_fails_clearly_when_make_up_drops_fake_mode() -> None:
+    ctx, run, out = _stub(["approval|40", "|"])
+    gate2.restart_all(ctx)
+    cmds = [" ".join(c) for c in run.calls]
+    assert f"{COMPOSE} down" in cmds and "make up" in cmds  # vẫn dựng lại toàn bộ
+    assert any(line.startswith("FAIL") and "FAKE_SCENARIO" in line for line in out)
+
+
+def test_restart_all_passes_when_fake_mode_kept() -> None:
+    ctx, _, out = _stub(["approval|40"])
+    gate2.restart_all(ctx)
+    assert not any("FAKE_SCENARIO" in line for line in out)
+    assert any(line.startswith("PASS") and "chế độ giả backend giữ nguyên" in line for line in out)

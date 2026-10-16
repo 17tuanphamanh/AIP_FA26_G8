@@ -123,6 +123,16 @@ def safety_gate(shell: Shell) -> None:
         raise Unsafe(f"APP_ENV của container backend = {env!r}, không phải 'dev' — dừng")
 
 
+FAKE_MODE_SH = 'printf "%s|%s" "${FAKE_SCENARIO-}" "${FAKE_NODE_DELAY-}"'
+FAKE_ENV_HINT = "make up dựng lại theo .env — .env cần FAKE_SCENARIO=approval và FAKE_NODE_DELAY=40 cho gate2"
+
+
+def fake_mode(shell: Shell, svc: str = "backend") -> str:
+    """Chế độ giả của container đang chạy: `FAKE_SCENARIO|FAKE_NODE_DELAY` (biến không đặt → rỗng). Không
+    dùng `printenv`: biến không đặt thì nó trả mã 1."""
+    return shell.compose("exec", "-T", svc, "sh", "-c", FAKE_MODE_SH)
+
+
 # ---- Báo cáo: mỗi dòng PASS/FAIL kèm ticket_id -----------------------------------------------
 
 
@@ -389,11 +399,17 @@ def restart(ctx: Ctx, *, full: bool = False) -> None:
     tickets = _three_waits(ctx, "restart-all" if full else "restart")
     if full:
         before = _count_tickets(ctx)
+        mode = fake_mode(ctx.shell)
         ctx.shell.compose("down")  # KHÔNG -v: giữ volume (check_command chặn -v)
-        ctx.shell.run(["make", "up"])
+        ctx.shell.run(["make", "up"])  # cố ý dựng lại toàn bộ theo .env — không giữ biến shell qua đây
         safety_gate(ctx.shell)
         after = _count_tickets(ctx)
         rep.eq("-", "số ticket trước/sau down+up", before, after)
+        mode_after = fake_mode(ctx.shell)
+        if mode_after != mode:
+            rep.fail("-", "chế độ giả backend sau down+up", f"trước {mode!r}, sau {mode_after!r}: {FAKE_ENV_HINT}")
+        else:
+            rep.eq("-", "chế độ giả backend giữ nguyên sau down+up", mode, mode_after)
     else:
         ctx.shell.compose("restart", "backend")
     ctx.health_up()
@@ -531,6 +547,7 @@ def _kill(ctx: Ctx, preset: str, sleeping: Callable[[str], bool], what: str) -> 
     # đối chứng: truy vấn khoá tìm THẤY khoá đang giữ — không thì "nhả = 0" bên dưới xanh oan (vd tính
     # sai classid/objid)
     rep.eq(t, "khoá advisory của ticket đang giữ trước kill (đối chứng)", 1, ctx.ticket_lock_count(t))
+    mode = fake_mode(ctx.shell)
     ctx.shell.compose("kill", "-s", "SIGKILL", "backend")
     try:
         wait_for("khoá advisory của ticket nhả", lambda: True if ctx.ticket_lock_count(t) == 0 else None, 10)
@@ -538,8 +555,11 @@ def _kill(ctx: Ctx, preset: str, sleeping: Callable[[str], bool], what: str) -> 
     except StackError:
         rep.check(t, "khoá advisory nhả ≤ 10 giây sau SIGKILL", False, 0, ctx.ticket_lock_count(t))
     rep.eq(t, "lượt vẫn mở sau kill", [False], [x["ended"] for x in ctx.turns(t)])
-    ctx.shell.compose("up", "-d", "backend")
+    # `start`, KHÔNG `up -d`: bật lại đúng container vừa SIGKILL, giữ env lúc tạo. `up -d` nội suy lại
+    # `${FAKE_SCENARIO:-}` từ .env → .env không có FAKE_* là tạo lại backend chạy node thật.
+    ctx.shell.compose("start", "backend")
     ctx.health_up()
+    rep.eq(t, "chế độ giả giữ nguyên sau khởi động lại backend", mode, fake_mode(ctx.shell))
     ctx.login_all()
     rep.echo("  … chờ worker phục hồi (lượt mở > 120 giây, quét mỗi 60 giây) — tối đa 6 phút")
     v = ctx.after_event(t, 0, 360, interval=5)  # lượt duy nhất (cùng turn_id) đóng khi phục hồi xong

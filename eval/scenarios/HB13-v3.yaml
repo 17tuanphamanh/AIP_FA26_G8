@@ -1,0 +1,39 @@
+id: HB13-v3
+family: HB13
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-15T10:25:00+07:00'
+faults: []
+turns:
+- minh can quyen write finance/public-reports 180 ngay de cap nhat bao cao quy
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv001
+    params:
+      permission_level: write
+      duration_days: 180
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: true
+    target_user_status: active
+    existing_permission_level: read
+labels:
+  annotator_1: null
+  annotator_2: null

@@ -60,9 +60,18 @@ def vpn_scripts(
             slots["action"] = verb
         return Reply({"slots": slots, "off_topic": not slots})
 
+    def risk_estimate(_: Mapping[str, Any]) -> Step:
+        return Reply({"prob_needs_human": 0.9, "factors": ["missing_facts"], "rationale": "preset"})
+
+    def risk_vote(_: Mapping[str, Any]) -> Step:
+        return Reply({"needs_human": True, "factors": ["missing_facts"]})
+
+    # Phase 6 6C (Q-6C-5): B14 = giá trị preset P12 (0,9 / cần người) — chưa hiệu chỉnh → ca không luật nào khớp ra E5
+    # `llm_high_risk`; ca cần HITL/AUTO ghi đè bằng `overrides`.
     scripts: dict[str, Script] = {
         "b02_injection_judge": judge, "b03_classify": classify, "b10_need_type": need_type, "b10_answer": answer,
         "b11_clarify_question": clarify, "b11_extract_slots": extract,
+        "b14_risk_estimate": risk_estimate, "b14_risk_vote": risk_vote,
     }  # fmt: skip
     scripts.update(overrides)
     return scripts

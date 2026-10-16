@@ -59,8 +59,9 @@ if ! command -v uv >/dev/null 2>&1; then
   echo "Cài uv (https://docs.astral.sh/uv/) rồi chạy: uv sync" >&2
   exit 1
 fi
-if [ ! -x .venv/bin/python ]; then
-  echo "Không thấy .venv/bin/python — chưa dựng môi trường, không soát được test." >&2
+# Windows (Git Bash): uv dựng venv ở .venv/Scripts/python.exe, không có .venv/bin/python — nhận cả hai; test vẫn chạy qua uv run.
+if [ ! -x .venv/bin/python ] && [ ! -f .venv/Scripts/python.exe ]; then
+  echo "Không thấy .venv/bin/python (Windows: .venv/Scripts/python.exe) — chưa dựng môi trường, không soát được test." >&2
   echo "Dựng bằng: uv sync" >&2
   exit 1
 fi

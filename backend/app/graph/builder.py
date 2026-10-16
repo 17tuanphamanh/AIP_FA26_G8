@@ -43,6 +43,8 @@ from app.graph.nodes.fake import b12_assess as fake_b12_assess
 from app.graph.nodes.fake import b15_prepare_approval as fake_b15_prepare_approval
 from app.graph.nodes.fake import b17_execute as fake_b17_execute
 from app.graph.nodes.fake import clarify_wait as fake_clarify_wait
+from app.graph.nodes.fake import parent_reply_wait as fake_parent_reply_wait
+from app.graph.nodes.fake import parent_wait as fake_parent_wait
 from app.graph.routing import ENTRY, ROUTES, route_next
 from app.graph.tracing import NodeFn, traced
 
@@ -53,8 +55,8 @@ _NODE_MODULES = {
     "b06_diagnose": fake_b06_diagnose, "b08_retrieve": fake_b08_retrieve, "b10_route": fake_b10_route,
     "b11_slots": fake_b11_slots, "clarify_wait": fake_clarify_wait, "b12_assess": fake_b12_assess,
     "b15_prepare_approval": fake_b15_prepare_approval, "approval_wait": approval_wait,
-    "b17_execute": fake_b17_execute, "confirm_wait": confirm_wait, "parent_wait": parent_wait,
-    "parent_reply_wait": parent_reply_wait, "b20_audit": b20_audit,
+    "b17_execute": fake_b17_execute, "confirm_wait": confirm_wait, "parent_wait": fake_parent_wait,
+    "parent_reply_wait": fake_parent_reply_wait, "b20_audit": b20_audit,
 }  # fmt: skip
 
 # Node THẬT đã có (thay dần _NODE_MODULES khi mỗi nhánh xong — 3-Q32 cách A). `real_nodes(deps)` dùng bảng
@@ -70,6 +72,8 @@ REAL_NODE_MODULES = {
     "b12_assess": b12_assess,  # 3h: luật R16–R20 (build_ctx + evaluate), không khớp → DisabledEstimator → E5 (phase3 11.3)
     "b15_prepare_approval": b15_prepare_approval,  # 4b: chọn người duyệt + xung đột (phase4 3.1, 5.2), peek khi chạy lại (P9)
     "b17_execute": b17_execute,  # 3h: kiểm lại luật/hash/người → executor (transaction_log) → B18 tin kết quả (phase3 11.4)
+    "parent_wait": parent_wait,  # Phase 5 T20b P7: khởi động con, đối soát từ DB, một tin tổng hợp mỗi vòng (phase5 5.2.4)
+    "parent_reply_wait": parent_reply_wait,  # Phase 5 T20b P8: chuyển câu trả lời một lần xuống đúng con
 }  # fmt: skip
 
 

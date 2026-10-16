@@ -1,0 +1,38 @@
+id: HB07-v2
+family: HB07
+source: ho_bo_sung
+requester:
+  user_id: l2_01
+  role: l2
+  dept: it
+  tenure_days: 2100
+at: '2026-10-12T09:40:00+07:00'
+faults: []
+turns:
+- IT cấp giúp mình quyền ghi folder shared/templates 60 ngày nhé
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:shared/templates
+    requested_for: l2_01
+    params:
+      permission_level: write
+      duration_days: 60
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: false
+    target_user_status: active
+labels:
+  annotator_1: null
+  annotator_2: null

@@ -523,6 +523,15 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 11.2, 11.3,
 - DSL: `action` là chuỗi hoặc danh sách; nguồn `ctx.*`; danh sách trắng tên fact; kiểu chặt; thiếu fact → sai; `deny > approval_required > allow`; `check_policy_config` lúc khởi động.
 - `ctx.target_is_other` = cờ B6 OR (`requested_for ≠ requester` OR owner không phải True); `build_ctx` chỉ đọc `intended_action`, `requester_context`, `ctx_flags` + `now`.
 
+### Chốt khi hiện thực Phase 6 — 6A, 6B (10/10/2026)
+
+Phase 6 hiện thực theo `build/phase6-thiet-ke-chi-tiet.md` mục 4.10 (6A), 5.11 (6B), 6.1 (Q-6-8); khi lệch, file đó thắng (trừ bất biến và mục [Chốt]). Mã giả mục 5 ở trên là bản khung — nối vào B12 thật ở chặng 6C.
+
+- **Toán + hiệu chỉnh (6A):** `app/risk/decision_math.py` (ngưỡng từ chi phí, quét lưới, Clopper–Pearson một phía, ECE, Brier, AUC) và `app/risk/calibrator.py` (Platt không phạt / temperature, `LeakageError` khi có mẫu ngoài split calibration, chặn hiệu chỉnh đảo chiều). Một nguồn cho cả M5 và M8 (D-37).
+- **Estimator (6B):** `estimate(action, ctx, retrieved) -> RiskEstimate(raw_prob, p_method, factors, prompt_id, prompt_version, model)`; tự nêu = 1 lời gọi `b14_risk_estimate`; k = 5 = 5 lời gọi `b14_risk_vote` (một lời gọi lỗi → cả ước lượng lỗi → E5). `factors` ∈ 13 mã đóng `FactorCode`; `rationale` không lưu (D-40).
+- **Quyết định (6B, `app/risk/strategy.py`):** chưa có calibrator → **không bao giờ AUTO** (raw > t_high → ESCALATE_L2, còn lại HITL; D-38); `kb_gap` → tối đa HITL (D-34); `reason` ghép theo mẫu cố định (phase6 5.3), không dùng chữ tự do của LLM; chiến lược so sánh bị chặn khi không `EVAL_MODE`.
+- **`full_auto` (Q-6-8 = C):** không dựng `RiskDecision`; điểm log 4 `decided_by = NULL` + `detail.strategy = "full_auto"`; B17 vẫn kiểm lại luật.
+
 ## 15. Nhật ký thay đổi của file
 
 | Ngày | Phiên bản | Thay đổi |
@@ -531,3 +540,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 11.2, 11.3,
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 30/09/2026 | 1.2 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 11.2, 11.3, 11.10) |
 | 09/10/2026 | 1.3 | Mục 4.2: nguồn `fact` thêm `action.params.*` (danh sách trắng `PARAM_TYPES`) và `ctx.target_is_other`; `target_is_other` chỉ xét chủ máy khi đích là `device:` — theo Phase 5 T22a (`2ffb005`) |
+| 10/10/2026 | 1.4 | Thêm mục "Chốt khi hiện thực Phase 6 — 6A, 6B" (estimator `RiskEstimate`, chưa hiệu chỉnh không AUTO, `reason` theo mẫu, `full_auto` = C) |

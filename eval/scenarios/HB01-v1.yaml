@@ -10,6 +10,8 @@ at: '2026-10-07T09:10:00+07:00'
 faults: []
 turns:
 - IT ơi reset giúp mật khẩu cho nv001 với, bạn ấy quên mật khẩu đăng nhập.
+- on_question_about: account_type
+  reply: tài khoản đăng nhập Windows (AD)
 - on_confirm: true
 gold:
   intents:
@@ -24,6 +26,8 @@ gold:
     type: reset_password
     target: user:nv001
     requested_for: nv001
+    params:
+      account_type: ad
   facts:
     target_account_privilege: standard_user
     target_is_service_account: false

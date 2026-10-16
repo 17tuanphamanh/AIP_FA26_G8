@@ -11,23 +11,37 @@ Chỉ để báo; không đổi mã 200/503 (runtime down thì route ticket tự
 `app.state.kb_probe` cache 10 giây trong process (đồng hồ monotonic tiêm qua `app.state.kb_monotonic`, mặc định
 `time.monotonic`, test tiêm giả); lỗi/timeout → `status="unknown"`, `collection=None`, cũng cache 10 giây. `api`
 không import `rag`/qdrant-client — alias cố định `"kb_current"` (khớp `rag.ingest.config.ALIAS`, kiểm bằng test).
+
+M9 (A4, Q-M9-7, Q-M9-B1-6, Q-M9-A4-1..9): `llm` và `monitor` — chuỗi, CHỈ báo như `kb`, không bao giờ đổi mã 200/503;
+không chứa số tiền, DSN hay tên model. Probe dựng ở `main.py` (`app.state.llm_probe`, `app.state.monitor_probe`) — không
+gọi LLM thật. Probe lỗi/timeout → `llm="unknown"`, `monitor="down"` (log tên lớp lỗi). CẢ response (body + mã, kể cả
+503) cache 10 giây với khoá single-flight: hai lần gọi trong 10 giây — kể cả đồng thời — mỗi phụ thuộc chỉ kiểm một lần.
+Đồng hồ dùng chung `app.state.kb_monotonic`.
 """
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
+from typing import Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 type HealthCheck = Callable[[], Awaitable[None]]
 type KbProbe = Callable[[], Awaitable[str | None]]
+# ---- M9 ----
+# `real:missing_pricing` không xuất hiện ở process thật: `check_llm` đã từ chối khởi động (3-Q26, Q-M9-A4-2).
+type LlmStatus = Literal["scripted", "real:configured", "real:missing_pricing", "spend_cap_reached", "unknown"]
+type MonitorStatus = Literal["ok", "not_configured", "wrong_role", "down"]
+type LlmProbe = Callable[[], Awaitable[LlmStatus]]
+type MonitorProbe = Callable[[], Awaitable[MonitorStatus]]
 
 router = APIRouter()
 log = logging.getLogger(__name__)
 
 KB_ALIAS = "kb_current"
 KB_CACHE_SECONDS = 10.0
+HEALTH_CACHE_SECONDS = 10.0  # M9 (A4)
 
 
 async def run_checks(checks: Mapping[str, HealthCheck], timeout: float) -> dict[str, str]:
@@ -64,13 +78,45 @@ async def _kb_status(request: Request) -> dict[str, str | None]:
     return body
 
 
+# ---- M9 (A4) ----
+async def _probe[T](name: str, probe: Callable[[], Awaitable[T]], timeout: float, fallback: T) -> T:
+    try:
+        return await asyncio.wait_for(probe(), timeout)
+    except Exception as exc:  # noqa: BLE001 — biên health: lỗi bất kỳ → `fallback`, không làm hỏng /api/health
+        log.warning("%s probe lỗi: %s", name, type(exc).__name__)  # chỉ tên lớp, như kb
+        return fallback
+
+
+async def _health(request: Request) -> tuple[dict[str, object], int]:
+    """(body, mã). Khoá giữ suốt lượt tính: request thứ hai đứng chờ rồi đọc cache, không kiểm lại."""
+    state = request.app.state
+    lock = getattr(state, "_health_lock", None)
+    if lock is None:  # không có `await` giữa kiểm và gán → không hai khoá
+        lock = state._health_lock = asyncio.Lock()
+    async with lock:
+        now = state.kb_monotonic()
+        cached = getattr(state, "_health_cache", None)
+        if cached is not None and now - cached[0] < HEALTH_CACHE_SECONDS:
+            return cached[1], cached[2]
+        timeout = state.health_timeout
+        results, kb, llm, monitor = await asyncio.gather(
+            run_checks(state.health_checks, timeout),
+            _kb_status(request),
+            _probe("llm", state.llm_probe, timeout, "unknown"),
+            _probe("monitor", state.monitor_probe, timeout, "down"),
+        )
+        failed = sorted(name for name, status in results.items() if status != "ok")
+        body: dict[str, object] = {
+            "status": "ok" if not failed else "degraded", "checks": results, "failed": failed,
+            "runtime": getattr(state, "runtime_status", "down"),
+            "kb": kb, "llm": llm, "monitor": monitor,
+        }  # fmt: skip
+        code = 200 if not failed else 503  # chỉ `checks` quyết mã — `kb`, `llm`, `monitor` chỉ báo
+        state._health_cache = (now, body, code)
+        return body, code
+
+
 @router.get("/api/health")
 async def health(request: Request) -> JSONResponse:
-    results = await run_checks(request.app.state.health_checks, request.app.state.health_timeout)
-    failed = sorted(name for name, status in results.items() if status != "ok")
-    body = {
-        "status": "ok" if not failed else "degraded", "checks": results, "failed": failed,
-        "runtime": getattr(request.app.state, "runtime_status", "down"),
-        "kb": await _kb_status(request),
-    }  # fmt: skip
-    return JSONResponse(body, status_code=200 if not failed else 503)
+    body, code = await _health(request)
+    return JSONResponse(body, status_code=code)

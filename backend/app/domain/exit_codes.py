@@ -80,7 +80,11 @@ REASON_DETAILS: frozenset[str] = frozenset({
     # đích chưa xác minh chủ (E5, P6), thiếu khoá HMAC để đồng bộ người duyệt (E2); B17 — người đã duyệt không còn hợp lệ (E5)
     "no_valid_approver", "approver_lookup_error", "approval_target_unverified", "approver_sync_unavailable",
     "approver_no_longer_valid",
+    # Phase 6 6C (P3, Q-6C-2): B12 — lớp LLM của M5 định tuyến chuyển L2 (E5); lỗi estimator vẫn là `llm_layer_disabled`
+    "llm_high_risk",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",
+    # Phase 5 T20b (P2, bảng 5.2.2, D-49): `span` của một ý (câu nhiều ý) rỗng hoặc không nằm trong câu → con E1
+    "split_span_invalid",
 })  # fmt: skip

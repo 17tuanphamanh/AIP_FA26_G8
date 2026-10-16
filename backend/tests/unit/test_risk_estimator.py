@@ -266,14 +266,20 @@ def _all_keys(value: Any) -> set[str]:
     return set()
 
 
-def test_es2_keys_equal_allowed_vars_and_intended_action_full() -> None:
-    """es2 (P2, P3): khoá = allowed_vars của b14_risk_estimate; intended_action = Action.model_dump(mode="json")."""
+def test_es2_keys_equal_allowed_vars_and_intended_action_whitelisted() -> None:
+    """es2 (P2, P3) — sửa ở 6C theo P8/N1 (PLAN-6C TQ-9, bảng "Test cũ đổi kỳ vọng"): khoá = allowed_vars của b14_risk_estimate;
+    intended_action KHÔNG còn `Action.model_dump` đầy đủ — bỏ `requested_for`, `params` chỉ khoá cho phép (bỏ `resource_path`),
+    `target` "folder:…" → "folder". Dict kỳ vọng viết tay từ `_access()`."""
     action = _access()
     variables = estimator_vars(action, _ctx(), [])
     assert set(variables) == set(repo_registry().get("b14_risk_estimate").spec.allowed_vars) == ESTIMATE_VARS
     ia = variables["intended_action"]
     assert {"type", "facts", "params"} <= set(ia)
-    assert ia == action.model_dump(mode="json")
+    assert ia == {
+        "type": "grant_permission", "target": "folder", "scope": "single_account", "privilege_level": "standard_user",
+        "reversible": True, "reversibility": "full", "data_sensitivity": "medium",
+        "params": {"permission_level": "read", "duration_days": 30}, "facts": {"resource_sensitivity": "medium"},
+    }  # fmt: skip
 
 
 def test_es2_risk_context_drops_time_and_identity() -> None:
@@ -507,10 +513,10 @@ CANARY = "CANARY-b14-rationale-9f2c"
 
 
 def test_es9_risk_estimate_has_no_rationale_field() -> None:
-    """es9 (P7, Q-6-5): RiskEstimate không có trường nào chứa "rationale"; trường đúng P1."""
+    """es9 (P7, Q-6-5): RiskEstimate không có trường nào chứa "rationale"; trường đúng P1 + `evidence_trimmed` (6C P9/N4, TQ-8)."""
     names = [f.name for f in dataclasses.fields(RiskEstimate)]
     assert not [n for n in names if "rationale" in n]
-    assert set(names) == {"raw_prob", "p_method", "factors", "prompt_id", "prompt_version", "model"}
+    assert set(names) == {"raw_prob", "p_method", "factors", "prompt_id", "prompt_version", "model", "evidence_trimmed"}
 
 
 @pytest.mark.asyncio

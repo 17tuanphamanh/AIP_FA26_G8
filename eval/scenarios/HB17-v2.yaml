@@ -1,0 +1,38 @@
+id: HB17-v2
+family: HB17
+source: ho_bo_sung
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-19T09:40:00+07:00'
+faults: []
+turns:
+- IT cấp giúp em quyền ghi thư mục finance/public-reports trong 180 ngày
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: null
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv003
+    params:
+      permission_level: write
+      duration_days: 180
+  facts:
+    resource_sensitivity: low
+    same_department: true
+    has_permission_record: false
+    target_user_status: probation
+labels:
+  annotator_1: null
+  annotator_2: null

@@ -1,0 +1,17 @@
+# Preset `tc34` của ScriptedLLM trên stack dev — `make gate5` nhiều ý (phase5 mục 5.2.7, PLAN-T20b S15), KHÔNG đặt FAKE_SCENARIO.
+# nv001 tc34 (= TC12): ý 1 reset AD (R01 AUTO) + ý 2 cài Adobe Acrobat Pro (R14 → duyệt) → 2 con `tc34-1`, `tc34-2`.
+# Phản hồi TĨNH, kiểm schema lúc khởi động. Đủ mọi khoá prompt của preset cũ (kể cả b14_*, giá trị an toàn của default.yaml).
+# KHÔNG dùng trong test.
+b02_injection_judge: {is_attack: false, category: none, reason: "preset tc34"}
+b03_classify:
+  intents:
+    - {type: account, confidence: 0.92, span: "đặt lại mật khẩu tài khoản AD", action_hint: reset_password, slots: {account_type: ad}}
+    - {type: software, confidence: 0.92, span: "cài luôn Adobe Acrobat Pro", action_hint: install_software, slots: {software_name: Adobe Acrobat Pro}}
+  is_multi: true
+b10_need_type: {type: info, confidence: 0.5}
+b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
+b11_clarify_question: {text: "Bạn cho mình biết thêm thông tin về yêu cầu này nhé."}
+b11_extract_slots: {slots: {}, off_topic: true}
+# Phase 6 P12 [Chốt 09/10]: giá trị an toàn — khi 6C nối B12, ca không luật nào khớp vẫn ra chuyển L2 (0,9 > t_high).
+b14_risk_estimate: {prob_needs_human: 0.9, factors: [missing_facts], rationale: "preset"}
+b14_risk_vote: {needs_human: true, factors: [missing_facts]}

@@ -4765,6 +4765,13 @@ Thiết kế: `docs/spec/build/phase4-thiet-ke-chi-tiet.md` **v1.4** mục 7 (+ 
         (truyền id) 0 thiếu, 0 bí mật; mã ≠ 0 in nguyên bảng; danh sách rỗng → FAIL"; quét log `compose logs --since <giờ bắt đầu>` giữ. 7.1
         P5 ghi chú: `--since` chọn ticket theo HOẠT ĐỘNG (có dòng mới) → trên stack dev dùng chung kéo theo ticket node giả gate2/ticket cũ.
 
+## M9 — tầng monitor (Lưu Dương luồng A, Tạ Duy Anh luồng B) (14/10/2026 — **cổng M9 A, B ĐẠT**; B3 gộp `ddfc539`)
+
+- Chia việc, hợp đồng hàm, chốt Q-M9: `claude/ke-hoach-m9-chia-viec.md`, `claude/ke-hoach-m9-monitor.md`; đặc tả `build/nen-tang/P9-monitor-M9.md` (1.6).
+- Đã gộp vào `dev-tuananh`: A0–A4 (A4 ở PR #38), B0–B2, **B3 — PR #37 → `ddfc539`** (luật 8 drift PSI + job tuần `monitor_rules_weekly`, CI xanh; #15 đóng).
+- **Cổng B — ĐẠT** (Dương chạy). **Cổng A — ĐẠT** (Duy Anh, trên `90ee85d` — đã gồm A4; ghi nhận ở #6, 14/10).
+- Còn (không chặn cổng 5): khối `drift` dashboard (Dương, #45, Q-M9-B3-4); seed perf A4 ghi `detail.confidence` / `detail.top_score` (Dương, PR A riêng — review #37); D5 của B3: log worker có `monitor_rules_weekly`, không traceback — kiểm ở lượt chạy thử 6C / verify 17/10.
+
 ## Phase 6 (làm sớm) — chặng 6A: decision_math + calibrator (tầng B) (09/10/2026 — DỪNG xanh: verify G=0, mutation 12/12; chưa gộp) — chưa tính qua cổng 6
 
 Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.6** mục 4. Kế hoạch `PLAN-6A.md` (untracked) — **DUYỆT 09/10/2026**: Q-6A-1 = A
@@ -4892,7 +4899,7 @@ TQ-8 bổ sung (trạng thái đích ≠ disabled → `disable_reason` luôn nul
   17. **Theo dõi Phase 6** (soát DỪNG 2 ghi chú): cấp/gia hạn quyền cho người `terminated` không khớp luật nào (R12 chỉ `disabled` +
       `security`) → đi lớp LLM; an toàn hiện nhờ D-38 (chưa calibrator thì lớp LLM không AUTO).
 
-## Phase 6 (làm sớm) — chặng 6B: estimator LLM + strategy (tầng A) (10/10/2026 — DỪNG 1 `d8e3cbe`, DỪNG 2 xanh chưa commit; chưa gộp) — chưa tính qua cổng 6
+## Phase 6 (làm sớm) — chặng 6B: estimator LLM + strategy (tầng A) (10/10/2026 — DỪNG 1 `d8e3cbe`, DỪNG 2 `6fda378`; đã gộp d42d5c4) — chưa tính qua cổng 6
 
 Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v0.8** mục 5. Kế hoạch `PLAN-6B.md` (gitignore) — **DUYỆT 10/10/2026**:
 Q-6B-1 = A (st xfail strict từng test ở DỪNG 1), Q-6B-2 = A, Q-6B-3 = A, Q-6B-4 = A (giới hạn), Sửa 1 (test bảng `_ROUTE`/`_LEVEL`
@@ -4964,7 +4971,8 @@ dẫn model; NGHI → nợ, FAIL → DỪNG); TQ-1…11 duyệt nguyên.
   → shadow). Trước code: t1 + 4 ca t2 **đỏ đúng lý do** (`MlContractError: HTTP 422` → E9 qua boundary); 5 ca 422 khác, t3, TQ-8 xanh
   (khẳng định hành vi có sẵn). Sau code: unit **4593 passed** (+11), ml **123 passed** (+1), mock **106**; `make lint` **xanh**.
 - **Mutation lượt 1** (`scripts/mutation/mutate_t23a.py`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp.
-  Lượt 2: ngày đệm trước cổng 5.
+  Lượt 2 (14/10, trên `c45b079`): **9/9 ĐỎ đúng dự đoán** (M-T23a-1…9); md5 4 file đích + `git diff --stat` khớp. Đỏ thêm ngoài
+  dự đoán (bộ test gác rộng hơn, không phải lỗi): M-2 +1, M-4 +7, M-5 +1, M-6 +3, M-7 +1, M-8 +2, M-9 +2.
 - **security-reviewer** (diff `d42d5c4`..cây, trừ `docs/`, `llm/`): 8/8 PASS, 0 FAIL (`.env.example` agent chính tự kiểm: 13 dòng thêm đều
   là chú thích, không đụng khối M9). NGHI: hàng chờ chung ml-service (classify 48 cửa sổ CPU vs timeout 2 s + retry, `to_thread` không
   huỷ); `active` bỏ L4 khi p ≤ τ_pass với τ chưa hiệu chỉnh; backend `ClassifyOut.p_malicious` không chặn miền [0,1]/NaN; SHA chỉ phủ
@@ -5210,6 +5218,303 @@ chẩn đoán → "chưa đọc được danh sách quyền", rỗng thật → 
 - **Duyệt verify DỪNG 2 (13/10/2026):** G=2345 lượt 2 (gate2/3/4 xanh) + G=5 lượt 3 (gate5 115/0) → commit 2. **Chờ:** push (phiên git) +
   báo Phase 6 "6C mở được"; báo M9 (Dương/Duy Anh): 4 intent bật → phân bố intent đổi; báo thành viên: `ENABLED_INTENTS` trong `.env` không
   tác dụng trên stack (compose không truyền — Q-T24-9); Quân: HB04 kỳ vọng thật là E7 (`assign_paid_license` 409).
+
+## Phase 5 — chặng T20b: nhiều ý (tầng A) (13–14/10/2026, DỪNG 1 `14316ad`, DỪNG 2 sandbox — chờ Q + verify) — chưa tính qua cổng 5
+
+Thiết kế: `docs/spec/build/phase5-thiet-ke-chi-tiet.md` **v0.5** mục 5.2; `decisions.md` D-17, D-18, D-29, D-30, D-31, **D-49**. Kế hoạch:
+`PLAN-T20b.md` (untracked) — **DUYỆT 13/10/2026**: Q-T20b-1 = A (`wiring.py` 2 dòng: import + dòng notifier), Q-T20b-2 = B (≥ 2 ý, 0 ý chạy
+được → `out_of_scope` hoặc `reason_detail` của ý ĐẦU TIÊN trong phạm vi theo bảng 5.2.2; code mới không còn `multi_intent_not_enabled`),
+Q-T20b-3 = A (đặt hạn cho CHA thay mọi hạn `wait_deadlines` chưa bắn của cả hai loại; không đụng hạn duyệt), Q-T20b-4 = A (thêm
+`tickets.deliver_round` vào `SIDE_EFFECT_FUNCS`); TQ-5 nhận (con khởi động ở worker → E7 `REFUSED_NOTE`, ghi nợ).
+
+- **Bước 0:** HEAD `90ee85d`; `status -uno` chỉ 2 file spec; spec 0.5; `grep -c D-49` = 5; `alembic heads` = 1 (`0009`); `make lint` xanh;
+  unit **5206 passed**.
+- **DỪNG 1 (sandbox xanh):**
+  - S1 bề mặt + stub `NotImplementedError` (`domain/children.py`, `graph/children.py` ChildOps, `notify/child.py`, `db/notices.py`, node cha
+    thật; bản giả cha chuyển `graph/nodes/fake/`), `TicketState.child_seeds`, `REASON_DETAILS += split_span_invalid`, contextvar
+    `current_effect()` (đặt trong `effects.once`), store giả `tests/fakes/graph.py` (dòng con, `child_notices` giả, `MemoryNoticeStore`,
+    hạn con/cha). Context dùng Protocol `ChildPort` (import TYPE_CHECKING làm gãy hợp đồng "graph.nodes.* không import lẫn nhau").
+  - S2 test-writer viết TRƯỚC code bảng 5.2.8 (11 file `test_t20b_*` + `_t20b.py` + `integration/test_t20b_pg.py`; sửa
+    `test_b03_classify.py` theo Q-T20b-2, `test_side_effects_ast.py` theo Q-T20b-4). Trước code: **97 đỏ / 5222 xanh / 22 xfail** (1 đỏ cũ
+    biết trước `test_graph_static` vì node cha là stub). Agent chính sửa lint 6 lỗi + mypy 3 lỗi trong file test, 1 lỗi test (`test_t20b_digest`
+    thiếu tham số `needs`), 1 KeyError ở c2 (`ok.get("exit_code")`).
+  - S3–S8: B3 phán ý + B5 (seed, `child_create` qua `effects.once`, `mark_parent_once`); `ChildOps.start_missing`/`deliver` (lượt con LỒNG:
+    khoá con, `turns`, RunContext + hạn mới, không Semaphore, không `after_turn`); `recover`/`run_new` con chưa có thread → đóng lượt;
+    `ChildAwareNotifier` + `SqlNoticeStore`; `SqlDeadlineStore.set` (con `child:skip`, cha thay 2 loại); `after_turn` đánh thức khi con dừng ở
+    `clarify_wait`/`confirm_wait`; `parent_wait`/`parent_reply_wait` thật; `compose_digest`, `aggregate_children`, `reply_text`.
+  - security-reviewer (5.2.10 mục 1–5, 7–10 + 2 grep): 5 PASS, 2 PASS+NGHI, **2 FAIL** (8: lấy khoá con đã khởi động / cạn lock pool → cha
+    E9; 9: cha E9 im lặng — D-30 bỏ escalation của cha). Sửa ngay phần hiện thực: không lấy khoá con đã khởi động + `TicketBusy` → bỏ qua; lượt
+    lồng lỗi trước checkpoint con → không ghi `child_submit`; chạy lại sau khi đã gửi → `children_view(delivered_round=n)` (không gom notice
+    mới); siết kiểm seed E1. Agent chính viết 3 test hồi quy `test_t20b_s10_fixes.py` (đỏ khi bỏ từng chỗ sửa — đã thử). Phần cần chốt →
+    Q-T20b-5…7.
+  - Sau code: unit **5322 passed, 22 xfailed** (`CHO_DUNG2`); `make lint` xanh (import-linter 10/10, gitleaks 0).
+  - Mutation lượt 1 (`scripts/mutation/mutate_t20b.py`): **M-T20b-1…10 ĐỎ đúng dự đoán**; md5 7 file đích + `git diff --stat` khớp.
+- **Duyệt MẪU B DỪNG 1 (13–14/10/2026), có điều kiện:**
+  - Q-T20b-5 = A (lệch D-30 CÓ CHỦ ĐÍCH → "Spec cần sửa (T20b)"): (i) cha có `exit_code` (chỉ đường lỗi) → B20 tạo escalation + tin theo mã
+    — lượt 3 bỏ giới hạn E2/E9, MỌI mã; (ii) `db/escalations.list_open`: `is_parent = false OR tickets.exit_code IS NOT NULL` (view/chỉ số M9
+    KHÔNG đổi — `v_l2_queue` của M9 vẫn không có cha lỗi, lệch có chủ đích); (iii) P12(b) mở rộng: con chưa kết thúc, cha đã kết thúc, có
+    notice `needs≠none` ĐÃ gửi hay chưa → worker giao `timeout` (DỪNG 2; store giả + docstring đã theo; con đang có phiếu `pending` → bỏ —
+    tránh `late_event` mỗi chu kỳ).
+  - Q-T20b-6 = A giới hạn: `start_missing` — pool khoá hết chờ như `TicketBusy` → bỏ qua con, ghi audit; `deliver` — thử lại 1 s × 5 rồi ném.
+    Nợ: mỗi cha đang chạy cần 2 kết nối khoá; tăng pool (`settings.py`) để sau cổng 5.
+  - Q-T20b-7 = A (DỪNG 2): P12(a) = "số dòng `child_submit` của cha < số con" (bắt cả con có `turns` mà thread rỗng — FAIL-2 lượt 2).
+  - DỪNG 2 thêm: kiểm cache runtime của `b03_classify` khi B3 chạy lại lúc phục hồi (khoá cache, môi trường tắt) → không bảo đảm thì Q.
+- **Soát lượt 2 (mục 3, 8, 9, 10):** PASS 3, 8(a)(b)(d)(e), 9, 10; **FAIL-1** `deliver` báo "đã giao" khi lượt lồng lỗi trước khi con nhận
+  resume (câu trả lời mất, cha treo im lặng); **FAIL-2** con "failed" có dòng `turns` → P12(a) cũ không bắt (để DỪNG 2 cùng Q-T20b-7);
+  NGHI: notice bị nuốt (B20 con ghi `final_state` trước notice escalation), cha mang mã ngoài E2/E9 im lặng, `start_busy` mất ở nhánh
+  interrupt + "failed" không ghi, chú thích b03 sai tên tập.
+- **Duyệt lượt 2 → sửa lượt 3 (14/10):** FAIL-1 = A — `deliver` so mốc `(checkpoint_id, next)` của con trước/sau lượt lồng (đã kiểm LangGraph:
+  resume được nhận rồi node lỗi thì `checkpoint_id` GIỮ NGUYÊN, `next` đổi — so mỗi `checkpoint_id` sẽ sai): không đổi → ném (cha E9, thấy
+  được); đổi → không ném, lượt con mở cho worker. `children_view`: con "kết thúc" = `final_state` VÀ không còn lượt mở. B20: mọi `exit_code`
+  của cha. Audit `B5 children_not_started {busy, failed}` ghi TRƯỚC interrupt. Chú thích b03 (`E1_REASONS`). Test: `test_t20b_q5_q6.py`
+  (9 + 1 xfail s3 mở rộng), `integration/test_t20b_q5_pg.py` (3 ca); đột biến tạm từng chỗ sửa → đúng test đỏ.
+- **Sau lượt 3:** unit **5331 passed, 23 xfailed**; `make lint` xanh; mutation lượt 1 **10/10 ĐỎ đúng dự đoán** (md5 + diff khớp).
+- **Soát lượt 3 (mục 8(c), 9 trên phần sửa):** 0 FAIL. NGHI-1 (8c): `_first` của LangGraph ghi `__resume__` + `turn_id` lên checkpoint cũ —
+  DB lỗi SAU đó, TRƯỚC write của task → `(checkpoint_id, next)` không đổi → `deliver` ném (cha E9) nhưng resume còn nằm chờ, worker recover
+  con xử lý tiếp sau khi cha E9 (không mất sự kiện, có escalation; L2 có thể làm trùng) — đề xuất thêm `values.turn_id` vào mốc + test có
+  lỗi tiêm sau `_first` → **việc DỪNG 2**. NGHI-2 (9): con cạn lượt phục hồi ở B20 (`_give_up` nhánh AUDIT, `waiting_at='b20_audit'`) hoặc
+  `wake_parent` lỗi bị nuốt → không ai đánh thức cha → P12(a) chỉ "`child_submit` < số con" không bắt → **ràng buộc DỪNG 2**: P12(a) = (`child_submit`
+  < số con) OR (mọi con đã dừng theo CÙNG điều kiện `children_view`: `final_state` VÀ không lượt mở, hoặc notice chưa gửi `needs≠none`); cân
+  nhắc `after_turn` đánh thức cha khi `_give_up` ở AUDIT. Nhỏ: pool CHÍNH hết chờ ở `turns.start` của `deliver` bị gắn nhãn "bận" (thử lại
+  có trần → E9, vô hại); audit `children_not_started` khoá theo lượt (lần 2 cùng lượt khác danh sách bị bỏ, lần 1 đã ghi).
+- **Nợ (không chặn DỪNG 1):** span các ý chồng nhau (slot "đích" của ý này có thể nằm trong span ý kia — M5 vẫn đánh giá đích thật);
+  `redacted_request` của con = chuỗi `span` LLM trả (không cắt đúng đoạn câu); B3 chạy lại khi phục hồi gọi LLM lần hai (DỪNG 2 kiểm cache);
+  con `needs=confirm` của cha lỗi nhận timeout worker → `resolved_auto_timeout_48h` dù người dùng chưa thấy kết quả (phương án ở MẪU B DỪNG
+  2); M9 `E1_REASONS` không có `split_span_invalid` (vào nhóm `other`, không sửa `monitor/*`).
+- **Spec cần sửa (T20b) — gom dần:** 5.2.0 dòng B3 là `b03_classify.py:102` (không `:98`); TQ-2 contextvar đặt ở `effects.once`; Q-T20b-3
+  (hạn cha thay 2 loại); P7 thêm "chạy lại sau khi đã gửi vòng n → dựng lại từ notice vòng n" + `children_view` coi lượt mở là chưa kết thúc;
+  Q-T20b-5 lệch D-30 có chủ đích (cha lỗi có escalation, `list_open` thấy cha lỗi); `child_submit` chỉ ghi khi thật sự khởi động.
+  DỪNG 2 thêm: P12 chạy trong `scan_deadlines`, (a) hai vế, (b) mở rộng + chỉ sau hạn thường từ `delivered_at`/`created_at` (Q-T20b-9 ii),
+  giới hạn số mục + ngân sách mỗi lượt (Q-T20b-10); P11 `wait_node`, khoá `items` dạng `<cha>-<i>`, 422 không dội khoá, che qua
+  `redact_reply_items` (Q-T20b-8); mốc `deliver` = `(checkpoint_id, next, turn_id)`; ghi chú bàn giao cha lỗi có mã trạng thái từng con
+  (Q-T20b-9 i); `child_submit` ghi bù khi con đã có thread (Q-T20b-11); `child_create.result_ref` = `<cid>|<n>|<type>`, B3 chạy lại lệch →
+  E9 cha (Q-T20b-12); NỢ con chưa khởi động của cha lỗi treo `final_state NULL` (NGHI mục 4). Q-T20b-13: điểm log 8 (`audit_check`,
+  phase4 7.2) với ticket CHA (D-30 — nhận qua dòng audit B5 `split_into_<n>_children`) đạt bằng `detail.aggregate_status ∈
+  AGGREGATE_STATUSES` thay cho `close_reason|exit_code`; lá/con vẫn đòi `close_reason|exit_code`.
+- **Commit 1 = `14316ad`** (47 file, hook pre-commit xanh).
+- **DỪNG 2 (14/10, sandbox; chưa commit):** chốt mở DỪNG 2: NGHI-1 = nhận (mốc `deliver` = `(checkpoint_id, next, values.turn_id)` — đã kiểm
+  LangGraph: lỗi DB ngay sau write NULL `__resume__`+`turn_id` → chỉ `values.turn_id` đổi), NGHI-2 = nhận (P12(a) 2 vế), FAIL-2 cùng P12.
+  - P12: `_PARENTS_TO_WAKE` (số `child_submit` khác `result_ref` < số con, HOẶC mọi con dừng theo `children_view`), `_ORPHAN_CHILDREN` (mở
+    rộng Q5 (iii), bỏ con có phiếu `pending`), `WorkerJobs.scan_parents`. **Lệch:** chạy Ở CUỐI `scan_deadlines`, chặn 60 s theo đồng hồ
+    runner (khuôn nhắc duyệt 4c) — KHÔNG thêm job ở `worker.py` vì `test_monitor_jobs_minute.py`/`test_monitor_jobs_periodic.py` (M9) ghim
+    tập job lõi → Q-T20b-10.
+  - P11: `start_event(wait_node=…, validate=…)` + `InvalidReply`; `POST /reply`; `GET` cha `children_progress`; SQL `children_progress_rows`.
+    Soát DỪNG 2 FAIL (B7, mục 6): 422 dội lại khoá `items` thô → sửa: `_reply_body` chặn khoá không dạng `<cha>-<i>` với vị trí chung
+    `body.items` (test 4 ca; bỏ sửa → đỏ — đã thử).
+  - P13: `child_preset` + `SqlPresetResolver` (thẻ cha + `-<i>`). 14 preset `config/scripted/tc{34,35,36,32,12r}[-i].yaml`; `gate5.py` 5 kịch
+    bản nhiều ý (bảng 5.2.7); `test_gate5.py` mở rộng tập ghim (kịch bản, file preset) + 4 nhóm test preset nhiều ý (span trong câu, slot qua
+    `sanitize_slots(text=span)`, thẻ qua privacy guard thật, luật của từng con khớp chuỗi node thật trên seed: R01/R14/R01/R10/R01).
+  - Gỡ hết xfail (`grep -c xfail` = 0 ở 15 file T20b). `integration/test_t20b_pg.py` helper `_children` thêm dòng `child_submit` (theo Q-T20b-7)
+    + đóng lượt con đã finalize.
+  - Unit **5376 passed, 1 failed** — `test_start_event_redacted_ast.py::test_n1_user_text_events_are_redacted_first` (test CŨ N1: bộ quét AST
+    không chứng minh được `items` của `/reply` dựng bằng vòng lặp từ `redact`; soát DỪNG 2 kiểm bằng mắt: giá trị chỉ `done.text` + bool —
+    báo động giả) → **Q-T20b-8, chưa sửa test**. `make lint` xanh.
+  - Mutation lượt 2: **14/14 ĐỎ đúng dự đoán** (M-T20b-11 `/reply` bỏ `validate`, -12 không `goto` sau interrupt, -13 `after_turn` chỉ khi kết
+    thúc, -14 cờ `target_is_other` áp mọi con); md5 9 file đích + `git diff --stat` khớp.
+  - security-reviewer DỪNG 2 (đủ 10 mục): PASS 1, 2, 3, 5, 7, 10; FAIL 6 (đã sửa); NGHI 4 (con chưa khởi động của cha lỗi treo `final_state
+    NULL`), 8a (`scan_parents` trong `scan_deadlines` làm trễ quét hạn), 8b (thiếu `child_submit` do chết giữa khởi động con và `once` → đánh
+    thức cha mỗi 60 s), 9 (orphan `confirm` của cha lỗi đóng `resolved_auto_timeout_48h` sau ≤ 60 s).
+  - Cache `b03_classify` (chốt lượt 2): khoá = provider|model|version|prompt|messages render|schema|temperature|kb_version|mode, TTL 24 h — KHÔNG
+    bảo đảm cùng kết quả khi B3 chạy lại (`LLM_CACHE_MODE=bypass`; model dự phòng không ghi cache; chết giữa phản hồi và `cache_put`; đổi
+    prompt/model) → Q-T20b-12.
+  - Phase 6 #15: 0 test T20b ghim `llm_layer_disabled`; p4 + `test_q5_parent_normal_close…` (con không luật khớp qua B12 thật) chỉ kiểm con
+    ESCALATED (không ghim mã E5).
+- **Duyệt MẪU B DỪNG 2 → sửa (14/10, sandbox; chưa commit):**
+  - Q-T20b-8 = A: helper `redact_reply_items` (`api/desk.py` — được phép sửa theo duyệt): che TỪNG `answer`/`note`, kết quả chỉ chữ đã che /
+    bool / None, trường lạ → `ValueError`. Route `/reply` dùng helper. Test CŨ N1 (`test_start_event_redacted_ast.py`, được phép sửa theo
+    duyệt): `REDACT_FUNCS = {redact, redact_reply_items}` (import thẳng, không bí danh), `EXPECTED_USER_TEXT` + `("api/tickets.py","reply",
+    "items")`, 6 ca đối chứng (khuôn route thật đạt; `items` thô / bí danh / hàm trùng tên tự định nghĩa / gán lại / che sau cổng → đỏ).
+  - Q-T20b-9 = (i)+(ii): (i) B20 của cha lỗi thêm vào `done_so_far` câu mẫu `Ticket con (mã trạng thái): <id>=<mã>; …` — mã `not_started` /
+    `closed:<final_state>` / `pending_approval` / `awaiting_confirm` / `awaiting_answer` / `processing`, `+executed` khi có dòng
+    `transaction_log` của con (đọc DB `tickets.children_status`; không chữ người dùng; ngoài 4 mã anh nêu, thêm `closed:`/`pending_approval`/
+    `processing` cho đủ trường hợp). (ii) `orphan_children(now, limit, clarify_hours, confirm_hours)`: chỉ con đã quá hạn thường tính từ
+    `delivered_at` của notice `needs≠none` mới nhất (chưa gửi → `created_at`); giờ lấy từ `policy.json` (worker không sửa). B19 không đổi.
+    Test T20b cũ đổi kỳ vọng theo chốt: `test_t20b_scan.py::test_s3_…` + `test_t20b_q5_q6.py::test_q5_iii_…` (trước hạn: 0 timeout; sau
+    hạn: 1); `test_parent_reconcile_interval_60s` thêm trường `deferred`.
+  - Q-T20b-10 = A: mỗi lượt quét vòng cha tối đa `PARENT_SCAN_MAX = 20` cha + 20 con mồ côi, ngân sách `PARENT_SCAN_BUDGET_S = 10` s;
+    `asyncio.timeout` bọc HAI TRUY VẤN ĐỌC; lượt graph (đánh thức cha / giao timeout) KHÔNG bị huỷ giữa chừng (huỷ giữa lượt để lại lượt
+    mở + effect dở) — hết ngân sách thì không bắt đầu mục mới (`deferred`). Không sửa `worker.py`.
+  - Q-T20b-11: `tickets.started_children` (dòng `child_submit` mọi lượt) → `start_missing(recorded=…)` bỏ qua con đã ghi; con có thread
+    mà thiếu dòng → ghi bù `child_submit` (không khởi động lại).
+  - Q-T20b-12: `create_child(…, intents, intent_type)` trả `child_ref` = `<cid>|<n>|<type>` (= `result_ref` của `child_create`); B3 chạy lại
+    cùng lượt: ref lệch (số ý / loại ý), hoặc không tách nữa mà con 1 đã tạo → `SplitChanged` → cha E9 (thấy được nhờ Q5), không thêm/đổi con.
+  - Test mới: `tests/unit/test_t20b_dung2_fixes.py` (11 ca), PG `test_t20b_q5_pg.py` +2 ca (hạn thường 24 h/48 h theo `delivered_at` /
+    `created_at`; `children_status` + `started_children`); PG `test_t20b_pg.py` theo chữ ký mới (`create_child`, `orphan_children`).
+    Gỡ từng chỗ sửa (7 chỗ) → đúng test tương ứng đỏ (đã thử).
+  - Unit **5394 passed, 0 failed**; `make lint` xanh (import-linter 10/10, gitleaks 0). Mutation chạy lại 12 mã có file đích vừa sửa
+    (M-T20b-1…4, 6…12, 14): **12/12 ĐỎ đúng dự đoán**; md5 + `git diff --stat` khớp (chuỗi đích M-T20b-3, -11 cập nhật theo code).
+  - **Soát lượt 4 (mục 4, 6, 8, 9 trên phần sửa):** PASS 8, 9; **FAIL mục 6 (thấp)** — khoá `<cha>-MatKhau123-1` vẫn qua `_CHILD_KEY` rồi bị
+    dội trong 422 của `_items_match` → sửa: phần sau `<cha>-` phải fullmatch `[0-9]{1,2}` (test thêm 2 ca); **FAIL mục 4 (thấp)** — cha E9
+    do `SplitChanged` chưa có `children` trong state → mất dòng `not_started` → sửa: `children_status(parent)` đọc mọi con theo
+    `parent_ticket_id` từ DB, B20 gọi với mọi ticket có `exit_code` (lá → rỗng, không thêm); test q12 kiểm `T1-1=not_started; T1-2=not_started`.
+    Gỡ từng chỗ sửa → đúng test đỏ. Soát lại 4, 6: **PASS**. Unit **5396 passed**, lint xanh, M-T20b-11 chạy lại ĐỎ đúng dự đoán.
+    NGHI còn mở: (a) `children_status` lỗi đọc DB → B20 ném → escalation chờ recover (đề xuất bắt lỗi → mã cố định
+    `children_status_unavailable`); (b) `wake_parent` chậm > ngân sách 10 s mỗi chu kỳ → bước con mồ côi bị bỏ đói (cha đứng đầu
+    `ORDER BY created_at`).
+  - **Duyệt lượt 4 (14/10):** nhận cách làm Q-T20b-10 (không huỷ lượt graph). NGHI (a) sửa: B20 bắt lỗi `children_status` → câu mẫu với
+    mã `children_status_unavailable`, escalation vẫn tạo ngay. NGHI (b) sửa: `scan_parents` hai bước, ngân sách RIÊNG mỗi bước
+    (`PARENT_SCAN_BUDGET_S = 5` s/bước), bước con mồ côi chạy TRƯỚC; đọc quá hạn chỉ bỏ bước đó (`failed`). Test: 4 ca mới/viết lại trong
+    `test_t20b_dung2_fixes.py`; gỡ từng chỗ sửa → đúng test đỏ. Unit **5399 passed**, lint xanh. Chưa soát lại (anh cho soát mục 4, 9 cùng
+    kết quả verify, trước commit 2).
+  - **Verify lần 1 (14/10 11:50, G=2345):** ĐỎ bước 2 — backend 12 failed / 6006 passed: toàn bộ 12 test PG T20b (`test_t20b_pg.py` 7,
+    `test_t20b_q5_pg.py` 5) ném `TicketMissing` ở `SqlTicketStore.create_child`. Nguyên nhân: SQLAlchemy 2.1 chỉ giữ `rowcount` của
+    UPDATE/DELETE — INSERT … SELECT trả -1 (không `preserve_rowcount`) → kiểm `rowcount != 1` luôn đúng (lỗi có từ DỪNG 1; test PG T20b chưa
+    từng chạy trên Postgres trước lượt này). Sửa: `.returning(ticket_id)` + `scalar_one_or_none()`. Các `rowcount` khác trong `app/` đều
+    trên UPDATE. Unit 5399 passed, lint xanh. Gate 3/4/5 chưa chạy.
+  - **Verify lần 2 (12:00):** ĐỎ bước 2 — 1 failed / 6017 passed: `test_t20b_pg.py::test_children_view_deliver_round_only_given_ids_once`
+    (test T20b DỪNG 1): helper `_children` mở lượt cho con, con 3 finalize mà lượt còn mở → `children_view` (luật lượt 2: kết thúc =
+    `final_state` VÀ không lượt mở) trả None. Kỳ vọng giữ nguyên; sửa phần dựng: đóng lượt con 3 (như B20 làm). Kèm: bỏ `.tuples()`
+    (deprecated 2.1) ở `children_view`. Unit 5399 passed, lint xanh.
+  - **Verify lần 3 (12:06–12:55):** bước 2 test PASS (backend 6018 · mock 106 · ml 123), up, gate2 89/0, ingest, gate3 66/0, gate4 73/0,
+    ingest KB thật (19 phút) PASS; **gate5 226 PASS, 1 FAIL**: 9 kịch bản đơn ý + 5 kịch bản nhiều ý (tc34/35/36/32/12r) PASS toàn bộ;
+    FAIL duy nhất `g5-audit`: `audit_check` báo 5 ticket CHA thiếu `close_reason|exit_code` ở điểm 8 (`audit/check.py:147` `_point8` đòi
+    một trong hai) — mâu thuẫn với D-30 (cha đóng bình thường KHÔNG `close_reason`/`exit_code`; có `detail.aggregate_status`). `audit/check.py`
+    là file cấm sửa → **Q-T20b-13** (chờ chốt). Biên bản `tests/stack/bienban-gate5-20261014.md` (gitignore, không commit bản đã điền).
+  - **Q-T20b-13 = A (chốt 14/10):** CHỈ hàm `_point8` của `audit/check.py` (+ dòng import `AGGREGATE_STATUSES` từ `db/models.py` — một
+    nguồn): dòng `B20/closed` đạt khi có `close_reason` hoặc `exit_code`, HOẶC `detail.aggregate_status ∈ AGGREGATE_STATUSES`. Không đụng
+    hàm/điểm khác. `test_audit_check.py` +4 ca (cha hợp lệ đạt; `aggregate_status` lạ / null / vắng → vẫn thiếu). Gỡ sửa → ca hợp lệ đỏ.
+    Unit **5403 passed**, lint xanh. Chờ verify G=5.
+  - **Verify G=5 (14/10 13:30–13:38): XANH** — test PASS (backend 6022 · mock 106 · ml 123), up, ingest KB thật (KB không đổi), **gate5
+    227 PASS, 0 FAIL** (9 đơn ý + 5 nhiều ý + g5-audit). Gate2/3/4 xanh ở lần 3 trên cùng code (89/66/73 PASS, 0 FAIL). Biên bản
+    `tests/stack/bienban-gate5-20261014.md`: ĐẠT (gitignore, không commit).
+  - **Soát trước commit 2 (mục 4, 9, 10):** PASS cả 3, 0 FAIL (`audit/check.py` chỉ import + `_point8`; `wiring.py` không đổi so với
+    commit 1; grep import động `risk/` rỗng). NGHI ghi nợ: (1) `_budgeted` chỉ bắt `TimeoutError` — lỗi khác ở bước đọc con mồ côi làm
+    bỏ bước đánh thức cha ở chu kỳ đó (đường chính `after_turn` vẫn chạy); (2) ≥ 20 con khớp `_ORPHAN_CHILDREN` mà luôn `LateEvent` có thể
+    bỏ đói con tạo sau (chưa dựng được trạng thái đó từ code); (3) file untracked `docs/spec/claude/*` có từ trước phiên T20b, không stage.
+  - **Commit 2 = `5df24c7`.** Thiếu phần bổ sung Q-T20b-13 của phiên git → **commit 3** (không amend): `_point8` chỉ nới khi ticket LÀ CHA.
+    Nguồn "là cha": chính `rows` (dòng `audit_logs` của ticket mà `_point8` đã nhận) có dòng B5 `split_into_<n>_children` (`b03_classify
+    ._split`; lá và con không có) — KHÔNG đọc `tickets.is_parent` vì phải sửa `load`/`run`/`required` (ngoài `_point8`). `test_audit_check.py`
+    +2 ca (lá / con có `aggregate_status` hợp lệ, thiếu `close_reason`/`exit_code` → vẫn thiếu); 2 ca cũ giữ (thêm dòng tách ý cho cha).
+    Gỡ điều kiện cha → ca mới đỏ. Unit **5405 passed**, lint xanh. Verify G=5 (13:49–13:57): **XANH** — backend 6024 passed, gate5
+    **227 PASS, 0 FAIL**.
+  - **Nợ — NGHI mục 4 (DỪNG 2):** con CHƯA khởi động của cha lỗi (cha E-code trước khi `start_missing` chạy hết, hoặc B3 E9 sau khi đã
+    `child_create`) giữ `final_state NULL` mãi (không thread, không notice — P12 (b) không bắt). Thấy được qua escalation cha (mã
+    `not_started` trong ghi chú bàn giao — Q-T20b-9 (i)). Phương án sau: B20 của cha lỗi đóng các con chưa khởi động (E-code riêng).
+
+## Phase 6 — chặng 6C: nối lớp LLM vào B12 + B17 (tầng A) (14/10/2026, DỪNG 1 `f030926` + DỪNG 2 `b7cb1a4`; đã gộp `5f2ece2` (PR #44); chạy thử stack trên cây gộp `28bfef7`: backend 6546, gate2 89/0, gate3 78/0, gate4 73/0, gate5 227/0) — chưa tính qua cổng 6
+
+Thiết kế: `docs/spec/build/phase6-thiet-ke-chi-tiet.md` **v1.0** mục 6. Kế hoạch `PLAN-6C.md` (gitignore) — **DUYỆT 13/10/2026**:
+Q-6C-1 = B (nguồn chiến lược DUY NHẤT `Settings.strategy`/env `STRATEGY`, không thêm `M5_STRATEGY`; `manual` từ chối mọi chế độ),
+Q-6C-2 = A (`llm_high_risk` vào `REASON_DETAILS`), Q-6C-3 = A (`detail.strategy` ở mọi đường điểm 4 khi EVAL_MODE; `audit_check` nhận
+rule + `policy_decision` NULL chỉ khi `rule_only` ∧ HITL), Q-6C-4 = A (`kb_gap = min(len(evidence), 3) - evidence_trimmed <= 0`),
+Q-6C-5 = A (`b14_*` 0,9 vào `vpn_scripts`), Q-6C-6 = A (c15/c18 mức chuỗi node trong bộ nhớ, gateway thật, từ câu người dùng ở B2/B3),
+Q-6C-7 = B (test-writer 2 lần). Ràng buộc: không sửa `main.py`; `wiring.py` chỉ thêm dòng (T20b sửa `notifier=` — đẩy trước 6C).
+Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
+
+- **Bước 0:** HEAD/nhánh/status đúng (5 file docs ` M`); `make lint` xanh; unit mốc **5065 passed, 4 skipped**.
+- **DỪNG 1 — làm:** `settings.py` `M5Config` + `PolicyFile.m5` (bắt buộc); `policy.json` khối `m5 {p_method: self_report, calibrator_version:
+  null}`; `NodeDeps` + `calibrator`, `strategy`, `eval_mode` (mặc định an toàn); `RiskEstimate.evidence_trimmed` (self_report = meta; k = 5 =
+  max); `estimator_vars` danh sách trắng N1 (`intended_action_vars`: bỏ `requested_for`, `params` chỉ `device_id/account_type/
+  permission_level/duration_days` đạt mẫu chặt, `target` → loại đích trừ `device:<mã>` đúng mẫu); `wiring.open_runtime` `m5_strategy` +
+  `open_calibrator` (chỉ `load_calibrator`) trước DB, `_open` dựng `LlmRiskEstimator` + kiểm chiến lược lớp hai; B12 đường LLM qua
+  `strategy.decide` (AUTO → B17 + `action_plan_hash`, HITL → B15, L2 → E5 `llm_high_risk`, lỗi estimator giữ E5 `llm_layer_disabled`; điểm 4
+  + lineage trường mới; bỏ `RuntimeError`; `full_auto` tạm `NotImplementedError` → E9 tới DỪNG 2); `audit_check` điểm 4 theo `decided_by`;
+  `domain/exit_codes.py` + `llm_high_risk`; `tests/fixtures/llm/vpn.py` + `b14_*`.
+- **Test (test-writer, trước code):** `test_m5_startup.py` (c1, c2 — API và worker), `test_b12_llm.py` (c3–c8, c14, Q-6C-3),
+  `test_audit_check_m5.py` (c13), `test_estimator_vars_n1.py` (c16, c17); sửa es2, es9 `test_risk_estimator.py`. Lượt đỏ **109 đỏ / 67 xanh**
+  (đỏ do hành vi). Sau code: unit **5203 passed, 4 skipped** (= 5065 + 138).
+- **Test cũ đổi kỳ vọng:** e2e `test_gate3_vpn.py` 3 ca (h11, h11@20:00, h14) E5 `llm_layer_disabled` → `llm_high_risk` + sự kiện
+  `risk_decided`; es2 (N1), es9 (+ `evidence_trimmed`); `test_b12_assess.py:150` chỉ tên + docstring. Grep `llm_layer_disabled`/E5 toàn repo
+  (script cổng gate3/4/5, `eval/scenarios`, `config/scripted`, frontend, seed M9): không file nào khác phải sửa.
+- **Mutation lượt 1** (`scripts/mutation/mutate_6c.py --luot 1`): **7/7** đỏ đúng dự đoán (M-6C-2, 3, 4, 5, 7, 8, 9; M-6C-3 bỏ kiểm ở cả
+  `open_runtime` lẫn lớp hai `_open`); md5 + `git diff --stat` khớp. `mutate_4a.py` M-S0-5 đồng bộ chuỗi gốc (thụt 16). `test_mutation_n3`
+  xanh; M-3h-9, M-S0-5 đỏ đúng; `mutate_6b.py` lượt 2 vẫn 9/9.
+- **security-reviewer (DỪNG 1):** 8/8 bất biến 6.6 PASS + 6 mục thêm PASS, 0 FAIL. NGHI: (1) `kb_gap` chưa chặn `evidence_trimmed` âm/sai
+  kiểu từ estimator khác; (2) B14 tin `type`/`facts` từ B11 (đề xuất kiểm lại `check_facts` + `type ∈ PARAMS_BY_ACTION`); (3) `llm_cache` lưu
+  `rationale` khi EVAL (ngoài diff, N3 của 6B); (4) API "từ chối khởi động" = runtime 503 không thoát tiến trình; `llm_only` (EVAL) không chạy
+  luật ở B12 nên ca `deny` có thể vào B15 (B17 vẫn chặn).
+- **Chốt NGHI (Tuấn Anh 13/10):** Q-6C-8 = A (`kb_gap` True khi `evidence_trimmed` không phải `int` thật/kể cả `bool`/âm), Q-6C-9 = A
+  (B12 trước B14: `check_facts(action.facts)` + `action.type ∈ PARAMS_BY_ACTION`, lệch → E9, estimator không gọi). Test agent chính viết
+  `test_b12_llm_guards.py` (6); đột biến M-6C-10, 11, 12 → lượt 1 nay **10/10** đỏ đúng dự đoán, md5 khớp. Unit **5209 passed, 4 skipped**.
+  Quan sát (không sửa): runtime từ chối khởi động ở API → route ticket 503, `/api/health` vẫn HTTP 200 `"status": "ok"`, `"runtime":
+  "down"` (mã HTTP chỉ theo phụ thuộc DB/Qdrant/mock/ml); worker thoát.
+- **Báo M9 (Dương):** mã E5 mới `llm_high_risk` (`event="risk_decided"`); khoá `detail` điểm 4 mới (`calibrated_prob`, `thresholds`,
+  `factors`, `kb_gap`, `calibrator_version`, `strategy` khi EVAL); dòng điểm 4 `decided_by` NULL ở `full_auto` (EVAL, DỪNG 2).
+- **verify DỪNG 1 (14/10/2026):** `make verify G=0` XANH trên HEAD `457239d` dirty=26 — lint PASS; backend 5756 passed / 4 skipped, mock 106, ml 123 (5 deselected); unit 5209 passed / 4 skipped; mutation lượt 1 10/10, md5 khớp.
+- **Sau rebase (14/10/2026):** DỪNG 1 = `f030926` trên `origin/dev-tuananh` `c45b079` (chưa push); lint xanh; unit **5696 passed / 4
+  skipped** (mốc mới, gồm `tests/unit/eval` T29); `llm_layer_disabled` chỉ còn chỗ đã biết; ca T20b p4/q5 xanh. Quan sát `/api/health`
+  (A4): runtime từ chối khởi động (`STRATEGY=llm_only` không EVAL; `manual` EVAL tắt/bật) → HTTP 200 `status: ok`, `runtime: down`,
+  gọi lại trong 10 s (cache A4) như cũ; route ticket 503 (`desk=None`).
+- **DỪNG 2 — làm (14/10/2026):** B17 D-42 (`llm_auto(state, action)`: `risk.decided_by == "llm"` ∧ `route == "AUTO"` ∧
+  `action_plan_hash == hash_action(action)`; chỉ khi không qua duyệt ∧ luật hiện hành không khớp — kiểm lại luật vẫn chạy trước, kiểm
+  người giữ; điểm 7 `action_plan_hash_matched` True); B12 `full_auto` (Q-6-8 = C: `risk=None`, `detail` đúng 3 khoá, không
+  `action_plan_hash`, → B17) thay `NotImplementedError`; docstring B17 + README.
+- **Test DỪNG 2 (test-writer, trước code):** `test_b17_llm_auto.py` (c9–c12, 37) + `test_chain_m5.py` (c15, c18, 33). Lượt đỏ **18 đỏ / 52
+  xanh** (đỏ do hành vi: B17 E5 thay vì thực thi; `full_auto` E9 `NotImplementedError`). Sau code: unit **5766 passed / 4 skipped** (=
+  5696 + 70); lint xanh. Họ §8.2: không họ nào ra `rule` với seed hiện có (họ "mở khoá không do nhập sai" dùng `set_lock` trong bộ nhớ).
+- **Chốt NGHI DỪNG 2 (Tuấn Anh 14/10):** Q-6C-10 = A (`llm_auto` thêm vế `risk.calibrated_prob is not None`; không sửa `ticket_state.py`),
+  Q-6C-11 = A (test `risk` dict hỏng → E9), Q-6C-12 = A (đột biến bỏ vế `not verdict.matched`). Agent chính viết
+  `test_b17_llm_guards.py` (3 test). Unit **5769 passed / 4 skipped**; lint xanh.
+- **Mutation lượt 2** (`mutate_6c.py`): **14/14** đỏ đúng dự đoán (M-6C-1…14; M-6C-13 → 3 test c11 `approval_required` đỏ, M-6C-14 →
+  test Q-6C-10 đỏ); md5 + `git diff --stat` khớp; M-6C-5 đỏ cả c15 lẫn c16;
+  M-6C-6 bị c5 + c18 (AUTO → B17) bắt (c9 mức node tự dựng state nên không bắt được). `test_mutation_n3` xanh; `mutate_3h.py` 28 đột
+  biến vẫn đỏ đúng; chuỗi gốc mọi script đụng B12/B17 còn khớp.
+- **security-reviewer (DỪNG 2):** 8/8 bất biến 6.6 + 4 mục thêm PASS, 0 FAIL. 3 NGHI → Q-6C-10/11/12 (đã chốt A, làm ở trên).
+  Soát riêng phần Q-6C-10/11/12: 6/6 PASS, 0 FAIL; 3 NGHI chữ đã sửa (thông điệp `--only` "M-6C-14", docstring B17 nhắc
+  `calibrated_prob`, test Q-6C-11 kiểm thêm dòng `unhandled_exception` của B17 là `ValidationError`) — chạy lại lint, unit 5769, mutation
+  14/14 sau khi sửa.
+- **Spec cần sửa (6C)** (phase6 mục 6 — chưa sửa `docs/spec/`):
+  - 6.1 P1, 6.4 c1 (Q-6C-1): nguồn chiến lược = `Settings.strategy`/env `STRATEGY` (không `M5_STRATEGY`); `manual` từ chối ở mọi chế độ.
+  - 6.1 P3 (Q-6C-2): `llm_high_risk` thêm vào `REASON_DETAILS` (`domain/exit_codes.py` — ngoài danh sách 6.2).
+  - 6.1 P5, P7 (Q-6C-3): `detail.strategy` ghi ở MỌI đường điểm 4 khi EVAL; `rule` + `policy_decision` NULL hợp lệ chỉ khi
+    `detail.strategy == "rule_only"` ∧ `detail.route == "HITL"`.
+  - 6.1 P9 (Q-6C-4, Q-6C-8): `kb_gap = min(len(evidence), MAX_EVIDENCE) - evidence_trimmed <= 0`; `evidence_trimmed` không phải `int` thật
+    (kể cả `bool`) hoặc âm → `kb_gap`.
+  - 6.1 P3 (Q-6C-9): trước B14, B12 kiểm lại `check_facts(action.facts)` + `action.type ∈ PARAMS_BY_ACTION` — lệch → E9, estimator không gọi.
+  - 6.1 P11, 6.3 (Q-6C-5): `b14_*` 0,9 thêm vào `tests/fixtures/llm/vpn.py` (e2e đi đường estimator thật).
+  - 6.4 c15, c18 (Q-6C-6): mức chuỗi node trong bộ nhớ (B3 → B12 → B17, gateway thật, EVAL), không e2e testcontainers.
+  - 6.1 P8: mẫu `[0-9]` thay `\d` (chữ số Unicode); `duration_days` `int` (không `bool`) 1…999; khoá trượt mẫu bị BỎ (không ném).
+  - 6.2: `settings.py` không import `app.risk.calibrator` (import-linter) — `VERSION_PATTERN` kiểm ở `open_runtime` qua `load_calibrator`.
+  - 6.1 P6 (Q-6C-10): D-42 thêm vế `risk.calibrated_prob is not None`; `risk` hỏng → E9 (Q-6C-11).
+  - 6.5: thêm M-6C-10…14 (Q-6C-8, 9, 12, 10); M-6C-3 bỏ kiểm ở cả `open_runtime` lẫn `_open`; M-6C-6 bị c5 + c18 (AUTO → B17) bắt —
+    c9 mức node không bắt được (tự dựng state) — Tuấn Anh chấp nhận 14/10.
+  - 6.3: es2 (N1) + es9 (`evidence_trimmed`) của 6B đổi kỳ vọng.
+  - Nợ/quan sát: N3 `llm_cache` lưu `rationale` khi EVAL; N7 tên khoá `facts` lạ vào `audit.detail.exception`/log (`FactKeyViolation`) —
+    vô hại khi khoá do code đặt, phải lọc nếu khoá đến từ đầu ra LLM; API runtime từ chối khởi động → route 503 + `/api/health` 200
+    `runtime: down` (3 cấu hình, cache 10 s A4), worker thoát; `llm_only` (EVAL) ca `deny` có thể vào B15 — B17 chặn.
+- **Báo M9 (Dương) — bổ sung DỪNG 2:** `decided_by` NULL ở dòng điểm 4 khi `full_auto` (EVAL; `detail` đúng 3 khoá); `/api/health` vẫn
+  HTTP 200 khi runtime down (chỉ `runtime: down`).
+- **verify DỪNG 2 (14/10/2026):** `make verify G=0` XANH trên HEAD `f030926` dirty=8 — lint PASS; backend 6388 passed / 4 skipped, mock
+  106, ml 123 (5 deselected); unit 5769 passed / 4 skipped; mutation lượt 2 14/14, md5 khớp (dòng CI là lượt cũ trên remote — 6C chưa push).
+- **Chờ:** đã gộp `5f2ece2` (PR #44) vào `dev-tuananh`; chờ Quân xác nhận #44 (`make verify G=0` trên máy mình + đọc c9–c11, c15).
+
+## Phase 6 — chặng 6D: công cụ đọc lý do + probe p (tầng B) (15/10/2026, 1 DỪNG trên `78a25cd` — verify G=0 xanh, mutation 6/6; chưa commit) — chưa tính qua cổng 6
+
+- **Việc (spec phase6 v1.1 mục 7):** `backend/app/audit/m5_review.py` (`Point4`, `point4_rows`, `pick`/`sample_reasons`,
+  `template_reasons`, `concentration`, `histogram`, `probe_report`, `open_engine` READ ONLY, `load_point4`, `sample_main`, `probe_main`,
+  `python -m app.audit.m5_review sample|probe`); vỏ `scripts/sample_reasons.py`, `scripts/probe_p_distribution.py`; `audit/check.py` chỉ
+  thêm hằng `POINT4_KEY` (dùng ở dòng điểm 4, logic không đổi); test r1–r10 (`test_m5_review.py`, 42 test) + r11
+  (`test_m5_review_pg.py`, 3 test testcontainers); `scripts/mutation/mutate_6d.py`.
+- **Chốt MẪU A (Tuấn Anh 15/10):** Q-6D-1 = A (thoát 1 chỉ khi tổng < n; thiếu câu llm → stderr "thiếu câu llm: k/m", thoát 0) ·
+  Q-6D-2 = C (giữ nguyên chữ `reason`, kể cả chứa mã luật; r5 chỉ kiểm canary ở TRƯỜNG `ticket_id`/`route`/`rule_id`/`expected_route`) ·
+  Q-6D-3 = A (probe: 0 có khuyến nghị · 1 n < 20 · 2 lỗi DB · 3 không phải `real` — 3 thắng 1) · Q-6D-4 = A (`llm_backend` ≠ `real`, kể
+  cả None → cảnh báo + 3) · Q-6D-5 = A (`python -m app.audit.m5_review` trong image; không sửa Makefile/Dockerfile) · Q-6D-6 = A
+  (M-6D-6 làn `--integration`, Tuấn Anh chạy ngoài sandbox).
+- **Test:** lượt đỏ 42/42 do `NotImplementedError` (khung đủ chữ ký, không lỗi import) → xanh 42/42; unit 5906 → **5948 passed** /
+  4 skipped (+42); lint xanh (mypy, import-linter 10/10, gitleaks 0). r11: 3/3 xanh (mốc của `mutate_6d.py --integration`, Tuấn Anh
+  chạy ngoài sandbox).
+- **Mutation lượt 1: 6/6** — M-6D-1…5 (unit) đỏ đúng dự đoán; M-6D-6 (`--integration`, Tuấn Anh chạy 15/10) đỏ đúng
+  `test_r11_open_engine_refuses_insert`, mốc r11 xanh 3/3 trên Postgres testcontainers; md5 `m5_review.py`
+  `f4da37cc8e82c102a10419ddc07a5424` trước = sau, `git diff --stat` khớp.
+- **Lệch spec / Spec cần sửa (6D):** r7 "6/10" mâu thuẫn `n < 20 → None` → test dùng 12/20, 18/30 (và 14/20, 21/30); r5 theo Q-6D-2 = C;
+  hai định nghĩa "dòng điểm log 4" (`check.py` chỉ `risk_decided` — `eval/predictions.py:23` nhận cả `llm_layer_disabled`) chưa thống
+  nhất một nguồn; `LLM_BACKEND` của tiến trình probe có thể khác backend đã sinh dữ liệu.
+- **security-reviewer (15/10):** 5/5 PASS (chỉ đọc qua `open_engine`; stdout chỉ `reason`; không DSN/detail; không ghi DB; chỉ ghi
+  `--key-out`/`--csv`), 0 FAIL. Ghi nhận thấp (không sửa — cùng khuôn `audit/check.py`, `mutate_6a.py`): `get_settings()` ngoài `try`
+  (bí mật đều `SecretStr`); mutation khôi phục bằng `write_text` (CRLF trên Windows); exception ngoài dự kiến thoát 1 trùng nghĩa "thiếu".
+- **verify (15/10/2026):** `make verify G=0` XANH trên HEAD `78a25cd` dirty=9 — lint PASS; backend 6587 passed / 4 skipped, mock
+  106, ml 123 (5 deselected) (dòng CI là lượt cũ trên remote — 6D chưa push).
+- **Chờ:** commit cục bộ khi được bảo → PHIẾU push + PR `m5-tuananh` → `dev-tuananh` + gộp (phiên git).
+
+## Phase 5 — Cổng 5 (15/10/2026) — phần tự động ĐẠT; chờ thành viên chạy `make verify` + biên bản
+
+- **Lượt chính thức** (Tuấn Anh chốt 15/10; dùng chung mốc PR `dev-tuananh` → `main`): `make verify G=2345` 15/10 00:22:47–01:12:08, máy Tuấn Anh, `.env` thật (`STRATEGY=hybrid`, `EVAL_MODE=false`). Commit tạm lúc chạy `a2346e9` (không push); cây `28bfef7` trùng từng byte cây của **`5f2ece2`** (HEAD `dev-tuananh` sau gộp PR #44 6C). `78a25cd` sau đó chỉ sửa `.githooks/pre-commit`.
+- Kết quả (`.verify/run-20261015-002247.log`): lint PASS; test backend 6546 · mock 106 · ml 123 (5 deselected); gate2 89/0; gate3 **78/0**; gate4 73/0; ingest KB thật (`kb_3362c39b…`); gate5 **227/0** — đơn ý 113 (preflight 6, tc01 10, tc03 12, tc07 16, tc08 8, tc17 5, tc18 5, tc21a 13, tc21b 20, hb04 18), nhiều ý 112 (tc34 26, tc35 21, tc36 24, tc32 16, tc12r 25), g5-audit 2. Bước CI của verify bỏ qua (gh); CI `5f2ece2` **xanh** (run 38660791290, phiên git xác nhận). Stack kết thúc ở KB thật.
+- Đối chứng trên `e62b40b` (chưa 6C, 14/10 23:28–00:21): cùng số (gate3 78/0, gate5 227/0) → gộp 6C không đổi kết quả cổng.
+- gate3 78 (mốc 13–14/10: 66) — không phải đổi code: gate3 theo giờ (Q-3h); lượt chạy **ngoài giờ** đi thêm nhánh R18 → chờ duyệt, +6 phép kiểm × 2 kịch bản (so log 13/10 với 15/10: cùng 9 kịch bản, phần còn lại giống hệt).
+- Biên bản `backend/tests/stack/bienban-gate5-20261015.md` (ĐẠT, script ghi) — `.gitignore`, không commit bản đã điền.
+- Điều kiện cổng 5 (phase5 mục 8): lint/test/CI ✓; cổng 5 tự động ✓ (đơn ý TC01/03/07/08/17/18/21 + HB04; nhiều ý: ALL_RESOLVED, PARTIALLY_ESCALATED, PARTIALLY_REJECTED trên stack — 6 trường hợp + tổ hợp 3 loại ghim ở unit T20b p5; 20 luật khớp/suýt khớp ở unit T22a); mutation T22a/T23a/T24 ×2, T20a/T20b phần A ×2 ✓; "Chốt khi hiện thực" 5 chặng + `decisions.md` ✓ (`c973b55`). **Còn:** một thành viên chạy `make verify G=2345` trên máy riêng, đúng HEAD đã chốt, ghi biên bản → khi có thì đổi tiêu đề mục này thành "Cổng 5 ĐẠT".
+- Phần thủ công (intent macro-F1, chặn tấn công, Recall@5, E7 4 phần, 10 câu nhiều ý): mục "Dồn về mốc G".
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
