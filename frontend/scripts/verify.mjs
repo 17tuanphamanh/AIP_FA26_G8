@@ -9,7 +9,8 @@
 //      Ca không có preset → BỎ QUA kèm lý do. Câu đã chọn ghi ở PLAN-fe.md (F2).
 //      F3-1…6 L2: DÙNG LẠI ticket E3 (F2-2) + E0 (F2-4) của cùng lượt → long.nh / ha.lt xem hàng đợi + chi tiết THẬT;
 //      an.nv (không có escalation:handle) → trang không có quyền + 403 thật khi gọi thẳng API; đóng ca = MSW (dev:mock,
-//      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2).
+//      F3-6). Không có ticket từ F2 (bỏ qua/đỏ) → các ca cần ticket BỎ QUA kèm lý do. Mỗi lượt chỉ tạo 3 ticket (F2) + 1
+//      ticket cha nhiều ý (F6-R, kéo theo 2 ticket con).
 //      N-L2Q: màn chỉ hiện 10 ca đầu mỗi nhóm và ca mới nằm CUỐI nhóm → ticket của lượt được tìm bằng Ô TÌM (gõ ticket_id;
 //      ô tìm chỉ trong bộ nhớ → mỗi lần quay lại /escalations gõ lại). F3-8 (chỉ đọc, sau F3-5, dev không mock): phân trang
 //      trong nhóm, thu gọn nhóm, tìm rồi xoá ô — không ghi gì.
@@ -30,9 +31,14 @@
 //      không tồn tại → 404; 2 GET → 422) bằng Bearer đọc từ request GET của chính SPA (Q-fe-44 = A; token vào `secrets`,
 //      không refresh / logout bằng nó). 503 `monitor_unavailable` → ĐỎ "stack thiếu kết nối app_monitor". Không có
 //      VERIFY_MGR → F5-1…6 BỎ QUA. F5-7 (ha.lt, headless, cuối lượt) chạy cả khi không có VERIFY_MGR.
-//      F6-1…6 trên dev:mock + backend thật (đăng nhập): tin tổng hợp nhiều ý (MSW chỉ id `tkt-demo-multi-`, an.nv), nút gợi
-//      ý nhanh (/chat), chống duyệt theo phản xạ (ha.lt, `page.clock` giả cả performance.now), thẩm mỹ bảng + thanh quyết
-//      định. Không gửi câu chat nào (chip chỉ điền chữ).
+//      F6-1…6 trên dev:mock + backend thật (đăng nhập): tin tổng hợp nhiều ý minh hoạ (MSW chỉ id `tkt-demo-multi-` — ca lỗi
+//      422/409 khó tạo trên stack, an.nv), nút gợi ý nhanh (/chat), chống duyệt theo phản xạ (ha.lt, `page.clock` giả cả
+//      performance.now), thẩm mỹ bảng + thanh quyết định. Không gửi câu chat nào (chip chỉ điền chữ).
+//      F6-R (N-T20) dev KHÔNG mock: nhiều ý trên route THẬT T20b — an.nv gửi đúng câu tc35 của `make gate5` (cần backend
+//      LLM_BACKEND=scripted, không FAKE_SCENARIO, ENABLED_INTENTS ⊇ {account, access} ở backend VÀ worker): 1 ticket cha + 2
+//      con, cả 2 ý AUTO thật trên MOCK (reset nv001 chỉ đặt must_change; gia hạn finance/public-reports +30 ngày) — KHÔNG
+//      phiếu duyệt nào, không ghi đè. Gửi thẳng ĐÚNG 2 lời gọi không ghi gì (Bearer từ GET của SPA như Q-fe-44), chỉ khi cha
+//      đang ở parent_reply_wait: /reply thiếu ý → 422; /messages lên con → 409.
 //   c) dọn dẹp: tắt mọi server đã mở, đóng trình duyệt — kể cả khi lỗi hay Ctrl+C.
 // Đầu ra: .verify/summary.txt (bảng), .verify/run-<giờ>.log (chi tiết), .verify/<giờ>-<bước>.png khi FAIL,
 //         .verify/login.png, login-otp.png, sidebar-<user>.png, chat-*.png, l2-*.png, l1-*.png, mgr-*.png, f6-*.png (1440×900, để so
@@ -63,7 +69,7 @@ const OUT = join(FE, ".verify");
 const VITE = join(FE, "node_modules", "vite", "bin", "vite.js");
 
 // Chặng đã dựng xong (ghi vào summary). Kịch bản của chặng chưa dựng thì chưa có ở đây.
-const BUILT = "N-A3";
+const BUILT = "N-T20";
 
 const DEV = "http://localhost:5173";
 const PREVIEW = "http://localhost:4173";
@@ -2312,16 +2318,18 @@ await liveMock("F4-9 phiếu thiếu dữ liệu (apv-demo-08): “—”, câu 
 );
 
 // F6 — Nên có + D-31 (dev:mock + backend thật để đăng nhập). Chữ trên màn trùng src/routes/employee/multi.ts,
-// suggestions.ts, routes/l1/inbox.ts (verify chạy bằng Node, không import TS). Ticket nhiều ý chỉ có ở MSW (id
-// `tkt-demo-multi-`, máy trạng thái trong bộ nhớ trang — mỗi lần tải trang về lại từ đầu: GET đầu đang xử lý → round 1).
+// suggestions.ts, routes/l1/inbox.ts (verify chạy bằng Node, không import TS). F6-1…3: ticket nhiều ý MINH HOẠ ở MSW (id
+// `tkt-demo-multi-`, máy trạng thái trong bộ nhớ trang — mỗi lần tải trang về lại từ đầu: GET đầu đang xử lý → round 1);
+// dữ liệu theo hợp đồng thật T20b (không nút gợi ý — gõ câu trả lời). Ticket nhiều ý THẬT: F6-R (sau F6-6).
 const MULTI = { demo: "tkt-demo-multi-1", bad: "tkt-demo-multi-422" };
 const F6 = {
-  missingChoice: "Cần chọn một máy trước khi gửi.",
+  missingAnswer: "Cần trả lời trước khi gửi.",
   missingConfirm: "Chọn Đã ổn hoặc Chưa ổn",
   invalid: "Phản hồi cho ý này chưa hợp lệ — kiểm tra lại.",
   pillReply: "Cần bạn phản hồi",
   pillDone: "Các ý đã có kết quả",
   finalNote: "Các ý đã có kết quả — xem từng ý ở trên.",
+  demoSummary: "Đã xong 2/3 yêu cầu; có yêu cầu không được duyệt.", // fixtures/multi.ts summaryText (bảng 5.2.5)
   working1: ["Đã có kết quả — chờ tổng hợp", "Chờ IT duyệt", "Đang xử lý"],
   round1: ["Cần bạn phản hồi", "Cần bạn phản hồi", "Không được duyệt"],
   round2: ["Đã xong", "Cần bạn phản hồi", "Không được duyệt"],
@@ -2377,7 +2385,7 @@ async function openMulti(page, id, { expectWorking = false } = {}) {
   return { replies, first };
 }
 
-await liveMock("F6-1 an.nv tkt-demo-multi-1: dải tiến độ 3 ý; tin tổng hợp 3 khối, 1 nút; chưa chọn máy → lỗi dưới khối 2, 0 POST", () =>
+await liveMock("F6-1 an.nv tkt-demo-multi-1: dải tiến độ 3 ý; tin tổng hợp 3 khối, 1 nút; chưa trả lời → lỗi dưới khối 1, 2; 0 POST", () =>
   scenario("F6-1", async ({ page, consoleLines }) => {
     const { replies, first } = await openMulti(page, MULTI.demo, { expectWorking: true });
     check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
@@ -2393,7 +2401,7 @@ await liveMock("F6-1 an.nv tkt-demo-multi-1: dải tiến độ 3 ý; tin tổng
     await blockOf(page, child(MULTI.demo, 2)).getByTestId("digest-item-error").waitFor({ timeout: 5_000 });
     const errors = [];
     for (const n of [1, 2, 3]) errors.push(await blockError(page, child(MULTI.demo, n)));
-    check(errors[1] === F6.missingChoice, `khối 2: "${errors[1]}", cần "${F6.missingChoice}"`);
+    check(errors[1] === F6.missingAnswer, `khối 2: "${errors[1]}", cần "${F6.missingAnswer}"`);
     check(errors[0] === F6.missingConfirm, `khối 1: "${errors[0]}", cần "${F6.missingConfirm}"`);
     check(errors[2] === null, `khối 3 (ý bị từ chối) không được có lỗi, đang "${errors[2]}"`);
     await page.waitForTimeout(500);
@@ -2405,12 +2413,12 @@ await liveMock("F6-1 an.nv tkt-demo-multi-1: dải tiến độ 3 ý; tin tổng
   }),
 );
 
-await liveMock("F6-2 round 1: LAP-0342 + Đã ổn → 1 POST 2 khoá → round 2 (1 khối, round 1 chỉ đọc) → Đã ổn → 1 khoá → cha đóng", () =>
+await liveMock("F6-2 round 1: gõ LAP-0342 + Đã ổn → 1 POST 2 khoá → round 2 (1 khối, round 1 chỉ đọc) → Đã ổn → 1 khoá → cha đóng + câu tổng kết", () =>
   scenario("F6-2", async ({ page }) => {
     const { replies } = await openMulti(page, MULTI.demo);
     const c = (n) => child(MULTI.demo, n);
     await blockOf(page, c(1)).getByRole("button", { name: "Đã ổn", exact: true }).click();
-    await blockOf(page, c(2)).getByRole("button", { name: "LAP-0342", exact: true }).click();
+    await blockOf(page, c(2)).getByLabel("Trả lời ý 2", { exact: true }).fill("LAP-0342");
     const [res1] = await Promise.all([
       page.waitForResponse(isReplyCall(MULTI.demo), { timeout: 15_000 }),
       page.getByRole("button", { name: "Gửi phản hồi", exact: true }).click(),
@@ -2444,28 +2452,29 @@ await liveMock("F6-2 round 1: LAP-0342 + Đã ổn → 1 POST 2 khoá → round 
     const final = (await page.getByTestId("final-note").innerText({ timeout: 15_000 })).trim();
     check(final.startsWith(F6.finalNote), `câu cuối "${final}", cần "${F6.finalNote}"`);
     await waitStrip(page, F6.closed, "cha đóng");
+    await page.getByText(F6.demoSummary, { exact: true }).waitFor({ timeout: 10_000 });
     await expectPill(page, F6.pillDone, "an.nv (cha đóng)");
     check((await page.getByRole("button", { name: "Gửi phản hồi", exact: true }).count()) === 0, "cha đóng mà vẫn còn nút gửi");
     check(replies.length === 2, `cả chuỗi gửi ${replies.length} POST /reply, cần 2`);
     await expectNoStateCodes(page, "an.nv (cha đóng)");
     await shoot(page, "f6-closed.png");
-    return { note: `round 1 → 1 POST {${c(1)}: confirmed, ${c(2)}: LAP-0342} (không ý 3) → 202 → tin "Ý 1: Đã ổn · Ý 2: LAP-0342" → round 2: 1 khối (ý 2), round 1 chỉ đọc; dải ${F6.round2.join(" / ")} → 1 POST 1 khoá → "${F6.finalNote}"; dải ${F6.closed.join(" / ")}; nhãn "${F6.pillDone}"` };
+    return { note: `round 1 → 1 POST {${c(1)}: confirmed, ${c(2)}: LAP-0342} (không ý 3) → 202 → tin "Ý 1: Đã ổn · Ý 2: LAP-0342" → round 2: 1 khối (ý 2), round 1 chỉ đọc; dải ${F6.round2.join(" / ")} → 1 POST 1 khoá → "${F6.finalNote}" + câu tổng kết "${F6.demoSummary}"; dải ${F6.closed.join(" / ")}; nhãn "${F6.pillDone}"` };
   }),
 );
 
-await liveMock("F6-3 tkt-demo-multi-422: 422 fields → lỗi dưới ĐÚNG khối của child_id", () =>
+await liveMock("F6-3 tkt-demo-multi-422: 422 fields (dạng thật body.items.<child_id>) → lỗi dưới ĐÚNG khối của child_id", () =>
   scenario("F6-3", async ({ page }) => {
     await openMulti(page, MULTI.bad);
     const c = (n) => child(MULTI.bad, n);
     await blockOf(page, c(1)).getByRole("button", { name: "Đã ổn", exact: true }).click();
-    await blockOf(page, c(2)).getByRole("button", { name: "PC-1107", exact: true }).click();
+    await blockOf(page, c(2)).getByLabel("Trả lời ý 2", { exact: true }).fill("PC-1107");
     const [res] = await Promise.all([
       page.waitForResponse(isReplyCall(MULTI.bad), { timeout: 15_000 }),
       page.getByRole("button", { name: "Gửi phản hồi", exact: true }).click(),
     ]);
     check(res.status() === 422, `POST /reply → ${res.status()}, cần 422`);
     const fields = (await res.json()).fields;
-    check(sameList(fields, [`body.items.${c(2)}.answer`]), `fields ${JSON.stringify(fields)}`);
+    check(sameList(fields, [`body.items.${c(2)}`]), `fields ${JSON.stringify(fields)}`);
     await blockOf(page, c(2)).getByTestId("digest-item-error").waitFor({ timeout: 5_000 });
     const errors = [];
     for (const n of [1, 2, 3]) errors.push(await blockError(page, c(n)));
@@ -2611,6 +2620,164 @@ if (mockServer) {
   await stopServer(mockServer);
   mockServer = null;
 }
+
+// F6-R (N-T20 P6) — nhiều ý trên route THẬT T20b (dev KHÔNG mock). Câu = TC35 của backend/tests/stack/gate5.py + thẻ như
+// `Ctx.open` của gate3 (câu có "mật khẩu" kết thúc bằng dấu chấm — Q-T24-10, không thì luật bí mật che mất tên preset).
+// Preset config/scripted/tc35{,-1,-2}.yaml: vòng 1 = ý 1 kết quả (confirm) + ý 2 câu hỏi (answer) → "30" + Đã ổn → vòng 2 =
+// ý 2 kết quả (confirm) → Đã ổn → ALL_RESOLVED. Cả 2 ý AUTO (R01, R10) — KHÔNG phiếu duyệt. Tên ý lấy từ thân GET của server.
+const TC35 = "đặt lại mật khẩu AD và gia hạn quyền thư mục finance/public-reports. [fake:tc35]";
+const GATE5_HINT =
+  "backend có ở cấu hình gate5 không (LLM_BACKEND=scripted, không FAKE_SCENARIO, ENABLED_INTENTS ⊇ {account, access} ở CẢ backend lẫn worker)?";
+const TC35_SUMMARY = "Cả 2 yêu cầu đã hoàn tất."; // backend/app/domain/children.py SUMMARY["ALL_RESOLVED"], n = 2
+// = PROGRESS_LABEL / OUTCOME_LABEL / UNKNOWN_* của src/routes/employee/multi.ts
+const REAL_PROGRESS = { processing: "Đang xử lý", pending_approval: "Chờ IT duyệt", ready: "Đã có kết quả — chờ tổng hợp", needs_user: "Cần bạn phản hồi" };
+const REAL_OUTCOME = { resolved: "Đã xong", escalated: "Đã chuyển kỹ thuật viên", rejected: "Không được duyệt" };
+const progressText = (p) => {
+  const label =
+    p.progress === "closed"
+      ? (Object.hasOwn(REAL_OUTCOME, p.outcome ?? "") ? REAL_OUTCOME[p.outcome] : "Đã kết thúc")
+      : Object.hasOwn(REAL_PROGRESS, p.progress) ? REAL_PROGRESS[p.progress] : "Đang xử lý";
+  return `${p.title || `Ý ${p.index}`}· ${label}`;
+};
+const digestsOf = (v) => (v.conversation ?? []).filter((m) => m?.role === "assistant" && m?.kind === "digest");
+const stripTexts = (page) => page.locator('[data-testid="progress-item"]').evaluateAll((els) => els.map((el) => el.textContent.trim()));
+
+/** Dải tiến độ trên màn = nhãn suy từ `children_progress` của CHÍNH thân GET (không ghi cứng tên ý). */
+async function expectStripOf(page, view, what) {
+  const expected = (view.children_progress ?? []).map(progressText);
+  const deadline = Date.now() + 15_000;
+  let shown = [];
+  while (Date.now() < deadline) {
+    shown = await stripTexts(page);
+    if (sameList(shown, expected)) return shown;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`${what}: dải tiến độ ${JSON.stringify(shown)}, children_progress của thân GET → ${JSON.stringify(expected)}`);
+}
+
+/** Gửi thẳng (Q-fe-44: Bearer của SPA) CHỈ các lời gọi `allowed` của bước — log: phương thức, đường dẫn, mã, detail/error. */
+async function directTicketCall(method, path, body, token, allowed) {
+  check(allowed.has(`${method} ${path}`), `F6-R chỉ gửi thẳng 2 lời gọi đã chốt, không phải ${method} ${path}`);
+  const res = await fetch(`${BACKEND}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const json = await res.json().catch(() => null);
+  const code = json?.detail ?? json?.error ?? null;
+  log(`${method} ${path} (an.nv, gửi thẳng, Bearer của SPA) → ${res.status}${code ? ` ${code}` : ""}`);
+  return { status: res.status, body: json };
+}
+
+await live("F6-R an.nv câu tc35 (route THẬT T20b): vòng 1 (2 khối) → gửi thẳng 422/409 → “30” + Đã ổn → 1 POST 2 khoá → vòng 2 → Đã ổn → ALL_RESOLVED + câu tổng kết", () =>
+  scenario("F6-R", async ({ page }) => {
+    const tickets = watchTickets(page);
+    const replies = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && /^\/api\/tickets\/[^/]+\/reply$/.test(pathOf(r))) replies.push({ path: pathOf(r), body: r.postDataJSON() });
+    });
+    await signInAs(page, "an.nv");
+    const id = await submitChat(page, TC35);
+    const bearer = bearerFrom(page, (u) => u.pathname === `/api/tickets/${id}`);
+    const [c1, c2] = [1, 2].map((n) => child(id, n));
+
+    // Vòng 1
+    // Một ý `pending_approval` = backend KHÔNG ở cấu hình gate5 (tc35 cả 2 ý AUTO) → dừng NGAY, không đợi hết TURN_WAIT
+    // (phiếu đã có thì để hết hạn — verify không duyệt phiếu thật).
+    const approval = (v) => (v.children_progress ?? []).some((p) => p.progress === "pending_approval");
+    const r1 = await waitView(page, tickets, id, (v) => v.waiting_for === "reply" || !!v.final_state || approval(v), "chờ tin tổng hợp vòng 1");
+    check(!approval(r1), `có ý chờ IT duyệt (${describeView(r1)}) — tc35 phải AUTO cả 2 ý; ${GATE5_HINT}`);
+    check(r1.waiting_for === "reply" && !r1.final_state, `không tới vòng 1 (${describeView(r1)}) — ${GATE5_HINT}`);
+    const d1 = digestsOf(r1);
+    check(d1.length === 1 && d1[0].round === 1, `vòng 1: cần 1 tin digest round 1, có ${d1.length} — ${GATE5_HINT}`);
+    const shape1 = d1[0].items.map((i) => [i.child_id, i.kind, i.needs]);
+    check(sameList(shape1, [[c1, "result", "confirm"], [c2, "question", "answer"]]), `vòng 1: khối ${JSON.stringify(shape1)}`);
+    const progress1 = (r1.children_progress ?? []).map((p) => [p.child_id, p.progress]);
+    check(sameList(progress1, [[c1, "needs_user"], [c2, "needs_user"]]), `vòng 1: children_progress ${JSON.stringify(progress1)}`);
+    const active = page.locator('[data-testid="digest"][data-active="true"]');
+    await active.waitFor({ timeout: 30_000 });
+    await expectStripOf(page, r1, "vòng 1");
+    const blocks1 = await active.locator('[data-testid="digest-item"]').evaluateAll((els) => els.map((el) => el.dataset.child));
+    check(sameList(blocks1, [c1, c2]), `vòng 1: khối trên màn ${JSON.stringify(blocks1)}`);
+    const heads1 = (await active.locator('[data-testid="digest-item"] h3').allInnerTexts()).map((t) => t.trim());
+    const wantHeads1 = d1[0].items.map((i) => (i.title ? `Ý ${i.index} – ${i.title}` : `Ý ${i.index}`));
+    check(sameList(heads1, wantHeads1), `vòng 1: tiêu đề ${JSON.stringify(heads1)}, cần ${JSON.stringify(wantHeads1)}`);
+    await expectPill(page, "Cần bạn phản hồi", "an.nv (vòng 1)");
+    await expectNoStateCodes(page, "an.nv (vòng 1)");
+    await shoot(page, "f6-real-round1.png");
+
+    // Gửi thẳng — CHỈ khi cha ĐANG ở parent_reply_wait: đọc lại GET MỚI NHẤT ngay trước khi gửi (ngoài lúc đó /reply = 409 +
+    // late_event — một dòng ghi).
+    const token = await bearer.take();
+    const now = tickets.views.get(id);
+    check(now?.waiting_for === "reply" && !now.final_state && digestsOf(now).length === 1, `trước khi gửi thẳng cha không còn ở vòng 1 (${describeView(now)}) — không gửi`);
+    const allowed = new Set([`POST /api/tickets/${id}/reply`, `POST /api/tickets/${c1}/messages`]);
+    const missing = await directTicketCall("POST", `/api/tickets/${id}/reply`, { items: { [c1]: { confirmed: true } } }, token, allowed);
+    check(missing.status === 422 && sameList(missing.body?.fields, [`body.items.${c2}`]), `/reply thiếu ý 2 → ${missing.status} ${JSON.stringify(missing.body)}, cần 422 ["body.items.${c2}"]`);
+    const toChild = await directTicketCall("POST", `/api/tickets/${c1}/messages`, { text: "x" }, token, allowed);
+    check(toChild.status === 409, `/messages lên con → ${toChild.status}, cần 409`);
+    check(replies.length === 0, `gửi thẳng mà trang đã POST ${replies.length} /reply`);
+
+    // Trả lời vòng 1 trên giao diện
+    await blockOf(page, c1).getByRole("button", { name: "Đã ổn", exact: true }).click();
+    await blockOf(page, c2).getByLabel("Trả lời ý 2", { exact: true }).fill("30");
+    const [res1] = await Promise.all([
+      page.waitForResponse(isReplyCall(id), { timeout: 30_000 }),
+      active.getByRole("button", { name: "Gửi phản hồi", exact: true }).click(),
+    ]);
+    check(res1.status() === 202, `POST /reply (vòng 1) → ${res1.status()}, cần 202`);
+    check(sameList(res1.request().postDataJSON(), { items: { [c1]: { confirmed: true }, [c2]: { answer: "30" } } }), `body vòng 1: ${JSON.stringify(res1.request().postDataJSON())}`);
+
+    // Vòng 2
+    const r2 = await waitView(page, tickets, id, (v) => (v.waiting_for === "reply" && digestsOf(v).length >= 2) || !!v.final_state || approval(v), "chờ tin tổng hợp vòng 2");
+    check(!approval(r2), `vòng 2: có ý chờ IT duyệt (${describeView(r2)}) — tc35 ý 2 phải R10 AUTO; ${GATE5_HINT}`);
+    check(r2.waiting_for === "reply" && !r2.final_state, `không tới vòng 2 (${describeView(r2)})`);
+    const d2 = digestsOf(r2);
+    const shape2 = d2.at(-1).items.map((i) => [i.child_id, i.kind, i.needs]);
+    check(d2.length === 2 && d2[1].round === 2 && sameList(shape2, [[c2, "result", "confirm"]]), `vòng 2: ${d2.length} tin, khối ${JSON.stringify(shape2)}`);
+    await page.getByText("Ý 1: Đã ổn · Ý 2: 30", { exact: true }).waitFor({ timeout: 15_000 });
+    const round1 = page.locator('[data-testid="digest"]').nth(0);
+    const round2 = page.locator('[data-testid="digest"]').nth(1);
+    await round2.waitFor({ timeout: 15_000 });
+    check((await round2.getAttribute("data-active")) === "true", "tin vòng 2 không có form");
+    check((await round1.getAttribute("data-active")) === "false", "tin vòng 1 vẫn có form");
+    check((await round1.getByRole("button").count()) === 0 && (await round1.getByRole("textbox").count()) === 0, "tin vòng 1 (chỉ đọc) còn nút / ô nhập");
+    const blocks2 = await round2.locator('[data-testid="digest-item"]').evaluateAll((els) => els.map((el) => el.dataset.child));
+    check(sameList(blocks2, [c2]), `vòng 2: khối trên màn ${JSON.stringify(blocks2)}`);
+    await expectStripOf(page, r2, "vòng 2");
+    await shoot(page, "f6-real-round2.png");
+    await round2.getByRole("button", { name: "Đã ổn", exact: true }).click();
+    const [res2] = await Promise.all([
+      page.waitForResponse(isReplyCall(id), { timeout: 30_000 }),
+      round2.getByRole("button", { name: "Gửi phản hồi", exact: true }).click(),
+    ]);
+    check(res2.status() === 202, `POST /reply (vòng 2) → ${res2.status()}, cần 202`);
+    check(sameList(res2.request().postDataJSON(), { items: { [c2]: { confirmed: true } } }), `body vòng 2: ${JSON.stringify(res2.request().postDataJSON())}`);
+
+    // Cha đóng
+    const done = await waitView(page, tickets, id, (v) => !!v.final_state, "chờ cha đóng");
+    check(!approval(done), "cha đóng mà children_progress có ý chờ duyệt");
+    check(done.final_state === "S_RESOLVED", `cha đóng: ${describeView(done)}, cần S_RESOLVED (ALL_RESOLVED)`);
+    const outcomes = (done.children_progress ?? []).map((p) => [p.progress, p.outcome]);
+    check(sameList(outcomes, [["closed", "resolved"], ["closed", "resolved"]]), `children_progress cuối ${JSON.stringify(outcomes)}`);
+    const last = done.conversation.at(-1);
+    check(last?.kind === "digest" && sameList(last.items, []) && last.text === TC35_SUMMARY, `tin cuối ${JSON.stringify(last)?.slice(0, 160)}, cần digest items [] "${TC35_SUMMARY}"`);
+    await page.getByText(TC35_SUMMARY, { exact: true }).waitFor({ timeout: 15_000 });
+    const final = (await page.getByTestId("final-note").innerText({ timeout: 15_000 })).trim();
+    check(final.startsWith(F6.finalNote), `câu cuối "${final}", cần "${F6.finalNote}"`);
+    await expectStripOf(page, done, "cha đóng");
+    await expectPill(page, "Đã hoàn tất", "an.nv (cha đóng)");
+    check((await page.getByRole("button", { name: "Gửi phản hồi", exact: true }).count()) === 0, "cha đóng mà vẫn còn nút gửi");
+    check(replies.length === 2 && replies.every((r) => r.path === `/api/tickets/${id}/reply`), `cả chuỗi trang gửi ${replies.length} POST /reply, cần 2 (đúng ticket cha)`);
+    await expectPollingStopped(page, tickets, id, "an.nv (cha đóng)");
+    await expectNoStateCodes(page, "an.nv (cha đóng)");
+    await shoot(page, "f6-real-closed.png");
+    return {
+      note: `ticket ${id}: vòng 1 [result/confirm, question/answer], dải = children_progress (${(r1.children_progress ?? []).map(progressText).join(" / ")}); gửi thẳng /reply thiếu ý → 422 ["body.items.<ý 2>"], /messages lên con → 409; 1 POST {ý 1 confirmed, ý 2 "30"} → vòng 2 [result/confirm], vòng 1 chỉ đọc → 1 POST {ý 2 confirmed} → S_RESOLVED, "${TC35_SUMMARY}"; 2 POST /reply; polling dừng; không GET nào thấy ý pending_approval`,
+    };
+  }),
+);
 
 await live("F4-7 long.nh (L2) → /approvals: trang không có quyền; thanh bên không có mục duyệt", () =>
   scenario("F4-7", async ({ page }) => {

@@ -22,8 +22,8 @@ export type Accepted = { ticket_id: string; status: string; notices: string[] };
 export type Source = { chunk_id: string; title: string; heading_path: string };
 
 // Nguồn: domain/messages.py (answer, question, result), graph/nodes/b20_audit.py (escalation); 4c thêm rejection.
-// `kind` lạ → hiện `text` như tin thường, không lỗi (12b Q-fe-2); `digest` (tin tổng hợp nhiều ý) — Đề xuất F6, kiểu
-// `DigestConversationItem` ở khối route CHƯA CÓ. Xoá khi: TicketView khai kiểu conversation.
+// `kind` lạ → hiện `text` như tin thường, không lỗi (12b Q-fe-2); `digest` (tin tổng hợp nhiều ý) — kiểu
+// `DigestConversationItem` ở khối "Route ĐÃ CÓ — T20b". Xoá khi: TicketView khai kiểu conversation.
 export type ConversationItem =
   | { role: "user"; text: string }
   | DigestConversationItem
@@ -39,8 +39,8 @@ export type ConversationItem =
 // Nguồn: backend/app/api/tickets.py TicketView (response_model) — `conversation` là list[dict] nên phần tử để `unknown`,
 // component tự kiểm dạng (components/Conversation.tsx). Xoá khi: `npm run gen:api` chạy được (12b Q-fe-1) → dùng
 // kiểu của schema.gen.ts (conversation vẫn phải kiểm dạng).
-// `children_progress`: CHƯA CÓ ở backend — Đề xuất F6 cho T20 (kiểu `ChildProgress` dưới); thiếu/null = ticket thường.
-// Giao diện vẫn kiểm dạng từng phần tử (routes/employee/multi.ts `normalizeProgress`).
+// `children_progress` (T20b, kiểu `ChildProgress` dưới): thiếu/null = ticket thường. Hình dạng `children_progress` và tin
+// `digest` kiểm lúc chạy ở api/tickets.ts `parseTicketView`.
 export type TicketView = {
   ticket_id: string;
   status: string;
@@ -269,48 +269,45 @@ export type AiMetrics = {
 };
 export type AiDashboard = { from: string; to: string; unavailable: string[]; metrics: AiMetrics };
 
-// ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
+// ---------------------------------------------------------------- Route ĐÃ CÓ — T20b (nhiều ý, D-31; viết tay tới khi gen:api)
 
-// Yêu cầu nhiều ý (D-31) — Phase 5, T20. Toàn bộ khối này là [Đề xuất F6 — chốt ở T20]; hình dạng đầy đủ + chỗ
-// [Suy luận]: PLAN-fe mục 8 "Đề xuất hợp đồng cho T20". MSW: mocks/handlers/employee-multi.ts (chỉ id ticket nhiều ý minh hoạ).
+// ĐÃ CHỐT theo T20b 5df24c7: backend/app/api/tickets.py (`TicketView.children_progress`, `ReplyIn`, `_reply_body`,
+// `_items_match`, route `reply`), domain/children.py (`children_progress`, `child_index`, `SUMMARY`), domain/messages.py
+// (`compose_digest`, `child_title`, `reply_text`). openapi khai `children_progress: list[dict] | None` và `conversation:
+// list[dict]` → schema.check KHÔNG bắt được lệch: hình dạng kiểm LÚC CHẠY ở api/tickets.ts (`parseTicketView` — sai → 502
+// `invalid_ticket_body`, không vẽ một phần). Giá trị lạ của progress/outcome/kind/needs KHÔNG phải lỗi hình dạng (nhãn dự
+// phòng ở routes/employee/multi.ts, components/messages.ts). MSW chỉ còn minh hoạ ca lỗi khó tạo trên stack (id
+// `tkt-demo-multi-`, mocks/handlers/employee-multi.ts). Xoá khi: gen:api thành nguồn kiểu cho TicketView (vẫn phải kiểm dạng).
 
-// Nguồn: P1 §8.2–8.3 (khung tiến độ từng ý, không phải tin nhắn) + P10 §3.1 (`GET /api/tickets/{cha}` trả
-// `children_progress`) — Đề xuất F6. `title` = nhãn ngắn của ý do server đặt [Suy luận]; `outcome` chỉ khi `closed`.
-// Xoá khi: T20 merge (gen:api) — xoá cùng mocks/handlers/employee-multi.ts, mocks/fixtures/multi.ts.
+// `children_progress` (P11, 5.2.6): theo `index`; `child_id` = "<cha>-<index>"; `title` = `child_title(seed)` — CÓ THỂ "";
+// `outcome` chỉ khác null khi `closed` (con không bao giờ S_BLOCKED — P1). `null` = ticket thường / ticket con.
 export type ChildProgressState = "processing" | "pending_approval" | "ready" | "needs_user" | "closed";
-export type ChildOutcome = "resolved" | "escalated" | "rejected" | "blocked";
+export type ChildOutcome = "resolved" | "escalated" | "rejected";
 export type ChildProgress = {
   child_id: string;
   index: number;
   title: string;
-  progress: ChildProgressState;
-  outcome: ChildOutcome | null;
+  progress: ChildProgressState | (string & {});
+  outcome: ChildOutcome | (string & {}) | null;
 };
 
-// Nguồn: P1 §8.2 `compose_digest` (một tin / lượt, mỗi ý một khối "Ý n – …") + B03-B05 §5.4.1 (`needs` của notice) —
-// Đề xuất F6. `kind` theo notice của con: B10/B18 → result, B11 → question, B16 → rejection, B20 → escalation.
-// `options` (gợi ý trả lời, vd mã máy) [Suy luận]. `text` của tin = bản chữ thuần (dự phòng / kênh khác).
-// Xoá khi: T20 merge (gen:api).
+// Tin tổng hợp `compose_digest` (P9): `items[]` mỗi notice chưa gửi một khối (một con có thể có >1 khối, nhưng chỉ MỘT khối
+// `needs ≠ none`); notice B10 `answer` hiện là `result` (server đổi). KHÔNG có `options`, `sources`. `text` = các dòng
+// "Ý {index} – {title}: {text}" nối "\n" (+ câu tổng kết ở dòng cuối khi MỌI con đã kết thúc; vòng cuối không còn notice →
+// `items: []`, `text` = chỉ câu tổng kết). `DigestItem` là dạng ĐÃ chuẩn hoá (components/messages.ts — kind/needs lạ đã đổi).
 export type DigestItemKind = "result" | "question" | "rejection" | "escalation";
 export type DigestNeeds = "confirm" | "answer" | "none";
-export type DigestItem = {
-  child_id: string;
-  index: number;
-  title: string;
-  kind: DigestItemKind;
-  text: string;
-  needs: DigestNeeds;
-  options?: string[];
-  sources?: Source[];
-};
+export type DigestItem = { child_id: string; index: number; title: string; kind: DigestItemKind; text: string; needs: DigestNeeds };
 export type DigestConversationItem = { role: "assistant"; kind: "digest"; round: number; text: string; items: DigestItem[] };
 
-// Nguồn: B19 §4 `ParentReplyIn` (khoá = child_ticket_id; `ConfirmIn | ClarifyAnswerIn`) + P1 §8.2 (mọi ý trong
-// `awaiting` phải có mặt, thiếu → 422) — Đề xuất F6: `{answer}` cho câu hỏi, `{confirmed, note?}` cho xác nhận (không gửi
-// `satisfaction` — "Có thể"). 202 = `Accepted`; 422 `fields: ["body.items.<child_id>…"]`; 409 trả muộn [Chốt 8.3].
-// Xoá khi: T20 merge (gen:api).
+// `ReplyIn` (extra="forbid" mọi tầng, `items` ≥ 1): khoá = child_id "<cha>-<số>" (khác dạng → 422 `["body.items"]`, vị trí
+// CHUNG), ĐÚNG tập `awaiting` và đúng loại theo `needs` (lệch → 422 `["body.items.<child_id>", …]` sắp theo id); lỗi hình
+// dạng Pydantic → `items.<child_id>.ReplyAnswer.answer` … (KHÔNG tiền tố `body.`). `note` rỗng → không gửi khoá. Không ở
+// `parent_reply_wait` → 409 sự kiện muộn. 202 = `Accepted`.
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
+
+// ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
 
 // Nguồn: [Đề xuất F5 — chốt lại khi làm Phase 7] (Q-fe-26; PLAN-fe mục 7 #20, nợ API #11). P10 §3.3 chỉ có TÊN route;
 // tên trường bám cột bảng `policy_versions` (backend/app/db/models.py `PolicyVersion`: `version` String(16),

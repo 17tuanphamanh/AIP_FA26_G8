@@ -1,17 +1,19 @@
-// Yêu cầu nhiều ý (D-31) phía nhân viên — hàm thuần. Hợp đồng là [Đề xuất F6 — chốt ở T20] (PLAN-fe mục 8):
-// `children_progress` trên GET ticket cha, tin `kind:"digest"`, `POST /api/tickets/{cha}/reply`.
+// Yêu cầu nhiều ý (D-31) phía nhân viên — hàm thuần. Hợp đồng ĐÃ CHỐT theo T20b 5df24c7 (api/contracts-tam.ts):
+// `children_progress` trên GET ticket cha, tin `kind:"digest"`, `POST /api/tickets/{cha}/reply`. Hình dạng kiểm ở
+// api/tickets.ts `parseTicketView`; ở đây chỉ nhãn (giá trị lạ → nhãn dự phòng) và form trả lời.
 // Nhân viên KHÔNG thấy mã `S_*`; ý bị chặn chỉ có câu trung tính [Chốt 7.1].
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { NOTE_MAX, TEXT_MAX } from "../../api/tickets.ts";
-import type { ChildOutcome, ChildProgressState, DigestItem, ParentReplyIn, ParentReplyItem, TicketView } from "../../api/types.ts";
+import type { ChildOutcome, ChildProgress, ChildProgressState, DigestItem, ParentReplyIn, ParentReplyItem, TicketView } from "../../api/types.ts";
 import type { Message } from "../../components/messages.ts";
 import { ownEntry } from "../../lib/lookup.ts";
 import { statusLabel, type Tone } from "./status.ts";
 
 // ---------------------------------------------------------------- dải tiến độ (P1 §8.3 — không phải tin nhắn)
 
-/** Một ý trên dải tiến độ sau khi kiểm dạng. `progress`/`outcome` giữ nguyên chuỗi server gửi — nhãn tự xử lý giá trị lạ. */
-export type ProgressView = { child_id: string; index: number; title: string; progress: string; outcome: string | null };
+/** Một ý trên dải tiến độ (đã kiểm dạng ở api/tickets.ts). `progress`/`outcome` giữ nguyên chuỗi server gửi — nhãn tự xử lý
+ *  giá trị lạ. */
+export type ProgressView = ChildProgress;
 
 /** `closed` không có ở đây — đọc theo `outcome`. */
 export const PROGRESS_LABEL: Readonly<Record<Exclude<ChildProgressState, "closed">, string>> = {
@@ -25,49 +27,36 @@ export const OUTCOME_LABEL: Readonly<Record<ChildOutcome, string>> = {
   resolved: "Đã xong",
   escalated: "Đã chuyển kỹ thuật viên",
   rejected: "Không được duyệt",
-  blocked: "Không thể xử lý tự động", // trung tính như E0 [Chốt 7.1]
 };
 
-/** progress/outcome lạ (backend thêm sau) → câu chung, không vỡ màn, không lộ giá trị. */
+/** progress lạ (backend thêm sau) → câu chung, không vỡ màn, không lộ giá trị. */
 export const UNKNOWN_PROGRESS_LABEL = "Đang xử lý";
+/** `closed` mà outcome lạ / null → trung tính "đã kết thúc" (KHÔNG "Đang xử lý" — ý không còn chạy), chấm xám. */
+export const UNKNOWN_OUTCOME_LABEL = "Đã kết thúc";
 
 const has = <T extends string>(table: Readonly<Record<T, string>>, key: string | null): key is T =>
   key !== null && Object.prototype.hasOwnProperty.call(table, key);
 
 export function progressLabel(p: Pick<ProgressView, "progress" | "outcome">): string {
-  if (p.progress === "closed") return has(OUTCOME_LABEL, p.outcome) ? OUTCOME_LABEL[p.outcome] : UNKNOWN_PROGRESS_LABEL;
+  if (p.progress === "closed") return has(OUTCOME_LABEL, p.outcome) ? OUTCOME_LABEL[p.outcome] : UNKNOWN_OUTCOME_LABEL;
   return has(PROGRESS_LABEL, p.progress) ? PROGRESS_LABEL[p.progress] : UNKNOWN_PROGRESS_LABEL;
 }
 
-/** Màu chấm theo KH mục 5: cam = chờ con người (IT duyệt / bạn phản hồi), xanh lá = xong, xám = chuyển / không xử lý. */
+/** Màu chấm theo KH mục 5: cam = chờ con người (IT duyệt / bạn phản hồi), xanh lá = xong, xám = đã kết thúc khác (chuyển /
+ *  không duyệt / outcome lạ). */
 export function progressTone(p: Pick<ProgressView, "progress" | "outcome">): Tone {
   if (p.progress === "pending_approval" || p.progress === "needs_user") return "waiting";
-  if (p.progress === "closed" && has(OUTCOME_LABEL, p.outcome)) return p.outcome === "resolved" ? "done" : "closed";
+  if (p.progress === "closed") return p.outcome === "resolved" ? "done" : "closed";
   return "processing";
 }
 
-/** `children_progress`: không phải mảng / rỗng → null (ticket thường). Phần tử thiếu `child_id`/`index`/`title` → bỏ. */
-export function normalizeProgress(raw: unknown): ProgressView[] | null {
-  if (!Array.isArray(raw)) return null;
-  const seen = new Set<string>();
-  const items: ProgressView[] = [];
-  for (const entry of raw) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const { child_id, index, title, progress, outcome } = entry as Record<string, unknown>;
-    if (typeof child_id !== "string" || !child_id || seen.has(child_id)) continue;
-    if (typeof index !== "number" || !Number.isInteger(index) || index < 1 || typeof title !== "string") continue;
-    seen.add(child_id);
-    items.push({
-      child_id,
-      index,
-      title,
-      progress: typeof progress === "string" ? progress : "",
-      outcome: typeof outcome === "string" ? outcome : null,
-    });
-  }
-  items.sort((a, b) => a.index - b.index);
-  return items.length > 0 ? items : null;
+/** Dải tiến độ từ `children_progress` ĐÃ kiểm dạng: thiếu / rỗng → null (ticket thường); sắp theo index. */
+export function progressItems(list: readonly ChildProgress[] | null | undefined): ProgressView[] | null {
+  return list && list.length > 0 ? [...list].sort((a, b) => a.index - b.index) : null;
 }
+
+/** Tên ý: `title` server (có thể "" — `child_title` không có seed) → "Ý n" thay vì "Ý n – ". */
+export const childHeading = (p: { index: number; title: string }) => (p.title ? `Ý ${p.index} – ${p.title}` : `Ý ${p.index}`);
 
 // ---------------------------------------------------------------- nhãn ticket cha (12b Q-fe-34 — chỉ khi có children_progress)
 
@@ -106,11 +95,8 @@ const ITEM_LABEL: Readonly<Record<DigestItem["kind"], string>> = {
   escalation: "Đã chuyển kỹ thuật viên",
 };
 
-/** Nhãn góc phải của khối (Bản 4). Ý có `outcome:"blocked"` → câu trung tính, bất kể `kind` [Chốt 7.1]. */
-export function itemLabel(item: Pick<DigestItem, "kind">, outcome: string | null | undefined): string {
-  if (outcome === "blocked") return OUTCOME_LABEL.blocked;
-  return ownEntry(ITEM_LABEL, item.kind, ITEM_LABEL.result);
-}
+/** Nhãn góc phải của khối (Bản 4) theo `kind`; kind lạ → "Đã xử lý". */
+export const itemLabel = (item: Pick<DigestItem, "kind">): string => ownEntry(ITEM_LABEL, item.kind, ITEM_LABEL.result);
 
 // ---------------------------------------------------------------- form trả lời
 
@@ -120,19 +106,21 @@ export type Drafts = Readonly<Record<string, DraftItem>>;
 export const EMPTY_DRAFT: DraftItem = { choice: null, note: "", answer: "" };
 
 // 12b Q-fe-35.
-export const REPLY_MISSING_CHOICE = "Cần chọn một máy trước khi gửi.";
 export const REPLY_MISSING_ANSWER = "Cần trả lời trước khi gửi.";
 export const REPLY_MISSING_CONFIRM = "Chọn Đã ổn hoặc Chưa ổn";
 export const REPLY_ANSWER_TOO_LONG = `Câu trả lời tối đa ${TEXT_MAX} ký tự.`;
 export const REPLY_NOTE_TOO_LONG = `Ghi chú tối đa ${NOTE_MAX} ký tự.`;
 export const REPLY_INVALID = "Phản hồi cho ý này chưa hợp lệ — kiểm tra lại.";
+/** 409 sự kiện muộn (cha không còn ở `parent_reply_wait`) — câu cố định của giao diện, không hiện chữ server; màn tự tải lại. */
+export const REPLY_STALE = "Phản hồi này đã quá hạn hoặc yêu cầu đã thay đổi — đang tải lại nội dung mới.";
 
 /** Nháp của một khối theo `child_id` (khoá server) — khoá RIÊNG: id "constructor" / "__proto__" không ra hàm/object
  *  của prototype. Các hàm dưới GHI theo `child_id` qua `Object.fromEntries` (tạo khoá riêng; gán `obj["__proto__"] = …` là
  *  đổi prototype — khoá mất khỏi lỗi và khỏi body JSON). */
 export const draftOf = (drafts: Drafts, childId: string): DraftItem => ownEntry(drafts, childId, EMPTY_DRAFT);
 
-/** Chỉ các khối cần người dùng (`needs ≠ "none"`) — đúng tập `awaiting` của cha (P1 §8.2). */
+/** Chỉ các khối cần người dùng (`needs ≠ "none"`) — đúng tập `awaiting` của cha (P1 §8.2); mỗi con tối đa MỘT khối
+ *  (api/tickets.ts `parseDigest`), nên khoá body = `child_id` không trùng. */
 export const awaitingItems = (items: readonly DigestItem[]) => items.filter((i) => i.needs !== "none");
 
 /** Kiểm PHÍA MÁY KHÁCH trước khi gửi: mọi khối cần người dùng phải có lựa chọn / câu trả lời. Trả lỗi theo `child_id`
@@ -147,7 +135,7 @@ export function checkDigest(items: readonly DigestItem[], drafts: Drafts): Recor
       else if (draft.choice === false && draft.note.trim().length > NOTE_MAX) fail(REPLY_NOTE_TOO_LONG);
     } else {
       const answer = draft.answer.trim();
-      if (!answer) fail(item.options?.length ? REPLY_MISSING_CHOICE : REPLY_MISSING_ANSWER);
+      if (!answer) fail(REPLY_MISSING_ANSWER);
       else if (answer.length > TEXT_MAX) fail(REPLY_ANSWER_TOO_LONG);
     }
   }
@@ -166,8 +154,9 @@ export function digestReplyBody(items: readonly DigestItem[], drafts: Drafts): P
   return { items: Object.fromEntries(body) };
 }
 
-/** 422 `fields` (đã bỏ `body.`, errors.ts) → lỗi tại ĐÚNG khối theo `child_id` (`items.<cid>` hoặc `items.<cid>.…`).
- *  Field không thuộc khối nào (`items`, `items.<extra>`, `body`…) → `general`. */
+/** 422 `fields` (đã bỏ `body.`, errors.ts) → lỗi tại ĐÚNG khối theo `child_id` (`items.<cid>` hoặc `items.<cid>.…` — cả
+ *  dạng Pydantic `items.<cid>.ReplyAnswer.answer`). `childIds` = các ý CẦN trả lời. Field không thuộc ý nào (`items` — khoá
+ *  sai dạng, `items.<extra>`, `body`…) → `general`. */
 export function digestFieldErrors(fields: readonly string[], childIds: readonly string[]) {
   const byChild: [string, string][] = [];
   let general = fields.length === 0;
@@ -184,14 +173,15 @@ export function digestFieldErrors(fields: readonly string[], childIds: readonly 
 }
 
 /** Lỗi của `/reply` → lỗi theo khối + câu chung (dưới nút "Gửi phản hồi"). 422 có `fields` → đúng khối, field không
- *  thuộc khối nào (hoặc 422 `{detail}`) → câu chung; 409 trả muộn → câu của server / câu chung (màn tự tải lại ticket);
- *  413 → "Nội dung quá dài."; lỗi khác → errors.ts. Không bao giờ in lại nội dung người dùng gửi. */
+ *  thuộc khối nào (hoặc 422 `{detail}`) → câu chung; 409 trả muộn → `REPLY_STALE` (màn tự tải lại ticket); 413 → "Nội
+ *  dung quá dài."; lỗi khác → errors.ts. Không bao giờ in lại nội dung người dùng gửi hay chữ của server. */
 export function replyErrorView(error: unknown, childIds: readonly string[]): { byChild: Record<string, string>; general: string | null } {
   if (!(error instanceof ApiError)) return { byChild: {}, general: errorMessage(null) };
   if (error.status === 422) {
     const { byChild, general } = digestFieldErrors(error.fields, childIds);
     return { byChild, general: general ? errorMessage(error) : null };
   }
+  if (error.status === 409) return { byChild: {}, general: REPLY_STALE };
   if (error.status === 413) return { byChild: {}, general: "Nội dung quá dài." };
   return { byChild: {}, general: errorMessage(error) };
 }

@@ -19,7 +19,7 @@ import { DigestMessage, type SendResult } from "../../components/DigestMessage.t
 import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
-import { latestRound, normalizeProgress, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel } from "./multi.ts";
+import { latestRound, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel, progressItems } from "./multi.ts";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
 import { FINAL_NOTE, POLL_PROCESSING_MS, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
@@ -38,6 +38,8 @@ export function ChatRoute() {
 }
 
 const stopOn = (error: unknown) => error instanceof ApiError && (error.status === 403 || error.status === 404);
+/** Thân ticket sai hình dạng (api/tickets.ts `parseTicketView`): đang polling → giữ bản hợp lệ cũ + câu lỗi dữ liệu (Q-fe-46). */
+const badBody = (error: unknown): error is ApiError => error instanceof ApiError && error.code === "invalid_ticket_body";
 
 /** Sau 202 backend xử lý ở NỀN: lượt GET ngay sau đó có thể vẫn là bước cũ (vẫn `confirm`/`clarify`). Giữ khoá thao tác
  *  tới khi ticket đổi thật (hoặc quá `SETTLE_MAX_MS`) — không để bấm lần hai rồi nhận 409 "đã sang bước khác". */
@@ -45,7 +47,7 @@ const SETTLE_MAX_MS = 30_000;
 const progressOf = (v: TicketView) => `${v.status}|${v.waiting_for}|${v.final_state}|${v.conversation.length}`;
 
 // B4EmpChat + B4EmpStates (đã tinh chỉnh KH 4.6): một cột 720 px; polling theo KH mục 5; ô nhập theo `waiting_for`.
-// Ticket cha nhiều ý (F6, D-31 — có `children_progress`): dải tiến độ dưới header (không phải tin nhắn), tin tổng hợp
+// Ticket cha nhiều ý (D-31, T20b — có `children_progress`): dải tiến độ dưới header (không phải tin nhắn), tin tổng hợp
 // round lớn nhất có form khi `waiting_for = "reply"`, nhãn cha theo 12b Q-fe-34. Ticket thường: không nhánh nào đổi.
 export function ChatPage({ ticketId }: { ticketId: string }) {
   const location = useLocation();
@@ -153,8 +155,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const waiting = view.final_state || settling ? null : view.waiting_for;
   const composer = composerFor(view, waiting, settling);
   // Nhiều ý (D-31): form CHỈ cho tin tổng hợp round lớn nhất và CHỈ khi cha đang chờ trả lời; tin cũ chỉ đọc.
-  const progress = normalizeProgress(view.children_progress);
-  const outcomes = Object.fromEntries((progress ?? []).map((p) => [p.child_id, p.outcome]));
+  const progress = progressItems(view.children_progress);
   const activeRound = waiting === "reply" ? latestRound(messages) : null;
   const pillLabel = progress ? parentStatusLabel(view, progress) : statusLabel(view.final_state ?? view.status);
 
@@ -198,7 +199,6 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
             renderDigest={(digest) => (
               <DigestMessage
                 digest={digest}
-                outcomes={outcomes}
                 newRequestLink
                 form={digest.round === activeRound ? { sending, onSend: sendReply } : undefined}
               />
@@ -215,7 +215,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           />
           {query.isError ? (
             <p role="status" className="text-secondary text-ink-2">
-              Tạm mất kết nối tới máy chủ — đang thử lại…
+              {badBody(query.error) ? errorMessage(query.error) : "Tạm mất kết nối tới máy chủ — đang thử lại…"}
             </p>
           ) : null}
           <div ref={end} />

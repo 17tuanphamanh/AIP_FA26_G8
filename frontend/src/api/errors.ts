@@ -89,6 +89,8 @@ const CODE_MESSAGES: Record<string, string> = {
   same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
   // Tổng quan / cảnh báo (M9: thiếu kết nối monitor → 503, fail-closed — KH mục 5 dòng dashboard).
   monitor_unavailable: "Số liệu tạm thời không có",
+  // Ticket nhiều ý (T20b): `children_progress` / tin tổng hợp sai hình dạng — api/tickets.ts `parseTicketView` (502 do client đặt).
+  invalid_ticket_body: "Chưa đọc được dữ liệu của yêu cầu này. Vui lòng tải lại trang.",
   // Chính sách [Đề xuất F5 — Phase 7].
   version_conflict: "Đã có phiên bản mới hơn — tải lại trước khi lưu",
   invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
