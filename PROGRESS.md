@@ -5575,7 +5575,7 @@ cùng điều kiện nhận token. Commit `68c7f7d` (dev-tuananh, chưa push).
 
 ## Phase 5 — chặng V17: mô tả R17–R19 (16/10)
 
-Spec phase5 mục 7.12 #2 (Tuấn Anh chốt 16/10). Chưa commit.
+Spec phase5 mục 7.12 #2 (Tuấn Anh chốt 16/10). Commit 45f5cd7 (chưa push).
 
 - **Lý do:** việc P6→P5 #21 — `description` của luật là lý do hiện trên màn duyệt (`policy_engine` → `RiskDecision.reason`); cổng 6
   có bước người đọc lý do (Quân). R03–R15 loại `approval_required` đều nêu hệ quả ("… cần người duyệt"), R17–R19 chỉ nêu điều kiện.
@@ -5600,7 +5600,9 @@ Spec phase5 mục 7.12 #2 (Tuấn Anh chốt 16/10). Chưa commit.
 - **Còn chép chuỗi cũ (ngoài phạm vi V17, không sửa — Phase 5 ghi nhận):** `frontend/src/mocks/fixtures/{policy,approvals}.ts`, `manager.test.tsx:528`,
   `approvals.test.tsx:110,1468,1491` (dữ liệu giả của FE, độc lập backend); spec `phase3` 11.2 khối JSON (:1928–1934),
   `decisions.md:47`. (7.12 #2 ghi "Thay chỗ: P7 bảng luật (mô tả)" — `nen-tang/P7*.md` không có dòng R17/R18; chưa rõ chỗ nào.)
-- **Verify trên stack:** chưa chạy.
+- **Verify trên stack (16/10, 21:53–22:35):** `make verify G=345` trên 45f5cd7 (dirty=13 — 13 mục untracked trong `docs/`) **XANH**:
+  lint PASS; test backend 6635 passed · mock 106 · ml 123 (5 deselected); gate3 78/0 (ngoài giờ); gate4 73/0; gate5 227/0 (KB thật
+  `kb_version=3362c39b…`); hàng 9 BỎ QUA "chưa có CI cho HEAD 45f5cd7" (chưa push); stack kết thúc ở KB thật, backend+worker theo `.env`.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
