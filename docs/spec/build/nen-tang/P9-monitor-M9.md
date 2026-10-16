@@ -287,7 +287,7 @@ Thiết kế hiện thực chi tiết, chia việc, câu hỏi Q-M9: `claude/ke-
 
 | Endpoint | Quyền | Ghi chú |
 |---|---|---|
-| `GET /api/health` | nội bộ | 200 khi mọi phụ thuộc lõi sống; 503 kèm danh sách phụ thuộc lỗi |
+| `GET /api/health` | nội bộ | 200 khi mọi phụ thuộc lõi sống; 503 kèm danh sách phụ thuộc lỗi. Phụ thuộc lõi = DB, Qdrant, mock, ml-service; `runtime`/`kb`/`llm`/`monitor` chỉ báo, không đổi mã (D-50) |
 | `GET /api/dashboard/business?from&to` | `dashboard:read:all` hoặc `:own` | L1 chỉ thấy phiếu mình duyệt **[Chốt 2.2]** |
 | `GET /api/dashboard/ai?from&to` | `dashboard:read:all` | |
 | `GET /api/escalations/queue` | `escalation:handle` | |
@@ -325,3 +325,4 @@ Thiết kế hiện thực chi tiết, chia việc, câu hỏi Q-M9: `claude/ke-
 | 01/10/2026 | 1.5 | Mục 6.1: hai file `claude/ke-hoach-m9-*.md` thắng cả khi lệch mục 5 (không chỉ mục 6), kèm ví dụ đã lệch |
 | 01/10/2026 | 1.4 | Mục 3 ranh giới import mở rộng (M9 A0); mục 6.1 "Chốt khi hiện thực M9" trỏ về `claude/ke-hoach-m9-*.md` |
 | 14/10/2026 | 1.6 | B3 (luật 8 drift) merge: mục 3 lịch drift hằng tuần (thứ Hai 02:00 giờ VN), mục 5 drift `confidence` 10 bin (không phải "confidence TB"), mục 6.1 thêm dòng luật 8 |
+| 16/10/2026 | 1.7 | Mục 7 dòng `GET /api/health`: phụ thuộc lõi = DB, Qdrant, mock, ml-service; `runtime`/`kb`/`llm`/`monitor` chỉ báo (D-50, P6→P5 #23) |
