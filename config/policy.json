@@ -103,17 +103,17 @@
      "conditions": {"all": [
       {"fact": "action.facts.device_registered", "op": "is_false"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
-     "description": "Thiết bị chưa đăng ký"},
+     "description": "Thiết bị chưa đăng ký cần người duyệt"},
     {"id": "R18", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
      "conditions": {"all": [
       {"fact": "time.within_business_hours", "op": "is_false"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
-     "description": "Ngoài giờ hành chính"},
+     "description": "Yêu cầu gửi ngoài giờ hành chính cần người duyệt"},
     {"id": "R19", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
      "conditions": {"all": [
       {"fact": "requester.employment_status", "op": "eq", "value": "probation"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
-     "description": "Nhân viên chưa qua thử việc"},
+     "description": "Nhân viên chưa qua thử việc cần người duyệt"},
     {"id": "R20", "type": "allow", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
      "conditions": {"all": [
       {"fact": "action.facts.device_registered", "op": "is_true"},

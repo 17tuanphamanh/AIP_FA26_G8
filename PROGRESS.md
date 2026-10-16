@@ -5573,6 +5573,35 @@ cùng điều kiện nhận token. Commit `68c7f7d` (dev-tuananh, chưa push).
   điểm log lý do 401 của `validate_access` (mã cố định, không token/claim). Đối chiếu P6:295 "không log Authorization/cookie": dòng
   lý do không chứa header/cookie/token — khớp.
 
+## Phase 5 — chặng V17: mô tả R17–R19 (16/10)
+
+Spec phase5 mục 7.12 #2 (Tuấn Anh chốt 16/10). Chưa commit.
+
+- **Lý do:** việc P6→P5 #21 — `description` của luật là lý do hiện trên màn duyệt (`policy_engine` → `RiskDecision.reason`); cổng 6
+  có bước người đọc lý do (Quân). R03–R15 loại `approval_required` đều nêu hệ quả ("… cần người duyệt"), R17–R19 chỉ nêu điều kiện.
+- **Đổi (chỉ 3 giá trị `description` trong `config/policy.json`; id, loại luật, điều kiện, thứ tự, khối khác giữ nguyên —
+  `git diff config/policy.json` đúng 3 dòng):**
+  R17 "Thiết bị chưa đăng ký" → "Thiết bị chưa đăng ký cần người duyệt";
+  R18 "Ngoài giờ hành chính" → "Yêu cầu gửi ngoài giờ hành chính cần người duyệt";
+  R19 "Nhân viên chưa qua thử việc" → "Nhân viên chưa qua thử việc cần người duyệt".
+- **`policy_sha256` đổi:** `d6812193bc2c228ec79ad1926eb753bfeea037040e99138192133a2be558f071` (325af52) →
+  `936f4c1c04eeff1106156f6dc7e35fc76f6bdf4fc2a3c4bfee81ec007932658a`.
+- **Test:** sửa bản dựng tay `SPEC_11_2` ở `test_config_files.py` và `test_policy_rules_vpn.py` (chỉ 3 dòng mô tả R17/R18/R19 mỗi file);
+  thêm `test_v17_approval_required_description_ends_with_consequence` (`test_config_files.py`) — mọi luật `approval_required` trong
+  `config/policy.json` có `description` kết thúc "cần người duyệt" (không rỗng). Không test nào khác chép nguyên văn mô tả cũ.
+- **Mutation tay 1/1 đỏ:** trả R18 về "Ngoài giờ hành chính" → test mới đỏ `assert ['R18'] == []`; khôi phục, md5 `policy.json`
+  trước = sau (`ace9d063…`), 0 chữ `MUTATION`.
+- **Kết quả 16/10** (sandbox): `make lint` xanh (10 contracts kept, gitleaks sạch); unit **5996 passed**; `make test` 6001 passed,
+  0 failed, 634 errors — toàn bộ `PermissionError` ở `integration/` + `e2e/` (socket Docker bị sandbox chặn, như V16).
+- **Mốc `scripts/mutation/mutate_4b.py` cập nhật** (Tuấn Anh cho phép 16/10): chỉ đổi chuỗi mô tả trong `_R17`, `_R18` (:72–77)
+  sang chuỗi mới. Chạy lại: `--only M-4b-6` tìm thấy mốc, ĐỎ đúng dự đoán (13 test đỏ, đủ 4 test kỳ vọng); `--only M-4b-7` ĐỎ đúng
+  dự đoán (12 test đỏ, đủ 3 test kỳ vọng); cả hai thêm đỏ test V17 mới (chữ `MUTATION` ở cuối mô tả); md5 `policy.json` trước = sau
+  (`ace9d063…`), `git diff --stat` khớp lúc đầu.
+- **Còn chép chuỗi cũ (ngoài phạm vi V17, không sửa — Phase 5 ghi nhận):** `frontend/src/mocks/fixtures/{policy,approvals}.ts`, `manager.test.tsx:528`,
+  `approvals.test.tsx:110,1468,1491` (dữ liệu giả của FE, độc lập backend); spec `phase3` 11.2 khối JSON (:1928–1934),
+  `decisions.md:47`. (7.12 #2 ghi "Thay chỗ: P7 bảng luật (mô tả)" — `nen-tang/P7*.md` không có dòng R17/R18; chưa rõ chỗ nào.)
+- **Verify trên stack:** chưa chạy.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
