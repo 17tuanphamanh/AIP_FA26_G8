@@ -89,6 +89,19 @@ def _unauthorized() -> AuthError:
     return AuthError(401, "unauthorized")
 
 
+# V16 (việc treo g4-10): phiên thu hồi vì lý do thường gặp → DEBUG cho đỡ ồn; lý do khác (admin, reuse_detected, …) → INFO.
+_ROUTINE_REVOKES = frozenset({"logout", "rotated"})
+
+
+def _reject(code: str, *, cached: bool, level: int = logging.WARNING, revoke: str | None = None) -> AuthError:
+    """401 của `validate_access` + ĐÚNG MỘT dòng lý do (V16): mã cố định, `revoke` (enum CHECK `sessions.revoke_reason`),
+    `cached`. KHÔNG token, giá trị claim (sub/sid/role/tv/jti/iat/exp), username, IP. Phản hồi không đổi.
+    Stack log ở INFO (`core/logging.configure_logging`) → WARNING/INFO hiện trong `compose logs backend`, DEBUG thì không."""
+    log.log(level, "validate_access 401 reason=%s%s cached=%s", code, f" revoke={revoke}" if revoke else "",
+            "true" if cached else "false")  # fmt: skip
+    return _unauthorized()
+
+
 @dataclass(frozen=True)
 class AuthConfig:
     access_ttl: timedelta
@@ -406,27 +419,38 @@ class AuthService:
         không disabled/terminated. Tra DB được cache theo phiên ≤ 30 giây (P6: thu hồi ≤ 30 giây)."""
         try:
             claims = self.signer.verify(token)
-        except TokenError:
-            raise _unauthorized() from None
+        except TokenError as e:  # lý do là chuỗi cố định của TokenError (+ số giây lệch với iat/exp) — không chứa token
+            expired = str(e).startswith("hết hạn")
+            raise _reject(f"token_invalid:{e}", cached=False,
+                          level=logging.INFO if expired else logging.WARNING) from None  # fmt: skip
         now = self.clock.now()
         entry = self._cache.get(claims.sid)
+        cached = True
         if entry is None or now - entry.fetched_at >= self.config.cache_ttl:
+            cached = False
             session = await self.store.get_session(claims.sid)
             user = await self.store.get_user(claims.sub) if session is not None else None
             if session is None or user is None:
                 self._cache.pop(claims.sid, None)
-                raise _unauthorized()
+                raise _reject("session_missing" if session is None else "user_missing", cached=False)
             entry = _Cached(session, user, now)
             self._cache[claims.sid] = entry
         session, user = entry.session, entry.user
-        if (
-            not session.usable(now)
-            or session.user_id != claims.sub
-            or user.token_version != claims.tv
-            or user.role != claims.role
-            or not user.active
-        ):
-            raise _unauthorized()
+        # Cùng thứ tự, cùng điều kiện như `if … or …` cũ — tách ra chỉ để biết nhánh nào từ chối.
+        if not session.usable(now):  # thu hồi, hoặc hết hạn tuyệt đối
+            if session.revoked_at is None:
+                raise _reject("session_expired", cached=cached, level=logging.INFO)
+            reason = session.revoke_reason
+            raise _reject("session_revoked", cached=cached, revoke=reason,
+                          level=logging.DEBUG if reason in _ROUTINE_REVOKES else logging.INFO)  # fmt: skip
+        if session.user_id != claims.sub:
+            raise _reject("sub_mismatch", cached=cached)
+        if user.token_version != claims.tv:
+            raise _reject("tv_mismatch", cached=cached)
+        if user.role != claims.role:
+            raise _reject("role_mismatch", cached=cached)
+        if not user.active:
+            raise _reject("user_inactive", cached=cached, level=logging.INFO)
         return Principal(
             user_id=user.user_id,
             role=user.role,

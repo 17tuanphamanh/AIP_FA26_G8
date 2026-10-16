@@ -100,11 +100,20 @@ class TokenSigner:
         if claims["role"] not in _ROLES:
             raise TokenError("role lạ")
         now = self._clock.now().timestamp()
-        if claims["iat"] > now:
-            raise TokenError("iat ở tương lai")
+        if claims["iat"] > now:  # V16: kèm số giây lệch (tương đối) — chẩn đoán lệch giờ, không phải giá trị claim
+            raise TokenError(f"iat ở tương lai ({_skew(claims['iat'], now)})")
         if claims["exp"] <= now:
-            raise TokenError("hết hạn")
+            raise TokenError(f"hết hạn ({_skew(claims['exp'], now)})")
         return AccessClaims(**claims)
+
+
+def _skew(at: int, now: float) -> str:
+    """Số giây lệch `at - now` cho thông điệp TokenError (V16). Số nguyên ngoài miền float (token ký đúng nhưng claim
+    khổng lồ) → chuỗi cố định: dựng thông điệp không được biến 401 thành 500."""
+    try:
+        return f"{at - now:+.3f}s"
+    except OverflowError:
+        return "lệch ngoài miền float"
 
 
 def new_refresh_token() -> str:

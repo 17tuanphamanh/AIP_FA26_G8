@@ -5514,11 +5514,60 @@ Worktree `~/Documents/AIP_FA26_G8-m5`, nhánh `m5-tuananh`, HEAD `457239d`.
 - gate3 78 (mốc 13–14/10: 66) — không phải đổi code: gate3 theo giờ (Q-3h); lượt chạy **ngoài giờ** đi thêm nhánh R18 → chờ duyệt, +6 phép kiểm × 2 kịch bản (so log 13/10 với 15/10: cùng 9 kịch bản, phần còn lại giống hệt).
 - Biên bản `backend/tests/stack/bienban-gate5-20261015.md` (ĐẠT, script ghi) — `.gitignore`, không commit bản đã điền.
 - Điều kiện cổng 5 (phase5 mục 8): lint/test/CI ✓; cổng 5 tự động ✓ (đơn ý TC01/03/07/08/17/18/21 + HB04; nhiều ý: ALL_RESOLVED, PARTIALLY_ESCALATED, PARTIALLY_REJECTED trên stack — 6 trường hợp + tổ hợp 3 loại ghim ở unit T20b p5; 20 luật khớp/suýt khớp ở unit T22a); mutation T22a/T23a/T24 ×2, T20a/T20b phần A ×2 ✓; "Chốt khi hiện thực" 5 chặng + `decisions.md` ✓ (`c973b55`). Thành viên chạy trên máy riêng ✓ (dòng dưới).
-- **Thành viên chạy trên máy riêng — Tạ Duy Anh, 15/10:** MSI Thin GF63, Intel Core i5-12450H, RAM 16 GB (WSL/Docker được cấp 7,6 GB), Windows + WSL 2 Ubuntu; HEAD `60f89a6` (cây code như `5f2ece2` — sau đó chỉ đổi hook + PROGRESS), `dirty=0`. Lượt 1 (10:22–10:32) ĐỎ gate2 74/7 — không do code: `.env` để `#` hai dòng `FAKE_SCENARIO`/`FAKE_NODE_DELAY` (Bước 0 README cổng 3); kịch bản kill của gate2 chạy `compose up -d backend` → nội suy lại theo `.env` → backend mất chế độ giả → kill-b15 + 5 ticket tc29 ra S_ESCALATED. Bỏ `#` → **lượt 2 (10:57:54–11:44:45) XANH**: lint PASS; test backend 6546 · mock 106 · ml 123; gate2 89/0; gate3 66/0 (trong giờ); gate4 73/0; ingest KB thật `kb_3362c39b…`; gate5 227/0; CI success 38679359936. Biên bản `bienban-gate5-20261015.md` trên máy Duy Anh đã ký (D-43: chỉ điền 3 ô, không đọc bảng kịch bản; không commit).
+- **Thành viên chạy trên máy riêng — Tạ Duy Anh, 15/10:** MSI Thin GF63, Intel Core i5-12450H, RAM 16 GB (WSL/Docker được cấp 7,6 GB), Windows + WSL 2 Ubuntu; HEAD `60f89a6` (cây code như `5f2ece2` — sau đó chỉ đổi hook + PROGRESS), `dirty=0`. Lượt 1 (10:22–10:32) ĐỎ gate2 74/7 — không do code: `.env` để `#` hai dòng `FAKE_SCENARIO`/`FAKE_NODE_DELAY` (Bước 0 README cổng 3); kịch bản kill của gate2 chạy `compose up -d backend` → nội suy lại theo `.env` → backend mất chế độ giả → kill-b15 + 5 ticket tc29 ra S_ESCALATED. Bỏ `#` → **lượt 2 (10:57:54–11:44:45) XANH**: lint PASS; test backend 6546 · mock 106 · ml 123; gate2 89/0; gate3 66/0 (trong giờ); gate4 73/0; ingest KB thật `kb_3362c39b…`; gate5 227/0; CI `60f89a6` success 38670134404 (bước CI của verify in 38679359936 = run của `93a9090` — lỗi bước 9, sửa ở chặng V16). Biên bản `bienban-gate5-20261015.md` trên máy Duy Anh đã ký (D-43: chỉ điền 3 ô, không đọc bảng kịch bản; không commit).
 - **Việc treo (đóng cùng ngày):** gate2 phụ thuộc FAKE_* trong `.env` — sửa gốc ở `24c5012`: `_kill` bật lại backend bằng `compose start` (không tạo lại theo `.env`) + kiểm chế độ giả sau khởi động lại; `restart-all` giữ `down` + `make up`, báo rõ khi `.env` thiếu FAKE_*; +5 test unit; verify trên `1db4bd8` (phiên git, 16/10): gate2 **91/0** (+2 phép kiểm chế độ giả). Từ đây `.env` để `#` FAKE_* không còn làm đỏ kill-b15/tc29.
 - **Mốc main 16/10:** `main` = `a0606b1` (PR #48, gộp `dev-tuananh` `1db4bd8`: T20b, 6C, 6D, M9 A4/B3, T29, dữ liệu D2), CI main xanh (phiên git báo). Verify trên cây `1db4bd8` (máy Tuấn Anh): G=2345 00:18–00:45 — lint, test, gate2 91/0, gate3 78/0 (ngoài giờ) xanh, **gate4 61/1** (dòng dưới); chạy lại G=45 10:07–10:42 — gate4 73/0, gate5 227/0.
 - **Việc treo (mở 16/10) — gate4 g4-10 HTTP 401 chập chờn:** lượt G=2345 trên `1db4bd8`, g4-10 dừng ở bước đầu — `_begin` đăng nhập lại 5 user (17:43:27,9–28,2Z) rồi tạo ticket `g4_0501` bằng token chau.hm → `401 unauthorized` (`.verify/run-20261016-001846.log:1924`). Lượt G=45 sau đó xanh → chưa tái hiện. Tra DB 16/10 (chỉ đọc): phiên chau.hm tạo 17:43:27,8Z **không bị thu hồi**; `token_version` = 0 cả 5 user gate4; `security_events` 17:37–17:47Z không có `role_changed`/`user_disabled` → loại các nhánh phiên/`tv`/role/active của `validate_access` (`auth/service.py`). [Suy luận] Còn lại `signer.verify` (`auth/tokens.py`) từ chối token vừa cấp: `iat ở tương lai` (giờ máy ảo Docker lùi ≥ ~0,3 s giữa đăng nhập và lời gọi) hoặc `hết hạn` (giờ nhảy tới ≥ 15 phút); lý do `TokenError` không ghi log nên chưa xác nhận được. Chưa sửa; cần đóng trước lượt verify 20/10 (Quân).
 - Phần thủ công (intent macro-F1, chặn tấn công, Recall@5, E7 4 phần, 10 câu nhiều ý): mục "Dồn về mốc G".
+
+## Việc treo 16/10 — chặng V16: dấu vết 401 g4-10 + bước CI verify
+
+PLAN-V16 duyệt 16/10 (kèm 5 sửa: hết hạn → INFO; `conclusion` "" và "null" = chưa có kết luận; giữ `from None`; canary trên
+LogRecord gốc; liệt kê P6). Q-V16-1 có `revoke=<enum>`; Q-V16-2 "bỏ qua (không có git)"; Q-V16-3 13 mục untracked trong
+`docs/` không thuộc V16. **Không đổi hành vi xác thực**: cùng 401, cùng `{"detail":"unauthorized"}`, cùng `WWW-Authenticate: Bearer`,
+cùng điều kiện nhận token. Chưa commit.
+
+- **Log lý do 401** (`auth/service.py` `_reject`): mỗi đường 401 của `validate_access` ghi đúng 1 dòng
+  `validate_access 401 reason=<mã>[ revoke=<enum>] cached=<true|false>`. Mã: `token_invalid:<chuỗi TokenError>`, `session_missing`,
+  `user_missing`, `session_revoked`, `session_expired`, `sub_mismatch`, `tv_mismatch`, `role_mismatch`, `user_inactive`.
+  `cached=false` khi chưa tra phiên (token_invalid) hoặc vừa đọc DB. Không có token, giá trị claim, username, IP; không ghi DB/`security_events`.
+  `if … or …` cũ tách thành các `if` cùng thứ tự; nhánh phiên vẫn đi qua `session.usable(now)`.
+- **Mức log** — stack chạy `configure_logging()` mức INFO (`main.py` `build`, `core/logging.py`) → WARNING/INFO hiện trong
+  `docker compose logs backend`, DEBUG thì không:
+  WARNING = `token_invalid:*` (trừ hết hạn), `session_missing`, `user_missing`, `sub_mismatch`, `tv_mismatch`, `role_mismatch`;
+  INFO = `token_invalid:hết hạn (…)` (giả thuyết "giờ nhảy tới" của g4-10 phải thấy được), `session_revoked` admin/reuse_detected/
+  user_disabled/expired, `session_expired`, `user_inactive`; DEBUG = `session_revoked` logout/rotated (thường gặp).
+- **`auth/tokens.py`**: thông điệp `iat ở tương lai (+0.734s)`, `hết hạn (-12.300s)` (lệch tương đối, 3 số lẻ); điều kiện so sánh
+  không đổi, không thêm dung sai lệch giờ. Thêm `_skew` — chỉ dựng chuỗi; số nguyên ngoài miền float → "lệch ngoài miền float"
+  (soát NGHI-1: không có nó, token ký đúng mang iat/exp khổng lồ ra 500 thay vì 401 — đã tái hiện rồi sửa). Test khớp chuỗi cũ
+  (`test_auth_tokens.py:69, 76`, `match=` tìm theo regex) vẫn xanh, không sửa.
+- **`scripts/verify.sh`**: (1) cổng 2/3/4/5 đỏ → `$COMPOSE logs --no-color --timestamps --since <giờ bắt đầu bước, UTC> backend worker`
+  → `.verify/run-<giờ>-step<N>-logs.txt`, TRƯỚC bước 8; lỗi chỉ ghi chú; summary thêm dòng `log backend/worker của bước N: <file>`;
+  cổng xanh không gọi. (2) Bước 9: `gh run list --branch <nhánh> --commit <HEAD> -L 1 --json status,conclusion,databaseId --jq …`;
+  không git → BỎ QUA "bỏ qua (không có git)"; gh lỗi → "bỏ qua (gh)"; không run → "chưa có CI cho HEAD <sha7>"; completed+success →
+  PASS "success <id> (<sha7>)"; completed khác → FAIL "<conclusion> <id>" ("chưa có kết luận" khi rỗng/null); chưa xong → ĐANG CHẠY;
+  dirty > 0 → "; CI của HEAD; cây có N thay đổi chưa commit". Bước 9 vẫn không đổi KẾT LUẬN.
+- **Test**: `test_auth_reject_log.py` mới 20 test (14 đường 401 × mã/mức/cached + 401 giữ nguyên + canary token/sid/sub/username
+  trên bản chụp LogRecord lúc emit ở logger `app` — không dựa `RedactSecretsFilter`; token hợp lệ vẫn nhận; chuỗi + biên thời gian;
+  2 ca tràn số). `test_verify_script.py` +17 (gate đỏ ×4 lưu log trước bước 8, xanh không `logs`, `compose logs` lỗi không dừng,
+  CI 8 ca + dirty + không git, biểu thức `--jq` chạy bằng jq thật).
+- **Kết quả 16/10** (máy Tuấn Anh, sandbox): `make lint` xanh (10 contracts kept, gitleaks sạch); unit **5995 passed**; mock 106;
+  ml 123 (5 deselected). `integration` + `e2e` không chạy được trong sandbox (Docker socket bị chặn: 5 passed, 634 errors
+  `PermissionError`) — chưa chạy `make test` đủ.
+- **Mutation 5/5 đỏ** (md5 trước = sau, `git diff --stat` khớp): M1 bỏ log `tv_mismatch` → 2 ca đỏ; M2 thêm `log.debug(sid)` →
+  10 ca đỏ ở canary; M3 bỏ `--commit` → 8 đỏ; M4 failure → PASS → 3 đỏ; M5 không gọi `compose logs` → 4 đỏ.
+- **security-reviewer** (diff `auth/service.py` + `tokens.py`, trước bản sửa `_skew`): (a) không log token/claim/username/IP PASS;
+  (b) 401 giữ nguyên PASS; (c) điều kiện nhận token không đổi PASS; (d) không ghi DB/security_events PASS. NGHI-1 (tràn số → 500) đã
+  sửa + test; NGHI-2 (ts của dòng log + số giây lệch suy ra iat/exp gần đúng) — yêu cầu đã cho phép, không định danh người dùng.
+  Soát lại riêng diff `tokens.py` bản cuối (có `_skew`, Q-V16-5): (a)–(d) đều PASS; `_skew` chỉ có thể ném OverflowError (đã bắt);
+  lưu ý thông tin (không sửa): claim lớn nhưng vừa float (vd 10**300, phải có khoá ký) → thông điệp dài ~300 chữ số; biên exp == now
+  hiện "hết hạn (+0.000s)".
+- **Verify trên stack**: chưa chạy (Bước 6, sau commit).
+- **Spec cần sửa** (chỉ liệt kê): `build/phase4-thiet-ke-chi-tiet.md` mục 4.4 — dòng bước 9 (`--branch … -L 1` → `--commit HEAD` +
+  6 ca ánh xạ), thêm "cổng đỏ → lưu `run-*-step<N>-logs.txt` trước bước 8", mẫu summary thêm dòng trỏ log; `build/phase5-thiet-ke-chi-tiet.md`
+  mục 7.9/7.11 (Q-T24-1) — file log bước 12 khi gate5 đỏ; `build/nen-tang/P6-auth-bao-mat.md` mục 7 (dòng "Log", :295) — thêm
+  điểm log lý do 401 của `validate_access` (mã cố định, không token/claim). Đối chiếu P6:295 "không log Authorization/cookie": dòng
+  lý do không chứa header/cookie/token — khớp.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
