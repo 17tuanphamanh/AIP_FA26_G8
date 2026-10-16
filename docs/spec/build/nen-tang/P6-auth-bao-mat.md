@@ -293,6 +293,7 @@ CREATE TRIGGER sec_append_only   BEFORE UPDATE OR DELETE ON security_events
 - **CORS:** chỉ origin của frontend.
 - **Request:** giới hạn kích thước (64 KB cho API chat); timeout.
 - **Log:** không log header `Authorization` hay cookie. Filter logging lọc các chuỗi giống JWT, mật khẩu.
+- **Lý do 401 [V16, 16/10 — `68c7f7d`]:** mỗi đường 401 của `validate_access` ghi **đúng một** dòng `validate_access 401 reason=<mã>[ revoke=<enum>] cached=<true|false>`. Mã cố định: `token_invalid:<chuỗi TokenError>` ("iat ở tương lai"/"hết hạn" kèm số giây lệch tương đối), `session_missing`, `user_missing`, `session_revoked` (+ `revoke` = enum `sessions.revoke_reason`), `session_expired`, `sub_mismatch`, `tv_mismatch`, `role_mismatch`, `user_inactive`. **Không** token, giá trị claim, username, IP; không ghi DB/`security_events`; phản hồi 401 và điều kiện nhận token không đổi. Mức: WARNING cho lý do bất thường; INFO cho hết hạn, thu hồi do admin/reuse/disabled/expired, phiên hết hạn, tài khoản ngừng; DEBUG cho thu hồi do logout/rotated (stack log ở INFO).
 - **Dependency:** `pip-audit` trong CI; gitleaks.
 
 ## 8. API
