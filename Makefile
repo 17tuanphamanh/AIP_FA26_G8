@@ -202,8 +202,10 @@ seed:
 	$(COMPOSE) exec -T mock python -m app.seed reset
 
 # Probe với LLM thật (intent, injection, phân phối p) — TỐN TIỀN, không nằm trong make test.
+# Cổng 5 thủ công (phase5 7.13): make probe F=<bộ câu .jsonl> — stack LLM_BACKEND=real (README stack "Chạy smoke LLM thật").
 probe:
-	@echo "TODO (Phase 3): chưa có probe; chưa chốt provider LLM (N1)." >&2; exit 1
+	@test -n "$(F)" || { echo "thiếu F=<bộ câu .jsonl>" >&2; exit 2; }
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.probe.cong5 $(F)
 
 # Harness M8, chỉ khi EVAL_MODE=true. Ví dụ: make eval STRATEGY=hybrid SPLIT=test
 eval:

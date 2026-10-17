@@ -247,7 +247,7 @@ def test_h3_prompt_versions_and_contract() -> None:
     `action_hint` hợp lệ của từng intent (bảng 5.1.4)."""
     b03 = yaml.safe_load((PROMPTS / "b03_classify.yaml").read_text(encoding="utf-8"))
     b11 = yaml.safe_load((PROMPTS / "b11_extract_slots.yaml").read_text(encoding="utf-8"))
-    assert int(b03["version"]) == 3 and int(b11["version"]) == 2
+    assert int(b03["version"]) == 4 and int(b11["version"]) == 2  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint)
     registry = repo_registry()
     assert len(registry) == 8
     by_id = {p.id: p for p in registry}

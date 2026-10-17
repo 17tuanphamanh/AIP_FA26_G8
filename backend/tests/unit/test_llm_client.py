@@ -132,7 +132,7 @@ async def test_smoke_scripted_end_to_end() -> None:
     out, meta = await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
     assert out == NeedTypeOut(type="info", confidence=0.9)
     assert (meta.provider, meta.model, meta.prompt_id, meta.prompt_version) == ("scripted", "scripted",
-                                                                                "b10_need_type", "1")
+                                                                                "b10_need_type", "2")
     assert meta.json_valid_first_try and not meta.cache_hit and meta.cost_usd == 0
     assert meta.prompt_hash == repo_registry().get("b10_need_type").sha256
     assert len(gw.llm.calls) == 1 and len(gw.store.rows) == 1 and len(gw.store.spans) == 1

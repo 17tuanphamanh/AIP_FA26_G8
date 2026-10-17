@@ -125,7 +125,7 @@ async def test_g2_crash_after_b10_goto_rerun_same_turn_single_notice_single_line
     assert await _count(arw, "SELECT count(*) FROM lineage WHERE ticket_id = :t", ticket) == 1
     row = await scalar(arw, "SELECT concat_ws('|', turn_id, step, prompt_id, prompt_version, kb_version, "
                             "coalesce(commit_sha, 'NULL')) FROM lineage WHERE ticket_id = :t", t=ticket)  # fmt: skip
-    assert row == f"{turn}|B10|b10_answer|1|{KBV}|NULL"
+    assert row == f"{turn}|B10|b10_answer|2|{KBV}|NULL"
 
 
 async def test_g1_resume_confirm_wait_twice_single_b10_notice_pg(migrated: PgUrls, arw: AsyncEngine) -> None:
