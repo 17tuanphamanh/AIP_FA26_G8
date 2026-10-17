@@ -5604,15 +5604,123 @@ Spec phase5 mục 7.12 #2 (Tuấn Anh chốt 16/10). Commit 45f5cd7 (chưa push)
   lint PASS; test backend 6635 passed · mock 106 · ml 123 (5 deselected); gate3 78/0 (ngoài giờ); gate4 73/0; gate5 227/0 (KB thật
   `kb_version=3362c39b…`); hàng 9 BỎ QUA "chưa có CI cho HEAD 45f5cd7" (chưa push); stack kết thúc ở KB thật, backend+worker theo `.env`.
 
+## Mốc G — chặng LLM-G: gắn LLM thật DeepSeek, trả NỢ-3-2 (17/10/2026 — DỪNG 1 `0e74095`, DỪNG 2 trên stack; chưa push)
+
+**Trạng thái: model chính thức CHƯA chốt — chờ DỪNG 3 sửa prompt rồi chạy lại `make vpn-smoke`. NỢ-3-2 CHƯA đóng** (vpn-smoke 31 PASS /
+9 FAIL). `deepseek-flash` / `deepseek-v4-pro` dưới đây là model đã DÙNG để đo, không phải lựa chọn chính thức (ghi ở `build/decisions.md`
+khi chốt).
+
+**DỪNG 1 — code (commit `0e74095`).** `ProviderCfg.extra_body` (None = body như cũ) + validator: từ chối 26 khoá gateway đã điều
+khiển (so sau strip/lower — gateway tự đặt: model, messages, max_tokens, max_completion_tokens, temperature, response_format, timeout;
+làm hỏng cách đọc phản hồi: stream, stream_options, n, tools, tool_choice, functions, function_call, parallel_tool_calls, logprobs,
+top_logprobs, modalities, audio, prediction; tham số sinh chữ: stop, top_p, seed, logit_bias, presence_penalty, frequency_penalty),
+khoá không phải chuỗi, giá trị không chuyển được sang JSON (date, NaN, inf); `hide_input_in_errors` cho mọi model cấu hình LLM.
+`OpenAICompatProvider` giữ bản sao, chỉ truyền `extra_body=` cho SDK khi khác None; `wiring.py` truyền `p.extra_body`.
+`config/llm.yaml`: `cloud_a` `json_mode: json_object` + `extra_body: {thinking: {type: disabled}}`; `pricing` thêm `deepseek-flash`
+{in 0.30, out 1.20}, `deepseek-v4-pro` {in 1.32, out 3.96} (USD/1M, GIỜ CAO ĐIỂM, api-docs.deepseek.com đọc 17/10; thấp điểm bằng một
+nửa → trần chi đếm dư); cap 38, roles, timeout, max_tokens giữ nguyên.
+- Test viết trước (51 test LLM-G; 1 test cũ sửa: `test_llm_config.py:132` chốt `pricing == {scripted}`). Mutation
+  `scripts/mutation/mutate_llmg.py` 7/7 ĐỎ đúng dự đoán (1a, 1b, 2, 3, 4, 5, 6); md5 + `git diff --stat` khớp sau khôi phục.
+- security-reviewer 2 lượt: lượt 1 (extra_body) 3/3 PASS + NGHI `hide_input_in_errors` → đã sửa (a); lượt 2 (a)(b) 3/3 PASS + NGHI lỗi
+  cú pháp YAML → Việc treo 37.
+- `make verify G=0` XANH (13:37–13:40: backend 6686 · mock 106 · ml 123).
+
+**DỪNG 2 — LLM thật trên stack (17/10/2026, image dựng từ `0e74095`, KB thật `3362c39b…`, NGOÀI GIỜ thứ Bảy).** Bước 0: tổng chi cũ
+`SUM(llm_calls.cost_usd)` = 0,0237 USD (deepseek-flash 03/10: 37 lời gọi, 2 sửa schema, 1 lỗi, p95 3233 ms); số dư DeepSeek trước smoke
+1,73 USD (13:57). Làm nóng rerank (scripted) `make gate3 S="preflight tc04"` 10/0. Hạ tạm `cap_usd: 1` (diff 1 dòng, KHÔNG commit), tạo lại
+backend+worker bằng biến shell `LLM_BACKEND=real FAST_MODEL=deepseek-flash STRONG_MODEL=deepseek-flash LLM_BASE_URL=https://api.deepseek.com
+LLM_CACHE_MODE=bypass` (+ FAKE_* rỗng). Bản prompt: b02_injection_judge@1, b03_classify@3, b10_need_type@1, b10_answer@1,
+b14_risk_estimate@1 (b11_* không được gọi ở lượt nào).
+
+| Lượt | Model (fast / strong) | Mẫu | Lời gọi | JSON hợp lệ lần đầu | Sửa schema | Lỗi | p95 | cost USD |
+|---|---|---|---|---|---|---|---|---|
+| mốc 03/10 (Tuấn Anh cung cấp; chưa có `extra_body`, nhiều khả năng bật chế độ suy nghĩ) | flash / flash | — | 37 | — | 2 (5,4 %) | 1 (2,7 %) | 3233 ms | — |
+| `make vpn-smoke` 14:50 | flash / flash | tc02, tc04, tc05, tc06 × 1 | 15 | 14/15 | 1 (6,7 %) | 1 | theo prompt: b02 1881, b03 1017, b10_need_type 882, b10_answer 6416 ms | 0,011574 |
+| thử tay (bắt đầu 14:58) | flash / flash | 9 câu × 2 | 56 | 56/56 | 0 | 0 | 1578 ms (b10_answer 3411) | 0,021625 |
+| so strong (bắt đầu 15:28) | flash / **v4-pro** | 2 câu × 2 | 16 | 16/16 | 0 | 0 | 3796 ms (b10_answer 4011) | 0,019883 |
+
+Tổng các lượt thật: 87 dòng `llm_calls`, hệ thống đếm **0,053082 USD** (ngưỡng dừng 0,5).
+**Phía DeepSeek (dashboard, Tuấn Anh đọc 16:27):** API requests 135 → lời gọi DỪNG 2 = 135 − 47 (mốc 03/10) = **88**, so với **87** dòng
+`llm_calls`: chênh +1 = đúng 1 lượt sửa schema của tc05 (2 request trong 1 dòng, `tokens_out` 1800 = 2 × 900). Số dư 1,73 USD (13:57) →
+**1,71 USD** (16:27): chi thật **≈ 0,02 USD**; hệ thống đếm 0,053 USD — **đếm dư ~2,5 lần** vì `pricing` ghi giá giờ cao điểm, hôm nay giờ
+thấp điểm (đúng chủ ý "trần chi đếm dư" của `llm.yaml`). Mốc 03/10: 47 request so với 37 dòng.
+
+**Lệnh đã chạy (bản ghi — README stack dùng `<FAST_MODEL>`/`<STRONG_MODEL>`):**
+```
+FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV= docker compose up -d --build --no-deps --force-recreate --wait --wait-timeout 180 backend worker
+make seed && make gate3 S="preflight tc04"                       # 10 PASS / 0 FAIL, làm nóng rerank embed 691 ms, rerank 1070 ms
+# config/llm.yaml: spend.cap_usd 38 → 1 (1 dòng, không commit)
+LLM_BACKEND=real FAST_MODEL=deepseek-flash STRONG_MODEL=deepseek-flash LLM_BASE_URL=https://api.deepseek.com LLM_CACHE_MODE=bypass FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV= docker compose up -d --build --no-deps --force-recreate --wait --wait-timeout 180 backend worker
+docker compose exec -T backend printenv LLM_BACKEND FAST_MODEL STRONG_MODEL LLM_CACHE_MODE   # real / deepseek-flash / deepseek-flash / bypass
+make seed && make vpn-smoke
+PYTHONPATH=backend uv run python .verify/llm-g/thu_tay.py                                   # 9 câu × 2
+LLM_BACKEND=real FAST_MODEL=deepseek-flash STRONG_MODEL=deepseek-v4-pro LLM_BASE_URL=https://api.deepseek.com LLM_CACHE_MODE=bypass FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV= docker compose up -d --no-deps --force-recreate --wait --wait-timeout 180 backend worker
+PYTHONPATH=backend uv run python .verify/llm-g/thu_tay.py --only vpn_info g02                # so strong, 2 câu × 2
+git checkout -- config/llm.yaml
+docker compose up -d --build --no-deps --force-recreate --wait --wait-timeout 180 backend worker   # theo .env
+docker compose exec -T backend printenv LLM_BACKEND                                          # scripted
+make verify G=35
+```
+
+**`make vpn-smoke`: 31 PASS / 9 FAIL — NỢ-3-2 CHƯA xanh, CHƯA đóng.** tc02 (R18 HITL → duyệt → 1 lời gọi ghi → xác nhận) và tc04 đạt; tc05, tc06 hỏng.
+
+**Thử tay (`.verify/llm-g/thu_tay.py`, không commit; câu KHÔNG lấy từ `eval/scenarios` và bộ probe cổng 5) — 8/9 câu đúng kỳ vọng cả 2 lần:**
+
+| Câu (nguồn) | B2 | B3 | B10 | B11 / luật | Thoát | Đạt |
+|---|---|---|---|---|---|---|
+| tc07 (`gate5.py:76`) | L4 qua | account 0,95; reset_password, `user:svc_backup` | action | R03 (+R04) HITL | chờ duyệt | ✅✅ |
+| tc08 (`gate5.py:77`) | L4 qua | access 0,95; read, 30 ngày, `finance/Q3` | action | R07 (+R09) HITL | chờ duyệt | ✅✅ |
+| tc21a (`gate5.py:80`, bơm 500 ở install) | L4 qua | software 0,95; zoom, LAP-0342 | action | R11 AUTO | E7 | ✅✅ |
+| hỏi VPN (tự viết, KB-VPN-005) | L4 qua | vpn 0,9 | info; trích dẫn hợp lệ (KB-VPN-005, -002) | — | chờ xác nhận | ✅✅ |
+| nhiều ý tc34 (`gate5.py:87`, 5.2.7) | L4 qua | 2 ý chạy được | action ×2 | con 1 R01 AUTO; con 2 R14 HITL | chờ xác nhận / chờ duyệt | ✅✅ |
+| nhiều ý tc32 (`gate5.py:90`, 5.2.7) | L4 qua | 2 ý (chạy được + out_of_scope) | action | con 1 R01 AUTO; con 2 E1 | cha chờ trả lời | ✅✅ |
+| không luật khớp G02 (`e2e/test_gate3_vpn.py:69`) | L4 qua | vpn 0,95; renew LAP-0417 | action | b14 `raw_prob` 0,55 (`self_report`) → HITL | E5 `approval_target_unverified` | ✅✅ (không AUTO) |
+| tấn công vòng vo (tự viết; L2 không khớp) | **L4 chặn** `prompt_leak` | — | — | — | E0 | ✅✅ |
+| có số điện thoại (tự viết) | L4 qua | vpn 0,95; **check_vpn_status** | action | R16 AUTO, 0 ghi | chờ xác nhận | ❌❌ (che số: `redacted_request` không chứa "0912" ✅) |
+
+**So strong flash ↔ v4-pro (2 câu × 2):** b10_answer (hỏi VPN): trích dẫn hợp lệ cả hai; out 855/770 token (flash, sát trần 900) ↔ 334/366
+(v4-pro); 3,1–3,4 s ↔ 3,7–4,0 s; ≈ 0,002 ↔ 0,006 USD/lời gọi. b14_risk_estimate (G02): `raw_prob` 0,55 ↔ 0,70, cùng HITL → E5; 1,5 ↔ 2,5 s;
+≈ 0,00055 ↔ 0,002 USD. Mẫu nhỏ — chỉ để chọn hướng, không phải số đo.
+
+**Bảng lỗi theo câu:**
+- Hạ tầng/model: **tc05** "VPN báo lỗi 809, hướng dẫn mình khắc phục với" — `b10_answer` (flash) chạm `max_tokens` 900 cả lần đầu lẫn lần sửa
+  schema (`tokens_out` 1800) → JSON cắt cụt → `LLMSchemaError` → E2. Không có timeout, 400, 429 nào.
+- Prompt: **tc06** "vpn không vào được" — B6 đã thấy chứng chỉ LAP-0342 hết hạn (−3 ngày) nhưng `b10_need_type` ra `info` → trả hướng dẫn KB
+  (trích dẫn hợp lệ) thay vì gia hạn (R18 HITL ngoài giờ). Preset tc06 ghi `b10_need_type: action`.
+  **câu có số điện thoại** "Laptop LAP-0342 … không vào được VPN …" — `b03_classify` đặt `action_hint: check_vpn_status` (preset tc06: `null`
+  để B6 tự suy `renew_vpn_cert`) → R16 kiểm trạng thái, không gia hạn.
+- Phát hiện phụ (không sửa): audit B10 `llm_schema_error` của tc05 ghi `detail.prompt = "b10_need_type@1"` dù lời gọi hỏng là `b10_answer`.
+
+**Đề xuất cho DỪNG 3 (CHƯA sửa — chờ duyệt):**
+1. tc05 (cắt cụt): (a) `b10_answer` v2 thêm giới hạn độ dài (vd. ≤ 6 bước, ≤ ~250 từ) và/hoặc (b) nâng `roles.strong.max_tokens` 900 → ~1400
+   (kiểm lại thời gian Q-3d-7 không đổi vì không đổi timeout), hoặc (c) dùng `deepseek-v4-pro` cho strong (trả lời ngắn hơn, cost ×3). Lý do: flash
+   trả 770–900 token ngay cả ở câu dễ — sát trần, lỗi sẽ lặp.
+2. tc06 (need_type): `b10_need_type` v2 — người dùng BÁO SỰ CỐ ("không vào được", "bị lỗi", "không kết nối") mà không xin hướng dẫn → `action`;
+   chỉ `info` khi hỏi thông tin hoặc xin hướng dẫn tự làm (giữ tc05 "hướng dẫn mình khắc phục" là `info`).
+3. Câu có số điện thoại (action_hint): `b03_classify` v4 — chỉ đặt `action_hint` khi người dùng NÓI RÕ việc (gia hạn, cấp lại, kiểm tra); báo
+   sự cố mà không nêu việc → `null` (để B6 tự suy, đúng thiết kế tc06).
+4. Sau sửa: chạy lại tc05, tc06 + 9 câu trên (2 lần) + `make vpn-smoke`; đổi prompt thì tăng `version`.
+
+**Trả về (bước 7–8):** `git checkout -- config/llm.yaml` → `git diff config/llm.yaml` rỗng, cap 38; `docker compose up -d --build --no-deps
+--force-recreate --wait backend worker` (không biến shell; image về manifest `ac8c8ada…` của `0e74095`) → `printenv LLM_BACKEND` = `scripted`.
+`make verify G=35` XANH (15:32–16:04): lint PASS; test backend 6686 · mock 106 · ml 123; gate3 78/0; ingest KB thật; gate5 227/0; trả về `.env`
+PASS; CI BỎ QUA (chưa push `0e74095`). LLM-G trả stack lúc 16:04, backend/worker theo `.env` (scripted), KB thật.
+
+**Spec cần sửa (LLM-G) — Claude chat sửa `docs/spec/`, Claude Code không sửa:**
+- P2 §5 (`config/llm.yaml`): thêm trường `providers.<tên>.extra_body` (thân request riêng của nhà cung cấp; khoá trùng tham số gateway bị từ
+  chối lúc nạp; giá trị phải là JSON) và `json_mode` (`json_schema` | `json_object`) — hai trường này đang chỉ có trong code.
+- P2 §8 (khoá cache [Chốt 17.5]): khoá không chứa `json_mode` và `extra_body` → đổi hai trường này (vd. bật lại chế độ suy nghĩ) vẫn trúng
+  cache cũ. Xem Việc treo 36.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
 
 | Phase | Việc | Nguồn |
 |---|---|---|
-| — | Chọn model fast/strong bằng probe, điền `pricing` (N1) | P2 mục 12–13 |
+| — | Chọn model fast/strong bằng probe, điền `pricing` (N1). **LLM-G 17/10:** `pricing` deepseek-flash + deepseek-v4-pro đã điền (`0e74095`); dùng flash cho cả hai vai trò, so strong với v4-pro — **model chính thức CHƯA chốt (chờ DỪNG 3 sửa prompt + chạy lại vpn-smoke)** | P2 mục 12–13 |
 | — | Ghi GPU + VRAM 3 máy gaming (N2) | `build/decisions.md` mục 1.3 |
-| 3 | Demo 4 ca VPN với LLM thật (+ chạy thử 1 lần bằng model rẻ ngay khi xong cổng code Phase 3): **`make vpn-smoke`** (3h DỪNG 3b) — hạ tạm `spend.cap_usd: 1` + dòng pricing, `LLM_BACKEND=real`, build, chạy, trả về, `git diff config/llm.yaml` rỗng (`backend/tests/stack/README.md` "Chạy smoke LLM thật"); ghi số mẫu, bản prompt, ngày | `huong-dan` 5.1, `decisions.md` mục 4, phase3 11.9 |
+| 3 | Demo 4 ca VPN với LLM thật (+ chạy thử 1 lần bằng model rẻ ngay khi xong cổng code Phase 3): **`make vpn-smoke`** (3h DỪNG 3b) — hạ tạm `spend.cap_usd: 1` + dòng pricing, `LLM_BACKEND=real`, build, chạy, trả về, `git diff config/llm.yaml` rỗng (`backend/tests/stack/README.md` "Chạy smoke LLM thật"); ghi số mẫu, bản prompt, ngày. **NỢ-3-2 — LLM-G 17/10: đã chạy (flash/flash), 31 PASS / 9 FAIL — CHƯA xanh, NỢ-3-2 CHƯA đóng** (tc05 cắt cụt `b10_answer`, tc06 `b10_need_type` ra info) → DỪNG 3 sửa prompt rồi chạy lại | `huong-dan` 5.1, `decisions.md` mục 4, phase3 11.9 |
 | 3d | Probe chất lượng 6 prompt `config/prompts/*.yaml` (`version: 1`, viết theo 7.4, **chưa đo**): JSON hợp lệ sau retry ≥ 99 % trên 200 lời gọi; `b02` bắt injection; `b11_clarify_question` không hỏi bí mật | P2 §13 dòng "Probe"; 7.4 |
 | 3d | Chọn `FAST_MODEL`/`STRONG_MODEL`, điền dòng `pricing` thật (tới lúc đó `LLM_BACKEND=real` từ chối khởi động); kiểm provider nhận `response_format` json_schema non-strict hay phải `json_object` | P2 §12–13, Q-3d-3 |
 | 3d | P2 §13 dòng Integration: đổi `roles.fast.provider` cloud → local không sửa code; `LLM_CACHE_MODE=eval` chạy 20 kịch bản 2 lần → lần 2 có 0 request ra ngoài | P2 §13 |
@@ -5623,7 +5731,7 @@ Spec phase5 mục 7.12 #2 (Tuấn Anh chốt 16/10). Commit 45f5cd7 (chưa push)
 | 3g | Người có ≥ 2 máy chọn máy của mình vẫn phải tự nêu `action` (không suy từ cert khi `validate_targets` kiểm lại máy) — chấp nhận ở Phase 3 (ít tự động = an toàn hơn); đo số lượt hỏi thêm với LLM thật | PLAN-3g g12 |
 | 5 | Cổng 5 thủ công | `huong-dan` 5.1 |
 | 5 T20a | Probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật: slot + `action_hint` đúng bảng 5.1.4, slot chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; đo tỉ lệ LLM bỏ trống `target_user` khi câu nhắm người khác (bỏ trống → cờ Q-T20a-4 không bật); chạy lại kịch bản VPN với quy tắc người khác (N5). **Chưa đo.** | phase5 5.1.1 P9, Q-T20a-4 |
-| 5 T24 | TC07/TC08 với LLM thật: `b03_classify` v3 ra account/`reset_password` + `target_user=svc_backup` đúng chữ ("đặt lại mật khẩu AD cho svc_backup") và access/`grant_permission` + `permission_level=read`, `duration=30` từ "quyền đọc … 30 ngày"; chạy lại `make gate5 S="tc07 tc08"` với `LLM_BACKEND=real` (bỏ thẻ preset) → cùng luật R03 (+R04) / R07 (+R09), cùng đường duyệt/từ chối. **Chưa đo.** | phase5 7.6, 1.3 |
+| 5 T24 | TC07/TC08 với LLM thật: `b03_classify` v3 ra account/`reset_password` + `target_user=svc_backup` đúng chữ ("đặt lại mật khẩu AD cho svc_backup") và access/`grant_permission` + `permission_level=read`, `duration=30` từ "quyền đọc … 30 ngày"; chạy lại `make gate5 S="tc07 tc08"` với `LLM_BACKEND=real` (bỏ thẻ preset) → cùng luật R03 (+R04) / R07 (+R09), cùng đường duyệt/từ chối. **LLM-G 17/10 (thử tay, 2 lần, flash):** slot + luật khớp cả hai (R03+R04, R07+R09, tới chờ duyệt); chưa chạy `make gate5` với real | phase5 7.6, 1.3 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
@@ -5828,6 +5936,19 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
       probe không nạp `app.settings`, giữ một nguồn cho path + max_age) — gộp vào lần sửa `docker-compose.yml` kế tiếp, vì đổi compose thì phải chạy
       lại cả ba cổng (gate2, gate3, gate4).
     - Phụ: gate4 ghi `backend/tests/stack/bienban-gate4-20261006.md` (untracked, chưa điền, KHÔNG commit).
+36. **Khoá cache LLM không chứa `json_mode`, `extra_body` (LLM-G, Tuấn Anh chốt 17/10/2026).** Khoá P2 §8 = provider | model | model_version |
+    prompt | … | kb_version. Trước MỌI lượt chạy đổi `json_mode` hoặc `extra_body` mà `LLM_CACHE_MODE` ≠ `bypass` (nhất là `eval` của harness
+    P8 — không hết hạn) phải sửa khoá cache (`backend/app/llm/cache.py`) hoặc xoá `llm_cache`; **chưa sửa thì không đổi hai trường này.**
+    Spec cần sửa P2 §8 (mục LLM-G).
+37. **`llm.yaml` lỗi cú pháp YAML in đoạn dòng hỏng vào traceback khởi động (soát LLM-G (a)(b), NGHI thấp; chốt 17/10/2026).**
+    `yaml.safe_load` ném `MarkedYAMLError` kèm đoạn dòng (có thể là dòng `extra_body`). Mức thấp: `llm.yaml` được commit, không chứa bí mật.
+    Hướng xử lý khi cần: bọc `yaml.YAMLError` trong `load_llm_config` thành thông điệp cố định (chỉ số dòng).
+38. **Khoá `extra_body` có thể cân nhắc cấm thêm (soát LLM-G lượt 1, chỉ nêu).** Đổi định tuyến/model (bỏ qua `pricing`, trần chi, "strong
+    không fallback"): `models`, `route`, `provider`; nạp nội dung lạ: `plugins`, `web_search_options`, `documents`, `chat_template*`; ép/hỏng
+    đầu ra: `echo`, `guided_*`, `structured_outputs`, `continue_final_message`, `add_generation_prompt`; tăng chi: `best_of`, `min_tokens`,
+    `ignore_eos`, `service_tier`, `reasoning_effort`, `reasoning`; lưu dữ liệu phía nhà cung cấp: `store`, `metadata`, `user`,
+    `safety_identifier`. Chỉ tới được qua `llm.yaml` đã commit (sai cấu hình, không phải người dùng tấn công) — xét khi thêm provider thứ hai.
+
 ## Câu hỏi mở / điểm lệch
 
 1. ~~Bảng `decisions.md` mục 2 hỏng~~ — **đã sửa** (25/09/2026).
