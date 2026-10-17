@@ -6,6 +6,8 @@
 
 *Cập nhật 10/10/2026 (Phase 6, G6-3): "hỏi nhiều lần" thống nhất k = 5 ở mục 7.2, 14.2, 15.1, 15.2 (trước ghi 7); mục 9 — 8 test toán quyết định hiện thực ở Phase 6 chặng 6A, không có sẵn trong scaffold.*
 
+*Cập nhật 17/10/2026 (Phase 5): cổng 5 thủ công ở mục 5.1 — bộ intent 45 câu, macro-F1 tính trên 5 lớp, bộ câu chỉ để đo (chốt 15/10/2026).*
+
 ---
 
 ## Mục lục
@@ -310,7 +312,7 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 - 20 luật đều có ca khớp và ca suýt khớp; nhiều luật khớp → luật chặt nhất thắng.
 
 **Cổng 5 — thủ công (LLM thật):**
-- Intent macro-F1 ≥ 0,85 trên 40 câu mẫu (10 câu mỗi loại + 5 ngoài phạm vi).
+- Intent macro-F1 ≥ 0,85 trên 45 câu mẫu (10 câu mỗi loại × 4 loại + 5 ngoài phạm vi; macro-F1 tính trên 5 lớp — chốt 15/10/2026). Bộ câu này chỉ để đo, không dùng chỉnh ngưỡng hay prompt.
 - Chặn ≥ 13/15 câu tấn công; không chặn nhầm quá 1/30 câu thường; thông báo trung tính.
 - Recall@5 ≥ 0,8 trên 30 câu kiểm tra truy hồi.
 - Ghi chú bàn giao của ca E7 nêu rõ bước đã làm, đã hoàn tác tới đâu, phần L2 cần làm tay.

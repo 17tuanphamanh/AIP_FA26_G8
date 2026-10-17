@@ -219,7 +219,7 @@ Tăng cường áp **sau** khi chia tập, và chỉ trên tập huấn luyện.
 
 1. Chia **70 / 15 / 15** (train / validation / test) **theo `template`** — mọi biến thể của một mẫu vào cùng một tập.
 2. **Loại khỏi toàn bộ dữ liệu huấn luyện** mọi câu gần trùng với **tập test của M8** (P8): chuẩn hóa (bỏ dấu, thường hóa, gộp khoảng trắng) rồi so khớp chính xác, và so cosine bge-m3 ≥ 0,90 → loại. Nếu không, số liệu RQ1/RQ3 ở Phase 10 bị thổi phồng vì B3 đã "học thuộc" câu test.
-3. Bộ 40 câu probe intent (cổng 5) và bộ 15 + 30 câu injection (cổng 5) **[Chốt]** là **tập kiểm độc lập**, không bao giờ dùng để huấn luyện hay chọn ngưỡng.
+3. Bộ 45 câu probe intent (cổng 5; 10/loại × 4 + 5 ngoài phạm vi, macro-F1 5 lớp — chốt 15/10/2026) và bộ 15 + 30 câu injection (cổng 5) **[Chốt]** là **tập kiểm độc lập**, không bao giờ dùng để huấn luyện, chọn ngưỡng hay chỉnh prompt.
 4. Ghi `data/DATASET.md`: số câu mỗi lớp mỗi tập, sha256 từng file, danh sách câu đã loại ở bước 2.
 
 ## 4. Huấn luyện
@@ -273,7 +273,7 @@ ml-service nạp theo biến môi trường `INTENT_MODEL_DIR`, `GUARD_MODEL_DIR
 | Model | Chỉ số | Mục tiêu |
 |---|---|---|
 | `intent-clf` (model đơn thuần) | Macro-F1 theo nhãn; F1 từng nhãn; **exact-match tập nhãn** ở câu nhiều ý; recall `out_of_scope`; tách riêng câu có dấu / không dấu | Macro-F1 ≥ 0,85 |
-| Cascade B3 (model → LLM) | Macro-F1 trên bộ 40 câu probe; **% câu xuống LLM**; p95 độ trễ B3 | Macro-F1 ≥ 0,85 **[Chốt cổng 5]**; xuống LLM ≤ 30% |
+| Cascade B3 (model → LLM) | Macro-F1 trên bộ 45 câu probe; **% câu xuống LLM**; p95 độ trễ B3 | Macro-F1 ≥ 0,85 **[Chốt cổng 5]**; xuống LLM ≤ 30% |
 | `injection-clf` | Recall, tỉ lệ chặn nhầm, AUC trên test; bộ 15 + 30 câu | Chặn ≥ 13/15, chặn nhầm ≤ 1/30 **[Chốt cổng 5]** |
 | Cả hai | p95 suy luận CPU (ONNX int8, VM 4 vCPU) | < 100 ms **[Chốt P4]** |
 
@@ -319,3 +319,4 @@ Trước khi có model, `/classify_intent` trả 503 và B3 tự đi đường L
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 25/09/2026 | 1.0 | Tạo file: hai model phân loại (intent đa nhãn, injection), chọn backbone, dữ liệu, chống rò rỉ với M8, huấn luyện, ngưỡng, xuất ONNX, đánh giá |
+| 17/10/2026 | 1.1 | Bộ probe intent cổng 5 = 45 câu, macro-F1 5 lớp; bộ probe không dùng chỉnh prompt (chốt 15/10/2026) — mục 3.4, 5.1 |

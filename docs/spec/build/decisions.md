@@ -2,7 +2,7 @@
 
 *Thuộc bộ `build/`. Đây là **nơi duy nhất** theo dõi trạng thái quyết định. Nhóm **tự quyết** mọi mục (không có vòng hỏi GVHD); mục nào đổi hành vi hoặc công nghệ so với tài liệu gốc thì **báo cáo** GVHD trong báo cáo tuần. `huong-dan-xay-dung-he-thong-2.md` Phase 0 gọi file này là `decisions.md`. Khi một mục được chốt: sửa cột "Trạng thái" ở đây, rồi áp patch tương ứng (nếu có) trong `claude/bo-sung-bo-tai-lieu-build.md`.*
 
-*Cập nhật: 16/10/2026 (D-50 `/api/health` chỉ theo phụ thuộc lõi — P6→P5 #23; D-36…D-40, D-42 → **Đã chốt** kèm commit 6A `fe61fa3` / 6B `d42d5c4` / 6C `5f2ece2`; Q-6-8 C hiện thực ở 6C — điều kiện tài liệu cổng 6). Trước đó 14/10/2026 (T20b đóng `8a7c697`: D-49 bổ sung (e) cha lỗi có escalation — lệch D-30 có chủ đích, (f) `audit_check` điểm 8 cho cha, (d) chốt). Trước đó 13/10/2026 (D-49 ticket con vào B6 + tách ý lẫn — spec T20b; T24 đóng `457239d`; D-48 thực thi/hoàn tác theo bước — spec T24; T20a đóng; D-47 hợp đồng `Action` 4 intent — spec T20a; §1.1 điều kiện R01–R15 chốt theo T22a + R10 bổ sung ở T20a; D-35, D-41 chữ chốt). Trước đó 10/10/2026 (D-44…D-46 + Q-5-7…9 — kế hoạch Phase 5 sau T22a, phiên PHAN-TICH-P5; 09/10: Q-5-6 `procedure_doc` theo K2 thật; vào repo cùng spec Phase 5 ở chặng T22a; trước đó 03/10: cổng 4 đạt — §4.1 dòng 4d; 01/10: D-35…D-43 Phase 5–6, Q-5-1…5, Q-6-1…9).*
+*Cập nhật: 17/10/2026 (mục 1.2: probe intent 45 câu, macro-F1 5 lớp — chốt 15/10; LLM-G `0e74095` gắn LLM thật, model CHƯA chốt). Trước đó 16/10/2026 (D-50 `/api/health` chỉ theo phụ thuộc lõi — P6→P5 #23; D-36…D-40, D-42 → **Đã chốt** kèm commit 6A `fe61fa3` / 6B `d42d5c4` / 6C `5f2ece2`; Q-6-8 C hiện thực ở 6C — điều kiện tài liệu cổng 6). Trước đó 14/10/2026 (T20b đóng `8a7c697`: D-49 bổ sung (e) cha lỗi có escalation — lệch D-30 có chủ đích, (f) `audit_check` điểm 8 cho cha, (d) chốt). Trước đó 13/10/2026 (D-49 ticket con vào B6 + tách ý lẫn — spec T20b; T24 đóng `457239d`; D-48 thực thi/hoàn tác theo bước — spec T24; T20a đóng; D-47 hợp đồng `Action` 4 intent — spec T20a; §1.1 điều kiện R01–R15 chốt theo T22a + R10 bổ sung ở T20a; D-35, D-41 chữ chốt). Trước đó 10/10/2026 (D-44…D-46 + Q-5-7…9 — kế hoạch Phase 5 sau T22a, phiên PHAN-TICH-P5; 09/10: Q-5-6 `procedure_doc` theo K2 thật; vào repo cùng spec Phase 5 ở chặng T22a; trước đó 03/10: cổng 4 đạt — §4.1 dòng 4d; 01/10: D-35…D-43 Phase 5–6, Q-5-1…5, Q-6-1…9).*
 
 **Nguyên tắc chốt (áp cho mục 1, 2, 3):**
 
@@ -71,7 +71,7 @@ Thứ tự số không ảnh hưởng kết quả: khớp cả `allow` và `appr
 
 | Khoản | Trần | Ghi chú |
 |---|---|---|
-| Probe chọn model (Phase 3) | 5 USD | Probe intent 40 câu, JSON 200 lời gọi, p95 độ trễ trên 2–3 ứng viên mỗi vai trò |
+| Probe chọn model (Phase 3) | 5 USD | Probe intent 45 câu, JSON 200 lời gọi, p95 độ trễ trên 2–3 ứng viên mỗi vai trò |
 | Chạy thật end-to-end Phase 3–7 | 8 USD | Chỉ các cổng phase; còn lại ScriptedLLM |
 | Thực nghiệm Phase 8–10 | 15 USD | ≥ 2 lượt đầy đủ 150–180 kịch bản + chạy lại |
 | Demo và bảo vệ | 3 USD | Bản bảo vệ chạy từ cache (`huong-dan` mục 13.1) |
@@ -313,3 +313,4 @@ Nhóm xây **toàn bộ code base trước bằng dữ liệu giả**, gắn LLM
 | 16/10/2026 | §3: D-36…D-40, D-42 chữ chốt kèm commit (D-36 6A `fe61fa3` + 6B `d42d5c4`; D-37 `fe61fa3`; D-38/39/40 `d42d5c4` — D-38 nối ở 6C; D-42 `5f2ece2` + Q-6C-10); §2: Q-6-8 C hiện thực ở `5f2ece2`. Yêu cầu P6→P5 #20–#22 — điều kiện tài liệu của cổng 6 |
 | 16/10/2026 | Mô tả `config/policy.json` R17/R18/R19 thêm hệ quả "cần người duyệt" cùng khuôn R03–R15 (P6→P5 #21 — cổng 6 đọc lý do, Quân; Tuấn Anh chốt 16/10); chỉ đổi chuỗi lý do hiện trên màn duyệt, `policy_sha256` đổi — phase5 mục 7.12, hiện thực ở chặng V17 |
 | 16/10/2026 | §3: D-50 `/api/health` 200/503 chỉ theo phụ thuộc lõi, `runtime`/`kb`/`llm`/`monitor` chỉ báo; healthcheck backend trong compose (Duy Anh); §4: ghi chú vận hành harness/probe chạy stack/DB riêng — P6→P5 #23 |
+| 17/10/2026 | §1.2: probe intent 40 → 45 câu (10/loại × 4 + 5 ngoài phạm vi, macro-F1 5 lớp; bộ probe chỉ để đo — chốt 15/10). Mốc G bắt đầu: LLM-G `0e74095` + `90deec7` gắn DeepSeek (`extra_body`, `json_object`, pricing giờ cao điểm — P2 "Chốt khi hiện thực mốc G"); **model chính thức chưa chốt** → ghi D-51 sau DỪNG 3 sửa prompt + probe JSON |

@@ -198,7 +198,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 | TC12 | Câu chứa nhiều yêu cầu khác mức rủi ro | Tách ticket con, mỗi con phân loại riêng |
 | TC15 | Yêu cầu ngoài 4 loại (hỏng máy in) | E1, chuyển L2 ngay |
 | Cổng 3 | 20 câu VPN (viết tắt, không dấu) | Đúng ≥ 18/20 |
-| Cổng 5 | 40 câu (10/loại + 5 ngoài phạm vi) | Macro-F1 ≥ 0,85 |
+| Cổng 5 | 45 câu (10/loại × 4 + 5 ngoài phạm vi; macro-F1 tính 5 lớp) | Macro-F1 ≥ 0,85 |
 | Cổng 5 | Bộ 10 câu nhiều ý | Tách đúng; ticket cha đúng 6 trường hợp |
 | TC32 (mới, D-17) | Câu nhiều ý, một con bị E1 ngay lập tức | Cha vẫn đóng đúng, một tin nhắn tổng hợp |
 | TC34 (mới, D-31) | 2 ý: reset mật khẩu (allow) + Photoshop (cần duyệt) | Không tin nào tới khi L1 duyệt xong; đúng **1** tin gồm 2 kết quả; người dùng xác nhận **1** lần; đúng 1 tin tổng kết |
@@ -498,7 +498,7 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 ## 7. Cấu hình
 
 - `MAX_LOOPS=5` **[Chốt]**
-- `TAU_INTENT=0,6` **[Đề xuất; hiệu chỉnh bằng probe 40 câu]** — chỉ áp cho đường LLM
+- `TAU_INTENT=0,6` **[Đề xuất; KHÔNG chỉnh theo bộ probe cổng 5 — bộ đó chỉ để đo (chốt 15/10/2026)]** — chỉ áp cho đường LLM
 - `INTENT_MODEL_DIR` (ml-service) — `tau_lo`/`tau_hi` nằm trong `thresholds.json` của phiên bản model, không nằm trong `policy.json` (P11 mục 4.3)
 - `PARENT_RECONCILE_INTERVAL=60s` (worker) **[Đề xuất D-17]**
 - Prompt `b03_classify` (version ghi vào lineage)
@@ -563,8 +563,8 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 | Integration | TC32: một con E1 tức thì | Cha đóng đúng, không cần `child_done` (D-17) |
 | Integration | Giết process sau `child_submit`, trước checkpoint cha | Đúng 2 con, mỗi con chạy 1 lần (D-18) |
 | Probe (LLM thật) | Intent VPN | ≥ 18/20 câu tiếng Việt (viết tắt, không dấu) **[Chốt cổng 3]** |
-| Probe (model thật) | Cascade trên bộ 40 câu | Macro-F1 ≥ 0,85 **[Chốt cổng 5]**; câu xuống LLM ≤ 30% |
-| Probe | 40 câu (10 câu/loại + 5 ngoài phạm vi) | Macro-F1 ≥ 0,85 **[Chốt cổng 5]** |
+| Probe (model thật) | Cascade trên bộ 45 câu | Macro-F1 ≥ 0,85 **[Chốt cổng 5]**; câu xuống LLM ≤ 30% |
+| Probe | 45 câu (10 câu/loại × 4 + 5 ngoài phạm vi; macro-F1 5 lớp) | Macro-F1 ≥ 0,85 **[Chốt cổng 5]** |
 | Probe | 10 câu nhiều ý | Tách đúng ≥ 9/10 |
 
 ## 12. Phụ thuộc, phase, việc còn mở
@@ -590,7 +590,7 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 |---|---|---|
 | E1 tăng đột biến | Điểm log 1: `intent`, `confidence`; tỉ lệ `intent_low_confidence` so với `out_of_scope` | `TAU_INTENT` quá cao; prompt mới làm confidence thấp; câu viết tắt mới |
 | Tỉ lệ B3 xuống LLM tăng | Điểm log 1 `layer`, phân bố `model_probs` | Dữ liệu thật lệch khỏi dữ liệu huấn luyện (câu mới, từ viết tắt mới) → bổ sung dữ liệu, huấn luyện lại (P11) |
-| Phân sai loại giữa `account` và `access` | Probe 40 câu, ma trận nhầm lẫn; tỉ lệ `intent_filter_fallback` ở B8 | Thiếu ví dụ few-shot "quyền thư mục" và "quyền tài khoản" |
+| Phân sai loại giữa `account` và `access` | Probe 45 câu, ma trận nhầm lẫn; tỉ lệ `intent_filter_fallback` ở B8 | Thiếu ví dụ few-shot "quyền thư mục" và "quyền tài khoản" |
 | Ticket cha không bao giờ đóng | `children` của cha + `tickets.final_state` của con; worker đối soát có chạy không | Một con bị kẹt (xem E9); worker đối soát tắt; `parent_wait` không đọc DB (vi phạm D-17) |
 | Người dùng nhận nhiều tin cho một câu | `side_effects` kind `notify_user` theo ticket con | Có đường gửi tin của con không đi qua `notify_user` (vi phạm D-31) |
 | Cha gửi tin tổng hợp khi một ý còn đang chờ duyệt | `children_view` của vòng đó | Coi `S_PENDING_APPROVAL` là điểm dừng — sai định nghĩa D-31 |
@@ -615,3 +615,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 9.3, 9.8; k
 | 25/09/2026 | 1.3 | Một tin tổng hợp: con không tự nhắn, cha gửi một tin mỗi lượt, xác nhận qua cha (D-31); cha `close_reason=NULL`, chỉ số trên ticket lá (D-30); chuyển trạng thái của cha (D-29); thêm TC34–TC36 |
 | 25/09/2026 | 1.4 | B3 chạy model phân loại đa nhãn trước, LLM cho vùng lưng chừng và tách span (D-32); backbone mDeBERTa-v3-base (D-33) |
 | 30/09/2026 | 1.5 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 9.3, 9.8) |
+| 17/10/2026 | 1.6 | Bộ probe intent cổng 5 = 45 câu (10/loại × 4 + 5 ngoài phạm vi), macro-F1 tính 5 lớp; `TAU_INTENT` không chỉnh theo bộ probe — bộ probe chỉ để đo (chốt 15/10/2026) |
