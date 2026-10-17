@@ -104,10 +104,11 @@ def ok(content: dict[str, Any] | str, *, tokens: tuple[int, int] = (100, 10)) ->
 
 
 def openai_provider(server: Server, name: str = "cloud_a", base_url: str = "http://llm.test/v1",
-                    json_mode: str = "json_schema") -> OpenAICompatProvider:  # fmt: skip
+                    json_mode: str = "json_schema", **kw: Any) -> OpenAICompatProvider:  # fmt: skip
+    """`kw` (vd. `extra_body`) chỉ truyền khi test đặt — mặc định dựng provider y như cấu hình không có trường thêm."""
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(server.handler))
     return OpenAICompatProvider(name, base_url=base_url, api_key=SecretStr("k-test"), json_mode=json_mode,
-                                http_client=client)  # fmt: skip
+                                http_client=client, **kw)  # fmt: skip
 
 
 def scripted(name: str, *steps: Any) -> ScriptedLLM:
@@ -220,6 +221,65 @@ async def test_json_object_through_gateway_carries_schema() -> None:
     await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
     system = server.bodies()[0]["messages"][0]
     assert system["role"] == "system" and SCHEMA_TEXT in system["content"]
+
+
+
+# ---- LLM-G: extra_body (DeepSeek `thinking`) — None = body y như trước; có thì chỉ THÊM khoá, không đổi trường gateway ----
+
+THINKING_OFF = {"thinking": {"type": "disabled"}}
+GATEWAY_KEYS = {"model", "messages", "max_tokens", "temperature", "response_format"}
+VPN_MESSAGES = [{"role": "system", "content": "Phân loại nhu cầu."}, {"role": "user", "content": "gia hạn VPN"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("json_mode", ["json_schema", "json_object"])
+async def test_llmg_no_extra_body_sends_exact_gateway_keys(json_mode: str) -> None:
+    server = Server(ok(NEED_OK))
+    await openai_provider(server, json_mode=json_mode).chat(provider_req(VPN_MESSAGES))
+    assert set(server.bodies()[0]) == GATEWAY_KEYS
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_none_same_body_as_omitted() -> None:
+    plain, none = Server(ok(NEED_OK)), Server(ok(NEED_OK))
+    await openai_provider(plain, json_mode="json_object").chat(provider_req(VPN_MESSAGES))
+    await openai_provider(none, json_mode="json_object", extra_body=None).chat(provider_req(VPN_MESSAGES))
+    assert none.bodies() == plain.bodies()
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_adds_thinking_and_keeps_gateway_fields() -> None:
+    plain, extra = Server(ok(NEED_OK)), Server(ok(NEED_OK))
+    await openai_provider(plain, json_mode="json_object").chat(provider_req(VPN_MESSAGES))
+    await openai_provider(extra, json_mode="json_object", extra_body=THINKING_OFF).chat(provider_req(VPN_MESSAGES))
+    (before,), (after,) = plain.bodies(), extra.bodies()
+    assert set(after) == GATEWAY_KEYS | {"thinking"} and after["thinking"] == {"type": "disabled"}
+    assert {k: after[k] for k in GATEWAY_KEYS} == before
+    assert (after["model"], after["temperature"], after["max_tokens"]) == ("m-cloud_a", 0, 400)
+    assert after["response_format"] == {"type": "json_object"}
+    assert after["messages"][0]["content"].endswith(SCHEMA_TEXT)  # ghi chú json vẫn ở cuối system message
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_copied_not_shared() -> None:
+    server = Server(ok(NEED_OK))
+    cfg = {"thinking": {"type": "disabled"}}
+    provider = openai_provider(server, json_mode="json_object", extra_body=cfg)
+    cfg["thinking"]["type"] = "enabled"  # sửa dict cấu hình sau khi dựng: provider không thấy
+    await provider.chat(provider_req(VPN_MESSAGES))
+    assert server.bodies()[0]["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_through_gateway() -> None:
+    server = Server(ok(NEED_OK))
+    gw = make_gateway(runtime=runtime((target("cloud_a"),)),
+                      providers={"cloud_a": openai_provider(server, json_mode="json_object",
+                                                            extra_body=THINKING_OFF)})  # fmt: skip
+    out, _ = await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
+    (body,) = server.bodies()
+    assert out == NeedTypeOut(type="info", confidence=0.9)
+    assert body["thinking"] == {"type": "disabled"} and body["response_format"] == {"type": "json_object"}
 
 
 def test_smoke_check_llm_scripted_loads_presets() -> None:

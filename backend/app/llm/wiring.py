@@ -84,7 +84,7 @@ async def open_llm(
                 key = getattr(settings, p.api_key_setting)
                 assert isinstance(key, SecretStr)  # resolve() đã từ chối khởi động nếu thiếu
                 real = OpenAICompatProvider(name, base_url=getattr(settings, p.base_url_setting), api_key=key,
-                                            json_mode=p.json_mode)  # fmt: skip
+                                            json_mode=p.json_mode, extra_body=p.extra_body)  # fmt: skip
                 stack.push_async_callback(real.aclose)
                 providers[name] = real
         yield LLMClient(

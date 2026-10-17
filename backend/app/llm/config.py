@@ -4,15 +4,28 @@ Khác P2 (Q-3d-3): KHÔNG nội suy `${…}`. Model hai vai trò, base_url và k
 (`model_setting`, `base_url_setting`, `api_key_setting`); riêng bảng `pricing` ghi tên model cố định — model nào không
 có dòng giá thì không bao giờ được gọi. `resolve()` dựng chuỗi đích theo `LLM_BACKEND`; `check_timing()` ép công
 thức Q-3a-16 cho từng vai trò (Q-3d-7). Cả hai ném `RuntimeError` → backend/worker từ chối khởi động (fail-closed).
+
+`providers.<tên>.extra_body` (LLM-G): trường thêm vào thân request cho tính năng riêng của nhà cung cấp (vd. DeepSeek
+`thinking: {type: disabled}`). SDK openai gộp nó ĐÈ lên body → khoá trùng tham số gateway đã điều khiển bị từ chối lúc nạp;
+giá trị phải chuyển được sang JSON (không date, NaN, inf) ngay lúc nạp, không để nổ ở lời gọi đầu. Mọi model cấu hình đặt
+`hide_input_in_errors`: lỗi khởi động chỉ nêu đường dẫn trường + lý do, không in giá trị (extra_body có thể mang khoá riêng).
 """
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from app.settings import Settings
 
@@ -23,13 +36,22 @@ ROLES: tuple[Role, ...] = ("fast", "strong")
 SCRIPTED_PROVIDER = "scripted"
 SCRIPTED_MODEL = "scripted"  # Q-3d-4: mọi vai trò khi LLM_BACKEND=scripted; vẫn phải có dòng pricing (giá 0)
 
-_FROZEN = ConfigDict(extra="forbid", frozen=True)
+_FROZEN = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+# Khoá `extra_body` bị cấm (so sau strip + lower): gateway tự đặt; làm hỏng cách gateway đọc phản hồi (một lựa chọn, văn
+# bản); tham số sinh chữ do gateway quản. extra_body chỉ để bật/tắt tính năng riêng của nhà cung cấp.
+EXTRA_BODY_FORBIDDEN = frozenset({
+    "model", "messages", "max_tokens", "max_completion_tokens", "temperature", "response_format", "timeout",
+    "stream", "stream_options", "n", "tools", "tool_choice", "functions", "function_call", "parallel_tool_calls",
+    "logprobs", "top_logprobs", "modalities", "audio", "prediction",
+    "stop", "top_p", "seed", "logit_bias", "presence_penalty", "frequency_penalty",
+})  # fmt: skip
 
 
 class Price(BaseModel):
     """USD / 1M token (P2 mục 5)."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True, hide_input_in_errors=True)
 
     in_: float = Field(alias="in", ge=0)
     out: float = Field(ge=0)
@@ -51,6 +73,23 @@ class ProviderCfg(BaseModel):
     api_key_setting: str  # tên trường SecretStr của Settings, vd. llm_api_key → LLM_API_KEY
     # non-strict mặc định: schema có dict tự do (slots) không hợp strict mode; chốt lại ở mốc G bằng probe
     json_mode: Literal["json_schema", "json_object"] = "json_schema"
+    extra_body: dict[str, Any] | None = None  # None = không gửi trường thêm nào (body y như trước LLM-G)
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _no_gateway_keys(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            not_str = [repr(k) for k in v if not isinstance(k, str)]
+            if not_str:
+                raise ValueError(f"extra_body: khoá phải là chuỗi: {not_str}")
+            clash = sorted(k for k in v if k.strip().lower() in EXTRA_BODY_FORBIDDEN)
+            if clash:
+                raise ValueError(f"extra_body: khoá trùng tham số gateway đã điều khiển: {clash}")
+            try:
+                json.dumps(v, allow_nan=False)
+            except (TypeError, ValueError):
+                raise ValueError("extra_body: giá trị không chuyển được sang JSON (date, NaN, inf…)") from None
+        return v
 
 
 class RoleCfg(BaseModel):

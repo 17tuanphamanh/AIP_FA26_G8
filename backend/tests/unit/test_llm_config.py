@@ -6,10 +6,12 @@ Không test nào gọi LLM thật hay đọc `.env`: Settings dựng với `_env
 import copy
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar, cast
 
+import app.llm.wiring as llm_wiring
 import pytest
 import yaml
+from app.core.clock import FakeClock
 from app.db.session import create_engines
 from app.graph.wiring import open_runtime
 from app.guard.privacy import NotRedactingGuard
@@ -21,6 +23,7 @@ from app.llm.config import (
     resolve,
     worst_case_s,
 )
+from app.llm.ports import TraceParent
 from app.llm.wiring import check_llm
 from app.main import create_app
 from app.settings import Settings
@@ -129,7 +132,8 @@ def test_d15_repo_config_loads_and_has_no_interpolation() -> None:
 
     found = strings(_raw())
     assert len(found) > 20 and not [s for s in found if "${" in s]  # Q-3d-3: không nội suy ở khoá/giá trị nào
-    assert set(cfg.pricing) == {SCRIPTED_MODEL}  # 3d: chưa có giá model thật → real từ chối khởi động
+    # LLM-G: thêm giá 2 model DeepSeek (trước đây chốt chỉ có `scripted` vì chưa chọn model — 3d)
+    assert set(cfg.pricing) == {SCRIPTED_MODEL, "deepseek-flash", "deepseek-v4-pro"}
 
 
 def test_d15_real_with_repo_config_refuses_missing_model_env() -> None:
@@ -287,3 +291,140 @@ def test_f1_evidence_budget_over_budget_in_refuses_startup() -> None:
     budget = load_llm_config(LLM_YAML).roles["strong"].budget_in
     with pytest.raises(ValueError, match="RAG_EVIDENCE_MAX_TOKENS"):
         check_llm(_settings(app_env="dev", llm_backend="scripted", rag_evidence_max_tokens=budget))
+
+
+# ---- LLM-G: extra_body của provider (DeepSeek: tắt chế độ suy nghĩ), llm.yaml thật, wiring --------------------------
+
+THINKING_OFF = {"thinking": {"type": "disabled"}}
+# Khoá gateway đã điều khiển (SDK openai gộp extra_body ĐÈ lên body) — PLAN LLM-G, 3 nhóm
+FORBIDDEN = [
+    "model", "messages", "max_tokens", "max_completion_tokens", "temperature", "response_format", "timeout",
+    "stream", "stream_options", "n", "tools", "tool_choice", "functions", "function_call", "parallel_tool_calls",
+    "logprobs", "top_logprobs", "modalities", "audio", "prediction",
+    "stop", "top_p", "seed", "logit_bias", "presence_penalty", "frequency_penalty",
+]  # fmt: skip
+
+
+def _extra(value: Any) -> LlmConfig:
+    return _cfg(lambda d: d["providers"]["cloud_a"].update({"extra_body": value}))
+
+
+def test_llmg_extra_body_defaults_to_none() -> None:
+    cfg = _cfg(lambda d: d["providers"]["cloud_a"].pop("extra_body", None))
+    assert cfg.providers["cloud_a"].extra_body is None
+
+
+@pytest.mark.parametrize("key", [*FORBIDDEN, " Model ", "MAX_TOKENS", "Stop"])
+def test_llmg_extra_body_rejects_gateway_keys(key: str) -> None:
+    with pytest.raises(ValidationError, match="extra_body"):
+        _extra({key: 1})
+
+
+def test_llmg_extra_body_rejects_forbidden_key_beside_allowed_one() -> None:
+    with pytest.raises(ValidationError, match="extra_body"):
+        _extra({**THINKING_OFF, "temperature": 1})
+
+
+@pytest.mark.parametrize("key", [1, None, ("a",)])
+def test_llmg_extra_body_keys_must_be_strings(key: Any) -> None:
+    with pytest.raises(ValidationError, match="extra_body"):
+        _extra({key: 1})
+
+
+def test_llmg_extra_body_accepts_provider_feature_keys() -> None:
+    assert _extra({**THINKING_OFF, "safe_prompt": True}).providers["cloud_a"].extra_body == {**THINKING_OFF,
+                                                                                            "safe_prompt": True}
+
+
+def test_llmg_repo_config_deepseek() -> None:
+    cfg = load_llm_config(LLM_YAML)
+    p = cfg.providers["cloud_a"]
+    assert (p.json_mode, p.extra_body) == ("json_object", THINKING_OFF)
+    assert {m: (cfg.pricing[m].in_, cfg.pricing[m].out) for m in ("deepseek-flash", "deepseek-v4-pro")} == {
+        "deepseek-flash": (0.30, 1.20), "deepseek-v4-pro": (1.32, 3.96)}  # fmt: skip
+    assert cfg.spend.cap_usd == 38  # trần đồ án giữ nguyên; DỪNG 2 hạ tạm, không commit
+
+
+@pytest.mark.parametrize("model", ["deepseek-flash", "deepseek-v4-pro"])
+def test_llmg_repo_config_resolves_deepseek(model: str) -> None:
+    settings = _settings(**{**REAL, "fast_model": model, "strong_model": model})
+    runtime = resolve(load_llm_config(LLM_YAML), settings, "real")
+    for role in ("fast", "strong"):
+        (only,) = runtime.chains[role]
+        assert (only.provider, only.model) == ("cloud_a", model)
+        assert only.price is not None and only.price.paid
+
+
+class _Recorder:
+    """Thay `OpenAICompatProvider` trong wiring: ghi kwargs, không dựng client HTTP."""
+
+    made: ClassVar[list[dict[str, Any]]] = []
+
+    def __init__(self, name: str, **kwargs: Any) -> None:
+        _Recorder.made.append({"name": name, **kwargs})
+
+    async def aclose(self) -> None:
+        pass
+
+
+async def _open(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    _Recorder.made.clear()
+    monkeypatch.setattr(llm_wiring, "OpenAICompatProvider", _Recorder)
+    setup = check_llm(settings)
+    async with llm_wiring.open_llm(setup, settings, engine=cast(Any, object()), clock=FakeClock(),
+                                   trace=lambda: TraceParent("turn-llmg", "a" * 32, None)):  # fmt: skip
+        pass
+    return _Recorder.made
+
+
+@pytest.mark.asyncio
+async def test_llmg_wiring_passes_extra_body_and_json_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(app_env="prod", llm_backend="real",
+                         **{**REAL, "fast_model": "deepseek-flash", "strong_model": "deepseek-flash"})  # fmt: skip
+    (made,) = await _open(settings, monkeypatch)
+    assert made["name"] == "cloud_a"
+    assert (made["json_mode"], made["extra_body"]) == ("json_object", THINKING_OFF)
+
+
+@pytest.mark.asyncio
+async def test_llmg_scripted_backend_builds_no_real_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert await _open(_settings(app_env="dev", llm_backend="scripted"), monkeypatch) == []
+
+
+# ---- LLM-G (a)(b): lỗi nạp không in giá trị; extra_body phải chuyển được sang JSON ngay lúc nạp -------------------------
+
+SAMPLE_SECRET = "MAU-7f3a"  # giá trị mẫu kiểu khoá riêng của nhà cung cấp — không phải khoá thật
+
+
+def _yaml_with_extra(tmp_path: Path, extra_body_yaml: str) -> Path:
+    text = LLM_YAML.read_text(encoding="utf-8").replace(
+        "    extra_body: {thinking: {type: disabled}}\n", f"    extra_body: {extra_body_yaml}\n"
+    )
+    assert f"extra_body: {extra_body_yaml}" in text
+    path = tmp_path / "llm.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+# pydantic cắt `input_value` dài ở giữa → giá trị ngắn, đứng đầu (không bị cắt) mới chắc chắn lộ nếu thiếu cờ ẩn
+@pytest.mark.parametrize("extra_body_yaml", [
+    pytest.param(f"{{token: {SAMPLE_SECRET}, model: x}}", id="gia-tri-dau"),
+    pytest.param(f"{{model: x, token: {SAMPLE_SECRET}}}", id="gia-tri-cuoi"),
+])  # fmt: skip
+def test_llmg_load_error_hides_input_values(tmp_path: Path, extra_body_yaml: str) -> None:
+    path = _yaml_with_extra(tmp_path, extra_body_yaml)
+    with pytest.raises(ValidationError) as e:
+        load_llm_config(path)
+    assert SAMPLE_SECRET not in str(e.value)
+    assert "extra_body" in str(e.value) and "model" in str(e.value)  # vẫn nêu tên trường và khoá bị cấm
+
+
+@pytest.mark.parametrize(("extra_body_yaml", "raw"), [
+    pytest.param("{thinking: {type: disabled, since: 2026-10-17}}", "datetime.date(", id="date"),  # YAML ra datetime.date
+    pytest.param("{thinking: {type: disabled}, budget: .nan}", "': nan", id="nan"),
+    pytest.param("{thinking: {type: disabled}, budget: .inf}", "': inf", id="inf"),
+])  # fmt: skip
+def test_llmg_extra_body_must_be_json_at_load(tmp_path: Path, extra_body_yaml: str, raw: str) -> None:
+    with pytest.raises(ValidationError, match="extra_body.*JSON") as e:
+        load_llm_config(_yaml_with_extra(tmp_path, extra_body_yaml))
+    assert raw not in str(e.value) and "2026" not in str(e.value)  # thông điệp không chứa giá trị (repr của input)

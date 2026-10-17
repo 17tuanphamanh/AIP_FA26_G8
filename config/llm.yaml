@@ -4,8 +4,15 @@
 # (FAST_MODEL, STRONG_MODEL, LLM_BASE_URL, LLM_API_KEY). Bảng `pricing` ghi TÊN MODEL CỐ ĐỊNH: model không có
 # dòng giá thì không bao giờ được gọi (LLM_BACKEND=real mà FAST_MODEL/STRONG_MODEL thiếu dòng → từ chối khởi động).
 # Bật LLM thật (mốc G): thêm dòng giá của model đã chọn vào `pricing` + đặt 4 biến env trên, không sửa code.
+# LLM-G: DeepSeek (base_url https://api.deepseek.com) chỉ nhận response_format json_object; hai model mặc định BẬT chế độ
+# suy nghĩ (bỏ qua temperature) → tắt bằng trường thân request `thinking`. extra_body không được trùng tham số gateway.
 providers:
-  cloud_a: {kind: openai_compat, base_url_setting: llm_base_url, api_key_setting: llm_api_key, json_mode: json_schema}
+  cloud_a:
+    kind: openai_compat
+    base_url_setting: llm_base_url
+    api_key_setting: llm_api_key
+    json_mode: json_object
+    extra_body: {thinking: {type: disabled}}
 
 # Thời gian (Q-3d-7): với mỗi vai trò, (max_retries+1)·timeout_s + Σ backoff + max_retries·jitter_max_s phải
 # < WORKER_STALE_TURN_SECONDS/2 (60 s) và ≤ deadline_s < 60 s — backend/worker kiểm lúc khởi động.
@@ -29,5 +36,8 @@ limits: {max_concurrency: 8, retry_on: [429, 500, 502, 503, 504], backoff_base_s
 cache: {ttl_hours_runtime: 24}
 
 # USD / 1M token. `scripted` = ScriptedLLM (LLM_BACKEND=scripted, chỉ dev/test), giá 0.
+# DeepSeek: api-docs.deepseek.com, đọc 17/10/2026, giá GIỜ CAO ĐIỂM — giờ thấp điểm bằng một nửa, trần chi đếm dư.
 pricing:
   scripted: {in: 0, out: 0}
+  deepseek-flash: {in: 0.30, out: 1.20}
+  deepseek-v4-pro: {in: 1.32, out: 3.96}
