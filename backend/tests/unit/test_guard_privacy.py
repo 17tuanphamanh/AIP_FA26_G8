@@ -6,6 +6,8 @@ Test API (notices, 503, 422, security_events): `test_guard_api.py`.
 """
 
 import json
+import random
+import re
 import shutil
 import time
 from pathlib import Path
@@ -17,6 +19,7 @@ from app.guard.patterns import (
     PRIVACY_FILE,
     PRIVACY_RULE_ORDER,
     PatternFileError,
+    PrivacyRule,
     load_privacy_patterns,
 )
 from app.guard.privacy import NOTICE_PII, NOTICE_SECRET, RegexPrivacyGuard, shannon_bits
@@ -360,3 +363,193 @@ async def test_worker_runtime_refuses_broken_pattern_file_before_db(tmp_path: Pa
         async with open_runtime(settings, engines, clock=None, can_execute=False):  # type: ignore[arg-type]
             pass
     await engines.dispose()
+
+
+# ---- F15 (Việc treo 34): luật 6 = logic cũ ∪ xét từng mảnh quanh mặt nạ ------------------------------------------------
+
+# Ghép lúc chạy (gitleaks). Mỗi mảnh: 24 ký tự, entropy ≥ 4,0, không khớp loại trừ nào → luật 6 che khi đứng một mình.
+F15_RAND = "".join(("Qz8rT2mV", "b7LpN4wK", "s9YhC3dF"))  # noqa: FLY002 — gitleaks
+F15_RAND2 = "".join(("Wq7eR3tY", "9uI1oP5a", "S6gH2jK4"))  # noqa: FLY002 — gitleaks
+
+
+def _api_key(prefix: str = "sk-") -> str:
+    return prefix + "ABCDEFGH" + "IJKLMNOP"  # ghép lúc chạy (gitleaks)
+
+
+def test_f15_fixtures_are_masked_alone(guard: RegexPrivacyGuard) -> None:
+    for blob in (F15_RAND, F15_RAND2):
+        assert len(blob) == 24 and shannon_bits(blob) >= 4.0
+        assert guard.redact_text(f"chuỗi {blob} lạ").text == f"chuỗi {MASK} lạ"
+
+
+def test_f15_a_random_tail_glued_to_mask_is_masked(guard: RegexPrivacyGuard) -> None:
+    r = guard.redact_text(f"note x{MASK}{F15_RAND} nhé")
+    assert F15_RAND not in r.text
+    assert (r.text, r.secrets_found) == (f"note x{MASK}{MASK} nhé", 1)
+
+
+@pytest.mark.parametrize("text", [f"đã che {MASK} rồi", f"xem ({MASK}), nhé", MASK])
+def test_f15_b_bare_mask_kept_not_counted(guard: RegexPrivacyGuard, text: str) -> None:
+    r = guard.redact_text(text)
+    assert (r.text, r.secrets_found) == (text, 0)
+
+
+def test_f15_c_password_glued_value_masked(guard: RegexPrivacyGuard) -> None:
+    """Chỉ kiểm giá trị không còn. Lỗi che hai lần `password:<giá trị liền>` (luật 6 che lại `password:[MASK]` → `[MASK]]`, đếm 2,
+    mất tên trường) có từ trước F15 — việc treo mới, mức thấp (không lộ bí mật); F15 giữ nguyên logic cũ nên không sửa."""
+    r = guard.redact_text("password:Abc@123xyz9")
+    assert "Abc@123xyz9" not in r.text and r.secrets_found >= 1
+
+
+def test_f15_d_low_entropy_tail_kept(guard: RegexPrivacyGuard) -> None:
+    tail = "a" * 24
+    text = f"x{MASK}{tail}"
+    assert len(tail) >= 20 and shannon_bits(tail) < 4.0
+    r = guard.redact_text(text)
+    assert (r.text, r.secrets_found) == (text, 0)
+
+
+def test_f15_e_two_random_pieces_around_mask(guard: RegexPrivacyGuard) -> None:
+    r = guard.redact_text(f"{F15_RAND}{MASK}{F15_RAND2}")
+    assert (r.text, r.secrets_found) == (MASK * 3, 2)
+
+
+@pytest.mark.parametrize("text", [f"note x{MASK}{F15_RAND} nhé", f"{F15_RAND}{MASK}{F15_RAND2}", "password:Abc@123xyz9"])
+def test_f15_f_redact_twice_equals_once(guard: RegexPrivacyGuard, text: str) -> None:
+    once = guard.redact_text(text)
+    twice = guard.redact_text(once.text)
+    assert twice.text == once.text
+    if "password" not in text:  # luật mật khẩu khớp lại `[MASK]` và đếm lại — hành vi sẵn có, không thuộc luật 6
+        assert twice.secrets_found == 0
+
+
+# g–l: regex luật trước cắt bí mật ở "/", "+", "=", ":"… → phần còn lại dính mặt nạ ở mép token. Logic cũ che được (core mất một
+# ngoặc của mặt nạ nên không "chứa mặt nạ"); bản chỉ-tách để lọt (soát F15 lần 1–2). Kiểm: giá trị không còn, số đếm như bản cũ.
+
+
+def test_f15_g_tail_after_mask_starting_with_slash_masked(guard: RegexPrivacyGuard) -> None:
+    r = guard.redact_text(f"key {_api_key()}/{F15_RAND} nhé")
+    assert F15_RAND not in r.text and r.secrets_found == 2
+
+
+def test_f15_h_short_tail_after_mask_masked(guard: RegexPrivacyGuard) -> None:
+    tail = "+" + "Qz8/Lm3Kx9Tp"
+    assert len(tail) < 20
+    r = guard.redact_text(f"key {_api_key()}{tail} nhé")
+    assert "Lm3Kx9Tp" not in r.text and r.secrets_found == 2
+
+
+def test_f15_i_short_head_before_mask_masked(guard: RegexPrivacyGuard) -> None:
+    head = "Qz8rT2mV" + "b7Lp+"
+    assert len(head) < 20
+    r = guard.redact_text(f"{head}{_api_key()} nhé")
+    assert "Qz8rT2mVb7Lp" not in r.text and r.secrets_found == 2
+
+
+@pytest.mark.parametrize("sep", ["==", ":"])
+def test_f15_j_short_head_ending_with_field_separator_masked(guard: RegexPrivacyGuard, sep: str) -> None:
+    """Soát lần 2 G1a: mẩu base64 có đệm `==` / cặp `id:secret` trước khoá — không được coi là tên trường."""
+    head = "Qz8rT2mV" + "b7Lp9w" + sep
+    r = guard.redact_text(f"{head}{_api_key()}")
+    assert "Qz8rT2mVb7Lp9w" not in r.text and r.secrets_found == 2
+
+
+def test_f15_k_short_piece_between_two_masks_masked(guard: RegexPrivacyGuard) -> None:
+    """Soát lần 2 G1b: đoạn ngắn kẹp giữa hai mặt nạ ở hai mép token."""
+    r = guard.redact_text(f"{_api_key()}.48291,{_api_key('pk-')}")
+    assert "48291" not in r.text and r.secrets_found == 3
+
+
+def test_f15_l_output_guard_blocks_head_glued_to_mask() -> None:
+    """Soát lần 2 G4: câu trả lời nhắc lại `<mẩu khoá>==[MASK]` → output guard vẫn chặn (`secrets_found > 0`)."""
+    from app.guard.output import OutputGuard
+
+    out = OutputGuard.from_config(CONFIG, [])
+    assert out.violation(f"Mã của bạn là {'Qz8rT2mV' + 'b7Lp9w=='}{MASK} nhé") == "secret"
+
+
+# ---- So với bản trước F15: không bao giờ che ít hơn ------------------------------------------------------------------------
+
+# Chép NGUYÊN logic `_entropy` của b582058 (cả hằng) — đối chứng cố định, không import từ privacy.py.
+_OLD_TOKEN = re.compile(r"\S+")
+_OLD_EDGE_PUNCT = "\"'()[]{}<>,.;:!?"
+
+
+class _OldGuard(RegexPrivacyGuard):
+    """Guard với luật 6 của b582058; ghi lại các core bị thay để so."""
+
+    masked: list[str]
+
+    def _entropy(self, rule: PrivacyRule, text: str) -> tuple[str, int]:
+        count = 0
+
+        def one(m: re.Match[str]) -> str:
+            nonlocal count
+            token = m.group(0)
+            core = token.strip(_OLD_EDGE_PUNCT)
+            if (
+                len(core) < rule.min_len
+                or self._p.secret_mask in core
+                or any(ex.search(core) for _, ex in self._p.entropy_exclude)
+                or shannon_bits(core) < rule.min_bits
+            ):
+                return token
+            count += 1
+            self.masked.append(core)
+            return token.replace(core, self._p.secret_mask, 1)
+
+        return _OLD_TOKEN.sub(one, text), count
+
+
+REPO = CONFIG.parent
+_FIXTURE_ROOTS = ("eval", "kb", "backend/tests/stack", "backend/tests/probe", "backend/tests/e2e", "backend/tests/fakes",
+                  "backend/tests/integration", "mock_services", "scripts")  # fmt: skip
+
+
+def _fixture_lines() -> list[str]:
+    """Mọi dòng văn bản dưới các thư mục fixture/gate/eval/KB — đọc lúc chạy, không chép dữ liệu vào test."""
+    lines: list[str] = []
+    for root in _FIXTURE_ROOTS:
+        for path in sorted((REPO / root).rglob("*")):
+            rel = path.relative_to(REPO).parts
+            if not path.is_file() or any(p.startswith(".") or p == "__pycache__" for p in rel) or rel[:2] == ("scripts", "mutation"):
+                continue
+            if path.stat().st_size > 2_000_000:
+                continue
+            try:
+                lines += path.read_text(encoding="utf-8").splitlines()
+            except UnicodeDecodeError:
+                continue
+    return lines
+
+
+def _random_lines(n: int = 5000, seed: int = 34) -> list[str]:
+    parts = ["", " ", "x", "Qz8rT2mV", "b7LpN4wK", F15_RAND, F15_RAND2, "Abc@123", "a" * 12, "password:", "pwd=", "mk:", "otp:",
+             "https://user:", "C:", "~/", "./", "/home/", "\\", "/", "+", ":", "=", "==", "(", ")", ",", ".", "[", "]", MASK, MASK,
+             _api_key(), _api_key("pk-"), _api_key("ghp_"), "LAP-0342", "0x8004010F", "nguyen.van.a", "48291", "@github.com/org"]  # fmt: skip
+    rng = random.Random(seed)
+    return ["".join(rng.choice(parts) for _ in range(rng.randint(1, 7))) for _ in range(n)]
+
+
+@pytest.mark.parametrize("source", ["fixtures", "random"])
+def test_f15_never_weaker_than_old(guard: RegexPrivacyGuard, source: str) -> None:
+    old = _OldGuard(guard._p, ["congty-abc.vn"])
+    lines = _fixture_lines() if source == "fixtures" else _random_lines()
+    assert len(lines) >= (25_000 if source == "fixtures" else 5000)  # không xanh rỗng
+    weaker = []
+    for line in lines:
+        old.masked = []
+        before, after = old.redact_text(line), guard.redact_text(line)
+        kept = [c for c in old.masked if after.text.count(c) > before.text.count(c)]
+        if after.secrets_found < before.secrets_found or kept:
+            weaker.append((line[:120], before.secrets_found, after.secrets_found, kept))
+    assert weaker == []
+
+
+def test_f15_m_url_with_token_same_as_old(guard: RegexPrivacyGuard) -> None:
+    """`https://user:<token>@host/…`: bản cũ bỏ qua cả token (chứa mặt nạ); nhánh tách không che thêm — ghim giống hệt bản cũ."""
+    text = f"https://user:{_api_key('ghp_')}@github.com/org/repo"
+    old = _OldGuard(guard._p, ["congty-abc.vn"])
+    old.masked = []
+    r, o = guard.redact_text(text), old.redact_text(text)
+    assert (r.text, r.secrets_found) == (o.text, o.secrets_found) == (f"https://user:{MASK}@github.com/org/repo", 1)

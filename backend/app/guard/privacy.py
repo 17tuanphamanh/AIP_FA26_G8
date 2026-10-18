@@ -150,20 +150,33 @@ class RegexPrivacyGuard:
 
     def _entropy(self, rule: PrivacyRule, text: str) -> tuple[str, int]:
         count = 0
+        mask = self._p.secret_mask
+
+        def hit(core: str) -> bool:
+            return not (
+                len(core) < rule.min_len
+                or any(ex.search(core) for _, ex in self._p.entropy_exclude)
+                or shannon_bits(core) < rule.min_bits
+            )
+
+        def piece(part: str) -> str:
+            nonlocal count
+            core = part.strip(_EDGE_PUNCT)
+            if not hit(core):
+                return part
+            count += 1
+            return part.replace(core, mask, 1)
 
         def one(m: re.Match[str]) -> str:
             nonlocal count
             token = m.group(0)
             core = token.strip(_EDGE_PUNCT)
-            if (
-                len(core) < rule.min_len
-                or self._p.secret_mask in core
-                or any(ex.search(core) for _, ex in self._p.entropy_exclude)
-                or shannon_bits(core) < rule.min_bits
-            ):
-                return token
-            count += 1
-            return token.replace(core, self._p.secret_mask, 1)
+            if mask not in core and hit(core):  # logic trước F15, giữ nguyên: đã che thì dùng kết quả này
+                count += 1
+                return token.replace(core, mask, 1)
+            # Việc treo 34: bản trước F15 bỏ qua token chứa mặt nạ → chuỗi ngẫu nhiên dính liền mặt nạ lọt. Chỉ khi logic cũ
+            # KHÔNG che: tách theo mặt nạ, xét từng mảnh bằng đúng điều kiện trên → không bao giờ che ít hơn bản cũ.
+            return mask.join(piece(p) for p in token.split(mask))
 
         return _TOKEN.sub(one, text), count
 
