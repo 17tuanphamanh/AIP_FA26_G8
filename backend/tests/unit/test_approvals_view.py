@@ -19,6 +19,7 @@ Người dùng (`seed_ad_users`): ha.lt = l1_01, duc.pv = l1_02, long.nh = l2_01
 binh.tt = nv002.
 """
 
+import dataclasses
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -26,24 +27,28 @@ import httpx
 import pyotp
 import pytest
 from app.auth.mfa import MfaCipher, enroll
+from app.auth.models import UserRecord
 from app.core.hashing import hash_action
 from app.domain.action import Action
 from app.domain.states import S_PENDING_APPROVAL
+from app.domain.ticket_state import RiskDecision
 from app.graph.fakes import FAKE_ACTION
+from app.main import create_app
 from app.settings import get_action_metadata
 from pydantic import BaseModel
 from tests.fakes.auth import DEMO_PASSWORD
 from tests.fakes.desk import MASK, SECRET, DeskEnv, desk_env
+from tests.unit.auth_helpers import auth_settings
 
 pytestmark = pytest.mark.asyncio
 
 PRIMARY = "l1_01"  # ha.lt — người duyệt của B15 giả trong desk_env
 BACKUP = "l1_02"  # duc.pv — dự phòng đặt tay
 VIEW_ROUTE = "/api/approvals/{approval_id}"
-# Hợp đồng PLAN-4c 2.1 / spec 6.1 P6 LIỆT KÊ 12 tên khoá (2.1 ghi "ĐÚNG 13 khoá" nhưng chỉ kể 12 — xem báo cáo test-writer).
+# Đổi có chủ ý ở F6: 12 khoá P6 (PLAN-4c 2.1 / spec 6.1 P6, giữ nguyên kể cả `risk` thô) + `affected` + `risk_view` = 14 khoá.
 VIEW_KEYS = {
     "approval_id", "ticket_id", "status", "deadline", "requester", "request_summary", "action", "action_plan_hash", "risk",
-    "facts", "role_as", "procedure",
+    "facts", "role_as", "procedure", "affected", "risk_view",
 }  # fmt: skip
 DECISION_202_KEYS = {"approval_id", "ticket_id", "status", "notices", "decided_as"}  # PLAN-4c 2.1, TQ-12
 NOT_FOUND = {"detail": "not_found"}
@@ -458,3 +463,321 @@ async def test_view_requester_is_l1_role_and_department() -> None:
         r = await _view(env, aid, await _login(env, "ha.lt"))
         assert r.status_code == 200, r.text
         assert r.json()["requester"] == {"role": "l1", "department": "it"}
+
+
+# ---- F6: người bị tác động + khối rủi ro + response_model ----
+#
+# Hợp đồng F6 (lời giao agent chính): `affected` = {user_id = action.requested_for, is_requester, department, manager{status
+# known|unknown, user_id, full_name}} đọc từ bảng `users` (desk_env: `env.store`) của NGƯỜI BỊ TÁC ĐỘNG, không phải người gửi;
+# `risk_view` = null khi checkpoint `risk` None, ngược lại đúng 12 khoá (10 trường RiskDecision + `calibrated` + `auto_allowed`).
+# Dữ liệu dựng tay theo D-43: mã luật giả R81.., ngưỡng giả (0.137, 0.863). Dòng `users` đặt TƯỜNG MINH SAU mọi lần đăng nhập
+# (đăng nhập upsert dòng — đặt trước thì bị ghi đè).
+
+AFFECTED_KEYS = {"user_id", "is_requester", "department", "manager"}
+MANAGER_STATUSES = {"known", "unknown"}
+RISK_VIEW_KEYS = {
+    "decided_by", "policy_decision", "matched_rule_id", "risk_level", "route", "reason", "raw_prob", "calibrated_prob",
+    "p_method", "thresholds", "calibrated", "auto_allowed",
+}  # fmt: skip
+RISK_FIELDS = RISK_VIEW_KEYS - {"calibrated", "auto_allowed"}  # fmt: skip
+UNKNOWN_MANAGER = {"status": "unknown", "user_id": None, "full_name": None}
+BOSS_NAME = "Lê Đình Sếp Giả"  # full_name đặt tay cho dòng users của fin_head
+FAKE_THRESHOLDS = (0.137, 0.863)  # D-43: ngưỡng giả, không lấy từ config
+
+
+class UsersReadError(RuntimeError):
+    """Lỗi đọc bảng `users` tiêm vào ở f11 — phải nổi lên tới test (app không có handler Exception chung)."""
+
+
+def _put_user(env: DeskEnv, user_id: str, *, username: str, department: str | None, manager_id: str | None,
+              full_name: str = "Người thử giả") -> None:  # fmt: skip
+    """Dòng `users` dựng tay: có rồi (đã đăng nhập) → `replace`, chưa có → `UserRecord` mới."""
+    old = env.store.users.get(user_id)
+    if old is not None:
+        env.store.users[user_id] = dataclasses.replace(old, department=department, manager_id=manager_id, full_name=full_name)  # fmt: skip
+        return
+    env.store.users[user_id] = UserRecord(
+        user_id=user_id, username=username, full_name=full_name, role="employee", department=department,
+        manager_id=manager_id, employment_status="active", hired_at=None, is_privileged_account=False,
+    )  # fmt: skip
+
+
+def _requester_known(env: DeskEnv) -> None:
+    """Người GỬI an.nv (nv001) có dòng users + sếp fin_head có dòng → nếu route lấy nhầm dòng người gửi thì sẽ ra `known`/finance."""
+    assert "nv001" in env.store.users  # tiền điều kiện: an.nv đã đăng nhập (_pending)
+    _put_user(env, "nv001", username="an.nv", department="finance", manager_id="fin_head")  # fmt: skip
+    _put_user(env, "fin_head", username="lan.dt", department="finance", manager_id=None, full_name=BOSS_NAME)  # fmt: skip
+
+
+def _account_action(requested_for: str = "nv002") -> Action:
+    """`reset_password` (account) cho người khác — `requested_for` = người BỊ TÁC ĐỘNG (D-41); `account_type` ∈ slots.yaml (ad)."""
+    m = get_action_metadata().of("account")["reset_password"]
+    return Action(
+        type="reset_password", target=f"user:{requested_for}", requested_for=requested_for, scope=m.scope,
+        privilege_level=m.privilege_level, reversible=m.reversible, reversibility=m.reversibility,
+        data_sensitivity=m.data_sensitivity, params={"account_type": "ad"}, facts={},
+    )  # fmt: skip
+
+
+async def _put_account_action(env: DeskEnv, ticket: str, aid: str, action: Action) -> None:  # fmt: skip
+    """Như `_put_action` + `intent="account"` trong checkpoint (hành động account thật đi kèm intent account)."""
+    plan_hash = hash_action(action)
+    update = {"intended_action": action, "action_plan_hash": plan_hash, "intent": "account"}  # fmt: skip
+    await env.h.runner.graph.aupdate_state(env.h.runner.config(ticket), update)
+    _row(env, aid)["action_plan_hash"] = plan_hash
+
+
+async def _put_risk(env: DeskEnv, ticket: str, risk: RiskDecision | None) -> None:
+    """Đặt `risk` vào checkpoint — không đổi hash phiếu, `intended_action` giữ nguyên."""
+    await env.h.runner.graph.aupdate_state(env.h.runner.config(ticket), {"risk": risk})
+    snap = await env.h.runner.snapshot(ticket)
+    assert snap.values["risk"] == risk and snap.next == ("approval_wait",)
+
+
+async def _no_none_text_precondition(env: DeskEnv, ticket: str) -> None:
+    """f5 tiền điều kiện: dữ liệu KHÔNG do F6 sinh (lý do rủi ro của B12 giả, câu đã che) không chứa "không có" — để assert f5 trên
+    `r.text` đỏ chỉ vì `affected`."""
+    snap = await env.h.runner.snapshot(ticket)
+    risk = snap.values.get("risk")
+    assert risk is None or "không có" not in risk.reason, risk
+    assert "không có" not in snap.values["redacted_request"]
+
+
+def _assert_f5(r: httpx.Response) -> None:
+    """f5: không giá trị nào nghĩa "không có quản lý" — chuỗi "không có" không xuất hiện; `manager.status` ∈ {known, unknown}."""
+    assert "không có" not in r.text
+    assert r.json()["affected"]["manager"]["status"] in MANAGER_STATUSES
+
+
+async def _view_ok(env: DeskEnv, aid: str) -> dict[str, Any]:
+    r = await _view(env, aid, await _login(env, "ha.lt"))
+    assert r.status_code == 200, r.text
+    body: dict[str, Any] = r.json()
+    assert set(body) == VIEW_KEYS
+    return body
+
+
+async def test_f6_f1_f5_affected_is_requester_manager_known() -> None:
+    """f1 + f5: người bị tác động = CHÍNH người gửi (vpn `requested_for="nv001"`); nv001 có dòng users (finance, manager_id
+    fin_head), fin_head có dòng với full_name đặt tay → `affected` = {nv001, is_requester True, finance, manager known fin_head + tên}."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_action(env, ticket, aid, _vpn_action("nv001"))
+        ha = await _login(env, "ha.lt")
+        _requester_known(env)
+        await _no_none_text_precondition(env, ticket)
+        r = await _view(env, aid, ha)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body) == VIEW_KEYS
+        assert body["affected"] == {
+            "user_id": "nv001", "is_requester": True, "department": "finance",
+            "manager": {"status": "known", "user_id": "fin_head", "full_name": BOSS_NAME},
+        }  # fmt: skip
+        _assert_f5(r)
+
+
+@pytest.mark.parametrize("boss_row", [True, False], ids=["sep-co-dong", "sep-khong-dong"])  # fmt: skip
+async def test_f6_f2_f5_affected_other_person_manager_known(boss_row: bool) -> None:
+    """f2 + f5: account `requested_for="nv002"` ≠ người gửi nv001; nv002 có dòng (finance, manager fin_head) → is_requester False,
+    manager `known`. Biến thể `sep-khong-dong`: fin_head KHÔNG có dòng users → vẫn `known`, user_id "fin_head", full_name None."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_account_action(env, ticket, aid, _account_action("nv002"))
+        ha = await _login(env, "ha.lt")
+        _requester_known(env)
+        _put_user(env, "nv002", username="binh.tt", department="finance", manager_id="fin_head")  # fmt: skip
+        if not boss_row:
+            env.store.users.pop("fin_head")
+            assert "fin_head" not in env.store.users and env.store.users["nv002"].manager_id == "fin_head"  # fmt: skip
+        await _no_none_text_precondition(env, ticket)
+        r = await _view(env, aid, ha)
+        assert r.status_code == 200, r.text
+        assert r.json()["affected"] == {
+            "user_id": "nv002", "is_requester": False, "department": "finance",
+            "manager": {"status": "known", "user_id": "fin_head", "full_name": BOSS_NAME if boss_row else None},
+        }  # fmt: skip
+        _assert_f5(r)
+
+
+async def test_f6_f3_f5_affected_row_without_manager_unknown() -> None:
+    """f3 + f5: người bị tác động nv002 có dòng users nhưng `manager_id` NULL → manager `unknown` (user_id/full_name None),
+    `department` vẫn lấy từ dòng (đặt "hr" — khác phòng người gửi để không trùng ngẫu nhiên). Người gửi có sếp `known`."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_account_action(env, ticket, aid, _account_action("nv002"))
+        ha = await _login(env, "ha.lt")
+        _requester_known(env)
+        _put_user(env, "nv002", username="binh.tt", department="hr", manager_id=None)
+        await _no_none_text_precondition(env, ticket)
+        r = await _view(env, aid, ha)
+        assert r.status_code == 200, r.text
+        assert r.json()["affected"] == {"user_id": "nv002", "is_requester": False, "department": "hr", "manager": UNKNOWN_MANAGER}  # fmt: skip
+        _assert_f5(r)
+
+
+@pytest.mark.parametrize("who", ["nv002", "fake"], ids=["account-nv002-khong-dong", "fake-action"])  # fmt: skip
+async def test_f6_f4_f5_affected_no_users_row_unknown(who: str) -> None:
+    """f4 + f5: người bị tác động KHÔNG có dòng users → manager `unknown`, department None, is_requester False. Người GỬI an.nv có
+    dòng (finance) + sếp `known` → route lấy nhầm dòng người gửi thì đỏ.
+    - `account-nv002-khong-dong`: account `requested_for="nv002"`, binh.tt chưa từng đăng nhập (không dòng).
+    - `fake-action`: `FAKE_ACTION` mặc định của desk_env (`requested_for="fake"`)."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        if who == "nv002":
+            await _put_account_action(env, ticket, aid, _account_action("nv002"))
+        else:
+            assert FAKE_ACTION.requested_for == "fake"
+            snap = await env.h.runner.snapshot(ticket)
+            assert snap.values["intended_action"] == FAKE_ACTION
+        ha = await _login(env, "ha.lt")
+        _requester_known(env)
+        assert who not in env.store.users
+        await _no_none_text_precondition(env, ticket)
+        r = await _view(env, aid, ha)
+        assert r.status_code == 200, r.text
+        assert r.json()["affected"] == {"user_id": who, "is_requester": False, "department": None, "manager": UNKNOWN_MANAGER}  # fmt: skip
+        _assert_f5(r)
+
+
+async def test_f6_f6_f10_risk_view_rule_twelve_keys() -> None:
+    """f6 + f10: RiskDecision do LUẬT (R81 giả, approval_required, medium, HITL, không xác suất) → `risk_view` = đúng 12 khoá: các
+    trường như checkpoint + `calibrated` False + `auto_allowed` False; `risk` thô giữ nguyên."""
+    risk = RiskDecision(
+        decided_by="rule", policy_decision="approval_required", matched_rule_id="R81", raw_prob=None, calibrated_prob=None,
+        p_method=None, risk_level="medium", route="HITL", reason="Luật giả R81 đòi người duyệt", thresholds=None,
+    )  # fmt: skip
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_risk(env, ticket, risk)
+        body = await _view_ok(env, aid)
+        assert set(body["risk_view"]) == RISK_VIEW_KEYS
+        assert body["risk_view"] == {
+            "decided_by": "rule", "policy_decision": "approval_required", "matched_rule_id": "R81", "risk_level": "medium",
+            "route": "HITL", "reason": "Luật giả R81 đòi người duyệt", "raw_prob": None, "calibrated_prob": None,
+            "p_method": None, "thresholds": None, "calibrated": False, "auto_allowed": False,
+        }  # fmt: skip
+        assert body["risk"] == risk.model_dump(mode="json")
+
+
+async def test_f6_f7_f10_risk_view_llm_uncalibrated() -> None:
+    """f7 + f10: LLM chưa hiệu chỉnh (raw 0.41, self_report, calibrated_prob None, ngưỡng giả) → `calibrated` False, `auto_allowed`
+    False, `thresholds` ra JSON là list [0.137, 0.863]."""
+    risk = RiskDecision(
+        decided_by="llm", policy_decision=None, matched_rule_id=None, raw_prob=0.41, calibrated_prob=None,
+        p_method="self_report", risk_level="medium", route="HITL", reason="Ước lượng giả mức trung bình",
+        thresholds=FAKE_THRESHOLDS,
+    )  # fmt: skip
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_risk(env, ticket, risk)
+        body = await _view_ok(env, aid)
+        view = body["risk_view"]
+        assert set(view) == RISK_VIEW_KEYS
+        assert {k: view[k] for k in RISK_FIELDS} == risk.model_dump(mode="json")
+        assert view["thresholds"] == [0.137, 0.863]
+        assert (view["calibrated"], view["auto_allowed"]) == (False, False)
+        assert body["risk"] == risk.model_dump(mode="json")
+
+
+async def test_f6_f8_f10_risk_view_llm_calibrated_auto() -> None:
+    """f8 + f10: LLM có `calibrated_prob` 0.12, sampling_k5, route AUTO, low → `calibrated` True, `auto_allowed` True."""
+    risk = RiskDecision(
+        decided_by="llm", policy_decision=None, matched_rule_id=None, raw_prob=0.19, calibrated_prob=0.12,
+        p_method="sampling_k5", risk_level="low", route="AUTO", reason="Ước lượng giả mức thấp", thresholds=FAKE_THRESHOLDS,
+    )  # fmt: skip
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_risk(env, ticket, risk)
+        view = (await _view_ok(env, aid))["risk_view"]
+        assert set(view) == RISK_VIEW_KEYS
+        assert {k: view[k] for k in RISK_FIELDS} == risk.model_dump(mode="json")
+        assert (view["calibrated"], view["auto_allowed"]) == (True, True)
+
+
+async def test_f6_f9_risk_none_risk_view_null() -> None:
+    """f9: checkpoint `risk` None → `risk_view` null, `risk` null, vẫn đủ 14 khoá."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_risk(env, ticket, None)
+        body = await _view_ok(env, aid)
+        assert (body["risk"], body["risk_view"]) == (None, None)
+
+
+async def test_f6_f11_users_read_error_raises_no_first_viewed_at() -> None:
+    """f11: đọc `users` của người bị tác động (nv002) LỖI → lỗi nổi lên (không nuốt thành `unknown`), `first_viewed_at` KHÔNG ghi.
+    Lỗi chỉ tiêm cho nv002, SAU khi ha.lt đã đăng nhập — tầng quyền / chuỗi của người duyệt vẫn đọc users bình thường."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        await _put_account_action(env, ticket, aid, _account_action("nv002"))
+        ha = await _login(env, "ha.lt")
+        _put_user(env, "nv002", username="binh.tt", department="finance", manager_id=None)  # fmt: skip
+        original = env.store.get_user
+
+        async def get_user(user_id: str) -> UserRecord | None:
+            if user_id == "nv002":
+                raise UsersReadError("bảng users giả đang lỗi")
+            return await original(user_id)
+
+        env.store.get_user = get_user  # type: ignore[method-assign]
+        with pytest.raises(UsersReadError):
+            await _view(env, aid, ha)
+        assert _row(env, aid).get("first_viewed_at") is None
+
+
+def _schema(spec: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
+    """Theo `$ref` (nếu có) tới components."""
+    ref = node.get("$ref")
+    if isinstance(ref, str):
+        resolved: dict[str, Any] = spec["components"]["schemas"][ref.rsplit("/", 1)[-1]]
+        return resolved
+    return node
+
+
+def _enum_values(spec: dict[str, Any], node: dict[str, Any]) -> set[Any]:
+    """Tập giá trị enum của một property: `enum` nằm thẳng, `const` một giá trị, hoặc trong `anyOf`/`oneOf` (Literal | None sinh
+    anyOf [{enum, type}, {type: null}]) — bỏ nhánh null."""
+    node = _schema(spec, node)
+    if "enum" in node:
+        return {v for v in node["enum"] if v is not None}
+    if "const" in node:
+        return {node["const"]} - {None}
+    out: set[Any] = set()
+    for sub in [*node.get("anyOf", []), *node.get("oneOf", [])]:
+        out |= _enum_values(spec, sub)
+    return out
+
+
+def _ref_name(node: dict[str, Any]) -> str | None:
+    ref = node.get("$ref")
+    return ref.rsplit("/", 1)[-1] if isinstance(ref, str) else None
+
+
+async def test_f6_f12_openapi_approval_view_schema() -> None:
+    """f12: route có `response_model=ApprovalView` — 200 application/json `$ref` ApprovalView (14 khoá); `affected` → AffectedView
+    (4 khoá), `manager` → ManagerRef (status enum {known, unknown}); `risk_view` → anyOf [RiskView, null]; RiskView 12 khoá với enum
+    đúng, `calibrated`/`auto_allowed` boolean. (async chỉ vì `pytestmark` asyncio của module — không dùng desk_env.)"""
+    spec = create_app(auth_settings(), health_checks={}).openapi()
+    schemas = spec["components"]["schemas"]
+    ok = spec["paths"][VIEW_ROUTE]["get"]["responses"]["200"]["content"]["application/json"]["schema"]  # fmt: skip
+    assert _ref_name(ok) == "ApprovalView", ok
+    view = schemas["ApprovalView"]["properties"]
+    assert set(view) == VIEW_KEYS
+    assert _ref_name(view["affected"]) == "AffectedView", view["affected"]
+    affected = schemas["AffectedView"]["properties"]
+    assert set(affected) == AFFECTED_KEYS
+    assert _ref_name(affected["manager"]) == "ManagerRef", affected["manager"]
+    status = schemas["ManagerRef"]["properties"]["status"]
+    assert _enum_values(spec, status) == MANAGER_STATUSES
+    any_of = view["risk_view"].get("anyOf", [])
+    branches = sorted((_ref_name(s) or s.get("type")) for s in any_of)
+    assert branches == ["RiskView", "null"], view["risk_view"]
+    risk = schemas["RiskView"]["properties"]
+    assert set(risk) == RISK_VIEW_KEYS
+    assert _enum_values(spec, risk["decided_by"]) == {"rule", "llm"}
+    assert _enum_values(spec, risk["route"]) == {"AUTO", "HITL", "ESCALATE_L2"}
+    assert _enum_values(spec, risk["risk_level"]) == {"low", "medium", "high"}
+    assert _enum_values(spec, risk["p_method"]) == {"self_report", "sampling_k5"}
+    assert _enum_values(spec, risk["policy_decision"]) == {"allow", "approval_required", "deny"}  # fmt: skip
+    for key in ("calibrated", "auto_allowed"):
+        assert risk[key].get("type") == "boolean", (key, risk[key])
