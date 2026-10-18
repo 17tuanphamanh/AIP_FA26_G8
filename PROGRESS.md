@@ -5758,6 +5758,38 @@ kết quả `.verify/cong5/20261017-181019/ket-qua.json`. Số: mục "Phase 5 �
 4. **3 dòng `llm_calls` 2272–2274** (SELECT 18/10): ticket `d2551f48` = tc06 của `vpn-smoke` cấu hình B (lượt 16:32:58Z; b02, b03,
    b10_need_type, flash, 0,000992 USD). Chênh: `vpn-smoke` B in 14 lời gọi, khoảng `call_id` 2258–2274 có 17 dòng — cần xem lại cách đếm.
 
+## Phase 5 — gói 1: B2 chế độ `review` (D-52) (18/10/2026 — DỪNG 1 xong, chưa commit; DỪNG 2 chưa làm)
+
+Nguồn: `docs/spec/claude/dac-ta-bat-2-model.md` v0.6, D-52, phase5 7.14. PLAN `PLAN-B2REVIEW.md` (MẪU A duyệt 18/10: theo đề xuất
+trừ Q-B2R-3 — không gọi LLM chấm cho câu khớp regex; Q-B2R-9 — bản nhẹ `ml_real` + `FakeMlService`; Q-B2R-12 — ghi sha256 của
+`--code`). Nền `b582058`; mốc: lint xanh, unit 6093, ml_service 123 + 5 deselected.
+
+**DỪNG 1 (18/10, không stack, không mạng):**
+- Hàm thuần: `backend/app/guard/mask_words.py` (thay nhãn che 4.3, nhãn lấy từ `privacy_patterns.json`, NFC, trả số nhãn đã
+  thay); `backend/app/guard/b2_review.py` (bảng 4.2: `classifier_shortcut` chỉ `active`; `after_judge` — #3 `category ≠ none`
+  → E0 mọi chế độ; `review`: p ≥ τ hoặc `too_many_windows` → E1). Chưa nối vào node (DỪNG 2).
+- 6 script (Tuấn Anh chạy 19/10): `scripts/eval/_pii_fake.py`, `_judge_runtime.py` (LLMClient + OpenAICompatProvider thật, store
+  bộ nhớ, không dự phòng; `finish_reason`/nhà cung cấp qua hook `httpx2`), `judge_targets.yaml` (ô `<điền>` cho
+  `provider.order`, `reasoning`, slug Qwen), `b2_judge_compare.py`, `b2_tau_select.py` (prepare → score `--group ml` → select;
+  E_MAX/B/seed/lưới ghi cứng), `b2_review_offline.py` (export SELECT → score → decide, `--recall-category` đo bổ sung),
+  `b3_offline.py` (SHA `.pt` trước `torch.load`, `code_sha256`, F11 4 cột); `backend/tests/probe/cong5_score.py` thêm
+  `cp_lower`/`cp_upper`/`b2_criteria`.
+- Test (test-writer, viết trước code): DỪNG 1 275 ca xanh; DỪNG 2 viết sẵn `xfail` (backend 89, ml_service 32 + 1 `ml_real`).
+- Số thật: `make lint` xanh; unit **6325 passed, 78 xfailed, 11 xpassed**; ml_service **123 passed, 6 deselected, 30 xfailed,
+  1 xpassed**.
+- security-reviewer DỪNG 1: 1 FAIL đã sửa (cache `p_mal` nay khoá theo `prep_sha256` + SHA model/manifest, `select` in SHA
+  model); đã sửa thêm các NGHI: đầu ra có chữ phải nằm dưới `.verify/`, đích OpenRouter chỉ nhận `LLM_JUDGE_API_KEY` + `https://`,
+  `b3_offline score` chỉ chạy khi `model_files == ["seed_42.pt"]` và ghi `config_sha256`, `after_judge` ném lỗi khi p NaN/inf,
+  cảnh báo id thiếu `p_mal`, `replace_masks` trong script dùng file mẫu của repo (không đọc env). gitleaks trên file mới: sạch
+  (canary khoá trong test đổi sang chuỗi không giống khoá).
+
+**Còn mở cho DỪNG 2:** test cũ sẽ đổi có chủ ý (PLAN 5.3) + 2 ca test-writer phát hiện: `test_b02_screen.py::
+test_e13_ml_and_llm_down_e2_security_flag` (`classify == 3` → 1 khi `/classify` không thử lại timeout) và
+`test_turn_deadline.py::test_b2_turn_budget_exceeded_keeps_security_flag` (dựa vào timeout có thử lại để hết hạn lượt).
+
+**Spec cần sửa (gói 1):** ĐT mục 8 liệt kê `test_b02_screen.py:98, 104` phải đổi — nhánh regex không thêm khoá nên hai assert
+giữ nguyên (Q-B2R-10).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
