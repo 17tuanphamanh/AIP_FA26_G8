@@ -1,6 +1,6 @@
 # Phase 5 — Thiết kế chi tiết (đủ 4 loại yêu cầu: T22a luật, T20 phân loại + tách ý, T23 B2, T24 executor + hoàn tác)
 
-*Thuộc bộ `build/`. Phiên bản **0.10 — 17/10/2026** (0.10: mục 1.3 cổng 5 thủ công 45 câu, 5 lớp; 7.11 bảng S4 "mở rộng 1 → 4 loại tốn gì"; 7.12 LLM-G; **7.13 phần thủ công cổng 5 còn nợ**. 0.9: mục 7.12 — V16 dấu vết 401 + bước CI verify; V17 mô tả R17–R19. 0.8: **cổng 5 ĐẠT 15/10** — lịch mục 8; gate2 bỏ phụ thuộc FAKE_* trong `.env` ở `24c5012`. 0.7: mục 7.11 chốt khi hiện thực T24 (viết bù; nợ compose `ENABLED_INTENTS`). 0.6: **T20b đóng** `14316ad` + `5df24c7` + `8a7c697` (verify G=2345 lần 3 gate2/3/4 xanh + G=5 gate5 227/0) — mục 5.2.13 chốt khi hiện thực (Q-T20b-1…13); lịch mục 8 (6C DỪNG 15/16, cổng 5 ~17/10). 0.5: **T24 đóng** `457239d` (CI xanh, PR #39 → main `e000d03`); **T20b viết đủ** (mục 5.2, soát code tại `90ee85d`; Q5 = con vào B6, ý lẫn = tách — Tuấn Anh chốt 13/10). 0.4: **T20a đóng** `03b4450` — mục 5.1.11 chốt khi hiện thực (16 mục); **T24 viết đủ** (mục 7, soát code tại `03b4450`). 0.3: **T23a đóng** `a463150`; **T20a viết đủ** (mục 5.1, soát code tại `6cf1091` — K2 PR #29 đã gộp + ingest); áp 17 mục "Spec cần sửa (T22a)" (mục 4.14 + sửa tại chỗ 4.1 P7/P9, 4.2, 4.5, 4.7, 4.8, 4.10) và 11 mục "Spec cần sửa (T23a)" (mục 6.5); lịch mục 8. Bản 0.2 — 10/10: T22a đóng `2ffb005`, T20 tách T20a/T20b, bật intent dời sang T24, D-44…D-46. Bản 0.1f — 09/10: `procedure_doc` theo K2, luật git 4.0. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34, D-41, D-44…D-47; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Mốc code: T22a dựng trên `3ff63e1`; T23a trên `d42d5c4`; T20a trên `6cf1091`.*
+*Thuộc bộ `build/`. Phiên bản **0.14 — 18/10/2026** (0.14: mục 7.14 khớp đặc tả v0.6 — Tuấn Anh chốt 4 điểm lúc 03:25: bộ đếm tin nhắn gồm `/confirm`, đếm bằng bảng `rate_hits` trong `0010`; 3 luật đo ghi trước vào D-52; tối đa 3 phiên coding agent 18–21/10; Claude chép tài liệu vào `docs/spec`. 0.13: mục 7.14 khớp đặc tả v0.5 sau lượt soát 3 người độc lập — gói 1 chia 2 DỪNG, việc trước khi mở phiên, luật dùng stack, thứ tự tối 20/10, 7 điểm chờ duyệt; mục 8 dòng 18–21. 0.12: **mục 7.14 — sau cổng 5: bật 2 model phân loại (B2 `review`, B3 ghi điểm), chống dò và spam, B3-VA** (D-52…D-55, lịch 18–21/10 trên 2 worktree); bảng kế hoạch tóm tắt dòng 6–10; mục 8 thêm 18–21/10. 0.11: 7.12 dòng 3 — LLM-G DỪNG 3 `3cf0d18` (3 prompt, vpn-smoke 53/0, D-51) + việc treo tải song song; **7.13 — cổng 5 thủ công ĐẠT 18/10**. 0.10: mục 1.3 cổng 5 thủ công 45 câu, 5 lớp; 7.11 bảng S4 "mở rộng 1 → 4 loại tốn gì"; 7.12 LLM-G; **7.13 phần thủ công cổng 5 còn nợ**. 0.9: mục 7.12 — V16 dấu vết 401 + bước CI verify; V17 mô tả R17–R19. 0.8: **cổng 5 ĐẠT 15/10** — lịch mục 8; gate2 bỏ phụ thuộc FAKE_* trong `.env` ở `24c5012`. 0.7: mục 7.11 chốt khi hiện thực T24 (viết bù; nợ compose `ENABLED_INTENTS`). 0.6: **T20b đóng** `14316ad` + `5df24c7` + `8a7c697` (verify G=2345 lần 3 gate2/3/4 xanh + G=5 gate5 227/0) — mục 5.2.13 chốt khi hiện thực (Q-T20b-1…13); lịch mục 8 (6C DỪNG 15/16, cổng 5 ~17/10). 0.5: **T24 đóng** `457239d` (CI xanh, PR #39 → main `e000d03`); **T20b viết đủ** (mục 5.2, soát code tại `90ee85d`; Q5 = con vào B6, ý lẫn = tách — Tuấn Anh chốt 13/10). 0.4: **T20a đóng** `03b4450` — mục 5.1.11 chốt khi hiện thực (16 mục); **T24 viết đủ** (mục 7, soát code tại `03b4450`). 0.3: **T23a đóng** `a463150`; **T20a viết đủ** (mục 5.1, soát code tại `6cf1091` — K2 PR #29 đã gộp + ingest); áp 17 mục "Spec cần sửa (T22a)" (mục 4.14 + sửa tại chỗ 4.1 P7/P9, 4.2, 4.5, 4.7, 4.8, 4.10) và 11 mục "Spec cần sửa (T23a)" (mục 6.5); lịch mục 8. Bản 0.2 — 10/10: T22a đóng `2ffb005`, T20 tách T20a/T20b, bật intent dời sang T24, D-44…D-46. Bản 0.1f — 09/10: `procedure_doc` theo K2, luật git 4.0. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 5, §7.1; `NGU-CANH-DAY-DU.md` Phần I §6.3 (bảng luật); `build/decisions.md` §1.1 (R01–R20), D-34, D-41, D-44…D-47; `B12-B14` v1.2 (DSL §4.2); `B11` v1.5 (slot, `Action`); `P8` §4; `claude/phase5-6-phan-tich-va-chia-chang.md` (G5-x, lịch). Mốc code: T22a dựng trên `3ff63e1`; T23a trên `d42d5c4`; T20a trên `6cf1091`.*
 
 *Nhãn: **[Chốt]** spec gốc đã chốt · **[Chốt 01/10]**, **[Chốt 09/10]** Tuấn Anh chốt ngày đó · **[Đề xuất]** Claude chat đề xuất, Tuấn Anh soát khi duyệt PLAN · **[Suy luận]** agent phải kiểm lại trên code.*
 
@@ -13,8 +13,13 @@
 | 3 | **T20a** | B6/B11 + `Action` đơn ý cho account/software/access, fact `existing_permission_level` + R10, roster, tin từ chối theo đích (mục 5.1) — **ĐÓNG** `03b4450` | **A** + B | 2 | **Opus** | đạt 12/10 |
 | 4 | **T24** | `PLAN` + hoàn tác 6 hành động mới + B18 + **bật 4 intent** + `make gate5` (mục 7) — **ĐÓNG** `457239d` | **A** | 2 | **Opus** | đạt 13/10 |
 | 5 | **T20b** | Nhiều ý: B5 tách ticket con (con vào B6), vòng cha một tin mỗi lượt (D-31), `POST /reply`, gate5 nhiều ý (mục 5.2) — **ĐÓNG** `8a7c697` | **A** | 2 | **Opus** | đạt 13/10 |
+| 6 | **Gói 1** | B2 `review` + E1 `injection_suspected` + nợ bảo mật §6.5 + hàng chờ classify riêng + script đo (mục 7.14, D-52) | **A** | theo lời mở | **Opus** | 18/10, sau khi DỪNG 3 push |
+| 7 | **Gói 2** | B3 ghi điểm — bộ nạp intent vào ml-service (mục 7.14, D-53) | **A** | theo lời mở | **Opus** | 19/10, sau gói 1 |
+| 8 | **B3-VA** | Câu nhiều ý có ý không chắc: bước "dính nhau" (mục 7.14, D-55; prompt `claude/prompt-b3-va.md`) | **A** | MẪU A, B1, B2 | **Opus** | 19/10, sau gói 2 (cùng `b03_classify.py`) |
+| 9 | **Gói 2b** | Chống spam 429, luật M9 `requester_probe`, trang Cảnh báo cho L2, dòng lịch sử người gửi cho L2 (mục 7.14, D-54) | **A** | theo phần | **Opus** | 18/10, worktree riêng |
+| 10 | **Gói 3** | Vai trò `judge` cho LLM chấm — chỉ khi Gemini/Qwen qua phép thử (mục 7.14) | **A** | theo lời mở | **Opus** | 20/10 chiều |
 
-Mỗi chặng = **một phiên agent mới**. Tối đa 2 phiên coding agent cùng lúc trên cả dự án (lịch: `claude/phase5-6-phan-tich-va-chia-chang.md` mục 5).
+Mỗi chặng = **một phiên agent mới**. Tối đa 2 phiên coding agent cùng lúc trên cả dự án (lịch: `claude/phase5-6-phan-tich-va-chia-chang.md` mục 5). Ngoại lệ 18–21/10: tối đa 3 (mục 7.14, Tuấn Anh chốt 18/10).
 
 ---
 
@@ -48,7 +53,7 @@ Mỗi chặng = **một phiên agent mới**. Tối đa 2 phiên coding agent c�
 - **Luật git 4.0 (từ 09/10, `claude/ban-giao-phien-git-09-10.md` mục 4.0):** mọi việc git/GitHub do **phiên chat git** lo — pull/push/merge/rebase trên nhánh chung, PR, comment/issue, tạo/xoá worktree, xếp lượt Docker stack. Agent chặng Phase 5 **được**: sửa code, chạy test/lint, **commit cục bộ** ở DỪNG theo lời mở (đích danh, không `git add -A`, không `--no-verify`). Agent **không** pull/push/merge/rebase, không đụng GitHub/worktree, không dùng Docker stack khi chưa có "OK phiên git" do Tuấn Anh chuyển. Pull đầu chặng do phiên git làm **trước** khi mở agent; push cuối chặng: agent in sẵn phiếu `[YÊU CẦU GIT]` trong MẪU B DỪNG cuối.
 - **Thư mục chính dùng chung:** từ lúc phiên git pull đầu chặng **tới hết DỪNG cuối (commit + push)**, không phiên nào khác `pull`/`checkout`/`commit`/`merge` ở thư mục chính; image stack của phiên khác (frontend verify) dựng từ **worktree tạm sạch**. **Không chạy `make ingest` khi chặng còn mở** (đích ingest dựng lại image backend từ thư mục chính → mang code/config dở) — ingest trước khi mở chặng hoặc sau DỪNG cuối. Sau lượt `make verify G=234` của chặng, image stack mang code chặng → bên khác phải dựng lại image sạch.
 - **Stack Docker:** một bên một lúc, không có thứ tự lượt. Agent sẵn sàng verify thì hỏi Tuấn Anh "Stack rảnh không?" → Tuấn Anh gửi phiếu "dùng stack" cho phiên git → trả "rảnh" → agent đưa lệnh `make verify G=234` → xong nhắc "trả stack". Không chạy chồng với lượt `make verify G=0` của Phase 6 ở `-m5`.
-- **Song song Phase 6 (`claude/giao-thuc-phase5-6.md`, Phase 6 giữ bút):** tối đa 2 agent cùng lúc trên cả dự án; không hai DỪNG tầng A cùng ngày; T22a ↔ 6A chỉ chung `PROGRESS.md` (bên gộp sau: phiên git giữ cả hai mục, agent không tự giải); không thêm module/import `app.eval` vào `backend/app/risk/` (test AST của 6A quét cả thư mục); 6B mở sau khi T22a đẩy; T20 mở sau khi 6B gộp; 6C mở sau khi T24 đẩy. Tin chéo phase qua `claude/tin-p5-sang-p6.md` / `claude/tin-p6-sang-p5.md`.
+- **Song song Phase 6 (`claude/giao-thuc-phase5-6.md`, Phase 6 giữ bút):** tối đa 2 agent cùng lúc trên cả dự án (18–21/10: 3 — mục 7.14); không hai DỪNG tầng A cùng ngày; T22a ↔ 6A chỉ chung `PROGRESS.md` (bên gộp sau: phiên git giữ cả hai mục, agent không tự giải); không thêm module/import `app.eval` vào `backend/app/risk/` (test AST của 6A quét cả thư mục); 6B mở sau khi T22a đẩy; T20 mở sau khi 6B gộp; 6C mở sau khi T24 đẩy. Tin chéo phase qua `claude/tin-p5-sang-p6.md` / `claude/tin-p6-sang-p5.md`.
 - **Không** sửa file/khối M9: `worker.py` (khối M9, nay có `monitor_rules_hourly`/`monitor_rules_daily` từ `3ff63e1`), `main.py` khối `# M9`, `backend/app/monitor/*`, migration `*_monitor_*`, `.importlinter`, khối `# M9` trong `settings.py`/`docker-compose.yml`/`.env.example`. Cần sửa `worker.py` ngoài khối M9 → đọc đầu khối M9 trước, báo trong MẪU A.
 - Phase 5 thêm trường/biến ở khối riêng có chú thích `# Phase 5`.
 - **Báo M9 khi merge:** T22a thêm `reason`/`matched_rule_id` mới (R01–R15) vào điểm log 4 — dashboard "top luật khớp" tự có; T20 bật 3 intent → phân bố intent đổi; T20/T23 bật nguồn `b3_cascade`/`b2_classifier` → báo Duy Anh (luật M9 12/13 đang `pending`, Q-M9-B2-13) và Dương (`PENDING_SOURCES` trong `monitor/metrics.py`).
@@ -1176,32 +1181,108 @@ Mỗi kịch bản: đếm lời gọi ghi qua `/_admin/calls` của mock; audit
 
 Kết luận cho báo cáo: thêm một loại yêu cầu là mức 4 ở B12 §13 — **không chỉ sửa cấu hình** (phải viết module chẩn đoán, PLAN + hoàn tác, hợp đồng `Action`, mở rộng engine luật). Nhưng khung không đổi (graph, tool registry, DB, M5, HITL), và kịch bản cũ không đổi kết quả.
 
-### 7.12. Sau cổng 5 — V16, V17, LLM-G (16–17/10/2026)
+### 7.12. Sau cổng 5 — V16, V17, LLM-G (16–18/10/2026)
 
 | # | Chốt | Thay chỗ |
 |---|---|---|
 | 1 | **V16** `68c7f7d` (+ `4c798a9` PROGRESS, CI 38907115329 xanh): `validate_access` ghi một dòng lý do cho mỗi 401 (mã cố định, `revoke`, `cached`; lệch giờ kèm số giây; không token/claim — P6 mục 7); `verify.sh` cổng đỏ lưu log backend/worker ra `.verify/run-*-step<N>-logs.txt` **trước** bước 8 (gồm bước 12 — gate5); bước 9 hỏi CI của đúng HEAD. Mutation 5/5; security-reviewer PASS ×2; `make verify G=2345` trên `68c7f7d` xanh (test backend 6634, gate2 91/0, gate3 78/0, gate4 73/0, gate5 227/0) | 7.9, phase4 4.4, P6 mục 7 |
 | 2 | **V17** (P6→P5 #21; Tuấn Anh chốt 16/10): `description` của R17/R18/R19 trong `config/policy.json` thêm hệ quả, cùng khuôn R03–R15 — R17 "Thiết bị chưa đăng ký cần người duyệt", R18 "Yêu cầu gửi ngoài giờ hành chính cần người duyệt", R19 "Nhân viên chưa qua thử việc cần người duyệt". Chuỗi này là lý do hiện trên màn duyệt (`policy_engine` → `RiskDecision.reason`); chỉ đổi chuỗi, không đổi điều kiện/loại luật; `policy_sha256` đổi (`d6812193…` → `936f4c1c…`). **Hiện thực V17 `45f5cd7`** (+ PROGRESS): 3 dòng `description`; 2 test chép nguyên văn; mốc `scripts/mutation/mutate_4b.py` (M-4b-6/7); test ghim mọi luật `approval_required` có mô tả kết thúc "cần người duyệt" (mutation 1/1). `make verify G=345` trên `45f5cd7` xanh (test backend 6635, gate3 78/0, gate4 73/0, gate5 227/0) | `policy.json`. Giữ chữ cũ (tóm tắt/lịch sử, không phải nguồn lý do): mock frontend, `decisions.md` §1.1, spec phase3 11.2 |
-| 3 | **LLM-G (mốc G, 17/10)** `0e74095` + `90deec7` (CI 39027370481 xanh): gắn LLM thật DeepSeek — chi tiết ở P2 "Chốt khi hiện thực mốc G". Phần của Phase 5: TC07/TC08 thử tay 2 lần với LLM thật — slot và luật khớp, tới chờ duyệt; **chưa** chạy `make gate5` với LLM thật. 9 câu thử tay (đủ 4 loại + 2 câu nhiều ý): 8/9 đạt; câu lệch do `b03_classify` gắn `action_hint` khi câu không nêu hành động. Ca an toàn đúng cả: TC07, TC08, tc21a, câu tấn công → E0, ca không khớp luật không ra AUTO. `make vpn-smoke` 31 PASS / 9 FAIL (lỗi ở `b10_answer`, `b10_need_type`). Model chính thức CHƯA chốt → DỪNG 3 sửa 3 prompt rồi đo lại | 7.11 dòng "Dồn về mốc G"; PROGRESS "Dồn về mốc G" |
+| 3 | **LLM-G (mốc G, 17–18/10)** `0e74095` + `90deec7` (CI 39027370481 xanh) + DỪNG 3 `3cf0d18`: gắn LLM thật DeepSeek — chi tiết ở P2 "Chốt khi hiện thực mốc G". **Lượt 1 (17/10):** TC07/TC08 thử tay 2 lần với LLM thật — slot và luật khớp, tới chờ duyệt. 9 câu thử tay (đủ 4 loại + 2 câu nhiều ý): 8/9 đạt; câu lệch do `b03_classify` gắn `action_hint` khi câu không nêu hành động. Ca an toàn đúng cả: TC07, TC08, tc21a, câu tấn công → E0, ca không khớp luật không ra AUTO. `make vpn-smoke` 31 PASS / 9 FAIL (lỗi ở `b10_answer`, `b10_need_type`). **DỪNG 3 (17/10 22:20–23:54, `3cf0d18`):** sửa 3 prompt — `b03_classify@4` (chỉ `action_hint` của vpn), `b10_need_type@2`, `b10_answer@2` (giữ nguyên tên/lệnh trong tài liệu); `b14_*` không đổi. `make vpn-smoke` **53/0** ở cả cấu hình A (flash/flash) và B (flash/v4-pro) → NỢ-3-2 đóng; probe JSON 287/287 lời gọi hợp lệ, 0 lần sửa. **Model chốt D-51:** fast = strong = `deepseek-flash`; strong tạm tới 12:00 21/10 (chốt cùng `p_method`, Phase 6). Thêm đích `make probe F=<file.jsonl>` + script `backend/tests/probe/cong5.py`, `cong5_score.py` (mục 7.13). **Chưa** chạy `make gate5` với LLM thật; trả stack về scripted, gate5 `S=preflight` 6/0 | 7.11 dòng "Dồn về mốc G"; PROGRESS "Dồn về mốc G"; `decisions.md` D-51 |
 | **Việc treo (mở)** | gate4 g4-10 HTTP 401 chập chờn (1 lần, 16/10 00:43, `1db4bd8`) — chưa tái hiện; lần đỏ sau đọc dòng `validate_access 401 reason=…` trong `run-*-step10-logs.txt` | — |
+| **Việc treo (mở, 17/10)** | Tải song song: gửi 4 ticket cùng lúc → 30/40 ticket ra E2 `rag_system_error` ở B8 (ml-service quá tải: embed rỗng sau 2 lần thử lại / quá hạn rerank); 1 luồng → 0 ca E2. Lượt đo có kết quả phụ thuộc từ B8 trở đi (harness, probe p Phase 6, demo) chạy **tuần tự** cho tới khi xử lý. Cổng 5 thủ công không thuộc diện này: điểm chấm từ dòng audit B2–B5 (`cong5_score.predict`), ghi trước B8 | PROGRESS (commit 2 DỪNG 3); tin P5→P6 #21 |
 
-### 7.13. Phần thủ công cổng 5 — còn nợ (17/10/2026)
+### 7.13. Phần thủ công cổng 5 — ĐẠT 18/10/2026 (mở 17/10)
 
-Cổng 5 tự động ĐẠT 15/10. Phần thủ công dồn về mốc G (`huong-dan` §5.1); chưa mục nào có biên bản.
+Cổng 5 tự động ĐẠT 15/10. Phần thủ công dồn về mốc G (`huong-dan` §5.1); **ĐẠT 18/10** — lượt Đ6 của LLM-G DỪNG 3 (01:10–01:21 18/10, `3cf0d18` + 1 dòng trần tạm, cấu hình A D-51, 4 luồng, một lần, `run_valid = hop_le`). Biên bản: `claude/bien-ban-cong-5-thu-cong.md` (chỉ Tuấn Anh đọc tới 25/10).
 
 | # | Mục | Tiêu chí | Hiện trạng | Ai / khi |
 |---|---|---|---|---|
-| 1 | Intent | Macro-F1 ≥ 0,85 / 45 câu, 5 lớp; kèm F1 từng lớp, ma trận nhầm lẫn | Chưa đo. Script đo chưa vào repo; đích `make probe` vẫn là chỗ trống | Bộ câu v1 (100 câu: 45 phân loại + 10 nhiều ý + 15 tấn công + 30 thường; sha256 `22f7ba2d…`) Claude chat soạn 17/10 trước khi sửa prompt; script + lượt đo ở phiên LLM-G DỪNG 3 tối 17/10, sau khi chốt model **[Tuấn Anh chốt 17/10: đóng Phase 5 trong ngày, không giao thành viên — thay phân công 15/10]** |
-| 2 | Chặn tấn công | ≥ 13/15; chặn nhầm ≤ 1/30; tin trung tính (so với `user_message` E0) | Chưa đo với LLM thật. L3 chưa bật (T23a: chế độ `shadow`, mặc định không nạp model) nên câu qua L2 (regex) rồi xuống L4 `b02_injection_judge` | Cùng lượt #1 |
+| 1 | Intent | Macro-F1 ≥ 0,85 / 45 câu, 5 lớp; kèm F1 từng lớp, ma trận nhầm lẫn | **ĐẠT: macro-F1 5 lớp 0,9399** (4 lớp 0,9749); sai 2/45 (access → out_of_scope ra E1; out_of_scope → account). Script `backend/tests/probe/cong5.py` (chạy qua stack) + `cong5_score.py` (chấm, có test `test_cong5_score.py`), đích `make probe F=<file.jsonl>` — `3cf0d18`. Ca E2 ở B8 không đổi điểm (điểm đọc từ B2–B5) | Bộ câu v1 (100 câu: 45 phân loại + 10 nhiều ý + 15 tấn công + 30 thường; sha256 `22f7ba2d…`) Claude chat soạn 17/10 trước khi sửa prompt; script + lượt đo ở phiên LLM-G DỪNG 3 tối 17/10, sau khi chốt model **[Tuấn Anh chốt 17/10: đóng Phase 5 trong ngày, không giao thành viên — thay phân công 15/10]** |
+| 2 | Chặn tấn công | ≥ 13/15; chặn nhầm ≤ 1/30; tin trung tính (so với `user_message` E0) | **ĐẠT: chặn 14/15** (L2 8, L4 6); **chặn nhầm 0/30**; tin E0 khớp `user_message` E0 14/14. L3 chưa bật (T23a: `shadow`, không nạp model). Câu không chặn (1) lọt L2 + L4, kết thúc E2 ở B8 do ml-service quá tải → chưa có bằng chứng tầng sau xử lý đúng; việc treo: chạy riêng 1 luồng, chỉ quan sát | Cùng lượt #1 |
 | 3 | Recall@5 | ≥ 0,8 / 30 câu | Đã có số: Recall@5 1,000, MRR 0,848 trên 34 câu có đáp án; trả lời bừa 0 trên 22 câu âm tính (bước ingest KB thật `3362c39b` của `make verify G=35` 17/10 15:32, `.verify/run-20261017-153234.log`); thiếu biên bản. Không cần LLM | **ĐẠT** — `claude/bien-ban-cong-5-thu-cong.md` |
-| 4 | Ghi chú bàn giao E7 | Đủ 4 phần: bước đã làm, đã hoàn tác tới đâu, phần L2 làm tay | gate5 kiểm cấu trúc; chưa có người đọc. Ghi chú sinh bằng mẫu, không cần LLM | gate5 17/10: 3/3 đủ 4 nhãn phần; Đ5 in toàn văn từ DB, Tuấn Anh đọc |
-| 5 | 10 câu nhiều ý (giảm rủi ro, không phải tiêu chí cổng) | Tách đúng ≥ 9/10 | Bộ của Quân chưa có | Có trong bộ v1 (10 câu) |
+| 4 | Ghi chú bàn giao E7 | Đủ 4 phần: bước đã làm, đã hoàn tác tới đâu, phần L2 làm tay | **Đủ 4 phần cả 3** (toàn văn Đ5 in từ DB, đối chiếu trong biên bản); câu riêng đúng từng ca (5xx → "có thể đã được áp dụng"; license đã cấp không thu hồi; 409 hết license). Ghi chú sinh bằng mẫu, không cần LLM | gate5 17/10: 3/3 đủ nhãn; chờ Tuấn Anh ký người đọc |
+| 5 | 10 câu nhiều ý (giảm rủi ro, không phải tiêu chí cổng) | Tách đúng ≥ 9/10 | **10/10** (bộ v1) | Ghi nhận |
 
 **Quy tắc lượt đo:**
 - Bộ câu chỉ để đo, không dùng chỉnh ngưỡng hay prompt **[Chốt 15/10]**.
 - Lượt đo đi qua stack nên chạy tới M5 → người gán nhãn (D-43) không chạy, không đọc log lượt này. Tuấn Anh chạy (máy có key).
 - Kết quả về sau 18:00 21/10 chỉ ghi số, không sửa prompt cho bản ứng viên **[Đề xuất — rà soát 16/10 §5.1 #5]**.
 - Đổi `json_mode`/`extra_body` giữa hai lượt đo thì xoá `llm_cache` trước (Việc treo 36).
+
+### 7.14. Sau cổng 5 — bật 2 model phân loại, chống dò và spam, B3-VA (18–21/10/2026) [Chốt 18/10 — D-52…D-55]
+
+**Nguồn chi tiết:** mục này chỉ tóm tắt, khi lệch thì hai file nguồn sau thắng:
+- `claude/dac-ta-bat-2-model.md` v0.6 (đặc tả các gói);
+- `claude/prompt-b3-va.md` (B3-VA).
+
+Khi lệch với `B02`, `B03-B05`, `B20`, `P2`, `P4`, `P6`, `P7`, `P9`, `P10`, `P11` thì mục này thắng. Các file đó sửa sau 21/10 theo bảng "Spec cần sửa" cuối mục.
+
+**Mục tiêu:** đưa 2 model phân loại của nhóm vào luồng thật mà **không tăng bỏ sót**.
+- **B2 `review`:** model chỉ nghi rồi chuyển người, không tự chặn, không tự cho qua; LLM chấm vẫn xem mọi câu không khớp regex.
+- **B3 ghi điểm:** LLM vẫn quyết.
+- **Đi kèm:** các lớp chống dò và spam phát sinh từ `review`, và bước "dính nhau" cho câu nhiều ý có ý không chắc.
+
+| Gói | Nội dung | Quyết định | Nơi chạy | Đường lui |
+|---|---|---|---|---|
+| **1** (2 DỪNG) | DỪNG 1: hàm thuần cho bảng quyết định 10 dòng và bước thay nhãn che (bộ từ của Dương); 6 script đo `b2_judge_compare.py`, `b2_tau_select.py`, `_pii_fake.py`, `b2_review_offline.py`, `b3_offline.py` (có chế độ nhãn che), `cong5_score.py`. DỪNG 2: nối vào B2 — E1 `injection_suspected` (tin người dùng = tin E0, không `security_event`, ghi chú L2 có câu cảnh báo, ưu tiên "Thường"); τ qua `B2_TAU_REVIEW` (thiếu thì `review` từ chối khởi động); ghi `ml_error`, `llm_is_attack`, `llm_category` ở mọi nhánh; nợ bảo mật §6.5 #5, #8, #9 (manifest + SHA bắt buộc), #10; hàng chờ classify riêng `ML_CLASSIFY_CONCURRENCY`; `active` chỉ ở dev/test | D-52 | thư mục chính | gói đỏ hoặc không τ nào đạt → `shadow` |
+| **2** | B3 ghi điểm: chuyển `seed_42.pt` → safetensors fp32 sau khi kiểm SHA đầy đủ; `check_intent`; dựng `B3Model`, tính điểm trộn của gói; `/classify_intent` trả 200; B3 ghi `model_probs`. Bước thay nhãn che chỉ bật khi đạt tiêu chí của D-53 | D-53 | thư mục chính, sau gói 1 | trượt bộ nhớ → `INTENT_MODEL_DIR` để rỗng, dùng số offline |
+| **B3-VA** | Bước "dính nhau" (chồng đoạn, cụm phủ định) ở `_split`/`_splits`; `escalation_note` cho con không chắc | D-55 | thư mục chính, sau gói 2 (cùng `b03_classify.py`), sau khi DỪNG 3 push | chưa xanh → giữ D-49 |
+| **2b** | 429 + `rate_limited` + migration `0010` (CHECK, index, bảng `rate_hits` đếm tin nhắn gồm `/confirm`, `v_leaf` thêm `requester_id`), ngưỡng nới bằng biến ở `verify.sh`, gate, đo, test; 2 luật M9 `requester_probe`, `requester_probe_critical`; trang Cảnh báo cho L2 (BE + phiên FE, kiểu sinh từ file OpenAPI của 2b); dòng lịch sử người gửi trong ghi chú L2 (sau khi gói 1 commit) | D-54 | worktree riêng: không stack, không `make up`; test Postgres chạy ngay trong worktree (testcontainers) | mỗi phần là một commit riêng, gộp hay bỏ độc lập |
+| **3** | Vai trò `judge` cho LLM chấm: `fallback_on` chỉ với lỗi tạm thời; OpenRouter ghim nhà cung cấp, `zdr`. Chỉ làm khi Gemini hoặc Qwen qua phép thử | D-56 (nếu đổi) | thư mục chính, chiều 20/10 | không đạt → giữ DeepSeek |
+
+**Đo** (chốt trước khi chạy, ghi trong D-52 và D-53):
+- **Cổng 5 phần B2:** tính offline từ lượt 17/10, không chạy lại bộ câu.
+  - Tiêu chí chính: E0 ≥ 13/15 câu tấn công và ≤ 1/30 câu thường.
+  - Tiêu chí phụ: E0 ∪ E1 ≥ 13/15 câu tấn công và ≤ 3/30 câu thường.
+  - Báo kèm cận Clopper-Pearson.
+- **Validation 900 + 900 câu của Dương (19/10):** dùng để chọn τ và làm phép thử LLM chấm DeepSeek so với Gemini.
+  - Đổi khi đạt đủ: bắt tấn công ≥ DeepSeek; E0 trên câu thường ≤ DeepSeek + 1 điểm; JSON hợp lệ ≥ 99%; p95 ≤ 3 s.
+  - Gemini trượt → chạy Qwen nếu kịp trước 12:00 20/10.
+- **B3 offline + phép đo nhãn che;** bộ nhớ tổng ≤ 7 GB (tính `anon`), không OOMKilled; p95 của classify và của rerank khi có tải và câu dài.
+- **Ghi trước vào D-52** (03:05: tham số chọn τ; 03:25: Tuấn Anh chốt 3 luật): dòng #3 với lượt 17/10 đo bổ sung bằng 1 lần gọi lại DeepSeek cho câu đã qua để lấy `category`; tiêu chí phụ cổng 5 chỉ để báo; đổi LLM chấm chỉ khi tốt hơn có bằng chứng (cận dưới 97,5% của Δrecall > 0 và recall E0 ∪ E1 với τ chọn lại ≥ DeepSeek).
+- **RQ1 chạy với `review` bật:**
+  - chỉ số M5 tính trên phần giao;
+  - manifest ghi `clf_mode`, model LLM chấm, τ, SHA 2 model, ngưỡng 429 đã nới cho harness;
+  - đếm thêm số cảnh báo `requester_probe` và số câu kích hoạt `entangled`.
+
+**Lịch** (hướng đã chốt: cố không cắt việc nào):
+
+| Khi | Thư mục chính (có stack) | Worktree 2b | Tuấn Anh / người khác |
+|---|---|---|---|
+| CN 18/10 | Trước khi mở phiên: Claude chép tài liệu đã sửa vào `docs/spec`, phiên git commit + push. Rồi gói 1 DỪNG 1 (script đo + hàm thuần), tối gói 1 DỪNG 2 | Chống spam, gồm bảng `rate_hits` (tạo từ commit tài liệu) | 4 điểm chờ đã chốt lúc 03:25 (đặc tả mục 1, dòng 23–26); sao lưu DB lượt 17/10; khoá OpenRouter + hạn mức; gửi tin Dương (dữ liệu kèm ID nhóm + sha256), Duy Anh (SHA, fixture — hạn 22:00); DỪNG 3 đã push 01:31 (`33b7484`); phiên git khoá thư mục chính, tạo worktree 2b, dành migration `0010` |
+| T2 19/10 | Gói 1 DỪNG 2 xong trước trưa; gói 2 → B3-VA (09:00 chưa có SHA thì B3-VA trước) | Luật M9 (Dương soát) → trang Cảnh báo L2 (phần BE); xuất file OpenAPI | Đo bộ nhớ, p95 (lúc agent ở DỪNG); validation + phép thử LLM chấm; chạy `b2_review_offline.py`, `b3_offline.py`; tính lại báo nhầm `requester_probe` cho Dương |
+| T3 20/10 | Sáng: chấm `p_mal` câu kịch bản demo và gate. 12:00 mốc quyết (gói 1, τ, bộ nhớ, LLM chấm, nhãn che B3); chiều gói 3 nếu LLM chấm mới đạt, commit TRƯỚC khi gộp 2b | Rebase lên gói 1 → dòng lịch sử L2; tối gộp 2b sau khi gói 3 commit | Phiên FE làm trang Cảnh báo cho L2; gửi tin GVHD SAU mốc 12:00; tối: gộp 2b → lượt verify các PR sau 18:10 (cũng là chạy thử bản đã gộp) → đo lại B2 |
+| T4 21/10 | 14:00 `make verify G=2345` trên commit đã đặt `review` + `B2_TAU_REVIEW` (47–50 phút, đủ một vòng sửa) rồi gộp; 18:00 cắt | — | Thứ tự gỡ khi đỏ: B3-VA → gói 2 → dòng lịch sử của 2b → gói 1 |
+
+Không cắt việc theo kế hoạch: phần nào chưa xanh lúc 14:00 21/10 thì không gộp phần đó.
+
+**Ràng buộc:**
+- Không đụng M5 (D-43), `risk/*`, B12, B17.
+- `audit/handoff.py` chỉ gói 1 sửa; 2b và B3-VA đi qua `escalation_note`.
+- Không sửa prompt `b03_classify`.
+- Giữ luật git 4.0 (mục 0.2).
+- Việc treo "tải song song" ở 7.12 vẫn mở: hàng chờ riêng của gói 1 chỉ tách classify khỏi embed/rerank, không xử lý quá tải ở B8.
+- **Luật dùng stack 18–21/10:** chỉ chạy stack trên commit đã có (ghi SHA), lúc mọi agent đang đứng ở DỪNG; không chạy hai việc đo cùng lúc trên máy Tuấn Anh. Compose `name: servicedesk` cố định nên `make up` ở worktree nào cũng thay đúng các container đó; worktree 2b không `make up`.
+- Sau khi 2b gộp, DB chung lên `0010`: nhánh `-m5` và PR chưa rebase không dựng stack được tới khi rebase (phiên git báo Phase 6).
+- F8 (sửa prompt) không đụng `b02_injection_judge`.
+- **Số phiên song song [Chốt 18/10 03:25]:** tối đa 3 phiên coding agent trong 18–21/10 (thư mục chính, worktree 2b, 1 phiên cho việc F ở thư mục riêng do phiên git tạo); mỗi phiên một thư mục; phiên việc F không sửa file của gói 1 và 2b; sau 21/10 về lại 2.
+
+**Spec cần sửa** (sau 18:00 21/10, qua phiên tài liệu):
+
+| File | Sửa |
+|---|---|
+| `B02` §1, §7 | Chế độ `review`; bảng quyết định; E1 `injection_suspected`; τ theo E_max; bộ từ thay nhãn che |
+| `B03-B05` §2, §5.1, §10 | Đồng bộ theo bảng 5.2.2 (lệch từ T20b); B3 ghi điểm (D-53); bước "dính nhau" (D-55) |
+| `B20` | Câu cảnh báo cho `injection_suspected`; dòng lịch sử người gửi; `escalation_note` của con không chắc |
+| `P2` | Vai trò `judge` (nếu gói 3 làm) |
+| `P4` | Hàng chờ riêng `ML_CLASSIFY_CONCURRENCY` (lệch 3a); `classify_failed`; classify không thử lại khi timeout; `ML_MODELS_ROOT`; `check_intent`; `IntentOut`; manifest + SHA bắt buộc |
+| `P6` §5.1 | `alert:read` cho `l2`; `ALERT_ACK_ROLES`; giới hạn tần suất theo tài khoản (bộ tin nhắn gồm `/confirm`) |
+| `P7` 2.3 + danh sách bảng | Loại sự kiện `rate_limited`; bảng thứ 23 `rate_hits` (đếm tin nhắn, không append-only, GRANT `app_rw`); migration `0010` (CHECK, index `tickets(requester_id, created_at)`, `rate_hits`, `v_leaf` thêm `requester_id`) |
+| `P9` | Luật `requester_probe`, `requester_probe_critical`; nhãn người nhận `l2`; `v_leaf.requester_id`; định nghĩa lại luật 12; `e1_split` tách `injection_suspected` |
+| `P10` | Trang Cảnh báo cho L2 (`can_ack`) |
+| `P11` §4–5 | Ngưỡng `tau_review` ở `B2_TAU_REVIEW`, bản ghi `tai-lieu/thresholds.json` (lệch §4.3); chuyển gói intent sang safetensors fp32 (`v3.1-seed42-st/`) |
+
+Việc của người khác (Dương, Duy Anh, phiên git, phiên FE, phiên B3-VA): xem `claude/dac-ta-bat-2-model.md` mục 12.
 
 ---
 
@@ -1220,6 +1301,10 @@ Cổng 5 tự động ĐẠT 15/10. Phần thủ công dồn về mốc G (`huon
 | 15 | Commit docs (spec v0.6 + D-49) qua phiên git; mutation lượt 2 T23a (khoá thư mục chính ~1,5 giờ, tầng B) | B | `8d2aa6e` | **6C DỪNG 1** |
 | 16 | — | — | — | **6C DỪNG 2** → gộp (quyết 21:00) |
 | ~~17~~ **15** | **Cổng 5 ĐẠT** — lượt chính thức `make verify G=2345` trên cây `5f2ece2` (gộp 6C; Tuấn Anh, 00:22–01:12) + thành viên trên máy riêng (Duy Anh, WSL 2, `60f89a6`, lượt 2 10:57–11:44): gate2 89/0, gate3 78/0 · 66/0 (theo giờ), gate4 73/0, gate5 227/0 | — | T22a–T24, T20b, 6C | 6C gộp `5f2ece2` |
+| 18 | Chép tài liệu vào repo + commit (phiên git) → **Gói 1 DỪNG 1, DỪNG 2** (thư mục chính) · **Gói 2b** phần chống spam (worktree riêng) — mục 7.14 | A | DỪNG 3 đã push (`33b7484`); 4 điểm chờ đã chốt 03:25; phiên git khoá thư mục chính + tạo worktree 2b | — |
+| 19 | **Gói 2** → **B3-VA** (thư mục chính, nối tiếp — cùng `b03_classify.py`) · 2b: luật M9 `requester_probe` (Dương soát), trang Cảnh báo cho L2 (BE) | A | gói 1 | — |
+| 20 | 12:00 mốc quyết (gói 1, τ, bộ nhớ, judge, nhãn che B3) · **Gói 3** chiều nếu judge đạt, commit trước khi gộp 2b · 2b: dòng lịch sử L2, gộp 2b tối · FE: trang Cảnh báo cho L2 (từ file OpenAPI của 2b) | A | gói 1, 2 | — |
+| 21 | 14:00 `make verify G=2345` trên commit đã đặt `review` + `B2_TAU_REVIEW`, rồi gộp · 18:00 cắt đổi hành vi | — | mọi gói | chốt strong + `p_method` trước 12:00 (D-51) |
 
 Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự động đủ; mutation T22a/T23a/T24 ×2, T20a/T20b ×1 (phần A ×2); thành viên chạy `make verify` + biên bản; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-35, D-41, D-44…46. **Bỏ khỏi Phase 5 (D-44):** model phân loại của Duy + cascade B3 — làm sau cổng 5 khi có τ_hi/τ_lo + SHA.
 
@@ -1227,6 +1312,10 @@ Cổng 5 đạt khi: `make lint`, `make test` xanh; CI xanh; cổng 5 tự độ
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
+| 18/10/2026 | 0.14 | Mục 7.14 khớp đặc tả v0.6: Tuấn Anh chốt 4 điểm lúc 03:25 — bộ đếm tin nhắn gồm `/confirm`, đếm bằng bảng `rate_hits` (`0010`, bảng thứ 23); 3 luật đo ghi trước vào D-52; tối đa 3 phiên coding agent 18–21/10 (mục 0 và 0.2 ghi ngoại lệ); Claude chép tài liệu vào `docs/spec`. Mục 8 dòng 18 |
+| 18/10/2026 | 0.13 | Mục 7.14 khớp đặc tả v0.5 (soát 3 người độc lập trên `33b7484`): gói 1 chia 2 DỪNG và thêm script chọn τ, chèn PII; τ qua `B2_TAU_REVIEW`; 2b test Postgres trong worktree, nới ngưỡng ở `verify.sh`, `v_leaf.requester_id`, 2 luật `requester_probe`; việc trước khi mở phiên; luật dùng stack; thứ tự tối 20/10; 7 điểm chờ duyệt. Mục 8 dòng 18, 20, 21 |
+| 18/10/2026 | 0.12 | **Mục 7.14** (mới): sau cổng 5 — bật 2 model phân loại (B2 `review` D-52, B3 ghi điểm D-53), chống dò và spam (D-54), B3-VA (D-55); 5 gói, phép đo chốt trước, lịch 18–21/10 trên 2 worktree, "Spec cần sửa" sau 21/10. Bảng kế hoạch tóm tắt dòng 6–10; mục 8 thêm 18–21/10. Nguồn: `claude/dac-ta-bat-2-model.md` v0.4 (Tuấn Anh chốt rạng sáng 18/10) |
+| 18/10/2026 | 0.11 | Mục 7.12 dòng 3: LLM-G DỪNG 3 `3cf0d18` — 3 prompt (`b03_classify@4`, `b10_need_type@2`, `b10_answer@2`), vpn-smoke 53/0 cấu hình A và B (NỢ-3-2 đóng), probe JSON 287/287, model chốt D-51; việc treo tải song song (4 ticket → E2 ở B8). Mục 7.13: **cổng 5 thủ công ĐẠT** — intent macro-F1 0,9399, chặn 14/15, chặn nhầm 0/30, E0 14/14, tách ý 10/10, ghi chú E7 đủ 4 phần; script đo + `make probe` |
 | 17/10/2026 | 0.10 | Mục 1.3: cổng 5 thủ công 45 câu, macro-F1 5 lớp, bộ câu chỉ để đo (chốt 15/10). Mục 7.11: bảng S4 "mở rộng 1 → 4 loại tốn gì" (5 → 20 luật, 7 → 20 fact, 3 → 9 hành động, 0 tool/node/migration mới, 29 file code, 0 kịch bản VPN đổi kết quả). Mục 7.12: LLM-G (`0e74095` + `90deec7`). Mục **7.13**: phần thủ công cổng 5 còn nợ + quy tắc lượt đo |
 | 16/10/2026 | 0.9 | Mục **7.12** (cập nhật tối 16/10: V17 `45f5cd7` + verify G=345; sửa cột "Thay chỗ" — P7 không có bảng mô tả luật): V16 (`68c7f7d` — dấu vết 401, `verify.sh` lưu log cổng đỏ + bước 9 theo HEAD; verify G=2345 xanh) và V17 (mô tả R17–R19 thêm "cần người duyệt" — P6→P5 #21); việc treo g4-10 |
 | 16/10/2026 | 0.8 | **Cổng 5 ĐẠT 15/10** (lượt chính thức cây `5f2ece2` + Duy Anh `60f89a6`; xem `PROGRESS.md` mục "Phase 5 — Cổng 5 ĐẠT"); lịch mục 8; sửa gate2 `24c5012` (verify `1db4bd8` gate2 91/0); mốc main `a0606b1` (PR #48) |
