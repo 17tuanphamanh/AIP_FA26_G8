@@ -225,6 +225,14 @@ class Settings(BaseSettings):
         log.warning("APP_GIT_SHA không phải 40 ký tự hex — bỏ qua, lineage.commit_sha = NULL")
         return None
 
+    # ---- Phase 5 (gói 2b) — chống spam D-54 (a), đặc tả `claude/dac-ta-bat-2-model.md` 4.8 ----
+    # 429 theo tài khoản (sau xác thực, đếm theo `user_id`): ticket mới (`POST /api/tickets`, không tính ticket con) ≤ N trong 10 phút và
+    # ≤ M mỗi giờ; `/messages`, `/reply`, `/confirm` chung một bộ ≤ K trong 10 phút (bảng `rate_hits`). KHÔNG có giá trị "tắt": cổng, đo,
+    # demo nới bằng số lớn (`make up RATE=loose`, `make verify` tự nới) và ghi vào biên bản.
+    ticket_rate_10min: int = Field(default=10, ge=1)
+    ticket_rate_hour: int = Field(default=30, ge=1)
+    message_rate_10min: int = Field(default=30, ge=1)
+
     # ---- M9 (P9; kế hoạch M9 mục 4.1) ----
     # DSN role app_monitor (chỉ SELECT). KHÔNG mặc định: thiếu/rỗng → route M9 trả 503 `monitor_unavailable`, job M9
     # không chạy — không bao giờ rơi về app_rw (`monitor/db.py`). repr=False: DSN mang mật khẩu.
