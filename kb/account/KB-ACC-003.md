@@ -1,10 +1,10 @@
 ---
 doc_id: KB-ACC-003
-version: 1
+version: 2
 request_type: account
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: "Quy trình đặt lại mật khẩu tài khoản quản trị"
@@ -21,6 +21,12 @@ Những tài khoản này không nên được xử lý giống tài khoản cá
 Trước khi gửi yêu cầu, cần xác định đúng tài khoản cần xử lý và mô tả rõ lý do cần đặt lại mật khẩu.
 
 Không gửi mật khẩu hiện tại, mật khẩu cũ hoặc thông tin bí mật trong nội dung yêu cầu.
+
+## Tài khoản dịch vụ luôn cần người duyệt
+
+Tài khoản dịch vụ là tài khoản do hệ thống hoặc ứng dụng sử dụng, không gắn với một nhân viên cụ thể. Mọi yêu cầu đặt lại mật khẩu hoặc mở khóa tài khoản dịch vụ đều cần người duyệt, kể cả khi tài khoản chỉ có quyền thông thường. Hệ thống không tự xử lý các yêu cầu này.
+
+Vì vậy, người dùng không dùng quy trình tự đặt lại mật khẩu cá nhân hay tự mở khóa cho tài khoản dịch vụ. Hãy gửi yêu cầu riêng, nêu rõ tên tài khoản dịch vụ, hệ thống đang sử dụng tài khoản đó và lý do cần xử lý. Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện. Không gửi mật khẩu của tài khoản dịch vụ trong nội dung yêu cầu.
 
 ## Vì sao yêu cầu cần được phê duyệt
 
