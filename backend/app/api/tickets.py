@@ -147,6 +147,10 @@ class TicketView(BaseModel):
     closed_at: datetime | None
     # T20b P11 (5.2.6): ticket cha → tiến độ từng ý (chỉ từ DB + checkpoint CHA); ticket thường/con → None
     children_progress: list[dict[str, Any]] | None = None
+    # R3: hạn của LẦN CHỜ HIỆN TẠI (UTC) — approval: `approvals.deadline` của phiếu `pending`; clarify/confirm: dòng `wait_deadlines`
+    # chưa bắn (đúng dòng worker bắn timeout). Đã kết thúc / cha nhiều ý / reply / không chờ / con chờ clarify-confirm (hạn do cha giữ —
+    # không có dòng) → None. Quá hạn mà worker chưa bắn → vẫn trả mốc (trong quá khứ). Không mặc định: OpenAPI ghi bắt buộc (có thể null).
+    deadline: datetime | None
 
 
 def _accepted(ticket_id: str, status: str, notices: list[str]) -> JSONResponse:
@@ -224,13 +228,17 @@ async def read_ticket(
             await desk.tickets.children_progress_rows(ticket_id, children),
             {cid: child_title(seeds.get(cid) or {}) for cid in children}, awaiting,
         )  # fmt: skip
+    waiting_for = WAITING_FOR.get(snap.next[0]) if snap.next else None
+    deadline = None
+    if row.final_state is None and not row.is_parent and waiting_for in ("approval", "clarify", "confirm"):  # R3
+        deadline = await desk.approvals.open_deadline(ticket_id, waiting_for)
     return TicketView(
         ticket_id=ticket_id,
         status=row.final_state or values.get("status") or S_NEW,
-        waiting_for=WAITING_FOR.get(snap.next[0]) if snap.next else None,
+        waiting_for=waiting_for,
         conversation=list(values.get("conversation") or []),
         exit_code=row.exit_code, close_reason=row.close_reason, final_state=row.final_state,
-        created_at=row.created_at, closed_at=row.closed_at, children_progress=progress,
+        created_at=row.created_at, closed_at=row.closed_at, children_progress=progress, deadline=deadline,
     )  # fmt: skip
 
 

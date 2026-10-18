@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from app.approval.store import ApprovalRow, InboxRow, NoticeKind
+from app.approval.store import ApprovalRow, InboxRow, NoticeKind, OpenWaitKind
 from app.audit.writer import check_audit_row
 from app.auth.models import UserRecord
 from app.auth.service import auth_config, lock_policy
@@ -326,6 +326,7 @@ class MemoryApprovals:
         audit: "MemoryAudit | None" = None, tickets: "MemoryTickets | None" = None,
     ) -> None:  # fmt: skip
         self._table = deadlines.approvals
+        self._waits = deadlines.waits  # R3: `open_deadline` đọc `wait_deadlines` giả (cùng list worker đọc)
         self._clock = clock
         self._users = users
         self._audit = audit  # 4c P5: `inbox` lấy `intended_action` từ dòng audit B15 `queued` (như SQL)
@@ -427,6 +428,14 @@ class MemoryApprovals:
 
     async def procedure_title(self, doc_id: str) -> str | None:
         return self.titles.get(doc_id)
+
+    async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
+        """Như SQL (R3): `approval` → phiếu `pending` mới nhất của ticket; `clarify`/`confirm` → dòng chưa bắn cùng loại, hạn muộn nhất."""
+        if kind == "approval":
+            pending = [a for a in self._table.values() if a["ticket_id"] == ticket_id and a["status"] == "pending"]
+            return max(pending, key=lambda a: a.get("created_at", a["deadline"]))["deadline"] if pending else None
+        waits = [w["deadline"] for w in self._waits if (w["ticket_id"], w["kind"]) == (ticket_id, kind) and w["fired_at"] is None]
+        return max(waits) if waits else None
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:
         """Như SQL (4d P3): dòng `B13/B14 risk_decided` ghi SAU CÙNG (thứ tự ghi = `log_id`) + có `B10 deflected_info_only`."""
