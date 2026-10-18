@@ -12,10 +12,15 @@ from fastapi.responses import JSONResponse
 from app.guard import MAX_WINDOWS
 
 MODEL_MISSING = {"error": "model_missing"}
+CLASSIFY_FAILED = {"error": "classify_failed"}  # gói 1 (phase5 §6.5 #10): lỗi suy luận — mã chung, không chữ đầu vào
 
 
 def model_missing() -> JSONResponse:
     return JSONResponse(MODEL_MISSING, status_code=503)
+
+
+def classify_failed() -> JSONResponse:
+    return JSONResponse(CLASSIFY_FAILED, status_code=500)
 
 
 def too_many_windows(count: int) -> JSONResponse:

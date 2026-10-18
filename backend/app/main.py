@@ -81,6 +81,7 @@ from app.llm.store import (
     SqlLlmStore,  # M9 (A4): cùng SUM(llm_calls.cost_usd) gateway dùng để áp trần chi
 )
 from app.llm.wiring import check_llm
+from app.ml.startup import warn_if_guard_missing  # Phase 5 (gói 1)
 from app.monitor.db import MONITOR_ROLE, MonitorUnavailable, monitor_engine
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
@@ -334,6 +335,10 @@ def create_app(
                 alerts or AlertWriter(engines.main, clock),
                 identity,
             )
+            # Phase 5 (gói 1, D-52): `review` mà ml-service chưa nạp model chặn tấn công → cảnh báo (chạy như shadow), không chặn
+            if settings.b2_classifier_mode == "review":
+                async with httpx.AsyncClient(timeout=settings.health_timeout) as ml_http:
+                    await warn_if_guard_missing(ml_http, settings.ml_service_url)
             try:
                 rt = await stack.enter_async_context(
                     runtime_factory(settings, engines, clock, registry)

@@ -25,8 +25,6 @@ from app.main import create_app
 from app.settings import MlSettings
 from fastapi.testclient import TestClient
 
-pytestmark = pytest.mark.xfail(reason="gói 1 DỪNG 2 — chưa nối", strict=False)
-
 WEIGHTS = b"trong-so-gia-cua-model"
 MANIFEST = "MANIFEST.sha256"
 
@@ -243,3 +241,24 @@ def test_intent_outside_root_blocks_startup_before_torch(settings: MlSettings, r
     s = settings.model_copy(update={"ml_models_root": root, "intent_model_dir": outside})
     with pytest.raises(GuardLoadError), TestClient(create_app(s, loader=load_models)):
         pass
+
+
+# ---- agent chính thêm sau soát bảo mật DỪNG 2 (NGHI-d, NGHI-e) ------------------------------------------------------------------
+
+
+def test_fifo_in_guard_dir_refused(settings: MlSettings, root: Path, guard_dir: Path) -> None:
+    import os
+
+    os.mkfifo(guard_dir / "ong.fifo")  # không phải file thường → không được lọt khỏi so sánh tập file
+    with pytest.raises(GuardLoadError, match="ong.fifo"):
+        check_guard(_ok(settings, root, guard_dir))
+
+
+def test_symlink_in_intent_dir_refused(settings: MlSettings, root: Path) -> None:
+    intent = root / "intent-clf" / "v3.1-seed42"
+    intent.mkdir(parents=True)
+    (root / "khac").mkdir()
+    (intent / "lien-ket").symlink_to(root / "khac")  # trỏ trong gốc vẫn cấm: rglob không đi vào symlink thư mục
+    s = settings.model_copy(update={"ml_models_root": root, "intent_model_dir": intent})
+    with pytest.raises(GuardLoadError, match="lien-ket"):
+        _g().check_model_dirs(s)

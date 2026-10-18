@@ -9,6 +9,7 @@ Viết TỪ ĐẶC TẢ, trước code: `docs/spec/claude/dac-ta-bat-2-model.md`
 Khuôn: `test_ml_client.py` (transport `Scripted`, đếm request ở nơi nhận).
 """
 
+import json
 import typing
 from typing import Any
 
@@ -18,7 +19,7 @@ from app.core.clock import FakeClock
 from app.ml import MlClient, MlContractError
 from app.ml.ports import MlError
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.xfail(reason="gói 1 DỪNG 2 — chưa nối", strict=False)]
+pytestmark = pytest.mark.asyncio
 
 TOKEN = "t" * 43
 FAILED = {"error": "classify_failed"}
@@ -49,7 +50,10 @@ def make(t: Scripted) -> MlClient:
 
 
 def classify_ok(p: Any) -> httpx.Response:
-    return httpx.Response(200, json={"p_malicious": p, "windows": 1, "model": "injection-clf", "version": "v3"})
+    # json.dumps mặc định ghi NaN/Infinity (JSON không chuẩn mà json.loads vẫn đọc) — `httpx.Response(json=…)` từ chối NaN nên
+    # không dựng được ca #10; dựng thân bằng tay để chính client phải chặn.
+    body = json.dumps({"p_malicious": p, "windows": 1, "model": "injection-clf", "version": "v3"})
+    return httpx.Response(200, content=body.encode(), headers={"Content-Type": "application/json"})
 
 
 async def test_ml_error_literal_has_classify_failed() -> None:
@@ -105,3 +109,13 @@ async def test_p_malicious_out_of_range_is_contract_error(p: float) -> None:
 async def test_p_malicious_bounds_accepted(p: float) -> None:
     r = await make(Scripted(classify_ok(p))).classify("văn bản")
     assert r.data is not None and r.data.p_malicious == p
+
+
+# ---- agent chính thêm sau soát bảo mật DỪNG 2 (NGHI-a): chưa kết nối được thì request chưa tới ml-service → vẫn thử lại ----------
+
+
+@pytest.mark.parametrize("exc", [httpx.ConnectTimeout("chưa kết nối"), httpx.PoolTimeout("hết pool")])
+async def test_classify_connect_or_pool_timeout_still_retried(exc: Exception) -> None:
+    t = Scripted(exc)
+    r = await make(t).classify("văn bản")
+    assert (r.error, t.calls) == ("timeout", 3)

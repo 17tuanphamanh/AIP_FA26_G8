@@ -8,6 +8,10 @@
   khi nhóm chưa có model).
 - Phase 5 (T23a, P4 — Q-5-9): `/classify` 422 `{"error": "too_many_windows"}` (văn bản > 48 cửa sổ, ml-service không chấm một
   phần) → trả ngay `error="too_many_windows"`, KHÔNG retry — lỗi lớp 3 như `model_missing`, B2 xuống L4 (không E9).
+- Phase 5 gói 1 (D-52, phase5 §6.5 #10, ĐT 4.6): 500 `{"error": "classify_failed"}` của `/classify`, `/classify_intent` (lỗi suy
+  luận đã bắt ở ml-service) → trả ngay `error="classify_failed"`, KHÔNG BAO GIỜ thử lại. `/classify` hết thời gian chờ → trả ngay
+  `error="timeout"`, KHÔNG thử lại (`to_thread` ở ml-service không huỷ được: mỗi lần thử lại chiếm hàng chờ thêm ~2 s và kéo
+  ticket khác timeout theo); mất kết nối và 5xx khác vẫn thử lại như cũ.
 - 401/413/422 khác/404, response sai schema, một văn bản vượt giới hạn byte → raise `MlContractError`. Thông điệp
   chỉ có endpoint + mã HTTP, không kèm body (body có thể chứa văn bản người dùng).
 - Tự chia lô theo số phần tử (khớp `ml_service/app/schemas.py`) VÀ theo byte (dưới giới hạn 256 KB của
@@ -46,6 +50,8 @@ MAX_REQUEST_BYTES = 200 * 1024
 # phải false-negative). Xem PROGRESS S9 (Q-3a-16) và nợ kỹ thuật đo lại trên máy staging GPU (N2).
 TIMEOUT_S = {"embed": 5.0, "rerank": 18.0, "count_tokens": 5.0, "classify": 2.0, "classify_intent": 2.0}
 MODEL_VERSION_HEADER = "X-Model-Version"
+CLASSIFY_ENDPOINTS = frozenset({"classify", "classify_intent"})  # gói 1: 500 `classify_failed` là lỗi lớp 3, không thử lại
+NO_TIMEOUT_RETRY = frozenset({"classify"})  # gói 1 (ĐT 4.6): timeout không thử lại
 
 _SYSTEM_CLOCK = SystemClock()
 
@@ -86,11 +92,17 @@ def _error_code(response: httpx.Response) -> object:
     return body.get("error") if isinstance(body, dict) else None
 
 
+class _TimeoutNoRetry(Exception):
+    """`/classify` hết thời gian chờ — thoát `call_with_retry` ngay (nó chỉ bắt lỗi httpx), không thử lại."""
+
+
 def _is_l3_error(endpoint: str, response: httpx.Response) -> bool:
-    """Lỗi trả như GIÁ TRỊ, không retry: 503 `model_missing` (mọi endpoint phân loại) và 422 `too_many_windows` CHỈ của
-    `/classify` (T23a P4) — 422 khác vẫn là lỗi hợp đồng."""
+    """Lỗi trả như GIÁ TRỊ, không retry: 503 `model_missing` (mọi endpoint phân loại), 500 `classify_failed` (gói 1, hai endpoint
+    phân loại) và 422 `too_many_windows` CHỈ của `/classify` (T23a P4) — 422 khác vẫn là lỗi hợp đồng, 500 khác vẫn thử lại."""
     if response.status_code == 503:
         return _error_code(response) == "model_missing"
+    if response.status_code == 500:
+        return endpoint in CLASSIFY_ENDPOINTS and _error_code(response) == "classify_failed"
     return endpoint == "classify" and response.status_code == 422 and _error_code(response) == "too_many_windows"
 
 
@@ -184,8 +196,12 @@ class MlClient:
             try:
                 timeout = cap_timeout(TIMEOUT_S[endpoint], self._clock, what=f"ml:{endpoint}")  # 9.0
                 response = await self._http.post(f"/{endpoint}", content=payload, headers=self._headers, timeout=timeout)
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as e:
                 kind = "timeout"
+                # chỉ timeout khi ĐÃ gửi (ml-service có thể đang chấm, `to_thread` không huỷ) mới không thử lại; chưa kết nối
+                # được / chờ pool thì request chưa tới ml-service → thử lại như mất kết nối (ĐT 4.6)
+                if endpoint in NO_TIMEOUT_RETRY and not isinstance(e, httpx.ConnectTimeout | httpx.PoolTimeout):
+                    raise _TimeoutNoRetry from None
                 raise
             except httpx.ConnectError:
                 kind = "connect"
@@ -204,6 +220,11 @@ class MlClient:
             response, error, attempts = await call_with_retry(
                 once, retries=self._retries, clock=self._clock, what=f"ml:{endpoint}"
             )
+        except _TimeoutNoRetry:
+            # timeout bị cắt theo hạn lượt mà lượt đã hết → TurnBudgetExceeded (giữ bất biến 9.0: không rơi xuống LLM khi chính
+            # lượt hết giờ — trước gói 1 việc này do `check_sleep` của lần thử lại làm)
+            cap_timeout(TIMEOUT_S[endpoint], self._clock, what=f"ml:{endpoint}")
+            return MlResult(None, "timeout", 1)
         except httpx.HTTPStatusError as e:  # 4xx khác 404/429: call_with_retry raise lại, không retry
             raise MlContractError(f"ml-service /{endpoint}: HTTP {e.response.status_code}") from e
         if error is not None:
@@ -213,6 +234,8 @@ class MlClient:
         version = response.headers.get(MODEL_VERSION_HEADER)
         if response.status_code == 503:
             return MlResult(None, "model_missing", attempts, version)
+        if response.status_code == 500:  # chỉ tới đây khi `_is_l3_error` (classify_failed)
+            return MlResult(None, "classify_failed", attempts, version)
         if response.status_code == 422:  # chỉ tới đây khi `_is_l3_error` (too_many_windows của /classify)
             return MlResult(None, "too_many_windows", attempts, version)
         try:

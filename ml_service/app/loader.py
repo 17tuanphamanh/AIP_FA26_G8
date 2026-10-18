@@ -20,6 +20,7 @@ from app.guard import (
     GuardLoadError,
     GuardSpec,
     check_guard,
+    check_model_dirs,
 )
 from app.lock import model_dirs, read_lock
 from app.models import Guard, Models, Tokenizer
@@ -117,7 +118,8 @@ def _self_check(tokenizer: Tokenizer, cls_id: int, sep_id: int) -> None:
 def load_models(settings: MlSettings) -> Models:
     refs = read_lock(settings.models_lock)
     dirs = model_dirs(settings.models_dir, settings.models_lock)  # thiếu → LockError, chưa đụng torch
-    guard_spec = check_guard(settings)  # sai file/SHA/id2label → GuardLoadError, chưa đụng torch
+    check_model_dirs(settings)  # gói 1 #5: thư mục model ngoài ML_MODELS_ROOT → GuardLoadError, chưa đụng torch
+    guard_spec = check_guard(settings)  # sai file/SHA/manifest/id2label → GuardLoadError, chưa đụng torch
 
     import torch
     from sentence_transformers import CrossEncoder, SentenceTransformer

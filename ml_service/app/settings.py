@@ -5,6 +5,11 @@
 4 vCPU chỉ làm các lô tranh CPU rồi cùng timeout (quyết định của người, 3a).
 `GUARD_MODEL_DIR` (ML-GAN): rỗng = không nạp, `/classify` 503 như Phase 3; có đặt → nạp lúc khởi động (`guard.py`).
 `GUARD_MODEL_SHA256`: đặt thì `model.safetensors` lệch → không khởi động; sai dạng (khác 64 hex) cũng không khởi động.
+Phase 5 gói 1 (D-52, phase5 §6.5 #3, #5, #9): `ML_CLASSIFY_CONCURRENCY` (mặc định 1) — hàng chờ RIÊNG cho `/classify` và
+`/classify_intent`, tách khỏi embed/rerank (lệch quyết định 3a: classify chạy song song rerank, tranh CPU — ghi D-52);
+`ML_MODELS_ROOT` (mặc định `/ml_models`) — `GUARD_MODEL_DIR`, `INTENT_MODEL_DIR` và mọi file trong đó phải nằm dưới gốc này
+sau `resolve()`; `GUARD_MANIFEST_SHA256` — SHA-256 của `MANIFEST.sha256`. Đặt `GUARD_MODEL_DIR` thì `GUARD_MODEL_SHA256` VÀ
+`GUARD_MANIFEST_SHA256` bắt buộc (kiểm ở `guard.check_guard`). Hai biến số không truyền qua compose (như `ML_MAX_CONCURRENCY`).
 """
 
 import os
@@ -35,6 +40,10 @@ class MlSettings(BaseSettings):
     guard_model_dir: Path | None = None
     guard_model_sha256: str | None = None
     intent_model_dir: Path | None = None
+    # Phase 5 (gói 1, D-52)
+    ml_classify_concurrency: int = Field(default=1, ge=1)
+    ml_models_root: Path = Path("/ml_models")
+    guard_manifest_sha256: str | None = None
 
     @field_validator("ml_service_token")
     @classmethod
@@ -43,11 +52,11 @@ class MlSettings(BaseSettings):
             raise ValueError(f"ML_SERVICE_TOKEN phải dài ≥ {MIN_TOKEN_LEN} ký tự")
         return value
 
-    @field_validator("guard_model_sha256")
+    @field_validator("guard_model_sha256", "guard_manifest_sha256")
     @classmethod
     def _sha256_hex(cls, value: str | None) -> str | None:
         if value is None:
             return None
         if not SHA256_HEX.match(value.lower()):
-            raise ValueError("GUARD_MODEL_SHA256 phải là 64 ký tự hex (SHA-256 của model.safetensors)")
+            raise ValueError("GUARD_MODEL_SHA256 / GUARD_MANIFEST_SHA256 phải là 64 ký tự hex (SHA-256)")
         return value.lower()

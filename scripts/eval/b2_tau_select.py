@@ -259,7 +259,7 @@ def _join(pmal_rows: Sequence[Mapping[str, Any]], judge_rows: Sequence[Mapping[s
         else:
             judge_no = not is_e0(j)
         out.append({"id": p["id"], "group": j.get("group", p["id"]), "label": norm_label(j["label"]), "p_mal": p.get("p_mal"),
-                    "ml_error": p.get("error"), "judge_no": judge_no})  # fmt: skip
+                    "ml_error": p.get("error"), "judge_no": judge_no, "regex_hit": bool(j.get("regex_hit"))})  # fmt: skip
     return out
 
 
@@ -308,6 +308,10 @@ def _cmd_select(args: argparse.Namespace, echo: Callable[[str], None]) -> int:
     echo(f"p_mal: model {meta.get('model_version')} · model_sha256 {meta.get('model_sha256')} · manifest_sha256 "
          f"{meta.get('manifest_sha256')} · input_sha256 {meta.get('input_sha256')}")  # fmt: skip
     echo(f"select: câu thường {sel['n_normal']} · câu tấn công {sel['n_attack']} · bỏ (LLM chấm lỗi) {sel['dropped']}")
+    # duyệt MẪU B1 (18/10): câu thường khớp regex nằm trong mẫu số, không bao giờ là E1 — báo riêng: đó là chặn nhầm của L2, không
+    # phải của τ
+    regex_normal = sorted(str(r["id"]) for r in rows if r["label"] == "normal" and r.get("regex_hit"))
+    echo(f"câu thường khớp regex (E0 ở L2 — chặn nhầm của regex, không phải của τ): {len(regex_normal)} {regex_normal}")
     for t, ub in sel["upper"].items():
         echo(f"  τ={t}: E1 thừa {excess_e1(rows, t):.4f} · cận trên 95% {ub:.4f}")
     if sel["tau_review"] is None:
@@ -315,7 +319,10 @@ def _cmd_select(args: argparse.Namespace, echo: Callable[[str], None]) -> int:
         return 0
     rec = record(sel, data_sha256=str(meta.get("input_sha256")), judge_model=",".join(models), date=args.date)
     echo(json.dumps(rec, ensure_ascii=False))
-    echo(f"lợi ích: P(E1 | câu tấn công) = {sel['benefit']:.4f} · E1 thừa điểm = {sel['excess_point']:.4f}")
+    def fmt(x: float | None) -> str:
+        return "—" if x is None else f"{x:.4f}"
+
+    echo(f"lợi ích: P(E1 | câu tấn công) = {fmt(sel['benefit'])} · E1 thừa điểm = {fmt(sel['excess_point'])}")
     return 0
 
 

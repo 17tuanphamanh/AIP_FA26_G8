@@ -38,6 +38,7 @@ DESK = "backend/app/api/desk.py"
 ERRORS = "backend/app/api/errors.py"
 MAIN = "backend/app/main.py"
 B02 = "backend/app/graph/nodes/b02_screen.py"
+B2_REVIEW = "backend/app/guard/b2_review.py"  # gói 1 (D-52): ngưỡng L3 của `active` chuyển vào hàm quyết định thuần
 CLARIFY = "backend/app/graph/nodes/clarify_wait.py"
 CONFIRM = "backend/app/graph/nodes/confirm_wait.py"
 TICKETS = "backend/app/db/tickets.py"
@@ -139,9 +140,9 @@ UNIT = [
      '        if (hit := None) is not None:  # MUTATION bỏ screen_reply ở confirm_wait\n',
      pt(*UT),
      ["test_e16b_confirm_note_injection_escalates_e0"]),
-    ("M-3e-12 ngưỡng L3 >= thành >", B02,
-     "            if p_mal >= TAU_BLOCK:\n",
-     "            if p_mal > TAU_BLOCK:  # MUTATION biên TAU_BLOCK\n",
+    ("M-3e-12 ngưỡng L3 >= thành >", B2_REVIEW,  # gói 1: mốc dời từ b02_screen.py sang guard/b2_review.py
+     "    if p_mal >= TAU_BLOCK:\n",
+     "    if p_mal > TAU_BLOCK:  # MUTATION biên TAU_BLOCK\n",
      pt(*UT),
      ["test_e18_classifier_thresholds[0.9-S_BLOCKED-0]"]),
     ("M-3e-13 bỏ loại trừ email khỏi entropy", PRIVACY_JSON,

@@ -50,6 +50,9 @@ x-backend-env: &backend-env
   # chỉ ghi điểm). Backend và worker PHẢI thấy cùng giá trị (worker chạy lại lượt dở cũng đi qua B2). Giá trị khác →
   # từ chối khởi động.
   B2_CLASSIFIER_MODE: ${B2_CLASSIFIER_MODE:-}
+  # Phase 5 (gói 1, D-52): τ của chế độ `review` ([0,50; 0,9999], không mặc định) — `review` mà rỗng → backend và worker từ
+  # chối khởi động. Chọn theo `scripts/eval/b2_tau_select.py`; bản ghi ở ml_models/injection-clf/tai-lieu/thresholds.json.
+  B2_TAU_REVIEW: ${B2_TAU_REVIEW:-}
 
 services:
   postgres:
@@ -146,6 +149,10 @@ services:
       ML_THREADS: ${ML_THREADS:-4}
       GUARD_MODEL_DIR: ${GUARD_MODEL_DIR:-}
       GUARD_MODEL_SHA256: ${GUARD_MODEL_SHA256:-}
+      # Phase 5 (gói 1, D-52 — phase5 §6.5 #9): SHA-256 của MANIFEST.sha256 trong GUARD_MODEL_DIR. Đặt GUARD_MODEL_DIR thì
+      # GUARD_MODEL_SHA256 và GUARD_MANIFEST_SHA256 BẮT BUỘC — thiếu/lệch → ml-service không khởi động (cả stack đứng).
+      # ML_CLASSIFY_CONCURRENCY, ML_MODELS_ROOT không truyền: mặc định ở ml_service/app/settings.py (như ML_MAX_CONCURRENCY).
+      GUARD_MANIFEST_SHA256: ${GUARD_MANIFEST_SHA256:-}
       INTENT_MODEL_DIR: ${INTENT_MODEL_DIR:-}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro

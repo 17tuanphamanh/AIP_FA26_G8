@@ -87,4 +87,7 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "out_of_scope", "role_unmappable", "recover_exhausted",
     # Phase 5 T20b (P2, bảng 5.2.2, D-49): `span` của một ý (câu nhiều ý) rỗng hoặc không nằm trong câu → con E1
     "split_span_invalid",
+    # Phase 5 gói 1 (D-52, bảng 4.2 #4 #5): B2 `review` — model nghi (p ≥ τ hoặc 422 too_many_windows) mà LLM chấm nói không → E1
+    # (không mã thoát mới; tin người dùng = tin E0 — B20; không security_event/security_flag)
+    "injection_suspected",
 })  # fmt: skip

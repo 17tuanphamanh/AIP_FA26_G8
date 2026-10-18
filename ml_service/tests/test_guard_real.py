@@ -18,7 +18,7 @@ import pytest
 from app.guard import check_guard, classify_sync
 from app.settings import MlSettings
 
-pytestmark = [pytest.mark.ml_real, pytest.mark.xfail(reason="gói 1 DỪNG 2 — chưa nối", strict=False)]
+pytestmark = pytest.mark.ml_real
 
 REPO = Path(__file__).resolve().parents[2]
 NEEDED = ("GUARD_MODEL_DIR", "GUARD_MODEL_SHA256", "GUARD_MANIFEST_SHA256")

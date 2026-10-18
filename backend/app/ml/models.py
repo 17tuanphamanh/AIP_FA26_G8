@@ -4,7 +4,7 @@ Bỏ qua trường thừa (ml-service thêm trường không làm gãy backend),
 hợp đồng → `MlContractError` (như output tool, P5 mục 6.1).
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Out(BaseModel):
@@ -32,7 +32,8 @@ class CountOut(_Out):
 
 
 class ClassifyOut(_Out):  # injection-clf (Phase 5) — Phase 3 luôn model_missing
-    p_malicious: float
+    # Phase 5 gói 1 (phase5 §6.5 #8): ngoài [0, 1] hoặc NaN/inf → sai schema → MlContractError → E9 (bảng 4.2 #10)
+    p_malicious: float = Field(ge=0, le=1, allow_inf_nan=False)
     windows: int
     model: str
     version: str

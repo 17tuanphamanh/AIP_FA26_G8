@@ -13,8 +13,6 @@ from types import ModuleType
 import pytest
 from tests.unit._b2review import load_script
 
-pytestmark = pytest.mark.xfail(reason="gói 1 DỪNG 2 — chưa nối", strict=False)
-
 FILES = {"model.safetensors": b"trong-so", "config.json": b"{}", "tokenizer.json": b'{"a": 1}',
          "tokenizer_config.json": b"{ }", "sub/special_tokens_map.json": b"[]"}  # fmt: skip
 

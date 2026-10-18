@@ -196,7 +196,11 @@ class Settings(BaseSettings):
     # Phase 5 (T23a, ML-GAN — D-44): quyền quyết định của model chặn tấn công ở B2 L3. `shadow` (mặc định): vẫn gọi
     # /classify, ghi `p_mal` vào `screening`, nhưng không chặn/cho qua theo điểm — mọi câu không khớp mẫu xuống L4.
     # `active`: ≥ TAU_BLOCK chặn, ≤ TAU_PASS qua. Giá trị khác → không khởi động. Node B2 đọc MỘT lần lúc dựng graph (backend VÀ worker).
-    b2_classifier_mode: Literal["shadow", "active"] = "shadow"
+    # Phase 5 (gói 1, D-52): thêm `review` — model nghi (p ≥ τ) mà LLM chấm nói không → E1 `injection_suspected`; model không
+    # bao giờ cho câu đi thẳng. `review` BẮT BUỘC `B2_TAU_REVIEW` ([0,50; 0,9999], không mặc định); `active` chỉ ở dev/test
+    # (D-44: 31/900 câu tấn công đi thẳng). Sai → backend VÀ worker từ chối khởi động (`_b2_mode_guard`).
+    b2_classifier_mode: Literal["shadow", "active", "review"] = "shadow"
+    b2_tau_review: float | None = Field(default=None, ge=0.5, le=0.9999, allow_inf_nan=False)
 
     # ---- Phase 4 ----
     # S0-P11 (Q-4-U A+, D-34): `true` → yêu cầu HÀNH ĐỘNG cũng phải qua cổng độ liên quan B9 như Phase 3 (ablation Phase 10,
@@ -241,6 +245,18 @@ class Settings(BaseSettings):
         if self.eval_mode and self.app_env not in EVAL_MODE_ENVS:
             raise ValueError(
                 f"EVAL_MODE=true chỉ dùng được khi APP_ENV ∈ {sorted(EVAL_MODE_ENVS)} "
+                f"(đang là {self.app_env!r}) — từ chối khởi động"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _b2_mode_guard(self) -> "Settings":
+        # Phase 5 (gói 1, D-52): kiểm ở Settings → MỌI tiến trình dựng Settings (backend, worker) cùng từ chối.
+        if self.b2_classifier_mode == "review" and self.b2_tau_review is None:
+            raise ValueError("B2_CLASSIFIER_MODE=review cần b2_tau_review (B2_TAU_REVIEW, khoảng [0,50; 0,9999]) — từ chối khởi động")
+        if self.b2_classifier_mode == "active" and self.app_env not in B2_ACTIVE_ENVS:
+            raise ValueError(
+                f"B2_CLASSIFIER_MODE=active chỉ dùng được khi APP_ENV ∈ {sorted(B2_ACTIVE_ENVS)} "
                 f"(đang là {self.app_env!r}) — từ chối khởi động"
             )
         return self
@@ -328,6 +344,7 @@ class Settings(BaseSettings):
 
 
 DEV_FAKE_ENVS = frozenset({"dev", "test"})
+B2_ACTIVE_ENVS = DEV_FAKE_ENVS  # Phase 5 (gói 1, D-52): `active` 0,90/0,10 giữ trong code, chỉ thử ở dev/test
 EVAL_MODE_ENVS = frozenset({"dev", "test", "staging"})  # S9 PLAN-3d: prod và APP_ENV thiếu → từ chối
 LLM_BACKENDS = ("scripted", "real")
 

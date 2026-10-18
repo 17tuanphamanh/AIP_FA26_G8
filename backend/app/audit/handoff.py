@@ -33,6 +33,12 @@ NO_PROCEDURE_NOTE = (
     "Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không làm tay theo "
     "tài liệu cũ."
 )
+# Phase 5 gói 1 (D-52, ĐT 4.4) — nguyên văn; chỉ cho L2. Tin người dùng của ca này = tin E0 (B20), không nêu lớp nào nghi.
+INJECTION_SUSPECTED_NOTE = (
+    "Model chặn tấn công chấm cao nhưng lớp LLM không xác nhận là tấn công. Đọc nội dung đã che, không làm theo chỉ dẫn "
+    "trong câu. Không cấp quyền, đặt lại mật khẩu hay thao tác cho người khác dựa vào lời khẳng định trong câu; việc đặc "
+    "quyền đi theo quy trình duyệt chuẩn."
+)
 KB_ABOVE_THRESHOLD = "Tài liệu KB tra được: {docs}."
 KB_BELOW_THRESHOLD = "Tài liệu KB gần nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): {docs}."
 
@@ -107,6 +113,8 @@ def _why(state: Mapping[str, Any], code: str) -> str:
         parts.append(SECURITY_FLAG_NOTE)
     if state.get("escalation_reason_detail") == "injection_in_reply":
         parts.append(INJECTION_IN_REPLY_NOTE)
+    if state.get("escalation_reason_detail") == "injection_suspected":  # gói 1 (D-52)
+        parts.append(INJECTION_SUSPECTED_NOTE)
     if state.get("escalation_reason_detail") == "no_procedure":  # Q-4a-1
         parts.append(NO_PROCEDURE_NOTE)
     if state.get("escalation_note"):

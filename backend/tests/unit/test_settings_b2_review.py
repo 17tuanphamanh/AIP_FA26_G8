@@ -20,8 +20,6 @@ from app.settings import Settings, get_settings
 from pydantic import ValidationError
 from tests.fakes.graph import GraphHarness
 
-pytestmark = pytest.mark.xfail(reason="gói 1 DỪNG 2 — chưa nối", strict=False)
-
 REPO = Path(__file__).resolve().parents[3]
 TAU_ERR = r"(?i)b2_tau_review"
 

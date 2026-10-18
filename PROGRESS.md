@@ -5758,7 +5758,7 @@ kết quả `.verify/cong5/20261017-181019/ket-qua.json`. Số: mục "Phase 5 �
 4. **3 dòng `llm_calls` 2272–2274** (SELECT 18/10): ticket `d2551f48` = tc06 của `vpn-smoke` cấu hình B (lượt 16:32:58Z; b02, b03,
    b10_need_type, flash, 0,000992 USD). Chênh: `vpn-smoke` B in 14 lời gọi, khoảng `call_id` 2258–2274 có 17 dòng — cần xem lại cách đếm.
 
-## Phase 5 — gói 1: B2 chế độ `review` (D-52) (18/10/2026 — DỪNG 1 xong, chưa commit; DỪNG 2 chưa làm)
+## Phase 5 — gói 1: B2 chế độ `review` (D-52) (18/10/2026 — DỪNG 1 commit `dd27f4a`; DỪNG 2 commit 2 (MẪU B2 duyệt 18/10); chờ `make verify G=2345`)
 
 Nguồn: `docs/spec/claude/dac-ta-bat-2-model.md` v0.6, D-52, phase5 7.14. PLAN `PLAN-B2REVIEW.md` (MẪU A duyệt 18/10: theo đề xuất
 trừ Q-B2R-3 — không gọi LLM chấm cho câu khớp regex; Q-B2R-9 — bản nhẹ `ml_real` + `FakeMlService`; Q-B2R-12 — ghi sha256 của
@@ -5783,9 +5783,29 @@ trừ Q-B2R-3 — không gọi LLM chấm cho câu khớp regex; Q-B2R-9 — b�
   cảnh báo id thiếu `p_mal`, `replace_masks` trong script dùng file mẫu của repo (không đọc env). gitleaks trên file mới: sạch
   (canary khoá trong test đổi sang chuỗi không giống khoá).
 
-**Còn mở cho DỪNG 2:** test cũ sẽ đổi có chủ ý (PLAN 5.3) + 2 ca test-writer phát hiện: `test_b02_screen.py::
-test_e13_ml_and_llm_down_e2_security_flag` (`classify == 3` → 1 khi `/classify` không thử lại timeout) và
-`test_turn_deadline.py::test_b2_turn_budget_exceeded_keeps_security_flag` (dựa vào timeout có thử lại để hết hạn lượt).
+**DỪNG 2 (18/10, không stack):** nối `b2_review` vào `b02_screen.py` (E1 `injection_suspected`, thay nhãn che chỉ ở `review`,
+khoá `screening` mới); B20 tin E0 cho `injection_suspected`; `REASON_DETAILS`; `handoff.INJECTION_SUSPECTED_NOTE`; Settings
+`review` + `b2_tau_review` + `active` chỉ dev/test; `ml/client.py` (`classify_failed`, `/classify` không thử lại khi timeout đã
+gửi, lượt hết hạn vẫn TurnBudgetExceeded, `p_malicious` ∈ [0,1]); `ml/startup.py` + khối lifespan (cảnh báo `model_missing`);
+ml-service: hàng chờ classify riêng, `classify_failed`, `ML_MODELS_ROOT`, manifest + SHA bắt buộc, NaN → `classify_failed`;
+`scripts/ml/make_manifest.py`; compose/.env.example (`B2_TAU_REVIEW`, `GUARD_MANIFEST_SHA256`); `cong5.py` kiểm tin E1 nghi =
+tin E0 + tiêu chí B2; `b2_tau_select select` báo riêng số câu thường khớp regex.
+- Mutation `scripts/mutation/mutate_b2review.py`: 10/10 mã ĐT mục 8 đỏ + 8 mã phụ X1–X8 (12 test từng xpassed trên `dd27f4a`
+  không rỗng) đỏ; mốc cũ `mutate_t23a.py` 9/9, `mutate_3e.py` M-3e-3/4/8/9/12 đỏ (unit).
+- Test cũ đổi có chủ ý (lý do ghi trong test): `test_b02_screen.py` (dict `screening`, fixture `APP_ENV=test`, e13 classify 3 → 1),
+  `test_turn_deadline.py` (hạn 8 → 3 s), `test_turn_worst_case.py` (duyệt MẪU B2: `b03_classify` +1 Timeout bù ~7 s B2 không còn
+  thử lại, `len(seen)` 18 → 17 — lượt vẫn hết hạn đúng ở B6; M-3f-7a/b/c/d vẫn đỏ), `test_ml_deploy.py` (+`GUARD_MANIFEST_SHA256`),
+  `ml_service/tests/test_guard.py` (gốc model + SHA + manifest).
+- 12 test DỪNG 2 từng xpassed trên `dd27f4a` giữ làm test bất biến (hành vi có sẵn mà DỪNG 2 không được phá), mỗi test đỏ với một
+  mã phụ X1–X8.
+- Số: lint xanh; unit **6423 passed** (sau sửa `test_turn_worst_case`); ml_service **157 passed, 6 deselected**;
+  integration/e2e chạy trong `make verify` bước 2.
+- **Chuyển sang gói 2:** `/classify_intent` chưa đi qua hàng chờ classify riêng và chưa bọc lỗi → `classify_failed` (lệch
+  Q-B2R-11; route hiện luôn 503 nên chưa có rủi ro) — gói 2 làm khi nạp model intent.
+- **Spec cần sửa (gói 1, bổ sung):** ĐT mục 8 thiếu `test_b02_screen` e13, `test_turn_deadline`, `test_turn_worst_case`; mục 8
+  ghi `ml_service test_guard.py:163-174` phải đổi — thực tế không (loader giả); ĐT 4.6: `ConnectTimeout`/`PoolTimeout` vẫn thử lại;
+  ĐT 4.7/P4: model trả NaN → `classify_failed` (#7, L4 vẫn chấm); gói 3 đổi vai trò `judge` phải đổi cả chuỗi literal ở lời
+  gọi (test AST d10).
 
 **Spec cần sửa (gói 1):** ĐT mục 8 liệt kê `test_b02_screen.py:98, 104` phải đổi — nhánh regex không thêm khoá nên hai assert
 giữ nguyên (Q-B2R-10).

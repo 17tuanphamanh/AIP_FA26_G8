@@ -26,7 +26,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.auth import require_token
-from app.classify import model_missing, too_many_windows
+from app.classify import classify_failed, model_missing, too_many_windows
 from app.embed import embed_sync
 from app.guard import MAX_WINDOWS, TooManyWindows, classify_sync
 from app.intent import intent_missing
@@ -82,9 +82,16 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
     app.state.ready = False
     app.state.models = None
     limiter = asyncio.Semaphore(settings.ml_max_concurrency)
+    # Phase 5 gói 1 (D-52, ĐT 4.6): hàng chờ RIÊNG cho /classify và /classify_intent — classify không chờ rerank (10–15 s) rồi
+    # hết hạn 2 s của backend
+    classify_limiter = asyncio.Semaphore(settings.ml_classify_concurrency)
 
     async def run[T](fn: Callable[..., T], *args: Any) -> T:
         async with limiter:
+            return await anyio.to_thread.run_sync(fn, *args)
+
+    async def run_classify[T](fn: Callable[..., T], *args: Any) -> T:
+        async with classify_limiter:
             return await anyio.to_thread.run_sync(fn, *args)
 
     @app.exception_handler(RequestValidationError)
@@ -156,10 +163,13 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
             return model_missing()
         started = time.perf_counter()
         try:
-            out = await run(classify_sync, guard, body.text)
+            out = await run_classify(classify_sync, guard, body.text)
         except TooManyWindows as e:  # không chấm một phần (chốt 7b PLAN-ml-gan)
             log.info("classify chars=%d windows=%d > %d → 422", len(body.text), e.count, MAX_WINDOWS)
             return too_many_windows(e.count)
+        except Exception as e:  # noqa: BLE001 — gói 1 #10: lỗi suy luận → 500 mã chung; log TÊN lớp lỗi, không thông điệp/chữ
+            log.error("classify chars=%d lỗi suy luận %s → 500 classify_failed", len(body.text), type(e).__name__)
+            return classify_failed()
         log.info(
             "classify chars=%d windows=%d ms=%.0f",
             len(body.text), out.windows, (time.perf_counter() - started) * 1000,

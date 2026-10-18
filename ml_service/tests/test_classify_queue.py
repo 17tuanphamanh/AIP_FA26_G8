@@ -22,8 +22,6 @@ from app.settings import MlSettings
 from fastapi.testclient import TestClient
 from tests.conftest import FakeGuardScorer, FakeReranker, guarded
 
-pytestmark = pytest.mark.xfail(reason="gói 1 DỪNG 2 — chưa nối", strict=False)
-
 WAIT_S = 5.0
 CANARY = "CANARY-loi-suy-luan-0c4d"
 
@@ -106,3 +104,26 @@ def test_classify_inference_error_is_classify_failed(settings: MlSettings, auth:
 def test_classify_concurrency_default_one(token: str) -> None:
     s: Any = MlSettings(ml_service_token=token)
     assert s.ml_classify_concurrency == 1
+
+
+# ---- agent chính thêm sau soát bảo mật DỪNG 2 (NGHI-b): logit NaN → classify_failed (không trả p bị hạ lặng lẽ) ----------------
+
+
+@dataclass
+class NanScorer(FakeGuardScorer):
+    def logits(self, windows: list[list[int]]) -> list[list[float]]:
+        return [[float("nan"), float("nan")] for _ in windows]
+
+
+def test_nan_logits_is_classify_failed(settings: MlSettings, auth: dict[str, str]) -> None:
+    loader, scorer = guarded()
+    nan = NanScorer(loader.tok, scorer.hot, scorer.inj_pos)
+    assert loader.guard is not None
+    with TestClient(create_app(settings, loader=loader)) as c:
+        loader.guard = type(loader.guard)(
+            tokenizer=loader.guard.tokenizer, scorer=nan, cls_id=loader.guard.cls_id, sep_id=loader.guard.sep_id,
+            injection_index=loader.guard.injection_index, version=loader.guard.version,
+        )  # fmt: skip
+        c.app.state.models = type(c.app.state.models)(**{**c.app.state.models.__dict__, "guard": loader.guard})  # type: ignore[attr-defined]
+        r = c.post("/classify", json={"text": "vpn không vào được"}, headers=auth)
+    assert (r.status_code, r.json()) == (500, {"error": "classify_failed"})
