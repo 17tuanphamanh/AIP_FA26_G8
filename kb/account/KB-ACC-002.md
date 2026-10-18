@@ -1,10 +1,10 @@
 ---
 doc_id: KB-ACC-002
-version: 1
+version: 2
 request_type: account
 doc_type: troubleshooting
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: "Tài khoản bị khóa: nguyên nhân và cách mở"
@@ -19,6 +19,17 @@ Khi người dùng không thể đăng nhập, cần kiểm tra tình trạng c�
 Tài khoản trong hệ thống có thể ở các trạng thái đang hoạt động, thử việc, bị vô hiệu hóa hoặc đã nghỉ việc. Những trạng thái này không có cùng ý nghĩa và không nên được xử lý giống nhau.
 
 Việc đăng nhập thất bại không đủ để kết luận rằng tài khoản đã bị khóa vì nhập sai mật khẩu. Người dùng nên ghi lại thông báo lỗi và gửi thông tin đó khi cần hỗ trợ.
+
+## Mở khóa khi nhập sai mật khẩu
+
+Tài khoản cá nhân bị khóa vì nhập sai mật khẩu được hệ thống mở khóa tự động, không cần người duyệt, khi đồng thời thỏa các điều kiện sau:
+
+- Người dùng yêu cầu mở khóa cho chính tài khoản của mình.
+- Tài khoản đang bị khóa và lý do khóa là nhập sai mật khẩu.
+- Tài khoản là tài khoản người dùng thông thường, không phải tài khoản quản trị hay tài khoản dịch vụ.
+- Tài khoản đang hoạt động hoặc đang thử việc.
+
+Nếu tài khoản bị khóa vì lý do khác, ví dụ do quản trị viên khóa hoặc lâu không sử dụng, hệ thống không tự mở khóa mà chuyển cho người xem xét; người dùng nên ghi lại thông báo lỗi và gửi cho IT. Mở khóa tài khoản dịch vụ, tài khoản quản trị hoặc tài khoản của người đã nghỉ việc luôn cần người duyệt. Nếu người dùng cần đổi mật khẩu thay vì mở khóa, xem hướng dẫn tự đặt lại mật khẩu tài khoản cá nhân.
 
 ## Tài khoản bị vô hiệu hóa
 
@@ -36,7 +47,7 @@ Tài khoản thuộc trạng thái đã nghỉ việc không nên được xử 
 
 Không sử dụng quy trình đặt lại mật khẩu cá nhân hoặc mở khóa thông thường để tự kích hoạt lại loại tài khoản này.
 
-Nếu phát sinh yêu cầu liên quan đến tài khoản đã nghỉ việc, cần chuyển yêu cầu cho IT kiểm tra theo quy trình quản lý tài khoản.
+Yêu cầu đặt lại mật khẩu hoặc mở khóa tài khoản đã nghỉ việc luôn cần người duyệt và được IT kiểm tra theo quy trình quản lý tài khoản.
 
 Người dùng không nên tự suy đoán rằng việc đặt lại mật khẩu sẽ làm tài khoản hoạt động trở lại.
 

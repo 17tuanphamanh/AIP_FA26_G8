@@ -70,6 +70,12 @@ facts:
     allowed: ["30"]
     note: Khớp SLA_MINUTES
 
+  - id: access_extend_max_days
+    applies_to: [access]
+    regex: '(?i)gia hạn[^.\n]{0,40}?(?:tối đa|không quá)\s*(\d{1,3})\s*ngày'
+    allowed: ["90"]
+    note: Khớp policy.json - luật cho phép tự gia hạn quyền (thời hạn gia hạn tối đa 90 ngày)
+
   - id: it_extension
     applies_to: [vpn, account, software, access, general]
     regex: '(?i)máy lẻ\s*(\d{3,5})'
