@@ -178,7 +178,7 @@ class SimStack:
     def info(self) -> dict[str, Any]:
         base: dict[str, Any] = {
             "app_env": "dev", "strategy": "hybrid", "eval_mode": True, "llm_cache_mode": "eval",
-            "enable_proactive_diagnosis": True, "b2_classifier_mode": "shadow", "approval_sla_minutes_dev": None,
+            "enable_proactive_diagnosis": True, "b2_classifier_mode": "shadow", "approval_sla_minutes_dev": 2,
             "llm_backend": "scripted", "fast_model": "m-fast", "strong_model": "m-strong", "app_git_sha": GIT_SHA,
             "rag_rerank_k": 20, "policy_sha256": "ab" * 32,
         }  # fmt: skip

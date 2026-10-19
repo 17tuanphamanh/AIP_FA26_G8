@@ -1,7 +1,7 @@
 """Smoke harness G2 trên stack compose THẬT — không nằm trong `make test` (cần `make up`, gói luật giả `.luat-gia/kiem.py` ĐẠT,
-`LLM_BACKEND=scripted`).
+`LLM_BACKEND=scripted`, `APPROVAL_SLA_MINUTES_DEV=2` — G2-Q6).
 
-    EVAL_MODE=true EVAL_PASSWORD=… PYTHONPATH=backend uv run python -m tests.stack.eval_smoke --timeout-s 120 \
+    EVAL_MODE=true EVAL_PASSWORD=… PYTHONPATH=backend uv run python -m tests.stack.eval_smoke --timeout-s 300 \
         [--keep-out ~/eval-runs/smoke] [--per-case]
 
 Kịch bản TỔNG HỢP (không phải kịch bản thật), sinh vào thư mục tạm (hoặc `--keep-out`). Người gửi / preset chọn theo bảng của gói
@@ -10,14 +10,16 @@ luật GIẢ (`.luat-gia/BANG-LUAT-GIA.md`); câu đầu có thẻ `[fake:<prese
   → tới điểm log 4.
 - `SMOKE-A`: son.nt (Sales) gia_tk → R82 chờ duyệt (BANG-LUAT-GIA.md:9), `approver_decision: approve` → SimApprover duyệt trên stack
   → ca phải kết thúc (`done`, `final_state` có), `has_approval = true`, route HITL.
-- Lượt PHỤ (thư mục con `timeout/`): 1 ca `SMOKE-TO` = bản sao SMOKE-A với `approver_decision: ignore`, `--timeout-s 3` → ca chờ duyệt,
-  không ai bấm (SLA duyệt 30 phút) → `timeout`, bản ghi `final_state = None`, runner exit 1.
+- `SMOKE-I`: bản sao SMOKE-A với `approver_decision: ignore` → không ai bấm; hết SLA duyệt (`APPROVAL_SLA_MINUTES_DEV=2`) worker bắn E6
+  trước `--timeout-s 300` → kết cục `done`, `exit_code = E6` (G2-Q6).
+- Lượt PHỤ (thư mục con `timeout/`): 1 ca `SMOKE-TO` = bản sao SMOKE-I, `--timeout-s 3` → chờ duyệt, chưa tới SLA 2 phút → `timeout`,
+  bản ghi `final_state = None`, runner exit 1.
 
 KHÔNG có ca hỏi lại: trên gói luật giả (b582058) preset `gia_hoi_lai` đi B10:needs_action → B11:output_guard_block → E3 (câu hỏi lại
 của preset bị output guard chặn — đã báo Tuấn Anh). Đọc `detail->>'turn'` ở B11 chỉ được kiểm bằng unit test + đột biến M-G2-4/5/13.
 
 Kiểm: mã thoát ∈ {0, 1}; đủ 3 file; `load_predictions` qua; `outcomes.jsonl` đủ dòng; manifest `loaded` đúng; ≥ 2 bản ghi có route;
-`SMOKE-A` done + `has_approval` + route HITL; lượt phụ exit 1 + `timeout` + `final_state = None`; có request HTTP (đối chứng > 0) và 0 request tới đường dẫn có `/policy` (Rev 27).
+`SMOKE-A` done + `has_approval` + route HITL; `SMOKE-I` done + E6; lượt phụ exit 1 + `timeout` + `final_state = None`; có request HTTP (đối chứng > 0) và 0 request tới đường dẫn có `/policy` (Rev 27).
 
 In: 7 dòng tổng hợp của runner (lượt phụ có tiền tố `[phụ]`) + dòng `smoke:` + PASS/FAIL. `--per-case` (CHỈ vì đây là kịch bản tổng
 hợp trên gói luật giả; không áp cho kịch bản thật): thêm mỗi ca `scenario_id outcome final_state exit_code route has_approval
@@ -39,6 +41,7 @@ from app.eval import runner
 from app.eval.predictions import PredictionRecord, load_predictions
 
 APPROVE_CASE = "SMOKE-A"
+IGNORE_CASE = "SMOKE-I"
 TIMEOUT_ID = "SMOKE-TO"
 SUB_TIMEOUT_S = 3
 # .luat-gia/kiem.py:28-31 — (tên đăng nhập, preset, câu)
@@ -65,6 +68,7 @@ def scenarios() -> list[dict[str, Any]]:
         _one("SMOKE-K1", *_tagged(KIEM_CA1), "account", "approve"),
         _one("SMOKE-K2", *_tagged(KIEM_CA2), "vpn", "approve"),
         _one(APPROVE_CASE, *_tagged(HITL_CASE), "account", "approve"),
+        _one(IGNORE_CASE, *_tagged(HITL_CASE), "account", "ignore"),
     ]
 
 
@@ -147,6 +151,9 @@ def main(argv: Sequence[str], *, echo: Callable[[str], None] = print) -> int:
             checks[f"{APPROVE_CASE} done sau khi duyệt (has_approval, route HITL, final_state có)"] = (
                 by_id.get(APPROVE_CASE, {}).get("outcome") == "done" and a is not None and a.has_approval
                 and a.route == "HITL" and a.final_state is not None)  # fmt: skip
+            i = recs.get(IGNORE_CASE)
+            checks[f"{IGNORE_CASE} done + E6 (ignore, hết SLA duyệt trước timeout — G2-Q6)"] = (
+                by_id.get(IGNORE_CASE, {}).get("outcome") == "done" and i is not None and i.exit_code == "E6")  # fmt: skip
             echo(f"smoke: records={len(records)} routed={routed} commit_verified={manifest['commit_verified']} "
                  f"git_dirty={manifest['git_dirty']}")  # fmt: skip
             if args.per_case:  # CHỈ kịch bản tổng hợp của smoke

@@ -30,8 +30,11 @@ chỉ đọc `detail->>'route'` và `detail->>'strategy'` (dòng `B13/B14`), cù
 
 **Dựng stack:**
 - Chạy `make up` để build lại image backend, vì `app.eval.warmup` chạy trong container.
-- `.env` của máy chạy phải có `EVAL_MODE=true`, `LLM_CACHE_MODE=eval`, `STRATEGY=hybrid`.
+- `.env` của máy chạy phải có `EVAL_MODE=true`, `LLM_CACHE_MODE=eval`, `STRATEGY=hybrid`, `APPROVAL_SLA_MINUTES_DEV=2`.
 - Thiếu `EVAL_MODE=true` thì điểm log 4 không có `detail.strategy`, harness dừng mã 2.
+- `APPROVAL_SLA_MINUTES_DEV=2` (G2-Q6, Tuấn Anh 19/10): ca `ignore` hết hạn duyệt sau 2 phút và ra E6, trước khi chạm `--timeout-s`.
+  Container không đặt biến này, hoặc để rỗng, thì harness dừng mã 2 trước khi tạo ticket nào. Giá trị được ghi vào `manifest.json`
+  mục `approval_sla_minutes_dev`.
 
 **Trước khi giao:** Tuấn Anh chạy `--check-only` trên dữ liệu thật. Lệnh này chỉ nạp kịch bản, không gọi stack, không cần
 `EVAL_PASSWORD`, và chỉ in `scenarios: loaded=<n> errors=<n>` cùng các dòng lỗi dạng `file #i/N: <vị trí trường>`:
@@ -50,12 +53,14 @@ Nếu có trường lạ ngoài P8 §4.1, thêm `--allow-extra-fields` để b�
 cd ~/code/AIP_FA26_G8
 git checkout g2-harness-duong
 EVAL_MODE=true EVAL_PASSWORD='<mật khẩu demo>' PYTHONPATH=backend uv run python -m app.eval.runner \
-  --scenarios <thư mục kịch bản> --strategy hybrid --split test --timeout-s <số Tuấn Anh gửi> \
+  --scenarios <thư mục kịch bản> --strategy hybrid --split test --timeout-s 300 \
   --out <thư mục NGOÀI repo, vd ~/eval-runs/s1>
 ```
 
-- `--timeout-s` là giới hạn cho MỖI kịch bản. Tham số bắt buộc, không có mặc định; Tuấn Anh gửi số giây (chốt cùng G2-Q6).
-  Nếu số này nhỏ hơn SLA duyệt + 60 giây, harness in cảnh báo ra stderr và các ca `ignore` sẽ ra `timeout` thay vì E6.
+- `--timeout-s` là giới hạn cho MỖI kịch bản. Tham số bắt buộc, code không có mặc định. **300 giây là số tạm**, sẽ chốt lại khi có
+  probe B5 (Tuấn Anh 19/10). Số này chỉ truyền qua CLI, không nằm trong code.
+- Nếu `--timeout-s` nhỏ hơn SLA duyệt + 60 giây, harness in cảnh báo ra stderr và các ca `ignore` sẽ ra `timeout` thay vì E6.
+  Với SLA 2 phút, ngưỡng là 180 giây, nên 300 không bị cảnh báo.
 - `--out` không được nằm trong thư mục kịch bản và không được chứa sẵn file kết quả của lượt trước.
 - Cờ tuỳ chọn:
   - `--per-case`: in thêm mỗi ca một dòng `<scenario_id> <kết cục> <giây>`.
@@ -84,7 +89,7 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
 |---|---|
 | 0 | Xong |
 | 1 | Có ca `timeout` hoặc `error`; file vẫn được ghi |
-| 2 | Dừng trước khi ghi `predictions.jsonl`. Dòng cuối `DỪNG: <lý do>` cho biết nguyên nhân: tham số, kịch bản lỗi, chốt an toàn, STRATEGY / EVAL_MODE / LLM_CACHE_MODE / APP_GIT_SHA của container, `/api/health`, làm nóng, hoặc điểm log 4 thiếu khoá / sai strategy |
+| 2 | Dừng trước khi ghi `predictions.jsonl`. Dòng cuối `DỪNG: <lý do>` cho biết nguyên nhân: tham số, kịch bản lỗi, chốt an toàn, STRATEGY / EVAL_MODE / LLM_CACHE_MODE / APPROVAL_SLA_MINUTES_DEV / APP_GIT_SHA của container, `/api/health`, làm nóng, hoặc điểm log 4 thiếu khoá / sai strategy |
 
 **File trong `--out`:**
 - `predictions.jsonl`: hợp đồng v1, đọc bằng `app.eval.predictions.load_predictions`. Mỗi dòng là một lá; ca `multi_leaf` không có

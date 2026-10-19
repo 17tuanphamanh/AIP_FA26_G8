@@ -166,6 +166,30 @@ def test_sla_warning(tmp_path: Path) -> None:
     assert len(r.out) == 7
 
 
+@pytest.mark.parametrize("sla", [None, "", 0])
+def test_preflight_sla_required(tmp_path: Path, sla: Any) -> None:
+    """G2-Q6 (Tuấn Anh 19/10): harness chạy với APPROVAL_SLA_MINUTES_DEV=2 → ca ignore ra E6 trước timeout. Container không đặt / rỗng →
+    DỪNG mã 2, lý do cố định, không tạo ticket, không ghi file."""
+    r = Run(tmp_path, scn(1, "direct"), sim=SimStack(FakeClock(), info_over={"approval_sla_minutes_dev": sla}))
+    assert r() == 2
+    assert r.no_files() and "/api/tickets" not in r.paths()
+    assert r.out[-1].startswith("DỪNG:") and "APPROVAL_SLA_MINUTES_DEV" in r.out[-1]
+
+
+@pytest.mark.parametrize("sla", [2, 30])
+def test_manifest_sla_recorded(tmp_path: Path, sla: int) -> None:
+    r = Run(tmp_path, scn(1, "direct"), sim=SimStack(FakeClock(), info_over={"approval_sla_minutes_dev": sla}))
+    assert r(timeout="3000") == 0
+    assert r.manifest()["approval_sla_minutes_dev"] == sla
+
+
+def test_sla_no_warning_when_timeout_large(tmp_path: Path) -> None:
+    """Đối chứng cho `test_sla_warning`: SLA 2 phút, timeout 300 giây (≥ 2·60 + 60) → không cảnh báo."""
+    r = Run(tmp_path, scn(1, "direct"), sim=SimStack(FakeClock(), info_over={"approval_sla_minutes_dev": 2}))
+    assert r(timeout="300") == 0
+    assert not any("SLA" in e for e in r.err)
+
+
 def test_run_id_mismatch_exit2(tmp_path: Path) -> None:
     r = Run(tmp_path, scn(1, "direct"))
     assert r("--run-id", "000000000000") == 2
@@ -419,7 +443,7 @@ def test_manifest_without_flag(tmp_path: Path) -> None:
 MANIFEST_KEYS = {
     "run_id", "config", "git_commit", "git_dirty", "app_git_sha", "commit_verified", "dataset_sha256", "dataset_file_count", "strategy",
     "split", "timeout_s", "enable_proactive_diagnosis", "llm_cache_mode", "clf_mode", "policy_sha256", "llm_backend",
-    "started_at", "finished_at", "host", "warmup", "counts", "ignored_fields", "unavailable",
+    "started_at", "finished_at", "host", "warmup", "counts", "ignored_fields", "unavailable", "approval_sla_minutes_dev",
     "b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits",
 }  # fmt: skip
 LATER = ("b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits")

@@ -94,6 +94,7 @@ _PW = "    if not password.strip():\n"
 _TMP = '    tmp.write_text("".join(r.model_dump_json() + "\\n" for r in records), encoding="utf-8")\n'
 _RECHECK = "    if records:\n"
 _HEALTH = "        health = Api(deps.http).health()\n"
+_SLA = "    if not isinstance(sla, int) or isinstance(sla, bool) or sla <= 0:  # G2-Q6 (Tuấn Anh 19/10): ca ignore phải ra E6 trước timeout\n"
 _WHERE = '        where = self.name if show_name else f"file #{self.index}/{self.total}"\n'
 _IGNORED = "            ignored += dropped\n"
 
@@ -172,6 +173,8 @@ MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G2-28 SimApprover đăng nhập bằng approver_id thay username",
              [_swap(ACT, _LOGIN, "        headers = self.api.login(approver_id, self.password)", "M-G2-28")], UT,
              ["test_sim_approver_decides"]),
+    Mutation("M-G2-29 bỏ kiểm APPROVAL_SLA_MINUTES_DEV (G2-Q6)",
+             [_off(RUN, _SLA, "M-G2-29")], UT, ["test_preflight_sla_required"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL

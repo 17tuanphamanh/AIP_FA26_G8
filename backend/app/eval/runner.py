@@ -4,7 +4,8 @@
         --scenarios <dir> --strategy hybrid --split test --timeout-s <số giây> --out <dir ngoài repo>
 
 Luồng: nạp kịch bản (lỗi → mã 2) → kiểm `--out` → chốt an toàn (`APP_ENV=dev`, URL 127.0.0.1) → cấu hình hiệu lực của container
-backend (STRATEGY khớp cờ, `EVAL_MODE=true`, `LLM_CACHE_MODE=eval`, `APP_GIT_SHA` khớp HEAD nếu có đặt; chỉ SO, không in giá trị) →
+backend (STRATEGY khớp cờ, `EVAL_MODE=true`, `LLM_CACHE_MODE=eval`, `APPROVAL_SLA_MINUTES_DEV` có đặt (G2-Q6), `APP_GIT_SHA` khớp
+HEAD nếu có đặt; chỉ SO, không in giá trị) →
 `/api/health` → `run_id` → làm nóng rerank (trong container) → từng kịch bản TUẦN TỰ với hạn `--timeout-s` → `predictions.jsonl`
 (hợp đồng v1, đọc lại bằng `load_predictions` trước khi đổi tên) + `outcomes.jsonl` + `manifest.json`.
 
@@ -315,6 +316,9 @@ def _preflight(deps: Deps, args: argparse.Namespace, err: Callable[[str], None])
         raise Stop("container backend không chạy EVAL_MODE=true")
     if info.get("llm_cache_mode") != "eval":
         raise Stop("LLM_CACHE_MODE của container backend không phải eval")
+    sla = info.get("approval_sla_minutes_dev")
+    if not isinstance(sla, int) or isinstance(sla, bool) or sla <= 0:  # G2-Q6 (Tuấn Anh 19/10): ca ignore phải ra E6 trước timeout
+        raise Stop("container backend không đặt APPROVAL_SLA_MINUTES_DEV (.env cần APPROVAL_SLA_MINUTES_DEV=2, make up lại)")
     app_sha = info.get("app_git_sha") or ""
     if not app_sha:
         # backend/Dockerfile:32-33: `ARG GIT_SHA` → `ENV APP_GIT_SHA`; make up chỉ truyền khi cây sạch (bẩn → rỗng → Settings None)
@@ -332,8 +336,7 @@ def _preflight(deps: Deps, args: argparse.Namespace, err: Callable[[str], None])
         raise Stop("không gọi được /api/health") from None
     if health.get("runtime") != "up":
         raise Stop("backend chưa sẵn sàng (/api/health runtime ≠ up)")
-    sla = info.get("approval_sla_minutes_dev")
-    if isinstance(sla, int) and args.timeout_s < sla * 60 + 60:
+    if args.timeout_s < sla * 60 + 60:
         err("CẢNH BÁO: timeout_s nhỏ hơn SLA duyệt + 60 giây — ca ignore sẽ ra timeout thay vì E6 (G2-Q6)")
     return info, verified
 
@@ -420,7 +423,8 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         "dataset_file_count": len(ds.files), "strategy": config.strategy, "split": config.split, "timeout_s": config.timeout_s,
         "enable_proactive_diagnosis": config.enable_proactive_diagnosis, "llm_cache_mode": info.get("llm_cache_mode"),
         "clf_mode": info.get("b2_classifier_mode"), "policy_sha256": info.get("policy_sha256"),
-        "llm_backend": info.get("llm_backend"), "started_at": started_at.isoformat(), "finished_at": deps.now().isoformat(),
+        "llm_backend": info.get("llm_backend"), "approval_sla_minutes_dev": info.get("approval_sla_minutes_dev"),
+        "started_at": started_at.isoformat(), "finished_at": deps.now().isoformat(),
         "host": platform.node(), "warmup": warm, "counts": counts,
         "ignored_fields": {"allowed": args.allow_extra_fields, "count": len(ds.ignored_fields),
                            "paths": sorted(set(ds.ignored_fields))},
