@@ -22,6 +22,7 @@ from app.eval.metrics import (
     calibration_scores,
     decided_by_distribution,
     mean_route_cost,
+    n_unlabeled,
     safety,
 )
 from app.eval.predictions import PredictionRecord
@@ -333,3 +334,44 @@ def test_empty_records_raises() -> None:
         calibration_scores([], "raw")
     with pytest.raises(ValueError, match="rỗng"):
         decided_by_distribution([])
+
+
+# ---- G2-schema: bản ghi CHƯA NHÃN (expected_route None — dữ liệu thật tới 25/10, G2-Q22) ----------------------------------
+
+
+def unlabeled(*preds: str | None) -> list[PredictionRecord]:
+    return [leaf("AUTO", p).model_copy(update={"expected_route": None}) for p in preds]
+
+
+def test_n_unlabeled_helper() -> None:
+    assert n_unlabeled(h_set()) == 0
+    assert n_unlabeled(h_set() + unlabeled("AUTO", None, "HITL")) == 3
+
+
+def test_safety_skips_unlabeled() -> None:
+    """Chỉ số cần nhãn bỏ qua lá chưa nhãn (không coi là AUTO, không lỗi) và đếm `n_unlabeled`; phần đã nhãn giữ nguyên số."""
+    base = safety(h_set())
+    mixed = safety(h_set() + unlabeled("AUTO", "HITL", None, "ESCALATE_L2"))
+    assert base.n_unlabeled == 0 and mixed.n_unlabeled == 4
+    for field in ("n_m5", "fnr", "fnr_upper95", "fpr", "accuracy", "macro_f1", "cost"):
+        assert getattr(mixed, field) == getattr(base, field), field
+    assert {g: dict(row) for g, row in mixed.confusion.items()} == {g: dict(row) for g, row in base.confusion.items()}
+
+
+def test_mean_route_cost_skips_unlabeled() -> None:
+    assert mean_route_cost(h_set() + unlabeled("AUTO", "HITL")) == mean_route_cost(h_set())
+
+
+def test_safety_all_unlabeled() -> None:
+    s = safety(unlabeled("AUTO", "HITL"))
+    assert (s.n_m5, s.n_unlabeled, s.fnr.value, s.fpr.value, s.macro_f1, s.cost.value) == (0, 2, None, None, None, None)
+
+
+def test_calibration_skips_unlabeled() -> None:
+    labelled = [leaf("HITL", "HITL", by="llm", raw=0.8, pm="self_report"), leaf("AUTO", "HITL", by="llm", raw=0.2, pm="self_report")]
+    extra = [r.model_copy(update={"expected_route": None}) for r in
+             (leaf("AUTO", "HITL", by="llm", raw=0.99, pm="self_report"), leaf("AUTO", "HITL", by="llm", raw=0.01, pm="self_report"))]
+    base, mixed = calibration_scores(labelled, "raw"), calibration_scores(labelled + extra, "raw")
+    assert base is not None and mixed is not None
+    assert (mixed.n, mixed.ece, mixed.brier) == (base.n, base.ece, base.brier)
+    assert (base.n_unlabeled, mixed.n_unlabeled) == (0, 2)

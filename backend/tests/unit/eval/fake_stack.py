@@ -9,11 +9,53 @@ cặp `'khoá', biểu_thức` của `json_build_object`) trên bảng trong b�
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+# ---- kịch bản tổng hợp theo CẤU TRÚC THẬT (g2-chot.md:11-17 — chỉ tên trường + kiểu) -----------------------------------
+
+SEED_USERS: Mapping[str, str] = {"u_sentinel": "SENTINEL_USER", "u_an": "an.nv", "u_ha": "ha.lt"}  # user_id → username
+
+
+def reply(text: str, slot: str = "device_id") -> dict[str, Any]:
+    return {"on_question_about": slot, "reply": text}
+
+
+def confirm(value: bool = True) -> dict[str, Any]:
+    return {"on_confirm": value}
+
+
+def real_scenario(sid: str = "SENTINEL_ID_1", *, family: str | None = None, user_id: str = "u_sentinel",
+                  turns: Sequence[Any] | None = None, expected_route: str | None = None, decision: str = "approve",
+                  intents: Sequence[str] = ("vpn",), gold_doc_ids: Sequence[str] = ("SENTINEL_DOC",),
+                  **gold_over: Any) -> dict[str, Any]:  # fmt: skip
+    """Một kịch bản tổng hợp đủ khoá thật; mọi giá trị chữ có chuỗi canh `SENTINEL_`. Mặc định `expected_route = None` (chưa
+    nhãn — như dữ liệu thật tới 25/10)."""
+    gold: dict[str, Any] = {
+        "intents": list(intents), "need_type": "SENTINEL_NEED", "expected_route": expected_route, "expected_exit": None,
+        "approver_decision": decision, "gold_doc_ids": list(gold_doc_ids),
+        "action": {"type": "SENTINEL_ACT", "target": "SENTINEL_TGT", "requested_for": "SENTINEL_FOR",
+                   "params": {"p": "SENTINEL_P", "n": 1}},
+        "facts": {"f": "SENTINEL_FACT", "b": True},
+    }  # fmt: skip
+    gold.update(gold_over)
+    return {
+        "id": sid, "family": family or f"SENTINEL_FAM_{sid}", "source": "SENTINEL_SRC", "at": "2026-10-20T09:00:00+07:00",
+        "faults": [], "requester": {"user_id": user_id, "role": "employee", "dept": "SENTINEL_DEPT", "tenure_days": 400},
+        "turns": list(turns) if turns is not None else ["SENTINEL_TXT_mo dau"], "gold": gold,
+        "labels": {"annotator_1": None, "annotator_2": None},
+    }  # fmt: skip
+
+
+def write_seed(path: Path, users: Mapping[str, str] = SEED_USERS) -> Path:
+    """Seed tổng hợp cùng dạng `mock_services/seed.json` (`users[*].user_id`, `users[*].username`)."""
+    path.write_text(json.dumps({"users": [{"user_id": u, "username": n} for u, n in users.items()]}), encoding="utf-8")
+    return path
+
 
 _TID = re.compile(r"ticket_id = '([^']+)'")
 _STEP = re.compile(r"step = '([^']+)'")

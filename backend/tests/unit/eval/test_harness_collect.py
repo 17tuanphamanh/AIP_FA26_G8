@@ -13,16 +13,16 @@ from app.eval.collect import AbortRun, MultiLeaf, RunMeta, collect
 from app.eval.dataset import Scenario
 from app.eval.predictions import PredictionRecord
 from app.eval.stack import StackError
-from tests.unit.eval.fake_stack import FakeDb
+from tests.unit.eval.fake_stack import FakeDb, real_scenario
 
 TID = "T-0001"
 META = RunMeta(run_id="0123456789ab", strategy="hybrid", split="test")
 
 
 def scn(**gold: Any) -> Scenario:
-    g: dict[str, Any] = {"intents": ["vpn"], "expected_route": "HITL", "gold_doc_ids": ["kb-a"]}
-    g.update(gold)
-    return Scenario.model_validate({"id": "S1", "family": "F1", "requester": "an.nv", "turns": ["x"], "gold": g})
+    over: dict[str, Any] = {"expected_route": "HITL", "gold_doc_ids": ["kb-a"]}
+    over.update(gold)
+    return Scenario.model_validate(real_scenario("S1", family="F1", turns=["x"], **over))
 
 
 def log4(db: FakeDb, route: str | None = "HITL", strategy: str | None = "hybrid", step: str = "B13/B14", **cols: Any) -> None:
@@ -191,6 +191,13 @@ def test_multi_leaf_raises() -> None:
 def test_ticket_missing_raises() -> None:
     with pytest.raises(StackError):
         collect(FakeDb(), scn(), TID, META)
+
+
+def test_collect_unlabeled_record() -> None:
+    """Dữ liệu thật tới 25/10: `gold.expected_route = null` → bản ghi mang `expected_route = None` (đếm `unlabeled` ở runner)."""
+    r = collect(full_db(), scn(expected_route=None), TID, META)
+    assert r.expected_route is None and r.route == "HITL"
+    assert PredictionRecord.model_validate_json(r.model_dump_json()) == r
 
 
 def test_gold_intent_multi_none() -> None:

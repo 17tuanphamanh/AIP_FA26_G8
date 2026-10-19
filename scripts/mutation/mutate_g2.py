@@ -32,6 +32,7 @@ STK = "backend/app/eval/stack.py"
 ACT = "backend/app/eval/actors.py"
 RUN = "backend/app/eval/runner.py"
 DS = "backend/app/eval/dataset.py"
+MET = "backend/app/eval/metrics.py"
 UT = pt("backend/tests/unit/eval")
 
 
@@ -78,7 +79,8 @@ _RUN_ERR = '            raise StackError(f"lệnh lỗi (mã {code}): {shlex.joi
 
 # ---- actors.py --------------------------------------------------------------------------------------------------------
 
-_NEXT = "        self._sent += 1\n        return self._turns[self._sent - 1].text\n"
+_NEXT = "        return self._replies.pop(0)\n"
+_CONFIRM_POP = "            return self._confirms.pop(0)\n"
 _IGNORE = '        if decision == "ignore":\n'
 _REJECT = '            self.api.decide(headers, approval_id, "rejected", REJECT_NOTE)\n'
 _USERNAME = "        username = username_of(self.sql, approver_id)\n"
@@ -94,6 +96,12 @@ _PW = "    if not password.strip():\n"
 _TMP = '    tmp.write_text("".join(r.model_dump_json() + "\\n" for r in records), encoding="utf-8")\n'
 _RECHECK = "    if records:\n"
 _HEALTH = "        health = Api(deps.http).health()\n"
+_LOGIN_REQ = "        h = c.api.login(c.usernames[s.id], c.password)\n"
+_UNLABELED = '        "unlabeled": sum(r.expected_route is None for r in records),\n'
+_SEED_CHECK = "            if s.requester.user_id not in users:\n"
+_ROUTE_OPT = "    expected_route: Route | None  # None = chưa nhãn (tới 25/10)\n"
+_SAFETY_PAIRS = "    pairs = _pairs(_gold(records))\n    need = "
+_N_UNLAB = "        n_unlabeled=n_unlabeled(records),\n"
 _SLA = "    if not isinstance(sla, int) or isinstance(sla, bool) or sla <= 0:  # G2-Q6 (Tuấn Anh 19/10): ca ignore phải ra E6 trước timeout\n"
 _WHERE = '        where = self.name if show_name else f"file #{self.index}/{self.total}"\n'
 _IGNORED = "            ignored += dropped\n"
@@ -116,7 +124,7 @@ MUTATIONS_ALL: list[Mutation] = [
              [_swap(STK, _DEADLINE, "        return self.elapsed() > self.seconds", "M-G2-7")], UT, ["test_deadline_boundary"]),
     Mutation("M-G2-8 reject không gửi note",
              [_swap(ACT, _REJECT, '            self.api.decide(headers, approval_id, "rejected")', "M-G2-8")], UT,
-             ["test_sim_approver_reject", "test_sim_approver_decides[reject-rejected-body2]", "test_flow_reject"]),
+             ["test_sim_approver_reject", "test_sim_approver_decides[reject-rejected-body1]", "test_flow_reject"]),
     Mutation("M-G2-9 ignore → vẫn duyệt",
              [_off(ACT, _IGNORE, "M-G2-9")], UT, ["test_sim_approver_ignore", "test_flow_ignore_waits_for_worker"]),
     Mutation("M-G2-10 mặc định in từng ca",
@@ -161,7 +169,7 @@ MUTATIONS_ALL: list[Mutation] = [
              [_swap(STK, _RUN_ERR, '            raise StackError(f"lệnh lỗi (mã {code}): {shlex.join(cmd[:4])} … {out}")',
                     "M-G2-24")], UT, ["test_shell_error_hides_output"]),
     Mutation("M-G2-25 ScriptedUser không tiến con trỏ",
-             [one(ACT, _NEXT, "        return self._turns[self._sent].text  # MUTATION M-G2-25\n")], UT,
+             [_swap(ACT, _NEXT, "        return self._replies[0]", "M-G2-25")], UT,
              ["test_scripted_user_sequence"]),
     Mutation("M-G2-26 SimApprover đăng nhập bằng requester của ticket",
              [_swap(ACT, _USERNAME, "        username = username_of(self.sql, str(self.sql(f\"SELECT to_json(requester_id) "
@@ -175,6 +183,27 @@ MUTATIONS_ALL: list[Mutation] = [
              ["test_sim_approver_decides"]),
     Mutation("M-G2-29 bỏ kiểm APPROVAL_SLA_MINUTES_DEV (G2-Q6)",
              [_off(RUN, _SLA, "M-G2-29")], UT, ["test_preflight_sla_required"]),
+    # ---- G2-schema (20/10): cấu trúc kịch bản thật ----
+    Mutation("M-G2-30 ScriptedUser lấy reply CUỐI (không theo thứ tự)",
+             [_swap(ACT, _NEXT, "        return self._replies.pop()", "M-G2-30")], UT, ["test_scripted_user_replies_in_order"]),
+    Mutation("M-G2-31 đăng nhập bằng user_id (bỏ tra seed)",
+             [_swap(RUN, _LOGIN_REQ, "        h = c.api.login(s.requester.user_id, c.password)", "M-G2-31")], UT,
+             ["test_login_uses_seed_username", "test_password_from_env_used"]),
+    Mutation("M-G2-32 bỏ kiểm requester.user_id có trong seed",
+             [_off(DS, _SEED_CHECK, "M-G2-32")], UT, ["test_requester_unknown_user_id", "test_unknown_user_check_only_no_value"]),
+    Mutation("M-G2-33 coi expected_route null là lỗi",
+             [_swap(DS, _ROUTE_OPT, "    expected_route: Route", "M-G2-33")], UT,
+             ["test_expected_route_null_unlabelled", "test_cli_check_only_real_shape"]),
+    Mutation("M-G2-34 runner không đếm unlabeled",
+             [_swap(RUN, _UNLABELED, '        "unlabeled": 0,', "M-G2-34")], UT, ["test_manifest_unlabeled"]),
+    Mutation("M-G2-35 safety không lọc lá chưa nhãn",
+             [one(MET, _SAFETY_PAIRS, "    pairs = _pairs(records)  # type: ignore[arg-type]  # MUTATION M-G2-35\n    need = ")], UT,
+             ["test_safety_skips_unlabeled"]),
+    Mutation("M-G2-36 n_unlabeled của safety luôn 0",
+             [_swap(MET, _N_UNLAB, "        n_unlabeled=0,", "M-G2-36")], UT, ["test_safety_skips_unlabeled"]),
+    Mutation("M-G2-37 bước xác nhận luôn \"Đã ổn\" (bỏ on_confirm của kịch bản)",
+             [_swap(ACT, _CONFIRM_POP, "            return DEFAULT_ON_CONFIRM", "M-G2-37")], UT,
+             ["test_scripted_user_confirms_in_order", "test_confirm_uses_scenario_on_confirm"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL

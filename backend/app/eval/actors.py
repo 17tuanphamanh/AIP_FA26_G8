@@ -1,8 +1,10 @@
 """Diễn viên của harness G2 (P8 §5.2): `ScriptedUser` trả lời theo `turns`; `SimApprover` làm theo `gold.approver_decision`.
 
-- `ScriptedUser`: câu 1 = text tạo ticket; mỗi lần B11 hỏi lại gửi câu kế tiếp; hết câu → `None` (runner chờ tới hạn kịch bản rồi
-  ghi `timeout` — không chờ 24 giờ). B11 hỏi ≤ 2 slot mỗi lượt (`graph/nodes/b11_slots.py:150`): bản 20/10 gửi tuần tự từng câu,
-  không ghép 2 câu (cắt theo plan G2 mục 9).
+- `ScriptedUser` (cấu trúc thật, g2-chot.md): `turns[0]` = text tạo ticket; mỗi lần B11 hỏi lại gửi `reply` KẾ TIẾP THEO THỨ TỰ của
+  các phần tử `{on_question_about, reply}` — slot đang hỏi KHÔNG lộ qua API (`TicketView`, `api/tickets.py:134-147`; `conversation`
+  chỉ có chữ câu hỏi — `b11_slots.py:184`), chỉ ở `detail.missing` (khoá cấm) → TODO(G2-Q19). Hết reply → `None` (runner chờ tới hạn
+  kịch bản rồi ghi `timeout`). B11 hỏi ≤ 2 slot mỗi lượt (`b11_slots.py:150`): gửi tuần tự từng câu, không ghép. Bước xác nhận dùng
+  `{on_confirm}` kế tiếp theo thứ tự; hết → "Đã ổn" + `confirm_default = True` (đếm ở manifest).
 - `SimApprover`: phiếu `pending` → người được giao (`approvals.approver_id` → `users.username`) → đăng nhập bằng mật khẩu harness
   (`EVAL_PASSWORD`, không hằng trong `app/`) → quyết. `reject` gửi ghi chú cố định (`rejected` thiếu `note` → 422,
   `api/approvals.py:199-200`). `ignore` không gọi gì: worker bắn E6 khi hết `APPROVAL_SLA_MINUTES_DEV`.
@@ -15,33 +17,31 @@ from app.eval.dataset import ApproverDecision, Scenario
 from app.eval.stack import Api, Sql, StackError, pending_approval, username_of
 
 REJECT_NOTE = "eval: sim_approver reject"
-DEFAULT_DECISION: ApproverDecision = "approve"  # TODO(G2-Q6): ca tới chờ duyệt mà gold không có approver_decision
-DEFAULT_ON_CONFIRM = True  # TODO(G2-Q8): thiếu on_confirm → "Đã ổn"
+DEFAULT_ON_CONFIRM = True  # hết `{on_confirm}` trong kịch bản → "Đã ổn"
 
 type ApproverAction = Literal["approved", "rejected", "ignored"]
 
 
 class ScriptedUser:
     def __init__(self, scenario: Scenario) -> None:
-        self._turns = scenario.turns
-        self._sent = 1  # câu 1 là text tạo ticket
+        self._opening = scenario.opening
+        self._replies = list(scenario.replies)
+        self._confirms = list(scenario.confirms)
+        self.confirm_default = False
 
     @property
     def first_text(self) -> str:
-        return self._turns[0].text
+        return self._opening
 
     def next_answer(self) -> str | None:
-        if self._sent >= len(self._turns):
+        if not self._replies:
             return None
-        self._sent += 1
-        return self._turns[self._sent - 1].text
+        return self._replies.pop(0)
 
-    @property
-    def on_confirm(self) -> bool:
-        """TODO(G2-Q8): `on_confirm` của câu ĐÃ GỬI gần nhất có đặt; không câu nào đặt → mặc định."""
-        for turn in reversed(self._turns[: self._sent]):
-            if turn.on_confirm is not None:
-                return turn.on_confirm
+    def next_confirm(self) -> bool:
+        if self._confirms:
+            return self._confirms.pop(0)
+        self.confirm_default = True
         return DEFAULT_ON_CONFIRM
 
 
@@ -51,8 +51,7 @@ class SimApprover:
     sql: Sql
     password: str
 
-    def act(self, ticket_id: str, decision: ApproverDecision | None) -> ApproverAction:
-        decision = decision or DEFAULT_DECISION
+    def act(self, ticket_id: str, decision: ApproverDecision) -> ApproverAction:
         if decision == "ignore":
             return "ignored"
         found = pending_approval(self.sql, ticket_id)

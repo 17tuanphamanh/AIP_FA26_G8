@@ -5,6 +5,8 @@ Quy ước (chốt #32, 13/10):
 - Danh sách bản ghi rỗng → `ValueError` (như `decision_math`). Mẫu số con = 0 → `None`, không trả 0 giả.
 - §6.1 chỉ tính trên lá có điểm log 4 (`route ≠ None`, P8:342); "cần người" = `expected_route ≠ AUTO` (P8:346).
 - §6.2 tính trên MỌI lá (P8:342), kể cả lá không tới M5 (Q7).
+- Lá CHƯA NHÃN (`expected_route` None — dữ liệu thật tới 25/10, G2-Q22): chỉ số cần gold (§6.1 an toàn, chi phí, ECE/Brier,
+  escalation có trọng số theo nhóm N3) bỏ qua lá đó và đếm `n_unlabeled`; chỉ số không cần gold (§6.2 thô, §6.3) tính như cũ.
 - CP, ECE, Brier, ma trận chi phí IMPORT từ `app.risk.decision_math` — không viết lại (D-37).
 - Tỉ lệ trả `Rate(k, n)` để báo cáo và tính tay; `value = k/n`.
 """
@@ -14,7 +16,7 @@ from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Final, Literal
+from typing import Final, Literal, Protocol, cast
 
 import numpy as np
 
@@ -71,6 +73,7 @@ class SafetyMetrics:
     f1_by_class: Mapping[Route, float | None]
     macro_f1: float | None
     cost: Mean
+    n_unlabeled: int = 0  # lá chưa nhãn bị bỏ qua (G2-Q22)
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,7 @@ class CalibrationScores:
     p_method: str | None
     ece: float
     brier: float
+    n_unlabeled: int = 0
 
 
 @dataclass(frozen=True)
@@ -98,7 +102,30 @@ def _require(records: Records) -> None:
         raise ValueError("records: rỗng")
 
 
-def _pairs(records: Records) -> list[tuple[Route, Route]]:
+class _Gold(Protocol):
+    """Lá ĐÃ NHÃN (`expected_route` khác None) — chỉ tạo qua `_gold`."""
+
+    @property
+    def expected_route(self) -> Route: ...
+
+    @property
+    def route(self) -> Route | None: ...
+
+
+def _labelled(records: Records) -> list[PredictionRecord]:
+    return [r for r in records if r.expected_route is not None]
+
+
+def _gold(records: Records) -> list[_Gold]:
+    return cast(list[_Gold], _labelled(records))
+
+
+def n_unlabeled(records: Records) -> int:
+    """Số lá chưa nhãn (`expected_route` None) — bị bỏ qua ở chỉ số cần gold."""
+    return sum(1 for r in records if r.expected_route is None)
+
+
+def _pairs(records: Sequence[_Gold]) -> list[tuple[Route, Route]]:
     """(gold, pred) của lá có điểm log 4 (P8:342)."""
     return [(r.expected_route, r.route) for r in records if r.route is not None]
 
@@ -130,7 +157,7 @@ def mean_route_cost(records: Records, cost: CostMatrix = DEFAULT_COST) -> Mean:
     """P8:353 — trung bình `cost[gold][pred]` trên lá có điểm log 4 (đơn vị: một lượt duyệt). Khác
     `decision_math.expected_cost` (nhận p + ngưỡng): ở đây pred đã có sẵn."""
     _require(records)
-    pairs = _pairs(records)
+    pairs = _pairs(_gold(records))
     return Mean(float(sum(cost.costs[gold][pred] for gold, pred in pairs)), len(pairs))
 
 
@@ -138,7 +165,7 @@ def safety(records: Records, cost: CostMatrix = DEFAULT_COST) -> SafetyMetrics:
     """P8 §6.1: FNR (P8:350) + cận trên Clopper–Pearson 95%, FPR (P8:351), accuracy + ma trận + macro-F1 (P8:352),
     chi phí kỳ vọng (P8:353)."""
     _require(records)
-    pairs = _pairs(records)
+    pairs = _pairs(_gold(records))
     need = [pred for gold, pred in pairs if gold != "AUTO"]
     fnr = Rate(sum(1 for pred in need if pred == "AUTO"), len(need))
     upper = clopper_pearson_upper(fnr.k, fnr.n) if fnr.n else None
@@ -157,6 +184,7 @@ def safety(records: Records, cost: CostMatrix = DEFAULT_COST) -> SafetyMetrics:
         f1_by_class=MappingProxyType(per_class),
         macro_f1=sum(present) / len(present) if present else None,
         cost=mean_route_cost(records, cost),
+        n_unlabeled=n_unlabeled(records),
     )
 
 
@@ -171,6 +199,8 @@ def calibration_scores(records: Records, which: Literal["raw", "calibrated"]) ->
     _require(records)
     if which not in ("raw", "calibrated"):
         raise ValueError("which: phải là 'raw' hoặc 'calibrated'")
+    unlabeled = n_unlabeled(records)
+    records = _labelled(records)
     llm = [r for r in records if r.decided_by == "llm"]
     rows = [(r, p) for r in llm if (p := _prob(r, which)) is not None]
     if not rows:
@@ -180,7 +210,7 @@ def calibration_scores(records: Records, which: Literal["raw", "calibrated"]) ->
         raise ValueError("p_method: trộn nhiều cách lấy p trong một phép tính")
     probs = np.array([p for _, p in rows], dtype=float)
     labels = np.array([r.expected_route != "AUTO" for r, _ in rows], dtype=bool)
-    return CalibrationScores(which, len(rows), methods.pop(), ece(probs, labels), brier(probs, labels))
+    return CalibrationScores(which, len(rows), methods.pop(), ece(probs, labels), brier(probs, labels), unlabeled)
 
 
 def decided_by_distribution(records: Records) -> DecidedByDistribution:
@@ -227,12 +257,14 @@ SENSITIVITY_MIXES: Mapping[str, Mapping[Group, float]] = MappingProxyType({  # P
 })  # fmt: skip
 
 
-def n3_group(expected_route: Route) -> Group:
+def n3_group(expected_route: Route | None) -> Group:
     """Nhóm N3 theo nhãn GOLD (#32 mục 5): AUTO → routine, HITL → approval, ESCALATE_L2 → sensitive. Không phụ thuộc phương án
     đang đo (Full-auto không qua M5 vẫn chia nhóm như mọi phương án khác).
 
     Khác M9 (`monitor/queries/business.py`): M9 chia theo quyết định M5 (`policy_decision`/`risk_level` của điểm log 4) vì dữ liệu
     vận hành không có gold. M8 và M9 không dùng chung code [Chốt 17.9.4] — không import `app.monitor`."""
+    if expected_route is None:
+        raise ValueError("n3_group: lá chưa nhãn (expected_route None) — lọc trước khi chia nhóm")
     return _GROUP_OF[expected_route]
 
 
@@ -245,6 +277,7 @@ class WeightedRate:
     by_group: Mapping[Group, Rate]
     missing_groups: tuple[Group, ...]
     value: float | None
+    n_unlabeled: int = 0  # lá chưa nhãn: không thuộc nhóm N3 nào → bỏ qua (G2-Q22)
 
 
 @dataclass(frozen=True)
@@ -276,12 +309,14 @@ def _automated(r: PredictionRecord) -> bool:
 def escalation_weighted(records: Records, mix: MixLike) -> WeightedRate:
     _require(records)
     frozen = check_mix(mix)
+    unlabeled = n_unlabeled(records)
+    records = _labelled(records)
     by_group = {g: [r for r in records if n3_group(r.expected_route) == g] for g in GROUPS}
     rates = {g: Rate(sum(1 for r in rows if _escalated(r)), len(rows)) for g, rows in by_group.items()}
     missing = tuple(g for g in GROUPS if rates[g].n == 0)
     present = [g for g in GROUPS if g not in missing]
     value = None if missing else sum(frozen[g] * rates[g].k / rates[g].n for g in present)
-    return WeightedRate(frozen, MappingProxyType(rates), missing, value)
+    return WeightedRate(frozen, MappingProxyType(rates), missing, value, unlabeled)
 
 
 def efficiency(

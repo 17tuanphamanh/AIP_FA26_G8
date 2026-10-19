@@ -47,7 +47,13 @@ from app.eval.config import (
     check_run_id,
     make_run_id,
 )
-from app.eval.dataset import Dataset, DatasetError, Scenario, load_scenarios
+from app.eval.dataset import (
+    Dataset,
+    DatasetError,
+    Scenario,
+    load_scenarios,
+    load_seed_users,
+)
 from app.eval.predictions import PredictionRecord, Split, load_predictions
 from app.eval.stack import (
     DEFAULT_URL,
@@ -66,6 +72,7 @@ from app.eval.stack import (
 )
 
 POLL_S = 0.5
+DEFAULT_SEED = Path(__file__).resolve().parents[3] / "mock_services" / "seed.json"  # seed của mock: user_id → username
 OUT_FILES = ("predictions.jsonl", "outcomes.jsonl", "manifest.json")
 LATER = ("b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits")  # chừa cho 21/10
 INFO_KEYS = ("app_env", "strategy", "eval_mode", "llm_cache_mode", "enable_proactive_diagnosis", "b2_classifier_mode",
@@ -179,6 +186,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     p.add_argument("--url", default=DEFAULT_URL)
     p.add_argument("--allow-extra-fields", action="store_true")
     p.add_argument("--check-only", action="store_true")
+    p.add_argument("--seed", type=Path, default=DEFAULT_SEED)
     return p.parse_args(list(argv))
 
 
@@ -194,7 +202,7 @@ class Case:
     elapsed_s: float
     started_at: str
     record: PredictionRecord | None
-    approver_default: bool
+    confirm_default: bool
 
 
 @dataclass(frozen=True)
@@ -206,6 +214,7 @@ class _Ctx:
     timeout_s: int
     meta: RunMeta
     now: Callable[[], datetime]
+    usernames: Mapping[str, str]  # scenario_id → username (tra seed theo requester.user_id)
 
 
 def run_case(s: Scenario, c: _Ctx) -> Case:
@@ -216,9 +225,8 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
     ticket_id: str | None = None
     outcome: Outcome = "done"
     error_type: str | None = None
-    defaulted = False
     try:
-        h = c.api.login(s.requester, c.password)  # TODO(G2-Q7): requester = username
+        h = c.api.login(c.usernames[s.id], c.password)
         ticket_id = tid = c.api.create(h, user.first_text)
 
         def closed() -> bool | None:
@@ -239,9 +247,8 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
                     break
                 c.api.message(h, tid, answer)
             elif waiting == "confirm":
-                c.api.confirm(h, tid, user.on_confirm)
+                c.api.confirm(h, tid, user.next_confirm())
             elif waiting == "approval":
-                defaulted = defaulted or s.gold.approver_decision is None
                 if approver.act(tid, s.gold.approver_decision) == "ignored":  # worker bắn E6 khi hết SLA (TODO(G2-Q6))
                     wait_for(closed, deadline, POLL_S)
                     break
@@ -264,7 +271,7 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
             outcome, error_type = "error", error_type or type(e).__name__
     return Case(scenario_id=s.id, ticket_id=ticket_id, outcome=outcome, error_type=error_type,
                 elapsed_s=round(deadline.elapsed(), 1), started_at=started, record=record,
-                approver_default=defaulted)  # fmt: skip
+                confirm_default=user.confirm_default)  # fmt: skip
 
 
 # ---- CLI --------------------------------------------------------------------------------------------------------------
@@ -272,7 +279,12 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
 
 def _load(args: argparse.Namespace, out: Callable[[str], None]) -> Dataset | None:
     try:
-        return load_scenarios(args.scenarios, allow_extra=args.allow_extra_fields)
+        users = load_seed_users(args.seed)
+    except ValueError as e:  # chữ cố định của load_seed_users (có "seed", không giá trị)
+        out(f"DỪNG: {e}")
+        return None
+    try:
+        return load_scenarios(args.scenarios, users=users, allow_extra=args.allow_extra_fields)
     except DatasetError as e:
         out(f"scenarios: loaded={e.loaded} errors={len(e.issues)}")
         for line in e.render(show_name=args.per_case):
@@ -395,7 +407,8 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
     except (StackError, Unsafe):
         raise Stop("làm nóng rerank lỗi (image backend chưa có app.eval.warmup? make up lại)") from None
     ctx = _Ctx(api=Api(deps.http), sql=deps.backend.sql, clock=deps.clock, password=password, timeout_s=args.timeout_s,
-               meta=RunMeta(run_id=run_id, strategy=config.strategy, split=config.split), now=deps.now)  # fmt: skip
+               meta=RunMeta(run_id=run_id, strategy=config.strategy, split=config.split), now=deps.now,
+               usernames=ds.usernames)  # fmt: skip
     cases: list[Case] = []
     for s in ds.scenarios:
         try:
@@ -411,7 +424,8 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         "loaded": len(ds.scenarios), **{o: tally[o] for o in OUTCOMES}, "written": len(records),
         "route_none": sum(r.route is None for r in records),
         "calibrated_prob_nonnull": sum(r.calibrated_prob is not None for r in records),
-        "approver_default": sum(c.approver_default for c in cases),
+        "unlabeled": sum(r.expected_route is None for r in records),
+        "confirm_default": sum(c.confirm_default for c in cases),
         "p_method_mismatch": sum(r.p_method is not None and r.p_method != args.prob_method for r in records),
     }  # fmt: skip
     if counts["p_method_mismatch"]:
@@ -436,7 +450,7 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
     out(f"warmup: rounds={warm.get('rounds')} first_ms={warm.get('first_ms')} last_ms={warm.get('last_ms')}")
     out(f"outcomes: done={counts['done']} timeout={counts['timeout']} multi_leaf={counts['multi_leaf']} error={counts['error']}")
     out(f"records: written={counts['written']} route_none={counts['route_none']} "
-        f"calibrated_prob_nonnull={counts['calibrated_prob_nonnull']}")  # fmt: skip
+        f"calibrated_prob_nonnull={counts['calibrated_prob_nonnull']} unlabeled={counts['unlabeled']}")  # fmt: skip
     out(f"elapsed_s={elapsed:.1f}")
     out("files: " + " ".join(OUT_FILES))
     if args.allow_extra_fields:

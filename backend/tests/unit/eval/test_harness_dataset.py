@@ -1,10 +1,12 @@
-"""G2 mốc 1 — nạp kịch bản (`app.eval.dataset`) + cấu hình lượt chạy / `run_id` (`app.eval.config`) — P8 §4.1, §5.1.
+"""G2 — nạp kịch bản (`app.eval.dataset`) theo CẤU TRÚC THẬT (`~/m9-notes/g2-chot.md:11-17`, chỉ tên trường + kiểu) + cấu hình lượt
+chạy / `run_id` (`app.eval.config`) — P8 §5.1.
 
-Chỉ kịch bản TỔNG HỢP viết vào `tmp_path`. Thông điệp lỗi mặc định nêu `file #i/N` + vị trí trường — KHÔNG tên file, KHÔNG giá
-trị: mọi giá trị và tên file tổng hợp chứa chuỗi canh `SENTINEL_` để test bắt được khi bị vọng lại. Tên file chỉ hiện khi
-`render(show_name=True)` (cờ `--per-case`, Dương 19/10).
+Chỉ kịch bản TỔNG HỢP viết vào `tmp_path` (`fake_stack.real_scenario`). Thông điệp lỗi mặc định nêu `file #i/N` + vị trí trường — KHÔNG
+tên file, KHÔNG giá trị: mọi giá trị và tên file tổng hợp chứa chuỗi canh `SENTINEL_`. Tên file chỉ hiện khi `render(show_name=True)`
+(cờ `--per-case`).
 """
 
+import json
 import typing
 from pathlib import Path
 from typing import Any
@@ -20,23 +22,34 @@ from app.eval.config import (
     check_run_id,
     make_run_id,
 )
-from app.eval.dataset import DatasetError, Scenario, load_scenarios
+from app.eval.dataset import (
+    SLOTS,
+    Confirm,
+    DatasetError,
+    Reply,
+    Scenario,
+    load_scenarios,
+    load_seed_users,
+)
 from app.eval.predictions import Strategy
 from pydantic import ValidationError
+from tests.unit.eval.fake_stack import (
+    SEED_USERS,
+    confirm,
+    real_scenario,
+    reply,
+    write_seed,
+)
 
 SENTINEL = "SENTINEL_"
+REPO = Path(__file__).resolve().parents[4]
 
 
 def scenario(**over: Any) -> dict[str, Any]:
-    """Một kịch bản đơn ý tổng hợp hợp lệ."""
-    base: dict[str, Any] = {
-        "id": "SENTINEL_ID_1", "family": "SENTINEL_FAM_1", "requester": "SENTINEL_USER",
-        "turns": ["SENTINEL_TXT_mo dau", {"text": "SENTINEL_TXT_tra loi", "on_confirm": False}],
-        "gold": {"intents": ["vpn"], "expected_route": "HITL", "approver_decision": "approve",
-                 "gold_doc_ids": ["SENTINEL_DOC"]},
-    }  # fmt: skip
-    base.update(over)
-    return base
+    """Kịch bản tổng hợp đủ khoá thật: câu đầu + 1 câu trả lời + 1 bước xác nhận; chưa nhãn (expected_route null)."""
+    data = real_scenario(turns=["SENTINEL_TXT_mo dau", reply("SENTINEL_TXT_tra loi"), confirm(False)])
+    data.update(over)
+    return data
 
 
 def write(d: Path, name: str, data: Any) -> Path:
@@ -46,6 +59,10 @@ def write(d: Path, name: str, data: Any) -> Path:
     return p
 
 
+def load(directory: Path, **kw: Any) -> Any:
+    return load_scenarios(directory, users=SEED_USERS, **kw)
+
+
 def assert_no_sentinel(exc: BaseException) -> None:
     assert SENTINEL not in str(exc)
 
@@ -53,64 +70,220 @@ def assert_no_sentinel(exc: BaseException) -> None:
 def fails(directory: Path, **kw: Any) -> DatasetError:
     """Nạp phải ném `DatasetError`; thông điệp mặc định không có chuỗi canh (giá trị lẫn tên file)."""
     with pytest.raises(DatasetError) as e:
-        load_scenarios(directory, **kw)
+        load(directory, **kw)
     assert_no_sentinel(e.value)
     assert all(SENTINEL not in line for line in e.value.render())
     return e.value
 
 
-# ---- dataset ---------------------------------------------------------------------------------------------------------
+def at(data: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
+    node = data
+    for key in path:
+        node = node[key]
+    return node
+
+
+# ---- cấu trúc thật ---------------------------------------------------------------------------------------------------
 
 
 def test_dataset_load_ok(tmp_path: Path) -> None:
     write(tmp_path, "b.yaml", scenario(id="SENTINEL_ID_2"))
     write(tmp_path, "a.yaml", scenario())
-    ds = load_scenarios(tmp_path)
+    ds = load(tmp_path)
     assert ds.ignored_fields == ()
     assert [s.id for s in ds.scenarios] == ["SENTINEL_ID_1", "SENTINEL_ID_2"]  # sắp theo tên file
     s = ds.scenarios[0]
-    assert [t.text for t in s.turns] == ["SENTINEL_TXT_mo dau", "SENTINEL_TXT_tra loi"]
-    assert [t.on_confirm for t in s.turns] == [None, False]
-    assert s.gold.expected_route == "HITL"
-    assert s.gold.gold_doc_ids == ("SENTINEL_DOC",)
-    assert s.gold.hidden_factor is False
+    assert s.opening == "SENTINEL_TXT_mo dau"
+    assert isinstance(s.turns[1], Reply) and (s.turns[1].on_question_about, s.turns[1].reply) == ("device_id", "SENTINEL_TXT_tra loi")
+    assert isinstance(s.turns[2], Confirm) and s.turns[2].on_confirm is False
+    assert (s.replies, s.confirms) == (("SENTINEL_TXT_tra loi",), (False,))
+    assert (s.requester.user_id, s.requester.role, s.requester.dept, s.requester.tenure_days) == (
+        "u_sentinel", "employee", "SENTINEL_DEPT", 400)  # fmt: skip
+    assert ds.usernames == {"SENTINEL_ID_1": "SENTINEL_USER", "SENTINEL_ID_2": "SENTINEL_USER"}
+    assert (s.source, s.at, s.faults) == ("SENTINEL_SRC", "2026-10-20T09:00:00+07:00", ())
+    assert (s.labels.annotator_1, s.labels.annotator_2) == (None, None)
+    g = s.gold
+    assert (g.need_type, g.expected_route, g.expected_exit, g.approver_decision) == ("SENTINEL_NEED", None, None, "approve")
+    assert (g.action.type, g.action.target, g.action.requested_for) == ("SENTINEL_ACT", "SENTINEL_TGT", "SENTINEL_FOR")
+    assert g.action.params == {"p": "SENTINEL_P", "n": 1} and g.facts == {"f": "SENTINEL_FACT", "b": True}
+    assert g.gold_doc_ids == ("SENTINEL_DOC",)
     assert s.gold_intent == "vpn"
+    assert s.labelled is False
+
+
+def test_real_shape_variants(tmp_path: Path) -> None:
+    """Đủ biến thể của cấu trúc thật: đã nhãn / chưa nhãn, chỉ câu đầu, nhiều reply + confirm, expected_exit có giá trị."""
+    write(tmp_path, "a.yaml", real_scenario("SENTINEL_ID_A", expected_route="HITL", expected_exit="E5"))
+    write(tmp_path, "b.yaml", real_scenario("SENTINEL_ID_B", turns=["SENTINEL_TXT_b", reply("x1", "account_type"),
+                                                                     confirm(True), reply("x2", "duration")]))  # fmt: skip
+    write(tmp_path, "c.yaml", real_scenario("SENTINEL_ID_C", user_id="u_an", decision="ignore", intents=("vpn", "account")))
+    a, b, c = load(tmp_path).scenarios
+    assert (a.labelled, a.gold.expected_route, a.gold.expected_exit) == (True, "HITL", "E5")
+    assert (b.replies, b.confirms) == (("x1", "x2"), (True,))
+    assert (c.gold.approver_decision, c.gold_intent) == ("ignore", None)
+
+
+def test_slots_exact() -> None:
+    assert set(SLOTS) == {"account_type", "permission_level", "resource_path", "duration", "device_id", "software_name",
+                          "action", "target_corrected"}  # fmt: skip
+
+
+@pytest.mark.parametrize("field", ["id", "family", "source", "at", "faults", "requester", "turns", "gold", "labels"])
+def test_dataset_missing_field(tmp_path: Path, field: str) -> None:
+    data = scenario()
+    del data[field]
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    assert fails(tmp_path).render() == [f"file #1/1: không hợp lệ ({field})"]
+
+
+@pytest.mark.parametrize(("path", "field"), [
+    *((("requester",), f) for f in ("user_id", "role", "dept", "tenure_days")),
+    *((("gold",), f) for f in ("intents", "need_type", "expected_route", "expected_exit", "approver_decision", "gold_doc_ids",
+                               "action", "facts")),
+    *((("gold", "action"), f) for f in ("type", "target", "requested_for", "params")),
+    *((("labels",), f) for f in ("annotator_1", "annotator_2")),
+])  # fmt: skip
+def test_dataset_missing_nested_field(tmp_path: Path, path: tuple[str, ...], field: str) -> None:
+    data = scenario()
+    del at(data, path)[field]
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    assert fails(tmp_path).render() == [f"file #1/1: không hợp lệ ({'.'.join((*path, field))})"]
+
+
+@pytest.mark.parametrize("path", [(), ("requester",), ("gold",), ("gold", "action"), ("labels",)])
+def test_extra_forbidden(tmp_path: Path, path: tuple[str, ...]) -> None:
+    data = scenario()
+    at(data, path)["bogus"] = "SENTINEL_TXT_x"
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    assert fails(tmp_path).render() == [f"file #1/1: không hợp lệ ({'.'.join((*path, 'bogus'))})"]
+
+
+def test_gold_hidden_factor_not_in_schema(tmp_path: Path) -> None:
+    """Chỉ đúng các khoá của cấu trúc thật — `hidden_factor` để PR hợp đồng v1.1 (Dương 20/10)."""
+    data = scenario()
+    data["gold"]["hidden_factor"] = False
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (gold.hidden_factor)"]
+
+
+def test_params_facts_free_dict(tmp_path: Path) -> None:
+    data = scenario()
+    data["gold"]["action"]["params"] = {"SENTINEL_K": {"nested": [1, 2]}, "x": None}
+    data["gold"]["facts"] = {}
+    write(tmp_path, "a.yaml", data)
+    [s] = load(tmp_path).scenarios
+    assert s.gold.action.params == {"SENTINEL_K": {"nested": [1, 2]}, "x": None} and s.gold.facts == {}
+
+
+@pytest.mark.parametrize(("path", "field", "value"), [
+    (("gold", "action"), "params", ["SENTINEL_TXT_list"]),
+    (("gold",), "facts", "SENTINEL_TXT_str"),
+    (("requester",), "tenure_days", "SENTINEL_TXT_nan"),
+    ((), "faults", "SENTINEL_TXT_str"),
+])  # fmt: skip
+def test_wrong_types(tmp_path: Path, path: tuple[str, ...], field: str, value: Any) -> None:
+    data = scenario()
+    at(data, path)[field] = value
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    [line] = fails(tmp_path).render()
+    assert line.startswith(f"file #1/1: không hợp lệ ({'.'.join((*path, field))}")
+
+
+def test_expected_route_null_unlabelled(tmp_path: Path) -> None:
+    write(tmp_path, "a.yaml", scenario())
+    write(tmp_path, "b.yaml", real_scenario("SENTINEL_ID_2", expected_route="ESCALATE_L2"))
+    a, b = load(tmp_path).scenarios
+    assert (a.gold.expected_route, a.labelled) == (None, False)
+    assert (b.gold.expected_route, b.labelled) == ("ESCALATE_L2", True)
+
+
+# ---- turns -----------------------------------------------------------------------------------------------------------
+
+
+def test_turn0_must_be_str(tmp_path: Path) -> None:
+    write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(turns=[reply("SENTINEL_TXT_r")]))
+    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (turns)"]
+
+
+def test_str_turn_after_first_rejected(tmp_path: Path) -> None:
+    write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(turns=["SENTINEL_TXT_a", "SENTINEL_TXT_b"]))
+    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (turns)"]
+
+
+def test_reply_bad_slot(tmp_path: Path) -> None:
+    write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(turns=["SENTINEL_TXT_a", reply("SENTINEL_TXT_r", "SENTINEL_SLOT")]))
+    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (turns.1.on_question_about)"]
+
+
+@pytest.mark.parametrize(("turn", "loc"), [
+    ({"on_question_about": "device_id", "reply": "SENTINEL_TXT_r", "bogus": 1}, "turns.1.bogus"),
+    ({"on_confirm": True, "bogus": 1}, "turns.1.bogus"),
+    ({"on_question_about": "device_id"}, "turns.1.reply"),
+    ({"reply": "SENTINEL_TXT_r"}, "turns.1.on_question_about"),
+    ({"on_confirm": "SENTINEL_TXT_yes"}, "turns.1.on_confirm"),
+    ({"on_question_about": "device_id", "reply": "x" * 4001}, "turns.1.reply"),
+])  # fmt: skip
+def test_turn_object_errors(tmp_path: Path, turn: dict[str, Any], loc: str) -> None:
+    write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(turns=["SENTINEL_TXT_a", turn]))
+    assert fails(tmp_path).render() == [f"file #1/1: không hợp lệ ({loc})"]
+
+
+@pytest.mark.parametrize("turns", [[], ["x" * 4001]])
+def test_turns_empty_or_too_long(tmp_path: Path, turns: list[Any]) -> None:
+    write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(turns=turns))
+    [line] = fails(tmp_path).render()
+    assert line.startswith("file #1/1: không hợp lệ (turns") and "x" * 50 not in line
+
+
+# ---- requester ↔ seed ------------------------------------------------------------------------------------------------
+
+
+def test_requester_unknown_user_id(tmp_path: Path) -> None:
+    data = scenario()
+    data["requester"]["user_id"] = "SENTINEL_UID_khong_co"
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    write(tmp_path, "SENTINEL_FILE_b.yaml", scenario(id="SENTINEL_ID_2"))
+    err = fails(tmp_path)
+    assert err.render() == ["file #1/2: requester.user_id không có trong seed"]
+    assert err.loaded == 1
+
+
+def test_load_seed_users(tmp_path: Path) -> None:
+    assert load_seed_users(write_seed(tmp_path / "seed.json")) == dict(SEED_USERS)
+
+
+@pytest.mark.parametrize("content", [None, "{not json", json.dumps({"users": [{"user_id": "u1"}]}), json.dumps({"x": []}),
+                                     json.dumps({"users": [{"user_id": "u1", "username": "a"}, {"user_id": "u1", "username": "b"}]})])  # fmt: skip
+def test_load_seed_users_bad(tmp_path: Path, content: str | None) -> None:
+    p = tmp_path / "seed.json"
+    if content is not None:
+        p.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match="seed"):
+        load_seed_users(p)
+
+
+def test_real_seed_has_smoke_users() -> None:
+    """`mock_services/seed.json` (seed của mock — được đọc): có người gửi / người duyệt mà smoke dùng."""
+    names = set(load_seed_users(REPO / "mock_services" / "seed.json").values())
+    assert {"an.nv", "binh.tt", "son.nt", "ha.lt"} <= names
+
+
+# ---- giữ từ bản trước (nạp, lỗi, sha) --------------------------------------------------------------------------------
 
 
 def test_dataset_list_file(tmp_path: Path) -> None:
     write(tmp_path, "many.yaml", [scenario(), scenario(id="SENTINEL_ID_2")])
-    assert len(load_scenarios(tmp_path).scenarios) == 2
+    assert len(load(tmp_path).scenarios) == 2
 
 
 def test_dataset_yml_suffix_and_other_files_ignored(tmp_path: Path) -> None:
     write(tmp_path, "a.yml", scenario())
     (tmp_path / "README.md").write_text("SENTINEL_TXT", encoding="utf-8")
-    assert len(load_scenarios(tmp_path).scenarios) == 1
-
-
-@pytest.mark.parametrize("field", ["id", "family", "requester", "turns", "gold"])
-def test_dataset_missing_field(tmp_path: Path, field: str) -> None:
-    data = scenario()
-    del data[field]
-    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
-    err = fails(tmp_path)
-    assert err.render() == [f"file #1/1: không hợp lệ ({field})"]
-
-
-def test_dataset_extra_field(tmp_path: Path) -> None:
-    write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(bogus="SENTINEL_TXT_x"))
-    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (bogus)"]
-
-
-def test_dataset_extra_gold_field(tmp_path: Path) -> None:
-    data = scenario()
-    data["gold"]["bogus"] = "SENTINEL_TXT_x"
-    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
-    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (gold.bogus)"]
+    assert len(load(tmp_path).scenarios) == 1
 
 
 def test_load_error_hides_file_name(tmp_path: Path) -> None:
-    """Dương 19/10: mặc định `file #i/N` — tên file (có thể lộ thẻ/họ) chỉ hiện với `show_name=True` (`--per-case`)."""
+    """Mặc định `file #i/N` — tên file (có thể lộ thẻ/họ) chỉ hiện với `show_name=True` (`--per-case`)."""
     write(tmp_path, "SENTINEL_FILE_a.yaml", scenario())
     write(tmp_path, "SENTINEL_FILE_b.yaml", scenario(id="SENTINEL_ID_2", bogus=1))
     err = fails(tmp_path)
@@ -133,37 +306,31 @@ def test_allow_extra_fields_records_paths(tmp_path: Path) -> None:
     data = scenario(bogus="SENTINEL_TXT_x")
     data["gold"]["leaves"] = ["SENTINEL_TXT_y"]
     data["turns"][1]["extra_key"] = "SENTINEL_TXT_z"
+    data["requester"]["extra_key"] = "SENTINEL_TXT_w"
     write(tmp_path, "SENTINEL_FILE_a.yaml", data)
     write(tmp_path, "SENTINEL_FILE_b.yaml", scenario(id="SENTINEL_ID_2", bogus=2))
-    ds = load_scenarios(tmp_path, allow_extra=True)
+    ds = load(tmp_path, allow_extra=True)
     assert len(ds.scenarios) == 2
-    assert sorted(ds.ignored_fields) == ["bogus", "bogus", "gold.leaves", "turns.*.extra_key"]
+    assert sorted(ds.ignored_fields) == ["bogus", "bogus", "gold.leaves", "requester.extra_key", "turns.*.extra_key"]
     assert all(SENTINEL not in f for f in ds.ignored_fields)
+    assert ds.scenarios[0].replies == ("SENTINEL_TXT_tra loi",)
 
 
 def test_allow_extra_fields_other_errors_still_fail(tmp_path: Path) -> None:
     write(tmp_path, "SENTINEL_FILE_a.yaml", scenario(bogus=1, family=None))
-    err = fails(tmp_path, allow_extra=True)
-    assert err.render() == ["file #1/1: không hợp lệ (family)"]
+    assert fails(tmp_path, allow_extra=True).render() == ["file #1/1: không hợp lệ (family)"]
 
 
-@pytest.mark.parametrize(("path", "value"), [
-    (("gold", "expected_route"), "SENTINEL_ROUTE"),
-    (("gold", "approver_decision"), "SENTINEL_DEC"),
-    (("gold", "intents"), []),
-    (("turns",), []),
-    (("turns",), ["x" * 4001]),
+@pytest.mark.parametrize(("path", "field", "value"), [
+    (("gold",), "expected_route", "SENTINEL_ROUTE"),
+    (("gold",), "approver_decision", "SENTINEL_DEC"),
+    (("gold",), "intents", []),
 ])  # fmt: skip
-def test_dataset_bad_value_not_echoed(tmp_path: Path, path: tuple[str, ...], value: Any) -> None:
+def test_dataset_bad_value_not_echoed(tmp_path: Path, path: tuple[str, ...], field: str, value: Any) -> None:
     data = scenario()
-    target = data
-    for key in path[:-1]:
-        target = target[key]
-    target[path[-1]] = value
+    at(data, path)[field] = value
     write(tmp_path, "SENTINEL_FILE_a.yaml", data)
-    err = fails(tmp_path)
-    assert err.render()[0].startswith("file #1/1: không hợp lệ (")
-    assert "x" * 50 not in str(err)
+    assert fails(tmp_path).render() == [f"file #1/1: không hợp lệ ({'.'.join((*path, field))})"]
 
 
 def test_dataset_list_position_in_error(tmp_path: Path) -> None:
@@ -193,12 +360,12 @@ def test_dataset_not_mapping(tmp_path: Path, content: str) -> None:
 
 def test_dataset_empty_dir(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="không có file kịch bản"):
-        load_scenarios(tmp_path)
+        load(tmp_path)
 
 
 def test_dataset_not_a_dir(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="không phải thư mục"):
-        load_scenarios(tmp_path / "khong-co")
+        load(tmp_path / "khong-co")
 
 
 def test_dataset_sha_stable(tmp_path: Path) -> None:
@@ -207,24 +374,18 @@ def test_dataset_sha_stable(tmp_path: Path) -> None:
     write(a, "y.yaml", scenario(id="SENTINEL_ID_2"))
     write(b, "y.yaml", scenario(id="SENTINEL_ID_2"))  # tạo theo thứ tự ngược
     write(b, "x.yaml", scenario())
-    sha = load_scenarios(a).sha256
-    assert len(sha) == 64 and sha == load_scenarios(b).sha256
+    sha = load(a).sha256
+    assert len(sha) == 64 and sha == load(b).sha256
     p = b / "x.yaml"
     p.write_bytes(p.read_bytes() + b"\n")  # 1 byte khác, nội dung YAML vẫn như cũ
-    assert load_scenarios(b).sha256 != sha
+    assert load(b).sha256 != sha
 
 
 def test_dataset_sha_depends_on_name(tmp_path: Path) -> None:
     a, b = tmp_path / "a", tmp_path / "b"
     write(a, "x.yaml", scenario())
     write(b, "z.yaml", scenario())
-    assert load_scenarios(a).sha256 != load_scenarios(b).sha256
-
-
-def test_gold_intent_multi_is_none() -> None:
-    """TODO(G2-Q12): nhiều ý → `gold_intent` None (lá nhiều ý không vào predictions v1)."""
-    s = Scenario.model_validate(scenario(gold={"intents": ["vpn", "account"], "expected_route": "AUTO"}))
-    assert s.gold_intent is None
+    assert load(a).sha256 != load(b).sha256
 
 
 def test_scenario_frozen() -> None:

@@ -27,15 +27,23 @@ from app.eval.stack import (
     wait_turn_closed,
 )
 from tests.fakes.demo import DEMO_PASSWORD
-from tests.unit.eval.fake_stack import FakeApi, FakeClock, FakeDb, accepted, login_ok
+from tests.unit.eval.fake_stack import (
+    FakeApi,
+    FakeClock,
+    FakeDb,
+    accepted,
+    confirm,
+    login_ok,
+    real_scenario,
+    reply,
+)
 
 EVAL_DIR = Path(__file__).resolve().parents[3] / "app" / "eval"
 PW = "SENTINEL_PW_from_env"
 
 
 def scn(turns: list[Any]) -> Scenario:
-    return Scenario.model_validate({"id": "S1", "family": "F1", "requester": "an.nv", "turns": turns,
-                                    "gold": {"intents": ["vpn"], "expected_route": "HITL"}})  # fmt: skip
+    return Scenario.model_validate(real_scenario("S1", turns=turns))
 
 
 def clock(fake: FakeClock) -> Clock:
@@ -214,18 +222,31 @@ def test_api_create_checks_id() -> None:
 
 
 def test_scripted_user_sequence() -> None:
-    u = ScriptedUser(scn(["c1", "c2", "c3"]))
+    u = ScriptedUser(scn(["c1", reply("c2"), reply("c3")]))
     assert u.first_text == "c1"
     assert [u.next_answer(), u.next_answer(), u.next_answer(), u.next_answer()] == ["c2", "c3", None, None]
 
 
-def test_scripted_user_on_confirm() -> None:
-    u = ScriptedUser(scn(["c1", {"text": "c2", "on_confirm": False}, {"text": "c3", "on_confirm": True}]))
-    assert u.on_confirm is True  # mặc định (câu 2, 3 chưa gửi)
-    u.next_answer()
-    assert u.on_confirm is False
-    u.next_answer()
-    assert u.on_confirm is True
+def test_scripted_user_replies_in_order() -> None:
+    """Slot đang hỏi KHÔNG lộ qua API (TicketView không có trường slot; slot chỉ ở `detail.missing` — khoá cấm) → khớp THEO THỨ TỰ,
+    bỏ qua `on_question_about` (TODO(G2-Q19)); `on_confirm` xen giữa không làm lệch thứ tự reply."""
+    u = ScriptedUser(scn(["c1", reply("r-device", "device_id"), confirm(False), reply("r-acc", "account_type"),
+                          reply("r-dur", "duration")]))  # fmt: skip
+    assert [u.next_answer(), u.next_answer(), u.next_answer(), u.next_answer()] == ["r-device", "r-acc", "r-dur", None]
+
+
+def test_scripted_user_confirms_in_order() -> None:
+    u = ScriptedUser(scn(["c1", confirm(False), reply("r1"), confirm(True)]))
+    assert (u.next_confirm(), u.next_confirm()) == (False, True)
+    assert u.confirm_default is False
+    assert u.next_confirm() is True  # hết bước xác nhận trong kịch bản → mặc định "Đã ổn"
+    assert u.confirm_default is True
+
+
+def test_confirm_default_when_exhausted() -> None:
+    u = ScriptedUser(scn(["c1", reply("r1")]))
+    assert u.confirm_default is False
+    assert u.next_confirm() is True and u.confirm_default is True
 
 
 # ---- SimApprover ------------------------------------------------------------------------------------------------------
@@ -245,7 +266,6 @@ def approver_stack() -> tuple[FakeDb, FakeApi]:
 
 @pytest.mark.parametrize(("decision", "action", "body"), [
     ("approve", "approved", {"decision": "approved"}),
-    (None, "approved", {"decision": "approved"}),  # TODO(G2-Q6): thiếu approver_decision → approve
     ("reject", "rejected", {"decision": "rejected", "note": REJECT_NOTE}),
 ])  # fmt: skip
 def test_sim_approver_decides(decision: Any, action: str, body: dict[str, Any]) -> None:

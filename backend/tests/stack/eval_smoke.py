@@ -4,7 +4,8 @@
     EVAL_MODE=true EVAL_PASSWORD=… PYTHONPATH=backend uv run python -m tests.stack.eval_smoke --timeout-s 300 \
         [--keep-out ~/eval-runs/smoke] [--per-case]
 
-Kịch bản TỔNG HỢP (không phải kịch bản thật), sinh vào thư mục tạm (hoặc `--keep-out`). Người gửi / preset chọn theo bảng của gói
+Kịch bản TỔNG HỢP theo CẤU TRÚC THẬT (g2-chot.md: requester object, user_id tra ngược từ `mock_services/seed.json`), sinh vào
+thư mục tạm (hoặc `--keep-out`). K1, K2 CHƯA NHÃN (`expected_route` null — kiểm `counts.unlabeled = 2`). Người gửi / preset chọn theo bảng của gói
 luật GIẢ (`.luat-gia/BANG-LUAT-GIA.md`); câu đầu có thẻ `[fake:<preset>]` (LLM giả chỉ trả lời câu có thẻ — `kiem.py:154`):
 - `SMOKE-K1`, `SMOKE-K2`: ca 1, ca 2 của `.luat-gia/kiem.py:28-31` (binh.tt gia_tk → R83 chuyển L2; an.nv gia_vpn → LLM giả chuyển L2)
   → tới điểm log 4.
@@ -38,6 +39,7 @@ from typing import Any
 import httpx
 import yaml
 from app.eval import runner
+from app.eval.dataset import load_seed_users
 from app.eval.predictions import PredictionRecord, load_predictions
 
 APPROVE_CASE = "SMOKE-A"
@@ -51,11 +53,20 @@ KIEM_CA2 = ("an.nv", "gia_vpn", "Kiểm tra giúp mình tình trạng VPN trên 
 HITL_CASE = ("son.nt", "gia_tk", "Mình quên mật khẩu tài khoản AD, nhờ đặt lại giúp mình.")
 
 
-def _one(sid: str, user: str, text: str, intent: str, decision: str | None = None) -> dict[str, Any]:
-    gold: dict[str, Any] = {"intents": [intent], "expected_route": "HITL"}
-    if decision is not None:
-        gold["approver_decision"] = decision
-    return {"id": sid, "family": f"F-{sid}", "requester": user, "turns": [text], "gold": gold}
+_USER_IDS = {name: uid for uid, name in load_seed_users(runner.DEFAULT_SEED).items()}  # username → user_id (seed của mock)
+
+
+def _one(sid: str, user: str, text: str, intent: str, decision: str, expected_route: str | None = "HITL") -> dict[str, Any]:
+    """Kịch bản tổng hợp theo CẤU TRÚC THẬT (g2-chot.md): requester object (user_id tra ngược từ seed), turns = [câu đầu],
+    gold đủ khoá; `expected_route=None` = chưa nhãn như dữ liệu thật tới 25/10."""
+    gold: dict[str, Any] = {
+        "intents": [intent], "need_type": "smoke", "expected_route": expected_route, "expected_exit": None,
+        "approver_decision": decision, "gold_doc_ids": [],
+        "action": {"type": "smoke", "target": None, "requested_for": None, "params": {}}, "facts": {},
+    }  # fmt: skip
+    return {"id": sid, "family": f"F-{sid}", "source": "smoke", "at": "2026-10-20T09:00:00+07:00", "faults": [],
+            "requester": {"user_id": _USER_IDS[user], "role": "employee", "dept": "smoke", "tenure_days": 365},
+            "turns": [text], "gold": gold, "labels": {"annotator_1": None, "annotator_2": None}}  # fmt: skip
 
 
 def _tagged(case: tuple[str, str, str]) -> tuple[str, str]:
@@ -65,8 +76,8 @@ def _tagged(case: tuple[str, str, str]) -> tuple[str, str]:
 
 def scenarios() -> list[dict[str, Any]]:
     return [
-        _one("SMOKE-K1", *_tagged(KIEM_CA1), "account", "approve"),
-        _one("SMOKE-K2", *_tagged(KIEM_CA2), "vpn", "approve"),
+        _one("SMOKE-K1", *_tagged(KIEM_CA1), "account", "approve", expected_route=None),  # chưa nhãn
+        _one("SMOKE-K2", *_tagged(KIEM_CA2), "vpn", "approve", expected_route=None),  # chưa nhãn
         _one(APPROVE_CASE, *_tagged(HITL_CASE), "account", "approve"),
         _one(IGNORE_CASE, *_tagged(HITL_CASE), "account", "ignore"),
     ]
@@ -147,6 +158,7 @@ def main(argv: Sequence[str], *, echo: Callable[[str], None] = print) -> int:
             checks[f"outcomes đủ {len(items)} dòng"] = len(by_id) == len(items)
             checks[f"manifest loaded={len(items)}"] = manifest["counts"]["loaded"] == len(items)
             checks["≥ 2 bản ghi tới điểm log 4 (route khác None)"] = routed >= 2
+            checks["counts.unlabeled = 2 (K1, K2 chưa nhãn)"] = manifest["counts"]["unlabeled"] == 2
             a = recs.get(APPROVE_CASE)
             checks[f"{APPROVE_CASE} done sau khi duyệt (has_approval, route HITL, final_state có)"] = (
                 by_id.get(APPROVE_CASE, {}).get("outcome") == "done" and a is not None and a.has_approval

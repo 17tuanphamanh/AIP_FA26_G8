@@ -16,7 +16,15 @@ from app.eval import runner
 from app.eval.predictions import load_predictions
 from app.eval.runner import Deps, main
 from app.eval.stack import Clock
-from tests.unit.eval.fake_stack import GIT_SHA, FakeClock, SimStack
+from tests.unit.eval.fake_stack import (
+    GIT_SHA,
+    FakeClock,
+    SimStack,
+    confirm,
+    real_scenario,
+    reply,
+    write_seed,
+)
 
 PW = "SENTINEL_PW"
 ENV = {"EVAL_PASSWORD": PW}
@@ -25,20 +33,21 @@ SUMMARY = [
     r"scenarios: loaded=\d+",
     r"warmup: rounds=\d+ first_ms=\d+ last_ms=\d+",
     r"outcomes: done=\d+ timeout=\d+ multi_leaf=\d+ error=\d+",
-    r"records: written=\d+ route_none=\d+ calibrated_prob_nonnull=\d+",
+    r"records: written=\d+ route_none=\d+ calibrated_prob_nonnull=\d+ unlabeled=\d+",
     r"elapsed_s=\d+(\.\d+)?",
     r"files: predictions\.jsonl outcomes\.jsonl manifest\.json",
 ]
 NOT_IN_PER_CASE = ("SENTINEL_TXT", "SENTINEL_FAM", "SENTINEL_DOC", "SENTINEL_TID", "SENTINEL_USER", "SENTINEL_PW",
-                   "SENTINEL_FILE", "SENTINEL_FACTOR", "SENTINEL_ERR")  # fmt: skip
+                   "SENTINEL_FILE", "SENTINEL_FACTOR", "SENTINEL_ERR", "SENTINEL_NEED", "SENTINEL_ACT", "SENTINEL_TGT",
+                   "SENTINEL_FOR", "SENTINEL_P", "SENTINEL_FACT", "SENTINEL_DEPT", "SENTINEL_SRC")  # fmt: skip
 
 
-def scn(n: int, flow: str, *answers: str, decision: str | None = "approve", **over: Any) -> dict[str, Any]:
-    gold: dict[str, Any] = {"intents": ["vpn"], "expected_route": "HITL", "gold_doc_ids": [f"SENTINEL_DOC_{n}"]}
-    if decision is not None:
-        gold["approver_decision"] = decision
-    data: dict[str, Any] = {"id": f"SENTINEL_ID_{n}", "family": f"SENTINEL_FAM_{n}", "requester": "SENTINEL_USER",
-                            "turns": [f"SENTINEL_TXT_{n} flow={flow}", *answers], "gold": gold}  # fmt: skip
+def scn(n: int, flow: str, *answers: str, decision: str = "approve", expected_route: str | None = "HITL",
+        user_id: str = "u_sentinel", extra_turns: tuple[Any, ...] = (), **over: Any) -> dict[str, Any]:  # fmt: skip
+    """Kịch bản tổng hợp theo cấu trúc thật; `answers` → phần tử `{on_question_about, reply}`; mặc định ĐÃ nhãn (HITL)."""
+    data = real_scenario(f"SENTINEL_ID_{n}", family=f"SENTINEL_FAM_{n}", user_id=user_id,
+                         turns=[f"SENTINEL_TXT_{n} flow={flow}", *(reply(a) for a in answers), *extra_turns],
+                         expected_route=expected_route, decision=decision, gold_doc_ids=[f"SENTINEL_DOC_{n}"])  # fmt: skip
     data.update(over)
     return data
 
@@ -62,6 +71,7 @@ class Run:
         self.err: list[str] = []
         self.deps_made = 0
         self.git_dirty = False
+        self.seed = write_seed(tmp / "seed.json")
 
     def make_deps(self, url: str) -> Deps:
         self.deps_made += 1
@@ -70,7 +80,7 @@ class Run:
 
     def __call__(self, *extra: str, env: dict[str, str] | None = None, timeout: str | None = "30",
                  base: bool = True) -> int:  # fmt: skip
-        argv = ["--scenarios", str(self.scen), "--out", str(self.outdir)] if base else []
+        argv = ["--scenarios", str(self.scen), "--out", str(self.outdir), "--seed", str(self.seed)] if base else []
         argv += ["--strategy", "hybrid", "--split", "test"] if base else []
         if timeout is not None and base:
             argv += ["--timeout-s", timeout]
@@ -247,11 +257,41 @@ def test_flow_ignore_waits_for_worker(tmp_path: Path) -> None:
     assert not any("/decision" in p for p in r.paths())
 
 
-def test_flow_default_decision_counted(tmp_path: Path) -> None:
-    """TODO(G2-Q6): gold không có approver_decision mà tới chờ duyệt → approve + đếm `approver_default`."""
-    r = Run(tmp_path, scn(1, "clarify", "SENTINEL_TXT_ans", decision=None))
+def test_confirm_uses_scenario_on_confirm(tmp_path: Path) -> None:
+    """Bước xác nhận dùng `{on_confirm}` của kịch bản (theo thứ tự); hết → "Đã ổn" + đếm `confirm_default`."""
+    r = Run(tmp_path, scn(1, "clarify", "SENTINEL_TXT_ans", extra_turns=(confirm(False),)), scn(2, "clarify", "SENTINEL_TXT_b"))
     assert r() == 0
-    assert r.manifest()["counts"]["approver_default"] == 1
+    assert ("POST", "/api/tickets/SENTINEL_TID-1/confirm", {"confirmed": False}) in r.sim.api.calls
+    assert ("POST", "/api/tickets/SENTINEL_TID-2/confirm", {"confirmed": True}) in r.sim.api.calls
+    assert r.manifest()["counts"]["confirm_default"] == 1
+
+
+def test_login_uses_seed_username(tmp_path: Path) -> None:
+    """`requester.user_id` → `username` tra seed; đăng nhập bằng username, KHÔNG bằng user_id."""
+    r = Run(tmp_path, scn(1, "direct", user_id="u_an"))
+    assert r() == 0
+    logins = [body["username"] for _, path, body in r.sim.api.calls if path == "/api/auth/login"]
+    assert logins == ["an.nv"]
+
+
+def test_manifest_unlabeled(tmp_path: Path) -> None:
+    """Dữ liệu thật tới 25/10 mang `expected_route = null` → bản ghi vẫn ghi, đếm `unlabeled` (manifest + dòng `records:`)."""
+    r = Run(tmp_path, scn(1, "direct", expected_route=None), scn(2, "clarify", "SENTINEL_TXT_a", expected_route=None),
+            scn(3, "direct"))  # fmt: skip
+    assert r() == 0
+    assert r.manifest()["counts"]["unlabeled"] == 2
+    assert count(r.text, "unlabeled") == 2
+    recs = {x.scenario_id: x for x in load_predictions(r.outdir / "predictions.jsonl")}
+    assert (recs["SENTINEL_ID_1"].expected_route, recs["SENTINEL_ID_3"].expected_route) == (None, "HITL")
+
+
+@pytest.mark.parametrize("check_only", [False, True])
+def test_seed_missing_exit2(tmp_path: Path, check_only: bool) -> None:
+    r = Run(tmp_path, scn(1, "direct"))
+    r.seed = tmp_path / "khong-co.json"
+    code = r("--check-only", env={}, timeout=None) if check_only else r()
+    assert code == 2 and r.deps_made == 0 and r.no_files()
+    assert r.out[-1].startswith("DỪNG:") and "seed" in r.out[-1]
 
 
 def test_timeout_records_open_ticket(tmp_path: Path) -> None:
@@ -409,6 +449,24 @@ def test_cli_check_only(tmp_path: Path) -> None:
     assert r.deps_made == 0 and r.no_files()
 
 
+def test_cli_check_only_real_shape(tmp_path: Path) -> None:
+    """Thư mục TỔNG HỢP đúng cấu trúc thật (chưa nhãn, có reply + confirm, nhiều ý, ignore) → nạp hết, 0 lỗi."""
+    r = Run(tmp_path, real_scenario("SENTINEL_ID_A"),
+            real_scenario("SENTINEL_ID_B", turns=["SENTINEL_TXT_b", reply("SENTINEL_TXT_r", "account_type"), confirm(True)]),
+            real_scenario("SENTINEL_ID_C", user_id="u_an", decision="ignore", intents=("vpn", "account"), expected_exit="E6"),
+            real_scenario("SENTINEL_ID_D", expected_route="AUTO"))  # fmt: skip
+    assert r("--check-only", env={}, timeout=None) == 0
+    assert r.out == ["scenarios: loaded=4 errors=0"]
+    assert r.deps_made == 0
+
+
+def test_unknown_user_check_only_no_value(tmp_path: Path) -> None:
+    r = Run(tmp_path, scn(1, "direct", user_id="SENTINEL_UID_khong_co"), scn(2, "direct"))
+    assert r("--check-only", env={}, timeout=None) == 2
+    assert r.out == ["scenarios: loaded=1 errors=1", "file #1/2: requester.user_id không có trong seed"]
+    assert "SENTINEL" not in r.text
+
+
 def test_cli_check_only_errors(tmp_path: Path) -> None:
     r = Run(tmp_path, scn(1, "direct"), scn(2, "direct", family=None), scn(3, "direct", bogus=1))
     assert r("--check-only", env={}, timeout=None) == 2
@@ -459,7 +517,7 @@ def test_manifest_keys(tmp_path: Path) -> None:
     assert m["commit_verified"] is True and m["policy_sha256"] == "ab" * 32
     assert m["git_dirty"] is False
     assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "written": 1, "route_none": 0,
-                           "calibrated_prob_nonnull": 0, "approver_default": 0, "p_method_mismatch": 0}  # fmt: skip
+                           "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0}  # fmt: skip
     assert "SENTINEL" not in json.dumps(m)
 
 
