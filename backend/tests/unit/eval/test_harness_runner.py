@@ -200,6 +200,39 @@ def test_sla_no_warning_when_timeout_large(tmp_path: Path) -> None:
     assert not any("SLA" in e for e in r.err)
 
 
+WRONG_PW = "DỪNG: EVAL_PASSWORD sai (đăng nhập 401)"
+
+
+def test_preflight_wrong_password(tmp_path: Path) -> None:
+    """Góp ý G16 (Duy Anh): sai EVAL_PASSWORD → thử đăng nhập requester kịch bản đầu ở preflight → 401 → ĐÚNG một dòng DỪNG, mã 2,
+    0 ticket, 0 file; không in username / mật khẩu."""
+    r = Run(tmp_path, scn(1, "direct"), scn(2, "clarify", "SENTINEL_TXT_a"))
+    assert r(env={"EVAL_PASSWORD": "SENTINEL_PW_sai"}) == 2
+    assert r.out == [WRONG_PW]
+    logins = [b for _, path, b in r.sim.api.calls if path == "/api/auth/login"]
+    assert [b["username"] for b in logins] == ["SENTINEL_USER"]  # đúng một lần, bằng requester (tra seed) của kịch bản đầu
+    assert "/api/tickets" not in r.paths() and ("EXEC", "warmup", 3) not in r.sim.api.calls
+    assert r.no_files() and "SENTINEL" not in r.text
+
+
+@pytest.mark.parametrize("fault", [{"login_status": 500}, {"login_status": 403}, {"login_network_error": True}])
+def test_preflight_login_other_failure(tmp_path: Path, fault: dict[str, Any]) -> None:
+    """Lỗi mạng / mã khác 401 → DỪNG với lý do cố định KHÁC lý do sai mật khẩu."""
+    r = Run(tmp_path, scn(1, "direct"), sim=SimStack(FakeClock(), **fault))
+    assert r() == 2
+    assert len(r.out) == 1 and r.out[0].startswith("DỪNG:") and r.out[0] != WRONG_PW and "đăng nhập" in r.out[0]
+    assert "/api/tickets" not in r.paths() and r.no_files() and "SENTINEL" not in r.text
+
+
+def test_preflight_login_ok_then_runs(tmp_path: Path) -> None:
+    """Mật khẩu đúng → chạy như cũ; lần thử đăng nhập nằm TRƯỚC làm nóng và trước ticket đầu."""
+    r = Run(tmp_path, scn(1, "direct"))
+    assert r() == 0
+    paths = r.paths()
+    assert paths.index("/api/auth/login") < paths.index("warmup") < paths.index("/api/tickets")
+    assert paths.count("/api/auth/login") == 2  # thử ở preflight + đăng nhập của ca
+
+
 def test_run_id_mismatch_exit2(tmp_path: Path) -> None:
     r = Run(tmp_path, scn(1, "direct"))
     assert r("--run-id", "000000000000") == 2
@@ -271,7 +304,7 @@ def test_login_uses_seed_username(tmp_path: Path) -> None:
     r = Run(tmp_path, scn(1, "direct", user_id="u_an"))
     assert r() == 0
     logins = [body["username"] for _, path, body in r.sim.api.calls if path == "/api/auth/login"]
-    assert logins == ["an.nv"]
+    assert logins == ["an.nv", "an.nv"]  # thử ở preflight (góp ý G16) + đăng nhập của ca — đều bằng username tra seed
 
 
 def test_manifest_unlabeled(tmp_path: Path) -> None:
@@ -317,7 +350,8 @@ def test_error_before_ticket(tmp_path: Path) -> None:
     r = Run(tmp_path, scn(1, "boom"), scn(2, "direct"))
     assert r() == 1
     o = r.outcomes()
-    assert (o[0]["outcome"], o[0]["ticket_id"], o[0]["error_type"]) == ("error", None, "StackError")
+    assert (o[0]["outcome"], o[0]["ticket_id"], o[0]["error_type"], o[0]["error_http"]) == ("error", None, "StackError", 500)
+    assert "error_http" not in o[1]  # ca không lỗi: không có trường
     assert count(r.text, "error") == 1 and count(r.text, "written") == 1
 
 
@@ -447,6 +481,7 @@ def test_cli_check_only(tmp_path: Path) -> None:
     assert r("--check-only", env={}, timeout=None) == 0
     assert r.out == ["scenarios: loaded=2 errors=0"]
     assert r.deps_made == 0 and r.no_files()
+    assert r.sim.api.calls == []  # không gọi API nào — kể cả thử đăng nhập
 
 
 def test_cli_check_only_real_shape(tmp_path: Path) -> None:

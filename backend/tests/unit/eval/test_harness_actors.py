@@ -204,6 +204,27 @@ def test_api_error_shows_template_not_id() -> None:
     assert "SENTINEL" not in str(e.value) and "/api/tickets/{id}" in str(e.value)
 
 
+@pytest.mark.parametrize(("status", "call", "shown"), [
+    (401, "login", "POST /api/auth/login → 401"),
+    (404, "view", "GET /api/tickets/{id} → 404"),
+    (500, "create", "POST /api/tickets → 500"),
+])  # fmt: skip
+def test_api_error_has_http_status(status: int, call: str, shown: str) -> None:
+    """Góp ý G16 (Duy Anh): lỗi Api nêu MẪU đường dẫn + mã HTTP (`http_status`), không id, không username / mật khẩu."""
+    fake = FakeApi()
+    fake.fallback = lambda r: httpx.Response(status)
+    with fake.client() as http, pytest.raises(StackError) as e:
+        api = Api(http)
+        {"login": lambda: api.login("SENTINEL_USER", "SENTINEL_PW"), "view": lambda: api.view({}, "SENTINEL_TID"),
+         "create": lambda: api.create({}, "SENTINEL_TXT")}[call]()  # fmt: skip
+    assert str(e.value) == shown and e.value.http_status == status
+    assert "SENTINEL" not in str(e.value)
+
+
+def test_stack_error_without_http_status() -> None:
+    assert StackError("lệnh lỗi").http_status is None
+
+
 def test_api_login_without_token() -> None:
     fake = FakeApi()
     fake.on("POST", "/api/auth/login", lambda r: httpx.Response(200, json={}))

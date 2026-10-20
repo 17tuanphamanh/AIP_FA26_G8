@@ -74,7 +74,7 @@ _PARENT = '    if ticket["is_parent"]:\n'
 
 _SQL_RUN = '        out = self.run([*self.compose_base, "exec", "-T", "postgres", "sh", "-c", PSQL], stdin=READ_ONLY + query)\n'
 _DEADLINE = "        return self.elapsed() >= self.seconds\n"
-_API_ERR = '            raise StackError(f"{method} {shown}: HTTP {r.status_code}")\n'
+_API_ERR = '            raise StackError(f"{method} {shown} → {r.status_code}", http_status=r.status_code)\n'
 _RUN_ERR = '            raise StackError(f"lệnh lỗi (mã {code}): {shlex.join(cmd[:4])} …")\n'
 
 # ---- actors.py --------------------------------------------------------------------------------------------------------
@@ -102,6 +102,7 @@ _SEED_CHECK = "            if s.requester.user_id not in users:\n"
 _ROUTE_OPT = "    expected_route: Route | None  # None = chưa nhãn (tới 25/10)\n"
 _SAFETY_PAIRS = "    pairs = _pairs(_gold(records))\n    need = "
 _N_UNLAB = "        n_unlabeled=n_unlabeled(records),\n"
+_LOGIN_CHECK = "    _login_check(deps, ds.usernames[ds.scenarios[0].id], password)\n"
 _SLA = "    if not isinstance(sla, int) or isinstance(sla, bool) or sla <= 0:  # G2-Q6 (Tuấn Anh 19/10): ca ignore phải ra E6 trước timeout\n"
 _WHERE = '        where = self.name if show_name else f"file #{self.index}/{self.total}"\n'
 _IGNORED = "            ignored += dropped\n"
@@ -163,8 +164,8 @@ MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G2-22 Shell.sql in câu SQL",
              [one(STK, _SQL_RUN, "        print(query)  # MUTATION M-G2-22\n" + _SQL_RUN)], UT, ["test_shell_sql_no_echo"]),
     Mutation("M-G2-23 Api đưa id thật vào thông điệp lỗi",
-             [_swap(STK, _API_ERR, '            raise StackError(f"{method} {path}: HTTP {r.status_code}")', "M-G2-23")], UT,
-             ["test_api_error_shows_template_not_id"]),
+             [_swap(STK, _API_ERR, '            raise StackError(f"{method} {path} → {r.status_code}", http_status=r.status_code)',
+                    "M-G2-23")], UT, ["test_api_error_shows_template_not_id", "test_api_error_has_http_status"]),
     Mutation("M-G2-24 Shell.run chép đầu ra lệnh vào lỗi",
              [_swap(STK, _RUN_ERR, '            raise StackError(f"lệnh lỗi (mã {code}): {shlex.join(cmd[:4])} … {out}")',
                     "M-G2-24")], UT, ["test_shell_error_hides_output"]),
@@ -204,6 +205,13 @@ MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G2-37 bước xác nhận luôn \"Đã ổn\" (bỏ on_confirm của kịch bản)",
              [_swap(ACT, _CONFIRM_POP, "            return DEFAULT_ON_CONFIRM", "M-G2-37")], UT,
              ["test_scripted_user_confirms_in_order", "test_confirm_uses_scenario_on_confirm"]),
+    # ---- góp ý G16 (Duy Anh, 20/10): sai EVAL_PASSWORD ----
+    Mutation("M-G2-38 bỏ thử đăng nhập ở preflight",
+             [_swap(RUN, _LOGIN_CHECK, "    pass", "M-G2-38")], UT,
+             ["test_preflight_wrong_password", "test_preflight_login_other_failure", "test_preflight_login_ok_then_runs"]),
+    Mutation("M-G2-39 bỏ mã HTTP khỏi StackError của Api",
+             [_swap(STK, _API_ERR, '            raise StackError(f"{method} {shown}")', "M-G2-39")], UT,
+             ["test_api_error_has_http_status", "test_preflight_wrong_password", "test_error_before_ticket"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL

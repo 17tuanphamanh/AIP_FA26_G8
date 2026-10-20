@@ -78,6 +78,9 @@ EVAL_MODE=true EVAL_PASSWORD='<mật khẩu demo>' PYTHONPATH=backend uv run pyt
 - Nếu `--timeout-s` nhỏ hơn SLA duyệt + 60 giây, harness in cảnh báo ra stderr và các ca `ignore` sẽ ra `timeout` thay vì E6.
   Với SLA 2 phút, ngưỡng là 180 giây, nên 300 không bị cảnh báo.
 - `--out` không được nằm trong thư mục kịch bản và không được chứa sẵn file kết quả của lượt trước.
+- Sai mật khẩu thì harness dừng với dòng `DỪNG: EVAL_PASSWORD sai (đăng nhập 401)` và mã 2, chưa tạo ticket nào. Trước khi chạy,
+  harness thử đăng nhập một lần bằng người gửi của kịch bản đầu. Nếu lỗi mạng hoặc mã HTTP khác 401, dòng `DỪNG:` nêu lý do khác.
+  Trong `outcomes.jsonl`, ca lỗi do API có thêm trường `error_http` (mã HTTP).
 - Cờ tuỳ chọn:
   - `--per-case`: in thêm mỗi ca một dòng `<scenario_id> <kết cục> <giây>`.
   - `--warmup-rounds N`: số vòng làm nóng, mặc định 3.

@@ -199,6 +199,7 @@ class Case:
     ticket_id: str | None
     outcome: Outcome
     error_type: str | None
+    error_http: int | None  # mã HTTP khi lỗi là StackError của Api (góp ý G16) — chỉ vào outcomes.jsonl
     elapsed_s: float
     started_at: str
     record: PredictionRecord | None
@@ -225,6 +226,7 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
     ticket_id: str | None = None
     outcome: Outcome = "done"
     error_type: str | None = None
+    error_http: int | None = None
     try:
         h = c.api.login(c.usernames[s.id], c.password)
         ticket_id = tid = c.api.create(h, user.first_text)
@@ -261,6 +263,7 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
         outcome = "timeout"
     except (StackError, httpx.HTTPError, KeyError, TypeError, ValueError) as e:
         outcome, error_type = "error", type(e).__name__
+        error_http = e.http_status if isinstance(e, StackError) else None
     record = None
     if outcome != "multi_leaf" and ticket_id is not None:
         try:
@@ -269,7 +272,9 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
             outcome = "multi_leaf"
         except (StackError, KeyError, TypeError, ValueError) as e:
             outcome, error_type = "error", error_type or type(e).__name__
-    return Case(scenario_id=s.id, ticket_id=ticket_id, outcome=outcome, error_type=error_type,
+            if error_http is None and isinstance(e, StackError):
+                error_http = e.http_status
+    return Case(scenario_id=s.id, ticket_id=ticket_id, outcome=outcome, error_type=error_type, error_http=error_http,
                 elapsed_s=round(deadline.elapsed(), 1), started_at=started, record=record,
                 confirm_default=user.confirm_default)  # fmt: skip
 
@@ -353,6 +358,19 @@ def _preflight(deps: Deps, args: argparse.Namespace, err: Callable[[str], None])
     return info, verified
 
 
+def _login_check(deps: Deps, username: str, password: str) -> None:
+    """Góp ý G16 (Duy Anh): thử đăng nhập MỘT lần bằng requester của kịch bản đầu (username tra seed) trước khi tạo ticket nào —
+    sai EVAL_PASSWORD thì dừng ngay với lý do rõ, không để mọi ca ra StackError. Không in username / mật khẩu."""
+    try:
+        Api(deps.http).login(username, password)
+    except StackError as e:
+        if e.http_status == 401:
+            raise Stop("EVAL_PASSWORD sai (đăng nhập 401)") from None
+        raise Stop("thử đăng nhập lỗi (HTTP khác 401 — xem /api/health, log backend)") from None
+    except httpx.HTTPError:
+        raise Stop("thử đăng nhập lỗi (không kết nối được backend)") from None
+
+
 def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], manifest: dict[str, Any]) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     tmp = out_dir / "predictions.jsonl.tmp"
@@ -368,6 +386,7 @@ def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], ma
         "scenario_id": c.scenario_id, "ticket_id": c.ticket_id, "outcome": c.outcome, "error_type": c.error_type,
         "elapsed_s": c.elapsed_s, "run_started_at": c.started_at,
         "in_business_hours": None,  # TODO(G7): khung giờ `at` (G2-Q10)
+        **({"error_http": c.error_http} if c.error_http is not None else {}),
     }, ensure_ascii=False) + "\n" for c in cases), encoding="utf-8")  # fmt: skip
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -392,6 +411,7 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
     deps = make_deps(url)
     started_at, t0 = deps.now(), deps.clock.monotonic()
     info, verified = _preflight(deps, args, err)
+    _login_check(deps, ds.usernames[ds.scenarios[0].id], password)
     config = RunConfig(
         strategy=args.strategy, split=args.split, timeout_s=args.timeout_s, prob_method=args.prob_method,
         llm_roles={k: str(info.get(k) or "") for k in ("llm_backend", "fast_model", "strong_model")},
