@@ -8,14 +8,14 @@ M8 — chỉ bật khi EVAL_MODE=true, P8. Xem docs/spec/build/01-kien-truc-proj
 | `config.py` | `RunConfig`, `run_id = sha256(config \| dataset_sha256 \| commit)[:12]` (P8 §5.1) |
 | `stack.py` | lái stack compose (chép tối thiểu từ `tests/stack/gate2.py`): chốt an toàn, SQL chỉ đọc, hạn kịch bản |
 | `actors.py` | `ScriptedUser` (trả lời theo `turns`), `SimApprover` (làm theo `gold.approver_decision`) |
-| `collect.py` | DB → `PredictionRecord` (hợp đồng v1, `predictions.py`) |
+| `collect.py` | DB → `PredictionRecord` (hợp đồng v1.1, `predictions.py`) |
 | `warmup.py` | làm nóng rerank, chạy TRONG container backend |
 | `runner.py` | CLI, vòng tuần tự, `predictions.jsonl` + `outcomes.jsonl` + `manifest.json` |
 
 ### Cấu trúc kịch bản (dữ liệu thật — Tuấn Anh 19/10)
 
-Mọi khoá dưới đây đều bắt buộc. Khoá lạ bị từ chối (trừ khi có `--allow-extra-fields`). Không có `gold.hidden_factor`; khoá này để
-PR hợp đồng v1.1.
+Mọi khoá dưới đây đều bắt buộc. Khoá lạ bị từ chối (trừ khi có `--allow-extra-fields`). Không có `gold.hidden_factor` (P8 v1.4 §4.1):
+hợp đồng v1.1 để sẵn trường `hidden_factor` trong bản ghi nhưng ghi `null` cho tới khi chốt nguồn (V11-Q1).
 
 | Khoá | Kiểu | Harness dùng |
 |---|---|---|
@@ -33,7 +33,7 @@ chỉ đọc `detail->>'route'` và `detail->>'strategy'` (dòng `B13/B14`), cù
 
 **Đã kiểm ở đâu:**
 - Unit test: `backend/tests/unit/eval/test_harness_*.py`, chạy trên stack giả.
-- Đột biến: `scripts/mutation/mutate_g2.py`, 28 đột biến.
+- Đột biến: `scripts/mutation/mutate_g2.py` (37 đột biến) và `scripts/mutation/mutate_v11.py` (hợp đồng v1.1, 11 đột biến).
 - Smoke trên stack thật (gói luật giả): `backend/tests/stack/eval_smoke.py` gồm hai ca tới điểm log 4, một ca chờ duyệt rồi được
   SimApprover duyệt, và một lượt phụ hết giờ.
 - Việc đọc `detail.turn` ở B11 (`clarification_turns`) chỉ được kiểm bằng unit test và đột biến M-G2-4/5/13. Trên stack gói luật giả
@@ -108,11 +108,20 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
 | 2 | Dừng trước khi ghi `predictions.jsonl`. Dòng cuối `DỪNG: <lý do>` cho biết nguyên nhân: tham số, kịch bản lỗi, chốt an toàn, seed không đọc được, STRATEGY / EVAL_MODE / LLM_CACHE_MODE / APPROVAL_SLA_MINUTES_DEV / APP_GIT_SHA của container, `/api/health`, làm nóng, hoặc điểm log 4 thiếu khoá / sai strategy |
 
 **File trong `--out`:**
-- `predictions.jsonl`: hợp đồng v1, đọc bằng `app.eval.predictions.load_predictions`. Mỗi dòng là một lá; ca `multi_leaf` không có
-  dòng ở đây. Ca hết giờ vẫn có bản ghi, với `final_state` = `null`. Kịch bản chưa nhãn có bản ghi với `expected_route` = `null`
-  (đếm ở `unlabeled`).
+- `predictions.jsonl`: hợp đồng v1.1 (P8 v1.4 §5.6, `schema_version` = `"1.1"`), đọc bằng `app.eval.predictions.load_predictions`.
+  Mỗi dòng là một lá; ca `multi_leaf` không có dòng ở đây. Ca hết giờ vẫn có bản ghi, với `final_state` = `null`. Kịch bản chưa nhãn
+  có bản ghi với `expected_route` = `null` (đếm ở `unlabeled`).
+  - `run_started_at`: giờ bắt đầu của từng kịch bản (ISO 8601 có offset), cùng giá trị với `outcomes.jsonl`. Giờ bắt đầu cả lượt nằm
+    ở `manifest.started_at`.
+  - `fold`, `kb_gap`, `hidden_factor`, `in_business_hours`: luôn `null` ở lượt stack, vì chưa có nguồn hợp lệ. Tên bốn trường này
+    được liệt kê ở `manifest.predictions_unavailable`. Lý do từng trường:
+    - `fold`: gán phần ở bước offline, từ `SPLIT.md` (V11-Q3).
+    - `kb_gap`: không có cột riêng; muốn có phải đọc một khoá `detail` mới, chưa được duyệt (V11-Q2).
+    - `hidden_factor`: dữ liệu kịch bản chưa có khoá này (V11-Q1).
+    - `in_business_hours`: chờ G7 (V11-Q5).
+  - File v1 (không có `schema_version`) bị `load_predictions` từ chối với lỗi `bản v1`. Muốn có file v1.1 thì chạy lại harness.
 - `outcomes.jsonl`: kết cục từng ca (`done` / `timeout` / `multi_leaf` / `error`), tên lớp lỗi, số giây, giờ bắt đầu.
 - `manifest.json`: cấu hình, `run_id`, commit, `dataset_sha256`, `policy_sha256`, `clf_mode`, làm nóng, số đếm (gồm `unlabeled`,
-  `confirm_default`), `ignored_fields`.
+  `confirm_default`), `ignored_fields`, `schema_version`, `predictions_unavailable`.
   Các khoá của 21/10 (`b2_tau`, `b2_judge_model`, SHA hai model, `rate_limits`) để `null` và liệt kê trong `unavailable`.
   Không có manifest thì không đưa số vào báo cáo (P8 §5.1).

@@ -7,7 +7,7 @@ Luồng: nạp kịch bản (lỗi → mã 2) → kiểm `--out` → chốt an t
 backend (STRATEGY khớp cờ, `EVAL_MODE=true`, `LLM_CACHE_MODE=eval`, `APPROVAL_SLA_MINUTES_DEV` có đặt (G2-Q6), `APP_GIT_SHA` khớp
 HEAD nếu có đặt; chỉ SO, không in giá trị) →
 `/api/health` → `run_id` → làm nóng rerank (trong container) → từng kịch bản TUẦN TỰ với hạn `--timeout-s` → `predictions.jsonl`
-(hợp đồng v1, đọc lại bằng `load_predictions` trước khi đổi tên) + `outcomes.jsonl` + `manifest.json`.
+(hợp đồng v1.1, đọc lại bằng `load_predictions` trước khi đổi tên) + `outcomes.jsonl` + `manifest.json`.
 
 In: mặc định ĐÚNG 7 dòng tổng hợp (+ `ignored_fields=<n>` khi `--allow-extra-fields`) — không câu, id kịch bản, họ, gold, ticket_id,
 route từng ca, detail, SQL, thông điệp exception. `--per-case`: thêm mỗi ca `<scenario_id> <kết cục> <giây>[ <tên lớp lỗi>]` và tên
@@ -38,7 +38,7 @@ from typing import Any, Literal, Protocol, get_args
 import httpx
 
 from app.eval.actors import ScriptedUser, SimApprover
-from app.eval.collect import AbortRun, MultiLeaf, RunMeta, collect
+from app.eval.collect import UNAVAILABLE, AbortRun, MultiLeaf, RunMeta, collect
 from app.eval.config import (
     ProbMethod,
     RunConfig,
@@ -54,7 +54,12 @@ from app.eval.dataset import (
     load_scenarios,
     load_seed_users,
 )
-from app.eval.predictions import PredictionRecord, Split, load_predictions
+from app.eval.predictions import (
+    SCHEMA_VERSION,
+    PredictionRecord,
+    Split,
+    load_predictions,
+)
 from app.eval.stack import (
     DEFAULT_URL,
     Api,
@@ -264,7 +269,7 @@ def run_case(s: Scenario, c: _Ctx) -> Case:
     record = None
     if outcome != "multi_leaf" and ticket_id is not None:
         try:
-            record = collect(c.sql, s, ticket_id, c.meta)
+            record = collect(c.sql, s, ticket_id, c.meta, started_at=started)
         except MultiLeaf:
             outcome = "multi_leaf"
         except (StackError, KeyError, TypeError, ValueError) as e:
@@ -362,7 +367,7 @@ def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], ma
             load_predictions(tmp)  # tự kiểm hợp đồng v1 trước khi giao
         except ValueError:
             tmp.unlink()
-            raise Stop("predictions không qua hợp đồng v1 (load_predictions)") from None
+            raise Stop("predictions không qua hợp đồng v1.1 (load_predictions)") from None
     tmp.replace(out_dir / "predictions.jsonl")
     (out_dir / "outcomes.jsonl").write_text("".join(json.dumps({
         "scenario_id": c.scenario_id, "ticket_id": c.ticket_id, "outcome": c.outcome, "error_type": c.error_type,
@@ -443,6 +448,8 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         "ignored_fields": {"allowed": args.allow_extra_fields, "count": len(ds.ignored_fields),
                            "paths": sorted(set(ds.ignored_fields))},
         **dict.fromkeys(LATER), "unavailable": list(LATER),
+        "schema_version": SCHEMA_VERSION,
+        "predictions_unavailable": list(UNAVAILABLE),
     }  # fmt: skip
     _write(out_dir, records, cases, manifest)
     out(f"eval run {run_id} strategy={config.strategy} split={config.split} timeout_s={config.timeout_s}")
