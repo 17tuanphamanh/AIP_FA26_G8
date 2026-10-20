@@ -202,6 +202,8 @@ class SimStack:
     app_env_value: str | None = "dev"
     health_runtime: str = "up"
     warmup_fails: bool = False
+    login_status: int | None = None  # đặt → MỌI lần đăng nhập trả mã này (giả lỗi khác 401)
+    login_network_error: bool = False  # True → đăng nhập ném httpx.ConnectError
     db: FakeDb = field(default_factory=FakeDb)
     api: FakeApi = field(default_factory=FakeApi)
     tokens: dict[str, str] = field(default_factory=dict)
@@ -291,6 +293,10 @@ class SimStack:
         path, method = request.url.path, request.method
         body = json.loads(request.content) if request.content else {}
         if (method, path) == ("POST", "/api/auth/login"):
+            if self.login_network_error:
+                raise httpx.ConnectError("SENTINEL_NET không kết nối được", request=request)
+            if self.login_status is not None:
+                return httpx.Response(self.login_status)
             if body.get("password") != self.password:
                 return httpx.Response(401)
             token = f"Bearer tok-{body['username']}"

@@ -5,7 +5,8 @@ Khác gate2:
 - Không echo lệnh / SQL (chế độ mặc định chỉ in số tổng hợp). Thông điệp lỗi không chép stdout/stderr của lệnh.
 - `Shell.sql` đặt `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY` trước MỌI câu — M8 chỉ đọc DB.
 - Đồng hồ + sleep tiêm vào (`Clock`) để test không ngủ thật; `Deadline` = hạn của MỘT kịch bản, `elapsed >= timeout_s` là hết.
-- HTTP lỗi → `StackError` chỉ nêu phương thức + mẫu đường dẫn + mã (không id, không thân trả về).
+- HTTP lỗi → `StackError` chỉ nêu phương thức + mẫu đường dẫn + mã (`POST /api/auth/login → 401`, `http_status`) — không id, không
+  thân trả về.
 
 Script không đọc `.env`: compose tự đọc; psql chạy trong container postgres bằng biến của chính container (như gate2).
 """
@@ -39,7 +40,12 @@ class Unsafe(Exception):
 
 
 class StackError(Exception):
-    """Stack không làm được việc harness cần (lệnh lỗi, HTTP sai mã, dữ liệu lạ)."""
+    """Stack không làm được việc harness cần (lệnh lỗi, HTTP sai mã, dữ liệu lạ). `http_status` = mã HTTP khi lỗi do Api trả sai mã
+    (góp ý G16: phân biệt 401 sai mật khẩu với lỗi khác mà không phải xem log backend); thông điệp chỉ có mẫu đường dẫn + mã."""
+
+    def __init__(self, message: str, http_status: int | None = None) -> None:
+        super().__init__(message)
+        self.http_status = http_status
 
 
 class ScenarioTimeout(Exception):
@@ -207,7 +213,7 @@ class Api:
               body: Mapping[str, Any] | None = None) -> httpx.Response:  # fmt: skip
         r = self.http.request(method, path, headers=headers, json=None if body is None else dict(body))
         if r.status_code != expect:
-            raise StackError(f"{method} {shown}: HTTP {r.status_code}")
+            raise StackError(f"{method} {shown} → {r.status_code}", http_status=r.status_code)
         return r
 
     def login(self, username: str, password: str) -> Headers:
