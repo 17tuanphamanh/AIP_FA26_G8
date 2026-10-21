@@ -87,6 +87,15 @@ services:
     environment:
       <<: *backend-env
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+    healthcheck:
+      # D-50: /api/health trả 200 khi phụ thuộc lõi sống, `runtime` không đổi mã → phải đọc JSON: healthy chỉ khi
+      # 200 VÀ "runtime" == "up". 503 / chưa nghe cổng (runtime mở trong lifespan) → urlopen ném lỗi → thoát 1.
+      # Kết quả health cache 10s (HEALTH_CACHE_SECONDS) → interval 10s; retries 3 chịu được một lượt lõi chập chờn.
+      test: ["CMD", "python", "-c", "import json,sys,urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/health', timeout=4); sys.exit(0 if json.load(r).get('runtime')=='up' else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
