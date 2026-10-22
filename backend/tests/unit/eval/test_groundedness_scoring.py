@@ -24,6 +24,7 @@ def _fixture() -> list:  # type: ignore[type-arg]
 def test_counts_and_rates_hand_computed() -> None:
     s = score(_fixture(), n_boot=50)
     assert (s["n_answers"], s["n_judged"], s["n_cannot_answer"], s["n_no_claims"], s["n_errors"]) == (6, 3, 1, 1, 1)
+    assert s["n_families"] == 2 == s["supported_rate_ci"]["n_families"]  # họ của các ca được chấm (F1, F2); ca lỗi/cannot_answer không tính
     assert (s["n_claims"], s["n_supported"], s["n_partial"], s["n_unsupported"]) == (9, 4, 1, 4)
     assert s["supported_rate"] == pytest.approx(4 / 9, abs=1e-12)
     assert s["partial_rate"] == pytest.approx(1 / 9, abs=1e-12)

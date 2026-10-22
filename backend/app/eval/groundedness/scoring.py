@@ -83,6 +83,7 @@ def score(
     return {
         "n_answers": len(answers),
         "n_judged": len(judged),
+        "n_families": len({a.family for a in judged}),  # số họ trong các ca được chấm = số đơn vị rút lại của bootstrap
         "n_cannot_answer": by_status["cannot_answer"],
         "n_no_claims": by_status["no_claims"],
         "n_errors": by_status["error"],

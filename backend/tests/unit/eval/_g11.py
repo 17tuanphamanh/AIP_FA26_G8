@@ -53,8 +53,8 @@ def gateway(script: Any = judge_script, **kw: Any) -> Gateway:
     return make_gateway({"eval_groundedness": script}, **kw)
 
 
-def factory() -> Any:
-    """`--llm-factory tests.unit.eval._g11:factory` — gateway mới mỗi lần gọi."""
+def factory(run_id: str, **_: Any) -> Any:
+    """`--llm-factory tests.unit.eval._g11:factory` — gateway mới mỗi lần gọi (`fn(run_id[, max_usd=…])`, như `eval_gateway`)."""
     return gateway().client
 
 

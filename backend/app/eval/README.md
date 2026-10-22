@@ -155,4 +155,51 @@ EVAL_MODE=true python -m app.eval.groundedness agree  --run DIR --labels review_
 - **Độ tin cậy của người chấm**: `agreement.json` báo tỉ lệ khớp, Cohen κ (+ khoảng tin cậy rút lại ca), ma trận nhầm và số ý/ca "LLM hỗ trợ / người không". **κ < 0,6 → cờ `low_kappa`** (κ không xác định cũng gắn cờ). Khối `human_agreement` trong `summary.json` đi kèm con số groundedness: tỉ lệ khớp + κ + `low_kappa`.
 - **Ca không có trích dẫn**: mọi ý tính là không được hỗ trợ, cờ `no_citation`. Thực tế hiếm — hậu kiểm trích dẫn của B10 (`check_citations`) chặn ca không trích dẫn thành E3 nên gần như không tới được đây; giữ xử lý này để số không bị phồng nếu có.
 - **Giới hạn** (đầy đủ ở docstring `groundedness/__init__.py`): tách ý bằng code (câu ghép = một ý; ý xã giao bị chấm như ý thường); **model chấm = model viết** (cấu hình A: fast = strong = cùng model) nên có thể thiên vị cùng họ — mẫu người soát và cờ `low_kappa` là phép kiểm; chỉ chấm trên đoạn đã dẫn; κ của mẫu phân tầng không ngoại suy ra toàn bộ.
-- **Việc dồn về mốc G** (chưa làm): bộ thu thập `answers.jsonl` từ DB/Qdrant (gồm `family` và khối bằng chứng từ `llm_calls.prompt_full`); hàm dựng gateway thật cho `--llm-factory` (app/ chưa có store LLM không cần DB); chạy thật + chọn lại phiên bản prompt.
+- **Nối thật mốc G**: xem mục "Nối thật mốc G (G10 + G11)" bên dưới (collector, `probe-input`, factory gateway thật).
+
+## Nối thật mốc G (G10 + G11)
+
+Mọi thứ dưới đây chỉ chạy khi `EVAL_MODE=true`; code và test **không đọc `.env`** (người chạy tự nạp biến môi trường như compose) và test không dùng mạng.
+
+### Factory gateway thật — `app.eval.llm_factory:eval_gateway`
+
+`--llm-factory app.eval.llm_factory:eval_gateway` (G11 `judge`, G10 `collect-no-evidence`). Cấu hình đọc như backend: `config/llm.yaml` + biến `EVAL_MODE=true`, `APP_ENV` (dev/test/staging), `LLM_BACKEND=real`, `FAST_MODEL`, `STRONG_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, `DATABASE_URL` (role `app_rw`).
+
+- **Chỉ chạy factory SAU khi đã sao lưu DB bản đo (H4).** Nó GHI vào DB: `users` (1 dòng `svc-eval`), `tickets` (1 dòng `eval-<run_id>`, `final_state` NULL), `turns` (1 dòng, đã kết thúc), cộng `spans`, `llm_calls` (có `prompt_full`) và `llm_cache` (mode `eval`) cho từng lời gọi. Lượt eval là điều kiện để `llm_calls` ghi được (FK `span → turn → ticket`).
+- Từ chối chạy (`EvalConfigError`, 0 lời gọi) nếu thiếu `EVAL_MODE=true`, `LLM_BACKEND` khác `real`, hoặc có vai trò trong `llm.yaml` có `temperature ≠ 0`. Thông báo lỗi chỉ nêu tên biến, không có khoá API hay DSN.
+- Cache `eval` (chạy lại cùng đầu vào → cùng đáp án), trần chi dùng chung `spend.cap_usd` (chi của lần đo tính vào N1) và `--max-usd X` đặt thêm trần riêng cho lượt này (= tổng chi lúc bắt đầu + X).
+- **Nhiệt độ**: guard `temperature = 0` chỉ áp cho prompt đọc nhiệt độ từ vai trò (`b10_answer`, `eval_groundedness`). B14 tự đặt nhiệt độ từng lời gọi theo thiết kế P5/P6 (self_report 0,0; vote k=5 là **0,7**) — giữ nguyên.
+- **Ảnh hưởng tới M9** (kiểm 22/10, không sửa M9; mỗi run thêm 1 ticket lá `final_state` NULL):
+  - Không vào mẫu số các tỉ lệ nghiệp vụ và `tokens_per_ticket` (lọc `final_state IS NOT NULL`: `monitor/queries/common.py` `DONE`, `business.py`, `ai.py:85`, `rules_data.py` `DRIFT_DONE`).
+  - **Có đếm**: phân bố intent của luật drift (`DRIFT_INTENT_SQL`: +1 ở bin `none`/run, `rules_data.py`, không lọc kết thúc); `cache_hit_rate`, `json_invalid_first_try_rate`, `fallback_rate` (`ai.py:124` — lời gọi của lượt eval vào cả tử lẫn mẫu); `cost_per_day` (chi eval vào chi theo ngày — đúng thực tế); luật 14 ngân sách (`LLM_SPEND_SQL`, tổng toàn bảng — chi eval làm cảnh báo 80 % đến sớm hơn, đúng ý N1).
+  - Không ảnh hưởng: các đếm theo `exit_code`/dòng audit (ticket eval không có), recover của worker (`scan_stale_turns` chỉ quét turn chưa kết thúc; turn eval có `ended_at`), quét ticket cha/con (`db/runtime.py`; ticket eval không là cha và không có cha).
+
+### G11 `collect` — dựng `answers.jsonl` từ DB
+
+```
+EVAL_MODE=true python -m app.eval.groundedness collect \
+    (--questions Q.jsonl | --from-run RUN_DIR --scenarios DIR | --from-probe ket-qua.json --families families.jsonl) \
+    --out DIR [--since ISO --until ISO]
+```
+
+Chỉ đọc: `DATABASE_URL` (role `app_rw`, vì `app_monitor` không đọc được bảng checkpoint) nhưng **mọi phiên bị ép `default_transaction_read_only=on`**. Nguồn từng trường: xem docstring `groundedness/collect.py` (audit B10/B8, checkpoint `conversation`/`retrieved`, `llm_calls.prompt_full` của `b10_answer`). `Q.jsonl` = `{scenario_id, family, ticket_id}`; `--from-probe` ghép `rows[].{id, ticket}` của `ket-qua.json` (`tests/probe/cong5.py`) với `families.jsonl`. **`family` bắt buộc từ đầu vào** — dòng có ticket mà thiếu họ → lỗi, không suy. Ra `answers.jsonl` + `collect_report.json` (`n_questions`, `n_collected`, `n_families`, `n_cannot_answer`, số ca bỏ theo lý do). `summary.json` của `judge` cũng ghi `n_families` (số họ trong các ca được chấm = số đơn vị rút lại của bootstrap). Mã thoát 3 nếu có ca bị bỏ vì lỗi hệ thống (`no_prompt_full`, `evidence_parse_failed`, `no_checkpoint`, `no_answer_message`).
+
+### `probe-input` — bộ câu cho `make probe` [Đề xuất 22/10 — P6 chốt P8 6.3.1]
+
+```
+EVAL_MODE=true python -m app.eval.groundedness probe-input --retrieval-set kb/eval/retrieval_set.yaml --out DIR
+make probe F=DIR/probe.jsonl         # rồi: collect --from-probe .verify/cong5/<giờ>/ket-qua.json --families DIR/families.jsonl
+```
+
+`probe.jsonl` = `{"id", "kind": "intent", "text": query, "gold": intent}` cho mọi câu `role: employee`. `families.jsonl` = `{scenario_id: id, family}` với **family = `expected_doc_ids[0]` theo đúng thứ tự trong YAML**; câu có `expected_doc_ids` rỗng (âm tính) → **family = id của câu** (mỗi câu một họ, không gộp chung). Bộ hiện tại: 56 câu, 22 câu âm tính.
+
+### G10 `collect-no-evidence`
+
+```
+EVAL_MODE=true PYTHONPATH=backend python scripts/eval/prob_variants.py collect-no-evidence \
+    --run RUN_DIR --out OUT --llm-factory app.eval.llm_factory:eval_gateway --p-method self_report [--max-usd X]
+```
+
+`RUN_DIR` = thư mục lượt harness (một file `predictions.jsonl` = một lượt, một `split`). Chọn ca `decided_by = llm` đã có nhãn; `kb_gap` lấy từ `audit_logs.detail->>'kb_gap'` dòng B13/B14 — đúng giá trị truyền vào `decide()` (**không** dùng `grounding.kb_gap` của B10, nghĩa khác). Action/RiskContext dựng lại từ checkpoint bằng chính `risk.context.build_ctx`; `within_business_hours` tính lại từ giờ dòng audit nên có thể lệch vài ms so với `now` của node ở sát 08:00/18:00 (prompt B14 không dùng `now`). Ra `with.jsonl`, `cases.jsonl`, `without.jsonl`, `probs.jsonl` (ca `kb_gap` chép `raw_prob`), `manifest.json` (gồm tổng hợp `llm_calls` của lượt eval). `p_method` phải khớp audit, lệch thì dừng.
+
+Kiểm: `backend/tests/unit/eval/test_noi_that_unit.py`, `backend/tests/integration/test_noi_that_pg.py` (Postgres), đột biến `scripts/mutation/mutate_noi_that.py` (17 mã).

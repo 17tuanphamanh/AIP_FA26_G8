@@ -9,7 +9,8 @@ dưới đây = **[Đề xuất 22/10]** (P8 v1.5 6.3.1; P6 chốt 16:40). Repo 
 P8 v1.4 không nhắc groundedness).
 
 Dữ liệu vào: CÂU HỎI THÔNG TIN (bộ `eval/retrieval` + các câu info của probe), chạy với LLM thật; KHÔNG dùng thẻ giả `[fake:…]`.
-`family` BẮT BUỘC trên mỗi dòng (họ = câu hỏi gốc + các biến thể) — thiếu thì lỗi, không suy từ tiền tố `scenario_id`.
+`family` BẮT BUỘC trên mỗi dòng (họ = câu hỏi gốc + các biến thể) — thiếu thì lỗi, không suy từ tiền tố `scenario_id`. Bộ câu truy hồi:
+họ = `expected_doc_ids[0]` (thứ tự YAML), câu âm tính → họ = id câu (`probe-input`). Thu thập từ DB: `collect` (xem `collect.py`).
 `chunks[].text` = mọi khối bằng chứng đã gửi `b10_answer` cho chunk được dẫn, GỒM cả chunk liền kề (D-24); nguồn khi thu thập:
 `llm_calls.prompt_full` (EVAL_MODE) — việc của mốc G.
 

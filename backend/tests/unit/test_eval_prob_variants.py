@@ -569,7 +569,10 @@ def test_cli_has_only_build_and_compare_and_no_variants_flag(pv: ModuleType, cap
 
 def test_script_scope_static() -> None:
     src = (REPO / SCRIPT).read_text(encoding="utf-8")
-    assert not re.search(r"^\s*(from|import)\s+app\.eval", src, re.MULTILINE)  # không cần EVAL_MODE
+    # không cần EVAL_MODE để nạp script / chạy build, compare: cấm import `app.eval` ở MỨC MODULE. `collect-no-evidence` (nối mốc G) nạp muộn,
+    # TRONG hàm `_collect_run`, và tự từ chối khi thiếu EVAL_MODE (test_collect_no_evidence_script_refuses_without_eval_mode).
+    assert not re.search(r"^(from|import)\s+app\.eval", src, re.MULTILINE)
+    assert len(re.findall(r"^\s+from app\.eval", src, re.MULTILINE)) == len(re.findall(r"^        from app\.eval", src, re.MULTILINE))
     assert not re.search(r"""['"][^'"]*\.env['"]""", src)  # không mở .env
     assert "eval/scenarios" not in src and "kb/" not in src
     assert not re.search(r"\b(httpx|requests|urllib|socket)\b", src)  # không gọi mạng

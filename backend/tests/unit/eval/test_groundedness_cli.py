@@ -38,6 +38,7 @@ def test_judge_writes_results_summary_manifest(tmp_path: Path, answers: Path, ca
     summary = json.loads((out / report.SUMMARY).read_text(encoding="utf-8"))
     # 6 ca yếu: 3 ý (1 supported A, 1 unsupported, 1 supported B); 6 ca vững: 1 ý supported → 12 ca, 24 ý, 6·2+6 = 18 supported
     assert (summary["n_judged"], summary["n_claims"], summary["n_supported"], summary["n_unsupported"]) == (12, 24, 18, 6)
+    assert summary["n_families"] == 5  # W0, W1, S0, S1, S2
     assert summary["supported_rate"] == pytest.approx(18 / 24) and summary["citation_precision"] == 1.0  # 18 cặp dẫn, đều có ý supported
     assert (out / report.ERRORS).read_text(encoding="utf-8") == ""
     manifest = json.loads((out / report.MANIFEST).read_text(encoding="utf-8"))

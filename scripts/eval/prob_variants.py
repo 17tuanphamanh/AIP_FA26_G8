@@ -19,9 +19,13 @@ Mỗi lượt (S1, S2) một file `probs.jsonl` riêng, phân biệt bằng đư
 - WITHOUT.jsonl `{scenario_id, raw_prob}` hoặc `{scenario_id, error}` — kết quả `collect_no_evidence`; ca `kb_gap` không có dòng.
 - cases.jsonl   `{scenario_id, action, ctx}` (Action, RiskContext tuần tự hóa) — đầu vào của `collect_no_evidence`.
 
-Thu thập `no_evidence` gọi LLM thật → thuộc mốc G, không có subcommand ở đây (cần nối gateway). Ở mốc G:
-  rows = asyncio.run(collect_no_evidence(LlmRiskEstimator(llm, p_method=<như bản đóng băng>, eval_mode=True), recorded, cases))
-  write_jsonl(path, rows)
+Thu thập `no_evidence` gọi LLM thật (mốc G) — subcommand `collect-no-evidence` (chỉ chạy khi `EVAL_MODE=true`; chạy factory SAU khi đã sao
+lưu DB bản đo, H4):
+  EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/prob_variants.py collect-no-evidence \
+      --run RUN_DIR --out OUT --llm-factory app.eval.llm_factory:eval_gateway --p-method self_report [--max-usd 1.5]
+  RUN_DIR = thư mục lượt harness (có `predictions.jsonl`). DB → `with.jsonl` + `cases.jsonl` (chỉ đọc, `app.eval.prob_collect`: kb_gap lấy
+  từ `audit_logs.detail->>'kb_gap'` dòng B13/B14 — đúng giá trị truyền vào `decide()`), `collect_no_evidence` qua factory → `without.jsonl`,
+  rồi `build_probs` → `probs.jsonl`, kèm `manifest.json`. Mã thoát 3 nếu có ca lỗi LLM / thiếu dòng no_evidence.
 Lần gọi lỗi (`LLMUnavailable`, `LLMSchemaError`, `LLMBudgetExceeded`, `TurnBudgetExceeded`) → dòng `error` (tên lớp lỗi), ca đó bị bỏ
 `no_evidence` + `max`, không fail cả lượt. Lỗi khác là bug → ném lên.
 
@@ -39,14 +43,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from app.core.errors import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import Action
 from app.risk.calibrator import Calibrator, LabeledSample, fit_platt
 from app.risk.decision_math import Route, auc, brier, ece
-from app.risk.estimator import RiskEstimator
+from app.risk.estimator import PMethod, RiskEstimator
 from app.risk.models import RiskContext
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -337,6 +341,66 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _collect_run(args: argparse.Namespace) -> int:
+    try:
+        from app.eval.dbread import open_reader
+        from app.eval.llm_factory import eval_usage, open_port
+        from app.eval.predictions import load_predictions
+        from app.eval.prob_collect import gather
+        from app.risk.estimator import LlmRiskEstimator
+        from app.settings import Settings, load_policy
+    except ImportError as e:
+        if "EVAL_MODE" in str(e):
+            raise DataError("collect-no-evidence chỉ chạy khi EVAL_MODE=true") from None
+        raise
+    import hashlib
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]  # chỉ biến môi trường, không đọc .env
+    hours = load_policy(settings.config_dir / "policy.json").business_hours
+    predictions = args.run / "predictions.jsonl"
+    records = load_predictions(predictions)
+    sha = hashlib.sha256(predictions.read_bytes()).hexdigest()
+    run_id = args.run_id or f"g10-{sha[:8]}"
+    async with open_reader(settings) as reader:
+        got = await gather(reader, records, hours=hours, p_method=args.p_method)
+        recorded = [RecordedCase.model_validate(x) for x in got.recorded]
+        cases = {c["scenario_id"]: CollectCase.model_validate(c) for c in got.cases}
+        write_jsonl(args.out / "with.jsonl", recorded)
+        write_jsonl(args.out / "cases.jsonl", list(cases.values()))
+        async with open_port(args.llm_factory, run_id, max_usd=args.max_usd) as llm:
+            estimator = LlmRiskEstimator(llm, p_method=args.p_method, eval_mode=True)
+            without = await collect_no_evidence(estimator, recorded, cases)
+        usage = await eval_usage(reader.engine, run_id)
+    write_jsonl(args.out / "without.jsonl", without)
+    res = build_probs(recorded, without)
+    write_jsonl(args.out / "probs.jsonl", res.rows)
+    manifest = {
+        "kind": "prob_variants", "run_id": run_id, "predictions_sha256": sha, "p_method": args.p_method, "gathered": got.report,
+        "build": {"n_cases": res.n_cases, "n_copied_kb_gap": res.n_copied, "failed": res.failed, "n_missing": res.n_missing},
+        "llm_usage": usage, "generated_at": datetime.now(UTC).isoformat(),
+        "limitations": ["within_business_hours tính lại từ giờ dòng audit (lệch ms ở sát 08:00/18:00)",
+                        "B14 tự đặt nhiệt độ từng lời gọi (tự nêu 0,0; bỏ phiếu k=5 là 0,7)"],
+    }  # fmt: skip
+    with (args.out / "manifest.json").open("x", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    print(f"ca đi lớp LLM: {res.n_cases}; chép kb_gap: {res.n_copied}; lỗi LLM: {sum(res.failed.values())}; thiếu: {res.n_missing}")
+    print(f"đã ghi with/cases/without/probs/manifest → {args.out}")
+    return 3 if res.failed or res.n_missing else 0
+
+
+def _cmd_collect(args: argparse.Namespace) -> int:
+    import asyncio
+
+    try:
+        from app.eval.prob_collect import CollectError
+    except ImportError:
+        CollectError = DataError  # type: ignore[misc,assignment]  # chưa có EVAL_MODE → `_collect_run` báo DataError rõ ràng
+    try:
+        return asyncio.run(_collect_run(args))
+    except CollectError as e:
+        raise DataError(str(e)) from None
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="prob_variants.py", description=__doc__.split("\n")[0] if __doc__ else None)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -345,6 +409,14 @@ def _parser() -> argparse.ArgumentParser:
     b.add_argument("without_path", type=Path, metavar="WITHOUT.jsonl")
     b.add_argument("out", type=Path, metavar="OUT/probs.jsonl")
     b.set_defaults(fn=_cmd_build)
+    n = sub.add_parser("collect-no-evidence", help="DB + lượt harness → with/cases/without/probs (gọi LLM thật qua factory; EVAL_MODE=true)")
+    n.add_argument("--run", type=Path, required=True, help="thư mục lượt harness (có predictions.jsonl)")
+    n.add_argument("--out", type=Path, required=True, help="thư mục MỚI cho kết quả")
+    n.add_argument("--llm-factory", required=True, help="pkg.mod:fn — vd app.eval.llm_factory:eval_gateway")
+    n.add_argument("--p-method", choices=get_args(PMethod.__value__), required=True, help="như bản đóng băng; phải khớp audit")
+    n.add_argument("--max-usd", type=float, default=None, help="trần chi riêng cho lượt này")
+    n.add_argument("--run-id", default=None)
+    n.set_defaults(fn=_cmd_collect)
     c = sub.add_parser("compare", help="chẩn đoán ECE/Brier/AUC từng biến thể (không chọn)")
     c.add_argument("with_path", type=Path, metavar="WITH.jsonl")
     c.add_argument("probs", type=Path, metavar="probs.jsonl")

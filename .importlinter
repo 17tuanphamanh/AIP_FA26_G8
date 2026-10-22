@@ -207,6 +207,10 @@ forbidden_modules =
     app.llm.providers
     app.llm.store
     app.llm.wiring
+ignore_imports =
+    # G10/G11 nối mốc G: `eval/llm_factory.py` là composition root của lần đo (dựng `LLMClient` thật như `graph/wiring.py`/`main.py`).
+    app.eval.llm_factory -> app.llm.wiring
+    app.eval.llm_factory -> app.llm.store
 
 # 10. M9 không là nguồn dữ liệu cho M5 (kế hoạch M9 mục 4.1.4, 4.2 — M9 A0): chỉ app.api, app.worker (và app.main,
 #     composition root) import app.monitor. Nguồn liệt kê TƯỜNG MINH mọi package/module cấp một của app trừ api,
