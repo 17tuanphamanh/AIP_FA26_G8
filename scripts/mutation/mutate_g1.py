@@ -79,7 +79,11 @@ _C2 = "_C2 = cost_matrix_for_ratio(2).costs\n"
 _FIXED = "    {g: MappingProxyType({p: _C1[g][p] - _MISS[g][p] for p in ROUTES}) for g in ROUTES}\n"
 _RSTAR = "    r = (fb - fa) / (ma - mb)\n"
 _EQUAL = "    if abs(ma - mb) <= SLOPE_TOL:\n"
-_DOMINATED = '    return (r, "ok") if r > 0 else (None, "dominated")  # TODO(G1-Q2): r* ≤ 0 → một bên rẻ hơn với mọi r > 0\n'
+_DOMINATED = '    return (r, "ok") if r > 0 else (None, "dominated")  # r* < 0 → một bên rẻ hơn với mọi r > 0 (G1-Q2)\n'
+_TIE = "    if abs(fb - fa) <= FIXED_TOL:\n"
+_TIE_RET = '        return None, "tie"  # fixed bằng nhau: bên miss nhỏ hơn rẻ hơn với mọi r > 0\n'
+_FIXED_TOL = "FIXED_TOL = 1e-9  # |fixed_A − fixed_B| ≤ FIXED_TOL → hoà (Tuấn Anh 22/10): tử số r* chỉ là nhiễu số thực\n"
+_TIE_TESTS = ["test_breakeven_tie_exact", "test_breakeven_tie_float_noise", "test_breakeven_tie_within_tolerance"]
 _COMMON_A = "    common_a = [r for r in records_a if r.scenario_id in keep]\n"
 _COMMON_B = "    common_b = [r for r in records_b if r.scenario_id in keep]\n"
 _SAME_SCN = "    if gold_a.keys() != gold_b.keys():\n"
@@ -131,10 +135,10 @@ MUTATIONS_ALL: list[Mutation] = [
              [_swap(MET, _RSTAR, "    r = (fa - fb) / (ma - mb)", "M-G1-14")], UT,
              ["test_breakeven_vs_manual_hand", "test_breakeven_cost_equal_at_rstar"]),
     Mutation("M-G1-15 bỏ nhánh equal_miss",
-             [_off(MET, _EQUAL, "M-G1-15")], UT, ["test_breakeven_equal_miss"]),
-    Mutation("M-G1-16 bỏ nhánh dominated (trả r* ≤ 0)",
-             [_swap(MET, _DOMINATED, '    return r, "ok"', "M-G1-16")], UT,
-             ["test_breakeven_dominated", "test_breakeven_rstar_zero_is_dominated"]),
+             [_off(MET, _EQUAL, "M-G1-15")], UT,
+             ["test_breakeven_equal_miss", "test_breakeven_equal_miss_before_tie", "test_breakeven_cells_from_cost_matrix"]),
+    Mutation("M-G1-16 bỏ nhánh dominated (trả r* < 0)",
+             [_swap(MET, _DOMINATED, '    return r, "ok"', "M-G1-16")], UT, ["test_breakeven_dominated"]),
     Mutation("M-G1-17 phần cố định = C(1) (quên trừ phần theo r)",
              [_swap(MET, _FIXED, _FIXED.replace("_C1[g][p] - _MISS[g][p]", "_C1[g][p]"), "M-G1-17")], UT,
              ["test_breakeven_vs_manual_hand", "test_breakeven_cells_from_cost_matrix"]),
@@ -163,6 +167,18 @@ MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G1-25 breakeven không lọc lá chưa nhãn",
              [_swap(MET, _LABELLED, "    labelled = list(gold_a)", "M-G1-25")], UT,
              ["test_breakeven_skips_unlabeled", "test_breakeven_all_unlabeled"]),
+    # ---- hoà fixed (Tuấn Anh 22/10) ----
+    Mutation("M-G1-26 bỏ dung sai hoà (so ==)",
+             [_swap(MET, _TIE, "    if fb == fa:", "M-G1-26")], UT,
+             ["test_breakeven_tie_float_noise", "test_breakeven_tie_within_tolerance"]),
+    Mutation("M-G1-27 hoà trả r* = 0 thay None",
+             [_swap(MET, _TIE_RET, '        return 0.0, "tie"', "M-G1-27")], UT, _TIE_TESTS),
+    Mutation("M-G1-28 hoà trả reason ok",
+             [_swap(MET, _TIE_RET, '        return None, "ok"', "M-G1-28")], UT, _TIE_TESTS),
+    Mutation("M-G1-29 bỏ nhánh hoà",
+             [_off(MET, _TIE, "M-G1-29")], UT, ["test_breakeven_tie_exact", "test_breakeven_tie_float_noise"]),
+    Mutation("M-G1-30 dung sai hoà quá rộng (1e-6)",
+             [_swap(MET, _FIXED_TOL, "FIXED_TOL = 1e-6", "M-G1-30")], UT, ["test_breakeven_tie_outside_tolerance"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL
