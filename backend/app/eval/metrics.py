@@ -30,6 +30,7 @@ from app.risk.decision_math import (
     Route,
     brier,
     clopper_pearson_upper,
+    cost_matrix_for_ratio,
     ece,
 )
 
@@ -339,6 +340,263 @@ def efficiency(
         deflection=Rate(sum(1 for r in leaves if r.resolution_path == DEFLECTED_PATH), n),
         clarification=Mean(float(sum(r.clarification_turns for r in leaves)), n),
         one_turn=Rate(sum(1 for r in leaves if r.clarification_turns == 0 and r.close_reason == ONE_TURN_CLOSE_REASON), n),
+    )
+
+
+# ---- G1: chỉ số theo ROUTE có trọng số + điểm hoà vốn (P8 §6.1, §6.2, §5.2; chốt #32 18/10) ----------------------------------
+# Hàm thuần trên `route` — route của stack (Chỉ-luật), offline §5.3 (phương án có LLM) hoặc giải tích (Thủ công). Ca không tới
+# điểm log 4 do `offline.py` đổi thành ESCALATE_L2 trước khi gọi (chốt 3); ở đây route None = ngoài mẫu số như §6.1.
+# TODO(G1-Q8): đặt trong metrics.py (P8 §2), N3d của mutate_g1.py giữ chuỗi gốc của đột biến cũ — chờ Tuấn Anh xác nhận ở #32.
+
+BREAKEVEN_RATIOS: tuple[float, ...] = (5.0, 10.0, 20.0)  # P8 §5.3 — độ nhạy tỉ lệ bỏ sót/duyệt 5/10/20
+SLOPE_TOL = 1e-12  # |miss_A − miss_B| ≤ SLOPE_TOL → coi là bằng nhau (chốt 1: b_A = b_B → không có điểm hoà vốn)
+type BreakevenReason = Literal["ok", "equal_miss", "dominated", "no_common", "missing_groups"]
+
+
+@dataclass(frozen=True)
+class WeightedMean:
+    """Như `WeightedRate` nhưng trên trung bình: Σ_g mix[g]·mean_g. Nhóm rỗng → `value` None + `missing_groups` (Q5) — không
+    chuẩn hoá lại trên nhóm còn lại."""
+
+    mix: Mapping[Group, float]
+    by_group: Mapping[Group, Mean]
+    missing_groups: tuple[Group, ...]
+    value: float | None
+    n_unlabeled: int = 0
+
+
+@dataclass(frozen=True)
+class OperatingPoint:
+    """Chỉ số theo ROUTE trên một phân bố vận hành, nhóm theo gold, n_g = lá đã nhãn có route: `cost` lượt duyệt/ticket;
+    `automation` = route AUTO; `review` = route HITL — khối lượng duyệt, L2 không tính (chốt 5); `l2` = route ESCALATE_L2 — khác
+    `escalation` của `efficiency()` (điểm log 8, `exit_code`; chốt 2)."""
+
+    mix: Mapping[Group, float]
+    cost: WeightedMean
+    automation: WeightedRate
+    review: WeightedRate
+    l2: WeightedRate
+
+
+@dataclass(frozen=True)
+class OperatingMetrics:
+    """`cost` = chi phí kỳ vọng KHÔNG trọng số (§6.1, = `mean_route_cost`) — số chính RQ1 (chốt 4); `main` (mix chính) và
+    `sensitivity` (các bộ độ nhạy) là số phụ. TODO(G1-Q6): giữ `cost` dù trùng `safety().cost` — chờ xác nhận ở #32."""
+
+    n_m5: int
+    n_unlabeled: int
+    cost: Mean
+    main: OperatingPoint
+    sensitivity: Mapping[str, OperatingPoint]
+
+
+def _reached(records: Records) -> dict[Group, list[PredictionRecord]]:
+    """Lá ĐÃ NHÃN có điểm log 4 (route ≠ None), chia theo nhóm N3 của GOLD (#32 mục 5). Lá chưa nhãn bỏ qua (G2-Q22)."""
+    rows: dict[Group, list[PredictionRecord]] = {g: [] for g in GROUPS}
+    for r in _labelled(records):
+        if r.route is not None:
+            rows[n3_group(r.expected_route)].append(r)
+    return rows
+
+
+def _weigh(frozen: Mapping[Group, float], parts: Mapping[Group, float | None]) -> tuple[tuple[Group, ...], float | None]:
+    """(nhóm thiếu, Σ_g mix[g]·phần_g); có nhóm thiếu (phần None) → giá trị None, không chuẩn hoá lại (Q5)."""
+    missing = tuple(g for g in GROUPS if parts[g] is None)
+    return missing, None if missing else sum(frozen[g] * cast(float, parts[g]) for g in GROUPS)
+
+
+def _weighted_cost(
+    reached: Mapping[Group, list[PredictionRecord]], frozen: Mapping[Group, float], cost: CostMatrix, unlabeled: int
+) -> WeightedMean:
+    means = {g: mean_route_cost(rs, cost) if rs else Mean(0.0, 0) for g, rs in reached.items()}
+    missing, value = _weigh(frozen, {g: m.value for g, m in means.items()})
+    return WeightedMean(frozen, MappingProxyType(means), missing, value, unlabeled)
+
+
+def _share(
+    reached: Mapping[Group, list[PredictionRecord]], frozen: Mapping[Group, float], routes: Collection[str], unlabeled: int
+) -> WeightedRate:
+    rates = {g: Rate(sum(1 for r in rs if r.route in routes), len(rs)) for g, rs in reached.items()}
+    missing, value = _weigh(frozen, {g: q.value for g, q in rates.items()})
+    return WeightedRate(frozen, MappingProxyType(rates), missing, value, unlabeled)
+
+
+def _point(reached: Mapping[Group, list[PredictionRecord]], mix: MixLike, cost: CostMatrix, unlabeled: int) -> OperatingPoint:
+    frozen = check_mix(mix)
+    return OperatingPoint(
+        mix=frozen,
+        cost=_weighted_cost(reached, frozen, cost, unlabeled),
+        automation=_share(reached, frozen, ("AUTO",), unlabeled),
+        review=_share(reached, frozen, ("HITL",), unlabeled),
+        l2=_share(reached, frozen, ("ESCALATE_L2",), unlabeled),
+    )
+
+
+def operating_metrics(
+    records: Records,
+    mix: MixLike = OPERATING_MIX,
+    sensitivity_mixes: Mapping[str, MixLike] = SENSITIVITY_MIXES,
+    cost: CostMatrix = DEFAULT_COST,
+) -> OperatingMetrics:
+    """P8 §6.2 "với phương án có LLM, automation và escalation tính từ route offline" + chi phí §6.1 có trọng số (G1): mỗi chỉ số
+    = Σ_g mix[g]·(chỉ số trong nhóm gold g), mix chính và các bộ độ nhạy. Mẫu số = lá đã nhãn có route (như §6.1); lá chưa nhãn
+    đếm `n_unlabeled`. Đơn vị chi phí: lượt duyệt/ticket; `cost` truyền được `cost_matrix_for_ratio(5|20)`."""
+    plain = mean_route_cost(records, cost)  # `[]` → ValueError
+    unlabeled = n_unlabeled(records)
+    reached = _reached(records)
+    return OperatingMetrics(
+        n_m5=plain.n,
+        n_unlabeled=unlabeled,
+        cost=plain,
+        main=_point(reached, mix, cost, unlabeled),
+        sensitivity=MappingProxyType({k: _point(reached, m, cost, unlabeled) for k, m in sensitivity_mixes.items()}),
+    )
+
+
+def manual_baseline(records: Records) -> list[PredictionRecord]:
+    """Thủ công giải tích (P8 §5.2: mọi ca có hành động coi là qua người): lá có điểm log 4 (route ≠ None) → HITL, lá route None
+    giữ None; `strategy = "manual"`, các trường khác giữ nguyên. Hợp đồng không có trường "có hành động" → route ≠ None là đại diện
+    (P8 §6: đơn vị = lá có hành động đi tới M5). TODO(G1-Q1): Thủ công dựng từ CHÍNH phương án đem so — chờ xác nhận ở #32."""
+    out: list[PredictionRecord] = []
+    for r in records:
+        update: dict[str, object] = {"strategy": "manual"}
+        if r.route is not None:  # lá có hành động
+            update["route"] = "HITL"
+        out.append(r.model_copy(update=update))
+    return out
+
+
+# Ô chi phí theo họ C(r) = `cost_matrix_for_ratio(r)` (affine theo r): C(r)[g][p] = _FIXED[g][p] + _MISS[g][p]·r. Lấy từ chính hàm
+# đó (không hard-code ô nào phụ thuộc r): hiện HITL→AUTO có _MISS = 1, L2→AUTO có _MISS = 2, các ô khác _MISS = 0.
+_C1 = cost_matrix_for_ratio(1).costs
+_C2 = cost_matrix_for_ratio(2).costs
+_MISS: Mapping[Route, Mapping[Route, float]] = MappingProxyType(
+    {g: MappingProxyType({p: _C2[g][p] - _C1[g][p] for p in ROUTES}) for g in ROUTES}
+)
+_FIXED: Mapping[Route, Mapping[Route, float]] = MappingProxyType(
+    {g: MappingProxyType({p: _C1[g][p] - _MISS[g][p] for p in ROUTES}) for g in ROUTES}
+)
+
+
+@dataclass(frozen=True)
+class Breakeven:
+    """Điểm hoà vốn A vs B (chốt #32 18/10 câu 1, phương án A) trên phần giao `n` lá. Chi phí/ticket của X theo C(r) là
+    fixed_X + miss_X·r: `fixed` = lượt duyệt/ticket không phụ thuộc r; `miss` = ca bỏ sót quy đổi/ticket (HITL→AUTO 1, L2→AUTO 2
+    — tỉ lệ 2:1 của `cost_matrix_for_ratio`). `r_star` = (fixed_B − fixed_A)/(miss_A − miss_B), đơn vị lượt duyệt / một ca bỏ sót:
+    dưới r*, bên có `miss` lớn hơn rẻ hơn. `saving[r]` = cost_B(r) − cost_A(r), lượt duyệt/ticket (dương = A rẻ hơn).
+    `mix` None = không trọng số (số chính, chốt 4)."""
+
+    mix: Mapping[Group, float] | None
+    n: int
+    n_unlabeled: int
+    n_excluded_a: int
+    n_excluded_b: int
+    fixed_a: float | None
+    miss_a: float | None
+    fixed_b: float | None
+    miss_b: float | None
+    r_star: float | None
+    reason: BreakevenReason
+    missing_groups: tuple[Group, ...]
+    saving: Mapping[float, float | None]
+
+
+def _avg(cells: Mapping[Route, Mapping[Route, float]], pairs: list[tuple[Route, Route]]) -> float | None:
+    return sum(cells[g][p] for g, p in pairs) / len(pairs) if pairs else None
+
+
+def _fixed_miss(
+    rows: Records, frozen: Mapping[Group, float] | None
+) -> tuple[tuple[Group, ...], float | None, float | None]:
+    """(nhóm thiếu, fixed, miss) của một phương án trên phần giao; `frozen` None → không trọng số."""
+    pairs = _pairs(_gold(rows))
+    if frozen is None:
+        return (), _avg(_FIXED, pairs), _avg(_MISS, pairs)
+    by_group = {g: [(gd, p) for gd, p in pairs if n3_group(gd) == g] for g in GROUPS}
+    missing, fixed = _weigh(frozen, {g: _avg(_FIXED, ps) for g, ps in by_group.items()})
+    _, miss = _weigh(frozen, {g: _avg(_MISS, ps) for g, ps in by_group.items()})
+    return missing, fixed, miss
+
+
+def _cost_at(rows: Records, frozen: Mapping[Group, float] | None, cm: CostMatrix) -> float | None:
+    """Chi phí/ticket với ma trận `cm`, tính TRỰC TIẾP (§6.1 hoặc bản trọng số) — không qua fixed/miss."""
+    if frozen is None:
+        return mean_route_cost(rows, cm).value if rows else None
+    return _weighted_cost(_reached(rows), frozen, cm, 0).value
+
+
+def _minus(b: float | None, a: float | None) -> float | None:
+    return b - a if a is not None and b is not None else None
+
+
+def _r_star(
+    n: int, missing: tuple[Group, ...], fa: float | None, ma: float | None, fb: float | None, mb: float | None
+) -> tuple[float | None, BreakevenReason]:
+    if n == 0:
+        return None, "no_common"
+    if missing or fa is None or ma is None or fb is None or mb is None:
+        return None, "missing_groups"
+    if abs(ma - mb) <= SLOPE_TOL:
+        return None, "equal_miss"  # chốt 1: b_A = b_B
+    r = (fb - fa) / (ma - mb)
+    return (r, "ok") if r > 0 else (None, "dominated")  # TODO(G1-Q2): r* ≤ 0 → một bên rẻ hơn với mọi r > 0
+
+
+def breakeven(
+    records_a: Records,
+    records_b: Records,
+    mix: MixLike | None = None,
+    ratios: Sequence[float] = BREAKEVEN_RATIOS,
+) -> Breakeven:
+    """Điểm hoà vốn r* của A so với B + tiết kiệm/ticket ở từng `ratios` (chốt 1; v1 không có ticket/tháng). Báo cáo gọi cho mỗi
+    phương án có LLM X: `breakeven(X, manual_baseline(X))` và `breakeven(X, <Chỉ-luật>)`; mỗi cặp với `mix=None` (số chính) và
+    từng mix (số phụ). TODO(G1-Q7): một mix mỗi lần gọi — chờ xác nhận ở #32.
+
+    - Hai bên phải cùng tập `scenario_id`, cùng `split` (như `paired_family_bootstrap_diff`) và cùng `expected_route` theo
+      `scenario_id` → khác: ValueError. `[]`, mix sai, ratio ≤ 0 → ValueError.
+    - Phần giao (P8 §5.4 — so trên ca tới M5 ở mọi phương án): lá đã nhãn có route ở CẢ HAI bên. `n_excluded_a` =
+      lá đã nhãn có route ở A mà None ở B; `n_excluded_b` ngược lại. Lá chưa nhãn bỏ qua, đếm `n_unlabeled`.
+    - Không có điểm hoà vốn → `r_star` None + `reason`: `no_common` (phần giao rỗng), `missing_groups` (có mix, nhóm rỗng — Q5),
+      `equal_miss` (miss bằng nhau), `dominated` (r* ≤ 0). `saving` dấu cost_B − cost_A."""
+    _require(records_a)
+    _require(records_b)
+    gold_a = {r.scenario_id: r.expected_route for r in records_a}
+    gold_b = {r.scenario_id: r.expected_route for r in records_b}
+    if gold_a.keys() != gold_b.keys():
+        raise ValueError("records_a, records_b: tập scenario_id khác nhau — hai phương án phải trên cùng tập kịch bản")
+    if {r.split for r in records_a} ^ {r.split for r in records_b}:
+        raise ValueError("records_a, records_b: split khác nhau — không so hai phương án trên hai tập dữ liệu khác")
+    # TODO(G1-Q4): cùng scenario_id khác gold → ValueError — chờ Tuấn Anh xác nhận ở #32.
+    if any(gold_a[s] != gold_b[s] for s in gold_a):
+        raise ValueError("records_a, records_b: cùng scenario_id mà expected_route khác nhau — hai file khác gold")
+    frozen = check_mix(mix) if mix is not None else None
+    matrices = {float(r): cost_matrix_for_ratio(r) for r in ratios}  # ratio ≤ 0 → ValueError
+    route_a = {r.scenario_id: r.route for r in records_a}
+    route_b = {r.scenario_id: r.route for r in records_b}
+    labelled = [s for s, g in gold_a.items() if g is not None]
+    # TODO(G1-Q3): phần giao + n_excluded_a/b — chờ Tuấn Anh xác nhận ở #32.
+    keep = {s for s in labelled if route_a[s] is not None and route_b[s] is not None}
+    common_a = [r for r in records_a if r.scenario_id in keep]
+    common_b = [r for r in records_b if r.scenario_id in keep]
+    missing, fa, ma = _fixed_miss(common_a, frozen)
+    _, fb, mb = _fixed_miss(common_b, frozen)
+    r_star, reason = _r_star(len(keep), missing, fa, ma, fb, mb)
+    # TODO(G1-Q5): saving = cost_B − cost_A (dương = A rẻ hơn) — chờ Tuấn Anh xác nhận ở #32.
+    saving = {r: _minus(_cost_at(common_b, frozen, cm), _cost_at(common_a, frozen, cm)) for r, cm in matrices.items()}
+    return Breakeven(
+        mix=frozen,
+        n=len(keep),
+        n_unlabeled=n_unlabeled(records_a),
+        n_excluded_a=sum(1 for s in labelled if route_a[s] is not None and route_b[s] is None),
+        n_excluded_b=sum(1 for s in labelled if route_b[s] is not None and route_a[s] is None),
+        fixed_a=fa,
+        miss_a=ma,
+        fixed_b=fb,
+        miss_b=mb,
+        r_star=r_star,
+        reason=reason,
+        missing_groups=missing,
+        saving=MappingProxyType(saving),
     )
 
 
