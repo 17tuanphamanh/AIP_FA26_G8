@@ -1,0 +1,6 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,ablation,arm,cost,fnr_situation,fnr_upper95_1sided,clarification_mean
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid đầy đủ,Hybrid,2.625000,0.333333,0.864650,0.375000
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,bỏ lớp luật (= Chỉ-LLM),Chỉ-LLM,1.375000,0.000000,0.631597,0.000000
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,bỏ lớp LLM (= Chỉ-luật),Chỉ-luật,1.125000,0.000000,0.631597,0.000000
+dddddddddddd,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,"bỏ tool (tắt chẩn đoán chủ động, S3)","Hybrid (tắt chẩn đoán, S3)",2.625000,0.333333,0.864650,1.375000
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,0,1,0,bỏ RAG ở M5 (biến thể không trích đoạn),không có dữ liệu,,,,

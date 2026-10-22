@@ -128,3 +128,23 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
   `confirm_default`), `ignored_fields`, `schema_version`, `predictions_unavailable`.
   Các khoá của 21/10 (`b2_tau`, `b2_judge_model`, SHA hai model, `rate_limits`) để `null` và liệt kê trong `unavailable`.
   Không có manifest thì không đưa số vào báo cáo (P8 §5.1).
+
+## Báo cáo G5 — `report.py` (RQ1, RQ3)
+
+Sinh bảng Markdown + CSV từ `predictions.jsonl` (v1.1) và `manifest.json` của từng lượt chạy (P8 v1.4 §6, §7). Chỉ gọi `metrics.py`,
+`stats.py`, `decision_math`; không tính route offline. Không có manifest thì không ra số.
+
+```
+EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.report \
+  --arm S1/predictions.jsonl S1/manifest.json --arm S2/predictions.jsonl S2/manifest.json \
+  --arm S3/predictions.jsonl S3/manifest.json [--situations situations.csv] --out <thư mục mới>
+```
+
+- Mỗi `--arm` là một phương án (`rule_only`, `llm_only`, `hybrid`, `hybrid_guarded`, theo trường `strategy`); lượt S3 là Hybrid có
+  `enable_proactive_diagnosis = false` ở manifest. Thủ công và Full-auto là giải tích, dựng trên phần giao.
+- `--situations`: CSV (`scenario_id,situation_id`) hoặc JSON. Có file thì FNR theo tình huống gộp theo `situation_id`; thiếu thì lùi về họ
+  và báo CẢNH BÁO ở T3a, T4. Bootstrap luôn theo họ.
+- Mọi bảng mang `run_id, dataset_sha256, git_commit, n, n_unlabeled, n_excluded`. Số chính RQ1 = chi phí không trọng số (T1); T5, T6, T7 là số phụ.
+- Test: `backend/tests/unit/eval/test_report.py` (golden ở `golden/report/*.golden`; đổi định dạng có chủ ý thì chạy với `UPDATE_GOLDEN=1` rồi đọc lại
+  diff). Đột biến: `scripts/mutation/mutate_g5.py`.
+- Chưa có: biểu đồ, `folds/<i>.json`, 10 ca sai tiêu biểu, biến thể "không trích đoạn" (cần `offline.py`, `calibrate.py`, DB).

@@ -1,0 +1,3 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,comparison,diff,ci95_lo,ci95_hi,contains_zero,n_boot,n_used,n_families,reading
+cccccccccccc+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid − Chỉ-luật,1.500000,0.000000,3.750000,true,200,200,4,chưa đủ bằng chứng khác biệt
+cccccccccccc+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid − Chỉ-LLM,1.250000,-0.500000,3.750000,true,200,200,4,chưa đủ bằng chứng khác biệt
