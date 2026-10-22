@@ -30,11 +30,11 @@ def confirm(value: bool = True) -> dict[str, Any]:
 
 
 def real_scenario(sid: str = "SENTINEL_ID_1", *, family: str | None = None, user_id: str = "u_sentinel",
-                  turns: Sequence[Any] | None = None, expected_route: str | None = None, decision: str = "approve",
+                  turns: Sequence[Any] | None = None, expected_route: str | None = None, decision: str | None = "approve",
                   intents: Sequence[str] = ("vpn",), gold_doc_ids: Sequence[str] = ("SENTINEL_DOC",),
-                  **gold_over: Any) -> dict[str, Any]:  # fmt: skip
+                  drop_action: Sequence[str] = (), **gold_over: Any) -> dict[str, Any]:  # fmt: skip
     """Một kịch bản tổng hợp đủ khoá thật; mọi giá trị chữ có chuỗi canh `SENTINEL_`. Mặc định `expected_route = None` (chưa
-    nhãn — như dữ liệu thật tới 25/10)."""
+    nhãn — như dữ liệu thật tới 25/10). `drop_action`: bỏ khoá khỏi `gold.action` (dữ liệu thật thiếu `requested_for`/`params`)."""
     gold: dict[str, Any] = {
         "intents": list(intents), "need_type": "SENTINEL_NEED", "expected_route": expected_route, "expected_exit": None,
         "approver_decision": decision, "gold_doc_ids": list(gold_doc_ids),
@@ -42,6 +42,8 @@ def real_scenario(sid: str = "SENTINEL_ID_1", *, family: str | None = None, user
                    "params": {"p": "SENTINEL_P", "n": 1}},
         "facts": {"f": "SENTINEL_FACT", "b": True},
     }  # fmt: skip
+    for key in drop_action:
+        del gold["action"][key]
     gold.update(gold_over)
     return {
         "id": sid, "family": family or f"SENTINEL_FAM_{sid}", "source": "SENTINEL_SRC", "at": "2026-10-20T09:00:00+07:00",

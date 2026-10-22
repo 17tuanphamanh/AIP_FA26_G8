@@ -1,7 +1,9 @@
 """Nạp kịch bản M8 cho harness G2 theo CẤU TRÚC THẬT (Tuấn Anh 19/10, `~/m9-notes/g2-chot.md` — chỉ tên trường + kiểu, giống nhau 186
 file) — mỗi file `*.yaml`/`*.yml` (không đệ quy) là MỘT kịch bản (mapping) hoặc một DANH SÁCH.
 
-Schema CHỈ đúng các khoá của cấu trúc thật, BẮT BUỘC đủ, `extra="forbid"` ở MỌI tầng (bắt gõ nhầm tên); `gold.hidden_factor` (P8 v1.4)
+Schema CHỈ đúng các khoá của cấu trúc thật, BẮT BUỘC đủ (trừ `gold.action.requested_for` — vắng → người gửi, D-41 — và
+`gold.action.params` — vắng → `{}`; `gold.approver_decision` bắt buộc có khoá, nhận null = không có bước duyệt — #58),
+`extra="forbid"` ở MỌI tầng (bắt gõ nhầm tên); `gold.hidden_factor` (P8 v1.4)
 KHÔNG có trong dữ liệu → để PR hợp đồng v1.1. `allow_extra=True` (cờ `--allow-extra-fields`) → bỏ trường lạ, ghi ĐƯỜNG DẪN trường (chỉ
 số danh sách thành `*`, không giá trị) vào `Dataset.ignored_fields` — một phần tử mỗi lần bỏ.
 - `requester{user_id, role, dept, tenure_days}`: `user_id` → `username` tra seed của mock (`load_seed_users`, `mock_services/seed.json`);
@@ -90,8 +92,8 @@ Turn = Annotated[
 class Action(_Model):
     type: str
     target: str | None  # TODO(G2-Q21): kiểu thật của target / requested_for
-    requested_for: str | None
-    params: dict[str, Any]
+    requested_for: str | None = None  # vắng khoá → người gửi (D-41): `Dataset.requested_for`
+    params: dict[str, Any] = Field(default_factory=dict)  # vắng khoá → {}
 
 
 class Gold(_Model):
@@ -99,7 +101,7 @@ class Gold(_Model):
     need_type: str
     expected_route: Route | None  # None = chưa nhãn (tới 25/10)
     expected_exit: str | None
-    approver_decision: ApproverDecision
+    approver_decision: ApproverDecision | None  # None = không có bước duyệt (luật cấm); khoá vẫn bắt buộc
     gold_doc_ids: tuple[Id, ...]
     action: Action
     facts: dict[str, Any]
@@ -157,6 +159,11 @@ class Dataset:
     files: tuple[str, ...]
     ignored_fields: tuple[str, ...] = ()
     usernames: Mapping[str, str] = field(default_factory=dict)  # scenario_id → username (tra seed theo requester.user_id)
+
+    def requested_for(self, s: Scenario) -> str | None:
+        """D-41: vắng `gold.action.requested_for` → người gửi (username tra seed); có khoá (kể cả null) → giữ nguyên."""
+        a = s.gold.action
+        return a.requested_for if "requested_for" in a.model_fields_set else self.usernames[s.id]
 
 
 @dataclass(frozen=True)

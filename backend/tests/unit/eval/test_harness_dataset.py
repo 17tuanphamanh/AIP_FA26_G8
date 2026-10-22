@@ -140,7 +140,7 @@ def test_dataset_missing_field(tmp_path: Path, field: str) -> None:
     *((("requester",), f) for f in ("user_id", "role", "dept", "tenure_days")),
     *((("gold",), f) for f in ("intents", "need_type", "expected_route", "expected_exit", "approver_decision", "gold_doc_ids",
                                "action", "facts")),
-    *((("gold", "action"), f) for f in ("type", "target", "requested_for", "params")),
+    *((("gold", "action"), f) for f in ("type", "target")),  # `requested_for`, `params` không bắt buộc (#58, D-41)
     *((("labels",), f) for f in ("annotator_1", "annotator_2")),
 ])  # fmt: skip
 def test_dataset_missing_nested_field(tmp_path: Path, path: tuple[str, ...], field: str) -> None:
@@ -173,6 +173,57 @@ def test_params_facts_free_dict(tmp_path: Path) -> None:
     write(tmp_path, "a.yaml", data)
     [s] = load(tmp_path).scenarios
     assert s.gold.action.params == {"SENTINEL_K": {"nested": [1, 2]}, "x": None} and s.gold.facts == {}
+
+
+# ---- khoá không bắt buộc / null (#58, --check-only 22/10) ------------------------------------------------------------
+
+
+def test_requested_for_missing_is_requester(tmp_path: Path) -> None:
+    """D-41: vắng `gold.action.requested_for` → người gửi = username tra seed theo `requester.user_id` của TỪNG kịch bản."""
+    write(tmp_path, "a.yaml", real_scenario("SENTINEL_ID_A", drop_action=("requested_for",)))
+    write(tmp_path, "b.yaml", real_scenario("SENTINEL_ID_B", user_id="u_an", drop_action=("requested_for",)))
+    ds = load(tmp_path)
+    a, b = ds.scenarios
+    assert a.gold.action.requested_for is None and b.gold.action.requested_for is None
+    assert (ds.requested_for(a), ds.requested_for(b)) == ("SENTINEL_USER", "an.nv")
+
+
+def test_params_missing_is_empty(tmp_path: Path) -> None:
+    write(tmp_path, "a.yaml", real_scenario("SENTINEL_ID_A", drop_action=("params",)))
+    write(tmp_path, "b.yaml", real_scenario("SENTINEL_ID_B", drop_action=("requested_for", "params")))  # như dữ liệu thật
+    ds = load(tmp_path)
+    a, b = ds.scenarios
+    assert a.gold.action.params == {} and b.gold.action.params == {}
+    assert a.gold.action.params is not b.gold.action.params
+    assert ds.requested_for(a) == "SENTINEL_FOR" and ds.requested_for(b) == "SENTINEL_USER"
+
+
+def test_requested_for_params_present_kept(tmp_path: Path) -> None:
+    """Có khoá → giữ nguyên; `requested_for: null` TƯỜNG MINH ≠ vắng khoá → giữ `None` (#58-Q2)."""
+    write(tmp_path, "a.yaml", real_scenario("SENTINEL_ID_A"))
+    null_for = real_scenario("SENTINEL_ID_B")
+    null_for["gold"]["action"]["requested_for"] = None
+    write(tmp_path, "b.yaml", null_for)
+    ds = load(tmp_path)
+    a, b = ds.scenarios
+    assert ds.requested_for(a) == "SENTINEL_FOR" and a.gold.action.params == {"p": "SENTINEL_P", "n": 1}
+    assert ds.requested_for(b) is None
+
+
+def test_params_null_still_error(tmp_path: Path) -> None:
+    """Chỉ VẮNG khoá mới thành `{}`; `params: null` vẫn sai kiểu."""
+    data = scenario()
+    data["gold"]["action"]["params"] = None
+    write(tmp_path, "SENTINEL_FILE_a.yaml", data)
+    assert fails(tmp_path).render() == ["file #1/1: không hợp lệ (gold.action.params)"]
+
+
+def test_approver_decision_null_loads(tmp_path: Path) -> None:
+    """Họ không có bước duyệt (luật cấm) mang `approver_decision: null` → nạp được; THIẾU khoá vẫn lỗi
+    (`test_dataset_missing_nested_field`)."""
+    write(tmp_path, "a.yaml", real_scenario(decision=None))
+    [s] = load(tmp_path).scenarios
+    assert s.gold.approver_decision is None
 
 
 @pytest.mark.parametrize(("path", "field", "value"), [
@@ -324,6 +375,8 @@ def test_allow_extra_fields_other_errors_still_fail(tmp_path: Path) -> None:
 @pytest.mark.parametrize(("path", "field", "value"), [
     (("gold",), "expected_route", "SENTINEL_ROUTE"),
     (("gold",), "approver_decision", "SENTINEL_DEC"),
+    (("gold",), "approver_decision", ""),
+    (("gold",), "approver_decision", "Approve"),
     (("gold",), "intents", []),
 ])  # fmt: skip
 def test_dataset_bad_value_not_echoed(tmp_path: Path, path: tuple[str, ...], field: str, value: Any) -> None:

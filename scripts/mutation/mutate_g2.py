@@ -107,6 +107,19 @@ _SLA = "    if not isinstance(sla, int) or isinstance(sla, bool) or sla <= 0:  #
 _WHERE = '        where = self.name if show_name else f"file #{self.index}/{self.total}"\n'
 _IGNORED = "            ignored += dropped\n"
 
+# ---- #58 (--check-only 22/10): requested_for / params không bắt buộc, approver_decision nhận null -------------------------
+
+_FOR_OPT = "    requested_for: str | None = None  # vắng khoá → người gửi (D-41): `Dataset.requested_for`\n"
+_PARAMS_OPT = "    params: dict[str, Any] = Field(default_factory=dict)  # vắng khoá → {}\n"
+_FOR_RESOLVE = '        return a.requested_for if "requested_for" in a.model_fields_set else self.usernames[s.id]\n'
+_DEC_NULL = "    approver_decision: ApproverDecision | None  # None = không có bước duyệt (luật cấm); khoá vẫn bắt buộc\n"
+_DEC_SET = ('ApproverDecision = Literal["approve", "reject", "ignore"]  # TODO(G2-Q20): dữ liệu thật là `str` — tập giá trị chờ '
+            "Tuấn Anh xác nhận\n")  # fmt: skip
+_NO_DEC = "        if decision is None:\n"
+_NO_DEC_RAISE = '            raise NoApproverDecision("chờ duyệt nhưng kịch bản không có approver_decision")\n'
+_NO_DEC_COUNT = ('        "approval_no_decision": sum(c.error_type == "NoApproverDecision" for c in cases),  # #58: null mà stack '
+                 "đòi duyệt\n")  # fmt: skip
+
 MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G2-1 log 4 lọc step B12 thay B13/B14",
              [_swap(COL, _STEP, 'LOG4_STEP = "B12"', "M-G2-1")], UT, ["test_log4_step_filter"]),
@@ -212,6 +225,41 @@ MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G2-39 bỏ mã HTTP khỏi StackError của Api",
              [_swap(STK, _API_ERR, '            raise StackError(f"{method} {shown}")', "M-G2-39")], UT,
              ["test_api_error_has_http_status", "test_preflight_wrong_password", "test_error_before_ticket"]),
+    # ---- #58 (--check-only của Tuấn Anh 22/10) ----
+    Mutation("M-G2-40 requested_for bắt buộc lại",
+             [_swap(DS, _FOR_OPT, "    requested_for: str | None", "M-G2-40")], UT,
+             ["test_requested_for_missing_is_requester", "test_cli_check_only_real_shape"]),
+    Mutation("M-G2-41 params bắt buộc lại",
+             [_swap(DS, _PARAMS_OPT, "    params: dict[str, Any]", "M-G2-41")], UT,
+             ["test_params_missing_is_empty", "test_cli_check_only_real_shape"]),
+    Mutation("M-G2-42 requested_for vắng → None (không về người gửi)",
+             [_swap(DS, _FOR_RESOLVE, _FOR_RESOLVE.replace("self.usernames[s.id]", "None"), "M-G2-42")], UT,
+             ["test_requested_for_missing_is_requester"]),
+    Mutation("M-G2-43 requested_for vắng → user_id (bỏ tra seed)",
+             [_swap(DS, _FOR_RESOLVE, _FOR_RESOLVE.replace("self.usernames[s.id]", "s.requester.user_id"), "M-G2-43")], UT,
+             ["test_requested_for_missing_is_requester"]),
+    Mutation("M-G2-44 requested_for null tường minh gộp với vắng khoá",
+             [_swap(DS, _FOR_RESOLVE, "        return a.requested_for or self.usernames[s.id]", "M-G2-44")], UT,
+             ["test_requested_for_params_present_kept"]),
+    Mutation("M-G2-45 approver_decision không nhận null",
+             [_swap(DS, _DEC_NULL, "    approver_decision: ApproverDecision", "M-G2-45")], UT,
+             ["test_approver_decision_null_loads", "test_cli_check_only_real_shape", "test_flow_approval_without_decision"]),
+    Mutation("M-G2-46 thiếu khoá approver_decision cũng nạp (default None)",
+             [_swap(DS, _DEC_NULL, "    approver_decision: ApproverDecision | None = None", "M-G2-46")], UT,
+             ["test_dataset_missing_nested_field"]),
+    Mutation("M-G2-47 approver_decision null → duyệt (bỏ chặn)",
+             [_off(ACT, _NO_DEC, "M-G2-47")], UT, ["test_sim_approver_no_decision", "test_flow_approval_without_decision"]),
+    Mutation("M-G2-48 approver_decision null → ignore",
+             [_swap(ACT, _NO_DEC_RAISE, '            return "ignored"', "M-G2-48")], UT,
+             ["test_sim_approver_no_decision", "test_flow_approval_without_decision"]),
+    Mutation("M-G2-49 approval_no_decision luôn 0",
+             [_swap(RUN, _NO_DEC_COUNT, '        "approval_no_decision": 0,', "M-G2-49")], UT,
+             ["test_flow_approval_without_decision"]),
+    Mutation("M-G2-50 approver_decision nhận mọi chuỗi",
+             [_swap(DS, _DEC_SET, "ApproverDecision = str", "M-G2-50")], UT, ["test_dataset_bad_value_not_echoed"]),
+    Mutation("M-G2-51 ca lỗi không ghi bản ghi (ca đòi duyệt sai rơi khỏi chỉ số route)",
+             [_swap(RUN, _MULTI, '    if outcome == "done" and ticket_id is not None:', "M-G2-51")], UT,
+             ["test_flow_approval_without_decision", "test_timeout_records_open_ticket"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL

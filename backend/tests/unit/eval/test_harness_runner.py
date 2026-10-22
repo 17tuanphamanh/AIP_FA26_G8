@@ -42,7 +42,7 @@ NOT_IN_PER_CASE = ("SENTINEL_TXT", "SENTINEL_FAM", "SENTINEL_DOC", "SENTINEL_TID
                    "SENTINEL_FOR", "SENTINEL_P", "SENTINEL_FACT", "SENTINEL_DEPT", "SENTINEL_SRC")  # fmt: skip
 
 
-def scn(n: int, flow: str, *answers: str, decision: str = "approve", expected_route: str | None = "HITL",
+def scn(n: int, flow: str, *answers: str, decision: str | None = "approve", expected_route: str | None = "HITL",
         user_id: str = "u_sentinel", extra_turns: tuple[Any, ...] = (), **over: Any) -> dict[str, Any]:  # fmt: skip
     """Kịch bản tổng hợp theo cấu trúc thật; `answers` → phần tử `{on_question_about, reply}`; mặc định ĐÃ nhãn (HITL)."""
     data = real_scenario(f"SENTINEL_ID_{n}", family=f"SENTINEL_FAM_{n}", user_id=user_id,
@@ -290,6 +290,23 @@ def test_flow_ignore_waits_for_worker(tmp_path: Path) -> None:
     assert not any("/decision" in p for p in r.paths())
 
 
+def test_flow_approval_without_decision(tmp_path: Path) -> None:
+    """#58: `approver_decision: null` (họ luật cấm, không có bước duyệt) mà stack VẪN đòi duyệt → không tự chọn quyết định: ca
+    `error`/`NoApproverDecision` ngay (không chờ tới hạn), đếm `approval_no_decision`. Bản ghi VẪN ghi, CÒN route — đây là lỗi hệ
+    thống cần đo ở chỉ số route, không được rơi mất. Null mà không gặp duyệt → bình thường."""
+    r = Run(tmp_path, scn(1, "reject", decision=None), scn(2, "direct", decision=None))
+    assert r() == 1
+    o = r.outcomes()
+    assert [(x["outcome"], x["error_type"]) for x in o] == [("error", "NoApproverDecision"), ("done", None)]
+    assert o[0]["elapsed_s"] < 30
+    assert not any("/decision" in p for p in r.paths())
+    recs = {x.scenario_id: x for x in load_predictions(r.outdir / "predictions.jsonl")}
+    rec = recs["SENTINEL_ID_1"]
+    assert (rec.route, rec.has_approval, rec.final_state, rec.expected_route) == ("HITL", True, None, "HITL")
+    assert r.manifest()["counts"]["approval_no_decision"] == 1
+    assert count(r.text, "error") == 1 and "SENTINEL" not in r.text
+
+
 def test_confirm_uses_scenario_on_confirm(tmp_path: Path) -> None:
     """Bước xác nhận dùng `{on_confirm}` của kịch bản (theo thứ tự); hết → "Đã ổn" + đếm `confirm_default`."""
     r = Run(tmp_path, scn(1, "clarify", "SENTINEL_TXT_ans", extra_turns=(confirm(False),)), scn(2, "clarify", "SENTINEL_TXT_b"))
@@ -485,13 +502,17 @@ def test_cli_check_only(tmp_path: Path) -> None:
 
 
 def test_cli_check_only_real_shape(tmp_path: Path) -> None:
-    """Thư mục TỔNG HỢP đúng cấu trúc thật (chưa nhãn, có reply + confirm, nhiều ý, ignore) → nạp hết, 0 lỗi."""
+    """Thư mục TỔNG HỢP đúng cấu trúc thật (chưa nhãn, có reply + confirm, nhiều ý, ignore; thiếu `requested_for`/`params`,
+    `approver_decision` null — #58) → nạp hết, 0 lỗi."""
     r = Run(tmp_path, real_scenario("SENTINEL_ID_A"),
             real_scenario("SENTINEL_ID_B", turns=["SENTINEL_TXT_b", reply("SENTINEL_TXT_r", "account_type"), confirm(True)]),
             real_scenario("SENTINEL_ID_C", user_id="u_an", decision="ignore", intents=("vpn", "account"), expected_exit="E6"),
-            real_scenario("SENTINEL_ID_D", expected_route="AUTO"))  # fmt: skip
+            real_scenario("SENTINEL_ID_D", expected_route="AUTO"),
+            real_scenario("SENTINEL_ID_E", drop_action=("requested_for",)),
+            real_scenario("SENTINEL_ID_F", drop_action=("requested_for", "params")),
+            real_scenario("SENTINEL_ID_G", decision=None))  # fmt: skip
     assert r("--check-only", env={}, timeout=None) == 0
-    assert r.out == ["scenarios: loaded=4 errors=0"]
+    assert r.out == ["scenarios: loaded=7 errors=0"]
     assert r.deps_made == 0
 
 
@@ -552,7 +573,8 @@ def test_manifest_keys(tmp_path: Path) -> None:
     assert m["commit_verified"] is True and m["policy_sha256"] == "ab" * 32
     assert m["git_dirty"] is False
     assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "written": 1, "route_none": 0,
-                           "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0}  # fmt: skip
+                           "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0,
+                           "approval_no_decision": 0}  # fmt: skip
     assert "SENTINEL" not in json.dumps(m)
 
 
