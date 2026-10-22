@@ -1,5 +1,5 @@
-"""Dựng dữ liệu cho test M9 (A1; A2 thêm `turn`, `span`, `llm_call`, `llm_call_for`, `override`; Duy Anh dùng ở B1/B2 — chữ ký giữ
-ổn định, cần helper mới → viết ở file của mình).
+"""Dựng dữ liệu cho test M9 (A1; A2 thêm `turn`, `span`, `llm_call`, `llm_call_for`, `override`; F12 thêm `child_notice`; Duy Anh
+dùng ở B1/B2 — chữ ký giữ ổn định, cần helper mới → viết ở file của mình).
 
 Cách dùng: mọi helper là `async`, nhận `AsyncConnection` của **app_rw** và **KHÔNG tự commit**. Test phải commit
 (`async with rw.begin() as conn: ...`) TRƯỚC khi đọc qua engine `app_monitor` — connection khác không thấy dữ liệu
@@ -343,3 +343,31 @@ async def override(conn: AsyncConnection, ticket_id: str, *, created_at: datetim
     return await audit_row(
         conn, ticket_id, step=row["step"], event=row["event"], created_at=created_at, detail=row["detail"], **columns
     )  # fmt: skip
+
+
+# ---- F12: hộp thư con (`child_notices`, P7 2.9 / D-31) ----
+
+
+async def child_notice(
+    conn: AsyncConnection,
+    parent_ticket_id: str,
+    child_ticket_id: str,
+    *,
+    created_at: datetime,
+    delivered_round: int | None = None,
+    delivered_at: datetime | None = None,
+    kind: str = "result",
+    needs: str = "none",
+    body: str = "tin của con (đã che)",
+) -> int:
+    """Một dòng `child_notices` (như `db/notices.py` ghi; cha đánh dấu `delivered_round`/`delivered_at` CÙNG lúc như
+    `db/tickets.py` `deliver_round` — CHECK `delivered_pair` đòi cả hai cùng NULL hoặc cùng có). `kind` ∈ answer | question
+    | result | rejection | escalation; `needs` ∈ none | answer | confirm. `effect_key` ngẫu nhiên (UNIQUE). Trả `notice_id`."""
+    result = await conn.execute(text(
+        "INSERT INTO child_notices (parent_ticket_id, child_ticket_id, source_step, kind, needs, body, effect_key, "
+        "created_at, delivered_round, delivered_at) VALUES (:p, :c, 'B20', :k, :n, :b, :e, :at, :r, :d) RETURNING notice_id"
+    ), {
+        "p": parent_ticket_id, "c": child_ticket_id, "k": kind, "n": needs, "b": body, "e": uuid4().hex * 2,
+        "at": created_at, "r": delivered_round, "d": delivered_at,
+    })  # fmt: skip
+    return int(result.scalar_one())

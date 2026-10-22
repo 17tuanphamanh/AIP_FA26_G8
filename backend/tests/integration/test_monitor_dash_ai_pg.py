@@ -21,7 +21,7 @@ from tests.integration import monitor_seed as seed
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
 
 H = timedelta(hours=1)
-PENDING = ("multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn")
+PENDING = ("multi_intent_messages_per_turn",)  # F12: first_stop đã ready (v_child_notices); messages_per_turn chờ D-30
 
 
 @pytest.fixture(scope="module")
@@ -81,6 +81,20 @@ async def node_span(
 ) -> None:
     turn = await seed.turn(conn, ticket, started_at=started_at)
     await seed.span(conn, turn, name=name, started_at=started_at, duration_ms=ms, status=status)
+
+
+type Notice = tuple[int, float, int | None, float | None]  # (con thứ mấy, giây tạo, vòng gửi, giây gửi) tính từ mốc
+
+
+async def multi(conn: AsyncConnection, created_at: datetime, notices: list[Notice], *, children: int = 2) -> str:
+    """F12: 1 ticket cha + `children` con tạo lúc `created_at`, kèm các notice; giây tính từ `created_at`. Trả id cha."""
+    parent, kids = await seed.parent_with_children(conn, children, created_at=created_at)
+    for i, made, round_no, sent in notices:
+        await seed.child_notice(
+            conn, parent, kids[i], created_at=created_at + timedelta(seconds=made), delivered_round=round_no,
+            delivered_at=None if sent is None else created_at + timedelta(seconds=sent),
+        )  # fmt: skip
+    return parent
 
 
 async def audit(conn: AsyncConnection, ticket: str, step: str, event: str, created_at: datetime, **detail: Any) -> None:
@@ -263,7 +277,7 @@ async def test_zero_denominator_none(mon: AsyncEngine) -> None:
         got = await ai.ai_metrics(conn, *win(15))
     for key in (
         "tokens_per_ticket", "cache_hit_rate", "json_invalid_first_try_rate", "fallback_rate", "b2_llm_rate",
-        "intent_filter_fallback_rate", "b3_llm_rate", "intent_model_version",
+        "intent_filter_fallback_rate", "b3_llm_rate", "intent_model_version", "multi_intent_first_stop_to_reply_s",
     ):  # fmt: skip
         assert got.values[key] is None, key
     assert (got.values["e2_llm_count"], got.values["e9_count"]) == (0, 0)
@@ -339,8 +353,9 @@ async def test_running_leaf_scope(rw: AsyncEngine, mon: AsyncEngine) -> None:
 
 @pytest.mark.asyncio
 async def test_ai_metrics_all_keys_and_unavailable(rw: AsyncEngine, mon: AsyncEngine) -> None:
-    """Đủ 14 khóa; chỉ 2 khóa nhiều ý vào `unavailable` (None). `intent_model_version` None (Phase 3–4, model_missing)
-    nhưng KHÔNG vào `unavailable` (Q-M9-A2-1)."""
+    """Đủ 14 khóa; chỉ `multi_intent_messages_per_turn` vào `unavailable` (None) — F12: `first_stop` ready, ngày không có
+    cha → None nhưng KHÔNG vào `unavailable`. `intent_model_version` None (Phase 3–4, model_missing) nhưng KHÔNG vào
+    `unavailable` (Q-M9-A2-1)."""
     async with rw.begin() as conn:
         leaf = await seed.leaf_ticket(conn, created_at=at(17))
         await audit(conn, leaf, "B3", "intent_classified", at(17), layer="llm", model_version=None)
@@ -351,6 +366,7 @@ async def test_ai_metrics_all_keys_and_unavailable(rw: AsyncEngine, mon: AsyncEn
     for key in PENDING:
         assert got.values[key] is None
     assert got.values["intent_model_version"] is None
+    assert got.values["multi_intent_first_stop_to_reply_s"] is None
     assert got.values["b3_llm_rate"] == 1.0
 
 
@@ -430,6 +446,7 @@ async def test_ai_metrics_key_to_function(rw: AsyncEngine, mon: AsyncEngine) -> 
         await e_leaf(conn, at(2), "E2", "llm_unavailable")
         await e_leaf(conn, at(2), "E2", "llm_unavailable")
         await e_leaf(conn, at(2), "E9")
+        await multi(conn, at(2), [(0, 0, 1, 42)])  # F12: 1 cha, vòng đầu gửi sau 42 s
     async with mon.connect() as conn:
         got = await ai.ai_metrics(conn, *win(2))
     values = got.values
@@ -444,6 +461,7 @@ async def test_ai_metrics_key_to_function(rw: AsyncEngine, mon: AsyncEngine) -> 
     assert (values["e2_llm_count"], values["e9_count"]) == (2, 1)
     assert values["intent_model_version"] == "v-r26"
     assert values["latency_p95_by_step"] == {"node:b02_screen": pytest.approx(123.0)}
+    assert values["multi_intent_first_stop_to_reply_s"] == pytest.approx(42.0)
     day = datetime(2030, 1, 1, 17, tzinfo=UTC)  # 02/01 00:00 VN
     assert [(d.day_start, round(d.cost_usd, 6)) for d in values["cost_per_day"]] == [
         (day, 0.4), (day + timedelta(days=1), 0.0),
@@ -629,3 +647,53 @@ async def test_cost_per_day_day_start_utc(mon: AsyncEngine) -> None:
         assert (await conn.execute(text("SHOW TIME ZONE"))).scalar_one() == before
     assert got == (DayCost(frm, 0.0),)
     assert got[0].day_start.tzinfo is UTC
+
+
+# ---- F12 (#45): `multi_intent_first_stop_to_reply_s` — trung vị theo cha, CHỈ vòng đầu (`min(delivered_round)`), từ notice
+# tạo sớm nhất của vòng đó tới lúc vòng đó được gửi; cha vào cửa sổ theo `min(created_at)` của con. Tháng 5: ngày 1–4.
+
+P1: list[Notice] = [(0, 10, 1, 70), (1, 40, 1, 70), (1, 100, 2, 500)]  # vòng 1: 70 − 10 = 60; vòng 2 bỏ qua
+P2: list[Notice] = [(1, 5, None, None), (0, 50, 1, 80)]  # notice chưa gửi (tạo sớm hơn) bỏ qua: 80 − 50 = 30
+P3: list[Notice] = [(0, 10, None, None)]  # chưa gửi vòng nào → không tính
+
+
+@pytest.mark.asyncio
+async def test_first_stop_odd_median(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """60, 30, 120 (+ cha chưa gửi) → trung vị 60. avg = 70; bỏ lọc vòng đầu → P2 = 75 → 75; vòng cuối → P1 = 400 → 120."""
+    async with rw.begin() as conn:
+        await multi(conn, at(1, month=5), P1)
+        await multi(conn, at(1, month=5), P2)
+        await multi(conn, at(1, month=5), P3)
+        await multi(conn, at(1, month=5), [(0, 0, 1, 120)], children=1)
+    assert await q(mon, ai.multi_intent_first_stop_to_reply_s, 1, 5) == pytest.approx(60.0)
+
+
+@pytest.mark.asyncio
+async def test_first_stop_even_median(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """60, 30 → trung vị (nội suy) 45."""
+    async with rw.begin() as conn:
+        await multi(conn, at(2, month=5), P1)
+        await multi(conn, at(2, month=5), P2)
+    assert await q(mon, ai.multi_intent_first_stop_to_reply_s, 2, 5) == pytest.approx(45.0)
+
+
+@pytest.mark.asyncio
+async def test_first_stop_none(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """Chỉ có cha chưa gửi vòng nào + lá đơn → None (không 0)."""
+    async with rw.begin() as conn:
+        await multi(conn, at(3, month=5), P3)
+        await done(conn, at(3, month=5))
+    assert await q(mon, ai.multi_intent_first_stop_to_reply_s, 3, 5) is None
+
+
+@pytest.mark.asyncio
+async def test_first_stop_window_by_children(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """Cửa sổ [04/05, 05/05) UTC theo `created_at` của CON. PA: con tạo 23:00, notice 23:00:10, gửi sang hôm sau 01:00
+    → tính 7190. PB: con tạo đúng `to` → không. PC: con tạo hôm trước 23:00, notice và lần gửi trong cửa sổ (20 s) → không.
+    Lọc theo `created_at` của notice → {7190, 20} → 3605 (đỏ)."""
+    frm, to = win(4, 5)
+    async with rw.begin() as conn:
+        await multi(conn, frm + 23 * H, [(0, 10, 1, 7200)], children=1)
+        await multi(conn, to, [(0, 0, 1, 5)], children=1)
+        await multi(conn, frm - H, [(0, 2 * 3600, 1, 2 * 3600 + 20)], children=1)
+    assert await q(mon, ai.multi_intent_first_stop_to_reply_s, 4, 5) == pytest.approx(7190.0)

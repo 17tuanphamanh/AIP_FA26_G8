@@ -1,5 +1,5 @@
-"""Dựng dữ liệu HIỆU NĂNG cho M9 (A4, #11): 10.000 ticket lá + 200 cha, audit/turns/spans/llm_calls/approvals/
-escalations/alerts/security_events — đủ để đo "mỗi truy vấn dashboard < 2 giây" (P9 §8, [Chốt T5]).
+"""Dựng dữ liệu HIỆU NĂNG cho M9 (A4, #11): 10.000 ticket lá + 200 cha, child_notices (F12)/audit/turns/spans/llm_calls/
+approvals/escalations/alerts/security_events — đủ để đo "mỗi truy vấn dashboard < 2 giây" (P9 §8, [Chốt T5]).
 
 Khác `monitor_seed.py` (A1, chèn từng dòng cho test tính tay): ở đây mỗi bảng MỘT câu `INSERT … SELECT
 generate_series` → 10.000 lá chèn trong vài giây.
@@ -45,7 +45,7 @@ _HASH = "0" * 64  # action_plan_hash giả (CHAR(64) NOT NULL)
 
 # Bảng được seed, theo thứ tự chèn (FK): dùng cho ANALYZE và cho báo cáo số dòng.
 TABLES: tuple[str, ...] = (
-    "users", "tickets", "turns", "spans", "llm_calls", "audit_logs",
+    "users", "tickets", "child_notices", "turns", "spans", "llm_calls", "audit_logs",
     "approvals", "escalations", "alerts", "security_events",
 )  # fmt: skip
 
@@ -147,6 +147,27 @@ UPDATE tickets t
 SET parent_ticket_id = 'perf-parent-' || lpad((((n - 1) / {CHILDREN_PER_PARENT}) + 1)::text, 4, '0')
 FROM (SELECT ticket_id, row_number() OVER (ORDER BY ticket_id) AS n FROM tickets WHERE is_parent = false) r
 WHERE t.ticket_id = r.ticket_id AND r.n <= :p * {CHILDREN_PER_PARENT}
+"""
+
+# F12: hộp thư con (`child_notices`) cho `multi_intent_first_stop_to_reply_s` — mỗi con 2 notice (vòng k = 1, 2), mốc theo
+# `created_at` của CHA: tạo lúc cha + (k·300 + 10 + i % 50) s; cha gửi cả vòng CÙNG một lúc cha + (k·300 + 120) s (như
+# `deliver_round`). Con thứ 10, 20, … chưa được gửi vòng 2 (hai cột NULL — CHECK `delivered_pair`).
+_CHILD_NOTICES = """
+WITH c AS (SELECT t.ticket_id, t.parent_ticket_id, p.created_at AS parent_at,
+                  row_number() OVER (ORDER BY t.ticket_id) AS i
+           FROM tickets t JOIN tickets p ON p.ticket_id = t.parent_ticket_id WHERE t.is_parent = false)
+INSERT INTO child_notices (parent_ticket_id, child_ticket_id, source_step, kind, needs, body, effect_key, created_at,
+                           delivered_round, delivered_at)
+SELECT c.parent_ticket_id, c.ticket_id, 'B20',
+       CASE WHEN r.k = 1 AND c.i % 2 = 0 THEN 'question' ELSE 'result' END,
+       CASE WHEN r.k = 1 AND c.i % 2 = 0 THEN 'answer' ELSE 'none' END,
+       'tin con so ' || c.i::text || '-' || r.k::text,
+       rpad('perf-notice-' || c.i::text || '-' || r.k::text, 64, '0'),
+       c.parent_at + make_interval(secs => (r.k * 300 + 10 + c.i % 50)::int),
+       CASE WHEN r.k = 2 AND c.i % 10 = 0 THEN NULL ELSE r.k END,
+       CASE WHEN r.k = 2 AND c.i % 10 = 0 THEN NULL
+            ELSE c.parent_at + make_interval(secs => (r.k * 300 + 120)::int) END
+FROM c CROSS JOIN generate_series(1, 2) AS r(k)
 """
 
 # Một lượt (turn) mỗi lá; `leaf` CTE dùng lại cho mọi bảng con để số thứ tự `i` ổn định theo ticket_id.
@@ -379,6 +400,7 @@ _STEPS: tuple[tuple[str, str], ...] = (
     ("tickets (lá)", _LEAVES),
     ("tickets (cha)", _PARENTS),
     ("gán cha cho lá", _LINK_CHILDREN),
+    ("child_notices", _CHILD_NOTICES),
     ("turns", _TURNS),
     ("spans (node)", _SPANS_NODE),
     ("spans (llm)", _SPANS_LLM),
