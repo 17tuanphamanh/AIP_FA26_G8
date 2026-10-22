@@ -47,6 +47,7 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
 )
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
+from app.api.policy import router as policy_router
 from app.api.tickets import router as tickets_router
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
@@ -393,6 +394,7 @@ def create_app(
     app.state.monitor_probe = _default_monitor_probe(app)
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
+    app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
     app.include_router(auth_router)
