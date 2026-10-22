@@ -7,7 +7,9 @@
   `{on_confirm}` kế tiếp theo thứ tự; hết → "Đã ổn" + `confirm_default = True` (đếm ở manifest).
 - `SimApprover`: phiếu `pending` → người được giao (`approvals.approver_id` → `users.username`) → đăng nhập bằng mật khẩu harness
   (`EVAL_PASSWORD`, không hằng trong `app/`) → quyết. `reject` gửi ghi chú cố định (`rejected` thiếu `note` → 422,
-  `api/approvals.py:199-200`). `ignore` không gọi gì: worker bắn E6 khi hết `APPROVAL_SLA_MINUTES_DEV`.
+  `api/approvals.py:199-200`). `ignore` không gọi gì: worker bắn E6 khi hết `APPROVAL_SLA_MINUTES_DEV`. `approver_decision = null`
+  (họ không có bước duyệt) mà stack vẫn đòi duyệt → `NoApproverDecision` trước mọi SQL / HTTP — KHÔNG tự chọn quyết định (#58);
+  runner ghi ca `error`, bản ghi (còn route) vẫn ghi, đếm `approval_no_decision`.
 """
 
 from dataclasses import dataclass
@@ -20,6 +22,10 @@ REJECT_NOTE = "eval: sim_approver reject"
 DEFAULT_ON_CONFIRM = True  # hết `{on_confirm}` trong kịch bản → "Đã ổn"
 
 type ApproverAction = Literal["approved", "rejected", "ignored"]
+
+
+class NoApproverDecision(ValueError):
+    """Kịch bản `approver_decision = null` nhưng stack đòi duyệt — lớp con `ValueError` để `run_case` ghi `error` như lỗi khác."""
 
 
 class ScriptedUser:
@@ -51,7 +57,9 @@ class SimApprover:
     sql: Sql
     password: str
 
-    def act(self, ticket_id: str, decision: ApproverDecision) -> ApproverAction:
+    def act(self, ticket_id: str, decision: ApproverDecision | None) -> ApproverAction:
+        if decision is None:
+            raise NoApproverDecision("chờ duyệt nhưng kịch bản không có approver_decision")
         if decision == "ignore":
             return "ignored"
         found = pending_approval(self.sql, ticket_id)

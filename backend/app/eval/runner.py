@@ -452,6 +452,7 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         "unlabeled": sum(r.expected_route is None for r in records),
         "confirm_default": sum(c.confirm_default for c in cases),
         "p_method_mismatch": sum(r.p_method is not None and r.p_method != args.prob_method for r in records),
+        "approval_no_decision": sum(c.error_type == "NoApproverDecision" for c in cases),  # #58: null mà stack đòi duyệt
     }  # fmt: skip
     if counts["p_method_mismatch"]:
         err("CẢNH BÁO: có bản ghi p_method khác --prob-method (xem manifest counts.p_method_mismatch)")

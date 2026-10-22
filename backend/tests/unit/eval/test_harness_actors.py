@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
-from app.eval.actors import REJECT_NOTE, ScriptedUser, SimApprover
+from app.eval.actors import REJECT_NOTE, NoApproverDecision, ScriptedUser, SimApprover
 from app.eval.dataset import Scenario
 from app.eval.stack import (
     READ_ONLY,
@@ -310,6 +310,16 @@ def test_sim_approver_ignore() -> None:
     db, api = approver_stack()
     with api.client() as http:
         assert SimApprover(Api(http), db, PW).act("T1", "ignore") == "ignored"
+    assert api.calls == [] and db.queries == []
+
+
+def test_sim_approver_no_decision() -> None:
+    """`approver_decision: null` (#58) mà stack đòi duyệt → KHÔNG tự chọn approve/reject/ignore: ném `NoApproverDecision` trước mọi
+    SQL / HTTP (không đăng nhập, không bấm)."""
+    db, api = approver_stack()
+    with api.client() as http, pytest.raises(NoApproverDecision) as e:
+        SimApprover(Api(http), db, PW).act("T1", None)
+    assert isinstance(e.value, ValueError)
     assert api.calls == [] and db.queries == []
 
 
