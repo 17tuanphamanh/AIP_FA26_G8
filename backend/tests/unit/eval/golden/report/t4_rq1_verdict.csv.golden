@@ -1,0 +1,5 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,criterion,value,bound,status
+cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,vế 1: hiệu chi phí Hybrid − Chỉ-luật (cận trên khoảng 95%),3.750000,0.000000,chưa đủ bằng chứng khác biệt
+cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,vế 1: hiệu chi phí Hybrid − Chỉ-LLM (cận trên khoảng 95%),3.750000,0.000000,chưa đủ bằng chứng khác biệt
+cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,"vế 2: cận trên một phía 95% của FNR theo tình huống, lớp LLM của Hybrid",0.902389,0.100000,không đạt
+cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,kết luận,,,"không đạt: vế 1 (chi phí so Chỉ-luật), vế 1 (chi phí so Chỉ-LLM), vế 2 (an toàn)"

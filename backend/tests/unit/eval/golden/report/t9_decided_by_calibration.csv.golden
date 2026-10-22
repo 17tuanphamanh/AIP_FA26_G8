@@ -1,0 +1,4 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,arm,rule_share,llm_share,missing_share,n_cal_raw,p_method,ece_raw,brier_raw,n_cal_calibrated,ece_calibrated,brier_calibrated
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,1.000000,0.000000,0.000000,0,,,,0,,
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,0.000000,1.000000,0.000000,0,,,,0,,
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,0.625000,0.375000,0.000000,3,self_report,0.466667,0.280000,0,,

@@ -1,0 +1,5 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,arm,n_leaves,n_unlabeled,n_route_none,n_reached_labelled,n_outside_common,n_e1_injection_suspected
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,10,1,0,9,1,0
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,10,1,2,8,0,1
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,10,1,0,9,1,0
+dddddddddddd,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,"Hybrid (tắt chẩn đoán, S3)",10,1,0,9,1,0

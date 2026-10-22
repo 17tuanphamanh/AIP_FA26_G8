@@ -1,0 +1,218 @@
+# Báo cáo M8 — RQ1, RQ3 (P8 v1.4)
+
+run_id: aaaaaaaaaaaa, bbbbbbbbbbbb, cccccccccccc, dddddddddddd
+
+## Cảnh báo
+
+- n_unlabeled = 1/10 lá chưa nhãn (expected_route null): bỏ qua ở mọi chỉ số cần gold.
+- fold = null ở lượt stack (V11-Q3): số liệu chưa gộp theo 5 phần đo, calibrator/ngưỡng từng phần chưa có.
+
+## Nguồn số liệu
+
+### T0 — Nguồn số liệu (manifest)
+
+- Mỗi dòng một lượt chạy thật. Thủ công và Full-auto là giải tích, dựng từ phần giao của các phương án (không có dòng riêng).
+- Ở bảng này `n` = số lá của file, `n_excluded` = lá không tới điểm log 4 (route None).
+- Ánh xạ tình huống: situations.csv (sha256 ce94a6fad120).
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | strategy | chan_doan_chu_dong | policy_sha256 | clf_mode | git_dirty | n_leaves | n_route_none | predictions_unavailable | file |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 10 | 1 | 0 | Chỉ-luật | rule_only | true | 9999999999999999999999999999999999999999999999999999999999999999 | review | false | 10 | 0 | fold,kb_gap,in_business_hours | predictions.jsonl |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 10 | 1 | 2 | Chỉ-LLM | llm_only | true | 9999999999999999999999999999999999999999999999999999999999999999 | review | false | 10 | 2 | fold,kb_gap,in_business_hours | predictions.jsonl |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 10 | 1 | 0 | Hybrid | hybrid | true | 9999999999999999999999999999999999999999999999999999999999999999 | review | false | 10 | 0 | fold,kb_gap,in_business_hours | predictions.jsonl |
+| dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 10 | 1 | 0 | Hybrid (tắt chẩn đoán, S3) | hybrid | false | 9999999999999999999999999999999999999999999999999999999999999999 | review | false | 10 | 0 | fold,kb_gap,in_business_hours | predictions.jsonl |
+
+## RQ1 — số chính
+
+### T1 — Chi phí kỳ vọng/ticket (SỐ CHÍNH RQ1, không trọng số)
+
+- Trung bình COST[gold][pred] trên phần giao của các phương án, ma trận mặc định; đơn vị: một lượt duyệt (§6.1).
+- Khoảng 95% = bootstrap theo họ (§6.4). Thủ công, Full-auto: giải tích trên cùng phần giao.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | cost | ci95_lo | ci95_hi | n_boot | n_used | n_families | seed |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 2.2500 | 1.0000 | 4.7500 | 200 | 200 | 4 | 20260925 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 8.7500 | 1.2500 | 17.5000 | 200 | 200 | 4 | 20260925 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 1.1250 | 0.1250 | 2.5000 | 200 | 200 | 4 | 20260925 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 1.3750 | 0.6250 | 2.5000 | 200 | 200 | 4 | 20260925 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 2.6250 | 0.1250 | 5.2500 | 200 | 200 | 4 | 20260925 |
+
+### T2 — Hiệu chi phí Hybrid − phương án khác (ghép cặp theo họ)
+
+- Vế 1 §6.5: khoảng nằm hẳn dưới 0 → Hybrid rẻ hơn. Khoảng chứa 0 → chưa đủ bằng chứng khác biệt.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | comparison | diff | ci95_lo | ci95_hi | contains_zero | n_boot | n_used | n_families | reading |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid − Chỉ-luật | 1.5000 | 0.0000 | 3.7500 | true | 200 | 200 | 4 | chưa đủ bằng chứng khác biệt |
+| cccccccccccc+bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid − Chỉ-LLM | 1.2500 | -0.5000 | 3.7500 | true | 200 | 200 | 4 | chưa đủ bằng chứng khác biệt |
+
+### T3a — An toàn: FNR theo tình huống
+
+- §6.1: #(tình huống cần người có ít nhất một câu pred = AUTO) / #(tình huống cần người). Cận trên một phía 95% = Clopper–Pearson (`decision_math`); khoảng hai phía 95% kèm theo. Trên phần giao của các phương án.
+- Đơn vị: tình huống (situation_id).
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | scope | unit | n_situations | k_missed | fnr | upper95_1sided | ci95_lo | ci95_hi | n_mixed_gold |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | tất cả | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 0 | 1 | 9 | Thủ công | hidden_factor = true | tình huống (situation_id) | 0 | 0 | n/a | n/a | n/a | n/a | 0 |
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | hidden_factor ≠ true | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | tất cả | tình huống (situation_id) | 3 | 3 | 1.0000 | 1.0000 | 0.2924 | 1.0000 | 0 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 0 | 1 | 9 | Full-auto | hidden_factor = true | tình huống (situation_id) | 0 | 0 | n/a | n/a | n/a | n/a | 0 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | hidden_factor ≠ true | tình huống (situation_id) | 3 | 3 | 1.0000 | 1.0000 | 0.2924 | 1.0000 | 0 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | tất cả | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 0 | 1 | 9 | Chỉ-luật | hidden_factor = true | tình huống (situation_id) | 0 | 0 | n/a | n/a | n/a | n/a | 0 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | hidden_factor ≠ true | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | tất cả | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 0 | 1 | 9 | Chỉ-LLM | hidden_factor = true | tình huống (situation_id) | 0 | 0 | n/a | n/a | n/a | n/a | 0 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | hidden_factor ≠ true | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | lớp LLM (decided_by = llm) | tình huống (situation_id) | 3 | 0 | 0.0000 | 0.6316 | 0.0000 | 0.7076 | 0 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | tất cả | tình huống (situation_id) | 3 | 1 | 0.3333 | 0.8646 | 0.0084 | 0.9057 | 0 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 0 | 1 | 9 | Hybrid | hidden_factor = true | tình huống (situation_id) | 0 | 0 | n/a | n/a | n/a | n/a | 0 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | hidden_factor ≠ true | tình huống (situation_id) | 3 | 1 | 0.3333 | 0.8646 | 0.0084 | 0.9057 | 0 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 3 | 1 | 6 | Hybrid | lớp LLM (decided_by = llm) | tình huống (situation_id) | 3 | 1 | 0.3333 | 0.8646 | 0.0084 | 0.9057 | 0 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 4 | 1 | 5 | Hybrid | lớp LLM, toàn bộ ca tới M5 của Hybrid (dùng cho vế 2 §6.5) | tình huống (situation_id) | 4 | 2 | 0.5000 | 0.9024 | 0.0676 | 0.9324 | 0 |
+
+### T3b — An toàn và quyết định theo câu (phụ)
+
+- FNR theo câu (phụ), FPR, accuracy 3 lớp, macro-F1 trên phần giao. `escalation_raw_all_leaves` = tỉ lệ lá có exit_code trên MỌI lá của file (điểm log 8, §6.2); Thủ công, Full-auto không có.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | fnr_leaf_k | fnr_leaf_n | fnr_leaf | fnr_leaf_upper95 | fpr | accuracy | macro_f1 | escalation_raw_all_leaves |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 0 | 5 | 0.0000 | 0.4507 | 1.0000 | 0.3750 | 0.1818 | n/a |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 5 | 5 | 1.0000 | 1.0000 | 0.0000 | 0.3750 | 0.1818 | n/a |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 0 | 5 | 0.0000 | 0.4507 | 0.0000 | 1.0000 | 1.0000 | 0.0000 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 0 | 5 | 0.0000 | 0.4507 | 0.6667 | 0.7500 | 0.7500 | 0.1000 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 1 | 5 | 0.2000 | 0.6574 | 0.0000 | 0.7500 | 0.7302 | 0.0000 |
+
+### T4 — Kết luận RQ1 (P8 §6.5)
+
+- Tiêu chí §6.5: Hybrid tốt hơn khi CẢ HAI vế đạt. Không đạt vế nào thì báo trung thực vế đó.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | criterion | value | bound | status |
+|---|---|---|---|---|---|---|---|---|---|
+| cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | vế 1: hiệu chi phí Hybrid − Chỉ-luật (cận trên khoảng 95%) | 3.7500 | 0.0000 | chưa đủ bằng chứng khác biệt |
+| cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | vế 1: hiệu chi phí Hybrid − Chỉ-LLM (cận trên khoảng 95%) | 3.7500 | 0.0000 | chưa đủ bằng chứng khác biệt |
+| cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | vế 2: cận trên một phía 95% của FNR theo tình huống, lớp LLM của Hybrid | 0.9024 | 0.1000 | không đạt |
+| cccccccccccc+aaaaaaaaaaaa+bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | kết luận | n/a | n/a | không đạt: vế 1 (chi phí so Chỉ-luật), vế 1 (chi phí so Chỉ-LLM), vế 2 (an toàn) |
+
+## Số phụ
+
+### T5 — Chi phí và route có trọng số (SỐ PHỤ)
+
+- SỐ PHỤ — số chính RQ1 là chi phí không trọng số (T1). Σ_g mix[g]·(chỉ số trong nhóm gold g); mix chính 70/20/10, độ nhạy 60/30/10 và 80/15/5. Nhóm gold rỗng → n/a (không chuẩn hoá lại).
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | mix | cost_weighted | automation | review | l2 | missing_groups |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 70/20/10 (chính) | 1.5000 | 0.0000 | 1.0000 | 0.0000 |  |
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 60/30/10 | 1.5000 | 0.0000 | 1.0000 | 0.0000 |  |
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 80/15/5 | 1.2500 | 0.0000 | 1.0000 | 0.0000 |  |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 70/20/10 (chính) | 4.0000 | 1.0000 | 0.0000 | 0.0000 |  |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 60/30/10 | 5.0000 | 1.0000 | 0.0000 | 0.0000 |  |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 80/15/5 | 2.5000 | 1.0000 | 0.0000 | 0.0000 |  |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 70/20/10 (chính) | 0.5000 | 0.7000 | 0.2000 | 0.1000 |  |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 60/30/10 | 0.6000 | 0.6000 | 0.3000 | 0.1000 |  |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 80/15/5 | 0.3000 | 0.8000 | 0.1500 | 0.0500 |  |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 70/20/10 (chính) | 0.9667 | 0.2333 | 0.6667 | 0.1000 |  |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 60/30/10 | 1.0000 | 0.2000 | 0.7000 | 0.1000 |  |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 80/15/5 | 0.8333 | 0.2667 | 0.6833 | 0.0500 |  |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 70/20/10 (chính) | 1.2500 | 0.7667 | 0.1833 | 0.0500 |  |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 60/30/10 | 1.6500 | 0.7000 | 0.2500 | 0.0500 |  |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 80/15/5 | 0.8250 | 0.8500 | 0.1250 | 0.0250 |  |
+
+### T6 — Độ nhạy tỉ lệ bỏ sót/duyệt 5/10/20 (SỐ PHỤ)
+
+- `cost` = chi phí không trọng số với ma trận `cost_matrix_for_ratio(ratio)`; `t_low_theoretical` = ngưỡng dưới lý thuyết = 1/ratio. Phần giao như T1.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | ratio | t_low_theoretical | cost | cost_weighted_70_20_10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 5.0000 | 0.2000 | 2.2500 | 1.5000 |
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 10.0000 | 0.1000 | 2.2500 | 1.5000 |
+| manual@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Thủ công | 20.0000 | 0.0500 | 2.2500 | 1.5000 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 5.0000 | 0.2000 | 4.3750 | 2.0000 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 10.0000 | 0.1000 | 8.7500 | 4.0000 |
+| full_auto@cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Full-auto | 20.0000 | 0.0500 | 17.5000 | 8.0000 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 5.0000 | 0.2000 | 1.1250 | 0.5000 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 10.0000 | 0.1000 | 1.1250 | 0.5000 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 20.0000 | 0.0500 | 1.1250 | 0.5000 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 5.0000 | 0.2000 | 1.3750 | 0.9667 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 10.0000 | 0.1000 | 1.3750 | 0.9667 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 20.0000 | 0.0500 | 1.3750 | 0.9667 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 5.0000 | 0.2000 | 2.0000 | 0.9167 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 10.0000 | 0.1000 | 2.6250 | 1.2500 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 20.0000 | 0.0500 | 3.8750 | 1.9167 |
+
+### T7 — Điểm hoà vốn r* (lượt duyệt / một ca bỏ sót)
+
+- Phương án có lớp LLM (A) so với Thủ công và với Chỉ-luật (B), dưới r* bên có `miss` lớn hơn rẻ hơn. `saving` = cost_B − cost_A (dương = A rẻ hơn). Mỗi cặp lấy phần giao riêng của hai bên (§5.4); Thủ công dựng từ chính A nên trên đúng tập lá có route của A (G1-Q1). Dòng `không trọng số` là số chính, các mix là số phụ.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | pair | mix | n_pairs | n_excluded_a | n_excluded_b | fixed_a | miss_a | fixed_b | miss_b | r_star | reason | saving_5 | saving_10 | saving_20 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | không trọng số | 8 | 0 | 0 | 1.3750 | 0.0000 | 2.2500 | 0.0000 | n/a | equal_miss | 0.8750 | 0.8750 | 0.8750 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | 70/20/10 | 8 | 0 | 0 | 0.9667 | 0.0000 | 1.5000 | 0.0000 | n/a | equal_miss | 0.5333 | 0.5333 | 0.5333 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | 60/30/10 | 8 | 0 | 0 | 1.0000 | 0.0000 | 1.5000 | 0.0000 | n/a | equal_miss | 0.5000 | 0.5000 | 0.5000 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | 80/15/5 | 8 | 0 | 0 | 0.8333 | 0.0000 | 1.2500 | 0.0000 | n/a | equal_miss | 0.4167 | 0.4167 | 0.4167 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | không trọng số | 8 | 0 | 1 | 1.3750 | 0.0000 | 1.1250 | 0.0000 | n/a | equal_miss | -0.2500 | -0.2500 | -0.2500 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 70/20/10 | 8 | 0 | 1 | 0.9667 | 0.0000 | 0.5000 | 0.0000 | n/a | equal_miss | -0.4667 | -0.4667 | -0.4667 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 60/30/10 | 8 | 0 | 1 | 1.0000 | 0.0000 | 0.6000 | 0.0000 | n/a | equal_miss | -0.4000 | -0.4000 | -0.4000 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 80/15/5 | 8 | 0 | 1 | 0.8333 | 0.0000 | 0.3000 | 0.0000 | n/a | equal_miss | -0.5333 | -0.5333 | -0.5333 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | không trọng số | 9 | 0 | 0 | 1.2222 | 0.2222 | 2.1111 | 0.0000 | 4.0000 | ok | -0.2222 | -1.3333 | -3.5556 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | 70/20/10 | 9 | 0 | 0 | 0.5500 | 0.1000 | 1.5000 | 0.0000 | 9.5000 | ok | 0.4500 | -0.0500 | -1.0500 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | 60/30/10 | 9 | 0 | 0 | 0.6000 | 0.1500 | 1.5000 | 0.0000 | 6.0000 | ok | 0.1500 | -0.6000 | -2.1000 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | 80/15/5 | 9 | 0 | 0 | 0.3000 | 0.0750 | 1.2500 | 0.0000 | 12.6667 | ok | 0.5750 | 0.2000 | -0.5500 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | không trọng số | 9 | 0 | 0 | 1.2222 | 0.2222 | 1.3333 | 0.0000 | 0.5000 | ok | -1.0000 | -2.1111 | -4.3333 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | 70/20/10 | 9 | 0 | 0 | 0.5500 | 0.1000 | 0.6000 | 0.0000 | 0.5000 | ok | -0.4500 | -0.9500 | -1.9500 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | 60/30/10 | 9 | 0 | 0 | 0.6000 | 0.1500 | 0.7500 | 0.0000 | 1.0000 | ok | -0.6000 | -1.3500 | -2.8500 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | 80/15/5 | 9 | 0 | 0 | 0.3000 | 0.0750 | 0.3750 | 0.0000 | 1.0000 | ok | -0.3000 | -0.6750 | -1.4250 |
+
+## Ablation
+
+### T8 — Ablation (P8 §5.4)
+
+- Bỏ tool = tắt chẩn đoán chủ động (S3). Bỏ RAG ở M5 = biến thể "không trích đoạn": chưa có trong hợp đồng predictions (xác suất biến thể ghi file riêng `probs.jsonl`, chưa có `offline.py`) nên không có số.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | ablation | arm | cost | fnr_situation | fnr_upper95_1sided | clarification_mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid đầy đủ | Hybrid | 2.6250 | 0.3333 | 0.8646 | 0.3750 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | bỏ lớp luật (= Chỉ-LLM) | Chỉ-LLM | 1.3750 | 0.0000 | 0.6316 | 0.0000 |
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | bỏ lớp LLM (= Chỉ-luật) | Chỉ-luật | 1.1250 | 0.0000 | 0.6316 | 0.0000 |
+| dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | bỏ tool (tắt chẩn đoán chủ động, S3) | Hybrid (tắt chẩn đoán, S3) | 2.6250 | 0.3333 | 0.8646 | 1.3750 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 0 | 1 | 0 | bỏ RAG ở M5 (biến thể không trích đoạn) | không có dữ liệu | n/a | n/a | n/a | n/a |
+
+## Hiệu chỉnh
+
+### T9 — decided_by, ECE, Brier
+
+- ECE (10 bin) và Brier chỉ trên ca decided_by = llm có xác suất; trước = raw_prob, sau = calibrated_prob. calibrated_prob = null ở bản chưa hiệu chỉnh (D-38) → n/a. Trên phần giao; chưa gộp 5 phần đo (fold = null ở lượt stack).
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | rule_share | llm_share | missing_share | n_cal_raw | p_method | ece_raw | brier_raw | n_cal_calibrated | ece_calibrated | brier_calibrated |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 1.0000 | 0.0000 | 0.0000 | 0 | n/a | n/a | n/a | 0 | n/a | n/a |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 0.0000 | 1.0000 | 0.0000 | 0 | n/a | n/a | n/a | 0 | n/a | n/a |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 0.6250 | 0.3750 | 0.0000 | 3 | self_report | 0.4667 | 0.2800 | 0 | n/a | n/a |
+
+## RQ3
+
+### T10 — RQ3: chẩn đoán chủ động theo intent (S1 so S3)
+
+- `on` = Hybrid bật chẩn đoán (S1), `off` = tắt (S3). `reduction` = lượt hỏi lại TB (off) − (on), dương = chẩn đoán giảm lượt hỏi; khoảng 95% bootstrap ghép cặp theo họ. Tính trên MỌI lá (§6.2), theo `gold_intent`; độ chính xác route trên lá đã nhãn có route.
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | intent | n_families | clarification_on | clarification_off | reduction | ci95_lo | ci95_hi | contains_zero | one_turn_on | one_turn_off | route_accuracy_on | route_accuracy_off |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| cccccccccccc+dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 10 | 1 | 0 | (tất cả) | 5 | 0.5000 | 1.5000 | 1.0000 | 1.0000 | 1.0000 | false | 0.6000 | 0.0000 | 0.6667 | 0.6667 |
+| cccccccccccc+dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 2 | 0 | 0 | access | 1 | 0.5000 | 1.5000 | 1.0000 | 1.0000 | 1.0000 | false | 0.5000 | 0.0000 | 1.0000 | 1.0000 |
+| cccccccccccc+dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 2 | 0 | 0 | account | 1 | 0.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | false | 1.0000 | 0.0000 | 0.5000 | 0.5000 |
+| cccccccccccc+dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 2 | 1 | 0 | software | 1 | 1.0000 | 2.0000 | 1.0000 | 1.0000 | 1.0000 | false | 0.5000 | 0.0000 | 0.0000 | 0.0000 |
+| cccccccccccc+dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 4 | 0 | 0 | vpn | 2 | 0.5000 | 1.5000 | 1.0000 | 1.0000 | 1.0000 | false | 0.5000 | 0.0000 | 0.7500 | 0.7500 |
+
+## Lá bị loại
+
+### T11 — Lá bị loại khỏi mẫu, theo phương án
+
+- `route_none` = không tới điểm log 4 (ngoài mẫu số §6.1; với phương án có LLM tính là chuyển L2 chỉ ở bước offline, chưa có ở đây). `outside_common` = lá đã nhãn có route nhưng không nằm trong phần giao. E1 = dừng ở B2 do model nghi (không tới M5, §5.4).
+
+| run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | n_leaves | n_unlabeled | n_route_none | n_reached_labelled | n_outside_common | n_e1_injection_suspected |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-luật | 10 | 1 | 0 | 9 | 1 | 0 |
+| bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM | 10 | 1 | 2 | 8 | 0 | 1 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid | 10 | 1 | 0 | 9 | 1 | 0 |
+| dddddddddddd | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid (tắt chẩn đoán, S3) | 10 | 1 | 0 | 9 | 1 | 0 |

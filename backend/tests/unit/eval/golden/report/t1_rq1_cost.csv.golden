@@ -1,0 +1,6 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,arm,cost,ci95_lo,ci95_hi,n_boot,n_used,n_families,seed
+manual@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Thủ công,2.250000,1.000000,4.750000,200,200,4,20260925
+full_auto@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Full-auto,8.750000,1.250000,17.500000,200,200,4,20260925
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,1.125000,0.125000,2.500000,200,200,4,20260925
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,1.375000,0.625000,2.500000,200,200,4,20260925
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,2.625000,0.125000,5.250000,200,200,4,20260925
