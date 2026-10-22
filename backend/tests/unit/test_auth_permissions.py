@@ -74,5 +74,10 @@ def test_every_permission_belongs_to_the_matrix_or_p6() -> None:
         "ticket:create", "ticket:read:own", "ticket:message", "ticket:confirm", "ticket:read:any",
         "approval:decide", "decision:override", "escalation:handle", "dashboard:read:own",
         "dashboard:read:all", "audit:read:own", "audit:read:all", "policy:read", "policy:edit",
-        "kb:edit", "alert:read",
+        "kb:edit", "alert:read", "llm_status:read",
     }  # fmt: skip
+
+
+def test_llm_status_read_is_manager_only() -> None:
+    # I1: trang Trạng thái LLM chỉ đọc — chỉ Trưởng BP IT.
+    assert [r for r in PERMS if "llm_status:read" in PERMS[r]] == ["manager"]

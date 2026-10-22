@@ -231,7 +231,7 @@ PERMS = {
  "manager":  {"ticket:create", "ticket:read:own", "ticket:message", "ticket:confirm",
               "ticket:read:any", "approval:decide", "decision:override",
               "policy:read", "policy:edit", "dashboard:read:all", "audit:read:all",
-              "kb:edit", "alert:read"},
+              "kb:edit", "alert:read", "llm_status:read"},
  "l2":       {"ticket:create", "ticket:read:own", "ticket:message", "ticket:confirm",
               "ticket:read:any", "escalation:handle", "kb:edit"},
 }
