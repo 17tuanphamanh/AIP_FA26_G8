@@ -86,7 +86,7 @@ def test_p8_0010_up_down_up(pg: PgUrls) -> None:
         owner = create_engine(db.role("app_migrate"))
         mon = create_engine(db.role("app_monitor"))
         try:
-            command.upgrade(cfg, "head")
+            command.upgrade(cfg, "0010")
             assert _version(owner) == "0010"
             assert _state(owner) == UP
             assert _scalar(mon, "SELECT count(*) FROM v_leaf WHERE requester_id IS NOT NULL") == 0  # app_monitor đọc được cột mới
@@ -95,7 +95,7 @@ def test_p8_0010_up_down_up(pg: PgUrls) -> None:
             assert _state(owner) == DOWN
             for view in VIEWS:
                 assert _scalar(mon, f"SELECT count(*) FROM {view}") == 0  # GRANT trên view tạo lại còn hiệu lực
-            command.upgrade(cfg, "head")
+            command.upgrade(cfg, "0010")
             assert _state(owner) == UP
         finally:
             owner.dispose()
@@ -123,7 +123,7 @@ def test_p9_downgrade_refused_when_rate_limited_rows_exist(pg: PgUrls) -> None:
     """P9 (4.8 "dừng khi `security_events` đã có dòng `rate_limited` (khuôn 0002)"): `RuntimeError`, DB vẫn ở 0010, không đổi gì."""
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0010")
         owner = create_engine(db.role("app_migrate"))
         rw = create_engine(db.role("app_rw"))
         try:

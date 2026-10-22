@@ -208,6 +208,51 @@ async def test_group_most_sensitive_row(rw: AsyncEngine, mon: AsyncEngine) -> No
 
 
 @pytest.mark.asyncio
+async def test_weighted_e5_llm_high_risk_sensitive(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """F12 (#45): lá E5 có dòng escalation E5 MỚI NHẤT `llm_high_risk` → sensitive, trên mọi dòng điểm log 4 (cột
+    "mâu thuẫn" allow/low, NULL/NULL, hoặc không có dòng). 9 lá đã xong, ngày 27:
+    A E5 llm_high_risk + llm allow/low · B E5 llm_high_risk, không dòng B13/B14 · C E5 llm_high_risk + NULL/NULL → sensitive.
+    D E5 llm_layer_disabled + allow/low → routine (giữ hành vi cũ) · E E5 no_valid_approver + approval_required →
+    approval (đường luật) · F1 E7 exec_failed + allow → routine · F2 E2 (dữ liệu xấu: có dòng E5 llm_high_risk cũ) +
+    allow → routine (mã khác) · G E5: llm_high_risk rồi no_valid_approver (mới nhất) + allow → routine · R resolved +
+    allow → routine. routine 4/5 = 0,8; approval 1/1; sensitive 3/3; weighted 0,56 + 0,2 + 0,1 = 0,86; raw 8/9;
+    60/30/10 = 0,88; 80/15/5 = 0,84. Chưa có quy tắc E5: sensitive None, weighted ≈ 0,9028 → đỏ."""
+    at = win(27)[0] + timedelta(hours=1)
+    async with rw.begin() as conn:
+        a = await escalated(conn, at, "E5")
+        await seed.escalation(conn, a, exit_code="E5", created_at=at, reason_detail="llm_high_risk")
+        await seed.audit_point4(conn, a, created_at=at, decided_by="llm", policy_decision="allow", risk_level="low")
+        b_ = await escalated(conn, at, "E5")
+        await seed.escalation(conn, b_, exit_code="E5", created_at=at, reason_detail="llm_high_risk")
+        c = await escalated(conn, at, "E5")
+        await seed.escalation(conn, c, exit_code="E5", created_at=at, reason_detail="llm_high_risk")
+        await seed.audit_point4(conn, c, created_at=at, decided_by="llm", policy_decision=None, risk_level=None)
+        d = await escalated(conn, at, "E5")
+        await seed.escalation(conn, d, exit_code="E5", created_at=at, reason_detail="llm_layer_disabled")
+        await seed.audit_point4(conn, d, created_at=at, decided_by="llm", policy_decision="allow", risk_level="low")
+        e = await escalated(conn, at, "E5")
+        await seed.escalation(conn, e, exit_code="E5", created_at=at, reason_detail="no_valid_approver")
+        await seed.audit_point4(conn, e, created_at=at, policy_decision="approval_required")
+        f1 = await escalated(conn, at, "E7")
+        await seed.escalation(conn, f1, exit_code="E7", created_at=at, reason_detail="exec_failed")
+        await seed.audit_point4(conn, f1, created_at=at, policy_decision="allow")
+        f2 = await escalated(conn, at, "E2")
+        await seed.escalation(conn, f2, exit_code="E5", created_at=at - MIN, reason_detail="llm_high_risk")
+        await seed.escalation(conn, f2, exit_code="E2", created_at=at, reason_detail="llm_unavailable")
+        await seed.audit_point4(conn, f2, created_at=at, policy_decision="allow")
+        g = await escalated(conn, at, "E5")
+        await seed.escalation(conn, g, exit_code="E5", created_at=at, reason_detail="llm_high_risk")
+        await seed.escalation(conn, g, exit_code="E5", created_at=at + MIN, reason_detail="no_valid_approver")
+        await seed.audit_point4(conn, g, created_at=at, policy_decision="allow")
+        await seed.audit_point4(conn, await resolved(conn, at), created_at=at, policy_decision="allow")
+    r = await q(mon, b.escalation_rate_weighted, 27)
+    assert r.by_group == {"routine": pytest.approx(0.8), "approval": 1.0, "sensitive": 1.0}
+    assert r.weighted == pytest.approx(0.86)
+    assert r.raw == pytest.approx(8 / 9)
+    assert r.sensitivity == {"60/30/10": pytest.approx(0.88), "80/15/5": pytest.approx(0.84)}
+
+
+@pytest.mark.asyncio
 async def test_point4_one_row_per_leaf(rw: AsyncEngine, mon: AsyncEngine) -> None:
     """Mỗi lá một dòng điểm log 4: nhạy nhất; hòa → mới nhất (`created_at`, rồi `log_id`)."""
     at = win(7)[0] + timedelta(hours=1)
@@ -292,14 +337,17 @@ async def test_e1_split_verbatim_and_other(rw: AsyncEngine, mon: AsyncEngine) ->
         await seed.escalation(conn, twice, exit_code="E1", created_at=at + MIN, reason_detail="out_of_scope")
         e3 = await escalated(conn, at, "E3")  # không phải E1
         await seed.escalation(conn, e3, exit_code="E3", created_at=at, reason_detail="out_of_scope")
+        span = await escalated(conn, at, "E1")  # F12: B4 nhiều ý (bảng 5.2.2) → khóa riêng, không rơi vào other
+        await seed.escalation(conn, span, exit_code="E1", created_at=at, reason_detail="split_span_invalid")
     e1 = await q(mon, b.e1_split, 10)
     assert dict(e1.counts) == {
         "out_of_scope": 2, "multi_intent_not_enabled": 1, "intent_low_confidence": 1, "intent_not_enabled": 1,
-        "other": 2,
+        "split_span_invalid": 1, "other": 2,
     }  # fmt: skip
-    assert e1.total == 7 == sum(e1.counts.values())
-    assert e1.shares["out_of_scope"] == pytest.approx(2 / 7)
-    assert e1.shares["other"] == pytest.approx(2 / 7)
+    assert e1.total == 8 == sum(e1.counts.values())
+    assert e1.shares["out_of_scope"] == pytest.approx(2 / 8)
+    assert e1.shares["split_span_invalid"] == pytest.approx(1 / 8)
+    assert e1.shares["other"] == pytest.approx(2 / 8)
 
 
 @pytest.mark.asyncio

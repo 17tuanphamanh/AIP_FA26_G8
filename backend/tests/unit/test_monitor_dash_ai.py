@@ -22,7 +22,7 @@ TO = datetime(2030, 1, 2, tzinfo=UTC)
 LLM_ERRORS = {"LLMUnavailable", "LLMSchemaError", "LLMBudgetExceeded"}
 
 
-@pytest.mark.parametrize("fn", [ai.b2_llm_rate, ai.b3_llm_rate])
+@pytest.mark.parametrize("fn", [ai.b2_llm_rate, ai.b3_llm_rate, ai.multi_intent_first_stop_to_reply_s])
 def test_contract_signatures(fn: Any) -> None:
     sig = inspect.signature(fn)
     assert inspect.iscoroutinefunction(fn)
@@ -30,7 +30,9 @@ def test_contract_signatures(fn: Any) -> None:
     assert sig.return_annotation == float | None
 
 
-@pytest.mark.parametrize("fn", [ai.ai_metrics, ai.b2_llm_rate, ai.b3_llm_rate, ai.cost_per_day])
+@pytest.mark.parametrize(
+    "fn", [ai.ai_metrics, ai.b2_llm_rate, ai.b3_llm_rate, ai.cost_per_day, ai.multi_intent_first_stop_to_reply_s]
+)
 @pytest.mark.parametrize(
     ("frm", "to"),
     [
@@ -137,5 +139,5 @@ def test_ai_functions_read_v_leaf() -> None:
     while grown := {name for name in funcs if name not in reads and calls[name] & reads}:
         reads |= grown
     queries = {q.__name__ for q in ai.QUERIES.values() if q is not None}
-    assert len(queries) == 12
+    assert len(queries) == 13  # F12: + multi_intent_first_stop_to_reply_s
     assert queries <= reads, sorted(queries - reads)

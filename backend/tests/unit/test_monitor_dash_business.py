@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from app.monitor import views
 from app.monitor.metrics import METRIC_SOURCES, N3_SENSITIVITY, N3_WEIGHTS
 from app.monitor.queries import business
 from app.monitor.queries.business import WeightedRate, escalation_rate_weighted, weigh
@@ -409,9 +410,11 @@ def test_ratio_functions_read_v_leaf() -> None:
 
 def test_alembic_single_head_is_0009() -> None:
     """A4: chuỗi M9 không rẽ nhánh — `0009` (chỉ mục M9) nối thẳng sau `0008` (view M9). Gói 2b (U20, PLAN-2B1 G8 #6): head duy
-    nhất nay là `0010` (chống spam), nối thẳng sau `0009`. GIỮ TÊN: `mutate_a4.py` mã I5 gọi test này theo tên."""
+    nhất nay là `0010` (chống spam), nối thẳng sau `0009`. GIỮ TÊN: `mutate_a4.py` mã I5 gọi test này theo tên.
+    F12: head nay là 0011 (view child_notices), nối sau 0010."""
     script = ScriptDirectory.from_config(Config(str(REPO / "alembic.ini")))
-    assert script.get_heads() == ["0010"]
+    assert script.get_heads() == ["0011"]
+    assert script.get_revision("0011").down_revision == "0010"  # type: ignore[union-attr]
     assert script.get_revision("0010").down_revision == "0009"  # type: ignore[union-attr]
     assert script.get_revision("0009").down_revision == "0008"  # type: ignore[union-attr]
     assert script.get_revision("0008").down_revision == "0007"  # type: ignore[union-attr]
@@ -428,3 +431,68 @@ def test_migration_views_sql_static() -> None:
     assert "ix_tickets_leaf" not in MIGRATION.read_text(encoding="utf-8").split('"""')[2]  # không tạo lại chỉ mục
     assert m.DECISION_COLUMNS[0] == "log_id"
     assert "is_parent" not in m.LEAF_COLUMNS
+
+
+# ---- F12 (#45): migration 0011 (tĩnh) + nhóm N3 của lá một nguồn ----
+
+MIGRATION_0011 = REPO / "backend" / "app" / "db" / "alembic" / "versions" / "0011_monitor_child_notices.py"
+NOTICE_COLUMNS = ("notice_id", "parent_ticket_id", "child_ticket_id", "created_at", "delivered_round", "delivered_at")
+
+
+def load_migration_0011() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("m9_0011_monitor_child_notices", MIGRATION_0011)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_0011_static() -> None:
+    """GRANT theo cột, KHÔNG cột nội dung (`body`) hay cột thừa; view qua `v_leaf` (D-30), cột tường minh; SQL tĩnh (không
+    import `app.*`, quy ước 0008 :14); tên view trùng `views.V_CHILD_NOTICES`; TẠM nối sau 0009 (TODO khi gộp 0010 của 2b)."""
+    m = load_migration_0011()
+    assert (m.revision, m.down_revision) == ("0011", "0010")
+    assert m.NOTICE_COLUMNS == NOTICE_COLUMNS
+    assert not {"body", "effect_key", "kind", "needs", "source_step"} & set(m.NOTICE_COLUMNS)
+    assert m.VIEW_NAME == views.V_CHILD_NOTICES == "v_child_notices"
+    assert "*" not in m.VIEW_SQL
+    assert "JOIN v_leaf c ON c.ticket_id = n.child_ticket_id" in m.VIEW_SQL
+    code = MIGRATION_0011.read_text(encoding="utf-8").split('"""', 2)[2]
+    assert "import app" not in code and "from app" not in code
+    assert "TODO(F12)" in code
+    assert "security_invoker = true" in code
+
+
+def _monitor_trees() -> dict[str, ast.Module]:
+    return {str(p.relative_to(MONITOR_DIR)): ast.parse(p.read_text(encoding="utf-8")) for p in sorted(MONITOR_DIR.rglob("*.py"))}
+
+
+def _names(node: ast.AST) -> set[str]:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def test_leaf_n3_single_source() -> None:
+    """F12: nhóm N3 của LÁ chỉ gán ở MỘT chỗ — `_LEAF_N3_SEV_SQL` định nghĩa ở business.py, chỉ `escalation_rate_weighted`
+    dùng (không tự viết CASE riêng); `E5_SENSITIVE_REASONS` chỉ business.py lấy dùng; `_point4_per_leaf` (chọn dòng đại
+    diện cho decided_by/top_rules) KHÔNG theo quy tắc E5."""
+    trees = _monitor_trees()
+    defs = [
+        name for name, tree in trees.items() for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_LEAF_N3_SEV_SQL" for t in n.targets)
+    ]  # fmt: skip
+    assert defs == [str(Path("queries") / "business.py")]
+    users = {name for name, tree in trees.items() if "_LEAF_N3_SEV_SQL" in _names(tree)}
+    assert users == {str(Path("queries") / "business.py")}
+    e5_users = {
+        name for name, tree in trees.items()
+        if "E5_SENSITIVE_REASONS" in _names(tree)
+        or any(isinstance(n, ast.ImportFrom) and any(a.name == "E5_SENSITIVE_REASONS" for a in n.names) for n in ast.walk(tree))
+    }  # fmt: skip
+    assert e5_users == {"metrics.py", str(Path("queries") / "business.py")}
+    funcs = {n.name: n for n in ast.walk(trees[str(Path("queries") / "business.py")]) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)}
+    using = {name for name, fn in funcs.items() if "_LEAF_N3_SEV_SQL" in _names(fn)}
+    assert using == {"escalation_rate_weighted"}
+    weighted = funcs["escalation_rate_weighted"]
+    assert "_SEVERITY_SQL" not in _names(weighted)  # nhánh ELSE nằm trong hằng, không viết lại
+    assert not any(isinstance(c, ast.Constant) and isinstance(c.value, str) and "CASE" in c.value for c in ast.walk(weighted))
+    assert "_LEAF_N3_SEV_SQL" not in _names(funcs["_point4_per_leaf"])

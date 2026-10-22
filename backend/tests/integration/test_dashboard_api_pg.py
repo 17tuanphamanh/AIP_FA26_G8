@@ -202,9 +202,10 @@ async def test_ai_all_keys_and_unavailable(rw: AsyncEngine, env: Http) -> None:
     status, body = await _get(env, AI, await env.token(MANAGER), **win(5))
     assert status == 200, body
     assert set(body["metrics"]) == set(ai.AI_METRICS)
-    pending = ["multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"]
+    pending = ["multi_intent_messages_per_turn"]  # F12: first_stop ready (không có cha → null, ngoài `unavailable`)
     assert body["unavailable"] == pending
-    assert [body["metrics"][k] for k in pending] == [None, None]
+    assert body["metrics"]["multi_intent_messages_per_turn"] is None
+    assert body["metrics"]["multi_intent_first_stop_to_reply_s"] is None
     assert body["metrics"]["e9_count"] == 1
     assert body["metrics"]["e2_llm_count"] == 0  # review PR #30 (nhỏ): lá E9, không có lá E2
 
