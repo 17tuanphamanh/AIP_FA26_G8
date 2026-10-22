@@ -2,7 +2,7 @@
 
 `FakeDb` đọc đúng câu SQL `collect` phát ra (lọc step, chiếu khoá) → đột biến trên câu SQL (đổi step, bỏ khoá) làm test đỏ. Soát
 thêm mọi câu SQL: chỉ đọc; `detail` chỉ ở dạng `detail->>'route'`/`'strategy'` (câu `step = 'B13/B14'`), `detail->>'turn'` (câu
-`step = 'B11'`) và `detail->'grounding'->>'kb_gap'` (câu `step = 'B10'`, P6 22/10) — chốt 17/10 + Dương 18/10.
+`step = 'B11'`) và `detail->>'kb_gap'` (câu `step = 'B13/B14'`, P6 22/10 đính chính) — chốt 17/10 + Dương 18/10.
 """
 
 import re
@@ -26,8 +26,11 @@ def scn(**gold: Any) -> Scenario:
     return Scenario.model_validate(real_scenario("S1", family="F1", turns=["x"], **over))
 
 
-def log4(db: FakeDb, route: str | None = "HITL", strategy: str | None = "hybrid", step: str = "B13/B14", **cols: Any) -> None:
+def log4(db: FakeDb, route: str | None = "HITL", strategy: str | None = "hybrid", step: str = "B13/B14", kb_gap: Any = None,
+         **cols: Any) -> None:  # fmt: skip
     detail: dict[str, Any] = {"factors": {"SENTINEL_FACTOR": 1}, "thresholds": {"SENTINEL_TH": 0.5}}
+    if kb_gap is not None:
+        detail["kb_gap"] = kb_gap
     if route is not None:
         detail["route"] = route
     if strategy is not None:
@@ -69,65 +72,76 @@ def test_collect_full_record() -> None:
 
 
 def test_collect_v11_unavailable_null() -> None:
-    """V11-Q1/Q3/Q5: chưa có nguồn hợp lệ → `null` tường minh (KHÔNG False giả). Log 4 có khoá `kb_gap` trong `detail` KHÔNG phải nguồn
-    (nguồn là B10 `detail.grounding.kb_gap`); câu SQL soát ở `test_sql_detail_keys_whitelist`."""
+    """V11-Q1/Q3/Q5: chưa có nguồn hợp lệ → `null` tường minh (KHÔNG False giả); câu SQL soát ở `test_sql_detail_keys_whitelist`."""
     db = full_db()
-    db.audit = [a for a in db.audit if a["step"] != "B13/B14"]
-    db.log(TID, "B13/B14", "risk_decided", {"route": "HITL", "strategy": "hybrid", "kb_gap": True},
-           decided_by="llm", raw_prob=0.4, calibrated_prob=None, p_method="self_report")  # fmt: skip
     r = collect(db, scn(), TID, META, started_at=START)
-    assert (r.fold, r.kb_gap, r.hidden_factor, r.in_business_hours) == (None,) * 4
+    assert (r.fold, r.hidden_factor, r.in_business_hours) == (None,) * 3
     assert detail_violations(db.queries) == []
 
 
-# ---- kb_gap (audit B10 detail.grounding.kb_gap, chỉ ca đi lớp LLM) -----------------------------------------------------------
+# ---- kb_gap (audit điểm log 4 detail.kb_gap, chỉ ca đi lớp LLM) -------------------------------------------------------------
 
 
-def grounding(db: FakeDb, kb_gap: Any, *, event: str = "needs_action") -> None:
-    db.log(TID, "B10", event, {"grounding": {"top_score": 0.2, "above_threshold": not kb_gap, "kb_gap": kb_gap}})
+def grounding(db: FakeDb, kb_gap: Any) -> None:
+    """Dòng B10 `grounding.kb_gap` — nghĩa KHÁC (điểm truy hồi < ngưỡng); collector không được đọc."""
+    db.log(TID, "B10", "needs_action", {"grounding": {"top_score": 0.2, "above_threshold": not kb_gap, "kb_gap": kb_gap}})
+
+
+def llm_db(kb_gap: Any = None, **cols: Any) -> FakeDb:
+    db = full_db()
+    db.audit = [a for a in db.audit if a["step"] != "B13/B14"]
+    log4(db, kb_gap=kb_gap, **cols)
+    return db
 
 
 @pytest.mark.parametrize("value", [True, False])
-def test_kb_gap_from_b10_grounding_for_llm_case(value: bool) -> None:
-    db = full_db()
-    grounding(db, value)
+def test_kb_gap_from_log4_detail_for_llm_case(value: bool) -> None:
+    db = llm_db(kb_gap=value)
     r = collect(db, scn(), TID, META, started_at=START)
     assert r.decided_by == "llm" and r.kb_gap is value
+    assert any("detail->>'kb_gap'" in q and "step = 'B13/B14'" in q for q in db.queries)
     assert detail_violations(db.queries) == []
 
 
-def test_kb_gap_last_valued_b10_row_wins_and_null_rows_skipped() -> None:
-    db = full_db()
+@pytest.mark.parametrize("log4_value", [True, False])
+def test_kb_gap_is_not_read_from_b10_grounding(log4_value: bool) -> None:
+    """B10 `grounding.kb_gap` (điểm truy hồi) trái ngược với log 4: kết quả phải theo log 4."""
+    db = llm_db(kb_gap=log4_value)
+    grounding(db, not log4_value)
+    r = collect(db, scn(), TID, META, started_at=START)
+    assert r.kb_gap is log4_value
+    assert not any("step = 'B10'" in q for q in db.queries)  # không hỏi B10 cho kb_gap
+
+
+def test_kb_gap_null_when_log4_has_no_key_even_if_b10_has_grounding() -> None:
+    db = llm_db()  # dòng log 4 không có detail.kb_gap
     grounding(db, True)
-    grounding(db, False)
-    db.log(TID, "B10", "other", {"need_type": "action"})  # dòng B10 không có grounding → bỏ qua
-    assert collect(db, scn(), TID, META, started_at=START).kb_gap is False
-
-
-def test_kb_gap_null_when_no_b10_grounding() -> None:
-    db = full_db()
-    db.log(TID, "B10", "other", {"need_type": "action"})
     assert collect(db, scn(), TID, META, started_at=START).kb_gap is None
 
 
-def test_kb_gap_only_for_llm_decided_cases() -> None:
-    """Ca do luật quyết (hoặc không tới M5) không mang `kb_gap` dù có dòng B10 grounding."""
-    db = full_db()
+def test_kb_gap_null_without_log4_row() -> None:
+    db = llm_db(kb_gap=True)
     db.audit = [a for a in db.audit if a["step"] != "B13/B14"]
-    log4(db, decided_by="rule", raw_prob=None, p_method=None)
     grounding(db, True)
     r = collect(db, scn(), TID, META, started_at=START)
+    assert r.route is None and r.kb_gap is None
+
+
+def test_kb_gap_only_for_llm_decided_cases() -> None:
+    """Ca do luật quyết không mang `kb_gap` dù dòng log 4 có khoá."""
+    r = collect(llm_db(kb_gap=True, decided_by="rule", raw_prob=None, p_method=None), scn(), TID, META, started_at=START)
     assert r.decided_by == "rule" and r.kb_gap is None
-    db.audit = [a for a in db.audit if a["step"] != "B13/B14"]
-    r2 = collect(db, scn(), TID, META, started_at=START)
-    assert r2.route is None and r2.kb_gap is None
+
+
+def test_kb_gap_duplicate_log4_rows_keep_first() -> None:
+    db = llm_db(kb_gap=True)
+    log4(db, kb_gap=False)  # cùng route: giữ một (dòng đầu)
+    assert collect(db, scn(), TID, META, started_at=START).kb_gap is True
 
 
 def test_kb_gap_unexpected_value_raises() -> None:
-    db = full_db()
-    grounding(db, "maybe")
     with pytest.raises(ValueError, match="kb_gap"):
-        collect(db, scn(), TID, META, started_at=START)
+        collect(llm_db(kb_gap="maybe"), scn(), TID, META, started_at=START)
 
 
 # ---- intent (tickets.intent → dự phòng audit B3) ----------------------------------------------------------------------------
@@ -348,7 +362,7 @@ def test_gold_intent_multi_none() -> None:
 # ---- soát câu SQL ----------------------------------------------------------------------------------------------------
 
 _DETAIL = re.compile(r"\bdetail\b((?:->'\w+')*->>'(\w+)')?")
-_ALLOWED = {"B13/B14": {"route", "strategy"}, "B11": {"turn"}, "B10": {"grounding.kb_gap"}}
+_ALLOWED = {"B13/B14": {"route", "strategy", "kb_gap"}, "B11": {"turn"}}
 
 
 def detail_violations(queries: list[str]) -> list[str]:
@@ -363,12 +377,11 @@ def detail_violations(queries: list[str]) -> list[str]:
 
 
 def test_sql_detail_keys_whitelist() -> None:
-    db = full_db()
-    grounding(db, False)
+    db = llm_db(kb_gap=False)
     collect(db, scn(), TID, META, started_at=START)
     assert db.queries, "không có câu SQL nào — soát rỗng không được tính là qua"
     assert any("detail->>'route'" in q for q in db.queries)  # đối chứng: soát có thấy khoá được phép
-    assert any("detail->'grounding'->>'kb_gap'" in q for q in db.queries)
+    assert any("detail->>'kb_gap'" in q for q in db.queries)
     assert detail_violations(db.queries) == []
 
 
@@ -378,10 +391,10 @@ def test_whitelist_catches_full_detail() -> None:
     assert detail_violations(["SELECT detail->>'factors' FROM audit_logs WHERE step = 'B13/B14'"])
     assert detail_violations(["SELECT detail->>'turn' FROM audit_logs WHERE step = 'B13/B14'"])
     assert detail_violations(["SELECT detail->>'route' FROM audit_logs WHERE step = 'B11'"])
-    assert detail_violations(["SELECT detail->'grounding'->>'top_score' FROM audit_logs WHERE step = 'B10'"])
-    assert detail_violations(["SELECT detail->'grounding' FROM audit_logs WHERE step = 'B10'"])
-    assert detail_violations(["SELECT detail->'grounding'->>'kb_gap' FROM audit_logs WHERE step = 'B13/B14'"])
-    assert detail_violations(["SELECT detail->'grounding'->>'kb_gap' FROM audit_logs WHERE step = 'B10'"]) == []
+    assert detail_violations(["SELECT detail->'grounding'->>'kb_gap' FROM audit_logs WHERE step = 'B10'"])  # B10 không còn khoá nào được phép
+    assert detail_violations(["SELECT detail->'grounding'->>'kb_gap' FROM audit_logs WHERE step = 'B13/B14'"])  # đường lồng ở log 4 cũng không
+    assert detail_violations(["SELECT detail->>'kb_gap' FROM audit_logs WHERE step = 'B11'"])  # kb_gap chỉ hợp lệ ở câu log 4
+    assert detail_violations(["SELECT detail->>'kb_gap' FROM audit_logs WHERE step = 'B13/B14'"]) == []
 
 
 def test_sql_read_only_statements() -> None:

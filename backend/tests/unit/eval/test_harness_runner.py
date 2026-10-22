@@ -437,8 +437,9 @@ def test_v11_unavailable_fields_null(tmp_path: Path) -> None:
         assert {k: row[k] for k in V11_NULL} == dict.fromkeys(V11_NULL)
 
 
-def test_kb_gap_filled_for_llm_cases_from_b10_grounding(tmp_path: Path) -> None:
-    """P6 22/10: ca đi lớp LLM lấy `kb_gap` từ audit B10; ca do luật quyết không có (null)."""
+def test_kb_gap_filled_for_llm_cases_from_log4_detail(tmp_path: Path) -> None:
+    """P6 22/10: ca đi lớp LLM lấy `kb_gap` từ dòng log 4 (`detail.kb_gap`), KHÔNG từ B10 grounding (fake cố ý ghi `true` ở B10);
+    ca do luật quyết không có (null)."""
     r = Run(tmp_path, scn(1, "direct"), scn(2, "calib"))
     assert r() == 0
     rows = {json.loads(x)["scenario_id"]: json.loads(x) for x in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines()}
@@ -449,7 +450,7 @@ def test_kb_gap_filled_for_llm_cases_from_b10_grounding(tmp_path: Path) -> None:
 
 def test_manifest_counts_kb_gap_intent_and_m5_aborted_missing(tmp_path: Path) -> None:
     sim = SimStack(FakeClock())
-    sim.grounding = False  # ca LLM không có dòng B10 grounding
+    sim.with_kb_gap = False  # dòng log 4 của ca LLM không có detail.kb_gap (B10 grounding vẫn có, và KHÔNG được dùng)
     r = Run(tmp_path, scn(1, "calib"), scn(2, "bare"), sim=sim)
     assert r() == 0
     c = r.manifest()["counts"]

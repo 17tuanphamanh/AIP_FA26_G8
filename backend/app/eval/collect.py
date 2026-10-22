@@ -11,8 +11,9 @@ Câu SQL (mỗi câu một bảng / một step — `detail` chỉ đọc đúng 
 - `approvals`: có dòng nào của lá → `has_approval`.
 - v1.1: `run_started_at` = giờ bắt đầu kịch bản do runner truyền vào; `UNAVAILABLE` (chưa có nguồn hợp lệ — V11-Q1/Q3/Q5) →
   `null` tường minh.
-- `kb_gap` (P6 22/10): CHỈ ca đi lớp LLM (`decided_by = llm`) — `step = 'B10'`, khoá `detail.grounding.kb_gap` (dòng cuối có giá trị);
-  không có → `null` (runner đếm `kb_gap_missing`).
+- `kb_gap` (P6 22/10, đính chính): CHỈ ca đi lớp LLM (`decided_by = llm`) — chính dòng điểm log 4 (`step = 'B13/B14'`), khoá `detail->>'kb_gap'`,
+  là giá trị `b12_assess` truyền vào `decide()` (tính trên bằng chứng THỰC gửi tới B14). KHÔNG phải B10 `detail.grounding.kb_gap` (nghĩa khác:
+  điểm truy hồi < `RETRIEVAL_THRESHOLD`). Không có dòng log 4 / không có khoá → `null` (runner đếm `kb_gap_missing`).
 - `intent`: `tickets.intent` null → dòng `step = 'B3'` cuối có cột `intent` khác null; không có → `null` (runner đếm `intent_missing`).
 - `m5_aborted` (P8 §5.4): có dòng `audit_logs` `event ∈ {turn_budget_exceeded, unhandled_exception}` (lớp bọc lỗi, `graph/boundary.py`)
   với `from_status = 'S_ASSESSING'` → `True`; ticket có audit mà không có dòng đó → `False`; ticket không có dòng audit nào → `null`
@@ -30,8 +31,8 @@ from app.eval.predictions import SCHEMA_VERSION, PredictionRecord, Split, Strate
 from app.eval.stack import Sql, StackError, quote
 
 LOG4_STEP = "B13/B14"
-LOG4_FIELDS = ("'route', detail->>'route', 'strategy', detail->>'strategy', 'decided_by', decided_by, 'raw_prob', raw_prob, "
-               "'calibrated_prob', calibrated_prob, 'p_method', p_method")  # fmt: skip
+LOG4_FIELDS = ("'route', detail->>'route', 'strategy', detail->>'strategy', 'kb_gap', detail->>'kb_gap', 'decided_by', decided_by, "
+               "'raw_prob', raw_prob, 'calibrated_prob', calibrated_prob, 'p_method', p_method")  # fmt: skip
 B11_FIELDS = "'turn', detail->>'turn', 'event', event"
 B8_FIELDS = "'doc_ids', doc_ids, 'created_at', created_at, 'log_id', log_id"
 TICKET_FIELDS = ("'ticket_id', ticket_id, 'parent_ticket_id', parent_ticket_id, 'is_parent', is_parent, 'intent', intent, "
@@ -39,7 +40,6 @@ TICKET_FIELDS = ("'ticket_id', ticket_id, 'parent_ticket_id', parent_ticket_id, 
                  "'resolution_path', resolution_path")  # fmt: skip
 RISK = ("decided_by", "raw_prob", "calibrated_prob", "p_method")
 UNAVAILABLE = ("fold", "hidden_factor", "in_business_hours")  # v1.1 chưa có nguồn → null (manifest predictions_unavailable)
-B10_FIELDS = "'kb_gap', detail->'grounding'->>'kb_gap'"
 B3_FIELDS = "'intent', intent"
 BOUNDARY_EVENTS = ("turn_budget_exceeded", "unhandled_exception")  # graph/boundary.py — lớp bọc lỗi của node
 M5_STATUS = S_ASSESSING  # M5 (b12_assess) chạy khi ticket ở trạng thái này
@@ -73,10 +73,20 @@ def _audit(sql: Sql, ticket_id: str, step: str, fields: str) -> list[dict[str, A
     ))  # fmt: skip
 
 
+def _kb_gap(row: dict[str, Any]) -> bool | None:
+    """`detail->>'kb_gap'` của dòng điểm log 4 (chuỗi `true`/`false`); chỉ ca `decided_by = llm`. Khác `true`/`false` → `ValueError`."""
+    value = row["kb_gap"]
+    if row["decided_by"] != "llm" or value is None:
+        return None
+    if value not in ("true", "false"):
+        raise ValueError("điểm log 4 detail.kb_gap: không phải true/false")
+    return value == "true"
+
+
 def _log4(sql: Sql, ticket_id: str, strategy: str) -> dict[str, Any]:
     rows = _audit(sql, ticket_id, LOG4_STEP, LOG4_FIELDS)
     if not rows:
-        return {"route": None, **dict.fromkeys(RISK)}
+        return {"route": None, **dict.fromkeys(RISK), "kb_gap": None}
     for r in rows:
         if r["route"] is None:
             raise AbortRun("log4_missing_route")
@@ -87,7 +97,7 @@ def _log4(sql: Sql, ticket_id: str, strategy: str) -> dict[str, Any]:
     if len({r["route"] for r in rows}) > 1:
         raise ValueError("điểm log 4: nhiều dòng với route khác nhau (một lá chỉ qua b12_assess một lần)")
     first = rows[0]
-    return {"route": first["route"], **{k: first[k] for k in RISK}}
+    return {"route": first["route"], **{k: first[k] for k in RISK}, "kb_gap": _kb_gap(first)}
 
 
 def _clarification_turns(sql: Sql, ticket_id: str) -> int:
@@ -106,19 +116,6 @@ def _doc_ids(sql: Sql, ticket_id: str) -> list[str] | None:
     last = max(rows, key=lambda r: (datetime.fromisoformat(r["created_at"]), r["log_id"]))
     doc_ids = last["doc_ids"]
     return None if doc_ids is None else list(doc_ids)
-
-
-def _kb_gap(sql: Sql, ticket_id: str) -> bool | None:
-    """Audit B10 `detail.grounding.kb_gap` (dòng cuối có giá trị). `->>` trả chuỗi `true`/`false`; khác → `ValueError`."""
-    value: str | None = None
-    for r in _audit(sql, ticket_id, "B10", B10_FIELDS):
-        if r["kb_gap"] is not None:
-            value = r["kb_gap"]
-    if value is None:
-        return None
-    if value not in ("true", "false"):
-        raise ValueError("audit B10 detail.grounding.kb_gap: không phải true/false")
-    return value == "true"
 
 
 def _intent_from_b3(sql: Sql, ticket_id: str) -> str | None:
@@ -167,7 +164,6 @@ def collect(sql: Sql, scenario: Scenario, ticket_id: str, meta: RunMeta, *, star
         "doc_ids": _doc_ids(sql, ticket_id), "gold_doc_ids": list(scenario.gold.gold_doc_ids),
         "schema_version": SCHEMA_VERSION, "run_started_at": started_at,
         **dict.fromkeys(UNAVAILABLE),
-        "kb_gap": _kb_gap(sql, ticket_id) if log4["decided_by"] == "llm" else None,
         "m5_aborted": _m5_aborted(sql, ticket_id),
     }  # fmt: skip
     # qua JSON: `strict=True` từ chối list cho trường tuple (predictions.py:32-33)

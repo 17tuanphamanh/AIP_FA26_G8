@@ -121,8 +121,9 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
     - `fold`: gán phần ở bước offline, từ `SPLIT.md` (V11-Q3).
     - `hidden_factor`: dữ liệu kịch bản chưa có khoá này (V11-Q1).
     - `in_business_hours`: chờ G7 (V11-Q5).
-  - `kb_gap` (P6 22/10): chỉ ca đi lớp LLM (`decided_by = llm`); lấy từ audit B10 `detail.grounding.kb_gap` (dòng cuối có giá trị). Không có →
-    `null`, đếm ở `manifest.counts.kb_gap_missing`. Ca do luật quyết luôn `null`.
+  - `kb_gap` (P6 22/10): chỉ ca đi lớp LLM (`decided_by = llm`); lấy từ audit điểm log 4 (`step = 'B13/B14'`) `detail->>'kb_gap'` — giá trị
+    `b12_assess` truyền vào `decide()`, KHÔNG phải B10 `grounding.kb_gap` (điểm truy hồi dưới `RETRIEVAL_THRESHOLD`, nghĩa khác). Không có dòng log 4 /
+    khoá → `null`, đếm ở `manifest.counts.kb_gap_missing`. Ca do luật quyết luôn `null`.
   - `intent`: `tickets.intent`; null thì lấy dòng audit B3 (cột `intent`, dòng cuối khác null); vẫn không có → `null`, đếm ở
     `manifest.counts.intent_missing`.
   - `m5_aborted` (P6 22/10, P8 §5.4): `true` khi ticket có dòng audit của lớp bọc lỗi (`event` = `turn_budget_exceeded` hoặc `unhandled_exception`,

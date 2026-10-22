@@ -294,6 +294,65 @@ def test_kb_gap_null_on_llm_case_stops_with_message_for_the_harness(w: World, ca
     assert "harness phải điền kb_gap" in capsys.readouterr().err
 
 
+def test_kb_gap_hybrid_rule_matched_cases_need_no_kb_gap(w: World) -> None:
+    """(a) Hybrid: ca khớp luật ở S1 giữ route luật — dòng S1 của chúng không có `kb_gap` (null) và KHÔNG làm dừng."""
+    assert all(w.row("hybrid", i)["kb_gap"] is None for i in range(N) if is_rule(i))  # đối chứng: dữ liệu đúng như stack
+    s1, s2, folds = load_world_runs(w)
+    rows = offline.classify("hybrid", s1, s2, folds)  # không ném StopError
+    fixed = [r for r in rows if r.kind == "fixed"]
+    assert fixed and all(r.kb_gap is None for r in fixed)
+    assert run_cli(w)[0] == 0
+
+
+def test_kb_gap_llm_only_and_guarded_take_the_s2_row_of_the_same_case(w: World) -> None:
+    """(a) Chỉ-LLM và Hybrid-guarded lấy `kb_gap` từ dòng S2 của CHÍNH ca đó, không từ S1: S01 (LLM ở cả hai lượt) S1 nói true, S2 nói false;
+    S00 (luật CHO PHÉP ở S1 → `kb_gap` null ở S1) S2 nói true."""
+    w.row("hybrid", 1)["kb_gap"] = True
+    w.row("llm_only", 1)["kb_gap"] = False
+    w.row("llm_only", 0)["kb_gap"] = True
+    s1, s2, folds = load_world_runs(w)
+    by = {arm: {r.base.scenario_id: r for r in offline.classify(arm, s1, s2, folds)} for arm in offline.ARMS}
+    assert by["hybrid"][sid(1)].kb_gap is True  # Hybrid: dòng S1
+    assert by["llm_only"][sid(1)].kb_gap is False and by["llm_only"][sid(0)].kb_gap is True
+    assert by["hybrid_guarded"][sid(1)].kb_gap is False and by["hybrid_guarded"][sid(0)].kb_gap is True
+
+
+def test_kb_gap_written_to_output_comes_from_s2_for_guarded_and_llm_only(w: World) -> None:
+    w.row("hybrid", 1)["kb_gap"] = True
+    w.row("llm_only", 1)["kb_gap"] = False
+    w.row("llm_only", 0)["kb_gap"] = True
+    code, out = run_cli(w)
+    assert code == 0
+    got = {arm: {r.scenario_id: r for r in load_predictions(out / arm / "predictions.jsonl")} for arm in offline.ARMS}
+    assert got["hybrid"][sid(1)].kb_gap is True
+    assert got["llm_only"][sid(1)].kb_gap is False and got["llm_only"][sid(0)].kb_gap is True
+    assert got["hybrid_guarded"][sid(1)].kb_gap is False and got["hybrid_guarded"][sid(0)].kb_gap is True
+    assert got["hybrid"][sid(0)].kb_gap is None  # ca luật ở Hybrid: không có kb_gap
+
+
+@pytest.mark.parametrize(("strategy", "i"), [("hybrid", 1), ("llm_only", 1), ("llm_only", 0)])
+def test_kb_gap_null_on_llm_case_stops_even_when_the_other_run_has_a_value(
+    w: World, capsys: pytest.CaptureFixture[str], strategy: str, i: int
+) -> None:
+    """(b) Ca đi lớp LLM mà `kb_gap` null → DỪNG (exit 2), không đoán, không rơi về lượt kia: dòng của lượt kia vẫn có giá trị."""
+    w.row(strategy, i)["kb_gap"] = None
+    other = "llm_only" if strategy == "hybrid" else "hybrid"
+    assert i == 0 or w.row(other, i)["kb_gap"] is not None  # S01: lượt kia có giá trị thật
+    code, out = run_cli(w)
+    assert code == 2 and not out.exists()
+    assert "harness phải điền kb_gap" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("i", [0, 1])
+def test_kb_gap_null_on_s2_row_stops_hybrid_guarded_even_if_s1_has_it(w: World, i: int) -> None:
+    """(b) Riêng Hybrid-guarded: dòng S2 của ca (S00: luật cho phép; S01: LLM ở S1) null → dừng dù S1 có giá trị."""
+    w.row("hybrid", 1)["kb_gap"] = True  # S1 có giá trị ở S01
+    w.row("llm_only", i)["kb_gap"] = None
+    s1, s2, folds = load_world_runs(w)
+    with pytest.raises(StopError, match="kb_gap"):
+        offline.classify("hybrid_guarded", s1, s2, folds)
+
+
 def test_calibrated_output_never_auto_on_kb_gap_cases(w: World) -> None:
     code, out = run_cli(w)
     assert code == 0

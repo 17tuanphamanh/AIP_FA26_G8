@@ -63,6 +63,15 @@ def off(rel: str, frag: str, tag: str) -> list[Edit]:
     return [(rel, old, f"{indent}if False:  # MUTATION {tag}\n", 1)]
 
 
+_LOG4_DEF = "def _log4(sql: Sql, ticket_id: str, strategy: str) -> dict[str, Any]:\n"
+_B10_HELPER = (  # đột biến H2: nguồn kb_gap sai (B10 grounding thay vì dòng log 4)
+    "def _b10_kb_gap(sql: Sql, ticket_id: str) -> bool | None:  # MUTATION M-N18-H2\n"
+    "    rows = _audit(sql, ticket_id, \"B10\", \"'kb_gap', detail->'grounding'->>'kb_gap'\")\n"
+    "    values = [r[\"kb_gap\"] for r in rows if r[\"kb_gap\"] is not None]\n"
+    "    return None if not values else values[-1] == \"true\"\n\n\n"
+)
+
+
 def m(name: str, edits: list[Edit], *expect: str) -> Mutation:
     return Mutation(name, edits, CMD, list(expect))
 
@@ -84,7 +93,9 @@ ALL: list[Mutation] = [
       "test_p1_llm_only_includes_rule_matched_cases_with_s2_probabilities"),
     m("M-N18-P1d Hybrid-guarded lấy p và p_method từ S1",
       sub(OFF, 'src = base if arm != "hybrid_guarded" else r2', "src = base", "M-N18-P1d"),
-      "test_p1_guarded_rule_allow_and_unmatched_go_to_llm_blocking_rules_keep_route"),
+      "test_p1_guarded_rule_allow_and_unmatched_go_to_llm_blocking_rules_keep_route",
+      "test_kb_gap_llm_only_and_guarded_take_the_s2_row_of_the_same_case",
+      "test_kb_gap_written_to_output_comes_from_s2_for_guarded_and_llm_only"),
     m("M-N18-P1e bỏ kiểm with_evidence khớp raw_prob cùng lượt",
       off(OFF, "if src.raw_prob is not None and src.raw_prob != probs", "M-N18-P1e"),
       "test_p1_probs_must_match_predictions_of_the_same_run"),
@@ -187,6 +198,17 @@ ALL: list[Mutation] = [
       sub(OFF, "null_gap += src.kb_gap is None", "null_gap += 0", "M-N18-Q3a"),
       "test_kb_gap_null_on_llm_case_stops_with_message_for_the_harness"),
     # ---- Q4: ca không tới điểm log 4 theo m5_aborted (P6 22/10) ----
+    m("M-N18-Q3b kb_gap null bị coi là false (không dừng, không báo)",
+      [*sub(OFF, "null_gap += src.kb_gap is None", "null_gap += 0", "M-N18-Q3b"),
+       *sub(OFF, 'rows.append(ArmRow(base, fold, "llm", None, src, probs, src.kb_gap))',
+            'rows.append(ArmRow(base, fold, "llm", None, src, probs, bool(src.kb_gap)))', "M-N18-Q3b")],
+      "test_kb_gap_null_on_llm_case_stops_even_when_the_other_run_has_a_value",
+      "test_kb_gap_null_on_s2_row_stops_hybrid_guarded_even_if_s1_has_it",
+      "test_kb_gap_null_on_llm_case_stops_with_message_for_the_harness"),
+    m("M-N18-Q3c Hybrid đòi kb_gap cả ở ca khớp luật",
+      sub(OFF, 'rows.append(ArmRow(base, fold, "fixed", base.route, None, {}, None))',
+          'null_gap += 1; rows.append(ArmRow(base, fold, "fixed", base.route, None, {}, None))', "M-N18-Q3c"),
+      "test_kb_gap_hybrid_rule_matched_cases_need_no_kb_gap"),
     ma("M-N18-Q4a m5_outcome bỏ điều kiện m5_aborted (route null luôn ngoài mẫu)",
        sub(PRED, 'return "aborted" if r.m5_aborted else "out"', 'return "out"', "M-N18-Q4a"),
        "test_m5_outcome_labeled_without_route_follows_the_flag", "test_q4_no_route_follows_m5_aborted_only",
@@ -233,11 +255,15 @@ ALL: list[Mutation] = [
       "test_s3_absent_means_no_hybrid_no_diag_directory"),
     # ---- harness: kb_gap / intent / m5_aborted ở collector ----
     ma("M-N18-H1 kb_gap đọc cả ca không do LLM quyết",
-       sub(COL, 'if log4["decided_by"] == "llm" else None', "if True else None", "M-N18-H1"),
+       sub(COL, 'if row["decided_by"] != "llm" or value is None:', "if value is None:", "M-N18-H1"),
        "test_kb_gap_only_for_llm_decided_cases"),
-    ma("M-N18-H2 kb_gap lấy dòng B10 đầu thay vì cuối",
-       sub(COL, 'value = r["kb_gap"]', 'value = value or r["kb_gap"]', "M-N18-H2"),
-       "test_kb_gap_last_valued_b10_row_wins_and_null_rows_skipped"),
+    ma("M-N18-H2 kb_gap đọc từ B10 grounding thay vì dòng log 4",
+       [(COL, _LOG4_DEF, _B10_HELPER + _LOG4_DEF, 1),
+        *sub(COL, '"kb_gap": _kb_gap(first)}', '"kb_gap": _b10_kb_gap(sql, ticket_id)}', "M-N18-H2")],
+       "test_kb_gap_is_not_read_from_b10_grounding", "test_kb_gap_from_log4_detail_for_llm_case"),
+    ma("M-N18-H2b kb_gap lấy dòng log 4 nhưng khoá lồng grounding",
+       sub(COL, "'kb_gap', detail->>'kb_gap'", "'kb_gap', detail->'grounding'->>'kb_gap'", "M-N18-H2b"),
+       "test_kb_gap_from_log4_detail_for_llm_case"),
     ma("M-N18-H3 intent bỏ dự phòng audit B3",
        sub(COL, 'intent = ticket["intent"] if ticket["intent"] is not None else _intent_from_b3(sql, ticket_id)', 'intent = ticket["intent"]', "M-N18-H3"),
        "test_intent_null_ticket_falls_back_to_last_b3_intent"),

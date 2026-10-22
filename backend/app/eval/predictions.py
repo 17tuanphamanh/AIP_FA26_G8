@@ -24,7 +24,7 @@ tên ở manifest `predictions_unavailable` (không ghi False giả):
 |---|---|---|
 | `schema_version` | `"1.1"`; thiếu = file v1 → `load_predictions` từ chối (V11-Q6) | đọc file |
 | `fold` | 1..`CV_K`, họ → phần ở `SPLIT.md` (§2, §4.3) — chưa có `split.py`; lượt stack ghi `null` (G2-Q3, V11-Q3). Một file: mọi dòng có `fold` hoặc không dòng nào; một họ một phần | §4.3, §5.3 `fit_fold`, §6.1 gộp 5 phần đo |
-| `kb_gap` | audit B10 `detail.grounding.kb_gap` (P6 22/10), CHỈ ca đi lớp LLM (`decided_by = llm`); không có dòng → `null` (manifest đếm `kb_gap_missing`). Như trường rủi ro: `route = None` ⇒ `None` | §5.3 chặn AUTO khi tính route offline (D-34), §5.4 |
+| `kb_gap` | audit điểm log 4 (`step = 'B13/B14'`) `detail->>'kb_gap'` (P6 22/10) — giá trị `b12_assess` truyền vào `decide()`, CHỈ ca đi lớp LLM (`decided_by = llm`); không có → `null` (manifest đếm `kb_gap_missing`). KHÔNG phải B10 `grounding.kb_gap` (điểm truy hồi). Như trường rủi ro: `route = None` ⇒ `None` | §5.3 chặn AUTO khi tính route offline (D-34), §5.4 |
 | `hidden_factor` | `gold.hidden_factor` (§4.1) — dữ liệu thật CHƯA có khoá này → `null` (V11-Q1) | §6.1 FNR nhóm yếu tố M5 không thấy (ghi nợ, chưa tính) |
 | `run_started_at` | giờ bắt đầu TỪNG kịch bản của harness (= `outcomes.jsonl`; không phải giờ bắt đầu lượt ở manifest), ISO 8601 CÓ offset | §5.2 khung giờ, manifest số ca theo khung |
 | `in_business_hours` | khung giờ hành chính của `run_started_at` theo `business_hours` — việc G7 (G2-Q10, V11-Q5) → `null` tới G7 | §5.2 |

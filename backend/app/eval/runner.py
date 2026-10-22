@@ -453,7 +453,7 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         "confirm_default": sum(c.confirm_default for c in cases),
         "p_method_mismatch": sum(r.p_method is not None and r.p_method != args.prob_method for r in records),
         "approval_no_decision": sum(c.error_type == "NoApproverDecision" for c in cases),  # #58: null mà stack đòi duyệt
-        "kb_gap_missing": sum(r.decided_by == "llm" and r.kb_gap is None for r in records),  # P6 22/10: ca LLM không có audit B10 grounding
+        "kb_gap_missing": sum(r.decided_by == "llm" and r.kb_gap is None for r in records),  # P6 22/10: ca LLM mà dòng log 4 không có detail.kb_gap
         "intent_missing": sum(r.intent is None for r in records),  # cả tickets.intent lẫn audit B3 đều null
         "m5_aborted_unknown": sum(r.m5_aborted is None for r in records),  # ticket không có dòng audit nào
     }  # fmt: skip

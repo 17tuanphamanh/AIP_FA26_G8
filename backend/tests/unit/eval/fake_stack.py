@@ -206,7 +206,8 @@ class SimStack:
     badstrategy / nostrategy (log 4 strategy sai / thiếu) · calib (log 4 có calibrated_prob) · boom (POST /api/tickets → 500) ·
     bare (ticket không có dòng audit nào, `tickets.intent` null, đóng E9).
 
-    Ca đi lớp LLM (log 4 `decided_by = llm`) có dòng B10 `detail.grounding.kb_gap = false` khi `grounding = True` (mặc định).
+    Ca đi lớp LLM (log 4 `decided_by = llm`) có `detail.kb_gap = false` trong CHÍNH dòng log 4 khi `with_kb_gap = True` (mặc định) — như
+    `b12_assess`. Thêm dòng B10 `grounding.kb_gap = true` (nghĩa khác: điểm truy hồi) để phát hiện collector đọc nhầm nguồn.
 
     Người quyết phiếu phải là người được giao (`ha.lt`) — khác → 403 (như `approval_role`)."""
 
@@ -225,7 +226,7 @@ class SimStack:
     flows: dict[str, str] = field(default_factory=dict)
     waiting: dict[str, str | None] = field(default_factory=dict)
     created_at: dict[str, float] = field(default_factory=dict)
-    grounding: bool = True  # False → không ghi dòng B10 grounding (ca LLM thiếu kb_gap)
+    with_kb_gap: bool = True  # False → dòng log 4 của ca LLM không có detail.kb_gap (thiếu kb_gap)
 
     def __post_init__(self) -> None:
         self.db.users[APPROVER_ID] = APPROVER
@@ -276,8 +277,11 @@ class SimStack:
             detail["strategy"] = strategy
         base: dict[str, Any] = {"decided_by": "llm", "raw_prob": 0.4, "p_method": "self_report"}
         base.update(cols)
-        if base["decided_by"] == "llm" and self.grounding:
-            self.db.log(tid, "B10", "needs_action", {"grounding": {"top_score": 0.9, "above_threshold": True, "kb_gap": False}})
+        if base["decided_by"] == "llm":
+            # B10 grounding (điểm truy hồi dưới ngưỡng) cố ý ĐỐI NGHỊCH với kb_gap của log 4: đọc nhầm nguồn → kb_gap sai ngay
+            self.db.log(tid, "B10", "needs_action", {"grounding": {"top_score": 0.1, "above_threshold": False, "kb_gap": True}})
+            if self.with_kb_gap:
+                detail["kb_gap"] = False
         self.db.log(tid, "B13/B14", "risk_decided", detail, **base)
 
     def _approval(self, tid: str) -> None:
