@@ -349,8 +349,8 @@ def efficiency(
 
 BREAKEVEN_RATIOS: tuple[float, ...] = (5.0, 10.0, 20.0)  # P8 §5.3 — độ nhạy tỉ lệ bỏ sót/duyệt 5/10/20
 SLOPE_TOL = 1e-12  # |miss_A − miss_B| ≤ SLOPE_TOL → coi là bằng nhau (chốt 1: b_A = b_B → không có điểm hoà vốn)
-FIXED_TOL = 1e-9  # |fixed_A − fixed_B| ≤ FIXED_TOL → hoà (Tuấn Anh 22/10): tử số r* chỉ là nhiễu số thực
-type BreakevenReason = Literal["ok", "equal_miss", "tie", "dominated", "no_common", "missing_groups"]
+FIXED_TOL = 1e-9  # |fixed_A − fixed_B| ≤ FIXED_TOL → tử số r* = 0 (Tuấn Anh 22/10, Q-G1-11): chênh lệch chỉ là nhiễu số thực
+type BreakevenReason = Literal["ok", "equal_miss", "dominated", "no_common", "missing_groups"]
 
 
 @dataclass(frozen=True)
@@ -538,10 +538,11 @@ def _r_star(
         return None, "missing_groups"
     if abs(ma - mb) <= SLOPE_TOL:
         return None, "equal_miss"  # chốt 1: b_A = b_B
-    if abs(fb - fa) <= FIXED_TOL:
-        return None, "tie"  # fixed bằng nhau: bên miss nhỏ hơn rẻ hơn với mọi r > 0
-    r = (fb - fa) / (ma - mb)
-    return (r, "ok") if r > 0 else (None, "dominated")  # r* < 0 → một bên rẻ hơn với mọi r > 0 (G1-Q2)
+    num = fb - fa
+    if abs(num) <= FIXED_TOL:
+        num = 0.0  # fixed bằng nhau: r* = 0 → bên miss nhỏ hơn rẻ hơn với mọi r > 0
+    r = num / (ma - mb)
+    return (r, "ok") if r > 0 else (None, "dominated")  # r* ≤ 0 → một bên rẻ hơn với mọi r > 0 (G1-Q2)
 
 
 def breakeven(
@@ -559,9 +560,9 @@ def breakeven(
     - Phần giao (P8 §5.4 — so trên ca tới M5 ở mọi phương án): lá đã nhãn có route ở CẢ HAI bên. `n_excluded_a` =
       lá đã nhãn có route ở A mà None ở B; `n_excluded_b` ngược lại. Lá chưa nhãn bỏ qua, đếm `n_unlabeled`.
     - Không có điểm hoà vốn → `r_star` None + `reason`: `no_common` (phần giao rỗng), `missing_groups` (có mix, nhóm rỗng — Q5),
-      `equal_miss` (miss bằng nhau ± SLOPE_TOL; xét trước `tie`), `tie` (fixed bằng nhau ± FIXED_TOL — tử số r* chỉ là nhiễu số
-      thực; bên miss nhỏ hơn rẻ hơn với mọi r > 0), `dominated` (r* < 0). `saving` dấu cost_B − cost_A, tính độc lập với `reason`:
-      `tie`/`equal_miss` vẫn có số; None khi phần giao rỗng hoặc nhóm thiếu."""
+      `equal_miss` (miss bằng nhau ± SLOPE_TOL; xét trước dung sai fixed), `dominated` (r* ≤ 0; fixed bằng nhau ± FIXED_TOL coi
+      là tử số 0 → r* = 0). `saving` dấu cost_B − cost_A, tính độc lập với `reason`: `dominated`/`equal_miss` vẫn có số; None khi
+      phần giao rỗng hoặc nhóm thiếu."""
     _require(records_a)
     _require(records_b)
     gold_a = {r.scenario_id: r.expected_route for r in records_a}
