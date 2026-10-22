@@ -2,7 +2,8 @@
 
 `create_app` là điểm nối (composition root): auth chỉ biết port (`auth/ports.py`); ở đây gắn adapter
 AD (`tools`), writer `security_events` + `alerts` (`audit`), store SQL, runtime graph. Test tiêm `idp`,
-`store`, `sink`, `alerts`, `escalations` (hàng đợi L2), `runtime` (factory), `guard`, `clock`.
+`store`, `sink`, `alerts`, `escalations` (hàng đợi L2), `runtime` (factory), `guard`, `clock`, `rate` (cổng đếm 429 — Phase 5 gói 2b;
+mặc định `SqlRateGate` trên `engines.main` dựng trong lifespan).
 
 Thiếu `JWT_SIGNING_KEY` (hoặc thiếu `SVC_AGENT_TOKEN` khi không tiêm idp) → route auth trả 503; app
 vẫn khởi động và `/api/health` vẫn chạy. Runtime graph mở lỗi → route ticket/duyệt trả 503,
@@ -32,7 +33,7 @@ from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.dashboard import router as dashboard_router
-from app.api.desk import Desk, retry_after
+from app.api.desk import Desk, RateGate, retry_after
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
@@ -63,6 +64,12 @@ from app.auth.tokens import TokenSigner
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
+from app.db.rate_limits import (
+    LOOSE_RATES_WARNING,
+    RateLimits,
+    SqlRateGate,
+    loose_rate_vars,
+)
 from app.db.session import Engines, create_engines, ping
 from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
@@ -296,6 +303,7 @@ def create_app(
     guard: PrivacyGuard | None = None,
     clock: Clock | None = None,
     kb_probe: KbProbe | None = None,
+    rate: RateGate | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -309,6 +317,8 @@ def create_app(
     runtime_factory = runtime or _default_runtime
     background = BackgroundRuns()
     lock_retry = retry_after(settings.ticket_lock_timeout)
+    if loose := loose_rate_vars(settings):  # Phase 5 gói 2b (Q-2B1-8): chỉ tên biến, không giá trị; không chặn khởi động
+        log.warning(LOOSE_RATES_WARNING, ", ".join(loose))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -317,6 +327,7 @@ def create_app(
             stack.push_async_callback(engines.dispose)
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
+            rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
             if identity is None and settings.svc_agent_token is not None:
@@ -350,7 +361,7 @@ def create_app(
                 app.state.desk = Desk(
                     runner=rt.runner, tickets=rt.tickets, approvals=rt.approvals, guard=guard, security=security,
                     users=auth_store, clock=clock, background=background,
-                    retry_after_seconds=lock_retry,
+                    retry_after_seconds=lock_retry, rate=rate_gate,
                 )  # fmt: skip
                 app.state.runtime_status = "up"
             try:

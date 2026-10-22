@@ -24,6 +24,18 @@ endif
 .PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 gate4 gate5 vpn-smoke models ml-bench \
 	rerank-bench verify verify-status audit-check
 
+# Phase 5 (gói 2b, D-54 a): `RATE=loose` nới 3 ngưỡng 429 của backend bằng số lớn cho lượt chạy tay gate / vpn-smoke / probe /
+# harness / demo — `make up RATE=loose` (compose nội suy `${TICKET_RATE_10MIN:-}`…, biến shell thắng .env). Cùng số với `LOOSE_RATES` của
+# scripts/verify.sh (test ghim). Không có giá trị "tắt"; RATE khác `loose` → dừng. Đi qua MAKEFLAGS tới `make up` con (gate2 restart-all).
+RATE ?=
+ifeq ($(RATE),loose)
+export TICKET_RATE_10MIN := 100000
+export TICKET_RATE_HOUR := 100000
+export MESSAGE_RATE_10MIN := 100000
+else ifneq ($(RATE),)
+$(error RATE=$(RATE) không hợp lệ — chỉ RATE=loose (nới ngưỡng 429) hoặc bỏ trống)
+endif
+
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 COMPOSE := docker compose --env-file $(ENV_FILE)

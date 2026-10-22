@@ -8,8 +8,9 @@ Privacy guard (3e, phase3 mục 8.3): guard lỗi → 503 `{"error":"privacy_gua
 ghi TRƯỚC `start_event` (lỗi ghi → 503).
 
 `POST /api/tickets/{id}/messages` | `/confirm` → 202, thứ tự kiểm CHỐT (2b-3 a, b):
-  413 (middleware) → quyền (`require`) → không có / không đọc được → 404 (giống hệt nhau) → không phải
-  chủ → 403 → ticket con → 409 → body sai → 422 → guard → `start_event` (409 sự kiện muộn / 503 bận).
+  413 (middleware) → quyền (`require`) → 429 theo tài khoản (Phase 5 gói 2b, `api/ratelimit.py`) → không có / không đọc được → 404
+  (giống hệt nhau) → không phải chủ → 403 → ticket con → 409 → body sai → 422 → guard → `start_event` (409 sự kiện muộn / 503 bận).
+  `POST /api/tickets` cũng 429 ngay sau `require` (bộ đếm ticket mới); `/messages`, `/reply`, `/confirm` chung bộ đếm tin nhắn.
   Bị từ chối ở 403/404: chỉ ghi `permission_denied` (404 id giả: không ghi gì), không gọi guard,
   không ghi `turns`/`late_event`.
 
@@ -46,6 +47,7 @@ from app.api.desk import (
     redact_reply_items,
 )
 from app.api.errors import InvalidRequest, error_fields
+from app.api.ratelimit import limit_messages, limit_tickets
 from app.auth.authz import can_override, can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
@@ -181,6 +183,7 @@ async def create_ticket(
     p: Annotated[Principal, Depends(require("ticket:create"))],
     desk: Annotated[Desk, Depends(get_desk)],
 ) -> JSONResponse:
+    await limit_tickets(request, p, desk)  # 429 ngay sau `require`, trước đọc thân (gói 2b)
     body = await parse_body(request, TicketIn)
     redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
@@ -238,6 +241,7 @@ async def post_message(
     p: Annotated[Principal, Depends(require("ticket:message"))],
     desk: Annotated[Desk, Depends(get_desk)],
 ) -> JSONResponse:
+    await limit_messages(request, p, desk)  # 429 trước `_owned_leaf`: id giả vẫn 429 (gói 2b)
     await _owned_leaf(request, p, desk, ticket_id, "ticket:message")
     body = await parse_body(request, MessageIn)
     redacted = await redact(desk, request, body.text)
@@ -256,6 +260,7 @@ async def confirm(
     p: Annotated[Principal, Depends(require("ticket:confirm"))],
     desk: Annotated[Desk, Depends(get_desk)],
 ) -> JSONResponse:
+    await limit_messages(request, p, desk)  # chung bộ tin nhắn: /confirm sai bước vẫn chạy guard + ghi late_event (gói 2b)
     await _owned_leaf(request, p, desk, ticket_id, "ticket:confirm")
     body = await parse_body(request, ConfirmIn)
     redacted = await redact(desk, request, body.note) if body.note else None
@@ -315,6 +320,7 @@ async def reply(
     lỗi; bí mật → MỘT sự kiện `privacy_secret_redacted {count}` tổng) → `start_event(S_CONFIRMING, {"kind":"reply","items":…},
     wait_node="parent_reply_wait", validate=…)`: không ở `parent_reply_wait` (kể cả ticket thường) → 409 + `late_event`; `items` ≠ đúng
     `awaiting` → 422 `{error:"invalid_request", fields:["body.items.<child_id>"]}`. Tin người dùng ghép do NODE ghi (P8), không do route."""
+    await limit_messages(request, p, desk)  # chung bộ tin nhắn (gói 2b)
     await _owned_leaf(request, p, desk, ticket_id, "ticket:message")
     body = await _reply_body(request, ticket_id)
     redacted = await redact_reply_items(desk, request, body.items)  # Q-T20b-8: che TỪNG answer/note — test AST N1 tin như `redact`

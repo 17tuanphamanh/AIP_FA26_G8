@@ -94,6 +94,7 @@ SECURITY_EVENT_TYPES = (  # P7 2.3
     "refresh_reuse_detected", "session_revoked", "permission_denied", "role_changed",
     "mfa_failed", "policy_saved", "injection_detected", "privacy_secret_redacted",
     "mfa_enrolled", "mfa_reset",  # migration 0002 (P7 2.3 bản 1.5)
+    "rate_limited",  # migration 0010 (Phase 5 gói 2b, D-54 a): 429 theo tài khoản
 )  # fmt: skip
 AUTH_FAILURE_TYPES = ("login_failed", "mfa_failed")  # view auth_failures (P7 2.3)
 LLM_CACHE_MODES = ("runtime", "eval")  # P7 2.4
@@ -298,6 +299,7 @@ class Ticket(Base):
         check_in("aggregate_status", AGGREGATE_STATUSES),
         Index("ix_tickets_leaf", "created_at", postgresql_where=text("is_parent = false")),
         Index("ix_tickets_parent", "parent_ticket_id"),
+        Index("ix_tickets_requester_created_at", "requester_id", "created_at"),  # migration 0010: bộ đếm 429 ticket mới
     )
 
     ticket_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -749,3 +751,19 @@ class ChildNotice(Base):
     delivered_round: Mapped[int | None] = mapped_column(SmallInteger)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+
+
+# ---- 23. rate_hits (Phase 5 gói 2b, D-54 a; đặc tả `claude/dac-ta-bat-2-model.md` 4.8) — migration 0010 -----------------
+
+
+class RateHit(Base):
+    """Bộ đếm 429 của tin nhắn (`/messages`, `/reply`, `/confirm`): mỗi request được cho qua bước 429 một dòng. Chỉ để đếm, không phải
+    bằng chứng (bằng chứng là `security_events(rate_limited)`); không chữ người dùng, không `ticket_id`. KHÔNG append-only: `app_rw` xoá
+    dòng cũ của chính người gửi trong cùng transaction đếm (`db/rate_limits.py`). `created_at` từ Clock của app — không server_default."""
+
+    __tablename__ = "rate_hits"
+    __table_args__ = (Index("ix_rate_hits_user_created_at", "user_id", "created_at"),)
+
+    hit_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = _user_fk(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

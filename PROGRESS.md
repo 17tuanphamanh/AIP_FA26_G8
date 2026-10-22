@@ -5810,6 +5810,38 @@ tin E0 + tiêu chí B2; `b2_tau_select select` báo riêng số câu thường k
 **Spec cần sửa (gói 1):** ĐT mục 8 liệt kê `test_b02_screen.py:98, 104` phải đổi — nhánh regex không thêm khoá nên hai assert
 giữ nguyên (Q-B2R-10).
 
+## Phase 5 — gói 2b phần 1: chống spam (D-54 a) — worktree 2b, nhánh `2b-tuananh` (18/10/2026, 1 DỪNG trên `b582058`, CHƯA commit)
+
+**Trạng thái:** xong, CHƯA commit. `make lint` xanh; unit **6183 passed / 4 skipped** (mốc 6089 / 4); integration + e2e đầy đủ
+(testcontainers, 18/10 tối) **653 passed / 0 failed**. Mutation `scripts/mutation/mutate_2b.py` **7/7 ĐỎ** đúng dự đoán: unit 2b-11
+(42 test), 2b-13 (9), 2b-22 (9); Postgres 2b-11 (8), 2b-12 (1), 2b-14 (2), 2b-20 (5), 2b-21 (1); md5 + `git diff --stat` khớp sau khôi phục.
+`mutate_a4.py` I5 (unit) và I4 (Postgres) ĐỎ đúng dự đoán sau khi đổi 2 test M9. security-reviewer 5/5 PASS (không chữ người dùng; 429 sau
+`require`, trước `_owned_leaf` + đọc thân; chưa xác thực không hao lượt; GRANT tối thiểu; downgrade an toàn) + 2 phát hiện → Q-2B1-7,
+Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không commit).
+- **Q-2B1-7 = A (Tuấn Anh, 18/10):** `verify.sh` KHÔNG nới ở bước 3 `make up` (bước 3 đỏ thì không có bước 8 → không được bỏ lại stack đã
+  nới); chỉ nới ở `recreate` ngay trước mỗi cổng — mọi cổng vẫn chạy với ngưỡng nới. Lệch chữ lời mở ("kể cả make up đầu lượt") có chủ ý.
+- **Q-2B1-8 (Tuấn Anh, 18/10):** `create_app` log MỘT WARNING khi một trong 3 ngưỡng lớn hơn mặc định mà APP_ENV không phải dev/test —
+  chỉ tên biến, không giá trị; không chặn khởi động (`db/rate_limits.loose_rate_vars`, test U22).
+- **Bộ đếm A** (`POST /api/tickets`): `tickets` của người gửi có `parent_ticket_id IS NULL`, ≤ 10 / 10 phút và ≤ 30 / giờ. **Bộ B**
+  (`/messages`, `/reply`, `/confirm` chung): bảng thứ 23 `rate_hits`, ≤ 30 / 10 phút; mỗi lần kiểm MỘT transaction (dọn dòng cũ của chính
+  người gửi → đếm → INSERT khi dưới ngưỡng; 429 không ghi). 429 ở dòng đầu handler: sau `require`, trước `_owned_leaf` và trước đọc thân
+  (4 route đọc thân bằng tay — `api/tickets.py:184, 242, 260, 319`). `{"detail":"rate_limited"}` + `Retry-After` theo công thức 4.8.
+- `security_events(rate_limited)` cùng transaction, mỗi đợt (người, bộ đếm, cửa sổ) một dòng; `ticket_id` NULL, `route` mẫu, `detail
+  {counter, window, limit}`.
+- Migration `0010_rate_limits.py`: CHECK + `rate_limited`; index `ix_tickets_requester_created_at`; `rate_hits` + GRANT `SELECT, INSERT,
+  DELETE` (`app_rw`) + sequence; `v_leaf` thêm `requester_id` cuối (giữ `security_invoker`); downgrade dừng khi đã có `rate_limited`.
+- Cổng đếm: Protocol `RateGate` (`api/desk.py`), SQL `db/rate_limits.SqlRateGate` dựng trong lifespan (`create_app(rate=…)`), bản giả
+  `tests/fakes/rate.py` (`desk_env`, `test_t20b_api`). Settings `ticket_rate_10min`, `ticket_rate_hour`, `message_rate_10min` (`ge=1`,
+  không giá trị tắt); compose `x-backend-env` + `.env.example` để trống.
+- **Nới ngưỡng:** `make verify` tự nới (`LOOSE_RATES` ở `verify.sh` — mọi `recreate` trước cổng; bước 3 không nới; bước 8 gỡ); chạy tay gate2–5, `vpn-smoke`,
+  `probe`, harness, demo: `make up RATE=loose` (README stack); test: `conftest.py` gốc đặt 3 biến = 100000. **Harness RQ1 (Dương):** chưa nới
+  trong code harness — dựng stack bằng `make up RATE=loose`, ghi vào manifest (đặc tả 9.4).
+- Test cũ đổi có chủ ý (8): `test_db_models.py::test_22_tables` → `test_23_tables`, `::test_migration_grants_cover_every_table`;
+  `test_migration.py::test_upgrade_creates_exactly_22_tables` → `…_23_tables`, `::test_downgrade_is_clean_then_upgrade_again` (qua
+  `EXPECTED_TABLES`), `::test_0003_checkpoint_tables_down_and_up`; `test_monitor_dash_business.py::test_alembic_single_head_is_0009`
+  (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
+- Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

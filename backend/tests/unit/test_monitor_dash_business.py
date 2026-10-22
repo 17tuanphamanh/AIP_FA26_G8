@@ -408,9 +408,11 @@ def test_ratio_functions_read_v_leaf() -> None:
 
 
 def test_alembic_single_head_is_0009() -> None:
-    """A4: head duy nhất là `0009` (chỉ mục M9), nối thẳng sau `0008` (view M9) — chuỗi M9 không rẽ nhánh."""
+    """A4: chuỗi M9 không rẽ nhánh — `0009` (chỉ mục M9) nối thẳng sau `0008` (view M9). Gói 2b (U20, PLAN-2B1 G8 #6): head duy
+    nhất nay là `0010` (chống spam), nối thẳng sau `0009`. GIỮ TÊN: `mutate_a4.py` mã I5 gọi test này theo tên."""
     script = ScriptDirectory.from_config(Config(str(REPO / "alembic.ini")))
-    assert script.get_heads() == ["0009"]
+    assert script.get_heads() == ["0010"]
+    assert script.get_revision("0010").down_revision == "0009"  # type: ignore[union-attr]
     assert script.get_revision("0009").down_revision == "0008"  # type: ignore[union-attr]
     assert script.get_revision("0008").down_revision == "0007"  # type: ignore[union-attr]
 

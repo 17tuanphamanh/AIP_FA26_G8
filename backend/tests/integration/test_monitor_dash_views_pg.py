@@ -82,7 +82,8 @@ async def test_v_leaf_excludes_parent(rw: AsyncEngine, mon: AsyncEngine) -> None
 
 @pytest.mark.asyncio
 async def test_view_columns_explicit(mon: AsyncEngine) -> None:
-    assert await _columns(mon, "v_leaf") == list(M.LEAF_COLUMNS)
+    # Gói 2b (PLAN-2B1 G8 #7; đặc tả 4.10 "Dữ liệu"): migration 0010 thêm `requester_id` vào CUỐI `v_leaf`; M vẫn là 0008.
+    assert await _columns(mon, "v_leaf") == [*M.LEAF_COLUMNS, "requester_id"]
     assert await _columns(mon, "v_decisions") == list(M.DECISION_COLUMNS)
     assert await _columns(mon, "v_l2_queue") == [*M.L2_QUEUE_COLUMNS, "rank"]
 

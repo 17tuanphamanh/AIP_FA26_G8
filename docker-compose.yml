@@ -53,6 +53,11 @@ x-backend-env: &backend-env
   # Phase 5 (gói 1, D-52): τ của chế độ `review` ([0,50; 0,9999], không mặc định) — `review` mà rỗng → backend và worker từ
   # chối khởi động. Chọn theo `scripts/eval/b2_tau_select.py`; bản ghi ở ml_models/injection-clf/tai-lieu/thresholds.json.
   B2_TAU_REVIEW: ${B2_TAU_REVIEW:-}
+  # Phase 5 (gói 2b, D-54 a): 3 ngưỡng 429 theo tài khoản — rỗng = mặc định settings.py (10 ticket/10 phút, 30 ticket/giờ, 30 tin
+  # nhắn/10 phút). Không có giá trị "tắt": cổng/đo/demo nới bằng số lớn — `make verify` tự truyền, chạy tay `make up RATE=loose`.
+  TICKET_RATE_10MIN: ${TICKET_RATE_10MIN:-}
+  TICKET_RATE_HOUR: ${TICKET_RATE_HOUR:-}
+  MESSAGE_RATE_10MIN: ${MESSAGE_RATE_10MIN:-}
 
 services:
   postgres:

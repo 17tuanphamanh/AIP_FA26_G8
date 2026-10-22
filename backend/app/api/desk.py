@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 
 from fastapi import HTTPException, Request
@@ -41,6 +42,15 @@ class UserDirectory(Protocol):
     async def get_user(self, user_id: str) -> UserRecord | None: ...
 
 
+class RateGate(Protocol):
+    """429 theo tài khoản (Phase 5 gói 2b, D-54 a — `api/ratelimit.py`): `None` = cho qua; số = `Retry-After` (giây). Bản SQL:
+    `db/rate_limits.SqlRateGate`; bản giả: `tests/fakes/rate.py`."""
+
+    async def tickets(self, user_id: str, now: datetime, route: str) -> int | None: ...
+
+    async def messages(self, user_id: str, now: datetime, route: str) -> int | None: ...
+
+
 @dataclass(frozen=True)
 class Desk:
     runner: Runner
@@ -52,6 +62,7 @@ class Desk:
     clock: Clock
     background: BackgroundRuns
     retry_after_seconds: int  # TicketBusy → 503 + Retry-After (= ceil(TICKET_LOCK_TIMEOUT))
+    rate: RateGate  # Phase 5 gói 2b: bộ đếm 429 (ticket mới; tin nhắn `/messages` `/reply` `/confirm`)
 
 
 def retry_after(lock_timeout: float) -> int:
