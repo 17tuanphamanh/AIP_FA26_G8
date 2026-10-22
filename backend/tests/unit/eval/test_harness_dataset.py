@@ -179,13 +179,14 @@ def test_params_facts_free_dict(tmp_path: Path) -> None:
 
 
 def test_requested_for_missing_is_requester(tmp_path: Path) -> None:
-    """D-41: vắng `gold.action.requested_for` → người gửi = username tra seed theo `requester.user_id` của TỪNG kịch bản."""
+    """D-41: vắng `gold.action.requested_for` → người gửi = `requester.user_id` của TỪNG kịch bản — cùng không gian id với giá trị có
+    sẵn trong dữ liệu (user_id, Tuấn Anh 22/10), KHÔNG tra username (seed map sang username khác → phân biệt được)."""
     write(tmp_path, "a.yaml", real_scenario("SENTINEL_ID_A", drop_action=("requested_for",)))
     write(tmp_path, "b.yaml", real_scenario("SENTINEL_ID_B", user_id="u_an", drop_action=("requested_for",)))
     ds = load(tmp_path)
     a, b = ds.scenarios
     assert a.gold.action.requested_for is None and b.gold.action.requested_for is None
-    assert (ds.requested_for(a), ds.requested_for(b)) == ("SENTINEL_USER", "an.nv")
+    assert (ds.requested_for(a), ds.requested_for(b)) == ("u_sentinel", "u_an")
 
 
 def test_params_missing_is_empty(tmp_path: Path) -> None:
@@ -195,7 +196,7 @@ def test_params_missing_is_empty(tmp_path: Path) -> None:
     a, b = ds.scenarios
     assert a.gold.action.params == {} and b.gold.action.params == {}
     assert a.gold.action.params is not b.gold.action.params
-    assert ds.requested_for(a) == "SENTINEL_FOR" and ds.requested_for(b) == "SENTINEL_USER"
+    assert ds.requested_for(a) == "SENTINEL_FOR" and ds.requested_for(b) == "u_sentinel"
 
 
 def test_requested_for_params_present_kept(tmp_path: Path) -> None:

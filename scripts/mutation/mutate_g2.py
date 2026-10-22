@@ -111,7 +111,7 @@ _IGNORED = "            ignored += dropped\n"
 
 _FOR_OPT = "    requested_for: str | None = None  # vắng khoá → người gửi (D-41): `Dataset.requested_for`\n"
 _PARAMS_OPT = "    params: dict[str, Any] = Field(default_factory=dict)  # vắng khoá → {}\n"
-_FOR_RESOLVE = '        return a.requested_for if "requested_for" in a.model_fields_set else self.usernames[s.id]\n'
+_FOR_RESOLVE = '        return a.requested_for if "requested_for" in a.model_fields_set else s.requester.user_id\n'
 _DEC_NULL = "    approver_decision: ApproverDecision | None  # None = không có bước duyệt (luật cấm); khoá vẫn bắt buộc\n"
 _DEC_SET = ('ApproverDecision = Literal["approve", "reject", "ignore"]  # TODO(G2-Q20): dữ liệu thật là `str` — tập giá trị chờ '
             "Tuấn Anh xác nhận\n")  # fmt: skip
@@ -233,13 +233,13 @@ MUTATIONS_ALL: list[Mutation] = [
              [_swap(DS, _PARAMS_OPT, "    params: dict[str, Any]", "M-G2-41")], UT,
              ["test_params_missing_is_empty", "test_cli_check_only_real_shape"]),
     Mutation("M-G2-42 requested_for vắng → None (không về người gửi)",
-             [_swap(DS, _FOR_RESOLVE, _FOR_RESOLVE.replace("self.usernames[s.id]", "None"), "M-G2-42")], UT,
+             [_swap(DS, _FOR_RESOLVE, _FOR_RESOLVE.replace("s.requester.user_id", "None"), "M-G2-42")], UT,
              ["test_requested_for_missing_is_requester"]),
-    Mutation("M-G2-43 requested_for vắng → user_id (bỏ tra seed)",
-             [_swap(DS, _FOR_RESOLVE, _FOR_RESOLVE.replace("self.usernames[s.id]", "s.requester.user_id"), "M-G2-43")], UT,
+    Mutation("M-G2-43 requested_for vắng → username tra seed (khác không gian id của dữ liệu)",
+             [_swap(DS, _FOR_RESOLVE, _FOR_RESOLVE.replace("s.requester.user_id", "self.usernames[s.id]"), "M-G2-43")], UT,
              ["test_requested_for_missing_is_requester"]),
     Mutation("M-G2-44 requested_for null tường minh gộp với vắng khoá",
-             [_swap(DS, _FOR_RESOLVE, "        return a.requested_for or self.usernames[s.id]", "M-G2-44")], UT,
+             [_swap(DS, _FOR_RESOLVE, "        return a.requested_for or s.requester.user_id", "M-G2-44")], UT,
              ["test_requested_for_params_present_kept"]),
     Mutation("M-G2-45 approver_decision không nhận null",
              [_swap(DS, _DEC_NULL, "    approver_decision: ApproverDecision", "M-G2-45")], UT,

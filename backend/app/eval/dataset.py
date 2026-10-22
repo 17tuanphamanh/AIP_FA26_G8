@@ -1,7 +1,7 @@
 """Nạp kịch bản M8 cho harness G2 theo CẤU TRÚC THẬT (Tuấn Anh 19/10, `~/m9-notes/g2-chot.md` — chỉ tên trường + kiểu, giống nhau 186
 file) — mỗi file `*.yaml`/`*.yml` (không đệ quy) là MỘT kịch bản (mapping) hoặc một DANH SÁCH.
 
-Schema CHỈ đúng các khoá của cấu trúc thật, BẮT BUỘC đủ (trừ `gold.action.requested_for` — vắng → người gửi, D-41 — và
+Schema CHỈ đúng các khoá của cấu trúc thật, BẮT BUỘC đủ (trừ `gold.action.requested_for` — vắng → `requester.user_id` của người gửi, D-41 — và
 `gold.action.params` — vắng → `{}`; `gold.approver_decision` bắt buộc có khoá, nhận null = không có bước duyệt — #58),
 `extra="forbid"` ở MỌI tầng (bắt gõ nhầm tên); `gold.hidden_factor` (P8 v1.4)
 KHÔNG có trong dữ liệu → để PR hợp đồng v1.1. `allow_extra=True` (cờ `--allow-extra-fields`) → bỏ trường lạ, ghi ĐƯỜNG DẪN trường (chỉ
@@ -161,9 +161,10 @@ class Dataset:
     usernames: Mapping[str, str] = field(default_factory=dict)  # scenario_id → username (tra seed theo requester.user_id)
 
     def requested_for(self, s: Scenario) -> str | None:
-        """D-41: vắng `gold.action.requested_for` → người gửi (username tra seed); có khoá (kể cả null) → giữ nguyên."""
+        """D-41: vắng `gold.action.requested_for` → người gửi (`requester.user_id` — giá trị có sẵn trong dữ liệu là user_id, Tuấn Anh
+        22/10); có khoá (kể cả null) → giữ nguyên."""
         a = s.gold.action
-        return a.requested_for if "requested_for" in a.model_fields_set else self.usernames[s.id]
+        return a.requested_for if "requested_for" in a.model_fields_set else s.requester.user_id
 
 
 @dataclass(frozen=True)
