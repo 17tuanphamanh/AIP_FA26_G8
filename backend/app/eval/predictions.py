@@ -7,7 +7,7 @@ Mỗi dòng = một **ticket lá** (D-30) của một lần chạy. Tên trườ
 | `run_id`, `strategy`, `split` | manifest / RunConfig (P8 §5.1) | 1 file = 1 lần chạy = 1 tập; `split` chặn số calibration lọt vào bảng báo cáo |
 | `scenario_id`, `family` | `id`, `family` của kịch bản | gắn gold; bootstrap theo họ (§6.4) |
 | `ticket_id`, `parent_ticket_id` | `tickets` (lá: `is_parent = false`) | khoá duy nhất; nhóm lá theo yêu cầu (M1) |
-| `expected_route` | `gold.expected_route` | FNR, FPR, accuracy, macro-F1, chi phí, nhãn y ECE/Brier, nhóm 70/20/10 |
+| `expected_route` | `gold.expected_route`; `None` = chưa nhãn (G2-Q22) | FNR, FPR, accuracy, macro-F1, chi phí, nhãn y ECE/Brier, nhóm 70/20/10 — metrics bỏ qua lá `None` + đếm `n_unlabeled` |
 | `route` | `audit_logs.detail.route` dòng điểm log 4 (KHÔNG phải cột; dòng = dưới đây) | pred §6.1; `None` = không tới M5 → ngoài mẫu số §6.1 |
 | `decided_by`, `raw_prob`, `calibrated_prob`, `p_method` | cột `audit_logs` dòng điểm log 4 | ECE/Brier (chỉ `llm`): trước = `raw_prob`, sau = `calibrated_prob`, CÙNG lần chạy test |
 | `final_state`, `exit_code`, `close_reason`, `resolution_path` | `tickets` (điểm log 8) | Automation, Escalation, Deflection, Giải quyết một lượt |
@@ -85,7 +85,7 @@ class PredictionRecord(BaseModel, frozen=True, extra="forbid", strict=True, hide
     family: Id
     ticket_id: Id
     parent_ticket_id: Id | None
-    expected_route: Route
+    expected_route: Route | None  # None = kịch bản CHƯA NHÃN (dữ liệu thật tới 25/10 — G2-schema, G2-Q22)
     route: Route | None
     decided_by: str | None
     raw_prob: Prob | None

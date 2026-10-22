@@ -240,3 +240,13 @@ def test_load_rejects_duplicate_scenario_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="scenario_id.*dòng 2") as exc:
         load_predictions(write(tmp_path / "p.jsonl", rows))
     assert "ZZSECRET" not in str(exc.value)
+
+
+def test_expected_route_none_accepted() -> None:
+    """G2-schema (20/10): dữ liệu thật mang `gold.expected_route = null` tới 25/10 → bản ghi CHƯA NHÃN hợp lệ (đụng hợp đồng v1 —
+    G2-Q22). Các ràng buộc khác vẫn giữ: route lạ vẫn bị từ chối."""
+    r = parse(rec(expected_route=None))
+    assert r.expected_route is None
+    assert PredictionRecord.model_validate_json(r.model_dump_json()) == r
+    with pytest.raises(ValidationError):
+        parse(rec(expected_route="SENTINEL_ROUTE"))

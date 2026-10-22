@@ -282,3 +282,33 @@ def test_empty_records_raises() -> None:
         efficiency([])
     with pytest.raises(ValueError, match="rỗng"):
         escalation_weighted([], OPERATING_MIX)
+
+
+# ---- G2-schema: bản ghi CHƯA NHÃN (expected_route None — G2-Q22) ---------------------------------------------------------
+
+
+def unlabeled(*exits: str | None) -> list[PredictionRecord]:
+    return [leaf("AUTO", "AUTO", exit_code=e).model_copy(update={"expected_route": None}) for e in exits]
+
+
+def test_n3_group_none_raises() -> None:
+    with pytest.raises(ValueError, match="chưa nhãn"):
+        n3_group(None)
+
+
+def test_escalation_weighted_skips_unlabeled() -> None:
+    """Nhóm N3 theo GOLD → lá chưa nhãn không thuộc nhóm nào: bỏ qua + đếm, số của bộ W không đổi (0,375)."""
+    w = escalation_weighted(w_set() + unlabeled("E2", None, "E9"), OPERATING_MIX)
+    assert {g: (r.k, r.n) for g, r in w.by_group.items()} == {"routine": (1, 4), "approval": (1, 2), "sensitive": (2, 2)}
+    assert close(w.value, 0.375)
+    assert w.n_unlabeled == 3
+    assert escalation_weighted(w_set(), OPERATING_MIX).n_unlabeled == 0
+
+
+def test_efficiency_counts_all_leaves_with_unlabeled() -> None:
+    """§6.2 thô tính trên MỌI lá (P8:342) — kể cả lá chưa nhãn; chỉ phần có trọng số (theo gold) bỏ qua lá chưa nhãn."""
+    e = efficiency(w_set() + unlabeled("E2", None))
+    assert e.n_leaves == 10
+    assert (e.escalation.k, e.escalation.n) == (5, 10)
+    assert close(e.escalation_weighted.value, 0.375) and e.escalation_weighted.n_unlabeled == 2
+    assert all(w.n_unlabeled == 2 for w in e.escalation_sensitivity.values())
