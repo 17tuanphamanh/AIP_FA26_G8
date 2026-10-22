@@ -61,7 +61,9 @@ def write_seed(path: Path, users: Mapping[str, str] = SEED_USERS) -> Path:
 
 _TID = re.compile(r"ticket_id = '([^']+)'")
 _STEP = re.compile(r"step = '([^']+)'")
-_PAIR = re.compile(r"'(\w+)',\s*(detail->>'\w+'|\w+)")
+_PAIR = re.compile(r"'(\w+)',\s*(detail(?:->'\w+')*->>'\w+'|\w+)")
+_ABORT_EVENTS = re.compile(r"event IN \(([^)]*)\)")
+_ABORT_STATUS = re.compile(r"from_status = '(\w+)'")
 _USER = re.compile(r"user_id = '([^']+)'")
 _TO_JSON = re.compile(r"SELECT to_json\((\w+)\) FROM tickets")
 
@@ -86,7 +88,7 @@ class FakeDb:
     def log(self, ticket_id: str, step: str, event: str, detail: dict[str, Any] | None = None, **cols: Any) -> None:
         row: dict[str, Any] = {"ticket_id": ticket_id, "step": step, "event": event, "detail": detail or {},
                                "decided_by": None, "raw_prob": None, "calibrated_prob": None, "p_method": None,
-                               "doc_ids": None, "created_at": f"2026-10-19T10:00:{len(self.audit):02d}+07:00",
+                               "intent": None, "from_status": None, "doc_ids": None, "created_at": f"2026-10-19T10:00:{len(self.audit):02d}+07:00",
                                "log_id": len(self.audit) + 1}  # fmt: skip
         row.update(cols)
         self.audit.append(row)
@@ -95,6 +97,12 @@ class FakeDb:
     def __call__(self, query: str) -> Any:
         self.queries.append(query)
         tid = m.group(1) if (m := _TID.search(query)) else None
+        if "FROM audit_logs" in query and "bool_or(" in query:  # m5_aborted: đếm dòng + có dòng lớp bọc lỗi ở S_ASSESSING không
+            events_m, status_m = _ABORT_EVENTS.search(query), _ABORT_STATUS.search(query)
+            assert events_m is not None and status_m is not None
+            events = set(re.findall(r"'(\w+)'", events_m.group(1)))
+            mine = [r for r in self.audit if r["ticket_id"] == tid]
+            return {"n": len(mine), "aborted": any(r["event"] in events and r["from_status"] == status_m.group(1) for r in mine)}
         if "FROM audit_logs" in query:
             step = _STEP.search(query)
             assert step is not None, "câu audit_logs phải lọc step"
@@ -124,8 +132,10 @@ class FakeDb:
     def _project(query: str, row: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for key, expr in _PAIR.findall(query):
-            if expr.startswith("detail->>"):
-                v = (row.get("detail") or {}).get(expr.split("'")[1])
+            if expr.startswith("detail"):  # detail->>'k' hoặc detail->'a'->>'k'
+                v: Any = row.get("detail") or {}
+                for part in re.findall(r"'(\w+)'", expr):
+                    v = v.get(part) if isinstance(v, dict) else None
                 out[key] = None if v is None else (v if isinstance(v, str) else json.dumps(v))
             else:
                 out[key] = row[expr]
@@ -193,7 +203,10 @@ class SimStack:
 
     direct (rule AUTO, đóng ngay) · clarify (hỏi → trả lời → chờ duyệt → duyệt → xác nhận → đóng) · reject (chờ duyệt → từ chối) ·
     ignore (chờ duyệt; đồng hồ giả qua `sla_s` → worker E6) · stuck (hỏi lại, không bao giờ đóng) · multi (ticket cha, chờ reply) ·
-    badstrategy / nostrategy (log 4 strategy sai / thiếu) · calib (log 4 có calibrated_prob) · boom (POST /api/tickets → 500).
+    badstrategy / nostrategy (log 4 strategy sai / thiếu) · calib (log 4 có calibrated_prob) · boom (POST /api/tickets → 500) ·
+    bare (ticket không có dòng audit nào, `tickets.intent` null, đóng E9).
+
+    Ca đi lớp LLM (log 4 `decided_by = llm`) có dòng B10 `detail.grounding.kb_gap = false` khi `grounding = True` (mặc định).
 
     Người quyết phiếu phải là người được giao (`ha.lt`) — khác → 403 (như `approval_role`)."""
 
@@ -212,6 +225,7 @@ class SimStack:
     flows: dict[str, str] = field(default_factory=dict)
     waiting: dict[str, str | None] = field(default_factory=dict)
     created_at: dict[str, float] = field(default_factory=dict)
+    grounding: bool = True  # False → không ghi dòng B10 grounding (ca LLM thiếu kb_gap)
 
     def __post_init__(self) -> None:
         self.db.users[APPROVER_ID] = APPROVER
@@ -262,6 +276,8 @@ class SimStack:
             detail["strategy"] = strategy
         base: dict[str, Any] = {"decided_by": "llm", "raw_prob": 0.4, "p_method": "self_report"}
         base.update(cols)
+        if base["decided_by"] == "llm" and self.grounding:
+            self.db.log(tid, "B10", "needs_action", {"grounding": {"top_score": 0.9, "above_threshold": True, "kb_gap": False}})
         self.db.log(tid, "B13/B14", "risk_decided", detail, **base)
 
     def _approval(self, tid: str) -> None:
@@ -270,7 +286,12 @@ class SimStack:
         self.waiting[tid] = "approval"
 
     def _create(self, tid: str, flow: str, requester: str) -> None:
-        self.db.add_ticket(tid, intent="vpn", requester_id=next(u for u, n in self.db.users.items() if n == requester))
+        uid = next(u for u, n in self.db.users.items() if n == requester)
+        if flow == "bare":  # không audit, không intent → m5_aborted / intent null
+            self.db.add_ticket(tid, intent=None, requester_id=uid)
+            self._close(tid, "S_ESCALATED", "escalated", None, exit_code="E9")
+            return
+        self.db.add_ticket(tid, intent="vpn", requester_id=uid)
         self.db.log(tid, "B8", "retrieved", doc_ids=["SENTINEL_DOC_ret"])
         self.waiting[tid] = None
         if flow in ("direct", "badstrategy", "nostrategy", "calib"):

@@ -8,15 +8,18 @@ báo cáo. Chỉ-luật không qua đây (route của stack).
 
   EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.offline \\
       --s1 S1/predictions.jsonl S1/manifest.json S1/probs.jsonl --s2 S2/predictions.jsonl S2/manifest.json S2/probs.jsonl \\
-      --folds folds.csv --policy config/policy.json --out <thư mục mới>
+      [--s3 S3/predictions.jsonl S3/manifest.json S3/probs.jsonl] --folds folds.csv --policy config/policy.json --out <thư mục mới>
 
 Ca đi lớp LLM (P8 §5.4), p lấy theo `(scenario_id, variant)` trong `probs.jsonl` của lượt tương ứng:
 - Hybrid (S1)           : ca `decided_by = llm`; ca `rule` giữ route luật.
 - Chỉ-LLM (S2)          : MỌI ca có route (kể cả ca khớp luật ở chiến lược khác).
 - Hybrid-guarded (S1+S2): ca `llm` của S1 và ca `rule` có route AUTO (luật CHO PHÉP), p từ S2; luật chặn/cần duyệt giữ route luật.
-Ca đã nhãn không tới điểm log 4 (`route = None`), theo chữ của §5.4: hết hạn lượt (`final_state` null) hoặc lỗi chưa lường trước (`exit_code = E9`)
-→ ESCALATE_L2; mọi `route = None` khác (E1 dừng ở B2 do model nghi, E0, E2, E3…) → ngoài mẫu số. Ca chưa nhãn → ngoài mẫu (giữ nguyên dòng).
-Hybrid-guarded mà S2 không tới điểm log 4 → xét như trên theo dòng S2 (không có p của lớp LLM).
+Ca đã nhãn không tới điểm log 4 (`route = None`), theo P8 §5.4 [Chốt 22/10] và trường `m5_aborted` của predictions v1.1: M5 bị ngắt
+(`m5_aborted = true`) → ESCALATE_L2; không bị ngắt (`false`: E1, lỗi ở bước khác, kẹt B11…) → ngoài mẫu số; `null` → DỪNG. Cùng quy tắc ở
+`report.py` cho mọi phương án (kể cả Chỉ-luật). Ca chưa nhãn → ngoài mẫu (giữ nguyên dòng). Hybrid-guarded mà S2 không tới điểm log 4
+→ xét như trên theo dòng S2 (không có p của lớp LLM).
+`--s3` (tuỳ chọn): Hybrid tắt chẩn đoán — chạy lại `compute_arm("hybrid")` với S3 làm nguồn (calibrator fit trên phần huấn luyện của CHÍNH
+S3) → thư mục `hybrid_no_diag`.
 
 Đầu vào giả định (tạm tới khi có `split.py`/SPLIT.md, D11): `--folds` CSV `family,fold` (fold 1..CV_K); `fold` khác null trong predictions
 phải khớp CSV. `kb_gap` null ở ca đi lớp LLM → DỪNG (harness phải điền `kb_gap`; không đoán). `policy_sha256` của mọi manifest phải bằng
@@ -47,7 +50,7 @@ from app.eval.calibrate import (
     fit_fold,
     llm_route,
 )
-from app.eval.predictions import CV_K, PredictionRecord, load_predictions
+from app.eval.predictions import CV_K, PredictionRecord, load_predictions, m5_outcome
 from app.eval.report import Manifest, load_manifest
 from app.risk.calibrator import save_calibrator
 from app.risk.decision_math import DEFAULT_COST, CostMatrix, Route
@@ -55,12 +58,11 @@ from app.settings import parse_policy
 
 ARMS: Final = ("hybrid", "llm_only", "hybrid_guarded")
 OFFLINE_VERSION: Final = "n18-1"
-E1: Final = "E1"  # dừng ở B2 do model nghi (D-52) — không tới M5, ngoài mẫu số (P8 §5.4)
-E9: Final = "E9"  # lỗi chưa lường trước — "không tới điểm log 4" → ESCALATE_L2 (P8 §5.4)
+NO_DIAG_ARM: Final = "hybrid_no_diag"  # S3: Hybrid tắt chẩn đoán chủ động (RQ3, ablation bỏ tool)
 LIMITS: Final = (
     "Platt thường, không làm mượt nhãn (F3 không làm)",
     "select_thresholds không biết kb_gap; ngưỡng dưới giữ nguyên khi ép ngưỡng trên = 1,01",
-    "S3 (Hybrid tắt chẩn đoán) chưa có route offline",
+    "S3 chỉ có route offline khi truyền --s3",
     "fold lấy từ CSV tạm, không phải SPLIT.md",
 )
 
@@ -137,7 +139,7 @@ def load_folds(path: Path) -> tuple[dict[str, int], str]:
     return out, hashlib.sha256(raw).hexdigest()
 
 
-def load_run(predictions: Path, manifest: Path, probs: Path, *, strategy: str) -> Run:
+def load_run(predictions: Path, manifest: Path, probs: Path, *, strategy: str, diagnosis: bool = True) -> Run:
     try:
         mf = load_manifest(manifest)
         raw_mf = json.loads(manifest.read_text(encoding="utf-8"))
@@ -149,8 +151,8 @@ def load_run(predictions: Path, manifest: Path, probs: Path, *, strategy: str) -
         raise StopError(f"{predictions.name}: manifest và predictions lệch nhau (run_id hoặc strategy)")
     if first.strategy != strategy:
         raise StopError(f"{predictions.name}: strategy phải là {strategy}")
-    if not mf.diagnosis:
-        raise StopError(f"{predictions.name}: lượt phải bật chẩn đoán chủ động")
+    if mf.diagnosis != diagnosis:
+        raise StopError(f"{predictions.name}: lượt phải {'bật' if diagnosis else 'tắt'} chẩn đoán chủ động")
     by_sid, sha = load_probs(probs)
     known = {r.scenario_id for r in records}
     unknown = [s for s in by_sid if s not in known]
@@ -222,12 +224,13 @@ class ArmRow:
 
 
 def _no_log4(r: PredictionRecord) -> Kind:
-    """Lá đã nhãn mà `route = None` (P8 §5.4): "không tới điểm log 4" = hết hạn lượt (`final_state` null — harness ghi khi quá giờ) hoặc
-    lỗi chưa lường trước (E9) → ESCALATE_L2 với mọi phương án có LLM. E1 (dừng ở B2 do model nghi) và các ca không tới M5 vì lý do khác
-    (E0, E2, E3…) ngoài mẫu số §6.1."""
-    if r.exit_code == E1:
-        return "out"
-    return "no_log4" if r.final_state is None or r.exit_code == E9 else "out"
+    """Lá đã nhãn mà `route = None` (P8 §5.4 [Chốt 22/10]) — quy tắc DÙNG CHUNG với `report.py` (`predictions.m5_outcome`):
+    M5 bị ngắt (`m5_aborted`: hết hạn lượt / lỗi không lường tại `S_ASSESSING`) → ESCALATE_L2 với phương án có LLM; không bị ngắt (E1,
+    lỗi ở bước khác, kẹt B11…) → ngoài mẫu số; `m5_aborted` null → dừng (collector phải điền)."""
+    try:
+        return "no_log4" if m5_outcome(r) == "aborted" else "out"
+    except ValueError as e:
+        raise StopError(str(e)) from None
 
 
 def classify(arm: str, s1: Run, s2: Run, folds: Mapping[str, int]) -> list[ArmRow]:
@@ -318,8 +321,10 @@ def _update(row: ArmRow, fit: FoldFit | None, policy_t_high: float, counts: Coun
 
 def compute_arm(
     arm: str, rows: Sequence[ArmRow], *, now: datetime, policy_t_high: float, derived_run_id: str | None = None,
-    cost: CostMatrix = DEFAULT_COST,
+    cost: CostMatrix = DEFAULT_COST, name: str | None = None,
 ) -> ArmResult:  # fmt: skip
+    """`arm` = phương án tính (hybrid | llm_only | hybrid_guarded); `name` = tên thư mục/nhãn đầu ra (mặc định `arm`; S3 → hybrid_no_diag)."""
+    label = name or arm
     in_sample = [r for r in rows if r.kind != "out"]
     updates: dict[str, dict[str, Any]] = {}
     fits: dict[int, FoldFit | None] = {}
@@ -331,7 +336,7 @@ def compute_arm(
         train = [r.case("calibration") for r in in_sample if r.fold != i]
         if not test:
             fits[i] = None
-            reports.append({"arm": arm, "fold": i, "note": "không có ca đo ở phần này", "n_train": len(train)})
+            reports.append({"arm": label, "fold": i, "note": "không có ca đo ở phần này", "n_train": len(train)})
             continue
         fit = fit_fold(train, now=now, policy_t_high=policy_t_high, cost=cost)
         fits[i] = fit
@@ -340,7 +345,7 @@ def compute_arm(
             updates[r.base.scenario_id] = _update(r, fit, policy_t_high, local)
         counts.update(local)
         selection[fit.variant or "uncalibrated"] += 1
-        reports.append({"arm": arm, "fold": i, "n_test": len(test), "n_test_llm": sum(r.kind == "llm" for r in test),
+        reports.append({"arm": label, "fold": i, "n_test": len(test), "n_test_llm": sum(r.kind == "llm" for r in test),
                         "no_log4_to_l2": local["no_log4_to_l2"], "missing_p_to_l2": local["missing_p_to_l2"],
                         **fit.to_dict()})  # fmt: skip
     out: list[PredictionRecord] = []
@@ -356,7 +361,7 @@ def compute_arm(
     counts["unlabeled"] = sum(r.base.expected_route is None for r in rows)
     counts["folds_uncalibrated"] = selection["uncalibrated"]
     counts["folds_upper_disabled"] = sum(1 for f in fits.values() if f is not None and f.upper_disabled is not None)
-    return ArmResult(arm, tuple(out), fits, tuple(reports), dict(counts), dict(selection))
+    return ArmResult(label, tuple(out), fits, tuple(reports), dict(counts), dict(selection))
 
 
 # ---- ghi ra ----------------------------------------------------------------------------------------------------------
@@ -386,9 +391,11 @@ def derived_run_id(s1: Run, s2: Run) -> str:
     return hashlib.sha256(f"{s1.manifest.run_id}|{s2.manifest.run_id}|hybrid_guarded".encode()).hexdigest()[:12]
 
 
-def arm_manifest(arm: str, s1: Run, s2: Run, result: ArmResult, extra: Mapping[str, Any]) -> dict[str, Any]:
-    """Manifest của phương án: nguồn S2 (Chỉ-LLM) hoặc S1; Hybrid-guarded thêm `run_id` mới + `derived_from`."""
-    src = s2 if arm == "llm_only" else s1
+def arm_manifest(
+    arm: str, s1: Run, s2: Run, result: ArmResult, extra: Mapping[str, Any], s3: Run | None = None
+) -> dict[str, Any]:  # fmt: skip
+    """Manifest của phương án: nguồn S2 (Chỉ-LLM), S3 (hybrid_no_diag) hoặc S1; Hybrid-guarded thêm `run_id` mới + `derived_from`."""
+    src = s2 if arm == "llm_only" else (s3 if arm == NO_DIAG_ARM and s3 is not None else s1)
     mf: dict[str, Any] = dict(src.raw_manifest)
     mf["predictions_unavailable"] = [u for u in mf.get("predictions_unavailable", []) if u != "fold"]
     if arm == "hybrid_guarded":
@@ -399,12 +406,18 @@ def arm_manifest(arm: str, s1: Run, s2: Run, result: ArmResult, extra: Mapping[s
     return mf
 
 
-def run_all(s1: Run, s2: Run, folds: Mapping[str, int], *, now: datetime, policy_t_high: float) -> dict[str, ArmResult]:
+def run_all(
+    s1: Run, s2: Run, folds: Mapping[str, int], *, now: datetime, policy_t_high: float, s3: Run | None = None
+) -> dict[str, ArmResult]:  # fmt: skip
     out: dict[str, ArmResult] = {}
     for arm in ARMS:
         rows = classify(arm, s1, s2, folds)
         run_id = derived_run_id(s1, s2) if arm == "hybrid_guarded" else None
         out[arm] = compute_arm(arm, rows, now=now, policy_t_high=policy_t_high, derived_run_id=run_id)
+    if s3 is not None:  # S3 là một lượt Hybrid khác: calibrator fit trên phần huấn luyện của chính S3
+        out[NO_DIAG_ARM] = compute_arm(
+            "hybrid", classify("hybrid", s3, s2, folds), now=now, policy_t_high=policy_t_high, name=NO_DIAG_ARM
+        )  # fmt: skip
     return out
 
 
@@ -415,6 +428,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m app.eval.offline", description="Route offline của Hybrid, Chỉ-LLM, Hybrid-guarded (P8 §5.3)")
     p.add_argument("--s1", nargs=3, type=Path, required=True, metavar=("PREDICTIONS", "MANIFEST", "PROBS"))
     p.add_argument("--s2", nargs=3, type=Path, required=True, metavar=("PREDICTIONS", "MANIFEST", "PROBS"))
+    p.add_argument("--s3", nargs=3, type=Path, default=None, metavar=("PREDICTIONS", "MANIFEST", "PROBS"),
+                   help="tuỳ chọn: Hybrid tắt chẩn đoán → thư mục hybrid_no_diag")  # fmt: skip
     p.add_argument("--folds", type=Path, required=True, metavar="CSV")
     p.add_argument("--policy", type=Path, required=True, metavar="policy.json")
     p.add_argument("--out", type=Path, required=True, metavar="DIR")
@@ -422,19 +437,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         s1 = load_run(*args.s1, strategy="hybrid")
         s2 = load_run(*args.s2, strategy="llm_only")
+        s3 = load_run(*args.s3, strategy="hybrid", diagnosis=False) if args.s3 is not None else None
         check_runs(s1, s2)
+        if s3 is not None:
+            check_runs(s1, s3)
         folds, folds_sha = load_folds(args.folds)
-        t_high, policy_sha = read_policy_t_high(args.policy, (s1, s2))
+        t_high, policy_sha = read_policy_t_high(args.policy, tuple(r for r in (s1, s2, s3) if r is not None))
         now = started_at(s1)
         if args.out.exists():
             raise StopError("--out đã tồn tại — dùng thư mục mới")
-        results = run_all(s1, s2, folds, now=now, policy_t_high=t_high)
+        results = run_all(s1, s2, folds, now=now, policy_t_high=t_high, s3=s3)
         args.out.mkdir(parents=True)
         extra = {"version": OFFLINE_VERSION, "now": now.isoformat(), "folds_sha256": folds_sha, "policy_sha256": policy_sha,
-                 "probs_sha256": {"s1": s1.probs_sha256, "s2": s2.probs_sha256}, "cost_matrix": "DEFAULT_COST (10:1)",
+                 "probs_sha256": {"s1": s1.probs_sha256, "s2": s2.probs_sha256, **({"s3": s3.probs_sha256} if s3 else {})},
+                 "cost_matrix": "DEFAULT_COST (10:1)",
                  "variant_order": list(VARIANT_ORDER), "limits": list(LIMITS)}  # fmt: skip
         for arm, result in results.items():
-            write_arm(args.out, result, arm_manifest(arm, s1, s2, result, extra))
+            write_arm(args.out, result, arm_manifest(arm, s1, s2, result, extra, s3))
             c = result.counts
             print(f"{arm}: lá {c['rows']}, đi lớp LLM {c['llm']}, route luật {c['fixed']}, ngoài mẫu {c['out']} "
                   f"(chưa nhãn {c['unlabeled']}), không tới điểm log 4 → L2 {c.get('no_log4_to_l2', 0)}, "

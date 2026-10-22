@@ -9,8 +9,14 @@ Câu SQL (mỗi câu một bảng / một step — `detail` chỉ đọc đúng 
   max(turn + (event == 'asked'))` tính ở Python, bỏ dòng không có `turn`; không dòng nào → 0.
 - `step = 'B8'`: cột `doc_ids`, dòng cuối theo `created_at` (hoà → `log_id`); không có → `None`.
 - `approvals`: có dòng nào của lá → `has_approval`.
-- v1.1: `run_started_at` = giờ bắt đầu kịch bản do runner truyền vào; `UNAVAILABLE` (chưa có nguồn hợp lệ — V11-Q1/Q2/Q3/Q5) →
-  `null` tường minh. `kb_gap` KHÔNG đọc từ `detail` (khoá ngoài chốt, chờ V11-Q2).
+- v1.1: `run_started_at` = giờ bắt đầu kịch bản do runner truyền vào; `UNAVAILABLE` (chưa có nguồn hợp lệ — V11-Q1/Q3/Q5) →
+  `null` tường minh.
+- `kb_gap` (P6 22/10): CHỈ ca đi lớp LLM (`decided_by = llm`) — `step = 'B10'`, khoá `detail.grounding.kb_gap` (dòng cuối có giá trị);
+  không có → `null` (runner đếm `kb_gap_missing`).
+- `intent`: `tickets.intent` null → dòng `step = 'B3'` cuối có cột `intent` khác null; không có → `null` (runner đếm `intent_missing`).
+- `m5_aborted` (P8 §5.4): có dòng `audit_logs` `event ∈ {turn_budget_exceeded, unhandled_exception}` (lớp bọc lỗi, `graph/boundary.py`)
+  với `from_status = 'S_ASSESSING'` → `True`; ticket có audit mà không có dòng đó → `False`; ticket không có dòng audit nào → `null`
+  (runner đếm `m5_aborted_unknown`). Chỉ đọc cột `event`, `from_status`, không đọc `detail`.
 """
 
 import json
@@ -18,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
+from app.domain.states import S_ASSESSING
 from app.eval.dataset import Scenario
 from app.eval.predictions import SCHEMA_VERSION, PredictionRecord, Split, Strategy
 from app.eval.stack import Sql, StackError, quote
@@ -31,7 +38,11 @@ TICKET_FIELDS = ("'ticket_id', ticket_id, 'parent_ticket_id', parent_ticket_id, 
                  "'final_state', final_state, 'exit_code', exit_code, 'close_reason', close_reason, "
                  "'resolution_path', resolution_path")  # fmt: skip
 RISK = ("decided_by", "raw_prob", "calibrated_prob", "p_method")
-UNAVAILABLE = ("fold", "hidden_factor", "in_business_hours", "kb_gap")  # v1.1 chưa có nguồn → null (manifest predictions_unavailable)
+UNAVAILABLE = ("fold", "hidden_factor", "in_business_hours")  # v1.1 chưa có nguồn → null (manifest predictions_unavailable)
+B10_FIELDS = "'kb_gap', detail->'grounding'->>'kb_gap'"
+B3_FIELDS = "'intent', intent"
+BOUNDARY_EVENTS = ("turn_budget_exceeded", "unhandled_exception")  # graph/boundary.py — lớp bọc lỗi của node
+M5_STATUS = S_ASSESSING  # M5 (b12_assess) chạy khi ticket ở trạng thái này
 
 type AbortReason = Literal["strategy_mismatch", "log4_missing_strategy", "log4_missing_route"]
 
@@ -97,6 +108,40 @@ def _doc_ids(sql: Sql, ticket_id: str) -> list[str] | None:
     return None if doc_ids is None else list(doc_ids)
 
 
+def _kb_gap(sql: Sql, ticket_id: str) -> bool | None:
+    """Audit B10 `detail.grounding.kb_gap` (dòng cuối có giá trị). `->>` trả chuỗi `true`/`false`; khác → `ValueError`."""
+    value: str | None = None
+    for r in _audit(sql, ticket_id, "B10", B10_FIELDS):
+        if r["kb_gap"] is not None:
+            value = r["kb_gap"]
+    if value is None:
+        return None
+    if value not in ("true", "false"):
+        raise ValueError("audit B10 detail.grounding.kb_gap: không phải true/false")
+    return value == "true"
+
+
+def _intent_from_b3(sql: Sql, ticket_id: str) -> str | None:
+    """Dòng B3 (phân loại) cuối có cột `intent` khác null."""
+    value: str | None = None
+    for r in _audit(sql, ticket_id, "B3", B3_FIELDS):
+        if r["intent"] is not None:
+            value = r["intent"]
+    return value
+
+
+def _m5_aborted(sql: Sql, ticket_id: str) -> bool | None:
+    events = ", ".join(f"'{e}'" for e in BOUNDARY_EVENTS)
+    row = sql(
+        "SELECT json_build_object('n', count(*), "
+        f"'aborted', coalesce(bool_or(event IN ({events}) AND from_status = '{M5_STATUS}'), false)) "
+        f"FROM audit_logs WHERE ticket_id = {quote(ticket_id)}"
+    )  # fmt: skip
+    if row is None or int(row["n"]) == 0:
+        return None
+    return bool(row["aborted"])
+
+
 def _has_approval(sql: Sql, ticket_id: str) -> bool:
     return bool(sql(f"SELECT to_json(EXISTS (SELECT 1 FROM approvals WHERE ticket_id = {quote(ticket_id)}))"))
 
@@ -107,19 +152,23 @@ def collect(sql: Sql, scenario: Scenario, ticket_id: str, meta: RunMeta, *, star
         raise StackError("không có dòng tickets của ticket vừa tạo")
     if ticket["is_parent"]:
         raise MultiLeaf
+    log4 = _log4(sql, ticket_id, meta.strategy)
+    intent = ticket["intent"] if ticket["intent"] is not None else _intent_from_b3(sql, ticket_id)
     record: dict[str, Any] = {
         "run_id": meta.run_id, "strategy": meta.strategy, "split": meta.split,
         "scenario_id": scenario.id, "family": scenario.family,
         "ticket_id": ticket["ticket_id"], "parent_ticket_id": ticket["parent_ticket_id"],
         "expected_route": scenario.gold.expected_route,
-        **_log4(sql, ticket_id, meta.strategy),
-        **{k: ticket[k] for k in ("final_state", "exit_code", "close_reason", "resolution_path", "intent")},
+        **log4,
+        **{k: ticket[k] for k in ("final_state", "exit_code", "close_reason", "resolution_path")}, "intent": intent,
         "has_approval": _has_approval(sql, ticket_id),
         "clarification_turns": _clarification_turns(sql, ticket_id),
         "gold_intent": scenario.gold_intent,
         "doc_ids": _doc_ids(sql, ticket_id), "gold_doc_ids": list(scenario.gold.gold_doc_ids),
         "schema_version": SCHEMA_VERSION, "run_started_at": started_at,
         **dict.fromkeys(UNAVAILABLE),
+        "kb_gap": _kb_gap(sql, ticket_id) if log4["decided_by"] == "llm" else None,
+        "m5_aborted": _m5_aborted(sql, ticket_id),
     }  # fmt: skip
     # qua JSON: `strict=True` từ chối list cho trường tuple (predictions.py:32-33)
     return PredictionRecord.model_validate_json(json.dumps(record))

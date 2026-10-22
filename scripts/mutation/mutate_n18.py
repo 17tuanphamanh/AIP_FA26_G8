@@ -23,8 +23,13 @@ REPO = Path(__file__).resolve().parents[2]
 CAL = "backend/app/eval/calibrate.py"
 OFF = "backend/app/eval/offline.py"
 DM = "backend/app/risk/decision_math.py"
+PRED = "backend/app/eval/predictions.py"
+REP = "backend/app/eval/report.py"
+COL = "backend/app/eval/collect.py"
+RUN = "backend/app/eval/runner.py"
 CMD = ["uv", "run", "pytest", "backend/tests/unit/eval/test_calibrate.py", "backend/tests/unit/eval/test_offline.py", "-q",
        "-p", "no:cacheprovider"]  # fmt: skip
+CMD_ALL = ["uv", "run", "pytest", "backend/tests/unit/eval", "-q", "-p", "no:cacheprovider"]  # đột biến chạm predictions/collect/report/runner
 
 type Edit = tuple[str, str, str, int]  # (file, chuỗi gốc, chuỗi thay, số lần chuỗi gốc phải xuất hiện)
 
@@ -60,6 +65,10 @@ def off(rel: str, frag: str, tag: str) -> list[Edit]:
 
 def m(name: str, edits: list[Edit], *expect: str) -> Mutation:
     return Mutation(name, edits, CMD, list(expect))
+
+
+def ma(name: str, edits: list[Edit], *expect: str) -> Mutation:
+    return Mutation(name, edits, CMD_ALL, list(expect))
 
 
 ALL: list[Mutation] = [
@@ -177,23 +186,82 @@ ALL: list[Mutation] = [
     m("M-N18-Q3a kb_gap null không dừng",
       sub(OFF, "null_gap += src.kb_gap is None", "null_gap += 0", "M-N18-Q3a"),
       "test_kb_gap_null_on_llm_case_stops_with_message_for_the_harness"),
-    m("M-N18-Q4a ca không tới điểm log 4 không chuyển L2",
-      sub(OFF, 'return "no_log4" if r.final_state is None or r.exit_code == E9 else "out"', 'return "out"', "M-N18-Q4a"),
-      "test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample"),
-    m("M-N18-Q4b mọi ca route null (E3…) bị chuyển L2",
-      sub(OFF, 'return "no_log4" if r.final_state is None or r.exit_code == E9 else "out"', 'return "no_log4"', "M-N18-Q4b"),
-      "test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample"),
-    m("M-N18-Q4c hết hạn lượt (final_state null) không còn chuyển L2",
-      sub(OFF, 'return "no_log4" if r.final_state is None or r.exit_code == E9 else "out"',
-          'return "no_log4" if r.exit_code == E9 else "out"', "M-N18-Q4c"),
-      "test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample"),
-    m("M-N18-Q4d lỗi chưa lường trước (E9) không còn chuyển L2",
-      sub(OFF, 'return "no_log4" if r.final_state is None or r.exit_code == E9 else "out"',
-          'return "no_log4" if r.final_state is None else "out"', "M-N18-Q4d"),
-      "test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample"),
-    m("M-N18-Q4e E1 không còn được loại trước điều kiện hết hạn lượt",
-      off(OFF, "if r.exit_code == E1:", "M-N18-Q4e"),
-      "test_q4_e1_is_out_of_sample_even_when_final_state_is_null"),
+    # ---- Q4: ca không tới điểm log 4 theo m5_aborted (P6 22/10) ----
+    ma("M-N18-Q4a m5_outcome bỏ điều kiện m5_aborted (route null luôn ngoài mẫu)",
+       sub(PRED, 'return "aborted" if r.m5_aborted else "out"', 'return "out"', "M-N18-Q4a"),
+       "test_m5_outcome_labeled_without_route_follows_the_flag", "test_q4_no_route_follows_m5_aborted_only",
+       "test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample"),
+    m("M-N18-Q4b offline bỏ điều kiện m5_aborted (mọi route null đã nhãn → L2)",
+      sub(OFF, 'return "no_log4" if m5_outcome(r) == "aborted" else "out"', 'return "no_log4"', "M-N18-Q4b"),
+      "test_q4_no_route_follows_m5_aborted_only", "test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample"),
+    ma("M-N18-Q4c m5_aborted null không còn gây lỗi",
+       off(PRED, "if r.m5_aborted is None:", "M-N18-Q4c"),
+       "test_m5_outcome_labeled_without_route_and_null_flag_raises", "test_q4_null_m5_aborted_on_labeled_no_route_case_stops"),
+    ma("M-N18-Q4d lá chưa nhãn cũng đòi m5_aborted",
+       off(PRED, "if r.expected_route is None:", "M-N18-Q4d"),
+       "test_m5_outcome_unlabeled_is_out_without_needing_the_flag"),
+    m("M-N18-Q4e offline để ValueError thoát thay vì dừng (exit 2)",
+      sub(OFF, "    except ValueError as e:", "    except KeyError as e:", "M-N18-Q4e"),
+      "test_q4_null_m5_aborted_on_labeled_no_route_case_stops", "test_q4_null_m5_aborted_stops_the_cli_with_exit_2"),
+    ma("M-N18-Q4f report không áp quy tắc ngắt M5 khi nạp lượt",
+       sub(REP, "records = list(abort_as_l2(records))", "records = list(records)", "M-N18-Q4f"),
+       "test_rule_only_uses_the_same_abort_rule_so_denominators_match", "test_load_arm_reports_file_name_when_flag_is_null"),
+    ma("M-N18-Q4g report chuyển L2 mọi lá đã nhãn không route (bỏ cờ)",
+       sub(REP, 'if m5_outcome(r) == "aborted" else r for r in records', 'if r.route is None and r.expected_route is not None else r for r in records', "M-N18-Q4g"),
+       "test_abort_as_l2_converts_only_aborted_route_none", "test_rule_only_uses_the_same_abort_rule_so_denominators_match"),
+    ma("M-N18-Q4h trường m5_aborted có mặc định (không bắt buộc)",
+       sub(PRED, "    m5_aborted: bool | None", "    m5_aborted: bool | None = None", "M-N18-Q4h"),
+       "test_m5_aborted_is_a_required_nullable_bool_in_the_contract", "test_v11_fields_required"),
+    # ---- S3 (hybrid_no_diag) ----
+    m("M-N18-S3a S3 tính từ dữ liệu S1",
+      sub(OFF, 'classify("hybrid", s3, s2, folds), now=now', 'classify("hybrid", s1, s2, folds), now=now', "M-N18-S3a"),
+      "test_s3_is_computed_from_s3_own_data_with_its_own_calibrators"),
+    m("M-N18-S3b S3 ghi đè thư mục hybrid",
+      sub(OFF, "policy_t_high=policy_t_high, name=NO_DIAG_ARM", "policy_t_high=policy_t_high", "M-N18-S3b"),
+      "test_s3_writes_hybrid_no_diag_loadable_as_the_no_tool_arm"),
+    m("M-N18-S3c bỏ kiểm S3 tắt chẩn đoán",
+      off(OFF, "if mf.diagnosis != diagnosis:", "M-N18-S3c"),
+      "test_s3_must_have_diagnosis_off_and_match_dataset_and_policy"),
+    m("M-N18-S3d bỏ kiểm S3 cùng dataset/gold với S1",
+      sub(OFF, "check_runs(s1, s3)", "pass", "M-N18-S3d"),
+      "test_s3_must_have_diagnosis_off_and_match_dataset_and_policy"),
+    m("M-N18-S3e policy_sha256 của S3 không được kiểm",
+      sub(OFF, "tuple(r for r in (s1, s2, s3) if r is not None)", "(s1, s2)", "M-N18-S3e"),
+      "test_s3_must_have_diagnosis_off_and_match_dataset_and_policy"),
+    m("M-N18-S3f --s3 không truyền thì vẫn ghi hybrid_no_diag",
+      sub(OFF, "    if s3 is not None:  # S3 là một lượt Hybrid khác", "    if True:  # S3 là một lượt Hybrid khác", "M-N18-S3f"),
+      "test_s3_absent_means_no_hybrid_no_diag_directory"),
+    # ---- harness: kb_gap / intent / m5_aborted ở collector ----
+    ma("M-N18-H1 kb_gap đọc cả ca không do LLM quyết",
+       sub(COL, 'if log4["decided_by"] == "llm" else None', "if True else None", "M-N18-H1"),
+       "test_kb_gap_only_for_llm_decided_cases"),
+    ma("M-N18-H2 kb_gap lấy dòng B10 đầu thay vì cuối",
+       sub(COL, 'value = r["kb_gap"]', 'value = value or r["kb_gap"]', "M-N18-H2"),
+       "test_kb_gap_last_valued_b10_row_wins_and_null_rows_skipped"),
+    ma("M-N18-H3 intent bỏ dự phòng audit B3",
+       sub(COL, 'intent = ticket["intent"] if ticket["intent"] is not None else _intent_from_b3(sql, ticket_id)', 'intent = ticket["intent"]', "M-N18-H3"),
+       "test_intent_null_ticket_falls_back_to_last_b3_intent"),
+    ma("M-N18-H4 intent luôn hỏi B3 và ưu tiên B3",
+       sub(COL, 'intent = ticket["intent"] if ticket["intent"] is not None else _intent_from_b3(sql, ticket_id)', 'intent = _intent_from_b3(sql, ticket_id) or ticket["intent"]', "M-N18-H4"),
+       "test_intent_from_ticket_does_not_query_b3"),
+    ma("M-N18-H5 m5_aborted không xét trạng thái S_ASSESSING",
+       sub(COL, "AND from_status = '{M5_STATUS}'", "", "M-N18-H5"),
+       "test_m5_aborted_false_for_other_audit_rows"),
+    ma("M-N18-H6 m5_aborted bỏ sự kiện unhandled_exception",
+       sub(COL, 'BOUNDARY_EVENTS = ("turn_budget_exceeded", "unhandled_exception")', 'BOUNDARY_EVENTS = ("turn_budget_exceeded",)', "M-N18-H6"),
+       "test_m5_aborted_true_for_boundary_event_at_assessing"),
+    ma("M-N18-H7 ticket không audit vẫn được coi là không ngắt (False)",
+       off(COL, 'if row is None or int(row["n"]) == 0:', "M-N18-H7"),
+       "test_m5_aborted_null_when_ticket_has_no_audit_rows"),
+    ma("M-N18-H8 manifest vẫn khai kb_gap là chưa có nguồn",
+       sub(COL, 'UNAVAILABLE = ("fold", "hidden_factor", "in_business_hours")', 'UNAVAILABLE = ("fold", "hidden_factor", "in_business_hours", "kb_gap")', "M-N18-H8"),
+       "test_manifest_v11"),
+    ma("M-N18-H9 kb_gap_missing đếm cả ca không do LLM",
+       sub(RUN, 'r.decided_by == "llm" and r.kb_gap is None', "r.kb_gap is None", "M-N18-H9"),
+       "test_manifest_counts_kb_gap_intent_and_m5_aborted_missing"),
+    ma("M-N18-H10 intent_missing luôn 0",
+       sub(RUN, '"intent_missing": sum(r.intent is None for r in records)', '"intent_missing": 0', "M-N18-H10"),
+       "test_manifest_counts_kb_gap_intent_and_m5_aborted_missing"),
     m("M-N18-Q5a biến thể được chọn thiếu p không chuyển L2",
       sub(OFF, 'up |= {"route": "ESCALATE_L2", "raw_prob": None, "calibrated_prob": None}',
           'up |= {"route": "HITL", "raw_prob": None, "calibrated_prob": None}', "M-N18-Q5a"),

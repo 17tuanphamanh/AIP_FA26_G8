@@ -1,10 +1,10 @@
 """N18 — `app.eval.offline`: route offline của Hybrid, Chỉ-LLM, Hybrid-guarded (P8 v1.4 §5.3, §5.4) trên dữ liệu tổng hợp.
 
 Dữ liệu: 66 kịch bản, 10 họ F01..F10 (họ Fk → phần (k−1) % 5 + 1), lượt S1 (hybrid) và S2 (llm_only) dựng đúng hợp đồng
-predictions v1.1 (nạp bằng `load_predictions` thật), `probs.jsonl` như G10 ghi. Kịch bản đặc biệt (P8 §5.4, ca không tới điểm log 4):
-  S60 chưa nhãn · S61 nhãn, route null, E1 (ngoài mẫu) · S62 nhãn, route null, E9 (lỗi chưa lường trước → ESCALATE_L2) ·
-  S63 S1 luật CHO PHÉP nhưng S2 route null, E9 · S64 nhãn, route null, E3 (ngoài mẫu số, không phải "hết hạn lượt/E9") ·
-  S65 nhãn, route null, `final_state` null (hết hạn lượt → ESCALATE_L2).
+predictions v1.1 (nạp bằng `load_predictions` thật), `probs.jsonl` như G10 ghi. Kịch bản đặc biệt (P8 §5.4 [Chốt 22/10], trường `m5_aborted`):
+  S60 chưa nhãn · S61 nhãn, route null, E1, m5_aborted false (ngoài mẫu) · S62 nhãn, route null, E2 hết hạn lượt tại B12/B14,
+  m5_aborted true (→ ESCALATE_L2) · S63 S1 luật CHO PHÉP nhưng S2 route null, E2 tại B12, m5_aborted true ·
+  S64 nhãn, route null, E9 tại B3, m5_aborted false (ngoài mẫu số) · S65 nhãn, route null, `final_state` null do kẹt B11, m5_aborted false.
 Kỳ vọng chép từ P8 §5.4 và 7 điểm duyệt 22–23/10, không suy từ code.
 """
 
@@ -70,6 +70,13 @@ def expected(i: int) -> str | None:
     return {61: "HITL", 62: "HITL", 63: "AUTO", 64: "HITL", 65: "HITL"}.get(i, GOLD[i % 6])
 
 
+def m5_aborted_of(strategy: str, i: int) -> bool | None:
+    """Cờ của collector: M5 bị ngắt giữa chừng (event lớp bọc lỗi tại S_ASSESSING) — S62 mọi lượt; S63 chỉ ở S2; chưa nhãn → null."""
+    if i == 60:
+        return None
+    return i == 62 or (i == 63 and strategy == "llm_only")
+
+
 def record(run: str, strategy: str, i: int) -> Dict:
     """Một lá của lượt `strategy` ('hybrid' = S1, 'llm_only' = S2)."""
     s1 = strategy == "hybrid"
@@ -79,10 +86,10 @@ def record(run: str, strategy: str, i: int) -> Dict:
     if i == 60:
         route = decided = None
     elif i in (61, 62, 64, 65):
-        route, decided, exit_code = None, None, {61: "E1", 62: "E9", 64: "E3", 65: None}[i]
+        route, decided, exit_code = None, None, {61: "E1", 62: "E2", 64: "E9", 65: None}[i]
     elif i == 63:
         route, decided = ("AUTO", "rule") if s1 else (None, None)
-        exit_code = None if s1 else "E9"
+        exit_code = None if s1 else "E2"
     elif s1 and is_rule(i):
         route, decided = rule_route(i), "rule"
     else:
@@ -95,7 +102,7 @@ def record(run: str, strategy: str, i: int) -> Dict:
         "p_method": "self_report" if llm else None, "final_state": None if i == 65 else ("S_RESOLVED" if route else "S_ESCALATED"),
         "exit_code": exit_code, "close_reason": None, "resolution_path": None, "has_approval": False,
         "clarification_turns": 0, "intent": "vpn", "gold_intent": "vpn", "doc_ids": None, "gold_doc_ids": [],
-        **V11, "kb_gap": kb_gap_of(i) if llm else None,
+        **V11, "kb_gap": kb_gap_of(i) if llm else None, "m5_aborted": m5_aborted_of(strategy, i),
     }  # fmt: skip
 
 
@@ -139,6 +146,16 @@ class World:
     def row(self, strategy: str, i: int) -> Dict:
         return next(r for r in self.rec[strategy] if r["scenario_id"] == sid(i))
 
+    def enable_s3(self) -> None:
+        """S3 = Hybrid tắt chẩn đoán: cùng kịch bản/gold với S1, nhưng p khác (+0,04) và hỏi lại nhiều hơn (2 lượt)."""
+        self.rec["s3"] = [{**record("c" * 12, "hybrid", i), "clarification_turns": 2} for i in range(SPECIAL)]
+        self.probs["s3"] = prob_lines("hybrid")
+        self.manifest["s3"] = {**self.manifest["hybrid"], "run_id": "c" * 12, "enable_proactive_diagnosis": False}
+        for i in range(SPECIAL):
+            if self.row("s3", i)["decided_by"] == "llm":
+                p = round(min(0.98, p_of(i) + 0.04), 4)
+                set_p(self, "s3", i, p, no_ev(p), max(p, no_ev(p)))
+
     def write(self) -> list[str]:
         d = self.tmp
         files: dict[str, bytes] = {}
@@ -146,12 +163,17 @@ class World:
             files[f"{tag}.jsonl"] = "".join(json.dumps(r) + "\n" for r in self.rec[s]).encode()
             files[f"{tag}-manifest.json"] = json.dumps(self.manifest[s]).encode()
             files[f"{tag}-probs.jsonl"] = "".join(json.dumps(r) + "\n" for r in self.probs[s]).encode()
+        if "s3" in self.rec:
+            files["s3.jsonl"] = "".join(json.dumps(r) + "\n" for r in self.rec["s3"]).encode()
+            files["s3-manifest.json"] = json.dumps(self.manifest["s3"]).encode()
+            files["s3-probs.jsonl"] = "".join(json.dumps(r) + "\n" for r in self.probs["s3"]).encode()
         files["folds.csv"] = ("family,fold\n" + "".join(f"{f},{k}\n" for f, k in self.folds)).encode()
         files["policy.json"] = self.policy
         for name, data in files.items():
             (d / name).write_bytes(data)
+        s3 = ["--s3", str(d / "s3.jsonl"), str(d / "s3-manifest.json"), str(d / "s3-probs.jsonl")] if "s3" in self.rec else []
         return ["--s1", str(d / "s1.jsonl"), str(d / "s1-manifest.json"), str(d / "s1-probs.jsonl"),
-                "--s2", str(d / "s2.jsonl"), str(d / "s2-manifest.json"), str(d / "s2-probs.jsonl"),
+                "--s2", str(d / "s2.jsonl"), str(d / "s2-manifest.json"), str(d / "s2-probs.jsonl"), *s3,
                 "--folds", str(d / "folds.csv"), "--policy", str(d / "policy.json")]  # fmt: skip
 
 
@@ -202,7 +224,7 @@ def test_p1_hybrid_only_llm_decided_cases_go_to_llm_rule_cases_keep_route(w: Wor
     fixed = {r.base.scenario_id: r.fixed_route for r in rows if r.kind == "fixed"}
     assert fixed[sid(0)] == "AUTO" and fixed[sid(5)] == "HITL" and fixed[sid(10)] == "ESCALATE_L2"
     assert k[sid(60)] == "out" and k[sid(61)] == "out" and k[sid(62)] == "no_log4" and k[sid(63)] == "fixed"
-    assert k[sid(64)] == "out" and k[sid(65)] == "no_log4"
+    assert k[sid(64)] == "out" and k[sid(65)] == "out"  # E9 tại B3 và kẹt B11: M5 không bị ngắt → ngoài mẫu số
     llm = next(r for r in rows if r.base.scenario_id == sid(1))
     assert dict(llm.probs) == {"with_evidence": 0.41, "no_evidence": 0.40, "max": 0.41}
     other = next(r for r in rows if r.base.scenario_id == sid(2))
@@ -214,8 +236,8 @@ def test_p1_llm_only_includes_rule_matched_cases_with_s2_probabilities(w: World)
     rows = offline.classify("llm_only", s1, s2, folds)
     k = kinds(rows)
     assert all(k[sid(i)] == "llm" for i in range(N))  # kể cả ca S1 do luật quyết
-    assert k[sid(63)] == "no_log4" and k[sid(62)] == "no_log4" and k[sid(65)] == "no_log4"
-    assert k[sid(61)] == "out" and k[sid(60)] == "out" and k[sid(64)] == "out"
+    assert k[sid(63)] == "no_log4" and k[sid(62)] == "no_log4"
+    assert k[sid(61)] == "out" and k[sid(60)] == "out" and k[sid(64)] == "out" and k[sid(65)] == "out"
     assert [r.base.strategy for r in rows] == ["llm_only"] * len(rows) and rows[0].base.run_id == "b" * 12
 
 
@@ -315,10 +337,10 @@ def test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample(w: World) -> 
     assert code == 0
     for arm in ("hybrid", "llm_only", "hybrid_guarded"):
         by = {r.scenario_id: r for r in load_predictions(out / arm / "predictions.jsonl")}
-        assert by[sid(62)].route == "ESCALATE_L2" and by[sid(62)].decided_by is None  # E9, không tới điểm log 4 → L2
-        assert by[sid(65)].route == "ESCALATE_L2"  # hết hạn lượt (final_state null) → L2
+        assert by[sid(62)].route == "ESCALATE_L2" and by[sid(62)].decided_by is None  # E2 hết hạn lượt tại B12/B14 → L2
         assert by[sid(61)].route is None  # E1: ngoài mẫu số
-        assert by[sid(64)].route is None  # E3: không tới M5 vì lý do khác → ngoài mẫu số (không bị L2 hoá)
+        assert by[sid(64)].route is None  # E9 tại B3 (M5 chưa chạy): ngoài mẫu số, KHÔNG bị L2 hoá
+        assert by[sid(65)].route is None  # final_state null do kẹt B11: ngoài mẫu số
         assert by[sid(60)].route is None and by[sid(60)].expected_route is None  # chưa nhãn
         assert all(r.fold is not None for r in by.values())
     hy = {r.scenario_id: r for r in load_predictions(out / "hybrid" / "predictions.jsonl")}
@@ -329,11 +351,36 @@ def test_q4_no_log4_goes_to_l2_e1_and_unlabeled_stay_out_of_sample(w: World) -> 
     assert lo[sid(63)].route == "ESCALATE_L2"
 
 
-def test_q4_e1_is_out_of_sample_even_when_final_state_is_null() -> None:
-    e1 = PredictionRecord.model_validate_json(json.dumps({**record("a" * 12, "hybrid", 61), "final_state": None}))
-    assert offline._no_log4(e1) == "out"  # E1 thắng điều kiện "hết hạn lượt"
-    timeout = PredictionRecord.model_validate_json(json.dumps(record("a" * 12, "hybrid", 65)))
-    assert offline._no_log4(timeout) == "no_log4"
+def rec_of(i: int, strategy: str = "hybrid", **over: Any) -> PredictionRecord:
+    return PredictionRecord.model_validate_json(json.dumps({**record("a" * 12, strategy, i), **over}))
+
+
+@pytest.mark.parametrize(
+    ("scenario", "over", "expected"),
+    [
+        (62, {}, "no_log4"),  # E2 hết hạn lượt tại B12/B14, m5_aborted true
+        (64, {}, "out"),  # E9 tại B3: lỗi KHÔNG ở M5 → ngoài mẫu số dù exit_code = E9
+        (65, {}, "out"),  # final_state null do kẹt B11 → ngoài mẫu số
+        (61, {}, "out"),  # E1
+        (61, {"final_state": None}, "out"),  # E1 + final_state null vẫn ngoài mẫu
+        (64, {"exit_code": "E2", "final_state": None}, "out"),  # mã E2/final_state null KHÔNG quyết định — chỉ m5_aborted
+        (65, {"m5_aborted": True}, "no_log4"),  # đảo cờ → đảo kết quả: cờ là điều kiện duy nhất
+    ],
+)
+def test_q4_no_route_follows_m5_aborted_only(scenario: int, over: dict[str, Any], expected: str) -> None:
+    assert offline._no_log4(rec_of(scenario, **over)) == expected
+
+
+def test_q4_null_m5_aborted_on_labeled_no_route_case_stops() -> None:
+    with pytest.raises(StopError, match="m5_aborted"):
+        offline._no_log4(rec_of(64, m5_aborted=None))
+
+
+def test_q4_null_m5_aborted_stops_the_cli_with_exit_2(w: World, capsys: pytest.CaptureFixture[str]) -> None:
+    w.row("hybrid", 64)["m5_aborted"] = None
+    code, out = run_cli(w)
+    assert code == 2 and not out.exists()
+    assert "m5_aborted" in capsys.readouterr().err
 
 
 # ---- điểm 7 + Q7/Q8: policy, chưa hiệu chỉnh, started_at -----------------------------------------------------------------------
@@ -571,6 +618,80 @@ def test_records_are_validated_through_prediction_record(w: World) -> None:
     recs = load_predictions(out / "hybrid" / "predictions.jsonl")  # v1.1 thật, từ chối trường lạ/sai kiểu
     assert all(isinstance(r, PredictionRecord) for r in recs) and len(recs) == SPECIAL
     assert [r.scenario_id for r in recs] == [sid(i) for i in range(SPECIAL)]  # giữ thứ tự dòng nguồn
+
+
+# ---- S3: Hybrid tắt chẩn đoán → hybrid_no_diag ----------------------------------------------------------------------------------
+
+
+def test_s3_absent_means_no_hybrid_no_diag_directory(w: World) -> None:
+    code, out = run_cli(w)
+    assert code == 0 and not (out / offline.NO_DIAG_ARM).exists()
+
+
+def test_s3_writes_hybrid_no_diag_loadable_as_the_no_tool_arm(w: World) -> None:
+    w.enable_s3()
+    code, out = run_cli(w)
+    assert code == 0
+    arms = [load_arm(out / a / "predictions.jsonl", out / a / "manifest.json") for a in ("hybrid", "llm_only", "hybrid_no_diag")]
+    assert [a.name for a in arms] == ["hybrid", "llm_only", "hybrid_no_tool"]  # manifest tắt chẩn đoán → ablation bỏ tool
+    check_arms(arms)
+    assert build_report(arms, None, n_boot=20).tables
+    m = json.loads((out / "hybrid_no_diag" / "manifest.json").read_text(encoding="utf-8"))
+    assert m["run_id"] == "c" * 12 and m["enable_proactive_diagnosis"] is False and m["strategy"] == "hybrid"
+    assert m["offline"]["probs_sha256"]["s3"] and "fold" not in m["predictions_unavailable"]
+
+
+def test_s3_is_computed_from_s3_own_data_with_its_own_calibrators(w: World) -> None:
+    w.enable_s3()
+    code, out = run_cli(w)
+    assert code == 0
+    s1 = {r.scenario_id: r for r in load_predictions(out / "hybrid" / "predictions.jsonl")}
+    s3 = {r.scenario_id: r for r in load_predictions(out / "hybrid_no_diag" / "predictions.jsonl")}
+    assert {r.run_id for r in s3.values()} == {"c" * 12} and s3[sid(1)].clarification_turns == 2  # dòng nguồn là S3, không phải S1
+    assert s1[sid(1)].clarification_turns == 0
+    for r in s3.values():
+        if r.decided_by == "llm":
+            i = int(r.scenario_id[1:])
+            p3 = round(min(0.98, p_of(i) + 0.04), 4)
+            assert r.raw_prob in (p3, no_ev(p3), max(p3, no_ev(p3)))  # p của S3 (không phải của S1)
+    v1 = {f.stem for f in (out / "hybrid" / "calibrators").glob("*.json")}
+    v3 = {f.stem for f in (out / "hybrid_no_diag" / "calibrators").glob("*.json")}
+    assert v3 and v1.isdisjoint(v3)  # calibrator fit trên phần huấn luyện của CHÍNH S3
+    for f in (out / "hybrid_no_diag" / "calibrators").glob("*.json"):
+        assert load_calibrator(f.stem, f.parent).params.fitted_on.split == "calibration"
+
+
+def test_s3_same_data_as_s1_gives_the_same_calibrators(w: World) -> None:
+    """Đối chứng cho test trên: S3 trùng p với S1 → cùng calibrator (khác nhau ở test trên là do dữ liệu S3, không do tên thư mục)."""
+    w.enable_s3()
+    w.probs["s3"] = prob_lines("hybrid")
+    for i in range(SPECIAL):
+        row = w.row("s3", i)
+        if row["decided_by"] == "llm":
+            row["raw_prob"] = p_of(i)
+    code, out = run_cli(w)
+    assert code == 0
+    v1 = {f.stem for f in (out / "hybrid" / "calibrators").glob("*.json")}
+    v3 = {f.stem for f in (out / "hybrid_no_diag" / "calibrators").glob("*.json")}
+    assert v1 == v3
+
+
+def test_s3_must_have_diagnosis_off_and_match_dataset_and_policy(w: World, capsys: pytest.CaptureFixture[str]) -> None:
+    w.enable_s3()
+    w.manifest["s3"]["enable_proactive_diagnosis"] = True
+    assert run_cli(w)[0] == 2 and "tắt chẩn đoán" in capsys.readouterr().err
+    w.manifest["s3"]["enable_proactive_diagnosis"] = False
+    w.manifest["s3"]["dataset_sha256"] = "d" * 64
+    assert run_cli(w, "out2")[0] == 2 and "dataset_sha256" in capsys.readouterr().err
+    w.manifest["s3"]["dataset_sha256"] = SHA
+    w.manifest["s3"]["policy_sha256"] = "0" * 64
+    assert run_cli(w, "out3")[0] == 2 and "policy_sha256" in capsys.readouterr().err
+
+
+def test_s3_kb_gap_null_stops_like_the_other_arms(w: World, capsys: pytest.CaptureFixture[str]) -> None:
+    w.enable_s3()
+    w.row("s3", 1)["kb_gap"] = None
+    assert run_cli(w)[0] == 2 and "harness phải điền kb_gap" in capsys.readouterr().err
 
 
 def test_module_scope_static() -> None:
