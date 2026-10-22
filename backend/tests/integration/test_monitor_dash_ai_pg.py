@@ -650,11 +650,12 @@ async def test_cost_per_day_day_start_utc(mon: AsyncEngine) -> None:
 
 
 # ---- F12 (#45): `multi_intent_first_stop_to_reply_s` — trung vị theo cha, CHỈ vòng đầu (`min(delivered_round)`), từ notice
-# tạo sớm nhất của vòng đó tới lúc vòng đó được gửi; cha vào cửa sổ theo `min(created_at)` của con. Tháng 5: ngày 1–4.
+# tạo sớm nhất của vòng đó tới lúc vòng đó được gửi; cha vào cửa sổ theo `min(created_at)` của con. Tháng 5: ngày 1–5.
 
 P1: list[Notice] = [(0, 10, 1, 70), (1, 40, 1, 70), (1, 100, 2, 500)]  # vòng 1: 70 − 10 = 60; vòng 2 bỏ qua
 P2: list[Notice] = [(1, 5, None, None), (0, 50, 1, 80)]  # notice chưa gửi (tạo sớm hơn) bỏ qua: 80 − 50 = 30
 P3: list[Notice] = [(0, 10, None, None)]  # chưa gửi vòng nào → không tính
+P5: list[Notice] = [(1, 5, None, None), (0, 20, None, None)]  # có notice (một cái tạo sớm hơn) nhưng chưa gửi vòng nào → bỏ
 
 
 @pytest.mark.asyncio
@@ -684,6 +685,18 @@ async def test_first_stop_none(rw: AsyncEngine, mon: AsyncEngine) -> None:
         await multi(conn, at(3, month=5), P3)
         await done(conn, at(3, month=5))
     assert await q(mon, ai.multi_intent_first_stop_to_reply_s, 3, 5) is None
+
+
+@pytest.mark.asyncio
+async def test_first_stop_parent_undelivered_excluded(rw: AsyncEngine, mon: AsyncEngine) -> None:
+    """Yêu cầu 22/10 (PR #64): cha CHƯA gửi vòng nào bị BỎ khỏi trung vị, không tính 0. Ngày 05/05 UTC: P1 = 60, P2 = 30,
+    P4 = 120, P5 có 2 notice chưa gửi (tạo lúc 5 s và 20 s). Đúng: {30, 60, 120} → 60. P5 tính 0: {0, 30, 60, 120} → 45."""
+    async with rw.begin() as conn:
+        await multi(conn, at(5, month=5), P1)
+        await multi(conn, at(5, month=5), P2)
+        await multi(conn, at(5, month=5), [(0, 0, 1, 120)], children=1)
+        await multi(conn, at(5, month=5), P5)
+    assert await q(mon, ai.multi_intent_first_stop_to_reply_s, 5, 5) == pytest.approx(60.0)
 
 
 @pytest.mark.asyncio

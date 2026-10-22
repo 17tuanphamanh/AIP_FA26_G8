@@ -8,7 +8,7 @@ không file đích nào còn chữ `MUTATION`; (d) chuỗi gốc của đột bi
 mỗi file đích nếu có xuất hiện — đọc VĂN BẢN script bằng `ast` (không import).
 
   uv run python scripts/mutation/mutate_f12.py --unit              # 5 đột biến, unit — không cần Docker
-  uv run python scripts/mutation/mutate_f12.py --pg                # 12 đột biến, integration — CẦN Docker (testcontainers)
+  uv run python scripts/mutation/mutate_f12.py --pg                # 13 đột biến, integration — CẦN Docker (testcontainers)
   uv run python scripts/mutation/mutate_f12.py --pg --only M-F12-4 # chỉ các mã này
   uv run python scripts/mutation/mutate_f12.py --check-old         # chỉ chạy N3d
 
@@ -74,6 +74,7 @@ _N3_USE = '        f"SELECT t.exit_code, {_LEAF_N3_SEV_SQL} AS sev "\n'
 _FS_HAVING = '        "GROUP BY t.parent_ticket_id HAVING min(t.created_at) >= :frm AND min(t.created_at) < :to), "\n'
 _FS_R1 = '        f"r1 AS (SELECT n.parent_ticket_id AS p, min(n.delivered_round) AS r FROM {V_CHILD_NOTICES} n "\n'
 _FS_R1_WHERE = '        "JOIN par ON par.p = n.parent_ticket_id WHERE n.delivered_round IS NOT NULL GROUP BY n.parent_ticket_id), "\n'
+_FS_PER = '        "per AS (SELECT CAST(extract(epoch FROM min(n.delivered_at) - min(n.created_at)) AS double precision) AS s "\n'
 _FS_ROUND = '        f"FROM {V_CHILD_NOTICES} n JOIN r1 ON r1.p = n.parent_ticket_id AND n.delivered_round = r1.r "\n'
 _FS_MEDIAN = '        "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY per.s) FROM per"\n'
 
@@ -128,6 +129,14 @@ MUTATIONS_ALL: list[Mutation] = [
               _swap(AI, _FS_R1_WHERE, _FS_R1_WHERE.replace(
                   "IS NOT NULL GROUP BY", "IS NOT NULL AND n.created_at >= :frm AND n.created_at < :to GROUP BY"), "M-F12-9")],
              PG_AI, ["test_first_stop_window_by_children"]),
+    # Bỏ riêng `WHERE … IS NOT NULL` là đột biến tương đương (`min` bỏ NULL, `= NULL` không khớp) → phải gộp 3 chỗ.
+    Mutation("M-F12-16 cha chưa gửi vòng nào → tính 0", "pg",
+             [_swap(AI, _FS_R1_WHERE, _FS_R1_WHERE.replace(" WHERE n.delivered_round IS NOT NULL", ""), "M-F12-16"),
+              _swap(AI, _FS_ROUND, _FS_ROUND.replace("n.delivered_round = r1.r", "n.delivered_round IS NOT DISTINCT FROM r1.r"),
+                    "M-F12-16"),
+              _swap(AI, _FS_PER, _FS_PER.replace("SELECT CAST(", "SELECT COALESCE(CAST(").replace(
+                  "AS double precision) AS s", "AS double precision), 0) AS s"), "M-F12-16")],
+             PG_AI, ["test_first_stop_parent_undelivered_excluded", "test_first_stop_odd_median", "test_first_stop_none"]),
     Mutation("M-F12-10 first_stop về pending", "unit",
              [_swap(MET, _FIRST, '    "multi_intent_first_stop_to_reply_s": _pending("phase5_multi_intent", "child_notices", "tickets"),',
                     "M-F12-10")], UT, ["test_multi_intent_sources_split", "test_queries_cover_ai_metrics"]),
