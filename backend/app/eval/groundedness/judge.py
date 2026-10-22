@@ -52,7 +52,7 @@ def _numbered(claims: Sequence[str]) -> str:
 
 
 def _answer(row: AnswerRow, status: str, **over: object) -> JudgedAnswer:
-    base: dict[str, object] = {"scenario_id": row.scenario_id, "family": row.family_name, "status": status,
+    base: dict[str, object] = {"scenario_id": row.scenario_id, "family": row.family, "status": status,
                                "citations": row.citations}  # fmt: skip
     return JudgedAnswer.model_validate(base | over)
 

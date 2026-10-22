@@ -47,6 +47,8 @@ def test_judge_writes_results_summary_manifest(tmp_path: Path, answers: Path, ca
     assert manifest["prompt"]["sha256"] == [hashlib.sha256(PROMPT_FILE.read_bytes()).hexdigest()]
     assert manifest["judge"]["models"] == ["scripted"] and manifest["llm_calls"]["n"] == 12
     assert manifest["stats"] == {"seed": SEED, "bootstrap_n": 2000, "level": 0.95} and len(manifest["limitations"]) == 4
+    assert any("cùng model với người viết" in x and "cấu hình A" in x for x in manifest["limitations"])  # người chấm = model viết
+    assert any("[Đề xuất 22/10]" in x and "[Chốt 17.4]" in x for x in manifest["limitations"])
     assert "n_judged" in capsys.readouterr().out
 
 
@@ -114,7 +116,27 @@ def test_agree_end_to_end_with_filled_labels(tmp_path: Path, answers: Path, caps
     d = n - a - b - c
     po, pe = (a + d) / n, ((a + b) * (a + c) + (c + d) * (b + d)) / n**2
     assert result["kappa"] == pytest.approx((po - pe) / (1 - pe), abs=1e-12) and result["agreement"] == pytest.approx(po)
-    assert "kappa" in capsys.readouterr().out
+    assert result["low_kappa"] is (result["kappa"] < 0.6) and result["kappa_threshold"] == 0.6
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["low_kappa"] is result["low_kappa"]
+    summary = json.loads((out / report.SUMMARY).read_text(encoding="utf-8"))  # summary báo cả tỉ lệ khớp, κ và cờ
+    assert summary["human_agreement"] == {k: result[k] for k in report.AGREEMENT_KEYS}
+    assert summary["human_agreement"]["agreement"] == result["agreement"] and "low_kappa" in summary["human_agreement"]
+    assert main(["score", "--run", str(out)]) == 0  # tính lại summary vẫn giữ khối human_agreement
+    assert json.loads((out / report.SUMMARY).read_text(encoding="utf-8"))["human_agreement"] == summary["human_agreement"]
+    assert main(["sample", "--run", str(out), "--answers", str(answers), "--n", "4"]) == 0  # mẫu mới → đồng thuận cũ không còn khớp
+    assert not (out / report.AGREEMENT).exists()
+    assert "human_agreement" not in json.loads((out / report.SUMMARY).read_text(encoding="utf-8"))
+    main(["agree", "--run", str(out), "--labels", str(labels)])  # nhãn cũ không khớp mẫu mới → lỗi, không ghi
+    assert not (out / report.AGREEMENT).exists()
+
+
+def test_rejudging_into_same_dir_clears_stale_review_files(tmp_path: Path, answers: Path) -> None:
+    _, out = _judge(tmp_path, answers)
+    main(["sample", "--run", str(out), "--answers", str(answers), "--n", "4"])
+    assert (out / report.REVIEW_KEY).exists()
+    _judge(tmp_path, answers)  # cùng thư mục
+    for name in (report.REVIEW_SAMPLE, report.REVIEW_KEY, report.REVIEW_META, report.AGREEMENT):
+        assert not (out / name).exists(), name
 
 
 def test_agree_rejects_unlabelled_sample(tmp_path: Path, answers: Path, capsys: pytest.CaptureFixture[str]) -> None:

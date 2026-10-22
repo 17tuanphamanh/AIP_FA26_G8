@@ -5,7 +5,8 @@
 - `score --run DIR`: tính lại `summary.json` từ `results.jsonl`.
 - `sample --run DIR --answers F [--n 30] [--seed S] [--random]`: ghi `review_sample.jsonl` (mù), `review_key.jsonl`, `review_meta.json`.
   Mặc định phân tầng. `--answers` phải đúng file đã chấm (so sha256 với manifest).
-- `agree --run DIR --labels F`: `agreement.json` từ `review_key.jsonl` + `review_sample.jsonl` đã điền.
+- `agree --run DIR --labels F`: `agreement.json` từ `review_key.jsonl` + `review_sample.jsonl` đã điền; ghi thêm khối `human_agreement`
+  (tỉ lệ khớp, κ, cờ `low_kappa` khi κ < 0,6) vào `summary.json`.
 Lỗi đầu vào → thông điệp trên stderr, mã thoát 2.
 """
 
@@ -51,6 +52,7 @@ def cmd_judge(args: argparse.Namespace) -> int:
     run = asyncio.run(judge_all(llm, rows))
     sha = sha256_file(args.answers)
     report.write_results(args.out, run.answers)
+    report.clear_review(args.out)
     summary = score(run.answers, seed=args.seed)
     report.write_json(args.out / report.SUMMARY, summary)
     manifest = report.build_manifest(
@@ -66,6 +68,7 @@ def cmd_score(args: argparse.Namespace) -> int:
     answers = load_results(args.run / report.RESULTS)
     summary = score(answers, seed=args.seed)
     report.write_json(args.run / report.SUMMARY, summary)
+    report.merge_agreement(args.run)
     print(json.dumps({k: summary[k] for k in ("n_judged", "n_errors", "supported_rate", "citation_precision")}))
     return EXIT_JUDGE_ERRORS if summary["n_errors"] else 0
 
@@ -79,6 +82,7 @@ def cmd_sample(args: argparse.Namespace) -> int:
             raise ValueError("--answers khác file đã chấm (sha256 không khớp manifest.json)")
     rows = {r.scenario_id: r for r in load_answers(args.answers)}
     sample, meta = review.draw_sample(answers, n=args.n, seed=args.seed, stratify=not args.random)
+    report.drop_agreement(args.run)
     dump_jsonl(args.run / report.REVIEW_SAMPLE, review.review_rows(sample, rows))
     dump_jsonl(args.run / report.REVIEW_KEY, review.key_rows(sample))
     report.write_json(args.run / report.REVIEW_META, meta)
@@ -91,7 +95,8 @@ def cmd_agree(args: argparse.Namespace) -> int:
     labels = review.load_labels(args.labels)
     result = review.agreement(key, labels, seed=args.seed)
     report.write_json(args.run / report.AGREEMENT, result)
-    print(json.dumps({k: result[k] for k in ("n_claims", "agreement", "kappa")}))
+    report.merge_agreement(args.run)
+    print(json.dumps({k: result[k] for k in ("n_claims", "agreement", "kappa", "low_kappa")}))
     return 0
 
 

@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
@@ -22,15 +21,14 @@ MAX_CLAIMS = 24  # = trần `GroundednessOut.verdicts`
 type Verdict = Literal["supported", "partial", "unsupported"]
 type Status = Literal["judged", "cannot_answer", "no_claims", "error"]
 
-_VARIANT_SUFFIX = re.compile(r"-v\d+$")
-
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class Chunk(_Strict):
-    """Khối bằng chứng đúng như đã đưa cho model viết (đoạn neo + đoạn liền kề, D-24)."""
+    """Khối bằng chứng của MỘT chunk được dẫn: `text` = mọi khối bằng chứng đã gửi cho `b10_answer` ứng với chunk đó, GỒM cả chunk
+    liền kề (D-24) — đúng như model viết đã thấy. Nguồn khi thu thập (mốc G): `llm_calls.prompt_full` (EVAL_MODE) [Đề xuất 22/10]."""
 
     chunk_id: str = Field(min_length=1)
     text: str
@@ -41,10 +39,11 @@ class Chunk(_Strict):
 
 class AnswerRow(_Strict):
     """Một câu trả lời B10. `answer` là phần chữ gửi người dùng (hoặc `answer_markdown`); có `steps` thì các bước nằm ở `steps`
-    (bước trùng dòng đánh số trong `answer` chỉ tính một lần)."""
+    (bước trùng dòng đánh số trong `answer` chỉ tính một lần). `family` BẮT BUỘC: họ = câu hỏi gốc + các biến thể của nó — đơn vị
+    rút lại của bootstrap; thiếu → lỗi, KHÔNG suy từ tiền tố `scenario_id`."""
 
     scenario_id: str = Field(min_length=1)
-    family: str | None = None
+    family: str = Field(min_length=1, pattern=r"\S")  # BẮT BUỘC (P8 v1.5 6.3.1): họ = câu hỏi gốc + các biến thể; không suy từ scenario_id
     answer: str
     steps: tuple[str, ...] | None = None
     citations: tuple[str, ...]
@@ -64,11 +63,6 @@ class AnswerRow(_Strict):
         if len(set(ids)) != len(ids):
             raise ValueError("chunks có chunk_id trùng")
         return self
-
-    @property
-    def family_name(self) -> str:
-        """Họ cho bootstrap (P8 6.4): `family` nếu có, không thì bỏ hậu tố `-v<số>` của `scenario_id` (HB01-v3 → HB01)."""
-        return self.family or _VARIANT_SUFFIX.sub("", self.scenario_id)
 
 
 class JudgedClaim(_Strict):

@@ -21,7 +21,8 @@ REPO = Path(__file__).resolve().parents[4]
 
 
 def _rec(**over: Any) -> dict[str, Any]:
-    base: dict[str, Any] = {"scenario_id": "TC04-v1", "answer": "VPN dùng cổng 443.", "citations": ["A"], "chunks": [chunk("A")]}
+    base: dict[str, Any] = {"scenario_id": "TC04-v1", "family": "TC04", "answer": "VPN dùng cổng 443.", "citations": ["A"],
+                            "chunks": [chunk("A")]}  # fmt: skip
     return base | over
 
 
@@ -30,12 +31,30 @@ def test_load_answers_minimal_record(tmp_path: Path) -> None:
     write_jsonl(path, [_rec(), _rec(scenario_id="TC05-v2", steps=["Mở", "Chọn"], cannot_answer=False, family="TC05")])
     rows = load_answers(path)
     assert [r.scenario_id for r in rows] == ["TC04-v1", "TC05-v2"] and rows[1].steps == ("Mở", "Chọn")
+    assert [r.family for r in rows] == ["TC04", "TC05"]
     assert rows[0].cannot_answer is False and rows[0].steps is None and rows[0].chunks[0].chunk_id == "A"
 
 
-def test_family_defaults_to_scenario_prefix_without_variant_suffix() -> None:
-    assert row("HB01-v3").family_name == "HB01" and row("TC04-v12").family_name == "TC04"
-    assert row("TC04").family_name == "TC04" and row("X-v1", family="Họ-khác").family_name == "Họ-khác"
+def test_family_is_required_and_never_derived_from_scenario_id(tmp_path: Path) -> None:
+    """P8 v1.5 6.3.1: họ = câu hỏi gốc + các biến thể, do dữ liệu khai. Thiếu `family` → lỗi, kể cả khi scenario_id trông như `HB01-v3`."""
+    path = tmp_path / "answers.jsonl"
+    no_family = {k: v for k, v in _rec(scenario_id="HB01-v3").items() if k != "family"}
+    write_jsonl(path, [_rec(scenario_id="OK-v1", family="OK"), no_family])
+    with pytest.raises(ValueError) as exc:
+        load_answers(path)
+    assert "dòng 2" in str(exc.value) and "family" in str(exc.value)
+    with pytest.raises(ValueError):
+        AnswerRow.model_validate(no_family)
+    for blank in ("", "  ", "\t"):
+        with pytest.raises(ValueError):
+            AnswerRow.model_validate({**no_family, "family": blank})
+    assert not hasattr(row("HB01-v3"), "family_name")  # không còn đường suy họ từ tiền tố
+
+
+def test_family_is_taken_verbatim_even_when_it_differs_from_the_prefix(tmp_path: Path) -> None:
+    path = tmp_path / "answers.jsonl"
+    write_jsonl(path, [_rec(scenario_id="HB01-v3", family="Họ-câu-hỏi-gốc-7")])
+    assert load_answers(path)[0].family == "Họ-câu-hỏi-gốc-7"
 
 
 def test_citations_are_deduplicated_in_order() -> None:
@@ -46,6 +65,7 @@ def test_citations_are_deduplicated_in_order() -> None:
     ("record", "field"),
     [
         (_rec(extra=1), "extra"),
+        ({k: v for k, v in _rec().items() if k != "family"}, "family"),
         (_rec(citations=["A", ""]), "citations"),
         (_rec(chunks=[chunk("A"), chunk("A")]), "(gốc)"),
         (_rec(chunks=[{"chunk_id": "", "text": "x"}]), "chunks"),

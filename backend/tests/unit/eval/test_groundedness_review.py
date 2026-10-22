@@ -6,8 +6,10 @@ from typing import Any
 
 import pytest
 from app.eval.groundedness.review import (
+    LOW_KAPPA,
     agreement,
     draw_sample,
+    is_low_kappa,
     key_rows,
     load_key,
     load_labels,
@@ -241,3 +243,37 @@ def test_agreement_rejects_missing_extra_and_empty() -> None:
         agreement(key, extra, n_boot=10)
     with pytest.raises(ValueError, match="rỗng"):
         agreement({}, {}, n_boot=10)
+
+
+# ---- low_kappa (P8 v1.5 6.3.1) -------------------------------------------------------------------------------------------
+
+
+def _cells(a: int, b: int, c: int, d: int) -> tuple[dict, dict]:  # type: ignore[type-arg]
+    """Mẫu với đúng a/b/c/d (mỗi ý một ca)."""
+    key, labels, i = {}, {}, 0
+    for count, verdict, human in ((a, "supported", True), (b, "supported", False), (c, "unsupported", True), (d, "unsupported", False)):
+        for _ in range(count):
+            i += 1
+            key[(f"C{i:02d}", 1)], labels[(f"C{i:02d}", 1)] = verdict, human
+    return key, labels
+
+
+def test_low_kappa_flag_and_threshold_reported() -> None:
+    assert LOW_KAPPA == 0.6
+    low = agreement(*_cells(4, 2, 1, 3), n_boot=20)  # κ = 0,4
+    assert low["kappa"] == pytest.approx(0.4) and low["low_kappa"] is True and low["kappa_threshold"] == 0.6
+    assert low["agreement"] == pytest.approx(0.7)  # báo cả tỉ lệ khớp lẫn κ
+    high = agreement(*_cells(5, 1, 0, 4), n_boot=20)  # po = 0,9; pe = 0,5 → κ = 0,8
+    assert high["kappa"] == pytest.approx(0.8) and high["low_kappa"] is False
+
+
+def test_low_kappa_boundary_is_exclusive_and_exact() -> None:
+    """κ đúng 0,6 (a=4 b=1 c=1 d=4: po = 0,8; pe = 0,5) KHÔNG cờ; chỉ < 0,6 mới cờ. So số hữu tỉ, không lệch do sai số nổi."""
+    assert agreement(*_cells(4, 1, 1, 4), n_boot=10)["low_kappa"] is False
+    assert is_low_kappa(4, 1, 1, 4) is False and is_low_kappa(3, 1, 1, 4) is True and is_low_kappa(4, 2, 1, 3) is True
+
+
+def test_low_kappa_flagged_when_kappa_undefined() -> None:
+    """Một lớp duy nhất → κ không xác định → vẫn cờ: độ tin cậy không được chứng minh thì không báo là ổn."""
+    r = agreement(*_cells(6, 0, 0, 0), n_boot=10)
+    assert r["kappa"] is None and r["low_kappa"] is True and r["agreement"] == 1.0

@@ -131,7 +131,9 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
 
 ## Groundedness offline (G11) — `groundedness/`
 
-Tách câu trả lời B10 thành từng ý (bằng code) → LLM chấm mỗi ý có được đoạn trích **đã dẫn** hỗ trợ không (`config/prompts/eval_groundedness.yaml`, vai trò strong, một lời gọi/ca) → tỉ lệ ý được hỗ trợ + citation precision → mẫu 30 ca cho người soát + độ đồng thuận LLM–người. Nguồn yêu cầu: `huong-dan` 17.4, B10 mục 9/11, P2 mục 6. **P8 v1.4 không nhắc groundedness** — các định nghĩa dưới đây là **[Đề xuất]**, P6 sẽ đưa vào P8.
+Tách câu trả lời B10 thành từng ý (bằng code) → LLM chấm mỗi ý có được đoạn trích **đã dẫn** hỗ trợ không (`config/prompts/eval_groundedness.yaml`, vai trò strong, một lời gọi/ca) → tỉ lệ ý được hỗ trợ + citation precision → mẫu 30 ca cho người soát + độ đồng thuận LLM–người. Nguồn: `huong-dan` 17.4, B10 mục 9/11, P2 mục 6, P8 v1.5 mục 6.3.1.
+
+**Nhãn.** Yêu cầu đo — offline, tách ý, LLM chấm, người soát 30 mẫu, báo tỉ lệ ý được hỗ trợ + citation precision — là **[Chốt 17.4]**. Cách đo (mọi định nghĩa và quy ước dưới đây) là **[Đề xuất 22/10]**.
 
 ```
 EVAL_MODE=true python -m app.eval.groundedness judge  --answers answers.jsonl --out DIR --llm-factory pkg.mod:fn
@@ -140,10 +142,17 @@ EVAL_MODE=true python -m app.eval.groundedness sample --run DIR --answers answer
 EVAL_MODE=true python -m app.eval.groundedness agree  --run DIR --labels review_sample_da_dien.jsonl
 ```
 
-- **Đầu vào** `answers.jsonl`, mỗi dòng: `{scenario_id, answer, citations[], chunks[{chunk_id, text, doc_id?, title?, heading_path?}], steps?[], family?, cannot_answer?}`. `chunks` = khối bằng chứng đúng như đã đưa cho model viết; `answer` có thể là bản đã render (khối "Nguồn:" tự bị bỏ).
+- **Dữ liệu** [Đề xuất 22/10]: CÂU HỎI THÔNG TIN — bộ `eval/retrieval` và các câu info của probe — chạy với LLM thật. **Không dùng thẻ** giả `[fake:…]` (thẻ chọn phản hồi ScriptedLLM, không phải câu trả lời thật).
+- **Đầu vào** `answers.jsonl`, mỗi dòng: `{scenario_id, family, answer, citations[], chunks[{chunk_id, text, doc_id?, title?, heading_path?}], steps?[], cannot_answer?}`.
+  - `family` **BẮT BUỘC** (họ = câu hỏi gốc + các biến thể của nó; là đơn vị rút lại của bootstrap). Thiếu hoặc rỗng → lỗi nêu số dòng; **không** suy từ tiền tố `scenario_id`.
+  - `chunks[].text` = mọi khối bằng chứng đã gửi cho `b10_answer` ứng với chunk được dẫn, **gồm cả chunk liền kề (D-24)** — đúng như model viết đã thấy. Nguồn khi thu thập: `llm_calls.prompt_full` (`EVAL_MODE`) — việc của mốc G.
+  - `answer` có thể là bản đã render (khối "Nguồn:" tự bị bỏ).
 - **Đầu ra** trong `DIR` (đề nghị `eval/reports/<run_id>/groundedness/`): `results.jsonl`, `errors.jsonl`, `summary.json`, `manifest.json`; `review_sample.jsonl` (mù — không có verdict LLM), `review_key.jsonl`, `review_meta.json`, `agreement.json`. Mã thoát: 0 ổn; 2 lỗi đầu vào; 3 có ca chấm lỗi.
+- **Manifest** ghi model chấm, id/phiên bản/sha256 của prompt chấm, seed, số lời gọi/token/chi phí, sha256 đầu vào.
 - **Nhãn người**: Quân điền `human_supported` (true/false) vào chính `review_sample.jsonl`, trả lại làm `--labels`.
 - **Mẫu** mặc định phân tầng (nửa số ca có ý không được hỗ trợ theo LLM, nửa còn lại); `--random` rút ngẫu nhiên thuần. Seed mặc định = `SEED` của P8 (20260925).
 - **Định nghĩa**: ý được hỗ trợ = verdict `supported`, `partial` báo riêng và không tính là hỗ trợ. Citation precision = số cặp (ca, đoạn được dẫn) mà đoạn đó là bằng chứng `supported` của ≥ 1 ý ÷ tổng số cặp (ca, đoạn được dẫn). Khoảng tin cậy bootstrap theo họ (2000 lần, 95 %).
-- **Giới hạn** (đầy đủ ở docstring `groundedness/__init__.py`): tách ý bằng code (câu ghép = một ý; ý xã giao bị chấm như ý thường); cấu hình A có fast = strong = cùng model với người viết → người chấm có thể thiên vị cùng họ, mẫu người soát là phép kiểm; chỉ chấm trên đoạn đã dẫn; κ của mẫu phân tầng không ngoại suy ra toàn bộ.
-- **Việc dồn về mốc G** (chưa làm): bộ thu thập `answers.jsonl` từ DB/Qdrant; hàm dựng gateway thật cho `--llm-factory` (app/ chưa có store LLM không cần DB); chạy thật + chọn lại phiên bản prompt.
+- **Độ tin cậy của người chấm**: `agreement.json` báo tỉ lệ khớp, Cohen κ (+ khoảng tin cậy rút lại ca), ma trận nhầm và số ý/ca "LLM hỗ trợ / người không". **κ < 0,6 → cờ `low_kappa`** (κ không xác định cũng gắn cờ). Khối `human_agreement` trong `summary.json` đi kèm con số groundedness: tỉ lệ khớp + κ + `low_kappa`.
+- **Ca không có trích dẫn**: mọi ý tính là không được hỗ trợ, cờ `no_citation`. Thực tế hiếm — hậu kiểm trích dẫn của B10 (`check_citations`) chặn ca không trích dẫn thành E3 nên gần như không tới được đây; giữ xử lý này để số không bị phồng nếu có.
+- **Giới hạn** (đầy đủ ở docstring `groundedness/__init__.py`): tách ý bằng code (câu ghép = một ý; ý xã giao bị chấm như ý thường); **model chấm = model viết** (cấu hình A: fast = strong = cùng model) nên có thể thiên vị cùng họ — mẫu người soát và cờ `low_kappa` là phép kiểm; chỉ chấm trên đoạn đã dẫn; κ của mẫu phân tầng không ngoại suy ra toàn bộ.
+- **Việc dồn về mốc G** (chưa làm): bộ thu thập `answers.jsonl` từ DB/Qdrant (gồm `family` và khối bằng chứng từ `llm_calls.prompt_full`); hàm dựng gateway thật cho `--llm-factory` (app/ chưa có store LLM không cần DB); chạy thật + chọn lại phiên bản prompt.

@@ -18,12 +18,17 @@ def chunk(chunk_id: str, text: str = "nội dung đoạn") -> dict[str, Any]:
     return {"chunk_id": chunk_id, "text": text}
 
 
+def family_of(scenario_id: str) -> str:
+    """Chỉ cho DỮ LIỆU TEST: họ của kịch bản giả = phần trước `-v`. Code thật KHÔNG suy họ — `family` bắt buộc trong answers.jsonl."""
+    return scenario_id.rsplit("-v", 1)[0]
+
+
 def row(
     scenario_id: str = "TC04-v1", answer: str = "", citations: tuple[str, ...] = ("A",), *, chunks: tuple[str, ...] = ("A", "B", "C"),
     steps: tuple[str, ...] | None = None, family: str | None = None, cannot_answer: bool = False,
 ) -> AnswerRow:  # fmt: skip
     return AnswerRow.model_validate({
-        "scenario_id": scenario_id, "family": family, "answer": answer, "steps": steps, "citations": citations,
+        "scenario_id": scenario_id, "family": family or family_of(scenario_id), "answer": answer, "steps": steps, "citations": citations,
         "chunks": [chunk(c, f"văn bản của {c}") for c in chunks], "cannot_answer": cannot_answer,
     })  # fmt: skip
 
@@ -63,7 +68,7 @@ def judged(
     status: str = "judged", flags: tuple[str, ...] = (), invalid: tuple[str, ...] = (), error: str | None = None,
 ) -> JudgedAnswer:  # fmt: skip
     return JudgedAnswer.model_validate({
-        "scenario_id": scenario_id, "family": family or scenario_id.split("-")[0], "status": status, "flags": flags,
+        "scenario_id": scenario_id, "family": family or family_of(scenario_id), "status": status, "flags": flags,
         "citations": citations, "invalid_citations": invalid, "error": error, "claims": claims,
     })  # fmt: skip
 
@@ -77,16 +82,16 @@ def answers_file(path: Path, n_weak: int = 6, n_solid: int = 6) -> list[dict[str
     records: list[dict[str, Any]] = []
     for i in range(n_weak):
         records.append({
-            "scenario_id": f"W{i % 2}-v{i}", "answer": "Mở ứng dụng VPN [S]. Đây là ý bịa [X].", "steps": ["Bấm Connect [S2]"],
+            "scenario_id": f"W{i % 2}-v{i}", "family": f"W{i % 2}", "answer": "Mở ứng dụng VPN [S]. Đây là ý bịa [X].", "steps": ["Bấm Connect [S2]"],
             "citations": ["A", "B"], "chunks": [chunk("A", "bước A"), chunk("B", "bước B")],
         })  # fmt: skip
     for i in range(n_solid):
         records.append({
-            "scenario_id": f"S{i % 3}-v{i}", "answer": "VPN dùng cổng 443 [S].", "citations": ["A"],
+            "scenario_id": f"S{i % 3}-v{i}", "family": f"S{i % 3}", "answer": "VPN dùng cổng 443 [S].", "citations": ["A"],
             "chunks": [chunk("A", "cổng 443")],
         })  # fmt: skip
     write_jsonl(path, records)
     return records
 
 
-__all__ = ["Chunk", "answers_file", "chunk", "claim", "factory", "gateway", "judge_script", "judged", "row", "write_jsonl"]
+__all__ = ["Chunk", "answers_file", "chunk", "claim", "factory", "family_of", "gateway", "judge_script", "judged", "row", "write_jsonl"]

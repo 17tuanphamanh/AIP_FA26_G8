@@ -8,13 +8,15 @@
   phải bool → `ValueError` (không bỏ qua im lặng).
 - **Đồng thuận** (mức ý, nhị phân; LLM dương = `supported`, `partial` là âm): tỉ lệ khớp, Cohen κ (+ khoảng tin cậy bootstrap
   rút lại CA), ma trận nhầm, và số ý/ca "LLM hỗ trợ / người không" — lỗi làm tỉ lệ groundedness bị thổi phồng. κ không xác định
-  (pe = 1) → `null` kèm lý do. Giới hạn của mẫu phân tầng: xem docstring `app.eval.groundedness`.
+  (pe = 1) → `null` kèm lý do. `low_kappa` = κ < 0,6 (P8 v1.5 6.3.1); κ không xác định cũng gắn cờ (không chứng minh được độ tin cậy
+  thì không báo là ổn). Giới hạn của mẫu phân tầng: xem docstring `app.eval.groundedness`.
 """
 
 import json
 import random
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from app.eval.groundedness.models import AnswerRow, JudgedAnswer
 from app.eval.stats import BOOTSTRAP_N, LEVEL, SEED, percentile_interval
 
 SAMPLE_N = 30
+LOW_KAPPA = 0.6  # P8 v1.5 6.3.1: κ dưới mức này → cờ `low_kappa` (độ tin cậy của người chấm LLM thấp)
 
 type ClaimKey = tuple[str, int]
 
@@ -119,14 +122,26 @@ def load_key(path: Path) -> dict[ClaimKey, str]:
     return key
 
 
-def _kappa(a: int, b: int, c: int, d: int) -> tuple[float | None, str | None]:
-    """a = cả hai dương, b = LLM dương/người âm, c = LLM âm/người dương, d = cả hai âm."""
+def _kappa_exact(a: int, b: int, c: int, d: int) -> Fraction | None:
+    """a = cả hai dương, b = LLM dương/người âm, c = LLM âm/người dương, d = cả hai âm. Số hữu tỉ chính xác (không sai số nổi) để
+    so mốc `LOW_KAPPA` đúng ở biên."""
     n = a + b + c + d
-    po = (a + d) / n
-    pe = ((a + b) * (a + c) + (c + d) * (b + d)) / (n * n)
-    if pe == 1:
+    po = Fraction(a + d, n)
+    pe = Fraction((a + b) * (a + c) + (c + d) * (b + d), n * n)
+    return None if pe == 1 else (po - pe) / (1 - pe)
+
+
+def _kappa(a: int, b: int, c: int, d: int) -> tuple[float | None, str | None]:
+    k = _kappa_exact(a, b, c, d)
+    if k is None:
         return None, "pe = 1: cả hai chỉ dùng một lớp nên κ không xác định"
-    return (po - pe) / (1 - pe), None
+    return float(k), None
+
+
+def is_low_kappa(a: int, b: int, c: int, d: int) -> bool:
+    """κ < `LOW_KAPPA` (so chính xác; đúng bằng mốc thì KHÔNG cờ). κ không xác định → cờ (độ tin cậy không được chứng minh)."""
+    k = _kappa_exact(a, b, c, d)
+    return k is None or k < Fraction(str(LOW_KAPPA))
 
 
 def agreement(
@@ -173,6 +188,7 @@ def agreement(
     return {
         "n_claims": n, "n_answers": len(names),
         "agreement": (a + d) / n, "kappa": kappa, "kappa_undefined_reason": why,
+        "kappa_threshold": LOW_KAPPA, "low_kappa": is_low_kappa(a, b, c, d),
         "kappa_ci": {"lo": lo, "hi": hi, "n_boot": n_boot, "n_used": len(boots), "n_undefined": undefined,
                      "seed": seed, "level": level, "unit": "answer"},
         "confusion": {"llm_supported_human_supported": a, "llm_supported_human_not": b,

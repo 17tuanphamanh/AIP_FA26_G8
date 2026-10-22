@@ -2,7 +2,7 @@
 `backend/tests/unit/eval/test_groundedness_*.py`, khôi phục trong `finally`, so md5 + `git diff --stat` trước/sau. Luật N3 (`n3.py`):
 file đích còn chữ `MUTATION` → dừng; mốc xanh một lần trước khi đột biến.
 
-  uv run python scripts/mutation/mutate_g11.py                   # cả 10 mã (unit backend, không Docker, không LLM thật)
+  uv run python scripts/mutation/mutate_g11.py                   # cả 12 mã (unit backend, không Docker, không LLM thật)
   uv run python scripts/mutation/mutate_g11.py --only M-G11-6
 
 Chuỗi gốc là CẢ DÒNG (kể cả "\n") để chữ MUTATION nằm cuối dòng — chèn giữa biểu thức thì file hỏng cú pháp.
@@ -21,7 +21,7 @@ import n3  # scripts/mutation/n3.py — cùng thư mục (sys.path[0] khi chạy
 
 REPO = Path(__file__).resolve().parents[2]
 PKG = "backend/app/eval/groundedness/"
-SPLIT, JUDGE, SCORING, REVIEW = (PKG + f for f in ("split.py", "judge.py", "scoring.py", "review.py"))
+SPLIT, JUDGE, SCORING, REVIEW, MODELS = (PKG + f for f in ("split.py", "judge.py", "scoring.py", "review.py", "models.py"))
 TESTS = "backend/tests/unit/eval"
 CMD = ["uv", "run", "pytest", *(f"{TESTS}/test_groundedness_{n}.py" for n in ("split", "judge", "scoring", "review", "io", "cli")),
        "-q", "-p", "no:cacheprovider", "-W", "ignore"]  # fmt: skip
@@ -65,7 +65,7 @@ MUTATIONS_ALL: list[Mutation] = [
                   '                "human_supported": None, "note": None, "llm_verdict": claim.verdict,  # MUTATION M-G11-7\n')],
              ["test_review_sample_is_blind", "test_sample_is_blind"]),
     Mutation("M-G11-8 κ = tỉ lệ khớp (bỏ phần khớp ngẫu nhiên)",
-             [one(REVIEW, "    return (po - pe) / (1 - pe), None\n", "    return po, None  # MUTATION M-G11-8\n")],
+             [one(REVIEW, "    return None if pe == 1 else (po - pe) / (1 - pe)\n", "    return None if pe == 1 else po  # MUTATION M-G11-8\n")],
              ["test_agreement_hand_computed", "test_agree_end_to_end"]),
     Mutation("M-G11-9 nhãn người thiếu bị bỏ qua im lặng (coi như khớp LLM)",
              [one(REVIEW, "    if missing or extra:\n", "    if extra:  # MUTATION M-G11-9\n"),
@@ -77,6 +77,18 @@ MUTATIONS_ALL: list[Mutation] = [
               one(SCORING, "        support_units[a.family] = (n0 + s, d0 + len(a.claims))\n",
                   "        support_units[a.scenario_id] = (n0 + s, d0 + len(a.claims))\n")],
              ["test_single_family_bootstrap"]),
+    Mutation("M-G11-11 suy họ từ tiền tố scenario_id khi thiếu family (P8 v1.5 6.3.1 cấm)",
+             [one(MODELS, '    family: str = Field(min_length=1, pattern=r"\\S")', '    family: str = ""  # MUTATION M-G11-11\n#'),
+              one(MODELS, '            raise ValueError("chunks có chunk_id trùng")\n        return self\n',
+                  '            raise ValueError("chunks có chunk_id trùng")\n'
+                  '        if not self.family:  # MUTATION M-G11-11\n'
+                  '            object.__setattr__(self, "family", self.scenario_id.rsplit("-v", 1)[0])\n'
+                  '        return self\n')],
+             ["test_family_is_required", "test_bad_record"]),
+    Mutation("M-G11-12 κ = 0,6 đúng mốc bị cờ low_kappa (< thành <=)",
+             [one(REVIEW, "    return k is None or k < Fraction(str(LOW_KAPPA))\n",
+                  "    return k is None or k <= Fraction(str(LOW_KAPPA))  # MUTATION M-G11-12\n")],
+             ["test_low_kappa_boundary"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL
