@@ -52,6 +52,7 @@ class SeedUser(_Strict):
     is_service_account: bool
     disable_reason: DisableReason | None
     password_hash: str  # argon2id của mật khẩu demo — KHÔNG bao giờ trả ra API
+    phone: str | None = Field(default=None, pattern=r"^0900000\d{3}$")  # F2: số nhận SMS đặt lại mật khẩu, số giả
     accounts: dict[AccountType, SeedAccount]
     lockouts: list[SeedLockout] = []
 
@@ -153,6 +154,9 @@ class SeedData(_Strict):
             raise ValueError("user_id trùng")
         if len({u.username for u in self.users}) != len(self.users):
             raise ValueError("username trùng")
+        phones = [u.phone for u in self.users if u.phone is not None]
+        if len(set(phones)) != len(phones):
+            raise ValueError("phone trùng")
         devices = {d.device_id for d in self.devices}
         catalog = {c.name for c in self.catalog}
         resources = {r.path for r in self.resources}

@@ -51,6 +51,36 @@ POST   /_admin/users/{user_id}/status  {"employment_status": "active|probation|d
 đếm (lúc nhận, trước khi xử lý). Không đếm `/_admin/*` và `/health`. Test "gọi ghi đúng 1 lần" (e2e cổng 3, `make gate3`)
 đọc số ở đây, không suy từ log của backend.
 
+## Đặt lại mật khẩu qua SMS (F2)
+
+```
+POST /ad/users/{user_id}/reset-password   (token svc_executor)
+     {"account_type": "ad", "channel": "email"}   mặc định — hành vi cũ: chỉ cập nhật password_last_set, 4 trường, mật khẩu cũ vẫn dùng được
+     {"account_type": "ad", "channel": "sms"}     mật khẩu tạm một lần, hạn 15 phút (TEMP_PASSWORD_TTL)
+POST /ad/change-password                  (token svc_executor)
+     {"username", "temp_password", "new_password"}   new_password ≥ 12 ký tự, khác mật khẩu tạm
+GET  /_admin/outbox                       tin SMS/email mock "đã gửi" — mật khẩu tạm ĐÃ CHE
+```
+
+- Số nhận lấy từ trường `phone` trong seed của **chính chủ tài khoản** (dạng `0900000xxx`, số giả). Body không nhận số điện thoại:
+  trường lạ → 422. Người không có `phone` (`svc_backup`, `nv006`) → 409 `no_phone_on_file`.
+- Chỉ tài khoản `ad` (mock chỉ có một mật khẩu để kiểm — mật khẩu AD): `account_type` khác → 409 `sms_reset_ad_only`.
+- Sau reset SMS: mật khẩu cũ hỏng ngay; mock chỉ lưu hash argon2 của mật khẩu tạm + hạn. Gửi 1 SMS (có mật khẩu tạm) và 1 email
+  báo chủ tài khoản ("có yêu cầu đặt lại mật khẩu qua SMS lúc …", số đã che — KHÔNG có mật khẩu). Phản hồi: 4 trường cũ với
+  `delivered_via="sms"` + `expires_in_minutes`, không bao giờ có mật khẩu.
+- `/ad/authenticate` bằng mật khẩu tạm còn hạn → 403 `password_change_required`; hết hạn hoặc đã đổi → 401 `invalid_credentials`.
+- `/ad/change-password`: mật khẩu tạm đúng, còn hạn, chưa dùng → đặt mật khẩu mới; sai / hết hạn / dùng lần 2 / username lạ → cùng 401.
+  Sau khi đổi: mật khẩu tạm và mật khẩu cũ đều hỏng, mật khẩu mới đăng nhập được.
+- `POST /_admin/reset` xoá hộp thư đi và mọi trạng thái mật khẩu tạm (nạp lại seed).
+
+## Giới hạn
+
+- **SIM swap**: kẻ chiếm được SIM (đổi SIM, chuyển mạng trái phép) sẽ nhận được mật khẩu tạm qua SMS. Giảm thiểu trong mock: email
+  báo chủ tài khoản ở mỗi lần đặt lại qua SMS, hạn 15 phút, chỉ dùng một lần và bắt đổi mật khẩu ngay. Không loại bỏ được rủi ro này —
+  SMS là kênh yếu hơn email.
+- Mock không gửi tin thật: SMS/email chỉ nằm trong hộp thư đi (bộ nhớ) và mất khi `/_admin/reset` hoặc khởi động lại.
+- Backend hiện chỉ gọi kênh email; chưa có tool cho `/ad/change-password` và chưa xử lý 403 `password_change_required` ở đăng nhập.
+
 ## Bảng mong đợi — 12 tool đọc với seed (cổng 1, người xác nhận gọi tay)
 
 Test tự động của bảng này: `backend/tests/e2e/test_tools_vs_mock.py` (registry thật → HTTP → mock).
