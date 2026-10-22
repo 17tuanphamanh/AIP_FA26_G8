@@ -1,4 +1,5 @@
-"""Hợp đồng bản ghi `predictions.jsonl` v1 — T28 (runner) ghi, T29 (metrics, stats) đọc (P8 §2; duyệt ở #32 ngày 13/10).
+"""Hợp đồng bản ghi `predictions.jsonl` v1.1 — runner G2 ghi, T29 (metrics, stats) và offline đọc (P8 §2; v1 duyệt ở #32 ngày 13/10;
+v1.1 = P8 v1.4 §5.6, giao Dương ở #32 ngày 18/10).
 
 Mỗi dòng = một **ticket lá** (D-30) của một lần chạy. Tên trường theo DB/audit. Nguồn từng trường (runner T28 lấy đúng như sau):
 
@@ -15,6 +16,18 @@ Mỗi dòng = một **ticket lá** (D-30) của một lần chạy. Tên trườ
 | `clarification_turns` | dòng B11 của lá (dưới đây) | Lượt hỏi lại TB (RQ3), Giải quyết một lượt |
 | `intent`, `gold_intent` | `tickets.intent` của lá; `gold.intents` | Intent macro-F1 (§6.3) |
 | `doc_ids`, `gold_doc_ids` | cột `audit_logs.doc_ids` dòng B8 (theo hạng); `gold.gold_doc_ids` | Recall@5, MRR@5, nDCG@5 (§6.3) |
+
+v1.1 (P8 v1.4 §5.6) — mọi trường BẮT BUỘC có mặt, không mặc định; chưa có nguồn hợp lệ → runner ghi `null` tường minh và liệt kê
+tên ở manifest `predictions_unavailable` (không ghi False giả):
+
+| Trường | Nguồn | Dùng ở (P8 v1.4) |
+|---|---|---|
+| `schema_version` | `"1.1"`; thiếu = file v1 → `load_predictions` từ chối (V11-Q6) | đọc file |
+| `fold` | 1..`CV_K`, họ → phần ở `SPLIT.md` (§2, §4.3) — chưa có `split.py`; lượt stack ghi `null` (G2-Q3, V11-Q3). Một file: mọi dòng có `fold` hoặc không dòng nào; một họ một phần | §4.3, §5.3 `fit_fold`, §6.1 gộp 5 phần đo |
+| `kb_gap` | điểm log 4 (§0.1) — KHÔNG có cột `audit_logs` → khoá `detail` mới, ngoài chốt: chưa đọc, `null` (V11-Q2). Như trường rủi ro: `route = None` ⇒ `None` | §5.3 chặn AUTO khi tính route offline (D-34), §5.4 |
+| `hidden_factor` | `gold.hidden_factor` (§4.1) — dữ liệu thật CHƯA có khoá này → `null` (V11-Q1) | §6.1 FNR nhóm yếu tố M5 không thấy (ghi nợ, chưa tính) |
+| `run_started_at` | giờ bắt đầu TỪNG kịch bản của harness (= `outcomes.jsonl`; không phải giờ bắt đầu lượt ở manifest), ISO 8601 CÓ offset | §5.2 khung giờ, manifest số ca theo khung |
+| `in_business_hours` | khung giờ hành chính của `run_started_at` theo `business_hours` — việc G7 (G2-Q10, V11-Q5) → `null` tới G7 | §5.2 |
 
 Luật cho runner (chốt #32, 13/10; đính chính review #42):
 - Dòng điểm log 4 = `audit_logs` `step = 'B13/B14'` (node `b12_assess`; event `risk_decided` hoặc `llm_layer_disabled`) — KHÔNG
@@ -36,11 +49,13 @@ Lỗi đầu vào → `ValueError` (`ValidationError` là lớp con); thông đi
 """
 
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     Field,
     StringConstraints,
@@ -64,17 +79,35 @@ from app.risk.decision_math import Route
 # Alias thường (không `type X = …`): `typing.get_args` đọc được Literal — test so `Strategy` với `settings.strategy`.
 Strategy = Literal["manual", "full_auto", "rule_only", "llm_only", "hybrid", "hybrid_guarded"]
 Split = Literal["calibration", "test"]  # P8 §5.1 RunConfig.split
+SchemaVersion = Literal["1.1"]
+SCHEMA_VERSION: Final[SchemaVersion] = "1.1"
+CV_K: Final = 5  # P8 §8 `CV_K` — số phần kiểm tra chéo (§4.3)
 
 RunId = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{12}$")]  # P8 §5.1: sha256(...)[:12]
 Id = Annotated[str, StringConstraints(min_length=1)]
 Prob = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
+Fold = Annotated[int, Field(ge=1, le=CV_K)]
+
+
+def _aware_iso(v: str) -> str:
+    """ISO 8601 có offset; giữ nguyên chuỗi. Lỗi không in giá trị."""
+    try:
+        t = datetime.fromisoformat(v)
+    except ValueError:
+        raise ValueError("phải là ISO 8601") from None
+    if t.tzinfo is None:
+        raise ValueError("thiếu múi giờ (cần offset, vd +07:00)")
+    return v
+
+
+AwareIso = Annotated[str, AfterValidator(_aware_iso)]
 
 # Trường lấy từ cột DB → chỉ nhận giá trị DB nhận (CHECK của `audit_logs`/`tickets`, app/db/models.py).
 _DB_ENUMS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     "decided_by": DECIDED_BY, "p_method": P_METHODS, "final_state": FINAL_STATES, "exit_code": EXIT_CODES,
     "close_reason": CLOSE_REASONS, "resolution_path": RESOLUTION_PATHS, "intent": INTENTS,
 })  # fmt: skip
-_RISK_FIELDS = ("decided_by", "raw_prob", "calibrated_prob", "p_method")
+_RISK_FIELDS = ("decided_by", "raw_prob", "calibrated_prob", "p_method", "kb_gap")  # trường điểm log 4 (kb_gap: P8 §0.1)
 
 
 class PredictionRecord(BaseModel, frozen=True, extra="forbid", strict=True, hide_input_in_errors=True):
@@ -101,6 +134,12 @@ class PredictionRecord(BaseModel, frozen=True, extra="forbid", strict=True, hide
     gold_intent: str | None
     doc_ids: tuple[Id, ...] | None
     gold_doc_ids: tuple[Id, ...]
+    schema_version: SchemaVersion
+    fold: Fold | None
+    kb_gap: bool | None
+    hidden_factor: bool | None
+    run_started_at: AwareIso
+    in_business_hours: bool | None
 
     @field_validator(*_DB_ENUMS)
     @classmethod
@@ -113,7 +152,7 @@ class PredictionRecord(BaseModel, frozen=True, extra="forbid", strict=True, hide
     @model_validator(mode="after")
     def _no_m5_no_risk(self) -> "PredictionRecord":
         if self.route is None and any(getattr(self, f) is not None for f in _RISK_FIELDS):
-            raise ValueError("route = None (không tới M5): decided_by, raw_prob, calibrated_prob, p_method phải là None")
+            raise ValueError("route = None (không tới M5): decided_by, raw_prob, calibrated_prob, p_method, kb_gap phải là None")
         return self
 
 
@@ -122,9 +161,16 @@ def _where(e: ValidationError) -> str:
     return ", ".join(sorted(locs))
 
 
+def _is_v1(e: ValidationError) -> bool:
+    return any(err["type"] == "missing" and tuple(err["loc"]) == ("schema_version",)
+               for err in e.errors(include_url=False, include_input=False))  # fmt: skip
+
+
 def load_predictions(path: Path) -> list[PredictionRecord]:
-    """Đọc `predictions.jsonl` (giữ thứ tự dòng). Kiểm: mỗi dòng hợp lệ; 1 `run_id`, 1 `strategy`, 1 `split`; `ticket_id` không
-    trùng; không lá kịch bản nhiều ý (Q-T29-1); `scenario_id` không trùng (v1: một kịch bản một bộ gold → một lá)."""
+    """Đọc `predictions.jsonl` (giữ thứ tự dòng). Kiểm: mỗi dòng hợp lệ v1.1 (dòng v1 — không có `schema_version` — bị từ chối,
+    không điền mặc định); 1 `run_id`, 1 `strategy`, 1 `split`; `ticket_id` không trùng; không lá kịch bản nhiều ý (Q-T29-1);
+    `scenario_id` không trùng (v1: một kịch bản một bộ gold → một lá); `fold` có ở mọi dòng hoặc không dòng nào, một họ một phần
+    (P8 §4.3)."""
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines:
         raise ValueError("predictions: file rỗng")
@@ -135,6 +181,9 @@ def load_predictions(path: Path) -> list[PredictionRecord]:
         try:
             records.append(PredictionRecord.model_validate_json(line))
         except ValidationError as e:
+            if _is_v1(e):
+                raise ValueError(f"predictions dòng {no}: bản v1 (không có schema_version) — hợp đồng v{SCHEMA_VERSION} không đọc "
+                                 "file v1; chạy lại harness") from None  # fmt: skip
             raise ValueError(f"predictions dòng {no}: không hợp lệ ({_where(e)})") from None
     for field in ("run_id", "strategy", "split"):
         if len({getattr(r, field) for r in records}) > 1:
@@ -150,4 +199,11 @@ def load_predictions(path: Path) -> list[PredictionRecord]:
             raise ValueError(f"predictions: scenario_id trùng ở dòng {no} (v1: một kịch bản một lá)")
         tickets.add(r.ticket_id)
         scenarios.add(r.scenario_id)
+    folded = [r.fold is not None for r in records]
+    if any(folded) and not all(folded):
+        raise ValueError("predictions: fold gán dở (một file: mọi dòng có fold hoặc không dòng nào)")
+    fold_of: dict[str, int] = {}
+    for no, r in enumerate(records, start=1):
+        if r.fold is not None and fold_of.setdefault(r.family, r.fold) != r.fold:
+            raise ValueError(f"predictions dòng {no}: một họ (family) nằm ở hai phần fold khác nhau (P8 §4.3)")
     return records

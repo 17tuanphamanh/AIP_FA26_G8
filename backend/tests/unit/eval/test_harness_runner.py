@@ -4,9 +4,11 @@ Mọi giá trị dữ liệu tổng hợp (câu, id, họ, gold, tên file, tick
 stdout/stderr KHÔNG được có chuỗi canh nào. `--per-case` in thêm `scenario_id` (chỉ `SENTINEL_ID_…`), vẫn không câu/họ/gold/ticket.
 """
 
+import itertools
 import json
 import re
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,7 @@ SUMMARY = [
     r"elapsed_s=\d+(\.\d+)?",
     r"files: predictions\.jsonl outcomes\.jsonl manifest\.json",
 ]
+V11_NULL = ("fold", "hidden_factor", "in_business_hours", "kb_gap")  # chưa có nguồn — manifest `predictions_unavailable`
 NOT_IN_PER_CASE = ("SENTINEL_TXT", "SENTINEL_FAM", "SENTINEL_DOC", "SENTINEL_TID", "SENTINEL_USER", "SENTINEL_PW",
                    "SENTINEL_FILE", "SENTINEL_FACTOR", "SENTINEL_ERR", "SENTINEL_NEED", "SENTINEL_ACT", "SENTINEL_TGT",
                    "SENTINEL_FOR", "SENTINEL_P", "SENTINEL_FACT", "SENTINEL_DEPT", "SENTINEL_SRC")  # fmt: skip
@@ -72,11 +75,12 @@ class Run:
         self.deps_made = 0
         self.git_dirty = False
         self.seed = write_seed(tmp / "seed.json")
+        self.now: Callable[[], datetime] = lambda: datetime(2026, 10, 19, 3, 0, tzinfo=UTC)
 
     def make_deps(self, url: str) -> Deps:
         self.deps_made += 1
         return Deps(backend=self.sim, http=self.sim.client(), clock=Clock(self.clock.monotonic, self.clock.sleep),
-                    git_commit=GIT_SHA, now=lambda: datetime(2026, 10, 19, 3, 0, tzinfo=UTC), git_dirty=self.git_dirty)  # fmt: skip
+                    git_commit=GIT_SHA, now=self.now, git_dirty=self.git_dirty)  # fmt: skip
 
     def __call__(self, *extra: str, env: dict[str, str] | None = None, timeout: str | None = "30",
                  base: bool = True) -> int:  # fmt: skip
@@ -409,6 +413,38 @@ def test_written_file_roundtrip(tmp_path: Path) -> None:
     assert len(r.outcomes()) == 3
 
 
+def test_run_started_at_per_case(tmp_path: Path) -> None:
+    """V11-Q4: `run_started_at` của bản ghi = giờ bắt đầu TỪNG kịch bản (= `outcomes.jsonl`), không phải giờ bắt đầu lượt."""
+    r = Run(tmp_path, scn(1, "direct"), scn(2, "clarify", "SENTINEL_TXT_a"))
+    ticks = itertools.count()
+    r.now = lambda: datetime(2026, 10, 19, 3, 0, tzinfo=UTC) + timedelta(minutes=next(ticks))
+    assert r() == 0
+    recs = {x.scenario_id: x.run_started_at for x in load_predictions(r.outdir / "predictions.jsonl")}
+    outs = {o["scenario_id"]: o["run_started_at"] for o in r.outcomes()}
+    assert recs == outs
+    assert len(set(recs.values())) == 2
+    assert r.manifest()["started_at"] not in recs.values()
+    assert all(datetime.fromisoformat(v).tzinfo is not None for v in recs.values())
+
+
+def test_v11_unavailable_fields_null(tmp_path: Path) -> None:
+    """Lượt stack: `fold`, `kb_gap`, `hidden_factor`, `in_business_hours` = `null` tường minh trong file (không False giả)."""
+    r = Run(tmp_path, scn(1, "direct"), scn(2, "calib"))
+    assert r() == 0
+    for line in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        assert row["schema_version"] == "1.1"
+        assert {k: row[k] for k in V11_NULL} == dict.fromkeys(V11_NULL)
+
+
+def test_manifest_v11(tmp_path: Path) -> None:
+    r = Run(tmp_path, scn(1, "direct"))
+    assert r() == 0
+    m = r.manifest()
+    assert m["schema_version"] == "1.1"
+    assert m["predictions_unavailable"] == list(V11_NULL)
+
+
 def test_calibrated_prob_nonnull_counted(tmp_path: Path) -> None:
     r = Run(tmp_path, scn(1, "calib"), scn(2, "direct"))
     assert r() == 0
@@ -559,6 +595,7 @@ MANIFEST_KEYS = {
     "split", "timeout_s", "enable_proactive_diagnosis", "llm_cache_mode", "clf_mode", "policy_sha256", "llm_backend",
     "started_at", "finished_at", "host", "warmup", "counts", "ignored_fields", "unavailable", "approval_sla_minutes_dev",
     "b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits",
+    "schema_version", "predictions_unavailable",
 }  # fmt: skip
 LATER = ("b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits")
 

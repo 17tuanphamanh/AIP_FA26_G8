@@ -1,4 +1,4 @@
-"""DB → `PredictionRecord` (hợp đồng v1, `predictions.py:19-33`) cho MỘT lá của harness G2. Chỉ đọc.
+"""DB → `PredictionRecord` (hợp đồng v1.1, `predictions.py`) cho MỘT lá của harness G2. Chỉ đọc.
 
 Câu SQL (mỗi câu một bảng / một step — `detail` chỉ đọc đúng khoá được phép, KHÔNG SELECT nguyên `detail`):
 - `tickets`: cột điểm log 8 + `is_parent` (cha → `MultiLeaf`, không ghi bản ghi — `load_predictions` từ chối lá nhiều ý).
@@ -9,6 +9,8 @@ Câu SQL (mỗi câu một bảng / một step — `detail` chỉ đọc đúng 
   max(turn + (event == 'asked'))` tính ở Python, bỏ dòng không có `turn`; không dòng nào → 0.
 - `step = 'B8'`: cột `doc_ids`, dòng cuối theo `created_at` (hoà → `log_id`); không có → `None`.
 - `approvals`: có dòng nào của lá → `has_approval`.
+- v1.1: `run_started_at` = giờ bắt đầu kịch bản do runner truyền vào; `UNAVAILABLE` (chưa có nguồn hợp lệ — V11-Q1/Q2/Q3/Q5) →
+  `null` tường minh. `kb_gap` KHÔNG đọc từ `detail` (khoá ngoài chốt, chờ V11-Q2).
 """
 
 import json
@@ -17,7 +19,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from app.eval.dataset import Scenario
-from app.eval.predictions import PredictionRecord, Split, Strategy
+from app.eval.predictions import SCHEMA_VERSION, PredictionRecord, Split, Strategy
 from app.eval.stack import Sql, StackError, quote
 
 LOG4_STEP = "B13/B14"
@@ -29,6 +31,7 @@ TICKET_FIELDS = ("'ticket_id', ticket_id, 'parent_ticket_id', parent_ticket_id, 
                  "'final_state', final_state, 'exit_code', exit_code, 'close_reason', close_reason, "
                  "'resolution_path', resolution_path")  # fmt: skip
 RISK = ("decided_by", "raw_prob", "calibrated_prob", "p_method")
+UNAVAILABLE = ("fold", "hidden_factor", "in_business_hours", "kb_gap")  # v1.1 chưa có nguồn → null (manifest predictions_unavailable)
 
 type AbortReason = Literal["strategy_mismatch", "log4_missing_strategy", "log4_missing_route"]
 
@@ -98,7 +101,7 @@ def _has_approval(sql: Sql, ticket_id: str) -> bool:
     return bool(sql(f"SELECT to_json(EXISTS (SELECT 1 FROM approvals WHERE ticket_id = {quote(ticket_id)}))"))
 
 
-def collect(sql: Sql, scenario: Scenario, ticket_id: str, meta: RunMeta) -> PredictionRecord:
+def collect(sql: Sql, scenario: Scenario, ticket_id: str, meta: RunMeta, *, started_at: str) -> PredictionRecord:
     ticket = sql(f"SELECT json_build_object({TICKET_FIELDS}) FROM tickets WHERE ticket_id = {quote(ticket_id)}")
     if ticket is None:
         raise StackError("không có dòng tickets của ticket vừa tạo")
@@ -115,6 +118,8 @@ def collect(sql: Sql, scenario: Scenario, ticket_id: str, meta: RunMeta) -> Pred
         "clarification_turns": _clarification_turns(sql, ticket_id),
         "gold_intent": scenario.gold_intent,
         "doc_ids": _doc_ids(sql, ticket_id), "gold_doc_ids": list(scenario.gold.gold_doc_ids),
+        "schema_version": SCHEMA_VERSION, "run_started_at": started_at,
+        **dict.fromkeys(UNAVAILABLE),
     }  # fmt: skip
     # qua JSON: `strict=True` từ chối list cho trường tuple (predictions.py:32-33)
     return PredictionRecord.model_validate_json(json.dumps(record))

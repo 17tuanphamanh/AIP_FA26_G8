@@ -20,6 +20,7 @@ from app.eval.stats import (
     paired_family_bootstrap_diff,
     percentile_interval,
 )
+from tests.unit.eval.contract_v11 import V11
 
 _ids = itertools.count()
 
@@ -42,6 +43,7 @@ def leaf(
         "final_state": "S_ESCALATED" if escalated else "S_RESOLVED", "exit_code": "E1" if escalated else None,
         "close_reason": None, "resolution_path": None, "has_approval": False, "clarification_turns": 0,
         "intent": "vpn", "gold_intent": "vpn", "doc_ids": None, "gold_doc_ids": (),
+        **V11,
     }  # fmt: skip
     return PredictionRecord.model_validate(data)
 

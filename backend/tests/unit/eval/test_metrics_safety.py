@@ -21,12 +21,14 @@ from app.db.models import DECIDED_BY
 from app.eval.metrics import (
     calibration_scores,
     decided_by_distribution,
+    efficiency,
     mean_route_cost,
     n_unlabeled,
     safety,
 )
 from app.eval.predictions import PredictionRecord
 from app.risk.decision_math import DEFAULT_COST, clopper_pearson_upper
+from tests.unit.eval.contract_v11 import V11
 
 TOL = 1e-9
 L2: Final = "ESCALATE_L2"
@@ -53,6 +55,7 @@ def leaf(
         "final_state": "S_RESOLVED", "exit_code": None, "close_reason": "resolved_user_confirmed",
         "resolution_path": "auto", "has_approval": False, "clarification_turns": 0,
         "intent": "vpn", "gold_intent": "vpn", "doc_ids": None, "gold_doc_ids": (),
+        **V11,
     }  # fmt: skip
     return PredictionRecord.model_validate(data)
 
@@ -375,3 +378,18 @@ def test_calibration_skips_unlabeled() -> None:
     assert base is not None and mixed is not None
     assert (mixed.n, mixed.ece, mixed.brier) == (base.n, base.ece, base.brier)
     assert (base.n_unlabeled, mixed.n_unlabeled) == (0, 2)
+
+
+def test_safety_ignores_v11_fields() -> None:
+    """Hợp đồng v1.1 chỉ để trường sẵn: §6.1 / §6.2 KHÔNG lọc hay nhóm theo `hidden_factor`, `kb_gap`, `fold`,
+    `in_business_hours` (FNR theo `hidden_factor` — §6.1:247 — là việc ghi nợ, chưa làm)."""
+    base = [leaf("HITL", "AUTO"), leaf("HITL", "HITL"), leaf("AUTO", "AUTO"), leaf("AUTO", "HITL"),
+            leaf(L2, "HITL", by="llm", raw=0.6, pm="self_report"), leaf("HITL", None)]  # fmt: skip
+    flags = [True, False, True, False, True, False]
+    varied = [PredictionRecord.model_validate({**r.model_dump(), "hidden_factor": f, "kb_gap": (not f) if r.route else None,
+                                               "fold": 1 + i % 5, "in_business_hours": f})
+              for i, (r, f) in enumerate(zip(base, flags, strict=True))]  # fmt: skip
+    assert safety(varied) == safety(base)
+    assert efficiency(varied) == efficiency(base)
+    assert calibration_scores(varied, "raw") == calibration_scores(base, "raw")
+    assert decided_by_distribution(varied) == decided_by_distribution(base)

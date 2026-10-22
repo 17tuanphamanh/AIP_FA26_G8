@@ -31,6 +31,7 @@ from app.eval.metrics import (
     n3_group,
 )
 from app.eval.predictions import PredictionRecord
+from tests.unit.eval.contract_v11 import V11
 
 TOL = 1e-9
 _ids = itertools.count()
@@ -56,6 +57,7 @@ def leaf(
         "final_state": state, "exit_code": exit_code, "close_reason": close, "resolution_path": path,
         "has_approval": approval, "clarification_turns": turns,
         "intent": "vpn", "gold_intent": "vpn", "doc_ids": None, "gold_doc_ids": (),
+        **V11,
     }  # fmt: skip
     return PredictionRecord.model_validate(data)
 
