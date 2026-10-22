@@ -87,11 +87,8 @@ class ToolRegistry:
             raise ForbiddenToolCall(f"{name} không được gọi từ {caller_step}")
         if spec.kind == "write" and caller_step != "B17":  # thừa với validate_specs — cố ý giữ
             raise ForbiddenToolCall(f"tool ghi {name} chỉ được gọi từ B17")
-        try:
-            raw = args.model_dump() if isinstance(args, BaseModel) else args
-            inp = spec.input_model.model_validate(raw)
-        except ValidationError as e:
-            raise ToolContractError(f"{name}: input sai schema: {e}") from e
+        raw = args.model_dump() if isinstance(args, BaseModel) else args
+        inp = _validated(spec.input_model, raw, f"{name}: input sai schema")
         handler = self._handlers.get(name)
         if handler is None:
             raise ToolContractError(f"{name}: chưa gắn handler vào registry này")
@@ -136,7 +133,7 @@ class ToolRegistry:
                 )
             except httpx.HTTPStatusError as e:
                 breaker.record_success()  # hệ thống ngoài vẫn trả lời — lỗi là ở phía ta
-                raise ToolContractError(f"{spec.name}: HTTP {e.response.status_code}") from e
+                raise ToolContractError(f"{spec.name}: HTTP {e.response.status_code}") from None  # URL của HTTPStatusError mang giá trị slot
             return _Outcome(data, error, attempts, "success" if error is None else "failure")
         try:  # ghi: 1 lần, KHÔNG retry [Chốt 17.3]; không đủ trọn timeout → không gửi (9.0)
             timeout = cap_timeout(spec.timeout_s, self._clock, what=what, full=True)
@@ -151,7 +148,7 @@ class ToolRegistry:
             if code == 429 or code >= 500:
                 return _Outcome(None, error, 0, "failure")
             breaker.record_success()
-            raise ToolContractError(f"{spec.name}: HTTP {code}") from e
+            raise ToolContractError(f"{spec.name}: HTTP {code}") from None  # như trên
 
     def _finish(self, spec: ToolSpec, breaker: CircuitBreaker, out: "_Outcome") -> ToolResult:
         if out.breaker == "success":
@@ -164,10 +161,7 @@ class ToolRegistry:
             return ToolResult(spec.name, None, out.error, out.attempts, False)
         if out.data is None:  # 404 ở tool đọc
             return ToolResult(spec.name, None, None, out.attempts, True)
-        try:
-            model = spec.output_model.model_validate(out.data)
-        except ValidationError as e:
-            raise ToolContractError(f"{spec.name}: output sai schema: {e}") from e
+        model = _validated(spec.output_model, out.data, f"{spec.name}: output sai schema")
         empty = isinstance(model, RootModel) and not model.root
         return ToolResult(spec.name, model, None, out.attempts, empty)
 
@@ -178,6 +172,18 @@ class ToolRegistry:
             "tool:%s step=%s attempts=%d empty=%s error=%s ms=%.0f",
             spec.name, step, result.attempts, result.empty, result.error, seconds * 1000,
         )  # fmt: skip
+
+
+def _validated(model: type[BaseModel], data: Any, what: str) -> BaseModel:
+    """Việc treo 18: thông điệp chỉ (loc, type) — `msg`/`input_value`/`ctx` có thể mang giá trị tham số hoặc chữ của hệ thống
+    ngoài, mà boundary chép cả chuỗi exception vào audit. Ném NGOÀI `except`: `__cause__`, `__context__` đều không giữ
+    ValidationError (`from None` trong `except` vẫn để `__context__`)."""
+    try:
+        return model.model_validate(data)
+    except ValidationError as e:
+        problems = sorted({(".".join(map(str, err["loc"])), err["type"])
+                           for err in e.errors(include_url=False, include_input=False)})  # fmt: skip
+    raise ToolContractError(f"{what}: {problems}") from None
 
 
 def _detail(response: httpx.Response) -> str:
