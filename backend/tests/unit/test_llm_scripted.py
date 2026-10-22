@@ -58,9 +58,12 @@ def test_d19_fake_tag_syntax_same_as_graph_scenario() -> None:
     assert FAKE_TAG is GRAPH_FAKE_TAG is CORE_FAKE_TAG
 
 
+M8_ONLY_PROMPTS = {"eval_groundedness"}  # G11: chỉ `app.eval.groundedness` gọi (không node nào) → preset stack dev không cần
+
+
 def test_d19_repo_default_preset_covers_all_prompts_and_validates() -> None:
     presets = load_presets(REPO_CONFIG / "scripted", repo_registry())
-    assert set(presets[DEFAULT_PRESET]) == {p.id for p in repo_registry()}
+    assert set(presets[DEFAULT_PRESET]) == {p.id for p in repo_registry()} - M8_ONLY_PROMPTS
     assert presets[DEFAULT_PRESET]["b02_injection_judge"]["is_attack"] is False  # "an toàn" (7.5)
     assert presets[DEFAULT_PRESET]["b03_classify"]["intents"][0]["type"] == "out_of_scope"
 

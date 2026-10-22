@@ -243,13 +243,13 @@ async def test_g11_target_user_in_clarify_reply_is_other(
 
 
 def test_h3_prompt_versions_and_contract() -> None:
-    """h3 (P9): `b03_classify` v3, `b11_extract_slots` v2; registry nạp; `allowed_vars` KHÔNG đổi; vẫn 8 prompt; v3 liệt kê slot +
+    """h3 (P9): `b03_classify` v3, `b11_extract_slots` v2; registry nạp; `allowed_vars` KHÔNG đổi; 9 prompt (8 + `eval_groundedness` của M8, G11); v3 liệt kê slot +
     `action_hint` hợp lệ của từng intent (bảng 5.1.4)."""
     b03 = yaml.safe_load((PROMPTS / "b03_classify.yaml").read_text(encoding="utf-8"))
     b11 = yaml.safe_load((PROMPTS / "b11_extract_slots.yaml").read_text(encoding="utf-8"))
     assert int(b03["version"]) == 4 and int(b11["version"]) == 2  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint)
     registry = repo_registry()
-    assert len(registry) == 8
+    assert len(registry) == 9
     by_id = {p.id: p for p in registry}
     assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "recent_messages", "label_hint"}
     assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent"}

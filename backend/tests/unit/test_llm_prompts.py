@@ -49,6 +49,8 @@ TABLE_7_4 = {
     # Phase 6 (6B, phase6 5.1 P2/P9): B14 — không câu người dùng; `cache: default`, estimator tự `bypass` khi vận hành
     "b14_risk_estimate": ("strong", "default", "RiskEstimateOut", {"intended_action", "risk_context", "evidence"}),
     "b14_risk_vote": ("strong", "default", "RiskVoteOut", {"intended_action", "risk_context", "evidence", "sample_idx"}),
+    # M8 (G11, P2 mục 6): groundedness offline — chỉ `app.eval.groundedness` gọi, không node nào
+    "eval_groundedness": ("strong", "default", "GroundednessOut", {"claims", "evidence"}),
 }
 
 
@@ -62,13 +64,13 @@ def _vars(prompt_id: str, **over: Any) -> dict[str, Any]:
     return {**base, **over}
 
 
-# ---- d10: tĩnh — đúng 8 file (6B: + 2 prompt B14), schema tồn tại, biến template == allowed_vars, khớp bảng 7.4 ----------------
+# ---- d10: tĩnh — đúng 9 file (6B: + 2 prompt B14; G11: + eval_groundedness), schema tồn tại, biến template == allowed_vars, khớp bảng 7.4 ----------------
 
 
-def test_d10_exactly_eight_prompt_files_match_table(registry: PromptRegistry) -> None:
+def test_d10_exactly_nine_prompt_files_match_table(registry: PromptRegistry) -> None:
     files = sorted(p.stem for p in PROMPTS.glob("*.yaml"))
-    assert files == sorted(TABLE_7_4)  # quét được đúng 8 file
-    assert len(registry) == 8
+    assert files == sorted(TABLE_7_4)  # quét được đúng 9 file
+    assert len(registry) == 9
     for prompt in registry:
         role, cache, schema, variables = TABLE_7_4[prompt.id]
         spec = prompt.spec
@@ -84,7 +86,7 @@ def test_d10_only_injection_judge_has_random_boundary(registry: PromptRegistry) 
     assert [p.id for p in registry if p.spec.random_boundary] == ["b02_injection_judge"]
 
 
-def test_d10_schema_set_has_eight_classes() -> None:
+def test_d10_schema_set_has_nine_classes() -> None:
     assert set(SCHEMAS) == {v[2] for v in TABLE_7_4.values()}
 
 

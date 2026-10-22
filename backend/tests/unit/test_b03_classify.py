@@ -315,6 +315,6 @@ async def test_stack_vpn_preset_covers_all_prompts_and_routes_vpn() -> None:
     from tests.fakes.llm import repo_registry
 
     presets = load_presets(PROMPTS.parent / "scripted", repo_registry())  # kiểm schema từng phản hồi
-    assert set(presets["vpn"]) == {p.id for p in repo_registry()}
+    assert set(presets["vpn"]) == {p.id for p in repo_registry()} - {"eval_groundedness"}  # G11: prompt chỉ của M8, không node nào gọi
     [one] = presets["vpn"]["b03_classify"]["intents"]
     assert (one["type"], one["slots"], presets["vpn"]["b03_classify"]["is_multi"]) == ("vpn", {}, False)

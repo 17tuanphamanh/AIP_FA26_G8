@@ -116,8 +116,34 @@ class RiskVoteOut(BaseModel):
     factors: list[FactorCode] = Field(max_length=3)
 
 
+class ClaimVerdict(BaseModel):
+    """Một ý trong `GroundednessOut`. `supported` cần ≥ 1 mã đoạn; `partial`/`unsupported` không bắt buộc (nơi dùng bỏ qua)."""
+
+    model_config = _OUT
+
+    claim_id: int = Field(ge=1)
+    verdict: Literal["supported", "partial", "unsupported"]
+    chunk_ids: list[str] = Field(default_factory=list, max_length=10)  # mã đoạn trong khối bằng chứng đã đưa cho người chấm
+
+    @model_validator(mode="after")
+    def _supported_has_chunk(self) -> "ClaimVerdict":
+        if self.verdict == "supported" and not self.chunk_ids:
+            raise ValueError("verdict=supported phải kèm ít nhất 1 chunk_id")
+        return self
+
+
+class GroundednessOut(BaseModel):
+    """M8 groundedness offline (P2 mục 6 `eval_groundedness`; huong-dan 17.4): mỗi ý một verdict. Trần 24 ý/lần gọi
+    (≈ 30 token/verdict × 24 < `max_tokens` 900 của strong); đủ-và-không-trùng `claim_id` do nơi dùng kiểm
+    (`app.eval.groundedness.judge`)."""
+
+    model_config = _OUT
+
+    verdicts: list[ClaimVerdict] = Field(min_length=1, max_length=24)
+
+
 SCHEMAS: dict[str, type[BaseModel]] = {
     cls.__name__: cls
     for cls in (InjectionJudgeOut, ClassifyOut, NeedTypeOut, AnswerOut, QuestionOut, ExtractSlotsOut, RiskEstimateOut,
-                RiskVoteOut)
+                RiskVoteOut, GroundednessOut)
 }
