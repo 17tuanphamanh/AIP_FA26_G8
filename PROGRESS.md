@@ -5810,9 +5810,9 @@ tin E0 + tiêu chí B2; `b2_tau_select select` báo riêng số câu thường k
 **Spec cần sửa (gói 1):** ĐT mục 8 liệt kê `test_b02_screen.py:98, 104` phải đổi — nhánh regex không thêm khoá nên hai assert
 giữ nguyên (Q-B2R-10).
 
-## Phase 5 — gói 2b phần 1: chống spam (D-54 a) — worktree 2b, nhánh `2b-tuananh` (18/10/2026, 1 DỪNG trên `b582058`, CHƯA commit)
+## Phase 5 — gói 2b phần 1: chống spam (D-54 a) — worktree 2b (18/10/2026, 1 DỪNG trên `b582058`; dựng lại trên `a891ccb` = nhánh `rl-tuananh` `7c76767`, PR #62 gộp 22/10 vào `a40034e`)
 
-**Trạng thái:** xong, CHƯA commit. `make lint` xanh; unit **6183 passed / 4 skipped** (mốc 6089 / 4); integration + e2e đầy đủ
+**Trạng thái:** xong, đã gộp (PR #62, 22/10 — nhánh cũ `2b-tuananh` không gộp). `make lint` xanh; unit **6183 passed / 4 skipped** (mốc 6089 / 4); integration + e2e đầy đủ
 (testcontainers, 18/10 tối) **653 passed / 0 failed**. Mutation `scripts/mutation/mutate_2b.py` **7/7 ĐỎ** đúng dự đoán: unit 2b-11
 (42 test), 2b-13 (9), 2b-22 (9); Postgres 2b-11 (8), 2b-12 (1), 2b-14 (2), 2b-20 (5), 2b-21 (1); md5 + `git diff --stat` khớp sau khôi phục.
 `mutate_a4.py` I5 (unit) và I4 (Postgres) ĐỎ đúng dự đoán sau khi đổi 2 test M9. security-reviewer 5/5 PASS (không chữ người dùng; 429 sau
@@ -5841,6 +5841,17 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
   `EXPECTED_TABLES`), `::test_0003_checkpoint_tables_down_and_up`; `test_monitor_dash_business.py::test_alembic_single_head_is_0009`
   (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
 - Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
+
+## Lượt gộp 22/10 — lượt 1 (dev `a891ccb` → `a40034e`)
+
+- Gộp bằng merge commit, đúng thứ tự: #62 (gói 2b phần 1, `rl-tuananh` `7c76767`) → #60 (healthcheck backend, `826eea6`) → #56 (mock: đặt
+  lại mật khẩu qua SMS, `199d99e`) → #51 (việc treo 18, `89b254a`) → #52 (việc treo 33, `6fbf443`) → #53 (việc treo 34, `ba93f54`) → #54
+  (API chính sách chỉ đọc, `44a1d28`). Không xung đột: #62 × #60 cùng `docker-compose.yml`, #62 × #54 cùng `backend/app/main.py` — tự gộp.
+- Verify TRƯỚC khi đẩy, trên đúng `a40034e`: `make verify G=3` XANH (lint; test backend 7248, mock 119, ml 157; up; ingest KB fixture; gate3
+  66/0; trả về `.env`). CI dev run `39716879290` xanh.
+- F1: log worker `monitor_rules_weekly: nháp=4 ghi=0 trùng=4 lỗi=0 luật_lỗi=0` (22/10 10:26).
+- Sau lượt: DB lên `0010` → chạy tay dùng `make up RATE=loose`; stack ở KB fixture sau verify (cần KB thật: `make ingest`).
+- Lượt 2 (chưa): #57 (khi đủ chữ ký) + PR F6/R3 (khi mở), verify `G=2345` cho bản ứng viên.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -5950,7 +5961,8 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
 17. **[4a S0 — đã làm, chưa commit: B9 chỉ cho câu trả lời, căn cứ hành động = `procedure_doc` ở B11 (Q-4-U A+)]** **B9 (grounding) chạy trước B10 (need_type) (Tuấn Anh ghi, duyệt DỪNG 3a 3h, 30/09/2026).** Yêu cầu HÀNH ĐỘNG có điểm truy
     hồi thấp bị E3 dù không cần KB (thấy ở h14: "cấp VPN cho LAP-9999…" 0,5 < 0,6 → E3 ở B9, không tới B12). An toàn nhưng giảm
     tự động; xem lại ở Phase 5 + khi chọn ngưỡng ở mốc G. Chưa sửa.
-18. **`ToolContractError` chép `ValidationError` có `input_value` (soát DỪNG 3b 3h, NGHI mục 8).** Registry
+18. ~~**`ToolContractError` chép `ValidationError` có `input_value` (soát DỪNG 3b 3h, NGHI mục 8).**~~ — **ĐÓNG 22/10** (PR #51 `89b254a`,
+    gộp vào `a40034e`: lỗi hợp đồng schema chỉ ghi vị trí + loại lỗi). Registry
     (`tools/registry.py` `_finish` / input) đưa `str(ValidationError)` — có `input_value` là chữ của hệ thống ngoài (output) hoặc giá
     trị tham số (input) — vào thông điệp; lỗi nổi lên boundary → audit `unhandled_exception` (`exception`, `traceback`) + `log.error`.
     Có từ 1c, mọi tool. Nhánh GHI đã đóng ở Q-3h-10 (`cause` chỉ tên lớp); nhánh ĐỌC còn. Đề xuất: `e.errors(include_input=False)`
@@ -6015,11 +6027,12 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     ĐẦU TIÊN sau khi ml-service rảnh lâu (gate3 chạy sau 7,5 phút gate2 không RAG) hết hạn `deadline` (giây 49,4, retry 0) → B8
     `retrieval_error` E2. KHÔNG nới `TIMEOUT_S["rerank"]` / `rag_deadline_s`; DỪNG 2 4d chỉ thêm truy vấn làm nóng ở preflight `gate3.py`
     / `gate4.py`. Đóng: ml-service chạy một lượt rerank giả khi khởi động (trước khi báo healthy) — ngoài Phase 4.
-33. **Lỗi DB lúc INSERT có thể đưa tham số câu lệnh (gồm `note` ĐÃ CHE của ghi đè) vào log (soát 4d DỪNG 2 NGHI-3; Q-4d-6 = C, chốt
-    02/10/2026).** Postgres timeout/restart đúng lúc `record_override` INSERT → `DBAPIError` không bắt → traceback SQLAlchemy kèm
+33. ~~**Lỗi DB lúc INSERT có thể đưa tham số câu lệnh (gồm `note` ĐÃ CHE của ghi đè) vào log (soát 4d DỪNG 2 NGHI-3; Q-4d-6 = C, chốt
+    02/10/2026).**~~ — **ĐÓNG 22/10** (PR #52 `6fbf443`, gộp vào `a40034e`: `hide_parameters=True` cho mọi engine của app). Postgres timeout/restart đúng lúc `record_override` INSERT → `DBAPIError` không bắt → traceback SQLAlchemy kèm
     `[parameters: …]`. Cùng lớp lỗi với mọi INSERT khác của app. Sửa đúng = `create_async_engine(..., hide_parameters=True)` toàn hệ thống
     (`db/session.py` — có khối M9) → sau Phase 4, phối hợp M9. Không sửa route, không thêm mã 503.
-34. **Luật `entropy` của privacy guard bỏ qua token có chứa mặt nạ (soát 4d DỪNG 2 NGHI-5; Q-4d-7, chốt 02/10/2026).**
+34. ~~**Luật `entropy` của privacy guard bỏ qua token có chứa mặt nạ (soát 4d DỪNG 2 NGHI-5; Q-4d-7, chốt 02/10/2026).**~~ — **ĐÓNG 22/10**
+    (PR #53 `ba93f54`, gộp vào `a40034e`: logic cũ giữ nguyên, token chứa mặt nạ thì tách theo mặt nạ, xét từng mảnh).
     `guard/privacy.py:160` — chuỗi `x[BÍ_MẬT_ĐÃ_ẨN]<chuỗi ngẫu nhiên ≥ 20>` lọt guard (vd vào `audit_logs.note` qua ghi đè); `audit_check`
     không dùng luật entropy nên không bắt. Lõi 3e — sửa (chỉ bỏ qua khi token đúng bằng mặt nạ, hoặc xoá mặt nạ rồi mới tính entropy) cùng
     soát lại bộ test e* của 3e; không sửa ở 4d.
