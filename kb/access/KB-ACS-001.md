@@ -1,10 +1,10 @@
 ---
 doc_id: KB-ACS-001
-version: 1
+version: 2
 request_type: access
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: "Quy trình xin quyền thư mục dùng chung"
@@ -38,7 +38,7 @@ Khi gửi yêu cầu, người dùng cần mô tả rõ thư mục cần truy c�
 
 Ghi đường dẫn thư mục, phòng ban sở hữu và mức độ nhạy theo thông tin hiện có; nếu không xác định được, liên hệ IT để kiểm tra trước khi gửi yêu cầu.
 
-Xem quyền hiện có không cần phê duyệt. Yêu cầu quyền mới vào thư mục có mức độ nhạy high, yêu cầu quyền toàn quyền hoặc yêu cầu quyền mới vào thư mục thuộc phòng ban khác cần phê duyệt; yêu cầu gia hạn được xem xét tùy trường hợp. Tài khoản bị vô hiệu hóa vì lý do bảo mật không được cấp mới hoặc gia hạn quyền.
+Xem quyền hiện có của chính mình không cần phê duyệt. Cấp quyền mới không được hệ thống tự thực hiện: yêu cầu được chuyển cho người duyệt hoặc IT xem xét, trong đó quyền mới vào thư mục có mức độ nhạy high, quyền toàn quyền hoặc quyền mới vào thư mục thuộc phòng ban khác luôn cần phê duyệt. Gia hạn quyền chỉ được tự xử lý khi đủ điều kiện nêu trong bài về quyền truy cập có thời hạn và gia hạn quyền; gia hạn quyền vào thư mục thuộc phòng ban khác luôn cần phê duyệt. Tài khoản bị vô hiệu hóa vì lý do bảo mật không được cấp mới hoặc gia hạn quyền.
 
 Người duyệt có 30 phút để phản hồi; quá hạn, yêu cầu được chuyển cho kỹ thuật viên IT xử lý tiếp, không tự thực hiện.
 

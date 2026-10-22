@@ -1,10 +1,10 @@
 ---
 doc_id: KB-SW-001
-version: 1
+version: 2
 request_type: software
 doc_type: howto
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: "Danh mục phần mềm duyệt sẵn và cách tự cài"
@@ -50,4 +50,4 @@ Nếu phần mềm cần sử dụng không phải 7-Zip, Adobe Acrobat Pro, Aut
 
 Không tự thêm phần mềm mới vào danh mục và không đổi tên yêu cầu thành một phần mềm khác đã có sẵn.
 
-Yêu cầu phần mềm ngoài danh mục cần được phân biệt với yêu cầu cài một phần mềm đã được duyệt sẵn.
+Yêu cầu phần mềm ngoài danh mục cần được phân biệt với yêu cầu cài một phần mềm đã được duyệt sẵn. Yêu cầu cài phần mềm ngoài danh mục cần phê duyệt; yêu cầu cài phần mềm cần quyền quản trị máy để cài đặt cũng cần phê duyệt.
