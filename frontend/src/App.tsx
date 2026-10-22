@@ -19,6 +19,7 @@ import { EscalationDetailRoute } from "./routes/l2/EscalationDetail.tsx";
 import { EscalationQueue } from "./routes/l2/EscalationQueue.tsx";
 import { Alerts } from "./routes/manager/Alerts.tsx";
 import { DashboardPage } from "./routes/manager/DashboardPage.tsx";
+import { LlmStatus } from "./routes/manager/LlmStatus.tsx";
 import { PolicyEditor } from "./routes/manager/PolicyEditor.tsx";
 import { NotFound } from "./routes/NotFound.tsx";
 
@@ -112,11 +113,12 @@ const approvalRoutes = [
   },
 ];
 
-// F5 — Trưởng BP IT. Thiếu quyền → trang 403 TRƯỚC khi component mount → không gọi API nào (t64).
+// F5 (+ I1 Trạng thái LLM chỉ đọc) — Trưởng BP IT. Thiếu quyền → trang 403 TRƯỚC khi component mount → không gọi API nào (t64).
 const MANAGER_SCREENS: Record<string, ComponentType> = {
   "/dashboard": DashboardPage,
   "/alerts": Alerts,
   "/policy": PolicyEditor,
+  "/llm-status": LlmStatus,
 };
 const managerRoutes = STAFF_NAV.filter((item) => item.to in MANAGER_SCREENS).map((item) => {
   const Screen = MANAGER_SCREENS[item.to]!;

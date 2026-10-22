@@ -10,6 +10,7 @@ export const STAFF_NAV: readonly NavItem[] = [
   { to: "/dashboard", label: "Tổng quan", perm: "dashboard:read:all", stage: "F5" },
   { to: "/alerts", label: "Cảnh báo", perm: "alert:read", stage: "F5" },
   { to: "/policy", label: "Chính sách", perm: "policy:read", stage: "F5" },
+  { to: "/llm-status", label: "Trạng thái LLM", perm: "llm_status:read", stage: "I1" },
   { to: "/approvals", label: "Chờ tôi duyệt", perm: "approval:decide", stage: "F4" },
   { to: "/escalations", label: "Hàng đợi escalate", perm: "escalation:handle", stage: "F3" },
 ];

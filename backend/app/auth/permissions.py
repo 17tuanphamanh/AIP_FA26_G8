@@ -21,7 +21,7 @@ PERMS: Mapping[Role, frozenset[str]] = {
     | {
         "ticket:read:any", "approval:decide", "decision:override",
         "policy:read", "policy:edit", "dashboard:read:all", "audit:read:all",
-        "kb:edit", "alert:read",
+        "kb:edit", "alert:read", "llm_status:read",
     },
     "l2": _BASE | {"ticket:read:any", "escalation:handle", "kb:edit"},
 }  # fmt: skip

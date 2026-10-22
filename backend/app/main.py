@@ -47,6 +47,7 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
 )
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
+from app.api.llm_status import router as llm_status_router
 from app.api.policy import router as policy_router
 from app.api.tickets import router as tickets_router
 from app.audit.alerts import AlertWriter
@@ -388,12 +389,14 @@ def create_app(
     install_request_errors(app)  # 422 không trả `input`, guard lỗi → 503 (phase3 mục 8.3)
     # ---- M9 ---- thiếu MONITOR_DATABASE_URL → 503, không rơi về app_rw (kế hoạch M9 mục 4.1)
     app.add_exception_handler(MonitorUnavailable, _monitor_unavailable)
+    app.state.settings = settings  # I1: route đọc cấu hình LLM theo Settings của app (test tiêm Settings riêng)
     app.state.m9_clock = clock  # A3: mốc mặc định cửa sổ dashboard + `acked_at` (Clock của app, test tiêm FakeClock)
     # A4: `llm`, `monitor` của /api/health — chỉ báo, không đổi mã. Test gán đè `app.state.*_probe` (như `kb_probe`).
     app.state.llm_probe = _default_llm_probe(settings, app)
     app.state.monitor_probe = _default_monitor_probe(app)
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
+    app.include_router(llm_status_router)  # I1: GET /api/admin/llm-status (chỉ đọc, Trưởng BP IT)
     app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
