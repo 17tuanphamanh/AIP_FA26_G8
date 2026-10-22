@@ -1,6 +1,6 @@
 # P8 — Khung đánh giá và thực nghiệm (M8, `backend/app/eval/`)
 
-*Thuộc bộ `build/`. Objective 3 (0–20%). Phase 8 (harness, hiệu chỉnh, đóng băng), 9 (nhãn), 10 (RQ1, RQ3 — bắt buộc), 11 (tùy chọn). **Phiên bản 1.4 — 18/10/2026.** Bản này đọc được cho mọi thành viên (không chép bảng luật, không ghi ngưỡng đang dùng, không ghi thành phần dữ liệu). Phần chỉ người giữ dữ liệu đọc nằm ở ghi chú riêng của nhóm, không vào repo trước khi khoá nhãn.*
+*Thuộc bộ `build/`. Objective 3 (0–20%). Phase 8 (harness, hiệu chỉnh, đóng băng), 9 (nhãn), 10 (RQ1, RQ3 — bắt buộc), 11 (tùy chọn). **Phiên bản 1.5 — 22/10/2026** (1.5: thêm groundedness 6.3.1; 1.4 — 18/10). Bản này đọc được cho mọi thành viên (không chép bảng luật, không ghi ngưỡng đang dùng, không ghi thành phần dữ liệu). Phần chỉ người giữ dữ liệu đọc nằm ở ghi chú riêng của nhóm, không vào repo trước khi khoá nhãn.*
 
 *Nhãn: **[Chốt]** spec gốc · **[Chốt v1.4]** quyết định 17–18/10 đưa vào bản này · **[Đề xuất]** chờ duyệt · **[Suy luận]**.*
 
@@ -94,7 +94,7 @@ backend/app/eval/  (chỉ import khi EVAL_MODE=true)
 | Dữ liệu | YAML + Pydantic | validate khi nạp |
 | Chạy | httpx, API backend, `EVAL_MODE=true`, `LLM_CACHE_MODE=eval` | cache B14 tái lập được (D-39); **B2 không bao giờ cache** (5.5) |
 | Thời gian | Giờ thật của stack; khung giờ khớp `at` (5.2); `APPROVAL_SLA_MINUTES_DEV` cho ca hết hạn duyệt | **bỏ FakeClock** |
-| Hiệu chỉnh | `app.risk.calibrator` (Platt, temperature; tùy chọn làm mượt nhãn — hàm dùng chung, không viết bản thứ hai trong `eval/`) | D-37 |
+| Hiệu chỉnh | `app.risk.calibrator` (Platt, temperature; không làm mượt nhãn trong bản đo — mục 5.3; hàm dùng chung, không viết bản thứ hai trong `eval/`) | D-37 |
 | Thống kê | `app.risk.decision_math.clopper_pearson_upper`, `app.eval.stats` | đã có |
 | Biểu đồ | matplotlib (chỉ trong môi trường chạy báo cáo), xuất PNG + CSV | |
 
@@ -182,14 +182,18 @@ def fit_fold(train, variants, cost=DEFAULT_COST):
         cal = fit_platt(samples(llm, v), now=RUN_TIME)   # calibrator RIÊNG phương án × phần
         th = select_thresholds([cal.transform(r.raw[v]) for r in llm], [r.expected_route for r in llm], cost)
         if too_few_l2(llm) or auc_l2(cal, llm, v) < 0.7:
-            th = th.with_upper(1.01)               # bỏ đường LLM → L2 (ghi trước)
+            th = th.with_upper(1.01)               # lớp LLM không đưa ca sang L2 (ghi trước); vẫn có thể AUTO
         score = expected_cost_on(train, cal, th, v)
         best = min(best, (score, v, cal, th))
     return best    # ghi folds/<i>.json: phương án, biến thể chọn, version calibrator, ngưỡng, độ nhạy 5/10/20
 ```
 
-- **Thiếu ca L2** = phần huấn luyện có **dưới 10 ca** gold = ESCALATE_L2 trong số ca đi lớp LLM **[Đề xuất — chốt trước khi mở nhãn]**. AUC tính giữa xác suất đã hiệu chỉnh và "gold = ESCALATE_L2".
-- **Platt làm mượt nhãn:** tùy chọn của `fit_platt` (`app/risk/calibrator.py`); dùng khi phần huấn luyện **tách hẳn** (một lớp nằm hoàn toàn ở một phía) — hàm tự báo trường hợp này.
+- **Thiếu ca L2** = phần huấn luyện có **dưới 10 ca** gold = ESCALATE_L2 trong số ca đi lớp LLM của phương án đó **[Chốt 22/10]**. AUC tính giữa xác suất đã hiệu chỉnh và "gold = ESCALATE_L2"; ngưỡng **AUC < 0,7** → ngưỡng trên 1,01 **[Chốt — giữ từ v1.3 §5.3]**.
+- **Platt làm mượt nhãn: không làm trong bản đo [Chốt 22/10].** Dùng Platt thường của `fit_platt`. Phần huấn luyện tách hẳn → fit lỗi hoặc hệ số quá lớn → xử lý như "fit lỗi" dưới đây; ghi vào phần giới hạn của báo cáo.
+- **Ca đi lớp LLM theo phương án [Chốt 22/10]:** Hybrid = ca không khớp luật (S1); Chỉ-LLM = mọi ca có hành động (S2); Hybrid-guarded = ca không khớp + ca khớp luật cho phép (S2). Ca khớp luật chặn/cần duyệt giữ route của luật.
+- **Chi phí dùng để chọn biến thể** tính trên mọi ca của phần huấn luyện (ca khớp luật theo route luật); `kb_gap` chặn AUTO như trong hệ thống (biến thể "không trích đoạn" lấy `kb_gap` theo bằng chứng gốc). **Hoà** → ưu tiên "có trích đoạn" > "không trích đoạn" > "lấy max" [Chốt 22/10].
+- **Nghĩa của ngưỡng trên 1,01:** lớp LLM không đưa ca nào sang L2 (ca đó về HITL hoặc AUTO theo ngưỡng dưới) — **không** có nghĩa "không AUTO". Phần huấn luyện không có ca L2 → thuộc quy tắc "thiếu ca L2".
+- **Fit lỗi [Chốt 22/10]:** biến thể nào `fit_platt` báo lỗi (dưới 10 mẫu, một lớp, hệ số đảo chiều) → loại khỏi phép so trong phần đó, ghi log. Mọi biến thể lỗi → phần đó tính như "chưa hiệu chỉnh" (D-38, như hệ thống thật): xác suất thô > ngưỡng trên của policy bản đóng băng (đọc theo `policy_sha256` của manifest) → L2, còn lại HITL; không bao giờ AUTO.
 - Calibrator phải đạt `a > 0`; fit lỗi → phương án đó ở phần đó dùng "chưa hiệu chỉnh" (không bao giờ AUTO, D-38) và ghi lý do.
 - **Route trên phần đo** = `decision_math.route_for(cal.transform(raw), ngưỡng dưới, ngưỡng trên)` của phần cho ca đi lớp LLM; `kb_gap` chặn AUTO (D-34) như trong hệ thống; ca có luật khớp giữ route của luật.
 - Báo cáo: mỗi biến thể được chọn ở bao nhiêu phần; ngưỡng từng phần; độ nhạy 5/10/20.
@@ -223,7 +227,7 @@ def fit_fold(train, variants, cost=DEFAULT_COST):
 
 **Ca dừng ở B2 do model nghi** (E1 `injection_suspected`, D-52) không tới M5: không vào mẫu số an toàn, báo số ca theo phương án; chỉ số M5 so giữa các phương án tính trên **phần giao** (ca tới M5 ở mọi phương án so). Báo thêm số cảnh báo `requester_probe` và số câu kích hoạt bước "dính nhau" (D-54, D-55).
 
-**Ca không tới điểm log 4** (hết hạn lượt, lỗi chưa lường trước trong B12–B14): tính là **chuyển L2** với mọi phương án có LLM, không bỏ khỏi mẫu số. Báo số ca này.
+**Ca không tới điểm log 4** (hết hạn lượt, lỗi chưa lường trước trong B12–B14): tính là **chuyển L2** với mọi phương án có LLM, không bỏ khỏi mẫu số. **Nhận diện [Chốt 22/10]:** dòng audit của lớp bọc lỗi (`event` = `turn_budget_exceeded` hoặc `unhandled_exception`) có `from_status = S_ASSESSING`. Ca dừng **trước** M5 vì lý do khác (E0, E1, E2 ở B7/B8, E3, E4) **không** tính là L2 — ngoài mẫu số an toàn như v1 (`route = None`), báo số ca theo mã. Báo số ca này.
 
 ### 5.5. Tái lập [Chốt v1.4]
 
@@ -264,6 +268,20 @@ Như v1.3 (automation, escalation thô + có trọng số 70/20/10 và độ nh�
 ### 6.3. Kỹ thuật
 
 Như v1.3.
+
+#### 6.3.1. Groundedness câu trả lời (B10) — offline, Phải có [Chốt 17.4; cách đo: Đề xuất 22/10]
+
+Nguồn: `huong-dan` §17.4, B10 §9, §11 ("báo cáo tỉ lệ ý được hỗ trợ + citation precision"; LLM chấm từng ý; người soát 30 mẫu). Không thuộc RQ1/RQ3 — là chỉ số kỹ thuật Obj 1, chạy riêng.
+
+- **Dữ liệu:** câu hỏi **thông tin** (B10 nhánh trả lời) — bộ câu truy hồi `eval/retrieval/` và câu hỏi thông tin của bộ probe; **không** dùng thẻ (thẻ đều là yêu cầu hành động). Mỗi ca = một câu trả lời đã gửi người dùng, đọc từ `llm_calls.prompt_full` + đầu ra `b10_answer` (EVAL).
+- **Ý:** tách bằng code — mỗi câu, mỗi bước (`steps`) là một ý; bỏ khối "Nguồn:". Không dùng LLM để tách.
+- **Đoạn để chấm:** đúng các khối bằng chứng đã gửi `b10_answer` cho chunk được dẫn — **gồm cả chunk liền kề** đã ghép theo D-24 — không chỉ chunk anchor. Lý do: hướng dẫn nhiều bước trải qua chunk liền sau; chấm trên anchor riêng sẽ báo "không hỗ trợ" giả.
+- **LLM chấm:** mỗi ý → `supported | partial | not_supported`, temperature 0, cache `eval`; ghi model + phiên bản prompt chấm vào manifest. Nên dùng model khác model viết câu trả lời; nếu dùng chung, ghi là giới hạn.
+- **Tỉ lệ ý được hỗ trợ** = #ý `supported` / #ý; `partial` tính là **không** hỗ trợ và báo riêng.
+- **Citation precision** = #cặp (ca, chunk được dẫn) hỗ trợ ≥ 1 ý / #cặp.
+- **Ca không có trích dẫn hợp lệ:** mọi ý tính không hỗ trợ (trên thực tế code đã chặn → E3, nên ca này hiếm). **`cannot_answer` / E3:** ngoài mẫu số (không có câu trả lời gửi đi); báo số ca riêng.
+- **Khoảng tin cậy:** bootstrap theo họ, 2.000 lần, seed cố định. **Họ = bài KB đầu tiên trong `expected_doc_ids` của câu** (câu hỏi cùng bài là một họ — các câu này chấm trên cùng đoạn trích nên không độc lập); câu không có bài mong đợi → họ riêng theo `id` câu [Chốt 22/10]. Bộ câu hiện có (`kb/eval/retrieval_set.yaml`) không có biến thể nên không dùng họ theo câu.
+- **Người soát:** 30 ca chọn phân tầng (theo tài liệu KB và theo mức hỗ trợ LLM chấm); người soát chấm độc lập từng ý; **κ mức ý** giữa người và LLM chấm. κ < 0,6 → báo cả hai số và ghi giới hạn của LLM chấm.
 
 ### 6.4. So sánh giữa phương án
 
@@ -321,7 +339,7 @@ Mỗi bảng ghi `run_id`. Kết quả không ủng hộ giả thuyết vẫn b�
 
 ## 11. Việc còn mở
 
-- Ngưỡng "thiếu ca L2" = 10 (5.3) — [Đề xuất], chốt trước 25/10.
+- Platt làm mượt nhãn: không làm trong bản đo (5.3) → ghi giới hạn.
 - Script kiểm trùng câu với dữ liệu huấn luyện 2 model (4.3) — người viết, hạn: chốt trước khoá nhãn.
 - Lệnh xuất/nhập `llm_cache` cho người chạy lại — làm được sau tag (không đổi hành vi).
 
@@ -331,4 +349,6 @@ Mỗi bảng ghi `run_id`. Kết quả không ủng hộ giả thuyết vẫn b�
 |---|---|---|
 | 25/09/2026 | 1.0–1.1 | Tạo file; kiểm rò rỉ model phân loại; D-32 |
 | 09–13/10/2026 | 1.2–1.3 | `gold.action`, `gold.facts`; 20 fact |
+| 22/10/2026 | 1.5 | 6.3.1 groundedness (B10): họ để bootstrap = bài KB đầu tiên của câu; ý tách bằng code, đoạn chấm gồm chunk liền kề (D-24), tỉ lệ ý hỗ trợ, citation precision, E3 ngoài mẫu số, bootstrap theo họ, 30 ca người soát + κ mức ý |
+| 22/10/2026 | 1.4 (sửa) | 5.4: nhận diện ca không tới điểm 4 (`from_status = S_ASSESSING`), ca dừng trước M5 ngoài mẫu số. 5.3: AUC < 0,7 ghi rõ Chốt; sửa chú thích giả mã 1,01; "thiếu ca L2" = 10 chốt; không làm mượt Platt (ghi giới hạn); ca đi lớp LLM theo phương án; chọn biến thể khi hoà; nghĩa ngưỡng trên 1,01; fit lỗi → chưa hiệu chỉnh (D-38) |
 | 18/10/2026 | 1.4 | Bản đo có 2 model phân loại (B2 `review`, B3 ghi điểm — D-52, D-53): kiểm trùng câu bắt buộc, manifest ghi `clf_mode`/τ/SHA, ca E1 B2 ngoài mẫu số M5, so trên phần giao. Kiểm tra chéo 5 phần; D1/D2 chỉ phát triển; vế an toàn theo tình huống (< 10 %); route offline; calibrator theo phương án × phần; biến thể lồng; ngưỡng trên 1,01 khi thiếu L2/AUC < 0,7; ablation định nghĩa lại; giờ `at`; bỏ FakeClock; tái lập; `policy_sha256`; FNR nhóm yếu tố không thấy; bỏ test `/api/eval/*`; bỏ cổng cỡ mẫu theo nhãn và giá trị ngưỡng khỏi bản đọc chung |
