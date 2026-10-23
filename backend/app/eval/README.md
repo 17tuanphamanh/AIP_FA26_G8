@@ -21,6 +21,26 @@ EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/check_split.py
 Log chỉ có số đếm và vị trí `file #i/N`, `họ #i/M`; không có tên file, tên họ hay sha. Kịch bản được sửa sau khoá (vd sửa lỗi nhãn)
 thì phải sinh lại SPLIT.md, nếu không CI đỏ.
 
+## κ đồng thuận người gán nhãn (G9)
+
+Hàm thuần nằm trong `stats.py`: `cohen_kappa`, `weighted_kappa_linear`, `pabak`, `agreement`. Công thức ghi ở docstring module, tính
+bằng phân số; κ ≥ 0,6 là ĐẠT. CLI so 2 file xlsx của CÙNG một đợt:
+
+```
+EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/kappa.py A.xlsx B.xlsx --sheet "Đợt 2" \
+  [--bo S1,TH2 | --chi S1,TH2] [--json <ngoài repo>] [--lech <ngoài repo>]
+```
+
+- **"Gộp" không cộng đợt 1 với đợt 2.** Gộp nghĩa là chạy trên sheet đợt 2 đủ 66 dòng (17 tình huống đợt 1 đã được gán lại trong
+  đợt 2). Không có cờ cộng đợt.
+- Cột được tìm theo tiêu đề ở dòng 1: `id` và `Nhãn`. Dòng dữ liệu là dòng có id dạng `S…`/`TH…`. Dòng cam kết sau dòng dữ liệu cuối
+  bị bỏ qua; dòng id sai dạng nằm giữa các dòng dữ liệu là lỗi.
+- Hai file được ghép theo id. Thiếu, thừa hoặc trùng id, nhãn ngoài AUTO/HITL/ESCALATE_L2, id trong `--bo`/`--chi` không có trong
+  file: đều dừng mã 2.
+- stdout có 3 dòng chỉ số, không id, không nhãn. `--json` ghi đủ chữ số kèm phân số. `--lech` ghi id và 2 nhãn của các ca lệch. Cả
+  hai phải nằm ngoài repo và chưa tồn tại.
+- **Bộ đọc xlsx chưa có** (chờ chốt openpyxl hay stdlib — G9-Q1): `load_cells` hiện dừng với `LỖI: chưa có bộ đọc xlsx`, mã 2.
+
 ## Harness G2 — chạy kịch bản trên stack (RQ1)
 
 | File | Việc |

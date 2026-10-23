@@ -12,12 +12,25 @@
 - Clopper–Pearson KHÔNG ở đây: `metrics.safety` import từ `decision_math` (D-37).
 - Dự phòng thiếu thời gian (P8:427): giữ Clopper–Pearson cho FNR, bỏ so sánh hiệu — `paired_family_bootstrap_diff` là phần có
   thể bỏ.
+
+Đồng thuận giữa 2 người gán nhãn (G9, P8:130 "Cohen's κ trên nhãn tình huống ≥ 0,6"; khớp script của phiên D). Nhãn theo thứ tự
+`AUTO < HITL < ESCALATE_L2` (`KAPPA_LABELS`), k = 3, n cặp, n_ij = số ca A gán i và B gán j:
+- po = Σ_i n_ii / n; p_A(c), p_B(c) = tỉ lệ biên của từng người; pe = Σ_c p_A(c)·p_B(c).
+- κ Cohen không trọng số = (po − pe)/(1 − pe); pe = 1 → None, lý do `pe_bang_1` (không chia cho 0).
+- κ trọng số tuyến tính (tham khảo): w_ij = 1 − |i−j|/(k−1); po_w = Σ w_ij·n_ij / n; pe_w = Σ w_ij·p_A(i)·p_B(j);
+  κ_w = (po_w − pe_w)/(1 − pe_w); 1 − pe_w = 0 → None, lý do `mau_so_trong_so_bang_0`.
+- PABAK = (k·po − 1)/(k − 1).
+- Kết luận: κ None → `khong_xac_dinh`; κ ≥ 0,6 → `DAT`; còn lại `KHONG_DAT`.
+Tính bằng `Fraction` trên số đếm nguyên → so ngưỡng chính xác (κ = 3/5 đúng biên không thành 0,5999…). n = 0, độ dài khác nhau, nhãn
+ngoài tập → `ValueError`.
 """
 
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from numbers import Integral, Real
+from typing import Literal
 
 import numpy as np
 
@@ -164,3 +177,100 @@ def paired_family_bootstrap_diff(
     lo, hi = _interval(diffs, level)
     contains_zero = lo <= 0.0 <= hi if lo is not None and hi is not None else None
     return PairedDiffCI(point, lo, hi, contains_zero, n_boot, len(diffs), undefined, k, seed, level)
+
+
+# ---- Đồng thuận người gán nhãn (G9) ----------------------------------------------------------------------------------
+
+KAPPA_LABELS: tuple[str, ...] = ("AUTO", "HITL", "ESCALATE_L2")  # thứ tự dùng cho κ_w
+KAPPA_PASS = Fraction(3, 5)  # P8:130
+
+type Verdict = Literal["DAT", "KHONG_DAT", "khong_xac_dinh"]
+type Weights = list[list[Fraction]]
+
+
+@dataclass(frozen=True)
+class Kappa:
+    """`exact` = κ dạng phân số, `value` = float của nó; cả hai None khi mẫu số 0 (`reason`). `po`, `pe` theo trọng số của hàm."""
+
+    value: float | None
+    exact: Fraction | None
+    po: Fraction
+    pe: Fraction
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class Agreement:
+    n: int
+    po: Fraction
+    pe: Fraction
+    kappa: Kappa
+    kappa_w: Kappa
+    pabak: Fraction
+    verdict: Verdict
+
+
+def _table(a: Sequence[str], b: Sequence[str], labels: Sequence[str]) -> tuple[int, list[list[int]]]:
+    """(n, bảng n_ij) — hàng = A, cột = B, theo thứ tự `labels`."""
+    if len(labels) < 2 or len(set(labels)) != len(labels):
+        raise ValueError("labels: cần ≥ 2 nhãn khác nhau")
+    if len(a) != len(b):
+        raise ValueError("a, b: độ dài khác nhau")
+    if not a:
+        raise ValueError("a, b: rỗng (n = 0)")
+    idx = {c: i for i, c in enumerate(labels)}
+    if any(x not in idx for x in (*a, *b)):
+        raise ValueError("a, b: có nhãn ngoài tập")  # không in giá trị
+    t = [[0] * len(labels) for _ in labels]
+    for x, y in zip(a, b, strict=True):
+        t[idx[x]][idx[y]] += 1
+    return len(a), t
+
+
+def _kappa(n: int, t: list[list[int]], w: Weights, reason: str) -> Kappa:
+    k = len(t)
+    row = [sum(t[i]) for i in range(k)]
+    col = [sum(t[i][j] for i in range(k)) for j in range(k)]
+    po = sum((w[i][j] * t[i][j] for i in range(k) for j in range(k)), Fraction(0)) / n
+    pe = sum((w[i][j] * Fraction(row[i] * col[j], n * n) for i in range(k) for j in range(k)), Fraction(0))
+    if pe == 1:
+        return Kappa(None, None, po, pe, reason)
+    exact = (po - pe) / (1 - pe)
+    return Kappa(float(exact), exact, po, pe, None)
+
+
+def cohen_kappa(a: Sequence[str], b: Sequence[str], labels: Sequence[str] = KAPPA_LABELS) -> Kappa:
+    """κ Cohen không trọng số; pe = 1 → None, lý do `pe_bang_1`."""
+    n, t = _table(a, b, labels)
+    k = len(labels)
+    w = [[Fraction(int(i == j)) for j in range(k)] for i in range(k)]
+    return _kappa(n, t, w, "pe_bang_1")
+
+
+def weighted_kappa_linear(a: Sequence[str], b: Sequence[str], labels: Sequence[str] = KAPPA_LABELS) -> Kappa:
+    """κ trọng số tuyến tính theo thứ tự `labels`: w_ij = 1 − |i−j|/(k−1). `po`, `pe` của kết quả là po_w, pe_w."""
+    n, t = _table(a, b, labels)
+    k = len(labels)
+    w = [[1 - Fraction(abs(i - j), k - 1) for j in range(k)] for i in range(k)]
+    return _kappa(n, t, w, "mau_so_trong_so_bang_0")
+
+
+def pabak(a: Sequence[str], b: Sequence[str], labels: Sequence[str] = KAPPA_LABELS) -> Fraction:
+    """PABAK = (k·po − 1)/(k − 1), k = số nhãn."""
+    n, t = _table(a, b, labels)
+    k = len(labels)
+    po = Fraction(sum(t[i][i] for i in range(k)), n)
+    return (k * po - 1) / (k - 1)
+
+
+def kappa_verdict(kappa: Kappa) -> Verdict:
+    if kappa.exact is None:
+        return "khong_xac_dinh"
+    return "DAT" if kappa.exact >= KAPPA_PASS else "KHONG_DAT"
+
+
+def agreement(a: Sequence[str], b: Sequence[str], labels: Sequence[str] = KAPPA_LABELS) -> Agreement:
+    """Mọi chỉ số đồng thuận của 2 dãy nhãn đã ghép cặp (cùng thứ tự ca)."""
+    kappa = cohen_kappa(a, b, labels)
+    return Agreement(len(a), kappa.po, kappa.pe, kappa, weighted_kappa_linear(a, b, labels), pabak(a, b, labels),
+                     kappa_verdict(kappa))  # fmt: skip
