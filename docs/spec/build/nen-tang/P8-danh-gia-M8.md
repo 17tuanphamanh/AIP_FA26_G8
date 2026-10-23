@@ -194,7 +194,7 @@ def fit_fold(train, variants, cost=DEFAULT_COST):
 - **Chi phí dùng để chọn biến thể** tính trên mọi ca của phần huấn luyện (ca khớp luật theo route luật); `kb_gap` chặn AUTO như trong hệ thống (biến thể "không trích đoạn" lấy `kb_gap` theo bằng chứng gốc). **Hoà** → ưu tiên "có trích đoạn" > "không trích đoạn" > "lấy max" [Chốt 22/10].
 - **Nghĩa của ngưỡng trên 1,01:** lớp LLM không đưa ca nào sang L2 (ca đó về HITL hoặc AUTO theo ngưỡng dưới) — **không** có nghĩa "không AUTO". Phần huấn luyện không có ca L2 → thuộc quy tắc "thiếu ca L2".
 - **Fit lỗi [Chốt 22/10]:** biến thể nào `fit_platt` báo lỗi (dưới 10 mẫu, một lớp, hệ số đảo chiều) → loại khỏi phép so trong phần đó, ghi log. Mọi biến thể lỗi → phần đó tính như "chưa hiệu chỉnh" (D-38, như hệ thống thật): xác suất thô > ngưỡng trên của policy bản đóng băng (đọc theo `policy_sha256` của manifest) → L2, còn lại HITL; không bao giờ AUTO.
-- Calibrator phải đạt `a > 0`; fit lỗi → phương án đó ở phần đó dùng "chưa hiệu chỉnh" (không bao giờ AUTO, D-38) và ghi lý do.
+- Calibrator phải đạt `a > 0` (hệ số ≤ 0 là một dạng "fit lỗi" ở trên).
 - **Route trên phần đo** = `decision_math.route_for(cal.transform(raw), ngưỡng dưới, ngưỡng trên)` của phần cho ca đi lớp LLM; `kb_gap` chặn AUTO (D-34) như trong hệ thống; ca có luật khớp giữ route của luật.
 - Báo cáo: mỗi biến thể được chọn ở bao nhiêu phần; ngưỡng từng phần; độ nhạy 5/10/20.
 
@@ -208,7 +208,7 @@ def fit_fold(train, variants, cost=DEFAULT_COST):
 |---|---|---|
 | S1 | `STRATEGY=hybrid`, bật chẩn đoán | Route của luật + xác suất thô của ca không khớp luật (biến thể "có trích đoạn") + điểm log 8 |
 | S2 | `STRATEGY=llm_only`, bật chẩn đoán | Xác suất thô cho **mọi** ca có hành động (cả ca khớp luật) |
-| S3 | `STRATEGY=hybrid`, **tắt** chẩn đoán | RQ3 + ablation bỏ tool |
+| S3 | `STRATEGY=hybrid`, **tắt** chẩn đoán | RQ3 + ablation bỏ tool. Route của ca đi lớp LLM ở S3 cũng tính offline theo 5.3 (calibrator fit trên phần huấn luyện của chính S3) → phương án `hybrid_no_diag` [Chốt 22/10], để so với Hybrid trên cùng chỉ số |
 
 **Biến thể xác suất (offline, script):** "có trích đoạn" (S1/S2), "không trích đoạn" (`estimate(action, ctx, [])`, `kb_gap` lấy theo bằng chứng **gốc** của ca để biến thể này không bị chặn AUTO giả), "lấy max" của hai biến thể. Đầu vào B14 dựng lại từ `llm_calls.prompt_full` (có khi EVAL).
 
@@ -227,7 +227,7 @@ def fit_fold(train, variants, cost=DEFAULT_COST):
 
 **Ca dừng ở B2 do model nghi** (E1 `injection_suspected`, D-52) không tới M5: không vào mẫu số an toàn, báo số ca theo phương án; chỉ số M5 so giữa các phương án tính trên **phần giao** (ca tới M5 ở mọi phương án so). Báo thêm số cảnh báo `requester_probe` và số câu kích hoạt bước "dính nhau" (D-54, D-55).
 
-**Ca không tới điểm log 4** (hết hạn lượt, lỗi chưa lường trước trong B12–B14): tính là **chuyển L2** với mọi phương án có LLM, không bỏ khỏi mẫu số. **Nhận diện [Chốt 22/10]:** dòng audit của lớp bọc lỗi (`event` = `turn_budget_exceeded` hoặc `unhandled_exception`) có `from_status = S_ASSESSING`. Ca dừng **trước** M5 vì lý do khác (E0, E1, E2 ở B7/B8, E3, E4) **không** tính là L2 — ngoài mẫu số an toàn như v1 (`route = None`), báo số ca theo mã. Báo số ca này.
+**Ca không tới điểm log 4** (hết hạn lượt, lỗi chưa lường trước trong B12–B14): tính là **chuyển L2** với **mọi** phương án, kể cả Chỉ-luật (một quy tắc chung cho bước tính route offline và bước lập bảng, để mẫu số các phương án như nhau), không bỏ khỏi mẫu số. **Nhận diện [Chốt 22/10]:** dòng audit của lớp bọc lỗi (`event` = `turn_budget_exceeded` hoặc `unhandled_exception`) có `from_status = S_ASSESSING`. Ca dừng **trước** M5 vì lý do khác (E0, E1, E2 ở B7/B8, E3, E4) **không** tính là L2 — ngoài mẫu số an toàn như v1 (`route = None`), báo số ca theo mã. Lá đã nhãn, `route = None` mà không xác định được có bị ngắt ở M5 hay không → **dừng**, không đoán.
 
 ### 5.5. Tái lập [Chốt v1.4]
 
@@ -238,7 +238,7 @@ def fit_fold(train, variants, cost=DEFAULT_COST):
 
 ### 5.6. Hợp đồng `predictions.jsonl` v1.1
 
-Giữ v1 (`app/eval/predictions.py`), thêm: `fold` (1..5), `kb_gap`, `hidden_factor`, `run_started_at`, `in_business_hours`. Xác suất của các biến thể offline ghi file riêng `probs.jsonl` (`scenario_id`, `variant`, `raw_prob`), không sửa bản ghi stack.
+Giữ v1 (`app/eval/predictions.py`), thêm: `fold` (1..5), `kb_gap`, `hidden_factor`, `run_started_at`, `in_business_hours`, `m5_aborted`. **Nguồn [Chốt 22/10]:** `kb_gap` = khoá `kb_gap` trong `detail` của dòng điểm log 4 (giá trị M5 đã dùng khi quyết định, tính trên bằng chứng thật gửi tới B14), chỉ ca đi lớp LLM — **không** lấy cờ `kb_gap` ở audit B10 (nghĩa khác: điểm truy hồi dưới ngưỡng); Chỉ-LLM và Hybrid-guarded lấy từ dòng S2 của chính ca; thiếu ở ca đi lớp LLM → dừng. `m5_aborted` = có dòng audit của lớp bọc lỗi với `from_status = S_ASSESSING` (5.4); ticket không có dòng audit nào → null. Xác suất của các biến thể offline ghi file riêng `probs.jsonl` (`scenario_id`, `variant`, `raw_prob`), không sửa bản ghi stack.
 
 ## 6. Công thức chỉ số
 
@@ -349,6 +349,7 @@ Mỗi bảng ghi `run_id`. Kết quả không ủng hộ giả thuyết vẫn b�
 |---|---|---|
 | 25/09/2026 | 1.0–1.1 | Tạo file; kiểm rò rỉ model phân loại; D-32 |
 | 09–13/10/2026 | 1.2–1.3 | `gold.action`, `gold.facts`; 20 fact |
+| 23/10/2026 | 1.5 (bổ sung) | 5.4: S3 có route offline (`hybrid_no_diag`); ca M5 bị ngắt → L2 cho mọi phương án kể cả Chỉ-luật, chưa xác định → dừng. 5.6: thêm `m5_aborted`; nguồn `kb_gap` = điểm log 4. 5.3: bỏ câu thừa "fit lỗi → cả phương án chưa hiệu chỉnh" (mâu thuẫn quy tắc loại từng biến thể) |
 | 22/10/2026 | 1.5 | 6.3.1 groundedness (B10): họ để bootstrap = bài KB đầu tiên của câu; ý tách bằng code, đoạn chấm gồm chunk liền kề (D-24), tỉ lệ ý hỗ trợ, citation precision, E3 ngoài mẫu số, bootstrap theo họ, 30 ca người soát + κ mức ý |
 | 22/10/2026 | 1.4 (sửa) | 5.4: nhận diện ca không tới điểm 4 (`from_status = S_ASSESSING`), ca dừng trước M5 ngoài mẫu số. 5.3: AUC < 0,7 ghi rõ Chốt; sửa chú thích giả mã 1,01; "thiếu ca L2" = 10 chốt; không làm mượt Platt (ghi giới hạn); ca đi lớp LLM theo phương án; chọn biến thể khi hoà; nghĩa ngưỡng trên 1,01; fit lỗi → chưa hiệu chỉnh (D-38) |
 | 18/10/2026 | 1.4 | Bản đo có 2 model phân loại (B2 `review`, B3 ghi điểm — D-52, D-53): kiểm trùng câu bắt buộc, manifest ghi `clf_mode`/τ/SHA, ca E1 B2 ngoài mẫu số M5, so trên phần giao. Kiểm tra chéo 5 phần; D1/D2 chỉ phát triển; vế an toàn theo tình huống (< 10 %); route offline; calibrator theo phương án × phần; biến thể lồng; ngưỡng trên 1,01 khi thiếu L2/AUC < 0,7; ablation định nghĩa lại; giờ `at`; bỏ FakeClock; tái lập; `policy_sha256`; FNR nhóm yếu tố không thấy; bỏ test `/api/eval/*`; bỏ cổng cỡ mẫu theo nhãn và giá trị ngưỡng khỏi bản đọc chung |
