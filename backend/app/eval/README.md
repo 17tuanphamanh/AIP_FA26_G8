@@ -33,7 +33,9 @@ chỉ đọc `detail->>'route'` và `detail->>'strategy'` (dòng `B13/B14`), cù
 
 **Đã kiểm ở đâu:**
 - Unit test: `backend/tests/unit/eval/test_harness_*.py`, chạy trên stack giả.
-- Đột biến: `scripts/mutation/mutate_g2.py` (37 đột biến) và `scripts/mutation/mutate_v11.py` (hợp đồng v1.1, 11 đột biến).
+- Đột biến: `scripts/mutation/mutate_g2.py` (51 đột biến) và `scripts/mutation/mutate_v11.py` (hợp đồng v1.1, 11 đột biến).
+- Chỉ số G1 (`metrics.py`: `operating_metrics`, `manual_baseline`, `breakeven`): unit `backend/tests/unit/eval/test_metrics_*.py`,
+  đột biến `scripts/mutation/mutate_g1.py` (30 đột biến).
 - Smoke trên stack thật (gói luật giả): `backend/tests/stack/eval_smoke.py` gồm hai ca tới điểm log 4, một ca chờ duyệt rồi được
   SimApprover duyệt, và một lượt phụ hết giờ.
 - Việc đọc `detail.turn` ở B11 (`clarification_turns`) chỉ được kiểm bằng unit test và đột biến M-G2-4/5/13. Trên stack gói luật giả
@@ -51,9 +53,14 @@ chỉ đọc `detail->>'route'` và `detail->>'strategy'` (dòng `B13/B14`), cù
 - `APPROVAL_SLA_MINUTES_DEV=2` (G2-Q6, Tuấn Anh 19/10): ca `ignore` hết hạn duyệt sau 2 phút và ra E6, trước khi chạm `--timeout-s`.
   Container không đặt biến này, hoặc để rỗng, thì harness dừng mã 2 trước khi tạo ticket nào. Giá trị được ghi vào `manifest.json`
   mục `approval_sla_minutes_dev`.
+- Chạy nhiều lượt liên tiếp (vd tái lập G3): nghỉ ≥ 3 phút giữa hai lượt, vì ca `approver_decision: null` để lại ticket chờ duyệt,
+  worker đóng bằng E6 sau SLA.
+- Đang dùng `LLM_CACHE_MODE=eval` mà sửa preset thì xoá các dòng `llm_cache` của prompt đó (`prompt_id`, `mode = 'eval'` — không hết
+  hạn), nếu không sẽ nhận phản hồi cũ.
 
 **Trước khi giao:** Tuấn Anh chạy `--check-only` trên dữ liệu thật. Lệnh này chỉ nạp kịch bản, không gọi stack, không cần
-`EVAL_PASSWORD`, và chỉ in `scenarios: loaded=<n> errors=<n>` cùng các dòng lỗi dạng `file #i/N: <vị trí trường>`:
+`EVAL_PASSWORD`, và chỉ in `scenarios: loaded=<n> errors=<n>` cùng các dòng lỗi dạng `file #i/N: <vị trí trường>`. Vẫn phải có
+`EVAL_MODE=true` dù không gọi stack: `app/eval/__init__.py` chặn import khi thiếu.
 
 ```
 cd ~/code/AIP_FA26_G8
