@@ -1,9 +1,10 @@
-// Route ticket của nhân viên (KH 1.1; backend/app/api/tickets.py). Đều là route THẬT — F2 không dùng MSW. Ngoại lệ F6:
-// `/reply` (CHƯA CÓ, T20); MSW chỉ chặn GET + reply của id ticket nhiều ý minh hoạ (mocks/handlers/employee-multi.ts).
+// Route ticket của nhân viên (KH 1.1; backend/app/api/tickets.py). Đều là route THẬT, kể cả nhiều ý (T20b 5df24c7:
+// `children_progress` trên GET cha, tin `digest`, `POST …/reply`). MSW chỉ chặn GET + reply của id minh hoạ
+// `tkt-demo-multi-` (ca lỗi khó tạo trên stack — mocks/handlers/employee-multi.ts); id khác luôn đi backend.
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
-import type { Accepted, ConfirmIn, ParentReplyIn, TicketView } from "./types.ts";
+import type { Accepted, ChildProgress, ConfirmIn, ParentReplyIn, TicketView } from "./types.ts";
 
 /** Khớp `TEXT_MAX`, `NOTE_MAX` ở backend/app/api/tickets.py — chặn sớm ở ô nhập, backend vẫn kiểm (422). */
 export const TEXT_MAX = 4000;
@@ -15,8 +16,87 @@ export async function createTicket(text: string): Promise<Accepted> {
   return (await api.request<Accepted>("/api/tickets", { method: "POST", json: { text } })).data;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const isIndex = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+/** Hậu tố id con: 1–2 chữ số (`_CHILD_INDEX` của backend/app/api/tickets.py) — ≥ 100 thì `/reply` chắc chắn 422 chung. */
+const isChildIndex = (value: unknown): value is number => isIndex(value) && value <= 99;
+const BAD_BODY = "invalid_ticket_body";
+const badBody = () => new ApiError(502, BAD_BODY);
+
+/** `child_id` phải ĐÚNG "<ticket_id>-<index>" (backend `child_id`/`child_index`) — khoá `/reply` khác dạng là 422 chung. */
+const childOf = (ticketId: string, value: Record<string, unknown>): string | null =>
+  typeof value.child_id === "string" && isChildIndex(value.index) && value.child_id === `${ticketId}-${value.index}` ? value.child_id : null;
+
+/**
+ * `children_progress` của `GET /api/tickets/{cha}` (T20b P11). Thiếu / null → null (ticket thường, ticket con). Mảng mà
+ * CHỈ MỘT phần tử sai hình dạng (thiếu khoá, sai kiểu, `child_id` ≠ "<cha>-<index>", trùng `child_id`) → 502
+ * `invalid_ticket_body`: không đoán, không vẽ một phần. `progress`/`outcome` là chuỗi bất kỳ — giá trị lạ có nhãn dự phòng
+ * (routes/employee/multi.ts); `title` có thể "".
+ */
+export function parseChildrenProgress(raw: unknown, ticketId: string): ChildProgress[] | null {
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw)) throw badBody();
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!isRecord(entry)) throw badBody();
+    const id = childOf(ticketId, entry);
+    if (
+      id === null ||
+      seen.has(id) ||
+      typeof entry.title !== "string" ||
+      typeof entry.progress !== "string" ||
+      !(entry.outcome === null || typeof entry.outcome === "string")
+    ) {
+      throw badBody();
+    }
+    seen.add(id);
+  }
+  return raw as ChildProgress[];
+}
+
+/**
+ * Một tin `kind:"digest"` (P9): `round` nguyên ≥ 1, `text` chuỗi, `items` mảng (rỗng = vòng cuối chỉ có câu tổng kết);
+ * mỗi khối đủ `child_id` (= "<cha>-<index>"), `title`, `kind`, `text`, `needs` (chuỗi — giá trị lạ chuẩn hoá ở
+ * components/messages.ts). Một con có thể có nhiều khối, nhưng ≥ 2 khối CÙNG con cần trả lời (`needs` answer/confirm) →
+ * không biết gửi gì → lỗi. Sai → 502 `invalid_ticket_body`.
+ */
+export function parseDigest(raw: unknown, ticketId: string): void {
+  if (!isRecord(raw) || !isIndex(raw.round) || typeof raw.text !== "string" || !Array.isArray(raw.items)) throw badBody();
+  const asking = new Set<string>();
+  for (const item of raw.items) {
+    if (!isRecord(item)) throw badBody();
+    const id = childOf(ticketId, item);
+    if (id === null || typeof item.title !== "string" || typeof item.kind !== "string" || typeof item.text !== "string" || typeof item.needs !== "string") {
+      throw badBody();
+    }
+    if (item.needs === "answer" || item.needs === "confirm") {
+      if (asking.has(id)) throw badBody();
+      asking.add(id);
+    }
+  }
+}
+
+/** Thân `TicketView`: `ticket_id` chuỗi và = id đã hỏi (khoá `/reply` dựng từ nó, gửi tới URL của id đã hỏi);
+ *  `children_progress` + MỌI tin digest kiểm chặt (trên), không hai tin digest trùng `round` (chỉ tin round lớn nhất có
+ *  form); tin thường vẫn dễ dãi (12b Q-fe-2, components/messages.ts). */
+export function parseTicketView(body: unknown, requestedId: string): TicketView {
+  if (!isRecord(body) || body.ticket_id !== requestedId) throw badBody();
+  parseChildrenProgress(body.children_progress, requestedId);
+  if (Array.isArray(body.conversation)) {
+    const rounds = new Set<unknown>();
+    for (const m of body.conversation) {
+      if (!isRecord(m) || m.role === "user" || m.kind !== "digest") continue;
+      parseDigest(m, requestedId);
+      if (rounds.has(m.round)) throw badBody();
+      rounds.add(m.round);
+    }
+  }
+  return body as TicketView;
+}
+
 export async function getTicket(id: string): Promise<TicketView> {
-  return (await api.request<TicketView>(ticketPath(id))).data;
+  return parseTicketView((await api.request<unknown>(ticketPath(id))).data, id);
 }
 
 /** Đọc một lần, không polling — cho màn chỉ đọc của IT (L1/L2 có ticket:read:any): chi tiết escalate, ghi đè. */
@@ -33,8 +113,8 @@ export async function confirmTicket(id: string, body: ConfirmIn): Promise<Accept
   return (await api.request<Accepted>(`${ticketPath(id)}/confirm`, { method: "POST", json: body })).data;
 }
 
-/** Chỉ khi `waiting_for = reply` (ticket cha nhiều ý, D-31). Route CHƯA CÓ — Phase 5 T20; hiện chỉ MSW với id ticket
- *  nhiều ý minh hoạ (hình dạng đề xuất: PLAN-fe mục 8). Body dựng ở routes/employee/multi.ts `digestReplyBody`. */
+/** Chỉ khi `waiting_for = reply` (ticket cha nhiều ý, D-31 — route thật T20b). Body dựng ở routes/employee/multi.ts
+ *  `digestReplyBody`. */
 export async function replyTicket(id: string, body: ParentReplyIn): Promise<Accepted> {
   return (await api.request<Accepted>(`${ticketPath(id)}/reply`, { method: "POST", json: body })).data;
 }
