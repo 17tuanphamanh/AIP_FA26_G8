@@ -19,7 +19,7 @@ tên — không phụ thuộc đường dẫn tuyệt đối hay thứ tự tạ
 
 import copy
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args
@@ -266,14 +266,32 @@ def _parse(raw: bytes, allow_extra: bool) -> tuple[list[tuple[int | None, Scenar
     return ok, bad
 
 
+def scenario_files(directory: Path) -> list[Path]:
+    """File kịch bản cấp 1 (`*.yaml`/`*.yml`, không đệ quy), sắp theo tên. Dùng chung với `scripts/eval/check_split.py` (G9)."""
+    return sorted(p for p in directory.iterdir() if p.is_file() and p.suffix in SUFFIXES)
+
+
+def file_sha256(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def dataset_sha256(pairs: Iterable[tuple[str, str]]) -> str:
+    """`Dataset.sha256` từ các cặp (tên file, `file_sha256` nội dung): nối `"<tên>\\0<sha>\\n"` theo tên tăng dần rồi băm. Một công
+    thức cho `load_scenarios` và `check_split.py` (G9)."""
+    h = hashlib.sha256()
+    for name, sha in sorted(pairs):
+        h.update(f"{name}\0{sha}\n".encode())
+    return h.hexdigest()
+
+
 def load_scenarios(directory: Path, *, users: Mapping[str, str], allow_extra: bool = False) -> Dataset:
     """`users` = `load_seed_users(...)` (user_id → username)."""
     if not directory.is_dir():
         raise ValueError("thư mục kịch bản: không phải thư mục")
-    paths = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix in SUFFIXES)
+    paths = scenario_files(directory)
     if not paths:
         raise ValueError("thư mục kịch bản: không có file kịch bản (*.yaml, *.yml)")
-    h = hashlib.sha256()
+    shas: list[tuple[str, str]] = []
     scenarios: list[Scenario] = []
     usernames: dict[str, str] = {}
     ignored: list[str] = []
@@ -281,7 +299,7 @@ def load_scenarios(directory: Path, *, users: Mapping[str, str], allow_extra: bo
     seen: set[str] = set()
     for n, p in enumerate(paths, start=1):
         raw = p.read_bytes()
-        h.update(f"{p.name}\0{hashlib.sha256(raw).hexdigest()}\n".encode())
+        shas.append((p.name, file_sha256(raw)))
         ok, bad = _parse(raw, allow_extra)
         issues += [LoadIssue(n, len(paths), p.name, pos, what) for pos, what in bad]
         for pos, s, dropped in ok:
@@ -297,5 +315,5 @@ def load_scenarios(directory: Path, *, users: Mapping[str, str], allow_extra: bo
             ignored += dropped
     if issues:
         raise DatasetError(issues, loaded=len(scenarios))
-    return Dataset(scenarios=tuple(scenarios), sha256=h.hexdigest(), files=tuple(p.name for p in paths),
+    return Dataset(scenarios=tuple(scenarios), sha256=dataset_sha256(shas), files=tuple(p.name for p in paths),
                    ignored_fields=tuple(ignored), usernames=usernames)  # fmt: skip

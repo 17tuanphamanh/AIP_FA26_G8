@@ -67,6 +67,8 @@ dev = [
     "types-pyyaml>=6.0.12.20260906",  # stub cho mypy
     # Tokenizer bge-m3 thật cho test chunker (marker tokenizer_real, Q-3b-11) — image backend KHÔNG có
     "tokenizers>=0.23.2",
+    "openpyxl>=3.1.5",
+    "types-openpyxl>=3.1.5.20261017",
 ]
 # Model nặng của ml-service (P4) — KHÔNG cài mặc định: `uv sync --group ml`.
 # sentence-transformers (SentenceTransformer + CrossEncoder), không FlagEmbedding (3-Q19).

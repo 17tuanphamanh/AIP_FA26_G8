@@ -36,6 +36,14 @@ jobs:
       - name: Cài phụ thuộc theo uv.lock (nhóm dev, không nhóm ml)
         run: uv sync --locked
 
+      # G9: SPLIT.md do phiên git sinh lúc khoá nhãn; chưa có → chỉ cảnh báo (mã 0). Log chỉ số đếm, không tên file/sha.
+      # EVAL_MODE chỉ ở step này (app.eval chặn import khi thiếu) — không lan sang make test.
+      - name: Kiểm mã băm eval/SPLIT.md (G9)
+        env:
+          EVAL_MODE: "true"
+          PYTHONPATH: backend
+        run: uv run python scripts/eval/check_split.py
+
       - name: Cache tokenizer bge-m3 (không có trọng số)
         uses: actions/cache@v5
         with:

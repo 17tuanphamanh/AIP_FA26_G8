@@ -1,5 +1,47 @@
 M8 — chỉ bật khi EVAL_MODE=true, P8. Xem docs/spec/build/01-kien-truc-project.md mục 3.
 
+## SPLIT.md + CI (G9)
+
+`eval/SPLIT.md` do phiên git sinh lúc khoá nhãn (25/10). File có đúng một khối ```` ```yaml ```` gồm `seed`, `k`, `dataset_sha256`,
+`files` (tên file → sha256), `families` (họ → phần 1..k), `locked`. `scripts/eval/check_split.py` băm lại `eval/scenarios/*.yaml|*.yml`
+(cấp 1) bằng chính hàm của `Dataset.sha256` (`scenario_files`, `file_sha256`, `dataset_sha256` trong `dataset.py`).
+
+CI chạy script này ở job `lint-test`, ngay sau bước cài phụ thuộc:
+
+```
+EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/check_split.py
+```
+
+| Mã | Khi nào |
+|---|---|
+| 0 | Khớp; chưa có SPLIT.md (cảnh báo); `locked: false` mà dữ liệu lệch (cảnh báo) |
+| 1 | `locked: true` mà có file thiếu, thừa, sha lệch hoặc `dataset_sha256` lệch |
+| 2 | SPLIT.md sai cấu trúc, kể cả khi `locked: false`: không đúng 1 khối yaml, khoá trùng (một họ ở 2 phần), khoá lạ/thiếu/sai kiểu, phần ngoài 1..k, phần rỗng, `dataset_sha256` không khớp chính `files` |
+
+Log chỉ có số đếm và vị trí `file #i/N`, `họ #i/M`; không có tên file, tên họ hay sha. Kịch bản được sửa sau khoá (vd sửa lỗi nhãn)
+thì phải sinh lại SPLIT.md, nếu không CI đỏ.
+
+## κ đồng thuận người gán nhãn (G9)
+
+Hàm thuần nằm trong `stats.py`: `cohen_kappa`, `weighted_kappa_linear`, `pabak`, `agreement`. Công thức ghi ở docstring module, tính
+bằng phân số; κ ≥ 0,6 là ĐẠT. CLI so 2 file xlsx của CÙNG một đợt:
+
+```
+EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/kappa.py A.xlsx B.xlsx --sheet "Đợt 2" \
+  [--bo S1,TH2 | --chi S1,TH2] [--json <ngoài repo>] [--lech <ngoài repo>]
+```
+
+- **"Gộp" không cộng đợt 1 với đợt 2.** Gộp nghĩa là chạy trên sheet đợt 2 đủ 66 dòng (17 tình huống đợt 1 đã được gán lại trong
+  đợt 2). Không có cờ cộng đợt.
+- Cột được tìm theo tiêu đề ở dòng 1: `id` và `Nhãn`. Dòng dữ liệu là dòng có id dạng `S…`/`TH…`. Dòng cam kết sau dòng dữ liệu cuối
+  bị bỏ qua; dòng id sai dạng nằm giữa các dòng dữ liệu là lỗi.
+- Hai file được ghép theo id. Thiếu, thừa hoặc trùng id, nhãn ngoài AUTO/HITL/ESCALATE_L2, id trong `--bo`/`--chi` không có trong
+  file: đều dừng mã 2.
+- stdout có 3 dòng chỉ số, không id, không nhãn. `--json` ghi đủ chữ số kèm phân số. `--lech` ghi id và 2 nhãn của các ca lệch. Cả
+  hai phải nằm ngoài repo và chưa tồn tại.
+- File được đọc bằng openpyxl (nhóm dev) với `read_only=True, data_only=True`, như kiem_d6. Sheet được lấy theo tên `--sheet`, không
+  lấy sheet đang mở. Ô công thức đọc theo giá trị cache mà Excel/Sheets lưu kèm file. Không mở được file hoặc không có sheet: mã 2.
+
 ## Harness G2 — chạy kịch bản trên stack (RQ1)
 
 | File | Việc |
