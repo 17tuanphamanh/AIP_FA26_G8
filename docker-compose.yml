@@ -151,7 +151,8 @@ services:
   # Phase 5 (T23a, ML-GAN — D-44): model phân loại của nhóm (P11) ở TEAM_MODELS_DIR (mặc định ./ml_models) mount
   # read-only vào /ml_models.
   # GUARD_MODEL_DIR / INTENT_MODEL_DIR là đường dẫn TRONG container; rỗng = không nạp → /classify, /classify_intent
-  # 503 model_missing như Phase 3. GUARD_MODEL_SHA256 đặt thì model.safetensors lệch → ml-service không khởi động.
+  # 503 model_missing như Phase 3; có đặt → nạp model đó, SHA-256 trọng số + manifest bắt buộc, lệch → ml-service không
+  # khởi động. Gói 2 (D-53): INTENT_MODEL_DIR = bản safetensors (scripts/ml/convert_intent_pt.py), thêm ~1,2 GB RAM.
   ml-service:
     build:
       context: .
@@ -168,12 +169,15 @@ services:
       # ML_CLASSIFY_CONCURRENCY, ML_MODELS_ROOT không truyền: mặc định ở ml_service/app/settings.py (như ML_MAX_CONCURRENCY).
       GUARD_MANIFEST_SHA256: ${GUARD_MANIFEST_SHA256:-}
       INTENT_MODEL_DIR: ${INTENT_MODEL_DIR:-}
+      # Gói 2 (D-53): SHA-256 của model.safetensors và của MANIFEST.sha256 trong INTENT_MODEL_DIR — bắt buộc khi đặt dir.
+      INTENT_MODEL_SHA256: ${INTENT_MODEL_SHA256:-}
+      INTENT_MANIFEST_SHA256: ${INTENT_MANIFEST_SHA256:-}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
       - ${TEAM_MODELS_DIR:-./ml_models}:/ml_models:ro
     healthcheck:
       # 200 chỉ khi đã nạp + warm-up xong; nạp 2 model CPU mất tới vài phút lần đầu. ML-GAN: thêm SHA-256 file 1,1 GB
-      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan).
+      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan). Gói 2 (D-53): intent thêm SHA-256 ~1,1 GB + nạp (ước 10–25 s).
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health').status==200 else 1)"]
       interval: 10s
       timeout: 5s

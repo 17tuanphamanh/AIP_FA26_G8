@@ -77,9 +77,11 @@ def test_a7_classifiers_model_missing(client: TestClient, auth: dict[str, str], 
     assert client.post(path, json={}, headers=auth).status_code == 422  # body kiểm trước 503
 
 
-def test_a7_classifier_dir_present_still_missing(
+def test_a7_intent_missing_when_loader_has_no_intent(
     settings: MlSettings, loader: FakeLoader, auth: dict[str, str]
 ) -> None:
+    """Gói 2 (D-53) — đổi có chủ ý: loader THẬT giờ nạp model khi đặt INTENT_MODEL_DIR (`test_intent*.py`); 503 là do loader
+    không trả model intent (`Models.intent is None`), không còn do route luôn 503."""
     settings.models_dir.mkdir(parents=True)
     present = settings.model_copy(update={"intent_model_dir": settings.models_dir})
     with TestClient(create_app(present, loader=loader)) as c:

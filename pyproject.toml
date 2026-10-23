@@ -100,6 +100,7 @@ pythonpath = ["backend"]
 addopts = "-q --import-mode=importlib"
 markers = [
     "ml_real: cần model/tokenizer thật (make models) — chỉ chạy bằng `make test-ml`, không vào make test/CI",
+    "ml_torch: cần torch (nhóm uv `ml`), model giả nhỏ, không mạng — chạy bằng `make test-ml`; thiếu torch thì bỏ qua (CI)",
     "tokenizer_real: cần tokenizer bge-m3 thật (make tokenizer) — chạy trong make test; thiếu: local skip, CI FAIL",
 ]
 
@@ -121,7 +122,7 @@ ignore_missing_imports = true
 
 # Nhóm uv `ml` không cài trong CI (make lint): ml_service/app/loader.py import muộn các gói này.
 [[tool.mypy.overrides]]
-module = ["torch.*", "sentence_transformers.*", "transformers.*", "huggingface_hub.*"]
+module = ["torch.*", "sentence_transformers.*", "transformers.*", "huggingface_hub.*", "safetensors.*"]
 ignore_missing_imports = true
 
 # scipy, scikit-learn (M5 lớp 2: risk/decision_math.py, risk/calibrator.py) không có type stub / py.typed.
