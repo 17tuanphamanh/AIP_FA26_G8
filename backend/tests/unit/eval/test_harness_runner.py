@@ -39,7 +39,7 @@ SUMMARY = [
     r"elapsed_s=\d+(\.\d+)?",
     r"files: predictions\.jsonl outcomes\.jsonl manifest\.json",
 ]
-V11_NULL = ("fold", "hidden_factor", "in_business_hours", "kb_gap")  # chưa có nguồn — manifest `predictions_unavailable`
+V11_NULL = ("fold", "hidden_factor", "in_business_hours")  # chưa có nguồn — manifest `predictions_unavailable`
 NOT_IN_PER_CASE = ("SENTINEL_TXT", "SENTINEL_FAM", "SENTINEL_DOC", "SENTINEL_TID", "SENTINEL_USER", "SENTINEL_PW",
                    "SENTINEL_FILE", "SENTINEL_FACTOR", "SENTINEL_ERR", "SENTINEL_NEED", "SENTINEL_ACT", "SENTINEL_TGT",
                    "SENTINEL_FOR", "SENTINEL_P", "SENTINEL_FACT", "SENTINEL_DEPT", "SENTINEL_SRC")  # fmt: skip
@@ -428,13 +428,36 @@ def test_run_started_at_per_case(tmp_path: Path) -> None:
 
 
 def test_v11_unavailable_fields_null(tmp_path: Path) -> None:
-    """Lượt stack: `fold`, `kb_gap`, `hidden_factor`, `in_business_hours` = `null` tường minh trong file (không False giả)."""
+    """Lượt stack: `fold`, `hidden_factor`, `in_business_hours` = `null` tường minh trong file (không False giả)."""
     r = Run(tmp_path, scn(1, "direct"), scn(2, "calib"))
     assert r() == 0
     for line in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
         assert row["schema_version"] == "1.1"
         assert {k: row[k] for k in V11_NULL} == dict.fromkeys(V11_NULL)
+
+
+def test_kb_gap_filled_for_llm_cases_from_log4_detail(tmp_path: Path) -> None:
+    """P6 22/10: ca đi lớp LLM lấy `kb_gap` từ dòng log 4 (`detail.kb_gap`), KHÔNG từ B10 grounding (fake cố ý ghi `true` ở B10);
+    ca do luật quyết không có (null)."""
+    r = Run(tmp_path, scn(1, "direct"), scn(2, "calib"))
+    assert r() == 0
+    rows = {json.loads(x)["scenario_id"]: json.loads(x) for x in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines()}
+    by_decider = {row["decided_by"]: row["kb_gap"] for row in rows.values()}
+    assert by_decider == {"rule": None, "llm": False}
+    assert r.manifest()["counts"]["kb_gap_missing"] == 0
+
+
+def test_manifest_counts_kb_gap_intent_and_m5_aborted_missing(tmp_path: Path) -> None:
+    sim = SimStack(FakeClock())
+    sim.with_kb_gap = False  # dòng log 4 của ca LLM không có detail.kb_gap (B10 grounding vẫn có, và KHÔNG được dùng)
+    r = Run(tmp_path, scn(1, "calib"), scn(2, "bare"), sim=sim)
+    assert r() == 0
+    c = r.manifest()["counts"]
+    assert (c["kb_gap_missing"], c["intent_missing"], c["m5_aborted_unknown"]) == (1, 1, 1)
+    rows = [json.loads(x) for x in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines()]
+    bare = next(row for row in rows if row["route"] is None)
+    assert (bare["intent"], bare["m5_aborted"], bare["kb_gap"]) == (None, None, None)
 
 
 def test_manifest_v11(tmp_path: Path) -> None:
@@ -611,7 +634,7 @@ def test_manifest_keys(tmp_path: Path) -> None:
     assert m["git_dirty"] is False
     assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "written": 1, "route_none": 0,
                            "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0,
-                           "approval_no_decision": 0}  # fmt: skip
+                           "approval_no_decision": 0, "kb_gap_missing": 0, "intent_missing": 0, "m5_aborted_unknown": 0}  # fmt: skip
     assert "SENTINEL" not in json.dumps(m)
 
 

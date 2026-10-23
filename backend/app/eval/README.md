@@ -123,12 +123,20 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
   có bản ghi với `expected_route` = `null` (đếm ở `unlabeled`).
   - `run_started_at`: giờ bắt đầu của từng kịch bản (ISO 8601 có offset), cùng giá trị với `outcomes.jsonl`. Giờ bắt đầu cả lượt nằm
     ở `manifest.started_at`.
-  - `fold`, `kb_gap`, `hidden_factor`, `in_business_hours`: luôn `null` ở lượt stack, vì chưa có nguồn hợp lệ. Tên bốn trường này
+  - `fold`, `hidden_factor`, `in_business_hours`: luôn `null` ở lượt stack, vì chưa có nguồn hợp lệ. Tên ba trường này
     được liệt kê ở `manifest.predictions_unavailable`. Lý do từng trường:
     - `fold`: gán phần ở bước offline, từ `SPLIT.md` (V11-Q3).
-    - `kb_gap`: không có cột riêng; muốn có phải đọc một khoá `detail` mới, chưa được duyệt (V11-Q2).
     - `hidden_factor`: dữ liệu kịch bản chưa có khoá này (V11-Q1).
     - `in_business_hours`: chờ G7 (V11-Q5).
+  - `kb_gap` (P6 22/10): chỉ ca đi lớp LLM (`decided_by = llm`); lấy từ audit điểm log 4 (`step = 'B13/B14'`) `detail->>'kb_gap'` — giá trị
+    `b12_assess` truyền vào `decide()`, KHÔNG phải B10 `grounding.kb_gap` (điểm truy hồi dưới `RETRIEVAL_THRESHOLD`, nghĩa khác). Không có dòng log 4 /
+    khoá → `null`, đếm ở `manifest.counts.kb_gap_missing`. Ca do luật quyết luôn `null`.
+  - `intent`: `tickets.intent`; null thì lấy dòng audit B3 (cột `intent`, dòng cuối khác null); vẫn không có → `null`, đếm ở
+    `manifest.counts.intent_missing`.
+  - `m5_aborted` (P6 22/10, P8 §5.4): `true` khi ticket có dòng audit của lớp bọc lỗi (`event` = `turn_budget_exceeded` hoặc `unhandled_exception`,
+    `graph/boundary.py`) với `from_status = S_ASSESSING`; có audit mà không có dòng đó → `false`; ticket không có dòng audit nào → `null` (đếm ở
+    `manifest.counts.m5_aborted_unknown`). `offline.py` và `report.py` dùng cờ này cho lá đã nhãn không có route: `true` → ESCALATE_L2, `false` → ngoài
+    mẫu số, `null` → dừng.
   - File v1 (không có `schema_version`) bị `load_predictions` từ chối với lỗi `bản v1`. Muốn có file v1.1 thì chạy lại harness.
 - `outcomes.jsonl`: kết cục từng ca (`done` / `timeout` / `multi_leaf` / `error`), tên lớp lỗi, số giây, giờ bắt đầu.
 - `manifest.json`: cấu hình, `run_id`, commit, `dataset_sha256`, `policy_sha256`, `clf_mode`, làm nóng, số đếm (gồm `unlabeled`,
@@ -154,4 +162,35 @@ EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.report \
 - Mọi bảng mang `run_id, dataset_sha256, git_commit, n, n_unlabeled, n_excluded`. Số chính RQ1 = chi phí không trọng số (T1); T5, T6, T7 là số phụ.
 - Test: `backend/tests/unit/eval/test_report.py` (golden ở `golden/report/*.golden`; đổi định dạng có chủ ý thì chạy với `UPDATE_GOLDEN=1` rồi đọc lại
   diff). Đột biến: `scripts/mutation/mutate_g5.py`.
-- Chưa có: biểu đồ, `folds/<i>.json`, 10 ca sai tiêu biểu, biến thể "không trích đoạn" (cần `offline.py`, `calibrate.py`, DB).
+- Chưa có: biểu đồ, 10 ca sai tiêu biểu. `folds/<i>.json` và route offline do `offline.py` ghi (mục dưới); biến thể "không trích đoạn" lấy từ `probs.jsonl` (G10).
+
+## Route offline và hiệu chỉnh theo phần — `calibrate.py`, `offline.py` (N18, G4)
+
+Bản đóng băng chạy chưa hiệu chỉnh (D-38), nên route của stack không phản ánh quy trình "fit calibrator + chọn ngưỡng theo chi phí". `offline.py`
+tính lại route cho Hybrid, Chỉ-LLM, Hybrid-guarded bằng kiểm tra chéo 5 phần: với phần đo `i`, `calibrate.fit_fold` fit trên 4 phần còn lại
+(Platt riêng từng phương án × từng phần, chọn ngưỡng theo ma trận chi phí 10:1, chọn biến thể xác suất `with_evidence` / `no_evidence` / `max`),
+rồi tính route cho phần đo. Số RQ1 của các phương án có LLM là ước lượng của quy trình đó, không phải route đã chạy trên stack.
+
+```
+EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.offline \
+  --s1 S1/predictions.jsonl S1/manifest.json S1/probs.jsonl --s2 S2/predictions.jsonl S2/manifest.json S2/probs.jsonl \
+  --folds folds.csv --policy config/policy.json --out <thư mục mới>
+```
+
+- Đầu vào: hai lượt stack (S1 = hybrid, S2 = llm_only; mỗi lượt kèm `probs.jsonl` do `scripts/eval/prob_variants.py` ghi), `--folds` CSV
+  `family,fold` (tạm, tới khi có `split.py`/`SPLIT.md`), `--policy` (sha256 phải khớp `policy_sha256` của mọi manifest; ngưỡng trên của policy chỉ
+  dùng cho phần chưa hiệu chỉnh). `now` của `fit_platt` = `started_at` trong manifest S1 để chạy lại ra cùng `version`.
+- Đầu ra, mỗi phương án (`hybrid`, `llm_only`, `hybrid_guarded`): `predictions.jsonl` (v1.1, `route`/`calibrated_prob` offline, `fold` đã điền),
+  `manifest.json` (+ khối `offline`; Hybrid-guarded có `run_id` mới và `derived_from`), `folds/<i>.json`, `calibrators/<version>.json`. Đưa thẳng vào
+  `report.py` bằng `--arm`.
+- Ca đi lớp LLM (P8 §5.4): Hybrid = `decided_by = llm` của S1; Chỉ-LLM = mọi ca có route của S2; Hybrid-guarded = ca `llm` của S1 cộng ca luật CHO PHÉP
+  (route AUTO), p lấy từ S2; luật chặn/cần duyệt giữ route luật. Ca đã nhãn có `route` null (P8 §5.4 [Chốt 22/10]): `m5_aborted = true` → ESCALATE_L2; `false` (E1, lỗi ở bước khác, kẹt B11…) → ngoài mẫu số; `null` → dừng. `report.py` áp cùng quy tắc cho mọi phương án kể cả Chỉ-luật.
+- Quy tắc: `kb_gap` hạ AUTO → HITL và là của ca (mọi biến thể dùng chung); hoà chi phí → with_evidence > no_evidence > max; ngưỡng trên 1,01 =
+  lớp LLM không bao giờ đưa ca sang L2, bật khi dưới `MIN_L2_CASES` ca L2 trong ca đi lớp LLM của phần huấn luyện hoặc AUC L2 < 0,7 hoặc không tính được;
+  biến thể `fit_platt` lỗi bị loại; cả ba lỗi → phần đó chưa hiệu chỉnh (không bao giờ AUTO, ngưỡng dưới 0; raw > ngưỡng trên của policy → L2).
+- Dừng (mã 2) khi: `kb_gap` null ở ca đi lớp LLM (harness phải điền `kb_gap`), họ không có phần hoặc `fold` lệch CSV, `policy_sha256` thiếu/lệch,
+  thiếu `started_at`, `probs.jsonl` không khớp predictions cùng lượt.
+- Giới hạn: Platt thường, không làm mượt nhãn (F3 không làm); `select_thresholds` không biết `kb_gap`; `fold` từ CSV tạm.
+- `--s3` (tuỳ chọn): Hybrid tắt chẩn đoán — chạy lại phép tính của Hybrid với S3 làm nguồn (calibrator fit trên phần huấn luyện của chính S3) → thư mục `hybrid_no_diag`
+  (manifest tắt chẩn đoán → `report.py` nhận là phương án "bỏ tool").
+- Test: `tests/unit/eval/test_calibrate.py`, `test_offline.py`. Đột biến: `scripts/mutation/mutate_n18.py`.

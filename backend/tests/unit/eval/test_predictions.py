@@ -1,5 +1,5 @@
 """S1 T29 — hợp đồng `predictions.jsonl` v1 (`app.eval.predictions`, duyệt #32 ngày 13/10; chốt ở ghi chú t29-chot) + v1.1
-(P8 v1.4 §5.6: `schema_version`, `fold`, `kb_gap`, `hidden_factor`, `run_started_at`, `in_business_hours`).
+(P8 v1.4 §5.6: `schema_version`, `fold`, `kb_gap`, `hidden_factor`, `run_started_at`, `in_business_hours`; P6 22/10: `m5_aborted`).
 
 Chỉ dữ liệu tổng hợp. Lỗi đầu vào → `ValueError`, thông điệp nêu tên trường/số dòng, KHÔNG in giá trị dữ liệu.
 """
@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from app.eval.predictions import PredictionRecord, Split, Strategy, load_predictions
+from app.eval.predictions import (
+    PredictionRecord,
+    Split,
+    Strategy,
+    load_predictions,
+    m5_outcome,
+)
 from app.settings import Settings
 from pydantic import ValidationError
 from tests.unit.eval.contract_v11 import V11
@@ -21,7 +27,7 @@ CONTRACT_FIELDS = {
     "expected_route", "route", "decided_by", "raw_prob", "calibrated_prob", "p_method",
     "final_state", "exit_code", "close_reason", "resolution_path", "has_approval", "clarification_turns",
     "intent", "gold_intent", "doc_ids", "gold_doc_ids",
-    "schema_version", "fold", "kb_gap", "hidden_factor", "run_started_at", "in_business_hours",
+    "schema_version", "fold", "kb_gap", "hidden_factor", "run_started_at", "in_business_hours", "m5_aborted",
 }  # fmt: skip
 RISK_FIELDS = ("decided_by", "raw_prob", "calibrated_prob", "p_method", "kb_gap")
 V11_FIELDS = tuple(V11)
@@ -298,7 +304,7 @@ def test_fold_strict(value: Any) -> None:
         parse(rec(fold=value))
 
 
-@pytest.mark.parametrize("field", ["kb_gap", "hidden_factor", "in_business_hours"])
+@pytest.mark.parametrize("field", ["kb_gap", "hidden_factor", "in_business_hours", "m5_aborted"])
 @pytest.mark.parametrize(("value", "ok"), [(True, True), (False, True), (None, True), ("true", False), (1, False), (0, False)])
 def test_v11_bool_strict(field: str, value: Any, ok: bool) -> None:
     if ok:
@@ -319,6 +325,50 @@ def test_run_started_at_rejected(value: Any) -> None:
     with pytest.raises(ValidationError, match="run_started_at") as exc:
         parse(rec(run_started_at=value))
     assert "SENTINEL_TIME" not in str(exc.value)
+
+
+# ---- m5_aborted + quy tắc "không tới điểm log 4" (P8 §5.4 [Chốt 22/10]) ---------------------------------------------------------
+
+
+def outcome(**over: Any) -> str:
+    return m5_outcome(parse(no_m5(**over)))
+
+
+def test_m5_aborted_is_a_required_nullable_bool_in_the_contract() -> None:
+    data = rec()
+    del data["m5_aborted"]
+    with pytest.raises(ValidationError, match="m5_aborted"):
+        parse(data)
+    assert parse(rec(m5_aborted=None)).m5_aborted is None
+    assert parse(no_m5(m5_aborted=True)).m5_aborted is True
+
+
+def test_m5_outcome_route_present_is_log4_regardless_of_flag() -> None:
+    assert m5_outcome(parse(rec(m5_aborted=None))) == "log4"
+    assert m5_outcome(parse(rec(m5_aborted=False))) == "log4"
+
+
+@pytest.mark.parametrize(
+    ("flag", "expected"),
+    [(True, "aborted"), (False, "out")],
+)
+def test_m5_outcome_labeled_without_route_follows_the_flag(flag: bool, expected: str) -> None:
+    """Đã nhãn, `route = None`: M5 bị ngắt → `aborted` (ESCALATE_L2 ở phương án có LLM); không ngắt → `out` (ngoài mẫu số)."""
+    assert outcome(m5_aborted=flag) == expected
+    # mã thoát / trạng thái KHÔNG quyết định: E9 ở bước khác, kẹt B11 (final_state null), E1 đều theo cờ
+    assert outcome(m5_aborted=flag, exit_code="E9") == expected
+    assert outcome(m5_aborted=flag, final_state=None) == expected
+    assert outcome(m5_aborted=flag, exit_code="E1") == expected
+
+
+def test_m5_outcome_labeled_without_route_and_null_flag_raises() -> None:
+    with pytest.raises(ValueError, match="m5_aborted"):
+        outcome(m5_aborted=None)
+
+
+@pytest.mark.parametrize("flag", [True, False, None])
+def test_m5_outcome_unlabeled_is_out_without_needing_the_flag(flag: bool | None) -> None:
+    assert outcome(expected_route=None, m5_aborted=flag) == "out"
 
 
 def _v1_row(**over: Any) -> dict[str, Any]:

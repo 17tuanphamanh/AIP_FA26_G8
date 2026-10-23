@@ -60,8 +60,8 @@ def _swap(rel: str, old: str, new: str, tag: str) -> tuple[str, str, str, int]:
 # ---- collect.py: điểm log 4, B11, B8, lá nhiều ý ---------------------------------------------------------------------
 
 _STEP = 'LOG4_STEP = "B13/B14"\n'
-_FIELDS = ("LOG4_FIELDS = (\"'route', detail->>'route', 'strategy', detail->>'strategy', 'decided_by', decided_by, "
-           "'raw_prob', raw_prob, \"\n")  # fmt: skip
+_FIELDS = ("LOG4_FIELDS = (\"'route', detail->>'route', 'strategy', detail->>'strategy', 'kb_gap', detail->>'kb_gap', "
+           "'decided_by', decided_by, \"\n")  # fmt: skip  # dòng đầu của LOG4_FIELDS (kb_gap thêm 22/10, P6)
 _STRAT_NE = '        if r["strategy"] != strategy:\n'
 _STRAT_NONE = '        if r["strategy"] is None:\n'
 _ROUTES = '    if len({r["route"] for r in rows}) > 1:\n'
