@@ -19,7 +19,7 @@ hợp đồng v1.1 để sẵn trường `hidden_factor` trong bản ghi nhưng 
 
 | Khoá | Kiểu | Harness dùng |
 |---|---|---|
-| `id`, `family`, `source`, `at` | chuỗi | `id`, `family` vào bản ghi; `source` chỉ nạp; `at` chỉ nạp (khung giờ là việc G7) |
+| `id`, `family`, `source`, `at` | chuỗi | `id`, `family` vào bản ghi; `source` chỉ nạp; `at`: ISO-8601 có múi giờ, quyết định ca chạy hay `skipped_hours` (G7, dưới đây) |
 | `faults` | danh sách | chỉ nạp |
 | `requester` | `{user_id, role, dept, tenure_days}` | `user_id` → `username` tra `mock_services/seed.json` (cờ `--seed`); không có trong seed → lỗi nạp |
 | `turns` | `[0]` chuỗi; sau đó `{on_question_about, reply}` hoặc `{on_confirm}` | câu đầu tạo ticket; `reply` gửi THEO THỨ TỰ mỗi lần hệ thống hỏi lại (slot đang hỏi không lộ qua API — G2-Q19); `on_confirm` theo thứ tự ở bước xác nhận, hết thì coi là "Đã ổn" và đếm `confirm_default` |
@@ -82,7 +82,9 @@ EVAL_MODE=true EVAL_PASSWORD='<mật khẩu demo>' PYTHONPATH=backend uv run pyt
   harness thử đăng nhập một lần bằng người gửi của kịch bản đầu. Nếu lỗi mạng hoặc mã HTTP khác 401, dòng `DỪNG:` nêu lý do khác.
   Trong `outcomes.jsonl`, ca lỗi do API có thêm trường `error_http` (mã HTTP).
 - Cờ tuỳ chọn:
-  - `--per-case`: in thêm mỗi ca một dòng `<scenario_id> <kết cục> <giây>`.
+  - `--per-case`: in thêm mỗi ca một dòng `<scenario_id> <kết cục> <giây>`, kèm tên lớp lỗi hoặc lý do bỏ qua
+    (`lech_loai_gio` / `bien_gio`).
+  - `--resume <thư mục run>`: xem mục G7 dưới đây. Không dùng kèm `--out`.
   - `--warmup-rounds N`: số vòng làm nóng, mặc định 3.
   - `--prob-method`: mặc định `self_report`.
   - `--run-id`: chỉ để đối chiếu.
@@ -94,7 +96,7 @@ EVAL_MODE=true EVAL_PASSWORD='<mật khẩu demo>' PYTHONPATH=backend uv run pyt
 eval run <run_id> strategy=hybrid split=test timeout_s=<n>
 scenarios: loaded=<n>
 warmup: rounds=<n> first_ms=<n> last_ms=<n>
-outcomes: done=<n> timeout=<n> multi_leaf=<n> error=<n>
+outcomes: done=<n> timeout=<n> multi_leaf=<n> error=<n> skipped_hours=<n>
 records: written=<n> route_none=<n> calibrated_prob_nonnull=<n> unlabeled=<n>
 elapsed_s=<n>
 files: predictions.jsonl outcomes.jsonl manifest.json
@@ -106,7 +108,7 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
 
 | Mã | Nghĩa |
 |---|---|
-| 0 | Xong |
+| 0 | Xong (kể cả còn ca `skipped_hours`; `--resume` không còn ca nào thì không ghi gì) |
 | 1 | Có ca `timeout` hoặc `error`; file vẫn được ghi |
 | 2 | Dừng trước khi ghi `predictions.jsonl`. Dòng cuối `DỪNG: <lý do>` cho biết nguyên nhân: tham số, kịch bản lỗi, chốt an toàn, seed không đọc được, STRATEGY / EVAL_MODE / LLM_CACHE_MODE / APPROVAL_SLA_MINUTES_DEV / APP_GIT_SHA của container, `/api/health`, làm nóng, hoặc điểm log 4 thiếu khoá / sai strategy |
 
@@ -121,10 +123,38 @@ Harness không in câu, id kịch bản, họ, gold, ticket_id, route từng ca,
     - `fold`: gán phần ở bước offline, từ `SPLIT.md` (V11-Q3).
     - `kb_gap`: không có cột riêng; muốn có phải đọc một khoá `detail` mới, chưa được duyệt (V11-Q2).
     - `hidden_factor`: dữ liệu kịch bản chưa có khoá này (V11-Q1).
-    - `in_business_hours`: chờ G7 (V11-Q5).
+    - `in_business_hours`: G7 chỉ điền ở `outcomes.jsonl` (G7-Q1); ở predictions cần sửa `collect.py` (V11-Q5).
   - File v1 (không có `schema_version`) bị `load_predictions` từ chối với lỗi `bản v1`. Muốn có file v1.1 thì chạy lại harness.
-- `outcomes.jsonl`: kết cục từng ca (`done` / `timeout` / `multi_leaf` / `error`), tên lớp lỗi, số giây, giờ bắt đầu.
+- `outcomes.jsonl`: kết cục từng ca (`done` / `timeout` / `multi_leaf` / `error` / `skipped_hours`), tên lớp lỗi, số giây, giờ bắt
+  đầu, `in_business_hours` (giờ thật lúc xét ca), `hours_class` (`trong` / `ngoai` / `bien_gio`), `skip_reason`, `pass` (lần chạy).
 - `manifest.json`: cấu hình, `run_id`, commit, `dataset_sha256`, `policy_sha256`, `clf_mode`, làm nóng, số đếm (gồm `unlabeled`,
   `confirm_default`), `ignored_fields`, `schema_version`, `predictions_unavailable`.
   Các khoá của 21/10 (`b2_tau`, `b2_judge_model`, SHA hai model, `rate_limits`) để `null` và liệt kê trong `unavailable`.
   Không có manifest thì không đưa số vào báo cáo (P8 §5.1).
+  `passes`: mỗi lần chạy (lần đầu + mỗi `--resume`) một phần tử: `started_at` / `finished_at` thật, `ran`, `skipped_hours`,
+  `lech_loai_gio`, `bien_gio`, `hours_class`. `counts` = trạng thái cuối (kết cục mới nhất của mỗi ca).
+
+### G7 — khung giờ `at` (`schedule.py`)
+
+- "Trong giờ hành chính" = `app.domain.policy.within_business_hours` với `get_policy().business_hours`, tính TRONG container backend
+  (`schedule.HOURS_SCRIPT`): đúng hàm, đúng policy backend đang dùng. Container chỉ trả bool, harness không đọc file policy và không
+  in / ghi giờ bắt đầu, giờ kết thúc hay ngày làm việc. Không xét ngày lễ (như hàm backend).
+- Trước mỗi ca, harness hỏi bốn thời điểm `at`, `now − 10′`, `now`, `now + 10′`:
+  - ba điểm quanh `now` khác nhau → `now` gần biên đầu hoặc biên cuối giờ hành chính (vùng nửa mở `[biên − 10′, biên + 10′)`) →
+    `skipped_hours`, lý do `bien_gio`;
+  - `now` khác loại giờ với `at` → `skipped_hours`, lý do `lech_loai_gio`;
+  - còn lại → chạy. Ca bỏ qua không tạo ticket, không có dòng predictions. Harness không chờ.
+- `--timeout-s > 600` → cảnh báo ra stderr: ca dài có thể vượt biên giữa chừng.
+- `at` sai / thiếu múi giờ → `--check-only` in `at: errors=<n>`, mã 2; lượt chạy dừng mã 2 trước khi gọi stack.
+- `--resume <thư mục run>` (cùng `--scenarios --strategy --split --timeout-s` như lần đầu): chỉ chạy ca có kết cục mới nhất là
+  `skipped_hours`. run_id tính lại phải bằng `manifest.run_id`, khác thì dừng mã 2. Ca đã có kết cục chạy thật hoặc dòng predictions mà
+  sắp chạy lần 2 → dừng mã 2, không ghi. Kết quả ghi tiếp vào cùng `predictions.jsonl` / `outcomes.jsonl` (dòng cũ giữ nguyên) và
+  `manifest.json` (thêm một phần tử `passes`).
+
+```
+EVAL_MODE=true EVAL_PASSWORD='<mật khẩu demo>' PYTHONPATH=backend uv run python -m app.eval.runner \
+  --scenarios <thư mục kịch bản> --strategy hybrid --split test --timeout-s 300 --resume <thư mục run lần trước>
+```
+
+Đã kiểm ở: `backend/tests/unit/eval/test_schedule.py`, `test_harness_hours.py` (policy giả tự dựng trong test); đột biến
+`scripts/mutation/mutate_g7.py` (28 đột biến).

@@ -34,7 +34,7 @@ SUMMARY = [
     r"eval run [0-9a-f]{12} strategy=hybrid split=test timeout_s=\d+",
     r"scenarios: loaded=\d+",
     r"warmup: rounds=\d+ first_ms=\d+ last_ms=\d+",
-    r"outcomes: done=\d+ timeout=\d+ multi_leaf=\d+ error=\d+",
+    r"outcomes: done=\d+ timeout=\d+ multi_leaf=\d+ error=\d+ skipped_hours=\d+",
     r"records: written=\d+ route_none=\d+ calibrated_prob_nonnull=\d+ unlabeled=\d+",
     r"elapsed_s=\d+(\.\d+)?",
     r"files: predictions\.jsonl outcomes\.jsonl manifest\.json",
@@ -593,7 +593,7 @@ def test_manifest_without_flag(tmp_path: Path) -> None:
 MANIFEST_KEYS = {
     "run_id", "config", "git_commit", "git_dirty", "app_git_sha", "commit_verified", "dataset_sha256", "dataset_file_count", "strategy",
     "split", "timeout_s", "enable_proactive_diagnosis", "llm_cache_mode", "clf_mode", "policy_sha256", "llm_backend",
-    "started_at", "finished_at", "host", "warmup", "counts", "ignored_fields", "unavailable", "approval_sla_minutes_dev",
+    "started_at", "finished_at", "passes", "host", "warmup", "counts", "ignored_fields", "unavailable", "approval_sla_minutes_dev",
     "b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits",
     "schema_version", "predictions_unavailable",
 }  # fmt: skip
@@ -609,7 +609,8 @@ def test_manifest_keys(tmp_path: Path) -> None:
     assert (m["strategy"], m["split"], m["timeout_s"], m["clf_mode"], m["git_commit"]) == ("hybrid", "test", 30, "shadow", GIT_SHA)
     assert m["commit_verified"] is True and m["policy_sha256"] == "ab" * 32
     assert m["git_dirty"] is False
-    assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "written": 1, "route_none": 0,
+    assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "skipped_hours": 0, "written": 1,
+                           "route_none": 0,
                            "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0,
                            "approval_no_decision": 0}  # fmt: skip
     assert "SENTINEL" not in json.dumps(m)
