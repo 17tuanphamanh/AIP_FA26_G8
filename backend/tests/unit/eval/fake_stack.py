@@ -11,10 +11,12 @@ import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, time
 from pathlib import Path
 from typing import Any
 
 import httpx
+from app.domain.policy import BusinessHours, within_business_hours
 
 # ---- kịch bản tổng hợp theo CẤU TRÚC THẬT (g2-chot.md:11-17 — chỉ tên trường + kiểu) -----------------------------------
 
@@ -194,6 +196,8 @@ _TICKET_PATH = re.compile(r"^/api/tickets/([^/]+)(/messages|/confirm)?$")
 _DECISION_PATH = re.compile(r"^/api/approvals/([^/]+)/decision$")
 APPROVER_ID, APPROVER = "l1_01", "ha.lt"
 GIT_SHA = "c0ffee" + "0" * 34
+# G7: policy giả TỰ DỰNG cho test (không phải số thật): thứ 2–6, 08:00–17:00 giờ Việt Nam
+FAKE_HOURS = BusinessHours(tz="Asia/Ho_Chi_Minh", weekdays=(1, 2, 3, 4, 5), start=time(8, 0), end=time(17, 0))
 
 
 @dataclass
@@ -227,6 +231,8 @@ class SimStack:
     waiting: dict[str, str | None] = field(default_factory=dict)
     created_at: dict[str, float] = field(default_factory=dict)
     with_kb_gap: bool = True  # False → dòng log 4 của ca LLM không có detail.kb_gap (thiếu kb_gap)
+    hours: BusinessHours = FAKE_HOURS  # G7: "policy" của container giả
+    hours_probes: list[tuple[datetime, ...]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.db.users[APPROVER_ID] = APPROVER
@@ -256,6 +262,10 @@ class SimStack:
 
     def sql(self, query: str) -> Any:
         return self.db(query)
+
+    def in_hours(self, times: Sequence[datetime]) -> list[bool]:  # như `HOURS_SCRIPT` trong container: đúng hàm backend
+        self.hours_probes.append(tuple(times))
+        return [within_business_hours(t, self.hours) for t in times]
 
     def client(self) -> httpx.Client:
         return self.api.client()

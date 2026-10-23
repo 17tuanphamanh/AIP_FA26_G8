@@ -16,6 +16,9 @@ file trong lỗi nạp. `--check-only`: chỉ nạp + tính sha, không gọi st
 Mã thoát: 0 xong · 1 có ca `timeout`/`error` (file vẫn ghi) · 2 tham số / kịch bản / chốt an toàn / preflight / log 4 sai khoá hoặc
 strategy (KHÔNG ghi `predictions.jsonl`).
 
+G7 (`schedule.py`): ca có giờ thật khác loại giờ của `at` hoặc gần biên giờ hành chính → `skipped_hours` (không tạo ticket, mã 0);
+`--resume <thư mục>` chạy lại đúng các ca đó, ghi tiếp cùng file + cùng `run_id`, mỗi lần chạy một phần tử `manifest.passes`.
+
 Không gọi `/api/policy` hay endpoint chính sách nào (Rev 27). `p_method` thuộc hằng chính sách → không đọc: lấy `--prob-method`
 (mặc định `self_report`) và đếm bản ghi có `p_method` khác (`p_method_mismatch`). `policy_sha256` = `policy_sha256()` trong container
 (chỉ băm, G2-Q11).
@@ -30,13 +33,14 @@ import subprocess
 import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol, get_args
 
 import httpx
 
+from app.eval import schedule
 from app.eval.actors import ScriptedUser, SimApprover
 from app.eval.collect import UNAVAILABLE, AbortRun, MultiLeaf, RunMeta, collect
 from app.eval.config import (
@@ -93,8 +97,8 @@ ABORT_TEXT = {
     "log4_missing_route": "điểm log 4 thiếu khoá route",
 }
 
-type Outcome = Literal["done", "timeout", "multi_leaf", "error"]
-OUTCOMES: tuple[Outcome, ...] = ("done", "timeout", "multi_leaf", "error")
+type Outcome = Literal["done", "timeout", "multi_leaf", "error", "skipped_hours"]
+OUTCOMES: tuple[Outcome, ...] = ("done", "timeout", "multi_leaf", "error", "skipped_hours")
 
 
 class Backend(Protocol):
@@ -102,6 +106,7 @@ class Backend(Protocol):
     def info(self) -> dict[str, Any]: ...
     def warmup(self, rounds: int) -> dict[str, Any]: ...
     def sql(self, query: str) -> Any: ...
+    def in_hours(self, times: Sequence[datetime]) -> list[bool]: ...
 
 
 class ComposeBackend:
@@ -131,6 +136,10 @@ class ComposeBackend:
 
     def sql(self, query: str) -> Any:
         return self.shell.sql(query)
+
+    def in_hours(self, times: Sequence[datetime]) -> list[bool]:  # G7: hàm + policy của backend trong container, chỉ trả bool
+        isos = (t.isoformat() for t in times)
+        return schedule.parse_probe(self._json_line("python", "-c", schedule.HOURS_SCRIPT, *isos), len(times))
 
 
 @dataclass
@@ -192,6 +201,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     p.add_argument("--allow-extra-fields", action="store_true")
     p.add_argument("--check-only", action="store_true")
     p.add_argument("--seed", type=Path, default=DEFAULT_SEED)
+    p.add_argument("--resume", type=Path)  # G7: thư mục run trước — chỉ chạy ca skipped_hours, ghi tiếp vào đó
     return p.parse_args(list(argv))
 
 
@@ -209,6 +219,9 @@ class Case:
     started_at: str
     record: PredictionRecord | None
     confirm_default: bool
+    in_business_hours: bool | None = None  # G7: giờ thật lúc xét ca
+    hours_class: schedule.HoursClass | None = None
+    skip_reason: schedule.SkipReason | None = None
 
 
 @dataclass(frozen=True)
@@ -310,6 +323,9 @@ def _check_only(args: argparse.Namespace, out: Callable[[str], None]) -> int:
     if ds is None:
         return 2
     out(f"scenarios: loaded={len(ds.scenarios)} errors=0")
+    if n := schedule.bad_at([s.at for s in ds.scenarios]):  # G7-Q6: chỉ số đếm, không giá trị
+        out(f"at: errors={n} (cần ISO-8601 có múi giờ)")
+        return 2
     if args.allow_extra_fields:
         out(f"ignored_fields={len(ds.ignored_fields)}")
     return 0
@@ -376,7 +392,26 @@ def _login_check(deps: Deps, username: str, password: str) -> None:
         raise Stop("thử đăng nhập lỗi (không kết nối được backend)") from None
 
 
-def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], manifest: dict[str, Any]) -> None:
+def _resume(args: argparse.Namespace, ds: Dataset) -> tuple[schedule.Prior | None, tuple[Scenario, ...]]:
+    """G7 `--resume`: lượt trước + các kịch bản còn `skipped_hours` (rỗng → không còn gì để chạy). Không resume → mọi kịch bản."""
+    if args.resume is None:
+        return None, ds.scenarios
+    if args.out is not None:
+        raise Stop("--resume ghi tiếp vào chính thư mục đó — không dùng kèm --out")
+    try:
+        prior = schedule.read_prior(args.resume.resolve())
+        ids = schedule.pending(prior.outcomes)
+        schedule.check_no_rerun(ids, prior.outcomes, {r.scenario_id for r in prior.records})
+    except ValueError as e:  # chữ cố định của schedule.py (không id, không giá trị)
+        raise Stop(str(e)) from None
+    todo = tuple(s for s in ds.scenarios if s.id in set(ids))
+    if len(todo) != len(ids):
+        raise Stop("--resume: kịch bản skipped_hours của lượt trước không có trong --scenarios")
+    return prior, todo
+
+
+def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], manifest: dict[str, Any],
+           prior_lines: Sequence[str] = (), pass_no: int = 1) -> None:  # fmt: skip
     out_dir.mkdir(parents=True, exist_ok=True)
     tmp = out_dir / "predictions.jsonl.tmp"
     tmp.write_text("".join(r.model_dump_json() + "\n" for r in records), encoding="utf-8")
@@ -387,10 +422,10 @@ def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], ma
             tmp.unlink()
             raise Stop("predictions không qua hợp đồng v1.1 (load_predictions)") from None
     tmp.replace(out_dir / "predictions.jsonl")
-    (out_dir / "outcomes.jsonl").write_text("".join(json.dumps({
+    (out_dir / "outcomes.jsonl").write_text("".join(prior_lines) + "".join(json.dumps({
         "scenario_id": c.scenario_id, "ticket_id": c.ticket_id, "outcome": c.outcome, "error_type": c.error_type,
         "elapsed_s": c.elapsed_s, "run_started_at": c.started_at,
-        "in_business_hours": None,  # TODO(G7): khung giờ `at` (G2-Q10)
+        "in_business_hours": c.in_business_hours, "hours_class": c.hours_class, "skip_reason": c.skip_reason, "pass": pass_no,
         **({"error_http": c.error_http} if c.error_http is not None else {}),
     }, ensure_ascii=False) + "\n" for c in cases), encoding="utf-8")  # fmt: skip
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -399,7 +434,7 @@ def _write(out_dir: Path, records: list[PredictionRecord], cases: list[Case], ma
 def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[str], Deps], out: Callable[[str], None],
          err: Callable[[str], None]) -> int:  # fmt: skip
     missing = [f for f, v in (("--strategy", args.strategy), ("--split", args.split), ("--timeout-s", args.timeout_s),
-                              ("--out", args.out)) if v is None]  # fmt: skip
+                              ("--out", args.out or args.resume)) if v is None]  # fmt: skip
     if missing:
         raise Stop(f"thiếu tham số {' '.join(missing)}")
     password = env.get("EVAL_PASSWORD") or ""
@@ -408,7 +443,14 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
     ds = _load(args, out)
     if ds is None:
         return 2
-    out_dir = _check_out(args)
+    # ---- G7: `at` hợp lệ, `--resume` (chỉ ca skipped_hours, không chạy lần 2) ----
+    if schedule.bad_at([s.at for s in ds.scenarios]):
+        raise Stop("có kịch bản `at` không phải ISO-8601 có múi giờ (--check-only để đếm)")
+    prior, todo = _resume(args, ds)
+    if not todo:
+        out("resume: không còn ca skipped_hours — không chạy, không ghi")
+        return 0
+    out_dir = _check_out(args) if prior is None else args.resume.resolve()
     try:
         url = check_url(args.url)
     except Unsafe:
@@ -427,6 +469,10 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         check_run_id(args.run_id, run_id)
     except RunIdMismatch:
         raise Stop("--run-id khác run_id tính từ cấu hình + dữ liệu + commit") from None
+    if prior is not None and prior.manifest["run_id"] != run_id:  # G7: giữ run_id = cùng cấu hình + dữ liệu + commit
+        raise Stop("--resume: run_id tính lại khác run_id của lượt trước (cấu hình / dữ liệu / commit đã đổi)")
+    if args.timeout_s > schedule.LONG_TIMEOUT_S:  # G7-Q3
+        err("CẢNH BÁO: timeout_s > 600 — ca có thể vượt biên giờ hành chính giữa chừng (vùng đệm 10 phút)")
     try:
         warm = deps.backend.warmup(args.warmup_rounds)
     except (StackError, Unsafe):
@@ -435,14 +481,25 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
                meta=RunMeta(run_id=run_id, strategy=config.strategy, split=config.split), now=deps.now,
                usernames=ds.usernames)  # fmt: skip
     cases: list[Case] = []
-    for s in ds.scenarios:
+    checks: list[schedule.HoursCheck] = []
+    for s in todo:
+        now = deps.now()
+        try:  # G7: loại giờ của giờ thật vs của `at` — hỏi đúng hàm + policy của backend (container)
+            chk = schedule.decide(*deps.backend.in_hours(schedule.probe_times(schedule.parse_at(s.at), now)))
+        except (StackError, Unsafe, ValueError):
+            raise Stop("không phân loại được giờ hành chính trong container backend") from None
+        checks.append(chk)
         try:
-            case = run_case(s, ctx)
+            case = run_case(s, ctx) if chk.skip is None else Case(
+                scenario_id=s.id, ticket_id=None, outcome="skipped_hours", error_type=None, error_http=None, elapsed_s=0.0,
+                started_at=now.isoformat(), record=None, confirm_default=False)  # fmt: skip
         except AbortRun as e:
             raise Stop(ABORT_TEXT[e.reason]) from None
+        case = replace(case, in_business_hours=chk.now_in, hours_class=chk.hours_class, skip_reason=chk.skip)
         cases.append(case)
         if args.per_case:
-            out(f"{case.scenario_id} {case.outcome} {case.elapsed_s:.1f}" + (f" {case.error_type}" if case.error_type else ""))
+            out(f"{case.scenario_id} {case.outcome} {case.elapsed_s:.1f}"
+                + (f" {case.error_type or case.skip_reason}" if case.error_type or case.skip_reason else ""))  # fmt: skip
     records = [c.record for c in cases if c.record is not None]
     tally = Counter(c.outcome for c in cases)
     counts: dict[str, int] = {
@@ -459,6 +516,11 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
     }  # fmt: skip
     if counts["p_method_mismatch"]:
         err("CẢNH BÁO: có bản ghi p_method khác --prob-method (xem manifest counts.p_method_mismatch)")
+    finished_at = deps.now().isoformat()
+    pass_no = 1 if prior is None else len(prior.manifest["passes"]) + 1
+    passes = [*(prior.manifest["passes"] if prior else ()), schedule.pass_entry(pass_no, started_at.isoformat(), finished_at, checks)]
+    if prior is not None:  # G7: ghi tiếp — counts = trạng thái cuối, predictions = cũ + mới
+        counts, records = schedule.merge_counts(prior.manifest["counts"], counts), [*prior.records, *records]
     elapsed = deps.clock.monotonic() - t0
     manifest: dict[str, Any] = {
         "run_id": run_id, "config": config.model_dump(mode="json"), "git_commit": deps.git_commit, "git_dirty": deps.git_dirty,
@@ -467,19 +529,20 @@ def _run(args: argparse.Namespace, env: Mapping[str, str], make_deps: Callable[[
         "enable_proactive_diagnosis": config.enable_proactive_diagnosis, "llm_cache_mode": info.get("llm_cache_mode"),
         "clf_mode": info.get("b2_classifier_mode"), "policy_sha256": info.get("policy_sha256"),
         "llm_backend": info.get("llm_backend"), "approval_sla_minutes_dev": info.get("approval_sla_minutes_dev"),
-        "started_at": started_at.isoformat(), "finished_at": deps.now().isoformat(),
-        "host": platform.node(), "warmup": warm, "counts": counts,
+        "started_at": prior.manifest["started_at"] if prior else started_at.isoformat(), "finished_at": finished_at,
+        "passes": passes, "host": platform.node(), "warmup": warm, "counts": counts,
         "ignored_fields": {"allowed": args.allow_extra_fields, "count": len(ds.ignored_fields),
                            "paths": sorted(set(ds.ignored_fields))},
         **dict.fromkeys(LATER), "unavailable": list(LATER),
         "schema_version": SCHEMA_VERSION,
         "predictions_unavailable": list(UNAVAILABLE),
     }  # fmt: skip
-    _write(out_dir, records, cases, manifest)
+    _write(out_dir, records, cases, manifest, prior.outcome_lines if prior else (), pass_no)
     out(f"eval run {run_id} strategy={config.strategy} split={config.split} timeout_s={config.timeout_s}")
     out(f"scenarios: loaded={counts['loaded']}")
     out(f"warmup: rounds={warm.get('rounds')} first_ms={warm.get('first_ms')} last_ms={warm.get('last_ms')}")
-    out(f"outcomes: done={counts['done']} timeout={counts['timeout']} multi_leaf={counts['multi_leaf']} error={counts['error']}")
+    out(f"outcomes: done={counts['done']} timeout={counts['timeout']} multi_leaf={counts['multi_leaf']} error={counts['error']} "
+        f"skipped_hours={counts['skipped_hours']}")  # fmt: skip
     out(f"records: written={counts['written']} route_none={counts['route_none']} "
         f"calibrated_prob_nonnull={counts['calibrated_prob_nonnull']} unlabeled={counts['unlabeled']}")  # fmt: skip
     out(f"elapsed_s={elapsed:.1f}")
