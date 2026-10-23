@@ -163,6 +163,10 @@ export type Health = {
   kb: { alias: string; collection: string | null; status: "ready" | "missing" | "unknown" };
 };
 
+// Nguồn: backend/app/api/policy.py `ValidateIn` (extra="forbid", `content: dict`) — `POST /api/policy/validate` tự đọc thân
+// (`_read_body`) nên openapi không có requestBody. Kiểu PHẢN HỒI lấy từ schema.gen.ts (types.ts). Xoá khi: route khai body.
+export type PolicyValidateIn = { content: Record<string, unknown> };
+
 // Ghi đè `POST /api/tickets/{id}/override` (4d) — ghi một dòng audit OVERRIDE, KHÔNG đổi ticket. Thứ tự lỗi (code): 403
 // `forbidden` (không quyền) → 403 `reauth_required` (đăng nhập > 10 phút) → 404 `not_found` → 403 `forbidden` (người gửi tự
 // ghi đè — cùng mã, không phân biệt được) → 409 `ticket_open` → 422 `{error:"invalid_request", fields}` (tên trường KHÔNG có
@@ -306,31 +310,6 @@ export type DigestConversationItem = { role: "assistant"; kind: "digest"; round:
 // `parent_reply_wait` → 409 sự kiện muộn. 202 = `Accepted`.
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
-
-// ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
-
-// Nguồn: [Đề xuất F5 — chốt lại khi làm Phase 7] (Q-fe-26; PLAN-fe mục 7 #20, nợ API #11). P10 §3.3 chỉ có TÊN route;
-// tên trường bám cột bảng `policy_versions` (backend/app/db/models.py `PolicyVersion`: `version` String(16),
-// `policy_json` → `content`, `updated_by`, `updated_at`, `is_current`). Quay lui = TẠO phiên bản mới (append-only,
-// `restored_from` = version bản gốc). Xoá khi: Phase 7 có route (gen:api) — xoá cùng mocks/handlers/policy.ts.
-export type PolicyView = {
-  version_id: number;
-  version: string;
-  content: Record<string, unknown>;
-  updated_by: string | null;
-  updated_at: string;
-  is_current: boolean;
-};
-export type PolicyVersionItem = {
-  version_id: number;
-  version: string;
-  updated_by: string | null;
-  updated_at: string;
-  is_current: boolean;
-  restored_from?: string | null;
-};
-export type PolicyPutIn = { content: Record<string, unknown>; base_version_id: number };
-export type PolicySaved = { version_id: number; version: string };
 
 // ---------------------------------------------------------------- Route ĐÃ CÓ — I1 (viết tay tới khi gen:api)
 
