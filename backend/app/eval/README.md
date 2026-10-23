@@ -1,5 +1,26 @@
 M8 — chỉ bật khi EVAL_MODE=true, P8. Xem docs/spec/build/01-kien-truc-project.md mục 3.
 
+## SPLIT.md + CI (G9)
+
+`eval/SPLIT.md` do phiên git sinh lúc khoá nhãn (25/10). File có đúng một khối ```` ```yaml ```` gồm `seed`, `k`, `dataset_sha256`,
+`files` (tên file → sha256), `families` (họ → phần 1..k), `locked`. `scripts/eval/check_split.py` băm lại `eval/scenarios/*.yaml|*.yml`
+(cấp 1) bằng chính hàm của `Dataset.sha256` (`scenario_files`, `file_sha256`, `dataset_sha256` trong `dataset.py`).
+
+CI chạy script này ở job `lint-test`, ngay sau bước cài phụ thuộc:
+
+```
+EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/check_split.py
+```
+
+| Mã | Khi nào |
+|---|---|
+| 0 | Khớp; chưa có SPLIT.md (cảnh báo); `locked: false` mà dữ liệu lệch (cảnh báo) |
+| 1 | `locked: true` mà có file thiếu, thừa, sha lệch hoặc `dataset_sha256` lệch |
+| 2 | SPLIT.md sai cấu trúc, kể cả khi `locked: false`: không đúng 1 khối yaml, khoá trùng (một họ ở 2 phần), khoá lạ/thiếu/sai kiểu, phần ngoài 1..k, phần rỗng, `dataset_sha256` không khớp chính `files` |
+
+Log chỉ có số đếm và vị trí `file #i/N`, `họ #i/M`; không có tên file, tên họ hay sha. Kịch bản được sửa sau khoá (vd sửa lỗi nhãn)
+thì phải sinh lại SPLIT.md, nếu không CI đỏ.
+
 ## Harness G2 — chạy kịch bản trên stack (RQ1)
 
 | File | Việc |
