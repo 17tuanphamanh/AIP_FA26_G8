@@ -1,5 +1,5 @@
 """Mutation tay G9 — (A) κ đồng thuận (`stats.py`: `cohen_kappa`, `weighted_kappa_linear`, `pabak`, `agreement`;
-`scripts/eval/kappa.py`: `parse_cells`, ghép, lọc, đầu ra) + (B) hàm băm dùng chung (`dataset.py`: `scenario_files`, `file_sha256`,
+`scripts/eval/kappa.py`: `load_cells` (openpyxl), `parse_cells`, ghép, lọc, đầu ra) + (B) hàm băm dùng chung (`dataset.py`: `scenario_files`, `file_sha256`,
 `dataset_sha256`) + CI kiểm `eval/SPLIT.md` (`scripts/eval/check_split.py`); plan G9 mục Mutation. Khung giống `mutate_g1.py`: mỗi
 đột biến áp lên file thật, chạy test eval, khôi phục trong `finally`, so md5 + `git diff --stat` + `git status --porcelain` trước/sau
 (đột biến tắt kiểm "trong repo" của kappa.py không được để lại file mới trong repo).
@@ -102,6 +102,9 @@ _AFTER_LAST = "        if i > last:\n"
 _BAD_BETWEEN = '        errors.append(f"dòng #{i + 2}: id sai dạng")\n'
 _HEADER_ONE = "        if len(hits) != 1:\n"
 _BLANK = "        if not any(row):\n"
+_SHEET = "        return [list(r) for r in wb[sheet].iter_rows(values_only=True)]\n"
+_OPEN_ERR = "    except (InvalidFileException, zipfile.BadZipFile, OSError, KeyError) as e:\n"
+_HAS_SHEET = "        if sheet not in wb.sheetnames:\n"
 
 MUT_A: list[Mutation] = [
     Mutation("M-G9-1 pe = Σ p_A² (bỏ biên của B)",
@@ -172,6 +175,13 @@ MUT_A: list[Mutation] = [
              [_swap(KP, _HEADER_ONE, "        if not hits:", "M-G9-46")], UT, ["test_parse_cells_header_red"]),
     Mutation("M-G9-47 dòng trống ở giữa → lỗi",
              [_off(KP, _BLANK, "M-G9-47")], UT, ["test_parse_cells_blank_row_between_skipped"]),
+    Mutation("M-G9-48 đọc sheet đang mở (active) thay vì theo tên",
+             [_swap(KP, _SHEET, _SHEET.replace("wb[sheet]", "wb.active"), "M-G9-48")], UT, ["test_xlsx_e5"]),
+    Mutation("M-G9-49 chỉ bắt InvalidFileException (zip hỏng / thiếu file văng lỗi)",
+             [_swap(KP, _OPEN_ERR, "    except InvalidFileException as e:", "M-G9-49")], UT,
+             ["test_xlsx_not_xlsx[rac.xlsx]", "test_xlsx_not_xlsx[khong_co.xlsx]"]),
+    Mutation("M-G9-50 bỏ kiểm tên sheet (KeyError văng ra, không mã 2)",
+             [_off(KP, _HAS_SHEET, "M-G9-50")], UT, ["test_xlsx_wrong_sheet"]),
 ]  # fmt: skip
 
 # ---- dataset.py — hàm băm dùng chung ---------------------------------------------------------------------------------

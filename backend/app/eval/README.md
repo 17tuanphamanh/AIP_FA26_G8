@@ -39,7 +39,8 @@ EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/kappa.py A.xlsx B.x
   file: đều dừng mã 2.
 - stdout có 3 dòng chỉ số, không id, không nhãn. `--json` ghi đủ chữ số kèm phân số. `--lech` ghi id và 2 nhãn của các ca lệch. Cả
   hai phải nằm ngoài repo và chưa tồn tại.
-- **Bộ đọc xlsx chưa có** (chờ chốt openpyxl hay stdlib — G9-Q1): `load_cells` hiện dừng với `LỖI: chưa có bộ đọc xlsx`, mã 2.
+- File được đọc bằng openpyxl (nhóm dev) với `read_only=True, data_only=True`, như kiem_d6. Sheet được lấy theo tên `--sheet`, không
+  lấy sheet đang mở. Ô công thức đọc theo giá trị cache mà Excel/Sheets lưu kèm file. Không mở được file hoặc không có sheet: mã 2.
 
 ## Harness G2 — chạy kịch bản trên stack (RQ1)
 

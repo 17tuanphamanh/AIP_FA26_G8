@@ -1,7 +1,9 @@
-"""G9 — `scripts/eval/kappa.py`: `parse_cells` (bảng ô → (id, nhãn)) + CLI trên bộ đọc GIẢ tiêm vào `main(argv, read=...)`.
+"""G9 — `scripts/eval/kappa.py`: `parse_cells` (bảng ô → (id, nhãn)) + CLI trên bộ đọc GIẢ tiêm vào `main(argv, read=...)` + bộ đọc
+xlsx thật (`load_cells`, openpyxl) trên file xlsx GIẢ sinh trong `tmp_path` (mô phỏng file thật: sheet "Cách điền" đứng đầu, sheet đợt
+có 9 tiêu đề, dòng cam kết sau dòng dữ liệu cuối). Không mở file xlsx thật nào.
 
-Không file xlsx nào: đường dẫn A/B chỉ là tên trong `tmp_path`, bộ đọc giả trả danh sách (id, nhãn) dựng từ ma trận tính tay (E2, E5 ở
-`test_stats_kappa.py`). Id tổng hợp chứa `SENTINEL`; mọi lần chạy CLI kiểm stdout + stderr không có id, không có nhãn.
+Dữ liệu dựng từ ma trận tính tay (E2, E5 ở `test_stats_kappa.py`). Id tổng hợp chứa `SENTINEL`; mọi lần chạy CLI kiểm stdout + stderr
+không có id, không có nhãn.
 """
 
 import csv
@@ -9,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import openpyxl
 import pytest
 from app.eval.stats import KAPPA_LABELS
 from tests.unit.eval.eval_scripts import REPO, load_script
@@ -53,8 +56,14 @@ class Fake:
 
 def run(tmp_path: Path, capsys: pytest.CaptureFixture[str], rows: tuple[Rows, Rows] = E5, *extra: str,
         read: Any = None) -> tuple[int, str, str]:  # fmt: skip
-    argv = [str(tmp_path / "A.xlsx"), str(tmp_path / "B.xlsx"), "--sheet", "Đợt 2", *extra]
-    code = kp.main(argv) if read is False else kp.main(argv, read=read or Fake(*rows))
+    return run_files(tmp_path / "A.xlsx", tmp_path / "B.xlsx", capsys, *extra, read=read or Fake(*rows))
+
+
+def run_files(a: Path, b: Path, capsys: pytest.CaptureFixture[str], *extra: str, sheet: str = "Đợt 2",
+              read: Any = None) -> tuple[int, str, str]:  # fmt: skip
+    """`read=None` → bộ đọc thật (`kp.read_rows`, mặc định của `main`)."""
+    argv = [str(a), str(b), "--sheet", sheet, *extra]
+    code = kp.main(argv) if read is None else kp.main(argv, read=read)
     out, err = capsys.readouterr()
     for word in FORBIDDEN:
         assert word not in out + err
@@ -123,11 +132,6 @@ def test_parse_cells_empty_sheet() -> None:
         kp.parse_cells([])
 
 
-def test_read_rows_pending(tmp_path: Path) -> None:
-    with pytest.raises(kp.XlsxReaderPending):
-        kp.read_rows(tmp_path / "A.xlsx", "Đợt 2")
-
-
 # ---- CLI -------------------------------------------------------------------------------------------------------------
 
 
@@ -155,12 +159,6 @@ def test_cli_sheet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fake = Fake(*E5)
     assert run(tmp_path, capsys, read=fake)[0] == 0
     assert fake.sheets == ["Đợt 2", "Đợt 2"]
-
-
-def test_cli_reader_pending(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    code, out, err = run(tmp_path, capsys, read=False)
-    assert code == 2 and out == ""
-    assert "LỖI: chưa có bộ đọc xlsx" in err
 
 
 def test_cli_missing_extra_id(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -298,3 +296,54 @@ def test_cli_stdout_no_ids_labels(tmp_path: Path, capsys: pytest.CaptureFixture[
     code, out, err = run(tmp_path, capsys, E5, "--lech", str(tmp_path / "lech.csv"), "--json", str(tmp_path / "k.json"))
     assert code == 0 and err == ""
     assert len(out.splitlines()) == 3
+
+
+# ---- bộ đọc xlsx thật (load_cells) trên file GIẢ --------------------------------------------------------------------
+
+
+def write_xlsx(path: Path, rows: Rows) -> Path:
+    """Như file thật: "Cách điền" đứng đầu và là sheet đang mở, "Đợt 1" (dữ liệu khác), "Đợt 2" = `rows` + dòng cam kết."""
+    wb = openpyxl.Workbook()
+    guide = wb.active
+    assert guide is not None
+    guide.title = "Cách điền"
+    guide.append(["Hướng dẫn SENTINEL: ghi một trong ba nhãn vào cột Nhãn"])
+    d1 = wb.create_sheet("Đợt 1")
+    d1.append(HEADER)
+    d1.append(data_row("S_SENTINEL_00", L))
+    d2 = wb.create_sheet("Đợt 2")
+    d2.append(HEADER)
+    for sid, label in rows:
+        d2.append(data_row(sid, label))
+    d2.append(COMMIT)
+    wb.active = 0
+    wb.save(path)
+    return path
+
+
+def test_xlsx_e5(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Bộ đọc thật: sheet theo tên (không lấy sheet đang mở), cột theo tiêu đề, bỏ dòng cam kết, B đảo thứ tự dòng."""
+    a, b = E5
+    pa, pb = write_xlsx(tmp_path / "A.xlsx", a), write_xlsx(tmp_path / "B.xlsx", b[::-1])
+    assert kp.read_rows(pa, "Đợt 2") == a
+    code, out, err = run_files(pa, pb, capsys)
+    assert code == 0 and err == ""
+    assert out.splitlines() == E5_LINES
+
+
+def test_xlsx_wrong_sheet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    pa, pb = write_xlsx(tmp_path / "A.xlsx", E5[0]), write_xlsx(tmp_path / "B.xlsx", E5[1])
+    code, out, err = run_files(pa, pb, capsys, sheet="Đợt 3")
+    assert code == 2 and out == ""
+    assert "LỖI: file A.xlsx: không có sheet 'Đợt 3' (các sheet: Cách điền, Đợt 1, Đợt 2)" in err
+
+
+@pytest.mark.parametrize("kind", ["rac.xlsx", "van_ban.txt", "khong_co.xlsx"])
+def test_xlsx_not_xlsx(tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str) -> None:
+    bad = tmp_path / kind
+    if kind != "khong_co.xlsx":
+        bad.write_bytes(b"SENTINEL khong phai xlsx\n")
+    pb = write_xlsx(tmp_path / "B.xlsx", E5[1])
+    code, out, err = run_files(bad, pb, capsys)
+    assert code == 2 and out == ""
+    assert f"LỖI: file {kind}: không mở được xlsx (" in err

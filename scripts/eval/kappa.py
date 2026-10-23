@@ -10,8 +10,8 @@ cờ cộng đợt.
       [--bo S1,TH2 | --chi S1,TH2] [--json <ngoài repo>] [--lech <ngoài repo>]
 
 Ba lớp:
-- `load_cells(path, sheet)`: nạp ô của sheet từ xlsx — CHỜ G9-Q1 (openpyxl vào nhóm dev hay đọc bằng stdlib), hiện ném
-  `XlsxReaderPending`.
+- `load_cells(path, sheet)`: nạp ô của sheet THEO TÊN bằng openpyxl (`read_only=True, data_only=True` như kiem_d6 — ô công thức
+  đọc theo giá trị cache mà Excel/Sheets lưu kèm file). Không mở được file / không có sheet → lỗi.
 - `parse_cells(rows)` (thuần): dòng 1 = tiêu đề; cột tìm theo tiêu đề `id` và `Nhãn` (so chính xác sau strip; thiếu/trùng → lỗi).
   Dòng dữ liệu = ô id khớp `ID_RE`. Dòng có nội dung mà id sai dạng: SAU dòng dữ liệu cuối → bỏ (dòng cam kết của người gán — có chữ
   ở cả cột Nhãn); GIỮA các dòng dữ liệu → lỗi. Dòng trống hoàn toàn → bỏ. `read_rows = parse_cells ∘ load_cells`.
@@ -31,12 +31,15 @@ import hashlib
 import json
 import re
 import sys
+import zipfile
 from collections.abc import Callable, Sequence
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+import openpyxl
 from app.eval.stats import KAPPA_LABELS, KAPPA_PASS, Agreement, Kappa, agreement
+from openpyxl.utils.exceptions import InvalidFileException
 
 REPO = Path(__file__).resolve().parents[2]
 ID_RE = re.compile(r"^(S|TH)[A-Za-z0-9._-]*$")
@@ -47,10 +50,6 @@ type Reader = Callable[[Path, str], Rows]
 
 
 class InputError(ValueError):
-    pass
-
-
-class XlsxReaderPending(InputError):
     pass
 
 
@@ -94,8 +93,18 @@ def parse_cells(rows: Sequence[Sequence[object]]) -> Rows:
 
 
 def load_cells(path: Path, sheet: str) -> list[list[object]]:
-    """Nạp ô của `sheet` (giá trị đã tính, như `data_only=True` của kiem_d6). CHỜ G9-Q1."""
-    raise XlsxReaderPending("chưa có bộ đọc xlsx (chờ Tuấn Anh chốt openpyxl hay stdlib — G9-Q1)")
+    """Ô của `sheet` (theo tên, không lấy sheet đang mở) — `read_only`, `data_only=True` như kiem_d6: ô công thức đọc theo giá trị
+    cache mà Excel/Sheets lưu kèm file. Không mở được file / không có sheet → `InputError` (không in nội dung ô)."""
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except (InvalidFileException, zipfile.BadZipFile, OSError, KeyError) as e:
+        raise InputError(f"file {path.name}: không mở được xlsx ({type(e).__name__})") from None
+    try:
+        if sheet not in wb.sheetnames:
+            raise InputError(f"file {path.name}: không có sheet {sheet!r} (các sheet: {', '.join(wb.sheetnames)})")
+        return [list(r) for r in wb[sheet].iter_rows(values_only=True)]
+    finally:
+        wb.close()  # read_only giữ file mở tới khi close
 
 
 def read_rows(path: Path, sheet: str) -> Rows:
