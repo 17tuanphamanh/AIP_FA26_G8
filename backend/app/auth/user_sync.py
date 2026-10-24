@@ -111,6 +111,7 @@ class AdUserSync:
                 hired_at=ad.hired_at,
                 is_privileged_account=ad.is_privileged_account,
                 synced_at=now,
+                email=getattr(ad, "email", None),  # notify-email: trường tuỳ chọn của AD (Protocol `AdUser` không bắt buộc)
             )
         )
         if previous_role is None:  # dòng VỪA tạo bởi chính lời gọi này (kết quả INSERT … ON CONFLICT — AuthStore.upsert_user)
