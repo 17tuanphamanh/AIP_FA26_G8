@@ -73,12 +73,57 @@ GET  /_admin/outbox                       tin SMS/email mock "đã gửi" — m�
   Sau khi đổi: mật khẩu tạm và mật khẩu cũ đều hỏng, mật khẩu mới đăng nhập được.
 - `POST /_admin/reset` xoá hộp thư đi và mọi trạng thái mật khẩu tạm (nạp lại seed).
 
+## Mock-fidelity: phần mềm, license, VPN, thư mục chạy như hệ thống thật
+
+Tên phần mềm (`/software/catalog|licenses/{name}`, `install`, `uninstall`): tra theo slug (`zoom`) trước, rồi theo tên hiển thị
+hoặc `aliases` trong seed, đều sau chuẩn hoá (chữ thường, khoảng trắng → `-`): `Zoom Workplace`, `7-Zip`, `VS  Code`… Bảy tên trong
+`kb/software/KB-SW-001.md` đều tra đúng mục; tên lạ vẫn 404. Seed kiểm lúc nạp (sai thì mock không khởi động): slug chỉ gồm
+`a-z 0-9 -`; `display_name` không rỗng; slug, tên hiển thị và alias dùng chung một không gian tên — không trùng giữa các phần mềm,
+không trùng nhau trong một mục, alias không rỗng và không lặp lại slug / tên hiển thị của chính nó.
+
+```
+GET  /software/licenses/{name}      thêm "assignments": [{"assignment_id", "user_id"}] — ai đang giữ (rỗng với phần mềm miễn phí;
+                                    phần `used` dựng sẵn từ seed không có tên người giữ)
+POST /software/licenses/{name}/assign              người này đã giữ license → 409 already_assigned (xét trước no_license_available)
+POST /software/installed/{device_id}/install       phần mềm có phí mà CHỦ MÁY chưa giữ license → 409 license_not_assigned
+                                                   đã cài rồi → 200 + "already_installed": true + phiên bản ĐANG cài (không cài lại)
+POST /software/installed/{device_id}/uninstall     thêm "license_released": license của chủ máy về kho (used -1, bỏ khỏi assignments);
+                                                   chỉ khi chủ máy hết cài phần mềm đó trên mọi máy của mình
+POST /vpn/connect  {"user_id", "device_id"}        (token svc_executor) kết nối thử, ghi vào /vpn/connections/{user_id}
+     → 200 {"at", "user_id", "device_id", "result": "success"|"failed", "error_code"}
+POST /files/permissions/{user_id}/grant|extend     người không còn dùng được tài khoản → 409 user_not_active
+POST /files/permissions/{user_id}/grant            thêm "previous_level", "kept_higher_level"
+```
+
+`/vpn/connect` xét lần lượt: máy chưa đăng ký → `DEVICE_NOT_REGISTERED`; máy không có chứng chỉ nào → `NO_CERT`; có chứng chỉ còn hạn
+chưa thu hồi → `success`; còn chứng chỉ hết hạn chưa thu hồi → `CERT_EXPIRED`; chỉ còn chứng chỉ đã thu hồi → `CERT_REVOKED`
+(mã đã có trong seed). Thiết bị không có / không thuộc `user_id` → 404; không đổi chứng chỉ nào (renew/reissue/revoke giữ nguyên).
+
+Grant không hạ quyền: người đang có quyền CÒN HẠN cao hơn mức xin (`read` < `write` < `full`) → giữ nguyên mức và hạn,
+trả `kept_higher_level=true` và `previous_level` là mức đang giữ. Xin mức bằng/cao hơn, hoặc quyền cũ đã hết hạn → thay bằng
+quyền mới, `previous_level` là mức cũ (`null` nếu chưa có). "Dùng được tài khoản" = `employment_status` ∈ {`active`, `probation`}
+(cùng tập `target_user_status` của `config/policy.json`); `disabled`/`terminated` → 409. `revoke` và `restore-expiry` không bị chặn.
+
+### Mã lỗi mới (đều là `{"detail": "<mã>"}`)
+
+| Endpoint | HTTP | Mã | Khi nào |
+|---|---|---|---|
+| `POST /software/licenses/{name}/assign` | 409 | `already_assigned` | người này đã giữ license phần mềm đó |
+| `POST /software/installed/{device_id}/install` | 409 | `license_not_assigned` | phần mềm có phí, chủ máy chưa giữ license |
+| `POST /files/permissions/{user_id}/grant` | 409 | `user_not_active` | `disabled` / `terminated` |
+| `POST /files/permissions/{user_id}/extend` | 409 | `user_not_active` | như trên (quyền đang có vẫn nguyên) |
+| `POST /vpn/connect` | 200 | `error_code` = `CERT_EXPIRED` · `NO_CERT` · `DEVICE_NOT_REGISTERED` · `CERT_REVOKED` | kết quả `failed` của lần kết nối thử (không phải lỗi HTTP) |
+
+Mã 409 cũ giữ nguyên: `not_a_paid_license`, `no_license_available` (assign), `device_not_registered` (renew/reissue), `no_phone_on_file`,
+`sms_reset_ad_only` (reset mật khẩu).
+
 ## Giới hạn
 
 - **SIM swap**: kẻ chiếm được SIM (đổi SIM, chuyển mạng trái phép) sẽ nhận được mật khẩu tạm qua SMS. Giảm thiểu trong mock: email
   báo chủ tài khoản ở mỗi lần đặt lại qua SMS, hạn 15 phút, chỉ dùng một lần và bắt đổi mật khẩu ngay. Không loại bỏ được rủi ro này —
   SMS là kênh yếu hơn email.
 - Mock không gửi tin thật: SMS/email chỉ nằm trong hộp thư đi (bộ nhớ) và mất khi `/_admin/reset` hoặc khởi động lại.
+- Phần mềm: tên không phải slug / tên hiển thị / alias trong seed vẫn 404. `used` dựng sẵn từ seed không có tên người giữ nên gỡ phần mềm có phí cài từ trước không trả license nào về kho.
 - Backend hiện chỉ gọi kênh email; chưa có tool cho `/ad/change-password` và chưa xử lý 403 `password_change_required` ở đăng nhập.
 
 ## Bảng mong đợi — 12 tool đọc với seed (cổng 1, người xác nhận gọi tay)
