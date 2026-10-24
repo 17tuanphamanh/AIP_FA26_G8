@@ -1,12 +1,15 @@
-// t65 — handler giả F5 (chỉ nạp ở dev:mock): policy (Phase 7). Dashboard + alerts đã là route thật M9 A3 — handler giả và
-// phần t65 của chúng đã xoá (N-A3). Chạy handler trực tiếp bằng `getResponse` của MSW — không service worker, không mạng.
-// Lời gọi backend THẬT của handler (`/api/auth/me` qua bypass) đi vào fetch giả.
+// t65 — handler policy (route THẬT F7, N-POL1): KHÔNG nạp ở dev:mock, chỉ cho test — soát nó khớp hình dạng route thật.
+// Dashboard + alerts đã là route thật M9 A3 — handler giả và phần t65 của chúng đã xoá (N-A3). Chạy handler trực tiếp
+// bằng `getResponse` của MSW — không service worker, không mạng. Lời gọi backend THẬT của handler (`/api/auth/me` qua
+// bypass) đi vào fetch giả.
 import { getResponse } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { getPolicy, listPolicyVersions, validatePolicy } from "../../api/policy.ts";
+import { createClient } from "../../api/client.ts";
 import type { Me, PolicyVersionItem, PolicyView } from "../../api/types.ts";
-import { POLICY_JSON } from "../fixtures/policy.ts";
+import { DEMO_VERSION, POLICY_DEMO } from "../fixtures/policy.ts";
 import { handlers } from "./index.ts";
-import { policyHandlers, policyIssues, resetPolicy } from "./policy.ts";
+import { policyHandlers, policyIssues } from "./policy.ts";
 
 const BASE = ["ticket:create", "ticket:read:own"];
 const MGR: Me = { user_id: "it_mgr01", role: "manager", permissions: [...BASE, "policy:read", "policy:edit", "dashboard:read:all", "alert:read"] };
@@ -33,72 +36,74 @@ const send = (method: string, path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-beforeEach(() => {
-  resetPolicy();
-});
-
-describe("t65: handler policy (Q-fe-26) — 4 phiên bản; PUT 409/422/201; quay lui = TẠO bản mới, bản cũ nguyên", () => {
+describe("t65: handler policy = hình dạng route thật F7 (đọc, mảng trần, validate 422/403/413), luật mẫu trung tính", () => {
   const versions = async () => (await (await getResponse(policyHandlers, get("/api/policy/versions")))!.json()) as PolicyVersionItem[];
   const current = async () => (await (await getResponse(policyHandlers, get("/api/policy")))!.json()) as PolicyView;
+  const validate = (body: unknown) => getResponse(policyHandlers, send("POST", "/api/policy/validate", body));
 
-  it("GET: bản đang áp dụng '4' = config/policy.json; 4 phiên bản, đúng 1 đang áp dụng; bản 3 khôi phục từ bản 1", async () => {
+  it("GET: ĐÚNG 6 khoá, bản file (version_id 0, updated_by null, is_current); /versions MẢNG TRẦN 1 mục, restored_from null", async () => {
     stubMe(READER);
     const view = await current();
-    expect([view.version_id, view.version, view.is_current]).toStrictEqual([14, "4", true]);
-    expect(view.content).toStrictEqual(POLICY_JSON);
-    expect(Object.keys(view.content)).toStrictEqual(["constants", "business_hours", "rules"]);
+    expect(Object.keys(view).sort()).toStrictEqual(["content", "is_current", "updated_at", "updated_by", "version", "version_id"]);
+    expect([view.version_id, view.version, view.updated_by, view.is_current]).toStrictEqual([0, DEMO_VERSION, null, true]);
+    expect(view.version).toMatch(/^file-[0-9a-f]{8}$/);
+    expect(view.content).toStrictEqual(POLICY_DEMO);
     const list = await versions();
-    expect(list.map((v) => v.version)).toStrictEqual(["4", "3", "2", "1"]);
-    expect(list.filter((v) => v.is_current)).toHaveLength(1);
-    expect(list.find((v) => v.version === "3")?.restored_from).toBe("1");
-    // policy:read không ghi được.
-    expect((await getResponse(policyHandlers, send("PUT", "/api/policy", { content: POLICY_JSON, base_version_id: 14 })))?.status).toBe(403);
+    expect(Array.isArray(list)).toBe(true);
+    expect(list).toStrictEqual([{ version_id: 0, version: DEMO_VERSION, updated_by: null, updated_at: view.updated_at, is_current: true, restored_from: null }]);
   });
 
-  it("kiểm nghĩa giả: ngưỡng dưới ≥ ngưỡng trên, type sai, id trùng → loc đúng (tính từ gốc nội dung)", () => {
-    const bad = JSON.parse(JSON.stringify(POLICY_JSON)) as typeof POLICY_JSON;
-    bad.constants.THRESHOLD_LOW = 0.85;
-    (bad.rules[2] as { type: string }).type = "aproval_required";
-    bad.rules[4]!.id = "R17";
-    expect(policyIssues(bad)).toStrictEqual([
-      { loc: ["constants", "THRESHOLD_LOW"], msg: "Ngưỡng dưới 0.85 phải nhỏ hơn ngưỡng trên 0.75" },
-      { loc: ["rules", 2, "type"], msg: 'type "aproval_required" không hợp lệ — chỉ allow, approval_required, deny' },
-      { loc: ["rules", 4, "id"], msg: 'id "R17" trùng với luật thứ 2' },
-    ]);
-    expect(policyIssues(POLICY_JSON)).toStrictEqual([]);
-    expect(policyIssues([])).toStrictEqual([{ loc: [], msg: "Nội dung chính sách phải là một object JSON" }]);
+  it("fixture KHÔNG chép luật thật: mọi luật intent 'demo', id không phải R…, không có business_hours", () => {
+    expect(POLICY_DEMO.rules.every((r) => r.intent === "demo" && !/^R\d+$/.test(r.id))).toBe(true);
+    expect(Object.keys(POLICY_DEMO)).toStrictEqual(["constants", "rules"]);
   });
 
-  it("PUT: thừa khoá → 422 invalid_request; base cũ → 409 version_conflict; sai nghĩa → 422 invalid_policy; đúng → 201 bản '5'", async () => {
+  it("validate: policy:read → 403 forbidden; policy:edit + hợp lệ → 200 {valid, version_preview}; không có PUT/restore", async () => {
+    stubMe(READER);
+    const denied = (await validate({ content: POLICY_DEMO }))!;
+    expect([denied.status, await denied.json()]).toStrictEqual([403, { detail: "forbidden" }]);
     stubMe(MGR);
-    const put = (body: unknown) => getResponse(policyHandlers, send("PUT", "/api/policy", body));
-    expect(await (await put({ content: POLICY_JSON, base_version_id: 14, force: true }))!.json()).toStrictEqual({ error: "invalid_request", fields: ["body.force"] });
-    const conflict = (await put({ content: POLICY_JSON, base_version_id: 13 }))!;
-    expect([conflict.status, await conflict.json()]).toStrictEqual([409, { detail: "version_conflict" }]);
-    const invalid = (await put({ content: { ...POLICY_JSON, constants: { ...POLICY_JSON.constants, THRESHOLD_HIGH: 0.1 } }, base_version_id: 14 }))!;
-    expect(invalid.status).toBe(422);
-    expect(await invalid.json()).toMatchObject({ error: "invalid_policy", errors: [{ loc: ["constants", "THRESHOLD_LOW"] }] });
-    const ok = (await put({ content: { ...POLICY_JSON, constants: { ...POLICY_JSON.constants, SLA_MINUTES: 35 } }, base_version_id: 14 }))!;
-    expect([ok.status, await ok.json()]).toStrictEqual([201, { version_id: 15, version: "5" }]);
-    expect((await current()).version).toBe("5");
-    expect((await versions()).filter((v) => v.is_current).map((v) => v.version)).toStrictEqual(["5"]);
+    const ok = (await validate({ content: POLICY_DEMO }))!;
+    const body = (await ok.json()) as { valid: boolean; version_preview: string };
+    expect(ok.status).toBe(200);
+    expect(Object.keys(body).sort()).toStrictEqual(["valid", "version_preview"]);
+    expect(body.valid).toBe(true);
+    expect(body.version_preview).toMatch(/^file-[0-9a-f]{8}$/);
+    expect(await getResponse(policyHandlers, send("PUT", "/api/policy", { content: POLICY_DEMO }))).toBeUndefined();
+    expect(await getResponse(policyHandlers, send("POST", "/api/policy/versions/0/restore"))).toBeUndefined();
   });
 
-  it("quay lui bản 2 → danh sách +1, bản mới đang áp dụng (restored_from '2', nội dung = bản 2); bản 2 còn nguyên; id lạ → 404", async () => {
+  it("validate: sai nghĩa → 422 invalid_policy, loc từ gốc nội dung; sai hình dạng → 422 invalid_request; > 64 KB → 413", async () => {
     stubMe(MGR);
-    const before = await versions();
-    const v2Before = before.find((v) => v.version === "2")!;
-    const res = (await getResponse(policyHandlers, send("POST", "/api/policy/versions/12/restore")))!;
-    expect([res.status, await res.json()]).toStrictEqual([201, { version_id: 15, version: "5" }]);
-    const after = await versions();
-    expect(after).toHaveLength(before.length + 1);
-    const created = after.find((v) => v.version_id === 15)!;
-    expect([created.is_current, created.restored_from, created.updated_by]).toStrictEqual([true, "2", "it_mgr01"]);
-    expect(after.filter((v) => v.is_current)).toHaveLength(1);
-    expect(after.find((v) => v.version === "2")).toStrictEqual({ ...v2Before, is_current: false });
-    const view = await current();
-    expect((view.content as { constants: { SLA_MINUTES: number } }).constants.SLA_MINUTES).toBe(20); // nội dung bản 2
-    expect((await getResponse(policyHandlers, send("POST", "/api/policy/versions/999/restore")))?.status).toBe(404);
+    const bad = { ...POLICY_DEMO, constants: { ...POLICY_DEMO.constants, THRESHOLD_LOW: 0.9 }, rules: [POLICY_DEMO.rules[0], { ...POLICY_DEMO.rules[1], type: "alow" }] };
+    const res = (await validate({ content: bad }))!;
+    expect(res.status).toBe(422);
+    expect(await res.json()).toStrictEqual({
+      error: "invalid_policy",
+      errors: [
+        { loc: ["constants"], msg: "Value error, THRESHOLD_LOW phải nhỏ hơn THRESHOLD_HIGH" },
+        { loc: ["rules", 1, "type"], msg: "Input should be 'allow', 'approval_required' or 'deny'" },
+      ],
+    });
+    const shape = (await validate({ content: [], extra: 1 }))!;
+    expect([shape.status, await shape.json()]).toStrictEqual([422, { error: "invalid_request", fields: ["<extra>", "content"] }]);
+    const big = (await validate({ content: { ...POLICY_DEMO, note: "x".repeat(70_000) } }))!;
+    expect([big.status, await big.json()]).toStrictEqual([413, { detail: "payload_too_large" }]);
+    expect(policyIssues(POLICY_DEMO)).toStrictEqual([]);
+  });
+
+  it("api/policy.ts đi qua handler: getPolicy / listPolicyVersions / validatePolicy nhận đúng hình dạng (fail-closed không bắt nhầm)", async () => {
+    const me = vi.fn(async () => json(200, MGR));
+    const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
+      if (input === "/api/auth/me") return me();
+      const request = new Request(url(input), init);
+      vi.stubGlobal("fetch", vi.fn(async () => json(200, MGR))); // bypass `/api/auth/me` của handler
+      return (await getResponse(policyHandlers, request)) ?? json(404, { detail: "Not Found" });
+    });
+    const client = createClient({ fetch, readCookie: () => null, locks: null, channel: null, onSessionEnd: vi.fn() });
+    expect((await getPolicy(client)).version).toBe(DEMO_VERSION);
+    expect((await listPolicyVersions(client)).map((v) => v.version_id)).toStrictEqual([0]);
+    expect((await validatePolicy(POLICY_DEMO, client)).valid).toBe(true);
   });
 });
 

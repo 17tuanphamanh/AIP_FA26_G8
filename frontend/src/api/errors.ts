@@ -4,8 +4,8 @@ import { ownEntry } from "../lib/lookup.ts";
 //   {detail: "<mã hoặc câu>"}                  — HTTPException, AuthError, 409 sự kiện muộn, 413
 //   {error: "<mã>", fields?: ["body.text", …]}  — 422 kiểm dữ liệu (`invalid_request`), 503 privacy guard
 // (backend/app/api/errors.py). Thân lỗi không bao giờ chứa giá trị người dùng gửi (chống rò qua 422).
-// F5 [Đề xuất — Phase 7]: 422 `invalid_policy` kèm `errors: [{loc, msg}]` (dạng lỗi Pydantic, `loc` tính từ gốc nội
-// dung chính sách) → `issues`.
+// F7 (route thật `POST /api/policy/validate`, backend/app/api/policy.py): 422 `invalid_policy` kèm `errors: [{loc, msg}]`
+// (dạng lỗi Pydantic, `loc` tính từ gốc nội dung chính sách) → `issues`.
 
 export class ApiError extends Error {
   readonly status: number;
@@ -91,8 +91,7 @@ const CODE_MESSAGES: Record<string, string> = {
   monitor_unavailable: "Số liệu tạm thời không có",
   // Ticket nhiều ý (T20b): `children_progress` / tin tổng hợp sai hình dạng — api/tickets.ts `parseTicketView` (502 do client đặt).
   invalid_ticket_body: "Chưa đọc được dữ liệu của yêu cầu này. Vui lòng tải lại trang.",
-  // Chính sách [Đề xuất F5 — Phase 7].
-  version_conflict: "Đã có phiên bản mới hơn — tải lại trước khi lưu",
+  // Chính sách (F7 — chỉ có validate; `version_conflict` của Lưu bỏ cùng nút, N-POL2 thêm lại theo route thật).
   invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
 };
 

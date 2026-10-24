@@ -1,7 +1,8 @@
 // Soát LÚC BIÊN DỊCH (N-A3 PHẦN 2): kiểu VIẾT TAY của 4 route M9 A3 (contracts-tam.ts, đọc qua types.ts) phải gán được
-// HAI CHIỀU với kiểu sinh từ openapi (schema.gen.ts — `npm run gen:api`, openapi của a463150). Lệch → `npm run typecheck`
-// đỏ ngay tại dòng soát, lỗi nêu tên khoá ("Types of property 'x' are incompatible"). Không sửa kiểu viết tay cho xanh
-// khi chưa biết lệch do ai; không nới bằng any/unknown/ép kiểu. File chỉ có kiểu — không mã chạy, không ai import.
+// HAI CHIỀU với kiểu sinh từ openapi (schema.gen.ts — `npm run gen:api`; sinh lại ở N-POL1 từ openapi của be8239d, lấy
+// offline bằng `create_app().openapi()`). Lệch → `npm run typecheck` đỏ ngay tại dòng soát, lỗi nêu tên khoá ("Types of
+// property 'x' are incompatible"). Không sửa kiểu viết tay cho xanh khi chưa biết lệch do ai; không nới bằng
+// any/unknown/ép kiểu. File chỉ có kiểu — không mã chạy, không ai import.
 // Xoá khi: gen:api thành nguồn kiểu cho 4 route (xoá cùng khối "Route ĐÃ CÓ — M9 A3" ở contracts-tam.ts).
 import type { components, operations } from "./schema.gen.ts";
 import type {
@@ -15,6 +16,10 @@ import type {
   E1Split,
   E3Case,
   E3Cases,
+  PolicyInvalid,
+  PolicyValidateOk,
+  PolicyVersionItem,
+  PolicyView,
   RuleCount,
   WeightedRate,
 } from "./types.ts";
@@ -22,6 +27,8 @@ import type {
 type S = components["schemas"];
 /** Thân 200 `application/json` của một operation — nối tên schema với ĐÚNG route. */
 type Ok200<Op> = Op extends { responses: { 200: { content: { "application/json": infer B } } } } ? B : never;
+/** Thân 422 `application/json` của một operation. */
+type Err422<Op> = Op extends { responses: { 422: { content: { "application/json": infer B } } } } ? B : never;
 
 /** `true` khi A gán được cho B VÀ B gán được cho A (bọc `[…]` để không phân phối qua union). */
 type Mutual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -84,4 +91,15 @@ export type AiDashboardOk = [
   Expect<Mutual<AiMetrics["cost_per_day"], AiMetricsGen["cost_per_day"]>>,
   Expect<Same<DayCost, S["DayCost"]>>,
   Expect<Mutual<AiMetrics["latency_p95_by_step"], AiMetricsGen["latency_p95_by_step"]>>,
+];
+
+// ---------------------------------------------------------------- Chính sách (N-POL1)
+// Kiểu ở types.ts LÀ kiểu sinh (không viết tay) — soát ở đây chỉ nối tên schema với ĐÚNG route: `/versions` trả MẢNG
+// TRẦN (không phải `{items}`), 422 của validate có nhánh `invalid_policy`.
+
+export type PolicyOk = [
+  Expect<Mutual<PolicyView, Ok200<operations["current_policy_api_policy_get"]>>>,
+  Expect<Mutual<PolicyVersionItem[], Ok200<operations["policy_versions_api_policy_versions_get"]>>>,
+  Expect<Mutual<PolicyValidateOk, Ok200<operations["validate_policy_api_policy_validate_post"]>>>,
+  Expect<Mutual<PolicyInvalid, Extract<Err422<operations["validate_policy_api_policy_validate_post"]>, { error: "invalid_policy" }>>>,
 ];
