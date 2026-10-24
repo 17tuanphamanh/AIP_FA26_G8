@@ -25,6 +25,7 @@ import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
 import { FINAL_NOTE, POLL_PROCESSING_MS, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
 import { StreamingText } from "./StreamingText.tsx";
+import { usePacedMessages } from "./usePacedMessages.ts";
 import { ThinkingBox } from "./ThinkingBox.tsx";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
 import { POLL_STREAMING_MS, reconcile, type StreamPhase, useTicketStream } from "./useTicketStream.ts";
@@ -109,7 +110,8 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     streamPhaseRef.current = stream.phase;
   }, [stream.phase]);
   const reducedMotion = usePrefersReducedMotion();
-  const { official, streaming } = useMemo(() => reconcile(messages, stream.view.messages), [messages, stream.view.messages]);
+  const paced = usePacedMessages(stream.view.messages, reducedMotion); // nhịp chữ chạy phía màn; chỉ đổi sang tin chính thức khi đã hiện hết
+  const { official, streaming } = useMemo(() => reconcile(messages, paced), [messages, paced]);
 
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
