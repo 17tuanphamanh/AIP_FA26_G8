@@ -52,6 +52,8 @@ from app.api.limits import BodyLimitMiddleware
 from app.api.llm_status import router as llm_status_router
 from app.api.policy import router as policy_router
 from app.api.tickets import router as tickets_router
+from app.api.trace import SqlTraceSource, TraceSource
+from app.api.trace import router as trace_router
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.auth.mfa import MfaCipher
@@ -309,6 +311,7 @@ def create_app(
     kb_probe: KbProbe | None = None,
     rate: RateGate | None = None,
     events_feed: AuditFeed | None = None,
+    trace: TraceSource | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -333,6 +336,7 @@ def create_app(
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
             app.state.events_feed = events_feed or SqlAuditFeed(engines.main)  # SSE tiến trình ticket (api/events.py)
+            app.state.trace = trace or SqlTraceSource(engines.main)  # nhật ký quyết định (chỉ SELECT)
             rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
@@ -409,6 +413,7 @@ def create_app(
     app.include_router(events_router)  # GET /api/tickets/{id}/events (SSE; ENABLE_SSE=false → 404)
     app.include_router(approvals_router)
     app.include_router(escalations_router)
+    app.include_router(trace_router)  # GET /api/tickets/{id}/trace (chỉ đọc)
     return app
 
 
