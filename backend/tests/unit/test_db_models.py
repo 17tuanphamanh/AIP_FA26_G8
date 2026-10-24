@@ -18,6 +18,7 @@ MIGRATION = (
 
 
 MIGRATION_0010 = MIGRATION.parent / "0010_rate_limits.py"  # gói 2b (D-54 a) — bảng thứ 23 `rate_hits`
+MIGRATION_0012 = MIGRATION.parent / "0012_email_outbox.py"  # notify-email — bảng thứ 24 `email_outbox` + `users.email`
 
 
 def _migration(path: Path = MIGRATION) -> ModuleType:
@@ -36,10 +37,12 @@ def _check(table: str, column: str) -> str:
     raise AssertionError(f"không có CHECK cho {table}.{column}")
 
 
-def test_23_tables() -> None:
-    """Gói 2b (PLAN-2B1 G8 #1, Q-2B1-6; đặc tả 4.8 "bảng thứ 23"): 22 bảng gốc + `rate_hits` (migration 0010)."""
-    assert len(Base.metadata.tables) == 23
+def test_24_tables() -> None:
+    """Gói 2b (PLAN-2B1 G8 #1, Q-2B1-6; đặc tả 4.8 "bảng thứ 23"): 22 bảng gốc + `rate_hits` (migration 0010). Notify-email: bảng thứ
+    24 `email_outbox` (migration 0012)."""
+    assert len(Base.metadata.tables) == 24
     assert "rate_hits" in Base.metadata.tables
+    assert "email_outbox" in Base.metadata.tables
 
 
 @pytest.mark.parametrize("table", ["tickets", "audit_logs"])
@@ -72,10 +75,13 @@ def test_tickets_store_redacted_request_only() -> None:
 
 
 def test_migration_grants_cover_every_table() -> None:
-    """Gói 2b (PLAN-2B1 G8 #2): quyền `app_rw` = CRUD + append-only của `0001` HỢP `RW_TABLES` của `0010` (`rate_hits`)."""
-    m, m10 = _migration(), _migration(MIGRATION_0010)
+    """Gói 2b (PLAN-2B1 G8 #2): quyền `app_rw` = CRUD + append-only của `0001` HỢP `RW_TABLES` của `0010` (`rate_hits`) HỢP
+    `RW_TABLES` của `0012` (`email_outbox`, notify-email)."""
+    m, m10, m12 = _migration(), _migration(MIGRATION_0010), _migration(MIGRATION_0012)
     assert tuple(m10.RW_TABLES) == ("rate_hits",)
-    assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) == set(Base.metadata.tables)
+    assert tuple(m12.RW_TABLES) == ("email_outbox",)
+    assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) | set(m12.RW_TABLES) == set(Base.metadata.tables)
+    assert "email_outbox" not in m.MONITOR_TABLES  # body là nội dung tin: không cấp app_monitor
     assert not set(m.RW_CRUD_TABLES) & set(m.APPEND_ONLY)
     assert not (set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY)) & set(m10.RW_TABLES)  # rate_hits không phải bảng của 0001
     assert "rate_hits" not in m.MONITOR_TABLES  # 4.8: không cấp app_monitor
@@ -162,3 +168,25 @@ def test_migration_0010_downgrade_views_equal_0008() -> None:
     m10 = _migration(MIGRATION_0010)
     m8 = _migration(MIGRATION.parent / "0008_monitor_views.py")
     assert tuple(m10.VIEWS_0008) == tuple(m8.VIEWS)
+
+
+# ---- notify-email (migration 0012) ----------------------------------------------------------------------------------------
+
+
+def test_email_outbox_model_matches_migration_0012() -> None:
+    """`kind`/`status` tĩnh ở `0012` = hằng của model; `users.email` VARCHAR(254) NULL; `effect_key` UNIQUE; không cột địa chỉ người
+    nhận; `0012` nối sau `0011`; app_rw không có DELETE."""
+    from app.db.models import EMAIL_KINDS, EMAIL_STATUSES
+
+    m12 = _migration(MIGRATION_0012)
+    assert (m12.revision, m12.down_revision) == ("0012", "0011")
+    assert tuple(m12.KINDS) == EMAIL_KINDS and tuple(m12.STATUSES) == EMAIL_STATUSES
+    assert "DELETE" not in m12.RW_PRIVILEGES
+    assert _check("email_outbox", "kind") == "kind IN (" + ", ".join(f"'{k}'" for k in EMAIL_KINDS) + ")"
+    assert _check("email_outbox", "status") == "status IN ('pending', 'sent', 'failed', 'skipped')"
+    t: Table = Base.metadata.tables["email_outbox"]
+    assert t.c.effect_key.unique and not t.c.effect_key.nullable
+    assert t.c.ticket_id.nullable and not t.c.recipient_user_id.nullable
+    assert not [c.name for c in t.columns if "address" in c.name or c.name in ("email", "to")]
+    email = Base.metadata.tables["users"].c.email
+    assert isinstance(email.type, String) and email.type.length == 254 and email.nullable
