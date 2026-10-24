@@ -50,6 +50,8 @@ from app.api.limits import BodyLimitMiddleware
 from app.api.llm_status import router as llm_status_router
 from app.api.policy import router as policy_router
 from app.api.tickets import router as tickets_router
+from app.api.trace import SqlTraceSource, TraceSource
+from app.api.trace import router as trace_router
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.auth.mfa import MfaCipher
@@ -306,6 +308,7 @@ def create_app(
     clock: Clock | None = None,
     kb_probe: KbProbe | None = None,
     rate: RateGate | None = None,
+    trace: TraceSource | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -329,6 +332,7 @@ def create_app(
             stack.push_async_callback(engines.dispose)
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
+            app.state.trace = trace or SqlTraceSource(engines.main)  # nhật ký quyết định (chỉ SELECT)
             rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
@@ -404,6 +408,7 @@ def create_app(
     app.include_router(tickets_router)
     app.include_router(approvals_router)
     app.include_router(escalations_router)
+    app.include_router(trace_router)  # GET /api/tickets/{id}/trace (chỉ đọc)
     return app
 
 

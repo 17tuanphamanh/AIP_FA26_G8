@@ -1,0 +1,223 @@
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { Link, useParams } from "react-router";
+import { approvalQuery } from "../../api/approvals.ts";
+import { queueQuery } from "../../api/escalations.ts";
+import { TRACE_TICKET_ID, traceQuery, tracePath, type TicketTrace as Trace, type TraceStep } from "../../api/trace.ts";
+import {
+  formatAt,
+  formatProb,
+  policyProbs,
+  rollbackText,
+  screenLayer,
+  stepName,
+  stepTitle,
+  TRACE_BAD_ID_TEXT,
+  TRACE_EMPTY_TEXT,
+  TRACE_TITLE,
+  traceErrorText,
+} from "./traceText.ts";
+
+// Nhật ký quyết định của một ticket — `GET /api/tickets/{id}/trace` THẬT (chỉ đọc; L1, L2, Trưởng BP IT). Mỗi bước một
+// thẻ theo thời gian, nhãn tiếng Việt; chỉ hiện các trường backend đã lọc theo danh sách trắng (không câu người dùng, không
+// prompt, không tham số). Lỗi: 403 / 404 / thân sai hình dạng có câu riêng — KHÔNG hiện dữ liệu cũ kèm lỗi. Chữ từ server
+// hiện thô (React tự thoát), không Markdown, không ảnh/thư viện ngoài.
+
+/** Route `/trace/:ticketId` — `key` theo id để không mang dữ liệu sang ticket khác. */
+export function TicketTraceRoute() {
+  const { ticketId = "" } = useParams();
+  return <TicketTrace key={ticketId} ticketId={ticketId} />;
+}
+
+function Page({ ticketId, children }: { ticketId: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-6 px-12 py-8">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-title">{TRACE_TITLE}</h1>
+        <p className="text-ink-2">
+          Ticket <span className="font-mono select-all">{ticketId}</span> · chỉ để xem, theo thứ tự thời gian.
+        </p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function TicketTrace({ ticketId }: { ticketId: string }) {
+  const valid = TRACE_TICKET_ID.test(ticketId);
+  const query = useQuery({ ...traceQuery(ticketId), enabled: valid });
+  if (!valid) {
+    return (
+      <Page ticketId={ticketId}>
+        <p role="alert" className="text-danger">
+          {TRACE_BAD_ID_TEXT}
+        </p>
+      </Page>
+    );
+  }
+  return (
+    <Page ticketId={ticketId}>
+      {query.isError ? (
+        <div role="alert" data-testid="trace-error" className="rounded-group bg-danger-bg px-5 py-4 text-danger-ink">
+          {traceErrorText(query.error)}
+        </div>
+      ) : query.isPending ? (
+        <p className="text-ink-2">Đang tải nhật ký…</p>
+      ) : (
+        <Body trace={query.data} />
+      )}
+    </Page>
+  );
+}
+
+function Body({ trace }: { trace: Trace }) {
+  return (
+    <>
+      {trace.parent_ticket_id ? (
+        <p data-testid="trace-parent" className="text-ink-2">
+          Ý con của ticket{" "}
+          <Link to={tracePath(trace.parent_ticket_id)} className="font-mono text-fpt-blue">
+            {trace.parent_ticket_id}
+          </Link>
+        </p>
+      ) : null}
+      {trace.is_parent ? (
+        <section aria-labelledby="trace-children-heading" data-testid="trace-children" className="flex flex-col gap-2">
+          <h2 id="trace-children-heading" className="text-heading">
+            Các ý con ({trace.children.length})
+          </h2>
+          <ul className="flex flex-col gap-1">
+            {trace.children.map((c) => (
+              <li key={c.ticket_id} data-testid="trace-child">
+                <Link to={tracePath(c.ticket_id)} className="font-mono text-fpt-blue">
+                  {c.ticket_id}
+                </Link>
+                <span className="text-ink-2">
+                  {" "}
+                  · {c.intent ?? "chưa phân loại"}
+                  {c.exit_code ? ` · mã ${c.exit_code}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {trace.steps.length === 0 ? (
+        <p className="text-ink-2">{TRACE_EMPTY_TEXT}</p>
+      ) : (
+        <ol aria-label="Các bước" className="flex flex-col gap-3">
+          {trace.steps.map((s, i) => (
+            <StepCard key={i} step={s} />
+          ))}
+        </ol>
+      )}
+    </>
+  );
+}
+
+function Line({ children, testId }: { children: ReactNode; testId?: string }) {
+  return (
+    <p data-testid={testId} className="text-secondary text-ink-2">
+      {children}
+    </p>
+  );
+}
+
+function StepCard({ step: s }: { step: TraceStep }) {
+  const layer = s.screen ? screenLayer(s.screen) : null;
+  const probs = s.policy ? policyProbs(s.policy) : null;
+  const rollback = s.execution ? rollbackText(s.execution) : null;
+  return (
+    <li data-testid="trace-step" data-step={s.step} className="flex flex-col gap-1 rounded-group border border-line px-5 py-4">
+      <div className="flex items-baseline gap-3">
+        <h3 data-testid="trace-step-title" className="min-w-0 grow font-semibold">
+          {stepTitle(s)}
+        </h3>
+        <span className="shrink-0 text-secondary text-ink-2 tabular-nums">{formatAt(s.at)}</span>
+      </div>
+      <Line>
+        {stepName(s.step)} · <span className="font-mono">{s.step}</span> · <span className="font-mono">{s.event}</span>
+      </Line>
+      {layer ? <Line>{layer}</Line> : null}
+      {s.classify?.model_version ? (
+        <Line>
+          Phiên bản model <span className="font-mono">{s.classify.model_version}</span>
+        </Line>
+      ) : null}
+      {s.classify?.model_probs && Object.keys(s.classify.model_probs).length > 0 ? (
+        <Line testId="trace-model-probs">
+          Model:{" "}
+          {Object.entries(s.classify.model_probs)
+            .map(([label, p]) => `${label} ${formatProb(p)}`)
+            .join(" · ")}
+        </Line>
+      ) : null}
+      {s.diagnose && s.diagnose.fact_keys.length > 0 ? (
+        <Line testId="trace-facts">
+          Dữ kiện: <span className="font-mono">{s.diagnose.fact_keys.join(", ")}</span>
+        </Line>
+      ) : null}
+      {s.sources && s.sources.length > 0 ? (
+        <ul data-testid="trace-sources" className="flex flex-col text-secondary text-ink-2">
+          {s.sources.map((src) => (
+            <li key={src.doc_id}>
+              Nguồn KB <span className="font-mono">{src.doc_id}</span>
+              {src.title ? ` — ${src.title}` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {probs ? <Line>{probs}</Line> : null}
+      {s.approval?.at ? <Line>Lúc {formatAt(s.approval.at)}</Line> : null}
+      {s.execution && s.execution.calls.length > 0 ? (
+        <ul data-testid="trace-calls" className="flex flex-col text-secondary text-ink-2">
+          {s.execution.calls.map((c, i) => (
+            <li key={i}>
+              <span className="font-mono">{c.name}</span>: {c.result === "ok" ? "thành công" : "thất bại"}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {rollback ? <Line>{rollback}</Line> : null}
+    </li>
+  );
+}
+
+// ---- Nút "Nhật ký quyết định" gắn ở router (App.tsx) cạnh màn phiếu duyệt L1, chi tiết escalate L2, xem ticket — đọc mã
+// ticket từ CHÍNH truy vấn mà màn đó đã dùng (cùng khoá cache), không gọi thêm route nào. Chưa biết mã ticket → không hiện.
+
+function TraceButton({ ticketId }: { ticketId: string | undefined }) {
+  if (!ticketId || !TRACE_TICKET_ID.test(ticketId)) return null;
+  return (
+    <div className="flex justify-end px-12 pt-6">
+      <Link
+        to={tracePath(ticketId)}
+        data-testid="trace-link"
+        className="inline-flex h-11 items-center rounded-full bg-button-2 px-5 font-semibold text-fpt-blue"
+      >
+        {TRACE_TITLE}
+      </Link>
+    </div>
+  );
+}
+
+/** Màn phiếu duyệt `/approvals/:approvalId`. */
+export function ApprovalTraceLink() {
+  const { approvalId = "" } = useParams();
+  const query = useQuery(approvalQuery(approvalId));
+  return <TraceButton ticketId={query.data?.ticket_id} />;
+}
+
+/** Chi tiết escalate `/escalations/:escalationId` — ca tìm trong hàng đợi như màn chi tiết. */
+export function EscalationTraceLink() {
+  const { escalationId = "" } = useParams();
+  const query = useQuery(queueQuery());
+  const id = /^\d{1,15}$/.test(escalationId) ? Number(escalationId) : null;
+  return <TraceButton ticketId={query.data?.find((i) => i.escalation_id === id)?.ticket_id} />;
+}
+
+/** Xem ticket `/approvals/ticket/:ticketId` (nơi Trưởng BP IT / L1 xem ticket để ghi đè). */
+export function TicketTraceLink() {
+  const { ticketId = "" } = useParams();
+  return <TraceButton ticketId={ticketId} />;
+}
