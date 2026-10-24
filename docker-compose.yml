@@ -58,6 +58,18 @@ x-backend-env: &backend-env
   TICKET_RATE_10MIN: ${TICKET_RATE_10MIN:-}
   TICKET_RATE_HOUR: ${TICKET_RATE_HOUR:-}
   MESSAGE_RATE_10MIN: ${MESSAGE_RATE_10MIN:-}
+  # Notify-email: backend ghi hàng đợi `email_outbox`, worker gửi qua SMTP — backend và worker PHẢI thấy cùng giá trị. Mặc định tắt;
+  # EMAIL_ENABLED=true mà thiếu SMTP_HOST / SMTP_FROM / EMAIL_LINK_BASE_URL (hoặc chỉ có một trong SMTP_USERNAME/SMTP_PASSWORD) → cả hai
+  # từ chối khởi động. EVAL_MODE=true → luôn tắt. Rỗng = mặc định settings.py (cổng 587, STARTTLS bật, chu kỳ 15 s).
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  EMAIL_LINK_BASE_URL: ${EMAIL_LINK_BASE_URL:-}
+  EMAIL_SEND_INTERVAL_SECONDS: ${EMAIL_SEND_INTERVAL_SECONDS:-}
 
 services:
   postgres:

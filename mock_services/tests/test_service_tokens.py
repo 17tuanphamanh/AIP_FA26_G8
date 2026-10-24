@@ -54,7 +54,8 @@ def test_every_portal_route_is_env_gated() -> None:
 def test_every_post_except_authenticate_is_a_write() -> None:
     posts = {r.path for r in GUARDED if _method(r) == "POST"} - {"/ad/authenticate"}
     assert posts == {r.path for r in WRITE_ROUTES}
-    assert len(WRITE_ROUTES) == 14  # 8 tool ghi + 5 tool hoàn tác (P5 mục 4) + /ad/change-password (F2, chưa có tool backend)
+    # 8 tool ghi + 5 tool hoàn tác (P5 mục 4) + /ad/change-password (F2) + /vpn/connect (mock-fidelity F4) — hai cái cuối chưa có tool backend
+    assert len(WRITE_ROUTES) == 15
 
 
 @pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: r.path)

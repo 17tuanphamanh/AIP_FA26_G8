@@ -34,6 +34,7 @@ from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.dashboard import router as dashboard_router
 from app.api.desk import Desk, RateGate, retry_after
+from app.api.email_outbox import router as email_outbox_router
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
@@ -50,6 +51,8 @@ from app.api.limits import BodyLimitMiddleware
 from app.api.llm_status import router as llm_status_router
 from app.api.policy import router as policy_router
 from app.api.tickets import router as tickets_router
+from app.api.trace import SqlTraceSource, TraceSource
+from app.api.trace import router as trace_router
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.auth.mfa import MfaCipher
@@ -307,6 +310,7 @@ def create_app(
     clock: Clock | None = None,
     kb_probe: KbProbe | None = None,
     rate: RateGate | None = None,
+    trace: TraceSource | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -330,6 +334,7 @@ def create_app(
             stack.push_async_callback(engines.dispose)
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
+            app.state.trace = trace or SqlTraceSource(engines.main)  # nhật ký quyết định (chỉ SELECT)
             rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
@@ -399,6 +404,7 @@ def create_app(
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
     app.include_router(llm_status_router)  # I1: GET /api/admin/llm-status (chỉ đọc, Trưởng BP IT)
+    app.include_router(email_outbox_router)  # notify-email: GET /api/admin/email-outbox (chỉ đọc, Trưởng BP IT, không body)
     app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
@@ -406,6 +412,7 @@ def create_app(
     app.include_router(tickets_router)
     app.include_router(approvals_router)
     app.include_router(escalations_router)
+    app.include_router(trace_router)  # GET /api/tickets/{id}/trace (chỉ đọc)
     return app
 
 

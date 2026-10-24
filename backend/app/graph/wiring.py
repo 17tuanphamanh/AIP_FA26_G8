@@ -26,6 +26,9 @@ Người duyệt (4b): roster `config/approvers.yaml` (kiểm trước DB) → `
 M5 lớp 2 (Phase 6 6C, P1/P10, N2/N5): chiến lược = `Settings.strategy` (Q-6C-1 = B — `manual` bị từ chối ở mọi chế độ, còn lại
 `check_strategy`) và calibrator (`m5.calibrator_version` → CHỈ `load_calibrator`; null → None = không AUTO) kiểm TRƯỚC DB ở cả backend
 lẫn worker; `NodeDeps.estimator` = `LlmRiskEstimator` trên cùng gateway, `eval_mode` cùng nguồn Settings với gateway (N2).
+Email (notify-email): `Settings.email_active` (EMAIL_ENABLED=true và không EVAL_MODE) → `notify_user` của ticket thường/cha bọc
+`notify.notifier.EmailingNotifier` (bên trong `ChildAwareNotifier` — con không email), phiếu duyệt dùng `EmailingApprovals` (B15
+`notify_approver` thêm dòng outbox); cùng privacy guard với `NodeDeps.privacy`. Tắt → y như cũ, không dòng `email_outbox` nào.
 """
 
 import logging
@@ -81,7 +84,13 @@ from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
-from app.notify.child import ChildAwareNotifier
+from app.notify.child import ChildAwareNotifier, UserNotifier
+from app.notify.notifier import (
+    ApproverEmailNotice,
+    EmailingApprovals,
+    EmailingNotifier,
+    email_outbox_from_settings,
+)
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ports import RagPort
@@ -258,9 +267,12 @@ async def _open(
     security = SecurityEventWriter(engines.main, clock)
     turns = SqlTurnStore(engines.main)
     tickets = SqlTicketStore(engines.main)
-    approvals = SqlApprovals(engines.main)
+    privacy = guard_from_settings(settings)
+    outbox = email_outbox_from_settings(settings, engines.main, privacy, clock)  # None = email tắt (hoặc EVAL_MODE)
+    approvals = SqlApprovals(engines.main) if outbox is None else EmailingApprovals(engines.main, ApproverEmailNotice(outbox))
+    inner: UserNotifier = LoggingNotifier() if outbox is None else EmailingNotifier(LoggingNotifier(), outbox)
     deps = NodeDeps(
-        notifier=ChildAwareNotifier.on_engine(engines.main, LoggingNotifier()), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
+        notifier=ChildAwareNotifier.on_engine(engines.main, inner), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
@@ -272,7 +284,7 @@ async def _open(
         enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
         grounding_gate_actions=settings.grounding_gate_actions, commit_sha=settings.app_git_sha,
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
-        privacy=guard_from_settings(settings),
+        privacy=privacy,
         approval_sla_minutes=approval_sla_minutes if approval_sla_minutes is not None else get_policy().constants.SLA_MINUTES,
         approvers=approvers if approvers is not None else open_approvers(settings).root,
         approver_users=approver_users(settings, engines, security),

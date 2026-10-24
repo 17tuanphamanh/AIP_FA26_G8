@@ -110,6 +110,7 @@ class CatalogEntry:
     version: str
     requires_approval: bool
     requires_local_admin: bool  # Phase 5 T22a P7
+    aliases: tuple[str, ...] = ()  # mock-fidelity F1: tên gọi khác, tra cứu qua software.find_entry
 
 
 @dataclass
@@ -287,7 +288,8 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
         ],
         catalog={
             c.name: CatalogEntry(
-                c.name, c.display_name, c.license_type, c.version, c.requires_approval, c.requires_local_admin
+                c.name, c.display_name, c.license_type, c.version, c.requires_approval, c.requires_local_admin,
+                tuple(c.aliases),
             )
             for c in seed.catalog
         },

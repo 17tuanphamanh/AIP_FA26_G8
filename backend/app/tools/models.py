@@ -123,6 +123,9 @@ class AdUser(_Out):
     hired_at: date
     is_privileged_account: bool
     account: AccountState
+    # notify-email: địa chỉ email trong AD — TUỲ CHỌN (AD/mock cũ thiếu trường → None, không lỗi hợp đồng). Chuỗi thô: dạng được kiểm
+    # ở `auth/store.upsert_user` (sai dạng → NULL), không ở đây (một địa chỉ hỏng không được làm hỏng đăng nhập/B1).
+    email: str | None = None
 
 
 class AccountStatus(AdUser):

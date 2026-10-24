@@ -638,6 +638,7 @@
     {
       "name": "zoom",
       "display_name": "Zoom Workplace",
+      "aliases": ["zoom meeting", "zoom client"],
       "license_type": "free",
       "version": "6.2",
       "requires_approval": false,
@@ -646,6 +647,7 @@
     {
       "name": "vscode",
       "display_name": "Visual Studio Code",
+      "aliases": ["vs code"],
       "license_type": "free",
       "version": "1.94",
       "requires_approval": false,
@@ -654,6 +656,7 @@
     {
       "name": "7zip",
       "display_name": "7-Zip",
+      "aliases": ["7z"],
       "license_type": "free",
       "version": "24.08",
       "requires_approval": false,
@@ -662,6 +665,7 @@
     {
       "name": "ms-office",
       "display_name": "Microsoft Office",
+      "aliases": ["office"],
       "license_type": "free",
       "version": "2024",
       "requires_approval": false,
@@ -670,6 +674,7 @@
     {
       "name": "adobe-acrobat-pro",
       "display_name": "Adobe Acrobat Pro",
+      "aliases": ["acrobat", "acrobat pro", "adobe acrobat"],
       "license_type": "paid",
       "version": "2024",
       "requires_approval": true,
@@ -678,6 +683,7 @@
     {
       "name": "ms-project",
       "display_name": "Microsoft Project",
+      "aliases": ["project"],
       "license_type": "paid",
       "version": "2024",
       "requires_approval": true,
@@ -686,6 +692,7 @@
     {
       "name": "autocad",
       "display_name": "AutoCAD",
+      "aliases": ["auto cad"],
       "license_type": "paid",
       "version": "2025",
       "requires_approval": true,

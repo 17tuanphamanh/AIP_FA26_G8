@@ -106,6 +106,10 @@ SIDE_EFFECT_KINDS = (  # P7 2.8
 )  # fmt: skip
 NOTICE_KINDS = ("answer", "question", "result", "rejection", "escalation")  # P7 2.9
 NOTICE_NEEDS = ("none", "answer", "confirm")  # P7 2.9
+EMAIL_STATUSES = ("pending", "sent", "failed", "skipped")  # migration 0012 (notify-email)
+EMAIL_KINDS = (  # migration 0012: 4 loại tin người dùng (B10/B16/B18/B20) + 3 loại thông báo người duyệt (B15, nhắc 50 %/80 %)
+    "answer", "rejection", "result", "escalation", "approval_new", "approval_reminder_1", "approval_reminder_2",
+)  # fmt: skip
 
 
 def check_in(column: str, values: Iterable[str], name: str | None = None) -> CheckConstraint:
@@ -165,6 +169,7 @@ class User(Base):
         String(16), nullable=False, server_default=text("'active'")
     )
     hired_at: Mapped[date | None] = mapped_column(Date)
+    email: Mapped[str | None] = mapped_column(String(254))  # migration 0012: đồng bộ từ AD (`upsert_user`); NULL = AD không có
     mfa_secret_enc: Mapped[bytes | None] = mapped_column(BYTEA)
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -767,3 +772,36 @@ class RateHit(Base):
     hit_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = _user_fk(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ---- 24. email_outbox (notify-email) — migration 0012 ----------------------------------------------------------------------
+
+
+class EmailOutbox(Base):
+    """Hàng đợi email gửi người dùng/người duyệt. Ghi CÙNG transaction `effects.once` (`current_tx()`) với dòng `side_effects`;
+    worker `send_emails` gửi qua SMTP. KHÔNG lưu địa chỉ: worker nối `users.email` của `recipient_user_id` lúc gửi. `body` đã qua
+    privacy guard. KHÔNG append-only (worker đổi `status`, `attempts`…), `app_rw` không có DELETE. `next_attempt_at`: lịch thử lại
+    (backoff) và hạn giữ chỗ của lượt gửi đang chạy."""
+
+    __tablename__ = "email_outbox"
+    __table_args__ = (
+        check_in("status", EMAIL_STATUSES),
+        check_in("kind", EMAIL_KINDS),
+        CheckConstraint("attempts >= 0", name="attempts_nonneg"),
+        Index("ix_email_outbox_due", "next_attempt_at", postgresql_where=text("status = 'pending'")),
+        Index("ix_email_outbox_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str | None] = _ticket_fk(nullable=True)
+    recipient_user_id: Mapped[str] = _user_fk(nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    subject: Mapped[str] = mapped_column(String(256), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)  # đã qua privacy guard
+    status: Mapped[str] = mapped_column(String(8), nullable=False, server_default=text("'pending'"))
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    last_error_class: Mapped[str | None] = mapped_column(String(64))  # tên lớp exception / lý do skipped — không thông điệp
+    created_at: Mapped[datetime] = _now()
+    next_attempt_at: Mapped[datetime] = _now()
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    effect_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)

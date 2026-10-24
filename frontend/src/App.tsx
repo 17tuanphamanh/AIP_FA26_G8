@@ -21,6 +21,7 @@ import { Alerts } from "./routes/manager/Alerts.tsx";
 import { DashboardPage } from "./routes/manager/DashboardPage.tsx";
 import { LlmStatus } from "./routes/manager/LlmStatus.tsx";
 import { PolicyEditor } from "./routes/manager/PolicyEditor.tsx";
+import { ApprovalTraceLink, EscalationTraceLink, TicketTraceLink, TicketTraceRoute } from "./routes/shared/TicketTrace.tsx";
 import { NotFound } from "./routes/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -79,6 +80,7 @@ const escalationRoutes = [
     path: `${ESCALATIONS.to.slice(1)}/:escalationId`,
     element: (
       <RequirePerm perm={ESCALATIONS.perm}>
+        <EscalationTraceLink />
         <EscalationDetailRoute />
       </RequirePerm>
     ),
@@ -99,6 +101,7 @@ const approvalRoutes = [
     path: `${APPROVALS.to.slice(1)}/ticket/:ticketId`,
     element: (
       <RequirePerm perm="decision:override">
+        <TicketTraceLink />
         <TicketOverrideRoute />
       </RequirePerm>
     ),
@@ -107,6 +110,7 @@ const approvalRoutes = [
     path: `${APPROVALS.to.slice(1)}/:approvalId`,
     element: (
       <RequirePerm perm={APPROVALS.perm}>
+        <ApprovalTraceLink />
         <ApprovalDetailRoute />
       </RequirePerm>
     ),
@@ -132,6 +136,18 @@ const managerRoutes = STAFF_NAV.filter((item) => item.to in MANAGER_SCREENS).map
   };
 });
 
+// Nhật ký quyết định (chỉ đọc) — L1, L2, Trưởng BP IT (`ticket:read:any`); nút mở nằm cạnh 3 màn trên.
+const traceRoutes = [
+  {
+    path: "trace/:ticketId",
+    element: (
+      <RequirePerm perm="ticket:read:any">
+        <TicketTraceRoute />
+      </RequirePerm>
+    ),
+  },
+];
+
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   {
@@ -146,6 +162,7 @@ const router = createBrowserRouter([
       ...escalationRoutes,
       ...approvalRoutes,
       ...managerRoutes,
+      ...traceRoutes,
       { path: "*", element: <NotFound /> },
     ],
   },

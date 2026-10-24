@@ -56,6 +56,10 @@ from app.domain.slots import IntentSlots
 log = logging.getLogger(__name__)
 
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")  # Phase 4 P4: `APP_GIT_SHA` chỉ nhận SHA-1 đầy đủ, chữ thường
+# Dạng địa chỉ email chấp nhận (SMTP_FROM, `users.email` đồng bộ từ AD): một `@`, không khoảng trắng/ký tự điều khiển, tên miền có dấu
+# chấm; tổng ≤ 254 (RFC 5321) kiểm riêng ở nơi dùng.
+_DOMAIN_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+EMAIL_ADDRESS_RE = re.compile(rf"[A-Za-z0-9.!#$%&'*+/=?^_`{{|}}~-]{{1,64}}@{_DOMAIN_LABEL}(?:\.{_DOMAIN_LABEL})+")
 
 
 def env_file_from_env() -> str | None:
@@ -237,6 +241,56 @@ class Settings(BaseSettings):
     # DSN role app_monitor (chỉ SELECT). KHÔNG mặc định: thiếu/rỗng → route M9 trả 503 `monitor_unavailable`, job M9
     # không chạy — không bao giờ rơi về app_rw (`monitor/db.py`). repr=False: DSN mang mật khẩu.
     monitor_database_url: str | None = Field(default=None, repr=False)
+
+    # ---- Notify-email (hàng đợi `email_outbox` + worker `send_emails`) ----
+    # Mặc định TẮT. Bật mà thiếu biến bắt buộc → MỌI tiến trình (backend, worker) từ chối khởi động, thông báo nêu tên biến
+    # (`_email_config`). EVAL_MODE=true → luôn tắt (`email_active`): không ghi outbox, không gửi. SMTP_PASSWORD là SecretStr;
+    # SMTP_USERNAME/SMTP_PASSWORD đi cặp; có tài khoản thì bắt buộc STARTTLS (không gửi mật khẩu qua kênh rõ).
+    email_enabled: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_starttls: bool = True
+    smtp_username: str | None = Field(default=None, repr=False)
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    email_link_base_url: str | None = None  # gốc URL frontend cho dòng "Xem chi tiết: …" (không có "/" cuối)
+    email_send_interval_seconds: float = Field(default=15.0, gt=0)  # chu kỳ job `send_emails` của worker
+
+    @field_validator("email_link_base_url", mode="after")
+    @classmethod
+    def _link_base(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().rstrip("/")
+        if not re.fullmatch(r"https?://[^\s/?#]+(/[^\s?#]*)?", v):
+            raise ValueError("EMAIL_LINK_BASE_URL phải là URL http(s)://… không có query/fragment")
+        return v
+
+    @model_validator(mode="after")
+    def _email_config(self) -> "Settings":
+        if not self.email_enabled:
+            return self
+        if self.eval_mode:  # EVAL_MODE luôn tắt email — không đòi biến SMTP
+            log.warning("EMAIL_ENABLED=true bị bỏ qua vì EVAL_MODE=true — không ghi email_outbox, không gửi")
+            return self
+        required = {
+            "SMTP_HOST": self.smtp_host, "SMTP_FROM": self.smtp_from, "EMAIL_LINK_BASE_URL": self.email_link_base_url,
+        }  # fmt: skip
+        missing = [name for name, value in required.items() if not value]
+        if (self.smtp_username is None) != (self.smtp_password is None):
+            missing.append("SMTP_PASSWORD" if self.smtp_password is None else "SMTP_USERNAME")
+        if missing:
+            raise ValueError(f"EMAIL_ENABLED=true nhưng thiếu biến: {', '.join(missing)} — từ chối khởi động")
+        if self.smtp_username is not None and not self.smtp_starttls:
+            raise ValueError("SMTP_USERNAME đặt mà SMTP_STARTTLS=false — không gửi mật khẩu SMTP qua kênh rõ, từ chối khởi động")
+        if self.smtp_from is not None and not EMAIL_ADDRESS_RE.fullmatch(self.smtp_from):
+            raise ValueError("SMTP_FROM không phải địa chỉ email hợp lệ — từ chối khởi động")
+        return self
+
+    @property
+    def email_active(self) -> bool:
+        """Email thật sự chạy: EMAIL_ENABLED=true VÀ không EVAL_MODE. Mọi nơi dựng notifier/job email chỉ hỏi thuộc tính này."""
+        return self.email_enabled and not self.eval_mode
 
     @field_validator("llm_backend", mode="before")
     @classmethod
