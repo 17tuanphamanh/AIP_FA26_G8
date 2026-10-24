@@ -79,7 +79,52 @@ GET  /_admin/outbox                       tin SMS/email mock "đã gửi" — m�
   báo chủ tài khoản ở mỗi lần đặt lại qua SMS, hạn 15 phút, chỉ dùng một lần và bắt đổi mật khẩu ngay. Không loại bỏ được rủi ro này —
   SMS là kênh yếu hơn email.
 - Mock không gửi tin thật: SMS/email chỉ nằm trong hộp thư đi (bộ nhớ) và mất khi `/_admin/reset` hoặc khởi động lại.
-- Backend hiện chỉ gọi kênh email; chưa có tool cho `/ad/change-password` và chưa xử lý 403 `password_change_required` ở đăng nhập.
+- Backend gọi kênh `sms` cho tài khoản `ad`, kênh `email` cho loại khác; 403 `password_change_required` ở đăng nhập → 403 (không phải
+  AD sập). Chưa có tool backend cho `/ad/change-password` — người dùng đổi mật khẩu tạm ở cổng `/portal` (dưới).
+
+## Khoá, vô hiệu hoá, email AD (chặng mock-ad)
+
+- Khoá AD (`accounts.ad.locked`, ví dụ `hr_head`/`mai.tt` trong seed) chặn `/ad/authenticate`: mật khẩu đúng → 403 `account_locked`;
+  mật khẩu sai vẫn 401 (không dò được ai đang bị khoá). Khoá email/ERP không chặn đăng nhập AD. Backend coi 403 `account_locked`
+  như sai mật khẩu (401 chung).
+- `reset-password` / `unlock` khi tài khoản `enabled=false` hoặc người `terminated` → 409 `account_disabled`; `unlock` khi tài khoản
+  không khoá → 409 `not_locked`.
+- Mọi người dùng trong `seed.json` có `email` = `<user_id>@demo-corp.local`; `GET /ad/users/{user_id}` trả trường `email`.
+  Schema chỉ nhận đuôi `@demo-corp.local` trong `seed.json` — lỡ ghi địa chỉ thật thì mock **không khởi động**.
+- Phản hồi reset kênh sms có thêm `sent_to` = số **đã che** (`0900***001`). Email báo chủ tài khoản gửi tới email AD — chỉ vào hộp thư
+  đi của mock (`/_admin/outbox`, địa chỉ che dạng `n***@d***`), mock **không** gửi email ra ngoài.
+
+### Email thật cho demo: `seed.local.json`
+
+Muốn email báo về hộp thư thật khi demo: chép `mock_services/seed.local.example.json` thành `mock_services/seed.local.json`
+(**đã gitignore — không commit**) rồi sửa địa chỉ:
+
+```json
+{"users": {"nv001": {"email": "ten.ban+anv@gmail.com"}, "l1_01": {"email": "ten.ban+halt@gmail.com"}}}
+```
+
+- Đường dẫn: trên máy `mock_services/seed.local.json`; trong container mock `/srv/mock_local/seed.local.json` (compose mount thư mục
+  `./mock_services` read-only vào `/srv/mock_local` và đặt `MOCK_SEED_LOCAL`). Chạy ngoài compose: đổi đường dẫn bằng env
+  `MOCK_SEED_LOCAL`. File phải đọc được bởi uid 10001 trong container (`chmod 644`).
+- Nạp đè lúc khởi động và mỗi lần `POST /_admin/reset` (`make seed`) — sửa file xong chỉ cần `make seed`.
+- Email duy nhất trên toàn bộ người dùng sau khi nạp đè (không phân biệt hoa thường). Muốn nhiều tài khoản demo cùng về một Gmail thì
+  dùng dấu `+`: `ten+anv@gmail.com`, `ten+halt@gmail.com`.
+- Dòng bị bỏ kèm cảnh báo trong log mock (địa chỉ đã che): `user_id` không có trong seed, email sai dạng, email trùng người khác. File
+  không phải JSON / thiếu `"users"` → bỏ cả file. Kiểm nhanh: `PYTHONPATH=mock_services uv run python -m app.seed validate`.
+
+## Cổng đăng nhập giả lập `/portal` (chỉ `APP_ENV` dev/test)
+
+`GET /portal` — trang HTML tối giản, không JavaScript, không tài nguyên ngoài (CSP `default-src 'none'`); `APP_ENV` khác dev/test
+hoặc trống → 404. Không cần token (là màn hình của người dùng cuối, dùng chung logic với `/ad/authenticate` và `/ad/change-password`).
+
+1. Nhập username + mật khẩu → đúng: "Đăng nhập thành công"; sai (kể cả mật khẩu cũ sau reset SMS): báo sai; AD khoá: báo khoá;
+   tài khoản vô hiệu hoá: báo vô hiệu hoá.
+2. Mật khẩu tạm còn hạn → form đổi mật khẩu (mật khẩu tạm + mật khẩu mới ≥ 12 ký tự, nhập lại) → "Đăng nhập thành công".
+3. Mật khẩu tạm sai / hết hạn (15 phút) / đã dùng → báo "Mật khẩu tạm sai hoặc đã hết hạn".
+
+Mock chỉ nghe trong mạng compose, nên muốn mở `/portal` bằng trình duyệt trên máy thì thêm (không commit) một
+`docker-compose.override.yml` có `services.mock.ports: ["127.0.0.1:8100:8100"]` rồi mở `http://127.0.0.1:8100/portal`.
+Lời gọi tới `/portal/*` được `/_admin/calls` đếm như mọi request (POST) — đừng dùng cổng trong lúc chạy gate đếm lời gọi ghi.
 
 ## Bảng mong đợi — 12 tool đọc với seed (cổng 1, người xác nhận gọi tay)
 
