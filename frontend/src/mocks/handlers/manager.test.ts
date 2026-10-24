@@ -122,6 +122,13 @@ describe("t118 (P11): route thật M9 A3 không còn handler giả — dashboard
     }
   });
 
+  it("Chính sách (route thật F7, N-POL1): GET /api/policy, /versions, POST /validate → không handler nào khớp ở dev:mock", async () => {
+    stubMe(MGR);
+    for (const request of [get("/api/policy"), get("/api/policy/versions"), send("POST", "/api/policy/validate")]) {
+      expect(await getResponse(handlers, request)).toBeUndefined();
+    }
+  });
+
   it("4 file mock đã xoá không còn; không file nguồn nào (ngoài test) import chúng", () => {
     const sources = import.meta.glob<string>(["/src/**/*.{ts,tsx}", "!/src/**/*.test.{ts,tsx}"], { query: "?raw", import: "default", eager: true });
     const files = Object.keys(sources);
