@@ -83,6 +83,8 @@ const CODE_MESSAGES: Record<string, string> = {
   // Duyệt (backend/app/api/approvals.py) + xem phiếu (4c P6).
   rejected_requires_note: "Từ chối cần ghi chú lý do gửi người dùng.",
   plan_changed: "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt",
+  // Phiếu thiếu / sai kiểu người bị ảnh hưởng hoặc mức rủi ro — api/approvals.ts `parseApprovalView` (502 do client đặt, fail-closed).
+  invalid_approval_body: "Phiếu trả về thiếu hoặc sai thông tin người bị ảnh hưởng / mức rủi ro nên không hiện để duyệt. Vui lòng tải lại trang.",
   // Ghi đè (4d P1–P4; KH 4.6, 12b Q-fe-10).
   ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
   already_overridden: "Bạn đã ghi đè ticket này rồi — mỗi người chỉ ghi đè một ticket một lần.",
