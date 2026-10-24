@@ -155,6 +155,11 @@ services:
       SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
+      # Màn /console của mock chỉ phục vụ khi APP_ENV ∈ {dev, test}; môi trường khác → 404.
+      APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
+    ports:
+      # Chỉ localhost: màn /console (http://127.0.0.1:8100/console) hiện mật khẩu tạm ở trang điện thoại giả lập.
+      - "127.0.0.1:8100:8100"
 
   # P4 — model nạp một lần, CPU. Model tải trên máy bằng `make models` rồi mount read-only; không bind cổng
   # 8200 ra host (P4 mục 5). ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở ml_service/app/settings.py

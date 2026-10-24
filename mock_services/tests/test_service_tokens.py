@@ -8,7 +8,8 @@ from app.security import ServiceTokens, require_read, require_write
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from fastapi.testclient import TestClient
 
-UNGUARDED = ("/health", "/_admin")
+# /console: trang HTML cho người xem (trình duyệt không gắn được header token) — rào là APP_ENV dev/test, kiểm ở test_console.py.
+UNGUARDED = ("/health", "/_admin", "/console")
 
 
 def _guard(route: RouteContext) -> str | None:

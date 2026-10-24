@@ -3,7 +3,8 @@ P5 — mock hệ thống ngoài (FastAPI), cổng 8100; seed.json là dữ liệ
 ## Chạy
 
 - Trong compose: `make up` (tự nạp seed). Nạp lại seed và tắt mọi lỗi đang bơm: `make seed`.
-- Mock **chỉ nghe trong mạng compose**. Gọi tay từ máy thì vào container backend:
+- Mock nghe trong mạng compose; ra máy host chỉ qua `127.0.0.1:8100` (chỉ localhost) để xem màn `/console` (mục dưới). Gọi
+  API có token từ máy thì vào container backend:
   `docker compose exec backend python -c "import httpx; print(httpx.get('http://mock:8100/health').json())"`.
 - Test: `uv run pytest mock_services/tests -o pythonpath=mock_services` (có sẵn trong `make test`).
 
@@ -116,6 +117,26 @@ quyền mới, `previous_level` là mức cũ (`null` nếu chưa có). "Dùng �
 
 Mã 409 cũ giữ nguyên: `not_a_paid_license`, `no_license_available` (assign), `device_not_registered` (renew/reissue), `no_phone_on_file`,
 `sms_reset_ad_only` (reset mật khẩu).
+
+## Màn xem trạng thái (`/console`, `app/console.py`)
+
+HTML dựng ở server, tự làm mới 5 giây, **chỉ đọc**, để demo "trước/sau" khi agent xử lý ticket. Mỗi trang có giờ VN (UTC+7) và
+dòng **MÔI TRƯỜNG GIẢ LẬP**. Chỉ phục vụ khi `APP_ENV` là `dev` hoặc `test` (compose truyền `APP_ENV` vào container `mock`);
+thiếu hoặc giá trị khác → **404**. Không cần token (trình duyệt không gắn được header) — rào là `APP_ENV` + cổng chỉ bind localhost.
+
+| URL (`http://127.0.0.1:8100…`) | Nội dung |
+|---|---|
+| `/console` | mục lục + link điện thoại từng nhân viên |
+| `/console/ad` | user_id, tên, email (chưa có trong state → "—"), SĐT che, trạng thái, khoá, password_last_set, phải đổi mật khẩu, có mật khẩu tạm còn hạn (có/không — không hiện mật khẩu) |
+| `/console/vpn` | chứng chỉ (hạn, trạng thái), kết nối gần nhất mỗi người/máy |
+| `/console/fileserver` | quyền, mức, hạn, độ nhạy thư mục |
+| `/console/software` | máy → phần mềm đã cài; license còn lại + người giữ (chỉ có khi license cấp qua `assign`; seed không ghi người giữ → "—") |
+| `/console/outbox` | tin SMS/email, mật khẩu tạm **đã che** |
+| `/console/phone/{user_id}` | "điện thoại của nhân viên": SMS gửi tới số của **đúng** user đó, **hiện mật khẩu tạm** — trang duy nhất làm vậy |
+| `/console/calls` | lời gọi tới mock theo endpoint + mã trả về (bộ đếm không lưu thời điểm; lời gọi `/console` bị ẩn) |
+
+Lưu ý: lời gọi `/console/*` vẫn được `/_admin/calls` đếm (middleware đếm nằm ngoài) — lọc theo `path_prefix` khi đọc số liệu.
+`POST /_admin/faults` với `path_prefix` bao cả `/console` (ví dụ `/`) cũng làm hỏng màn này.
 
 ## Giới hạn
 
