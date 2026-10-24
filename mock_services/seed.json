@@ -17,6 +17,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000101",
+      "email": "it_mgr01@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$Mt0HHeB3RBTVkJmL7Xdk4A$wCdPyr5dVejremxRvq0Fd82/9qUKBSIE+1XjpfbzG1o",
       "accounts": {
         "ad": {
@@ -43,6 +44,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000102",
+      "email": "l1_lead@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$ATJQeOR8W2qPbY205FpEFQ$NXSNYwU7ZZUuiXUrRlfuMjLGczyyLQmyMhVS/+TzojU",
       "accounts": {
         "ad": {
@@ -69,6 +71,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000103",
+      "email": "l1_01@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$s3I1dyQwqmDF8kt+/6X9jg$Pv40wZwBEkgUczVGE5JpR/8Ca2+e/kRcmZ/QEAUNs4c",
       "accounts": {
         "ad": {
@@ -95,6 +98,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000104",
+      "email": "l1_02@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$jyDwUPZuGluCKgDLS5LSxg$GqroENBoKWycJNnT1kpEwYdTwdQP+QEyLpThqBHFSy0",
       "accounts": {
         "ad": {
@@ -121,6 +125,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000105",
+      "email": "l2_01@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$wTtcKzwdJ5aUFBq+GoG4zA$XtUpv6Z+ss5Oj9WLCbK3pUoHaSpX0pg5QeYJyf9vnrs",
       "accounts": {
         "ad": {
@@ -146,6 +151,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000106",
+      "email": "fin_head@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$g9q6+1ApdK1maYXH/3sQzw$rfq2/4dy8FgW7z1rdtYdHgnFCRdJgQBy3D2GHBRBvM0",
       "accounts": {
         "ad": {},
@@ -170,6 +176,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000001",
+      "email": "nv001@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$PVRbuS7bcvk7YBaGsbGGEg$hEJ8u7YV6lUe0vrry9CjGKq7OJ/EKJa4kZAbc/Hu8xc",
       "accounts": {
         "ad": {},
@@ -201,6 +208,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000107",
+      "email": "eng_head@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$s9m1jPGOXPWv2X2hn3AcUQ$mfXP3aUpPEAKHTMvuztF2tWTnX5Unxn5Ve9TtmyT+CQ",
       "accounts": {
         "ad": {},
@@ -227,6 +235,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000002",
+      "email": "nv002@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$4woH7qEe+PHcK5DIW0ToHw$65+n8amcvA/0L3s8ZjK+yFORezjMgReJvftq6pma8TU",
       "accounts": {
         "ad": {},
@@ -250,6 +259,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000003",
+      "email": "nv003@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$0UQSmqlnRZSeLFRSwgJ4kw$KPGyL5VxV+H/PIqT2TjgMUOdBdS0qiPZNeMF0k8kudY",
       "accounts": {
         "ad": {},
@@ -274,6 +284,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000108",
+      "email": "sales_head@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$LLGziL5NcaAFGGCxBonIRA$bo401WL0nshx8bszVRmcqyvdobpBC7znvBjUU5XF3js",
       "accounts": {
         "ad": {},
@@ -297,6 +308,7 @@
       "is_service_account": false,
       "disable_reason": "security",
       "phone": "0900000004",
+      "email": "nv004@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$rngY7i/eU8eWzd6nT5cgUg$vnvObmud9JzP2I3QrrwyUI8AFkDn/DSadxBQrV+G3WI",
       "accounts": {
         "ad": {
@@ -324,6 +336,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000005",
+      "email": "nv005@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$ot57Kam3mFa6VliyV3xF4g$+WY9WtoHoTnqZMc1xylmuqUVX3kdS0nOwsKf4gBsIVc",
       "accounts": {
         "ad": {},
@@ -346,6 +359,7 @@
       "is_privileged_account": false,
       "is_service_account": false,
       "disable_reason": null,
+      "email": "nv006@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$aU+d1naYuHhjm+qVVe5Isg$R9xvjPAyXkEMdiBptT51CKHfCmG43nkIH5wkY957GDc",
       "accounts": {
         "ad": {
@@ -373,6 +387,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000007",
+      "email": "nv007@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$zz1FhZmSAlUNImGj+VxMVw$RgV12xKZBamod6BhBp4VOb/aggUahqWXkDvCK/wwdyw",
       "accounts": {
         "ad": {},
@@ -418,6 +433,7 @@
       "is_service_account": false,
       "disable_reason": null,
       "phone": "0900000109",
+      "email": "hr_head@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$/AZqt6sWPrgtshr1HLuIBQ$HSyjhS0rEpcRIPsdnAcS/HJRuNTvx9MVaqCP0WzeazA",
       "accounts": {
         "ad": {
@@ -443,6 +459,7 @@
       "is_privileged_account": true,
       "is_service_account": true,
       "disable_reason": null,
+      "email": "svc_backup@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$GdjPmWYqkTBelti/fokmxA$VIRGhdBtDp/VValX8b/dEEZvTea+TAikHICvb4qgHzI",
       "accounts": {
         "ad": {
