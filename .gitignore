@@ -64,3 +64,6 @@ backend/tests/stack/bienban-gate5-2*.md
 Claude outputs/
 docs/demo-video/
 ml_models/*-clf/
+
+# mock AD: email thật của người chạy demo (nạp đè seed.json) — KHÔNG commit; mẫu ở mock_services/seed.local.example.json
+mock_services/seed.local.json
