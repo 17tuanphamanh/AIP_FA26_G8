@@ -58,6 +58,7 @@ from app.auth.ports import (
     AuthStore,
     IdentityProvider,
     IdentityUnavailable,
+    PasswordChangeRequired,
     SecurityEventSink,
 )
 from app.auth.service import AuthError, AuthService, auth_config
@@ -336,7 +337,8 @@ def create_app(
                 registry, ad_http = build_read_registry(settings, clock)
                 stack.push_async_callback(ad_http.aclose)
                 identity = AdIdentityProvider(
-                    ad_http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable
+                    ad_http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable,
+                    password_change=PasswordChangeRequired,
                 )
             auth_store = store or SqlAuthStore(engines.main)
             security = sink or SecurityEventWriter(engines.main, clock)  # auth + guard (3e) dùng chung
