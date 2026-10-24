@@ -1,17 +1,29 @@
 """Trạng thái trong bộ nhớ của mock: nạp từ seed.json, endpoint ghi sửa trực tiếp, `/_admin/reset`
 đặt lại (P5 mục 7). Không có DB — mock là "hệ thống của bên khác", chỉ cần hành xử như thật qua HTTP.
+
+Email AD: seed.json chỉ có địa chỉ @demo-corp.local; `seed.local.json` (gitignore, đường dẫn đổi được bằng env
+`MOCK_SEED_LOCAL`) dạng `{"users": {"<user_id>": {"email": "..."}}}` nạp đè mỗi lần `build_state` (khởi động và
+`/_admin/reset`). Dòng sai dạng / user lạ / email trùng → bỏ dòng đó + cảnh báo (địa chỉ đã che); file hỏng → bỏ cả file.
 """
 
 import json
-from collections.abc import Callable
+import logging
+import os
+import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from app.notify import OutboxMessage
+from app.notify import OutboxMessage, mask_email
 from app.seed_model import SeedData
 
 SEED_PATH = Path(__file__).resolve().parents[1] / "seed.json"
+SEED_LOCAL_ENV = "MOCK_SEED_LOCAL"
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+_SAFE_ID = re.compile(r"[A-Za-z0-9_.-]{1,32}")
+
+log = logging.getLogger(__name__)
 
 type Now = Callable[[], datetime]
 
@@ -55,6 +67,7 @@ class User:
     accounts: dict[str, Account]
     lockouts: list[Lockout]
     phone: str | None = None  # F2: số nhận SMS đặt lại mật khẩu — KHÔNG trả ra API
+    email: str | None = None  # email AD (seed.json, có thể bị seed.local.json đè) — trả ở GET /ad/users/{id}
     # F2: sau reset qua SMS, `password_hash` là hash của mật khẩu tạm (mật khẩu cũ hỏng ngay); hai trường dưới mô tả trạng thái tạm
     must_change_password: bool = False
     temp_password_expires_at: datetime | None = None
@@ -156,6 +169,51 @@ def load_seed(path: Path = SEED_PATH) -> SeedData:
     return SeedData.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
+def seed_local_path() -> Path:
+    """`MOCK_SEED_LOCAL` nếu đặt (compose: /srv/mock_local/seed.local.json), không thì mock_services/seed.local.json."""
+    return Path(os.environ.get(SEED_LOCAL_ENV) or SEED_PATH.with_name("seed.local.json"))
+
+
+def _who(user_id: object) -> str:
+    return user_id if isinstance(user_id, str) and _SAFE_ID.fullmatch(user_id) else "<user_id không hợp lệ>"
+
+
+def local_emails(path: Path, base: Mapping[str, str | None]) -> dict[str, str]:
+    """Email nạp đè từ `path` cho user có trong `base` (user_id → email hiện có). Không có file → {}.
+
+    Bỏ (kèm cảnh báo, KHÔNG in địa chỉ đầy đủ): file không đọc/không phải JSON đúng dạng, user lạ, email sai dạng, email
+    trùng với user khác sau khi đè (so không phân biệt hoa thường)."""
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        log.warning("seed.local: không đọc được file JSON — bỏ qua cả file")
+        return {}
+    users = raw.get("users") if isinstance(raw, dict) else None
+    if not isinstance(users, dict):
+        log.warning('seed.local: thiếu khoá "users" dạng object — bỏ qua cả file')
+        return {}
+    current = {uid: e for uid, e in base.items() if e is not None}
+    out: dict[str, str] = {}
+    for user_id in sorted(users, key=str):
+        entry = users[user_id]
+        email = entry.get("email") if isinstance(entry, dict) else None
+        if user_id not in base:
+            log.warning("seed.local: user lạ %s — bỏ", _who(user_id))
+            continue
+        if not isinstance(email, str) or len(email) > 254 or not EMAIL.fullmatch(email):
+            log.warning("seed.local: email của %s sai dạng — bỏ", user_id)
+            continue
+        if any(other != user_id and e.casefold() == email.casefold() for other, e in current.items()):
+            log.warning("seed.local: email %s của %s trùng user khác — bỏ", mask_email(email), user_id)
+            continue
+        current[user_id] = out[user_id] = email
+    if out:
+        log.info("seed.local: nạp đè email cho %d người dùng", len(out))
+    return out
+
+
 def build_state(seed: SeedData, now: Now = system_now) -> MockState:
     t0 = now()
 
@@ -192,9 +250,12 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
             },
             lockouts=[Lockout(x.account_type, ago(x.days_ago), x.reason, x.source) for x in u.lockouts],
             phone=u.phone,
+            email=u.email,
         )
         for u in seed.users
     }
+    for user_id, email in local_emails(seed_local_path(), {k: u.email for k, u in users.items()}).items():
+        users[user_id].email = email
     return MockState(
         now=now,
         users=users,
