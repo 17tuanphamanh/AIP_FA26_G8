@@ -9,8 +9,9 @@ from app.security import ServiceTokens, require_read, require_write
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from fastapi.testclient import TestClient
 
-# /portal: màn hình người dùng cuối, không token — thay vào đó chỉ mở ở APP_ENV dev/test (test_every_portal_route_is_env_gated)
-UNGUARDED = ("/health", "/_admin", "/portal")
+# /console: trang HTML cho người xem (trình duyệt không gắn được header token) — rào là APP_ENV dev/test, kiểm ở test_console.py.
+# /portal: màn hình người dùng cuối, không token — cũng chỉ mở ở APP_ENV dev/test (test_every_portal_route_is_env_gated).
+UNGUARDED = ("/health", "/_admin", "/console", "/portal")
 
 
 def _guard(route: RouteContext) -> str | None:

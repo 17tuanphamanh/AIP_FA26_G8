@@ -58,6 +58,10 @@ x-backend-env: &backend-env
   TICKET_RATE_10MIN: ${TICKET_RATE_10MIN:-}
   TICKET_RATE_HOUR: ${TICKET_RATE_HOUR:-}
   MESSAGE_RATE_10MIN: ${MESSAGE_RATE_10MIN:-}
+  # SSE tiến trình ticket (GET /api/tickets/{id}/events): mặc định tắt → route 404, frontend dùng polling.
+  ENABLE_SSE: ${ENABLE_SSE:-false}
+  SSE_POLL_MS: ${SSE_POLL_MS:-300}
+  SSE_HEARTBEAT_S: ${SSE_HEARTBEAT_S:-15}
   # Notify-email: backend ghi hàng đợi `email_outbox`, worker gửi qua SMTP — backend và worker PHẢI thấy cùng giá trị. Mặc định tắt;
   # EMAIL_ENABLED=true mà thiếu SMTP_HOST / SMTP_FROM / EMAIL_LINK_BASE_URL (hoặc chỉ có một trong SMTP_USERNAME/SMTP_PASSWORD) → cả hai
   # từ chối khởi động. EVAL_MODE=true → luôn tắt. Rỗng = mặc định settings.py (cổng 587, STARTTLS bật, chu kỳ 15 s).
@@ -155,10 +159,13 @@ services:
       SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
-      # Cổng /portal chỉ mở ở APP_ENV dev/test (thiếu → tắt).
-      APP_ENV: ${APP_ENV:-}
+      # Màn /console và cổng /portal của mock chỉ phục vụ khi APP_ENV ∈ {dev, test}; môi trường khác → 404.
+      APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
       # Email thật nạp đè seed.json (gitignore) — đọc qua thư mục mount bên dưới; không có file → dùng @demo-corp.local.
       MOCK_SEED_LOCAL: /srv/mock_local/seed.local.json
+    ports:
+      # Chỉ localhost: màn /console (http://127.0.0.1:8100/console) hiện mật khẩu tạm ở trang điện thoại giả lập.
+      - "127.0.0.1:8100:8100"
     # Mount THƯ MỤC (không mount thẳng file): file chưa tồn tại thì Docker không tự tạo thư mục rỗng mang tên file.
     volumes:
       - ./mock_services:/srv/mock_local:ro

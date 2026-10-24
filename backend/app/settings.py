@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     lock_pool_size: int | None = Field(default=None, ge=1)  # mặc định GRAPH_CONCURRENCY + 2 (D-19)
     ticket_lock_timeout: float = Field(default=5.0, gt=0)  # giây; SET lock_timeout trên lock pool
     health_timeout: float = Field(default=2.0, gt=0)  # giây mỗi phụ thuộc ở /api/health
+    # ---- SSE tiến trình ticket (GET /api/tickets/{id}/events) ----
+    enable_sse: bool = False  # tắt → route trả 404, màn chat dùng polling như cũ
+    sse_poll_ms: int = Field(default=300, ge=50)  # nhịp đọc DB tìm dòng audit mới
+    sse_heartbeat_s: float = Field(default=15.0, gt=0)  # comment giữ kết nối khi không có sự kiện
     graph_recursion_limit: int = Field(default=60, ge=10)  # P1 mục 7: lưới cuối sau MAX_LOOPS
     checkpoint_pool_size: int = Field(default=10, ge=1)  # pool psycopg của AsyncPostgresSaver
     # ---- Worker (P1 mục 7) ----

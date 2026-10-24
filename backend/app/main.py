@@ -38,6 +38,8 @@ from app.api.email_outbox import router as email_outbox_router
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
+from app.api.events import AuditFeed, SqlAuditFeed
+from app.api.events import router as events_router
 from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe dựng dưới đây
     HealthCheck,
     KbProbe,
@@ -310,6 +312,7 @@ def create_app(
     clock: Clock | None = None,
     kb_probe: KbProbe | None = None,
     rate: RateGate | None = None,
+    events_feed: AuditFeed | None = None,
     trace: TraceSource | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -334,6 +337,7 @@ def create_app(
             stack.push_async_callback(engines.dispose)
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
+            app.state.events_feed = events_feed or SqlAuditFeed(engines.main)  # SSE tiến trình ticket (api/events.py)
             app.state.trace = trace or SqlTraceSource(engines.main)  # nhật ký quyết định (chỉ SELECT)
             rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
@@ -410,6 +414,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(tickets_router)
+    app.include_router(events_router)  # GET /api/tickets/{id}/events (SSE; ENABLE_SSE=false → 404)
     app.include_router(approvals_router)
     app.include_router(escalations_router)
     app.include_router(trace_router)  # GET /api/tickets/{id}/trace (chỉ đọc)

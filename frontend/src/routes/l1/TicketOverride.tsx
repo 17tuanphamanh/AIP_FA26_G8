@@ -6,7 +6,7 @@ import { hasPerm } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
 import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
-import { TICKET_ID_PATTERN, TICKET_UNAVAILABLE } from "./inbox.ts";
+import { deadlineText, TICKET_ID_PATTERN, TICKET_UNAVAILABLE } from "./inbox.ts";
 
 // Xem ticket CHỈ ĐỌC để ghi đè (KH 4.6: tab "Hệ thống đã tự xử lý" ẩn tới Phase 7 → mở bằng mã ticket, hoặc từ phiếu đã
 // quyết). Hội thoại: `GET /api/tickets/{id}` THẬT (component chỉ đọc của F3, không mock). Q-fe-24 [Chốt]: nút "Ghi đè…"
@@ -24,6 +24,8 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
   const valid = TICKET_ID_PATTERN.test(ticketId);
   const query = useQuery({ ...ticketReadOnlyQuery(ticketId), enabled: valid });
   const view = query.data;
+  // R3: hạn của LẦN CHỜ HIỆN TẠI; null / thiếu / không phải thời điểm → không hiện gì (không đoán, không "—").
+  const waitDeadline = view?.final_state ? null : deadlineText(view?.deadline);
 
   return (
     <section className="flex flex-col gap-6 px-12 py-8">
@@ -45,6 +47,12 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
               </>
             ) : null}
             {view.final_state ? " · Đã kết thúc" : " · Chưa kết thúc"}
+            {waitDeadline ? (
+              <>
+                {" "}
+                · Hạn của lần chờ hiện tại <span data-testid="ticket-deadline">{waitDeadline}</span>
+              </>
+            ) : null}
           </p>
         ) : null}
       </div>
