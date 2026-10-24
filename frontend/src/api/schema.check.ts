@@ -10,6 +10,10 @@ import type {
   AiMetrics,
   AlertItem,
   AlertList,
+  ApprovalAffected,
+  ApprovalManagerRef,
+  ApprovalRiskView,
+  ApprovalViewP4,
   BusinessDashboard,
   BusinessMetrics,
   DayCost,
@@ -21,6 +25,7 @@ import type {
   PolicyVersionItem,
   PolicyView,
   RuleCount,
+  TicketView,
   WeightedRate,
 } from "./types.ts";
 
@@ -102,4 +107,30 @@ export type PolicyOk = [
   Expect<Mutual<PolicyVersionItem[], Ok200<operations["policy_versions_api_policy_versions_get"]>>>,
   Expect<Mutual<PolicyValidateOk, Ok200<operations["validate_policy_api_policy_validate_post"]>>>,
   Expect<Mutual<PolicyInvalid, Extract<Err422<operations["validate_policy_api_policy_validate_post"]>, { error: "invalid_policy" }>>>,
+];
+
+// ---------------------------------------------------------------- Duyệt L1 + ticket (F6 #76, R3 #76)
+// `ApprovalView.status` của openapi là `string` (cột DB), kiểu viết tay là enum chặt hơn → không soi cả object được; soi
+// TỪNG KHOÁ MỚI (hai chiều) + tập khoá (không thiếu / thừa khoá nào) bằng `PerKey` của object bỏ `status`.
+// `TicketView.conversation` là list[dict] (viết tay `unknown[]`) và `children_progress` viết tay chặt hơn → soi riêng `deadline`.
+
+type ApprovalGen = S["ApprovalView"];
+export type ApprovalViewOk = [
+  Expect<Same<ApprovalAffected, S["AffectedView"]>>,
+  Expect<Same<ApprovalManagerRef, S["ManagerRef"]>>,
+  Expect<Same<ApprovalRiskView, S["RiskView"]>>,
+  Expect<Mutual<ApprovalViewP4["affected"], ApprovalGen["affected"]>>,
+  Expect<Mutual<ApprovalViewP4["risk_view"], ApprovalGen["risk_view"]>>,
+  Expect<Mutual<ApprovalViewP4["role_as"], ApprovalGen["role_as"]>>,
+  Expect<Mutual<ApprovalViewP4["procedure"], ApprovalGen["procedure"]>>,
+  Expect<Mutual<ApprovalViewP4["requester"], ApprovalGen["requester"]>>,
+  Expect<Mutual<ApprovalViewP4["deadline"], ApprovalGen["deadline"]>>,
+  Expect<Mutual<ApprovalViewP4["risk"], ApprovalGen["risk"]>>,
+  // Cùng tập khoá: bỏ `status` ở cả hai rồi so từng khoá (khoá chỉ ở một bên → lỗi biên dịch).
+  Expect<Same<Omit<ApprovalViewP4, "status" | "action" | "facts" | "risk">, Omit<ApprovalGen, "status" | "action" | "facts" | "risk">>>,
+  Expect<Mutual<ApprovalViewP4, Ok200<operations["view_approval_api_approvals__approval_id__get"]> & { status: ApprovalViewP4["status"] }>>,
+];
+export type TicketDeadlineOk = [
+  Expect<Mutual<Exclude<TicketView["deadline"], undefined>, S["TicketView"]["deadline"]>>,
+  Expect<Mutual<S["TicketView"], Ok200<operations["read_ticket_api_tickets__ticket_id__get"]>>>,
 ];
