@@ -13,6 +13,11 @@ from app.state import MockState, Permission
 
 router = APIRouter(prefix="/files")
 
+# Tài khoản còn dùng được để NHẬN quyền: `active` và `probation` (tài khoản AD vẫn bật, cùng tập với
+# `target_user_status` của config/policy.json); `disabled`/`terminated` thì file server từ chối.
+ACTIVE_STATUSES = frozenset({"active", "probation"})
+LEVEL_RANK = {"read": 1, "write": 2, "full": 3}
+
 
 def normalize_path(path: str) -> str:
     return path.strip().strip("/")
@@ -82,6 +87,11 @@ def _find(state: MockState, user_id: str, path: str) -> Permission:
     return p
 
 
+def _require_active(state: MockState, user_id: str) -> None:
+    if get_user(state, user_id).employment_status not in ACTIVE_STATUSES:
+        raise HTTPException(409, "user_not_active")
+
+
 def _resource_path(state: MockState, raw: str) -> str:
     path = normalize_path(raw)
     if path not in state.resources:
@@ -94,12 +104,19 @@ async def grant(user_id: str, body: GrantBody, request: Request) -> dict[str, An
     state = mock_state(request)
     get_user(state, user_id)
     path = _resource_path(state, body.resource_path)
+    _require_active(state, user_id)
     now = state.now()
+    current = next((p for p in state.permissions if p.user_id == user_id and p.path == path), None)
+    previous_level = None if current is None else current.level
+    if (current is not None and permission_view(state, current)["status"] == "active"
+            and LEVEL_RANK[current.level] > LEVEL_RANK[body.level]):  # fmt: skip
+        # Không hạ quyền đang có: giữ nguyên mức và hạn, báo mức đã có để người gọi biết yêu cầu không đổi gì.
+        return {**permission_view(state, current), "previous_level": previous_level, "kept_higher_level": True}
     expires = None if body.duration_days is None else now + timedelta(days=body.duration_days)
-    state.permissions = [p for p in state.permissions if not (p.user_id == user_id and p.path == path)]
+    state.permissions = [p for p in state.permissions if p is not current]
     perm = Permission(user_id, path, body.level, now, expires)
     state.permissions.append(perm)
-    return permission_view(state, perm)
+    return {**permission_view(state, perm), "previous_level": previous_level, "kept_higher_level": False}
 
 
 @router.post("/permissions/{user_id}/revoke", dependencies=[Depends(require_write)])
@@ -117,6 +134,7 @@ async def extend(user_id: str, body: ExtendBody, request: Request) -> dict[str, 
     state = mock_state(request)
     get_user(state, user_id)
     perm = _find(state, user_id, normalize_path(body.resource_path))
+    _require_active(state, user_id)
     previous = perm.expires_at
     base = max(previous, state.now()) if previous is not None else state.now()
     perm.expires_at = base + timedelta(days=body.duration_days)
