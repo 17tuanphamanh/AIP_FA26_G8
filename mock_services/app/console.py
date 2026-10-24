@@ -8,7 +8,7 @@ Mật khẩu: chỉ trang `/console/phone/{user_id}` (điện thoại của nhâ
 user đó. Mọi trang khác dùng `OutboxMessage.view()` (đã che) hoặc không đụng tới nội dung tin; `password_hash` không bao giờ in.
 
 Giới hạn do state hiện có:
-- `User` chưa có địa chỉ email → cột email hiện "—"; số điện thoại được che.
+- Email AD và số điện thoại đều hiện dạng đã che (`notify.mask_email`, `mask_phone`); user không có email → "—".
 - `CallLog` chỉ giữ bộ đếm theo (method, path) và mã trả về, không có mốc thời gian/thứ tự → trang lời gọi liệt kê theo
   endpoint kèm mã, không có cột "lúc nào". Các lời gọi tới `/console` được ẩn khỏi trang này (màn tự làm mới 5 giây).
 """
@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse
 from app.ad import mock_state
 from app.admin_calls import CallLog
 from app.fileserver import permission_view
-from app.notify import mask_phone
+from app.notify import mask_email, mask_phone
 from app.state import Connection, MockState, User
 from app.vpn import cert_view
 
@@ -130,7 +130,7 @@ async def ad_page(request: Request) -> HTMLResponse:
         rows.append([
             u.user_id,
             u.full_name,
-            DASH,  # state chưa có email
+            DASH if u.email is None else mask_email(u.email),  # có thể là địa chỉ thật (seed.local.json)
             DASH if u.phone is None else mask_phone(u.phone),
             f"{u.employment_status} / AD {'bật' if ad.enabled else 'tắt'}",
             ", ".join(locked) if locked else "không",

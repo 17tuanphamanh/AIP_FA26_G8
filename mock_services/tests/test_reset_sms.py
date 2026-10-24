@@ -199,7 +199,8 @@ def test_canary_never_leaves_sms(
 def test_business_errors_and_unknown_fields(
     sms_client: TestClient, executor: dict[str, str]
 ) -> None:
-    no_phone = _reset_sms(sms_client, executor, "svc_backup")
+    sms_client.app.state.mock.users["nv002"].phone = None  # type: ignore[attr-defined]  # seed: mọi người còn làm đều có số
+    no_phone = _reset_sms(sms_client, executor, "nv002")
     assert no_phone.status_code == 409 and no_phone.json() == {
         "detail": "no_phone_on_file"
     }

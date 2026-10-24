@@ -4,6 +4,7 @@ của đúng nhân viên đó (`/console/phone/{user_id}`).
 Mật khẩu tạm biết được nhờ monkeypatch `app.ad.new_temp_password` (mỗi lần gọi ra một canary khác nhau).
 """
 
+import re
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 
@@ -161,11 +162,24 @@ def test_ad_page_shows_temp_password_flags_only(
     assert "19:00:00" in after  # password_last_set = lúc reset (giờ VN)
 
 
-def test_ad_page_masks_phone_and_has_no_email(c: TestClient) -> None:
+def test_ad_page_masks_phone_and_email(c: TestClient) -> None:
     text = c.get("/console/ad").text
     assert "0900***001" in text
     assert "0900000001" not in text
     assert "<th>Email (che)</th>" in text
+    assert "<td>n***@d***</td>" in text  # nv001@demo-corp.local đã che
+    assert "@demo-corp.local" not in text
+
+
+def test_ad_page_masks_overridden_email_and_dash_when_missing(c: TestClient) -> None:
+    users = c.app.state.mock.users  # type: ignore[attr-defined]
+    users[USER_A].email = "chu.tai.khoan+anv@gmail.com"  # như nạp từ seed.local.json
+    users[USER_B].email = None
+    text = c.get("/console/ad").text
+    assert "chu.tai.khoan" not in text and "gmail.com" not in text
+    assert "<td>c***@g***</td>" in text
+    cells_b = re.findall(r"<td>(.*?)</td>", text[text.index(f"<td>{USER_B}</td>"):].split("</tr>")[0])
+    assert cells_b[0] == USER_B and cells_b[2] == "—"  # cột thứ 3 = Email (che)
 
 
 def test_outbox_masks_password(c: TestClient, executor: dict[str, str], canaries: list[str]) -> None:

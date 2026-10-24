@@ -64,7 +64,11 @@ GET  /_admin/outbox                       tin SMS/email mock "đã gửi" — m�
 ```
 
 - Số nhận lấy từ trường `phone` trong seed của **chính chủ tài khoản** (dạng `0900000xxx`, số giả). Body không nhận số điện thoại:
-  trường lạ → 422. Người không có `phone` (`svc_backup`, `nv006`) → 409 `no_phone_on_file`.
+  trường lạ → 422. Người không có `phone` → 409 `no_phone_on_file` (seed: chỉ `nv006` không có số, nhưng đã nghỉ việc nên bị chặn
+  trước bằng 409 `account_disabled`).
+- Tài khoản dịch vụ (`svc_backup`) không có điện thoại riêng: `phone` trong seed (`0900000110`) là số của **người phụ trách** tài
+  khoản đó — SMS đặt lại mật khẩu tài khoản dịch vụ gửi tới người phụ trách. Số này riêng, không trùng số cá nhân của ai (màn
+  `/console/phone/…` tách SMS theo số).
 - Chỉ tài khoản `ad` (mock chỉ có một mật khẩu để kiểm — mật khẩu AD): `account_type` khác → 409 `sms_reset_ad_only`.
 - Sau reset SMS: mật khẩu cũ hỏng ngay; mock chỉ lưu hash argon2 của mật khẩu tạm + hạn. Gửi 1 SMS (có mật khẩu tạm) và 1 email
   báo chủ tài khoản ("có yêu cầu đặt lại mật khẩu qua SMS lúc …", số đã che — KHÔNG có mật khẩu). Phản hồi: 4 trường cũ với
@@ -127,7 +131,7 @@ thiếu hoặc giá trị khác → **404**. Không cần token (trình duyệt 
 | URL (`http://127.0.0.1:8100…`) | Nội dung |
 |---|---|
 | `/console` | mục lục + link điện thoại từng nhân viên |
-| `/console/ad` | user_id, tên, email (chưa có trong state → "—"), SĐT che, trạng thái, khoá, password_last_set, phải đổi mật khẩu, có mật khẩu tạm còn hạn (có/không — không hiện mật khẩu) |
+| `/console/ad` | user_id, tên, email AD **che** (`n***@d***`; không có → "—"), SĐT che, trạng thái, khoá, password_last_set, phải đổi mật khẩu, có mật khẩu tạm còn hạn (có/không — không hiện mật khẩu) |
 | `/console/vpn` | chứng chỉ (hạn, trạng thái), kết nối gần nhất mỗi người/máy |
 | `/console/fileserver` | quyền, mức, hạn, độ nhạy thư mục |
 | `/console/software` | máy → phần mềm đã cài; license còn lại + người giữ (chỉ có khi license cấp qua `assign`; seed không ghi người giữ → "—") |
@@ -145,6 +149,8 @@ Lưu ý: lời gọi `/console/*` vẫn được `/_admin/calls` đếm (middlew
   SMS là kênh yếu hơn email.
 - Mock không gửi tin thật: SMS/email chỉ nằm trong hộp thư đi (bộ nhớ) và mất khi `/_admin/reset` hoặc khởi động lại.
 - Phần mềm: tên không phải slug / tên hiển thị / alias trong seed vẫn 404. `used` dựng sẵn từ seed không có tên người giữ nên gỡ phần mềm có phí cài từ trước không trả license nào về kho.
+- Nợ: `unlock` tài khoản không khoá trả 409 `not_locked` → backend coi là bước ghi lỗi và bàn giao L2 (chưa có nhánh "đã mở sẵn,
+  coi như xong"). Giữ hành vi này cho tới khi quyết lại.
 - Backend gọi kênh `sms` cho tài khoản `ad`, kênh `email` cho loại khác; 403 `password_change_required` ở đăng nhập → 403 (không phải
   AD sập). Chưa có tool backend cho `/ad/change-password` — người dùng đổi mật khẩu tạm ở cổng `/portal` (dưới).
 
@@ -188,9 +194,10 @@ hoặc trống → 404. Không cần token (là màn hình của người dùng 
 2. Mật khẩu tạm còn hạn → form đổi mật khẩu (mật khẩu tạm + mật khẩu mới ≥ 12 ký tự, nhập lại) → "Đăng nhập thành công".
 3. Mật khẩu tạm sai / hết hạn (15 phút) / đã dùng → báo "Mật khẩu tạm sai hoặc đã hết hạn".
 
-Mock chỉ nghe trong mạng compose, nên muốn mở `/portal` bằng trình duyệt trên máy thì thêm (không commit) một
-`docker-compose.override.yml` có `services.mock.ports: ["127.0.0.1:8100:8100"]` rồi mở `http://127.0.0.1:8100/portal`.
-Lời gọi tới `/portal/*` được `/_admin/calls` đếm như mọi request (POST) — đừng dùng cổng trong lúc chạy gate đếm lời gọi ghi.
+Mở bằng trình duyệt trên máy: `http://127.0.0.1:8100/portal` (compose publish cổng 8100 chỉ ở localhost, như màn `/console`).
+
+**Không dùng `/portal` khi đang chạy gate đếm lời gọi** (`make gate3`/`gate4`/`gate5`…): lời gọi `/portal/*` được `/_admin/calls`
+đếm như mọi request (POST) — `mock_writes()` của gate (mọi POST trừ `/ad/authenticate`) sẽ đếm dư.
 
 ## Bảng mong đợi — 12 tool đọc với seed (cổng 1, người xác nhận gọi tay)
 

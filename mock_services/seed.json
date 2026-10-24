@@ -459,6 +459,7 @@
       "is_privileged_account": true,
       "is_service_account": true,
       "disable_reason": null,
+      "phone": "0900000110",
       "email": "svc_backup@demo-corp.local",
       "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$GdjPmWYqkTBelti/fokmxA$VIRGhdBtDp/VValX8b/dEEZvTea+TAikHICvb4qgHzI",
       "accounts": {
