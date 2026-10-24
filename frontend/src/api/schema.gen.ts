@@ -72,6 +72,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/llm-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Llm Status */
+        get: operations["llm_status_api_admin_llm_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current Policy */
+        get: operations["current_policy_api_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Policy Versions */
+        get: operations["policy_versions_api_policy_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Policy */
+        post: operations["validate_policy_api_policy_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -259,6 +327,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply
+         * @description T20b P11 (5.2.6): người dùng trả lời MỘT lần cho mọi ý của tin tổng hợp. Thứ tự kiểm như `/messages`: 413 → quyền → 404 → 403
+         *     (không phải chủ) → 409 `CHILD_MESSAGE` (gọi vào ticket con) → 422 hình dạng body → privacy guard TỪNG `answer`/`note` (503 khi guard
+         *     lỗi; bí mật → MỘT sự kiện `privacy_secret_redacted {count}` tổng) → `start_event(S_CONFIRMING, {"kind":"reply","items":…},
+         *     wait_node="parent_reply_wait", validate=…)`: không ở `parent_reply_wait` (kể cả ticket thường) → 409 + `late_event`; `items` ≠ đúng
+         *     `awaiting` → 422 `{error:"invalid_request", fields:["body.items.<child_id>"]}`. Tin người dùng ghép do NODE ghi (P8), không do route.
+         */
+        post: operations["reply_api_tickets__ticket_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/override": {
         parameters: {
             query?: never;
@@ -365,6 +457,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AffectedView
+         * @description Người BỊ TÁC ĐỘNG (`Action.requested_for`) — có thể khác người gửi (account/access, slot `target_user`).
+         */
+        AffectedView: {
+            /** User Id */
+            user_id: string;
+            /** Is Requester */
+            is_requester: boolean;
+            /** Department */
+            department: string | null;
+            manager: components["schemas"]["ManagerRef"];
+        };
         /** AiDashboard */
         AiDashboard: {
             /**
@@ -472,6 +577,49 @@ export interface components {
         };
         /** @enum {string} */
         ApprovalResult: "pending" | "approved" | "rejected" | "timeout";
+        /**
+         * ApprovalView
+         * @description Phiếu cho người duyệt (P6) — ĐÚNG 14 khoá (12 khoá P6 + F6 `affected`, `risk_view`); `action`/`facts` là object ĐÃ BĂM
+         *     (G4-13).
+         */
+        ApprovalView: {
+            /** Approval Id */
+            approval_id: string;
+            /** Ticket Id */
+            ticket_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Deadline
+             * Format: date-time
+             */
+            deadline: string;
+            requester: components["schemas"]["RequesterView"];
+            /** Request Summary */
+            request_summary: string;
+            /** Action */
+            action: {
+                [key: string]: unknown;
+            };
+            /** Action Plan Hash */
+            action_plan_hash: string;
+            /** Risk */
+            risk: {
+                [key: string]: unknown;
+            } | null;
+            /** Facts */
+            facts: {
+                [key: string]: unknown;
+            };
+            /**
+             * Role As
+             * @enum {string}
+             */
+            role_as: "primary" | "backup" | "viewer";
+            procedure: components["schemas"]["ProcedureRef"] | null;
+            affected: components["schemas"]["AffectedView"];
+            risk_view: components["schemas"]["RiskView"] | null;
+        };
         /** @enum {string} */
         AudienceParam: "manager" | "dev" | "ops";
         /** BusinessAll */
@@ -649,6 +797,16 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InvalidPolicy */
+        InvalidPolicy: {
+            /**
+             * Error
+             * @constant
+             */
+            error: "invalid_policy";
+            /** Errors */
+            errors: components["schemas"]["PolicyIssue"][];
+        };
         /**
          * InvalidRequestBody
          * @description Thân 422 thật (`api.errors.invalid_request`): chỉ vị trí trường, không trả lại giá trị người gửi.
@@ -662,12 +820,38 @@ export interface components {
             /** Fields */
             fields: string[];
         };
+        /** Kb */
+        Kb: {
+            /** Alias */
+            alias: string;
+            /** Collection */
+            collection: string | null;
+            status: components["schemas"]["KbState"];
+        };
         /** KbSource */
         KbSource: {
             /** Doc Id */
             doc_id: string;
             /** Title */
             title: string | null;
+        };
+        /** @enum {string} */
+        KbState: "ready" | "missing" | "unknown";
+        /** LlmStatus */
+        LlmStatus: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Backend */
+            backend: ("scripted" | "real") | null;
+            models: components["schemas"]["Models"];
+            /** Api Key Configured */
+            api_key_configured: boolean;
+            spend: components["schemas"]["Spend"];
+            usage: components["schemas"]["Usage"];
+            kb: components["schemas"]["Kb"];
         };
         /** LoginIn */
         LoginIn: {
@@ -677,6 +861,29 @@ export interface components {
             password: string;
             /** Otp */
             otp?: string | null;
+        };
+        /**
+         * ManagerRef
+         * @description Quản lý của người bị tác động: `known` ⇔ có dòng `users` VÀ `manager_id` khác NULL; `unknown` → `user_id`/`full_name` null.
+         *     `full_name` null khi `known` mà dòng của sếp chưa có (chưa từng đăng nhập).
+         */
+        ManagerRef: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "known" | "unknown";
+            /** User Id */
+            user_id: string | null;
+            /** Full Name */
+            full_name: string | null;
+        };
+        /** Models */
+        Models: {
+            /** Fast */
+            fast: string | null;
+            /** Strong */
+            strong: string | null;
         };
         /** OutcomeInfo */
         OutcomeInfo: {
@@ -702,6 +909,113 @@ export interface components {
             /** Calibrated Prob */
             calibrated_prob: number | null;
         };
+        /**
+         * PolicyIssue
+         * @description Một lỗi policy: vị trí từ gốc `content` + câu lỗi. Không `input`, `url`, `ctx`.
+         */
+        PolicyIssue: {
+            /** Loc */
+            loc: (string | number)[];
+            /** Msg */
+            msg: string;
+        };
+        /** PolicyVersionItem */
+        PolicyVersionItem: {
+            /** Version Id */
+            version_id: number;
+            /** Version */
+            version: string;
+            /** Updated By */
+            updated_by: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Is Current */
+            is_current: boolean;
+            /** Restored From */
+            restored_from: string | null;
+        };
+        /**
+         * PolicyView
+         * @description Policy đang chạy — ĐÚNG 6 khoá.
+         */
+        PolicyView: {
+            /** Version Id */
+            version_id: number;
+            /** Version */
+            version: string;
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+            /** Updated By */
+            updated_by: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Is Current */
+            is_current: boolean;
+        };
+        /** ProcedureRef */
+        ProcedureRef: {
+            /** Doc Id */
+            doc_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** RequesterView */
+        RequesterView: {
+            /** Role */
+            role: string;
+            /** Department */
+            department: string | null;
+        };
+        /**
+         * RiskView
+         * @description `RiskDecision` (cùng tên trường, cùng enum — một nguồn) + 2 cờ suy ra; FE ghép chữ hiển thị từ các cờ này.
+         */
+        RiskView: {
+            /**
+             * Decided By
+             * @enum {string}
+             */
+            decided_by: "rule" | "llm";
+            /** Policy Decision */
+            policy_decision: ("allow" | "approval_required" | "deny") | null;
+            /** Matched Rule Id */
+            matched_rule_id: string | null;
+            /** Raw Prob */
+            raw_prob: number | null;
+            /** Calibrated Prob */
+            calibrated_prob: number | null;
+            /** P Method */
+            p_method: ("self_report" | "sampling_k5") | null;
+            /**
+             * Risk Level
+             * @enum {string}
+             */
+            risk_level: "low" | "medium" | "high";
+            /**
+             * Route
+             * @enum {string}
+             */
+            route: "AUTO" | "HITL" | "ESCALATE_L2";
+            /** Reason */
+            reason: string;
+            /** Thresholds */
+            thresholds: [
+                number,
+                number
+            ] | null;
+            /** Calibrated */
+            calibrated: boolean;
+            /** Auto Allowed */
+            auto_allowed: boolean;
+        };
         /** RuleCount */
         RuleCount: {
             /** Rule Id */
@@ -719,6 +1033,20 @@ export interface components {
             p_injection: number | null;
             decision: components["schemas"]["ScreenDecision"] | null;
         };
+        /** Spend */
+        Spend: {
+            /** Total Usd */
+            total_usd: number;
+            /** Cap Usd */
+            cap_usd: number;
+            /** Percent */
+            percent: number;
+            /** Warn Percent */
+            warn_percent: number;
+            status: components["schemas"]["SpendState"];
+        };
+        /** @enum {string} */
+        SpendState: "ok" | "warn" | "over";
         /** TicketTrace */
         TicketTrace: {
             /** Ticket Id */
@@ -759,6 +1087,12 @@ export interface components {
             created_at: string;
             /** Closed At */
             closed_at: string | null;
+            /** Children Progress */
+            children_progress?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Deadline */
+            deadline: string | null;
         };
         /** TraceChild */
         TraceChild: {
@@ -789,6 +1123,27 @@ export interface components {
             approval: components["schemas"]["ApprovalInfo"] | null;
             execution: components["schemas"]["ExecutionInfo"] | null;
             outcome: components["schemas"]["OutcomeInfo"] | null;
+        };
+        /** Usage */
+        Usage: {
+            /** Calls Total */
+            calls_total: number;
+            /** Calls 24H */
+            calls_24h: number;
+            /** Tickets With Calls */
+            tickets_with_calls: number;
+            /** Avg Cost Per Ticket Usd */
+            avg_cost_per_ticket_usd: number | null;
+        };
+        /** ValidateOk */
+        ValidateOk: {
+            /**
+             * Valid
+             * @constant
+             */
+            valid: true;
+            /** Version Preview */
+            version_preview: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1070,6 +1425,185 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+        };
+    };
+    llm_status_api_admin_llm_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    current_policy_api_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    policy_versions_api_policy_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyVersionItem"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    validate_policy_api_policy_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidateOk"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidPolicy"] | components["schemas"]["InvalidRequestBody"];
                 };
             };
         };
@@ -1365,6 +1899,37 @@ export interface operations {
             };
         };
     };
+    reply_api_tickets__ticket_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     override_api_tickets__ticket_id__override_post: {
         parameters: {
             query?: never;
@@ -1464,7 +2029,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApprovalView"];
                 };
             };
             /** @description Validation Error */

@@ -268,7 +268,14 @@ describe("nút Nhật ký quyết định ở 3 màn", () => {
   });
 
   it("phiếu duyệt L1: mã ticket từ CHÍNH truy vấn phiếu của màn (cùng khoá cache → vẫn một GET)", async () => {
-    const calls = stub(() => json(200, { approval_id: "42", ticket_id: "T-42" }));
+    const calls = stub(() => json(200, {
+        approval_id: "42",
+        ticket_id: "T-42",
+        risk: null,
+        risk_view: null,
+        // F6 #76: getApproval kiểm chặt `affected` (fail-closed) — thân phiếu tối thiểu vẫn phải có đủ.
+        affected: { user_id: "u-1", is_requester: true, department: null, manager: { status: "unknown", user_id: null, full_name: null } },
+      }));
     renderAt("/approvals/42", L1, undefined, <ApprovalPageStandIn />);
     expect((await screen.findByTestId("trace-link")).getAttribute("href")).toBe("/trace/T-42");
     expect(screen.getByTestId("stand-in").textContent).toBe("T-42");

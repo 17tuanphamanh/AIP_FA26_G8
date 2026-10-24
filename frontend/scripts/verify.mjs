@@ -24,10 +24,10 @@
 //      Chromium CÓ GIAO DIỆN, MỘT context cho mọi bước quan.tm: điền tên + mật khẩu (che trong log), dừng ở màn OTP, NGƯỜI
 //      nhập mã trong 120 s (verify không đọc, không in, không chụp ô OTP; hết giờ, hoặc OTP bị từ chối 2 lần — tránh khoá
 //      tài khoản ở ngưỡng 5 lần/10 phút — → F5-1…6 BỎ QUA kèm đúng lý do, không thử lại). Thứ tự (N-A3 — Tổng quan +
-//      Cảnh báo là route THẬT M9 A3): F5-1 (trang đầu + thanh bên) → F5-6 (dev KHÔNG mock: /dashboard, /alerts 200; /policy
-//      "có từ Phase 7") → F5-2 Tổng quan số thật (so data-state + số dòng với thân response), F5-3 Cảnh báo CHỈ ĐỌC (không
-//      bấm "Đã xem" — ack thật là ghi thật), F5-4 hai GET sai tham số → 422, đều dev KHÔNG mock → chuyển dev:mock, cookie
-//      refresh giữ phiên (không nhập OTP lần 2) → F5-5 Chính sách. F5-3/F5-4 gửi thẳng ĐÚNG 3 lời gọi không ghi gì (ack id
+//      Cảnh báo là route THẬT M9 A3; Chính sách là route THẬT F7 — N-POL1): F5-1 (trang đầu + thanh bên) → F5-6 (dev KHÔNG
+//      mock: /dashboard, /alerts, /policy 200) → F5-2 Tổng quan số thật (so data-state + số dòng với thân response), F5-3
+//      Cảnh báo CHỈ ĐỌC (không bấm "Đã xem" — ack thật là ghi thật), F5-4 hai GET sai tham số → 422 → F5-5 Chính sách CHỈ
+//      ĐỌC + "Kiểm tra" (validate không lưu gì), tất cả dev KHÔNG mock. F5-3/F5-4 gửi thẳng ĐÚNG 3 lời gọi không ghi gì (ack id
 //      không tồn tại → 404; 2 GET → 422) bằng Bearer đọc từ request GET của chính SPA (Q-fe-44 = A; token vào `secrets`,
 //      không refresh / logout bằng nó). 503 `monitor_unavailable` → ĐỎ "stack thiếu kết nối app_monitor". Không có
 //      VERIFY_MGR → F5-1…6 BỎ QUA. F5-7 (ha.lt, headless, cuối lượt) chạy cả khi không có VERIFY_MGR.
@@ -868,10 +868,11 @@ const F5 = {
   unavailable: "Chưa có dữ liệu",
   empty: "—",
   alertsTruncated: "Chỉ hiện 200 cảnh báo mới nhất — còn cảnh báo cũ hơn chưa hiện.",
-  restore: (v) => `Nội dung bản ${v} sẽ được áp dụng lại thành một phiên bản mới.`,
+  policyValid: "Chính sách hợp lệ — máy chủ không thấy lỗi nào.",
+  policyInvalid: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
 };
-// Fixture MSW (src/mocks/fixtures/policy.ts): chính sách bản "4" (version_id 14) đang áp dụng, bản "2" (version_id 12) để
-// quay lui. Tổng quan + Cảnh báo là route THẬT M9 A3 (N-A3) — không còn fixture: verify chỉ ĐỌC và so màn với thân thật.
+// Tổng quan + Cảnh báo là route THẬT M9 A3 (N-A3), Chính sách là route THẬT F7 (N-POL1) — không còn fixture: verify chỉ
+// ĐỌC (validate của Chính sách chỉ kiểm, không lưu) và so màn với thân thật.
 const MGR_NAV = ["Tổng quan", "Cảnh báo", "Chính sách", "Chờ tôi duyệt"];
 const F5_API = /^\/api\/(?:dashboard|alerts|policy)(?:\/|$)/;
 // Tập khoá `metrics` của route thật (backend/app/api/dashboard.py @3f15afb, `extra="forbid"`) — chép riêng, không import app.
@@ -1108,14 +1109,14 @@ await step("F5-1 quan.tm đăng nhập (OTP do người nhập) → /dashboard; 
   return { note: `OTP do người nhập → trang đầu /dashboard (dashboard:read:all); thanh bên: ${MGR_NAV.join(", ")}; Storage/IndexedDB rỗng` };
 });
 
-await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts → route thật A3 (200, không trang \"có từ…\"); /policy → \"có từ Phase 7\"", "F5-6", async ({ page, consoleLines }) => {
+await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts → route thật A3; /policy → route thật F7 (200, không trang \"có từ…\")", "F5-6", async ({ page, consoleLines }) => {
   check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
   const notes = [];
   for (const [label, path, api, testId, title, expected, ready] of [
     // `ready`: màn đã dựng xong từ thân 200 (có dòng / câu rỗng) hoặc báo lỗi tải — rồi mới kiểm.
     ["Tổng quan", "/dashboard", "/api/dashboard/business", "dashboard-missing", F5.dashboardMissing, 200, (p) => p.getByTestId("kpi")],
     ["Cảnh báo", "/alerts", "/api/alerts", "alerts-missing", F5.alertsMissing, 200, (p) => p.getByTestId("alert-row").or(p.getByText("Không có cảnh báo đang mở.", { exact: true }))],
-    ["Chính sách", "/policy", "/api/policy", "policy-missing", F5.policyMissing, 404, null],
+    ["Chính sách", "/policy", "/api/policy", "policy-missing", F5.policyMissing, 200, (p) => p.getByTestId("version-row").first().or(p.getByTestId("policy-load-error"))],
   ]) {
     const seen = watchJson(page, (r) => r.request().method() === "GET" && pathOf(r) === api);
     if (new URL(page.url()).pathname === path) await page.reload({ waitUntil: "load" });
@@ -1137,8 +1138,9 @@ await mgrStep("F5-6 dev KHÔNG mock: /dashboard, /alerts → route thật A3 (20
     } else {
       await ready(page).or(page.getByTestId("load-error")).first().waitFor({ timeout: 15_000 });
       check((await page.getByTestId(testId).count()) === 0, `${path}: route thật đã có (200) mà vẫn hiện trang "${title}"`);
-      check((await page.getByTestId("load-error").count()) === 0, `${path}: GET ${api} 200 mà màn báo lỗi tải (thân sai hình dạng?)`);
-      notes.push(`${path} → 200 (route thật A3)`);
+      const loadErrors = (await page.getByTestId("load-error").count()) + (await page.getByTestId("policy-load-error").count());
+      check(loadErrors === 0, `${path}: GET ${api} 200 mà màn báo lỗi tải (thân sai hình dạng?)`);
+      notes.push(`${path} → 200 (route thật)`);
     }
   }
   return { note: `${notes.join(" · ")}; không khối đỏ` };
@@ -1331,72 +1333,77 @@ await mgrStep("F5-4 dev KHÔNG mock: gửi thẳng from thiếu múi giờ → 4
   return { note: `gửi thẳng (Bearer đọc từ GET /api/dashboard/business của SPA): GET ${WINDOW_NO_TZ} → 422 invalid_request [query.from] · GET ${STATUS_EMPTY} → 422 invalid_request` };
 });
 
-await mgrStep("F5-5 dev:mock Chính sách: sai cú pháp → \"Dòng N\" + Lưu khoá; 422 đúng dòng; Lưu 201; quay lui → 201", "F5-5", async ({ page, consoleLines }) => {
-  // Chuyển dev → dev:mock trong CÙNG context: cookie refresh (localhost) giữ phiên → không nhập OTP lần 2. Chính sách vẫn
-  // là MSW (Phase 7); Tổng quan + Cảnh báo ở dev:mock cũng đi backend thật (không còn handler) — bước này không mở chúng.
-  await page.goto("about:blank");
-  await ensureMockServer("dev:mock(F5)");
-  await page.goto(`${DEV}/policy`, { waitUntil: "load" });
-  await expectSignedIn(page, "quan.tm (dev:mock, khôi phục bằng cookie refresh)");
-  check(mswOn(consoleLines), 'console không có "[MSW] Mocking enabled"');
-  await page.getByRole("heading", { name: "Chính sách", level: 1 }).waitFor();
-  await page.getByTestId("version-row").first().waitFor({ timeout: 15_000 });
+await mgrStep("F5-5 dev KHÔNG mock Chính sách (route thật F7, chỉ đọc + Kiểm tra): lịch sử khớp thân; không Lưu/Quay lui; cú pháp → \"Dòng N\"; validate 200 + 422 đúng dòng", "F5-5", async ({ page, consoleLines }) => {
+  check(mswLines(consoleLines).length === 0, `dev không mock mà console có "${mswLines(consoleLines)[0]}"`);
+  const isGet = (path) => (r) => r.request().method() === "GET" && pathOf(r) === path;
+  const policySeen = watchJson(page, isGet("/api/policy"));
+  const versionsSeen = watchJson(page, isGet("/api/policy/versions"));
+  const writes = [];
+  page.on("request", (r) => {
+    const path = new URL(r.url()).pathname;
+    if (path.startsWith("/api/policy") && r.method() !== "GET" && path !== "/api/policy/validate") writes.push(`${r.method()} ${path}`);
+  });
+  if (new URL(page.url()).pathname === "/policy") await page.reload({ waitUntil: "load" });
+  else await navTo(page, "Chính sách");
+  await expectSignedIn(page, "quan.tm /policy");
+  const view = await waitJson(page, policySeen, "GET /api/policy");
+  const versions = await waitJson(page, versionsSeen, "GET /api/policy/versions");
+  check(policySeen.statuses[0] === 200 && versionsSeen.statuses[0] === 200, `GET /api/policy → ${policySeen.statuses[0]}, /versions → ${versionsSeen.statuses[0]}, cần 200`);
+  check(Array.isArray(versions), `/versions không phải mảng trần: ${JSON.stringify(versions).slice(0, 80)}`);
+  // (1) Xem: tiêu đề + lịch sử khớp thân thật.
+  await page.getByText(`Đang áp dụng bản ${view.version}`, { exact: true }).waitFor({ timeout: 10_000 });
+  const rows = page.getByTestId("version-row");
+  await rows.first().waitFor({ timeout: 10_000 });
+  check((await rows.count()) === versions.length, `lịch sử ${await rows.count()} dòng, thân có ${versions.length}`);
+  for (const v of versions) {
+    const row = page.locator(`[data-testid="version-row"][data-version="${v.version}"]`);
+    check((await row.count()) === 1, `thiếu dòng bản ${v.version}`);
+    const text = await row.innerText();
+    check((await row.getAttribute("data-current")) === String(v.is_current), `bản ${v.version}: data-current lệch is_current=${v.is_current}`);
+    check(text.includes("đang áp dụng") === v.is_current, `bản ${v.version}: "đang áp dụng" lệch is_current=${v.is_current}`);
+    if (v.updated_by === null) check(text.includes("Hệ thống"), `bản ${v.version}: updated_by null mà không hiện "Hệ thống"`);
+    check(text.includes("khôi phục") === Boolean(v.restored_from), `bản ${v.version}: "khôi phục" lệch restored_from=${v.restored_from}`);
+  }
+  // (2) Không có nút ghi (N-POL2).
+  for (const name of [/Lưu/, /Quay lui/, /Mô phỏng/]) check((await page.getByRole("button", { name }).count()) === 0, `màn có nút ${name}`);
   await shoot(page, "mgr-policy.png");
   await page.getByRole("tab", { name: "JSON", exact: true }).click();
   const area = page.getByLabel("Nội dung chính sách (JSON)");
   const original = await area.inputValue();
-  const saveButton = page.getByRole("button", { name: /^Lưu/ });
-  const puts = [];
-  page.on("request", (r) => {
-    if (r.method() === "PUT" && pathOf(r) === "/api/policy") puts.push(r.postDataJSON());
-  });
-  // (1) Sai cú pháp: bỏ dấu phẩy sau SLA_MINUTES → lỗi ở dòng THRESHOLD_LOW.
-  const broken = original.replace('"SLA_MINUTES": 30,', '"SLA_MINUTES": 30');
-  check(broken !== original, "không tìm thấy dòng SLA_MINUTES trong chính sách giả");
+  const checkButton = page.getByRole("button", { name: /^Kiểm tra/ });
+  const isValidate = (r) => r.request().method() === "POST" && pathOf(r) === "/api/policy/validate";
+  // (3) Sai cú pháp: bỏ dấu phẩy cuối dòng đầu tiên có dấu phẩy → lỗi ở dòng kế tiếp.
+  const lines = original.split("\n");
+  const cut = lines.findIndex((l) => l.endsWith(","));
+  check(cut >= 0, "chính sách không có dòng nào kết thúc bằng dấu phẩy");
+  const broken = lines.map((l, i) => (i === cut ? l.slice(0, -1) : l)).join("\n");
   await area.fill(broken);
-  const syntaxLine = lineIndex(broken, '"THRESHOLD_LOW"');
   const first = (await page.getByTestId("policy-problem").first().innerText()).trim();
-  check(first.startsWith(`Dòng ${syntaxLine}, cột `), `lỗi cú pháp hiện "${first}", cần "Dòng ${syntaxLine}, cột …"`);
-  check(await saveButton.isDisabled(), "JSON sai cú pháp mà nút Lưu không khoá");
-  check((await saveButton.innerText()).trim() === "Lưu · còn 1 lỗi", `nút Lưu: "${await saveButton.innerText()}"`);
-  // (2) Sai nghĩa: ngưỡng dưới ≥ ngưỡng trên → 422 ở đúng dòng.
-  const bad = original.replace('"THRESHOLD_LOW": 0.25', '"THRESHOLD_LOW": 0.9');
+  check(first.startsWith(`Dòng ${cut + 2}, cột `), `lỗi cú pháp hiện "${first}", cần "Dòng ${cut + 2}, cột …"`);
+  check(await checkButton.isDisabled(), "JSON sai cú pháp mà nút Kiểm tra không khoá");
+  check((await checkButton.innerText()).trim() === "Kiểm tra · còn 1 lỗi", `nút Kiểm tra: "${await checkButton.innerText()}"`);
+  // (4) Bản đang chạy → validate 200 → "hợp lệ".
+  await area.fill(original);
+  const r200 = await clickFor(page, isValidate, () => checkButton.click());
+  check(r200.status() === 200, `validate bản đang chạy → ${r200.status()}, cần 200`);
+  await page.waitForFunction((t) => document.querySelector('[data-testid="policy-message"]')?.textContent === t, F5.policyValid, { timeout: 5_000 });
+  // (5) THRESHOLD_LOW = 1.5 (ngoài [0, 1]) → 422 invalid_policy, lỗi ở dòng THRESHOLD_LOW, số dòng đỏ.
+  const bad = original.replace(/"THRESHOLD_LOW": [0-9.eE+-]+/, '"THRESHOLD_LOW": 1.5');
+  check(bad !== original, "không tìm thấy THRESHOLD_LOW trong chính sách thật");
   await area.fill(bad);
-  const r422 = await clickFor(page, (r) => r.request().method() === "PUT" && pathOf(r) === "/api/policy", () => saveButton.click());
-  check(r422.status() === 422, `PUT sai nghĩa → ${r422.status()}, cần 422`);
+  const r422 = await clickFor(page, isValidate, () => checkButton.click());
+  const body422 = await r422.json().catch(() => null);
+  check(r422.status() === 422 && body422?.error === "invalid_policy", `validate sai nghĩa → ${r422.status()} ${body422?.error ?? ""}, cần 422 invalid_policy`);
   const lowLine = lineIndex(bad, '"THRESHOLD_LOW"');
-  const expected = `Dòng ${lowLine} · Ngưỡng dưới 0.9 phải nhỏ hơn ngưỡng trên 0.75`;
-  await page.waitForFunction((t) => [...document.querySelectorAll('[data-testid="policy-problem"]')].some((el) => el.textContent === t), expected, { timeout: 5_000 });
+  await page.waitForFunction((t) => document.querySelector('[data-testid="policy-message"]')?.textContent === t, F5.policyInvalid, { timeout: 5_000 });
+  const problems = await page.getByTestId("policy-problem").allInnerTexts();
+  check(problems.some((t) => t.trim().startsWith(`Dòng ${lowLine} · `)), `không có lỗi ở "Dòng ${lowLine} · …" (có: ${problems.join(" | ")})`);
   const mark = await page.locator(`[data-testid="gutter-line"][data-line="${lowLine}"]`).getAttribute("data-mark");
   check(mark === "error", `số dòng ${lowLine} không tô đỏ (data-mark=${mark})`);
-  check(puts[0]?.base_version_id === 14, `PUT thiếu/sai base_version_id: ${JSON.stringify(puts[0]?.base_version_id)}`);
   await shoot(page, "mgr-policy-json-error.png");
-  // (3) Sửa đúng → 201 → lịch sử có bản mới đang áp dụng.
-  const good = original.replace('"SLA_MINUTES": 30', '"SLA_MINUTES": 35');
-  await area.fill(good);
-  const r201 = await clickFor(page, (r) => r.request().method() === "PUT" && pathOf(r) === "/api/policy", () => saveButton.click());
-  check(r201.status() === 201, `PUT đúng → ${r201.status()}, cần 201`);
-  const saved = await r201.json();
-  await page.waitForFunction((t) => document.querySelector('[data-testid="policy-message"]')?.textContent === t, `Đã lưu thành bản ${saved.version}.`, { timeout: 5_000 });
-  await page.locator(`[data-testid="version-row"][data-version="${saved.version}"][data-current="true"]`).waitFor({ timeout: 10_000 });
-  // (4) Quay lui bản "2" → hộp xác nhận → 201 → bản mới (khôi phục từ bản 2); bản 2 còn nguyên trong lịch sử.
-  await page.getByRole("button", { name: "Quay lui bản 2", exact: true }).click();
-  const confirmText = (await page.getByTestId("restore-confirm-text").innerText()).trim();
-  check(confirmText === F5.restore("2"), `hộp xác nhận: "${confirmText}"`);
-  const restored = await clickFor(page, (r) => r.request().method() === "POST" && /^\/api\/policy\/versions\/12\/restore$/.test(pathOf(r)), () =>
-    page.getByRole("button", { name: "Áp dụng lại", exact: true }).click(),
-  );
-  check(restored.status() === 201, `quay lui → ${restored.status()}, cần 201`);
-  const made = await restored.json();
-  await page.waitForFunction((t) => document.querySelector('[data-testid="policy-message"]')?.textContent === t, `Đã áp dụng lại nội dung bản 2 thành bản ${made.version}.`, { timeout: 5_000 });
-  const newest = page.locator(`[data-testid="version-row"][data-version="${made.version}"]`);
-  await newest.waitFor({ timeout: 10_000 });
-  check((await newest.getAttribute("data-current")) === "true", `bản ${made.version} không phải bản đang áp dụng`);
-  check((await newest.innerText()).includes("khôi phục từ bản 2"), `bản ${made.version} thiếu "khôi phục từ bản 2"`);
-  check((await page.locator('[data-testid="version-row"][data-version="2"]').count()) === 1, "bản 2 biến khỏi lịch sử sau quay lui");
-  await shoot(page, "mgr-policy-restore.png");
+  check(writes.length === 0, `trang gửi lời gọi ghi: ${writes.join(", ")}`);
   return {
-    note: `cú pháp → "Dòng ${syntaxLine}, cột …", Lưu khoá ("Lưu · còn 1 lỗi") · 422 → "${expected}", số dòng đỏ, base_version_id 14 · 201 → bản ${saved.version} đang áp dụng · quay lui bản 2 → "${F5.restore("2")}" → 201 → bản ${made.version} (khôi phục từ bản 2), bản 2 còn nguyên`,
+    note: `bản ${view.version} · lịch sử ${versions.length} dòng khớp thân · không nút Lưu/Quay lui/Mô phỏng · cú pháp → "Dòng ${cut + 2}, cột …", Kiểm tra khoá · validate bản đang chạy → 200 "hợp lệ" · THRESHOLD_LOW 1.5 → 422 invalid_policy ở dòng ${lowLine}, số dòng đỏ · 0 lời gọi ghi`,
   };
 });
 

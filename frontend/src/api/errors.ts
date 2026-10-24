@@ -4,8 +4,8 @@ import { ownEntry } from "../lib/lookup.ts";
 //   {detail: "<mã hoặc câu>"}                  — HTTPException, AuthError, 409 sự kiện muộn, 413
 //   {error: "<mã>", fields?: ["body.text", …]}  — 422 kiểm dữ liệu (`invalid_request`), 503 privacy guard
 // (backend/app/api/errors.py). Thân lỗi không bao giờ chứa giá trị người dùng gửi (chống rò qua 422).
-// F5 [Đề xuất — Phase 7]: 422 `invalid_policy` kèm `errors: [{loc, msg}]` (dạng lỗi Pydantic, `loc` tính từ gốc nội
-// dung chính sách) → `issues`.
+// F7 (route thật `POST /api/policy/validate`, backend/app/api/policy.py): 422 `invalid_policy` kèm `errors: [{loc, msg}]`
+// (dạng lỗi Pydantic, `loc` tính từ gốc nội dung chính sách) → `issues`.
 
 export class ApiError extends Error {
   readonly status: number;
@@ -83,6 +83,8 @@ const CODE_MESSAGES: Record<string, string> = {
   // Duyệt (backend/app/api/approvals.py) + xem phiếu (4c P6).
   rejected_requires_note: "Từ chối cần ghi chú lý do gửi người dùng.",
   plan_changed: "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt",
+  // Phiếu thiếu / sai kiểu người bị ảnh hưởng hoặc mức rủi ro — api/approvals.ts `parseApprovalView` (502 do client đặt, fail-closed).
+  invalid_approval_body: "Phiếu trả về thiếu hoặc sai thông tin người bị ảnh hưởng / mức rủi ro nên không hiện để duyệt. Vui lòng tải lại trang.",
   // Ghi đè (4d P1–P4; KH 4.6, 12b Q-fe-10).
   ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
   already_overridden: "Bạn đã ghi đè ticket này rồi — mỗi người chỉ ghi đè một ticket một lần.",
@@ -91,8 +93,7 @@ const CODE_MESSAGES: Record<string, string> = {
   monitor_unavailable: "Số liệu tạm thời không có",
   // Ticket nhiều ý (T20b): `children_progress` / tin tổng hợp sai hình dạng — api/tickets.ts `parseTicketView` (502 do client đặt).
   invalid_ticket_body: "Chưa đọc được dữ liệu của yêu cầu này. Vui lòng tải lại trang.",
-  // Chính sách [Đề xuất F5 — Phase 7].
-  version_conflict: "Đã có phiên bản mới hơn — tải lại trước khi lưu",
+  // Chính sách (F7 — chỉ có validate; `version_conflict` của Lưu bỏ cùng nút, N-POL2 thêm lại theo route thật).
   invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
 };
 

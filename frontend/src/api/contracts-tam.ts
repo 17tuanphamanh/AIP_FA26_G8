@@ -52,6 +52,9 @@ export type TicketView = {
   created_at: string;
   closed_at: string | null;
   children_progress?: ChildProgress[] | null;
+  // R3 (#76): hạn của LẦN CHỜ HIỆN TẠI (UTC); null = không chờ / đã kết thúc / cha nhiều ý. Backend ghi bắt buộc (có thể
+  // null); khai tuỳ chọn ở đây để thân/fixture cũ thiếu khoá vẫn đúng kiểu — thiếu = null (màn không hiện hạn).
+  deadline?: string | null;
 };
 
 // Nguồn: backend/app/api/tickets.py ConfirmIn (extra="forbid", note ≤ 1000). Xoá khi: route khai body trong openapi.
@@ -138,6 +141,32 @@ export type InboxResponse = { items: ApprovalListItem[] };
 // action_metadata; `title` null khi không tìm thấy tài liệu ở bản KB hiện hành. `viewer` = người có `audit:read:all` xem
 // phiếu không giao cho mình (không quyết được, không ghi lần xem đầu).
 export type ApprovalRoleAs = "primary" | "backup" | "viewer";
+
+// F6 (#76): `affected` = người BỊ TÁC ĐỘNG (`Action.requested_for`), có thể khác người gửi; `risk_view` = RiskDecision + 2 cờ
+// suy ra (`calibrated`, `auto_allowed`), null ⇔ `risk` null. Nguồn: backend/app/api/approvals.py (AffectedView, ManagerRef,
+// RiskView) — soi hai chiều với openapi ở schema.check.ts. Xoá khi: ApprovalViewP4 lấy thẳng từ schema.gen.ts (cần `status`
+// của openapi là enum; hiện là `string`).
+export type ApprovalManagerRef = { status: "known" | "unknown"; user_id: string | null; full_name: string | null };
+export type ApprovalAffected = {
+  user_id: string;
+  is_requester: boolean;
+  department: string | null;
+  manager: ApprovalManagerRef;
+};
+export type ApprovalRiskView = {
+  decided_by: "rule" | "llm";
+  policy_decision: "allow" | "approval_required" | "deny" | null;
+  matched_rule_id: string | null;
+  raw_prob: number | null;
+  calibrated_prob: number | null;
+  p_method: "self_report" | "sampling_k5" | null;
+  risk_level: "low" | "medium" | "high";
+  route: "AUTO" | "HITL" | "ESCALATE_L2";
+  reason: string;
+  thresholds: [number, number] | null;
+  calibrated: boolean;
+  auto_allowed: boolean;
+};
 export type ApprovalViewP4 = {
   approval_id: string;
   ticket_id: string;
@@ -151,6 +180,8 @@ export type ApprovalViewP4 = {
   facts: Record<string, unknown>;
   role_as: ApprovalRoleAs;
   procedure: { doc_id: string; title: string | null } | null;
+  affected: ApprovalAffected;
+  risk_view: ApprovalRiskView | null;
 };
 
 // Nguồn: backend/app/api/health.py health() — JSONResponse; 200 "ok" / 503 "degraded"; `runtime` chỉ để báo.
@@ -162,6 +193,10 @@ export type Health = {
   runtime: "up" | "down";
   kb: { alias: string; collection: string | null; status: "ready" | "missing" | "unknown" };
 };
+
+// Nguồn: backend/app/api/policy.py `ValidateIn` (extra="forbid", `content: dict`) — `POST /api/policy/validate` tự đọc thân
+// (`_read_body`) nên openapi không có requestBody. Kiểu PHẢN HỒI lấy từ schema.gen.ts (types.ts). Xoá khi: route khai body.
+export type PolicyValidateIn = { content: Record<string, unknown> };
 
 // Ghi đè `POST /api/tickets/{id}/override` (4d) — ghi một dòng audit OVERRIDE, KHÔNG đổi ticket. Thứ tự lỗi (code): 403
 // `forbidden` (không quyền) → 403 `reauth_required` (đăng nhập > 10 phút) → 404 `not_found` → 403 `forbidden` (người gửi tự
@@ -306,31 +341,6 @@ export type DigestConversationItem = { role: "assistant"; kind: "digest"; round:
 // `parent_reply_wait` → 409 sự kiện muộn. 202 = `Accepted`.
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
-
-// ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
-
-// Nguồn: [Đề xuất F5 — chốt lại khi làm Phase 7] (Q-fe-26; PLAN-fe mục 7 #20, nợ API #11). P10 §3.3 chỉ có TÊN route;
-// tên trường bám cột bảng `policy_versions` (backend/app/db/models.py `PolicyVersion`: `version` String(16),
-// `policy_json` → `content`, `updated_by`, `updated_at`, `is_current`). Quay lui = TẠO phiên bản mới (append-only,
-// `restored_from` = version bản gốc). Xoá khi: Phase 7 có route (gen:api) — xoá cùng mocks/handlers/policy.ts.
-export type PolicyView = {
-  version_id: number;
-  version: string;
-  content: Record<string, unknown>;
-  updated_by: string | null;
-  updated_at: string;
-  is_current: boolean;
-};
-export type PolicyVersionItem = {
-  version_id: number;
-  version: string;
-  updated_by: string | null;
-  updated_at: string;
-  is_current: boolean;
-  restored_from?: string | null;
-};
-export type PolicyPutIn = { content: Record<string, unknown>; base_version_id: number };
-export type PolicySaved = { version_id: number; version: string };
 
 // ---------------------------------------------------------------- Route ĐÃ CÓ — I1 (viết tay tới khi gen:api)
 

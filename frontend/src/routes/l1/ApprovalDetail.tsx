@@ -14,12 +14,16 @@ import { RejectSheet } from "../../components/RejectSheet.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import {
   actionLabel,
+  AFFECTED_OTHER_TEXT,
+  AFFECTED_SELF_TEXT,
   approveBody,
   BACKUP_TEXT,
   DECISION_SENT,
+  deadlineText,
   decisionRole,
   isReflex,
   isUrgent,
+  managerText,
   MISSING_VALUE,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
@@ -28,6 +32,7 @@ import {
   rejectBody,
   remainingClock,
   RISK_MISSING_TEXT,
+  riskSummary,
   STATUS_LABEL,
   VIEW_NOT_FOUND_TEXT,
   viewedSeconds,
@@ -202,6 +207,9 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const title = typeof actionType === "string" ? actionLabel(actionType) : "Hành động";
   const requesterRole = ownEntry(ROLE_LABEL, view.requester.role, view.requester.role || MISSING_VALUE);
   const department = view.requester.department || MISSING_VALUE;
+  const deadlineAt = deadlineText(view.deadline);
+  const { affected } = view;
+  const risk = view.risk_view ? riskSummary(view.risk_view) : null;
   // Thiếu cả `procedure` (lệch spec) → không vỡ màn: hiện "(không có)".
   const procedureTitle = view.procedure?.title?.trim();
   const procedureDoc = view.procedure?.doc_id ?? "(không có)";
@@ -220,6 +228,12 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
             </div>
             <p className="text-label font-normal text-ink-2">
               Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
+              {deadlineAt ? (
+                <>
+                  {" "}
+                  · Hạn duyệt <span data-testid="approval-deadline-at">{deadlineAt}</span>
+                </>
+              ) : null}
             </p>
           </div>
 
@@ -273,6 +287,41 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                   </div>
                 </dl>
               </Block>
+              <Block title="Người bị ảnh hưởng">
+                <div data-testid="affected" className="flex flex-col gap-2">
+                  {!affected.is_requester ? (
+                    <p role="note" data-testid="affected-other" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                      <b className="font-semibold">{AFFECTED_OTHER_TEXT}</b> — hành động áp dụng lên tài khoản này, không phải người gửi.
+                    </p>
+                  ) : null}
+                  <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                    <div className="flex justify-between gap-4 px-5 py-3">
+                      <dt>Tài khoản</dt>
+                      <dd data-testid="affected-user" className="font-mono text-ink-2">
+                        {affected.user_id}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Quan hệ với người gửi</dt>
+                      <dd data-testid="affected-relation" className="text-ink-2">
+                        {affected.is_requester ? AFFECTED_SELF_TEXT : AFFECTED_OTHER_TEXT}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Phòng ban</dt>
+                      <dd data-testid="affected-department" className="text-ink-2">
+                        {affected.department || MISSING_VALUE}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Quản lý</dt>
+                      <dd data-testid="affected-manager" data-known={affected.manager.status === "known"} className="text-right text-ink-2">
+                        {managerText(affected.manager)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </Block>
               <Block title="Căn cứ quy trình">
                 <p data-testid="procedure" className="flex flex-col rounded-group border border-line px-5 py-3">
                   <span>{procedureTitle || procedureDoc}</span>
@@ -281,8 +330,49 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               </Block>
               <Block title="Đánh giá rủi ro">
                 {view.risk ? (
-                  <div className="overflow-hidden rounded-group border border-line">
-                    <FlatTable value={view.risk} testId="risk-row" />
+                  <div className="flex flex-col gap-2">
+                    {risk ? (
+                      <dl data-testid="risk-summary" className="overflow-hidden rounded-group border border-line text-secondary">
+                        <div className="flex justify-between gap-4 px-5 py-3">
+                          <dt>Mức rủi ro</dt>
+                          <dd data-testid="risk-level" data-level={view.risk_view?.risk_level} className="font-semibold">
+                            {risk.level}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Hướng xử lý</dt>
+                          <dd data-testid="risk-route" className="text-ink-2">
+                            {risk.route}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Lý do</dt>
+                          <dd data-testid="risk-reason" className="text-right text-ink-2">
+                            {risk.reason}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Luật khớp</dt>
+                          <dd data-testid="risk-rule" className="font-mono text-ink-2">
+                            {risk.ruleId ?? MISSING_VALUE}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Nguồn đánh giá</dt>
+                          <dd data-testid="risk-source" className="text-right text-ink-2">
+                            {risk.source}
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : null}
+                    {risk?.note ? (
+                      <p role="note" data-testid="risk-uncalibrated" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                        {risk.note}
+                      </p>
+                    ) : null}
+                    <div className="overflow-hidden rounded-group border border-line">
+                      <FlatTable value={view.risk} testId="risk-row" />
+                    </div>
                   </div>
                 ) : (
                   <p data-testid="risk-missing" className="rounded-group border border-line px-5 py-3 text-ink-2">

@@ -50,10 +50,70 @@ export async function listApprovals(status: ApprovalStatus): Promise<ApprovalLis
   return parseInbox(res.data);
 }
 
+const isString = (value: unknown): value is string => typeof value === "string";
+const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
+const isNumberOrNull = (value: unknown): value is number | null => value === null || (typeof value === "number" && Number.isFinite(value));
+const oneOf = (value: unknown, allowed: readonly (string | null)[]): boolean => allowed.includes(value as string | null);
+const BAD_APPROVAL = "invalid_approval_body";
+
+/** `affected.manager`: `known` ⇒ có `user_id`; `unknown` ⇒ `user_id` và `full_name` đều null (backend không bao giờ có
+ *  giá trị "không có quản lý"). Sai kiểu / giá trị lạ / mâu thuẫn → false. */
+function isManagerRef(value: unknown): boolean {
+  if (!isRecord(value) || !isStringOrNull(value.user_id) || !isStringOrNull(value.full_name)) return false;
+  if (value.status === "known") return value.user_id !== null;
+  return value.status === "unknown" && value.user_id === null && value.full_name === null;
+}
+
+function isAffected(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value.user_id) &&
+    value.user_id !== "" &&
+    typeof value.is_requester === "boolean" &&
+    isStringOrNull(value.department) &&
+    isManagerRef(value.manager)
+  );
+}
+
+/** `risk_view`: đủ enum + hai cờ suy ra PHẢI khớp trường gốc (`calibrated` ⇔ `calibrated_prob` khác null, `auto_allowed` ⇔
+ *  `route` = "AUTO") — cờ lệch trường gốc nghĩa là thân không đáng tin, không đoán bên nào đúng. */
+function isRiskView(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    oneOf(value.decided_by, ["rule", "llm"]) &&
+    oneOf(value.policy_decision, ["allow", "approval_required", "deny", null]) &&
+    isStringOrNull(value.matched_rule_id) &&
+    isNumberOrNull(value.raw_prob) &&
+    isNumberOrNull(value.calibrated_prob) &&
+    oneOf(value.p_method, ["self_report", "sampling_k5", null]) &&
+    oneOf(value.risk_level, ["low", "medium", "high"]) &&
+    oneOf(value.route, ["AUTO", "HITL", "ESCALATE_L2"]) &&
+    isString(value.reason) &&
+    (value.thresholds === null ||
+      (Array.isArray(value.thresholds) && value.thresholds.length === 2 && value.thresholds.every((t) => typeof t === "number"))) &&
+    value.calibrated === (value.calibrated_prob !== null) &&
+    value.auto_allowed === (value.route === "AUTO")
+  );
+}
+
+/**
+ * Thân xem phiếu (F6 #76). Fail-closed: `affected` (người BỊ TÁC ĐỘNG — căn cứ để duyệt) thiếu / sai kiểu, `risk_view` sai
+ * kiểu, hoặc `risk_view` null khác `risk` null → 502 `invalid_approval_body`: màn báo lỗi, KHÔNG hiện phiếu và KHÔNG có
+ * thanh quyết định (người duyệt không được duyệt khi không thấy đúng ai bị tác động / mức rủi ro). Các trường cũ vẫn dễ dãi
+ * (màn tự xử lý null — phòng ban, căn cứ…), `role_as` lạ → `viewer` (decisionRole).
+ */
+export function parseApprovalView(body: unknown): ApprovalViewP4 {
+  if (!isRecord(body) || !isAffected(body.affected)) throw new ApiError(502, BAD_APPROVAL);
+  const riskView = body.risk_view;
+  if (riskView !== null && !isRiskView(riskView)) throw new ApiError(502, BAD_APPROVAL);
+  if (!(body.risk === null || isRecord(body.risk)) || (riskView === null) !== (body.risk === null)) throw new ApiError(502, BAD_APPROVAL);
+  return body as ApprovalViewP4;
+}
+
 export async function getApproval(id: string): Promise<ApprovalViewP4> {
-  const res = await api.request<ApprovalViewP4>(approvalPath(id));
+  const res = await api.request<unknown>(approvalPath(id));
   recordServerDate(res.headers);
-  return res.data;
+  return parseApprovalView(res.data);
 }
 
 export async function decideApproval(id: string, body: DecisionIn): Promise<DecisionAccepted> {
