@@ -58,6 +58,10 @@ x-backend-env: &backend-env
   TICKET_RATE_10MIN: ${TICKET_RATE_10MIN:-}
   TICKET_RATE_HOUR: ${TICKET_RATE_HOUR:-}
   MESSAGE_RATE_10MIN: ${MESSAGE_RATE_10MIN:-}
+  # SSE tiến trình ticket (GET /api/tickets/{id}/events): mặc định tắt → route 404, frontend dùng polling.
+  ENABLE_SSE: ${ENABLE_SSE:-false}
+  SSE_POLL_MS: ${SSE_POLL_MS:-300}
+  SSE_HEARTBEAT_S: ${SSE_HEARTBEAT_S:-15}
 
 services:
   postgres:
