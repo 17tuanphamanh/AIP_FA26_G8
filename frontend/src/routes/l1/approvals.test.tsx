@@ -9,7 +9,15 @@ import { INBOX_REFRESH_MS, inboxRefetchInterval, listApprovals, overrideTicket }
 import { type AuthChannel, createClient } from "../../api/client.ts";
 import { errorMessage, ApiError, GENERIC_LOGIN_ERROR } from "../../api/errors.ts";
 import { offsetFrom, recordServerDate, serverNow } from "../../api/serverClock.ts";
-import type { ApprovalListItem, ApprovalStatus, ApprovalViewP4, Me, OverrideIn } from "../../api/types.ts";
+import type {
+  ApprovalAffected,
+  ApprovalListItem,
+  ApprovalRiskView,
+  ApprovalStatus,
+  ApprovalViewP4,
+  Me,
+  OverrideIn,
+} from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
@@ -25,10 +33,13 @@ import {
   BACKUP_TEXT,
   DECISION_SENT,
   decisionRole,
+  deadlineText,
   INBOX_COUNT_STALE_TEXT,
   INBOX_STALE_TEXT,
   isShortValue,
   isUrgent,
+  managerText,
+  MANAGER_UNKNOWN_TEXT,
   NOTICES_TEXT,
   OVERRIDE_DONE,
   OVERRIDE_FORBIDDEN,
@@ -43,6 +54,8 @@ import {
   reflexText,
   remainingShort,
   RISK_MISSING_TEXT,
+  riskSummary,
+  UNCALIBRATED_TEXT,
   SHORT_VALUE_MAX,
   sortByDeadline,
   TICKET_UNAVAILABLE,
@@ -97,6 +110,28 @@ const NESTED_ACTION = {
   facts: { device_registered: true, cert_days_to_expiry: -3, history: [] },
 };
 
+// F6 #76: người bị tác động (chính người gửi, sếp có tên) + RiskDecision của luật + 2 cờ suy ra.
+const AFFECTED: ApprovalAffected = {
+  user_id: "nv001",
+  is_requester: true,
+  department: "Finance",
+  manager: { status: "known", user_id: "mgr01", full_name: "Lê Thị Hạnh" },
+};
+const RISK_VIEW: ApprovalRiskView = {
+  decided_by: "rule",
+  policy_decision: "approval_required",
+  matched_rule_id: "R18",
+  raw_prob: null,
+  calibrated_prob: null,
+  p_method: null,
+  risk_level: "medium",
+  route: "HITL",
+  reason: "Ngoài giờ hành chính",
+  thresholds: null,
+  calibrated: false,
+  auto_allowed: false,
+};
+
 function viewOf(id: string, over: Partial<ApprovalViewP4> = {}): ApprovalViewP4 {
   return {
     approval_id: id,
@@ -111,6 +146,8 @@ function viewOf(id: string, over: Partial<ApprovalViewP4> = {}): ApprovalViewP4 
     facts: { cert_status: "expired" },
     role_as: "primary",
     procedure: { doc_id: "KB-VPN-004", title: "Gia hạn và cấp lại chứng chỉ VPN" },
+    affected: AFFECTED,
+    risk_view: RISK_VIEW,
     ...over,
   };
 }
@@ -350,7 +387,7 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
     expect(screen.getAllByTestId("fact-row").map((r) => r.dataset.key)).toStrictEqual(["cert_status"]);
     expect(screen.getAllByTestId("action-row")).toHaveLength(EXPECTED.length);
     expect(screen.getByTestId("action-hash").textContent).toBe(HASH);
-    expect(screen.getByText("Finance")).toBeTruthy();
+    expect(screen.getAllByText("Finance")).toHaveLength(2); // người gửi + người bị ảnh hưởng (cùng phòng ban)
     expect(screen.queryByTestId("backup-banner")).toBeNull();
     expect(screen.getByRole("button", { name: /^Đồng ý/ })).toBeTruthy();
   });
@@ -801,7 +838,8 @@ describe("t51: decision 403 (xung đột lợi ích theo chuỗi quản lý — 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(errorMessage(new ApiError(403, "forbidden")));
     expect(alert.textContent).toBe("Bạn không có quyền thực hiện thao tác này.");
-    expect(document.body.textContent).not.toMatch(/xung đột|quản lý|forbidden|permission_denied/i);
+    // "Quản lý" là nhãn dòng của khối "Người bị ảnh hưởng" (F6) → chỉ chặn chữ của LÝ DO xung đột ("chuỗi quản lý").
+    expect(document.body.textContent).not.toMatch(/xung đột|chuỗi quản lý|forbidden|permission_denied/i);
     expect(screen.queryByTestId("decision-sent")).toBeNull();
     expect((screen.getByRole("button", { name: /^Đồng ý/ }) as HTMLButtonElement).disabled).toBe(false);
     expect(posts(calls, "/decision")).toHaveLength(1);
@@ -1024,10 +1062,12 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
 
 // ------------------------------------------------------------------------------------------------ t81
 
-const NULL_VIEW: Partial<ApprovalViewP4> = { requester: { role: "employee", department: null }, risk: null, procedure: null };
+const NULL_VIEW: Partial<ApprovalViewP4> = { requester: { role: "employee", department: null }, risk: null, risk_view: null, procedure: null };
 
 describe("t81: phiếu có phòng ban / rủi ro / căn cứ null → '—', câu rủi ro, '(không có)'; thanh quyết định VẪN có", () => {
-  const dd = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+  // Khối "Người gửi" (khối "Người bị ảnh hưởng" cũng có dòng "Phòng ban") — tra trong khối đúng.
+  const dd = (label: string) =>
+    within(screen.getByText("Người gửi", { selector: "h2" }).parentElement!).getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
 
   it("hiện thay thế đúng chỗ, không dựng bảng rỗng; Đồng ý gửi đúng body cũ", async () => {
     const calls = stubFetch((method, url) => {
@@ -1555,5 +1595,225 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
     expect(within(rows[3]!).getByTestId("inbox-time").textContent).toBe("Đã đồng ý");
     expect(errors()).toHaveLength(0);
     noLeak();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t142 (F6 #76, R3 #76)
+
+describe("t142: hàm thuần — nhãn rủi ro, quản lý, hạn tuyệt đối", () => {
+  it("riskSummary: nhãn theo bảng; giá trị lạ → nguyên mã; LLM chưa hiệu chỉnh mới có câu 'chưa hiệu chỉnh'", () => {
+    expect(riskSummary(RISK_VIEW)).toMatchObject({ level: "Trung bình", route: "Cần người duyệt", ruleId: "R18", note: null });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "low", route: "AUTO" })).toMatchObject({ level: "Thấp", route: "Tự xử lý" });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "high", route: "ESCALATE_L2" })).toMatchObject({ level: "Cao", route: "Chuyển L2" });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "toString" as never, route: "constructor" as never })).toMatchObject({
+      level: "toString",
+      route: "constructor",
+    });
+    const llm = { ...RISK_VIEW, decided_by: "llm" as const, matched_rule_id: null, policy_decision: null };
+    expect(riskSummary(llm).note).toBe(UNCALIBRATED_TEXT);
+    expect(UNCALIBRATED_TEXT).toBe("Chưa hiệu chỉnh, không tự xử lý");
+    expect(riskSummary({ ...llm, calibrated_prob: 0.4, calibrated: true }).note).toBeNull(); // đã hiệu chỉnh → không câu
+    expect(riskSummary({ ...RISK_VIEW, calibrated: false }).note).toBeNull(); // luật (rule) không bao giờ có câu này
+  });
+
+  it("managerText: known có tên / không tên; unknown → 'Chưa rõ quản lý', KHÔNG 'không có quản lý'", () => {
+    expect(managerText({ status: "known", user_id: "m-1", full_name: "Lê Thị Hạnh" })).toBe("Lê Thị Hạnh (m-1)");
+    expect(managerText({ status: "known", user_id: "m-1", full_name: null })).toBe("m-1 (chưa có tên)");
+    expect(managerText({ status: "unknown", user_id: null, full_name: null })).toBe(MANAGER_UNKNOWN_TEXT);
+    expect(MANAGER_UNKNOWN_TEXT).not.toMatch(/không có quản lý/i);
+  });
+
+  it("deadlineText: giờ Việt Nam; null / không phải chuỗi / không phải thời điểm → null", () => {
+    expect(deadlineText("2026-09-30T14:30:00Z")).toBe("21:30 30/09/2026");
+    expect(deadlineText("2026-09-30T17:05:00+00:00")).toBe("00:05 01/10/2026"); // qua nửa đêm giờ VN
+    for (const bad of [null, undefined, "", "không phải ngày", 0, 1.7e12, {}, []]) expect(deadlineText(bad)).toBeNull();
+  });
+});
+
+describe("t143: màn chi tiết phiếu — người bị ảnh hưởng, mức rủi ro, hạn duyệt", () => {
+  const txt = (id: string) => screen.getByTestId(id).textContent;
+
+  function open(over: Partial<ApprovalViewP4>, path = "/approvals/f6") {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/f6") return json(200, viewOf("f6", over));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("f6")]);
+      return undefined;
+    });
+    renderAt(path);
+  }
+
+  it("người bị ảnh hưởng = người gửi: tài khoản, phòng ban, quản lý có tên; KHÔNG có dải 'khác người gửi'", async () => {
+    open({});
+    await screen.findByTestId("affected");
+    expect(txt("affected-user")).toBe("nv001");
+    expect(txt("affected-relation")).toBe("Chính người gửi yêu cầu");
+    expect(txt("affected-department")).toBe("Finance");
+    expect(txt("affected-manager")).toBe("Lê Thị Hạnh (mgr01)");
+    expect(screen.queryByTestId("affected-other")).toBeNull();
+  });
+
+  it("khác người gửi → dải cảnh báo 'Khác người gửi yêu cầu'; quản lý chưa rõ; phòng ban null → '—'", async () => {
+    open({
+      affected: { user_id: "nv006", is_requester: false, department: null, manager: { status: "unknown", user_id: null, full_name: null } },
+    });
+    await screen.findByTestId("affected");
+    expect(txt("affected-user")).toBe("nv006");
+    expect(screen.getByTestId("affected-other").textContent).toContain("Khác người gửi yêu cầu");
+    expect(txt("affected-relation")).toBe("Khác người gửi yêu cầu");
+    expect(txt("affected-department")).toBe("—");
+    expect(txt("affected-manager")).toBe("Chưa rõ quản lý");
+    expect(txt("affected-manager")).not.toMatch(/không có quản lý/i);
+    expect(screen.getByTestId("affected-manager").dataset.known).toBe("false");
+  });
+
+  it("quản lý known mà sếp chưa có tên → 'id (chưa có tên)'", async () => {
+    open({ affected: { ...AFFECTED, manager: { status: "known", user_id: "mgr02", full_name: null } } });
+    await screen.findByTestId("affected");
+    expect(txt("affected-manager")).toBe("mgr02 (chưa có tên)");
+  });
+
+  it("mức rủi ro: nhãn Việt, hướng xử lý, lý do, luật khớp, nguồn; bảng gốc vẫn còn; luật không có câu 'chưa hiệu chỉnh'", async () => {
+    open({});
+    await screen.findByTestId("risk-summary");
+    expect(txt("risk-level")).toBe("Trung bình");
+    expect(screen.getByTestId("risk-level").dataset.level).toBe("medium");
+    expect(txt("risk-route")).toBe("Cần người duyệt");
+    expect(txt("risk-reason")).toBe("Ngoài giờ hành chính");
+    expect(txt("risk-rule")).toBe("R18");
+    expect(txt("risk-source")).toBe("Theo luật chính sách");
+    expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
+    expect(screen.getAllByTestId("risk-row").length).toBeGreaterThan(0);
+  });
+
+  it("mức Cao + LLM chưa hiệu chỉnh → nhãn 'Cao' và câu 'Chưa hiệu chỉnh, không tự xử lý'; luật khớp '—'", async () => {
+    open({
+      risk: { decided_by: "llm", matched_rule_id: null, reason: "x", thresholds: null },
+      risk_view: { ...RISK_VIEW, decided_by: "llm", policy_decision: null, matched_rule_id: null, raw_prob: 0.6, p_method: "self_report", risk_level: "high" },
+    });
+    await screen.findByTestId("risk-summary");
+    expect(txt("risk-level")).toBe("Cao");
+    expect(txt("risk-rule")).toBe("—");
+    expect(txt("risk-source")).toBe("Do mô hình ngôn ngữ đánh giá");
+    expect(txt("risk-uncalibrated")).toBe(UNCALIBRATED_TEXT);
+  });
+
+  it("LLM đã hiệu chỉnh → không có câu 'chưa hiệu chỉnh'", async () => {
+    open({
+      risk_view: { ...RISK_VIEW, decided_by: "llm", policy_decision: null, matched_rule_id: null, calibrated_prob: 0.4, calibrated: true, thresholds: [0.3, 0.7] },
+    });
+    await screen.findByTestId("risk-summary");
+    expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
+  });
+
+  it("risk null (và risk_view null) → câu 'chưa có đánh giá', không bảng tóm tắt, thanh quyết định vẫn có", async () => {
+    open({ risk: null, risk_view: null });
+    await screen.findByTestId("risk-missing");
+    expect(screen.queryByTestId("risk-summary")).toBeNull();
+    expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+  });
+
+  it("hạn duyệt: đồng hồ đếm ngược VÀ mốc tuyệt đối giờ Việt Nam", async () => {
+    open({ deadline: "2099-09-30T14:30:00Z" });
+    await screen.findByTestId("approval-deadline");
+    expect(txt("approval-deadline-at")).toBe("21:30 30/09/2099");
+  });
+
+  it("hạn hỏng (không phải thời điểm) → không hiện mốc tuyệt đối, màn không vỡ", async () => {
+    open({ deadline: "không phải ngày" });
+    await screen.findByTestId("request-summary");
+    expect(screen.queryByTestId("approval-deadline-at")).toBeNull();
+  });
+
+  it("viewer: vẫn thấy người bị ảnh hưởng + rủi ro, KHÔNG có thanh quyết định", async () => {
+    open({ role_as: "viewer" });
+    await screen.findByTestId("viewer-note");
+    expect(txt("affected-user")).toBe("nv001");
+    expect(txt("risk-level")).toBe("Trung bình");
+    expect(screen.queryByTestId("decision-bar")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Đồng ý/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Từ chối/ })).toBeNull();
+  });
+
+  it("primary: có thanh quyết định (đối chứng của ca viewer)", async () => {
+    open({});
+    await screen.findByTestId("affected");
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+  });
+});
+
+describe("t144: fail-closed — phiếu thiếu / sai kiểu người bị ảnh hưởng hoặc rủi ro → không hiện phiếu, KHÔNG thanh quyết định", () => {
+  async function expectBlocked(over: Record<string, unknown>) {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/bad") return json(200, { ...viewOf("bad"), ...over });
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("bad")]);
+      return undefined;
+    });
+    renderAt("/approvals/bad");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(errorMessage(new ApiError(502, "invalid_approval_body")));
+    expect(alert.textContent).not.toContain("invalid_approval_body");
+    expect(screen.queryByTestId("decision-bar")).toBeNull();
+    expect(screen.queryByTestId("affected")).toBeNull();
+    expect(screen.queryByTestId("action-hash")).toBeNull(); // không hiện nửa phiếu
+    expect(screen.queryByRole("button", { name: /^Đồng ý/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Từ chối/ })).toBeNull();
+  }
+
+  it("thiếu affected", () => expectBlocked({ affected: undefined }));
+  it("affected sai kiểu (user_id số)", () => expectBlocked({ affected: { ...AFFECTED, user_id: 5 } }));
+  it("manager.status lạ", () => expectBlocked({ affected: { ...AFFECTED, manager: { status: "none", user_id: null, full_name: null } } }));
+  it("risk_view sai enum (risk_level 'critical')", () => expectBlocked({ risk_view: { ...RISK_VIEW, risk_level: "critical" } }));
+  it("risk_view null mà risk có", () => expectBlocked({ risk_view: null }));
+});
+
+describe("t145: màn xem ticket (ghi đè) — hạn của lần chờ hiện tại", () => {
+  const T = "tkt-145";
+  const ticket = (over: Record<string, unknown>) => ({
+    ticket_id: T,
+    status: "S_PENDING_APPROVAL",
+    waiting_for: "approval",
+    conversation: [],
+    exit_code: null,
+    close_reason: null,
+    final_state: null,
+    created_at: "2026-09-30T13:00:00Z",
+    closed_at: null,
+    deadline: null,
+    ...over,
+  });
+
+  async function show(over: Record<string, unknown>) {
+    stubFetch((_method, url) => (url === `/api/tickets/${T}` ? json(200, ticket(over)) : undefined));
+    renderAt(`/approvals/ticket/${T}`);
+    await screen.findByTestId("ticket-state");
+  }
+
+  it("deadline là mốc → 'Hạn của lần chờ hiện tại 21:30 30/09/2026'", async () => {
+    await show({ deadline: "2026-09-30T14:30:00Z" });
+    expect(screen.getByTestId("ticket-deadline").textContent).toBe("21:30 30/09/2026");
+    expect(screen.getByTestId("ticket-state").textContent).toContain("Hạn của lần chờ hiện tại");
+  });
+
+  it("deadline null → không hiện gì (không '—', không 'Hạn')", async () => {
+    await show({ deadline: null });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+    expect(screen.getByTestId("ticket-state").textContent).not.toMatch(/Hạn/);
+  });
+
+  it("thiếu khoá deadline (backend/fixture cũ) hoặc sai kiểu → không hiện, màn không vỡ", async () => {
+    await show({ deadline: undefined });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+    cleanup();
+    await show({ deadline: 1234 });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+    cleanup();
+    await show({ deadline: "không phải ngày" });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+  });
+
+  it("ticket đã kết thúc → không hiện hạn dù thân có chuỗi (không còn lần chờ)", async () => {
+    await show({ final_state: "S_CLOSED", deadline: "2026-09-30T14:30:00Z" });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
   });
 });
