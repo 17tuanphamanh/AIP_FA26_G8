@@ -1,6 +1,6 @@
 """Lệnh quản trị seed của mock (dùng bởi `make seed`):
 
-    python -m app.seed validate [đường_dẫn]   # kiểm schema + tham chiếu của seed.json
+    python -m app.seed validate [đường_dẫn]   # kiểm schema + tham chiếu của seed.json; báo seed.local.json nạp đè mấy email
     python -m app.seed reset [url]            # POST /_admin/reset (mặc định http://127.0.0.1:8100)
     python -m app.seed hash                   # đọc mật khẩu từ stdin, in hash argon2id cho seed.json
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 from argon2 import PasswordHasher
 
-from app.state import SEED_PATH, load_seed
+from app.state import SEED_PATH, load_seed, local_emails, seed_local_path
 
 DEFAULT_URL = "http://127.0.0.1:8100"
 
@@ -25,6 +25,12 @@ def main(argv: list[str]) -> int:
         path = Path(rest[0]) if rest else SEED_PATH
         seed = load_seed(path)
         print(f"seed hợp lệ: {path} — {len(seed.users)} người dùng, {len(seed.devices)} thiết bị")
+        local = seed_local_path()
+        if local.is_file():  # dòng bị bỏ đã được cảnh báo (địa chỉ che) qua logging
+            emails = local_emails(local, {u.user_id: u.email for u in seed.users})
+            print(f"seed.local: {local} — nạp đè email cho {len(emails)} người dùng")
+        else:
+            print(f"seed.local: không có {local} — dùng email @demo-corp.local của seed.json")
         return 0
     if cmd == "reset":
         url = (rest[0] if rest else DEFAULT_URL).rstrip("/")
