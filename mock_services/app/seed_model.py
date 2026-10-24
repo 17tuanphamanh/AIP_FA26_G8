@@ -99,13 +99,33 @@ class SeedConnection(_Strict):
     error_code: str | None = None
 
 
+def _lookup_key(text: str) -> str:
+    """Cùng cách chuẩn hoá với `software.normalize`: "Zoom  Workplace" → "zoom-workplace"."""
+    return "-".join(text.strip().lower().split())
+
+
 class SeedCatalogEntry(_Strict):
-    name: str  # khoá tra cứu, chữ thường, không dấu cách
-    display_name: str
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")  # khoá tra cứu: slug chữ thường, không dấu cách
+    display_name: str = Field(min_length=1)  # tên như KB viết (kb/software/KB-SW-001.md)
+    aliases: list[str] = []  # tên gọi khác người dùng hay viết; tra cứu so khớp sau khi chuẩn hoá
     license_type: Literal["free", "paid"]
     version: str
     requires_approval: bool
     requires_local_admin: bool  # Phase 5 T22a P7 — bắt buộc có khoá (R11/R15), không mặc định
+
+    @model_validator(mode="after")
+    def _aliases(self) -> "SeedCatalogEntry":
+        if self.display_name.strip() != self.display_name or not _lookup_key(self.display_name):
+            raise ValueError(f"{self.name}: display_name rỗng hoặc thừa khoảng trắng đầu/cuối")
+        keys = [_lookup_key(a) for a in self.aliases]
+        if "" in keys:
+            raise ValueError(f"{self.name}: alias rỗng")
+        if len(set(keys)) != len(keys):
+            raise ValueError(f"{self.name}: alias trùng nhau (sau chuẩn hoá)")
+        own = {self.name, _lookup_key(self.display_name)}
+        if own & set(keys):
+            raise ValueError(f"{self.name}: alias trùng chính slug hoặc display_name của nó")
+        return self
 
 
 class SeedLicensePool(_Strict):
@@ -177,6 +197,11 @@ class SeedData(_Strict):
         ]  # fmt: skip
         if problems:
             raise ValueError(f"tham chiếu không tồn tại: {problems}")
+        owner_of: dict[str, str] = {}
+        for c in self.catalog:  # slug, tên hiển thị và alias dùng chung một không gian tra cứu: không phần mềm nào được trùng
+            for key in {c.name, _lookup_key(c.display_name), *(_lookup_key(a) for a in c.aliases)}:
+                if owner_of.setdefault(key, c.name) != c.name:
+                    raise ValueError(f"tên tra cứu '{key}' trùng giữa {owner_of[key]} và {c.name}")
         for pool in self.licenses:
             if pool.used > pool.total:
                 raise ValueError(f"license {pool.name}: used > total")

@@ -8,6 +8,9 @@ chạy B17, chuyển E7 "thực thi bị gián đoạn".
 M9 (B1): job `monitor_rules_minute` 60 giây chạy luật cảnh báo theo sự kiện; (B2) `monitor_rules_hourly` mỗi 3600
 giây và `monitor_rules_daily` 19:00 UTC (02:00 giờ VN); (B3) `monitor_rules_weekly` Chủ nhật 19:00 UTC (02:00 thứ Hai
 giờ VN) — ba job này chạy bù một lượt lúc khởi động — khối `# ---- M9` cuối file.
+Notify-email: chỉ khi `Settings.email_active` (EMAIL_ENABLED=true, không EVAL_MODE) — job `send_emails` mỗi
+`EMAIL_SEND_INTERVAL_SECONDS` (mặc định 15 s) gửi `email_outbox` qua SMTP, và nhắc duyệt 50 %/80 % ghi thêm dòng outbox
+(`notify.notifier.ApproverEmailNotice`) — khối `# ---- Email` cuối file. Tắt → không đăng ký job, nhắc duyệt như cũ.
 """
 
 import asyncio
@@ -19,19 +22,24 @@ from typing import Any, Protocol
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app import heartbeat
+from app.approval.store import log_approver_notice
 from app.audit.alerts import AlertWriter  # M9: ghi alerts qua M7, không qua app.monitor
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.session import Engines, create_engines
 from app.domain.alerts import AlertDraft
 from app.graph.wiring import open_runtime
-from app.graph.worker_jobs import WorkerJobs
+from app.graph.worker_jobs import ApproverNotice, WorkerJobs
+from app.guard.privacy import guard_from_settings
 from app.llm.config import load_llm_config
 from app.monitor.db import MonitorUnavailable, monitor_engine
 from app.monitor.evaluator import evaluate
 from app.monitor.queries import rules_data as _rules_data  # noqa: F401
 from app.monitor.rules import Every, RuleContext
 from app.monitor.window import VN_TZ
+from app.notify.notifier import ApproverEmailNotice, email_outbox_from_settings
+from app.notify.outbox import SqlEmailOutbox
+from app.notify.smtp import EmailSendJob, SmtpSender
 from app.settings import Settings, get_settings
 
 log = logging.getLogger("app.worker")
@@ -70,14 +78,19 @@ async def run() -> None:
         loop.add_signal_handler(sig, stop.set)
     try:
         async with open_runtime(settings, engines, clock, can_execute=False) as rt:
+            outbox = email_outbox_from_settings(settings, engines.main, guard_from_settings(settings), clock)
+            # Email tắt → hàm nhắc mặc định của WorkerJobs (`log_approver_notice`) như cũ.
+            notice: ApproverNotice = log_approver_notice if outbox is None else ApproverEmailNotice(outbox)
             jobs = WorkerJobs(
                 rt.runner, rt.deadlines, rt.turns,
                 stale_after=timedelta(seconds=settings.worker_stale_turn_seconds),
-                batch=settings.worker_batch,
+                batch=settings.worker_batch, notify_approver=notice,
             )  # fmt: skip
             scheduler = AsyncIOScheduler(timezone="UTC")
             schedule_jobs(scheduler, jobs, settings, clock)
             setup_monitor_jobs(scheduler, settings, engines, clock)  # M9 — lỗi dựng không làm chết worker
+            if outbox is not None:
+                setup_email_jobs(scheduler, settings, outbox, clock)
             scheduler.start()
             heartbeat.write(settings.worker_heartbeat_path, clock.now())
             log.info("worker khởi động")
@@ -331,6 +344,23 @@ def setup_monitor_jobs(
         log.error("không dựng đủ job M9 (%s) — worker chạy tiếp, THIẾU cảnh báo M9", type(exc).__name__)
         return None
     return jobs
+
+
+# ---- Email (notify-email) ---------------------------------------------------------------------------------------------
+# Một job interval, cùng option với job lõi (`max_instances=1`, `coalesce`): một lượt gửi chậm (SMTP treo tới timeout) không chồng lượt
+# sau. Không đăng ký trong `schedule_jobs` (tập job lõi được test ghim). Chỉ gọi khi `email_active`.
+
+SEND_EMAILS_JOB = "send_emails"
+
+
+def setup_email_jobs(scheduler: AsyncIOScheduler, settings: Settings, outbox: SqlEmailOutbox, clock: Clock) -> EmailSendJob:
+    job = EmailSendJob(outbox, SmtpSender.from_settings(settings), clock)
+    scheduler.add_job(
+        job.run, id=SEND_EMAILS_JOB, seconds=settings.email_send_interval_seconds, trigger="interval", max_instances=1,
+        coalesce=True,
+    )  # fmt: skip
+    log.info("email bật — job %s mỗi %g giây", SEND_EMAILS_JOB, settings.email_send_interval_seconds)
+    return job
 
 
 if __name__ == "__main__":

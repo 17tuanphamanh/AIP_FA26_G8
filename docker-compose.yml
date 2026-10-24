@@ -62,6 +62,18 @@ x-backend-env: &backend-env
   ENABLE_SSE: ${ENABLE_SSE:-false}
   SSE_POLL_MS: ${SSE_POLL_MS:-300}
   SSE_HEARTBEAT_S: ${SSE_HEARTBEAT_S:-15}
+  # Notify-email: backend ghi hàng đợi `email_outbox`, worker gửi qua SMTP — backend và worker PHẢI thấy cùng giá trị. Mặc định tắt;
+  # EMAIL_ENABLED=true mà thiếu SMTP_HOST / SMTP_FROM / EMAIL_LINK_BASE_URL (hoặc chỉ có một trong SMTP_USERNAME/SMTP_PASSWORD) → cả hai
+  # từ chối khởi động. EVAL_MODE=true → luôn tắt. Rỗng = mặc định settings.py (cổng 587, STARTTLS bật, chu kỳ 15 s).
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  EMAIL_LINK_BASE_URL: ${EMAIL_LINK_BASE_URL:-}
+  EMAIL_SEND_INTERVAL_SECONDS: ${EMAIL_SEND_INTERVAL_SECONDS:-}
 
 services:
   postgres:
@@ -147,6 +159,11 @@ services:
       SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
+      # Màn /console của mock chỉ phục vụ khi APP_ENV ∈ {dev, test}; môi trường khác → 404.
+      APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
+    ports:
+      # Chỉ localhost: màn /console (http://127.0.0.1:8100/console) hiện mật khẩu tạm ở trang điện thoại giả lập.
+      - "127.0.0.1:8100:8100"
 
   # P4 — model nạp một lần, CPU. Model tải trên máy bằng `make models` rồi mount read-only; không bind cổng
   # 8200 ra host (P4 mục 5). ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở ml_service/app/settings.py
