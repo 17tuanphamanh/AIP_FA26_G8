@@ -108,7 +108,9 @@ describe("ChatPage + SSE", () => {
     await waitFor(() => expect(eventsCalls(env.calls)).toBe(1));
     act(() => live.push(frame(token("answer:1", "Bạn mở ứng dụng "), "9.1"), frame(token("answer:1", "VPN rồi bấm "), "9.2")));
     const streaming = await screen.findByTestId("streaming-message");
-    expect(streaming.textContent).toContain("Bạn mở ứng dụng VPN rồi bấm");
+    // nhịp chữ phía màn (usePacedMessages): cụm đã nhận KHÔNG hiện cả một lần mà hiện dần
+    expect(streaming.textContent ?? "").not.toContain("Bạn mở ứng dụng VPN rồi bấm");
+    await waitFor(() => expect(screen.getByTestId("streaming-message").textContent).toContain("Bạn mở ứng dụng VPN rồi bấm"));
     expect(screen.queryByTestId("stream-caret")).not.toBeNull(); // đang chạy: có con trỏ
     // tin chính thức về TRƯỚC message_end (polling bắt kịp): chỉ một bản hiện
     current = view({ status: "S_CONFIRMING", waiting_for: null, conversation: [{ role: "assistant", kind: "answer", text: ANSWER, ref: "m1", needs: "confirm" }] });
