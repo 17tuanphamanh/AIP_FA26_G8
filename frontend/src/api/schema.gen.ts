@@ -440,6 +440,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AffectedView
+         * @description Người BỊ TÁC ĐỘNG (`Action.requested_for`) — có thể khác người gửi (account/access, slot `target_user`).
+         */
+        AffectedView: {
+            /** User Id */
+            user_id: string;
+            /** Is Requester */
+            is_requester: boolean;
+            /** Department */
+            department: string | null;
+            manager: components["schemas"]["ManagerRef"];
+        };
         /** AiDashboard */
         AiDashboard: {
             /**
@@ -534,6 +547,49 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * ApprovalView
+         * @description Phiếu cho người duyệt (P6) — ĐÚNG 14 khoá (12 khoá P6 + F6 `affected`, `risk_view`); `action`/`facts` là object ĐÃ BĂM
+         *     (G4-13).
+         */
+        ApprovalView: {
+            /** Approval Id */
+            approval_id: string;
+            /** Ticket Id */
+            ticket_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Deadline
+             * Format: date-time
+             */
+            deadline: string;
+            requester: components["schemas"]["RequesterView"];
+            /** Request Summary */
+            request_summary: string;
+            /** Action */
+            action: {
+                [key: string]: unknown;
+            };
+            /** Action Plan Hash */
+            action_plan_hash: string;
+            /** Risk */
+            risk: {
+                [key: string]: unknown;
+            } | null;
+            /** Facts */
+            facts: {
+                [key: string]: unknown;
+            };
+            /**
+             * Role As
+             * @enum {string}
+             */
+            role_as: "primary" | "backup" | "viewer";
+            procedure: components["schemas"]["ProcedureRef"] | null;
+            affected: components["schemas"]["AffectedView"];
+            risk_view: components["schemas"]["RiskView"] | null;
         };
         /** @enum {string} */
         AudienceParam: "manager" | "dev" | "ops";
@@ -729,6 +785,22 @@ export interface components {
             /** Otp */
             otp?: string | null;
         };
+        /**
+         * ManagerRef
+         * @description Quản lý của người bị tác động: `known` ⇔ có dòng `users` VÀ `manager_id` khác NULL; `unknown` → `user_id`/`full_name` null.
+         *     `full_name` null khi `known` mà dòng của sếp chưa có (chưa từng đăng nhập).
+         */
+        ManagerRef: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "known" | "unknown";
+            /** User Id */
+            user_id: string | null;
+            /** Full Name */
+            full_name: string | null;
+        };
         /** Models */
         Models: {
             /** Fast */
@@ -787,6 +859,62 @@ export interface components {
             /** Is Current */
             is_current: boolean;
         };
+        /** ProcedureRef */
+        ProcedureRef: {
+            /** Doc Id */
+            doc_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** RequesterView */
+        RequesterView: {
+            /** Role */
+            role: string;
+            /** Department */
+            department: string | null;
+        };
+        /**
+         * RiskView
+         * @description `RiskDecision` (cùng tên trường, cùng enum — một nguồn) + 2 cờ suy ra; FE ghép chữ hiển thị từ các cờ này.
+         */
+        RiskView: {
+            /**
+             * Decided By
+             * @enum {string}
+             */
+            decided_by: "rule" | "llm";
+            /** Policy Decision */
+            policy_decision: ("allow" | "approval_required" | "deny") | null;
+            /** Matched Rule Id */
+            matched_rule_id: string | null;
+            /** Raw Prob */
+            raw_prob: number | null;
+            /** Calibrated Prob */
+            calibrated_prob: number | null;
+            /** P Method */
+            p_method: ("self_report" | "sampling_k5") | null;
+            /**
+             * Risk Level
+             * @enum {string}
+             */
+            risk_level: "low" | "medium" | "high";
+            /**
+             * Route
+             * @enum {string}
+             */
+            route: "AUTO" | "HITL" | "ESCALATE_L2";
+            /** Reason */
+            reason: string;
+            /** Thresholds */
+            thresholds: [
+                number,
+                number
+            ] | null;
+            /** Calibrated */
+            calibrated: boolean;
+            /** Auto Allowed */
+            auto_allowed: boolean;
+        };
         /** RuleCount */
         RuleCount: {
             /** Rule Id */
@@ -839,6 +967,8 @@ export interface components {
             children_progress?: {
                 [key: string]: unknown;
             }[] | null;
+            /** Deadline */
+            deadline: string | null;
         };
         /** Usage */
         Usage: {
@@ -1745,7 +1875,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApprovalView"];
                 };
             };
             /** @description Validation Error */
