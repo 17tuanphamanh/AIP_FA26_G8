@@ -20,9 +20,14 @@ import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import { latestRound, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel, progressItems } from "./multi.ts";
+import { ProgressStepper } from "./ProgressStepper.tsx";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
 import { FINAL_NOTE, POLL_PROCESSING_MS, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
+import { StreamingText } from "./StreamingText.tsx";
+import { ThinkingBox } from "./ThinkingBox.tsx";
+import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
+import { POLL_STREAMING_MS, reconcile, type StreamPhase, useTicketStream } from "./useTicketStream.ts";
 
 const PILL: Record<Tone, { box: string; dot: string }> = {
   processing: { box: "bg-selected text-fpt-blue", dot: "bg-fpt-blue" },
@@ -54,6 +59,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ["ticket", ticketId], [ticketId]);
   const settlingRef = useRef(false);
+  const streamPhaseRef = useRef<StreamPhase>("off"); // SSE đang sống → polling chỉ còn là lưới an toàn thưa
   const query = useQuery({
     queryKey,
     queryFn: () => getTicket(ticketId),
@@ -62,6 +68,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     refetchInterval: (q) => {
       if (stopOn(q.state.error)) return false;
       const delay = pollDelay(q.state.data);
+      if (delay !== false && streamPhaseRef.current === "streaming") return POLL_STREAMING_MS;
       return delay !== false && settlingRef.current ? POLL_PROCESSING_MS : delay;
     },
     retry: false,
@@ -94,6 +101,15 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   useEffect(() => {
     settlingRef.current = settling;
   }, [settling]);
+
+  // SSE tiến trình (chỉ khi server bật; 404/lỗi/ngắt quá 3 lần → tự về polling hiện có, không mất tin: tin chính thức luôn từ GET).
+  const streamActive = view !== undefined && !view.final_state && (!view.waiting_for || settling);
+  const stream = useTicketStream({ ticketId, active: streamActive, onSync: () => void queryClient.invalidateQueries({ queryKey }) });
+  useEffect(() => {
+    streamPhaseRef.current = stream.phase;
+  }, [stream.phase]);
+  const reducedMotion = usePrefersReducedMotion();
+  const { official, streaming } = useMemo(() => reconcile(messages, stream.view.messages), [messages, stream.view.messages]);
 
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -195,7 +211,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
             </p>
           ) : null}
           <Conversation
-            messages={messages}
+            messages={official}
             renderDigest={(digest) => (
               <DigestMessage
                 digest={digest}
@@ -204,6 +220,15 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               />
             )}
           />
+          {streaming.map((message) => (
+            <StreamingText key={message.id} message={message} reducedMotion={reducedMotion} />
+          ))}
+          {streamActive && (stream.view.steps.length > 0 || stream.view.log.length > 0) ? (
+            <div data-testid="stream-progress" className="flex flex-col gap-3">
+              <ProgressStepper steps={stream.view.steps} />
+              <ThinkingBox log={stream.view.log} current={stream.view.steps.findLast((s) => s.state === "active")?.label} />
+            </div>
+          ) : null}
           <ActionPanel
             view={view}
             waiting={waiting}

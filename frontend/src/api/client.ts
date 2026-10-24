@@ -246,6 +246,22 @@ export function createClient(deps: ClientDeps) {
     return { data: await readBody<T>(res), status: res.status, headers: res.headers };
   }
 
+  /** Như `request` nhưng trả `Response` thô, KHÔNG đọc thân và KHÔNG ném khi `!ok` — cho luồng SSE (api/events.ts). Cùng cơ chế
+   *  xác thực: gắn Bearer; 401 → refresh một lần (single-flight, khoá xuyên tab) → gửi lại đúng một lần; vẫn 401 → hết phiên. */
+  async function open(path: string, options: RequestOptions = {}): Promise<Response> {
+    const sentWith = accessToken;
+    let res = await send(path, options, sentWith);
+    if (res.status !== 401) return res;
+    const renewed = accessToken !== null && accessToken !== sentWith ? true : await refreshOnce(sentWith);
+    if (!renewed) {
+      endSession();
+      return res;
+    }
+    res = await send(path, options, accessToken);
+    if (res.status === 401) endSession();
+    return res;
+  }
+
   async function login(username: string, password: string, otp?: string): Promise<LoginResult> {
     const name = username.trim();
     if (!USERNAME_PATTERN.test(name)) return { ok: false, kind: "invalid_username" };
@@ -305,5 +321,5 @@ export function createClient(deps: ClientDeps) {
     return true;
   }
 
-  return { request, login, restore, logout };
+  return { request, open, login, restore, logout };
 }
