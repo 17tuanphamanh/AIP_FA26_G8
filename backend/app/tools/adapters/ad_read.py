@@ -40,12 +40,25 @@ class IdentityUnavailableError(Exception):
     """AD không trả lời được — main.create_app đổi sang `auth.ports.IdentityUnavailable`."""
 
 
+class PasswordChangeRequiredError(Exception):
+    """AD: mật khẩu tạm đúng, phải đổi — main.create_app đổi sang `auth.ports.PasswordChangeRequired`."""
+
+
+def _detail(response: httpx.Response) -> object:
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    return body.get("detail") if isinstance(body, dict) else None
+
+
 class AdIdentityProvider:
     """Khớp `auth.ports.IdentityProvider` theo cấu trúc (tools không import auth — 01 mục 4.2).
 
     - `authenticate`: POST `/ad/authenticate` MỘT lần, không retry (AD thật có thể đếm hai lần
       sai), KHÔNG qua ToolRegistry — không phải tool của P5, và mật khẩu không được lọt vào
-      input/span của registry. 401 → None; lỗi khác → `unavailable`.
+      input/span của registry. 401 → None; 403 `password_change_required` → `password_change` (trạng thái, không phải
+      AD sập); 403 `account_locked` (AD khoá) → None như sai mật khẩu (không lộ trạng thái khoá); lỗi khác → `unavailable`.
     - `get_user`: qua registry (`ad_get_user`, retry + breaker như B1) — B01 mục 3.
     """
 
@@ -56,11 +69,13 @@ class AdIdentityProvider:
         *,
         timeout: float,
         unavailable: type[Exception] = IdentityUnavailableError,
+        password_change: type[Exception] = PasswordChangeRequiredError,
     ) -> None:
         self._http = http
         self._registry = registry
         self._timeout = timeout
         self._unavailable = unavailable
+        self._password_change = password_change
 
     async def authenticate(self, username: str, password: str) -> AdUser | None:
         try:
@@ -69,7 +84,12 @@ class AdIdentityProvider:
                 json={"username": username, "password": password},
             )  # fmt: skip
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
+            status = e.response.status_code
+            if status == 401:
+                return None
+            if status == 403 and _detail(e.response) == "password_change_required":
+                raise self._password_change("AD authenticate: cần đổi mật khẩu") from None
+            if status == 403 and _detail(e.response) == "account_locked":
                 return None
             raise self._unavailable(f"AD authenticate: HTTP {e.response.status_code}") from None
         except httpx.HTTPError as e:
