@@ -5,8 +5,12 @@ Mọi datetime TRẢ VỀ được chuẩn hoá thành `tzinfo=timezone.utc`: ps
 phiên Postgres (ví dụ `ZoneInfo("Etc/UTC")`), cùng thời điểm nhưng khác đối tượng — thư viện như
 `email.utils.format_datetime` (cookie của Starlette) chỉ nhận đúng `timezone.utc`.
 Bản in-memory cho unit test: `tests/fakes/auth.py`; hai bản chạy chung bộ test hợp đồng.
+
+`users.email` (notify-email, migration 0012): `upsert_user` chép `UserSync.email` của AD sau khi kiểm dạng (`clean_email`) — thiếu
+hoặc sai dạng → NULL, KHÔNG lỗi (một địa chỉ hỏng trong AD không được chặn đăng nhập/B1/B15). Không log địa chỉ.
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -17,6 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.auth.models import SessionRecord, UserRecord, UserSync
 from app.db.models import Session, User
+from app.settings import EMAIL_ADDRESS_RE
+
+log = logging.getLogger(__name__)
+
+EMAIL_MAX_LEN = 254  # users.email VARCHAR(254) — RFC 5321
 
 _users: Table = User.__table__  # type: ignore[assignment]
 _sessions: Table = Session.__table__  # type: ignore[assignment]
@@ -53,6 +62,16 @@ def _user(row: Row[Any]) -> UserRecord:
         locked_until=_utc(m["locked_until"]),
         mfa_secret_enc=bytes(m["mfa_secret_enc"]) if m["mfa_secret_enc"] is not None else None,
     )
+
+
+def clean_email(raw: object) -> str | None:
+    """Địa chỉ AD → giá trị `users.email`: bỏ khoảng trắng hai đầu; không phải chuỗi / rỗng / dài quá 254 / sai dạng → None."""
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value or len(value) > EMAIL_MAX_LEN or not EMAIL_ADDRESS_RE.fullmatch(value):
+        return None
+    return value
 
 
 def _session(row: Row[Any]) -> SessionRecord:
@@ -114,6 +133,9 @@ class SqlAuthStore:
         return _user(row) if row else None
 
     async def upsert_user(self, sync: UserSync) -> tuple[UserRecord, str | None]:
+        email = clean_email(sync.email)
+        if sync.email is not None and email is None:
+            log.warning("AD trả email sai dạng cho user %s — users.email = NULL", sync.user_id)
         values = {
             "user_id": sync.user_id,
             "username": sync.username,
@@ -125,6 +147,7 @@ class SqlAuthStore:
             "hired_at": sync.hired_at,
             "is_privileged_account": sync.is_privileged_account,
             "last_synced_at": sync.synced_at,
+            "email": email,
         }
         # Q-4a-6: "dòng mới" lấy từ kết quả INSERT … ON CONFLICT DO NOTHING RETURNING, KHÔNG từ SELECT trước (SELECT … FOR
         # UPDATE trên dòng chưa có không khoá gì → hai lượt đồng thời cùng thấy "chưa có"). Lượt thua chờ lượt thắng commit,
