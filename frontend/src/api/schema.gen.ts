@@ -436,6 +436,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ticket Trace */
+        get: operations["ticket_trace_api_tickets__ticket_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -548,6 +565,18 @@ export interface components {
              */
             created_at: string;
         };
+        /** ApprovalInfo */
+        ApprovalInfo: {
+            /** Approver Id */
+            approver_id: string | null;
+            /** Approver Name */
+            approver_name: string | null;
+            result: components["schemas"]["ApprovalResult"] | null;
+            /** At */
+            at: string | null;
+        };
+        /** @enum {string} */
+        ApprovalResult: "pending" | "approved" | "rejected" | "timeout";
         /**
          * ApprovalView
          * @description Phiếu cho người duyệt (P6) — ĐÚNG 14 khoá (12 khoá P6 + F6 `affected`, `risk_view`); `action`/`facts` là object ĐÃ BĂM
@@ -668,6 +697,21 @@ export interface components {
             /** Top Matched Rules */
             top_matched_rules: components["schemas"]["RuleCount"][] | null;
         };
+        /** ClassifyInfo */
+        ClassifyInfo: {
+            /** Intent */
+            intent: string | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Model Probs */
+            model_probs: {
+                [key: string]: number;
+            } | null;
+            /** Model Version */
+            model_version: string | null;
+            /** Is Multi */
+            is_multi: boolean | null;
+        };
         /** DayCost */
         DayCost: {
             /**
@@ -677,6 +721,11 @@ export interface components {
             day_start: string;
             /** Cost Usd */
             cost_usd: number;
+        };
+        /** DiagnoseInfo */
+        DiagnoseInfo: {
+            /** Fact Keys */
+            fact_keys: string[];
         };
         /** E1Split */
         E1Split: {
@@ -722,6 +771,27 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** ExecCall */
+        ExecCall: {
+            /** Name */
+            name: string;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "ok" | "failed";
+        };
+        /** ExecutionInfo */
+        ExecutionInfo: {
+            /** Action */
+            action: string | null;
+            /** Success */
+            success: boolean | null;
+            /** Rollback Status */
+            rollback_status: string | null;
+            /** Calls */
+            calls: components["schemas"]["ExecCall"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -757,6 +827,13 @@ export interface components {
             /** Collection */
             collection: string | null;
             status: components["schemas"]["KbState"];
+        };
+        /** KbSource */
+        KbSource: {
+            /** Doc Id */
+            doc_id: string;
+            /** Title */
+            title: string | null;
         };
         /** @enum {string} */
         KbState: "ready" | "missing" | "unknown";
@@ -807,6 +884,30 @@ export interface components {
             fast: string | null;
             /** Strong */
             strong: string | null;
+        };
+        /** OutcomeInfo */
+        OutcomeInfo: {
+            /** Route */
+            route: string | null;
+            /** Exit Code */
+            exit_code: string | null;
+        };
+        /** PolicyInfo */
+        PolicyInfo: {
+            /** Rule Id */
+            rule_id: string | null;
+            /** Rule Description */
+            rule_description: string | null;
+            /** Policy Decision */
+            policy_decision: string | null;
+            /** Risk Level */
+            risk_level: string | null;
+            /** Decided By */
+            decided_by: ("rule" | "llm") | null;
+            /** Raw Prob */
+            raw_prob: number | null;
+            /** Calibrated Prob */
+            calibrated_prob: number | null;
         };
         /**
          * PolicyIssue
@@ -922,6 +1023,16 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** @enum {string} */
+        ScreenDecision: "safe" | "attack" | "suspected" | "unavailable";
+        /** ScreenInfo */
+        ScreenInfo: {
+            /** Layer */
+            layer: ("regex" | "model" | "llm") | null;
+            /** P Injection */
+            p_injection: number | null;
+            decision: components["schemas"]["ScreenDecision"] | null;
+        };
         /** Spend */
         Spend: {
             /** Total Usd */
@@ -936,6 +1047,19 @@ export interface components {
         };
         /** @enum {string} */
         SpendState: "ok" | "warn" | "over";
+        /** TicketTrace */
+        TicketTrace: {
+            /** Ticket Id */
+            ticket_id: string;
+            /** Is Parent */
+            is_parent: boolean;
+            /** Parent Ticket Id */
+            parent_ticket_id: string | null;
+            /** Steps */
+            steps: components["schemas"]["TraceStep"][];
+            /** Children */
+            children: components["schemas"]["TraceChild"][];
+        };
         /**
          * TicketView
          * @description Đúng tập trường trả cho người dùng — không lộ state nội bộ khác của checkpoint.
@@ -969,6 +1093,36 @@ export interface components {
             }[] | null;
             /** Deadline */
             deadline: string | null;
+        };
+        /** TraceChild */
+        TraceChild: {
+            /** Ticket Id */
+            ticket_id: string;
+            /** Intent */
+            intent: string | null;
+            /** Exit Code */
+            exit_code: string | null;
+        };
+        /** TraceStep */
+        TraceStep: {
+            /** Step */
+            step: string;
+            /** Event */
+            event: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            screen: components["schemas"]["ScreenInfo"] | null;
+            classify: components["schemas"]["ClassifyInfo"] | null;
+            diagnose: components["schemas"]["DiagnoseInfo"] | null;
+            /** Sources */
+            sources: components["schemas"]["KbSource"][] | null;
+            policy: components["schemas"]["PolicyInfo"] | null;
+            approval: components["schemas"]["ApprovalInfo"] | null;
+            execution: components["schemas"]["ExecutionInfo"] | null;
+            outcome: components["schemas"]["OutcomeInfo"] | null;
         };
         /** Usage */
         Usage: {
@@ -1918,6 +2072,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ticket_trace_api_tickets__ticket_id__trace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketTrace"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };
