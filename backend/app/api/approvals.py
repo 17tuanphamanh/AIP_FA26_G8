@@ -33,6 +33,15 @@ Phase 4 4c DỪNG 2 (phase4 6.1 P4–P6, PLAN-4c TQ-9…12): MỘT hàm vai trò
 - `GET /api/approvals/{id}` (xem phiếu, P6): 403 tầng 2 → 404 (không có / không được giao — CÙNG thân; bản ghi có thật thì
   `permission_denied`) → manager (`audit:read:all`) xem `viewer` không ghi → `hash_action(action) != action_plan_hash` → 409
   `plan_changed`, không trả bản nào → người được giao / dự phòng ghi `first_viewed_at` lần đầu → `ApprovalView`.
+
+F6 (màn duyệt, `response_model=ApprovalView` cho FE gen:api): thêm `affected` + `risk_view`, thứ tự lỗi KHÔNG đổi.
+- `affected` = người BỊ TÁC ĐỘNG (`Action.requested_for`, D-41) theo bảng `users` (bản sao AD đồng bộ LÚC ĐĂNG NHẬP — người chưa từng đăng
+  nhập không có dòng). `manager.status="known"` CHỈ khi có dòng VÀ `manager_id` khác NULL; mọi ca khác `"unknown"` — `manager_id` NULL
+  mang hai nghĩa "không có sếp" / "không biết" (việc treo 25) nên không bao giờ có giá trị "không có quản lý". Đọc `users` lỗi → lỗi nổi
+  lên (lỗi hệ thống ≠ "không biết"); đọc TRƯỚC `mark_viewed` nên lỗi không để lại `first_viewed_at`.
+- `risk_view` = `RiskDecision` của checkpoint + `calibrated` (`calibrated_prob` khác null) + `auto_allowed` (`route == "AUTO"`); `risk`
+  thô giữ nguyên. Backend không sinh chữ hiển thị: "chưa hiệu chỉnh, không tự xử lý" là chữ của FE khi `decided_by == "llm"` và
+  `calibrated` false.
 """
 
 import logging
@@ -60,6 +69,7 @@ from app.domain.action import Action
 from app.domain.approval import manager_chain
 from app.domain.messages import ReasonCode
 from app.domain.states import S_PENDING_APPROVAL
+from app.domain.ticket_state import RiskDecision
 from app.graph.late_event import record_late, start_event
 from app.settings import get_action_metadata
 
@@ -107,8 +117,34 @@ class ProcedureRef(BaseModel):
     title: str | None
 
 
+class ManagerRef(BaseModel):
+    """Quản lý của người bị tác động: `known` ⇔ có dòng `users` VÀ `manager_id` khác NULL; `unknown` → `user_id`/`full_name` null.
+    `full_name` null khi `known` mà dòng của sếp chưa có (chưa từng đăng nhập)."""
+
+    status: Literal["known", "unknown"]
+    user_id: str | None
+    full_name: str | None
+
+
+class AffectedView(BaseModel):
+    """Người BỊ TÁC ĐỘNG (`Action.requested_for`) — có thể khác người gửi (account/access, slot `target_user`)."""
+
+    user_id: str
+    is_requester: bool
+    department: str | None  # không có dòng `users` → null
+    manager: ManagerRef
+
+
+class RiskView(RiskDecision):
+    """`RiskDecision` (cùng tên trường, cùng enum — một nguồn) + 2 cờ suy ra; FE ghép chữ hiển thị từ các cờ này."""
+
+    calibrated: bool  # calibrated_prob khác null
+    auto_allowed: bool  # route == "AUTO"
+
+
 class ApprovalView(BaseModel):
-    """Phiếu cho người duyệt (P6) — ĐÚNG 12 khoá; `action`/`facts` là object ĐÃ BĂM (G4-13)."""
+    """Phiếu cho người duyệt (P6) — ĐÚNG 14 khoá (12 khoá P6 + F6 `affected`, `risk_view`); `action`/`facts` là object ĐÃ BĂM
+    (G4-13)."""
 
     approval_id: str
     ticket_id: str
@@ -122,6 +158,8 @@ class ApprovalView(BaseModel):
     facts: dict[str, Any]
     role_as: Literal["primary", "backup", "viewer"]
     procedure: ProcedureRef | None  # None: action_type không có trong action_metadata (hành động giả)
+    affected: AffectedView
+    risk_view: RiskView | None  # None ⇔ `risk` None
 
 
 def _action(values: dict[str, Any]) -> Action | None:
@@ -156,6 +194,25 @@ async def _chain_from_users(users: UserDirectory, user_id: str) -> tuple[str, ..
 
     me = await users.get_user(user_id)
     return await manager_chain(user_id, me.manager_id if me else None, fetch_manager)
+
+
+async def _affected(users: UserDirectory, affected_id: str, requester_id: str) -> AffectedView:
+    """F6: người bị tác động + quản lý theo bảng `users`. Lỗi đọc KHÔNG nuốt thành `unknown` (lỗi hệ thống ≠ "không biết")."""
+    me = await users.get_user(affected_id)
+    manager = ManagerRef(status="unknown", user_id=None, full_name=None)
+    if me is not None and me.manager_id is not None:
+        boss = await users.get_user(me.manager_id)
+        manager = ManagerRef(status="known", user_id=me.manager_id, full_name=boss.full_name if boss else None)
+    return AffectedView(
+        user_id=affected_id, is_requester=affected_id == requester_id, department=me.department if me else None, manager=manager,
+    )  # fmt: skip
+
+
+def _risk_view(raw: Any) -> RiskView | None:
+    if raw is None:
+        return None
+    risk = RiskDecision.model_validate(raw)  # checkpoint giữ model hoặc dict — hỏng thì lỗi nổi lên, không đoán
+    return RiskView(**dict(risk), calibrated=risk.calibrated_prob is not None, auto_allowed=risk.route == "AUTO")
 
 
 @router.post("/api/approvals/{approval_id}/decision", status_code=202)
@@ -252,13 +309,13 @@ async def inbox(
     return JSONResponse({"items": [i.model_dump(mode="json") for i in items]})
 
 
-@router.get("/api/approvals/{approval_id}")
+@router.get("/api/approvals/{approval_id}", response_model=ApprovalView)
 async def view_approval(
     approval_id: str,
     request: Request,
     p: Annotated[Principal, Depends(require("approval:decide"))],
     desk: Annotated[Desk, Depends(get_desk)],
-) -> JSONResponse:
+) -> ApprovalView:
     a = await desk.approvals.get(approval_id)
     if a is None:
         raise HTTPException(404, NOT_FOUND)
@@ -272,6 +329,9 @@ async def view_approval(
         raise HTTPException(404, NOT_FOUND)
     if action is None or hash_action(action) != a.action_plan_hash:  # G4-13: không bao giờ trả object khác object đã băm
         raise HTTPException(409, "plan_changed")
+    # F6: đọc/dựng TRƯỚC mark_viewed — lỗi ở đây không để lại `first_viewed_at`
+    affected = await _affected(desk.users, action.requested_for, ticket.requester_id if ticket else "")
+    risk_view = _risk_view(values.get("risk"))
     if role is not None:  # chỉ người được giao / dự phòng đủ điều kiện ghi lần xem đầu; manager xem không ghi
         await desk.approvals.mark_viewed(approval_id, desk.clock.now())
     meta = (get_action_metadata().root.get(str(values.get("intent"))) or {}).get(action.type)
@@ -279,11 +339,10 @@ async def view_approval(
     if meta is not None:
         procedure = ProcedureRef(doc_id=meta.procedure_doc, title=await desk.approvals.procedure_title(meta.procedure_doc))
     rc = _as_json(values.get("requester_context")) or {}
-    view = ApprovalView(
+    return ApprovalView(
         approval_id=a.approval_id, ticket_id=a.ticket_id, status=a.status, deadline=a.deadline,
         requester=RequesterView(role=str(rc.get("role") or ""), department=rc.get("department")),
         request_summary=(ticket.redacted_request if ticket else "")[:REQUEST_SUMMARY_MAX],
         action=action.model_dump(mode="json"), action_plan_hash=a.action_plan_hash, risk=_as_json(values.get("risk")),
-        facts=dict(action.facts), role_as=role or "viewer", procedure=procedure,
+        facts=dict(action.facts), role_as=role or "viewer", procedure=procedure, affected=affected, risk_view=risk_view,
     )  # fmt: skip
-    return JSONResponse(view.model_dump(mode="json"))

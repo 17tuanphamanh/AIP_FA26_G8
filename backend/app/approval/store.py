@@ -21,6 +21,8 @@
 - 4d (P3, P4 — route ghi đè; Q-4d-2 = A, cùng lý do `main.py` dựng `Desk` với lớp này): `decision_trail` (đọc `audit_logs` để suy
   `original_decision`), `record_override` (MỘT dòng `step="OVERRIDE"` qua `AuditWriter.record_new` — idempotent theo người ghi đè;
   không đụng `tickets`).
+- R3 (`TicketView.deadline`; cùng lý do `main.py` dựng `Desk` với lớp này): `open_deadline` — hạn lần chờ hiện tại: phiếu `pending` mới
+  nhất (`approvals.deadline`) hoặc dòng `wait_deadlines` cùng loại chưa bắn (đúng dòng worker bắn timeout clarify/confirm). Chỉ đọc.
 """
 
 import logging
@@ -44,6 +46,7 @@ log = logging.getLogger(__name__)
 _APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 
 type NoticeKind = Literal["new", "reminder_1", "reminder_2"]
+type OpenWaitKind = Literal["approval", "clarify", "confirm"]  # R3: kiểu chờ có hạn thật
 
 # 4c P5: vai trò lọc Ở SQL (trước LIMIT); hành động của phiếu = dòng audit B15 `queued` CÙNG ticket + `action_plan_hash` (mới nhất) —
 # không đọc checkpoint từng phiếu (5.7 #5). Xung đột lợi ích lọc ở route (`authz.approval_role`).
@@ -75,6 +78,13 @@ _RISK_DECIDED = text(
 )
 _DEFLECTED = text(
     "SELECT EXISTS (SELECT 1 FROM audit_logs WHERE ticket_id = :t AND step = 'B10' AND event = 'deflected_info_only')"
+)
+# R3: hạn lần chờ hiện tại — phiếu `pending` mới nhất của ticket; hạn hỏi lại/xác nhận chưa bắn (worker bắn từ CHÍNH dòng này).
+_OPEN_APPROVAL_DEADLINE = text(
+    "SELECT deadline FROM approvals WHERE ticket_id = :t AND status = 'pending' ORDER BY created_at DESC, approval_id DESC LIMIT 1"
+)
+_OPEN_WAIT_DEADLINE = text(
+    "SELECT deadline FROM wait_deadlines WHERE ticket_id = :t AND kind = :k AND fired_at IS NULL ORDER BY deadline DESC LIMIT 1"
 )
 # 4c P6: tài liệu ở bản KB HIỆN HÀNH (`kb_documents.kb_version` chỉ có ở tài liệu bật — Q-3b-2).
 _PROCEDURE_TITLE = text(
@@ -237,6 +247,15 @@ class SqlApprovals:
         async with self._engine.connect() as conn:
             title = (await conn.execute(_PROCEDURE_TITLE, {"doc": doc_id})).scalar()
         return None if title is None else str(title)
+
+    async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
+        """R3: `approval` → phiếu `pending`; `clarify`/`confirm` → `wait_deadlines` chưa bắn. Không có → None."""
+        async with self._engine.connect() as conn:
+            if kind == "approval":
+                deadline = (await conn.execute(_OPEN_APPROVAL_DEADLINE, {"t": ticket_id})).scalar()
+            else:
+                deadline = (await conn.execute(_OPEN_WAIT_DEADLINE, {"t": ticket_id, "k": kind})).scalar()
+        return _utc(deadline)
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:
         """4d P3: dòng `risk_decided` mới nhất (`log_id` lớn nhất) + có `B10 deflected_info_only` hay không."""

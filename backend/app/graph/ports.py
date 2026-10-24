@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow, InboxRow
+from app.approval.store import ApprovalRow, InboxRow, OpenWaitKind
 from app.db.identity import LiveSession
 from app.db.runtime import (
     DueReminder,
@@ -305,4 +305,10 @@ class ApprovalRepo(Protocol):
     async def record_override(self, rec: OverrideRecord) -> bool:
         """4d P4: ghi MỘT dòng `audit_logs` `step="OVERRIDE"` (qua `AuditWriter.record_new`) — True = dòng mới; người này đã ghi đè
         ticket này (trùng `idempotency_key`) → False. KHÔNG đụng `tickets`, checkpoint, lượt."""
+        ...
+
+    async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
+        """R3 (`TicketView.deadline`, chỉ đọc): `approval` → `approvals.deadline` của phiếu `pending` mới nhất của ticket;
+        `clarify`/`confirm` → dòng `wait_deadlines` cùng loại chưa bắn (`fired_at IS NULL`, hạn muộn nhất) — đúng dòng worker bắn
+        timeout. Không có → None. Nằm ở đây vì `Desk` (`main.py`) chỉ có `tickets`/`approvals` (như `inbox`, `procedure_title`)."""
         ...
