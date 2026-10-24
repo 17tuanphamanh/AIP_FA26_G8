@@ -4,7 +4,9 @@
 import { NOTE_MAX } from "../../api/approvals.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import type {
+  ApprovalAffected,
   ApprovalListItem,
+  ApprovalRiskView,
   ApprovalStatus,
   DecisionIn,
   OverrideDecision,
@@ -120,6 +122,66 @@ export const RISK_MISSING_TEXT = "Chưa có đánh giá rủi ro cho phiếu nà
 export function decisionRole(roleAs: unknown): "primary" | "backup" | "viewer" {
   return roleAs === "primary" || roleAs === "backup" ? roleAs : "viewer";
 }
+// ---------------------------------------------------------------- người bị ảnh hưởng, mức rủi ro, hạn (F6 #76, R3 #76)
+
+/** Quản lý chưa biết (`manager.status = "unknown"`): backend gộp "không có sếp" và "không biết" làm một → KHÔNG BAO GIỜ viết
+ *  "không có quản lý". */
+export const MANAGER_UNKNOWN_TEXT = "Chưa rõ quản lý";
+/** Sếp có trong `manager_id` nhưng chưa từng đăng nhập nên chưa có tên. */
+export const MANAGER_NO_NAME_TEXT = "(chưa có tên)";
+export const AFFECTED_OTHER_TEXT = "Khác người gửi yêu cầu";
+export const AFFECTED_SELF_TEXT = "Chính người gửi yêu cầu";
+
+export const RISK_LEVEL_LABEL: Record<ApprovalRiskView["risk_level"], string> = { low: "Thấp", medium: "Trung bình", high: "Cao" };
+export const RISK_ROUTE_LABEL: Record<ApprovalRiskView["route"], string> = {
+  AUTO: "Tự xử lý",
+  HITL: "Cần người duyệt",
+  ESCALATE_L2: "Chuyển L2",
+};
+/** Điểm LLM chưa qua hiệu chỉnh: xác suất không dùng để tự xử lý — chữ của FE (backend chỉ trả cờ). */
+export const UNCALIBRATED_TEXT = "Chưa hiệu chỉnh, không tự xử lý";
+
+export type RiskSummary = { level: string; route: string; reason: string; ruleId: string | null; source: string; note: string | null };
+
+/** Tóm tắt `risk_view` cho người duyệt. Nhãn tra theo khoá của riêng bảng (`ownEntry`): giá trị lạ → nguyên mã, không đoán. */
+export function riskSummary(view: ApprovalRiskView): RiskSummary {
+  return {
+    level: ownEntry<string>(RISK_LEVEL_LABEL, view.risk_level, view.risk_level),
+    route: ownEntry<string>(RISK_ROUTE_LABEL, view.route, view.route),
+    reason: view.reason,
+    ruleId: view.matched_rule_id,
+    source: view.decided_by === "rule" ? "Theo luật chính sách" : "Do mô hình ngôn ngữ đánh giá",
+    note: view.decided_by === "llm" && !view.calibrated ? UNCALIBRATED_TEXT : null,
+  };
+}
+
+/** Quản lý của người bị ảnh hưởng thành một dòng chữ. */
+export function managerText(manager: ApprovalAffected["manager"]): string {
+  if (manager.status !== "known") return MANAGER_UNKNOWN_TEXT;
+  const id = manager.user_id ?? MISSING_VALUE;
+  return manager.full_name ? `${manager.full_name} (${id})` : `${id} ${MANAGER_NO_NAME_TEXT}`;
+}
+
+const VN_TIME = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Ho_Chi_Minh",
+  hour: "2-digit",
+  minute: "2-digit",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hourCycle: "h23",
+});
+
+/** Mốc hạn tuyệt đối theo giờ Việt Nam ("21:30 30/09/2026"); null / chuỗi không phải thời điểm → null (không hiện). Ghép từ
+ *  từng phần của Intl nên không phụ thuộc dấu phân cách của từng bản ICU. */
+export function deadlineText(deadline: unknown): string | null {
+  if (typeof deadline !== "string") return null;
+  const ms = Date.parse(deadline);
+  if (Number.isNaN(ms)) return null;
+  const p = Object.fromEntries(VN_TIME.formatToParts(new Date(ms)).map((part) => [part.type, part.value]));
+  return `${p.hour}:${p.minute} ${p.day}/${p.month}/${p.year}`;
+}
+
 export const DECISION_SENT = "Đã gửi quyết định";
 export const NOTICES_TEXT = "Ghi chú đã được ẩn bớt thông tin nhạy cảm";
 /** Màn xem ticket để ghi đè: GET ticket lỗi (vd 404) → câu trung tính, không mã lỗi (Q-fe-24). */
