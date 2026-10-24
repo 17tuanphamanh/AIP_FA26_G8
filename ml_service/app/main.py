@@ -1,12 +1,12 @@
 """ml-service (P4, thiết kế Phase 3 mục 4): embed, rerank, count_tokens; classify (khi GUARD_MODEL_DIR đặt — ML-GAN,
-không thì 503); classify_intent → 503.
+không thì 503); classify_intent (khi INTENT_MODEL_DIR đặt — gói 2, D-53, không thì 503).
 
 Chạy: `uvicorn app.main:build --factory --port 8200` (PYTHONPATH=ml_service), **1 worker** — một bản
 model; song song hoá bằng threadpool + `asyncio.Semaphore(ML_MAX_CONCURRENCY)`.
 
 - Lifespan nạp model qua `loader` (test tiêm loader giả, không cần torch) rồi warm-up (embed 1 câu,
-  rerank 1 cặp, classify 1 câu nếu có model chặn tấn công). Thiếu model → exception → service không lên. Chưa nạp xong
-  → `/health` 503 `loading`. `/health` ghi version model chặn tấn công đã nạp.
+  rerank 1 cặp, classify 1 câu nếu có model chặn tấn công, classify_intent 1 câu nếu có model intent). Thiếu model →
+  exception → service không lên. Chưa nạp xong → `/health` 503 `loading`. `/health` ghi version 2 model của nhóm đã nạp.
 - 413 (body > 256 KB, đếm byte đọc thật) → 401 (`X-Service-Token`, trừ `/health`) → 422 (body) → handler.
 - Log chỉ ghi endpoint, số phần tử, số ký tự, thời lượng — KHÔNG ghi văn bản. Lỗi 422 trả về không kèm
   giá trị đầu vào (mặc định của FastAPI vọng lại `input`).
@@ -29,10 +29,10 @@ from app.auth import require_token
 from app.classify import classify_failed, model_missing, too_many_windows
 from app.embed import embed_sync
 from app.guard import MAX_WINDOWS, TooManyWindows, classify_sync
-from app.intent import intent_missing
+from app.intent import classify_intent_sync, intent_missing
 from app.limits import BodyLimitMiddleware
 from app.loader import load_models
-from app.models import GUARD_LABEL, Models
+from app.models import GUARD_LABEL, INTENT_LABEL, Models
 from app.rerank import rerank_sync
 from app.schemas import (
     ClassifyIn,
@@ -42,6 +42,7 @@ from app.schemas import (
     EmbedIn,
     EmbedOut,
     IntentIn,
+    IntentOut,
     RerankIn,
     RerankOut,
 )
@@ -61,6 +62,8 @@ def warm_up(models: Models) -> None:
     rerank_sync(models, WARM_UP_TEXT, [WARM_UP_TEXT])
     if models.guard is not None:
         classify_sync(models.guard, WARM_UP_TEXT)
+    if models.intent is not None:
+        classify_intent_sync(models.intent, WARM_UP_TEXT)
 
 
 def create_app(settings: MlSettings | None = None, loader: Loader = load_models) -> FastAPI:
@@ -120,14 +123,14 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
         models: Models | None = request.app.state.models
         if not request.app.state.ready or models is None:
             return JSONResponse({"status": "loading"}, status_code=503)
-        guard = models.guard
+        guard, intent = models.guard, models.intent
         return {
             "status": "ok",
             "models": {
                 "embed": {"repo": models.embed.repo, "revision": models.embed.revision, "dim": models.dim},
                 "rerank": {"repo": models.rerank.repo, "revision": models.rerank.revision},
                 "injection": {"model": GUARD_LABEL, "version": guard.version} if guard else "missing",
-                "intent": "missing",  # ML-GAN phần 2 (P11)
+                "intent": {"model": INTENT_LABEL, "version": intent.version} if intent else "missing",
             },
         }  # fmt: skip
 
@@ -176,9 +179,22 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
         )  # fmt: skip
         return out
 
-    @api.post("/classify_intent")
-    async def classify_intent(body: IntentIn) -> JSONResponse:
-        return intent_missing()
+    @api.post("/classify_intent", response_model=None)
+    async def classify_intent(body: IntentIn, request: Request) -> IntentOut | JSONResponse:
+        intent = loaded(request).intent
+        if intent is None:
+            return intent_missing()
+        started = time.perf_counter()
+        try:  # gói 2: cùng hàng chờ và cách bọc lỗi như /classify (Q-B2R-11)
+            out = await run_classify(classify_intent_sync, intent, body.text)
+        except Exception as e:  # noqa: BLE001 — lỗi suy luận / điểm NaN → 500 mã chung; log TÊN lớp lỗi, không thông điệp/chữ
+            log.error("classify_intent chars=%d lỗi suy luận %s → 500 classify_failed", len(body.text), type(e).__name__)
+            return classify_failed()
+        log.info(
+            "classify_intent chars=%d truncated=%d ms=%.0f",
+            len(body.text), int(out.truncated), (time.perf_counter() - started) * 1000,
+        )  # fmt: skip
+        return out
 
     app.include_router(api)
     app.add_middleware(BodyLimitMiddleware)  # thêm sau cùng = lớp ngoài cùng: 413 trước mọi thứ

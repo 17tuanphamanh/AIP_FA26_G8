@@ -100,8 +100,9 @@ test:
 
 # Test ml-service với model/tokenizer THẬT (a3, a4, a5, a6, a16 — thiết kế Phase 3 mục 4.8). Cài nhóm uv
 # `ml` (torch…) vào .venv; cần `make models` trước — thiếu model thì FAIL, không skip. Không vào CI.
+# Gói 2 (D-53): cả test marker ml_torch (B3Model giả nhỏ, nạp safetensors, script chuyển .pt) — cần torch, không cần model.
 test-ml:
-	uv run --group ml pytest ml_service/tests -o pythonpath=ml_service -m ml_real
+	uv run --group ml pytest ml_service/tests -o pythonpath=ml_service -m "ml_real or ml_torch"
 
 # ruff, mypy, import-linter, gitleaks (cổng T01 mục 4).
 lint:

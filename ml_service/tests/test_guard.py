@@ -158,11 +158,12 @@ def test_health_reports_guard_version(settings: MlSettings) -> None:
     with _client(loader, settings) as c:
         models = c.get("/health").json()["models"]
     assert models["injection"] == {"model": "injection-clf", "version": "v3-seed123"}
-    assert models["intent"] == "missing"  # phần 2 chưa làm
+    assert models["intent"] == "missing"  # loader giả không có model intent
 
 
-def test_t23a_intent_stays_503_with_guard_loaded(settings: MlSettings, auth: dict[str, str]) -> None:
-    """Phase 5 (T23a, D-44): nạp model chặn tấn công + đặt INTENT_MODEL_DIR vẫn KHÔNG bật /classify_intent."""
+def test_guard_loaded_without_intent_model_intent_503(settings: MlSettings, auth: dict[str, str]) -> None:
+    """Phase 5 (T23a, D-44) — gói 2 (D-53) đổi có chủ ý: nạp model chặn tấn công KHÔNG kéo theo model intent; loader không trả
+    model intent thì /classify_intent vẫn 503 (có model intent: `test_intent.py`)."""
     settings.models_dir.mkdir(parents=True, exist_ok=True)
     loader, _ = guarded()
     both = settings.model_copy(update={"intent_model_dir": settings.models_dir})
