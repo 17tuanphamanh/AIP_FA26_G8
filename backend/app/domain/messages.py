@@ -135,6 +135,22 @@ def _dmy(iso: str | None) -> str | None:
     return None if iso is None else f"{date.fromisoformat(iso):%d/%m/%Y}"
 
 
+def _reset_delivery(outputs: Mapping[str, str]) -> str:
+    """Câu kênh nhận mật khẩu tạm — chỉ từ `outputs` đã qua mẫu (`sent_to` chỉ số ĐÃ CHE, phút 1–60); KHÔNG bao giờ mật khẩu.
+    sms: mock gửi mật khẩu tạm một lần tới số trong AD. email: chỉ nói điều hệ thống tài khoản xác nhận (mock không gửi gì
+    thật ở kênh này)."""
+    via = _out(outputs, "delivered_via")
+    if via == "sms":
+        to = _out(outputs, "sent_to")
+        minutes = _out(outputs, "expires_in_minutes")
+        return (f"Mật khẩu tạm đã gửi qua SMS tới {f'số {to}' if to else 'số điện thoại đã đăng ký'}"
+                f"{f', hiệu lực {minutes} phút' if minutes else ''}, chỉ dùng một lần; "
+                "bạn sẽ được yêu cầu đổi mật khẩu khi đăng nhập.")  # fmt: skip
+    if via == "email":
+        return "Hệ thống tài khoản xác nhận mật khẩu tạm được gửi qua email; bạn cần đổi mật khẩu ở lần đăng nhập tới."
+    return "Bạn cần đổi mật khẩu ở lần đăng nhập tới."
+
+
 def _new_action_text(
     action: Action, outputs: Mapping[str, str], requester_id: str, rows: Sequence[PermRow] | None
 ) -> str:
@@ -147,9 +163,7 @@ def _new_action_text(
     folder = f"thư mục {path_raw}" if RESOURCE_PATH.fullmatch(path_raw) else "thư mục được yêu cầu"
     until = _dmy(_out(outputs, "expires_on"))
     if action.type == "reset_password":
-        via = _out(outputs, "delivered_via")
-        sent = f"Mật khẩu tạm đã gửi qua {via}" if via else "Mật khẩu tạm đã gửi"
-        return f"Đã đặt lại mật khẩu {account}. {sent}; cần đổi ở lần đăng nhập tới. {ASK_CONFIRM_LOGIN}"
+        return f"Đã đặt lại mật khẩu {account}. {_reset_delivery(outputs)} {ASK_CONFIRM_LOGIN}"
     if action.type == "unlock_account":
         return f"Đã mở khoá {account}. {ASK_CONFIRM_LOGIN}"
     if action.type == "install_software":
