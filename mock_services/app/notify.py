@@ -26,7 +26,7 @@ EMAIL_SMS_RESET_NOTICE = (
 @dataclass
 class OutboxMessage:
     channel: Literal["sms", "email"]
-    to: str  # sms: số điện thoại trong seed; email: username chủ tài khoản (mock không có địa chỉ email)
+    to: str  # sms: số điện thoại trong seed; email: địa chỉ email AD của chủ tài khoản (seed / seed.local.json)
     at: datetime
     # SMS chứa mật khẩu tạm — không để lọt vào log qua repr()
     body: str = field(repr=False)
@@ -35,12 +35,22 @@ class OutboxMessage:
 
     def view(self) -> dict[str, Any]:
         body = self.body.replace(self.secret, MASK) if self.secret else self.body
-        return {"channel": self.channel, "to": self.to, "at": self.at, "body": body}
+        # địa chỉ email có thể là địa chỉ thật (seed.local.json) — xem qua /_admin/outbox cũng che
+        to = mask_email(self.to) if self.channel == "email" else self.to
+        return {"channel": self.channel, "to": to, "at": self.at, "body": body}
 
 
 def mask_phone(phone: str) -> str:
     """Che số điện thoại: 0900000123 → 0900***123."""
     return f"{phone[:4]}***{phone[-3:]}"
+
+
+def mask_email(address: str) -> str:
+    """Che địa chỉ email cho log và /_admin/outbox: ten+anv@gmail.com → t***@g***. Chuỗi không có "@" → "***"."""
+    local, at, domain = address.partition("@")
+    if not at or not local or not domain:
+        return "***"
+    return f"{local[0]}***@{domain[0]}***"
 
 
 def _when(at: datetime) -> str:
@@ -56,7 +66,7 @@ def send_temp_password_sms(
 
 def send_sms_reset_notice(
     outbox: list[OutboxMessage],
-    username: str,
+    email: str,
     phone: str,
     at: datetime,
     ttl_minutes: int,
@@ -64,4 +74,5 @@ def send_sms_reset_notice(
     body = EMAIL_SMS_RESET_NOTICE.format(
         at=_when(at), phone=mask_phone(phone), ttl=ttl_minutes
     )
-    outbox.append(OutboxMessage("email", username, at, body))
+    # chỉ vào hộp thư đi của mock — mock KHÔNG gửi email ra ngoài (gửi thật là việc của backend)
+    outbox.append(OutboxMessage("email", email, at, body))

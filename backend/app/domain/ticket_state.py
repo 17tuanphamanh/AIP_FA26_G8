@@ -65,6 +65,9 @@ EXEC_OUTPUT_PATTERNS: Mapping[str, re.Pattern[str]] = {
     "level": re.compile(r"read|write|full"),
     "software": re.compile(r"[a-z0-9][a-z0-9.+#-]{0,63}"),  # cùng mẫu `domain.action.SOFTWARE_NAME`
     "license_id": re.compile(r"LIC-[a-z0-9.+#-]{1,64}-[0-9]{3}"),
+    # đặt lại mật khẩu qua SMS: số nhận CHỈ ở dạng đã che (không bao giờ số đầy đủ), hạn mật khẩu tạm 1–60 phút
+    "sent_to": re.compile(r"0\d{2,3}\*{3}\d{3}"),
+    "expires_in_minutes": re.compile(r"[1-9]|[1-5][0-9]|60"),
 }
 
 

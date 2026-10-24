@@ -6,6 +6,8 @@
  3 idp.authenticate: sai → login_failed; đủ ngưỡng → khoá + account_locked(threshold) + 1 dòng
                     `alerts` (P9 luật 3, idempotent theo người + đợt khoá) → 401 chung
                     AD lỗi → 503 (không đếm)
+                    mật khẩu tạm phải đổi → permission_denied(password_change_required) → 403, không đếm lần sai,
+                    không tạo phiên
  4 đồng bộ users (role từ nhóm AD, chuỗi quản lý ≤ 5 cấp) — role đổi → role_changed + phiên cũ chết
  5 disabled/terminated                                  → 401 chung (mọi phiên bị thu hồi)
  6 cần MFA? (manager, hoặc đã enroll): thiếu OTP → 401 mfa_required; sai → mfa_failed;
@@ -50,6 +52,7 @@ from app.auth.ports import (
     AuthStore,
     IdentityProvider,
     IdentityUnavailable,
+    PasswordChangeRequired,
     SecurityEventSink,
 )
 from app.auth.tokens import (
@@ -204,6 +207,15 @@ class AuthService:
         except IdentityUnavailable:
             log.warning("đăng nhập: AD không trả lời — 503, không đếm lần sai")
             raise AuthError(503, "identity_unavailable") from None
+        except PasswordChangeRequired:
+            # mật khẩu tạm ĐÚNG — không phải lần sai (permission_denied không vào auth_failures), không tới bước 4–7
+            await self.sink.record(
+                "permission_denied", user_id=existing.user_id if existing else None,
+                username_attempted=self._stored(username, existing), ip_prefix=ip, route=LOGIN_ROUTE,
+                detail={"reason": "password_change_required"},
+            )  # fmt: skip
+            log.info("đăng nhập: AD yêu cầu đổi mật khẩu tạm — 403, không đếm lần sai")
+            raise AuthError(403, "password_change_required") from None
         if ad is None:
             await self._event("login_failed", existing, username, ip)
             await self._check_threshold(username, existing, ip, now)

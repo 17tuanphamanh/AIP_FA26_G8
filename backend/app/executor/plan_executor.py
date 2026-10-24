@@ -189,7 +189,7 @@ class PlanExecutor:
 
     def _outputs(self, results: list[Any]) -> dict[str, str]:
         """Kết quả MỌI bước đã xong (`tools.models`) → khoá ĐÓNG cho tin B18 (P4): `Cert` → `serial`, `expires_on`;
-        `ResetPasswordResult` → `delivered_via`; `AssignLicenseResult` → `license_id`, `software`; `InstallResult` → `software`,
+        `ResetPasswordResult` → `delivered_via`, `expires_in_minutes`, `sent_to`; `AssignLicenseResult` → `license_id`, `software`; `InstallResult` → `software`,
         `version`; `PermissionEntry` (cấp/gia hạn) → `level`, `expires_on`. Ngày theo giờ địa phương. `ExecutionResult` lọc lại regex."""
         out: dict[str, str] = {}
         for data in results:
@@ -198,6 +198,10 @@ class PlanExecutor:
                 out["expires_on"] = self._local_date(data.expires_at)
             elif isinstance(data, ResetPasswordResult):
                 out["delivered_via"] = data.delivered_via
+                if data.expires_in_minutes is not None:
+                    out["expires_in_minutes"] = str(data.expires_in_minutes)
+                if data.sent_to is not None:
+                    out["sent_to"] = data.sent_to
             elif isinstance(data, AssignLicenseResult):
                 out["license_id"] = data.assignment_id
                 out["software"] = data.name

@@ -53,6 +53,9 @@ class SeedUser(_Strict):
     disable_reason: DisableReason | None
     password_hash: str  # argon2id của mật khẩu demo — KHÔNG bao giờ trả ra API
     phone: str | None = Field(default=None, pattern=r"^0900000\d{3}$")  # F2: số nhận SMS đặt lại mật khẩu, số giả
+    # Mock AD: email công ty. File trong repo CHỈ nhận đuôi @demo-corp.local (không lỡ commit địa chỉ thật); địa chỉ thật nạp đè
+    # từ seed.local.json (đã gitignore — `app.state.local_emails`).
+    email: str = Field(pattern=r"^[a-z0-9._+-]+@demo-corp\.local$")
     accounts: dict[AccountType, SeedAccount]
     lockouts: list[SeedLockout] = []
 
@@ -177,6 +180,9 @@ class SeedData(_Strict):
         phones = [u.phone for u in self.users if u.phone is not None]
         if len(set(phones)) != len(phones):
             raise ValueError("phone trùng")
+        emails = [u.email for u in self.users]
+        if len(set(emails)) != len(emails):
+            raise ValueError("email trùng")
         devices = {d.device_id for d in self.devices}
         catalog = {c.name for c in self.catalog}
         resources = {r.path for r in self.resources}

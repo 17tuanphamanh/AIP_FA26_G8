@@ -105,14 +105,17 @@ def test_sms_sends_one_sms_and_one_notice_old_password_dies(
     assert body["delivered_via"] == "sms" and body["must_change_at_next_login"] is True
     assert (
         body["expires_in_minutes"] == 15
+        and body["sent_to"] == f"{phone[:4]}***{phone[-3:]}"  # số ĐÃ CHE, không bao giờ số đầy đủ
         and body["user_id"] == "nv001"
         and body["account_type"] == "ad"
     )
     rows = _outbox(sms_client)
     assert [(r["channel"], r["to"]) for r in rows] == [
         ("sms", phone),
-        ("email", "an.nv"),
+        ("email", "n***@d***"),  # email AD của chủ tài khoản, che khi xem qua /_admin/outbox
     ]
+    internal = sms_client.app.state.mock.outbox  # type: ignore[attr-defined]
+    assert internal[1].to == "nv001@demo-corp.local"
     notice = rows[1]["body"]
     assert (
         "qua SMS" in notice
@@ -196,7 +199,8 @@ def test_canary_never_leaves_sms(
 def test_business_errors_and_unknown_fields(
     sms_client: TestClient, executor: dict[str, str]
 ) -> None:
-    no_phone = _reset_sms(sms_client, executor, "svc_backup")
+    sms_client.app.state.mock.users["nv002"].phone = None  # type: ignore[attr-defined]  # seed: mọi người còn làm đều có số
+    no_phone = _reset_sms(sms_client, executor, "nv002")
     assert no_phone.status_code == 409 and no_phone.json() == {
         "detail": "no_phone_on_file"
     }

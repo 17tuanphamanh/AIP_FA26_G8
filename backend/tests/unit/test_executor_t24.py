@@ -288,9 +288,11 @@ async def test_x9_vpn_renew_outputs_unchanged() -> None:
 
 async def test_s7_reset_password_result_has_no_password_field() -> None:
     """Soát 7.8 mục 7 (NGHI-3 security-reviewer DỪNG 1): model đầu ra `reset_password` KHÔNG có trường mật khẩu — mật khẩu tạm không
-    bao giờ vào `ExecutionResult`/tin/audit (mock gửi thẳng tới email). Thêm trường kiểu `temp_password` → test đỏ."""
+    bao giờ vào `ExecutionResult`/tin/audit (mock gửi thẳng tới SMS/email). Thêm trường kiểu `temp_password` → test đỏ.
+    Kênh sms thêm `expires_in_minutes` và `sent_to` (số ĐÃ CHE)."""
     from app.tools.models import ResetPasswordResult
 
     fields = set(ResetPasswordResult.model_fields)
-    assert fields == {"user_id", "account_type", "delivered_via", "must_change_at_next_login"}
+    assert fields == {"user_id", "account_type", "delivered_via", "must_change_at_next_login", "expires_in_minutes",
+                      "sent_to"}  # fmt: skip
     assert not [f for f in fields if "pass" in f.lower() or "secret" in f.lower()]

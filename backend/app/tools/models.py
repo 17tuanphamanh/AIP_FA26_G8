@@ -272,12 +272,16 @@ class ResetPasswordResult(_Out):
     account_type: AccountType
     delivered_via: str
     must_change_at_next_login: bool
+    # Kênh sms: hạn mật khẩu tạm (phút) và số nhận ĐÃ CHE (mock: `0900***123`). Kênh email không có → None.
+    expires_in_minutes: int | None = None
+    sent_to: str | None = None
 
 
 class LockStateResult(_Out):
     user_id: str
     account_type: AccountType
     locked: bool
+    was_locked: bool | None = None  # chỉ `unlock` trả (lock không có) — giữ lại thay vì bỏ qua như trường lạ
 
 
 class InstallResult(_Out):
