@@ -143,6 +143,13 @@ services:
       SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
+      # Cổng /portal chỉ mở ở APP_ENV dev/test (thiếu → tắt).
+      APP_ENV: ${APP_ENV:-}
+      # Email thật nạp đè seed.json (gitignore) — đọc qua thư mục mount bên dưới; không có file → dùng @demo-corp.local.
+      MOCK_SEED_LOCAL: /srv/mock_local/seed.local.json
+    # Mount THƯ MỤC (không mount thẳng file): file chưa tồn tại thì Docker không tự tạo thư mục rỗng mang tên file.
+    volumes:
+      - ./mock_services:/srv/mock_local:ro
 
   # P4 — model nạp một lần, CPU. Model tải trên máy bằng `make models` rồi mount read-only; không bind cổng
   # 8200 ra host (P4 mục 5). ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở ml_service/app/settings.py
