@@ -52,6 +52,9 @@ export type TicketView = {
   created_at: string;
   closed_at: string | null;
   children_progress?: ChildProgress[] | null;
+  // R3 (#76): hạn của LẦN CHỜ HIỆN TẠI (UTC); null = không chờ / đã kết thúc / cha nhiều ý. Backend ghi bắt buộc (có thể
+  // null); khai tuỳ chọn ở đây để thân/fixture cũ thiếu khoá vẫn đúng kiểu — thiếu = null (màn không hiện hạn).
+  deadline?: string | null;
 };
 
 // Nguồn: backend/app/api/tickets.py ConfirmIn (extra="forbid", note ≤ 1000). Xoá khi: route khai body trong openapi.
@@ -138,6 +141,32 @@ export type InboxResponse = { items: ApprovalListItem[] };
 // action_metadata; `title` null khi không tìm thấy tài liệu ở bản KB hiện hành. `viewer` = người có `audit:read:all` xem
 // phiếu không giao cho mình (không quyết được, không ghi lần xem đầu).
 export type ApprovalRoleAs = "primary" | "backup" | "viewer";
+
+// F6 (#76): `affected` = người BỊ TÁC ĐỘNG (`Action.requested_for`), có thể khác người gửi; `risk_view` = RiskDecision + 2 cờ
+// suy ra (`calibrated`, `auto_allowed`), null ⇔ `risk` null. Nguồn: backend/app/api/approvals.py (AffectedView, ManagerRef,
+// RiskView) — soi hai chiều với openapi ở schema.check.ts. Xoá khi: ApprovalViewP4 lấy thẳng từ schema.gen.ts (cần `status`
+// của openapi là enum; hiện là `string`).
+export type ApprovalManagerRef = { status: "known" | "unknown"; user_id: string | null; full_name: string | null };
+export type ApprovalAffected = {
+  user_id: string;
+  is_requester: boolean;
+  department: string | null;
+  manager: ApprovalManagerRef;
+};
+export type ApprovalRiskView = {
+  decided_by: "rule" | "llm";
+  policy_decision: "allow" | "approval_required" | "deny" | null;
+  matched_rule_id: string | null;
+  raw_prob: number | null;
+  calibrated_prob: number | null;
+  p_method: "self_report" | "sampling_k5" | null;
+  risk_level: "low" | "medium" | "high";
+  route: "AUTO" | "HITL" | "ESCALATE_L2";
+  reason: string;
+  thresholds: [number, number] | null;
+  calibrated: boolean;
+  auto_allowed: boolean;
+};
 export type ApprovalViewP4 = {
   approval_id: string;
   ticket_id: string;
@@ -151,6 +180,8 @@ export type ApprovalViewP4 = {
   facts: Record<string, unknown>;
   role_as: ApprovalRoleAs;
   procedure: { doc_id: string; title: string | null } | null;
+  affected: ApprovalAffected;
+  risk_view: ApprovalRiskView | null;
 };
 
 // Nguồn: backend/app/api/health.py health() — JSONResponse; 200 "ok" / 503 "degraded"; `runtime` chỉ để báo.
