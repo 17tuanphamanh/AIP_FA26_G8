@@ -61,3 +61,12 @@ class ClassifyOut(BaseModel):  # khớp `backend/app/ml/models.py` ClassifyOut (
 
 class IntentIn(_In):  # P4 mục 4 — model intent-clf (Phase 5, D-32)
     text: str = Field(min_length=1)
+
+
+class IntentOut(BaseModel):  # khớp `backend/app/ml/models.py` IntentOut (test đọc bằng AST) — gói 2, D-53
+    probs: dict[str, float]  # điểm trộn của gói, khoá theo đúng thứ tự `labels` của inference_config
+    tau_hi: dict[str, float]  # thresholds.json
+    tau_lo: dict[str, float]
+    truncated: bool  # câu dài hơn max_len token (model chỉ thấy phần đầu)
+    model: str
+    version: str

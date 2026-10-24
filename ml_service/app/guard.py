@@ -170,28 +170,36 @@ def _check_manifest(d: Path, settings: MlSettings) -> dict[str, str]:
         raise GuardLoadError("GUARD_MODEL_SHA256 bắt buộc khi đặt GUARD_MODEL_DIR — từ chối khởi động")
     if settings.guard_manifest_sha256 is None:
         raise GuardLoadError("GUARD_MANIFEST_SHA256 bắt buộc khi đặt GUARD_MODEL_DIR — từ chối khởi động")
+    return verify_manifest(d, settings.guard_manifest_sha256, "GUARD_MANIFEST_SHA256")
+
+
+def verify_manifest(
+    d: Path, pinned: str, var: str, error: type[GuardLoadError] = GuardLoadError
+) -> dict[str, str]:
+    """Manifest đúng SHA ghim (`var`), đúng tập file, đúng SHA từng file — dùng chung cho guard và intent (gói 2, D-53)."""
     manifest = d / MANIFEST_FILE
     if not manifest.is_file():
-        raise GuardLoadError(f"{d}: thiếu {MANIFEST_FILE} — sinh bằng scripts/ml/make_manifest.py")
+        raise error(f"{d}: thiếu {MANIFEST_FILE} — sinh bằng scripts/ml/make_manifest.py")
     raw = manifest.read_bytes()
     actual_manifest = hashlib.sha256(raw).hexdigest()
-    if actual_manifest != settings.guard_manifest_sha256:
-        raise GuardLoadError(
-            f"SHA-256 của {MANIFEST_FILE} ({actual_manifest[:12]}…) lệch GUARD_MANIFEST_SHA256 "
-            f"({settings.guard_manifest_sha256[:12]}…) — từ chối khởi động"
+    if actual_manifest != pinned:
+        raise error(
+            f"SHA-256 của {MANIFEST_FILE} ({actual_manifest[:12]}…) lệch {var} ({pinned[:12]}…) — từ chối khởi động"
         )
     try:
         listed = parse_manifest(raw.decode("utf-8"))
     except UnicodeDecodeError:
-        raise GuardLoadError(f"{MANIFEST_FILE} không phải UTF-8") from None
+        raise error(f"{MANIFEST_FILE} không phải UTF-8") from None
+    except GuardLoadError as e:
+        raise error(str(e)) from None
     present = {p.relative_to(d).as_posix() for p in d.rglob("*") if p.is_file()} - {MANIFEST_FILE}
     extra, missing = sorted(present - set(listed)), sorted(set(listed) - present)
     if extra or missing:
-        raise GuardLoadError(f"{d}: tập file lệch {MANIFEST_FILE} — thừa {extra}, thiếu {missing} — từ chối khởi động")
+        raise error(f"{d}: tập file lệch {MANIFEST_FILE} — thừa {extra}, thiếu {missing} — từ chối khởi động")
     hashes = {rel: sha256_file(d / rel) for rel in sorted(listed)}
     wrong = sorted(rel for rel, sha in hashes.items() if sha != listed[rel])
     if wrong:
-        raise GuardLoadError(f"{d}: SHA-256 lệch {MANIFEST_FILE} ở {wrong} — từ chối khởi động")
+        raise error(f"{d}: SHA-256 lệch {MANIFEST_FILE} ở {wrong} — từ chối khởi động")
     return hashes
 
 
