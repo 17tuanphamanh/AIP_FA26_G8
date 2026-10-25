@@ -13,7 +13,7 @@ Quy ước (chốt #32, 13/10):
 
 import math
 from collections import Counter
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, Literal, Protocol, cast
@@ -23,6 +23,7 @@ import numpy as np
 from app.db.models import EXIT_CODES, INTENTS
 from app.domain.states import S_RESOLVED
 from app.eval.predictions import PredictionRecord
+from app.eval.stats import clopper_pearson_two_sided
 from app.risk.decision_math import (
     DEFAULT_COST,
     ROUTES,
@@ -549,7 +550,8 @@ def breakeven(
     ratios: Sequence[float] = BREAKEVEN_RATIOS,
 ) -> Breakeven:
     """Điểm hoà vốn r* của A so với B + tiết kiệm/ticket ở từng `ratios` (chốt 1; v1 không có ticket/tháng). Báo cáo gọi cho mỗi
-    phương án có LLM X: `breakeven(X, manual_baseline(X))` và `breakeven(X, <Chỉ-luật>)`; mỗi cặp với `mix=None` (số chính) và
+    phương án có LLM X, trên phần giao chung của các phương án (G5, như T1): `breakeven(X, manual_baseline(X))` và
+    `breakeven(X, <Chỉ-luật>)`; mỗi cặp với `mix=None` (số chính) và
     từng mix (số phụ). TODO(G1-Q7): một mix mỗi lần gọi — chờ xác nhận ở #32.
 
     - Hai bên phải cùng tập `scenario_id`, cùng `split` (như `paired_family_bootstrap_diff`) và cùng `expected_route` theo
@@ -686,6 +688,73 @@ def retrieval(records: Records, k: int = TOP_K) -> RetrievalMetrics:
         mrr5=Mean(float(sum(reciprocal_rank_at_k(g, d, k) for g, d in rows)), n),
         ndcg5=Mean(float(sum(ndcg_at_k(g, d, k) for g, d in rows)), n),
     )
+
+
+# ---- G5: Full-auto giải tích + FNR theo tình huống (P8 §5.4, §6.1) — dời từ report.py, không đổi kết quả ------------------
+
+type UnitOf = Callable[[PredictionRecord], str]
+type Hidden = Literal["all", "only", "except"]
+
+
+def full_auto_baseline(records: Records) -> list[PredictionRecord]:
+    """Full-auto giải tích (P8 §5.4: mọi ca có hành động = AUTO; B17 vẫn chặn khi chạy thật): lá có điểm log 4 (`route ≠ None`)
+    → AUTO, `strategy = "full_auto"`, các trường khác giữ nguyên. Đối xứng `manual_baseline`."""
+    return [r.model_copy(update={"strategy": "full_auto", **({"route": "AUTO"} if r.route is not None else {})}) for r in records]
+
+
+@dataclass(frozen=True)
+class SituationFnr:
+    """FNR theo tình huống: `k` tình huống cần người có ít nhất một câu pred = AUTO, trên `n` tình huống cần người. `upper95` =
+    cận trên Clopper–Pearson MỘT phía 95% (vế an toàn §6.5); `lo95`/`hi95` = khoảng hai phía 95%. `n_mixed` = đơn vị có nhãn
+    gold lẫn AUTO và không-AUTO (ánh xạ sai hoặc thiếu); `n_leaves` = số lá đã nhãn có route trong phạm vi."""
+
+    k: int
+    n: int
+    n_leaves: int
+    n_mixed: int
+    upper95: float | None
+    lo95: float | None
+    hi95: float | None
+
+    @property
+    def value(self) -> float | None:
+        return self.k / self.n if self.n else None
+
+
+def situation_fnr(
+    records: Records,
+    unit_of: UnitOf | None = None,
+    *,
+    only_llm: bool = False,
+    hidden: Hidden = "all",
+) -> SituationFnr:
+    """FNR theo tình huống (P8 §6.1): #(tình huống cần người có ≥ 1 câu pred = AUTO) / #(tình huống cần người). Hàm thuần, mẫu =
+    lá đã nhãn có `route` (≠ None). `unit_of` ánh xạ lá → mã tình huống (mặc định `family`). Tình huống "cần người" nếu có ≥ 1 lá
+    `expected_route ≠ AUTO`. `only_llm` chỉ giữ lá `decided_by = llm` (vế 2 §6.5: tình huống đi qua lớp LLM). `hidden`: `only` =
+    chỉ tình huống có lá `hidden_factor = True`, `except` = loại chúng (§6.1 nhóm yếu tố M5 không thấy). Mẫu số 0 → `value` và
+    cận None. NGOẠI LỆ quy ước đầu file: `[]` KHÔNG ValueError mà trả k = n = 0 (báo cáo gọi trên phần giao có thể rỗng)."""
+    key = unit_of or (lambda r: r.family)
+    units: dict[str, list[PredictionRecord]] = {}
+    for r in records:
+        if r.expected_route is None or r.route is None or (only_llm and r.decided_by != "llm"):
+            continue
+        units.setdefault(key(r), []).append(r)
+    k = n = leaves = mixed = 0
+    for rows in units.values():
+        is_hidden = any(r.hidden_factor is True for r in rows)
+        if (hidden == "only" and not is_hidden) or (hidden == "except" and is_hidden):
+            continue
+        leaves += len(rows)
+        needs = {r.expected_route != "AUTO" for r in rows}
+        mixed += len(needs) > 1
+        if True not in needs:
+            continue
+        n += 1
+        k += any(r.route == "AUTO" for r in rows)
+    if n == 0:
+        return SituationFnr(0, 0, leaves, mixed, None, None, None)
+    lo, hi = clopper_pearson_two_sided(k, n)
+    return SituationFnr(k, n, leaves, mixed, clopper_pearson_upper(k, n), lo, hi)
 
 
 @dataclass(frozen=True)

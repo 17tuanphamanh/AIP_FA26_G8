@@ -143,7 +143,7 @@ run_id: aaaaaaaaaaaa, bbbbbbbbbbbb, cccccccccccc, dddddddddddd
 
 ### T7 — Điểm hoà vốn r* (lượt duyệt / một ca bỏ sót)
 
-- Phương án có lớp LLM (A) so với Thủ công và với Chỉ-luật (B), dưới r* bên có `miss` lớn hơn rẻ hơn. `saving` = cost_B − cost_A (dương = A rẻ hơn). Mỗi cặp lấy phần giao riêng của hai bên (§5.4); Thủ công dựng từ chính A nên trên đúng tập lá có route của A (G1-Q1). Dòng `không trọng số` là số chính, các mix là số phụ.
+- Phương án có lớp LLM (A) so với Thủ công và với Chỉ-luật (B), dưới r* bên có `miss` lớn hơn rẻ hơn. `saving` = cost_B − cost_A (dương = A rẻ hơn). Mỗi cặp trên CÙNG phần giao với T1 (lá đã nhãn có route ở mọi phương án RQ1, §5.4): `n_pairs` = `n` của T1; ở r = 10 chi phí khớp T1 (không trọng số) và T5 (mix). Thủ công = `manual_baseline` của A trên phần giao (= Thủ công của T1, G1-Q1). `n_excluded_a`/`n_excluded_b` = 0 vì đã lọc trước; lá ngoài phần giao ở cột `n_excluded`, chi tiết T11. Dòng `không trọng số` là số chính, các mix là số phụ.
 
 | run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | pair | mix | n_pairs | n_excluded_a | n_excluded_b | fixed_a | miss_a | fixed_b | miss_b | r_star | reason | saving_5 | saving_10 | saving_20 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -151,18 +151,18 @@ run_id: aaaaaaaaaaaa, bbbbbbbbbbbb, cccccccccccc, dddddddddddd
 | bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | 70/20/10 | 8 | 0 | 0 | 0.9667 | 0.0000 | 1.5000 | 0.0000 | n/a | equal_miss | 0.5333 | 0.5333 | 0.5333 |
 | bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | 60/30/10 | 8 | 0 | 0 | 1.0000 | 0.0000 | 1.5000 | 0.0000 | n/a | equal_miss | 0.5000 | 0.5000 | 0.5000 |
 | bbbbbbbbbbbb | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Thủ công | 80/15/5 | 8 | 0 | 0 | 0.8333 | 0.0000 | 1.2500 | 0.0000 | n/a | equal_miss | 0.4167 | 0.4167 | 0.4167 |
-| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | không trọng số | 8 | 0 | 1 | 1.3750 | 0.0000 | 1.1250 | 0.0000 | n/a | equal_miss | -0.2500 | -0.2500 | -0.2500 |
-| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 70/20/10 | 8 | 0 | 1 | 0.9667 | 0.0000 | 0.5000 | 0.0000 | n/a | equal_miss | -0.4667 | -0.4667 | -0.4667 |
-| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 60/30/10 | 8 | 0 | 1 | 1.0000 | 0.0000 | 0.6000 | 0.0000 | n/a | equal_miss | -0.4000 | -0.4000 | -0.4000 |
-| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 80/15/5 | 8 | 0 | 1 | 0.8333 | 0.0000 | 0.3000 | 0.0000 | n/a | equal_miss | -0.5333 | -0.5333 | -0.5333 |
-| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | không trọng số | 9 | 0 | 0 | 1.2222 | 0.2222 | 2.1111 | 0.0000 | 4.0000 | ok | -0.2222 | -1.3333 | -3.5556 |
-| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | 70/20/10 | 9 | 0 | 0 | 0.5500 | 0.1000 | 1.5000 | 0.0000 | 9.5000 | ok | 0.4500 | -0.0500 | -1.0500 |
-| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | 60/30/10 | 9 | 0 | 0 | 0.6000 | 0.1500 | 1.5000 | 0.0000 | 6.0000 | ok | 0.1500 | -0.6000 | -2.1000 |
-| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Thủ công | 80/15/5 | 9 | 0 | 0 | 0.3000 | 0.0750 | 1.2500 | 0.0000 | 12.6667 | ok | 0.5750 | 0.2000 | -0.5500 |
-| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | không trọng số | 9 | 0 | 0 | 1.2222 | 0.2222 | 1.3333 | 0.0000 | 0.5000 | ok | -1.0000 | -2.1111 | -4.3333 |
-| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | 70/20/10 | 9 | 0 | 0 | 0.5500 | 0.1000 | 0.6000 | 0.0000 | 0.5000 | ok | -0.4500 | -0.9500 | -1.9500 |
-| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | 60/30/10 | 9 | 0 | 0 | 0.6000 | 0.1500 | 0.7500 | 0.0000 | 1.0000 | ok | -0.6000 | -1.3500 | -2.8500 |
-| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 9 | 1 | 0 | Hybrid vs Chỉ-luật | 80/15/5 | 9 | 0 | 0 | 0.3000 | 0.0750 | 0.3750 | 0.0000 | 1.0000 | ok | -0.3000 | -0.6750 | -1.4250 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | không trọng số | 8 | 0 | 0 | 1.3750 | 0.0000 | 1.1250 | 0.0000 | n/a | equal_miss | -0.2500 | -0.2500 | -0.2500 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 70/20/10 | 8 | 0 | 0 | 0.9667 | 0.0000 | 0.5000 | 0.0000 | n/a | equal_miss | -0.4667 | -0.4667 | -0.4667 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 60/30/10 | 8 | 0 | 0 | 1.0000 | 0.0000 | 0.6000 | 0.0000 | n/a | equal_miss | -0.4000 | -0.4000 | -0.4000 |
+| bbbbbbbbbbbb+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Chỉ-LLM vs Chỉ-luật | 80/15/5 | 8 | 0 | 0 | 0.8333 | 0.0000 | 0.3000 | 0.0000 | n/a | equal_miss | -0.5333 | -0.5333 | -0.5333 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Thủ công | không trọng số | 8 | 0 | 0 | 1.3750 | 0.1250 | 2.2500 | 0.0000 | 7.0000 | ok | 0.2500 | -0.3750 | -1.6250 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Thủ công | 70/20/10 | 8 | 0 | 0 | 0.5833 | 0.0667 | 1.5000 | 0.0000 | 13.7500 | ok | 0.5833 | 0.2500 | -0.4167 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Thủ công | 60/30/10 | 8 | 0 | 0 | 0.6500 | 0.1000 | 1.5000 | 0.0000 | 8.5000 | ok | 0.3500 | -0.1500 | -1.1500 |
+| cccccccccccc | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Thủ công | 80/15/5 | 8 | 0 | 0 | 0.3250 | 0.0500 | 1.2500 | 0.0000 | 18.5000 | ok | 0.6750 | 0.4250 | -0.0750 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Chỉ-luật | không trọng số | 8 | 0 | 0 | 1.3750 | 0.1250 | 1.1250 | 0.0000 | n/a | dominated | -0.8750 | -1.5000 | -2.7500 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Chỉ-luật | 70/20/10 | 8 | 0 | 0 | 0.5833 | 0.0667 | 0.5000 | 0.0000 | n/a | dominated | -0.4167 | -0.7500 | -1.4167 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Chỉ-luật | 60/30/10 | 8 | 0 | 0 | 0.6500 | 0.1000 | 0.6000 | 0.0000 | n/a | dominated | -0.5500 | -1.0500 | -2.0500 |
+| cccccccccccc+aaaaaaaaaaaa | eeeeeeeeeeee | ffffffffffffffffffffffffffffffffffffffff | 8 | 1 | 1 | Hybrid vs Chỉ-luật | 80/15/5 | 8 | 0 | 0 | 0.3250 | 0.0500 | 0.3000 | 0.0000 | n/a | dominated | -0.2750 | -0.5250 | -1.0250 |
 
 ## Ablation
 

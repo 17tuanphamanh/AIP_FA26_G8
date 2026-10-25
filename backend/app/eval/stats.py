@@ -9,7 +9,8 @@
 - Khoảng = phân vị (1−level)/2 và (1+level)/2 của các giá trị bootstrap (level 0,95 → 2,5 / 97,5 [Đề xuất — P8 chỉ ghi "95%"]),
   nội suy tuyến tính `numpy.percentile(method="linear")`: vị trí q·(N−1) trên dãy đã sắp.
 - Lần rút mà thống kê trả `None` (mẫu số 0) → bỏ, đếm `n_undefined`; không coi là 0.
-- Clopper–Pearson KHÔNG ở đây: `metrics.safety` import từ `decision_math` (D-37).
+- Cận trên Clopper–Pearson một phía ở `decision_math` (D-37, `metrics.safety` import thẳng). Ở đây chỉ cận dưới và khoảng hai
+  phía (P8 §2 `stats.py`, §6.1 "báo thêm hai phía"); cận trên của khoảng gọi lại `decision_math`, không viết lại.
 - Dự phòng thiếu thời gian (P8:427): giữ Clopper–Pearson cho FNR, bỏ so sánh hiệu — `paired_family_bootstrap_diff` là phần có
   thể bỏ.
 """
@@ -20,8 +21,10 @@ from dataclasses import dataclass
 from numbers import Integral, Real
 
 import numpy as np
+from scipy.stats import beta
 
 from app.eval.predictions import PredictionRecord
+from app.risk.decision_math import clopper_pearson_upper
 
 type Records = Sequence[PredictionRecord]
 type Statistic = Callable[[Sequence[PredictionRecord]], float | None]
@@ -164,3 +167,32 @@ def paired_family_bootstrap_diff(
     lo, hi = _interval(diffs, level)
     contains_zero = lo <= 0.0 <= hi if lo is not None and hi is not None else None
     return PairedDiffCI(point, lo, hi, contains_zero, n_boot, len(diffs), undefined, k, seed, level)
+
+
+# ---- Clopper–Pearson hai phía (G5) -------------------------------------------------------------------------------------
+
+
+def clopper_pearson_lower(k: int, n: int, conf: float = LEVEL) -> float:
+    """Cận dưới Clopper–Pearson MỘT PHÍA, đối xứng `decision_math.clopper_pearson_upper`: `beta.ppf(1 − conf, k, n−k+1)`;
+    k = 0 → 0,0. n ≥ 1, 0 ≤ k ≤ n, conf ∈ (0, 1); sai → ValueError."""
+    for value, name in ((k, "k"), (n, "n")):
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise ValueError(f"{name}: phải là số nguyên")  # noqa: TRY004 — P3: mọi lỗi đầu vào là ValueError
+    if isinstance(conf, bool) or not isinstance(conf, Real) or not (math.isfinite(float(conf)) and 0.0 < float(conf) < 1.0):
+        raise ValueError("conf: phải nằm trong khoảng mở (0, 1)")
+    if n < 1:
+        raise ValueError("n: phải ≥ 1")
+    if not 0 <= k <= n:
+        raise ValueError("k: phải thoả 0 ≤ k ≤ n")
+    if k == 0:
+        return 0.0
+    return float(beta.ppf(1.0 - float(conf), int(k), int(n) - int(k) + 1))
+
+
+def clopper_pearson_two_sided(k: int, n: int, level: float = LEVEL) -> tuple[float, float]:
+    """Khoảng Clopper–Pearson HAI PHÍA `level` (P8 §6.1 "báo thêm hai phía"): mỗi phía (1 + level)/2 — cận dưới ở đây, cận trên
+    `decision_math.clopper_pearson_upper`. level 0,95 → (beta.ppf(0,025, k, n−k+1), beta.ppf(0,975, k+1, n−k))."""
+    if isinstance(level, bool) or not isinstance(level, Real) or not (math.isfinite(float(level)) and 0.0 < float(level) < 1.0):
+        raise ValueError("level: phải nằm trong khoảng mở (0, 1)")
+    c = (1.0 + level) / 2.0
+    return clopper_pearson_lower(k, n, c), clopper_pearson_upper(k, n, c)

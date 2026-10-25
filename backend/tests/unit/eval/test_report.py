@@ -423,21 +423,42 @@ def test_t6_ratio_sensitivity(rep: Report) -> None:
 
 def test_t7_breakeven(rep: Report) -> None:
     m = row(rep, "t7_breakeven", pair="Hybrid vs Thủ công", mix="không trọng số")
-    # trên 9 lá đã nhãn có route: Hybrid fixed 11/9, miss 2/9; Thủ công fixed 19/9, miss 0 → r* = (8/9)/(2/9) = 4
-    assert (m["n_pairs"], m["reason"]) == (9, "ok")
-    assert close(m["fixed_a"], 11 / 9) and close(m["miss_a"], 2 / 9) and close(m["fixed_b"], 19 / 9) and close(m["miss_b"], 0.0)
-    assert close(m["r_star"], 4.0)
-    for r, want in ((5, -2 / 9), (10, -12 / 9), (20, -32 / 9)):  # cost_B − cost_A; r > r* → Hybrid đắt hơn Thủ công
+    # trên phần giao 01–08 (như T1): Hybrid fixed 11/8, miss 1/8 (chỉ lá 04); Thủ công fixed 18/8, miss 0 → r* = (7/8)/(1/8) = 7
+    assert (m["n_pairs"], m["reason"], m["n_excluded_a"], m["n_excluded_b"]) == (8, "ok", 0, 0)
+    assert close(m["fixed_a"], 11 / 8) and close(m["miss_a"], 1 / 8) and close(m["fixed_b"], 18 / 8) and close(m["miss_b"], 0.0)
+    assert close(m["r_star"], 7.0)
+    for r, want in ((5, 2 / 8), (10, -3 / 8), (20, -13 / 8)):  # cost_B − cost_A = (7 − r)/8; r > r* → Hybrid đắt hơn Thủ công
         assert close(m[f"saving_{r}"], want)
     d = row(rep, "t7_breakeven", pair="Hybrid vs Chỉ-luật", mix="không trọng số")
-    # Chỉ-luật trên 9 lá: fixed 12/9 (lá 09 gold HITL route L2 tốn 3), miss 0 → r* = (12/9 − 11/9)/(2/9) = 1/2
-    assert (d["reason"], d["n_pairs"]) == ("ok", 9)
-    assert close(d["fixed_b"], 12 / 9) and close(d["miss_b"], 0.0) and close(d["r_star"], 0.5)
-    for r, want in ((5, -9 / 9), (10, -19 / 9), (20, -39 / 9)):
+    # Chỉ-luật trên phần giao: fixed 9/8, miss 0 → r* = (9/8 − 11/8)/(1/8) = −2 ≤ 0 → dominated (Hybrid đắt hơn với mọi r, như T2)
+    assert (d["reason"], d["n_pairs"], d["r_star"]) == ("dominated", 8, None)
+    assert close(d["fixed_b"], 9 / 8) and close(d["miss_b"], 0.0)
+    for r, want in ((5, -7 / 8), (10, -12 / 8), (20, -22 / 8)):  # (−2 − r)/8
         assert close(d[f"saving_{r}"], want)
-    w = row(rep, "t7_breakeven", pair="Hybrid vs Chỉ-luật", mix="70/20/10")  # fixed_B 0,2·1,5 + 0,1·3 = 0,6; fixed_A 0,55; miss_A 0,1
-    assert close(w["fixed_a"], 0.55) and close(w["fixed_b"], 0.6) and close(w["miss_a"], 0.1) and close(w["r_star"], 0.5)
+    # 70/20/10: Hybrid approval (03,04,08) fixed 2/3, miss 1/3; sensitive fixed 4,5 → fixed_A = 0,2·2/3 + 0,1·4,5 = 7/12, miss_A = 1/15
+    w = row(rep, "t7_breakeven", pair="Hybrid vs Thủ công", mix="70/20/10")  # Thủ công 0,7·1 + 0,2·1 + 0,1·6 = 1,5
+    assert close(w["fixed_a"], 7 / 12) and close(w["miss_a"], 1 / 15) and close(w["fixed_b"], 1.5) and close(w["r_star"], 13.75)
+    wr = row(rep, "t7_breakeven", pair="Hybrid vs Chỉ-luật", mix="70/20/10")  # fixed_B 0,2·1 + 0,1·3 = 0,5
+    assert close(wr["fixed_b"], 0.5) and wr["reason"] == "dominated"
     assert {r["mix"] for r in rows(rep, "t7_breakeven")} == {"không trọng số", "70/20/10", "60/30/10", "80/15/5"}
+
+
+def test_t7_same_sample_as_t1(rep: Report) -> None:
+    """T7 trên CÙNG phần giao với T1: cột meta, n và chi phí ở r = 10 (ma trận mặc định) trùng T1/T2/T5."""
+    t1 = {r["arm"]: r for r in rows(rep, "t1_rq1_cost")}
+    meta = ("n", "n_unlabeled", "n_excluded")
+    for arm in ("Chỉ-LLM", "Hybrid"):
+        for other in ("Thủ công", "Chỉ-luật"):
+            b = row(rep, "t7_breakeven", pair=f"{arm} vs {other}", mix="không trọng số")
+            assert tuple(b[k] for k in meta) == tuple(t1[arm][k] for k in meta) == (8, 1, 1), (arm, other)
+            assert b["n_pairs"] == t1[arm]["n"] and (b["n_excluded_a"], b["n_excluded_b"]) == (0, 0)
+            assert close(b["fixed_a"] + 10 * b["miss_a"], t1[arm]["cost"]), (arm, other)
+            assert close(b["fixed_b"] + 10 * b["miss_b"], t1[other]["cost"]), (arm, other)
+    assert close(row(rep, "t7_breakeven", pair="Hybrid vs Thủ công", mix="không trọng số")["fixed_b"], 2.25)  # = T1 Thủ công
+    d = row(rep, "t7_breakeven", pair="Hybrid vs Chỉ-luật", mix="không trọng số")
+    assert close(d["saving_10"], -row(rep, "t2_rq1_cost_diff", comparison="Hybrid − Chỉ-luật")["diff"])
+    w = row(rep, "t7_breakeven", pair="Hybrid vs Thủ công", mix="70/20/10")
+    assert close(w["fixed_a"] + 10 * w["miss_a"], row(rep, "t5_operating_mix", arm="Hybrid", mix="70/20/10 (chính)")["cost_weighted"])
 
 
 def test_t8_ablation(rep: Report) -> None:
@@ -503,6 +524,7 @@ def test_empty_common_set(tmp_path: Path) -> None:
     rep = build_report(arms, None, n_boot=20)
     assert any("Phần giao rỗng" in w for w in rep.warnings)
     assert row(rep, "t1_rq1_cost", arm="Hybrid")["cost"] is None and row(rep, "t1_rq1_cost", arm="Hybrid")["n"] == 0
+    assert not rows(rep, "t7_breakeven")  # phần giao rỗng → không bịa số hoà vốn
 
 
 # ---- kết luận RQ1 -----------------------------------------------------------------------------------------------------------
