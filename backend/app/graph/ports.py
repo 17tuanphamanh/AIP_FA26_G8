@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow, InboxRow, OpenWaitKind
+from app.approval.store import ApprovalRow, InboxRow, OpenWaitKind, PolicyMatchRow
 from app.db.identity import LiveSession
 from app.db.runtime import (
     DueReminder,
@@ -299,6 +299,11 @@ class ApprovalRepo(Protocol):
 
     async def procedure_title(self, doc_id: str) -> str | None:
         """4c P6: tiêu đề tài liệu `doc_id` ở bản KB hiện hành; không có → None (không chặn)."""
+        ...
+
+    async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
+        """P3 tuần 8 (`ApprovalView.matched_rules`): `detail.all_matched` + `matched_rule_id` của dòng B13/B14 MỚI NHẤT (`log_id`) có
+        `created_at <= before` (lúc tạo phiếu); không có → None."""
         ...
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:

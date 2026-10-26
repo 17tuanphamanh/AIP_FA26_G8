@@ -762,7 +762,8 @@ async def test_f6_f12_openapi_approval_view_schema() -> None:
     ok = spec["paths"][VIEW_ROUTE]["get"]["responses"]["200"]["content"]["application/json"]["schema"]  # fmt: skip
     assert _ref_name(ok) == "ApprovalView", ok
     view = schemas["ApprovalView"]["properties"]
-    assert set(view) == VIEW_KEYS
+    assert set(view) == VIEW_KEYS | {"matched_rules"}  # P3 tuần 8: khoá tuỳ chọn (không có dữ liệu B13/B14 → bỏ khoá)
+    assert set(schemas["ApprovalView"]["required"]) == VIEW_KEYS
     assert _ref_name(view["affected"]) == "AffectedView", view["affected"]
     affected = schemas["AffectedView"]["properties"]
     assert set(affected) == AFFECTED_KEYS

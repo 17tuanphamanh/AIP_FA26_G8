@@ -25,7 +25,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from app.approval.store import ApprovalRow, InboxRow, NoticeKind, OpenWaitKind
+from app.approval.store import (
+    ApprovalRow,
+    InboxRow,
+    NoticeKind,
+    OpenWaitKind,
+    PolicyMatchRow,
+)
 from app.audit.writer import check_audit_row
 from app.auth.models import UserRecord
 from app.auth.service import auth_config, lock_policy
@@ -436,6 +442,15 @@ class MemoryApprovals:
             return max(pending, key=lambda a: a.get("created_at", a["deadline"]))["deadline"] if pending else None
         waits = [w["deadline"] for w in self._waits if (w["ticket_id"], w["kind"]) == (ticket_id, kind) and w["fired_at"] is None]
         return max(waits) if waits else None
+
+    async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
+        """Như SQL (P3 tuần 8): dòng B13/B14 ghi SAU CÙNG (thứ tự ghi = `log_id`) có `created_at <= before`."""
+        rows = [r for r in (self._audit.rows if self._audit else [])
+                if (r["ticket_id"], r["step"]) == (ticket_id, "B13/B14") and r.get("created_at", before) <= before]  # fmt: skip
+        if not rows:
+            return None
+        last = rows[-1]
+        return PolicyMatchRow(all_matched=(last.get("detail") or {}).get("all_matched"), matched_rule_id=last.get("matched_rule_id"))
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:
         """Như SQL (4d P3): dòng `B13/B14 risk_decided` ghi SAU CÙNG (thứ tự ghi = `log_id`) + có `B10 deflected_info_only`."""
