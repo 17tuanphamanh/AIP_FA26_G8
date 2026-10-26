@@ -52,6 +52,7 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
 from app.api.llm_status import router as llm_status_router
+from app.api.notifications import router as notifications_router
 from app.api.policy import router as policy_router
 from app.api.strategy import router as strategy_router
 from app.api.tickets import router as tickets_router
@@ -75,6 +76,7 @@ from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
 from app.db.m5_strategy import SqlStrategyStore
+from app.db.notifications import NotificationSource, SqlNotificationSource
 from app.db.rate_limits import (
     LOOSE_RATES_WARNING,
     RateLimits,
@@ -317,6 +319,7 @@ def create_app(
     rate: RateGate | None = None,
     events_feed: AuditFeed | None = None,
     trace: TraceSource | None = None,
+    notifications: NotificationSource | None = None,
     strategy: StrategyStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -343,6 +346,7 @@ def create_app(
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
             app.state.events_feed = events_feed or SqlAuditFeed(engines.main)  # SSE tiến trình ticket (api/events.py)
             app.state.trace = trace or SqlTraceSource(engines.main)  # nhật ký quyết định (chỉ SELECT)
+            app.state.notifications = notifications or SqlNotificationSource(engines.main)  # GET /api/me/notifications (chỉ SELECT)
             rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
@@ -425,6 +429,7 @@ def create_app(
     app.include_router(approvals_router)
     app.include_router(escalations_router)
     app.include_router(trace_router)  # GET /api/tickets/{id}/trace (chỉ đọc)
+    app.include_router(notifications_router)  # GET /api/me/notifications (chỉ đọc, ticket của chính người gọi)
     return app
 
 
