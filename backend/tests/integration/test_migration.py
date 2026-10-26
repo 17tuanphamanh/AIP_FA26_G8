@@ -122,7 +122,8 @@ def test_downgrade_is_clean_then_upgrade_again(migrated: PgUrls) -> None:
 
 def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
     """0003 hạ xuống bỏ đúng 4 bảng checkpoint; nâng lại chạy `setup()` từ đầu, grant lại app_rw.
-    Gói 2b (PLAN-2B1 G8 #5): xuống `0002` thì `rate_hits` (0010) cũng không còn; notify-email: `email_outbox` (0012) cũng vậy."""
+    Gói 2b (PLAN-2B1 G8 #5): xuống `0002` thì `rate_hits` (0010) cũng không còn; notify-email: `email_outbox` (0012) cũng vậy; D-60:
+    `m5_strategy_changes` (0013) cũng vậy."""
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
         command.upgrade(cfg, "head")
@@ -130,7 +131,7 @@ def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
         owner = create_engine(db.role("app_migrate"))
         try:
             with owner.connect() as conn:
-                assert _all_tables(conn) == EXPECTED_TABLES - {"rate_hits", "email_outbox"}
+                assert _all_tables(conn) == EXPECTED_TABLES - {"rate_hits", "email_outbox", "m5_strategy_changes"}  # D-60: 0013
             command.upgrade(cfg, "head")
             with owner.connect() as conn:
                 assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)

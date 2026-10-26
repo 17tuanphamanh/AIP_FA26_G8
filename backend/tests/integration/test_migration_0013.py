@@ -54,9 +54,10 @@ def _state(engine: Engine) -> dict[str, Any]:
               for p in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")} if table else {}  # fmt: skip
         monitor = conn.execute(text("SELECT has_table_privilege('app_monitor', 'm5_strategy_changes', 'SELECT')")).scalar() \
             if table else None  # fmt: skip
+        # pg_trigger (không information_schema.triggers — view đó không liệt kê trigger TRUNCATE)
         triggers: set[str] = set(conn.execute(text(
-            "SELECT trigger_name FROM information_schema.triggers WHERE event_object_table = 'm5_strategy_changes'"
-        )).scalars())  # fmt: skip
+            "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgrelid = to_regclass('public.m5_strategy_changes')"
+        )).scalars()) if table else set()  # fmt: skip
     tickets = _columns(engine, "tickets")
     with engine.connect() as conn:
         note_check = conn.execute(text(
