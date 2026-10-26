@@ -1,8 +1,11 @@
 // (a) vai quản lý: quan.tm bắt buộc OTP → đúng trang đầu + đúng menu thanh bên (hợp đồng thông báo mục 3.1).
 // Mã OTP do test TỰ SINH (TOTP RFC 6238, e2e/totp.ts) từ E2E_MANAGER_TOTP_SECRET (base32, secret đã enroll MFA của
 // quan.tm). Không có biến → BỎ QUA. Backend KHÔNG có cờ bỏ MFA và test này không thêm cờ nào.
-// Tối đa 2 lần OTP mỗi lượt (backend khoá ở 5 lần sai / 10 phút): mã của bước hiện tại; bị từ chối (401 — đồng hồ máy
-// lệch) → mã của bước KẾ TIẾP một lần; vẫn bị từ chối → đỏ, không thử nữa. retries = 0 (playwright.config.ts).
+// Hạn chế OTP sai (ĐP 27/10 — sai cộng dồn có thể bắn cảnh báo an ninh / khoá quan.tm; backend khoá 5 lần / 10 phút):
+// - Trước lần đầu: cửa sổ 30 s hiện tại còn < 5 s → chờ sang cửa sổ mới rồi mới sinh mã.
+// - 401 lần đầu → DỪNG NGAY, trừ đúng một trường hợp: mã rơi sát ranh giới cửa sổ (lúc nhận 401 đồng hồ đã sang cửa
+//   sổ sau, hoặc lúc gửi còn ≤ 3 s). Khi đó chờ sang cửa sổ mới, sinh lại mã TỪ THỜI GIAN HIỆN TẠI (không đoán mã bước
+//   kế tiếp), gửi lần 2. Sai lần 2 → dừng. Thường chỉ 1 mã, tối đa 2 mã mỗi lượt. retries = 0 (playwright.config.ts).
 import { expect, test } from "@playwright/test";
 import {
   ACCOUNTS,
@@ -16,10 +19,14 @@ import {
 } from "./support.ts";
 import { base32Decode, TOTP_STEP_SECONDS, totpAt, totpCounter } from "./totp.ts";
 
-/** Tối đa số lần gửi OTP mỗi lượt chạy. */
-const MAX_OTP_ATTEMPTS = 2;
-/** Còn ít hơn chừng này giây trong bước 30 s thì chờ sang bước mới rồi mới sinh mã (tránh mã hết hạn giữa đường). */
+/** Còn ít hơn chừng này giây trong cửa sổ 30 s thì chờ sang cửa sổ mới rồi mới sinh mã lần đầu. */
 const MIN_SECONDS_LEFT = 5;
+/** Lúc gửi mà cửa sổ còn ≤ chừng này giây → coi là sát ranh giới (được thử lại một lần). */
+const NEAR_BOUNDARY_SECONDS = 3;
+const OTP_REJECTED = "OTP bị từ chối — kiểm E2E_MANAGER_TOTP_SECRET và giờ máy (đồng bộ thời gian)";
+
+const nowSeconds = () => Date.now() / 1000;
+const secondsLeftInWindow = () => TOTP_STEP_SECONDS - (nowSeconds() % TOTP_STEP_SECONDS);
 
 // Ô OTP hiện chữ số (không phải type=password) → không chụp ảnh kể cả khi đỏ.
 test.use({ screenshot: "off" });
@@ -40,23 +47,36 @@ test(`quản lý ${ACCOUNTS.manager.username} (OTP) → ${ACCOUNTS.manager.home}
   const step = await afterSubmit(page);
   expect(step, `${account.username}: không sang bước OTP (POST /api/auth/login → ${status}; cần 401 mfa_required)`).toBe("otp");
 
-  const secondsLeft = TOTP_STEP_SECONDS - ((Date.now() / 1000) % TOTP_STEP_SECONDS);
-  if (secondsLeft < MIN_SECONDS_LEFT) await page.waitForTimeout(Math.ceil((secondsLeft + 0.5) * 1000));
-  const counter = totpCounter(Date.now() / 1000);
+  if (secondsLeftInWindow() < MIN_SECONDS_LEFT) await page.waitForTimeout(Math.ceil((secondsLeftInWindow() + 0.5) * 1000));
+
+  /** Sinh mã từ thời gian HIỆN TẠI, gửi, chờ kết quả. Mã chỉ nằm trong biến, không in. */
+  const sendOtp = async () => {
+    const counter = totpCounter(nowSeconds());
+    const leftAtSend = secondsLeftInWindow();
+    const status = await submitOtp(page, totpAt(totpSecret, counter));
+    // Ngay lúc nhận phản hồi: đồng hồ đã sang cửa sổ sau, hoặc lúc gửi đã sát ranh giới.
+    const nearBoundary = totpCounter(nowSeconds()) !== counter || leftAtSend <= NEAR_BOUNDARY_SECONDS;
+    const state = await afterSubmit(page, { fromOtp: true });
+    return { counter, status, state, nearBoundary };
+  };
 
   const statuses: number[] = [];
-  let state = "";
-  for (let attempt = 0; attempt < MAX_OTP_ATTEMPTS; attempt += 1) {
-    const otpStatus = await submitOtp(page, totpAt(totpSecret, counter + attempt));
-    statuses.push(otpStatus);
-    state = await afterSubmit(page, { fromOtp: true });
-    if (state === "signedIn" || otpStatus !== 401) break; // khác 401 (vd bị khoá, 5xx) → không thử mã kế tiếp
+  const first = await sendOtp();
+  statuses.push(first.status);
+  let state = first.state;
+  if (state !== "signedIn" && first.status === 401 && first.nearBoundary) {
+    // Mã có thể đã hết hạn giữa đường: chờ tới khi đã sang cửa sổ SAU cửa sổ của mã đầu (+0,5 s; đã sang rồi thì không
+    // chờ), rồi sinh lại từ thời gian hiện tại — đúng MỘT lần.
+    const nextWindowAt = (first.counter + 1) * TOTP_STEP_SECONDS + 0.5;
+    await page.waitForTimeout(Math.max(0, Math.ceil((nextWindowAt - nowSeconds()) * 1000)));
+    const second = await sendOtp();
+    statuses.push(second.status);
+    state = second.state;
   }
   expect(
     state,
-    `${account.username}: OTP tự sinh không được nhận sau ${statuses.length} lần (POST /api/auth/login → ${statuses.join(", ")}). ` +
-      "Kiểm đồng hồ máy (phải đúng giờ, tự đồng bộ) và E2E_MANAGER_TOTP_SECRET (đúng secret đã enroll). " +
-      "Đừng chạy lặp liên tục: backend khoá ở 5 lần sai / 10 phút.",
+    `${account.username}: ${OTP_REJECTED}. Đã gửi ${statuses.length} mã (POST /api/auth/login → ${statuses.join(", ")}). ` +
+      "KHÔNG chạy lại liên tục — báo Tuấn Anh (backend khoá ở 5 lần sai / 10 phút).",
   ).toBe("signedIn");
   await expectHomeAndNav(page, account);
 });
