@@ -1,8 +1,9 @@
 """Màn xem trạng thái hệ thống giả lập (mock console) — để demo trước/sau khi agent xử lý ticket.
 
-HTML dựng ở server, tối giản, tự làm mới 5 giây, CHỈ ĐỌC (mọi route là GET, không đổi state). Chỉ phục vụ khi `APP_ENV` ∈
-{dev, test} — biến thiếu hoặc giá trị khác (prod, staging…) → 404 như thể route không tồn tại. Đọc `APP_ENV` mỗi request
-(không cache) để test đổi được bằng monkeypatch.
+HTML dựng ở server, tối giản, tự làm mới 5 giây, CHỈ ĐỌC (mọi route là GET, không đổi state). Chỉ phục vụ khi CẢ HAI: `APP_ENV` ∈
+{dev, test} VÀ cờ `MOCK_CONSOLE_ENABLED` bật (đúng `1` hoặc `true`; mặc định TẮT — P5 tuần 8). Thiếu một trong hai (biến thiếu, giá trị
+khác như prod/staging, `0`, `yes`…) → 404 như thể route không tồn tại, ở `/console` và MỌI trang con (dependency của router). Đọc
+hai biến mỗi request (không cache) để test đổi được bằng monkeypatch.
 
 Mật khẩu: chỉ trang `/console/phone/{user_id}` (điện thoại của nhân viên) hiện mật khẩu tạm, và chỉ SMS gửi tới đúng số của
 user đó. Mọi trang khác dùng `OutboxMessage.view()` (đã che) hoặc không đụng tới nội dung tin; `password_hash` không bao giờ in.
@@ -29,13 +30,15 @@ from app.state import Connection, MockState, User
 from app.vpn import cert_view
 
 CONSOLE_ENVS = frozenset({"dev", "test"})
+CONSOLE_FLAG = "MOCK_CONSOLE_ENABLED"
+CONSOLE_FLAG_ON = frozenset({"1", "true"})
 REFRESH_SECONDS = 5
 VN_TZ = timezone(timedelta(hours=7))
 DASH = "—"
 
 
 def _require_dev_env() -> None:
-    if os.environ.get("APP_ENV") not in CONSOLE_ENVS:
+    if os.environ.get("APP_ENV") not in CONSOLE_ENVS or os.environ.get(CONSOLE_FLAG) not in CONSOLE_FLAG_ON:
         raise HTTPException(404)
 
 
