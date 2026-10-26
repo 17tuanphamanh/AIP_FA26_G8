@@ -68,17 +68,29 @@ describe("t181: handler MSW N-PA — hình dạng hợp đồng (parser FE đọ
     resetStrategyMock();
   });
 
-  it("strategies: real|sim, source trả lại đúng, 17 khoá đúng thứ tự, 1 ô mẫu < 20, 1 ô null, intent_mix khác giữa cột; source lạ → 422", async () => {
+  it("strategies: real|sim, source trả lại đúng, 17 khoá đúng thứ tự, đủ dạng ô hợp đồng sửa lần 3; ratio không khoá unit; source lạ → 422", async () => {
     stubMe(MGR);
     const q = "from=2026-10-20T00:00:00.000%2B07:00&to=2026-10-26T12:00:00.000%2B07:00";
+    const shapes = { real: { nul: 0, zeroRatio: 1, smallRatio: 1, nullValueN0: 1 }, sim: { nul: 17, zeroRatio: 0, smallRatio: 0, nullValueN0: 1 } };
     for (const source of ["real", "sim"] as const) {
       const d = parseStrategies((await call(strategyCompareHandlers, get(`/api/dashboard/strategies?${q}&source=${source}`))).body, source);
       expect(d.metrics.map((m) => m.key)).toStrictEqual([...METRIC_KEYS]);
+      expect(d.metrics.filter((m) => m.kind === "ratio" && "unit" in m)).toStrictEqual([]);
       const cells = d.metrics.flatMap((m) => Object.values(m.values));
-      expect(cells.filter((c) => c === null)).toHaveLength(1);
-      expect(cells.filter((c) => c !== null && "den" in c && c.den < 20)).toHaveLength(1);
-      const mixes = d.strategies.map((s) => JSON.stringify(d.intent_mix[s]));
-      expect(new Set(mixes).size).toBe(3);
+      const ratios = cells.filter((c) => c !== null && "den" in c) as { num: number; den: number }[];
+      expect({
+        nul: cells.filter((c) => c === null).length,
+        zeroRatio: ratios.filter((c) => c.num === 0 && c.den === 0).length,
+        smallRatio: ratios.filter((c) => c.den > 0 && c.den < 20).length,
+        nullValueN0: cells.filter((c) => c !== null && "value" in c && c.value === null && c.n === 0).length,
+      }).toStrictEqual(shapes[source]);
+      // Cả ô null CHỈ ở phương án 0 lá (sim: hybrid_guarded) — cột đó null hết, không có trong intent_mix.
+      if (source === "sim") {
+        expect(d.metrics.every((m) => m.values.hybrid_guarded === null)).toBe(true);
+        expect(Object.hasOwn(d.intent_mix, "hybrid_guarded")).toBe(false);
+      }
+      const mixes = d.strategies.filter((s) => Object.hasOwn(d.intent_mix, s)).map((s) => JSON.stringify(d.intent_mix[s]));
+      expect(new Set(mixes).size).toBe(mixes.length);
     }
     expect((await call(strategyCompareHandlers, get(`/api/dashboard/strategies?${q}&source=all`))).body.fields).toStrictEqual(["query.source"]);
     expect((await call(strategyCompareHandlers, get("/api/dashboard/strategies?from=2026-10-20T00:00:00&to=x"))).status).toBe(422);

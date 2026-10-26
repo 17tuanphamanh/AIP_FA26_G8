@@ -117,33 +117,19 @@ export const hasMore = (data: InfiniteData<EscalationQueuePage> | undefined): bo
 /** Nhịp tự tải lại của màn hàng đợi; 403 (mất quyền) → dừng. */
 export const queueRefetchInterval = (error: unknown): number | false => (is403(error) ? false : QUEUE_REFRESH_MS);
 
-/** Kết quả đóng ca mà màn dùng: mã ticket mới khi "Mở ticket mới" (null = không có / không đọc được). */
-export type CloseResult = { new_ticket_id: string | null };
-/** Mã ticket hợp lệ để hiện (như mã ticket ở nhật ký quyết định): ký tự an toàn, ≤ 64. */
-const TICKET_ID = /^[A-Za-z0-9._-]{1,64}$/;
-
-/**
- * Thân 200 của `/close` (hợp đồng sửa 21:30: `{…, new_ticket_id: str|null}`). Chỉ đọc `new_ticket_id`: chuỗi mã hợp lệ → giữ;
- * thiếu / null / sai kiểu / ký tự lạ → null. KHÔNG ném: ca ĐÃ đóng (200) — thân lạ chỉ làm mất câu phụ, không thành lỗi
- * (báo lỗi sẽ khiến người dùng gửi lại → 409).
- */
-export function parseCloseResult(body: unknown): CloseResult {
-  const id = isRecord(body) ? body.new_ticket_id : undefined;
-  return { new_ticket_id: typeof id === "string" && TICKET_ID.test(id) ? id : null };
-}
-
 /**
  * Gửi `POST /close` (KHÔNG kiểm `CLOSE_AVAILABLE` — chỉ `closeEscalation` và test gọi). CHỈ 200 = đã đóng; 2xx khác → 502
  * (không chắc đã ghi → không báo thành công giả; gửi lại → 409 `already_closed` là đúng sự thật).
  */
-export async function requestClose(id: number, body: EscalationCloseIn): Promise<CloseResult> {
+export async function requestClose(id: number, body: EscalationCloseIn): Promise<void> {
   const res = await api.request<unknown>(`/api/escalations/${id}/close`, { method: "POST", json: body });
   if (res.status !== 200) throw new ApiError(502, "unexpected_close_status");
-  return parseCloseResult(res.data);
+  // Thân 200 KHÔNG đọc (hợp đồng sửa lần 3, ĐP 26/10 23:51): `new_ticket_id` luôn null đợt này — kể cả server lỡ trả mã, màn
+  // không hiện mã / link ticket mới.
 }
 
 /** Đóng ca từ màn. Lớp chặn thứ hai (lớp đầu: nút gửi khoá): route chưa bật → tuyệt đối không gửi. */
-export async function closeEscalation(id: number, body: EscalationCloseIn): Promise<CloseResult> {
+export async function closeEscalation(id: number, body: EscalationCloseIn): Promise<void> {
   if (!CLOSE_AVAILABLE) throw new Error("close_unavailable");
   return requestClose(id, body);
 }

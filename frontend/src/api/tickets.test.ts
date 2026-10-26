@@ -42,6 +42,18 @@ describe("t23: body /confirm", () => {
   });
 });
 
+describe("t202: withBusyRetry — 503 `strategy_unavailable` có Retry-After vẫn ném NGAY, 0 lần chờ (hợp đồng sửa lần 3)", () => {
+  it("1 lần gửi, không gọi onWait; ticket_busy vẫn tự thử lại như cũ", async () => {
+    vi.useFakeTimers();
+    const onWait = vi.fn();
+    const send = vi.fn().mockRejectedValue(new ApiError(503, "strategy_unavailable", [], 1));
+    await expect(withBusyRetry(send, onWait)).rejects.toMatchObject({ status: 503, code: "strategy_unavailable" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(onWait).not.toHaveBeenCalled();
+  });
+});
+
 describe("t24: 503 + Retry-After → tự thử lại", () => {
   it("503 có Retry-After → chờ đúng số giây rồi gửi lại; 503 không có Retry-After → ném ngay", async () => {
     vi.useFakeTimers();

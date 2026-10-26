@@ -58,8 +58,11 @@ const STRATEGIES = ["rule_only", "hybrid", "hybrid_guarded"] as const;
 type S = (typeof STRATEGIES)[number];
 type Cell = { num: number; den: number } | { value: number | null; n?: number } | null;
 
-/** Số liệu minh hoạ theo nguồn: `sim` (dữ liệu thử) lớn gấp ~3 lần. Ô `l1_reject_rate` của hybrid_guarded có mẫu 12 (< 20);
- *  ô chi phí LLM của rule_only là null (không gọi LLM). */
+/** Số liệu minh hoạ theo nguồn: `sim` (dữ liệu thử) lớn gấp ~3 lần. Đủ 4 dạng ô của hợp đồng sửa lần 3 (ĐP 26/10 23:51):
+ *  - ratio thường `{num, den}` (không khoá `unit`); ô `l1_reject_rate` của hybrid_guarded có mẫu 12 (< 20);
+ *  - ratio mẫu 0 `{num: 0, den: 0}`: `quick_approve_rate` của hybrid_guarded;
+ *  - value không tính được `{value: null, n: 0}`: chi phí LLM của rule_only (không gọi LLM);
+ *  - cả ô `null` CHỈ khi phương án có 0 lá: nguồn `sim` chưa chạy hybrid_guarded → mọi ô của cột đó null, không có ở intent_mix. */
 export function buildStrategies(source: StrategySource, from: string, to: string): StrategiesDashboard {
   const k = source === "sim" ? 3 : 1;
   const tickets: Record<S, number> = { rule_only: 120 * k, hybrid: 340 * k, hybrid_guarded: 95 * k };
@@ -73,7 +76,7 @@ export function buildStrategies(source: StrategySource, from: string, to: string
     no_response_rate: { kind: "ratio", cells: { rule_only: ratio(15 * k, 103 * k), hybrid: ratio(35 * k, 300 * k), hybrid_guarded: ratio(12 * k, 78 * k) } },
     unresolved_rate: { kind: "ratio", cells: { rule_only: ratio(8 * k, 103 * k), hybrid: ratio(15 * k, 300 * k), hybrid_guarded: ratio(6 * k, 78 * k) } },
     l1_reject_rate: { kind: "ratio", cells: { rule_only: ratio(9 * k, 62 * k), hybrid: ratio(14 * k, 110 * k), hybrid_guarded: ratio(2, 12) } },
-    quick_approve_rate: { kind: "ratio", cells: { rule_only: ratio(5 * k, 62 * k), hybrid: ratio(9 * k, 110 * k), hybrid_guarded: ratio(3 * k, 48 * k) } },
+    quick_approve_rate: { kind: "ratio", cells: { rule_only: ratio(5 * k, 62 * k), hybrid: ratio(9 * k, 110 * k), hybrid_guarded: ratio(0, 0) } },
     system_time_p50: { kind: "value", unit: "s", cells: { rule_only: { value: 6.2, n: 120 * k }, hybrid: { value: 9.8, n: 340 * k }, hybrid_guarded: { value: 12.4, n: 95 * k } } },
     system_time_p90: { kind: "value", unit: "s", cells: { rule_only: { value: 14.1, n: 120 * k }, hybrid: { value: 21.7, n: 340 * k }, hybrid_guarded: { value: 26.3, n: 95 * k } } },
     human_wait_p50: { kind: "value", unit: "min", cells: { rule_only: { value: 18, n: 79 * k }, hybrid: { value: 14.5, n: 150 * k }, hybrid_guarded: { value: 16, n: 65 * k } } },
@@ -81,8 +84,9 @@ export function buildStrategies(source: StrategySource, from: string, to: string
     e5_recheck_failed: { kind: "value", unit: "count", cells: { rule_only: { value: 1 * k }, hybrid: { value: 3 * k }, hybrid_guarded: { value: 1 * k } } },
     overrides: { kind: "value", unit: "count", cells: { rule_only: { value: 4 * k }, hybrid: { value: 6 * k }, hybrid_guarded: { value: 2 * k } } },
     rollbacks: { kind: "value", unit: "count", cells: { rule_only: { value: 0 }, hybrid: { value: 2 * k }, hybrid_guarded: { value: 1 * k } } },
-    llm_cost_per_ticket: { kind: "value", unit: "usd", cells: { rule_only: null, hybrid: { value: 0.0042, n: 340 * k }, hybrid_guarded: { value: 0.0071, n: 95 * k } } },
+    llm_cost_per_ticket: { kind: "value", unit: "usd", cells: { rule_only: { value: null, n: 0 }, hybrid: { value: 0.0042, n: 340 * k }, hybrid_guarded: { value: 0.0071, n: 95 * k } } },
   };
+  const noLeaves = source === "sim"; // hybrid_guarded 0 lá ở dữ liệu thử
   return {
     source,
     from,
@@ -91,13 +95,13 @@ export function buildStrategies(source: StrategySource, from: string, to: string
     intent_mix: {
       rule_only: { vpn: 70 * k, account: 30 * k, software: 20 * k },
       hybrid: { vpn: 180 * k, account: 90 * k, access: 40 * k, software: 30 * k },
-      hybrid_guarded: { account: 45 * k, vpn: 40 * k, access: 10 * k },
+      ...(noLeaves ? {} : { hybrid_guarded: { account: 45 * k, vpn: 40 * k, access: 10 * k } }),
     },
     metrics: METRIC_KEYS.map((key) => ({
       key,
       kind: table[key].kind,
       ...(table[key].unit ? { unit: table[key].unit } : {}),
-      values: { ...table[key].cells },
+      values: { ...table[key].cells, ...(noLeaves ? { hybrid_guarded: null } : {}) },
     })),
     unavailable: [],
   };

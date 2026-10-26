@@ -9,7 +9,7 @@ import { parseApprovalView } from "./approvals.ts";
 import { createClient } from "./client.ts";
 import { BAD_STRATEGIES, getStrategiesDashboard, parseStrategies, SOURCE_MISMATCH } from "./dashboard.ts";
 import { ApiError } from "./errors.ts";
-import { CLOSE_AVAILABLE, closeEscalation, getEscalationQueuePage, loadedItems, parseCloseResult, parseQueuePage, QUEUE_PAGE_LIMIT, queuePath } from "./escalations.ts";
+import { CLOSE_AVAILABLE, closeEscalation, getEscalationQueuePage, loadedItems, parseQueuePage, QUEUE_PAGE_LIMIT, queuePath, requestClose } from "./escalations.ts";
 import {
   getStrategy,
   getStrategyHistory,
@@ -374,16 +374,15 @@ describe("t187: matched_rules.decision null (luật đã xoá khỏi chính sác
   it("decision là chuỗi lạ vẫn 502", () => bad(() => parseApprovalView({ ...approval(), matched_rules: [{ ...nullRule, decision: "x" }] }), "invalid_approval_body"));
 });
 
-describe("t188: parseCloseResult — 200 `{…, new_ticket_id}`: chuỗi mã hợp lệ → giữ; thiếu / null / sai kiểu → null (không làm vỡ)", () => {
+describe("t188: requestClose — 200 thì xong, thân KHÔNG đọc (hợp đồng sửa lần 3: new_ticket_id luôn null; server lỡ trả mã cũng bỏ qua)", () => {
   it.each([
-    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: "tkt-moi-1" }, "tkt-moi-1"],
-    [{ escalation_id: 1, close_result: "completed", new_ticket_id: null }, null],
-    [{ escalation_id: 1, close_result: "completed" }, null],
-    [{ new_ticket_id: 5 }, null],
-    [{ new_ticket_id: "<b>x</b>" }, null],
-    [null, null],
-    ["ok", null],
-  ])("%j → %s", (body, expected) => {
-    expect(parseCloseResult(body).new_ticket_id).toBe(expected);
+    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: "tkt-moi-1" }],
+    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: null }],
+    [{ escalation_id: 1, close_result: "completed" }],
+    [{ new_ticket_id: 5 }],
+    [null],
+  ])("%j → resolve undefined", async (body) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, body)));
+    await expect(requestClose(1, { close_result: "reopened_as_new", note: "x" })).resolves.toBeUndefined();
   });
 });

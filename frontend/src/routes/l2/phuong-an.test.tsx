@@ -15,7 +15,7 @@ import { closeOutcome } from "../../mocks/handlers/escalation-close.ts";
 import { queuePage } from "../../mocks/handlers/escalation-queue.ts";
 import { EscalationDetailRoute } from "./EscalationDetail.tsx";
 import { EscalationQueue } from "./EscalationQueue.tsx";
-import { ALREADY_CLOSED_TEXT, CLOSED_TEXT } from "./queue.ts";
+import { ALREADY_CLOSED_TEXT, CLOSED_TEXT, REOPENED_TEXT } from "./queue.ts";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -275,7 +275,7 @@ describe("t180: ca đã đóng (?status=closed) → chỉ đọc: kết quả, g
 
 // ------------------------------------------------------------------------------------------------ t189, t190 (hợp đồng sửa 21:15/21:30)
 
-describe("t189: đóng ca 200 `{…, new_ticket_id}` — 'Mở ticket mới' + mã ≠ null → 'Đã tạo yêu cầu mới #<mã>' (chữ thường, không link); null / thiếu → không nhắc", () => {
+describe("t189: đóng ca 200 — 'Mở ticket mới' → đúng câu REOPENED_TEXT, KHÔNG mã / link ticket mới (kể cả server lỡ trả mã); kết quả khác giữ CLOSED_TEXT", () => {
   async function closeWith(result: RegExp, override?: () => Response) {
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
@@ -287,21 +287,26 @@ describe("t189: đóng ca 200 `{…, new_ticket_id}` — 'Mở ticket mới' + m
     fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
     return { done: await screen.findByTestId("close-done"), target };
   }
-  it("reopened_as_new → 'Đã tạo yêu cầu mới #<mã>' (mã từ server), không có link tới mã", async () => {
-    const { done, target } = await closeWith(/Mở ticket mới/);
-    const id = `tkt-demo-esc-moi-${target.escalation_id}`;
-    expect(done.textContent).toBe(`${CLOSED_TEXT} Đã tạo yêu cầu mới #${id}`);
-    expect(within(done).getByTestId("close-new-ticket").textContent).toBe(id);
+  it("reopened_as_new (MSW: new_ticket_id null) → 'Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.'", async () => {
+    const { done } = await closeWith(/Mở ticket mới/);
+    expect(REOPENED_TEXT).toBe("Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.");
+    expect(done.textContent).toBe(REOPENED_TEXT);
     expect(done.querySelector("a")).toBeNull();
-    expect([...document.querySelectorAll("a")].some((a) => a.textContent?.includes(id) || a.getAttribute("href")?.includes(id))).toBe(false);
   });
-  it("completed → không nhắc ticket mới (server trả null)", async () => {
+  it("reopened_as_new mà server lỡ trả mã → vẫn đúng câu, mã KHÔNG xuất hiện ở đâu trên màn (không chữ, không link)", async () => {
+    const leaked = "tkt-lo-ma-999";
+    const { done } = await closeWith(/Mở ticket mới/, () => json(200, { escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: leaked }));
+    expect(done.textContent).toBe(REOPENED_TEXT);
+    expect(document.body.textContent).not.toContain(leaked);
+    expect([...document.querySelectorAll("a")].some((a) => a.getAttribute("href")?.includes(leaked))).toBe(false);
+    expect(document.body.textContent).not.toMatch(/Đã tạo yêu cầu mới/);
+  });
+  it("completed → câu cũ CLOSED_TEXT (không câu 'Nhân viên sẽ được báo')", async () => {
     const { done } = await closeWith(/Đã hoàn tất/);
     expect(done.textContent).toBe(CLOSED_TEXT);
-    expect(screen.queryByTestId("close-new-ticket")).toBeNull();
   });
-  it("thân 200 thiếu khoá new_ticket_id → vẫn thành công, không nhắc", async () => {
-    const { done } = await closeWith(/Mở ticket mới/, () => json(200, { escalation_id: 1, close_result: "reopened_as_new" }));
+  it("confirmed_denial → câu cũ CLOSED_TEXT", async () => {
+    const { done } = await closeWith(/Xác nhận từ chối/);
     expect(done.textContent).toBe(CLOSED_TEXT);
   });
   it("404 not_found → câu lỗi chung, form giữ nguyên", async () => {

@@ -322,3 +322,50 @@ describe("t123: final_state '__proto__' / 'constructor' / 'toString' → câu k�
     }
   });
 });
+
+// ------------------------------------------------------------------------------------------------ t201 (hợp đồng sửa lần 3, ĐP 26/10 23:51)
+
+describe("t201: tạo ticket 503 `strategy_unavailable` → đúng câu, giữ chữ đã gõ, KHÔNG tự gửi lại (kể cả có Retry-After), không lộ mã", () => {
+  it("1 lần gọi; câu đúng chữ; ô nhập giữ nguyên; người dùng bấm Gửi lại → gọi lần 2", async () => {
+    const TEXT = "Tôi không vào được VPN từ sáng nay.";
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ detail: "strategy_unavailable" }), { status: 503, headers: { "Content-Type": "application/json", "Retry-After": "1" } }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const queryClient = new QueryClient();
+    const rendered = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/chat"]}>
+          <Routes>
+            <Route path="/chat" element={<ChatHome />} />
+            <Route path="/chat/:ticketId" element={<p>trang ticket</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    try {
+      const box = screen.getByLabelText("Mô tả vấn đề") as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: TEXT } });
+      fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe("Hệ thống tạm thời chưa nhận yêu cầu, vui lòng thử lại sau ít phút.");
+      expect(box.value).toBe(TEXT);
+      expect(document.body.textContent).not.toMatch(/strategy_unavailable|503|tự thử lại/);
+      // Quá Retry-After (1 giây) mà vẫn chỉ 1 lần gọi — không tự gửi lại.
+      await new Promise((r) => setTimeout(r, 1_200));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText("trang ticket")).toBeNull();
+      // Người dùng tự bấm gửi lại → đúng 1 lần gọi nữa, cùng chữ.
+      fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+      const [, init] = fetchSpy.mock.calls[1] as unknown as [string, RequestInit];
+      expect(JSON.parse(String(init.body))).toStrictEqual({ text: TEXT });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(box.value).toBe(TEXT);
+    } finally {
+      rendered.unmount();
+      queryClient.clear();
+    }
+  });
+});

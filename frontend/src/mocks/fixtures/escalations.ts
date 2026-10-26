@@ -74,8 +74,8 @@ export function createEscalationStore(base: number, openCount = 62) {
       if (result === "completed" && (it.is_deny_case || it.exit_code === "E6")) return { status: 422, body: { error: "invalid_request", fields: ["close_result"] } };
       open.splice(idx, 1);
       closed.unshift({ ...it, closed_at: new Date(now).toISOString(), close_result: result, closed_by: by, close_note: note });
-      const newTicket = result === "reopened_as_new" ? `${ESC_DEMO_PREFIX}moi-${id}` : null;
-      return { status: 200, body: { escalation_id: id, close_result: result, new_ticket_id: newTicket } };
+      // Hợp đồng sửa lần 3 (ĐP 26/10 23:51): `new_ticket_id` luôn null đợt này, kể cả `reopened_as_new`.
+      return { status: 200, body: { escalation_id: id, close_result: result, new_ticket_id: null } };
     },
   };
 }
