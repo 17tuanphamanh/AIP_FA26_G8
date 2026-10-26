@@ -13,7 +13,7 @@ import { useAuth } from "../../auth/useAuth.ts";
 import { FlashNotice } from "../../components/FlashNotice.tsx";
 import { DEMO_UPDATED_AT, DEMO_VERSION, POLICY_DEMO } from "../../mocks/fixtures/policy.ts";
 import { buildStrategies, METRIC_KEYS } from "../../mocks/fixtures/strategy.ts";
-import { COMPARE_NOTE, SIM_BAND } from "./compare.ts";
+import { cellText, COMPARE_NOTE, SIM_BAND } from "./compare.ts";
 import { DashboardPage } from "./DashboardPage.tsx";
 import { MONITOR_DOWN_TEXT } from "./metrics.ts";
 import { PolicyEditor } from "./PolicyEditor.tsx";
@@ -536,7 +536,7 @@ describe("t167: bảng — cột theo strategies, dòng theo metrics ĐÚNG th�
     expect(rows.find((r) => r.dataset.key === "auto_rate")!.querySelector("th")!.textContent).toBe(METRIC_LABEL.auto_rate);
     const cell = (key: string, s: string) => rows.find((r) => r.dataset.key === key)!.querySelector<HTMLElement>(`[data-strategy="${s}"]`)!.textContent;
     expect(cell("l1_reject_rate", "hybrid_guarded")).toBe("chưa đủ dữ liệu (n=12)");
-    expect(cell("llm_cost_per_ticket", "rule_only")).toBe("—");
+    expect(cell("llm_cost_per_ticket", "rule_only")).toBe("chưa đủ dữ liệu (n=0)"); // {value: null, n: 0} (hợp đồng sửa lần 3)
     expect(cell("auto_rate", "hybrid")).toBe("55,9\u00a0% (190/340)");
     expect(screen.getByTestId("compare-note").textContent).toBe(COMPARE_NOTE);
     expect(COMPARE_NOTE).toBe(
@@ -557,6 +557,41 @@ describe("t167: bảng — cột theo strategies, dòng theo metrics ĐÚNG th�
     const row = table.querySelector<HTMLElement>('[data-key="overrides"]')!;
     expect([...row.querySelectorAll("td")].map((td) => td.textContent)).toStrictEqual(["Chưa có dữ liệu", "Chưa có dữ liệu", "Chưa có dữ liệu"]);
     expect(screen.getByTestId("compare-unavailable").textContent).toBe("Chưa có dữ liệu: khoa_khac");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t200 (hợp đồng sửa lần 3, ĐP 26/10 23:51)
+
+describe("t200: ô so sánh — ratio {0,0} và value {null, n:0} → 'chưa đủ dữ liệu (n=0)' (không NaN/Infinity); cả ô null chỉ ở phương án 0 lá → '—'; không gửi source=all", () => {
+  const rowsOf = (table: HTMLElement) => [...table.querySelectorAll<HTMLElement>('[data-testid="compare-row"]')];
+  const cellOf = (table: HTMLElement, key: string, s: string) =>
+    rowsOf(table).find((r) => r.dataset.key === key)!.querySelector<HTMLElement>(`[data-strategy="${s}"]`)!.textContent;
+  it("Thật: {num:0, den:0} và {value:null, n:0} ra 'chưa đủ dữ liệu (n=0)'; không ô nào chứa NaN / Infinity / '—'", async () => {
+    renderDashboard();
+    await openCompare();
+    const table = await screen.findByTestId("compare-table");
+    expect(cellOf(table, "quick_approve_rate", "hybrid_guarded")).toBe("chưa đủ dữ liệu (n=0)");
+    expect(cellOf(table, "llm_cost_per_ticket", "rule_only")).toBe("chưa đủ dữ liệu (n=0)");
+    expect(table.textContent).not.toMatch(/NaN|Infinity|∞/);
+    const cells = [...table.querySelectorAll<HTMLElement>('[data-testid="compare-cell"]')].map((c) => c.textContent);
+    expect(cells.filter((t) => t === "—")).toStrictEqual([]);
+  });
+  it("Dữ liệu thử: phương án 0 lá (mọi ô null) → cả cột '—'; cột khác vẫn có số; mọi lần gọi chỉ source real|sim", async () => {
+    const calls = renderDashboard();
+    await openCompare();
+    await screen.findByTestId("compare-table");
+    fireEvent.click(tab("Dữ liệu thử"));
+    await waitFor(() => expect(screen.getByTestId("compare").dataset.source).toBe("sim"));
+    const table = screen.getByTestId("compare-table");
+    expect(rowsOf(table).map((r) => cellOf(table, r.dataset.key!, "hybrid_guarded"))).toStrictEqual(METRIC_KEYS.map(() => "—"));
+    expect(cellOf(table, "auto_rate", "hybrid")).toBe("55,9\u00a0% (570/1.020)");
+    expect(table.textContent).not.toMatch(/NaN|Infinity/);
+    expect(strategyCalls(calls).map((q) => q.get("source"))).toStrictEqual(["real", "sim"]);
+  });
+  it("cellText trực tiếp: {num:0, den:0} với ngưỡng bất kỳ không chia — chữ không chứa NaN", () => {
+    expect(cellText({ kind: "ratio" }, { num: 0, den: 0 })).toBe("chưa đủ dữ liệu (n=0)");
+    expect(cellText({ kind: "value", unit: "usd" }, { value: null, n: 0 })).toBe("chưa đủ dữ liệu (n=0)");
+    expect(cellText({ kind: "ratio" }, null)).toBe("—");
   });
 });
 

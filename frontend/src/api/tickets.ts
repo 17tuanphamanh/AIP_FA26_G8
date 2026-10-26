@@ -128,18 +128,21 @@ export function confirmBody(confirmed: boolean, note?: string): ConfirmIn {
 /** Số lần tự gửi lại tối đa khi 503 có `Retry-After`; số giây chờ tối đa mỗi lần. */
 export const BUSY_RETRIES = 3;
 export const BUSY_WAIT_MAX_S = 30;
+/** 503 không bao giờ tự gửi lại (kể cả có `Retry-After`). */
+export const NO_AUTO_RETRY = "strategy_unavailable";
 
 /**
  * Gửi; 503 có `Retry-After` (vd `ticket_busy`) → chờ đúng số giây đó rồi gửi lại, tối đa `BUSY_RETRIES` lần. 503 nghĩa
  * là backend CHƯA nhận (guard lỗi thì không INSERT; bận thì không `start_event`) nên gửi lại không tạo trùng. 503 không
- * có `Retry-After` (privacy guard) → ném ngay để người dùng tự thử lại (12b Q-fe-3).
+ * có `Retry-After` (privacy guard) → ném ngay để người dùng tự thử lại (12b Q-fe-3). 503 `strategy_unavailable` (hợp đồng
+ * sửa lần 3) → ném ngay DÙ có `Retry-After`: lỗi chờ vài phút, người dùng tự bấm gửi lại (chữ đã gõ giữ nguyên ở ô nhập).
  */
 export async function withBusyRetry<T>(send: () => Promise<T>, onWait: (seconds: number) => void): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await send();
     } catch (error) {
-      const busy = error instanceof ApiError && error.status === 503 && error.retryAfter !== null;
+      const busy = error instanceof ApiError && error.status === 503 && error.retryAfter !== null && error.code !== NO_AUTO_RETRY;
       if (!busy || attempt >= BUSY_RETRIES) throw error;
       const seconds = Math.min(error.retryAfter ?? 1, BUSY_WAIT_MAX_S);
       onWait(seconds);

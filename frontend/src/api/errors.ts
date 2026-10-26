@@ -75,6 +75,8 @@ const CODE_MESSAGES: Record<string, string> = {
   reauth_required: "Cần đăng nhập lại để xác nhận thao tác này.",
   privacy_guard_unavailable: "Chưa gửi được — hệ thống kiểm tra nội dung đang bận, vui lòng thử lại.",
   ticket_busy: "Hệ thống đang bận, sẽ tự thử lại.",
+  // Tạo ticket khi chưa đọc được phương án xử lý (hợp đồng sửa lần 3, ĐP 26/10 23:51): 503, KHÔNG tự gửi lại (api/tickets.ts).
+  strategy_unavailable: "Hệ thống tạm thời chưa nhận yêu cầu, vui lòng thử lại sau ít phút.",
   payload_too_large: "Nội dung quá dài.",
   // Đóng escalation (B20 §4.3; hợp đồng N-PA §4 — route be-tuan8, hiện chỉ MSW trả).
   already_closed: "Ca đã được đóng",

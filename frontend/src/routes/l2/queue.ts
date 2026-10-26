@@ -103,6 +103,9 @@ const CLOSE_TITLE: Record<string, string> = Object.fromEntries(CLOSE_OPTIONS.map
 export const closeResultLabel = (value: string): string => labelOf(CLOSE_TITLE, value);
 
 export const CLOSED_TEXT = "Đã đóng ca — ca đã rời danh sách Mở.";
+/** Đóng thành công với "Mở ticket mới" (hợp đồng sửa lần 3, ĐP 26/10 23:51): đợt này KHÔNG tạo ticket mới phía server
+ *  (`new_ticket_id` luôn null) — chỉ ghi nhận, nhân viên được báo tự gửi yêu cầu mới. Không mã, không link. */
+export const REOPENED_TEXT = "Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.";
 export const ALREADY_CLOSED_TEXT = "Ca đã được đóng";
 export const CLOSE_UNAVAILABLE_TEXT = "Chức năng đóng ca chưa bật ở máy chủ này.";
 

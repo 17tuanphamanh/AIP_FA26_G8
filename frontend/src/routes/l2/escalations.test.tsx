@@ -500,13 +500,13 @@ describe("t36: handler MSW /close — kết quả theo kho minh hoạ (N-PA: 200
     if (expected) expect(outcome.body).toStrictEqual(expected);
   });
 
-  it("200 có new_ticket_id: reopened_as_new → mã minh hoạ, kết quả khác → null; id lạ → 404 not_found (hợp đồng sửa 21:30)", () => {
+  it("200 `new_ticket_id` luôn null kể cả reopened_as_new (hợp đồng sửa lần 3); id lạ → 404 not_found", () => {
     const store = createEscalationStore(Date.now(), 10);
     const [a, b] = store.list("open").filter((i) => i.exit_code === "E3");
     expect(closeOutcome(store, a!.escalation_id, { close_result: "reopened_as_new", note: "x" }, "long.nh").body).toStrictEqual({
       escalation_id: a!.escalation_id,
       close_result: "reopened_as_new",
-      new_ticket_id: `tkt-demo-esc-moi-${a!.escalation_id}`,
+      new_ticket_id: null,
     });
     expect(closeOutcome(store, b!.escalation_id, { close_result: "completed", note: "x" }, "long.nh").body.new_ticket_id).toBeNull();
     expect(closeOutcome(store, 1, { close_result: "completed", note: "x" }, "long.nh")).toStrictEqual({ status: 404, body: { detail: "not_found" } });
