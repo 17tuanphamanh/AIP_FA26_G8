@@ -34,18 +34,18 @@ SUMMARY = [
     r"eval run [0-9a-f]{12} strategy=hybrid split=test timeout_s=\d+",
     r"scenarios: loaded=\d+",
     r"warmup: rounds=\d+ first_ms=\d+ last_ms=\d+",
-    r"outcomes: done=\d+ timeout=\d+ multi_leaf=\d+ error=\d+",
+    r"outcomes: done=\d+ timeout=\d+ multi_leaf=\d+ error=\d+ skipped_hours=\d+",
     r"records: written=\d+ route_none=\d+ calibrated_prob_nonnull=\d+ unlabeled=\d+",
     r"elapsed_s=\d+(\.\d+)?",
     r"files: predictions\.jsonl outcomes\.jsonl manifest\.json",
 ]
-V11_NULL = ("fold", "hidden_factor", "in_business_hours", "kb_gap")  # chưa có nguồn — manifest `predictions_unavailable`
+V11_NULL = ("fold", "hidden_factor", "in_business_hours")  # chưa có nguồn — manifest `predictions_unavailable`
 NOT_IN_PER_CASE = ("SENTINEL_TXT", "SENTINEL_FAM", "SENTINEL_DOC", "SENTINEL_TID", "SENTINEL_USER", "SENTINEL_PW",
                    "SENTINEL_FILE", "SENTINEL_FACTOR", "SENTINEL_ERR", "SENTINEL_NEED", "SENTINEL_ACT", "SENTINEL_TGT",
                    "SENTINEL_FOR", "SENTINEL_P", "SENTINEL_FACT", "SENTINEL_DEPT", "SENTINEL_SRC")  # fmt: skip
 
 
-def scn(n: int, flow: str, *answers: str, decision: str = "approve", expected_route: str | None = "HITL",
+def scn(n: int, flow: str, *answers: str, decision: str | None = "approve", expected_route: str | None = "HITL",
         user_id: str = "u_sentinel", extra_turns: tuple[Any, ...] = (), **over: Any) -> dict[str, Any]:  # fmt: skip
     """Kịch bản tổng hợp theo cấu trúc thật; `answers` → phần tử `{on_question_about, reply}`; mặc định ĐÃ nhãn (HITL)."""
     data = real_scenario(f"SENTINEL_ID_{n}", family=f"SENTINEL_FAM_{n}", user_id=user_id,
@@ -294,6 +294,23 @@ def test_flow_ignore_waits_for_worker(tmp_path: Path) -> None:
     assert not any("/decision" in p for p in r.paths())
 
 
+def test_flow_approval_without_decision(tmp_path: Path) -> None:
+    """#58: `approver_decision: null` (họ luật cấm, không có bước duyệt) mà stack VẪN đòi duyệt → không tự chọn quyết định: ca
+    `error`/`NoApproverDecision` ngay (không chờ tới hạn), đếm `approval_no_decision`. Bản ghi VẪN ghi, CÒN route — đây là lỗi hệ
+    thống cần đo ở chỉ số route, không được rơi mất. Null mà không gặp duyệt → bình thường."""
+    r = Run(tmp_path, scn(1, "reject", decision=None), scn(2, "direct", decision=None))
+    assert r() == 1
+    o = r.outcomes()
+    assert [(x["outcome"], x["error_type"]) for x in o] == [("error", "NoApproverDecision"), ("done", None)]
+    assert o[0]["elapsed_s"] < 30
+    assert not any("/decision" in p for p in r.paths())
+    recs = {x.scenario_id: x for x in load_predictions(r.outdir / "predictions.jsonl")}
+    rec = recs["SENTINEL_ID_1"]
+    assert (rec.route, rec.has_approval, rec.final_state, rec.expected_route) == ("HITL", True, None, "HITL")
+    assert r.manifest()["counts"]["approval_no_decision"] == 1
+    assert count(r.text, "error") == 1 and "SENTINEL" not in r.text
+
+
 def test_confirm_uses_scenario_on_confirm(tmp_path: Path) -> None:
     """Bước xác nhận dùng `{on_confirm}` của kịch bản (theo thứ tự); hết → "Đã ổn" + đếm `confirm_default`."""
     r = Run(tmp_path, scn(1, "clarify", "SENTINEL_TXT_ans", extra_turns=(confirm(False),)), scn(2, "clarify", "SENTINEL_TXT_b"))
@@ -411,13 +428,36 @@ def test_run_started_at_per_case(tmp_path: Path) -> None:
 
 
 def test_v11_unavailable_fields_null(tmp_path: Path) -> None:
-    """Lượt stack: `fold`, `kb_gap`, `hidden_factor`, `in_business_hours` = `null` tường minh trong file (không False giả)."""
+    """Lượt stack: `fold`, `hidden_factor`, `in_business_hours` = `null` tường minh trong file (không False giả)."""
     r = Run(tmp_path, scn(1, "direct"), scn(2, "calib"))
     assert r() == 0
     for line in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
         assert row["schema_version"] == "1.1"
         assert {k: row[k] for k in V11_NULL} == dict.fromkeys(V11_NULL)
+
+
+def test_kb_gap_filled_for_llm_cases_from_log4_detail(tmp_path: Path) -> None:
+    """P6 22/10: ca đi lớp LLM lấy `kb_gap` từ dòng log 4 (`detail.kb_gap`), KHÔNG từ B10 grounding (fake cố ý ghi `true` ở B10);
+    ca do luật quyết không có (null)."""
+    r = Run(tmp_path, scn(1, "direct"), scn(2, "calib"))
+    assert r() == 0
+    rows = {json.loads(x)["scenario_id"]: json.loads(x) for x in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines()}
+    by_decider = {row["decided_by"]: row["kb_gap"] for row in rows.values()}
+    assert by_decider == {"rule": None, "llm": False}
+    assert r.manifest()["counts"]["kb_gap_missing"] == 0
+
+
+def test_manifest_counts_kb_gap_intent_and_m5_aborted_missing(tmp_path: Path) -> None:
+    sim = SimStack(FakeClock())
+    sim.with_kb_gap = False  # dòng log 4 của ca LLM không có detail.kb_gap (B10 grounding vẫn có, và KHÔNG được dùng)
+    r = Run(tmp_path, scn(1, "calib"), scn(2, "bare"), sim=sim)
+    assert r() == 0
+    c = r.manifest()["counts"]
+    assert (c["kb_gap_missing"], c["intent_missing"], c["m5_aborted_unknown"]) == (1, 1, 1)
+    rows = [json.loads(x) for x in (r.outdir / "predictions.jsonl").read_text(encoding="utf-8").splitlines()]
+    bare = next(row for row in rows if row["route"] is None)
+    assert (bare["intent"], bare["m5_aborted"], bare["kb_gap"]) == (None, None, None)
 
 
 def test_manifest_v11(tmp_path: Path) -> None:
@@ -521,13 +561,17 @@ def test_cli_check_only(tmp_path: Path) -> None:
 
 
 def test_cli_check_only_real_shape(tmp_path: Path) -> None:
-    """Thư mục TỔNG HỢP đúng cấu trúc thật (chưa nhãn, có reply + confirm, nhiều ý, ignore) → nạp hết, 0 lỗi."""
+    """Thư mục TỔNG HỢP đúng cấu trúc thật (chưa nhãn, có reply + confirm, nhiều ý, ignore; thiếu `requested_for`/`params`,
+    `approver_decision` null — #58) → nạp hết, 0 lỗi."""
     r = Run(tmp_path, real_scenario("SENTINEL_ID_A"),
             real_scenario("SENTINEL_ID_B", turns=["SENTINEL_TXT_b", reply("SENTINEL_TXT_r", "account_type"), confirm(True)]),
             real_scenario("SENTINEL_ID_C", user_id="u_an", decision="ignore", intents=("vpn", "account"), expected_exit="E6"),
-            real_scenario("SENTINEL_ID_D", expected_route="AUTO"))  # fmt: skip
+            real_scenario("SENTINEL_ID_D", expected_route="AUTO"),
+            real_scenario("SENTINEL_ID_E", drop_action=("requested_for",)),
+            real_scenario("SENTINEL_ID_F", drop_action=("requested_for", "params")),
+            real_scenario("SENTINEL_ID_G", decision=None))  # fmt: skip
     assert r("--check-only", env={}, timeout=None) == 0
-    assert r.out == ["scenarios: loaded=4 errors=0"]
+    assert r.out == ["scenarios: loaded=7 errors=0"]
     assert r.deps_made == 0
 
 
@@ -572,7 +616,7 @@ def test_manifest_without_flag(tmp_path: Path) -> None:
 MANIFEST_KEYS = {
     "run_id", "config", "git_commit", "git_dirty", "app_git_sha", "commit_verified", "dataset_sha256", "dataset_file_count", "strategy",
     "split", "timeout_s", "enable_proactive_diagnosis", "llm_cache_mode", "clf_mode", "policy_sha256", "llm_backend",
-    "started_at", "finished_at", "host", "warmup", "counts", "ignored_fields", "unavailable", "approval_sla_minutes_dev",
+    "started_at", "finished_at", "passes", "host", "warmup", "counts", "ignored_fields", "unavailable", "approval_sla_minutes_dev",
     "b2_tau", "b2_judge_model", "injection_clf_sha", "intent_clf_sha", "rate_limits",
     "schema_version", "predictions_unavailable",
 }  # fmt: skip
@@ -588,8 +632,10 @@ def test_manifest_keys(tmp_path: Path) -> None:
     assert (m["strategy"], m["split"], m["timeout_s"], m["clf_mode"], m["git_commit"]) == ("hybrid", "test", 30, "shadow", GIT_SHA)
     assert m["commit_verified"] is True and m["policy_sha256"] == "ab" * 32
     assert m["git_dirty"] is False
-    assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "written": 1, "route_none": 0,
-                           "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0}  # fmt: skip
+    assert m["counts"] == {"loaded": 1, "done": 1, "timeout": 0, "multi_leaf": 0, "error": 0, "skipped_hours": 0, "written": 1,
+                           "route_none": 0,
+                           "calibrated_prob_nonnull": 0, "unlabeled": 0, "confirm_default": 0, "p_method_mismatch": 0,
+                           "approval_no_decision": 0, "kb_gap_missing": 0, "intent_missing": 0, "m5_aborted_unknown": 0}  # fmt: skip
     assert "SENTINEL" not in json.dumps(m)
 
 

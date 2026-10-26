@@ -36,6 +36,11 @@ MAKE="${MAKE_BIN:-make}"  # Makefile truyền MAKE_BIN (không dùng biến MAKE
 HEALTH_URL="http://127.0.0.1:8000/api/health"
 WAIT_S=180
 KNOWN_GATES="02345"
+# Phase 5 (gói 2b, D-54 a): ngưỡng 429 nới bằng số lớn ở MỌI lần tạo lại backend+worker ngay trước một cổng (`recreate` của gate2–5) —
+# gate2 một mình tạo > 10 ticket cho `an.nv` trong vài phút. Bước 3 `make up` KHÔNG nới (Q-2B1-7 A): `check_app_env` chạy SAU khi dựng
+# mà bước 3 đỏ thì không có bước 8 → không được bỏ lại stack đã nới; giữa bước 3 và cổng đầu không có ticket nào (seed, health, ingest
+# `run --rm`). Cùng số với `RATE=loose` của Makefile (test ghim). Bước 8 gỡ → về `.env`.
+LOOSE_RATES="TICKET_RATE_10MIN=100000 TICKET_RATE_HOUR=100000 MESSAGE_RATE_10MIN=100000"
 
 if ! [[ "$G" =~ ^[0-9]+$ ]]; then
   echo "G phải là chuỗi chữ số (vd 3, 23, 0) — nhận: '$G'" >&2
@@ -140,8 +145,8 @@ wait_health() {
 }
 
 recreate() { # recreate <FAKE_SCENARIO> <FAKE_NODE_DELAY> <APPROVAL_SLA_MINUTES_DEV> — tạo lại backend+worker với biến shell (rỗng = không đặt)
-  # shellcheck disable=SC2086  # $COMPOSE là chuỗi lệnh, cần tách từ
-  env FAKE_SCENARIO="$1" FAKE_NODE_DELAY="$2" APPROVAL_SLA_MINUTES_DEV="$3" \
+  # shellcheck disable=SC2086  # $COMPOSE, $LOOSE_RATES là chuỗi lệnh / chuỗi phép gán, cần tách từ
+  env FAKE_SCENARIO="$1" FAKE_NODE_DELAY="$2" APPROVAL_SLA_MINUTES_DEV="$3" $LOOSE_RATES \
     $COMPOSE up -d --force-recreate --no-deps --wait --wait-timeout "$WAIT_S" backend worker || return 1
   wait_health || return 1
 }
@@ -165,9 +170,9 @@ step_gate2() { recreate approval 40 "" || return 1; "$MAKE" gate2 S=all || retur
 step_gate4() { recreate "" "" 2 || return 1; "$MAKE" gate4 S=all || return 1; }
 step_gate5() { recreate "" "" "" || return 1; "$MAKE" gate5 S=all || return 1; }
 step_bench() { PYTHONPATH=backend uv run python -m tests.stack.bench_checkpoint || return 1; }
-step_restore() { # bước 8 — không biến shell nào đè FAKE_* / APPROVAL_SLA_MINUTES_DEV → đúng cấu hình .env
+step_restore() { # bước 8 — không biến shell nào đè FAKE_* / APPROVAL_SLA_MINUTES_DEV / ngưỡng 429 → đúng cấu hình .env
   # shellcheck disable=SC2086
-  env -u FAKE_SCENARIO -u FAKE_NODE_DELAY -u APPROVAL_SLA_MINUTES_DEV \
+  env -u FAKE_SCENARIO -u FAKE_NODE_DELAY -u APPROVAL_SLA_MINUTES_DEV -u TICKET_RATE_10MIN -u TICKET_RATE_HOUR -u MESSAGE_RATE_10MIN \
     $COMPOSE up -d --force-recreate --no-deps --wait --wait-timeout "$WAIT_S" backend worker || return 1
   wait_health || return 1
 }

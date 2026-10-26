@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from app.notify import OutboxMessage
 from app.seed_model import SeedData
 
 SEED_PATH = Path(__file__).resolve().parents[1] / "seed.json"
@@ -53,6 +54,10 @@ class User:
     password_hash: str
     accounts: dict[str, Account]
     lockouts: list[Lockout]
+    phone: str | None = None  # F2: số nhận SMS đặt lại mật khẩu — KHÔNG trả ra API
+    # F2: sau reset qua SMS, `password_hash` là hash của mật khẩu tạm (mật khẩu cũ hỏng ngay); hai trường dưới mô tả trạng thái tạm
+    must_change_password: bool = False
+    temp_password_expires_at: datetime | None = None
 
 
 @dataclass
@@ -140,6 +145,7 @@ class MockState:
     resources: dict[str, Resource]
     permissions: list[Permission]
     serial_seq: int = 0
+    outbox: list[OutboxMessage] = field(default_factory=list)  # F2: hộp thư đi (SMS/email), `/_admin/reset` dựng state mới → rỗng
 
     def next_serial(self) -> str:
         self.serial_seq += 1
@@ -185,6 +191,7 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
                 for kind, a in u.accounts.items()
             },
             lockouts=[Lockout(x.account_type, ago(x.days_ago), x.reason, x.source) for x in u.lockouts],
+            phone=u.phone,
         )
         for u in seed.users
     }

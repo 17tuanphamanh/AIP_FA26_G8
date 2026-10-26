@@ -46,7 +46,7 @@ def test_every_non_admin_route_is_guarded() -> None:
 def test_every_post_except_authenticate_is_a_write() -> None:
     posts = {r.path for r in GUARDED if _method(r) == "POST"} - {"/ad/authenticate"}
     assert posts == {r.path for r in WRITE_ROUTES}
-    assert len(WRITE_ROUTES) == 13  # 8 tool ghi + 5 tool hoàn tác (P5 mục 4)
+    assert len(WRITE_ROUTES) == 14  # 8 tool ghi + 5 tool hoàn tác (P5 mục 4) + /ad/change-password (F2, chưa có tool backend)
 
 
 @pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: r.path)

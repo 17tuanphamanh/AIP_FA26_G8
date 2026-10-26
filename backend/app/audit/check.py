@@ -239,7 +239,7 @@ def scan_log(lines: Iterable[str], scanner: SecretScanner) -> list[SecretHit]:
 def readonly_engine(dsn: str) -> AsyncEngine:
     """Engine mà MỌI giao dịch là READ ONLY (INSERT/UPDATE → lỗi Postgres `read_only_sql_transaction`) — Postgres ép theo phiên,
     không phụ thuộc quyền của role (app_rw CÓ quyền INSERT)."""
-    return create_async_engine(dsn, connect_args={"options": "-c default_transaction_read_only=on"})
+    return create_async_engine(dsn, connect_args={"options": "-c default_transaction_read_only=on"}, hide_parameters=True)
 
 
 async def load(

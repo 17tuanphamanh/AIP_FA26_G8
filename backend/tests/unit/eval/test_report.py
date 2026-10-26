@@ -39,6 +39,7 @@ from app.eval.report import (
     Report,
     SituationFnr,
     Table,
+    abort_as_l2,
     build_report,
     check_arms,
     full_auto_baseline,
@@ -100,6 +101,7 @@ def rec(name: str, i: int, *, routes: str | None = None, split: str = "test", ru
         "close_reason": "resolved_user_confirmed" if name in CLARIFY else None, "resolution_path": None,
         "has_approval": False, "clarification_turns": clar, "intent": INTENT_OF[intent], "gold_intent": intent,
         "doc_ids": None, "gold_doc_ids": (), **V11, "hidden_factor": hidden,
+        "m5_aborted": None if gold == "?" else False,  # lá đã nhãn không route (S09 llm_only, E1): M5 không bị ngắt → ngoài mẫu số
     }  # fmt: skip
     return PredictionRecord.model_validate(data)
 
@@ -631,3 +633,62 @@ def test_manual_baseline_matches_report_manual(rep: Report) -> None:
     sample = common_sample("hybrid")
     assert {r.route for r in manual_baseline(sample)} == {"HITL"}
     assert row(rep, "t3a_safety_situation", arm="Thủ công", scope="tất cả")["k_missed"] == 0
+
+
+# ---- lá không tới điểm log 4: CÙNG quy tắc với offline.py cho mọi phương án (P8 §5.4 [Chốt 22/10]) ---------------------------
+
+
+def patch_rows(path: Path, updates: Mapping[str, Mapping[str, Any]]) -> None:
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        row.update(updates.get(row["scenario_id"], {}))
+        out.append(json.dumps(row))
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def no_route(r: PredictionRecord, flag: bool | None) -> PredictionRecord:
+    return r.model_copy(update={"route": None, "decided_by": None, "raw_prob": None, "calibrated_prob": None, "p_method": None,
+                                "kb_gap": None, "m5_aborted": flag})  # fmt: skip
+
+
+def test_abort_as_l2_converts_only_aborted_route_none() -> None:
+    base = records("rule_only")
+    aborted, kept = no_route(base[2], True), no_route(base[3], False)  # S03 M5 bị ngắt; S04 không ngắt
+    unlabeled = no_route(base[9], None)  # S10 chưa nhãn: không cần cờ
+    out = abort_as_l2([aborted, kept, unlabeled, base[0]])
+    assert [r.route for r in out] == ["ESCALATE_L2", None, None, base[0].route]
+    assert out[0].decided_by is None and out[0].raw_prob is None  # chỉ đổi route, không bịa trường rủi ro
+    assert abort_as_l2(out) == out  # lặp lại trên file của offline.py (route đã đổi) không đổi gì
+
+
+def test_abort_as_l2_null_flag_on_labeled_route_none_raises() -> None:
+    with pytest.raises(ValueError, match="m5_aborted"):
+        abort_as_l2([no_route(records("rule_only")[2], None)])
+
+
+def test_load_arm_reports_file_name_when_flag_is_null(tmp_path: Path) -> None:
+    pred, mf = write_files(tmp_path, "rule_only", routes="AA-HLLAHLH")
+    patch_rows(pred, {"S03": {"m5_aborted": None}})
+    with pytest.raises(ValueError, match=r"predictions\.jsonl: m5_aborted"):
+        load_arm(pred, mf)
+
+
+def n_common(tmp: Path, *, rule_flag: bool, llm_flag: bool) -> int:
+    """S09 (nhãn HITL) không route ở Chỉ-luật và Chỉ-LLM; Hybrid có route. Số lá của phần giao (T1.n)."""
+    tmp.mkdir(parents=True, exist_ok=True)
+    arms = []
+    for name, routes, flag in (("rule_only", "AAHHLLAH-H", rule_flag), ("llm_only", "AHHHLLHH--", llm_flag), ("hybrid", "AAHALHAHAA", None)):
+        pred, mf = write_files(tmp, name, routes=routes)
+        if flag is not None:
+            patch_rows(pred, {"S09": {"m5_aborted": flag}})
+        arms.append(load_arm(pred, mf))
+    return int(row(build_report(arms, None, n_boot=20), "t1_rq1_cost", arm="Hybrid")["n"])
+
+
+def test_rule_only_uses_the_same_abort_rule_so_denominators_match(tmp_path: Path) -> None:
+    """S09 vào phần giao chỉ khi CẢ Chỉ-luật lẫn Chỉ-LLM tính nó là ESCALATE_L2 (M5 bị ngắt); một bên ngoài mẫu số → ra khỏi phần giao."""
+    assert n_common(tmp_path / "a", rule_flag=True, llm_flag=True) == 9
+    assert n_common(tmp_path / "b", rule_flag=False, llm_flag=True) == 8  # Chỉ-luật không ngắt → ngoài mẫu số
+    assert n_common(tmp_path / "c", rule_flag=True, llm_flag=False) == 8
+    assert n_common(tmp_path / "d", rule_flag=False, llm_flag=False) == 8

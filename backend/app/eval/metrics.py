@@ -347,10 +347,10 @@ def efficiency(
 # ---- G1: chỉ số theo ROUTE có trọng số + điểm hoà vốn (P8 §6.1, §6.2, §5.2; chốt #32 18/10) ----------------------------------
 # Hàm thuần trên `route` — route của stack (Chỉ-luật), offline §5.3 (phương án có LLM) hoặc giải tích (Thủ công). Ca không tới
 # điểm log 4 do `offline.py` đổi thành ESCALATE_L2 trước khi gọi (chốt 3); ở đây route None = ngoài mẫu số như §6.1.
-# TODO(G1-Q8): đặt trong metrics.py (P8 §2), N3d của mutate_g1.py giữ chuỗi gốc của đột biến cũ — chờ Tuấn Anh xác nhận ở #32.
 
 BREAKEVEN_RATIOS: tuple[float, ...] = (5.0, 10.0, 20.0)  # P8 §5.3 — độ nhạy tỉ lệ bỏ sót/duyệt 5/10/20
 SLOPE_TOL = 1e-12  # |miss_A − miss_B| ≤ SLOPE_TOL → coi là bằng nhau (chốt 1: b_A = b_B → không có điểm hoà vốn)
+FIXED_TOL = 1e-9  # |fixed_A − fixed_B| ≤ FIXED_TOL → tử số r* = 0 (Tuấn Anh 22/10, Q-G1-11): chênh lệch chỉ là nhiễu số thực
 type BreakevenReason = Literal["ok", "equal_miss", "dominated", "no_common", "missing_groups"]
 
 
@@ -382,7 +382,7 @@ class OperatingPoint:
 @dataclass(frozen=True)
 class OperatingMetrics:
     """`cost` = chi phí kỳ vọng KHÔNG trọng số (§6.1, = `mean_route_cost`) — số chính RQ1 (chốt 4); `main` (mix chính) và
-    `sensitivity` (các bộ độ nhạy) là số phụ. TODO(G1-Q6): giữ `cost` dù trùng `safety().cost` — chờ xác nhận ở #32."""
+    `sensitivity` (các bộ độ nhạy) là số phụ. Giữ `cost` dù trùng `safety().cost` (G1-Q6)."""
 
     n_m5: int
     n_unlabeled: int
@@ -457,7 +457,7 @@ def operating_metrics(
 def manual_baseline(records: Records) -> list[PredictionRecord]:
     """Thủ công giải tích (P8 §5.2: mọi ca có hành động coi là qua người): lá có điểm log 4 (route ≠ None) → HITL, lá route None
     giữ None; `strategy = "manual"`, các trường khác giữ nguyên. Hợp đồng không có trường "có hành động" → route ≠ None là đại diện
-    (P8 §6: đơn vị = lá có hành động đi tới M5). TODO(G1-Q1): Thủ công dựng từ CHÍNH phương án đem so — chờ xác nhận ở #32."""
+    (P8 §6: đơn vị = lá có hành động đi tới M5). Thủ công dựng từ CHÍNH phương án đem so, trên cùng tập lá so (G1-Q1)."""
     out: list[PredictionRecord] = []
     for r in records:
         update: dict[str, object] = {"strategy": "manual"}
@@ -539,8 +539,11 @@ def _r_star(
         return None, "missing_groups"
     if abs(ma - mb) <= SLOPE_TOL:
         return None, "equal_miss"  # chốt 1: b_A = b_B
-    r = (fb - fa) / (ma - mb)
-    return (r, "ok") if r > 0 else (None, "dominated")  # TODO(G1-Q2): r* ≤ 0 → một bên rẻ hơn với mọi r > 0
+    num = fb - fa
+    if abs(num) <= FIXED_TOL:
+        num = 0.0  # fixed bằng nhau: r* = 0 → bên miss nhỏ hơn rẻ hơn với mọi r > 0
+    r = num / (ma - mb)
+    return (r, "ok") if r > 0 else (None, "dominated")  # r* ≤ 0 → một bên rẻ hơn với mọi r > 0 (G1-Q2)
 
 
 def breakeven(
@@ -551,15 +554,16 @@ def breakeven(
 ) -> Breakeven:
     """Điểm hoà vốn r* của A so với B + tiết kiệm/ticket ở từng `ratios` (chốt 1; v1 không có ticket/tháng). Báo cáo gọi cho mỗi
     phương án có LLM X, trên phần giao chung của các phương án (G5, như T1): `breakeven(X, manual_baseline(X))` và
-    `breakeven(X, <Chỉ-luật>)`; mỗi cặp với `mix=None` (số chính) và
-    từng mix (số phụ). TODO(G1-Q7): một mix mỗi lần gọi — chờ xác nhận ở #32.
+    `breakeven(X, <Chỉ-luật>)`; mỗi cặp với `mix=None` (số chính) và từng mix (số phụ). Một mix mỗi lần gọi (G1-Q7).
 
     - Hai bên phải cùng tập `scenario_id`, cùng `split` (như `paired_family_bootstrap_diff`) và cùng `expected_route` theo
       `scenario_id` → khác: ValueError. `[]`, mix sai, ratio ≤ 0 → ValueError.
     - Phần giao (P8 §5.4 — so trên ca tới M5 ở mọi phương án): lá đã nhãn có route ở CẢ HAI bên. `n_excluded_a` =
       lá đã nhãn có route ở A mà None ở B; `n_excluded_b` ngược lại. Lá chưa nhãn bỏ qua, đếm `n_unlabeled`.
     - Không có điểm hoà vốn → `r_star` None + `reason`: `no_common` (phần giao rỗng), `missing_groups` (có mix, nhóm rỗng — Q5),
-      `equal_miss` (miss bằng nhau), `dominated` (r* ≤ 0). `saving` dấu cost_B − cost_A."""
+      `equal_miss` (miss bằng nhau ± SLOPE_TOL; xét trước dung sai fixed), `dominated` (r* ≤ 0; fixed bằng nhau ± FIXED_TOL coi
+      là tử số 0 → r* = 0). `saving` dấu cost_B − cost_A, tính độc lập với `reason`: `dominated`/`equal_miss` vẫn có số; None khi
+      phần giao rỗng hoặc nhóm thiếu."""
     _require(records_a)
     _require(records_b)
     gold_a = {r.scenario_id: r.expected_route for r in records_a}
@@ -568,7 +572,6 @@ def breakeven(
         raise ValueError("records_a, records_b: tập scenario_id khác nhau — hai phương án phải trên cùng tập kịch bản")
     if {r.split for r in records_a} ^ {r.split for r in records_b}:
         raise ValueError("records_a, records_b: split khác nhau — không so hai phương án trên hai tập dữ liệu khác")
-    # TODO(G1-Q4): cùng scenario_id khác gold → ValueError — chờ Tuấn Anh xác nhận ở #32.
     if any(gold_a[s] != gold_b[s] for s in gold_a):
         raise ValueError("records_a, records_b: cùng scenario_id mà expected_route khác nhau — hai file khác gold")
     frozen = check_mix(mix) if mix is not None else None
@@ -576,14 +579,12 @@ def breakeven(
     route_a = {r.scenario_id: r.route for r in records_a}
     route_b = {r.scenario_id: r.route for r in records_b}
     labelled = [s for s, g in gold_a.items() if g is not None]
-    # TODO(G1-Q3): phần giao + n_excluded_a/b — chờ Tuấn Anh xác nhận ở #32.
     keep = {s for s in labelled if route_a[s] is not None and route_b[s] is not None}
     common_a = [r for r in records_a if r.scenario_id in keep]
     common_b = [r for r in records_b if r.scenario_id in keep]
     missing, fa, ma = _fixed_miss(common_a, frozen)
     _, fb, mb = _fixed_miss(common_b, frozen)
     r_star, reason = _r_star(len(keep), missing, fa, ma, fb, mb)
-    # TODO(G1-Q5): saving = cost_B − cost_A (dương = A rẻ hơn) — chờ Tuấn Anh xác nhận ở #32.
     saving = {r: _minus(_cost_at(common_b, frozen, cm), _cost_at(common_a, frozen, cm)) for r, cm in matrices.items()}
     return Breakeven(
         mix=frozen,

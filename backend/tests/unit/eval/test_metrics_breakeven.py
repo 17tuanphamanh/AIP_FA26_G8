@@ -16,6 +16,7 @@ H: fixed (0+0+0+1 + 0+1 + 6+3)/8 = 11/8, miss 1/8. M: fixed (4·1 + 2·1 + 2·6)
     H vs M  (18−11)/1 = 7           (1,5−0,725)/0,1 = 7,75  (1,5−0,75)/0,15 = 5    (1,25−0,5)/0,075 = 10
     H vs R  −1 → None "dominated"   (0,85−0,725)/0,1 = 1,25 (0,9−0,75)/0,15 = 1    (0,7−0,5)/0,075 = 8/3
     R vs M  None "equal_miss"       None                    None                   None
+|fixed_A − fixed_B| ≤ FIXED_TOL = 1e-9 → tử số 0 → r* = 0 → None "dominated" (Q-G1-11); equal_miss xét trước (Q-G1-9).
 """
 
 from dataclasses import FrozenInstanceError
@@ -132,10 +133,66 @@ def test_breakeven_dominated() -> None:
 
 
 def test_breakeven_rstar_zero_is_dominated() -> None:
-    # fixed bằng nhau, miss khác → r* = 0 → không có r > 0 nào hoà → "dominated".
+    # fixed bằng nhau, miss khác → r* = 0 → không có r > 0 nào hoà → "dominated". Saving vẫn tính: ½ − (r + 1)/2 = −r/2.
     a = [leaf(1, "HITL", "AUTO"), leaf(2, "AUTO", "HITL")]  # fixed (0 + 1)/2, miss 1/2
     b = [leaf(1, "HITL", "HITL"), leaf(2, "AUTO", "AUTO")]  # fixed (1 + 0)/2, miss 0
-    assert (breakeven(a, b).r_star, breakeven(a, b).reason) == (None, "dominated")
+    t = breakeven(a, b)
+    assert (t.r_star, t.reason) == (None, "dominated")
+    assert dict(t.saving) == pytest.approx({5.0: -2.5, 10.0: -5.0, 20.0: -10.0}, abs=TOL)
+
+
+# Một lá mỗi nhóm. A: fixed 0,7·1 + 0,2·1 + 0,1·0, miss 0,1·2; B: fixed 0,2·3 + 0,1·3, miss 0. Hai fixed bằng nhau về toán (0,9).
+FIXED_EQ_A: Final = (("AUTO", "HITL"), ("HITL", "HITL"), (L2, "AUTO"))
+FIXED_EQ_B: Final = (("AUTO", "AUTO"), ("HITL", L2), (L2, L2))
+
+
+def fixed_eq_pair() -> tuple[list[PredictionRecord], list[PredictionRecord]]:
+    def build(cells: tuple[tuple[str, str], ...]) -> list[PredictionRecord]:
+        return [leaf(i, g, p) for i, (g, p) in enumerate(cells, start=1)]
+
+    return build(FIXED_EQ_A), build(FIXED_EQ_B)
+
+
+def test_breakeven_fixed_tol_float_noise() -> None:
+    # 70/20/10: fixed_A = 0.8999999999999999, fixed_B = 0.9000000000000001 (cộng dồn số thực) → không có dung sai thì
+    # r* = 2,2e-16/0,2 ≈ 1e-15 "ok"; có dung sai → tử số 0 → "dominated" (Q-G1-11). Saving = 0,9 − (0,9 + 0,2r) = −0,2r.
+    a, b = fixed_eq_pair()
+    t = breakeven(a, b, OPERATING_MIX)
+    assert t.fixed_a is not None and t.fixed_b is not None and t.fixed_a != t.fixed_b
+    assert close(t.fixed_a, 0.9) and close(t.fixed_b, 0.9) and close(t.miss_a, 0.2) and close(t.miss_b, 0.0)
+    assert (t.r_star, t.reason) == (None, "dominated")
+    assert dict(t.saving) == pytest.approx({5.0: -1.0, 10.0: -2.0, 20.0: -4.0}, abs=TOL)
+
+
+def eps_mix(eps: float) -> dict[str, float]:
+    # fixed_A = 0,9 − ε, fixed_B = 0,9 + 3ε → tử số 4ε; miss_A = 0,2 + 2ε, miss_B = 0.
+    return {"routine": 0.7 - eps, "approval": 0.2, "sensitive": 0.1 + eps}
+
+
+@pytest.mark.parametrize("eps", [2.5e-13, 2e-10])  # tử số 1e-12, 8e-10 ≤ 1e-9
+def test_breakeven_fixed_tol_within(eps: float) -> None:
+    a, b = fixed_eq_pair()
+    t = breakeven(a, b, eps_mix(eps))
+    assert t.fixed_a is not None and t.fixed_b is not None and close(t.fixed_b - t.fixed_a, 4 * eps)
+    assert (t.r_star, t.reason) == (None, "dominated")
+
+
+def test_breakeven_fixed_tol_outside() -> None:
+    # ε = 5e-10 → tử số 2e-9 > 1e-9 → giữ tử số: r* = 2e-9 / (0,2 + 1e-9) ≈ 1e-8, "ok".
+    a, b = fixed_eq_pair()
+    t = breakeven(a, b, eps_mix(5e-10))
+    assert t.reason == "ok"
+    assert t.r_star == pytest.approx(2e-9 / (0.2 + 1e-9), rel=1e-6)
+
+
+def test_breakeven_equal_miss_before_fixed_tol() -> None:
+    # fixed ½ = ½ VÀ miss 0 = 0 → "equal_miss" (xét trước dung sai fixed — Q-G1-9); saving 0 ở mọi r.
+    a = [leaf(1, "AUTO", "HITL"), leaf(2, "AUTO", "AUTO")]
+    b = [leaf(1, "AUTO", "AUTO"), leaf(2, "AUTO", "HITL")]
+    t = breakeven(a, b)
+    assert (t.r_star, t.reason) == (None, "equal_miss")
+    assert close(t.fixed_a, 0.5) and close(t.fixed_b, 0.5)
+    assert all(close(v, 0.0) for v in t.saving.values())
 
 
 def test_breakeven_equal_miss() -> None:

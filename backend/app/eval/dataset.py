@@ -1,7 +1,9 @@
 """Nạp kịch bản M8 cho harness G2 theo CẤU TRÚC THẬT (Tuấn Anh 19/10, `~/m9-notes/g2-chot.md` — chỉ tên trường + kiểu, giống nhau 186
 file) — mỗi file `*.yaml`/`*.yml` (không đệ quy) là MỘT kịch bản (mapping) hoặc một DANH SÁCH.
 
-Schema CHỈ đúng các khoá của cấu trúc thật, BẮT BUỘC đủ, `extra="forbid"` ở MỌI tầng (bắt gõ nhầm tên); `gold.hidden_factor` (P8 v1.4)
+Schema CHỈ đúng các khoá của cấu trúc thật, BẮT BUỘC đủ (trừ `gold.action.requested_for` — vắng → `requester.user_id` của người gửi, D-41 — và
+`gold.action.params` — vắng → `{}`; `gold.approver_decision` bắt buộc có khoá, nhận null = không có bước duyệt — #58),
+`extra="forbid"` ở MỌI tầng (bắt gõ nhầm tên); `gold.hidden_factor` (P8 v1.4)
 KHÔNG có trong dữ liệu → để PR hợp đồng v1.1. `allow_extra=True` (cờ `--allow-extra-fields`) → bỏ trường lạ, ghi ĐƯỜNG DẪN trường (chỉ
 số danh sách thành `*`, không giá trị) vào `Dataset.ignored_fields` — một phần tử mỗi lần bỏ.
 - `requester{user_id, role, dept, tenure_days}`: `user_id` → `username` tra seed của mock (`load_seed_users`, `mock_services/seed.json`);
@@ -17,7 +19,7 @@ tên — không phụ thuộc đường dẫn tuyệt đối hay thứ tự tạ
 
 import copy
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args
@@ -90,8 +92,8 @@ Turn = Annotated[
 class Action(_Model):
     type: str
     target: str | None  # TODO(G2-Q21): kiểu thật của target / requested_for
-    requested_for: str | None
-    params: dict[str, Any]
+    requested_for: str | None = None  # vắng khoá → người gửi (D-41): `Dataset.requested_for`
+    params: dict[str, Any] = Field(default_factory=dict)  # vắng khoá → {}
 
 
 class Gold(_Model):
@@ -99,7 +101,7 @@ class Gold(_Model):
     need_type: str
     expected_route: Route | None  # None = chưa nhãn (tới 25/10)
     expected_exit: str | None
-    approver_decision: ApproverDecision
+    approver_decision: ApproverDecision | None  # None = không có bước duyệt (luật cấm); khoá vẫn bắt buộc
     gold_doc_ids: tuple[Id, ...]
     action: Action
     facts: dict[str, Any]
@@ -157,6 +159,12 @@ class Dataset:
     files: tuple[str, ...]
     ignored_fields: tuple[str, ...] = ()
     usernames: Mapping[str, str] = field(default_factory=dict)  # scenario_id → username (tra seed theo requester.user_id)
+
+    def requested_for(self, s: Scenario) -> str | None:
+        """D-41: vắng `gold.action.requested_for` → người gửi (`requester.user_id` — giá trị có sẵn trong dữ liệu là user_id, Tuấn Anh
+        22/10); có khoá (kể cả null) → giữ nguyên."""
+        a = s.gold.action
+        return a.requested_for if "requested_for" in a.model_fields_set else s.requester.user_id
 
 
 @dataclass(frozen=True)
@@ -258,14 +266,32 @@ def _parse(raw: bytes, allow_extra: bool) -> tuple[list[tuple[int | None, Scenar
     return ok, bad
 
 
+def scenario_files(directory: Path) -> list[Path]:
+    """File kịch bản cấp 1 (`*.yaml`/`*.yml`, không đệ quy), sắp theo tên. Dùng chung với `scripts/eval/check_split.py` (G9)."""
+    return sorted(p for p in directory.iterdir() if p.is_file() and p.suffix in SUFFIXES)
+
+
+def file_sha256(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def dataset_sha256(pairs: Iterable[tuple[str, str]]) -> str:
+    """`Dataset.sha256` từ các cặp (tên file, `file_sha256` nội dung): nối `"<tên>\\0<sha>\\n"` theo tên tăng dần rồi băm. Một công
+    thức cho `load_scenarios` và `check_split.py` (G9)."""
+    h = hashlib.sha256()
+    for name, sha in sorted(pairs):
+        h.update(f"{name}\0{sha}\n".encode())
+    return h.hexdigest()
+
+
 def load_scenarios(directory: Path, *, users: Mapping[str, str], allow_extra: bool = False) -> Dataset:
     """`users` = `load_seed_users(...)` (user_id → username)."""
     if not directory.is_dir():
         raise ValueError("thư mục kịch bản: không phải thư mục")
-    paths = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix in SUFFIXES)
+    paths = scenario_files(directory)
     if not paths:
         raise ValueError("thư mục kịch bản: không có file kịch bản (*.yaml, *.yml)")
-    h = hashlib.sha256()
+    shas: list[tuple[str, str]] = []
     scenarios: list[Scenario] = []
     usernames: dict[str, str] = {}
     ignored: list[str] = []
@@ -273,7 +299,7 @@ def load_scenarios(directory: Path, *, users: Mapping[str, str], allow_extra: bo
     seen: set[str] = set()
     for n, p in enumerate(paths, start=1):
         raw = p.read_bytes()
-        h.update(f"{p.name}\0{hashlib.sha256(raw).hexdigest()}\n".encode())
+        shas.append((p.name, file_sha256(raw)))
         ok, bad = _parse(raw, allow_extra)
         issues += [LoadIssue(n, len(paths), p.name, pos, what) for pos, what in bad]
         for pos, s, dropped in ok:
@@ -289,5 +315,5 @@ def load_scenarios(directory: Path, *, users: Mapping[str, str], allow_extra: bo
             ignored += dropped
     if issues:
         raise DatasetError(issues, loaded=len(scenarios))
-    return Dataset(scenarios=tuple(scenarios), sha256=h.hexdigest(), files=tuple(p.name for p in paths),
+    return Dataset(scenarios=tuple(scenarios), sha256=dataset_sha256(shas), files=tuple(p.name for p in paths),
                    ignored_fields=tuple(ignored), usernames=usernames)  # fmt: skip

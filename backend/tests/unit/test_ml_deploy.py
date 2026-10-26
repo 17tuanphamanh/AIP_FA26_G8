@@ -48,9 +48,13 @@ def test_ml_token_required_everywhere_without_default() -> None:
 def test_no_empty_numeric_env_passed_to_ml_service() -> None:
     """Chuỗi rỗng cho trường số là lỗi cấu hình: ML_MAX_CONCURRENCY không truyền, không `:-}`.
     ML_THREADS TRUYỀN tường minh từ Q-3a-16 (S9, PLAN-3c mục 6.2) — mặc định "4" (tier ②), không rỗng.
-    ML-GAN: ba biến model của nhóm (đường dẫn / chuỗi, rỗng = không nạp) là các biến DUY NHẤT được rỗng."""
+    ML-GAN: ba biến model của nhóm (đường dẫn / chuỗi, rỗng = không nạp) là các biến DUY NHẤT được rỗng.
+    Gói 1 (D-52, phase5 §6.5 #9) — đổi có chủ ý: thêm `GUARD_MANIFEST_SHA256` (chuỗi, rỗng khi không nạp model) vào nhóm được
+    rỗng; `ML_CLASSIFY_CONCURRENCY`, `ML_MODELS_ROOT` KHÔNG truyền (mặc định ở ml_service/app/settings.py, như ML_MAX_CONCURRENCY).
+    Gói 2 (D-53) — đổi có chủ ý: thêm `INTENT_MODEL_SHA256`, `INTENT_MANIFEST_SHA256` (bắt buộc khi đặt INTENT_MODEL_DIR)."""
     env = compose()["services"]["ml-service"]["environment"]
-    optional = {"GUARD_MODEL_DIR", "GUARD_MODEL_SHA256", "INTENT_MODEL_DIR"}
+    optional = {"GUARD_MODEL_DIR", "GUARD_MODEL_SHA256", "GUARD_MANIFEST_SHA256", "INTENT_MODEL_DIR",
+                "INTENT_MODEL_SHA256", "INTENT_MANIFEST_SHA256"}  # fmt: skip
     assert set(env) == {"ML_SERVICE_TOKEN", "MODELS_DIR", "ML_THREADS"} | optional
     assert env["ML_THREADS"] == "${ML_THREADS:-4}"
     assert {k for k, v in env.items() if str(v).endswith(":-}")} == optional
@@ -105,7 +109,7 @@ def test_makefile_ml_targets() -> None:
     test = makefile_target("test")
     assert 'uv run pytest ml_service/tests -o pythonpath=ml_service -m "not ml_real"' in test
     test_ml = makefile_target("test-ml")
-    assert "--group ml" in test_ml and "-m ml_real" in test_ml
+    assert "--group ml" in test_ml and '-m "ml_real or ml_torch"' in test_ml  # gói 2 (D-53): thêm test cần torch
     models = makefile_target("models")
     assert "--with huggingface_hub" in models and "--group ml" not in models  # không kéo torch
     assert "scripts/download_models.py" in models

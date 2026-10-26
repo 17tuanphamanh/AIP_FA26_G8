@@ -5758,6 +5758,90 @@ kết quả `.verify/cong5/20261017-181019/ket-qua.json`. Số: mục "Phase 5 �
 4. **3 dòng `llm_calls` 2272–2274** (SELECT 18/10): ticket `d2551f48` = tc06 của `vpn-smoke` cấu hình B (lượt 16:32:58Z; b02, b03,
    b10_need_type, flash, 0,000992 USD). Chênh: `vpn-smoke` B in 14 lời gọi, khoảng `call_id` 2258–2274 có 17 dòng — cần xem lại cách đếm.
 
+## Phase 5 — gói 1: B2 chế độ `review` (D-52) (18/10/2026 — DỪNG 1 commit `dd27f4a`; DỪNG 2 commit 2 (MẪU B2 duyệt 18/10); chờ `make verify G=2345`)
+
+Nguồn: `docs/spec/claude/dac-ta-bat-2-model.md` v0.6, D-52, phase5 7.14. PLAN `PLAN-B2REVIEW.md` (MẪU A duyệt 18/10: theo đề xuất
+trừ Q-B2R-3 — không gọi LLM chấm cho câu khớp regex; Q-B2R-9 — bản nhẹ `ml_real` + `FakeMlService`; Q-B2R-12 — ghi sha256 của
+`--code`). Nền `b582058`; mốc: lint xanh, unit 6093, ml_service 123 + 5 deselected.
+
+**DỪNG 1 (18/10, không stack, không mạng):**
+- Hàm thuần: `backend/app/guard/mask_words.py` (thay nhãn che 4.3, nhãn lấy từ `privacy_patterns.json`, NFC, trả số nhãn đã
+  thay); `backend/app/guard/b2_review.py` (bảng 4.2: `classifier_shortcut` chỉ `active`; `after_judge` — #3 `category ≠ none`
+  → E0 mọi chế độ; `review`: p ≥ τ hoặc `too_many_windows` → E1). Chưa nối vào node (DỪNG 2).
+- 6 script (Tuấn Anh chạy 19/10): `scripts/eval/_pii_fake.py`, `_judge_runtime.py` (LLMClient + OpenAICompatProvider thật, store
+  bộ nhớ, không dự phòng; `finish_reason`/nhà cung cấp qua hook `httpx2`), `judge_targets.yaml` (ô `<điền>` cho
+  `provider.order`, `reasoning`, slug Qwen), `b2_judge_compare.py`, `b2_tau_select.py` (prepare → score `--group ml` → select;
+  E_MAX/B/seed/lưới ghi cứng), `b2_review_offline.py` (export SELECT → score → decide, `--recall-category` đo bổ sung),
+  `b3_offline.py` (SHA `.pt` trước `torch.load`, `code_sha256`, F11 4 cột); `backend/tests/probe/cong5_score.py` thêm
+  `cp_lower`/`cp_upper`/`b2_criteria`.
+- Test (test-writer, viết trước code): DỪNG 1 275 ca xanh; DỪNG 2 viết sẵn `xfail` (backend 89, ml_service 32 + 1 `ml_real`).
+- Số thật: `make lint` xanh; unit **6325 passed, 78 xfailed, 11 xpassed**; ml_service **123 passed, 6 deselected, 30 xfailed,
+  1 xpassed**.
+- security-reviewer DỪNG 1: 1 FAIL đã sửa (cache `p_mal` nay khoá theo `prep_sha256` + SHA model/manifest, `select` in SHA
+  model); đã sửa thêm các NGHI: đầu ra có chữ phải nằm dưới `.verify/`, đích OpenRouter chỉ nhận `LLM_JUDGE_API_KEY` + `https://`,
+  `b3_offline score` chỉ chạy khi `model_files == ["seed_42.pt"]` và ghi `config_sha256`, `after_judge` ném lỗi khi p NaN/inf,
+  cảnh báo id thiếu `p_mal`, `replace_masks` trong script dùng file mẫu của repo (không đọc env). gitleaks trên file mới: sạch
+  (canary khoá trong test đổi sang chuỗi không giống khoá).
+
+**DỪNG 2 (18/10, không stack):** nối `b2_review` vào `b02_screen.py` (E1 `injection_suspected`, thay nhãn che chỉ ở `review`,
+khoá `screening` mới); B20 tin E0 cho `injection_suspected`; `REASON_DETAILS`; `handoff.INJECTION_SUSPECTED_NOTE`; Settings
+`review` + `b2_tau_review` + `active` chỉ dev/test; `ml/client.py` (`classify_failed`, `/classify` không thử lại khi timeout đã
+gửi, lượt hết hạn vẫn TurnBudgetExceeded, `p_malicious` ∈ [0,1]); `ml/startup.py` + khối lifespan (cảnh báo `model_missing`);
+ml-service: hàng chờ classify riêng, `classify_failed`, `ML_MODELS_ROOT`, manifest + SHA bắt buộc, NaN → `classify_failed`;
+`scripts/ml/make_manifest.py`; compose/.env.example (`B2_TAU_REVIEW`, `GUARD_MANIFEST_SHA256`); `cong5.py` kiểm tin E1 nghi =
+tin E0 + tiêu chí B2; `b2_tau_select select` báo riêng số câu thường khớp regex.
+- Mutation `scripts/mutation/mutate_b2review.py`: 10/10 mã ĐT mục 8 đỏ + 8 mã phụ X1–X8 (12 test từng xpassed trên `dd27f4a`
+  không rỗng) đỏ; mốc cũ `mutate_t23a.py` 9/9, `mutate_3e.py` M-3e-3/4/8/9/12 đỏ (unit).
+- Test cũ đổi có chủ ý (lý do ghi trong test): `test_b02_screen.py` (dict `screening`, fixture `APP_ENV=test`, e13 classify 3 → 1),
+  `test_turn_deadline.py` (hạn 8 → 3 s), `test_turn_worst_case.py` (duyệt MẪU B2: `b03_classify` +1 Timeout bù ~7 s B2 không còn
+  thử lại, `len(seen)` 18 → 17 — lượt vẫn hết hạn đúng ở B6; M-3f-7a/b/c/d vẫn đỏ), `test_ml_deploy.py` (+`GUARD_MANIFEST_SHA256`),
+  `ml_service/tests/test_guard.py` (gốc model + SHA + manifest).
+- 12 test DỪNG 2 từng xpassed trên `dd27f4a` giữ làm test bất biến (hành vi có sẵn mà DỪNG 2 không được phá), mỗi test đỏ với một
+  mã phụ X1–X8.
+- Số: lint xanh; unit **6423 passed** (sau sửa `test_turn_worst_case`); ml_service **157 passed, 6 deselected**;
+  integration/e2e chạy trong `make verify` bước 2.
+- **Chuyển sang gói 2:** `/classify_intent` chưa đi qua hàng chờ classify riêng và chưa bọc lỗi → `classify_failed` (lệch
+  Q-B2R-11; route hiện luôn 503 nên chưa có rủi ro) — gói 2 làm khi nạp model intent.
+- **Spec cần sửa (gói 1, bổ sung):** ĐT mục 8 thiếu `test_b02_screen` e13, `test_turn_deadline`, `test_turn_worst_case`; mục 8
+  ghi `ml_service test_guard.py:163-174` phải đổi — thực tế không (loader giả); ĐT 4.6: `ConnectTimeout`/`PoolTimeout` vẫn thử lại;
+  ĐT 4.7/P4: model trả NaN → `classify_failed` (#7, L4 vẫn chấm); gói 3 đổi vai trò `judge` phải đổi cả chuỗi literal ở lời
+  gọi (test AST d10).
+
+**Spec cần sửa (gói 1):** ĐT mục 8 liệt kê `test_b02_screen.py:98, 104` phải đổi — nhánh regex không thêm khoá nên hai assert
+giữ nguyên (Q-B2R-10).
+
+## Phase 5 — gói 2b phần 1: chống spam (D-54 a) — worktree 2b, nhánh `2b-tuananh` (18/10/2026, 1 DỪNG trên `b582058`, CHƯA commit)
+
+**Trạng thái:** xong, CHƯA commit. `make lint` xanh; unit **6183 passed / 4 skipped** (mốc 6089 / 4); integration + e2e đầy đủ
+(testcontainers, 18/10 tối) **653 passed / 0 failed**. Mutation `scripts/mutation/mutate_2b.py` **7/7 ĐỎ** đúng dự đoán: unit 2b-11
+(42 test), 2b-13 (9), 2b-22 (9); Postgres 2b-11 (8), 2b-12 (1), 2b-14 (2), 2b-20 (5), 2b-21 (1); md5 + `git diff --stat` khớp sau khôi phục.
+`mutate_a4.py` I5 (unit) và I4 (Postgres) ĐỎ đúng dự đoán sau khi đổi 2 test M9. security-reviewer 5/5 PASS (không chữ người dùng; 429 sau
+`require`, trước `_owned_leaf` + đọc thân; chưa xác thực không hao lượt; GRANT tối thiểu; downgrade an toàn) + 2 phát hiện → Q-2B1-7,
+Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không commit).
+- **Q-2B1-7 = A (Tuấn Anh, 18/10):** `verify.sh` KHÔNG nới ở bước 3 `make up` (bước 3 đỏ thì không có bước 8 → không được bỏ lại stack đã
+  nới); chỉ nới ở `recreate` ngay trước mỗi cổng — mọi cổng vẫn chạy với ngưỡng nới. Lệch chữ lời mở ("kể cả make up đầu lượt") có chủ ý.
+- **Q-2B1-8 (Tuấn Anh, 18/10):** `create_app` log MỘT WARNING khi một trong 3 ngưỡng lớn hơn mặc định mà APP_ENV không phải dev/test —
+  chỉ tên biến, không giá trị; không chặn khởi động (`db/rate_limits.loose_rate_vars`, test U22).
+- **Bộ đếm A** (`POST /api/tickets`): `tickets` của người gửi có `parent_ticket_id IS NULL`, ≤ 10 / 10 phút và ≤ 30 / giờ. **Bộ B**
+  (`/messages`, `/reply`, `/confirm` chung): bảng thứ 23 `rate_hits`, ≤ 30 / 10 phút; mỗi lần kiểm MỘT transaction (dọn dòng cũ của chính
+  người gửi → đếm → INSERT khi dưới ngưỡng; 429 không ghi). 429 ở dòng đầu handler: sau `require`, trước `_owned_leaf` và trước đọc thân
+  (4 route đọc thân bằng tay — `api/tickets.py:184, 242, 260, 319`). `{"detail":"rate_limited"}` + `Retry-After` theo công thức 4.8.
+- `security_events(rate_limited)` cùng transaction, mỗi đợt (người, bộ đếm, cửa sổ) một dòng; `ticket_id` NULL, `route` mẫu, `detail
+  {counter, window, limit}`.
+- Migration `0010_rate_limits.py`: CHECK + `rate_limited`; index `ix_tickets_requester_created_at`; `rate_hits` + GRANT `SELECT, INSERT,
+  DELETE` (`app_rw`) + sequence; `v_leaf` thêm `requester_id` cuối (giữ `security_invoker`); downgrade dừng khi đã có `rate_limited`.
+- Cổng đếm: Protocol `RateGate` (`api/desk.py`), SQL `db/rate_limits.SqlRateGate` dựng trong lifespan (`create_app(rate=…)`), bản giả
+  `tests/fakes/rate.py` (`desk_env`, `test_t20b_api`). Settings `ticket_rate_10min`, `ticket_rate_hour`, `message_rate_10min` (`ge=1`,
+  không giá trị tắt); compose `x-backend-env` + `.env.example` để trống.
+- **Nới ngưỡng:** `make verify` tự nới (`LOOSE_RATES` ở `verify.sh` — mọi `recreate` trước cổng; bước 3 không nới; bước 8 gỡ); chạy tay gate2–5, `vpn-smoke`,
+  `probe`, harness, demo: `make up RATE=loose` (README stack); test: `conftest.py` gốc đặt 3 biến = 100000. **Harness RQ1 (Dương):** chưa nới
+  trong code harness — dựng stack bằng `make up RATE=loose`, ghi vào manifest (đặc tả 9.4).
+- Test cũ đổi có chủ ý (8): `test_db_models.py::test_22_tables` → `test_23_tables`, `::test_migration_grants_cover_every_table`;
+  `test_migration.py::test_upgrade_creates_exactly_22_tables` → `…_23_tables`, `::test_downgrade_is_clean_then_upgrade_again` (qua
+  `EXPECTED_TABLES`), `::test_0003_checkpoint_tables_down_and_up`; `test_monitor_dash_business.py::test_alembic_single_head_is_0009`
+  (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
+- Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

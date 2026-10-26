@@ -26,7 +26,7 @@ type _Floats = Sequence[float] | np.ndarray
 type _Golds = Sequence[Route] | Sequence[str] | np.ndarray
 type _Labels = Sequence[bool] | Sequence[int] | np.ndarray
 
-T_HIGH_MAX = 1.01  # t_high = 1,01 = bỏ đường LLM → mọi ca LLM đi L2 (P8 §5.3)
+T_HIGH_MAX = 1.01  # t_high = 1,01 = lớp LLM không bao giờ đưa ca sang L2 (p ≤ 1 < 1,01; P8 §5.3, B12-B14 §5.2 mục 5)
 _GRID = np.arange(101) / 100  # P7: {i/100 : i = 0…100} — phép chia IEEE, bằng đúng `i / 100` của Python
 
 
@@ -154,7 +154,7 @@ def t_low_star(cost: CostMatrix = DEFAULT_COST) -> float:
 
 def route_for(p: float, t_low: float, t_high: float) -> Route:
     """p < t_low → AUTO; p > t_high → ESCALATE_L2; còn lại HITL (bằng ngưỡng = HITL).
-    Ràng buộc 0 ≤ t_low ≤ t_high ≤ 1,01 (1,01 = bỏ đường LLM → L2, P8 §5.3)."""
+    Ràng buộc 0 ≤ t_low ≤ t_high ≤ 1,01 (1,01 = lớp LLM không bao giờ đưa ca sang L2: p ≤ 1 < 1,01; P8 §5.3)."""
     x = _finite_real(p, "p")
     if not 0.0 <= x <= 1.0:
         raise ValueError("p: phải nằm trong đoạn [0, 1]")

@@ -1,0 +1,40 @@
+# Đích LLM chấm cho phép thử chấp nhận (gói 1, D-52; docs/spec/claude/dac-ta-bat-2-model.md mục 3) — đọc bởi
+# scripts/eval/_judge_runtime.py. Thân request GHIM MỘT LẦN ở đây và dùng lại nguyên cho gói 3 (vai trò `judge`).
+# DeepSeek KHÔNG khai ở đây: đích `deepseek` lấy đúng vai trò `fast` đang chạy từ config/llm.yaml (D-51).
+#
+# Ô `<điền>`: Tuấn Anh điền sau khi đọc tài liệu OpenRouter lúc chạy (tên nhà cung cấp ghim, cách tắt/hạ suy luận — kiểm cờ
+# `mandatory` của model; slug có ngày). Còn ô `<điền>` → script từ chối chạy. Không ghi khoá ở đây: `api_key_env` là TÊN biến.
+# temperature 0, max_tokens 400, timeout, số lần thử: chép từ vai trò `fast` của config/llm.yaml (không khai lại ở đây).
+# `extra_body` theo luật của gateway: không được trùng tham số gateway điều khiển (`EXTRA_BODY_FORBIDDEN`).
+# Giá: USD / 1M token — nguồn và ngày đọc ghi ở `price_source`.
+targets:
+  gemini:
+    model: google/gemini-3.6-flash-20260721
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: LLM_JUDGE_API_KEY
+    json_mode: json_object
+    extra_body:
+      provider:
+        order: ["<điền>"]
+        allow_fallbacks: false
+        require_parameters: true
+        data_collection: deny
+        zdr: true
+      reasoning: "<điền>"
+    price: {in: 0.75, out: 3.75}
+    price_source: "openrouter.ai/models/google/gemini-3.6-flash-20260721, đọc 18/10/2026 (dac-ta-bat-2-model.md mục 3)"
+  qwen:
+    model: "<điền>"  # slug có ngày của qwen/qwen3.8-flash
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: LLM_JUDGE_API_KEY
+    json_mode: json_object
+    extra_body:
+      provider:
+        order: ["<điền>"]
+        allow_fallbacks: false
+        require_parameters: true
+        data_collection: deny
+        zdr: true
+      reasoning: "<điền>"
+    price: {in: 0.15, out: 0.47}
+    price_source: "openrouter.ai/compare/google/gemini-3.6-flash/qwen/qwen3.8-flash, đọc 18/10/2026 (dac-ta-bat-2-model.md mục 3)"

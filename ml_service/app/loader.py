@@ -8,6 +8,9 @@ Model chặn tấn công (ML-GAN phần 1, `GUARD_MODEL_DIR`): `guard.check_guar
 torch. Nạp bằng `AutoTokenizer` + `AutoModelForSequenceClassification` với `local_files_only=True`,
 `use_safetensors=True`, `trust_remote_code=False` (không pickle, không chạy mã trong thư mục model); CPU, `eval()`,
 `no_grad`. Tự kiểm tokenizer (không tự cắt, cls/sep như khi train) rồi mới nhận.
+
+Model intent (gói 2, D-53, `INTENT_MODEL_DIR`): `intent.check_intent` (thư mục, SHA + manifest, config, ngưỡng) cũng chạy TRƯỚC
+torch; nạp ở `intent_model.load_intent` (safetensors, `B3Model`, strict).
 """
 
 import logging
@@ -20,7 +23,9 @@ from app.guard import (
     GuardLoadError,
     GuardSpec,
     check_guard,
+    check_model_dirs,
 )
+from app.intent import check_intent
 from app.lock import model_dirs, read_lock
 from app.models import Guard, Models, Tokenizer
 from app.rerank import RERANK_MAX_LENGTH
@@ -117,7 +122,9 @@ def _self_check(tokenizer: Tokenizer, cls_id: int, sep_id: int) -> None:
 def load_models(settings: MlSettings) -> Models:
     refs = read_lock(settings.models_lock)
     dirs = model_dirs(settings.models_dir, settings.models_lock)  # thiếu → LockError, chưa đụng torch
-    guard_spec = check_guard(settings)  # sai file/SHA/id2label → GuardLoadError, chưa đụng torch
+    check_model_dirs(settings)  # gói 1 #5: thư mục model ngoài ML_MODELS_ROOT → GuardLoadError, chưa đụng torch
+    guard_spec = check_guard(settings)  # sai file/SHA/manifest/id2label → GuardLoadError, chưa đụng torch
+    intent_spec = check_intent(settings)  # gói 2: sai file/SHA/manifest/config/ngưỡng → IntentLoadError, chưa đụng torch
 
     import torch
     from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -135,7 +142,13 @@ def load_models(settings: MlSettings) -> Models:
     tokenizer: Tokenizer = embedder.tokenizer
     rerank_tokenizer: Tokenizer = reranker.tokenizer
     guard = _load_guard(guard_spec) if guard_spec is not None else None
+    intent = None
+    if intent_spec is not None:
+        from app.intent_model import load_intent
+
+        intent = load_intent(intent_spec)
     return Models(
         tokenizer=tokenizer, rerank_tokenizer=rerank_tokenizer, embedder=_StEmbedder(embedder),
         reranker=_CeReranker(reranker), embed=refs["embed"], rerank=refs["rerank"], dim=dim, guard=guard,
+        intent=intent,
     )  # fmt: skip

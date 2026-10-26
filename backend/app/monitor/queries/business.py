@@ -23,6 +23,7 @@ from app.domain.override import OVERRIDE_EVENT, OVERRIDE_STEP
 from app.monitor.metrics import (
     E1_OTHER,
     E1_REASONS,
+    E5_SENSITIVE_REASONS,
     GROUPS,
     N3_SENSITIVITY,
     N3_WEIGHTS,
@@ -45,11 +46,21 @@ TOP_RULES_LIMIT = 10
 E3_CASES_LIMIT = 100
 EXCERPT_MAX = 200
 
-# Nhóm N3 của một dòng điểm log 4 (Q-M9-1, Q-M9-A1-4). `decision` và `risk_level` lệch nhau thì lấy cái nhạy hơn.
-# Lá nhận MAX trên mọi dòng của nó. Lá không có dòng nào (không tới M5) → routine.
+# Độ nhạy của MỘT dòng điểm log 4 (Q-M9-1, Q-M9-A1-4). `decision` và `risk_level` lệch nhau thì lấy cái nhạy hơn. Dùng ở
+# hai chỗ: nhánh ELSE của nhóm N3 (dưới) và chọn dòng đại diện của lá (`_point4_per_leaf`) — tự nó KHÔNG phải nhóm N3.
 _SEVERITY_SQL = (
     "CASE WHEN d.policy_decision = 'deny' OR d.risk_level = 'high' THEN 3 "
     "WHEN d.policy_decision = 'approval_required' OR d.risk_level = 'medium' THEN 2 ELSE 1 END"
+)
+# Nhóm N3 của LÁ — chỗ DUY NHẤT gán nhóm (F12, #45; test ghim chỉ `escalation_rate_weighted` dùng). Lá E5 có dòng
+# escalation E5 MỚI NHẤT mang reason_detail thuộc `E5_SENSITIVE_REASONS` (:e5_sensitive) → 3, trên mọi dòng điểm log 4
+# (không đọc `detail`, không xét policy_decision/risk_level). Còn lại: MAX `_SEVERITY_SQL` trên mọi dòng của lá; lá không có
+# dòng nào (không tới M5) → routine. Dòng mới nhất: cùng cách `e1_split`, `ai.e2_llm_count`.
+_LEAF_N3_SEV_SQL = (
+    "CASE WHEN t.exit_code = 'E5' AND (SELECT e.reason_detail FROM escalations e WHERE e.ticket_id = t.ticket_id "
+    "AND e.exit_code = 'E5' ORDER BY e.created_at DESC, e.escalation_id DESC LIMIT 1) "
+    "= ANY(CAST(:e5_sensitive AS text[])) THEN 3 "
+    f"ELSE COALESCE((SELECT max({_SEVERITY_SQL}) FROM {V_DECISIONS} d WHERE d.ticket_id = t.ticket_id), 1) END"
 )
 _SEVERITY_GROUP: Mapping[int, str] = {1: "routine", 2: "approval", 3: "sensitive"}
 
@@ -73,7 +84,7 @@ class RuleCount:
 @dataclass(frozen=True)
 class E1Split:
     total: int  # số lá E1 = tổng `counts`
-    counts: Mapping[str, int]  # 4 khóa E1_REASONS (reason_detail nguyên văn) + "other"
+    counts: Mapping[str, int]  # 5 khóa E1_REASONS (reason_detail nguyên văn) + "other"
     shares: Mapping[str, float | None]  # count / total; total 0 → None
 
 
@@ -139,13 +150,14 @@ async def escalation_rate_raw(conn: AsyncConnection, frm: datetime, to: datetime
 
 
 async def escalation_rate_weighted(conn: AsyncConnection, frm: datetime, to: datetime) -> WeightedRate:
-    """Escalation rate theo nhóm N3 (70/20/10) + độ nhạy 60/30/10, 80/15/5 — luật 1 dùng `weighted`."""
+    """Escalation rate theo nhóm N3 (70/20/10) + độ nhạy 60/30/10, 80/15/5 — luật 1 dùng `weighted`. Nhóm của lá:
+    `_LEAF_N3_SEV_SQL` (F12: E5 `llm_high_risk` → sensitive)."""
+    params = {**_params(frm, to), "e5_sensitive": list(E5_SENSITIVE_REASONS)}
     rows = (await conn.execute(text(
         "SELECT g.sev, count(*), count(*) FILTER (WHERE g.exit_code IS NOT NULL) FROM ("
-        f"SELECT t.exit_code, COALESCE((SELECT max({_SEVERITY_SQL}) FROM {V_DECISIONS} d "
-        "WHERE d.ticket_id = t.ticket_id), 1) AS sev "
+        f"SELECT t.exit_code, {_LEAF_N3_SEV_SQL} AS sev "
         f"FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND {_DONE}) g GROUP BY g.sev"
-    ), _params(frm, to))).all()  # fmt: skip
+    ), params)).all()  # fmt: skip
     counts = {g: (0, 0) for g in GROUPS} | {_SEVERITY_GROUP[sev]: (n, esc) for sev, n, esc in rows}
     return WeightedRate(
         raw=_ratio(sum(esc for _, esc in counts.values()), sum(n for n, _ in counts.values())),
@@ -226,7 +238,7 @@ async def override_count(conn: AsyncConnection, frm: datetime, to: datetime) -> 
 
 
 async def e1_split(conn: AsyncConnection, frm: datetime, to: datetime) -> E1Split:
-    """Lá E1 tách theo `escalations.reason_detail` nguyên văn (dòng E1 mới nhất của lá) → 4 khóa `E1_REASONS` +
+    """Lá E1 tách theo `escalations.reason_detail` nguyên văn (dòng E1 mới nhất của lá) → 5 khóa `E1_REASONS` +
     `other` (reason_detail khác hoặc không có dòng); tổng = số lá E1 đã kết thúc."""
     rows = (await conn.execute(text(
         "SELECT (SELECT e.reason_detail FROM escalations e WHERE e.ticket_id = t.ticket_id AND e.exit_code = 'E1' "

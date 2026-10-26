@@ -1,4 +1,5 @@
-"""Nguồn dữ liệu của chỉ số và luật M9 (kế hoạch M9 5.3; hợp đồng mục 3; Q-M9-A1-7) + hằng N3 (Q-M9-1), hằng E1, E2 LLM.
+"""Nguồn dữ liệu của chỉ số và luật M9 (kế hoạch M9 5.3; hợp đồng mục 3; Q-M9-A1-7) + hằng N3 (Q-M9-1; F12 thêm E5), hằng
+E1, E2 LLM.
 
 - `METRIC_SOURCES`: CHỈ khóa chỉ số có trong response dashboard ↔ (bảng, step, event) nguồn. Test hai chiều áp cho
   dict này. `status="pending"`: chưa có node nào ghi nguồn → chỉ số `null` + tên trong `unavailable` (không trả 0).
@@ -59,13 +60,14 @@ METRIC_SOURCES: Mapping[str, MetricSource] = MappingProxyType({
     "intent_filter_fallback_rate": _ready("audit_logs", step="B8"),
     "b3_llm_rate": _ready("audit_logs", step="B3/B4"),
     "intent_model_version": _ready("audit_logs", step="B3/B4"),  # Phase 3–4 None (ml-service model_missing)
-    "multi_intent_first_stop_to_reply_s": _pending("phase5_multi_intent", "tickets"),
-    "multi_intent_messages_per_turn": _pending("phase5_multi_intent", "tickets"),
+    "multi_intent_first_stop_to_reply_s": _ready("child_notices", "tickets"),  # F12: v_child_notices (0011) → v_leaf
+    # F12: cần lượt của ticket CHA (`turns` của cha) — D-30 không cho đọc cha → pending RIÊNG, không theo `multi_intent`
+    "multi_intent_messages_per_turn": _pending("d30_parent_turns", "turns", "tickets"),
 })  # fmt: skip
 
 PENDING_SOURCES: Mapping[str, Status] = MappingProxyType({
     "override_count": "ready",  # 4d (e510a6e): step OVERRIDE, event override_recorded
-    "multi_intent": "pending",  # Phase 5
+    "multi_intent": "ready",  # F12 (#45): child_notices qua v_child_notices (0011) — nguồn của first_stop
     "b3_cascade": "pending",  # luật 13 (Q-M9-9): cascade model → LLM là Phase 5
     "tool_spans": "pending",  # luật 5 (Q-M9-4): span tool chưa ghi bảng `spans`
     "b2_classifier": "pending",  # luật 12 (Q-M9-A2-8): injection-clf L3 Phase 5; Phase 3–4 b2_llm_rate ≈ 1,0
@@ -84,8 +86,11 @@ def is_pending(key: str) -> bool:
 
 
 # ---- e1_split: `escalations.reason_detail` NGUYÊN VĂN mà B3/B4 ghi (graph/nodes/b03_classify.py) ----
-# Không ánh xạ sang tên event audit (`intent_out_of_scope`). reason_detail khác → E1_OTHER.
-E1_REASONS: tuple[str, ...] = ("out_of_scope", "multi_intent_not_enabled", "intent_low_confidence", "intent_not_enabled")
+# Không ánh xạ sang tên event audit (`intent_out_of_scope`). reason_detail khác → E1_OTHER. F12: thêm `split_span_invalid`
+# (bảng 5.2.2, `graph/children.py` E1_REASONS) vào CUỐI; giữ `multi_intent_not_enabled` (dữ liệu Phase 3–4).
+E1_REASONS: tuple[str, ...] = (
+    "out_of_scope", "multi_intent_not_enabled", "intent_low_confidence", "intent_not_enabled", "split_span_invalid",
+)  # fmt: skip
 E1_OTHER = "other"
 
 # ---- e2_llm_count: `escalations.reason_detail` của E2 do LỚP LLM lỗi (Q-M9-A2-4) — hằng MỘT chỗ ----
@@ -101,3 +106,6 @@ N3_SENSITIVITY: Mapping[str, Mapping[str, float]] = MappingProxyType({
     "60/30/10": MappingProxyType({"routine": 0.6, "approval": 0.3, "sensitive": 0.1}),
     "80/15/5": MappingProxyType({"routine": 0.8, "approval": 0.15, "sensitive": 0.05}),
 })  # fmt: skip
+# F12 (#45): lá E5 có dòng escalation E5 MỚI NHẤT mang reason_detail này → nhóm sensitive, trên mọi dòng điểm log 4 (không suy
+# từ policy_decision/risk_level, không đọc `detail`). `llm_layer_disabled` giữ hành vi cũ. Chỉ business.py dùng (test ghim).
+E5_SENSITIVE_REASONS: tuple[str, ...] = ("llm_high_risk",)

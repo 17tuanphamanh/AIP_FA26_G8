@@ -2,7 +2,8 @@
 
 `create_app` là điểm nối (composition root): auth chỉ biết port (`auth/ports.py`); ở đây gắn adapter
 AD (`tools`), writer `security_events` + `alerts` (`audit`), store SQL, runtime graph. Test tiêm `idp`,
-`store`, `sink`, `alerts`, `escalations` (hàng đợi L2), `runtime` (factory), `guard`, `clock`.
+`store`, `sink`, `alerts`, `escalations` (hàng đợi L2), `runtime` (factory), `guard`, `clock`, `rate` (cổng đếm 429 — Phase 5 gói 2b;
+mặc định `SqlRateGate` trên `engines.main` dựng trong lifespan).
 
 Thiếu `JWT_SIGNING_KEY` (hoặc thiếu `SVC_AGENT_TOKEN` khi không tiêm idp) → route auth trả 503; app
 vẫn khởi động và `/api/health` vẫn chạy. Runtime graph mở lỗi → route ticket/duyệt trả 503,
@@ -32,7 +33,7 @@ from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.dashboard import router as dashboard_router
-from app.api.desk import Desk, retry_after
+from app.api.desk import Desk, RateGate, retry_after
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
@@ -46,6 +47,8 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
 )
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
+from app.api.llm_status import router as llm_status_router
+from app.api.policy import router as policy_router
 from app.api.tickets import router as tickets_router
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
@@ -63,6 +66,12 @@ from app.auth.tokens import TokenSigner
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
+from app.db.rate_limits import (
+    LOOSE_RATES_WARNING,
+    RateLimits,
+    SqlRateGate,
+    loose_rate_vars,
+)
 from app.db.session import Engines, create_engines, ping
 from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
@@ -81,6 +90,7 @@ from app.llm.store import (
     SqlLlmStore,  # M9 (A4): cùng SUM(llm_calls.cost_usd) gateway dùng để áp trần chi
 )
 from app.llm.wiring import check_llm
+from app.ml.startup import warn_if_guard_missing  # Phase 5 (gói 1)
 from app.monitor.db import MONITOR_ROLE, MonitorUnavailable, monitor_engine
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
@@ -295,6 +305,7 @@ def create_app(
     guard: PrivacyGuard | None = None,
     clock: Clock | None = None,
     kb_probe: KbProbe | None = None,
+    rate: RateGate | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -308,6 +319,8 @@ def create_app(
     runtime_factory = runtime or _default_runtime
     background = BackgroundRuns()
     lock_retry = retry_after(settings.ticket_lock_timeout)
+    if loose := loose_rate_vars(settings):  # Phase 5 gói 2b (Q-2B1-8): chỉ tên biến, không giá trị; không chặn khởi động
+        log.warning(LOOSE_RATES_WARNING, ", ".join(loose))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -316,6 +329,7 @@ def create_app(
             stack.push_async_callback(engines.dispose)
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
+            rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
             if identity is None and settings.svc_agent_token is not None:
@@ -334,6 +348,10 @@ def create_app(
                 alerts or AlertWriter(engines.main, clock),
                 identity,
             )
+            # Phase 5 (gói 1, D-52): `review` mà ml-service chưa nạp model chặn tấn công → cảnh báo (chạy như shadow), không chặn
+            if settings.b2_classifier_mode == "review":
+                async with httpx.AsyncClient(timeout=settings.health_timeout) as ml_http:
+                    await warn_if_guard_missing(ml_http, settings.ml_service_url)
             try:
                 rt = await stack.enter_async_context(
                     runtime_factory(settings, engines, clock, registry)
@@ -345,7 +363,7 @@ def create_app(
                 app.state.desk = Desk(
                     runner=rt.runner, tickets=rt.tickets, approvals=rt.approvals, guard=guard, security=security,
                     users=auth_store, clock=clock, background=background,
-                    retry_after_seconds=lock_retry,
+                    retry_after_seconds=lock_retry, rate=rate_gate,
                 )  # fmt: skip
                 app.state.runtime_status = "up"
             try:
@@ -371,12 +389,15 @@ def create_app(
     install_request_errors(app)  # 422 không trả `input`, guard lỗi → 503 (phase3 mục 8.3)
     # ---- M9 ---- thiếu MONITOR_DATABASE_URL → 503, không rơi về app_rw (kế hoạch M9 mục 4.1)
     app.add_exception_handler(MonitorUnavailable, _monitor_unavailable)
+    app.state.settings = settings  # I1: route đọc cấu hình LLM theo Settings của app (test tiêm Settings riêng)
     app.state.m9_clock = clock  # A3: mốc mặc định cửa sổ dashboard + `acked_at` (Clock của app, test tiêm FakeClock)
     # A4: `llm`, `monitor` của /api/health — chỉ báo, không đổi mã. Test gán đè `app.state.*_probe` (như `kb_probe`).
     app.state.llm_probe = _default_llm_probe(settings, app)
     app.state.monitor_probe = _default_monitor_probe(app)
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
+    app.include_router(llm_status_router)  # I1: GET /api/admin/llm-status (chỉ đọc, Trưởng BP IT)
+    app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
     app.include_router(auth_router)

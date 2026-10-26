@@ -9,6 +9,9 @@ Test `ml_real` (model thật, `make test-ml`) nằm ở `test_real_models.py`.
 
 Model chặn tấn công giả (ML-GAN): `FakeGuardScorer` trả logit sao cho softmax ở vị trí INJECTION = điểm của từ "nóng"
 cao nhất trong cửa sổ (`hot`, mặc định `BASE`) — test biết cửa sổ nào chứa câu đáng ngờ mà không cần torch.
+
+Model intent giả (gói 2, D-53): `FakeIntentScorer` trả `IntentRaw` dựng sẵn (`raw`) hoặc ném `error` — phần trộn điểm, lọc token,
+cờ cắt chạy code thật `intent.py`. Test cần torch (`B3Model` nhỏ, safetensors) ở `test_intent_model.py` (marker `ml_torch`).
 """
 
 import math
@@ -21,7 +24,7 @@ from typing import Any
 import pytest
 from app.lock import ModelRef
 from app.main import create_app
-from app.models import Guard, Models
+from app.models import Guard, Intent, IntentRaw, Models
 from app.settings import MlSettings
 from fastapi.testclient import TestClient
 
@@ -103,12 +106,62 @@ class FakeGuardScorer:
         return [w for batch in self.batches for w in batch]
 
 
+INTENT_LABELS = ("account", "vpn", "software", "access", "out_of_scope")
+INTENT_TAGS = (
+    "O", *(f"{p}-REQ:{label}" for label in INTENT_LABELS for p in "BI"),
+    *(f"{p}-MEN:{label}" for label in INTENT_LABELS for p in "BI"), "B-CTX", "I-CTX",
+)  # fmt: skip
+
+
+def raw_for(text: str, seq_logits: Sequence[float], hot: Mapping[tuple[int, str], float] | None = None,
+            full_len: int | None = None) -> IntentRaw:  # fmt: skip
+    """`IntentRaw` cho câu tách theo khoảng trắng + `<s>`/`</s>` (offset (0, 0)); `hot[(token, tag)]` = xác suất tag đó."""
+    offsets, pos = [(0, 0)], 0
+    for word in text.split():
+        start = text.index(word, pos)
+        offsets.append((start, start + len(word)))
+        pos = start + len(word)
+    offsets.append((0, 0))
+    rows = [[0.0] * len(INTENT_TAGS) for _ in offsets]
+    for (t, tag), p in (hot or {}).items():
+        rows[t][INTENT_TAGS.index(tag)] = p
+    return IntentRaw(seq_logits=list(seq_logits), tok_probs=rows, offsets=offsets,
+                     full_len=len(offsets) if full_len is None else full_len)  # fmt: skip
+
+
+@dataclass
+class FakeIntentScorer:
+    raw: IntentRaw | None = None  # None → câu nào cũng logit 0, không tag nào
+    error: Exception | None = None
+    texts: list[str] = field(default_factory=list)
+
+    def score(self, text: str) -> IntentRaw:
+        self.texts.append(text)
+        if self.error is not None:
+            raise self.error
+        return self.raw if self.raw is not None else raw_for(text, [0.0] * len(INTENT_LABELS))
+
+
+def fake_intent(scorer: FakeIntentScorer | None = None, *, max_len: int = 160,
+                tau: Mapping[str, tuple[float, float]] | None = None) -> Intent:  # fmt: skip
+    """Model intent đã nạp (như INTENT_MODEL_DIR=…/intent-clf/v3.1-seed42-st), trọng số trộn của gói 0,4 / 0,6."""
+    taus = tau or {label: (0.75, 0.75) for label in INTENT_LABELS}
+    return Intent(
+        scorer=scorer or FakeIntentScorer(), labels=INTENT_LABELS,
+        b_req=tuple(INTENT_TAGS.index(f"B-REQ:{label}") for label in INTENT_LABELS),
+        i_req=tuple(INTENT_TAGS.index(f"I-REQ:{label}") for label in INTENT_LABELS),
+        mix=(0.4, 0.6), max_len=max_len, tau_lo={k: lo for k, (lo, _) in taus.items()},
+        tau_hi={k: hi for k, (_, hi) in taus.items()}, version="v3.1-seed42-st",
+    )  # fmt: skip
+
+
 @dataclass
 class FakeLoader:
     embedder: FakeEmbedder = field(default_factory=FakeEmbedder)
     reranker: FakeReranker = field(default_factory=FakeReranker)
     tok: FakeTokenizer = field(default_factory=FakeTokenizer)
     guard: Guard | None = None  # None = GUARD_MODEL_DIR không đặt
+    intent: Intent | None = None  # None = INTENT_MODEL_DIR không đặt
     loads: int = 0
 
     def __call__(self, settings: MlSettings) -> Models:
@@ -116,7 +169,7 @@ class FakeLoader:
         return Models(
             tokenizer=self.tok, rerank_tokenizer=self.tok, embedder=self.embedder, reranker=self.reranker,
             embed=ModelRef("BAAI/bge-m3", REV_E), rerank=ModelRef("BAAI/bge-reranker-v2-m3", REV_R),
-            dim=4, guard=self.guard,
+            dim=4, guard=self.guard, intent=self.intent,
         )  # fmt: skip
 
 

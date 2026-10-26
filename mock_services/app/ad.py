@@ -4,16 +4,21 @@ chuỗi quản lý; ghi: đặt lại mật khẩu, mở khoá, khoá (P5 mục 
 Mock đơn giản hoá: khoá tài khoản (`accounts.*.locked`) không chặn `/ad/authenticate` — người bị
 khoá email/ERP vẫn đăng nhập service desk để xin mở khoá. Trạng thái làm việc (disabled,
 terminated…) do backend quyết định sau khi đăng nhập (P6 mục 4 bước 5), mock chỉ trả thuộc tính.
+
+F2: `reset-password` có `channel="sms"` (chỉ tài khoản `ad`) — mật khẩu tạm một lần, hạn `TEMP_PASSWORD_TTL`, gửi SMS tới
+`phone` trong seed + email báo chủ tài khoản (`app/notify.py`); `/ad/change-password` đổi mật khẩu tạm lấy mật khẩu mới.
 """
 
 import secrets
+from datetime import timedelta
 from typing import Any, Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app import notify
 from app.security import require_read, require_write
 from app.state import MockState, User
 
@@ -21,6 +26,26 @@ router = APIRouter(prefix="/ad")
 
 AccountType = Literal["ad", "email", "erp"]
 _hasher = PasswordHasher()
+TEMP_PASSWORD_TTL = timedelta(minutes=15)
+_TTL_MINUTES = int(TEMP_PASSWORD_TTL.total_seconds() // 60)
+
+
+def new_temp_password() -> str:
+    """Mật khẩu tạm ngẫu nhiên (16 ký tự). Test monkeypatch hàm này để biết mật khẩu mà không đọc nội dung tin."""
+    return secrets.token_urlsafe(12)
+
+
+def _verify(stored: str, password: str) -> bool:
+    try:
+        _hasher.verify(stored, password)
+    except (VerificationError, InvalidHashError):
+        return False
+    return True
+
+
+def _temp_valid(state: MockState, user: User) -> bool:
+    expires = user.temp_password_expires_at
+    return user.must_change_password and expires is not None and state.now() < expires
 
 
 def mock_state(request: Request) -> MockState:
@@ -79,6 +104,10 @@ async def authenticate(body: Credentials, request: Request) -> dict[str, Any]:
     except (VerificationError, InvalidHashError):
         raise HTTPException(401, "invalid_credentials") from None
     if user is None:  # không thể xảy ra trừ khi ai đó đoán trúng mật khẩu ngẫu nhiên của hash giả
+        raise HTTPException(401, "invalid_credentials")
+    if user.must_change_password:  # F2: hash đang là của mật khẩu tạm — còn hạn thì bắt đổi, hết hạn thì như sai mật khẩu
+        if _temp_valid(state, user):
+            raise HTTPException(403, "password_change_required")
         raise HTTPException(401, "invalid_credentials")
     return user_view(user)
 
@@ -157,17 +186,73 @@ def _account(request: Request, user_id: str, account_type: str) -> tuple[User, A
     return user, account
 
 
+class ResetPasswordBody(BaseModel):
+    # F2: chỉ body này cấm trường lạ — không nhận số điện thoại từ lời gọi (số lấy từ seed của chính chủ).
+    model_config = ConfigDict(extra="forbid")
+    account_type: AccountType = "ad"
+    channel: Literal["email", "sms"] = "email"
+
+
 @router.post("/users/{user_id}/reset-password", dependencies=[Depends(require_write)])
-async def reset_password(user_id: str, body: AccountBody, request: Request) -> dict[str, Any]:
-    _, account = _account(request, user_id, body.account_type)
-    account.password_last_set = mock_state(request).now()
-    # Mật khẩu tạm gửi thẳng tới email người dùng — KHÔNG bao giờ nằm trong phản hồi API.
+async def reset_password(user_id: str, body: ResetPasswordBody, request: Request) -> dict[str, Any]:
+    user, account = _account(request, user_id, body.account_type)
+    state = mock_state(request)
+    if body.channel == "email":
+        account.password_last_set = state.now()
+        # Mật khẩu tạm gửi thẳng tới email người dùng — KHÔNG bao giờ nằm trong phản hồi API.
+        return {
+            "user_id": user_id,
+            "account_type": body.account_type,
+            "delivered_via": "email",
+            "must_change_at_next_login": True,
+        }
+    if body.account_type != "ad":  # mock chỉ có một password_hash (của AD) để kiểm mật khẩu tạm
+        raise HTTPException(409, "sms_reset_ad_only")
+    if user.phone is None:
+        raise HTTPException(409, "no_phone_on_file")
+    now = state.now()
+    temp = new_temp_password()
+    user.password_hash = _hasher.hash(temp)  # mật khẩu cũ hỏng ngay; chỉ lưu hash của mật khẩu tạm
+    user.must_change_password = True
+    user.temp_password_expires_at = now + TEMP_PASSWORD_TTL
+    account.password_last_set = now
+    notify.send_temp_password_sms(state.outbox, user.phone, temp, now, _TTL_MINUTES)
+    notify.send_sms_reset_notice(state.outbox, user.username, user.phone, now, _TTL_MINUTES)
+    # Mật khẩu tạm chỉ đi qua SMS — KHÔNG bao giờ nằm trong phản hồi API.
     return {
         "user_id": user_id,
         "account_type": body.account_type,
-        "delivered_via": "email",
+        "delivered_via": "sms",
         "must_change_at_next_login": True,
+        "expires_in_minutes": _TTL_MINUTES,
     }
+
+
+class ChangePasswordBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: str
+    temp_password: str
+    new_password: str = Field(min_length=12)
+
+    @model_validator(mode="after")
+    def _differs(self) -> "ChangePasswordBody":
+        if self.new_password == self.temp_password:
+            raise ValueError("new_password phải khác temp_password")
+        return self
+
+
+@router.post("/change-password", dependencies=[Depends(require_write)])
+async def change_password(body: ChangePasswordBody, request: Request) -> dict[str, Any]:
+    """F2: đổi mật khẩu tạm (còn hạn, chưa dùng) lấy mật khẩu mới. Sai / hết hạn / đã dùng / user lạ → cùng một 401."""
+    state = mock_state(request)
+    user = next((u for u in state.users.values() if u.username == body.username), None)
+    stored = user.password_hash if user is not None else request.app.state.dummy_hash  # luôn verify một hash như authenticate
+    if not _verify(stored, body.temp_password) or user is None or not _temp_valid(state, user):
+        raise HTTPException(401, "invalid_credentials")
+    user.password_hash = _hasher.hash(body.new_password)
+    user.must_change_password, user.temp_password_expires_at = False, None
+    user.accounts["ad"].password_last_set = state.now()
+    return {"user_id": user.user_id, "username": user.username, "password_changed": True}
 
 
 @router.post("/users/{user_id}/unlock", dependencies=[Depends(require_write)])

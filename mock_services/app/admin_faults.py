@@ -126,7 +126,8 @@ async def remove_fault(fault_id: int, request: Request) -> dict[str, str]:
 
 @router.post("/reset")
 async def reset(request: Request) -> dict[str, Any]:
-    """Đặt lại dữ liệu từ seed.json, tắt mọi lỗi đang bơm (chế độ demo, [Chốt 16.5]) và xoá bộ đếm `/_admin/calls` (3h)."""
+    """Đặt lại dữ liệu từ seed.json, tắt mọi lỗi đang bơm (chế độ demo, [Chốt 16.5]) và xoá bộ đếm `/_admin/calls` (3h).
+    State dựng mới nên hộp thư đi và mọi trạng thái mật khẩu tạm (F2) cũng bị xoá."""
     reload: Callable[[], dict[str, int]] = request.app.state.reload
     counts = reload()
     table: FaultTable = request.app.state.faults

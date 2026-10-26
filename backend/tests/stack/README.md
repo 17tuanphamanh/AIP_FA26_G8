@@ -6,6 +6,9 @@ container postgres). Không nằm trong `make test`. Mục lục: [Thành viên 
 [Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) ·
 [Chạy smoke LLM thật](#chạy-smoke-llm-thật) · [Đo CPU của worker](#đo-cpu-của-worker).
 
+**Ngưỡng 429 (Phase 5 gói 2b, D-54 a):** chạy tay gate2–5, `vpn-smoke`, `probe`, harness, demo thì dựng stack bằng `make up RATE=loose` (nới 3
+ngưỡng chống spam bằng số lớn; ghi vào biên bản) — `make verify` tự nới, không cần.
+
 ## Thành viên chạy cổng 3 rồi cổng 4 (một trang)
 
 Người chạy: thành viên **không** làm chính. Máy riêng, **NGOÀI GIỜ** hành chính (sau 18:00 hoặc cuối tuần — gate3 khi đó đi

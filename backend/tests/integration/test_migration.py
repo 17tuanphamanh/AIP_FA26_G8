@@ -21,6 +21,8 @@ EXPECTED_TABLES = {
     "audit_logs", "lineage", "turns", "spans", "llm_calls", "alerts",
     # 5 bảng mới (P7)
     "security_events", "llm_cache", "wait_deadlines", "side_effects", "child_notices",
+    # bảng thứ 23 — migration 0010 (gói 2b, D-54 a, đặc tả 4.8): bộ đếm 429 của tin nhắn
+    "rate_hits",
 }  # fmt: skip
 
 
@@ -44,11 +46,12 @@ def _scalar(conn: Connection, sql: str) -> object:
     return conn.execute(text(sql)).scalar()
 
 
-def test_upgrade_creates_exactly_22_tables(migrated: PgUrls) -> None:
+def test_upgrade_creates_exactly_23_tables(migrated: PgUrls) -> None:
+    """Gói 2b (PLAN-2B1 G8 #3, Q-2B1-6): 22 bảng gốc + `rate_hits` (0010)."""
     engine = create_engine(migrated.role("app_migrate"))
     with engine.connect() as conn:
         assert _tables(conn) == EXPECTED_TABLES
-        assert len(EXPECTED_TABLES) == 22
+        assert len(EXPECTED_TABLES) == 23
         assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)  # migration 0003
         assert _scalar(conn, "SELECT to_regclass('public.auth_failures')") == "auth_failures"
         owners: Any = conn.execute(
@@ -113,7 +116,8 @@ def test_downgrade_is_clean_then_upgrade_again(migrated: PgUrls) -> None:
 
 
 def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
-    """0003 hạ xuống bỏ đúng 4 bảng checkpoint; nâng lại chạy `setup()` từ đầu, grant lại app_rw."""
+    """0003 hạ xuống bỏ đúng 4 bảng checkpoint; nâng lại chạy `setup()` từ đầu, grant lại app_rw.
+    Gói 2b (PLAN-2B1 G8 #5): xuống `0002` thì `rate_hits` (0010) cũng không còn."""
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
         command.upgrade(cfg, "head")
@@ -121,7 +125,7 @@ def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
         owner = create_engine(db.role("app_migrate"))
         try:
             with owner.connect() as conn:
-                assert _all_tables(conn) == EXPECTED_TABLES
+                assert _all_tables(conn) == EXPECTED_TABLES - {"rate_hits"}
             command.upgrade(cfg, "head")
             with owner.connect() as conn:
                 assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)

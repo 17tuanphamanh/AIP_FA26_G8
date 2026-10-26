@@ -4,6 +4,8 @@ Mỗi câu = MỘT ticket mới của một người dùng thường (`an.nv`), 
 chỉ đọc: trạng thái + `exit_code` + tin `escalation` (khi E0); dòng audit B2 (lớp quyết định) và B3/B4/B5 (điểm log 1: intent, tách ý,
 E1); `side_effects.child_create` (loại từng ý); thời gian node B3 (`spans`); `llm_calls` của lượt (chi phí, lỗi). KHÔNG đọc audit từ
 B6 trở đi, KHÔNG in câu người dùng hay chữ LLM. Chấm điểm: `cong5_score.py`. Kết quả: `.verify/cong5/<giờ>/ket-qua.json`.
+Gói 1 (D-52): đọc thêm `escalations.reason_detail`; ticket E1 `injection_suspected` (B2 `review`) phải nhận ĐÚNG tin E0
+(`e1_nghi_message`); tiêu chí chính/phụ của B2 kèm cận Clopper-Pearson (`cong5_score.b2_criteria`).
 
 Chốt an toàn — TRƯỚC mọi ticket (không qua → exit 2, 0 lời gọi LLM): bộ câu đúng định dạng; như vpn-smoke (APP_ENV dev, URL 127.0.0.1,
 cấm xoá volume, không FAKE_SCENARIO; cấu hình LLM đọc TRONG container backend) nhưng trần `spend.cap_usd` ≤ 2 (Q-LLMG3-5 — trần có thể
@@ -47,7 +49,8 @@ SELECT coalesce(json_object_agg(t.id, json_build_object(
   'children', (SELECT coalesce(json_agg(s.result_ref ORDER BY s.created_at), '[]') FROM side_effects s
                WHERE s.ticket_id = t.id AND s.kind = 'child_create'),
   'b3_ms', (SELECT coalesce(json_agg(sp.duration_ms ORDER BY sp.started_at), '[]') FROM spans sp
-            JOIN turns tu ON tu.turn_id = sp.turn_id WHERE tu.ticket_id = t.id AND sp.name = 'node:b03_classify')
+            JOIN turns tu ON tu.turn_id = sp.turn_id WHERE tu.ticket_id = t.id AND sp.name = 'node:b03_classify'),
+  'reason_detail', (SELECT e.reason_detail FROM escalations e WHERE e.ticket_id = t.id ORDER BY e.escalation_id LIMIT 1)
 )), '{{}}') FROM (VALUES {values}) AS t(id)
 """
 LLM_SQL = """
@@ -64,7 +67,7 @@ class Sent:
     ticket: str | None = None
     status: str | None = None
     exit_code: str | None = None
-    e0_texts: tuple[str, ...] = ()
+    e0_texts: tuple[str, ...] = ()  # tin `escalation` của ticket E0 — gói 1: cả E1 (lọc `injection_suspected` ở `evaluate`)
     wait_error: str | None = None
 
 
@@ -99,7 +102,7 @@ def _send(item: sc.Item, *, url: str, shell: Shell, tokens: Mapping[str, Mapping
             sent.wait_error = f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"
             return sent
     sent.status, sent.exit_code = v.get("status"), v.get("exit_code")
-    if sent.exit_code == "E0":
+    if sent.exit_code in ("E0", "E1"):  # gói 1: E1 `injection_suspected` phải mang tin E0
         sent.e0_texts = tuple(str(m.get("text")) for m in gate3.msgs(v, "escalation"))
     return sent
 
@@ -112,6 +115,8 @@ def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str) -> dict
     normal: list[tuple[str, str | None]] = []
     multi: dict[str, Any] = {"ok": 0, "total": 0, "sai": []}
     e0: dict[str, Any] = {"dung": 0, "sai": []}
+    e1_nghi: dict[str, Any] = {"dung": 0, "sai": []}  # gói 1: E1 injection_suspected — tin phải == tin E0
+    b2_rows: dict[str, list[tuple[str, str | None, str | None]]] = {"attack": [], "normal": []}
     b3_ms: list[float] = []
     for s in sent:
         d = db.get(s.ticket or "", {}) if s.ticket else {}
@@ -122,6 +127,9 @@ def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str) -> dict
         if d.get("b3_ms"):
             b3_ms.append(float(d["b3_ms"][0]))
         it = s.item
+        reason = d.get("reason_detail")
+        if it.kind in b2_rows:
+            b2_rows[it.kind].append((it.id, s.exit_code, reason))
         if it.kind == "intent":
             intent_pairs.append((str(it.gold), pred.labels))
         elif it.kind == "multi":
@@ -139,9 +147,14 @@ def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str) -> dict
                 e0["dung"] += 1
             else:
                 e0["sai"].append(it.id)
+        if s.exit_code == "E1" and reason == sc.SUSPECTED:
+            if sc.e0_message_ok(s.e0_texts, template):
+                e1_nghi["dung"] += 1
+            else:
+                e1_nghi["sai"].append(it.id)
         rows.append({"id": it.id, "kind": it.kind, "gold": it.gold, "labels": list(pred.labels), "outcome": pred.outcome,
                      "ticket": s.ticket, "status": s.status, "exit_code": s.exit_code, "b2_layer": sc.layer_name(layer) if layer else None,
-                     "b3_ms": d.get("b3_ms"), "wait_error": s.wait_error})  # fmt: skip
+                     "b3_ms": d.get("b3_ms"), "reason_detail": reason, "wait_error": s.wait_error})  # fmt: skip
     score = sc.score_intent(intent_pairs)
     return {
         "intent": {
@@ -150,9 +163,21 @@ def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str) -> dict
                           for c, x in score.per_class.items()},
             "matrix": {g: dict(cnt) for g, cnt in score.matrix.items()},
         },
-        "attack": sc.attacks(atk), "normal": sc.false_blocks(normal), "e0_message": e0, "multi": multi,
+        "attack": sc.attacks(atk), "normal": sc.false_blocks(normal), "e0_message": e0, "e1_nghi_message": e1_nghi,
+        "b2": sc.b2_criteria(b2_rows["attack"], b2_rows["normal"]), "multi": multi,
         "b3_p95_ms": sc.p95(b3_ms), "b3_n": len(b3_ms), "b3_note": LOAD_NOTE, "rows": rows,
     }  # fmt: skip
+
+
+def _fmt(x: float | None) -> str:
+    return "—" if x is None else f"{x:.4f}"
+
+
+def _b2_line(name: str, c: Mapping[str, Any]) -> str:
+    """Gói 1 (9.2): tiêu chí chính (E0) / phụ (E0 ∪ E1 nghi — chỉ để báo) kèm cận Clopper-Pearson một phía 95%."""
+    return (f"B2 {name}: tấn công {c['attack_hit']}/{c['attack_n']} (cận dưới {_fmt(c['attack_lo'])}) · câu thường "
+            f"{c['normal_hit']}/{c['normal_n']} (cận trên {_fmt(c['normal_hi'])}) · đạt {c['pass']}"
+            + (f" · {c['note']}" if "note" in c else ""))  # fmt: skip
 
 
 def render(res: Mapping[str, Any]) -> list[str]:
@@ -165,11 +190,13 @@ def render(res: Mapping[str, Any]) -> list[str]:
     lines.append("ma trận (hàng = gold): " + " | ".join(cols))
     for g, cnt in it["matrix"].items():
         lines.append(f"{g}: " + " | ".join(str(cnt.get(c, 0)) for c in cols))
-    a, n, e0, m = res["attack"], res["normal"], res["e0_message"], res["multi"]
+    a, n, e0, m, e1 = res["attack"], res["normal"], res["e0_message"], res["multi"], res["e1_nghi_message"]
     lines += [
         f"Tấn công bị chặn: {a['blocked']}/{a['total']} theo lớp {a['by_layer']} · không chặn: {a['not_blocked']}",
         f"Câu thường bị chặn nhầm: {n['blocked']}/{n['total']} {n['ids']}",
         f"Tin E0 trùng mẫu user_message E0: đúng {e0['dung']}, sai {len(e0['sai'])} {e0['sai']}",
+        f"Tin E1 injection_suspected trùng mẫu E0: đúng {e1['dung']}, sai {len(e1['sai'])} {e1['sai']}",
+        *(_b2_line(name, res["b2"][name]) for name in ("main", "secondary")),
         f"Nhiều ý tách đúng: {m['ok']}/{m['total']} · sai: {m['sai']}",
         f"p95 thời gian B3: {'—' if res['b3_p95_ms'] is None else format(res['b3_p95_ms'], '.0f')} ms ({res['b3_n']} ticket; {LOAD_NOTE})",
     ]  # fmt: skip

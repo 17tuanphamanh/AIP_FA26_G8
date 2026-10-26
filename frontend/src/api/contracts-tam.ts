@@ -334,3 +334,23 @@ export type PolicyVersionItem = {
 };
 export type PolicyPutIn = { content: Record<string, unknown>; base_version_id: number };
 export type PolicySaved = { version_id: number; version: string };
+
+// ---------------------------------------------------------------- Route ĐÃ CÓ — I1 (viết tay tới khi gen:api)
+
+// backend/app/api/llm_status.py (`LlmStatus`, model `extra="forbid"`): GET /api/admin/llm-status, quyền `llm_status:read`.
+// `api_key_configured` CHỈ là boolean — backend không bao giờ trả khoá, độ dài, tiền tố hay mã băm.
+// `spend.percent` là số thô (25 = 25 %, có thể > 100); `warn_percent` lấy từ `spend.warn_ratio` của cấu hình.
+// `avg_cost_per_ticket_usd` = SUM(cost_usd) ÷ số ticket có ≥ 1 lời gọi, toàn bộ lịch sử (chưa có ticket → null).
+// Xoá khi: gen:api thành nguồn kiểu cho route này.
+export type LlmBackend = "scripted" | "real";
+export type LlmSpendStatus = "ok" | "warn" | "over";
+export type LlmKbStatus = "ready" | "missing" | "unknown";
+export type LlmStatus = {
+  as_of: string;
+  backend: LlmBackend | null;
+  models: { fast: string | null; strong: string | null };
+  api_key_configured: boolean;
+  spend: { total_usd: number; cap_usd: number; percent: number; warn_percent: number; status: LlmSpendStatus };
+  usage: { calls_total: number; calls_24h: number; tickets_with_calls: number; avg_cost_per_ticket_usd: number | null };
+  kb: { alias: string; collection: string | null; status: LlmKbStatus };
+};

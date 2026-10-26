@@ -397,17 +397,20 @@ def test_index_definitions(perf: PgUrls) -> None:
 
 
 def test_migration_0009_down_up(pg: PgUrls) -> None:
-    """`downgrade 0008` xoá ĐÚNG 2 chỉ mục của 0009 (không đụng chỉ mục khác); `upgrade head` dựng lại y hệt."""
+    """`downgrade 0008` xoá ĐÚNG 2 chỉ mục của 0009 (không đụng chỉ mục khác); `upgrade 0009` dựng lại y hệt.
+
+    Gói 2b (PLAN-2B1 G8 #8): lên `0009` thay vì `head` — từ `head` (0010) xuống `0008` còn bỏ chỉ mục + bảng của `0010`.
+    GIỮ TÊN: `mutate_a4.py` mã I4 gọi test này theo tên."""
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0009")
         engine = create_engine(db.role("app_migrate"))
         try:
             before = _indexes(engine)
             assert set(INDEX_DEFS) <= set(before)
             command.downgrade(cfg, "0008")
             assert _indexes(engine) == {k: v for k, v in before.items() if k not in INDEX_DEFS}
-            command.upgrade(cfg, "head")
+            command.upgrade(cfg, "0009")
             assert _indexes(engine) == before
         finally:
             engine.dispose()

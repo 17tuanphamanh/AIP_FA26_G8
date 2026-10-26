@@ -44,6 +44,15 @@ POINT_8_EVENT = "closed"
 # ngay ở B3 chạy lại — `SplitChanged` — chưa có `children` trong checkpoint mà dòng con đã tạo; soát lượt 4 mục 4); ticket lá → không dòng.
 
 
+# Phase 5 gói 1 (D-52, ĐT 4.4): E1 `injection_suspected` của B2 nhận ĐÚNG tin của E0 — tin E1 riêng sẽ cho kẻ dò biết đã lừa được
+# LLM chấm. Escalation vẫn mang `exit_code` E1 (ưu tiên L2 "Thường" theo bảng). Chọn theo `escalation_reason_detail`.
+SUSPECTED_MESSAGE_CODE = {"injection_suspected": "E0"}
+
+
+def _message_code(state: Any, code: str) -> str:
+    return SUSPECTED_MESSAGE_CODE.get(str(state.get("escalation_reason_detail") or ""), code)
+
+
 def make(deps: NodeDeps) -> NodeFn:
     async def b20_audit(state: Any) -> dict[str, Any]:
         run = current_run()
@@ -83,7 +92,7 @@ def make(deps: NodeDeps) -> NodeFn:
                 handoff_note=note.model_dump(),
                 is_deny_case=is_deny_case(code), created_at=now,
             )  # fmt: skip
-            text = deps.templates.of(code).user_message
+            text = deps.templates.of(_message_code(state, code)).user_message
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, ticket_id, text, "none", step="B20"
             )

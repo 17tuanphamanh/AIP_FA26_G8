@@ -50,6 +50,14 @@ x-backend-env: &backend-env
   # chỉ ghi điểm). Backend và worker PHẢI thấy cùng giá trị (worker chạy lại lượt dở cũng đi qua B2). Giá trị khác →
   # từ chối khởi động.
   B2_CLASSIFIER_MODE: ${B2_CLASSIFIER_MODE:-}
+  # Phase 5 (gói 1, D-52): τ của chế độ `review` ([0,50; 0,9999], không mặc định) — `review` mà rỗng → backend và worker từ
+  # chối khởi động. Chọn theo `scripts/eval/b2_tau_select.py`; bản ghi ở ml_models/injection-clf/tai-lieu/thresholds.json.
+  B2_TAU_REVIEW: ${B2_TAU_REVIEW:-}
+  # Phase 5 (gói 2b, D-54 a): 3 ngưỡng 429 theo tài khoản — rỗng = mặc định settings.py (10 ticket/10 phút, 30 ticket/giờ, 30 tin
+  # nhắn/10 phút). Không có giá trị "tắt": cổng/đo/demo nới bằng số lớn — `make verify` tự truyền, chạy tay `make up RATE=loose`.
+  TICKET_RATE_10MIN: ${TICKET_RATE_10MIN:-}
+  TICKET_RATE_HOUR: ${TICKET_RATE_HOUR:-}
+  MESSAGE_RATE_10MIN: ${MESSAGE_RATE_10MIN:-}
 
 services:
   postgres:
@@ -87,6 +95,15 @@ services:
     environment:
       <<: *backend-env
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+    healthcheck:
+      # D-50: /api/health trả 200 khi phụ thuộc lõi sống, `runtime` không đổi mã → phải đọc JSON: healthy chỉ khi
+      # 200 VÀ "runtime" == "up". 503 / chưa nghe cổng (runtime mở trong lifespan) → urlopen ném lỗi → thoát 1.
+      # Kết quả health cache 10s (HEALTH_CACHE_SECONDS) → interval 10s; retries 3 chịu được một lượt lõi chập chờn.
+      test: ["CMD", "python", "-c", "import json,sys,urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/health', timeout=4); sys.exit(0 if json.load(r).get('runtime')=='up' else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,7 +151,8 @@ services:
   # Phase 5 (T23a, ML-GAN — D-44): model phân loại của nhóm (P11) ở TEAM_MODELS_DIR (mặc định ./ml_models) mount
   # read-only vào /ml_models.
   # GUARD_MODEL_DIR / INTENT_MODEL_DIR là đường dẫn TRONG container; rỗng = không nạp → /classify, /classify_intent
-  # 503 model_missing như Phase 3. GUARD_MODEL_SHA256 đặt thì model.safetensors lệch → ml-service không khởi động.
+  # 503 model_missing như Phase 3; có đặt → nạp model đó, SHA-256 trọng số + manifest bắt buộc, lệch → ml-service không
+  # khởi động. Gói 2 (D-53): INTENT_MODEL_DIR = bản safetensors (scripts/ml/convert_intent_pt.py), thêm ~1,2 GB RAM.
   ml-service:
     build:
       context: .
@@ -146,13 +164,20 @@ services:
       ML_THREADS: ${ML_THREADS:-4}
       GUARD_MODEL_DIR: ${GUARD_MODEL_DIR:-}
       GUARD_MODEL_SHA256: ${GUARD_MODEL_SHA256:-}
+      # Phase 5 (gói 1, D-52 — phase5 §6.5 #9): SHA-256 của MANIFEST.sha256 trong GUARD_MODEL_DIR. Đặt GUARD_MODEL_DIR thì
+      # GUARD_MODEL_SHA256 và GUARD_MANIFEST_SHA256 BẮT BUỘC — thiếu/lệch → ml-service không khởi động (cả stack đứng).
+      # ML_CLASSIFY_CONCURRENCY, ML_MODELS_ROOT không truyền: mặc định ở ml_service/app/settings.py (như ML_MAX_CONCURRENCY).
+      GUARD_MANIFEST_SHA256: ${GUARD_MANIFEST_SHA256:-}
       INTENT_MODEL_DIR: ${INTENT_MODEL_DIR:-}
+      # Gói 2 (D-53): SHA-256 của model.safetensors và của MANIFEST.sha256 trong INTENT_MODEL_DIR — bắt buộc khi đặt dir.
+      INTENT_MODEL_SHA256: ${INTENT_MODEL_SHA256:-}
+      INTENT_MANIFEST_SHA256: ${INTENT_MANIFEST_SHA256:-}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
       - ${TEAM_MODELS_DIR:-./ml_models}:/ml_models:ro
     healthcheck:
       # 200 chỉ khi đã nạp + warm-up xong; nạp 2 model CPU mất tới vài phút lần đầu. ML-GAN: thêm SHA-256 file 1,1 GB
-      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan).
+      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan). Gói 2 (D-53): intent thêm SHA-256 ~1,1 GB + nạp (ước 10–25 s).
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health').status==200 else 1)"]
       interval: 10s
       timeout: 5s

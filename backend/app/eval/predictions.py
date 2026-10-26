@@ -24,10 +24,11 @@ tên ở manifest `predictions_unavailable` (không ghi False giả):
 |---|---|---|
 | `schema_version` | `"1.1"`; thiếu = file v1 → `load_predictions` từ chối (V11-Q6) | đọc file |
 | `fold` | 1..`CV_K`, họ → phần ở `SPLIT.md` (§2, §4.3) — chưa có `split.py`; lượt stack ghi `null` (G2-Q3, V11-Q3). Một file: mọi dòng có `fold` hoặc không dòng nào; một họ một phần | §4.3, §5.3 `fit_fold`, §6.1 gộp 5 phần đo |
-| `kb_gap` | điểm log 4 (§0.1) — KHÔNG có cột `audit_logs` → khoá `detail` mới, ngoài chốt: chưa đọc, `null` (V11-Q2). Như trường rủi ro: `route = None` ⇒ `None` | §5.3 chặn AUTO khi tính route offline (D-34), §5.4 |
+| `kb_gap` | audit điểm log 4 (`step = 'B13/B14'`) `detail->>'kb_gap'` (P6 22/10) — giá trị `b12_assess` truyền vào `decide()`, CHỈ ca đi lớp LLM (`decided_by = llm`); không có → `null` (manifest đếm `kb_gap_missing`). KHÔNG phải B10 `grounding.kb_gap` (điểm truy hồi). Như trường rủi ro: `route = None` ⇒ `None` | §5.3 chặn AUTO khi tính route offline (D-34), §5.4 |
 | `hidden_factor` | `gold.hidden_factor` (§4.1) — dữ liệu thật CHƯA có khoá này → `null` (V11-Q1) | §6.1 FNR nhóm yếu tố M5 không thấy (ghi nợ, chưa tính) |
 | `run_started_at` | giờ bắt đầu TỪNG kịch bản của harness (= `outcomes.jsonl`; không phải giờ bắt đầu lượt ở manifest), ISO 8601 CÓ offset | §5.2 khung giờ, manifest số ca theo khung |
 | `in_business_hours` | khung giờ hành chính của `run_started_at` theo `business_hours` — việc G7 (G2-Q10, V11-Q5) → `null` tới G7 | §5.2 |
+| `m5_aborted` | audit của lớp bọc lỗi (`graph/boundary.py`): `True` khi ticket có dòng `event ∈ {turn_budget_exceeded, unhandled_exception}` với `from_status = S_ASSESSING` (M5 bị ngắt giữa chừng); có audit mà không có dòng đó → `False`; ticket không có dòng audit nào → `null` (manifest đếm `m5_aborted_unknown`) | §5.4 "ca không tới điểm log 4": `route = None` ∧ `True` → ESCALATE_L2; ∧ `False` → ngoài mẫu số; lá đã nhãn ∧ `null` → DỪNG (`m5_outcome`) |
 
 Luật cho runner (chốt #32, 13/10; đính chính review #42):
 - Dòng điểm log 4 = `audit_logs` `step = 'B13/B14'` (node `b12_assess`; event `risk_decided` hoặc `llm_layer_disabled`) — KHÔNG
@@ -140,6 +141,7 @@ class PredictionRecord(BaseModel, frozen=True, extra="forbid", strict=True, hide
     hidden_factor: bool | None
     run_started_at: AwareIso
     in_business_hours: bool | None
+    m5_aborted: bool | None
 
     @field_validator(*_DB_ENUMS)
     @classmethod
@@ -154,6 +156,23 @@ class PredictionRecord(BaseModel, frozen=True, extra="forbid", strict=True, hide
         if self.route is None and any(getattr(self, f) is not None for f in _RISK_FIELDS):
             raise ValueError("route = None (không tới M5): decided_by, raw_prob, calibrated_prob, p_method, kb_gap phải là None")
         return self
+
+
+type M5Outcome = Literal["log4", "aborted", "out"]
+
+
+def m5_outcome(r: PredictionRecord) -> M5Outcome:
+    """P8 §5.4 [Chốt 22/10] — MỘT quy tắc cho `offline.py` và `report.py` (mẫu số các phương án giống nhau):
+    `log4` = lá có route (đã tới điểm log 4); `aborted` = `route = None` ∧ `m5_aborted` (M5 bị ngắt: hết hạn lượt / lỗi không lường tại
+    `S_ASSESSING`) → tính ESCALATE_L2 với phương án có LLM; `out` = `route = None` ∧ không ngắt (E1, lỗi ở bước khác, kẹt B11…) → ngoài mẫu
+    số §6.1. Lá chưa nhãn → `out`. Lá đã nhãn, `route = None`, `m5_aborted = None` → `ValueError` (không đoán)."""
+    if r.route is not None:
+        return "log4"
+    if r.expected_route is None:
+        return "out"
+    if r.m5_aborted is None:
+        raise ValueError("m5_aborted null ở lá đã nhãn không có route — collector phải điền m5_aborted (P8 §5.4)")
+    return "aborted" if r.m5_aborted else "out"
 
 
 def _where(e: ValidationError) -> str:

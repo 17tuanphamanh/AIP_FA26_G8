@@ -208,7 +208,7 @@ run_id: aaaaaaaaaaaa, bbbbbbbbbbbb, cccccccccccc, dddddddddddd
 
 ### T11 — Lá bị loại khỏi mẫu, theo phương án
 
-- `route_none` = không tới điểm log 4 (ngoài mẫu số §6.1; với phương án có LLM tính là chuyển L2 chỉ ở bước offline, chưa có ở đây). `outside_common` = lá đã nhãn có route nhưng không nằm trong phần giao. E1 = dừng ở B2 do model nghi (không tới M5, §5.4).
+- `route_none` = không tới điểm log 4 mà M5 không bị ngắt (ngoài mẫu số §6.1); lá M5 bị ngắt (`m5_aborted`) đã tính ESCALATE_L2 ở mọi phương án (`abort_as_l2`). `outside_common` = lá đã nhãn có route nhưng không nằm trong phần giao. E1 = dừng ở B2 do model nghi (không tới M5, §5.4).
 
 | run_id | dataset_sha256 | git_commit | n | n_unlabeled | n_excluded | arm | n_leaves | n_unlabeled | n_route_none | n_reached_labelled | n_outside_common | n_e1_injection_suspected |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

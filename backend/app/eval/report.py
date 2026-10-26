@@ -9,6 +9,8 @@ là giải tích: dựng từ phần giao của các phương án (`manual_basel
 Quy ước:
 - Chỉ nhận `split = "test"` (số của phần calibration không được lọt vào báo cáo). Mọi file cùng `dataset_sha256`, cùng `split`, cùng tập
   `scenario_id`, cùng gold; lệch → `ValueError`. Commit hoặc `policy_sha256` khác nhau chỉ là CẢNH BÁO (P8 §5.5 yêu cầu cùng tag).
+- **Lá không tới điểm log 4** (P8 §5.4 [Chốt 22/10]): `abort_as_l2` áp CÙNG quy tắc với `offline.py` cho mọi phương án (kể cả Chỉ-luật): `route = None` ∧
+  `m5_aborted` → ESCALATE_L2; `route = None` ∧ không ngắt → ngoài mẫu số; đã nhãn ∧ `m5_aborted = null` → `ValueError`. Mẫu số các phương án giống nhau.
 - **Phần giao** (P8 §5.4): lá đã nhãn có `route` ở MỌI phương án RQ1. Chi phí, an toàn, độ nhạy so trên phần giao; Thủ công và
   Full-auto tính trên đúng phần giao đó (chốt G1-Q1, #32 22/10). Hoà vốn (T7) cũng trên phần giao đó (G5) → đối chiếu được T1.
 - Số chính RQ1 = chi phí kỳ vọng KHÔNG trọng số (§6.1, ma trận mặc định). Bản có trọng số và hai độ nhạy là số phụ.
@@ -52,7 +54,12 @@ from app.eval.metrics import (
     safety,
     situation_fnr,
 )
-from app.eval.predictions import SCHEMA_VERSION, PredictionRecord, load_predictions
+from app.eval.predictions import (
+    SCHEMA_VERSION,
+    PredictionRecord,
+    load_predictions,
+    m5_outcome,
+)
 from app.eval.stats import (
     BOOTSTRAP_N,
     SEED,
@@ -163,11 +170,24 @@ def load_manifest(path: Path) -> Manifest:
     )  # fmt: skip
 
 
+def abort_as_l2(records: Sequence[PredictionRecord]) -> tuple[PredictionRecord, ...]:
+    """P8 §5.4 [Chốt 22/10] — CÙNG quy tắc với `offline.py` (`predictions.m5_outcome`) cho MỌI phương án kể cả Chỉ-luật, để mẫu số giống
+    nhau: lá `route = None` ∧ `m5_aborted` (M5 bị ngắt) → ESCALATE_L2; `route = None` ∧ không ngắt → giữ `None` (ngoài mẫu số). Lá đã
+    nhãn, `route = None`, `m5_aborted = None` → `ValueError`. Lặp lại trên file của `offline.py` (route đã đổi) không đổi gì."""
+    return tuple(
+        r.model_copy(update={"route": "ESCALATE_L2"}) if m5_outcome(r) == "aborted" else r for r in records
+    )  # fmt: skip
+
+
 def load_arm(predictions: Path, manifest: Path) -> Arm:
     """Nạp một lượt chạy. Từ chối: thiếu manifest, `schema_version` ≠ 1.1, `run_id`/`strategy` lệch nhau, `split` ≠ test,
     phương án ngoài `RQ1_STRATEGIES`, lượt tắt chẩn đoán mà không phải Hybrid."""
     mf = load_manifest(manifest)
     records = load_predictions(predictions)
+    try:
+        records = list(abort_as_l2(records))
+    except ValueError as e:
+        raise ValueError(f"{predictions.name}: {e}") from None
     first = records[0]
     if mf.schema_version != SCHEMA_VERSION:
         raise ValueError(f"manifest: schema_version phải là {SCHEMA_VERSION}")
@@ -622,8 +642,8 @@ def _t10(c: _Ctx) -> Table:
 def _t11(c: _Ctx) -> Table:
     t = _Builder("t11_exclusions", "Lá bị loại", "T11 — Lá bị loại khỏi mẫu, theo phương án",
                  ("arm", "n_leaves", "n_unlabeled", "n_route_none", "n_reached_labelled", "n_outside_common", "n_e1_injection_suspected"),
-                 (("`route_none` = không tới điểm log 4 (ngoài mẫu số §6.1; với phương án có LLM tính là chuyển L2 chỉ ở bước offline, "
-                  "chưa có ở đây). `outside_common` = lá đã nhãn có route nhưng không nằm trong phần giao. E1 = dừng ở B2 do model nghi "
+                 (("`route_none` = không tới điểm log 4 mà M5 không bị ngắt (ngoài mẫu số §6.1); lá M5 bị ngắt (`m5_aborted`) đã tính "
+                  "ESCALATE_L2 ở mọi phương án (`abort_as_l2`). `outside_common` = lá đã nhãn có route nhưng không nằm trong phần giao. E1 = dừng ở B2 do model nghi "
                   "(không tới M5, §5.4)."),))  # fmt: skip
     for name, a in c.arms.items():
         rs = a.records
