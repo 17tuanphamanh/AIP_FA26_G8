@@ -116,7 +116,7 @@ class DeskEnv:
     idp: FakeIdentityProvider
     settings: Settings
     rate: MemoryRateGate  # gói 2b: cổng đếm 429 giả (`hits`, `calls`)
-    strategy: MemoryStrategyStore  # D-60: `m5_strategy_changes` giả
+    strategy: MemoryStrategyStore  # D-67: `m5_strategy_changes` giả
 
     @property
     def background(self) -> BackgroundRuns:

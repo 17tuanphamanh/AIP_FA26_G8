@@ -192,7 +192,7 @@ async def create_ticket(
     body = await parse_body(request, TicketIn)
     redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
-    strategy, source = await snapshot_for_new_ticket(request, desk)  # D-60: chụp chiến lược M5 + nguồn lúc TẠO
+    strategy, source = await snapshot_for_new_ticket(request, desk)  # D-67: chụp chiến lược M5 + nguồn lúc TẠO
     ticket_id, turn_id = new_ticket_id(), new_turn_id()
     await desk.tickets.create(
         NewTicket(

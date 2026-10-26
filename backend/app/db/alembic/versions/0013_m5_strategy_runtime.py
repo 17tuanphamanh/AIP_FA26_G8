@@ -1,4 +1,4 @@
-"""chiến lược M5 lúc vận hành (D-60): tickets.strategy/source, bảng m5_strategy_changes, v_leaf thêm 2 cột
+"""chiến lược M5 lúc vận hành (D-67): tickets.strategy/source, bảng m5_strategy_changes, v_leaf thêm 2 cột
 
 - `tickets.strategy` text NULL: chiến lược M5 CHỤP lúc tạo ticket (ticket cũ để NULL; B12 coi NULL là `hybrid`). Không CHECK giá trị:
   tập giá trị hợp lệ nằm ở `risk/strategy.py` (RUNTIME_SELECTABLE / STRATEGIES), migration không chép lại.

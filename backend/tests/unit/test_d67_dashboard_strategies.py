@@ -1,4 +1,4 @@
-"""D-60 P2 — `GET /api/dashboard/strategies` không cần DB (SQL thật: `tests/integration/test_dashboard_strategies_pg.py`).
+"""D-67 P2 — `GET /api/dashboard/strategies` không cần DB (SQL thật: `tests/integration/test_dashboard_strategies_pg.py`).
 
 - Hợp đồng BE chốt 26/10: đúng 17 khoá, đúng thứ tự, `kind`/`unit`; tỉ lệ `{num, den}`; giá trị `{value}` hoặc `{value, n}` (khoá kèm n);
   chiến lược 0 lá → null; `strategies` = RUNTIME_SELECTABLE; `source` real|sim (mặc định real), `all` → 422; `source` trong thân trùng

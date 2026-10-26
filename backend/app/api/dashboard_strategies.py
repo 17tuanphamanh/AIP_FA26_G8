@@ -1,4 +1,4 @@
-"""`GET /api/dashboard/strategies` — so sánh phương án M5 (D-60 P2; hình dạng BE chốt 26/10).
+"""`GET /api/dashboard/strategies` — so sánh phương án M5 (D-67 P2; hình dạng BE chốt 26/10).
 
 Quyền `dashboard:read:all` (như `/api/dashboard/ai`). Thứ tự lỗi: 401 → 403 → 422 (`source` ngoài `real|sim` — KHÔNG có `all` —, kiểu
 `from`/`to`; FastAPI gom sau dependency quyền) → 422 `resolve_window` (thân handler) → 503 `monitor_unavailable` (engine monitor).

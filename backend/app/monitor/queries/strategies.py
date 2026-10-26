@@ -1,8 +1,8 @@
-"""So sánh phương án M5 (D-60 P2) — `GET /api/dashboard/strategies`: 17 chỉ số theo chiến lược đã CHỤP trên ticket lá.
+"""So sánh phương án M5 (D-67 P2) — `GET /api/dashboard/strategies`: 17 chỉ số theo chiến lược đã CHỤP trên ticket lá.
 
 - Chỉ đọc qua `AsyncConnection` của engine `app_monitor`, qua `v_leaf` (cột `strategy`, `source` — migration 0013). Cửa sổ `[frm, to)`
   theo `created_at` của lá; CHỈ lá đã kết thúc (`final_state IS NOT NULL`) — khuôn `business.py`. Lọc `source` (real/sim) và
-  `strategy = ANY(:strategies)` — ticket `strategy` NULL (trước D-60), `llm_only`, `full_auto` KHÔNG vào bảng. Danh sách chiến lược do
+  `strategy = ANY(:strategies)` — ticket `strategy` NULL (trước D-67), `llm_only`, `full_auto` KHÔNG vào bảng. Danh sách chiến lược do
   route truyền (`risk.strategy.RUNTIME_SELECTABLE`; monitor không import `risk` — hợp đồng import 2).
 - Trả SỐ ĐẾM kèm mẫu số (`{num, den}`) hoặc giá trị kèm `n` — không "điểm tổng". Chiến lược 0 lá → `None` ở mọi chỉ số (route trả null).
 - Định nghĩa (mỗi lá một dòng `per`, rồi gộp theo chiến lược):

@@ -55,7 +55,7 @@ class NewTicket:
     session_id: str | None
     redacted_request: str  # ĐÃ qua privacy guard (D-07)
     created_at: datetime
-    # D-60 (migration 0013): chiến lược M5 chụp lúc tạo (None = không ghi → B12 coi là `hybrid`), nguồn ticket (`real`/`sim`/`eval`)
+    # D-67 (migration 0013): chiến lược M5 chụp lúc tạo (None = không ghi → B12 coi là `hybrid`), nguồn ticket (`real`/`sim`/`eval`)
     strategy: str | None = None
     source: str = "real"
 
@@ -155,7 +155,7 @@ class SqlTicketStore:
         return TicketRow(**values)
 
     async def strategy_of(self, ticket_id: str) -> str | None:
-        """D-60: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""
+        """D-67: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""
         async with self._engine.connect() as conn:
             row = (
                 await conn.execute(select(_TICKETS.c.strategy).where(_TICKETS.c.ticket_id == ticket_id))
@@ -208,7 +208,7 @@ class SqlTicketStore:
     async def create_child(
         self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime, intents: int, intent_type: str
     ) -> str:
-        """`INSERT … SELECT` từ dòng cha (người gửi, vai trò, phòng ban, phiên; D-60: `strategy`, `source`) — trong transaction của `effects.once("child_create")`;
+        """`INSERT … SELECT` từ dòng cha (người gửi, vai trò, phòng ban, phiên; D-67: `strategy`, `source`) — trong transaction của `effects.once("child_create")`;
         cha không có dòng → `TicketMissing`. Không dòng `turns` (lượt đầu do `ChildOps.start_missing` mở)."""
         p = _TICKETS.c
         stmt = insert(_TICKETS).from_select(

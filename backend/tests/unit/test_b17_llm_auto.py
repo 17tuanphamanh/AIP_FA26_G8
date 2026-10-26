@@ -204,7 +204,7 @@ class Env:
     ) -> dict[str, Any]:
         deps = self.h.deps()
         deps.estimator = estimator
-        self.h.tickets.strategies[state["ticket_id"]] = strategy  # D-60: chiến lược chụp trên ticket (không qua deps)
+        self.h.tickets.strategies[state["ticket_id"]] = strategy  # D-67: chiến lược chụp trên ticket (không qua deps)
         deps.eval_mode = eval_mode
         with self.run():
             out: dict[str, Any] = await wrap_node("b12_assess", b12_assess.make(deps))(state)

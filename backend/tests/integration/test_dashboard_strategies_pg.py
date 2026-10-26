@@ -1,4 +1,4 @@
-"""D-60 P2 — SQL của `monitor.queries.strategies` trên Postgres 16 thật (engine `app_monitor`, qua `v_leaf`) với dữ liệu dựng sẵn.
+"""D-67 P2 — SQL của `monitor.queries.strategies` trên Postgres 16 thật (engine `app_monitor`, qua `v_leaf`) với dữ liệu dựng sẵn.
 
 Kỳ vọng tính TAY từ dữ liệu dưới (không suy từ code): 4 lá `hybrid_guarded` nguồn real đã kết thúc trong cửa sổ; bị loại: lá đang chạy,
 lá ngoài cửa sổ, lá `strategy` NULL, lá `llm_only`, ticket CHA (`v_leaf` bỏ), lá `hybrid` nguồn sim (chỉ vào khi `source=sim`).
@@ -106,7 +106,7 @@ async def _seed(rw: AsyncEngine) -> None:
         await _mark(conn, await seed.leaf_ticket(conn, created_at=T0, intent="vpn"), "hybrid_guarded")  # đang chạy
         await _mark(conn, await seed.leaf_ticket(conn, created_at=T0 - timedelta(days=2), final_state="S_RESOLVED",
                                                  intent="vpn"), "hybrid_guarded")  # fmt: skip  — ngoài cửa sổ
-        await _mark(conn, await seed.leaf_ticket(conn, created_at=T0, final_state="S_RESOLVED", intent="vpn"), None)  # trước D-60
+        await _mark(conn, await seed.leaf_ticket(conn, created_at=T0, final_state="S_RESOLVED", intent="vpn"), None)  # trước D-67
         await _mark(conn, await seed.leaf_ticket(conn, created_at=T0, final_state="S_RESOLVED", intent="vpn"), "llm_only")
         parent, (child,) = await seed.parent_with_children(conn, 1, created_at=T0, parent_final_state="S_RESOLVED",
                                                            final_state="S_RESOLVED", intent="software")  # fmt: skip

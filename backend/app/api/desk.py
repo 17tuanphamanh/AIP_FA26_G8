@@ -53,7 +53,7 @@ class RateGate(Protocol):
 
 
 class StrategyStore(Protocol):
-    """Chiến lược M5 lúc vận hành (D-60) — bản SQL: `db/m5_strategy.SqlStrategyStore`; bản giả: `tests/fakes/strategy.py`."""
+    """Chiến lược M5 lúc vận hành (D-67) — bản SQL: `db/m5_strategy.SqlStrategyStore`; bản giả: `tests/fakes/strategy.py`."""
 
     async def current(self) -> StrategyChange | None: ...
 
@@ -74,7 +74,7 @@ class Desk:
     background: BackgroundRuns
     retry_after_seconds: int  # TicketBusy → 503 + Retry-After (= ceil(TICKET_LOCK_TIMEOUT))
     rate: RateGate  # Phase 5 gói 2b: bộ đếm 429 (ticket mới; tin nhắn `/messages` `/reply` `/confirm`)
-    strategy: StrategyStore  # D-60: chiến lược M5 lúc vận hành (chụp lên ticket mới; route `/api/admin/strategy`)
+    strategy: StrategyStore  # D-67: chiến lược M5 lúc vận hành (chụp lên ticket mới; route `/api/admin/strategy`)
 
 
 def retry_after(lock_timeout: float) -> int:

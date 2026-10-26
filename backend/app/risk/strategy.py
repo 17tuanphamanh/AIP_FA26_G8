@@ -1,5 +1,5 @@
 """Chiến lược quyết định của M5 (phase6 5.3, P10) — hàm thuần: từ (kết quả luật, ước lượng B14, calibrator, ngưỡng, chiến
-lược) ra `RiskDecision`. Lúc vận hành chạy `RUNTIME_SELECTABLE` (D-60: `rule_only`, `hybrid`, `hybrid_guarded`);
+lược) ra `RiskDecision`. Lúc vận hành chạy `RUNTIME_SELECTABLE` (D-67: `rule_only`, `hybrid`, `hybrid_guarded`);
 `llm_only`, `full_auto` chỉ để so sánh ở chế độ đánh giá (`check_strategy`, cổng 6). Nguồn `Strategy` do 6C quyết (Settings).
 """
 
@@ -15,9 +15,9 @@ from app.risk.models import RuleVerdict
 
 type Strategy = Literal["hybrid", "rule_only", "llm_only", "full_auto", "hybrid_guarded"]
 STRATEGIES: frozenset[Strategy] = frozenset({"hybrid", "rule_only", "llm_only", "full_auto", "hybrid_guarded"})
-# D-60: ba chiến lược chọn được lúc vận hành (quản lý đổi qua `PUT /api/admin/strategy`) — khai báo DUY NHẤT ở đây, nơi khác import.
+# D-67: ba chiến lược chọn được lúc vận hành (quản lý đổi qua `PUT /api/admin/strategy`) — khai báo DUY NHẤT ở đây, nơi khác import.
 RUNTIME_SELECTABLE: tuple[Strategy, ...] = ("rule_only", "hybrid", "hybrid_guarded")
-EVAL_ONLY: frozenset[Strategy] = STRATEGIES - frozenset(RUNTIME_SELECTABLE)  # D-60: còn llm_only, full_auto
+EVAL_ONLY: frozenset[Strategy] = STRATEGIES - frozenset(RUNTIME_SELECTABLE)  # D-67: còn llm_only, full_auto
 
 # Đường luật — CHÉP từ `graph/nodes/b12_assess.py` (strategy không import graph); test so khớp hai bảng. 6C: B12 dùng strategy.
 _ROUTE: dict[str, Literal["AUTO", "HITL", "ESCALATE_L2"]] = {
@@ -47,7 +47,7 @@ def _known(strategy: Strategy) -> None:
 
 
 def check_strategy(strategy: Strategy, *, eval_mode: bool) -> None:
-    """Chiến lược thuộc `EVAL_ONLY` (D-60: `llm_only`, `full_auto`) khi không ở chế độ đánh giá → `StrategyNotAllowed` (6C gọi lúc
+    """Chiến lược thuộc `EVAL_ONLY` (D-67: `llm_only`, `full_auto`) khi không ở chế độ đánh giá → `StrategyNotAllowed` (6C gọi lúc
     khởi động). `rule_only`/`hybrid_guarded` đã chọn được lúc vận hành (`RUNTIME_SELECTABLE`)."""
     _known(strategy)
     if strategy in EVAL_ONLY and not eval_mode:

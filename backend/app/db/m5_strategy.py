@@ -1,8 +1,8 @@
-"""Chiến lược M5 lúc vận hành (D-60) — bảng `m5_strategy_changes` (chỉ ghi thêm, migration 0013).
+"""Chiến lược M5 lúc vận hành (D-67) — bảng `m5_strategy_changes` (chỉ ghi thêm, migration 0013).
 
 - `current()`: dòng có `id` lớn nhất; chưa có dòng nào → None (nơi gọi coi là `hybrid`).
 - `history(limit)`: mới nhất trước; `strategy_from` = chiến lược của dòng liền trước theo `id` (dòng đầu tiên → `hybrid`, mặc định
-  trước D-60). Đọc `limit + 1` dòng để biết còn dòng cũ hơn (`truncated`).
+  trước D-67). Đọc `limit + 1` dòng để biết còn dòng cũ hơn (`truncated`).
 - `append(...)`: MỘT transaction — khoá tư vấn (hai PUT đồng thời không cùng thấy "khác hiện tại"), kiểm khác chiến lược hiện hành
   (trùng → `SameStrategy`), INSERT dòng đổi và `security_events` loại `policy_saved` có sẵn (`detail.kind = "m5_strategy"` để không
   lẫn với lưu chính sách). `at` lấy từ Clock của app. Lý do đã qua privacy guard ở route; bảng không đọc lại chữ người dùng.
@@ -19,7 +19,7 @@ from app.db.models import M5StrategyChange
 from app.db.security_events import insert_event
 
 _CHANGES: Table = M5StrategyChange.__table__  # type: ignore[assignment]
-DEFAULT_STRATEGY = "hybrid"  # trước D-60 chỉ có `hybrid` chạy lúc vận hành; chưa có dòng nào → `hybrid`
+DEFAULT_STRATEGY = "hybrid"  # trước D-67 chỉ có `hybrid` chạy lúc vận hành; chưa có dòng nào → `hybrid`
 POLICY_SAVED = "policy_saved"
 ROUTE = "/api/admin/strategy"
 _LOCK = text("SELECT pg_advisory_xact_lock(hashtext('m5_strategy_changes'))")

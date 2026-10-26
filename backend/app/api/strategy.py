@@ -1,4 +1,4 @@
-"""Chiến lược M5 lúc vận hành (D-60) — ba route quản lý + chụp chiến lược lên ticket mới.
+"""Chiến lược M5 lúc vận hành (D-67) — ba route quản lý + chụp chiến lược lên ticket mới.
 
 `GET /api/admin/strategy` (quyền `policy:read`) → trạng thái PHẲNG: chiến lược hiện hành, `selectable`, `llm_calibrated`
 (= `m5.calibrator_version` khác null), `eval_mode`, và dòng đổi gần nhất (`changed_by/at`, `reason`; chưa có dòng → `hybrid` + 3 trường

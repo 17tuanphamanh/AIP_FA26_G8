@@ -1,4 +1,4 @@
-"""D-60 P1.7 — `hybrid_guarded` lần đầu chạy lúc vận hành (không EVAL_MODE): graph THẬT (`GraphHarness(nodes="real")`, B1 → … → B12
+"""D-67 P1.7 — `hybrid_guarded` lần đầu chạy lúc vận hành (không EVAL_MODE): graph THẬT (`GraphHarness(nodes="real")`, B1 → … → B12
 → B15/B17/B20 thật), LLM giả (ScriptedLLM qua gateway THẬT + `LlmRiskEstimator`), chiến lược CHỤP trên ticket (`tickets.strategies`).
 
 Câu: nv001 "gia hạn VPN cho máy LAP-0342" (máy của chính mình, đã đăng ký — seed mock). Trong giờ → R20 `allow`; 20:00 → R18
@@ -85,7 +85,7 @@ async def _graph(at: datetime, b14: Script, *, strategy: str = "hybrid_guarded")
                        calibrator=CAL)  # fmt: skip
     h.identity.add_session("s-nv001", "nv001", expires_at=clock.now() + timedelta(days=365))
     h.tickets.register("t1", clock.now(), requester_id="nv001")
-    h.tickets.strategies["t1"] = strategy  # D-60: chụp lúc tạo (API); vận hành, không EVAL_MODE
+    h.tickets.strategies["t1"] = strategy  # D-67: chụp lúc tạo (API); vận hành, không EVAL_MODE
     values = (await h.runner.submit("t1", session_id="s-nv001", redacted_request=TEXT)).values
     return h, cast(dict[str, Any], values), gw
 

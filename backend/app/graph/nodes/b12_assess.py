@@ -4,7 +4,7 @@ dùng bản giả `graph/nodes/fake/b12_assess.py`.
 Input DUY NHẤT của M5: `intended_action` + `build_ctx(state, now, business_hours)` — `build_ctx` chỉ đọc `intended_action`,
 `requester_context`, `ctx_flags` (P2, h21); `now` = Clock của lượt. `evaluate(action, ctx)` giữ chữ ký (h22).
 
-- Chiến lược (D-60) = giá trị CHỤP trên ticket lúc tạo (`deps.tickets.strategy_of`; ticket con kế thừa từ cha; NULL → `hybrid`;
+- Chiến lược (D-67) = giá trị CHỤP trên ticket lúc tạo (`deps.tickets.strategy_of`; ticket con kế thừa từ cha; NULL → `hybrid`;
   giá trị ngoài tập cho phép của chế độ — vận hành: `RUNTIME_SELECTABLE`, EVAL_MODE: `STRATEGIES` — → `hybrid` + log cảnh báo, KHÔNG
   chạy chiến lược lạ): `needs_rules` → `evaluate`; `needs_llm` → B14. Quyết định CHỈ qua `risk.strategy.decide` (bảng 5.3).
 - Luật khớp (hybrid) → không gọi estimator/LLM (h18): `allow` → `S_EXECUTING`/B17; `approval_required` → B15; `deny` → E5.
@@ -17,7 +17,7 @@ Input DUY NHẤT của M5: `intended_action` + `build_ctx(state, now, business_h
   (`risk=None` → cột `decided_by` NULL); điểm 4 `detail` đúng 3 khoá `{strategy, route: AUTO, policy_sha256}`; → B17 (không
   `action_plan_hash`) — B17 kiểm lại luật: `deny`/`approval_required`/không khớp → E5, chỉ `allow` thực thi.
 - Điểm log 4 (3.6) qua `audit_detail` của chính lần `goto` + `policy_sha256`; ca LLM thêm `calibrated_prob`, `thresholds`, `factors`,
-  `kb_gap`, `calibrator_version` (6C P5); `detail.strategy` ở MỌI đường điểm 4, cả lúc vận hành (D-60 thay Q-6C-3: trước chỉ khi EVAL_MODE). Dòng `lineage` cùng transaction
+  `kb_gap`, `calibrator_version` (6C P5); `detail.strategy` ở MỌI đường điểm 4, cả lúc vận hành (D-67 thay Q-6C-3: trước chỉ khi EVAL_MODE). Dòng `lineage` cùng transaction
   audit; ca LLM thêm `prompt_id`, `prompt_version`, `model`, `calibrator_version`, `p_method`. Không lưu `rationale` (D-40).
 - Mỗi nhánh một `goto` với `step`/`exit_code`/`escalation_reason_detail` hằng (P1). `step="B13/B14"`.
 """
@@ -51,7 +51,7 @@ from app.risk.strategy import (
 from app.settings import policy_sha256
 
 log = logging.getLogger(__name__)
-DEFAULT_STRATEGY: Strategy = "hybrid"  # trước D-60 chỉ có `hybrid` chạy lúc vận hành → ticket cũ (strategy NULL) chạy như vậy
+DEFAULT_STRATEGY: Strategy = "hybrid"  # trước D-67 chỉ có `hybrid` chạy lúc vận hành → ticket cũ (strategy NULL) chạy như vậy
 LLM_DOWN_REASON = "Không ước lượng được rủi ro → không tự làm"  # B12 §5 [Đề xuất], phase3 11.3
 _ROUTE: dict[str, Literal["AUTO", "HITL", "ESCALATE_L2"]] = {
     "allow": "AUTO", "approval_required": "HITL", "deny": "ESCALATE_L2",
@@ -80,7 +80,7 @@ def kb_gap(evidence: list[ChunkRef], est: RiskEstimate) -> bool:
 
 
 async def ticket_strategy(deps: NodeDeps, ticket_id: str) -> Strategy:
-    """D-60: chiến lược đã chụp trên ticket. NULL (ticket cũ) → `hybrid`. Ngoài tập cho phép của chế độ hiện tại (không được xảy ra:
+    """D-67: chiến lược đã chụp trên ticket. NULL (ticket cũ) → `hybrid`. Ngoài tập cho phép của chế độ hiện tại (không được xảy ra:
     route PUT chỉ nhận `RUNTIME_SELECTABLE`, ticket chỉ nhận chiến lược EVAL từ env đã qua `check_strategy`) → KHÔNG chạy chiến lược
     đó: `hybrid` + log cảnh báo (id ticket, không chữ người dùng)."""
     raw = await deps.tickets.strategy_of(ticket_id)
@@ -101,7 +101,7 @@ def make(deps: NodeDeps) -> NodeFn:
         verdict = evaluate(action, ctx) if needs_rules(strategy) else None
         all_matched = list(verdict.all_matched) if verdict is not None else []
         lineage: dict[str, Any] = {"policy_version_id": None, "kb_version": state.get("kb_version"), "commit_sha": deps.commit_sha}
-        mode = {"strategy": strategy}  # D-60: ở MỌI đường điểm 4, cả lúc vận hành (trước: chỉ khi EVAL_MODE — Q-6C-3)
+        mode = {"strategy": strategy}  # D-67: ở MỌI đường điểm 4, cả lúc vận hành (trước: chỉ khi EVAL_MODE — Q-6C-3)
         est: RiskEstimate | None = None
         gap = False
         if needs_llm(strategy, verdict):

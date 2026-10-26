@@ -1,4 +1,4 @@
-"""D-60 P1.3, P1.5, P1.6 — chiến lược M5 lúc vận hành qua HTTP thật của app (`desk_env`, graph giả, `MemoryStrategyStore`).
+"""D-67 P1.3, P1.5, P1.6 — chiến lược M5 lúc vận hành qua HTTP thật của app (`desk_env`, graph giả, `MemoryStrategyStore`).
 
 - `GET /api/admin/strategy` (`policy:read`), `PUT` (`policy:edit` + đăng nhập lại ≤ `reauth_minutes`), `GET …/history`: hình dạng phẳng
   (ĐP chốt 26/10), 401/403/422/409/reauth, ranh giới `reason` 9/10/500/501 SAU khi cắt khoảng trắng, `strategy_from`, audit

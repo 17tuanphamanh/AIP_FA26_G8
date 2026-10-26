@@ -323,7 +323,7 @@ class NodeDeps:
     business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
     estimator: RiskEstimator = field(default_factory=DisabledEstimator)
     # Phase 6 6C (P1, P10): calibrator nạp lúc khởi động (`m5.calibrator_version`) — None = chưa hiệu chỉnh → không bao giờ AUTO
-    # (D-38); `eval_mode` = `Settings.eval_mode`. D-60: chiến lược M5 KHÔNG còn ở đây — B12 đọc chiến lược đã chụp trên ticket
+    # (D-38); `eval_mode` = `Settings.eval_mode`. D-67: chiến lược M5 KHÔNG còn ở đây — B12 đọc chiến lược đã chụp trên ticket
     # (`TicketStore.strategy_of`); điểm log 4 luôn ghi `detail.strategy`. Mặc định = an toàn (không AUTO do LLM).
     calibrator: Calibrator | None = None
     eval_mode: bool = False

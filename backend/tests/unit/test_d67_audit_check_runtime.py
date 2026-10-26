@@ -1,8 +1,8 @@
-"""D-60 P1.4 — bất biến `audit/check.py` (`_point4_need`, dòng 117–125) ĐÚNG với dòng audit điểm 4 VẬN HÀNH (không EVAL_MODE) của
+"""D-67 P1.4 — bất biến `audit/check.py` (`_point4_need`, dòng 117–125) ĐÚNG với dòng audit điểm 4 VẬN HÀNH (không EVAL_MODE) của
 `rule_only` và `hybrid_guarded`: dòng do chính node B12 sinh (`eval_mode=False`, chiến lược chụp trên ticket) — không báo thiếu sai
 (dòng đủ → []), không bỏ lọt (bỏ một trường bắt buộc → đúng trường đó).
 
-Trước D-60 dòng vận hành không có `detail.strategy` (Q-6C-3) nên nhánh `rule_only` + `policy_decision` NULL của `audit_check` chỉ đạt
+Trước D-67 dòng vận hành không có `detail.strategy` (Q-6C-3) nên nhánh `rule_only` + `policy_decision` NULL của `audit_check` chỉ đạt
 khi EVAL_MODE; nay B12 luôn ghi `detail.strategy` nên dòng vận hành của `rule_only` (không luật nào khớp → HITL) cũng đạt.
 """
 

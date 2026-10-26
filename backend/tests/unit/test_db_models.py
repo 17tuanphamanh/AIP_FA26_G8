@@ -19,7 +19,7 @@ MIGRATION = (
 
 MIGRATION_0010 = MIGRATION.parent / "0010_rate_limits.py"  # gói 2b (D-54 a) — bảng thứ 23 `rate_hits`
 MIGRATION_0012 = MIGRATION.parent / "0012_email_outbox.py"  # notify-email — bảng thứ 24 `email_outbox` + `users.email`
-MIGRATION_0013 = MIGRATION.parent / "0013_m5_strategy_runtime.py"  # D-60 — bảng thứ 25 `m5_strategy_changes` + 2 cột `tickets`
+MIGRATION_0013 = MIGRATION.parent / "0013_m5_strategy_runtime.py"  # D-67 — bảng thứ 25 `m5_strategy_changes` + 2 cột `tickets`
 
 
 def _migration(path: Path = MIGRATION) -> ModuleType:
@@ -40,7 +40,7 @@ def _check(table: str, column: str) -> str:
 
 def test_24_tables() -> None:
     """Gói 2b (PLAN-2B1 G8 #1, Q-2B1-6; đặc tả 4.8 "bảng thứ 23"): 22 bảng gốc + `rate_hits` (migration 0010). Notify-email: bảng thứ
-    24 `email_outbox` (migration 0012). D-60: bảng thứ 25 `m5_strategy_changes` (migration 0013) — giữ tên test."""
+    24 `email_outbox` (migration 0012). D-67: bảng thứ 25 `m5_strategy_changes` (migration 0013) — giữ tên test."""
     assert len(Base.metadata.tables) == 25
     assert "rate_hits" in Base.metadata.tables
     assert "email_outbox" in Base.metadata.tables
@@ -73,12 +73,12 @@ def test_no_password_column_anywhere() -> None:
 def test_tickets_store_redacted_request_only() -> None:
     cols = set(Base.metadata.tables["tickets"].columns.keys())
     assert "redacted_request" in cols and "raw_request" not in cols  # D-07 (A1)
-    assert len(cols) == 23  # 20 cột nguồn + is_parent (A2) + D-60 `strategy`, `source` (migration 0013)
+    assert len(cols) == 23  # 20 cột nguồn + is_parent (A2) + D-67 `strategy`, `source` (migration 0013)
 
 
 def test_migration_grants_cover_every_table() -> None:
     """Gói 2b (PLAN-2B1 G8 #2): quyền `app_rw` = CRUD + append-only của `0001` HỢP `RW_TABLES` của `0010` (`rate_hits`) HỢP
-    `RW_TABLES` của `0012` (`email_outbox`, notify-email) HỢP `RW_TABLES` của `0013` (`m5_strategy_changes`, D-60)."""
+    `RW_TABLES` của `0012` (`email_outbox`, notify-email) HỢP `RW_TABLES` của `0013` (`m5_strategy_changes`, D-67)."""
     m, m10, m12, m13 = _migration(), _migration(MIGRATION_0010), _migration(MIGRATION_0012), _migration(MIGRATION_0013)
     assert tuple(m10.RW_TABLES) == ("rate_hits",)
     assert tuple(m12.RW_TABLES) == ("email_outbox",)
@@ -86,7 +86,7 @@ def test_migration_grants_cover_every_table() -> None:
     assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) | set(m12.RW_TABLES) | set(m13.RW_TABLES) == set(
         Base.metadata.tables
     )
-    assert "m5_strategy_changes" not in m.MONITOR_TABLES  # D-60: không cấp app_monitor
+    assert "m5_strategy_changes" not in m.MONITOR_TABLES  # D-67: không cấp app_monitor
     assert "email_outbox" not in m.MONITOR_TABLES  # body là nội dung tin: không cấp app_monitor
     assert not set(m.RW_CRUD_TABLES) & set(m.APPEND_ONLY)
     assert not (set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY)) & set(m10.RW_TABLES)  # rate_hits không phải bảng của 0001
@@ -166,7 +166,7 @@ def test_tickets_requester_created_at_index() -> None:
     t: Table = Base.metadata.tables["tickets"]
     indexes = {str(ix.name): [c.name for c in ix.columns] for ix in t.indexes}
     assert indexes["ix_tickets_requester_created_at"] == ["requester_id", "created_at"]
-    assert len(t.columns) == 23  # 0010 không thêm cột vào tickets; D-60 (0013) thêm `strategy`, `source`
+    assert len(t.columns) == 23  # 0010 không thêm cột vào tickets; D-67 (0013) thêm `strategy`, `source`
 
 
 def test_migration_0010_downgrade_views_equal_0008() -> None:
@@ -198,11 +198,11 @@ def test_email_outbox_model_matches_migration_0012() -> None:
     assert isinstance(email.type, String) and email.type.length == 254 and email.nullable
 
 
-# ---- D-60 (migration 0013) ------------------------------------------------------------------------------------------------
+# ---- D-67 (migration 0013) ------------------------------------------------------------------------------------------------
 
 
 def test_m5_strategy_model_matches_migration_0013() -> None:
-    """D-60: `0013` nối sau `0012`; `tickets.source` CHECK = hằng model, NOT NULL mặc định 'real'; `tickets.strategy` NULL, không CHECK
+    """D-67: `0013` nối sau `0012`; `tickets.source` CHECK = hằng model, NOT NULL mặc định 'real'; `tickets.strategy` NULL, không CHECK
     (tập hợp lệ ở `risk/strategy.py`); `m5_strategy_changes` chỉ ghi thêm (app_rw SELECT, INSERT; trigger chặn UPDATE/DELETE/TRUNCATE);
     `v_leaf` = cột của 0010 + `strategy`, `source` ở cuối; downgrade tạo lại 4 view đúng như 0008/0010/0011."""
     from app.db.models import TICKET_SOURCES

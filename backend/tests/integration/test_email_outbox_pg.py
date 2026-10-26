@@ -147,7 +147,7 @@ def _state(url: str) -> dict[str, Any]:
 def test_migration_0012_up_down_up(pg: PgUrls) -> None:
     with fresh_database(pg) as fresh:
         cfg, url = alembic_config(fresh), fresh.role("app_migrate")
-        command.upgrade(cfg, "0012")  # D-60: head nay là 0013 — kiểm đúng mốc 0012
+        command.upgrade(cfg, "0012")  # D-67: head nay là 0013 — kiểm đúng mốc 0012
         up = _state(url)
         assert up["version"] == "0012"
         assert up["email"] == ("character varying", 254, "YES")

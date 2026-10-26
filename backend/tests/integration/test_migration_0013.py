@@ -1,4 +1,4 @@
-"""Migration 0013 (D-60 — chiến lược M5 lúc vận hành) trên Postgres 16 thật + store SQL (`SqlStrategyStore`, `SqlTicketStore`).
+"""Migration 0013 (D-67 — chiến lược M5 lúc vận hành) trên Postgres 16 thật + store SQL (`SqlStrategyStore`, `SqlTicketStore`).
 
 - Lên 0013 → xuống 0012 → lên 0013 (BE chốt 26/10): cột `tickets.strategy`/`source` + CHECK, `escalations.close_note` + CHECK, bảng `m5_strategy_changes` (chỉ ghi thêm,
   quyền `app_rw` SELECT/INSERT, trigger), `v_leaf` thêm 2 cột CUỐI; sau downgrade đủ 4 view (`v_leaf`, `v_decisions`, `v_l2_queue`,
@@ -139,9 +139,9 @@ def test_0013_append_only_and_source_check(pg: PgUrls) -> None:
         rw, owner = create_engine(db.role("app_rw")), create_engine(db.role("app_migrate"))
         try:
             with rw.begin() as conn:
-                conn.execute(text("INSERT INTO users (user_id, username, role) VALUES ('mgr-d60', 'mgr.d60', 'manager')"))
+                conn.execute(text("INSERT INTO users (user_id, username, role) VALUES ('mgr-d67', 'mgr.d67', 'manager')"))
                 conn.execute(text("INSERT INTO m5_strategy_changes (strategy, changed_by, reason) VALUES "
-                                  "('rule_only', 'mgr-d60', 'chạy dữ liệu thử')"))  # fmt: skip
+                                  "('rule_only', 'mgr-d67', 'chạy dữ liệu thử')"))  # fmt: skip
             for stmt in ("UPDATE m5_strategy_changes SET reason = 'x'", "DELETE FROM m5_strategy_changes"):
                 with pytest.raises(DBAPIError, match="permission denied"), rw.begin() as conn:
                     conn.execute(text(stmt))
@@ -151,7 +151,7 @@ def test_0013_append_only_and_source_check(pg: PgUrls) -> None:
                     conn.execute(text(stmt))
             with pytest.raises(DBAPIError, match="ck_tickets_source"), rw.begin() as conn:
                 conn.execute(text("INSERT INTO tickets (ticket_id, requester_id, requester_role, redacted_request, source) "
-                                  "VALUES ('t-src', 'mgr-d60', 'manager', 'x', 'khac')"))  # fmt: skip
+                                  "VALUES ('t-src', 'mgr-d67', 'manager', 'x', 'khac')"))  # fmt: skip
         finally:
             rw.dispose()
             owner.dispose()
@@ -164,16 +164,16 @@ async def test_strategy_store_and_ticket_snapshot_sql(pg: PgUrls) -> None:
         engine = create_async_engine(db.role("app_rw"))
         try:
             async with engine.begin() as conn:
-                await conn.execute(text("INSERT INTO users (user_id, username, role) VALUES ('mgr-d60', 'mgr.d60', 'manager'), "
-                                        "('nv-d60', 'nv.d60', 'employee')"))  # fmt: skip
+                await conn.execute(text("INSERT INTO users (user_id, username, role) VALUES ('mgr-d67', 'mgr.d67', 'manager'), "
+                                        "('nv-d67', 'nv.d67', 'employee')"))  # fmt: skip
             store = SqlStrategyStore(engine)
             assert await store.current() is None
             with pytest.raises(SameStrategy):  # chưa có dòng = hybrid
-                await store.append("hybrid", changed_by="mgr-d60", reason="chạy dữ liệu thử", at=T0)
+                await store.append("hybrid", changed_by="mgr-d67", reason="chạy dữ liệu thử", at=T0)
             for i, s in enumerate(("rule_only", "hybrid_guarded", "hybrid")):
-                await store.append(s, changed_by="mgr-d60", reason=f"lý do số {i} đủ dài", at=T0 + timedelta(minutes=i))
+                await store.append(s, changed_by="mgr-d67", reason=f"lý do số {i} đủ dài", at=T0 + timedelta(minutes=i))
             with pytest.raises(SameStrategy):
-                await store.append("hybrid", changed_by="mgr-d60", reason="chạy dữ liệu thử", at=T0)
+                await store.append("hybrid", changed_by="mgr-d67", reason="chạy dữ liệu thử", at=T0)
             current = await store.current()
             assert current is not None and (current.strategy, current.strategy_from) == ("hybrid", "hybrid_guarded")
             items, truncated = await store.history(2)
@@ -189,18 +189,18 @@ async def test_strategy_store_and_ticket_snapshot_sql(pg: PgUrls) -> None:
                               {"kind": "m5_strategy", "from": "hybrid_guarded", "to": "hybrid"}]  # fmt: skip
 
             tickets = SqlTicketStore(engine)
-            await tickets.create(NewTicket(ticket_id="t-d60", requester_id="nv-d60", requester_role="employee", requester_dept=None,
+            await tickets.create(NewTicket(ticket_id="t-d67", requester_id="nv-d67", requester_role="employee", requester_dept=None,
                                            session_id=None, redacted_request="x", created_at=T0, strategy="hybrid_guarded",
-                                           source="sim"), turn_id="turn-d60")  # fmt: skip
-            await tickets.create(NewTicket(ticket_id="t-old", requester_id="nv-d60", requester_role="employee", requester_dept=None,
+                                           source="sim"), turn_id="turn-d67")  # fmt: skip
+            await tickets.create(NewTicket(ticket_id="t-old", requester_id="nv-d67", requester_role="employee", requester_dept=None,
                                            session_id=None, redacted_request="x", created_at=T0), turn_id="turn-old")  # fmt: skip
-            await tickets.create_child("t-d60-1", parent_id="t-d60", redacted_request="ý 1", created_at=T0, intents=2,
+            await tickets.create_child("t-d67-1", parent_id="t-d67", redacted_request="ý 1", created_at=T0, intents=2,
                                        intent_type="vpn")  # fmt: skip
-            assert await tickets.strategy_of("t-d60") == "hybrid_guarded"
-            assert await tickets.strategy_of("t-d60-1") == "hybrid_guarded"  # con kế thừa
+            assert await tickets.strategy_of("t-d67") == "hybrid_guarded"
+            assert await tickets.strategy_of("t-d67-1") == "hybrid_guarded"  # con kế thừa
             assert await tickets.strategy_of("t-old") is None  # không ghi → NULL (B12 coi là hybrid)
             async with engine.connect() as conn:
                 sources: dict[str, str] = {r[0]: r[1] for r in await conn.execute(text("SELECT ticket_id, source FROM tickets"))}
-            assert sources == {"t-d60": "sim", "t-d60-1": "sim", "t-old": "real"}
+            assert sources == {"t-d67": "sim", "t-d67-1": "sim", "t-old": "real"}
         finally:
             await engine.dispose()

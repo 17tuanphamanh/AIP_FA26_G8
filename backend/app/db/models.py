@@ -106,7 +106,7 @@ SIDE_EFFECT_KINDS = (  # P7 2.8
 )  # fmt: skip
 NOTICE_KINDS = ("answer", "question", "result", "rejection", "escalation")  # P7 2.9
 NOTICE_NEEDS = ("none", "answer", "confirm")  # P7 2.9
-TICKET_SOURCES = ("real", "sim", "eval")  # migration 0013 (D-60): nguồn ticket — thật / chạy dữ liệu thử / đánh giá
+TICKET_SOURCES = ("real", "sim", "eval")  # migration 0013 (D-67): nguồn ticket — thật / chạy dữ liệu thử / đánh giá
 EMAIL_STATUSES = ("pending", "sent", "failed", "skipped")  # migration 0012 (notify-email)
 EMAIL_KINDS = (  # migration 0012: 4 loại tin người dùng (B10/B16/B18/B20) + 3 loại thông báo người duyệt (B15, nhắc 50 %/80 %)
     "answer", "rejection", "result", "escalation", "approval_new", "approval_reminder_1", "approval_reminder_2",
@@ -330,7 +330,7 @@ class Ticket(Base):
     created_at: Mapped[datetime] = _now()
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_parent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    # migration 0013 (D-60): chiến lược M5 CHỤP lúc tạo ticket (NULL = ticket cũ, B12 coi là `hybrid`); nguồn ticket
+    # migration 0013 (D-67): chiến lược M5 CHỤP lúc tạo ticket (NULL = ticket cũ, B12 coi là `hybrid`); nguồn ticket
     strategy: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'real'"))
 
@@ -815,7 +815,7 @@ class EmailOutbox(Base):
     effect_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
 
 
-# ---- 25. m5_strategy_changes (D-60) — migration 0013 -----------------------------------------------------------------------
+# ---- 25. m5_strategy_changes (D-67) — migration 0013 -----------------------------------------------------------------------
 
 
 class M5StrategyChange(Base):

@@ -1,4 +1,4 @@
-"""Golden `risk.strategy.decide` — chốt kết quả trên ma trận đầu vào cố định (gói tuần 8, D-60).
+"""Golden `risk.strategy.decide` — chốt kết quả trên ma trận đầu vào cố định (gói tuần 8, D-67).
 
 Ma trận: mọi chiến lược (kể cả giá trị lạ) × {không có kết quả luật, không khớp, allow, approval_required, deny} × ước lượng
 (không có + 8 xác suất quanh ngưỡng) × {có, không} calibrator × kb_gap. Ngưỡng và mã luật là giá trị giả (R81…R83), không lấy từ

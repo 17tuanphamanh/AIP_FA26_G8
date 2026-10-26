@@ -1,4 +1,4 @@
-"""`m5_strategy_changes` giả (D-60) — cùng ngữ nghĩa `db/m5_strategy.SqlStrategyStore`: chỉ ghi thêm, hiện hành = dòng cuối, trùng
+"""`m5_strategy_changes` giả (D-67) — cùng ngữ nghĩa `db/m5_strategy.SqlStrategyStore`: chỉ ghi thêm, hiện hành = dòng cuối, trùng
 chiến lược hiện hành → `SameStrategy`, `strategy_from` của dòng đầu = `hybrid`; `append` ghi thêm `policy_saved` vào `events`."""
 
 from datetime import datetime

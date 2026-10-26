@@ -204,9 +204,9 @@ def test_st14_full_auto_bypass() -> None:
 
 
 def test_st15_check_strategy_eval_only_blocked_outside_eval() -> None:
-    """st15 [Chốt cổng 6] — sửa có chủ ý theo D-60 (GIỮ TÊN: `mutate_6b.py` M-6B-6 gọi test này): `RUNTIME_SELECTABLE` = rule_only,
+    """st15 [Chốt cổng 6] — sửa có chủ ý theo D-67 (GIỮ TÊN: `mutate_6b.py` M-6B-6 gọi test này): `RUNTIME_SELECTABLE` = rule_only,
     hybrid, hybrid_guarded qua khi eval_mode=False; `EVAL_ONLY` còn llm_only, full_auto → StrategyNotAllowed; eval_mode=True — 5 qua.
-    Trước D-60: EVAL_ONLY = 4 chiến lược, chỉ hybrid qua lúc vận hành."""
+    Trước D-67: EVAL_ONLY = 4 chiến lược, chỉ hybrid qua lúc vận hành."""
     assert frozenset({"llm_only", "full_auto"}) == EVAL_ONLY
     assert RUNTIME_SELECTABLE == ("rule_only", "hybrid", "hybrid_guarded")
     assert STRATEGIES == EVAL_ONLY | frozenset(RUNTIME_SELECTABLE) and len(STRATEGIES) == 5
