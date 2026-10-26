@@ -82,6 +82,7 @@ def seeded(db: PgUrls) -> PgUrls:
         escalation("T-A2", "E1", "injection_suspected", "reopened_as_new", _at(26))
         escalation("T-A2", "E1", "out_of_scope", "reopened_as_new", _at(27))
         escalation("T-A2", "E5", "llm_high_risk", None, None)  # còn mở
+        escalation("T-A2", "E3", "no_grounding", None, _at(28))  # dữ liệu lạ: có closed_at mà close_result NULL → không trả ra
         escalation("T-B1", "E3", "no_grounding", "completed", _at(45))
         # nhiều dòng TRÙNG created_at → id 'appr:<n>' có cả số 1 chữ số lẫn 2 chữ số
         for _ in range(12):
@@ -133,7 +134,7 @@ async def test_sources_filters_and_created_at(source: SqlNotificationSource) -> 
     assert (rejected.result, rejected.ticket_id, rejected.created_at) == ("rejected", "P-A", _at(20))  # con → id của CHA
     assert {r.result for r in rows.values() if r.kind == "approval_decided"} == {"approved", "rejected"}
     escs = [r for r in rows.values() if r.kind == "escalation_closed"]
-    assert sorted(r.created_at for r in escs) == [_at(15), _at(25), _at(26), _at(27)]  # ca còn mở không có
+    assert sorted(r.created_at for r in escs) == [_at(15), _at(25), _at(26), _at(27)]  # ca còn mở / close_result NULL không có
     assert {(r.exit_code, r.reason_detail, r.result) for r in escs} == {
         ("E3", "no_grounding", "completed"), ("E0", None, "confirmed_denial"),
         ("E1", "injection_suspected", "reopened_as_new"), ("E1", "out_of_scope", "reopened_as_new"),
@@ -186,6 +187,26 @@ def env(seeded: PgUrls) -> Iterator[AuthEnv]:
     with auth_env() as e:
         e.app.state.notifications = PerCallSql(seeded.role("app_rw"))
         yield e
+
+
+KIND_CONTRACT = {
+    "approval_decided": ("appr:", {"approved", "rejected"}),
+    "escalation_closed": ("esc:", {"completed", "confirmed_denial", "reopened_as_new"}),
+}
+
+
+@pytest.mark.asyncio
+async def test_every_row_kind_result_and_id_prefix_agree_and_odd_data_excluded(source: SqlNotificationSource) -> None:
+    """Quét MỌI dòng của mọi người dùng: kind ↔ tiền tố id ↔ result hợp lệ. Phiếu `timeout`/`late_ignored`/`pending` và ca L2 còn mở hoặc
+    có `closed_at` mà `close_result` NULL không bao giờ ra (dòng lạ ở mốc `_at(28)` không có trong kết quả)."""
+    for user in (A, B):
+        rows = await source.page(user, 200, None)
+        assert rows
+        for r in rows:
+            prefix, results = KIND_CONTRACT[r.kind]
+            assert r.id.startswith(prefix) and r.result in results, r
+        assert _at(28) not in {r.created_at for r in rows}
+    assert {r.result for r in await source.page(A, 200, None)} == {"approved", "rejected", "completed", "confirmed_denial", "reopened_as_new"}
 
 
 def _get(env: AuthEnv, user: str, query: str = "") -> Any:

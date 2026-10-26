@@ -121,6 +121,22 @@ def test_shape_and_both_kinds_all_results(mixed: tuple[AuthEnv, MemoryNotificati
     assert by_id["esc:3"]["new_ticket_id"] is None
 
 
+KIND_CONTRACT = {
+    "approval_decided": ("appr:", {"approved", "rejected"}),
+    "escalation_closed": ("esc:", {"completed", "confirmed_denial", "reopened_as_new"}),
+}
+
+
+def test_every_item_kind_result_and_id_prefix_agree(mixed: tuple[AuthEnv, MemoryNotifications]) -> None:
+    """Quét MỌI item (mọi trang): kind ↔ tiền tố id ↔ tập result hợp lệ — FE rẽ nhánh theo bộ ba này."""
+    env, _ = mixed
+    items = [i for page in _walk(env, 2) for i in page]
+    assert len(items) == 5
+    for i in items:
+        prefix, results = KIND_CONTRACT[i["kind"]]
+        assert i["id"].startswith(prefix) and i["result"] in results, i
+
+
 def test_empty_list(mixed: tuple[AuthEnv, MemoryNotifications]) -> None:
     env, source = mixed
     source.items.clear()
