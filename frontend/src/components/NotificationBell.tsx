@@ -26,6 +26,9 @@ import { vnDateTime } from "../routes/manager/range.ts";
 //   `document.visibilityState` = hidden); 401/403/404 → dừng. 404 (route chưa có) → không vẽ chuông.
 // - Danh sách là popover gọn (không thêm trang `/notifications`): Bản 4 không có thanh trên, thanh bên 264 px.
 
+/** Câu lỗi khung thông báo (ĐP soát 23d0f6a #4). */
+const TB_LOI = "Chưa tải được thông báo";
+
 const badgeText = (count: number, partial: boolean) => (count > 99 ? "99+" : partial ? `${count}+` : String(count));
 
 export function NotificationBell({ me }: { me: Me }) {
@@ -126,9 +129,11 @@ export function NotificationBell({ me }: { me: Me }) {
         >
           <h2 className="border-b border-line px-4 py-3 text-secondary font-semibold">Thông báo</h2>
           <div className="flex min-h-0 flex-col overflow-y-auto">
+            {/* Lỗi (thân sai 502 invalid_notifications_body, mạng, 5xx…) → nói ra, không im lặng (ĐP soát 23d0f6a #4). Chưa
+                có dữ liệu: câu ĐP nguyên văn; đã có dữ liệu cũ (vẫn hiện bên dưới): thêm "— đang thử lại" (nhịp 30 s vẫn chạy). */}
             {query.isError ? (
-              <p role="status" className="px-4 py-3 text-label font-normal text-ink-2">
-                Chưa tải được thông báo mới — đang thử lại.
+              <p role="status" data-testid="tb-error" className="px-4 py-3 text-secondary text-ink-2">
+                {items.length > 0 ? `${TB_LOI} — đang thử lại.` : `${TB_LOI}.`}
               </p>
             ) : null}
             {items.length === 0 && !query.isError ? <p className="px-4 py-6 text-secondary text-ink-2">Chưa có thông báo nào.</p> : null}

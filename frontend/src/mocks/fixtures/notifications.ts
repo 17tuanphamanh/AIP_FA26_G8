@@ -19,7 +19,7 @@ const APPROVAL_TEXT = {
 const CLOSE_TEXT = {
   completed: "Kỹ thuật viên đã xử lý xong sự cố VPN của bạn.",
   confirmed_denial: "Kỹ thuật viên đã xem lại và giữ quyết định không cấp quyền quản trị máy.",
-  reopened_as_new: "Kỹ thuật viên đã tạo yêu cầu mới để xử lý tiếp việc đổi thiết bị.",
+  reopened_as_new: "Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc đổi thiết bị.",
 } as const;
 
 /** 26 thông báo (mới nhất trước), cách nhau 47 phút; dòng 3 có chữ dáng mã (minh hoạ bộ lọc), dòng 2 = `reopened_as_new` (không mã ticket mới). */

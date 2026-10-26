@@ -262,7 +262,7 @@ export const KET_QUA_THONG_BAO: Readonly<Record<string, string>> = {
   rejected: "Bị từ chối",
   completed: "Đã xử lý xong",
   confirmed_denial: "Giữ quyết định từ chối",
-  reopened_as_new: "Đã tạo yêu cầu mới",
+  reopened_as_new: "Cần gửi yêu cầu mới",
 };
 
 /** Câu chung theo `result` — thay chữ của server khi chữ đó có dáng mã nội bộ (fail-closed). */
@@ -270,8 +270,8 @@ export const CAU_THONG_BAO: Readonly<Record<string, string>> = {
   approved: "IT đã duyệt yêu cầu của bạn.",
   rejected: "IT đã từ chối yêu cầu của bạn.",
   completed: "Kỹ thuật viên đã xử lý xong yêu cầu của bạn.",
-  confirmed_denial: "Kỹ thuật viên đã xem lại và giữ quyết định từ chối yêu cầu của bạn.",
-  reopened_as_new: "Kỹ thuật viên đã tạo yêu cầu mới để xử lý tiếp cho bạn.",
+  confirmed_denial: "Kỹ thuật viên đã xem lại và giữ quyết định từ chối.",
+  reopened_as_new: "Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc này.",
 };
 
 /** Câu chung theo `kind` khi `result` không có câu (dự phòng; parser đã chặn khoá lạ). */

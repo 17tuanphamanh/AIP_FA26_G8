@@ -380,7 +380,7 @@ describe("t208: dòng thông báo — \"Xem yêu cầu\" tới /chat/<ticket_id>
     expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toStrictEqual([["Xem yêu cầu", "/chat/tkt-goc"]]);
     expect(dialog.textContent).not.toContain("tkt-moi-777");
     expect([...dialog.querySelectorAll("[href]")].map((a) => a.getAttribute("href"))).not.toContain("/chat/tkt-moi-777");
-    expect(within(dialog).getByText("Đã tạo yêu cầu mới")).toBeTruthy();
+    expect(within(dialog).getByText("Cần gửi yêu cầu mới")).toBeTruthy();
   });
   it("nhân sự IT không có ticket:read:own → không link (route /chat/:id sẽ là 403)", async () => {
     feed(THREE);
@@ -673,5 +673,101 @@ describe("t216: Storage chỉ đụng ở lib/lastSeen.ts — chuông không ghi
       expect(isIsoWithZone(value)).toBe(true);
     }
     expect(setItem.mock.calls.length).toBeGreaterThan(0);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------------ ĐP soát 23d0f6a
+describe("t217: câu chữ reopened_as_new / confirmed_denial (ĐP soát 23d0f6a #1, #2)", () => {
+  it("nhãn + câu chung đúng nguyên văn; không còn \"đã tạo yêu cầu mới\" ở nhãn/câu/fixture của nhân viên", () => {
+    expect(KET_QUA_THONG_BAO.reopened_as_new).toBe("Cần gửi yêu cầu mới");
+    expect(CAU_THONG_BAO.reopened_as_new).toBe("Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc này.");
+    expect(CAU_THONG_BAO.confirmed_denial).toBe("Kỹ thuật viên đã xem lại và giữ quyết định từ chối.");
+    const texts = [...Object.values(KET_QUA_THONG_BAO), ...Object.values(CAU_THONG_BAO), ...createNotifications(T0).map((i) => i.text)];
+    for (const t of texts) expect(t.toLowerCase()).not.toContain("đã tạo yêu cầu mới");
+  });
+  it("dòng reopened_as_new chữ có mã → câu chung mới + nhãn mới; chỉ link ticket gốc", async () => {
+    feed([item({ id: "esc:7", kind: "escalation_closed", result: "reopened_as_new", ticket_id: "tkt-goc", text: "Đóng ca E5, mở lại", new_ticket_id: null })]);
+    mountSidebar();
+    fireEvent.click(await bell());
+    const dialog = await screen.findByRole("dialog", { name: "Thông báo" });
+    expect(within(dialog).getByText("Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc này.")).toBeTruthy();
+    expect(within(dialog).getByText("Cần gửi yêu cầu mới")).toBeTruthy();
+    expect(within(dialog).getAllByRole("link").map((a) => a.getAttribute("href"))).toStrictEqual(["/chat/tkt-goc"]);
+  });
+  it("dòng confirmed_denial chữ có mã → câu chung mới", () => {
+    expect(cauThongBao({ kind: "escalation_closed", result: "confirmed_denial", text: "Giữ E3" })).toBe("Kỹ thuật viên đã xem lại và giữ quyết định từ chối.");
+  });
+});
+
+describe("t218: lỗi tải thông báo → chuông vẫn hiện (không số), mở khung thấy \"Chưa tải được thông báo\" (ĐP soát 23d0f6a #4)", () => {
+  it.each([
+    ["thân sai hình dạng (502 invalid_notifications_body)", () => json(200, { items: [{ id: "esc:1", kind: "approval_decided" }], next_cursor: null })],
+    ["kind↔result lệch (đọc chặt giữ nguyên)", () => json(200, { items: [item({ id: "appr:1", result: "completed" })], next_cursor: null })],
+    ["5xx", () => json(500, { detail: "boom" })],
+  ] as [string, () => Response][])("%s", async (_name, respond) => {
+    stub((u) => (u.startsWith("/api/me/notifications") ? respond() : undefined));
+    mountSidebar();
+    const button = await bell();
+    expect(count()).toBeNull();
+    expect(button.getAttribute("aria-label")).toBe("Thông báo");
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog", { name: "Thông báo" });
+    expect(within(dialog).getByTestId("tb-error").textContent).toBe("Chưa tải được thông báo.");
+    expect(within(dialog).queryByText("Chưa có thông báo nào.")).toBeNull();
+    expect(within(dialog).queryAllByTestId("tb-row")).toHaveLength(0);
+  });
+  it("đã có dữ liệu rồi lần hỏi lại lỗi → giữ dòng cũ + \"Chưa tải được thông báo — đang thử lại.\"", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let n = 0;
+    stub((u) => (u.startsWith("/api/me/notifications") ? (++n === 1 ? json(200, { items: THREE, next_cursor: null }) : json(200, { items: "hỏng", next_cursor: null })) : undefined));
+    mountSidebar();
+    await bell();
+    await waitFor(() => expect(count()).toBe("3"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_500);
+    });
+    await waitFor(() => expect(n).toBeGreaterThanOrEqual(2));
+    fireEvent.click(await bell());
+    const dialog = await screen.findByRole("dialog", { name: "Thông báo" });
+    await waitFor(() => expect(within(dialog).getByTestId("tb-error").textContent).toBe("Chưa tải được thông báo — đang thử lại."));
+    expect(within(dialog).getAllByTestId("tb-row")).toHaveLength(3);
+  });
+});
+
+describe("t219: đồng hồ quá hạn → ô nhập \"Đang chuyển kỹ thuật viên\" tới khi ticket đổi (ĐP soát 23d0f6a #5)", () => {
+  const composer = () => document.querySelector("textarea")?.getAttribute("placeholder") ?? null;
+  it("trước hạn: \"Đang chờ IT duyệt\"; quá hạn (tải lại vẫn chờ duyệt): \"Đang chuyển kỹ thuật viên\"; ticket đổi hạn mới → về \"Đang chờ IT duyệt\"", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, now: T0 });
+    const first = new Date(T0 + 2000).toISOString();
+    let deadline = first;
+    stubTicket(() => view({ deadline, server_now: new Date(Date.now()).toISOString() }));
+    mountChat();
+    await tick(50);
+    await vi.waitFor(() => expect(clockText()).toContain("còn 00:02"));
+    expect(composer()).toBe("Đang chờ IT duyệt");
+    await tick(2100);
+    await vi.waitFor(() => expect(clockText()).toContain(EXPIRED_TEXT));
+    await tick(50);
+    expect(composer()).toBe("Đang chuyển kỹ thuật viên");
+    // Lần chờ duyệt mới (hạn khác) → đồng hồ mới, ô nhập về câu chờ duyệt.
+    deadline = new Date(T0 + 20 * 60_000).toISOString();
+    await tick(10_000);
+    await vi.waitFor(() => expect(clockText()).toMatch(/còn \d\d:\d\d/));
+    expect(composer()).toBe("Đang chờ IT duyệt");
+  });
+  it("tải lại ra ticket đã chuyển (final) → không còn ô nhập; không câu \"đang chuyển\" treo lại", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, now: T0 });
+    const deadline = new Date(T0 + 1000).toISOString();
+    stubTicket((n) =>
+      n === 1
+        ? view({ deadline, server_now: new Date(Date.now()).toISOString() })
+        : view({ status: "S_ESCALATED", waiting_for: null, final_state: "S_ESCALATED", deadline: null, server_now: new Date(Date.now()).toISOString() }),
+    );
+    mountChat();
+    await tick(50);
+    await vi.waitFor(() => expect(clockText()).toContain("còn 00:01"));
+    await tick(1100);
+    await vi.waitFor(() => expect(clockText()).toBeNull());
+    expect(document.body.textContent).not.toContain("Đang chuyển kỹ thuật viên");
   });
 });

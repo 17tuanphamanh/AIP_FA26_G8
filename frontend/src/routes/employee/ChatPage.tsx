@@ -78,7 +78,15 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   });
   const view = query.data;
   // Đồng hồ chờ duyệt hết hạn → tải lại ticket NGAY một lần (ApprovalClock gọi đúng một lần mỗi hạn); kết luận theo ticket.
-  const refetchTicket = useCallback(() => void queryClient.refetchQueries({ queryKey, exact: true }), [queryClient, queryKey]);
+  // Ghi lại hạn đã quá → ô nhập đổi "Đang chuyển kỹ thuật viên" tới khi ticket tải lại đổi bước / đổi hạn (ĐP soát 23d0f6a #5).
+  const [expiredDeadline, setExpiredDeadline] = useState<string | null>(null);
+  const onClockExpire = useCallback(
+    (expired: string) => {
+      setExpiredDeadline(expired);
+      void queryClient.refetchQueries({ queryKey, exact: true });
+    },
+    [queryClient, queryKey],
+  );
   const messages = useMemo(() => normalizeConversation(view?.conversation), [view]);
   // Câu yêu cầu + tiêu đề: chỉ từ bộ nhớ phiên (12b Q-fe-18) — không lấy tin người dùng trong `conversation` (đó là
   // câu TRẢ LỜI khi hỏi thêm). Tải lại trang / mở bằng URL → không có → "Yêu cầu của bạn", không bong bóng.
@@ -175,7 +183,6 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const tone = statusTone(view);
   // Đang chờ backend nhận câu trả lời / xác nhận vừa gửi → không mở lại ô nhập, nút của bước cũ.
   const waiting = view.final_state || settling ? null : view.waiting_for;
-  const composer = composerFor(view, waiting, settling);
   // Nhiều ý (D-31): form CHỈ cho tin tổng hợp round lớn nhất và CHỈ khi cha đang chờ trả lời; tin cũ chỉ đọc.
   const progress = progressItems(view.children_progress);
   const activeRound = waiting === "reply" ? latestRound(messages) : null;
@@ -184,8 +191,15 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   // nhận (`dataUpdatedAt`); ticket cha: `deadline` của cha như server trả.
   const deadline = clockDeadline(view, waiting);
   const clock = deadline ? (
-    <ApprovalClock key={deadline} deadline={deadline} serverNow={view.server_now} receivedAt={query.dataUpdatedAt} onExpire={refetchTicket} />
+    <ApprovalClock
+      key={deadline}
+      deadline={deadline}
+      serverNow={view.server_now}
+      receivedAt={query.dataUpdatedAt}
+      onExpire={() => onClockExpire(deadline)}
+    />
   ) : null;
+  const composer = composerFor(view, waiting, settling, deadline !== null && deadline === expiredDeadline);
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -289,11 +303,12 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
 const SENT_NOTE = "Đã gửi — đang xử lý";
 
-function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean) {
+/** `approvalExpired`: đồng hồ duyệt đang ở pha quá hạn (chưa tải lại được trạng thái mới) → câu "đang chuyển". */
+function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean, approvalExpired = false) {
   if (settling) return { enabled: false, label: "Tin nhắn", placeholder: `${SENT_NOTE}…` };
   if (waiting === "clarify") return { enabled: true, label: "Trả lời", placeholder: "Trả lời câu hỏi ở trên…" };
   if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Nhắn thêm nếu chưa ổn…" };
-  if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: "Đang chờ IT duyệt" };
+  if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: approvalExpired ? "Đang chuyển kỹ thuật viên" : "Đang chờ IT duyệt" };
   if (waiting === "reply") return { enabled: false, label: "Tin nhắn", placeholder: "Phản hồi trong khung ở trên" };
   return { enabled: false, label: "Tin nhắn", placeholder: `${statusLabel(view.status)}…` };
 }
