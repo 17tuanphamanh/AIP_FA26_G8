@@ -42,7 +42,7 @@ jobs:
         env:
           EVAL_MODE: "true"
           PYTHONPATH: backend
-        run: uv run python scripts/eval/check_split.py
+        run: uv run python scripts/eval/check_split.py --scenarios eval/the100
 
       - name: Cache tokenizer bge-m3 (không có trọng số)
         uses: actions/cache@v5
