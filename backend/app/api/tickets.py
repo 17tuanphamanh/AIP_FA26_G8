@@ -48,6 +48,7 @@ from app.api.desk import (
 )
 from app.api.errors import InvalidRequest, error_fields
 from app.api.ratelimit import limit_messages, limit_tickets
+from app.api.strategy import snapshot_for_new_ticket
 from app.auth.authz import can_override, can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
@@ -191,12 +192,13 @@ async def create_ticket(
     body = await parse_body(request, TicketIn)
     redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
+    strategy, source = await snapshot_for_new_ticket(request, desk)  # D-60: chụp chiến lược M5 + nguồn lúc TẠO
     ticket_id, turn_id = new_ticket_id(), new_turn_id()
     await desk.tickets.create(
         NewTicket(
             ticket_id=ticket_id, requester_id=p.user_id, requester_role=p.role,
             requester_dept=user.department if user else None, session_id=p.session_id,
-            redacted_request=redacted.text, created_at=desk.clock.now(),
+            redacted_request=redacted.text, created_at=desk.clock.now(), strategy=strategy, source=source,
         ),
         turn_id=turn_id,
         security_events=[(SECRET_EVENT, {"count": redacted.secrets_found})] if redacted.secrets_found else (),

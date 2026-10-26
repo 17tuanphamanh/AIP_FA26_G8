@@ -37,8 +37,9 @@ pytestmark = pytest.mark.asyncio
 POLICY = Path(__file__).resolve().parents[3] / "config" / "policy.json"
 IN_HOURS = datetime(2026, 9, 29, 3, 0, tzinfo=UTC)  # thứ Ba 10:00 giờ VN
 AFTER_HOURS = datetime(2026, 9, 29, 13, 0, tzinfo=UTC)  # thứ Ba 20:00 giờ VN
+# D-60 (sửa có chủ ý): `strategy` luôn có ở điểm 4, cả lúc vận hành (trước: chỉ khi EVAL_MODE — Q-6C-3)
 POINT4 = {"decided_by", "policy_decision", "matched_rule_id", "all_matched", "risk_level", "reason", "route",
-          "policy_version_id", "raw_prob", "p_method", "policy_sha256"}  # fmt: skip
+          "policy_version_id", "raw_prob", "p_method", "policy_sha256", "strategy"}  # fmt: skip
 
 
 class SpyEstimator:
@@ -172,6 +173,7 @@ async def test_point4_detail_and_lineage() -> None:
     [row] = h.audit.of("t1", "risk_decided")
     detail = row["detail"]
     assert set(detail) == POINT4
+    assert detail["strategy"] == "hybrid"  # D-60: ticket chưa ghi chiến lược (NULL) → hybrid, vẫn ghi vào điểm 4
     assert detail["policy_sha256"] == hashlib.sha256(POLICY.read_bytes()).hexdigest()
     assert detail["policy_version_id"] is None and detail["raw_prob"] is None and detail["p_method"] is None
     assert (detail["decided_by"], detail["policy_decision"], detail["matched_rule_id"], detail["route"]) == (

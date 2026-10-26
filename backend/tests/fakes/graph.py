@@ -550,6 +550,9 @@ class MemoryTickets:
         self.approvals_table: dict[str, dict[str, Any]] = {}  # = `MemoryDeadlines.approvals` (harness nối) — `children_progress_rows`
         self.effects: MemoryEffects | None = None  # harness nối — `started_children`, `children_status` đọc dòng `child_submit`
         self.txlog: MemoryTxLog | None = None  # harness nối — `children_status.executed`
+        # D-60: chiến lược M5 chụp lúc tạo ticket (test đặt `strategies["t1"] = "rule_only"`); vắng = None → B12 coi là `hybrid`
+        self.strategies: dict[str, str | None] = {}
+        self.sources: dict[str, str] = {}
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -582,6 +585,8 @@ class MemoryTickets:
             session_id=ticket.session_id, redacted_request=ticket.redacted_request,
             requester_role=ticket.requester_role, requester_dept=ticket.requester_dept,
         )  # fmt: skip
+        self.strategies[ticket.ticket_id] = ticket.strategy
+        self.sources[ticket.ticket_id] = ticket.source
         await self._turns.start(turn_id=turn_id, ticket_id=ticket.ticket_id,
                                 session_id=ticket.session_id, event_type="submit",
                                 at=ticket.created_at)  # fmt: skip
@@ -599,6 +604,9 @@ class MemoryTickets:
             close_reason=final.close_reason if final else None, created_at=r["created_at"],
             closed_at=final.closed_at if final else None,
         )  # fmt: skip
+
+    async def strategy_of(self, ticket_id: str) -> str | None:
+        return self.strategies.get(ticket_id)
 
     async def created_at(self, ticket_id: str) -> datetime:
         return self.rows[ticket_id]["created_at"]  # type: ignore[no-any-return]
@@ -635,6 +643,8 @@ class MemoryTickets:
             redacted_request=redacted_request, parent_ticket_id=parent_id, requester_role=parent["requester_role"],
             requester_dept=parent["requester_dept"],
         )  # fmt: skip
+        self.strategies[child_id] = self.strategies.get(parent_id)  # D-60: con kế thừa từ cha
+        self.sources[child_id] = self.sources.get(parent_id, "real")
         self.created_children.append(child_id)
         return child_ref(child_id, intents, intent_type)
 

@@ -25,6 +25,8 @@ EXPECTED_TABLES = {
     "rate_hits",
     # bảng thứ 24 — migration 0012 (notify-email): hàng đợi email
     "email_outbox",
+    # bảng thứ 25 — migration 0013 (D-60): lịch sử đổi chiến lược M5 lúc vận hành (chỉ ghi thêm)
+    "m5_strategy_changes",
 }  # fmt: skip
 
 
@@ -49,11 +51,12 @@ def _scalar(conn: Connection, sql: str) -> object:
 
 
 def test_upgrade_creates_exactly_24_tables(migrated: PgUrls) -> None:
-    """Gói 2b (PLAN-2B1 G8 #3, Q-2B1-6): 22 bảng gốc + `rate_hits` (0010) + `email_outbox` (0012, notify-email)."""
+    """Gói 2b (PLAN-2B1 G8 #3, Q-2B1-6): 22 bảng gốc + `rate_hits` (0010) + `email_outbox` (0012, notify-email) + D-60
+    `m5_strategy_changes` (0013) — giữ tên test."""
     engine = create_engine(migrated.role("app_migrate"))
     with engine.connect() as conn:
         assert _tables(conn) == EXPECTED_TABLES
-        assert len(EXPECTED_TABLES) == 24
+        assert len(EXPECTED_TABLES) == 25
         assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)  # migration 0003
         assert _scalar(conn, "SELECT to_regclass('public.auth_failures')") == "auth_failures"
         owners: Any = conn.execute(
@@ -66,7 +69,7 @@ def test_upgrade_creates_exactly_24_tables(migrated: PgUrls) -> None:
                 "WHERE trigger_schema = 'public'"
             )
         ).all()
-        assert {t for t, _ in triggers} == {"audit_logs", "security_events"}
+        assert {t for t, _ in triggers} == {"audit_logs", "security_events", "m5_strategy_changes"}  # D-60: 0013
     engine.dispose()
 
 

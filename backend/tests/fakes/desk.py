@@ -41,6 +41,7 @@ from tests.fakes.auth import (
 from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import FakeAd, MemoryIdentity, ad_user
 from tests.fakes.rate import MemoryRateGate
+from tests.fakes.strategy import MemoryStrategyStore
 from tests.unit.auth_helpers import BASE_URL, auth_settings
 
 # Chuỗi canary: không được xuất hiện ở bất kỳ đâu sau guard. Ghép lúc chạy — viết liền thì gitleaks
@@ -115,6 +116,7 @@ class DeskEnv:
     idp: FakeIdentityProvider
     settings: Settings
     rate: MemoryRateGate  # gói 2b: cổng đếm 429 giả (`hits`, `calls`)
+    strategy: MemoryStrategyStore  # D-60: `m5_strategy_changes` giả
 
     @property
     def background(self) -> BackgroundRuns:
@@ -176,16 +178,17 @@ async def desk_env(
     guard = guard or MaskingGuard()
     settings = auth_settings(**settings_over)
     rate = MemoryRateGate(RateLimits.from_settings(settings), tickets=lambda: h.tickets.rows.values(), sink=sink)
+    strategy = MemoryStrategyStore()
     app = create_app(
         settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=h.alerts,
-        runtime=runtime or harness_runtime(h), guard=guard, clock=clock, rate=rate,
+        runtime=runtime or harness_runtime(h), guard=guard, clock=clock, rate=rate, strategy=strategy,
     )  # fmt: skip
     transport = httpx.ASGITransport(app=app, client=("203.0.113.7", 50000))
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client,
     ):
-        yield DeskEnv(app, client, h, clock, sink, store, guard, idp, settings, rate)
+        yield DeskEnv(app, client, h, clock, sink, store, guard, idp, settings, rate, strategy)
         await app.state.background.drain()
 
 

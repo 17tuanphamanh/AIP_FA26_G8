@@ -120,7 +120,7 @@ async def chain_m5(
     run_b17: bool = False,
 ) -> Run:  # fmt: skip
     """B3 → B6 → B11 → B12 (→ B17 khi B12 ra `S_EXECUTING` và `run_b17`); mỗi bước qua `wrap_node` (lỗi lạ → E9 → assert đỏ).
-    NodeDeps như wiring 6C: estimator THẬT trên gateway, `strategy`, `calibrator`, `eval_mode=True`; executor thật trên hệ thống ghi
+    NodeDeps như wiring 6C: estimator THẬT trên gateway, `calibrator`, `eval_mode=True` (D-60: `strategy` chụp trên ticket — `h.tickets`); executor thật trên hệ thống ghi
     giả (đếm ở nơi nhận), txlog CHUNG cho B17 bước 0 và executor."""
     env = Env()
     if setup is not None:
@@ -137,6 +137,7 @@ async def chain_m5(
     registry = ToolRegistry({**vpn_writes.handlers(), **writes.handlers()}, breakers=breakers, clock=env.clock)
     executor = PlanExecutor(registry, txlog, env.clock, tz=TZ)
     h = GraphHarness(clock=env.clock, directory=env.directory(), llm=gw.client, rag=FakeRag(), txlog=txlog)
+    h.tickets.strategies["t1"] = strategy  # D-60: B12 đọc chiến lược đã chụp trên ticket
     state: dict[str, Any] = {
         "ticket_id": "t1", "turn_id": "T1", "status": S_CLASSIFYING, "redacted_request": text, "reasoning_loops": 0,
         "conversation": [], "requester_context": rc(user), "clarification_turns": 0, "kb_version": "a" * 64,
@@ -151,7 +152,7 @@ async def chain_m5(
         name, module, expect = steps[i]
         deps = dataclasses.replace(
             h.deps(), enabled_intents=FOUR, estimator=LlmRiskEstimator(gw.client, p_method=p_method, eval_mode=True),
-            calibrator=calibrator, strategy=strategy, eval_mode=True, executor=executor,
+            calibrator=calibrator, eval_mode=True, executor=executor,
         )  # fmt: skip
         run = RunContext(turn_id="T1", trace_id="0" * 32, audit=h.audit, effects=h.effects, spans=h.spans, clock=env.clock,
                          txlog=txlog)  # fmt: skip
