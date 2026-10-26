@@ -172,16 +172,16 @@ describe("trang dòng thời gian", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Nhật ký quyết định");
     expect(screen.getAllByTestId("trace-step")).toHaveLength(10);
     expect(titles()).toStrictEqual([
-      "Xác thực người gửi: đã xác thực",
+      "Xác thực người gửi: đã xác thực người gửi",
       "Kiểm tra tấn công: an toàn (model 0,03)",
-      "Phân loại: vpn — LLM 0,95, model 0,97",
+      "Phân loại: VPN — LLM 0,95, model 0,97",
       "Chẩn đoán: dùng 2 dữ kiện",
-      "Định tuyến: trả lời hướng dẫn",
-      "Chính sách: cần duyệt — luật R18 (ngoài giờ)",
+      "Trả lời từ tài liệu: đã trả lời hướng dẫn",
+      "Đánh giá rủi ro: cần duyệt — theo luật",
       "Gửi duyệt: chờ duyệt — Lê Thu Hà (l1_01)",
       "Duyệt: đã đồng ý — Lê Thu Hà (l1_01)",
       "Thực thi: gia hạn chứng chỉ — thành công",
-      "Kết cục: xử lý sau khi duyệt",
+      "Kết cục: xử lý sau khi IT duyệt",
     ]);
     expect(screen.getByTestId("trace-facts").textContent).toContain("cert_expired, device_registered");
     expect(screen.getByTestId("trace-sources").textContent).toBe("Nguồn KB KB-VPN-001 — Gia hạn chứng chỉ VPN");
@@ -195,7 +195,7 @@ describe("trang dòng thời gian", () => {
     stub(() => json(200, { ...TRACE, steps: [step(1, "B13/B14", "risk_decided", { policy })] }));
     renderAt("/trace/T-1");
     const card = await screen.findByTestId("trace-step");
-    expect(titles()).toStrictEqual(["Chính sách: rủi ro thấp — mô hình ước lượng (không luật nào khớp)"]);
+    expect(titles()).toStrictEqual(["Đánh giá rủi ro: rủi ro thấp — theo đánh giá của AI (không luật nào khớp)"]);
     expect(within(card).getByText("p rủi ro thô 0,12 · đã hiệu chỉnh 0,09")).toBeTruthy();
   });
 
@@ -247,7 +247,11 @@ describe("trang dòng thời gian", () => {
     stub(() => json(200, parent));
     renderAt("/trace/P-1", L2);
     const kids = await screen.findAllByTestId("trace-child");
-    expect(kids.map((k) => k.textContent)).toStrictEqual(["P-1-1 · vpn", "P-1-2 · account · mã E1"]);
+    // N-NGU: loại yêu cầu + mã kết thúc dạng "Nhãn · mã" (gợi ý của mã kết thúc nằm trong sr-only).
+    expect(kids.map((k) => k.textContent)).toStrictEqual([
+      "P-1-1 · VPN · vpn",
+      "P-1-2 · Tài khoản · account · Ngoài phạm vi hoặc chưa rõ yêu cầu (Không thuộc 4 loại việc, hoặc chưa xác định được ý định) · E1",
+    ]);
     expect(kids.map((k) => k.querySelector("a")?.getAttribute("href"))).toStrictEqual(["/trace/P-1-1", "/trace/P-1-2"]);
     expect(titles()).toStrictEqual(["Phân loại: chưa rõ · nhiều ý"]);
     cleanup();

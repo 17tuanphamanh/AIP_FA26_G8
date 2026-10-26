@@ -202,8 +202,8 @@ describe("t66: nhãn tiến độ từng ý (P1 §8.3) — đủ giá trị, gi�
     ])!;
     expect(parentStatusLabel({ final_state: "S_RESOLVED", waiting_for: null }, mixed)).toBe(PARENT_DONE);
     const allDone = progressItems(PROGRESS.map((p) => ({ ...p, progress: "closed", outcome: "resolved" })))!;
-    expect(parentStatusLabel({ final_state: "S_RESOLVED", waiting_for: null }, allDone)).toBe("Đã hoàn tất");
-    expect(parentStatusLabel({ final_state: "S_ESCALATED", waiting_for: null }, mixed)).toBe("Đã chuyển kỹ thuật viên hỗ trợ");
+    expect(parentStatusLabel({ final_state: "S_RESOLVED", waiting_for: null }, allDone)).toBe("Đã giải quyết"); // N-NGU (NGU-1): nhãn theo bảng
+    expect(parentStatusLabel({ final_state: "S_ESCALATED", waiting_for: null }, mixed)).toBe("Đã chuyển kỹ thuật viên");
   });
 });
 
@@ -571,7 +571,7 @@ describe("t74: ticket thường (không children_progress) — hành vi F2 khôn
     v = plain({ status: "S_RESOLVED", waiting_for: null, final_state: "S_RESOLVED" });
     await client.invalidateQueries({ queryKey: ["ticket", PARENT] });
     expect((await screen.findByTestId("final-note")).textContent).toContain(FINAL_NOTE.S_RESOLVED!);
-    expect(pill()).toContain("Đã hoàn tất");
+    expect(pill()).toContain("Đã giải quyết"); // N-NGU (NGU-1)
     expect(document.body.textContent).not.toContain("các ý");
   });
 });

@@ -6,18 +6,20 @@ import { type CloseResult, hasMore, loadedItems, queueQuery, type QueueItem } fr
 import type { EscalationCloseIn, EscalationQueueStatus } from "../../api/types.ts";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
 import { formatAt } from "../shared/traceText.ts";
+import { MaNhan, NhanMa } from "../../components/MaNhan.tsx";
+import { caSo } from "../../lib/nhan.ts";
 import { CloseForm } from "./CloseForm.tsx";
 import {
   CLOSED_GONE_TEXT,
   CLOSED_TEXT,
   closeResultLabel,
   DENY_BANNER,
+  exitNhan,
   EMPTY_NOTE,
   GONE_TEXT,
   handoffRows,
   NOT_LOADED_NOTE,
   notLoadedText,
-  splitLabel,
   waitingText,
 } from "./queue.ts";
 
@@ -127,15 +129,14 @@ function Detail({
    *  ticket của nhân viên — màn chat riêng). */
   newTicketId?: string | null;
 }) {
-  const { base } = splitLabel(item.label);
   const closed = typeof item.closed_at === "string";
   return (
     <section className="flex flex-col gap-6 px-12 py-8">
       <div className="flex flex-col gap-1">
         {BACK}
         <div className="flex items-center gap-4">
-          <h1 className="min-w-0 grow text-title">
-            {item.exit_code} · {base}
+          <h1 data-testid="detail-exit" className="min-w-0 grow text-title">
+            <NhanMa {...exitNhan(item)} />
           </h1>
           <span className="shrink-0 text-secondary text-ink-2">{closed ? "Đã đóng" : waitingText(item.created_at, now)}</span>
         </div>
@@ -144,11 +145,11 @@ function Detail({
           <span className="font-mono select-all" data-testid="ticket-id">
             {item.ticket_id}
           </span>{" "}
-          · Escalation #{item.escalation_id}
+          · <span data-testid="ca-so">{caSo(item.escalation_id)}</span>
           {item.reason_detail ? (
             <>
               {" "}
-              · <span className="font-mono">{item.reason_detail}</span>
+              · Lý do <MaNhan loai="ly_do" ma={item.reason_detail} />
             </>
           ) : null}
           {item.assigned_to ? ` · ${item.assigned_to} đang xử lý` : ""}

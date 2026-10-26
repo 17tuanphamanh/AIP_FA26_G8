@@ -13,6 +13,7 @@ import { Modal } from "../../components/Modal.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import { MatchedRules } from "../shared/MatchedRules.tsx";
+import { NhanMa } from "../../components/MaNhan.tsx";
 import {
   actionLabel,
   AFFECTED_OTHER_TEXT,
@@ -210,7 +211,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const department = view.requester.department || MISSING_VALUE;
   const deadlineAt = deadlineText(view.deadline);
   const { affected } = view;
-  const risk = view.risk_view ? riskSummary(view.risk_view) : null;
+  const risk = view.risk_view ? riskSummary(view.risk_view, view.matched_rules) : null;
   // Thiếu cả `procedure` (lệch spec) → không vỡ màn: hiện "(không có)".
   const procedureTitle = view.procedure?.title?.trim();
   const procedureDoc = view.procedure?.doc_id ?? "(không có)";
@@ -343,7 +344,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                           <dt>Hướng xử lý</dt>
                           <dd data-testid="risk-route" className="text-ink-2">
-                            {risk.route}
+                            <NhanMa {...risk.route} />
                           </dd>
                         </div>
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
@@ -354,14 +355,14 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                         </div>
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                           <dt>Luật khớp</dt>
-                          <dd data-testid="risk-rule" className="font-mono text-ink-2">
-                            {risk.ruleId ?? MISSING_VALUE}
+                          <dd data-testid="risk-rule" className="text-right text-ink-2">
+                            {risk.rule ? <NhanMa {...risk.rule} /> : MISSING_VALUE}
                           </dd>
                         </div>
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                           <dt>Nguồn đánh giá</dt>
                           <dd data-testid="risk-source" className="text-right text-ink-2">
-                            {risk.source}
+                            <NhanMa {...risk.source} />
                           </dd>
                         </div>
                       </dl>
@@ -371,9 +372,13 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                         {risk.note}
                       </p>
                     ) : null}
-                    <div className="overflow-hidden rounded-group border border-line">
-                      <FlatTable value={view.risk} testId="risk-row" />
-                    </div>
+                    {/* NGU-2: bảng rủi ro thô (khoá kỹ thuật) thu vào khối đóng sẵn — tóm tắt phía trên đã đủ để quyết. */}
+                    <details data-testid="risk-raw" className="overflow-hidden rounded-group border border-line">
+                      <summary className="cursor-pointer px-5 py-2.5 text-secondary text-ink-2">Chi tiết kỹ thuật</summary>
+                      <div className="border-t border-line">
+                        <FlatTable value={view.risk} testId="risk-row" />
+                      </div>
+                    </details>
                   </div>
                 ) : (
                   <p data-testid="risk-missing" className="rounded-group border border-line px-5 py-3 text-ink-2">

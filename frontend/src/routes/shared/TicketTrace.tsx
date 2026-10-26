@@ -2,6 +2,8 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { MatchedRules } from "./MatchedRules.tsx";
+import { MaNhan, NhanMa } from "../../components/MaNhan.tsx";
+import { luatIT } from "../../lib/nhan.ts";
 import { approvalQuery } from "../../api/approvals.ts";
 import { loadedItems, queueQuery } from "../../api/escalations.ts";
 import { TRACE_TICKET_ID, traceQuery, tracePath, type TicketTrace as Trace, type TraceStep } from "../../api/trace.ts";
@@ -11,7 +13,6 @@ import {
   policyProbs,
   rollbackText,
   screenLayer,
-  stepName,
   stepTitle,
   TRACE_BAD_ID_TEXT,
   TRACE_EMPTY_TEXT,
@@ -95,8 +96,13 @@ function Body({ trace }: { trace: Trace }) {
                 </Link>
                 <span className="text-ink-2">
                   {" "}
-                  · {c.intent ?? "chưa phân loại"}
-                  {c.exit_code ? ` · mã ${c.exit_code}` : ""}
+                  · {c.intent === null ? "chưa phân loại" : <MaNhan loai="loai_yeu_cau" ma={c.intent} />}
+                  {c.exit_code ? (
+                    <>
+                      {" · "}
+                      <MaNhan loai="ma_ket_thuc" ma={c.exit_code} />
+                    </>
+                  ) : null}
                 </span>
               </li>
             ))}
@@ -136,9 +142,24 @@ function StepCard({ step: s }: { step: TraceStep }) {
         </h3>
         <span className="shrink-0 text-secondary text-ink-2 tabular-nums">{formatAt(s.at)}</span>
       </div>
-      <Line>
-        {stepName(s.step)} · <span className="font-mono">{s.step}</span> · <span className="font-mono">{s.event}</span>
+      <Line testId="trace-step-codes">
+        <MaNhan loai="buoc" ma={s.step} /> · <MaNhan loai="su_kien" ma={s.event} />
       </Line>
+      {s.classify?.intent ? (
+        <Line>
+          Loại yêu cầu <MaNhan loai="loai_yeu_cau" ma={s.classify.intent} />
+        </Line>
+      ) : null}
+      {s.policy?.rule_id ? (
+        <Line testId="trace-rule">
+          Luật <NhanMa {...luatIT(s.policy.rule_id, s.policy.rule_description)} />
+        </Line>
+      ) : null}
+      {s.outcome?.exit_code ? (
+        <Line testId="trace-exit">
+          Mã kết thúc <MaNhan loai="ma_ket_thuc" ma={s.outcome.exit_code} />
+        </Line>
+      ) : null}
       {layer ? <Line>{layer}</Line> : null}
       {s.classify?.model_version ? (
         <Line>

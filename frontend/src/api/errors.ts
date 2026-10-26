@@ -80,7 +80,7 @@ const CODE_MESSAGES: Record<string, string> = {
   already_closed: "Ca đã được đóng",
   invalid_queue_body: "Hàng đợi trả về không đúng dạng — không hiển thị để tránh hiểu sai. Vui lòng tải lại trang.",
   deny_case_cannot_complete:
-    "Không đóng được: ca E5 không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
+    "Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
   escalation_not_found: "Ca đã đóng hoặc không còn trong hàng đợi.",
   // Duyệt (backend/app/api/approvals.py) + xem phiếu (4c P6).
   rejected_requires_note: "Từ chối cần ghi chú lý do gửi người dùng.",

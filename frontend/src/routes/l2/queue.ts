@@ -4,6 +4,7 @@
 import { CLOSE_NOTE_MAX } from "../../api/escalations.ts";
 import type { EscalationCloseResult, EscalationQueueItem, HandoffNote } from "../../api/types.ts";
 import { labelOf } from "../../lib/lookup.ts";
+import { KHAC, maKetThuc } from "../../lib/nhan.ts";
 
 /** Nhãn seed có thể kèm phần phụ sau dấu phẩy ("Thường, cần bổ sung KB") → tên nhóm "Thường" + huy hiệu trên dòng. */
 export function splitLabel(label: string): { base: string; extra: string | null } {
@@ -80,11 +81,17 @@ export function reasonLine(item: EscalationQueueItem): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-export const DENY_BADGE = "E5 — không thực hiện lại";
+export const DENY_BADGE = "Không thực hiện lại";
 export const DENY_BANNER = {
-  strong: "Ca E5 — không thực hiện lại hành động.",
+  strong: "Ca không đủ điều kiện tự xử lý — không thực hiện lại hành động.",
   rest: "Chỉ xác nhận từ chối hoặc mở ticket mới.",
 };
+
+/** Nhãn mã kết thúc của một ca cho nhân sự IT (bảng ĐP 23:10; E1 + `injection_suspected` → nhãn riêng); mã lạ → "Khác". */
+export function exitNhan(item: Pick<EscalationQueueItem, "exit_code" | "reason_detail">): { nhan: string; ma: string; goiY?: string } {
+  const n = maKetThuc(item.exit_code, item.reason_detail);
+  return n ? { nhan: n.nhan, ma: item.exit_code, ...(n.goiY ? { goiY: n.goiY } : {}) } : { nhan: KHAC, ma: item.exit_code };
+}
 
 export const CLOSE_OPTIONS: readonly { value: EscalationCloseResult; title: string; desc: string }[] = [
   { value: "completed", title: "Đã hoàn tất", desc: "L2 đã làm xong việc agent định làm" },
@@ -110,8 +117,8 @@ export const STATUS_TABS: readonly { key: "open" | "closed"; label: string }[] =
  * - E6 (hết hạn duyệt): B20 §4.3 + decisions.md mục 2 Q2 [Chốt] — L2 không hoàn tất tay (12b Q-fe-21).
  */
 export function completedLock(item: Pick<EscalationQueueItem, "is_deny_case" | "exit_code">): string | null {
-  if (item.is_deny_case) return "Không dùng với ca E5 — không thực hiện lại hành động";
-  if (item.exit_code === "E6") return "Không dùng với ca hết hạn duyệt (E6) — L2 không hoàn tất tay";
+  if (item.is_deny_case) return "Không dùng với ca không đủ điều kiện tự xử lý — không thực hiện lại hành động";
+  if (item.exit_code === "E6") return "Không dùng với ca quá hạn chờ duyệt — L2 không hoàn tất tay";
   return null;
 }
 

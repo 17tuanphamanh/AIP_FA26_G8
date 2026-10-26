@@ -196,7 +196,7 @@ describe("t28: hàng đợi giữ nguyên thứ tự server, chỉ gom nhóm li�
     stubApi([esc("E5"), esc("E3")]);
     renderAt("/escalations");
     const badge = await screen.findByTestId("deny-badge");
-    expect(badge.textContent).toBe("E5 — không thực hiện lại");
+    expect(badge.textContent).toBe("Không thực hiện lại"); // N-NGU: không mã trần
     expect(badge.closest<HTMLElement>('[data-testid="queue-row"]')?.dataset.exitCode).toBe("E5");
   });
 
@@ -278,10 +278,10 @@ describe("t30: ca deny → banner + 'Đã hoàn tất' khoá; ca thường → m
     renderAt("/escalations/5");
     const banner = await screen.findByTestId("deny-banner");
     expect(banner.textContent).toBe(`${DENY_BANNER.strong} ${DENY_BANNER.rest}`);
-    expect(banner.textContent).toBe("Ca E5 — không thực hiện lại hành động. Chỉ xác nhận từ chối hoặc mở ticket mới.");
+    expect(banner.textContent).toBe("Ca không đủ điều kiện tự xử lý — không thực hiện lại hành động. Chỉ xác nhận từ chối hoặc mở ticket mới.");
     const completed = radio(COMPLETED);
     expect(completed.getAttribute("aria-disabled")).toBe("true");
-    expect(completed.textContent).toContain("Không dùng với ca E5");
+    expect(completed.textContent).toContain("Không dùng với ca không đủ điều kiện tự xử lý"); // N-NGU: nhãn thay mã E5
     fireEvent.click(completed);
     expect(completed.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(radio(DENIAL));
@@ -305,7 +305,7 @@ describe("t30: ca deny → banner + 'Đã hoàn tất' khoá; ca thường → m
     await screen.findByText("Ghi chú bàn giao");
     expect(screen.queryByTestId("deny-banner")).toBeNull();
     expect(radio(COMPLETED).getAttribute("aria-disabled")).toBe("true");
-    expect(radio(COMPLETED).textContent).toContain("E6");
+    expect(radio(COMPLETED).textContent).toContain("quá hạn chờ duyệt"); // N-NGU: nhãn thay mã E6
   });
 });
 
@@ -359,7 +359,7 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(errorMessage(new ApiError(422, "deny_case_cannot_complete")));
-    expect(alert.textContent).toBe("Không đóng được: ca E5 không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.");
+    expect(alert.textContent).toBe("Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.");
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(JSON.parse(calls.find((c) => c.method === "POST")!.body!)).toStrictEqual({
       close_result: "completed",

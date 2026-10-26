@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { flattenEntries, isShortValue } from "../routes/l1/inbox.ts";
+import { actionKeyLabel, flattenEntries, isShortValue } from "../routes/l1/inbox.ts";
 
 // B4L1Detail "Hệ thống sẽ thực hiện chính xác": ĐÚNG object `action` đã băm nhận từ server (KH 4.2 #5 [Chốt 5.2.1]).
 // Tab Bảng liệt kê đủ mọi khoá (đệ quy, tên khoá giữ nguyên); tab JSON = JSON.stringify của CHÍNH object đó. Không tóm
 // tắt, không đổi tên, không lọc khoá. Mã băm hiện đủ, font mono, có nút sao chép.
 
-/** Bảng khoá–giá trị chung (dùng cho `action`, `risk`, `facts`): chữ thô, không Markdown/HTML. */
-export function FlatTable({ value, testId }: { value: unknown; testId: string }) {
+/**
+ * Bảng khoá–giá trị chung (dùng cho `action`, `risk`, `facts`): chữ thô, không Markdown/HTML. `keyLabel`: nhãn tiếng Việt cạnh
+ * khoá đã biết ("Nhãn · khoá" — khoá giữ nguyên, chữ nhỏ); khoá lạ → chỉ khoá.
+ */
+export function FlatTable({ value, testId, keyLabel }: { value: unknown; testId: string; keyLabel?: (key: string) => string | null }) {
   return (
     <dl className="font-mono text-secondary">
       {flattenEntries(value).map((entry) => {
@@ -21,7 +24,15 @@ export function FlatTable({ value, testId }: { value: unknown; testId: string })
             data-key={entry.key}
             className={`flex justify-between border-t border-line px-5 py-2.5 first:border-t-0 ${short ? "flex-wrap gap-x-4 gap-y-1" : "gap-4"}`}
           >
-            <dt className="shrink-0 text-ink-2">{entry.key || "(gốc)"}</dt>
+            <dt className="shrink-0 text-ink-2">
+              {keyLabel && entry.key && keyLabel(entry.key) ? (
+                <>
+                  <span className="font-sans">{keyLabel(entry.key)}</span> · <span className="text-label font-normal">{entry.key}</span>
+                </>
+              ) : (
+                entry.key || "(gốc)"
+              )}
+            </dt>
             <dd className={`min-w-0 text-right wrap-anywhere break-normal${short ? " ml-auto max-w-full" : ""}`}>
               {entry.value}
             </dd>
@@ -73,7 +84,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
       </div>
       <div id="action-panel" role="tabpanel" aria-labelledby={`action-tab-${mode}`}>
         {mode === "table" ? (
-          <FlatTable value={action} testId="action-row" />
+          <FlatTable value={action} testId="action-row" keyLabel={actionKeyLabel} />
         ) : (
           <pre data-testid="action-json" className="overflow-x-auto px-5 py-4 font-mono text-label font-normal">
             {JSON.stringify(action, null, 2)}

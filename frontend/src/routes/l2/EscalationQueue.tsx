@@ -7,9 +7,11 @@ import type { EscalationQueueStatus } from "../../api/types.ts";
 import { Segmented } from "../../components/Segmented.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import { formatAt } from "../shared/traceText.ts";
+import { NhanMa } from "../../components/MaNhan.tsx";
 import {
   closeResultLabel,
   DENY_BADGE,
+  exitNhan,
   EMPTY_VIEW,
   GROUP_PAGE_SIZE,
   NO_IDS,
@@ -421,9 +423,11 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
         data-escalation-id={item.escalation_id}
         data-ticket-id={item.ticket_id}
         data-exit-code={item.exit_code}
-        className="grid min-h-13 grid-cols-[44px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-2 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className="grid min-h-13 grid-cols-[250px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-2 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
       >
-        <span className="font-mono text-label font-normal text-ink-2">{item.exit_code}</span>
+        <span data-testid="queue-exit" className="truncate text-secondary">
+          <NhanMa {...exitNhan(item)} />
+        </span>
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate" title={reason}>
             {reason}
