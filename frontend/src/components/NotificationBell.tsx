@@ -12,7 +12,7 @@ import {
   notificationsUnavailable,
   unreadCount,
 } from "../api/notifications.ts";
-import type { Me, NotificationItem } from "../api/types.ts";
+import type { Me, NotificationView } from "../api/types.ts";
 import { hasPerm } from "../auth/permissions.ts";
 import { readLastSeen, writeLastSeen } from "../lib/lastSeen.ts";
 import { ownEntry } from "../lib/lookup.ts";
@@ -23,7 +23,7 @@ import { vnDateTime } from "../routes/manager/range.ts";
 // - Số trên chuông = số thông báo ĐÃ TẢI có `created_at` > mốc đã xem (lib/lastSeen.ts); không có → không số.
 // - Mở danh sách = đánh dấu đã đọc: mốc = `created_at` mới nhất đang hiện.
 // - Hỏi lại 30 s, CHỈ khi tab đang hiện (`refetchIntervalInBackground: false` — TanStack dừng nhịp khi
-//   `document.visibilityState` = hidden); 401/403/404 → dừng. 404 (route chưa có) → không vẽ chuông.
+//   `document.visibilityState` = hidden); 401/403/404 → dừng. 404 (backend cũ) / 403 / thiếu `ticket:read:own` → không vẽ chuông.
 // - Danh sách là popover gọn (không thêm trang `/notifications`): Bản 4 không có thanh trên, thanh bên 264 px.
 
 /** Câu lỗi khung thông báo (ĐP soát 23d0f6a #4). */
@@ -33,8 +33,11 @@ const badgeText = (count: number, partial: boolean) => (count > 99 ? "99+" : par
 
 export function NotificationBell({ me }: { me: Me }) {
   const userId = me.user_id;
+  // Route thật đòi `ticket:read:own` (backend/app/api/notifications.py) — không có quyền → không hỏi, không chuông.
+  const allowed = hasPerm(me, "ticket:read:own");
   const query = useInfiniteQuery({
     ...notificationsQuery(userId),
+    enabled: allowed,
     refetchInterval: (q) => notificationsRefetchInterval(q.state.error),
     refetchIntervalInBackground: false,
   });
@@ -69,6 +72,7 @@ export function NotificationBell({ me }: { me: Me }) {
     return () => document.removeEventListener("mousedown", onPointer);
   }, [open]);
 
+  if (!allowed) return null;
   if (query.data === undefined && (query.isPending || notificationsUnavailable(query.error))) return null;
   if (notificationsUnavailable(query.error)) return null;
 
@@ -143,7 +147,6 @@ export function NotificationBell({ me }: { me: Me }) {
                   key={item.id}
                   item={item}
                   fresh={(isoMs(seenAtOpen) ?? -Infinity) < Date.parse(item.created_at)}
-                  canOpen={hasPerm(me, "ticket:read:own")}
                   onNavigate={() => setOpen(false)}
                 />
               ))}
@@ -168,12 +171,10 @@ export function NotificationBell({ me }: { me: Me }) {
 function NotificationRow({
   item,
   fresh,
-  canOpen,
   onNavigate,
 }: {
-  item: NotificationItem;
+  item: NotificationView;
   fresh: boolean;
-  canOpen: boolean;
   onNavigate: () => void;
 }) {
   // ĐP 23:51: đợt này KHÔNG hiện link / mã ticket mới kể cả khi `new_ticket_id` lỡ có giá trị — chỉ link ticket gốc.
@@ -188,13 +189,12 @@ function NotificationRow({
           {label ? <span className="font-semibold">{label}</span> : null}
           <time dateTime={item.created_at}>{vnDateTime(item.created_at)}</time>
         </p>
-        {canOpen ? (
-          <p className="flex flex-wrap gap-x-4 text-label">
-            <Link to={`/chat/${encodeURIComponent(item.ticket_id)}`} onClick={onNavigate} className="text-fpt-blue">
-              Xem yêu cầu
-            </Link>
-          </p>
-        ) : null}
+        {/* Chuông chỉ có khi có `ticket:read:own` — cùng quyền route /chat/:id. */}
+        <p className="flex flex-wrap gap-x-4 text-label">
+          <Link to={`/chat/${encodeURIComponent(item.ticket_id)}`} onClick={onNavigate} className="text-fpt-blue">
+            Xem yêu cầu
+          </Link>
+        </p>
       </div>
     </li>
   );

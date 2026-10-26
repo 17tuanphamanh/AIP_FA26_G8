@@ -20,6 +20,12 @@ import type {
   E1Split,
   E3Case,
   E3Cases,
+  ErrorDetail,
+  EscalationCloseResult,
+  InvalidRequestBody,
+  MatchedRule,
+  NotificationPage,
+  NotificationView,
   PolicyInvalid,
   PolicyValidateOk,
   PolicyVersionItem,
@@ -126,12 +132,48 @@ export type ApprovalViewOk = [
   Expect<Mutual<ApprovalViewP4["requester"], ApprovalGen["requester"]>>,
   Expect<Mutual<ApprovalViewP4["deadline"], ApprovalGen["deadline"]>>,
   Expect<Mutual<ApprovalViewP4["risk"], ApprovalGen["risk"]>>,
-  // Cùng tập khoá: bỏ `status` ở cả hai rồi so từng khoá (khoá chỉ ở một bên → lỗi biên dịch). `matched_rules` (N-PA, route
-  // be-tuan8 CHƯA CÓ) chưa có trong openapi → bỏ khỏi phía viết tay; gỡ khi gen:api sinh lại từ be-tuan8.
-  Expect<Same<Omit<ApprovalViewP4, "status" | "action" | "facts" | "risk" | "matched_rules">, Omit<ApprovalGen, "status" | "action" | "facts" | "risk">>>,
-  Expect<Mutual<ApprovalViewP4, Ok200<operations["view_approval_api_approvals__approval_id__get"]> & { status: ApprovalViewP4["status"] }>>,
+  // Cùng tập khoá: bỏ `status` ở cả hai rồi so từng khoá (khoá chỉ ở một bên → lỗi biên dịch). `matched_rules` (N-PA) đã
+  // có trong openapi (gen:api từ be-thong-bao 56ea4d9) nhưng khai `list[MatchedRule] | None = None` → openapi `| null`; route
+  // THẬT không bao giờ gửi null (không có dữ liệu → BỎ khoá — backend/app/api/approvals.py `view_approval`). Kiểu viết tay
+  // giữ chặt hơn (null → 502 ở api/approvals.ts) → soi riêng: bỏ `null` phía openapi rồi so hai chiều.
+  Expect<Same<Omit<ApprovalViewP4, "status" | "action" | "facts" | "risk" | "matched_rules">, Omit<ApprovalGen, "status" | "action" | "facts" | "risk" | "matched_rules">>>,
+  Expect<Mutual<ApprovalViewP4["matched_rules"], Exclude<ApprovalGen["matched_rules"], null>>>,
+  Expect<Same<MatchedRule, S["MatchedRule"]>>,
+  Expect<
+    Mutual<
+      Omit<ApprovalViewP4, "matched_rules">,
+      Omit<Ok200<operations["view_approval_api_approvals__approval_id__get"]>, "status" | "matched_rules"> & { status: ApprovalViewP4["status"] }
+    >
+  >,
 ];
-export type TicketDeadlineOk = [
-  Expect<Mutual<Exclude<TicketView["deadline"], undefined>, S["TicketView"]["deadline"]>>,
-  Expect<Mutual<S["TicketView"], Ok200<operations["read_ticket_api_tickets__ticket_id__get"]>>>,
+// TicketView (N-TB): `deadline` + `server_now` LẤY từ openapi (types.ts) nhưng để TUỲ CHỌN có chủ ý (thân cũ thiếu khoá) →
+// so hai chiều sau khi bỏ `undefined`; tập khoá viết tay ≡ tập khoá openapi (không thiếu / thừa khoá nào).
+type TicketGen = S["TicketView"];
+export type TicketViewOk = [
+  Expect<Mutual<Exclude<TicketView["deadline"], undefined>, TicketGen["deadline"]>>,
+  Expect<Mutual<Exclude<TicketView["server_now"], undefined>, TicketGen["server_now"]>>,
+  Expect<Mutual<keyof TicketView, keyof TicketGen>>,
+  Expect<Mutual<TicketView["waiting_for"], TicketGen["waiting_for"]>>,
+  Expect<Same<Omit<TicketView, "conversation" | "children_progress" | "deadline" | "server_now">, Omit<TicketGen, "conversation" | "children_progress" | "deadline" | "server_now">>>,
+  Expect<Mutual<TicketGen, Ok200<operations["read_ticket_api_tickets__ticket_id__get"]>>>,
+];
+
+// ---------------------------------------------------------------- Thông báo (N-TB, be-thong-bao 56ea4d9)
+// Kiểu ở types.ts LÀ kiểu sinh — soát nối tên schema với ĐÚNG route + thân lỗi dùng chung (401/403/503 `ErrorDetail`,
+// 422 `InvalidRequestBody`); `kind`/`result` của openapi ≡ đúng 2/5 giá trị parser chấp nhận (api/notifications.ts).
+type Notif = operations["my_notifications_api_me_notifications_get"];
+type Err<Op, C extends number> = Op extends { responses: { [K in C]: { content: { "application/json": infer B } } } } ? B : never;
+export type NotificationOk = [
+  Expect<Mutual<NotificationPage, Ok200<Notif>>>,
+  Expect<Mutual<NotificationPage["items"][number], NotificationView>>,
+  Expect<Mutual<NotificationView["kind"], "approval_decided" | "escalation_closed">>,
+  Expect<Mutual<NotificationView["result"], "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new">>,
+  Expect<Mutual<Extract<NotificationView["result"], "completed" | "confirmed_denial" | "reopened_as_new">, EscalationCloseResult>>,
+  Expect<Mutual<NotificationView["new_ticket_id"], string | null>>,
+  Expect<Mutual<NotificationPage["next_cursor"], string | null>>,
+  Expect<Mutual<Err<Notif, 401>, ErrorDetail>>,
+  Expect<Mutual<Err<Notif, 403>, ErrorDetail>>,
+  Expect<Mutual<Err422<Notif>, InvalidRequestBody>>,
+  Expect<Mutual<Err<Notif, 503>, ErrorDetail>>,
+  Expect<Mutual<Notif["parameters"]["query"], { limit?: number; after?: string | null } | undefined>>,
 ];

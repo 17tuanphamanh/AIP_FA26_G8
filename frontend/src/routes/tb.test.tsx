@@ -7,13 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors.ts";
 import { isIsoWithZone } from "../api/iso.ts";
 import { notificationsPath, parseNotificationPage } from "../api/notifications.ts";
-import type { Me, NotificationItem, NotificationPage, TicketView } from "../api/types.ts";
+import type { Me, NotificationView, TicketView } from "../api/types.ts";
 import { AuthContext, type AuthValue } from "../auth/context.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { lastSeenKey, readLastSeen, writeLastSeen } from "../lib/lastSeen.ts";
 import { CAU_THONG_BAO, cauThongBao, KET_QUA_THONG_BAO } from "../lib/nhan.ts";
 import { createMulti, viewOf } from "../mocks/fixtures/multi.ts";
-import { createDuyet, createNotifications, DUYET_SAP_HET, duyetView, pageOf } from "../mocks/fixtures/notifications.ts";
 import { clockDeadline, EXPIRED_TEXT, FIVE_MIN_TEXT } from "./employee/approvalClock.ts";
 import { ChatRoute } from "./employee/ChatPage.tsx";
 import { sessionTickets } from "./employee/sessionTickets.ts";
@@ -50,7 +49,7 @@ function spaced(el: Node): string {
 
 const T0 = Date.parse("2026-10-26T09:00:00Z");
 const at = (minAgo: number) => new Date(T0 - minAgo * 60_000).toISOString();
-function item(over: Partial<NotificationItem> & { id: string }): NotificationItem {
+function item(over: Partial<NotificationView> & { id: string }): NotificationView {
   return {
     kind: "approval_decided",
     ticket_id: `tkt-${over.id.replace(/\W/g, "")}`,
@@ -131,6 +130,8 @@ describe("t200: getNotifications đọc CHẶT {items, next_cursor} — sai → 
     ["kind không khớp result", { items: [item({ id: "appr:1", result: "completed" })], next_cursor: null }],
     ["tiền tố id không khớp kind", { items: [item({ id: "esc:1" })], next_cursor: null }],
     ["id chỉ có tiền tố", { items: [item({ id: "appr:" })], next_cursor: null }],
+    ["id đuôi không phải số (ID_PATTERN backend)", { items: [item({ id: "appr:abc" })], next_cursor: null }],
+    ["id đuôi > 19 chữ số", { items: [item({ id: `appr:${"1".repeat(20)}` })], next_cursor: null }],
     ["created_at thiếu múi giờ", { items: [item({ id: "appr:1", created_at: "2026-10-26T09:00:00" })], next_cursor: null }],
     ["created_at rác", { items: [item({ id: "appr:1", created_at: "hôm qua" })], next_cursor: null }],
     ["text không phải chuỗi", { items: [item({ id: "appr:1", text: null as never })], next_cursor: null }],
@@ -148,6 +149,16 @@ describe("t200: getNotifications đọc CHẶT {items, next_cursor} — sai → 
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(502);
     expect((error as ApiError).code).toBe("invalid_notifications_body");
+  });
+  it("thân đúng dạng backend thật (isoformat UTC có micro giây, con trỏ base64url, new_ticket_id null) → nhận", () => {
+    const body = {
+      items: [
+        { id: "appr:42", kind: "approval_decided", ticket_id: "6f1c2a9e-0d3b-4c55-9a1e-2b7f0c9d1e23", text: "Yêu cầu của bạn chưa được duyệt.", result: "rejected", new_ticket_id: null, created_at: "2026-10-26T09:00:00.123456+00:00" },
+        { id: "esc:7", kind: "escalation_closed", ticket_id: "6f1c2a9e-0d3b-4c55-9a1e-2b7f0c9d1e23", text: "Bộ phận IT đã xử lý xong yêu cầu của bạn.", result: "completed", new_ticket_id: null, created_at: "2026-10-26T08:00:00+00:00" },
+      ],
+      next_cursor: "eyJ0IjoiMjAyNi0xMC0yNlQwODowMDowMCswMDowMCIsImkiOiJlc2M6NyJ9",
+    };
+    expect(parseNotificationPage(body).items).toHaveLength(2);
   });
   it("đường dẫn: limit + after mã hoá", () => {
     expect(notificationsPath(20, null)).toBe("/api/me/notifications?limit=20");
@@ -170,6 +181,13 @@ describe("t201: route chưa có (404) → không chuông, không câu lỗi, kh�
     expect(document.body.textContent).not.toMatch(/Chưa tải được thông báo|lỗi/i);
     expect(tbCalls(calls)).toHaveLength(1);
   });
+  it("403 → ẩn chuông như 404 (không câu lỗi)", async () => {
+    const calls = stub((u) => (u.startsWith("/api/me/notifications") ? json(403, { detail: "forbidden" }) : undefined));
+    mountSidebar();
+    await waitFor(() => expect(tbCalls(calls)).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId("tb-bell")).toBeNull();
+  });
   it("401/403 → dừng hỏi lại", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const calls = stub((u) => (u.startsWith("/api/me/notifications") ? json(403, { detail: "forbidden" }) : undefined));
@@ -182,7 +200,7 @@ describe("t201: route chưa có (404) → không chuông, không câu lỗi, kh�
   });
 });
 
-const feed = (items: NotificationItem[], next: string | null = null) =>
+const feed = (items: NotificationView[], next: string | null = null) =>
   stub((u) => (u.startsWith("/api/me/notifications") ? json(200, { items, next_cursor: next }) : undefined));
 
 // ------------------------------------------------------------------------------------------------------ t202 đếm + đã đọc
@@ -382,13 +400,19 @@ describe("t208: dòng thông báo — \"Xem yêu cầu\" tới /chat/<ticket_id>
     expect([...dialog.querySelectorAll("[href]")].map((a) => a.getAttribute("href"))).not.toContain("/chat/tkt-moi-777");
     expect(within(dialog).getByText("Cần gửi yêu cầu mới")).toBeTruthy();
   });
-  it("nhân sự IT không có ticket:read:own → không link (route /chat/:id sẽ là 403)", async () => {
-    feed(THREE);
+  it("không có ticket:read:own (quyền của route thật) → không hỏi, không chuông", async () => {
+    const calls = feed(THREE);
     mountSidebar(L2);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId("tb-bell")).toBeNull();
+    expect(tbCalls(calls)).toHaveLength(0);
+  });
+  it("nhân sự IT có ticket:read:own → chuông + link như nhân viên", async () => {
+    feed(THREE);
+    mountSidebar({ ...L2, permissions: [...L2.permissions, "ticket:read:own"] });
     fireEvent.click(await bell());
     const dialog = await screen.findByRole("dialog", { name: "Thông báo" });
-    expect(within(dialog).queryAllByRole("link")).toHaveLength(0);
-    expect(within(dialog).getAllByTestId("tb-row")).toHaveLength(3);
+    expect(within(dialog).getAllByRole("link")).toHaveLength(3);
   });
 });
 
@@ -626,38 +650,6 @@ describe("t214: ticket cha nhiều ý — dùng nguyên deadline server trả ch
   });
 });
 
-// ------------------------------------------------------------------------------------------------------ t215 MSW fixture
-describe("t215: fixture dev:mock — đủ minh hoạ, đúng hợp đồng", () => {
-  it("≥ 25 dòng, cả 2 kind, 1 dòng chữ có mã, có reopened_as_new, new_ticket_id luôn null; mọi trang qua parser", () => {
-    const all = createNotifications(T0);
-    expect(all.length).toBeGreaterThanOrEqual(25);
-    expect(new Set(all.map((i) => i.kind))).toStrictEqual(new Set(["approval_decided", "escalation_closed"]));
-    expect(all.filter((i) => MA_NOI_BO.test(i.text))).toHaveLength(1);
-    expect(all.some((i) => i.result === "reopened_as_new")).toBe(true);
-    expect(all.every((i) => i.new_ticket_id === null)).toBe(true);
-    let after: string | null = null;
-    const seen: string[] = [];
-    do {
-      const page: NotificationPage = pageOf(all, 20, after)!;
-      parseNotificationPage(page);
-      seen.push(...page.items.map((i) => i.id));
-      after = page.next_cursor;
-    } while (after !== null);
-    expect(seen).toStrictEqual(all.map((i) => i.id));
-    expect(pageOf(all, 20, "lạ")).toBeNull();
-  });
-  it("ticket chờ duyệt minh hoạ: deadline + server_now ISO có múi giờ; quá hạn 15 s → đã chuyển, deadline null", () => {
-    const t = createDuyet(DUYET_SAP_HET, T0);
-    const v = duyetView(t, T0);
-    expect(isIsoWithZone(v.deadline)).toBe(true);
-    expect(isIsoWithZone(v.server_now)).toBe(true);
-    expect(v.waiting_for).toBe("approval");
-    const later = duyetView(t, t.deadline + 15_000);
-    expect(later.final_state).toBe("S_ESCALATED");
-    expect(later.deadline).toBeNull();
-  });
-});
-
 // ------------------------------------------------------------------------------------------------------ t216 Storage 1 file
 describe("t216: Storage chỉ đụng ở lib/lastSeen.ts — chuông không ghi gì ngoài khoá tb.last_seen.<user>", () => {
   it("mở chuông: setItem chỉ với khoá của người đang đăng nhập, giá trị ISO; không sessionStorage", async () => {
@@ -682,7 +674,7 @@ describe("t217: câu chữ reopened_as_new / confirmed_denial (ĐP soát 23d0f6a
     expect(KET_QUA_THONG_BAO.reopened_as_new).toBe("Cần gửi yêu cầu mới");
     expect(CAU_THONG_BAO.reopened_as_new).toBe("Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc này.");
     expect(CAU_THONG_BAO.confirmed_denial).toBe("Kỹ thuật viên đã xem lại và giữ quyết định từ chối.");
-    const texts = [...Object.values(KET_QUA_THONG_BAO), ...Object.values(CAU_THONG_BAO), ...createNotifications(T0).map((i) => i.text)];
+    const texts = [...Object.values(KET_QUA_THONG_BAO), ...Object.values(CAU_THONG_BAO)];
     for (const t of texts) expect(t.toLowerCase()).not.toContain("đã tạo yêu cầu mới");
   });
   it("dòng reopened_as_new chữ có mã → câu chung mới + nhãn mới; chỉ link ticket gốc", async () => {

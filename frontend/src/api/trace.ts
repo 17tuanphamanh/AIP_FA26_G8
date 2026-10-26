@@ -10,9 +10,10 @@ import type { components } from "./schema.gen.ts";
 import type { MatchedRule } from "./types.ts";
 
 type S = components["schemas"];
-// N-PA §3: khối `policy` (bước B13/B14) có thêm `matched_rules` TUỲ CHỌN (be-tuan8 chưa có — openapi chưa sinh). Gỡ phần
-// mở rộng khi gen:api sinh lại từ be-tuan8.
-export type PolicyInfo = S["PolicyInfo"] & { matched_rules?: MatchedRule[] };
+// N-PA §3: khối `policy` (bước B13/B14) có `matched_rules` TUỲ CHỌN. openapi (be-thong-bao 56ea4d9) khai `| null` (Pydantic
+// `list | None = None`) nhưng route thật BỎ khoá thay vì gửi null (`response_model_exclude_unset`, backend/app/api/trace.py)
+// → giữ chặt: thiếu khoá = chưa có dữ liệu, null = 502 như mọi sai kiểu.
+export type PolicyInfo = Omit<S["PolicyInfo"], "matched_rules"> & { matched_rules?: MatchedRule[] };
 export type TraceStep = Omit<S["TraceStep"], "policy"> & { policy: PolicyInfo | null };
 export type TicketTrace = Omit<S["TicketTrace"], "steps"> & { steps: TraceStep[] };
 export type TraceChild = S["TraceChild"];

@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard Strategies */
+        get: operations["dashboard_strategies_api_dashboard_strategies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/alerts": {
         parameters: {
             query?: never;
@@ -81,6 +98,58 @@ export interface paths {
         };
         /** Llm Status */
         get: operations["llm_status_api_admin_llm_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/email-outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Email Outbox */
+        get: operations["email_outbox_api_admin_email_outbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/strategy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Strategy */
+        get: operations["get_strategy_api_admin_strategy_get"];
+        /** Put Strategy */
+        put: operations["put_strategy_api_admin_strategy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/strategy/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Strategy History */
+        get: operations["strategy_history_api_admin_strategy_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -368,6 +437,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ticket Events */
+        get: operations["ticket_events_api_tickets__ticket_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/approvals/{approval_id}/decision": {
         parameters: {
             query?: never;
@@ -436,6 +522,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/escalations/{escalation_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Escalation */
+        post: operations["close_escalation_api_escalations__escalation_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/trace": {
         parameters: {
             query?: never;
@@ -445,6 +548,23 @@ export interface paths {
         };
         /** Ticket Trace */
         get: operations["ticket_trace_api_tickets__ticket_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Notifications */
+        get: operations["my_notifications_api_me_notifications_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -619,6 +739,8 @@ export interface components {
             procedure: components["schemas"]["ProcedureRef"] | null;
             affected: components["schemas"]["AffectedView"];
             risk_view: components["schemas"]["RiskView"] | null;
+            /** Matched Rules */
+            matched_rules?: components["schemas"]["MatchedRule"][] | null;
         };
         /** @enum {string} */
         AudienceParam: "manager" | "dev" | "ops";
@@ -712,6 +834,8 @@ export interface components {
             /** Is Multi */
             is_multi: boolean | null;
         };
+        /** @enum {string} */
+        CloseResult: "completed" | "confirmed_denial" | "reopened_as_new";
         /** DayCost */
         DayCost: {
             /**
@@ -771,6 +895,69 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** EscalationCloseOut */
+        EscalationCloseOut: {
+            /** Escalation Id */
+            escalation_id: number;
+            /** Ticket Id */
+            ticket_id: string;
+            close_result: components["schemas"]["CloseResult"];
+            /** Close Reason */
+            close_reason: string | null;
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /** Closed By */
+            closed_by: string;
+            /** Close Note */
+            close_note: string;
+            /** New Ticket Id */
+            new_ticket_id: string | null;
+        };
+        /** EscalationQueueItem */
+        EscalationQueueItem: {
+            /** Escalation Id */
+            escalation_id: number;
+            /** Ticket Id */
+            ticket_id: string;
+            /** Exit Code */
+            exit_code: string;
+            /** Priority */
+            priority: number;
+            /** Label */
+            label: string;
+            /** Reason Detail */
+            reason_detail: string | null;
+            /** Is Deny Case */
+            is_deny_case: boolean;
+            /** Handoff Note */
+            handoff_note: {
+                [key: string]: unknown;
+            };
+            /** Assigned To */
+            assigned_to: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Closed At */
+            closed_at: string | null;
+            close_result: components["schemas"]["CloseResult"] | null;
+            /** Closed By */
+            closed_by: string | null;
+            /** Close Note */
+            close_note: string | null;
+        };
+        /** EscalationQueuePage */
+        EscalationQueuePage: {
+            /** Items */
+            items: components["schemas"]["EscalationQueueItem"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** ExecCall */
         ExecCall: {
             /** Name */
@@ -796,6 +983,22 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HistoryItem */
+        HistoryItem: {
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Changed By */
+            changed_by: string;
+            /** Strategy From */
+            strategy_from: string;
+            /** Strategy To */
+            strategy_to: string;
+            /** Reason */
+            reason: string;
         };
         /** InvalidPolicy */
         InvalidPolicy: {
@@ -837,6 +1040,8 @@ export interface components {
         };
         /** @enum {string} */
         KbState: "ready" | "missing" | "unknown";
+        /** @enum {string} */
+        Kind: "approval_decided" | "escalation_closed";
         /** LlmStatus */
         LlmStatus: {
             /**
@@ -878,6 +1083,16 @@ export interface components {
             /** Full Name */
             full_name: string | null;
         };
+        /** MatchedRule */
+        MatchedRule: {
+            /** Rule Id */
+            rule_id: string;
+            /** Description */
+            description: string | null;
+            decision: components["schemas"]["RuleDecision"] | null;
+            /** Applied */
+            applied: boolean;
+        };
         /** Models */
         Models: {
             /** Fast */
@@ -885,6 +1100,57 @@ export interface components {
             /** Strong */
             strong: string | null;
         };
+        /** NotificationPage */
+        NotificationPage: {
+            /** Items */
+            items: components["schemas"]["NotificationView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** NotificationView */
+        NotificationView: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["Kind"];
+            /** Ticket Id */
+            ticket_id: string;
+            /** Text */
+            text: string;
+            result: components["schemas"]["Result"];
+            /** New Ticket Id */
+            new_ticket_id: string | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** OutboxItem */
+        OutboxItem: {
+            /** Id */
+            id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Sent At */
+            sent_at: string | null;
+            /** Kind */
+            kind: string;
+            /** Recipient */
+            recipient: string | null;
+            /** Status */
+            status: string;
+            /** Attempts */
+            attempts: number;
+            /** Last Error Class */
+            last_error_class: string | null;
+        };
+        /** OutboxList */
+        OutboxList: {
+            /** Items */
+            items: components["schemas"]["OutboxItem"][];
+        };
+        /** @enum {string} */
+        OutboxStatus: "pending" | "sent" | "failed" | "skipped";
         /** OutcomeInfo */
         OutcomeInfo: {
             /** Route */
@@ -908,6 +1174,8 @@ export interface components {
             raw_prob: number | null;
             /** Calibrated Prob */
             calibrated_prob: number | null;
+            /** Matched Rules */
+            matched_rules?: components["schemas"]["MatchedRule"][] | null;
         };
         /**
          * PolicyIssue
@@ -967,6 +1235,29 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** @enum {string} */
+        QueueStatus: "open" | "closed";
+        /** RatioCell */
+        RatioCell: {
+            /** Num */
+            num: number;
+            /** Den */
+            den: number;
+        };
+        /** RatioMetric */
+        RatioMetric: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "ratio";
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["RatioCell"] | null;
+            };
+        };
         /** RequesterView */
         RequesterView: {
             /** Role */
@@ -974,6 +1265,8 @@ export interface components {
             /** Department */
             department: string | null;
         };
+        /** @enum {string} */
+        Result: "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new";
         /**
          * RiskView
          * @description `RiskDecision` (cùng tên trường, cùng enum — một nguồn) + 2 cờ suy ra; FE ghép chữ hiển thị từ các cờ này.
@@ -1024,6 +1317,8 @@ export interface components {
             count: number;
         };
         /** @enum {string} */
+        RuleDecision: "allow" | "approval_required" | "deny";
+        /** @enum {string} */
         ScreenDecision: "safe" | "attack" | "suspected" | "unavailable";
         /** ScreenInfo */
         ScreenInfo: {
@@ -1033,6 +1328,8 @@ export interface components {
             p_injection: number | null;
             decision: components["schemas"]["ScreenDecision"] | null;
         };
+        /** @enum {string} */
+        Source: "real" | "sim";
         /** Spend */
         Spend: {
             /** Total Usd */
@@ -1047,6 +1344,56 @@ export interface components {
         };
         /** @enum {string} */
         SpendState: "ok" | "warn" | "over";
+        /** StrategyDashboard */
+        StrategyDashboard: {
+            source: components["schemas"]["Source"];
+            /**
+             * From
+             * Format: date-time
+             */
+            from: string;
+            /**
+             * To
+             * Format: date-time
+             */
+            to: string;
+            /** Strategies */
+            strategies: string[];
+            /** Intent Mix */
+            intent_mix: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** Metrics */
+            metrics: (components["schemas"]["RatioMetric"] | components["schemas"]["ValueMetric"])[];
+            /** Unavailable */
+            unavailable: string[];
+        };
+        /** StrategyHistory */
+        StrategyHistory: {
+            /** Items */
+            items: components["schemas"]["HistoryItem"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** StrategyState */
+        StrategyState: {
+            /** Strategy */
+            strategy: string;
+            /** Selectable */
+            selectable: string[];
+            /** Llm Calibrated */
+            llm_calibrated: boolean;
+            /** Eval Mode */
+            eval_mode: boolean;
+            /** Changed By */
+            changed_by: string | null;
+            /** Changed At */
+            changed_at: string | null;
+            /** Reason */
+            reason: string | null;
+        };
         /** TicketTrace */
         TicketTrace: {
             /** Ticket Id */
@@ -1093,6 +1440,11 @@ export interface components {
             }[] | null;
             /** Deadline */
             deadline: string | null;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            server_now: string;
         };
         /** TraceChild */
         TraceChild: {
@@ -1157,6 +1509,37 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValueCell */
+        ValueCell: {
+            /** Value */
+            value: number | null;
+        };
+        /** ValueMetric */
+        ValueMetric: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "value";
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "count" | "s" | "min" | "usd";
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["ValueNCell"] | components["schemas"]["ValueCell"] | null;
+            };
+        };
+        /** ValueNCell */
+        ValueNCell: {
+            /** Value */
+            value: number | null;
+            /** N */
+            n: number;
         };
         /** @enum {string} */
         WaitingFor: "clarify" | "approval" | "confirm" | "reply";
@@ -1262,6 +1645,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiDashboard"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    dashboard_strategies_api_dashboard_strategies_get: {
+        parameters: {
+            query?: {
+                source?: components["schemas"]["Source"];
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyDashboard"];
                 };
             };
             /** @description Unauthorized */
@@ -1463,6 +1906,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    email_outbox_api_admin_email_outbox_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["OutboxStatus"] | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_strategy_api_admin_strategy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    put_strategy_api_admin_strategy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    strategy_history_api_admin_strategy_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyHistory"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description Service Unavailable */
@@ -1961,6 +2633,37 @@ export interface operations {
             };
         };
     };
+    ticket_events_api_tickets__ticket_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     decide_api_approvals__approval_id__decision_post: {
         parameters: {
             query?: never;
@@ -2046,7 +2749,9 @@ export interface operations {
     escalation_queue_api_escalations_queue_get: {
         parameters: {
             query?: {
+                status?: components["schemas"]["QueueStatus"];
                 limit?: number;
+                after?: string | null;
             };
             header?: never;
             path?: never;
@@ -2060,9 +2765,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["EscalationQueuePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
             /** @description Validation Error */
@@ -2072,6 +2811,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    close_escalation_api_escalations__escalation_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                escalation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationCloseOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };
@@ -2130,6 +2954,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    my_notifications_api_me_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestBody"];
                 };
             };
             /** @description Service Unavailable */

@@ -3,7 +3,6 @@ import { approvalHandlers } from "./approvals.ts";
 import { multiHandlers } from "./employee-multi.ts";
 import { escalationCloseHandlers } from "./escalation-close.ts";
 import { escalationQueueHandlers } from "./escalation-queue.ts";
-import { notificationHandlers } from "./notifications.ts";
 import { strategyCompareHandlers } from "./strategy-compare.ts";
 import { strategyHandlers } from "./strategy.ts";
 import { overrideHandlers } from "./override.ts";
@@ -24,8 +23,5 @@ export const handlers: HttpHandler[] = [
   ...strategyCompareHandlers, // N-PA: GET /api/dashboard/strategies (be-tuan8 chưa merge) — business/ai vẫn route thật
   ...approvalHandlers, // F4/N4c: hộp thư = thật + minh hoạ; xem phiếu + decision chỉ id `apv-demo-` (Q-fe-5, P6)
   ...overrideHandlers, // F4/N4d: POST /api/tickets/:id/override (route thật 4d) chỉ id `tkt-demo-`
-  // N-TB: GET /api/me/notifications (be-thong-bao chưa merge) + GET /api/tickets/:id CHỈ id `tkt-demo-duyet-` (deadline,
-  // server_now) — đứng TRƯỚC multiHandlers (handler đó passthrough mọi id khác của nó).
-  ...notificationHandlers,
   ...multiHandlers, // F6: GET /api/tickets/:id + POST …/reply (route thật T20b) chỉ id `tkt-demo-multi-` (minh hoạ 422/409)
 ];
