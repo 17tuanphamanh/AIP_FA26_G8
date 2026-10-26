@@ -3,10 +3,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import type { Me } from "../../api/types.ts";
+import { AuthContext, type AuthValue } from "../../auth/context.ts";
+import { STAFF_NAV } from "../../auth/permissions.ts";
+import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../../api/errors.ts";
-import { queueQuery } from "../../api/escalations.ts";
-import { api } from "../../api/http.ts";
+import { queueQuery, requestClose } from "../../api/escalations.ts";
 import type { EscalationCloseIn } from "../../api/types.ts";
 import { createEscalationStore, type EscalationStore } from "../../mocks/fixtures/escalations.ts";
 import { closeOutcome } from "../../mocks/handlers/escalation-close.ts";
@@ -54,10 +56,7 @@ function serve(store: EscalationStore, { closeOverride, delayAfter }: { closeOve
 }
 
 /** Đóng ca qua client THẬT (như route thật đã bật) — vitest không bật MSW nên `closeEscalation` mặc định luôn chặn. */
-const viaClient = async (id: number, body: EscalationCloseIn) => {
-  const res = await api.request(`/api/escalations/${id}/close`, { method: "POST", json: body });
-  if (res.status !== 200) throw new ApiError(502, "unexpected_close_status");
-};
+const viaClient = (id: number, body: EscalationCloseIn) => requestClose(id, body);
 
 function renderAt(path: string, closeAvailable?: boolean) {
   const client = new QueryClient();
@@ -271,5 +270,79 @@ describe("t180: ca đã đóng (?status=closed) → chỉ đọc: kết quả, g
     expect(screen.queryByRole("button", { name: "Đóng escalation" })).toBeNull();
     expect(screen.queryByRole("radiogroup", { name: "Kết quả đóng" })).toBeNull();
     expect(queueCalls(calls)).toStrictEqual(["/api/escalations/queue?status=closed&limit=50"]);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t189, t190 (hợp đồng sửa 21:15/21:30)
+
+describe("t189: đóng ca 200 `{…, new_ticket_id}` — 'Mở ticket mới' + mã ≠ null → 'Đã tạo yêu cầu mới #<mã>' (chữ thường, không link); null / thiếu → không nhắc", () => {
+  async function closeWith(result: RegExp, override?: () => Response) {
+    const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
+    const target = store.list("open").find((i) => i.exit_code === "E3")!;
+    serve(store, override ? { closeOverride: override } : {});
+    renderAt(`/escalations/${target.escalation_id}`, true);
+    await screen.findByText("Ghi chú bàn giao");
+    fireEvent.click(screen.getByRole("radio", { name: result }));
+    fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    return { done: await screen.findByTestId("close-done"), target };
+  }
+  it("reopened_as_new → 'Đã tạo yêu cầu mới #<mã>' (mã từ server), không có link tới mã", async () => {
+    const { done, target } = await closeWith(/Mở ticket mới/);
+    const id = `tkt-demo-esc-moi-${target.escalation_id}`;
+    expect(done.textContent).toBe(`${CLOSED_TEXT} Đã tạo yêu cầu mới #${id}`);
+    expect(within(done).getByTestId("close-new-ticket").textContent).toBe(id);
+    expect(done.querySelector("a")).toBeNull();
+    expect([...document.querySelectorAll("a")].some((a) => a.textContent?.includes(id) || a.getAttribute("href")?.includes(id))).toBe(false);
+  });
+  it("completed → không nhắc ticket mới (server trả null)", async () => {
+    const { done } = await closeWith(/Đã hoàn tất/);
+    expect(done.textContent).toBe(CLOSED_TEXT);
+    expect(screen.queryByTestId("close-new-ticket")).toBeNull();
+  });
+  it("thân 200 thiếu khoá new_ticket_id → vẫn thành công, không nhắc", async () => {
+    const { done } = await closeWith(/Mở ticket mới/, () => json(200, { escalation_id: 1, close_result: "reopened_as_new" }));
+    expect(done.textContent).toBe(CLOSED_TEXT);
+  });
+  it("404 not_found → câu lỗi chung, form giữ nguyên", async () => {
+    const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
+    const target = store.list("open").find((i) => i.exit_code === "E3")!;
+    serve(store, { closeOverride: () => json(404, { detail: "not_found" }) });
+    renderAt(`/escalations/${target.escalation_id}`, true);
+    await screen.findByText("Ghi chú bàn giao");
+    fireEvent.click(screen.getByRole("radio", { name: /Mở ticket mới/ }));
+    fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    expect((await screen.findByText("Không tìm thấy.")).getAttribute("role")).toBe("alert");
+    expect(screen.queryByTestId("close-done")).toBeNull();
+  });
+});
+
+describe("t190: quyền đóng ca = escalation:handle (L1 + L2) — L1 thấy form đóng qua cổng quyền của route", () => {
+  const P = ["ticket:create", "ticket:read:own"];
+  const L1: Me = { user_id: "ha.lt", role: "l1", permissions: [...P, "ticket:read:any", "approval:decide", "decision:override", "escalation:handle"] };
+  const L2: Me = { user_id: "long.nh", role: "l2", permissions: [...P, "ticket:read:any", "escalation:handle"] };
+  const signedIn = (me: Me): AuthValue => ({ state: { status: "signedIn", me }, signIn: vi.fn(), signOut: vi.fn(async () => true) });
+  const perm = STAFF_NAV.find((i) => i.to === "/escalations")!.perm;
+  it.each([["L1", L1], ["L2", L2]])("%s: form + nút 'Đóng escalation'", async (_n, me) => {
+    expect(perm).toBe("escalation:handle");
+    const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
+    const target = store.list("open").find((i) => i.exit_code === "E3")!;
+    serve(store);
+    const client = new QueryClient();
+    clients.push(client);
+    render(
+      <QueryClientProvider client={client}>
+        <AuthContext value={signedIn(me)}>
+          <MemoryRouter initialEntries={[`/escalations/${target.escalation_id}`]}>
+            <Routes>
+              <Route path="/escalations/:escalationId" element={<RequirePerm perm={perm}><EscalationDetailRoute closeAvailable submit={viaClient} /></RequirePerm>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole("radiogroup", { name: "Kết quả đóng" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Đóng escalation" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

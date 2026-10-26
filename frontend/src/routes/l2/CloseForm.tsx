@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { CLOSE_AVAILABLE, CLOSE_NOTE_MAX, closeEscalation } from "../../api/escalations.ts";
+import { CLOSE_AVAILABLE, CLOSE_NOTE_MAX, closeEscalation, type CloseResult } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueItem } from "../../api/types.ts";
 import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, CLOSE_UNAVAILABLE_TEXT, closeProblem, completedLock } from "./queue.ts";
 
@@ -9,9 +9,9 @@ type CloseFormProps = {
   item: EscalationQueueItem;
   /** Mặc định `CLOSE_AVAILABLE` (api/escalations.ts — một hằng một chỗ). Tắt → nút gửi khoá, KHÔNG gọi `/close`. */
   available?: boolean;
-  onSubmit?: (id: number, body: EscalationCloseIn) => Promise<void>;
-  /** 200: ca đã đóng (màn chi tiết giữ bản chụp ca + câu báo). */
-  onClosed?: () => void;
+  onSubmit?: (id: number, body: EscalationCloseIn) => Promise<CloseResult | void>;
+  /** 200: ca đã đóng (màn chi tiết giữ bản chụp ca + câu báo; `newTicketId` chỉ khi "Mở ticket mới" và server trả mã). */
+  onClosed?: (newTicketId: string | null) => void;
 };
 
 // Khối "Đóng escalation" của B4L2Detail (hợp đồng N-PA §4): 3 kết quả (enum B20 §4.3) + ghi chú bắt buộc 1–1000 ký tự.
@@ -52,9 +52,9 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
     setChoiceError(null);
     setNoteError(null);
     try {
-      await onSubmit(item.escalation_id, { close_result: result, note: note.trim() });
+      const done = await onSubmit(item.escalation_id, { close_result: result, note: note.trim() });
       reloadQueue();
-      onClosed?.();
+      onClosed?.(result === "reopened_as_new" && done ? done.new_ticket_id : null);
     } catch (e) {
       // Giữ nguyên lựa chọn + ghi chú để sửa rồi gửi lại.
       const api = e instanceof ApiError ? e : null;

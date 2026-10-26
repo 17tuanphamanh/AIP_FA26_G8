@@ -9,7 +9,7 @@ import { parseApprovalView } from "./approvals.ts";
 import { createClient } from "./client.ts";
 import { BAD_STRATEGIES, getStrategiesDashboard, parseStrategies, SOURCE_MISMATCH } from "./dashboard.ts";
 import { ApiError } from "./errors.ts";
-import { CLOSE_AVAILABLE, closeEscalation, getEscalationQueuePage, loadedItems, parseQueuePage, QUEUE_PAGE_LIMIT, queuePath } from "./escalations.ts";
+import { CLOSE_AVAILABLE, closeEscalation, getEscalationQueuePage, loadedItems, parseCloseResult, parseQueuePage, QUEUE_PAGE_LIMIT, queuePath } from "./escalations.ts";
 import {
   getStrategy,
   getStrategyHistory,
@@ -358,4 +358,32 @@ describe("t156: parseTrace — policy.matched_rules TUỲ CHỌN ở bước B13
     ["khoá lạ khác trong policy", { ...policy, extra: 1 }],
     ["thiếu khoá bắt buộc", without(policy, "rule_id")],
   ])("%s → 502 invalid_trace_body", (_n, p) => bad(() => parseTrace(trace(p)), "invalid_trace_body"));
+});
+
+// ------------------------------------------------------------------------------------------------ t187, t188 (hợp đồng sửa 21:15/21:30)
+
+describe("t187: matched_rules.decision null (luật đã xoá khỏi chính sách) → parser NHẬN (không 502 cả phiếu / nhật ký)", () => {
+  const nullRule = { rule_id: "R99", description: null, decision: null, applied: false };
+  it("phiếu duyệt + nhật ký", () => {
+    expect(parseApprovalView({ ...approval(), matched_rules: [nullRule] }).matched_rules).toStrictEqual([nullRule]);
+    const step = { step: "B13/B14", event: "risk_decided", at: "2099-09-26T01:00:00Z", screen: null, classify: null, diagnose: null, sources: null, approval: null, execution: null, outcome: null };
+    const policy = { rule_id: null, rule_description: null, policy_decision: null, risk_level: "high", decided_by: "llm", raw_prob: 0.9, calibrated_prob: null, matched_rules: [nullRule] };
+    const t = parseTrace({ ticket_id: "t", is_parent: false, parent_ticket_id: null, children: [], steps: [{ ...step, policy }] });
+    expect(t.steps[0]!.policy!.matched_rules).toStrictEqual([nullRule]);
+  });
+  it("decision là chuỗi lạ vẫn 502", () => bad(() => parseApprovalView({ ...approval(), matched_rules: [{ ...nullRule, decision: "x" }] }), "invalid_approval_body"));
+});
+
+describe("t188: parseCloseResult — 200 `{…, new_ticket_id}`: chuỗi mã hợp lệ → giữ; thiếu / null / sai kiểu → null (không làm vỡ)", () => {
+  it.each([
+    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: "tkt-moi-1" }, "tkt-moi-1"],
+    [{ escalation_id: 1, close_result: "completed", new_ticket_id: null }, null],
+    [{ escalation_id: 1, close_result: "completed" }, null],
+    [{ new_ticket_id: 5 }, null],
+    [{ new_ticket_id: "<b>x</b>" }, null],
+    [null, null],
+    ["ok", null],
+  ])("%j → %s", (body, expected) => {
+    expect(parseCloseResult(body).new_ticket_id).toBe(expected);
+  });
 });

@@ -13,7 +13,7 @@ export const STRATEGY_OPTIONS: readonly { key: RuntimeStrategy; title: string; d
   {
     key: "hybrid_guarded",
     title: "LLM xét mọi yêu cầu, luật làm lớp chặn cuối",
-    desc: "Luật cần duyệt hoặc cấm được giữ nguyên; các yêu cầu còn lại LLM xét thêm và chỉ có thể nâng mức cần người.",
+    desc: "Luật cần duyệt hoặc cấm được giữ nguyên; các yêu cầu còn lại LLM xét thêm và chỉ có thể nâng mức cần người. Khi lớp AI không phản hồi, các việc luật cho tự làm sẽ chuyển kỹ thuật viên L2.",
   },
 ];
 

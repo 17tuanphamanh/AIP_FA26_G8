@@ -486,8 +486,8 @@ describe("t35: tải lại chi tiết khi ca không còn trong hàng đợi", ()
 
 describe("t36: handler MSW /close — kết quả theo kho minh hoạ (N-PA: 200 / 409 / 404 / 422)", () => {
   it.each([
-    ["E5 + completed → 422 deny_case_cannot_complete", "E5", { close_result: "completed", note: "x" }, 422, { detail: "deny_case_cannot_complete" }],
-    ["E6 + completed → 422 (B20)", "E6", { close_result: "completed", note: "x" }, 422, { detail: "deny_case_cannot_complete" }],
+    ["E5 + completed → 422 fields close_result (hợp đồng sửa 21:30)", "E5", { close_result: "completed", note: "x" }, 422, { error: "invalid_request", fields: ["close_result"] }],
+    ["E6 + completed → 422 fields close_result (B20)", "E6", { close_result: "completed", note: "x" }, 422, { error: "invalid_request", fields: ["close_result"] }],
     ["E5 + confirmed_denial → 200", "E5", { close_result: "confirmed_denial", note: "x" }, 200, undefined],
     ["E3 + completed → 200", "E3", { close_result: "completed", note: "x" }, 200, undefined],
     ["ghi chú chỉ khoảng trắng → 422 body.note", "E3", { close_result: "reopened_as_new", note: "  " }, 422, { error: "invalid_request", fields: ["body.note"] }],
@@ -498,6 +498,18 @@ describe("t36: handler MSW /close — kết quả theo kho minh hoạ (N-PA: 200
     const outcome = closeOutcome(store, item.escalation_id, body, "long.nh");
     expect(outcome.status).toBe(status);
     if (expected) expect(outcome.body).toStrictEqual(expected);
+  });
+
+  it("200 có new_ticket_id: reopened_as_new → mã minh hoạ, kết quả khác → null; id lạ → 404 not_found (hợp đồng sửa 21:30)", () => {
+    const store = createEscalationStore(Date.now(), 10);
+    const [a, b] = store.list("open").filter((i) => i.exit_code === "E3");
+    expect(closeOutcome(store, a!.escalation_id, { close_result: "reopened_as_new", note: "x" }, "long.nh").body).toStrictEqual({
+      escalation_id: a!.escalation_id,
+      close_result: "reopened_as_new",
+      new_ticket_id: `tkt-demo-esc-moi-${a!.escalation_id}`,
+    });
+    expect(closeOutcome(store, b!.escalation_id, { close_result: "completed", note: "x" }, "long.nh").body.new_ticket_id).toBeNull();
+    expect(closeOutcome(store, 1, { close_result: "completed", note: "x" }, "long.nh")).toStrictEqual({ status: 404, body: { detail: "not_found" } });
   });
 
   it("200 → ca rời danh sách mở, sang đã đóng (closed_by, close_note); đóng lại → 409 already_closed; id lạ → 404", () => {

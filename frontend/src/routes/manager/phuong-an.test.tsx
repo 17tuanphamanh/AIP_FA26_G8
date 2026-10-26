@@ -182,7 +182,7 @@ describe("t157: khối 'Cách xử lý của hệ thống' — 3 lựa chọn đ
     expect(STRATEGY_OPTIONS.map((o) => o.desc)).toStrictEqual([
       "Bảng luật quyết định; yêu cầu không khớp luật nào được chuyển người duyệt.",
       "Có luật khớp thì luật quyết định; không khớp luật nào thì LLM ước lượng.",
-      "Luật cần duyệt hoặc cấm được giữ nguyên; các yêu cầu còn lại LLM xét thêm và chỉ có thể nâng mức cần người.",
+      "Luật cần duyệt hoặc cấm được giữ nguyên; các yêu cầu còn lại LLM xét thêm và chỉ có thể nâng mức cần người. Khi lớp AI không phản hồi, các việc luật cho tự làm sẽ chuyển kỹ thuật viên L2.",
     ]);
     for (const o of STRATEGY_OPTIONS) expect(option(o.key).textContent).toContain(o.desc);
     expect(option("hybrid").getAttribute("aria-checked")).toBe("true");

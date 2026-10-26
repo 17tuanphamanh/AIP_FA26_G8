@@ -415,12 +415,13 @@ export type StrategiesDashboard = {
   unavailable: string[];
 };
 
-/** Các luật khớp (ApprovalView gốc + TicketTrace bước B13/B14 `policy`), thứ tự như `all_matched`; khi có luật khớp đúng
- *  MỘT phần tử `applied`. Thiếu khoá = chưa có dữ liệu (≠ mảng rỗng = không luật nào khớp). */
+/** Các luật khớp (ApprovalView gốc + TicketTrace bước B13/B14 `policy`), thứ tự như `all_matched`. Hợp đồng sửa 21:15/21:30:
+ *  tối đa MỘT phần tử `applied` (0 = quyết định cuối không do luật, vd hybrid_guarded + AI lỗi → E5 llm_layer_disabled);
+ *  `decision` null = luật đã bị xoá khỏi chính sách. Thiếu khoá = chưa có dữ liệu (≠ mảng rỗng = không luật nào khớp). */
 export type MatchedRule = {
   rule_id: string;
   description: string | null;
-  decision: "allow" | "approval_required" | "deny";
+  decision: "allow" | "approval_required" | "deny" | null;
   applied: boolean;
 };
 

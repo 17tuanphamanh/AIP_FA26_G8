@@ -70,10 +70,12 @@ export function createEscalationStore(base: number, openCount = 62) {
           : { status: 404, body: { detail: "not_found" } };
       }
       const it = open[idx]!;
-      if (result === "completed" && (it.is_deny_case || it.exit_code === "E6")) return { status: 422, body: { detail: "deny_case_cannot_complete" } };
+      // Hợp đồng sửa 21:30: 422 `fields:["close_result"]` cho E5/E6 + completed (B20).
+      if (result === "completed" && (it.is_deny_case || it.exit_code === "E6")) return { status: 422, body: { error: "invalid_request", fields: ["close_result"] } };
       open.splice(idx, 1);
       closed.unshift({ ...it, closed_at: new Date(now).toISOString(), close_result: result, closed_by: by, close_note: note });
-      return { status: 200, body: { escalation_id: id, close_result: result } };
+      const newTicket = result === "reopened_as_new" ? `${ESC_DEMO_PREFIX}moi-${id}` : null;
+      return { status: 200, body: { escalation_id: id, close_result: result, new_ticket_id: newTicket } };
     },
   };
 }

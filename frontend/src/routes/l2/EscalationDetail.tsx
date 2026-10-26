@@ -2,7 +2,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { hasMore, loadedItems, queueQuery, type QueueItem } from "../../api/escalations.ts";
+import { type CloseResult, hasMore, loadedItems, queueQuery, type QueueItem } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationQueueStatus } from "../../api/types.ts";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
 import { formatAt } from "../shared/traceText.ts";
@@ -33,7 +33,7 @@ const BACK = (
 );
 
 /** Route `/escalations/:escalationId` — `key` theo id + trạng thái để form đóng không mang nháp sang ca khác. */
-type Submit = (id: number, body: EscalationCloseIn) => Promise<void>;
+type Submit = (id: number, body: EscalationCloseIn) => Promise<CloseResult | void>;
 
 /** `closeAvailable` / `submit`: chỉ test truyền (mặc định `CLOSE_AVAILABLE` + `closeEscalation`). */
 export function EscalationDetailRoute({ closeAvailable, submit }: { closeAvailable?: boolean; submit?: Submit }) {
@@ -59,10 +59,12 @@ function EscalationDetail({
   const items = loadedItems(query.data);
   const found = id === null ? undefined : items?.find((i) => i.escalation_id === id);
   // Đóng xong: ca rời danh sách Mở (tải lại) — màn giữ bản chụp ca để còn hiện câu báo, không nhảy sang "không còn".
-  const [closedSnap, setClosedSnap] = useState<QueueItem | null>(null);
+  const [closedSnap, setClosedSnap] = useState<{ item: QueueItem; newTicketId: string | null } | null>(null);
   const loadingMore = useRef(false);
 
-  if (closedSnap) return <Detail item={closedSnap} now={query.dataUpdatedAt} closeAvailable={closeAvailable} justClosed />;
+  if (closedSnap) {
+    return <Detail item={closedSnap.item} now={query.dataUpdatedAt} closeAvailable={closeAvailable} justClosed newTicketId={closedSnap.newTicketId} />;
+  }
   if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2">Đang tải ca…</p>;
   if (id !== null && items === undefined) {
     return (
@@ -103,7 +105,7 @@ function EscalationDetail({
       </section>
     );
   }
-  return <Detail item={found} now={query.dataUpdatedAt} closeAvailable={closeAvailable} submit={submit} onClosed={() => setClosedSnap(found)} />;
+  return <Detail item={found} now={query.dataUpdatedAt} closeAvailable={closeAvailable} submit={submit} onClosed={(newTicketId) => setClosedSnap({ item: found, newTicketId })} />;
 }
 
 function Detail({
@@ -113,13 +115,17 @@ function Detail({
   submit,
   onClosed,
   justClosed = false,
+  newTicketId = null,
 }: {
   item: QueueItem;
   now: number;
   closeAvailable?: boolean;
   submit?: Submit;
-  onClosed?: () => void;
+  onClosed?: (newTicketId: string | null) => void;
   justClosed?: boolean;
+  /** "Mở ticket mới" + server trả mã → câu thêm "Đã tạo yêu cầu mới #<mã>" (ĐP 21:30); chữ thường, KHÔNG link (mã là
+   *  ticket của nhân viên — màn chat riêng). */
+  newTicketId?: string | null;
 }) {
   const { base } = splitLabel(item.label);
   const closed = typeof item.closed_at === "string";
@@ -163,6 +169,15 @@ function Detail({
           <div className="flex flex-col gap-2">
             <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
               {CLOSED_TEXT}
+              {newTicketId ? (
+                <>
+                  {" "}
+                  Đã tạo yêu cầu mới #
+                  <span data-testid="close-new-ticket" className="font-mono select-all">
+                    {newTicketId}
+                  </span>
+                </>
+              ) : null}
             </p>
             <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue">
               Xem ca trong danh sách Đã đóng

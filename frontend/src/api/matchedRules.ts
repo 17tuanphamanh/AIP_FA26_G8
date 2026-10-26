@@ -1,8 +1,8 @@
 // Các luật khớp (hợp đồng N-PA §3) — kiểm HÌNH DẠNG dùng chung cho ApprovalView (khoá gốc) và TicketTrace (khối `policy`
-// của bước B13/B14). Chỉ kiểm kiểu từng phần tử (đúng 4 khoá); số phần tử `applied` sai (≠ 1 khi mảng khác rỗng) KHÔNG
-// phải lỗi hình dạng — màn tự báo "lỗi dữ liệu" tại bảng (routes/shared/matchedRules.ts), phiếu vẫn duyệt được (Q-fe-N2).
+// của bước B13/B14). Chỉ kiểm kiểu từng phần tử (đúng 4 khoá; `decision` có thể null — luật đã xoá); số phần tử `applied`
+// sai (> 1) hay luật applied không chặt nhất KHÔNG phải lỗi hình dạng — màn tự báo "lỗi dữ liệu" tại bảng (routes/shared/matchedRules.ts), phiếu vẫn duyệt được (Q-fe-N2).
 const RULE_KEYS = ["rule_id", "description", "decision", "applied"] as const;
-const DECISIONS = ["allow", "approval_required", "deny"];
+const DECISIONS: readonly unknown[] = ["allow", "approval_required", "deny", null]; // null = luật đã xoá khỏi chính sách
 
 export function isMatchedRule(v: unknown): boolean {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
@@ -13,7 +13,7 @@ export function isMatchedRule(v: unknown): boolean {
     RULE_KEYS.every((k) => Object.hasOwn(r, k)) &&
     typeof r.rule_id === "string" &&
     (r.description === null || typeof r.description === "string") &&
-    DECISIONS.includes(r.decision as string) &&
+    DECISIONS.includes(r.decision) &&
     typeof r.applied === "boolean"
   );
 }

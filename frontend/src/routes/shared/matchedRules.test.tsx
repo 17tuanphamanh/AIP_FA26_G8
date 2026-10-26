@@ -10,11 +10,13 @@ import { ApprovalDetailRoute } from "../l1/ApprovalDetail.tsx";
 import {
   APPLIED_TEXT,
   BAD_DATA_TEXT,
+  MATCHED_ONLY_TEXT,
   matchedView,
   NO_DATA_TEXT,
   NO_RULE_TEXT,
   REPLACED_TEXT,
   SAME_LEVEL_TEXT,
+  UNDECIDED_TEXT,
 } from "./matchedRules.ts";
 import { TicketTraceRoute } from "./TicketTrace.tsx";
 
@@ -63,11 +65,11 @@ describe("t170: matchedView — applied / thua khác mức / thua cùng mức; [
     const view = matchedView([R("A", "allow", false), R("B", "approval_required", false), R("C", "deny", true), R("D", "deny", false)]);
     expect(view.kind === "rows" && view.rows.map((r) => r.result)).toStrictEqual([REPLACED_TEXT, REPLACED_TEXT, APPLIED_TEXT, SAME_LEVEL_TEXT]);
   });
-  it("[] → không có luật khớp; undefined → chưa có dữ liệu; 2 applied / 0 applied → lỗi dữ liệu", () => {
+  it("[] → không có luật khớp; undefined → chưa có dữ liệu; 2 applied → lỗi dữ liệu", () => {
     expect(matchedView([])).toStrictEqual({ kind: "empty" });
     expect(matchedView(undefined)).toStrictEqual({ kind: "missing" });
     expect(matchedView([R("A", "deny", true), R("B", "deny", true)])).toStrictEqual({ kind: "invalid" });
-    expect(matchedView([R("A", "deny", false)])).toStrictEqual({ kind: "invalid" });
+    // Hợp đồng sửa 21:15: 0 applied hợp lệ (quyết định cuối không do luật) — xem t185.
     expect([NO_RULE_TEXT, NO_DATA_TEXT]).toStrictEqual(["Không có luật nào khớp", "Chưa có dữ liệu luật khớp"]);
   });
 });
@@ -230,5 +232,48 @@ describe("t183 (soát bảo mật FAIL-1): luật 'applied' KHÔNG chặt nhất
     expect((await screen.findByTestId("matched-note")).textContent).toBe(BAD_DATA_TEXT);
     expect(screen.queryAllByTestId("matched-rule")).toHaveLength(0);
     expect(screen.getByTestId("decision-bar")).toBeTruthy();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t185, t186 (hợp đồng sửa 21:15/21:30)
+
+describe("t185: 0 luật applied (quyết định cuối không do luật) → mọi luật 'khớp' + một dòng dưới bảng; > 1 applied vẫn lỗi", () => {
+  it("matchedView: rows 'khớp', cờ undecided", () => {
+    const view = matchedView([R("R20", "allow", false), R("R18", "approval_required", false)]);
+    expect(view.kind).toBe("rows");
+    if (view.kind !== "rows") return;
+    expect(view.rows.map((r) => r.result)).toStrictEqual([MATCHED_ONLY_TEXT, MATCHED_ONLY_TEXT]);
+    expect(MATCHED_ONLY_TEXT).toBe("khớp");
+    expect(view.undecided).toBe(true);
+    expect(matchedView([R("A", "deny", true), R("B", "deny", true)])).toStrictEqual({ kind: "invalid" });
+  });
+  it("màn phiếu duyệt: bảng + dòng 'Quyết định cuối không do luật — …'", async () => {
+    renderApproval({ ...fixtureView(), matched_rules: [R("R20", "allow", false), R("R18", "approval_required", false)] });
+    const box = await screen.findByTestId("matched-rules");
+    expect(within(box).getAllByTestId("matched-rule").map((r) => r.querySelectorAll("td")[3]!.textContent)).toStrictEqual(["khớp", "khớp"]);
+    expect(within(box).getByTestId("matched-undecided").textContent).toBe(UNDECIDED_TEXT);
+    expect(UNDECIDED_TEXT).toBe("Quyết định cuối không do luật — xem lý do ở bước đánh giá rủi ro");
+  });
+  it("có đúng 1 applied → không có dòng 'không do luật'", async () => {
+    renderApproval(fixtureView());
+    await screen.findAllByTestId("matched-rule");
+    expect(screen.queryByTestId("matched-undecided")).toBeNull();
+  });
+});
+
+describe("t186: decision null (luật đã xoá khỏi chính sách) → parser nhận, cột Quyết định '—', bỏ qua khi so mức chặt", () => {
+  const nullRule = { rule_id: "R99", description: null, decision: null, applied: false };
+  it("phiếu duyệt KHÔNG 502; bảng hiện '—'; không làm invalid", async () => {
+    renderApproval({ ...fixtureView(), matched_rules: [R("R20", "allow", true), nullRule as unknown as MatchedRule] });
+    const rows = await screen.findAllByTestId("matched-rule");
+    expect([...rows[1]!.querySelectorAll("td")].map((td) => td.textContent)).toStrictEqual(["R99", "—", "—", "khớp"]);
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+  });
+  it("matchedView: luật applied có decision null → vẫn vẽ (không so mức)", () => {
+    const view = matchedView([{ ...nullRule, applied: true } as unknown as MatchedRule, R("D", "deny", false)]);
+    expect(view.kind === "rows" && view.rows.map((r) => [r.decision, r.result])).toStrictEqual([
+      ["—", APPLIED_TEXT],
+      ["Cấm", MATCHED_ONLY_TEXT],
+    ]);
   });
 });
