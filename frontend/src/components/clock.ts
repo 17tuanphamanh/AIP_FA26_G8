@@ -29,7 +29,17 @@ function subscribe(listener: () => void): () => void {
 
 const machineNow = () => tick;
 
+/** Nhịp đang dừng (chưa ai nghe) → lấy lại giờ máy ngay. Gọi trước lần vẽ đầu của đồng hồ cần đúng ngay từ lần vẽ đầu. */
+export function primeTick(): void {
+  if (timer === null) tick = Date.now();
+}
+
+/** Giờ MÁY (ms), cập nhật mỗi giây — cho đồng hồ tự cộng độ lệch riêng (đồng hồ chờ duyệt của nhân viên: `server_now`). */
+export function useMachineNow(): number {
+  return useSyncExternalStore(subscribe, machineNow);
+}
+
 /** Giờ máy chủ (ms), cập nhật mỗi giây. */
 export function useServerNow(): number {
-  return serverNow(useSyncExternalStore(subscribe, machineNow));
+  return serverNow(useMachineNow());
 }

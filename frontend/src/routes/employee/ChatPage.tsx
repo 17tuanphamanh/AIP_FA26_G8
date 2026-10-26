@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import {
@@ -19,6 +19,8 @@ import { DigestMessage, type SendResult } from "../../components/DigestMessage.t
 import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
+import { ApprovalClock } from "./ApprovalClock.tsx";
+import { clockDeadline } from "./approvalClock.ts";
 import { latestRound, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel, progressItems } from "./multi.ts";
 import { ProgressStepper } from "./ProgressStepper.tsx";
 import { describeSendError, readNotices } from "./sendError.ts";
@@ -75,6 +77,8 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     retry: false,
   });
   const view = query.data;
+  // Đồng hồ chờ duyệt hết hạn → tải lại ticket NGAY một lần (ApprovalClock gọi đúng một lần mỗi hạn); kết luận theo ticket.
+  const refetchTicket = useCallback(() => void queryClient.refetchQueries({ queryKey, exact: true }), [queryClient, queryKey]);
   const messages = useMemo(() => normalizeConversation(view?.conversation), [view]);
   // Câu yêu cầu + tiêu đề: chỉ từ bộ nhớ phiên (12b Q-fe-18) — không lấy tin người dùng trong `conversation` (đó là
   // câu TRẢ LỜI khi hỏi thêm). Tải lại trang / mở bằng URL → không có → "Yêu cầu của bạn", không bong bóng.
@@ -176,6 +180,12 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const progress = progressItems(view.children_progress);
   const activeRound = waiting === "reply" ? latestRound(messages) : null;
   const pillLabel = progress ? parentStatusLabel(view, progress) : statusLabel(view.final_state ?? view.status);
+  // N-TB P5 (sửa ĐP 27/10 00:05): "Chờ IT duyệt · còn mm:ss" CHỈ khi waiting_for = approval; độ lệch từ `server_now` đo lúc
+  // nhận (`dataUpdatedAt`); ticket cha: `deadline` của cha như server trả.
+  const deadline = clockDeadline(view, waiting);
+  const clock = deadline ? (
+    <ApprovalClock key={deadline} deadline={deadline} serverNow={view.server_now} receivedAt={query.dataUpdatedAt} onExpire={refetchTicket} />
+  ) : null;
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -233,6 +243,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           ) : null}
           <ActionPanel
             view={view}
+            clock={clock}
             waiting={waiting}
             settling={settling}
             sending={sending}
@@ -296,10 +307,12 @@ type ActionPanelProps = {
   parent: boolean;
   /** Tin tổng hợp đang có form trả lời (waiting_for = reply) — khi đó form nằm trong hội thoại. */
   replyShown: boolean;
+  /** Đồng hồ chờ duyệt (null = không có hạn → chỉ nhãn tĩnh). */
+  clock: ReactNode;
   onConfirm: (ok: boolean) => void;
 };
 
-function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onConfirm }: ActionPanelProps) {
+function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-sheet bg-group p-5" data-testid="final-note">
@@ -334,10 +347,10 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onC
     );
   }
   if (waiting === "approval") {
-    // TicketView chưa có `deadline` → chưa có đồng hồ đếm ngược (KH 1.3 #2).
+    // Có hạn → đồng hồ (N-TB P5); không có hạn / hạn hỏng → nhãn tĩnh như cũ.
     return (
       <div className="flex flex-col gap-2 rounded-sheet bg-orange-bg p-5">
-        <span className="text-label text-orange-ink">Chờ IT duyệt</span>
+        {clock ?? <span className="text-label text-orange-ink">Chờ IT duyệt</span>}
         <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
         <span className="text-label font-normal text-ink-2">Bạn có thể rời trang — kết quả sẽ hiện trong cuộc trò chuyện này.</span>
       </div>

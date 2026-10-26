@@ -4,7 +4,7 @@
 //    trên woff2 có thể khớp ngẫu nhiên → báo đỏ nhầm (12b, tự quyết 4).
 // 2. Fixture giả không lọt (Q-fe-29, lớp 2 — lớp 1 là plugin `no-mocks-in-build` ở vite.config.ts): nội dung tệp văn
 //    bản không có mã fixture `apv-demo-` (phiếu duyệt F4), `tkt-demo-` (ticket F4, ca E3 + cảnh báo F5, hàng đợi L2 N-PA
-//    `tkt-demo-esc-`), `npa-demo` (cách xử lý / so sánh phương án N-PA).
+//    `tkt-demo-esc-`, thông báo + ticket chờ duyệt N-TB `tkt-demo-tb-`/`tkt-demo-duyet-`), `npa-demo` (cách xử lý / so sánh phương án N-PA).
 // 3. Không tải gì ngoài origin (KH 4.1 #7, CSP `default-src 'self'`): HTML/CSS không có src/href/url()/@import
 //    trỏ tới `http(s)://` hay `//`.
 // Có vi phạm → in từng tệp, thoát 1.
