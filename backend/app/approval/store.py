@@ -93,6 +93,13 @@ _OPEN_APPROVAL_DEADLINE = text(
 _OPEN_WAIT_DEADLINE = text(
     "SELECT deadline FROM wait_deadlines WHERE ticket_id = :t AND kind = :k AND fired_at IS NULL ORDER BY deadline DESC LIMIT 1"
 )
+# ticket CHA (TicketView.deadline): hạn chờ riêng của cha (mọi loại — `SqlDeadlineStore._set` giữ đúng một dòng chưa bắn), rồi hạn sớm nhất của
+# phiếu `pending` của các con.
+_PARENT_OWN_WAIT = text("SELECT deadline FROM wait_deadlines WHERE ticket_id = :t AND fired_at IS NULL ORDER BY deadline DESC LIMIT 1")
+_CHILD_EARLIEST_PENDING = text(
+    "SELECT min(a.deadline) FROM approvals a JOIN tickets c ON c.ticket_id = a.ticket_id "
+    "WHERE c.parent_ticket_id = :t AND a.status = 'pending'"
+)
 # 4c P6: tài liệu ở bản KB HIỆN HÀNH (`kb_documents.kb_version` chỉ có ở tài liệu bật — Q-3b-2).
 _PROCEDURE_TITLE = text(
     "SELECT d.title FROM kb_documents d JOIN kb_versions v ON v.kb_version = d.kb_version "
@@ -270,6 +277,13 @@ class SqlApprovals:
                 deadline = (await conn.execute(_OPEN_APPROVAL_DEADLINE, {"t": ticket_id})).scalar()
             else:
                 deadline = (await conn.execute(_OPEN_WAIT_DEADLINE, {"t": ticket_id, "k": kind})).scalar()
+        return _utc(deadline)
+
+    async def parent_deadline(self, parent_id: str) -> datetime | None:
+        """Hạn của ticket CHA: hạn chờ riêng chưa bắn; không có → phiếu `pending` sớm nhất của các con; không có → None."""
+        async with self._engine.connect() as conn:
+            own = (await conn.execute(_PARENT_OWN_WAIT, {"t": parent_id})).scalar()
+            deadline = own if own is not None else (await conn.execute(_CHILD_EARLIEST_PENDING, {"t": parent_id})).scalar()
         return _utc(deadline)
 
     async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
