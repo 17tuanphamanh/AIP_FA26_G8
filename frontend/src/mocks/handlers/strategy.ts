@@ -4,7 +4,7 @@ import type { RuntimeStrategy, StrategyChange, StrategyView } from "../../api/ty
 import { initialHistory, initialStrategy } from "../fixtures/strategy.ts";
 import { invalid, readJson, reply, requireAny } from "./shared.ts";
 
-// Cách xử lý của hệ thống (D-60) — route CHƯA CÓ ở backend (be-tuan8; hợp đồng N-PA §1). Xoá file này khi be-tuan8 merge.
+// Cách xử lý của hệ thống (D-67) — route CHƯA CÓ ở backend (be-tuan8; hợp đồng N-PA §1). Xoá file này khi be-tuan8 merge.
 // Quyền hỏi backend THẬT (`/api/auth/me` — requireAny). Trạng thái chỉ trong bộ nhớ của trang (tải lại trang → về đầu).
 // Thứ tự kiểm của PUT (phỏng theo hợp đồng): quyền → thân (422 `strategy`/`reason`) → 409 `same_as_current` → 200.
 // Không giả 403 `reauth_required` (luồng xác nhận lại đã có vitest; demo không cần).

@@ -365,12 +365,12 @@ export type LlmStatus = {
 };
 
 // ---------------------------------------------------------------- Route CHƯA CÓ — N-PA, hợp đồng chốt ĐP 26/10 17:30
-// Nguồn: hợp đồng API be-tuan8 / fe-phuong-an (bản chốt ĐP 26/10 17:30) + D-60. Backend (nhánh be-tuan8) chưa có code →
+// Nguồn: hợp đồng API be-tuan8 / fe-phuong-an (bản chốt ĐP 26/10 17:30) + D-67. Backend (nhánh be-tuan8) chưa có code →
 // dev:mock dựng bằng MSW (mocks/handlers/strategy.ts, strategy-compare.ts, escalation-queue.ts, escalation-close.ts).
 // Hình dạng kiểm LÚC CHẠY (api/strategy.ts, dashboard.ts, approvals.ts, trace.ts, escalations.ts) — thân sai → 502.
 // Xoá khi: be-tuan8 merge, mọi route có response_model → `gen:api` thành nguồn kiểu (vẫn giữ kiểm lúc chạy).
 
-/** D-60: tập chọn được khi vận hành (`RUNTIME_SELECTABLE`). */
+/** D-67: tập chọn được khi vận hành (`RUNTIME_SELECTABLE`). */
 export type RuntimeStrategy = "rule_only" | "hybrid" | "hybrid_guarded";
 /** `GET /api/admin/strategy` (cũng là thân 200 của PUT). `llm_calibrated` thiếu khoá → FE coi là CHƯA hiệu chỉnh. */
 export type StrategyView = {

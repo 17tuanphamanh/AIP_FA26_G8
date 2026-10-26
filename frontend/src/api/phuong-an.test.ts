@@ -1,4 +1,4 @@
-// N-PA P1 — kiểu + parser chặt cho route mới (hợp đồng chốt ĐP 26/10 17:30): cách xử lý (D-60), so sánh phương án, các
+// N-PA P1 — kiểu + parser chặt cho route mới (hợp đồng chốt ĐP 26/10 17:30): cách xử lý (D-67), so sánh phương án, các
 // luật khớp (phiếu duyệt + nhật ký), hàng đợi L2 `{items, next_cursor}` + đóng ca. Thân sai hình → ApiError(502, …).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalFixtures } from "../mocks/fixtures/approvals.ts";

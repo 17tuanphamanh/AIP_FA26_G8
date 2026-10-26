@@ -1,4 +1,4 @@
-// N-PA P2 + P3 — Trưởng BP IT: khối "Cách xử lý của hệ thống" (D-60) ở trang Chính sách và tab "So sánh phương án" ở Tổng
+// N-PA P2 + P3 — Trưởng BP IT: khối "Cách xử lý của hệ thống" (D-67) ở trang Chính sách và tab "So sánh phương án" ở Tổng
 // quan. Không gọi backend: fetch giả trả đúng hình dạng hợp đồng chốt ĐP 26/10 17:30 (route CHƯA CÓ ở backend).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -168,7 +168,7 @@ async function choose(key: string, reason: string) {
 
 // ------------------------------------------------------------------------------------------------ t157
 
-describe("t157: khối 'Cách xử lý của hệ thống' — 3 lựa chọn đúng tên D-60 + mô tả trung tính; đang áp dụng; null → '—'", () => {
+describe("t157: khối 'Cách xử lý của hệ thống' — 3 lựa chọn đúng tên D-67 + mô tả trung tính; đang áp dụng; null → '—'", () => {
   it("radiogroup 3 lựa chọn đúng thứ tự, tên, mô tả; lựa chọn hiện tại aria-checked; dữ liệu đổi null → '—'", async () => {
     renderPolicy();
     await screen.findByTestId("strategy-current");

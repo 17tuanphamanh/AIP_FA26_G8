@@ -29,7 +29,7 @@ import {
   UNCONFIRMED_TEXT,
 } from "./strategyText.ts";
 
-// Khối "Cách xử lý của hệ thống" (D-60; hợp đồng N-PA §1) ở đầu trang Chính sách — route CHƯA CÓ ở backend (be-tuan8):
+// Khối "Cách xử lý của hệ thống" (D-67; hợp đồng N-PA §1) ở đầu trang Chính sách — route CHƯA CÓ ở backend (be-tuan8):
 // dev:mock dùng MSW, backend chưa có route → 404 → câu trung tính (route này không có 404 nào khác trong hợp đồng). Đọc cần `policy:read` (cổng trang); đổi cần
 // `policy:edit` + đăng nhập gần đây (403 `reauth_required` → useReauthRetry: cùng người → gửi lại ĐÚNG một lần). Chữ từ
 // server (người đổi, lý do) hiện thô — React tự thoát, không Markdown/HTML. Không câu nào khen/chê một phương án.

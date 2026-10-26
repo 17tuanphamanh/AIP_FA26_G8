@@ -1,5 +1,5 @@
-// Chữ của khối "Cách xử lý của hệ thống" (D-60) và tên chiến lược dùng chung cho tab "So sánh phương án". Hàm thuần.
-// Tên 3 lựa chọn ĐÚNG D-60 mục 2. Mô tả TRUNG TÍNH (không khen/chê phương án nào — D-60: các lựa chọn chỉ khác nhau ở
+// Chữ của khối "Cách xử lý của hệ thống" (D-67) và tên chiến lược dùng chung cho tab "So sánh phương án". Hàm thuần.
+// Tên 3 lựa chọn ĐÚNG D-67 mục 2. Mô tả TRUNG TÍNH (không khen/chê phương án nào — D-67: các lựa chọn chỉ khác nhau ở
 // khối lượng việc của người), đối chiếu backend/app/risk/strategy.py.
 import { REASON_MAX, REASON_MIN, reasonLength } from "../../api/strategy.ts";
 import type { RuntimeStrategy } from "../../api/types.ts";

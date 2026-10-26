@@ -19,7 +19,7 @@ import { overrideHandlers } from "./override.ts";
 export const handlers: HttpHandler[] = [
   ...escalationQueueHandlers, // N-PA: GET /api/escalations/queue dạng mới {items, next_cursor} (be-tuan8 chưa merge — Q-fe-N8)
   ...escalationCloseHandlers, // N-PA: POST /api/escalations/:id/close (be-tuan8 chưa merge)
-  ...strategyHandlers, // N-PA: GET/PUT /api/admin/strategy, GET …/history (D-60, be-tuan8 chưa merge)
+  ...strategyHandlers, // N-PA: GET/PUT /api/admin/strategy, GET …/history (D-67, be-tuan8 chưa merge)
   ...strategyCompareHandlers, // N-PA: GET /api/dashboard/strategies (be-tuan8 chưa merge) — business/ai vẫn route thật
   ...approvalHandlers, // F4/N4c: hộp thư = thật + minh hoạ; xem phiếu + decision chỉ id `apv-demo-` (Q-fe-5, P6)
   ...overrideHandlers, // F4/N4d: POST /api/tickets/:id/override (route thật 4d) chỉ id `tkt-demo-`

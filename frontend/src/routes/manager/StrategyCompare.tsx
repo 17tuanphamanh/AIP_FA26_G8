@@ -8,7 +8,7 @@ import { LoadError, MissingPanel } from "./panels.tsx";
 import { intentLabel, metricLabel } from "./strategyLabels.ts";
 import { strategyName } from "./strategyText.ts";
 
-// Tab "So sánh phương án" (D-60 "Đo hiệu quả"; hợp đồng N-PA §2). Một cột mỗi `strategies[i]`, một dòng mỗi `metrics[j]` —
+// Tab "So sánh phương án" (D-67 "Đo hiệu quả"; hợp đồng N-PA §2). Một cột mỗi `strategies[i]`, một dòng mỗi `metrics[j]` —
 // ĐÚNG thứ tự server, không sắp. Không màu trạng thái, không mũi tên, không điểm tổng; chi phí LLM là một dòng như mọi
 // dòng. Lỗi → chỉ khối lỗi, KHÔNG số cũ (không đọc `data` khi `isError`).
 

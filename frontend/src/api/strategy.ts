@@ -1,4 +1,4 @@
-// Cách xử lý của hệ thống (D-60) — route CHƯA CÓ ở backend (be-tuan8), hợp đồng chốt ĐP 26/10 17:30 §1:
+// Cách xử lý của hệ thống (D-67) — route CHƯA CÓ ở backend (be-tuan8), hợp đồng chốt ĐP 26/10 17:30 §1:
 // - `GET /api/admin/strategy` (`policy:read`) → `StrategyView`.
 // - `PUT /api/admin/strategy` thân `{strategy, reason}` (manager, đăng nhập gần đây) → 200 thân như GET. Lỗi: 403
 //   `reauth_required` (luồng xác nhận lại — useReauthRetry), 403 `forbidden`, 422 `fields:["reason"|"strategy"]`, 409

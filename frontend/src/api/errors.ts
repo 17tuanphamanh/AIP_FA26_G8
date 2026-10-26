@@ -97,7 +97,7 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_ticket_body: "Chưa đọc được dữ liệu của yêu cầu này. Vui lòng tải lại trang.",
   // Chính sách (F7 — chỉ có validate; `version_conflict` của Lưu bỏ cùng nút, N-POL2 thêm lại theo route thật).
   invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
-  // Cách xử lý của hệ thống + So sánh phương án (D-60; hợp đồng N-PA §1–2).
+  // Cách xử lý của hệ thống + So sánh phương án (D-67; hợp đồng N-PA §1–2).
   same_as_current: "Phương án này đang được áp dụng",
   invalid_strategy_body: "Máy chủ trả cách xử lý không đúng dạng — không hiển thị để tránh hiểu sai.",
   invalid_strategy_history_body: "Máy chủ trả lịch sử đổi không đúng dạng — không hiển thị để tránh hiểu sai.",
