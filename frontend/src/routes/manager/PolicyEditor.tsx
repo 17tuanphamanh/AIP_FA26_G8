@@ -12,6 +12,7 @@ import { POLICY_MISSING_TITLE } from "./metrics.ts";
 import { MissingPanel } from "./panels.tsx";
 import { PolicyHistory } from "./PolicyHistory.tsx";
 import { PolicyTable } from "./PolicyTable.tsx";
+import { StrategySection } from "./StrategySection.tsx";
 import {
   checkFailure,
   checkPolicyText,
@@ -25,7 +26,8 @@ import {
   VALID_TEXT,
 } from "./policyText.ts";
 
-// B4MgrPolicy (P10 §3.3; F7 route THẬT — N-POL1): XEM chính sách đang chạy + lịch sử phiên bản, KIỂM bản đang sửa.
+// B4MgrPolicy (P10 §3.3; F7 route THẬT — N-POL1): XEM chính sách đang chạy + lịch sử phiên bản, KIỂM bản đang sửa. Đầu
+// trang: khối "Cách xử lý của hệ thống" (D-60, N-PA P2 — StrategySection.tsx, route riêng, đổi được khi có policy:edit).
 // - Tab "JSON" = ô sửa có cột số dòng (không thư viện editor). Tab "Bảng" chỉ xem. Kiểm phía máy khách CHỈ cú pháp
 //   (JSON.parse quyết; vị trí từ policyText.ts) + gốc phải là object + trần 64 KB của thân → nút Kiểm tra khoá. Kiểm
 //   NGHĨA là của server: `POST /api/policy/validate` → 422 `invalid_policy` `errors[{loc, msg}]` → đánh dấu đúng dòng
@@ -85,6 +87,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
     return (
       <section className="flex flex-col gap-6 px-12 py-10">
         <h1 className="text-title">Chính sách</h1>
+        <StrategySection client={client} />
         <MissingPanel testId="policy-missing" title={POLICY_MISSING_TITLE} text={MISSING_TEXT} />
       </section>
     );
@@ -136,9 +139,12 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
   const current = policy.data;
   return (
     <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-3">
+      <h1 className="text-title">Chính sách</h1>
+      {/* N-PA P2: cách xử lý của hệ thống (D-60) — độc lập với nội dung chính sách bên dưới. */}
+      <StrategySection client={client} />
+      <div className="flex items-end gap-3 border-t border-line pt-6">
         <div className="flex min-w-0 grow flex-col gap-1">
-          <h1 className="text-title">Chính sách</h1>
+          <h2 className="text-heading">Nội dung chính sách</h2>
           <p className="flex items-center gap-2 text-ink-2">
             {current ? `Đang áp dụng bản ${current.version}` : "Đang tải chính sách…"}
             {dirty ? (

@@ -3,12 +3,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { errorMessage, ApiError } from "../../api/errors.ts";
 import { CLOSE_AVAILABLE, closeEscalation, queueQuery } from "../../api/escalations.ts";
 import { api } from "../../api/http.ts";
 import type { EscalationCloseIn, EscalationQueueItem, Me, TicketView } from "../../api/types.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
+import { createEscalationStore } from "../../mocks/fixtures/escalations.ts";
 import { closeOutcome } from "../../mocks/handlers/escalation-close.ts";
 import { CloseForm } from "./CloseForm.tsx";
 import { EscalationDetailRoute } from "./EscalationDetail.tsx";
@@ -25,9 +27,10 @@ import {
   handoffRows,
   isHidden,
   NO_IDS,
-  NO_MATCH_FULL_TEXT,
+  CLOSE_UNAVAILABLE_TEXT,
+  noMatchPartialText,
+  notLoadedText,
   NO_MATCH_TEXT,
-  OVERFLOW_TEXT,
   pageCount,
   pruneQueueView,
   type QueueView,
@@ -100,7 +103,10 @@ function stubApi(queue: EscalationQueueItem[], close?: () => Response): Call[] {
     vi.fn(async (url: string, init: RequestInit = {}) => {
       const method = init.method ?? "GET";
       calls.push({ method, url, body: typeof init.body === "string" ? init.body : null });
-      if (method === "GET" && url.startsWith("/api/escalations/queue")) return json(200, queue);
+      // Hợp đồng N-PA §4: `{items, next_cursor}`; ca mở theo `status=open` (một trang), "Đã đóng" rỗng.
+      if (method === "GET" && url.startsWith("/api/escalations/queue")) {
+        return json(200, { items: url.includes("status=closed") ? [] : queue, next_cursor: null });
+      }
       if (method === "GET" && url.startsWith("/api/tickets/")) return json(200, ticketView(url.split("/").pop()!));
       if (method === "POST" && /^\/api\/escalations\/\d+\/close$/.test(url) && close) return close();
       return json(404, { detail: "not_found" });
@@ -133,6 +139,13 @@ function renderAt(path: string, { me, closeAvailable }: { me?: Me; closeAvailabl
 }
 
 const radio = (name: RegExp) => screen.getByRole("radio", { name });
+
+/** CloseForm dùng QueryClient (tải lại hàng đợi sau khi đóng) → bọc provider khi dựng riêng. */
+function withClient(ui: ReactNode) {
+  const client = new QueryClient();
+  clients.push(client);
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 const COMPLETED = /^Đã hoàn tất/;
 const DENIAL = /^Xác nhận từ chối/;
 
@@ -153,7 +166,7 @@ describe("t28: hàng đợi giữ nguyên thứ tự server, chỉ gom nhóm li�
     expect(groups.flatMap((g) => g.items)).toStrictEqual(server); // cùng phần tử, cùng thứ tự
   });
 
-  it("màn hàng đợi: gọi limit=200; 'Đang hiện N ca'; nhóm + dòng đúng thứ tự server; E3 có huy hiệu 'Cần bổ sung KB'", async () => {
+  it("màn hàng đợi: gọi status=open&limit=50 (N-PA); 'Đã tải N ca'; nhóm + dòng đúng thứ tự server; E3 có huy hiệu 'Cần bổ sung KB'", async () => {
     const calls = stubApi(server);
     renderAt("/escalations");
     await screen.findByText("Lỗi hệ thống / Hạ tầng");
@@ -168,9 +181,9 @@ describe("t28: hàng đợi giữ nguyên thứ tự server, chỉ gom nhóm li�
     const e3 = rows.find((r) => r.dataset.exitCode === "E3")!;
     expect(within(e3).getByText("Cần bổ sung KB")).toBeTruthy();
     expect(within(rows[0]!).queryByText("Cần bổ sung KB")).toBeNull();
-    expect(screen.getByTestId("queue-count").textContent).toBe("Đang hiện 5 ca");
+    expect(screen.getByTestId("queue-count").textContent).toBe("Đã tải 5 ca");
     expect(calls.filter((c) => c.url.startsWith("/api/escalations/queue")).map((c) => c.url)).toStrictEqual([
-      "/api/escalations/queue?limit=200",
+      "/api/escalations/queue?status=open&limit=50",
     ]);
     expect(screen.queryByTestId("queue-overflow")).toBeNull();
   });
@@ -303,7 +316,8 @@ describe("t31: ghi chú rỗng / chỉ khoảng trắng → không gửi", () =>
     const submit = vi.fn<(id: number, body: EscalationCloseIn) => Promise<void>>(async () => {});
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    render(<CloseForm item={esc("E3", { escalation_id: 31 })} available onSubmit={submit} />);
+    const onClosed = vi.fn();
+    render(withClient(<CloseForm item={esc("E3", { escalation_id: 31 })} available onSubmit={submit} onClosed={onClosed} />));
     const send = screen.getByRole("button", { name: "Đóng escalation" });
     const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
 
@@ -322,7 +336,7 @@ describe("t31: ghi chú rỗng / chỉ khoảng trắng → không gửi", () =>
 
     fireEvent.change(note, { target: { value: "  Đã gọi người gửi.  " } });
     fireEvent.click(send);
-    await screen.findByText("Đã ghi nhận (minh hoạ)");
+    await waitFor(() => expect(onClosed).toHaveBeenCalledTimes(1));
     expect(submit).toHaveBeenCalledTimes(1);
     expect(submit).toHaveBeenCalledWith(31, { close_result: "confirmed_denial", note: "Đã gọi người gửi." });
   });
@@ -337,7 +351,7 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
     const viaClient = async (id: number, body: EscalationCloseIn) => {
       await api.request(`/api/escalations/${id}/close`, { method: "POST", json: body });
     };
-    render(<CloseForm item={esc("E3", { escalation_id: 32 })} available onSubmit={viaClient} />);
+    render(withClient(<CloseForm item={esc("E3", { escalation_id: 32 })} available onSubmit={viaClient} />));
     fireEvent.click(radio(COMPLETED));
     const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
     fireEvent.change(note, { target: { value: "Đã cấp lại quyền." } });
@@ -353,7 +367,8 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
     });
     expect(radio(COMPLETED).getAttribute("aria-checked")).toBe("true");
     expect(note.value).toBe("Đã cấp lại quyền.");
-    expect(screen.queryByText("Đã ghi nhận (minh hoạ)")).toBeNull();
+    expect(screen.queryByTestId("close-done")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Phase 7|Minh hoạ — chưa ghi/);
     expect((screen.getByRole("button", { name: "Đóng escalation" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
@@ -361,22 +376,24 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
 // ------------------------------------------------------------------------------------------------ t33
 
 describe("t33: MSW tắt → nút gửi khoá, 0 lời gọi /close", () => {
-  it("mặc định (vitest: không DEV-mock) → khoá + 'Đóng ca có ở Phase 7'; bấm / submit form / gọi thẳng API đều không tới /close", async () => {
+  it("mặc định (vitest: không DEV-mock) → khoá + câu 'chưa bật' (không còn 'Phase 7'); bấm / submit form / gọi thẳng API đều không tới /close", async () => {
     expect(CLOSE_AVAILABLE).toBe(false);
     const calls = stubApi([esc("E3", { escalation_id: 33 })], () => json(202, {}));
     renderAt("/escalations/33");
     await screen.findByText("Ghi chú bàn giao");
     const send = screen.getByRole("button", { name: "Đóng escalation" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
-    expect(screen.getByTestId("close-unavailable").textContent).toBe("Đóng ca có ở Phase 7");
+    expect(screen.getByTestId("close-unavailable").textContent).toBe(CLOSE_UNAVAILABLE_TEXT);
+    expect(CLOSE_UNAVAILABLE_TEXT).toBe("Chức năng đóng ca chưa bật ở máy chủ này.");
     fireEvent.click(radio(DENIAL));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "ghi chú" } });
     fireEvent.click(send);
     fireEvent.submit(send.closest("form")!);
-    await expect(closeEscalation(33, { close_result: "confirmed_denial", note: "x" })).rejects.toThrow("Phase 7");
+    await expect(closeEscalation(33, { close_result: "confirmed_denial", note: "x" })).rejects.toThrow("close_unavailable");
     await new Promise((r) => setTimeout(r, 20));
     expect(calls.filter((c) => c.url.includes("/close"))).toHaveLength(0);
-    expect(screen.queryByText("Đã ghi nhận (minh hoạ)")).toBeNull();
+    expect(screen.queryByTestId("close-done")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Phase 7|Minh hoạ — chưa ghi/);
   });
 });
 
@@ -410,29 +427,38 @@ describe("t34: không có nút duyệt / đồng ý / phê duyệt ở mọi mà
 // ------------------------------------------------------------------------------------------------ t35
 
 describe("t35: tải lại chi tiết khi ca không còn trong hàng đợi", () => {
-  it.each([["999"], ["abc"]])("/escalations/%s → gọi lại queue limit=200 → 'Ca đã đóng…'", async (id) => {
+  it.each([["999"], ["abc"]])("/escalations/%s → gọi lại queue status=open&limit=50 → 'Ca đã đóng…'", async (id) => {
     const calls = stubApi([esc("E3", { escalation_id: 1 })]);
     renderAt(`/escalations/${id}`);
     expect(await screen.findByRole("heading", { name: GONE_TEXT })).toBeTruthy();
     expect(GONE_TEXT).toBe("Ca đã đóng hoặc không còn trong hàng đợi");
-    if (id === "999") expect(calls.map((c) => c.url)).toContain("/api/escalations/queue?limit=200");
+    if (id === "999") expect(calls.map((c) => c.url)).toContain("/api/escalations/queue?status=open&limit=50");
     expect(calls.some((c) => c.url.startsWith("/api/tickets/"))).toBe(false);
     expect(screen.getByRole("link", { name: "‹ Hàng đợi escalate" }).getAttribute("href")).toBe("/escalations");
   });
 
-  it("hàng đợi đủ 200 ca mà không có id → báo quá 200 ca (không khẳng định 'đã đóng'); màn hàng đợi cũng báo", async () => {
-    const full = Array.from({ length: 200 }, (_, i) => esc("E3", { escalation_id: 1000 + i }));
-    stubApi(full);
+  it("N-PA: ca không có trong trang đã tải mà còn next_cursor → 'Không tìm thấy ca trong N ca đã tải' + Tải thêm (KHÔNG khẳng định đã đóng)", async () => {
+    const first = Array.from({ length: 3 }, (_, i) => esc("E3", { escalation_id: 1000 + i }));
+    const target = esc("E3", { escalation_id: 999 });
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        if (url.startsWith("/api/escalations/queue")) {
+          return url.includes("after=") ? json(200, { items: [target], next_cursor: null }) : json(200, { items: first, next_cursor: "c/1" });
+        }
+        if (url.startsWith("/api/tickets/")) return json(200, ticketView(url.split("/").pop()!));
+        return json(404, { detail: "not_found" });
+      }),
+    );
     renderAt("/escalations/999");
-    expect(await screen.findByRole("heading", { name: OVERFLOW_TEXT })).toBeTruthy();
-    expect(OVERFLOW_TEXT).toBe("Không tìm thấy ca trong 200 ca đầu của hàng đợi");
-    expect(screen.getByText(/Hàng đợi đang quá 200 ca/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: notLoadedText(3) })).toBeTruthy();
+    expect(notLoadedText(3)).toBe("Không tìm thấy ca trong 3 ca đã tải");
     expect(screen.queryByRole("heading", { name: GONE_TEXT })).toBeNull();
-    cleanup();
-    stubApi(full);
-    renderAt("/escalations");
-    expect((await screen.findByTestId("queue-overflow")).textContent).toContain("Hàng đợi đang quá 200 ca");
-    expect(screen.getByTestId("queue-count").textContent).toBe("Đang hiện 200 ca");
+    fireEvent.click(screen.getByTestId("detail-more"));
+    expect(await screen.findByText("Ghi chú bàn giao")).toBeTruthy();
+    expect(calls).toContain("/api/escalations/queue?status=open&limit=50&after=c%2F1");
   });
 
   it("bổ sung N-L2Q: 200 ca một nhóm → 20 trang; đi hết các trang = đúng 200 ca server, đúng thứ tự, không thiếu, không lặp", async () => {
@@ -458,20 +484,30 @@ describe("t35: tải lại chi tiết khi ca không còn trong hàng đợi", ()
 
 // ------------------------------------------------------------------------------------------------ t36, t37 (bổ sung)
 
-describe("t36: handler MSW /close — kết quả theo ca thật trong hàng đợi", () => {
-  const deny = esc("E5");
-  const normal = esc("E3");
+describe("t36: handler MSW /close — kết quả theo kho minh hoạ (N-PA: 200 / 409 / 404 / 422)", () => {
   it.each([
-    ["deny + completed → 422 deny_case_cannot_complete", { close_result: "completed", note: "x" }, deny, 422, { detail: "deny_case_cannot_complete" }],
-    ["deny + confirmed_denial → 202", { close_result: "confirmed_denial", note: "x" }, deny, 202, undefined],
-    ["thường + completed → 202", { close_result: "completed", note: "x" }, normal, 202, undefined],
-    ["không còn trong hàng đợi → 404", { close_result: "completed", note: "x" }, undefined, 404, { detail: "escalation_not_found" }],
-    ["ghi chú chỉ khoảng trắng → 422 body.note", { close_result: "reopened_as_new", note: "  " }, normal, 422, { error: "invalid_request", fields: ["body.note"] }],
-    ["thừa khoá → 422", { close_result: "completed", note: "x", force: true }, normal, 422, { error: "invalid_request", fields: ["body.force"] }],
-  ])("%s", (_name, body, item, status, expected) => {
-    const outcome = closeOutcome(body, item);
+    ["E5 + completed → 422 deny_case_cannot_complete", "E5", { close_result: "completed", note: "x" }, 422, { detail: "deny_case_cannot_complete" }],
+    ["E6 + completed → 422 (B20)", "E6", { close_result: "completed", note: "x" }, 422, { detail: "deny_case_cannot_complete" }],
+    ["E5 + confirmed_denial → 200", "E5", { close_result: "confirmed_denial", note: "x" }, 200, undefined],
+    ["E3 + completed → 200", "E3", { close_result: "completed", note: "x" }, 200, undefined],
+    ["ghi chú chỉ khoảng trắng → 422 body.note", "E3", { close_result: "reopened_as_new", note: "  " }, 422, { error: "invalid_request", fields: ["body.note"] }],
+    ["thừa khoá → 422", "E3", { close_result: "completed", note: "x", force: true }, 422, { error: "invalid_request", fields: ["body.force"] }],
+  ])("%s", (_name, code, body, status, expected) => {
+    const store = createEscalationStore(Date.now(), 10);
+    const item = store.list("open").find((i) => i.exit_code === code)!;
+    const outcome = closeOutcome(store, item.escalation_id, body, "long.nh");
     expect(outcome.status).toBe(status);
     if (expected) expect(outcome.body).toStrictEqual(expected);
+  });
+
+  it("200 → ca rời danh sách mở, sang đã đóng (closed_by, close_note); đóng lại → 409 already_closed; id lạ → 404", () => {
+    const store = createEscalationStore(Date.now(), 10);
+    const item = store.list("open").find((i) => i.exit_code === "E3")!;
+    expect(closeOutcome(store, item.escalation_id, { close_result: "completed", note: " xong " }, "long.nh").status).toBe(200);
+    expect(store.list("open").some((i) => i.escalation_id === item.escalation_id)).toBe(false);
+    expect(store.list("closed")[0]).toMatchObject({ escalation_id: item.escalation_id, close_result: "completed", closed_by: "long.nh", close_note: "xong" });
+    expect(closeOutcome(store, item.escalation_id, { close_result: "completed", note: "x" }, "long.nh")).toStrictEqual({ status: 409, body: { detail: "already_closed" } });
+    expect(closeOutcome(store, 1, { close_result: "completed", note: "x" }, "long.nh").status).toBe(404);
   });
 });
 
@@ -495,7 +531,7 @@ describe("t37: thời gian chờ tính từ created_at", () => {
 const ids = (items: readonly EscalationQueueItem[]) => items.map((i) => i.escalation_id);
 const many = (code: string, n: number, over: Partial<EscalationQueueItem> = {}) => Array.from({ length: n }, () => esc(code, over));
 
-type LiveQueue = { queue: EscalationQueueItem[]; calls: Call[] };
+type LiveQueue = { queue: EscalationQueueItem[]; calls: Call[]; cursor: string | null; more: EscalationQueueItem[] };
 
 function LocationProbe() {
   const location = useLocation();
@@ -503,14 +539,19 @@ function LocationProbe() {
 }
 
 /** Màn hàng đợi với fetch giả đọc `live.queue` lúc gọi → đổi `live.queue` rồi tải lại = server trả dữ liệu mới. */
-async function renderQueue(initial: EscalationQueueItem[]) {
-  const live: LiveQueue = { queue: initial, calls: [] };
+async function renderQueue(initial: EscalationQueueItem[], { cursor = null, more = [] }: { cursor?: string | null; more?: EscalationQueueItem[] } = {}) {
+  const live: LiveQueue = { queue: initial, calls: [], cursor, more };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
       const method = init.method ?? "GET";
       live.calls.push({ method, url, body: typeof init.body === "string" ? init.body : null });
-      if (method === "GET" && url.startsWith("/api/escalations/queue")) return json(200, live.queue);
+      if (method === "GET" && url.startsWith("/api/escalations/queue")) {
+        // Trang đầu = `live.queue` (+ `live.cursor`); trang sau (`after`) = `live.more`, hết trang.
+        return url.includes("after=")
+          ? json(200, { items: live.more, next_cursor: null })
+          : json(200, { items: live.queue, next_cursor: live.cursor });
+      }
       return json(404, { detail: "not_found" });
     }),
   );
@@ -541,7 +582,7 @@ async function renderQueue(initial: EscalationQueueItem[]) {
       await client.refetchQueries({ queryKey: queueQuery().queryKey });
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(screen.getByTestId("queue-count").textContent).toBe(`Đang hiện ${next.length} ca`);
+    expect(screen.getByTestId("queue-count").textContent).toBe(`Đã tải ${next.length} ca`);
   };
   /** Nút "Tải lại". */
   const reloadButton = async (next: EscalationQueueItem[]) => {
@@ -552,7 +593,7 @@ async function renderQueue(initial: EscalationQueueItem[]) {
       expect(live.calls.length).toBe(before + 1);
       expect((screen.getByRole("button", { name: "Tải lại" }) as HTMLButtonElement).disabled).toBe(false);
     });
-    expect(screen.getByTestId("queue-count").textContent).toBe(`Đang hiện ${next.length} ca`);
+    expect(screen.getByTestId("queue-count").textContent).toBe(`Đã tải ${next.length} ca`);
   };
   return { live, tick, reloadButton };
 }
@@ -561,7 +602,7 @@ async function renderQueue(initial: EscalationQueueItem[]) {
 function expectQuiet(live: LiveQueue) {
   expect(screen.getByTestId("location").textContent).toBe("/escalations");
   expect(live.calls.length).toBeGreaterThan(0);
-  expect(live.calls.filter((c) => !(c.method === "GET" && c.url === "/api/escalations/queue?limit=200"))).toStrictEqual([]);
+  expect(live.calls.filter((c) => !(c.method === "GET" && c.url === "/api/escalations/queue?status=open&limit=50"))).toStrictEqual([]);
 }
 
 const groupOf = (priority: number) => document.querySelector<HTMLElement>(`[data-testid="queue-group"][data-priority="${priority}"]`);
@@ -804,7 +845,7 @@ describe("t99: thẻ nhóm — chọn một nhóm chỉ hiện nhóm đó; số 
     expect(tabAll().getAttribute("aria-selected")).toBe("false");
     expect(shownPriorities()).toStrictEqual([6]);
     expect(idsIn()).toStrictEqual(ids(e3.slice(0, 10)));
-    expect(screen.getByTestId("queue-count").textContent).toBe("Đang hiện 16 ca");
+    expect(screen.getByTestId("queue-count").textContent).toBe("Đã tải 16 ca");
     fireEvent.click(tabAll());
     expect(shownPriorities()).toStrictEqual([2, 4, 6]);
     expectQuiet(live);
@@ -826,7 +867,7 @@ describe("t99: thẻ nhóm — chọn một nhóm chỉ hiện nhóm đó; số 
 
 // ------------------------------------------------------------------------------------------------ t100
 
-describe("t100: ô tìm — 'Khớp k / N ca', câu không khớp (dưới trần / chạm trần 200), xoá ô; đầu trang tính trên TỔNG", () => {
+describe("t100: ô tìm — 'Khớp k / N ca', câu không khớp (hết trang / còn trang theo next_cursor), xoá ô; đầu trang tính trên TỔNG", () => {
   it("dưới trần: đếm khớp; tên nhóm theo danh sách chưa lọc, số = số khớp; không khớp → câu ngắn; xoá ô → mất dòng đếm", async () => {
     const server = [...many("E0", 2), esc("E9"), esc("E2"), ...many("E3", 12)];
     const { live } = await renderQueue(server);
@@ -848,7 +889,7 @@ describe("t100: ô tìm — 'Khớp k / N ca', câu không khớp (dưới trầ
     expect(tabOf(4).textContent).toBe("Lỗi hệ thống / Hạ tầng · 1");
     expect(tabAll().textContent).toBe("Tất cả · 1");
     // P5: đầu trang tính trên TỔNG đã tải, không đổi theo ô tìm.
-    expect(screen.getByTestId("queue-count").textContent).toBe("Đang hiện 16 ca");
+    expect(screen.getByTestId("queue-count").textContent).toBe("Đã tải 16 ca");
 
     typeSearch("e3");
     expect(searchCount()).toBe("Khớp 12 / 16 ca");
@@ -864,32 +905,32 @@ describe("t100: ô tìm — 'Khớp k / N ca', câu không khớp (dưới trầ
     typeSearch("");
     expect(searchCount()).toBeNull();
     expect(idsIn().length).toBe(14);
-    expect(screen.getByTestId("queue-count").textContent).toBe("Đang hiện 16 ca");
+    expect(screen.getByTestId("queue-count").textContent).toBe("Đã tải 16 ca");
     expectQuiet(live);
   });
 
-  it("chạm trần 200: dòng đếm thêm 'chỉ tìm trong 200 ca đã tải'; 0 khớp → câu không khẳng định ca không tồn tại; cảnh báo + đầu trang không đổi", async () => {
-    const full = [...many("E0", 1), ...many("E3", 199)];
-    await renderQueue(full);
-    expect(screen.getByTestId("queue-overflow")).toBeTruthy();
-    typeSearch(full[150]!.ticket_id);
-    expect(searchCount()).toBe("Khớp 1 / 200 ca · chỉ tìm trong 200 ca đã tải");
-    expect(idsIn()).toStrictEqual([full[150]!.escalation_id]);
+  it("còn next_cursor: dòng đếm thêm 'chỉ tìm trong N ca đã tải'; 0 khớp → câu không khẳng định ca không tồn tại; không còn băng 200", async () => {
+    const loaded = [...many("E0", 1), ...many("E3", 29)];
+    await renderQueue(loaded, { cursor: "c-2" });
+    expect(screen.getByTestId("queue-count").textContent).toBe("Đã tải 30 ca · còn ca chưa tải");
+    typeSearch(loaded[15]!.ticket_id);
+    expect(searchCount()).toBe("Khớp 1 / 30 ca · chỉ tìm trong 30 ca đã tải");
+    expect(idsIn()).toStrictEqual([loaded[15]!.escalation_id]);
     typeSearch("00000000-0000-0000-0000-000000000000");
-    expect(searchCount()).toBe("Khớp 0 / 200 ca · chỉ tìm trong 200 ca đã tải");
-    expect(screen.getByText(NO_MATCH_FULL_TEXT)).toBeTruthy();
-    expect(NO_MATCH_FULL_TEXT).toBe("Không có ca nào khớp trong 200 ca đã tải — ca cần tìm có thể nằm ngoài danh sách.");
+    expect(searchCount()).toBe("Khớp 0 / 30 ca · chỉ tìm trong 30 ca đã tải");
+    expect(screen.getByText(noMatchPartialText(30))).toBeTruthy();
+    expect(noMatchPartialText(30)).toBe("Không có ca nào khớp trong 30 ca đã tải — ca cần tìm có thể nằm ngoài danh sách.");
     expect(screen.queryByText(NO_MATCH_TEXT)).toBeNull();
-    expect(screen.getByTestId("queue-overflow").textContent).toContain("Hàng đợi đang quá 200 ca");
-    expect(screen.getByTestId("queue-count").textContent).toBe("Đang hiện 200 ca");
+    expect(screen.queryByTestId("queue-overflow")).toBeNull();
   });
 
-  it("dưới trần 1 ca (199): dòng đếm KHÔNG có phần 'chỉ tìm trong…', không cảnh báo", async () => {
+  it("hết trang (next_cursor null): dòng đếm KHÔNG có phần 'chỉ tìm trong…', không nút Tải thêm", async () => {
     const server = many("E3", 199);
     await renderQueue(server);
     typeSearch("e3");
     expect(searchCount()).toBe("Khớp 199 / 199 ca");
     expect(screen.queryByTestId("queue-overflow")).toBeNull();
+    expect(screen.queryByTestId("queue-more")).toBeNull();
   });
 
   it("hàng đợi rỗng → không có ô tìm, chỉ 'Không có ca nào đang chờ'", async () => {

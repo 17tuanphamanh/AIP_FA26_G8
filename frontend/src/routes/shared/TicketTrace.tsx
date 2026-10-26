@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
+import { MatchedRules } from "./MatchedRules.tsx";
 import { approvalQuery } from "../../api/approvals.ts";
-import { queueQuery } from "../../api/escalations.ts";
+import { loadedItems, queueQuery } from "../../api/escalations.ts";
 import { TRACE_TICKET_ID, traceQuery, tracePath, type TicketTrace as Trace, type TraceStep } from "../../api/trace.ts";
 import {
   formatAt,
@@ -179,6 +180,11 @@ function StepCard({ step: s }: { step: TraceStep }) {
         </ul>
       ) : null}
       {rollback ? <Line>{rollback}</Line> : null}
+      {s.policy ? (
+        <div className="pt-2">
+          <MatchedRules rules={s.policy.matched_rules} headingLevel={3} />
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -208,12 +214,13 @@ export function ApprovalTraceLink() {
   return <TraceButton ticketId={query.data?.ticket_id} />;
 }
 
-/** Chi tiết escalate `/escalations/:escalationId` — ca tìm trong hàng đợi như màn chi tiết. */
+/** Chi tiết escalate `/escalations/:escalationId[?status=closed]` — ca tìm trong các trang đã tải như màn chi tiết. */
 export function EscalationTraceLink() {
   const { escalationId = "" } = useParams();
-  const query = useQuery(queueQuery());
+  const [params] = useSearchParams();
+  const query = useInfiniteQuery(queueQuery(params.get("status") === "closed" ? "closed" : "open"));
   const id = /^\d{1,15}$/.test(escalationId) ? Number(escalationId) : null;
-  return <TraceButton ticketId={query.data?.find((i) => i.escalation_id === id)?.ticket_id} />;
+  return <TraceButton ticketId={loadedItems(query.data)?.find((i) => i.escalation_id === id)?.ticket_id} />;
 }
 
 /** Xem ticket `/approvals/ticket/:ticketId` (nơi Trưởng BP IT / L1 xem ticket để ghi đè). */

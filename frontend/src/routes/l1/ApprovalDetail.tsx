@@ -12,6 +12,7 @@ import { useServerNow } from "../../components/clock.ts";
 import { Modal } from "../../components/Modal.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
+import { MatchedRules } from "../shared/MatchedRules.tsx";
 import {
   actionLabel,
   AFFECTED_OTHER_TEXT,
@@ -387,6 +388,9 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               </Block>
             </aside>
           </div>
+
+          {/* N-PA P4: các luật khớp (khoá gốc `matched_rules`, tuỳ chọn) — số luật áp dụng sai chỉ báo tại bảng. */}
+          <MatchedRules rules={view.matched_rules} />
 
           {error ? (
             <p role="alert" className="text-danger">

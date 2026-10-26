@@ -76,7 +76,9 @@ const CODE_MESSAGES: Record<string, string> = {
   privacy_guard_unavailable: "Chưa gửi được — hệ thống kiểm tra nội dung đang bận, vui lòng thử lại.",
   ticket_busy: "Hệ thống đang bận, sẽ tự thử lại.",
   payload_too_large: "Nội dung quá dài.",
-  // Đóng escalation (B20 §4.3, P10 §3.4 — route Phase 7; hiện chỉ MSW trả).
+  // Đóng escalation (B20 §4.3; hợp đồng N-PA §4 — route be-tuan8, hiện chỉ MSW trả).
+  already_closed: "Ca đã được đóng",
+  invalid_queue_body: "Hàng đợi trả về không đúng dạng — không hiển thị để tránh hiểu sai. Vui lòng tải lại trang.",
   deny_case_cannot_complete:
     "Không đóng được: ca E5 không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
   escalation_not_found: "Ca đã đóng hoặc không còn trong hàng đợi.",
@@ -95,6 +97,12 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_ticket_body: "Chưa đọc được dữ liệu của yêu cầu này. Vui lòng tải lại trang.",
   // Chính sách (F7 — chỉ có validate; `version_conflict` của Lưu bỏ cùng nút, N-POL2 thêm lại theo route thật).
   invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
+  // Cách xử lý của hệ thống + So sánh phương án (D-60; hợp đồng N-PA §1–2).
+  same_as_current: "Phương án này đang được áp dụng",
+  invalid_strategy_body: "Máy chủ trả cách xử lý không đúng dạng — không hiển thị để tránh hiểu sai.",
+  invalid_strategy_history_body: "Máy chủ trả lịch sử đổi không đúng dạng — không hiển thị để tránh hiểu sai.",
+  invalid_strategies_body: "Số liệu so sánh trả về không đúng dạng — không hiển thị để tránh hiểu sai.",
+  strategies_source_mismatch: "Số liệu trả về không đúng nguồn đã chọn — không hiển thị để tránh hiểu sai.",
 };
 
 export function errorMessage(error: ApiError | null): string {

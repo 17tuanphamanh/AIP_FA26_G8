@@ -14,6 +14,7 @@ import type {
   ApprovalRoleAs,
   ApprovalStatus,
   ApprovalViewP4,
+  MatchedRule,
   OverrideDecision,
 } from "../../api/types.ts";
 
@@ -64,6 +65,8 @@ type Spec = {
   affected?: { user_id: string; department: string | null; manager: ApprovalAffected["manager"] };
   /** true → đánh giá do LLM, chưa hiệu chỉnh (`risk_view.calibrated` false): màn hiện "chưa hiệu chỉnh, không tự xử lý". */
   llmRisk?: boolean;
+  /** N-PA §3: các luật khớp (khoá gốc `matched_rules`); vắng → phiếu không có khoá (màn hiện "Chưa có dữ liệu luật khớp"). */
+  matched?: MatchedRule[];
 };
 
 const NV001: Requester = { user_id: "nv001", department: "Finance" }; // an.nv — LAP-0342, chứng chỉ hết hạn 3 ngày
@@ -75,6 +78,14 @@ const NV005: Requester = { user_id: "nv005", department: "Sales" }; // hoa.bt �
 const R17: Rule = { id: "R17", reason: "Thiết bị chưa đăng ký" };
 const R18: Rule = { id: "R18", reason: "Ngoài giờ hành chính" };
 const R19: Rule = { id: "R19", reason: "Nhân viên chưa qua thử việc" };
+
+/** apv-demo-01 (N-PA P4, Q-fe-N3): 3 luật, đúng 1 applied (R18) — R20 (allow) là luật thua có quyết định KHÁC, R19
+ *  (approval_required) là luật thua CÙNG quyết định; R20 không có mô tả (null → "—"). */
+const MATCHED_01: MatchedRule[] = [
+  { rule_id: "R18", description: "Yêu cầu gửi ngoài giờ hành chính cần người duyệt", decision: "approval_required", applied: true },
+  { rule_id: "R19", description: "Nhân viên chưa qua thử việc cần người duyệt", decision: "approval_required", applied: false },
+  { rule_id: "R20", description: null, decision: "allow", applied: false },
+];
 
 const KB_CERT = { doc_id: "KB-VPN-004", title: "Gia hạn và cấp lại chứng chỉ VPN" };
 const KB_DEVICE = { doc_id: "KB-VPN-005", title: "Đăng ký thiết bị mới để dùng VPN" };
@@ -111,7 +122,7 @@ const SPECS: readonly Spec[] = [
   {
     // Còn 4/30 phút (13%) → ĐỎ; đã qua cả 2 mốc nhắc.
     n: "01", status: "pending", role_as: "primary", created: -26, action_type: "renew_vpn_cert", device_id: "LAP-0342",
-    requester: NV001, rule: R18,
+    requester: NV001, rule: R18, matched: MATCHED_01,
     affected: { user_id: "nv001", department: "Finance", manager: { status: "known", user_id: "mgr01", full_name: "Lê Thị Hạnh" } },
     request: "VPN báo chứng chỉ hết hạn trên máy LAP-0342, tối nay em cần vào hệ thống kế toán để chốt sổ ạ.",
     facts: { device_registered: true, device_owner_is_requester: true, cert_status: "expired", cert_days_to_expiry: -3, last_connection_ok: false },
@@ -251,6 +262,7 @@ function build(spec: Spec, base: number): ApprovalFixture {
     role_as: spec.role_as,
     procedure: spec.procedure,
     affected,
+    ...(spec.matched ? { matched_rules: spec.matched } : {}),
   };
   return { ...meta, view };
 }

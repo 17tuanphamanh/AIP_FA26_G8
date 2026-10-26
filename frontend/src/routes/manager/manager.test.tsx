@@ -597,7 +597,11 @@ describe("t60 (N-POL1 P2): xem chính sách + lịch sử theo hình dạng th�
     expect(rows[0]!.querySelector(".font-semibold")).toBeTruthy();
     // Bảng dựng từ nội dung thật trả về.
     expect(screen.getAllByTestId("rule-row")).toHaveLength(2);
-    expect(calls.filter((c) => c.method === "GET").map((c) => pathOf(c.url)).sort()).toStrictEqual(["/api/policy", "/api/policy/versions"]);
+    // Khối "Cách xử lý" (N-PA) gọi route riêng `/api/admin/strategy*` — ở đây chỉ soát lời gọi của nội dung chính sách.
+    expect(calls.filter((c) => c.method === "GET" && pathOf(c.url).startsWith("/api/policy")).map((c) => pathOf(c.url)).sort()).toStrictEqual([
+      "/api/policy",
+      "/api/policy/versions",
+    ]);
   });
 
   it("nhiều mục: sắp version_id giảm; chỉ mục is_current đậm + 'đang áp dụng'; restored_from null / không khoá → không hiện; có giá trị → 'khôi phục từ bản X'", async () => {
@@ -639,7 +643,7 @@ describe("t60 (N-POL1 P2): xem chính sách + lịch sử theo hình dạng th�
     expect(screen.queryByLabelText("Nội dung chính sách (JSON)")).toBeNull();
   });
 
-  it("route chưa có (404 'Not Found') → 'Chính sách có từ Phase 7', không khối lỗi đỏ", async () => {
+  it("route chưa có (404 'Not Found') → 'Chưa có chức năng chính sách' (không còn 'Phase 7'), không khối lỗi đỏ", async () => {
     stubFetch((_m, url) => (pathOf(url).startsWith("/api/policy") ? json(404, { detail: "Not Found" }) : undefined));
     renderAt("/policy");
     const box = await screen.findByTestId("policy-missing");

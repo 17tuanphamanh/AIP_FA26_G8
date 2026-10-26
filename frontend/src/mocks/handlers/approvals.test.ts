@@ -265,17 +265,18 @@ describe("t85: xem phiếu chỉ chặn id apv-demo-; id khác → passthrough; 
     },
   );
 
-  it("apv-demo-01 → fixture (14 khoá như ApprovalView); apv-demo-viewer → role_as viewer, pending; apv-demo-08 → các trường null", async () => {
+  it("apv-demo-01 → fixture (14 khoá như ApprovalView + `matched_rules` của N-PA); apv-demo-viewer → role_as viewer, pending; apv-demo-08 → các trường null", async () => {
     stubReal(L1);
     const view = async (id: string) => (await (await getResponse(approvalHandlers, get(`/api/approvals/${id}`)))!.json()) as Record<string, unknown>;
     const normal = await view("apv-demo-01");
     expect(Object.keys(normal).sort()).toStrictEqual(
       [
-        "action", "action_plan_hash", "affected", "approval_id", "deadline", "facts", "procedure", "request_summary", "requester",
-        "risk", "risk_view", "role_as", "status", "ticket_id",
+        "action", "action_plan_hash", "affected", "approval_id", "deadline", "facts", "matched_rules", "procedure", "request_summary",
+        "requester", "risk", "risk_view", "role_as", "status", "ticket_id",
       ],
     );
     expect(normal.approval_id).toBe("apv-demo-01");
+    expect(Object.keys(await view("apv-demo-03"))).not.toContain("matched_rules"); // phiếu khác: thiếu khoá → "Chưa có dữ liệu"
     const watcher = await view("apv-demo-viewer");
     expect([watcher.role_as, watcher.status]).toStrictEqual(["viewer", "pending"]);
     const sparse = await view("apv-demo-08");

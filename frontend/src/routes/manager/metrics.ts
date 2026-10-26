@@ -14,7 +14,7 @@ export const EMPTY_NOTE = "Không có ticket trong khoảng này";
 export const MONITOR_DOWN_TEXT = "Số liệu tạm thời không có";
 export const DASHBOARD_MISSING_TITLE = "Tổng quan có từ M9 (chặng A3)";
 export const ALERTS_MISSING_TITLE = "Cảnh báo có từ M9 (chặng A3)";
-export const POLICY_MISSING_TITLE = "Chính sách có từ Phase 7";
+export const POLICY_MISSING_TITLE = "Chưa có chức năng chính sách";
 
 /** Chỉ số biết trước khi nào có nguồn (ke-hoach-m9-monitor.md §1.3, §5.2; backend monitor/metrics.py "pending"). */
 const SOURCE_HINT: Record<string, string> = {

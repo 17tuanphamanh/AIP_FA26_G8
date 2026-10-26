@@ -285,10 +285,10 @@ describe("nút Nhật ký quyết định ở 3 màn", () => {
   it("chi tiết escalate L2: mã ticket từ hàng đợi; ca không có → không hiện nút", () => {
     stub(() => json(500, {}));
     const item = { escalation_id: 7, ticket_id: "T-7" };
-    renderAt("/escalations/7", L2, (c) => c.setQueryData(queueQuery().queryKey, [item] as never));
+    renderAt("/escalations/7", L2, (c) => c.setQueryData(queueQuery().queryKey, { pages: [{ items: [item], next_cursor: null }], pageParams: [null] } as never));
     expect(href()).toBe("/trace/T-7");
     cleanup();
-    renderAt("/escalations/8", L2, (c) => c.setQueryData(queueQuery().queryKey, [item] as never));
+    renderAt("/escalations/8", L2, (c) => c.setQueryData(queueQuery().queryKey, { pages: [{ items: [item], next_cursor: null }], pageParams: [null] } as never));
     expect(screen.queryByTestId("trace-link")).toBeNull();
   });
 });
