@@ -6,7 +6,8 @@ tự trả mã HTTP và ghi `permission_denied`. Nhận Protocol theo cấu trú
   riêng phần này → 409 + `late_event`, TC27 — 2b-3 Q3).
 - `approval_role` (Phase 4 4c P4, TQ-9): MỘT định nghĩa "tôi quyết/xem phiếu này với vai trò gì" cho route quyết, xem phiếu, hộp
   thư — `primary` (người được giao) | `backup` (dự phòng, CHỈ sau nhắc 2 — Q-4-O) | None; luôn kèm không xung đột lợi ích.
-- `can_close_escalation` → "forbidden" (403) hoặc "unprocessable" (422: L2 hoàn tất ca deny).
+- `can_close_escalation` → "forbidden" (403) hoặc "unprocessable" (422: `completed` cho ca deny / E5 / E6 —
+  `domain.escalation_close.cannot_complete`, B20:303).
 """
 
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from app.auth.models import Principal
 from app.domain.action import Action
 from app.domain.approval import ConflictType, conflict_type
 from app.domain.context import RequesterContext
+from app.domain.escalation_close import cannot_complete
 
 
 class TicketLike(Protocol):
@@ -52,6 +54,9 @@ class ApprovalParties:
 class EscalationLike(Protocol):
     @property
     def is_deny_case(self) -> bool: ...
+
+    @property
+    def exit_code(self) -> str: ...
 
 
 def can_read_ticket(p: Principal, t: TicketLike) -> bool:
@@ -100,7 +105,7 @@ def can_close_escalation(
 ) -> Literal["allow", "forbidden", "unprocessable"]:
     if not p.has("escalation:handle"):
         return "forbidden"
-    if e.is_deny_case and result == "completed":  # L2 không hoàn tất hành động bị deny [Chốt]
+    if cannot_complete(result, exit_code=e.exit_code, is_deny_case=e.is_deny_case):  # deny [Chốt] + E5/E6 (B20:303)
         return "unprocessable"
     return "allow"
 

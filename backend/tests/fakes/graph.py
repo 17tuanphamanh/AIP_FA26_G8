@@ -20,7 +20,7 @@ import importlib.util
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -38,7 +38,16 @@ from app.auth.service import auth_config, lock_policy
 from app.auth.user_sync import AdUserSync, AuthApproverUsers
 from app.auth.username_hash import username_key
 from app.core.clock import Clock, FakeClock
-from app.db.escalations import QueueItem
+from app.db.escalations import (
+    ClosedEscalation,
+    CloseRequest,
+    EscalationHead,
+    QueueItem,
+    QueueKey,
+    QueueStatus,
+    ReopenHook,
+    close_audit_row,
+)
 from app.db.lineage import LINEAGE_KEY, check_lineage_row
 from app.db.models import CONFLICT_TYPES, NOTICE_KINDS, NOTICE_NEEDS
 from app.db.runtime import (
@@ -64,6 +73,7 @@ from app.domain.children import (
 )
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
+from app.domain.states import S_ESCALATED
 from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
@@ -761,8 +771,9 @@ class MemoryNoticeStore:
 
 
 class MemoryEscalations:
-    def __init__(self, tickets: MemoryTickets) -> None:
+    def __init__(self, tickets: MemoryTickets, audit: "MemoryAudit | None" = None) -> None:
         self._tickets = tickets
+        self._audit = audit
         self._priority = seed_priority()
         self.rows: list[dict[str, Any]] = []
 
@@ -786,18 +797,61 @@ class MemoryEscalations:
         final: FinalSummary | None = row.get("final")
         return not row.get("is_parent") or (final is not None and final.exit_code is not None)
 
+    def _item(self, r: dict[str, Any]) -> QueueItem:
+        return QueueItem(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
+            priority=r["priority"], label=self._priority[r["exit_code"]][1],
+            reason_detail=r["reason_detail"], is_deny_case=r["is_deny_case"],
+            handoff_note=r["handoff_note"], assigned_to=None, created_at=r["created_at"],
+            closed_at=r["closed_at"], close_result=r.get("close_result"), closed_by=r.get("closed_by"),
+            close_note=r.get("close_note"),
+        )  # fmt: skip
+
+    @staticmethod
+    def _order(r: dict[str, Any]) -> tuple[int, datetime, int]:
+        return r["priority"], r["created_at"], r["escalation_id"]
+
     async def list_open(self, limit: int) -> list[QueueItem]:
         rows = [r for r in self.rows if r["closed_at"] is None and self._leaf_or_failed_parent(r["ticket_id"])]
-        rows.sort(key=lambda r: (r["priority"], r["created_at"], r["escalation_id"]))
-        return [
-            QueueItem(
-                escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
-                priority=r["priority"], label=self._priority[r["exit_code"]][1],
-                reason_detail=r["reason_detail"], is_deny_case=r["is_deny_case"],
-                handoff_note=r["handoff_note"], assigned_to=None, created_at=r["created_at"],
-            )
-            for r in rows[:limit]
-        ]
+        rows.sort(key=self._order)
+        return [self._item(r) for r in rows[:limit]]
+
+    async def list_page(self, status: QueueStatus, limit: int, after: QueueKey | None) -> list[QueueItem]:
+        """Như SQL (P4 tuần 8): `open` | `closed`, thứ tự `priority, created_at, escalation_id`, keyset SAU `after`."""
+        rows = [r for r in self.rows
+                if (r["closed_at"] is None) == (status == "open") and self._leaf_or_failed_parent(r["ticket_id"])]  # fmt: skip
+        rows.sort(key=self._order)
+        if after is not None:
+            rows = [r for r in rows if self._order(r) > (after.priority, after.created_at, after.escalation_id)]
+        return [self._item(r) for r in rows[:limit]]
+
+    async def get(self, escalation_id: int) -> EscalationHead | None:
+        r = next((r for r in self.rows if r["escalation_id"] == escalation_id), None)
+        return None if r is None else EscalationHead(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
+            is_deny_case=r["is_deny_case"], closed_at=r["closed_at"],
+        )  # fmt: skip
+
+    async def close(self, req: CloseRequest, *, reopen: ReopenHook | None = None) -> ClosedEscalation | None:
+        """Như SQL: đóng nếu còn mở (không `await` giữa kiểm và ghi → hai lần đóng: một thắng); `tickets.close_reason` chỉ khi
+        `S_ESCALATED` và còn NULL; một dòng audit `B20`/`escalation_closed` vào `MemoryAudit` (nếu có). Móc `reopen` cần
+        transaction SQL — bản giả không hỗ trợ."""
+        assert reopen is None, "MemoryEscalations: móc reopen chỉ có ở SqlEscalationStore"
+        r = next((r for r in self.rows if r["escalation_id"] == req.escalation_id), None)
+        if r is None or r["closed_at"] is not None:
+            return None
+        r.update(closed_at=req.at, close_result=req.close_result, closed_by=req.closed_by, close_note=req.close_note)
+        ticket = self._tickets.rows.get(r["ticket_id"], {})
+        final: FinalSummary | None = ticket.get("final")
+        if final is not None and final.close_reason is None and final.final_state == S_ESCALATED:
+            final = ticket["final"] = replace(final, close_reason=req.close_reason)
+        if self._audit is not None:
+            await self._audit.record(close_audit_row(req, r["ticket_id"]))
+        return ClosedEscalation(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], close_result=req.close_result,
+            close_reason=final.close_reason if final is not None else None, closed_at=req.at, closed_by=req.closed_by,
+            close_note=req.close_note, new_ticket_id=None,
+        )  # fmt: skip
 
 
 class MemoryTicketLock:
