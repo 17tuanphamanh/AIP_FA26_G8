@@ -33,6 +33,7 @@ from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.dashboard import router as dashboard_router
+from app.api.dashboard_strategies import router as dashboard_strategies_router
 from app.api.desk import Desk, RateGate, StrategyStore, retry_after
 from app.api.email_outbox import router as email_outbox_router
 from app.api.errors import install_graph_errors, install_request_errors
@@ -410,6 +411,7 @@ def create_app(
     app.state.llm_probe = _default_llm_probe(settings, app)
     app.state.monitor_probe = _default_monitor_probe(app)
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
+    app.include_router(dashboard_strategies_router)  # D-60 P2: /api/dashboard/strategies (so sánh phương án, app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
     app.include_router(llm_status_router)  # I1: GET /api/admin/llm-status (chỉ đọc, Trưởng BP IT)
     app.include_router(email_outbox_router)  # notify-email: GET /api/admin/email-outbox (chỉ đọc, Trưởng BP IT, không body)
