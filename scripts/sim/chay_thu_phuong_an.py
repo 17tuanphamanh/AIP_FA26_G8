@@ -4,10 +4,13 @@
 
 Lần lượt `PUT /api/admin/strategy` rule_only → hybrid → hybrid_guarded (reason "chạy dữ liệu thử"); mỗi cách gửi CÙNG 8 yêu cầu bằng
 tài khoản nhân viên kèm header `X-Sim-Run` (backend chỉ nhận header khi APP_ENV ∈ {dev, test}); L1 duyệt/từ chối phiếu chờ duyệt theo
-danh sách cố định; nhân viên xác nhận "Đã ổn"/"Chưa ổn" theo danh sách cố định. Cuối cùng đặt lại `hybrid` trong `finally` (kể cả khi
-lỗi giữa chừng).
+danh sách cố định; nhân viên xác nhận "Đã ổn"/"Chưa ổn" theo danh sách cố định.
 
-- Từ chối chạy khi APP_ENV ∉ {dev, test} hoặc URL không phải localhost (trước MỌI lời gọi HTTP).
+- Từ chối chạy khi APP_ENV ∉ {dev, test} hoặc URL không phải localhost (trước MỌI lời gọi HTTP). Sau khi đăng nhập quản lý, đọc
+  `GET /api/admin/strategy`: server đang EVAL_MODE → dừng (mã 3) TRƯỚC mọi PUT/POST, không đổi gì.
+- Khôi phục: lúc bắt đầu lưu chiến lược hiện hành (`ban_dau`); `finally` (kể cả lỗi giữa chừng) đọc lại — khác `ban_dau` thì PUT
+  `ban_dau` (reason "khôi phục sau chạy thử dữ liệu thử"), đã bằng thì KHÔNG PUT. Khôi phục lỗi → cảnh báo stderr + mã ≠ 0.
+- `source = 'sim'` của ticket script tạo KHÔNG đọc được qua API (TicketView không có `source`) — chỉ kiểm được ở PG.
 - 8 câu lấy từ fixture gate sẵn có: `backend/tests/stack/gate3.py` (TC04, TC05 — câu hỏi KB), `gate5.py` (TC01, TC03 — luật cho tự làm;
   TC07, TC17 — cần duyệt) + 2 câu TC37 của `backend/tests/unit/test_chain_m5.py` (không luật nào khớp, preset dev-only
   `config/scripted/sim_khongluat.yaml`). `--tagged` thêm thẻ `[fake:<preset>]` cuối câu — BẮT BUỘC khi stack chạy LLM_BACKEND=scripted.
@@ -38,8 +41,9 @@ ALLOWED_ENVS = ("dev", "test")
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 DEFAULT_URL = "http://127.0.0.1:8000"
 ORDER = ("rule_only", "hybrid", "hybrid_guarded")
-RESET_TO = "hybrid"
 REASON = "chạy dữ liệu thử"
+RESTORE_REASON = "khôi phục sau chạy thử dữ liệu thử"
+EVAL_REFUSED = 3  # mã thoát: server đang EVAL_MODE
 SIM_HEADER = "X-Sim-Run"
 MANAGER, EMPLOYEE, L1 = "quan.tm", "an.nv", "ha.lt"  # it_mgr01 (MFA), nv001, l1_01 = người duyệt chính mọi intent (approvers.yaml)
 TOTP_ENV, PASSWORD_ENV = "SIM_MANAGER_TOTP_SECRET", "SIM_PASSWORD"
@@ -130,11 +134,16 @@ class Sim:
         token = self._call(f"đăng nhập {username}", "POST", "/api/auth/login", (200,), json=body).json()["access_token"]
         return {"Authorization": f"Bearer {token}"}
 
-    def set_strategy(self, strategy: str) -> None:
+    def current(self) -> dict[str, Any]:
+        """`GET /api/admin/strategy` bằng phiên quản lý mới: `{strategy, eval_mode, …}`."""
+        headers = self.login(MANAGER, manager=True)
+        return dict(self._call("đọc cách xử lý", "GET", "/api/admin/strategy", (200,), headers=headers).json())
+
+    def set_strategy(self, strategy: str, reason: str = REASON) -> None:
         """Đăng nhập lại manager rồi PUT (PUT cần đăng nhập gần đây). 409 `same_as_current` = đã đúng chiến lược → coi là xong."""
         headers = self.login(MANAGER, manager=True)
         self._call(f"đổi cách xử lý → {strategy}", "PUT", "/api/admin/strategy", (200, 409), headers=headers,
-                   json={"strategy": strategy, "reason": REASON})  # fmt: skip
+                   json={"strategy": strategy, "reason": reason})  # fmt: skip
 
     def view(self, ticket: str, headers: dict[str, str]) -> dict[str, Any]:
         return dict(self._call("xem ticket", "GET", f"/api/tickets/{ticket}", (200,), headers=headers).json())
@@ -185,6 +194,15 @@ def run_all(sim: Sim, out: Callable[[str], None], err: Callable[[str], None]) ->
     counts: dict[str, int] = {}
     code = 0
     try:
+        start = sim.current()  # trước MỌI PUT/POST
+    except (SimError, httpx.HTTPError) as exc:
+        err(f"DỪNG: không đọc được cách xử lý hiện hành ({exc if isinstance(exc, SimError) else type(exc).__name__})")
+        return 1
+    if start.get("eval_mode") is not False:
+        err("DỪNG: server đang EVAL_MODE — không chạy dữ liệu thử, không đổi gì")
+        return EVAL_REFUSED
+    ban_dau = str(start["strategy"])
+    try:
         for strategy in ORDER:
             counts[strategy] = sim.round(strategy)
             out(f"{strategy}: {counts[strategy]} ticket")
@@ -193,11 +211,14 @@ def run_all(sim: Sim, out: Callable[[str], None], err: Callable[[str], None]) ->
         code = 1
     finally:
         try:
-            sim.set_strategy(RESET_TO)
-            out(f"đã đặt lại cách xử lý: {RESET_TO}")
-        except Exception as exc:  # noqa: BLE001 — không để lỗi đặt lại che lỗi chính; báo rõ để người chạy tự đặt lại
-            err(f"CẢNH BÁO: chưa đặt lại được {RESET_TO} ({exc if isinstance(exc, SimError) else type(exc).__name__}) — "
-                f"đặt lại bằng tay ở màn Chính sách hoặc PUT /api/admin/strategy")  # fmt: skip
+            if sim.current()["strategy"] != ban_dau:
+                sim.set_strategy(ban_dau, RESTORE_REASON)
+                out(f"đã khôi phục cách xử lý ban đầu: {ban_dau}")
+            else:
+                out(f"cách xử lý hiện hành đã là ban đầu ({ban_dau}) — không cần khôi phục")
+        except Exception as exc:  # noqa: BLE001 — không để lỗi khôi phục che lỗi chính; báo rõ để người chạy tự đặt lại
+            err(f"CẢNH BÁO: chưa khôi phục được cách xử lý ban đầu {ban_dau} "
+                f"({exc if isinstance(exc, SimError) else type(exc).__name__}) — đặt lại bằng tay ở màn Chính sách")  # fmt: skip
             code = 1
     out("tổng: " + ", ".join(f"{s} {n}" for s, n in counts.items()) if counts else "tổng: 0 ticket")
     return code

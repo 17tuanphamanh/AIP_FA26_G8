@@ -38,7 +38,12 @@ APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py --tagged
    | Không luật nào khớp | 2 câu TC37 (`backend/tests/unit/test_chain_m5.py`), preset dev-only `config/scripted/sim_khongluat.yaml` |
 
 3. L1 `ha.lt` duyệt TC07, từ chối TC17. Nhân viên xác nhận TC04 và TC01 "Đã ổn", TC03 "Chưa ổn". Các ticket khác để nguyên.
-4. Cuối cùng (kể cả khi lỗi giữa chừng) đặt lại `hybrid`. Không đặt lại được → script in CẢNH BÁO: tự đặt lại ở màn Chính sách.
+0. Trước mọi thay đổi: đăng nhập quản lý, đọc cách xử lý hiện hành (lưu làm "ban đầu"). Server đang `EVAL_MODE` → dừng ngay
+   (mã 3), không đổi gì.
+4. Cuối cùng (kể cả khi lỗi giữa chừng): cách xử lý hiện hành khác "ban đầu" → đặt lại "ban đầu" (lý do "khôi phục sau chạy thử dữ
+   liệu thử"); đã bằng thì không đổi gì. Không khôi phục được → script in CẢNH BÁO: tự đặt lại ở màn Chính sách.
+5. `source = 'sim'` của ticket chỉ kiểm được ở PG (API ticket không trả `source`):
+   `SELECT source, count(*) FROM tickets WHERE created_at > <lúc chạy> GROUP BY 1`.
 
 Script chỉ in số ticket theo từng cách (và mã HTTP khi lỗi) — không in câu chữ, token, mật khẩu, OTP.
-Mã thoát: 0 xong, 1 dừng giữa chừng / chưa đặt lại được, 2 từ chối chạy.
+Mã thoát: 0 xong, 1 dừng giữa chừng / chưa khôi phục được, 2 từ chối chạy (APP_ENV/URL), 3 server đang EVAL_MODE.
