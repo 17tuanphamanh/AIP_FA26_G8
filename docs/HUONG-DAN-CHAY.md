@@ -139,10 +139,10 @@ make models
 3. Kiểm mỗi thư mục model **đủ và đúng từng file** bằng file `MANIFEST.sha256` có sẵn trong thư mục:
 
    ```bash
-   for m in $(find ml_models -name MANIFEST.sha256 | sort); do d=$(dirname "$m"); echo "== $d"; (cd "$d" && sha256sum -c --quiet MANIFEST.sha256 && echo "tat ca file OK" && sha256sum MANIFEST.sha256 model.safetensors); done
+   for m in $(find ml_models -name MANIFEST.sha256 | sort); do d=$(dirname "$m"); echo "== $d"; (cd "$d" && sha256sum -c --quiet MANIFEST.sha256 && [ "$(find . -type f ! -name MANIFEST.sha256 | wc -l)" -eq "$(wc -l < MANIFEST.sha256)" ] && echo "tat ca file OK, khong thua khong thieu" && sha256sum MANIFEST.sha256 model.safetensors || echo "LOI: file sai, thieu hoac thua so voi MANIFEST"); done
    ```
 
-   - Mỗi thư mục phải in `tat ca file OK`. File nào sai/thiếu sẽ in `FAILED` — **tải lại**, vì lệch là ml-service từ chối khởi động.
+   - Mỗi thư mục phải in `tat ca file OK, khong thua khong thieu`. File sai/thiếu sẽ in `FAILED`; có file **thừa** (không nằm trong manifest) hoặc thiếu sẽ in `LOI: …` — **tải lại / xoá file thừa**, vì sai, thiếu hay thừa file đều làm ml-service từ chối khởi động.
    - Hai dòng SHA in ra cuối mỗi thư mục (của `MANIFEST.sha256` và `model.safetensors`) phải **trùng** với giá trị đặt trong `.env` ở bước 4.
 
 4. Đặt 6 dòng sau vào `.env` (đường dẫn là đường dẫn **trong container**: `/ml_models/...` ứng với `./ml_models/...` trên máy). Các mã SHA-256 **không phải bí mật**:
