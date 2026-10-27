@@ -59,9 +59,9 @@
 Repo là repo riêng tư trên GitHub: `https://github.com/17tuanphamanh/AIP_FA26_G8`.
 
 - **Cách chính:** nhóm thêm tài khoản GitHub của thầy/cô làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
-- **Dự phòng:** tải **file zip của tag** mã nguồn (trang *Releases* / *Tags* của repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
+- **Dự phòng:** tải **file zip của tag `v1.0-freeze`** (trang *Tags* của repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
 
-⚠️ **CẦN BỔ SUNG:** tên tag nộp chấm, và nhánh/tag hội đồng dùng để chạy.
+Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (nhóm tạo tag chiều 27/10, chậm nhất sáng 28/10).
 
 ### 2.2. Clone
 
@@ -73,11 +73,14 @@ git clone https://github.com/17tuanphamanh/AIP_FA26_G8
 cd AIP_FA26_G8
 ```
 
-Chuyển sang nhánh dùng để chạy (người chạy lại trong nhóm dùng `dev-tuananh`):
+Chuyển sang đúng bản dùng để chạy — tag `v1.0-freeze`:
 
 ```bash
-git checkout dev-tuananh
+git checkout v1.0-freeze
 ```
+
+- Git sẽ báo `You are in 'detached HEAD' state` — **bình thường** khi đứng trên tag. Chỉ chạy, **không commit gì** trên tag.
+- Báo `pathspec 'v1.0-freeze' did not match`: tag chưa được tạo hoặc bản clone chưa có tag — chạy `git fetch --tags` rồi thử lại. Trước khi có tag (trước 28/10), người chạy thử trong nhóm dùng `git checkout dev-tuananh`.
 
 ---
 
