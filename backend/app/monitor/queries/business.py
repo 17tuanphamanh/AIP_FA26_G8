@@ -9,10 +9,14 @@
   `approvals.decided_by`.
 - Own (`approver_id`, Q-M9-5 / Q-M9-A1-6): chỉ tính lá có phiếu `approvals.approver_id = approver_id`, kể cả phiếu
   hết hạn; chỉ trả `OWN_KEYS`.
+- Số đếm tử/mẫu (D13, giao diện hiện "(a/b)"): 3 tỉ lệ đơn đếm bằng MỘT câu riêng `ratio_counts`, dùng chung mảnh FILTER
+  (`_AUTOMATED`/`_ESCALATED`/`_DEFLECTED`) với hàm tỉ lệ — giá trị tỉ lệ không đổi. Câu đếm và câu tỉ lệ chạy trên cùng
+  `conn` của `read_snapshot` (REPEATABLE READ, READ ONLY) nên a/b khớp tỉ lệ. Weighted: a/b CHỈ theo nhóm N3 (không có tử
+  tổng — tử tổng / cỡ mẫu là `raw`, đặt cạnh `weighted` dễ hiểu sai). Own: 3 khoá là số đếm → không tử/mẫu, chỉ `sample`.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -42,6 +46,9 @@ BUSINESS_METRICS: tuple[str, ...] = (
     "e3_cases",
 )  # fmt: skip
 OWN_KEYS: tuple[str, ...] = ("approval_expired_count", "decided_by_distribution", "top_matched_rules")
+COUNTED_KEYS: tuple[str, ...] = (
+    "automation_rate", "escalation_rate_raw", "escalation_rate_weighted", "deflection_rate",
+)  # fmt: skip
 TOP_RULES_LIMIT = 10
 E3_CASES_LIMIT = 100
 EXCERPT_MAX = 200
@@ -66,6 +73,16 @@ _SEVERITY_GROUP: Mapping[int, str] = {1: "routine", 2: "approval", 3: "sensitive
 
 _OWN = "EXISTS (SELECT 1 FROM approvals ap WHERE ap.ticket_id = t.ticket_id AND ap.approver_id = :approver_id)"
 
+# Tử số của 3 tỉ lệ đơn — dùng chung cho hàm tỉ lệ và `ratio_counts` (một nguồn điều kiện). Thứ tự = cột của `ratio_counts`.
+_SIMPLE_RATIOS: tuple[str, ...] = ("automation_rate", "escalation_rate_raw", "deflection_rate")
+_AUTOMATED = (
+    "t.final_state = 'S_RESOLVED' "
+    "AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.ticket_id = t.ticket_id) "
+    "AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.ticket_id = t.ticket_id)"
+)
+_ESCALATED = "t.exit_code IS NOT NULL"
+_DEFLECTED = "t.resolution_path = 'deflected'"
+
 
 @dataclass(frozen=True)
 class WeightedRate:
@@ -73,6 +90,34 @@ class WeightedRate:
     weighted: float | None  # 70/20/10 — luật 1 dùng số này; chuẩn hoá lại trên nhóm có lá; None chỉ khi 0 lá
     by_group: Mapping[str, float | None]  # "routine" | "approval" | "sensitive"; nhóm 0 lá → None
     sensitivity: Mapping[str, float | None]  # "60/30/10", "80/15/5"
+
+
+@dataclass(frozen=True)
+class RatioCount:
+    num: int
+    den: int  # #lá đã kết thúc trong cửa sổ; 0 → tỉ lệ None
+
+
+@dataclass(frozen=True)
+class GroupCount:
+    num: int  # #lá của nhóm có exit_code
+    den: int  # #lá của nhóm
+    weight: float  # trọng số danh nghĩa `N3_WEIGHTS` (chuẩn hoá lại trên nhóm có lá là việc của `weigh`)
+
+
+@dataclass(frozen=True)
+class WeightedCount:
+    den: int  # cỡ mẫu = #lá đã kết thúc; KHÔNG có tử tổng — a/b của weighted chỉ hiện theo nhóm
+    by_group: Mapping[str, GroupCount]
+
+
+@dataclass(frozen=True)
+class CountedWeightedRate(WeightedRate):
+    """`WeightedRate` + số đếm theo nhóm (D13) — lớp con vì chữ ký và 4 trường của `WeightedRate` bị ghim (hợp đồng mục 3).
+    Luật 1 / drift chỉ đọc `weighted` / `raw`. Lưu ý: dataclass so `==` theo lớp → không bằng `WeightedRate(...)` cùng giá
+    trị; `business_metrics` đổi về `WeightedRate` gốc trước khi đưa ra response."""
+
+    count: WeightedCount
 
 
 @dataclass(frozen=True)
@@ -107,6 +152,8 @@ class E3Cases:
 class BusinessMetrics:
     values: Mapping[str, Any]  # all: đủ 10 khóa; own: đúng OWN_KEYS
     unavailable: tuple[str, ...]
+    counts: Mapping[str, RatioCount | WeightedCount] = field(default_factory=dict)  # all: COUNTED_KEYS không pending
+    sample: int | None = None  # own: #lá own trong cửa sổ (cho "chưa đủ dữ liệu"); all: None
 
 
 def _own(params: dict[str, Any], approver_id: str | None) -> str:
@@ -132,9 +179,7 @@ async def automation_rate(conn: AsyncConnection, frm: datetime, to: datetime) ->
     """#lá `S_RESOLVED` không có dòng `approvals` và không có dòng `escalations` / #lá đã kết thúc (P8 §6.2). Ca
     deflected (`S_RESOLVED`, `resolution_path='deflected'` — audit/final.py) được tính."""
     row = await _scalar_row(conn, (
-        "SELECT count(*), count(*) FILTER (WHERE t.final_state = 'S_RESOLVED' "
-        "AND NOT EXISTS (SELECT 1 FROM approvals a WHERE a.ticket_id = t.ticket_id) "
-        "AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.ticket_id = t.ticket_id)) "
+        f"SELECT count(*), count(*) FILTER (WHERE {_AUTOMATED}) "
         f"FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND {_DONE}"
     ), _params(frm, to))  # fmt: skip
     return _ratio(row[1], row[0])
@@ -143,13 +188,13 @@ async def automation_rate(conn: AsyncConnection, frm: datetime, to: datetime) ->
 async def escalation_rate_raw(conn: AsyncConnection, frm: datetime, to: datetime) -> float | None:
     """#lá có `exit_code` / #lá đã kết thúc."""
     row = await _scalar_row(conn, (
-        "SELECT count(*), count(*) FILTER (WHERE t.exit_code IS NOT NULL) "
+        f"SELECT count(*), count(*) FILTER (WHERE {_ESCALATED}) "
         f"FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND {_DONE}"
     ), _params(frm, to))  # fmt: skip
     return _ratio(row[1], row[0])
 
 
-async def escalation_rate_weighted(conn: AsyncConnection, frm: datetime, to: datetime) -> WeightedRate:
+async def escalation_rate_weighted(conn: AsyncConnection, frm: datetime, to: datetime) -> CountedWeightedRate:
     """Escalation rate theo nhóm N3 (70/20/10) + độ nhạy 60/30/10, 80/15/5 — luật 1 dùng `weighted`. Nhóm của lá:
     `_LEAF_N3_SEV_SQL` (F12: E5 `llm_high_risk` → sensitive)."""
     params = {**_params(frm, to), "e5_sensitive": list(E5_SENSITIVE_REASONS)}
@@ -159,21 +204,43 @@ async def escalation_rate_weighted(conn: AsyncConnection, frm: datetime, to: dat
         f"FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND {_DONE}) g GROUP BY g.sev"
     ), params)).all()  # fmt: skip
     counts = {g: (0, 0) for g in GROUPS} | {_SEVERITY_GROUP[sev]: (n, esc) for sev, n, esc in rows}
-    return WeightedRate(
+    return CountedWeightedRate(
         raw=_ratio(sum(esc for _, esc in counts.values()), sum(n for n, _ in counts.values())),
         weighted=weigh(counts, N3_WEIGHTS),
         by_group={g: _ratio(esc, n) for g, (n, esc) in counts.items()},
         sensitivity={name: weigh(counts, w) for name, w in N3_SENSITIVITY.items()},
+        count=WeightedCount(
+            den=sum(n for n, _ in counts.values()),
+            by_group={g: GroupCount(num=esc, den=n, weight=N3_WEIGHTS[g]) for g, (n, esc) in counts.items()},
+        ),
     )
 
 
 async def deflection_rate(conn: AsyncConnection, frm: datetime, to: datetime) -> float | None:
     """#lá `resolution_path = 'deflected'` / #lá đã kết thúc."""
     row = await _scalar_row(conn, (
-        "SELECT count(*), count(*) FILTER (WHERE t.resolution_path = 'deflected') "
+        f"SELECT count(*), count(*) FILTER (WHERE {_DEFLECTED}) "
         f"FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND {_DONE}"
     ), _params(frm, to))  # fmt: skip
     return _ratio(row[1], row[0])
+
+
+async def ratio_counts(conn: AsyncConnection, frm: datetime, to: datetime) -> dict[str, RatioCount]:
+    """(tử, mẫu) của 3 tỉ lệ đơn trong MỘT câu, cùng mảnh FILTER + cùng mẫu số với hàm tỉ lệ."""
+    row = await _scalar_row(conn, (
+        f"SELECT count(*), count(*) FILTER (WHERE {_AUTOMATED}), count(*) FILTER (WHERE {_ESCALATED}), "
+        f"count(*) FILTER (WHERE {_DEFLECTED}) FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND {_DONE}"
+    ), _params(frm, to))  # fmt: skip
+    return {key: RatioCount(num=int(num), den=int(row[0])) for key, num in zip(_SIMPLE_RATIOS, row[1:], strict=True)}
+
+
+async def own_sample(conn: AsyncConnection, frm: datetime, to: datetime, *, approver_id: str) -> int:
+    """#lá own trong cửa sổ — cùng cửa sổ + điều kiện phiếu như 3 hàm own (không lọc `final_state`). Chỉ để giao diện báo
+    "chưa đủ dữ liệu"; 3 khoá own là số đếm, không có tử/mẫu."""
+    params = _params(frm, to)
+    own = _own(params, approver_id)
+    row = await _scalar_row(conn, f"SELECT count(*) FROM {V_LEAF} t WHERE {_LEAF_WINDOW}{own}", params)
+    return int(row[0])
 
 
 async def approval_expired_count(
@@ -289,10 +356,12 @@ async def business_metrics(
     conn: AsyncConnection, frm: datetime, to: datetime, *, approver_id: str | None = None
 ) -> BusinessMetrics:
     """Gom chỉ số cho `/api/dashboard/business`. `approver_id=None` → đủ 10 khóa. Có `approver_id` (own) → đúng
-    `OWN_KEYS`, khóa khác KHÔNG có (không 0, không null)."""
+    `OWN_KEYS`, khóa khác KHÔNG có (không 0, không null). Số đếm (D13): all → `counts` cho `COUNTED_KEYS` không pending;
+    own → `sample`. Mọi câu chạy trên cùng `conn` (route: một snapshot)."""
     _params(frm, to)
     keys = BUSINESS_METRICS if approver_id is None else OWN_KEYS
     values: dict[str, Any] = {}
+    counts: dict[str, RatioCount | WeightedCount] = {}
     unavailable: list[str] = []
     for key in keys:
         query = QUERIES[key]
@@ -305,4 +374,14 @@ async def business_metrics(
             values[key] = await query(conn, frm, to)
         else:
             values[key] = await query(conn, frm, to, approver_id=approver_id)
-    return BusinessMetrics(values=values, unavailable=tuple(unavailable))
+        got = values[key]
+        if isinstance(got, CountedWeightedRate):  # response giữ `WeightedRate` gốc, số đếm sang `counts`
+            counts[key] = got.count
+            values[key] = WeightedRate(raw=got.raw, weighted=got.weighted, by_group=got.by_group, sensitivity=got.sensitivity)
+    if approver_id is not None:
+        sample = await own_sample(conn, frm, to, approver_id=approver_id)
+        return BusinessMetrics(values=values, unavailable=tuple(unavailable), sample=sample)
+    if any(k not in unavailable for k in _SIMPLE_RATIOS):
+        counted = await ratio_counts(conn, frm, to)
+        counts.update({k: c for k, c in counted.items() if k not in unavailable})
+    return BusinessMetrics(values=values, unavailable=tuple(unavailable), counts=counts)

@@ -266,6 +266,40 @@
               "default": 200,
               "title": "Limit"
             }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
           }
         ],
         "responses": {
@@ -782,8 +816,15 @@
             "const": "all",
             "title": "Scope"
           },
+          "min_sample": {
+            "type": "integer",
+            "title": "Min Sample"
+          },
           "metrics": {
             "$ref": "#/components/schemas/BusinessAllMetrics"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/BusinessAllCounts"
           }
         },
         "type": "object",
@@ -792,9 +833,65 @@
           "to",
           "unavailable",
           "scope",
-          "metrics"
+          "min_sample",
+          "metrics",
+          "counts"
         ],
         "title": "BusinessAll"
+      },
+      "BusinessAllCounts": {
+        "properties": {
+          "automation_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatioCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalation_rate_raw": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatioCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalation_rate_weighted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeightedCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deflection_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatioCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "automation_rate",
+          "escalation_rate_raw",
+          "escalation_rate_weighted",
+          "deflection_rate"
+        ],
+        "title": "BusinessAllCounts",
+        "description": "Số đếm tử/mẫu — tập trường = `COUNTED_KEYS` (test hai chiều)."
       },
       "BusinessAllMetrics": {
         "properties": {
@@ -952,6 +1049,21 @@
             "const": "own",
             "title": "Scope"
           },
+          "min_sample": {
+            "type": "integer",
+            "title": "Min Sample"
+          },
+          "sample": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample"
+          },
           "metrics": {
             "$ref": "#/components/schemas/BusinessOwnMetrics"
           }
@@ -962,6 +1074,8 @@
           "to",
           "unavailable",
           "scope",
+          "min_sample",
+          "sample",
           "metrics"
         ],
         "title": "BusinessOwn"
@@ -1155,6 +1269,29 @@
         "title": "ErrorDetail",
         "description": "Thân lỗi `HTTPException(…, \"<mã>\")` của repo: 401 `unauthorized`, 403 `forbidden`, 404, 409, 503."
       },
+      "GroupCount": {
+        "properties": {
+          "num": {
+            "type": "integer",
+            "title": "Num"
+          },
+          "den": {
+            "type": "integer",
+            "title": "Den"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight"
+          }
+        },
+        "type": "object",
+        "required": [
+          "num",
+          "den",
+          "weight"
+        ],
+        "title": "GroupCount"
+      },
       "InvalidRequestBody": {
         "properties": {
           "error": {
@@ -1178,6 +1315,24 @@
         "title": "InvalidRequestBody",
         "description": "Thân 422 thật (`api.errors.invalid_request`): chỉ vị trí trường, không trả lại giá trị người gửi."
       },
+      "RatioCount": {
+        "properties": {
+          "num": {
+            "type": "integer",
+            "title": "Num"
+          },
+          "den": {
+            "type": "integer",
+            "title": "Den"
+          }
+        },
+        "type": "object",
+        "required": [
+          "num",
+          "den"
+        ],
+        "title": "RatioCount"
+      },
       "RuleCount": {
         "properties": {
           "rule_id": {
@@ -1195,6 +1350,27 @@
           "count"
         ],
         "title": "RuleCount"
+      },
+      "WeightedCount": {
+        "properties": {
+          "den": {
+            "type": "integer",
+            "title": "Den"
+          },
+          "by_group": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/GroupCount"
+            },
+            "type": "object",
+            "title": "By Group"
+          }
+        },
+        "type": "object",
+        "required": [
+          "den",
+          "by_group"
+        ],
+        "title": "WeightedCount"
       },
       "WeightedRate": {
         "properties": {

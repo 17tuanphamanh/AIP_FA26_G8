@@ -11,7 +11,10 @@ dependency quyền) → GET: engine monitor (thiếu DSN → 503 `monitor_unavai
 - `detail` của dòng `alerts` không phải object → `{}`; `severity` để `str` (cột không có CHECK): một dòng lạ không được làm
   500 cả danh sách (= mất cảnh báo).
 - `responses=` khai thân lỗi THẬT cho OpenAPI (FE sinh kiểu): 422 là `{"error","fields"}` (`api.errors`), không phải
-  `HTTPValidationError` mặc định của FastAPI.
+  `HTTPValidationError` mặc định của FastAPI. `ErrorDetail`, `InvalidRequestBody`, `GET_ERRORS` khai ở `api.dashboard`
+  (D13, tránh vòng import), xuất lại ở đây cho các route đang import từ module này.
+- Khung giờ (D13): `from`/`to` nhận đúng như `/api/dashboard` (`window` + `resolve_window`, kiểm trong THÂN handler sau
+  quyền); lọc `window_start` trong `[from, to)`. Không gửi cả hai → không lọc (KHÔNG áp mặc định 7 ngày) = như trước D13.
 """
 
 from dataclasses import asdict
@@ -21,6 +24,13 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel
 
+from app.api.dashboard import (
+    GET_ERRORS,
+    ErrorDetail,
+    InvalidRequestBody,
+    resolve_window,
+    window,
+)
 from app.audit.alerts import AlertWriter
 from app.auth.deps import require
 from app.auth.models import Principal
@@ -37,19 +47,6 @@ ALREADY_ACKED = "already_acked"
 
 type AlertStatus = Literal["open", "acked"]
 type AudienceParam = Literal["manager", "dev", "ops"]  # = monitor.rules.AUDIENCE_VALUES (test ghim)
-
-
-class ErrorDetail(BaseModel):
-    """Thân lỗi `HTTPException(…, "<mã>")` của repo: 401 `unauthorized`, 403 `forbidden`, 404, 409, 503."""
-
-    detail: str
-
-
-class InvalidRequestBody(BaseModel):
-    """Thân 422 thật (`api.errors.invalid_request`): chỉ vị trí trường, không trả lại giá trị người gửi."""
-
-    error: Literal["invalid_request"]
-    fields: list[str]
 
 
 class AlertView(BaseModel):
@@ -74,12 +71,6 @@ class AlertList(BaseModel):
     truncated: bool  # còn dòng ngoài `limit` (không phân trang — FE hiện băng)
 
 
-GET_ERRORS: dict[int | str, dict[str, Any]] = {
-    401: {"model": ErrorDetail},
-    403: {"model": ErrorDetail},
-    422: {"model": InvalidRequestBody},
-    503: {"model": ErrorDetail},
-}
 ACK_ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorDetail},
     403: {"model": ErrorDetail},
@@ -105,12 +96,17 @@ def _view(row: AlertRow | dict[str, Any]) -> AlertView:
 async def alerts(
     request: Request,
     _: Annotated[Principal, Depends(require("alert:read"))],
+    raw: Annotated[tuple[datetime | None, datetime | None], Depends(window)],
     status: Annotated[AlertStatus | None, Query()] = None,
     audience: Annotated[AudienceParam | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=LIMIT_MAX)] = LIMIT_DEFAULT,
 ) -> AlertList:
+    frm: datetime | None = None
+    to: datetime | None = None
+    if raw != (None, None):
+        frm, to = resolve_window(*raw, now=request.app.state.m9_clock.now())
     async with read_snapshot(request.app.state.engines) as conn:
-        page = await list_alerts(conn, status=status, audience=audience, limit=limit)
+        page = await list_alerts(conn, status=status, audience=audience, limit=limit, frm=frm, to=to)
     return AlertList(items=[_view(r) for r in page.rows], truncated=page.truncated)
 
 
