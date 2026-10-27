@@ -12,7 +12,7 @@ Quy ước:
 - **Lá không tới điểm log 4** (P8 §5.4 [Chốt 22/10]): `abort_as_l2` áp CÙNG quy tắc với `offline.py` cho mọi phương án (kể cả Chỉ-luật): `route = None` ∧
   `m5_aborted` → ESCALATE_L2; `route = None` ∧ không ngắt → ngoài mẫu số; đã nhãn ∧ `m5_aborted = null` → `ValueError`. Mẫu số các phương án giống nhau.
 - **Phần giao** (P8 §5.4): lá đã nhãn có `route` ở MỌI phương án RQ1. Chi phí, an toàn, độ nhạy so trên phần giao; Thủ công và
-  Full-auto tính trên đúng phần giao đó (chốt G1-Q1, #32 22/10). Hoà vốn (T7) dùng `breakeven` — tự lấy phần giao từng cặp.
+  Full-auto tính trên đúng phần giao đó (chốt G1-Q1, #32 22/10). Hoà vốn (T7) cũng trên phần giao đó (G5) → đối chiếu được T1.
 - Số chính RQ1 = chi phí kỳ vọng KHÔNG trọng số (§6.1, ma trận mặc định). Bản có trọng số và hai độ nhạy là số phụ.
 - Mọi bảng có sáu cột đầu `run_id, dataset_sha256, git_commit, n, n_unlabeled, n_excluded`. `n` = số lá trong mẫu của bảng,
   `n_unlabeled` = lá chưa nhãn của file, `n_excluded` = lá đã nhãn không vào mẫu (route None hoặc ngoài phần giao).
@@ -33,23 +33,26 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal, NoReturn
-
-from scipy.stats import beta
+from typing import Final, NoReturn
 
 from app.eval.metrics import (
     BREAKEVEN_RATIOS,
     OPERATING_MIX,
     SENSITIVITY_MIXES,
     Group,
+    Hidden,
+    SituationFnr,
+    UnitOf,
     breakeven,
     calibration_scores,
     decided_by_distribution,
     efficiency,
+    full_auto_baseline,
     manual_baseline,
     mean_route_cost,
     operating_metrics,
     safety,
+    situation_fnr,
 )
 from app.eval.predictions import (
     SCHEMA_VERSION,
@@ -66,14 +69,12 @@ from app.eval.stats import (
     paired_family_bootstrap_diff,
 )
 from app.risk.decision_math import (
-    clopper_pearson_upper,
     cost_matrix_for_ratio,
     t_low_star,
 )
 
 type Cell = str | int | float | bool | None
 type Records = Sequence[PredictionRecord]
-type UnitOf = Callable[[PredictionRecord], str]
 
 RQ1_STRATEGIES: Final = ("rule_only", "llm_only", "hybrid", "hybrid_guarded")
 LLM_ARMS: Final = ("llm_only", "hybrid", "hybrid_guarded")  # có lớp LLM (P8 §5.4)
@@ -262,71 +263,6 @@ def check_arms(arms: Sequence[Arm]) -> None:
             raise ValueError("arms: split khác nhau")
         if {r.scenario_id: (r.family, r.expected_route, r.gold_intent) for r in a.records} != gold:
             raise ValueError("arms: tập scenario_id, họ hoặc gold khác nhau giữa các lượt")
-
-
-def full_auto_baseline(records: Records) -> list[PredictionRecord]:
-    """Full-auto giải tích (P8 §5.4: mọi ca có hành động = AUTO; B17 vẫn chặn khi chạy thật): lá có điểm log 4 (`route ≠ None`)
-    → AUTO, `strategy = "full_auto"`, các trường khác giữ nguyên. Đối xứng `manual_baseline`.
-    TODO: sẽ chuyển vào metrics.py (Dương soát)."""
-    return [r.model_copy(update={"strategy": "full_auto", **({"route": "AUTO"} if r.route is not None else {})}) for r in records]
-
-
-# ---- FNR theo tình huống (P8 §6.1) -------------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SituationFnr:
-    """FNR theo tình huống: `k` tình huống cần người có ít nhất một câu pred = AUTO, trên `n` tình huống cần người. `upper95` =
-    cận trên Clopper–Pearson MỘT phía 95% (vế an toàn §6.5); `lo95`/`hi95` = khoảng hai phía 95%. `n_mixed` = đơn vị có nhãn
-    gold lẫn AUTO và không-AUTO (ánh xạ sai hoặc thiếu); `n_leaves` = số lá đã nhãn có route trong phạm vi."""
-
-    k: int
-    n: int
-    n_leaves: int
-    n_mixed: int
-    upper95: float | None
-    lo95: float | None
-    hi95: float | None
-
-    @property
-    def value(self) -> float | None:
-        return self.k / self.n if self.n else None
-
-
-def situation_fnr(
-    records: Records,
-    unit_of: UnitOf | None = None,
-    *,
-    only_llm: bool = False,
-    hidden: "Hidden" = "all",
-) -> SituationFnr:
-    """FNR theo tình huống (P8 §6.1): #(tình huống cần người có ≥ 1 câu pred = AUTO) / #(tình huống cần người). Hàm thuần, mẫu =
-    lá đã nhãn có `route` (≠ None). `unit_of` ánh xạ lá → mã tình huống (mặc định `family`). Tình huống "cần người" nếu có ≥ 1 lá
-    `expected_route ≠ AUTO`. `only_llm` chỉ giữ lá `decided_by = llm` (vế 2 §6.5: tình huống đi qua lớp LLM). `hidden`: `only` =
-    chỉ tình huống có lá `hidden_factor = True`, `except` = loại chúng (§6.1 nhóm yếu tố M5 không thấy). Mẫu số 0 → `value` và
-    cận None. sẽ chuyển vào metrics.py (Dương soát)."""
-    key = unit_of or (lambda r: r.family)
-    units: dict[str, list[PredictionRecord]] = {}
-    for r in records:
-        if r.expected_route is None or r.route is None or (only_llm and r.decided_by != "llm"):
-            continue
-        units.setdefault(key(r), []).append(r)
-    k = n = leaves = mixed = 0
-    for rows in units.values():
-        is_hidden = any(r.hidden_factor is True for r in rows)
-        if (hidden == "only" and not is_hidden) or (hidden == "except" and is_hidden):
-            continue
-        leaves += len(rows)
-        needs = {r.expected_route != "AUTO" for r in rows}
-        mixed += len(needs) > 1
-        if True not in needs:
-            continue
-        n += 1
-        k += any(r.route == "AUTO" for r in rows)
-    if n == 0:
-        return SituationFnr(0, 0, leaves, mixed, None, None, None)
-    lo = 0.0 if k == 0 else float(beta.ppf(0.025, k, n - k + 1))
-    return SituationFnr(k, n, leaves, mixed, clopper_pearson_upper(k, n), lo, clopper_pearson_upper(k, n, 0.975))
 
 
 # ---- kết luận RQ1 (P8 §6.5) --------------------------------------------------------------------------------------------
@@ -524,7 +460,6 @@ def _t1_t2(c: _Ctx) -> tuple[Table, Table, PairedDiffCI | None, PairedDiffCI | N
     return t1.build(), t2.build(), diffs["rule_only"], diffs["llm_only"]
 
 
-type Hidden = Literal["all", "only", "except"]
 _SCOPES: Final[tuple[tuple[str, Hidden], ...]] = (("tất cả", "all"), ("hidden_factor = true", "only"), ("hidden_factor ≠ true", "except"))
 
 
@@ -618,20 +553,22 @@ def _t7(c: _Ctx) -> Table:
                  ("pair", "mix", "n_pairs", "n_excluded_a", "n_excluded_b", "fixed_a", "miss_a", "fixed_b", "miss_b", "r_star", "reason",
                   "saving_5", "saving_10", "saving_20"),
                  (("Phương án có lớp LLM (A) so với Thủ công và với Chỉ-luật (B), dưới r* bên có `miss` lớn hơn rẻ hơn. `saving` = cost_B − "
-                  "cost_A (dương = A rẻ hơn). Mỗi cặp lấy phần giao riêng của hai bên (§5.4); Thủ công dựng từ chính A nên trên đúng tập lá "
-                  "có route của A (G1-Q1). Dòng `không trọng số` là số chính, các mix là số phụ."),))  # fmt: skip
+                  "cost_A (dương = A rẻ hơn). Mỗi cặp trên CÙNG phần giao với T1 (lá đã nhãn có route ở mọi phương án RQ1, §5.4): "
+                  "`n_pairs` = `n` của T1; ở r = 10 chi phí khớp T1 (không trọng số) và T5 (mix). Thủ công = `manual_baseline` của A trên "
+                  "phần giao (= Thủ công của T1, G1-Q1). `n_excluded_a`/`n_excluded_b` = 0 vì đã lọc trước; lá ngoài phần giao ở cột "
+                  "`n_excluded`, chi tiết T11. Dòng `không trọng số` là số chính, các mix là số phụ."),))  # fmt: skip
     for name in LLM_ARMS:
-        arm = c.rq1.get(name)
-        if arm is None:
+        rs = c.sample.get(name)
+        if not rs:  # phương án vắng hoặc phần giao rỗng → không dòng (không bịa số)
             continue
-        against = [("Thủ công", manual_baseline(arm.records), arm)]
-        if "rule_only" in c.rq1:
-            against.append(("Chỉ-luật", list(c.rq1["rule_only"].records), c.rq1["rule_only"]))
-        for other_label, other, other_arm in against:
+        against = [("Thủ công", manual_baseline(rs), name)]
+        if "rule_only" in c.sample:
+            against.append(("Chỉ-luật", c.sample["rule_only"], "rule_only"))
+        for other_label, other, other_name in against:
             for mix_label, mix in MIXES.items():
-                be = breakeven(arm.records, other, mix)
-                metas = [arm.name] + ([other_arm.name] if other_arm is not arm else [])
-                t.add(c.meta(metas, be.n, n_unlabeled=be.n_unlabeled), f"{c.label(name)} vs {other_label}", mix_label, be.n,
+                be = breakeven(rs, other, mix)
+                metas = [name] + ([other_name] if other_name != name else [])
+                t.add(c.meta(metas, be.n), f"{c.label(name)} vs {other_label}", mix_label, be.n,
                       be.n_excluded_a, be.n_excluded_b, be.fixed_a, be.miss_a, be.fixed_b, be.miss_b, be.r_star, be.reason,
                       *(be.saving[r] for r in BREAKEVEN_RATIOS))  # fmt: skip
     return t.build()

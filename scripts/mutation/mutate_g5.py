@@ -1,5 +1,6 @@
-"""Mutation tay G5 — báo cáo M8 (`backend/app/eval/report.py`). Khung giống `mutate_g1.py`: mỗi đột biến áp lên file thật, chạy test
-báo cáo, khôi phục trong `finally`, so md5 + `git diff --stat` trước/sau.
+"""Mutation tay G5 — báo cáo M8 (`backend/app/eval/report.py`) và phần dời sang nơi đặt công thức (`metrics.py`: `situation_fnr`,
+`full_auto_baseline`; `stats.py`: Clopper–Pearson hai phía). Khung giống `mutate_g1.py`: mỗi đột biến áp lên file thật, chạy test
+eval, khôi phục trong `finally`, so md5 + `git diff --stat` trước/sau.
 
 Chốt (như N3 của các script cũ, viết lại ở đây): (a) file đích còn chữ `MUTATION` → dừng; (b) mốc xanh một lần trước khi đột biến;
 (c) sau khi chạy: md5 khớp, `git diff --stat` khớp, không file đích nào còn chữ `MUTATION`. Chuỗi gốc phải xuất hiện đúng số lần khai báo.
@@ -21,7 +22,9 @@ from typing import NamedTuple
 REPO = Path(__file__).resolve().parents[2]
 MARK = "MUTATION"
 REP = "backend/app/eval/report.py"
-UT = ["uv", "run", "pytest", "backend/tests/unit/eval/test_report.py", "-q", "-p", "no:cacheprovider"]
+MET = "backend/app/eval/metrics.py"
+STA = "backend/app/eval/stats.py"
+UT = ["uv", "run", "pytest", "backend/tests/unit/eval", "-q", "-p", "no:cacheprovider"]
 
 
 class Mutation(NamedTuple):
@@ -31,22 +34,35 @@ class Mutation(NamedTuple):
     expect: list[str]  # test PHẢI đỏ
 
 
-def swap(old: str, new: str, tag: str) -> tuple[str, str, str, int]:
-    return (REP, old, new.rstrip("\n") + f"  # MUTATION {tag}\n", 1)
+def swap(old: str, new: str, tag: str, rel: str = REP) -> tuple[str, str, str, int]:
+    return (rel, old, new.rstrip("\n") + f"  # MUTATION {tag}\n", 1)
 
 
-_ANY = '        k += any(r.route == "AUTO" for r in rows)\n'
+_ANY = '        k += any(r.route == "AUTO" for r in rows)\n'  # metrics.situation_fnr (dời từ report.py)
 _COST = "    return mean_route_cost(rs).value\n"
 _SPLIT = '    if first.split != "test" or mf.split != "test":\n'
 _SAMPLE = "        self.sample: dict[str, list[PredictionRecord]] = {n: self.restrict(a.records) for n, a in self.rq1.items()}\n"
 _HI = "    if diff.hi < 0:\n"
 _MAPPING = "            self.mapping: Mapping[str, str] | None = situations.mapping\n"
 _LIMIT = "        safe = PASS if fnr.upper95 < SAFETY_UPPER_LIMIT else FAIL\n"
+# T7 trên phần giao chung (report.py)
+_T7_A = "        rs = c.sample.get(name)\n        if not rs:  # phương án vắng hoặc phần giao rỗng → không dòng (không bịa số)\n"
+_T7_RULE = '            against.append(("Chỉ-luật", c.sample["rule_only"], "rule_only"))\n'
+_T7_META = '                t.add(c.meta(metas, be.n), f"{c.label(name)} vs {other_label}", mix_label, be.n,\n'
+# metrics.py (dời từ report.py)
+_FULL_AUTO = ('    return [r.model_copy(update={"strategy": "full_auto", **({"route": "AUTO"} if r.route is not None else {})}) '
+              "for r in records]\n")  # fmt: skip
+_HIDDEN = '        if (hidden == "only" and not is_hidden) or (hidden == "except" and is_hidden):\n'
+_ONLY_LLM = '        if r.expected_route is None or r.route is None or (only_llm and r.decided_by != "llm"):\n'
+# stats.py
+_CP_LO = "    return float(beta.ppf(1.0 - float(conf), int(k), int(n) - int(k) + 1))\n"
+_CP_TWO = "    c = (1.0 + level) / 2.0\n"
+_CP_K = "    if not 0 <= k <= n:\n"
 
 MUTATIONS_ALL: list[Mutation] = [
     Mutation("M-G5-1 FNR tình huống: ít nhất một câu AUTO → mọi câu AUTO",
-             [swap(_ANY, _ANY.replace("any(", "all("), "M-G5-1")], UT,
-             ["test_situation_fnr_unit_changes_the_number", "test_t3a_situation_fnr_rows"]),
+             [swap(_ANY, _ANY.replace("any(", "all("), "M-G5-1", MET)], UT,
+             ["test_situation_fnr_unit_changes_the_number", "test_t3a_situation_fnr_rows", "test_situation_fnr_any_not_all"]),
     Mutation("M-G5-2 số chính RQ1 lấy chi phí có trọng số 70/20/10",
              [swap(_COST, "    return operating_metrics(rs).main.cost.value", "M-G5-2")], UT,
              ["test_t1_primary_cost_unweighted_on_common_set", "test_t2_cost_diff_points"]),
@@ -62,6 +78,32 @@ MUTATIONS_ALL: list[Mutation] = [
              ["test_t3a_situation_fnr_rows", "test_cli_matches_golden"]),
     Mutation("M-G5-7 vế 2 an toàn: cận trên < 10% → <= 10%",
              [swap(_LIMIT, _LIMIT.replace("<", "<="), "M-G5-7")], UT, ["test_verdict_cost_worse_and_safety_limit"]),
+    # Hai edit: chỉ đổi một bên → breakeven ValueError ở fixture → pytest báo ERROR, không đếm là đỏ.
+    Mutation("M-G5-8 T7 về tập lá riêng (toàn bộ bản ghi của X và của Chỉ-luật)",
+             [swap(_T7_A, "        rs = list(c.rq1[name].records) if name in c.rq1 else None\n"
+                          "        if not rs:  # phương án vắng hoặc phần giao rỗng → không dòng (không bịa số)", "M-G5-8"),
+              swap(_T7_RULE, _T7_RULE.replace('c.sample["rule_only"]', 'list(c.rq1["rule_only"].records)'), "M-G5-8")], UT,
+             ["test_t7_breakeven", "test_t7_same_sample_as_t1", "test_cli_matches_golden"]),
+    Mutation("M-G5-9 T7 meta lấy n_unlabeled của breakeven (lệch T1)",
+             [swap(_T7_META, _T7_META.replace("c.meta(metas, be.n)", "c.meta(metas, be.n, n_unlabeled=be.n_unlabeled)"), "M-G5-9")], UT,
+             ["test_t7_same_sample_as_t1"]),
+    Mutation("M-G5-10 Full-auto đổi cả lá route None thành AUTO",
+             [swap(_FULL_AUTO, '    return [r.model_copy(update={"strategy": "full_auto", "route": "AUTO"}) for r in records]', "M-G5-10", MET)],
+             UT, ["test_full_auto_baseline", "test_full_auto_baseline_hand"]),
+    Mutation("M-G5-11 FNR tình huống bỏ lọc hidden_factor",
+             [swap(_HIDDEN, "        if False:", "M-G5-11", MET)], UT,
+             ["test_situation_fnr_llm_layer_and_hidden", "test_situation_fnr_hidden"]),
+    Mutation("M-G5-12 FNR tình huống bỏ lọc only_llm",
+             [swap(_ONLY_LLM, "        if r.expected_route is None or r.route is None:", "M-G5-12", MET)], UT,
+             ["test_situation_fnr_llm_layer_and_hidden", "test_situation_fnr_only_llm"]),
+    Mutation("M-G5-13 cận dưới CP lấy phân vị conf thay 1 − conf",
+             [swap(_CP_LO, _CP_LO.replace("1.0 - float(conf)", "float(conf)"), "M-G5-13", STA)], UT,
+             ["test_cp_lower_hand", "test_situation_fnr_clopper_pearson"]),
+    Mutation("M-G5-14 khoảng hai phía dùng level cho mỗi phía (thay (1 + level)/2)",
+             [swap(_CP_TWO, "    c = level", "M-G5-14", STA)], UT,
+             ["test_cp_two_sided_hand", "test_situation_fnr_clopper_pearson"]),
+    Mutation("M-G5-15 cận dưới CP bỏ kiểm 0 ≤ k ≤ n",
+             [swap(_CP_K, "    if False:", "M-G5-15", STA)], UT, ["test_cp_lower_rejects"]),
 ]  # fmt: skip
 
 MUTATIONS = MUTATIONS_ALL
