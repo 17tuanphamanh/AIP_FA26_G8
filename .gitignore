@@ -24,6 +24,8 @@ __pycache__/
 !.env.example
 *.key
 secrets/
+# du lieu that cua nguoi chay demo (email, so dien thoai) - KHONG commit, o moi thu muc
+seed.local.json
 
 # du lieu va model - nang, tai lai duoc (Dieu 7)
 data/*
@@ -64,3 +66,6 @@ backend/tests/stack/bienban-gate5-2*.md
 Claude outputs/
 docs/demo-video/
 ml_models/*-clf/
+
+# mock AD: email thật của người chạy demo (nạp đè seed.json) — KHÔNG commit; mẫu ở mock_services/seed.local.example.json
+mock_services/seed.local.json
