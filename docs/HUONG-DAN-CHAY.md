@@ -7,7 +7,7 @@
 
 ## Mục lục
 
-1. [Yêu cầu máy](#1-yêu-cầu-máy)
+1. [Yêu cầu máy](#1-yêu-cầu-máy) — Windows: [chuẩn bị WSL2](#11-chuẩn-bị-trên-windows-wsl2)
 2. [Lấy mã nguồn và quyền truy cập repo](#2-lấy-mã-nguồn-và-quyền-truy-cập-repo)
 3. [Tạo file `.env`](#3-tạo-file-env)
 4. [Lấy model](#4-lấy-model)
@@ -26,7 +26,7 @@
 ## 0. Đọc trước khi bắt đầu
 
 - Mọi lệnh chạy **trong terminal, tại thư mục gốc của repo** (thư mục có file `Makefile`), trừ khi ghi khác.
-- **Windows:** chạy trong terminal **WSL2 (Ubuntu)**, không dùng PowerShell/CMD (trừ vài lệnh ghi rõ là PowerShell).
+- **Windows:** chạy trong terminal **WSL2 (Ubuntu)** — **không** dùng PowerShell, CMD hay **Git Bash** (trừ vài lệnh ghi rõ là PowerShell). Cách chuẩn bị WSL2: mục 1.1.
 - Lệnh trong khung ```` ```bash ```` chép nguyên văn, chạy lần lượt từng lệnh. Chỗ nào phải tự điền sẽ ghi rõ.
 - Mặc định hệ thống dùng **LLM giả** (`scripted`) — **không tốn tiền**. Chỉ tốn tiền khi bạn tự bật LLM thật (mục 9).
 - **Ghi lại giờ lúc chạy** khi chạy đánh giá (mục 11.1): một số ca cho kết quả khác nhau tuỳ chạy trong hay ngoài giờ hành chính.
@@ -49,6 +49,42 @@
 - **Không nạp 2 model của nhóm** (lựa chọn A, mục 4.2): đo trên máy nhóm (WSL2 được cấp 7,6 GiB), stack đã dựng xong, để yên với LLM giả — tổng các container ~**1,8 GiB**: `ml-service` ~1,06 GiB, `backend` ~280 MiB, `worker` ~260 MiB, `qdrant` ~115 MiB, `postgres` ~65 MiB, `mock` ~50 MiB (chưa tính giao diện web và trình duyệt).
 - **Nạp model intent của nhóm** (lựa chọn B): `ml-service` dùng thêm **~1,2 GB RAM**. Tổng các container phải ≤ 7 GB và không bị hệ thống "giết" vì thiếu RAM (OOMKilled). **Máy 8 GB thì không nạp model intent** (để trống các biến `INTENT_*`).
 - Khuyến nghị: máy **8 GB RAM** cho lựa chọn A, cấp cho Docker/WSL **ít nhất 4 GB**; máy **16 GB** nếu nạp đủ 2 model. Thiếu RAM: xem mục 12.
+
+### 1.1. Chuẩn bị trên Windows (WSL2)
+
+Trên Windows, mọi lệnh `make`, `docker compose`, `npm` trong file này chạy **bên trong Ubuntu của WSL2** — đây là cách máy nhóm đang chạy. **Không** cài `make` cho Git Bash (ezwinports, choco…): `make up` dùng lệnh shell kiểu Linux, và `make ingest` gắn thư mục bằng đường dẫn tuyệt đối — chạy từ Git Bash dễ hỏng giữa chừng. Trong WSL không cần chỉnh gì Makefile.
+
+1. Mở **PowerShell với quyền quản trị**, cài Ubuntu cho WSL2 (đã có thì bỏ qua), rồi khởi động lại máy và đặt tên người dùng/mật khẩu Ubuntu khi được hỏi:
+
+   ```powershell
+   wsl --install -d Ubuntu
+   ```
+
+2. **Docker Desktop** → Settings → Resources → **WSL integration** → bật cho **Ubuntu** → Apply & restart.
+
+3. Mở terminal **Ubuntu**, cài công cụ:
+
+   ```bash
+   sudo apt update && sudo apt install -y make git curl python3
+   ```
+
+4. Cài `uv`, rồi **đóng và mở lại** terminal Ubuntu:
+
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+5. Cài Node.js 24 (bản Node trong `apt` của Ubuntu thường quá cũ):
+
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt install -y nodejs
+   ```
+
+6. Kiểm đủ công cụ (mục 1, cột "Kiểm"): `docker compose version`, `make --version`, `uv --version`, `node --version`.
+
+7. Clone repo **bên trong Ubuntu**, ở thư mục nhà (`cd ~`), theo mục 2.2.
+   - **Không** dùng bản repo đã clone bằng Git for Windows / Git Bash, và **không** đặt repo trong `/mnt/c/...`: Git for Windows có thể đổi ký tự xuống dòng (CRLF) làm hỏng script, còn thư mục `/mnt/c` chạy chậm hơn nhiều trong WSL.
+   - File cần chép từ Windows (ví dụ 2 model nhóm) thì chép từ `/mnt/c/...` hoặc `/mnt/<ổ>/...` vào repo trong Ubuntu.
 
 ---
 
@@ -528,7 +564,7 @@ Ba lệnh dưới **xuất** các dòng cache LLM chế độ đánh giá (bản
 
 - Hai máy phải **cùng tag `v1.0-freeze`** để các cột của bảng khớp nhau.
 - Stack đang chạy (`make up`) ở máy tương ứng.
-- **Windows:** chạy bằng **WSL** hoặc **Git Bash** — PowerShell không hiểu dấu `<` ở lệnh nạp (2).
+- **Windows:** chạy trong **WSL** như các mục khác (riêng 3 lệnh này chạy bằng **Git Bash** cũng được) — **PowerShell** không hiểu dấu `<` ở lệnh nạp (2).
 
 **1. Xuất cache eval ra file CSV (máy nguồn):**
 
@@ -610,6 +646,9 @@ Cách tăng RAM cho Docker:
 | `ML_SERVICE_TOKEN phai khai bao trong .env` hoặc `LLM_BACKEND phai khai bao trong .env` | `.env` thiếu biến bắt buộc | Thêm biến vào `.env` (mục 3) |
 | `CẢNH BÁO: không có .env` | Chưa tạo `.env` | `cp .env.example .env` (mục 3) |
 | `docker compose` không có, hoặc báo không nhận cờ `--wait` | Docker Compose quá cũ (v1) | Cài Docker Compose v2 trở lên (mục 1) |
+| `make: command not found` | Chưa cài `make`, hoặc đang chạy trong Git Bash / PowerShell | Windows: chạy trong Ubuntu (WSL2) và `sudo apt install -y make` (mục 1.1) — không cài `make` cho Git Bash |
+| Trong Ubuntu (WSL) báo `docker: command not found` | Docker Desktop chưa bật WSL integration cho Ubuntu | Docker Desktop → Settings → Resources → WSL integration → bật Ubuntu (mục 1.1) |
+| Lỗi lạ kiểu `$'\r': command not found` | Repo clone bằng Git for Windows, xuống dòng kiểu CRLF | Clone lại repo bên trong Ubuntu (mục 1.1 bước 7) |
 | `worker chưa healthy sau 60 giây` | `FAKE_NODE_DELAY` trong `.env` còn giá trị | Để trống `FAKE_NODE_DELAY`, `make up` lại |
 | `/api/health` báo `kb.status = missing` | Chưa `make ingest` (hoặc vừa xoá sạch), hoặc ingest vừa xong chưa tới ~1 phút | `make ingest` (mục 5.3); vừa ingest xong thì chờ ~1 phút rồi kiểm lại |
 | Backend/worker từ chối khởi động sau khi sửa dòng `B2_*` | Đặt `B2_CLASSIFIER_MODE` mà thiếu giá trị đi kèm | Để `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` như `.env.example` (mục 3), `make up` lại |
