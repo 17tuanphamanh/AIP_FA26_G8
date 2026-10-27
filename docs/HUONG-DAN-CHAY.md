@@ -1,6 +1,6 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
-> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
+> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
 > Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ).
 
 **File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
@@ -17,7 +17,7 @@
 8. [Đặt OTP cho tài khoản quản lý `quan.tm`](#8-đặt-otp-cho-tài-khoản-quản-lý-quantm)
 9. [Bật LLM thật](#9-bật-llm-thật)
 10. [Dừng, dọn dẹp, chạy lại từ đầu](#10-dừng-dọn-dẹp-chạy-lại-từ-đầu)
-11. [Chạy đánh giá (G8)](#11-chạy-đánh-giá-g8)
+11. [Chạy đánh giá (G8)](#11-chạy-đánh-giá-g8) — ghi giờ, nới giới hạn, chuyển cache LLM giữa hai máy
 12. [Lỗi thường gặp](#12-lỗi-thường-gặp)
 13. [Lệnh khác](#13-lệnh-khác)
 
@@ -214,8 +214,22 @@ make ingest
 ```
 
 - Cần `make up` chạy xong trước.
+- ⏱ Mất khoảng **10–15 phút** (đo trên máy nhóm: ~12 phút, trong đó tạo embedding chỉ ~40 giây; phần còn lại là build image, cổng kiểm KB và tạo snapshot). Đứng im lâu là bình thường.
 - Kết quả in `kb_version` và số đoạn bị cắt (truncated) — **số này phải bằng 0**.
 - Chạy thử không ghi: `make ingest ARGS=--dry-run`.
+
+**Chạy thành công thì cuối output có các dòng như sau:**
+
+```text
+tài liệu: 18 enabled / 18 tổng; số đoạn: 77; max text_tokens: 277; truncated=0
+...
+alias kb_current → kb_<kb_version>
+...
+xong: kb_version=..., collection=kb_..., số đoạn=77, truncated=0, eval_status=evaluated
+```
+
+- Trên DB vừa xoá sạch có thể gặp dòng `cảnh báo: owner it_mgr01 chưa có trong bảng users — ghi kb_documents.owner = NULL`. Ingest vẫn hoàn tất bình thường.
+- Ngay sau khi ingest xong, `/api/health` có thể vẫn báo `kb.status = missing` thêm **khoảng 10–60 giây** (backend kiểm lại KB theo chu kỳ ~10 giây) — chờ rồi kiểm lại (mục 5.4), **không cần** khởi động lại gì.
 
 ### 5.4. Kiểm nhanh
 
@@ -232,7 +246,7 @@ curl -s http://127.0.0.1:8000/api/health | python3 -c "import sys, json; print(j
 Phải in ra `up`.
 
 - `/api/health` **luôn trả 200**; trạng thái thật nằm ở trường `runtime`.
-- Các trường khác: `checks` (từng thành phần lõi, phải đều `ok`), `failed` (thành phần lỗi, phải rỗng `[]`), `kb.status` (`ready` sau khi `make ingest`), `llm` (`scripted` = đang dùng LLM giả), `monitor`.
+- Các trường khác: `checks` (từng thành phần lõi, phải đều `ok`), `failed` (thành phần lỗi, phải rỗng `[]`), `kb.status` (`missing` khi chưa nạp KB — ví dụ ngay sau khi xoá sạch; `ready` sau khi `make ingest`), `llm` (`scripted` = đang dùng LLM giả), `monitor`.
 - `runtime` chỉ tính phần lõi: DB, Qdrant, mock, ml-service. Các trường `kb`, `llm`, `monitor` chỉ để tham khảo.
 - Container backend có healthcheck riêng: healthy khi `/api/health` trả 200 **và** `runtime == "up"` (chờ khởi động 60 s).
 
@@ -369,7 +383,7 @@ Các điểm dưới đây có thể trông lạ khi chạy lại, nhưng đều
 
 Làm **một lần**, sau khi `make up` chạy xong (và làm lại sau mỗi lần xoá sạch DB — mục 10).
 
-⚠️ **CẦN BỔ SUNG:** xác nhận lệnh đặt OTP trên nhánh chạy chấm (do GIT cấp). Lệnh dưới đã chạy thử thành công ngày 23/10/2026.
+Lệnh dưới đã chạy thử thành công trên `dev-tuananh` @ `1a0145f` ngày 26/10/2026, trên DB vừa xoá sạch.
 
 1. Chạy lệnh dưới, **thay `ten-cua-ban` bằng tên người chạy** (viết liền, không dấu):
 
@@ -484,12 +498,64 @@ Chạy đánh giá xong, đưa về mặc định (dựng lại stack, không k�
 make up
 ```
 
-- `RATE` chỉ nhận đúng giá trị `loose` (hoặc bỏ trống); giá trị khác → `make` dừng ngay với lỗi `RATE=... không hợp lệ`.
+- `RATE` chỉ nhận đúng giá trị `loose` (hoặc bỏ trống); giá trị khác → `make` dừng ngay, chưa đụng tới container nào, với lỗi:
+
+  ```text
+  Makefile:36: *** RATE=sai không hợp lệ — chỉ RATE=loose (nới ngưỡng 429) hoặc bỏ trống.  Stop.
+  ```
+
+- Kiểm giới hạn đang nới hay mặc định:
+
+  ```bash
+  docker compose exec -T backend sh -c 'echo "T10=[$TICKET_RATE_10MIN] TH=[$TICKET_RATE_HOUR] M10=[$MESSAGE_RATE_10MIN]"'
+  ```
+
+  Sau `make up RATE=loose`: cả 3 là `100000`. Sau `make up` (mặc định): cả 3 rỗng `[]`.
 - **Ghi vào biên bản** mỗi lần chạy có nới giới hạn.
 
-### 11.3. Lệnh chạy đánh giá
+### 11.3. Chuyển cache LLM của lượt đánh giá giữa hai máy (G8)
 
-⚠️ **CẦN BỔ SUNG:** ba lệnh G8.
+Ba lệnh dưới **xuất** các dòng cache LLM chế độ đánh giá (bảng `llm_cache`, `mode = 'eval'`) ở **máy nguồn** ra file CSV, rồi **nạp** vào **máy đích**, để máy đích dùng lại cache của lượt đánh giá đã chạy. Lệnh dùng biến có sẵn trong container postgres — không chứa tên người dùng hay tên DB, không cần sửa gì.
+
+**Điều kiện trước khi chạy:**
+
+- Hai máy phải **cùng tag `v1.0-freeze`** để các cột của bảng khớp nhau.
+- Stack đang chạy (`make up`) ở máy tương ứng.
+- **Windows:** chạy bằng **WSL** hoặc **Git Bash** — PowerShell không hiểu dấu `<` ở lệnh nạp (2).
+
+**1. Xuất cache eval ra file CSV (máy nguồn):**
+
+```bash
+docker compose --env-file .env exec -T postgres sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "COPY (SELECT * FROM llm_cache WHERE mode = '\''eval'\'') TO STDOUT WITH (FORMAT csv, HEADER)"' > ~/llm_cache_eval.csv; echo exit=$?
+```
+
+Phải in `exit=0`. File nằm ở `~/llm_cache_eval.csv`.
+
+**Chuyển file sang máy đích** (USB, Drive…) — ❗ **không commit file CSV** vào repo. Kiểm mã băm ở **hai đầu**, hai mã phải **trùng nhau**:
+
+```bash
+sha256sum ~/llm_cache_eval.csv
+```
+
+(macOS dùng `shasum -a 256 ~/llm_cache_eval.csv`.)
+
+**2. Nạp vào máy đích** (bảng chưa có dòng eval trùng `cache_key`):
+
+```bash
+docker compose --env-file .env exec -T postgres sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "COPY llm_cache FROM STDIN WITH (FORMAT csv, HEADER)"' < ~/llm_cache_eval.csv; echo exit=$?
+```
+
+Phải in `exit=0`.
+
+> ❗ Nếu lệnh 2 báo **trùng khoá** (duplicate key) nghĩa là máy đích **đã có cache** này. Khi đó **dừng lại và hỏi nhóm** — **không tự xoá** dữ liệu trong bảng.
+
+**3. Kiểm số dòng theo mode (chạy ở cả hai máy):**
+
+```bash
+docker compose --env-file .env exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT mode, count(*) FROM llm_cache GROUP BY mode ORDER BY mode"'
+```
+
+Số dòng `eval` ở máy đích sau khi nạp phải bằng số dòng `eval` ở máy nguồn (máy đích chưa có dòng `eval` nào trước khi nạp). Tham khảo: lần thử của nhóm xuất **28 dòng** eval, nạp đủ 28 dòng.
 
 ---
 
@@ -538,10 +604,15 @@ Cách tăng RAM cho Docker:
 | `CẢNH BÁO: không có .env` | Chưa tạo `.env` | `cp .env.example .env` (mục 3) |
 | `docker compose` không có, hoặc báo không nhận cờ `--wait` | Docker Compose quá cũ (v1) | Cài Docker Compose v2 trở lên (mục 1) |
 | `worker chưa healthy sau 60 giây` | `FAKE_NODE_DELAY` trong `.env` còn giá trị | Để trống `FAKE_NODE_DELAY`, `make up` lại |
+| `/api/health` báo `kb.status = missing` | Chưa `make ingest` (hoặc vừa xoá sạch), hoặc ingest vừa xong chưa tới ~1 phút | `make ingest` (mục 5.3); vừa ingest xong thì chờ ~1 phút rồi kiểm lại |
 | Backend/worker từ chối khởi động sau khi sửa dòng `B2_*` | Đặt `B2_CLASSIFIER_MODE` mà thiếu giá trị đi kèm | Để `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` như `.env.example` (mục 3), `make up` lại |
 | `make` báo `RATE=... không hợp lệ` | Gõ sai giá trị `RATE` | Chỉ dùng `make up RATE=loose` hoặc `make up` (mục 11.2) |
 | Gửi nhiều yêu cầu liên tiếp bị từ chối (429) | Giới hạn chống spam | `make up RATE=loose` (mục 11.2) |
 | Kết quả một số ca khác lần chạy trước | Chạy trong / ngoài giờ hành chính | Ghi giờ lúc chạy (mục 11.1) |
+| Lệnh nạp cache (11.3 lệnh 2) báo trùng khoá (duplicate key) | Máy đích đã có cache eval này | **Dừng lại, hỏi nhóm** — không tự xoá dữ liệu |
+| Lệnh nạp cache báo lỗi cột / kiểu dữ liệu | Hai máy không cùng tag `v1.0-freeze` | Đưa cả hai máy về cùng tag, chạy lại từ lệnh 1 |
+| PowerShell báo lỗi ở dấu `<` (lệnh nạp cache) | PowerShell không hỗ trợ chuyển file vào lệnh kiểu này | Chạy bằng WSL hoặc Git Bash (mục 11.3) |
+| Mã băm file CSV ở hai máy khác nhau | File hỏng / chép thiếu khi chuyển | Chuyển lại file, kiểm lại mã băm trước khi nạp |
 | Bật LLM thật thì hệ thống không khởi động | Model chưa có dòng trong `pricing` / sai tên model | Kiểm `FAST_MODEL`, `STRONG_MODEL` khớp tên trong `config/llm.yaml` (mục 9.2) |
 | Mock trả lỗi lạ | Lỗi bơm vào mock vẫn còn bật | `make seed` |
 | Tài khoản demo không đăng nhập được bằng `Demo@2026!` (dù không phải `dung.dv`, `em.lv`) | Mật khẩu đã bị đặt lại qua kênh SMS của mock (gọi thẳng API mock) | `make seed` — đưa mọi tài khoản về mật khẩu demo |
