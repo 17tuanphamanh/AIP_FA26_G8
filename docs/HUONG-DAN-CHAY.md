@@ -405,7 +405,11 @@ Lệnh dưới đã chạy thử thành công trên `dev-tuananh` @ `1a0145f` ng
    docker compose exec backend python -m app.auth.mfa reset quan.tm --by ten-cua-ban --reason demo
    ```
 
-⚠️ **CẦN BỔ SUNG:** cách mở khoá khi `quan.tm` đã bị khoá.
+**Nếu `quan.tm` đã bị khoá** (đăng nhập khi chưa đặt OTP, hoặc nhập sai OTP nhiều lần):
+
+- Cách chắc chắn gỡ được là **xoá sạch rồi dựng lại** (mục 10): `docker compose down -v` → `make up` → `make ingest` → đặt lại OTP theo các bước 1–5 ở trên. Mất khoảng 15 phút. Cách này đưa DB của backend và dữ liệu mock về ban đầu, nên trạng thái khoá cũng mất theo.
+- ❗ Xoá sạch sẽ mất **toàn bộ** ticket, lịch sử và cache trong DB — kể cả cache LLM của lượt đánh giá. Nếu đang chạy đánh giá, **xuất cache trước** (mục 11.3, lệnh 1). Chỉ dùng cách này khi không còn cách khác.
+- Nếu nhóm có lệnh mở khoá nhanh hơn sẽ bổ sung tại đây.
 
 ---
 
