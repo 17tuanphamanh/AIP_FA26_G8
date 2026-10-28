@@ -265,6 +265,14 @@ make models
 
 ### 5.1. Dựng stack
 
+> ❗ **Máy đã từng chạy hệ thống này** (bản cũ, nhánh khác, hay một bản clone khác) thì **xoá sạch dữ liệu cũ trước**. Tên dự án compose cố định là `servicedesk`, nên bản clone mới vẫn dùng lại volume DB cũ (`servicedesk_pgdata`) — DB cũ có thể đã chạy migration mà bản này không có, làm `make up` dừng với lỗi `Can't locate revision` (mục 12.4).
+>
+> ```bash
+> docker compose down -v
+> ```
+>
+> Lệnh này **xoá toàn bộ** ticket, lịch sử, OTP đã đặt và cache LLM trong DB cũ. Cần giữ cache của lượt đánh giá thì **xuất trước** (mục 11.3, lệnh 1). Máy chưa từng chạy thì bỏ qua bước này.
+
 ```bash
 make up
 ```
@@ -702,6 +710,7 @@ Cách tăng RAM cho Docker:
 |---|---|---|
 | `ML_SERVICE_TOKEN phai khai bao trong .env` hoặc `LLM_BACKEND phai khai bao trong .env` | `.env` thiếu biến bắt buộc | Thêm biến vào `.env` (mục 3) |
 | `CẢNH BÁO: không có .env` | Chưa tạo `.env` | `cp .env.example .env` (mục 3) |
+| `make up` dừng ở bước migration: `Can't locate revision identified by '00xx'` (`Makefile: … up] Error 255`) | Máy từng chạy hệ thống ở bản/nhánh khác; volume DB cũ `servicedesk_pgdata` đã có migration mà bản này không có | `docker compose down -v` rồi `make up` lại (mục 5.1). Lệnh xoá hết dữ liệu cũ — cần giữ cache đánh giá thì xuất trước (mục 11.3) |
 | `docker compose` không có, hoặc báo không nhận cờ `--wait` | Docker Compose quá cũ (v1) | Cài Docker Compose v2 trở lên (mục 1) |
 | `git clone` hỏi Username/Password, nhập mật khẩu báo `Authentication failed` | Repo riêng tư; GitHub không nhận mật khẩu cho git | Đăng nhập bằng `gh auth login` (mục 2.2) rồi clone lại |
 | `git clone` báo `Repository not found` dù đã đăng nhập | Tài khoản chưa chấp nhận lời mời collaborator | Chấp nhận lời mời (email / thông báo GitHub), rồi clone lại (mục 2.1) |
