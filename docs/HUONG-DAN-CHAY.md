@@ -148,14 +148,49 @@ git checkout v1.0-freeze
 cp .env.example .env
 ```
 
-Mở `.env` để kiểm (ví dụ bằng `nano .env`; lưu: `Ctrl+O` → `Enter`, thoát: `Ctrl+X`):
+`.env.example` **chưa có giá trị** cho 6 khoá bí mật, và đang đặt sẵn 2 biến kịch bản giả (`FAKE_SCENARIO=approval`, `FAKE_NODE_DELAY=40`) dùng cho kiểm thử nội bộ. Chạy đoạn lệnh dưới **một lần** để: (1) tự sinh 6 khoá — mỗi khoá một giá trị ngẫu nhiên riêng, đúng cách ghi trong chú thích `.env.example`; (2) để trống 2 biến `FAKE_*`. Lệnh **không in khoá ra màn hình**; chạy lại cũng không ghi đè khoá đã có.
+
+```bash
+python3 - <<'PY'
+import base64, pathlib, re, secrets
+p = pathlib.Path(".env")
+s = p.read_text()
+sinh = {
+    "JWT_SIGNING_KEY": lambda: secrets.token_urlsafe(32),
+    "MFA_ENC_KEY": lambda: base64.b64encode(secrets.token_bytes(32)).decode(),
+    "SVC_AGENT_TOKEN": lambda: secrets.token_urlsafe(32),
+    "SVC_EXECUTOR_TOKEN": lambda: secrets.token_urlsafe(32),
+    "SVC_WORKER_TOKEN": lambda: secrets.token_urlsafe(32),
+    "ML_SERVICE_TOKEN": lambda: secrets.token_urlsafe(32),
+}
+for k, f in sinh.items():
+    s, n = re.subn(rf"(?m)^{k}=[ \t]*$", lambda m, k=k, f=f: f"{k}={f()}", s)
+    print(f"{k}: {'da sinh' if n else 'da co gia tri, giu nguyen'}")
+for k in ("FAKE_SCENARIO", "FAKE_NODE_DELAY"):
+    s, n = re.subn(rf"(?m)^{k}=.*$", f"{k}=", s)
+    print(f"{k}: {'da de trong' if n else 'khong co dong nay'}")
+p.write_text(s)
+PY
+```
+
+Kiểm lại (chỉ in 1 = có giá trị, 0 = trống — không in nội dung `.env`):
+
+```bash
+for v in LLM_BACKEND JWT_SIGNING_KEY MFA_ENC_KEY SVC_AGENT_TOKEN SVC_EXECUTOR_TOKEN SVC_WORKER_TOKEN ML_SERVICE_TOKEN FAKE_SCENARIO FAKE_NODE_DELAY; do echo "$v: $(grep -cE "^$v=.+" .env)"; done; echo "LLM_BACKEND=scripted: $(grep -c '^LLM_BACKEND=scripted$' .env)"
+```
+
+Phải ra: 7 dòng đầu (`LLM_BACKEND` và 6 khoá) là **1**; `FAKE_SCENARIO`, `FAKE_NODE_DELAY` là **0**; dòng cuối `LLM_BACKEND=scripted: 1`.
+
+Giải thích các biến quan trọng (sửa tay bằng `nano .env` nếu cần; lưu: `Ctrl+O` → `Enter`, thoát: `Ctrl+X`):
 
 - `LLM_BACKEND=scripted` — **bắt buộc có**. `scripted` là LLM giả, không tốn tiền (dùng cho lần dựng đầu). Bật LLM thật: mục 9.
-- `ML_SERVICE_TOKEN` — **bắt buộc có giá trị**, thiếu thì compose dừng ngay.
-- `FAKE_NODE_DELAY` — **để trống** (còn giá trị thì worker không lên).
+- `JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`, `SVC_WORKER_TOKEN`, `ML_SERVICE_TOKEN` — **bắt buộc có giá trị**, mỗi khoá một giá trị riêng (đoạn lệnh trên đã sinh). Thiếu `ML_SERVICE_TOKEN` thì compose dừng ngay.
+- `FAKE_SCENARIO` — **để trống**. Có giá trị (ví dụ `approval`) thì **toàn bộ các bước của agent chạy bằng node giả** (chỉ dùng cho kiểm thử nội bộ) — kết quả demo/đánh giá sẽ không phải của hệ thống thật.
+- `FAKE_NODE_DELAY` — **để trống**. Còn giá trị khi `FAKE_SCENARIO` trống thì backend **từ chối khởi động**.
+- `FAKE_APPROVER_ID` — giữ nguyên như `.env.example`.
+- `PG_*` (mật khẩu Postgres) — `.env.example` có sẵn giá trị mẫu, giữ nguyên là chạy được trên máy dev.
 - `TICKET_RATE_10MIN`, `TICKET_RATE_HOUR`, `MESSAGE_RATE_10MIN` (giới hạn chống spam) — **để trống** = dùng mặc định. Khi cần nới (chạy đánh giá), dùng `make up RATE=loose` (mục 11.2), không sửa ở đây.
 - Các dòng model của nhóm (`GUARD_*`, `INTENT_*`) và `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` — **giữ nguyên như `.env.example`** (đang là dòng chú thích `#`), trừ khi làm theo lựa chọn B ở mục 4.2.
-- Các khoá/mật khẩu khác (`JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_*_TOKEN`, `PG_*`…) giữ giá trị mẫu là chạy được.
 
 > ❗ **Không commit `.env`**, không đưa khoá thật vào repo, PR hay tin nhắn.
 > Không có `.env` thì Makefile dùng tạm `.env.example` và in cảnh báo — không nên chạy như vậy.
@@ -673,7 +708,9 @@ Cách tăng RAM cho Docker:
 | `make: command not found` | Chưa cài `make`, hoặc đang chạy trong Git Bash / PowerShell | Windows: chạy trong Ubuntu (WSL2) và `sudo apt install -y make` (mục 1.1) — không cài `make` cho Git Bash |
 | Trong Ubuntu (WSL) báo `docker: command not found` | Docker Desktop chưa bật WSL integration cho Ubuntu | Docker Desktop → Settings → Resources → WSL integration → bật Ubuntu (mục 1.1) |
 | Lỗi lạ kiểu `$'\r': command not found` | Repo clone bằng Git for Windows, xuống dòng kiểu CRLF | Clone lại repo bên trong Ubuntu (mục 1.1 bước 7) |
-| `worker chưa healthy sau 60 giây` | `FAKE_NODE_DELAY` trong `.env` còn giá trị | Để trống `FAKE_NODE_DELAY`, `make up` lại |
+| `worker chưa healthy sau 60 giây`, hoặc log backend báo `FAKE_NODE_DELAY chỉ có nghĩa khi đặt FAKE_SCENARIO — từ chối khởi động` | `FAKE_NODE_DELAY` trong `.env` còn giá trị (`.env.example` để sẵn `40`) | Để trống `FAKE_NODE_DELAY` (mục 3), `make up` lại |
+| Agent trả lời lạ / như kịch bản dựng sẵn, kết quả không giống hệ thống thật | `FAKE_SCENARIO` còn giá trị (`.env.example` để sẵn `approval`) → mọi bước agent chạy node giả | Để trống `FAKE_SCENARIO` (mục 3), `make up` lại |
+| Compose / backend báo thiếu `JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_*_TOKEN` | `.env.example` không có sẵn giá trị cho các khoá này | Chạy đoạn lệnh sinh khoá ở mục 3 |
 | `/api/health` báo `kb.status = missing` | Chưa `make ingest` (hoặc vừa xoá sạch), hoặc ingest vừa xong chưa tới ~1 phút | `make ingest` (mục 5.3); vừa ingest xong thì chờ ~1 phút rồi kiểm lại |
 | Backend/worker từ chối khởi động sau khi sửa dòng `B2_*` | Đặt `B2_CLASSIFIER_MODE` mà thiếu giá trị đi kèm | Để `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` như `.env.example` (mục 3), `make up` lại |
 | `make` báo `RATE=... không hợp lệ` | Gõ sai giá trị `RATE` | Chỉ dùng `make up RATE=loose` hoặc `make up` (mục 11.2) |
