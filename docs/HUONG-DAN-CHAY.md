@@ -1,6 +1,6 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
-> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
+> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Quân chạy lại từ đầu theo hướng dẫn ngày 28/10/2026 trên `dev-tuananh` @ `df865dc` (máy Windows + WSL2, lựa chọn A): đạt, các chỗ lệch đã sửa vào file. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
 > Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ).
 
 **File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
@@ -359,11 +359,11 @@ Phải in ra `up`.
 | Service | Truy cập từ máy? | Ghi chú |
 |---|---|---|
 | Giao diện web | ✅ `http://localhost:5173` | Không thuộc compose — bật bằng `npm run dev` (mục 6) |
-| `backend` | ✅ `http://127.0.0.1:8000` | Cổng duy nhất của compose mở ra máy (chỉ localhost) |
+| `backend` | ✅ `http://127.0.0.1:8000` | Chỉ nghe trên localhost (máy mình) |
 | `worker` | ❌ | |
 | `mock` | ❌ (cổng 8100 trong mạng compose) | Gọi tay: xem `mock_services/README.md` mục "Chạy" |
 | `ml-service` | ❌ (cổng 8200 trong mạng compose) | |
-| `postgres` | ❌ | Dữ liệu ở volume `pgdata` |
+| `postgres` | ✅ `127.0.0.1:55432` (chỉ localhost) | Dữ liệu ở volume `pgdata`. Cổng `55432` thấy ở bản `df865dc` (`docker compose ps` in `127.0.0.1:55432->5432/tcp`) |
 | `qdrant` | ❌ | KB ở volume `qdrant` |
 
 ### 5.6. Làm nóng
@@ -444,7 +444,7 @@ Giao diện web **không** được `make up` bật — phải chạy riêng t�
 | Nhân viên | Yêu cầu mới, Gần đây |
 | IT Helpdesk L1 (người duyệt) | Chờ tôi duyệt, Hàng đợi escalate |
 | Kỹ thuật viên L2 | Hàng đợi escalate |
-| Trưởng bộ phận IT (manager) | Tổng quan, Cảnh báo, Chính sách, Chờ tôi duyệt |
+| Trưởng bộ phận IT (manager) | Tổng quan, Cảnh báo, Chính sách, Trạng thái LLM, Chờ tôi duyệt |
 
 Mọi vai trò đều có ô chat ở giữa màn hình ("Hôm nay IT giúp gì cho bạn?").
 
@@ -475,7 +475,7 @@ Mọi vai trò đều có ô chat ở giữa màn hình ("Hôm nay IT giúp gì 
 Các điểm dưới đây có thể trông lạ khi chạy lại, nhưng đều là **dữ liệu demo được dựng sẵn có chủ đích**:
 
 - `khoa.dv`: chức danh trong dữ liệu là **"Trưởng nhóm Helpdesk"**, nhưng vai trò trên web là **IT Helpdesk L1** (menu giống `ha.lt`).
-- `quan.tm`: menu có **Tổng quan, Cảnh báo, Chính sách, Chờ tôi duyệt**.
+- `quan.tm`: menu có **Tổng quan, Cảnh báo, Chính sách, Trạng thái LLM, Chờ tôi duyệt**.
 - 4 trưởng phòng (`lan.dt`, `cuong.vq`, `son.nt`, `mai.tt`) đăng nhập với vai trò **Nhân viên** — không có quyền gì thêm trên web.
 - `dung.dv` (bị vô hiệu hoá) và `em.lv` (đã nghỉ việc) **không đăng nhập được** — bị từ chối với câu **"Tên đăng nhập hoặc mật khẩu không đúng."** Hệ thống cố ý báo chung chung (không tiết lộ tài khoản bị vô hiệu hoá), **không phải gõ sai mật khẩu**. **Đừng thử lại nhiều lần.**
 - `svc-backup`: tài khoản dịch vụ, **không dùng để đăng nhập**.
@@ -495,7 +495,9 @@ Lệnh dưới đã chạy thử thành công trên `dev-tuananh` @ `1a0145f` ng
    docker compose exec backend python -m app.auth.mfa enroll quan.tm --by ten-cua-ban --reason demo
    ```
 
-2. Lệnh in ra mã `otpauth://…`. Thêm vào app **Google Authenticator** trên điện thoại: bấm **"+"** → **"Quét mã QR"**; hoặc **"Nhập khoá thiết lập"** — tên tài khoản `quan.tm`, khoá là phần chữ sau `secret=` (tới dấu `&` kế tiếp), loại **Dựa trên thời gian**.
+2. Lệnh in ra mã `otpauth://…` và một dòng `Secret: …` riêng. Thêm vào app **Google Authenticator** trên điện thoại: bấm **"+"** → **"Nhập khoá thiết lập"** — tên tài khoản `quan.tm`, khoá là phần chữ ở dòng **`Secret:`**, loại **Dựa trên thời gian** (hoặc "Quét mã QR" nếu có mã QR).
+
+   > ❗ Output của lệnh `enroll` / `reset` chứa **khoá bí mật OTP**. **Không** chép output này vào chat, tin nhắn, báo cáo hay ảnh chụp màn hình — khi báo kết quả chỉ ghi "đã đặt OTP, đăng nhập được". Lỡ để lộ thì chạy lại bằng `reset` (bên dưới) để đổi khoá.
 3. Ở giao diện web, nhập `quan.tm` / `Demo@2026!` → bấm **Đăng nhập**.
 4. Web chuyển sang **trang riêng "Nhập mã xác thực"** ("Mã 6 số trong ứng dụng xác thực trên điện thoại") với 6 ô. Nhập mã 6 số đang hiện trong app → bấm **Xác nhận**. (Nút **Quay lại** để về trang đăng nhập.)
    - Mã đổi mỗi 30 giây — nếu vòng đếm sắp hết thì chờ mã mới rồi nhập.
@@ -701,7 +703,7 @@ Cách tăng RAM cho Docker:
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| `make up` báo `port is already allocated` / `address already in use` (cổng **8000**) | Có chương trình khác (hoặc stack cũ) đang giữ cổng. Tìm trong WSL: `ss -ltnp \| grep ':8000'`; trên Windows (PowerShell): `netstat -ano \| findstr :8000`. Tắt chương trình đó (stack cũ: `make down`), rồi `make up` lại |
+| `make up` báo `port is already allocated` / `address already in use` (cổng **8000**, hoặc **55432** của postgres) | Có chương trình khác (hoặc stack cũ, hoặc một Postgres khác) đang giữ cổng. Tìm trong WSL: `ss -ltnp \| grep -E ':8000\|:55432'`; trên Windows (PowerShell): `netstat -ano \| findstr :8000` (thay `55432` nếu cần). Tắt chương trình đó (stack cũ: `make down`), rồi `make up` lại |
 | `npm run dev` báo cổng **5173** đang dùng, hoặc chạy sang cổng khác | Còn một terminal web cũ đang chạy. Tìm: `ss -ltnp \| grep ':5173'`; tắt terminal đó (`Ctrl+C`), chạy lại `npm run dev`. Luôn mở đúng địa chỉ dòng `Local:` Vite in ra |
 
 ### 12.4. Các lỗi khác
