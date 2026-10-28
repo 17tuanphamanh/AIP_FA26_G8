@@ -101,6 +101,28 @@ Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (nhóm tạo tag c
 
 ### 2.2. Clone
 
+Repo riêng tư nên `git clone` sẽ hỏi Username/Password — **GitHub không nhận mật khẩu tài khoản cho git**. Đăng nhập một lần bằng GitHub CLI (`gh`) trước khi clone:
+
+1. Cài `gh`:
+
+   ```bash
+   sudo apt install -y gh
+   ```
+
+2. Đăng nhập:
+
+   ```bash
+   gh auth login
+   ```
+
+   Chọn lần lượt: **GitHub.com** → **HTTPS** → **Y** (dùng tài khoản GitHub cho git) → **Login with a web browser**.
+
+3. Terminal in ra một **mã một lần** (dạng `XXXX-XXXX`). Trong WSL trình duyệt **không tự mở** — tự mở **https://github.com/login/device** bằng trình duyệt trên Windows, nhập mã đó, bấm cho phép. Terminal báo `Logged in as …` là xong.
+
+   - Tài khoản GitHub phải **đã chấp nhận lời mời collaborator** (mục 2.1), nếu không clone vẫn báo không tìm thấy repo.
+
+Rồi clone:
+
 ```bash
 git clone https://github.com/17tuanphamanh/AIP_FA26_G8
 ```
@@ -646,6 +668,8 @@ Cách tăng RAM cho Docker:
 | `ML_SERVICE_TOKEN phai khai bao trong .env` hoặc `LLM_BACKEND phai khai bao trong .env` | `.env` thiếu biến bắt buộc | Thêm biến vào `.env` (mục 3) |
 | `CẢNH BÁO: không có .env` | Chưa tạo `.env` | `cp .env.example .env` (mục 3) |
 | `docker compose` không có, hoặc báo không nhận cờ `--wait` | Docker Compose quá cũ (v1) | Cài Docker Compose v2 trở lên (mục 1) |
+| `git clone` hỏi Username/Password, nhập mật khẩu báo `Authentication failed` | Repo riêng tư; GitHub không nhận mật khẩu cho git | Đăng nhập bằng `gh auth login` (mục 2.2) rồi clone lại |
+| `git clone` báo `Repository not found` dù đã đăng nhập | Tài khoản chưa chấp nhận lời mời collaborator | Chấp nhận lời mời (email / thông báo GitHub), rồi clone lại (mục 2.1) |
 | `make: command not found` | Chưa cài `make`, hoặc đang chạy trong Git Bash / PowerShell | Windows: chạy trong Ubuntu (WSL2) và `sudo apt install -y make` (mục 1.1) — không cài `make` cho Git Bash |
 | Trong Ubuntu (WSL) báo `docker: command not found` | Docker Desktop chưa bật WSL integration cho Ubuntu | Docker Desktop → Settings → Resources → WSL integration → bật Ubuntu (mục 1.1) |
 | Lỗi lạ kiểu `$'\r': command not found` | Repo clone bằng Git for Windows, xuống dòng kiểu CRLF | Clone lại repo bên trong Ubuntu (mục 1.1 bước 7) |
