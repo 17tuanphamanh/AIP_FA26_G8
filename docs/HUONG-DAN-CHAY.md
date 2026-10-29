@@ -1,7 +1,6 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
-> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Quân chạy lại từ đầu theo hướng dẫn ngày 28/10/2026 trên `dev-tuananh` @ `df865dc` (máy Windows + WSL2, lựa chọn A): đạt, các chỗ lệch đã sửa vào file. Lựa chọn B (đủ 2 model nhóm, theo `DOC-TRUOC-model-freeze.md` bản 3) chạy thử ngày 29/10/2026 trên `dev-tuananh` @ `24e85ab`: đạt. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
-> Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ).
+> Bản dùng để chạy và chấm: tag `v1.0-freeze`. Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ). ❗ là lời dặn quan trọng cho người chạy.
 
 **File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
 
@@ -46,13 +45,13 @@
 
 **RAM:**
 
-- **Không nạp 2 model của nhóm** (lựa chọn A, mục 4.2): đo trên máy nhóm (WSL2 được cấp 7,6 GiB), stack đã dựng xong, để yên với LLM giả — tổng các container ~**1,8 GiB**: `ml-service` ~1,06 GiB, `backend` ~280 MiB, `worker` ~260 MiB, `qdrant` ~115 MiB, `postgres` ~65 MiB, `mock` ~50 MiB (chưa tính giao diện web và trình duyệt).
-- **Nạp đủ 2 model của nhóm** (lựa chọn B): đo ngày 29/10 trên `24e85ab`, để yên với LLM giả — `ml-service` ~**2,14 GiB**, tổng các container ~**2,9 GiB** (`worker` ~250 MiB, `backend` ~235 MiB, `qdrant` ~140 MiB, `postgres` ~57 MiB, `mock` ~44 MiB). Khi chạy đánh giá sẽ dùng nhiều hơn.
+- **Không nạp 2 model của nhóm** (lựa chọn A, mục 4.2): stack đã dựng xong, để yên với LLM giả — tổng các container ~**1,8 GiB**: `ml-service` ~1,06 GiB, `backend` ~280 MiB, `worker` ~260 MiB, `qdrant` ~115 MiB, `postgres` ~65 MiB, `mock` ~50 MiB (chưa tính giao diện web và trình duyệt).
+- **Nạp đủ 2 model của nhóm** (lựa chọn B): stack đã dựng xong, để yên với LLM giả — `ml-service` ~**2,14 GiB**, tổng các container ~**2,9 GiB** (`worker` ~250 MiB, `backend` ~235 MiB, `qdrant` ~140 MiB, `postgres` ~57 MiB, `mock` ~44 MiB). Khi chạy đánh giá sẽ dùng nhiều hơn.
 - **Yêu cầu:** lựa chọn A — máy **8 GB RAM**, cấp cho Docker/WSL **ít nhất 4 GB**. Lựa chọn B — Docker phải có **≥ 8 GB** (theo `DOC-TRUOC-model-freeze.md`), tức máy **16 GB**. Trên Windows, WSL mặc định chỉ được **một nửa** RAM máy (máy 16 GB → ~7,6 GiB, chưa đủ) — đặt `memory=10GB` trong `.wslconfig` (mục 12.1). Kiểm: `docker info --format '{{.MemTotal}}'` (byte). Thiếu RAM: xem mục 12.
 
 ### 1.1. Chuẩn bị trên Windows (WSL2)
 
-Trên Windows, mọi lệnh `make`, `docker compose`, `npm` trong file này chạy **bên trong Ubuntu của WSL2** — đây là cách máy nhóm đang chạy. **Không** cài `make` cho Git Bash (ezwinports, choco…): `make up` dùng lệnh shell kiểu Linux, và `make ingest` gắn thư mục bằng đường dẫn tuyệt đối — chạy từ Git Bash dễ hỏng giữa chừng. Trong WSL không cần chỉnh gì Makefile.
+Trên Windows, mọi lệnh `make`, `docker compose`, `npm` trong file này chạy **bên trong Ubuntu của WSL2**. **Không** cài `make` cho Git Bash (ezwinports, choco…): `make up` dùng lệnh shell kiểu Linux, và `make ingest` gắn thư mục bằng đường dẫn tuyệt đối — chạy từ Git Bash dễ hỏng giữa chừng. Trong WSL không cần chỉnh gì Makefile.
 
 1. Mở **PowerShell với quyền quản trị**, cài Ubuntu cho WSL2 (đã có thì bỏ qua), rồi khởi động lại máy và đặt tên người dùng/mật khẩu Ubuntu khi được hỏi:
 
@@ -97,9 +96,9 @@ Repo là repo riêng tư trên GitHub: `https://github.com/17tuanphamanh/AIP_FA2
 - **Cách chính:** nhóm thêm tài khoản GitHub của thầy/cô làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
 - **Dự phòng:** tải **file zip của tag `v1.0-freeze`** (trang *Tags* của repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
 
-Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (tạo ngày 29/10/2026, commit `bf94df2`). Mọi lượt đo (RQ1, RQ2, RQ3, G14) chạy trên đúng tag này.
+Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (commit `bf94df2`).
 
-> ❗ Hướng dẫn này được cập nhật **sau** khi tạo tag. Bản `docs/HUONG-DAN-CHAY.md` **nằm trong tag** là bản 28/10 — chưa có hướng dẫn chi tiết cho 2 model nhóm (mục 4.2 lựa chọn B). Bản mới nhất: trên GitHub, nhánh `dev-tuananh`, file `docs/HUONG-DAN-CHAY.md`. Code để chạy vẫn là tag `v1.0-freeze`.
+> ❗ Bản `docs/HUONG-DAN-CHAY.md` nằm trong tag là bản cũ, chưa có hướng dẫn chi tiết cho 2 model nhóm (mục 4.2). Đọc hướng dẫn bản mới nhất trên GitHub (nhánh chính của repo, file `docs/HUONG-DAN-CHAY.md`); code để chạy vẫn là tag `v1.0-freeze`.
 
 ### 2.2. Clone
 
@@ -225,17 +224,26 @@ make models
 
 - Không làm gì thêm: để thư mục `ml_models/` trống, các dòng `GUARD_*`, `INTENT_*` trong `.env` giữ nguyên như `.env.example`.
 - Hệ thống vẫn dựng và chạy bình thường. Các lời gọi chấm điểm của model nhóm trả **503** (chưa nạp model); bước sàng lọc injection (B2) và phân loại intent (B3) dùng **LLM**.
-- Đây là cấu hình nhóm đã chạy thử thật (dựng, đăng nhập đủ các vai, đặt OTP).
 
 #### Lựa chọn B — nạp 2 model của nhóm
 
-Đây là cấu hình **bắt buộc khi chạy số liệu đánh giá** (RQ1, G14…). Nguồn chính thức: file `DOC-TRUOC-model-freeze.md` (bản 3, 29/10) đi kèm model trên Drive — mục này viết theo file đó. Đã chạy thử ngày 29/10/2026 trên `dev-tuananh` @ `24e85ab` (máy Windows + WSL2).
+Đây là cấu hình **bắt buộc khi chạy số liệu đánh giá**. Nguồn chính thức: file `DOC-TRUOC-model-freeze.md` (bản 3) đi kèm model trên Drive — mục này viết theo file đó.
 
 **Yêu cầu RAM:** Docker phải có **≥ 8 GB** (mục 1 — máy 16 GB, WSL mặc định chỉ được nửa RAM máy nên phải đặt `.wslconfig`).
 
-1. **Tải** từ Drive, thư mục `1-model-freeze`: file `aitha-model-freeze.zip` (~2,2 GB) và `DOC-TRUOC-model-freeze.md`.
+1. **Tải** từ Drive, thư mục **`1-model-freeze`**: https://drive.google.com/drive/folders/1DOihaqU1uQqK_9BBWU1cmo70JikQLnrK — gồm file `aitha-model-freeze.zip` (~2,2 GB) và `DOC-TRUOC-model-freeze.md`.
 
-   ⚠️ **CẦN BỔ SUNG:** link Drive thư mục `1-model-freeze` (`<link Drive>`).
+   Thư mục chỉ người được mời mở được; xin quyền anh Tuấn Anh.
+
+   SHA-256 mong đợi (theo `DOC-TRUOC-model-freeze.md` bản 3, không phải bí mật):
+
+   | File | SHA-256 |
+   |---|---|
+   | `aitha-model-freeze.zip` | `999b529187b5974c95c8d7ef7abf49075d0dcedf0b88db463bc1f913b2e496ba` |
+   | injection `model.safetensors` | `2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02` |
+   | injection `MANIFEST.sha256` | `83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba` |
+   | intent `model.safetensors` | `51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc` |
+   | intent `MANIFEST.sha256` | `07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9` |
 
 2. **Kiểm SHA-256 của file zip TRƯỚC khi giải nén.** Trong Ubuntu, khai báo đường dẫn file zip — **thay** phần `<tên-Windows>/Downloads` bằng đúng chỗ bạn lưu (ổ C: là `/mnt/c`, ổ D: là `/mnt/d`):
 
@@ -277,14 +285,7 @@ make models
    ```
 
    - Mỗi thư mục phải in `tat ca file OK, khong thua khong thieu`. File sai/thiếu sẽ in `FAILED`; có file **thừa** hoặc thiếu sẽ in `LOI: …` — **giải nén lại**, vì sai, thiếu hay thừa file đều làm ml-service từ chối khởi động.
-   - 4 mã SHA in ra phải trùng bảng dưới (cũng là giá trị trong `.env` ở bước 6):
-
-   | File | SHA-256 |
-   |---|---|
-   | injection `model.safetensors` | `2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02` |
-   | injection `MANIFEST.sha256` | `83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba` |
-   | intent `model.safetensors` | `51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc` |
-   | intent `MANIFEST.sha256` | `07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9` |
+   - 4 mã SHA in ra (`MANIFEST.sha256` và `model.safetensors` của mỗi model) phải trùng **bảng SHA ở bước 1** — cũng là giá trị trong `.env` ở bước 6.
 
 6. **Đặt 8 dòng vào `.env`** (các giá trị **không phải bí mật**; đường dẫn là đường **trong container**). Đoạn lệnh dưới sao lưu `.env` ra `~/env-backup-model` (ngoài repo), bỏ các dòng cũ đang có hiệu lực của 8 biến này (nếu có), rồi thêm khối 8 dòng vào cuối `.env` — không in nội dung `.env`:
 
@@ -325,11 +326,11 @@ make models
    B2_TAU_REVIEW=0.9999
    ```
 
-   - `B2_TAU_REVIEW=0.9999` là ngưỡng đã chọn theo quy tắc D-52 — **không tự đổi**.
+   - `B2_TAU_REVIEW=0.9999` là ngưỡng nhóm đã chọn — **không tự đổi**.
    - Đặt `GUARD_MODEL_DIR` / `INTENT_MODEL_DIR` thì **bắt buộc** đủ 2 dòng SHA đi kèm; thiếu hoặc lệch → **ml-service từ chối khởi động và cả stack đứng** (backend chờ ml-service).
    - ml-service **không** nạp `seed_42.pt`; nó nạp bản safetensors ở `v3.1-seed42-st`.
 
-7. **Dựng lại** (`make up`, mục 5.1) — đổi `.env` thì phải `make up` lại để tạo lại backend, worker và ml-service. Lần chạy thử: `make up` 42 giây; mỗi model nhóm nạp ~2 giây (kể cả kiểm SHA-256).
+7. **Dựng lại** (`make up`, mục 5.1) — đổi `.env` thì phải `make up` lại để tạo lại backend, worker và ml-service. Tham khảo: `make up` khoảng 1 phút khi đã có image; mỗi model nhóm nạp ~2 giây (kể cả kiểm SHA-256).
 
 8. **Kiểm sau khi bật** (theo `DOC-TRUOC-model-freeze.md`):
 
@@ -389,7 +390,7 @@ make up
 
 Mỗi bước chờ có giới hạn thời gian; quá hạn thì in log của service lỗi và dừng (xem mục 12).
 
-⏱ **Lần đầu mất khá lâu** (build image + ml-service làm nóng, cho phép tới 4 phút). Đứng lâu ở bước ml-service là bình thường, **không phải treo**. Tham khảo: trên máy nhóm (WSL2), khi đã có model, cả `make up` mất khoảng **4 phút** (phần lớn là build image).
+⏱ **Lần đầu mất khá lâu** (build image + ml-service làm nóng, cho phép tới 4 phút). Đứng lâu ở bước ml-service là bình thường, **không phải treo**. Tham khảo: khi đã có model, `make up` lần đầu mất khoảng **4 phút** (phần lớn là build image).
 
 **Chạy thành công thì cuối output có các dòng như sau:**
 
@@ -418,7 +419,7 @@ make ingest
 ```
 
 - Cần `make up` chạy xong trước.
-- ⏱ Mất khoảng **10–15 phút** (đo trên máy nhóm: ~12 phút, trong đó tạo embedding chỉ ~40 giây; phần còn lại là build image, cổng kiểm KB và tạo snapshot). Đứng im lâu là bình thường.
+- ⏱ Mất khoảng **10–15 phút** (tạo embedding chỉ ~40 giây; phần còn lại là build image, cổng kiểm KB và tạo snapshot). Đứng im lâu là bình thường.
 - Kết quả in `kb_version` và số đoạn bị cắt (truncated) — **số này phải bằng 0**.
 - Chạy thử không ghi: `make ingest ARGS=--dry-run`.
 
@@ -463,7 +464,7 @@ Phải in ra `up`.
 | `worker` | ❌ | |
 | `mock` | ❌ (cổng 8100 trong mạng compose) | Gọi tay: xem `mock_services/README.md` mục "Chạy" |
 | `ml-service` | ❌ (cổng 8200 trong mạng compose) | |
-| `postgres` | ✅ `127.0.0.1:55432` (chỉ localhost) | Dữ liệu ở volume `pgdata`. Cổng `55432` thấy ở bản `df865dc` (`docker compose ps` in `127.0.0.1:55432->5432/tcp`) |
+| `postgres` | ✅ `127.0.0.1:55432` (chỉ localhost) | Dữ liệu ở volume `pgdata` |
 | `qdrant` | ❌ | KB ở volume `qdrant` |
 
 ### 5.6. Làm nóng
@@ -587,8 +588,6 @@ Các điểm dưới đây có thể trông lạ khi chạy lại, nhưng đều
 
 Làm **một lần**, sau khi `make up` chạy xong (và làm lại sau mỗi lần xoá sạch DB — mục 10).
 
-Lệnh dưới đã chạy thử thành công trên `dev-tuananh` @ `1a0145f` ngày 26/10/2026, trên DB vừa xoá sạch.
-
 1. Chạy lệnh dưới, **thay `ten-cua-ban` bằng tên người chạy** (viết liền, không dấu):
 
    ```bash
@@ -615,7 +614,6 @@ Lệnh dưới đã chạy thử thành công trên `dev-tuananh` @ `1a0145f` ng
 
 - Cách chắc chắn gỡ được là **xoá sạch rồi dựng lại** (mục 10): `docker compose down -v` → `make up` → `make ingest` → đặt lại OTP theo các bước 1–5 ở trên. Mất khoảng 15 phút. Cách này đưa DB của backend và dữ liệu mock về ban đầu, nên trạng thái khoá cũng mất theo.
 - ❗ Xoá sạch sẽ mất **toàn bộ** ticket, lịch sử và cache trong DB — kể cả cache LLM của lượt đánh giá. Nếu đang chạy đánh giá, **xuất cache trước** (mục 11.3, lệnh 1). Chỉ dùng cách này khi không còn cách khác.
-- Nếu nhóm có lệnh mở khoá nhanh hơn sẽ bổ sung tại đây.
 
 ---
 
@@ -765,7 +763,7 @@ Phải in `exit=0`.
 docker compose --env-file .env exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT mode, count(*) FROM llm_cache GROUP BY mode ORDER BY mode"'
 ```
 
-Số dòng `eval` ở máy đích sau khi nạp phải bằng số dòng `eval` ở máy nguồn (máy đích chưa có dòng `eval` nào trước khi nạp). Tham khảo: lần thử của nhóm xuất **28 dòng** eval, nạp đủ 28 dòng.
+Số dòng `eval` ở máy đích sau khi nạp phải bằng số dòng `eval` ở máy nguồn (máy đích chưa có dòng `eval` nào trước khi nạp).
 
 ---
 
@@ -790,7 +788,7 @@ Cách tăng RAM cho Docker:
 - **macOS / Docker Desktop:** Settings → Resources → Memory.
 - Ví dụ trên dành cho máy 16 GB (WSL được 10 GB, Windows còn ~6 GB). Máy 8 GB: đặt khoảng `memory=6GB` và chỉ chạy lựa chọn A.
 - Kiểm sau khi khởi động lại: `free -h` (dòng `Mem` → `total`) và `docker info --format '{{.MemTotal}}'`.
-- Không tăng được: dùng lựa chọn A (mục 4.2 — để các dòng `GUARD_*`, `INTENT_*`, `B2_*` như `.env.example`), rồi `make up`. Lưu ý: số liệu đánh giá (RQ1, G14…) bắt buộc chạy với đủ 2 model.
+- Không tăng được: dùng lựa chọn A (mục 4.2 — để các dòng `GUARD_*`, `INTENT_*`, `B2_*` như `.env.example`), rồi `make up`. Lưu ý: chạy số liệu đánh giá bắt buộc dùng đủ 2 model.
 
 ### 12.2. ml-service chưa nạp model / không lên
 
@@ -845,8 +843,6 @@ Cách tăng RAM cho Docker:
 | Góc màn hình có nhãn "Dữ liệu minh hoạ" | Đang chạy `npm run dev:mock` | `Ctrl+C`, chạy lại `npm run dev` |
 | `npm` báo phiên bản Node không hợp | Node quá cũ | Cài Node 24.x (mục 1) |
 | `npm ci` báo lock không khớp | `package-lock.json` lệch `package.json` | Dùng `npm install` (mục 6) |
-
-> Ghi chú: sửa file đang được git theo dõi mà chưa commit rồi `make up` thì image backend không gắn commit (`lineage.commit_sha` rỗng) — không phải lỗi.
 
 ---
 
