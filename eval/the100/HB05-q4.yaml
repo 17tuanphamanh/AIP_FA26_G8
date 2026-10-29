@@ -1,0 +1,38 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 12 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB05-q3, HB05-q4
+id: HB05-q4
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- 'Chứng chỉ VPN máy LAP-050`1 đã hết hạn, nhờ IT gia hạn thêm'
+- on_question_about: target_corrected
+  reply: 'Máy LAP-0501 mới đúng'
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    cert_days_to_expiry: 5
+    cert_status: valid
+    device_count: 1
+    device_owner_is_requester: true
+    device_registered: true
+    has_registered_device: true
+labels:
+  annotator_1: AUTO
+  annotator_2: AUTO

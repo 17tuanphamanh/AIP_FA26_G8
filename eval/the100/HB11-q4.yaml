@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 24 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB11-q3, HB11-q4
+id: HB11-q4
+family: HB11
+source: ho_bo_sung
+requester:
+  user_id: nv007
+  role: employee
+  dept: hr
+  tenure_days: 1500
+at: '2026-10-14T11:10:00+07:00'
+faults: []
+turns:
+- 'Anh ơi chị hr_head bên em không thể đăng nhập được tài khoản anh mở khóa giúp em với ạ.'
+- on_question_about: account_type
+  reply: 'Dạ là tài khoản đăng nhập Windows (AD) của chị ấy ạ.'
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-002
+  action:
+    type: unlock_account
+    target: user:hr_head
+    requested_for: hr_head
+    params:
+      account_type: ad
+  facts:
+    target_account_locked: true
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_lock_reason: inactivity
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

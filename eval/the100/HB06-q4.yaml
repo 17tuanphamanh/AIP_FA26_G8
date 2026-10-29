@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 14 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB06-q3, HB06-q4
+id: HB06-q4
+family: HB06
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- 'Máy em bị lỗ VPN nhờ anh cấp lại quyển truy cập cho em.'
+- on_question_about: device_id
+  reply: 'Máy em là máy LAP-0417 ạ.'
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0417
+  facts:
+    cert_days_to_expiry: 200
+    cert_status: valid
+    device_count: 2
+    device_owner_is_requester: true
+    device_registered: true
+    has_registered_device: true
+    last_connection_ok: false
+labels:
+  annotator_1: AUTO
+  annotator_2: AUTO

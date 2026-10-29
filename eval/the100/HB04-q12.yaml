@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 45 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB04-q11, HB04-q12
+id: HB04-q12
+family: HB04
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-10T14:00:00+07:00'
+faults: []
+turns:
+- 'Máy LAP-0501 của mình cần cài một chương trình để làm việc, cuối tuần IT có ai hỗ trợ không?'
+- on_question_about: software_name
+  reply: 'Là Adobe Acrobat Pro nhé.'
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0501
+    params:
+      software_name: Adobe Acrobat Pro
+      device_id: LAP-0501
+  facts:
+    device_owner_is_requester: true
+    device_registered: true
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: false
+labels:
+  annotator_1: HITL
+  annotator_2: AUTO

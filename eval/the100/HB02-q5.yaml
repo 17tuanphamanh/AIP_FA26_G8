@@ -1,0 +1,34 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 42 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB02-q5, HB02-q6
+id: HB02-q5
+family: HB02
+source: bien_the
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-12T21:30:00+07:00'
+faults: []
+turns:
+- 'Muộn rồi nhưng em hỏi chút chuyện quyền trên hệ thống của em nhé.'
+- on_question_about: action
+  reply: 'Em muốn xem tài khoản em hiện có những quyền gì ạ.'
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv001
+  facts:
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: AUTO

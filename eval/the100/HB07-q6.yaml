@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 47 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB07-q5, HB07-q6
+id: HB07-q6
+family: HB07
+source: ho_bo_sung
+requester:
+  user_id: l1_02
+  role: employee
+  dept: it
+  tenure_days: 640
+at: '2026-10-09T19:00:00+07:00'
+faults: []
+turns:
+- 'Xin cấp quyền thư mục shared/templates cho em, dùng 45 ngày ạ'
+- on_question_about: permission_level
+  reply: 'Quyền đọc ghi ạ.'
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:shared/templates
+    requested_for: l1_02
+    params:
+      permission_level: write
+      duration_days: 45
+  facts:
+    has_permission_record: false
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: AUTO

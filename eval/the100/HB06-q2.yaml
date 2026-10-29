@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 13 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB06-q1, HB06-q2
+id: HB06-q2
+family: HB06
+source: bien_the
+requester:
+  user_id: nv005
+  role: employee
+  dept: sales
+  tenure_days: 450
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- 'Xin cấp quyền truy cập VPN máy LAP-0620.'
+- on_question_about: target_corrected
+  reply: 'Đính chính là máy LAP-0610.'
+- on_confirm: false
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: E8
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0610
+  facts:
+    cert_days_to_expiry: 65
+    cert_status: revoked
+    device_count: 1
+    device_owner_is_requester: true
+    device_registered: true
+    has_registered_device: true
+    last_connection_ok: false
+labels:
+  annotator_1: AUTO
+  annotator_2: ESCALATE_L2

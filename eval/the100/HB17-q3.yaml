@@ -1,0 +1,42 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 36 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB17-q3, HB17-q4
+id: HB17-q3
+family: HB17
+source: ho_bo_sung
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-19T10:25:00+07:00'
+faults: []
+turns:
+- 'Cho em xin cấp quyền đọc và ghi trong 180 ngày ạ, em cần cập nhật tài liệu định kỳ.'
+- on_question_about: resource_path
+  reply: 'Thư mục finance/public-reports ạ.'
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-003
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv003
+    params:
+      permission_level: write
+      duration_days: 180
+  facts:
+    has_permission_record: false
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: probation
+labels:
+  annotator_1: HITL
+  annotator_2: HITL
