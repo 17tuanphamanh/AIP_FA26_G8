@@ -8,6 +8,8 @@ Tiến độ theo phase ở [PROGRESS.md](PROGRESS.md).
 > Hiện mới có **khung thư mục**, chưa có logic nghiệp vụ. Agent thử nghiệm cũ đã gỡ;
 > xem lại trong lịch sử git (nhánh `doi-ten-tieng-anh`).
 
+**Chạy lại hệ thống từ đầu (hội đồng, người ngoài nhóm):** xem [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md).
+
 ## Dựng môi trường
 
 ```bash
