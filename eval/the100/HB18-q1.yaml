@@ -1,0 +1,42 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 43 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB18-q1, HB18-q2
+id: HB18-q1
+family: HB18
+source: goc
+requester:
+  user_id: fin_head
+  role: employee
+  dept: finance
+  tenure_days: 3300
+at: '2026-10-20T09:05:00+07:00'
+faults: []
+turns:
+- 'Em cấp quyền vào thư mục finance/Q3 cho nv004 bên kinh doanh trong 30 ngày giúp chị nhé, bạn ấy cần đối chiếu số liệu doanh thu.'
+- on_question_about: permission_level
+  reply: 'Chỉ đọc thôi em.'
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: E5
+  approver_decision: null
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:finance/Q3
+    requested_for: nv004
+    params:
+      permission_level: read
+      duration_days: 30
+  facts:
+    has_permission_record: false
+    resource_sensitivity: high
+    same_department: false
+    target_disable_reason: security
+    target_user_status: disabled
+labels:
+  annotator_1: ESCALATE_L2
+  annotator_2: ESCALATE_L2

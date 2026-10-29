@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 10 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB04-q3, HB04-q4
+id: HB04-q3
+family: HB04
+source: bien_the
+requester:
+  user_id: l1_01
+  role: employee
+  dept: it
+  tenure_days: 1200
+at: '2026-10-07T10:20:00+07:00'
+faults: []
+turns:
+- 'Cài giúp mình Adobe Acrobat Pro nhé, cần ký mấy file PDF.'
+- on_question_about: device_id
+  reply: 'Máy PC-0123 nhé.'
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:PC-0123
+    params:
+      software_name: Adobe Acrobat Pro
+      device_id: PC-0123
+  facts:
+    device_owner_is_requester: true
+    device_registered: true
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: false
+labels:
+  annotator_1: AUTO
+  annotator_2: AUTO

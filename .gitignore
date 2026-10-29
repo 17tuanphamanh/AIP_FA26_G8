@@ -36,6 +36,7 @@ data/*
 *.safetensors
 *.csv
 !eval/reports/**/*.csv
+!eval/folds.csv
 *.parquet
 *.zip
 *.onnx

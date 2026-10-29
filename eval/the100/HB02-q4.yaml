@@ -1,0 +1,34 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 6 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB02-q3, HB02-q4
+id: HB02-q4
+family: HB02
+source: bien_the
+requester:
+  user_id: nv007
+  role: employee
+  dept: hr
+  tenure_days: 1500
+at: '2026-10-07T11:05:00+07:00'
+faults: []
+turns:
+- 'Em đang chưa rõ về quyền truy cập của mình trên hệ thống IT, nhờ anh kiểm tra giúp em.'
+- on_question_about: action
+  reply: 'em muốn xem danh sach quyền truy cập hiện tại của tài khoản nv007'
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv007
+  facts:
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: AUTO

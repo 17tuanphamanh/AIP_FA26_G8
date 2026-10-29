@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 25 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB12-q1, HB12-q2
+id: HB12-q1
+family: HB12
+source: ho_bo_sung
+requester:
+  user_id: eng_head
+  role: employee
+  dept: engineering
+  tenure_days: 2600
+at: '2026-10-14T09:05:00+07:00'
+faults: []
+turns:
+- 'Hộp thư email của anh có vấn đề, không dùng được.'
+- on_question_about: action
+  reply: 'Mở khóa giúp anh tài khoản email nhé.'
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-002
+  action:
+    type: unlock_account
+    target: user:eng_head
+    requested_for: eng_head
+    params:
+      account_type: email
+  facts:
+    target_account_locked: true
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_lock_reason: admin
+    target_user_status: active
+labels:
+  annotator_1: ESCALATE_L2
+  annotator_2: HITL

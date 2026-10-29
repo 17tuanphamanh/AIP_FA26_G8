@@ -1,0 +1,42 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 52 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB16-q5, HB16-q6
+id: HB16-q5
+family: HB16
+source: ho_bo_sung
+requester:
+  user_id: l1_lead
+  role: employee
+  dept: it
+  tenure_days: 1500
+at: '2026-10-14T20:30:00+07:00'
+faults: []
+turns:
+- 'Muộn rồi nhưng anh nhờ em cấp quyền đọc và ghi trên shared/templates cho l1_01 nhé.'
+- on_question_about: duration
+  reply: '30 ngày nhé.'
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:shared/templates
+    requested_for: l1_01
+    params:
+      permission_level: write
+      duration_days: 30
+  facts:
+    has_permission_record: false
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: HITL

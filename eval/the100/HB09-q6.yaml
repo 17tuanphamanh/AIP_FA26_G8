@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 48 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB09-q5, HB09-q6
+id: HB09-q6
+family: HB09
+source: ho_bo_sung
+requester:
+  user_id: nv007
+  role: employee
+  dept: hr
+  tenure_days: 1500
+at: '2026-10-13T15:30:00+07:00'
+faults: []
+turns:
+- 'Nhờ đặt lại mật khẩu cho nhân viên nv003, bạn ấy đang thử việc nên chưa quen hệ thống.'
+- on_question_about: account_type
+  reply: 'Là hộp thư email của bạn ấy.'
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv003
+    requested_for: nv003
+    params:
+      account_type: email
+  facts:
+    target_account_locked: false
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: probation
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

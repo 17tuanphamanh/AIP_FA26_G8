@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 17 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB08-q1, HB08-q2
+id: HB08-q2
+family: HB08
+source: ho_bo_sung
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-12T09:40:00+07:00'
+faults: []
+turns:
+- 'Anh ơi, em đang thử việc ở phòng kế toán, cho em quyền chỉ đọc trên finance/public-reports để em xem các báo cáo trước đây được không ạ?'
+- on_question_about: duration
+  reply: 'Dạ 14 ngày ạ.'
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv003
+    params:
+      permission_level: read
+      duration_days: 14
+  facts:
+    has_permission_record: false
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: probation
+labels:
+  annotator_1: HITL
+  annotator_2: AUTO
