@@ -218,9 +218,9 @@ async def test_c1_llm_only_runs_in_eval_mode(monkeypatch: pytest.MonkeyPatch, ca
 
 
 def test_c2_repo_policy_has_m5_block() -> None:
-    """c2 (P2): `config/policy.json` của repo có `m5 = {p_method: self_report, calibrator_version: null}`."""
-    assert _raw_policy()["m5"] == {"p_method": "self_report", "calibrator_version": None}
-    assert get_policy().m5 == M5Config(p_method="self_report", calibrator_version=None)
+    """c2 (P2): `config/policy.json` của repo có `m5 = {p_method: sampling_k5, calibrator_version: null}`."""
+    assert _raw_policy()["m5"] == {"p_method": "sampling_k5", "calibrator_version": None}
+    assert get_policy().m5 == M5Config(p_method="sampling_k5", calibrator_version=None)
 
 
 def test_c2_m5_p_method_literal_equals_pmethod() -> None:
