@@ -20,7 +20,7 @@ G7 (`schedule.py`): ca có giờ thật khác loại giờ của `at` hoặc g�
 `--resume <thư mục>` chạy lại đúng các ca đó, ghi tiếp cùng file + cùng `run_id`, mỗi lần chạy một phần tử `manifest.passes`.
 
 Không gọi `/api/policy` hay endpoint chính sách nào (Rev 27). `p_method` thuộc hằng chính sách → không đọc: lấy `--prob-method`
-(mặc định `self_report`) và đếm bản ghi có `p_method` khác (`p_method_mismatch`). `policy_sha256` = `policy_sha256()` trong container
+(mặc định `sampling_k5` = giá trị của bản đóng băng, P8 §5.1) và đếm bản ghi có `p_method` khác (`p_method_mismatch`). `policy_sha256` = `policy_sha256()` trong container
 (chỉ băm, G2-Q11).
 """
 
@@ -194,7 +194,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     p.add_argument("--split", choices=get_args(Split))  # TODO(G2-Q3): lượt stack ghi "test"
     p.add_argument("--timeout-s", type=_positive_int)  # BẮT BUỘC khi chạy (không mặc định) — số Tuấn Anh gửi
     p.add_argument("--run-id")  # TODO(G2-Q4): chỉ để đối chiếu
-    p.add_argument("--prob-method", choices=get_args(ProbMethod), default="self_report")
+    p.add_argument("--prob-method", choices=get_args(ProbMethod), default="sampling_k5")
     p.add_argument("--per-case", action="store_true")
     p.add_argument("--warmup-rounds", type=_positive_int, default=3)
     p.add_argument("--url", default=DEFAULT_URL)
