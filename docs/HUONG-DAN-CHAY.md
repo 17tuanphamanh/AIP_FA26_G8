@@ -1,6 +1,6 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
-> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Quân chạy lại từ đầu theo hướng dẫn ngày 28/10/2026 trên `dev-tuananh` @ `df865dc` (máy Windows + WSL2, lựa chọn A): đạt, các chỗ lệch đã sửa vào file. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
+> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Quân chạy lại từ đầu theo hướng dẫn ngày 28/10/2026 trên `dev-tuananh` @ `df865dc` (máy Windows + WSL2, lựa chọn A): đạt, các chỗ lệch đã sửa vào file. Lựa chọn B (đủ 2 model nhóm, theo `DOC-TRUOC-model-freeze.md` bản 3) chạy thử ngày 29/10/2026 trên `dev-tuananh` @ `24e85ab`: đạt. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
 > Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ).
 
 **File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
@@ -47,8 +47,8 @@
 **RAM:**
 
 - **Không nạp 2 model của nhóm** (lựa chọn A, mục 4.2): đo trên máy nhóm (WSL2 được cấp 7,6 GiB), stack đã dựng xong, để yên với LLM giả — tổng các container ~**1,8 GiB**: `ml-service` ~1,06 GiB, `backend` ~280 MiB, `worker` ~260 MiB, `qdrant` ~115 MiB, `postgres` ~65 MiB, `mock` ~50 MiB (chưa tính giao diện web và trình duyệt).
-- **Nạp model intent của nhóm** (lựa chọn B): `ml-service` dùng thêm **~1,2 GB RAM**. Tổng các container phải ≤ 7 GB và không bị hệ thống "giết" vì thiếu RAM (OOMKilled). **Máy 8 GB thì không nạp model intent** (để trống các biến `INTENT_*`).
-- Khuyến nghị: máy **8 GB RAM** cho lựa chọn A, cấp cho Docker/WSL **ít nhất 4 GB**; máy **16 GB** nếu nạp đủ 2 model. Thiếu RAM: xem mục 12.
+- **Nạp đủ 2 model của nhóm** (lựa chọn B): đo ngày 29/10 trên `24e85ab`, để yên với LLM giả — `ml-service` ~**2,14 GiB**, tổng các container ~**2,9 GiB** (`worker` ~250 MiB, `backend` ~235 MiB, `qdrant` ~140 MiB, `postgres` ~57 MiB, `mock` ~44 MiB). Khi chạy đánh giá sẽ dùng nhiều hơn.
+- **Yêu cầu:** lựa chọn A — máy **8 GB RAM**, cấp cho Docker/WSL **ít nhất 4 GB**. Lựa chọn B — Docker phải có **≥ 8 GB** (theo `DOC-TRUOC-model-freeze.md`), tức máy **16 GB**. Trên Windows, WSL mặc định chỉ được **một nửa** RAM máy (máy 16 GB → ~7,6 GiB, chưa đủ) — đặt `memory=10GB` trong `.wslconfig` (mục 12.1). Kiểm: `docker info --format '{{.MemTotal}}'` (byte). Thiếu RAM: xem mục 12.
 
 ### 1.1. Chuẩn bị trên Windows (WSL2)
 
@@ -97,7 +97,9 @@ Repo là repo riêng tư trên GitHub: `https://github.com/17tuanphamanh/AIP_FA2
 - **Cách chính:** nhóm thêm tài khoản GitHub của thầy/cô làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
 - **Dự phòng:** tải **file zip của tag `v1.0-freeze`** (trang *Tags* của repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
 
-Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (nhóm tạo tag chiều 27/10, chậm nhất sáng 28/10).
+Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (tạo ngày 29/10/2026, commit `bf94df2`). Mọi lượt đo (RQ1, RQ2, RQ3, G14) chạy trên đúng tag này.
+
+> ❗ Hướng dẫn này được cập nhật **sau** khi tạo tag. Bản `docs/HUONG-DAN-CHAY.md` **nằm trong tag** là bản 28/10 — chưa có hướng dẫn chi tiết cho 2 model nhóm (mục 4.2 lựa chọn B). Bản mới nhất: trên GitHub, nhánh `dev-tuananh`, file `docs/HUONG-DAN-CHAY.md`. Code để chạy vẫn là tag `v1.0-freeze`.
 
 ### 2.2. Clone
 
@@ -138,7 +140,8 @@ git checkout v1.0-freeze
 ```
 
 - Git sẽ báo `You are in 'detached HEAD' state` — **bình thường** khi đứng trên tag. Chỉ chạy, **không commit gì** trên tag.
-- Báo `pathspec 'v1.0-freeze' did not match`: tag chưa được tạo hoặc bản clone chưa có tag — chạy `git fetch --tags` rồi thử lại. Trước khi có tag (trước 28/10), người chạy thử trong nhóm dùng `git checkout dev-tuananh`.
+- Báo `pathspec 'v1.0-freeze' did not match`: bản clone chưa có tag — chạy `git fetch --tags` rồi thử lại.
+- Kiểm đúng bản: `git log --oneline -1` phải in `bf94df2 (HEAD, tag: v1.0-freeze, …)`.
 
 ---
 
@@ -190,7 +193,7 @@ Giải thích các biến quan trọng (sửa tay bằng `nano .env` nếu cần
 - `FAKE_APPROVER_ID` — giữ nguyên như `.env.example`.
 - `PG_*` (mật khẩu Postgres) — `.env.example` có sẵn giá trị mẫu, giữ nguyên là chạy được trên máy dev.
 - `TICKET_RATE_10MIN`, `TICKET_RATE_HOUR`, `MESSAGE_RATE_10MIN` (giới hạn chống spam) — **để trống** = dùng mặc định. Khi cần nới (chạy đánh giá), dùng `make up RATE=loose` (mục 11.2), không sửa ở đây.
-- Các dòng model của nhóm (`GUARD_*`, `INTENT_*`) và `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` — **giữ nguyên như `.env.example`** (đang là dòng chú thích `#`), trừ khi làm theo lựa chọn B ở mục 4.2.
+- Các dòng model của nhóm (`GUARD_*`, `INTENT_*`) và `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` — **giữ nguyên như `.env.example`** (đang là dòng chú thích `#`) nếu chạy lựa chọn A; lựa chọn B đặt đủ **8 dòng** theo mục 4.2 bước 6.
 
 > ❗ **Không commit `.env`**, không đưa khoá thật vào repo, PR hay tin nhắn.
 > Không có `.env` thì Makefile dùng tạm `.env.example` và in cảnh báo — không nên chạy như vậy.
@@ -203,8 +206,8 @@ Hệ thống dùng **hai loại model**, nằm ở **hai thư mục khác nhau**
 
 | Thư mục | Chứa gì | Lấy bằng cách nào | Bắt buộc? |
 |---|---|---|---|
-| `models/` | Model chung của ml-service (embed, rerank) | `make models` (tự tải từ huggingface.co) | **Có** — thiếu thì `make up` dừng |
-| `ml_models/` | **2 model của nhóm**: phân loại injection (`injection-clf`) và phân loại intent (`intent-clf`) | Tải riêng (mục 4.2) — **không có trong repo** (nằm trong `.gitignore`) | Không — chạy được khi chưa có (lựa chọn A) |
+| `models/` | Model chung của ml-service: 2 model BAAI (`bge-m3` để embed, `bge-reranker-v2-m3` để rerank) | `make models` (tự tải từ huggingface.co) | **Có** — thiếu thì `make up` dừng |
+| `ml_models/` | **2 model của nhóm**: phân loại injection (`injection-clf`) và phân loại intent (`intent-clf`) | Tải `aitha-model-freeze.zip` trên Drive, giải nén vào `ml_models/` (mục 4.2) — **không có trong repo** (nằm trong `.gitignore`) | **Bắt buộc khi chạy số liệu đánh giá**; dựng/demo thì chạy được khi chưa có (lựa chọn A) |
 
 ### 4.1. Model chung — `make models` (chỉ lần đầu)
 
@@ -226,38 +229,135 @@ make models
 
 #### Lựa chọn B — nạp 2 model của nhóm
 
-1. Tải 2 thư mục model:
+Đây là cấu hình **bắt buộc khi chạy số liệu đánh giá** (RQ1, G14…). Nguồn chính thức: file `DOC-TRUOC-model-freeze.md` (bản 3, 29/10) đi kèm model trên Drive — mục này viết theo file đó. Đã chạy thử ngày 29/10/2026 trên `dev-tuananh` @ `24e85ab` (máy Windows + WSL2).
 
-   ⚠️ **CẦN BỔ SUNG:** link Drive 2 model của nhóm (`<link Drive>`) và cách giải nén (nếu là file nén).
+**Yêu cầu RAM:** Docker phải có **≥ 8 GB** (mục 1 — máy 16 GB, WSL mặc định chỉ được nửa RAM máy nên phải đặt `.wslconfig`).
 
-2. Đặt vào thư mục `ml_models/` ở gốc repo, giữ nguyên cấu trúc. Theo cấu hình mẫu, model intent dùng bản safetensors `ml_models/intent-clf/v3.1-seed42-st` (thư mục gốc có `seed_42.pt` **không** nạp được — ml-service từ chối khởi động).
+1. **Tải** từ Drive, thư mục `1-model-freeze`: file `aitha-model-freeze.zip` (~2,2 GB) và `DOC-TRUOC-model-freeze.md`.
 
-3. Kiểm mỗi thư mục model **đủ và đúng từng file** bằng file `MANIFEST.sha256` có sẵn trong thư mục:
+   ⚠️ **CẦN BỔ SUNG:** link Drive thư mục `1-model-freeze` (`<link Drive>`).
+
+2. **Kiểm SHA-256 của file zip TRƯỚC khi giải nén.** Trong Ubuntu, khai báo đường dẫn file zip — **thay** phần `<tên-Windows>/Downloads` bằng đúng chỗ bạn lưu (ổ C: là `/mnt/c`, ổ D: là `/mnt/d`):
+
+   ```bash
+   Z="/mnt/c/Users/<tên-Windows>/Downloads/aitha-model-freeze.zip"
+   ```
+
+   ```bash
+   sha256sum "$Z"
+   ```
+
+   Phải ra đúng: `999b529187b5974c95c8d7ef7abf49075d0dcedf0b88db463bc1f913b2e496ba`. Lệch → **tải lại, không dùng**. (Windows: `certutil -hashfile aitha-model-freeze.zip SHA256`; macOS: `shasum -a 256 aitha-model-freeze.zip`.)
+
+3. **Giải nén vào `ml_models/`** — KHÔNG phải `models/` (`models/` chỉ chứa 2 model BAAI tải bằng `make models`). Chạy ở thư mục gốc repo, cùng terminal với bước 2:
+
+   ```bash
+   unzip -n "$Z" -d ml_models
+   ```
+
+   Kết quả phải có 2 thư mục:
+
+   | Model | Thư mục trên máy | Đường trong container |
+   |---|---|---|
+   | injection-clf | `ml_models/injection-clf/v3-seed123/` | `/ml_models/injection-clf/v3-seed123` |
+   | intent-clf | `ml_models/intent-clf/v3.1-seed42-st/` | `/ml_models/intent-clf/v3.1-seed42-st` |
+
+   (Thiếu lệnh `unzip`: `sudo apt install -y unzip`.)
+
+4. **Cấp quyền đọc cho model — bắt buộc.** File trong zip chỉ cho chủ file đọc (`-rw-------`), trong khi ml-service chạy trong container bằng một người dùng khác → không đọc được, báo `PermissionError: [Errno 13] Permission denied` và **cả stack không lên**. Lệnh dưới chỉ thêm quyền đọc, không đổi nội dung (SHA giữ nguyên):
+
+   ```bash
+   chmod -R a+rX ml_models/injection-clf ml_models/intent-clf
+   ```
+
+5. **Kiểm từng file model** bằng `MANIFEST.sha256` có sẵn trong mỗi thư mục:
 
    ```bash
    for m in $(find ml_models -name MANIFEST.sha256 | sort); do d=$(dirname "$m"); echo "== $d"; (cd "$d" && sha256sum -c --quiet MANIFEST.sha256 && [ "$(find . -type f ! -name MANIFEST.sha256 | wc -l)" -eq "$(wc -l < MANIFEST.sha256)" ] && echo "tat ca file OK, khong thua khong thieu" && sha256sum MANIFEST.sha256 model.safetensors || echo "LOI: file sai, thieu hoac thua so voi MANIFEST"); done
    ```
 
-   - Mỗi thư mục phải in `tat ca file OK, khong thua khong thieu`. File sai/thiếu sẽ in `FAILED`; có file **thừa** (không nằm trong manifest) hoặc thiếu sẽ in `LOI: …` — **tải lại / xoá file thừa**, vì sai, thiếu hay thừa file đều làm ml-service từ chối khởi động.
-   - Hai dòng SHA in ra cuối mỗi thư mục (của `MANIFEST.sha256` và `model.safetensors`) phải **trùng** với giá trị đặt trong `.env` ở bước 4.
+   - Mỗi thư mục phải in `tat ca file OK, khong thua khong thieu`. File sai/thiếu sẽ in `FAILED`; có file **thừa** hoặc thiếu sẽ in `LOI: …` — **giải nén lại**, vì sai, thiếu hay thừa file đều làm ml-service từ chối khởi động.
+   - 4 mã SHA in ra phải trùng bảng dưới (cũng là giá trị trong `.env` ở bước 6):
 
-4. Đặt 6 dòng sau vào `.env` (đường dẫn là đường dẫn **trong container**: `/ml_models/...` ứng với `./ml_models/...` trên máy). Các mã SHA-256 **không phải bí mật**:
+   | File | SHA-256 |
+   |---|---|
+   | injection `model.safetensors` | `2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02` |
+   | injection `MANIFEST.sha256` | `83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba` |
+   | intent `model.safetensors` | `51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc` |
+   | intent `MANIFEST.sha256` | `07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9` |
 
-   ```dotenv
-   GUARD_MODEL_DIR=/ml_models/injection-clf/<phiên bản>
-   GUARD_MODEL_SHA256=<sha256 của model.safetensors>
-   GUARD_MANIFEST_SHA256=<sha256 của MANIFEST.sha256>
-   INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st
-   INTENT_MODEL_SHA256=<sha256 của model.safetensors>
-   INTENT_MANIFEST_SHA256=<sha256 của MANIFEST.sha256>
+6. **Đặt 8 dòng vào `.env`** (các giá trị **không phải bí mật**; đường dẫn là đường **trong container**). Đoạn lệnh dưới sao lưu `.env` ra `~/env-backup-model` (ngoài repo), bỏ các dòng cũ đang có hiệu lực của 8 biến này (nếu có), rồi thêm khối 8 dòng vào cuối `.env` — không in nội dung `.env`:
+
+   ```bash
+   cp .env ~/env-backup-model && chmod 600 ~/env-backup-model && python3 - <<'PY'
+   import pathlib, re
+   p = pathlib.Path(".env")
+   dong = [
+       "GUARD_MODEL_DIR=/ml_models/injection-clf/v3-seed123",
+       "GUARD_MODEL_SHA256=2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02",
+       "GUARD_MANIFEST_SHA256=83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba",
+       "INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st",
+       "INTENT_MODEL_SHA256=51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc",
+       "INTENT_MANIFEST_SHA256=07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9",
+       "B2_CLASSIFIER_MODE=review",
+       "B2_TAU_REVIEW=0.9999",
+   ]
+   khoa = [d.split("=", 1)[0] for d in dong]
+   cu = p.read_text().splitlines()
+   giu = [l for l in cu if not re.match(r"^(" + "|".join(khoa) + r")=", l)]
+   print("so dong hieu luc cu da bo:", len(cu) - len(giu))
+   giu += ["", "# Model nhom — DOC-TRUOC-model-freeze ban 3 (29/10)"] + dong
+   p.write_text("\n".join(giu) + "\n")
+   print("da them 8 dong model")
+   PY
    ```
 
-   ⚠️ **CẦN BỔ SUNG:** 6 dòng giá trị chính xác (nhóm cung cấp cùng link Drive).
+   8 dòng này (đúng theo `DOC-TRUOC-model-freeze.md`):
 
-   - Đặt `GUARD_MODEL_DIR` thì **bắt buộc** đủ `GUARD_MODEL_SHA256` và `GUARD_MANIFEST_SHA256`; tương tự với `INTENT_*`. Thiếu hoặc lệch → **ml-service từ chối khởi động và cả stack đứng** (backend chờ ml-service).
-   - Máy 8 GB: chỉ đặt 3 dòng `GUARD_*`, để trống 3 dòng `INTENT_*` (mục 1, RAM).
+   ```dotenv
+   GUARD_MODEL_DIR=/ml_models/injection-clf/v3-seed123
+   GUARD_MODEL_SHA256=2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02
+   GUARD_MANIFEST_SHA256=83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba
+   INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st
+   INTENT_MODEL_SHA256=51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc
+   INTENT_MANIFEST_SHA256=07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9
+   B2_CLASSIFIER_MODE=review
+   B2_TAU_REVIEW=0.9999
+   ```
 
-5. Dựng lại: `make up` (mục 5.1). Lần đầu nạp model nhóm, ml-service khởi động lâu hơn (kiểm SHA-256 + nạp, thêm ~10–25 s cho model intent).
+   - `B2_TAU_REVIEW=0.9999` là ngưỡng đã chọn theo quy tắc D-52 — **không tự đổi**.
+   - Đặt `GUARD_MODEL_DIR` / `INTENT_MODEL_DIR` thì **bắt buộc** đủ 2 dòng SHA đi kèm; thiếu hoặc lệch → **ml-service từ chối khởi động và cả stack đứng** (backend chờ ml-service).
+   - ml-service **không** nạp `seed_42.pt`; nó nạp bản safetensors ở `v3.1-seed42-st`.
+
+7. **Dựng lại** (`make up`, mục 5.1) — đổi `.env` thì phải `make up` lại để tạo lại backend, worker và ml-service. Lần chạy thử: `make up` 42 giây; mỗi model nhóm nạp ~2 giây (kể cả kiểm SHA-256).
+
+8. **Kiểm sau khi bật** (theo `DOC-TRUOC-model-freeze.md`):
+
+   ```bash
+   docker compose logs ml-service 2>&1 | grep -E "đã nạp (injection|intent)-clf" | tail -2
+   ```
+
+   Phải có 2 dòng `đã nạp injection-clf v3-seed123 (SHA-256 đã kiểm, …)` và `đã nạp intent-clf v3.1-seed42-st (…, SHA-256 đã kiểm)`.
+
+   ```bash
+   docker compose exec -T backend printenv B2_CLASSIFIER_MODE B2_TAU_REVIEW
+   ```
+
+   Phải in `review` rồi `0.9999`.
+
+   ```bash
+   docker compose exec -T ml-service python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8200/health').read().decode())"
+   ```
+
+   Phần `models` phải có `"injection": {"model": "injection-clf", "version": "v3-seed123"}` và `"intent": {"model": "intent-clf", "version": "v3.1-seed42-st"}` (khi chưa nạp, chấm điểm trả 503 `model_missing`).
+
+   Sau 2–3 ticket đầu (ví dụ đăng nhập `an.nv`, bấm nút gợi ý "Quên mật khẩu"), xem trace bước B2 — lệnh chỉ in 3 giá trị, không in nội dung ticket:
+
+   ```bash
+   docker compose --env-file .env exec -T postgres sh -c 'psql -X -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT jsonb_path_query_first(to_jsonb(a), '\''\$.**.clf_mode'\'') AS clf_mode, jsonb_path_query_first(to_jsonb(a), '\''\$.**.p_mal'\'') AS p_mal, jsonb_path_query_first(to_jsonb(a), '\''\$.**.ml_error'\'') AS ml_error FROM audit_logs a WHERE to_jsonb(a)::text LIKE '\''%clf_mode%'\'' ORDER BY 1 DESC NULLS LAST LIMIT 10"'
+   ```
+
+   Mỗi ticket phải có `clf_mode` = `"review"`, `p_mal` là **một số** (0–1), `ml_error` = `null`. Thấy `ml_error` = `"model_missing"` → **dừng**, kiểm lại bước 3–6 rồi chạy lại.
 
 ---
 
@@ -683,12 +783,14 @@ Cách tăng RAM cho Docker:
 
   ```ini
   [wsl2]
-  memory=6GB
+  memory=10GB
   ```
 
   rồi mở **PowerShell** chạy `wsl --shutdown`, mở lại Docker Desktop và terminal WSL.
 - **macOS / Docker Desktop:** Settings → Resources → Memory.
-- Không tăng được: bỏ model intent của nhóm (để trống 3 dòng `INTENT_*` trong `.env`, bớt ~1,2 GB), hoặc dùng lựa chọn A (mục 4.2), rồi `make up`.
+- Ví dụ trên dành cho máy 16 GB (WSL được 10 GB, Windows còn ~6 GB). Máy 8 GB: đặt khoảng `memory=6GB` và chỉ chạy lựa chọn A.
+- Kiểm sau khi khởi động lại: `free -h` (dòng `Mem` → `total`) và `docker info --format '{{.MemTotal}}'`.
+- Không tăng được: dùng lựa chọn A (mục 4.2 — để các dòng `GUARD_*`, `INTENT_*`, `B2_*` như `.env.example`), rồi `make up`. Lưu ý: số liệu đánh giá (RQ1, G14…) bắt buộc chạy với đủ 2 model.
 
 ### 12.2. ml-service chưa nạp model / không lên
 
@@ -696,7 +798,9 @@ Cách tăng RAM cho Docker:
 |---|---|---|
 | `Thiếu model cho ml-service — chạy: make models` | Chưa tải model chung / sai `MODELS_DIR` | `make models` (cùng `MODELS_DIR` với lúc `make up`) — mục 4.1 |
 | Đứng lâu ở bước ml-service (tới ~4 phút) | Đang nạp + làm nóng — **bình thường** | Chờ; quá 240 s mới là lỗi |
-| `ml-service/backend/worker không lên` kèm 50 dòng log ml-service | Model của nhóm đặt sai: thiếu biến SHA, SHA/manifest lệch, thư mục không nằm dưới `/ml_models`, trỏ nhầm thư mục `.pt` thay vì safetensors | Đọc log: `docker compose logs --tail 50 ml-service`. Kiểm lại theo mục 4.2 (bước 3–4). Cần chạy ngay thì quay về lựa chọn A (để các dòng `GUARD_*`, `INTENT_*` như `.env.example`) rồi `make up` |
+| Log ml-service báo `PermissionError: [Errno 13] Permission denied: '/ml_models/…'`, `Application startup failed` | File model giải nén từ zip chỉ cho chủ file đọc (`-rw-------`); ml-service trong container chạy bằng người dùng khác | `chmod -R a+rX ml_models/injection-clf ml_models/intent-clf` rồi `make up` lại (mục 4.2 bước 4) |
+| Trace B2 có `ml_error` = `"model_missing"`, hoặc chấm điểm trả 503 | ml-service chưa nạp model nhóm (thiếu dòng `.env`, sai thư mục) | Kiểm lại mục 4.2 bước 3–6, `make up` lại, xem lại bước 8 |
+| `ml-service/backend/worker không lên` kèm 50 dòng log ml-service | Model của nhóm đặt sai: thiếu biến SHA, SHA/manifest lệch, thư mục không nằm dưới `/ml_models`, trỏ nhầm thư mục `.pt` thay vì safetensors | Đọc log: `docker compose logs --tail 50 ml-service`. Kiểm lại theo mục 4.2 (bước 3–6). Cần chạy ngay thì quay về lựa chọn A (để các dòng `GUARD_*`, `INTENT_*` như `.env.example`) rồi `make up` |
 | `/api/health` trả 200 nhưng `runtime` khác `up`, `checks.ml` khác `ok` | ml-service chưa sẵn sàng | `docker compose ps`, xem log như trên |
 
 ### 12.3. Cổng bị chiếm
@@ -723,7 +827,7 @@ Cách tăng RAM cho Docker:
 | Agent trả lời lạ / như kịch bản dựng sẵn, kết quả không giống hệ thống thật | `FAKE_SCENARIO` còn giá trị (`.env.example` để sẵn `approval`) → mọi bước agent chạy node giả | Để trống `FAKE_SCENARIO` (mục 3), `make up` lại |
 | Compose / backend báo thiếu `JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_*_TOKEN` | `.env.example` không có sẵn giá trị cho các khoá này | Chạy đoạn lệnh sinh khoá ở mục 3 |
 | `/api/health` báo `kb.status = missing` | Chưa `make ingest` (hoặc vừa xoá sạch), hoặc ingest vừa xong chưa tới ~1 phút | `make ingest` (mục 5.3); vừa ingest xong thì chờ ~1 phút rồi kiểm lại |
-| Backend/worker từ chối khởi động sau khi sửa dòng `B2_*` | Đặt `B2_CLASSIFIER_MODE` mà thiếu giá trị đi kèm | Để `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` như `.env.example` (mục 3), `make up` lại |
+| Backend/worker từ chối khởi động sau khi sửa dòng `B2_*` | Đặt `B2_CLASSIFIER_MODE=review` mà thiếu `B2_TAU_REVIEW` (hoặc giá trị sai) | Lựa chọn B: đặt đúng 2 dòng `B2_*` theo mục 4.2 bước 6; lựa chọn A: để như `.env.example` (mục 3). Rồi `make up` lại |
 | `make` báo `RATE=... không hợp lệ` | Gõ sai giá trị `RATE` | Chỉ dùng `make up RATE=loose` hoặc `make up` (mục 11.2) |
 | Gửi nhiều yêu cầu liên tiếp bị từ chối (429) | Giới hạn chống spam | `make up RATE=loose` (mục 11.2) |
 | Kết quả một số ca khác lần chạy trước | Chạy trong / ngoài giờ hành chính | Ghi giờ lúc chạy (mục 11.1) |
