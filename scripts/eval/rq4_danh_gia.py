@@ -255,7 +255,8 @@ def _softmax(row: Sequence[float]) -> list[float]:
     return [e / s for e in ex]
 
 
-def _pg2_classifier(model_dir: Path) -> tuple[Callable[[str], tuple[float, int]], dict[str, Any]]:
+def _pg2_classifier(model_dir: Path, chi_so: int | None = None, revision: str | None = None,
+                    nguon_chi_so: str | None = None) -> tuple[Callable[[str], tuple[float, int]], dict[str, Any]]:  # fmt: skip
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -265,9 +266,17 @@ def _pg2_classifier(model_dir: Path) -> tuple[Callable[[str], tuple[float, int]]
     model.to("cpu").eval()
     labels = {int(k): v for k, v in model.config.id2label.items()}
     hits = [i for i, v in labels.items() if "MALICIOUS" in str(v).upper()]
-    if len(hits) != 1:
-        raise SystemExit(f"DỪNG: không xác định được lớp tấn công của PG2 từ id2label={labels}")
-    idx, pad = hits[0], tok.pad_token_id
+    if chi_so is not None:  # config.json của PG2 trên HF chỉ có LABEL_0/LABEL_1 — chỉ số phải truyền tường minh kèm nguồn
+        if chi_so not in labels or (hits and hits != [chi_so]):
+            raise SystemExit(f"DỪNG: --chi-so-tan-cong {chi_so} không hợp lệ với id2label={labels}")
+        if not nguon_chi_so:
+            raise SystemExit("DỪNG: --chi-so-tan-cong cần --nguon-chi-so (bằng chứng chỉ số lớp tấn công)")
+        idx = chi_so
+    elif len(hits) == 1:
+        idx = hits[0]
+    else:
+        raise SystemExit(f"DỪNG: không xác định được lớp tấn công của PG2 từ id2label={labels} — truyền --chi-so-tan-cong")
+    pad = tok.pad_token_id
 
     def classify(text: str) -> tuple[float, int]:
         ids = list(tok(text, add_special_tokens=False)["input_ids"])
@@ -279,7 +288,8 @@ def _pg2_classifier(model_dir: Path) -> tuple[Callable[[str], tuple[float, int]]
             logits = model(input_ids=x, attention_mask=m).logits.tolist()
         return max(_softmax(r)[idx] for r in logits), len(wins)
 
-    info = {"id2label": labels, "chi_so_tan_cong": idx, "revision_hf": getattr(model.config, "_commit_hash", None),
+    info = {"id2label": labels, "chi_so_tan_cong": idx, "nguon_chi_so": nguon_chi_so or "id2label",
+            "revision_hf": revision or getattr(model.config, "_commit_hash", None),
             "max_len": PG2_MAX_LEN, "buoc": PG2_STEP,
             "sha256": {p.name: sha256_file(p) for p in sorted(model_dir.glob("*")) if p.is_file()}}  # fmt: skip
     return classify, info
@@ -310,7 +320,7 @@ def _cmd_cham_model(a: argparse.Namespace) -> None:
     torch.set_num_threads(a.threads)
     meta_p, rows = read_jsonl(a.prep)
     if a.model == "pg2":
-        classify, info = _pg2_classifier(Path(a.model_dir))
+        classify, info = _pg2_classifier(Path(a.model_dir), a.chi_so_tan_cong, a.revision_hf, a.nguon_chi_so)
     else:
         if not a.model_sha:
             raise SystemExit("DỪNG: v3/v4 cần --model-sha (và --manifest-sha) như ml-service")
@@ -717,6 +727,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     m.add_argument("--manifest-sha")
     m.add_argument("--models-root")
     m.add_argument("--threads", type=int, default=4)
+    m.add_argument("--chi-so-tan-cong", type=int, help="pg2: chỉ số lớp tấn công khi id2label không ghi rõ")
+    m.add_argument("--nguon-chi-so", help="pg2: bằng chứng cho --chi-so-tan-cong (ghi vào manifest)")
+    m.add_argument("--revision-hf", help="pg2: commit hash trên Hugging Face (ghi vào manifest)")
     m.set_defaults(f=_cmd_cham_model)
     n = sp.add_parser("chon-nguong")
     n.add_argument("--kieu", choices=("block", "hai-nguong", "review-d52", "co-dinh"), required=True)
