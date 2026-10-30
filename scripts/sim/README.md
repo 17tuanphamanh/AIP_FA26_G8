@@ -13,6 +13,9 @@
     xử lý (4 lần — đăng nhập lại trước mỗi lần đổi vì cần đăng nhập gần đây);
   - `SIM_PASSWORD` — tuỳ chọn; không đặt thì dùng mật khẩu demo công khai của seed mock.
 
+- **Backend PHẢI chạy với `RATE=loose`** (`make up RATE=loose`). Ngưỡng mặc định `TICKET_RATE_10MIN=10` chặn script bằng 429 vì mỗi cách gửi 8 ticket
+  (3 cách = 24 ticket trong vài phút) — không có `RATE=loose` thì vòng 2 hoặc 3 sẽ dừng giữa chừng.
+
 ## Chạy
 
 ```sh
@@ -24,6 +27,10 @@ APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py --tagged
 - `--no-mock-reset` — không reset mock giữa các vòng (mặc định có reset: `docker compose exec -T mock python -m app.seed reset`, như
   gate, để "cài Zoom" / "đặt lại mật khẩu" chạy lại được ở vòng sau).
 - `--url` — chỉ nhận localhost.
+- `--tuan-tu` (**mặc định**) — gửi từng ticket, chờ nó dừng (kết thúc / chờ duyệt / chờ hỏi lại / chờ xác nhận; tối đa 120 giây) rồi mới gửi
+  ticket kế. Lý do: gửi 8 ticket cùng lúc làm ml-service quá tải → nhiều ticket ra E2 `rag_system_error`, cách `hybrid` không có ca nào qua L1 duyệt
+  (GIT chạy 3 lượt: 46/72 ticket E2). Chậm hơn nhưng dữ liệu dùng được.
+- `--song-song` — cách cũ: gửi cả 8 ticket liền nhau rồi mới chờ. Chỉ dùng khi máy đủ mạnh (ml-service không quá tải); loại trừ với `--tuan-tu`.
 
 ## Script làm gì
 
@@ -46,4 +53,19 @@ APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py --tagged
    `SELECT source, count(*) FROM tickets WHERE created_at > <lúc chạy> GROUP BY 1`.
 
 Script chỉ in số ticket theo từng cách (và mã HTTP khi lỗi) — không in câu chữ, token, mật khẩu, OTP.
-Mã thoát: 0 xong, 1 dừng giữa chừng / chưa khôi phục được, 2 từ chối chạy (APP_ENV/URL), 3 server đang EVAL_MODE.
+
+### Cảnh báo cuối lượt (stderr) và mã thoát
+
+Sau khi khôi phục cách xử lý ban đầu, script kiểm từng cách (mỗi câu là một ý nên mỗi ticket là một lá):
+
+- không ticket nào tới chờ duyệt → `CẢNH BÁO: không ticket nào tới bước duyệt ở cách <tên> — dữ liệu thử không dùng được`;
+- số ticket kết thúc bằng E2 vượt 20% (`TicketView.exit_code = E2`) → `CẢNH BÁO: ml-service/RAG lỗi ở cách <tên>, dữ liệu thử không dùng được`.
+
+| Mã | Ý nghĩa |
+|---|---|
+| 0 | xong, dữ liệu dùng được |
+| 1 | lỗi chung: dừng giữa chừng / chưa khôi phục được (giữ nguyên, ưu tiên hơn 4 và 5) |
+| 2 | từ chối chạy (APP_ENV / URL) |
+| 3 | server đang EVAL_MODE |
+| 4 | có cách không ticket nào tới bước duyệt (HITL = 0) |
+| 5 | có cách E2 > 20% số lá (ưu tiên hơn 4 khi cả hai) |

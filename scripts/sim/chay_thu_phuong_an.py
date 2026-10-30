@@ -1,6 +1,6 @@
 """Chạy dữ liệu thử 3 cách xử lý M5 (P6 gói tuần 8, D-67) trên stack DEV — sinh ticket `source='sim'` cho `GET /api/dashboard/strategies`.
 
-  APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py [--tagged] [--url http://127.0.0.1:8000] [--no-mock-reset]
+  APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py [--tagged] [--url http://127.0.0.1:8000] [--no-mock-reset] [--tuan-tu | --song-song]
 
 Lần lượt `PUT /api/admin/strategy` rule_only → hybrid → hybrid_guarded (reason "chạy dữ liệu thử"); mỗi cách gửi CÙNG 8 yêu cầu bằng
 tài khoản nhân viên kèm header `X-Sim-Run` (backend chỉ nhận header khi APP_ENV ∈ {dev, test}); L1 duyệt/từ chối phiếu chờ duyệt theo
@@ -19,6 +19,10 @@ danh sách cố định; nhân viên xác nhận "Đã ổn"/"Chưa ổn" theo d
   (PUT cần đăng nhập ≤ REAUTH_MINUTES).
 - Reset mock giữa 3 vòng (như gate: `docker compose exec -T mock python -m app.seed reset`) để ca "cài Zoom"/"đặt lại mật khẩu" lặp lại
   được; `--no-mock-reset` để bỏ.
+- Gửi TUẦN TỰ (mặc định, `--tuan-tu`): gửi từng ticket, chờ tới chỗ dừng (kết thúc / chờ duyệt / chờ hỏi lại / chờ xác nhận, tối đa
+  SETTLE_S giây) rồi mới gửi ticket kế — gửi 8 ticket cùng lúc làm ml-service quá tải (E2 `rag_system_error`). `--song-song` giữ cách cũ.
+- Cuối lượt (SAU khi khôi phục chiến lược) cảnh báo ra stderr, mã thoát ≠ 0: cách nào không có ticket nào tới bước duyệt (mã 4), hoặc có
+  E2 > 20% số ticket (mã 5, ưu tiên hơn 4) — dữ liệu thử không dùng được. Mỗi câu trong 8 câu là một ý → mỗi ticket là một lá.
 - CHỈ in số ticket theo từng cách + mã HTTP khi lỗi; KHÔNG in câu chữ, token, mật khẩu, OTP. Không đọc `.env`.
 """
 
@@ -48,6 +52,8 @@ SIM_HEADER = "X-Sim-Run"
 MANAGER, EMPLOYEE, L1 = "quan.tm", "an.nv", "ha.lt"  # it_mgr01 (MFA), nv001, l1_01 = người duyệt chính mọi intent (approvers.yaml)
 TOTP_ENV, PASSWORD_ENV = "SIM_MANAGER_TOTP_SECRET", "SIM_PASSWORD"
 MOCK_RESET = ("docker", "compose", "exec", "-T", "mock", "python", "-m", "app.seed", "reset")
+NO_HITL, E2_HIGH = 4, 5  # mã thoát: có cách không ticket nào tới bước duyệt; có cách E2 > 20% số lá (khác 1 = lỗi chung, 3 = EVAL_MODE)
+E2_MAX_PERCENT = 20
 SETTLE_S, POLL_S = 120.0, 1.0
 WAITS = frozenset({"approval", "confirm", "clarify", "reply"})
 
@@ -80,6 +86,15 @@ CONFIRMS: Mapping[int, bool] = {0: True, 2: True, 3: False}  # tc04 Đã ổn, t
 UNRESOLVED_NOTE = "vẫn chưa dùng được"
 
 
+@dataclass(frozen=True)
+class RoundStat:
+    """Kết quả một vòng: số ticket đã gửi, số ticket tới chờ duyệt (HITL), số ticket kết thúc bằng E2 — đọc từ lần dừng đầu tiên."""
+
+    n: int
+    hitl: int
+    e2: int
+
+
 class SimError(RuntimeError):
     """Lỗi có nhãn bước + mã HTTP — không mang thân phản hồi (có thể chứa chữ người dùng)."""
 
@@ -107,9 +122,10 @@ def password(env: Mapping[str, str]) -> str:
 
 class Sim:
     def __init__(self, client: httpx.Client, env: Mapping[str, str], *, tagged: bool, prompt: Callable[[str], str],
-                 sleep: Callable[[float], None], run: Callable[..., Any], mock_reset: bool, run_id: str) -> None:  # fmt: skip
+                 sleep: Callable[[float], None], run: Callable[..., Any], mock_reset: bool, run_id: str,
+                 sequential: bool = True) -> None:  # fmt: skip
         self.client, self.env, self.tagged, self.prompt, self.sleep = client, env, tagged, prompt, sleep
-        self.run, self.mock_reset, self.run_id = run, mock_reset, run_id
+        self.run, self.mock_reset, self.run_id, self.sequential = run, mock_reset, run_id, sequential
         self.pw = password(env)
 
     # ---- HTTP --------------------------------------------------------------------------------------------------------
@@ -158,18 +174,22 @@ class Sim:
             self.sleep(POLL_S)
 
     # ---- một vòng ----------------------------------------------------------------------------------------------------
-    def round(self, strategy: str) -> int:
+    def round(self, strategy: str) -> RoundStat:
         self.set_strategy(strategy)
         if self.mock_reset:
             self.run(list(MOCK_RESET), cwd=REPO, check=True, capture_output=True)
         emp = self.login(EMPLOYEE)
         sim = {**emp, SIM_HEADER: self.run_id}
         tickets: list[str] = []
+        views: list[dict[str, Any]] = []
         for req in REQUESTS:
             text = f"{req.text} [fake:{req.preset}]" if self.tagged else req.text
             r = self._call("tạo ticket", "POST", "/api/tickets", (202,), headers=sim, json={"text": text})
             tickets.append(str(r.json()["ticket_id"]))
-        views = [self.settle(t, emp) for t in tickets]
+            if self.sequential:  # chờ ticket này dừng rồi mới gửi ticket kế (tránh dồn tải ml-service)
+                views.append(self.settle(tickets[-1], emp))
+        if not self.sequential:
+            views = [self.settle(t, emp) for t in tickets]
         l1 = self.login(L1)
         pending = self._call("hộp duyệt L1", "GET", "/api/approvals", (200,), headers=l1,
                              params={"mine": "1", "status": "pending"}).json()["items"]  # fmt: skip
@@ -187,11 +207,28 @@ class Sim:
                 continue
             body: dict[str, Any] = {"confirmed": ok} if ok else {"confirmed": False, "note": UNRESOLVED_NOTE}
             self._call("xác nhận", "POST", f"/api/tickets/{tickets[i]}/confirm", (202,), headers=sim, json=body)
-        return len(tickets)
+        hitl = sum(1 for t, v in zip(tickets, views, strict=True) if v.get("waiting_for") == "approval" or t in by_ticket)
+        e2 = sum(1 for v in views if v.get("exit_code") == "E2")
+        return RoundStat(len(tickets), hitl, e2)
+
+
+def unusable(stats: Mapping[str, RoundStat]) -> tuple[list[str], int]:
+    """Cảnh báo dữ liệu thử không dùng được (theo thứ tự cách) + mã thoát: E2 > 20% số lá → 5; không ticket nào tới bước duyệt → 4."""
+    warnings: list[str] = []
+    code = 0
+    for name, st in stats.items():
+        if st.n and st.e2 * 100 > E2_MAX_PERCENT * st.n:
+            warnings.append(f"ml-service/RAG lỗi ở cách {name}, dữ liệu thử không dùng được")
+            code = E2_HIGH
+        if st.hitl == 0:
+            warnings.append(f"không ticket nào tới bước duyệt ở cách {name} — dữ liệu thử không dùng được")
+            code = code or NO_HITL
+    return warnings, code
 
 
 def run_all(sim: Sim, out: Callable[[str], None], err: Callable[[str], None]) -> int:
     counts: dict[str, int] = {}
+    stats: dict[str, RoundStat] = {}
     code = 0
     try:
         start = sim.current()  # trước MỌI PUT/POST
@@ -204,7 +241,8 @@ def run_all(sim: Sim, out: Callable[[str], None], err: Callable[[str], None]) ->
     ban_dau = str(start["strategy"])
     try:
         for strategy in ORDER:
-            counts[strategy] = sim.round(strategy)
+            stats[strategy] = sim.round(strategy)
+            counts[strategy] = stats[strategy].n
             out(f"{strategy}: {counts[strategy]} ticket")
     except (SimError, httpx.HTTPError, subprocess.CalledProcessError, OSError) as exc:
         err(f"DỪNG giữa chừng: {exc if isinstance(exc, SimError) else type(exc).__name__}")
@@ -221,7 +259,10 @@ def run_all(sim: Sim, out: Callable[[str], None], err: Callable[[str], None]) ->
                 f"({exc if isinstance(exc, SimError) else type(exc).__name__}) — đặt lại bằng tay ở màn Chính sách")  # fmt: skip
             code = 1
     out("tổng: " + ", ".join(f"{s} {n}" for s, n in counts.items()) if counts else "tổng: 0 ticket")
-    return code
+    warnings, bad = unusable(stats)  # SAU khi khôi phục chiến lược (finally ở trên)
+    for line in warnings:
+        err(f"CẢNH BÁO: {line}")
+    return code or bad
 
 
 def main(
@@ -234,6 +275,9 @@ def main(
     parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--tagged", action="store_true", help="thêm [fake:<preset>] cuối câu — bắt buộc khi LLM_BACKEND=scripted")
     parser.add_argument("--no-mock-reset", action="store_true", help="không reset mock giữa các vòng")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--tuan-tu", action="store_true", help="gửi từng ticket, chờ dừng rồi mới gửi ticket kế (MẶC ĐỊNH)")
+    mode.add_argument("--song-song", action="store_true", help="gửi cả 8 ticket cùng lúc rồi mới chờ (cách cũ; chỉ khi máy đủ mạnh)")
     args = parser.parse_args(argv)
     env = os.environ if env is None else env
     reason = refuse(env, args.url)
@@ -244,7 +288,7 @@ def main(
     http = client or httpx.Client(base_url=args.url, timeout=30)
     try:
         sim = Sim(http, env, tagged=args.tagged, prompt=prompt, sleep=sleep, run=run, mock_reset=not args.no_mock_reset,
-                  run_id=time.strftime("%Y%m%d%H%M%S"))  # fmt: skip
+                  run_id=time.strftime("%Y%m%d%H%M%S"), sequential=not args.song_song)  # fmt: skip
         return run_all(sim, out, err)
     finally:
         if own:

@@ -27,7 +27,10 @@ class FakeApi:
     """Server giả: giữ chiến lược hiện hành (`current`), `eval_mode`; PUT trùng hiện hành → 409 `same_as_current` (như server thật)."""
 
     def __init__(self, *, start: str = "hybrid", eval_mode: bool = False, fail_tickets_in_round: int | None = None,
-                 fail_restore: bool = False) -> None:  # fmt: skip
+                 fail_restore: bool = False, busy_polls: int = 0, wait_by_round: dict[int, list[str | None]] | None = None,
+                 e2: dict[int, set[int]] | None = None) -> None:  # fmt: skip
+        self.events: list[tuple[str, str, bool]] = []  # (post|get, ticket, đã dừng?) theo thứ tự thật
+        self.busy_polls, self.wait_by_round, self.e2 = busy_polls, wait_by_round or {}, e2 or {}  # e2: vòng → chỉ số ticket kết thúc E2
         self.calls: list[tuple[str, str, dict[str, Any], dict[str, str]]] = []
         self.current, self.eval_mode = start, eval_mode
         self.attempts: list[tuple[str, str, int]] = []  # (strategy, reason, mã HTTP) của MỌI PUT
@@ -72,12 +75,22 @@ class FakeApi:
                 return httpx.Response(500, json={"detail": "loi gia"})
             idx = sum(1 for t in self.tickets.values() if t["round"] == self.round)
             tid = f"T{len(self.tickets)}"
-            self.tickets[tid] = {"round": self.round, "idx": idx, "waiting_for": WAIT[idx],
-                                 "final_state": "S_ESCALATED" if WAIT[idx] is None else None, "text": body["text"]}  # fmt: skip
+            wait = self.wait_by_round.get(self.round, WAIT)[idx]
+            is_e2 = idx in self.e2.get(self.round, set())
+            self.tickets[tid] = {"round": self.round, "idx": idx, "waiting_for": None if is_e2 else wait,
+                                 "final_state": "S_ESCALATED" if wait is None or is_e2 else None, "text": body["text"],
+                                 "exit_code": "E2" if is_e2 else None, "polls": 0}  # fmt: skip
+            self.events.append(("post", tid, False))
             return httpx.Response(202, json={"ticket_id": tid, "status": "S_NEW", "notices": []})
         if req.method == "GET" and path.startswith("/api/tickets/"):
-            t = self.tickets[path.rsplit("/", 1)[1]]
-            return httpx.Response(200, json={"waiting_for": t["waiting_for"], "final_state": t["final_state"]})
+            tid = path.rsplit("/", 1)[1]
+            t = self.tickets[tid]
+            t["polls"] += 1
+            if t["polls"] <= self.busy_polls:  # còn đang xử lý: chưa dừng
+                self.events.append(("get", tid, False))
+                return httpx.Response(200, json={"waiting_for": None, "final_state": None, "exit_code": None})
+            self.events.append(("get", tid, True))
+            return httpx.Response(200, json={"waiting_for": t["waiting_for"], "final_state": t["final_state"], "exit_code": t["exit_code"]})
         if req.method == "GET" and path == "/api/approvals":
             items = [{"ticket_id": tid, "approval_id": f"A{tid}"} for tid, t in self.tickets.items() if t["waiting_for"] == "approval"]
             return httpx.Response(200, json={"items": items})
@@ -97,9 +110,10 @@ class FakeApi:
 
 
 class Run:
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, api: FakeApi, env: dict[str, str] | None = None, *args: str) -> None:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, api: FakeApi, env: dict[str, str] | None = None, *args: str,
+                 settle_s: float = 0.0) -> None:  # fmt: skip
         self.mod = load_script(SCRIPT, monkeypatch)
-        monkeypatch.setattr(self.mod, "SETTLE_S", 0.0)
+        monkeypatch.setattr(self.mod, "SETTLE_S", settle_s)
         self.out: list[str] = []
         self.err: list[str] = []
         self.prompts: list[str] = []
@@ -282,3 +296,119 @@ def test_password_falls_back_to_seed_demo_password(monkeypatch: pytest.MonkeyPat
     assert {c[2]["password"] for c in api.calls if c[1] == "/api/auth/login"} == {DEMO_PASSWORD}
     source = (REPO / SCRIPT).read_text(encoding="utf-8")
     assert DEMO_PASSWORD not in source
+
+
+# ---- tuần tự / song song ----------------------------------------------------------------------------------------------------
+
+
+def _round_events(api: FakeApi, rnd: int) -> list[tuple[str, str, bool]]:
+    ids = {tid for tid, t in api.tickets.items() if t["round"] == rnd}
+    return [e for e in api.events if e[1] in ids]
+
+
+def test_tuan_tu_mac_dinh_gui_ticket_ke_chi_sau_khi_ticket_truoc_dung(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(busy_polls=2)
+    run = Run(monkeypatch, api, None, settle_s=1000.0)
+    assert run.code == 0, run.err
+    for rnd in range(3):
+        ev = _round_events(api, rnd)
+        posts = [i for i, e in enumerate(ev) if e[0] == "post"]
+        assert len(posts) == 8
+        for k in range(1, 8):
+            before = ev[posts[k] - 1]  # sự kiện ngay trước lần gửi thứ k
+            assert before[0] == "get" and before[1] == ev[posts[k - 1]][1] and before[2] is True  # ticket trước đã dừng
+            assert sum(1 for e in ev[: posts[k]] if e[:2] == ("get", ev[posts[k - 1]][1])) == 3  # busy 2 lần rồi mới dừng
+
+
+def test_tuan_tu_cung_nghia_voi_co_tuan_tu_tuong_minh(monkeypatch: pytest.MonkeyPatch) -> None:
+    a, b = FakeApi(busy_polls=1), FakeApi(busy_polls=1)
+    Run(monkeypatch, a, None, settle_s=1000.0)
+    Run(monkeypatch, b, None, "--tuan-tu", settle_s=1000.0)
+    assert a.events == b.events
+
+
+def test_song_song_giu_hanh_vi_cu_gui_het_roi_moi_cho(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(busy_polls=2)
+    run = Run(monkeypatch, api, None, "--song-song", settle_s=1000.0)
+    assert run.code == 0, run.err
+    for rnd in range(3):
+        ev = _round_events(api, rnd)
+        assert [e[0] for e in ev[:8]] == ["post"] * 8  # 8 lần gửi liền nhau, chưa có lần xem nào
+
+
+def test_hai_che_do_loai_tru_nhau(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(SystemExit):
+        Run(monkeypatch, FakeApi(), None, "--tuan-tu", "--song-song")
+
+
+# ---- cảnh báo cuối lượt ------------------------------------------------------------------------------------------------------
+
+NO_APPROVAL: list[str | None] = ["confirm", "confirm", "confirm", "confirm", "confirm", "confirm", None, None]
+
+
+def test_mot_cach_khong_co_ticket_toi_buoc_duyet_canh_bao_ma_4_van_khoi_phuc(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(start="rule_only", wait_by_round={1: NO_APPROVAL})  # vòng 1 = hybrid
+    run = Run(monkeypatch, api)
+    assert run.code == 4
+    assert "CẢNH BÁO: không ticket nào tới bước duyệt ở cách hybrid — dữ liệu thử không dùng được" in run.err
+    assert not any("rule_only" in e or "hybrid_guarded" in e for e in run.err)  # chỉ cách có vấn đề
+    assert _restores(api) == ["rule_only"] and api.current == "rule_only"  # finally vẫn khôi phục cách ban đầu, TRƯỚC khi thoát
+    assert run.out[-2:] == ["đã khôi phục cách xử lý ban đầu: rule_only", "tổng: rule_only 8, hybrid 8, hybrid_guarded 8"]
+
+
+def test_e2_tren_20_phan_tram_canh_bao_ma_5(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(e2={2: {0, 1}})  # vòng 2 = hybrid_guarded: 2/8 = 25% E2
+    run = Run(monkeypatch, api)
+    assert run.code == 5
+    assert "CẢNH BÁO: ml-service/RAG lỗi ở cách hybrid_guarded, dữ liệu thử không dùng được" in run.err
+    assert len(run.err) == 1 and _restores(api) == ["hybrid"] and api.current == "hybrid"
+
+
+def test_e2_dung_12_5_phan_tram_van_dung_duoc(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = Run(monkeypatch, FakeApi(e2={0: {0}, 1: {0}, 2: {0}}))  # 1/8 mỗi cách
+    assert run.code == 0 and run.err == []
+
+
+def test_e2_dung_20_phan_tram_khong_vuot_nguong(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ngưỡng là "> 20%": 8 ticket thì 1 (12,5%) qua, 2 (25%) không — kiểm hàm thuần với 5 lá, 1 E2 = đúng 20%."""
+    mod = load_script(SCRIPT, monkeypatch)
+    ok, code = mod.unusable({"x": mod.RoundStat(5, 1, 1)})
+    assert ok == [] and code == 0
+    bad, code = mod.unusable({"x": mod.RoundStat(5, 1, 2)})
+    assert len(bad) == 1 and code == mod.E2_HIGH
+
+
+def test_e2_cao_va_khong_co_duyet_ma_5_uu_tien_va_ca_hai_canh_bao(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(e2={0: {0, 1, 2, 3, 4, 5}}, wait_by_round={0: NO_APPROVAL})
+    run = Run(monkeypatch, api)
+    assert run.code == 5
+    assert "CẢNH BÁO: ml-service/RAG lỗi ở cách rule_only, dữ liệu thử không dùng được" in run.err
+    assert "CẢNH BÁO: không ticket nào tới bước duyệt ở cách rule_only — dữ liệu thử không dùng được" in run.err
+
+
+def test_du_duyet_va_e2_thap_ma_0_khong_canh_bao(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = Run(monkeypatch, FakeApi())
+    assert run.code == 0 and run.err == []
+
+
+def test_canh_bao_khong_in_cau_chu_token_mat_khau(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(e2={0: {0, 1, 2}}, wait_by_round={1: NO_APPROVAL})
+    run = Run(monkeypatch, api)
+    shown = "\n".join([*run.out, *run.err])
+    assert run.code == 5 and PW not in shown and SECRET not in shown
+    assert not any(t["text"] in shown for t in api.tickets.values()) and not any(tok in shown for tok in api.tokens)
+
+
+def test_dung_giua_chung_giu_ma_1_van_bao_cac_vong_da_xong(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(fail_tickets_in_round=1, wait_by_round={0: NO_APPROVAL})
+    run = Run(monkeypatch, api)
+    assert run.code == 1  # lỗi chung giữ nguyên mã 1
+    assert any("không ticket nào tới bước duyệt ở cách rule_only" in e for e in run.err)  # vòng 0 đã xong vẫn được báo
+    assert _restores(api) == [] and api.current == "hybrid"  # đứt ở vòng hybrid = cách ban đầu → không PUT thừa
+
+
+def test_khoi_phuc_loi_giu_ma_1_du_co_canh_bao(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = Run(monkeypatch, FakeApi(fail_restore=True, start="rule_only", e2={0: {0, 1, 2}}))
+    assert run.code == 1
+    assert any("chưa khôi phục được cách xử lý ban đầu" in e for e in run.err)
+    assert any("ml-service/RAG lỗi ở cách rule_only" in e for e in run.err)
