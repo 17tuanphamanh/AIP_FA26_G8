@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow, InboxRow, OpenWaitKind
+from app.approval.store import ApprovalRow, InboxRow, OpenWaitKind, PolicyMatchRow
 from app.db.identity import LiveSession
 from app.db.runtime import (
     DueReminder,
@@ -191,6 +191,10 @@ class TicketStore(TicketReader, Protocol):
 
     async def created_at(self, ticket_id: str) -> datetime: ...
 
+    async def strategy_of(self, ticket_id: str) -> str | None:
+        """D-67: chiến lược M5 đã CHỤP lúc tạo ticket (B12 đọc, không đọc từ `NodeDeps`). None = ticket cũ / không ghi → `hybrid`."""
+        ...
+
     async def count_turns(self, ticket_id: str) -> int: ...
 
     async def finalize_once(self, ticket_id: str, summary: FinalSummary) -> FinalSummary:
@@ -202,7 +206,7 @@ class TicketStore(TicketReader, Protocol):
     async def create_child(
         self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime, intents: int, intent_type: str
     ) -> str:
-        """Dòng `tickets` của con: chép `requester_id/role/dept`, `session_id` từ dòng cha; `parent_ticket_id = parent_id`; KHÔNG dòng
+        """Dòng `tickets` của con: chép `requester_id/role/dept`, `session_id`, D-67 `strategy`/`source` từ dòng cha; `parent_ticket_id = parent_id`; KHÔNG dòng
         `turns` (lượt đầu do `ChildOps.start` mở). CHỈ gọi qua `effects.once("child_create", sub=child_id)` (D-18). Trả
         `domain.children.child_ref(child_id, intents, intent_type)` = `result_ref` (Q-T20b-12)."""
         ...
@@ -295,6 +299,11 @@ class ApprovalRepo(Protocol):
 
     async def procedure_title(self, doc_id: str) -> str | None:
         """4c P6: tiêu đề tài liệu `doc_id` ở bản KB hiện hành; không có → None (không chặn)."""
+        ...
+
+    async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
+        """P3 tuần 8 (`ApprovalView.matched_rules`): `detail.all_matched` + `matched_rule_id` của dòng B13/B14 MỚI NHẤT (`log_id`) có
+        `created_at <= before` (lúc tạo phiếu); không có → None."""
         ...
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:

@@ -1,0 +1,264 @@
+"""`POST /api/escalations/{id}/close` (P4 tuần 8; B20 mục 4.3, 5.1; P6 §5.3) — bản giả `MemoryEscalations` + `MemoryAudit` của harness.
+
+- Quyền `escalation:handle`: L1 VÀ L2 đóng được; nhân viên, manager → 403 (+ `permission_denied`).
+- Thứ tự: 401 → 403 → 422 thân (`fields` không tiền tố) → 404 `not_found` → 409 `already_closed` → 422 `fields: ["close_result"]`
+  (`completed` cho ca deny / E5 / E6) → guard (503 khi lỗi; bản che chỉ khoảng trắng / > 1000 → 422 `["note"]`, KHÔNG cắt).
+- 200: thân đúng 8 khoá; `close_note` = bản ĐÃ che; `new_ticket_id` null (B — mọi `close_result`, kể cả `reopened_as_new`);
+  `tickets.close_reason` theo B20:297–301 khi ticket `S_ESCALATED` còn NULL, khác thì giữ nguyên + log.info.
+- Audit: MỘT dòng `B20`/`escalation_closed`, `detail` ĐÚNG {escalation_id, close_result, closed_by, note_length}; không chuỗi bí mật.
+  `audit/check.required` không báo thiếu sai vì dòng này, và dòng này KHÔNG thay được ("B20","closed") của điểm 8.
+- Hai lần đóng đồng thời → một 200, một 409; một dòng audit.
+"""
+
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import timedelta
+from typing import Any
+
+import httpx
+import pytest
+from app.audit.check import required
+from app.db.escalations import CLOSE_EVENT, CLOSE_STEP
+from app.domain.final import FinalSummary
+from app.domain.states import S_ESCALATED, S_RESOLVED
+from tests.fakes.auth import EPOCH
+from tests.fakes.desk import MASK, SECRET, DeskEnv, desk_env
+from tests.fakes.graph import MemoryEscalations
+from tests.unit.test_approvals_view import _login
+
+pytestmark = pytest.mark.asyncio
+
+URL = "/api/escalations/{}/close"
+OUT_KEYS = {"escalation_id", "ticket_id", "close_result", "close_reason", "closed_at", "closed_by", "close_note", "new_ticket_id"}
+NOTE = "Đã kiểm tra lại với người dùng."
+
+
+def _final(code: str, *, close_reason: str | None = None, state: str = S_ESCALATED) -> FinalSummary:
+    return FinalSummary(
+        final_state=state, exit_code=code, block_reason=None, close_reason=close_reason, resolution_path="escalated",
+        aggregate_status=None, auto_closed=False, intent=None, slots=None, total_turns=1, total_duration_seconds=1, closed_at=EPOCH,
+    )  # fmt: skip
+
+
+@asynccontextmanager
+async def env_with(*cases: tuple[str, bool], **kw: Any) -> AsyncIterator[tuple[DeskEnv, MemoryEscalations]]:
+    """Mỗi `(mã E, is_deny_case)` → một ticket `S_ESCALATED` + một ca mở (escalation_id = 1, 2, …)."""
+    async with desk_env(**kw) as env:
+        esc = MemoryEscalations(env.h.tickets, env.h.audit)
+        for i, (code, deny) in enumerate(cases, 1):
+            tid = f"esc-{i}"
+            env.h.tickets.register(tid, EPOCH)
+            env.h.tickets.rows[tid]["final"] = _final(code)
+            await esc.create(ticket_id=tid, exit_code=code, reason_detail=None, handoff_note={"request": "x"},
+                             is_deny_case=deny, created_at=EPOCH)  # fmt: skip
+        env.app.state.escalations = esc
+        yield env, esc
+
+
+async def _close(env: DeskEnv, eid: Any, headers: dict[str, str] | None, body: Any = None, **kw: Any) -> httpx.Response:
+    payload = {"close_result": "completed", "note": NOTE} if body is None else body
+    return await env.client.post(URL.format(eid), json=payload, headers=headers or {}, **kw)
+
+
+def _audit(env: DeskEnv, ticket: str) -> list[dict[str, Any]]:
+    return [r for r in env.h.audit.rows if r["ticket_id"] == ticket and (r["step"], r["event"]) == (CLOSE_STEP, CLOSE_EVENT)]
+
+
+def _invalid(r: httpx.Response, *fields: str) -> None:
+    assert r.status_code == 422, r.text
+    assert r.json() == {"error": "invalid_request", "fields": list(fields)}
+
+
+# ---- quyền + thân 200 ----------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("user", "role_id"), [("ha.lt", "l1_01"), ("long.nh", "l2_01")])
+async def test_l1_and_l2_can_close(user: str, role_id: str) -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        r = await _close(env, 1, await _login(env, user))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body) == OUT_KEYS
+        assert (body["escalation_id"], body["ticket_id"], body["close_result"], body["closed_by"]) == (1, "esc-1", "completed", role_id)
+        assert (body["close_reason"], body["close_note"], body["new_ticket_id"]) == ("resolved_after_escalation", NOTE, None)
+        assert esc.rows[0]["closed_by"] == role_id and esc.rows[0]["close_note"] == NOTE
+        final = env.h.tickets.final("esc-1")
+        assert final is not None and final.close_reason == "resolved_after_escalation"
+
+
+@pytest.mark.parametrize("user", ["an.nv", "quan.tm"])  # nhân viên, manager — không có escalation:handle
+async def test_employee_and_manager_forbidden(user: str) -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        denied = env.denied()
+        r = await _close(env, 1, await _login(env, user), body={"x": 1})  # 403 TRƯỚC 422 thân
+        assert r.status_code == 403 and r.json() == {"detail": "forbidden"}
+        assert env.denied() == denied + 1 and esc.rows[0]["closed_at"] is None
+
+
+async def test_no_token_401() -> None:
+    async with env_with(("E1", False)) as (env, _):
+        assert (await _close(env, 1, None)).status_code == 401
+
+
+# ---- 404 / 409 / 422 -----------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("eid", ["999", "abc", "1x", "²", "9" * 19])
+async def test_unknown_id_404(eid: str) -> None:
+    async with env_with(("E1", False)) as (env, _):
+        r = await _close(env, eid, await _login(env, "long.nh"))
+        assert r.status_code == 404 and r.json() == {"detail": "not_found"}
+
+
+async def test_second_close_409_keeps_first_note() -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        l2 = await _login(env, "long.nh")
+        assert (await _close(env, 1, l2)).status_code == 200
+        r = await _close(env, 1, l2, body={"close_result": "confirmed_denial", "note": "lần hai"})
+        assert r.status_code == 409 and r.json() == {"detail": "already_closed"}
+        assert (esc.rows[0]["close_result"], esc.rows[0]["close_note"]) == ("completed", NOTE)
+        assert len(_audit(env, "esc-1")) == 1
+
+
+@pytest.mark.parametrize(("code", "deny"), [("E5", True), ("E5", False), ("E6", False), ("E1", True)])
+async def test_completed_on_e5_e6_or_deny_case_422(code: str, deny: bool) -> None:
+    async with env_with((code, deny)) as (env, esc):
+        _invalid(await _close(env, 1, await _login(env, "long.nh")), "close_result")
+        assert esc.rows[0]["closed_at"] is None and _audit(env, "esc-1") == []
+        assert env.guard.calls == 0  # luật chặn TRƯỚC khi che ghi chú
+
+
+@pytest.mark.parametrize(
+    ("code", "deny", "result", "reason"),
+    [
+        ("E5", True, "confirmed_denial", "resolved_after_deny_review"),
+        ("E5", True, "reopened_as_new", "resolved_after_deny_review"),
+        ("E6", False, "confirmed_denial", "resolved_after_escalation"),
+        ("E6", False, "reopened_as_new", "resolved_after_escalation"),
+        ("E2", False, "completed", "resolved_after_escalation"),
+    ],
+)
+async def test_close_reason_mapping_and_no_new_ticket(code: str, deny: bool, result: str, reason: str) -> None:
+    async with env_with((code, deny)) as (env, _):
+        tickets = set(env.h.tickets.rows)
+        r = await _close(env, 1, await _login(env, "long.nh"), body={"close_result": result, "note": NOTE})
+        assert r.status_code == 200, r.text
+        assert (r.json()["close_reason"], r.json()["new_ticket_id"]) == (reason, None)
+        assert set(env.h.tickets.rows) == tickets  # (B): reopened_as_new KHÔNG tạo ticket
+
+
+BAD_BODIES: list[tuple[Any, list[str]]] = [
+    ({"close_result": "completed"}, ["note"]),
+    ({"note": NOTE}, ["close_result"]),
+    ({"close_result": "done", "note": NOTE}, ["close_result"]),
+    ({"close_result": "completed", "note": ""}, ["note"]),
+    ({"close_result": "completed", "note": " \n\t "}, ["note"]),
+    ({"close_result": "completed", "note": "x" * 1001}, ["note"]),
+    ({"close_result": "completed", "note": NOTE, "mat_khau": "x"}, ["<extra>"]),
+    ({"close_result": "completed", "note": 5}, ["note"]),
+]
+
+
+@pytest.mark.parametrize(("body", "fields"), BAD_BODIES)
+async def test_bad_body_422_before_lookup(body: Any, fields: list[str]) -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        _invalid(await _close(env, 999, await _login(env, "long.nh"), body=body), *fields)  # id không có: thân kiểm TRƯỚC 404
+        assert esc.rows[0]["closed_at"] is None
+
+
+async def test_invalid_json_422() -> None:
+    async with env_with(("E1", False)) as (env, _):
+        l2 = await _login(env, "long.nh")
+        r = await env.client.post(URL.format(1), content=b"{khong-phai-json", headers={**l2, "Content-Type": "application/json"})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_request"
+
+
+# ---- ghi chú qua privacy guard ------------------------------------------------------------------------------------------------
+
+
+async def test_note_is_redacted_everywhere() -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        raw = f"mật khẩu: {SECRET} — đã đặt lại cho người dùng"
+        r = await _close(env, 1, await _login(env, "long.nh"), body={"close_result": "completed", "note": raw})
+        assert r.status_code == 200, r.text
+        masked = raw.replace(SECRET, MASK)
+        assert r.json()["close_note"] == masked and SECRET not in r.text
+        assert esc.rows[0]["close_note"] == masked
+        queue = await env.client.get("/api/escalations/queue?status=closed", headers=await _login(env, "ha.lt"))
+        assert queue.json()["items"][0]["close_note"] == masked and SECRET not in queue.text
+        [row] = _audit(env, "esc-1")
+        assert row["detail"] == {"escalation_id": 1, "close_result": "completed", "closed_by": "l2_01", "note_length": len(masked)}
+        assert SECRET not in repr(env.h.audit.rows) and MASK not in repr(row)  # không nguyên văn ghi chú (gốc lẫn đã che)
+        assert [e.detail for e in env.sink.of("privacy_secret_redacted")] == [{"count": 1}]
+
+
+async def test_redacted_note_over_1000_is_422_not_truncated() -> None:
+    raw = "a" * (1000 - len(SECRET)) + SECRET  # 1000 ký tự; mặt nạ dài hơn chuỗi bí mật → bản che 1001
+    assert len(raw) == 1000 and len(raw.replace(SECRET, MASK)) > 1000
+    async with env_with(("E1", False)) as (env, esc):
+        _invalid(await _close(env, 1, await _login(env, "long.nh"), body={"close_result": "completed", "note": raw}), "note")
+        assert esc.rows[0]["closed_at"] is None and _audit(env, "esc-1") == []
+
+
+class BrokenGuard:
+    calls = 0
+
+    async def redact(self, text: str) -> Any:
+        raise RuntimeError("guard hỏng")
+
+
+async def test_guard_down_503_nothing_closed() -> None:
+    async with env_with(("E1", False), guard=BrokenGuard()) as (env, esc):
+        r = await _close(env, 1, await _login(env, "long.nh"))
+        assert r.status_code == 503 and r.json() == {"error": "privacy_guard_unavailable"}
+        assert esc.rows[0]["closed_at"] is None and _audit(env, "esc-1") == []
+
+
+# ---- tickets.close_reason chỉ ghi một lần ---------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("final", [_final("E1", close_reason="resolved_user_confirmed"), _final("E1", state=S_RESOLVED), None])
+async def test_close_reason_not_overwritten(final: FinalSummary | None) -> None:
+    """Ticket đã có `close_reason` / không ở `S_ESCALATED` / chưa finalize → giữ nguyên, ca VẪN đóng (log.info kiểm ở test PG)."""
+    async with env_with(("E1", False)) as (env, esc):
+        env.h.tickets.rows["esc-1"]["final"] = final
+        r = await _close(env, 1, await _login(env, "long.nh"))
+        assert r.status_code == 200 and esc.rows[0]["closed_at"] is not None
+        assert env.h.tickets.rows["esc-1"]["final"] == final
+        assert r.json()["close_reason"] == (final.close_reason if final else None)
+
+
+# ---- đồng thời ------------------------------------------------------------------------------------------------------------------
+
+
+async def test_concurrent_close_one_wins() -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        l1, l2 = await _login(env, "ha.lt"), await _login(env, "long.nh")
+        a, b = await asyncio.gather(_close(env, 1, l1), _close(env, 1, l2, body={"close_result": "confirmed_denial", "note": "khác"}))
+        assert sorted([a.status_code, b.status_code]) == [200, 409]
+        winner = a if a.status_code == 200 else b
+        assert (esc.rows[0]["close_result"], esc.rows[0]["close_note"]) == (winner.json()["close_result"], winner.json()["close_note"])
+        assert len(_audit(env, "esc-1")) == 1
+
+
+# ---- audit/check ---------------------------------------------------------------------------------------------------------------
+
+
+async def test_audit_check_not_confused_by_close_row() -> None:
+    async with env_with(("E1", False)) as (env, _):
+        assert (await _close(env, 1, await _login(env, "long.nh"))).status_code == 200
+        [close_row] = _audit(env, "esc-1")
+        point8 = {"step": "B20", "event": "closed", "final_state": S_ESCALATED, "exit_code": "E1", "log_id": 1}
+        assert required("esc-1", [point8], final_state=S_ESCALATED) == []
+        assert required("esc-1", [point8, close_row], final_state=S_ESCALATED) == []  # dòng mới không bị báo thiếu
+        missing = required("esc-1", [close_row], final_state=S_ESCALATED)  # nhưng KHÔNG thay được điểm 8
+        assert [(m.point, m.fields) for m in missing] == [(8, ("B20/closed",))]
+
+
+async def test_closed_at_uses_app_clock() -> None:
+    async with env_with(("E1", False)) as (env, esc):
+        env.clock.advance(timedelta(minutes=7))
+        r = await _close(env, 1, await _login(env, "long.nh"))
+        assert esc.rows[0]["closed_at"] == env.clock.now() and r.json()["closed_at"].startswith(env.clock.now().strftime("%Y-%m-%dT%H:%M"))
+

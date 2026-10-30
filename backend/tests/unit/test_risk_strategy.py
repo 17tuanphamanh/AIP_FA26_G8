@@ -17,6 +17,7 @@ from app.risk.estimator import PMethod, RiskEstimate
 from app.risk.models import RuleVerdict
 from app.risk.strategy import (
     EVAL_ONLY,
+    RUNTIME_SELECTABLE,
     STRATEGIES,
     FullAutoBypass,
     Strategy,
@@ -203,10 +204,15 @@ def test_st14_full_auto_bypass() -> None:
 
 
 def test_st15_check_strategy_eval_only_blocked_outside_eval() -> None:
-    """st15 [Chốt cổng 6]: eval_mode=False — 4 chiến lược EVAL_ONLY → StrategyNotAllowed, hybrid qua; eval_mode=True — 5 qua."""
-    assert frozenset({"rule_only", "llm_only", "full_auto", "hybrid_guarded"}) == EVAL_ONLY
-    assert STRATEGIES == EVAL_ONLY | {"hybrid"} and len(STRATEGIES) == 5
-    check_strategy("hybrid", eval_mode=False)  # qua = không ném
+    """st15 [Chốt cổng 6] — sửa có chủ ý theo D-67 (GIỮ TÊN: `mutate_6b.py` M-6B-6 gọi test này): `RUNTIME_SELECTABLE` = rule_only,
+    hybrid, hybrid_guarded qua khi eval_mode=False; `EVAL_ONLY` còn llm_only, full_auto → StrategyNotAllowed; eval_mode=True — 5 qua.
+    Trước D-67: EVAL_ONLY = 4 chiến lược, chỉ hybrid qua lúc vận hành."""
+    assert frozenset({"llm_only", "full_auto"}) == EVAL_ONLY
+    assert RUNTIME_SELECTABLE == ("rule_only", "hybrid", "hybrid_guarded")
+    assert STRATEGIES == EVAL_ONLY | frozenset(RUNTIME_SELECTABLE) and len(STRATEGIES) == 5
+    assert not EVAL_ONLY & frozenset(RUNTIME_SELECTABLE)
+    for s in RUNTIME_SELECTABLE:
+        check_strategy(s, eval_mode=False)  # qua = không ném
     for s in sorted(EVAL_ONLY):
         with pytest.raises(StrategyNotAllowed):
             check_strategy(s, eval_mode=False)

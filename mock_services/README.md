@@ -125,8 +125,10 @@ Mã 409 cũ giữ nguyên: `not_a_paid_license`, `no_license_available` (assign)
 ## Màn xem trạng thái (`/console`, `app/console.py`)
 
 HTML dựng ở server, tự làm mới 5 giây, **chỉ đọc**, để demo "trước/sau" khi agent xử lý ticket. Mỗi trang có giờ VN (UTC+7) và
-dòng **MÔI TRƯỜNG GIẢ LẬP**. Chỉ phục vụ khi `APP_ENV` là `dev` hoặc `test` (compose truyền `APP_ENV` vào container `mock`);
-thiếu hoặc giá trị khác → **404**. Không cần token (trình duyệt không gắn được header) — rào là `APP_ENV` + cổng chỉ bind localhost.
+dòng **MÔI TRƯỜNG GIẢ LẬP**. Chỉ phục vụ khi `APP_ENV` là `dev` hoặc `test` (compose truyền `APP_ENV` vào container `mock`)
+**và** cờ `MOCK_CONSOLE_ENABLED` bật (đúng `1` hoặc `true`; mặc định `0` = tắt — đặt trong `.env` khi cần demo); thiếu một trong
+hai → **404** ở `/console` và mọi trang con. Không cần token (trình duyệt không gắn được header) — rào là `APP_ENV` + cờ + cổng chỉ
+bind localhost.
 
 | URL (`http://127.0.0.1:8100…`) | Nội dung |
 |---|---|

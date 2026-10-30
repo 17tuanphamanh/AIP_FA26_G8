@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 from alembic import command
+from app.api.matched_rules import RuleRef
 from app.api.trace import SqlTraceSource, build_trace
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -99,7 +100,7 @@ async def test_sql_source_reads_whitelisted_shape(rw: AsyncEngine) -> None:
     assert all("note" not in a for a in data.approvals)
     assert data.kb_titles == {("KB-VPN-001", 3): "Gia hạn chứng chỉ VPN"}
     assert data.names == {"tr-l1": "Lê Thu Hà"}
-    out = build_trace(data, {"R18": "mô tả"})
+    out = build_trace(data, {"R18": RuleRef("approval_required", "mô tả")})
     assert CANARY not in out.model_dump_json()
     steps = {s.step: s for s in out.steps}
     assert [s.model_dump() for s in steps["B10"].sources or []] == [{"doc_id": "KB-VPN-001", "title": "Gia hạn chứng chỉ VPN"}]

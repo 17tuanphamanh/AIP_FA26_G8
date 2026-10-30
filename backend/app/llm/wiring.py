@@ -37,7 +37,7 @@ from app.llm.providers.scripted import (
 )
 from app.llm.registry import PromptRegistry, load_prompts
 from app.llm.store import SqlLlmStore
-from app.settings import Settings
+from app.settings import DEV_FAKE_ENVS, Settings
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,11 @@ def check_llm(settings: Settings) -> LlmSetup:
     return LlmSetup(config=cfg, runtime=runtime, registry=registry, presets=presets)
 
 
+def sim_presets_allowed(settings: Settings) -> bool:
+    """Preset `sim_*` (dữ liệu thử, `scripts/sim`) chỉ khi APP_ENV ∈ {dev, test} VÀ không EVAL_MODE (P6 gói tuần 8, D-67)."""
+    return settings.app_env in DEV_FAKE_ENVS and not settings.eval_mode
+
+
 @asynccontextmanager
 async def open_llm(
     setup: LlmSetup, settings: Settings, *, engine: AsyncEngine, clock: Clock, trace: TraceSource
@@ -77,7 +82,9 @@ async def open_llm(
     async with AsyncExitStack() as stack:
         if setup.runtime.backend == "scripted":
             assert setup.presets is not None
-            providers[SCRIPTED_PROVIDER] = PresetScriptedLLM(setup.presets, SqlPresetResolver(engine))
+            providers[SCRIPTED_PROVIDER] = PresetScriptedLLM(
+                setup.presets, SqlPresetResolver(engine), allow_sim=sim_presets_allowed(settings)
+            )
         else:
             for name in sorted({t.provider for chain in setup.runtime.chains.values() for t in chain}):
                 p = setup.config.providers[name]

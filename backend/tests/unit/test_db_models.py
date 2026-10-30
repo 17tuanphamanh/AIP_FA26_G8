@@ -19,6 +19,7 @@ MIGRATION = (
 
 MIGRATION_0010 = MIGRATION.parent / "0010_rate_limits.py"  # gói 2b (D-54 a) — bảng thứ 23 `rate_hits`
 MIGRATION_0012 = MIGRATION.parent / "0012_email_outbox.py"  # notify-email — bảng thứ 24 `email_outbox` + `users.email`
+MIGRATION_0013 = MIGRATION.parent / "0013_m5_strategy_runtime.py"  # D-67 — bảng thứ 25 `m5_strategy_changes` + 2 cột `tickets`
 
 
 def _migration(path: Path = MIGRATION) -> ModuleType:
@@ -39,10 +40,11 @@ def _check(table: str, column: str) -> str:
 
 def test_24_tables() -> None:
     """Gói 2b (PLAN-2B1 G8 #1, Q-2B1-6; đặc tả 4.8 "bảng thứ 23"): 22 bảng gốc + `rate_hits` (migration 0010). Notify-email: bảng thứ
-    24 `email_outbox` (migration 0012)."""
-    assert len(Base.metadata.tables) == 24
+    24 `email_outbox` (migration 0012). D-67: bảng thứ 25 `m5_strategy_changes` (migration 0013) — giữ tên test."""
+    assert len(Base.metadata.tables) == 25
     assert "rate_hits" in Base.metadata.tables
     assert "email_outbox" in Base.metadata.tables
+    assert "m5_strategy_changes" in Base.metadata.tables
 
 
 @pytest.mark.parametrize("table", ["tickets", "audit_logs"])
@@ -71,16 +73,20 @@ def test_no_password_column_anywhere() -> None:
 def test_tickets_store_redacted_request_only() -> None:
     cols = set(Base.metadata.tables["tickets"].columns.keys())
     assert "redacted_request" in cols and "raw_request" not in cols  # D-07 (A1)
-    assert len(cols) == 21  # 20 cột nguồn + is_parent (A2)
+    assert len(cols) == 23  # 20 cột nguồn + is_parent (A2) + D-67 `strategy`, `source` (migration 0013)
 
 
 def test_migration_grants_cover_every_table() -> None:
     """Gói 2b (PLAN-2B1 G8 #2): quyền `app_rw` = CRUD + append-only của `0001` HỢP `RW_TABLES` của `0010` (`rate_hits`) HỢP
-    `RW_TABLES` của `0012` (`email_outbox`, notify-email)."""
-    m, m10, m12 = _migration(), _migration(MIGRATION_0010), _migration(MIGRATION_0012)
+    `RW_TABLES` của `0012` (`email_outbox`, notify-email) HỢP `RW_TABLES` của `0013` (`m5_strategy_changes`, D-67)."""
+    m, m10, m12, m13 = _migration(), _migration(MIGRATION_0010), _migration(MIGRATION_0012), _migration(MIGRATION_0013)
     assert tuple(m10.RW_TABLES) == ("rate_hits",)
     assert tuple(m12.RW_TABLES) == ("email_outbox",)
-    assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) | set(m12.RW_TABLES) == set(Base.metadata.tables)
+    assert tuple(m13.RW_TABLES) == ("m5_strategy_changes",)
+    assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) | set(m12.RW_TABLES) | set(m13.RW_TABLES) == set(
+        Base.metadata.tables
+    )
+    assert "m5_strategy_changes" not in m.MONITOR_TABLES  # D-67: không cấp app_monitor
     assert "email_outbox" not in m.MONITOR_TABLES  # body là nội dung tin: không cấp app_monitor
     assert not set(m.RW_CRUD_TABLES) & set(m.APPEND_ONLY)
     assert not (set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY)) & set(m10.RW_TABLES)  # rate_hits không phải bảng của 0001
@@ -160,7 +166,7 @@ def test_tickets_requester_created_at_index() -> None:
     t: Table = Base.metadata.tables["tickets"]
     indexes = {str(ix.name): [c.name for c in ix.columns] for ix in t.indexes}
     assert indexes["ix_tickets_requester_created_at"] == ["requester_id", "created_at"]
-    assert len(t.columns) == 21  # không thêm cột vào tickets
+    assert len(t.columns) == 23  # 0010 không thêm cột vào tickets; D-67 (0013) thêm `strategy`, `source`
 
 
 def test_migration_0010_downgrade_views_equal_0008() -> None:
@@ -190,3 +196,39 @@ def test_email_outbox_model_matches_migration_0012() -> None:
     assert not [c.name for c in t.columns if "address" in c.name or c.name in ("email", "to")]
     email = Base.metadata.tables["users"].c.email
     assert isinstance(email.type, String) and email.type.length == 254 and email.nullable
+
+
+# ---- D-67 (migration 0013) ------------------------------------------------------------------------------------------------
+
+
+def test_m5_strategy_model_matches_migration_0013() -> None:
+    """D-67: `0013` nối sau `0012`; `tickets.source` CHECK = hằng model, NOT NULL mặc định 'real'; `tickets.strategy` NULL, không CHECK
+    (tập hợp lệ ở `risk/strategy.py`); `m5_strategy_changes` chỉ ghi thêm (app_rw SELECT, INSERT; trigger chặn UPDATE/DELETE/TRUNCATE);
+    `v_leaf` = cột của 0010 + `strategy`, `source` ở cuối; downgrade tạo lại 4 view đúng như 0008/0010/0011."""
+    from app.db.models import TICKET_SOURCES
+
+    m13 = _migration(MIGRATION_0013)
+    m10 = _migration(MIGRATION_0010)
+    m11 = _migration(MIGRATION.parent / "0011_monitor_child_notices.py")
+    assert (m13.revision, m13.down_revision) == ("0013", "0012")
+    assert tuple(m13.SOURCES) == TICKET_SOURCES == ("real", "sim", "eval")
+    assert _check("tickets", "source") == "source IN ('real', 'sim', 'eval')"
+    t: Table = Base.metadata.tables["tickets"]
+    assert t.c.strategy.nullable and not t.c.source.nullable
+    assert not [c for c in t.constraints if isinstance(c, CheckConstraint) and str(c.name).endswith("_strategy")]
+    assert m13.RW_PRIVILEGES == "SELECT, INSERT"
+    source = MIGRATION_0013.read_text(encoding="utf-8")
+    assert "BEFORE UPDATE OR DELETE ON {CHANGES}" in source and "BEFORE TRUNCATE ON {CHANGES}" in source
+    assert tuple(m13.LEAF_COLUMNS_0012) == tuple(m10.LEAF_COLUMNS)
+    assert tuple(m13.LEAF_COLUMNS) == (*m10.LEAF_COLUMNS, "strategy", "source")
+    views = dict(m13.VIEWS_0012)
+    assert list(views) == ["v_leaf", "v_decisions", "v_l2_queue", "v_child_notices"]
+    assert views["v_leaf"] == "SELECT " + ", ".join(f"t.{c}" for c in m10.LEAF_COLUMNS) + " FROM tickets t WHERE t.is_parent = false"
+    assert views["v_decisions"] == dict(m10.VIEWS_0008)["v_decisions"]
+    assert views["v_l2_queue"] == dict(m10.VIEWS_0008)["v_l2_queue"]
+    assert views["v_child_notices"] == m11.VIEW_SQL
+    e: Table = Base.metadata.tables["escalations"]
+    assert e.c.close_note.nullable and _check("escalations", "close_note_len") == m13.CLOSE_NOTE_RULE  # ĐP bổ sung 26/10
+    c = Base.metadata.tables["m5_strategy_changes"]
+    assert [col.name for col in c.columns] == ["id", "strategy", "changed_by", "reason", "changed_at"]
+    assert not any(col.nullable for col in c.columns)
