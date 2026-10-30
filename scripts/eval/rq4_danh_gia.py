@@ -16,7 +16,8 @@ Lệnh (chạy ở gốc repo/worktree):
   # 3. Chọn ngưỡng — CHỈ trên validation, ghi file TRƯỚC khi chạy test
   python scripts/eval/rq4_danh_gia.py chon-nguong --kieu block|hai-nguong --prep VAL.prep --diem VAL.diem --ra N.json
   python scripts/eval/rq4_danh_gia.py chon-nguong --kieu review-d52 --prep VAL.prep --diem VAL.diem --llm VAL.llm --ra N.json
-  python scripts/eval/rq4_danh_gia.py chon-nguong --kieu co-dinh --tau-review 0.9999 --nguon "<nguồn>" --ra N.json  # 5a v3
+  # 3b. Gộp mọi ngưỡng đã chọn → thresholds.json (+ SHA-256) gửi TA TRƯỚC khi chạy test; từ chối ghi đè
+  python scripts/eval/rq4_danh_gia.py gop-nguong --ra thresholds.json --nguong model:v3=N1.json --nguong tang5b:v3=N2.json
   # 4. Câu nào cần LLM (5b: vùng giữa hai ngưỡng hoặc model lỗi)
   python scripts/eval/rq4_danh_gia.py can-llm --phuong-an tang5b:v3 --prep P --diem D --nguong N --ra ids.txt
   # 5. Gọi LLM b02_injection_judge đúng đường chạy thật (_judge_runtime, không cache, không dự phòng) — MỖI phương án
@@ -32,8 +33,9 @@ Phương án: `regex` (1) · `model:pg2|v3|v4` (2, 3) · `llm` (4) · `tang5a:v3
 `tang5b:v3|v4` (5b, hai ngưỡng B02 §5 — logic `classifier_shortcut` chế độ `active`, ngưỡng chọn trên validation).
 
 Quyết định 5a/4/5b sau LLM gọi `after_judge` THẬT (`backend/app/guard/b2_review.py`). E1 (5a: LLM nói không mà p ≥ τ
-hoặc too_many_windows) ghi `ket_cuc=E1`, `nhan_du_doan=tan_cong` (bảng 9.6 của đặc tả D-52 tính "giữ" = E0 ∪ E1) — CHỜ TA
-xác nhận. File trung gian có chữ chỉ nằm dưới `.verify/` (gitignore). Không in chữ câu nào ra màn hình.
+hoặc too_many_windows) ghi `ket_cuc=E1`, `nhan_du_doan=tan_cong` — TA 30/10: E1 tính là "giữ" (báo recall cả E0 lẫn
+E0 ∪ E1). Mọi phương án có model chấm chữ đã thay nhãn che (`text_model`), LLM nhận chữ sau L1 (`text_l1`) — TA 30/10.
+Mọi ngưỡng (PG2, v3, v4; τ_review 5a, τ_block/τ_pass 5b) chọn trên CÙNG validation v2.7 — TA 30/10. File trung gian có chữ chỉ nằm dưới `.verify/` (gitignore). Không in chữ câu nào ra màn hình.
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-PHIEN_BAN = "0.2.0"
+PHIEN_BAN = "0.3.0"
 
 NHAN_TC, NHAN_BT = "tan_cong", "binh_thuong"
 LABEL_CSV = {NHAN_TC: "attack", NHAN_BT: "normal"}
@@ -335,7 +337,7 @@ def _cmd_cham_model(a: argparse.Namespace) -> None:
     scored = cham_rows(rows, classify)
     meta = {"lenh": "cham-model", "model": a.model, "model_dir": a.model_dir, "prep_sha256": sha256_file(a.prep),
             "input_sha256": meta_p.get("input_sha256"), "threads": a.threads, "thiet_bi": "cpu",
-            "dau_vao_model": "text_model (đã thay nhãn che — TA 30/10 câu 2, chờ xác nhận)", "model_info": info,
+            "dau_vao_model": "text_model (đã thay nhãn che — TA 30/10)", "model_info": info,
             "moi_truong": moi_truong()}  # fmt: skip
     write_jsonl(a.ra, meta, scored)
     print(f"cham-model {a.model}: {len(scored)} câu · lỗi {sum(1 for s in scored if s['error'])} → {a.ra}")
@@ -358,7 +360,7 @@ def chon_tau_block(scores: Sequence[float], y: Sequence[int], fpr_max: float = F
 
 
 def chon_tau_pass(scores: Sequence[float], y: Sequence[int], tau_block: float, lot_toi_da: int = 0) -> dict[str, Any]:
-    """τ_pass LỚN NHẤT < τ_block có số câu tấn công với p ≤ τ_pass ≤ `lot_toi_da` (B02 §7; số cho phép CHỜ TA)."""
+    """τ_pass LỚN NHẤT < τ_block có số câu tấn công với p ≤ τ_pass ≤ `lot_toi_da` (B02 §7; TA 30/10: 0 câu lọt, không nới)."""
     for tau in sorted({s for s in scores if s < tau_block}, reverse=True):
         lot = sum(1 for s, t in zip(scores, y) if t and s <= tau)
         if lot <= lot_toi_da:
@@ -403,7 +405,7 @@ def rows_d52(prep: Sequence[Mapping[str, Any]], diem: Sequence[Mapping[str, Any]
 
 
 def _cmd_chon_nguong(a: argparse.Namespace) -> None:
-    if a.kieu == "co-dinh":  # 5a với v3: đúng cấu hình tag (B2_TAU_REVIEW của lượt đo), KHÔNG chọn lại
+    if a.kieu == "co-dinh":  # chỉ để đối chiếu; TA 30/10: 5a (cả v3) dùng τ chọn theo D-52 trên validation đúng
         if a.tau_review is None or not a.nguon:
             raise SystemExit("DỪNG: co-dinh cần --tau-review và --nguon (vd \"B2_TAU_REVIEW lượt S3 trên tag, DA9 29/10\")")
         kq0 = {"kieu": "co-dinh", "tau_review": a.tau_review, "nguon": a.nguon, "moi_truong": moi_truong()}
@@ -447,6 +449,66 @@ def _cmd_chon_nguong(a: argparse.Namespace) -> None:
     Path(a.ra).parent.mkdir(parents=True, exist_ok=True)
     Path(a.ra).write_text(json.dumps(kq, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(f"chon-nguong {a.kieu}: " + ", ".join(f"{k}={kq[k]}" for k in ("tau_block", "tau_pass", "tau_review") if k in kq))
+
+
+# ---- 3b. gop-nguong ---------------------------------------------------------------------------------------------------
+
+CAN_TAU = {"model:": ("tau_block",), "tang5a:": ("tau_review",), "tang5b:": ("tau_block", "tau_pass")}
+
+
+def gop_nguong(items: Sequence[tuple[str, str]], validation_sha: str | None = None) -> dict[str, Any]:
+    """Gộp các file `chon-nguong` thành một bản ghi cố định (gửi TA trước test). Mọi file phải từ CÙNG validation."""
+    if not items:
+        raise SystemExit("DỪNG: cần ít nhất một --nguong PHUONG_AN=FILE")
+    out: dict[str, Any] = {}
+    nguon_val: set[str] = set()
+    for pa, path in items:
+        m = model_cua(pa)
+        need = next((v for k, v in CAN_TAU.items() if pa.startswith(k)), None)
+        if m is None or need is None:
+            raise SystemExit(f"DỪNG: {pa} không cần ngưỡng (chỉ model:/tang5a:/tang5b:)")
+        if pa in out:
+            raise SystemExit(f"DỪNG: {pa} xuất hiện hai lần")
+        ng = json.loads(Path(path).read_text(encoding="utf-8"))
+        if ng.get("kieu") == "co-dinh":
+            raise SystemExit(f"DỪNG: {path} là ngưỡng cố định — TA 30/10: mọi ngưỡng chọn trên validation")
+        if ng.get("model") != m:
+            raise SystemExit(f"DỪNG: {path} chọn cho model {ng.get('model')}, không phải {m}")
+        thieu = [t for t in need if t not in ng]
+        if thieu:
+            raise SystemExit(f"DỪNG: {path} thiếu {thieu} cho {pa}")
+        val = (ng.get("validation") or {}).get("input_sha256")
+        if not val:
+            raise SystemExit(f"DỪNG: {path} không ghi SHA-256 validation")
+        nguon_val.add(val)
+        out[pa] = {"file": path, "sha256": sha256_file(path), "kieu": ng["kieu"], "model": m,
+                   "diem_sha256": ng.get("diem_sha256"), "llm_sha256": ng.get("llm_sha256"),
+                   "auc_val": ng.get("auc_val"), "tieu_chi": ng.get("tieu_chi")} | {t: ng[t] for t in need}  # fmt: skip
+    if len(nguon_val) != 1:
+        raise SystemExit(f"DỪNG: các file ngưỡng chọn trên {len(nguon_val)} validation khác nhau")
+    (val,) = nguon_val
+    if validation_sha and val != validation_sha.lower():
+        raise SystemExit(f"DỪNG: validation {val[:12]}… khác --validation-sha {validation_sha[:12]}…")
+    return {"loai": "thresholds RQ4 (DA10)", "chon_tren": "chỉ validation — chưa chạy test", "validation_input_sha256": val,
+            "phuong_an": out, "moi_truong": moi_truong()}  # fmt: skip
+
+
+def _cmd_gop_nguong(a: argparse.Namespace) -> None:
+    ra = Path(a.ra)
+    if ra.exists():
+        raise SystemExit(f"DỪNG: {ra} đã có — ngưỡng đã gửi TA không ghi đè (dùng tên mới)")
+    items = []
+    for x in a.nguong:
+        pa, sep, path = x.partition("=")
+        if not sep or not path:
+            raise SystemExit(f"DỪNG: --nguong cần dạng PHUONG_AN=FILE, nhận {x!r}")
+        items.append((pa, path))
+    kq = gop_nguong(items, a.validation_sha)
+    ra.parent.mkdir(parents=True, exist_ok=True)
+    ra.write_text(json.dumps(kq, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    for pa, v in kq["phuong_an"].items():
+        print(f"  {pa}: " + ", ".join(f"{t}={v[t]}" for t in ("tau_block", "tau_pass", "tau_review") if t in v))
+    print(f"gop-nguong: {len(kq['phuong_an'])} phương án → {ra}\nsha256 {sha256_file(ra)}")
 
 
 def _has_meta(path: str) -> bool:
@@ -742,6 +804,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     n.add_argument("--lot-toi-da", type=int, default=0)
     n.add_argument("--ra", required=True)
     n.set_defaults(f=_cmd_chon_nguong)
+    gn = sp.add_parser("gop-nguong")
+    gn.add_argument("--nguong", action="append", required=True, help="PHUONG_AN=FILE, vd tang5b:v4=nguong.v4.5b.json")
+    gn.add_argument("--validation-sha", help="SHA-256 file validation mong đợi (vd val_chung_rq4.csv)")
+    gn.add_argument("--ra", required=True)
+    gn.set_defaults(f=_cmd_gop_nguong)
     k = sp.add_parser("can-llm")
     for arg in ("--phuong-an", "--prep", "--ra"):
         k.add_argument(arg, required=True)

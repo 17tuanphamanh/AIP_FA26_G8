@@ -258,3 +258,37 @@ def test_goi_llm_dry_run_khong_goi_mang(rq: ModuleType, tmp_path: Path, capsys: 
     rq.main(["goi-llm", str(P), str(tmp_path / "o.jsonl"), "--phuong-an", "tang5a:v3", "--max-calls", "5", "--max-usd", "0",
              "--dry-run"])  # fmt: skip
     assert "cần 2" in capsys.readouterr().out and not (tmp_path / "o.jsonl").exists()
+
+
+def test_gop_nguong(rq: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def ng(name: str, **kw: Any) -> str:
+        p = tmp_path / name
+        p.write_text(json.dumps({"validation": {"input_sha256": "ab" * 32}, **kw}), encoding="utf-8")
+        return str(p)
+
+    blk = ng("b.json", kieu="block", model="v4", tau_block=0.99)
+    hai = ng("h.json", kieu="hai-nguong", model="v4", tau_block=0.99, tau_pass=0.01)
+    rv = ng("r.json", kieu="review-d52", model="v4", tau_review=0.95)
+    out = tmp_path / "thresholds.json"
+    rq.main(["gop-nguong", "--nguong", f"model:v4={blk}", "--nguong", f"tang5b:v4={hai}", "--nguong", f"tang5a:v4={rv}",
+             "--validation-sha", "AB" * 32, "--ra", str(out)])  # fmt: skip
+    kq = json.loads(out.read_text(encoding="utf-8"))
+    assert kq["phuong_an"]["tang5b:v4"]["tau_pass"] == 0.01 and kq["phuong_an"]["model:v4"]["sha256"] == rq.sha256_file(blk)
+    assert rq.sha256_file(out) in capsys.readouterr().out
+    with pytest.raises(SystemExit):  # đã gửi TA → không ghi đè
+        rq.main(["gop-nguong", "--nguong", f"model:v4={blk}", "--ra", str(out)])
+    bad = [
+        [("tang5b:v4", blk)],  # thiếu tau_pass
+        [("model:v3", blk)],  # sai model
+        [("model:v4", ng("c.json", kieu="co-dinh", model="v4", tau_block=0.5))],  # ngưỡng cố định
+        [("model:v4", blk), ("tang5b:v4", str(tmp_path / "x.json"))],  # validation khác
+        [("llm", blk)],
+        [("model:v4", blk), ("model:v4", blk)],
+    ]
+    (tmp_path / "x.json").write_text(json.dumps({"validation": {"input_sha256": "cd" * 32}, "kieu": "hai-nguong",
+                                                 "model": "v4", "tau_block": 1, "tau_pass": 0}), encoding="utf-8")  # fmt: skip
+    for items in bad:
+        with pytest.raises(SystemExit):
+            rq.gop_nguong(items)
+    with pytest.raises(SystemExit):
+        rq.gop_nguong([("model:v4", blk)], "cd" * 32)
