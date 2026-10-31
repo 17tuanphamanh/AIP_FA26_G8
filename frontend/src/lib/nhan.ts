@@ -252,3 +252,41 @@ export const caSo = (id: number | string): string => `Ca #${id}`;
 /** Tooltip "Chuyển L2 (có trọng số)" — tỉ lệ theo `N3_WEIGHTS` của backend (monitor/metrics.py: 0,7 / 0,2 / 0,1). */
 export const GOI_Y_TRONG_SO = "Tính theo tỉ lệ 70/20/10 giữa ca thường, ca cần duyệt và ca nhạy cảm.";
 
+
+// ---------------------------------------------------------------- thông báo của nhân viên (N-TB, hợp đồng thông báo §1)
+// Câu chữ mới [ĐX] (bảng từ ngữ giao diện chưa có mục thông báo) — chờ duyệt.
+
+/** Nhãn ngắn của `result` (chip trên mỗi dòng thông báo). Khoá lạ → không có nhãn (parser đã chặn khoá lạ). */
+export const KET_QUA_THONG_BAO: Readonly<Record<string, string>> = {
+  approved: "Đã duyệt",
+  rejected: "Bị từ chối",
+  completed: "Đã xử lý xong",
+  confirmed_denial: "Giữ quyết định từ chối",
+  reopened_as_new: "Cần gửi yêu cầu mới",
+};
+
+/** Câu chung theo `result` — thay chữ của server khi chữ đó có dáng mã nội bộ (fail-closed). */
+export const CAU_THONG_BAO: Readonly<Record<string, string>> = {
+  approved: "IT đã duyệt yêu cầu của bạn.",
+  rejected: "IT đã từ chối yêu cầu của bạn.",
+  completed: "Kỹ thuật viên đã xử lý xong yêu cầu của bạn.",
+  confirmed_denial: "Kỹ thuật viên đã xem lại và giữ quyết định từ chối.",
+  reopened_as_new: "Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc này.",
+};
+
+/** Câu chung theo `kind` khi `result` không có câu (dự phòng; parser đã chặn khoá lạ). */
+export const CAU_THONG_BAO_LOAI: Readonly<Record<string, string>> = {
+  approval_decided: "IT đã có quyết định cho yêu cầu của bạn.",
+  escalation_closed: "Kỹ thuật viên đã xử lý xong ca của bạn.",
+};
+export const CAU_THONG_BAO_KHAC = "Yêu cầu của bạn có cập nhật mới.";
+
+/** Dáng mã nội bộ (mã kết thúc E*, bước B*, luật R*, trạng thái S_*) — có là KHÔNG hiện chữ server cho nhân viên. */
+export const DANG_MA_NOI_BO = /\bE\d\b|\bB\d{1,2}\b|\bR\d+\b|S_[A-Z]/;
+
+/** Chữ thông báo cho nhân viên: chữ server nguyên văn; rỗng hoặc có dáng mã → câu chung theo result/kind. */
+export function cauThongBao(item: { kind: string; result: string; text: string }): string {
+  const text = item.text.trim();
+  if (text !== "" && !DANG_MA_NOI_BO.test(text)) return text;
+  return ownEntry<string | null>(CAU_THONG_BAO, item.result, null) ?? ownEntry(CAU_THONG_BAO_LOAI, item.kind, CAU_THONG_BAO_KHAC);
+}

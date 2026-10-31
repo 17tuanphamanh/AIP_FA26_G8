@@ -36,12 +36,12 @@ export type ConversationItem =
       sources?: Source[];
     };
 
-// Nguồn: backend/app/api/tickets.py TicketView (response_model) — `conversation` là list[dict] nên phần tử để `unknown`,
-// component tự kiểm dạng (components/Conversation.tsx). Xoá khi: `npm run gen:api` chạy được (12b Q-fe-1) → dùng
-// kiểu của schema.gen.ts (conversation vẫn phải kiểm dạng).
-// `children_progress` (T20b, kiểu `ChildProgress` dưới): thiếu/null = ticket thường. Hình dạng `children_progress` và tin
-// `digest` kiểm lúc chạy ở api/tickets.ts `parseTicketView`.
-export type TicketView = {
+// Nguồn: backend/app/api/tickets.py TicketView (response_model) — PHẦN VIẾT TAY: `conversation` là list[dict] nên phần tử
+// để `unknown`, component tự kiểm dạng (components/Conversation.tsx); `children_progress` (T20b, kiểu `ChildProgress` dưới)
+// viết tay chặt hơn openapi (list[dict]) — hình dạng kiểm lúc chạy ở api/tickets.ts `parseTicketView`. `deadline` +
+// `server_now` LẤY TỪ schema.gen.ts (N-TB nối API thật, be-thong-bao 56ea4d9) — ghép ở types.ts `TicketView`; tập khoá +
+// từng khoá soát hai chiều ở schema.check.ts `TicketViewOk`.
+export type TicketViewBase = {
   ticket_id: string;
   status: string;
   waiting_for: "clarify" | "approval" | "confirm" | "reply" | null;
@@ -52,9 +52,6 @@ export type TicketView = {
   created_at: string;
   closed_at: string | null;
   children_progress?: ChildProgress[] | null;
-  // R3 (#76): hạn của LẦN CHỜ HIỆN TẠI (UTC); null = không chờ / đã kết thúc / cha nhiều ý. Backend ghi bắt buộc (có thể
-  // null); khai tuỳ chọn ở đây để thân/fixture cũ thiếu khoá vẫn đúng kiểu — thiếu = null (màn không hiện hạn).
-  deadline?: string | null;
 };
 
 // Nguồn: backend/app/api/tickets.py ConfirmIn (extra="forbid", note ≤ 1000). Xoá khi: route khai body trong openapi.

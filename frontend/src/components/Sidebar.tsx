@@ -4,6 +4,7 @@ import type { Me } from "../api/types.ts";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
 import { ownEntry } from "../lib/lookup.ts";
+import { NotificationBell } from "./NotificationBell.tsx";
 import { titleOf, useSessionTickets } from "../routes/employee/sessionTickets.ts";
 import type { Tone } from "../routes/employee/status.ts";
 
@@ -43,7 +44,7 @@ function RecentTickets() {
 }
 
 // Thanh bên hợp nhất Bản 4 (B4Sidebar): 264 px, không có thanh trên. Mục theo `permissions` (KH 4.1 #8), không
-// theo tên role. Chuông ẩn tới Phase 7 (KH 4.6). Hồ sơ hiện `user_id` (Q-fe-9 — `me` chưa có tên).
+// theo tên role. Chuông thông báo ở hàng logo (N-TB — components/NotificationBell.tsx; route chưa có → ẩn). Hồ sơ hiện `user_id` (Q-fe-9 — `me` chưa có tên).
 export function Sidebar({ me, onSignOut }: SidebarProps) {
   const staff = isStaff(me);
   const [signOutFailed, setSignOutFailed] = useState(false);
@@ -54,7 +55,8 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
     >
       <div className="flex h-10 items-center gap-2.5 px-2">
         <img src={logoUrl} alt="" width={28} height={28} />
-        <span className="text-secondary font-semibold">ServiceDesk AI</span>
+        <span className="grow text-secondary font-semibold">ServiceDesk AI</span>
+        <NotificationBell key={me.user_id} me={me} />
       </div>
 
       {staff ? (

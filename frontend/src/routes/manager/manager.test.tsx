@@ -51,6 +51,8 @@ import {
 import { rangeWindow } from "./range.ts";
 
 const clients: QueryClient[] = [];
+/** Thanh bên có chuông thông báo (N-TB, useInfiniteQuery): client không chạy query nào → chuông ẩn, 0 lời gọi mạng. */
+const idleClient = () => new QueryClient({ defaultOptions: { queries: { enabled: false } } });
 afterEach(() => {
   cleanup();
   for (const client of clients.splice(0)) client.clear();
@@ -867,9 +869,11 @@ describe("t64: L1 (ha.lt) không vào được 3 màn Trưởng BP IT — 0 lờ
   it("thanh bên: L1 không có Tổng quan/Cảnh báo/Chính sách; Trưởng BP IT có cả 3 + 'Chờ tôi duyệt'; trang đầu /dashboard", () => {
     const labels = (me: Me) => {
       const view = render(
-        <MemoryRouter>
-          <Sidebar me={me} onSignOut={async () => true} />
-        </MemoryRouter>,
+        <QueryClientProvider client={idleClient()}>
+          <MemoryRouter>
+            <Sidebar me={me} onSignOut={async () => true} />
+          </MemoryRouter>
+        </QueryClientProvider>,
       );
       const names = within(view.container).getAllByRole("link").map((a) => a.textContent);
       view.unmount();
@@ -1553,9 +1557,11 @@ describe("t126: thanh bên — me.role '__proto__' / 'constructor' / 'toString' 
   /** [tiêu đề khu IT, nhãn vai trò dưới user_id]. */
   const roleTexts = (me: Me) => {
     const view = render(
-      <MemoryRouter>
-        <Sidebar me={me} onSignOut={async () => true} />
-      </MemoryRouter>,
+      <QueryClientProvider client={idleClient()}>
+        <MemoryRouter>
+          <Sidebar me={me} onSignOut={async () => true} />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     const heading = view.container.querySelector("nav > span.text-label")?.textContent ?? null;
     const label = within(view.container).getByTestId("me-user-id").nextElementSibling?.textContent ?? null;
