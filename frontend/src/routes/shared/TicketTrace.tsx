@@ -222,7 +222,7 @@ function TraceButton({ ticketId }: { ticketId: string | undefined }) {
       <Link
         to={tracePath(ticketId)}
         data-testid="trace-link"
-        className="mt-6 inline-flex h-10 items-center rounded-full border border-line bg-white px-5 text-secondary font-semibold text-fpt-blue shadow-sm transition hover:bg-selected"
+        className="mt-6 inline-flex h-9 items-center rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-group"
       >
         {TRACE_TITLE}
       </Link>

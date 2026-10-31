@@ -4,7 +4,6 @@ import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { hasMore, loadedItems, queueQuery, type QueueItem } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueStatus } from "../../api/types.ts";
-import { CARD, PageIcon } from "../../components/PageIcon.tsx";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
 import { formatAt } from "../shared/traceText.ts";
 import { MaNhan, NhanMa } from "../../components/MaNhan.tsx";
@@ -135,13 +134,13 @@ function Detail({
     <section className="flex flex-col gap-6 px-12 pt-20 pb-8">
       <div className="flex flex-col gap-1">
         {BACK}
-        <div className="mt-2 flex items-center gap-4">
-          <PageIcon name="alert" tone={item.is_deny_case ? "danger" : closed ? "blue" : "orange"} />
-          <div className="flex min-w-0 grow flex-col gap-1">
-            <h1 data-testid="detail-exit" className="min-w-0 text-title">
-              <NhanMa {...exitNhan(item)} />
-            </h1>
-            <p className="text-label font-normal text-ink-2">
+        <div className="flex items-center gap-4">
+          <h1 data-testid="detail-exit" className="min-w-0 grow text-title">
+            <NhanMa {...exitNhan(item)} />
+          </h1>
+          <span className="shrink-0 text-secondary text-ink-2">{closed ? "Đã đóng" : waitingText(item.created_at, now)}</span>
+        </div>
+        <p className="text-label font-normal text-ink-2">
           Mã ticket{" "}
           <span className="font-mono select-all" data-testid="ticket-id">
             {item.ticket_id}
@@ -154,22 +153,13 @@ function Detail({
             </>
           ) : null}
           {item.assigned_to ? ` · ${item.assigned_to} đang xử lý` : ""}
-            </p>
-          </div>
-          <span
-            className={`shrink-0 rounded-full border px-4 py-2 text-secondary font-semibold ${
-              closed ? "border-line bg-group text-ink-2" : "border-fpt-orange/25 bg-orange-bg text-orange-ink"
-            }`}
-          >
-            {closed ? "Đã đóng" : waitingText(item.created_at, now)}
-          </span>
-        </div>
+        </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-5">
           {item.is_deny_case ? (
-            <div role="note" data-testid="deny-banner" className="rounded-2xl border border-danger/20 bg-danger-bg px-5 py-3.5 text-danger-ink">
+            <div role="note" data-testid="deny-banner" className="rounded-group bg-danger-bg px-5 py-3.5 text-danger-ink">
               <b className="font-semibold">{DENY_BANNER.strong}</b> {DENY_BANNER.rest}
             </div>
           ) : null}
@@ -178,7 +168,7 @@ function Detail({
         </div>
         {justClosed ? (
           <div className="flex flex-col gap-2">
-            <p role="status" data-testid="close-done" className="rounded-2xl border border-line bg-group px-4 py-3">
+            <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
               {closedWith === "reopened_as_new" ? REOPENED_TEXT : CLOSED_TEXT}
             </p>
             <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue">
@@ -208,7 +198,7 @@ function ClosedInfo({ item }: { item: QueueItem }) {
       <h2 id="closed-heading" className="pl-1 text-label text-ink-2">
         Đã đóng escalation
       </h2>
-      <dl className={`text-secondary ${CARD}`}>
+      <dl className="overflow-hidden rounded-group border border-line text-secondary">
         {rows.map((r) => (
           <div key={r.label} className="grid grid-cols-[110px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0">
             <dt className="text-ink-2">{r.label}</dt>
@@ -229,7 +219,7 @@ function Handoff({ note }: { note: unknown }) {
       <h2 id="handoff-heading" className="pl-1 text-label text-ink-2">
         Ghi chú bàn giao
       </h2>
-      <dl className={CARD}>
+      <dl className="overflow-hidden rounded-group border border-line">
         {handoffRows(note).map((row) => (
           <div
             key={row.key}
