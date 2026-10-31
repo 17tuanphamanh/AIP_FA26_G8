@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { flushSync } from "react-dom";
 import { GENERIC_LOGIN_ERROR, loginErrorMessage, USERNAME_HINT } from "../api/errors.ts";
 import { OTP_LENGTH } from "../components/OtpInput.tsx";
 import type { SignInResult } from "./context.ts";
@@ -26,8 +27,12 @@ export function useLoginSteps(onSignedIn?: (result: SignedIn) => void) {
   const [digits, setDigits] = useState<string[]>(EMPTY_OTP);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Nút hiện/ẩn mật khẩu (fe-login-sua). Mặc định ẩn; về lại ẩn khi gửi form, có kết quả (lỗi / OTP / xong), quay lại,
+  // xoá trắng (đóng hộp) — an toàn khi quay màn hình / trình chiếu demo.
+  const [passwordShown, setPasswordShown] = useState(false);
 
   function show(result: SignInResult, fromOtp: boolean) {
+    setPasswordShown(false);
     if (result.ok) {
       wipe(); // đã dùng xong: mật khẩu / OTP không nằm lại trong state
       onSignedIn?.(result);
@@ -53,6 +58,7 @@ export function useLoginSteps(onSignedIn?: (result: SignedIn) => void) {
     try {
       show(await signIn(username, password, otp), otp !== undefined);
     } catch {
+      setPasswordShown(false);
       setError(loginErrorMessage(null));
     } finally {
       setBusy(false);
@@ -61,6 +67,8 @@ export function useLoginSteps(onSignedIn?: (result: SignedIn) => void) {
 
   async function submitPassword(event: FormEvent) {
     event.preventDefault();
+    // Ẩn NGAY trên DOM trước khi gọi đăng nhập (flushSync) — không đợi nhịp render sau phản hồi.
+    flushSync(() => setPasswordShown(false));
     setError(null);
     await attempt(undefined);
   }
@@ -78,6 +86,7 @@ export function useLoginSteps(onSignedIn?: (result: SignedIn) => void) {
 
   function backToPassword() {
     setStep("password");
+    setPasswordShown(false);
     setPassword("");
     setDigits(EMPTY_OTP);
     setError(null);
@@ -85,6 +94,7 @@ export function useLoginSteps(onSignedIn?: (result: SignedIn) => void) {
 
   /** Xoá trắng mật khẩu + OTP. */
   function wipe() {
+    setPasswordShown(false);
     setPassword("");
     setDigits(EMPTY_OTP);
   }
@@ -95,6 +105,8 @@ export function useLoginSteps(onSignedIn?: (result: SignedIn) => void) {
     setUsername,
     password,
     setPassword,
+    passwordShown,
+    togglePassword: () => setPasswordShown((v) => !v),
     digits,
     setDigits,
     error,

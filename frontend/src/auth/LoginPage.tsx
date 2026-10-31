@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router";
 import logoUrl from "../assets/logo.svg";
 import { OtpInput } from "../components/OtpInput.tsx";
+import { PasswordField } from "../components/PasswordField.tsx";
 import { homePath } from "./permissions.ts";
 import { useAuth } from "./useAuth.ts";
 import { useLoginSteps } from "./useLoginSteps.ts";
@@ -19,7 +20,7 @@ function returnPath(state: unknown): string | null {
 export function LoginPage() {
   const { state } = useAuth();
   const location = useLocation();
-  const { step, username, setUsername, password, setPassword, digits, setDigits, error, busy, submitPassword, submitOtp, backToPassword } =
+  const { step, username, setUsername, password, setPassword, passwordShown, togglePassword, digits, setDigits, error, busy, submitPassword, submitOtp, backToPassword } =
     useLoginSteps();
 
   if (state.status === "signedIn") {
@@ -84,15 +85,14 @@ export function LoginPage() {
             <label htmlFor="login-password" className="sr-only">
               Mật khẩu
             </label>
-            <input
+            <PasswordField
               id="login-password"
               name="password"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mật khẩu"
-              autoComplete="current-password"
-              className="h-13 w-full bg-white px-4 placeholder:text-ink-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue"
+              onChange={setPassword}
+              shown={passwordShown}
+              onToggle={togglePassword}
+              inputClassName="h-13 bg-white px-4 placeholder:text-ink-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue"
             />
           </div>
           {alert}
