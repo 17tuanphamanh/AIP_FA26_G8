@@ -73,7 +73,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
   );
 
   return (
-    <div className="overflow-hidden rounded-group border border-line">
+    <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
       <p className="border-b border-line px-5 py-4.5 text-heading">{title}</p>
       <div className="flex items-center border-b border-line bg-group px-5 py-2.5">
         <span className="grow text-secondary text-ink-2">Đủ mọi trường của object đã băm</span>
@@ -100,7 +100,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
           <button
             type="button"
             onClick={() => void copy()}
-            className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue"
+            className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue transition hover:bg-selected"
           >
             Sao chép
           </button>

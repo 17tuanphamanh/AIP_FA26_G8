@@ -7,6 +7,7 @@ import type { ApprovalListItem } from "../../api/types.ts";
 import { hasPerm } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
 import { useServerNow } from "../../components/clock.ts";
+import { CARD, PageIcon } from "../../components/PageIcon.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import {
   actionLabel,
@@ -50,6 +51,7 @@ export function ApprovalQueue() {
   return (
     <section className="flex flex-col gap-6 px-12 py-10">
       <div className="flex items-end gap-6">
+        <PageIcon name="inbox" />
         <div className="flex min-w-0 grow flex-col gap-1">
           <h1 className="text-title">Chờ tôi duyệt</h1>
           <p className="text-ink-2">Hết hạn sẽ tự chuyển L2 — không bao giờ tự thực hiện.</p>
@@ -72,7 +74,7 @@ export function ApprovalQueue() {
       </div>
 
       {countStale ? (
-        <p role="status" data-testid="inbox-count-stale" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
+        <p role="status" data-testid="inbox-count-stale" className="rounded-2xl border border-fpt-orange/25 bg-orange-bg px-5 py-3.5 text-orange-ink">
           {INBOX_COUNT_STALE_TEXT} {errorMessage(pending.error instanceof ApiError ? pending.error : null)}
         </p>
       ) : null}
@@ -86,7 +88,7 @@ export function ApprovalQueue() {
       ) : items ? (
         <>
           {stale ? (
-            <p role="status" data-testid="inbox-stale" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
+            <p role="status" data-testid="inbox-stale" className="rounded-2xl border border-fpt-orange/25 bg-orange-bg px-5 py-3.5 text-orange-ink">
               {INBOX_STALE_TEXT} {errorMessage(stale.error instanceof ApiError ? stale.error : null)}
             </p>
           ) : null}
@@ -107,9 +109,9 @@ const EMPTY: Record<InboxTab, string> = {
 
 function InboxList({ items, tab }: { items: ApprovalListItem[]; tab: InboxTab }) {
   const now = useServerNow();
-  if (items.length === 0) return <p className="rounded-group bg-group px-5 py-4 text-ink-2">{EMPTY[tab]}</p>;
+  if (items.length === 0) return <p className="rounded-2xl border border-line bg-group px-5 py-4 text-ink-2">{EMPTY[tab]}</p>;
   return (
-    <ul aria-label="Phiếu duyệt" className="overflow-hidden rounded-group border border-line">
+    <ul aria-label="Phiếu duyệt" className={CARD}>
       {items.map((item) => (
         <InboxRow key={item.approval_id} item={item} now={now} />
       ))}
@@ -129,17 +131,29 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
         data-approval-id={item.approval_id}
         data-urgent={urgent}
         data-role-as={item.role_as}
-        className="grid min-h-13 grid-cols-[150px_minmax(0,1fr)_auto_14px] items-center gap-5 px-5 py-3 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className="grid min-h-16 grid-cols-[40px_150px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-3 transition-colors hover:bg-group/70 focus-visible:outline-2 focus-visible:outline-fpt-blue"
       >
         <span
+          aria-hidden="true"
+          className={`flex size-10 items-center justify-center rounded-xl ${
+            urgent ? "bg-danger-bg text-danger" : pending ? "bg-orange-bg text-fpt-orange" : "bg-group text-ink-2"
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M7 4h10v16l-5-3-5 3zM10 9.5l1.5 1.5 3-3" />
+          </svg>
+        </span>
+        <span
           data-testid="inbox-time"
-          className={`inline-flex items-center gap-2 text-secondary tabular-nums ${urgent ? "font-semibold text-danger" : ""}`}
+          className={`inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1 text-secondary tabular-nums ${
+            urgent ? "bg-danger-bg font-semibold text-danger" : pending ? "bg-orange-bg text-orange-ink" : "bg-group text-ink-2"
+          }`}
         >
           <span className={`size-1.75 shrink-0 rounded-full ${urgent ? "bg-danger" : pending ? "bg-fpt-orange" : "bg-ink-3"}`} aria-hidden="true" />
           {pending ? remainingShort(item.deadline, now) : ownEntry(STATUS_LABEL, item.status, "")}
         </span>
         <span className="flex min-w-0 flex-col">
-          <span className="truncate">{actionLabel(item.action_type)}</span>
+          <span className="truncate font-semibold">{actionLabel(item.action_type)}</span>
           <span className="truncate text-secondary text-ink-2">
             Máy {item.device_id ?? "(không có)"} · Ticket <span className="font-mono">{item.ticket_id}</span>
           </span>
@@ -193,7 +207,7 @@ function OverrideEntry() {
       <h2 id="override-entry-heading" className="pl-1 text-label text-ink-2">
         Ghi đè quyết định của hệ thống
       </h2>
-      <form onSubmit={submit} noValidate className="flex items-center gap-3 rounded-group border border-line px-5 py-3">
+      <form onSubmit={submit} noValidate className={`flex items-center gap-3 px-5 py-3 ${CARD}`}>
         <label htmlFor="override-ticket" className="shrink-0 text-secondary">
           Mã ticket
         </label>
@@ -207,9 +221,9 @@ function OverrideEntry() {
           autoComplete="off"
           spellCheck={false}
           aria-invalid={error !== null || undefined}
-          className="h-9 min-w-0 grow rounded-lg border border-line px-3 font-mono text-secondary"
+          className="h-10 min-w-0 grow rounded-xl border border-line px-3 font-mono text-secondary focus-visible:border-fpt-blue focus-visible:outline-4 focus-visible:outline-fpt-blue/10"
         />
-        <button type="submit" className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue">
+        <button type="submit" className="h-9 shrink-0 rounded-full bg-fpt-blue px-4 text-secondary font-semibold text-white shadow-sm transition hover:bg-fpt-blue/90">
           Xem ticket
         </button>
       </form>

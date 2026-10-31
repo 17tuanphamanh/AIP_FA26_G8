@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { hasMore, loadedItems, QUEUE_REFRESH_MS, queueQuery, queueRefetchInterval, type QueueItem } from "../../api/escalations.ts";
 import type { EscalationQueueStatus } from "../../api/types.ts";
+import { CARD, PageIcon } from "../../components/PageIcon.tsx";
 import { Segmented } from "../../components/Segmented.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import { formatAt } from "../shared/traceText.ts";
@@ -68,6 +69,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
   return (
     <section className="flex flex-col gap-6 px-12 py-10">
       <div className="flex items-end gap-4">
+        <PageIcon name="queue" />
         <div className="flex min-w-0 grow flex-col gap-1">
           <h1 className="text-title">Hàng đợi escalate</h1>
           <p className="text-ink-2">
@@ -87,14 +89,18 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
           type="button"
           onClick={() => void query.refetch()}
           disabled={query.isFetching}
-          className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60"
+          className="h-9 shrink-0 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue shadow-sm transition hover:bg-selected disabled:opacity-60"
         >
           {query.isFetching && !query.isFetchingNextPage ? "Đang tải…" : "Tải lại"}
         </button>
       </div>
 
       {items && items.length > 0 ? (
-        <div className="flex items-center gap-3 rounded-group border border-line px-5 py-3">
+        <div className={`flex items-center gap-3 px-5 py-3 ${CARD}`}>
+          <svg viewBox="0 0 24 24" className="size-5 shrink-0 fill-none stroke-ink-3" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M16 16l4 4" />
+          </svg>
           <label htmlFor="queue-search" className="shrink-0 text-secondary">
             Tìm ca
           </label>
@@ -108,7 +114,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
             autoComplete="off"
             spellCheck={false}
             data-testid="queue-search"
-            className="h-9 min-w-0 grow rounded-lg border border-line px-3 text-secondary"
+            className="h-10 min-w-0 grow rounded-xl border border-line px-3 text-secondary focus-visible:border-fpt-blue focus-visible:outline-4 focus-visible:outline-fpt-blue/10"
           />
           {words.length > 0 ? (
             <span role="status" data-testid="queue-search-count" className="shrink-0 text-secondary text-ink-2">
@@ -160,7 +166,7 @@ function LoadMore({ loading, onMore }: { loading: boolean; onMore: () => void })
         onClick={() => {
           if (!loading) onMore();
         }}
-        className={`h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue ${loading ? "cursor-wait opacity-60" : ""}`}
+        className={`h-10 rounded-full border border-line bg-white px-5 text-secondary font-semibold text-fpt-blue shadow-sm transition hover:bg-selected ${loading ? "cursor-wait opacity-60" : ""}`}
       >
         {loading ? "Đang tải…" : "Tải thêm"}
       </button>
@@ -221,7 +227,7 @@ function QueueGroups({
 
   if (all.length === 0) {
     return (
-      <p className="rounded-group bg-group px-5 py-4 text-ink-2">{status === "closed" ? "Chưa có ca nào đã đóng" : "Không có ca nào đang chờ"}</p>
+      <p className="rounded-2xl border border-line bg-group px-5 py-4 text-ink-2">{status === "closed" ? "Chưa có ca nào đã đóng" : "Không có ca nào đang chờ"}</p>
     );
   }
 
@@ -244,7 +250,7 @@ function QueueGroups({
       <div
         role="status"
         data-testid="queue-missed"
-        className="flex flex-wrap items-center gap-3 rounded-group bg-orange-bg px-4 py-3 text-secondary text-orange-ink"
+        className="flex flex-wrap items-center gap-3 rounded-2xl border border-fpt-orange/25 bg-orange-bg px-4 py-3 text-secondary text-orange-ink"
       >
         <span className="min-w-0 grow">
           Có {missedTotal} ca mới ở nhóm đang ẩn hoặc thu gọn: {missedGroups.map((g) => `${g.name} (${g.count})`).join(", ")}
@@ -259,7 +265,7 @@ function QueueGroups({
     return (
       <div className="flex flex-col gap-4">
         {missedLine}
-        <p className="rounded-group bg-group px-5 py-4 text-ink-2">{more ? noMatchPartialText(all.length) : NO_MATCH_TEXT}</p>
+        <p className="rounded-2xl border border-line bg-group px-5 py-4 text-ink-2">{more ? noMatchPartialText(all.length) : NO_MATCH_TEXT}</p>
       </div>
     );
   }
@@ -364,7 +370,7 @@ function QueueGroups({
             </h2>
             {open ? (
               <>
-                <ul className="overflow-hidden rounded-group border border-line">
+                <ul className={CARD}>
                   {group.items.slice(start, start + GROUP_PAGE_SIZE).map((item) => (
                     <QueueRow key={item.escalation_id} item={item} now={now} />
                   ))}
@@ -381,7 +387,8 @@ function QueueGroups({
   );
 }
 
-const PAGER_BUTTON = "h-7.5 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60";
+const PAGER_BUTTON =
+  "h-8 rounded-full border border-line bg-white px-3.5 text-secondary font-semibold text-fpt-blue transition hover:bg-selected disabled:opacity-50 disabled:hover:bg-white";
 
 function Pager({ name, page, total, onGo }: { name: string; page: number; total: number; onGo: (page: number) => void }) {
   const pages = pageCount(total);
@@ -423,9 +430,19 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
         data-escalation-id={item.escalation_id}
         data-ticket-id={item.ticket_id}
         data-exit-code={item.exit_code}
-        className="grid min-h-13 grid-cols-[250px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-2 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className="grid min-h-16 grid-cols-[40px_250px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-2.5 transition-colors hover:bg-group/70 focus-visible:outline-2 focus-visible:outline-fpt-blue"
       >
-        <span data-testid="queue-exit" className="truncate text-secondary">
+        <span
+          aria-hidden="true"
+          className={`flex size-10 items-center justify-center rounded-xl ${
+            item.is_deny_case ? "bg-danger-bg text-danger" : closed ? "bg-group text-ink-2" : "bg-selected text-fpt-blue"
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            {closed ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v5H5a1 1 0 0 1-1-1zM20 14h-3v5h2a1 1 0 0 0 1-1z" />}
+          </svg>
+        </span>
+        <span data-testid="queue-exit" className="truncate text-secondary font-semibold">
           <NhanMa {...exitNhan(item)} />
         </span>
         <span className="flex min-w-0 items-center gap-2">
@@ -441,7 +458,7 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
             <span className="shrink-0 rounded-full bg-orange-bg px-2 text-label text-orange-ink">{extra}</span>
           ) : null}
         </span>
-        <span className="text-secondary text-ink-2">{meta}</span>
+        <span className="rounded-full bg-group px-2.5 py-1 text-label font-normal text-ink-2">{meta}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
         </svg>
