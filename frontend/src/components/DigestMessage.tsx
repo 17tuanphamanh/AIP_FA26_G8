@@ -88,7 +88,7 @@ export function DigestMessage({ digest, form, newRequestLink = false }: Props) {
         <p className="pt-0.5">{digestLead(digest.items.length, active)}</p>
       </div>
       <div className={`${AVATAR_INDENT} rounded-sheet border border-line bg-group p-1.5`}>
-        <div className="overflow-hidden rounded-group bg-white shadow-sm">
+        <div className="overflow-hidden rounded-group bg-white">
           {digest.items.map((item, at) => (
             <DigestBlock
               key={`${item.child_id}#${at}`} // một ý có thể có nhiều khối (T20b) → khoá = child_id + thứ tự
@@ -114,7 +114,7 @@ export function DigestMessage({ digest, form, newRequestLink = false }: Props) {
                 type="button"
                 onClick={() => void submit()}
                 disabled={form.sending}
-                className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white shadow-sm transition-colors hover:bg-fpt-blue/90 disabled:opacity-60"
+                className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white hover:bg-fpt-blue/90 disabled:opacity-60"
               >
                 {form.sending ? "Đang gửi…" : "Gửi phản hồi"}
               </button>
