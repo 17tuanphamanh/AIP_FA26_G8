@@ -154,8 +154,8 @@ UNIT = [
     ("M-3c-11 retries cộng attempts cả khi lỗi", RETRIEVER,
      "        self.total += attempt if not failed else max(0, attempt - 1)\n",
      "        self.total += attempt  # MUTATION cộng cả khi lỗi\n",
-     pt(f"{UT_RETRIEVER}::test_c13_unreachable_qdrant_gives_search_stage_with_two_retries"),
-     ["test_c13_unreachable_qdrant_gives_search_stage_with_two_retries"]),
+     pt(f"{UT_RETRIEVER}::test_c13_unreachable_qdrant_gives_alias_stage_with_two_retries"),
+     ["test_c13_unreachable_qdrant_gives_alias_stage_with_two_retries"]),
     ("M-3c-12 bỏ kb_version khỏi _SAME_NAME_COLUMNS [unit]", GOTO,
      ('_SAME_NAME_COLUMNS = frozenset({\n'
       '    "intended_action", "exit_code", "block_reason", "close_reason", "intent",\n'
