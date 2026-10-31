@@ -42,10 +42,13 @@ export function useAlertAck() {
       }
       // Server đã ghi nhận → mới gỡ khỏi "Đang mở" và cập nhật "Tất cả" bằng bản server trả (giữ `truncated`). CHỈ sửa bộ
       // lọc đang có dữ liệu tốt: `setQueryData` lên query đang LỖI sẽ biến nó thành success với danh sách cũ trước lỗi (KH
-      // mục 5 — không hiện số cũ) → bộ lọc đó để `reload()` đánh dấu cũ, mở ra là tải lại.
+      // mục 5 — không hiện số cũ) → bộ lọc đó để `reload()` đánh dấu cũ, mở ra là tải lại. Mọi khoá có tiền tố
+      // `["alerts", filter]` — gồm `["alerts","open",<khoảng>]` của khối Tổng quan (D13), mỗi query xét riêng.
       const edit = (filter: "open" | "all", next: (items: AlertList["items"]) => AlertList["items"]) => {
-        if (queryClient.getQueryState(["alerts", filter])?.status !== "success") return;
-        queryClient.setQueryData<AlertList>(["alerts", filter], (old) => old && { ...old, items: next(old.items) });
+        for (const q of queryClient.getQueryCache().findAll({ queryKey: ["alerts", filter] })) {
+          if (q.state.status !== "success") continue;
+          queryClient.setQueryData<AlertList>(q.queryKey, (old) => old && { ...old, items: next(old.items) });
+        }
       };
       edit("open", (items) => items.filter((a) => a.alert_id !== id));
       edit("all", (items) => items.map((a) => (a.alert_id === id ? acked : a)));

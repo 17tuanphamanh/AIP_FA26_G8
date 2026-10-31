@@ -2,15 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { policyQuery } from "../../api/policy.ts";
 import { NhanMa } from "../../components/MaNhan.tsx";
 import { GOI_Y_TRONG_SO, luatIT, MA_KET_THUC } from "../../lib/nhan.ts";
-import type { BusinessDashboard as Business, BusinessMetrics, E3Cases } from "../../api/types.ts";
+import type { BusinessCountedTam as Business, BusinessMetrics, E3Cases, GroupCountTam } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import {
+  countedRateText,
   DECIDED_BY_LABEL,
   E1_LABEL,
   E3_TRUNCATED_TEXT,
   EMPTY_TEXT,
   formatRate,
+  fractionText,
+  INSUFFICIENT_TEXT,
+  insufficientText,
   type MetricKind,
+  type MetricText,
   metricText,
   WEIGHT_GROUP_LABEL,
 } from "./metrics.ts";
@@ -19,7 +24,8 @@ import { vnDate } from "./range.ts";
 // B4MgrDashboard — dashboard nghiệp vụ (backend/app/api/dashboard.py `BusinessAllMetrics`, tên trường giữ nguyên; chỉ
 // số nằm trong `data.metrics`). Component này CHỈ vẽ dữ liệu đã tải thành công; trạng thái tải/lỗi do DashboardPage lo
 // (lỗi → không gọi tới đây → không còn số cũ). Mọi ô số đi qua `metricText`: unavailable → "Chưa có dữ liệu", null → "—",
-// 0 thật → "0" (F5 P3).
+// 0 thật → "0" (F5 P3). Số đếm D13 (`min_sample`, `counts`): tỉ lệ kèm "(a/b)", mẫu < min_sample → "chưa đủ dữ liệu
+// (n=b)" thay cho %; weighted không có tử tổng → chỉ cỡ mẫu + a/b theo nhóm. Thiếu counts (backend cũ) → như trước.
 
 type Name = keyof BusinessMetrics;
 /** Giá trị của một chỉ số; khoá thiếu → undefined ("Máy chủ không trả chỉ số này" — nhánh phòng thủ). */
@@ -33,6 +39,7 @@ function Kpi({
   kind,
   extra,
   goiY,
+  text,
 }: {
   data: Business;
   name: Name;
@@ -41,8 +48,10 @@ function Kpi({
   kind: MetricKind;
   extra?: string;
   goiY?: string;
+  /** Chữ đã tính sẵn (tỉ lệ có số đếm); không có → `metricText`. */
+  text?: MetricText;
 }) {
-  const m = metricText(name, value, data.unavailable, kind);
+  const m = text ?? metricText(name, value, data.unavailable, kind);
   return (
     <div data-testid="kpi" data-metric={name} data-state={m.state} className="flex flex-col gap-0.5 rounded-group bg-group px-5 py-4.5">
       <span className="text-secondary text-ink-2" title={goiY} data-testid={goiY ? "kpi-goi-y" : undefined}>
@@ -138,12 +147,26 @@ function E3List({ cases }: { cases: E3Cases }) {
   );
 }
 
+type Simple = "automation_rate" | "escalation_rate_raw" | "deflection_rate";
+const rateText = (data: Business, name: Simple) => countedRateText(name, metric(data, name), data.counts?.[name], data.min_sample, data.unavailable);
+
+/** Cỡ mẫu weighted (`counts.escalation_rate_weighted.den`) < min_sample? Thiếu số đếm → false (như trước D13). */
+function weightedTooSmall(data: Business): boolean {
+  const count = data.counts?.escalation_rate_weighted;
+  return !!count && data.min_sample !== undefined && count.den < data.min_sample;
+}
+
 export function BusinessKpis({ data }: { data: Business }) {
-  const raw = metricText("escalation_rate_raw", metric(data, "escalation_rate_raw"), data.unavailable, "rate");
+  const raw = rateText(data, "escalation_rate_raw");
   const weighted = metric(data, "escalation_rate_weighted");
+  const weightedCount = data.counts?.escalation_rate_weighted;
+  const weightedText: MetricText | undefined =
+    weightedTooSmall(data) && weightedCount && !data.unavailable.includes("escalation_rate_weighted")
+      ? { state: "insufficient", text: insufficientText(weightedCount.den), note: null }
+      : undefined;
   return (
     <div className="grid grid-cols-4 gap-4">
-      <Kpi data={data} name="automation_rate" value={metric(data, "automation_rate")} label="Tự xử lý" kind="rate" />
+      <Kpi data={data} name="automation_rate" value={metric(data, "automation_rate")} label="Tự xử lý" kind="rate" text={rateText(data, "automation_rate")} />
       <Kpi
         data={data}
         name="escalation_rate_weighted"
@@ -151,9 +174,17 @@ export function BusinessKpis({ data }: { data: Business }) {
         label="Chuyển L2 (có trọng số)"
         goiY={GOI_Y_TRONG_SO}
         kind="rate"
-        extra={`thô ${raw.text}`}
+        text={weightedText}
+        extra={`${weightedCount ? `n=${weightedCount.den} · ` : ""}thô ${raw.text}`}
       />
-      <Kpi data={data} name="deflection_rate" value={metric(data, "deflection_rate")} label="Trả lời bằng tài liệu" kind="rate" />
+      <Kpi
+        data={data}
+        name="deflection_rate"
+        value={metric(data, "deflection_rate")}
+        label="Trả lời bằng tài liệu"
+        kind="rate"
+        text={rateText(data, "deflection_rate")}
+      />
       <Kpi data={data} name="approval_expired_count" value={metric(data, "approval_expired_count")} label="Hết hạn duyệt" kind="count" extra="tự chuyển L2" />
     </div>
   );
@@ -165,6 +196,15 @@ function WeightedGroups({ data }: { data: Business }) {
   if (!usable(data, "escalation_rate_weighted") || !weighted) return <StateLine data={data} name="escalation_rate_weighted" />;
   const groups = Object.entries(weighted.by_group);
   const sensitivity = Object.entries(weighted.sensitivity);
+  const counts = data.counts?.escalation_rate_weighted?.by_group;
+  const tooSmall = weightedTooSmall(data);
+  /** Nhóm có số đếm: "a/b", thêm % khi den ≥ min_sample và tỉ lệ khác null → "25 % (5/20)". Không số đếm → như cũ. */
+  const groupText = (key: string, rate: number | null) => {
+    const count = counts ? ownEntry<GroupCountTam | null>(counts, key, null) : null;
+    if (!count || data.min_sample === undefined) return rateOrEmpty(rate);
+    const fraction = fractionText(count.num, count.den);
+    return count.den >= data.min_sample && rate !== null ? `${formatRate(rate)} (${fraction})` : fraction;
+  };
   return (
     <div className="flex flex-col gap-2">
       {groups.length === 0 ? (
@@ -174,14 +214,14 @@ function WeightedGroups({ data }: { data: Business }) {
           {groups.map(([key, rate]) => (
             <li key={key} data-testid="weighted-group" data-key={key} className="flex h-11 items-center gap-3 border-t border-line px-5 first:border-t-0">
               <span className="grow text-secondary">{labelOf(WEIGHT_GROUP_LABEL, key)}</span>
-              <span className="text-secondary text-ink-2 tabular-nums">{rateOrEmpty(rate)}</span>
+              <span className="text-secondary text-ink-2 tabular-nums">{groupText(key, rate)}</span>
             </li>
           ))}
         </ul>
       )}
       {sensitivity.length > 0 ? (
         <p data-testid="weighted-sensitivity" className="pl-1 text-label font-normal text-ink-2">
-          Độ nhạy trọng số: {sensitivity.map(([key, rate]) => `${key}: ${rateOrEmpty(rate)}`).join(" · ")}
+          Độ nhạy trọng số: {tooSmall ? INSUFFICIENT_TEXT : sensitivity.map(([key, rate]) => `${key}: ${rateOrEmpty(rate)}`).join(" · ")}
         </p>
       ) : null}
     </div>

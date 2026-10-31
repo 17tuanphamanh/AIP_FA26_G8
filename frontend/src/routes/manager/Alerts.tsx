@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router";
 import { type AlertFilter, alertsQuery } from "../../api/alerts.ts";
 import { ApiError, routeMissing } from "../../api/errors.ts";
@@ -9,8 +9,9 @@ import { useMe } from "../../auth/useAuth.ts";
 import { AlertRow } from "../../components/AlertRow.tsx";
 import { Segmented } from "../../components/Segmented.tsx";
 import { Forbidden } from "../Forbidden.tsx";
-import { ALERTS_MISSING_TITLE, ALERTS_TRUNCATED_TEXT, DASHBOARD_ALERT_LIMIT, MONITOR_DOWN_TEXT, sortAlerts } from "./metrics.ts";
+import { ALERTS_MISSING_TITLE, ALERTS_TRUNCATED_TEXT, DASHBOARD_ALERT_LIMIT, MONITOR_DOWN_TEXT, rule1WindowNote, sortAlerts } from "./metrics.ts";
 import { LoadError, MissingPanel } from "./panels.tsx";
+import { openAlertsQuery, type RangeKey } from "./range.ts";
 import { type AckNotice, useAlertAck } from "./useAlertAck.ts";
 
 // Cảnh báo (P10 §3.3, P9 §7): `GET /api/alerts?status=open` | "Tất cả" (không tham số — Q-fe-27) + "Đã xem"
@@ -95,12 +96,14 @@ export function Alerts() {
 
 /**
  * Khối "Cảnh báo đang mở" của Tổng quan (B4MgrDashboard): tối đa 5 dòng, link "Tất cả" → /alerts. Đếm ở tiêu đề = số
- * server trả; `truncated` → "200+" (còn cảnh báo mở ngoài 200 — không nói "200" khi thật ra nhiều hơn).
+ * server trả; `truncated` → "200+" (còn cảnh báo mở ngoài 200 — không nói "200" khi thật ra nhiều hơn). D13: chỉ cảnh báo
+ * có `window_start` trong khung đang chọn (`from`/`to` như số liệu). API không cho biết số cảnh báo ngoài khung → không hiện
+ * dòng "còn N ngoài khung". Cảnh báo luật 1 kèm một dòng ghi cửa sổ đo của luật (không theo khung đang chọn).
  */
-export function OpenAlertsBlock() {
+export function OpenAlertsBlock({ range }: { range: RangeKey }) {
   const me = useMe();
   const canAck = hasPerm(me, "alert:read");
-  const query = useQuery({ ...alertsQuery("open"), enabled: canAck });
+  const query = useQuery({ ...openAlertsQuery(range), enabled: canAck });
   const ack = useAlertAck();
   if (!canAck) return null;
   const forbidden = query.error instanceof ApiError && query.error.status === 403;
@@ -124,9 +127,19 @@ export function OpenAlertsBlock() {
       <ul aria-label="Cảnh báo đang mở">
         {sortAlerts(query.data.items)
           .slice(0, DASHBOARD_ALERT_LIMIT)
-          .map((alert) => (
-            <AlertRow key={alert.alert_id} alert={alert} onAck={ack.ack} acking={ack.pending.has(alert.alert_id)} compact />
-          ))}
+          .map((alert) => {
+            const note = rule1WindowNote(alert);
+            return (
+              <Fragment key={alert.alert_id}>
+                <AlertRow alert={alert} onAck={ack.ack} acking={ack.pending.has(alert.alert_id)} compact />
+                {note ? (
+                  <li data-testid="rule1-window-note" className="px-4 pb-3 text-label font-normal text-ink-2">
+                    {note}
+                  </li>
+                ) : null}
+              </Fragment>
+            );
+          })}
       </ul>
     );
   }

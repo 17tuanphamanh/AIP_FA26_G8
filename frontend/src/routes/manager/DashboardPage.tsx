@@ -76,7 +76,7 @@ export function DashboardPage() {
             </button>
           </div>
           {tab === "business" ? (
-            <BusinessTab query={business} />
+            <BusinessTab query={business} range={range} />
           ) : tab === "ai" ? (
             <AiTab query={ai} />
           ) : (
@@ -90,7 +90,7 @@ export function DashboardPage() {
 
 type Q<T> = { isError: boolean; error: unknown; isPending: boolean; data: T | undefined };
 
-function BusinessTab({ query }: { query: Q<Parameters<typeof BusinessKpis>[0]["data"]> }) {
+function BusinessTab({ query, range }: { query: Q<Parameters<typeof BusinessKpis>[0]["data"]>; range: RangeKey }) {
   // Lỗi → chỉ khối lỗi (KHÔNG BAO GIỜ kèm số cũ); đang tải lần đầu → chữ chờ.
   const data = query.isError ? null : (query.data ?? null);
   return (
@@ -105,7 +105,7 @@ function BusinessTab({ query }: { query: Q<Parameters<typeof BusinessKpis>[0]["d
       <div className="grid grid-cols-[minmax(0,1fr)_400px] gap-6">
         {data ? <BusinessSections data={data} /> : <div />}
         <div className="flex min-w-0 flex-col gap-5">
-          <OpenAlertsBlock />
+          <OpenAlertsBlock range={range} />
           {data ? <E3Section data={data} /> : null}
         </div>
       </div>

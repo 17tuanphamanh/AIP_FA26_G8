@@ -956,7 +956,7 @@ describe("t109 (P2): parseAlerts / isAlertItem — MỘT hình dạng {items, tr
 // ------------------------------------------------------------------------------------------------ t110
 
 describe("t110 (P3): 'Đang mở' = /api/alerts?status=open, 'Tất cả' = /api/alerts — không audience, limit, tham số rỗng", () => {
-  it("màn Cảnh báo (2 bộ lọc) + khối Tổng quan: đúng 2 URL, chỉ GET", async () => {
+  it("màn Cảnh báo (2 bộ lọc): đúng 2 URL; khối Tổng quan: status=open + from/to của khung (D13); chỉ GET", async () => {
     const calls = dashboardServer({ alerts: () => json(200, alertList([alert(1, "drift", "info", 0)])) });
     renderAt("/alerts");
     await waitFor(() => expect(alertRow(1)).not.toBeNull());
@@ -967,9 +967,17 @@ describe("t110 (P3): 'Đang mở' = /api/alerts?status=open, 'Tất cả' = /api
     renderAt("/dashboard");
     const block = await screen.findByTestId("open-alerts");
     await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(1));
-    const urls = calls.filter((c) => pathOf(c.url).startsWith("/api/alerts")).map((c) => `${c.method} ${c.url}`);
-    expect(new Set(urls)).toStrictEqual(new Set(["GET /api/alerts?status=open", "GET /api/alerts"]));
-    expect(urls.filter((u) => u === "GET /api/alerts?status=open").length).toBeGreaterThanOrEqual(2); // màn Cảnh báo + khối Tổng quan
+    const alertCalls = calls.filter((c) => pathOf(c.url).startsWith("/api/alerts"));
+    const urls = alertCalls.filter((c) => !queryOf(c.url).has("from")).map((c) => `${c.method} ${c.url}`);
+    expect(new Set(urls)).toStrictEqual(new Set(["GET /api/alerts?status=open", "GET /api/alerts"])); // màn Cảnh báo
+    // Khối Tổng quan (D13): đúng 3 tham số status=open, from, to — không audience, limit, tham số rỗng.
+    const windowed = alertCalls.filter((c) => queryOf(c.url).has("from"));
+    expect(windowed.length).toBeGreaterThanOrEqual(1);
+    for (const c of windowed) {
+      expect(c.method).toBe("GET");
+      expect([...queryOf(c.url).keys()]).toStrictEqual(["status", "from", "to"]);
+      expect(queryOf(c.url).get("status")).toBe("open");
+    }
   });
 });
 

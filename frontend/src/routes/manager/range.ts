@@ -6,6 +6,7 @@
 //   30 ngày  : from = 00:00 VN của 29 ngày trước
 //   to       = thời điểm hiện tại (tính LÚC GỬI — nút "Tải lại" lấy giờ mới).
 import { queryOptions } from "@tanstack/react-query";
+import { listAlerts } from "../../api/alerts.ts";
 import { type DashboardWindow, getAiDashboard, getBusinessDashboard, getStrategiesDashboard } from "../../api/dashboard.ts";
 import type { StrategySource } from "../../api/types.ts";
 
@@ -65,6 +66,14 @@ export const businessQuery = (range: RangeKey) =>
   queryOptions({
     queryKey: ["dashboard", "business", range] as const,
     queryFn: () => getBusinessDashboard(rangeWindow(range, Date.now())),
+    retry: false,
+  });
+
+/** Khối "Cảnh báo đang mở" của Tổng quan (D13): cùng khung với số liệu. Khoá có tiền tố `["alerts","open"]` (useAlertAck). */
+export const openAlertsQuery = (range: RangeKey) =>
+  queryOptions({
+    queryKey: ["alerts", "open", range] as const,
+    queryFn: () => listAlerts("open", rangeWindow(range, Date.now())),
     retry: false,
   });
 
