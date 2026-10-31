@@ -163,6 +163,8 @@ class Settings(BaseSettings):
     # ---- API ----
     max_request_body_bytes: int = Field(default=64 * 1024, ge=1)  # đếm byte ĐỌC THẬT (2b-3 Q5)
     background_shutdown_seconds: float = Field(default=10.0, ge=0)  # tắt app: chờ lượt nền rồi huỷ
+    # `off` → không mở /docs, /redoc, /openapi.json (máy demo). Không phụ thuộc APP_ENV: demo chạy APP_ENV=dev.
+    api_docs: Literal["on", "off"] = "on"
     # ---- Privacy guard (B02 L1, phase3 mục 8.3, 3-Q25) ----
     # Mặc định MỌI env là guard regex thật. `none` (NotRedactingGuard) chỉ khi đặt tường minh VÀ APP_ENV ∈ {dev, test}
     # (`main._default_guard` → `require_dev_fakes`) — không có đường nào lưu dữ liệu thô ở môi trường thật.
@@ -304,6 +306,13 @@ class Settings(BaseSettings):
             raise ValueError(f"LLM_BACKEND={v!r} không hợp lệ — giá trị hợp lệ: {' | '.join(LLM_BACKENDS)}")
         return v
 
+    @field_validator("api_docs", mode="before")
+    @classmethod
+    def _api_docs_value(cls, v: object) -> object:
+        if v not in API_DOCS_VALUES:
+            raise ValueError(f"API_DOCS={v!r} không hợp lệ — giá trị hợp lệ: {' | '.join(API_DOCS_VALUES)}")
+        return v
+
     @model_validator(mode="after")
     def _eval_mode_not_in_prod(self) -> "Settings":
         # P2 mục 11: EVAL_MODE ghi prompt đầy đủ vào `llm_calls.prompt_full` — chỉ môi trường thử nghiệm. Thiếu
@@ -413,6 +422,7 @@ DEV_FAKE_ENVS = frozenset({"dev", "test"})
 B2_ACTIVE_ENVS = DEV_FAKE_ENVS  # Phase 5 (gói 1, D-52): `active` 0,90/0,10 giữ trong code, chỉ thử ở dev/test
 EVAL_MODE_ENVS = frozenset({"dev", "test", "staging"})  # S9 PLAN-3d: prod và APP_ENV thiếu → từ chối
 LLM_BACKENDS = ("scripted", "real")
+API_DOCS_VALUES = ("on", "off")
 
 
 @lru_cache

@@ -74,6 +74,7 @@ x-backend-env: &backend-env
   SMTP_FROM: ${SMTP_FROM:-}
   EMAIL_LINK_BASE_URL: ${EMAIL_LINK_BASE_URL:-}
   EMAIL_SEND_INTERVAL_SECONDS: ${EMAIL_SEND_INTERVAL_SECONDS:-}
+  API_DOCS: ${API_DOCS:-on}
 
 services:
   postgres:
