@@ -64,11 +64,11 @@ export function LoginPage() {
           <ul className="flex flex-col gap-2 text-secondary text-white/80">
             <li className="flex items-center gap-2">
               <span className="size-2 shrink-0 rounded-full bg-done" />
-              Tự xử lý các yêu cầu thường gặp
+              Tự xử lý các yêu cầu thường gặp và an toàn
             </li>
             <li className="flex items-center gap-2">
               <span className="size-2 shrink-0 rounded-full bg-fpt-orange" />
-              Việc nhạy cảm luôn chờ IT duyệt
+              Việc nhạy cảm luôn có IT kiểm tra
             </li>
             <li className="flex items-center gap-2">
               <span className="size-2 shrink-0 rounded-full bg-white" />
