@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink } from "react-router";
 import type { Me } from "../api/types.ts";
+import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
 import { ownEntry } from "../lib/lookup.ts";
@@ -88,8 +89,10 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
       ) : null}
 
       <span className="grow" />
-      <div className="mx-2 mb-2 flex h-9 items-center justify-center rounded-lg border border-dashed border-line text-label font-normal text-ink-2">
-        Logo đơn vị
+      {/* Chỗ dành sẵn "Logo đơn vị" → logo FPT (gói fe-logo-fpt): cao 24 px, rộng theo tỉ lệ (330×93). */}
+      <div className="mx-2 mb-2 flex h-9 items-center gap-2 px-1" data-testid="sidebar-fpt">
+        <img src={fptLogoUrl} alt="Trường Đại học FPT" width={330} height={93} className="h-6 w-auto shrink-0" />
+        <span className="whitespace-nowrap text-label font-normal text-ink-2">Trường Đại học FPT</span>
       </div>
       {signOutFailed ? (
         <p role="alert" className="mx-2 mb-1 rounded-lg bg-danger-bg px-3 py-2 text-label font-normal text-danger-ink">
