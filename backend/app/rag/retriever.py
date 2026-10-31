@@ -231,7 +231,7 @@ class Retriever:
             try:
                 coll = await self._call(self._index.alias_target, ALIAS, retries=retries)
             except _Transient as e:
-                raise RetrievalSystemError("search", retries.total, detail=str(e)) from e
+                raise RetrievalSystemError("alias", retries.total, detail=str(e)) from e
             if coll is None:
                 raise RetrievalSystemError("alias", retries.total)
         if not _COLLECTION_RE.match(coll):

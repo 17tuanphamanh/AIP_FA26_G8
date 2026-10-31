@@ -113,18 +113,19 @@ def test_c3_excerpt_has_no_prefix_and_is_capped() -> None:
     assert len(ref.excerpt) == 600
 
 
-# ---- c13: Qdrant không tới được (cổng sai) — E2 stage=search, 0 lời gọi ml ------------------------
+# ---- c13: Qdrant không tới được (cổng sai) — E2 stage=alias, 0 lời gọi ml -------------------------
+# Lỗi tạm khi đọc alias → alias (phase4:739, ĐP 24/10); phase3:1089 vẫn đúng cho lỗi bước search.
 
 
 @pytest.mark.asyncio
-async def test_c13_unreachable_qdrant_gives_search_stage_with_two_retries() -> None:
+async def test_c13_unreachable_qdrant_gives_alias_stage_with_two_retries() -> None:
     client = AsyncQdrantClient(url="http://127.0.0.1:1", check_compatibility=False, timeout=1)
     fake = FakeMlService()
     r = _retriever(QdrantIndex(client), fake.client(), clock=FakeClock())
     try:
         with pytest.raises(RetrievalSystemError) as err:
             await r.retrieve(RetrievalQuery(text="vpn lỗi", intent="vpn"), _ctx())
-        assert err.value.stage == "search"
+        assert err.value.stage == "alias"
         assert err.value.retries == 2
         assert sum(fake.calls.values()) == 0
     finally:

@@ -8,16 +8,22 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from app.audit.check import required
 from app.core.clock import FakeClock
 from app.domain.context import RequesterContext
 from app.domain.states import S_ESCALATED, S_RETRIEVING
 from app.domain.ticket_state import ChunkRef
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b08_retrieve
+from app.rag.bm25 import load_lexicon
 from app.rag.models import RetrievalSystemError
+from app.rag.retriever import RagConfig, Retriever
+from app.rag.vector_store import VectorStoreTransient
+from app.settings import get_policy, get_settings
 from tests.fakes.executor import MemoryTxLog
+from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
-from tests.fakes.rag import FakeRag
+from tests.fakes.rag import FakeRag, SpyIndex
 
 pytestmark = pytest.mark.asyncio
 
@@ -188,6 +194,32 @@ async def test_c18_retrieval_system_error_gives_single_e2_audit_row() -> None:
     assert row["detail"]["retrieval_error"] == "ConnectError: mất kết nối"
     assert row["detail"]["query"] == "vpn lỗi 809"  # điểm log 3: query = redacted_request đã che (không phải lỗi)
     assert "vpn lỗi 809" not in row["detail"]["retrieval_error"]  # detail lỗi KHÔNG được chứa câu truy vấn
+
+
+async def test_alias_transient_error_chain_logs_alias_stage_and_passes_audit_check() -> None:
+    """L4 (phase4:739, ĐP 24/10): lỗi tạm khi đọc alias, hết retry → `Retriever` thật → node B8 → dòng audit
+    `retrieval_error` có `error_stage="alias"`, `kb_version` NULL, và `audit.check.required` không đòi điểm log 3 thiếu
+    `kb_version`. Không dựng `RetrievalSystemError` bằng tay — lỗi đi hết chuỗi từ `SpyIndex`."""
+    spy = SpyIndex().fail_next(
+        "alias_target", VectorStoreTransient("qdrant mất kết nối"), times=get_policy().constants.TOOL_RETRY + 1
+    )
+    ml = FakeMlService()
+    retriever = Retriever(
+        spy, ml.client(), RagConfig.from_settings(get_settings()), threshold=0.6, pipeline_sha="p" * 64,
+        lexicon=load_lexicon(get_settings().config_dir), clock=FakeClock(),
+    )  # type: ignore[arg-type]  # fmt: skip
+    h = _harness_with_rag(retriever)  # type: ignore[arg-type]
+    audit = MemoryAudit()
+    with run(audit):
+        out = await b08_retrieve.make(h.deps())(_state())
+    assert (out["status"], out["exit_code"], out["retrieval_error"]) == (S_ESCALATED, "E2", "alias")
+    [row] = audit.rows
+    assert (row["step"], row["event"]) == ("B8", "retrieval_error")
+    assert row["detail"]["error_stage"] == "alias"
+    assert row["kb_version"] is None
+    assert spy.calls["alias_target"] == get_policy().constants.TOOL_RETRY + 1
+    assert sum(ml.calls.values()) == 0
+    assert required("t1", audit.rows, final_state=None) == []  # không thiếu điểm log 3
 
 
 async def test_node_does_not_catch_exceptions_other_than_retrieval_system_error() -> None:
