@@ -29,9 +29,9 @@ function SendIcon() {
   );
 }
 
-/** Khung ô nhập: bo lớn, bóng nhẹ; viền + quầng xanh khi đang gõ (focus-within) — kiểu ô nhập của các ứng dụng chat. */
+/** Khung ô nhập: bo 24, bóng nhẹ (token); viền xanh khi đang gõ. Ô bị khoá → nền xám. */
 const FRAME =
-  "flex rounded-3xl border border-line bg-white shadow-lg shadow-ink/5 transition focus-within:border-fpt-blue/40 focus-within:ring-4 focus-within:ring-fpt-blue/10 has-[textarea:disabled]:bg-group has-[textarea:disabled]:shadow-none";
+  "flex rounded-input border border-line bg-white shadow-input focus-within:border-fpt-blue/50 has-[textarea:disabled]:bg-group has-[textarea:disabled]:shadow-none";
 
 // Ô nhập B4EmpHome (lớn, bo 24) / B4EmpChat (một dòng, dính đáy). Enter gửi, Shift+Enter xuống dòng; đang gõ dấu
 // tiếng Việt (IME đang ghép chữ) thì Enter KHÔNG gửi.
@@ -84,7 +84,7 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
               aria-label="Gửi"
               onClick={() => canSend && props.onSubmit?.()}
               disabled={!canSend}
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-send text-white shadow-sm transition hover:bg-send/90 active:scale-95 disabled:bg-ink-3 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpt-blue"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-send text-white hover:bg-send/90 disabled:bg-ink-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpt-blue"
             >
               <SendIcon />
             </button>

@@ -70,7 +70,7 @@ export function ChatHome() {
   return (
     <section className="flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-16">
       <div className="flex w-full max-w-(--chat-width) flex-col items-center">
-        <img src={logoUrl} alt="" width={56} height={56} className="size-14 rounded-2xl shadow-lg shadow-fpt-blue/20" />
+        <img src={logoUrl} alt="" width={48} height={48} className="size-12" />
         <h1 className="mt-6 text-center text-title">Hôm nay IT giúp gì cho bạn?</h1>
         <p className="mt-2 text-center text-ink-2">Mô tả vấn đề bằng lời thường — trợ lý sẽ hướng dẫn, hoặc chuyển IT khi cần.</p>
         <div className="mt-8 w-full">
@@ -101,11 +101,8 @@ export function ChatHome() {
               type="button"
               aria-label={suggestion.label}
               onClick={() => suggest(suggestion.text)}
-              className="group flex items-start gap-3 rounded-2xl border border-line bg-white p-4 text-left transition hover:border-fpt-blue/30 hover:bg-selected/40 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-fpt-blue"
+              className="flex min-w-0 flex-col rounded-group border border-line bg-white px-4 py-3 text-left hover:border-fpt-blue/40 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-selected text-fpt-blue transition group-hover:bg-white">
-                <SuggestionIcon label={suggestion.label} />
-              </span>
               <span className="flex min-w-0 flex-col">
                 <span className="text-secondary font-semibold">{suggestion.label}</span>
                 <span className="truncate text-label font-normal text-ink-2">{suggestion.text}</span>
@@ -115,38 +112,5 @@ export function ChatHome() {
         </div>
       </div>
     </section>
-  );
-}
-
-/** Biểu tượng nét theo nhãn gợi ý (trang trí, aria-hidden). Nhãn lạ → biểu tượng tin nhắn. */
-function SuggestionIcon({ label }: { label: string }) {
-  const path =
-    label === "Quên mật khẩu" ? (
-      <>
-        <circle cx="8" cy="15" r="4" />
-        <path d="M11 12l8-8M16 7l2 2M14 9l2 2" />
-      </>
-    ) : label === "Lỗi VPN" ? (
-      <>
-        <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
-        <path d="M9.5 12.5l2 2 3.5-4" />
-      </>
-    ) : label === "Cài phần mềm" ? (
-      <>
-        <path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" />
-        <path d="M5 19h14" />
-      </>
-    ) : label === "Xin quyền truy cập" ? (
-      <>
-        <rect x="5" y="11" width="14" height="9" rx="2" />
-        <path d="M8 11V8a4 4 0 0 1 7.5-2" />
-      </>
-    ) : (
-      <path d="M5 6h14v9H10l-4 3v-3H5z" />
-    );
-  return (
-    <svg viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {path}
-    </svg>
   );
 }

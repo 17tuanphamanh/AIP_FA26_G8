@@ -28,7 +28,7 @@ function AssistantMessage({ message }: { message: Message }) {
 }
 
 /** Bong bóng tin của người dùng — dùng chung cho câu yêu cầu đầu (ChatPage). */
-export const USER_BUBBLE = "max-w-[80%] self-end rounded-3xl rounded-br-lg bg-selected px-5 py-3 whitespace-pre-line";
+export const USER_BUBBLE = "max-w-[80%] self-end rounded-sheet rounded-br-md bg-selected px-5 py-3 whitespace-pre-line";
 
 type ConversationProps = { messages: Message[]; renderDigest?: (digest: Digest) => ReactNode };
 
