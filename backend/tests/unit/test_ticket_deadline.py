@@ -2,8 +2,8 @@
 `api/tickets.py`, `api/approvals.py`, `approval/store.py`.
 
 `deadline`: datetime ISO có múi giờ (UTC) | null — hạn của LẦN CHỜ HIỆN TẠI. Không đổi `waiting_for`, không đổi thứ tự 403/404/503,
-không thêm `server_now`.
-- ticket đã kết thúc (`tickets.final_state` có) → null; ticket cha nhiều ý (`tickets.is_parent`) → null.
+(`server_now` + hạn của ticket CHA: test_ticket_server_now.py).
+- ticket đã kết thúc (`tickets.final_state` có) → null; ticket cha (`tickets.is_parent`): hạn riêng của cha / hạn sớm nhất phiếu `pending` của con (test_ticket_server_now.py).
 - `waiting_for == "approval"` → `approvals.deadline` của phiếu `pending` của ticket (phiếu đã đóng → không tính → null).
 - `waiting_for == "confirm"` / `"clarify"` → `deadline` của dòng `wait_deadlines` cùng loại, `fired_at` None (dòng worker dùng).
 - `waiting_for` "reply" / None → null. Ticket con chờ clarify/confirm → null (không có dòng — hạn do cha giữ).
@@ -170,9 +170,9 @@ async def test_r3_r7_other_employee_404_l1_200_with_deadline() -> None:
 # ---- r8–r9: ticket cha + guard phòng thủ ---------------------------------------------------------------------------------------
 
 
-async def test_r3_r8_real_parent_reply_wait_deadline_null() -> None:
-    """r8: ticket CHA thật (TC35, graph thật `_t20b.make_flow`) tới `parent_reply_wait` → `waiting_for` "reply", `deadline` null.
-    Tiền điều kiện: cha CÓ ít nhất 1 dòng `wait_deadlines` chưa bắn — null là do quy tắc "cha → null", không phải thiếu dữ liệu."""
+async def test_r3_r8_real_parent_reply_wait_deadline_is_parents_own_wait() -> None:
+    """r8 (đổi theo hợp đồng ĐP 27/10): ticket CHA thật (TC35, graph thật `_t20b.make_flow`) tới `parent_reply_wait` → `waiting_for` "reply",
+    `deadline` = hạn chờ RIÊNG của cha (dòng `wait_deadlines` chưa bắn do `parent_wait` đặt) — trước đây null."""
     f = await tc35()
     assert f.h.tickets.rows["T1"]["is_parent"] is True
     open_waits = [w for w in f.h.deadlines.waits if w["ticket_id"] == "T1" and w["fired_at"] is None]  # fmt: skip
@@ -181,7 +181,7 @@ async def test_r3_r8_real_parent_reply_wait_deadline_null() -> None:
         an = await a.token("an.nv")
         body = await a.get(an)
         assert body["waiting_for"] == "reply"
-        assert _deadline(body) is None
+        assert _deadline(body) == max(w["deadline"] for w in open_waits)
 
 
 async def test_r3_r9a_guard_is_parent_pending_approval_deadline_null() -> None:

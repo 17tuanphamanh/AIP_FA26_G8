@@ -445,6 +445,16 @@ class MemoryApprovals:
     async def procedure_title(self, doc_id: str) -> str | None:
         return self.titles.get(doc_id)
 
+    async def parent_deadline(self, parent_id: str) -> datetime | None:
+        """Như SQL: hạn chờ riêng chưa bắn của cha (hạn muộn nhất); không có → min hạn phiếu `pending` của các con; không có → None."""
+        own = [w["deadline"] for w in self._waits if w["ticket_id"] == parent_id and w["fired_at"] is None]
+        if own:
+            return max(own)
+        rows = self._tickets.rows if self._tickets is not None else {}
+        children = {t for t, r in rows.items() if r["parent_ticket_id"] == parent_id}
+        pending = [a["deadline"] for a in self._table.values() if a["ticket_id"] in children and a["status"] == "pending"]
+        return min(pending) if pending else None
+
     async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
         """Như SQL (R3): `approval` → phiếu `pending` mới nhất của ticket; `clarify`/`confirm` → dòng chưa bắn cùng loại, hạn muộn nhất."""
         if kind == "approval":

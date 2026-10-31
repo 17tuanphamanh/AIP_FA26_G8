@@ -321,3 +321,9 @@ class ApprovalRepo(Protocol):
         `clarify`/`confirm` → dòng `wait_deadlines` cùng loại chưa bắn (`fired_at IS NULL`, hạn muộn nhất) — đúng dòng worker bắn
         timeout. Không có → None. Nằm ở đây vì `Desk` (`main.py`) chỉ có `tickets`/`approvals` (như `inbox`, `procedure_title`)."""
         ...
+
+    async def parent_deadline(self, parent_id: str) -> datetime | None:
+        """`TicketView.deadline` của ticket CHA chưa kết thúc, theo thứ tự: (1) dòng `wait_deadlines` chưa bắn của CHÍNH cha
+        (`parent_wait` đặt khi gửi tin tổng hợp — `db/runtime.py:SqlDeadlineStore._set`; mỗi lúc chỉ một dòng chưa bắn); (2) không có →
+        `min(approvals.deadline)` các phiếu `pending` của ticket CON; (3) không có → None. Chỉ đọc."""
+        ...
