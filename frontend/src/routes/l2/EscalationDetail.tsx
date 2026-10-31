@@ -131,9 +131,10 @@ function Detail({
 }) {
   const closed = typeof item.closed_at === "string";
   return (
-    <section className="flex flex-col gap-6 px-12 pt-20 pb-8">
+    <section className="flex flex-col gap-6 px-12 pt-6 pb-8">
       <div className="flex flex-col gap-1">
-        {BACK}
+        {/* Hàng nút quay lại ngang hàng nút "Nhật ký quyết định" (nổi ở góc phải). */}
+        <div className="flex h-9 items-center">{BACK}</div>
         <div className="flex items-center gap-4">
           <h1 data-testid="detail-exit" className="min-w-0 grow text-title">
             <NhanMa {...exitNhan(item)} />
@@ -166,20 +167,23 @@ function Detail({
           <Handoff note={item.handoff_note} />
           <TicketConversation ticketId={item.ticket_id} />
         </div>
-        {justClosed ? (
-          <div className="flex flex-col gap-2">
-            <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
-              {closedWith === "reopened_as_new" ? REOPENED_TEXT : CLOSED_TEXT}
-            </p>
-            <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue">
-              Xem ca trong danh sách Đã đóng
-            </Link>
-          </div>
-        ) : closed ? (
-          <ClosedInfo item={item} />
-        ) : (
-          <CloseForm item={item} available={closeAvailable} onSubmit={submit} onClosed={onClosed} />
-        )}
+        {/* Cột phải đứng yên khi cuộn hội thoại dài: hộp đóng ca luôn trong tầm tay. */}
+        <div className="self-start lg:sticky lg:top-20">
+          {justClosed ? (
+            <div className="flex flex-col gap-2">
+              <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
+                {closedWith === "reopened_as_new" ? REOPENED_TEXT : CLOSED_TEXT}
+              </p>
+              <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue">
+                Xem ca trong danh sách Đã đóng
+              </Link>
+            </div>
+          ) : closed ? (
+            <ClosedInfo item={item} />
+          ) : (
+            <CloseForm item={item} available={closeAvailable} onSubmit={submit} onClosed={onClosed} />
+          )}
+        </div>
       </div>
     </section>
   );

@@ -143,7 +143,11 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-semibold">{actionLabel(item.action_type)}</span>
           <span className="truncate text-secondary text-ink-2">
-            Máy {item.device_id ?? "(không có)"} · Ticket <span className="font-mono">{item.ticket_id}</span>
+            Máy {item.device_id ?? "(không có)"} · Ticket{" "}
+            {/* Mã ticket dài (UUID): chỉ rút gọn khi HIỂN THỊ — chữ đủ vẫn nằm trong trang + hiện khi rê chuột. */}
+            <span className="inline-block max-w-[10ch] truncate align-bottom font-mono" title={item.ticket_id}>
+              {item.ticket_id}
+            </span>
           </span>
         </span>
         <span className="flex items-center gap-2">
