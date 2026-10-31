@@ -389,7 +389,14 @@ def create_app(
                 await background.shutdown(settings.background_shutdown_seconds)
                 app.state.desk, app.state.runtime_status = None, "down"
 
-    app = FastAPI(title="servicedesk-agent", lifespan=lifespan)
+    docs_on = settings.api_docs == "on"  # off: 404 cả 3 đường; app.openapi() nội bộ vẫn chạy
+    app = FastAPI(
+        title="servicedesk-agent",
+        lifespan=lifespan,
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
+    )
     app.state.health_timeout = settings.health_timeout
     app.state.health_checks = (
         health_checks if health_checks is not None else _default_checks(settings, app)
