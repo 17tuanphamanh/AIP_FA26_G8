@@ -5,7 +5,7 @@
 
 ## Cần có
 
-- Stack dev đang chạy (`make up`, `make seed`), backend ở `http://127.0.0.1:8000`, `APP_ENV=dev` (hoặc `test`).
+- Stack dev đang chạy (`make up RATE=loose`, `make seed`) — **bắt buộc `RATE=loose`**, không thì giới hạn tốc độ chặn script, backend ở `http://127.0.0.1:8000`, `APP_ENV=dev` (hoặc `test`).
 - Tài khoản quản lý `quan.tm` đã đăng ký MFA (`python -m app.auth.mfa enroll quan.tm --by <bạn> --reason "chạy thử"`).
 - Biến môi trường ở shell chạy script (KHÔNG ghi vào file, KHÔNG dán vào chat):
   - `APP_ENV=dev` — script từ chối chạy nếu thiếu hoặc khác `dev`/`test`;
@@ -23,6 +23,10 @@ APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py --tagged
   dùng preset `default` và kết quả không đúng nhóm câu). Với LLM thật (mốc G) thì bỏ `--tagged`.
 - `--no-mock-reset` — không reset mock giữa các vòng (mặc định có reset: `docker compose exec -T mock python -m app.seed reset`, như
   gate, để "cài Zoom" / "đặt lại mật khẩu" chạy lại được ở vòng sau).
+- `--tuan-tu` (**mặc định**) — gửi từng ticket, chờ tới trạng thái dừng (kết thúc / chờ duyệt / chờ hỏi lại / chờ xác nhận, tối đa
+  120 giây mỗi ticket) rồi mới gửi ticket kế. Lý do: gửi 8 ticket cùng lúc làm ml-service quá tải → 46/72 ticket ra E2 `rag_system_error`
+  và hybrid 0 ca tới L1 duyệt; chạy đơn lẻ thì 0 E2.
+- `--song-song` — đường cũ (gửi hết 8 ticket rồi mới chờ). Chỉ dùng khi máy đủ mạnh cho ml-service.
 - `--url` — chỉ nhận localhost.
 
 ## Script làm gì
@@ -42,8 +46,19 @@ APP_ENV=dev uv run python scripts/sim/chay_thu_phuong_an.py --tagged
    (mã 3), không đổi gì.
 4. Cuối cùng (kể cả khi lỗi giữa chừng): cách xử lý hiện hành khác "ban đầu" → đặt lại "ban đầu" (lý do "khôi phục sau chạy thử dữ
    liệu thử"); đã bằng thì không đổi gì. Không khôi phục được → script in CẢNH BÁO: tự đặt lại ở màn Chính sách.
-5. `source = 'sim'` của ticket chỉ kiểm được ở PG (API ticket không trả `source`):
+5. Cuối lượt (sau bước 4, in stderr): cách nào có 0 ticket tới chờ duyệt → "không ticket nào tới bước duyệt ở cách <tên> — dữ liệu thử
+   không dùng được", mã 4; cách nào có E2 > 20% số lá (8 lá → từ 2 ticket E2) → "ml-service/RAG lỗi ở cách <tên>, dữ liệu thử không
+   dùng được", mã 5. Dữ liệu của lượt đó không dùng được — chạy lại.
+6. `source = 'sim'` của ticket chỉ kiểm được ở PG (API ticket không trả `source`):
    `SELECT source, count(*) FROM tickets WHERE created_at > <lúc chạy> GROUP BY 1`.
 
 Script chỉ in số ticket theo từng cách (và mã HTTP khi lỗi) — không in câu chữ, token, mật khẩu, OTP.
-Mã thoát: 0 xong, 1 dừng giữa chừng / chưa khôi phục được, 2 từ chối chạy (APP_ENV/URL), 3 server đang EVAL_MODE.
+
+| Mã thoát | Nghĩa |
+|---|---|
+| 0 | xong, dữ liệu dùng được |
+| 1 | dừng giữa chừng / chưa khôi phục được |
+| 2 | từ chối chạy (APP_ENV/URL) |
+| 3 | server đang EVAL_MODE |
+| 4 | có cách mà 0 ticket tới bước duyệt — dữ liệu thử không dùng được |
+| 5 | có cách mà E2 > 20% số lá (ml-service/RAG lỗi) — dữ liệu thử không dùng được (ưu tiên hơn mã 4) |

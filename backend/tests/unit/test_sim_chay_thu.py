@@ -4,6 +4,8 @@ Kiểm: dừng TRƯỚC mọi PUT/POST khi server EVAL_MODE; thứ tự PUT rule
 tiếp); `finally` khôi phục chiến lược BAN ĐẦU chỉ khi khác (kể cả lỗi giữa chừng), không PUT thừa; header `X-Sim-Run`
 trên MỌI yêu cầu tạo ticket; từ chối ngoài dev/test và URL không phải localhost (0 lời gọi HTTP); danh sách duyệt/xác nhận cố định;
 OTP từ biến môi trường hoặc hỏi tương tác (đăng nhập lại trước MỖI PUT); không in câu chữ, token, mật khẩu, OTP; reset mock mỗi vòng.
+Chế độ tuần tự (mặc định) gửi ticket kế chỉ sau khi ticket trước dừng, `--song-song` giữ đường cũ; cuối lượt: 0 ticket tới bước duyệt ở
+một cách → cảnh báo + mã 4, E2 > 20% số lá → cảnh báo + mã 5 (đều SAU khi khôi phục chiến lược); đủ duyệt + E2 thấp → mã 0.
 """
 
 import json
@@ -27,7 +29,8 @@ class FakeApi:
     """Server giả: giữ chiến lược hiện hành (`current`), `eval_mode`; PUT trùng hiện hành → 409 `same_as_current` (như server thật)."""
 
     def __init__(self, *, start: str = "hybrid", eval_mode: bool = False, fail_tickets_in_round: int | None = None,
-                 fail_restore: bool = False) -> None:  # fmt: skip
+                 fail_restore: bool = False, lag: int = 0, waits: dict[int, list[str | None]] | None = None,
+                 e2: dict[int, set[int]] | None = None) -> None:  # fmt: skip
         self.calls: list[tuple[str, str, dict[str, Any], dict[str, str]]] = []
         self.current, self.eval_mode = start, eval_mode
         self.attempts: list[tuple[str, str, int]] = []  # (strategy, reason, mã HTTP) của MỌI PUT
@@ -37,6 +40,9 @@ class FakeApi:
         self.tokens: list[str] = []
         self.otps: list[str] = []
         self.fail_round, self.fail_restore = fail_tickets_in_round, fail_restore
+        self.lag = lag  # số lần xem đầu của mỗi ticket còn "đang chạy" (chưa dừng)
+        self.waits, self.e2 = waits or {}, e2 or {}  # vòng → chỗ dừng thay thế / tập chỉ số ticket ra E2
+        self.unsettled_at_post: list[int] = []  # mỗi lần POST tạo ticket: số ticket trước đó CHƯA từng được xem ở trạng thái dừng
 
     @property
     def round(self) -> int:
@@ -72,12 +78,21 @@ class FakeApi:
                 return httpx.Response(500, json={"detail": "loi gia"})
             idx = sum(1 for t in self.tickets.values() if t["round"] == self.round)
             tid = f"T{len(self.tickets)}"
-            self.tickets[tid] = {"round": self.round, "idx": idx, "waiting_for": WAIT[idx],
-                                 "final_state": "S_ESCALATED" if WAIT[idx] is None else None, "text": body["text"]}  # fmt: skip
+            wait = self.waits.get(self.round, WAIT)[idx]
+            is_e2 = idx in self.e2.get(self.round, set())
+            self.unsettled_at_post.append(sum(1 for t in self.tickets.values() if not t["seen_stopped"]))
+            self.tickets[tid] = {"round": self.round, "idx": idx, "waiting_for": None if is_e2 else wait, "views": 0,
+                                 "final_state": "S_ESCALATED" if wait is None or is_e2 else None, "text": body["text"],
+                                 "exit_code": "E2" if is_e2 else None, "seen_stopped": False}  # fmt: skip
             return httpx.Response(202, json={"ticket_id": tid, "status": "S_NEW", "notices": []})
         if req.method == "GET" and path.startswith("/api/tickets/"):
             t = self.tickets[path.rsplit("/", 1)[1]]
-            return httpx.Response(200, json={"waiting_for": t["waiting_for"], "final_state": t["final_state"]})
+            t["views"] += 1
+            if t["views"] <= self.lag:  # còn đang chạy
+                return httpx.Response(200, json={"waiting_for": None, "final_state": None, "exit_code": None})
+            t["seen_stopped"] = True
+            return httpx.Response(200, json={"waiting_for": t["waiting_for"], "final_state": t["final_state"],
+                                             "exit_code": t["exit_code"]})  # fmt: skip
         if req.method == "GET" and path == "/api/approvals":
             items = [{"ticket_id": tid, "approval_id": f"A{tid}"} for tid, t in self.tickets.items() if t["waiting_for"] == "approval"]
             return httpx.Response(200, json={"items": items})
@@ -97,9 +112,10 @@ class FakeApi:
 
 
 class Run:
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, api: FakeApi, env: dict[str, str] | None = None, *args: str) -> None:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, api: FakeApi, env: dict[str, str] | None = None, *args: str,
+                 settle_s: float = 0.0) -> None:  # fmt: skip
         self.mod = load_script(SCRIPT, monkeypatch)
-        monkeypatch.setattr(self.mod, "SETTLE_S", 0.0)
+        monkeypatch.setattr(self.mod, "SETTLE_S", settle_s)
         self.out: list[str] = []
         self.err: list[str] = []
         self.prompts: list[str] = []
@@ -282,3 +298,65 @@ def test_password_falls_back_to_seed_demo_password(monkeypatch: pytest.MonkeyPat
     assert {c[2]["password"] for c in api.calls if c[1] == "/api/auth/login"} == {DEMO_PASSWORD}
     source = (REPO / SCRIPT).read_text(encoding="utf-8")
     assert DEMO_PASSWORD not in source
+
+
+def test_sequential_default_posts_next_only_after_previous_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mặc định tuần tự: mỗi ticket "đang chạy" 2 lần xem đầu; ticket kế chỉ được gửi khi mọi ticket trước đã được thấy dừng."""
+    api = FakeApi(lag=2)
+    run = Run(monkeypatch, api, settle_s=60.0)
+    assert run.code == 0, run.err
+    assert len(api.tickets) == 24 and api.unsettled_at_post == [0] * 24
+
+
+def test_explicit_tuan_tu_equals_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(lag=1)
+    run = Run(monkeypatch, api, None, "--tuan-tu", settle_s=60.0)
+    assert run.code == 0 and api.unsettled_at_post == [0] * 24
+
+
+def test_song_song_keeps_old_behaviour_posts_all_before_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(lag=2)
+    run = Run(monkeypatch, api, None, "--song-song", settle_s=60.0)
+    assert run.code == 0, run.err
+    assert api.unsettled_at_post[:8] == list(range(8))  # vòng 1: gửi hết 8 khi chưa ticket nào được xem dừng
+    assert len(api.tickets) == 24 and len(api.decisions) == 6 and len(api.confirms) == 9
+    order = [c[:2] for c in api.calls if c[1].startswith("/api/tickets")]
+    assert order[:8] == [("POST", "/api/tickets")] * 8  # 8 POST liền nhau rồi mới GET
+
+
+def test_no_approval_in_one_strategy_warns_new_code_and_still_restores(monkeypatch: pytest.MonkeyPatch) -> None:
+    no_approval = [None if w == "approval" else w for w in WAIT]
+    api = FakeApi(start="rule_only", waits={1: no_approval})  # hybrid: 0 ticket tới bước duyệt
+    run = Run(monkeypatch, api)
+    assert run.code == run.mod.NO_APPROVAL == 4 and run.code not in (0, 1, 2, run.mod.EVAL_REFUSED)
+    assert run.err == ["không ticket nào tới bước duyệt ở cách hybrid — dữ liệu thử không dùng được"]
+    assert [st for st, _ in _rounds(api)] == ["rule_only", "hybrid", "hybrid_guarded"]
+    assert _restores(api) == ["rule_only"] and api.current == "rule_only"  # vẫn khôi phục chiến lược ban đầu
+    assert run.out[-1] == "tổng: rule_only 8, hybrid 8, hybrid_guarded 8"
+
+
+def test_e2_over_20_percent_warns_new_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(start="hybrid", e2={2: {0, 1}})  # hybrid_guarded: 2/8 = 25% E2 (ngưỡng > 20%)
+    run = Run(monkeypatch, api)
+    assert run.code == run.mod.ML_ERROR == 5 and run.code not in (0, 1, 2, 3, run.mod.NO_APPROVAL)
+    assert run.err == ["ml-service/RAG lỗi ở cách hybrid_guarded, dữ liệu thử không dùng được"]
+    assert _restores(api) == ["hybrid"] and api.current == "hybrid"
+
+
+def test_e2_at_or_below_20_percent_is_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(e2={0: {3}, 1: {3}, 2: {3}})  # 1/8 = 12,5% mỗi cách
+    run = Run(monkeypatch, api)
+    assert run.code == 0 and run.err == []
+
+
+def test_e2_wins_over_no_approval_when_both(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi(waits={0: [None] * 8}, e2={0: {0, 1, 2, 3, 4, 5}})
+    run = Run(monkeypatch, api)
+    assert run.code == run.mod.ML_ERROR
+    assert len(run.err) == 2 and "bước duyệt ở cách rule_only" in run.err[0] and "RAG lỗi ở cách rule_only" in run.err[1]
+
+
+def test_enough_approvals_and_low_e2_exits_zero_without_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = FakeApi()
+    run = Run(monkeypatch, api)
+    assert run.code == 0 and run.err == []
