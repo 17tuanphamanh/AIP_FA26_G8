@@ -12,6 +12,7 @@ import type {
   TraceStep,
 } from "../../api/trace.ts";
 import { labelOf } from "../../lib/lookup.ts";
+import { BEN_QUYET_DINH, nhanIT } from "../../lib/nhan.ts";
 
 export const TRACE_TITLE = "Nhật ký quyết định";
 export const TRACE_FORBIDDEN_TEXT = "Bạn không có quyền xem nhật ký quyết định. Trang này dành cho L1, L2 và Trưởng bộ phận IT.";
@@ -20,48 +21,11 @@ export const TRACE_INVALID_TEXT = "Máy chủ trả nhật ký không đúng d�
 export const TRACE_BAD_ID_TEXT = "Mã ticket không hợp lệ.";
 export const TRACE_EMPTY_TEXT = "Ticket này chưa có bước nào được ghi nhật ký.";
 
-const STEP_NAME: Record<string, string> = {
-  B1: "Xác thực người gửi",
-  B2: "Kiểm tra tấn công",
-  B3: "Phân loại",
-  B4: "Phân loại",
-  B5: "Tách nhiều ý",
-  B6: "Chẩn đoán",
-  B7: "Chẩn đoán",
-  B8: "Tra cứu KB",
-  B9: "Kiểm tra căn cứ",
-  B10: "Định tuyến",
-  B11: "Dựng hành động",
-  "B13/B14": "Chính sách",
-  B15: "Gửi duyệt",
-  B16: "Duyệt",
-  B17: "Thực thi",
-  B18: "Thực thi",
-  B20: "Kết cục",
-  OVERRIDE: "Ghi đè",
-};
-export const stepName = (step: string): string => labelOf(STEP_NAME, step);
-
-const EVENT: Record<string, string> = {
-  identity_established: "đã xác thực",
-  diagnosed: "đã chẩn đoán",
-  diagnosis_skipped: "bỏ qua chẩn đoán",
-  retrieved: "đã tra cứu",
-  needs_action: "cần thực hiện hành động",
-  deflected_info_only: "trả lời hướng dẫn",
-  no_evidence: "không đủ căn cứ trong KB",
-  action_built: "đã dựng hành động",
-  asked: "hỏi thêm người dùng",
-  risk_decided: "đã quyết định",
-  queued: "đã gửi phiếu duyệt",
-  approved: "đã đồng ý",
-  rejected: "đã từ chối",
-  approval_timeout: "hết hạn duyệt",
-  executed_ok: "thành công",
-  exec_failed: "thất bại",
-  ticket_closed: "đã đóng",
-};
-export const eventText = (event: string): string => labelOf(EVENT, event);
+// Bước + sự kiện: nhãn từ src/lib/nhan.ts (nguồn chữ duy nhất — bảng ĐP 26/10 23:10). Màn hiện thêm mã chữ nhỏ (MaNhan).
+export const stepName = (step: string): string => nhanIT("buoc", step).nhan;
+export const eventText = (event: string): string => nhanIT("su_kien", event).nhan;
+/** Chữ đầu viết thường khi nhãn đứng giữa câu (giữ nguyên từ viết tắt: "IT", "AI", "VPN"…). */
+const giuaCau = (t: string): string => (t.length > 1 && t[1] === t[1]!.toLocaleUpperCase("vi") && /\p{L}/u.test(t[1]!) ? t : t.charAt(0).toLocaleLowerCase("vi") + t.slice(1));
 
 /** 0,03 — luôn 2 chữ số thập phân. */
 export const formatProb = (p: number): string =>
@@ -99,7 +63,7 @@ export function classifyLine(c: ClassifyInfo): string {
   if (c.confidence !== null) parts.push(`LLM ${formatProb(c.confidence)}`);
   const model = c.intent !== null && c.model_probs !== null ? ownProb(c.model_probs, c.intent) : null;
   if (model !== null) parts.push(`model ${formatProb(model)}`);
-  const head = `Phân loại: ${c.intent ?? "chưa rõ"}`;
+  const head = `Phân loại: ${c.intent === null ? "chưa rõ" : nhanIT("loai_yeu_cau", c.intent).nhan}`;
   const multi = c.is_multi ? " · nhiều ý" : "";
   return `${head}${parts.length ? ` — ${parts.join(", ")}` : ""}${multi}`;
 }
@@ -113,14 +77,14 @@ const DECISION: Record<string, string> = {
 };
 const RISK: Record<string, string> = { low: "rủi ro thấp", medium: "rủi ro trung bình", high: "rủi ro cao" };
 
+/** Tiêu đề thẻ chính sách — KHÔNG mã luật (mã + mô tả hiện riêng ở dòng "Luật", dạng "Mô tả · R18"). */
 export function policyLine(p: PolicyInfo): string {
   if (p.decided_by === "rule" || (p.decided_by === null && p.policy_decision !== null)) {
     const decision = p.policy_decision === null ? "chưa rõ" : labelOf(DECISION, p.policy_decision);
-    const rule = p.rule_id === null ? "" : ` — luật ${p.rule_id}${p.rule_description ? ` (${p.rule_description})` : ""}`;
-    return `Chính sách: ${decision}${rule}`;
+    return `Đánh giá rủi ro: ${decision} — ${giuaCau(BEN_QUYET_DINH.rule!)}`;
   }
   const risk = p.risk_level === null ? "chưa rõ rủi ro" : labelOf(RISK, p.risk_level);
-  return `Chính sách: ${risk} — ${p.decided_by === "llm" ? "mô hình ước lượng (không luật nào khớp)" : "chưa rõ ai quyết"}`;
+  return `Đánh giá rủi ro: ${risk} — ${p.decided_by === "llm" ? `${giuaCau(BEN_QUYET_DINH.llm!)} (không luật nào khớp)` : "chưa rõ bên quyết định"}`;
 }
 
 export function policyProbs(p: PolicyInfo): string | null {
@@ -163,25 +127,21 @@ const ROLLBACK: Record<string, string> = {
   none_needed: "không cần hoàn tác",
 };
 
+/** Mã lạ trong câu (không dựng được component) → "Khác · mã" — không hiện mã trần một mình. */
+const orKhac = (table: Record<string, string>, key: string): string => (Object.hasOwn(table, key) ? table[key]! : `Khác · ${key}`);
+
 export function executionLine(e: ExecutionInfo): string {
-  const action = e.action === null ? "chưa rõ hành động" : labelOf(ACTION, e.action);
+  const action = e.action === null ? "chưa rõ hành động" : orKhac(ACTION, e.action);
   const result = e.success === null ? "chưa rõ kết quả" : e.success ? "thành công" : "thất bại";
   return `Thực thi: ${action} — ${result}`;
 }
 export const rollbackText = (e: ExecutionInfo): string | null =>
-  e.rollback_status === null ? null : `Hoàn tác: ${labelOf(ROLLBACK, e.rollback_status)}`;
+  e.rollback_status === null ? null : `Hoàn tác: ${orKhac(ROLLBACK, e.rollback_status)}`;
 
-const ROUTE: Record<string, string> = {
-  auto: "tự động xử lý",
-  approved: "xử lý sau khi duyệt",
-  rejected: "bị từ chối",
-  escalated: "chuyển L2",
-  deflected: "trả lời hướng dẫn",
-};
-
+/** Tiêu đề thẻ kết cục — mã kết thúc hiện riêng ("Nhãn · E5", MaNhan) ở dòng dưới. */
 export function outcomeLine(o: OutcomeInfo): string {
-  const route = o.route === null ? "chưa rõ" : labelOf(ROUTE, o.route);
-  return `Kết cục: ${route}${o.exit_code ? ` — mã ${o.exit_code}` : ""}`;
+  const route = o.route === null ? "chưa rõ" : giuaCau(nhanIT("duong_xu_ly", o.route).nhan);
+  return `Kết cục: ${route}`;
 }
 
 /** Dòng tiêu đề của một thẻ. Bước không có trường chi tiết → "<tên bước>: <sự kiện>". */
@@ -193,7 +153,7 @@ export function stepTitle(s: TraceStep): string {
   if (s.execution) return executionLine(s.execution);
   if (s.outcome) return outcomeLine(s.outcome);
   if (s.diagnose) return `Chẩn đoán: dùng ${s.diagnose.fact_keys.length} dữ kiện`;
-  return `${stepName(s.step)}: ${eventText(s.event)}`;
+  return `${stepName(s.step)}: ${giuaCau(eventText(s.event))}`;
 }
 
 /** Câu lỗi tải: 403 và 404 có câu riêng; thân sai hình dạng (502 `invalid_trace_body`) có câu riêng; còn lại theo mã. */

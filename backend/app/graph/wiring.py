@@ -150,13 +150,17 @@ def fake_scenario(settings: Settings) -> FakeScenario:
 
 
 def m5_strategy(settings: Settings) -> Strategy:
-    """6C P1 (Q-6C-1 = B): chiến lược M5 từ `Settings.strategy`. `manual` (P8 — chỉ tính giải tích ở harness) → từ chối ở MỌI chế
-    độ; chiến lược chỉ-để-so-sánh khi không EVAL_MODE → `StrategyNotAllowed` (cổng 6). Gọi ở `open_runtime` TRƯỚC DB (backend +
-    worker, N5) và lại ở `_open` (lớp thứ hai cho nơi dựng runtime không qua `open_runtime`)."""
+    """6C P1 (Q-6C-1 = B): kiểm `Settings.strategy` lúc khởi động. `manual` (P8 — chỉ tính giải tích ở harness) → từ chối ở MỌI chế
+    độ; chiến lược chỉ-để-so-sánh (D-67: `llm_only`, `full_auto`) khi không EVAL_MODE → `StrategyNotAllowed` (cổng 6). Gọi ở
+    `open_runtime` TRƯỚC DB (backend + worker, N5) và lại ở `_open` (lớp thứ hai cho nơi dựng runtime không qua `open_runtime`).
+    D-67: ngoài EVAL_MODE chiến lược lúc vận hành do DB quyết (`m5_strategy_changes`, chụp lên ticket lúc tạo) — `STRATEGY` chỉ có
+    nghĩa khi EVAL_MODE; `rule_only`/`hybrid_guarded` đặt ở env ngoài EVAL_MODE được chấp nhận nhưng BỊ BỎ QUA (log cảnh báo)."""
     strategy = settings.strategy
     if strategy == "manual":
         raise RuntimeError(MANUAL_REFUSED)
     check_strategy(strategy, eval_mode=settings.eval_mode)
+    if not settings.eval_mode and strategy != "hybrid":
+        log.warning("STRATEGY=%s bị bỏ qua ngoài EVAL_MODE — chiến lược vận hành do DB quyết (PUT /api/admin/strategy)", strategy)
     return strategy
 
 
@@ -263,6 +267,7 @@ async def _open(
     approval_sla_minutes: int | None = None, approvers: Mapping[str, Roster] | None = None,
     calibrator: Calibrator | None = None,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
+    m5_strategy(settings)  # lớp thứ hai (6C P1): D-67 — NodeDeps không còn mang chiến lược, nên kiểm ở đây thay cho `strategy=`
     deadlines = SqlDeadlineStore(engines.main)
     security = SecurityEventWriter(engines.main, clock)
     turns = SqlTurnStore(engines.main)
@@ -289,7 +294,7 @@ async def _open(
         approvers=approvers if approvers is not None else open_approvers(settings).root,
         approver_users=approver_users(settings, engines, security),
         estimator=LlmRiskEstimator(llm, p_method=get_policy().m5.p_method, eval_mode=settings.eval_mode),
-        calibrator=calibrator, strategy=m5_strategy(settings), eval_mode=settings.eval_mode,
+        calibrator=calibrator, eval_mode=settings.eval_mode,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

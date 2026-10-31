@@ -57,7 +57,8 @@ def one(rel: str, old: str, new: str) -> tuple[str, str, str, int]:
 
 _KBGAP_CALL = "            gap = kb_gap(evidence, est)\n"
 _STRAT_RUNTIME = "    m5_strategy(settings)\n"
-_STRAT_OPEN = "        calibrator=calibrator, strategy=m5_strategy(settings), eval_mode=settings.eval_mode,\n"
+# D-67: NodeDeps không còn `strategy=` — lớp thứ hai ở `_open` là lời gọi riêng (neo đổi theo, phép đột biến giữ nguyên ý)
+_STRAT_OPEN = "    m5_strategy(settings)  # lớp thứ hai (6C P1): D-67 — NodeDeps không còn mang chiến lược, nên kiểm ở đây thay cho `strategy=`\n"
 _POINT4 = '_POINT4 = ("decided_by", "policy_decision", "matched_rule_id", "risk_level", "reason", "route", "raw_prob", "p_method")\n'
 _PARAM_ELSE = "    return False  # software_name, resource_path, khoá lạ — không bao giờ gửi\n"
 _NULL_OK = '    if decided_by is None and strategy == "full_auto" and route == "AUTO":\n'

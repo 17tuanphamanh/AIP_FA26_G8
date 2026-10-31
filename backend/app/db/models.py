@@ -106,6 +106,7 @@ SIDE_EFFECT_KINDS = (  # P7 2.8
 )  # fmt: skip
 NOTICE_KINDS = ("answer", "question", "result", "rejection", "escalation")  # P7 2.9
 NOTICE_NEEDS = ("none", "answer", "confirm")  # P7 2.9
+TICKET_SOURCES = ("real", "sim", "eval")  # migration 0013 (D-67): nguồn ticket — thật / chạy dữ liệu thử / đánh giá
 EMAIL_STATUSES = ("pending", "sent", "failed", "skipped")  # migration 0012 (notify-email)
 EMAIL_KINDS = (  # migration 0012: 4 loại tin người dùng (B10/B16/B18/B20) + 3 loại thông báo người duyệt (B15, nhắc 50 %/80 %)
     "answer", "rejection", "result", "escalation", "approval_new", "approval_reminder_1", "approval_reminder_2",
@@ -302,6 +303,7 @@ class Ticket(Base):
         check_in("close_reason", CLOSE_REASONS),  # NULL qua được — ticket cha (P7 2.10)
         check_in("resolution_path", RESOLUTION_PATHS),
         check_in("aggregate_status", AGGREGATE_STATUSES),
+        check_in("source", TICKET_SOURCES),  # migration 0013
         Index("ix_tickets_leaf", "created_at", postgresql_where=text("is_parent = false")),
         Index("ix_tickets_parent", "parent_ticket_id"),
         Index("ix_tickets_requester_created_at", "requester_id", "created_at"),  # migration 0010: bộ đếm 429 ticket mới
@@ -328,6 +330,9 @@ class Ticket(Base):
     created_at: Mapped[datetime] = _now()
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_parent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # migration 0013 (D-67): chiến lược M5 CHỤP lúc tạo ticket (NULL = ticket cũ, B12 coi là `hybrid`); nguồn ticket
+    strategy: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'real'"))
 
 
 # ---- 8. approvals (B15 mục 8, P7 2.6, TK) ---------------------------------------------------
@@ -404,6 +409,8 @@ class Escalation(Base):
     __table_args__ = (
         check_in("exit_code", EXIT_CODES),
         check_in("close_result", CLOSE_RESULTS),
+        # migration 0013 (ĐP bổ sung 26/10): ghi chú khi L2 đóng ca — dùng ở P4 (agent B)
+        CheckConstraint("close_note IS NULL OR char_length(close_note) BETWEEN 1 AND 1000", name="close_note_len"),
         Index("ix_escalations_ticket", "ticket_id"),
         Index("ix_escalations_closed_at_exit_code", "closed_at", "exit_code"),  # P9 mục 4
     )
@@ -423,6 +430,7 @@ class Escalation(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     new_ticket_id: Mapped[str | None] = _ticket_fk(nullable=True)
     created_at: Mapped[datetime] = _now()
+    close_note: Mapped[str | None] = mapped_column(Text)  # migration 0013 — 1–1000 ký tự hoặc NULL
 
 
 # ---- 12. audit_logs (N3-9.2, N4-9, TK, P7 2.7, B20) — append-only ---------------------------
@@ -805,3 +813,20 @@ class EmailOutbox(Base):
     next_attempt_at: Mapped[datetime] = _now()
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     effect_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+
+
+# ---- 25. m5_strategy_changes (D-67) — migration 0013 -----------------------------------------------------------------------
+
+
+class M5StrategyChange(Base):
+    """Lịch sử đổi chiến lược M5 lúc vận hành. CHỈ GHI THÊM (trigger `forbid_mutation` chặn UPDATE/DELETE/TRUNCATE; `app_rw` chỉ
+    SELECT, INSERT). Chiến lược hiện hành = dòng có `id` lớn nhất; chưa có dòng nào → `hybrid` (xử lý ở code). Tập giá trị hợp lệ
+    ở `risk/strategy.RUNTIME_SELECTABLE`, không chép thành CHECK (một nguồn)."""
+
+    __tablename__ = "m5_strategy_changes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    strategy: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by: Mapped[str] = _user_fk(nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # đã qua privacy guard
+    changed_at: Mapped[datetime] = _now()

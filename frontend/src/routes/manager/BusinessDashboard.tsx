@@ -1,5 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
+import { policyQuery } from "../../api/policy.ts";
+import { NhanMa } from "../../components/MaNhan.tsx";
+import { GOI_Y_TRONG_SO, luatIT, MA_KET_THUC } from "../../lib/nhan.ts";
 import type { BusinessDashboard as Business, BusinessMetrics, E3Cases } from "../../api/types.ts";
-import { labelOf } from "../../lib/lookup.ts";
+import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import {
   DECIDED_BY_LABEL,
   E1_LABEL,
@@ -21,11 +25,30 @@ type Name = keyof BusinessMetrics;
 /** Giá trị của một chỉ số; khoá thiếu → undefined ("Máy chủ không trả chỉ số này" — nhánh phòng thủ). */
 const metric = <K extends Name>(data: Business, name: K): BusinessMetrics[K] | undefined => data.metrics[name];
 
-function Kpi({ data, name, value, label, kind, extra }: { data: Business; name: Name; value: unknown; label: string; kind: MetricKind; extra?: string }) {
+function Kpi({
+  data,
+  name,
+  value,
+  label,
+  kind,
+  extra,
+  goiY,
+}: {
+  data: Business;
+  name: Name;
+  value: unknown;
+  label: string;
+  kind: MetricKind;
+  extra?: string;
+  goiY?: string;
+}) {
   const m = metricText(name, value, data.unavailable, kind);
   return (
     <div data-testid="kpi" data-metric={name} data-state={m.state} className="flex flex-col gap-0.5 rounded-group bg-group px-5 py-4.5">
-      <span className="text-secondary text-ink-2">{label}</span>
+      <span className="text-secondary text-ink-2" title={goiY} data-testid={goiY ? "kpi-goi-y" : undefined}>
+        {label}
+        {goiY ? <span className="sr-only"> ({goiY})</span> : null}
+      </span>
       <span data-testid="kpi-value" className={m.state === "value" ? "text-title tabular-nums" : "text-heading text-ink-2"}>
         {m.text}
       </span>
@@ -38,10 +61,17 @@ function Kpi({ data, name, value, label, kind, extra }: { data: Business; name: 
 }
 
 /** Đầu khối: nhãn tiếng Việt + tên trường API (Bản 4: "Ai quyết định mức rủi ro · decided_by_distribution"). */
-function Heading({ id, text, field }: { id: string; text: string; field: string }) {
+function Heading({ id, text, field, ma }: { id: string; text: string; field: string; ma?: string }) {
   return (
     <h2 id={id} className="pl-1 text-label text-ink-2">
-      {text} · <span className="font-mono font-normal">{field}</span>
+      {text}
+      {ma ? (
+        <>
+          {" · "}
+          <span className="font-mono font-normal">{ma}</span>
+        </>
+      ) : null}{" "}
+      · <span className="font-mono font-normal">{field}</span>
     </h2>
   );
 }
@@ -82,7 +112,7 @@ function Bars({ values, labels }: { values: Record<string, number>; labels: Reco
 }
 
 function E3List({ cases }: { cases: E3Cases }) {
-  if (cases.items.length === 0) return <p className="px-4 py-3 text-secondary text-ink-2">Không có ca E3 trong khoảng này.</p>;
+  if (cases.items.length === 0) return <p className="px-4 py-3 text-secondary text-ink-2">Không có ca thiếu tài liệu hướng dẫn trong khoảng này.</p>;
   return (
     <>
       <ul aria-label="Ca thiếu tài liệu">
@@ -119,6 +149,7 @@ export function BusinessKpis({ data }: { data: Business }) {
         name="escalation_rate_weighted"
         value={weighted ? weighted.weighted : weighted}
         label="Chuyển L2 (có trọng số)"
+        goiY={GOI_Y_TRONG_SO}
         kind="rate"
         extra={`thô ${raw.text}`}
       />
@@ -157,8 +188,25 @@ function WeightedGroups({ data }: { data: Business }) {
   );
 }
 
+/** `rules[].id → description` của nội dung chính sách đang chạy (chỉ mục đúng dạng; khoá lạ bỏ qua). */
+function ruleDescriptionMap(content: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const rules = content.rules;
+  if (!Array.isArray(rules)) return out;
+  for (const r of rules) {
+    if (r && typeof r === "object" && typeof (r as { id?: unknown }).id === "string" && typeof (r as { description?: unknown }).description === "string") {
+      Object.defineProperty(out, (r as { id: string }).id, { value: (r as { description: string }).description, enumerable: true });
+    }
+  }
+  return out;
+}
+
 /** Cột trái của B4MgrDashboard. */
 export function BusinessSections({ data }: { data: Business }) {
+  // Mô tả luật (NGU-10): BE chưa trả trong `top_matched_rules` → tra `GET /api/policy` (Trưởng BP có policy:read); lỗi / chưa có
+  // → "Luật chưa có mô tả · R…" (không chặn khối).
+  const policy = useQuery(policyQuery());
+  const ruleDescriptions = policy.data ? ruleDescriptionMap(policy.data.content) : null;
   const decidedBy = metric(data, "decided_by_distribution");
   const rules = metric(data, "top_matched_rules");
   const e1 = metric(data, "e1_split");
@@ -189,7 +237,9 @@ export function BusinessSections({ data }: { data: Business }) {
             <ul className="overflow-hidden rounded-group border border-line">
               {rules.map((r) => (
                 <li key={r.rule_id} data-testid="rule-row" className="flex h-11 items-center gap-3 border-t border-line px-5 first:border-t-0">
-                  <span className="grow font-mono text-label font-normal">{r.rule_id}</span>
+                  <span data-testid="rule-name" className="grow text-secondary">
+                    <NhanMa {...luatIT(r.rule_id, ruleDescriptions ? ownEntry<string | null>(ruleDescriptions, r.rule_id, null) : null)} />
+                  </span>
                   <span className="text-secondary text-ink-2 tabular-nums">{metricText(r.rule_id, r.count, [], "count").text}</span>
                 </li>
               ))}
@@ -202,7 +252,7 @@ export function BusinessSections({ data }: { data: Business }) {
       </section>
 
       <section aria-labelledby="e1-split" className="flex flex-col gap-2">
-        <Heading id="e1-split" text="Ca không xác định được ý định (E1)" field="e1_split" />
+        <Heading id="e1-split" text={MA_KET_THUC.E1!.nhan} ma="E1" field="e1_split" />
         {usable(data, "e1_split") && e1 ? (
           <div className="rounded-group border border-line">
             <Bars values={e1.counts} labels={E1_LABEL} />
@@ -231,7 +281,7 @@ export function E3Section({ data }: { data: Business }) {
   const cases = metric(data, "e3_cases");
   return (
     <section aria-labelledby="e3-cases" className="flex flex-col gap-2">
-      <Heading id="e3-cases" text="Ca thiếu tài liệu (E3)" field="e3_cases" />
+      <Heading id="e3-cases" text={MA_KET_THUC.E3!.nhan} ma="E3" field="e3_cases" />
       {usable(data, "e3_cases") && cases ? (
         <div className="overflow-hidden rounded-group border border-line">
           <E3List cases={cases} />

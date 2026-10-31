@@ -393,7 +393,7 @@ describe("t57 (P6): nhãn 16 luật; 'Đã xem' chỉ gỡ SAU 200; 409 / 404 c�
       "reflex_approval", "drift", "refresh_reuse", "permission_denied_burst", "policy_saved", "b2_degraded",
       "b3_degraded", "llm_budget", "finalize_failed", "execution_failed",
     ]);
-    expect(alertLabel("custom_rule_x")).toBe("custom_rule_x");
+    expect(alertLabel("custom_rule_x")).toBe("Khác"); // N-NGU: luật lạ → "Khác" (mã luật vẫn hiện nhỏ ở dòng dưới)
   });
 
   it("sắp: critical → warning → info → lạ, rồi window_start giảm dần (Q-fe-27)", () => {
@@ -597,7 +597,11 @@ describe("t60 (N-POL1 P2): xem chính sách + lịch sử theo hình dạng th�
     expect(rows[0]!.querySelector(".font-semibold")).toBeTruthy();
     // Bảng dựng từ nội dung thật trả về.
     expect(screen.getAllByTestId("rule-row")).toHaveLength(2);
-    expect(calls.filter((c) => c.method === "GET").map((c) => pathOf(c.url)).sort()).toStrictEqual(["/api/policy", "/api/policy/versions"]);
+    // Khối "Cách xử lý" (N-PA) gọi route riêng `/api/admin/strategy*` — ở đây chỉ soát lời gọi của nội dung chính sách.
+    expect(calls.filter((c) => c.method === "GET" && pathOf(c.url).startsWith("/api/policy")).map((c) => pathOf(c.url)).sort()).toStrictEqual([
+      "/api/policy",
+      "/api/policy/versions",
+    ]);
   });
 
   it("nhiều mục: sắp version_id giảm; chỉ mục is_current đậm + 'đang áp dụng'; restored_from null / không khoá → không hiện; có giá trị → 'khôi phục từ bản X'", async () => {
@@ -639,7 +643,7 @@ describe("t60 (N-POL1 P2): xem chính sách + lịch sử theo hình dạng th�
     expect(screen.queryByLabelText("Nội dung chính sách (JSON)")).toBeNull();
   });
 
-  it("route chưa có (404 'Not Found') → 'Chính sách có từ Phase 7', không khối lỗi đỏ", async () => {
+  it("route chưa có (404 'Not Found') → 'Chưa có chức năng chính sách' (không còn 'Phase 7'), không khối lỗi đỏ", async () => {
     stubFetch((_m, url) => (pathOf(url).startsWith("/api/policy") ? json(404, { detail: "Not Found" }) : undefined));
     renderAt("/policy");
     const box = await screen.findByTestId("policy-missing");
@@ -1282,7 +1286,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
       ["sensitive", "Nhạy cảm", "—"], // nhóm 0 lá → null → "—", KHÔNG "0 %"
     ]);
     expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Độ nhạy trọng số: 60/30/10: 14,2 % · 80/15/5: 15,1 %");
-    const e1 = within(screen.getByRole("region", { name: /Ca không xác định được ý định/ })).getAllByTestId("bar-row");
+    const e1 = within(screen.getByRole("region", { name: /Ngoài phạm vi hoặc chưa rõ yêu cầu · E1/ })).getAllByTestId("bar-row"); // N-NGU
     expect(e1.map((r) => r.dataset.key)).toStrictEqual(["out_of_scope", "intent_low_confidence", "multi_intent_not_enabled", "intent_not_enabled", "other"]);
     expect(text(e1[4]!.firstElementChild)).toBe("Lý do khác");
     expect(screen.getAllByTestId("rule-row")).toHaveLength(1);
@@ -1336,7 +1340,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     expect(screen.queryAllByTestId("bar-row")).toHaveLength(0);
     expect(screen.getAllByText("Không có ticket trong khoảng này.")).toHaveLength(2); // decided_by + E1
     expect(screen.getByText("Không có luật nào khớp trong khoảng này.")).toBeTruthy();
-    expect(screen.getByText("Không có ca E3 trong khoảng này.")).toBeTruthy();
+    expect(screen.getByText("Không có ca thiếu tài liệu hướng dẫn trong khoảng này.")).toBeTruthy(); // N-NGU: không mã trần
     expect(text(document.querySelector("main") ?? document.body)).not.toMatch(/\b0 %/);
   });
 
@@ -1472,7 +1476,8 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
   };
 
   it("labelOf / ownEntry / alertLabel / severityLabel / severityDot / audienceLabel; sắp xếp coi mức lạ là cuối", () => {
-    expect([alertLabel("constructor"), alertLabel("injection_detected")]).toStrictEqual(["constructor", "Yêu cầu bị chặn vì nghi chèn lệnh (E0)"]);
+    // N-NGU: luật lạ → "Khác"; nhãn không chứa mã (mã E0 hiện riêng, chữ nhỏ).
+    expect([alertLabel("constructor"), alertLabel("injection_detected")]).toStrictEqual(["Khác", "Yêu cầu bị chặn vì nghi tấn công"]);
     expect([severityLabel("__proto__"), severityLabel("toString"), severityLabel("critical")]).toStrictEqual(["__proto__", "toString", "Nghiêm trọng"]);
     expect([severityDot("__proto__"), severityDot("constructor"), severityDot("critical")]).toStrictEqual(["bg-ink-3", "bg-ink-3", "bg-danger"]);
     expect([audienceLabel("toString"), audienceLabel("manager")]).toStrictEqual(["toString", "Trưởng BP IT"]);
@@ -1493,10 +1498,10 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
     expect(screen.getAllByTestId("alert-row").map((r) => r.dataset.alertId)).toStrictEqual(["2", "1"]);
     const row = alertRow(1)!;
     expect(row.dataset.severity).toBe("__proto__");
-    expect(text(row)).toContain("constructor — mức __proto__");
+    expect(text(row)).toContain("Khác — mức __proto__constructor"); // N-NGU: "Khác" + mã luật chữ nhỏ
     expect(text(within(row).getByTestId("alert-audience"))).toBe("Người nhận: toString");
     expect(row.querySelector('[aria-hidden="true"]')!.className).toContain("bg-ink-3");
-    expect(text(alertRow(2))).toContain("toString — mức Nghiêm trọng");
+    expect(text(alertRow(2))).toContain("Khác — mức Nghiêm trọngtoString");
     noLeak();
   });
 

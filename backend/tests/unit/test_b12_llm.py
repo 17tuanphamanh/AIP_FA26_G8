@@ -6,8 +6,8 @@ Viết TỪ ĐẶC TẢ trước code — node gọi trực tiếp (khung `test_
 - "Không luật nào khớp" = G-02 (máy của người khác, trong giờ — `_action(owner=False)`); "luật khớp" = `_state()` mặc định trong
   giờ → R20 allow.
 - Ngưỡng = `policy.json constants` (0,25; 0,75). `kb_gap = (min(len(evidence), 3) - est.evidence_trimmed) <= 0` (Q-6C-4).
-- Điểm log 4 ca LLM: khoá `detail` cũ + `calibrated_prob`, `thresholds`, `factors`, `kb_gap`, `calibrator_version`; `strategy` CHỈ khi
-  `deps.eval_mode` (Q-6C-3 — khi đó ở MỌI đường điểm 4). Lineage ca LLM thêm `prompt_id`, `prompt_version`, `model`, `p_method`,
+- Điểm log 4 ca LLM: khoá `detail` cũ + `calibrated_prob`, `thresholds`, `factors`, `kb_gap`, `calibrator_version`; D-67 (thay
+  Q-6C-3): `strategy` ở MỌI đường điểm 4, có EVAL_MODE hay không. Chiến lược đặt trên ticket (`h.tickets.strategies`), không qua deps. Lineage ca LLM thêm `prompt_id`, `prompt_version`, `model`, `p_method`,
   `calibrator_version` (P5). Không trường nào mang `rationale` (D-40).
 """
 
@@ -103,7 +103,7 @@ async def _node(
     deps.estimator = estimator if estimator is not None else LlmRiskEstimator(gw.client, p_method=p_method,
                                                                               eval_mode=eval_mode)  # fmt: skip
     deps.calibrator = calibrator
-    deps.strategy = strategy
+    h.tickets.strategies[state["ticket_id"]] = strategy  # D-67: chiến lược chụp trên ticket, B12 đọc qua `tickets.strategy_of`
     deps.eval_mode = eval_mode
     fn = b12_assess.make(deps)
     with _run(h):
@@ -170,11 +170,12 @@ async def test_c3_no_match_uncalibrated_low_raw_goes_hitl_b15() -> None:
 
 @pytest.mark.asyncio
 async def test_c3_point4_detail_keys_exact_without_eval_mode() -> None:
-    """P5 / TQ-6 / Q-6C-3: điểm 4 ca LLM, `eval_mode` False → đúng khoá cũ + 5 khoá mới, KHÔNG có `strategy`."""
+    """P5 / TQ-6 — sửa có chủ ý theo D-67: điểm 4 ca LLM, `eval_mode` False → đúng khoá cũ + 5 khoá mới + `strategy` (trước D-67,
+    Q-6C-3: KHÔNG có `strategy`)."""
     _, h, _ = await _node(_no_match(), scripts=_scripts(0.02))
     detail = _point4(h)["detail"]
     assert set(detail) == LLM_POINT4
-    assert "strategy" not in detail
+    assert detail["strategy"] == "hybrid"
 
 
 # ---- c4: preset 0,9 chưa hiệu chỉnh → E5 llm_high_risk ----------------------------------------------------------------
@@ -363,7 +364,7 @@ async def test_c8_rule_match_never_calls_estimator() -> None:
     assert (out["status"], out["next"]) == (S_EXECUTING, "b17_execute")
     risk = _risk(out)
     assert (risk.decided_by, risk.policy_decision, risk.matched_rule_id, risk.route) == ("rule", "allow", "R20", "AUTO")
-    assert set(_point4(h)["detail"]) == POINT4  # đường luật: khoá cũ, không `strategy` khi eval_mode False
+    assert set(_point4(h)["detail"]) == POINT4  # đường luật: khoá cũ (D-67: gồm `strategy`, cả khi eval_mode False)
 
 
 @pytest.mark.asyncio
@@ -404,7 +405,7 @@ async def test_c14_lineage_llm_calibrated_version() -> None:
     assert (lin["prompt_id"], lin["p_method"]) == ("b14_risk_estimate", "self_report")
 
 
-# ---- Q-6C-3 phần B12: detail.strategy chỉ khi EVAL_MODE; rule_only không khớp ------------------------------------------
+# ---- Q-6C-3 phần B12 → D-67: detail.strategy ở MỌI đường điểm 4, cả lúc vận hành; rule_only không khớp ---------------------
 
 
 @pytest.mark.asyncio
@@ -420,18 +421,21 @@ async def test_q6c3_eval_mode_writes_strategy_on_every_point4_path(path: str) ->
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["luat", "llm"])
-async def test_q6c3_no_eval_mode_no_strategy_key(path: str) -> None:
-    """Q-6C-3 = A / P5: `deps.eval_mode` False → khoá `strategy` VẮNG ở mọi đường điểm 4."""
+@pytest.mark.parametrize("strategy", ["hybrid", "hybrid_guarded"])
+async def test_d67_no_eval_mode_still_writes_strategy(path: str, strategy: Strategy) -> None:
+    """D-67 (thay `test_q6c3_no_eval_mode_no_strategy_key` — trước: khoá `strategy` VẮNG khi không EVAL_MODE): `deps.eval_mode`
+    False → `detail.strategy` = chiến lược của ticket ở mọi đường điểm 4."""
     state = _rule_match() if path == "luat" else _no_match()
-    _, h, _ = await _node(state, scripts=_scripts(0.02), eval_mode=False)
-    assert "strategy" not in _point4(h)["detail"]
+    _, h, _ = await _node(state, scripts=_scripts(0.02), eval_mode=False, strategy=strategy)
+    assert _point4(h)["detail"]["strategy"] == strategy
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("eval_mode", [True, False], ids=["danh-gia", "deps-mac-dinh"])
 async def test_q6c3_rule_only_no_match_goes_hitl_without_llm(eval_mode: bool) -> None:
-    """P3 + st8 + Q-6C-3: `deps.strategy="rule_only"` + không khớp → HITL (B15), `decided_by="rule"`, `policy_decision=None`,
-    reason đúng chữ [Chốt B12 §5]; estimator 0 lần, 0 lời gọi `b14_*`; eval_mode True → `detail.strategy == "rule_only"`."""
+    """P3 + st8 + Q-6C-3: ticket `strategy="rule_only"` + không khớp → HITL (B15), `decided_by="rule"`, `policy_decision=None`,
+    reason đúng chữ [Chốt B12 §5]; estimator 0 lần, 0 lời gọi `b14_*`. D-67 (sửa có chủ ý): `detail.strategy == "rule_only"` ở CẢ
+    hai chế độ (trước: chỉ khi eval_mode)."""
     fake = FakeRiskEstimator(_est(0.05, 0))
     out, h, gw = await _node(_no_match(), estimator=fake, calibrator=CAL, strategy="rule_only", eval_mode=eval_mode)
     assert fake.calls == []
@@ -442,7 +446,4 @@ async def test_q6c3_rule_only_no_match_goes_hitl_without_llm(eval_mode: bool) ->
     assert risk.reason == RULE_ONLY_REASON
     row = _point4(h)
     assert (row["decided_by"], row["detail"]["route"]) == ("rule", "HITL")
-    if eval_mode:
-        assert row["detail"]["strategy"] == "rule_only"
-    else:
-        assert "strategy" not in row["detail"]
+    assert row["detail"]["strategy"] == "rule_only"

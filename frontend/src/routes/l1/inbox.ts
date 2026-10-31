@@ -1,9 +1,11 @@
 // Hàm thuần cho màn L1 (B4L1Queue, B4L1Detail, hộp ghi đè). Không gọi mạng, không đọc đồng hồ — `now` truyền vào
 // (giờ MÁY CHỦ: api/serverClock.ts). Tên khoá của `action` / `risk` / `facts` KHÔNG được đọc ở đây: phiếu hiện đúng
 // object đã băm, đủ mọi khoá (KH 4.2 #5), risk hiện khoá–giá trị chung (F4 P1).
+import { HUONG_XU_LY, KHAC, luatIT, nhanIT } from "../../lib/nhan.ts";
 import { NOTE_MAX } from "../../api/approvals.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import type {
+  MatchedRule,
   ApprovalAffected,
   ApprovalListItem,
   ApprovalRiskView,
@@ -14,7 +16,7 @@ import type {
   OverrideReasonCode,
   ReasonCode,
 } from "../../api/types.ts";
-import { labelOf, ownEntry } from "../../lib/lookup.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 
 // ---------------------------------------------------------------- hộp thư
 
@@ -99,7 +101,28 @@ export const ACTION_LABEL: Record<string, string> = {
 };
 /** Hộp thư không biết hành động (`action_type` null — dòng audit B15 không có): dòng VẪN hiện, mở phiếu để xem object. */
 export const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
-export const actionLabel = (type: string | null): string => (type === null ? ACTION_UNKNOWN : labelOf(ACTION_LABEL, type));
+/** Loại hành động lạ → "Khác · <mã>" (không hiện mã trần một mình — bảng ĐP 23:10). */
+export const actionLabel = (type: string | null): string =>
+  type === null ? ACTION_UNKNOWN : Object.hasOwn(ACTION_LABEL, type) ? ACTION_LABEL[type]! : `${KHAC} · ${type}`;
+
+/** Nhãn cạnh khoá đã biết của object hành động đã băm (G4-13: khoá + giá trị giữ NGUYÊN; chỉ thêm nhãn). */
+export const ACTION_KEY_LABEL: Record<string, string> = {
+  type: "Loại hành động",
+  target: "Đối tượng",
+  requested_for: "Thực hiện cho",
+  scope: "Phạm vi",
+  privilege_level: "Mức quyền",
+  reversible: "Hoàn tác được",
+  reversibility: "Mức hoàn tác",
+  data_sensitivity: "Độ nhạy dữ liệu",
+  params: "Tham số",
+  facts: "Dữ kiện",
+};
+/** Nhãn cho một khoá phẳng (`params.device_id` → nhãn của `params`); khoá lạ → null (chỉ hiện khoá). */
+export function actionKeyLabel(key: string): string | null {
+  const head = key.split(".")[0] ?? key;
+  return Object.hasOwn(ACTION_KEY_LABEL, head) ? ACTION_KEY_LABEL[head]! : null;
+}
 
 /** Hộp thư đã có dữ liệu nhưng lần tải lại gần nhất lỗi (Q-fe-38): giữ danh sách cũ, báo có thể đã cũ + câu lỗi. */
 export const INBOX_STALE_TEXT = "Chưa cập nhật được hộp thư — danh sách dưới đây có thể đã cũ.";
@@ -133,24 +156,26 @@ export const AFFECTED_OTHER_TEXT = "Khác người gửi yêu cầu";
 export const AFFECTED_SELF_TEXT = "Chính người gửi yêu cầu";
 
 export const RISK_LEVEL_LABEL: Record<ApprovalRiskView["risk_level"], string> = { low: "Thấp", medium: "Trung bình", high: "Cao" };
-export const RISK_ROUTE_LABEL: Record<ApprovalRiskView["route"], string> = {
-  AUTO: "Tự xử lý",
-  HITL: "Cần người duyệt",
-  ESCALATE_L2: "Chuyển L2",
-};
+/** Hướng xử lý, bên quyết định: nhãn từ src/lib/nhan.ts (bảng ĐP 26/10 23:10) — màn hiện "Nhãn · mã" (MaNhan). */
+export const RISK_ROUTE_LABEL = HUONG_XU_LY;
 /** Điểm LLM chưa qua hiệu chỉnh: xác suất không dùng để tự xử lý — chữ của FE (backend chỉ trả cờ). */
 export const UNCALIBRATED_TEXT = "Chưa hiệu chỉnh, không tự xử lý";
 
-export type RiskSummary = { level: string; route: string; reason: string; ruleId: string | null; source: string; note: string | null };
+type Pair = { nhan: string; ma: string; goiY?: string };
+export type RiskSummary = { level: string; route: Pair; reason: string; rule: Pair | null; source: Pair; note: string | null };
 
-/** Tóm tắt `risk_view` cho người duyệt. Nhãn tra theo khoá của riêng bảng (`ownEntry`): giá trị lạ → nguyên mã, không đoán. */
-export function riskSummary(view: ApprovalRiskView): RiskSummary {
+/**
+ * Tóm tắt `risk_view` cho người duyệt. Hướng xử lý / bên quyết định: "Nhãn · mã" (mã lạ → "Khác · mã"). Luật khớp: "Mô tả ·
+ * R18" — mô tả lấy từ `matched_rules` của phiếu (luật cùng id), không có → "Luật chưa có mô tả · R18".
+ */
+export function riskSummary(view: ApprovalRiskView, rules: readonly MatchedRule[] = []): RiskSummary {
+  const ruleId = view.matched_rule_id;
   return {
     level: ownEntry<string>(RISK_LEVEL_LABEL, view.risk_level, view.risk_level),
-    route: ownEntry<string>(RISK_ROUTE_LABEL, view.route, view.route),
+    route: nhanIT("huong_xu_ly", view.route),
     reason: view.reason,
-    ruleId: view.matched_rule_id,
-    source: view.decided_by === "rule" ? "Theo luật chính sách" : "Do mô hình ngôn ngữ đánh giá",
+    rule: ruleId === null ? null : luatIT(ruleId, rules.find((r) => r.rule_id === ruleId)?.description),
+    source: nhanIT("ben_quyet_dinh", view.decided_by),
     note: view.decided_by === "llm" && !view.calibrated ? UNCALIBRATED_TEXT : null,
   };
 }

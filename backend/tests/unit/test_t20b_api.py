@@ -36,6 +36,7 @@ from tests.fakes.auth import (
 )
 from tests.fakes.desk import MASK, SECRET, MaskingGuard, harness_runtime
 from tests.fakes.rate import MemoryRateGate
+from tests.fakes.strategy import MemoryStrategyStore
 from tests.unit._t20b import (
     RESET,
     TC34,
@@ -100,7 +101,7 @@ async def api(f: Flow, guard: Any = None) -> AsyncIterator[Api]:
     rate = MemoryRateGate(RateLimits.from_settings(settings), tickets=lambda: f.h.tickets.rows.values(), sink=sink)  # gói 2b
     app = create_app(
         settings, health_checks={}, idp=FakeIdentityProvider(), store=store, sink=sink, alerts=f.h.alerts,
-        runtime=harness_runtime(f.h), guard=guard, clock=clock, rate=rate,
+        runtime=harness_runtime(f.h), guard=guard, clock=clock, rate=rate, strategy=MemoryStrategyStore(),
     )  # fmt: skip
     transport = httpx.ASGITransport(app=app, client=("203.0.113.7", 50000))
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:

@@ -1,3 +1,4 @@
+import { MaNhan } from "../../components/MaNhan.tsx";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -39,11 +40,11 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
         <p className="text-ink-2">Xem chỉ đọc. Ghi đè không đổi ticket — chỉ ghi vào nhật ký để đánh giá lại hệ thống.</p>
         {view ? (
           <p data-testid="ticket-state" className="text-secondary text-ink-2">
-            Trạng thái <span className="font-mono">{view.status}</span>
+            Trạng thái <MaNhan loai="trang_thai" ma={view.status} />
             {view.exit_code ? (
               <>
                 {" "}
-                · Mã kết thúc <span className="font-mono">{view.exit_code}</span>
+                · Kết thúc <MaNhan loai="ma_ket_thuc" ma={view.exit_code} />
               </>
             ) : null}
             {view.final_state ? " · Đã kết thúc" : " · Chưa kết thúc"}

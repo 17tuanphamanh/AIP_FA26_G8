@@ -126,8 +126,9 @@ export type ApprovalViewOk = [
   Expect<Mutual<ApprovalViewP4["requester"], ApprovalGen["requester"]>>,
   Expect<Mutual<ApprovalViewP4["deadline"], ApprovalGen["deadline"]>>,
   Expect<Mutual<ApprovalViewP4["risk"], ApprovalGen["risk"]>>,
-  // Cùng tập khoá: bỏ `status` ở cả hai rồi so từng khoá (khoá chỉ ở một bên → lỗi biên dịch).
-  Expect<Same<Omit<ApprovalViewP4, "status" | "action" | "facts" | "risk">, Omit<ApprovalGen, "status" | "action" | "facts" | "risk">>>,
+  // Cùng tập khoá: bỏ `status` ở cả hai rồi so từng khoá (khoá chỉ ở một bên → lỗi biên dịch). `matched_rules` (N-PA, route
+  // be-tuan8 CHƯA CÓ) chưa có trong openapi → bỏ khỏi phía viết tay; gỡ khi gen:api sinh lại từ be-tuan8.
+  Expect<Same<Omit<ApprovalViewP4, "status" | "action" | "facts" | "risk" | "matched_rules">, Omit<ApprovalGen, "status" | "action" | "facts" | "risk">>>,
   Expect<Mutual<ApprovalViewP4, Ok200<operations["view_approval_api_approvals__approval_id__get"]> & { status: ApprovalViewP4["status"] }>>,
 ];
 export type TicketDeadlineOk = [

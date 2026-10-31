@@ -864,7 +864,7 @@ const OTP_MAX_REJECTS = 2; // dừng F5 khi OTP bị từ chối lần thứ 2 (
 const F5 = {
   dashboardMissing: "Tổng quan có từ M9 (chặng A3)",
   alertsMissing: "Cảnh báo có từ M9 (chặng A3)",
-  policyMissing: "Chính sách có từ Phase 7",
+  policyMissing: "Chưa có chức năng chính sách",
   unavailable: "Chưa có dữ liệu",
   empty: "—",
   alertsTruncated: "Chỉ hiện 200 cảnh báo mới nhất — còn cảnh báo cũ hơn chưa hiện.",

@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from app.api import trace as api
+from app.api.matched_rules import RuleRef
 from app.api.trace import TicketHead, TraceData, build_trace
 from app.core.clock import FakeClock
 from tests.fakes.auth import EPOCH
@@ -25,7 +26,7 @@ _CANARY_PARTS = ("CANARY", "trace", "5b1e")
 CANARY = "-".join(_CANARY_PARTS)
 USER_TEXT = f"Tôi quên mật khẩu VPN, mật khẩu cũ là {CANARY}"
 URL = "/api/tickets/{}/trace"
-RULES = {"R18": "Gia hạn chứng chỉ VPN ngoài giờ cần duyệt"}
+RULES = {"R18": RuleRef("approval_required", "Gia hạn chứng chỉ VPN ngoài giờ cần duyệt")}
 
 
 def _at(minutes: int) -> Any:
@@ -102,7 +103,7 @@ class FakeTrace:
 
 @pytest.fixture(autouse=True)
 def _rules(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(api, "_rule_descriptions", lambda: dict(RULES))
+    monkeypatch.setattr(api, "rule_index", lambda: dict(RULES))
 
 
 @pytest.fixture
@@ -219,8 +220,10 @@ def test_whitelisted_fields_per_step(env: AuthEnv) -> None:
     assert steps["B6"]["diagnose"] == {"fact_keys": ["cert_expired", "device_registered"]}
     assert steps["B10"]["sources"] == []
     assert steps["B13/B14"]["policy"] == {
-        "rule_id": "R18", "rule_description": RULES["R18"], "policy_decision": "approval_required",
+        "rule_id": "R18", "rule_description": RULES["R18"].description, "policy_decision": "approval_required",
         "risk_level": "medium", "decided_by": "rule", "raw_prob": None, "calibrated_prob": None,
+        "matched_rules": [{"rule_id": "R18", "description": RULES["R18"].description, "decision": "approval_required",
+                           "applied": True}],
     }  # fmt: skip
     assert steps["B15"]["approval"] == {
         "approver_id": "l1_01", "approver_name": "Lê Thu Hà", "result": "pending", "at": "2099-09-26T08:09:00Z",

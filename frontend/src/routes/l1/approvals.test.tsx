@@ -1028,7 +1028,7 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
     expect(actionLabel(null)).toBe(ACTION_UNKNOWN);
     expect(ACTION_UNKNOWN).toBe("Chưa rõ hành động — mở phiếu để xem");
     expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
-    expect(actionLabel("hanh_dong_la")).toBe("hanh_dong_la");
+    expect(actionLabel("hanh_dong_la")).toBe("Khác · hanh_dong_la"); // N-NGU: mã lạ → "Khác · mã"
   });
 
   it("màn: dòng null đứng đúng chỗ theo hạn, đỏ khi < 20%, nhãn P3 + '(không có)', bấm → mở phiếu", async () => {
@@ -1545,7 +1545,7 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
   it("readonlyText / actionLabel: khoá prototype → câu 'không còn chờ duyệt' / hiện nguyên mã; khoá hợp lệ giữ nhãn cũ", () => {
     for (const key of PROTO_KEYS) {
       expect(readonlyText(key as ApprovalStatus)).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
-      expect(actionLabel(key)).toBe(key);
+      expect(actionLabel(key)).toBe(`Khác · ${key}`); // N-NGU: mã lạ → "Khác · mã"
     }
     expect(readonlyText("rejected")).toBe("Phiếu đã từ chối — chỉ xem, không quyết định được nữa.");
     expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
@@ -1562,7 +1562,7 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
     expect((await screen.findByTestId("approval-status")).textContent).toBe("");
     expect(screen.getByTestId("approval-readonly").textContent).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
     expect(screen.getByText("Vai trò", { selector: "dt" }).nextElementSibling?.textContent).toBe(key);
-    expect(screen.getByText(key, { selector: "p.text-heading" })).toBeTruthy(); // tiêu đề hành động = nguyên mã
+    expect(screen.getByText(`Khác · ${key}`, { selector: "p.text-heading" })).toBeTruthy(); // N-NGU: tiêu đề hành động lạ = "Khác · mã"
     expect(errors()).toHaveLength(0);
     noLeak();
   });
@@ -1602,12 +1602,23 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
 
 describe("t142: hàm thuần — nhãn rủi ro, quản lý, hạn tuyệt đối", () => {
   it("riskSummary: nhãn theo bảng; giá trị lạ → nguyên mã; LLM chưa hiệu chỉnh mới có câu 'chưa hiệu chỉnh'", () => {
-    expect(riskSummary(RISK_VIEW)).toMatchObject({ level: "Trung bình", route: "Cần người duyệt", ruleId: "R18", note: null });
-    expect(riskSummary({ ...RISK_VIEW, risk_level: "low", route: "AUTO" })).toMatchObject({ level: "Thấp", route: "Tự xử lý" });
-    expect(riskSummary({ ...RISK_VIEW, risk_level: "high", route: "ESCALATE_L2" })).toMatchObject({ level: "Cao", route: "Chuyển L2" });
+    // N-NGU: hướng xử lý / bên quyết định / luật = cặp "Nhãn · mã" (bảng ĐP 23:10); luật kèm mô tả từ matched_rules.
+    expect(riskSummary(RISK_VIEW)).toMatchObject({
+      level: "Trung bình",
+      route: { nhan: "Chờ IT duyệt", ma: "HITL" },
+      rule: { nhan: "Luật chưa có mô tả", ma: "R18" },
+      source: { nhan: "Theo luật", ma: "rule" },
+      note: null,
+    });
+    expect(riskSummary(RISK_VIEW, [{ rule_id: "R18", description: "Ngoài giờ cần duyệt", decision: "approval_required", applied: true }]).rule).toStrictEqual({
+      nhan: "Ngoài giờ cần duyệt",
+      ma: "R18",
+    });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "low", route: "AUTO" })).toMatchObject({ level: "Thấp", route: { nhan: "Tự xử lý", ma: "AUTO" } });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "high", route: "ESCALATE_L2" })).toMatchObject({ level: "Cao", route: { nhan: "Chuyển kỹ thuật viên L2" } });
     expect(riskSummary({ ...RISK_VIEW, risk_level: "toString" as never, route: "constructor" as never })).toMatchObject({
       level: "toString",
-      route: "constructor",
+      route: { nhan: "Khác", ma: "constructor" },
     });
     const llm = { ...RISK_VIEW, decided_by: "llm" as const, matched_rule_id: null, policy_decision: null };
     expect(riskSummary(llm).note).toBe(UNCALIBRATED_TEXT);
@@ -1677,10 +1688,11 @@ describe("t143: màn chi tiết phiếu — người bị ảnh hưởng, mức 
     await screen.findByTestId("risk-summary");
     expect(txt("risk-level")).toBe("Trung bình");
     expect(screen.getByTestId("risk-level").dataset.level).toBe("medium");
-    expect(txt("risk-route")).toBe("Cần người duyệt");
+    expect(txt("risk-route")).toBe("Chờ IT duyệt · HITL"); // N-NGU: "Nhãn · mã"
     expect(txt("risk-reason")).toBe("Ngoài giờ hành chính");
-    expect(txt("risk-rule")).toBe("R18");
-    expect(txt("risk-source")).toBe("Theo luật chính sách");
+    expect(txt("risk-rule")).toBe(`${txt("risk-rule").split(" · ")[0]} · R18`); // N-NGU: "Mô tả · R18"
+    expect(txt("risk-rule")).not.toBe("R18");
+    expect(txt("risk-source")).toBe("Theo luật · rule");
     expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
     expect(screen.getAllByTestId("risk-row").length).toBeGreaterThan(0);
   });
@@ -1693,7 +1705,7 @@ describe("t143: màn chi tiết phiếu — người bị ảnh hưởng, mức 
     await screen.findByTestId("risk-summary");
     expect(txt("risk-level")).toBe("Cao");
     expect(txt("risk-rule")).toBe("—");
-    expect(txt("risk-source")).toBe("Do mô hình ngôn ngữ đánh giá");
+    expect(txt("risk-source")).toBe("Theo đánh giá của AI · llm"); // N-NGU
     expect(txt("risk-uncalibrated")).toBe(UNCALIBRATED_TEXT);
   });
 

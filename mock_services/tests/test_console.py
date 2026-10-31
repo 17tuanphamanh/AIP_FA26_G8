@@ -1,4 +1,4 @@
-"""Mock console (`app/console.py`): chỉ phục vụ khi APP_ENV ∈ {dev, test}, chỉ đọc, và mật khẩu tạm chỉ lộ ở trang điện thoại
+"""Mock console (`app/console.py`): chỉ phục vụ khi APP_ENV ∈ {dev, test} VÀ cờ MOCK_CONSOLE_ENABLED bật (1 | true), chỉ đọc, và mật khẩu tạm chỉ lộ ở trang điện thoại
 của đúng nhân viên đó (`/console/phone/{user_id}`).
 
 Mật khẩu tạm biết được nhờ monkeypatch `app.ad.new_temp_password` (mỗi lần gọi ra một canary khác nhau).
@@ -51,6 +51,7 @@ def canaries(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
 @pytest.fixture(autouse=True)
 def dev_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("MOCK_CONSOLE_ENABLED", "1")
 
 
 @pytest.fixture
@@ -94,6 +95,53 @@ def test_page_404_when_env_not_dev_or_test(
 def test_page_404_when_env_unset(c: TestClient, monkeypatch: pytest.MonkeyPatch, path: str) -> None:
     monkeypatch.delenv("APP_ENV")
     assert c.get(path).status_code == 404
+
+
+# ---- cờ MOCK_CONSOLE_ENABLED (P5 tuần 8): mặc định TẮT, chỉ nhận 1 | true, và vẫn cần APP_ENV dev/test ----------------------
+
+
+@pytest.mark.parametrize("flag", ["1", "true"])
+@pytest.mark.parametrize("env", ["dev", "test"])
+@pytest.mark.parametrize("path", STATIC_PAGES)
+def test_page_200_when_flag_on_in_dev_test(
+    c: TestClient, monkeypatch: pytest.MonkeyPatch, flag: str, env: str, path: str
+) -> None:
+    monkeypatch.setenv("APP_ENV", env)
+    monkeypatch.setenv("MOCK_CONSOLE_ENABLED", flag)
+    assert c.get(path).status_code == 200
+
+
+@pytest.mark.parametrize("env", ["dev", "test"])
+@pytest.mark.parametrize("path", STATIC_PAGES)
+def test_page_404_when_flag_unset_default_off(
+    c: TestClient, monkeypatch: pytest.MonkeyPatch, env: str, path: str
+) -> None:
+    monkeypatch.setenv("APP_ENV", env)
+    monkeypatch.delenv("MOCK_CONSOLE_ENABLED")
+    assert c.get(path).status_code == 404
+
+
+@pytest.mark.parametrize("flag", ["0", "false", "", "yes", "on", "TRUE", "True", " 1", "2"])
+@pytest.mark.parametrize("path", STATIC_PAGES)
+def test_page_404_when_flag_not_exactly_on(c: TestClient, monkeypatch: pytest.MonkeyPatch, flag: str, path: str) -> None:
+    monkeypatch.setenv("MOCK_CONSOLE_ENABLED", flag)
+    assert c.get(path).status_code == 404
+
+
+@pytest.mark.parametrize("env", ["prod", "staging", ""])
+@pytest.mark.parametrize("path", STATIC_PAGES)
+def test_page_404_outside_dev_test_even_with_flag_on(
+    c: TestClient, monkeypatch: pytest.MonkeyPatch, env: str, path: str
+) -> None:
+    monkeypatch.setenv("APP_ENV", env)
+    monkeypatch.setenv("MOCK_CONSOLE_ENABLED", "1")
+    assert c.get(path).status_code == 404
+
+
+def test_flag_off_applies_to_unknown_subpages_and_users(c: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MOCK_CONSOLE_ENABLED", "0")
+    for path in ("/console/phone/khong-co-ai", "/console/khong-ton-tai", "/console/"):
+        assert c.get(path).status_code == 404, path
 
 
 def test_gate_applies_to_unknown_user_too(c: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

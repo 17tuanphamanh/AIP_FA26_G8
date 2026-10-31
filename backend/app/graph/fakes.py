@@ -47,7 +47,6 @@ from app.ml import MlPort
 from app.rag.ports import RagPort
 from app.risk.calibrator import Calibrator
 from app.risk.estimator import DisabledEstimator, RiskEstimator
-from app.risk.strategy import Strategy
 from app.settings import (
     EscalationTemplates,
     PolicyConstants,
@@ -324,10 +323,9 @@ class NodeDeps:
     business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
     estimator: RiskEstimator = field(default_factory=DisabledEstimator)
     # Phase 6 6C (P1, P10): calibrator nạp lúc khởi động (`m5.calibrator_version`) — None = chưa hiệu chỉnh → không bao giờ AUTO
-    # (D-38); chiến lược M5 = `Settings.strategy` đã qua `check_strategy` (Q-6C-1); `eval_mode` = `Settings.eval_mode` — điểm log
-    # 4 ghi `detail.strategy` chỉ khi đánh giá (Q-6C-3). Mặc định = an toàn (không AUTO do LLM, chiến lược vận hành).
+    # (D-38); `eval_mode` = `Settings.eval_mode`. D-67: chiến lược M5 KHÔNG còn ở đây — B12 đọc chiến lược đã chụp trên ticket
+    # (`TicketStore.strategy_of`); điểm log 4 luôn ghi `detail.strategy`. Mặc định = an toàn (không AUTO do LLM).
     calibrator: Calibrator | None = None
-    strategy: Strategy = "hybrid"
     eval_mode: bool = False
     # Phase 4 4b P12: hạn duyệt (phút) HIỆU LỰC = `APPROVAL_SLA_MINUTES_DEV` (chỉ dev/test) hoặc `SLA_MINUTES` của policy.json — wiring
     # tính, node không đọc Settings. Mặc định = policy.json.

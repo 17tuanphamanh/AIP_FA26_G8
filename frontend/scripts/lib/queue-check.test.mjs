@@ -1,7 +1,9 @@
 // t38 (12b Q-fe-23, phương án D): hàm quyết định của verify F3-1 — hàng đợi dev có thể quá 200 ca (nợ API #10).
 // t106 (N-L2Q): màn chỉ hiện 10 ca đầu mỗi nhóm → kiểm theo trang; ticket mới tìm bằng ô tìm (checkSearchHit).
 import { describe, expect, it } from "vitest";
-import { GROUP_PAGE_SIZE, NO_MATCH_FULL_TEXT, SEARCH_LIMIT_NOTE } from "../../src/routes/l2/queue.ts";
+// N-PA: màn bỏ trần 200 (phân trang theo `next_cursor`) — chữ màn thành hàm theo số ca đã tải; so tại N = 200 (verify F3 làm lại
+// ở chặng nối thật sau khi be-tuan8 merge — FE-STATE).
+import { GROUP_PAGE_SIZE, noMatchPartialText, searchScopeNote } from "../../src/routes/l2/queue.ts";
 import {
   checkQueueSnapshot,
   checkSearchHit,
@@ -134,9 +136,9 @@ describe("t38: checkQueueSnapshot (F3-1) — ảnh chụp mặc định: 10 ca �
 describe("t106: verify N-L2Q — nhóm theo server, chữ thanh trang / dòng đếm khớp màn, kết quả ô tìm", () => {
   it("hằng của verify = hằng của màn (cỡ trang, phần 'chỉ tìm trong 200 ca', câu không khớp khi chạm trần)", () => {
     expect(PAGE_SIZE).toBe(GROUP_PAGE_SIZE);
-    expect(searchCountText(1, 200, 200)).toBe(`Khớp 1 / 200 ca${SEARCH_LIMIT_NOTE}`);
+    expect(searchCountText(1, 200, 200)).toBe(`Khớp 1 / 200 ca${searchScopeNote(200)}`);
     expect(searchCountText(3, 199, 200)).toBe("Khớp 3 / 199 ca");
-    expect(noMatchFullText(200)).toBe(NO_MATCH_FULL_TEXT);
+    expect(noMatchFullText(200)).toBe(noMatchPartialText(200));
   });
 
   it("serverGroups gom nhóm LIÊN TIẾP, giữ thứ tự; pagerLabel đúng chữ màn", () => {
@@ -174,7 +176,7 @@ describe("t106: verify N-L2Q — nhóm theo server, chữ thanh trang / dòng đ
     const full = { ticket, item: undefined, total: 200, limit: 200, countText: "Khớp 0 / 200 ca · chỉ tìm trong 200 ca đã tải", rows: [] };
     expect(checkSearchHit({ ...full, overflowShown: true, noMatchFullShown: true })).toStrictEqual([]);
     expect(checkSearchHit({ ...full, overflowShown: true, noMatchFullShown: false })).toStrictEqual([
-      `E3 (F2-2): vắng mà không có câu "${NO_MATCH_FULL_TEXT}"`,
+      `E3 (F2-2): vắng mà không có câu "${noMatchPartialText(200)}"`,
     ]);
     expect(checkSearchHit({ ...full, overflowShown: false, noMatchFullShown: true }).some((p) => p.includes("KHÔNG có cảnh báo"))).toBe(true);
     const short = checkSearchHit({ ...full, total: 150, countText: "Khớp 0 / 150 ca", overflowShown: false, noMatchFullShown: false });

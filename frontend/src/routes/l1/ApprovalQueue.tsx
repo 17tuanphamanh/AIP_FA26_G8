@@ -219,7 +219,7 @@ function OverrideEntry() {
         </p>
       ) : null}
       <p className="pl-1 text-label font-normal text-ink-2">
-        Danh sách ca hệ thống đã tự xử lý có ở Phase 7 — tới lúc đó nhập mã ticket cần xem lại.
+        Màn này chưa có danh sách ca hệ thống đã tự xử lý — nhập mã ticket cần xem lại.
       </p>
     </section>
   );

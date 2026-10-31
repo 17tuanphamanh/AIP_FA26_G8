@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AlertItem } from "../api/types.ts";
-import { alertLabel, audienceLabel, formatNumber, severityDot, severityLabel } from "../routes/manager/metrics.ts";
+import { alertLabel, alertMa, audienceLabel, formatNumber, severityDot, severityLabel } from "../routes/manager/metrics.ts";
+import { Ma } from "./MaNhan.tsx";
 import { vnDateTime } from "../routes/manager/range.ts";
 import { FlatTable } from "./ActionView.tsx";
 
@@ -35,6 +36,12 @@ export function AlertRow({
         <span className="flex min-w-0 flex-col">
           <span className="text-secondary">
             {alertLabel(alert.rule_id)}
+            {alertMa(alert.rule_id) ? (
+              <>
+                {" · "}
+                <Ma ma={alertMa(alert.rule_id)!} />
+              </>
+            ) : null}
             <span className="sr-only"> — mức {severityLabel(alert.severity)}</span>
           </span>
           <span className="truncate text-label font-normal text-ink-2">

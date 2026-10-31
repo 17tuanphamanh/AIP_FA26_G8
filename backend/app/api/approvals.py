@@ -42,6 +42,11 @@ F6 (màn duyệt, `response_model=ApprovalView` cho FE gen:api): thêm `affected
 - `risk_view` = `RiskDecision` của checkpoint + `calibrated` (`calibrated_prob` khác null) + `auto_allowed` (`route == "AUTO"`); `risk`
   thô giữ nguyên. Backend không sinh chữ hiển thị: "chưa hiệu chỉnh, không tự xử lý" là chữ của FE khi `decided_by == "llm"` và
   `calibrated` false.
+
+P3 tuần 8: `matched_rules` ở GỐC `ApprovalView` (khối `policy` không có ở đây) — mọi luật khớp của đánh giá B13/B14 mà phiếu dựa vào
+(`desk.approvals.policy_matches(ticket, lúc tạo phiếu)`), dựng bằng CÙNG hàm với trace (`api/matched_rules.py`). Dòng không có
+`all_matched` dạng list / không có dòng → BỎ khoá (`response_model_exclude_unset`; mọi trường khác luôn gán tường minh). Đọc TRƯỚC
+`mark_viewed` (như `affected`).
 """
 
 import logging
@@ -61,6 +66,7 @@ from app.api.desk import (
     redact,
 )
 from app.api.errors import InvalidRequest
+from app.api.matched_rules import MatchedRule, matched_rules, rule_index
 from app.auth.authz import ApprovalParties, RoleAs, approval_role
 from app.auth.deps import deny, require
 from app.auth.models import Principal
@@ -160,6 +166,7 @@ class ApprovalView(BaseModel):
     procedure: ProcedureRef | None  # None: action_type không có trong action_metadata (hành động giả)
     affected: AffectedView
     risk_view: RiskView | None  # None ⇔ `risk` None
+    matched_rules: list[MatchedRule] | None = None  # P3 tuần 8: chỉ gán khi có dữ liệu B13/B14; không gán → route bỏ khoá
 
 
 def _action(values: dict[str, Any]) -> Action | None:
@@ -309,7 +316,7 @@ async def inbox(
     return JSONResponse({"items": [i.model_dump(mode="json") for i in items]})
 
 
-@router.get("/api/approvals/{approval_id}", response_model=ApprovalView)
+@router.get("/api/approvals/{approval_id}", response_model=ApprovalView, response_model_exclude_unset=True)
 async def view_approval(
     approval_id: str,
     request: Request,
@@ -332,6 +339,8 @@ async def view_approval(
     # F6: đọc/dựng TRƯỚC mark_viewed — lỗi ở đây không để lại `first_viewed_at`
     affected = await _affected(desk.users, action.requested_for, ticket.requester_id if ticket else "")
     risk_view = _risk_view(values.get("risk"))
+    pm = await desk.approvals.policy_matches(a.ticket_id, a.created_at)
+    matched = matched_rules(pm.all_matched, pm.matched_rule_id, rule_index()) if pm is not None else None
     if role is not None:  # chỉ người được giao / dự phòng đủ điều kiện ghi lần xem đầu; manager xem không ghi
         await desk.approvals.mark_viewed(approval_id, desk.clock.now())
     meta = (get_action_metadata().root.get(str(values.get("intent"))) or {}).get(action.type)
@@ -345,4 +354,5 @@ async def view_approval(
         request_summary=(ticket.redacted_request if ticket else "")[:REQUEST_SUMMARY_MAX],
         action=action.model_dump(mode="json"), action_plan_hash=a.action_plan_hash, risk=_as_json(values.get("risk")),
         facts=dict(action.facts), role_as=role or "viewer", procedure=procedure, affected=affected, risk_view=risk_view,
+        **({"matched_rules": matched} if matched is not None else {}),
     )  # fmt: skip

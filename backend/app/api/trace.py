@@ -13,7 +13,9 @@ ngoài [0, 1] hoặc không phải số → bỏ. Trường thiếu → None / r
 - B6/B7: tên khoá `facts` (không giá trị).
 - B10: `doc_id` + tiêu đề (`kb_documents`) của chunk đã trích dẫn (`detail.cited` = `<doc_id>#v<version>#<seq>`).
 - B13/B14 (B12): `rule_id`, `policy_decision`, `risk_level`, `decided_by`, `raw_prob`, `calibrated_prob`; mô tả luật lấy từ
-  `config/policy.json` theo `rule_id` (không từ cột `reason` — ca LLM cột đó có chữ của mô hình).
+  `config/policy.json` theo `rule_id` (không từ cột `reason` — ca LLM cột đó có chữ của mô hình). `matched_rules` (mọi luật khớp,
+  `api/matched_rules.py` — chung với màn duyệt): dòng không có `detail.all_matched` dạng list → BỎ khoá (`response_model_exclude_unset`;
+  mọi trường khác luôn được gán tường minh nên không bị bỏ).
 - B15/B16: phiếu duyệt — người duyệt (id + họ tên từ `users`), kết quả, thời điểm (bảng `approvals`).
 - B17/B18: loại hành động (`intended_action.type` — SQL chỉ chọn khoá này), kết quả từng lời gọi ghi, trạng thái hoàn tác.
 - B20: `route` (= `resolution_path`), `exit_code`.
@@ -33,10 +35,10 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api.alerts import ErrorDetail
+from app.api.matched_rules import MatchedRule, RuleRef, matched_rules, rule_index
 from app.auth.authz import can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
-from app.settings import get_policy
 
 router = APIRouter()
 
@@ -206,6 +208,7 @@ class PolicyInfo(_Strict):
     decided_by: Literal["rule", "llm"] | None
     raw_prob: float | None
     calibrated_prob: float | None
+    matched_rules: list[MatchedRule] | None = None  # chỉ gán khi dòng có `all_matched`; không gán → route bỏ khoá
 
 
 class ApprovalInfo(_Strict):
@@ -321,18 +324,17 @@ def _sources(row: Mapping[str, Any], titles: Mapping[tuple[str, int], str]) -> l
     return list(out.values())
 
 
-def _rule_descriptions() -> dict[str, str]:
-    return {r.id: r.description for r in get_policy().rules}
-
-
-def _policy(row: Mapping[str, Any], rules: Mapping[str, str]) -> PolicyInfo:
+def _policy(row: Mapping[str, Any], rules: Mapping[str, RuleRef]) -> PolicyInfo:
     rule_id = _ident(row.get("matched_rule_id"))
     decided_by = row.get("decided_by")
+    ref = rules.get(rule_id) if rule_id else None
+    matched = matched_rules(_detail(row).get("all_matched"), rule_id, rules)
     return PolicyInfo(
-        rule_id=rule_id, rule_description=rules.get(rule_id) if rule_id else None,
+        rule_id=rule_id, rule_description=ref.description if ref else None,
         policy_decision=_ident(row.get("policy_decision")), risk_level=_ident(row.get("risk_level")),
         decided_by=decided_by if decided_by in ("rule", "llm") else None,
         raw_prob=_prob(row.get("raw_prob")), calibrated_prob=_prob(row.get("calibrated_prob")),
+        **({"matched_rules": matched} if matched is not None else {}),
     )  # fmt: skip
 
 
@@ -372,8 +374,8 @@ _EMPTY: dict[str, None] = dict.fromkeys(
 )
 
 
-def build_trace(data: TraceData, rules: Mapping[str, str] | None = None) -> TicketTrace:
-    rules = _rule_descriptions() if rules is None else rules
+def build_trace(data: TraceData, rules: Mapping[str, RuleRef] | None = None) -> TicketTrace:
+    rules = rule_index() if rules is None else rules
     rows = sorted(data.audit, key=lambda r: (r["created_at"], r.get("log_id") or 0))
     approvals = list(data.approvals)
     queued = -1  # chỉ số phiếu của lần B15 gần nhất — B16 sau đó nói về phiếu này
@@ -421,7 +423,9 @@ READ_ERRORS: dict[int | str, dict[str, Any]] = {
 }  # fmt: skip
 
 
-@router.get("/api/tickets/{ticket_id}/trace", response_model=TicketTrace, responses=READ_ERRORS)
+@router.get(
+    "/api/tickets/{ticket_id}/trace", response_model=TicketTrace, responses=READ_ERRORS, response_model_exclude_unset=True,
+)
 async def ticket_trace(
     ticket_id: str,
     request: Request,
