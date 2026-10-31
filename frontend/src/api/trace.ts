@@ -5,15 +5,19 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
+import { isMatchedRule } from "./matchedRules.ts";
 import type { components } from "./schema.gen.ts";
+import type { MatchedRule } from "./types.ts";
 
 type S = components["schemas"];
-export type TicketTrace = S["TicketTrace"];
-export type TraceStep = S["TraceStep"];
+// N-PA §3: khối `policy` (bước B13/B14) có thêm `matched_rules` TUỲ CHỌN (be-tuan8 chưa có — openapi chưa sinh). Gỡ phần
+// mở rộng khi gen:api sinh lại từ be-tuan8.
+export type PolicyInfo = S["PolicyInfo"] & { matched_rules?: MatchedRule[] };
+export type TraceStep = Omit<S["TraceStep"], "policy"> & { policy: PolicyInfo | null };
+export type TicketTrace = Omit<S["TicketTrace"], "steps"> & { steps: TraceStep[] };
 export type TraceChild = S["TraceChild"];
 export type ScreenInfo = S["ScreenInfo"];
 export type ClassifyInfo = S["ClassifyInfo"];
-export type PolicyInfo = S["PolicyInfo"];
 export type ApprovalInfo = S["ApprovalInfo"];
 export type ExecutionInfo = S["ExecutionInfo"];
 export type OutcomeInfo = S["OutcomeInfo"];
@@ -42,13 +46,16 @@ const listOf =
   (check: Check): Check =>
   (v) =>
     Array.isArray(v) && v.every(check);
-/** Đúng TẬP khoá (backend `extra="forbid"`) và từng khoá đúng kiểu. */
+/** Đúng TẬP khoá (backend `extra="forbid"`) và từng khoá đúng kiểu. `optional`: khoá được vắng; có mặt thì phải đúng kiểu. */
 const shape =
-  (fields: Record<string, Check>): Check =>
+  (fields: Record<string, Check>, optional: Record<string, Check> = {}): Check =>
   (v) => {
     if (!isRecord(v)) return false;
     const keys = Object.keys(v);
-    return keys.length === Object.keys(fields).length && keys.every((k) => Object.hasOwn(fields, k) && fields[k]!(v[k]));
+    if (!Object.keys(fields).every((k) => Object.hasOwn(v, k))) return false;
+    return keys.every((k) =>
+      Object.hasOwn(fields, k) ? fields[k]!(v[k]) : Object.hasOwn(optional, k) ? optional[k]!(v[k]) : false,
+    );
   };
 const probMap: Check = (v) => isRecord(v) && Object.values(v).every(prob);
 
@@ -74,7 +81,7 @@ const policy = shape({
   decided_by: nullable(oneOf("rule", "llm")),
   raw_prob: nullable(prob),
   calibrated_prob: nullable(prob),
-});
+}, { matched_rules: listOf(isMatchedRule) });
 const approval = shape({
   approver_id: nullable(str),
   approver_name: nullable(str),

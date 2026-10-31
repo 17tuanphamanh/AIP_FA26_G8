@@ -8,6 +8,7 @@ import { queryOptions } from "@tanstack/react-query";
 import type { Client } from "./client.ts";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
+import { isMatchedRulesField } from "./matchedRules.ts";
 import { recordServerDate } from "./serverClock.ts";
 import type {
   ApprovalListItem,
@@ -107,6 +108,8 @@ export function parseApprovalView(body: unknown): ApprovalViewP4 {
   const riskView = body.risk_view;
   if (riskView !== null && !isRiskView(riskView)) throw new ApiError(502, BAD_APPROVAL);
   if (!(body.risk === null || isRecord(body.risk)) || (riskView === null) !== (body.risk === null)) throw new ApiError(502, BAD_APPROVAL);
+  // N-PA §3 (Q-fe-N1, N2): `matched_rules` ở GỐC, khoá tuỳ chọn; sai KIỂU → 502 cả phiếu (số `applied` sai: màn báo tại bảng).
+  if (!isMatchedRulesField(body.matched_rules)) throw new ApiError(502, BAD_APPROVAL);
   return body as ApprovalViewP4;
 }
 

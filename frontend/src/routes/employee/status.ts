@@ -1,5 +1,6 @@
 // Trạng thái ticket cho NHÂN VIÊN (KH mục 5, 4.2): nhãn thường, KHÔNG BAO GIỜ hiện mã `S_*`; E0 (`S_BLOCKED`) chỉ câu
-// trung tính, không chữ nào gợi ý đã phát hiện tấn công [Chốt 7.1]. 14 trạng thái: backend/app/domain/states.py.
+// trung tính, không chữ nào gợi ý đã phát hiện tấn công [Chốt 7.1]. 14 trạng thái: backend/app/domain/states.py. 4 trạng thái
+// kết thúc đổi theo bảng từ ngữ ĐP 26/10 23:10 (NGU-1: "Đã giải quyết", "Đã chuyển kỹ thuật viên", "Chờ IT duyệt", "Bị từ chối").
 import type { TicketView } from "../../api/types.ts";
 import { ownEntry } from "../../lib/lookup.ts";
 
@@ -12,11 +13,11 @@ export const STATUS_LABEL: Readonly<Record<string, string>> = {
   S_ASSESSING: "Đang đánh giá yêu cầu",
   S_EXECUTING: "Đang thực hiện",
   S_CLARIFYING: "Cần bạn bổ sung thông tin",
-  S_PENDING_APPROVAL: "Đang chờ IT duyệt",
+  S_PENDING_APPROVAL: "Chờ IT duyệt",
   S_CONFIRMING: "Chờ bạn xác nhận kết quả",
-  S_ESCALATED: "Đã chuyển kỹ thuật viên hỗ trợ",
-  S_RESOLVED: "Đã hoàn tất",
-  S_REJECTED: "Yêu cầu không được duyệt",
+  S_ESCALATED: "Đã chuyển kỹ thuật viên",
+  S_RESOLVED: "Đã giải quyết",
+  S_REJECTED: "Bị từ chối",
   S_BLOCKED: "Yêu cầu này không thể xử lý tự động",
 };
 

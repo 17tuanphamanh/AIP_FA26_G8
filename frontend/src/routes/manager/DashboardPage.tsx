@@ -8,17 +8,20 @@ import { OpenAlertsBlock } from "./Alerts.tsx";
 import { BusinessKpis, BusinessSections, E3Section } from "./BusinessDashboard.tsx";
 import { DASHBOARD_MISSING_TITLE, WINDOW_INVALID_TEXT } from "./metrics.ts";
 import { LoadError, MissingPanel } from "./panels.tsx";
-import { aiQuery, businessQuery, DEFAULT_RANGE, RANGES, type RangeKey, vnDateTime } from "./range.ts";
+import { aiQuery, businessQuery, DEFAULT_RANGE, RANGES, type RangeKey, strategiesQuery, vnDateTime } from "./range.ts";
+import { StrategyCompareTab } from "./StrategyCompare.tsx";
+import type { StrategySource } from "../../api/types.ts";
 
-// B4MgrDashboard — trang đầu của Trưởng BP IT (`dashboard:read:all`, 12b Q-fe-8). Tab "Nghiệp vụ | AI" trong CÙNG trang
-// (F5 P1). Route thật M9 A3 (không còn MSW). Backend cũ chưa có route → 404 "Not Found" → "Tổng quan có từ M9 (chặng A3)"
+// B4MgrDashboard — trang đầu của Trưởng BP IT (`dashboard:read:all`, 12b Q-fe-8). Tab "Nghiệp vụ | AI | So sánh phương án"
+// trong CÙNG trang (F5 P1; N-PA P3 — tab thứ 3 dùng chung khoảng thời gian, route chưa có → khối báo TRONG tab, giữ hàng tab). Route thật M9 A3 (không còn MSW). Backend cũ chưa có route → 404 "Not Found" → "Tổng quan có từ M9 (chặng A3)"
 // (không khối lỗi đỏ). Lỗi (503 `monitor_unavailable`, 422 cửa sổ, 500…) → CHỈ hiện lỗi, KHÔNG số cũ: TanStack Query giữ
 // `data` cũ khi tải lại cùng khoá thất bại → luôn kiểm `isError` TRƯỚC khi đọc `data` (F5 P5; KH mục 5).
 
-type Tab = "business" | "ai";
+type Tab = "business" | "ai" | "strategies";
 const TABS: readonly { key: Tab; label: string }[] = [
   { key: "business", label: "Nghiệp vụ" },
   { key: "ai", label: "AI" },
+  { key: "strategies", label: "So sánh phương án" },
 ];
 
 const MISSING_TEXT = "Máy chủ chưa có số liệu tổng quan. Khi chặng A3 của M9 được gộp, màn này tự hiện số thật — không cần sửa giao diện.";
@@ -29,10 +32,13 @@ export function DashboardPage() {
   const [tab, setTab] = useState<Tab>("business");
   const business = useQuery({ ...businessQuery(range), enabled: tab === "business" });
   const ai = useQuery({ ...aiQuery(range), enabled: tab === "ai" });
-  const active = tab === "business" ? business : ai;
+  const [source, setSource] = useState<StrategySource>("real");
+  const strategies = useQuery({ ...strategiesQuery(range, source), enabled: tab === "strategies" });
+  const active = tab === "business" ? business : tab === "ai" ? ai : strategies;
 
   if (active.error instanceof ApiError && active.error.status === 403) return <Forbidden />;
-  const missing = routeMissing(active.error);
+  // Route chưa có: Nghiệp vụ / AI → cả trang báo chưa có (như cũ); So sánh phương án → báo trong tab, giữ hàng tab.
+  const missing = tab !== "strategies" && routeMissing(active.error);
   const shown = active.isError ? null : (active.data ?? null);
 
   function reload() {
@@ -69,7 +75,13 @@ export function DashboardPage() {
               {active.isFetching ? "Đang tải…" : "Tải lại"}
             </button>
           </div>
-          {tab === "business" ? <BusinessTab query={business} /> : <AiTab query={ai} />}
+          {tab === "business" ? (
+            <BusinessTab query={business} />
+          ) : tab === "ai" ? (
+            <AiTab query={ai} />
+          ) : (
+            <StrategyCompareTab query={strategies} source={source} onSource={setSource} />
+          )}
         </>
       )}
     </section>

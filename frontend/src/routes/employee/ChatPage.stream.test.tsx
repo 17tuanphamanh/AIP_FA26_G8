@@ -199,7 +199,7 @@ describe("ChatPage + SSE", () => {
     };
     stubBackend(env);
     mount();
-    expect(await screen.findByText("Chờ IT duyệt")).toBeTruthy();
+    expect((await screen.findAllByText("Chờ IT duyệt")).length).toBeGreaterThan(0); // N-NGU: nhãn trạng thái = câu chờ duyệt
     await new Promise((r) => setTimeout(r, 30));
     expect(eventsCalls(env.calls)).toBe(0);
     expect(screen.queryByTestId("stream-progress")).toBeNull();

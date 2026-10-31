@@ -3,6 +3,7 @@
 // ≠ "đã đo, bằng 0" (0). KHÔNG BAO GIỜ hiện 0 thay cho null/unavailable — 0 là sai sự thật và che lỗ hổng.
 import type { AlertItem } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
+import { BEN_QUYET_DINH, KHAC } from "../../lib/nhan.ts";
 
 export type MetricKind = "rate" | "count" | "number";
 export type MetricState = "value" | "empty" | "unavailable";
@@ -14,7 +15,7 @@ export const EMPTY_NOTE = "Không có ticket trong khoảng này";
 export const MONITOR_DOWN_TEXT = "Số liệu tạm thời không có";
 export const DASHBOARD_MISSING_TITLE = "Tổng quan có từ M9 (chặng A3)";
 export const ALERTS_MISSING_TITLE = "Cảnh báo có từ M9 (chặng A3)";
-export const POLICY_MISSING_TITLE = "Chính sách có từ Phase 7";
+export const POLICY_MISSING_TITLE = "Chưa có chức năng chính sách";
 
 /** Chỉ số biết trước khi nào có nguồn (ke-hoach-m9-monitor.md §1.3, §5.2; backend monitor/metrics.py "pending"). */
 const SOURCE_HINT: Record<string, string> = {
@@ -67,8 +68,8 @@ export function metricText(name: string, value: unknown, unavailable: readonly s
   return { state: "value", text: JSON.stringify(value), note: null };
 }
 
-/** `decided_by` (domain/ticket_state.py RiskDecision: "rule" | "llm"); khoá lạ → hiện nguyên. */
-export const DECIDED_BY_LABEL: Record<string, string> = { rule: "Luật cứng", llm: "Lớp AI" };
+/** `decided_by` (rule / llm / model) — nhãn từ src/lib/nhan.ts (bảng ĐP 26/10 23:10); khoá lạ → hiện nguyên. */
+export const DECIDED_BY_LABEL: Readonly<Record<string, string>> = BEN_QUYET_DINH;
 
 /** Lý do E1 (backend monitor/metrics.py E1_REASONS + "other") [Suy luận nhãn]; khoá lạ → hiện nguyên. */
 export const E1_LABEL: Record<string, string> = {
@@ -86,18 +87,19 @@ export const E1_LABEL: Record<string, string> = {
 export const WEIGHT_GROUP_LABEL: Record<string, string> = { routine: "Thường", approval: "Cần duyệt", sensitive: "Nhạy cảm" };
 
 /** Tab AI (§5.2; backend api/dashboard.py `AiMetrics` — đủ 14 khoá, đúng thứ tự): nhãn + loại. */
-export const AI_METRICS: readonly { name: string; label: string; kind: MetricKind }[] = [
+/** `ma`: mã bước / mã kết thúc liên quan — hiện SAU nhãn, chữ nhỏ (bảng ĐP 23:10: nhãn không chứa mã). */
+export const AI_METRICS: readonly { name: string; label: string; kind: MetricKind; ma?: string }[] = [
   { name: "tokens_per_ticket", label: "Token mỗi ticket", kind: "number" },
   { name: "cost_per_day", label: "Chi phí theo ngày (USD)", kind: "number" },
   { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước", kind: "number" },
   { name: "cache_hit_rate", label: "Tỉ lệ trúng cache", kind: "rate" },
   { name: "json_invalid_first_try_rate", label: "JSON lỗi ở lần gọi đầu", kind: "rate" },
   { name: "fallback_rate", label: "Phải dùng model dự phòng", kind: "rate" },
-  { name: "e2_llm_count", label: "Ca E2 do LLM lỗi", kind: "count" },
-  { name: "e9_count", label: "Ca E9 (lỗi chưa lường trước)", kind: "count" },
-  { name: "b2_llm_rate", label: "B2 phải xuống LLM (lớp 4)", kind: "rate" },
-  { name: "intent_filter_fallback_rate", label: "B8 phải nới bộ lọc ý định", kind: "rate" },
-  { name: "b3_llm_rate", label: "B3 phải xuống LLM", kind: "rate" },
+  { name: "e2_llm_count", label: "Ca lỗi khi xử lý do AI", kind: "count", ma: "E2" },
+  { name: "e9_count", label: "Ca lỗi hệ thống bất ngờ", kind: "count", ma: "E9" },
+  { name: "b2_llm_rate", label: "Kiểm tra tấn công phải dùng AI (lớp 4)", kind: "rate", ma: "B2" },
+  { name: "intent_filter_fallback_rate", label: "Tra cứu tài liệu phải nới bộ lọc loại yêu cầu", kind: "rate", ma: "B8" },
+  { name: "b3_llm_rate", label: "Phân loại phải dùng AI", kind: "rate", ma: "B3" },
   { name: "intent_model_version", label: "Phiên bản model ý định", kind: "number" },
   { name: "multi_intent_first_stop_to_reply_s", label: "Nhiều ý: từ lúc dừng đầu tới câu trả lời (giây)", kind: "number" },
   { name: "multi_intent_messages_per_turn", label: "Nhiều ý: số tin mỗi lượt", kind: "number" },
@@ -113,23 +115,34 @@ export const WINDOW_INVALID_TEXT = "Khoảng thời gian không hợp lệ — k
 /** 16 luật của ke-hoach-m9-monitor.md mục 6 — một bảng hằng. `rule_id` lạ → hiện nguyên mã. */
 export const ALERT_LABEL: Record<string, string> = {
   escalation_rate_high: "Tỉ lệ chuyển L2 (có trọng số) vượt 40%",
-  injection_detected: "Yêu cầu bị chặn vì nghi chèn lệnh (E0)",
+  injection_detected: "Yêu cầu bị chặn vì nghi tấn công",
   password_bruteforce: "Dò mật khẩu — tài khoản bị khoá",
-  e9_spike: "Lỗi chưa lường trước (E9) tăng đột biến",
+  e9_spike: "Lỗi hệ thống bất ngờ tăng đột biến",
   breaker_open: "Hệ thống bên ngoài lỗi liên tiếp — ngắt mạch mở",
-  e6_spike: "Phiếu duyệt hết hạn (E6) tăng đột biến",
+  e6_spike: "Phiếu duyệt quá hạn tăng đột biến",
   reflex_approval: "Duyệt theo phản xạ (xem dưới 5 giây)",
   drift: "Phân bố dữ liệu lệch so với tuần mốc",
   refresh_reuse: "Phiên đăng nhập bị dùng lại",
   permission_denied_burst: "Bị từ chối quyền dồn dập",
   policy_saved: "Chính sách vừa được lưu",
-  b2_degraded: "Sàng lọc B2 xuống LLM quá 30%",
-  b3_degraded: "Phân loại B3 xuống LLM quá 30%",
+  b2_degraded: "Kiểm tra tấn công phải dùng AI quá 30%",
+  b3_degraded: "Phân loại phải dùng AI quá 30%",
   llm_budget: "Sắp hết ngân sách LLM",
   finalize_failed: "Ghi kết thúc ticket thất bại",
-  execution_failed: "Thực thi thất bại (E7)",
+  execution_failed: "Thực hiện không thành công",
 };
-export const alertLabel = (ruleId: string): string => labelOf(ALERT_LABEL, ruleId);
+/** Mã bước / mã kết thúc liên quan của luật cảnh báo — hiện SAU nhãn, chữ nhỏ (bảng ĐP 23:10). */
+export const ALERT_MA: Readonly<Record<string, string>> = {
+  injection_detected: "E0",
+  e9_spike: "E9",
+  e6_spike: "E6",
+  b2_degraded: "B2",
+  b3_degraded: "B3",
+  execution_failed: "E7",
+};
+/** Luật cảnh báo lạ → "Khác" (mã luật vẫn hiện chữ nhỏ ở dòng dưới). */
+export const alertLabel = (ruleId: string): string => ownEntry(ALERT_LABEL, ruleId, KHAC);
+export const alertMa = (ruleId: string): string | null => ownEntry<string | null>(ALERT_MA, ruleId, null);
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 export const SEVERITY_LABEL: Record<string, string> = { critical: "Nghiêm trọng", warning: "Cần chú ý", info: "Thông tin" };

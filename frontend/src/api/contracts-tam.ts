@@ -79,9 +79,9 @@ export type EscalationQueueItem = {
   created_at: string;
 };
 
-// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + P10 §3.4 — `POST /api/escalations/{id}/close` CHƯA CÓ (Phase 7, T31).
-// Body phỏng đoán: đúng 2 khoá; ghi chú bắt buộc (≤ 1000 như ghi chú confirm). Ca deny + `completed` → 422
-// `deny_case_cannot_complete`. Xoá khi: T31 merge → gen:api (xoá cùng mocks/handlers/escalation-close.ts).
+// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + hợp đồng N-PA §4 — `POST /api/escalations/{id}/close` CHƯA CÓ
+// (be-tuan8). Thân đúng 2 khoá; ghi chú bắt buộc 1–1000 ký tự. Thành công 200; 422 ca E5/E6 + `completed`; 409
+// `already_closed`. Xoá khi: be-tuan8 merge → gen:api (xoá cùng mocks/handlers/escalation-close.ts).
 export type EscalationCloseResult = "completed" | "confirmed_denial" | "reopened_as_new";
 export type EscalationCloseIn = { close_result: EscalationCloseResult; note: string };
 
@@ -182,6 +182,8 @@ export type ApprovalViewP4 = {
   procedure: { doc_id: string; title: string | null } | null;
   affected: ApprovalAffected;
   risk_view: ApprovalRiskView | null;
+  /** N-PA §3 (route CHƯA CÓ ở be-tuan8): thiếu khoá = chưa có dữ liệu luật khớp. */
+  matched_rules?: MatchedRule[];
 };
 
 // Nguồn: backend/app/api/health.py health() — JSONResponse; 200 "ok" / 503 "degraded"; `runtime` chỉ để báo.
@@ -361,3 +363,75 @@ export type LlmStatus = {
   usage: { calls_total: number; calls_24h: number; tickets_with_calls: number; avg_cost_per_ticket_usd: number | null };
   kb: { alias: string; collection: string | null; status: LlmKbStatus };
 };
+
+// ---------------------------------------------------------------- Route CHƯA CÓ — N-PA, hợp đồng chốt ĐP 26/10 17:30
+// Nguồn: hợp đồng API be-tuan8 / fe-phuong-an (bản chốt ĐP 26/10 17:30) + D-67. Backend (nhánh be-tuan8) chưa có code →
+// dev:mock dựng bằng MSW (mocks/handlers/strategy.ts, strategy-compare.ts, escalation-queue.ts, escalation-close.ts).
+// Hình dạng kiểm LÚC CHẠY (api/strategy.ts, dashboard.ts, approvals.ts, trace.ts, escalations.ts) — thân sai → 502.
+// Xoá khi: be-tuan8 merge, mọi route có response_model → `gen:api` thành nguồn kiểu (vẫn giữ kiểm lúc chạy).
+
+/** D-67: tập chọn được khi vận hành (`RUNTIME_SELECTABLE`). */
+export type RuntimeStrategy = "rule_only" | "hybrid" | "hybrid_guarded";
+/** `GET /api/admin/strategy` (cũng là thân 200 của PUT). `llm_calibrated` thiếu khoá → FE coi là CHƯA hiệu chỉnh. */
+export type StrategyView = {
+  strategy: RuntimeStrategy;
+  selectable: RuntimeStrategy[];
+  llm_calibrated?: boolean;
+  eval_mode: boolean;
+  changed_by: string | null;
+  changed_at: string | null;
+  reason: string | null;
+};
+/** `PUT /api/admin/strategy`: `reason` 10–500 ký tự sau khi cắt khoảng trắng. */
+export type StrategyIn = { strategy: RuntimeStrategy; reason: string };
+/** Một dòng `m5_strategy_changes`; `strategy_from` của dòng đầu tiên là "hybrid". */
+export type StrategyChange = {
+  changed_at: string;
+  changed_by: string;
+  strategy_from: RuntimeStrategy;
+  strategy_to: RuntimeStrategy;
+  reason: string;
+};
+/** `GET /api/admin/strategy/history?limit=` — mới nhất lên trước. */
+export type StrategyHistory = { items: StrategyChange[]; truncated: boolean };
+
+/** `GET /api/dashboard/strategies?from=&to=&source=` — không có giá trị `all`. */
+export type StrategySource = "real" | "sim";
+export type StrategyRatio = { num: number; den: number };
+export type StrategyValue = { value: number | null; n?: number };
+export type StrategyMetric = {
+  key: string;
+  kind: "ratio" | "value";
+  unit?: string;
+  values: Record<string, StrategyRatio | StrategyValue | null>;
+};
+export type StrategiesDashboard = {
+  source: StrategySource;
+  from: string;
+  to: string;
+  strategies: string[];
+  intent_mix: Record<string, Record<string, number>>;
+  metrics: StrategyMetric[];
+  unavailable: string[];
+};
+
+/** Các luật khớp (ApprovalView gốc + TicketTrace bước B13/B14 `policy`), thứ tự như `all_matched`. Hợp đồng sửa 21:15/21:30:
+ *  tối đa MỘT phần tử `applied` (0 = quyết định cuối không do luật, vd hybrid_guarded + AI lỗi → E5 llm_layer_disabled);
+ *  `decision` null = luật đã bị xoá khỏi chính sách. Thiếu khoá = chưa có dữ liệu (≠ mảng rỗng = không luật nào khớp). */
+export type MatchedRule = {
+  rule_id: string;
+  description: string | null;
+  decision: "allow" | "approval_required" | "deny" | null;
+  applied: boolean;
+};
+
+/** `GET /api/escalations/queue?status=open|closed&limit=&after=` → `{items, next_cursor}`. */
+export type EscalationQueueStatus = "open" | "closed";
+/** Ca đã đóng mang thêm 3 trường bắt buộc (+ `close_note` tuỳ chọn — FE đề nghị BE thêm); ca mở: vắng hoặc null. */
+export type EscalationClosedInfo = {
+  closed_at?: string | null;
+  close_result?: EscalationCloseResult | null;
+  closed_by?: string | null;
+  close_note?: string | null;
+};
+export type EscalationQueuePage = { items: (EscalationQueueItem & EscalationClosedInfo)[]; next_cursor: string | null };

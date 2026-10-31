@@ -1,62 +1,85 @@
-import { useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState, type FormEvent } from "react";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { CLOSE_AVAILABLE, CLOSE_NOTE_MAX, closeEscalation } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueItem } from "../../api/types.ts";
-import { CLOSE_OPTIONS, closeProblem, completedLock } from "./queue.ts";
+import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, CLOSE_UNAVAILABLE_TEXT, closeProblem, completedLock } from "./queue.ts";
 
 type CloseFormProps = {
   item: EscalationQueueItem;
-  /** Mặc định: chỉ khi MSW bật (route Phase 7). Tắt → nút gửi khoá, KHÔNG gọi `/close`. */
+  /** Mặc định `CLOSE_AVAILABLE` (api/escalations.ts — một hằng một chỗ). Tắt → nút gửi khoá, KHÔNG gọi `/close`. */
   available?: boolean;
   onSubmit?: (id: number, body: EscalationCloseIn) => Promise<void>;
+  /** 200: ca đã đóng với kết quả `result` (màn chi tiết giữ bản chụp ca + câu báo theo kết quả). */
+  onClosed?: (result: EscalationCloseResult) => void;
 };
 
-// Khối "Đóng escalation" của B4L2Detail: 3 kết quả (B20 §4.3) + ghi chú bắt buộc. "Đã hoàn tất" khoá khi `completedLock`
-// (ca E5 / E6). Đây là MINH HOẠ tới Phase 7: 202 của MSW không xoá ca khỏi hàng đợi thật. Không có nút duyệt [Chốt 2.2].
-export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeEscalation }: CloseFormProps) {
+// Khối "Đóng escalation" của B4L2Detail (hợp đồng N-PA §4): 3 kết quả (enum B20 §4.3) + ghi chú bắt buộc 1–1000 ký tự.
+// "Đã hoàn tất" khoá khi `completedLock` (ca E5 / E6). 200 → ca rời danh sách Mở (tải lại hàng đợi); 409 `already_closed` →
+// "Ca đã được đóng" + tải lại; 422 → lỗi đúng chỗ (nhóm kết quả / ô ghi chú). Câu lỗi KHÔNG nhắc lại ghi chú đã gõ. Không có
+// nút duyệt [Chốt 2.2].
+export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeEscalation, onClosed }: CloseFormProps) {
+  const queryClient = useQueryClient();
   const lock = completedLock(item);
   const [result, setResult] = useState<EscalationCloseResult | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [choiceError, setChoiceError] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [done, setDone] = useState(false);
+  const inFlight = useRef(false);
+
+  const reloadQueue = () => void queryClient.invalidateQueries({ queryKey: ["escalations", "queue"] });
 
   function pick(value: EscalationCloseResult) {
     if (value === "completed" && lock !== null) return; // khoá: không chọn được, kể cả bằng bàn phím
     setResult(value);
     setError(null);
+    setChoiceError(null);
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!available || sending || done) return;
+    if (!available || inFlight.current) return;
     const problem = closeProblem(result, note, lock);
     if (problem !== null || result === null) {
       setError(problem);
       return;
     }
+    inFlight.current = true;
     setSending(true);
     setError(null);
+    setChoiceError(null);
+    setNoteError(null);
     try {
       await onSubmit(item.escalation_id, { close_result: result, note: note.trim() });
-      setDone(true);
+      reloadQueue();
+      onClosed?.(result);
     } catch (e) {
       // Giữ nguyên lựa chọn + ghi chú để sửa rồi gửi lại.
-      setError(errorMessage(e instanceof ApiError ? e : null));
+      const api = e instanceof ApiError ? e : null;
+      if (api?.status === 409 && api.code === "already_closed") {
+        setError(ALREADY_CLOSED_TEXT);
+        reloadQueue();
+      } else if (api?.status === 422 && (api.code === "deny_case_cannot_complete" || api.fields.includes("close_result"))) {
+        setChoiceError(api.code === "deny_case_cannot_complete" ? errorMessage(api) : "Kết quả đóng này không dùng được cho ca này.");
+      } else if (api?.status === 422 && api.fields.includes("note")) {
+        setNoteError(`Ghi chú đóng chưa hợp lệ — cần 1–${CLOSE_NOTE_MAX} ký tự.`);
+      } else {
+        setError(errorMessage(api));
+      }
     } finally {
+      inFlight.current = false;
       setSending(false);
     }
   }
 
-  const noteMissing = error !== null && !note.trim();
+  const noteMissing = (error !== null && !note.trim()) || noteError !== null;
   return (
     <form onSubmit={(e) => void submit(e)} aria-labelledby="close-heading" className="flex flex-col gap-2" noValidate>
       <h2 id="close-heading" className="pl-1 text-label text-ink-2">
         Đóng escalation
       </h2>
-      {available ? (
-        <p className="pl-1 text-label font-normal text-orange-ink">Minh hoạ — chưa ghi vào hệ thống (đóng ca thật có ở Phase 7).</p>
-      ) : null}
       <div role="radiogroup" aria-label="Kết quả đóng" className="overflow-hidden rounded-group border border-line">
         {CLOSE_OPTIONS.map((option) => {
           const locked = option.value === "completed" && lock !== null;
@@ -92,6 +115,11 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
           );
         })}
       </div>
+      {choiceError ? (
+        <p role="alert" data-testid="close-choice-error" className="text-secondary text-danger">
+          {choiceError}
+        </p>
+      ) : null}
 
       <label htmlFor="close-note" className="sr-only">
         Ghi chú đóng
@@ -104,38 +132,37 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
         onChange={(e) => {
           setNote(e.target.value);
           setError(null);
+          setNoteError(null);
         }}
         placeholder="Ghi chú đóng (bắt buộc)"
         aria-invalid={noteMissing || undefined}
-        disabled={done}
-        className="mt-2 resize-none rounded-group border border-line px-5 py-3 disabled:bg-group"
+        className="mt-2 resize-none rounded-group border border-line px-5 py-3"
       />
       <span className="self-end text-label font-normal text-ink-2">
         {note.trim().length}/{CLOSE_NOTE_MAX}
       </span>
+      {noteError ? (
+        <p role="alert" data-testid="close-note-error" className="text-secondary text-danger">
+          {noteError}
+        </p>
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-secondary text-danger">
           {error}
         </p>
       ) : null}
-      {done ? (
-        <p role="status" className="rounded-group bg-orange-bg px-4 py-3 text-orange-ink">
-          Đã ghi nhận (minh hoạ)
-          <span className="block text-label font-normal">Ca vẫn nằm trong hàng đợi — đóng ca thật có ở Phase 7.</span>
-        </p>
-      ) : null}
 
       <button
         type="submit"
-        disabled={!available || sending || done}
+        disabled={!available || sending}
         className="mt-2 h-11 rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60"
       >
         {sending ? "Đang gửi…" : "Đóng escalation"}
       </button>
       {!available ? (
         <p className="text-secondary text-ink-2" data-testid="close-unavailable">
-          Đóng ca có ở Phase 7
+          {CLOSE_UNAVAILABLE_TEXT}
         </p>
       ) : null}
     </form>
