@@ -10,6 +10,7 @@ import { useMe } from "../../auth/useAuth.ts";
 import { ActionView, FlatTable } from "../../components/ActionView.tsx";
 import { useServerNow } from "../../components/clock.ts";
 import { Modal } from "../../components/Modal.tsx";
+import { CARD, PageIcon } from "../../components/PageIcon.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
 import { MatchedRules } from "../shared/MatchedRules.tsx";
@@ -110,7 +111,7 @@ function Deadline({ view, createdAt }: { view: ApprovalViewP4; createdAt: string
   const now = useServerNow();
   if (view.status !== "pending") {
     return (
-      <span data-testid="approval-status" className="shrink-0 rounded-full bg-group px-3.5 py-1.5 text-secondary font-semibold">
+      <span data-testid="approval-status" className="shrink-0 rounded-full border border-line bg-group px-4 py-2 text-secondary font-semibold">
         {ownEntry(STATUS_LABEL, view.status, "")}
       </span>
     );
@@ -120,8 +121,8 @@ function Deadline({ view, createdAt }: { view: ApprovalViewP4; createdAt: string
     <span
       data-testid="approval-deadline"
       data-urgent={urgent}
-      className={`shrink-0 rounded-full px-3.5 py-1.5 text-secondary font-semibold tabular-nums ${
-        urgent ? "bg-danger-bg text-danger" : "bg-group text-ink"
+      className={`shrink-0 rounded-full border px-4 py-2 text-secondary font-semibold tabular-nums ${
+        urgent ? "border-danger/30 bg-danger-bg text-danger" : "border-fpt-orange/25 bg-orange-bg text-orange-ink"
       }`}
     >
       {remainingClock(view.deadline, now, createdAt)}
@@ -219,16 +220,16 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div data-testid="approval-scroll" className="min-h-0 grow overflow-y-auto">
-        <section className="flex flex-col gap-6 px-12 pt-8 pb-6">
+        <section className="flex flex-col gap-6 px-12 pt-20 pb-6">
           <div className="flex flex-col gap-1">
             {BACK}
-            <div className="flex items-center gap-4">
-              <h1 className="min-w-0 grow text-title">
-                Phiếu <span className="font-mono">{view.approval_id}</span>
-              </h1>
-              <Deadline view={view} createdAt={createdAt} />
-            </div>
-            <p className="text-label font-normal text-ink-2">
+            <div className="mt-2 flex items-center gap-4">
+              <PageIcon name="ticket" tone={pending ? "orange" : "blue"} />
+              <div className="flex min-w-0 grow flex-col gap-1">
+                <h1 className="min-w-0 text-title">
+                  Phiếu <span className="font-mono">{view.approval_id}</span>
+                </h1>
+                <p className="text-label font-normal text-ink-2">
               Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
               {deadlineAt ? (
                 <>
@@ -236,21 +237,24 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                   · Hạn duyệt <span data-testid="approval-deadline-at">{deadlineAt}</span>
                 </>
               ) : null}
-            </p>
+                </p>
+              </div>
+              <Deadline view={view} createdAt={createdAt} />
+            </div>
           </div>
 
           {role === "backup" ? (
-            <div role="note" data-testid="backup-banner" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
+            <div role="note" data-testid="backup-banner" className="rounded-2xl border border-fpt-orange/25 bg-orange-bg px-5 py-3.5 text-orange-ink">
               <b className="font-semibold">{BACKUP_TEXT}</b> — người duyệt chính chưa quyết sau lần nhắc thứ hai.
             </div>
           ) : null}
           {role === "viewer" ? (
-            <p role="note" data-testid="viewer-note" className="rounded-group bg-group px-5 py-3.5">
+            <p role="note" data-testid="viewer-note" className="rounded-2xl border border-line bg-group px-5 py-3.5">
               {VIEWER_TEXT}
             </p>
           ) : null}
           {!pending ? (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-group bg-group px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-group px-5 py-3.5">
               <p role="status" data-testid="approval-readonly" className="grow">
                 {readonlyText(view.status)}
               </p>
@@ -273,12 +277,12 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
             </Block>
             <aside className="flex flex-col gap-6">
               <Block title="Yêu cầu của người gửi">
-                <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
+                <p data-testid="request-summary" className="rounded-2xl border border-line bg-white px-5 py-3 shadow-sm whitespace-pre-line">
                   {view.request_summary}
                 </p>
               </Block>
               <Block title="Người gửi">
-                <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                <dl className="overflow-hidden rounded-2xl border border-line bg-white text-secondary shadow-sm">
                   <div className="flex justify-between gap-4 px-5 py-3">
                     <dt>Vai trò</dt>
                     <dd className="text-ink-2">{requesterRole}</dd>
@@ -292,11 +296,11 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               <Block title="Người bị ảnh hưởng">
                 <div data-testid="affected" className="flex flex-col gap-2">
                   {!affected.is_requester ? (
-                    <p role="note" data-testid="affected-other" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                    <p role="note" data-testid="affected-other" className="rounded-2xl border border-fpt-orange/25 bg-orange-bg px-5 py-3 text-orange-ink">
                       <b className="font-semibold">{AFFECTED_OTHER_TEXT}</b> — hành động áp dụng lên tài khoản này, không phải người gửi.
                     </p>
                   ) : null}
-                  <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                  <dl className="overflow-hidden rounded-2xl border border-line bg-white text-secondary shadow-sm">
                     <div className="flex justify-between gap-4 px-5 py-3">
                       <dt>Tài khoản</dt>
                       <dd data-testid="affected-user" className="font-mono text-ink-2">
@@ -325,7 +329,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                 </div>
               </Block>
               <Block title="Căn cứ quy trình">
-                <p data-testid="procedure" className="flex flex-col rounded-group border border-line px-5 py-3">
+                <p data-testid="procedure" className="flex flex-col rounded-2xl border border-line bg-white px-5 py-3 shadow-sm">
                   <span>{procedureTitle || procedureDoc}</span>
                   {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
                 </p>
@@ -334,7 +338,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                 {view.risk ? (
                   <div className="flex flex-col gap-2">
                     {risk ? (
-                      <dl data-testid="risk-summary" className="overflow-hidden rounded-group border border-line text-secondary">
+                      <dl data-testid="risk-summary" className="overflow-hidden rounded-2xl border border-line bg-white text-secondary shadow-sm">
                         <div className="flex justify-between gap-4 px-5 py-3">
                           <dt>Mức rủi ro</dt>
                           <dd data-testid="risk-level" data-level={view.risk_view?.risk_level} className="font-semibold">
@@ -368,12 +372,12 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                       </dl>
                     ) : null}
                     {risk?.note ? (
-                      <p role="note" data-testid="risk-uncalibrated" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                      <p role="note" data-testid="risk-uncalibrated" className="rounded-2xl border border-fpt-orange/25 bg-orange-bg px-5 py-3 text-orange-ink">
                         {risk.note}
                       </p>
                     ) : null}
                     {/* NGU-2: bảng rủi ro thô (khoá kỹ thuật) thu vào khối đóng sẵn — tóm tắt phía trên đã đủ để quyết. */}
-                    <details data-testid="risk-raw" className="overflow-hidden rounded-group border border-line">
+                    <details data-testid="risk-raw" className={CARD}>
                       <summary className="cursor-pointer px-5 py-2.5 text-secondary text-ink-2">Chi tiết kỹ thuật</summary>
                       <div className="border-t border-line">
                         <FlatTable value={view.risk} testId="risk-row" />
@@ -381,13 +385,13 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                     </details>
                   </div>
                 ) : (
-                  <p data-testid="risk-missing" className="rounded-group border border-line px-5 py-3 text-ink-2">
+                  <p data-testid="risk-missing" className="rounded-2xl border border-line bg-white px-5 py-3 shadow-sm text-ink-2">
                     {RISK_MISSING_TEXT}
                   </p>
                 )}
               </Block>
               <Block title="Dữ kiện đã kiểm">
-                <div className="overflow-hidden rounded-group border border-line">
+                <div className={CARD}>
                   <FlatTable value={view.facts} testId="fact-row" />
                 </div>
               </Block>
@@ -403,7 +407,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
             </p>
           ) : null}
           {sent ? (
-            <p role="status" data-testid="decision-sent" className="rounded-group bg-group px-5 py-3.5">
+            <p role="status" data-testid="decision-sent" className="rounded-2xl border border-line bg-group px-5 py-3.5">
               <b className="font-semibold">{DECISION_SENT}</b>
               {sent.redacted ? ` · ${NOTICES_TEXT}` : ""}
             </p>
@@ -420,16 +424,16 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               setSheet(true);
             }}
             disabled={sending}
-            className="h-11 rounded-full bg-danger-bg px-5.5 font-semibold text-danger disabled:opacity-60"
+            className="h-11 rounded-full border border-danger/20 bg-danger-bg px-5.5 font-semibold text-danger transition hover:border-danger/40 disabled:opacity-60"
           >
             Từ chối
           </button>
-          <span className="grow text-label font-normal text-ink-2">Quyết định được ghi vào nhật ký kiểm toán.</span>
+          <span className="grow text-center text-label font-normal text-ink-2">Quyết định được ghi vào nhật ký kiểm toán.</span>
           <button
             type="button"
             onClick={approve}
             disabled={sending}
-            className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white disabled:opacity-60"
+            className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white shadow-sm transition hover:bg-fpt-blue/90 disabled:opacity-60"
           >
             {sending && !sheet ? "Đang gửi…" : "Đồng ý thực hiện"}
           </button>

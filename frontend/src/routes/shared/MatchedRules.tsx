@@ -11,9 +11,9 @@ export function MatchedRules({ rules, headingLevel = 2 }: { rules: readonly Matc
       <Heading className="pl-1 text-label text-ink-2">{MATCHED_HEADING}</Heading>
       {view.kind === "rows" ? (
         <>
-          <div className="overflow-x-auto rounded-group border border-line">
+          <div className="overflow-x-auto rounded-2xl border border-line bg-white shadow-sm">
             <table className="w-full text-left text-secondary">
-              <thead className="text-label text-ink-2">
+              <thead className="bg-group text-label text-ink-2">
                 <tr>
                   <th scope="col" className="px-5 py-2.5 font-normal">Luật</th>
                   <th scope="col" className="px-5 py-2.5 font-normal">Mô tả</th>
@@ -42,7 +42,7 @@ export function MatchedRules({ rules, headingLevel = 2 }: { rules: readonly Matc
           ) : null}
         </>
       ) : (
-        <p role={view.kind === "invalid" ? "alert" : undefined} data-testid="matched-note" className={`rounded-group border border-line px-5 py-3 ${view.kind === "invalid" ? "text-danger" : "text-ink-2"}`}>
+        <p role={view.kind === "invalid" ? "alert" : undefined} data-testid="matched-note" className={`rounded-2xl border border-line bg-white px-5 py-3 shadow-sm ${view.kind === "invalid" ? "text-danger" : "text-ink-2"}`}>
           {view.kind === "missing" ? NO_DATA_TEXT : view.kind === "empty" ? NO_RULE_TEXT : BAD_DATA_TEXT}
         </p>
       )}
