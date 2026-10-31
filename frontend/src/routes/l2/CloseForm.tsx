@@ -76,11 +76,11 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
 
   const noteMissing = (error !== null && !note.trim()) || noteError !== null;
   return (
-    <form onSubmit={(e) => void submit(e)} aria-labelledby="close-heading" className="flex flex-col gap-2 self-start rounded-2xl border border-line bg-white p-4 shadow-sm" noValidate>
+    <form onSubmit={(e) => void submit(e)} aria-labelledby="close-heading" className="flex flex-col gap-2" noValidate>
       <h2 id="close-heading" className="pl-1 text-label text-ink-2">
         Đóng escalation
       </h2>
-      <div role="radiogroup" aria-label="Kết quả đóng" className="flex flex-col gap-2">
+      <div role="radiogroup" aria-label="Kết quả đóng" className="overflow-hidden rounded-group border border-line">
         {CLOSE_OPTIONS.map((option) => {
           const locked = option.value === "completed" && lock !== null;
           const on = result === option.value;
@@ -93,12 +93,8 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
               aria-disabled={locked ? true : undefined}
               data-value={option.value}
               onClick={() => pick(option.value)}
-              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-fpt-blue ${
-                locked
-                  ? "cursor-not-allowed border-line bg-group"
-                  : on
-                    ? "border-fpt-blue bg-selected"
-                    : "border-line bg-white hover:border-fpt-blue/40 hover:bg-group"
+              className={`flex w-full items-center gap-3 border-t border-line px-5 py-3 text-left first:border-t-0 focus-visible:outline-2 focus-visible:outline-fpt-blue ${
+                locked ? "cursor-not-allowed bg-group" : on ? "bg-selected" : "bg-white hover:bg-group"
               }`}
             >
               <span className="flex min-w-0 grow flex-col">
@@ -112,12 +108,10 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
                 </svg>
               ) : (
                 <span
-                  className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 text-label ${
-                    on ? "border-fpt-blue bg-fpt-blue text-white" : "border-ink-3 text-transparent"
-                  }`}
                   aria-hidden="true"
+                  className={`flex size-4.5 shrink-0 items-center justify-center rounded-full border-2 ${on ? "border-fpt-blue" : "border-ink-3"}`}
                 >
-                  ✓
+                  <span className={`size-2 rounded-full ${on ? "bg-fpt-blue" : "bg-transparent"}`} />
                 </span>
               )}
             </button>
@@ -145,7 +139,7 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
         }}
         placeholder="Ghi chú đóng (bắt buộc)"
         aria-invalid={noteMissing || undefined}
-        className="mt-2 resize-none rounded-xl border border-line px-4 py-3 transition focus-visible:border-fpt-blue focus-visible:outline-4 focus-visible:outline-fpt-blue/10 aria-[invalid=true]:border-danger"
+        className="mt-2 resize-none rounded-group border border-line px-5 py-3"
       />
       <span className="self-end text-label font-normal text-ink-2">
         {note.trim().length}/{CLOSE_NOTE_MAX}
@@ -165,7 +159,7 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
       <button
         type="submit"
         disabled={!available || sending}
-        className="mt-2 h-11 rounded-full bg-fpt-blue font-semibold text-white shadow-sm transition hover:bg-fpt-blue/90 disabled:opacity-60"
+        className="mt-2 h-11 rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60"
       >
         {sending ? "Đang gửi…" : "Đóng escalation"}
       </button>
