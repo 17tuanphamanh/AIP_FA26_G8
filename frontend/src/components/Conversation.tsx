@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import logoUrl from "../assets/logo.svg";
+import { AVATAR_CLASS } from "./avatar.ts";
 import { DigestMessage } from "./DigestMessage.tsx";
 import type { Digest, Message } from "./messages.ts";
 import { SafeMarkdown } from "./SafeMarkdown.tsx";
@@ -12,9 +13,9 @@ import { Sources } from "./Sources.tsx";
 
 function AssistantMessage({ message }: { message: Message }) {
   return (
-    <div className="flex items-start gap-2.5" data-kind={message.kind}>
-      <img src={logoUrl} alt="" width={24} height={24} className="mt-0.5 shrink-0" />
-      <div className="flex min-w-0 grow flex-col gap-3">
+    <div className="flex items-start gap-3" data-kind={message.kind}>
+      <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
+      <div className="flex min-w-0 grow flex-col gap-3 pt-0.5">
         {!message.text.trim() ? null : message.kind === "answer" ? (
           <SafeMarkdown text={message.text} />
         ) : (
@@ -26,17 +27,20 @@ function AssistantMessage({ message }: { message: Message }) {
   );
 }
 
+/** Bong bóng tin của người dùng — dùng chung cho câu yêu cầu đầu (ChatPage). */
+export const USER_BUBBLE = "max-w-[80%] self-end rounded-3xl rounded-br-lg bg-selected px-5 py-3 whitespace-pre-line";
+
 type ConversationProps = { messages: Message[]; renderDigest?: (digest: Digest) => ReactNode };
 
 export function Conversation({ messages, renderDigest }: ConversationProps) {
   return (
-    <div role="log" aria-live="polite" aria-label="Cuộc trò chuyện" className="flex flex-col gap-6">
+    <div role="log" aria-live="polite" aria-label="Cuộc trò chuyện" className="flex flex-col gap-8">
       {messages.map((message, index) =>
         message.role === "user" ? (
           <p
             key={index}
             data-role="user"
-            className="max-w-130 self-end rounded-sheet bg-button-2 px-4.5 py-3 whitespace-pre-line"
+            className={USER_BUBBLE}
           >
             {message.text}
           </p>

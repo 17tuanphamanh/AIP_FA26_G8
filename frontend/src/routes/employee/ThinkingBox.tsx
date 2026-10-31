@@ -42,7 +42,7 @@ export function ThinkingBox({ log, current }: { log: readonly LogItem[]; current
   };
   const mounted = open || closing;
   return (
-    <section data-testid="thinking-box" data-open={open} className="flex flex-col rounded-sheet bg-group px-4 py-3 text-secondary">
+    <section data-testid="thinking-box" data-open={open} className="flex flex-col rounded-2xl border border-line bg-group px-4 py-3 text-secondary">
       <button
         type="button"
         aria-expanded={open}

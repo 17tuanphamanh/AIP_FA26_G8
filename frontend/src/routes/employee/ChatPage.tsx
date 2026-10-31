@@ -14,7 +14,9 @@ import {
 } from "../../api/tickets.ts";
 import type { Accepted, ParentReplyIn, TicketView } from "../../api/types.ts";
 import { Composer } from "../../components/Composer.tsx";
-import { Conversation } from "../../components/Conversation.tsx";
+import logoUrl from "../../assets/logo.svg";
+import { AVATAR_CLASS } from "../../components/avatar.ts";
+import { Conversation, USER_BUBBLE } from "../../components/Conversation.tsx";
 import { DigestMessage, type SendResult } from "../../components/DigestMessage.tsx";
 import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
@@ -203,24 +205,24 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-6">
+      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-white/90 px-6 backdrop-blur">
         <div className="flex min-w-0 grow flex-col">
           <h1 className="truncate text-body font-semibold">{title}</h1>
+          <span className="hidden truncate text-label font-normal text-ink-2 lg:inline">
+            Mã yêu cầu <span className="font-mono select-all" data-testid="ticket-id">{view.ticket_id}</span>
+          </span>
         </div>
-        <span className="hidden text-label font-normal text-ink-2 lg:inline">
-          Mã yêu cầu <span className="font-mono select-all" data-testid="ticket-id">{view.ticket_id}</span>
-        </span>
-        <span role="status" className={`inline-flex h-7 shrink-0 items-center gap-2 rounded-full px-3 text-secondary ${PILL[tone].box}`}>
-          <span className={`size-1.75 rounded-full ${PILL[tone].dot}`} aria-hidden="true" />
+        <span role="status" className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-full px-3.5 text-secondary font-semibold ${PILL[tone].box}`}>
+          <span className={`size-2 rounded-full ${PILL[tone].dot} ${tone === "processing" ? "motion-safe:animate-pulse" : ""}`} aria-hidden="true" />
           {pillLabel}
         </span>
       </header>
       {progress ? <ProgressStrip items={progress} /> : null}
 
-      <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-8 pb-6">
-        <div className="flex w-full max-w-(--chat-width) grow flex-col gap-6">
+      <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-10 pb-8">
+        <div className="flex w-full max-w-(--chat-width) grow flex-col gap-8">
           {notices.length > 0 ? (
-            <div role="status" className="rounded-group bg-group px-4 py-3 text-secondary text-ink-2" data-testid="notices">
+            <div role="status" className="rounded-2xl border border-line bg-group px-4 py-3 text-secondary text-ink-2" data-testid="notices">
               {notices.map((notice) => (
                 <p key={notice}>{notice}</p>
               ))}
@@ -229,9 +231,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           {mine ? (
             <p
               data-role="request"
-              className={`max-w-130 self-end rounded-sheet bg-button-2 px-4.5 py-3 whitespace-pre-line ${
-                mine.request === null ? "text-ink-2 italic" : ""
-              }`}
+              className={`${USER_BUBBLE} ${mine.request === null ? "text-ink-2 italic" : ""}`}
             >
               {mine.request ?? REDACTED_NOTE}
             </p>
@@ -250,7 +250,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
             <StreamingText key={message.id} message={message} reducedMotion={reducedMotion} />
           ))}
           {streamActive && (stream.view.steps.length > 0 || stream.view.log.length > 0) ? (
-            <div data-testid="stream-progress" className="flex flex-col gap-3">
+            <div data-testid="stream-progress" className="ml-10 flex flex-col gap-3">
               <ProgressStepper steps={stream.view.steps} />
               <ThinkingBox log={stream.view.log} current={stream.view.steps.findLast((s) => s.state === "active")?.label} />
             </div>
@@ -275,7 +275,8 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       </div>
 
       {view.final_state ? null : (
-        <div className="flex shrink-0 justify-center px-6 pb-6">
+        <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t from-white to-white/0" />
           <div className="flex w-full max-w-(--chat-width) flex-col gap-2">
             {waitNote || error ? (
               <p role={error ? "alert" : "status"} className={`px-5 text-secondary ${error ? "text-danger" : "text-ink-2"}`}>
@@ -294,6 +295,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               busy={sending}
               error={fieldError}
             />
+            <p className="text-center text-label font-normal text-ink-2">Trợ lý AI có thể nhầm — hãy đọc kỹ hướng dẫn trước khi làm theo.</p>
           </div>
         </div>
       )}
@@ -330,9 +332,13 @@ type ActionPanelProps = {
 function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-sheet bg-group p-5" data-testid="final-note">
+      <div className="flex flex-col items-start gap-3 rounded-2xl border border-line bg-group p-5" data-testid="final-note">
         <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
-        <Link to="/chat" className="font-semibold text-fpt-blue">
+        <Link
+          to="/chat"
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue shadow-sm transition hover:bg-selected"
+        >
+          <span aria-hidden="true">+</span>
           Tạo yêu cầu mới
         </Link>
       </div>
@@ -340,13 +346,13 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   }
   if (waiting === "confirm") {
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-sheet bg-group py-4 pr-4 pl-5">
+      <div className="ml-10 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white py-4 pr-4 pl-5 shadow-sm">
         <span className="grow font-semibold">Vấn đề của bạn đã được giải quyết chưa?</span>
         <button
           type="button"
           disabled={sending}
           onClick={() => onConfirm(false)}
-          className="h-11 rounded-full bg-white px-5 font-semibold disabled:opacity-60"
+          className="h-11 rounded-full border border-line bg-white px-5 font-semibold transition hover:bg-group disabled:opacity-60"
         >
           Chưa ổn
         </button>
@@ -354,7 +360,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
           type="button"
           disabled={sending}
           onClick={() => onConfirm(true)}
-          className="h-11 rounded-full bg-fpt-blue px-5.5 font-semibold text-white disabled:opacity-60"
+          className="h-11 rounded-full bg-fpt-blue px-5.5 font-semibold text-white shadow-sm transition hover:bg-fpt-blue/90 disabled:opacity-60"
         >
           Đã ổn
         </button>
@@ -364,26 +370,41 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   if (waiting === "approval") {
     // Có hạn → đồng hồ (N-TB P5); không có hạn / hạn hỏng → nhãn tĩnh như cũ.
     return (
-      <div className="flex flex-col gap-2 rounded-sheet bg-orange-bg p-5">
-        {clock ?? <span className="text-label text-orange-ink">Chờ IT duyệt</span>}
-        <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
-        <span className="text-label font-normal text-ink-2">Bạn có thể rời trang — kết quả sẽ hiện trong cuộc trò chuyện này.</span>
+      <div className="ml-10 flex items-start gap-4 rounded-2xl border border-fpt-orange/25 bg-orange-bg p-5">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-fpt-orange shadow-sm" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M12 7.5V12l3 2" />
+          </svg>
+        </span>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          {clock ?? <span className="text-label text-orange-ink">Chờ IT duyệt</span>}
+          <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
+          <span className="text-label font-normal text-ink-2">Bạn có thể rời trang — kết quả sẽ hiện trong cuộc trò chuyện này.</span>
+        </div>
       </div>
     );
   }
   if (waiting === "reply") {
     // Form nằm trong tin tổng hợp. Không có tin nào đọc được (dữ liệu hỏng) → báo, không mở ô nhập nào.
     return replyShown ? null : (
-      <p role="status" className="rounded-sheet bg-group p-5">
+      <p role="status" className="rounded-2xl border border-line bg-group p-5">
         Chưa hiện được nội dung cần phản hồi. Vui lòng tải lại trang.
       </p>
     );
   }
   if (waiting === "clarify") return null; // câu hỏi đã nằm trong hội thoại; ô trả lời ở dưới
   return (
-    <p className="inline-flex items-center gap-2 text-secondary text-ink-2" data-testid="processing">
-      <span className="size-1.75 animate-pulse rounded-full bg-fpt-blue" aria-hidden="true" />
-      {settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}… Bạn không cần làm gì.
-    </p>
+    <div className="flex items-start gap-3">
+      <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-secondary text-ink-2" data-testid="processing">
+        <span className="inline-flex h-6 items-center gap-1 rounded-full bg-group px-2.5" aria-hidden="true">
+          <span className="size-1.5 rounded-full bg-fpt-blue motion-safe:animate-bounce" />
+          <span className="size-1.5 rounded-full bg-fpt-blue/70 motion-safe:animate-bounce motion-safe:[animation-delay:150ms]" />
+          <span className="size-1.5 rounded-full bg-fpt-blue/40 motion-safe:animate-bounce motion-safe:[animation-delay:300ms]" />
+        </span>
+        {settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}… Bạn không cần làm gì.
+      </p>
+    </div>
   );
 }
