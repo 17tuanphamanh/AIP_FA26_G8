@@ -222,7 +222,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-10 pb-8">
         <div className="flex w-full max-w-(--chat-width) grow flex-col gap-8">
           {notices.length > 0 ? (
-            <div role="status" className="rounded-2xl border border-line bg-group px-4 py-3 text-secondary text-ink-2" data-testid="notices">
+            <div role="status" className="rounded-group border border-line bg-group px-4 py-3 text-secondary text-ink-2" data-testid="notices">
               {notices.map((notice) => (
                 <p key={notice}>{notice}</p>
               ))}
@@ -332,11 +332,11 @@ type ActionPanelProps = {
 function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-2xl border border-line bg-group p-5" data-testid="final-note">
+      <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5" data-testid="final-note">
         <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
         <Link
           to="/chat"
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue shadow-sm transition hover:bg-selected"
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-selected"
         >
           <span aria-hidden="true">+</span>
           Tạo yêu cầu mới
@@ -346,13 +346,13 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   }
   if (waiting === "confirm") {
     return (
-      <div className="ml-10 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white py-4 pr-4 pl-5 shadow-sm">
+      <div className="ml-10 flex flex-wrap items-center gap-3 rounded-group border border-line bg-white py-4 pr-4 pl-5">
         <span className="grow font-semibold">Vấn đề của bạn đã được giải quyết chưa?</span>
         <button
           type="button"
           disabled={sending}
           onClick={() => onConfirm(false)}
-          className="h-11 rounded-full border border-line bg-white px-5 font-semibold transition hover:bg-group disabled:opacity-60"
+          className="h-11 rounded-full border border-line bg-white px-5 font-semibold hover:bg-group disabled:opacity-60"
         >
           Chưa ổn
         </button>
@@ -360,7 +360,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
           type="button"
           disabled={sending}
           onClick={() => onConfirm(true)}
-          className="h-11 rounded-full bg-fpt-blue px-5.5 font-semibold text-white shadow-sm transition hover:bg-fpt-blue/90 disabled:opacity-60"
+          className="h-11 rounded-full bg-fpt-blue px-5.5 font-semibold text-white hover:bg-fpt-blue/90 disabled:opacity-60"
         >
           Đã ổn
         </button>
@@ -370,13 +370,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   if (waiting === "approval") {
     // Có hạn → đồng hồ (N-TB P5); không có hạn / hạn hỏng → nhãn tĩnh như cũ.
     return (
-      <div className="ml-10 flex items-start gap-4 rounded-2xl border border-fpt-orange/25 bg-orange-bg p-5">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-fpt-orange shadow-sm" aria-hidden="true">
-          <svg viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="8.5" />
-            <path d="M12 7.5V12l3 2" />
-          </svg>
-        </span>
+      <div className="ml-10 flex items-start rounded-group border-l-3 border-l-fpt-orange bg-orange-bg py-4 pr-5 pl-4.5">
         <div className="flex min-w-0 flex-col gap-1.5">
           {clock ?? <span className="text-label text-orange-ink">Chờ IT duyệt</span>}
           <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
@@ -388,7 +382,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   if (waiting === "reply") {
     // Form nằm trong tin tổng hợp. Không có tin nào đọc được (dữ liệu hỏng) → báo, không mở ô nhập nào.
     return replyShown ? null : (
-      <p role="status" className="rounded-2xl border border-line bg-group p-5">
+      <p role="status" className="rounded-group border border-line bg-group p-5">
         Chưa hiện được nội dung cần phản hồi. Vui lòng tải lại trang.
       </p>
     );
