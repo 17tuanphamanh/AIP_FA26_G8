@@ -3,6 +3,7 @@ import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { OtpInput } from "../components/OtpInput.tsx";
 import { PasswordField } from "../components/PasswordField.tsx";
+import { LoginArt } from "./LoginArt.tsx";
 import { homePath } from "./permissions.ts";
 import { useAuth } from "./useAuth.ts";
 import { useLoginSteps } from "./useLoginSteps.ts";
@@ -45,69 +46,150 @@ export function LoginPage() {
   ) : null;
 
   return (
-    <main className="relative flex min-h-full flex-col items-center justify-center gap-8 bg-group px-4 pt-16 pb-28">
-      <div className="flex flex-col items-center gap-4 text-center">
-        <img src={logoUrl} alt="" width={64} height={64} />
-        <h1 className="text-title">{otp ? "Nhập mã xác thực" : "Đăng nhập"}</h1>
-        <p className="text-ink-2">
-          {otp ? "Mã 6 số trong ứng dụng xác thực trên điện thoại." : "Dùng tài khoản công ty (AD) của bạn."}
-        </p>
-      </div>
+    <main className="grid min-h-full bg-white lg:grid-cols-2">
+      {/* Cột trái (màn rộng): giới thiệu + tranh minh hoạ. Thuần trang trí, ẩn trên màn hẹp. */}
+      <section
+        aria-hidden="true"
+        className="relative hidden flex-col justify-between overflow-hidden bg-linear-to-br from-fpt-blue via-fpt-blue to-ink p-12 text-white lg:flex"
+      >
+        <span className="pointer-events-none absolute -top-24 -right-24 size-80 rounded-full bg-white/5" />
+        <span className="pointer-events-none absolute -bottom-32 -left-20 size-96 rounded-full bg-white/5" />
+        <div className="relative flex items-center gap-3">
+          <img src={logoUrl} alt="" width={40} height={40} className="rounded-xl ring-2 ring-white/20" />
+          <span className="text-heading">ServiceDesk AI</span>
+        </div>
+        <LoginArt className="relative mx-auto w-full max-w-140" />
+        <div className="relative flex max-w-140 flex-col gap-3">
+          <p className="text-title">Hỗ trợ IT cấp 1, nhanh và an toàn</p>
+          <ul className="flex flex-col gap-2 text-secondary text-white/80">
+            <li className="flex items-center gap-2">
+              <span className="size-2 shrink-0 rounded-full bg-done" />
+              Tự xử lý các yêu cầu thường gặp và an toàn
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-2 shrink-0 rounded-full bg-fpt-orange" />
+              Việc nhạy cảm luôn có IT kiểm tra
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-2 shrink-0 rounded-full bg-white" />
+              Chuyển kỹ thuật viên khi cần
+            </li>
+          </ul>
+        </div>
+      </section>
 
-      {otp ? (
-        <form onSubmit={(e) => void submitOtp(e)} noValidate className="flex w-100 max-w-full flex-col items-center gap-4">
-          <OtpInput digits={digits} onChange={setDigits} disabled={busy} />
-          {alert}
-          <button type="submit" disabled={busy} className="h-11 w-full rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60">
-            Xác nhận
-          </button>
-          <button type="button" onClick={backToPassword} className="h-11 px-4 text-fpt-blue">
-            Quay lại
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={(e) => void submitPassword(e)} noValidate className="flex w-100 max-w-full flex-col gap-4">
-          <div className="overflow-hidden rounded-group border border-line bg-white">
-            <label htmlFor="login-username" className="sr-only">
-              Tên đăng nhập
-            </label>
-            <input
-              id="login-username"
-              name="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Tên đăng nhập"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              autoFocus
-              className="h-13 w-full border-b border-line bg-white px-4 placeholder:text-ink-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue"
-            />
-            <label htmlFor="login-password" className="sr-only">
-              Mật khẩu
-            </label>
-            <PasswordField
-              id="login-password"
-              name="password"
-              value={password}
-              onChange={setPassword}
-              shown={passwordShown}
-              onToggle={togglePassword}
-              inputClassName="h-13 bg-white px-4 placeholder:text-ink-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue"
-            />
+      {/* Cột phải: form. */}
+      <div className="flex min-h-full flex-col bg-white px-6 sm:px-12">
+        <div className="flex flex-1 items-center justify-center py-12">
+          <div className="flex w-100 max-w-full flex-col gap-8">
+            <div className="flex flex-col gap-3">
+              <img src={logoUrl} alt="" width={48} height={48} className="mb-2 lg:hidden" />
+              <h1 className="text-title">{otp ? "Nhập mã xác thực" : "Đăng nhập"}</h1>
+              <p className="text-ink-2">
+                {otp ? "Mã 6 số trong ứng dụng xác thực trên điện thoại." : "Dùng tài khoản công ty (AD) của bạn."}
+              </p>
+            </div>
+
+            {otp ? (
+              <form onSubmit={(e) => void submitOtp(e)} noValidate className="flex flex-col items-stretch gap-4">
+                <div className="flex">
+                  <OtpInput digits={digits} onChange={setDigits} disabled={busy} />
+                </div>
+                {alert}
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="h-12 w-full rounded-xl bg-fpt-blue font-semibold text-white shadow-input transition-colors hover:bg-fpt-blue/90 disabled:opacity-60"
+                >
+                  Xác nhận
+                </button>
+                <button type="button" onClick={backToPassword} className="h-11 px-4 text-fpt-blue">
+                  Quay lại
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={(e) => void submitPassword(e)} noValidate className="flex flex-col gap-5">
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="login-username" className="text-label text-ink">
+                    Tên đăng nhập
+                  </label>
+                  <div className={FIELD}>
+                    <UserIcon />
+                    <input
+                      id="login-username"
+                      name="username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Tài khoản công ty"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      autoFocus
+                      className="h-12 min-w-0 flex-1 bg-white pr-4 outline-none placeholder:text-ink-3"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="login-password" className="text-label text-ink">
+                    Mật khẩu
+                  </label>
+                  <div className={FIELD}>
+                    <LockIcon />
+                    <div className="min-w-0 flex-1">
+                      <PasswordField
+                        id="login-password"
+                        name="password"
+                        value={password}
+                        onChange={setPassword}
+                        shown={passwordShown}
+                        onToggle={togglePassword}
+                        inputClassName="h-12 bg-white outline-none placeholder:text-ink-3"
+                      />
+                    </div>
+                  </div>
+                </div>
+                {alert}
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="mt-1 h-12 rounded-xl bg-fpt-blue font-semibold text-white shadow-input transition-colors hover:bg-fpt-blue/90 disabled:opacity-60"
+                >
+                  Đăng nhập
+                </button>
+                <p className="text-center text-secondary text-ink-2">Quên mật khẩu? Liên hệ bộ phận IT để được cấp lại.</p>
+              </form>
+            )}
           </div>
-          {alert}
-          <button type="submit" disabled={busy} className="h-11 rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60">
-            Đăng nhập
-          </button>
-        </form>
-      )}
+        </div>
 
-      {/* Logo FPT (gói fe-logo-fpt): ảnh chính thức nguyên byte, chỉ đặt chiều cao 40 px, rộng theo tỉ lệ (330×93). */}
-      <footer className="absolute bottom-8 flex flex-col items-center gap-2">
-        <img src={fptLogoUrl} alt="Trường Đại học FPT" width={330} height={93} className="h-10 w-auto" />
-        <span className="text-label font-normal text-ink-2">Đồ án tốt nghiệp · Trường Đại học FPT</span>
-      </footer>
+        {/* Logo FPT (gói fe-logo-fpt): ảnh chính thức nguyên byte, chỉ đặt chiều cao 40 px, rộng theo tỉ lệ (330×93). */}
+        <footer className="flex flex-col items-center gap-2 border-t border-line py-6">
+          <img src={fptLogoUrl} alt="Trường Đại học FPT" width={330} height={93} className="h-10 w-auto" />
+          <span className="text-label font-normal text-ink-2">Đồ án tốt nghiệp · Trường Đại học FPT</span>
+        </footer>
+      </div>
     </main>
+  );
+}
+
+// Khung ô nhập: viền mảnh, bo góc, viền xanh khi đang gõ (focus-within) — outline giữ cho bàn phím.
+const FIELD =
+  "flex items-center gap-3 overflow-hidden rounded-xl border border-line bg-white pl-4 transition-colors focus-within:border-fpt-blue focus-within:outline-2 focus-within:outline-fpt-blue/20";
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-5 shrink-0 fill-none stroke-ink-3" strokeWidth="1.6" aria-hidden="true" focusable="false">
+      <circle cx="10" cy="7" r="3.5" />
+      <path d="M3.5 17c.8-3 3.4-5 6.5-5s5.7 2 6.5 5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-5 shrink-0 fill-none stroke-ink-3" strokeWidth="1.6" aria-hidden="true" focusable="false">
+      <rect x="4" y="9" width="12" height="8" rx="2" />
+      <path d="M7 9V6.5a3 3 0 0 1 6 0V9" strokeLinecap="round" />
+    </svg>
   );
 }
