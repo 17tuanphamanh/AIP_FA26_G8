@@ -237,7 +237,10 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
             <h1 className="min-w-0 text-title">{title}</h1>
             <p className="text-label font-normal text-ink-2">
               Phiếu <span className="font-mono">{view.approval_id}</span> · Mã yêu cầu{" "}
-              <span className="font-mono select-all">{view.ticket_id}</span>
+              {/* Mã yêu cầu dài (UUID): rút gọn khi HIỂN THỊ — chữ đủ vẫn trong trang, chọn/sao chép được, hiện khi rê chuột. */}
+              <span className="inline-block max-w-[10ch] truncate align-bottom font-mono select-all" title={view.ticket_id}>
+                {view.ticket_id}
+              </span>
               {deadlineAt ? (
                 <>
                   {" "}

@@ -129,10 +129,9 @@ export function actionValueLabel(key: string, raw: string): string | null {
   } catch {
     return null; // "undefined" hoặc dạng lạ → chỉ hiện gốc
   }
-  if (key === "target" && typeof value === "string") {
-    const at = value.indexOf(":");
-    const prefix = at > 0 ? has(TARGET_PREFIX, value.slice(0, at)) : null;
-    return prefix && at < value.length - 1 ? `${prefix} ${value.slice(at + 1)}` : null;
+  if (key === "target") {
+    const parts = targetParts(raw);
+    return parts ? `${parts.prefix} ${parts.rest}` : null;
   }
   if (key === "params.duration_days") {
     return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? `${value} ngày` : null;
@@ -145,3 +144,46 @@ export function actionValueLabel(key: string, raw: string): string | null {
 
 /** Nhãn khoá phẳng đầy đủ (params.*, facts.*) — null nếu không có (nơi gọi lùi về nhãn khoá cấp gốc). */
 export const flatKeyLabel = (key: string): string | null => has(FLAT_KEY_LABEL, key);
+
+// ---- Chế độ TẮT chỉ còn chữ người đọc được (ĐP 01/11 15:35, bảng nhãn mục 0c) -------------------------------------------
+
+export const EMPTY_TEXT = "(trống)";
+export const NULL_TEXT = "(không có)";
+export const RAW_FORMAT_NOTE = "định dạng gốc";
+
+/** (d) Trường danh tính — luôn hiện nội dung, font đơn cách. Phần sau ":" của `target` xử lý riêng (targetParts). */
+export const IDENTITY_KEYS: ReadonlySet<string> = new Set(["requested_for", "params.device_id", "params.resource_path", "params.software_name"]);
+
+// Khoảng trắng đầu/cuối · ký tự điều khiển (C0, DEL, C1) · ký tự vô hình (zero-width, điều hướng chữ, word joiner…, soft
+// hyphen, BOM, Mongolian vowel separator) · chuỗi trông như số / true / false / null / NaN / Infinity.
+const EDGE_SPACE = /^\s|\s$/u;
+// eslint-disable-next-line no-control-regex -- cố ý: phát hiện ký tự điều khiển để hiện dạng JSON có escape
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/u;
+const INVISIBLE = /[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u;
+const LOOKS_LITERAL = /^(?:[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|true|false|null|nan|[+-]?infinity)$/iu;
+
+/** JSON.stringify KHÔNG escape ký tự vô hình (zero-width, soft hyphen, BOM, điều hướng chữ…) → thêm escape \uXXXX cho đúng
+ *  các ký tự đó. Kết quả vẫn là JSON hợp lệ của CÙNG chuỗi (JSON.parse ra đúng giá trị), chỉ là nhìn thấy được. */
+export function visibleJson(value: string): string {
+  return JSON.stringify(value).replace(new RegExp(INVISIBLE.source, "gu"), (c) => `\\u${c.codePointAt(0)!.toString(16).padStart(4, "0")}`);
+}
+
+/** (c) Chuỗi phải hiện dạng JSON.stringify (có ngoặc kép, có escape) kể cả khi TẮT. */
+export const needsRawFormat = (s: string): boolean => EDGE_SPACE.test(s) || CONTROL.test(s) || INVISIBLE.test(s) || LOOKS_LITERAL.test(s);
+
+/** `target` = "<tiền tố>:<phần sau>" với tiền tố trong bảng → nhãn tiền tố + phần sau GIỮ NGUYÊN. Phần sau rỗng hoặc cần
+ *  định dạng gốc (c) → null (dòng hiện như chuỗi không nhãn). */
+export function targetParts(raw: string): { prefix: string; rest: string } | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "string") return null;
+  const at = value.indexOf(":");
+  if (at <= 0) return null;
+  const prefix = has(TARGET_PREFIX, value.slice(0, at));
+  const rest = value.slice(at + 1);
+  return prefix && rest && !needsRawFormat(rest) ? { prefix, rest } : null;
+}
