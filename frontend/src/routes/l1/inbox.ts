@@ -2,6 +2,7 @@
 // (giờ MÁY CHỦ: api/serverClock.ts). Tên khoá của `action` / `risk` / `facts` KHÔNG được đọc ở đây: phiếu hiện đúng
 // object đã băm, đủ mọi khoá (KH 4.2 #5), risk hiện khoá–giá trị chung (F4 P1).
 import { HUONG_XU_LY, KHAC, luatIT, nhanIT } from "../../lib/nhan.ts";
+import { ACTION_TYPE_LABEL, flatKeyLabel } from "./actionLabels.ts";
 import { NOTE_MAX } from "../../api/approvals.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import type {
@@ -94,11 +95,8 @@ const READONLY_STATE: Partial<Record<ApprovalStatus, string>> = {
 export const readonlyText = (status: ApprovalStatus): string =>
   `Phiếu ${ownEntry<string | undefined>(READONLY_STATE, status, undefined) ?? "không còn chờ duyệt"} — chỉ xem, không quyết định được nữa.`;
 
-/** Phase 4 chỉ có intent VPN (KH 4.6). Loại lạ → hiện nguyên mã, không đoán nghĩa. */
-export const ACTION_LABEL: Record<string, string> = {
-  renew_vpn_cert: "Cấp lại chứng chỉ VPN",
-  reissue_vpn_access: "Cấp lại truy cập VPN",
-};
+/** Tên hành động (B2 — bảng nhãn đợt 2: đủ 9 loại trong config/action_metadata.yaml). Loại lạ → hiện nguyên mã, không đoán. */
+export const ACTION_LABEL: Readonly<Record<string, string>> = ACTION_TYPE_LABEL;
 /** Hộp thư không biết hành động (`action_type` null — dòng audit B15 không có): dòng VẪN hiện, mở phiếu để xem object. */
 export const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
 /** Loại hành động lạ → "Khác · <mã>" (không hiện mã trần một mình — bảng ĐP 23:10). */
@@ -120,6 +118,8 @@ export const ACTION_KEY_LABEL: Record<string, string> = {
 };
 /** Nhãn cho một khoá phẳng (`params.device_id` → nhãn của `params`); khoá lạ → null (chỉ hiện khoá). */
 export function actionKeyLabel(key: string): string | null {
+  const full = flatKeyLabel(key); // B2: params.* / facts.* có nhãn riêng
+  if (full !== null) return full;
   const head = key.split(".")[0] ?? key;
   return Object.hasOwn(ACTION_KEY_LABEL, head) ? ACTION_KEY_LABEL[head]! : null;
 }
@@ -305,7 +305,7 @@ export const OVERRIDE_REASONS: readonly { value: OverrideReasonCode; label: stri
 
 /** Ghi chú bắt buộc khi lý do "Khác" (4d P2), luôn ≤ 1000. Trả câu lỗi, null = gửi được. */
 export function overrideProblem(decision: OverrideDecision | null, reason: OverrideReasonCode | null, note: string): string | null {
-  if (decision === null) return "Chọn quyết định đúng cho ticket này.";
+  if (decision === null) return "Chọn quyết định đúng cho yêu cầu này.";
   if (reason === null) return "Chọn lý do ghi đè.";
   const text = note.trim();
   if (reason === "other" && !text) return "Lý do “Khác” cần ghi chú.";
@@ -323,8 +323,8 @@ export const OVERRIDE_DONE = "Đã ghi nhận ghi đè.";
 export const OVERRIDE_ORIGINAL_PREFIX = "Quyết định ban đầu của hệ thống: ";
 export const OVERRIDE_NOTE_INVALID = "Ghi chú không hợp lệ hoặc trống sau khi ẩn thông tin nhạy cảm — hãy viết lại ghi chú.";
 /** 403 `forbidden`: không có quyền HOẶC người gửi tự ghi đè — cùng một mã, client không phân biệt được (4d). */
-export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).";
-export const OVERRIDE_NOT_FOUND = "Không tìm thấy ticket hoặc bạn không được xem ticket này.";
+export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè yêu cầu này (không có quyền, hoặc đây là yêu cầu do chính bạn gửi).";
+export const OVERRIDE_NOT_FOUND = "Không tìm thấy yêu cầu hoặc bạn không được xem yêu cầu này.";
 
 /** Nhãn của một quyết định ghi đè (như hộp chọn); giá trị lạ / thiếu → null — không đoán. */
 export const overrideDecisionLabel = (value: unknown): string | null =>

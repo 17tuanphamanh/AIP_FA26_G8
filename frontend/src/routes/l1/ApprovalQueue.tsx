@@ -143,7 +143,7 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-semibold">{actionLabel(item.action_type)}</span>
           <span className="truncate text-secondary text-ink-2">
-            Máy {item.device_id ?? "(không có)"} · Ticket{" "}
+            Máy {item.device_id ?? "(không có)"} · Yêu cầu{" "}
             {/* Mã ticket dài (UUID): chỉ rút gọn khi HIỂN THỊ — chữ đủ vẫn nằm trong trang + hiện khi rê chuột. */}
             <span className="inline-block max-w-[10ch] truncate align-bottom font-mono" title={item.ticket_id}>
               {item.ticket_id}
@@ -188,7 +188,7 @@ function OverrideEntry() {
     event.preventDefault();
     const id = ticketId.trim();
     if (!TICKET_ID_PATTERN.test(id)) {
-      setError("Mã ticket chỉ gồm chữ, số và . _ - (tối đa 64 ký tự).");
+      setError("Mã yêu cầu chỉ gồm chữ, số và . _ - (tối đa 64 ký tự).");
       return;
     }
     void navigate(`/approvals/ticket/${encodeURIComponent(id)}`);
@@ -201,7 +201,7 @@ function OverrideEntry() {
       </h2>
       <form onSubmit={submit} noValidate className="flex items-center gap-3 rounded-group border border-line px-5 py-3">
         <label htmlFor="override-ticket" className="shrink-0 text-secondary">
-          Mã ticket
+          Mã yêu cầu
         </label>
         <input
           id="override-ticket"
@@ -216,7 +216,7 @@ function OverrideEntry() {
           className="h-9 min-w-0 grow rounded-lg border border-line px-3 font-mono text-secondary"
         />
         <button type="submit" className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue">
-          Xem ticket
+          Xem yêu cầu
         </button>
       </form>
       {error ? (
@@ -225,7 +225,7 @@ function OverrideEntry() {
         </p>
       ) : null}
       <p className="pl-1 text-label font-normal text-ink-2">
-        Màn này chưa có danh sách ca hệ thống đã tự xử lý — nhập mã ticket cần xem lại.
+        Màn này chưa có danh sách ca hệ thống đã tự xử lý — nhập mã yêu cầu cần xem lại.
       </p>
     </section>
   );

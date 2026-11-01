@@ -113,7 +113,7 @@ export function locate(text: string): Located {
         return { kind: "scalar", line };
       }
     }
-    return fail(i, `Cần một giá trị (chuỗi, số, object, mảng, true, false, null) — gặp ${show(c)}`);
+    return fail(i, `Cần một giá trị (chuỗi, số, đối tượng, mảng, true, false, null) — gặp ${show(c)}`);
   }
 
   function object(line: number): JsonNode {
@@ -127,7 +127,7 @@ export function locate(text: string): Located {
     }
     for (;;) {
       ws();
-      if (i >= n) fail(i, "Nội dung kết thúc khi object chưa đóng — thiếu }");
+      if (i >= n) fail(i, "Nội dung kết thúc khi đối tượng chưa đóng — thiếu }");
       if (text[i] !== '"') fail(i, text[i] === "}" ? "Dấu phẩy thừa trước }" : `Cần tên khoá trong ngoặc kép — gặp ${show(text[i])}`);
       const keyLine = lineOf(i);
       const key = string();
@@ -145,7 +145,7 @@ export function locate(text: string): Located {
         i++;
         break;
       }
-      fail(i, i >= n ? "Nội dung kết thúc khi object chưa đóng — thiếu }" : `Thiếu dấu phẩy hoặc } — gặp ${show(text[i])}`);
+      fail(i, i >= n ? "Nội dung kết thúc khi đối tượng chưa đóng — thiếu }" : `Thiếu dấu phẩy hoặc } — gặp ${show(text[i])}`);
     }
     for (const [key, lines] of seen) if (lines.length > 1) duplicates.push({ key, lines });
     return { kind: "object", line, members };
@@ -261,7 +261,7 @@ export const formatPolicy = (content: unknown): string => JSON.stringify(content
 // Câu trên màn Chính sách (dùng chung với test / verify). N-POL1: chỉ xem + kiểm (`POST /api/policy/validate`); câu của
 // Lưu / quay lui (409 `version_conflict`, hộp xác nhận quay lui) bỏ cùng nút — N-POL2 thêm lại theo route thật.
 export const TOO_LARGE_TEXT = "Nội dung quá dài";
-export const NOT_OBJECT_TEXT = "Nội dung chính sách phải là một object JSON ({…})";
+export const NOT_OBJECT_TEXT = "Nội dung chính sách phải là một đối tượng JSON ({…})";
 export const VALID_TEXT = "Chính sách hợp lệ — máy chủ không thấy lỗi nào.";
 export const INVALID_TEXT = "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.";
 /** 422 `invalid_request` (thân sai hình dạng) — không có vị trí trong nội dung để đánh dấu. */

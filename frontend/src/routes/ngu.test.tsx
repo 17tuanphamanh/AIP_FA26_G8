@@ -327,7 +327,9 @@ describe("t196: phiếu duyệt — hướng xử lý / nguồn / luật 'Nhãn 
     expect(within(raw).getByText("Chi tiết kỹ thuật")).toBeTruthy();
     const type = screen.getAllByTestId("action-row").find((r) => r.dataset.key === "type")!;
     expect(type.querySelector("dt")!.textContent).toBe("Loại hành động · type");
-    expect(type.querySelector("dd")!.textContent).toBe('"renew_vpn_cert"'); // giá trị đã băm giữ NGUYÊN (G4-13)
+    // giá trị đã băm giữ NGUYÊN (G4-13); B2: nhãn chỉ đi kèm, ở phần tử riêng
+    expect(within(type).getByTestId("raw-value").textContent).toBe('"renew_vpn_cert"');
+    expect(within(type).getByTestId("value-label").textContent).toBe("Cấp lại chứng chỉ VPN");
   });
 });
 

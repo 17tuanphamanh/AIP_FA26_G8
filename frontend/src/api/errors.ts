@@ -82,7 +82,7 @@ const CODE_MESSAGES: Record<string, string> = {
   already_closed: "Ca đã được đóng",
   invalid_queue_body: "Hàng đợi trả về không đúng dạng — không hiển thị để tránh hiểu sai. Vui lòng tải lại trang.",
   deny_case_cannot_complete:
-    "Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
+    "Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở yêu cầu mới.",
   escalation_not_found: "Ca đã đóng hoặc không còn trong hàng đợi.",
   // Duyệt (backend/app/api/approvals.py) + xem phiếu (4c P6).
   rejected_requires_note: "Từ chối cần ghi chú lý do gửi người dùng.",
@@ -90,8 +90,8 @@ const CODE_MESSAGES: Record<string, string> = {
   // Phiếu thiếu / sai kiểu người bị ảnh hưởng hoặc mức rủi ro — api/approvals.ts `parseApprovalView` (502 do client đặt, fail-closed).
   invalid_approval_body: "Phiếu trả về thiếu hoặc sai thông tin người bị ảnh hưởng / mức rủi ro nên không hiện để duyệt. Vui lòng tải lại trang.",
   // Ghi đè (4d P1–P4; KH 4.6, 12b Q-fe-10).
-  ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
-  already_overridden: "Bạn đã ghi đè ticket này rồi — mỗi người chỉ ghi đè một ticket một lần.",
+  ticket_open: "Yêu cầu chưa kết thúc — chỉ ghi đè được yêu cầu đã đóng.",
+  already_overridden: "Bạn đã ghi đè yêu cầu này rồi — mỗi người chỉ ghi đè một yêu cầu một lần.",
   same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
   // Tổng quan / cảnh báo (M9: thiếu kết nối monitor → 503, fail-closed — KH mục 5 dòng dashboard).
   monitor_unavailable: "Số liệu tạm thời không có",

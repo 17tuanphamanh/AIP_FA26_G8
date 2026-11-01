@@ -31,7 +31,7 @@ import {
 
 const BACK = (
   <Link to="/escalations" className="text-secondary text-fpt-blue">
-    ‹ Hàng đợi escalate
+    ‹ Hàng chờ chuyển L2
   </Link>
 );
 
@@ -142,7 +142,7 @@ function Detail({
           <span className="shrink-0 text-secondary text-ink-2">{closed ? "Đã đóng" : waitingText(item.created_at, now)}</span>
         </div>
         <p className="text-label font-normal text-ink-2">
-          Mã ticket{" "}
+          Mã yêu cầu{" "}
           <span className="font-mono select-all" data-testid="ticket-id">
             {item.ticket_id}
           </span>{" "}
@@ -200,7 +200,7 @@ function ClosedInfo({ item }: { item: QueueItem }) {
   return (
     <section aria-labelledby="closed-heading" data-testid="closed-info" className="flex flex-col gap-2">
       <h2 id="closed-heading" className="pl-1 text-label text-ink-2">
-        Đã đóng escalation
+        Ca đã đóng
       </h2>
       <dl className="overflow-hidden rounded-group border border-line text-secondary">
         {rows.map((r) => (

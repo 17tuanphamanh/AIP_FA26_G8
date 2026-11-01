@@ -13,7 +13,7 @@ export type MetricText = { state: MetricState; text: string; note: string | null
 
 export const UNAVAILABLE_TEXT = "Chưa có dữ liệu";
 export const EMPTY_TEXT = "—";
-export const EMPTY_NOTE = "Không có ticket trong khoảng này";
+export const EMPTY_NOTE = "Không có yêu cầu trong khoảng này";
 export const MONITOR_DOWN_TEXT = "Số liệu tạm thời không có";
 export const DASHBOARD_MISSING_TITLE = "Tổng quan có từ M9 (chặng A3)";
 export const ALERTS_MISSING_TITLE = "Cảnh báo có từ M9 (chặng A3)";
@@ -59,7 +59,7 @@ export function formatNumber(value: number, kind: MetricKind): string {
 
 /**
  * Chữ hiện cho một chỉ số. Thứ tự: tên trong `unavailable` → "Chưa có dữ liệu" (+ nguồn có từ đâu nếu biết); thiếu
- * trường → cũng "Chưa có dữ liệu" (fail-closed, không bịa 0); null → "—" + "Không có ticket trong khoảng này"; số → định
+ * trường → cũng "Chưa có dữ liệu" (fail-closed, không bịa 0); null → "—" + "Không có yêu cầu trong khoảng này"; số → định
  * dạng theo loại (0 thật → "0" / "0 %").
  */
 export function metricText(name: string, value: unknown, unavailable: readonly string[], kind: MetricKind): MetricText {
@@ -122,7 +122,7 @@ export const WEIGHT_GROUP_LABEL: Record<string, string> = { routine: "Thường"
 /** Tab AI (§5.2; backend api/dashboard.py `AiMetrics` — đủ 14 khoá, đúng thứ tự): nhãn + loại. */
 /** `ma`: mã bước / mã kết thúc liên quan — hiện SAU nhãn, chữ nhỏ (bảng ĐP 23:10: nhãn không chứa mã). */
 export const AI_METRICS: readonly { name: string; label: string; kind: MetricKind; ma?: string }[] = [
-  { name: "tokens_per_ticket", label: "Token mỗi ticket", kind: "number" },
+  { name: "tokens_per_ticket", label: "Token mỗi yêu cầu", kind: "number" },
   { name: "cost_per_day", label: "Chi phí theo ngày (USD)", kind: "number" },
   { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước", kind: "number" },
   { name: "cache_hit_rate", label: "Tỉ lệ trúng cache", kind: "rate" },
@@ -161,7 +161,7 @@ export const ALERT_LABEL: Record<string, string> = {
   b2_degraded: "Kiểm tra tấn công phải dùng AI quá 30%",
   b3_degraded: "Phân loại phải dùng AI quá 30%",
   llm_budget: "Sắp hết ngân sách LLM",
-  finalize_failed: "Ghi kết thúc ticket thất bại",
+  finalize_failed: "Ghi kết thúc yêu cầu thất bại",
   execution_failed: "Thực hiện không thành công",
 };
 /** Mã bước / mã kết thúc liên quan của luật cảnh báo — hiện SAU nhãn, chữ nhỏ (bảng ĐP 23:10). */

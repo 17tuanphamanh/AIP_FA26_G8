@@ -229,7 +229,7 @@ describe("trang dòng thời gian", () => {
   it("mã ticket sai mẫu → không gọi API", () => {
     const calls = stub(() => json(200, TRACE));
     renderAt("/trace/a%20b");
-    expect(screen.getByRole("alert").textContent).toBe("Mã ticket không hợp lệ.");
+    expect(screen.getByRole("alert").textContent).toBe("Mã yêu cầu không hợp lệ.");
     expect(calls).toStrictEqual([]);
   });
 
