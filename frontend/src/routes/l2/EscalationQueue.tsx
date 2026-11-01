@@ -335,7 +335,7 @@ function QueueGroups({
             data-priority={group.priority}
             className="flex flex-col gap-1.5"
           >
-            <h2 id={`queue-group-${group.key}`} className="pl-1 text-label text-ink-2">
+            <h2 id={`queue-group-${group.key}`} className="pt-2 pl-1 text-secondary font-semibold text-ink">
               <button
                 type="button"
                 onClick={() => toggle(group.priority)}
@@ -357,7 +357,7 @@ function QueueGroups({
                   <path d="M9 6l6 6-6 6" />
                 </svg>
                 <span data-testid="queue-group-name">{group.name}</span>
-                <span className="font-normal" data-testid="queue-group-count">
+                <span className="font-normal text-ink-2" data-testid="queue-group-count">
                   · {total} ca
                 </span>
               </button>
@@ -423,13 +423,15 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
         data-escalation-id={item.escalation_id}
         data-ticket-id={item.ticket_id}
         data-exit-code={item.exit_code}
-        className="grid min-h-13 grid-cols-[250px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-2 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className={`grid min-h-14 grid-cols-[220px_minmax(0,1fr)_auto_14px] items-center gap-4 border-l-3 py-2.5 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue ${
+          item.is_deny_case ? "border-l-danger" : "border-l-transparent"
+        }`}
       >
-        <span data-testid="queue-exit" className="truncate text-secondary">
+        <span data-testid="queue-exit" className="truncate text-secondary text-ink-2">
           <NhanMa {...exitNhan(item)} />
         </span>
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate" title={reason}>
+          <span className="truncate font-semibold" title={reason}>
             {reason}
           </span>
           {item.is_deny_case ? (
@@ -441,7 +443,7 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
             <span className="shrink-0 rounded-full bg-orange-bg px-2 text-label text-orange-ink">{extra}</span>
           ) : null}
         </span>
-        <span className="text-secondary text-ink-2">{meta}</span>
+        <span className="text-secondary text-ink-2 tabular-nums">{meta}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
         </svg>
