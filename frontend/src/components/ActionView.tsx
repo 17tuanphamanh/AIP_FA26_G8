@@ -76,7 +76,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
     <div className="overflow-hidden rounded-group border border-line">
       <p className="border-b border-line px-5 py-4.5 text-heading">{title}</p>
       <div className="flex items-center border-b border-line bg-group px-5 py-2.5">
-        <span className="grow text-secondary text-ink-2">Đủ mọi trường của object đã băm</span>
+        <span className="grow text-secondary text-ink-2">Toàn bộ nội dung sẽ thực hiện (đã khoá bằng mã băm)</span>
         <div role="tablist" aria-label="Cách hiển thị hành động" className="flex rounded-lg bg-segmented p-0.5">
           {tab("table", "Bảng")}
           {tab("json", "JSON")}

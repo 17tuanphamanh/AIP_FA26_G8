@@ -48,9 +48,9 @@ const R = (rule_id: string, decision: MatchedRule["decision"], applied: boolean,
 describe("t170: matchedView — applied / thua khác mức / thua cùng mức; [] ≠ thiếu khoá; số applied ≠ 1 → lỗi dữ liệu", () => {
   it("ba câu kết quả đúng chữ, giữ thứ tự server", () => {
     expect([APPLIED_TEXT, REPLACED_TEXT, SAME_LEVEL_TEXT]).toStrictEqual([
-      "áp dụng (chặt nhất)",
-      "khớp nhưng bị luật chặt hơn thay thế",
-      "khớp, cùng mức với luật được áp dụng",
+      "Áp dụng (chặt nhất)",
+      "Khớp nhưng bị luật chặt hơn thay thế",
+      "Khớp, cùng mức với luật được áp dụng",
     ]);
     const view = matchedView([R("R20", "allow", false, null), R("R18", "approval_required", true), R("R19", "approval_required", false)]);
     expect(view.kind).toBe("rows");
@@ -243,14 +243,14 @@ describe("t185: 0 luật applied (quyết định cuối không do luật) → m
     expect(view.kind).toBe("rows");
     if (view.kind !== "rows") return;
     expect(view.rows.map((r) => r.result)).toStrictEqual([MATCHED_ONLY_TEXT, MATCHED_ONLY_TEXT]);
-    expect(MATCHED_ONLY_TEXT).toBe("khớp");
+    expect(MATCHED_ONLY_TEXT).toBe("Khớp");
     expect(view.undecided).toBe(true);
     expect(matchedView([R("A", "deny", true), R("B", "deny", true)])).toStrictEqual({ kind: "invalid" });
   });
   it("màn phiếu duyệt: bảng + dòng 'Quyết định cuối không do luật — …'", async () => {
     renderApproval({ ...fixtureView(), matched_rules: [R("R20", "allow", false), R("R18", "approval_required", false)] });
     const box = await screen.findByTestId("matched-rules");
-    expect(within(box).getAllByTestId("matched-rule").map((r) => r.querySelectorAll("td")[3]!.textContent)).toStrictEqual(["khớp", "khớp"]);
+    expect(within(box).getAllByTestId("matched-rule").map((r) => r.querySelectorAll("td")[3]!.textContent)).toStrictEqual(["Khớp", "Khớp"]);
     expect(within(box).getByTestId("matched-undecided").textContent).toBe(UNDECIDED_TEXT);
     expect(UNDECIDED_TEXT).toBe("Quyết định cuối không do luật — xem lý do ở bước đánh giá rủi ro");
   });
@@ -266,7 +266,7 @@ describe("t186: decision null (luật đã xoá khỏi chính sách) → parser 
   it("phiếu duyệt KHÔNG 502; bảng hiện '—'; không làm invalid", async () => {
     renderApproval({ ...fixtureView(), matched_rules: [R("R20", "allow", true), nullRule as unknown as MatchedRule] });
     const rows = await screen.findAllByTestId("matched-rule");
-    expect([...rows[1]!.querySelectorAll("td")].map((td) => td.textContent)).toStrictEqual(["R99", "—", "—", "khớp"]);
+    expect([...rows[1]!.querySelectorAll("td")].map((td) => td.textContent)).toStrictEqual(["R99", "—", "—", "Khớp"]);
     expect(screen.getByTestId("decision-bar")).toBeTruthy();
   });
   it("matchedView: luật applied có decision null → vẫn vẽ (không so mức)", () => {

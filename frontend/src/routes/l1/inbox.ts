@@ -305,7 +305,7 @@ export const OVERRIDE_REASONS: readonly { value: OverrideReasonCode; label: stri
 
 /** Ghi chú bắt buộc khi lý do "Khác" (4d P2), luôn ≤ 1000. Trả câu lỗi, null = gửi được. */
 export function overrideProblem(decision: OverrideDecision | null, reason: OverrideReasonCode | null, note: string): string | null {
-  if (decision === null) return "Chọn quyết định đúng cho ticket này.";
+  if (decision === null) return "Chọn quyết định đúng cho yêu cầu này.";
   if (reason === null) return "Chọn lý do ghi đè.";
   const text = note.trim();
   if (reason === "other" && !text) return "Lý do “Khác” cần ghi chú.";
@@ -323,8 +323,8 @@ export const OVERRIDE_DONE = "Đã ghi nhận ghi đè.";
 export const OVERRIDE_ORIGINAL_PREFIX = "Quyết định ban đầu của hệ thống: ";
 export const OVERRIDE_NOTE_INVALID = "Ghi chú không hợp lệ hoặc trống sau khi ẩn thông tin nhạy cảm — hãy viết lại ghi chú.";
 /** 403 `forbidden`: không có quyền HOẶC người gửi tự ghi đè — cùng một mã, client không phân biệt được (4d). */
-export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).";
-export const OVERRIDE_NOT_FOUND = "Không tìm thấy ticket hoặc bạn không được xem ticket này.";
+export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè yêu cầu này (không có quyền, hoặc đây là yêu cầu do chính bạn gửi).";
+export const OVERRIDE_NOT_FOUND = "Không tìm thấy yêu cầu hoặc bạn không được xem yêu cầu này.";
 
 /** Nhãn của một quyết định ghi đè (như hộp chọn); giá trị lạ / thiếu → null — không đoán. */
 export const overrideDecisionLabel = (value: unknown): string | null =>

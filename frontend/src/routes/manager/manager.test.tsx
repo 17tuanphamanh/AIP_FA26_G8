@@ -278,7 +278,7 @@ describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 t
     expect(metricText("override_count", 0, ["override_count"], "count").text).toBe(UNAVAILABLE_TEXT);
     expect(metricText("deflection_rate", undefined, [], "rate").text).toBe(UNAVAILABLE_TEXT);
     expect(metricText("deflection_rate", null, [], "rate")).toStrictEqual({ state: "empty", text: "—", note: EMPTY_NOTE });
-    expect(EMPTY_NOTE).toBe("Không có ticket trong khoảng này");
+    expect(EMPTY_NOTE).toBe("Không có yêu cầu trong khoảng này");
     expect(metricText("deflection_rate", 0, [], "rate").text).toMatch(/^0\s%$/);
     expect(metricText("approval_expired_count", 0, [], "count").text).toBe("0");
     expect(metricText("automation_rate", 0.63, [], "rate").text).toMatch(/^63\s%$/);
@@ -1275,7 +1275,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     dashboardServer();
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính ticket lá.");
+    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính yêu cầu lá.");
     expect([kpiValue("automation_rate"), kpiValue("escalation_rate_weighted"), kpiValue("deflection_rate"), kpiValue("approval_expired_count")]).toStrictEqual([
       "63 %",
       "14,2 %",
@@ -1342,7 +1342,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     expect(text(kpi("escalation_rate_weighted"))).toContain("thô —");
     expect(screen.getAllByTestId("weighted-group").map((g) => text(g.lastElementChild))).toStrictEqual(["—", "—", "—"]);
     expect(screen.queryAllByTestId("bar-row")).toHaveLength(0);
-    expect(screen.getAllByText("Không có ticket trong khoảng này.")).toHaveLength(2); // decided_by + E1
+    expect(screen.getAllByText("Không có yêu cầu trong khoảng này.")).toHaveLength(2); // decided_by + E1
     expect(screen.getByText("Không có luật nào khớp trong khoảng này.")).toBeTruthy();
     expect(screen.getByText("Không có ca thiếu tài liệu hướng dẫn trong khoảng này.")).toBeTruthy(); // N-NGU: không mã trần
     expect(text(document.querySelector("main") ?? document.body)).not.toMatch(/\b0 %/);
@@ -1576,7 +1576,7 @@ describe("t126: thanh bên — me.role '__proto__' / 'constructor' / 'toString' 
   });
 
   it("role hợp lệ vẫn ra nhãn cũ", () => {
-    expect(roleTexts(L1)).toStrictEqual(["Người duyệt L1", "IT Helpdesk L1"]);
+    expect(roleTexts(L1)).toStrictEqual(["Người duyệt L1", "Nhân viên hỗ trợ L1"]);
     expect(roleTexts(MGR)).toStrictEqual(["Trưởng bộ phận IT", "Trưởng bộ phận IT"]);
   });
 });
