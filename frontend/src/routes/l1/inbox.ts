@@ -2,6 +2,7 @@
 // (giờ MÁY CHỦ: api/serverClock.ts). Tên khoá của `action` / `risk` / `facts` KHÔNG được đọc ở đây: phiếu hiện đúng
 // object đã băm, đủ mọi khoá (KH 4.2 #5), risk hiện khoá–giá trị chung (F4 P1).
 import { HUONG_XU_LY, KHAC, luatIT, nhanIT } from "../../lib/nhan.ts";
+import { ACTION_TYPE_LABEL, flatKeyLabel } from "./actionLabels.ts";
 import { NOTE_MAX } from "../../api/approvals.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import type {
@@ -94,11 +95,8 @@ const READONLY_STATE: Partial<Record<ApprovalStatus, string>> = {
 export const readonlyText = (status: ApprovalStatus): string =>
   `Phiếu ${ownEntry<string | undefined>(READONLY_STATE, status, undefined) ?? "không còn chờ duyệt"} — chỉ xem, không quyết định được nữa.`;
 
-/** Phase 4 chỉ có intent VPN (KH 4.6). Loại lạ → hiện nguyên mã, không đoán nghĩa. */
-export const ACTION_LABEL: Record<string, string> = {
-  renew_vpn_cert: "Cấp lại chứng chỉ VPN",
-  reissue_vpn_access: "Cấp lại truy cập VPN",
-};
+/** Tên hành động (B2 — bảng nhãn đợt 2: đủ 9 loại trong config/action_metadata.yaml). Loại lạ → hiện nguyên mã, không đoán. */
+export const ACTION_LABEL: Readonly<Record<string, string>> = ACTION_TYPE_LABEL;
 /** Hộp thư không biết hành động (`action_type` null — dòng audit B15 không có): dòng VẪN hiện, mở phiếu để xem object. */
 export const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
 /** Loại hành động lạ → "Khác · <mã>" (không hiện mã trần một mình — bảng ĐP 23:10). */
@@ -120,6 +118,8 @@ export const ACTION_KEY_LABEL: Record<string, string> = {
 };
 /** Nhãn cho một khoá phẳng (`params.device_id` → nhãn của `params`); khoá lạ → null (chỉ hiện khoá). */
 export function actionKeyLabel(key: string): string | null {
+  const full = flatKeyLabel(key); // B2: params.* / facts.* có nhãn riêng
+  if (full !== null) return full;
   const head = key.split(".")[0] ?? key;
   return Object.hasOwn(ACTION_KEY_LABEL, head) ? ACTION_KEY_LABEL[head]! : null;
 }
