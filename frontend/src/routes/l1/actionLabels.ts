@@ -162,11 +162,26 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f]/u;
 const INVISIBLE = /[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u;
 const LOOKS_LITERAL = /^(?:[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|true|false|null|nan|[+-]?infinity)$/iu;
 
-/** JSON.stringify KHÔNG escape ký tự vô hình (zero-width, soft hyphen, BOM, điều hướng chữ…) → thêm escape \uXXXX cho đúng
- *  các ký tự đó. Kết quả vẫn là JSON hợp lệ của CÙNG chuỗi (JSON.parse ra đúng giá trị), chỉ là nhìn thấy được. */
-export function visibleJson(value: string): string {
-  return JSON.stringify(value).replace(new RegExp(INVISIBLE.source, "gu"), (c) => `\\u${c.codePointAt(0)!.toString(16).padStart(4, "0")}`);
-}
+// ---- Hiển thị JSON an toàn (ĐP 01/11 16:00, mục 0d) — DÙNG CHUNG cho chế độ TẮT ca (c), chế độ BẬT và tab JSON ------------------
+// JSON.stringify KHÔNG escape DEL, C1 (U+007F–U+009F) và ký tự vô hình / điều khiển hướng chữ → thay từng đơn vị UTF-16 bằng
+// \uXXXX. Các ký tự này chỉ có thể nằm TRONG chuỗi JSON (khoá hoặc giá trị) → kết quả vẫn là JSON hợp lệ, JSON.parse ra ĐÚNG giá
+// trị/object gốc, chỉ là nhìn thấy được. Không có ký tự nào như vậy → kết quả === JSON.stringify như cũ.
+const HIDDEN_UNIT = /[\u007f-\u009f\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+/** (h) Trường danh tính bắt buộc ASCII: mọi đơn vị ngoài U+0020–U+007E (JSON.stringify đã escape U+0000–U+001F). */
+const NON_ASCII_UNIT = /[^\u0020-\u007e]/g;
+const unitEscape = (c: string): string => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
+
+/** Chữ JSON (đã JSON.stringify) → escape ký tự vô hình. `asciiOnly` (h): escape mọi ký tự ngoài ASCII. */
+export const safeJsonText = (jsonText: string, asciiOnly = false): string =>
+  jsonText.replace(asciiOnly ? NON_ASCII_UNIT : HIDDEN_UNIT, unitEscape);
+
+/** Chuỗi → JSON hiển thị an toàn (ca (c), (h)). */
+export const visibleJson = (value: string, asciiOnly = false): string => safeJsonText(JSON.stringify(value), asciiOnly);
+
+/** (h) Danh tính phải là ASCII in được: requested_for, params.device_id, phần sau ":" của target. resource_path, software_name
+ *  được có tiếng Việt — không áp. */
+export const ASCII_IDENTITY_KEYS: ReadonlySet<string> = new Set(["requested_for", "params.device_id", "target"]);
+export const hasNonAscii = (s: string): boolean => new RegExp(NON_ASCII_UNIT.source).test(s);
 
 /** (c) Chuỗi phải hiện dạng JSON.stringify (có ngoặc kép, có escape) kể cả khi TẮT. */
 export const needsRawFormat = (s: string): boolean => EDGE_SPACE.test(s) || CONTROL.test(s) || INVISIBLE.test(s) || LOOKS_LITERAL.test(s);
@@ -185,5 +200,5 @@ export function targetParts(raw: string): { prefix: string; rest: string } | nul
   if (at <= 0) return null;
   const prefix = has(TARGET_PREFIX, value.slice(0, at));
   const rest = value.slice(at + 1);
-  return prefix && rest && !needsRawFormat(rest) ? { prefix, rest } : null;
+  return prefix && rest && !needsRawFormat(rest) && !hasNonAscii(rest) ? { prefix, rest } : null;
 }
