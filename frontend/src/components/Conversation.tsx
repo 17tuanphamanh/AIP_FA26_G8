@@ -13,7 +13,7 @@ import { Sources } from "./Sources.tsx";
 
 function AssistantMessage({ message }: { message: Message }) {
   return (
-    <div className="flex items-start gap-3" data-kind={message.kind}>
+    <div className="flex items-start gap-3 motion-safe:animate-rise-in" data-kind={message.kind}>
       <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
       <div className="flex min-w-0 grow flex-col gap-3 pt-0.5">
         {!message.text.trim() ? null : message.kind === "answer" ? (
@@ -40,12 +40,12 @@ export function Conversation({ messages, renderDigest }: ConversationProps) {
           <p
             key={index}
             data-role="user"
-            className={USER_BUBBLE}
+            className={`${USER_BUBBLE} motion-safe:animate-rise-in`}
           >
             {message.text}
           </p>
         ) : message.digest ? (
-          <div key={index} data-kind="digest">
+          <div key={index} data-kind="digest" className="motion-safe:animate-rise-in">
             {renderDigest ? renderDigest(message.digest) : <DigestMessage digest={message.digest} />}
           </div>
         ) : (

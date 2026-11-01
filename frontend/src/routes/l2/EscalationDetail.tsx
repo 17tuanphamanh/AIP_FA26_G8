@@ -66,7 +66,7 @@ function EscalationDetail({
   if (closedSnap) {
     return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} />;
   }
-  if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2">Đang tải ca…</p>;
+  if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse">Đang tải ca…</p>;
   if (id !== null && items === undefined) {
     return (
       <section className="flex flex-col gap-2 px-12 py-10">

@@ -120,7 +120,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
 
       {items === undefined ? (
         query.isPending ? (
-          <p className="text-ink-2">Đang tải hàng đợi…</p>
+          <p className="text-ink-2 motion-safe:animate-pulse">Đang tải hàng đợi…</p>
         ) : (
           <p role="alert" className="text-danger">
             Chưa tải được hàng đợi: {errorMessage(query.error instanceof ApiError ? query.error : null)}
@@ -416,7 +416,7 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
     ? ["Đã đóng", item.close_result ? closeResultLabel(item.close_result) : "", formatAt(item.closed_at!)].filter(Boolean).join(" · ")
     : [waitingText(item.created_at, now), item.assigned_to ? `${item.assigned_to} đang xử lý` : ""].filter(Boolean).join(" · ");
   return (
-    <li className="border-t border-line first:border-t-0">
+    <li className="border-t border-line first:border-t-0 motion-safe:animate-rise-in">
       <Link
         to={closed ? `/escalations/${item.escalation_id}?status=closed` : `/escalations/${item.escalation_id}`}
         data-testid="queue-row"

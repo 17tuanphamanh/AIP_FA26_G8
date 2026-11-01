@@ -58,7 +58,7 @@ export function LoginPage() {
           <img src={logoUrl} alt="" width={40} height={40} className="rounded-xl ring-2 ring-white/20" />
           <span className="text-heading">ServiceDesk AI</span>
         </div>
-        <LoginArt className="relative mx-auto w-full max-w-140" />
+        <LoginArt className="relative mx-auto w-full max-w-140 motion-safe:animate-rise-in motion-safe:[animation-delay:120ms]" />
         <div className="relative flex max-w-140 flex-col gap-3">
           <p className="text-title">Hỗ trợ IT cấp 1, nhanh và an toàn</p>
           <ul className="flex flex-col gap-2 text-secondary text-white/80">
@@ -81,7 +81,7 @@ export function LoginPage() {
       {/* Cột phải: form. */}
       <div className="flex min-h-full flex-col bg-white px-6 sm:px-12">
         <div className="flex flex-1 items-center justify-center py-12">
-          <div className="flex w-100 max-w-full flex-col gap-8">
+          <div key={otp ? "otp" : "password"} className="flex w-100 max-w-full flex-col gap-8 motion-safe:animate-rise-in">
             <div className="flex flex-col gap-3">
               <img src={logoUrl} alt="" width={48} height={48} className="mb-2 lg:hidden" />
               <h1 className="text-title">{otp ? "Nhập mã xác thực" : "Đăng nhập"}</h1>

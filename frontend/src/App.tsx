@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ComponentType, useCallback } from "react";
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router";
+import { type ComponentType, useCallback, useRef } from "react";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from "react-router";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 import { LoginPage } from "./auth/LoginPage.tsx";
 import { CHAT_NAV, homePath, STAFF_NAV } from "./auth/permissions.ts";
@@ -8,6 +8,7 @@ import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
 import { useAuth, useMe } from "./auth/useAuth.ts";
 import { FlashNotice } from "./components/FlashNotice.tsx";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
+import { useEnterOnChange } from "./components/motion.ts";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ChatHome } from "./routes/employee/ChatHome.tsx";
 import { ChatRoute } from "./routes/employee/ChatPage.tsx";
@@ -29,12 +30,16 @@ const queryClient = new QueryClient();
 function Shell() {
   const me = useMe();
   const { signOut } = useAuth();
+  const content = useRef<HTMLDivElement>(null);
+  useEnterOnChange(content, useLocation().pathname); // đổi màn → nội dung trượt nhẹ vào, không dựng lại màn
   return (
     <div className="flex h-full">
       <Sidebar me={me} onSignOut={signOut} />
       <main className="min-w-0 grow overflow-y-auto">
-        <FlashNotice />
-        <Outlet />
+        <div ref={content} className="motion-safe:animate-fade-in">
+          <FlashNotice />
+          <Outlet />
+        </div>
       </main>
     </div>
   );

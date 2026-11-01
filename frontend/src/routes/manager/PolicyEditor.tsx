@@ -185,7 +185,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
           Chưa tải được chính sách: {errorMessage(policy.error instanceof ApiError ? policy.error : null)}
         </p>
       ) : draft === null ? (
-        <p className="text-ink-2">Đang tải chính sách…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải chính sách…</p>
       ) : (
         <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-6">
           <div className="min-w-0">
@@ -243,7 +243,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
               ) : versions.data ? (
                 <PolicyHistory versions={versions.data} dirty={dirty} />
               ) : (
-                <p className="px-1 text-secondary text-ink-2">Đang tải lịch sử…</p>
+                <p className="px-1 text-secondary text-ink-2 motion-safe:animate-pulse">Đang tải lịch sử…</p>
               )}
             </section>
           </aside>

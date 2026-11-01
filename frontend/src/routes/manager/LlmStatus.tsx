@@ -151,7 +151,7 @@ export function LlmStatus() {
       ) : query.isError ? (
         <LoadError error={query.error} what="trạng thái LLM" />
       ) : query.isPending ? (
-        <p className="text-ink-2">Đang tải trạng thái LLM…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải trạng thái LLM…</p>
       ) : (
         <Body data={query.data} />
       )}

@@ -78,7 +78,7 @@ export function ApprovalQueue() {
       ) : null}
 
       {loading ? (
-        <p className="text-ink-2">Đang tải hộp thư…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải hộp thư…</p>
       ) : failed ? (
         <p role="alert" className="text-danger">
           Chưa tải được hộp thư: {errorMessage(failed.error instanceof ApiError ? failed.error : null)}
@@ -122,7 +122,7 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
   const urgent = pending && isUrgent(item.created_at, item.deadline, now);
   const reminder = item.reminder_2_at ? 2 : item.reminder_1_at ? 1 : 0;
   return (
-    <li className="border-t border-line first:border-t-0">
+    <li className="border-t border-line first:border-t-0 motion-safe:animate-rise-in">
       <Link
         to={`/approvals/${encodeURIComponent(item.approval_id)}`}
         data-testid="inbox-row"
