@@ -283,6 +283,33 @@ export type BusinessMetrics = {
 };
 export type BusinessDashboard = { from: string; to: string; unavailable: string[]; scope: "all"; metrics: BusinessMetrics };
 
+// D13 (backend 3ec275b: api/dashboard.py `BusinessAllCounts`, monitor/queries/business.py RatioCount, GroupCount,
+// WeightedCount; api/alerts.py `from`/`to`). schema.gen.ts chưa sinh lại → hình dạng kiểm LÚC CHẠY ở api/dashboard.ts.
+
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Tử/mẫu của một tỉ lệ đơn; `den` = #lá đã kết thúc trong cửa sổ. */
+export type RatioCountTam = { num: number; den: number };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Một nhóm N3: `num` = #lá có exit_code, `den` = #lá của nhóm, `weight` = trọng số danh nghĩa của backend. */
+export type GroupCountTam = { num: number; den: number; weight: number };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Weighted KHÔNG có tử tổng: chỉ cỡ mẫu `den` + a/b theo nhóm. */
+export type WeightedCountTam = { den: number; by_group: Record<string, GroupCountTam> };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Khoá pending / unavailable → null. */
+export type BusinessCountsTam = {
+  automation_rate: RatioCountTam | null;
+  escalation_rate_raw: RatioCountTam | null;
+  escalation_rate_weighted: WeightedCountTam | null;
+  deflection_rate: RatioCountTam | null;
+};
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** `min_sample`/`counts` tuỳ chọn: backend trước D13 không gửi → màn hiện như cũ (không "(a/b)"). */
+export type BusinessCountedTam = BusinessDashboard & { min_sample?: number; counts?: BusinessCountsTam };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Khung giờ của `GET /api/alerts` — lọc `window_start` trong `[from, to)`. */
+export type AlertsWindowTam = { from: string; to: string };
+
 /** `day_start` = 00:00 giờ VN của ngày, viết ở UTC (vd "2026-09-29T17:00:00Z" là ngày 30/09). */
 export type DayCost = { day_start: string; cost_usd: number };
 export type AiMetrics = {

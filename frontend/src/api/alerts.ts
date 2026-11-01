@@ -6,7 +6,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
-import type { AlertItem, AlertList } from "./types.ts";
+import type { AlertItem, AlertList, AlertsWindowTam } from "./types.ts";
 
 export type AlertFilter = "open" | "all";
 
@@ -51,8 +51,19 @@ export function parseAlerts(body: unknown): AlertList {
   return { items: body.items, truncated: body.truncated };
 }
 
-export async function listAlerts(filter: AlertFilter): Promise<AlertList> {
-  return parseAlerts((await api.request<unknown>(filter === "open" ? "/api/alerts?status=open" : "/api/alerts")).data);
+/**
+ * `frame` (D13): lọc `window_start` trong `[from, to)` — khối "Cảnh báo đang mở" của Tổng quan. Không có → URL như cũ
+ * (màn Cảnh báo: mọi khung). `from`/`to` phải encode ("+07:00" không encode thành dấu cách ở server → 422).
+ */
+export async function listAlerts(filter: AlertFilter, frame?: AlertsWindowTam): Promise<AlertList> {
+  const params = new URLSearchParams();
+  if (filter === "open") params.set("status", "open");
+  if (frame) {
+    params.set("from", frame.from);
+    params.set("to", frame.to);
+  }
+  const qs = params.toString();
+  return parseAlerts((await api.request<unknown>(qs ? `/api/alerts?${qs}` : "/api/alerts")).data);
 }
 
 /**

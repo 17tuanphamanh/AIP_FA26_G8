@@ -1,12 +1,14 @@
 // Hàm thuần cho Tổng quan + Cảnh báo (F5 P3, P6). Không gọi mạng, không đọc đồng hồ.
 // Chỉ số (ke-hoach-m9-monitor.md §4.3 [Chốt]): "chưa có nguồn" (tên trong `unavailable`) ≠ "đã đo, không có ca" (null)
 // ≠ "đã đo, bằng 0" (0). KHÔNG BAO GIỜ hiện 0 thay cho null/unavailable — 0 là sai sự thật và che lỗ hổng.
-import type { AlertItem } from "../../api/types.ts";
+import type { AlertItem, RatioCountTam } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import { BEN_QUYET_DINH, KHAC } from "../../lib/nhan.ts";
+import { vnDate } from "./range.ts";
 
 export type MetricKind = "rate" | "count" | "number";
-export type MetricState = "value" | "empty" | "unavailable";
+/** `insufficient` (D13): đã đo nhưng mẫu < `min_sample` → không hiện tỉ lệ. */
+export type MetricState = "value" | "empty" | "unavailable" | "insufficient";
 export type MetricText = { state: MetricState; text: string; note: string | null };
 
 export const UNAVAILABLE_TEXT = "Chưa có dữ liệu";
@@ -66,6 +68,37 @@ export function metricText(name: string, value: unknown, unavailable: readonly s
   if (value === null) return { state: "empty", text: EMPTY_TEXT, note: EMPTY_NOTE };
   if (typeof value === "number" && Number.isFinite(value)) return { state: "value", text: formatNumber(value, kind), note: null };
   return { state: "value", text: JSON.stringify(value), note: null };
+}
+
+// ---------------------------------------------------------------- số đếm tử/mẫu (D13)
+// Quy tắc chung của trang Tổng quan (khớp ô tab So sánh — compare.ts `cellText`): unavailable → "Chưa có dữ liệu"; không có
+// số đếm nào → "—"; có số đếm mà mẫu < ngưỡng (kể cả 0) → "chưa đủ dữ liệu (n=mẫu)"; đủ mẫu → "x % (a/b)". Ngưỡng: `min_sample`
+// của server (tab So sánh: `MIN_SAMPLE` của compare.ts tới khi route gửi ngưỡng). Ngoại lệ có chủ đích (phiếu D13): dòng NHÓM
+// của tỉ lệ có trọng số luôn hiện "a/b" (số đếm thành phần, tổng đã bị chặn ở KPI), chỉ thêm % khi nhóm đủ mẫu.
+
+export const INSUFFICIENT_TEXT = "chưa đủ dữ liệu";
+/** "chưa đủ dữ liệu (n=19)" — mẫu nhỏ hơn `min_sample` của backend (cùng chữ với `few` của compare.ts). */
+export const insufficientText = (den: number): string => `${INSUFFICIENT_TEXT} (n=${integer.format(den)})`;
+/** "13/20". */
+export const fractionText = (num: number, den: number): string => `${integer.format(num)}/${integer.format(den)}`;
+
+/**
+ * Tỉ lệ đơn kèm tử/mẫu. unavailable / thiếu trường → như `metricText`; thiếu `count` hoặc `minSample` (backend trước D13)
+ * → như `metricText` (chỉ %); `den < minSample` → "chưa đủ dữ liệu (n=den)" — kể cả den 0 (tỉ lệ null): KHÔNG "0 %",
+ * KHÔNG "—"; còn lại "65 % (13/20)" (`formatRate` sẵn có — lệch nhỏ so với mẫu "xx,x%" của phiếu, để đồng bộ cả trang).
+ */
+export function countedRateText(
+  name: string,
+  value: unknown,
+  count: RatioCountTam | null | undefined,
+  minSample: number | undefined,
+  unavailable: readonly string[],
+): MetricText {
+  const plainText = metricText(name, value, unavailable, "rate");
+  if (plainText.state === "unavailable" || !count || minSample === undefined) return plainText;
+  if (count.den < minSample) return { state: "insufficient", text: insufficientText(count.den), note: null };
+  if (plainText.state !== "value") return plainText;
+  return { ...plainText, text: `${plainText.text} (${fractionText(count.num, count.den)})` };
 }
 
 /** `decided_by` (rule / llm / model) — nhãn từ src/lib/nhan.ts (bảng ĐP 26/10 23:10); khoá lạ → hiện nguyên. */
@@ -171,3 +204,24 @@ export const ACK_CONFLICT_TEXT = "Cảnh báo này đã được xác nhận tr�
 export const ACK_GONE_TEXT = "Cảnh báo không còn";
 export const ACK_DONE_TEXT = "Đã xác nhận cảnh báo";
 export const DASHBOARD_ALERT_LIMIT = 5;
+
+const RULE1_ID = "escalation_rate_high";
+const DAY_MS = 86_400_000;
+// Chữ hiện KHÔNG gọi "luật 1" (N-NGU: không hiện số hiệu nội bộ) — dòng nằm ngay dưới cảnh báo đó.
+export const RULE1_NOTE_GENERIC = "Đo trên các ngày trọn (giờ VN) trước ngày ghi cảnh báo, không theo khoảng đang chọn.";
+
+/**
+ * Ghi chú cửa sổ đo của luật 1 (D13) — chỉ để đọc, KHÔNG đổi luật. Nguồn: backend/app/monitor/rules.py `rolling_7d_window`
+ * + `escalation_rate_high`: cửa sổ `[window_start − days, window_start)`, `window_start` = 00:00 VN ngày ghi, `detail.days`.
+ * Luật khác → null; `days` không phải số nguyên dương / ngoài miền Date → câu chung không ngày.
+ */
+export function rule1WindowNote(alert: AlertItem): string | null {
+  if (alert.rule_id !== RULE1_ID) return null;
+  const end = Date.parse(alert.window_start);
+  const days = alert.detail.days;
+  if (Number.isNaN(end) || typeof days !== "number" || !Number.isSafeInteger(days) || days < 1) return RULE1_NOTE_GENERIC;
+  const start = new Date(end - days * DAY_MS);
+  if (Number.isNaN(start.getTime())) return RULE1_NOTE_GENERIC;
+  const last = new Date(end - 1).toISOString();
+  return `Đo trên ${days} ngày trọn ${vnDate(start.toISOString())}–${vnDate(last)} (giờ VN), không theo khoảng đang chọn.`;
+}
