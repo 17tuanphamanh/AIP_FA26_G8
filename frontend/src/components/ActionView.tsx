@@ -7,6 +7,9 @@ import {
   needsRawFormat,
   NULL_TEXT,
   RAW_FORMAT_NOTE,
+  ASCII_IDENTITY_KEYS,
+  hasNonAscii,
+  safeJsonText,
   targetParts,
   visibleJson,
 } from "../routes/l1/actionLabels.ts";
@@ -88,7 +91,7 @@ function ActionKey({ entryKey, showRaw }: { entryKey: string; showRaw: boolean }
         <span className="font-sans">{exact}</span>
         <span data-testid="raw-key" hidden={!showRaw}>
           {" · "}
-          <span className="text-label font-normal">{entryKey}</span>
+          <span className="text-label font-normal">{safeJsonText(entryKey)}</span>
         </span>
       </>
     );
@@ -96,10 +99,10 @@ function ActionKey({ entryKey, showRaw }: { entryKey: string; showRaw: boolean }
   const group = groupLabel(entryKey);
   return group !== null ? (
     <>
-      <span className="font-sans">{group}</span> · <span className="text-label font-normal">{entryKey}</span>
+      <span className="font-sans">{group}</span> · <span className="text-label font-normal">{safeJsonText(entryKey)}</span>
     </>
   ) : (
-    <>{entryKey || "(gốc)"}</>
+    <>{entryKey ? safeJsonText(entryKey) : "(gốc)"}</>
   );
 }
 
@@ -116,8 +119,10 @@ function plainDisplay(raw: string, key: string): { text: string; rawFormat: bool
     if (value === "") return { text: EMPTY_TEXT, rawFormat: false }; // (b)
     // (c). `target`: phần sau ":" là danh tính → xét riêng phần đó (vd "device: LAP" có khoảng trắng đầu ở phần sau).
     const suffix = key === "target" && value.includes(":") ? value.slice(value.indexOf(":") + 1) : "";
-    const unsafe = needsRawFormat(value) || (suffix !== "" && needsRawFormat(suffix));
-    return unsafe ? { text: visibleJson(value), rawFormat: true } : { text: value, rawFormat: false };
+    // (h) danh tính ASCII: requested_for, device_id, phần sau ":" của target có ký tự ngoài ASCII → dạng gốc, escape \uXXXX.
+    const ascii = ASCII_IDENTITY_KEYS.has(key) && hasNonAscii(key === "target" ? suffix || value : value);
+    const unsafe = ascii || needsRawFormat(value) || (suffix !== "" && needsRawFormat(suffix));
+    return unsafe ? { text: visibleJson(value, ascii), rawFormat: true } : { text: value, rawFormat: false };
   }
   return { text: raw, rawFormat: false }; // (e) số, bool, {} / [] → nguyên giá trị
 }
@@ -128,7 +133,7 @@ function ActionValue({ entryKey, raw, showRaw }: { entryKey: string; raw: string
   const identity = IDENTITY_KEYS.has(entryKey);
   const rawEl = (
     <span data-testid="raw-value" hidden={!showRaw} className={label !== null ? "text-label font-normal text-ink-2" : undefined}>
-      {raw}
+      {safeJsonText(raw, ASCII_IDENTITY_KEYS.has(entryKey))}
     </span>
   );
   if (label !== null) {
@@ -266,7 +271,8 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
           <ActionTable action={action} showRaw={showRaw} />
         ) : (
           <pre data-testid="action-json" className="overflow-x-auto px-5 py-4 font-mono text-label font-normal">
-            {JSON.stringify(action, null, 2)}
+            {/* Mục 0d: cùng hàm hiển thị an toàn — ký tự vô hình hiện \uXXXX; object sạch → === JSON.stringify(action, null, 2). */}
+            {safeJsonText(JSON.stringify(action, null, 2))}
           </pre>
         )}
       </div>

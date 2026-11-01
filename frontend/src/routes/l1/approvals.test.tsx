@@ -1958,10 +1958,10 @@ describe("t232: B2 — TẮT chỉ chữ người đọc được, BẬT khoá g
     ["khoảng trắng cuối", "nv001 "],
     ["ký tự điều khiển", "nv\u0000001"],
     ["xuống dòng", "nv\n001"],
-    ["zero-width", "nv​001"],
-    ["soft hyphen", "nv­001"],
-    ["BOM", "﻿nv001"],
-    ["điều hướng chữ (RLO)", "nv‮001"],
+    ["zero-width", "nv\u200b001"],
+    ["soft hyphen", "nv\u00ad001"],
+    ["BOM", "\ufeffnv001"],
+    ["điều hướng chữ (RLO)", "nv\u202e001"],
     ["trông như số", "0123"],
     ["trông như số âm thập phân", "-1.5e3"],
     ["trông như true", "true"],
@@ -1982,6 +1982,73 @@ describe("t232: B2 — TẮT chỉ chữ người đọc được, BẬT khoá g
       expect(/[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u.test(shown.textContent!)).toBe(false); // không còn ký tự vô hình
       expect(within(r).getByTestId("raw-format-note").textContent).toBe("định dạng gốc");
     }
+  });
+
+  // ---- Mục 0d (ĐP 01/11 16:00) ----
+  const HIDDEN = /[\u007f-\u009f\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u;
+
+  it("0d-1: BẬT + tab JSON dùng cùng hàm an toàn — parse lại bằng sâu đúng gốc, không còn ký tự vô hình (khoá lẫn giá trị)", () => {
+    const DIRTY = {
+      type: "renew_vpn_cert",
+      target: "device:LAP\u200b0342",
+      requested_for: "nv\u202e001",
+      params: { device_id: "LAP\u00ad0342", "kho\u200ba": "x\u007fy\u0085z" },
+      facts: { cert_status: "\ufeffexpired" },
+    };
+    render(<ActionView action={DIRTY} hash={"e".repeat(64)} title="x" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    const at = (path: string): unknown => path.split(".").reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], DIRTY);
+    for (const r of screen.getAllByTestId("action-row")) {
+      const text = raw(r).textContent!;
+      expect(HIDDEN.test(text)).toBe(false); // (ii)
+      expect(JSON.parse(text)).toStrictEqual(at(r.dataset.key!)); // (i)
+      expect(HIDDEN.test(visible(r.querySelector("dt")!))).toBe(false); // khoá gốc cũng thấy được
+    }
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    const json = screen.getByTestId("action-json").textContent!;
+    expect(HIDDEN.test(json)).toBe(false);
+    expect(JSON.parse(json)).toStrictEqual(DIRTY);
+    expect(json).toContain("LAP\\u200b0342");
+  });
+
+  it("0d-1 (iii): object sạch → BẬT === JSON.stringify từng dòng, tab JSON === JSON.stringify(action, null, 2)", () => {
+    render(<ActionView action={ACTION} hash={"f".repeat(64)} title="x" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    for (const r of screen.getAllByTestId("action-row")) expect(raw(r).textContent).toBe(JSON.stringify(at(r.dataset.key!)));
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    expect(screen.getByTestId("action-json").textContent).toBe(JSON.stringify(ACTION, null, 2));
+  });
+
+  it("(h) Cyrillic ở requested_for / device_id / phần sau ':' của target → dạng gốc, escape \\uXXXX ngoài ASCII; tiếng Việt ở resource_path, software_name không bị đánh dấu", () => {
+    // "\u0430" (U+0430 Cyrillic) thay "a" Latin — trông giống hệt.
+    const SPOOF = {
+      target: "device:L\u0410P-0342",
+      requested_for: "\u0430dmin",
+      params: { device_id: "LAP-0\u04173", resource_path: "Phòng Kế toán/Quý 3", software_name: "Bộ gõ Tiếng Việt" },
+    };
+    render(<ActionView action={SPOOF} hash={"9".repeat(64)} title="x" />);
+    const cases: [string, string, string][] = [
+      ["target", "device:L\u0410P-0342", '"device:L\\u0410P-0342"'],
+      ["requested_for", "\u0430dmin", '"\\u0430dmin"'],
+      ["params.device_id", "LAP-0\u04173", '"LAP-0\\u04173"'],
+    ];
+    for (const [key, value, shown] of cases) {
+      const r = row(key);
+      expect(within(r).queryByTestId("value-label")).toBeNull();
+      const el = within(r).getByTestId("display-value");
+      expect(el.firstChild?.textContent).toBe(shown);
+      expect(JSON.parse(el.firstChild!.textContent!)).toBe(value);
+      expect(within(r).getByTestId("raw-format-note").textContent).toBe("định dạng gốc");
+    }
+    for (const [key, value] of [["params.resource_path", "Phòng Kế toán/Quý 3"], ["params.software_name", "Bộ gõ Tiếng Việt"]] as const) {
+      const r = row(key);
+      expect(within(r).getByTestId("display-value").textContent).toBe(value); // tiếng Việt hiện nguyên, không đánh dấu
+      expect(within(r).queryByTestId("raw-format-note")).toBeNull();
+    }
+    // BẬT: cùng hàm — danh tính ASCII cũng escape ngoài ASCII
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    expect(raw(row("requested_for")).textContent).toBe('"\\u0430dmin"');
+    expect(raw(row("params.resource_path")).textContent).toBe(JSON.stringify("Phòng Kế toán/Quý 3"));
   });
 
   it("chuỗi thường KHÔNG bị coi là (c): 'LAP-0342', 'finance/Q3', 'Visio 2021', 'nv001'", () => {
