@@ -57,7 +57,7 @@ export const NOT_LOADED_NOTE = "Ca có thể nằm ở phần chưa tải — b�
 
 export const HANDOFF_FIELDS: readonly { key: keyof HandoffNote; label: string }[] = [
   { key: "request", label: "Yêu cầu (đã che)" },
-  { key: "done_so_far", label: "Agent đã làm" },
+  { key: "done_so_far", label: "Hệ thống đã làm" },
   { key: "why_escalated", label: "Lý do chuyển" },
   { key: "next_for_l2", label: "Việc cần làm" },
 ];
@@ -84,7 +84,7 @@ export function reasonLine(item: EscalationQueueItem): string {
 export const DENY_BADGE = "Không thực hiện lại";
 export const DENY_BANNER = {
   strong: "Ca không đủ điều kiện tự xử lý — không thực hiện lại hành động.",
-  rest: "Chỉ xác nhận từ chối hoặc mở ticket mới.",
+  rest: "Chỉ xác nhận từ chối hoặc mở yêu cầu mới.",
 };
 
 /** Nhãn mã kết thúc của một ca cho nhân sự IT (bảng ĐP 23:10; E1 + `injection_suspected` → nhãn riêng); mã lạ → "Khác". */
@@ -94,9 +94,9 @@ export function exitNhan(item: Pick<EscalationQueueItem, "exit_code" | "reason_d
 }
 
 export const CLOSE_OPTIONS: readonly { value: EscalationCloseResult; title: string; desc: string }[] = [
-  { value: "completed", title: "Đã hoàn tất", desc: "L2 đã làm xong việc agent định làm" },
+  { value: "completed", title: "Đã hoàn tất", desc: "L2 đã làm xong việc hệ thống định làm" },
   { value: "confirmed_denial", title: "Xác nhận từ chối", desc: "Giữ nguyên quyết định không thực hiện" },
-  { value: "reopened_as_new", title: "Mở ticket mới", desc: "Chạy lại từ đầu, liên kết ticket này" },
+  { value: "reopened_as_new", title: "Mở yêu cầu mới", desc: "Xử lý lại từ đầu, có liên kết tới yêu cầu này" },
 ];
 const CLOSE_TITLE: Record<string, string> = Object.fromEntries(CLOSE_OPTIONS.map((o) => [o.value, o.title]));
 /** Nhãn kết quả đóng theo khoá (đã kiểm enum ở api/escalations.ts; khoá lạ → hiện nguyên). */

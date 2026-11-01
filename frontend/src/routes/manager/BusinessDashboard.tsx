@@ -104,7 +104,7 @@ const rateOrEmpty = (value: number | null) => (value === null ? EMPTY_TEXT : for
 function Bars({ values, labels }: { values: Record<string, number>; labels: Record<string, string> }) {
   const entries = Object.entries(values);
   const total = entries.reduce((sum, [, n]) => sum + (Number.isFinite(n) ? n : 0), 0);
-  if (entries.length === 0 || total === 0) return <p className="px-5 py-3.5 text-secondary text-ink-2">Không có ticket trong khoảng này.</p>;
+  if (entries.length === 0 || total === 0) return <p className="px-5 py-3.5 text-secondary text-ink-2">Không có yêu cầu trong khoảng này.</p>;
   return (
     <div className="flex flex-col gap-3.5 px-5 py-4.5">
       {entries.map(([key, n], i) => (
@@ -208,7 +208,7 @@ function WeightedGroups({ data }: { data: Business }) {
   return (
     <div className="flex flex-col gap-2">
       {groups.length === 0 ? (
-        <p className="rounded-group border border-line px-5 py-3.5 text-secondary text-ink-2">Không có ticket trong khoảng này.</p>
+        <p className="rounded-group border border-line px-5 py-3.5 text-secondary text-ink-2">Không có yêu cầu trong khoảng này.</p>
       ) : (
         <ul className="overflow-hidden rounded-group border border-line">
           {groups.map(([key, rate]) => (

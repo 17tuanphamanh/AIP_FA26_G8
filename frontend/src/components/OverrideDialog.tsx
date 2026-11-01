@@ -72,7 +72,7 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
         <div className="flex flex-col gap-1 text-center">
           <h2 className="text-heading">Ghi đè quyết định</h2>
           <p className="text-secondary text-ink-2">
-            Ticket <span className="font-mono">{ticketId}</span> — ghi vào nhật ký để đánh giá lại (không gỡ được), không đổi ticket.
+            Yêu cầu <span className="font-mono">{ticketId}</span> — ghi vào nhật ký để đánh giá lại (không gỡ được), không đổi yêu cầu.
           </p>
         </div>
 

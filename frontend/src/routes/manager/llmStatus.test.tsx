@@ -95,7 +95,7 @@ describe("I1: nội dung trang", () => {
     renderPage();
     await screen.findByTestId("llm-backend");
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Trạng thái LLM");
-    expect(text("llm-backend-state")).toContain("Giả lập (scripted)");
+    expect(text("llm-backend-state")).toContain("Giả lập — không gọi");
     expect(text("llm-model-fast")).toBe("scripted");
     expect(text("llm-model-strong")).toBe("scripted");
     expect(text("llm-key-state")).toContain("chưa cấu hình");
@@ -166,7 +166,7 @@ describe("I1: nội dung trang", () => {
     stub(() => json(200, status({ backend: "real", api_key_configured: true, models: { fast: "deepseek-flash", strong: null } })));
     renderPage();
     await screen.findByTestId("llm-backend");
-    expect(text("llm-backend-state")).toContain("Thật (real)");
+    expect(text("llm-backend-state")).toContain("Thật — gọi nhà cung cấp AI");
     expect(text("llm-key-state")).toBe("Khoá API: đã cấu hình");
     expect(screen.getByTestId("llm-key-state").querySelector("span")?.className).toContain("bg-done");
     expect(text("llm-model-fast")).toBe("deepseek-flash");
@@ -184,7 +184,7 @@ describe("I1: nội dung trang", () => {
     stub(() => json(200, status({ usage: { calls_total: 0, calls_24h: 0, tickets_with_calls: 0, avg_cost_per_ticket_usd: null } })));
     renderPage();
     await screen.findByTestId("llm-avg-cost");
-    expect(text("llm-avg-cost")).toBe("— (chưa có ticket)");
+    expect(text("llm-avg-cost")).toBe("— (chưa có yêu cầu)");
     expect(flat(text("llm-calls-total"))).toBe("0");
   });
 

@@ -16,10 +16,10 @@ import { BEN_QUYET_DINH, nhanIT } from "../../lib/nhan.ts";
 
 export const TRACE_TITLE = "Nhật ký quyết định";
 export const TRACE_FORBIDDEN_TEXT = "Bạn không có quyền xem nhật ký quyết định. Trang này dành cho L1, L2 và Trưởng bộ phận IT.";
-export const TRACE_NOT_FOUND_TEXT = "Không tìm thấy ticket này, hoặc bạn không được xem nhật ký của nó.";
+export const TRACE_NOT_FOUND_TEXT = "Không tìm thấy yêu cầu này, hoặc bạn không được xem nhật ký của nó.";
 export const TRACE_INVALID_TEXT = "Máy chủ trả nhật ký không đúng dạng — không hiển thị để tránh hiểu sai.";
-export const TRACE_BAD_ID_TEXT = "Mã ticket không hợp lệ.";
-export const TRACE_EMPTY_TEXT = "Ticket này chưa có bước nào được ghi nhật ký.";
+export const TRACE_BAD_ID_TEXT = "Mã yêu cầu không hợp lệ.";
+export const TRACE_EMPTY_TEXT = "Yêu cầu này chưa có bước nào được ghi nhật ký.";
 
 // Bước + sự kiện: nhãn từ src/lib/nhan.ts (nguồn chữ duy nhất — bảng ĐP 26/10 23:10). Màn hiện thêm mã chữ nhỏ (MaNhan).
 export const stepName = (step: string): string => nhanIT("buoc", step).nhan;

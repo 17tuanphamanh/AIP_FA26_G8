@@ -233,11 +233,14 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
         <div className="flex h-9 items-center">{BACK}</div>
         <div className="mt-1 flex items-end gap-6">
           <div className="flex min-w-0 grow flex-col gap-1">
-            <h1 className="min-w-0 text-title">
-              Phiếu <span className="font-mono">{view.approval_id}</span>
-            </h1>
+            {/* B1 (ĐP 01/11 12:25): tiêu đề = tên hành động cần duyệt; mã phiếu xuống dòng dưới. */}
+            <h1 className="min-w-0 text-title">{title}</h1>
             <p className="text-label font-normal text-ink-2">
-              Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
+              Phiếu <span className="font-mono">{view.approval_id}</span> · Mã yêu cầu{" "}
+              {/* Mã yêu cầu dài (UUID): rút gọn khi HIỂN THỊ — chữ đủ vẫn trong trang, chọn/sao chép được, hiện khi rê chuột. */}
+              <span className="inline-block max-w-[10ch] truncate align-bottom font-mono select-all" title={view.ticket_id}>
+                {view.ticket_id}
+              </span>
               {deadlineAt ? (
                 <>
                   {" "}
@@ -273,7 +276,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                   data-testid="override-link"
                   className="shrink-0 text-secondary font-semibold text-fpt-blue"
                 >
-                  Xem ticket · Ghi đè…
+                  Xem yêu cầu · Ghi đè…
                 </Link>
               ) : null}
             </div>
