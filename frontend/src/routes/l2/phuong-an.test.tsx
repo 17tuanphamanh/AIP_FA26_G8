@@ -58,7 +58,7 @@ function serve(store: EscalationStore, { closeOverride, delayAfter }: { closeOve
 /** Đóng ca qua client THẬT (như route thật đã bật) — vitest không bật MSW nên `closeEscalation` mặc định luôn chặn. */
 const viaClient = (id: number, body: EscalationCloseIn) => requestClose(id, body);
 
-function renderAt(path: string, closeAvailable?: boolean) {
+function renderAt(path: string) {
   const client = new QueryClient();
   clients.push(client);
   render(
@@ -66,7 +66,7 @@ function renderAt(path: string, closeAvailable?: boolean) {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/escalations" element={<EscalationQueue />} />
-          <Route path="/escalations/:escalationId" element={<EscalationDetailRoute closeAvailable={closeAvailable} submit={closeAvailable ? viaClient : undefined} />} />
+          <Route path="/escalations/:escalationId" element={<EscalationDetailRoute />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -181,7 +181,7 @@ describe("t178: Đóng ca 200 → POST đúng thân; ca rời danh sách Mở; c
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
     const calls = serve(store);
-    const client = renderAt(`/escalations/${target.escalation_id}`, true);
+    const client = renderAt(`/escalations/${target.escalation_id}`);
     await screen.findByText("Ghi chú bàn giao");
     expect(document.body.textContent).not.toMatch(/Minh hoạ — chưa ghi|Phase 7/);
     fireEvent.click(screen.getByRole("radio", { name: /Xác nhận từ chối/ }));
@@ -208,7 +208,7 @@ describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
     const calls = serve(store);
-    renderAt(`/escalations/${target.escalation_id}`, true);
+    renderAt(`/escalations/${target.escalation_id}`);
     await screen.findByText("Ghi chú bàn giao");
     store.close(target.escalation_id, "completed", "người khác", "khac", Date.now());
     const before = queueCalls(calls).length;
@@ -227,7 +227,7 @@ describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
     serve(store, { closeOverride: () => json(422, body) });
-    renderAt(`/escalations/${target.escalation_id}`, true);
+    renderAt(`/escalations/${target.escalation_id}`);
     await screen.findByText("Ghi chú bàn giao");
     fireEvent.click(screen.getByRole("radio", { name: /Mở yêu cầu mới/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "GHI-CHU-RIENG" } });
@@ -242,7 +242,7 @@ describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === code)!;
     serve(store);
-    renderAt(`/escalations/${target.escalation_id}`, true);
+    renderAt(`/escalations/${target.escalation_id}`);
     await screen.findByText("Ghi chú bàn giao");
     const completed = screen.getByRole("radio", { name: /Đã hoàn tất/ });
     expect(completed.getAttribute("aria-disabled")).toBe("true");
@@ -261,7 +261,7 @@ describe("t180: ca đã đóng (?status=closed) → chỉ đọc: kết quả, g
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("closed")[idx]!;
     const calls = serve(store);
-    renderAt(`/escalations/${target.escalation_id}?status=closed`, true);
+    renderAt(`/escalations/${target.escalation_id}?status=closed`);
     const info = await screen.findByTestId("closed-info");
     expect(within(info).getByTestId("closed-result").textContent).toBe(result);
     expect(within(info).getByTestId("closed-note").textContent).toBe(note);
@@ -280,7 +280,7 @@ describe("t189: đóng ca 200 — 'Mở yêu cầu mới' → đúng câu REOPEN
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
     serve(store, override ? { closeOverride: override } : {});
-    renderAt(`/escalations/${target.escalation_id}`, true);
+    renderAt(`/escalations/${target.escalation_id}`);
     await screen.findByText("Ghi chú bàn giao");
     fireEvent.click(screen.getByRole("radio", { name: result }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
@@ -313,7 +313,7 @@ describe("t189: đóng ca 200 — 'Mở yêu cầu mới' → đúng câu REOPEN
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
     serve(store, { closeOverride: () => json(404, { detail: "not_found" }) });
-    renderAt(`/escalations/${target.escalation_id}`, true);
+    renderAt(`/escalations/${target.escalation_id}`);
     await screen.findByText("Ghi chú bàn giao");
     fireEvent.click(screen.getByRole("radio", { name: /Mở yêu cầu mới/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
@@ -341,7 +341,7 @@ describe("t190: quyền đóng ca = escalation:handle (L1 + L2) — L1 thấy fo
         <AuthContext value={signedIn(me)}>
           <MemoryRouter initialEntries={[`/escalations/${target.escalation_id}`]}>
             <Routes>
-              <Route path="/escalations/:escalationId" element={<RequirePerm perm={perm}><EscalationDetailRoute closeAvailable submit={viaClient} /></RequirePerm>} />
+              <Route path="/escalations/:escalationId" element={<RequirePerm perm={perm}><EscalationDetailRoute submit={viaClient} /></RequirePerm>} />
             </Routes>
           </MemoryRouter>
         </AuthContext>

@@ -9,7 +9,7 @@ import { parseApprovalView } from "./approvals.ts";
 import { createClient } from "./client.ts";
 import { BAD_STRATEGIES, getStrategiesDashboard, parseStrategies, SOURCE_MISMATCH } from "./dashboard.ts";
 import { ApiError } from "./errors.ts";
-import { CLOSE_AVAILABLE, closeEscalation, getEscalationQueuePage, loadedItems, parseQueuePage, QUEUE_PAGE_LIMIT, queuePath, requestClose } from "./escalations.ts";
+import { closeEscalation, getEscalationQueuePage, loadedItems, parseQueuePage, QUEUE_PAGE_LIMIT, queuePath, requestClose } from "./escalations.ts";
 import {
   getStrategy,
   getStrategyHistory,
@@ -300,13 +300,17 @@ describe("t153: URL hàng đợi — status, limit 50 (≤ 100), after nguyên c
 
 // ------------------------------------------------------------------------------------------------ t154
 
-describe("t154: closeEscalation — CLOSE_AVAILABLE false → không gọi mạng", () => {
-  it("vitest (không DEV-mock): ném 'close_unavailable', 0 fetch", async () => {
-    const fetch = vi.fn();
+describe("t154: closeEscalation — route thật, không còn cờ chặn (ĐP 01/11 16:40)", () => {
+  it("closeEscalation là requestClose: POST /api/escalations/{id}/close đúng thân, 200 → xong", async () => {
+    expect(closeEscalation).toBe(requestClose);
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => json(200, {}));
     vi.stubGlobal("fetch", fetch);
-    expect(CLOSE_AVAILABLE).toBe(false);
-    await expect(closeEscalation(1, { close_result: "completed", note: "x" })).rejects.toThrow("close_unavailable");
-    expect(fetch).not.toHaveBeenCalled();
+    await expect(closeEscalation(7, { close_result: "confirmed_denial", note: "x" })).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain("/api/escalations/7/close");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toStrictEqual({ close_result: "confirmed_denial", note: "x" });
   });
 });
 

@@ -107,7 +107,6 @@ export const CLOSED_TEXT = "Đã đóng ca — ca đã rời danh sách Mở.";
  *  (`new_ticket_id` luôn null) — chỉ ghi nhận, nhân viên được báo tự gửi yêu cầu mới. Không mã, không link. */
 export const REOPENED_TEXT = "Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.";
 export const ALREADY_CLOSED_TEXT = "Ca đã được đóng";
-export const CLOSE_UNAVAILABLE_TEXT = "Chức năng đóng ca chưa bật ở máy chủ này.";
 
 export const STATUS_TABS: readonly { key: "open" | "closed"; label: string }[] = [
   { key: "open", label: "Mở" },

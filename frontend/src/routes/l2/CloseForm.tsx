@@ -1,14 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { CLOSE_AVAILABLE, CLOSE_NOTE_MAX, closeEscalation } from "../../api/escalations.ts";
+import { CLOSE_NOTE_MAX, closeEscalation } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueItem } from "../../api/types.ts";
-import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, CLOSE_UNAVAILABLE_TEXT, closeProblem, completedLock } from "./queue.ts";
+import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, closeProblem, completedLock } from "./queue.ts";
 
 type CloseFormProps = {
   item: EscalationQueueItem;
-  /** Mặc định `CLOSE_AVAILABLE` (api/escalations.ts — một hằng một chỗ). Tắt → nút gửi khoá, KHÔNG gọi `/close`. */
-  available?: boolean;
   onSubmit?: (id: number, body: EscalationCloseIn) => Promise<void>;
   /** 200: ca đã đóng với kết quả `result` (màn chi tiết giữ bản chụp ca + câu báo theo kết quả). */
   onClosed?: (result: EscalationCloseResult) => void;
@@ -18,7 +16,7 @@ type CloseFormProps = {
 // "Đã hoàn tất" khoá khi `completedLock` (ca E5 / E6). 200 → ca rời danh sách Mở (tải lại hàng đợi); 409 `already_closed` →
 // "Ca đã được đóng" + tải lại; 422 → lỗi đúng chỗ (nhóm kết quả / ô ghi chú). Câu lỗi KHÔNG nhắc lại ghi chú đã gõ. Không có
 // nút duyệt [Chốt 2.2].
-export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeEscalation, onClosed }: CloseFormProps) {
+export function CloseForm({ item, onSubmit = closeEscalation, onClosed }: CloseFormProps) {
   const queryClient = useQueryClient();
   const lock = completedLock(item);
   const [result, setResult] = useState<EscalationCloseResult | null>(null);
@@ -40,7 +38,7 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!available || inFlight.current) return;
+    if (inFlight.current) return;
     const problem = closeProblem(result, note, lock);
     if (problem !== null || result === null) {
       setError(problem);
@@ -158,16 +156,11 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
 
       <button
         type="submit"
-        disabled={!available || sending}
+        disabled={sending}
         className="mt-2 h-11 rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60"
       >
         {sending ? "Đang gửi…" : "Đóng ca"}
       </button>
-      {!available ? (
-        <p className="text-secondary text-ink-2" data-testid="close-unavailable">
-          {CLOSE_UNAVAILABLE_TEXT}
-        </p>
-      ) : null}
     </form>
   );
 }

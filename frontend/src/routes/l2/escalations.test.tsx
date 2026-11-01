@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { errorMessage, ApiError } from "../../api/errors.ts";
-import { CLOSE_AVAILABLE, closeEscalation, queueQuery } from "../../api/escalations.ts";
+import { closeEscalation, queueQuery } from "../../api/escalations.ts";
 import { api } from "../../api/http.ts";
 import type { EscalationCloseIn, EscalationQueueItem, Me, TicketView } from "../../api/types.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
@@ -27,7 +27,6 @@ import {
   handoffRows,
   isHidden,
   NO_IDS,
-  CLOSE_UNAVAILABLE_TEXT,
   noMatchPartialText,
   notLoadedText,
   NO_MATCH_TEXT,
@@ -122,7 +121,7 @@ const L1: Me = {
   permissions: ["approval:decide", "decision:override", "escalation:handle", "ticket:create", "ticket:read:any"],
 };
 
-function renderAt(path: string, { me, closeAvailable }: { me?: Me; closeAvailable?: boolean } = {}) {
+function renderAt(path: string, { me }: { me?: Me } = {}) {
   const client = new QueryClient();
   clients.push(client);
   return render(
@@ -131,7 +130,7 @@ function renderAt(path: string, { me, closeAvailable }: { me?: Me; closeAvailabl
         {me ? <Sidebar me={me} onSignOut={async () => true} /> : null}
         <Routes>
           <Route path="/escalations" element={<EscalationQueue />} />
-          <Route path="/escalations/:escalationId" element={<EscalationDetailRoute closeAvailable={closeAvailable} />} />
+          <Route path="/escalations/:escalationId" element={<EscalationDetailRoute />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -317,7 +316,7 @@ describe("t31: ghi chú rỗng / chỉ khoảng trắng → không gửi", () =>
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const onClosed = vi.fn();
-    render(withClient(<CloseForm item={esc("E3", { escalation_id: 31 })} available onSubmit={submit} onClosed={onClosed} />));
+    render(withClient(<CloseForm item={esc("E3", { escalation_id: 31 })} onSubmit={submit} onClosed={onClosed} />));
     const send = screen.getByRole("button", { name: "Đóng ca" });
     const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
 
@@ -351,7 +350,7 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
     const viaClient = async (id: number, body: EscalationCloseIn) => {
       await api.request(`/api/escalations/${id}/close`, { method: "POST", json: body });
     };
-    render(withClient(<CloseForm item={esc("E3", { escalation_id: 32 })} available onSubmit={viaClient} />));
+    render(withClient(<CloseForm item={esc("E3", { escalation_id: 32 })} onSubmit={viaClient} />));
     fireEvent.click(radio(COMPLETED));
     const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
     fireEvent.change(note, { target: { value: "Đã cấp lại quyền." } });
@@ -375,25 +374,41 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
 
 // ------------------------------------------------------------------------------------------------ t33
 
-describe("t33: MSW tắt → nút gửi khoá, 0 lời gọi /close", () => {
-  it("mặc định (vitest: không DEV-mock) → khoá + câu 'chưa bật' (không còn 'Phase 7'); bấm / submit form / gọi thẳng API đều không tới /close", async () => {
-    expect(CLOSE_AVAILABLE).toBe(false);
-    const calls = stubApi([esc("E3", { escalation_id: 33 })], () => json(202, {}));
+describe("t33: đóng ca đi route thật (ĐP 01/11 16:40 — bỏ cờ CLOSE_AVAILABLE), không còn câu 'chưa bật'", () => {
+  it("mặc định (không truyền submit) → nút bật, POST /close đúng thân, 200 → 'Đã đóng ca…'", async () => {
+    const calls = stubApi([esc("E3", { escalation_id: 33 })], () => json(200, {}));
     renderAt("/escalations/33");
     await screen.findByText("Ghi chú bàn giao");
+    expect(screen.queryByTestId("close-unavailable")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/chưa bật|Phase 7|Minh hoạ — chưa ghi/);
     const send = screen.getByRole("button", { name: "Đóng ca" }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    expect(screen.getByTestId("close-unavailable").textContent).toBe(CLOSE_UNAVAILABLE_TEXT);
-    expect(CLOSE_UNAVAILABLE_TEXT).toBe("Chức năng đóng ca chưa bật ở máy chủ này.");
+    expect(send.disabled).toBe(false);
     fireEvent.click(radio(DENIAL));
-    fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "ghi chú" } });
+    fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "  ghi chú  " } });
     fireEvent.click(send);
-    fireEvent.submit(send.closest("form")!);
-    await expect(closeEscalation(33, { close_result: "confirmed_denial", note: "x" })).rejects.toThrow("close_unavailable");
-    await new Promise((r) => setTimeout(r, 20));
-    expect(calls.filter((c) => c.url.includes("/close"))).toHaveLength(0);
+    await screen.findByTestId("close-done");
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts.map((c) => c.url)).toStrictEqual(["/api/escalations/33/close"]);
+    expect(JSON.parse(posts[0]!.body!)).toStrictEqual({ close_result: "confirmed_denial", note: "ghi chú" });
+    expect(closeEscalation).toBeTypeOf("function");
+  });
+
+  it("422 fields ['close_result'] cho ca E6 → báo lỗi ở chỗ chọn kết quả, giữ form", async () => {
+    const calls = stubApi([esc("E6", { escalation_id: 36 })], () =>
+      json(422, { error: "invalid_request", fields: ["close_result"] }), // đúng hình backend InvalidRequest(["close_result"])
+    );
+    renderAt("/escalations/36");
+    await screen.findByText("Ghi chú bàn giao");
+    fireEvent.click(radio(DENIAL));
+    const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
+    fireEvent.change(note, { target: { value: "ghi chú" } });
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Kết quả đóng này không dùng được cho ca này.");
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(screen.queryByTestId("close-done")).toBeNull();
-    expect(document.body.textContent).not.toMatch(/Phase 7|Minh hoạ — chưa ghi/);
+    expect(radio(DENIAL).getAttribute("aria-checked")).toBe("true");
+    expect(note.value).toBe("ghi chú");
   });
 });
 
@@ -408,14 +423,14 @@ describe("t34: không có nút duyệt / đồng ý / phê duyệt ở mọi mà
   }
 
   it.each([
-    ["hàng đợi (L2)", "/escalations", L2, false],
-    ["hàng đợi (L1 — thanh bên có mục duyệt dạng link)", "/escalations", L1, false],
-    ["chi tiết ca deny", "/escalations/34", L2, false],
-    ["chi tiết ca E3, đóng ca bật (dev:mock)", "/escalations/35", L2, true],
-    ["ca không còn", "/escalations/999", L1, false],
-  ])("%s", async (_name, path, me, closeAvailable) => {
+    ["hàng đợi (L2)", "/escalations", L2],
+    ["hàng đợi (L1 — thanh bên có mục duyệt dạng link)", "/escalations", L1],
+    ["chi tiết ca deny", "/escalations/34", L2],
+    ["chi tiết ca E3 (có form đóng ca)", "/escalations/35", L2],
+    ["ca không còn", "/escalations/999", L1],
+  ])("%s", async (_name, path, me) => {
     stubApi([esc("E5", { escalation_id: 34 }), esc("E3", { escalation_id: 35 })]);
-    renderAt(path, { me, closeAvailable });
+    renderAt(path, { me });
     await waitFor(() => expect(document.querySelector("h1")).toBeTruthy());
     await waitFor(() => expect(screen.queryByText(/^Đang tải/)).toBeNull());
     const texts = buttonTexts();
@@ -490,8 +505,8 @@ describe("t36: handler MSW /close — kết quả theo kho minh hoạ (N-PA: 200
     ["E6 + completed → 422 fields close_result (B20)", "E6", { close_result: "completed", note: "x" }, 422, { error: "invalid_request", fields: ["close_result"] }],
     ["E5 + confirmed_denial → 200", "E5", { close_result: "confirmed_denial", note: "x" }, 200, undefined],
     ["E3 + completed → 200", "E3", { close_result: "completed", note: "x" }, 200, undefined],
-    ["ghi chú chỉ khoảng trắng → 422 body.note", "E3", { close_result: "reopened_as_new", note: "  " }, 422, { error: "invalid_request", fields: ["body.note"] }],
-    ["thừa khoá → 422", "E3", { close_result: "completed", note: "x", force: true }, 422, { error: "invalid_request", fields: ["body.force"] }],
+    ["ghi chú chỉ khoảng trắng → 422 note", "E3", { close_result: "reopened_as_new", note: "  " }, 422, { error: "invalid_request", fields: ["note"] }],
+    ["thừa khoá → 422", "E3", { close_result: "completed", note: "x", force: true }, 422, { error: "invalid_request", fields: ["force"] }],
   ])("%s", (_name, code, body, status, expected) => {
     const store = createEscalationStore(Date.now(), 10);
     const item = store.list("open").find((i) => i.exit_code === code)!;
