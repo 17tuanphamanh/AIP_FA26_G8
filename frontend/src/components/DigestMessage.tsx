@@ -15,6 +15,7 @@ import {
   replyErrorView,
 } from "../routes/employee/multi.ts";
 import { ownEntry } from "../lib/lookup.ts";
+import { AVATAR_CLASS, AVATAR_INDENT } from "./avatar.ts";
 import type { Digest } from "./messages.ts";
 import { SafeMarkdown } from "./SafeMarkdown.tsx";
 
@@ -82,11 +83,11 @@ export function DigestMessage({ digest, form, newRequestLink = false }: Props) {
 
   return (
     <div className="flex flex-col gap-3" data-testid="digest" data-round={digest.round} data-active={active}>
-      <div className="flex items-start gap-2.5">
-        <img src={logoUrl} alt="" width={24} height={24} className="mt-0.5 shrink-0" />
-        <p>{digestLead(digest.items.length, active)}</p>
+      <div className="flex items-start gap-3">
+        <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
+        <p className="pt-0.5">{digestLead(digest.items.length, active)}</p>
       </div>
-      <div className="ml-8.5 rounded-sheet bg-group p-1.5">
+      <div className={`${AVATAR_INDENT} rounded-sheet border border-line bg-group p-1.5`}>
         <div className="overflow-hidden rounded-group bg-white">
           {digest.items.map((item, at) => (
             <DigestBlock
@@ -113,7 +114,7 @@ export function DigestMessage({ digest, form, newRequestLink = false }: Props) {
                 type="button"
                 onClick={() => void submit()}
                 disabled={form.sending}
-                className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white disabled:opacity-60"
+                className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white hover:bg-fpt-blue/90 disabled:opacity-60"
               >
                 {form.sending ? "Đang gửi…" : "Gửi phản hồi"}
               </button>
