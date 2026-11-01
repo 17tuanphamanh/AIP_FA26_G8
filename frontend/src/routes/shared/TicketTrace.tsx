@@ -216,11 +216,13 @@ function StepCard({ step: s }: { step: TraceStep }) {
 function TraceButton({ ticketId }: { ticketId: string | undefined }) {
   if (!ticketId || !TRACE_TICKET_ID.test(ticketId)) return null;
   return (
-    <div className="flex justify-end px-12 pt-6">
+    // Cao 0 + sticky: nút nổi ở góc phải trên, KHÔNG chiếm một hàng — màn chi tiết (h-full) không bị đẩy xuống, thanh quyết
+    // định của phiếu duyệt luôn nằm trong khung nhìn.
+    <div className="sticky top-0 z-10 flex h-0 justify-end overflow-visible px-12">
       <Link
         to={tracePath(ticketId)}
         data-testid="trace-link"
-        className="inline-flex h-11 items-center rounded-full bg-button-2 px-5 font-semibold text-fpt-blue"
+        className="mt-6 inline-flex h-9 items-center rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-group"
       >
         {TRACE_TITLE}
       </Link>

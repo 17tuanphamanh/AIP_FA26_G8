@@ -129,19 +129,25 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
         data-approval-id={item.approval_id}
         data-urgent={urgent}
         data-role-as={item.role_as}
-        className="grid min-h-13 grid-cols-[150px_minmax(0,1fr)_auto_14px] items-center gap-5 px-5 py-3 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className={`grid min-h-15 grid-cols-[132px_minmax(0,1fr)_auto_14px] items-center gap-5 border-l-3 py-3 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue ${
+          urgent ? "border-l-danger" : pending ? "border-l-fpt-orange" : "border-l-transparent"
+        }`}
       >
+        {/* Vạch mép trái = mức gấp (đỏ: còn dưới 20% thời gian; cam: đang chờ) — cùng nghĩa với chữ thời gian, không thay chữ. */}
         <span
           data-testid="inbox-time"
-          className={`inline-flex items-center gap-2 text-secondary tabular-nums ${urgent ? "font-semibold text-danger" : ""}`}
+          className={`text-secondary tabular-nums ${urgent ? "font-semibold text-danger" : pending ? "text-ink" : "text-ink-2"}`}
         >
-          <span className={`size-1.75 shrink-0 rounded-full ${urgent ? "bg-danger" : pending ? "bg-fpt-orange" : "bg-ink-3"}`} aria-hidden="true" />
           {pending ? remainingShort(item.deadline, now) : ownEntry(STATUS_LABEL, item.status, "")}
         </span>
         <span className="flex min-w-0 flex-col">
-          <span className="truncate">{actionLabel(item.action_type)}</span>
+          <span className="truncate font-semibold">{actionLabel(item.action_type)}</span>
           <span className="truncate text-secondary text-ink-2">
-            Máy {item.device_id ?? "(không có)"} · Ticket <span className="font-mono">{item.ticket_id}</span>
+            Máy {item.device_id ?? "(không có)"} · Ticket{" "}
+            {/* Mã ticket dài (UUID): chỉ rút gọn khi HIỂN THỊ — chữ đủ vẫn nằm trong trang + hiện khi rê chuột. */}
+            <span className="inline-block max-w-[10ch] truncate align-bottom font-mono" title={item.ticket_id}>
+              {item.ticket_id}
+            </span>
           </span>
         </span>
         <span className="flex items-center gap-2">

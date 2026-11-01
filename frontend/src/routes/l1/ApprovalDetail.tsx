@@ -116,16 +116,25 @@ function Deadline({ view, createdAt }: { view: ApprovalViewP4; createdAt: string
     );
   }
   const urgent = isUrgent(createdAt, view.deadline, now);
+  // Phần thời gian còn lại (0–1) — chỉ khi biết lúc tạo phiếu; không biết thì chỉ hiện chữ.
+  const end = Date.parse(view.deadline);
+  const start = createdAt === null ? Number.NaN : Date.parse(createdAt);
+  const left = end > start ? Math.min(1, Math.max(0, (end - now) / (end - start))) : null;
   return (
-    <span
-      data-testid="approval-deadline"
-      data-urgent={urgent}
-      className={`shrink-0 rounded-full px-3.5 py-1.5 text-secondary font-semibold tabular-nums ${
-        urgent ? "bg-danger-bg text-danger" : "bg-group text-ink"
-      }`}
-    >
-      {remainingClock(view.deadline, now, createdAt)}
-    </span>
+    <div className="flex shrink-0 flex-col items-end gap-2">
+      <span
+        data-testid="approval-deadline"
+        data-urgent={urgent}
+        className={`font-semibold tabular-nums ${urgent ? "text-danger" : "text-ink"}`}
+      >
+        {remainingClock(view.deadline, now, createdAt)}
+      </span>
+      {left !== null ? (
+        <span aria-hidden="true" className="block h-1 w-44 overflow-hidden rounded-full bg-line">
+          <span className={`block h-full rounded-full ${urgent ? "bg-danger" : "bg-fpt-orange"}`} style={{ width: `${left * 100}%` }} />
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -218,16 +227,15 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div data-testid="approval-scroll" className="min-h-0 grow overflow-y-auto">
-        <section className="flex flex-col gap-6 px-12 pt-8 pb-6">
-          <div className="flex flex-col gap-1">
-            {BACK}
-            <div className="flex items-center gap-4">
-              <h1 className="min-w-0 grow text-title">
-                Phiếu <span className="font-mono">{view.approval_id}</span>
-              </h1>
-              <Deadline view={view} createdAt={createdAt} />
-            </div>
+      {/* Đầu phiếu đứng yên khi cuộn: tên phiếu + đồng hồ hạn duyệt luôn trong tầm mắt. Hàng nút quay lại ngang hàng nút
+          "Nhật ký quyết định" (nổi ở góc phải). */}
+      <header className="shrink-0 border-b border-line bg-white px-12 pt-6 pb-4">
+        <div className="flex h-9 items-center">{BACK}</div>
+        <div className="mt-1 flex items-end gap-6">
+          <div className="flex min-w-0 grow flex-col gap-1">
+            <h1 className="min-w-0 text-title">
+              Phiếu <span className="font-mono">{view.approval_id}</span>
+            </h1>
             <p className="text-label font-normal text-ink-2">
               Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
               {deadlineAt ? (
@@ -238,7 +246,11 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               ) : null}
             </p>
           </div>
-
+          <Deadline view={view} createdAt={createdAt} />
+        </div>
+      </header>
+      <div data-testid="approval-scroll" className="min-h-0 grow overflow-y-auto">
+        <section className="flex flex-col gap-6 px-12 pt-6 pb-6">
           {role === "backup" ? (
             <div role="note" data-testid="backup-banner" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
               <b className="font-semibold">{BACKUP_TEXT}</b> — người duyệt chính chưa quyết sau lần nhắc thứ hai.
@@ -267,69 +279,22 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
             </div>
           ) : null}
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <Block title="Hệ thống sẽ thực hiện chính xác">
-              <ActionView action={view.action} hash={view.action_plan_hash} title={title} />
-            </Block>
+          {/* Thứ tự theo cách người duyệt đọc: người gửi xin gì → hệ thống sẽ làm gì → các luật khớp. Cột phải: rủi ro trước,
+              rồi người bị ảnh hưởng, người gửi, căn cứ, dữ kiện. Chỉ đổi vị trí — nội dung từng khối giữ nguyên. */}
+          <div className="grid items-start gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="flex min-w-0 flex-col gap-6">
+                <Block title="Yêu cầu của người gửi">
+                  <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
+                    {view.request_summary}
+                  </p>
+                </Block>
+              <Block title="Hệ thống sẽ thực hiện chính xác">
+                <ActionView action={view.action} hash={view.action_plan_hash} title={title} />
+              </Block>
+              {/* N-PA P4: các luật khớp (khoá gốc `matched_rules`, tuỳ chọn) — số luật áp dụng sai chỉ báo tại bảng. */}
+              <MatchedRules rules={view.matched_rules} />
+            </div>
             <aside className="flex flex-col gap-6">
-              <Block title="Yêu cầu của người gửi">
-                <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
-                  {view.request_summary}
-                </p>
-              </Block>
-              <Block title="Người gửi">
-                <dl className="overflow-hidden rounded-group border border-line text-secondary">
-                  <div className="flex justify-between gap-4 px-5 py-3">
-                    <dt>Vai trò</dt>
-                    <dd className="text-ink-2">{requesterRole}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
-                    <dt>Phòng ban</dt>
-                    <dd className="text-ink-2">{department}</dd>
-                  </div>
-                </dl>
-              </Block>
-              <Block title="Người bị ảnh hưởng">
-                <div data-testid="affected" className="flex flex-col gap-2">
-                  {!affected.is_requester ? (
-                    <p role="note" data-testid="affected-other" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
-                      <b className="font-semibold">{AFFECTED_OTHER_TEXT}</b> — hành động áp dụng lên tài khoản này, không phải người gửi.
-                    </p>
-                  ) : null}
-                  <dl className="overflow-hidden rounded-group border border-line text-secondary">
-                    <div className="flex justify-between gap-4 px-5 py-3">
-                      <dt>Tài khoản</dt>
-                      <dd data-testid="affected-user" className="font-mono text-ink-2">
-                        {affected.user_id}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
-                      <dt>Quan hệ với người gửi</dt>
-                      <dd data-testid="affected-relation" className="text-ink-2">
-                        {affected.is_requester ? AFFECTED_SELF_TEXT : AFFECTED_OTHER_TEXT}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
-                      <dt>Phòng ban</dt>
-                      <dd data-testid="affected-department" className="text-ink-2">
-                        {affected.department || MISSING_VALUE}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
-                      <dt>Quản lý</dt>
-                      <dd data-testid="affected-manager" data-known={affected.manager.status === "known"} className="text-right text-ink-2">
-                        {managerText(affected.manager)}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </Block>
-              <Block title="Căn cứ quy trình">
-                <p data-testid="procedure" className="flex flex-col rounded-group border border-line px-5 py-3">
-                  <span>{procedureTitle || procedureDoc}</span>
-                  {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
-                </p>
-              </Block>
               <Block title="Đánh giá rủi ro">
                 {view.risk ? (
                   <div className="flex flex-col gap-2">
@@ -386,6 +351,59 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                   </p>
                 )}
               </Block>
+              <Block title="Người bị ảnh hưởng">
+                <div data-testid="affected" className="flex flex-col gap-2">
+                  {!affected.is_requester ? (
+                    <p role="note" data-testid="affected-other" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                      <b className="font-semibold">{AFFECTED_OTHER_TEXT}</b> — hành động áp dụng lên tài khoản này, không phải người gửi.
+                    </p>
+                  ) : null}
+                  <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                    <div className="flex justify-between gap-4 px-5 py-3">
+                      <dt>Tài khoản</dt>
+                      <dd data-testid="affected-user" className="font-mono text-ink-2">
+                        {affected.user_id}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Quan hệ với người gửi</dt>
+                      <dd data-testid="affected-relation" className="text-ink-2">
+                        {affected.is_requester ? AFFECTED_SELF_TEXT : AFFECTED_OTHER_TEXT}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Phòng ban</dt>
+                      <dd data-testid="affected-department" className="text-ink-2">
+                        {affected.department || MISSING_VALUE}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Quản lý</dt>
+                      <dd data-testid="affected-manager" data-known={affected.manager.status === "known"} className="text-right text-ink-2">
+                        {managerText(affected.manager)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </Block>
+              <Block title="Người gửi">
+                <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                  <div className="flex justify-between gap-4 px-5 py-3">
+                    <dt>Vai trò</dt>
+                    <dd className="text-ink-2">{requesterRole}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                    <dt>Phòng ban</dt>
+                    <dd className="text-ink-2">{department}</dd>
+                  </div>
+                </dl>
+              </Block>
+              <Block title="Căn cứ quy trình">
+                <p data-testid="procedure" className="flex flex-col rounded-group border border-line px-5 py-3">
+                  <span>{procedureTitle || procedureDoc}</span>
+                  {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
+                </p>
+              </Block>
               <Block title="Dữ kiện đã kiểm">
                 <div className="overflow-hidden rounded-group border border-line">
                   <FlatTable value={view.facts} testId="fact-row" />
@@ -393,9 +411,6 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               </Block>
             </aside>
           </div>
-
-          {/* N-PA P4: các luật khớp (khoá gốc `matched_rules`, tuỳ chọn) — số luật áp dụng sai chỉ báo tại bảng. */}
-          <MatchedRules rules={view.matched_rules} />
 
           {error ? (
             <p role="alert" className="text-danger">

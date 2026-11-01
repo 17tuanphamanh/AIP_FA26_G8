@@ -13,7 +13,7 @@ export function MatchedRules({ rules, headingLevel = 2 }: { rules: readonly Matc
         <>
           <div className="overflow-x-auto rounded-group border border-line">
             <table className="w-full text-left text-secondary">
-              <thead className="text-label text-ink-2">
+              <thead className="bg-group text-label text-ink-2">
                 <tr>
                   <th scope="col" className="px-5 py-2.5 font-normal">Luật</th>
                   <th scope="col" className="px-5 py-2.5 font-normal">Mô tả</th>

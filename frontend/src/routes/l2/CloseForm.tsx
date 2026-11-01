@@ -94,7 +94,7 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
               data-value={option.value}
               onClick={() => pick(option.value)}
               className={`flex w-full items-center gap-3 border-t border-line px-5 py-3 text-left first:border-t-0 focus-visible:outline-2 focus-visible:outline-fpt-blue ${
-                locked ? "cursor-not-allowed bg-group" : "bg-white hover:bg-group"
+                locked ? "cursor-not-allowed bg-group" : on ? "bg-selected" : "bg-white hover:bg-group"
               }`}
             >
               <span className="flex min-w-0 grow flex-col">
@@ -107,8 +107,11 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
                   <path d="M8 11V8a4 4 0 0 1 8 0v3" />
                 </svg>
               ) : (
-                <span className={`shrink-0 font-semibold text-fpt-blue ${on ? "visible" : "invisible"}`} aria-hidden="true">
-                  ✓
+                <span
+                  aria-hidden="true"
+                  className={`flex size-4.5 shrink-0 items-center justify-center rounded-full border-2 ${on ? "border-fpt-blue" : "border-ink-3"}`}
+                >
+                  <span className={`size-2 rounded-full ${on ? "bg-fpt-blue" : "bg-transparent"}`} />
                 </span>
               )}
             </button>
