@@ -38,23 +38,21 @@ const BACK = (
 /** Route `/escalations/:escalationId` — `key` theo id + trạng thái để form đóng không mang nháp sang ca khác. */
 type Submit = (id: number, body: EscalationCloseIn) => Promise<void>;
 
-/** `closeAvailable` / `submit`: chỉ test truyền (mặc định `CLOSE_AVAILABLE` + `closeEscalation`). */
-export function EscalationDetailRoute({ closeAvailable, submit }: { closeAvailable?: boolean; submit?: Submit }) {
+/** `submit`: chỉ test truyền (mặc định `closeEscalation` — route thật). */
+export function EscalationDetailRoute({ submit }: { submit?: Submit }) {
   const { escalationId = "" } = useParams();
   const [params] = useSearchParams();
   const status: EscalationQueueStatus = params.get("status") === "closed" ? "closed" : "open";
-  return <EscalationDetail key={`${escalationId}|${status}`} escalationId={escalationId} status={status} closeAvailable={closeAvailable} submit={submit} />;
+  return <EscalationDetail key={`${escalationId}|${status}`} escalationId={escalationId} status={status} submit={submit} />;
 }
 
 function EscalationDetail({
   escalationId,
   status,
-  closeAvailable,
   submit,
 }: {
   escalationId: string;
   status: EscalationQueueStatus;
-  closeAvailable?: boolean;
   submit?: Submit;
 }) {
   const id = /^\d{1,15}$/.test(escalationId) ? Number(escalationId) : null;
@@ -66,7 +64,7 @@ function EscalationDetail({
   const loadingMore = useRef(false);
 
   if (closedSnap) {
-    return <Detail item={closedSnap.item} now={query.dataUpdatedAt} closeAvailable={closeAvailable} justClosed closedWith={closedSnap.result} />;
+    return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} />;
   }
   if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2">Đang tải ca…</p>;
   if (id !== null && items === undefined) {
@@ -108,13 +106,12 @@ function EscalationDetail({
       </section>
     );
   }
-  return <Detail item={found} now={query.dataUpdatedAt} closeAvailable={closeAvailable} submit={submit} onClosed={(result) => setClosedSnap({ item: found, result })} />;
+  return <Detail item={found} now={query.dataUpdatedAt} submit={submit} onClosed={(result) => setClosedSnap({ item: found, result })} />;
 }
 
 function Detail({
   item,
   now,
-  closeAvailable,
   submit,
   onClosed,
   justClosed = false,
@@ -122,7 +119,6 @@ function Detail({
 }: {
   item: QueueItem;
   now: number;
-  closeAvailable?: boolean;
   submit?: Submit;
   onClosed?: (result: EscalationCloseResult) => void;
   justClosed?: boolean;
@@ -181,7 +177,7 @@ function Detail({
           ) : closed ? (
             <ClosedInfo item={item} />
           ) : (
-            <CloseForm item={item} available={closeAvailable} onSubmit={submit} onClosed={onClosed} />
+            <CloseForm item={item} onSubmit={submit} onClosed={onClosed} />
           )}
         </div>
       </div>

@@ -76,9 +76,9 @@ export type EscalationQueueItem = {
   created_at: string;
 };
 
-// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + hợp đồng N-PA §4 — `POST /api/escalations/{id}/close` CHƯA CÓ
-// (be-tuan8). Thân đúng 2 khoá; ghi chú bắt buộc 1–1000 ký tự. Thành công 200; 422 ca E5/E6 + `completed`; 409
-// `already_closed`. Xoá khi: be-tuan8 merge → gen:api (xoá cùng mocks/handlers/escalation-close.ts).
+// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + hợp đồng N-PA §4 — `POST /api/escalations/{id}/close` (route thật,
+// backend/app/api/escalations.py). Thân đúng 2 khoá; ghi chú bắt buộc 1–1000 ký tự. Thành công 200; 404 `not_found`; 409
+// `already_closed`; 422 fields ["close_result"] (ca deny/E5/E6 + `completed`) / ["note"]. Xoá khi: gen:api có kiểu này.
 export type EscalationCloseResult = "completed" | "confirmed_denial" | "reopened_as_new";
 export type EscalationCloseIn = { close_result: EscalationCloseResult; note: string };
 

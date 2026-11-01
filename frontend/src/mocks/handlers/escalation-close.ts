@@ -5,20 +5,20 @@ import type { CloseOutcome, EscalationStore } from "../fixtures/escalations.ts";
 import { escalationStore } from "./escalation-queue.ts";
 import { readJson, reply, requireAny } from "./shared.ts";
 
-// `POST /api/escalations/:id/close` — route CHƯA CÓ (be-tuan8; B20 §4.3, hợp đồng N-PA §4). Xoá file này khi be-tuan8 merge
-// (và đổi `CLOSE_AVAILABLE` ở api/escalations.ts thành `true`). Đóng ca trên kho minh hoạ của escalation-queue.ts: 200 → ca
-// rời danh sách mở; 409 `already_closed`; 404; 422 ca E5/E6 + `completed`; 422 thân sai.
+// `POST /api/escalations/:id/close` — route THẬT đã có (be-tuan8, backend/app/api/escalations.py). File này CHỈ để dev:mock
+// đóng được ca MINH HOẠ của escalation-queue.ts, cùng hình dạng route thật: 200 (thân EscalationCloseOut) → ca rời danh sách
+// mở; 404 `not_found`; 409 `already_closed`; 422 `fields: ["close_result"]` (completed cho ca deny / E6); 422 thân sai với
+// `fields` KHÔNG tiền tố (`parse_body` của backend): `["close_result"]`, `["note"]`, hoặc tên khoá thừa.
 
-/** Kiểm thân như backend (`extra="forbid"`): đúng 2 khoá; lỗi → danh sách trường kiểu `body.<khoá>`. */
+/** Kiểm thân như backend (`extra="forbid"`): đúng 2 khoá; lỗi → danh sách trường không tiền tố như `parse_body`. */
 export function parseCloseIn(body: unknown): { value: EscalationCloseIn } | { fields: string[] } {
   if (body === null || typeof body !== "object" || Array.isArray(body)) return { fields: ["body"] };
   const b = body as Record<string, unknown>;
   const fields = Object.keys(b)
-    .filter((k) => k !== "close_result" && k !== "note")
-    .map((k) => `body.${k}`);
-  if (!CLOSE_RESULTS.includes(b.close_result as EscalationCloseResult)) fields.push("body.close_result");
+    .filter((k) => k !== "close_result" && k !== "note");
+  if (!CLOSE_RESULTS.includes(b.close_result as EscalationCloseResult)) fields.push("close_result");
   const note = typeof b.note === "string" ? b.note.trim() : "";
-  if (!note || note.length > CLOSE_NOTE_MAX) fields.push("body.note");
+  if (!note || note.length > CLOSE_NOTE_MAX) fields.push("note");
   return fields.length ? { fields } : { value: { close_result: b.close_result as EscalationCloseResult, note } };
 }
 

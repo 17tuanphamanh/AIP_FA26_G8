@@ -2,11 +2,11 @@
 // - `GET /api/escalations/queue?status=open|closed&limit=&after=` → `{items, next_cursor}` (đọc CHẶT: mảng trần, item sai
 //   kiểu, ca đóng thiếu `closed_at`/`close_result`/`closed_by`, ca mở mang thông tin đóng → 502 `invalid_queue_body`).
 //   `limit` ≤ 100; `after` = chuỗi mờ lấy nguyên từ `next_cursor` của trang trước. Giữ thứ tự server.
-// - `POST /api/escalations/{id}/close` thân `{close_result, note}` → 200. Route CHƯA CÓ ở backend: chỉ gọi được khi
-//   `CLOSE_AVAILABLE` (hiện = MSW bật, mocks/handlers/escalation-close.ts) — không bao giờ gửi tới backend thật khi tắt.
+// - `POST /api/escalations/{id}/close` thân `{close_result, note}` → 200 (route THẬT be-tuan8, backend/app/api/escalations.py).
+//   Lỗi: 404 `not_found`; 409 `already_closed`; 422 `fields: ["close_result"]` (completed cho ca deny / E5 / E6) hoặc
+//   `fields: ["note"]` (ghi chú sau khi che rỗng / > 1000). dev:mock: mocks/handlers/escalation-close.ts giả cùng hình dạng.
 // Chưa có `GET /api/escalations/{id}` → chi tiết tìm ca trong các trang ĐÃ tải của hàng đợi (cùng cache).
 import { infiniteQueryOptions, type InfiniteData } from "@tanstack/react-query";
-import { MOCK_ENABLED } from "../mocks/flag.ts";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
 import type {
@@ -21,12 +21,6 @@ export const QUEUE_PAGE_LIMIT = 50;
 export const QUEUE_REFRESH_MS = 15_000;
 /** Ghi chú đóng: bắt buộc, sau khi cắt khoảng trắng 1…1000 ký tự. */
 export const CLOSE_NOTE_MAX = 1000;
-/**
- * Đóng ca chỉ có khi MSW bật (dev + `VITE_API_MOCK=1`). Bản build: hằng `false`.
- * BẬT khi route thật `POST /api/escalations/{id}/close` (be-tuan8) vào nhánh: đổi DUY NHẤT dòng này thành `true` rồi xoá
- * mocks/handlers/escalation-close.ts.
- */
-export const CLOSE_AVAILABLE: boolean = MOCK_ENABLED;
 export const CLOSE_RESULTS: readonly EscalationCloseResult[] = ["completed", "confirmed_denial", "reopened_as_new"];
 
 export type QueueItem = EscalationQueuePage["items"][number];
@@ -118,7 +112,7 @@ export const hasMore = (data: InfiniteData<EscalationQueuePage> | undefined): bo
 export const queueRefetchInterval = (error: unknown): number | false => (is403(error) ? false : QUEUE_REFRESH_MS);
 
 /**
- * Gửi `POST /close` (KHÔNG kiểm `CLOSE_AVAILABLE` — chỉ `closeEscalation` và test gọi). CHỈ 200 = đã đóng; 2xx khác → 502
+ * Gửi `POST /close`. CHỈ 200 = đã đóng; 2xx khác → 502
  * (không chắc đã ghi → không báo thành công giả; gửi lại → 409 `already_closed` là đúng sự thật).
  */
 export async function requestClose(id: number, body: EscalationCloseIn): Promise<void> {
@@ -128,9 +122,6 @@ export async function requestClose(id: number, body: EscalationCloseIn): Promise
   // không hiện mã / link ticket mới.
 }
 
-/** Đóng ca từ màn. Lớp chặn thứ hai (lớp đầu: nút gửi khoá): route chưa bật → tuyệt đối không gửi. */
-export async function closeEscalation(id: number, body: EscalationCloseIn): Promise<void> {
-  if (!CLOSE_AVAILABLE) throw new Error("close_unavailable");
-  return requestClose(id, body);
-}
+/** Đóng ca từ màn — route thật (ĐP 01/11 16:40: bỏ cờ CLOSE_AVAILABLE, hợp đồng N-PA §4). */
+export const closeEscalation = requestClose;
 

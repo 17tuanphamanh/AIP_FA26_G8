@@ -233,7 +233,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
       <div className="flex flex-col gap-1.5 border-b border-line px-5 py-4">
         <h3 className="sr-only">{title}</h3>
         {/* Điều kiện 4: mã băm rút gọn + sao chép ngay đầu bảng; câu chú thích. Mã đủ vẫn ở chân bảng. */}
-        <div className="flex items-center gap-2 text-label font-normal text-ink-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-label font-normal text-ink-2">
           <span>Mã băm</span>
           <code data-testid="action-hash-short" title={hash} className="font-mono text-ink">
             {hash.slice(0, 12)}…
@@ -246,8 +246,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
           {RAW_NOTE}
         </p>
       </div>
-      <div className="flex items-center gap-3 border-b border-line bg-group px-5 py-2.5">
-        <span className="grow" />
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-b border-line bg-group px-5 py-2.5">
         {mode === "table" ? (
           <button
             type="button"

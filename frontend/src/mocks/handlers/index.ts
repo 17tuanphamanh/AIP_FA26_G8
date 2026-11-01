@@ -18,7 +18,7 @@ import { overrideHandlers } from "./override.ts";
 // Mọi request khác đi thẳng qua proxy tới backend (`onUnhandledFrame: "bypass"`). Mọi response giả có header `Date`.
 export const handlers: HttpHandler[] = [
   ...escalationQueueHandlers, // N-PA: GET /api/escalations/queue dạng mới {items, next_cursor} (be-tuan8 chưa merge — Q-fe-N8)
-  ...escalationCloseHandlers, // N-PA: POST /api/escalations/:id/close (be-tuan8 chưa merge)
+  ...escalationCloseHandlers, // POST /api/escalations/:id/close — route thật đã có; chỉ chặn id ca MINH HOẠ của escalation-queue.ts
   ...strategyHandlers, // N-PA: GET/PUT /api/admin/strategy, GET …/history (D-67, be-tuan8 chưa merge)
   ...strategyCompareHandlers, // N-PA: GET /api/dashboard/strategies (be-tuan8 chưa merge) — business/ai vẫn route thật
   ...approvalHandlers, // F4/N4c: hộp thư = thật + minh hoạ; xem phiếu + decision chỉ id `apv-demo-` (Q-fe-5, P6)
