@@ -35,9 +35,9 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
           ‹ Chờ tôi duyệt
         </Link>
         <h1 className="text-title">
-          Ticket <span className="font-mono">{ticketId}</span>
+          Yêu cầu <span className="font-mono">{ticketId}</span>
         </h1>
-        <p className="text-ink-2">Xem chỉ đọc. Ghi đè không đổi ticket — chỉ ghi vào nhật ký để đánh giá lại hệ thống.</p>
+        <p className="text-ink-2">Xem chỉ đọc. Ghi đè không đổi yêu cầu — chỉ ghi vào nhật ký để đánh giá lại hệ thống.</p>
         {view ? (
           <p data-testid="ticket-state" className="text-secondary text-ink-2">
             Trạng thái <MaNhan loai="trang_thai" ma={view.status} />
@@ -62,7 +62,7 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
         <TicketConversation ticketId={ticketId} failText={TICKET_UNAVAILABLE} />
       ) : (
         <p role="alert" className="text-danger">
-          Mã ticket không hợp lệ.
+          Mã yêu cầu không hợp lệ.
         </p>
       )}
 

@@ -29,9 +29,9 @@ export const ACCOUNTS = {
     title: "L1",
     passwordVar: "E2E_PASSWORD_HA",
     home: "/approvals",
-    nav: ["Chờ tôi duyệt", "Hàng đợi escalate"],
+    nav: ["Chờ tôi duyệt", "Hàng chờ chuyển L2"],
   },
-  l2: { username: "long.nh", title: "L2", passwordVar: "E2E_PASSWORD_LONG", home: "/escalations", nav: ["Hàng đợi escalate"] },
+  l2: { username: "long.nh", title: "L2", passwordVar: "E2E_PASSWORD_LONG", home: "/escalations", nav: ["Hàng chờ chuyển L2"] },
   manager: {
     username: "quan.tm",
     title: "quản lý",

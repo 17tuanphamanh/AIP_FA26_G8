@@ -221,7 +221,7 @@ describe("t29: ghi chú bàn giao thiếu khoá / rỗng / có HTML → '(không
   it("handoffRows: đúng 4 khối, đúng nhãn, đúng thứ tự; hỏng → null", () => {
     expect(handoffRows(null).map((r) => [r.label, r.text])).toStrictEqual([
       ["Yêu cầu (đã che)", null],
-      ["Agent đã làm", null],
+      ["Hệ thống đã làm", null],
       ["Lý do chuyển", null],
       ["Việc cần làm", null],
     ]);
@@ -244,7 +244,7 @@ describe("t29: ghi chú bàn giao thiếu khoá / rỗng / có HTML → '(không
     const rows = [...document.querySelectorAll<HTMLElement>('[data-testid="handoff-row"]')];
     expect(rows.map((r) => r.querySelector("dt")?.textContent)).toStrictEqual([
       "Yêu cầu (đã che)",
-      "Agent đã làm",
+      "Hệ thống đã làm",
       "Lý do chuyển",
       "Việc cần làm",
     ]);
@@ -278,7 +278,7 @@ describe("t30: ca deny → banner + 'Đã hoàn tất' khoá; ca thường → m
     renderAt("/escalations/5");
     const banner = await screen.findByTestId("deny-banner");
     expect(banner.textContent).toBe(`${DENY_BANNER.strong} ${DENY_BANNER.rest}`);
-    expect(banner.textContent).toBe("Ca không đủ điều kiện tự xử lý — không thực hiện lại hành động. Chỉ xác nhận từ chối hoặc mở ticket mới.");
+    expect(banner.textContent).toBe("Ca không đủ điều kiện tự xử lý — không thực hiện lại hành động. Chỉ xác nhận từ chối hoặc mở yêu cầu mới.");
     const completed = radio(COMPLETED);
     expect(completed.getAttribute("aria-disabled")).toBe("true");
     expect(completed.textContent).toContain("Không dùng với ca không đủ điều kiện tự xử lý"); // N-NGU: nhãn thay mã E5
@@ -318,7 +318,7 @@ describe("t31: ghi chú rỗng / chỉ khoảng trắng → không gửi", () =>
     vi.stubGlobal("fetch", fetchSpy);
     const onClosed = vi.fn();
     render(withClient(<CloseForm item={esc("E3", { escalation_id: 31 })} available onSubmit={submit} onClosed={onClosed} />));
-    const send = screen.getByRole("button", { name: "Đóng escalation" });
+    const send = screen.getByRole("button", { name: "Đóng ca" });
     const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
 
     fireEvent.change(note, { target: { value: "có ghi chú" } });
@@ -355,11 +355,11 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
     fireEvent.click(radio(COMPLETED));
     const note = screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement;
     fireEvent.change(note, { target: { value: "Đã cấp lại quyền." } });
-    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(errorMessage(new ApiError(422, "deny_case_cannot_complete")));
-    expect(alert.textContent).toBe("Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.");
+    expect(alert.textContent).toBe("Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở yêu cầu mới.");
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(JSON.parse(calls.find((c) => c.method === "POST")!.body!)).toStrictEqual({
       close_result: "completed",
@@ -369,7 +369,7 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
     expect(note.value).toBe("Đã cấp lại quyền.");
     expect(screen.queryByTestId("close-done")).toBeNull();
     expect(document.body.textContent).not.toMatch(/Phase 7|Minh hoạ — chưa ghi/);
-    expect((screen.getByRole("button", { name: "Đóng escalation" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Đóng ca" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
 
@@ -381,7 +381,7 @@ describe("t33: MSW tắt → nút gửi khoá, 0 lời gọi /close", () => {
     const calls = stubApi([esc("E3", { escalation_id: 33 })], () => json(202, {}));
     renderAt("/escalations/33");
     await screen.findByText("Ghi chú bàn giao");
-    const send = screen.getByRole("button", { name: "Đóng escalation" }) as HTMLButtonElement;
+    const send = screen.getByRole("button", { name: "Đóng ca" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
     expect(screen.getByTestId("close-unavailable").textContent).toBe(CLOSE_UNAVAILABLE_TEXT);
     expect(CLOSE_UNAVAILABLE_TEXT).toBe("Chức năng đóng ca chưa bật ở máy chủ này.");
@@ -434,7 +434,7 @@ describe("t35: tải lại chi tiết khi ca không còn trong hàng đợi", ()
     expect(GONE_TEXT).toBe("Ca đã đóng hoặc không còn trong hàng đợi");
     if (id === "999") expect(calls.map((c) => c.url)).toContain("/api/escalations/queue?status=open&limit=50");
     expect(calls.some((c) => c.url.startsWith("/api/tickets/"))).toBe(false);
-    expect(screen.getByRole("link", { name: "‹ Hàng đợi escalate" }).getAttribute("href")).toBe("/escalations");
+    expect(screen.getByRole("link", { name: "‹ Hàng chờ chuyển L2" }).getAttribute("href")).toBe("/escalations");
   });
 
   it("N-PA: ca không có trong trang đã tải mà còn next_cursor → 'Không tìm thấy ca trong N ca đã tải' + Tải thêm (KHÔNG khẳng định đã đóng)", async () => {

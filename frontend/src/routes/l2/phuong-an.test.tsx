@@ -186,7 +186,7 @@ describe("t178: Đóng ca 200 → POST đúng thân; ca rời danh sách Mở; c
     expect(document.body.textContent).not.toMatch(/Minh hoạ — chưa ghi|Phase 7/);
     fireEvent.click(screen.getByRole("radio", { name: /Xác nhận từ chối/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "  Đã gọi người gửi.  " } });
-    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
     expect((await screen.findByTestId("close-done")).textContent).toBe(CLOSED_TEXT);
     const post = calls.find((c) => c.method === "POST")!;
     expect([post.url, JSON.parse(post.body!)]).toStrictEqual([
@@ -197,7 +197,7 @@ describe("t178: Đóng ca 200 → POST đúng thân; ca rời danh sách Mở; c
       const data = client.getQueryData(queueQuery("open").queryKey);
       expect(data?.pages.flatMap((p) => p.items).some((i) => i.escalation_id === target.escalation_id)).toBe(false);
     });
-    expect(screen.queryByRole("button", { name: "Đóng escalation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Đóng ca" })).toBeNull();
   });
 });
 
@@ -214,7 +214,7 @@ describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 
     const before = queueCalls(calls).length;
     fireEvent.click(screen.getByRole("radio", { name: /Đã hoàn tất/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
     expect((await screen.findByText(ALREADY_CLOSED_TEXT)).getAttribute("role")).toBe("alert");
     await waitFor(() => expect(queueCalls(calls).length).toBeGreaterThan(before));
   });
@@ -229,12 +229,12 @@ describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 
     serve(store, { closeOverride: () => json(422, body) });
     renderAt(`/escalations/${target.escalation_id}`, true);
     await screen.findByText("Ghi chú bàn giao");
-    fireEvent.click(screen.getByRole("radio", { name: /Mở ticket mới/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Mở yêu cầu mới/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "GHI-CHU-RIENG" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
     const err = await screen.findByTestId(testId);
     expect(err.textContent).not.toContain("GHI-CHU-RIENG");
-    expect(screen.getByRole("radio", { name: /Mở ticket mới/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: /Mở yêu cầu mới/ }).getAttribute("aria-checked")).toBe("true");
     expect((screen.getByLabelText("Ghi chú đóng") as HTMLTextAreaElement).value).toBe("GHI-CHU-RIENG");
   });
 
@@ -267,7 +267,7 @@ describe("t180: ca đã đóng (?status=closed) → chỉ đọc: kết quả, g
     expect(within(info).getByTestId("closed-note").textContent).toBe(note);
     expect(within(info).getByTestId("closed-by").textContent).toBe("long.nh");
     expect(within(info).getByTestId("closed-at").textContent).toMatch(/^\d{2}:\d{2}:\d{2} \d{2}\/\d{2}\/\d{4}$/);
-    expect(screen.queryByRole("button", { name: "Đóng escalation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Đóng ca" })).toBeNull();
     expect(screen.queryByRole("radiogroup", { name: "Kết quả đóng" })).toBeNull();
     expect(queueCalls(calls)).toStrictEqual(["/api/escalations/queue?status=closed&limit=50"]);
   });
@@ -275,7 +275,7 @@ describe("t180: ca đã đóng (?status=closed) → chỉ đọc: kết quả, g
 
 // ------------------------------------------------------------------------------------------------ t189, t190 (hợp đồng sửa 21:15/21:30)
 
-describe("t189: đóng ca 200 — 'Mở ticket mới' → đúng câu REOPENED_TEXT, KHÔNG mã / link ticket mới (kể cả server lỡ trả mã); kết quả khác giữ CLOSED_TEXT", () => {
+describe("t189: đóng ca 200 — 'Mở yêu cầu mới' → đúng câu REOPENED_TEXT, KHÔNG mã / link ticket mới (kể cả server lỡ trả mã); kết quả khác giữ CLOSED_TEXT", () => {
   async function closeWith(result: RegExp, override?: () => Response) {
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
@@ -284,18 +284,18 @@ describe("t189: đóng ca 200 — 'Mở ticket mới' → đúng câu REOPENED_T
     await screen.findByText("Ghi chú bàn giao");
     fireEvent.click(screen.getByRole("radio", { name: result }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
     return { done: await screen.findByTestId("close-done"), target };
   }
   it("reopened_as_new (MSW: new_ticket_id null) → 'Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.'", async () => {
-    const { done } = await closeWith(/Mở ticket mới/);
+    const { done } = await closeWith(/Mở yêu cầu mới/);
     expect(REOPENED_TEXT).toBe("Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.");
     expect(done.textContent).toBe(REOPENED_TEXT);
     expect(done.querySelector("a")).toBeNull();
   });
   it("reopened_as_new mà server lỡ trả mã → vẫn đúng câu, mã KHÔNG xuất hiện ở đâu trên màn (không chữ, không link)", async () => {
     const leaked = "tkt-lo-ma-999";
-    const { done } = await closeWith(/Mở ticket mới/, () => json(200, { escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: leaked }));
+    const { done } = await closeWith(/Mở yêu cầu mới/, () => json(200, { escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: leaked }));
     expect(done.textContent).toBe(REOPENED_TEXT);
     expect(document.body.textContent).not.toContain(leaked);
     expect([...document.querySelectorAll("a")].some((a) => a.getAttribute("href")?.includes(leaked))).toBe(false);
@@ -315,9 +315,9 @@ describe("t189: đóng ca 200 — 'Mở ticket mới' → đúng câu REOPENED_T
     serve(store, { closeOverride: () => json(404, { detail: "not_found" }) });
     renderAt(`/escalations/${target.escalation_id}`, true);
     await screen.findByText("Ghi chú bàn giao");
-    fireEvent.click(screen.getByRole("radio", { name: /Mở ticket mới/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Mở yêu cầu mới/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
-    fireEvent.click(screen.getByRole("button", { name: "Đóng escalation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
     expect((await screen.findByText("Không tìm thấy.")).getAttribute("role")).toBe("alert");
     expect(screen.queryByTestId("close-done")).toBeNull();
   });
@@ -329,7 +329,7 @@ describe("t190: quyền đóng ca = escalation:handle (L1 + L2) — L1 thấy fo
   const L2: Me = { user_id: "long.nh", role: "l2", permissions: [...P, "ticket:read:any", "escalation:handle"] };
   const signedIn = (me: Me): AuthValue => ({ state: { status: "signedIn", me }, signIn: vi.fn(), signOut: vi.fn(async () => true) });
   const perm = STAFF_NAV.find((i) => i.to === "/escalations")!.perm;
-  it.each([["L1", L1], ["L2", L2]])("%s: form + nút 'Đóng escalation'", async (_n, me) => {
+  it.each([["L1", L1], ["L2", L2]])("%s: form + nút 'Đóng ca'", async (_n, me) => {
     expect(perm).toBe("escalation:handle");
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
@@ -348,6 +348,6 @@ describe("t190: quyền đóng ca = escalation:handle (L1 + L2) — L1 thấy fo
       </QueryClientProvider>,
     );
     expect(await screen.findByRole("radiogroup", { name: "Kết quả đóng" })).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Đóng escalation" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Đóng ca" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

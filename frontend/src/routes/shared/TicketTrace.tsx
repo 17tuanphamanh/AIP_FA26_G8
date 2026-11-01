@@ -37,7 +37,7 @@ function Page({ ticketId, children }: { ticketId: string; children: ReactNode })
       <div className="flex flex-col gap-1">
         <h1 className="text-title">{TRACE_TITLE}</h1>
         <p className="text-ink-2">
-          Ticket <span className="font-mono select-all">{ticketId}</span> · chỉ để xem, theo thứ tự thời gian.
+          Yêu cầu <span className="font-mono select-all">{ticketId}</span> · chỉ xem, theo thứ tự thời gian.
         </p>
       </div>
       {children}
@@ -77,7 +77,7 @@ function Body({ trace }: { trace: Trace }) {
     <>
       {trace.parent_ticket_id ? (
         <p data-testid="trace-parent" className="text-ink-2">
-          Ý con của ticket{" "}
+          Ý con của yêu cầu{" "}
           <Link to={tracePath(trace.parent_ticket_id)} className="font-mono text-fpt-blue">
             {trace.parent_ticket_id}
           </Link>

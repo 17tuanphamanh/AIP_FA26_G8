@@ -69,7 +69,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
     <section className="flex flex-col gap-6 px-12 py-10">
       <div className="flex items-end gap-4">
         <div className="flex min-w-0 grow flex-col gap-1">
-          <h1 className="text-title">Hàng đợi escalate</h1>
+          <h1 className="text-title">Hàng chờ chuyển L2</h1>
           <p className="text-ink-2">
             {items ? (
               <>
@@ -104,7 +104,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             maxLength={SEARCH_MAX}
-            placeholder="Mã ticket, mã E, tên nhóm, lý do…"
+            placeholder="Mã yêu cầu, mã lỗi (E…), tên nhóm, lý do…"
             autoComplete="off"
             spellCheck={false}
             data-testid="queue-search"

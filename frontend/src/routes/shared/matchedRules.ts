@@ -17,11 +17,11 @@ export const NO_RULE_TEXT = "Không có luật nào khớp";
 export const NO_DATA_TEXT = "Chưa có dữ liệu luật khớp";
 export const BAD_DATA_TEXT =
   "Dữ liệu luật khớp không hợp lệ (nhiều hơn một luật được áp dụng, hoặc luật được áp dụng không phải luật chặt nhất) — không hiển thị để tránh hiểu sai.";
-export const APPLIED_TEXT = "áp dụng (chặt nhất)";
-export const REPLACED_TEXT = "khớp nhưng bị luật chặt hơn thay thế";
-export const SAME_LEVEL_TEXT = "khớp, cùng mức với luật được áp dụng";
+export const APPLIED_TEXT = "Áp dụng (chặt nhất)";
+export const REPLACED_TEXT = "Khớp nhưng bị luật chặt hơn thay thế";
+export const SAME_LEVEL_TEXT = "Khớp, cùng mức với luật được áp dụng";
 /** Luật khớp mà không so được với luật applied (không có luật applied, hoặc một bên `decision` null). */
-export const MATCHED_ONLY_TEXT = "khớp";
+export const MATCHED_ONLY_TEXT = "Khớp";
 export const UNDECIDED_TEXT = "Quyết định cuối không do luật — xem lý do ở bước đánh giá rủi ro";
 
 const DECISION: Record<string, string> = { allow: "Cho phép", approval_required: "Cần duyệt", deny: "Cấm" };

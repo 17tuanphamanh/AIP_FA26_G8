@@ -78,7 +78,7 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
   return (
     <form onSubmit={(e) => void submit(e)} aria-labelledby="close-heading" className="flex flex-col gap-2" noValidate>
       <h2 id="close-heading" className="pl-1 text-label text-ink-2">
-        Đóng escalation
+        Đóng ca
       </h2>
       <div role="radiogroup" aria-label="Kết quả đóng" className="overflow-hidden rounded-group border border-line">
         {CLOSE_OPTIONS.map((option) => {
@@ -161,7 +161,7 @@ export function CloseForm({ item, available = CLOSE_AVAILABLE, onSubmit = closeE
         disabled={!available || sending}
         className="mt-2 h-11 rounded-full bg-fpt-blue font-semibold text-white disabled:opacity-60"
       >
-        {sending ? "Đang gửi…" : "Đóng escalation"}
+        {sending ? "Đang gửi…" : "Đóng ca"}
       </button>
       {!available ? (
         <p className="text-secondary text-ink-2" data-testid="close-unavailable">

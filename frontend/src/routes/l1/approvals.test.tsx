@@ -561,7 +561,7 @@ describe("t46: hộp thư 404 → đường lỗi chung (N4c P5: route 4c đã c
     expect(screen.queryByTestId("inbox-missing")).toBeNull();
     expect(document.body.textContent).not.toContain("Phase 4 (4c)");
     expect(screen.getByRole("tablist")).toBeTruthy();
-    expect(screen.getByLabelText("Mã ticket")).toBeTruthy();
+    expect(screen.getByLabelText("Mã yêu cầu")).toBeTruthy();
     expect(calls[0]?.url).toBe("/api/approvals?mine=1&status=pending");
   });
 
@@ -1470,8 +1470,8 @@ describe("t91: câu lỗi của hộp ghi đè — 403 forbidden riêng; 404 (k�
   });
 
   it("hằng câu + overrideErrorMessage thuần: P5 đúng chữ; 403 mã khác → câu 403 chung; lỗi không phải ApiError → câu mất kết nối", () => {
-    expect(OVERRIDE_FORBIDDEN).toBe("Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).");
-    expect(OVERRIDE_NOT_FOUND).toBe("Không tìm thấy ticket hoặc bạn không được xem ticket này.");
+    expect(OVERRIDE_FORBIDDEN).toBe("Bạn không được ghi đè yêu cầu này (không có quyền, hoặc đây là yêu cầu do chính bạn gửi).");
+    expect(OVERRIDE_NOT_FOUND).toBe("Không tìm thấy yêu cầu hoặc bạn không được xem yêu cầu này.");
     expect(overrideErrorMessage(new ApiError(403, null))).toBe(errorMessage(new ApiError(403, null)));
     expect(overrideErrorMessage(new ApiError(403, "reauth_required"))).toBe(errorMessage(new ApiError(403, "reauth_required")));
     expect(overrideErrorMessage(new TypeError("Failed to fetch"))).toBe(errorMessage(null));
@@ -1827,5 +1827,21 @@ describe("t145: màn xem ticket (ghi đè) — hạn của lần chờ hiện t�
   it("ticket đã kết thúc → không hiện hạn dù thân có chuỗi (không còn lần chờ)", async () => {
     await show({ final_state: "S_CLOSED", deadline: "2026-09-30T14:30:00Z" });
     expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t231 (đợt 2 tên gọi, B1)
+
+describe("t231: B1 — tiêu đề phiếu là tên hành động; mã phiếu + mã yêu cầu ở dòng dưới", () => {
+  it("h1 = 'Cấp lại chứng chỉ VPN'; dòng dưới có 'Phiếu r' và 'Mã yêu cầu'; không còn 'Mã ticket'", async () => {
+    detailApi(() => json(202, {}));
+    renderAt("/approvals/r");
+    await screen.findByTestId("decision-bar");
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1.textContent).toBe("Cấp lại chứng chỉ VPN");
+    const meta = h1.nextElementSibling?.textContent ?? "";
+    expect(meta).toContain("Phiếu r");
+    expect(meta).toContain("Mã yêu cầu");
+    expect(document.body.textContent).not.toContain("Mã ticket");
   });
 });
