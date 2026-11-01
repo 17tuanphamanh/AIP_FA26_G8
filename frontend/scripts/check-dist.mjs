@@ -7,7 +7,10 @@
 //    `tkt-demo-esc-`), `npa-demo` (cách xử lý / so sánh phương án N-PA).
 // 3. Không tải gì ngoài origin (KH 4.1 #7, CSP `default-src 'self'`): HTML/CSS không có src/href/url()/@import
 //    trỏ tới `http(s)://` hay `//`.
+// 4. Logo FPT (gói fe-logo-fpt): `src/assets/fpt-university-logo.png` phải ra `dist/assets/` thành tệp riêng, trùng
+//    từng byte với nguồn (không nén lại / không inline — `assetsInlineLimit: 0`); không tệp văn bản nào chứa `data:image/`.
 // Có vi phạm → in từng tệp, thoát 1.
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,9 +53,20 @@ for (const file of files) {
   }
 }
 
+const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+const FPT_LOGO_SRC = fileURLToPath(new URL("../src/assets/fpt-university-logo.png", import.meta.url));
+const fptLogos = files.filter((file) => /^assets[\\/]fpt-university-logo-[\w-]+\.png$/.test(relative(DIST, file)));
+if (fptLogos.length !== 1) problems.push(`logo FPT: cần đúng 1 tệp dist/assets/fpt-university-logo-*.png, thấy ${fptLogos.length}`);
+else if (sha256(fptLogos[0]) !== sha256(FPT_LOGO_SRC)) problems.push(`${relative(DIST, fptLogos[0])}: khác byte với src/assets/fpt-university-logo.png`);
+for (const file of files) {
+  if (TEXT_EXT.has(extname(file).toLowerCase()) && readFileSync(file, "utf8").includes("data:image/")) {
+    problems.push(`${relative(DIST, file)}: chứa ảnh nhúng "data:image/"`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(`check:dist: ĐỎ — ${problems.length} vi phạm trong dist/:`);
   for (const problem of problems) console.error(`  - ${problem}`);
   process.exit(1);
 }
-console.log(`check:dist: sạch (${files.length} tệp trong dist/, không có msw/mockServiceWorker, không mã fixture, không tải ngoài origin).`);
+console.log(`check:dist: sạch (${files.length} tệp trong dist/, không có msw/mockServiceWorker, không mã fixture, không tải ngoài origin, logo FPT ở dist/assets trùng byte nguồn, không data:image/).`);

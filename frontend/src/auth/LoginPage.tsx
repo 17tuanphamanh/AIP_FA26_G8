@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from "react-router";
+import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { OtpInput } from "../components/OtpInput.tsx";
 import { PasswordField } from "../components/PasswordField.tsx";
@@ -102,11 +103,10 @@ export function LoginPage() {
         </form>
       )}
 
-      <footer className="absolute bottom-8 flex items-center gap-4">
-        <span className="flex h-9 w-28 items-center justify-center rounded-lg border border-dashed border-line text-label font-normal text-ink-2">
-          Logo đơn vị
-        </span>
-        <span className="text-label font-normal text-ink-2">Đồ án tốt nghiệp — Trường Đại học FPT</span>
+      {/* Logo FPT (gói fe-logo-fpt): ảnh chính thức nguyên byte, chỉ đặt chiều cao 40 px, rộng theo tỉ lệ (330×93). */}
+      <footer className="absolute bottom-8 flex flex-col items-center gap-2">
+        <img src={fptLogoUrl} alt="Trường Đại học FPT" width={330} height={93} className="h-10 w-auto" />
+        <span className="text-label font-normal text-ink-2">Đồ án tốt nghiệp · Trường Đại học FPT</span>
       </footer>
     </main>
   );
