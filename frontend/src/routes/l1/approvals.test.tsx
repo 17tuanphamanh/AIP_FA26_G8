@@ -22,7 +22,7 @@ import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { useAuth } from "../../auth/useAuth.ts";
-import { ActionView, FlatTable } from "../../components/ActionView.tsx";
+import { ActionView, FlatTable, RAW_NOTE, SHOW_RAW_TEXT } from "../../components/ActionView.tsx";
 import { FlashNotice } from "../../components/FlashNotice.tsx";
 import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { ApprovalDetailRoute } from "./ApprovalDetail.tsx";
@@ -364,7 +364,7 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
     expect(table).toHaveLength(EXPECTED.length); // không trùng, không thiếu
     const row = document.querySelector('[data-key="params.window.to"]')!;
     expect(row.querySelector("dd")?.textContent).toBe("null");
-    expect(document.querySelector('[data-key="type"] dd')?.textContent).toBe('"renew_vpn_cert"');
+    expect(document.querySelector('[data-key="type"] [data-testid="raw-value"]')?.textContent).toBe('"renew_vpn_cert"');
 
     fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
     const text = screen.getByTestId("action-json").textContent ?? "";
@@ -1843,5 +1843,100 @@ describe("t231: B1 — tiêu đề phiếu là tên hành động; mã phiếu +
     expect(meta).toContain("Phiếu r");
     expect(meta).toContain("Mã yêu cầu");
     expect(document.body.textContent).not.toContain("Mã ticket");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t232 (đợt 2 tên gọi, B2 — phương án (b))
+
+describe("t232: B2 (b) — nhãn 1-1, công tắc 'Hiện giá trị gốc' mặc định tắt; gốc luôn trong DOM; danh tính luôn hiện gốc", () => {
+  // Object có khoá đã biết, khoá lạ, giá trị lạ, giá trị trùng tên thuộc tính prototype, mảng, null.
+  const ACTION = {
+    type: "grant_permission",
+    target: "folder:finance/Q3",
+    requested_for: "nv001",
+    scope: "single_account",
+    privilege_level: "elevated",
+    reversible: false,
+    reversibility: "none",
+    data_sensitivity: "constructor",
+    params: { resource_path: "finance/Q3", permission_level: "write", duration_days: 30, account_type: "__proto__", software_name: "Visio" },
+    facts: { cert_status: "expired", device_registered: true, cert_days_to_expiry: -3, khoa_moi: "gia_tri_moi" },
+    khoa_la: { x: null, y: [1, "a"] },
+  };
+  /** Giá trị tại đường dẫn — viết RIÊNG ở test, không dùng flattenEntries. */
+  const at = (path: string): unknown =>
+    path.split(/\.|\[(\d+)\]/).filter(Boolean).reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], ACTION);
+  const LABELED: Record<string, string> = {
+    type: "Cấp quyền truy cập",
+    target: "Thư mục finance/Q3",
+    scope: "Một tài khoản",
+    privilege_level: "Quyền nâng cao",
+    reversible: "Không",
+    reversibility: "Không hoàn tác được",
+    "params.permission_level": "Đọc và ghi",
+    "params.duration_days": "30 ngày",
+    "facts.cert_status": "Đã hết hạn",
+    "facts.device_registered": "Có",
+  };
+  /** Điều kiện 2: trường danh tính luôn hiện gốc (phần sau ":" của target nằm nguyên trong nhãn). */
+  const IDENTITY = ["requested_for", "params.resource_path", "params.software_name"];
+  const raw = (row: HTMLElement) => within(row).getByTestId("raw-value");
+
+  it("mặc định TẮT: dòng có nhãn → nhãn hiện, gốc vẫn trong DOM nhưng hidden; dòng không nhãn → gốc hiện; đủ khoá, đúng thứ tự", () => {
+    render(<ActionView action={ACTION} hash={"a".repeat(64)} title="Cấp quyền truy cập" />);
+    const toggle = screen.getByRole("button", { name: SHOW_RAW_TEXT });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    const rows = screen.getAllByTestId("action-row");
+    expect(rows.map((r) => r.dataset.key)).toStrictEqual(jsonKeyPaths(ACTION)); // đủ, không trùng, không sắp lại
+    for (const row of rows) {
+      const key = row.dataset.key!;
+      expect(raw(row).textContent).toBe(JSON.stringify(at(key))); // gốc KHÔNG bị bỏ, kể cả khi ẩn
+      const label = within(row).queryByTestId("value-label");
+      if (Object.hasOwn(LABELED, key)) {
+        expect(label?.textContent).toBe(LABELED[key]);
+        expect(raw(row).hidden).toBe(true);
+      } else {
+        expect(label).toBeNull(); // requested_for, "constructor", "__proto__", khoá lạ, null, mảng → không đoán
+        expect(raw(row).hidden).toBe(false);
+      }
+    }
+    for (const key of IDENTITY) expect(raw(rows.find((r) => r.dataset.key === key)!).hidden).toBe(false);
+    // Điều kiện 4: mã băm rút gọn + câu chú thích ở đầu bảng; mã đủ ở chân.
+    expect(screen.getByTestId("action-hash-short").textContent).toBe(`${"a".repeat(12)}…`);
+    expect(screen.getByTestId("raw-note").textContent).toBe(RAW_NOTE);
+    expect(screen.getByTestId("action-hash").textContent).toBe("a".repeat(64));
+    // nhãn khoá: params/facts riêng; khoá lạ chỉ hiện khoá
+    const dt = (key: string) => rows.find((r) => r.dataset.key === key)!.querySelector("dt")!.textContent;
+    expect(dt("params.permission_level")).toBe("Mức quyền xin cấp · params.permission_level");
+    expect(dt("facts.cert_status")).toBe("Trạng thái chứng chỉ · facts.cert_status");
+    expect(dt("facts.khoa_moi")).toBe("Dữ kiện · facts.khoa_moi");
+    expect(dt("khoa_la.x")).toBe("khoa_la.x");
+  });
+
+  it("BẬT: mọi dòng hiện gốc, textContent === JSON.stringify từng ký tự; tab JSON === JSON.stringify(action, null, 2)", () => {
+    render(<ActionView action={ACTION} hash={"b".repeat(64)} title="Cấp quyền truy cập" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("true");
+    for (const row of screen.getAllByTestId("action-row")) {
+      expect(raw(row).hidden).toBe(false);
+      expect(raw(row).textContent).toBe(JSON.stringify(at(row.dataset.key!)));
+    }
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    expect(screen.getByTestId("action-json").textContent).toBe(JSON.stringify(ACTION, null, 2));
+    expect(screen.getByTestId("action-hash").textContent).toBe("b".repeat(64));
+  });
+
+  it("điều kiện 6: không nhớ sang phiếu khác — bật ở phiếu này, mở phiếu khác (dựng lại) → TẮT", () => {
+    const { rerender } = render(<ActionView key="p1" action={ACTION} hash={"c".repeat(64)} title="x" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("true");
+    rerender(<ActionView key="p2" action={ACTION} hash={"c".repeat(64)} title="x" />);
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("bảng khác (rủi ro, dữ kiện, chính sách) không nhận nhãn giá trị: FlatTable mặc định không có raw-value/value-label", () => {
+    render(<FlatTable value={{ scope: "single_device", reversible: true }} testId="kv" />);
+    expect(screen.queryByTestId("raw-value")).toBeNull();
+    expect(screen.queryByTestId("value-label")).toBeNull();
   });
 });
