@@ -1,6 +1,16 @@
 import { useState } from "react";
-import { actionValueLabel } from "../routes/l1/actionLabels.ts";
-import { actionKeyLabel, flattenEntries, isShortValue } from "../routes/l1/inbox.ts";
+import {
+  actionValueLabel,
+  EMPTY_TEXT,
+  flatKeyLabel,
+  IDENTITY_KEYS,
+  needsRawFormat,
+  NULL_TEXT,
+  RAW_FORMAT_NOTE,
+  targetParts,
+  visibleJson,
+} from "../routes/l1/actionLabels.ts";
+import { ACTION_KEY_LABEL, flattenEntries, isShortValue } from "../routes/l1/inbox.ts";
 
 // B4L1Detail "Hệ thống sẽ thực hiện chính xác": ĐÚNG object `action` đã băm nhận từ server (KH 4.2 #5 [Chốt 5.2.1]).
 // Tab Bảng liệt kê đủ mọi khoá (đệ quy, tên khoá giữ nguyên); tab JSON = JSON.stringify của CHÍNH object đó. Không tóm
@@ -14,16 +24,10 @@ export function FlatTable({
   value,
   testId,
   keyLabel,
-  valueLabel,
-  showRaw = true,
 }: {
   value: unknown;
   testId: string;
   keyLabel?: (key: string) => string | null;
-  /** B2: nhãn dễ đọc cho giá trị (bảng nhãn 1-1). Không truyền → ô giá trị như cũ. */
-  valueLabel?: (key: string, raw: string) => string | null;
-  /** B2 (b): dòng CÓ nhãn — giá trị gốc hiện hay ẩn (vẫn trong DOM). Dòng không nhãn luôn hiện gốc. */
-  showRaw?: boolean;
 }) {
   return (
     <dl className="font-mono text-secondary">
@@ -49,7 +53,7 @@ export function FlatTable({
               )}
             </dt>
             <dd className={`min-w-0 text-right wrap-anywhere break-normal${short ? " ml-auto max-w-full" : ""}`}>
-              {valueLabel ? <LabeledValue raw={entry.value} label={valueLabel(entry.key, entry.value)} showRaw={showRaw} /> : entry.value}
+              {entry.value}
             </dd>
           </div>
         );
@@ -58,20 +62,129 @@ export function FlatTable({
   );
 }
 
-/** B2 (b, ĐP 01/11 14:50). Có nhãn: nhãn là chữ chính; giá trị gốc (phần tử riêng — test so từng ký tự) LUÔN có trong DOM,
- *  hiện ngay dưới khi bật "Hiện giá trị gốc", ẩn (`hidden`) khi tắt. Không nhãn (mã người dùng, mã máy, đường dẫn, tên phần
- *  mềm, khoá/giá trị lạ): luôn hiện gốc. */
-function LabeledValue({ raw, label, showRaw }: { raw: string; label: string | null; showRaw: boolean }) {
-  if (label === null) return <span data-testid="raw-value">{raw}</span>;
-  return (
-    <span className="inline-flex flex-col items-end">
-      <span data-testid="value-label" className="font-sans text-ink">
-        {label}
-      </span>
-      <span data-testid="raw-value" hidden={!showRaw} className="text-label font-normal text-ink-2">
-        {raw}
-      </span>
+// ---- Bảng hành động của phiếu duyệt (B2, ĐP 01/11 14:50 + 15:00 + 15:35; Project claude/bang-nhan-b2-01-11.md mục 0, 0c) ----
+// TẮT (mặc định): chỉ chữ người đọc được — khoá có nhãn chỉ hiện nhãn; giá trị có nhãn chỉ hiện nhãn; chuỗi không nhãn hiện nội
+// dung không ngoặc kép. BẬT: khoá gốc + JSON.stringify từng dòng. Mọi phần tử gốc LUÔN trong DOM (`hidden` khi tắt) — test so
+// từng ký tự. Đủ mọi khoá, đúng thứ tự `flattenEntries`, không gộp/ẩn/sắp lại dòng.
+
+/** Nhãn khoá CHÍNH XÁC (1-1). Khoá chỉ khớp nhãn nhóm ("Dữ kiện" cho facts.<lạ>) không tính — (a): hiện khoá gốc kể cả khi tắt. */
+function exactKeyLabel(key: string): string | null {
+  const full = flatKeyLabel(key);
+  if (full !== null) return full;
+  return /^[a-z_]+$/.test(key) && Object.hasOwn(ACTION_KEY_LABEL, key) ? ACTION_KEY_LABEL[key]! : null;
+}
+
+/** Nhãn nhóm cho khoá lạ trong nhóm đã biết (params.<lạ>, facts.<lạ>) — hiện kèm khoá gốc, không thay. */
+function groupLabel(key: string): string | null {
+  const head = key.split(/[.[]/)[0] ?? "";
+  return key !== head && Object.hasOwn(ACTION_KEY_LABEL, head) ? ACTION_KEY_LABEL[head]! : null;
+}
+
+function ActionKey({ entryKey, showRaw }: { entryKey: string; showRaw: boolean }) {
+  const exact = exactKeyLabel(entryKey);
+  if (exact !== null) {
+    return (
+      <>
+        <span className="font-sans">{exact}</span>
+        <span data-testid="raw-key" hidden={!showRaw}>
+          {" · "}
+          <span className="text-label font-normal">{entryKey}</span>
+        </span>
+      </>
+    );
+  }
+  const group = groupLabel(entryKey);
+  return group !== null ? (
+    <>
+      <span className="font-sans">{group}</span> · <span className="text-label font-normal">{entryKey}</span>
+    </>
+  ) : (
+    <>{entryKey || "(gốc)"}</>
+  );
+}
+
+/** Chữ hiện khi TẮT cho giá trị KHÔNG nhãn. `rawFormat` = (c): hiện nguyên JSON.stringify + chú thích. */
+function plainDisplay(raw: string, key: string): { text: string; rawFormat: boolean } {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return { text: raw, rawFormat: false }; // "undefined" hay dạng lạ → nguyên văn
+  }
+  if (value === null) return { text: NULL_TEXT, rawFormat: false }; // (b)
+  if (typeof value === "string") {
+    if (value === "") return { text: EMPTY_TEXT, rawFormat: false }; // (b)
+    // (c). `target`: phần sau ":" là danh tính → xét riêng phần đó (vd "device: LAP" có khoảng trắng đầu ở phần sau).
+    const suffix = key === "target" && value.includes(":") ? value.slice(value.indexOf(":") + 1) : "";
+    const unsafe = needsRawFormat(value) || (suffix !== "" && needsRawFormat(suffix));
+    return unsafe ? { text: visibleJson(value), rawFormat: true } : { text: value, rawFormat: false };
+  }
+  return { text: raw, rawFormat: false }; // (e) số, bool, {} / [] → nguyên giá trị
+}
+
+function ActionValue({ entryKey, raw, showRaw }: { entryKey: string; raw: string; showRaw: boolean }) {
+  const label = actionValueLabel(entryKey, raw);
+  const target = entryKey === "target" ? targetParts(raw) : null;
+  const identity = IDENTITY_KEYS.has(entryKey);
+  const rawEl = (
+    <span data-testid="raw-value" hidden={!showRaw} className={label !== null ? "text-label font-normal text-ink-2" : undefined}>
+      {raw}
     </span>
+  );
+  if (label !== null) {
+    return (
+      <span className="inline-flex flex-col items-end">
+        <span data-testid="value-label" className="font-sans text-ink">
+          {target ? (
+            <>
+              {target.prefix} <span className="font-mono">{target.rest}</span>
+            </>
+          ) : (
+            label
+          )}
+        </span>
+        {rawEl}
+      </span>
+    );
+  }
+  const shown = plainDisplay(raw, entryKey);
+  return (
+    <>
+      <span data-testid="display-value" hidden={showRaw} className={identity || entryKey === "target" || shown.rawFormat ? "font-mono" : "font-sans"}>
+        {shown.text}
+        {shown.rawFormat ? (
+          <span data-testid="raw-format-note" className="ml-2 font-sans text-label font-normal text-ink-2">
+            {RAW_FORMAT_NOTE}
+          </span>
+        ) : null}
+      </span>
+      {rawEl}
+    </>
+  );
+}
+
+function ActionTable({ action, showRaw }: { action: Record<string, unknown>; showRaw: boolean }) {
+  return (
+    <dl className="font-mono text-secondary">
+      {flattenEntries(action).map((entry) => {
+        const short = isShortValue(entry.value);
+        return (
+          <div
+            key={entry.key}
+            data-testid="action-row"
+            data-key={entry.key}
+            className={`flex justify-between border-t border-line px-5 py-2.5 first:border-t-0 ${short ? "flex-wrap gap-x-4 gap-y-1" : "gap-4"}`}
+          >
+            <dt className="shrink-0 text-ink-2">
+              <ActionKey entryKey={entry.key} showRaw={showRaw} />
+            </dt>
+            <dd className={`min-w-0 text-right wrap-anywhere break-normal${short ? " ml-auto max-w-full" : ""}`}>
+              <ActionValue entryKey={entry.key} raw={entry.value} showRaw={showRaw} />
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 
@@ -113,7 +226,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
   return (
     <div className="overflow-hidden rounded-group border border-line">
       <div className="flex flex-col gap-1.5 border-b border-line px-5 py-4">
-        <p className="text-heading">{title}</p>
+        <h3 className="sr-only">{title}</h3>
         {/* Điều kiện 4: mã băm rút gọn + sao chép ngay đầu bảng; câu chú thích. Mã đủ vẫn ở chân bảng. */}
         <div className="flex items-center gap-2 text-label font-normal text-ink-2">
           <span>Mã băm</span>
@@ -129,7 +242,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
         </p>
       </div>
       <div className="flex items-center gap-3 border-b border-line bg-group px-5 py-2.5">
-        <span className="grow text-secondary text-ink-2">Toàn bộ nội dung sẽ thực hiện (đã khoá bằng mã băm)</span>
+        <span className="grow" />
         {mode === "table" ? (
           <button
             type="button"
@@ -150,7 +263,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
       </div>
       <div id="action-panel" role="tabpanel" aria-labelledby={`action-tab-${mode}`}>
         {mode === "table" ? (
-          <FlatTable value={action} testId="action-row" keyLabel={actionKeyLabel} valueLabel={actionValueLabel} showRaw={showRaw} />
+          <ActionTable action={action} showRaw={showRaw} />
         ) : (
           <pre data-testid="action-json" className="overflow-x-auto px-5 py-4 font-mono text-label font-normal">
             {JSON.stringify(action, null, 2)}
