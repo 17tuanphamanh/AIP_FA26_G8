@@ -85,6 +85,19 @@ describe.each<Where>(["login", "reauth"])("nút hiện/ẩn mật khẩu — %s"
     expect(screen.getByRole("button", { name: "Hiện mật khẩu" }).getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("ĐP 02/11: nút là biểu tượng con mắt (svg aria-hidden, không chữ); mắt gạch khi đang hiện; tên ở aria-label", async () => {
+    setup(where, () => json(500));
+    await field(where);
+    const btn = screen.getByRole("button", { name: "Hiện mật khẩu" });
+    expect(btn.textContent).toBe("");
+    expect(btn.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(btn.querySelectorAll("svg path")).toHaveLength(1); // mắt mở
+    fireEvent.click(btn);
+    const hide = screen.getByRole("button", { name: "Ẩn mật khẩu" });
+    expect(hide.textContent).toBe("");
+    expect(hide.querySelectorAll("svg path")).toHaveLength(2); // mắt gạch chéo
+  });
+
   it("t221: nút là type=button, có tiêu điểm bàn phím, bấm KHÔNG gửi form", async () => {
     const { loginCalls } = setup(where, () => json(500));
     const input = await field(where);

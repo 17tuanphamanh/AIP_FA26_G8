@@ -22,7 +22,7 @@ function returnPath(state: unknown): string | null {
 export function LoginPage() {
   const { state } = useAuth();
   const location = useLocation();
-  const { step, username, setUsername, password, setPassword, passwordShown, togglePassword, digits, setDigits, error, busy, submitPassword, submitOtp, backToPassword } =
+  const { step, username, setUsername, password, setPassword, passwordShown, togglePassword, digits, setDigits, otpFocus, error, busy, submitPassword, submitOtp, backToPassword } =
     useLoginSteps();
 
   if (state.status === "signedIn") {
@@ -93,7 +93,7 @@ export function LoginPage() {
             {otp ? (
               <form onSubmit={(e) => void submitOtp(e)} noValidate className="flex flex-col items-stretch gap-4">
                 <div className="flex">
-                  <OtpInput digits={digits} onChange={setDigits} disabled={busy} />
+                  <OtpInput digits={digits} onChange={setDigits} disabled={busy} focusKey={otpFocus} />
                 </div>
                 {alert}
                 <button

@@ -1,13 +1,25 @@
-import { type ClipboardEvent, type KeyboardEvent, useRef } from "react";
+import { type ClipboardEvent, type KeyboardEvent, useEffect, useRef } from "react";
 
 export const OTP_LENGTH = 6;
 
-type OtpInputProps = { digits: string[]; onChange: (digits: string[]) => void; disabled?: boolean };
+type OtpInputProps = {
+  digits: string[];
+  onChange: (digits: string[]) => void;
+  disabled?: boolean;
+  /** Đổi giá trị → đưa con trỏ về ô đầu (sau khi hết `disabled`) — dùng khi sai mã, 6 ô đã xoá trắng. */
+  focusKey?: number;
+};
 
 // Mã TOTP 6 số, mỗi số một ô (B4Login bước OTP). Gõ → sang ô sau; Backspace ở ô trống → về ô trước;
 // dán cả mã → rải vào các ô. Ô đầu có autocomplete="one-time-code" để trình duyệt/điện thoại tự điền.
-export function OtpInput({ digits, onChange, disabled }: OtpInputProps) {
+export function OtpInput({ digits, onChange, disabled, focusKey = 0 }: OtpInputProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const focused = useRef(focusKey); // lần dựng đầu: autoFocus lo
+  useEffect(() => {
+    if (disabled || focused.current === focusKey) return;
+    focused.current = focusKey;
+    refs.current[0]?.focus();
+  }, [focusKey, disabled]);
 
   function fill(start: number, raw: string) {
     const incoming = raw.replace(/\D/g, "").slice(0, OTP_LENGTH - start).split("");

@@ -137,6 +137,12 @@ export function errorMessage(error: ApiError | null): string {
 // Đăng nhập (P6 §4): sai tên/mật khẩu/OTP, tài khoản khoá hay ngừng hoạt động đều là MỘT câu chung — chống dò
 // username. Chỉ `mfa_not_enrolled` có câu riêng (chỉ tới được sau khi mật khẩu đúng — 12b Q-fe-3).
 export const GENERIC_LOGIN_ERROR = "Tên đăng nhập hoặc mật khẩu không đúng.";
+/** Ô trống ở bước mật khẩu (soát 01/11 M1, M2 — ĐP 02/11): báo ngay, KHÔNG gửi request. */
+export const EMPTY_USERNAME = "Nhập tên đăng nhập.";
+export const EMPTY_PASSWORD = "Nhập mật khẩu.";
+/** Sai mã ở bước OTP (soát 01/11 M3 — ĐP quyết 02/11). Chỉ tới được bước này khi mật khẩu đã đúng nên câu riêng không lộ
+ *  thêm gì; backend vẫn trả cùng mã `invalid_login` (Q-fe-3) — chỉ FE đổi câu. */
+export const OTP_WRONG = "Mã xác thực không đúng hoặc đã hết hạn.";
 export const USERNAME_HINT = "Tên đăng nhập chỉ gồm chữ thường không dấu, số và các ký tự . _ - (vd an.nv).";
 
 export function loginErrorMessage(error: ApiError | null): string {
