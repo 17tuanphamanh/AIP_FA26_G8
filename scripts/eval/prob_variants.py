@@ -19,9 +19,17 @@ Mỗi lượt (S1, S2) một file `probs.jsonl` riêng, phân biệt bằng đư
 - WITHOUT.jsonl `{scenario_id, raw_prob}` hoặc `{scenario_id, error}` — kết quả `collect_no_evidence`; ca `kb_gap` không có dòng.
 - cases.jsonl   `{scenario_id, action, ctx}` (Action, RiskContext tuần tự hóa) — đầu vào của `collect_no_evidence`.
 
-Thu thập `no_evidence` gọi LLM thật → thuộc mốc G, không có subcommand ở đây (cần nối gateway). Ở mốc G:
-  rows = asyncio.run(collect_no_evidence(LlmRiskEstimator(llm, p_method=<như bản đóng băng>, eval_mode=True), recorded, cases))
-  write_jsonl(path, rows)
+Thu thập `no_evidence` gọi LLM thật (mốc G) — subcommand `collect-no-evidence` (G10; script đo thêm SAU tag bf94df2, không đổi hành vi hệ
+thống — P8 §10). Chỉ chạy khi `EVAL_MODE=true`; chạy factory SAU khi đã sao lưu DB bản đo (H4):
+  EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/prob_variants.py collect-no-evidence \
+      --run RUN_DIR --out OUT --llm-factory app.eval.llm_factory:eval_gateway [--max-usd 1.5] [--dry-run]
+  RUN_DIR = thư mục lượt harness (có `predictions.jsonl` + `manifest.json`). Trước khi gọi LLM: `p_method` phải là `sampling_k5` ở manifest
+  lượt (`config.prob_method`, `counts.p_method_mismatch = 0`), ở mọi bản ghi đi lớp LLM và ở audit B13/B14 (`app.eval.prob_collect`) — lệch
+  là dừng cả lượt (mã 2, 0 lời gọi); `OUT` phải chưa có file kết quả. DB CHỈ ĐỌC → `with.jsonl` + `cases.jsonl` (kb_gap lấy từ
+  `audit_logs.detail->>'kb_gap'` dòng B13/B14 — đúng giá trị truyền vào `decide()`); in số ca + số lời gọi LLM dự kiến (k = 5 mỗi ca không
+  kb_gap); `--dry-run` dừng ở đây (không ghi file, không dựng factory, 0 lời gọi). Sau đó `collect_no_evidence` qua factory → `without.jsonl`
+  (lời gọi lỗi → dòng `error` như hợp đồng WITHOUT.jsonl), `build_probs` → `probs.jsonl`, kèm `manifest.json`. Mã thoát 3 nếu có ca lỗi LLM /
+  thiếu dòng no_evidence. Khoá API chỉ lấy từ biến môi trường của tiến trình (`Settings(_env_file=None)`), không đọc `.env`, không in.
 Lần gọi lỗi (`LLMUnavailable`, `LLMSchemaError`, `LLMBudgetExceeded`, `TurnBudgetExceeded`) → dòng `error` (tên lớp lỗi), ca đó bị bỏ
 `no_evidence` + `max`, không fail cả lượt. Lỗi khác là bug → ném lên.
 
@@ -39,7 +47,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from app.core.errors import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.core.turn_budget import TurnBudgetExceeded
@@ -337,6 +345,114 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+P_METHOD = "sampling_k5"  # bản đóng băng (P8 §5.1) — mọi lượt RQ1 chạy cách lấy xác suất này
+K_VOTES = 5  # `risk.estimator.K`: cách lấy xác suất này = 5 lời gọi b14_risk_vote mỗi ca
+OUT_FILES = ("with.jsonl", "cases.jsonl", "without.jsonl", "probs.jsonl", "manifest.json")
+
+
+def check_run_manifest(manifest: Mapping[str, Any], p_method: str) -> None:
+    """Manifest lượt harness phải chạy đúng `p_method` (G10: khớp bản đóng băng) và không có bản ghi lệch — sai là dừng, 0 lời gọi."""
+    config = manifest.get("config")
+    got = config.get("prob_method") if isinstance(config, Mapping) else None
+    if got != p_method:
+        raise DataError(f"manifest lượt: config.prob_method = {got!r}, cần {p_method!r}; lượt không so sánh được")
+    counts = manifest.get("counts")
+    mismatch = counts.get("p_method_mismatch") if isinstance(counts, Mapping) else None
+    if mismatch not in (0, None):
+        raise DataError(f"manifest lượt: counts.p_method_mismatch = {mismatch} (≠ 0); lượt không so sánh được")
+
+
+def plan_line(n_gathered: int, n_kb_gap: int) -> str:
+    n_call = n_gathered - n_kb_gap
+    return (f"dự kiến: {n_gathered} ca đi lớp LLM; {n_kb_gap} ca kb_gap chép, không gọi; {n_call} ca gọi B14 trích đoạn rỗng "
+            f"× {K_VOTES} phiếu = {n_call * K_VOTES} lời gọi LLM (chưa tính gọi lại sửa schema; trúng cache eval thì ít hơn)")
+
+
+async def _collect_run(args: argparse.Namespace) -> int:
+    try:
+        from app.eval.dbread import open_reader
+        from app.eval.llm_factory import eval_usage, open_port
+        from app.eval.predictions import load_predictions
+        from app.eval.prob_collect import gather, llm_records
+        from app.risk.estimator import LlmRiskEstimator
+        from app.settings import Settings, load_policy
+    except ImportError as e:
+        if "EVAL_MODE" in str(e):
+            raise DataError("collect-no-evidence chỉ chạy khi EVAL_MODE=true") from None
+        raise
+    import hashlib
+
+    if not args.dry_run and args.llm_factory is None:
+        raise DataError("--llm-factory bắt buộc khi không --dry-run")
+    taken = [n for n in OUT_FILES if (args.out / n).exists()]
+    if taken:
+        raise DataError(f"out: đã có {len(taken)} file kết quả (vd {taken[0]}) — dùng thư mục mới")
+    manifest_path = args.run / "manifest.json"
+    try:
+        run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        raise DataError("manifest.json của lượt không phải JSON") from None
+    check_run_manifest(run_manifest, args.p_method)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]  # chỉ biến môi trường, không đọc .env
+    hours = load_policy(settings.config_dir / "policy.json").business_hours
+    predictions = args.run / "predictions.jsonl"
+    records = load_predictions(predictions)
+    chosen, _ = llm_records(records)
+    other = sum(1 for r in chosen if r.p_method != args.p_method)
+    if other:
+        raise DataError(f"predictions: {other} ca đi lớp LLM có p_method khác {args.p_method!r}; lượt không so sánh được")
+    sha = hashlib.sha256(predictions.read_bytes()).hexdigest()
+    run_id = args.run_id or f"g10-{sha[:8]}"
+    async with open_reader(settings) as reader:
+        got = await gather(reader, records, hours=hours, p_method=args.p_method)
+        recorded = [RecordedCase.model_validate(x) for x in got.recorded]
+        cases = {c["scenario_id"]: CollectCase.model_validate(c) for c in got.cases}
+        print(f"lượt {run_id}: {len(records)} bản ghi; bỏ {got.report['skipped'] or 'không ca nào'}")
+        print(plan_line(len(recorded), got.report["n_kb_gap"]))
+        if args.dry_run:
+            print("--dry-run: dừng trước khi gọi LLM (không ghi file, không dựng factory)")
+            return 0
+        write_jsonl(args.out / "with.jsonl", recorded)
+        write_jsonl(args.out / "cases.jsonl", list(cases.values()))
+        async with open_port(args.llm_factory, run_id, max_usd=args.max_usd) as llm:
+            estimator = LlmRiskEstimator(llm, p_method=args.p_method, eval_mode=True)
+            without = await collect_no_evidence(estimator, recorded, cases)
+        usage = await eval_usage(reader.engine, run_id)
+    write_jsonl(args.out / "without.jsonl", without)
+    res = build_probs(recorded, without)
+    write_jsonl(args.out / "probs.jsonl", res.rows)
+    manifest = {
+        "kind": "prob_variants", "run_id": run_id, "predictions_sha256": sha, "p_method": args.p_method,
+        "run_manifest": {"run_id": run_manifest.get("run_id"), "strategy": run_manifest.get("strategy"),
+                         "policy_sha256": run_manifest.get("policy_sha256"), "git_commit": run_manifest.get("git_commit")},
+        "gathered": got.report,
+        "build": {"n_cases": res.n_cases, "n_copied_kb_gap": res.n_copied, "failed": res.failed, "n_missing": res.n_missing},
+        "llm_usage": usage, "generated_at": datetime.now(UTC).isoformat(),
+        "limitations": ["script đo thêm sau tag bf94df2, không đổi hành vi hệ thống (P8 §10)",
+                        "within_business_hours tính lại từ giờ dòng audit (lệch ms ở sát 08:00/18:00)",
+                        "B14 tự đặt nhiệt độ từng lời gọi (bỏ phiếu k=5 là 0,7)"],
+    }  # fmt: skip
+    with (args.out / "manifest.json").open("x", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    print(f"ca đi lớp LLM: {res.n_cases}; chép kb_gap: {res.n_copied}; lỗi LLM: {sum(res.failed.values())} {res.failed or ''}; "
+          f"thiếu: {res.n_missing}")  # fmt: skip
+    print(f"đã ghi with/cases/without/probs/manifest → {args.out}")
+    return 3 if res.failed or res.n_missing else 0
+
+
+def _cmd_collect(args: argparse.Namespace) -> int:
+    import asyncio
+
+    try:
+        from app.eval.prob_collect import CollectError
+    except ImportError:
+        CollectError = DataError  # type: ignore[misc,assignment]  # chưa có EVAL_MODE → `_collect_run` báo DataError rõ ràng
+    try:
+        return asyncio.run(_collect_run(args))
+    except CollectError as e:
+        raise DataError(str(e)) from None
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="prob_variants.py", description=__doc__.split("\n")[0] if __doc__ else None)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -345,6 +461,15 @@ def _parser() -> argparse.ArgumentParser:
     b.add_argument("without_path", type=Path, metavar="WITHOUT.jsonl")
     b.add_argument("out", type=Path, metavar="OUT/probs.jsonl")
     b.set_defaults(fn=_cmd_build)
+    n = sub.add_parser("collect-no-evidence", help="DB + lượt harness → with/cases/without/probs (gọi LLM thật qua factory; EVAL_MODE=true)")
+    n.add_argument("--run", type=Path, required=True, help="thư mục lượt harness (có predictions.jsonl, manifest.json)")
+    n.add_argument("--out", type=Path, required=True, help="thư mục MỚI cho kết quả")
+    n.add_argument("--llm-factory", default=None, help="pkg.mod:fn — vd app.eval.llm_factory:eval_gateway (bắt buộc trừ --dry-run)")
+    n.add_argument("--p-method", choices=(P_METHOD,), default=P_METHOD, help=f"chỉ {P_METHOD} (bản đóng băng); phải khớp manifest + audit")
+    n.add_argument("--max-usd", type=float, default=None, help="trần chi riêng cho lượt này")
+    n.add_argument("--run-id", default=None)
+    n.add_argument("--dry-run", action="store_true", help="đọc DB, in số ca + số lời gọi dự kiến, KHÔNG gọi LLM, không ghi file")
+    n.set_defaults(fn=_cmd_collect)
     c = sub.add_parser("compare", help="chẩn đoán ECE/Brier/AUC từng biến thể (không chọn)")
     c.add_argument("with_path", type=Path, metavar="WITH.jsonl")
     c.add_argument("probs", type=Path, metavar="probs.jsonl")

@@ -236,6 +236,62 @@ EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.report \
   diff). Đột biến: `scripts/mutation/mutate_g5.py`.
 - Chưa có: biểu đồ, 10 ca sai tiêu biểu. `folds/<i>.json` và route offline do `offline.py` ghi (mục dưới); biến thể "không trích đoạn" lấy từ `probs.jsonl` (G10).
 
+## Thu `no_evidence` (G10) — `prob_variants.py collect-no-evidence`
+
+**Ngoại lệ (P8 §10):** script đo thêm SAU tag `v1.0-freeze` (bf94df2), chỉ ở `backend/app/eval/` (`llm_factory.py`, `dbread.py`,
+`prob_collect.py`), `scripts/eval/prob_variants.py` và test — KHÔNG đổi hành vi hệ thống, không đổi `config/` (prompt, policy). Stack đo vẫn
+chạy bf94df2; script chỉ ĐỌC DB của lượt đã chạy và gọi lại B14 với trích đoạn rỗng. Lấy từ nhánh `cloud/g-noi-that` 4ad61fa, bỏ G11.
+
+`offline.py` cần `probs.jsonl` (3 biến thể `with_evidence`, `no_evidence`, `max`) cho S1 (hybrid) và S2 (llm_only). `with_evidence` chép từ
+lượt chạy; `no_evidence` = một lần gọi B14 mới với trích đoạn rỗng (sampling_k5 = 5 phiếu `b14_risk_vote`); ca `kb_gap` đã gửi trích đoạn
+rỗng sẵn nên CHÉP, không gọi lại.
+
+**Chuẩn bị (một lần):**
+- Sao lưu DB của máy đo TRƯỚC (H4): factory GHI vào DB 1 user `svc-eval`, 1 ticket `eval-<run_id>` (`final_state` NULL), 1 turn đã kết thúc,
+  cùng `spans`/`llm_calls` (có `prompt_full`)/`llm_cache` (mode `eval`) của từng lời gọi.
+- Nạp biến môi trường trong shell (code KHÔNG đọc `.env`, không in khoá): `EVAL_MODE=true`, `APP_ENV=dev`, `LLM_BACKEND=real`, `FAST_MODEL`,
+  `STRONG_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, `DATABASE_URL` (role `app_rw`, tới Postgres của stack đo từ máy chạy lệnh).
+- Factory từ chối (0 lời gọi) nếu thiếu `EVAL_MODE=true`, `LLM_BACKEND` khác `real`, hoặc vai trò trong `config/llm.yaml` có `temperature ≠ 0`.
+  B14 tự đặt nhiệt độ từng phiếu (k=5 là 0,7) — giữ nguyên thiết kế.
+
+**Từng bước, làm cho S1 rồi S2** (`RUN` = thư mục lượt harness có `predictions.jsonl` + `manifest.json`; `OUT` = thư mục MỚI):
+
+```
+# 1. Thử (không gọi LLM, không ghi file): đọc DB, in số ca, số ca kb_gap, số lời gọi dự kiến
+EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/prob_variants.py collect-no-evidence \
+    --run RUN_S1 --out OUT_S1 --dry-run
+
+# 2. Thu thật (LLM thật): DB → with.jsonl + cases.jsonl → gọi B14 trích đoạn rỗng → without.jsonl → probs.jsonl + manifest.json
+EVAL_MODE=true PYTHONPATH=backend uv run python scripts/eval/prob_variants.py collect-no-evidence \
+    --run RUN_S1 --out OUT_S1 --llm-factory app.eval.llm_factory:eval_gateway [--max-usd 2]
+
+# 3. (Tuỳ chọn) dựng lại probs.jsonl từ with/without đã có — bước 2 đã làm sẵn
+PYTHONPATH=backend uv run python scripts/eval/prob_variants.py build OUT_S1/with.jsonl OUT_S1/without.jsonl OUT_S1b/probs.jsonl
+
+# 4. So sánh chẩn đoán (không chọn biến thể)
+PYTHONPATH=backend uv run python scripts/eval/prob_variants.py compare OUT_S1/with.jsonl OUT_S1/probs.jsonl --json OUT_S1/so-sanh.json
+
+# 5. Sau khi có cả S1 và S2: offline.py (mục dưới) với --s1 RUN_S1/predictions.jsonl RUN_S1/manifest.json OUT_S1/probs.jsonl
+#    --s2 RUN_S2/predictions.jsonl RUN_S2/manifest.json OUT_S2/probs.jsonl
+```
+
+- **p_method = sampling_k5 bắt buộc** (bản đóng băng, P8 §5.1). Trước mọi lời gọi: manifest lượt phải có `config.prob_method = sampling_k5`
+  và `counts.p_method_mismatch = 0`, mọi bản ghi đi lớp LLM trong `predictions.jsonl` có `p_method = sampling_k5`, dòng audit B13/B14 cũng vậy.
+  Lệch ở bất kỳ đâu → dừng cả lượt (mã 2), 0 lời gọi. `--p-method` chỉ nhận `sampling_k5`.
+- **Chọn ca:** `decided_by = llm`, đã có nhãn (`expected_route`). S1: ca không khớp luật; S2 (llm_only): mọi ca có route. `kb_gap` lấy từ
+  `audit_logs.detail->>'kb_gap'` dòng B13/B14 (giá trị đã truyền vào `decide()`); Action/RiskContext dựng lại từ checkpoint bằng chính
+  `risk.context.build_ctx`. Ca thiếu dữ liệu bị bỏ và đếm theo lý do (`unlabeled`, `no_log4`, `raw_prob_mismatch`, `no_kb_gap`, `no_state`) —
+  không đoán.
+- **Số lời gọi dự kiến** = (ca đi lớp LLM − ca kb_gap) × 5, in ở cả `--dry-run` lẫn lượt thật trước khi gọi; ít hơn nếu trúng cache `eval`.
+- **Lỗi LLM** (`LLMUnavailable`, `LLMSchemaError`, `LLMBudgetExceeded`, `TurnBudgetExceeded`) → dòng `{"scenario_id", "error"}` trong
+  `without.jsonl` (hợp đồng WITHOUT.jsonl), ca đó mất `no_evidence` + `max`, lượt không dừng; mã thoát 3, số lỗi ở `manifest.json`
+  `build.failed`. Chạy lại vào thư mục `OUT` mới: ca đã thành công trúng cache `eval` (cùng đáp án), chỉ ca lỗi gọi lại.
+- **DB chỉ đọc** khi thu dữ liệu: mọi phiên của `open_reader` bị ép `default_transaction_read_only=on` (cả engine lẫn pool checkpoint).
+- `OUT` đã có file kết quả → dừng trước khi đọc DB. `manifest.json` ghi `predictions_sha256`, `run_manifest` (run_id, strategy,
+  policy_sha256, git_commit của lượt), báo cáo chọn ca, kết quả build, tổng `llm_calls` của lượt eval và giới hạn.
+- Giới hạn: `within_business_hours` tính lại từ giờ dòng audit (lệch vài ms ở sát 08:00/18:00; prompt B14 không dùng `now`).
+- Kiểm: `backend/tests/unit/eval/test_g10_collect.py`, `backend/tests/integration/test_g10_pg.py` (Postgres, ScriptedLLM, không mạng).
+
 ## Route offline và hiệu chỉnh theo phần — `calibrate.py`, `offline.py` (N18, G4)
 
 Bản đóng băng chạy chưa hiệu chỉnh (D-38), nên route của stack không phản ánh quy trình "fit calibrator + chọn ngưỡng theo chi phí". `offline.py`
