@@ -86,8 +86,9 @@ _B11_INFER = "            _, facts = module.infer(diag, requester_id=requester, 
 _TOKEN = 'TOKEN_IN_TEXT = frozenset({"device_id", "error_code", "target_user", "resource_path"})\n'
 _PHRASE = '    kind, _, ident = action.target.partition(":")\n'
 _B6_FLAG = '        other = bool((state.get("ctx_flags") or {}).get("target_is_other"))  # Q-T20a-4: B3 đã đặt True thì giữ\n'
-_B3_FLAG = '        flags = {"ctx_flags": {"target_is_other": True}} if "target_user" in dropped else {}  # Q-T20a-4\n'
-_CLARIFY_FLAG = '        flags = {"ctx_flags": {"target_is_other": True}} if "target_user" in dropped else {}  # Q-T20a-6\n'
+# be-target-guard: dòng đặt cờ nay theo lý do của `domain/target.target_check` (gồm `target_user` bị bỏ) — đột biến tắt cả dòng.
+_B3_FLAG = '        flags = {"ctx_flags": {"target_is_other": True}} if reason is not None else {}\n'
+_CLARIFY_FLAG = '        flags = {"ctx_flags": {"target_is_other": True}} if reason is not None else {}  # Q-T20a-6 + L-03\n'
 
 # `_hit` so theo TÊN test (khuôn mutate_t22a) — tên test T20a không trùng giữa các file.
 I = C = S = A = ""
@@ -160,11 +161,11 @@ UNIT: list[Mutation] = [
              UT, [G10, "test_n7_b6_keeps_target_is_other_from_b3[n7-vpn]", "test_n7_b6_keeps_target_is_other_from_b3[n7-account]",
                   "test_n7_b6_keeps_target_is_other_from_b3[n7-ablation]"]),
     Mutation("M-T20a-16 B3 không đặt cờ khi target_user bị bỏ",
-             [one(B03, _B3_FLAG, _B3_FLAG.replace('"target_user" in dropped', "False")[:-1] + "  # MUTATION M-T20a-16\n")],
+             [one(B03, _B3_FLAG, _B3_FLAG.replace("reason is not None", "False")[:-1] + "  # MUTATION M-T20a-16\n")],
              UT, [G10]),
     Mutation("M-T20a-17 clarify_wait không bật cờ khi target_user bị bỏ",
              [one(CLARIFY, _CLARIFY_FLAG,
-                  _CLARIFY_FLAG.replace('"target_user" in dropped', "False")[:-1] + "  # MUTATION M-T20a-17\n")],
+                  _CLARIFY_FLAG.replace("reason is not None", "False")[:-1] + "  # MUTATION M-T20a-17\n")],
              UT, [G11]),
 ]  # fmt: skip
 

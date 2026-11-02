@@ -22,10 +22,14 @@
 4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` (`diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4)
    → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
    `effects.once`, khoá RIÊNG từng lượt hỏi (`sub=f"q{n}"`, P5) → `S_CLARIFYING`.
+5. be-target-guard (L-03): intent ∈ {account, access}, `ctx_flags.target_is_other` bật mà CHƯA có `target_user` → `missing =
+   ["target_user", *missing]` (`target_required`). Câu hỏi CỐ ĐỊNH `domain/target.TARGET_QUESTION` — KHÔNG gọi LLM (`prompt` None),
+   vẫn qua output guard, `notify_user`, hạn như bước 4; hết lượt → E4 `clarification_exhausted` như bước 3. Không dựng `Action` trên
+   người gửi khi người dùng chưa nêu đích. Cờ KHÔNG hạ dù người dùng trả lời mã của chính mình (→ HITL/chốt B15).
 
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
-Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int) — không câu người dùng, không chữ LLM.
+Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required` — không câu người dùng, không chữ LLM.
 """
 
 import asyncio
@@ -33,10 +37,11 @@ from datetime import timedelta
 from typing import Any
 
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.action import build_action
+from app.domain.action import TARGET_USER_INTENTS, build_action
 from app.domain.exit_codes import ExitCode
 from app.domain.messages import question_msg
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
+from app.domain.target import TARGET_QUESTION
 from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
@@ -50,10 +55,16 @@ from app.tools.diagnosis import DIAGNOSERS, vpn
 from app.tools.retry import retries_of
 
 
-def _info(missing: list[str], turns: int) -> dict[str, Any]:
+def _info(missing: list[str], turns: int, target_required: bool) -> dict[str, Any]:
     return {"missing": missing, "turn": turns, "prompt": None, "llm_error": None, "guard": None, "tools_called": [],
             "tool_retry_count": 0, "facts": None, "procedure_doc": None, "procedure_kb_version": None,
-            "rag_error": None}  # fmt: skip
+            "rag_error": None, "target_required": target_required}  # fmt: skip
+
+
+def target_required(state: Any, slots: dict[str, Any]) -> bool:
+    """L-03: account/access, cờ `target_is_other` bật, chưa có `target_user` → phải hỏi đích trước khi dựng `Action`."""
+    flag = (state.get("ctx_flags") or {}).get("target_is_other", False) is not False
+    return state["intent"] in TARGET_USER_INTENTS and flag and not slots.get("target_user")
 
 
 def _error_kind(error: str) -> str:
@@ -73,7 +84,10 @@ def make(deps: NodeDeps) -> NodeFn:
         spec = deps.slots.intents[state["intent"]]
         slots = dict(state.get("slots") or {})
         missing = spec.missing(slots)  # T20a P4
-        info = _info(missing, int(state.get("clarification_turns") or 0))
+        need_target = target_required(state, slots)
+        if need_target:  # L-03: hỏi đích TRƯỚC
+            missing = ["target_user", *missing]
+        info = _info(missing, int(state.get("clarification_turns") or 0), need_target)
         try:
             return await (_ask(state, missing, info) if missing else _build(state, slots, info))
         except TurnBudgetExceeded:  # 9.0: ở LLM hoặc tool — không cho qua, không E9
@@ -143,25 +157,28 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=info, exit_code=ExitCode.E4.value, missing_slots=missing,
                 escalation_reason_detail="clarification_exhausted",
             )  # fmt: skip
-        summary = diagnostics_summary(state, dict(state.get("facts") or {}))
-        try:
-            q, meta = await deps.llm.complete(
-                "fast", "b11_clarify_question",
-                {"missing": missing[:2], "intent": state["intent"], "diagnostics_summary": summary}, QuestionOut,
-            )  # fmt: skip
-        except LLMSchemaError as exc:
-            info["llm_error"] = type(exc).__name__
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B11", event="llm_schema_error", audit_detail=info,
-                exit_code=ExitCode.E2.value, missing_slots=missing, escalation_reason_detail="llm_schema_error",
-            )  # fmt: skip
-        except (LLMUnavailable, LLMBudgetExceeded) as exc:
-            info["llm_error"] = type(exc).__name__
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B11", event="llm_unavailable", audit_detail=info,
-                exit_code=ExitCode.E2.value, missing_slots=missing, escalation_reason_detail="llm_unavailable",
-            )  # fmt: skip
-        info["prompt"] = f"{meta.prompt_id}@{meta.prompt_version}"
+        if info["target_required"]:  # L-03: câu CỐ ĐỊNH, không gọi LLM (`prompt` None) — vẫn qua guard/notify/hạn dưới
+            q = QuestionOut(text=TARGET_QUESTION)
+        else:
+            summary = diagnostics_summary(state, dict(state.get("facts") or {}))
+            try:
+                q, meta = await deps.llm.complete(
+                    "fast", "b11_clarify_question",
+                    {"missing": missing[:2], "intent": state["intent"], "diagnostics_summary": summary}, QuestionOut,
+                )  # fmt: skip
+            except LLMSchemaError as exc:
+                info["llm_error"] = type(exc).__name__
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B11", event="llm_schema_error", audit_detail=info,
+                    exit_code=ExitCode.E2.value, missing_slots=missing, escalation_reason_detail="llm_schema_error",
+                )  # fmt: skip
+            except (LLMUnavailable, LLMBudgetExceeded) as exc:
+                info["llm_error"] = type(exc).__name__
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B11", event="llm_unavailable", audit_detail=info,
+                    exit_code=ExitCode.E2.value, missing_slots=missing, escalation_reason_detail="llm_unavailable",
+                )  # fmt: skip
+            info["prompt"] = f"{meta.prompt_id}@{meta.prompt_version}"
         info["guard"] = deps.output_guard.violation(q.text)
         if info["guard"] is not None:  # P4: câu hỏi do LLM viết cũng là chữ sắp gửi người dùng
             return await goto(
