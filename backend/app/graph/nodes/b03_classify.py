@@ -25,6 +25,11 @@
    câu…) nghĩa là người dùng nhắm NGƯỜI KHÁC mà định danh không dùng được → không để `requested_for` âm thầm thành người gửi (luật
    allow chạy trên chính họ): ghi `ctx_flags={"target_is_other": True}` (B6 không ghi đè; B12 `build_ctx` đọc). Không thêm giá trị
    slot vào audit — điểm log 1 đã có key bị bỏ.
+7. be-target-guard (L-03): cờ đó còn bật khi intent ∈ {account, access}, CHƯA có `target_user` hợp lệ VÀ câu nêu người khác
+   (`domain/target.mention_reason`: định danh lạ / cụm "tài khoản dịch vụ", "đồng nghiệp"…) hoặc có khoá lạ `unknown_key`
+   (`domain/target.target_check`). Một ý: dò câu; B5: TỪNG con dò TOÀN CÂU GỐC (không chỉ span — ý tự xưng trong câu có nêu người
+   khác cũng bật, chấp nhận có chủ ý). Không bao giờ hạ cờ. Điểm log 1 thêm `other_target_mention` (bool), `other_target_reason`
+   (hằng | None); dòng tách B5: `other_target_mention` (bất kỳ con) + `children_other_target_reason` (theo con). Không câu/token.
 
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
@@ -39,6 +44,7 @@ from app.domain.children import child_id, child_ref
 from app.domain.exit_codes import ExitCode
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
 from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
+from app.domain.target import requester_id_of, target_check
 from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
@@ -60,7 +66,7 @@ def _point1() -> dict[str, Any]:
     return {
         "layer": None, "intent": None, "confidence": None, "is_multi": None, "model_probs": None,
         "model_version": None, "prompt": None, "ml_error": None, "llm_error": None, "span_not_in_text": False,
-        **audit_dropped({}, frozenset()),
+        "other_target_mention": False, "other_target_reason": None, **audit_dropped({}, frozenset()),
     }  # fmt: skip
 
 
@@ -138,10 +144,13 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="intent_not_enabled",
             )  # fmt: skip
         raw = {**it.slots, **({"action": it.action_hint} if it.action_hint else {})}
-        slots, dropped = sanitize_slots(deps.slots.intents[it.type], raw, text=text)  # 3-Q1: cửa DUY NHẤT
+        spec = deps.slots.intents[it.type]
+        slots, dropped = sanitize_slots(spec, raw, text=text)  # 3-Q1: cửa DUY NHẤT
         span = it.span if it.span.strip() and phrase_in_text(it.span, text) else None  # Q-3f-4
-        info.update(audit_dropped(dropped, known), span_not_in_text=bool(it.span.strip()) and span is None)
-        flags = {"ctx_flags": {"target_is_other": True}} if "target_user" in dropped else {}  # Q-T20a-4
+        mention, reason = target_check(it.type, slots, dropped, spec.keys, text, requester_id_of(state))  # Q-T20a-4 + L-03
+        info.update(audit_dropped(dropped, known), span_not_in_text=bool(it.span.strip()) and span is None,
+                    other_target_mention=mention, other_target_reason=reason)  # fmt: skip
+        flags = {"ctx_flags": {"target_is_other": True}} if reason is not None else {}
         return await goto(
             state, S_DIAGNOSING, next_node="b06_diagnose", step="B3", event="intent_classified", audit_detail=info,
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
@@ -165,9 +174,12 @@ def make(deps: NodeDeps) -> NodeFn:
         return len(intents) >= 2 and any(i.type != "out_of_scope" for i in intents) \
             and any(_verdict(it, text) == RUNNABLE for it in intents)  # fmt: skip
 
-    def _seed(state: Any, cid: str, it: IntentItem, verdict: str, text: str, loops: int) -> dict[str, Any]:
+    def _seed(
+        state: Any, cid: str, it: IntentItem, verdict: str, text: str, loops: int
+    ) -> tuple[dict[str, Any], bool, str | None]:
         """Seed của con (bảng 5.2.3) — KHÔNG `requester_context` (ChildOps đọc lại từ state cha), KHÔNG `risk`/`action`, `facts={}`
-        (G-01). Slot chỉ lấy trong `span` của CHÍNH ý (P2 — chống "mượn" đích của ý khác)."""
+        (G-01). Slot chỉ lấy trong `span` của CHÍNH ý (P2 — chống "mượn" đích của ý khác); dò người khác trên TOÀN CÂU GỐC (L-03).
+        Trả (seed, câu nêu người khác?, lý do cờ của con)."""
         span_ok = bool(it.span.strip()) and phrase_in_text(it.span, text)
         seed: dict[str, Any] = {
             "ticket_id": cid, "parent_ticket_id": state["ticket_id"], "session_id": state.get("session_id"),
@@ -181,13 +193,15 @@ def make(deps: NodeDeps) -> NodeFn:
             # `verdict` ∈ hằng của `_verdict` (bảng 5.2.2) — `ChildOps` kiểm lại ∈ `E1_REASONS` (4 hằng bảng 5.2.2) và `exit_code == "E1"`
             # trước khi gieo (test AST chỉ quét tham số `escalation_reason_detail=` dạng hằng)
             seed["exit_code"], seed["escalation_reason_detail"] = ExitCode.E1.value, verdict
-            return seed
+            return seed, False, None
         raw = {**it.slots, **({"action": it.action_hint} if it.action_hint else {})}
-        slots, dropped = sanitize_slots(deps.slots.intents[it.type], raw, text=l0(it.span))  # P2: text = span của ý
+        spec = deps.slots.intents[it.type]
+        slots, dropped = sanitize_slots(spec, raw, text=l0(it.span))  # P2: text = span của ý
         seed["slots"] = slots
-        if "target_user" in dropped:  # Q-T20a-4 áp TỪNG con
+        mention, reason = target_check(it.type, slots, dropped, spec.keys, text, requester_id_of(state))  # TOÀN CÂU GỐC
+        if reason is not None:  # Q-T20a-4 + L-03 áp TỪNG con
             seed["ctx_flags"] = {"target_is_other": True}
-        return seed
+        return seed, mention, reason
 
     async def _split(state: Any, intents: Sequence[IntentItem], text: str, loops: int, info: dict[str, Any]) -> dict[str, Any]:
         """B4/B5 (P2, P3; D-49): ≥ 1 ý chạy được → tách MỌI ý; 0 ý chạy được → cả câu E1 (Q-T20b-2 = B)."""
@@ -197,9 +211,13 @@ def make(deps: NodeDeps) -> NodeFn:
             return await _whole_e1(state, intents, verdicts, loops, info)
         parent, run = state["ticket_id"], current_run()
         seeds: dict[str, dict[str, Any]] = {}
+        mentions: list[bool] = []
+        reasons: list[str | None] = []
         for i, (it, verdict) in enumerate(zip(intents, verdicts, strict=True), start=1):
             cid = child_id(parent, i)
-            seeds[cid] = _seed(state, cid, it, verdict, text, loops)
+            seeds[cid], mention, reason = _seed(state, cid, it, verdict, text, loops)
+            mentions.append(mention)
+            reasons.append(reason)
             ref = await effects.once(
                 state, "child_create", deps.tickets.create_child, cid, parent_id=parent,
                 redacted_request=seeds[cid]["redacted_request"], created_at=run.clock.now(), step="B5", sub=cid,
@@ -208,6 +226,7 @@ def make(deps: NodeDeps) -> NodeFn:
             if ref != child_ref(cid, len(intents), it.type):  # Q-T20b-12: lần trước tách khác (số ý / loại ý) → không đè, E9 cha
                 raise SplitChanged(f"B3 chạy lại: {cid} đã tạo với {ref!r}, lần này {len(intents)} ý, ý {i} loại {it.type}")
         await deps.tickets.mark_parent_once(parent)  # D-30 — idempotent
+        info.update(other_target_mention=any(mentions), children_other_target_reason=reasons)
         return await goto(
             state, S_CLASSIFYING, next_node="parent_wait", step="B5", event=f"split_into_{len(seeds)}_children",
             audit_detail=info, is_parent=True, children=list(seeds), child_seeds=seeds, reasoning_loops=loops,

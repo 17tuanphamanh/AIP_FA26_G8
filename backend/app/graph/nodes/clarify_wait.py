@@ -14,6 +14,9 @@ Sau `interrupt()`, thứ tự cố định:
    Q-T20a-6 (Phase 5 T20a, duyệt DỪNG 2): `target_user` bị `sanitize_slots` bỏ (BẤT KỲ lý do, kể cả `unknown_key` vì không phải
    slot đang thiếu) → người dùng nhắm NGƯỜI KHÁC ở lượt trả lời → ghi `ctx_flags={"target_is_other": True}` (như B3, Q-T20a-4);
    không thêm giá trị slot vào audit. B11 không ghi `ctx_flags`; B12 `build_ctx` đọc.
+   be-target-guard (L-03): cờ còn bật khi intent ∈ {account, access}, slot (đã gộp) CHƯA có `target_user` hợp lệ VÀ câu TRẢ LỜI nêu
+   người khác hoặc có khoá bị bỏ `unknown_key` NGOÀI `spec.keys` (khoá đã khai báo mà không đang hỏi KHÔNG tính) —
+   `domain/target.target_check`. Không bao giờ hạ cờ. `detail` thêm `other_target_mention`, `other_target_reason` (không câu/token).
 
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt → E2 `turn_budget_exceeded` (bắt tường minh, `step="B11"`).
 Audit `detail`: key slot bị bỏ + lý do (chỉ key đã khai báo — Q-3f-5), cờ lạc đề — không câu người dùng, không giá trị slot.
@@ -28,6 +31,7 @@ from app.domain.exit_codes import ExitCode
 from app.domain.messages import user_msg
 from app.domain.slots import audit_dropped, sanitize_slots
 from app.domain.states import S_CLARIFYING, S_ESCALATED
+from app.domain.target import requester_id_of, target_check
 from app.graph import effects
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
@@ -59,6 +63,7 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         text = deps.privacy.redact_text(raw).text  # P3: từ đây chỉ dùng bản ĐÃ CHE
         info: dict[str, Any] = {"prompt": None, "llm_error": None, "off_topic": None, "streak": None,
+                                "other_target_mention": False, "other_target_reason": None,
                                 **audit_dropped({}, known)}  # fmt: skip
         try:
             return await _extract(state, text, info)
@@ -88,22 +93,23 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_ESCALATED, next_node="b20_audit", step="B11", event="llm_unavailable", audit_detail=info,
                 exit_code=ExitCode.E2.value, conversation=[user_msg(text)], escalation_reason_detail="llm_unavailable",
             )  # fmt: skip
-        clean, dropped = sanitize_slots(
-            deps.slots.intents[state["intent"]], got.slots, text=text, allowed=frozenset(missing)
-        )  # 3-Q1 + P2: cửa DUY NHẤT từ câu trả lời vào `slots`
+        spec = deps.slots.intents[state["intent"]]
+        clean, dropped = sanitize_slots(spec, got.slots, text=text, allowed=frozenset(missing))  # 3-Q1 + P2: cửa DUY NHẤT
+        merged = {**(state.get("slots") or {}), **clean}
+        mention, reason = target_check(state["intent"], merged, dropped, spec.keys, text, requester_id_of(state))  # L-03
         streak = 0 if clean and not got.off_topic else int(state.get("off_topic_streak") or 0) + 1
         info.update(prompt=f"{meta.prompt_id}@{meta.prompt_version}", off_topic=got.off_topic, streak=streak,
-                    **audit_dropped(dropped, known))  # fmt: skip
+                    other_target_mention=mention, other_target_reason=reason, **audit_dropped(dropped, known))  # fmt: skip
         if streak >= 2:  # [Chốt] lạc đề 2 lần liên tiếp
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B11", event="off_topic_twice", audit_detail=info,
                 exit_code=ExitCode.E4.value, off_topic_streak=streak, conversation=[user_msg(text)],
                 escalation_reason_detail="off_topic_twice",
             )  # fmt: skip
-        flags = {"ctx_flags": {"target_is_other": True}} if "target_user" in dropped else {}  # Q-T20a-6
+        flags = {"ctx_flags": {"target_is_other": True}} if reason is not None else {}  # Q-T20a-6 + L-03
         return await goto(
             state, S_CLARIFYING, next_node="b11_slots", step="B11", event="user_replied", audit_detail=info,
-            slots={**(state.get("slots") or {}), **clean}, off_topic_streak=streak, conversation=[user_msg(text)],
+            slots=merged, off_topic_streak=streak, conversation=[user_msg(text)],
             **flags,
         )  # fmt: skip
 

@@ -4,6 +4,9 @@
 Thứ tự (lời giao DỪNG 2, C5):
 1. Chốt phòng thủ P6 — đích `device:` mà `facts.device_owner_is_requester` không phải True → E5 `approval_target_unverified`,
    TRƯỚC mọi lời gọi AD (G4-16: luật sai cũng không mở được phiếu cho máy của người khác).
+1b. Chốt dự phòng L-03 (be-target-guard, cùng kiểu P6): intent ∈ {account, access}, `ctx_flags.target_is_other` bật mà
+   `action.requested_for` == người gửi (đích người khác chưa xác minh được) → E5 `approval_target_unverified`, `stage="target_flag_guard"`,
+   0 phiếu, TRƯỚC roster/AD.
 2. `effects.peek("approval_create")` có (chạy lại — TC33, P9) → nhánh phiếu cũ: `approvals.get` → `once("notify_approver",
    a.approver_id)` → `goto` theo phiếu cũ. KHÔNG chọn người, KHÔNG tra AD, KHÔNG ensure (AD lỗi lúc chạy lại không làm mồ côi
    phiếu `pending`; người duyệt đổi trạng thái giữa hai lần chạy không làm báo nhầm người).
@@ -25,7 +28,7 @@ from typing import Any
 
 from app.core.hashing import hash_action
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.action import Action
+from app.domain.action import TARGET_USER_INTENTS, Action
 from app.domain.approval import (
     ApproverLookupError,
     Choice,
@@ -102,6 +105,13 @@ def make(deps: NodeDeps) -> NodeFn:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B15", event="approval_target_unverified",
                 audit_detail={"stage": "target_guard"}, exit_code=ExitCode.E5.value,
+                escalation_reason_detail="approval_target_unverified",
+            )  # fmt: skip
+        flag = (state.get("ctx_flags") or {}).get("target_is_other", False) is not False
+        if state["intent"] in TARGET_USER_INTENTS and flag and action.requested_for == requester.user_id:  # [1b] L-03
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B15", event="approval_target_unverified",
+                audit_detail={"stage": "target_flag_guard"}, exit_code=ExitCode.E5.value,
                 escalation_reason_detail="approval_target_unverified",
             )  # fmt: skip
         roster = deps.approvers[state["intent"]]  # thiếu = cấu hình lệch mà open_approvers bỏ sót → KeyError → E9

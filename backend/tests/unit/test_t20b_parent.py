@@ -136,9 +136,11 @@ async def test_p3_rerun_after_sent_no_resend_no_remark() -> None:
 async def test_p4_p6_all_children_end_before_parent_wait_closes_now() -> None:
     """p4 (D-17, TC32 nhanh): mọi con kết thúc ngay khi khởi động (con 1 nhắm người khác → E5, con 2 ngoài phạm vi → E1) → cha đóng
     ngay `S_ESCALATED`/`ALL_ESCALATED`, đúng 1 tin (2 khối `escalation` + câu tổng kết), không cần đánh thức.
-    p6 (D-30, M-T20b-9): cha `close_reason`/`exit_code` NULL, 0 `escalations` của cha, `resolution_path` NULL, hàng đợi L2 không có cha."""
-    reset_other = f"{RESET} cho Nguyễn Văn A"
-    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "Nguyễn Văn A"})
+    p6 (D-30, M-T20b-9): cha `close_reason`/`exit_code` NULL, 0 `escalations` của cha, `resolution_path` NULL, hàng đợi L2 không có cha.
+    be-target-guard (L-03): con 1 nêu đích HỢP LỆ `nv005` (không luật → E5) — đích sai mẫu ("Nguyễn Văn A") nay làm B11 HỎI `target_user`
+    (con chưa kết thúc), không còn hợp với p4."""
+    reset_other = f"{RESET} cho nv005"
+    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "nv005"})
     f = make_flow(classify(i1, oos_item()))
     r = await f.submit(f"{reset_other}, tiện {PRINTER}")
     assert (r.status, r.waiting_at) == (S_ESCALATED, None), f.h.audit.events("T1")
