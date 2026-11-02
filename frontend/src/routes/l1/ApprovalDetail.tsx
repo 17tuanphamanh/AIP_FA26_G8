@@ -7,7 +7,7 @@ import { serverNow } from "../../api/serverClock.ts";
 import type { ApprovalListItem, ApprovalViewP4, DecisionIn, ReasonCode } from "../../api/types.ts";
 import { hasPerm, ROLE_LABEL } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
-import { ActionView, FlatTable } from "../../components/ActionView.tsx";
+import { ActionView, FactTable, FlatTable } from "../../components/ActionView.tsx";
 import { useServerNow } from "../../components/clock.ts";
 import { Modal } from "../../components/Modal.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
@@ -408,9 +408,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                 </p>
               </Block>
               <Block title="Dữ kiện đã kiểm">
-                <div className="overflow-hidden rounded-group border border-line">
-                  <FlatTable value={view.facts} testId="fact-row" />
-                </div>
+                <FactTable facts={view.facts} />
               </Block>
             </aside>
           </div>

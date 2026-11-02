@@ -22,7 +22,7 @@ import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { useAuth } from "../../auth/useAuth.ts";
-import { ActionView, FlatTable, RAW_NOTE, SHOW_RAW_TEXT } from "../../components/ActionView.tsx";
+import { ActionView, FACT_SHOW_RAW_LABEL, FactTable, FlatTable, RAW_NOTE, SHOW_RAW_TEXT } from "../../components/ActionView.tsx";
 import { FlashNotice } from "../../components/FlashNotice.tsx";
 import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { ApprovalDetailRoute } from "./ApprovalDetail.tsx";
@@ -2085,5 +2085,67 @@ describe("t232: B2 — TẮT chỉ chữ người đọc được, BẬT khoá g
     expect(screen.queryByTestId("raw-value")).toBeNull();
     expect(screen.queryByTestId("value-label")).toBeNull();
     expect(document.querySelector('[data-key="scope"] dd')?.textContent).toBe('"single_device"');
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t234 (ĐP 02/11 B4)
+
+describe("t234: B4 — bảng 'Dữ kiện đã kiểm' dùng nhãn mục 3; khoá lạ giữ khoá gốc; cùng luật hiển thị an toàn 0c/0d", () => {
+  const facts = {
+    device_registered: true,
+    cert_status: "expired",
+    cert_days_to_expiry: -3,
+    target_user_status: "probation",
+    khoa_la: "abc",
+    device_count: 2,
+    target_lock_reason: "gia_tri_la",
+    the_rong: "",
+    the_null: null,
+    vo_hinh: "LAP\u200b0342",
+    giong_so: "42",
+  };
+  const row = (key: string) => screen.getAllByTestId("fact-row").find((r) => r.dataset.key === key)!;
+  const shown = (key: string) => {
+    const r = row(key);
+    const label = within(r).queryByTestId("value-label");
+    return (label ?? within(r).getByTestId("display-value")).textContent;
+  };
+
+  it("TẮT (mặc định): nhãn khoá + nhãn giá trị; khoá lạ hiện khoá gốc; giá trị lạ hiện nguyên; đủ dòng đúng thứ tự, data-key = khoá gốc", () => {
+    render(<FactTable facts={facts} />);
+    expect(screen.getAllByTestId("fact-row").map((r) => r.dataset.key)).toStrictEqual(Object.keys(facts));
+    expect(screen.getByRole("button", { name: FACT_SHOW_RAW_LABEL }).getAttribute("aria-pressed")).toBe("false");
+    const dt = (key: string) => row(key).querySelector("dt")!;
+    expect(dt("device_registered").textContent).toBe("Máy đã đăng ký · device_registered"); // khoá gốc có trong DOM…
+    expect(within(row("device_registered")).getByTestId("raw-key").hidden).toBe(true); // …nhưng ẩn khi tắt
+    expect(shown("device_registered")).toBe("Có");
+    expect(shown("cert_status")).toBe("Đã hết hạn");
+    expect(dt("cert_days_to_expiry").firstChild!.textContent).toBe("Số ngày tới hạn chứng chỉ (âm = đã quá hạn)");
+    expect(shown("cert_days_to_expiry")).toBe("-3");
+    expect(shown("target_user_status")).toBe("Đang thử việc");
+    expect(shown("device_count")).toBe("2");
+    expect(dt("khoa_la").textContent).toBe("khoa_la"); // khoá lạ: khoá gốc, không nhãn đoán
+    expect(shown("khoa_la")).toBe("abc");
+    expect(shown("target_lock_reason")).toBe("gia_tri_la"); // giá trị ngoài bảng: không nhãn
+    expect(shown("the_rong")).toBe("(trống)");
+    expect(shown("the_null")).toBe("(không có)");
+  });
+
+  it("0c/0d: ký tự vô hình / chuỗi giống số → dạng gốc có escape + 'định dạng gốc' kể cả khi tắt; BẬT → khoá gốc + safeJsonText từng dòng", () => {
+    render(<FactTable facts={facts} />);
+    expect(within(row("vo_hinh")).getByTestId("display-value").textContent).toBe('"LAP\\u200b0342"định dạng gốc');
+    expect(within(row("giong_so")).getByTestId("raw-format-note")).toBeTruthy();
+    for (const r of screen.getAllByTestId("fact-row")) expect(r.textContent).not.toMatch(/[\u200b-\u200f\u2060\ufeff]/);
+    fireEvent.click(screen.getByRole("button", { name: FACT_SHOW_RAW_LABEL }));
+    expect(within(row("device_registered")).getByTestId("raw-key").hidden).toBe(false);
+    expect(within(row("cert_status")).getByTestId("raw-value").textContent).toBe('"expired"');
+    expect(within(row("vo_hinh")).getByTestId("raw-value").textContent).toBe('"LAP\\u200b0342"');
+    expect(JSON.parse(within(row("vo_hinh")).getByTestId("raw-value").textContent!)).toBe(facts.vo_hinh);
+  });
+
+  it("công tắc của bảng dữ kiện tách khỏi công tắc bảng hành động; khoá '__proto__' / 'constructor' không có nhãn", () => {
+    render(<FactTable facts={JSON.parse('{"__proto__": "x", "constructor": "y"}')} />);
+    expect(screen.getAllByTestId("fact-row").map((r) => r.querySelector("dt")!.textContent)).toStrictEqual(['__proto__', "constructor"]);
+    expect(screen.queryByRole("button", { name: SHOW_RAW_TEXT })).toBeNull(); // tên riêng, không trùng nút bảng hành động
   });
 });
