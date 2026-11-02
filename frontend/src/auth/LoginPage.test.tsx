@@ -70,11 +70,21 @@ describe("LoginPage", () => {
     expect(loginCalls()).toBe(0);
   });
 
-  it("M1: cả hai ô trống → báo tên trước", async () => {
+  it("M1: cả hai ô trống → báo tên trước; L1: ô tên viền đỏ + câu gắn đúng ô, ô mật khẩu không", async () => {
     const { loginCalls } = renderLogin(() => json(200, {}));
     await submit("", "");
-    expect((await screen.findByRole("alert")).textContent).toBe(EMPTY_USERNAME);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(EMPTY_USERNAME);
     expect(loginCalls()).toBe(0);
+    const user = screen.getByLabelText("Tên đăng nhập");
+    expect(user.getAttribute("aria-invalid")).toBe("true");
+    expect(user.getAttribute("aria-describedby")).toBe(alert.id);
+    expect(screen.getByLabelText("Mật khẩu").getAttribute("aria-invalid")).toBeNull();
+    fireEvent.change(user, { target: { value: "an.nv" } });
+    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
+    const pwAlert = await screen.findByText(EMPTY_PASSWORD);
+    expect(screen.getByLabelText("Mật khẩu").getAttribute("aria-describedby")).toBe(pwAlert.id);
+    expect(screen.getByLabelText("Tên đăng nhập").getAttribute("aria-invalid")).toBeNull();
   });
 
   it('M2: mật khẩu trống → "Nhập mật khẩu.", không gửi; mật khẩu chỉ khoảng trắng vẫn gửi (server quyết)', async () => {

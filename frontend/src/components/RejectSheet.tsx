@@ -28,13 +28,18 @@ export function RejectSheet({ sending, serverError, onCancel, onSubmit }: Reject
     onSubmit(reason, note);
   }
 
-  const error = problem ?? serverError;
+  // L1 (soát 01/11): lỗi nhập báo ĐÚNG ô (viền đỏ + câu ngay dưới); lỗi của server vẫn ở cuối hộp.
+  const reasonBad = problem !== null && reason === null;
+  const noteBad = problem !== null && reason !== null;
   return (
     <Modal label="Từ chối yêu cầu" onClose={sending ? undefined : onCancel}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <h2 className="text-center text-heading">Từ chối yêu cầu</h2>
-        <div className="overflow-hidden rounded-xl bg-group">
-          <label htmlFor="reject-reason" className="flex items-center justify-between gap-4 border-b border-line px-4 py-3">
+        <div className={`overflow-hidden rounded-xl bg-group ${problem !== null ? "ring-1 ring-danger" : ""}`}>
+          <label
+            htmlFor="reject-reason"
+            className={`flex items-center justify-between gap-4 border-b border-line px-4 py-3 ${reasonBad ? "bg-danger-bg" : ""}`}
+          >
             Lý do
             <select
               id="reject-reason"
@@ -43,7 +48,8 @@ export function RejectSheet({ sending, serverError, onCancel, onSubmit }: Reject
                 setReason(e.target.value ? (e.target.value as ReasonCode) : null);
                 setProblem(null);
               }}
-              aria-invalid={(problem !== null && reason === null) || undefined}
+              aria-invalid={reasonBad || undefined}
+              aria-describedby={reasonBad ? "reject-field-error" : undefined}
               className="min-w-0 bg-transparent text-right text-ink-2"
             >
               <option value="">Chọn lý do…</option>
@@ -67,17 +73,23 @@ export function RejectSheet({ sending, serverError, onCancel, onSubmit }: Reject
               setProblem(null);
             }}
             placeholder="Lý do gửi người dùng (bắt buộc)"
-            aria-invalid={(problem !== null && reason !== null && !note.trim()) || undefined}
+            aria-invalid={noteBad || undefined}
+            aria-describedby={noteBad ? "reject-field-error" : undefined}
             autoFocus
-            className="block w-full resize-none bg-transparent px-4 py-3"
+            className={`block w-full resize-none px-4 py-3 ${noteBad ? "bg-danger-bg" : "bg-transparent"}`}
           />
         </div>
+        {problem !== null ? (
+          <p id="reject-field-error" role="alert" className="-mt-2 px-1 text-secondary text-danger">
+            {problem}
+          </p>
+        ) : null}
         <span className="text-center text-label font-normal text-ink-2">
           Lý do hiển thị cho người gửi (thông tin nhạy cảm được ẩn tự động) · {note.trim().length}/{NOTE_MAX}
         </span>
-        {error ? (
+        {problem === null && serverError ? (
           <p role="alert" className="text-secondary text-danger">
-            {error}
+            {serverError}
           </p>
         ) : null}
         <div className="grid grid-cols-2 gap-3">

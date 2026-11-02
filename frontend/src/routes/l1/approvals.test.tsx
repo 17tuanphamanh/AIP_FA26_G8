@@ -474,12 +474,18 @@ describe("t44: từ chối thiếu lý do hoặc thiếu ghi chú → không g�
     fireEvent.change(note, { target: { value: "Sai máy" } }); // có ghi chú, chưa chọn lý do
     fireEvent.click(send);
     expect(within(dialog).getByRole("alert").textContent).toBe("Chọn lý do từ chối.");
+    // L1: viền đỏ + câu gắn đúng ô "Lý do"
+    expect(reason.getAttribute("aria-invalid")).toBe("true");
+    expect(reason.getAttribute("aria-describedby")).toBe(within(dialog).getByRole("alert").id);
+    expect(note.getAttribute("aria-invalid")).toBeNull();
 
     fireEvent.change(reason, { target: { value: "wrong_device" } });
     for (const value of ["", "   ", "\n\t "]) {
       fireEvent.change(note, { target: { value } });
       fireEvent.click(send);
       expect(within(dialog).getByRole("alert").textContent).toBe("Nhập lý do gửi người dùng (bắt buộc).");
+      expect(note.getAttribute("aria-invalid")).toBe("true");
+      expect(reason.getAttribute("aria-invalid")).toBeNull();
     }
     await new Promise((r) => setTimeout(r, 20));
     expect(posts(calls, "/decision")).toHaveLength(0);
@@ -624,8 +630,14 @@ describe("t47: ghi đè — 'Khác' thiếu ghi chú → không gửi; 409/422 �
     const reasons = [...(within(dialog).getByLabelText("Lý do") as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
     expect(reasons).toStrictEqual(["too_risky_for_auto", "approval_unnecessary", "should_not_escalate", "wrong_answer", "policy_gap", "other"]);
 
+    // L1: chưa chọn quyết định → nhóm quyết định viền đỏ + câu ngay dưới
+    fireEvent.click(within(dialog).getByRole("button", { name: "Gửi ghi đè" }));
+    expect(within(dialog).getByRole("alert").textContent).toBe("Chọn quyết định đúng cho yêu cầu này.");
+    expect(within(dialog).getByRole("radiogroup").getAttribute("aria-invalid")).toBe("true");
     fillOverride(dialog, "Chuyển L2", "other", "   ");
     expect(within(dialog).getByRole("alert").textContent).toBe("Lý do “Khác” cần ghi chú.");
+    expect(within(dialog).getByLabelText("Ghi chú ghi đè").getAttribute("aria-invalid")).toBe("true");
+    expect(within(dialog).getByRole("radiogroup").getAttribute("aria-invalid")).toBeNull();
     await new Promise((r) => setTimeout(r, 20));
     expect(posts(calls, "/override")).toHaveLength(0);
 

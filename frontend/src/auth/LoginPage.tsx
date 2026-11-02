@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from "react-router";
+import { EMPTY_PASSWORD, EMPTY_USERNAME, USERNAME_HINT } from "../api/errors.ts";
 import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { OtpInput } from "../components/OtpInput.tsx";
@@ -39,7 +40,15 @@ export function LoginPage() {
   }
 
   const otp = step === "otp";
-  const alert = error ? (
+  // L1 (soát 01/11): lỗi nhập của một ô → viền đỏ + câu ngay dưới ô đó; lỗi của server vẫn là một câu chung dưới form.
+  const fieldError = otp ? null : error === EMPTY_USERNAME || error === USERNAME_HINT ? "username" : error === EMPTY_PASSWORD ? "password" : null;
+  const fieldMessage = (field: "username" | "password") =>
+    fieldError === field ? (
+      <p id={`login-${field}-error`} role="alert" className="px-1 text-secondary text-danger">
+        {error}
+      </p>
+    ) : null;
+  const alert = error && fieldError === null ? (
     <p role="alert" className="rounded-xl bg-danger-bg px-4 py-3 text-secondary text-danger-ink">
       {error}
     </p>
@@ -113,7 +122,7 @@ export function LoginPage() {
                   <label htmlFor="login-username" className="text-label text-ink">
                     Tên đăng nhập
                   </label>
-                  <div className={FIELD}>
+                  <div className={fieldError === "username" ? FIELD_BAD : FIELD}>
                     <UserIcon />
                     <input
                       id="login-username"
@@ -125,15 +134,18 @@ export function LoginPage() {
                       autoCapitalize="none"
                       spellCheck={false}
                       autoFocus
+                      aria-invalid={fieldError === "username" || undefined}
+                      aria-describedby={fieldError === "username" ? "login-username-error" : undefined}
                       className="h-12 min-w-0 flex-1 bg-white pr-4 outline-none placeholder:text-ink-3"
                     />
                   </div>
+                  {fieldMessage("username")}
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="login-password" className="text-label text-ink">
                     Mật khẩu
                   </label>
-                  <div className={FIELD}>
+                  <div className={fieldError === "password" ? FIELD_BAD : FIELD}>
                     <LockIcon />
                     <div className="min-w-0 flex-1">
                       <PasswordField
@@ -144,9 +156,11 @@ export function LoginPage() {
                         shown={passwordShown}
                         onToggle={togglePassword}
                         inputClassName="h-12 bg-white outline-none placeholder:text-ink-3"
+                        invalidId={fieldError === "password" ? "login-password-error" : undefined}
                       />
                     </div>
                   </div>
+                  {fieldMessage("password")}
                 </div>
                 {alert}
                 <button
@@ -173,8 +187,9 @@ export function LoginPage() {
 }
 
 // Khung ô nhập: viền mảnh, bo góc, viền xanh khi đang gõ (focus-within) — outline giữ cho bàn phím.
-const FIELD =
-  "flex items-center gap-3 overflow-hidden rounded-xl border border-line bg-white pl-4 transition-colors focus-within:border-fpt-blue focus-within:outline-2 focus-within:outline-fpt-blue/20";
+const FIELD_BASE = "flex items-center gap-3 overflow-hidden rounded-xl border bg-white pl-4 transition-colors focus-within:outline-2";
+const FIELD = `${FIELD_BASE} border-line focus-within:border-fpt-blue focus-within:outline-fpt-blue/20`;
+const FIELD_BAD = `${FIELD_BASE} border-danger focus-within:outline-danger/20`;
 
 function UserIcon() {
   return (

@@ -10,6 +10,8 @@ type PasswordFieldProps = {
   onToggle: () => void;
   /** Lớp riêng của ô nhập (nền, viền, outline) — giữ đúng như ô cũ của từng nơi dùng. */
   inputClassName: string;
+  /** Có lỗi tại ô → id câu lỗi (aria-invalid + aria-describedby). */
+  invalidId?: string;
 };
 
 // Ô mật khẩu + nút hiện/ẩn (gói fe-login-sua). Dùng ở màn đăng nhập (F1) và hộp xác nhận lại đăng nhập (F4).
@@ -17,7 +19,7 @@ type PasswordFieldProps = {
 //   tên đọc cho trình đọc màn hình ở aria-label ("Hiện mật khẩu" / "Ẩn mật khẩu") + aria-pressed; vùng bấm 44×44.
 // - Đổi type password ↔ text trên CÙNG một phần tử: giá trị giữ nguyên; vị trí con trỏ / vùng chọn khôi phục sau khi đổi.
 // - autocomplete giữ `current-password` ở cả hai trạng thái.
-export function PasswordField({ id, name, value, onChange, shown, onToggle, inputClassName }: PasswordFieldProps) {
+export function PasswordField({ id, name, value, onChange, shown, onToggle, inputClassName, invalidId }: PasswordFieldProps) {
   const input = useRef<HTMLInputElement>(null);
   const selection = useRef<[number, number] | null>(null);
 
@@ -52,6 +54,8 @@ export function PasswordField({ id, name, value, onChange, shown, onToggle, inpu
         autoComplete="current-password"
         autoCapitalize="none"
         spellCheck={false}
+        aria-invalid={invalidId ? true : undefined}
+        aria-describedby={invalidId}
         className={`min-w-0 flex-1 ${inputClassName}`}
       />
       <button
