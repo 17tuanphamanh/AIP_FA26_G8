@@ -44,11 +44,12 @@ def target_calls(requester_id: str, slots: Mapping[str, str]) -> list[tuple[str,
 
 
 def infer_software(
-    diag: Mapping[str, Any], *, requester_id: str, slots: Mapping[str, str]
+    diag: Mapping[str, Any], *, requester_id: str, slots: Mapping[str, str], allow_infer: bool = True
 ) -> tuple[dict[str, str], dict[str, str | int | bool]]:
+    """`allow_infer=False` (be-target-guard-2, cờ người khác): không suy máy duy nhất của người gửi — B11 hỏi mã máy."""
     devices = diag["check_device_registered"].root if isinstance(diag["check_device_registered"], DeviceList) else []
     entry = diag["check_catalog_entry"] if isinstance(diag["check_catalog_entry"], CatalogEntry) else None
-    inferred, facts = device_facts(devices, requester_id=requester_id, device_id=slots.get("device_id"))
+    inferred, facts = device_facts(devices, requester_id=requester_id, device_id=slots.get("device_id"), allow_infer=allow_infer)
     if "software_name" in slots:  # đã gọi catalog (calls) — 404 là dữ liệu "ngoài danh mục"
         facts["in_catalog"] = entry is not None and entry.in_catalog
         if entry is not None:

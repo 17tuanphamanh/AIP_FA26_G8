@@ -13,6 +13,9 @@ B11) đi qua `sanitize_slots` — hàm thuần, không đọc file (schema `Inte
    "LAP-0417"). `reason` (chữ tự do): đoạn con sau chuẩn hoá casefold + gộp khoảng trắng — câu người dùng đã qua guard
    nên `reason` giữ lại cũng đã được che (luật chung 8.9).
 
+be-target-guard-2 (ĐP 02/11 13:55): `device_id` CHUẨN HOÁ CHỮ HOA trước khi so mẫu (`lap-0610` → `LAP-0610`) — mã máy so không phân
+biệt hoa thường (mẫu trong `config/slots.yaml` giữ nguyên). Có thật trong câu vẫn so không phân biệt hoa thường như trên.
+
 Key do LLM đặt là chữ TỰ DO → `audit_dropped` chỉ ghi key đã khai báo; key lạ thành `"<unknown>"` + đếm (Q-3f-5).
 """
 
@@ -131,6 +134,8 @@ def sanitize_slots(
             dropped[k] = "unknown_key"
             continue
         value = str(raw_value).strip()
+        if k == "device_id":  # be-target-guard-2: mã máy không phân biệt hoa thường
+            value = value.upper()
         if len(value) > MAX_VALUE_LEN:
             dropped[k] = "too_long"
         elif not value:

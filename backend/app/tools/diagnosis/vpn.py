@@ -49,17 +49,19 @@ def target_calls(requester_id: str, device_id: str) -> list[tuple[str, dict[str,
 
 
 def device_facts(
-    devices: Sequence[Device], *, requester_id: str, device_id: str | None
+    devices: Sequence[Device], *, requester_id: str, device_id: str | None, allow_infer: bool = True
 ) -> tuple[dict[str, str], dict[str, str | int | bool]]:
     """T20a P3 (TQ-4): phần MÁY của `infer_vpn`, dùng chung với `infer_software` — `devices` = đầu ra `check_device_registered`
     (rỗng khi 404). Không nêu máy → `device_count`, `has_registered_device`; ĐÚNG 1 máy mới suy slot `device_id` (≥ 2 → để B11 hỏi).
-    Có máy (nêu hoặc suy) → `device_registered` (tồn tại và registered), `device_owner_is_requester` (`owner_id == người gửi`)."""
+    Có máy (nêu hoặc suy) → `device_registered` (tồn tại và registered), `device_owner_is_requester` (`owner_id == người gửi`).
+    be-target-guard-2: `allow_infer=False` (cờ `target_is_other` bật — câu nhắm máy NGƯỜI KHÁC) → KHÔNG suy máy duy nhất của người gửi;
+    vẫn đặt fact theo người (`device_count`, `has_registered_device`)."""
     slots: dict[str, str] = {}
     facts: dict[str, str | int | bool] = {}
     if device_id is None:  # tra theo người: danh sách máy của chính họ
         facts["device_count"] = len(devices)
         facts["has_registered_device"] = any(d.registered for d in devices)
-        if len(devices) == 1:  # ĐÚNG 1 máy mới tự suy; ≥ 2 → để B11 hỏi
+        if len(devices) == 1 and allow_infer:  # ĐÚNG 1 máy mới tự suy; ≥ 2 hoặc cờ người khác → để B11 hỏi
             device_id = devices[0].device_id
             slots["device_id"] = device_id
     if device_id is not None:
@@ -70,12 +72,12 @@ def device_facts(
 
 
 def infer_vpn(
-    diag: Mapping[str, Any], *, requester_id: str, device_id: str | None
+    diag: Mapping[str, Any], *, requester_id: str, device_id: str | None, allow_infer: bool = True
 ) -> tuple[dict[str, str], dict[str, str | int | bool]]:
     devices = diag["check_device_registered"].root if isinstance(diag["check_device_registered"], DeviceList) else []
     certs = diag["check_vpn_cert_expiry"].root if isinstance(diag["check_vpn_cert_expiry"], CertList) else []
     conns = diag["check_last_connection"].root if isinstance(diag["check_last_connection"], ConnectionList) else []
-    slots, facts = device_facts(devices, requester_id=requester_id, device_id=device_id)
+    slots, facts = device_facts(devices, requester_id=requester_id, device_id=device_id, allow_infer=allow_infer)
     device_id = slots.get("device_id", device_id)
     if device_id is not None:
         mine = sorted((c for c in certs if c.device_id == device_id), key=lambda c: c.issued_at, reverse=True)

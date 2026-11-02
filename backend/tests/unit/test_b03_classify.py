@@ -219,8 +219,10 @@ async def test_f18_hallucinated_device_dropped_at_node() -> None:
     v, row, _, _ = await _run([out(item("vpn", 0.9, slots={"device_id": "LAP-0417", "error_code": "691"}))])
     assert row["detail"]["dropped_slot_reasons"] == {"device_id": "slot_not_in_text", "error_code": "slot_not_in_text"}
     assert row["detail"]["slot_fact_collision"] is False
-    # B6 tự tra theo người gửi (nv001 có đúng LAP-0342) — không phải LAP-0417 LLM bịa
-    assert v["slots"]["device_id"] == "LAP-0342"
+    # be-target-guard-2 (ĐP duyệt 02/11 13:35, đổi CÓ CHỦ ĐÍCH): khoá `device_id` bị bỏ (mọi lý do) → cờ người khác → B6 KHÔNG tự suy
+    # máy của người gửi (trước: suy LAP-0342) → B11 hỏi mã máy. Không bao giờ dùng LAP-0417 LLM bịa.
+    assert v["ctx_flags"] == {"target_is_other": True} and row["detail"]["other_target_reason"] == "dropped"
+    assert "device_id" not in v["slots"]
 
 
 # ---- Q-3f-4, Q-3f-5 ---------------------------------------------------------------------------------------------------

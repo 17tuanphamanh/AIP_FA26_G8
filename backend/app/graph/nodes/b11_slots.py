@@ -73,7 +73,10 @@ def _error_kind(error: str) -> str:
 
 
 def diagnostics_summary(state: Any, facts: dict[str, Any]) -> dict[str, Any]:
-    """f4: chỉ enum/bool/số (`facts`) + `device_id` các máy CỦA người gửi (B6 tra theo `user_id`) — không chữ tự do."""
+    """f4: chỉ enum/bool/số (`facts`) + `device_id` các máy CỦA người gửi (B6 tra theo `user_id`) — không chữ tự do.
+    be-target-guard-2 (ĐP Q1 = a): cờ `target_is_other` bật → `devices = []` — câu hỏi không gợi ý máy của người gửi."""
+    if (state.get("ctx_flags") or {}).get("target_is_other", False) is not False:
+        return {"facts": dict(facts), "devices": []}
     requester = state["requester_context"].user_id
     devices = (state.get("diagnostics") or {}).get("check_device_registered") or []
     return {"facts": dict(facts), "devices": [d["device_id"] for d in devices if d.get("owner_id") == requester]}

@@ -17,6 +17,8 @@
    của `TOOLS` có khoá) → `module.infer(...)`. Chẩn đoán với slot chưa đủ chỉ là GỢI Ý — B11 tính lại toàn bộ. Intent khác → E9.
 8. Q-T20a-4 (duyệt DỪNG 1): `ctx_flags.target_is_other` KHÔNG bị ghi đè về False — B3 đặt True khi `target_user` bị bỏ (người
    dùng nhắm người khác mà định danh không qua được `sanitize_slots`); mọi nhánh ở đây giữ True nếu state đã True, mặc định False.
+9. be-target-guard-2 (L-03 Phần 2 D): vpn/software, cờ `target_is_other` bật (B3 thấy câu nhắm MÁY người khác) → KHÔNG tự suy máy duy
+   nhất của người gửi (`allow_infer=False`) — không slot `device_id`/`action` suy ra, không fact máy; B11 hỏi mã máy.
 
 Điểm log 2 ở MỌI nhánh: `tools_called`, `tool_retry_count`, `slots_inferred`, `facts`, `rediagnose`, `phase`.
 """
@@ -27,6 +29,7 @@ from typing import Any
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import ExitCode
 from app.domain.states import S_ESCALATED, S_RETRIEVING
+from app.domain.target import DEVICE_INTENTS
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.ports import ToolResult
@@ -91,10 +94,11 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         if module is None:  # VPN: 404/rỗng = dữ liệu hợp lệ, gộp về None (không đổi)
             diag = {r.tool: (None if r.empty else r.data) for r in results}
-            inferred, facts = vpn.infer_vpn(diag, requester_id=requester, device_id=device_id)
+            inferred, facts = vpn.infer_vpn(diag, requester_id=requester, device_id=device_id, allow_infer=not other)
         else:  # TQ-2: giữ phân biệt 404 (None) / rỗng (RootModel rỗng)
             diag = {t: None for t in module.TOOLS} | {r.tool: r.data for r in results}
-            inferred, facts = module.infer(diag, requester_id=requester, slots=slots)
+            no_infer = {"allow_infer": False} if other and intent in DEVICE_INTENTS else {}  # be-target-guard-2
+            inferred, facts = module.infer(diag, requester_id=requester, slots=slots, **no_infer)
         added = {k: v for k, v in inferred.items() if k not in slots}  # không ghi đè slot người dùng đã nêu
         point2.update(slots_inferred=sorted(added), facts=facts)
         return await goto(

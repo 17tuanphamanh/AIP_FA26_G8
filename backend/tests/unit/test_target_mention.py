@@ -129,8 +129,10 @@ def test_target_check_valid_target_no_new_flag() -> None:
 
 
 def test_target_check_other_intents_never_flag() -> None:
-    for intent in ("vpn", "software", None):
-        assert target_check(intent, {}, {"target_user": "bad_value"}, frozenset(), BUG, "nv001") == (False, None)
+    assert target_check(None, {}, {"target_user": "bad_value"}, frozenset(), BUG, "nv001") == (False, None)
+    # be-target-guard-2 (đổi CÓ CHỦ ĐÍCH): vpn/software giờ xét đích máy — khoá người/máy bị bỏ → `dropped`
+    for intent in ("vpn", "software"):
+        assert target_check(intent, {}, {"target_user": "bad_value"}, frozenset(), BUG, "nv001")[1] == "dropped"
 
 
 def test_target_check_access_resource_slot_a1() -> None:
