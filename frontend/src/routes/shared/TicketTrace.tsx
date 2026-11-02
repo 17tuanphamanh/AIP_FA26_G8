@@ -64,7 +64,7 @@ function TicketTrace({ ticketId }: { ticketId: string }) {
           {traceErrorText(query.error)}
         </div>
       ) : query.isPending ? (
-        <p className="text-ink-2">Đang tải nhật ký…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải nhật ký…</p>
       ) : (
         <Body trace={query.data} />
       )}

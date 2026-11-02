@@ -39,7 +39,7 @@ function CompareBody({ query }: { query: Q }) {
     }
     return <LoadError error={query.error} what="số liệu so sánh" invalid={WINDOW_INVALID_TEXT} />;
   }
-  if (query.data === undefined) return <p className="text-ink-2">Đang tải số liệu…</p>;
+  if (query.data === undefined) return <p className="text-ink-2 motion-safe:animate-pulse">Đang tải số liệu…</p>;
   return <CompareTable data={query.data} />;
 }
 

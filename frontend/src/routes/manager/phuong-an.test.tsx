@@ -416,6 +416,8 @@ describe("t165: lịch sử đổi — bảng 4 cột, thứ tự server, limit 
       "Quay về mặc định.",
     ]);
     expect(rows[1]!.querySelectorAll("td")[3]!.textContent).toBe("Thử chỉ luật <b>một</b> tuần.");
+    // L4 (soát 01/11): cột Người đổi không ngắt giữa mã người dùng ("npa-" / "demo.quan.tm")
+    expect(rows[0]!.querySelectorAll("td")[1]!.className.split(/\s+/)).toContain("whitespace-nowrap");
     expect(table.querySelector("b")).toBeNull();
     expect(screen.getByTestId("strategy-history-truncated").textContent).toBe(HISTORY_TRUNCATED_TEXT);
     expect(calls.some((c) => c.url === "/api/admin/strategy/history?limit=50")).toBe(true);

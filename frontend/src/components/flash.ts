@@ -3,6 +3,8 @@
 export const FLASH = {
   override_other_user: "Bạn đã đăng nhập bằng tài khoản khác — thao tác ghi đè đã huỷ.",
   policy_other_user: "Bạn đã đăng nhập bằng tài khoản khác — thao tác trên chính sách đã huỷ.",
+  /** Đóng ca bị 409 `already_closed` → chuyển sang xem ca ở danh sách Đã đóng (ĐP 02/11 Q3). */
+  escalation_already_closed: "Ca này đã được đóng trước đó.",
 } as const;
 
 export type FlashKey = keyof typeof FLASH;

@@ -10,13 +10,15 @@ type CloseFormProps = {
   onSubmit?: (id: number, body: EscalationCloseIn) => Promise<void>;
   /** 200: ca đã đóng với kết quả `result` (màn chi tiết giữ bản chụp ca + câu báo theo kết quả). */
   onClosed?: (result: EscalationCloseResult) => void;
+  /** 409 `already_closed`: màn chi tiết chuyển sang xem ca ở danh sách Đã đóng (ĐP 02/11). Không truyền → báo tại chỗ. */
+  onAlreadyClosed?: () => void;
 };
 
 // Khối "Đóng escalation" của B4L2Detail (hợp đồng N-PA §4): 3 kết quả (enum B20 §4.3) + ghi chú bắt buộc 1–1000 ký tự.
 // "Đã hoàn tất" khoá khi `completedLock` (ca E5 / E6). 200 → ca rời danh sách Mở (tải lại hàng đợi); 409 `already_closed` →
-// "Ca đã được đóng" + tải lại; 422 → lỗi đúng chỗ (nhóm kết quả / ô ghi chú). Câu lỗi KHÔNG nhắc lại ghi chú đã gõ. Không có
+// tải lại + "Ca này đã được đóng trước đó." (màn chi tiết chuyển sang `?status=closed`); 422 → lỗi đúng chỗ (nhóm kết quả / ô ghi chú). Câu lỗi KHÔNG nhắc lại ghi chú đã gõ. Không có
 // nút duyệt [Chốt 2.2].
-export function CloseForm({ item, onSubmit = closeEscalation, onClosed }: CloseFormProps) {
+export function CloseForm({ item, onSubmit = closeEscalation, onClosed, onAlreadyClosed }: CloseFormProps) {
   const queryClient = useQueryClient();
   const lock = completedLock(item);
   const [result, setResult] = useState<EscalationCloseResult | null>(null);
@@ -57,8 +59,9 @@ export function CloseForm({ item, onSubmit = closeEscalation, onClosed }: CloseF
       // Giữ nguyên lựa chọn + ghi chú để sửa rồi gửi lại.
       const api = e instanceof ApiError ? e : null;
       if (api?.status === 409 && api.code === "already_closed") {
-        setError(ALREADY_CLOSED_TEXT);
         reloadQueue();
+        if (onAlreadyClosed) onAlreadyClosed();
+        else setError(ALREADY_CLOSED_TEXT);
       } else if (api?.status === 422 && (api.code === "deny_case_cannot_complete" || api.fields.includes("close_result"))) {
         setChoiceError(api.code === "deny_case_cannot_complete" ? errorMessage(api) : "Kết quả đóng này không dùng được cho ca này.");
       } else if (api?.status === 422 && api.fields.includes("note")) {

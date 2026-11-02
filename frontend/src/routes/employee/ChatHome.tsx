@@ -69,7 +69,7 @@ export function ChatHome() {
 
   return (
     <section className="flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-16">
-      <div className="flex w-full max-w-(--chat-width) flex-col items-center">
+      <div className="flex w-full max-w-(--chat-width) flex-col items-center motion-safe:animate-rise-in">
         <img src={logoUrl} alt="" width={48} height={48} className="size-12" />
         <h1 className="mt-6 text-center text-title">Hôm nay IT giúp gì cho bạn?</h1>
         <p className="mt-2 text-center text-ink-2">Mô tả vấn đề bằng lời thường — trợ lý sẽ hướng dẫn, hoặc chuyển IT khi cần.</p>
@@ -95,13 +95,14 @@ export function ChatHome() {
           </p>
         ) : null}
         <div className="mt-6 grid w-full gap-3 sm:grid-cols-2">
-          {SUGGESTIONS.map((suggestion) => (
+          {SUGGESTIONS.map((suggestion, i) => (
             <button
               key={suggestion.label}
+              style={{ animationDelay: `${120 + i * 50}ms` }}
               type="button"
               aria-label={suggestion.label}
               onClick={() => suggest(suggestion.text)}
-              className="flex min-w-0 flex-col rounded-group border border-line bg-white px-4 py-3 text-left hover:border-fpt-blue/40 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+              className="flex min-w-0 flex-col rounded-group border border-line bg-white px-4 py-3 text-left hover:-translate-y-0.5 hover:border-fpt-blue/40 hover:bg-group hover:shadow-input focus-visible:outline-2 focus-visible:outline-fpt-blue motion-safe:animate-rise-in"
             >
               <span className="flex min-w-0 flex-col">
                 <span className="text-secondary font-semibold">{suggestion.label}</span>

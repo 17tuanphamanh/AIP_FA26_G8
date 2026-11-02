@@ -29,7 +29,7 @@ export function AlertRow({
       data-alert-id={alert.alert_id}
       data-severity={alert.severity}
       data-status={alert.status}
-      className="border-t border-line first:border-t-0"
+      className="border-t border-line first:border-t-0 motion-safe:animate-rise-in"
     >
       <div className="grid grid-cols-[7px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
         <span className={`size-1.75 rounded-full ${severityDot(alert.severity)}`} aria-hidden="true" />

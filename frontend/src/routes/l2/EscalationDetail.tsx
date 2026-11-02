@@ -1,9 +1,10 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { hasMore, loadedItems, queueQuery, type QueueItem } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueStatus } from "../../api/types.ts";
+import { flashState } from "../../components/flash.ts";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
 import { formatAt } from "../shared/traceText.ts";
 import { MaNhan, NhanMa } from "../../components/MaNhan.tsx";
@@ -62,11 +63,12 @@ function EscalationDetail({
   // Đóng xong: ca rời danh sách Mở (tải lại) — màn giữ bản chụp ca để còn hiện câu báo, không nhảy sang "không còn".
   const [closedSnap, setClosedSnap] = useState<{ item: QueueItem; result: EscalationCloseResult } | null>(null);
   const loadingMore = useRef(false);
+  const navigate = useNavigate();
 
   if (closedSnap) {
     return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} />;
   }
-  if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2">Đang tải ca…</p>;
+  if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse">Đang tải ca…</p>;
   if (id !== null && items === undefined) {
     return (
       <section className="flex flex-col gap-2 px-12 py-10">
@@ -106,7 +108,18 @@ function EscalationDetail({
       </section>
     );
   }
-  return <Detail item={found} now={query.dataUpdatedAt} submit={submit} onClosed={(result) => setClosedSnap({ item: found, result })} />;
+  return (
+    <Detail
+      item={found}
+      now={query.dataUpdatedAt}
+      submit={submit}
+      onClosed={(result) => setClosedSnap({ item: found, result })}
+      // 409: ca đã đóng ở nơi khác → xem ca ở danh sách Đã đóng (chỉ đọc: kết quả, người đóng, lúc đóng) + câu báo một lần.
+      onAlreadyClosed={() =>
+        void navigate(`/escalations/${found.escalation_id}?status=closed`, { replace: true, state: flashState("escalation_already_closed") })
+      }
+    />
+  );
 }
 
 function Detail({
@@ -114,6 +127,7 @@ function Detail({
   now,
   submit,
   onClosed,
+  onAlreadyClosed,
   justClosed = false,
   closedWith = null,
 }: {
@@ -121,6 +135,7 @@ function Detail({
   now: number;
   submit?: Submit;
   onClosed?: (result: EscalationCloseResult) => void;
+  onAlreadyClosed?: () => void;
   justClosed?: boolean;
   /** Kết quả vừa đóng: "Mở ticket mới" → `REOPENED_TEXT` (hợp đồng sửa lần 3 — KHÔNG mã / link ticket mới); khác → `CLOSED_TEXT`. */
   closedWith?: EscalationCloseResult | null;
@@ -177,7 +192,7 @@ function Detail({
           ) : closed ? (
             <ClosedInfo item={item} />
           ) : (
-            <CloseForm item={item} onSubmit={submit} onClosed={onClosed} />
+            <CloseForm item={item} onSubmit={submit} onClosed={onClosed} onAlreadyClosed={onAlreadyClosed} />
           )}
         </div>
       </div>

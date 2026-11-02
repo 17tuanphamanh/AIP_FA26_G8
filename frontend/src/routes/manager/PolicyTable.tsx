@@ -1,6 +1,6 @@
 import type { Issue } from "../../api/errors.ts";
 import { FlatTable } from "../../components/ActionView.tsx";
-import { labelOf, ownEntry } from "../../lib/lookup.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 import type { PolicyCheck } from "./policyText.ts";
 
 // Tab "Bảng" của B4MgrPolicy — CHỈ XEM (sửa ở tab JSON; PLAN-fe mục 7 #21), dựng từ JSON ĐANG có trong ô sửa. Giá trị
@@ -71,6 +71,7 @@ export function PolicyTable({ check, issues }: { check: PolicyCheck; issues: rea
           <ul className="overflow-hidden rounded-group border border-line">
             {Object.entries(constants).map(([key, v]) => {
               const flags = issuesAt(issues, "constants", key);
+              const label = ownEntry<string | null>(CONSTANT_LABEL, key, null); // khoá chưa có nhãn → chỉ hiện khoá một lần (L3)
               return (
                 <li
                   key={key}
@@ -80,8 +81,8 @@ export function PolicyTable({ check, issues }: { check: PolicyCheck; issues: rea
                   className={`flex items-center justify-between gap-4 border-t border-line px-5 py-3 first:border-t-0 ${flags.length ? "bg-danger-bg" : ""}`}
                 >
                   <span className="flex min-w-0 flex-col">
-                    <span>{labelOf(CONSTANT_LABEL, key)}</span>
-                    <span className="font-mono text-label font-normal text-ink-2">{key}</span>
+                    <span className={label === null ? "font-mono" : undefined}>{label ?? key}</span>
+                    {label !== null ? <span className="font-mono text-label font-normal text-ink-2">{key}</span> : null}
                     <Flag messages={flags} />
                   </span>
                   <span className={`shrink-0 font-mono ${flags.length ? "font-semibold text-danger" : "text-ink-2"}`}>{raw(v)}</span>

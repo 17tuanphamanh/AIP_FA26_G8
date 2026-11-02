@@ -47,6 +47,12 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
   }
 
   const home = props.variant === "home";
+  // L2 (soát 01/11): ô có `maxLength` cắt im lặng khi dán quá dài → gần giới hạn (≥ 87,5%, vd 3500/4000) hiện "n/max";
+  // chạm giới hạn → kèm câu báo phần thừa bị bỏ.
+  const length = props.value.length;
+  const counter = length >= Math.floor(props.maxLength * 0.875);
+  const atMax = length >= props.maxLength;
+  const counterId = `${id}-counter`;
   return (
     <div className="flex flex-col gap-1.5">
       <div
@@ -71,7 +77,7 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
           disabled={props.disabled}
           autoFocus={props.autoFocus}
           aria-invalid={props.error ? true : undefined}
-          aria-describedby={props.error ? errorId : undefined}
+          aria-describedby={[props.error ? errorId : "", atMax ? counterId : ""].filter(Boolean).join(" ") || undefined}
           className={`resize-none bg-transparent field-sizing-content placeholder:text-ink-2 focus-visible:outline-none disabled:text-ink-2 ${
             home ? "max-h-60 min-h-14 w-full" : "max-h-40 min-h-10 grow py-2"
           }`}
@@ -94,6 +100,12 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
       {props.error ? (
         <p id={errorId} role="alert" className="px-5 text-label font-normal text-danger">
           {props.error}
+        </p>
+      ) : null}
+      {counter ? (
+        <p id={counterId} data-testid="composer-counter" className={`px-5 text-right text-label font-normal tabular-nums ${atMax ? "text-orange-ink" : "text-ink-2"}`}>
+          {length}/{props.maxLength}
+          {atMax ? " · Đã tới giới hạn — phần dán thêm bị bỏ." : ""}
         </p>
       ) : null}
     </div>

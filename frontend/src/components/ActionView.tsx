@@ -65,6 +65,8 @@ export function FlatTable({
   );
 }
 
+export const SHOW_RAW_TEXT = "Hiện giá trị gốc";
+
 // ---- Bảng hành động của phiếu duyệt (B2, ĐP 01/11 14:50 + 15:00 + 15:35; Project claude/bang-nhan-b2-01-11.md mục 0, 0c) ----
 // TẮT (mặc định): chỉ chữ người đọc được — khoá có nhãn chỉ hiện nhãn; giá trị có nhãn chỉ hiện nhãn; chuỗi không nhãn hiện nội
 // dung không ngoặc kép. BẬT: khoá gốc + JSON.stringify từng dòng. Mọi phần tử gốc LUÔN trong DOM (`hidden` khi tắt) — test so
@@ -193,9 +195,72 @@ function ActionTable({ action, showRaw }: { action: Record<string, unknown>; sho
   );
 }
 
+// ---- Bảng "Dữ kiện đã kiểm" của phiếu duyệt (ĐP 02/11 B4; bảng nhãn mục 3) ----------------------------------------------
+// Cùng luật hiển thị an toàn với bảng hành động (0c/0d): khoá có nhãn → nhãn (khoá gốc ẩn tới khi bật); khoá lạ → khoá gốc;
+// giá trị dùng CHÍNH `ActionValue` với khoá `facts.<khoá>` (nhãn giá trị, (trống)/(không có), dạng gốc + escape). Công tắc
+// riêng của bảng, mặc định TẮT, không nhớ (state trong component). testid `fact-row` + `data-key` (khoá gốc) giữ nguyên.
+
+function FactKey({ entryKey, showRaw }: { entryKey: string; showRaw: boolean }) {
+  const label = entryKey ? flatKeyLabel(`facts.${entryKey}`) : null;
+  if (label === null) return <>{entryKey ? safeJsonText(entryKey) : "(gốc)"}</>; // khoá lạ: khoá gốc, kể cả khi tắt
+  return (
+    <>
+      <span className="font-sans">{label}</span>
+      <span data-testid="raw-key" hidden={!showRaw}>
+        {" · "}
+        <span className="text-label font-normal">{safeJsonText(entryKey)}</span>
+      </span>
+    </>
+  );
+}
+
+export const FACT_SHOW_RAW_LABEL = "Hiện giá trị gốc của dữ kiện";
+
+export function FactTable({ facts }: { facts: unknown }) {
+  const [showRaw, setShowRaw] = useState(false);
+  const entries = flattenEntries(facts);
+  return (
+    <div className="overflow-hidden rounded-group border border-line">
+      <div className="flex justify-end border-b border-line bg-group px-5 py-2">
+        <button
+          type="button"
+          aria-pressed={showRaw}
+          aria-label={FACT_SHOW_RAW_LABEL}
+          onClick={() => setShowRaw((v) => !v)}
+          data-testid="fact-show-raw"
+          className={`h-7 shrink-0 rounded-md border px-3 text-label ${
+            showRaw ? "border-fpt-blue bg-selected text-fpt-blue" : "border-line bg-white font-normal text-ink"
+          }`}
+        >
+          {SHOW_RAW_TEXT}
+        </button>
+      </div>
+      <dl className="font-mono text-secondary">
+        {entries.map((entry) => {
+          const short = isShortValue(entry.value);
+          return (
+            <div
+              key={entry.key}
+              data-testid="fact-row"
+              data-key={entry.key}
+              className={`flex justify-between border-t border-line px-5 py-2.5 first:border-t-0 ${short ? "flex-wrap gap-x-4 gap-y-1" : "gap-4"}`}
+            >
+              <dt className="shrink-0 text-ink-2">
+                <FactKey entryKey={entry.key} showRaw={showRaw} />
+              </dt>
+              <dd className={`min-w-0 text-right wrap-anywhere break-normal${short ? " ml-auto max-w-full" : ""}`}>
+                <ActionValue entryKey={entry.key ? `facts.${entry.key}` : ""} raw={entry.value} showRaw={showRaw} />
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </div>
+  );
+}
+
 /** Chú thích đầu bảng (ĐP 01/11 14:50 điều kiện 4) — đúng chữ ĐP. */
 export const RAW_NOTE = "Bảng hiển thị bằng nhãn dễ đọc. Bấm 'Hiện giá trị gốc' hoặc mở tab JSON để xem đúng dữ liệu hệ thống sẽ chạy.";
-export const SHOW_RAW_TEXT = "Hiện giá trị gốc";
 
 type Mode = "table" | "json";
 

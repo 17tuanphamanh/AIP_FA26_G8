@@ -129,7 +129,7 @@ export function NotificationBell({ me }: { me: Me }) {
               close();
             }
           }}
-          className="absolute top-10 left-0 z-30 flex max-h-120 w-90 flex-col overflow-hidden rounded-group border border-line bg-white shadow-input outline-none"
+          className="absolute top-10 left-0 z-30 flex max-h-120 w-90 origin-top-left flex-col overflow-hidden rounded-group border border-line bg-white shadow-input outline-none motion-safe:animate-pop-in"
         >
           <h2 className="border-b border-line px-4 py-3 text-secondary font-semibold">Thông báo</h2>
           <div className="flex min-h-0 flex-col overflow-y-auto">
@@ -180,7 +180,7 @@ function NotificationRow({
   // ĐP 23:51: đợt này KHÔNG hiện link / mã ticket mới kể cả khi `new_ticket_id` lỡ có giá trị — chỉ link ticket gốc.
   const label = ownEntry<string | null>(KET_QUA_THONG_BAO, item.result, null);
   return (
-    <li className="flex gap-2.5 border-b border-line px-4 py-3 last:border-b-0" data-testid="tb-row">
+    <li className="flex gap-2.5 border-b border-line px-4 py-3 last:border-b-0 motion-safe:animate-fade-in" data-testid="tb-row">
       <span className={`mt-2 size-1.75 shrink-0 rounded-full bg-send ${fresh ? "" : "invisible"}`} aria-hidden="true" />
       <div className="flex min-w-0 grow flex-col gap-1">
         <p className="text-secondary">{cauThongBao(item)}</p>

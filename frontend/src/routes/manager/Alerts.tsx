@@ -79,7 +79,7 @@ export function Alerts() {
       ) : query.isError ? (
         <LoadError error={query.error} what="cảnh báo" />
       ) : query.isPending ? (
-        <p className="text-ink-2">Đang tải cảnh báo…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải cảnh báo…</p>
       ) : (
         <>
           {query.data.truncated ? (
@@ -119,7 +119,7 @@ export function OpenAlertsBlock({ range }: { range: RangeKey }) {
       </p>
     );
   } else if (query.isPending) {
-    body = <p className="px-4 py-3 text-secondary text-ink-2">Đang tải cảnh báo…</p>;
+    body = <p className="px-4 py-3 text-secondary text-ink-2 motion-safe:animate-pulse">Đang tải cảnh báo…</p>;
   } else if (query.data.items.length === 0) {
     body = <p className="px-4 py-3 text-secondary text-ink-2">Không có cảnh báo đang mở.</p>;
   } else {

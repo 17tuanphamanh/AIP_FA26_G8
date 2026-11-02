@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 export function Modal({ label, onClose, children }: { label: string; onClose?: () => void; children: ReactNode }) {
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-ink/25 px-4"
+      className="fixed inset-0 z-20 flex items-center justify-center bg-ink/25 px-4 motion-safe:animate-fade-in"
       onKeyDown={(e) => {
         if (e.key === "Escape" && onClose) onClose();
       }}
@@ -13,7 +13,7 @@ export function Modal({ label, onClose, children }: { label: string; onClose?: (
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className="flex max-h-full w-120 max-w-full flex-col gap-4 overflow-y-auto rounded-sheet bg-white p-6 shadow-input"
+        className="flex max-h-full w-120 max-w-full flex-col gap-4 overflow-y-auto rounded-sheet bg-white p-6 shadow-input motion-safe:animate-pop-in"
       >
         {children}
       </div>

@@ -56,7 +56,7 @@ export function StrategySection({ client = api }: { client?: Client }) {
           Chưa tải được cách xử lý: {errorMessage(current.error instanceof ApiError ? current.error : null)}
         </p>
       ) : current.data === undefined ? (
-        <p className="text-ink-2">Đang tải cách xử lý…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải cách xử lý…</p>
       ) : (
         <>
           <StrategyForm
@@ -293,7 +293,7 @@ function StrategyHistoryBlock({ client }: { client: Client }) {
           Chưa tải được lịch sử: {errorMessage(history.error instanceof ApiError ? history.error : null)}
         </p>
       ) : history.data === undefined ? (
-        <p className="pl-1 text-secondary text-ink-2">Đang tải lịch sử…</p>
+        <p className="pl-1 text-secondary text-ink-2 motion-safe:animate-pulse">Đang tải lịch sử…</p>
       ) : history.data.items.length === 0 ? (
         <p data-testid="strategy-history-empty" className="pl-1 text-secondary text-ink-2">
           {HISTORY_EMPTY_TEXT}
@@ -329,7 +329,7 @@ function HistoryTable({ items }: { items: readonly StrategyChange[] }) {
           {items.map((c, i) => (
             <tr key={i} data-testid="strategy-history-row" className="border-t border-line align-top">
               <td className="px-5 py-2.5 whitespace-nowrap tabular-nums">{vnDateTime(c.changed_at)}</td>
-              <td className="px-5 py-2.5 font-mono">{c.changed_by}</td>
+              <td className="px-5 py-2.5 font-mono whitespace-nowrap">{c.changed_by}</td>
               <td className="px-5 py-2.5">
                 {strategyName(c.strategy_from)} → {strategyName(c.strategy_to)}
               </td>

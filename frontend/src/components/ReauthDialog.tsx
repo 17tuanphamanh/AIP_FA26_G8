@@ -40,7 +40,7 @@ export function ReauthDialog({ userId, onDone }: ReauthDialogProps) {
         </p>
         {step === "otp" ? (
           <div className="flex justify-center">
-            <OtpInput digits={digits} onChange={setDigits} disabled={busy} />
+            <OtpInput digits={digits} onChange={setDigits} disabled={busy} focusKey={steps.otpFocus} />
           </div>
         ) : (
           <div className="overflow-hidden rounded-group border border-line">

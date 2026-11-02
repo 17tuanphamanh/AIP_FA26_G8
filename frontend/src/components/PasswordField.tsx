@@ -10,13 +10,16 @@ type PasswordFieldProps = {
   onToggle: () => void;
   /** Lớp riêng của ô nhập (nền, viền, outline) — giữ đúng như ô cũ của từng nơi dùng. */
   inputClassName: string;
+  /** Có lỗi tại ô → id câu lỗi (aria-invalid + aria-describedby). */
+  invalidId?: string;
 };
 
 // Ô mật khẩu + nút hiện/ẩn (gói fe-login-sua). Dùng ở màn đăng nhập (F1) và hộp xác nhận lại đăng nhập (F4).
-// - Nút `type="button"`: KHÔNG gửi form; aria-label đổi theo trạng thái + aria-pressed; cao 44 (h-11) như nút viên thuốc.
+// - Nút `type="button"`: KHÔNG gửi form; biểu tượng con mắt (đang ẩn → mắt mở = bấm để hiện; đang hiện → mắt gạch);
+//   tên đọc cho trình đọc màn hình ở aria-label ("Hiện mật khẩu" / "Ẩn mật khẩu") + aria-pressed; vùng bấm 44×44.
 // - Đổi type password ↔ text trên CÙNG một phần tử: giá trị giữ nguyên; vị trí con trỏ / vùng chọn khôi phục sau khi đổi.
 // - autocomplete giữ `current-password` ở cả hai trạng thái.
-export function PasswordField({ id, name, value, onChange, shown, onToggle, inputClassName }: PasswordFieldProps) {
+export function PasswordField({ id, name, value, onChange, shown, onToggle, inputClassName, invalidId }: PasswordFieldProps) {
   const input = useRef<HTMLInputElement>(null);
   const selection = useRef<[number, number] | null>(null);
 
@@ -51,6 +54,8 @@ export function PasswordField({ id, name, value, onChange, shown, onToggle, inpu
         autoComplete="current-password"
         autoCapitalize="none"
         spellCheck={false}
+        aria-invalid={invalidId ? true : undefined}
+        aria-describedby={invalidId}
         className={`min-w-0 flex-1 ${inputClassName}`}
       />
       <button
@@ -59,10 +64,21 @@ export function PasswordField({ id, name, value, onChange, shown, onToggle, inpu
         aria-label={shown ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
         aria-pressed={shown}
         aria-controls={id}
-        className="h-11 min-w-11 shrink-0 rounded-full px-3 text-secondary font-semibold text-fpt-blue focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-group hover:text-ink focus-visible:outline-2 focus-visible:outline-fpt-blue"
       >
-        {shown ? "Ẩn" : "Hiện"}
+        <EyeIcon off={shown} />
       </button>
     </div>
+  );
+}
+
+/** Con mắt (bấm để hiện) / con mắt gạch chéo (bấm để ẩn). Thuần trang trí — tên nút nằm ở aria-label. */
+function EyeIcon({ off }: { off: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+      {off ? <path d="M4 4l16 16" /> : null}
+    </svg>
   );
 }

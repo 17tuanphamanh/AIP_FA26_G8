@@ -33,7 +33,7 @@ function RecentTickets() {
   return (
     <ul className="flex flex-col gap-1" aria-label="Yêu cầu gần đây">
       {tickets.map((t) => (
-        <li key={t.ticket_id}>
+        <li key={t.ticket_id} className="motion-safe:animate-rise-in">
           <NavLink to={`/chat/${encodeURIComponent(t.ticket_id)}`} className={itemClass}>
             <span className={`size-1.75 shrink-0 rounded-full ${DOT[t.tone]}`} aria-hidden="true" />
             <span className="truncate">{titleOf(t)}</span>

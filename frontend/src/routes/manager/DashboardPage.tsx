@@ -100,7 +100,7 @@ function BusinessTab({ query, range }: { query: Q<Parameters<typeof BusinessKpis
       ) : data ? (
         <BusinessKpis data={data} />
       ) : (
-        <p className="text-ink-2">Đang tải số liệu…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải số liệu…</p>
       )}
       <div className="grid grid-cols-[minmax(0,1fr)_400px] gap-6">
         {data ? <BusinessSections data={data} /> : <div />}
@@ -115,6 +115,6 @@ function BusinessTab({ query, range }: { query: Q<Parameters<typeof BusinessKpis
 
 function AiTab({ query }: { query: Q<Parameters<typeof AiDashboardView>[0]["data"]> }) {
   if (query.isError) return <LoadError error={query.error} what="số liệu AI" invalid={WINDOW_INVALID_TEXT} />;
-  if (query.data === undefined) return <p className="text-ink-2">Đang tải số liệu…</p>;
+  if (query.data === undefined) return <p className="text-ink-2 motion-safe:animate-pulse">Đang tải số liệu…</p>;
   return <AiDashboardView data={query.data} />;
 }

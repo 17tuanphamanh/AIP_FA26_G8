@@ -165,7 +165,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const sendReply = (body: ParentReplyIn) => submit(() => replyTicket(ticketId, body));
 
   if (query.isPending) {
-    return <p className="px-12 py-10 text-ink-2">Đang tải yêu cầu…</p>;
+    return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse">Đang tải yêu cầu…</p>;
   }
   if (!view) {
     const e = query.error;
@@ -222,7 +222,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-10 pb-8">
         <div className="flex w-full max-w-(--chat-width) grow flex-col gap-8">
           {notices.length > 0 ? (
-            <div role="status" className="rounded-group border border-line bg-group px-4 py-3 text-secondary text-ink-2" data-testid="notices">
+            <div role="status" className="rounded-group border border-line bg-group px-4 py-3 text-secondary text-ink-2 motion-safe:animate-drop-in" data-testid="notices">
               {notices.map((notice) => (
                 <p key={notice}>{notice}</p>
               ))}
@@ -231,7 +231,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           {mine ? (
             <p
               data-role="request"
-              className={`${USER_BUBBLE} ${mine.request === null ? "text-ink-2 italic" : ""}`}
+              className={`${USER_BUBBLE} motion-safe:animate-rise-in ${mine.request === null ? "text-ink-2 italic" : ""}`}
             >
               {mine.request ?? REDACTED_NOTE}
             </p>
@@ -332,7 +332,7 @@ type ActionPanelProps = {
 function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5" data-testid="final-note">
+      <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5 motion-safe:animate-rise-in" data-testid="final-note">
         <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
         <Link
           to="/chat"
@@ -346,7 +346,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   }
   if (waiting === "confirm") {
     return (
-      <div className="ml-10 flex flex-wrap items-center gap-3 rounded-group border border-line bg-white py-4 pr-4 pl-5">
+      <div className="ml-10 flex flex-wrap items-center gap-3 rounded-group border border-line bg-white py-4 pr-4 pl-5 motion-safe:animate-rise-in">
         <span className="grow font-semibold">Vấn đề của bạn đã được giải quyết chưa?</span>
         <button
           type="button"
@@ -370,7 +370,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   if (waiting === "approval") {
     // Có hạn → đồng hồ (N-TB P5); không có hạn / hạn hỏng → nhãn tĩnh như cũ.
     return (
-      <div className="ml-10 flex items-start rounded-group border-l-3 border-l-fpt-orange bg-orange-bg py-4 pr-5 pl-4.5">
+      <div className="ml-10 flex items-start rounded-group border-l-3 border-l-fpt-orange bg-orange-bg py-4 pr-5 pl-4.5 motion-safe:animate-rise-in">
         <div className="flex min-w-0 flex-col gap-1.5">
           {clock ?? <span className="text-label text-orange-ink">Chờ IT duyệt</span>}
           <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
@@ -389,7 +389,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   }
   if (waiting === "clarify") return null; // câu hỏi đã nằm trong hội thoại; ô trả lời ở dưới
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-3 motion-safe:animate-fade-in">
       <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-secondary text-ink-2" data-testid="processing">
         <span className="inline-flex h-6 items-center gap-1 rounded-full bg-group px-2.5" aria-hidden="true">
