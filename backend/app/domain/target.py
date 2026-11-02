@@ -18,6 +18,16 @@ Không bao giờ trả lý do để HẠ cờ; nơi gọi chỉ ghi True.
   TÍNH là định danh lạ (thận trọng); `[BÍ_MẬT_ĐÃ_ẨN]` KHÔNG tính.
 - `phrase`: cụm gợi ý người khác, so cả bản có dấu lẫn bản bỏ dấu. Tự xưng ("cho em", "giúp em", "của em", "mình", "tôi") không tính.
 
+be-target-guard-2 (L-03 Phần 2 D, D-72 bổ sung): intent ∈ {vpn, software} (`DEVICE_INTENTS`) → lý do bật cờ (thứ tự kiểm):
+- `dropped`: khoá `device_id` hoặc `target_user` bị bỏ (BẤT KỲ lý do — "lap-0610" sai mẫu, mã không có trong câu…);
+- `identifier`: CHỈ mã nhân viên `^nv\\d{3,5}$` (casefold) khác người gửi — KHÔNG dùng phép dò định danh ASCII rộng (tên phần mềm/phiên bản
+  như 7-zip, python3.11 sẽ bật nhầm);
+- `phrase`: cụm gợi ý người khác như trên + cụm máy: "máy (tính )?(của )?(anh|chị|bạn|sếp|cô|chú|cậu) <Tên viết hoa>", "máy (tính )?của
+  (anh|chị|bạn|sếp|cô|chú|cậu)", "của (anh|chị|…) <Tên viết hoa>". "máy của em/mình/tôi" không tính;
+- `device_text`: câu có chuỗi dạng mã máy (`[a-z]{2,4}[- ]?\\d{3,5}`, không phân biệt hoa thường — "LAP 0610", "lap-0610") mà dạng chuẩn
+  (`LAP-0610`) KHÁC `device_id` sạch (LLM bỏ khoá mã máy) và không nằm trong tên phần mềm đã sạch.
+Cờ bật → B6 KHÔNG tự suy máy duy nhất của người gửi (`allow_infer`) → B11 hỏi mã máy → máy người khác → B15 chốt P6 (E5).
+
 Audit chỉ ghi lý do (hằng) + bool — KHÔNG ghi câu hay token.
 """
 
@@ -30,7 +40,9 @@ from app.domain.action import TARGET_USER_INTENTS
 from app.domain.context import RequesterContext
 
 type MentionReason = Literal["identifier", "phrase"]
-type FlagReason = Literal["identifier", "phrase", "dropped", "unknown_key"]
+type FlagReason = Literal["identifier", "phrase", "dropped", "unknown_key", "device_text"]
+
+DEVICE_INTENTS = frozenset({"vpn", "software"})  # be-target-guard-2: đích là MÁY
 
 # B11 hỏi `target_user` khi cờ bật mà chưa có đích — câu CỐ ĐỊNH, không gọi LLM (vẫn qua output guard, notify, hạn).
 TARGET_QUESTION = (
@@ -66,6 +78,11 @@ _PHRASES = (
     r"\b(?:anh|chị|em|bạn|cậu|cô|chú) ấy\b", r"tài khoản của (?:anh|chị|bạn|sếp|cô|chú)\b", r"\bhộ (?:anh|chị|bạn)\b",
 )  # fmt: skip
 _NAMED = r"(?i:\bcho (?:anh|chị|bạn|sếp|cô|chú)) (\w)"  # "cho chị Hoa" — tên viết hoa (so trên bản giữ hoa/thường)
+# be-target-guard-2: cụm MÁY của người khác ("máy của chị Hoa", "máy anh Nam", "máy của sếp") — không có "em/mình/tôi" (tự xưng)
+_DEVICE_PHRASES = (r"\bmáy (?:tính )?của (?:anh|chị|bạn|sếp|cô|chú|cậu)\b",)
+_DEVICE_NAMED = r"(?i:\b(?:máy (?:tính )?(?:của )?|của )(?:anh|chị|bạn|sếp|cô|chú|cậu)) (\w)"  # + "máy lap-0610 của chị Hoa"
+_EMPLOYEE = re.compile(r"nv\d{3,5}")  # mã nhân viên (seed nvXXX) — dò riêng cho vpn/software
+_DEVICE_TEXT = re.compile(r"(?<!\w)([a-z]{2,4})[- ]?(\d{3,5})(?!\w)")  # biên \w Unicode: "cổng 443", "phòng 302" không khớp
 
 
 def fold(text: str) -> str:
@@ -76,6 +93,8 @@ def fold(text: str) -> str:
 
 _PHRASE_RES = tuple(re.compile(p) for p in _PHRASES) + tuple(re.compile(fold(p)) for p in _PHRASES)
 _NAMED_RES = (re.compile(_NAMED), re.compile(fold(_NAMED)))
+_DEVICE_PHRASE_RES = tuple(re.compile(p) for p in _DEVICE_PHRASES) + tuple(re.compile(fold(p)) for p in _DEVICE_PHRASES)
+_DEVICE_NAMED_RES = (re.compile(_DEVICE_NAMED), re.compile(fold(_DEVICE_NAMED)))
 
 
 def _ignored_values(values: Iterable[str]) -> frozenset[str]:
@@ -104,16 +123,44 @@ def _has_identifier(text: str, requester_id: str, ignore: frozenset[str]) -> boo
     return False
 
 
-def _has_phrase(text: str) -> bool:
+def _has_phrase(text: str, *, device: bool = False) -> bool:
     lowered = text.casefold()
     folded = fold(lowered)
-    if any(r.search(lowered) or r.search(folded) for r in _PHRASE_RES):
+    phrases = _PHRASE_RES + (_DEVICE_PHRASE_RES if device else ())
+    if any(r.search(lowered) or r.search(folded) for r in phrases):
         return True
-    for r in _NAMED_RES:
+    for r in _NAMED_RES + (_DEVICE_NAMED_RES if device else ()):
         for target in (text, fold(text)):
             if any(m.group(1).isupper() for m in r.finditer(target)):
                 return True
     return False
+
+
+def _has_employee_id(text: str, requester_id: str) -> bool:
+    requester = requester_id.strip().casefold()
+    for piece in text.split():
+        token = piece.strip(_EDGE_PUNCT).casefold()
+        if _EMPLOYEE.fullmatch(token) and token != requester:
+            return True
+    return False
+
+
+def _canonical_devices(text: str) -> set[str]:
+    """Mọi chuỗi dạng mã máy trong câu, chuẩn hoá `LAP-0610` ("LAP 0610", "lap-0610", "lap0610" → `LAP-0610`)."""
+    found = _DEVICE_TEXT.finditer(text.casefold())
+    return {f"{m.group(1).upper()}-{m.group(2)}" for m in found if m.group(1) != "nv"}  # `nvXXX` = mã nhân viên (`identifier`)
+
+
+def device_mention_reason(text: str, requester_id: str, slots: Mapping[str, str]) -> FlagReason | None:
+    """vpn/software (không xét khoá bị bỏ): `identifier` (mã nhân viên khác người gửi) | `phrase` | `device_text` | None."""
+    if _has_employee_id(text, requester_id):
+        return "identifier"
+    if _has_phrase(text, device=True):
+        return "phrase"
+    known = {str(slots.get("device_id") or "").upper()} | _canonical_devices(str(slots.get("software_name") or ""))
+    if _canonical_devices(text) - known:
+        return "device_text"
+    return None
 
 
 def mention_reason(text: str, requester_id: str, *, ignore: Iterable[str] = ()) -> MentionReason | None:
@@ -144,7 +191,13 @@ def target_check(
     requester_id: str,
 ) -> tuple[bool, FlagReason | None]:
     """(câu nêu người khác?, lý do bật cờ hoặc None). `slots` = slot SẠCH hiện có (clarify: đã gộp); `dropped` = khoá bị bỏ ở lượt
-    này. intent ngoài account/access → (False, None)."""
+    này. vpn/software → `device_mention_reason` + khoá máy/người bị bỏ (be-target-guard-2); intent khác → (False, None)."""
+    if intent in DEVICE_INTENTS:  # be-target-guard-2
+        dev_reason = device_mention_reason(text, requester_id, slots)
+        dev_mention = dev_reason in ("identifier", "phrase")
+        if "device_id" in dropped or "target_user" in dropped:
+            return dev_mention, "dropped"
+        return dev_mention, dev_reason
     if intent not in TARGET_USER_INTENTS:
         return False, None
     ignore = [v for k, v in slots.items() if k in RESOURCE_SLOTS]

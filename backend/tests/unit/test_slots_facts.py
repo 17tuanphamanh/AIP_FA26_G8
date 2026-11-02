@@ -77,7 +77,7 @@ def test_f1_keeps_valid_slots() -> None:
         ("cert_status", "valid", "fact_key"),
         ("action", "grant_admin", "bad_action"),  # action lạ
         ("action", "reset_password", "bad_action"),  # action của intent khác
-        ("device_id", "lap-0342", "bad_value"),  # sai mẫu (chữ thường)
+        ("device_id", "lap0342", "bad_value"),  # sai mẫu (thiếu gạch). be-target-guard-2: chữ thường "lap-0342" giờ được chuẩn hoá LAP-0342
         ("device_id", "LAP0342", "bad_value"),
         ("device_id", "LAP-03421234", "bad_value"),
         ("device_id", "ＬＡＰ-0342", "bad_value"),  # full-width

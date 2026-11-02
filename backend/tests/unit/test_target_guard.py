@@ -147,16 +147,16 @@ async def test_b3_valid_target_user_no_extra_flag() -> None:
 @pytest.mark.asyncio
 async def test_b5_child_without_target_flags_by_whole_sentence() -> None:
     """(iv) tách 2 ý: con account KHÔNG có đích, span không nêu ai — dò TOÀN CÂU GỐC thấy "svc-backup" → con 1 bật cờ; con
-    software không bật (ngoài account/access). Dòng tách B5: `children_other_target_reason` theo con."""
+    software cũng bật từ be-target-guard-2 (câu có `svc` — cụm người khác; trước: không bật). Dòng tách B5: `children_other_target_reason`."""
     reset, zoom = "đặt lại mật khẩu AD", "cài Zoom giúp svc-backup"
     f = make_flow(classify(_account(reset, {"account_type": "ad"}),
                            item("software", zoom, action="install_software", slots={"software_name": "Zoom"})))  # fmt: skip
     await f.submit(f"{reset}, tiện {zoom}")
     s = await seeds(f)
     assert s["T1-1"]["ctx_flags"] == {"target_is_other": True}
-    assert s["T1-2"].get("ctx_flags") in (None, {})
+    assert s["T1-2"]["ctx_flags"] == {"target_is_other": True}  # be-target-guard-2 (đổi CÓ CHỦ ĐÍCH)
     [split] = [r for r in f.h.audit.rows if r["ticket_id"] == "T1" and r["event"] == "split_into_2_children"]
-    assert split["detail"]["children_other_target_reason"] == ["identifier", None]
+    assert split["detail"]["children_other_target_reason"] == ["identifier", "phrase"]
     assert split["detail"]["other_target_mention"] is True
 
 
@@ -171,7 +171,7 @@ async def test_a2_multi_intent_self_account_flagged_by_other_span() -> None:
     s = await seeds(f)
     assert s["T1-1"]["ctx_flags"] == {"target_is_other": True}
     [split] = [r for r in f.h.audit.rows if r["ticket_id"] == "T1" and r["event"] == "split_into_2_children"]
-    assert split["detail"]["children_other_target_reason"] == ["phrase", None]
+    assert split["detail"]["children_other_target_reason"] == ["phrase", "phrase"]  # be-target-guard-2: con Zoom "cho chị Hoa" = V1
 
 
 def clarify_state(missing: list[str], slots: dict[str, str], **over: Any) -> dict[str, Any]:
