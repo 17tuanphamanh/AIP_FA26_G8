@@ -329,7 +329,7 @@ function HistoryTable({ items }: { items: readonly StrategyChange[] }) {
           {items.map((c, i) => (
             <tr key={i} data-testid="strategy-history-row" className="border-t border-line align-top">
               <td className="px-5 py-2.5 whitespace-nowrap tabular-nums">{vnDateTime(c.changed_at)}</td>
-              <td className="px-5 py-2.5 font-mono">{c.changed_by}</td>
+              <td className="px-5 py-2.5 font-mono whitespace-nowrap">{c.changed_by}</td>
               <td className="px-5 py-2.5">
                 {strategyName(c.strategy_from)} → {strategyName(c.strategy_to)}
               </td>

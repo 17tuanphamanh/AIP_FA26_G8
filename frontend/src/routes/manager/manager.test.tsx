@@ -1569,6 +1569,9 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
       ["constructor", "constructor"],
       ["SLA_MINUTES", "Hạn duyệt (phút)"],
     ]);
+    // L3 (soát 01/11): khoá chưa có nhãn chỉ hiện MỘT lần ("constructor", không "constructor / constructor"); có nhãn → nhãn + khoá
+    expect(rows.map((r) => r.querySelector("span")!.children.length)).toStrictEqual([1, 1, 2]);
+    expect(text(rows[1]!.querySelector("span"))).toBe("constructor");
     const rules = screen.getAllByTestId("rule-row").map((r) => text(r.lastElementChild));
     expect(rules).toStrictEqual(["Không hợp lệ (constructor)", "Không hợp lệ (__proto__)", "Không hợp lệ (toString)", "Cho phép"]);
     for (const r of screen.getAllByTestId("rule-row").slice(0, 3)) expect(r.lastElementChild!.className).toContain("text-danger");
