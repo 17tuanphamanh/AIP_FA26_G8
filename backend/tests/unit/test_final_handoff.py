@@ -77,8 +77,10 @@ def test_handoff_four_parts_from_state() -> None:
     assert note.request == "Cấp quyền [REDACTED] thư mục Finance"
     assert "access" in note.done_so_far and "check_folder_acl" in note.done_so_far
     assert "vpn_reset_session" in note.done_so_far  # Action nằm ở phần (2), không ở (1)
-    assert note.why_escalated.startswith("E5") and "rule_deny" in note.why_escalated
-    assert "luật FAKE" in note.why_escalated
+    # ĐP 02/11 12:45: câu tiếng Việt "nhãn · mã", mã để cuối; lý do lạ → "Khác · mã"
+    assert note.why_escalated.startswith("Lý do chuyển: Không đủ điều kiện tự xử lý · E5. Mức ưu tiên: Cao.")
+    assert "Chi tiết: Khác · rule_deny." in note.why_escalated
+    assert "Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · FAKE) — node giả (Phase 2)." in note.why_escalated
     assert note.next_for_l2.endswith(TEMPLATES.deny_warning)
 
 

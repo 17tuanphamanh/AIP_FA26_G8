@@ -73,7 +73,8 @@ async def test_each_exit_code_one_escalation_with_handoff_and_message(code: str)
     assert (esc["exit_code"], esc["priority"]) == (code, PRIORITY[code][0])  # rank từ seed 0001
     assert set(esc["handoff_note"]) == {"request", "done_so_far", "why_escalated", "next_for_l2"}
     assert all(v.strip() for v in esc["handoff_note"].values())
-    assert esc["handoff_note"]["why_escalated"].startswith(code)
+    assert esc["handoff_note"]["why_escalated"].startswith("Lý do chuyển: ")  # ĐP 02/11: "nhãn · mã", mã để cuối
+    assert f" · {code}. Mức ưu tiên: " in esc["handoff_note"]["why_escalated"]
     assert esc["is_deny_case"] is (code == "E5")  # 2b-Q4
     message = TEMPLATES.of(code).user_message
     assert h.notifier.sent[-1] == ("t1", message, "none")
@@ -114,9 +115,10 @@ async def test_every_e5_is_deny_case_with_warning(outcome: str) -> None:
     assert esc["handoff_note"]["next_for_l2"].endswith(TEMPLATES.deny_warning)
     why = esc["handoff_note"]["why_escalated"]
     if outcome == "deny":
-        assert "Quyết định rủi ro: deny (bởi rule, luật FAKE)" in why
+        assert "Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · FAKE)" in why
     else:
-        assert "Quyết định rủi ro: không luật nào khớp, ước lượng rủi ro (bởi llm, p=0.90)" in why
+        assert "Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo đánh giá của AI)" in why
+    assert "p=" not in why and "bởi " not in why  # ĐP 02/11: không lộ p= hay khoá thô
 
 
 @pytest.mark.asyncio
