@@ -5,6 +5,7 @@ import { CLOSE_NOTE_MAX } from "../../api/escalations.ts";
 import type { EscalationCloseResult, EscalationQueueItem, HandoffNote } from "../../api/types.ts";
 import { labelOf } from "../../lib/lookup.ts";
 import { KHAC, maKetThuc } from "../../lib/nhan.ts";
+import { FLASH } from "../../components/flash.ts";
 
 /** Nhãn seed có thể kèm phần phụ sau dấu phẩy ("Thường, cần bổ sung KB") → tên nhóm "Thường" + huy hiệu trên dòng. */
 export function splitLabel(label: string): { base: string; extra: string | null } {
@@ -106,7 +107,8 @@ export const CLOSED_TEXT = "Đã đóng ca — ca đã rời danh sách Mở.";
 /** Đóng thành công với "Mở ticket mới" (hợp đồng sửa lần 3, ĐP 26/10 23:51): đợt này KHÔNG tạo ticket mới phía server
  *  (`new_ticket_id` luôn null) — chỉ ghi nhận, nhân viên được báo tự gửi yêu cầu mới. Không mã, không link. */
 export const REOPENED_TEXT = "Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.";
-export const ALREADY_CLOSED_TEXT = "Ca đã được đóng";
+/** 409 `already_closed` (ĐP 02/11): cùng câu với flash khi chuyển sang `?status=closed`. */
+export const ALREADY_CLOSED_TEXT = FLASH.escalation_already_closed;
 
 export const STATUS_TABS: readonly { key: "open" | "closed"; label: string }[] = [
   { key: "open", label: "Mở" },

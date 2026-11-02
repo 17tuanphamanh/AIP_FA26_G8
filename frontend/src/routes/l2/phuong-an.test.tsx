@@ -2,7 +2,8 @@
 // ca (200 / 409 / 422), ca đã đóng chỉ đọc. Fetch giả dùng CHÍNH kho + hàm trang của handler MSW (cùng hình dạng).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { FlashNotice } from "../../components/FlashNotice.tsx";
 import type { Me } from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { STAFF_NAV } from "../../auth/permissions.ts";
@@ -58,12 +59,20 @@ function serve(store: EscalationStore, { closeOverride, delayAfter }: { closeOve
 /** Đóng ca qua client THẬT (như route thật đã bật) — vitest không bật MSW nên `closeEscalation` mặc định luôn chặn. */
 const viaClient = (id: number, body: EscalationCloseIn) => requestClose(id, body);
 
+/** Đường dẫn hiện tại (kiểm điều hướng sau 409). */
+function Where() {
+  const { pathname, search } = useLocation();
+  return <span data-testid="where" hidden>{pathname + search}</span>;
+}
+
 function renderAt(path: string) {
   const client = new QueryClient();
   clients.push(client);
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
+        <FlashNotice />
+        <Where />
         <Routes>
           <Route path="/escalations" element={<EscalationQueue />} />
           <Route path="/escalations/:escalationId" element={<EscalationDetailRoute />} />
@@ -203,8 +212,8 @@ describe("t178: Đóng ca 200 → POST đúng thân; ca rời danh sách Mở; c
 
 // ------------------------------------------------------------------------------------------------ t179
 
-describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 422 → lỗi đúng chỗ; completed khoá E5/E6", () => {
-  it("409: ca đã bị người khác đóng → câu + GET hàng đợi lần nữa", async () => {
+describe("t179: 409 already_closed → 'Ca này đã được đóng trước đó.' + chuyển ?status=closed (chỉ đọc); 422 → lỗi đúng chỗ; completed khoá E5/E6", () => {
+  it("409: ca đã bị người khác đóng → câu báo + sang ?status=closed, xem ca chỉ đọc (kết quả, người đóng, lúc đóng); không còn 'Không tìm thấy ca'", async () => {
     const store = createEscalationStore(Date.parse("2026-10-26T05:00:00Z"), 8);
     const target = store.list("open").find((i) => i.exit_code === "E3")!;
     const calls = serve(store);
@@ -215,8 +224,16 @@ describe("t179: 409 already_closed → 'Ca đã được đóng' + tải lại; 
     fireEvent.click(screen.getByRole("radio", { name: /Đã hoàn tất/ }));
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "xong" } });
     fireEvent.click(screen.getByRole("button", { name: "Đóng ca" }));
-    expect((await screen.findByText(ALREADY_CLOSED_TEXT)).getAttribute("role")).toBe("alert");
+    expect(ALREADY_CLOSED_TEXT).toBe("Ca này đã được đóng trước đó.");
+    expect((await screen.findByTestId("flash")).textContent).toBe(ALREADY_CLOSED_TEXT);
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe(`/escalations/${target.escalation_id}?status=closed`));
     await waitFor(() => expect(queueCalls(calls).length).toBeGreaterThan(before));
+    await waitFor(() => expect(queueCalls(calls)).toContain("/api/escalations/queue?status=closed&limit=50"));
+    // chế độ chỉ đọc: kết quả + người đóng, không form, không câu "không tìm thấy"
+    await screen.findByText("Đã hoàn tất");
+    expect(document.body.textContent).toContain("người khác");
+    expect(screen.queryByRole("button", { name: "Đóng ca" })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Không tìm thấy ca|Ca đã đóng hoặc không còn/);
   });
 
   it.each([
