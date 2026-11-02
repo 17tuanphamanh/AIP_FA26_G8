@@ -187,6 +187,10 @@ function OverrideEntry() {
   function submit(event: FormEvent) {
     event.preventDefault();
     const id = ticketId.trim();
+    if (id === "") {
+      setError("Nhập mã yêu cầu."); // soát 01/11 M5 (ĐP 02/11): ô trống không báo câu sai mẫu
+      return;
+    }
     if (!TICKET_ID_PATTERN.test(id)) {
       setError("Mã yêu cầu chỉ gồm chữ, số và . _ - (tối đa 64 ký tự).");
       return;

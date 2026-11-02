@@ -137,6 +137,9 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
   }
 
   const current = policy.data;
+  // Soát 01/11 M4 (ĐP 02/11): chưa có dữ liệu mà tải lỗi → CHỈ câu lỗi + "Thử lại" (không "Đang tải…", không nút Kiểm tra,
+  // không tab Bảng/JSON — trước đây hiện cùng lúc ba trạng thái mâu thuẫn).
+  const loadFailed = policy.isError && draft === null;
   return (
     <section className="flex flex-col gap-6 px-12 py-10">
       <h1 className="text-title">Chính sách</h1>
@@ -145,18 +148,20 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
       <div className="flex items-end gap-3 border-t border-line pt-6">
         <div className="flex min-w-0 grow flex-col gap-1">
           <h2 className="text-heading">Nội dung chính sách</h2>
-          <p className="flex items-center gap-2 text-ink-2">
-            {current ? `Đang áp dụng bản ${current.version}` : "Đang tải chính sách…"}
-            {dirty ? (
-              <span data-testid="draft-mark" className="inline-flex items-center gap-1.5 text-orange-ink">
-                <span className="size-1.75 rounded-full bg-fpt-orange" aria-hidden="true" />
-                Đã sửa — chưa lưu
-              </span>
-            ) : null}
-          </p>
+          {loadFailed ? null : (
+            <p className="flex items-center gap-2 text-ink-2">
+              {current ? `Đang áp dụng bản ${current.version}` : "Đang tải chính sách…"}
+              {dirty ? (
+                <span data-testid="draft-mark" className="inline-flex items-center gap-1.5 text-orange-ink">
+                  <span className="size-1.75 rounded-full bg-fpt-orange" aria-hidden="true" />
+                  Đã sửa — chưa lưu
+                </span>
+              ) : null}
+            </p>
+          )}
         </div>
-        <Segmented label="Cách hiển thị chính sách" options={TABS} value={tab} onChange={setTab} />
-        {canCheck ? (
+        {loadFailed ? null : <Segmented label="Cách hiển thị chính sách" options={TABS} value={tab} onChange={setTab} />}
+        {canCheck && !loadFailed ? (
           <button
             type="button"
             onClick={() => void onCheck()}
@@ -168,11 +173,13 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
         ) : null}
       </div>
 
-      <p data-testid="policy-mode" className="text-secondary text-ink-2">
-        {canCheck
-          ? "Màn này chỉ xem và kiểm tra chính sách — chưa lưu được thay đổi từ đây."
-          : "Bạn chỉ có quyền xem chính sách."}
-      </p>
+      {loadFailed ? null : (
+        <p data-testid="policy-mode" className="text-secondary text-ink-2">
+          {canCheck
+            ? "Màn này chỉ xem và kiểm tra chính sách — chưa lưu được thay đổi từ đây."
+            : "Bạn chỉ có quyền xem chính sách."}
+        </p>
+      )}
 
       {message ? (
         <p role={message.tone === "ok" ? "status" : "alert"} data-testid="policy-message" className={`text-secondary ${message.tone === "ok" ? "text-ink-2" : "text-danger"}`}>
@@ -181,9 +188,20 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
       ) : null}
 
       {policy.isError ? (
-        <p role="alert" data-testid="policy-load-error" className="text-danger">
-          Chưa tải được chính sách: {errorMessage(policy.error instanceof ApiError ? policy.error : null)}
-        </p>
+        <div className="flex flex-col items-start gap-3">
+          <p role="alert" data-testid="policy-load-error" className="text-danger">
+            Chưa tải được chính sách: {errorMessage(policy.error instanceof ApiError ? policy.error : null)}
+          </p>
+          <button
+            type="button"
+            data-testid="policy-retry"
+            onClick={() => void policy.refetch()}
+            disabled={policy.isFetching}
+            className="h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue disabled:opacity-60"
+          >
+            {policy.isFetching ? "Đang tải lại…" : "Thử lại"}
+          </button>
+        </div>
       ) : draft === null ? (
         <p className="text-ink-2 motion-safe:animate-pulse">Đang tải chính sách…</p>
       ) : (

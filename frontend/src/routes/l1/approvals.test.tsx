@@ -565,6 +565,21 @@ describe("t46: hộp thư 404 → đường lỗi chung (N4c P5: route 4c đã c
     expect(calls[0]?.url).toBe("/api/approvals?mine=1&status=pending");
   });
 
+  it("M5 (ĐP 02/11): ô Mã yêu cầu trống / chỉ khoảng trắng → 'Nhập mã yêu cầu.'; sai mẫu vẫn câu cũ; không điều hướng", async () => {
+    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(200, { items: [] }) : undefined));
+    renderAt("/approvals");
+    const input = await screen.findByLabelText("Mã yêu cầu");
+    for (const value of ["", "   "]) {
+      fireEvent.change(input, { target: { value } });
+      fireEvent.click(screen.getByRole("button", { name: "Xem yêu cầu" }));
+      expect((await screen.findByRole("alert")).textContent).toBe("Nhập mã yêu cầu.");
+    }
+    fireEvent.change(input, { target: { value: "a b/c" } });
+    fireEvent.click(screen.getByRole("button", { name: "Xem yêu cầu" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Mã yêu cầu chỉ gồm chữ, số và . _ - (tối đa 64 ký tự).");
+    expect(screen.getByLabelText("Mã yêu cầu")).toBeTruthy(); // vẫn ở hộp thư
+  });
+
   it("P9: không có approval:decide (L2) → trang không có quyền, không gọi API", async () => {
     const calls = stubFetch(() => undefined);
     const client = new QueryClient();

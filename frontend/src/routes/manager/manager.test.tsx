@@ -645,6 +645,23 @@ describe("t60 (N-POL1 P2): xem chính sách + lịch sử theo hình dạng th�
     expect(screen.queryByLabelText("Nội dung chính sách (JSON)")).toBeNull();
   });
 
+  it("M4 (ĐP 02/11): tải lỗi → CHỈ câu lỗi + 'Thử lại' (không 'Đang tải…', không nút Kiểm tra, không tab Bảng/JSON); Thử lại → nạp được", async () => {
+    let fail = true;
+    stubFetch(policyRoutes({ current: () => (fail ? { ...view(), content: [] as unknown as Record<string, unknown> } : view()) }));
+    renderAt("/policy");
+    await screen.findByTestId("policy-load-error");
+    const section = screen.getByRole("heading", { name: "Nội dung chính sách" }).closest("section")!;
+    expect(section.textContent).not.toContain("Đang tải chính sách");
+    expect(screen.queryByRole("button", { name: /^Kiểm tra/ })).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Cách hiển thị chính sách" })).toBeNull();
+    expect(screen.queryByTestId("policy-mode")).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    expect(await screen.findAllByTestId("rule-row")).toHaveLength(2);
+    expect(screen.queryByTestId("policy-load-error")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Kiểm tra/ })).toBeTruthy();
+  });
+
   it("route chưa có (404 'Not Found') → 'Chưa có chức năng chính sách' (không còn 'Phase 7'), không khối lỗi đỏ", async () => {
     stubFetch((_m, url) => (pathOf(url).startsWith("/api/policy") ? json(404, { detail: "Not Found" }) : undefined));
     renderAt("/policy");
