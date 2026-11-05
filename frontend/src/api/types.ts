@@ -36,4 +36,5 @@ export type NotificationResult = S["Result"];
 // Phần viết tay (`TicketViewBase`, contracts-tam.ts) + `deadline`/`server_now` từ openapi. Hai khoá này backend ghi BẮT
 // BUỘC (`deadline` có thể null) nhưng ở đây để TUỲ CHỌN có chủ ý: thân của backend cũ / fixture thiếu khoá vẫn đúng kiểu
 // và màn đọc thiếu = không có (không đồng hồ; độ lệch rơi về header `Date`) — routes/employee/approvalClock.ts.
-export type TicketView = TicketViewBase & Partial<Pick<S["TicketView"], "deadline" | "server_now">>;
+// `request_text` (Nợ API #8): câu yêu cầu đầu ĐÃ CHE, ≤ 500 ký tự; thiếu khoá (backend cũ) = null.
+export type TicketView = TicketViewBase & Partial<Pick<S["TicketView"], "deadline" | "server_now" | "request_text">>;

@@ -1445,6 +1445,8 @@ export interface components {
              * Format: date-time
              */
             server_now: string;
+            /** Request Text */
+            request_text?: string | null;
         };
         /** TraceChild */
         TraceChild: {

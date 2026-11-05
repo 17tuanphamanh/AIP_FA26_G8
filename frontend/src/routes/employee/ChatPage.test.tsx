@@ -98,7 +98,9 @@ describe("t25: ChatPage — hỏi thêm → trả lời → đi tiếp", () => {
 });
 
 // t26 (12b Q-fe-18): câu yêu cầu chỉ hiện khi 202 có notices rỗng; notices có → câu gốc KHÔNG ở đâu cả (bong bóng,
-// tiêu đề, thanh bên). Tiêu đề / "Gần đây" chỉ từ câu yêu cầu, không từ câu trả lời. Tải lại → "Yêu cầu của bạn".
+// tiêu đề, thanh bên). Tiêu đề / "Gần đây" chỉ từ câu yêu cầu, không từ câu trả lời.
+// Sửa có chủ ý (Q-fe-18 (a), Nợ API #8): tải lại / mở bằng URL mà ticket có `request_text` (câu ĐÃ CHE) → đúng 1 bong
+// bóng + tiêu đề từ nó; có bộ nhớ phiên → giữ (b), không nhân đôi; `request_text` null hoặc thiếu khoá → như cũ.
 describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
   const EMPLOYEE: Me = {
     user_id: "nv001",
@@ -107,7 +109,8 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
   };
   const REPLY = { role: "user", text: "LAP-0342" }; // câu TRẢ LỜI khi hỏi thêm — không được thành tiêu đề
 
-  function mount(notices: string[], at = "/chat") {
+  function mount(notices: string[], at = "/chat", request_text?: string | null) {
+    const extra = request_text === undefined ? {} : { request_text };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -115,7 +118,7 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
           return json(202, { ticket_id: ID, status: "S_NEW", notices });
         }
         if (url === `/api/tickets/${ID}`) {
-          return json(200, view({ status: "S_DIAGNOSING", waiting_for: null, conversation: [QUESTION, REPLY] }));
+          return json(200, view({ status: "S_DIAGNOSING", waiting_for: null, conversation: [QUESTION, REPLY], ...extra }));
         }
         return json(404, { detail: "not_found" });
       }),
@@ -147,6 +150,7 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
   const heading = () => screen.getByRole("heading", { level: 1 }).textContent;
   const recent = () => screen.getByRole("list", { name: "Yêu cầu gần đây" }).textContent;
   const bubble = () => document.querySelector('[data-role="request"]')?.textContent;
+  const bubbles = () => document.querySelectorAll('[data-role="request"]').length;
 
   it("notices rỗng → hiện câu vừa gõ ở bong bóng, tiêu đề, thanh bên; câu trả lời không thành tiêu đề", async () => {
     const unmount = mount([]);
@@ -178,13 +182,53 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
     }
   });
 
-  it("tải lại trang (bộ nhớ phiên trống) → tiêu đề \"Yêu cầu của bạn\", không bong bóng, câu trả lời không thành tiêu đề", async () => {
+  it("tải lại trang, ticket thiếu khoá request_text (backend cũ) → tiêu đề \"Yêu cầu của bạn\", không bong bóng, câu trả lời không thành tiêu đề", async () => {
     const unmount = mount([], `/chat/${ID}`);
     try {
       await screen.findByText(QUESTION.text);
       expect(heading()).toBe(DEFAULT_TITLE);
       expect(bubble()).toBeUndefined();
       expect(screen.getByText("Chưa có yêu cầu nào trong phiên này.")).toBeTruthy();
+    } finally {
+      unmount();
+    }
+  });
+  it("tải lại trang, có request_text → đúng 1 bong bóng người dùng (trên hội thoại) + tiêu đề từ câu đã che", async () => {
+    const masked = "Không vào được VPN, gọi giúp em số <SĐT_1>";
+    const unmount = mount([], `/chat/${ID}`, masked);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(1);
+      expect(bubble()).toBe(masked);
+      expect(heading()).toBe(masked);
+      expect(heading()).not.toBe(REPLY.text);
+      const req = document.querySelector('[data-role="request"]')!;
+      expect(req.compareDocumentPosition(screen.getByText(QUESTION.text)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByText("Chưa có yêu cầu nào trong phiên này.")).toBeTruthy(); // "Gần đây" vẫn chỉ trong phiên
+    } finally {
+      unmount();
+    }
+  });
+
+  it("có bộ nhớ phiên (mine) + ticket có request_text → giữ hành vi (b), không nhân đôi bong bóng", async () => {
+    const unmount = mount([], "/chat", "bản che từ backend — không được hiện");
+    try {
+      await send("VPN công ty dùng cổng nào?");
+      expect(bubbles()).toBe(1);
+      expect(bubble()).toBe("VPN công ty dùng cổng nào?");
+      expect(heading()).toBe("VPN công ty dùng cổng nào?");
+      expect(document.body.textContent).not.toContain("bản che từ backend");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("tải lại trang, request_text null → như cũ: \"Yêu cầu của bạn\", không bong bóng", async () => {
+    const unmount = mount([], `/chat/${ID}`, null);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(0);
+      expect(heading()).toBe(DEFAULT_TITLE);
     } finally {
       unmount();
     }
