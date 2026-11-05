@@ -90,10 +90,12 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     [queryClient, queryKey],
   );
   const messages = useMemo(() => normalizeConversation(view?.conversation), [view]);
-  // Câu yêu cầu + tiêu đề: chỉ từ bộ nhớ phiên (12b Q-fe-18) — không lấy tin người dùng trong `conversation` (đó là
-  // câu TRẢ LỜI khi hỏi thêm). Tải lại trang / mở bằng URL → không có → "Yêu cầu của bạn", không bong bóng.
+  // Câu yêu cầu + tiêu đề (12b Q-fe-18): có bộ nhớ phiên (`mine`) → dùng nó, như cũ. Không có (tải lại trang / mở bằng
+  // URL / mở từ danh sách) → `request_text` của ticket (câu ĐÃ CHE từ backend, Nợ API #8); null/thiếu → "Yêu cầu của
+  // bạn", không bong bóng. Không lấy tin người dùng trong `conversation` (đó là câu TRẢ LỜI khi hỏi thêm).
   const mine = useSessionTickets().find((t) => t.ticket_id === ticketId);
-  const title = titleOf(mine);
+  const savedRequest = mine ? null : view?.request_text?.trim() ? view.request_text : null;
+  const title = titleOf(mine ?? (savedRequest === null ? undefined : { request: savedRequest }));
 
   useEffect(() => {
     if (view) sessionTickets.setTone(ticketId, statusTone(view));
@@ -234,6 +236,10 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               className={`${USER_BUBBLE} motion-safe:animate-rise-in ${mine.request === null ? "text-ink-2 italic" : ""}`}
             >
               {mine.request ?? REDACTED_NOTE}
+            </p>
+          ) : savedRequest !== null ? (
+            <p data-role="request" className={USER_BUBBLE}>
+              {savedRequest}
             </p>
           ) : null}
           <Conversation

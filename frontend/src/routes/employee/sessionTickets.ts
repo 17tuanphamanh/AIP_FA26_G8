@@ -58,7 +58,7 @@ export function useSessionTickets(): readonly SessionTicket[] {
 }
 
 /** Tiêu đề hội thoại / mục "Gần đây": câu yêu cầu, một dòng, cắt ngắn (KH 4.6). Không có → DEFAULT_TITLE. */
-export function titleOf(ticket: SessionTicket | undefined, max = 60): string {
+export function titleOf(ticket: Pick<SessionTicket, "request"> | undefined, max = 60): string {
   if (!ticket?.request) return DEFAULT_TITLE;
   const line = ticket.request.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
