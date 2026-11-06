@@ -18,6 +18,9 @@ Lệnh (chạy ở gốc repo/worktree):
   python scripts/eval/rq4_danh_gia.py chon-nguong --kieu review-d52 --prep VAL.prep --diem VAL.diem --llm VAL.llm --ra N.json
   # 3b. Gộp mọi ngưỡng đã chọn → thresholds.json (+ SHA-256) gửi TA TRƯỚC khi chạy test; từ chối ghi đè
   python scripts/eval/rq4_danh_gia.py gop-nguong --ra thresholds.json --nguong model:v3=N1.json --nguong tang5b:v3=N2.json
+  # 5a v3 (D-70, TA 30/10): τ_review 0,50 = D-52 chạy lại trên v2.7 — ngưỡng cho sẵn kèm nguồn; 0,9999 làm độ nhạy
+  python scripts/eval/rq4_danh_gia.py chon-nguong --kieu co-dinh --model v3 --tau-review 0.50 --nguon "D-70 ..." --ra N3.json
+  python scripts/eval/rq4_danh_gia.py gop-nguong ... --nguong tang5a:v3=N3.json --nguong "tang5a:v3#do-nhay-0.9999=N4.json"
   # 4. Câu nào cần LLM (5b: vùng giữa hai ngưỡng hoặc model lỗi)
   python scripts/eval/rq4_danh_gia.py can-llm --phuong-an tang5b:v3 --prep P --diem D --nguong N --ra ids.txt
   # 5. Gọi LLM b02_injection_judge đúng đường chạy thật (_judge_runtime, không cache, không dự phòng) — MỖI phương án
@@ -59,7 +62,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-PHIEN_BAN = "0.3.0"
+PHIEN_BAN = "0.3.1"
 
 NHAN_TC, NHAN_BT = "tan_cong", "binh_thuong"
 LABEL_CSV = {NHAN_TC: "attack", NHAN_BT: "normal"}
@@ -405,10 +408,11 @@ def rows_d52(prep: Sequence[Mapping[str, Any]], diem: Sequence[Mapping[str, Any]
 
 
 def _cmd_chon_nguong(a: argparse.Namespace) -> None:
-    if a.kieu == "co-dinh":  # chỉ để đối chiếu; TA 30/10: 5a (cả v3) dùng τ chọn theo D-52 trên validation đúng
-        if a.tau_review is None or not a.nguon:
-            raise SystemExit("DỪNG: co-dinh cần --tau-review và --nguon (vd \"B2_TAU_REVIEW lượt S3 trên tag, DA9 29/10\")")
-        kq0 = {"kieu": "co-dinh", "tau_review": a.tau_review, "nguon": a.nguon, "moi_truong": moi_truong()}
+    if a.kieu == "co-dinh":  # τ_review cho sẵn kèm nguồn — D-70 (TA 30/10): 5a v3 = 0,50 (D-52 chạy lại trên v2.7)
+        if a.tau_review is None or not a.nguon or not a.model:
+            raise SystemExit("DỪNG: co-dinh cần --model, --tau-review và --nguon (vd \"D-70, TA 30/10\")")
+        kq0 = {"kieu": "co-dinh", "model": a.model, "tau_review": a.tau_review, "nguon": a.nguon,
+               "moi_truong": moi_truong()}  # fmt: skip
         Path(a.ra).parent.mkdir(parents=True, exist_ok=True)
         Path(a.ra).write_text(json.dumps(kq0, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"chon-nguong co-dinh: tau_review={a.tau_review}")
@@ -457,37 +461,43 @@ CAN_TAU = {"model:": ("tau_block",), "tang5a:": ("tau_review",), "tang5b:": ("ta
 
 
 def gop_nguong(items: Sequence[tuple[str, str]], validation_sha: str | None = None) -> dict[str, Any]:
-    """Gộp các file `chon-nguong` thành một bản ghi cố định (gửi TA trước test). Mọi file phải từ CÙNG validation."""
+    """Gộp các file `chon-nguong` thành một bản ghi cố định (gửi TA trước test). Mọi file chọn ngưỡng phải từ CÙNG
+    validation. Ngưỡng cho sẵn (`co-dinh`) chỉ nhận cho 5a và phải ghi nguồn (D-70). Tên `PA#nhan` = bản độ nhạy."""
     if not items:
         raise SystemExit("DỪNG: cần ít nhất một --nguong PHUONG_AN=FILE")
     out: dict[str, Any] = {}
     nguon_val: set[str] = set()
     for pa, path in items:
-        m = model_cua(pa)
-        need = next((v for k, v in CAN_TAU.items() if pa.startswith(k)), None)
+        goc, _, nhan = pa.partition("#")
+        if "#" in pa and not nhan:
+            raise SystemExit(f"DỪNG: {pa}: thiếu nhãn sau #")
+        m = model_cua(goc)
+        need = next((v for k, v in CAN_TAU.items() if goc.startswith(k)), None)
         if m is None or need is None:
             raise SystemExit(f"DỪNG: {pa} không cần ngưỡng (chỉ model:/tang5a:/tang5b:)")
         if pa in out:
             raise SystemExit(f"DỪNG: {pa} xuất hiện hai lần")
         ng = json.loads(Path(path).read_text(encoding="utf-8"))
-        if ng.get("kieu") == "co-dinh":
-            raise SystemExit(f"DỪNG: {path} là ngưỡng cố định — TA 30/10: mọi ngưỡng chọn trên validation")
+        co_dinh = ng.get("kieu") == "co-dinh"
+        if co_dinh and (not goc.startswith("tang5a:") or not ng.get("nguon")):
+            raise SystemExit(f"DỪNG: {path}: ngưỡng cho sẵn chỉ nhận cho tang5a và phải có nguồn (D-70)")
         if ng.get("model") != m:
             raise SystemExit(f"DỪNG: {path} chọn cho model {ng.get('model')}, không phải {m}")
         thieu = [t for t in need if t not in ng]
         if thieu:
             raise SystemExit(f"DỪNG: {path} thiếu {thieu} cho {pa}")
         val = (ng.get("validation") or {}).get("input_sha256")
-        if not val:
-            raise SystemExit(f"DỪNG: {path} không ghi SHA-256 validation")
-        nguon_val.add(val)
-        out[pa] = {"file": path, "sha256": sha256_file(path), "kieu": ng["kieu"], "model": m,
+        if not co_dinh:
+            if not val:
+                raise SystemExit(f"DỪNG: {path} không ghi SHA-256 validation")
+            nguon_val.add(val)
+        out[pa] = {"file": path, "sha256": sha256_file(path), "kieu": ng["kieu"], "model": m, "nguon": ng.get("nguon"),
                    "diem_sha256": ng.get("diem_sha256"), "llm_sha256": ng.get("llm_sha256"),
                    "auc_val": ng.get("auc_val"), "tieu_chi": ng.get("tieu_chi")} | {t: ng[t] for t in need}  # fmt: skip
-    if len(nguon_val) != 1:
+    if len(nguon_val) > 1:
         raise SystemExit(f"DỪNG: các file ngưỡng chọn trên {len(nguon_val)} validation khác nhau")
-    (val,) = nguon_val
-    if validation_sha and val != validation_sha.lower():
+    val = next(iter(nguon_val), None)
+    if validation_sha and val is not None and val != validation_sha.lower():
         raise SystemExit(f"DỪNG: validation {val[:12]}… khác --validation-sha {validation_sha[:12]}…")
     return {"loai": "thresholds RQ4 (DA10)", "chon_tren": "chỉ validation — chưa chạy test", "validation_input_sha256": val,
             "phuong_an": out, "moi_truong": moi_truong()}  # fmt: skip
@@ -798,6 +808,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     n.add_argument("--prep")
     n.add_argument("--diem")
     n.add_argument("--tau-review", type=float)
+    n.add_argument("--model", choices=MODELS, help="co-dinh: model của ngưỡng cho sẵn")
     n.add_argument("--nguon")
     n.add_argument("--llm")
     n.add_argument("--fpr-toi-da", type=float, default=FPR_TOI_DA)

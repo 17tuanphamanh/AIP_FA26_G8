@@ -280,7 +280,9 @@ def test_gop_nguong(rq: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixtur
     bad = [
         [("tang5b:v4", blk)],  # thiếu tau_pass
         [("model:v3", blk)],  # sai model
-        [("model:v4", ng("c.json", kieu="co-dinh", model="v4", tau_block=0.5))],  # ngưỡng cố định
+        [("model:v4", ng("c.json", kieu="co-dinh", model="v4", tau_block=0.5, nguon="x"))],  # cho sẵn ngoài 5a
+        [("tang5a:v3", ng("c2.json", kieu="co-dinh", model="v3", tau_review=0.5))],  # cho sẵn thiếu nguồn
+        [("tang5a:v3#", ng("c3.json", kieu="co-dinh", model="v3", tau_review=0.5, nguon="x"))],  # nhãn rỗng
         [("model:v4", blk), ("tang5b:v4", str(tmp_path / "x.json"))],  # validation khác
         [("llm", blk)],
         [("model:v4", blk), ("model:v4", blk)],
@@ -292,3 +294,21 @@ def test_gop_nguong(rq: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixtur
             rq.gop_nguong(items)
     with pytest.raises(SystemExit):
         rq.gop_nguong([("model:v4", blk)], "cd" * 32)
+
+
+def test_gop_nguong_5a_cho_san_d70(rq: ModuleType, tmp_path: Path) -> None:
+    """D-70 (TA 30/10): 5a v3 τ_review 0,50 cho sẵn kèm nguồn; 0,9999 làm bản độ nhạy."""
+    n50, n9999 = tmp_path / "a.json", tmp_path / "b.json"
+    rq.main(["chon-nguong", "--kieu", "co-dinh", "--model", "v3", "--tau-review", "0.50", "--nguon", "D-70", "--ra", str(n50)])
+    rq.main(["chon-nguong", "--kieu", "co-dinh", "--model", "v3", "--tau-review", "0.9999", "--nguon", "tag", "--ra",
+             str(n9999)])  # fmt: skip
+    blk = tmp_path / "blk.json"
+    blk.write_text(json.dumps({"validation": {"input_sha256": "ab" * 32}, "kieu": "block", "model": "v3",
+                               "tau_block": 0.99}), encoding="utf-8")  # fmt: skip
+    kq = rq.gop_nguong([("model:v3", str(blk)), ("tang5a:v3", str(n50)), ("tang5a:v3#do-nhay-0.9999", str(n9999))],
+                       "ab" * 32)  # fmt: skip
+    assert kq["phuong_an"]["tang5a:v3"]["tau_review"] == 0.5 and kq["phuong_an"]["tang5a:v3"]["nguon"] == "D-70"
+    assert kq["phuong_an"]["tang5a:v3#do-nhay-0.9999"]["tau_review"] == 0.9999
+    assert kq["validation_input_sha256"] == "ab" * 32
+    with pytest.raises(SystemExit):  # co-dinh thiếu --model
+        rq.main(["chon-nguong", "--kieu", "co-dinh", "--tau-review", "0.5", "--nguon", "x", "--ra", str(tmp_path / "z")])
