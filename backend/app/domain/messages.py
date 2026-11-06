@@ -76,6 +76,8 @@ ASK_CONFIRM_LOGIN_OTHER: Final = "Bạn nhờ người dùng tài khoản này �
 ASK_CONFIRM_LOGIN_SERVICE: Final = "Bạn kiểm tra dịch vụ dùng tài khoản này đã đăng nhập lại được chưa rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_OPEN_OTHER: Final = "Bạn nhờ người được yêu cầu mở thử rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_VIEW_OTHER: Final = "Bạn xem danh sách quyền này đã đủ chưa rồi xác nhận giúp mình nhé."
+RESET_SMS_TAIL: Final = "bạn sẽ được yêu cầu đổi mật khẩu khi đăng nhập."
+RESET_SMS_TAIL_OTHER: Final = "người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới."
 
 
 def _until(outputs: Mapping[str, str]) -> str:
@@ -153,17 +155,17 @@ def _dmy(iso: str | None) -> str | None:
     return None if iso is None else f"{date.fromisoformat(iso):%d/%m/%Y}"
 
 
-def _reset_delivery(outputs: Mapping[str, str]) -> str:
+def _reset_delivery(outputs: Mapping[str, str], *, other: bool = False) -> str:
     """Câu kênh nhận mật khẩu tạm — chỉ từ `outputs` đã qua mẫu (`sent_to` chỉ số ĐÃ CHE, phút 1–60); KHÔNG bao giờ mật khẩu.
     sms: mock gửi mật khẩu tạm một lần tới số trong AD. email: chỉ nói điều hệ thống tài khoản xác nhận (mock không gửi gì
-    thật ở kênh này)."""
+    thật ở kênh này). `other` (lô N, N10): tài khoản của người khác → đuôi câu SMS nói về người dùng tài khoản đó."""
     via = _out(outputs, "delivered_via")
     if via == "sms":
         to = _out(outputs, "sent_to")
         minutes = _out(outputs, "expires_in_minutes")
         return (f"Mật khẩu tạm đã gửi qua SMS tới {f'số {to}' if to else 'số điện thoại đã đăng ký'}"
                 f"{f', hiệu lực {minutes} phút' if minutes else ''}, chỉ dùng một lần; "
-                "bạn sẽ được yêu cầu đổi mật khẩu khi đăng nhập.")  # fmt: skip
+                f"{RESET_SMS_TAIL_OTHER if other else RESET_SMS_TAIL}")  # fmt: skip
     if via == "email":
         return "Hệ thống tài khoản xác nhận mật khẩu tạm được gửi qua email; bạn cần đổi mật khẩu ở lần đăng nhập tới."
     return "Bạn cần đổi mật khẩu ở lần đăng nhập tới."
@@ -182,7 +184,7 @@ def _new_action_text(
     folder = f"thư mục {path_raw}" if RESOURCE_PATH.fullmatch(path_raw) else "thư mục được yêu cầu"
     until = _dmy(_out(outputs, "expires_on"))
     if action.type == "reset_password":
-        return f"Đã đặt lại mật khẩu {account}. {_reset_delivery(outputs)} {confirm_login}"
+        return f"Đã đặt lại mật khẩu {account}. {_reset_delivery(outputs, other=action.requested_for != requester_id)} {confirm_login}"
     if action.type == "unlock_account":
         return f"Đã mở khoá {account}. {confirm_login}"
     if action.type == "install_software":

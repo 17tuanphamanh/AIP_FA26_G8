@@ -75,8 +75,12 @@ def test_m1_result_actions_nine() -> None:
         pytest.param(action("reset_password", rf="svc_backup", params={"account_type": "ad"}, facts=SERVICE_FACTS),
                      {"delivered_via": "sms", "sent_to": "0900***101", "expires_in_minutes": "15"},
                      "Đã đặt lại mật khẩu tài khoản đăng nhập (AD) của svc_backup. Mật khẩu tạm đã gửi qua SMS tới số "
-                     "0900***101, hiệu lực 15 phút, chỉ dùng một lần; bạn sẽ được yêu cầu đổi mật khẩu khi đăng nhập. "
-                     f"{CONFIRM_LOGIN_SERVICE}", id="reset-svc_backup"),
+                     "0900***101, hiệu lực 15 phút, chỉ dùng một lần; người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu "
+                     f"ở lần đăng nhập tới. {CONFIRM_LOGIN_SERVICE}", id="reset-svc_backup"),
+        pytest.param(action("reset_password", rf="nv005", params={"account_type": "erp"}), {"delivered_via": "sms"},
+                     "Đã đặt lại mật khẩu tài khoản ERP của nv005. Mật khẩu tạm đã gửi qua SMS tới số điện thoại đã đăng ký, "
+                     "chỉ dùng một lần; người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới. "
+                     f"{CONFIRM_LOGIN_OTHER}", id="reset-sms-nguoi-khac"),
         pytest.param(action("reset_password", rf="nv005", params={"account_type": "ad"}), {},
                      "Đã đặt lại mật khẩu tài khoản đăng nhập (AD) của nv005. Bạn cần đổi mật khẩu ở lần đăng nhập tới. "
                      f"{CONFIRM_LOGIN_OTHER}", id="reset-nguoi-khac"),
