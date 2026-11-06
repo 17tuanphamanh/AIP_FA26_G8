@@ -284,6 +284,94 @@ def test_p1_probs_must_cover_with_evidence_of_every_llm_case(w: World) -> None:
         offline.classify("hybrid", s1, s2, folds)
 
 
+# ---- ca lớp LLM không có xác suất ghi lại: giữ route hệ thống, đếm llm_no_prob ----------------------------------------------------
+
+NO_PROB_ARMS = [("hybrid", "hybrid"), ("llm_only", "llm_only"), ("hybrid_guarded", "llm_only"), (offline.NO_DIAG_ARM, "s3")]
+
+
+def drop_p(w: World, strategy: str, i: int, route: str = "HITL") -> None:
+    """Ca `i` ở lượt `strategy`: lớp LLM không ghi được xác suất — `raw_prob` null, route hệ thống `route`, KHÔNG có dòng probs nào."""
+    row = w.row(strategy, i)
+    row["raw_prob"], row["route"] = None, route
+    w.probs[strategy] = [p for p in w.probs[strategy] if p["scenario_id"] != sid(i)]
+
+
+def classify_arm(w: World, arm: str) -> list[ArmRow]:
+    s1, s2, folds = load_world_runs(w)
+    if arm == offline.NO_DIAG_ARM:
+        d = w.tmp
+        s3 = offline.load_run(d / "s3.jsonl", d / "s3-manifest.json", d / "s3-probs.jsonl", strategy="hybrid", diagnosis=False)
+        return offline.classify("hybrid", s3, s2, folds)
+    return offline.classify(arm, s1, s2, folds)
+
+
+def signature(r: ArmRow) -> tuple[Any, ...]:
+    return (r.kind, r.fixed_route, dict(r.probs), r.kb_gap, r.no_prob, r.fold)
+
+
+@pytest.mark.parametrize(("arm", "strategy"), NO_PROB_ARMS)
+def test_llm_case_without_probability_keeps_system_route_and_is_counted(w: World, arm: str, strategy: str) -> None:
+    """(a) Ca S01 (đi lớp LLM, phần 1): `raw_prob` null, route hệ thống HITL, không có dòng probs → ra HITL, `llm_no_prob` = 1.
+    Ca khác: phân loại (kind, route cố định, p, kb_gap) không đổi; ca cùng phần đo 1 ra y hệt (calibrator phần 1 fit trên phần 2–5,
+    không chứa S01). Ca ở phần khác có thể đổi route vì S01 rời tập huấn luyện của chúng — đúng thiết kế, không kiểm."""
+    if strategy == "s3":
+        w.enable_s3()
+    before = {r.base.scenario_id: signature(r) for r in classify_arm(w, arm)}
+    assert run_cli(w, "base")[0] == 0
+    drop_p(w, strategy, 1)
+    rows = classify_arm(w, arm)
+    after = {r.base.scenario_id: signature(r) for r in rows}
+    assert after.pop(sid(1)) == ("fixed", "HITL", {}, None, True, 1)
+    assert after == {k: v for k, v in before.items() if k != sid(1)}
+
+    code, out = run_cli(w)
+    assert code == 0
+    got = {r.scenario_id: r for r in load_predictions(out / arm / "predictions.jsonl")}
+    s01 = got[sid(1)]
+    assert s01.route == "HITL" and s01.decided_by == "llm" and s01.calibrated_prob is None and s01.fold == 1
+    # dòng ghi ra = dòng nguồn (base) giữ nguyên: Hybrid-guarded ghi dòng S1 (raw_prob của S1), các phương án khác base = src (null)
+    assert s01.raw_prob == (w.row("hybrid", 1)["raw_prob"] if arm == "hybrid_guarded" else None)
+    base = {r.scenario_id: r for r in load_predictions(w.tmp / "base" / arm / "predictions.jsonl")}
+    same_fold = [k for k, r in base.items() if r.fold == 1 and k != sid(1)]
+    assert same_fold and all(got[k] == base[k] for k in same_fold)
+    counts = json.loads((out / arm / "manifest.json").read_text(encoding="utf-8"))["offline"]["counts"]
+    base_counts = json.loads((w.tmp / "base" / arm / "manifest.json").read_text(encoding="utf-8"))["offline"]["counts"]
+    assert counts["llm_no_prob"] == 1 and base_counts["llm_no_prob"] == 0
+    assert counts["llm"] == base_counts["llm"] - 1 and counts["fixed"] == base_counts["fixed"] + 1
+    if arm == "hybrid":  # S2 không đổi → Chỉ-LLM và Hybrid-guarded không có ca nào như vậy
+        for other in ("llm_only", "hybrid_guarded"):
+            assert json.loads((out / other / "manifest.json").read_text(encoding="utf-8"))["offline"]["counts"]["llm_no_prob"] == 0
+
+
+@pytest.mark.parametrize(("arm", "strategy", "i", "route"), [("hybrid", "hybrid", 1, "AUTO"), ("llm_only", "llm_only", 1, "AUTO"),
+                                                              (offline.NO_DIAG_ARM, "s3", 1, "AUTO"),
+                                                              ("hybrid_guarded", "llm_only", 0, "HITL")])  # fmt: skip
+def test_llm_case_without_probability_and_system_route_auto_stops(
+    w: World, capsys: pytest.CaptureFixture[str], arm: str, strategy: str, i: int, route: str
+) -> None:
+    """(b) Như (a) nhưng route hệ thống (route của dòng nguồn ghi ra) là AUTO → DỪNG, không đoán. Hybrid-guarded: dòng nguồn là S1 — S00 luật
+    CHO PHÉP (AUTO) ở S1 mà S2 không có p → dừng."""
+    if strategy == "s3":
+        w.enable_s3()
+    drop_p(w, strategy, i, route)
+    with pytest.raises(StopError, match="route hệ thống là AUTO"):
+        classify_arm(w, arm)
+    code, out = run_cli(w)
+    assert code == 2 and not out.exists()
+    assert "route hệ thống là AUTO" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("arm", "strategy"), NO_PROB_ARMS)
+def test_llm_case_with_raw_prob_but_no_probs_lines_still_stops(w: World, arm: str, strategy: str) -> None:
+    """(c) Ca CÓ `raw_prob` mà `probs.jsonl` không có dòng nào của ca → vẫn DỪNG như cũ (nhầm file / thu thiếu)."""
+    if strategy == "s3":
+        w.enable_s3()
+    w.probs[strategy] = [p for p in w.probs[strategy] if p["scenario_id"] != sid(1)]
+    assert w.row(strategy, 1)["raw_prob"] is not None
+    with pytest.raises(StopError, match="thiếu with_evidence"):
+        classify_arm(w, arm)
+
+
 # ---- điểm 2 + Q3: kb_gap ------------------------------------------------------------------------------------------------------
 
 

@@ -2,7 +2,7 @@
 
 Nguồn (mỗi ca đi lớp LLM của lượt):
 - **Chọn ca / WITH**: `predictions.jsonl` của lượt (`load_predictions`): ca `decided_by == "llm"`, có `route` và `raw_prob`; ca CHƯA NHÃN
-  (`expected_route` null) bị bỏ + đếm. WITH = `{scenario_id, family, split, gold_route = expected_route, raw_prob, kb_gap}`.
+  (`expected_route` null) bị bỏ + đếm; ca `llm` có route mà `raw_prob` null không vào danh sách (như trước) và được đếm `llm_no_raw_prob`. WITH = `{scenario_id, family, split, gold_route = expected_route, raw_prob, kb_gap}`.
 - **kb_gap**: `audit_logs.detail->>'kb_gap'` của dòng `step = 'B13/B14'` — ĐÚNG giá trị đã truyền vào `decide()` (`b12_assess.py`, ca LLM).
   KHÔNG dùng `grounding.kb_gap` của B10 (nghĩa khác: điểm truy hồi dưới ngưỡng). Thiếu khoá → bỏ ca (lý do `no_kb_gap`), không đoán.
 - **raw_prob / p_method** của audit phải khớp bản ghi dự đoán / `--p-method`: lệch p_method → `CollectError` cả lượt (so sánh biến thể
@@ -45,11 +45,15 @@ class Gathered:
 
 
 def llm_records(records: Sequence[PredictionRecord]) -> tuple[list[PredictionRecord], Counter[str]]:
-    """Ca đi lớp LLM của lượt, sắp theo `scenario_id`; đếm các ca bỏ vì chưa nhãn."""
+    """Ca đi lớp LLM của lượt, sắp theo `scenario_id`; đếm các ca bỏ vì chưa nhãn và ca lớp LLM không có `raw_prob`
+    (`llm_no_raw_prob` — `offline.py` giữ route hệ thống cho ca đó, đếm `llm_no_prob`)."""
     skipped: Counter[str] = Counter()
     out: list[PredictionRecord] = []
     for r in sorted(records, key=lambda x: x.scenario_id):
-        if r.decided_by != "llm" or r.route is None or r.raw_prob is None:
+        if r.decided_by != "llm" or r.route is None:
+            continue
+        if r.raw_prob is None:
+            skipped["llm_no_raw_prob"] += 1
             continue
         if r.expected_route is None:
             skipped["unlabeled"] += 1

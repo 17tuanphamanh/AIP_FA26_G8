@@ -18,6 +18,9 @@ Ca đã nhãn không tới điểm log 4 (`route = None`), theo P8 §5.4 [Chốt
 (`m5_aborted = true`) → ESCALATE_L2; không bị ngắt (`false`: E1, lỗi ở bước khác, kẹt B11…) → ngoài mẫu số; `null` → DỪNG. Cùng quy tắc ở
 `report.py` cho mọi phương án (kể cả Chỉ-luật). Ca chưa nhãn → ngoài mẫu (giữ nguyên dòng). Hybrid-guarded mà S2 không tới điểm log 4
 → xét như trên theo dòng S2 (không có p của lớp LLM).
+Ca đi lớp LLM mà lớp LLM không ghi được xác suất (`raw_prob` null ở dòng nguồn VÀ `probs.jsonl` không có `with_evidence` của ca) → không
+hiệu chỉnh được: giữ route hệ thống đã ra lúc chạy (kind `fixed`, đếm `llm_no_prob` ở `manifest.offline.counts`); route đó là AUTO → DỪNG
+(bản đóng băng lớp LLM không ra AUTO, D-38 — không đoán). Ca có `raw_prob` mà thiếu `with_evidence` → DỪNG như cũ.
 `--s3` (tuỳ chọn): Hybrid tắt chẩn đoán — chạy lại `compute_arm("hybrid")` với S3 làm nguồn (calibrator fit trên phần huấn luyện của CHÍNH
 S3) → thư mục `hybrid_no_diag`.
 
@@ -206,11 +209,12 @@ def started_at(s1: Run) -> datetime:
 class ArmRow:
     base: PredictionRecord  # dòng nguồn để ghi ra
     fold: int
-    kind: Kind  # llm | fixed (route luật) | no_log4 (→ ESCALATE_L2) | out (chưa nhãn, hoặc E1 — ngoài mẫu)
+    kind: Kind  # llm | fixed (route luật, hoặc route hệ thống của ca lớp LLM không có xác suất) | no_log4 (→ ESCALATE_L2) | out (chưa nhãn, hoặc E1 — ngoài mẫu)
     fixed_route: Route | None
     src: PredictionRecord | None  # dòng mang p_method của ca LLM (cùng lượt với probs)
     probs: Mapping[Variant, float]
     kb_gap: bool | None
+    no_prob: bool = False  # ca đi lớp LLM không có xác suất ghi lại → giữ route hệ thống (kind = fixed)
 
     def case(self, split: Literal["calibration", "test"]) -> FoldCase:
         gold = self.base.expected_route
@@ -272,7 +276,14 @@ def classify(arm: str, s1: Run, s2: Run, folds: Mapping[str, int]) -> list[ArmRo
             raise StopError("S2 (llm_only) có lá không do lớp LLM quyết")
         probs = dict(probs_run.probs.get(base.scenario_id, {}))
         if "with_evidence" not in probs:
-            raise StopError("probs: thiếu with_evidence của một ca đi lớp LLM")
+            if src.raw_prob is not None:
+                raise StopError("probs: thiếu with_evidence của một ca đi lớp LLM")
+            # Lớp LLM không ghi được xác suất (raw_prob null, không có dòng probs) → không hiệu chỉnh được: giữ route hệ thống đã ra
+            # lúc chạy. Bản đóng băng lớp LLM không ra AUTO (D-38); route AUTO ở ca như vậy là dữ liệu lạ → dừng, không đoán.
+            if base.route == "AUTO":
+                raise StopError("ca đi lớp LLM không có xác suất mà route hệ thống là AUTO — không đoán")
+            rows.append(ArmRow(base, fold, "fixed", base.route, None, {}, None, no_prob=True))
+            continue
         if src.raw_prob is not None and src.raw_prob != probs["with_evidence"]:
             raise StopError("probs: with_evidence khác raw_prob trong predictions cùng lượt (nhầm file S1/S2?)")
         null_gap += src.kb_gap is None
@@ -357,6 +368,7 @@ def compute_arm(
     counts["rows"] = len(rows)
     counts["llm"] = sum(r.kind == "llm" for r in rows)
     counts["fixed"] = sum(r.kind == "fixed" for r in rows)
+    counts["llm_no_prob"] = sum(r.no_prob for r in rows)  # nằm trong "fixed": ca lớp LLM không có xác suất, giữ route hệ thống
     counts["out"] = sum(r.kind == "out" for r in rows)
     counts["unlabeled"] = sum(r.base.expected_route is None for r in rows)
     counts["folds_uncalibrated"] = selection["uncalibrated"]
@@ -455,7 +467,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for arm, result in results.items():
             write_arm(args.out, result, arm_manifest(arm, s1, s2, result, extra, s3))
             c = result.counts
-            print(f"{arm}: lá {c['rows']}, đi lớp LLM {c['llm']}, route luật {c['fixed']}, ngoài mẫu {c['out']} "
+            print(f"{arm}: lá {c['rows']}, đi lớp LLM {c['llm']}, route cố định {c['fixed']} "
+                  f"(trong đó lớp LLM không có xác suất, giữ route hệ thống {c['llm_no_prob']}), ngoài mẫu {c['out']} "
                   f"(chưa nhãn {c['unlabeled']}), không tới điểm log 4 → L2 {c.get('no_log4_to_l2', 0)}, "
                   f"thiếu p biến thể được chọn → L2 {c.get('missing_p_to_l2', 0)}")  # fmt: skip
             print(f"  biến thể được chọn (số phần): {dict(result.selection)}; phần chưa hiệu chỉnh: {c['folds_uncalibrated']}; "

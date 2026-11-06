@@ -280,8 +280,8 @@ PYTHONPATH=backend uv run python scripts/eval/prob_variants.py compare OUT_S1/wi
   Lệch ở bất kỳ đâu → dừng cả lượt (mã 2), 0 lời gọi. `--p-method` chỉ nhận `sampling_k5`.
 - **Chọn ca:** `decided_by = llm`, đã có nhãn (`expected_route`). S1: ca không khớp luật; S2 (llm_only): mọi ca có route. `kb_gap` lấy từ
   `audit_logs.detail->>'kb_gap'` dòng B13/B14 (giá trị đã truyền vào `decide()`); Action/RiskContext dựng lại từ checkpoint bằng chính
-  `risk.context.build_ctx`. Ca thiếu dữ liệu bị bỏ và đếm theo lý do (`unlabeled`, `no_log4`, `raw_prob_mismatch`, `no_kb_gap`, `no_state`) —
-  không đoán.
+  `risk.context.build_ctx`. Ca thiếu dữ liệu bị bỏ và đếm theo lý do (`unlabeled`, `llm_no_raw_prob`, `no_log4`, `raw_prob_mismatch`, `no_kb_gap`,
+  `no_state`) — không đoán. Ca `llm_no_raw_prob` không có dòng nào trong `probs.jsonl`; `offline.py` giữ route hệ thống cho ca đó (mục dưới).
 - **Số lời gọi dự kiến** = (ca đi lớp LLM − ca kb_gap) × 5, in ở cả `--dry-run` lẫn lượt thật trước khi gọi; ít hơn nếu trúng cache `eval`.
 - **Lỗi LLM** (`LLMUnavailable`, `LLMSchemaError`, `LLMBudgetExceeded`, `TurnBudgetExceeded`) → dòng `{"scenario_id", "error"}` trong
   `without.jsonl` (hợp đồng WITHOUT.jsonl), ca đó mất `no_evidence` + `max`, lượt không dừng; mã thoát 3, số lỗi ở `manifest.json`
@@ -316,6 +316,11 @@ EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.offline \
 - Quy tắc: `kb_gap` hạ AUTO → HITL và là của ca (mọi biến thể dùng chung); hoà chi phí → with_evidence > no_evidence > max; ngưỡng trên 1,01 =
   lớp LLM không bao giờ đưa ca sang L2, bật khi dưới `MIN_L2_CASES` ca L2 trong ca đi lớp LLM của phần huấn luyện hoặc AUC L2 < 0,7 hoặc không tính được;
   biến thể `fit_platt` lỗi bị loại; cả ba lỗi → phần đó chưa hiệu chỉnh (không bao giờ AUTO, ngưỡng dưới 0; raw > ngưỡng trên của policy → L2).
+- Ca đi lớp LLM **không có xác suất**: `raw_prob` null ở dòng nguồn (S1 cho Hybrid, S2 cho Chỉ-LLM và Hybrid-guarded, S3 cho `hybrid_no_diag`)
+  VÀ `probs.jsonl` không có `with_evidence` của ca (G10 bỏ ca này, đếm `skipped.llm_no_raw_prob`). Không có p thì không hiệu chỉnh được, nên
+  offline giữ route hệ thống đã ra lúc chạy (route của dòng nguồn ghi ra; ca vào nhóm route cố định, đếm `llm_no_prob` ở `manifest.offline.counts`).
+  An toàn vì bản đóng băng lớp LLM không bao giờ ra AUTO (D-38); nếu route đó là AUTO thì dữ liệu lạ → dừng, không đoán. Ca CÓ `raw_prob` mà
+  thiếu `with_evidence` vẫn dừng (nhầm file hoặc thu thiếu).
 - Dừng (mã 2) khi: `kb_gap` null ở ca đi lớp LLM (harness phải điền `kb_gap`), họ không có phần hoặc `fold` lệch CSV, `policy_sha256` thiếu/lệch,
   thiếu `started_at`, `probs.jsonl` không khớp predictions cùng lượt.
 - Giới hạn: Platt thường, không làm mượt nhãn (F3 không làm); `select_thresholds` không biết `kb_gap`; `fold` từ CSV tạm.

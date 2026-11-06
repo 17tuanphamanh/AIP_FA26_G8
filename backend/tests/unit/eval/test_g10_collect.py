@@ -150,6 +150,17 @@ def test_llm_records_selects_labelled_llm_cases_sorted() -> None:
     assert [r.scenario_id for r in chosen] == ["A-v1", "B-v1"] and dict(skipped) == {"unlabeled": 1}
 
 
+def test_llm_records_counts_llm_cases_without_raw_prob_and_still_skips_them() -> None:
+    """Ca `decided_by = llm` có route mà `raw_prob` null: KHÔNG chọn (như trước), chỉ đếm `llm_no_raw_prob`."""
+    records = [
+        parse(rec(scenario_id="A-v1", ticket_id="T1")),
+        parse(rec(scenario_id="N-v1", ticket_id="T2", raw_prob=None, calibrated_prob=None)),
+        parse(rec(scenario_id="D-v1", ticket_id="T4", expected_route=None)),
+    ]  # fmt: skip
+    chosen, skipped = llm_records(records)
+    assert [r.scenario_id for r in chosen] == ["A-v1"] and dict(skipped) == {"llm_no_raw_prob": 1, "unlabeled": 1}
+
+
 # ---- CLI: kiểm trước khi gọi LLM ----------------------------------------------------------------------------------------------
 
 
