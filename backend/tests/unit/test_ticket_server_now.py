@@ -20,6 +20,7 @@ pytestmark = pytest.mark.asyncio
 OLD_KEYS = {
     "ticket_id", "status", "waiting_for", "conversation", "exit_code", "close_reason", "final_state", "created_at", "closed_at",
     "children_progress", "deadline",
+    "request_text",  # be-api8-cau-dau: câu đầu ĐÃ CHE (đổi CÓ CHỦ ĐÍCH tập trường TicketView)
 }  # fmt: skip
 
 

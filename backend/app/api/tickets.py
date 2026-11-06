@@ -154,6 +154,20 @@ class TicketView(BaseModel):
     # con; (3) không có → None. Quá hạn mà worker chưa bắn → vẫn trả mốc (trong quá khứ). Không mặc định: OpenAPI ghi bắt buộc (có thể null).
     deadline: datetime | None
     server_now: datetime  # giờ máy chủ (`desk.clock`, có múi giờ) — FE tính đồng hồ đếm ngược theo giờ máy chủ, không theo giờ máy khách
+    # be-api8-cau-dau (nợ API #8 / Q-fe-18): câu yêu cầu đầu — `tickets.redacted_request` (bản ĐÃ CHE, D-07; không bao giờ raw) cắt
+    # REQUEST_TEXT_MAX ký tự. Ticket con mà `redacted_request` trùng nguyên câu của cha (B5 seed khi span không hợp lệ) → None.
+    request_text: str | None = None
+
+
+REQUEST_TEXT_MAX = 500
+
+
+def request_text_of(row: TicketRow, parent_request: str | None) -> str | None:
+    """Câu đầu hiển thị cho ticket: bản đã che, cắt `REQUEST_TEXT_MAX`; con trùng nguyên câu cha → None (không lặp câu của cha)."""
+    text = row.redacted_request
+    if row.parent_ticket_id is not None and parent_request is not None and text.strip() == parent_request.strip():
+        return None
+    return text[:REQUEST_TEXT_MAX] or None
 
 
 def _accepted(ticket_id: str, status: str, notices: list[str]) -> JSONResponse:
@@ -238,6 +252,7 @@ async def read_ticket(
         deadline = await desk.approvals.parent_deadline(ticket_id)
     elif row.final_state is None and waiting_for in ("approval", "clarify", "confirm"):  # R3
         deadline = await desk.approvals.open_deadline(ticket_id, waiting_for)
+    parent = await desk.tickets.get(row.parent_ticket_id) if row.parent_ticket_id is not None else None
     return TicketView(
         ticket_id=ticket_id,
         status=row.final_state or values.get("status") or S_NEW,
@@ -245,7 +260,7 @@ async def read_ticket(
         conversation=list(values.get("conversation") or []),
         exit_code=row.exit_code, close_reason=row.close_reason, final_state=row.final_state,
         created_at=row.created_at, closed_at=row.closed_at, children_progress=progress, deadline=deadline,
-        server_now=desk.clock.now(),
+        server_now=desk.clock.now(), request_text=request_text_of(row, parent.redacted_request if parent else None),
     )  # fmt: skip
 
 
