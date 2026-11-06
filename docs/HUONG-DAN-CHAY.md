@@ -1,12 +1,10 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
-> Bản dùng để chạy và chấm: tag `v1.0-freeze`. Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ). ❗ là lời dặn quan trọng cho người chạy.
-
-**File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
+Hướng dẫn cài đặt và chạy hệ thống trên một máy mới — từ cài công cụ, lấy mã nguồn và model, dựng hệ thống, tới đăng nhập giao diện web và chạy đánh giá. Làm lần lượt theo thứ tự các mục.
 
 ## Mục lục
 
-1. [Yêu cầu máy](#1-yêu-cầu-máy) — Windows: [chuẩn bị WSL2](#11-chuẩn-bị-trên-windows-wsl2)
+1. [Yêu cầu máy và cài đặt](#1-yêu-cầu-máy) — [Windows](#11-cài-đặt-trên-windows-wsl2--docker-desktop) · [macOS](#12-cài-đặt-trên-macos) · [Ubuntu](#13-cài-đặt-trên-ubuntu-2204--2404)
 2. [Lấy mã nguồn và quyền truy cập repo](#2-lấy-mã-nguồn-và-quyền-truy-cập-repo)
 3. [Tạo file `.env`](#3-tạo-file-env)
 4. [Lấy model](#4-lấy-model)
@@ -16,16 +14,18 @@
 8. [Đặt OTP cho tài khoản quản lý `quan.tm`](#8-đặt-otp-cho-tài-khoản-quản-lý-quantm)
 9. [Bật LLM thật](#9-bật-llm-thật)
 10. [Dừng, dọn dẹp, chạy lại từ đầu](#10-dừng-dọn-dẹp-chạy-lại-từ-đầu)
-11. [Chạy đánh giá (G8)](#11-chạy-đánh-giá-g8) — ghi giờ, nới giới hạn, chuyển cache LLM giữa hai máy
+11. [Chạy đánh giá](#11-chạy-đánh-giá) — ghi giờ, nới giới hạn, chuyển cache LLM giữa hai máy
 12. [Lỗi thường gặp](#12-lỗi-thường-gặp)
 13. [Lệnh khác](#13-lệnh-khác)
+14. [Chạy bản demo (`demo-tuananh`)](#14-chạy-bản-demo-demo-tuananh) — giao diện mới, dùng để trình diễn
 
 ---
 
 ## 0. Đọc trước khi bắt đầu
 
 - Mọi lệnh chạy **trong terminal, tại thư mục gốc của repo** (thư mục có file `Makefile`), trừ khi ghi khác.
-- **Windows:** chạy trong terminal **WSL2 (Ubuntu)** — **không** dùng PowerShell, CMD hay **Git Bash** (trừ vài lệnh ghi rõ là PowerShell). Cách chuẩn bị WSL2: mục 1.1.
+- **Máy chưa cài gì:** làm mục 1 trước — có hướng dẫn cài đầy đủ cho Windows (1.1), macOS (1.2), Ubuntu (1.3).
+- **Windows:** chạy trong terminal **WSL2 (Ubuntu)** — **không** dùng PowerShell, CMD hay **Git Bash** (trừ vài lệnh ghi rõ là PowerShell). Cách cài WSL2: mục 1.1.
 - Lệnh trong khung ```` ```bash ```` chép nguyên văn, chạy lần lượt từng lệnh. Chỗ nào phải tự điền sẽ ghi rõ.
 - Mặc định hệ thống dùng **LLM giả** (`scripted`) — **không tốn tiền**. Chỉ tốn tiền khi bạn tự bật LLM thật (mục 9).
 - **Ghi lại giờ lúc chạy** khi chạy đánh giá (mục 11.1): một số ca cho kết quả khác nhau tuỳ chạy trong hay ngoài giờ hành chính.
@@ -41,64 +41,129 @@
 | `uv` | **Cài trên máy**, không chỉ trong container: `make up` chạy `uv run` để kiểm model trước khi build. Kiểm: `uv --version` |
 | Node.js + npm | Cho giao diện web. Node phải là **22.22 trở lên trong dòng 22, hoặc 24.x, hoặc ≥ 26** (theo `engines` trong `frontend/package.json`). Kiểm: `node --version`, `npm --version` |
 | Mạng tới `huggingface.co` | Chỉ lần đầu, để `make models` tải model (~4–5 GB). |
-| Ổ đĩa trống ≥ ~10 GB | Model ~4–5 GB + image Docker (+ 2 model của nhóm nếu dùng). |
+| Ổ đĩa trống ≥ ~10 GB | Model ~4–5 GB + image Docker (+ 2 model của dự án nếu dùng). |
 
 **RAM:**
 
-- **Không nạp 2 model của nhóm** (lựa chọn A, mục 4.2): stack đã dựng xong, để yên với LLM giả — tổng các container ~**1,8 GiB**: `ml-service` ~1,06 GiB, `backend` ~280 MiB, `worker` ~260 MiB, `qdrant` ~115 MiB, `postgres` ~65 MiB, `mock` ~50 MiB (chưa tính giao diện web và trình duyệt).
-- **Nạp đủ 2 model của nhóm** (lựa chọn B): stack đã dựng xong, để yên với LLM giả — `ml-service` ~**2,14 GiB**, tổng các container ~**2,9 GiB** (`worker` ~250 MiB, `backend` ~235 MiB, `qdrant` ~140 MiB, `postgres` ~57 MiB, `mock` ~44 MiB). Khi chạy đánh giá sẽ dùng nhiều hơn.
-- **Yêu cầu:** lựa chọn A — máy **8 GB RAM**, cấp cho Docker/WSL **ít nhất 4 GB**. Lựa chọn B — Docker phải có **≥ 8 GB** (theo `DOC-TRUOC-model-freeze.md`), tức máy **16 GB**. Trên Windows, WSL mặc định chỉ được **một nửa** RAM máy (máy 16 GB → ~7,6 GiB, chưa đủ) — đặt `memory=10GB` trong `.wslconfig` (mục 12.1). Kiểm: `docker info --format '{{.MemTotal}}'` (byte). Thiếu RAM: xem mục 12.
+- **Không nạp 2 model của dự án** (lựa chọn A, mục 4.2): stack đã dựng xong, để yên với LLM giả — tổng các container ~**1,8 GiB**: `ml-service` ~1,06 GiB, `backend` ~280 MiB, `worker` ~260 MiB, `qdrant` ~115 MiB, `postgres` ~65 MiB, `mock` ~50 MiB (chưa tính giao diện web và trình duyệt).
+- **Nạp model injection của dự án** (lựa chọn B, cấu hình chạy đánh giá): stack đã dựng và nạp KB xong, LLM giả — `ml-service` ~**1,5–1,8 GiB**, tổng các container ~**2,2–2,6 GiB** (số nhỏ: để yên; số lớn: sau khi xử lý ticket đầu tiên; `worker` ~250 MiB, `backend` ~250 MiB, `qdrant` ~115–165 MiB, `postgres` ~60–70 MiB, `mock` ~50 MiB). Khi chạy đánh giá sẽ dùng nhiều hơn.
+- **Yêu cầu:** máy **8 GB RAM**, cấp cho Docker/WSL **ít nhất 4 GB** (cả lựa chọn A và B). Kiểm: `docker info --format '{{.MemTotal}}'` (byte). Trên Windows, WSL mặc định chỉ được **một nửa** RAM máy — cần thì tăng bằng `.wslconfig` (mục 12.1). Thiếu RAM: xem mục 12.
 
-### 1.1. Chuẩn bị trên Windows (WSL2)
+Chọn đúng hệ điều hành và làm **từ đầu tới hết** phần tương ứng — máy chưa cài gì cũng làm được: **Windows** → mục 1.1 · **macOS** → mục 1.2 · **Ubuntu** → mục 1.3. Xong thì sang mục 2.
+
+### 1.1. Cài đặt trên Windows (WSL2 + Docker Desktop)
+
+Yêu cầu: **Windows 10 (bản 22H2) hoặc Windows 11**, tài khoản có **quyền quản trị**.
 
 Trên Windows, mọi lệnh `make`, `docker compose`, `npm` trong file này chạy **bên trong Ubuntu của WSL2**. **Không** cài `make` cho Git Bash (ezwinports, choco…): `make up` dùng lệnh shell kiểu Linux, và `make ingest` gắn thư mục bằng đường dẫn tuyệt đối — chạy từ Git Bash dễ hỏng giữa chừng. Trong WSL không cần chỉnh gì Makefile.
 
-1. Mở **PowerShell với quyền quản trị**, cài Ubuntu cho WSL2 (đã có thì bỏ qua), rồi khởi động lại máy và đặt tên người dùng/mật khẩu Ubuntu khi được hỏi:
+1. **Kiểm ảo hoá đã bật:** mở **Task Manager** (`Ctrl+Shift+Esc`) → tab **Performance** → **CPU** → dòng **Virtualization** phải là **Enabled**. Nếu là *Disabled*: vào BIOS/UEFI của máy (cách vào tuỳ hãng máy) bật **Intel VT-x** hoặc **AMD-V / SVM**, lưu rồi khởi động lại.
+
+2. **Cài WSL2 và Ubuntu:** mở **PowerShell với quyền quản trị** (bấm Start, gõ `PowerShell`, chuột phải → *Run as administrator*), chạy:
 
    ```powershell
    wsl --install -d Ubuntu
    ```
 
-2. **Docker Desktop** → Settings → Resources → **WSL integration** → bật cho **Ubuntu** → Apply & restart.
+   Khởi động lại máy khi được yêu cầu. Sau khi khởi động lại, cửa sổ **Ubuntu** tự mở (nếu không, bấm Start → gõ `Ubuntu`) — đặt **tên người dùng** và **mật khẩu** cho Ubuntu (mật khẩu này dùng cho lệnh `sudo`; khi gõ mật khẩu, màn hình không hiện ký tự — bình thường).
 
-3. Mở terminal **Ubuntu**, cài công cụ:
+3. **Cài Docker Desktop:** tải bản cho Windows tại https://www.docker.com/products/docker-desktop/ (máy thông thường chọn **AMD64**), chạy file cài:
+   - Giữ dấu chọn **Use WSL 2 instead of Hyper-V** (nếu có hỏi).
+   - Cài xong, đăng xuất hoặc khởi động lại nếu được yêu cầu.
+   - Mở **Docker Desktop**, chấp nhận điều khoản. **Không cần đăng nhập** tài khoản Docker (bấm *Skip* / *Continue without signing in*).
+   - Vào **Settings → Resources → WSL integration** → bật cho **Ubuntu** → **Apply & restart**.
+   - ❗ Docker Desktop phải **đang mở** mỗi khi chạy hệ thống.
+
+4. Mở terminal **Ubuntu**, cài công cụ:
 
    ```bash
-   sudo apt update && sudo apt install -y make git curl python3
+   sudo apt update && sudo apt install -y make git curl python3 unzip
    ```
 
-4. Cài `uv`, rồi **đóng và mở lại** terminal Ubuntu:
+5. Cài `uv`, rồi **đóng và mở lại** terminal Ubuntu:
 
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-5. Cài Node.js 24 (bản Node trong `apt` của Ubuntu thường quá cũ):
+6. Cài Node.js 24 (bản Node trong `apt` của Ubuntu thường quá cũ):
 
    ```bash
    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt install -y nodejs
    ```
 
-6. Kiểm đủ công cụ (mục 1, cột "Kiểm"): `docker compose version`, `make --version`, `uv --version`, `node --version`.
+7. **Kiểm đủ công cụ** (trong terminal Ubuntu):
 
-7. Clone repo **bên trong Ubuntu**, ở thư mục nhà (`cd ~`), theo mục 2.2.
+   ```bash
+   docker compose version && docker run --rm hello-world | grep -m1 "Hello from Docker" && make --version | head -1 && git --version && python3 --version && unzip -v | head -1 && uv --version && node --version && npm --version
+   ```
+
+   Phải in đủ phiên bản từng công cụ và dòng `Hello from Docker!`. Báo `docker: command not found` hoặc `Cannot connect to the Docker daemon`: Docker Desktop chưa mở, hoặc chưa bật WSL integration cho Ubuntu (bước 3). `node --version` phải đúng yêu cầu ở bảng trên.
+
+8. **RAM cho WSL:** WSL mặc định chỉ được **một nửa** RAM máy. Kiểm bằng `free -h` (dòng `Mem` → `total`) — cần **ít nhất 4 GB**; thiếu thì tăng theo mục 12.1.
+
+9. Clone repo **bên trong Ubuntu**, ở thư mục nhà (`cd ~`), theo mục 2.2.
    - **Không** dùng bản repo đã clone bằng Git for Windows / Git Bash, và **không** đặt repo trong `/mnt/c/...`: Git for Windows có thể đổi ký tự xuống dòng (CRLF) làm hỏng script, còn thư mục `/mnt/c` chạy chậm hơn nhiều trong WSL.
-   - File cần chép từ Windows (ví dụ 2 model nhóm) thì chép từ `/mnt/c/...` hoặc `/mnt/<ổ>/...` vào repo trong Ubuntu.
+   - File cần chép từ Windows (ví dụ file zip model của dự án) thì chép từ `/mnt/c/...` hoặc `/mnt/<ổ>/...` (ổ C: là `/mnt/c`, ổ D: là `/mnt/d`).
+
+### 1.2. Cài đặt trên macOS
+
+Mọi lệnh chạy trong app **Terminal**.
+
+1. Cài bộ công cụ dòng lệnh của Apple (có sẵn `git`, `make`, `python3`, `curl`); chọn **Install** ở hộp thoại hiện ra:
+
+   ```bash
+   xcode-select --install
+   ```
+
+2. Cài **Homebrew** (trình cài phần mềm cho macOS) theo hướng dẫn tại https://brew.sh — chép lệnh cài ở trang đó, chạy, rồi làm đúng các dòng *Next steps* mà nó in ra cuối cùng.
+
+3. Cài `uv` và Node.js 24:
+
+   ```bash
+   brew install uv node@24
+   ```
+
+   `node@24` không tự vào `PATH` — làm theo dòng `echo 'export PATH=...node@24/bin...' >> ~/.zshrc` mà `brew` in ra, rồi **đóng và mở lại** Terminal.
+
+4. **Cài Docker Desktop:** tải bản cho Mac tại https://www.docker.com/products/docker-desktop/ — chọn **Apple Silicon** (chip M1/M2/M3/M4…) hoặc **Intel** (xem ở menu Apple → *About This Mac*). Kéo vào *Applications*, mở lên, chấp nhận điều khoản, không cần đăng nhập. Vào **Settings → Resources → Memory** đặt **ít nhất 4 GB**. Docker Desktop phải **đang mở** mỗi khi chạy hệ thống.
+
+5. **Kiểm đủ công cụ:**
+
+   ```bash
+   docker compose version && docker run --rm hello-world | grep -m1 "Hello from Docker" && make --version | head -1 && git --version && python3 --version && unzip -v | head -1 && uv --version && node --version && npm --version
+   ```
+
+   Phải in đủ phiên bản và dòng `Hello from Docker!`.
+
+6. Clone repo theo mục 2.2 (trên macOS cài `gh` bằng `brew install gh` thay cho lệnh `apt`).
+
+### 1.3. Cài đặt trên Ubuntu (22.04 / 24.04)
+
+1. **Cài Docker Engine và Compose v2** theo hướng dẫn chính thức: https://docs.docker.com/engine/install/ubuntu/ (mục *Install using the apt repository* — cài cả gói `docker-compose-plugin`). Rồi cho tài khoản hiện tại dùng Docker không cần `sudo`, **đăng xuất và đăng nhập lại**:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   ```
+
+2. Làm tiếp **bước 4 → 8 của mục 1.1** (cài công cụ, `uv`, Node.js 24, kiểm công cụ, kiểm RAM bằng `free -h`).
+
+3. Clone repo theo mục 2.2.
 
 ---
 
 ## 2. Lấy mã nguồn và quyền truy cập repo
 
-### 2.1. Quyền truy cập (hội đồng)
+### 2.1. Quyền truy cập
 
 Repo là repo riêng tư trên GitHub: `https://github.com/17tuanphamanh/AIP_FA26_G8`.
 
-- **Cách chính:** nhóm thêm tài khoản GitHub của thầy/cô làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
-- **Dự phòng:** tải **file zip của tag `v1.0-freeze`** (trang *Tags* của repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
+- **Cách chính:** chủ repo thêm tài khoản GitHub của bạn làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
+- **Dự phòng:** tải **file zip của tag `v1.0-freeze`** (trang *Tags* của repo, hoặc file zip được gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
 
-Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (commit `bf94df2`).
+Bản dùng để chạy là tag **`v1.0-freeze`** (commit `bf94df2`).
 
-> ❗ Bản `docs/HUONG-DAN-CHAY.md` nằm trong tag là bản cũ, chưa có hướng dẫn chi tiết cho 2 model nhóm (mục 4.2). Đọc hướng dẫn bản mới nhất trên GitHub (nhánh chính của repo, file `docs/HUONG-DAN-CHAY.md`); code để chạy vẫn là tag `v1.0-freeze`.
+> ❗ Bản `docs/HUONG-DAN-CHAY.md` nằm trong tag là bản cũ, chưa có hướng dẫn chi tiết cho 2 model của dự án (mục 4.2). Đọc hướng dẫn bản mới nhất trên GitHub (nhánh chính của repo, file `docs/HUONG-DAN-CHAY.md`); code để chạy vẫn là tag `v1.0-freeze`.
 
 ### 2.2. Clone
 
@@ -192,7 +257,7 @@ Giải thích các biến quan trọng (sửa tay bằng `nano .env` nếu cần
 - `FAKE_APPROVER_ID` — giữ nguyên như `.env.example`.
 - `PG_*` (mật khẩu Postgres) — `.env.example` có sẵn giá trị mẫu, giữ nguyên là chạy được trên máy dev.
 - `TICKET_RATE_10MIN`, `TICKET_RATE_HOUR`, `MESSAGE_RATE_10MIN` (giới hạn chống spam) — **để trống** = dùng mặc định. Khi cần nới (chạy đánh giá), dùng `make up RATE=loose` (mục 11.2), không sửa ở đây.
-- Các dòng model của nhóm (`GUARD_*`, `INTENT_*`) và `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` — **giữ nguyên như `.env.example`** (đang là dòng chú thích `#`) nếu chạy lựa chọn A; lựa chọn B đặt đủ **8 dòng** theo mục 4.2 bước 6.
+- Các dòng model của dự án (`GUARD_*`, `INTENT_*`) và `B2_CLASSIFIER_MODE`, `B2_TAU_REVIEW` — **giữ nguyên như `.env.example`** (đang là dòng chú thích `#`) nếu chạy lựa chọn A; lựa chọn B đặt **5 dòng** theo mục 4.2 bước 6 (3 dòng `INTENT_*` để trống).
 
 > ❗ **Không commit `.env`**, không đưa khoá thật vào repo, PR hay tin nhắn.
 > Không có `.env` thì Makefile dùng tạm `.env.example` và in cảnh báo — không nên chạy như vậy.
@@ -206,7 +271,7 @@ Hệ thống dùng **hai loại model**, nằm ở **hai thư mục khác nhau**
 | Thư mục | Chứa gì | Lấy bằng cách nào | Bắt buộc? |
 |---|---|---|---|
 | `models/` | Model chung của ml-service: 2 model BAAI (`bge-m3` để embed, `bge-reranker-v2-m3` để rerank) | `make models` (tự tải từ huggingface.co) | **Có** — thiếu thì `make up` dừng |
-| `ml_models/` | **2 model của nhóm**: phân loại injection (`injection-clf`) và phân loại intent (`intent-clf`) | Tải `aitha-model-freeze.zip` trên Drive, giải nén vào `ml_models/` (mục 4.2) — **không có trong repo** (nằm trong `.gitignore`) | **Bắt buộc khi chạy số liệu đánh giá**; dựng/demo thì chạy được khi chưa có (lựa chọn A) |
+| `ml_models/` | **2 model của dự án**: phân loại injection (`injection-clf`) và phân loại intent (`intent-clf`) | Tải `aitha-model-freeze.zip` trên Drive, giải nén vào `ml_models/` (mục 4.2) — **không có trong repo** (nằm trong `.gitignore`) | Model injection **bắt buộc khi chạy số liệu đánh giá** (lựa chọn B); dựng/xem thử thì chạy được khi chưa có (lựa chọn A) |
 
 ### 4.1. Model chung — `make models` (chỉ lần đầu)
 
@@ -218,24 +283,22 @@ make models
 - Đổi thư mục: `make models up MODELS_DIR=/duong/dan` (đây là **biến của make**, không đặt trong `.env`).
 - Thiếu model thì `make up` dừng với thông báo `Thiếu model cho ml-service — chạy: make models`.
 
-### 4.2. 2 model của nhóm — chọn A hoặc B
+### 4.2. 2 model của dự án — chọn A hoặc B
 
-#### Lựa chọn A — chạy khi chưa có 2 model của nhóm (mặc định)
+#### Lựa chọn A — chạy khi chưa có 2 model của dự án (mặc định)
 
 - Không làm gì thêm: để thư mục `ml_models/` trống, các dòng `GUARD_*`, `INTENT_*` trong `.env` giữ nguyên như `.env.example`.
-- Hệ thống vẫn dựng và chạy bình thường. Các lời gọi chấm điểm của model nhóm trả **503** (chưa nạp model); bước sàng lọc injection (B2) và phân loại intent (B3) dùng **LLM**.
+- Hệ thống vẫn dựng và chạy bình thường. Các lời gọi chấm điểm tới model của dự án trả **503** (chưa nạp model); bước sàng lọc injection (B2) và phân loại intent (B3) dùng **LLM**.
 
-#### Lựa chọn B — nạp 2 model của nhóm
+#### Lựa chọn B — nạp model injection của dự án (cấu hình chạy đánh giá)
 
-Đây là cấu hình **bắt buộc khi chạy số liệu đánh giá**. Nguồn chính thức: file `DOC-TRUOC-model-freeze.md` (bản 3) đi kèm model trên Drive — mục này viết theo file đó.
-
-**Yêu cầu RAM:** Docker phải có **≥ 8 GB** (mục 1 — máy 16 GB, WSL mặc định chỉ được nửa RAM máy nên phải đặt `.wslconfig`).
+Đây là cấu hình **dùng khi chạy đánh giá** trên tag `v1.0-freeze`: ml-service chỉ nạp model **injection**; 3 dòng của model **intent** để trống (ở bản này model intent chỉ ghi điểm, không đổi quyết định của hệ thống).
 
 1. **Tải** từ Drive, thư mục **`1-model-freeze`**: https://drive.google.com/drive/folders/1DOihaqU1uQqK_9BBWU1cmo70JikQLnrK — gồm file `aitha-model-freeze.zip` (~2,2 GB) và `DOC-TRUOC-model-freeze.md`.
 
-   Thư mục chỉ người được mời mở được; xin quyền anh Tuấn Anh.
+   Thư mục chỉ người được mời mở được — liên hệ chủ repo để được cấp quyền.
 
-   SHA-256 mong đợi (theo `DOC-TRUOC-model-freeze.md` bản 3, không phải bí mật):
+   SHA-256 mong đợi (không phải bí mật):
 
    | File | SHA-256 |
    |---|---|
@@ -285,9 +348,9 @@ make models
    ```
 
    - Mỗi thư mục phải in `tat ca file OK, khong thua khong thieu`. File sai/thiếu sẽ in `FAILED`; có file **thừa** hoặc thiếu sẽ in `LOI: …` — **giải nén lại**, vì sai, thiếu hay thừa file đều làm ml-service từ chối khởi động.
-   - 4 mã SHA in ra (`MANIFEST.sha256` và `model.safetensors` của mỗi model) phải trùng **bảng SHA ở bước 1** — cũng là giá trị trong `.env` ở bước 6.
+   - 4 mã SHA in ra (`MANIFEST.sha256` và `model.safetensors` của mỗi model) phải trùng **bảng SHA ở bước 1**. Hai mã của model injection cũng là giá trị trong `.env` ở bước 6.
 
-6. **Đặt 8 dòng vào `.env`** (các giá trị **không phải bí mật**; đường dẫn là đường **trong container**). Đoạn lệnh dưới sao lưu `.env` ra `~/env-backup-model` (ngoài repo), bỏ các dòng cũ đang có hiệu lực của 8 biến này (nếu có), rồi thêm khối 8 dòng vào cuối `.env` — không in nội dung `.env`:
+6. **Đặt 5 dòng vào `.env`** (các giá trị **không phải bí mật**; đường dẫn là đường **trong container**). Đoạn lệnh dưới sao lưu `.env` ra `~/env-backup-model` (ngoài repo), bỏ các dòng cũ đang có hiệu lực của các biến model (kể cả 3 dòng `INTENT_*`, nếu có), rồi thêm khối 5 dòng vào cuối `.env` — không in nội dung `.env`:
 
    ```bash
    cp .env ~/env-backup-model && chmod 600 ~/env-backup-model && python3 - <<'PY'
@@ -297,48 +360,42 @@ make models
        "GUARD_MODEL_DIR=/ml_models/injection-clf/v3-seed123",
        "GUARD_MODEL_SHA256=2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02",
        "GUARD_MANIFEST_SHA256=83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba",
-       "INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st",
-       "INTENT_MODEL_SHA256=51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc",
-       "INTENT_MANIFEST_SHA256=07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9",
        "B2_CLASSIFIER_MODE=review",
        "B2_TAU_REVIEW=0.9999",
    ]
-   khoa = [d.split("=", 1)[0] for d in dong]
+   khoa = [d.split("=", 1)[0] for d in dong] + ["INTENT_MODEL_DIR", "INTENT_MODEL_SHA256", "INTENT_MANIFEST_SHA256"]
    cu = p.read_text().splitlines()
    giu = [l for l in cu if not re.match(r"^(" + "|".join(khoa) + r")=", l)]
    print("so dong hieu luc cu da bo:", len(cu) - len(giu))
-   giu += ["", "# Model nhom — DOC-TRUOC-model-freeze ban 3 (29/10)"] + dong
+   giu += ["", "# Model du an — cau hinh chay danh gia"] + dong
    p.write_text("\n".join(giu) + "\n")
-   print("da them 8 dong model")
+   print("da them 5 dong model")
    PY
    ```
 
-   8 dòng này (đúng theo `DOC-TRUOC-model-freeze.md`):
+   5 dòng này:
 
    ```dotenv
    GUARD_MODEL_DIR=/ml_models/injection-clf/v3-seed123
    GUARD_MODEL_SHA256=2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02
    GUARD_MANIFEST_SHA256=83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba
-   INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st
-   INTENT_MODEL_SHA256=51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc
-   INTENT_MANIFEST_SHA256=07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9
    B2_CLASSIFIER_MODE=review
    B2_TAU_REVIEW=0.9999
    ```
 
-   - `B2_TAU_REVIEW=0.9999` là ngưỡng nhóm đã chọn — **không tự đổi**.
-   - Đặt `GUARD_MODEL_DIR` / `INTENT_MODEL_DIR` thì **bắt buộc** đủ 2 dòng SHA đi kèm; thiếu hoặc lệch → **ml-service từ chối khởi động và cả stack đứng** (backend chờ ml-service).
-   - ml-service **không** nạp `seed_42.pt`; nó nạp bản safetensors ở `v3.1-seed42-st`.
+   - `INTENT_MODEL_DIR`, `INTENT_MODEL_SHA256`, `INTENT_MANIFEST_SHA256` **để trống**.
+   - `B2_TAU_REVIEW=0.9999` là ngưỡng dùng khi chạy đánh giá — **không tự đổi**. (Kết quả B2 trong báo cáo được tính lại ở ngưỡng 0,50 từ nhật ký `audit_logs` của chính các lượt chạy, không cần chạy lại.)
+   - Đặt `GUARD_MODEL_DIR` thì **bắt buộc** đủ 2 dòng SHA đi kèm; thiếu hoặc lệch → **ml-service từ chối khởi động và cả stack đứng** (backend chờ ml-service).
 
-7. **Dựng lại** (`make up`, mục 5.1) — đổi `.env` thì phải `make up` lại để tạo lại backend, worker và ml-service. Tham khảo: `make up` khoảng 1 phút khi đã có image; mỗi model nhóm nạp ~2 giây (kể cả kiểm SHA-256).
+7. **Dựng lại** (`make up`, mục 5.1) — đổi `.env` thì phải `make up` lại để tạo lại backend, worker và ml-service. Tham khảo: `make up` khoảng 1 phút khi đã có image; mỗi model của dự án nạp ~2 giây (kể cả kiểm SHA-256).
 
-8. **Kiểm sau khi bật** (theo `DOC-TRUOC-model-freeze.md`):
+8. **Kiểm sau khi bật:**
 
    ```bash
    docker compose logs ml-service 2>&1 | grep -E "đã nạp (injection|intent)-clf" | tail -2
    ```
 
-   Phải có 2 dòng `đã nạp injection-clf v3-seed123 (SHA-256 đã kiểm, …)` và `đã nạp intent-clf v3.1-seed42-st (…, SHA-256 đã kiểm)`.
+   Phải có dòng `đã nạp injection-clf v3-seed123 (SHA-256 đã kiểm, …)`. **Không** có dòng `đã nạp intent-clf` là **đúng** (cấu hình này không nạp model intent).
 
    ```bash
    docker compose exec -T backend printenv B2_CLASSIFIER_MODE B2_TAU_REVIEW
@@ -350,7 +407,7 @@ make models
    docker compose exec -T ml-service python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8200/health').read().decode())"
    ```
 
-   Phần `models` phải có `"injection": {"model": "injection-clf", "version": "v3-seed123"}` và `"intent": {"model": "intent-clf", "version": "v3.1-seed42-st"}` (khi chưa nạp, chấm điểm trả 503 `model_missing`).
+   Phần `models` phải có `"injection": {"model": "injection-clf", "version": "v3-seed123"}` và `"intent": "missing"` — intent `missing` là **đúng** với cấu hình này.
 
    Sau 2–3 ticket đầu (ví dụ đăng nhập `an.nv`, bấm nút gợi ý "Quên mật khẩu"), xem trace bước B2 — lệnh chỉ in 3 giá trị, không in nội dung ticket:
 
@@ -469,7 +526,7 @@ Phải in ra `up`.
 
 ### 5.6. Làm nóng
 
-- **Làm nóng chạy tự động bên trong container `ml-service`** mỗi khi container khởi động: nạp model chung, kiểm SHA-256 và nạp model của nhóm (nếu có). Không cần lệnh riêng.
+- **Làm nóng chạy tự động bên trong container `ml-service`** mỗi khi container khởi động: nạp model chung, kiểm SHA-256 và nạp model của dự án (nếu có). Không cần lệnh riêng.
 - Healthcheck ml-service chỉ báo `healthy` khi đã nạp + làm nóng xong (kiểm mỗi 10 s, cho phép khởi động tới **240 s**). Backend và worker chờ ml-service healthy rồi mới lên.
 - **Đổi cấu hình ml-service** (thư mục model, `ML_THREADS`, `GUARD_*`, `INTENT_*`, …) → chạy lại `make up` để build lại và làm nóng với cấu hình mới.
 
@@ -682,7 +739,7 @@ make up
 
 ---
 
-## 11. Chạy đánh giá (G8)
+## 11. Chạy đánh giá
 
 ### 11.1. Ghi giờ lúc chạy
 
@@ -721,7 +778,7 @@ make up
   Sau `make up RATE=loose`: cả 3 là `100000`. Sau `make up` (mặc định): cả 3 rỗng `[]`.
 - **Ghi vào biên bản** mỗi lần chạy có nới giới hạn.
 
-### 11.3. Chuyển cache LLM của lượt đánh giá giữa hai máy (G8)
+### 11.3. Chuyển cache LLM của lượt đánh giá giữa hai máy
 
 Ba lệnh dưới **xuất** các dòng cache LLM chế độ đánh giá (bảng `llm_cache`, `mode = 'eval'`) ở **máy nguồn** ra file CSV, rồi **nạp** vào **máy đích**, để máy đích dùng lại cache của lượt đánh giá đã chạy. Lệnh dùng biến có sẵn trong container postgres — không chứa tên người dùng hay tên DB, không cần sửa gì.
 
@@ -755,7 +812,7 @@ docker compose --env-file .env exec -T postgres sh -c 'psql -X -q -v ON_ERROR_ST
 
 Phải in `exit=0`.
 
-> ❗ Nếu lệnh 2 báo **trùng khoá** (duplicate key) nghĩa là máy đích **đã có cache** này. Khi đó **dừng lại và hỏi nhóm** — **không tự xoá** dữ liệu trong bảng.
+> ❗ Nếu lệnh 2 báo **trùng khoá** (duplicate key) nghĩa là máy đích **đã có cache** này. Khi đó **dừng lại, liên hệ chủ repo** — **không tự xoá** dữ liệu trong bảng.
 
 **3. Kiểm số dòng theo mode (chạy ở cả hai máy):**
 
@@ -786,9 +843,9 @@ Cách tăng RAM cho Docker:
 
   rồi mở **PowerShell** chạy `wsl --shutdown`, mở lại Docker Desktop và terminal WSL.
 - **macOS / Docker Desktop:** Settings → Resources → Memory.
-- Ví dụ trên dành cho máy 16 GB (WSL được 10 GB, Windows còn ~6 GB). Máy 8 GB: đặt khoảng `memory=6GB` và chỉ chạy lựa chọn A.
+- Ví dụ trên dành cho máy 16 GB (WSL được 10 GB, Windows còn ~6 GB). Máy 8 GB: đặt khoảng `memory=6GB`.
 - Kiểm sau khi khởi động lại: `free -h` (dòng `Mem` → `total`) và `docker info --format '{{.MemTotal}}'`.
-- Không tăng được: dùng lựa chọn A (mục 4.2 — để các dòng `GUARD_*`, `INTENT_*`, `B2_*` như `.env.example`), rồi `make up`. Lưu ý: chạy số liệu đánh giá bắt buộc dùng đủ 2 model.
+- Không tăng được: dùng lựa chọn A (mục 4.2 — để các dòng `GUARD_*`, `INTENT_*`, `B2_*` như `.env.example`), rồi `make up`. Lưu ý: chạy số liệu đánh giá bắt buộc dùng lựa chọn B.
 
 ### 12.2. ml-service chưa nạp model / không lên
 
@@ -797,8 +854,8 @@ Cách tăng RAM cho Docker:
 | `Thiếu model cho ml-service — chạy: make models` | Chưa tải model chung / sai `MODELS_DIR` | `make models` (cùng `MODELS_DIR` với lúc `make up`) — mục 4.1 |
 | Đứng lâu ở bước ml-service (tới ~4 phút) | Đang nạp + làm nóng — **bình thường** | Chờ; quá 240 s mới là lỗi |
 | Log ml-service báo `PermissionError: [Errno 13] Permission denied: '/ml_models/…'`, `Application startup failed` | File model giải nén từ zip chỉ cho chủ file đọc (`-rw-------`); ml-service trong container chạy bằng người dùng khác | `chmod -R a+rX ml_models/injection-clf ml_models/intent-clf` rồi `make up` lại (mục 4.2 bước 4) |
-| Trace B2 có `ml_error` = `"model_missing"`, hoặc chấm điểm trả 503 | ml-service chưa nạp model nhóm (thiếu dòng `.env`, sai thư mục) | Kiểm lại mục 4.2 bước 3–6, `make up` lại, xem lại bước 8 |
-| `ml-service/backend/worker không lên` kèm 50 dòng log ml-service | Model của nhóm đặt sai: thiếu biến SHA, SHA/manifest lệch, thư mục không nằm dưới `/ml_models`, trỏ nhầm thư mục `.pt` thay vì safetensors | Đọc log: `docker compose logs --tail 50 ml-service`. Kiểm lại theo mục 4.2 (bước 3–6). Cần chạy ngay thì quay về lựa chọn A (để các dòng `GUARD_*`, `INTENT_*` như `.env.example`) rồi `make up` |
+| Trace B2 có `ml_error` = `"model_missing"`, hoặc chấm điểm trả 503 | ml-service chưa nạp model của dự án (thiếu dòng `.env`, sai thư mục) | Kiểm lại mục 4.2 bước 3–6, `make up` lại, xem lại bước 8 |
+| `ml-service/backend/worker không lên` kèm 50 dòng log ml-service | Model của dự án đặt sai: thiếu biến SHA, SHA/manifest lệch, thư mục không nằm dưới `/ml_models`, trỏ nhầm thư mục `.pt` thay vì safetensors | Đọc log: `docker compose logs --tail 50 ml-service`. Kiểm lại theo mục 4.2 (bước 3–6). Cần chạy ngay thì quay về lựa chọn A (để các dòng `GUARD_*`, `INTENT_*` như `.env.example`) rồi `make up` |
 | `/api/health` trả 200 nhưng `runtime` khác `up`, `checks.ml` khác `ok` | ml-service chưa sẵn sàng | `docker compose ps`, xem log như trên |
 
 ### 12.3. Cổng bị chiếm
@@ -829,7 +886,7 @@ Cách tăng RAM cho Docker:
 | `make` báo `RATE=... không hợp lệ` | Gõ sai giá trị `RATE` | Chỉ dùng `make up RATE=loose` hoặc `make up` (mục 11.2) |
 | Gửi nhiều yêu cầu liên tiếp bị từ chối (429) | Giới hạn chống spam | `make up RATE=loose` (mục 11.2) |
 | Kết quả một số ca khác lần chạy trước | Chạy trong / ngoài giờ hành chính | Ghi giờ lúc chạy (mục 11.1) |
-| Lệnh nạp cache (11.3 lệnh 2) báo trùng khoá (duplicate key) | Máy đích đã có cache eval này | **Dừng lại, hỏi nhóm** — không tự xoá dữ liệu |
+| Lệnh nạp cache (11.3 lệnh 2) báo trùng khoá (duplicate key) | Máy đích đã có cache eval này | **Dừng lại, liên hệ chủ repo** — không tự xoá dữ liệu |
 | Lệnh nạp cache báo lỗi cột / kiểu dữ liệu | Hai máy không cùng tag `v1.0-freeze` | Đưa cả hai máy về cùng tag, chạy lại từ lệnh 1 |
 | PowerShell báo lỗi ở dấu `<` (lệnh nạp cache) | PowerShell không hỗ trợ chuyển file vào lệnh kiểu này | Chạy bằng WSL hoặc Git Bash (mục 11.3) |
 | Mã băm file CSV ở hai máy khác nhau | File hỏng / chép thiếu khi chuyển | Chuyển lại file, kiểm lại mã băm trước khi nạp |
@@ -854,3 +911,102 @@ Cách tăng RAM cho Docker:
 | `make lint` | ruff, mypy, import-linter, gitleaks (cần cài `gitleaks`) |
 | `make seed` | Nạp lại dữ liệu demo cho mock |
 | `make down` | Dừng stack, giữ dữ liệu |
+
+---
+
+## 14. Chạy bản demo (`demo-tuananh`)
+
+Bản demo (nhánh `demo-tuananh`) có giao diện mới và các tính năng thêm sau khi đóng băng, dùng để trình diễn. Bản demo **không** phải bản dùng để chạy đánh giá — chạy đánh giá dùng tag `v1.0-freeze` theo mục 1–11.
+
+| | Tag `v1.0-freeze` (mục 1–11) | Bản demo (mục này) |
+|---|---|---|
+| Code | tag `v1.0-freeze` | nhánh `demo-tuananh` |
+| Model của dự án | chỉ injection — **5 dòng** `.env` | injection + intent — **8 dòng** `.env` |
+| `B2_TAU_REVIEW` | `0.9999` | `0.50` |
+| RAM (tổng các container, sau khi nạp KB và xử lý ticket đầu) | ~2,2–2,6 GiB | ~**3,1 GiB** (`ml-service` ~2,4 GiB) |
+
+**RAM:** bản demo nạp thêm model intent nên cần nhiều RAM hơn — cấp cho Docker/WSL **khoảng 8 GB** (máy 16 GB; Windows đặt `.wslconfig` theo mục 12.1). Máy 8 GB RAM không đủ cho bản demo.
+
+Làm mục 1 (cài đặt) và mục 4 (model, bước 1–5 của lựa chọn B) trước nếu máy chưa có. Rồi:
+
+1. **Xoá sạch dữ liệu cũ** nếu máy đã chạy tag (bản demo có thêm bảng trong DB). ❗ Chuyển qua lại giữa tag và demo thì **luôn** xoá sạch trước — từ demo quay về tag mà không xoá, `make up` dừng với lỗi `Can't locate revision` (mục 12.4):
+
+   ```bash
+   docker compose down -v
+   ```
+
+2. **Lấy code bản demo:**
+
+   ```bash
+   git fetch origin && git checkout demo-tuananh && git pull
+   ```
+
+   Kiểm: `git log --oneline -1` in commit mới nhất của nhánh `demo-tuananh`.
+
+3. **Tạo lại `.env` từ `.env.example` của bản demo** (bản demo có thêm biến). Sao lưu `.env` đang dùng cho tag ra ngoài repo rồi tạo mới:
+
+   ```bash
+   cp .env ~/env-backup-tag && chmod 600 ~/env-backup-tag && cp .env.example .env
+   ```
+
+   Chạy lại **đoạn lệnh sinh khoá và lệnh kiểm ở mục 3** (đúng như lần đầu).
+
+4. **Đặt 8 dòng model của máy demo** — đoạn lệnh dưới bỏ các dòng model cũ (nếu có) rồi thêm 8 dòng; không in nội dung `.env`:
+
+   ```bash
+   python3 - <<'PY'
+   import pathlib, re
+   p = pathlib.Path(".env")
+   dong = [
+       "GUARD_MODEL_DIR=/ml_models/injection-clf/v3-seed123",
+       "GUARD_MODEL_SHA256=2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02",
+       "GUARD_MANIFEST_SHA256=83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba",
+       "INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st",
+       "INTENT_MODEL_SHA256=51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc",
+       "INTENT_MANIFEST_SHA256=07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9",
+       "B2_CLASSIFIER_MODE=review",
+       "B2_TAU_REVIEW=0.50",
+   ]
+   khoa = [d.split("=", 1)[0] for d in dong]
+   cu = p.read_text().splitlines()
+   giu = [l for l in cu if not re.match(r"^(" + "|".join(khoa) + r")=", l)]
+   print("so dong hieu luc cu da bo:", len(cu) - len(giu))
+   giu += ["", "# Model du an — ban demo"] + dong
+   p.write_text("\n".join(giu) + "\n")
+   print("da them 8 dong model")
+   PY
+   ```
+
+5. **Dựng, nạp KB, bật web** — giống mục 5 và 6:
+
+   ```bash
+   make up
+   ```
+
+   ```bash
+   make ingest
+   ```
+
+   Ở một terminal khác:
+
+   ```bash
+   cd frontend && npm ci && npm run dev
+   ```
+
+6. **Kiểm sau khi bật:**
+
+   ```bash
+   docker compose logs ml-service 2>&1 | grep -E "đã nạp (injection|intent)-clf" | tail -2
+   ```
+
+   Phải có **2 dòng**: `đã nạp injection-clf v3-seed123 …` và `đã nạp intent-clf v3.1-seed42-st …`.
+
+   ```bash
+   docker compose exec -T backend printenv B2_CLASSIFIER_MODE B2_TAU_REVIEW
+   ```
+
+   Phải in `review` rồi `0.50`. Sau ticket đầu tiên, kiểm trace B2 bằng lệnh ở mục 4.2 bước 8 — phải có `clf_mode` = `"review"`, `p_mal` là một số, `ml_error` = `null`.
+
+7. Tài khoản demo và OTP cho `quan.tm`: như mục 7 và mục 8. Giao diện bản demo khác với mô tả ở mục 6–7 (bản tag), nhưng đăng nhập, mật khẩu demo `Demo@2026!` và các nút gợi ý (ví dụ "Quên mật khẩu") vẫn như cũ.
+
+**Quay lại tag:** `docker compose down -v` → `git checkout v1.0-freeze` → `cp ~/env-backup-tag .env` → `make up` → `make ingest` (và đặt lại OTP nếu cần, mục 8).
