@@ -318,7 +318,9 @@ EVAL_MODE=true PYTHONPATH=backend uv run python -m app.eval.offline \
   biến thể `fit_platt` lỗi bị loại; cả ba lỗi → phần đó chưa hiệu chỉnh (không bao giờ AUTO, ngưỡng dưới 0; raw > ngưỡng trên của policy → L2).
 - Ca đi lớp LLM **không có xác suất**: `raw_prob` null ở dòng nguồn (S1 cho Hybrid, S2 cho Chỉ-LLM và Hybrid-guarded, S3 cho `hybrid_no_diag`)
   VÀ `probs.jsonl` không có `with_evidence` của ca (G10 bỏ ca này, đếm `skipped.llm_no_raw_prob`). Không có p thì không hiệu chỉnh được, nên
-  offline giữ route hệ thống đã ra lúc chạy (route của dòng nguồn ghi ra; ca vào nhóm route cố định, đếm `llm_no_prob` ở `manifest.offline.counts`).
+  offline giữ route hệ thống của dòng mang p (S1 cho Hybrid/`hybrid_no_diag`, S2 cho Chỉ-LLM và Hybrid-guarded); dòng ghi ra có `decided_by = llm`,
+  `raw_prob`/`calibrated_prob`/`p_method` null (ECE/Brier không tính trên p của lượt khác); ca vào nhóm route cố định, đếm `llm_no_prob` ở
+  `manifest.offline.counts`.
   An toàn vì bản đóng băng lớp LLM không bao giờ ra AUTO (D-38); nếu route đó là AUTO thì dữ liệu lạ → dừng, không đoán. Ca CÓ `raw_prob` mà
   thiếu `with_evidence` vẫn dừng (nhầm file hoặc thu thiếu).
 - Dừng (mã 2) khi: `kb_gap` null ở ca đi lớp LLM (harness phải điền `kb_gap`), họ không có phần hoặc `fold` lệch CSV, `policy_sha256` thiếu/lệch,

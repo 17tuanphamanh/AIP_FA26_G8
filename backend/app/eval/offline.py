@@ -19,8 +19,9 @@ Ca đã nhãn không tới điểm log 4 (`route = None`), theo P8 §5.4 [Chốt
 `report.py` cho mọi phương án (kể cả Chỉ-luật). Ca chưa nhãn → ngoài mẫu (giữ nguyên dòng). Hybrid-guarded mà S2 không tới điểm log 4
 → xét như trên theo dòng S2 (không có p của lớp LLM).
 Ca đi lớp LLM mà lớp LLM không ghi được xác suất (`raw_prob` null ở dòng nguồn VÀ `probs.jsonl` không có `with_evidence` của ca) → không
-hiệu chỉnh được: giữ route hệ thống đã ra lúc chạy (kind `fixed`, đếm `llm_no_prob` ở `manifest.offline.counts`); route đó là AUTO → DỪNG
-(bản đóng băng lớp LLM không ra AUTO, D-38 — không đoán). Ca có `raw_prob` mà thiếu `with_evidence` → DỪNG như cũ.
+hiệu chỉnh được: giữ route hệ thống của DÒNG MANG p (S1 cho Hybrid/S3, S2 cho Chỉ-LLM và Hybrid-guarded), kind `fixed`, đếm `llm_no_prob` ở
+`manifest.offline.counts`; dòng ghi ra có `decided_by = llm`, `raw_prob`/`calibrated_prob`/`p_method` null. Route đó là AUTO → DỪNG (bản đóng
+băng lớp LLM không ra AUTO, D-38 — không đoán). Ca có `raw_prob` mà thiếu `with_evidence` → DỪNG như cũ.
 `--s3` (tuỳ chọn): Hybrid tắt chẩn đoán — chạy lại `compute_arm("hybrid")` với S3 làm nguồn (calibrator fit trên phần huấn luyện của CHÍNH
 S3) → thư mục `hybrid_no_diag`.
 
@@ -214,7 +215,7 @@ class ArmRow:
     src: PredictionRecord | None  # dòng mang p_method của ca LLM (cùng lượt với probs)
     probs: Mapping[Variant, float]
     kb_gap: bool | None
-    no_prob: bool = False  # ca đi lớp LLM không có xác suất ghi lại → giữ route hệ thống (kind = fixed)
+    no_prob: bool = False  # ca đi lớp LLM không có xác suất ghi lại → giữ route hệ thống của dòng mang p (kind = fixed)
 
     def case(self, split: Literal["calibration", "test"]) -> FoldCase:
         gold = self.base.expected_route
@@ -278,11 +279,12 @@ def classify(arm: str, s1: Run, s2: Run, folds: Mapping[str, int]) -> list[ArmRo
         if "with_evidence" not in probs:
             if src.raw_prob is not None:
                 raise StopError("probs: thiếu with_evidence của một ca đi lớp LLM")
-            # Lớp LLM không ghi được xác suất (raw_prob null, không có dòng probs) → không hiệu chỉnh được: giữ route hệ thống đã ra
-            # lúc chạy. Bản đóng băng lớp LLM không ra AUTO (D-38); route AUTO ở ca như vậy là dữ liệu lạ → dừng, không đoán.
-            if base.route == "AUTO":
+            # Lớp LLM không ghi được xác suất (raw_prob null, không có dòng probs) → không hiệu chỉnh được: giữ route hệ thống của dòng
+            # mang p (src: S1 cho Hybrid, S2 cho Chỉ-LLM và Hybrid-guarded). Bản đóng băng lớp LLM không ra AUTO (D-38); route AUTO ở ca
+            # như vậy là dữ liệu lạ → dừng, không đoán.
+            if src.route == "AUTO":
                 raise StopError("ca đi lớp LLM không có xác suất mà route hệ thống là AUTO — không đoán")
-            rows.append(ArmRow(base, fold, "fixed", base.route, None, {}, None, no_prob=True))
+            rows.append(ArmRow(base, fold, "fixed", src.route, None, {}, None, no_prob=True))
             continue
         if src.raw_prob is not None and src.raw_prob != probs["with_evidence"]:
             raise StopError("probs: with_evidence khác raw_prob trong predictions cùng lượt (nhầm file S1/S2?)")
@@ -313,6 +315,8 @@ def _update(row: ArmRow, fit: FoldFit | None, policy_t_high: float, counts: Coun
         counts["no_log4_to_l2"] += 1
         up |= {"route": "ESCALATE_L2", "decided_by": None, "raw_prob": None, "calibrated_prob": None, "p_method": None,
                "kb_gap": None}  # fmt: skip
+    elif row.no_prob:  # ca lớp LLM không có xác suất: route của dòng mang p; bỏ p để report.py không tính ECE/Brier trên p của lượt khác
+        up |= {"route": row.fixed_route, "decided_by": "llm", "raw_prob": None, "calibrated_prob": None, "p_method": None}
     elif row.kind == "llm":
         assert fit is not None and row.src is not None
         variant = fit.variant or UNCALIBRATED_VARIANT

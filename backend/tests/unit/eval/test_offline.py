@@ -328,9 +328,8 @@ def test_llm_case_without_probability_keeps_system_route_and_is_counted(w: World
     assert code == 0
     got = {r.scenario_id: r for r in load_predictions(out / arm / "predictions.jsonl")}
     s01 = got[sid(1)]
-    assert s01.route == "HITL" and s01.decided_by == "llm" and s01.calibrated_prob is None and s01.fold == 1
-    # dòng ghi ra = dòng nguồn (base) giữ nguyên: Hybrid-guarded ghi dòng S1 (raw_prob của S1), các phương án khác base = src (null)
-    assert s01.raw_prob == (w.row("hybrid", 1)["raw_prob"] if arm == "hybrid_guarded" else None)
+    assert s01.route == "HITL" and s01.decided_by == "llm" and s01.fold == 1
+    assert s01.raw_prob is None and s01.calibrated_prob is None and s01.p_method is None  # kể cả Hybrid-guarded (dòng S1 có raw_prob)
     base = {r.scenario_id: r for r in load_predictions(w.tmp / "base" / arm / "predictions.jsonl")}
     same_fold = [k for k, r in base.items() if r.fold == 1 and k != sid(1)]
     assert same_fold and all(got[k] == base[k] for k in same_fold)
@@ -345,12 +344,11 @@ def test_llm_case_without_probability_keeps_system_route_and_is_counted(w: World
 
 @pytest.mark.parametrize(("arm", "strategy", "i", "route"), [("hybrid", "hybrid", 1, "AUTO"), ("llm_only", "llm_only", 1, "AUTO"),
                                                               (offline.NO_DIAG_ARM, "s3", 1, "AUTO"),
-                                                              ("hybrid_guarded", "llm_only", 0, "HITL")])  # fmt: skip
+                                                              ("hybrid_guarded", "llm_only", 1, "AUTO")])  # fmt: skip
 def test_llm_case_without_probability_and_system_route_auto_stops(
     w: World, capsys: pytest.CaptureFixture[str], arm: str, strategy: str, i: int, route: str
 ) -> None:
-    """(b) Như (a) nhưng route hệ thống (route của dòng nguồn ghi ra) là AUTO → DỪNG, không đoán. Hybrid-guarded: dòng nguồn là S1 — S00 luật
-    CHO PHÉP (AUTO) ở S1 mà S2 không có p → dừng."""
+    """(b) Như (a) nhưng route hệ thống của dòng mang p là AUTO → DỪNG, không đoán. Hybrid-guarded: dòng mang p là S2 (S1 của S01 vẫn HITL)."""
     if strategy == "s3":
         w.enable_s3()
     drop_p(w, strategy, i, route)
@@ -359,6 +357,38 @@ def test_llm_case_without_probability_and_system_route_auto_stops(
     code, out = run_cli(w)
     assert code == 2 and not out.exists()
     assert "route hệ thống là AUTO" in capsys.readouterr().err
+
+
+def test_guarded_rule_allow_case_without_s2_probability_keeps_s2_route(w: World) -> None:
+    """(e) Hybrid-guarded, S00: S1 luật CHO PHÉP (AUTO), S2 lớp LLM không có xác suất, route S2 = HITL → ra HITL (route của dòng mang p),
+    KHÔNG dừng dù route S1 là AUTO; `llm_no_prob` = 1."""
+    assert w.row("hybrid", 0)["route"] == "AUTO" and w.row("hybrid", 0)["decided_by"] == "rule"
+    drop_p(w, "llm_only", 0, "HITL")
+    row = next(r for r in classify_arm(w, "hybrid_guarded") if r.base.scenario_id == sid(0))
+    assert (row.kind, row.fixed_route, row.no_prob) == ("fixed", "HITL", True)
+    code, out = run_cli(w)
+    assert code == 0
+    s00 = {r.scenario_id: r for r in load_predictions(out / "hybrid_guarded" / "predictions.jsonl")}[sid(0)]
+    assert s00.route == "HITL" and s00.decided_by == "llm" and s00.raw_prob is None and s00.calibrated_prob is None
+    assert s00.p_method is None and s00.strategy == "hybrid_guarded"
+    counts = json.loads((out / "hybrid_guarded" / "manifest.json").read_text(encoding="utf-8"))["offline"]["counts"]
+    assert counts["llm_no_prob"] == 1
+
+
+def test_guarded_llm_case_with_s1_probability_but_none_in_s2_takes_s2_route_and_drops_p(w: World) -> None:
+    """(f) Hybrid-guarded, S01: S1 lớp LLM CÓ raw_prob (route HITL), S2 không có xác suất (route ESCALATE_L2) → route = route S2,
+    raw_prob/calibrated_prob null (không mang p của S1 vào ECE/Brier)."""
+    assert w.row("hybrid", 1)["raw_prob"] is not None and w.row("hybrid", 1)["route"] == "HITL"
+    drop_p(w, "llm_only", 1, "ESCALATE_L2")
+    row = next(r for r in classify_arm(w, "hybrid_guarded") if r.base.scenario_id == sid(1))
+    assert (row.kind, row.fixed_route, row.no_prob) == ("fixed", "ESCALATE_L2", True)
+    code, out = run_cli(w)
+    assert code == 0
+    s01 = {r.scenario_id: r for r in load_predictions(out / "hybrid_guarded" / "predictions.jsonl")}[sid(1)]
+    assert s01.route == "ESCALATE_L2" and s01.decided_by == "llm"
+    assert s01.raw_prob is None and s01.calibrated_prob is None and s01.p_method is None
+    hy = {r.scenario_id: r for r in load_predictions(out / "hybrid" / "predictions.jsonl")}[sid(1)]
+    assert hy.raw_prob is not None  # Hybrid dùng S1 (có p) → vẫn đi lớp LLM, không bị ảnh hưởng
 
 
 @pytest.mark.parametrize(("arm", "strategy"), NO_PROB_ARMS)
