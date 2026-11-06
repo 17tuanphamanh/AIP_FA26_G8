@@ -569,7 +569,7 @@ describe("t167: bảng — cột theo strategies, dòng theo metrics ĐÚNG th�
     expect(["e5_recheck_failed", "overrides", "rollbacks"].map(label)).toStrictEqual([
       "Số yêu cầu kiểm tra lại trước khi thực hiện không đạt",
       "Số lần ghi đè",
-      "Số yêu cầu đã hoàn tác",
+      "Số yêu cầu đã thử hoàn tác",
     ]);
   });
 });

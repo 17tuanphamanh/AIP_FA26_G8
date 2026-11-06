@@ -21,7 +21,7 @@ export const METRIC_LABEL: Record<string, string> = {
   // (mỗi yêu cầu tính một lần); `overrides` cộng SỐ DÒNG audit OVERRIDE/override_recorded (một yêu cầu có thể bị ghi đè nhiều lần).
   e5_recheck_failed: "Số yêu cầu kiểm tra lại trước khi thực hiện không đạt",
   overrides: "Số lần ghi đè",
-  rollbacks: "Số yêu cầu đã hoàn tác",
+  rollbacks: "Số yêu cầu đã thử hoàn tác", // gồm cả `partial`, `undo_failed` (ROLLBACK_DONE ở strategies.py)
   llm_cost_per_ticket: "Chi phí LLM mỗi yêu cầu",
 };
 
