@@ -560,6 +560,18 @@ describe("t167: bảng — cột theo strategies, dòng theo metrics ĐÚNG th�
     expect([...row.querySelectorAll("td")].map((td) => td.textContent)).toStrictEqual(["Chưa có dữ liệu", "Chưa có dữ liệu", "Chưa có dữ liệu"]);
     expect(screen.getByTestId("compare-unavailable").textContent).toBe("Chưa có dữ liệu: khoa_khac");
   });
+
+  it("nhãn chỉ số đếm theo đơn vị đếm của server: số yêu cầu (e5_recheck_failed, rollbacks) / số lần (overrides)", async () => {
+    renderDashboard();
+    await openCompare();
+    const table = await screen.findByTestId("compare-table");
+    const label = (key: string) => table.querySelector<HTMLElement>(`[data-key="${key}"]`)!.querySelector("th")!.textContent;
+    expect(["e5_recheck_failed", "overrides", "rollbacks"].map(label)).toStrictEqual([
+      "Số yêu cầu kiểm tra lại trước khi thực hiện không đạt",
+      "Số lần ghi đè",
+      "Số yêu cầu đã hoàn tác",
+    ]);
+  });
 });
 
 // ------------------------------------------------------------------------------------------------ t200 (hợp đồng sửa lần 3, ĐP 26/10 23:51)

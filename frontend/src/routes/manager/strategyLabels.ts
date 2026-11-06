@@ -17,9 +17,11 @@ export const METRIC_LABEL: Record<string, string> = {
   system_time_p90: "Thời gian hệ thống xử lý — p90",
   human_wait_p50: "Thời gian chờ người — trung vị",
   human_minutes_per_100: "Phút người xử lý mỗi 100 yêu cầu",
-  e5_recheck_failed: "Kiểm tra lại trước khi thực hiện không đạt",
+  // Ba chỉ số đếm — nhãn theo ĐƠN VỊ ĐẾM của backend/app/monitor/queries/strategies.py: `e5_recheck_failed`, `rollbacks` đếm SỐ LÁ
+  // (mỗi yêu cầu tính một lần); `overrides` cộng SỐ DÒNG audit OVERRIDE/override_recorded (một yêu cầu có thể bị ghi đè nhiều lần).
+  e5_recheck_failed: "Số yêu cầu kiểm tra lại trước khi thực hiện không đạt",
   overrides: "Số lần ghi đè",
-  rollbacks: "Số lần hoàn tác",
+  rollbacks: "Số yêu cầu đã hoàn tác",
   llm_cost_per_ticket: "Chi phí LLM mỗi yêu cầu",
 };
 
