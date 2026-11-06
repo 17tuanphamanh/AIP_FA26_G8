@@ -29,7 +29,10 @@
 
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
-Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required` — không câu người dùng, không chữ LLM.
+6. be-b11-khoa-slot: câu LLM viết (chỉ nhánh LLM) qua `domain/slot_text.scrub_slot_keys` TRƯỚC output guard / notify / conversation — bỏ
+   "(device_id)"… và thay khoá trơn bằng nhãn tiếng Việt, với MỌI khoá slot của `config/slots.yaml`; rỗng sau khi dọn → câu cố định.
+Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required`, `slot_keys_removed` (số đếm) — không câu
+người dùng, không chữ LLM.
 """
 
 import asyncio
@@ -40,6 +43,7 @@ from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import TARGET_USER_INTENTS, build_action
 from app.domain.exit_codes import ExitCode
 from app.domain.messages import question_msg
+from app.domain.slot_text import scrub_slot_keys
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
 from app.domain.target import TARGET_QUESTION
 from app.graph import effects
@@ -58,7 +62,7 @@ from app.tools.retry import retries_of
 def _info(missing: list[str], turns: int, target_required: bool) -> dict[str, Any]:
     return {"missing": missing, "turn": turns, "prompt": None, "llm_error": None, "guard": None, "tools_called": [],
             "tool_retry_count": 0, "facts": None, "procedure_doc": None, "procedure_kb_version": None,
-            "rag_error": None, "target_required": target_required}  # fmt: skip
+            "rag_error": None, "target_required": target_required, "slot_keys_removed": 0}  # fmt: skip
 
 
 def target_required(state: Any, slots: dict[str, Any]) -> bool:
@@ -182,6 +186,11 @@ def make(deps: NodeDeps) -> NodeFn:
                     exit_code=ExitCode.E2.value, missing_slots=missing, escalation_reason_detail="llm_unavailable",
                 )  # fmt: skip
             info["prompt"] = f"{meta.prompt_id}@{meta.prompt_version}"
+            all_keys = {k for spec in deps.slots.intents.values() for k in spec.keys}
+            text, removed = scrub_slot_keys(q.text, all_keys, missing[0] if missing else None)
+            if removed:
+                q = QuestionOut(text=text)
+            info["slot_keys_removed"] = removed
         info["guard"] = deps.output_guard.violation(q.text)
         if info["guard"] is not None:  # P4: câu hỏi do LLM viết cũng là chữ sắp gửi người dùng
             return await goto(
