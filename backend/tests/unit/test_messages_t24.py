@@ -81,9 +81,16 @@ def test_m1_result_actions_nine() -> None:
                      "Đã đặt lại mật khẩu tài khoản ERP của nv005. Mật khẩu tạm đã gửi qua SMS tới số điện thoại đã đăng ký, "
                      "chỉ dùng một lần; người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới. "
                      f"{CONFIRM_LOGIN_OTHER}", id="reset-sms-nguoi-khac"),
+        pytest.param(action("reset_password", rf="nv005", params={"account_type": "email"}), {"delivered_via": "email"},
+                     "Đã đặt lại mật khẩu tài khoản email của nv005. Hệ thống tài khoản xác nhận mật khẩu tạm được gửi qua "
+                     "email; người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới. "
+                     f"{CONFIRM_LOGIN_OTHER}", id="reset-email-nguoi-khac"),
+        pytest.param(action("reset_password", rf="svc_backup", params={"account_type": "ad"}, facts=SERVICE_FACTS), {},
+                     "Đã đặt lại mật khẩu tài khoản đăng nhập (AD) của svc_backup. Người dùng tài khoản này sẽ được yêu cầu "
+                     f"đổi mật khẩu ở lần đăng nhập tới. {CONFIRM_LOGIN_SERVICE}", id="reset-mac-dinh-svc"),
         pytest.param(action("reset_password", rf="nv005", params={"account_type": "ad"}), {},
-                     "Đã đặt lại mật khẩu tài khoản đăng nhập (AD) của nv005. Bạn cần đổi mật khẩu ở lần đăng nhập tới. "
-                     f"{CONFIRM_LOGIN_OTHER}", id="reset-nguoi-khac"),
+                     "Đã đặt lại mật khẩu tài khoản đăng nhập (AD) của nv005. Người dùng tài khoản này sẽ được yêu cầu đổi mật "
+                     f"khẩu ở lần đăng nhập tới. {CONFIRM_LOGIN_OTHER}", id="reset-nguoi-khac"),
         pytest.param(action("reset_password", rf=ME, params={"account_type": "ad"}), {},
                      f"Đã đặt lại mật khẩu tài khoản đăng nhập (AD) của bạn. Bạn cần đổi mật khẩu ở lần đăng nhập tới. "
                      f"{CONFIRM_LOGIN}", id="reset-thieu-delivered"),

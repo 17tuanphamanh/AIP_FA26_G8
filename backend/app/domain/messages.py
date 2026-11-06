@@ -78,6 +78,7 @@ ASK_CONFIRM_OPEN_OTHER: Final = "Bạn nhờ người được yêu cầu mở t
 ASK_CONFIRM_VIEW_OTHER: Final = "Bạn xem danh sách quyền này đã đủ chưa rồi xác nhận giúp mình nhé."
 RESET_SMS_TAIL: Final = "bạn sẽ được yêu cầu đổi mật khẩu khi đăng nhập."
 RESET_SMS_TAIL_OTHER: Final = "người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới."
+RESET_DEFAULT_OTHER: Final = "Người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới."
 
 
 def _until(outputs: Mapping[str, str]) -> str:
@@ -158,7 +159,8 @@ def _dmy(iso: str | None) -> str | None:
 def _reset_delivery(outputs: Mapping[str, str], *, other: bool = False) -> str:
     """Câu kênh nhận mật khẩu tạm — chỉ từ `outputs` đã qua mẫu (`sent_to` chỉ số ĐÃ CHE, phút 1–60); KHÔNG bao giờ mật khẩu.
     sms: mock gửi mật khẩu tạm một lần tới số trong AD. email: chỉ nói điều hệ thống tài khoản xác nhận (mock không gửi gì
-    thật ở kênh này). `other` (lô N, N10): tài khoản của người khác → đuôi câu SMS nói về người dùng tài khoản đó."""
+    thật ở kênh này). `other` (lô N, N10): tài khoản của người khác → câu đổi mật khẩu (SMS, email, mặc định) nói về người dùng
+    tài khoản đó; ca của mình giữ chữ cũ."""
     via = _out(outputs, "delivered_via")
     if via == "sms":
         to = _out(outputs, "sent_to")
@@ -167,8 +169,9 @@ def _reset_delivery(outputs: Mapping[str, str], *, other: bool = False) -> str:
                 f"{f', hiệu lực {minutes} phút' if minutes else ''}, chỉ dùng một lần; "
                 f"{RESET_SMS_TAIL_OTHER if other else RESET_SMS_TAIL}")  # fmt: skip
     if via == "email":
-        return "Hệ thống tài khoản xác nhận mật khẩu tạm được gửi qua email; bạn cần đổi mật khẩu ở lần đăng nhập tới."
-    return "Bạn cần đổi mật khẩu ở lần đăng nhập tới."
+        tail = RESET_SMS_TAIL_OTHER if other else "bạn cần đổi mật khẩu ở lần đăng nhập tới."
+        return f"Hệ thống tài khoản xác nhận mật khẩu tạm được gửi qua email; {tail}"
+    return RESET_DEFAULT_OTHER if other else "Bạn cần đổi mật khẩu ở lần đăng nhập tới."
 
 
 def _new_action_text(
