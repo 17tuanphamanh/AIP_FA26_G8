@@ -9,6 +9,8 @@ import type { Accepted, ChildProgress, ConfirmIn, ParentReplyIn, TicketView } fr
 /** Khớp `TEXT_MAX`, `NOTE_MAX` ở backend/app/api/tickets.py — chặn sớm ở ô nhập, backend vẫn kiểm (422). */
 export const TEXT_MAX = 4000;
 export const NOTE_MAX = 1000;
+/** Khớp `REQUEST_TEXT_MAX` ở backend/app/api/tickets.py: `request_text` bị CẮT (không dấu) ở 500 ký tự (điểm mã Unicode). */
+export const REQUEST_TEXT_MAX = 500;
 
 const ticketPath = (id: string) => `/api/tickets/${encodeURIComponent(id)}`;
 

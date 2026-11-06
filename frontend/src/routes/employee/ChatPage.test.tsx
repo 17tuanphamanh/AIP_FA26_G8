@@ -223,6 +223,40 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
     }
   });
 
+  it("tải lại trang, request_text toàn khoảng trắng → như null: \"Yêu cầu của bạn\", không bong bóng", async () => {
+    const unmount = mount([], `/chat/${ID}`, "  \n\t  ");
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(0);
+      expect(heading()).toBe(DEFAULT_TITLE);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("tải lại trang, request_text đúng 500 ký tự (backend đã cắt) → bong bóng thêm \"…\" ở cuối; dưới 500 → không thêm", async () => {
+    const cut = `${"Không vào được VPN từ nhà. ".repeat(20)}`.slice(0, 500);
+    expect(Array.from(cut).length).toBe(500);
+    let unmount = mount([], `/chat/${ID}`, cut);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(1);
+      expect(bubble()).toBe(`${cut}…`);
+      expect(heading()!.endsWith("…")).toBe(true);
+      expect(heading()!.length).toBeLessThanOrEqual(60); // tiêu đề vẫn cắt riêng ở 60 như cũ
+    } finally {
+      unmount();
+    }
+    const short = cut.slice(0, 499);
+    unmount = mount([], `/chat/${ID}`, short);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubble()).toBe(short);
+    } finally {
+      unmount();
+    }
+  });
+
   it("tải lại trang, request_text null → như cũ: \"Yêu cầu của bạn\", không bong bóng", async () => {
     const unmount = mount([], `/chat/${ID}`, null);
     try {

@@ -8,6 +8,7 @@ import {
   getTicket,
   NOTE_MAX,
   replyTicket,
+  REQUEST_TEXT_MAX,
   sendMessage,
   TEXT_MAX,
   withBusyRetry,
@@ -95,6 +96,8 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   // bạn", không bong bóng. Không lấy tin người dùng trong `conversation` (đó là câu TRẢ LỜI khi hỏi thêm).
   const mine = useSessionTickets().find((t) => t.ticket_id === ticketId);
   const savedRequest = mine ? null : view?.request_text?.trim() ? view.request_text : null;
+  // Backend cắt ở REQUEST_TEXT_MAX điểm mã, không thêm dấu → đủ độ dài thì bong bóng thêm "…" (chỉ chỗ hiện; tiêu đề tự cắt riêng).
+  const savedBubble = savedRequest !== null && Array.from(savedRequest).length >= REQUEST_TEXT_MAX ? `${savedRequest}…` : savedRequest;
   const title = titleOf(mine ?? (savedRequest === null ? undefined : { request: savedRequest }));
 
   useEffect(() => {
@@ -239,7 +242,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
             </p>
           ) : savedRequest !== null ? (
             <p data-role="request" className={USER_BUBBLE}>
-              {savedRequest}
+              {savedBubble}
             </p>
           ) : null}
           <Conversation
