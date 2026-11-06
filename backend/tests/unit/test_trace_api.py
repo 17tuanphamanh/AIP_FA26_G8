@@ -348,3 +348,45 @@ def test_openapi_declares_trace_model(env: AuthEnv) -> None:
         "step", "event", "at", "screen", "classify", "diagnose", "sources", "policy", "approval", "execution", "outcome",
     }
     assert schemas["TicketTrace"]["additionalProperties"] is False
+
+
+# ---- lô N (N7): thẻ B20 `escalation_closed` có kết quả đóng ca -------------------------------------------------------------
+
+
+def _closed_row(close_result: Any) -> dict[str, Any]:
+    """Dòng audit đóng ca đúng khuôn `db/escalations.close_audit_row` (detail {escalation_id, close_result, closed_by, note_length})."""
+    return _row(1, "B20", "escalation_closed", exit_code=None, detail={
+        "escalation_id": 7, "close_result": close_result, "closed_by": "long.nh", "note_length": 42,
+    })  # fmt: skip
+
+
+@pytest.mark.parametrize("result", ["completed", "confirmed_denial", "reopened_as_new"])
+def test_n7_escalation_closed_has_close_result(result: str) -> None:
+    outcome = build_trace(TraceData(TicketHead("T", "u", None, False), [_closed_row(result)]), {}).steps[0].outcome
+    assert outcome is not None
+    assert outcome.model_dump(exclude_unset=True) == {"route": None, "exit_code": None, "close_result": result}
+
+
+@pytest.mark.parametrize("bad", ["closed_ok", "", 1, None, ["completed"], f"{CANARY} completed"])
+def test_n7_escalation_closed_unknown_value_is_null(bad: Any) -> None:
+    outcome = build_trace(TraceData(TicketHead("T", "u", None, False), [_closed_row(bad)]), {}).steps[0].outcome
+    assert outcome is not None
+    assert outcome.model_dump(exclude_unset=True) == {"route": None, "exit_code": None, "close_result": None}
+
+
+def test_n7_escalation_closed_route_no_closed_by(env: AuthEnv, source: FakeTrace) -> None:
+    """Qua route: khoá `close_result` có mặt; KHÔNG `closed_by`, `note_length`, `escalation_id`."""
+    source.items["C-1"] = TraceData(TicketHead("C-1", "nv001", None, False), [_closed_row("confirmed_denial")])
+    r = _get(env, "C-1", env.manager_token())
+    assert r.status_code == 200, r.text
+    step = r.json()["steps"][0]
+    assert step["outcome"] == {"route": None, "exit_code": None, "close_result": "confirmed_denial"}
+    assert "long.nh" not in str(step) and "note_length" not in str(step) and "escalation_id" not in str(step)
+
+
+def test_n7_plain_b20_unchanged() -> None:
+    """B20 thường (không phải `escalation_closed`) — không gán `close_result` (route bỏ khoá); `detail.close_result` bị lờ."""
+    row = _row(1, "B20", "ticket_closed", exit_code="E5", detail={"resolution_path": "escalated", "close_result": "completed"})
+    outcome = build_trace(TraceData(TicketHead("T", "u", None, False), [row]), {}).steps[0].outcome
+    assert outcome is not None
+    assert outcome.model_dump(exclude_unset=True) == {"route": "escalated", "exit_code": "E5"}

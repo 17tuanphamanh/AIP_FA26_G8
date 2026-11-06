@@ -152,6 +152,7 @@ describe("parseTrace — fail-closed", () => {
     ["calls sai kiểu", (t) => ({ ...t, steps: [step(1, "B17", "x", { execution: { ...TRACE.steps[8]!.execution!, calls: "renew" as never } })] })],
     ["con thiếu ticket_id", (t) => ({ ...t, is_parent: true, children: [{ intent: "vpn", exit_code: null }] })],
     ["is_parent không phải boolean", (t) => ({ ...t, is_parent: "false" })],
+    ["close_result ngoài miền", (t) => ({ ...t, steps: [step(1, "B20", "escalation_closed", { outcome: { route: null, exit_code: null, close_result: "done" as never } })] })],
   ];
   it.each(broken)("%s → 502 invalid_trace_body", (_, mutate) => {
     const body = mutate(structuredClone(TRACE) as unknown as Record<string, unknown>);
@@ -161,6 +162,31 @@ describe("parseTrace — fail-closed", () => {
     } catch (e) {
       expect(e).toMatchObject({ status: 502, code: "invalid_trace_body" });
     }
+  });
+});
+
+describe("thẻ đóng ca L2 (B20 escalation_closed) — lô N (N7)", () => {
+  const closed = (close_result?: "completed" | "confirmed_denial" | "reopened_as_new" | null) =>
+    step(1, "B20", "escalation_closed", { outcome: close_result === undefined ? { route: null, exit_code: null } : { route: null, exit_code: null, close_result } });
+
+  it("parseTrace nhận close_result (3 giá trị + null) và nhận khi vắng khoá", () => {
+    for (const r of ["completed", "confirmed_denial", "reopened_as_new", null, undefined] as const) {
+      const body = { ...TRACE, steps: [closed(r)] };
+      expect(parseTrace(structuredClone(body))).toStrictEqual(body);
+    }
+  });
+
+  it("3 kết quả đóng → 'L2 đã đóng ca · <nhãn đóng ca>'; route null không close_result → 'chưa rõ' như cũ", async () => {
+    stub(() => json(200, { ...TRACE, steps: [closed("completed"), closed("confirmed_denial"), closed("reopened_as_new"), closed(null), closed()] }));
+    renderAt("/trace/T-1");
+    await screen.findAllByTestId("trace-step");
+    expect(titles()).toStrictEqual([
+      "Kết cục: L2 đã đóng ca · đã hoàn tất",
+      "Kết cục: L2 đã đóng ca · xác nhận từ chối",
+      "Kết cục: L2 đã đóng ca · mở yêu cầu mới",
+      "Kết cục: chưa rõ",
+      "Kết cục: chưa rõ",
+    ]);
   });
 });
 

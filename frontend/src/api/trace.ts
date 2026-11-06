@@ -95,7 +95,11 @@ const execution = shape({
   rollback_status: nullable(str),
   calls: listOf(shape({ name: str, result: oneOf("ok", "failed") })),
 });
-const outcome = shape({ route: nullable(str), exit_code: nullable(str) });
+// Lô N (N7): `close_result` TUỲ CHỌN — chỉ dòng B20 `escalation_closed` có (route bỏ khoá ở dòng B20 khác); có thì null hoặc 1 trong 3.
+const outcome = shape(
+  { route: nullable(str), exit_code: nullable(str) },
+  { close_result: nullable(oneOf("completed", "confirmed_denial", "reopened_as_new")) },
+);
 const step = shape({
   step: str,
   event: str,

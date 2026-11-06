@@ -1157,6 +1157,8 @@ export interface components {
             route: string | null;
             /** Exit Code */
             exit_code: string | null;
+            /** @default null */
+            close_result?: components["schemas"]["CloseResult"] | null;
         };
         /** PolicyInfo */
         PolicyInfo: {

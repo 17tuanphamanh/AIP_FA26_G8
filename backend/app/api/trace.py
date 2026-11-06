@@ -18,7 +18,9 @@ ngoài [0, 1] hoặc không phải số → bỏ. Trường thiếu → None / r
   mọi trường khác luôn được gán tường minh nên không bị bỏ).
 - B15/B16: phiếu duyệt — người duyệt (id + họ tên từ `users`), kết quả, thời điểm (bảng `approvals`).
 - B17/B18: loại hành động (`intended_action.type` — SQL chỉ chọn khoá này), kết quả từng lời gọi ghi, trạng thái hoàn tác.
-- B20: `route` (= `resolution_path`), `exit_code`.
+- B20: `route` (= `resolution_path`), `exit_code`. Dòng `escalation_closed` (L2 đóng ca, `db/escalations.close_audit_row`) thêm
+  `close_result` ∈ {completed, confirmed_denial, reopened_as_new} lấy từ `detail.close_result` (giá trị lạ → null); KHÔNG `closed_by`,
+  ghi chú hay độ dài ghi chú. Dòng B20 khác không gán khoá này → route bỏ khoá (`response_model_exclude_unset`).
 Ticket cha (`is_parent`): kèm danh sách con (id, intent, exit_code).
 """
 
@@ -39,6 +41,8 @@ from app.api.matched_rules import MatchedRule, RuleRef, matched_rules, rule_inde
 from app.auth.authz import can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
+from app.db.escalations import CLOSE_EVENT
+from app.domain.escalation_close import CLOSE_RESULT_VALUES, CloseResult
 
 router = APIRouter()
 
@@ -233,6 +237,7 @@ class ExecutionInfo(_Strict):
 class OutcomeInfo(_Strict):
     route: str | None
     exit_code: str | None
+    close_result: CloseResult | None = None  # chỉ gán ở dòng `escalation_closed`; không gán → route bỏ khoá
 
 
 class TraceStep(_Strict):
@@ -369,6 +374,18 @@ def _action_type(row: Mapping[str, Any]) -> str | None:
     return _ident(a.get("type")) if isinstance(a, Mapping) else None
 
 
+_CLOSE_RESULTS: dict[str, CloseResult] = {v: v for v in CLOSE_RESULT_VALUES}
+
+
+def _outcome(row: Mapping[str, Any], event: str) -> OutcomeInfo:
+    d = _detail(row)
+    route, exit_code = _ident(d.get("resolution_path")), _ident(row.get("exit_code"))
+    if event != CLOSE_EVENT:
+        return OutcomeInfo(route=route, exit_code=exit_code)
+    raw = d.get("close_result")
+    return OutcomeInfo(route=route, exit_code=exit_code, close_result=_CLOSE_RESULTS.get(raw) if isinstance(raw, str) else None)
+
+
 _EMPTY: dict[str, None] = dict.fromkeys(
     ("screen", "classify", "diagnose", "sources", "policy", "approval", "execution", "outcome")
 )
@@ -403,8 +420,7 @@ def build_trace(data: TraceData, rules: Mapping[str, RuleRef] | None = None) -> 
         elif step in _EXECUTE_STEPS:
             extra["execution"] = _execution(row, action)
         elif step == "B20":
-            route = _detail(row).get("resolution_path")
-            extra["outcome"] = OutcomeInfo(route=_ident(route), exit_code=_ident(row.get("exit_code")))
+            extra["outcome"] = _outcome(row, event)
         steps.append(TraceStep(
             step=_ident(step) or "?", event=_ident(event) or "?", at=row["created_at"], **{**_EMPTY, **extra},
         ))  # fmt: skip
