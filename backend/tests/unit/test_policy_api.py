@@ -561,6 +561,10 @@ def _description_int(c: dict[str, Any]) -> None:
     c["rules"][0]["description"] = 5
 
 
+def _threshold_str(c: dict[str, Any]) -> None:
+    c["constants"]["THRESHOLD_LOW"] = "thap"
+
+
 def _bad_rule_id(c: dict[str, Any]) -> None:
     c["rules"][0]["id"] = "X1"  # sai mẫu ^R\d{2}$ → string_pattern_mismatch (không có câu riêng)
 
@@ -572,6 +576,7 @@ SCHEMA_MSG_CASES: list[tuple[str, Mutate, list[Any], str]] = [
     ("extra_forbidden", _extra_block, ["extra_block"], "Trường không được phép"),
     ("int_parsing", _max_loops_str, ["constants", "MAX_LOOPS"], "Phải là số nguyên"),
     ("int_from_float", _max_loops_frac, ["constants", "MAX_LOOPS"], "Phải là số nguyên"),
+    ("float_parsing", _threshold_str, ["constants", "THRESHOLD_LOW"], "Phải là số"),
     ("string_type", _description_int, ["rules", 0, "description"], "Phải là chuỗi"),
     ("du_phong", _bad_rule_id, ["rules", 0, "id"], "Giá trị không hợp lệ"),
 ]
@@ -588,18 +593,22 @@ def test_t23_schema_msg_vietnamese_by_type(env: AuthEnv, mutate: Mutate, loc: li
 
 
 def test_t23_own_vietnamese_msg_kept(env: AuthEnv) -> None:
-    """T23: câu do validator của schema tự viết (value_error) giữ nguyên msg gốc — THRESHOLD_LOW ≥ THRESHOLD_HIGH."""
+    """T23: câu do validator của schema tự viết (value_error) giữ nguyên chữ, bỏ tiền tố "Value error, " — THRESHOLD_LOW ≥ HIGH."""
     errors = _errors(_validate(env, variant(_low_eq_high), env.manager_token()))
-    assert {"loc": ["constants"], "msg": "Value error, THRESHOLD_LOW phải nhỏ hơn THRESHOLD_HIGH"} in errors, errors
+    assert {"loc": ["constants"], "msg": "THRESHOLD_LOW phải nhỏ hơn THRESHOLD_HIGH"} in errors, errors
+    assert all(not e["msg"].startswith("Value error") for e in errors), errors
 
 
 SCHEMA_MSG_PURE: list[tuple[str, dict[str, Any], str]] = [
     ("bool_type", {"type": "bool_type", "msg": "Input should be a valid boolean"}, "Phải là đúng/sai"),
     ("bool_parsing", {"type": "bool_parsing", "msg": "Input should be a valid boolean, unable to interpret input"}, "Phải là đúng/sai"),
     ("int_type", {"type": "int_type", "msg": "Input should be a valid integer"}, "Phải là số nguyên"),
+    ("float_type", {"type": "float_type", "msg": "Input should be a valid number"}, "Phải là số"),
+    ("float_parsing", {"type": "float_parsing", "msg": "Input should be a valid number, unable to parse string as a number"}, "Phải là số"),
     ("literal_mot_gia_tri", {"type": "literal_error", "msg": "x", "ctx": {"expected": "'only'"}}, "Phải là một trong: 'only'"),
     ("literal_thieu_ctx", {"type": "literal_error", "msg": "Input should be 'a' or 'b'"}, "Giá trị không hợp lệ"),
-    ("value_error", {"type": "value_error", "msg": "Value error, câu tự viết", "ctx": {"error": ValueError("x")}}, "Value error, câu tự viết"),
+    ("value_error", {"type": "value_error", "msg": "Value error, câu tự viết", "ctx": {"error": ValueError("x")}}, "câu tự viết"),
+    ("value_error_khong_tien_to", {"type": "value_error", "msg": "câu tự viết"}, "câu tự viết"),
     ("assertion_error", {"type": "assertion_error", "msg": "Assertion failed, câu tự viết"}, "Assertion failed, câu tự viết"),
     ("loai_la", {"type": "greater_than_equal", "msg": "Input should be greater than or equal to 1"}, "Giá trị không hợp lệ"),
 ]

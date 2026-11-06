@@ -19,8 +19,8 @@ như lúc khởi động. `check_policy_config` chỉ ném một `RuntimeError` 
   hoá thì 500. Tên khoá thừa giữ nguyên trong `loc` (khác `api.errors`, vốn đổi thành `<extra>`): thân này là policy của chính
   Trưởng BP, FE cần chỉ đúng khoá sai.
 - `msg` tiếng Việt theo `type` của lỗi pydantic (`schema_msg`): `literal_error` → "Phải là một trong: <ctx.expected>"; `missing`,
-  `extra_forbidden`, lỗi kiểu số nguyên / chuỗi / bool → câu cố định; `value_error` / `assertion_error` (câu tiếng Việt do validator
-  của schema tự viết) → giữ nguyên `msg` gốc; loại khác → "Giá trị không hợp lệ".
+  `extra_forbidden`, lỗi kiểu số nguyên / số thực / chuỗi / bool → câu cố định; `value_error` / `assertion_error` (câu tiếng Việt do
+  validator của schema tự viết) → giữ câu gốc, bỏ tiền tố "Value error, " pydantic tự thêm; loại khác → "Giá trị không hợp lệ".
 - NaN/Infinity (JSON không chuẩn) bị chặn ngay lúc đọc thân (`parse_constant`, như `parse_policy`) → 422 `invalid_policy` với đúng
   một lỗi `loc == []`. Thân sai hình dạng (thiếu `content`, không phải object, khoá lạ, JSON hỏng) → 422 `invalid_request`.
 - KHÔNG log nội dung policy hay `msg`: chỉ log số lỗi.
@@ -76,11 +76,14 @@ FIXED_MSGS: dict[str, str] = {
     "int_type": "Phải là số nguyên",
     "int_parsing": "Phải là số nguyên",
     "int_from_float": "Phải là số nguyên",
+    "float_type": "Phải là số",
+    "float_parsing": "Phải là số",
     "string_type": "Phải là chuỗi",
     "bool_type": "Phải là đúng/sai",
     "bool_parsing": "Phải là đúng/sai",
 }
-OWN_MSG_TYPES = frozenset({"value_error", "assertion_error"})  # validator của schema tự viết câu (tiếng Việt) → giữ nguyên
+OWN_MSG_TYPES = frozenset({"value_error", "assertion_error"})  # validator của schema tự viết câu (tiếng Việt) → giữ câu
+VALUE_ERROR_PREFIX = "Value error, "  # pydantic tự thêm trước câu của `ValueError` — không phải chữ của validator
 FALLBACK_MSG = "Giá trị không hợp lệ"
 
 
@@ -204,7 +207,7 @@ def schema_msg(error: Mapping[str, Any]) -> str:
     (`'a', 'b' or 'c'` → `'a', 'b', 'c'`); thiếu `ctx.expected` → câu dự phòng."""
     kind = error.get("type")
     if kind in OWN_MSG_TYPES:
-        return str(error["msg"])
+        return str(error["msg"]).removeprefix(VALUE_ERROR_PREFIX)
     if kind == "literal_error":
         expected = (error.get("ctx") or {}).get("expected")
         if not isinstance(expected, str) or not expected:
