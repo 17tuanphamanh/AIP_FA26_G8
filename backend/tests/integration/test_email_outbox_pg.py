@@ -71,8 +71,8 @@ def outbox(rw: AsyncEngine, clock: FakeClock) -> SqlEmailOutbox:
     return SqlEmailOutbox(rw, guard, clock, BASE)
 
 
-async def _ticket(rw: AsyncEngine, requester: str = REQ, *, parent: str | None = None) -> str:
-    ticket = str(uuid4())
+async def _ticket(rw: AsyncEngine, requester: str = REQ, *, parent: str | None = None, ticket_id: str | None = None) -> str:
+    ticket = ticket_id or str(uuid4())
     async with rw.begin() as conn:
         await conn.execute(
             text("INSERT INTO tickets (ticket_id, parent_ticket_id, requester_id, requester_role, redacted_request) "
@@ -338,15 +338,20 @@ async def _drain(rw: AsyncEngine) -> None:
         await conn.execute(text("UPDATE email_outbox SET status = 'skipped' WHERE status = 'pending'"))
 
 
+# be-pii-uuid: ĐÚNG mã ticket từng làm test này đỏ ngẫu nhiên — "0-8471-62786" trong UUID bị che thành <SĐT_1> ở link email
+PHONE_LIKE_UUID = "23d1ce34-f9e3-43b0-8471-62786daeeefe"
+
+
 async def test_job_sends_pending_and_marks_sent(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: FakeClock) -> None:
     await _drain(rw)
-    ticket = await _ticket(rw)
+    ticket = await _ticket(rw, ticket_id=PHONE_LIKE_UUID)
     await _notify_once(rw, outbox, ticket, _key())
     sender = RecSender()
     report = await EmailSendJob(outbox, sender, clock).run()
     assert report.sent == 1
     assert sender.sent == [(REQ_MAIL, f"[IT Service Desk] Kết quả xử lý yêu cầu của bạn — {ticket[:8].upper()}",
                             f"{BODY}\n\nXem chi tiết: {BASE}/chat/{ticket}")]  # fmt: skip
+    assert "<SĐT" not in sender.sent[0][2] and f"/chat/{PHONE_LIKE_UUID}" in sender.sent[0][2]  # link nguyên vẹn
     (row,) = await _outbox_of(rw, ticket)
     assert (row.status, row.sent_at, row.attempts) == ("sent", NOW, 0)
     assert (await EmailSendJob(outbox, sender, clock).run()).sent == 0  # không gửi lại
