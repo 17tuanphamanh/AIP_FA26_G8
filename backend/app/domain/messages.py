@@ -68,6 +68,14 @@ MAX_PERMISSION_ROWS: Final = 10
 ASK_CONFIRM_LOGIN: Final = "Bạn đăng nhập thử rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_OPEN: Final = "Bạn mở thử rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_VIEW: Final = "Bạn xem đã đủ chưa rồi xác nhận giúp mình nhé."
+# Lô N (N10, ca TC07): đối tượng KHÁC người gửi (`requested_for != requester_id` — đúng quy tắc của `person_phrase`) → người gửi
+# không tự thử được; câu xác nhận nói việc của người gửi. Tài khoản dịch vụ = fact `target_is_service_account` (B6
+# `check_account_status`; `ACCOUNT_TYPE_TEXT` chỉ có ad/email/erp). Ca tự yêu cầu cho mình dùng câu cũ y nguyên.
+ASK_CONFIRM_OTHER: Final = "Bạn nhờ người dùng máy này kết nối lại rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_LOGIN_OTHER: Final = "Bạn nhờ người dùng tài khoản này đăng nhập thử rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_LOGIN_SERVICE: Final = "Bạn kiểm tra dịch vụ dùng tài khoản này đã đăng nhập lại được chưa rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_OPEN_OTHER: Final = "Bạn nhờ người được yêu cầu mở thử rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_VIEW_OTHER: Final = "Bạn xem danh sách quyền này đã đủ chưa rồi xác nhận giúp mình nhé."
 
 
 def _until(outputs: Mapping[str, str]) -> str:
@@ -86,6 +94,16 @@ def person_phrase(requested_for: str, requester_id: str) -> str:
     if requested_for == requester_id:
         return "bạn"
     return requested_for if USER_ID.fullmatch(requested_for) else "người được yêu cầu"
+
+
+def _confirm_texts(action: Action, requester_id: str) -> tuple[str, str, str, str]:
+    """(kết nối VPN, đăng nhập, mở thử, xem) — câu xác nhận theo đối tượng: của mình → câu cũ; người khác → câu cho bên thứ ba;
+    tài khoản dịch vụ (`target_is_service_account is True`) → câu kiểm dịch vụ cho mẫu đăng nhập."""
+    if action.requested_for == requester_id:
+        return ASK_CONFIRM, ASK_CONFIRM_LOGIN, ASK_CONFIRM_OPEN, ASK_CONFIRM_VIEW
+    service = action.facts.get("target_is_service_account") is True
+    login = ASK_CONFIRM_LOGIN_SERVICE if service else ASK_CONFIRM_LOGIN_OTHER
+    return ASK_CONFIRM_OTHER, login, ASK_CONFIRM_OPEN_OTHER, ASK_CONFIRM_VIEW_OTHER
 
 
 def _local_date(raw: object, tz: ZoneInfo) -> date | None:
@@ -157,22 +175,23 @@ def _new_action_text(
     """6 mẫu T24 (bảng 7.3) — chỉ enum, định danh qua mẫu, ngày; thiếu giá trị → bỏ cụm."""
     p = action.params
     who = person_phrase(action.requested_for, requester_id)
+    _, confirm_login, confirm_open, confirm_view = _confirm_texts(action, requester_id)
     kind = ACCOUNT_TYPE_TEXT.get(str(p.get("account_type")))
     account = f"tài khoản {kind} của {who}" if kind else f"tài khoản của {who}"
     path_raw = str(p.get("resource_path", ""))
     folder = f"thư mục {path_raw}" if RESOURCE_PATH.fullmatch(path_raw) else "thư mục được yêu cầu"
     until = _dmy(_out(outputs, "expires_on"))
     if action.type == "reset_password":
-        return f"Đã đặt lại mật khẩu {account}. {_reset_delivery(outputs)} {ASK_CONFIRM_LOGIN}"
+        return f"Đã đặt lại mật khẩu {account}. {_reset_delivery(outputs)} {confirm_login}"
     if action.type == "unlock_account":
-        return f"Đã mở khoá {account}. {ASK_CONFIRM_LOGIN}"
+        return f"Đã mở khoá {account}. {confirm_login}"
     if action.type == "install_software":
         raw_software = str(p.get("software_name", ""))  # Q-T24-7: tên đã chuẩn hoá của Action, KHÔNG lấy tên hệ thống ngoài trả về
         software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
         version = _out(outputs, "version")
         device_id = str(p.get("device_id", ""))
         device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
-        return f"Đã cài {software}{f' phiên bản {version}' if version else ''} lên {device}. {ASK_CONFIRM_OPEN}"
+        return f"Đã cài {software}{f' phiên bản {version}' if version else ''} lên {device}. {confirm_open}"
     if action.type == "view_permissions":
         if rows is None:
             return (f"Mình chưa đọc được danh sách quyền truy cập của {who}. "
@@ -182,13 +201,13 @@ def _new_action_text(
             f"{path} ({level}, {f'hết hạn {day:%d/%m/%Y}' if day is not None else 'không thời hạn'})"
             for path, level, day in shown
         )
-        return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {ASK_CONFIRM_VIEW}"
+        return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {confirm_view}"
     if action.type == "grant_permission":
         level = _out(outputs, "level")
         return (f"Đã cấp quyền {f'{level} ' if level else ''}{folder} cho {who}"
-                f"{f', hiệu lực tới {until}' if until else ''}. {ASK_CONFIRM_OPEN}")  # fmt: skip
+                f"{f', hiệu lực tới {until}' if until else ''}. {confirm_open}")  # fmt: skip
     if action.type == "extend_permission":
-        return f"Đã gia hạn quyền {folder} của {who}{f' tới {until}' if until else ''}. {ASK_CONFIRM_OPEN}"
+        return f"Đã gia hạn quyền {folder} của {who}{f' tới {until}' if until else ''}. {confirm_open}"
     raise ValueError(f"không có mẫu tin kết quả cho {action.type!r}")
 
 
@@ -200,10 +219,11 @@ def result_text(
     action_type = action.type
     device_id = str(action.params.get("device_id", ""))
     device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    confirm = _confirm_texts(action, requester_id)[0]
     if action_type == "renew_vpn_cert":
-        return f"Đã gia hạn chứng chỉ VPN cho {device}{_until(outputs)}. {ASK_CONFIRM}"
+        return f"Đã gia hạn chứng chỉ VPN cho {device}{_until(outputs)}. {confirm}"
     if action_type == "reissue_vpn_access":
-        return f"Đã cấp lại quyền truy cập VPN cho {device}{_until(outputs)}. {ASK_CONFIRM}"
+        return f"Đã cấp lại quyền truy cập VPN cho {device}{_until(outputs)}. {confirm}"
     if action_type == "check_vpn_status":
         status = facts.get("cert_status")
         cert = CERT_STATUS_TEXT.get(status, "chưa rõ") if isinstance(status, str) else "chưa rõ"
