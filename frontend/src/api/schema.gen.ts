@@ -763,7 +763,20 @@ export interface components {
              * @enum {string}
              */
             scope: "all";
+            /** Min Sample */
+            min_sample: number;
             metrics: components["schemas"]["BusinessAllMetrics"];
+            counts: components["schemas"]["BusinessAllCounts"];
+        };
+        /**
+         * BusinessAllCounts
+         * @description Số đếm tử/mẫu — tập trường = `COUNTED_KEYS` (test hai chiều).
+         */
+        BusinessAllCounts: {
+            automation_rate: components["schemas"]["RatioCount"] | null;
+            escalation_rate_raw: components["schemas"]["RatioCount"] | null;
+            escalation_rate_weighted: components["schemas"]["WeightedCount"] | null;
+            deflection_rate: components["schemas"]["RatioCount"] | null;
         };
         /** BusinessAllMetrics */
         BusinessAllMetrics: {
@@ -806,6 +819,10 @@ export interface components {
              * @enum {string}
              */
             scope: "own";
+            /** Min Sample */
+            min_sample: number;
+            /** Sample */
+            sample: number | null;
             metrics: components["schemas"]["BusinessOwnMetrics"];
         };
         /** BusinessOwnMetrics */
@@ -978,6 +995,15 @@ export interface components {
             rollback_status: string | null;
             /** Calls */
             calls: components["schemas"]["ExecCall"][];
+        };
+        /** GroupCount */
+        GroupCount: {
+            /** Num */
+            num: number;
+            /** Den */
+            den: number;
+            /** Weight */
+            weight: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1157,7 +1183,6 @@ export interface components {
             route: string | null;
             /** Exit Code */
             exit_code: string | null;
-            /** @default null */
             close_result?: components["schemas"]["CloseResult"] | null;
         };
         /** PolicyInfo */
@@ -1241,6 +1266,13 @@ export interface components {
         QueueStatus: "open" | "closed";
         /** RatioCell */
         RatioCell: {
+            /** Num */
+            num: number;
+            /** Den */
+            den: number;
+        };
+        /** RatioCount */
+        RatioCount: {
             /** Num */
             num: number;
             /** Den */
@@ -1547,6 +1579,15 @@ export interface components {
         };
         /** @enum {string} */
         WaitingFor: "clarify" | "approval" | "confirm" | "reply";
+        /** WeightedCount */
+        WeightedCount: {
+            /** Den */
+            den: number;
+            /** By Group */
+            by_group: {
+                [key: string]: components["schemas"]["GroupCount"];
+            };
+        };
         /** WeightedRate */
         WeightedRate: {
             /** Raw */
@@ -1755,6 +1796,8 @@ export interface operations {
                 status?: components["schemas"]["AlertStatus"] | null;
                 audience?: components["schemas"]["AudienceParam"] | null;
                 limit?: number;
+                from?: string | null;
+                to?: string | null;
             };
             header?: never;
             path?: never;

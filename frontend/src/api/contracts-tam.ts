@@ -285,6 +285,7 @@ export type BusinessDashboard = { from: string; to: string; unavailable: string[
 
 // D13 (backend 3ec275b: api/dashboard.py `BusinessAllCounts`, monitor/queries/business.py RatioCount, GroupCount,
 // WeightedCount; api/alerts.py `from`/`to`). schema.gen.ts chưa sinh lại → hình dạng kiểm LÚC CHẠY ở api/dashboard.ts.
+// TODO (A) gộp kiểu chính sau bảo vệ — lô N (N3): đã sinh lại schema.gen.ts + soát hai chiều 4 kiểu *Tam (schema.check.ts, hướng B).
 
 // TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
 /** Tử/mẫu của một tỉ lệ đơn; `den` = #lá đã kết thúc trong cửa sổ. */

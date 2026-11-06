@@ -14,13 +14,15 @@ import type {
   ApprovalManagerRef,
   ApprovalRiskView,
   ApprovalViewP4,
-  BusinessDashboard,
+  BusinessCountedTam,
+  BusinessCountsTam,
   BusinessMetrics,
   DayCost,
   E1Split,
   E3Case,
   E3Cases,
   ErrorDetail,
+  GroupCountTam,
   EscalationCloseResult,
   InvalidRequestBody,
   MatchedRule,
@@ -30,8 +32,10 @@ import type {
   PolicyValidateOk,
   PolicyVersionItem,
   PolicyView,
+  RatioCountTam,
   RuleCount,
   TicketView,
+  WeightedCountTam,
   WeightedRate,
 } from "./types.ts";
 
@@ -74,11 +78,19 @@ export type AlertListOk = [
 // ---------------------------------------------------------------- Tổng quan — Nghiệp vụ
 // Route trả `BusinessAll | BusinessOwn`; kiểu viết tay chỉ dựng nhánh `scope: "all"` (dashboard:read:all) — nhánh "own"
 // (L1) chưa dùng, parseBusiness trả 502 khi scope ≠ "all".
+// D13 (lô N, N3 hướng B): openapi có `min_sample` + `counts` BẮT BUỘC; kiểu viết tay giữ chúng TUỲ CHỌN (`BusinessCountedTam`,
+// tương thích backend trước D13 — bộ đọc và d13.test.tsx không đổi) → so bản bắt-buộc-hết-trường với openapi.
 
 type BusinessMetricsGen = S["BusinessAllMetrics"];
+type BusinessCountedFull = Required<BusinessCountedTam>;
 export type BusinessDashboardOk = [
-  Expect<Same<BusinessDashboard, S["BusinessAll"]>>,
-  Expect<Mutual<BusinessDashboard, Extract<Ok200<operations["dashboard_business_api_dashboard_business_get"]>, { scope: "all" }>>>,
+  Expect<Same<BusinessCountedFull, S["BusinessAll"]>>,
+  Expect<Mutual<BusinessCountedFull, Extract<Ok200<operations["dashboard_business_api_dashboard_business_get"]>, { scope: "all" }>>>,
+  // 4 kiểu *Tam của D13, từng khoá hai chiều.
+  Expect<Same<BusinessCountsTam, S["BusinessAllCounts"]>>,
+  Expect<Same<RatioCountTam, S["RatioCount"]>>,
+  Expect<Same<GroupCountTam, S["GroupCount"]>>,
+  Expect<Same<WeightedCountTam, S["WeightedCount"]>>,
   Expect<Same<BusinessMetrics, BusinessMetricsGen>>,
   // Object con: cả trường (gồm `| null`) lẫn phần không null, từng khoá.
   Expect<Mutual<BusinessMetrics["escalation_rate_weighted"], BusinessMetricsGen["escalation_rate_weighted"]>>,
