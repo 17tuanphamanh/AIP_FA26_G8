@@ -38,3 +38,7 @@ export type NotificationResult = S["Result"];
 // và màn đọc thiếu = không có (không đồng hồ; độ lệch rơi về header `Date`) — routes/employee/approvalClock.ts.
 // `request_text` (Nợ API #8): câu yêu cầu đầu ĐÃ CHE, ≤ 500 ký tự; thiếu khoá (backend cũ) = null.
 export type TicketView = TicketViewBase & Partial<Pick<S["TicketView"], "deadline" | "server_now" | "request_text">>;
+// P3 "Gần đây": GET /api/tickets (quyền `ticket:read:own`) → `TicketList` {items} — ticket gốc của CHÍNH người gọi, mới
+// nhất trước; `request_text` ĐÃ CHE. Đọc CHẶT lúc chạy ở api/tickets.ts `parseTicketList`; nối với route: schema.check.ts.
+export type TicketListItem = S["TicketListItem"];
+export type TicketList = S["TicketList"];

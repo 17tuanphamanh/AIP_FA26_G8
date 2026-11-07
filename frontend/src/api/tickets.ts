@@ -4,7 +4,8 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
-import type { Accepted, ChildProgress, ConfirmIn, ParentReplyIn, TicketView } from "./types.ts";
+import { isIsoWithZone } from "./iso.ts";
+import type { Accepted, ChildProgress, ConfirmIn, ParentReplyIn, TicketListItem, TicketView } from "./types.ts";
 
 /** Khớp `TEXT_MAX`, `NOTE_MAX` ở backend/app/api/tickets.py — chặn sớm ở ô nhập, backend vẫn kiểm (422). */
 export const TEXT_MAX = 4000;
@@ -100,6 +101,48 @@ export function parseTicketView(body: unknown, requestedId: string): TicketView 
 export async function getTicket(id: string): Promise<TicketView> {
   return parseTicketView((await api.request<unknown>(ticketPath(id))).data, id);
 }
+
+/** P3 "Gần đây": số ticket thanh bên xin (`LIST_LIMIT_DEFAULT` của backend — route nhận 1–50). */
+export const MY_TICKETS_LIMIT = 20;
+const BAD_LIST = "invalid_ticket_list_body";
+const strOrNull = (v: unknown): v is string | null => v === null || typeof v === "string";
+
+function isListItem(v: unknown): v is TicketListItem {
+  return (
+    isRecord(v) &&
+    typeof v.ticket_id === "string" &&
+    v.ticket_id !== "" &&
+    strOrNull(v.request_text) &&
+    strOrNull(v.final_state) &&
+    strOrNull(v.exit_code) &&
+    isIsoWithZone(v.created_at) &&
+    (v.closed_at === null || isIsoWithZone(v.closed_at))
+  );
+}
+
+/** Thân `GET /api/tickets` = `{items: TicketListItem[]}`; MỘT phần tử sai (thiếu khoá, sai kiểu, giờ không múi) → 502
+ *  `invalid_ticket_list_body` cho cả thân — không vẽ một phần. Thanh bên coi mọi lỗi là "không có danh sách" (im lặng). */
+export function parseTicketList(body: unknown): TicketListItem[] {
+  if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isListItem)) throw new ApiError(502, BAD_LIST);
+  return body.items;
+}
+
+/** Ticket gốc của CHÍNH người đang đăng nhập (backend lọc theo token, mọi vai), mới nhất trước. */
+export async function listMyTickets(limit: number = MY_TICKETS_LIMIT): Promise<TicketListItem[]> {
+  return parseTicketList((await api.request<unknown>(`/api/tickets?limit=${limit}`)).data);
+}
+
+/** Khoá theo `user_id`: đổi người là query khác (không bao giờ thấy danh sách người trước). Tải MỘT lần mỗi lần mở trang
+ *  (không polling, không tải lại khi đổi tab/mạng về); lỗi không thử lại. Ticket vừa tạo hiện qua bộ nhớ phiên. */
+export const myTicketsQuery = (userId: string) =>
+  queryOptions({
+    queryKey: ["tickets", "mine", userId] as const,
+    queryFn: () => listMyTickets(),
+    retry: false,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
 /** Đọc một lần, không polling — cho màn chỉ đọc của IT (L1/L2 có ticket:read:any): chi tiết escalate, ghi đè. */
 export const ticketReadOnlyQuery = (id: string) =>

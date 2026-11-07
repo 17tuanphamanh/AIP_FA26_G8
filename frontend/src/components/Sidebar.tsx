@@ -1,12 +1,14 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { NavLink } from "react-router";
+import { myTicketsQuery } from "../api/tickets.ts";
 import type { Me } from "../api/types.ts";
 import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
 import { ownEntry } from "../lib/lookup.ts";
 import { NotificationBell } from "./NotificationBell.tsx";
-import { titleOf, useSessionTickets } from "../routes/employee/sessionTickets.ts";
+import { recentTickets, titleOf, useSessionTickets } from "../routes/employee/sessionTickets.ts";
 import type { Tone } from "../routes/employee/status.ts";
 
 /** `onSignOut` trả false khi CHƯA đăng xuất được (mạng/5xx) — phải báo, phiên vẫn sống. */
@@ -24,11 +26,15 @@ const DOT: Record<Tone, string> = {
   closed: "bg-ink-3",
 };
 
-// "Gần đây" = ticket tạo trong phiên này (bộ nhớ, KH 4.6). Chấm: cam chờ bạn/IT, xanh lá xong, xám đã chuyển/dừng.
-function RecentTickets() {
-  const tickets = useSessionTickets();
+// "Gần đây" (P3) = ticket vừa tạo trong phiên (bộ nhớ, KH 4.6) ghép với `GET /api/tickets` tải MỘT lần (sống qua F5 / đăng
+// nhập lại; khoá theo `user_id`). API lỗi → chỉ ticket trong phiên, không báo lỗi (thanh bên không chặn trang). Không lưu
+// danh sách xuống Storage. Chấm: cam chờ bạn/IT, xanh lá xong, xám đã chuyển/dừng, xanh FPT đang chạy (chỉ ticket phiên).
+function RecentTickets({ me }: { me: Me }) {
+  const session = useSessionTickets();
+  const fromApi = useQuery({ ...myTicketsQuery(me.user_id), enabled: hasPerm(me, "ticket:read:own") }).data;
+  const tickets = recentTickets(session, fromApi ?? []);
   if (tickets.length === 0) {
-    return <p className="px-3 py-1 text-label font-normal text-ink-2">Chưa có yêu cầu nào trong phiên này.</p>;
+    return <p className="px-3 py-1 text-label font-normal text-ink-2">Chưa có yêu cầu nào.</p>;
   }
   return (
     <ul className="flex flex-col gap-1" aria-label="Yêu cầu gần đây">
@@ -84,7 +90,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
             {CHAT_NAV.label}
           </NavLink>
           <span className="px-3 pt-3 pb-1 text-label text-ink-2">Gần đây</span>
-          <RecentTickets />
+          <RecentTickets me={me} />
         </>
       ) : null}
 

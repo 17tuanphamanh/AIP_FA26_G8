@@ -34,6 +34,8 @@ import type {
   PolicyView,
   RatioCountTam,
   RuleCount,
+  TicketList,
+  TicketListItem,
   TicketView,
   WeightedCountTam,
   WeightedRate,
@@ -168,6 +170,26 @@ export type TicketViewOk = [
   Expect<Mutual<TicketView["waiting_for"], TicketGen["waiting_for"]>>,
   Expect<Same<Omit<TicketView, "conversation" | "children_progress" | "deadline" | "server_now">, Omit<TicketGen, "conversation" | "children_progress" | "deadline" | "server_now">>>,
   Expect<Mutual<TicketGen, Ok200<operations["read_ticket_api_tickets__ticket_id__get"]>>>,
+];
+// P3 "Gần đây": GET /api/tickets — nối tên schema với ĐÚNG route; đúng 6 khoá mà parser (api/tickets.ts `parseTicketList`) kiểm.
+type MyTickets = operations["list_tickets_api_tickets_get"];
+export type TicketListOk = [
+  Expect<Mutual<TicketList, Ok200<MyTickets>>>,
+  Expect<Mutual<TicketList["items"][number], TicketListItem>>,
+  Expect<
+    Same<
+      TicketListItem,
+      {
+        ticket_id: string;
+        request_text: string | null;
+        final_state: string | null;
+        exit_code: string | null;
+        created_at: string;
+        closed_at: string | null;
+      }
+    >
+  >,
+  Expect<Mutual<MyTickets["parameters"]["query"], { limit?: number } | undefined>>,
 ];
 
 // ---------------------------------------------------------------- Thông báo (N-TB, be-thong-bao 56ea4d9)

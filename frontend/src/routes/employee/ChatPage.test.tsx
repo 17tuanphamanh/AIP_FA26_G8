@@ -188,7 +188,7 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
       await screen.findByText(QUESTION.text);
       expect(heading()).toBe(DEFAULT_TITLE);
       expect(bubble()).toBeUndefined();
-      expect(screen.getByText("Chưa có yêu cầu nào trong phiên này.")).toBeTruthy();
+      expect(screen.getByText("Chưa có yêu cầu nào.")).toBeTruthy();
     } finally {
       unmount();
     }
@@ -204,7 +204,7 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
       expect(heading()).not.toBe(REPLY.text);
       const req = document.querySelector('[data-role="request"]')!;
       expect(req.compareDocumentPosition(screen.getByText(QUESTION.text)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(screen.getByText("Chưa có yêu cầu nào trong phiên này.")).toBeTruthy(); // "Gần đây" vẫn chỉ trong phiên
+      expect(screen.getByText("Chưa có yêu cầu nào.")).toBeTruthy(); // GET /api/tickets 404 ở fetch giả → chỉ ticket trong phiên (rỗng)
     } finally {
       unmount();
     }
