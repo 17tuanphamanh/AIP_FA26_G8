@@ -335,7 +335,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Tickets
+         * @description P3 "Gần đây": ticket gốc của CHÍNH người gọi — lọc `requester_id = p.user_id` cho MỌI vai (kể cả `ticket:read:any`: danh
+         *     sách không bao giờ có ticket người khác). Chỉ DB (không checkpoint); route đọc như `GET /{id}` — không bộ đếm 429.
+         */
+        get: operations["list_tickets_api_tickets_get"];
         put?: never;
         /** Create Ticket */
         post: operations["create_ticket_api_tickets_post"];
@@ -1428,6 +1433,33 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** TicketList */
+        TicketList: {
+            /** Items */
+            items: components["schemas"]["TicketListItem"][];
+        };
+        /**
+         * TicketListItem
+         * @description P3 "Gần đây" — một dòng của `GET /api/tickets`: CHỈ cột bảng `tickets` (không checkpoint). `request_text` như `TicketView`
+         *     (bản ĐÃ CHE, cắt `REQUEST_TEXT_MAX` — không bao giờ câu gốc).
+         */
+        TicketListItem: {
+            /** Ticket Id */
+            ticket_id: string;
+            /** Request Text */
+            request_text: string | null;
+            /** Final State */
+            final_state: string | null;
+            /** Exit Code */
+            exit_code: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Closed At */
+            closed_at: string | null;
+        };
         /** TicketTrace */
         TicketTrace: {
             /** Ticket Id */
@@ -2501,6 +2533,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tickets_api_tickets_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };

@@ -56,6 +56,7 @@ def test_every_route_declares_require() -> None:
 
 TICKET_ROUTES = {  # 2b-3 — mỗi route có đúng permission này (không chỉ "có require nào đó")
     ("POST", "/api/tickets"): "ticket:create",
+    ("GET", "/api/tickets"): "ticket:read:own",  # P3 "Gần đây": danh sách của chính người gọi
     ("GET", "/api/tickets/{ticket_id}"): "ticket:read:own",
     ("POST", "/api/tickets/{ticket_id}/messages"): "ticket:message",
     ("POST", "/api/tickets/{ticket_id}/confirm"): "ticket:confirm",

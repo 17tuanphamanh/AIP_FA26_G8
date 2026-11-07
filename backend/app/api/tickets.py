@@ -32,11 +32,15 @@ import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from langgraph.types import StateSnapshot
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.api.alerts import (  # CHUNG thân lỗi (một schema OpenAPI, như notifications)
+    ErrorDetail,
+    InvalidRequestBody,
+)
 from app.api.desk import (
     SECRET_EVENT,
     Desk,
@@ -160,6 +164,29 @@ class TicketView(BaseModel):
 
 
 REQUEST_TEXT_MAX = 500
+LIST_LIMIT_DEFAULT = 20
+LIST_LIMIT_MAX = 50
+
+
+class TicketListItem(BaseModel):
+    """P3 "Gần đây" — một dòng của `GET /api/tickets`: CHỈ cột bảng `tickets` (không checkpoint). `request_text` như `TicketView`
+    (bản ĐÃ CHE, cắt `REQUEST_TEXT_MAX` — không bao giờ câu gốc)."""
+
+    ticket_id: str
+    request_text: str | None
+    final_state: str | None
+    exit_code: str | None
+    created_at: datetime
+    closed_at: datetime | None
+
+
+class TicketList(BaseModel):
+    items: list[TicketListItem]
+
+
+LIST_ERRORS: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 422: {"model": InvalidRequestBody}, 503: {"model": ErrorDetail},
+}  # fmt: skip
 
 
 def request_text_of(row: TicketRow, parent_request: str | None) -> str | None:
@@ -221,6 +248,24 @@ async def create_ticket(
     )  # fmt: skip
     desk.background.spawn(desk.runner.run_new(ticket_id, turn_id), name=f"submit:{ticket_id}")
     return _accepted(ticket_id, S_NEW, redacted.notices)
+
+
+@router.get("/api/tickets", response_model=TicketList, responses=LIST_ERRORS)
+async def list_tickets(
+    p: Annotated[Principal, Depends(require("ticket:read:own"))],
+    desk: Annotated[Desk, Depends(get_desk)],
+    limit: Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
+) -> TicketList:
+    """P3 "Gần đây": ticket gốc của CHÍNH người gọi — lọc `requester_id = p.user_id` cho MỌI vai (kể cả `ticket:read:any`: danh
+    sách không bao giờ có ticket người khác). Chỉ DB (không checkpoint); route đọc như `GET /{id}` — không bộ đếm 429."""
+    rows = await desk.tickets.list_own(p.user_id, limit)
+    return TicketList(items=[
+        TicketListItem(
+            ticket_id=r.ticket_id, request_text=request_text_of(r, None), final_state=r.final_state, exit_code=r.exit_code,
+            created_at=r.created_at, closed_at=r.closed_at,
+        )
+        for r in rows
+    ])  # fmt: skip
 
 
 @router.get("/api/tickets/{ticket_id}", response_model=TicketView)

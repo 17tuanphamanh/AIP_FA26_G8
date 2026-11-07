@@ -242,6 +242,82 @@ async def test_http_idor_pg(db: PgUrls) -> None:
             assert (r.status_code, r.json()["ticket_id"]) == (200, tid)
 
 
+# ---- P3 "Gần đây": GET /api/tickets — danh sách ticket CỦA CHÍNH người gọi ----------------------
+# DB dùng chung cả module (ticket của test khác còn đó) → không đòi danh sách ĐÚNG bằng, mà: ticket vừa tạo đứng đầu đúng thứ tự,
+# và MỌI dòng trả về đều thuộc người gọi + là ticket gốc (đối chiếu bảng `tickets`).
+
+
+async def _owner_rows(rw: AsyncEngine, ids: list[str]) -> set[tuple[str, str | None]]:
+    async with rw.connect() as conn:
+        rows = await conn.execute(
+            text("SELECT requester_id, parent_ticket_id FROM tickets WHERE ticket_id = ANY(:ids)"), {"ids": ids}
+        )
+        return {(r.requester_id, r.parent_ticket_id) for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_list_own_tickets_http_pg(db: PgUrls, rw: AsyncEngine) -> None:
+    clock = FakeClock(EPOCH + timedelta(days=400))  # mới hơn mọi ticket của test khác trong module
+    async with pg_desk(db, clock) as d:
+        await d.token("ha.lt")
+        an, binh, l1 = await d.token("an.nv"), await d.token("binh.tt"), await d.token("ha.lt")
+        a1 = await d.create(an, "VPN lỗi của An")
+        clock.advance(timedelta(minutes=1))
+        b1 = await d.create(binh, "Outlook lỗi của Bình")
+        clock.advance(timedelta(minutes=1))
+        a2 = await d.create(an, f"Zoom lỗi, mật khẩu là {SECRET}")
+        clock.advance(timedelta(minutes=1))
+        # con mới nhất nhưng KHÔNG được vào danh sách
+        await SqlTicketStore(rw).create_child(
+            f"{a2}-1", parent_id=a2, redacted_request="cài Zoom", created_at=clock.now(), intents=2, intent_type="software",
+        )  # fmt: skip
+
+        r = await d.client.get("/api/tickets", headers=an)
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        ids = [i["ticket_id"] for i in items]
+        assert ids[:2] == [a2, a1] and b1 not in ids and f"{a2}-1" not in ids
+        assert await _owner_rows(rw, ids) == {("nv001", None)}
+        assert SECRET not in r.text and MASK in items[0]["request_text"]
+        assert set(items[0]) == {"ticket_id", "request_text", "final_state", "exit_code", "created_at", "closed_at"}
+
+        for who, owner, mine in ((binh, "nv002", b1), (l1, "l1_01", None)):  # l1 có ticket:read:any — vẫn chỉ của mình
+            got = [i["ticket_id"] for i in (await d.client.get("/api/tickets", headers=who)).json()["items"]]
+            assert a1 not in got and a2 not in got
+            assert mine is None or got[0] == mine
+            assert got == [] or await _owner_rows(rw, got) == {(owner, None)}
+
+        assert [i["ticket_id"] for i in (await d.client.get("/api/tickets?limit=1", headers=an)).json()["items"]] == [a2]
+        bad = await d.client.get("/api/tickets?limit=51", headers=an)
+        assert (bad.status_code, bad.json()) == (422, {"error": "invalid_request", "fields": ["query.limit"]})
+        assert (await d.client.get("/api/tickets")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_own_store_order_limit_pg(rw: AsyncEngine) -> None:
+    """`SqlTicketStore.list_own`: chỉ `requester_id`, chỉ gốc, `created_at DESC, ticket_id DESC`, `LIMIT`."""
+    me, other = f"u-{uuid4().hex[:8]}", f"u-{uuid4().hex[:8]}"
+    async with rw.begin() as conn:
+        await conn.execute(text("INSERT INTO users (user_id, username, role) VALUES (:a, :a, 'employee'), (:b, :b, 'employee')"),
+                           {"a": me, "b": other})  # fmt: skip
+    store, at, sfx = SqlTicketStore(rw), EPOCH, uuid4().hex[:6]
+    plan = [("tk-l-a", me, at), ("tk-l-c", me, at + SLA), ("tk-l-b", me, at + SLA), ("tk-l-o", other, at + 2 * SLA)]
+    for tid, who, when in plan:
+        await store.create(
+            NewTicket(ticket_id=f"{tid}-{sfx}", requester_id=who, requester_role="employee", requester_dept=None,
+                      session_id=None, redacted_request="VPN lỗi", created_at=when),
+            turn_id=f"turn-{tid}-{sfx}",
+        )  # fmt: skip
+    await store.create_child(f"tk-l-a-{sfx}-1", parent_id=f"tk-l-a-{sfx}", redacted_request="con",
+                             created_at=at + 3 * SLA, intents=2, intent_type="software")  # fmt: skip
+    rows = await store.list_own(me, 50)
+    assert [r.ticket_id for r in rows] == [f"tk-l-c-{sfx}", f"tk-l-b-{sfx}", f"tk-l-a-{sfx}"]  # cùng giờ → id lớn trước
+    assert all(isinstance(r, TicketRow) and r.requester_id == me and r.parent_ticket_id is None for r in rows)
+    assert rows[0].created_at.utcoffset() == timedelta(0)
+    assert [r.ticket_id for r in await store.list_own(me, 2)] == [f"tk-l-c-{sfx}", f"tk-l-b-{sfx}"]
+    assert await store.list_own(f"u-{uuid4().hex[:8]}", 20) == []
+
+
 # ---- Guard: quét MỌI cột text/jsonb/bytea của MỌI bảng + checkpoint ---------------------------
 
 

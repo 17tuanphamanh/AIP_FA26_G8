@@ -273,6 +273,11 @@ class TicketRepo(TicketStore, Protocol):
         """`security_events` (event_type, detail) INSERT cùng transaction (3e, phase3 mục 8.3)."""
         ...
 
+    async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
+        """P3 "Gần đây" (`GET /api/tickets`): ticket GỐC của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa `limit`.
+        Chỉ DB."""
+        ...
+
     async def children_progress_rows(self, parent_id: str, children: Sequence[str]) -> list[ChildProgressRow]:
         """Phase 5 T20b P11 (DỪNG 2): mỗi con (theo thứ tự `children`) — `final_state`, có phiếu `approvals.status='pending'`, có notice
         chưa gửi `needs ≠ none` của `parent_id`. Chỉ DB."""

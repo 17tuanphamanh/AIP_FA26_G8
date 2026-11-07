@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, func, insert, literal, select, text, update
+from sqlalchemy import RowMapping, Table, func, insert, literal, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.db.models import ChildNotice, Ticket, Turn
@@ -105,6 +105,14 @@ CREATE_ROUTE = "/api/tickets"  # `security_events.route` của sự kiện ghi l
 type NewEvents = Sequence[tuple[str, Mapping[str, Any]]]  # (event_type, detail) — không chứa văn bản người dùng
 
 
+def _ticket_row(mapping: RowMapping) -> TicketRow:
+    values = dict(mapping)
+    values["created_at"] = values["created_at"].astimezone(UTC)
+    if values["closed_at"] is not None:
+        values["closed_at"] = values["closed_at"].astimezone(UTC)
+    return TicketRow(**values)
+
+
 class TicketMissing(LookupError):
     """Không có dòng `tickets` — lỗi lập trình (ticket phải được tạo trước khi submit graph)."""
 
@@ -146,13 +154,21 @@ class SqlTicketStore:
                     )
                 )
             ).first()
-        if row is None:
-            return None
-        values = dict(row._mapping)
-        values["created_at"] = values["created_at"].astimezone(UTC)
-        if values["closed_at"] is not None:
-            values["closed_at"] = values["closed_at"].astimezone(UTC)
-        return TicketRow(**values)
+        return None if row is None else _ticket_row(row._mapping)
+
+    async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
+        """P3 "Gần đây": ticket GỐC (`parent_ticket_id IS NULL`) của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa
+        `limit` dòng. Chỉ bảng `tickets` (không checkpoint). Index `ix_tickets_requester_created_at` (migration 0010)."""
+        t = _TICKETS.c
+        stmt = (
+            select(*(t[c] for c in _ROW_COLUMNS))
+            .where(t.requester_id == requester_id, t.parent_ticket_id.is_(None))
+            .order_by(t.created_at.desc(), t.ticket_id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_ticket_row(r._mapping) for r in rows]
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         """D-67: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""

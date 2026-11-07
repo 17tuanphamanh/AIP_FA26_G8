@@ -640,6 +640,12 @@ class MemoryTickets:
             closed_at=final.closed_at if final else None,
         )  # fmt: skip
 
+    async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
+        """Như SQL: gốc (`parent_ticket_id IS NULL`) của đúng người gửi, `created_at DESC, ticket_id DESC`, `LIMIT`."""
+        own = [t for t, r in self.rows.items() if r["requester_id"] == requester_id and r["parent_ticket_id"] is None]
+        own.sort(key=lambda t: (self.rows[t]["created_at"], t), reverse=True)
+        return [row for t in own[:limit] if (row := await self.get(t)) is not None]
+
     async def strategy_of(self, ticket_id: str) -> str | None:
         return self.strategies.get(ticket_id)
 
