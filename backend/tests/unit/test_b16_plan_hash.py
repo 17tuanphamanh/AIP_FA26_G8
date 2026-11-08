@@ -95,7 +95,9 @@ async def _assert_e5(h: GraphHarness, *, source: str, old: str | None, new: str)
     assert not [e for e in h.audit.events("t1") if e[0] == "B17"]
     assert h.audit.of("t1", "unhandled_exception") == []
     assert [(e["exit_code"], e["reason_detail"]) for e in h.escalations.of("t1")] == [("E5", CHANGED)]
-    assert [text for t, text, _ in h.notifier.sent if t == "t1"] == [get_escalation_templates().of("E5").user_message]
+    # Q3 M5: câu E5 theo lý do (`user_message_by_reason`) — lý do này có câu riêng
+    e5 = get_escalation_templates().of("E5").user_message_for(CHANGED)
+    assert [text for t, text, _ in h.notifier.sent if t == "t1"] == [e5]
     return row
 
 
