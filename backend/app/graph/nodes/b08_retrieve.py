@@ -9,6 +9,8 @@
   ngưỡng nằm trong state nhưng không bao giờ là căn cứ: B10 chặn trả lời, B12 chỉ đưa estimator qua `evidence_for_estimator`.
 - `RETRIEVAL_THRESHOLD` đọc từ `deps.constants` (không đọc file trong node). `retrieved` là `list[ChunkRef]`
   (không `model_dump`) — `RetrievalResult` của `rag` chỉ là giá trị trả về, KHÔNG vào state.
+- R2: điểm log 3 thêm `embed_truncated` (bool — cờ `truncated` của embed câu truy vấn, như ingest kiểm; CHỈ GHI, không chặn, không đổi
+  điểm/top-5). `query_truncated` vẫn là cờ của reranker (câu bị cắt ở 128 token).
 - Node thật không gọi `deps.scenario`. Thông báo người dùng E2/E3 do B20 gửi (B8 không tự gửi).
 """
 
@@ -30,6 +32,7 @@ def point3(q: RetrievalQuery, *, result: RetrievalResult | None = None, threshol
     return {
         "query": q.text[:500],
         "query_truncated": result.query_truncated if result else None,
+        "embed_truncated": result.embed_truncated if result else None,  # R2: cờ embed câu truy vấn (chỉ ghi)
         "top_score": result.top_score if result else None,
         "above_threshold": (bool(result.chunks) and result.top_score >= threshold)
         if result is not None and threshold is not None else None,

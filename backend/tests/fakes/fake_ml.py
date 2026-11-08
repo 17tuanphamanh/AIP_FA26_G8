@@ -80,9 +80,10 @@ def cosine(a: list[float], b: list[float]) -> float:
 class FakeMlService:
     def __init__(
         self, *, truncate_all: bool = False, classify_p: float | None = None,
-        intent_probs: dict[str, float] | None = None, rerank_score: float | None = None,
+        intent_probs: dict[str, float] | None = None, rerank_score: float | None = None, truncate_embed: bool = False,
     ) -> None:  # fmt: skip
         self.truncate_all = truncate_all
+        self.truncate_embed = truncate_embed  # R2: CHỈ `/embed` báo cắt (câu truy vấn); rerank không báo gì
         self.rerank_score = rerank_score
         self.classify_p = classify_p
         self.intent_probs = intent_probs  # 3f: `/classify_intent` trả xác suất này (model "đã có") thay vì model_missing
@@ -137,7 +138,7 @@ class FakeMlService:
             counts = [count_tokens(t) for t in texts]
             out = {
                 "vectors": [embed_text(t) for t in texts], "dim": DIM, "model": "BAAI/bge-m3",
-                "truncated": [self.truncate_all or n > 512 for n in counts], "token_counts": counts,
+                "truncated": [self.truncate_all or self.truncate_embed or n > 512 for n in counts], "token_counts": counts,
             }  # fmt: skip
         elif endpoint == "rerank":
             passages = body["passages"]

@@ -181,7 +181,10 @@ class RetrievalResult(BaseModel):
     intent_filter_fallback: bool
     fallback_tried: bool
     retries: int  # tổng số lần THỬ LẠI (Q-3c-10)
-    query_truncated: bool
+    query_truncated: bool  # cờ của RERANKER: câu truy vấn bị cắt ở 128 token (3-Q12)
+    # R2: cờ của EMBED câu truy vấn (> 512 token, D-21) — như ingest kiểm cờ này nhưng ở đây CHỈ GHI (audit B8), không chặn, không
+    # đổi điểm/top-5. Mặc định False: mọi chỗ dựng cũ không phải sửa.
+    embed_truncated: bool = False
 
 
 class ProcedureCheck(BaseModel):
