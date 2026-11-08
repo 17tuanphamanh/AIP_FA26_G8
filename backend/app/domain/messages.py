@@ -273,6 +273,14 @@ def symptom_intro(device_id: str | None, facts: Mapping[str, FactValue]) -> str:
     return f"{text} {SYMPTOM_LAST_FAIL}" if facts.get("last_connection_ok") is False else text
 
 
+def device_not_found_question(device_id: str) -> str:
+    """Q2 M4 (ĐP 09/11): câu hỏi CỐ ĐỊNH của B11 khi máy người dùng nêu không có trong danh mục (`check_device_registered` 404) —
+    không LLM; mã chỉ in khi khớp `DEVICE_ID`."""
+    device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy này"
+    return (f"Mình không tìm thấy {device} trong danh mục. Bạn xem mã máy dán ở thân máy (dạng LAP-0342) rồi gửi lại "
+            "giúp mình.")  # fmt: skip
+
+
 def result_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "result", "text": text, "ref": ref, "needs": "confirm"}
 

@@ -28,22 +28,32 @@
    vẫn qua output guard, `notify_user`, hạn như bước 4; hết lượt → E4 `clarification_exhausted` như bước 3. Không dựng `Action` trên
    người gửi khi người dùng chưa nêu đích. Cờ KHÔNG hạ dù người dùng trả lời mã của chính mình (→ HITL/chốt B15).
 
+7. Q2 M4 (ĐP 09/11) — TRƯỚC KHI HỎI, intent `vpn`, có slot `device_id` mà B6 đã tra ĐÚNG máy đó (`device_lookup`: fact
+   `device_registered` có mặt; danh sách `diagnostics.check_device_registered` — tra theo mã trả máy bất kể chủ, 404 → None):
+   - máy có trong danh sách và `device_owner_is_requester is False` → KHÔNG hỏi hành động: E5 `approval_target_unverified`
+     ngay (step B11, audit `owner_mismatch_early=true`) — trước kiểm hết lượt hỏi;
+   - máy không có (404) → bỏ slot `device_id` + fact máy (`vpn.DEVICE_FACTS`), hỏi câu CỐ ĐỊNH `messages.device_not_found_question`
+     (không LLM, `prompt` None; output guard, notify, hạn, hết lượt như bước 5; audit `device_not_found=true`). Máy người dùng gửi
+     lại KHÔNG do B6 tra → lần sau đi luồng cũ (không hỏi câu này lần 2, không tự suy máy khác).
+   B6 tra theo người (có `device_count`) mà máy không có trong danh sách → không kết luận (luồng cũ). Đủ slot → `_build` như cũ.
+
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
 6. be-b11-khoa-slot: câu LLM viết (chỉ nhánh LLM) qua `domain/slot_text.scrub_slot_keys` TRƯỚC output guard / notify / conversation — bỏ
    "(device_id)"… và thay khoá trơn bằng nhãn tiếng Việt, với MỌI khoá slot của `config/slots.yaml`; rỗng sau khi dọn → câu cố định.
-Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required`, `slot_keys_removed` (số đếm) — không câu
+Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required`, `slot_keys_removed` (số đếm),
+`owner_mismatch_early`, `device_not_found` (bool) — không câu
 người dùng, không chữ LLM.
 """
 
 import asyncio
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import TARGET_USER_INTENTS, build_action
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import question_msg
+from app.domain.messages import device_not_found_question, question_msg
 from app.domain.slot_text import scrub_slot_keys
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
 from app.domain.target import TARGET_QUESTION
@@ -63,7 +73,8 @@ from app.tools.retry import retries_of
 def _info(missing: list[str], turns: int, target_required: bool) -> dict[str, Any]:
     return {"missing": missing, "turn": turns, "prompt": None, "llm_error": None, "guard": None, "tools_called": [],
             "tool_retry_count": 0, "facts": None, "procedure_doc": None, "procedure_kb_version": None,
-            "rag_error": None, "target_required": target_required, "slot_keys_removed": 0}  # fmt: skip
+            "rag_error": None, "target_required": target_required, "slot_keys_removed": 0,
+            "owner_mismatch_early": False, "device_not_found": False}  # fmt: skip
 
 
 def target_required(state: Any, slots: dict[str, Any]) -> bool:
@@ -85,6 +96,19 @@ def diagnostics_summary(state: Any, facts: dict[str, Any]) -> dict[str, Any]:
     requester = state["requester_context"].user_id
     devices = (state.get("diagnostics") or {}).get("check_device_registered") or []
     return {"facts": dict(facts), "devices": [d["device_id"] for d in devices if d.get("owner_id") == requester]}
+
+
+def device_lookup(state: Any) -> Literal["mine", "other", "not_found"] | None:
+    """Q2 M4: kết quả B6 cho ĐÚNG máy trong slot (vpn). None = không kết luận được (không phải vpn, chưa có máy, B6 không tra máy
+    này, B6 tra theo người mà máy không trong danh sách). Chỉ đọc dữ liệu tool (`facts`, `diagnostics`) — không đọc câu người dùng."""
+    device_id = (state.get("slots") or {}).get("device_id")
+    facts = state.get("facts") or {}
+    if state.get("intent") != "vpn" or not device_id or "device_registered" not in facts:
+        return None
+    listed = (state.get("diagnostics") or {}).get("check_device_registered") or []
+    if not any(isinstance(d, dict) and d.get("device_id") == device_id for d in listed):
+        return None if "device_count" in facts else "not_found"  # tra theo người: danh sách chỉ có máy của họ
+    return "other" if facts.get("device_owner_is_requester") is False else "mine"
 
 
 def previous_reply(state: Any, turns: int) -> str:
@@ -168,13 +192,30 @@ def make(deps: NodeDeps) -> NodeFn:
 
     async def _ask(state: Any, missing: list[str], info: dict[str, Any]) -> dict[str, Any]:
         turns = info["turn"]
+        seen = device_lookup(state)
+        if seen == "other":  # Q2 M4: máy của người khác — không hỏi hành động, chuyển L2 ngay (như chốt P6 ở B15)
+            info["owner_mismatch_early"] = True
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B11", event="approval_target_unverified",
+                audit_detail=info, exit_code=ExitCode.E5.value, missing_slots=missing,
+                escalation_reason_detail="approval_target_unverified",
+            )  # fmt: skip
         if turns >= deps.constants.MAX_CLARIFICATION_TURNS:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B11", event="clarification_exhausted",
                 audit_detail=info, exit_code=ExitCode.E4.value, missing_slots=missing,
                 escalation_reason_detail="clarification_exhausted",
             )  # fmt: skip
-        if info["target_required"]:  # L-03: câu CỐ ĐỊNH, không gọi LLM (`prompt` None) — vẫn qua guard/notify/hạn dưới
+        dropped: dict[str, Any] = {}
+        if seen == "not_found":  # Q2 M4: mã máy không có — bỏ slot + fact máy cũ, hỏi lại mã bằng câu CỐ ĐỊNH (không LLM)
+            device_id = str(state["slots"]["device_id"])
+            slots = {k: v for k, v in state["slots"].items() if k != "device_id"}
+            facts = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
+            missing = deps.slots.intents[state["intent"]].missing(slots)
+            info["missing"], info["device_not_found"] = missing, True
+            dropped = {"slots": slots, "facts": facts}
+            q = QuestionOut(text=device_not_found_question(device_id))
+        elif info["target_required"]:  # L-03: câu CỐ ĐỊNH, không gọi LLM (`prompt` None) — vẫn qua guard/notify/hạn dưới
             q = QuestionOut(text=TARGET_QUESTION)
         else:
             summary = diagnostics_summary(state, dict(state.get("facts") or {}))
@@ -221,7 +262,7 @@ def make(deps: NodeDeps) -> NodeFn:
         )  # fmt: skip
         return await goto(
             state, S_CLARIFYING, next_node="clarify_wait", step="B11", event="asked", audit_detail=info,
-            clarification_turns=n, missing_slots=missing, conversation=[question_msg(q.text, ref)],
+            clarification_turns=n, missing_slots=missing, conversation=[question_msg(q.text, ref)], **dropped,
         )  # fmt: skip
 
     async def _gather(calls: list[tuple[str, dict[str, str]]]) -> list[ToolResult]:
