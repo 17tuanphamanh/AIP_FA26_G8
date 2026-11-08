@@ -79,7 +79,7 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
           aria-invalid={props.error ? true : undefined}
           aria-describedby={[props.error ? errorId : "", atMax ? counterId : ""].filter(Boolean).join(" ") || undefined}
           className={`resize-none bg-transparent field-sizing-content placeholder:text-ink-2 focus-visible:outline-none disabled:text-ink-2 ${
-            home ? "max-h-60 min-h-14 w-full" : "max-h-40 min-h-10 grow py-2"
+            home ? "max-h-60 min-h-14 w-full" : "max-h-40 min-h-10 grow py-2 max-lg:min-h-11"
           }`}
         />
         {props.onSubmit ? (
@@ -90,7 +90,7 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
               aria-label="Gửi"
               onClick={() => canSend && props.onSubmit?.()}
               disabled={!canSend}
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-send text-white hover:bg-send/90 disabled:bg-ink-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpt-blue"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-send text-white hover:bg-send/90 disabled:bg-ink-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpt-blue max-lg:size-11"
             >
               <SendIcon />
             </button>

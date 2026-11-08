@@ -18,7 +18,7 @@ export function ProgressStrip({ items }: { items: readonly ProgressView[] }) {
       role="group"
       aria-label="Tiến độ từng việc"
       data-testid="progress-strip"
-      className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line px-6 py-2.5 text-secondary"
+      className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line px-6 py-2.5 text-secondary max-lg:px-4"
     >
       {items.map((item) => {
         const tone = progressTone(item);

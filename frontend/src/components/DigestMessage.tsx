@@ -37,7 +37,7 @@ type Props = {
 };
 
 const pill = (pressed: boolean) =>
-  `h-9 rounded-full px-4 text-secondary font-semibold disabled:opacity-60 ${
+  `h-9 rounded-full px-4 text-secondary font-semibold disabled:opacity-60 max-lg:min-h-11 ${
     pressed ? "bg-fpt-blue text-white" : "bg-button-2 text-ink"
   }`;
 const field =
@@ -213,7 +213,7 @@ function DigestBlock({ item, active, sending, draft, error, onChange, newRequest
       ) : null}
 
       {newRequestLink && item.kind === "rejection" ? (
-        <Link to="/chat" className="self-start text-secondary font-semibold text-fpt-blue">
+        <Link to="/chat" className="self-start text-secondary font-semibold text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
           Tạo yêu cầu mới
         </Link>
       ) : null}

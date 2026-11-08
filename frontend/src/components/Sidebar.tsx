@@ -22,7 +22,7 @@ import type { Tone } from "../routes/employee/status.ts";
 type SidebarProps = { me: Me; onSignOut: () => Promise<boolean> };
 
 const itemClass = ({ isActive }: { isActive: boolean }) =>
-  `flex h-9 items-center gap-2.5 rounded-lg px-3 text-secondary ${
+  `flex h-9 items-center gap-2.5 rounded-lg px-3 text-secondary max-lg:min-h-11 ${
     isActive ? "bg-selected font-semibold text-fpt-blue" : "text-ink hover:bg-group"
   }`;
 
@@ -228,9 +228,9 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
   return (
     <nav
       aria-label="Điều hướng chính"
-      className="flex h-full w-(--sidebar-width) shrink-0 flex-col gap-1 border-r border-line bg-sidebar px-3 py-4"
+      className="flex h-full w-(--sidebar-width) shrink-0 flex-col gap-1 border-r border-line bg-sidebar px-3 py-4 max-lg:overflow-y-auto"
     >
-      <div className="flex h-10 items-center gap-2.5 px-2">
+      <div className="flex h-10 items-center gap-2.5 px-2 max-lg:h-12">
         <img src={logoUrl} alt="" width={28} height={28} />
         <span className="grow text-secondary font-semibold">ServiceDesk AI</span>
         <NotificationBell key={me.user_id} me={me} />
@@ -250,7 +250,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
           <NavLink
             to={CHAT_NAV.to}
             end
-            className="mt-3 mb-2 flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-secondary font-semibold"
+            className="mt-3 mb-2 flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-secondary font-semibold max-lg:min-h-11"
           >
             <span className="flex size-5 items-center justify-center rounded-full bg-send">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="stroke-white" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
@@ -291,7 +291,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
           aria-label="Đăng xuất"
           title="Đăng xuất"
           onClick={() => void onSignOut().then((done) => setSignOutFailed(!done))}
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-2 hover:bg-group hover:text-ink focus-visible:outline-2 focus-visible:outline-fpt-blue"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-2 hover:bg-group hover:text-ink focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:size-11"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M9 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4" />

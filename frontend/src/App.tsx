@@ -8,8 +8,10 @@ import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
 import { useAuth, useMe } from "./auth/useAuth.ts";
 import { FlashNotice } from "./components/FlashNotice.tsx";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
+import { MobileNavBar, NavDrawer } from "./components/MobileNav.tsx";
 import { useEnterOnChange } from "./components/motion.ts";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { useMobileNav } from "./components/useMobileNav.ts";
 import { ChatHome } from "./routes/employee/ChatHome.tsx";
 import { ChatRoute } from "./routes/employee/ChatPage.tsx";
 import { sessionTickets } from "./routes/employee/sessionTickets.ts";
@@ -27,16 +29,27 @@ import { NotFound } from "./routes/NotFound.tsx";
 
 const queryClient = new QueryClient();
 
+// Điện thoại (dưới 1024 px) — mọi lớp `max-lg:` ở đây chỉ chạy dưới 1024 px; từ 1024 px trở lên khung y như cũ:
+// - thanh bên thu vào nút menu (MobileNav.tsx), khung xếp dọc: thanh đầu → nội dung;
+// - vùng nội dung `h-full` + cột flex: màn dùng `h-full` (chat, phiếu duyệt) mới dính đáy ô nhập / thanh quyết định. Vỏ
+//   hiệu ứng `ref={content}` không có chiều cao nên chuỗi `h-full` của các màn đó đứt ở đây (từ khi thêm vỏ này);
+// - `wrap-anywhere`: chuỗi dài không dấu cách (mã ticket, UUID) ngắt dòng thay vì đẩy tràn ngang;
+// - không cuộn ngang cả trang: bảng rộng tự cuộn ngang TRONG khung của nó.
 function Shell() {
   const me = useMe();
   const { signOut } = useAuth();
   const content = useRef<HTMLDivElement>(null);
-  useEnterOnChange(content, useLocation().pathname); // đổi màn → nội dung trượt nhẹ vào, không dựng lại màn
+  const { pathname } = useLocation();
+  useEnterOnChange(content, pathname); // đổi màn → nội dung trượt nhẹ vào, không dựng lại màn
+  const { open, toggle, close, buttonRef, drawerRef } = useMobileNav(pathname);
   return (
-    <div className="flex h-full">
-      <Sidebar me={me} onSignOut={signOut} />
-      <main className="min-w-0 grow overflow-y-auto">
-        <div ref={content} className="motion-safe:animate-fade-in">
+    <div className="flex h-full max-lg:flex-col">
+      <MobileNavBar open={open} onToggle={toggle} buttonRef={buttonRef} />
+      <NavDrawer open={open} onClose={close} drawerRef={drawerRef}>
+        <Sidebar me={me} onSignOut={signOut} />
+      </NavDrawer>
+      <main inert={open} className="min-w-0 grow overflow-y-auto max-lg:min-h-0 max-lg:overflow-x-hidden">
+        <div ref={content} className="motion-safe:animate-fade-in max-lg:flex max-lg:h-full max-lg:flex-col max-lg:wrap-anywhere">
           <FlashNotice />
           <Outlet />
         </div>

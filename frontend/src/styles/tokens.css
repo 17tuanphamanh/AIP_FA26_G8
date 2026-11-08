@@ -121,6 +121,32 @@
   --chat-width: 720px;
 }
 
+/* Điện thoại: dưới điểm `lg` (64rem = 1024 px — cùng điểm với biến thể `max-lg:`). Từ 1024 px trở lên KHÔNG có gì ở đây
+   chạy. Vẫn đúng 5 cỡ chữ, chỉ đổi giá trị của 2 cỡ:
+   - `label` 13 → 14 px: chữ trên màn nhỏ không được dưới 14 px;
+   - `title` 34 → 28 px: tiêu đề màn không chiếm nửa màn hình hẹp.
+   Đặt NGOÀI mọi @layer nên thắng khối @theme ở trên (nằm trong layer theme). */
+@media (width < 64rem) {
+  :root {
+    --text-title: 28px;
+    --text-title--line-height: 34px;
+    --text-label: 14px;
+    --text-label--line-height: 20px;
+  }
+}
+
+/* Chiều cao khung theo `dvh` (vùng nhìn thấy THẬT, trừ thanh địa chỉ và bàn phím ảo trên trình duyệt hỗ trợ) thay cho 100% ở
+   khối @layer base — ô chat dính đáy không bị bàn phím che. Trình duyệt chưa biết `dvh` giữ nguyên 100%. */
+@supports (height: 100dvh) {
+  @media (width < 64rem) {
+    html,
+    body,
+    #root {
+      height: 100dvh;
+    }
+  }
+}
+
 @layer base {
   html,
   body,

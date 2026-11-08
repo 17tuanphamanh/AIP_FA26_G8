@@ -170,17 +170,17 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const sendReply = (body: ParentReplyIn) => submit(() => replyTicket(ticketId, body));
 
   if (query.isPending) {
-    return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse">Đang tải yêu cầu…</p>;
+    return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse max-lg:px-4 max-lg:py-6">Đang tải yêu cầu…</p>;
   }
   if (!view) {
     const e = query.error;
     return (
-      <section className="px-12 py-10">
+      <section className="px-12 py-10 max-lg:px-4 max-lg:py-6">
         <h1 className="text-heading">
           {e instanceof ApiError && e.status === 404 ? "Không tìm thấy yêu cầu này." : "Chưa tải được yêu cầu."}
         </h1>
         <p className="mt-2 text-ink-2">{e instanceof ApiError && e.status === 404 ? "" : errorMessage(e instanceof ApiError ? e : null)}</p>
-        <Link to="/chat" className="mt-4 inline-block font-semibold text-fpt-blue">
+        <Link to="/chat" className="mt-4 inline-block font-semibold text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
           Tạo yêu cầu mới
         </Link>
       </section>
@@ -210,7 +210,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-white/90 px-6 backdrop-blur">
+      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-white/90 px-6 backdrop-blur max-lg:h-14 max-lg:px-4">
         <div className="flex min-w-0 grow flex-col">
           <h1 className="truncate text-body font-semibold">{title}</h1>
           <span className="hidden truncate text-label font-normal text-ink-2 lg:inline">
@@ -224,7 +224,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       </header>
       {progress ? <ProgressStrip items={progress} /> : null}
 
-      <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-10 pb-8">
+      <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-10 pb-8 max-lg:px-4 max-lg:pt-6 max-lg:pb-6">
         <div className="flex w-full max-w-(--chat-width) grow flex-col gap-8">
           {notices.length > 0 ? (
             <div role="status" className="rounded-group border border-line bg-group px-4 py-3 text-secondary text-ink-2 motion-safe:animate-drop-in" data-testid="notices">
@@ -284,7 +284,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       </div>
 
       {view.final_state ? null : (
-        <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4">
+        <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4 max-lg:px-3 max-lg:pb-3">
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t from-white to-white/0" />
           <div className="flex w-full max-w-(--chat-width) flex-col gap-2">
             {waitNote || error ? (
@@ -345,7 +345,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
         <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
         <Link
           to="/chat"
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-selected"
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-selected max-lg:min-h-11"
         >
           <span aria-hidden="true">+</span>
           Tạo yêu cầu mới

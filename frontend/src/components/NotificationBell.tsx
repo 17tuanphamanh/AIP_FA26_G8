@@ -100,7 +100,7 @@ export function NotificationBell({ me }: { me: Me }) {
         aria-haspopup="dialog"
         onClick={toggle}
         data-testid="tb-bell"
-        className="relative flex size-8 items-center justify-center rounded-lg text-ink-2 hover:bg-group hover:text-ink focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className="relative flex size-8 items-center justify-center rounded-lg text-ink-2 hover:bg-group hover:text-ink focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:size-11"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -129,7 +129,7 @@ export function NotificationBell({ me }: { me: Me }) {
               close();
             }
           }}
-          className="absolute top-10 left-0 z-30 flex max-h-120 w-90 origin-top-left flex-col overflow-hidden rounded-group border border-line bg-white shadow-input outline-none motion-safe:animate-pop-in"
+          className="absolute top-10 left-0 z-30 flex max-h-120 w-90 origin-top-left flex-col overflow-hidden rounded-group border border-line bg-white shadow-input outline-none motion-safe:animate-pop-in max-lg:fixed max-lg:inset-x-3 max-lg:top-16 max-lg:max-h-[min(30rem,calc(100dvh_-_5rem))] max-lg:w-auto"
         >
           <h2 className="border-b border-line px-4 py-3 text-secondary font-semibold">Thông báo</h2>
           <div className="flex min-h-0 flex-col overflow-y-auto">
@@ -156,7 +156,7 @@ export function NotificationBell({ me }: { me: Me }) {
                 type="button"
                 disabled={query.isFetchingNextPage}
                 onClick={() => void query.fetchNextPage({ cancelRefetch: false })}
-                className="m-3 h-9 rounded-full bg-button-2 text-secondary font-semibold disabled:opacity-60"
+                className="m-3 h-9 rounded-full bg-button-2 text-secondary font-semibold disabled:opacity-60 max-lg:min-h-11"
               >
                 {query.isFetchingNextPage ? "Đang tải…" : "Tải thêm"}
               </button>
@@ -191,7 +191,7 @@ function NotificationRow({
         </p>
         {/* Chuông chỉ có khi có `ticket:read:own` — cùng quyền route /chat/:id. */}
         <p className="flex flex-wrap gap-x-4 text-label">
-          <Link to={`/chat/${encodeURIComponent(item.ticket_id)}`} onClick={onNavigate} className="text-fpt-blue">
+          <Link to={`/chat/${encodeURIComponent(item.ticket_id)}`} onClick={onNavigate} className="text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
             Xem yêu cầu
           </Link>
         </p>

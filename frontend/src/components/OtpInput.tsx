@@ -49,7 +49,7 @@ export function OtpInput({ digits, onChange, disabled, focusKey = 0 }: OtpInputP
   }
 
   return (
-    <div className="flex gap-2" role="group" aria-label="Mã xác thực 6 số">
+    <div className="flex gap-2 max-lg:w-full max-lg:justify-center" role="group" aria-label="Mã xác thực 6 số">
       {Array.from({ length: OTP_LENGTH }, (_, i) => (
         <input
           key={i}
@@ -70,7 +70,7 @@ export function OtpInput({ digits, onChange, disabled, focusKey = 0 }: OtpInputP
           autoComplete={i === 0 ? "one-time-code" : "off"}
           autoFocus={i === 0}
           disabled={disabled}
-          className="h-16 w-14 rounded-xl border border-line bg-white text-center text-heading focus-visible:outline-2 focus-visible:outline-fpt-blue"
+          className="h-16 w-14 rounded-xl border border-line bg-white text-center text-heading focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:w-auto max-lg:max-w-14 max-lg:min-w-0 max-lg:flex-1"
         />
       ))}
     </div>

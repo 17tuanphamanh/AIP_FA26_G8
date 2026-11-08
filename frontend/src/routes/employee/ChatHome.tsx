@@ -68,7 +68,7 @@ export function ChatHome() {
   }
 
   return (
-    <section className="flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-16">
+    <section className="flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-16 max-lg:px-4 max-lg:pt-6 max-lg:pb-8">
       <div className="flex w-full max-w-(--chat-width) flex-col items-center motion-safe:animate-rise-in">
         <img src={logoUrl} alt="" width={48} height={48} className="size-12" />
         <h1 className="mt-6 text-center text-title">Hôm nay IT giúp gì cho bạn?</h1>

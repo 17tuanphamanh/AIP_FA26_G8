@@ -48,7 +48,7 @@ export function ThinkingBox({ log, current }: { log: readonly LogItem[]; current
         aria-expanded={open}
         aria-controls="thinking-box-body"
         onClick={toggle}
-        className="flex items-center gap-2 text-left font-semibold"
+        className="flex items-center gap-2 text-left font-semibold max-lg:min-h-11"
       >
         <span aria-hidden="true" className={`inline-block transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}>
           ▸
