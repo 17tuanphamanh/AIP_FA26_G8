@@ -29,9 +29,9 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
   const waitDeadline = view?.final_state ? null : deadlineText(view?.deadline);
 
   return (
-    <section className="flex flex-col gap-6 px-12 pt-20 pb-8">
+    <section className="flex flex-col gap-6 px-12 pt-20 pb-8 max-lg:px-4 max-lg:pt-16 max-lg:pb-6">
       <div className="flex flex-col gap-1">
-        <Link to="/approvals" className="text-secondary text-fpt-blue">
+        <Link to="/approvals" className="text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
           ‹ Chờ tôi duyệt
         </Link>
         <h1 className="text-title">

@@ -12,7 +12,7 @@ export function MatchedRules({ rules, headingLevel = 2 }: { rules: readonly Matc
       {view.kind === "rows" ? (
         <>
           <div className="overflow-x-auto rounded-group border border-line">
-            <table className="w-full text-left text-secondary">
+            <table className="w-full text-left text-secondary max-lg:min-w-xl">
               <thead className="bg-group text-label text-ink-2">
                 <tr>
                   <th scope="col" className="px-5 py-2.5 font-normal">Luật</th>

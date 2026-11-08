@@ -48,13 +48,13 @@ export function ApprovalQueue() {
   const items = lists.every((q) => q.data !== undefined) ? sortByDeadline(lists.flatMap((q) => q.data ?? [])) : null;
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-6">
-        <div className="flex min-w-0 grow flex-col gap-1">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
+      <div className="flex items-end gap-6 max-lg:flex-wrap max-lg:items-start max-lg:gap-3">
+        <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
           <h1 className="text-title">Chờ tôi duyệt</h1>
           <p className="text-ink-2">Hết hạn sẽ tự chuyển L2 — không bao giờ tự thực hiện.</p>
         </div>
-        <div role="tablist" aria-label="Trạng thái phiếu" className="flex shrink-0 rounded-lg bg-segmented p-0.5">
+        <div role="tablist" aria-label="Trạng thái phiếu" className="flex shrink-0 rounded-lg bg-segmented p-0.5 max-lg:w-full">
           {INBOX_TABS.map((t) => (
             <button
               key={t.tab}
@@ -62,7 +62,7 @@ export function ApprovalQueue() {
               role="tab"
               aria-selected={tab === t.tab}
               onClick={() => setTab(t.tab)}
-              className={`h-8 rounded-md px-4 text-secondary ${tab === t.tab ? "bg-white font-semibold shadow-input" : ""}`}
+              className={`h-8 rounded-md px-4 text-secondary max-lg:min-h-11 max-lg:flex-1 max-lg:px-2 ${tab === t.tab ? "bg-white font-semibold shadow-input" : ""}`}
             >
               {t.label}
               {t.tab === "pending" && pending.data ? ` · ${pending.data.length}` : ""}
@@ -129,20 +129,20 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
         data-approval-id={item.approval_id}
         data-urgent={urgent}
         data-role-as={item.role_as}
-        className={`grid min-h-15 grid-cols-[132px_minmax(0,1fr)_auto_14px] items-center gap-5 border-l-3 py-3 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue ${
+        className={`grid min-h-15 grid-cols-[132px_minmax(0,1fr)_auto_14px] items-center gap-5 border-l-3 py-3 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue max-lg:grid-cols-[minmax(0,1fr)_auto_14px] max-lg:gap-x-3 max-lg:gap-y-1 max-lg:pr-4 ${
           urgent ? "border-l-danger" : pending ? "border-l-fpt-orange" : "border-l-transparent"
         }`}
       >
         {/* Vạch mép trái = mức gấp (đỏ: còn dưới 20% thời gian; cam: đang chờ) — cùng nghĩa với chữ thời gian, không thay chữ. */}
         <span
           data-testid="inbox-time"
-          className={`text-secondary tabular-nums ${urgent ? "font-semibold text-danger" : pending ? "text-ink" : "text-ink-2"}`}
+          className={`text-secondary tabular-nums max-lg:col-start-1 max-lg:row-start-1 ${urgent ? "font-semibold text-danger" : pending ? "text-ink" : "text-ink-2"}`}
         >
           {pending ? remainingShort(item.deadline, now) : ownEntry(STATUS_LABEL, item.status, "")}
         </span>
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate font-semibold">{actionLabel(item.action_type)}</span>
-          <span className="truncate text-secondary text-ink-2">
+        <span className="flex min-w-0 flex-col max-lg:col-span-2 max-lg:col-start-1 max-lg:row-start-2">
+          <span className="truncate font-semibold max-lg:whitespace-normal">{actionLabel(item.action_type)}</span>
+          <span className="truncate text-secondary text-ink-2 max-lg:whitespace-normal">
             Máy {item.device_id ?? "(không có)"} · Yêu cầu{" "}
             {/* Mã ticket dài (UUID): chỉ rút gọn khi HIỂN THỊ — chữ đủ vẫn nằm trong trang + hiện khi rê chuột. */}
             <span className="inline-block max-w-[10ch] truncate align-bottom font-mono" title={item.ticket_id}>
@@ -150,7 +150,7 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
             </span>
           </span>
         </span>
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2 max-lg:col-start-2 max-lg:row-start-1">
           {item.role_as === "backup" ? (
             <span data-testid="backup-badge" className="rounded-full bg-orange-bg px-2 text-label text-orange-ink">
               Dự phòng
@@ -170,7 +170,7 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
             </span>
           ) : null}
         </span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3 max-lg:col-start-3 max-lg:row-span-2 max-lg:row-start-1" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
         </svg>
       </Link>
@@ -203,7 +203,7 @@ function OverrideEntry() {
       <h2 id="override-entry-heading" className="pl-1 text-label text-ink-2">
         Ghi đè quyết định của hệ thống
       </h2>
-      <form onSubmit={submit} noValidate className="flex items-center gap-3 rounded-group border border-line px-5 py-3">
+      <form onSubmit={submit} noValidate className="flex items-center gap-3 rounded-group border border-line px-5 py-3 max-lg:flex-col max-lg:items-stretch max-lg:px-4">
         <label htmlFor="override-ticket" className="shrink-0 text-secondary">
           Mã yêu cầu
         </label>
@@ -217,9 +217,9 @@ function OverrideEntry() {
           autoComplete="off"
           spellCheck={false}
           aria-invalid={error !== null || undefined}
-          className="h-9 min-w-0 grow rounded-lg border border-line px-3 font-mono text-secondary"
+          className="h-9 min-w-0 grow rounded-lg border border-line px-3 font-mono text-secondary max-lg:min-h-11 max-lg:text-body"
         />
-        <button type="submit" className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue">
+        <button type="submit" className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue max-lg:min-h-11 max-lg:self-start max-lg:px-5">
           Xem yêu cầu
         </button>
       </form>

@@ -50,7 +50,7 @@ export function RejectSheet({ sending, serverError, onCancel, onSubmit }: Reject
               }}
               aria-invalid={reasonBad || undefined}
               aria-describedby={reasonBad ? "reject-field-error" : undefined}
-              className="min-w-0 bg-transparent text-right text-ink-2"
+              className="min-w-0 bg-transparent text-right text-ink-2 max-lg:min-h-11"
             >
               <option value="">Chọn lý do…</option>
               {REJECT_REASONS.map((r) => (

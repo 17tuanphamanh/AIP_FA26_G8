@@ -139,7 +139,7 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
               }}
               aria-invalid={error?.field === "reason" || undefined}
               aria-describedby={error?.field === "reason" ? FIELD_ERROR_ID : undefined}
-              className="min-w-0 bg-transparent text-right text-ink-2"
+              className="min-w-0 bg-transparent text-right text-ink-2 max-lg:min-h-11"
             >
               <option value="">Chọn lý do…</option>
               {OVERRIDE_REASONS.map((r) => (

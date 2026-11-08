@@ -228,7 +228,7 @@ export function FactTable({ facts }: { facts: unknown }) {
           aria-label={FACT_SHOW_RAW_LABEL}
           onClick={() => setShowRaw((v) => !v)}
           data-testid="fact-show-raw"
-          className={`h-7 shrink-0 rounded-md border px-3 text-label ${
+          className={`h-7 shrink-0 rounded-md border px-3 text-label max-lg:min-h-11 ${
             showRaw ? "border-fpt-blue bg-selected text-fpt-blue" : "border-line bg-white font-normal text-ink"
           }`}
         >
@@ -287,7 +287,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
       aria-selected={mode === value}
       aria-controls="action-panel"
       onClick={() => setMode(value)}
-      className={`h-7 rounded-md px-3 text-label ${mode === value ? "bg-white text-ink shadow-input" : "font-normal text-ink"}`}
+      className={`h-7 rounded-md px-3 text-label max-lg:min-h-11 ${mode === value ? "bg-white text-ink shadow-input" : "font-normal text-ink"}`}
     >
       {label}
     </button>
@@ -303,7 +303,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
           <code data-testid="action-hash-short" title={hash} className="font-mono text-ink">
             {hash.slice(0, 12)}…
           </code>
-          <button type="button" onClick={() => void copy()} className="rounded-full bg-button-2 px-2.5 py-0.5 text-label text-fpt-blue">
+          <button type="button" onClick={() => void copy()} className="rounded-full bg-button-2 px-2.5 py-0.5 text-label text-fpt-blue max-lg:min-h-11 max-lg:px-3.5">
             Sao chép
           </button>
         </div>
@@ -318,7 +318,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
             aria-pressed={showRaw}
             onClick={() => setShowRaw((v) => !v)}
             data-testid="show-raw"
-            className={`h-7 shrink-0 rounded-md border px-3 text-label ${
+            className={`h-7 shrink-0 rounded-md border px-3 text-label max-lg:min-h-11 ${
               showRaw ? "border-fpt-blue bg-selected text-fpt-blue" : "border-line bg-white font-normal text-ink"
             }`}
           >
@@ -349,7 +349,7 @@ export function ActionView({ action, hash, title }: { action: Record<string, unk
           <button
             type="button"
             onClick={() => void copy()}
-            className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue"
+            className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue max-lg:min-h-11"
           >
             Sao chép
           </button>

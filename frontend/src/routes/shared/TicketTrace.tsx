@@ -226,11 +226,11 @@ function TraceButton({ ticketId }: { ticketId: string | undefined }) {
   return (
     // Cao 0 + sticky: nút nổi ở góc phải trên, KHÔNG chiếm một hàng — màn chi tiết (h-full) không bị đẩy xuống, thanh quyết
     // định của phiếu duyệt luôn nằm trong khung nhìn.
-    <div className="sticky top-0 z-10 flex h-0 justify-end overflow-visible px-12">
+    <div className="sticky top-0 z-10 flex h-0 justify-end overflow-visible px-12 max-lg:px-4">
       <Link
         to={tracePath(ticketId)}
         data-testid="trace-link"
-        className="mt-6 inline-flex h-9 items-center rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-group"
+        className="mt-6 inline-flex h-9 items-center rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-group max-lg:mt-3 max-lg:h-11 max-lg:px-3"
       >
         {TRACE_TITLE}
       </Link>
