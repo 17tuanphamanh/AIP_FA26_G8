@@ -19,7 +19,9 @@
    `no_procedure` (kèm `intended_action` để L2 thấy hành động dự kiến); `RetrievalSystemError` → E2 `rag_system_error`.
    Có → `S_ASSESSING`; audit `procedure_doc` + `procedure_kb_version`.
 3. Đã hỏi đủ `MAX_CLARIFICATION_TURNS` lượt mà vẫn thiếu → E4 `clarification_exhausted`.
-4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` v2 (`diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4;
+4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` v3 (Q3 M2: + `missing_desc` = `slot_text.describe_missing` — nhãn + giải thích + ví
+   dụ từng slot, slot `action` kèm nhãn các việc của intent; `action_label` = nhãn `slots.action` hoặc "chưa rõ" — chỉ HẰNG, không chữ
+   người dùng; `diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4;
    `previous_reply` ∈ none/usable/unusable — ĐP 08/11 P6: chỉ chào lượt đầu, trả lời trước không dùng được thì "Mình chưa rõ ý
    bạn,", tối đa 2 câu) → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
    `effects.once`, khoá RIÊNG từng lượt hỏi (`sub=f"q{n}"`, P5) → `S_CLARIFYING`.
@@ -46,8 +48,8 @@ from typing import Any
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import TARGET_USER_INTENTS, build_action
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import question_msg
-from app.domain.slot_text import scrub_slot_keys
+from app.domain.messages import ACTION_LABELS, question_msg
+from app.domain.slot_text import UNKNOWN_ACTION, describe_missing, scrub_slot_keys
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
 from app.domain.target import TARGET_QUESTION
 from app.graph import effects
@@ -91,12 +93,23 @@ def diagnostics_summary(state: Any, facts: dict[str, Any]) -> dict[str, Any]:
 
 
 def previous_reply(state: Any, turns: int) -> str:
-    """Biến `previous_reply` của `b11_clarify_question` v2 — enum do node tính, LLM không thấy câu người dùng:
+    """Biến `previous_reply` của `b11_clarify_question` (từ v2) — enum do node tính, LLM không thấy câu người dùng:
     `none` = câu hỏi đầu tiên (chưa hỏi lượt nào); `unusable` = câu trả lời trước không cho slot sạch nào hoặc lạc đề
     (`off_topic_streak` ≥ 1, đặt ở `clarify_wait`); còn lại `usable`."""
     if turns <= 0:
         return "none"
     return "unusable" if int(state.get("off_topic_streak") or 0) >= 1 else "usable"
+
+
+def action_label(state: Any) -> str:
+    """Q3 M2: biến `action_label` (v3) — nhãn tiếng Việt của `slots.action` (`ACTION_LABELS`), chưa có/không nhãn → "chưa rõ"."""
+    action = (state.get("slots") or {}).get("action")
+    return ACTION_LABELS.get(action, UNKNOWN_ACTION) if isinstance(action, str) else UNKNOWN_ACTION
+
+
+def action_choices(deps: NodeDeps, intent: str) -> list[str]:
+    """Q3 M2: nhãn các việc của intent (theo thứ tự `action_types`) cho dòng mô tả slot `action`."""
+    return [ACTION_LABELS[a] for a in deps.slots.intents[intent].action_types if a in ACTION_LABELS]
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -184,11 +197,14 @@ def make(deps: NodeDeps) -> NodeFn:
             q = QuestionOut(text=fixed)
         else:
             summary = diagnostics_summary(state, dict(state.get("facts") or {}))
+            asked = missing[:2]
             try:
                 q, meta = await deps.llm.complete(
                     "fast", "b11_clarify_question",
-                    {"missing": missing[:2], "intent": state["intent"], "diagnostics_summary": summary,
-                     "previous_reply": previous_reply(state, turns)}, QuestionOut,
+                    {"missing": asked, "intent": state["intent"], "diagnostics_summary": summary,
+                     "previous_reply": previous_reply(state, turns),
+                     "missing_desc": describe_missing(asked, action_choices=action_choices(deps, state["intent"])),
+                     "action_label": action_label(state)}, QuestionOut,
                 )  # fmt: skip
             except LLMSchemaError as exc:
                 info["llm_error"] = type(exc).__name__
