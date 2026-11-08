@@ -291,3 +291,23 @@ def test_m2_retention_days_floor_90(days: int, ok: bool) -> None:
     else:
         with pytest.raises(ValidationError, match="retention_days"):
             RetentionConfig(retention_days=days)
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_m2_worker_logs_one_startup_line_mode_and_days_no_path(
+    dry_run: bool, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:  # fmt: skip
+    """ĐP 08/11 20:35 (không chặn CONFIG_DIR): dựng job → đúng 1 dòng INFO `app.worker` nêu dry_run + retention_days; không đường dẫn."""
+    import logging
+
+    from app.core.clock import FakeClock
+    from app.worker import setup_retention_job
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    caplog.set_level(logging.DEBUG, logger="app.worker")
+    setup_retention_job(AsyncIOScheduler(timezone="UTC"), _job(FakeStore(), FakeSaver(), FakeClock(NOW), dry_run=dry_run,
+                                                               retention_days=120))  # fmt: skip
+    [rec] = [r for r in caplog.records if r.name == "app.worker"]
+    assert rec.levelno == logging.INFO
+    assert rec.getMessage() == f"retention: dry_run={dry_run} retention_days=120"
+    assert "/" not in rec.getMessage() and str(REPO) not in rec.getMessage()

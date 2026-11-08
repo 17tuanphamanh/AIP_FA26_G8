@@ -56,6 +56,10 @@ class RetentionJob:
         self._clock = clock
         self._config = config
 
+    @property
+    def config(self) -> RetentionConfig:
+        return self._config
+
     async def run(self) -> RetentionReport:
         cfg = self._config
         now = self._clock.now()

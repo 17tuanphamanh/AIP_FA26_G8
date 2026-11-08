@@ -406,6 +406,10 @@ RETENTION_SAVER_POOL = 2  # saver riêng của job — chỉ `adelete_thread`, k
 
 
 def setup_retention_job(scheduler: AsyncIOScheduler, job: RetentionJob) -> None:
+    """Đăng ký job + ĐÚNG 1 dòng log lúc khởi động (ĐP 08/11 20:35): chế độ và hạn giữ đang hiệu lực — không in đường dẫn config
+    (`CONFIG_DIR` không bị chặn; người trực nhìn log biết ngay worker đang dry-run hay xoá thật)."""
+    cfg = job.config
+    log.info("retention: dry_run=%s retention_days=%d", cfg.dry_run, cfg.retention_days)
     scheduler.add_job(
         job.tick, id=RETENTION_JOB, trigger="cron", hour=RETENTION_HOUR_UTC, minute=0, timezone="UTC", max_instances=1,
         coalesce=True, misfire_grace_time=None,
