@@ -1180,7 +1180,7 @@ Test tĩnh: mọi file prompt có `schema` tồn tại; `allowed_vars` ⊇ biế
 | `b10_need_type` | fast | `text`, `evidence_titles` | `NeedTypeOut{type, confidence}` | `info` khi chỉ hỏi/cần hướng dẫn tự làm; `action` khi nhờ hệ thống làm thay (cấp, gia hạn, đăng ký…) |
 | `b10_answer` | strong | `question`, `evidence` | `AnswerOut` (B10 §4) | Chỉ dùng các khối bằng chứng; mỗi ý phải có trích dẫn bằng `anchor_chunk_id` (đúng chuỗi); không có trong bằng chứng → `cannot_answer=true`; hướng dẫn nhiều bước → điền `steps` |
 | `b11_clarify_question` | fast | `missing`, `diagnostics_summary`, `intent` | `QuestionOut{text≤300}` | Hỏi tối đa 2 thông tin, nêu vì sao cần, lịch sự, tiếng Việt |
-| `b11_extract_slots` | fast | `text`, `missing`, `intent` | `ExtractSlotsOut{slots: dict[str,str], off_topic: bool}` | Chỉ trích slot trong `missing`, đúng chữ người dùng; câu không liên quan → `off_topic=true` |
+| `b11_extract_slots` | fast | `text`, `missing`, `intent`, `question` (v3, bn-a 08/11: câu B11 vừa gửi — tin `question` cuối của `conversation`, đã qua output guard; chỉ là ngữ cảnh) | `ExtractSlotsOut{slots: dict[str,str], off_topic: bool}` | Chỉ trích slot trong `missing`, đúng chữ người dùng, CHỈ từ câu trả lời (`sanitize_slots(text=câu trả lời)` — slot chỉ có trong câu hỏi bị loại); câu không liên quan → `off_topic=true` |
 
 `evidence` được context builder render thành các khối `[anchor_chunk_id] title › heading\n<text>`; cắt khối điểm thấp trước khi vượt `budget_in`.
 
