@@ -12,7 +12,7 @@ import type {
   TraceStep,
 } from "../../api/trace.ts";
 import { labelOf } from "../../lib/lookup.ts";
-import { BEN_QUYET_DINH, nhanIT } from "../../lib/nhan.ts";
+import { BEN_QUYET_DINH, KHAC, maKetThuc, nhanIT } from "../../lib/nhan.ts";
 import { closeResultLabel } from "../l2/queue.ts";
 
 export const TRACE_TITLE = "Nhật ký quyết định";
@@ -139,12 +139,21 @@ export function executionLine(e: ExecutionInfo): string {
 export const rollbackText = (e: ExecutionInfo): string | null =>
   e.rollback_status === null ? null : `Hoàn tác: ${orKhac(ROLLBACK, e.rollback_status)}`;
 
-/** Tiêu đề thẻ kết cục — mã kết thúc hiện riêng ("Nhãn · E5", MaNhan) ở dòng dưới. */
-/** Thẻ B20. Lô N (N7): dòng `escalation_closed` (route null) có `close_result` → "L2 đã đóng ca · <nhãn đóng ca của màn L2>". */
+/** Kết cục theo mã kết thúc (nhãn bảng `MA_KET_THUC`). Không mã → "chưa rõ"; mã lạ → "Khác · mã" (nguyên mã, không đoán nghĩa). */
+function exitCodeText(code: string | null): string {
+  if (!code) return "chưa rõ";
+  const nhan = maKetThuc(code);
+  return nhan === null ? `${KHAC} · ${code}` : giuaCau(nhan.nhan);
+}
+
+/** Tiêu đề thẻ kết cục — mã kết thúc hiện riêng ("Nhãn · E5", MaNhan) ở dòng dưới.
+ *  Thẻ B20, theo thứ tự: có `route` → nhãn đường xử lý. Lô N (N7): dòng `escalation_closed` (route null) có `close_result` →
+ *  "L2 đã đóng ca · <nhãn đóng ca của màn L2>". QS04: route null và không `close_result` (vd. ca bị chặn ở B2: E0, S_BLOCKED, không
+ *  có `resolution_path`) → nhãn của `exit_code`; không có `exit_code` → "chưa rõ". */
 export function outcomeLine(o: OutcomeInfo): string {
-  if (o.route === null && o.close_result != null) return `Kết cục: L2 đã đóng ca · ${giuaCau(closeResultLabel(o.close_result))}`;
-  const route = o.route === null ? "chưa rõ" : giuaCau(nhanIT("duong_xu_ly", o.route).nhan);
-  return `Kết cục: ${route}`;
+  if (o.route !== null) return `Kết cục: ${giuaCau(nhanIT("duong_xu_ly", o.route).nhan)}`;
+  if (o.close_result != null) return `Kết cục: L2 đã đóng ca · ${giuaCau(closeResultLabel(o.close_result))}`;
+  return `Kết cục: ${exitCodeText(o.exit_code)}`;
 }
 
 /** Dòng tiêu đề của một thẻ. Bước không có trường chi tiết → "<tên bước>: <sự kiện>". */

@@ -13,6 +13,7 @@ import type { Me } from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { ApprovalTraceLink, EscalationTraceLink, TicketTraceLink, TicketTraceRoute } from "./TicketTrace.tsx";
+import { MA_KET_THUC } from "../../lib/nhan.ts";
 import { TRACE_FORBIDDEN_TEXT, TRACE_INVALID_TEXT, TRACE_NOT_FOUND_TEXT } from "./traceText.ts";
 
 const clients: QueryClient[] = [];
@@ -187,6 +188,61 @@ describe("thẻ đóng ca L2 (B20 escalation_closed) — lô N (N7)", () => {
       "Kết cục: chưa rõ",
       "Kết cục: chưa rõ",
     ]);
+  });
+});
+
+describe("QS04 — thẻ B20 không có route: kết cục theo mã thoát", () => {
+  const b20 = (outcome: { route: string | null; exit_code: string | null; close_result?: "completed" | null }, event = "ticket_closed") =>
+    step(1, "B20", event, { outcome });
+  const titleOf = async (outcome: Parameters<typeof b20>[0], event?: string): Promise<string> => {
+    stub(() => json(200, { ...TRACE, steps: [b20(outcome, event)] }));
+    renderAt("/trace/T-1");
+    await screen.findAllByTestId("trace-step");
+    const [only] = titles();
+    cleanup();
+    return only!;
+  };
+
+  it("E0 (bị chặn ở B2, S_BLOCKED) → nhãn mã thoát, KHÔNG còn 'chưa rõ'", async () => {
+    expect(await titleOf({ route: null, exit_code: "E0" })).toBe("Kết cục: nghi tấn công, đã chặn");
+  });
+
+  it("E2 → đúng nhãn E2", async () => {
+    expect(await titleOf({ route: null, exit_code: "E2" })).toBe("Kết cục: lỗi khi xử lý (AI hoặc công cụ)");
+  });
+
+  it.each(Object.keys(MA_KET_THUC))("%s → nhãn của bảng mã thoát (nhan.ts), không 'chưa rõ'", async (code) => {
+    const t = await titleOf({ route: null, exit_code: code });
+    expect(t).not.toBe("Kết cục: chưa rõ");
+    expect(t.toLocaleLowerCase("vi")).toBe(`kết cục: ${MA_KET_THUC[code]!.nhan.toLocaleLowerCase("vi")}`);
+  });
+
+  it("không có exit_code → giữ 'chưa rõ'", async () => {
+    expect(await titleOf({ route: null, exit_code: null })).toBe("Kết cục: chưa rõ");
+    expect(await titleOf({ route: null, exit_code: "" })).toBe("Kết cục: chưa rõ");
+  });
+
+  it("mã lạ → 'Khác · mã' (nguyên mã, không đoán nghĩa; khoá prototype không rơi vào bảng)", async () => {
+    expect(await titleOf({ route: null, exit_code: "E42" })).toBe("Kết cục: Khác · E42");
+    expect(await titleOf({ route: null, exit_code: "constructor" })).toBe("Kết cục: Khác · constructor");
+  });
+
+  it("có route → như cũ (route thắng mã thoát)", async () => {
+    expect(await titleOf({ route: "escalated", exit_code: "E5" })).toBe("Kết cục: chuyển kỹ thuật viên L2");
+    expect(await titleOf({ route: "approved", exit_code: null })).toBe("Kết cục: xử lý sau khi IT duyệt");
+    expect(await titleOf({ route: "auto", exit_code: "E0" })).toBe("Kết cục: tự xử lý");
+  });
+
+  it("escalation_closed → như cũ (close_result thắng mã thoát)", async () => {
+    expect(await titleOf({ route: null, exit_code: null, close_result: "completed" }, "escalation_closed")).toBe("Kết cục: L2 đã đóng ca · đã hoàn tất");
+    expect(await titleOf({ route: null, exit_code: "E5", close_result: "completed" }, "escalation_closed")).toBe("Kết cục: L2 đã đóng ca · đã hoàn tất");
+  });
+
+  it("dòng 'Mã kết thúc' dưới thẻ vẫn hiện nhãn + mã", async () => {
+    stub(() => json(200, { ...TRACE, steps: [b20({ route: null, exit_code: "E0" })] }));
+    renderAt("/trace/T-1");
+    expect((await screen.findByTestId("trace-exit")).textContent).toContain("Nghi tấn công, đã chặn");
+    expect(screen.getByTestId("trace-exit").textContent).toContain("E0");
   });
 });
 
