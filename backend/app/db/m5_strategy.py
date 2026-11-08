@@ -22,7 +22,7 @@ _CHANGES: Table = M5StrategyChange.__table__  # type: ignore[assignment]
 DEFAULT_STRATEGY = "hybrid"  # trước D-67 chỉ có `hybrid` chạy lúc vận hành; chưa có dòng nào → `hybrid`
 POLICY_SAVED = "policy_saved"
 ROUTE = "/api/admin/strategy"
-_LOCK = text("SELECT pg_advisory_xact_lock(hashtext('m5_strategy_changes'))")
+_LOCK = text("SELECT pg_advisory_xact_lock(hashtextextended('m5_strategy_changes', 0))")
 _HISTORY = text(
     "SELECT id, strategy, LAG(strategy, 1, :default) OVER (ORDER BY id) AS strategy_from, changed_by, reason, changed_at "
     "FROM m5_strategy_changes ORDER BY id DESC LIMIT :limit"
