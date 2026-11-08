@@ -15,6 +15,10 @@ B11) đi qua `sanitize_slots` — hàm thuần, không đọc file (schema `Inte
 
 be-target-guard-2 (ĐP 02/11 13:55): `device_id` CHUẨN HOÁ CHỮ HOA trước khi so mẫu (`lap-0610` → `LAP-0610`) — mã máy so không phân
 biệt hoa thường (mẫu trong `config/slots.yaml` giữ nguyên). Có thật trong câu vẫn so không phân biệt hoa thường như trên.
+M1 (ĐP 08/11): `canonical_device_id` đưa dạng lỏng ("LAP0012", " lap 0012 ") về dạng chuẩn danh mục `LAP-0012` TRƯỚC khi so mẫu — chỉ khi
+khớp ĐÚNG dáng mã máy (2–4 chữ cái ASCII, tuỳ chọn MỘT "-" hoặc dấu cách, 3–5 chữ số ASCII); không khớp → giữ nguyên → sai mẫu → `bad_value`
+(B11 hỏi lại, không đoán). `nv…` là mã nhân viên, không bao giờ thành mã máy. Có thật trong câu: mã chuẩn trùng một chuỗi dạng mã máy
+trong câu sau cùng phép chuẩn hoá (biên token giữ nguyên — "LAP-00123" không cho "LAP-0012"), hoặc khớp biên token như cũ.
 
 Key do LLM đặt là chữ TỰ DO → `audit_dropped` chỉ ghi key đã khai báo; key lạ thành `"<unknown>"` + đếm (Q-3f-5).
 """
@@ -35,6 +39,10 @@ TOKEN_IN_TEXT = frozenset({"device_id", "error_code", "target_user", "resource_p
 PHRASE_IN_TEXT = frozenset({"reason", "software_name"})
 MUST_APPEAR_IN_TEXT = TOKEN_IN_TEXT | PHRASE_IN_TEXT
 UNKNOWN_KEY = "<unknown>"
+# M1: dáng mã máy người dùng gõ — chữ/số ASCII (`\d` của Python khớp cả chữ số Unicode). `[A-Za-z]` không có cờ IGNORECASE: chỉ ASCII.
+_DEVICE_LOOSE = re.compile(r"([A-Za-z]{2,4})[- ]?([0-9]{3,5})")
+_DEVICE_IN_TEXT = re.compile(r"(?<!\w)([A-Za-z]{2,4})[- ]?([0-9]{3,5})(?!\w)")  # biên \w Unicode: "cổng 443" không khớp
+_EMPLOYEE_PREFIX = "nv"  # `nvXXX` = mã nhân viên (domain/target.py) — không đổi thành mã máy
 
 type DropReason = Literal["fact_key", "unknown_key", "too_long", "bad_action", "bad_value", "slot_not_in_text"]
 
@@ -110,10 +118,26 @@ def phrase_in_text(value: str, text: str) -> bool:
     return _squash(value) in _squash(text)
 
 
+def canonical_device_id(value: str) -> str:
+    """M1: "lap-0012" / "LAP0012" / " lap 0012 " → `LAP-0012`. Không đúng dáng mã máy (hoặc tiền tố `nv`) → trả NGUYÊN `value`."""
+    m = _DEVICE_LOOSE.fullmatch(value.strip())
+    if m is None or m.group(1).casefold() == _EMPLOYEE_PREFIX:
+        return value
+    return f"{m.group(1).upper()}-{m.group(2)}"
+
+
+def device_ids_in_text(text: str) -> frozenset[str]:
+    """M1: mọi chuỗi dạng mã máy trong câu, đã chuẩn hoá như `canonical_device_id` (bỏ `nv…`)."""
+    found = _DEVICE_IN_TEXT.finditer(text)
+    return frozenset(f"{m.group(1).upper()}-{m.group(2)}" for m in found if m.group(1).casefold() != _EMPLOYEE_PREFIX)
+
+
 def in_text(key: str, value: str, text: str) -> bool:
     """Giá trị có thật trong câu người dùng không (P2, Q-3f-3)."""
     if key in PHRASE_IN_TEXT:
         return phrase_in_text(value, text)
+    if key == "device_id" and value in device_ids_in_text(text):  # M1: người dùng gõ dạng lỏng
+        return True
     return re.search(rf"(?<!\w){re.escape(value.casefold())}(?!\w)", text.casefold()) is not None
 
 
@@ -134,8 +158,8 @@ def sanitize_slots(
             dropped[k] = "unknown_key"
             continue
         value = str(raw_value).strip()
-        if k == "device_id":  # be-target-guard-2: mã máy không phân biệt hoa thường
-            value = value.upper()
+        if k == "device_id":  # be-target-guard-2: không phân biệt hoa thường; M1: dạng lỏng → dạng chuẩn trước khi so mẫu
+            value = canonical_device_id(value.upper())
         if len(value) > MAX_VALUE_LEN:
             dropped[k] = "too_long"
         elif not value:

@@ -77,8 +77,10 @@ def test_f1_keeps_valid_slots() -> None:
         ("cert_status", "valid", "fact_key"),
         ("action", "grant_admin", "bad_action"),  # action lạ
         ("action", "reset_password", "bad_action"),  # action của intent khác
-        ("device_id", "lap0342", "bad_value"),  # sai mẫu (thiếu gạch). be-target-guard-2: chữ thường "lap-0342" giờ được chuẩn hoá LAP-0342
-        ("device_id", "LAP0342", "bad_value"),
+        # sai mẫu. be-target-guard-2: "lap-0342" → LAP-0342; M1 (08/11): "lap0342"/"LAP0342" thiếu gạch cũng được chuẩn hoá
+        # (test_slots_device_id_norm.py) — còn bỏ khi không đúng dáng mã máy
+        ("device_id", "lap_0342", "bad_value"),
+        ("device_id", "LAP-34", "bad_value"),
         ("device_id", "LAP-03421234", "bad_value"),
         ("device_id", "ＬＡＰ-0342", "bad_value"),  # full-width
         ("error_code", "80O", "bad_value"),
