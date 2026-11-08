@@ -11,9 +11,11 @@ import dataclasses
 from typing import Any, cast
 
 import pytest
+from app.db.models import NOTICE_KINDS
 from app.domain.messages import (
     ACTION_LABELS,
     APPROVAL_PENDING_KIND,
+    MSG_KINDS,
     approval_pending_msg,
     approval_pending_text,
 )
@@ -59,6 +61,12 @@ def test_msg_shape_needs_none() -> None:
     assert approval_pending_msg("x", "m1") == {"role": "assistant", "kind": APPROVAL_PENDING_KIND, "text": "x", "ref": "m1",
                                                "needs": "none"}  # fmt: skip
     assert APPROVAL_PENDING_KIND == "approval_pending"
+
+
+def test_kind_declared_in_msg_kinds_not_notice_kinds() -> None:
+    """ĐP 09/11 01:50: `approval_pending` là loại tin hội thoại khai báo; notice con vẫn `result` (CHECK `child_notices` — chờ migration)."""
+    assert APPROVAL_PENDING_KIND in MSG_KINDS
+    assert APPROVAL_PENDING_KIND not in NOTICE_KINDS and NOTICE_KIND_BY_STEP["B15"] == "result"
 
 
 # ---- node ---------------------------------------------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 """Tin nhắn trong `conversation` (phase3 mục 10.2, 3-Q28 bản 1.1; chốt P9 3g) — theo khuôn B20 `{role, kind, text, ref}`.
 
-- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có). `needs` như
+- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có), `duplicate`
+  (B3 — M1), `approval_pending` (B15 — Q3 M4). `needs` như
   tham số `notify_user`.
 - `sources` CHỈ ở `answer`, mỗi nguồn ĐÚNG 3 khoá `chunk_id`, `title`, `heading_path` — không đoạn trích, không bằng chứng
   đã mở rộng (P9).
@@ -25,7 +26,9 @@ from app.domain.action import SOFTWARE_NAME, Action, FactValue
 from app.domain.children import ChildView, summary_text
 from app.domain.ticket_state import EXEC_OUTPUT_PATTERNS, ChunkRef, Msg
 
-MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation", "duplicate")
+# Q3 (ĐP 09/11): + `approval_pending` (B15 — tin chờ duyệt, needs `none`; FE hiện như tin thường, không nút). Không phải `NOTICE_KINDS`:
+# notice con của B15 dùng `result` cho tới migration thêm loại riêng.
+MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation", "duplicate", "approval_pending")
 SOURCE_KEYS: Final = ("chunk_id", "title", "heading_path")
 
 
