@@ -144,6 +144,12 @@ export const myTicketsQuery = (userId: string) =>
     refetchOnReconnect: false,
   });
 
+/** P3 menu ⋯ "Xóa": ẨN ticket khỏi "Gần đây" của chính người đang đăng nhập (204; gọi lại vẫn 204). Không xoá dữ liệu — mở bằng
+ *  link vẫn đọc được. Ticket không có / không phải của mình / ticket con → 404 (ApiError). */
+export async function hideTicket(id: string): Promise<void> {
+  await api.request<void>(`${ticketPath(id)}/hide`, { method: "POST" });
+}
+
 /** Đọc một lần, không polling — cho màn chỉ đọc của IT (L1/L2 có ticket:read:any): chi tiết escalate, ghi đè. */
 export const ticketReadOnlyQuery = (id: string) =>
   queryOptions({ queryKey: ["ticket", id] as const, queryFn: () => getTicket(id), retry: false });

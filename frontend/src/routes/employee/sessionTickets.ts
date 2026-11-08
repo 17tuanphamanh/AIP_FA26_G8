@@ -23,9 +23,18 @@ export const REDACTED_NOTE = "Nội dung đã được ẩn bớt thông tin nh�
 
 let items: readonly SessionTicket[] = [];
 const listeners = new Set<() => void>();
+// P3 menu ⋯ "Xóa": id đang/đã ẩn TRONG PHIÊN NÀY — `recentTickets` lọc theo tập này nên mục mất ngay mà dữ liệu gốc (phiên + cache
+// API) không đổi; API lỗi → bỏ id khỏi tập, mục hiện lại ĐÚNG chỗ cũ. Chỉ trong bộ nhớ, xoá cùng `clear()` (server mới là nguồn sự thật).
+let hidden: ReadonlySet<string> = new Set();
+const EMPTY: ReadonlySet<string> = new Set();
 
 function set(next: readonly SessionTicket[]): void {
   items = next;
+  for (const listener of listeners) listener();
+}
+
+function setHidden(next: ReadonlySet<string>): void {
+  hidden = next;
   for (const listener of listeners) listener();
 }
 
@@ -42,8 +51,21 @@ export const sessionTickets = {
     if (!current || current.tone === tone) return;
     set(items.map((t) => (t.ticket_id === ticket_id ? { ...t, tone } : t)));
   },
+  /** Bỏ hẳn khỏi danh sách phiên (sau khi API ẩn thành công). */
+  remove(ticket_id: string): void {
+    if (items.some((t) => t.ticket_id === ticket_id)) set(items.filter((t) => t.ticket_id !== ticket_id));
+  },
+  /** Đánh dấu đang ẩn (trước khi API trả) — mục biến khỏi "Gần đây" ngay. */
+  hide(ticket_id: string): void {
+    if (!hidden.has(ticket_id)) setHidden(new Set([...hidden, ticket_id]));
+  },
+  /** API ẩn lỗi → mục hiện lại ở chỗ cũ. */
+  unhide(ticket_id: string): void {
+    if (hidden.has(ticket_id)) setHidden(new Set([...hidden].filter((id) => id !== ticket_id)));
+  },
   clear(): void {
     if (items.length) set([]);
+    if (hidden.size) setHidden(new Set());
   },
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
@@ -52,10 +74,16 @@ export const sessionTickets = {
     };
   },
   getSnapshot: (): readonly SessionTicket[] => items,
+  getHidden: (): ReadonlySet<string> => hidden,
 };
 
 export function useSessionTickets(): readonly SessionTicket[] {
   return useSyncExternalStore(sessionTickets.subscribe, sessionTickets.getSnapshot);
+}
+
+/** Tập id đang/đã ẩn trong phiên (menu ⋯ "Xóa"). */
+export function useHiddenTickets(): ReadonlySet<string> {
+  return useSyncExternalStore(sessionTickets.subscribe, sessionTickets.getHidden);
 }
 
 /** Tiêu đề hội thoại / mục "Gần đây": câu yêu cầu, một dòng, cắt ngắn (KH 4.6). Không có → DEFAULT_TITLE. */
@@ -77,9 +105,14 @@ export function listTone(item: Pick<TicketListItem, "final_state" | "exit_code">
 }
 
 /** Ticket trong phiên trước (mới nhất trước, giữ chấm + tiêu đề của phiên — câu đã che thì vẫn DEFAULT_TITLE), rồi ticket
- *  từ API theo thứ tự backend (`created_at DESC`) mà phiên chưa có. Khử trùng theo `ticket_id`. */
-export function recentTickets(session: readonly SessionTicket[], fromApi: readonly TicketListItem[]): RecentTicket[] {
-  const seen = new Set<string>();
+ *  từ API theo thứ tự backend (`created_at DESC`) mà phiên chưa có. Khử trùng theo `ticket_id`; bỏ id trong `hidden` (menu ⋯
+ *  "Xóa" — lọc, không đổi thứ tự các mục còn lại). */
+export function recentTickets(
+  session: readonly SessionTicket[],
+  fromApi: readonly TicketListItem[],
+  hidden: ReadonlySet<string> = EMPTY,
+): RecentTicket[] {
+  const seen = new Set<string>(hidden);
   const out: RecentTicket[] = [];
   for (const t of session) {
     if (seen.has(t.ticket_id)) continue;
