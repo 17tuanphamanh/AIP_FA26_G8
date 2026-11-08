@@ -23,6 +23,7 @@ from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.approval import ReminderN
 from app.domain.children import ChildHandoffRow, ChildProgressRow, ChildView
+from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
 from app.tools.registry import ToolResult
@@ -196,6 +197,12 @@ class TicketStore(TicketReader, Protocol):
         ...
 
     async def count_turns(self, ticket_id: str) -> int: ...
+
+    async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
+        """M1 (B3 báo trùng yêu cầu): ticket của `requester_id` tạo từ `since`, kèm `intent` lấy từ dòng audit B3 `intent_classified`
+        (`tickets.intent` chỉ được ghi ở B20, ticket còn mở thì NULL). Chỉ đọc. Trả TẬP CHA — có thể thừa (đã đóng, là cha, chưa có
+        intent…); người gọi lọc lại bằng `domain.dedup.pick_duplicate` (nơi duy nhất quyết định)."""
+        ...
 
     async def finalize_once(self, ticket_id: str, summary: FinalSummary) -> FinalSummary:
         """Ghi nếu `final_state IS NULL`; luôn trả dòng ĐANG CÓ (vừa ghi hoặc từ lần trước)."""

@@ -1,0 +1,6 @@
+# Báo trùng yêu cầu (M1) — B3, sau khi ticket lá có intent: người gửi đang có ticket còn mở CÙNG intent, tạo trong cửa sổ này
+# → gửi MỘT tin cố định theo mẫu dưới (không LLM, qua output guard + effects.once). KHÔNG dừng luồng, KHÔNG đổi exit_code.
+# Không phải biến .env. Đổi giá trị ở đây là đổi hành vi agent — chạy lại test (test_dedup_*.py).
+DEDUP_WINDOW_HOURS: 24
+# Chỉ có hai chỗ trống: {loai} = nhãn loại yêu cầu (domain/messages.INTENT_LABELS, hạ chữ đầu), {ma} = mã ticket đang mở.
+template: "Bạn đang có một yêu cầu {loai} đang xử lý (mã {ma}). Yêu cầu này vẫn được tiếp nhận."

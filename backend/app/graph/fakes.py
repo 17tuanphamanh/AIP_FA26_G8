@@ -48,10 +48,12 @@ from app.rag.ports import RagPort
 from app.risk.calibrator import Calibrator
 from app.risk.estimator import DisabledEstimator, RiskEstimator
 from app.settings import (
+    DedupConfig,
     EscalationTemplates,
     PolicyConstants,
     SlotsFile,
     get_action_metadata,
+    get_dedup,
     get_policy,
     get_settings,
     get_slots,
@@ -308,6 +310,8 @@ class NodeDeps:
         default_factory=lambda: get_action_metadata().root
     )
     enabled_intents: frozenset[str] = frozenset({"vpn"})
+    # M1: cửa sổ + mẫu tin báo trùng yêu cầu của B3 (`config/dedup.yaml`, không phải biến .env). Mặc định = cấu hình repo.
+    dedup: DedupConfig = field(default_factory=get_dedup)
     enable_proactive_diagnosis: bool = True
     # Phase 4 S0-P11: `GROUNDING_GATE_ACTIONS` (ablation) — B10 áp B9 cho cả nhánh hành động. Mặc định = Settings (tắt).
     grounding_gate_actions: bool = False

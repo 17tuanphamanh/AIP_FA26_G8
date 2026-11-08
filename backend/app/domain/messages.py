@@ -25,7 +25,7 @@ from app.domain.action import SOFTWARE_NAME, Action, FactValue
 from app.domain.children import ChildView, summary_text
 from app.domain.ticket_state import EXEC_OUTPUT_PATTERNS, ChunkRef, Msg
 
-MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
+MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation", "duplicate")
 SOURCE_KEYS: Final = ("chunk_id", "title", "heading_path")
 
 
@@ -304,6 +304,11 @@ def rejection_text(action_type: str, target_phrase: str, reason_code: str | None
 
 def rejection_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "rejection", "text": text, "ref": ref, "needs": "none"}
+
+
+def duplicate_msg(text: str, ref: str | None) -> Msg:
+    """M1 — tin báo trùng yêu cầu của B3 (mẫu cố định, không LLM). Không phải `NOTICE_KINDS`: B3 chỉ chạy ở ticket lá, không phải con."""
+    return {"role": "assistant", "kind": "duplicate", "text": text, "ref": ref, "needs": "none"}
 
 
 # ---- Tin tổng hợp của ticket cha (Phase 5 T20b P8, P9 — phase5 5.2.5, 5.2.6; D-31) ----------------------------------------------

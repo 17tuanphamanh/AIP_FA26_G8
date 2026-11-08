@@ -45,6 +45,7 @@ from app.domain.children import (
     child_index,
     child_ref,
 )
+from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
@@ -109,6 +110,14 @@ _HANDOFF_ROWS = text(
     "(SELECT n.needs FROM child_notices n WHERE n.child_ticket_id = c.ticket_id AND n.needs <> 'none' "
     " ORDER BY n.created_at DESC, n.notice_id DESC LIMIT 1) AS needs "
     "FROM tickets c WHERE c.parent_ticket_id = :parent"
+)
+# M1 (B3 báo trùng): ticket LÁ còn mở của một người từ `since` + `intent` của dòng audit B3 `intent_classified` mới nhất (`tickets.intent` NULL tới
+# B20). Chỉ đọc; `ix_tickets_requester_created_at` + `ix_audit_logs_ticket`. Lọc ở đây chỉ để thu nhỏ tập — quyết định ở `pick_duplicate`.
+_OPEN_CANDIDATES = text(
+    "SELECT t.ticket_id, t.requester_id, t.final_state, t.is_parent, t.parent_ticket_id, t.created_at, "
+    "(SELECT a.intent FROM audit_logs a WHERE a.ticket_id = t.ticket_id AND a.step = 'B3' AND a.event = 'intent_classified' "
+    " AND a.intent IS NOT NULL ORDER BY a.log_id DESC LIMIT 1) AS intent "
+    "FROM tickets t WHERE t.requester_id = :requester AND t.created_at >= :since AND t.final_state IS NULL AND t.is_parent = false"
 )
 _STARTED = text("SELECT result_ref FROM side_effects WHERE ticket_id = :parent AND kind = 'child_submit'")
 STARTED_PREFIX = "started:"  # `result_ref` của `child_submit` (`graph.children._started`)
@@ -190,6 +199,17 @@ class SqlTicketStore:
         stmt = pg_insert(_HIDDEN).values(user_id=user_id, ticket_id=ticket_id, hidden_at=at).on_conflict_do_nothing()
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+
+    async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(_OPEN_CANDIDATES, {"requester": requester_id, "since": since})).all()
+        return [
+            OpenCandidate(
+                ticket_id=r.ticket_id, requester_id=r.requester_id, intent=r.intent, final_state=r.final_state,
+                is_parent=r.is_parent, parent_ticket_id=r.parent_ticket_id, created_at=r.created_at.astimezone(UTC),
+            )
+            for r in rows
+        ]  # fmt: skip
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         """D-67: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""

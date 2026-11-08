@@ -31,6 +31,13 @@
    khác cũng bật, chấp nhận có chủ ý). Không bao giờ hạ cờ. Điểm log 1 thêm `other_target_mention` (bool), `other_target_reason`
    (hằng | None); dòng tách B5: `other_target_mention` (bất kỳ con) + `children_other_target_reason` (theo con). Không câu/token.
 
+8. M1 — báo trùng yêu cầu (nhánh đơn ý `intent_classified`, ticket lá): có ticket CÒN MỞ (`final_state IS NULL`) của cùng người gửi,
+   cùng intent, tạo trong `DEDUP_WINDOW_HOURS` (`config/dedup.yaml`) → MỘT tin cố định theo mẫu (không LLM) qua output guard +
+   `effects.once("notify_user", step="B3", sub="duplicate")` và điểm log 1 thêm `duplicate_of` (mã ticket — không chữ tự do). KHÔNG dừng
+   luồng, KHÔNG đổi `exit_code`, KHÔNG vào state/ctx (M5 không thấy — `test_dedup_isolation_ast.py`). Quyết định ở
+   `domain/dedup.pick_duplicate`; store chỉ trả tập cha (`TicketStore.open_candidates`). Output guard chặn mẫu → không gửi tin, audit
+   vẫn ghi `duplicate_of`. Lỗi đọc store lan ra như mọi lỗi hạ tầng khác của node (không nuốt) → E9 ở boundary.
+
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
 slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi khác (`ScriptExhausted`, `MlContractError`…) → E9.
@@ -41,7 +48,9 @@ from typing import Any, Final
 
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.children import child_id, child_ref
+from app.domain.dedup import duplicate_text, pick_duplicate
 from app.domain.exit_codes import ExitCode
+from app.domain.messages import duplicate_msg
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
 from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
 from app.domain.target import requester_id_of, target_check
@@ -151,11 +160,33 @@ def make(deps: NodeDeps) -> NodeFn:
         info.update(audit_dropped(dropped, known), span_not_in_text=bool(it.span.strip()) and span is None,
                     other_target_mention=mention, other_target_reason=reason)  # fmt: skip
         flags = {"ctx_flags": {"target_is_other": True}} if reason is not None else {}
+        flags.update(await _duplicate_notice(state, it.type, info))  # M1: sau khi chắc có intent, trước khi sang B6
         return await goto(
             state, S_DIAGNOSING, next_node="b06_diagnose", step="B3", event="intent_classified", audit_detail=info,
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
             **flags,
         )  # fmt: skip
+
+    async def _duplicate_notice(state: Any, intent: str, info: dict[str, Any]) -> dict[str, Any]:
+        """M1 — trả phần cập nhật state (`conversation` một tin) hoặc {}; ghi `info["duplicate_of"]` khi có ticket trùng."""
+        requester = requester_id_of(state)
+        if not requester:  # node trần (test) không có người gửi → không có gì để so
+            return {}
+        since = current_run().clock.now() - deps.dedup.window
+        found = pick_duplicate(
+            await deps.tickets.open_candidates(requester, since=since), ticket_id=state["ticket_id"],
+            parent_ticket_id=state.get("parent_ticket_id"), requester_id=requester, intent=intent, since=since,
+        )  # fmt: skip
+        if found is None:
+            return {}
+        info["duplicate_of"] = found
+        text = duplicate_text(deps.dedup.template, intent, found)
+        if deps.output_guard.violation(text) is not None:  # mẫu do cấu hình viết — vẫn qua cổng đầu ra như mọi tin gửi đi
+            return {}
+        ref = await effects.once(
+            state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "none", step="B3", sub="duplicate"
+        )
+        return {"conversation": [duplicate_msg(text, ref)]}
 
     def _verdict(it: IntentItem, text: str) -> str:
         """Bảng 5.2.2 — thứ tự kiểm CỐ ĐỊNH, mỗi ý đúng một kết quả (hằng trong `VERDICTS`)."""

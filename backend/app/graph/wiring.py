@@ -105,6 +105,7 @@ from app.settings import (
     check_intent_config,
     check_policy_config,
     get_action_metadata,
+    get_dedup,
     get_escalation_templates,
     get_policy,
     get_slots,
@@ -285,7 +286,7 @@ async def _open(
         templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
         scenario=scenario, security_events=security,
         slots=get_slots(), action_metadata=get_action_metadata().root,
-        enabled_intents=frozenset(settings.enabled_intents),
+        enabled_intents=frozenset(settings.enabled_intents), dedup=get_dedup(),  # M1: sai config/dedup.yaml → không khởi động
         enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
         grounding_gate_actions=settings.grounding_gate_actions, commit_sha=settings.app_git_sha,
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),

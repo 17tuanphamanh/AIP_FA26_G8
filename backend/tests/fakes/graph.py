@@ -71,6 +71,7 @@ from app.domain.children import (
     child_index,
     child_ref,
 )
+from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
 from app.domain.states import S_ESCALATED
@@ -82,7 +83,14 @@ from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.llm import LlmPort
 from app.notify.child import ChildAwareNotifier
-from app.settings import Settings, get_escalation_templates, get_policy, open_approvers
+from app.settings import (
+    DedupConfig,
+    Settings,
+    get_dedup,
+    get_escalation_templates,
+    get_policy,
+    open_approvers,
+)
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.fakes.ad_seed import ROSTER_CHAIN, seed_ad_records
 from tests.fakes.auth import InMemoryAuthStore, RecordingSink
@@ -589,6 +597,7 @@ class MemoryTickets:
         self.strategies: dict[str, str | None] = {}
         self.sources: dict[str, str] = {}
         self.hidden: dict[tuple[str, str], datetime] = {}  # `ticket_hidden` giả: (user_id, ticket_id) → hidden_at
+        self.audit: MemoryAudit | None = None  # harness nối — `open_candidates` đọc `intent` từ dòng audit B3 (như SQL)
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -653,6 +662,22 @@ class MemoryTickets:
         if ticket_id not in self.rows:
             raise ValueError(f"FK ticket_hidden.ticket_id: {ticket_id} chưa có")
         self.hidden.setdefault((user_id, ticket_id), at)
+
+    async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
+        """M1: cố ý trả MỌI dòng (tập cha tối đa) — mọi điều kiện lọc phải do `pick_duplicate` làm, để mutation ở đó đỏ trong unit test.
+        `intent` từ dòng audit B3 `intent_classified` MỚI NHẤT của ticket (như `SqlTicketStore`)."""
+        rows = self.audit.rows if self.audit is not None else []
+        out: list[OpenCandidate] = []
+        for tid, r in self.rows.items():
+            intents = [x["intent"] for x in rows if x["ticket_id"] == tid and x["step"] == "B3"
+                       and x["event"] == "intent_classified" and x.get("intent") is not None]  # fmt: skip
+            final: FinalSummary | None = r["final"]
+            out.append(OpenCandidate(
+                ticket_id=tid, requester_id=r["requester_id"], intent=intents[-1] if intents else None,
+                final_state=final.final_state if final else None, is_parent=r["is_parent"],
+                parent_ticket_id=r["parent_ticket_id"], created_at=r["created_at"],
+            ))  # fmt: skip
+        return out
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         return self.strategies.get(ticket_id)
@@ -943,6 +968,7 @@ class GraphHarness:
     auth_store: InMemoryAuthStore | None = None
     approvers: Mapping[str, Roster] = field(default_factory=lambda: open_approvers(_DEFAULT_SETTINGS).root)
     approver_users: ApproverUsers | None = None
+    dedup: DedupConfig | None = None  # M1: None = `config/dedup.yaml`
     roster_in_ad: bool = True  # gộp `ROSTER_CHAIN` (seed.json) vào `ad` — chỉ khi `directory` None
     tickets: MemoryTickets = field(init=False)
     notices: "MemoryNoticeStore" = field(init=False)  # Phase 5 T20b: `child_notices` giả (ghi vào `tickets.notices`)
@@ -969,6 +995,7 @@ class GraphHarness:
                 lock=lock_policy(auth_config(_DEFAULT_SETTINGS, get_policy().constants)),
             ))  # fmt: skip
         self.tickets = MemoryTickets(self.turns)
+        self.tickets.audit = self.audit
         self.deadlines.tickets = self.tickets  # Phase 5 T20b: con không đặt hạn, cha thay hạn mọi loại (Q-T20b-3)
         self.tickets.approvals_table = self.deadlines.approvals
         self.deadlines.effects = self.effects
@@ -999,7 +1026,7 @@ class GraphHarness:
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
             security_events=self.security_events, enable_proactive_diagnosis=self.enable_proactive_diagnosis,
             grounding_gate_actions=self.grounding_gate_actions, approvers=self.approvers,
-            approver_users=self.approver_users,
+            approver_users=self.approver_users, dedup=self.dedup or get_dedup(),
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:

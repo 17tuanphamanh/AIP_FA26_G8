@@ -16,6 +16,8 @@
   (P12): `APPROVAL_SLA_MINUTES_DEV` chỉ dev/test.
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
+- `config/dedup.yaml` (`get_dedup`, M1): `DEDUP_WINDOW_HOURS` (cửa sổ báo trùng, giờ) + mẫu tin cố định `{loai}`/`{ma}` — KHÔNG
+  phải biến `.env`.
 Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
 trò (`FAST_MODEL`, `STRONG_MODEL`), `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env (PLAN-3d Q-3d-3).
 
@@ -29,7 +31,9 @@ import json
 import logging
 import os
 import re
+import string
 from collections.abc import Mapping
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -708,3 +712,38 @@ def load_escalation_templates(path: Path) -> EscalationTemplates:
 @lru_cache
 def get_escalation_templates() -> EscalationTemplates:
     return load_escalation_templates(get_settings().config_dir / "escalation_templates.yaml")
+
+
+# ---- config/dedup.yaml (M1 — báo trùng yêu cầu) ------------------------------------------------
+
+
+class DedupConfig(BaseModel):
+    """Cửa sổ và mẫu tin của báo trùng yêu cầu (B3). Không phải biến `.env` và không nằm trong `policy.json`: một file riêng,
+    sai schema → không khởi động. Mẫu chỉ có hai chỗ trống `{loai}` (nhãn loại yêu cầu) và `{ma}` (mã ticket đang mở)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    DEDUP_WINDOW_HOURS: int = Field(strict=True, ge=1, le=720)  # ≤ 30 ngày
+    template: str = Field(min_length=1)
+
+    @field_validator("template")
+    @classmethod
+    def _placeholders(cls, value: str) -> str:
+        fields = list(string.Formatter().parse(value))
+        names = {name for _, name, _, _ in fields if name is not None}
+        if names != {"loai", "ma"} or any(spec or conv for _, name, spec, conv in fields if name is not None):
+            raise ValueError("template phải có đúng hai chỗ trống {loai} và {ma} (không định dạng, không chỗ trống khác)")
+        return value
+
+    @property
+    def window(self) -> timedelta:
+        return timedelta(hours=self.DEDUP_WINDOW_HOURS)
+
+
+def load_dedup(path: Path) -> DedupConfig:
+    return DedupConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+@lru_cache
+def get_dedup() -> DedupConfig:
+    return load_dedup(get_settings().config_dir / "dedup.yaml")
