@@ -58,12 +58,14 @@ RESOURCE_PATH: Final = re.compile(r"(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za
 CERT_STATUS_TEXT: Final = {"valid": "còn hiệu lực", "expired": "đã hết hạn", "revoked": "đã bị thu hồi", "none": "chưa có"}
 ASK_CONFIRM: Final = "Bạn thử kết nối lại rồi xác nhận giúp mình nhé."
 # Q2 M3 (ĐP 09/11): mẫu `check_vpn_status` — kết quả kiểm tra có vấn đề thì GỢI Ý bước tiếp (chỉ câu chữ, không tự sinh hành động);
-# đứng sau dòng trạng thái, trước câu mời xác nhận.
+# đứng sau dòng trạng thái, trước câu mời xác nhận. `{device}` = "máy <mã>" (qua `DEVICE_ID`) hoặc "máy của bạn". Lúc này ô nhập là
+# ghi chú xác nhận → yêu cầu mới mở bằng mục "Yêu cầu mới" ở thanh bên (FE `auth/permissions.ts` CHAT_NAV). Không ghi "cần IT
+# duyệt": gia hạn máy của chính mình trong giờ hành chính thường tự động (KB-VPN-004).
 VPN_STATUS_NEXT: Final[Mapping[str, str]] = {
-    "expired": ('Chứng chỉ hết hạn là lý do máy không vào được VPN. Bạn nhắn "gia hạn chứng chỉ VPN" để mình gửi yêu cầu '
-                "gia hạn (cần IT duyệt)."),
-    "revoked": ('Chứng chỉ bị thu hồi là lý do máy không vào được VPN. Bạn nhắn "cấp lại quyền VPN" để mình gửi yêu cầu '
-                "cấp lại (cần IT duyệt)."),
+    "expired": ('Chứng chỉ hết hạn là lý do máy không vào được VPN. Để gia hạn, bạn bấm "Yêu cầu mới" ở thanh bên và nhắn '
+                '"gia hạn chứng chỉ VPN {device}", mình sẽ xử lý.'),
+    "revoked": ('Chứng chỉ đã bị thu hồi nên máy không vào được VPN. Để xin cấp lại, bạn bấm "Yêu cầu mới" ở thanh bên và nhắn '
+                '"cấp lại quyền VPN {device}".'),
 }  # fmt: skip
 VPN_STATUS_UNREGISTERED: Final = "Máy chưa đăng ký VPN nên chưa kết nối được; mình chuyển kỹ thuật viên nếu bạn cần đăng ký."
 RESULT_ACTIONS: Final = frozenset({
@@ -248,7 +250,7 @@ def result_text(
             cert += f", quá hạn {-days} ngày"
         conn = facts.get("last_connection_ok")
         last = "thành công" if conn is True else "không thành công" if conn is False else "chưa có dữ liệu"
-        hints = [VPN_STATUS_NEXT[status]] if isinstance(status, str) and status in VPN_STATUS_NEXT else []
+        hints = [VPN_STATUS_NEXT[status].format(device=device)] if isinstance(status, str) and status in VPN_STATUS_NEXT else []
         if facts.get("device_registered") is False:
             hints.append(VPN_STATUS_UNREGISTERED)
         nxt = "".join(f"{h} " for h in hints)
