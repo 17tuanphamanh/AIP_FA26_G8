@@ -21,6 +21,7 @@ from app.llm.context import check_variables, render
 from app.llm.errors import PromptVariableError
 from app.llm.providers.scripted import Reply
 from app.llm.registry import PromptRegistry, load_prompts
+from app.settings import get_slots
 from tests.unit.test_b11_slots import (
     CANARY,
     CONFIG,
@@ -144,8 +145,10 @@ async def test_graph_three_asks_none_unusable_usable() -> None:
     await _reply(h, "hôm nay trời đẹp quá")  # lạc đề → streak 1 → lượt hỏi 2
     await _reply(h, "PC-0977")  # có slot sạch (streak về 0), còn thiếu action → lượt hỏi 3
     calls = gw.llm.calls_for(PID)
-    assert [c.variables["previous_reply"] for c in calls] == ["none", "unusable", "usable"]
-    assert [c.variables["missing"] for c in calls] == [["device_id", "action"], ["device_id", "action"], ["action"]]
+    # Q3 M1: lượt 3 chỉ còn thiếu `action` (slot enum) → câu CỐ ĐỊNH, không gọi LLM — chỉ 2 lời gọi.
+    assert [c.variables["previous_reply"] for c in calls] == ["none", "unusable"]
+    assert [c.variables["missing"] for c in calls] == [["device_id", "action"], ["device_id", "action"]]
+    assert h.notifier.sent[-1][1] == get_slots().intents["vpn"].fixed_questions["action"]
 
 
 # ---- output guard + dọn khoá slot vẫn chạy như cũ ở lượt có câu mở đầu "Mình chưa rõ ý bạn," -------------------------------------

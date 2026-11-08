@@ -24,7 +24,7 @@ Key do LLM đặt là chữ TỰ DO → `audit_dropped` chỉ ghi key đã khai 
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -39,6 +39,10 @@ TOKEN_IN_TEXT = frozenset({"device_id", "error_code", "target_user", "resource_p
 PHRASE_IN_TEXT = frozenset({"reason", "software_name"})
 MUST_APPEAR_IN_TEXT = TOKEN_IN_TEXT | PHRASE_IN_TEXT
 UNKNOWN_KEY = "<unknown>"
+# Q3 M1 (ĐP 09/11): slot có DANH SÁCH giá trị — B11 hỏi bằng câu CỐ ĐỊNH (`IntentSlots.fixed_questions`), không LLM, khi MỌI slot đang
+# thiếu thuộc tập này (LLM chỉ thấy tên khoá thì bịa lựa chọn). Slot tự do (mã máy, đường dẫn, số ngày…) vẫn hỏi bằng LLM.
+FIXED_QUESTION_SLOTS = frozenset({"account_type", "action", "permission_level"})
+MAX_FIXED_SENTENCES = 2
 # M1: dáng mã máy người dùng gõ — chữ/số ASCII (`\d` của Python khớp cả chữ số Unicode). `[A-Za-z]` không có cờ IGNORECASE: chỉ ASCII.
 _DEVICE_LOOSE = re.compile(r"([A-Za-z]{2,4})[- ]?([0-9]{3,5})")
 _DEVICE_IN_TEXT = re.compile(r"(?<!\w)([A-Za-z]{2,4})[- ]?([0-9]{3,5})(?!\w)")  # biên \w Unicode: "cổng 443" không khớp
@@ -81,6 +85,8 @@ class IntentSlots(BaseModel):
     value_rules: dict[str, ValueRule] = Field(default_factory=dict)
     # T20a P4 (Q-T22a-2): slot bắt buộc thêm theo `action` (khoá ∈ action_types, giá trị ⊆ optional).
     required_by_action: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    # Q3 M1: câu hỏi cố định cho slot enum (khoá ⊆ FIXED_QUESTION_SLOTS ∩ slot khai báo, câu không rỗng).
+    fixed_questions: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> "IntentSlots":
@@ -96,7 +102,18 @@ class IntentSlots(BaseModel):
         for action, needed in sorted(self.required_by_action.items()):
             if extra := sorted(set(needed) - set(self.optional)):
                 raise ValueError(f"required_by_action[{action}] ngoài optional: {extra}")
+        if bad := sorted(set(self.fixed_questions) - (FIXED_QUESTION_SLOTS & keys)):
+            raise ValueError(f"fixed_questions cho slot không phải slot danh sách giá trị của intent: {bad}")
+        if empty := sorted(k for k, q in self.fixed_questions.items() if not q.strip()):
+            raise ValueError(f"fixed_questions rỗng: {empty}")
         return self
+
+    def fixed_question(self, missing: Sequence[str]) -> str | None:
+        """Q3 M1: MỌI slot thiếu có câu cố định → ghép tối đa `MAX_FIXED_SENTENCES` câu theo thứ tự thiếu; còn lại (có slot tự do,
+        hoặc không thiếu gì) → None (nhánh LLM)."""
+        if not missing or any(s not in self.fixed_questions for s in missing):
+            return None
+        return " ".join(self.fixed_questions[s] for s in missing[:MAX_FIXED_SENTENCES])
 
     def missing(self, slots: Mapping[str, object]) -> list[str]:
         """T20a P4: slot còn thiếu — `required` rồi (khi đã có `action`) `required_by_action[action]`, theo thứ tự khai báo."""

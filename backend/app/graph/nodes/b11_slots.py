@@ -30,6 +30,9 @@
 
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
+5b. Q3 M1 (ĐP 09/11): MỌI slot đang thiếu thuộc `FIXED_QUESTION_SLOTS` (account_type, action, permission_level) → câu CỐ ĐỊNH của intent
+   (`IntentSlots.fixed_question` — `config/slots.yaml` `fixed_questions`, ghép ≤ 2 câu theo thứ tự thiếu), KHÔNG gọi LLM (`prompt` None) —
+   như bước 5: output guard, `notify_user`, hạn, khoá theo lượt. Còn slot tự do → bước 4 (LLM).
 6. be-b11-khoa-slot: câu LLM viết (chỉ nhánh LLM) qua `domain/slot_text.scrub_slot_keys` TRƯỚC output guard / notify / conversation — bỏ
    "(device_id)"… và thay khoá trơn bằng nhãn tiếng Việt, với MỌI khoá slot của `config/slots.yaml`; rỗng sau khi dọn → câu cố định.
 Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required`, `slot_keys_removed` (số đếm) — không câu
@@ -174,8 +177,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=info, exit_code=ExitCode.E4.value, missing_slots=missing,
                 escalation_reason_detail="clarification_exhausted",
             )  # fmt: skip
+        fixed = deps.slots.intents[state["intent"]].fixed_question(missing)  # Q3 M1: mọi slot thiếu đều là slot enum
         if info["target_required"]:  # L-03: câu CỐ ĐỊNH, không gọi LLM (`prompt` None) — vẫn qua guard/notify/hạn dưới
             q = QuestionOut(text=TARGET_QUESTION)
+        elif fixed is not None:  # Q3 M1: câu cố định từ `config/slots.yaml` — không LLM, vẫn qua guard/notify/hạn như trên
+            q = QuestionOut(text=fixed)
         else:
             summary = diagnostics_summary(state, dict(state.get("facts") or {}))
             try:

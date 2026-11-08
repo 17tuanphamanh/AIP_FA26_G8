@@ -83,7 +83,10 @@ class RecordingGuard:
 async def _ask(llm_text: str, **over: Any) -> tuple[dict[str, Any], Any, RecordingGuard]:
     n = node({"b11_clarify_question": lambda _: Reply({"text": llm_text})})
     guard = RecordingGuard()
-    out = await n.run("b11_slots", b11_slots, b11_state({"action": "reset_password"}, flag=False), output_guard=guard, **over)
+    # Q3 M1: account chỉ thiếu slot enum (`account_type`) nay là câu CỐ ĐỊNH — nhánh LLM (nơi bộ dọn chạy) cần slot TỰ DO đang thiếu:
+    # VPN đã có `action`, thiếu `device_id`.
+    state = {**b11_state({"action": "renew_vpn_cert"}, flag=False), "intent": "vpn"}
+    out = await n.run("b11_slots", b11_slots, state, output_guard=guard, **over)
     assert (out["status"], out["next"]) == (S_CLARIFYING, "clarify_wait"), (out.get("exit_code"), out.get("escalation_reason_detail"))
     return out, n, guard
 
@@ -110,7 +113,7 @@ async def test_node_question_without_key_unchanged() -> None:
 @pytest.mark.asyncio
 async def test_node_empty_after_scrub_sends_fixed_question() -> None:
     out, _, _ = await _ask("(account_type)")
-    assert out["conversation"][-1]["text"] == "Bạn cho mình biết thêm loại tài khoản nhé?"
+    assert out["conversation"][-1]["text"] == "Bạn cho mình biết thêm mã máy nhé?"  # câu dự phòng theo slot thiếu đầu (device_id)
 
 
 @pytest.mark.asyncio
