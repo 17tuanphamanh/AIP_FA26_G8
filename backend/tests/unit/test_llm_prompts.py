@@ -220,11 +220,11 @@ def test_prompt_hash_is_sha256_of_file(registry: PromptRegistry, tmp_path: Path)
 
     prompt = registry.get("b10_answer")
     assert prompt.sha256 == hashlib.sha256((PROMPTS / "b10_answer.yaml").read_bytes()).hexdigest()
-    assert prompt.version == "2"
+    assert prompt.version == "3"  # Q2 M2 (ĐP 09/11): v3 — tối đa 3 bước
 
 
 @pytest.mark.parametrize(("pid", "version", "role", "schema", "allowed"), [
-    ("b10_answer", "2", "strong", "AnswerOut", ("question", "evidence")),
+    ("b10_answer", "3", "strong", "AnswerOut", ("question", "evidence")),  # Q2 M2: v3, hợp đồng giữ nguyên
     ("b10_need_type", "2", "fast", "NeedTypeOut", ("text", "evidence_titles")),
     ("b03_classify", "5", "fast", "ClassifyOut", ("redacted_request", "label_hint")),  # M3: v5 bỏ recent_messages
 ])  # fmt: skip

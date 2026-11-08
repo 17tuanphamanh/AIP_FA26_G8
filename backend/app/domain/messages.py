@@ -338,6 +338,12 @@ OTHER_LABEL: Final = "Yêu cầu khác"
 DIGEST_ITEM_KINDS: Final = ("result", "question", "rejection", "escalation")
 CONFIRMED_TEXT: Final = "Đã ổn"
 UNRESOLVED_TEXT: Final = "Chưa ổn"
+# Q2 M2 (ĐP 09/11): câu kết CỐ ĐỊNH của câu trả lời B10 có bước — sau các bước, trước mục nguồn (`answer.render_answer`). Nhãn nút
+# = nhãn FE (`ChatPage.tsx`); "Chưa ổn" ở `confirm_wait` → E8 (chuyển kỹ thuật viên kèm bàn giao).
+ANSWER_CLOSING: Final = (
+    f'Bạn thử lần lượt rồi báo mình nhé: chọn "{CONFIRMED_TEXT}" nếu đã được, "{UNRESOLVED_TEXT}" nếu vẫn lỗi để mình chuyển '
+    "kỹ thuật viên kèm thông tin đã kiểm tra."
+)
 
 
 @dataclass(frozen=True)

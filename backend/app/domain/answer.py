@@ -7,20 +7,31 @@
    Ca rỗng không tới được qua LLM (validator `AnswerOut` → `LLMSchemaError` → E2) — kiểm ở đây cho đủ (Q-3g-2).
 3. Còn lại → `"ok"`.
 
-`render_answer` theo mẫu (không LLM): câu mở đầu theo fact nếu có (Q2 M1); phần trả lời; nếu có `steps` → danh sách đánh số; cuối cùng "Nguồn:" liệt kê
-`title › heading_path` của các chunk được trích (không trùng, theo thứ tự trích).
+`render_answer` theo mẫu (không LLM): câu mở đầu theo fact nếu có (Q2 M1); phần trả lời; nếu có `steps` → danh sách đánh số
+rồi câu kết cố định `messages.ANSWER_CLOSING` (Q2 M2); cuối cùng "Nguồn:" liệt kê `title › heading_path` của các chunk được trích
+(không trùng, theo thứ tự trích).
+
+`cap_steps` (Q2 M2): bỏ bước rỗng, giữ tối đa `MAX_ANSWER_STEPS` bước đầu (prompt `b10_answer` v3 xếp bước khả năng cao nhất
+lên đầu); trả kèm cờ đã cắt (B10 ghi audit `steps_truncated`).
 """
 
 from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
 from typing import Literal
 
+from app.domain.messages import ANSWER_CLOSING
 from app.domain.ticket_state import ChunkRef
 
 type CitationVerdict = Literal["ok", "no_grounding", "invalid_citation"]
 
 SOURCES_HEADER = "Nguồn:"
 PATH_SEP = " › "
+MAX_ANSWER_STEPS = 3  # Q2 M2 (ĐP 09/11): câu trả lời B10 tối đa 3 bước
+
+
+def cap_steps(steps: Sequence[str] | None) -> tuple[list[str], bool]:
+    kept = [s for s in steps or () if s.strip()]
+    return kept[:MAX_ANSWER_STEPS], len(kept) > MAX_ANSWER_STEPS
 
 
 def check_citations(citations: Sequence[str], *, cannot_answer: bool, anchors: AbstractSet[str]) -> CitationVerdict:
@@ -43,6 +54,7 @@ def render_answer(
     numbered = [s.strip() for s in steps or () if s.strip()]
     if numbered:
         parts.append("\n".join(f"{i}. {s}" for i, s in enumerate(numbered, 1)))
+        parts.append(ANSWER_CLOSING)
     sources = list(dict.fromkeys(f"{c.title}{PATH_SEP}{c.heading_path}" for c in cited))
     if sources:
         parts.append(SOURCES_HEADER + "\n" + "\n".join(f"- {s}" for s in sources))

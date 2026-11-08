@@ -14,7 +14,7 @@
 4. Hậu kiểm bằng CODE (`domain.answer.check_citations`): `cannot_answer` → E3 `no_grounding` (Q-3g-1); trích dẫn ngoài
    anchor → E3 `invalid_citation`. Anchor = `chunk_id` top-5 ∩ anchor của khối THẬT SỰ gửi LLM — không bao giờ là chunk
    liền kề (chúng chỉ là ngữ cảnh đọc thêm).
-5. `render_answer` theo mẫu (không LLM) → output guard (P4) → vi phạm → E3 `output_guard_block`, 0 tin gửi đi.
+5. Q2 M2: `cap_steps` giữ tối đa 3 bước (audit `steps_truncated`); `render_answer` theo mẫu (không LLM, câu kết cố định sau các bước) → output guard (P4) → vi phạm → E3 `output_guard_block`, 0 tin gửi đi.
 6. `notify_user` (needs=confirm) + hạn `confirm` 48 h, đều qua `effects.once` (chạy lại node / resume `confirm_wait` không gửi
    lại — D-18); `lineage` (prompt, model, `kb_version`) ghi CÙNG transaction với audit của `goto` (Q-3g-3) → `S_CONFIRMING`.
 
@@ -33,7 +33,7 @@ from datetime import timedelta
 from typing import Any
 
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.answer import check_citations, render_answer
+from app.domain.answer import cap_steps, check_citations, render_answer
 from app.domain.exit_codes import ExitCode
 from app.domain.messages import answer_msg, symptom_intro
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_RETRIEVING
@@ -52,7 +52,7 @@ def _info() -> dict[str, Any]:
     return {
         "need_type": None, "prompt": None, "llm_error": None, "rag_error": None, "evidence_blocks": None,
         "trimmed_evidence": None, "evidence_truncated": False, "citation": None, "cited": [], "guard": None,
-        "grounding": None, "symptom_to_info": False,
+        "grounding": None, "symptom_to_info": False, "steps_truncated": False,
     }  # fmt: skip
 
 
@@ -181,7 +181,8 @@ def make(deps: NodeDeps) -> NodeFn:
         cited = [by_id[i] for i in dict.fromkeys(ans.citations)]
         info["cited"] = [c.chunk_id for c in cited]
         intro = symptom_intro((state.get("slots") or {}).get("device_id"), state.get("facts") or {}) if symptom else None
-        body = render_answer(ans.answer_markdown, ans.steps, cited, intro=intro)
+        steps, info["steps_truncated"] = cap_steps(ans.steps)  # Q2 M2: tối đa 3 bước, bước LLM xếp đầu được giữ
+        body = render_answer(ans.answer_markdown, steps, cited, intro=intro)
         info["guard"] = deps.output_guard.violation(body)
         if info["guard"] is not None:  # P4: chữ LLM có bí mật / canary / đoạn prompt hệ thống → không gửi, không lưu
             return await goto(
