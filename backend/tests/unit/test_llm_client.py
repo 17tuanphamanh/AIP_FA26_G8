@@ -499,7 +499,8 @@ async def test_d8_script_exhausted_is_not_llm_unavailable() -> None:
         await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut, cache_policy="bypass")
     with pytest.raises(ScriptExhausted, match="không có kịch bản"):
         await gw.client.complete("fast", "b11_clarify_question",
-                                 {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn"}, QuestionOut)
+                                 {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
+                                  "previous_reply": "none"}, QuestionOut)
     assert len(gw.llm.calls) == 3  # không retry ScriptExhausted
     assert [r.error for r in gw.store.rows] == [None, "ScriptExhausted", "ScriptExhausted"]
 

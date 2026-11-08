@@ -244,7 +244,9 @@ async def test_h7_tc16_no_kb_e3_no_grounding_template(stack: Stack) -> None:
     assert (v["final_state"], v["exit_code"]) == (S_ESCALATED, "E3")
     assert (await escalation(p.rw, t))[1] == "no_grounding"
     [msg] = _msgs(v, "escalation")
-    assert msg["text"] == _user_message("E3") and msg["text"].startswith("Mình chưa có thông tin về việc này")
+    assert msg["text"] == _user_message("E3")
+    assert msg["text"].startswith("Mình là trợ lý IT, hiện hỗ trợ: ")  # P6 lời nói: phạm vi trước, rồi mới báo đã chuyển
+    assert "Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên." in msg["text"]
     assert _msgs(v, "answer") == []
     assert await calls(stack.mock) == 0
 

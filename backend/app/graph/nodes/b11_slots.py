@@ -19,8 +19,9 @@
    `no_procedure` (kèm `intended_action` để L2 thấy hành động dự kiến); `RetrievalSystemError` → E2 `rag_system_error`.
    Có → `S_ASSESSING`; audit `procedure_doc` + `procedure_kb_version`.
 3. Đã hỏi đủ `MAX_CLARIFICATION_TURNS` lượt mà vẫn thiếu → E4 `clarification_exhausted`.
-4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` (`diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4)
-   → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
+4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` v2 (`diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4;
+   `previous_reply` ∈ none/usable/unusable — ĐP 08/11 P6: chỉ chào lượt đầu, trả lời trước không dùng được thì "Mình chưa rõ ý
+   bạn,", tối đa 2 câu) → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
    `effects.once`, khoá RIÊNG từng lượt hỏi (`sub=f"q{n}"`, P5) → `S_CLARIFYING`.
 5. be-target-guard (L-03): intent ∈ {account, access}, `ctx_flags.target_is_other` bật mà CHƯA có `target_user` → `missing =
    ["target_user", *missing]` (`target_required`). Câu hỏi CỐ ĐỊNH `domain/target.TARGET_QUESTION` — KHÔNG gọi LLM (`prompt` None),
@@ -84,6 +85,15 @@ def diagnostics_summary(state: Any, facts: dict[str, Any]) -> dict[str, Any]:
     requester = state["requester_context"].user_id
     devices = (state.get("diagnostics") or {}).get("check_device_registered") or []
     return {"facts": dict(facts), "devices": [d["device_id"] for d in devices if d.get("owner_id") == requester]}
+
+
+def previous_reply(state: Any, turns: int) -> str:
+    """Biến `previous_reply` của `b11_clarify_question` v2 — enum do node tính, LLM không thấy câu người dùng:
+    `none` = câu hỏi đầu tiên (chưa hỏi lượt nào); `unusable` = câu trả lời trước không cho slot sạch nào hoặc lạc đề
+    (`off_topic_streak` ≥ 1, đặt ở `clarify_wait`); còn lại `usable`."""
+    if turns <= 0:
+        return "none"
+    return "unusable" if int(state.get("off_topic_streak") or 0) >= 1 else "usable"
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -171,7 +181,8 @@ def make(deps: NodeDeps) -> NodeFn:
             try:
                 q, meta = await deps.llm.complete(
                     "fast", "b11_clarify_question",
-                    {"missing": missing[:2], "intent": state["intent"], "diagnostics_summary": summary}, QuestionOut,
+                    {"missing": missing[:2], "intent": state["intent"], "diagnostics_summary": summary,
+                     "previous_reply": previous_reply(state, turns)}, QuestionOut,
                 )  # fmt: skip
             except LLMSchemaError as exc:
                 info["llm_error"] = type(exc).__name__

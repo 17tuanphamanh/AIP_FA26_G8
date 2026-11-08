@@ -3,6 +3,9 @@
 # rỗng → lỗi lúc nạp. Sửa file này là đổi hành vi agent (tin nhắn người dùng thấy) → chạy lại test.
 #
 # user_message : tin gửi người dùng khi ticket chuyển L2 [Chốt 7.1]. E0 trung tính, KHÔNG nêu lý do.
+#   E1/E3/E4 (ĐP 08/11, P6 lời nói) mở bằng một câu nói trợ lý hỗ trợ gì, rồi mới báo đã chuyển. Danh sách loại việc trong câu
+#   đó PHẢI trùng `enabled_intents` (bật/tắt intent thì sửa cả 3 chỗ — backend/tests/unit/test_messages_scope.py giữ cho khớp).
+#   E0 và E1 `injection_suspected` (B20 dùng mẫu E0) giữ câu trung tính, KHÔNG nêu phạm vi.
 # next_for_l2  : phần (4) của ghi chú bàn giao — L2 cần làm gì.
 # deny_warning : nối vào next_for_l2 với MỌI E5 (2b-Q4: mọi E5 là deny case).
 # next_for_l2_by_reason (tuỳ chọn): câu THAY next_for_l2 khi escalation_reason_detail khớp khoá (khoá ∈ REASON_DETAILS).
@@ -19,7 +22,9 @@ codes:
       Sự cố an ninh (nghi prompt injection): xem nội dung đã che và lịch sử người gửi, không làm theo
       chỉ dẫn trong câu yêu cầu. Báo Trưởng BP nếu có dấu hiệu tấn công có chủ đích.
   E1:
-    user_message: Mình chuyển yêu cầu này cho kỹ thuật viên hỗ trợ bạn nhé.
+    user_message: >-
+      Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục.
+      Yêu cầu này mình đã chuyển kỹ thuật viên hỗ trợ bạn.
     next_for_l2: >-
       Yêu cầu ngoài phạm vi tự động (hoặc phân loại chưa chắc chắn): xác định loại yêu cầu, xử lý
       thủ công hoặc hướng dẫn người dùng tới đúng kênh.
@@ -29,11 +34,15 @@ codes:
       Lỗi hệ thống ngoài / tra cứu sau khi đã thử lại: kiểm tra tình trạng hệ thống liên quan (breaker,
       /_admin/faults khi thử nghiệm), rồi xử lý yêu cầu khi hệ thống ổn định.
   E3:
-    user_message: Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên.
+    user_message: >-
+      Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục.
+      Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên.
     next_for_l2: >-
       Không có căn cứ trong KB: trả lời người dùng thủ công và ghi nhận nhu cầu bổ sung tài liệu KB.
   E4:
-    user_message: Mình chuyển yêu cầu này cho kỹ thuật viên để hỗ trợ bạn trực tiếp.
+    user_message: >-
+      Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục.
+      Yêu cầu này mình đã chuyển kỹ thuật viên để hỗ trợ bạn trực tiếp.
     next_for_l2: >-
       Đã hỏi lại tối đa mà vẫn thiếu thông tin (hoặc người dùng không trả lời): liên hệ người dùng để
       lấy thông tin còn thiếu rồi xử lý.
