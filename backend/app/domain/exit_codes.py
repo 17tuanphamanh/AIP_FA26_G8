@@ -82,6 +82,8 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "approver_no_longer_valid",
     # Phase 6 6C (P3, Q-6C-2): B12 — lớp LLM của M5 định tuyến chuyển L2 (E5); lỗi estimator vẫn là `llm_layer_disabled`
     "llm_high_risk",
+    # M2 (ĐP 08/11): B12 — luật `deny` khớp → E5 (trước: không ghi lý do); tách khỏi lỗi lớp AI (`llm_layer_disabled`). Không đổi route/mã
+    "policy_deny",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",

@@ -7,7 +7,8 @@ Input DUY NHẤT của M5: `intended_action` + `build_ctx(state, now, business_h
 - Chiến lược (D-67) = giá trị CHỤP trên ticket lúc tạo (`deps.tickets.strategy_of`; ticket con kế thừa từ cha; NULL → `hybrid`;
   giá trị ngoài tập cho phép của chế độ — vận hành: `RUNTIME_SELECTABLE`, EVAL_MODE: `STRATEGIES` — → `hybrid` + log cảnh báo, KHÔNG
   chạy chiến lược lạ): `needs_rules` → `evaluate`; `needs_llm` → B14. Quyết định CHỈ qua `risk.strategy.decide` (bảng 5.3).
-- Luật khớp (hybrid) → không gọi estimator/LLM (h18): `allow` → `S_EXECUTING`/B17; `approval_required` → B15; `deny` → E5.
+- Luật khớp (hybrid) → không gọi estimator/LLM (h18): `allow` → `S_EXECUTING`/B17; `approval_required` → B15; `deny` → E5 `policy_deny`
+  (M2, ĐP 08/11 — tách khỏi lỗi lớp AI `llm_layer_disabled`; route, mã thoát không đổi).
 - Không luật nào khớp → B14 `deps.estimator` — trích đoạn KB CHỈ qua `evidence_for_estimator` (Phase 4 S0-P9). Lỗi estimator
   (`LLMUnavailable`, `LLMSchemaError`, `LLMBudgetExceeded`) → E5 `llm_layer_disabled` "Không ước lượng được rủi ro → không tự làm".
   Có ước lượng → `kb_gap` trên phần bằng chứng THỰC gửi (Q-6C-4: ≤ `MAX_EVIDENCE` khối, trừ khối gateway cắt) → `decide`
@@ -169,9 +170,10 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=detail, lineage=lineage, risk=decision, exit_code=ExitCode.E5.value,
                 escalation_reason_detail="llm_high_risk",
             )  # fmt: skip
-        return await goto(
+        return await goto(  # luật `deny` (M2: lý do riêng, khác lỗi estimator `llm_layer_disabled`)
             state, S_ESCALATED, next_node="b20_audit", step="B13/B14", event="risk_decided",
             audit_detail=detail, lineage=lineage, risk=decision, exit_code=ExitCode.E5.value,
+            escalation_reason_detail="policy_deny",
         )  # fmt: skip
 
     return b12_assess
