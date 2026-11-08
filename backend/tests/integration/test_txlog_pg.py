@@ -24,7 +24,8 @@ from app.executor.errors import ExecutionInterrupted
 from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
 from app.settings import get_action_metadata, get_policy
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.fakes.executor import FakeVpnWrites
 from tests.integration.graph_pg import APPROVER, REQUESTER, SESSION, scalar, seed_users
@@ -126,3 +127,24 @@ async def test_get_status_reads_table(rw: AsyncEngine) -> None:
     assert await store.get_status(aid) == "approved"
     assert await store.get_status("999999999") is None
     assert await store.get_status("khong-phai-so") is None
+
+
+# ---- S1 (bn-a, migration 0015): transaction_log append-only — test viết trước, đỏ tới khi có 0015 -------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason="CHỜ migration 0015 (S1)")
+async def test_s1_txlog_rows_cannot_be_updated_deleted_or_truncated_by_app_rw(rw: AsyncEngine) -> None:
+    """Bằng chứng "có thể đã ghi" (`begun`) không sửa/xoá được — kể cả bằng role của app. Mỗi câu một transaction riêng."""
+    ticket = await _ticket(rw)
+    log = SqlTxLog(rw, FakeClock(NOW))
+    await log.begin(ticket, "T1", "renew_vpn_cert")
+    for sql in (
+        "UPDATE transaction_log SET status = 'undone' WHERE ticket_id = :t",
+        "DELETE FROM transaction_log WHERE ticket_id = :t",
+        "TRUNCATE transaction_log",
+    ):
+        with pytest.raises(DBAPIError):
+            async with rw.begin() as conn:
+                await conn.execute(text(sql), {"t": ticket})
+    assert await log.has_begun(ticket)
+    await log.undone(ticket, "T1", "renew_vpn_cert")  # đường ghi thật (INSERT) vẫn chạy
