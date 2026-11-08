@@ -164,6 +164,7 @@ export const SU_KIEN: Readonly<Record<string, string>> = {
   user_confirmed: "Người dùng xác nhận đã ổn",
   user_reported_unresolved: "Người dùng báo chưa giải quyết",
   closed: "Đã ghi nhận và kết thúc",
+  escalation_closed: "Kỹ thuật viên đóng ca",
   max_loops_exceeded: "Vượt số vòng xử lý",
   turn_budget_exceeded: "Hết thời gian cho lượt xử lý",
   recursion_limit: "Vượt giới hạn xử lý",

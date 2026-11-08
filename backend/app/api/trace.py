@@ -8,6 +8,7 @@ Danh sách TRẮNG (`build_trace`, hàm thuần): mỗi bước chỉ `step`, `e
 `detail` đã biết tên. Không bao giờ trả `redacted_request`, `query`, `note`, `reason`, prompt, tham số hành động, traceback hay
 `detail` thô. Mọi chuỗi lấy từ audit phải là định danh (`_IDENT`) — chuỗi lạ (câu chữ) bị bỏ, không cắt bớt. Xác suất làm tròn 2 số;
 ngoài [0, 1] hoặc không phải số → bỏ. Trường thiếu → None / rỗng, không lỗi.
+Chữ tự do DUY NHẤT được trả là `close_note` của dòng đóng ca (B20, bên dưới) — lấy từ bảng `escalations` (bản đã che), KHÔNG từ audit.
 - B2: lớp chặn (`regex` | `model` | `llm`), `p_injection` (L3), `decision` (theo `event`).
 - B3/B4/B5: intent + confidence của LLM, `model_probs` (nhãn → p), `model_version`, `is_multi`.
 - B6/B7: tên khoá `facts` (không giá trị).
@@ -18,9 +19,13 @@ ngoài [0, 1] hoặc không phải số → bỏ. Trường thiếu → None / r
   mọi trường khác luôn được gán tường minh nên không bị bỏ).
 - B15/B16: phiếu duyệt — người duyệt (id + họ tên từ `users`), kết quả, thời điểm (bảng `approvals`).
 - B17/B18: loại hành động (`intended_action.type` — SQL chỉ chọn khoá này), kết quả từng lời gọi ghi, trạng thái hoàn tác.
-- B20: `route` (= `resolution_path`), `exit_code`. Dòng `escalation_closed` (L2 đóng ca, `db/escalations.close_audit_row`) thêm
-  `close_result` ∈ {completed, confirmed_denial, reopened_as_new} lấy từ `detail.close_result` (giá trị lạ → null); KHÔNG `closed_by`,
-  ghi chú hay độ dài ghi chú. Dòng B20 khác không gán khoá này → route bỏ khoá (`response_model_exclude_unset`).
+- B20: `route` (= `resolution_path`), `exit_code`. Dòng `escalation_closed` (L2 đóng ca, `db/escalations.close_audit_row`) thêm:
+  `close_result` ∈ {completed, confirmed_denial, reopened_as_new} lấy từ `detail.close_result` (giá trị lạ → null) và `close_note` =
+  cột `escalations.close_note` của ca có `escalation_id` = `detail.escalation_id` — bản ĐÃ che lúc đóng ca (privacy guard ở route
+  `/close`), 1–1000 ký tự; thiếu / rỗng / không phải chuỗi / dài quá 1000 → null (KHÔNG cắt: cắt ngang có thể vỡ mặt nạ).
+  `SqlTraceSource` chỉ SELECT bảng `escalations` khi ticket có dòng đóng ca. KHÔNG lấy ghi chú từ `audit_logs` (cột `note`, `detail`);
+  KHÔNG `closed_by`, KHÔNG độ dài ghi chú. Quyền xem trace không đổi (L1, L2, manager). Dòng B20 khác không gán hai khoá này →
+  route bỏ khoá (`response_model_exclude_unset`).
 Ticket cha (`is_parent`): kèm danh sách con (id, intent, exit_code).
 """
 
@@ -37,11 +42,12 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.api.alerts import ErrorDetail
+from app.api.escalations import NOTE_MAX as CLOSE_NOTE_MAX
 from app.api.matched_rules import MatchedRule, RuleRef, matched_rules, rule_index
 from app.auth.authz import can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
-from app.db.escalations import CLOSE_EVENT
+from app.db.escalations import CLOSE_EVENT, CLOSE_STEP
 from app.domain.escalation_close import CLOSE_RESULT_VALUES, CloseResult
 
 router = APIRouter()
@@ -86,6 +92,8 @@ class TraceData:
     children: Sequence[Mapping[str, Any]] = ()  # ticket_id, intent, exit_code
     kb_titles: Mapping[tuple[str, int], str] = field(default_factory=dict)
     names: Mapping[str, str] = field(default_factory=dict)  # user_id → họ tên
+    # escalation_id → `escalations.close_note` (bản ĐÃ che lúc đóng ca) của ticket; chỉ nạp khi ticket có dòng audit đóng ca.
+    close_notes: Mapping[int, str] = field(default_factory=dict)
 
 
 class TraceSource(Protocol):
@@ -127,6 +135,8 @@ _TITLES = text(
     "SELECT doc_id, version, title FROM kb_documents WHERE (doc_id || '#' || version::text) IN :keys"
 ).bindparams(bindparam("keys", expanding=True))
 _NAMES = text("SELECT user_id, full_name FROM users WHERE user_id IN :ids").bindparams(bindparam("ids", expanding=True))
+# Ghi chú đóng ca: cột `escalations.close_note` (bản đã che, CHECK 1–1000) — KHÔNG đọc `audit_logs.note` / `detail`.
+_CLOSE_NOTES = text("SELECT escalation_id, close_note FROM escalations WHERE ticket_id = :tid AND close_note IS NOT NULL")
 
 
 class SqlTraceSource:
@@ -158,7 +168,11 @@ class SqlTraceSource:
                     for r in (await conn.execute(_NAMES, {"ids": ids})).mappings():
                         if r["full_name"]:
                             names[r["user_id"]] = r["full_name"]
-        return TraceData(ticket, audit, approvals, children, titles, names)
+                close_notes: dict[int, str] = {}
+                if any(r.get("step") == CLOSE_STEP and r.get("event") == CLOSE_EVENT for r in audit):
+                    for r in (await conn.execute(_CLOSE_NOTES, tid)).mappings():
+                        close_notes[r["escalation_id"]] = r["close_note"]
+        return TraceData(ticket, audit, approvals, children, titles, names, close_notes)
 
 
 def _people(audit: Iterable[Mapping[str, Any]], approvals: Iterable[Mapping[str, Any]]) -> set[str]:
@@ -238,6 +252,7 @@ class OutcomeInfo(_Strict):
     route: str | None
     exit_code: str | None
     close_result: CloseResult | None = None  # chỉ gán ở dòng `escalation_closed`; không gán → route bỏ khoá
+    close_note: str | None = None  # như trên; = `escalations.close_note` (bản ĐÃ che), không từ audit; không dùng được → null
 
 
 class TraceStep(_Strict):
@@ -377,13 +392,26 @@ def _action_type(row: Mapping[str, Any]) -> str | None:
 _CLOSE_RESULTS: dict[str, CloseResult] = {v: v for v in CLOSE_RESULT_VALUES}
 
 
-def _outcome(row: Mapping[str, Any], event: str) -> OutcomeInfo:
+def _close_note(detail: Mapping[str, Any], notes: Mapping[int, str]) -> str | None:
+    """Ghi chú của ca `detail.escalation_id` trong `notes` (cột `escalations`). Id phải là số nguyên thật (không bool, không chuỗi);
+    ghi chú không phải chuỗi / chỉ khoảng trắng / dài quá `CLOSE_NOTE_MAX` → None — nguyên văn hoặc không có gì, không cắt."""
+    escalation_id = detail.get("escalation_id")
+    if isinstance(escalation_id, bool) or not isinstance(escalation_id, int):
+        return None
+    note = notes.get(escalation_id)
+    return note if isinstance(note, str) and note.strip() and len(note) <= CLOSE_NOTE_MAX else None
+
+
+def _outcome(row: Mapping[str, Any], event: str, close_notes: Mapping[int, str]) -> OutcomeInfo:
     d = _detail(row)
     route, exit_code = _ident(d.get("resolution_path")), _ident(row.get("exit_code"))
     if event != CLOSE_EVENT:
         return OutcomeInfo(route=route, exit_code=exit_code)
     raw = d.get("close_result")
-    return OutcomeInfo(route=route, exit_code=exit_code, close_result=_CLOSE_RESULTS.get(raw) if isinstance(raw, str) else None)
+    return OutcomeInfo(
+        route=route, exit_code=exit_code, close_result=_CLOSE_RESULTS.get(raw) if isinstance(raw, str) else None,
+        close_note=_close_note(d, close_notes),
+    )  # fmt: skip
 
 
 _EMPTY: dict[str, None] = dict.fromkeys(
@@ -420,7 +448,7 @@ def build_trace(data: TraceData, rules: Mapping[str, RuleRef] | None = None) -> 
         elif step in _EXECUTE_STEPS:
             extra["execution"] = _execution(row, action)
         elif step == "B20":
-            extra["outcome"] = _outcome(row, event)
+            extra["outcome"] = _outcome(row, event, data.close_notes)
         steps.append(TraceStep(
             step=_ident(step) or "?", event=_ident(event) or "?", at=row["created_at"], **{**_EMPTY, **extra},
         ))  # fmt: skip

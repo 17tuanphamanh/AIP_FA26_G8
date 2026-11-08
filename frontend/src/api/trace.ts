@@ -96,9 +96,10 @@ const execution = shape({
   calls: listOf(shape({ name: str, result: oneOf("ok", "failed") })),
 });
 // Lô N (N7): `close_result` TUỲ CHỌN — chỉ dòng B20 `escalation_closed` có (route bỏ khoá ở dòng B20 khác); có thì null hoặc 1 trong 3.
+// QS05b: `close_note` TUỲ CHỌN như vậy — ghi chú đóng ca của L2 (cột `escalations.close_note`, bản đã che); có thì chuỗi hoặc null.
 const outcome = shape(
   { route: nullable(str), exit_code: nullable(str) },
-  { close_result: nullable(oneOf("completed", "confirmed_denial", "reopened_as_new")) },
+  { close_result: nullable(oneOf("completed", "confirmed_denial", "reopened_as_new")), close_note: nullable(str) },
 );
 const step = shape({
   step: str,

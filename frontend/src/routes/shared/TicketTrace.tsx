@@ -8,6 +8,7 @@ import { approvalQuery } from "../../api/approvals.ts";
 import { loadedItems, queueQuery } from "../../api/escalations.ts";
 import { TRACE_TICKET_ID, traceQuery, tracePath, type TicketTrace as Trace, type TraceStep } from "../../api/trace.ts";
 import {
+  closeNoteLine,
   formatAt,
   formatProb,
   policyProbs,
@@ -134,6 +135,7 @@ function StepCard({ step: s }: { step: TraceStep }) {
   const layer = s.screen ? screenLayer(s.screen) : null;
   const probs = s.policy ? policyProbs(s.policy) : null;
   const rollback = s.execution ? rollbackText(s.execution) : null;
+  const closeNote = s.outcome ? closeNoteLine(s.outcome) : null;
   return (
     <li data-testid="trace-step" data-step={s.step} className="flex flex-col gap-1 rounded-group border border-line px-5 py-4">
       <div className="flex items-baseline gap-3">
@@ -205,6 +207,12 @@ function StepCard({ step: s }: { step: TraceStep }) {
         <div className="pt-2">
           <MatchedRules rules={s.policy.matched_rules} headingLevel={3} />
         </div>
+      ) : null}
+      {closeNote ? (
+        // Ghi chú đóng ca của L2 (chữ tự do, đã che ở backend): hiện thô như chữ, xuống dòng khi quá dài.
+        <p data-testid="trace-close-note" className="text-secondary text-ink-2 min-w-0 break-words whitespace-pre-line">
+          {closeNote}
+        </p>
       ) : null}
     </li>
   );

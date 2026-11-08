@@ -364,23 +364,23 @@ def _closed_row(close_result: Any) -> dict[str, Any]:
 def test_n7_escalation_closed_has_close_result(result: str) -> None:
     outcome = build_trace(TraceData(TicketHead("T", "u", None, False), [_closed_row(result)]), {}).steps[0].outcome
     assert outcome is not None
-    assert outcome.model_dump(exclude_unset=True) == {"route": None, "exit_code": None, "close_result": result}
+    assert outcome.model_dump(exclude_unset=True) == {"route": None, "exit_code": None, "close_result": result, "close_note": None}
 
 
 @pytest.mark.parametrize("bad", ["closed_ok", "", 1, None, ["completed"], f"{CANARY} completed"])
 def test_n7_escalation_closed_unknown_value_is_null(bad: Any) -> None:
     outcome = build_trace(TraceData(TicketHead("T", "u", None, False), [_closed_row(bad)]), {}).steps[0].outcome
     assert outcome is not None
-    assert outcome.model_dump(exclude_unset=True) == {"route": None, "exit_code": None, "close_result": None}
+    assert outcome.model_dump(exclude_unset=True) == {"route": None, "exit_code": None, "close_result": None, "close_note": None}
 
 
 def test_n7_escalation_closed_route_no_closed_by(env: AuthEnv, source: FakeTrace) -> None:
-    """Qua route: khoá `close_result` có mặt; KHÔNG `closed_by`, `note_length`, `escalation_id`."""
+    """Qua route: khoá `close_result` có mặt (`close_note` null khi `escalations` không có ghi chú); KHÔNG `closed_by`, `note_length`, `escalation_id`."""
     source.items["C-1"] = TraceData(TicketHead("C-1", "nv001", None, False), [_closed_row("confirmed_denial")])
     r = _get(env, "C-1", env.manager_token())
     assert r.status_code == 200, r.text
     step = r.json()["steps"][0]
-    assert step["outcome"] == {"route": None, "exit_code": None, "close_result": "confirmed_denial"}
+    assert step["outcome"] == {"route": None, "exit_code": None, "close_result": "confirmed_denial", "close_note": None}
     assert "long.nh" not in str(step) and "note_length" not in str(step) and "escalation_id" not in str(step)
 
 
@@ -390,3 +390,108 @@ def test_n7_plain_b20_unchanged() -> None:
     outcome = build_trace(TraceData(TicketHead("T", "u", None, False), [row]), {}).steps[0].outcome
     assert outcome is not None
     assert outcome.model_dump(exclude_unset=True) == {"route": "escalated", "exit_code": "E5"}
+
+
+# ---- QS05b: dòng B20 `escalation_closed` kèm `close_note` (cột `escalations.close_note`, bản ĐÃ che lúc đóng ca) ----------------
+# Nguồn là bảng `escalations` (TraceData.close_notes: escalation_id → ghi chú), khớp theo `detail.escalation_id` của dòng audit —
+# KHÔNG đọc `audit_logs` (cột `note`, `detail`), KHÔNG `closed_by`, KHÔNG độ dài ghi chú.
+
+NOTE = "Đã gọi lại người dùng, xác nhận tài khoản đã mở khoá. Số điện thoại: [SĐT_ĐÃ_ẨN]"
+
+
+def _closed_at(i: int, escalation_id: Any, close_result: str = "completed", **detail: Any) -> dict[str, Any]:
+    return _row(i, "B20", "escalation_closed", exit_code=None, detail={
+        "escalation_id": escalation_id, "close_result": close_result, "closed_by": "long.nh", "note_length": 42, **detail,
+    })  # fmt: skip
+
+
+def _outcomes(rows: list[dict[str, Any]], close_notes: dict[int, Any]) -> list[dict[str, Any]]:
+    out = build_trace(TraceData(TicketHead("T", "u", None, False), rows, close_notes=close_notes), {})
+    return [s.outcome.model_dump(exclude_unset=True) for s in out.steps if s.outcome is not None]
+
+
+def test_qs05b_close_note_comes_from_escalations_table() -> None:
+    assert _outcomes([_closed_at(1, 7)], {7: NOTE}) == [
+        {"route": None, "exit_code": None, "close_result": "completed", "close_note": NOTE},
+    ]
+
+
+def test_qs05b_close_note_matched_by_escalation_id() -> None:
+    """Một ticket có thể có nhiều ca đã đóng (mở lại thành ticket mới / nhiều dòng): mỗi dòng audit nhận đúng ghi chú của ca nó."""
+    rows = [_closed_at(1, 7), _closed_at(2, 9, "confirmed_denial"), _closed_at(3, 11)]
+    got = _outcomes(rows, {7: "ghi chú ca 7", 9: "ghi chú ca 9", 8: "ghi chú ca 8, không dòng audit nào trỏ tới"})
+    assert [(o["close_result"], o["close_note"]) for o in got] == [
+        ("completed", "ghi chú ca 7"), ("confirmed_denial", "ghi chú ca 9"), ("completed", None),
+    ]  # ca 11 không có ghi chú trong bảng → khoá có mặt, giá trị null
+
+
+def test_qs05b_audit_text_is_never_the_source() -> None:
+    """Chữ nằm trong `audit_logs` (cột `note`, `detail.note`/`close_note`/`text`) KHÔNG được dùng thay cho cột của `escalations`."""
+    row = _closed_at(1, 7, note=CANARY, close_note=CANARY, text=CANARY)
+    row["note"] = CANARY
+    out = build_trace(TraceData(TicketHead("T", "u", None, False), [row], close_notes={}), {})
+    assert out.steps[0].outcome is not None and out.steps[0].outcome.close_note is None
+    assert CANARY not in out.model_dump_json()
+    out = build_trace(TraceData(TicketHead("T", "u", None, False), [row], close_notes={7: NOTE}), {})
+    assert out.steps[0].outcome is not None and out.steps[0].outcome.close_note == NOTE
+    assert CANARY not in out.model_dump_json()
+
+
+@pytest.mark.parametrize("bad_id", [None, "7", 7.0, True, [7], {"id": 7}, "abc"])
+def test_qs05b_bad_escalation_id_gives_null_note(bad_id: Any) -> None:
+    """`escalation_id` phải là số nguyên thật (không chuỗi, không bool — `True == 1` không được khớp ca 1)."""
+    got = _outcomes([_closed_at(1, bad_id)], {1: NOTE, 7: NOTE})
+    assert got == [{"route": None, "exit_code": None, "close_result": "completed", "close_note": None}]
+
+
+@pytest.mark.parametrize("bad", [None, "", "   ", "\n\t ", 5, ["x"], {"a": 1}, "x" * 1001])
+def test_qs05b_unusable_note_is_null(bad: Any) -> None:
+    """Rỗng / chỉ khoảng trắng / không phải chuỗi / dài quá CHECK 1000 của cột → null, KHÔNG cắt (cắt ngang có thể vỡ mặt nạ)."""
+    assert _outcomes([_closed_at(1, 7)], {7: bad})[0]["close_note"] is None
+
+
+def test_qs05b_note_of_exactly_1000_chars_is_kept_verbatim() -> None:
+    note = "ă" * 1000
+    assert _outcomes([_closed_at(1, 7)], {7: note})[0]["close_note"] == note
+
+
+def test_qs05b_plain_b20_has_no_close_note_key() -> None:
+    """Dòng B20 khác (`ticket_closed`, kể cả mang `detail.escalation_id`) không gán khoá → route bỏ khoá; `close_notes` bị lờ."""
+    plain = _row(1, "B20", "ticket_closed", exit_code="E5", detail={"resolution_path": "escalated", "escalation_id": 7})
+    got = _outcomes([plain], {7: NOTE})
+    assert got == [{"route": "escalated", "exit_code": "E5"}]
+    assert "close_note" not in got[0] and "close_result" not in got[0]
+    other = _row(2, "B16", "approved", approval_result="approved", detail={"escalation_id": 7})
+    assert build_trace(TraceData(TicketHead("T", "u", None, False), [other], close_notes={7: NOTE}), {}).steps[0].outcome is None
+
+
+def test_qs05b_route_returns_close_note_and_no_other_keys(env: AuthEnv, source: FakeTrace) -> None:
+    """Qua route: `close_note` có mặt ở dòng đóng ca; dòng B20 thường KHÔNG có khoá; vẫn không `closed_by`/`note_length`/`escalation_id`."""
+    rows = [_row(1, "B20", "ticket_closed", exit_code="E5", detail={"resolution_path": "escalated"}), _closed_at(2, 7)]
+    source.items["C-2"] = TraceData(TicketHead("C-2", "nv001", None, False), rows, close_notes={7: NOTE})
+    for token in (env.token("ha.lt"), env.token("long.nh"), env.manager_token()):  # quyền xem trace KHÔNG đổi: L1, L2, manager
+        r = _get(env, "C-2", token)
+        assert r.status_code == 200, r.text
+        plain, closed = (s["outcome"] for s in r.json()["steps"])
+        assert plain == {"route": "escalated", "exit_code": "E5"}
+        assert closed == {"route": None, "exit_code": None, "close_result": "completed", "close_note": NOTE}
+        assert "long.nh" not in r.text and "note_length" not in r.text and "escalation_id" not in r.text
+    assert _get(env, "C-2", env.token("an.nv")).status_code == 403  # nhân viên vẫn bị chặn
+
+
+def test_qs05b_ticket_without_close_event_ignores_notes(env: AuthEnv, source: FakeTrace) -> None:
+    """Thân T-1 (không có dòng đóng ca) không đổi khi `close_notes` có dữ liệu thừa; B20 thường không có khoá `close_note`."""
+    source.items["T-1"] = TraceData(
+        ticket=TicketHead("T-1", "nv001", None, False), audit=vpn_audit(), approvals=APPROVALS, names={"l1_01": "Lê Thu Hà"},
+        close_notes={1: NOTE},
+    )  # fmt: skip
+    r = _get(env, "T-1", env.manager_token())
+    steps = {s["step"]: s for s in r.json()["steps"]}
+    assert steps["B20"]["outcome"] == {"route": "approved", "exit_code": None}
+    assert NOTE not in r.text
+
+
+def test_qs05b_openapi_declares_close_note_optional(env: AuthEnv) -> None:
+    schema = env.app.openapi()["components"]["schemas"]["OutcomeInfo"]
+    assert "close_note" in schema["properties"] and "close_note" not in schema.get("required", [])
+    assert schema["additionalProperties"] is False

@@ -1,5 +1,7 @@
 """`SqlTraceSource` (api/trace.py) trên Postgres 16 thật, role `app_rw`: đọc đúng dòng, `intended_action` CHỈ còn khoá `type`
-(tham số không rời DB), tiêu đề KB theo (doc_id, version) của chunk đã trích dẫn, họ tên người duyệt, con của ticket cha.
+(tham số không rời DB), tiêu đề KB theo (doc_id, version) của chunk đã trích dẫn, họ tên người duyệt, con của ticket cha;
+QS05b: `close_note` của dòng đóng ca lấy từ cột `escalations.close_note` theo `detail.escalation_id` (không từ audit_logs, không lẫn
+ca của ticket khác; ca đóng không có ghi chú → null; ticket không có dòng đóng ca thì không đọc bảng `escalations`).
 Database riêng cho module (audit_logs chỉ ghi thêm)."""
 
 import json
@@ -11,6 +13,8 @@ import pytest_asyncio
 from alembic import command
 from app.api.matched_rules import RuleRef
 from app.api.trace import SqlTraceSource, build_trace
+from app.db.escalations import CloseRequest, SqlEscalationStore, close_audit_row
+from app.domain.escalation_close import CloseResult
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
@@ -100,6 +104,7 @@ async def test_sql_source_reads_whitelisted_shape(rw: AsyncEngine) -> None:
     assert all("note" not in a for a in data.approvals)
     assert data.kb_titles == {("KB-VPN-001", 3): "Gia hạn chứng chỉ VPN"}
     assert data.names == {"tr-l1": "Lê Thu Hà"}
+    assert dict(data.close_notes) == {}  # không có dòng đóng ca → không đọc `escalations`
     out = build_trace(data, {"R18": RuleRef("approval_required", "mô tả")})
     assert CANARY not in out.model_dump_json()
     steps = {s.step: s for s in out.steps}
@@ -117,3 +122,69 @@ async def test_sql_source_children_of_parent(rw: AsyncEngine) -> None:
     assert [(c["ticket_id"], c["intent"]) for c in data.children] == [("TR-P-1", "vpn"), ("TR-P-2", "account")]
     child = await src.head("TR-P-1")
     assert child is not None and child.parent_ticket_id == "TR-P" and (await src.load(child)).children == []
+
+
+async def _escalation(store: SqlEscalationStore, ticket_id: str) -> int:
+    return int(await store.create(
+        ticket_id=ticket_id, exit_code="E1", reason_detail=None, handoff_note={"request": "x"}, is_deny_case=False, created_at=T0,
+    ))  # fmt: skip
+
+
+async def test_sql_source_close_notes_come_from_escalations_by_escalation_id(rw: AsyncEngine) -> None:
+    """Hai ca của cùng ticket đóng bằng `SqlEscalationStore.close` thật (dòng audit đúng khuôn `close_audit_row`): mỗi dòng đóng ca nhận
+    đúng ghi chú của ca nó; ghi chú của ticket khác không lọt vào `close_notes` lẫn thân trả về."""
+    await _tickets(rw, [("TR-C1", None, False, "account"), ("TR-C2", None, False, "account")])
+    store = SqlEscalationStore(rw)
+    ids = {key: await _escalation(store, ticket) for key, ticket in (("a", "TR-C1"), ("b", "TR-C1"), ("c", "TR-C2"))}
+    notes = {"a": "Đã gọi lại, tài khoản đã mở khoá. [SĐT_ĐÃ_ẨN]", "b": "Giữ quyết định từ chối theo chính sách.",
+             "c": f"ghi chú của ticket khác {CANARY}"}  # fmt: skip
+    results: dict[str, CloseResult] = {"a": "completed", "b": "confirmed_denial", "c": "completed"}
+    for hour, key in enumerate("abc", start=1):
+        req = CloseRequest(
+            escalation_id=ids[key], close_result=results[key], closed_by="tr-l1", close_note=notes[key],
+            close_reason="resolved_after_escalation", at=T0 + timedelta(hours=hour),
+        )  # fmt: skip
+        assert await store.close(req) is not None
+    src = SqlTraceSource(rw)
+    head = await src.head("TR-C1")
+    assert head is not None
+    data = await src.load(head)
+    assert dict(data.close_notes) == {ids["a"]: notes["a"], ids["b"]: notes["b"]}
+    assert all("note" not in r for r in data.audit)
+    out = build_trace(data, {})
+    assert [(s.outcome.close_result, s.outcome.close_note) for s in out.steps if s.outcome is not None] == [
+        ("completed", notes["a"]), ("confirmed_denial", notes["b"]),
+    ]  # fmt: skip
+    blob = out.model_dump_json()
+    assert CANARY not in blob and "tr-l1" not in blob  # không ghi chú ticket khác, không closed_by
+
+
+async def test_sql_source_closed_without_note_gives_null(rw: AsyncEngine) -> None:
+    """Ca đã đóng mà cột `close_note` NULL (đóng trước migration 0013): dòng đóng ca có `close_note: null`, không lỗi."""
+    await _tickets(rw, [("TR-C3", None, False, "account")])
+    store = SqlEscalationStore(rw)
+    eid = await _escalation(store, "TR-C3")
+    at = T0 + timedelta(hours=1)
+    audit = close_audit_row(
+        CloseRequest(escalation_id=eid, close_result="completed", closed_by="tr-l1", close_note="x",
+                     close_reason="resolved_after_escalation", at=at),
+        "TR-C3",
+    )  # fmt: skip
+    async with rw.begin() as conn:
+        await conn.execute(text(
+            "UPDATE escalations SET closed_at = :at, close_result = 'completed', closed_by = 'tr-l1' WHERE escalation_id = :e"
+        ), {"at": at, "e": eid})  # fmt: skip
+        await conn.execute(text(
+            "INSERT INTO audit_logs (ticket_id, created_at, step, event, idempotency_key, detail) "
+            "VALUES (:t, :c, :s, :ev, :k, CAST(:d AS jsonb))"
+        ), {"t": "TR-C3", "c": at, "s": audit["step"], "ev": audit["event"], "k": audit["idempotency_key"],
+            "d": _j(audit["detail"])})  # fmt: skip
+    src = SqlTraceSource(rw)
+    head = await src.head("TR-C3")
+    assert head is not None
+    data = await src.load(head)
+    assert dict(data.close_notes) == {}
+    outcome = build_trace(data, {}).steps[0].outcome
+    assert outcome is not None and outcome.model_dump(exclude_unset=True) == {
+        "route": None, "exit_code": None, "close_result": "completed", "close_note": None,
+    }  # fmt: skip

@@ -1189,6 +1189,8 @@ export interface components {
             /** Exit Code */
             exit_code: string | null;
             close_result?: components["schemas"]["CloseResult"] | null;
+            /** Close Note */
+            close_note?: string | null;
         };
         /** PolicyInfo */
         PolicyInfo: {

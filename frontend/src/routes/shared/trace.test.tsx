@@ -13,8 +13,8 @@ import type { Me } from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { ApprovalTraceLink, EscalationTraceLink, TicketTraceLink, TicketTraceRoute } from "./TicketTrace.tsx";
-import { MA_KET_THUC } from "../../lib/nhan.ts";
-import { TRACE_FORBIDDEN_TEXT, TRACE_INVALID_TEXT, TRACE_NOT_FOUND_TEXT } from "./traceText.ts";
+import { MA_KET_THUC, nhanIT } from "../../lib/nhan.ts";
+import { closeNoteLine, TRACE_FORBIDDEN_TEXT, TRACE_INVALID_TEXT, TRACE_NOT_FOUND_TEXT } from "./traceText.ts";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -154,6 +154,8 @@ describe("parseTrace — fail-closed", () => {
     ["con thiếu ticket_id", (t) => ({ ...t, is_parent: true, children: [{ intent: "vpn", exit_code: null }] })],
     ["is_parent không phải boolean", (t) => ({ ...t, is_parent: "false" })],
     ["close_result ngoài miền", (t) => ({ ...t, steps: [step(1, "B20", "escalation_closed", { outcome: { route: null, exit_code: null, close_result: "done" as never } })] })],
+    ["close_note không phải chuỗi", (t) => ({ ...t, steps: [step(1, "B20", "escalation_closed", { outcome: { route: null, exit_code: null, close_note: 5 as never } })] })],
+    ["outcome thừa khoá (closed_by)", (t) => ({ ...t, steps: [step(1, "B20", "escalation_closed", { outcome: { route: null, exit_code: null, closed_by: "long.nh" } as never })] })],
   ];
   it.each(broken)("%s → 502 invalid_trace_body", (_, mutate) => {
     const body = mutate(structuredClone(TRACE) as unknown as Record<string, unknown>);
@@ -243,6 +245,96 @@ describe("QS04 — thẻ B20 không có route: kết cục theo mã thoát", () 
     renderAt("/trace/T-1");
     expect((await screen.findByTestId("trace-exit")).textContent).toContain("Nghi tấn công, đã chặn");
     expect(screen.getByTestId("trace-exit").textContent).toContain("E0");
+  });
+});
+
+describe("QS05a — nhãn sự kiện escalation_closed", () => {
+  it("bảng SU_KIEN: 'Kỹ thuật viên đóng ca' (hết 'Khác · escalation_closed')", () => {
+    expect(nhanIT("su_kien", "escalation_closed")).toStrictEqual({ nhan: "Kỹ thuật viên đóng ca", ma: "escalation_closed" });
+    expect(nhanIT("su_kien", "escalation_closed_x").nhan).toBe("Khác");
+  });
+
+  it("dòng mã dưới thẻ + tiêu đề (bước không có outcome) dùng nhãn mới", async () => {
+    stub(() => json(200, { ...TRACE, steps: [step(1, "B20", "escalation_closed")] }));
+    renderAt("/trace/T-1");
+    const card = await screen.findByTestId("trace-step");
+    const codes = within(card).getByTestId("trace-step-codes").textContent ?? "";
+    expect(codes).toContain("Kỹ thuật viên đóng ca");
+    expect(codes).toContain("escalation_closed");
+    expect(codes).not.toContain("Khác");
+    expect(titles()).toStrictEqual(["Ghi nhận và chuyển người: kỹ thuật viên đóng ca"]);
+  });
+});
+
+describe("QS05b — ghi chú đóng ca của L2 (close_note)", () => {
+  const NOTE = "Đã gọi lại người dùng, tài khoản đã mở khoá. SĐT: [SĐT_ĐÃ_ẨN]";
+  const closedWith = (close_note?: string | null) =>
+    step(1, "B20", "escalation_closed", {
+      outcome: { route: null, exit_code: null, close_result: "completed", ...(close_note === undefined ? {} : { close_note }) },
+    });
+  const renderNote = async (close_note?: string | null) => {
+    stub(() => json(200, { ...TRACE, steps: [closedWith(close_note)] }));
+    renderAt("/trace/T-1");
+    return await screen.findByTestId("trace-step");
+  };
+
+  it("parseTrace nhận close_note: chuỗi, null, và vắng khoá", () => {
+    for (const note of ["ghi chú", null, undefined] as const) {
+      const body = { ...TRACE, steps: [closedWith(note)] };
+      expect(parseTrace(structuredClone(body))).toStrictEqual(body);
+    }
+  });
+
+  it("có ghi chú → dòng 'Ghi chú: <close_note>' ở cuối thẻ", async () => {
+    const card = await renderNote(NOTE);
+    const line = within(card).getByTestId("trace-close-note");
+    expect(line.textContent).toBe(`Ghi chú: ${NOTE}`);
+    expect(card.lastElementChild).toBe(line);
+    expect(titles()).toStrictEqual(["Kết cục: L2 đã đóng ca · đã hoàn tất"]); // tiêu đề không đổi
+  });
+
+  it.each([["null", null], ["rỗng", ""], ["chỉ khoảng trắng", " \n\t "], ["vắng khoá", undefined]] as const)(
+    "%s → KHÔNG hiện dòng ghi chú",
+    async (_, value) => {
+      const card = await renderNote(value);
+      expect(within(card).queryByTestId("trace-close-note")).toBeNull();
+      expect(card.textContent).not.toContain("Ghi chú");
+    },
+  );
+
+  it("thẻ B20 thường (không phải đóng ca) không có dòng ghi chú", async () => {
+    stub(() => json(200, TRACE));
+    renderAt("/trace/T-1");
+    await screen.findAllByTestId("trace-step");
+    expect(screen.queryByTestId("trace-close-note")).toBeNull();
+  });
+
+  it("cắt hiển thị 300 ký tự + '…' (đúng 300 → nguyên văn; 301 → cắt)", async () => {
+    const digits = "0123456789".repeat(31); // 310 ký tự, mỗi vị trí phân biệt được
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: digits.slice(0, 299) })).toBe(`Ghi chú: ${digits.slice(0, 299)}`);
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: digits.slice(0, 300) })).toBe(`Ghi chú: ${digits.slice(0, 300)}`);
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: digits.slice(0, 301) })).toBe(`Ghi chú: ${digits.slice(0, 300)}…`);
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: digits })).toBe(`Ghi chú: ${digits.slice(0, 300)}…`);
+    const card = await renderNote(digits);
+    expect(within(card).getByTestId("trace-close-note").textContent).toBe(`Ghi chú: ${digits.slice(0, 300)}…`);
+  });
+
+  it("cắt theo ký tự, không chẻ đôi cặp thay thế (emoji ở vị trí 300)", () => {
+    const note = `${"a".repeat(299)}😀b`; // 301 ký tự (code point); UTF-16 dài 302
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: note })).toBe(`Ghi chú: ${"a".repeat(299)}😀…`);
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: `${"a".repeat(299)}😀` })).toBe(`Ghi chú: ${"a".repeat(299)}😀`);
+  });
+
+  it("closeNoteLine: không có outcome.close_note → null", () => {
+    expect(closeNoteLine({ route: null, exit_code: null })).toBeNull();
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: null })).toBeNull();
+    expect(closeNoteLine({ route: null, exit_code: null, close_note: "   " })).toBeNull();
+  });
+
+  it("chữ từ server hiện THÔ như chữ — không dựng HTML", async () => {
+    const card = await renderNote('<img src=x onerror="alert(1)"> <b>đậm</b>');
+    expect(within(card).getByTestId("trace-close-note").textContent).toBe('Ghi chú: <img src=x onerror="alert(1)"> <b>đậm</b>');
+    expect(card.querySelector("img, b")).toBeNull();
   });
 });
 

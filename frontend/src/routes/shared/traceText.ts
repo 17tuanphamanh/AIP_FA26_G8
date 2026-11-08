@@ -156,6 +156,18 @@ export function outcomeLine(o: OutcomeInfo): string {
   return `Kết cục: ${exitCodeText(o.exit_code)}`;
 }
 
+/** Hiện tối đa bấy nhiêu ký tự của ghi chú đóng ca trên thẻ (backend giữ tới 1000 — cắt chỉ ở màn). */
+export const CLOSE_NOTE_SHOW = 300;
+
+/** Dòng "Ghi chú: <close_note>" của thẻ đóng ca L2 (chữ ĐÃ che từ backend, hiện thô). null / rỗng / chỉ khoảng trắng → null (không
+ *  hiện). Dài hơn 300 ký tự → 300 ký tự đầu + "…"; đếm theo ký tự Unicode nên không chẻ đôi cặp thay thế (emoji). */
+export function closeNoteLine(o: OutcomeInfo): string | null {
+  const note = o.close_note?.trim();
+  if (!note) return null;
+  const chars = Array.from(note);
+  return `Ghi chú: ${chars.length > CLOSE_NOTE_SHOW ? `${chars.slice(0, CLOSE_NOTE_SHOW).join("")}…` : note}`;
+}
+
 /** Dòng tiêu đề của một thẻ. Bước không có trường chi tiết → "<tên bước>: <sự kiện>". */
 export function stepTitle(s: TraceStep): string {
   if (s.screen) return screenLine(s.screen);
