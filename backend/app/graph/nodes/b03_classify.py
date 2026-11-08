@@ -36,13 +36,16 @@
    `effects.once("notify_user", step="B3", sub="duplicate")` và điểm log 1 thêm `duplicate_of` (mã ticket — không chữ tự do). KHÔNG dừng
    luồng, KHÔNG đổi `exit_code`, KHÔNG vào state/ctx (M5 không thấy — `test_dedup_isolation_ast.py`). Quyết định ở
    `domain/dedup.pick_duplicate`; store chỉ trả tập cha (`TicketStore.open_candidates`). Output guard chặn mẫu → không gửi tin, audit
-   vẫn ghi `duplicate_of`. Lỗi đọc store lan ra như mọi lỗi hạ tầng khác của node (không nuốt) → E9 ở boundary.
+   vẫn ghi `duplicate_of`. Lỗi ĐỌC store (`open_candidates`) KHÔNG lan thành E9 (ĐP 08/11): bắt `Exception`, log cảnh báo chỉ có tên lớp
+   lỗi + mã ticket (không thông điệp, không traceback), bỏ qua tin báo trùng, luồng chạy tiếp; riêng `TurnBudgetExceeded` vẫn lan lên (E2).
+   Phạm vi bắt lỗi CHỈ là bước đọc store — gửi tin hỏng (notifier) vẫn là lỗi thật → E9.
 
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
 slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi khác (`ScriptExhausted`, `MlContractError`…) → E9.
 """
 
+import logging
 from collections.abc import Sequence
 from typing import Any, Final
 
@@ -62,6 +65,8 @@ from app.graph.tracing import NodeFn
 from app.guard.normalize import l0
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import ClassifyOut, IntentItem
+
+log = logging.getLogger(__name__)
 
 RUNNABLE: Final = "runnable"  # kết quả bảng 5.2.2 #5 — ý chạy được (các kết quả khác là `reason_detail` E1 của con)
 
@@ -171,9 +176,17 @@ def make(deps: NodeDeps) -> NodeFn:
         if not requester:  # node trần (test) không có người gửi → không có gì để so
             return {}
         since = current_run().clock.now() - deps.dedup.window
+        try:
+            candidates = await deps.tickets.open_candidates(requester, since=since)
+        except TurnBudgetExceeded:  # hạn cả lượt (9.0) không bao giờ bị nuốt — vẫn E2 `turn_budget_exceeded` ở `b03_classify`
+            raise
+        except Exception as exc:  # noqa: BLE001 — ĐP 08/11: tin báo trùng chỉ là phụ, không đáng làm hỏng ticket (không E9)
+            # Chỉ tên lớp lỗi + mã ticket: thông điệp của driver có thể chứa tham số truy vấn / chữ người dùng; không traceback.
+            log.warning("B3: bỏ qua báo trùng yêu cầu, không đọc được ticket đang mở (%s), ticket %s", type(exc).__name__, state["ticket_id"])
+            return {}
         found = pick_duplicate(
-            await deps.tickets.open_candidates(requester, since=since), ticket_id=state["ticket_id"],
-            parent_ticket_id=state.get("parent_ticket_id"), requester_id=requester, intent=intent, since=since,
+            candidates, ticket_id=state["ticket_id"], parent_ticket_id=state.get("parent_ticket_id"),
+            requester_id=requester, intent=intent, since=since,
         )  # fmt: skip
         if found is None:
             return {}

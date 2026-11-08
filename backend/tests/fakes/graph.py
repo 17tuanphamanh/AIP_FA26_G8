@@ -598,6 +598,7 @@ class MemoryTickets:
         self.sources: dict[str, str] = {}
         self.hidden: dict[tuple[str, str], datetime] = {}  # `ticket_hidden` giả: (user_id, ticket_id) → hidden_at
         self.audit: MemoryAudit | None = None  # harness nối — `open_candidates` đọc `intent` từ dòng audit B3 (như SQL)
+        self.open_candidates_error: BaseException | None = None  # M1: tiêm lỗi đọc store báo trùng
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -666,6 +667,8 @@ class MemoryTickets:
     async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
         """M1: cố ý trả MỌI dòng (tập cha tối đa) — mọi điều kiện lọc phải do `pick_duplicate` làm, để mutation ở đó đỏ trong unit test.
         `intent` từ dòng audit B3 `intent_classified` MỚI NHẤT của ticket (như `SqlTicketStore`)."""
+        if self.open_candidates_error is not None:
+            raise self.open_candidates_error
         rows = self.audit.rows if self.audit is not None else []
         out: list[OpenCandidate] = []
         for tid, r in self.rows.items():

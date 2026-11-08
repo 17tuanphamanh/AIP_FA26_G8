@@ -6,13 +6,16 @@ do `domain.dedup.pick_duplicate` đảm nhiệm — mutation ở hàm đó đỏ
 Cổng: KHÔNG dừng luồng, KHÔNG đổi `exit_code`; M5 không thấy gì (`test_dedup_isolation_ast.py`).
 """
 
+import asyncio
+import logging
 from datetime import timedelta
 from typing import Any
 
 import pytest
+from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.context import RequesterContext
 from app.domain.final import FinalSummary
-from app.domain.states import S_CLASSIFYING, S_DIAGNOSING
+from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
 from app.graph.builder import wrap_node
 from app.graph.context import RunContext, bind_run
 from app.graph.nodes import b03_classify
@@ -198,3 +201,91 @@ async def test_output_guard_violation_suppresses_notice_but_audit_keeps_duplicat
     assert not [text for t, text, _ in h.notifier.sent if t == "t1" and "Abcd1234xyz" in text]  # tin bị chặn, không ai nhận
     assert point1(h)["detail"]["duplicate_of"] == "old" and not any(m.get("kind") == "duplicate" for m in v["conversation"])
     assert ("B6", "diagnosed") in h.audit.events("t1")
+
+
+# ---- lỗi đọc store báo trùng KHÔNG làm hỏng luồng (ĐP 08/11) --------------------------------------------------------------------
+
+LOGGER = "app.graph.nodes.b03_classify"
+USER_WORDS = ("mật khẩu", "LAP-0342", "VPN không vào được", "809")  # chữ người dùng / chi tiết lỗi KHÔNG được vào log
+
+
+def _warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.name == LOGGER and r.levelno == logging.WARNING]
+
+
+@pytest.mark.parametrize("exc", [
+    RuntimeError("mật khẩu LAP-0342 VPN không vào được 809"),
+    ConnectionError("connection refused host=db user=app_rw LAP-0342"),
+    OSError("mật khẩu"),
+    ValueError("809"),
+])  # fmt: skip
+async def test_store_error_is_swallowed_with_a_clean_warning_and_flow_continues(
+    exc: Exception, caplog: pytest.LogCaptureFixture
+) -> None:
+    base, _ = _env([OK])
+    v_base = await run(base)
+    h, _ = _env([OK])
+    seed(h, "old")  # đáng lẽ trùng — nhưng không đọc được store
+    h.tickets.open_candidates_error = exc
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        v = await run(h)
+    # luồng chạy tiếp y như không có tính năng: cùng chuỗi bước, cùng trạng thái cuối, không E9 do tin báo trùng
+    assert h.audit.events("t1") == base.audit.events("t1")
+    assert (v["status"], v.get("exit_code"), v.get("escalation_reason_detail")) == (
+        v_base["status"], v_base.get("exit_code"), v_base.get("escalation_reason_detail"),
+    )  # fmt: skip
+    assert v.get("exit_code") != "E9" or v_base.get("exit_code") == "E9"
+    assert notices(h) == [] and "duplicate_of" not in point1(h)["detail"]
+    assert not any(m.get("kind") == "duplicate" for m in v["conversation"])
+    # đúng MỘT cảnh báo, chỉ có tên lớp lỗi + mã ticket; không thông điệp lỗi, không traceback, không chữ người dùng
+    [rec] = _warnings(caplog)
+    text = rec.getMessage()
+    assert type(exc).__name__ in text and "t1" in text
+    assert rec.exc_info is None and not any(w in text for w in USER_WORDS) and str(exc) not in text
+    assert not any(w in repr((rec.msg, rec.args)) for w in USER_WORDS)  # tham số log thô; KHÔNG quét rec.__dict__ (mốc thời gian có thể chứa '809')
+
+
+async def test_no_warning_when_the_store_works(caplog: pytest.LogCaptureFixture) -> None:
+    h, _ = _env([OK])
+    seed(h, "old")
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        await run(h)
+    assert _warnings(caplog) == [] and notices(h) == [NOTICE.format(tid="old")]
+
+
+async def test_turn_budget_exceeded_from_the_store_is_not_swallowed() -> None:
+    """Hạn cả lượt (9.0) không bao giờ bị nuốt: vẫn E2 `turn_budget_exceeded` như mọi chỗ khác của B3."""
+    h, _ = _env([OK])
+    h.tickets.open_candidates_error = TurnBudgetExceeded("db:open_candidates")
+    v = await run(h)
+    assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E2", "turn_budget_exceeded")
+
+
+async def test_cancellation_from_the_store_is_not_swallowed() -> None:
+    h, _ = _env([OK])
+    h.tickets.register("t1", h.clock.now())
+    h.tickets.open_candidates_error = asyncio.CancelledError()
+    who = RequesterContext(user_id="nv001", role="employee", department="it", manager_id=None, employment_status="active",
+                           tenure_days=400, is_privileged_account=False, captured_at=h.clock.now())  # fmt: skip
+    state = {"ticket_id": "t1", "turn_id": "T1", "status": S_CLASSIFYING, "redacted_request": TEXT, "reasoning_loops": 0,
+             "conversation": [], "requester_context": who.model_dump(mode="json")}  # fmt: skip
+    run_ctx = RunContext(turn_id="T1", trace_id="0" * 32, audit=MemoryAudit(), effects=MemoryEffects(), spans=MemorySpans(),
+                         clock=h.clock, txlog=MemoryTxLog())  # fmt: skip
+    with bind_run(run_ctx), pytest.raises(asyncio.CancelledError):
+        await b03_classify.make(h.deps())(state)
+
+
+async def test_failure_to_send_the_notice_is_still_a_real_error() -> None:
+    """Phạm vi bắt lỗi CHỈ là bước đọc store: tin báo trùng gửi hỏng (notifier) vẫn lan lên boundary → E9, không bị nuốt nhầm."""
+    h, _ = _env([OK])
+    seed(h, "old")
+    real = h.notifier.notify_user
+
+    async def flaky(ticket_id: str, text: str, needs: str = "none") -> str:
+        if "đang xử lý (mã" in text:
+            raise RuntimeError("notifier hỏng")
+        return await real(ticket_id, text, needs)
+
+    h.notifier.notify_user = flaky  # type: ignore[method-assign]
+    v = await run(h)
+    assert v["exit_code"] == "E9" and ("B6", "diagnosed") not in h.audit.events("t1")
