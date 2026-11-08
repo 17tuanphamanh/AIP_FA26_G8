@@ -29,10 +29,13 @@ import { NotFound } from "./routes/NotFound.tsx";
 
 const queryClient = new QueryClient();
 
-// Điện thoại (dưới 1024 px) — mọi lớp `max-lg:` ở đây chỉ chạy dưới 1024 px; từ 1024 px trở lên khung y như cũ:
-// - thanh bên thu vào nút menu (MobileNav.tsx), khung xếp dọc: thanh đầu → nội dung;
-// - vùng nội dung `h-full` + cột flex: màn dùng `h-full` (chat, phiếu duyệt) mới dính đáy ô nhập / thanh quyết định. Vỏ
-//   hiệu ứng `ref={content}` không có chiều cao nên chuỗi `h-full` của các màn đó đứt ở đây (từ khi thêm vỏ này);
+// Vỏ nội dung `ref={content}` (hiệu ứng đổi màn, commit 0eb24d8) PHẢI có `h-full` + `overflow-y-auto`: vỏ này đứng giữa `main`
+// và màn, không có chiều cao thì `h-full` / `min-h-full` của màn bên trong tính ra "auto" — chuỗi chiều cao đứt. Hậu quả
+// (đã sửa): chat `/chat/:id` mất header và ô nhập dính đáy, phiếu duyệt `/approvals/:id` mất đầu phiếu và thanh quyết
+// định dính đáy (cả hai trôi theo cuộn của cả trang), trang chủ chat `/chat` mất căn giữa dọc. Cuộn nằm ở vỏ (như `main`
+// trước 0eb24d8) nên nút "Nhật ký quyết định" (`sticky`) vẫn dính suốt màn dài.
+// Điện thoại (dưới 1024 px) — các lớp `max-lg:` chỉ chạy dưới 1024 px:
+// - thanh bên thu vào nút menu (MobileNav.tsx), khung xếp dọc: thanh đầu → nội dung; vỏ nội dung là cột flex;
 // - `wrap-anywhere`: chuỗi dài không dấu cách (mã ticket, UUID) ngắt dòng thay vì đẩy tràn ngang;
 // - không cuộn ngang cả trang: bảng rộng tự cuộn ngang TRONG khung của nó.
 function Shell() {
@@ -48,8 +51,8 @@ function Shell() {
       <NavDrawer open={open} onClose={close} drawerRef={drawerRef}>
         <Sidebar me={me} onSignOut={signOut} />
       </NavDrawer>
-      <main inert={open} className="min-w-0 grow overflow-y-auto max-lg:min-h-0 max-lg:overflow-x-hidden">
-        <div ref={content} className="motion-safe:animate-fade-in max-lg:flex max-lg:h-full max-lg:flex-col max-lg:wrap-anywhere">
+      <main inert={open} className="min-w-0 grow overflow-y-auto max-lg:min-h-0">
+        <div ref={content} className="h-full overflow-y-auto motion-safe:animate-fade-in max-lg:flex max-lg:flex-col max-lg:overflow-x-hidden max-lg:wrap-anywhere">
           <FlashNotice />
           <Outlet />
         </div>
