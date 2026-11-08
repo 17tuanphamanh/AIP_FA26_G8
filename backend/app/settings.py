@@ -682,6 +682,7 @@ def approval_sla_minutes(settings: Settings) -> int:
 # ---- config/retention.yaml (M2 bn-a; P7 mục 4 [Chốt 17.2]) -----------------------------------
 
 RETENTION_FILE = "retention.yaml"
+RETENTION_MIN_DAYS = 90  # sàn hạn giữ hội thoại/checkpoint (huong-dan 17.2, P7 mục 4)
 
 
 class RetentionConfig(BaseModel):
@@ -690,7 +691,9 @@ class RetentionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
-    retention_days: int = Field(default=90, ge=1)  # checkpoint + hội thoại, side_effects, child_notices (P7 mục 4)
+    # checkpoint + hội thoại, side_effects, child_notices (P7 mục 4). SÀN 90 (ĐP 08/11 20:35): chỉ được giữ LÂU hơn — gõ nhầm "9" không
+    # thành dọn ticket 9 ngày tuổi.
+    retention_days: int = Field(default=90, ge=RETENTION_MIN_DAYS)
     session_grace_days: int = Field(default=30, ge=1)  # sessions: 30 ngày sau khi hết hạn (P7 mục 4)
     wait_grace_days: int = Field(default=7, ge=1)  # wait_deadlines: 7 ngày sau fired_at (P7 mục 4)
     dry_run: StrictBool = True

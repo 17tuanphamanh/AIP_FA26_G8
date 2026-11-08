@@ -2,7 +2,7 @@
 `integration/test_retention_pg.py` (TA chạy bằng `make test`).
 
 Hợp đồng (PLAN bn-a mục M2; P7 mục 4 [Chốt 17.2]):
-- `settings.RetentionConfig` nạp từ `config/retention.yaml` (`load_retention`/`open_retention`): `retention_days` (mặc định 90, ≥ 1),
+- `settings.RetentionConfig` nạp từ `config/retention.yaml` (`load_retention`/`open_retention`): `retention_days` (mặc định 90, sàn 90 — ĐP 08/11 20:35),
   `session_grace_days` (30 — P7 mục 4 "sessions: 30 ngày sau khi hết hạn"), `wait_grace_days` (7 — ĐP chốt Q3), `dry_run` (mặc định TRUE,
   bool chặt), `batch` (≥ 1). Khoá lạ / giá trị sai → không khởi động. Bật xoá thật = sửa file config (commit), KHÔNG qua `.env` máy đo.
 - `graph.retention.RetentionJob(store, saver, clock, config).run() -> RetentionReport`:
@@ -147,12 +147,12 @@ async def test_m2_cutoff_follows_injected_clock() -> None:
 
     clock = FakeClock(NOW)
     store = FakeStore()
-    job = _job(store, FakeSaver(), clock, retention_days=7)
+    job = _job(store, FakeSaver(), clock, retention_days=120)
     await job.run()
     clock.advance(timedelta(days=1))
     await job.run()
     cutoffs = [a[0] for n, a in store.calls if n == "expired_threads"]
-    assert cutoffs == [NOW - timedelta(days=7), NOW - timedelta(days=6)]
+    assert cutoffs == [NOW - timedelta(days=120), NOW - timedelta(days=119)]
     assert [at for _, at in store.runs] == [NOW, NOW + timedelta(days=1)]
 
 
@@ -179,7 +179,7 @@ def test_m2_repo_config_defaults_dry_run_true_90_days() -> None:
 
 
 @pytest.mark.parametrize("bad", [
-    {"retention_days": 0}, {"retention_days": -1}, {"dry_run": "false"}, {"dry_run": 0}, {"batch": 0},
+    {"retention_days": 0}, {"retention_days": -1}, {"retention_days": 89}, {"dry_run": "false"}, {"dry_run": 0}, {"batch": 0},
     {"session_grace_days": 0}, {"wait_grace_days": 0}, {"khoa_la": 1},
 ])  # fmt: skip
 def test_m2_config_rejects_bad_values(tmp_path: Path, bad: dict[str, Any]) -> None:
@@ -277,3 +277,17 @@ async def test_m2_failure_after_purging_still_records_one_event() -> None:
     [(detail, _)] = store.runs
     assert (detail["threads"], detail["sessions"], detail["errors"]) == (2, 0, 1)
     assert saver.deleted == ["tk-a", "tk-b"]
+
+
+@pytest.mark.parametrize(("days", "ok"), [(89, False), (90, True), (365, True)])
+def test_m2_retention_days_floor_90(days: int, ok: bool) -> None:
+    """ĐP 08/11 20:35: sàn 90 — 89 bị từ chối (worker không khởi động), 90 trở lên nhận; lỗi không in giá trị khác ngoài tên trường."""
+    from app.settings import RETENTION_MIN_DAYS, RetentionConfig
+    from pydantic import ValidationError
+
+    assert RETENTION_MIN_DAYS == 90
+    if ok:
+        assert RetentionConfig(retention_days=days).retention_days == days
+    else:
+        with pytest.raises(ValidationError, match="retention_days"):
+            RetentionConfig(retention_days=days)
