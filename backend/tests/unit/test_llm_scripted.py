@@ -84,7 +84,8 @@ async def test_d19_unknown_tag_or_missing_prompt_is_script_exhausted() -> None:
                           trace=lambda: TRACE)  # fmt: skip
         with pytest.raises(ScriptExhausted, match=match):
             await gw.client.complete("fast", "b11_clarify_question",
-                                     {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn"},
+                                     {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
+                                      "previous_reply": "none"},
                                      QuestionOut)  # fmt: skip
 
 
@@ -122,7 +123,8 @@ CALLS: list[tuple[str, str, dict[str, Any]]] = [
                               "label_hint": None}),
     ("fast", "b10_need_type", {"text": "gia hạn giúp", "evidence_titles": ["Gia hạn chứng chỉ"]}),
     ("strong", "b10_answer", {"question": "gia hạn thế nào", "evidence": EVIDENCE}),
-    ("fast", "b11_clarify_question", {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn"}),
+    ("fast", "b11_clarify_question", {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
+                                      "previous_reply": "none"}),
     ("fast", "b11_extract_slots", {"text": "máy em là PC-0977", "missing": ["device_id"], "intent": "vpn"}),
 ]  # fmt: skip
 

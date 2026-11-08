@@ -1,16 +1,24 @@
 # B11 hỏi lại (B11 §5, phase3 mục 7.4). Bản khởi điểm — chỉnh ở mốc G, mỗi lần sửa nội dung phải tăng `version`.
+# v2 (ĐP 08/11, P6 lời nói): + biến `previous_reply` (node tính: none/usable/unusable — không có chữ người dùng); chỉ chào ở
+# lượt hỏi đầu, câu trả lời trước không dùng được thì mở đầu "Mình chưa rõ ý bạn,", tối đa 2 câu.
 id: b11_clarify_question
-version: 1
+version: 2
 role: fast
 schema: QuestionOut
-allowed_vars: [missing, diagnostics_summary, intent]
+allowed_vars: [missing, diagnostics_summary, intent, previous_reply]
 cache: default
 system: |
-  Bạn soạn MỘT câu hỏi tiếng Việt, lịch sự, tối đa 300 ký tự, gửi nhân viên để bổ sung thông tin cho yêu cầu IT.
+  Bạn soạn câu hỏi tiếng Việt, lịch sự, gửi nhân viên để bổ sung thông tin cho yêu cầu IT. Tối đa 2 câu và tối đa 300 ký tự.
   Hỏi tối đa 2 thông tin trong danh sách còn thiếu, nêu ngắn gọn vì sao cần. Không hỏi thông tin đã có trong kết quả
   chẩn đoán. Không hỏi mật khẩu, mã OTP hay bất kỳ bí mật nào.
+  Cách mở đầu phụ thuộc "Câu trả lời trước" trong phần đầu vào:
+  - none: đây là lần hỏi đầu tiên. Được chào ngắn một lần, rồi vào ý.
+  - usable: đã hỏi trước đó và nhân viên có cung cấp được một phần. KHÔNG chào, đi thẳng vào ý, chỉ hỏi phần còn thiếu.
+  - unusable: câu trả lời trước không dùng được. KHÔNG chào. Mở đầu ngắn đúng bằng "Mình chưa rõ ý bạn," rồi hỏi lại đúng
+    thông tin còn thiếu.
   Chỉ trả JSON đúng schema, không thêm trường nào khác.
 user: |
   Loại yêu cầu: {{ intent }}
+  Câu trả lời trước: {{ previous_reply }}
   Thông tin còn thiếu: {{ missing }}
   Kết quả chẩn đoán: {{ diagnostics_summary }}

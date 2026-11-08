@@ -44,7 +44,8 @@ TABLE_7_4 = {
     "b03_classify": ("fast", "default", "ClassifyOut", {"redacted_request", "recent_messages", "label_hint"}),
     "b10_need_type": ("fast", "default", "NeedTypeOut", {"text", "evidence_titles"}),
     "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence"}),
-    "b11_clarify_question": ("fast", "default", "QuestionOut", {"missing", "diagnostics_summary", "intent"}),
+    # P6 lời nói (ĐP 08/11, v2): + `previous_reply` ∈ {none, usable, unusable} — enum do node tính, không chữ người dùng
+    "b11_clarify_question": ("fast", "default", "QuestionOut", {"missing", "diagnostics_summary", "intent", "previous_reply"}),
     "b11_extract_slots": ("fast", "default", "ExtractSlotsOut", {"text", "missing", "intent"}),
     # Phase 6 (6B, phase6 5.1 P2/P9): B14 — không câu người dùng; `cache: default`, estimator tự `bypass` khi vận hành
     "b14_risk_estimate": ("strong", "default", "RiskEstimateOut", {"intended_action", "risk_context", "evidence"}),
@@ -337,7 +338,8 @@ def test_d13_estimate_is_ceil_chars_over_three() -> None:
 
 def test_render_json_for_non_string_values(registry: PromptRegistry) -> None:
     r = render(registry.get("b11_clarify_question"),
-               {"missing": ["device_id"], "diagnostics_summary": {"cert": "expired"}, "intent": "vpn"},
+               {"missing": ["device_id"], "diagnostics_summary": {"cert": "expired"}, "intent": "vpn",
+                "previous_reply": "none"},
                budget_in=2000)  # fmt: skip
     user = r.messages[1]["content"]
     assert '["device_id"]' in user and '{"cert":"expired"}' in user
