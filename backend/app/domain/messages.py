@@ -57,6 +57,15 @@ USER_ID: Final = re.compile(r"[a-z0-9_]{3,64}")
 RESOURCE_PATH: Final = re.compile(r"(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}")
 CERT_STATUS_TEXT: Final = {"valid": "còn hiệu lực", "expired": "đã hết hạn", "revoked": "đã bị thu hồi", "none": "chưa có"}
 ASK_CONFIRM: Final = "Bạn thử kết nối lại rồi xác nhận giúp mình nhé."
+# Q2 M3 (ĐP 09/11): mẫu `check_vpn_status` — kết quả kiểm tra có vấn đề thì GỢI Ý bước tiếp (chỉ câu chữ, không tự sinh hành động);
+# đứng sau dòng trạng thái, trước câu mời xác nhận.
+VPN_STATUS_NEXT: Final[Mapping[str, str]] = {
+    "expired": ('Chứng chỉ hết hạn là lý do máy không vào được VPN. Bạn nhắn "gia hạn chứng chỉ VPN" để mình gửi yêu cầu '
+                "gia hạn (cần IT duyệt)."),
+    "revoked": ('Chứng chỉ bị thu hồi là lý do máy không vào được VPN. Bạn nhắn "cấp lại quyền VPN" để mình gửi yêu cầu '
+                "cấp lại (cần IT duyệt)."),
+}  # fmt: skip
+VPN_STATUS_UNREGISTERED: Final = "Máy chưa đăng ký VPN nên chưa kết nối được; mình chuyển kỹ thuật viên nếu bạn cần đăng ký."
 RESULT_ACTIONS: Final = frozenset({
     "renew_vpn_cert", "reissue_vpn_access", "check_vpn_status",
     "reset_password", "unlock_account", "install_software", "view_permissions", "grant_permission", "extend_permission",
@@ -239,7 +248,11 @@ def result_text(
             cert += f", quá hạn {-days} ngày"
         conn = facts.get("last_connection_ok")
         last = "thành công" if conn is True else "không thành công" if conn is False else "chưa có dữ liệu"
-        return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. "
+        hints = [VPN_STATUS_NEXT[status]] if isinstance(status, str) and status in VPN_STATUS_NEXT else []
+        if facts.get("device_registered") is False:
+            hints.append(VPN_STATUS_UNREGISTERED)
+        nxt = "".join(f"{h} " for h in hints)
+        return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. {nxt}"
                 "Bạn xem thông tin này đã đủ chưa rồi xác nhận giúp mình nhé.")  # fmt: skip
     return _new_action_text(action, outputs, requester_id, rows)
 
