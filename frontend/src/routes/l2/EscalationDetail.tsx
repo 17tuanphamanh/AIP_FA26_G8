@@ -31,7 +31,7 @@ import {
 // (CloseForm). Ca đã đóng: chỉ đọc (kết quả, ghi chú, người đóng, lúc đóng).
 
 const BACK = (
-  <Link to="/escalations" className="text-secondary text-fpt-blue">
+  <Link to="/escalations" className="text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
     ‹ Hàng chờ chuyển L2
   </Link>
 );
@@ -68,10 +68,10 @@ function EscalationDetail({
   if (closedSnap) {
     return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} />;
   }
-  if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse">Đang tải ca…</p>;
+  if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse max-lg:px-4 max-lg:py-6">Đang tải ca…</p>;
   if (id !== null && items === undefined) {
     return (
-      <section className="flex flex-col gap-2 px-12 py-10">
+      <section className="flex flex-col gap-2 px-12 py-10 max-lg:px-4 max-lg:py-6">
         {BACK}
         <h1 className="text-heading">Chưa tải được ca này.</h1>
         <p role="alert" className="text-ink-2">
@@ -84,7 +84,7 @@ function EscalationDetail({
     const more = id !== null && hasMore(query.data);
     const busy = query.isFetching;
     return (
-      <section className="flex flex-col gap-2 px-12 py-10">
+      <section className="flex flex-col gap-2 px-12 py-10 max-lg:px-4 max-lg:py-6">
         {BACK}
         <h1 className="text-heading">{more ? notLoadedText(items?.length ?? 0) : status === "closed" ? CLOSED_GONE_TEXT : GONE_TEXT}</h1>
         <p className="text-ink-2">{more ? NOT_LOADED_NOTE : "Mở lại hàng đợi để xem các ca."}</p>
@@ -100,7 +100,7 @@ function EscalationDetail({
                 loadingMore.current = false;
               });
             }}
-            className={`h-9 self-start rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue ${busy ? "cursor-wait opacity-60" : ""}`}
+            className={`h-9 self-start rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue max-lg:min-h-11 ${busy ? "cursor-wait opacity-60" : ""}`}
           >
             {busy ? "Đang tải…" : "Tải thêm"}
           </button>
@@ -142,11 +142,11 @@ function Detail({
 }) {
   const closed = typeof item.closed_at === "string";
   return (
-    <section className="flex flex-col gap-6 px-12 pt-6 pb-8">
+    <section className="flex flex-col gap-6 px-12 pt-6 pb-8 max-lg:px-4 max-lg:pt-3 max-lg:pb-6">
       <div className="flex flex-col gap-1">
         {/* Hàng nút quay lại ngang hàng nút "Nhật ký quyết định" (nổi ở góc phải). */}
-        <div className="flex h-9 items-center">{BACK}</div>
-        <div className="flex items-center gap-4">
+        <div className="flex h-9 items-center max-lg:h-11">{BACK}</div>
+        <div className="flex items-center gap-4 max-lg:flex-wrap max-lg:gap-y-1">
           <h1 data-testid="detail-exit" className="min-w-0 grow text-title">
             <NhanMa {...exitNhan(item)} />
           </h1>
@@ -185,7 +185,7 @@ function Detail({
               <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
                 {closedWith === "reopened_as_new" ? REOPENED_TEXT : CLOSED_TEXT}
               </p>
-              <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue">
+              <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
                 Xem ca trong danh sách Đã đóng
               </Link>
             </div>
@@ -215,7 +215,7 @@ function ClosedInfo({ item }: { item: QueueItem }) {
       </h2>
       <dl className="overflow-hidden rounded-group border border-line text-secondary">
         {rows.map((r) => (
-          <div key={r.label} className="grid grid-cols-[110px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0">
+          <div key={r.label} className="grid grid-cols-[110px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0 max-lg:grid-cols-1 max-lg:gap-1">
             <dt className="text-ink-2">{r.label}</dt>
             <dd data-testid={r.testId} className="min-w-0 break-words whitespace-pre-line">
               {r.text}
@@ -240,9 +240,9 @@ function Handoff({ note }: { note: unknown }) {
             key={row.key}
             data-testid="handoff-row"
             data-key={row.key}
-            className="grid grid-cols-[140px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0"
+            className="grid grid-cols-[140px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0 max-lg:grid-cols-1 max-lg:gap-1"
           >
-            <dt className="pt-0.75 text-secondary text-ink-2">{row.label}</dt>
+            <dt className="pt-0.75 text-secondary text-ink-2 max-lg:pt-0">{row.label}</dt>
             <dd className={`min-w-0 break-words whitespace-pre-line ${row.text === null ? "text-ink-2 italic" : ""}`}>
               {row.text ?? EMPTY_NOTE}
             </dd>

@@ -30,7 +30,7 @@ export function Segmented<K extends string>({
           aria-selected={value === option.key}
           data-key={option.key}
           onClick={() => onChange(option.key)}
-          className={`relative h-8 rounded-md px-4 text-secondary ${value === option.key ? "font-semibold" : "text-ink-2 hover:text-ink"}`}
+          className={`relative h-8 rounded-md px-4 text-secondary max-lg:min-h-11 max-lg:px-3 ${value === option.key ? "font-semibold" : "text-ink-2 hover:text-ink"}`}
         >
           {option.label}
         </button>

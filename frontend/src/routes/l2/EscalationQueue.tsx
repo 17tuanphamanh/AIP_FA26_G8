@@ -66,9 +66,9 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
   }
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-4">
-        <div className="flex min-w-0 grow flex-col gap-1">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
+      <div className="flex items-end gap-4 max-lg:flex-wrap max-lg:items-center">
+        <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
           <h1 className="text-title">Hàng chờ chuyển L2</h1>
           <p className="text-ink-2">
             {items ? (
@@ -87,14 +87,14 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
           type="button"
           onClick={() => void query.refetch()}
           disabled={query.isFetching}
-          className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60"
+          className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60 max-lg:min-h-11"
         >
           {query.isFetching && !query.isFetchingNextPage ? "Đang tải…" : "Tải lại"}
         </button>
       </div>
 
       {items && items.length > 0 ? (
-        <div className="flex items-center gap-3 rounded-group border border-line px-5 py-3">
+        <div className="flex items-center gap-3 rounded-group border border-line px-5 py-3 max-lg:flex-wrap max-lg:px-4">
           <label htmlFor="queue-search" className="shrink-0 text-secondary">
             Tìm ca
           </label>
@@ -108,7 +108,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
             autoComplete="off"
             spellCheck={false}
             data-testid="queue-search"
-            className="h-9 min-w-0 grow rounded-lg border border-line px-3 text-secondary"
+            className="h-9 min-w-0 grow rounded-lg border border-line px-3 text-secondary max-lg:min-h-11 max-lg:text-body"
           />
           {words.length > 0 ? (
             <span role="status" data-testid="queue-search-count" className="shrink-0 text-secondary text-ink-2">
@@ -160,7 +160,7 @@ function LoadMore({ loading, onMore }: { loading: boolean; onMore: () => void })
         onClick={() => {
           if (!loading) onMore();
         }}
-        className={`h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue ${loading ? "cursor-wait opacity-60" : ""}`}
+        className={`h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue max-lg:min-h-11 ${loading ? "cursor-wait opacity-60" : ""}`}
       >
         {loading ? "Đang tải…" : "Tải thêm"}
       </button>
@@ -290,7 +290,7 @@ function QueueGroups({
   // Thẻ đang chọn không có ca (đang tìm) → chỉ suy ra tạm "Tất cả", không đặt lại.
   const current = groups.some((g) => g.priority === saved.active) ? saved.active : null;
   const tabClass = (selected: boolean) =>
-    `h-8 shrink-0 rounded-md px-4 text-secondary ${selected ? "bg-white font-semibold shadow-input" : ""}`;
+    `h-8 shrink-0 rounded-md px-4 text-secondary max-lg:min-h-11 ${selected ? "bg-white font-semibold shadow-input" : ""}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -341,7 +341,7 @@ function QueueGroups({
                 onClick={() => toggle(group.priority)}
                 aria-expanded={open}
                 data-testid="queue-group-toggle"
-                className="inline-flex items-center gap-2 rounded-md py-0.5 pr-2 focus-visible:outline-2 focus-visible:outline-fpt-blue"
+                className="inline-flex items-center gap-2 rounded-md py-0.5 pr-2 focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:min-h-11"
               >
                 <svg
                   width="12"
@@ -381,15 +381,15 @@ function QueueGroups({
   );
 }
 
-const PAGER_BUTTON = "h-7.5 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60";
+const PAGER_BUTTON = "h-7.5 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60 max-lg:min-h-11 max-lg:min-w-11";
 
 function Pager({ name, page, total, onGo }: { name: string; page: number; total: number; onGo: (page: number) => void }) {
   const pages = pageCount(total);
   const from = (page - 1) * GROUP_PAGE_SIZE + 1;
   const to = Math.min(page * GROUP_PAGE_SIZE, total);
   return (
-    <nav aria-label={`Phân trang trong nhóm ${name}`} data-testid="queue-pager" className="flex items-center gap-2 pt-0.5">
-      <span className="mr-auto pl-1 text-secondary text-ink-2">
+    <nav aria-label={`Phân trang trong nhóm ${name}`} data-testid="queue-pager" className="flex items-center gap-2 pt-0.5 max-lg:flex-wrap">
+      <span className="mr-auto pl-1 text-secondary text-ink-2 max-lg:basis-full">
         Ca {from}–{to} / {total} · trang {page}/{pages}
       </span>
       <button type="button" className={PAGER_BUTTON} disabled={page <= 1} onClick={() => onGo(1)}>
@@ -423,15 +423,15 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
         data-escalation-id={item.escalation_id}
         data-ticket-id={item.ticket_id}
         data-exit-code={item.exit_code}
-        className={`grid min-h-14 grid-cols-[220px_minmax(0,1fr)_auto_14px] items-center gap-4 border-l-3 py-2.5 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue ${
+        className={`grid min-h-14 grid-cols-[220px_minmax(0,1fr)_auto_14px] items-center gap-4 border-l-3 py-2.5 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue max-lg:grid-cols-[minmax(0,1fr)_14px] max-lg:gap-y-1 max-lg:pr-4 ${
           item.is_deny_case ? "border-l-danger" : "border-l-transparent"
         }`}
       >
-        <span data-testid="queue-exit" className="truncate text-secondary text-ink-2">
+        <span data-testid="queue-exit" className="truncate text-secondary text-ink-2 max-lg:col-start-1 max-lg:row-start-2 max-lg:whitespace-normal">
           <NhanMa {...exitNhan(item)} />
         </span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-semibold" title={reason}>
+        <span className="flex min-w-0 items-center gap-2 max-lg:col-start-1 max-lg:row-start-1 max-lg:flex-wrap">
+          <span className="truncate font-semibold max-lg:whitespace-normal" title={reason}>
             {reason}
           </span>
           {item.is_deny_case ? (
@@ -443,8 +443,8 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
             <span className="shrink-0 rounded-full bg-orange-bg px-2 text-label text-orange-ink">{extra}</span>
           ) : null}
         </span>
-        <span className="text-secondary text-ink-2 tabular-nums">{meta}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <span className="text-secondary text-ink-2 tabular-nums max-lg:col-start-1 max-lg:row-start-3">{meta}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3 max-lg:col-start-2 max-lg:row-span-3 max-lg:row-start-1" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
         </svg>
       </Link>
