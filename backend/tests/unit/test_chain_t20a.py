@@ -271,12 +271,12 @@ def test_h3_prompt_versions_and_contract() -> None:
     `action_hint` hợp lệ của từng intent (bảng 5.1.4)."""
     b03 = yaml.safe_load((PROMPTS / "b03_classify.yaml").read_text(encoding="utf-8"))
     b11 = yaml.safe_load((PROMPTS / "b11_extract_slots.yaml").read_text(encoding="utf-8"))
-    assert int(b03["version"]) == 4 and int(b11["version"]) == 2  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint)
+    assert int(b03["version"]) == 4 and int(b11["version"]) == 3  # b03 v4: mốc G LLM-G DỪNG 3; b11 v3: M4 bn-a (+ `question`)
     registry = repo_registry()
     assert len(registry) == 8
     by_id = {p.id: p for p in registry}
     assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "recent_messages", "label_hint"}
-    assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent"}
+    assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent", "question"}  # M4 bn-a: đổi CÓ CHỦ ĐÍCH
     system = b03["system"]
     for word in ("device_id", "error_code", "account_type", "target_user", "software_name", "resource_path",
                  "permission_level", "duration", "renew_vpn_cert", "reissue_vpn_access", "check_vpn_status",

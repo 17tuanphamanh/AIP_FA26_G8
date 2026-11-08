@@ -45,7 +45,8 @@ TABLE_7_4 = {
     "b10_need_type": ("fast", "default", "NeedTypeOut", {"text", "evidence_titles"}),
     "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence"}),
     "b11_clarify_question": ("fast", "default", "QuestionOut", {"missing", "diagnostics_summary", "intent"}),
-    "b11_extract_slots": ("fast", "default", "ExtractSlotsOut", {"text", "missing", "intent"}),
+    # M4 (bn-a 08/11): + `question` — câu B11 vừa gửi (đã qua output guard), chỉ là ngữ cảnh
+    "b11_extract_slots": ("fast", "default", "ExtractSlotsOut", {"text", "missing", "intent", "question"}),
     # Phase 6 (6B, phase6 5.1 P2/P9): B14 — không câu người dùng; `cache: default`, estimator tự `bypass` khi vận hành
     "b14_risk_estimate": ("strong", "default", "RiskEstimateOut", {"intended_action", "risk_context", "evidence"}),
     "b14_risk_vote": ("strong", "default", "RiskVoteOut", {"intended_action", "risk_context", "evidence", "sample_idx"}),

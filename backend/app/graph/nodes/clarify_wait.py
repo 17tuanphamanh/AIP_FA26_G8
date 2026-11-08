@@ -7,8 +7,9 @@ Sau `interrupt()`, thứ tự cố định:
 2. Hết hạn 24 h (worker) → E4 `clarify_timeout`.
 3. Che L1 bằng `redact_text` THUẦN (P3, Q-3g-4 — API đã che, node không tin đầu vào; không ghi sự kiện/notice lần hai). Từ
    đây CHỈ bản đã che được gửi LLM, đưa vào `sanitize_slots`, lưu `conversation`; bản thô không lưu ở đâu cả.
-4. LLM fast `b11_extract_slots` → `sanitize_slots(spec, got.slots, text=bản đã che, allowed=missing)` (P2: slot phải có trong
-   CÂU TRẢ LỜI, chỉ nhận slot đang thiếu, key fact bị bỏ — 3-Q1). Không slot sạch hoặc LLM báo lạc đề → `off_topic_streak`+1;
+4. LLM fast `b11_extract_slots` (biến `question` = chữ của tin `kind="question"` CUỐI trong `conversation` — câu B11 vừa gửi, đã qua
+   dọn khoá slot + output guard, kể cả câu cố định L-03; không có → "" — M4 bn-a) → `sanitize_slots(spec, got.slots, text=bản đã che,
+   allowed=missing)` (P2: slot phải có trong CÂU TRẢ LỜI — câu hỏi KHÔNG vào `text`, chỉ nhận slot đang thiếu, key fact bị bỏ — 3-Q1). Không slot sạch hoặc LLM báo lạc đề → `off_topic_streak`+1;
    2 lần liên tiếp → E4 `off_topic_twice` [Chốt].
 5. Còn lại → `S_CLARIFYING` → `b11_slots` (hỏi tiếp hoặc dựng Action).
    Q-T20a-6 (Phase 5 T20a, duyệt DỪNG 2): `target_user` bị `sanitize_slots` bỏ (BẤT KỲ lý do, kể cả `unknown_key` vì không phải
@@ -39,6 +40,15 @@ from app.graph.tracing import NodeFn
 from app.guard.screen import screen_reply
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import ExtractSlotsOut
+
+
+def last_question(state: Any) -> str:
+    """M4: chữ của tin `question` CUỐI trong `conversation` — đúng bản đã gửi người dùng (B11 chỉ ghi tin sau scrub + output guard).
+    Không có → "" (không lấy tin người dùng hay tin khác thay)."""
+    for msg in reversed(list(state.get("conversation") or [])):
+        if msg.get("role") == "assistant" and msg.get("kind") == "question":
+            return str(msg.get("text") or "")
+    return ""
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -78,7 +88,8 @@ def make(deps: NodeDeps) -> NodeFn:
         missing = list(state.get("missing_slots") or [])
         try:
             got, meta = await deps.llm.complete(
-                "fast", "b11_extract_slots", {"text": text, "missing": missing, "intent": state["intent"]},
+                "fast", "b11_extract_slots",
+                {"text": text, "missing": missing, "intent": state["intent"], "question": last_question(state)},
                 ExtractSlotsOut,
             )  # fmt: skip
         except LLMSchemaError as exc:
