@@ -46,11 +46,19 @@ def _derived_hex(jwt: str) -> str:
 def test_a2_common_env_has_no_jwt_or_mfa_key() -> None:
     common = _compose()["x-backend-env"]
     assert "JWT_SIGNING_KEY" not in common and "MFA_ENC_KEY" not in common
+    assert "MIGRATE_DATABASE_URL" not in common  # ĐP 08/11 20:35
+
+
+def test_migrate_dsn_only_in_backend_where_alembic_runs() -> None:
+    """`make up` chạy `compose run --rm --no-deps backend alembic upgrade head` → backend PHẢI còn DSN app_migrate; worker không."""
+    backend = _compose()["services"]["backend"]["environment"]
+    assert backend["MIGRATE_DATABASE_URL"].startswith("postgresql+psycopg://app_migrate:")
+    assert "run --rm --no-deps backend alembic upgrade head" in (REPO / "Makefile").read_text(encoding="utf-8")
 
 
 def test_a2_worker_env_has_only_username_hmac_key() -> None:
     worker = _compose()["services"]["worker"]["environment"]
-    for secret in ("JWT_SIGNING_KEY", "MFA_ENC_KEY", "SVC_EXECUTOR_TOKEN"):
+    for secret in ("JWT_SIGNING_KEY", "MFA_ENC_KEY", "SVC_EXECUTOR_TOKEN", "MIGRATE_DATABASE_URL"):
         assert secret not in worker, secret
     assert worker["USERNAME_HMAC_KEY"] == "${USERNAME_HMAC_KEY:-}"
 
@@ -138,7 +146,7 @@ def test_a2_wiring_approver_users_available_with_only_derived_key() -> None:
 # ---- Q7 (ĐP 08/11): worker thấy khoá thừa → từ chối khởi động -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("var", ["jwt_signing_key", "mfa_enc_key", "svc_executor_token"])
+@pytest.mark.parametrize("var", ["jwt_signing_key", "mfa_enc_key", "svc_executor_token", "migrate_database_url"])
 def test_a2_worker_refuses_when_it_receives_jwt_or_mfa_key(var: str) -> None:
     from app.worker import require_worker_keys
 

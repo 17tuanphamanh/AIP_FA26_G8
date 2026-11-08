@@ -5,8 +5,8 @@ Heartbeat (`app/heartbeat.py`) ghi file mỗi 10 giây bằng CHÍNH scheduler �
 file, quá 60 giây = unhealthy.
 Worker KHÔNG có SVC_EXECUTOR_TOKEN (D-03): runner dựng với `can_execute=False` — recover không bao giờ
 chạy B17, chuyển E7 "thực thi bị gián đoạn".
-A2 (bn-a): worker KHÔNG nhận `JWT_SIGNING_KEY` (ký được token mọi vai trò), `MFA_ENC_KEY` (giải mã secret MFA), `SVC_EXECUTOR_TOKEN` —
-thấy một trong ba → từ chối khởi động; chỉ nhận `USERNAME_HMAC_KEY` (khoá HMAC username ma cho B15 khi phục hồi lượt) — thiếu → từ chối. Kiểm ở
+A2 (bn-a): worker KHÔNG nhận `JWT_SIGNING_KEY` (ký được token mọi vai trò), `MFA_ENC_KEY` (giải mã secret MFA), `SVC_EXECUTOR_TOKEN`,
+`MIGRATE_DATABASE_URL` (role owner) — thấy một trong bốn → từ chối khởi động; chỉ nhận `USERNAME_HMAC_KEY` (khoá HMAC username ma cho B15 khi phục hồi lượt) — thiếu → từ chối. Kiểm ở
 `require_worker_keys` TRƯỚC khi đụng DB; thông báo chỉ nêu tên biến.
 M2 (bn-a): job `retention_purge` (`graph/retention.RetentionJob`) cron 20:00 UTC (03:00 giờ VN) — cấu hình `config/retention.yaml`
 (`open_retention`, sai → không khởi động, trước DB), role `app_rw` (engine chính), saver checkpoint RIÊNG pool nhỏ; khối `# ---- Hạn giữ`.
@@ -78,7 +78,8 @@ def schedule_jobs(scheduler: AsyncIOScheduler, jobs: Jobs, settings: Settings, c
 
 
 # SVC_EXECUTOR_TOKEN: lớp thứ hai cạnh `can_execute=False` (soát A2) — worker không bao giờ giữ credential ghi (D-03).
-WORKER_FORBIDDEN_KEYS = ("jwt_signing_key", "mfa_enc_key", "svc_executor_token")
+# MIGRATE_DATABASE_URL (ĐP 08/11 20:35): DSN role owner `app_migrate` — chỉ Alembic (chạy trong container backend) dùng.
+WORKER_FORBIDDEN_KEYS = ("jwt_signing_key", "mfa_enc_key", "svc_executor_token", "migrate_database_url")
 
 
 def require_worker_keys(settings: Settings) -> bytes:

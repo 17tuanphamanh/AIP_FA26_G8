@@ -4,7 +4,8 @@
 name: servicedesk
 
 # Env chung của backend và worker. Worker KHÔNG nhận SVC_EXECUTOR_TOKEN (credential ghi duy nhất,
-# D-03) — chỉ backend (nơi chạy B17) có. A2 (bn-a): JWT_SIGNING_KEY, MFA_ENC_KEY cũng CHỈ backend (thêm riêng ở service backend);
+# D-03) — chỉ backend (nơi chạy B17) có. A2 (bn-a): JWT_SIGNING_KEY, MFA_ENC_KEY, MIGRATE_DATABASE_URL cũng CHỈ backend (thêm riêng ở
+# service backend);
 # worker nhận USERNAME_HMAC_KEY (khoá HMAC username ma) — thấy JWT/MFA hoặc thiếu USERNAME_HMAC_KEY thì worker từ chối khởi động.
 x-backend-env: &backend-env
   # Bắt buộc khai báo (2b-3 Q3): thiếu → compose dừng. Thành phần giả chỉ nạp khi dev/test.
@@ -14,7 +15,6 @@ x-backend-env: &backend-env
   FAKE_SCENARIO: ${FAKE_SCENARIO:-}
   FAKE_NODE_DELAY: ${FAKE_NODE_DELAY:-}
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
-  MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
   # M9 — role chỉ-đọc app_monitor. Ghi cứng như DATABASE_URL (DSN localhost trong .env không đè). Tắt để thử 503:
   # docker compose run --rm -e MONITOR_DATABASE_URL= … (rỗng = chưa đặt → route M9 trả 503, không rơi về app_rw).
   MONITOR_DATABASE_URL: postgresql+psycopg://app_monitor:${PG_MONITOR_PASSWORD}@postgres:5432/${PG_DATABASE}
@@ -113,6 +113,9 @@ services:
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
       MFA_ENC_KEY: ${MFA_ENC_KEY:-}
+      # Role app_migrate (owner, DDL) — CHỈ Alembic dùng, chạy qua `compose run backend alembic upgrade head` (make up). Worker không nhận
+      # (ĐP 08/11 20:35): thấy biến này worker từ chối khởi động.
+      MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
       # Soát A2 (7a): backend CŨNG nhận USERNAME_HMAC_KEY để `resolve_key` so với khoá dẫn xuất từ JWT_SIGNING_KEY — lệch (xoay JWT mà
       # quên tạo lại khoá worker) → runtime backend không mở (503, healthcheck đỏ) thay vì backend và worker băm username ma khác nhau.
       USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}
