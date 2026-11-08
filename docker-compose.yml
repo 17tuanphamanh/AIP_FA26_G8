@@ -113,6 +113,9 @@ services:
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
       MFA_ENC_KEY: ${MFA_ENC_KEY:-}
+      # Soát A2 (7a): backend CŨNG nhận USERNAME_HMAC_KEY để `resolve_key` so với khoá dẫn xuất từ JWT_SIGNING_KEY — lệch (xoay JWT mà
+      # quên tạo lại khoá worker) → runtime backend không mở (503, healthcheck đỏ) thay vì backend và worker băm username ma khác nhau.
+      USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}
     healthcheck:
       # D-50: /api/health trả 200 khi phụ thuộc lõi sống, `runtime` không đổi mã → phải đọc JSON: healthy chỉ khi
       # 200 VÀ "runtime" == "up". 503 / chưa nghe cổng (runtime mở trong lifespan) → urlopen ném lỗi → thoát 1.

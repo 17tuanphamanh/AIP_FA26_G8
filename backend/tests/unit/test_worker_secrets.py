@@ -55,12 +55,14 @@ def test_a2_worker_env_has_only_username_hmac_key() -> None:
     assert worker["USERNAME_HMAC_KEY"] == "${USERNAME_HMAC_KEY:-}"
 
 
-def test_a2_backend_still_gets_jwt_and_mfa_key_but_not_username_hmac() -> None:
+def test_a2_backend_gets_jwt_mfa_and_username_hmac_for_cross_check() -> None:
+    """Soát A2 (7a): backend nhận CẢ JWT_SIGNING_KEY lẫn USERNAME_HMAC_KEY → `resolve_key` so hai nguồn lúc mở runtime; lệch → không mở.
+    (Trước bản soát: backend không nhận USERNAME_HMAC_KEY → trong compose không tiến trình nào giữ cả hai → lệch không bị phát hiện.)"""
     backend = _compose()["services"]["backend"]["environment"]
     assert backend["JWT_SIGNING_KEY"] == "${JWT_SIGNING_KEY:-}"
     assert backend["MFA_ENC_KEY"] == "${MFA_ENC_KEY:-}"
     assert backend["SVC_EXECUTOR_TOKEN"] == "${SVC_EXECUTOR_TOKEN:-}"
-    assert "USERNAME_HMAC_KEY" not in backend  # backend tự dẫn xuất từ JWT_SIGNING_KEY — một nguồn
+    assert backend["USERNAME_HMAC_KEY"] == "${USERNAME_HMAC_KEY:-}"
 
 
 def test_a2_env_example_declares_blank_username_hmac_key_with_derivation_hint() -> None:
@@ -136,7 +138,7 @@ def test_a2_wiring_approver_users_available_with_only_derived_key() -> None:
 # ---- Q7 (ĐP 08/11): worker thấy khoá thừa → từ chối khởi động -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("var", ["jwt_signing_key", "mfa_enc_key"])
+@pytest.mark.parametrize("var", ["jwt_signing_key", "mfa_enc_key", "svc_executor_token"])
 def test_a2_worker_refuses_when_it_receives_jwt_or_mfa_key(var: str) -> None:
     from app.worker import require_worker_keys
 
@@ -220,3 +222,18 @@ def test_q9_ghost_username_identical_before_and_after_split(tmp_path: Path) -> N
         assert stored_username(ghost, known=False, key=before) == expected
         assert stored_username(ghost, known=False, key=worker_key) == expected
         assert failure_keys(ghost, known=False, key=worker_key) == (expected,)
+
+
+def test_a2_backend_runtime_refuses_when_derived_and_given_keys_differ() -> None:
+    """Backend có JWT_SIGNING_KEY + USERNAME_HMAC_KEY lệch (xoay JWT, quên tạo lại khoá) → `approver_users` (gọi trong `open_runtime`)
+    ném RuntimeError → runtime không mở (route 503), thông báo không có khoá."""
+    from app.graph.wiring import approver_users
+
+    jwt = secrets.token_urlsafe(32)
+    stale = _derived_hex(secrets.token_urlsafe(32))  # khoá dẫn xuất từ JWT CŨ
+    backend = Settings(_env_file=None, jwt_signing_key=jwt, username_hmac_key=stale)  # type: ignore[call-arg,arg-type]
+    with pytest.raises(RuntimeError, match="USERNAME_HMAC_KEY") as e:
+        approver_users(backend, SimpleNamespace(main=None), sink=None)  # type: ignore[arg-type]
+    assert stale not in str(e.value) and jwt not in str(e.value)
+    same = Settings(_env_file=None, jwt_signing_key=jwt, username_hmac_key=_derived_hex(jwt))  # type: ignore[call-arg,arg-type]
+    assert approver_users(same, SimpleNamespace(main=None), sink=None).available is True  # type: ignore[arg-type]

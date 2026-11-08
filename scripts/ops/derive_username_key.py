@@ -7,8 +7,8 @@
 - Giá trị = `HMAC-SHA256(JWT_SIGNING_KEY, "auth-username-v1")` dạng 64 hex — ĐÚNG khoá backend đang dùng (`auth.username_hash.username_key`,
   một nguồn công thức) → username ma của dữ liệu hiện có không đổi khi worker chuyển sang `USERNAME_HMAC_KEY`.
 - `--env-file`: đọc `JWT_SIGNING_KEY` bằng cùng bộ đọc dotenv mà `Settings` dùng (bỏ ngoặc như `.env`); không đọc biến nào khác ra ngoài.
-- File đích: tạo MỚI với quyền 0600 (`O_EXCL`) — đã có file (kể cả `.env`) thì dừng, không ghi đè. Nội dung đúng một dòng
-  `USERNAME_HMAC_KEY=<hex>` để người vận hành tự chép vào `.env` rồi xoá file.
+- File đích: tạo MỚI với quyền 0600 (`O_EXCL`, `fchmod` theo fd) — đã có file (kể cả `.env`, kể cả symlink) thì dừng, không ghi đè; ghi dở
+  thì xoá. Nội dung đúng một dòng `USERNAME_HMAC_KEY=<hex>` — nên đặt NGOÀI repo (vd `$TMPDIR`), chép vào `.env` rồi xoá file.
 - Màn hình chỉ có đường dẫn đã ghi hoặc lý do lỗi — không khoá, không JWT. Mã thoát: 0 xong, 2 lỗi.
 """
 
@@ -53,9 +53,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as e:
         print(f"Lỗi: không tạo được {args.out} ({type(e).__name__})", file=sys.stderr)
         return 2
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(line)
-    os.chmod(args.out, 0o600)  # umask không nới được, nhưng ghi rõ cho chắc
+    os.fchmod(fd, 0o600)  # theo fd, không theo đường dẫn (soát A2: tránh TOCTOU của chmod theo tên)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(line)
+    except OSError as e:  # ghi dở → xoá file cụt, không để lại nửa khoá
+        args.out.unlink(missing_ok=True)
+        print(f"Lỗi: ghi {args.out} không xong ({type(e).__name__}) — đã xoá file dở", file=sys.stderr)
+        return 2
     print(f"Đã ghi USERNAME_HMAC_KEY vào {args.out} (quyền 0600) — chép dòng đó vào .env rồi xoá file.")
     return 0
 
