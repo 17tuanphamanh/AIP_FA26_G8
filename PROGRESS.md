@@ -5842,7 +5842,7 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
   (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
 - Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
 
-## S5 (08/11/2026) — nhánh `bn-c` (nền `d9b356e`): M1, M3, R1, R2, G1, G2, G4, M5 — 8 commit, mỗi mã một commit
+## S5 (08/11/2026) — nhánh `bn-c` (nền `d9b356e`): M1, M3, R1, R2, G1, G2, G4, M5 — 8 commit, mỗi mã một commit; ĐP chốt 20:00 → 3 commit sửa
 
 Lệnh của ĐP (8 mã, test viết trước, ghi mutation). `make lint` xanh ở từng commit; hook pre-commit chạy toàn bộ unit (xanh) ở từng commit.
 **Chưa chạy `make test`** (sandbox chặn Docker) — các test PG viết sẵn chờ TA chạy: `test_dedup_pg.py` (M1), `test_lock_pg.py` (G1).
@@ -5854,34 +5854,42 @@ Lệnh của ĐP (8 mã, test viết trước, ghi mutation). `make lint` xanh �
 | R1 | `97c220b` | `GateMetrics` thêm `p_at_1`, `recall_at_threshold`; `evaluate_without_intent`; `eval_cli` in thêm | 8/8 |
 | R2 | `57e958f` | Truy vấn ghi cờ `truncated` của embed (`embed_truncated`) vào audit B8 | 6/6 |
 | G1 | `c936f0a` | `hashtext` → `hashtextextended(:t, 0)` ở khoá ticket, `m5_strategy`, `gate2` | 5/5 |
-| G2 | `c76962e` | Lock pool mặc định `2 × GRAPH_CONCURRENCY + 2`; README ghi tổng số kết nối | 6/6 |
+| G2 | `c76962e` → **đã revert** `1eaf935` | Lock pool mặc định `2 × GRAPH_CONCURRENCY + 2`; README ghi tổng số kết nối. ĐP 08/11: để sau bảo vệ cùng việc chỉnh `max_connections` | 6/6 (trước khi revert) |
 | G4 | `6ced3db` | Test: node chờ chạy lại nhiều lần không ghi DB thêm trước `interrupt()` | 7/7 |
 | M5 | `a3fba89` | `scripts/eval/token_estimate_check.py` (chỉ đọc): tỉ số token thật / ước lượng | 12/12 |
+| M1 sửa (ĐP 3) | `0cde953` | "Còn mở" tính cả `S_ESCALATED` + `close_reason IS NULL` (đang chờ kỹ thuật viên); `OpenCandidate.close_reason` bắt buộc | 6/6 |
+| M1 sửa (ĐP 4) | `9a0e8db` | Lỗi đọc store khi kiểm trùng: bắt, log cảnh báo (tên lớp lỗi + mã ticket), bỏ tin báo trùng, luồng chạy tiếp; `TurnBudgetExceeded` vẫn lan lên | 8/8 (+1 tương đương) |
+| G2 revert (ĐP 6, 7) | `1eaf935` | `git revert c76962e` | — |
 
-**Điểm cần ĐP chốt:**
+**ĐP chốt 08/11 20:00:** (1) intent từ audit B3 — đồng ý; (2) tin báo trùng là ngoại lệ D-31, `kind: "duplicate"` — đồng ý, ghi ở "Spec cần sửa"; (3) SỬA — xem điểm 2; (4) SỬA — xem điểm 4; (5) M3 giữ; (6)(7) G2 revert `1eaf935`, làm lại sau bảo vệ cùng `max_connections` — xem điểm 7; (8)(9) đồng ý.
+
+**Điểm đã chốt / còn ghi lại:**
 
 1. **M1 — nguồn `intent` của ticket còn mở.** Lệnh ghi "đọc bảng `tickets`", nhưng `tickets.intent` chỉ được ghi ở B20 (`finalize_once`) → ticket còn mở có
    `intent` NULL; truy vấn theo `tickets.intent` không bao giờ khớp ở production. Đã làm: đọc `intent` từ dòng audit B3 `intent_classified` mới nhất
    (`SqlTicketStore.open_candidates`, JOIN con trỏ chỉ đọc, KHÔNG migration, KHÔNG thêm đường ghi vào `tickets`). Nếu ĐP muốn ghi `tickets.intent` sớm
    ở B3 (đổi nguyên tắc "tickets ghi một lần ở B20") thì chỉ phải đổi hàm SQL này — node, domain, test đơn vị giữ nguyên.
-2. **M1 — "còn mở" = `final_state IS NULL`** (chưa qua B20). Ticket đã escalate sang L2 và đang chờ L2 đóng có `final_state = S_ESCALATED` → KHÔNG tính là trùng.
+2. **M1 — "còn mở" (ĐP chốt, `0cde953`) = `final_state IS NULL` HOẶC (`final_state = 'S_ESCALATED'` VÀ `close_reason IS NULL`).** Yêu cầu đã chuyển L2 nhưng L2 chưa đóng
+   vẫn tính trùng; `S_ESCALATED` đã có `close_reason` (L2 đóng) và `S_RESOLVED`/`S_REJECTED`/`S_BLOCKED` thì không. Cùng điều kiện ở `domain/dedup.is_open` và SQL `open_candidates`.
    Chỉ báo ở nhánh đơn ý đã nhận intent (`intent_classified`); không báo ở E1/low-confidence, không báo ở cha tách ý.
 3. **M1 — một lượt có hai tin.** Tin báo trùng đi thêm ngoài tin trả lời sau đó (đúng lệnh "không dừng luồng"), nên vi phạm chữ của D-31 / luật 7 "một lượt
    người dùng — một tin". Có `kind: "duplicate"` mới trong `conversation` (FE giữ nguyên: `kind` lạ hiện như tin thường). Không email (B3 không có trong bảng `user_kind`).
-4. **M1 — lỗi đọc store** không bị nuốt: lan lên boundary → E9 (một tin phụ không đáng để làm hỏng ticket? — nếu ĐP muốn thì đổi thành bỏ qua có ghi log).
+4. **M1 — lỗi đọc store (ĐP chốt, `9a0e8db`) KHÔNG lan thành E9:** bắt `Exception`, một cảnh báo log chỉ có tên lớp lỗi + mã ticket (không thông điệp lỗi, không traceback),
+   bỏ tin báo trùng và `duplicate_of`, luồng chạy tiếp. Ngoại lệ có chủ ý: `TurnBudgetExceeded` vẫn lan lên (E2), huỷ task không bị nuốt, gửi tin hỏng (notifier) vẫn E9.
 5. **M1 — nhãn loại** dùng `INTENT_LABELS` có sẵn (hạ chữ đầu: "VPN", "tài khoản", "phần mềm", "quyền truy cập"); mẫu câu ở `config/dedup.yaml`.
 6. **M3 — `MAX_RECENT_MESSAGES` và cơ chế `recent_messages` chung của gateway (`llm/context.py`) GIỮ NGUYÊN** dù grep không còn prompt nào dùng: gỡ nó kéo theo
    `trimmed_messages` trong span/`llm_calls`. Nếu muốn gỡ hẳn thì làm một mã riêng. Prompt `b03_classify` đổi chữ (bớt hai dòng) nên chưa thử với LLM thật — dồn mốc G (bảng dưới).
-7. **G2 — đã bỏ ghim số** `LOCK_POOL_SIZE` ở `docker-compose.yml` (`${LOCK_POOL_SIZE:-10}` → `${LOCK_POOL_SIZE:-}`) và `.env.example` (dòng `LOCK_POOL_SIZE=10` → chú thích),
-   để công thức ở `Settings` là một nguồn. **`.env` thật của máy nếu có dòng `LOCK_POOL_SIZE=10` thì phải xoá** (tôi không đọc/sửa `.env`). Với mặc định: 38 kết nối/tiến
-   trình, tối đa 48; backend + worker 76, tối đa 96 trên `max_connections` mặc định 100 — **sát trần**, chưa đặt `max_connections` trong compose.
+7. **G2 — ĐÃ REVERT (`1eaf935`, ĐP 08/11):** để sau bảo vệ, làm cùng việc chỉnh `max_connections` của Postgres. Trở về: lock pool `GRAPH_CONCURRENCY + 2` = 10,
+   `docker-compose.yml` `${LOCK_POOL_SIZE:-10}`, `.env.example` `LOCK_POOL_SIZE=10`, README không còn mục "Số kết nối Postgres". Khi làm lại nhớ: mặc định 2 × 8 + 2 = 18 → 38 kết nối/tiến trình,
+   tối đa 48; backend + worker 76, tối đa 96 trên `max_connections` mặc định 100 (sát trần); phải bỏ ghim số ở compose/`.env.example` (một nguồn công thức) và nhắc xoá
+   `LOCK_POOL_SIZE=10` trong `.env` thật. Commit gốc `c76962e` còn trong lịch sử (có test ràng buộc README với mặc định).
 8. **G1 — triển khai:** đổi hàm băm là đổi khoá; phải khởi động lại backend VÀ worker cùng lúc (README ghi).
 9. **R1 — `eval_cli` mặc định chạy thêm N lần `search_once`** (lượt không lọc intent); CSV sweep thêm 2 cột ở CUỐI (`p_at_1,recall_at_threshold`).
 10. **R2 — hai cờ khác nhau:** `query_truncated` (reranker, cắt ở 128 token) giữ nghĩa cũ; `embed_truncated` (embed, > 512 token) là mới, chỉ ghi.
 
 **Spec cần sửa (Claude chat sửa `docs/spec`; Claude Code KHÔNG sửa):**
 
-- **M1:** B03-B05 (điểm log 1 thêm `duplicate_of`; bước báo trùng sau khi có intent); D-31 / `docs/spec/CLAUDE.md` luật 7 (ngoại lệ "một tin mỗi lượt" cho tin báo trùng);
+- **M1:** B03-B05 (điểm log 1 thêm `duplicate_of`; bước báo trùng sau khi có intent; "còn mở" gồm `S_ESCALATED` chưa có `close_reason`; lỗi đọc store không làm hỏng ticket); D-31 / `docs/spec/CLAUDE.md` luật 7 (ngoại lệ "một tin mỗi lượt" cho tin báo trùng);
   P7 / NGU-CANH III 9.1 (ghi rõ `tickets.intent` NULL tới B20 — intent ticket còn mở chỉ có ở audit); `domain/messages` kinds (thêm `duplicate`, phase3 10.2);
   01-kien-truc mục 3/5 (thêm `config/dedup.yaml`).
 - **M3:** P2-llm-gateway.md ~257 (prompt mẫu còn `Hội thoại gần nhất: {{ recent_messages }}`); phase3-thiet-ke-chi-tiet.md ~1179 (bảng 7.4: biến của `b03_classify`);
@@ -5889,7 +5897,7 @@ Lệnh của ĐP (8 mã, test viết trước, ghi mutation). `make lint` xanh �
 - **R1:** P3-rag-pipeline / B08-B09 / phase3 mục 6 (`eval_cli`: chỉ số P@1, Recall@5 ở ngưỡng, lượt không lọc intent; cột CSV).
 - **R2:** B08-B09 / phase3 mục 3.6 (điểm log 3 thêm `embed_truncated`; phân biệt với `query_truncated`).
 - **G1:** P1-langgraph-runtime.md 179, 449 (`pg_advisory_lock(hashtext(ticket_id))` → `hashtextextended(ticket_id, 0)`).
-- **G2:** P1-langgraph-runtime.md 212 (`LOCK_POOL_SIZE = GRAPH_CONCURRENCY + 2`); 01-kien-truc-project.md 80 ("hai pool" — thực tế 3 pool + engine monitor) và 245.
+- **G2:** HOÃN (đã revert) — spec `LOCK_POOL_SIZE = GRAPH_CONCURRENCY + 2` (P1 212) vẫn đúng với mã hiện tại. Riêng 01-kien-truc-project.md 80 ("hai pool") vẫn lệch thực tế: 3 pool + engine monitor.
 - **G4:** P1 mục 8.2 / mục 11: `parent_wait` là ngoại lệ có chủ ý của "không side effect trước `interrupt`" (`start_missing`, `children_not_started`) — idempotent, có test.
 - **M5:** P2 mục 12–13 dòng "Hiệu chỉnh ước lượng token" → công cụ đo là `scripts/eval/token_estimate_check.py`.
 
