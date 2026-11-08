@@ -118,8 +118,7 @@ EVIDENCE = [
 ]  # fmt: skip
 CALLS: list[tuple[str, str, dict[str, Any]]] = [
     ("fast", "b02_injection_judge", {"text": "VPN báo lỗi chứng chỉ trên LAP-0342"}),
-    ("fast", "b03_classify", {"redacted_request": "Gia hạn chứng chỉ VPN cho máy LAP-0342", "recent_messages": [],
-                              "label_hint": None}),
+    ("fast", "b03_classify", {"redacted_request": "Gia hạn chứng chỉ VPN cho máy LAP-0342", "label_hint": None}),
     ("fast", "b10_need_type", {"text": "gia hạn giúp", "evidence_titles": ["Gia hạn chứng chỉ"]}),
     ("strong", "b10_answer", {"question": "gia hạn thế nào", "evidence": EVIDENCE}),
     ("fast", "b11_clarify_question", {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn"}),
@@ -153,7 +152,7 @@ async def test_d18_vpn_scripts_info_flow_and_overrides() -> None:
     out, _ = await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
     assert out.type == "info"
     classify, _ = await gw.client.complete("fast", "b03_classify", {"redacted_request": "VPN không vào được",
-                                           "recent_messages": [], "label_hint": None}, ClassifyOut)  # fmt: skip
+                                           "label_hint": None}, ClassifyOut)  # fmt: skip
     assert classify.intents[0].slots == {} and classify.intents[0].action_hint is None  # TC06: không có mã máy
     no_ev, _ = await gw.client.complete("strong", "b10_answer", {"question": "x", "evidence": []}, AnswerOut)
     assert no_ev.cannot_answer and no_ev.citations == []

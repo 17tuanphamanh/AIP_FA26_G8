@@ -10,11 +10,14 @@
 # vì chỉ B6 của vpn tự suy `action` khi hint trống (tools/diagnosis/vpn.py: chứng chỉ → việc). account/software/access KHÔNG suy → để
 # trống chỉ thêm một lượt hỏi lại, không tăng an toàn (M5 vẫn quyết) → giữ cách v3. Không đổi intent, slot, target_user,
 # allowed_vars/schema/role.
+# v5 (M3): bỏ biến chết `recent_messages` và khối "Hội thoại gần nhất". B3 chạy một lần ngay sau B2, lúc `conversation` của ticket luôn rỗng
+# (runner._initial_state; B1/B2 không ghi tin; ticket con được gieo như thể B3 đã chạy) → khối đó luôn ra "(không có)". Không đổi
+# intent, slot, action_hint, target_user, schema, role. Chỉ đổi chữ của lời nhắn người dùng (bớt hai dòng) — chưa thử với LLM thật (dồn mốc G).
 id: b03_classify
-version: 4
+version: 5
 role: fast
 schema: ClassifyOut
-allowed_vars: [redacted_request, recent_messages, label_hint]
+allowed_vars: [redacted_request, label_hint]
 cache: default
 system: |
   Bạn phân loại yêu cầu hỗ trợ IT viết bằng tiếng Việt của nhân viên công ty.
@@ -53,6 +56,4 @@ system: |
   Chỉ trả JSON đúng schema, không thêm trường nào khác.
 user: |
   Yêu cầu: {{ redacted_request }}
-  Hội thoại gần nhất:
-  {{ recent_messages }}
   Gợi ý nhãn: {{ label_hint }}

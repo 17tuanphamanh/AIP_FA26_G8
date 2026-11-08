@@ -259,9 +259,9 @@ async def test_point1_on_every_branch_without_user_text(script: Script) -> None:
 
 
 async def test_point1_records_prompt_version() -> None:
-    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 (DỪNG 2); mốc G LLM-G DỪNG 3: v4."""
+    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 (DỪNG 2); mốc G LLM-G DỪNG 3: v4; M3: v5 (bỏ recent_messages)."""
     _, row, _, _ = await _run([out(item("vpn", 0.9))])
-    assert row["detail"]["prompt"] == "b03_classify@4" and row["detail"]["layer"] == "llm"
+    assert row["detail"]["prompt"] == "b03_classify@5" and row["detail"]["layer"] == "llm"
 
 
 async def test_model_result_in_phase3_still_goes_llm() -> None:

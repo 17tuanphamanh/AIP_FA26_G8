@@ -42,7 +42,7 @@ from tests.fakes.llm import make_gateway
 from tests.unit.test_rag_retriever import _cfg, _ctx, _retriever, _spy
 
 MARGIN = 2.0
-B03_VARS: dict[str, Any] = {"redacted_request": "vpn lỗi", "recent_messages": [], "label_hint": None}
+B03_VARS: dict[str, Any] = {"redacted_request": "vpn lỗi", "label_hint": None}
 NOT_ATTACK = {"is_attack": False, "category": "none", "reason": "bình thường"}
 
 

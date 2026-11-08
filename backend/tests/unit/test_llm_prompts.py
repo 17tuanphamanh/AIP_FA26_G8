@@ -41,7 +41,7 @@ MIN_LLM_CALL_SITES = 6
 # phase3 mục 7.4 — (vai trò, cache, schema, biến)
 TABLE_7_4 = {
     "b02_injection_judge": ("fast", "bypass", "InjectionJudgeOut", {"text"}),
-    "b03_classify": ("fast", "default", "ClassifyOut", {"redacted_request", "recent_messages", "label_hint"}),
+    "b03_classify": ("fast", "default", "ClassifyOut", {"redacted_request", "label_hint"}),  # M3: bỏ recent_messages (v5)
     "b10_need_type": ("fast", "default", "NeedTypeOut", {"text", "evidence_titles"}),
     "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence"}),
     "b11_clarify_question": ("fast", "default", "QuestionOut", {"missing", "diagnostics_summary", "intent"}),
@@ -224,7 +224,7 @@ def test_prompt_hash_is_sha256_of_file(registry: PromptRegistry, tmp_path: Path)
 @pytest.mark.parametrize(("pid", "version", "role", "schema", "allowed"), [
     ("b10_answer", "2", "strong", "AnswerOut", ("question", "evidence")),
     ("b10_need_type", "2", "fast", "NeedTypeOut", ("text", "evidence_titles")),
-    ("b03_classify", "4", "fast", "ClassifyOut", ("redacted_request", "recent_messages", "label_hint")),
+    ("b03_classify", "5", "fast", "ClassifyOut", ("redacted_request", "label_hint")),  # M3: v5 bỏ recent_messages
 ])  # fmt: skip
 def test_llmg3_prompt_versions_and_contract(
     registry: PromptRegistry, pid: str, version: str, role: str, schema: str, allowed: tuple[str, ...]
@@ -317,18 +317,26 @@ def test_d13_lowest_score_evidence_cut_first(registry: PromptRegistry) -> None:
     assert len(ev) == 3  # không sửa danh sách của bên gọi
 
 
-def test_d13_oldest_messages_cut_then_budget_error(registry: PromptRegistry) -> None:
-    prompt = registry.get("b03_classify")
+def test_d13_oldest_messages_cut_then_budget_error(tmp_path: Path) -> None:
+    """Cơ chế `recent_messages` CHUNG của gateway (P2 mục 7 [Chốt 17.2]). M3: không prompt nào trong repo còn dùng biến này (b03 v5 đã
+    bỏ) → thử bằng prompt tổng hợp trong thư mục tạm; hợp đồng cắt (≤ 4 tin mới nhất, cắt tin cũ trước, hết cách → `LLMBudgetExceeded`)
+    không đổi."""
+    (tmp_path / "msg_probe.yaml").write_text(
+        "id: msg_probe\nversion: 1\nrole: fast\nschema: ClassifyOut\nallowed_vars: [redacted_request, recent_messages]\n"
+        "cache: default\nsystem: |\n  Phân loại.\nuser: |\n  Yêu cầu: {{ redacted_request }}\n  Hội thoại:\n  {{ recent_messages }}\n",
+        encoding="utf-8",
+    )  # fmt: skip
+    prompt = load_prompts(tmp_path).get("msg_probe")
     msgs = [{"role": "user", "text": f"tin {i} " + "y" * 300} for i in range(6)]
-    variables = {"redacted_request": "vpn lỗi", "recent_messages": msgs, "label_hint": None}
+    variables = {"redacted_request": "vpn lỗi", "recent_messages": msgs}
     full = render(prompt, variables, budget_in=100_000)
     assert full.trimmed_messages == 0 and "tin 1 " not in full.messages[1]["content"]  # chỉ 4 tin mới nhất
     assert "tin 2 " in full.messages[1]["content"] and MAX_RECENT_MESSAGES == 4
     r = render(prompt, variables, budget_in=full.est_tokens - 150)
     user = r.messages[1]["content"]
     assert r.trimmed_messages == 2 and "tin 3 " not in user and "tin 4 " in user and "tin 5 " in user
-    with pytest.raises(LLMBudgetExceeded, match="budget_in 50"):
-        render(prompt, variables, budget_in=50)
+    with pytest.raises(LLMBudgetExceeded, match="budget_in 5 "):
+        render(prompt, variables, budget_in=5)  # khung prompt tổng hợp nhỏ → trần phải thấp hơn khung mới hết cách cắt
 
 
 def test_d13_estimate_is_ceil_chars_over_three() -> None:

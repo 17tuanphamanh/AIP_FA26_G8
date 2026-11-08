@@ -271,11 +271,11 @@ def test_h3_prompt_versions_and_contract() -> None:
     `action_hint` hợp lệ của từng intent (bảng 5.1.4)."""
     b03 = yaml.safe_load((PROMPTS / "b03_classify.yaml").read_text(encoding="utf-8"))
     b11 = yaml.safe_load((PROMPTS / "b11_extract_slots.yaml").read_text(encoding="utf-8"))
-    assert int(b03["version"]) == 4 and int(b11["version"]) == 2  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint)
+    assert int(b03["version"]) == 5 and int(b11["version"]) == 2  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint); v5: M3 bỏ recent_messages
     registry = repo_registry()
     assert len(registry) == 8
     by_id = {p.id: p for p in registry}
-    assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "recent_messages", "label_hint"}
+    assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "label_hint"}  # M3: bỏ recent_messages
     assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent"}
     system = b03["system"]
     for word in ("device_id", "error_code", "account_type", "target_user", "software_name", "resource_path",

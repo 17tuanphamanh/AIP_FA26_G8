@@ -63,7 +63,6 @@ from app.guard.normalize import l0
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import ClassifyOut, IntentItem
 
-RECENT_MESSAGES = 4  # B03 mục 2: ≤ 4 tin gần nhất
 RUNNABLE: Final = "runnable"  # kết quả bảng 5.2.2 #5 — ý chạy được (các kết quả khác là `reason_detail` E1 của con)
 
 
@@ -106,11 +105,10 @@ def make(deps: NodeDeps) -> NodeFn:
         if r.data is not None:  # Phase 3: không tới (model_missing) — có model thì chỉ ghi, vẫn xuống LLM
             info["model_probs"], info["model_version"] = dict(r.data.probs), r.data.version
         info["layer"] = "llm"
-        recent = list(state.get("conversation") or [])[-RECENT_MESSAGES:]
         try:
             out, meta = await deps.llm.complete(
                 "fast", "b03_classify",
-                {"redacted_request": text, "recent_messages": recent, "label_hint": None}, ClassifyOut,
+                {"redacted_request": text, "label_hint": None}, ClassifyOut,
             )  # fmt: skip
         except LLMSchemaError:
             info["llm_error"] = "LLMSchemaError"
