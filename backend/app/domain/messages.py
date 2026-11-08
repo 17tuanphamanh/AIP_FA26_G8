@@ -378,3 +378,23 @@ def reply_text(items: Sequence[tuple[int, Mapping[str, Any]]]) -> str:
             note = str(item.get("note") or "").strip()
             parts.append(f"Ý {index}: {UNRESOLVED_TEXT} — {note}" if note else f"Ý {index}: {UNRESOLVED_TEXT}")
     return " · ".join(parts)
+
+
+# ---- Q3 M4 (ĐP 09/11): tin cho người dùng khi yêu cầu chờ duyệt (B15) ---------------------------------------------------------------
+# Theo MẪU, không LLM: nhãn hành động (`ACTION_LABELS`) + cụm đích (`target_phrase` — định danh đã qua regex); KHÔNG nêu người duyệt.
+# `kind` riêng (FE hiển thị như tin thường — kind lạ không lỗi, không nút); needs `none`. Ticket con: notice (`notify/child.py`, bước B15).
+APPROVAL_PENDING_KIND: Final = "approval_pending"
+APPROVAL_PENDING_TAIL: Final = (
+    "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn ngay tại đây."
+)
+
+
+def approval_pending_text(action_type: str, target_phrase: str) -> str:
+    """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa)."""
+    label = ACTION_LABELS.get(action_type)
+    head = f"Yêu cầu {label} cho {target_phrase}" if label is not None and target_phrase else "Yêu cầu của bạn"
+    return f"{head} {APPROVAL_PENDING_TAIL}"
+
+
+def approval_pending_msg(text: str, ref: str | None) -> Msg:
+    return {"role": "assistant", "kind": APPROVAL_PENDING_KIND, "text": text, "ref": ref, "needs": "none"}

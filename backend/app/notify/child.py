@@ -4,7 +4,7 @@ Luôn được gọi qua `effects.once` (test AST `SIDE_EFFECT_FUNCS`). Ticket c
 `child_notices(parent, child, source_step, kind, needs, body, effect_key)` → trả `notice:<id>`; ticket thường/cha → giao cho `inner` như
 cũ (`fakes.LoggingNotifier` ở runtime — tin nằm trong `conversation` của checkpoint). `source_step` + `effect_key` lấy từ
 `db.runtime.current_effect()` (do `effects.once` đặt); `kind` theo bước: B10 → `answer`, B11 → `question`, B16 → `rejection`, B18 →
-`result`, B20 → `escalation`; bước khác (hoặc gọi ngoài `effects.once`) → `ValueError` (E9 — thấy được, không gửi thẳng).
+`result`, B20 → `escalation`, B15 → `result` (Q3 M4 — tin chờ duyệt); bước khác (hoặc gọi ngoài `effects.once`) → `ValueError` (E9 — thấy được, không gửi thẳng).
 Logic các nhánh B10/B11/B16/B18/B20 KHÔNG đổi; tin của con vẫn vào `conversation` checkpoint con (nội bộ).
 """
 
@@ -18,6 +18,9 @@ from app.db.runtime import current_effect
 
 NOTICE_KIND_BY_STEP: Final[Mapping[str, str]] = {
     "B10": "answer", "B11": "question", "B16": "rejection", "B18": "result", "B20": "escalation",
+    # Q3 M4 (ĐP 09/11): tin "chờ duyệt" của B15 (needs=none). `child_notices.kind` có CHECK 5 giá trị (P7 2.9) — không có loại riêng nên
+    # dùng `result` (tin trạng thái do hệ thống báo). FE gắn nhãn khối "Đã xử lý" cho `result` — chờ ĐP chốt có thêm loại mới không.
+    "B15": "result",
 }  # fmt: skip
 
 
