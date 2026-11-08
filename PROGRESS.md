@@ -5842,6 +5842,57 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
   (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
 - Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
 
+## S5 (08/11/2026) — nhánh `bn-c` (nền `d9b356e`): M1, M3, R1, R2, G1, G2, G4, M5 — 8 commit, mỗi mã một commit
+
+Lệnh của ĐP (8 mã, test viết trước, ghi mutation). `make lint` xanh ở từng commit; hook pre-commit chạy toàn bộ unit (xanh) ở từng commit.
+**Chưa chạy `make test`** (sandbox chặn Docker) — các test PG viết sẵn chờ TA chạy: `test_dedup_pg.py` (M1), `test_lock_pg.py` (G1).
+
+| Mã | Commit | Việc | Mutation (đỏ/tổng) |
+|---|---|---|---|
+| M1 | `6830e92` | B3 báo trùng yêu cầu: tin cố định + audit `duplicate_of`; `config/dedup.yaml` | 11/11 |
+| M3 | `0ccb759` | Bỏ `recent_messages` ở B3, `b03_classify` v5 | 5/5 |
+| R1 | `97c220b` | `GateMetrics` thêm `p_at_1`, `recall_at_threshold`; `evaluate_without_intent`; `eval_cli` in thêm | 8/8 |
+| R2 | `57e958f` | Truy vấn ghi cờ `truncated` của embed (`embed_truncated`) vào audit B8 | 6/6 |
+| G1 | `c936f0a` | `hashtext` → `hashtextextended(:t, 0)` ở khoá ticket, `m5_strategy`, `gate2` | 5/5 |
+| G2 | `c76962e` | Lock pool mặc định `2 × GRAPH_CONCURRENCY + 2`; README ghi tổng số kết nối | 6/6 |
+| G4 | `6ced3db` | Test: node chờ chạy lại nhiều lần không ghi DB thêm trước `interrupt()` | 7/7 |
+| M5 | `a3fba89` | `scripts/eval/token_estimate_check.py` (chỉ đọc): tỉ số token thật / ước lượng | 12/12 |
+
+**Điểm cần ĐP chốt:**
+
+1. **M1 — nguồn `intent` của ticket còn mở.** Lệnh ghi "đọc bảng `tickets`", nhưng `tickets.intent` chỉ được ghi ở B20 (`finalize_once`) → ticket còn mở có
+   `intent` NULL; truy vấn theo `tickets.intent` không bao giờ khớp ở production. Đã làm: đọc `intent` từ dòng audit B3 `intent_classified` mới nhất
+   (`SqlTicketStore.open_candidates`, JOIN con trỏ chỉ đọc, KHÔNG migration, KHÔNG thêm đường ghi vào `tickets`). Nếu ĐP muốn ghi `tickets.intent` sớm
+   ở B3 (đổi nguyên tắc "tickets ghi một lần ở B20") thì chỉ phải đổi hàm SQL này — node, domain, test đơn vị giữ nguyên.
+2. **M1 — "còn mở" = `final_state IS NULL`** (chưa qua B20). Ticket đã escalate sang L2 và đang chờ L2 đóng có `final_state = S_ESCALATED` → KHÔNG tính là trùng.
+   Chỉ báo ở nhánh đơn ý đã nhận intent (`intent_classified`); không báo ở E1/low-confidence, không báo ở cha tách ý.
+3. **M1 — một lượt có hai tin.** Tin báo trùng đi thêm ngoài tin trả lời sau đó (đúng lệnh "không dừng luồng"), nên vi phạm chữ của D-31 / luật 7 "một lượt
+   người dùng — một tin". Có `kind: "duplicate"` mới trong `conversation` (FE giữ nguyên: `kind` lạ hiện như tin thường). Không email (B3 không có trong bảng `user_kind`).
+4. **M1 — lỗi đọc store** không bị nuốt: lan lên boundary → E9 (một tin phụ không đáng để làm hỏng ticket? — nếu ĐP muốn thì đổi thành bỏ qua có ghi log).
+5. **M1 — nhãn loại** dùng `INTENT_LABELS` có sẵn (hạ chữ đầu: "VPN", "tài khoản", "phần mềm", "quyền truy cập"); mẫu câu ở `config/dedup.yaml`.
+6. **M3 — `MAX_RECENT_MESSAGES` và cơ chế `recent_messages` chung của gateway (`llm/context.py`) GIỮ NGUYÊN** dù grep không còn prompt nào dùng: gỡ nó kéo theo
+   `trimmed_messages` trong span/`llm_calls`. Nếu muốn gỡ hẳn thì làm một mã riêng. Prompt `b03_classify` đổi chữ (bớt hai dòng) nên chưa thử với LLM thật — dồn mốc G (bảng dưới).
+7. **G2 — đã bỏ ghim số** `LOCK_POOL_SIZE` ở `docker-compose.yml` (`${LOCK_POOL_SIZE:-10}` → `${LOCK_POOL_SIZE:-}`) và `.env.example` (dòng `LOCK_POOL_SIZE=10` → chú thích),
+   để công thức ở `Settings` là một nguồn. **`.env` thật của máy nếu có dòng `LOCK_POOL_SIZE=10` thì phải xoá** (tôi không đọc/sửa `.env`). Với mặc định: 38 kết nối/tiến
+   trình, tối đa 48; backend + worker 76, tối đa 96 trên `max_connections` mặc định 100 — **sát trần**, chưa đặt `max_connections` trong compose.
+8. **G1 — triển khai:** đổi hàm băm là đổi khoá; phải khởi động lại backend VÀ worker cùng lúc (README ghi).
+9. **R1 — `eval_cli` mặc định chạy thêm N lần `search_once`** (lượt không lọc intent); CSV sweep thêm 2 cột ở CUỐI (`p_at_1,recall_at_threshold`).
+10. **R2 — hai cờ khác nhau:** `query_truncated` (reranker, cắt ở 128 token) giữ nghĩa cũ; `embed_truncated` (embed, > 512 token) là mới, chỉ ghi.
+
+**Spec cần sửa (Claude chat sửa `docs/spec`; Claude Code KHÔNG sửa):**
+
+- **M1:** B03-B05 (điểm log 1 thêm `duplicate_of`; bước báo trùng sau khi có intent); D-31 / `docs/spec/CLAUDE.md` luật 7 (ngoại lệ "một tin mỗi lượt" cho tin báo trùng);
+  P7 / NGU-CANH III 9.1 (ghi rõ `tickets.intent` NULL tới B20 — intent ticket còn mở chỉ có ở audit); `domain/messages` kinds (thêm `duplicate`, phase3 10.2);
+  01-kien-truc mục 3/5 (thêm `config/dedup.yaml`).
+- **M3:** P2-llm-gateway.md ~257 (prompt mẫu còn `Hội thoại gần nhất: {{ recent_messages }}`); phase3-thiet-ke-chi-tiet.md ~1179 (bảng 7.4: biến của `b03_classify`);
+  B03-B05 ~342 (mã giả `recent_messages: last_n(state["conversation"], 4)`); P2 mục 7 [Chốt 17.2] (không prompt nào còn dùng `recent_messages`).
+- **R1:** P3-rag-pipeline / B08-B09 / phase3 mục 6 (`eval_cli`: chỉ số P@1, Recall@5 ở ngưỡng, lượt không lọc intent; cột CSV).
+- **R2:** B08-B09 / phase3 mục 3.6 (điểm log 3 thêm `embed_truncated`; phân biệt với `query_truncated`).
+- **G1:** P1-langgraph-runtime.md 179, 449 (`pg_advisory_lock(hashtext(ticket_id))` → `hashtextextended(ticket_id, 0)`).
+- **G2:** P1-langgraph-runtime.md 212 (`LOCK_POOL_SIZE = GRAPH_CONCURRENCY + 2`); 01-kien-truc-project.md 80 ("hai pool" — thực tế 3 pool + engine monitor) và 245.
+- **G4:** P1 mục 8.2 / mục 11: `parent_wait` là ngoại lệ có chủ ý của "không side effect trước `interrupt`" (`start_missing`, `children_not_started`) — idempotent, có test.
+- **M5:** P2 mục 12–13 dòng "Hiệu chỉnh ước lượng token" → công cụ đo là `scripts/eval/token_estimate_check.py`.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -5863,6 +5914,9 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
 | 5 T20a | Probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật: slot + `action_hint` đúng bảng 5.1.4, slot chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; đo tỉ lệ LLM bỏ trống `target_user` khi câu nhắm người khác (bỏ trống → cờ Q-T20a-4 không bật); chạy lại kịch bản VPN với quy tắc người khác (N5). **LLM-G DỪNG 3 (b03 v4, flash, thử tay 2 lần): "quyền sửa … trong 2 tuần" → write, 14, đường dẫn đúng chữ (R09); "quyền đọc …" → chỉ hỏi `duration`, giá trị `read` chưa xác nhận; `action_hint` vpn tả lỗi → null, B6 tự suy renew. Tỉ lệ bỏ trống `target_user`, `b11_extract_slots` v2 chưa đo.** | phase5 5.1.1 P9, Q-T20a-4 |
 | 5 T24 | TC07/TC08 với LLM thật: `b03_classify` v3 ra account/`reset_password` + `target_user=svc_backup` đúng chữ ("đặt lại mật khẩu AD cho svc_backup") và access/`grant_permission` + `permission_level=read`, `duration=30` từ "quyền đọc … 30 ngày"; chạy lại `make gate5 S="tc07 tc08"` với `LLM_BACKEND=real` (bỏ thẻ preset) → cùng luật R03 (+R04) / R07 (+R09), cùng đường duyệt/từ chối. **LLM-G 17/10 (thử tay, 2 lần, flash):** slot + luật khớp cả hai (R03+R04, R07+R09, tới chờ duyệt). **DỪNG 3 (b03 v4) thử tay lại 2 lần: như cũ.** Chưa chạy `make gate5` với real | phase5 7.6, 1.3 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
+| S5 M3 | Probe `b03_classify` **v5** (bỏ `recent_messages`, bớt hai dòng ở lời nhắn người dùng) với LLM thật: phân loại, slot, `action_hint`, `target_user` không đổi so với v4 (53 PASS / 0 FAIL của LLM-G). ScriptedLLM chỉ kiểm hợp đồng biến, không kiểm hành vi | PROGRESS "S5" M3 |
+| S5 M5 | Chạy `scripts/eval/token_estimate_check.py --dsn <app_monitor>` trên dữ liệu thật (EVAL_MODE có `prompt_full`) rồi hiệu chỉnh `ceil(ký tự/3)` nếu trung vị/p95 lệch; ghi số mẫu, ngày, bản prompt. **Chưa đo** | Q-3d-8, S5 M5 |
+| S5 R1/R2 | `make eval-rag` trên KB thật: số P@1, Recall@5 ở ngưỡng, lượt không lọc intent; tỉ lệ `embed_truncated` ở audit B8. **Chưa đo** | S5 R1, R2 |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
 5 PASS / 0 FAIL khi đè `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=`; stack đã trả về đúng `.env`). `.env` VẪN giữ
