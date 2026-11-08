@@ -244,6 +244,22 @@ def result_text(
     return _new_action_text(action, outputs, requester_id, rows)
 
 
+# Q2 M1 (ĐP 09/11): câu mở đầu của B10 khi người dùng BÁO LỖI VPN mà fact B6 cho thấy máy của họ đã đăng ký, chứng chỉ còn hạn
+# (`b10_route.symptom_to_info`) — ghép bằng CODE từ fact (enum/bool/số) + mã máy qua `DEVICE_ID`, không LLM.
+SYMPTOM_LAST_FAIL: Final = "Lần kết nối gần nhất không thành công."
+
+
+def symptom_intro(device_id: str | None, facts: Mapping[str, FactValue]) -> str:
+    """"Mình đã kiểm tra máy {id}: máy đã đăng ký, chứng chỉ VPN còn hạn {n} ngày, nên lỗi không nằm ở chứng chỉ." — mã sai mẫu/
+    không có → "máy của bạn"; `cert_days_to_expiry` không phải số nguyên dương → bỏ vế "{n} ngày"; `last_connection_ok is False`
+    → thêm `SYMPTOM_LAST_FAIL`."""
+    device = f"máy {device_id}" if isinstance(device_id, str) and DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    days = facts.get("cert_days_to_expiry")
+    left = f"còn hạn {days} ngày" if type(days) is int and days > 0 else "còn hạn"
+    text = f"Mình đã kiểm tra {device}: máy đã đăng ký, chứng chỉ VPN {left}, nên lỗi không nằm ở chứng chỉ."
+    return f"{text} {SYMPTOM_LAST_FAIL}" if facts.get("last_connection_ok") is False else text
+
+
 def result_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "result", "text": text, "ref": ref, "needs": "confirm"}
 

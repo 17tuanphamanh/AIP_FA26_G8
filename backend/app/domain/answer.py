@@ -7,7 +7,7 @@
    Ca rỗng không tới được qua LLM (validator `AnswerOut` → `LLMSchemaError` → E2) — kiểm ở đây cho đủ (Q-3g-2).
 3. Còn lại → `"ok"`.
 
-`render_answer` theo mẫu (không LLM): phần trả lời; nếu có `steps` → danh sách đánh số; cuối cùng "Nguồn:" liệt kê
+`render_answer` theo mẫu (không LLM): câu mở đầu theo fact nếu có (Q2 M1); phần trả lời; nếu có `steps` → danh sách đánh số; cuối cùng "Nguồn:" liệt kê
 `title › heading_path` của các chunk được trích (không trùng, theo thứ tự trích).
 """
 
@@ -31,8 +31,13 @@ def check_citations(citations: Sequence[str], *, cannot_answer: bool, anchors: A
     return "ok"
 
 
-def render_answer(answer_markdown: str, steps: Sequence[str] | None, cited: Sequence[ChunkRef]) -> str:
+def render_answer(
+    answer_markdown: str, steps: Sequence[str] | None, cited: Sequence[ChunkRef], *, intro: str | None = None
+) -> str:
+    """`intro` (Q2 M1): câu mở đầu do CODE ghép từ fact (`messages.symptom_intro`) — đứng trước phần trả lời của LLM."""
     parts: list[str] = []
+    if intro:
+        parts.append(intro)
     if answer_markdown.strip():
         parts.append(answer_markdown.strip())
     numbered = [s.strip() for s in steps or () if s.strip()]
