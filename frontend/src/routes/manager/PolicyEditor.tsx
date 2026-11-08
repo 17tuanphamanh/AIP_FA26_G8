@@ -85,7 +85,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
   if (policy.error instanceof ApiError && policy.error.status === 403) return <Forbidden />;
   if (routeMissing(policy.error)) {
     return (
-      <section className="flex flex-col gap-6 px-12 py-10">
+      <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
         <h1 className="text-title">Chính sách</h1>
         <StrategySection client={client} />
         <MissingPanel testId="policy-missing" title={POLICY_MISSING_TITLE} text={MISSING_TEXT} />
@@ -141,12 +141,12 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
   // không tab Bảng/JSON — trước đây hiện cùng lúc ba trạng thái mâu thuẫn).
   const loadFailed = policy.isError && draft === null;
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
       <h1 className="text-title">Chính sách</h1>
       {/* N-PA P2: cách xử lý của hệ thống (D-67) — độc lập với nội dung chính sách bên dưới. */}
       <StrategySection client={client} />
-      <div className="flex items-end gap-3 border-t border-line pt-6">
-        <div className="flex min-w-0 grow flex-col gap-1">
+      <div className="flex items-end gap-3 border-t border-line pt-6 max-lg:flex-wrap max-lg:items-start">
+        <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
           <h2 className="text-heading">Nội dung chính sách</h2>
           {loadFailed ? null : (
             <p className="flex items-center gap-2 text-ink-2">
@@ -197,7 +197,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
             data-testid="policy-retry"
             onClick={() => void policy.refetch()}
             disabled={policy.isFetching}
-            className="h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue disabled:opacity-60"
+            className="h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue disabled:opacity-60 max-lg:min-h-11"
           >
             {policy.isFetching ? "Đang tải lại…" : "Thử lại"}
           </button>
@@ -205,7 +205,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
       ) : draft === null ? (
         <p className="text-ink-2 motion-safe:animate-pulse">Đang tải chính sách…</p>
       ) : (
-        <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-6 max-lg:grid-cols-1">
           <div className="min-w-0">
             {tab === "table" ? (
               <PolicyTable check={check} issues={issues} />
@@ -274,7 +274,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
 function ProblemText({ line, text, onJump }: { line: number | null; text: string; onJump: (line: number) => void }) {
   if (line === null) return <>{text}</>;
   return (
-    <button type="button" onClick={() => onJump(line)} className="text-left hover:underline">
+    <button type="button" onClick={() => onJump(line)} className="text-left hover:underline max-lg:min-h-11">
       {text}
     </button>
   );

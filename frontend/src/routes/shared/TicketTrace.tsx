@@ -34,7 +34,7 @@ export function TicketTraceRoute() {
 
 function Page({ ticketId, children }: { ticketId: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-6 px-12 py-8">
+    <section className="flex flex-col gap-6 px-12 py-8 max-lg:px-4 max-lg:py-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-title">{TRACE_TITLE}</h1>
         <p className="text-ink-2">
@@ -79,7 +79,7 @@ function Body({ trace }: { trace: Trace }) {
       {trace.parent_ticket_id ? (
         <p data-testid="trace-parent" className="text-ink-2">
           Ý con của yêu cầu{" "}
-          <Link to={tracePath(trace.parent_ticket_id)} className="font-mono text-fpt-blue">
+          <Link to={tracePath(trace.parent_ticket_id)} className="font-mono text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
             {trace.parent_ticket_id}
           </Link>
         </p>
@@ -92,7 +92,7 @@ function Body({ trace }: { trace: Trace }) {
           <ul className="flex flex-col gap-1">
             {trace.children.map((c) => (
               <li key={c.ticket_id} data-testid="trace-child">
-                <Link to={tracePath(c.ticket_id)} className="font-mono text-fpt-blue">
+                <Link to={tracePath(c.ticket_id)} className="font-mono text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
                   {c.ticket_id}
                 </Link>
                 <span className="text-ink-2">
@@ -138,7 +138,7 @@ function StepCard({ step: s }: { step: TraceStep }) {
   const closeNote = s.outcome ? closeNoteLine(s.outcome) : null;
   return (
     <li data-testid="trace-step" data-step={s.step} className="flex flex-col gap-1 rounded-group border border-line px-5 py-4">
-      <div className="flex items-baseline gap-3">
+      <div className="flex items-baseline gap-3 max-lg:flex-wrap">
         <h3 data-testid="trace-step-title" className="min-w-0 grow font-semibold">
           {stepTitle(s)}
         </h3>

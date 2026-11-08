@@ -47,9 +47,9 @@ export function DashboardPage() {
   }
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-6">
-        <div className="flex min-w-0 grow flex-col gap-1">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
+      <div className="flex items-end gap-6 max-lg:flex-wrap max-lg:items-start max-lg:gap-3">
+        <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
           <h1 className="text-title">Tổng quan</h1>
           <p data-testid="dashboard-window" className="text-ink-2">
             {shown
@@ -64,13 +64,13 @@ export function DashboardPage() {
         <MissingPanel testId="dashboard-missing" title={DASHBOARD_MISSING_TITLE} text={MISSING_TEXT} />
       ) : (
         <>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 max-lg:flex-wrap">
             <Segmented label="Loại số liệu" options={TABS} value={tab} onChange={setTab} />
             <button
               type="button"
               onClick={reload}
               disabled={active.isFetching}
-              className="h-7.5 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue disabled:opacity-60"
+              className="h-7.5 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue disabled:opacity-60 max-lg:min-h-11"
             >
               {active.isFetching ? "Đang tải…" : "Tải lại"}
             </button>
@@ -102,7 +102,7 @@ function BusinessTab({ query, range }: { query: Q<Parameters<typeof BusinessKpis
       ) : (
         <p className="text-ink-2 motion-safe:animate-pulse">Đang tải số liệu…</p>
       )}
-      <div className="grid grid-cols-[minmax(0,1fr)_400px] gap-6">
+      <div className="grid grid-cols-[minmax(0,1fr)_400px] gap-6 max-lg:grid-cols-1">
         {data ? <BusinessSections data={data} /> : <div />}
         <div className="flex min-w-0 flex-col gap-5">
           <OpenAlertsBlock range={range} />

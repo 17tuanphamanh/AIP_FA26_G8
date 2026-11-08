@@ -272,7 +272,7 @@ function StrategyForm({ view, client, setMessage }: { view: StrategyView; client
 
 function Row({ label, testId, children }: { label: string; testId: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0">
+    <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-4 border-t border-line px-5 py-3 first:border-t-0 max-lg:grid-cols-1 max-lg:gap-1">
       <dt className="text-ink-2">{label}</dt>
       <dd data-testid={testId} className="min-w-0 break-words whitespace-pre-line">
         {children}
@@ -315,8 +315,8 @@ function StrategyHistoryBlock({ client }: { client: Client }) {
 /** Thứ tự server (mới nhất trước) — không sắp lại. */
 function HistoryTable({ items }: { items: readonly StrategyChange[] }) {
   return (
-    <div className={BOX}>
-      <table className="w-full text-left text-secondary">
+    <div className={`${BOX} max-lg:overflow-x-auto`}>
+      <table className="w-full text-left text-secondary max-lg:min-w-xl">
         <thead className="text-label text-ink-2">
           <tr>
             <th scope="col" className="px-5 py-2.5 font-normal">Lúc</th>

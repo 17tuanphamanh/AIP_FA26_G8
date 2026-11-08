@@ -31,7 +31,7 @@ export function AlertRow({
       data-status={alert.status}
       className="border-t border-line first:border-t-0 motion-safe:animate-rise-in"
     >
-      <div className="grid grid-cols-[7px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
+      <div className="grid grid-cols-[7px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 max-lg:grid-cols-[7px_minmax(0,1fr)]">
         <span className={`size-1.75 rounded-full ${severityDot(alert.severity)}`} aria-hidden="true" />
         <span className="flex min-w-0 flex-col">
           <span className="text-secondary">
@@ -44,7 +44,7 @@ export function AlertRow({
             ) : null}
             <span className="sr-only"> — mức {severityLabel(alert.severity)}</span>
           </span>
-          <span className="truncate text-label font-normal text-ink-2">
+          <span className="truncate text-label font-normal text-ink-2 max-lg:whitespace-normal">
             <span className="font-mono">{alert.rule_id}</span>
             {alert.subject ? (
               <>
@@ -68,14 +68,14 @@ export function AlertRow({
             </span>
           ) : null}
         </span>
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2 max-lg:col-start-2 max-lg:empty:hidden">
           {compact ? null : (
             <button
               type="button"
               aria-expanded={showDetail}
               aria-controls={detailId}
               onClick={() => setShowDetail((v) => !v)}
-              className="h-7.5 rounded-full px-3 text-label text-fpt-blue hover:bg-group"
+              className="h-7.5 rounded-full px-3 text-label text-fpt-blue hover:bg-group max-lg:min-h-11"
             >
               Chi tiết
             </button>
@@ -85,7 +85,7 @@ export function AlertRow({
               type="button"
               disabled={acking}
               onClick={() => onAck(alert.alert_id)}
-              className="h-7.5 rounded-full bg-button-2 px-3 text-label text-fpt-blue disabled:opacity-60"
+              className="h-7.5 rounded-full bg-button-2 px-3 text-label text-fpt-blue disabled:opacity-60 max-lg:min-h-11"
             >
               {acking ? "Đang gửi…" : "Đã xem"}
             </button>

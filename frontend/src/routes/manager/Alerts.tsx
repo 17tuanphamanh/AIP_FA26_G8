@@ -65,8 +65,8 @@ export function Alerts() {
   const missing = routeMissing(query.error);
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-6">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
+      <div className="flex items-end gap-6 max-lg:flex-wrap max-lg:items-start max-lg:gap-3">
         <div className="flex min-w-0 grow flex-col gap-1">
           <h1 className="text-title">Cảnh báo</h1>
           <p className="text-ink-2">Cảnh báo chỉ báo người — hệ thống không tự đổi hành vi vì cảnh báo.</p>
@@ -150,7 +150,7 @@ export function OpenAlertsBlock({ range }: { range: RangeKey }) {
         <h2 id="open-alerts-heading" className="grow text-label text-ink-2">
           Cảnh báo đang mở{query.data && !query.isError ? ` · ${query.data.items.length}${query.data.truncated ? "+" : ""}` : ""}
         </h2>
-        <Link to="/alerts" className="text-label text-fpt-blue">
+        <Link to="/alerts" className="text-label text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
           Tất cả
         </Link>
       </div>

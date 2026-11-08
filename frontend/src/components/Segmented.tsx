@@ -16,7 +16,7 @@ export function Segmented<K extends string>({
     options.findIndex((option) => option.key === value),
   );
   return (
-    <div role="tablist" aria-label={label} className="relative grid shrink-0 auto-cols-fr grid-flow-col rounded-lg bg-segmented p-0.5">
+    <div role="tablist" aria-label={label} className="relative grid shrink-0 auto-cols-fr grid-flow-col rounded-lg bg-segmented p-0.5 max-lg:max-w-full">
       <span
         aria-hidden="true"
         className="absolute top-0.5 bottom-0.5 left-0.5 rounded-md bg-white shadow-input transition-transform duration-250 ease-soft"
@@ -30,7 +30,7 @@ export function Segmented<K extends string>({
           aria-selected={value === option.key}
           data-key={option.key}
           onClick={() => onChange(option.key)}
-          className={`relative h-8 rounded-md px-4 text-secondary max-lg:min-h-11 max-lg:px-3 ${value === option.key ? "font-semibold" : "text-ink-2 hover:text-ink"}`}
+          className={`relative h-8 rounded-md px-4 text-secondary max-lg:h-auto max-lg:min-h-11 max-lg:px-3 max-lg:py-2 ${value === option.key ? "font-semibold" : "text-ink-2 hover:text-ink"}`}
         >
           {option.label}
         </button>

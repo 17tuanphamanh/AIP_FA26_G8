@@ -165,7 +165,7 @@ export function BusinessKpis({ data }: { data: Business }) {
       ? { state: "insufficient", text: insufficientText(weightedCount.den), note: null }
       : undefined;
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-4 gap-4 max-lg:grid-cols-2">
       <Kpi data={data} name="automation_rate" value={metric(data, "automation_rate")} label="Tự xử lý" kind="rate" text={rateText(data, "automation_rate")} />
       <Kpi
         data={data}

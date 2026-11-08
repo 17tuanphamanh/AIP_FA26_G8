@@ -141,7 +141,7 @@ export function LlmStatus() {
   const missing = routeMissing(query.error);
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-title">Trạng thái LLM</h1>
         <p className="text-ink-2">Chỉ để xem — trang này không có thao tác sửa cấu hình nào.</p>

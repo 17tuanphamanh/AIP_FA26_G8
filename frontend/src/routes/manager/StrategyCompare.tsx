@@ -17,7 +17,7 @@ type Q = { isError: boolean; error: unknown; data: StrategiesDashboard | undefin
 export function StrategyCompareTab({ query, source, onSource }: { query: Q; source: StrategySource; onSource: (s: StrategySource) => void }) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3 self-start">
+      <div className="flex items-center gap-3 self-start max-lg:flex-wrap">
         <span className="text-secondary text-ink-2">Nguồn số liệu</span>
         <Segmented label="Nguồn số liệu" options={SOURCES} value={source} onChange={onSource} />
       </div>
@@ -59,7 +59,7 @@ export function CompareTable({ data }: { data: StrategiesDashboard }) {
         </p>
       ) : null}
       <div className="overflow-x-auto rounded-group border border-line">
-        <table data-testid="compare-table" className="w-full text-secondary">
+        <table data-testid="compare-table" className="w-full text-secondary max-lg:min-w-xl">
           <thead>
             <tr>
               <th scope="col" className={TH}>
@@ -105,7 +105,7 @@ export function CompareTable({ data }: { data: StrategiesDashboard }) {
           <p className="pl-1 text-secondary text-ink-2">Không có yêu cầu nào trong khoảng này.</p>
         ) : (
           <div className="overflow-x-auto rounded-group border border-line">
-            <table data-testid="intent-mix" className="w-full text-secondary">
+            <table data-testid="intent-mix" className="w-full text-secondary max-lg:min-w-xl">
               <thead>
                 <tr>
                   <th scope="col" className={TH}>
