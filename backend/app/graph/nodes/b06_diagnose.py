@@ -19,6 +19,8 @@
    dùng nhắm người khác mà định danh không qua được `sanitize_slots`); mọi nhánh ở đây giữ True nếu state đã True, mặc định False.
 9. be-target-guard-2 (L-03 Phần 2 D): vpn/software, cờ `target_is_other` bật (B3 thấy câu nhắm MÁY người khác) → KHÔNG tự suy máy duy
    nhất của người gửi (`allow_infer=False`) — không slot `device_id`/`action` suy ra, không fact máy; B11 hỏi mã máy.
+10. Q3 M3 (ĐP 09/11): account — `infer_account` suy `account_type="ad"` khi AD của CHÍNH người gửi đang khoá (điều kiện ở
+   `tools/diagnosis/account.py`); cờ `target_is_other` bật → `allow_infer=False` như mục 9. Audit `slots_inferred` như VPN.
 
 Điểm log 2 ở MỌI nhánh: `tools_called`, `tool_retry_count`, `slots_inferred`, `facts`, `rediagnose`, `phase`.
 """
@@ -36,6 +38,9 @@ from app.graph.ports import ToolResult
 from app.graph.tracing import NodeFn
 from app.tools.diagnosis import DIAGNOSERS, vpn
 from app.tools.retry import retries_of
+
+# Cờ `target_is_other` bật → không tự suy slot: máy (vpn/software — be-target-guard-2), loại tài khoản (account — Q3 M3).
+NO_INFER_WHEN_OTHER = DEVICE_INTENTS | {"account"}
 
 
 def _point2(tools: list[str], *, device_id: str | None, rediagnose: bool) -> dict[str, Any]:
@@ -97,7 +102,7 @@ def make(deps: NodeDeps) -> NodeFn:
             inferred, facts = vpn.infer_vpn(diag, requester_id=requester, device_id=device_id, allow_infer=not other)
         else:  # TQ-2: giữ phân biệt 404 (None) / rỗng (RootModel rỗng)
             diag = {t: None for t in module.TOOLS} | {r.tool: r.data for r in results}
-            no_infer = {"allow_infer": False} if other and intent in DEVICE_INTENTS else {}  # be-target-guard-2
+            no_infer = {"allow_infer": False} if other and intent in NO_INFER_WHEN_OTHER else {}  # be-target-guard-2, Q3 M3
             inferred, facts = module.infer(diag, requester_id=requester, slots=slots, **no_infer)
         added = {k: v for k, v in inferred.items() if k not in slots}  # không ghi đè slot người dùng đã nêu
         point2.update(slots_inferred=sorted(added), facts=facts)
