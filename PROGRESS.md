@@ -5842,6 +5842,88 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
   (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
 - Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
 
+## bn-a (08/11/2026, S6) — M2 hạn giữ + migration 0015 (S1, S2, S4, A4) + A2 khoá worker + M4 câu hỏi vào prompt trích slot — tầng A
+
+### DỪNG 2 (08/11 18:25 → 20:20) — ĐP duyệt PLAN (trừ 0015), M4 → A2 → M2 đã code + commit; 0015 CHỜ lô P5 gộp 0014
+
+**ĐP chốt (18:25):** Q1 job chạy `app_rw`, KHÔNG `app_migrate` — **lệch P7 mục 4 ("dùng role `app_migrate`") có chủ ý**: owner `app_migrate`
+tắt được trigger `forbid_mutation` (ALTER TABLE … DISABLE TRIGGER) và không bị REVOKE → mất rào DB bảo đảm job không đụng `audit_logs`;
+`app_rw` đã có CRUD bảng checkpoint từ 0003 nên đủ quyền. Q2 sessions hết hạn > 30 ngày VÀ không còn dòng trỏ tới. Q3 gộp `wait_deadlines`
+(`fired_at` > 7 ngày); `llm_cache` ĐỂ SAU bảo vệ. Q4 410 `conversation_purged` + câu FE. Q5 `security_events.retention_run` (CHECK ở 0015).
+Q6 `config/retention.yaml`. Q7 worker thấy JWT/MFA → từ chối. Q8 cập nhật bảng 7.4. Q9 `USERNAME_HMAC_KEY` (`:-`) + script dẫn xuất + username
+ma không đổi.
+
+**Commit (nhánh `bn-a`, chưa push):** `9aeeb4d` M4 · `953c9ec` test viết trước A4/S1/S2/S4 (xfail strict "CHỜ 0015") · `c561342` sửa kiểu ca
+chờ 0015 · `78eba8a` A2 · `0b00619` M2 · `567188e` A2 sửa theo soát · `288f648` M2 sửa theo soát · `a1f6be5` docs bảng 7.4.
+
+**Cờ chờ 0015 (gỡ khi viết migration):** xfail strict ở `test_auth_totp_replay.py` (4), `auth_store_contract.py` (4 — cả bản SQL),
+`test_migration_0015_static.py` (3), `integration/test_migration_0015.py` (cả module), `test_txlog_pg.py` (1 ca S1), `test_retention_pg.py`
+(1 ca `retention_run`); `db/retention.SqlRetentionStore.record_run` ghi log thay dòng `security_events` tới khi `retention_run` có trong
+`SECURITY_EVENT_TYPES`. A4 (code TOTP chống dùng lại) chưa viết — đi cùng 0015.
+
+**security-reviewer:** A2 (`78eba8a`): 7 PASS, 1 FAIL thấp (7a — trong compose không tiến trình nào giữ cả 2 khoá → xoay JWT quên tạo lại khoá
+worker không bị phát hiện) → đã sửa `567188e` (backend cũng nhận `USERNAME_HMAC_KEY`, lệch → runtime không mở) + thêm `SVC_EXECUTOR_TOKEN` vào
+danh sách cấm của worker + `fchmod` theo fd; NGHI còn lại: 7d worker vẫn nhận `MIGRATE_DATABASE_URL` (có từ trước; `make up` chạy alembic qua
+`compose run backend` nên gỡ khỏi worker được — chờ ĐP). M2 (`0b00619`): 0 FAIL, 12 PASS, 4 NGHI → đã sửa `288f648`: giữ cả họ cha–con khi
+có escalation/lượt mở, chọn lại nếu còn dòng ở bất kỳ bảng checkpoint nào, lỗi giữa chừng vẫn ghi sự kiện; còn mở cho ĐP: sàn
+`retention_days` (đặc tả "cấu hình được", hiện `ge=1`) và `CONFIG_DIR` env trỏ được thư mục config khác (cùng mức với `policy.json`);
+phòng thủ thêm ở `runner.recover` (ticket đã kết thúc + snapshot rỗng → không `_run_initial`) — chưa làm.
+
+**Việc TA làm:** thêm `USERNAME_HMAC_KEY` vào `.env` (script `scripts/ops/derive_username_key.py --env-file .env --out "$TMPDIR/…"`),
+dựng lại backend + worker; chạy `make test` (PG: `test_retention_pg.py` 12, `test_migration_0015.py` xfail, `test_txlog_pg.py`, hợp đồng
+`test_auth_store_sql`), soát mutation SQL (bỏ "đã đóng", `<` → `<=`) bằng PG.
+
+### DỪNG 1 (08/11 sáng)
+
+Nền `d9b356e`. DỪNG 1 = PLAN + test viết trước (đỏ đúng lý do), **chưa commit** (hook pre-commit chặn test đỏ), **chưa code**. Code migration
+chỉ viết SAU khi ĐP báo lô P5 (0014 `ticket_hidden`) đã gộp — 0015 nối sau 0014.
+
+**Trả lời M2 (từ code đã đọc):**
+- (a) `AsyncPostgresSaver` (langgraph-checkpoint-postgres 3.1.2) giữ hội thoại ở `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`
+  (`checkpoint_migrations` chỉ là phiên bản schema); `thread_id` = `ticket_id` (`graph/runner.py:150`). Có API `adelete_thread(thread_id)`
+  (xoá 3 bảng theo thread, mọi namespace) → job dùng API này, không DELETE tay. `app_rw` đã có DELETE trên 4 bảng từ 0003.
+- (b) Bảng khác có chữ người dùng (đã che): `tickets.redacted_request` — GIỮ (D-07 đã che; `audit_logs`, `transaction_log`… có FK tới
+  `tickets` → không xoá được dòng ticket; danh sách "Gần đây" đọc cột này). `turns` — không có chữ, GIỮ (M9). `llm_calls.prompt_full` — chỉ
+  có khi EVAL_MODE (không ở prod; harness P8 cần), GIỮ. `side_effects`, `child_notices.body` — P7 mục 4 [Chốt 17.2] ghi "cùng vòng đời
+  checkpoint/hội thoại, job đêm" → đề xuất XOÁ cùng thread. `email_outbox.body`, `approvals.note`, `escalations.handoff_note/close_note`,
+  `llm_cache.response_json` — đề xuất GIỮ trong lô này (không có trong bảng P7 mục 4 / có chu kỳ riêng) — ĐP chốt.
+- (c) Job KHÔNG đụng `audit_logs`/`security_events` (chỉ INSERT 1 dòng sự kiện). Rào DB: `app_rw` bị REVOKE UPDATE/DELETE/TRUNCATE + trigger
+  `forbid_mutation` (0001) — test PG thử DELETE/UPDATE/TRUNCATE bằng `app_rw` đều lỗi; số dòng `audit_logs` trước = sau.
+
+**Điểm lệch đặc tả (dừng hỏi, KHÔNG tự chọn):**
+- **Q-bna-1 — role của job:** P7 mục 4 ghi "Job đêm của worker, dùng role `app_migrate`". Đề xuất `app_rw` (đủ quyền từ 0003; owner `app_migrate`
+  tắt được trigger audit → mất rào (c); cùng tinh thần A2 bớt bí mật trong worker — kèm bỏ `MIGRATE_DATABASE_URL` khỏi env worker?).
+- **Q-bna-2 — `sessions`:** P7 mục 4 "30 ngày sau khi hết hạn" (brief chỉ ghi "hết hạn") → test theo 30 ngày. `tickets.session_id`, `turns.session_id`
+  có FK tới `sessions` → đề xuất chỉ xoá phiên KHÔNG còn dòng nào trỏ tới (không sửa `tickets`).
+- **Q-bna-3 — bảng P7 mục 4 brief không nêu:** `wait_deadlines` (7 ngày sau `fired_at`), `llm_cache` runtime (`expires_at < now`) — gộp vào job này hay để sau?
+
+**Thiết kế (file đụng):**
+| Mục | File | Ai làm |
+|---|---|---|
+| M2 | `config/retention.yaml` (mới: `retention_days: 90`, `session_grace_days: 30`, `dry_run: true`, `batch`); `settings.py` (`RetentionConfig`, `load_retention`, `get_retention` — KHÔNG có biến env); `db/retention.py` (mới, `SqlRetentionStore`); `graph/retention.py` (mới, `RetentionJob` + `RetentionReport`, Clock tiêm); `worker.py` (`setup_retention_job`: cron 20:00 UTC, `max_instances=1`, `misfire_grace_time=None`, ngoài `schedule_jobs`); `api/tickets.py` (410 `conversation_purged`); `db/models.py` + 0015 (`security_events.event_type` += `retention_run` — chờ Q-bna-5) | agent chính; **security-reviewer** soát diff M2 ở DỪNG 2 |
+| 0015 | `db/alembic/versions/0015_*.py` (S1 REVOKE + 2 trigger `transaction_log`; S2 trigger `tickets_final_state_once` BEFORE UPDATE OF final_state; S4 `ix_approvals_pending_deadline` WHERE status='pending'; A4 `users.mfa_last_step BIGINT NULL`; downgrade đủ); `db/models.py`; sửa test ghim head/bảng/trigger (`test_monitor_dash_business::test_alembic_single_head_is_0009`, `test_db_models`, `test_migration.py` tập trigger) | agent chính; **security-reviewer** soát diff ở DỪNG 2 |
+| A4 | `auth/mfa.py` (`totp_step`), `auth/ports.py` + `auth/store.py` + `tests/fakes/auth.py` (`accept_totp_step` — `UPDATE … WHERE mfa_last_step IS NULL OR mfa_last_step < :s RETURNING`; `set_mfa_secret` xoá bước), `auth/service.py` (`otp_replayed`) | agent chính |
+| A2 | `docker-compose.yml` (JWT/MFA ra khỏi `x-backend-env`, thêm riêng cho backend; worker `USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}`); `.env.example`; `settings.py` (`username_hmac_key` 64 hex); `auth/username_hash.py` (`resolve_key`); `worker.py` (`require_worker_keys` trước DB); `graph/wiring.py` (`approver_users` dùng `resolve_key`) | agent chính |
+| M4 | `config/prompts/b11_extract_slots.yaml` (v3, `allowed_vars` + `question`, luật cũ giữ nguyên văn); `graph/nodes/clarify_wait.py` (biến `question` = tin `question` cuối của `conversation`; `sanitize_slots(text=)` vẫn CHỈ câu trả lời) — KHÔNG đụng `b11_slots.py` | agent chính |
+
+**Rủi ro an toàn:** (1) xoá nhầm ticket còn sống → điều kiện ở SQL (đã kết thúc, `closed_at <` mốc chặt, không escalation mở, không lượt mở,
+cha/con đều xong) + `dry_run` mặc định TRUE trong file commit; (2) owner role tắt được trigger (Q-bna-1); (3) S2 trigger chặn nhầm đường ghi
+hợp lệ — đã soát: chỉ `finalize_once` ghi `final_state`, L2 chỉ ghi `close_reason` (test canh tĩnh); (4) A2 lệch khoá giữa backend và worker →
+đếm khoá username ma sai → `resolve_key` từ chối khi lệch; (5) M4 câu hỏi chứa mã máy ví dụ lọt thành slot → luật nguyên văn chỉ trên câu
+trả lời (test canh); (6) A4 test cũ dùng lại cùng OTP trong cùng bước sẽ đỏ khi bật chống dùng lại → sửa test (tua đồng hồ), không nới luật.
+
+**Test viết trước (đỏ đúng lý do — unit chạy trong sandbox; PG TA chạy):** unit 8334 test: 44 đỏ = đúng 44 ca mới/ghim lại, 0 ca cũ vỡ.
+`test_retention_job.py` (14 đỏ), `test_retention_api.py` (1 đỏ: 200 thay vì 410; 3 canh xanh), `test_worker_secrets.py` (11 đỏ; 1 canh xanh),
+`test_auth_totp_replay.py` (4 đỏ; 2 canh xanh), `auth_store_contract.py` (+4, đỏ ở bản in-memory), `test_b11_extract_question.py` (5 đỏ; 2 canh
+xanh), `test_llm_prompts.py`/`test_chain_t20a.py` (ghim v3 + `question` — 2 đỏ), `test_migration_0015_static.py` (3 đỏ; 2 canh S1/S2 xanh).
+PG (chưa chạy): `test_retention_pg.py` (7), `test_migration_0015.py` (4), `test_txlog_pg.py` (+1 S1).
+
+**Câu hỏi cần ĐP chốt:** Q-bna-1…3 ở trên; Q-bna-4 GET ticket đã dọn = 410 `conversation_purged` (đề xuất) hay 200 + cờ (frontend + `schema.gen.ts`
+phải theo); Q-bna-5 "1 dòng sự kiện hệ thống" = `security_events` loại mới `retention_run` (thêm vào CHECK ở 0015) hay chỉ dòng log; Q-bna-6
+`dry_run` + hạn giữ trong `config/retention.yaml` (commit) — đúng ý "bật bằng config, không .env máy đo"?; Q-bna-7 worker có từ chối khởi động
+khi LỠ nhận `JWT_SIGNING_KEY`/`MFA_ENC_KEY` (chạy tay ngoài compose đọc `.env`) hay chỉ WARNING; Q-bna-8 bảng 7.4 phase3 (biến của
+`b11_extract_slots`) cần cập nhật spec theo `question`.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -5863,6 +5945,7 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
 | 5 T20a | Probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật: slot + `action_hint` đúng bảng 5.1.4, slot chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; đo tỉ lệ LLM bỏ trống `target_user` khi câu nhắm người khác (bỏ trống → cờ Q-T20a-4 không bật); chạy lại kịch bản VPN với quy tắc người khác (N5). **LLM-G DỪNG 3 (b03 v4, flash, thử tay 2 lần): "quyền sửa … trong 2 tuần" → write, 14, đường dẫn đúng chữ (R09); "quyền đọc …" → chỉ hỏi `duration`, giá trị `read` chưa xác nhận; `action_hint` vpn tả lỗi → null, B6 tự suy renew. Tỉ lệ bỏ trống `target_user`, `b11_extract_slots` v2 chưa đo.** | phase5 5.1.1 P9, Q-T20a-4 |
 | 5 T24 | TC07/TC08 với LLM thật: `b03_classify` v3 ra account/`reset_password` + `target_user=svc_backup` đúng chữ ("đặt lại mật khẩu AD cho svc_backup") và access/`grant_permission` + `permission_level=read`, `duration=30` từ "quyền đọc … 30 ngày"; chạy lại `make gate5 S="tc07 tc08"` với `LLM_BACKEND=real` (bỏ thẻ preset) → cùng luật R03 (+R04) / R07 (+R09), cùng đường duyệt/từ chối. **LLM-G 17/10 (thử tay, 2 lần, flash):** slot + luật khớp cả hai (R03+R04, R07+R09, tới chờ duyệt). **DỪNG 3 (b03 v4) thử tay lại 2 lần: như cũ.** Chưa chạy `make gate5` với real | phase5 7.6, 1.3 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
+| bn-a M4 | Probe `b11_extract_slots` v3 (+ `question`) với LLM thật: câu trả lời ngắn ("máy thứ nhất", "cái đó") có trích đúng nhờ câu hỏi không; LLM có lấy mã ví dụ trong câu hỏi không (code vẫn loại — đo tỉ lệ slot bị `sanitize_slots` bỏ). **Chưa đo.** | PROGRESS bn-a |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
 5 PASS / 0 FAIL khi đè `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=`; stack đã trả về đúng `.env`). `.env` VẪN giữ
