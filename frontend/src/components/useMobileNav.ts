@@ -1,11 +1,10 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { DESKTOP_QUERY } from "../lib/viewport.ts";
 
 // Trạng thái của thanh bên thu gọn trên điện thoại (hiển thị: MobileNav.tsx).
 // - Đóng bằng: Esc · chạm vùng mờ · nút "Đóng menu" · bấm một liên kết trong ngăn kéo · đổi đường dẫn · kéo rộng tới ≥ 1024 px.
 // - Mở → tiêu điểm vào ngăn kéo; đóng → tiêu điểm về nút menu.
 
-/** Điểm `lg` của Tailwind (64rem). Phải trùng điểm gãy của các lớp `max-lg:` và khối @media trong tokens.css. */
-export const DESKTOP_QUERY = "(min-width: 64rem)";
 export const NAV_ID = "app-sidebar";
 
 export type MobileNav = {

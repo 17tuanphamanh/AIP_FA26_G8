@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { createTicket, TEXT_MAX, withBusyRetry } from "../../api/tickets.ts";
 import logoUrl from "../../assets/logo.svg";
 import { Composer } from "../../components/Composer.tsx";
+import { isDesktop } from "../../lib/viewport.ts";
 import { describeSendError } from "./sendError.ts";
 import { sessionTickets } from "./sessionTickets.ts";
 import { SUGGESTIONS } from "./suggestions.ts";
@@ -30,6 +31,9 @@ export function ChatHome() {
   const [waitNote, setWaitNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const caretToEnd = useRef(false);
+  // Tự focus ô nhập chỉ ở khổ ≥ 1024 px: trên điện thoại focus lúc mở trang bật bàn phím ảo (Android) ngay và che lời chào + nút
+  // gợi ý. Nút gợi ý vẫn focus ô nhập (người dùng vừa chạm). Đọc MỘT lần lúc dựng — `autoFocus` chỉ có nghĩa lúc gắn.
+  const [focusOnMount] = useState(isDesktop);
 
   // Nút gợi ý (F6 P4): điền câu mẫu → focus ô nhập, con trỏ cuối câu để sửa tiếp. KHÔNG gửi.
   function suggest(sample: string) {
@@ -85,7 +89,7 @@ export function ChatHome() {
             busy={busy}
             error={fieldError}
             hint={<LockHint />}
-            autoFocus
+            autoFocus={focusOnMount}
             inputRef={inputRef}
           />
         </div>

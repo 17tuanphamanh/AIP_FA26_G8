@@ -5,7 +5,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { Link, MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MobileNavBar, NavDrawer } from "./MobileNav.tsx";
-import { DESKTOP_QUERY, NAV_ID, useMobileNav } from "./useMobileNav.ts";
+import { DESKTOP_QUERY } from "../lib/viewport.ts";
+import { NAV_ID, useMobileNav } from "./useMobileNav.ts";
 
 type Listener = () => void;
 let listeners: Set<Listener>;
