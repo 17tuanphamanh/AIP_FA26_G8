@@ -17,7 +17,8 @@ docs/spec/build/phase3-thiet-ke-chi-tiet.md mục 5 (ingest) + mục 6 (truy h�
   (`RagPort` Protocol — bản thật `Retriever`, bản giả `tests/fakes/rag.FakeRag`); `ingest/procedures.py` (`make ingest`
   CẢNH BÁO `procedure_doc` thiếu/tắt/nhân viên không xem được — không chặn);
   `eval_cli.py` (`make eval-rag` — đo Recall/FG/MRR trên bản KB đang chạy, `--sweep` chỉ để quan sát, không
-  chọn ngưỡng — D-22).
+  chọn ngưỡng — D-22). R1: thêm P@1, Recall@5 ở ngưỡng (đúng tài liệu trong top-5 VÀ top_score ≥ `RETRIEVAL_THRESHOLD`) và một
+  dòng "Không lọc intent"; `recall_at5` giữ nghĩa cũ và cổng ingest (`gate.decide`) không đọc chỉ số mới.
 - Test: unit (`backend/tests/unit/test_rag_*.py`, không cần Docker) · integration Qdrant/Postgres thật
   (`backend/tests/integration/test_rag_query_qdrant.py`, `test_b08_pg.py`, `test_rag_ingest_pg.py` — cần
   `make up`/testcontainers, người chạy) · mutation (`scripts/mutation/mutate_3b.py`, `mutate_3c.py`).
