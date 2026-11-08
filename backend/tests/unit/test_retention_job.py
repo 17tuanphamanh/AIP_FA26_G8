@@ -260,3 +260,20 @@ def test_m2_open_retention_refuses_bad_or_missing_file(tmp_path: Path) -> None:
     (tmp_path / "retention.yaml").write_text("dry_run: 'false'\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="retention.yaml"):
         open_retention(Settings(_env_file=None, config_dir=tmp_path))  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_m2_failure_after_purging_still_records_one_event() -> None:
+    """Soát M2 5b: đã xoá thread rồi bước xoá phiên lỗi (DB mất) → vẫn đúng 1 `record_run` mang số thread đã xoá + errors; lỗi ném lại."""
+    from app.core.clock import FakeClock
+
+    class SessionsDown(FakeStore):
+        async def delete_expired_sessions(self, cutoff: datetime) -> int:
+            raise ConnectionError("db down")
+
+    store, saver = SessionsDown(), FakeSaver()
+    with pytest.raises(ConnectionError):
+        await _job(store, saver, FakeClock(NOW), dry_run=False).run()
+    [(detail, _)] = store.runs
+    assert (detail["threads"], detail["sessions"], detail["errors"]) == (2, 0, 1)
+    assert saver.deleted == ["tk-a", "tk-b"]

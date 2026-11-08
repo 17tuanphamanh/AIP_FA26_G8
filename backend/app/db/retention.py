@@ -1,9 +1,9 @@
 """Truy vấn của job hạn giữ (M2 bn-a; P7 mục 4 [Chốt 17.2]) — chạy bằng role `app_rw` (ĐP chốt Q1: KHÔNG `app_migrate`, lệch P7 mục 4 —
 owner tắt được trigger append-only, `app_rw` thì không; `app_rw` có CRUD trên bảng checkpoint từ 0003).
 
-- `expired_threads(cutoff, limit)`: ticket CÒN checkpoint, ĐÃ kết thúc (`final_state IS NOT NULL`), `closed_at < cutoff` (chặt — đúng mốc
-  thì còn), không escalation đang mở (L2 còn cần hội thoại), không lượt mở, có cha thì cha cũng đã kết thúc trước mốc, là cha thì mọi con
-  đã kết thúc. Cũ nhất trước, tối đa `limit`. Checkpoint xoá bằng API của saver (`adelete_thread`) ở `graph/retention.py` — KHÔNG ở đây.
+- `expired_threads(cutoff, limit)`: ticket CÒN dòng ở một trong 3 bảng checkpoint, ĐÃ kết thúc (`final_state IS NOT NULL`), `closed_at <
+  cutoff` (chặt — đúng mốc thì còn), không escalation đang mở / lượt mở ở BẤT KỲ ai trong họ (chính nó, cha, con — L2 còn cần ngữ cảnh), có
+  cha thì cha cũng đã kết thúc trước mốc, là cha thì mọi con đã kết thúc. Cũ nhất trước, tối đa `limit`. Checkpoint xoá bằng API của saver (`adelete_thread`) ở `graph/retention.py` — KHÔNG ở đây.
 - `purge_ticket_rows(ticket_id)`: `side_effects` của ticket + `child_notices` có `parent_ticket_id` = ticket (P7 mục 4: cùng vòng đời
   hội thoại, theo ticket CHA). Một transaction.
 - `sessions`: `expires_at < cutoff` VÀ không dòng `tickets`/`turns` nào trỏ tới (FK — ĐP chốt Q2; không sửa `tickets`).
@@ -28,12 +28,20 @@ log = logging.getLogger(__name__)
 
 RETENTION_EVENT = "retention_run"
 
+# Họ = chính ticket + cha + các con (soát M2 1b): escalation mở / lượt mở ở BẤT KỲ ai trong họ → giữ cả họ (L2 còn cần ngữ cảnh).
+_FAMILY = "(x.ticket_id = t.ticket_id OR x.ticket_id = t.parent_ticket_id OR x.ticket_id IN " \
+          "(SELECT k.ticket_id FROM tickets k WHERE k.parent_ticket_id = t.ticket_id))"
+# Còn dòng ở BẤT KỲ bảng checkpoint nào (soát M2 2b): `adelete_thread` xoá 3 bảng bằng 3 lệnh — lỗi giữa chừng thì lượt sau chọn lại.
+_HAS_CHECKPOINT = " OR ".join(
+    f"EXISTS (SELECT 1 FROM {table} c WHERE c.thread_id = t.ticket_id)"
+    for table in ("checkpoints", "checkpoint_blobs", "checkpoint_writes")
+)
 _EXPIRED_THREADS = text(
     "SELECT t.ticket_id FROM tickets t "
     "WHERE t.final_state IS NOT NULL AND t.closed_at < :cutoff "
-    "AND EXISTS (SELECT 1 FROM checkpoints c WHERE c.thread_id = t.ticket_id) "
-    "AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.ticket_id = t.ticket_id AND e.closed_at IS NULL) "
-    "AND NOT EXISTS (SELECT 1 FROM turns u WHERE u.ticket_id = t.ticket_id AND u.ended_at IS NULL) "
+    f"AND ({_HAS_CHECKPOINT}) "
+    f"AND NOT EXISTS (SELECT 1 FROM escalations x WHERE x.closed_at IS NULL AND {_FAMILY}) "
+    f"AND NOT EXISTS (SELECT 1 FROM turns x WHERE x.ended_at IS NULL AND {_FAMILY}) "
     "AND (t.parent_ticket_id IS NULL OR EXISTS (SELECT 1 FROM tickets p WHERE p.ticket_id = t.parent_ticket_id "
     "     AND p.final_state IS NOT NULL AND p.closed_at < :cutoff)) "
     "AND NOT EXISTS (SELECT 1 FROM tickets k WHERE k.parent_ticket_id = t.ticket_id AND k.final_state IS NULL) "

@@ -257,3 +257,31 @@ async def test_m2_child_notices_of_purged_parent_deleted(rw: AsyncEngine, saver:
 async def _all(engine: AsyncEngine, sql: str, **params: Any) -> list[Any]:
     async with engine.connect() as conn:
         return [r[0] for r in await conn.execute(text(sql), params)]
+
+
+async def test_m2_family_with_open_escalation_kept(rw: AsyncEngine, saver: AsyncPostgresSaver) -> None:
+    """Soát M2 1b: escalation còn mở ở CON → giữ cả cha; escalation còn mở ở CHA → giữ con (L2 còn cần ngữ cảnh của họ)."""
+    parent_a = await _ticket(rw, "fpa", closed_days=95, is_parent=True)
+    child_a = await _ticket(rw, "fca", closed_days=96, parent=parent_a, final="S_ESCALATED")
+    parent_b = await _ticket(rw, "fpb", closed_days=95, is_parent=True, final="S_ESCALATED")
+    child_b = await _ticket(rw, "fcb", closed_days=96, parent=parent_b)
+    for t in (parent_a, child_a, parent_b, child_b):
+        await _checkpoint(saver, t)
+    async with rw.begin() as conn:
+        await conn.execute(text("INSERT INTO escalations (ticket_id, exit_code, priority, handoff_note) "
+                                "VALUES (:a, 'E5', 5, '{}'::jsonb), (:b, 'E2', 4, '{}'::jsonb)"), {"a": child_a, "b": parent_b})
+    got = set(await _store(rw).expired_threads(CUTOFF, 500))
+    assert not got & {parent_a, child_a, parent_b, child_b}
+
+
+async def test_m2_leftover_blobs_without_checkpoint_row_still_selected(rw: AsyncEngine, saver: AsyncPostgresSaver) -> None:
+    """Soát M2 2b: `checkpoints` đã xoá mà còn `checkpoint_writes` (xoá dở) → lượt sau vẫn chọn ticket để dọn nốt."""
+    tid = await _ticket(rw, "left", closed_days=120)
+    await _checkpoint(saver, tid)
+    cfg: Any = {"configurable": {"thread_id": tid, "checkpoint_ns": "", "checkpoint_id": empty_checkpoint()["id"]}}
+    await saver.aput_writes(cfg, [("ch", "x")], "task-1")
+    async with rw.begin() as conn:
+        await conn.execute(text("DELETE FROM checkpoints WHERE thread_id = :t"), {"t": tid})  # giả lập xoá dở
+    assert tid in set(await _store(rw).expired_threads(CUTOFF, 500))
+    await _job(rw, saver, dry_run=False).run()
+    assert int(await scalar(rw, "SELECT count(*) FROM checkpoint_writes WHERE thread_id = :t", t=tid)) == 0
