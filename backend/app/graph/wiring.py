@@ -20,9 +20,10 @@ Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 Người duyệt (4b): roster `config/approvers.yaml` (kiểm trước DB) → `NodeDeps.approvers`; `NodeDeps.approver_users` =
-`auth.user_sync.AuthApproverUsers` trên `SqlAuthStore` + `SecurityEventWriter` + khoá HMAC dẫn xuất từ `JWT_SIGNING_KEY`
-(`username_hash.username_key` — cùng hàm với `TokenSigner.username_key`). Thiếu khoá → WARNING, `available=False` (B15 → E2
-`approver_sync_unavailable` theo ticket) — KHÔNG đổi điều kiện khởi động (Q-4b-5).
+`auth.user_sync.AuthApproverUsers` trên `SqlAuthStore` + `SecurityEventWriter` + khoá HMAC username ma qua `username_hash.resolve_key`
+(backend: dẫn xuất từ `JWT_SIGNING_KEY` — cùng hàm với `TokenSigner.username_key`; worker: `USERNAME_HMAC_KEY` — A2 bn-a; lệch → không
+khởi động). Thiếu khoá → WARNING, `available=False` (B15 → E2 `approver_sync_unavailable` theo ticket) — KHÔNG đổi điều kiện khởi động
+của backend (Q-4b-5); worker tự từ chối thiếu khoá ở `worker.require_worker_keys`.
 M5 lớp 2 (Phase 6 6C, P1/P10, N2/N5): chiến lược = `Settings.strategy` (Q-6C-1 = B — `manual` bị từ chối ở mọi chế độ, còn lại
 `check_strategy`) và calibrator (`m5.calibrator_version` → CHỈ `load_calibrator`; null → None = không AUTO) kiểm TRƯỚC DB ở cả backend
 lẫn worker; `NodeDeps.estimator` = `LlmRiskEstimator` trên cùng gateway, `eval_mode` cùng nguồn Settings với gateway (N2).
@@ -47,7 +48,7 @@ from app.audit.writer import AuditWriter
 from app.auth.service import auth_config, lock_policy
 from app.auth.store import SqlAuthStore
 from app.auth.user_sync import AdUserSync, AuthApproverUsers
-from app.auth.username_hash import username_key
+from app.auth.username_hash import resolve_key
 from app.core.clock import Clock
 from app.db.escalations import SqlEscalationStore
 from app.db.identity import SqlIdentityReads
@@ -243,14 +244,15 @@ async def open_runtime(
 
 
 def approver_users(settings: Settings, engines: Engines, sink: SecurityEventWriter) -> AuthApproverUsers:
-    """B15 `ensure` (4b P5, TQ-3): `AdUserSync` trên bảng `users` thật, cùng tham số khoá với đăng nhập (`auth_config`). Thiếu
-    `JWT_SIGNING_KEY` → WARNING + `available=False` (Q-4b-5 — không đổi điều kiện khởi động). Khoá không log."""
-    if settings.jwt_signing_key is None:
-        log.warning("JWT_SIGNING_KEY chưa cấu hình — B15 không đồng bộ được người duyệt, ticket cần duyệt sẽ ra E2")
+    """B15 `ensure` (4b P5, TQ-3): `AdUserSync` trên bảng `users` thật, cùng tham số khoá với đăng nhập (`auth_config`). Không có khoá
+    HMAC username ma (`resolve_key` → None) → WARNING + `available=False` (Q-4b-5 — không đổi điều kiện khởi động). Khoá không log."""
+    key = resolve_key(settings.jwt_signing_key, settings.username_hmac_key)
+    if key is None:
+        log.warning("thiếu khoá HMAC username ma (JWT_SIGNING_KEY / USERNAME_HMAC_KEY) — B15 không đồng bộ được người duyệt, "
+                    "ticket cần duyệt sẽ ra E2")  # fmt: skip
         return AuthApproverUsers(None)
     return AuthApproverUsers(AdUserSync(
-        store=SqlAuthStore(engines.main), sink=sink,
-        username_key=username_key(settings.jwt_signing_key.get_secret_value().encode("utf-8")),
+        store=SqlAuthStore(engines.main), sink=sink, username_key=key,
         lock=lock_policy(auth_config(settings, get_policy().constants)),
     ))  # fmt: skip
 

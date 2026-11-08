@@ -71,7 +71,14 @@ export async function readApiError(res: Response): Promise<ApiError> {
 }
 
 // Mã máy của backend → câu cho người dùng. Mã lạ: 409 có thể là câu tiếng Việt sẵn (`LateEvent.message`).
+/** M2 bn-a (ĐP chốt Q4): `GET /api/tickets/{id}` 410 `conversation_purged` — job hạn giữ (90 ngày) đã dọn checkpoint của ticket đã kết thúc. */
+export const PURGED_CODE = "conversation_purged";
+export const PURGED_TEXT = "Nội dung hội thoại đã được dọn theo chính sách lưu trữ.";
+/** Lỗi đọc ticket là "đã dọn theo hạn giữ" (410 + mã) — màn hiện câu trung tính, không coi là lỗi, không hỏi lại. */
+export const isPurged = (error: unknown): boolean => error instanceof ApiError && error.status === 410 && error.code === PURGED_CODE;
+
 const CODE_MESSAGES: Record<string, string> = {
+  [PURGED_CODE]: PURGED_TEXT,
   reauth_required: "Cần đăng nhập lại để xác nhận thao tác này.",
   privacy_guard_unavailable: "Chưa gửi được — hệ thống kiểm tra nội dung đang bận, vui lòng thử lại.",
   ticket_busy: "Hệ thống đang bận, sẽ tự thử lại.",

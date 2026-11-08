@@ -14,6 +14,8 @@
 - `config/approvers.yaml` (`open_approvers`, Phase 4 4b P1): người duyệt chính/dự phòng/Trưởng BP theo intent — gọi ở
   `open_runtime` trước DB; thiếu intent đang bật, khoá lạ, id sai mẫu, trùng người → không khởi động. `approval_sla_minutes`
   (P12): `APPROVAL_SLA_MINUTES_DEV` chỉ dev/test.
+- `config/retention.yaml` (`open_retention`, M2 bn-a — P7 mục 4 [Chốt 17.2]): hạn giữ checkpoint/hội thoại, phiên, hạn chờ đã bắn + công tắc
+  `dry_run` (mặc định true). Công tắc nằm trong file commit, KHÔNG qua env/`.env` máy đo. Sai → worker không khởi động.
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
 - `config/dedup.yaml` (`get_dedup`, M1): `DEDUP_WINDOW_HOURS` (cửa sổ báo trùng, giờ) + mẫu tin cố định `{loai}`/`{ma}` — KHÔNG
@@ -45,6 +47,7 @@ from pydantic import (
     Field,
     RootModel,
     SecretStr,
+    StrictBool,
     StringConstraints,
     field_validator,
     model_validator,
@@ -74,14 +77,19 @@ def env_file_from_env() -> str | None:
 class Settings(BaseSettings):
     # env_file đọc lúc import module: đổi APP_ENV_FILE sau khi đã import app.settings thì không ăn.
     # env_ignore_empty: `LLM_API_KEY=` (để trống tới mốc G) được hiểu là chưa đặt → None.
+    # hide_input_in_errors (A2 bn-a): lỗi cấu hình không in giá trị (khoá, DSN) — chỉ tên trường + lý do.
     model_config = SettingsConfigDict(
-        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
     # ---- Bí mật ----
     llm_api_key: SecretStr | None = None
     jwt_signing_key: SecretStr | None = None
     mfa_enc_key: SecretStr | None = None
+    # A2 (bn-a): khoá HMAC username ma CHO WORKER (worker không nhận JWT_SIGNING_KEY/MFA_ENC_KEY) — 64 hex = đúng khoá backend dẫn xuất
+    # từ JWT_SIGNING_KEY (`auth.username_hash.username_key`, tạo bằng `scripts/ops/derive_username_key.py`). Lệch → `resolve_key` từ chối.
+    username_hmac_key: SecretStr | None = None
     # Token dịch vụ (P6 mục 3, D-03): mock kiểm ở header X-Service-Token.
     svc_agent_token: SecretStr | None = None  # tool đọc (B6, B11), đăng nhập qua AD
     svc_executor_token: SecretStr | None = None  # DUY NHẤT có quyền ghi (B17)
@@ -227,6 +235,14 @@ class Settings(BaseSettings):
     # 4b P12: hạn duyệt (phút) đè `SLA_MINUTES` của policy.json để thử hết hạn/nhắc trên stack dev — CHỈ khi APP_ENV ∈ {dev, test}
     # (`require_dev_fakes` ở `open_runtime`, trước DB); môi trường khác đặt biến này → từ chối khởi động.
     approval_sla_minutes_dev: int | None = Field(default=None, ge=1, le=30)
+
+    @field_validator("username_hmac_key", mode="before")
+    @classmethod
+    def _username_key_hex(cls, v: object) -> object:
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if raw is not None and not (isinstance(raw, str) and re.fullmatch(r"[0-9a-fA-F]{64}", raw)):
+            raise ValueError("USERNAME_HMAC_KEY phải là 64 ký tự hex (32 byte) — từ chối khởi động")
+        return v
 
     @field_validator("app_git_sha", mode="before")
     @classmethod
@@ -665,6 +681,40 @@ def approval_sla_minutes(settings: Settings) -> int:
         return get_policy().constants.SLA_MINUTES
     settings.require_dev_fakes("APPROVAL_SLA_MINUTES_DEV (hạn duyệt rút ngắn cho dev)")
     return settings.approval_sla_minutes_dev
+
+
+# ---- config/retention.yaml (M2 bn-a; P7 mục 4 [Chốt 17.2]) -----------------------------------
+
+RETENTION_FILE = "retention.yaml"
+RETENTION_MIN_DAYS = 90  # sàn hạn giữ hội thoại/checkpoint (huong-dan 17.2, P7 mục 4)
+
+
+class RetentionConfig(BaseModel):
+    """Job hạn giữ của worker (`graph/retention.RetentionJob`). Số ngày tính từ `closed_at` của ticket / `expires_at` của phiên /
+    `fired_at` của hạn chờ. `dry_run` bool CHẶT (chuỗi "false" không được hiểu là tắt) — mặc định chỉ đếm."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    # checkpoint + hội thoại, side_effects, child_notices (P7 mục 4). SÀN 90 (ĐP 08/11 20:35): chỉ được giữ LÂU hơn — gõ nhầm "9" không
+    # thành dọn ticket 9 ngày tuổi.
+    retention_days: int = Field(default=90, ge=RETENTION_MIN_DAYS)
+    session_grace_days: int = Field(default=30, ge=1)  # sessions: 30 ngày sau khi hết hạn (P7 mục 4)
+    wait_grace_days: int = Field(default=7, ge=1)  # wait_deadlines: 7 ngày sau fired_at (P7 mục 4)
+    dry_run: StrictBool = True
+    batch: int = Field(default=500, ge=1)  # tối đa số ticket mỗi lượt
+
+
+def load_retention(path: Path) -> RetentionConfig:
+    return RetentionConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def open_retention(settings: Settings) -> RetentionConfig:
+    """Nạp `<config_dir>/retention.yaml` — thiếu file, YAML hỏng, khoá lạ, giá trị sai → `RuntimeError` (worker từ chối khởi động, TRƯỚC DB)."""
+    path = settings.config_dir / RETENTION_FILE
+    try:
+        return load_retention(path)
+    except (OSError, yaml.YAMLError, ValueError) as e:  # ValidationError là ValueError
+        raise RuntimeError(f"{RETENTION_FILE} không nạp được ({type(e).__name__}) — từ chối khởi động") from e
 
 
 # ---- config/escalation_templates.yaml ---------------------------------------------------------

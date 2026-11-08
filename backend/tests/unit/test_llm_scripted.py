@@ -124,7 +124,8 @@ CALLS: list[tuple[str, str, dict[str, Any]]] = [
     ("strong", "b10_answer", {"question": "gia hạn thế nào", "evidence": EVIDENCE}),
     ("fast", "b11_clarify_question", {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
                                       "previous_reply": "none"}),
-    ("fast", "b11_extract_slots", {"text": "máy em là PC-0977", "missing": ["device_id"], "intent": "vpn"}),
+    ("fast", "b11_extract_slots", {"text": "máy em là PC-0977", "missing": ["device_id"], "intent": "vpn",
+                                    "question": "Bạn cho mình xin mã máy nhé."}),  # M4 bn-a: + question
 ]  # fmt: skip
 
 

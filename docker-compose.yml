@@ -4,7 +4,9 @@
 name: servicedesk
 
 # Env chung của backend và worker. Worker KHÔNG nhận SVC_EXECUTOR_TOKEN (credential ghi duy nhất,
-# D-03) — chỉ backend (nơi chạy B17) có.
+# D-03) — chỉ backend (nơi chạy B17) có. A2 (bn-a): JWT_SIGNING_KEY, MFA_ENC_KEY, MIGRATE_DATABASE_URL cũng CHỈ backend (thêm riêng ở
+# service backend);
+# worker nhận USERNAME_HMAC_KEY (khoá HMAC username ma) — thấy JWT/MFA hoặc thiếu USERNAME_HMAC_KEY thì worker từ chối khởi động.
 x-backend-env: &backend-env
   # Bắt buộc khai báo (2b-3 Q3): thiếu → compose dừng. Thành phần giả chỉ nạp khi dev/test.
   APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
@@ -13,7 +15,6 @@ x-backend-env: &backend-env
   FAKE_SCENARIO: ${FAKE_SCENARIO:-}
   FAKE_NODE_DELAY: ${FAKE_NODE_DELAY:-}
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
-  MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
   # M9 — role chỉ-đọc app_monitor. Ghi cứng như DATABASE_URL (DSN localhost trong .env không đè). Tắt để thử 503:
   # docker compose run --rm -e MONITOR_DATABASE_URL= … (rỗng = chưa đặt → route M9 trả 503, không rơi về app_rw).
   MONITOR_DATABASE_URL: postgresql+psycopg://app_monitor:${PG_MONITOR_PASSWORD}@postgres:5432/${PG_DATABASE}
@@ -28,8 +29,6 @@ x-backend-env: &backend-env
   STRONG_MODEL: ${STRONG_MODEL:-}
   LLM_BASE_URL: ${LLM_BASE_URL:-}
   LLM_API_KEY: ${LLM_API_KEY:-}
-  JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
-  MFA_ENC_KEY: ${MFA_ENC_KEY:-}
   SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
   SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
   GRAPH_CONCURRENCY: ${GRAPH_CONCURRENCY:-8}
@@ -112,6 +111,14 @@ services:
     environment:
       <<: *backend-env
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
+      MFA_ENC_KEY: ${MFA_ENC_KEY:-}
+      # Role app_migrate (owner, DDL) — CHỈ Alembic dùng, chạy qua `compose run backend alembic upgrade head` (make up). Worker không nhận
+      # (ĐP 08/11 20:35): thấy biến này worker từ chối khởi động.
+      MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
+      # Soát A2 (7a): backend CŨNG nhận USERNAME_HMAC_KEY để `resolve_key` so với khoá dẫn xuất từ JWT_SIGNING_KEY — lệch (xoay JWT mà
+      # quên tạo lại khoá worker) → runtime backend không mở (503, healthcheck đỏ) thay vì backend và worker băm username ma khác nhau.
+      USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}
     healthcheck:
       # D-50: /api/health trả 200 khi phụ thuộc lõi sống, `runtime` không đổi mã → phải đọc JSON: healthy chỉ khi
       # 200 VÀ "runtime" == "up". 503 / chưa nghe cổng (runtime mở trong lifespan) → urlopen ném lỗi → thoát 1.
@@ -135,7 +142,10 @@ services:
     image: servicedesk-backend:dev  # CÙNG image với backend (T01 mục 5), chỉ khác lệnh
     pull_policy: never
     command: ["python", "-m", "app.worker"]
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # Rỗng → worker tự từ chối khởi động, thông báo nêu tên biến (không dùng `:?` — sẽ chặn mọi lệnh compose, kể cả `down`).
+      USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}
     healthcheck:
       # Worker ghi heartbeat mỗi 10 giây (app/heartbeat.py); cũ hơn 60 giây / không có file → thoát 1.
       # retries 1: một lần kiểm hỏng là unhealthy — ngưỡng 60 giây đã nằm trong chính lệnh kiểm.

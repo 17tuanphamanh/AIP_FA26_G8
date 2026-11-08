@@ -46,7 +46,8 @@ TABLE_7_4 = {
     "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence"}),
     # P6 lời nói (ĐP 08/11, v2): + `previous_reply` ∈ {none, usable, unusable} — enum do node tính, không chữ người dùng
     "b11_clarify_question": ("fast", "default", "QuestionOut", {"missing", "diagnostics_summary", "intent", "previous_reply"}),
-    "b11_extract_slots": ("fast", "default", "ExtractSlotsOut", {"text", "missing", "intent"}),
+    # M4 (bn-a 08/11): + `question` — câu B11 vừa gửi (đã qua output guard), chỉ là ngữ cảnh
+    "b11_extract_slots": ("fast", "default", "ExtractSlotsOut", {"text", "missing", "intent", "question"}),
     # Phase 6 (6B, phase6 5.1 P2/P9): B14 — không câu người dùng; `cache: default`, estimator tự `bypass` khi vận hành
     "b14_risk_estimate": ("strong", "default", "RiskEstimateOut", {"intended_action", "risk_context", "evidence"}),
     "b14_risk_vote": ("strong", "default", "RiskVoteOut", {"intended_action", "risk_context", "evidence", "sample_idx"}),
