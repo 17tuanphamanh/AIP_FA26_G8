@@ -2635,6 +2635,13 @@ export interface operations {
                     "application/json": components["schemas"]["TicketView"];
                 };
             };
+            /** @description conversation_purged */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {

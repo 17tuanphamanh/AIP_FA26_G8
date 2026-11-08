@@ -15,7 +15,8 @@ ghi TRƯỚC `start_event` (lỗi ghi → 503).
   không ghi `turns`/`late_event`.
 
 `GET /api/tickets/{id}` → `TicketView`: đã có `final_state` thì `status` lấy từ `tickets`, còn mở thì từ
-checkpoint; `waiting_for` CHỈ từ checkpoint; đọc checkpoint lỗi → 503 (không đoán).
+checkpoint; `waiting_for` CHỈ từ checkpoint; đọc checkpoint lỗi → 503 (không đoán). M2 (bn-a): ticket ĐÃ kết thúc mà checkpoint rỗng
+(job hạn giữ đã dọn — 90 ngày, P7 mục 4) → 410 `conversation_purged`, SAU kiểm quyền (người không được đọc vẫn 404).
 
 `POST /api/tickets/{id}/override` → 201 (Phase 4 4d P1–P4, TC23; PLAN-4d 2.1): người có `decision:override` ghi lại "đáng lẽ quyết
 khác" cho ticket ĐÃ kết thúc — KHÔNG đổi kết quả ticket (một dòng `audit_logs` `step="OVERRIDE"` qua `desk.approvals.record_override`;
@@ -77,6 +78,7 @@ NOTE_MAX = 1000
 CHILD_MESSAGE = "Vui lòng trả lời trong hội thoại chung"  # P1 mục 6.1, D-31
 _CHILD_INDEX = re.compile(r"[0-9]{1,2}")  # khoá `items` của `/reply` = id con `<cha>-<i>`: phần sau `<cha>-` CHỈ là số (T20b, soát lượt 4)
 NOT_FOUND = "not_found"
+PURGED = "conversation_purged"  # M2: 410 — hội thoại đã dọn theo hạn giữ
 
 type WaitingFor = Literal["clarify", "approval", "confirm", "reply"]
 WAITING_FOR: dict[str, WaitingFor] = {
@@ -268,7 +270,7 @@ async def list_tickets(
     ])  # fmt: skip
 
 
-@router.get("/api/tickets/{ticket_id}", response_model=TicketView)
+@router.get("/api/tickets/{ticket_id}", response_model=TicketView, responses={410: {"description": PURGED}})
 async def read_ticket(
     ticket_id: str,
     request: Request,
@@ -282,6 +284,8 @@ async def read_ticket(
         log.exception("đọc checkpoint của ticket %s lỗi", ticket_id)
         raise HTTPException(503, "checkpoint_unavailable") from None
     values = snap.values or {}
+    if row.final_state is not None and not values:  # M2: ticket đã kết thúc mà checkpoint rỗng = job hạn giữ đã dọn (90 ngày)
+        raise HTTPException(410, PURGED)
     progress = None
     if row.is_parent:  # T20b P11: chỉ DB (`children_progress_rows`) + checkpoint CHA (danh sách con, seed, `awaiting`)
         children = list(values.get("children") or [])

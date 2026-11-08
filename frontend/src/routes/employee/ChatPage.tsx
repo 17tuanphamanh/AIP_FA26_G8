@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { ApiError, errorMessage } from "../../api/errors.ts";
+import { ApiError, PURGED_TEXT, errorMessage, isPurged } from "../../api/errors.ts";
 import {
   confirmBody,
   confirmTicket,
@@ -48,7 +48,7 @@ export function ChatRoute() {
   return <ChatPage key={ticketId} ticketId={ticketId} />;
 }
 
-const stopOn = (error: unknown) => error instanceof ApiError && (error.status === 403 || error.status === 404);
+const stopOn = (error: unknown) => error instanceof ApiError && (error.status === 403 || error.status === 404 || isPurged(error));
 /** Thân ticket sai hình dạng (api/tickets.ts `parseTicketView`): đang polling → giữ bản hợp lệ cũ + câu lỗi dữ liệu (Q-fe-46). */
 const badBody = (error: unknown): error is ApiError => error instanceof ApiError && error.code === "invalid_ticket_body";
 
@@ -171,6 +171,17 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
   if (query.isPending) {
     return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse">Đang tải yêu cầu…</p>;
+  }
+  if (!view && isPurged(query.error)) {
+    // M2 bn-a: ticket đã kết thúc, hội thoại đã dọn theo hạn giữ (410) — câu trung tính, không phải lỗi, không hỏi lại.
+    return (
+      <section className="px-12 py-10">
+        <h1 className="text-heading">{PURGED_TEXT}</h1>
+        <Link to="/chat" className="mt-4 inline-block font-semibold text-fpt-blue">
+          Tạo yêu cầu mới
+        </Link>
+      </section>
+    );
   }
   if (!view) {
     const e = query.error;

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PURGED_TEXT } from "../../api/errors.ts";
 import type { Me, TicketView } from "../../api/types.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
 import { ChatHome } from "./ChatHome.tsx";
@@ -444,6 +445,27 @@ describe("t201: tạo ticket 503 `strategy_unavailable` → đúng câu, giữ c
     } finally {
       rendered.unmount();
       queryClient.clear();
+    }
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ M2 bn-a: hội thoại đã dọn (410)
+
+describe("M2: GET ticket 410 conversation_purged → câu chính sách lưu trữ, dừng polling", () => {
+  it("410 → tiêu đề đúng câu ĐP chốt, không 'Chưa tải được', không alert; chỉ 1 lần GET (không hỏi lại)", async () => {
+    const page = mountTicket(() => json(410, { detail: "conversation_purged" }));
+    try {
+      const heading = await screen.findByRole("heading", { name: PURGED_TEXT });
+      expect(heading).toBeTruthy();
+      expect(PURGED_TEXT).toBe("Nội dung hội thoại đã được dọn theo chính sách lưu trữ.");
+      expect(screen.queryByText("Chưa tải được yêu cầu.")).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/410|conversation_purged/);
+      await new Promise((r) => setTimeout(r, 2500));
+      const gets = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter((c) => c[0] === `/api/tickets/${ID}`);
+      expect(gets).toHaveLength(1);
+    } finally {
+      page.done();
     }
   });
 });

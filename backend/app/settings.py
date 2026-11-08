@@ -14,6 +14,8 @@
 - `config/approvers.yaml` (`open_approvers`, Phase 4 4b P1): người duyệt chính/dự phòng/Trưởng BP theo intent — gọi ở
   `open_runtime` trước DB; thiếu intent đang bật, khoá lạ, id sai mẫu, trùng người → không khởi động. `approval_sla_minutes`
   (P12): `APPROVAL_SLA_MINUTES_DEV` chỉ dev/test.
+- `config/retention.yaml` (`open_retention`, M2 bn-a — P7 mục 4 [Chốt 17.2]): hạn giữ checkpoint/hội thoại, phiên, hạn chờ đã bắn + công tắc
+  `dry_run` (mặc định true). Công tắc nằm trong file commit, KHÔNG qua env/`.env` máy đo. Sai → worker không khởi động.
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
 Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
@@ -41,6 +43,7 @@ from pydantic import (
     Field,
     RootModel,
     SecretStr,
+    StrictBool,
     StringConstraints,
     field_validator,
     model_validator,
@@ -674,6 +677,37 @@ def approval_sla_minutes(settings: Settings) -> int:
         return get_policy().constants.SLA_MINUTES
     settings.require_dev_fakes("APPROVAL_SLA_MINUTES_DEV (hạn duyệt rút ngắn cho dev)")
     return settings.approval_sla_minutes_dev
+
+
+# ---- config/retention.yaml (M2 bn-a; P7 mục 4 [Chốt 17.2]) -----------------------------------
+
+RETENTION_FILE = "retention.yaml"
+
+
+class RetentionConfig(BaseModel):
+    """Job hạn giữ của worker (`graph/retention.RetentionJob`). Số ngày tính từ `closed_at` của ticket / `expires_at` của phiên /
+    `fired_at` của hạn chờ. `dry_run` bool CHẶT (chuỗi "false" không được hiểu là tắt) — mặc định chỉ đếm."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    retention_days: int = Field(default=90, ge=1)  # checkpoint + hội thoại, side_effects, child_notices (P7 mục 4)
+    session_grace_days: int = Field(default=30, ge=1)  # sessions: 30 ngày sau khi hết hạn (P7 mục 4)
+    wait_grace_days: int = Field(default=7, ge=1)  # wait_deadlines: 7 ngày sau fired_at (P7 mục 4)
+    dry_run: StrictBool = True
+    batch: int = Field(default=500, ge=1)  # tối đa số ticket mỗi lượt
+
+
+def load_retention(path: Path) -> RetentionConfig:
+    return RetentionConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def open_retention(settings: Settings) -> RetentionConfig:
+    """Nạp `<config_dir>/retention.yaml` — thiếu file, YAML hỏng, khoá lạ, giá trị sai → `RuntimeError` (worker từ chối khởi động, TRƯỚC DB)."""
+    path = settings.config_dir / RETENTION_FILE
+    try:
+        return load_retention(path)
+    except (OSError, yaml.YAMLError, ValueError) as e:  # ValidationError là ValueError
+        raise RuntimeError(f"{RETENTION_FILE} không nạp được ({type(e).__name__}) — từ chối khởi động") from e
 
 
 # ---- config/escalation_templates.yaml ---------------------------------------------------------
