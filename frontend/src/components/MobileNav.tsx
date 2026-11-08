@@ -15,8 +15,8 @@ function MenuIcon({ open }: { open: boolean }) {
   );
 }
 
-/** Thanh đầu trên điện thoại (ẩn từ 1024 px): nút menu + tên ứng dụng. */
-export function MobileNavBar({ open, onToggle, buttonRef }: Pick<MobileNav, "open" | "buttonRef"> & { onToggle: () => void }) {
+/** Thanh đầu trên điện thoại (ẩn từ 1024 px): nút menu + tên ứng dụng + (bên phải) `children` — chuông thông báo. */
+export function MobileNavBar({ open, onToggle, buttonRef, children }: Pick<MobileNav, "open" | "buttonRef"> & { onToggle: () => void; children?: ReactNode }) {
   return (
     <header inert={open} className="flex h-14 shrink-0 items-center gap-1 border-b border-line bg-white pr-4 pl-2 lg:hidden">
       <button
@@ -32,6 +32,8 @@ export function MobileNavBar({ open, onToggle, buttonRef }: Pick<MobileNav, "ope
       </button>
       <img src={logoUrl} alt="" width={28} height={28} className="ml-1" />
       <span className="truncate text-secondary font-semibold">ServiceDesk AI</span>
+      {/* Chỗ của chuông thông báo (PlacedBell) — dưới 1024 px chuông ở đây, không nằm trong ngăn kéo. */}
+      <div className="ml-auto flex shrink-0 items-center">{children}</div>
     </header>
   );
 }

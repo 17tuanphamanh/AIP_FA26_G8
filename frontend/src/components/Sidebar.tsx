@@ -7,7 +7,7 @@ import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
 import { ownEntry } from "../lib/lookup.ts";
-import { NotificationBell } from "./NotificationBell.tsx";
+import { PlacedBell } from "./PlacedBell.tsx";
 import {
   type RecentTicket,
   recentTickets,
@@ -233,7 +233,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
       <div className="flex h-10 items-center gap-2.5 px-2 max-lg:h-12">
         <img src={logoUrl} alt="" width={28} height={28} />
         <span className="grow text-secondary font-semibold">ServiceDesk AI</span>
-        <NotificationBell key={me.user_id} me={me} />
+        <PlacedBell me={me} where="sidebar" />
       </div>
 
       {staff ? (

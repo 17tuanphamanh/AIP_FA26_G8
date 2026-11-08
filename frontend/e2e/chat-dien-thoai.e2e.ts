@@ -78,16 +78,11 @@ test("điện thoại 390×844: nhân viên đăng nhập, menu thu gọn, ô ch
   }
   await expectClean(page, "trang chat (menu đóng)");
 
-  // Mở menu: tiêu điểm vào trong, nội dung phía sau inert, liên kết cao ≥ 44 px.
-  await menu.click();
-  await expect(nav).toBeVisible();
-  await expect(menu).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator("main")).toHaveAttribute("inert", "");
-  await expectClean(page, "menu mở");
-
-  // Chuông thông báo (route có thể chưa có → không chuông): bảng thông báo phải nằm trọn trong màn.
+  // Chuông thông báo nằm ở thanh đầu (route có thể chưa có → không chuông): mở được mà không cần mở menu, bảng nằm trọn trong màn.
   const bell = page.getByTestId("tb-bell");
-  if (await bell.count()) {
+  const hasBell = (await bell.count()) > 0;
+  if (hasBell) {
+    await expect(page.locator("header").getByTestId("tb-bell")).toBeVisible();
     await bell.click();
     const panel = page.getByRole("dialog", { name: "Thông báo" });
     await expect(panel).toBeVisible();
@@ -96,10 +91,18 @@ test("điện thoại 390×844: nhân viên đăng nhập, menu thu gọn, ô ch
     expect(rect.x + rect.width, "bảng thông báo lọt mép phải").toBeLessThanOrEqual(390);
     expect(rect.y + rect.height, "bảng thông báo lọt mép dưới").toBeLessThanOrEqual(844);
     await expectClean(page, "bảng thông báo");
-    await page.keyboard.press("Escape"); // Esc trong bảng chỉ đóng bảng, ngăn kéo vẫn mở
+    await page.keyboard.press("Escape");
     await expect(panel).toBeHidden();
-    await expect(nav).toBeVisible();
+    await expect(nav).toBeHidden();
   }
+
+  // Mở menu: tiêu điểm vào trong, nội dung phía sau inert, liên kết cao ≥ 44 px. Chuông KHÔNG nằm trong ngăn kéo.
+  await menu.click();
+  await expect(nav).toBeVisible();
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("main")).toHaveAttribute("inert", "");
+  await expect(nav.getByTestId("tb-bell")).toHaveCount(0);
+  await expectClean(page, "menu mở");
 
   // Esc đóng menu, tiêu điểm về nút Menu.
   await page.keyboard.press("Escape");

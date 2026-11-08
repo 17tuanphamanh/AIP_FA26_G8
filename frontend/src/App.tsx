@@ -10,6 +10,7 @@ import { FlashNotice } from "./components/FlashNotice.tsx";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
 import { MobileNavBar, NavDrawer } from "./components/MobileNav.tsx";
 import { useEnterOnChange } from "./components/motion.ts";
+import { PlacedBell } from "./components/PlacedBell.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { useMobileNav } from "./components/useMobileNav.ts";
 import { ChatHome } from "./routes/employee/ChatHome.tsx";
@@ -38,7 +39,8 @@ const queryClient = new QueryClient();
 // - thanh bên thu vào nút menu (MobileNav.tsx), khung xếp dọc: thanh đầu → nội dung; vỏ nội dung là cột flex;
 // - `wrap-anywhere`: chuỗi dài không dấu cách (mã ticket, UUID) ngắt dòng thay vì đẩy tràn ngang;
 // - không cuộn ngang cả trang: bảng rộng tự cuộn ngang TRONG khung của nó.
-function Shell() {
+/** Khung sau đăng nhập. Xuất ra để test dựng đúng khung thật (Shell.test.tsx). */
+export function Shell() {
   const me = useMe();
   const { signOut } = useAuth();
   const content = useRef<HTMLDivElement>(null);
@@ -47,7 +49,9 @@ function Shell() {
   const { open, toggle, close, buttonRef, drawerRef } = useMobileNav(pathname);
   return (
     <div className="flex h-full max-lg:flex-col">
-      <MobileNavBar open={open} onToggle={toggle} buttonRef={buttonRef} />
+      <MobileNavBar open={open} onToggle={toggle} buttonRef={buttonRef}>
+        <PlacedBell me={me} where="header" />
+      </MobileNavBar>
       <NavDrawer open={open} onClose={close} drawerRef={drawerRef}>
         <Sidebar me={me} onSignOut={signOut} />
       </NavDrawer>

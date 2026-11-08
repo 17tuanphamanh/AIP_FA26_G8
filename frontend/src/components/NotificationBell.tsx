@@ -19,7 +19,8 @@ import { ownEntry } from "../lib/lookup.ts";
 import { cauThongBao, KET_QUA_THONG_BAO } from "../lib/nhan.ts";
 import { vnDateTime } from "../routes/manager/range.ts";
 
-// Chuông thông báo (ĐP 26/10 N-TB P2; hợp đồng thông báo §1) — mọi vai trò đã đăng nhập, ở hàng logo của thanh bên.
+// Chuông thông báo (ĐP 26/10 N-TB P2; hợp đồng thông báo §1) — mọi vai trò đã đăng nhập, ở hàng logo của thanh bên (dưới
+//   1024 px: ở thanh đầu — chỗ đứng do PlacedBell.tsx quyết).
 // - Số trên chuông = số thông báo ĐÃ TẢI có `created_at` > mốc đã xem (lib/lastSeen.ts); không có → không số.
 // - Mở danh sách = đánh dấu đã đọc: mốc = `created_at` mới nhất đang hiện.
 // - Hỏi lại 30 s, CHỈ khi tab đang hiện (`refetchIntervalInBackground: false` — TanStack dừng nhịp khi
