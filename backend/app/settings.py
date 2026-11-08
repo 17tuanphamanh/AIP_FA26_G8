@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     mock_url: str = "http://localhost:8100"
     db_pool_size: int = Field(default=10, ge=1)
     graph_concurrency: int = Field(default=8, ge=1)  # P1 mục 7
-    lock_pool_size: int | None = Field(default=None, ge=1)  # mặc định GRAPH_CONCURRENCY + 2 (D-19)
+    lock_pool_size: int | None = Field(default=None, ge=1)  # mặc định 2 × GRAPH_CONCURRENCY + 2 (D-19; G2 — trước là + 2)
     ticket_lock_timeout: float = Field(default=5.0, gt=0)  # giây; SET lock_timeout trên lock pool
     health_timeout: float = Field(default=2.0, gt=0)  # giây mỗi phụ thuộc ở /api/health
     # ---- SSE tiến trình ticket (GET /api/tickets/{id}/events) ----
@@ -343,7 +343,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _default_lock_pool(self) -> "Settings":
         if self.lock_pool_size is None:
-            self.lock_pool_size = self.graph_concurrency + 2
+            # G2: MỘT nguồn của công thức. `GRAPH_CONCURRENCY` lượt giữ khoá suốt lượt; API còn giữ khoá chờ giao cho task nền
+            # (`resume_locked`) và `deliver_event` chờ khoá — cần dư gấp đôi, không chỉ + 2.
+            self.lock_pool_size = 2 * self.graph_concurrency + 2
         return self
 
     @model_validator(mode="after")

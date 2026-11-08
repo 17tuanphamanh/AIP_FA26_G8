@@ -45,6 +45,22 @@ tiếp ngoài `make` thì tự thêm thư mục đó vào `PATH`.
 **Từ Phase 3d, `.env` phải có `LLM_BACKEND=scripted`** (máy dev, LLM giả `ScriptedLLM`, không gọi API) — thiếu thì
 `make up`/`make gate2` dừng và backend/worker từ chối khởi động; `real` chỉ dùng từ mốc G (`config/llm.yaml`).
 
+### Số kết nối Postgres
+
+Mỗi tiến trình Python (`backend` và `worker` — 2 tiến trình) mở **3 pool** tới Postgres:
+
+| Pool | Cấu hình | Mặc định | Tối đa |
+|---|---|---|---|
+| Chính (nghiệp vụ, audit) | `DB_POOL_SIZE` (+ `max_overflow` 10 của SQLAlchemy) | 10 | 20 |
+| Khoá ticket (`pg_advisory_lock` cấp session) | `LOCK_POOL_SIZE`, trống = 2 × `GRAPH_CONCURRENCY` + 2 | 18 | 18 (không overflow) |
+| Checkpoint LangGraph | `CHECKPOINT_POOL_SIZE` | 10 | 10 |
+
+Một tiến trình: 38 kết nối ở mặc định (10 + 18 + 10), tối đa 48 khi pool chính tràn. Hai tiến trình: **76** ở mặc định, tối đa **96**.
+Postgres mặc định `max_connections` = 100 (3 chỗ dành cho superuser), nên chỉ còn dư vài kết nối cho `alembic`, `psql`, công cụ
+đọc `app_monitor` (engine riêng, tối đa 15 kết nối mỗi tiến trình khi có `MONITOR_DATABASE_URL`) và `make gate*`. Tăng `GRAPH_CONCURRENCY`
+là tăng pool khoá gấp đôi: muốn chạy nhiều lượt hơn thì nâng `max_connections` của Postgres (compose chưa đặt) hoặc giảm `DB_POOL_SIZE`
+/ `CHECKPOINT_POOL_SIZE` trước.
+
 ### Đổi hàm băm khoá ticket (G1)
 
 Khoá ticket là `pg_advisory_lock(hashtextextended(ticket_id, 0))` (bigint, 64 bit; trước là `hashtext`, 32 bit nên hai ticket khác nhau
