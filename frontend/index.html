@@ -3,8 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/src/assets/logo.svg" />
-    <!-- interactive-widget: bàn phím ảo co vùng bố cục (Chrome Android) để ô chat dính đáy nằm trên bàn phím; trình duyệt không biết thì bỏ qua. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <!-- interactive-widget: bàn phím ảo co vùng bố cục (Chrome Android) để ô chat dính đáy nằm trên bàn phím; trình duyệt không biết thì bỏ qua.
+         viewport-fit=cover: trang phủ cả vùng tai thỏ / thanh home — thanh đầu, ô chat, thanh quyết định tự đệm bằng env(safe-area-inset-*),
+         tokens.css đệm trái/phải cho cả trang khi xoay ngang. Bỏ dòng này thì phải bỏ các đệm đó. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
     <title>ServiceDesk AI</title>
   </head>
   <body>

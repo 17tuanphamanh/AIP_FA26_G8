@@ -133,6 +133,13 @@
     --text-label: 14px;
     --text-label--line-height: 20px;
   }
+
+  /* `viewport-fit=cover` (index.html) cho trang phủ cả vùng tai thỏ khi xoay ngang → đệm trái/phải cho cả trang; trên/dưới do
+     từng thanh dính (thanh đầu, ô chat, thanh quyết định) tự đệm. Máy không có tai thỏ: env() = 0, không đổi gì. */
+  body {
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
+  }
 }
 
 /* Chiều cao khung theo `dvh` (vùng nhìn thấy THẬT, trừ thanh địa chỉ và bàn phím ảo trên trình duyệt hỗ trợ) thay cho 100% ở

@@ -284,7 +284,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       </div>
 
       {view.final_state ? null : (
-        <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4 max-lg:px-3 max-lg:pb-3">
+        <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4 max-lg:px-3 max-lg:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t from-white to-white/0" />
           <div className="flex w-full max-w-(--chat-width) flex-col gap-2">
             {waitNote || error ? (

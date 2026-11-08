@@ -130,7 +130,7 @@ export function NotificationBell({ me }: { me: Me }) {
               close();
             }
           }}
-          className="absolute top-10 left-0 z-30 flex max-h-120 w-90 origin-top-left flex-col overflow-hidden rounded-group border border-line bg-white shadow-input outline-none motion-safe:animate-pop-in max-lg:fixed max-lg:inset-x-3 max-lg:top-16 max-lg:max-h-[min(30rem,calc(100dvh_-_5rem))] max-lg:w-auto"
+          className="absolute top-10 left-0 z-30 flex max-h-120 w-90 origin-top-left flex-col overflow-hidden rounded-group border border-line bg-white shadow-input outline-none motion-safe:animate-pop-in max-lg:fixed max-lg:inset-x-3 max-lg:top-[calc(4rem+env(safe-area-inset-top))] max-lg:max-h-[min(30rem,calc(100dvh_-_5rem_-_env(safe-area-inset-top)))] max-lg:w-auto"
         >
           <h2 className="border-b border-line px-4 py-3 text-secondary font-semibold">Thông báo</h2>
           <div className="flex min-h-0 flex-col overflow-y-auto">

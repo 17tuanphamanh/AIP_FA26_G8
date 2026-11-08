@@ -18,7 +18,7 @@ function MenuIcon({ open }: { open: boolean }) {
 /** Thanh đầu trên điện thoại (ẩn từ 1024 px): nút menu + tên ứng dụng + (bên phải) `children` — chuông thông báo. */
 export function MobileNavBar({ open, onToggle, buttonRef, children }: Pick<MobileNav, "open" | "buttonRef"> & { onToggle: () => void; children?: ReactNode }) {
   return (
-    <header inert={open} className="flex h-14 shrink-0 items-center gap-1 border-b border-line bg-white pr-4 pl-2 lg:hidden">
+    <header inert={open} className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-1 border-b border-line bg-white pt-[env(safe-area-inset-top)] pr-4 pl-2 lg:hidden">
       <button
         ref={buttonRef}
         type="button"
@@ -60,7 +60,7 @@ export function NavDrawer({ open, onClose, drawerRef, children }: Pick<MobileNav
         type="button"
         aria-label="Đóng menu"
         onClick={onClose}
-        className="absolute top-3 right-3 flex size-11 items-center justify-center rounded-full bg-white text-ink shadow-input focus-visible:outline-2 focus-visible:outline-fpt-blue lg:hidden"
+        className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] right-3 flex size-11 items-center justify-center rounded-full bg-white text-ink shadow-input focus-visible:outline-2 focus-visible:outline-fpt-blue lg:hidden"
       >
         <MenuIcon open />
       </button>

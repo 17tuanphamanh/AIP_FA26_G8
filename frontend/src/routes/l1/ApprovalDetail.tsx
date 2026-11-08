@@ -428,7 +428,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
       </div>
 
       {canDecide && !sent ? (
-        <div data-testid="decision-bar" className="flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white px-12 max-lg:h-auto max-lg:flex-wrap max-lg:px-4 max-lg:py-3">
+        <div data-testid="decision-bar" className="flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white px-12 max-lg:h-auto max-lg:flex-wrap max-lg:px-4 max-lg:pt-3 max-lg:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => {
