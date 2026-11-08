@@ -70,14 +70,19 @@ def env_file_from_env() -> str | None:
 class Settings(BaseSettings):
     # env_file đọc lúc import module: đổi APP_ENV_FILE sau khi đã import app.settings thì không ăn.
     # env_ignore_empty: `LLM_API_KEY=` (để trống tới mốc G) được hiểu là chưa đặt → None.
+    # hide_input_in_errors (A2 bn-a): lỗi cấu hình không in giá trị (khoá, DSN) — chỉ tên trường + lý do.
     model_config = SettingsConfigDict(
-        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
     # ---- Bí mật ----
     llm_api_key: SecretStr | None = None
     jwt_signing_key: SecretStr | None = None
     mfa_enc_key: SecretStr | None = None
+    # A2 (bn-a): khoá HMAC username ma CHO WORKER (worker không nhận JWT_SIGNING_KEY/MFA_ENC_KEY) — 64 hex = đúng khoá backend dẫn xuất
+    # từ JWT_SIGNING_KEY (`auth.username_hash.username_key`, tạo bằng `scripts/ops/derive_username_key.py`). Lệch → `resolve_key` từ chối.
+    username_hmac_key: SecretStr | None = None
     # Token dịch vụ (P6 mục 3, D-03): mock kiểm ở header X-Service-Token.
     svc_agent_token: SecretStr | None = None  # tool đọc (B6, B11), đăng nhập qua AD
     svc_executor_token: SecretStr | None = None  # DUY NHẤT có quyền ghi (B17)
@@ -223,6 +228,14 @@ class Settings(BaseSettings):
     # 4b P12: hạn duyệt (phút) đè `SLA_MINUTES` của policy.json để thử hết hạn/nhắc trên stack dev — CHỈ khi APP_ENV ∈ {dev, test}
     # (`require_dev_fakes` ở `open_runtime`, trước DB); môi trường khác đặt biến này → từ chối khởi động.
     approval_sla_minutes_dev: int | None = Field(default=None, ge=1, le=30)
+
+    @field_validator("username_hmac_key", mode="before")
+    @classmethod
+    def _username_key_hex(cls, v: object) -> object:
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if raw is not None and not (isinstance(raw, str) and re.fullmatch(r"[0-9a-fA-F]{64}", raw)):
+            raise ValueError("USERNAME_HMAC_KEY phải là 64 ký tự hex (32 byte) — từ chối khởi động")
+        return v
 
     @field_validator("app_git_sha", mode="before")
     @classmethod

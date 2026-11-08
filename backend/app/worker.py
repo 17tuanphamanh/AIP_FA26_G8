@@ -5,6 +5,9 @@ Heartbeat (`app/heartbeat.py`) ghi file mỗi 10 giây bằng CHÍNH scheduler �
 file, quá 60 giây = unhealthy.
 Worker KHÔNG có SVC_EXECUTOR_TOKEN (D-03): runner dựng với `can_execute=False` — recover không bao giờ
 chạy B17, chuyển E7 "thực thi bị gián đoạn".
+A2 (bn-a): worker KHÔNG nhận `JWT_SIGNING_KEY` (ký được token mọi vai trò) và `MFA_ENC_KEY` (giải mã secret MFA) — thấy một trong hai →
+từ chối khởi động; chỉ nhận `USERNAME_HMAC_KEY` (khoá HMAC username ma cho B15 khi phục hồi lượt) — thiếu → từ chối. Kiểm ở
+`require_worker_keys` TRƯỚC khi đụng DB; thông báo chỉ nêu tên biến.
 M9 (B1): job `monitor_rules_minute` 60 giây chạy luật cảnh báo theo sự kiện; (B2) `monitor_rules_hourly` mỗi 3600
 giây và `monitor_rules_daily` 19:00 UTC (02:00 giờ VN); (B3) `monitor_rules_weekly` Chủ nhật 19:00 UTC (02:00 thứ Hai
 giờ VN) — ba job này chạy bù một lượt lúc khởi động — khối `# ---- M9` cuối file.
@@ -24,6 +27,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app import heartbeat
 from app.approval.store import log_approver_notice
 from app.audit.alerts import AlertWriter  # M9: ghi alerts qua M7, không qua app.monitor
+from app.auth.username_hash import resolve_key
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.session import Engines, create_engines
@@ -68,8 +72,25 @@ def schedule_jobs(scheduler: AsyncIOScheduler, jobs: Jobs, settings: Settings, c
     )  # fmt: skip
 
 
+WORKER_FORBIDDEN_KEYS = ("jwt_signing_key", "mfa_enc_key")
+
+
+def require_worker_keys(settings: Settings) -> bytes:
+    """A2: fail-closed lúc khởi động worker — có khoá thừa (JWT/MFA) hoặc thiếu `USERNAME_HMAC_KEY` → RuntimeError (chỉ tên biến)."""
+    if extra := [name.upper() for name in WORKER_FORBIDDEN_KEYS if getattr(settings, name) is not None]:
+        raise RuntimeError(f"worker không được nhận {', '.join(extra)} (chỉ backend giữ) — gỡ khỏi env của worker; từ chối khởi động")
+    key = resolve_key(None, settings.username_hmac_key)
+    if key is None:
+        raise RuntimeError(
+            "USERNAME_HMAC_KEY chưa cấu hình — worker cần khoá HMAC username ma (dẫn xuất từ JWT_SIGNING_KEY bằng "
+            "scripts/ops/derive_username_key.py); từ chối khởi động"
+        )
+    return key
+
+
 async def run() -> None:
     settings = get_settings()
+    require_worker_keys(settings)  # A2: trước khi đụng DB
     clock = SystemClock()
     engines = create_engines(settings)
     stop = asyncio.Event()
