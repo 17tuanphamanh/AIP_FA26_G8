@@ -830,3 +830,19 @@ class M5StrategyChange(Base):
     changed_by: Mapped[str] = _user_fk(nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)  # đã qua privacy guard
     changed_at: Mapped[datetime] = _now()
+
+
+# ---- 26. ticket_hidden (P3 menu ⋯ "Xóa") — migration 0014 ------------------------------------------------------------------
+
+
+class TicketHidden(Base):
+    """Ticket người dùng đã ẨN khỏi danh sách "Gần đây" của CHÍNH họ (`POST /api/tickets/{id}/hide`). Chỉ là tuỳ chọn hiển thị: không
+    xoá/sửa ticket, audit, phiếu duyệt hay escalation; `GET /api/tickets/{id}` vẫn đọc được. Ngoại lệ §4 `docs/spec/CLAUDE.md` (bảng ngoài
+    P7) TA/ĐP duyệt 08/11. `app_rw` chỉ SELECT, INSERT (ẩn lại = `ON CONFLICT DO NOTHING`; chưa có "bỏ ẩn" nên không DELETE).
+    `hidden_at` từ Clock của app (server_default chỉ là lưới an toàn)."""
+
+    __tablename__ = "ticket_hidden"
+
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.user_id"), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(64), ForeignKey("tickets.ticket_id"), primary_key=True)
+    hidden_at: Mapped[datetime] = _now()

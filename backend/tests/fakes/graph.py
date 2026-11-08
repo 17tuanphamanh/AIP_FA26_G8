@@ -588,6 +588,7 @@ class MemoryTickets:
         # D-67: chiến lược M5 chụp lúc tạo ticket (test đặt `strategies["t1"] = "rule_only"`); vắng = None → B12 coi là `hybrid`
         self.strategies: dict[str, str | None] = {}
         self.sources: dict[str, str] = {}
+        self.hidden: dict[tuple[str, str], datetime] = {}  # `ticket_hidden` giả: (user_id, ticket_id) → hidden_at
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -642,9 +643,16 @@ class MemoryTickets:
 
     async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
         """Như SQL: gốc (`parent_ticket_id IS NULL`) của đúng người gửi, `created_at DESC, ticket_id DESC`, `LIMIT`."""
-        own = [t for t, r in self.rows.items() if r["requester_id"] == requester_id and r["parent_ticket_id"] is None]
+        own = [t for t, r in self.rows.items() if r["requester_id"] == requester_id and r["parent_ticket_id"] is None
+               and (requester_id, t) not in self.hidden]  # fmt: skip
         own.sort(key=lambda t: (self.rows[t]["created_at"], t), reverse=True)
         return [row for t in own[:limit] if (row := await self.get(t)) is not None]
+
+    async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
+        """Như SQL: `INSERT … ON CONFLICT DO NOTHING` — lần sau giữ `hidden_at` cũ; FK `ticket_id` → `tickets`."""
+        if ticket_id not in self.rows:
+            raise ValueError(f"FK ticket_hidden.ticket_id: {ticket_id} chưa có")
+        self.hidden.setdefault((user_id, ticket_id), at)
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         return self.strategies.get(ticket_id)

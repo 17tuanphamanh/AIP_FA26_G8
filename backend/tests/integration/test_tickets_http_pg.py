@@ -12,7 +12,7 @@ import sys
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -316,6 +316,98 @@ async def test_list_own_store_order_limit_pg(rw: AsyncEngine) -> None:
     assert rows[0].created_at.utcoffset() == timedelta(0)
     assert [r.ticket_id for r in await store.list_own(me, 2)] == [f"tk-l-c-{sfx}", f"tk-l-b-{sfx}"]
     assert await store.list_own(f"u-{uuid4().hex[:8]}", 20) == []
+
+
+# ---- P3 menu ⋯ "Xóa" = ẩn khỏi "Gần đây" (POST /api/tickets/{id}/hide, bảng `ticket_hidden` — migration 0014) ----------------
+
+
+async def _count(rw: AsyncEngine, sql: str, **params: Any) -> int:
+    async with rw.connect() as conn:
+        return int((await conn.execute(text(sql), params)).scalar_one())
+
+
+KEEP_TABLES = ("approvals", "escalations", "turns", "transaction_log", "side_effects")  # ẩn không xoá/thêm dòng nào ở đây
+
+
+async def _row_json(rw: AsyncEngine, ticket_id: str) -> str | None:
+    async with rw.connect() as conn:
+        value = (await conn.execute(text("SELECT row_to_json(t)::text FROM tickets t WHERE ticket_id = :t"), {"t": ticket_id})).scalar()
+        return None if value is None else str(value)
+
+
+@pytest.mark.asyncio
+async def test_hide_from_recent_http_pg(db: PgUrls, rw: AsyncEngine) -> None:
+    clock = FakeClock(EPOCH + timedelta(days=500))  # mới hơn mọi ticket của test khác trong module
+    async with pg_desk(db, clock) as d:
+        an, binh, l1 = await d.token("an.nv"), await d.token("binh.tt"), await d.token("ha.lt")
+        a1 = await d.create(an, "VPN lỗi của An")
+        clock.advance(timedelta(minutes=1))
+        a2 = await d.create(an, "Zoom lỗi của An")
+        clock.advance(timedelta(minutes=1))
+        a3 = await d.create(an, "Outlook lỗi của An")
+        clock.advance(timedelta(minutes=1))
+        b1 = await d.create(binh, "Máy in lỗi của Bình")
+        detail_before = {k: v for k, v in (await d.status(a2, an)).items() if k != "server_now"}
+        audit_before = await _count(rw, "SELECT count(*) FROM audit_logs WHERE ticket_id = :t", t=a2)
+        others_before = [await _count(rw, f"SELECT count(*) FROM {t} WHERE ticket_id = :t", t=a2) for t in KEEP_TABLES]
+        ticket_before = await _row_json(rw, a2)
+
+        hide_at = clock.now()
+        for _ in range(2):  # idempotent: lần 2 vẫn 204, vẫn 1 dòng
+            r = await d.client.post(f"/api/tickets/{a2}/hide", headers=an)
+            assert (r.status_code, r.content) == (204, b"")
+        ids = [i["ticket_id"] for i in (await d.client.get("/api/tickets", headers=an)).json()["items"]]
+        assert ids[:2] == [a3, a1] and a2 not in ids  # các mục còn lại giữ thứ tự
+        async with rw.connect() as conn:
+            rows = (await conn.execute(text("SELECT user_id, hidden_at FROM ticket_hidden WHERE ticket_id = :t"), {"t": a2})).all()
+        assert [(r.user_id, r.hidden_at) for r in rows] == [("nv001", hide_at)]  # giờ từ Clock của app
+
+        # không xoá gì: ticket + audit còn nguyên; chi tiết đọc được, KHÔNG đổi; IT vẫn xem được
+        assert await _count(rw, "SELECT count(*) FROM audit_logs WHERE ticket_id = :t", t=a2) == audit_before
+        assert ticket_before is not None and await _row_json(rw, a2) == ticket_before
+        assert [await _count(rw, f"SELECT count(*) FROM {t} WHERE ticket_id = :t", t=a2) for t in KEEP_TABLES] == others_before
+        assert {k: v for k, v in (await d.status(a2, an)).items() if k != "server_now"} == detail_before
+        assert (await d.status(a2, l1))["ticket_id"] == a2
+
+        # người khác: danh sách không đổi; ẩn hộ ticket người khác / id không có → cùng 404
+        assert (await d.client.get("/api/tickets", headers=binh)).json()["items"][0]["ticket_id"] == b1
+        for who in (binh, l1):
+            foreign = await d.client.post(f"/api/tickets/{a1}/hide", headers=who)
+            missing = await d.client.post(f"/api/tickets/{uuid4()}/hide", headers=who)
+            assert (foreign.status_code, foreign.json()) == (missing.status_code, missing.json()) == (404, {"detail": "not_found"})
+        assert a1 in [i["ticket_id"] for i in (await d.client.get("/api/tickets", headers=an)).json()["items"]]
+        assert await _count(rw, "SELECT count(*) FROM ticket_hidden WHERE ticket_id = :t", t=a1) == 0
+
+        # đăng nhập lại (phiên mới) → vẫn ẩn
+        again = await d.token("an.nv")
+        assert a2 not in [i["ticket_id"] for i in (await d.client.get("/api/tickets", headers=again)).json()["items"]]
+        assert (await d.client.post(f"/api/tickets/{a1}/hide")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_hide_store_filters_before_limit_pg(rw: AsyncEngine) -> None:
+    """`SqlTicketStore.hide` (INSERT … ON CONFLICT DO NOTHING) + `list_own` loại ticket người đó đã ẩn TRƯỚC `LIMIT`; ẩn của người
+    khác (dòng `ticket_hidden` khác `user_id`) không ảnh hưởng."""
+    me, other = f"u-{uuid4().hex[:8]}", f"u-{uuid4().hex[:8]}"
+    async with rw.begin() as conn:
+        await conn.execute(text("INSERT INTO users (user_id, username, role) VALUES (:a, :a, 'employee'), (:b, :b, 'employee')"),
+                           {"a": me, "b": other})  # fmt: skip
+    store, sfx = SqlTicketStore(rw), uuid4().hex[:6]
+    ids = [f"tk-h-{i}-{sfx}" for i in range(3)]
+    for i, tid in enumerate(ids):
+        await store.create(
+            NewTicket(ticket_id=tid, requester_id=me, requester_role="employee", requester_dept=None, session_id=None,
+                      redacted_request="VPN lỗi", created_at=EPOCH + i * SLA),
+            turn_id=f"turn-{tid}",
+        )  # fmt: skip
+    await store.hide(me, ids[2], EPOCH)
+    await store.hide(me, ids[2], EPOCH + SLA)  # lần 2 không lỗi, không đổi `hidden_at`
+    await store.hide(other, ids[1], EPOCH)  # dòng của người khác (không qua API) — không ảnh hưởng `me`
+    assert [r.ticket_id for r in await store.list_own(me, 2)] == [ids[1], ids[0]]
+    assert await _count(rw, "SELECT count(*) FROM ticket_hidden WHERE ticket_id = :t", t=ids[2]) == 1
+    async with rw.connect() as conn:
+        at: datetime = (await conn.execute(text("SELECT hidden_at FROM ticket_hidden WHERE ticket_id = :t"), {"t": ids[2]})).scalar_one()
+    assert at == EPOCH
 
 
 # ---- Guard: quét MỌI cột text/jsonb/bytea của MỌI bảng + checkpoint ---------------------------

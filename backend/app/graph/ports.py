@@ -274,8 +274,12 @@ class TicketRepo(TicketStore, Protocol):
         ...
 
     async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
-        """P3 "Gần đây" (`GET /api/tickets`): ticket GỐC của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa `limit`.
-        Chỉ DB."""
+        """P3 "Gần đây" (`GET /api/tickets`): ticket GỐC của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa `limit`,
+        trừ ticket người đó đã ẩn (lọc trước `LIMIT`). Chỉ DB."""
+        ...
+
+    async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
+        """P3 menu ⋯ "Xóa": ẩn ticket khỏi "Gần đây" của `user_id` — idempotent, không đổi dữ liệu nghiệp vụ."""
         ...
 
     async def children_progress_rows(self, parent_id: str, children: Sequence[str]) -> list[ChildProgressRow]:

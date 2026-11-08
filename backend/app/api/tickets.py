@@ -14,6 +14,9 @@ ghi TRƯỚC `start_event` (lỗi ghi → 503).
   Bị từ chối ở 403/404: chỉ ghi `permission_denied` (404 id giả: không ghi gì), không gọi guard,
   không ghi `turns`/`late_event`.
 
+`POST /api/tickets/{id}/hide` → 204 (P3 menu ⋯ "Xóa"): ẩn ticket gốc của CHÍNH người gọi khỏi `GET /api/tickets` (bảng `ticket_hidden`,
+migration 0014) — không xoá/sửa dữ liệu nghiệp vụ, không audit; còn lại → 404 như `GET /{id}`.
+
 `GET /api/tickets/{id}` → `TicketView`: đã có `final_state` thì `status` lấy từ `tickets`, còn mở thì từ
 checkpoint; `waiting_for` CHỈ từ checkpoint; đọc checkpoint lỗi → 503 (không đoán).
 
@@ -33,7 +36,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from langgraph.types import StateSnapshot
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -184,6 +187,7 @@ class TicketList(BaseModel):
     items: list[TicketListItem]
 
 
+HIDE_ERRORS: dict[int | str, dict[str, Any]] = {401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}}
 LIST_ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 422: {"model": InvalidRequestBody}, 503: {"model": ErrorDetail},
 }  # fmt: skip
@@ -266,6 +270,30 @@ async def list_tickets(
         )
         for r in rows
     ])  # fmt: skip
+
+
+@router.post("/api/tickets/{ticket_id}/hide", status_code=204, responses=HIDE_ERRORS)
+async def hide_ticket(
+    ticket_id: str,
+    request: Request,
+    p: Annotated[Principal, Depends(require("ticket:read:own"))],
+    desk: Annotated[Desk, Depends(get_desk)],
+) -> Response:
+    """Ẩn ticket gốc của chính người gọi khỏi danh sách "Gần đây" (`GET /api/tickets`). Không xoá dữ liệu; `GET /{id}` vẫn đọc được.
+    Gọi lại vẫn 204. Không có / không phải của người gọi / ticket con → 404 `not_found`."""
+    # 404 giống hệt `GET /{id}`: không có → không ghi gì; của người khác (kể cả `ticket:read:any`) → `permission_denied` (`not_owner`);
+    # ticket con của mình → không ghi (danh sách không có con). Không ghi audit (tuỳ chọn hiển thị, không phải quyết định của hệ
+    # thống — `ticket_hidden.hidden_at` giữ vết; ĐP duyệt 08/11); không 429, không guard (không có chữ người dùng).
+    row = await desk.tickets.get(ticket_id)
+    if row is None:
+        raise HTTPException(404, NOT_FOUND)
+    if row.requester_id != p.user_id:
+        await deny(request, p, "ticket:read:own", ticket_id=ticket_id, reason="not_owner")
+        raise HTTPException(404, NOT_FOUND)
+    if row.parent_ticket_id is not None:
+        raise HTTPException(404, NOT_FOUND)
+    await desk.tickets.hide(p.user_id, ticket_id, desk.clock.now())
+    return Response(status_code=204)
 
 
 @router.get("/api/tickets/{ticket_id}", response_model=TicketView)

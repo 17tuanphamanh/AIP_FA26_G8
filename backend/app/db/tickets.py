@@ -20,10 +20,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import RowMapping, Table, func, insert, literal, select, text, update
+from sqlalchemy import (
+    RowMapping,
+    Table,
+    exists,
+    func,
+    insert,
+    literal,
+    select,
+    text,
+    update,
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.db.models import ChildNotice, Ticket, Turn
+from app.db.models import ChildNotice, Ticket, TicketHidden, Turn
 from app.db.runtime import current_tx
 from app.db.security_events import check_event, insert_event
 from app.domain.children import (
@@ -39,6 +50,7 @@ from app.domain.final import FinalSummary
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 _TURNS: Table = Turn.__table__  # type: ignore[assignment]
 _NOTICES: Table = ChildNotice.__table__  # type: ignore[assignment]
+_HIDDEN: Table = TicketHidden.__table__  # type: ignore[assignment]
 _FINAL_COLUMNS = (
     "final_state", "exit_code", "block_reason", "close_reason", "resolution_path",
     "aggregate_status", "auto_closed", "intent", "slots", "total_turns", "total_duration_seconds",
@@ -158,17 +170,26 @@ class SqlTicketStore:
 
     async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
         """P3 "Gần đây": ticket GỐC (`parent_ticket_id IS NULL`) của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa
-        `limit` dòng. Chỉ bảng `tickets` (không checkpoint). Index `ix_tickets_requester_created_at` (migration 0010)."""
-        t = _TICKETS.c
+        `limit` dòng — trừ ticket người đó đã ẩn (`ticket_hidden`, lọc trong WHERE nên TRƯỚC `LIMIT`). Không checkpoint. Index
+        `ix_tickets_requester_created_at` (migration 0010); `NOT EXISTS` đi theo PK `ticket_hidden(user_id, ticket_id)`."""
+        t, h = _TICKETS.c, _HIDDEN.c
+        hidden = exists().where(h.user_id == requester_id, h.ticket_id == t.ticket_id)
         stmt = (
             select(*(t[c] for c in _ROW_COLUMNS))
-            .where(t.requester_id == requester_id, t.parent_ticket_id.is_(None))
+            .where(t.requester_id == requester_id, t.parent_ticket_id.is_(None), ~hidden)
             .order_by(t.created_at.desc(), t.ticket_id.desc())
             .limit(limit)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_ticket_row(r._mapping) for r in rows]
+
+    async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
+        """P3 menu ⋯ "Xóa": ẩn `ticket_id` khỏi "Gần đây" của `user_id`. Idempotent — `ON CONFLICT DO NOTHING` (lần sau không đổi
+        `hidden_at`; quyền `app_rw` chỉ cần INSERT). Không đụng `tickets` hay bảng nào khác. Quyền chủ ticket do route kiểm."""
+        stmt = pg_insert(_HIDDEN).values(user_id=user_id, ticket_id=ticket_id, hidden_at=at).on_conflict_do_nothing()
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         """D-67: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""

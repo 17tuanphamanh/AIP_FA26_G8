@@ -27,6 +27,8 @@ EXPECTED_TABLES = {
     "email_outbox",
     # bảng thứ 25 — migration 0013 (D-67): lịch sử đổi chiến lược M5 lúc vận hành (chỉ ghi thêm)
     "m5_strategy_changes",
+    # bảng thứ 26 — migration 0014 (P3 menu ⋯ "Xóa"): ticket người dùng đã ẩn khỏi "Gần đây"
+    "ticket_hidden",
 }  # fmt: skip
 
 
@@ -56,7 +58,7 @@ def test_upgrade_creates_exactly_24_tables(migrated: PgUrls) -> None:
     engine = create_engine(migrated.role("app_migrate"))
     with engine.connect() as conn:
         assert _tables(conn) == EXPECTED_TABLES
-        assert len(EXPECTED_TABLES) == 25
+        assert len(EXPECTED_TABLES) == 26
         assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)  # migration 0003
         assert _scalar(conn, "SELECT to_regclass('public.auth_failures')") == "auth_failures"
         owners: Any = conn.execute(
@@ -131,7 +133,9 @@ def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
         owner = create_engine(db.role("app_migrate"))
         try:
             with owner.connect() as conn:
-                assert _all_tables(conn) == EXPECTED_TABLES - {"rate_hits", "email_outbox", "m5_strategy_changes"}  # D-67: 0013
+                assert _all_tables(conn) == EXPECTED_TABLES - {
+                    "rate_hits", "email_outbox", "m5_strategy_changes", "ticket_hidden",
+                }  # D-67: 0013; P3 menu ⋯: 0014
             command.upgrade(cfg, "head")
             with owner.connect() as conn:
                 assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)

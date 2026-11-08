@@ -20,6 +20,7 @@ MIGRATION = (
 MIGRATION_0010 = MIGRATION.parent / "0010_rate_limits.py"  # gói 2b (D-54 a) — bảng thứ 23 `rate_hits`
 MIGRATION_0012 = MIGRATION.parent / "0012_email_outbox.py"  # notify-email — bảng thứ 24 `email_outbox` + `users.email`
 MIGRATION_0013 = MIGRATION.parent / "0013_m5_strategy_runtime.py"  # D-67 — bảng thứ 25 `m5_strategy_changes` + 2 cột `tickets`
+MIGRATION_0014 = MIGRATION.parent / "0014_ticket_hidden.py"  # P3 menu ⋯ "Xóa" — bảng thứ 26 `ticket_hidden`
 
 
 def _migration(path: Path = MIGRATION) -> ModuleType:
@@ -40,8 +41,10 @@ def _check(table: str, column: str) -> str:
 
 def test_24_tables() -> None:
     """Gói 2b (PLAN-2B1 G8 #1, Q-2B1-6; đặc tả 4.8 "bảng thứ 23"): 22 bảng gốc + `rate_hits` (migration 0010). Notify-email: bảng thứ
-    24 `email_outbox` (migration 0012). D-67: bảng thứ 25 `m5_strategy_changes` (migration 0013) — giữ tên test."""
-    assert len(Base.metadata.tables) == 25
+    24 `email_outbox` (migration 0012). D-67: bảng thứ 25 `m5_strategy_changes` (migration 0013). P3 menu ⋯: bảng thứ 26
+    `ticket_hidden` (migration 0014) — giữ tên test."""
+    assert len(Base.metadata.tables) == 26
+    assert "ticket_hidden" in Base.metadata.tables
     assert "rate_hits" in Base.metadata.tables
     assert "email_outbox" in Base.metadata.tables
     assert "m5_strategy_changes" in Base.metadata.tables
@@ -78,14 +81,18 @@ def test_tickets_store_redacted_request_only() -> None:
 
 def test_migration_grants_cover_every_table() -> None:
     """Gói 2b (PLAN-2B1 G8 #2): quyền `app_rw` = CRUD + append-only của `0001` HỢP `RW_TABLES` của `0010` (`rate_hits`) HỢP
-    `RW_TABLES` của `0012` (`email_outbox`, notify-email) HỢP `RW_TABLES` của `0013` (`m5_strategy_changes`, D-67)."""
+    `RW_TABLES` của `0012` (`email_outbox`, notify-email) HỢP `RW_TABLES` của `0013` (`m5_strategy_changes`, D-67) HỢP `RW_TABLES`
+    của `0014` (`ticket_hidden`, P3 menu ⋯)."""
     m, m10, m12, m13 = _migration(), _migration(MIGRATION_0010), _migration(MIGRATION_0012), _migration(MIGRATION_0013)
+    m14 = _migration(MIGRATION_0014)
     assert tuple(m10.RW_TABLES) == ("rate_hits",)
     assert tuple(m12.RW_TABLES) == ("email_outbox",)
     assert tuple(m13.RW_TABLES) == ("m5_strategy_changes",)
-    assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) | set(m12.RW_TABLES) | set(m13.RW_TABLES) == set(
-        Base.metadata.tables
-    )
+    assert tuple(m14.RW_TABLES) == ("ticket_hidden",)
+    assert set(m.RW_CRUD_TABLES) | set(m.APPEND_ONLY) | set(m10.RW_TABLES) | set(m12.RW_TABLES) | set(m13.RW_TABLES) | set(
+        m14.RW_TABLES
+    ) == set(Base.metadata.tables)
+    assert "ticket_hidden" not in m.MONITOR_TABLES  # tuỳ chọn hiển thị của từng người — không cấp app_monitor
     assert "m5_strategy_changes" not in m.MONITOR_TABLES  # D-67: không cấp app_monitor
     assert "email_outbox" not in m.MONITOR_TABLES  # body là nội dung tin: không cấp app_monitor
     assert not set(m.RW_CRUD_TABLES) & set(m.APPEND_ONLY)
@@ -232,3 +239,27 @@ def test_m5_strategy_model_matches_migration_0013() -> None:
     c = Base.metadata.tables["m5_strategy_changes"]
     assert [col.name for col in c.columns] == ["id", "strategy", "changed_by", "reason", "changed_at"]
     assert not any(col.nullable for col in c.columns)
+
+
+# ---- P3 menu ⋯ "Xóa" = ẩn khỏi "Gần đây" (migration 0014) ------------------------------------------------------------------
+
+
+def test_ticket_hidden_model_matches_migration_0014() -> None:
+    """`0014` nối sau `0013`; bảng `ticket_hidden(user_id, ticket_id, hidden_at)` — PK (user_id, ticket_id), FK `ticket_id` →
+    `tickets`, FK `user_id` → `users`, mọi cột NOT NULL; `app_rw` = SELECT, INSERT (ẩn idempotent bằng `ON CONFLICT DO NOTHING` — không
+    cần UPDATE; chưa có "bỏ ẩn" nên không DELETE); không trigger; KHÔNG đổi bảng `tickets` (23 cột như 0013)."""
+    m14 = _migration(MIGRATION_0014)
+    assert (m14.revision, m14.down_revision) == ("0014", "0013")
+    assert m14.RW_PRIVILEGES == "SELECT, INSERT"
+    h: Table = Base.metadata.tables["ticket_hidden"]
+    assert [c.name for c in h.columns] == ["user_id", "ticket_id", "hidden_at"]
+    assert not any(c.nullable for c in h.columns)
+    assert [c.name for c in h.primary_key.columns] == ["user_id", "ticket_id"]
+    fks = {(fk.parent.name, fk.column.table.name, fk.column.name) for fk in h.foreign_keys}
+    assert fks == {("user_id", "users", "user_id"), ("ticket_id", "tickets", "ticket_id")}
+    assert isinstance(h.c.hidden_at.type, DateTime) and h.c.hidden_at.type.timezone
+    assert h.c.hidden_at.server_default is not None
+    source = MIGRATION_0014.read_text(encoding="utf-8")
+    assert "CREATE TRIGGER" not in source.upper()
+    assert "tickets" not in {t for t in re.findall(r'op\.(?:add_column|alter_column|drop_column)\(\s*"(\w+)"', source)}
+    assert len(Base.metadata.tables["tickets"].columns) == 23

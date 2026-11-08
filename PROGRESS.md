@@ -6158,3 +6158,4 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
       `UV_HTTP_TIMEOUT=300`, cache mount cho uv, build backend rồi mới build mock.
     - Máy dev: colima (4 CPU, 8 GB) + gitleaks cài bằng brew. Makefile tự nhận socket colima và thêm
       `docker-credential-desktop` vào PATH (xem README "Dựng môi trường").
+15. **Ngoại lệ §4 `docs/spec/CLAUDE.md` — bảng thứ 26 `ticket_hidden`** (migration 0014, nhánh `p5-gan-day-menu`): TA/ĐP duyệt 08/11 (người kiểm thử yêu cầu menu ⋯ "Xóa" ở "Gần đây"; chỉ ẩn hiển thị của chính người đó, không đổi dữ liệu nghiệp vụ, không audit). *Giới hạn:* chưa có "bỏ ẩn" (`app_rw` không có DELETE — làm sau bằng migration mới); cửa sổ/tab khác đang mở không tự cập nhật "Gần đây", phải F5.
