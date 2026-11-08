@@ -5842,6 +5842,32 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
   (giữ tên); `test_monitor_dash_views_pg.py::test_view_columns_explicit`; `test_monitor_perf_pg.py::test_migration_0009_down_up` (giữ tên).
 - Báo khi gộp: DB chung lên `0010` → stack dựng từ mã chưa có `0010` (nhánh `-m5`, PR chưa rebase) hỏng ở `alembic upgrade` (đặc tả 4.8).
 
+## Phase 6 — P6 lời nói: chỉ sửa LỜI gửi người dùng (08/11/2026, nhánh `p6-loi-noi` trên `2bd01a3`; ĐP 08/11 duyệt P6 ĐẠT) — chưa push
+
+**Trạng thái:** xong, 2 commit code + 1 commit docs, CHƯA push. Không đổi route, ngưỡng, luật, mã thoát; không đụng `b02_*`, `b03_classify`,
+`b13/b14`, `b11_extract_slots`. `make lint` xanh; `uv run pytest backend/tests/unit` thoát 0 — **8420 pass / 4 skip / 0 fail** (đếm từ dòng
+tiến trình, cấu hình pytest không in dòng tổng). Không gọi LLM thật; FE không đổi nên không chạy.
+- **Mục 1 — `002aa8f` `messages: cau chuyen nguoi neu ro tro ly ho tro gi`:** `config/escalation_templates.yaml` — `user_message` của
+  E1, E3, E4 mở bằng "Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục." rồi mới báo đã
+  chuyển (E3 giữ ý "chưa có thông tin về việc này"). Danh sách 4 loại theo `enabled_intents` (mặc định của `Settings`, đối chiếu
+  `slots.yaml`): `test_messages_scope.py` ghim bảng nhãn = đúng tập intent đang bật — bật thêm intent mà quên nhãn/câu thì đỏ. E0 và E1
+  `injection_suspected` (B20 dùng mẫu E0) GIỮ NGUYÊN câu trung tính, có test (cả đường B2 `review` thật). So bản YAML cũ (`git show HEAD:`)
+  với mới: chỉ 3 trường `user_message` khác, mọi mã/trường khác giữ nguyên giá trị. Test vàng sửa: `test_gate3.py::test_tc16_still_e3_template`,
+  `e2e/test_gate3_vpn.py` (E3); E1/E4 trước đó chưa có test ghim câu.
+- **Mục 2 — `5b19f01` `b11: cau hoi lai tu nhien hon`:** `config/prompts/b11_clarify_question.yaml` **v1 → v2** (KHÔNG phải
+  `b11_extract_slots`): chỉ chào ở lượt hỏi đầu, câu trả lời trước không dùng được thì mở "Mình chưa rõ ý bạn," rồi hỏi lại đúng
+  thông tin còn thiếu, tối đa 2 câu; chỉ dẫn cũ (≤ 300 ký tự, ≤ 2 thông tin, không hỏi bí mật) giữ nguyên. Biến mới `previous_reply` ∈
+  {`none`, `usable`, `unusable`} khai báo trong `allowed_vars`, do `b11_slots.previous_reply()` tính (lượt hỏi đầu → `none`; `off_topic_streak`
+  ≥ 1 → `unusable`; còn lại `usable`) — prompt này không thấy câu người dùng, giữ nguyên như v1. Test `test_b11_clarify_wording.py`
+  (ScriptedLLM): văn bản prompt, whitelist (thiếu/thừa biến → `PromptVariableError`), biến theo lượt × streak, graph 3 lượt hỏi ra
+  `none/unusable/usable`, audit `b11_clarify_question@2`, output guard + dọn khoá slot vẫn chạy trên câu có câu mở đầu. Test cũ đổi
+  có chủ ý (truyền thêm `previous_reply`): `test_llm_prompts.py` (bảng 7.4, render JSON), `test_llm_scripted.py` (2), `test_llm_client.py` (1).
+- **Chưa đo (LLM thật):** v2 chưa chạy với LLM thật — chất lượng câu chữ (có chào đúng lượt đầu, có mở "Mình chưa rõ ý bạn," đúng ca
+  `unusable`, ≤ 2 câu / ≤ 300 ký tự, tỉ lệ `output_guard_block`) dồn về mốc G — hàng "P6" ở bảng dưới.
+- **Docs (commit 3):** `docs/spec/claude/dac-ta-bat-2-model.md` (câu E1), `docs/spec/build/phase3-thiet-ke-chi-tiet.md` bảng 7.4 (biến
+  `previous_reply`). Còn lệch có chủ ý, chưa sửa: mã giả `llm.complete("fast", "b11_clarify_question", …)` ở `phase3-thiet-ke-chi-tiet.md`
+  (~dòng 1798) và `build/nhanh/B11-bo-sung-thong-tin.md` (~dòng 309) vẫn là bản 3 biến.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -5863,6 +5889,7 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
 | 5 T20a | Probe `b03_classify` v3 + `b11_extract_slots` v2 với LLM thật: slot + `action_hint` đúng bảng 5.1.4, slot chuẩn hoá ("quyền đọc" → `read`, "2 tuần" → `14`), slot đích đúng chữ; đo tỉ lệ LLM bỏ trống `target_user` khi câu nhắm người khác (bỏ trống → cờ Q-T20a-4 không bật); chạy lại kịch bản VPN với quy tắc người khác (N5). **LLM-G DỪNG 3 (b03 v4, flash, thử tay 2 lần): "quyền sửa … trong 2 tuần" → write, 14, đường dẫn đúng chữ (R09); "quyền đọc …" → chỉ hỏi `duration`, giá trị `read` chưa xác nhận; `action_hint` vpn tả lỗi → null, B6 tự suy renew. Tỉ lệ bỏ trống `target_user`, `b11_extract_slots` v2 chưa đo.** | phase5 5.1.1 P9, Q-T20a-4 |
 | 5 T24 | TC07/TC08 với LLM thật: `b03_classify` v3 ra account/`reset_password` + `target_user=svc_backup` đúng chữ ("đặt lại mật khẩu AD cho svc_backup") và access/`grant_permission` + `permission_level=read`, `duration=30` từ "quyền đọc … 30 ngày"; chạy lại `make gate5 S="tc07 tc08"` với `LLM_BACKEND=real` (bỏ thẻ preset) → cùng luật R03 (+R04) / R07 (+R09), cùng đường duyệt/từ chối. **LLM-G 17/10 (thử tay, 2 lần, flash):** slot + luật khớp cả hai (R03+R04, R07+R09, tới chờ duyệt). **DỪNG 3 (b03 v4) thử tay lại 2 lần: như cũ.** Chưa chạy `make gate5` với real | phase5 7.6, 1.3 |
 | 6 | Probe phân phối p | `huong-dan` 5.1 |
+| P6 (08/11) | Probe `b11_clarify_question` **v2** với LLM thật (**chưa đo**; ghi số mẫu, bản prompt, ngày): lượt hỏi đầu (`previous_reply=none`) chào tối đa một lần, các lượt sau không chào; ca `unusable` mở đúng "Mình chưa rõ ý bạn,"; ≤ 2 câu và ≤ 300 ký tự; vẫn không hỏi bí mật; tỉ lệ `output_guard_block`. ScriptedLLM chỉ kiểm văn bản prompt + biến, không kiểm được câu LLM viết | mục "Phase 6 — P6 lời nói" |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
 5 PASS / 0 FAIL khi đè `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=`; stack đã trả về đúng `.env`). `.env` VẪN giữ
