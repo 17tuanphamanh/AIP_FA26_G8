@@ -31,7 +31,8 @@ from tests.unit.test_nodes_t20a import Nodes, b11_state
 PROMPTS = Path(__file__).resolve().parents[3] / "config" / "prompts"
 SEED = Path(__file__).resolve().parents[3] / "mock_services" / "seed.json"
 PID = "b11_clarify_question"
-VARS = {"missing", "diagnostics_summary", "intent", "previous_reply", "missing_desc", "action_label"}
+VARS = {"missing", "diagnostics_summary", "intent", "previous_reply", "missing_desc", "action_label", "user_request",
+        "last_question"}  # Q11: v4 thêm 2 biến (xem test_b11_clarify_v4.py)
 BANNED = ("chúng tôi", "tôi", "anh/chị", "quý khách", "ạ", "Xin cảm ơn")
 
 
@@ -49,7 +50,7 @@ def _all_slot_keys() -> set[str]:
 
 def test_v3_contract(registry: PromptRegistry) -> None:
     prompt = registry.get(PID)
-    assert prompt.version == "3"
+    assert prompt.version == "4"  # Q11: quy tắc v3 dưới đây giữ nguyên ở v4; hợp đồng v4 ghim ở test_b11_clarify_v4.py
     assert (prompt.spec.role, prompt.spec.cache, prompt.spec.schema_name) == ("fast", "default", "QuestionOut")
     assert set(prompt.spec.allowed_vars) == VARS
 
@@ -71,7 +72,8 @@ def test_v3_voice_rules(registry: PromptRegistry) -> None:
 def test_v3_user_block_renders_new_vars(registry: PromptRegistry) -> None:
     desc = describe_missing(["duration"], action_choices=())
     variables: dict[str, Any] = {"missing": ["duration"], "diagnostics_summary": {"facts": {}, "devices": []}, "intent": "access",
-                                 "previous_reply": "none", "missing_desc": desc, "action_label": "cấp quyền truy cập"}  # fmt: skip
+                                 "previous_reply": "none", "missing_desc": desc, "action_label": "cấp quyền truy cập",
+                                 "user_request": "xin quyền thư mục", "last_question": "(chưa có)"}  # fmt: skip
     user = render(registry.get(PID), variables, budget_in=4000).messages[1]["content"]
     assert "cấp quyền truy cập" in user and "số ngày" in user
 
@@ -140,7 +142,7 @@ async def test_node_free_slot_passes_desc_and_action_label() -> None:
     content = str(call.rendered_messages[1]["content"])
     assert ACTION_LABELS["grant_permission"] in content and "số ngày" in content
     [row] = [r for r in n.audit.rows if r["event"] == "asked"]
-    assert row["detail"]["prompt"] == f"{PID}@3"
+    assert row["detail"]["prompt"] == f"{PID}@4"
 
 
 @pytest.mark.asyncio
@@ -159,9 +161,11 @@ async def test_node_no_action_yet_label_unknown_and_actions_listed() -> None:
 
 @pytest.mark.asyncio
 async def test_node_desc_has_no_user_text() -> None:
-    """Câu người dùng (có chuỗi đánh dấu) không lọt vào `missing_desc`/`action_label`."""
+    """Q11 đổi test này có chủ ý: từ v4 chữ người dùng ĐƯỢC vào prompt, nhưng chỉ qua `user_request`. Câu người dùng (có chuỗi đánh dấu)
+    vẫn không lọt vào `missing_desc`/`action_label`/`diagnostics_summary`/các biến còn lại — những biến đó vẫn chỉ là hằng/enum do code dựng."""
     n = Nodes()
     marker = "CHU-NGUOI-DUNG-7781"
     await n.run("b11_slots", b11_slots, b11_state("nv002", "vpn", {}, redacted_request=f"VPN hỏng {marker}"))
     [call] = n.gw.llm.calls_for(PID)
-    assert marker not in repr(call.variables) and marker not in repr(call.rendered_messages)
+    assert marker in call.variables["user_request"]
+    assert marker not in repr({k: v for k, v in call.variables.items() if k != "user_request"})

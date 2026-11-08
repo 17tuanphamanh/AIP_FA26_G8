@@ -49,6 +49,16 @@ def question_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "question", "text": text, "ref": ref, "needs": "answer"}
 
 
+def last_question(state: Any) -> str:
+    """Chữ của tin `question` CUỐI trong `conversation` — đúng bản đã gửi người dùng (B11 chỉ ghi tin sau scrub + output guard; chỉ B11
+    tạo tin `question`). Không có → "" (không lấy tin người dùng hay tin khác thay). Dùng cho `b11_extract_slots.question` (M4, `clarify_wait`)
+    và `b11_clarify_question.last_question` (Q11, `b11_slots`)."""
+    for msg in reversed(list(state.get("conversation") or [])):
+        if msg.get("role") == "assistant" and msg.get("kind") == "question":
+            return str(msg.get("text") or "")
+    return ""
+
+
 def user_msg(redacted_text: str) -> Msg:
     return {"role": "user", "text": redacted_text}
 

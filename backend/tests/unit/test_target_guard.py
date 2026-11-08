@@ -217,7 +217,7 @@ async def test_clarify_never_lowers_flag(monkeypatch: pytest.MonkeyPatch) -> Non
 def b11_state(slots: dict[str, str], *, flag: bool, turns: int = 0) -> dict[str, Any]:
     return {"ticket_id": "t1", "turn_id": "T1", "status": S_RETRIEVING, "intent": "account", "reasoning_loops": 1,
             "requester_context": rc("nv001"), "slots": slots, "facts": {}, "conversation": [], "clarification_turns": turns,
-            "ctx_flags": {"target_is_other": flag}}  # fmt: skip
+            "ctx_flags": {"target_is_other": flag}, "redacted_request": "yêu cầu"}  # fmt: skip
 
 
 @pytest.mark.asyncio

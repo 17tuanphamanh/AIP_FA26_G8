@@ -29,7 +29,7 @@ from langgraph.types import interrupt
 
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import user_msg
+from app.domain.messages import last_question, user_msg
 from app.domain.slots import audit_dropped, sanitize_slots
 from app.domain.states import S_CLARIFYING, S_ESCALATED
 from app.domain.target import requester_id_of, target_check
@@ -40,15 +40,6 @@ from app.graph.tracing import NodeFn
 from app.guard.screen import screen_reply
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import ExtractSlotsOut
-
-
-def last_question(state: Any) -> str:
-    """M4: chữ của tin `question` CUỐI trong `conversation` — đúng bản đã gửi người dùng (B11 chỉ ghi tin sau scrub + output guard).
-    Không có → "" (không lấy tin người dùng hay tin khác thay)."""
-    for msg in reversed(list(state.get("conversation") or [])):
-        if msg.get("role") == "assistant" and msg.get("kind") == "question":
-            return str(msg.get("text") or "")
-    return ""
 
 
 def make(deps: NodeDeps) -> NodeFn:

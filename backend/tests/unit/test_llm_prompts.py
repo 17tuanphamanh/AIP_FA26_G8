@@ -46,8 +46,10 @@ TABLE_7_4 = {
     "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence"}),
     # P6 lời nói (ĐP 08/11, v2): + `previous_reply` ∈ {none, usable, unusable} — enum do node tính, không chữ người dùng
     # Q3 M2 (ĐP 09/11, v3): + `missing_desc` (bảng nhãn slot), `action_label` (nhãn việc hoặc "chưa rõ") — hằng do code dựng
+    # Q11 (ĐP 09/11, v4): + `user_request` (= `redacted_request` ĐÃ che, cắt đuôi theo `budget_in` vai fast) và `last_question` (câu B11
+    # gần nhất đã gửi, hoặc "(chưa có)") — ĐÂY là chữ người dùng đầu tiên vào prompt này; vẫn không bao giờ câu gốc
     "b11_clarify_question": ("fast", "default", "QuestionOut", {"missing", "diagnostics_summary", "intent", "previous_reply",
-                                                                "missing_desc", "action_label"}),
+                                                                "missing_desc", "action_label", "user_request", "last_question"}),
     # M4 (bn-a 08/11): + `question` — câu B11 vừa gửi (đã qua output guard), chỉ là ngữ cảnh
     "b11_extract_slots": ("fast", "default", "ExtractSlotsOut", {"text", "missing", "intent", "question"}),
     # Phase 6 (6B, phase6 5.1 P2/P9): B14 — không câu người dùng; `cache: default`, estimator tự `bypass` khi vận hành
@@ -350,7 +352,7 @@ def test_d13_estimate_is_ceil_chars_over_three() -> None:
 def test_render_json_for_non_string_values(registry: PromptRegistry) -> None:
     r = render(registry.get("b11_clarify_question"),
                {"missing": ["device_id"], "diagnostics_summary": {"cert": "expired"}, "intent": "vpn",
-                "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ",},
+                "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ", "user_request": "VPN báo lỗi 809", "last_question": "(chưa có)",},
                budget_in=2000)  # fmt: skip
     user = r.messages[1]["content"]
     assert '["device_id"]' in user and '{"cert":"expired"}' in user

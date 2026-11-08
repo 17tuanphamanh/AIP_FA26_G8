@@ -32,6 +32,9 @@ class PromptSpec(BaseModel):
     role: Literal["fast", "strong"]
     schema_name: str = Field(alias="schema")
     allowed_vars: tuple[str, ...]
+    # Biến CHUỖI chữ người dùng mà context builder được cắt đuôi khi khung + biến vượt `budget_in` của vai trò (sau khi hết khối bằng
+    # chứng / tin nhắn để cắt). Mặc định rỗng: vượt trần → `LLMBudgetExceeded` như cũ. Trần không khai ở đây — chỉ ở `config/llm.yaml`.
+    trim_vars: tuple[str, ...] = ()
     cache: Literal["default", "bypass"]
     # Văn bản người dùng đặt giữa hai dấu phân cách sinh ngẫu nhiên mỗi lần gọi (b02_injection_judge, 7.4)
     random_boundary: bool = False
@@ -46,6 +49,8 @@ class PromptSpec(BaseModel):
             raise ValueError("allowed_vars có tên trùng")
         if BOUNDARY_VAR in self.allowed_vars:
             raise ValueError(f"{BOUNDARY_VAR!r} do renderer sinh, không được nằm trong allowed_vars")
+        if stray_trim := sorted(set(self.trim_vars) - set(self.allowed_vars)):
+            raise ValueError(f"trim_vars {stray_trim} không nằm trong allowed_vars")
         text = self.system + "\n" + self.user
         used = set(PLACEHOLDER.findall(text))
         expected = set(self.allowed_vars) | ({BOUNDARY_VAR} if self.random_boundary else set())

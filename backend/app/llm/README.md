@@ -10,7 +10,8 @@ mục 7 (3d). Khi lệch spec: `PROGRESS.md` mục "Phase 3 — chặng 3d" (ch�
   trường `Settings`; `resolve` từ chối khởi động khi `real` thiếu model/giá/URL/khoá; `check_timing` (công thức
   Q-3a-16 < `WORKER_STALE_TURN_SECONDS/2`). `wiring.py` — `check_llm` (trước mọi kết nối) + `open_llm`.
 - `registry.py` (prompt YAML: id = tên file, biến template == `allowed_vars`, `sha256`), `context.py` (render MỘT lượt
-  — giá trị không bị render lại; `random_boundary` từ `secrets`; ước lượng token `ceil(ký tự/3)`), `schemas.py`
+  — giá trị không bị render lại; `random_boundary` từ `secrets`; ước lượng token `ceil(ký tự/3)`; vượt `budget_in` → cắt
+  bằng chứng, tin nhắn, rồi đuôi biến `trim_vars` của prompt — Q11: `user_request` của `b11_clarify_question` — ở ranh giới từ), `schemas.py`
   (6 schema `extra="forbid"`), `cache.py` (khoá 11 thành phần gồm `mode`), `spend.py` (trần chi: đọc SUM mỗi 60 s,
   cộng dồn, giữ chỗ từng request trả phí), `store.py` (`SqlLlmStore`: `llm_cache`, `spans` + `llm_calls`, tổng chi).
 - `providers/`: `openai_compat.py` (SDK `openai`, `max_retries=0`, lỗi → `ProviderError` chỉ có loại + host; logger

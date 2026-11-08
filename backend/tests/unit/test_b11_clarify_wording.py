@@ -3,7 +3,8 @@
 Ba chỉ dẫn mới: (a) chỉ chào ở lượt hỏi đầu tiên, các lượt sau đi thẳng vào ý; (b) câu trả lời trước không dùng được → mở đầu ngắn
 "Mình chưa rõ ý bạn," rồi hỏi lại đúng thông tin còn thiếu; (c) tối đa 2 câu.
 
-LLM không được thấy câu người dùng ở prompt này, nên "lượt nào" và "câu trả lời trước có dùng được không" do NODE tính và đưa vào biến
+(v2–v3: LLM không thấy câu người dùng ở prompt này; Q11 v4 đã đổi — xem test_b11_clarify_v4.py.) "Lượt nào" và "câu trả lời trước có dùng
+được không" vẫn do NODE tính và đưa vào biến
 `previous_reply` (enum, không chữ tự do): `none` = câu hỏi đầu tiên; `unusable` = câu trả lời trước không cho slot sạch nào hoặc lạc đề
 (`off_topic_streak` ≥ 1 — cùng khái niệm với luật [Chốt] "lạc đề 2 lần liên tiếp → E4"); `usable` = có slot sạch.
 
@@ -35,7 +36,8 @@ from tests.unit.test_b11_slots import (
 
 PROMPTS = Path(__file__).resolve().parents[3] / "config" / "prompts"
 PID = "b11_clarify_question"
-VARS = {"missing", "diagnostics_summary", "intent", "previous_reply", "missing_desc", "action_label"}  # Q3 M2: v3 thêm 2 biến
+VARS = {"missing", "diagnostics_summary", "intent", "previous_reply", "missing_desc", "action_label", "user_request",
+        "last_question"}  # Q3 M2: v3 thêm 2 biến; Q11: v4 thêm 2 biến nữa
 OPENER = "Mình chưa rõ ý bạn,"
 
 
@@ -51,7 +53,8 @@ def _reply_line(content: str, value: str) -> bool:
 
 def _vars(**over: Any) -> dict[str, Any]:
     return {"missing": ["device_id"], "diagnostics_summary": {"devices": []}, "intent": "vpn", "previous_reply": "none",
-            "missing_desc": "- mã máy", "action_label": "chưa rõ", **over}
+            "missing_desc": "- mã máy", "action_label": "chưa rõ", "user_request": "VPN báo lỗi 809", "last_question": "(chưa có)",
+            **over}
 
 
 # ---- prompt: phiên bản, hợp đồng, nội dung ---------------------------------------------------------------------------
@@ -59,7 +62,7 @@ def _vars(**over: Any) -> dict[str, Any]:
 
 def test_version_bumped_and_contract_kept(registry: PromptRegistry) -> None:
     prompt = registry.get(PID)
-    assert prompt.version == "3"  # sửa nội dung → tăng version (khoá cache + llm_calls.prompt_version); Q3 M2: v3
+    assert prompt.version == "4"  # sửa nội dung → tăng version (khoá cache + llm_calls.prompt_version); Q3 M2: v3; Q11: v4
     assert (prompt.spec.role, prompt.spec.cache, prompt.spec.schema_name) == ("fast", "default", "QuestionOut")
     assert set(prompt.spec.allowed_vars) == VARS
 
@@ -89,13 +92,13 @@ def test_user_block_shows_previous_reply(registry: PromptRegistry) -> None:
 
 def test_previous_reply_is_required_and_nothing_else_is_accepted(registry: PromptRegistry) -> None:
     prompt = registry.get(PID)
-    check_variables(prompt, _vars())  # đủ 6 biến (v3): qua
+    check_variables(prompt, _vars())  # đủ 8 biến (v4): qua
     without = _vars()
     del without["previous_reply"]
     with pytest.raises(PromptVariableError, match=r"thiếu biến \['previous_reply'\]"):
         check_variables(prompt, without)
     with pytest.raises(PromptVariableError, match=r"biến ngoài allowed_vars \['redacted_request'\]"):
-        check_variables(prompt, _vars(redacted_request="câu người dùng"))  # không đưa chữ người dùng vào prompt này
+        check_variables(prompt, _vars(redacted_request="câu người dùng"))  # Q11: tên biến hợp lệ là `user_request`; tên khác vẫn bị chặn
 
 
 # ---- node: biến render đúng theo lượt ---------------------------------------------------------------------------------------
@@ -116,7 +119,7 @@ async def test_node_passes_previous_reply_by_turn_and_streak(turns: int, streak:
     assert _reply_line(cast(str, call.rendered_messages[1]["content"]), expected)  # biến thật sự vào prompt đã render
     assert out["clarification_turns"] == turns + 1
     [row] = h.audit.of("t1", "asked")
-    assert row["detail"]["prompt"] == f"{PID}@3"
+    assert row["detail"]["prompt"] == f"{PID}@4"
 
 
 @pytest.mark.asyncio
