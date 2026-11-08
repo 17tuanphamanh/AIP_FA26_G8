@@ -8,6 +8,8 @@ việc đã làm. Phần (4) `next_for_l2` lấy từ `config/escalation_templat
   cờ an ninh (3e: `security_flag`, `injection_in_reply`), ghi chú escalate, cách xử lý + bên quyết định + luật. Không in p= hay khoá
   thô (ĐP 02/11 12:45); câu lý do của M5 (`risk.reason`) đã là câu đọc được nên giữ.
 - `is_deny_case`: MỌI E5 (2b-Q4) — L2 không được "hoàn tất" (422 ở Phase 7), `next_for_l2` kèm cảnh báo.
+- M2 (ĐP 08/11): phần (4) theo lý do — `CodeTemplate.next_for(reason)`: mẫu khai `next_for_l2_by_reason` (E5 `llm_layer_disabled`: lớp AI
+  lỗi, cần đánh giá thủ công) thay câu chung của mã; lý do khác (kể cả `policy_deny`) giữ câu chung. Cảnh báo deny vẫn nối với MỌI E5.
 - Tài liệu KB (Phase 4 chốt S0-A1): từ S0, B8 luôn ghi `retrieved` kể cả khi điểm dưới ngưỡng. `retrieval_score` thiếu hoặc
   < `retrieval_threshold` → câu `KB_BELOW_THRESHOLD` (không dùng làm căn cứ, có thể KB còn thiếu) — L2 không đọc nhầm thành
   "KB có đáp án" rồi làm tay theo tài liệu sai; đạt ngưỡng → câu cũ. Áp mọi mã thoát. `reason_detail == "no_procedure"`
@@ -146,7 +148,8 @@ def build_handoff(
 ) -> HandoffNote:
     """`retrieval_threshold` = `RETRIEVAL_THRESHOLD` (B20 truyền `deps.constants`) — BẮT BUỘC, không mặc định (chốt S0-A1)."""
     code = str(state["exit_code"])
-    next_for_l2 = templates.of(code).next_for_l2
+    reason = state.get("escalation_reason_detail")
+    next_for_l2 = templates.of(code).next_for(str(reason) if reason else None)
     if is_deny_case(code):
         next_for_l2 = f"{next_for_l2} {templates.deny_warning}"
     return HandoffNote(

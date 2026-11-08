@@ -162,7 +162,7 @@ async def test_deny_rule_is_e5_without_approval(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(b12_assess, "evaluate", lambda action, ctx: verdict)
     out, _, _ = await _node(_state())
     assert (out["status"], out["next"], out["exit_code"]) == (S_ESCALATED, "b20_audit", "E5")
-    assert "escalation_reason_detail" not in out
+    assert out["escalation_reason_detail"] == "policy_deny"  # M2 (ĐP 08/11): trước không ghi lý do
     risk = _risk(out)
     assert (risk.policy_decision, risk.matched_rule_id, risk.route, risk.risk_level) == (
         "deny", "R12", "ESCALATE_L2", "high")

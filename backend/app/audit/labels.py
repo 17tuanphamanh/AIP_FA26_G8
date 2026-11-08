@@ -30,6 +30,7 @@ REASON_LABELS: Final[dict[str, str]] = {
     "llm_layer_disabled": "Lớp AI không phản hồi",
     "llm_high_risk": "AI đánh giá rủi ro cao",
     "approval_target_unverified": "Không xác minh được người hưởng lợi",
+    "policy_deny": "Không được phép theo chính sách",  # M2 (ĐP 08/11) — như frontend/src/lib/nhan.ts
     # Lý do khác (duyệt 26/10 23:45)
     "no_grounding": "Không có tài liệu đủ căn cứ",
     "screening_unavailable": "Chưa kiểm tra an toàn được",

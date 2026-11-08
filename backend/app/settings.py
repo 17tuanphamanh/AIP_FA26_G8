@@ -49,7 +49,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.domain.action import ActionMeta
 from app.domain.approval import Roster
-from app.domain.exit_codes import ExitCode
+from app.domain.exit_codes import REASON_DETAILS, ExitCode
 from app.domain.policy import BusinessHours, Rule, check_rules
 from app.domain.slots import IntentSlots
 
@@ -671,6 +671,17 @@ class CodeTemplate(BaseModel):
 
     user_message: str = Field(min_length=1)  # tin gửi người dùng [Chốt B20 7.1]
     next_for_l2: str = Field(min_length=1)  # phần (4) của ghi chú bàn giao (B20 4.2)
+    # M2 (ĐP 08/11): câu phần (4) THAY `next_for_l2` theo `escalation_reason_detail` — khoá ∈ REASON_DETAILS, chuỗi không rỗng
+    next_for_l2_by_reason: dict[str, Annotated[str, Field(min_length=1)]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _known_reasons(self) -> "CodeTemplate":
+        if unknown := sorted(set(self.next_for_l2_by_reason) - REASON_DETAILS):
+            raise ValueError(f"next_for_l2_by_reason: lý do không có trong REASON_DETAILS: {unknown}")
+        return self
+
+    def next_for(self, reason: str | None) -> str:
+        return self.next_for_l2_by_reason.get(reason, self.next_for_l2) if reason else self.next_for_l2
 
 
 class EscalationTemplates(BaseModel):

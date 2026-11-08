@@ -5,6 +5,8 @@
 # user_message : tin gửi người dùng khi ticket chuyển L2 [Chốt 7.1]. E0 trung tính, KHÔNG nêu lý do.
 # next_for_l2  : phần (4) của ghi chú bàn giao — L2 cần làm gì.
 # deny_warning : nối vào next_for_l2 với MỌI E5 (2b-Q4: mọi E5 là deny case).
+# next_for_l2_by_reason (tuỳ chọn): câu THAY next_for_l2 khi escalation_reason_detail khớp khoá (khoá ∈ REASON_DETAILS).
+#   M2 (ĐP 08/11): E5 luật cấm (`policy_deny`) dùng câu E5 chung; lớp AI lỗi (`llm_layer_disabled`) câu riêng. deny_warning vẫn nối.
 
 deny_warning: >-
   CẢNH BÁO: KHÔNG thực hiện lại hành động này. L2 chỉ được xác nhận từ chối và đóng, hoặc mở ticket
@@ -40,6 +42,8 @@ codes:
     next_for_l2: >-
       Hành động bị chặn vì rủi ro cao / luật deny / kế hoạch bị thay đổi sau khi duyệt: xem lý do và
       luật khớp trong ghi chú.
+    next_for_l2_by_reason:
+      llm_layer_disabled: Hệ thống chưa đánh giá được rủi ro do lớp AI lỗi — cần kỹ thuật viên đánh giá thủ công.
   E6:
     user_message: Yêu cầu của bạn đang được xử lý, bộ phận IT sẽ phản hồi sớm.
     next_for_l2: >-

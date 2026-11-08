@@ -298,7 +298,7 @@ describe("t195: L2 — dòng + tiêu đề 'Nhãn · mã'; E1 nghi tấn công; 
     serveQueue([it5]);
     mount(`/escalations/${it5.escalation_id}`, "/escalations/:escalationId", <EscalationDetailRoute />);
     const h = await screen.findByTestId("detail-exit");
-    expect(withoutCodes(h)).toBe("Không đủ điều kiện tự xử lý · ");
+    expect(withoutCodes(h)).toBe("Chưa đánh giá được rủi ro — chuyển kỹ thuật viên · "); // M2 (ĐP 08/11): E5 + lớp AI lỗi
     expect(screen.getByTestId("ca-so").textContent).toBe(`Ca #${it5.escalation_id}`);
     expect(document.body.textContent).not.toContain("Escalation #");
     expect(document.body.textContent).toContain("Lý do Lớp AI không phản hồi · llm_layer_disabled");

@@ -24,9 +24,18 @@ export const MA_KET_THUC: Readonly<Record<string, Nhan>> = {
 /** E1 với lý do `injection_suspected`: nhãn riêng (bảng). */
 export const E1_NGHI_TAN_CONG: Nhan = { nhan: "Nghi tấn công, cần người xem", goiY: "Model chặn tấn công nghi ngờ nhưng LLM chưa xác nhận" };
 
-/** Nhãn mã kết thúc có xét lý do (E1 + injection_suspected → nhãn riêng). */
+/** M2 (ĐP 08/11): E5 tách theo lý do — lớp AI lỗi (mọi lỗi: chưa bật hay sập đều một nhãn) khác luật cấm. Không nêu tên lỗi nội bộ. */
+export const E5_AI_LOI: Nhan = { nhan: "Chưa đánh giá được rủi ro — chuyển kỹ thuật viên", goiY: "Không có kết quả đánh giá rủi ro tự động — cần kỹ thuật viên đánh giá thủ công" };
+export const E5_CAM: Nhan = { nhan: "Không được phép theo chính sách", goiY: "Luật chính sách cấm thao tác này — không thực hiện lại" };
+const E5_THEO_LY_DO: Readonly<Record<string, Nhan>> = { llm_layer_disabled: E5_AI_LOI, policy_deny: E5_CAM };
+
+/** Nhãn mã kết thúc có xét lý do (E1 + injection_suspected → nhãn riêng; E5 + llm_layer_disabled / policy_deny → nhãn riêng). */
 export function maKetThuc(code: string, reasonDetail?: string | null): Nhan | null {
   if (code === "E1" && reasonDetail === "injection_suspected") return E1_NGHI_TAN_CONG;
+  if (code === "E5" && reasonDetail) {
+    const rieng = ownEntry<Nhan | null>(E5_THEO_LY_DO, reasonDetail, null);
+    if (rieng) return rieng;
+  }
   return ownEntry<Nhan | null>(MA_KET_THUC, code, null);
 }
 
@@ -37,6 +46,7 @@ const LY_DO_RIENG: Readonly<Record<string, string>> = {
   llm_layer_disabled: "Lớp AI không phản hồi",
   llm_high_risk: "AI đánh giá rủi ro cao",
   approval_target_unverified: "Không xác minh được người hưởng lợi",
+  policy_deny: "Không được phép theo chính sách", // M2 (ĐP 08/11)
   no_grounding: "Không có tài liệu đủ căn cứ",
   screening_unavailable: "Chưa kiểm tra an toàn được",
   multi_intent_not_enabled: "Yêu cầu nhiều ý chưa bật",
