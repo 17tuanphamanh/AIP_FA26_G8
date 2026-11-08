@@ -171,6 +171,26 @@ describe("menu — đúng 2 mục, Esc / bấm ra ngoài đóng", () => {
     expect(screen.queryByRole("menu")).not.toBeNull();
   });
 
+  it("↑/↓ chuyển focus giữa các mục, vòng từ cuối về đầu và từ đầu về cuối; không chọn mục nào", async () => {
+    stubServer([item("t2"), item("t1")]);
+    mount();
+    await ready(["câu của t2", "câu của t1"]);
+    const menu = await openMenu("câu của t2");
+    const [first, last] = within(menu).getAllByRole("menuitem");
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last!, { key: "ArrowDown" }); // cuối → vòng về đầu
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first!, { key: "ArrowUp" }); // đầu → vòng về cuối
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last!, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(first);
+    expect(screen.queryByRole("menu")).not.toBeNull(); // phím mũi tên không đóng menu
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(server.hideCalls).toEqual([]);
+  });
+
   it("Esc đóng menu, focus về nút ⋯; không gọi API, không mở cửa sổ", async () => {
     stubServer([item("t2"), item("t1")]);
     mount();
