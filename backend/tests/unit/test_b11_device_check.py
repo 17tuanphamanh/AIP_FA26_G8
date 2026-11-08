@@ -187,16 +187,43 @@ async def test_other_cases_ask_with_llm_as_before(
     assert (detail["owner_mismatch_early"], detail["device_not_found"]) == (False, False), why
 
 
-@pytest.mark.parametrize(("slots", "facts", "devices"), [
-    ({"device_id": "LAP-0610", "action": "renew_vpn_cert"}, OTHER_FACTS, [DEV_0610]),
-    ({"device_id": "LAP-0012", "action": "renew_vpn_cert"}, GONE_FACTS, None),
-])  # fmt: skip
 @pytest.mark.asyncio
-async def test_full_slots_build_path_unchanged(slots: dict[str, str], facts: dict[str, Any], devices: Any) -> None:
-    """M4 chỉ chạy TRƯỚC KHI HỎI: đủ slot → `validate_targets` + `build_action` như cũ (B12/B15 quyết)."""
+async def test_full_slots_other_persons_device_build_path_unchanged() -> None:
+    """Máy của người khác ở đường đủ slot: GIỮ luồng cũ (`validate_targets` + `build_action` → B12/B15 chốt P6) — ĐP 09/11 điểm 1."""
     h, gw = _harness()
-    out = await _node(h, _state(slots, facts, devices))
-    assert out["status"] == S_ASSESSING and out["intended_action"].params["device_id"] == slots["device_id"]
+    out = await _node(h, _state({"device_id": "LAP-0610", "action": "renew_vpn_cert"}, OTHER_FACTS, [DEV_0610]))
+    assert out["status"] == S_ASSESSING and out["intended_action"].params["device_id"] == "LAP-0610"
+    assert gw.llm.calls == [] and h.notifier.sent == []
+    assert _detail(h)["device_not_found"] is False
+
+
+@pytest.mark.asyncio
+async def test_full_slots_unknown_device_asks_fixed_question_no_action() -> None:
+    """ĐP 09/11 điểm 1 — bằng chứng (d) có gợi ý hành động sẵn: đủ slot mà máy 404 (B6 đã tra) → hỏi lại mã như M4, KHÔNG dựng
+    Action, không gọi tool kiểm lại; giữ slot `action`."""
+    h, gw = _harness()
+    out = await _node(h, _state({"device_id": "LAP-0012", "action": "check_vpn_status"}, GONE_FACTS, None))
+    assert (out["status"], out["next"], out["clarification_turns"]) == (S_CLARIFYING, "clarify_wait", 1)
+    assert "intended_action" not in out and gw.llm.calls == []
+    assert h.vpn is None or sum(h.vpn.calls.values()) == 0  # validate_targets không chạy
+    assert h.notifier.sent == [("t1", NOT_FOUND, "answer")]
+    assert out["slots"] == {"action": "check_vpn_status"} and out["facts"] == {"last_connection_ok": False}
+    assert out["missing_slots"] == ["device_id"]
+    detail = _detail(h)
+    assert (detail["device_not_found"], detail["missing"], detail["tools_called"]) == (True, ["device_id"], [])
+    [row] = [r for r in h.audit.rows if r["step"] == "B11"]
+    assert row["event"] == "asked"
+
+
+@pytest.mark.asyncio
+async def test_full_slots_unknown_device_after_last_turn_is_e4() -> None:
+    h, gw = _harness()
+    turns = h.deps().constants.MAX_CLARIFICATION_TURNS
+    out = await _node(h, _state({"device_id": "LAP-0012", "action": "check_vpn_status"}, GONE_FACTS, None,
+                                clarification_turns=turns))  # fmt: skip
+    assert (out["exit_code"], out["escalation_reason_detail"], out["missing_slots"]) == (
+        "E4", "clarification_exhausted", ["device_id"],
+    )  # fmt: skip
     assert gw.llm.calls == [] and h.notifier.sent == []
 
 
@@ -211,9 +238,9 @@ def _rag() -> FakeRag:
                                           query_truncated=False))  # fmt: skip
 
 
-def _graph(user: str = "nv001") -> tuple[GraphHarness, Gateway]:
+def _graph(user: str = "nv001", action: str | None = None) -> tuple[GraphHarness, Gateway]:
     clock = FakeClock()
-    gw = make_gateway(vpn_scripts(need="action", action=None), clock=clock)  # type: ignore[arg-type]
+    gw = make_gateway(vpn_scripts(need="action", action=action), clock=clock)  # type: ignore[arg-type]
     h = GraphHarness(clock=clock, nodes="real", llm=gw.client, rag=_rag(), ad=FakeAd(ad_user(user)))
     h.identity.add_session(f"s-{user}", user, expires_at=clock.now() + timedelta(days=365))
     h.tickets.register("t1", clock.now(), requester_id=user)
@@ -269,3 +296,34 @@ async def test_graph_second_unknown_code_falls_back_to_old_flow() -> None:
     assert v["intended_action"].params["device_id"] == "LAP-0013"
     assert _asked(h).count(NOT_FOUND) == 1 and len(_asked(h)) == 2
     assert not any(re.search(r"LAP-0013", t) for t in _asked(h))
+
+
+EVIDENCE_D = "Máy LAP-0012 của mình không vào được VPN kiểm tra giúp"
+
+
+@pytest.mark.asyncio
+async def test_graph_evidence_d_with_action_hint_asks_code_then_continues() -> None:
+    """Bằng chứng (d): B3 gợi ý sẵn `check_vpn_status` → đủ slot; trước: dựng Action trên LAP-0012 → E5 `llm_high_risk`.
+    Nay: hỏi lại mã một lần; trả lời mã đúng → dựng Action trên máy đúng, giữ hành động người dùng đã nêu."""
+    h, gw = _graph(action="check_vpn_status")
+    v = await _submit(h, EVIDENCE_D)
+    assert (v["status"], v.get("exit_code")) == (S_CLARIFYING, None)
+    assert v.get("intended_action") is None and _asked(h) == [NOT_FOUND]
+    v = await _reply(h, "LAP-0342")
+    action = v["intended_action"]
+    assert (action.type, action.params["device_id"]) == ("check_vpn_status", "LAP-0342")
+    assert action.facts["device_owner_is_requester"] is True
+    assert _asked(h) == [NOT_FOUND] and gw.llm.calls_for("b11_clarify_question") == []
+
+
+@pytest.mark.asyncio
+async def test_graph_full_slots_second_unknown_code_old_flow_asked_once() -> None:
+    """Đủ slot, mã gửi lại vẫn không có: máy này B6 không tra (`device_lookup` None) → luồng cũ (dựng Action trên máy 404, B12/B15
+    quyết) — câu "không tìm thấy" chỉ gửi MỘT lần."""
+    h, _ = _graph(action="check_vpn_status")
+    await _submit(h, EVIDENCE_D)
+    v = await _reply(h, "LAP-0013")
+    action = v["intended_action"]
+    assert (action.params["device_id"], action.facts["device_registered"]) == ("LAP-0013", False)
+    assert _asked(h) == [NOT_FOUND]
+    assert v["status"] != S_CLARIFYING

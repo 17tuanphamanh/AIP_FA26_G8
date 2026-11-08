@@ -35,7 +35,9 @@
    - máy không có (404) → bỏ slot `device_id` + fact máy (`vpn.DEVICE_FACTS`), hỏi câu CỐ ĐỊNH `messages.device_not_found_question`
      (không LLM, `prompt` None; output guard, notify, hạn, hết lượt như bước 5; audit `device_not_found=true`). Máy người dùng gửi
      lại KHÔNG do B6 tra → lần sau đi luồng cũ (không hỏi câu này lần 2, không tự suy máy khác).
-   B6 tra theo người (có `device_count`) mà máy không có trong danh sách → không kết luận (luồng cũ). Đủ slot → `_build` như cũ.
+   B6 tra theo người (có `device_count`) mà máy không có trong danh sách → không kết luận (luồng cũ).
+   ĐP 09/11 điểm 1: máy 404 ĐỦ slot (B3 đã gợi ý hành động — bằng chứng (d)) cũng hỏi lại mã như trên, giữ slot `action`, KHÔNG dựng
+   Action, không gọi tool. Máy của người khác ở đường đủ slot giữ luồng cũ (`_build` → B12 → chốt P6 ở B15).
 
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
@@ -130,7 +132,9 @@ def make(deps: NodeDeps) -> NodeFn:
             missing = ["target_user", *missing]
         info = _info(missing, int(state.get("clarification_turns") or 0), need_target)
         try:
-            return await (_ask(state, missing, info) if missing else _build(state, slots, info))
+            if missing or device_lookup(state) == "not_found":  # ĐP 09/11 điểm 1: máy 404 hỏi lại mã cả khi đủ slot
+                return await _ask(state, missing, info)
+            return await _build(state, slots, info)
         except TurnBudgetExceeded:  # 9.0: ở LLM hoặc tool — không cho qua, không E9
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B11", event="turn_budget_exceeded", audit_detail=info,
@@ -200,21 +204,21 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=info, exit_code=ExitCode.E5.value, missing_slots=missing,
                 escalation_reason_detail="approval_target_unverified",
             )  # fmt: skip
+        dropped: dict[str, Any] = {}
+        if seen == "not_found":  # Q2 M4: mã máy không có — bỏ slot + fact máy cũ (kể cả khi đã đủ slot — ĐP 09/11 điểm 1)
+            slots = {k: v for k, v in state["slots"].items() if k != "device_id"}
+            facts = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
+            missing = deps.slots.intents[state["intent"]].missing(slots)
+            info["missing"], info["device_not_found"] = missing, True
+            dropped = {"slots": slots, "facts": facts}
         if turns >= deps.constants.MAX_CLARIFICATION_TURNS:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B11", event="clarification_exhausted",
                 audit_detail=info, exit_code=ExitCode.E4.value, missing_slots=missing,
                 escalation_reason_detail="clarification_exhausted",
             )  # fmt: skip
-        dropped: dict[str, Any] = {}
-        if seen == "not_found":  # Q2 M4: mã máy không có — bỏ slot + fact máy cũ, hỏi lại mã bằng câu CỐ ĐỊNH (không LLM)
-            device_id = str(state["slots"]["device_id"])
-            slots = {k: v for k, v in state["slots"].items() if k != "device_id"}
-            facts = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
-            missing = deps.slots.intents[state["intent"]].missing(slots)
-            info["missing"], info["device_not_found"] = missing, True
-            dropped = {"slots": slots, "facts": facts}
-            q = QuestionOut(text=device_not_found_question(device_id))
+        if seen == "not_found":  # hỏi lại mã bằng câu CỐ ĐỊNH (không LLM)
+            q = QuestionOut(text=device_not_found_question(str(state["slots"]["device_id"])))
         elif info["target_required"]:  # L-03: câu CỐ ĐỊNH, không gọi LLM (`prompt` None) — vẫn qua guard/notify/hạn dưới
             q = QuestionOut(text=TARGET_QUESTION)
         else:
