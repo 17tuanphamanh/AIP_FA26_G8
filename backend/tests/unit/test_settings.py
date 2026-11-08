@@ -38,8 +38,8 @@ def test_secret_not_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.llm_api_key.get_secret_value() == "sk-bi-mat-khong-duoc-in"
 
 
-def test_lock_pool_defaults_to_two_times_graph_concurrency_plus_two() -> None:
-    assert _settings(graph_concurrency=8).effective_lock_pool_size == 18  # G2 (trước: + 2 → 10); chi tiết test_lock_pool_g2.py
+def test_lock_pool_defaults_to_graph_concurrency_plus_two() -> None:
+    assert _settings(graph_concurrency=8).effective_lock_pool_size == 10  # P1 mục 3
     assert _settings(graph_concurrency=8, lock_pool_size=4).effective_lock_pool_size == 4
 
 
