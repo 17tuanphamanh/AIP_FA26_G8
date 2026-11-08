@@ -68,6 +68,8 @@ EXEC_OUTPUT_PATTERNS: Mapping[str, re.Pattern[str]] = {
     # đặt lại mật khẩu qua SMS: số nhận CHỈ ở dạng đã che (không bao giờ số đầy đủ), hạn mật khẩu tạm 1–60 phút
     "sent_to": re.compile(r"0\d{2,3}\*{3}\d{3}"),
     "expires_in_minutes": re.compile(r"[1-9]|[1-5][0-9]|60"),
+    # Q3 M6: `install_software` trả `already_installed: true` (máy đã có sẵn) — executor chỉ ghi khoá này khi True
+    "already_installed": re.compile(r"true"),
 }
 
 

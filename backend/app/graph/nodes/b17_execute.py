@@ -32,7 +32,8 @@
    `turn_budget_exceeded`; kết quả lỗi → E7 `exec_failed` + `execution` + `escalation_note = handoff_note` (4 phần — B20 chép
    vào ghi chú bàn giao).
 6. **B18:** điểm log 7 → `notify_user` (tin THEO MẪU, P6 — `domain.messages.result_text`; T24: `view_permissions` kèm dòng quyền
-   từ `diagnostics` B6 qua `permission_rows`) + hạn confirm qua `effects.once`
+   từ `diagnostics` B6 qua `permission_rows`; Q3 M6: `install_software` mà `outputs.already_installed == "true"` → mẫu "đã có sẵn"
+   `already_installed_text`, audit `executed_ok` thêm `already_installed` (bool)) + hạn confirm qua `effects.once`
    (`step="B18"`) → `conversation` `kind="result"` → `S_CONFIRMING`. Lệnh ghi ĐÃ thành công: lỗi (`Exception`) ở đoạn này → E7
    `exec_interrupted` + câu "có thể đã gửi lệnh ghi…" (chốt FAIL mục 7 c — ticket đã có `begun` không bao giờ mang mẫu E9 "xử lý
    thủ công"); `BaseException` (`CancelledError`) đi tiếp.
@@ -54,7 +55,13 @@ from app.domain.action import Action
 from app.domain.approval import invalid_reason
 from app.domain.context import RequesterContext
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import permission_rows, result_msg, result_text
+from app.domain.messages import (
+    already_installed_text,
+    is_already_installed,
+    permission_rows,
+    result_msg,
+    result_text,
+)
 from app.domain.policy import referenced_facts
 from app.domain.states import S_CONFIRMING, S_ESCALATED
 from app.domain.ticket_state import ExecutionResult, RiskDecision
@@ -271,7 +278,9 @@ def make(deps: NodeDeps) -> NodeFn:
                 permission_rows((state.get("diagnostics") or {}).get("check_current_permissions"), deps.business_hours.tz)
                 if action.type == "view_permissions" else ()
             )  # fmt: skip
-            text = result_text(action, res.outputs, action.facts, requester_id=requester.user_id, rows=rows)
+            already = is_already_installed(action, res.outputs)  # Q3 M6: máy đã có sẵn → không nói "Đã cài"
+            text = (already_installed_text(action, res.outputs) if already
+                    else result_text(action, res.outputs, action.facts, requester_id=requester.user_id, rows=rows))  # fmt: skip
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "confirm", step="B18",
             )  # fmt: skip
@@ -289,7 +298,8 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         return await goto(
             state, S_CONFIRMING, next_node="confirm_wait", step="B18", event="executed_ok",
-            audit_detail={**rule, **_point7(res)}, execution=res, conversation=[result_msg(text, ref)],
+            audit_detail={**rule, **_point7(res), "already_installed": already}, execution=res,
+            conversation=[result_msg(text, ref)],
         )  # fmt: skip
 
     return b17_execute

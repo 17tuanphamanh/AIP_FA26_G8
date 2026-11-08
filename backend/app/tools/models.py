@@ -289,6 +289,8 @@ class InstallResult(_Out):
     name: str
     version: str
     installed_at: datetime
+    # Q3 M6 (ĐP 09/11): mock trả True khi máy ĐÃ có phần mềm (không cài lại). Thiếu trường → False (cài mới — như trước).
+    already_installed: bool = False
 
 
 class UninstallResult(_Out):

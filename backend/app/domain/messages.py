@@ -398,3 +398,24 @@ def approval_pending_text(action_type: str, target_phrase: str) -> str:
 
 def approval_pending_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": APPROVAL_PENDING_KIND, "text": text, "ref": ref, "needs": "none"}
+
+
+# ---- Q3 M6 (ĐP 09/11): cài phần mềm mà máy ĐÃ có sẵn — không nói "Đã cài" -------------------------------------------------------------
+# B18 dùng mẫu này thay `result_text` khi `install_software` và `outputs["already_installed"] == "true"` (executor chỉ ghi khi tool trả True).
+# Tên phần mềm/máy qua mẫu như `result_text`; phiên bản qua `EXEC_OUTPUT_PATTERNS` — thiếu thì bỏ cụm "(phiên bản …)".
+
+
+def already_installed_text(action: Action, outputs: Mapping[str, str]) -> str:
+    p = action.params
+    raw_software = str(p.get("software_name", ""))
+    software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
+    device_id = str(p.get("device_id", ""))
+    device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    version = _out(outputs, "version")
+    head = f"{software} đã có sẵn trên {device}{f' (phiên bản {version})' if version else ''}, mình không cài lại."
+    head = head[:1].upper() + head[1:] if software == "phần mềm" else head
+    return f'{head} Nếu {software} không mở được, bạn chọn "{UNRESOLVED_TEXT}" để mình chuyển kỹ thuật viên.'
+
+
+def is_already_installed(action: Action, outputs: Mapping[str, str]) -> bool:
+    return action.type == "install_software" and _out(outputs, "already_installed") == "true"
