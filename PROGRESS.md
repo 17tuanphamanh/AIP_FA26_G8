@@ -5844,6 +5844,16 @@ Q-2B1-8 (đã quyết, dưới). Kế hoạch + MẪU A: `PLAN-2B1.md` (không c
 
 ## bn-a (08/11/2026, S6) — M2 hạn giữ + migration 0015 (S1, S2, S4, A4) + A2 khoá worker + M4 câu hỏi vào prompt trích slot — tầng A
 
+### Chốt ĐP 08/11 20:35 (sau DỪNG 2) — 4 commit, rồi DỪNG
+
+- (1) `283541c` gỡ `MIGRATE_DATABASE_URL` khỏi env worker (chỉ backend — `make up` chạy alembic qua `compose run backend`); worker thấy biến
+  này → từ chối khởi động như JWT/MFA/`SVC_EXECUTOR_TOKEN`.
+- (2) `02c804c` `retention_days` sàn 90 (`RETENTION_MIN_DAYS`; 89 bị từ chối → worker không khởi động).
+- (3) `f1456aa` KHÔNG chặn `CONFIG_DIR`; worker log đúng 1 dòng INFO lúc dựng job: `retention: dry_run=… retention_days=…` (không đường dẫn).
+- (4) Nợ sau bảo vệ: "Việc treo" 39 (phòng thủ `runner.recover`).
+- Mutation: 5/5 đỏ (bỏ khoá cấm migrate; trả DSN migrate về env chung; sàn `ge=1`; bỏ dòng log; log có đường dẫn).
+- Tiếp: DỪNG. Chưa viết 0015/A4 — chờ ĐP báo lô `lo-0811` (có 0014) lên demo → rebase lên `origin/demo-tuananh` rồi mới viết 0015.
+
 ### DỪNG 2 (08/11 18:25 → 20:20) — ĐP duyệt PLAN (trừ 0015), M4 → A2 → M2 đã code + commit; 0015 CHỜ lô P5 gộp 0014
 
 **ĐP chốt (18:25):** Q1 job chạy `app_rw`, KHÔNG `app_migrate` — **lệch P7 mục 4 ("dùng role `app_migrate`") có chủ ý**: owner `app_migrate`
@@ -6161,6 +6171,11 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     đầu ra: `echo`, `guided_*`, `structured_outputs`, `continue_final_message`, `add_generation_prompt`; tăng chi: `best_of`, `min_tokens`,
     `ignore_eos`, `service_tier`, `reasoning_effort`, `reasoning`; lưu dữ liệu phía nhà cung cấp: `store`, `metadata`, `user`,
     `safety_identifier`. Chỉ tới được qua `llm.yaml` đã commit (sai cấu hình, không phải người dùng tấn công) — xét khi thêm provider thứ hai.
+39. **[Nợ sau bảo vệ — ĐP chốt 08/11 20:35, không làm]** **Phòng thủ `runner.recover` với ticket đã dọn (soát M2 bn-a, mục 7).** Nếu ticket
+    ĐÃ kết thúc (`final_state IS NOT NULL`) mà snapshot checkpoint rỗng (job hạn giữ đã dọn) thì `recover` nên đóng lượt, KHÔNG `_run_initial`
+    (chạy graph từ START); tương tự `ChildOps._start` với con có snapshot rỗng. Hiện không tới được: job chỉ chọn ticket không còn lượt mở ở
+    cả họ, ticket đã kết thúc không mở lượt mới (guard sự kiện muộn 409, `wake_parent` không làm gì). Kèm: dòng `late_event` của ticket đã
+    dọn ghi `actual_status="S_NEW"` (đọc audit dễ hiểu nhầm).
 
 ## Câu hỏi mở / điểm lệch
 
