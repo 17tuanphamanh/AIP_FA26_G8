@@ -4,6 +4,8 @@
 chỉ ticket của đúng người gửi, chỉ ticket lá còn mở (`final_state IS NULL` HOẶC `S_ESCALATED` với `close_reason IS NULL` — đang chờ kỹ thuật viên), từ `since` (gồm mốc), `intent` đúng dòng audit B3,
 ticket chưa có dòng B3 → `intent` None; chạy được bằng role `app_rw`. Quyết định cuối ở
 `domain.dedup.pick_duplicate` (unit: `test_dedup_domain.py`); ở đây nối cả hai trên dữ liệu thật.
+Mỗi ca một người gửi RIÊNG (fixture `me`): DB của module dùng chung giữa các ca và không dọn, mà `open_candidates` đọc mọi
+ticket còn mở của cùng `requester_id` — ca sau sẽ thấy ticket của ca trước (vd. `d-two` chen vào kết quả `pick()` của ca cuối).
 Chỉ chạy ở verify/CI (testcontainers) — KHÔNG nằm trong `uv run pytest backend/tests/unit`.
 """
 
@@ -17,7 +19,7 @@ from app.db.tickets import SqlTicketStore
 from app.domain.dedup import pick_duplicate
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from tests.integration.graph_pg import REQUESTER, seed_users
+from tests.integration.graph_pg import seed_requester
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
 
 NOW = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)
@@ -37,7 +39,6 @@ def db(pg: PgUrls) -> Iterator[PgUrls]:
 @pytest_asyncio.fixture
 async def rw(db: PgUrls) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(db.role("app_rw"))
-    await seed_users(engine)
     async with engine.begin() as conn:
         await conn.execute(text("INSERT INTO users (user_id, username, role) VALUES (:u, :u, 'employee') ON CONFLICT DO NOTHING"),
                            {"u": OTHER})  # fmt: skip
@@ -45,7 +46,13 @@ async def rw(db: PgUrls) -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
-async def put(rw: AsyncEngine, tid: str, *, requester: str = REQUESTER, age_h: float = 1.0, final: str | None = None,
+@pytest_asyncio.fixture
+async def me(rw: AsyncEngine) -> str:
+    """Người gửi riêng của MỘT ca — mã mới mỗi ca, nên ticket các ca khác không lọt vào `open_candidates` của ca này."""
+    return (await seed_requester(rw)).user_id
+
+
+async def put(rw: AsyncEngine, requester: str, tid: str, *, age_h: float = 1.0, final: str | None = None,
               close_reason: str | None = None, is_parent: bool = False, parent: str | None = None,
               intents: tuple[str, ...] = ("vpn",)) -> None:  # fmt: skip
     """Một ticket + (các) dòng audit B3 `intent_classified` theo thứ tự `intents` (dòng cuối = mới nhất)."""
@@ -63,47 +70,47 @@ async def put(rw: AsyncEngine, tid: str, *, requester: str = REQUESTER, age_h: f
             )
 
 
-async def test_returns_only_requesters_open_leaf_tickets_since_cutoff_with_audit_intent(rw: AsyncEngine) -> None:
+async def test_returns_only_requesters_open_leaf_tickets_since_cutoff_with_audit_intent(rw: AsyncEngine, me: str) -> None:
     store = SqlTicketStore(rw)
-    await put(rw, "d-open")  # khớp
-    await put(rw, "d-edge", age_h=24)  # đúng mốc → gồm
-    await put(rw, "d-old", age_h=24.5)  # ngoài cửa sổ
-    await put(rw, "d-closed", final="S_RESOLVED", close_reason="resolved_user_confirmed")  # đã qua B20
-    await put(rw, "d-esc-wait", final="S_ESCALATED")  # escalate, L2 chưa đóng (close_reason NULL) → vẫn mở
-    await put(rw, "d-esc-done", final="S_ESCALATED", close_reason="resolved_after_escalation")  # L2 đã đóng
-    await put(rw, "d-parent", is_parent=True)  # cha
-    await put(rw, "d-other", requester=OTHER)  # người khác
-    got = {c.ticket_id: c for c in await store.open_candidates(REQUESTER, since=SINCE)}
+    await put(rw, me, "d-open")  # khớp
+    await put(rw, me, "d-edge", age_h=24)  # đúng mốc → gồm
+    await put(rw, me, "d-old", age_h=24.5)  # ngoài cửa sổ
+    await put(rw, me, "d-closed", final="S_RESOLVED", close_reason="resolved_user_confirmed")  # đã qua B20
+    await put(rw, me, "d-esc-wait", final="S_ESCALATED")  # escalate, L2 chưa đóng (close_reason NULL) → vẫn mở
+    await put(rw, me, "d-esc-done", final="S_ESCALATED", close_reason="resolved_after_escalation")  # L2 đã đóng
+    await put(rw, me, "d-parent", is_parent=True)  # cha
+    await put(rw, OTHER, "d-other")  # người khác
+    got = {c.ticket_id: c for c in await store.open_candidates(me, since=SINCE)}
     assert set(got) == {"d-open", "d-edge", "d-esc-wait"}
     assert (got["d-esc-wait"].final_state, got["d-esc-wait"].close_reason) == ("S_ESCALATED", None)
     assert got["d-open"].intent == "vpn" and got["d-open"].final_state is None and got["d-open"].created_at.tzinfo is not None
-    assert got["d-open"].requester_id == REQUESTER and got["d-open"].is_parent is False
+    assert got["d-open"].requester_id == me and got["d-open"].is_parent is False
 
 
-async def test_intent_is_the_latest_b3_audit_row(rw: AsyncEngine) -> None:
+async def test_intent_is_the_latest_b3_audit_row(rw: AsyncEngine, me: str) -> None:
     store = SqlTicketStore(rw)
-    await put(rw, "d-two", intents=("account", "vpn"))
-    [c] = [c for c in await store.open_candidates(REQUESTER, since=SINCE) if c.ticket_id == "d-two"]
+    await put(rw, me, "d-two", intents=("account", "vpn"))
+    [c] = [c for c in await store.open_candidates(me, since=SINCE) if c.ticket_id == "d-two"]
     assert c.intent == "vpn"
 
 
-async def test_ticket_without_b3_row_has_no_intent(rw: AsyncEngine) -> None:
+async def test_ticket_without_b3_row_has_no_intent(rw: AsyncEngine, me: str) -> None:
     store = SqlTicketStore(rw)
-    await put(rw, "d-nob3", intents=())
+    await put(rw, me, "d-nob3", intents=())
     async with rw.begin() as conn:  # dòng audit khác B3 không được tính là intent
         await conn.execute(text("INSERT INTO audit_logs (ticket_id, step, event, intent) VALUES ('d-nob3', 'B6', 'diagnosed', 'vpn')"))
-    [c] = [c for c in await store.open_candidates(REQUESTER, since=SINCE) if c.ticket_id == "d-nob3"]
+    [c] = [c for c in await store.open_candidates(me, since=SINCE) if c.ticket_id == "d-nob3"]
     assert c.intent is None
 
 
-async def test_end_to_end_with_pick_duplicate_and_child_exclusion(rw: AsyncEngine) -> None:
+async def test_end_to_end_with_pick_duplicate_and_child_exclusion(rw: AsyncEngine, me: str) -> None:
     store = SqlTicketStore(rw)
-    await put(rw, "e-old", age_h=5)
-    await put(rw, "e-new", age_h=2)
-    cands = await store.open_candidates(REQUESTER, since=SINCE)
+    await put(rw, me, "e-old", age_h=5)
+    await put(rw, me, "e-new", age_h=2)
+    cands = await store.open_candidates(me, since=SINCE)
 
     def pick(*, ticket_id: str = "me", parent: str | None = None, intent: str = "vpn") -> str | None:
-        return pick_duplicate(cands, ticket_id=ticket_id, parent_ticket_id=parent, requester_id=REQUESTER, intent=intent, since=SINCE)
+        return pick_duplicate(cands, ticket_id=ticket_id, parent_ticket_id=parent, requester_id=me, intent=intent, since=SINCE)
 
     assert pick() == "e-new"
     assert pick(intent="account") is None

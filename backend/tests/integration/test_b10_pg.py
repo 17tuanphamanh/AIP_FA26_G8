@@ -6,6 +6,9 @@ chunk KB fixture thật + `expand` thật), ScriptedLLM `vpn_scripts(need="info"
   đúng 1 tin (`side_effects` notify_user), đúng 1 dòng `lineage`, 1 dòng audit `deflected_info_only`.
 - g1: resume `confirm_wait` hai lần (lần đầu chết trước audit của B19 → recover) → vẫn 1 `notify_user` của B10, 1 câu trả
   lời trong `conversation`.
+
+Mỗi ca một người gửi RIÊNG (`seed_requester`): DB `migrated` dùng chung cả phiên pytest, còn B3 báo trùng (M1) gửi thêm một tin
+`duplicate` nếu người gửi có ticket vpn còn mở do ca khác để lại — đếm "1 tin B10" / "1 notify_user" mới đo đúng B10.
 """
 
 from collections.abc import AsyncIterator, Mapping
@@ -27,10 +30,10 @@ from tests.fakes.kb_index import KBV, fixture_rag
 from tests.fakes.llm import make_gateway
 from tests.fixtures.llm.vpn import vpn_scripts
 from tests.integration.graph_pg import (
-    REQUESTER,
-    SESSION,
+    OwnRequester,
     open_pg_runtime,
     scalar,
+    seed_requester,
     seed_users,
 )
 from tests.integration.pg import PgUrls
@@ -46,6 +49,11 @@ async def arw(migrated: PgUrls) -> AsyncIterator[AsyncEngine]:
     await seed_users(engine)
     yield engine
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def who(arw: AsyncEngine) -> OwnRequester:
+    return await seed_requester(arw)
 
 
 class DieAfterAudit(AuditWriter):
@@ -75,11 +83,11 @@ class DieBeforeConfirmAudit(AuditWriter):
         return await super().record(row, lineage=lineage)
 
 
-async def _ticket(rw: AsyncEngine, clock: FakeClock) -> tuple[str, str]:
+async def _ticket(rw: AsyncEngine, clock: FakeClock, who: OwnRequester) -> tuple[str, str]:
     ticket, turn = f"b10-{uuid4().hex[:10]}", f"turn-{uuid4().hex[:8]}"
     await SqlTicketStore(rw).create(
-        NewTicket(ticket_id=ticket, requester_id=REQUESTER, requester_role="employee", requester_dept="it",
-                  session_id=SESSION, redacted_request=QUESTION, created_at=clock.now()),
+        NewTicket(ticket_id=ticket, requester_id=who.user_id, requester_role="employee", requester_dept="it",
+                  session_id=who.session_id, redacted_request=QUESTION, created_at=clock.now()),
         turn_id=turn,
     )  # fmt: skip
     return ticket, turn
@@ -94,14 +102,15 @@ def _answers(values: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 
 async def test_g2_crash_after_b10_goto_rerun_same_turn_single_notice_single_lineage_pg(
-    migrated: PgUrls, arw: AsyncEngine
+    migrated: PgUrls, arw: AsyncEngine, who: OwnRequester
 ) -> None:
     clock = FakeClock()
     url = migrated.role("app_rw")
-    ticket, turn = await _ticket(arw, clock)
+    ticket, turn = await _ticket(arw, clock, who)
     rag = await fixture_rag(["KB-VPN-001#v1#1", "KB-VPN-003#v1#0"], clock)
     llm = make_gateway(vpn_scripts(need="info"), clock=clock).client  # type: ignore[arg-type]
-    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, audit=DieAfterAudit(arw)) as rt:
+    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, ad=who.ad(),
+                               audit=DieAfterAudit(arw)) as rt:  # fmt: skip
         with pytest.raises(Crash):
             await rt.runner.run_new(ticket, turn)
         first_sends = rt.notifier.count(ticket)
@@ -109,7 +118,7 @@ async def test_g2_crash_after_b10_goto_rerun_same_turn_single_notice_single_line
     assert await _count(arw, "SELECT count(*) FROM lineage WHERE ticket_id = :t", ticket) == 1  # commit cùng audit
 
     clock.advance(timedelta(minutes=3))
-    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, can_execute=False) as rt:
+    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, ad=who.ad(), can_execute=False) as rt:
         assert await WorkerJobs(rt.runner, rt.deadlines, rt.turns).scan_stale_turns() >= 1
         values = (await rt.runner.snapshot(ticket)).values
         second_sends = rt.notifier.count(ticket)
@@ -128,20 +137,22 @@ async def test_g2_crash_after_b10_goto_rerun_same_turn_single_notice_single_line
     assert row == f"{turn}|B10|b10_answer|2|{KBV}|NULL"
 
 
-async def test_g1_resume_confirm_wait_twice_single_b10_notice_pg(migrated: PgUrls, arw: AsyncEngine) -> None:
+async def test_g1_resume_confirm_wait_twice_single_b10_notice_pg(
+    migrated: PgUrls, arw: AsyncEngine, who: OwnRequester
+) -> None:
     clock = FakeClock()
     url = migrated.role("app_rw")
-    ticket, turn = await _ticket(arw, clock)
+    ticket, turn = await _ticket(arw, clock, who)
     rag = await fixture_rag(["KB-VPN-001#v1#1"], clock)
     llm = make_gateway(vpn_scripts(need="info"), clock=clock).client  # type: ignore[arg-type]
-    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag) as rt:
+    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, ad=who.ad()) as rt:
         assert (res := await rt.runner.run_new(ticket, turn)) is not None and res.status == S_CONFIRMING
-    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag,
+    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, ad=who.ad(),
                                audit=DieBeforeConfirmAudit(arw)) as rt:  # fmt: skip
         with pytest.raises(Crash):
             await deliver_event(rt.runner, ticket, S_CONFIRMING, {"kind": "confirmed"})
     clock.advance(timedelta(minutes=3))
-    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, can_execute=False) as rt:
+    async with open_pg_runtime(url, clock=clock, nodes="real", llm=llm, rag=rag, ad=who.ad(), can_execute=False) as rt:
         assert await WorkerJobs(rt.runner, rt.deadlines, rt.turns).scan_stale_turns() >= 1
         values = (await rt.runner.snapshot(ticket)).values
     assert values["status"] == S_RESOLVED
@@ -152,14 +163,14 @@ async def test_g1_resume_confirm_wait_twice_single_b10_notice_pg(migrated: PgUrl
                         ticket) == 1  # B19 → S_RESOLVED: B20 không gửi thêm (không exit_code)  # fmt: skip
 
 
-async def test_q3g3_audit_insert_fails_lineage_rolled_back_pg(arw: AsyncEngine) -> None:
+async def test_q3g3_audit_insert_fails_lineage_rolled_back_pg(arw: AsyncEngine, who: OwnRequester) -> None:
     """Chốt DỪNG 1: dòng audit INSERT lỗi (vi phạm CHECK `exit_code`) → rollback CẢ transaction → 0 dòng lineage — audit và
     lineage của một bước cùng có hoặc cùng không."""
     from app.db.lineage import LINEAGE_COLUMNS
     from sqlalchemy.exc import IntegrityError
 
     clock = FakeClock()
-    ticket, turn = await _ticket(arw, clock)
+    ticket, turn = await _ticket(arw, clock, who)
     row = {"ticket_id": ticket, "turn_id": turn, "loop_seq": 0, "idempotency_key": f"k-{uuid4().hex}", "step": "B10",
            "event": "deflected_info_only", "from_status": "S_RETRIEVING", "to_status": "S_CONFIRMING",
            "created_at": clock.now(), "detail": {}, "exit_code": "E99"}  # fmt: skip
