@@ -6,6 +6,7 @@ Postgres. Node B3 dùng hàm này: `test_dedup_b3.py`.
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -19,9 +20,10 @@ CONFIG = Path(__file__).resolve().parents[3] / "config"
 
 
 def cand(tid: str, *, requester: str = "nv001", intent: str | None = "vpn", final: str | None = None,
-         is_parent: bool = False, parent: str | None = None, age_h: float = 1.0) -> OpenCandidate:  # fmt: skip
-    return OpenCandidate(ticket_id=tid, requester_id=requester, intent=intent, final_state=final, is_parent=is_parent,
-                         parent_ticket_id=parent, created_at=NOW - timedelta(hours=age_h))  # fmt: skip
+         close_reason: str | None = None, is_parent: bool = False, parent: str | None = None,
+         age_h: float = 1.0) -> OpenCandidate:  # fmt: skip
+    return OpenCandidate(ticket_id=tid, requester_id=requester, intent=intent, final_state=final, close_reason=close_reason,
+                         is_parent=is_parent, parent_ticket_id=parent, created_at=NOW - timedelta(hours=age_h))  # fmt: skip
 
 
 def pick(cands: list[OpenCandidate], **over: object) -> str | None:
@@ -44,8 +46,36 @@ def test_other_intent_is_not_a_duplicate() -> None:
 
 
 def test_closed_ticket_is_not_a_duplicate() -> None:
-    assert pick([cand("old", final="S_RESOLVED")]) is None
-    assert pick([cand("old", final="S_ESCALATED")]) is None  # đã qua B20 (chờ L2) — "còn mở" = chưa có final_state
+    assert pick([cand("old", final="S_RESOLVED", close_reason="resolved_user_confirmed")]) is None
+    assert pick([cand("old", final="S_REJECTED", close_reason="rejected_by_approver")]) is None
+    assert pick([cand("old", final="S_BLOCKED", close_reason="blocked_injection_detected")]) is None
+
+
+def test_escalated_ticket_still_waiting_for_a_technician_is_open() -> None:
+    """ĐP 08/11: "còn mở" = `final_state IS NULL` HOẶC (`final_state = 'S_ESCALATED'` VÀ `close_reason IS NULL`) — yêu cầu đang chờ kỹ thuật
+    viên (L2 chưa đóng) cũng tính trùng."""
+    assert pick([cand("old", final="S_ESCALATED", close_reason=None)]) == "old"
+
+
+def test_escalated_ticket_closed_by_l2_is_not_open() -> None:
+    assert pick([cand("old", final="S_ESCALATED", close_reason="resolved_after_escalation")]) is None
+    assert pick([cand("old", final="S_ESCALATED", close_reason="resolved_after_deny_review")]) is None
+
+
+def test_only_escalated_counts_as_open_when_close_reason_is_null() -> None:
+    """`close_reason` NULL không tự biến ticket đã đóng thành 'mở': chỉ `S_ESCALATED` được ngoại lệ."""
+    for final in ("S_RESOLVED", "S_REJECTED", "S_BLOCKED"):
+        assert pick([cand("old", final=final, close_reason=None)]) is None, final
+
+
+def test_open_escalated_ticket_still_obeys_every_other_condition() -> None:
+    waiting: dict[str, Any] = {"final": "S_ESCALATED", "close_reason": None}
+    assert pick([cand("old", requester="nv002", **waiting)]) is None
+    assert pick([cand("old", intent="account", **waiting)]) is None
+    assert pick([cand("old", age_h=25, **waiting)]) is None
+    assert pick([cand("P", **waiting)], ticket_id="P-1", parent_ticket_id="P") is None
+    assert pick([cand("old", is_parent=True, **waiting)]) is None
+    assert pick([cand("a", age_h=5), cand("b", age_h=2, **waiting)]) == "b"  # mới nhất, dù đang chờ L2
 
 
 def test_window_start_is_inclusive_and_older_is_out() -> None:

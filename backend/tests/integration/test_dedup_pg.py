@@ -1,7 +1,7 @@
 """M1 — `SqlTicketStore.open_candidates` trên Postgres 16 thật (testcontainers): truy vấn mà B3 dùng để báo trùng yêu cầu.
 
 `tickets.intent` chỉ được ghi ở B20 → ticket CÒN MỞ có `intent` NULL; intent lấy từ dòng audit B3 `intent_classified` MỚI NHẤT. Kiểm:
-chỉ ticket của đúng người gửi, chỉ ticket lá còn mở (`final_state IS NULL`), từ `since` (gồm mốc), `intent` đúng dòng audit B3,
+chỉ ticket của đúng người gửi, chỉ ticket lá còn mở (`final_state IS NULL` HOẶC `S_ESCALATED` với `close_reason IS NULL` — đang chờ kỹ thuật viên), từ `since` (gồm mốc), `intent` đúng dòng audit B3,
 ticket chưa có dòng B3 → `intent` None; chạy được bằng role `app_rw`. Quyết định cuối ở
 `domain.dedup.pick_duplicate` (unit: `test_dedup_domain.py`); ở đây nối cả hai trên dữ liệu thật.
 Chỉ chạy ở verify/CI (testcontainers) — KHÔNG nằm trong `uv run pytest backend/tests/unit`.
@@ -46,13 +46,15 @@ async def rw(db: PgUrls) -> AsyncIterator[AsyncEngine]:
 
 
 async def put(rw: AsyncEngine, tid: str, *, requester: str = REQUESTER, age_h: float = 1.0, final: str | None = None,
-              is_parent: bool = False, parent: str | None = None, intents: tuple[str, ...] = ("vpn",)) -> None:  # fmt: skip
+              close_reason: str | None = None, is_parent: bool = False, parent: str | None = None,
+              intents: tuple[str, ...] = ("vpn",)) -> None:  # fmt: skip
     """Một ticket + (các) dòng audit B3 `intent_classified` theo thứ tự `intents` (dòng cuối = mới nhất)."""
     async with rw.begin() as conn:
         await conn.execute(
             text("INSERT INTO tickets (ticket_id, requester_id, requester_role, redacted_request, created_at, final_state, "
-                 "is_parent, parent_ticket_id) VALUES (:t, :u, 'employee', 'yêu cầu thử', :c, :f, :p, :pp)"),
-            {"t": tid, "u": requester, "c": NOW - timedelta(hours=age_h), "f": final, "p": is_parent, "pp": parent},
+                 "close_reason, is_parent, parent_ticket_id) VALUES (:t, :u, 'employee', 'yêu cầu thử', :c, :f, :cr, :p, :pp)"),
+            {"t": tid, "u": requester, "c": NOW - timedelta(hours=age_h), "f": final, "cr": close_reason, "p": is_parent,
+             "pp": parent},
         )  # fmt: skip
         for intent in intents:
             await conn.execute(
@@ -66,11 +68,14 @@ async def test_returns_only_requesters_open_leaf_tickets_since_cutoff_with_audit
     await put(rw, "d-open")  # khớp
     await put(rw, "d-edge", age_h=24)  # đúng mốc → gồm
     await put(rw, "d-old", age_h=24.5)  # ngoài cửa sổ
-    await put(rw, "d-closed", final="S_RESOLVED")  # đã qua B20
+    await put(rw, "d-closed", final="S_RESOLVED", close_reason="resolved_user_confirmed")  # đã qua B20
+    await put(rw, "d-esc-wait", final="S_ESCALATED")  # escalate, L2 chưa đóng (close_reason NULL) → vẫn mở
+    await put(rw, "d-esc-done", final="S_ESCALATED", close_reason="resolved_after_escalation")  # L2 đã đóng
     await put(rw, "d-parent", is_parent=True)  # cha
     await put(rw, "d-other", requester=OTHER)  # người khác
     got = {c.ticket_id: c for c in await store.open_candidates(REQUESTER, since=SINCE)}
-    assert set(got) == {"d-open", "d-edge"}
+    assert set(got) == {"d-open", "d-edge", "d-esc-wait"}
+    assert (got["d-esc-wait"].final_state, got["d-esc-wait"].close_reason) == ("S_ESCALATED", None)
     assert got["d-open"].intent == "vpn" and got["d-open"].final_state is None and got["d-open"].created_at.tzinfo is not None
     assert got["d-open"].requester_id == REQUESTER and got["d-open"].is_parent is False
 

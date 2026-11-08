@@ -28,7 +28,8 @@ OK = out(item("vpn", 0.9))
 
 
 def seed(h: GraphHarness, tid: str, *, requester: str = "nv001", intent: str | None = "vpn", age_h: float = 1.0,
-         final: str | None = None, is_parent: bool = False, parent: str | None = None) -> None:  # fmt: skip
+         final: str | None = None, close_reason: str | None = "resolved_user_confirmed", is_parent: bool = False,
+         parent: str | None = None) -> None:  # fmt: skip
     """Ticket có sẵn trong 'DB': dòng `tickets` (+ final_state nếu đã đóng) và dòng audit B3 mang `intent`."""
     created = h.clock.now() - timedelta(hours=age_h)
     h.tickets.register(tid, created, requester_id=requester, is_parent=is_parent, parent_ticket_id=parent)
@@ -36,7 +37,7 @@ def seed(h: GraphHarness, tid: str, *, requester: str = "nv001", intent: str | N
         h.audit.rows.append({"ticket_id": tid, "step": "B3", "event": "intent_classified", "intent": intent, "detail": {}})
     if final is not None:
         h.tickets.rows[tid]["final"] = FinalSummary(
-            final_state=final, exit_code=None, block_reason=None, close_reason="resolved", resolution_path=None,
+            final_state=final, exit_code=None, block_reason=None, close_reason=close_reason, resolution_path=None,
             aggregate_status=None, auto_closed=False, intent=intent, slots=None, total_turns=1, total_duration_seconds=1,
             closed_at=h.clock.now(),
         )  # fmt: skip
@@ -111,7 +112,9 @@ async def test_most_recent_open_ticket_is_cited() -> None:
 # ---- các ca KHÔNG báo ---------------------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("case", ["baseline", "other_requester", "other_intent", "outside_window", "closed", "no_intent"])
+@pytest.mark.parametrize(
+    "case", ["baseline", "other_requester", "other_intent", "outside_window", "closed", "escalated_closed_by_l2", "no_intent"]
+)  # fmt: skip
 async def test_no_notice_and_no_audit_key(case: str) -> None:
     h, _ = _env([OK])
     if case == "other_requester":
@@ -122,12 +125,22 @@ async def test_no_notice_and_no_audit_key(case: str) -> None:
         seed(h, "old", age_h=25)
     elif case == "closed":
         seed(h, "old", final="S_RESOLVED")
+    elif case == "escalated_closed_by_l2":
+        seed(h, "old", final="S_ESCALATED", close_reason="resolved_after_escalation")
     elif case == "no_intent":
         seed(h, "old", intent=None)
     v = await run(h)
     assert notices(h) == [] and "duplicate_of" not in point1(h)["detail"]
     assert not any(m.get("kind") == "duplicate" for m in v["conversation"])
     assert ("B6", "diagnosed") in h.audit.events("t1")
+
+
+async def test_ticket_escalated_and_waiting_for_a_technician_counts_as_duplicate() -> None:
+    """ĐP 08/11: `S_ESCALATED` + `close_reason` NULL (L2 chưa đóng) vẫn là yêu cầu đang xử lý."""
+    h, _ = _env([OK])
+    seed(h, "old", final="S_ESCALATED", close_reason=None)
+    await run(h)
+    assert notices(h) == [NOTICE.format(tid="old")] and point1(h)["detail"]["duplicate_of"] == "old"
 
 
 async def test_window_comes_from_config_not_a_constant() -> None:

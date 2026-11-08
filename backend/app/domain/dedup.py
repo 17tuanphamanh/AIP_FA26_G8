@@ -2,8 +2,9 @@
 
 B3 (sau khi có intent của ticket lá) hỏi store `open_candidates(requester_id, since=…)` — store trả TẬP CHA có thể thừa — rồi
 `pick_duplicate` MỚI là nơi quyết định (mọi điều kiện lọc nằm ở đây để unit test + mutation bắt được, không cần Postgres):
-cùng người gửi, cùng intent, ticket lá còn mở (`final_state IS NULL` — chưa qua B20), tạo từ `since` (gồm mốc), không phải chính
-ticket này, không phải cha hay anh em của nó (cùng một câu gốc, không phải yêu cầu chồng).
+cùng người gửi, cùng intent, ticket lá còn mở, tạo từ `since` (gồm mốc), không phải chính ticket này, không phải cha hay anh em của nó
+(cùng một câu gốc, không phải yêu cầu chồng). "Còn mở" (ĐP 08/11) = `final_state IS NULL` (chưa qua B20) HOẶC (`final_state = 'S_ESCALATED'`
+VÀ `close_reason IS NULL`) — yêu cầu đang chờ kỹ thuật viên (L2 chưa đóng) cũng tính trùng.
 
 `intent` của ticket còn mở lấy từ dòng audit B3 `intent_classified` — `tickets.intent` chỉ được ghi ở B20.
 Kết quả chỉ đi vào audit điểm log 1 (`duplicate_of`) và một tin cố định; KHÔNG vào state/ctx/M5 (`test_dedup_isolation_ast.py`).
@@ -14,19 +15,28 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.domain.messages import INTENT_LABELS
+from app.domain.states import S_ESCALATED
 
 
 @dataclass(frozen=True)
 class OpenCandidate:
-    """Một ticket do store trả — chưa lọc. `intent`/`final_state` None = chưa qua B3 / chưa qua B20."""
+    """Một ticket do store trả — chưa lọc. `intent`/`final_state` None = chưa qua B3 / chưa qua B20; `close_reason` None ở ticket
+    `S_ESCALATED` = L2 chưa đóng. Không mặc định: thiếu trường này là coi ticket đã đóng thành còn mở."""
 
     ticket_id: str
     requester_id: str
     intent: str | None
     final_state: str | None
+    close_reason: str | None
     is_parent: bool
     parent_ticket_id: str | None
     created_at: datetime
+
+
+def is_open(c: OpenCandidate) -> bool:
+    """`final_state IS NULL` HOẶC (`S_ESCALATED` VÀ `close_reason IS NULL`). Ticket đã đóng khác (`S_RESOLVED`, `S_REJECTED`, `S_BLOCKED`) không bao
+    giờ mở, dù `close_reason` rỗng."""
+    return c.final_state is None or (c.final_state == S_ESCALATED and c.close_reason is None)
 
 
 def pick_duplicate(
@@ -43,7 +53,7 @@ def pick_duplicate(
     for c in candidates:
         if c.requester_id != requester_id or c.intent != intent:
             continue
-        if c.final_state is not None or c.is_parent or c.created_at < since:
+        if not is_open(c) or c.is_parent or c.created_at < since:
             continue
         if c.ticket_id == ticket_id or c.ticket_id == parent_ticket_id:
             continue

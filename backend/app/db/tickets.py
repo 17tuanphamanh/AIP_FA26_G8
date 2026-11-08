@@ -112,12 +112,13 @@ _HANDOFF_ROWS = text(
     "FROM tickets c WHERE c.parent_ticket_id = :parent"
 )
 # M1 (B3 báo trùng): ticket LÁ còn mở của một người từ `since` + `intent` của dòng audit B3 `intent_classified` mới nhất (`tickets.intent` NULL tới
-# B20). Chỉ đọc; `ix_tickets_requester_created_at` + `ix_audit_logs_ticket`. Lọc ở đây chỉ để thu nhỏ tập — quyết định ở `pick_duplicate`.
+# B20). "Còn mở" (ĐP 08/11) = `final_state IS NULL` HOẶC (`S_ESCALATED` VÀ `close_reason IS NULL` — chờ kỹ thuật viên). Chỉ đọc; `ix_tickets_requester_created_at` + `ix_audit_logs_ticket`. Lọc ở đây chỉ để thu nhỏ tập — quyết định ở `pick_duplicate`.
 _OPEN_CANDIDATES = text(
-    "SELECT t.ticket_id, t.requester_id, t.final_state, t.is_parent, t.parent_ticket_id, t.created_at, "
+    "SELECT t.ticket_id, t.requester_id, t.final_state, t.close_reason, t.is_parent, t.parent_ticket_id, t.created_at, "
     "(SELECT a.intent FROM audit_logs a WHERE a.ticket_id = t.ticket_id AND a.step = 'B3' AND a.event = 'intent_classified' "
     " AND a.intent IS NOT NULL ORDER BY a.log_id DESC LIMIT 1) AS intent "
-    "FROM tickets t WHERE t.requester_id = :requester AND t.created_at >= :since AND t.final_state IS NULL AND t.is_parent = false"
+    "FROM tickets t WHERE t.requester_id = :requester AND t.created_at >= :since AND t.is_parent = false "
+    "AND (t.final_state IS NULL OR (t.final_state = 'S_ESCALATED' AND t.close_reason IS NULL))"
 )
 _STARTED = text("SELECT result_ref FROM side_effects WHERE ticket_id = :parent AND kind = 'child_submit'")
 STARTED_PREFIX = "started:"  # `result_ref` của `child_submit` (`graph.children._started`)
@@ -206,6 +207,7 @@ class SqlTicketStore:
         return [
             OpenCandidate(
                 ticket_id=r.ticket_id, requester_id=r.requester_id, intent=r.intent, final_state=r.final_state,
+                close_reason=r.close_reason,
                 is_parent=r.is_parent, parent_ticket_id=r.parent_ticket_id, created_at=r.created_at.astimezone(UTC),
             )
             for r in rows

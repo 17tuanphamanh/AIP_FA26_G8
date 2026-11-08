@@ -674,7 +674,8 @@ class MemoryTickets:
             final: FinalSummary | None = r["final"]
             out.append(OpenCandidate(
                 ticket_id=tid, requester_id=r["requester_id"], intent=intents[-1] if intents else None,
-                final_state=final.final_state if final else None, is_parent=r["is_parent"],
+                final_state=final.final_state if final else None, close_reason=final.close_reason if final else None,
+                is_parent=r["is_parent"],
                 parent_ticket_id=r["parent_ticket_id"], created_at=r["created_at"],
             ))  # fmt: skip
         return out
