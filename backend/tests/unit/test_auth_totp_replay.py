@@ -48,7 +48,8 @@ def _code(secret: str, at: datetime) -> str:
 
 
 def test_a4_totp_step_returns_matched_counter_within_window() -> None:
-    from app.auth.mfa import totp_step
+    # A4: `totp_step` có khi hiện thực (chờ 0015) — gỡ ignore
+    from app.auth.mfa import totp_step  # type: ignore[attr-defined]
 
     secret = pyotp.random_base32()
     step = int(T0.timestamp()) // 30
