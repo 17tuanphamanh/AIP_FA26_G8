@@ -247,3 +247,15 @@ async def test_q6_s5_safety_net_matches_round_ready() -> None:
     assert report.woken == 1
     d2 = digests(await f.assistant_msgs())[-1]
     assert d2["round"] == 2 and [i["child_id"] for i in d2["items"]] == ["T1-2"]
+
+
+# ---- c2: `step` của khối digest — FE gắn nhãn "Chờ IT duyệt" cho khối B15 (không đổi kind, không migration) ---------------------
+
+
+async def test_c2_digest_item_carries_source_step_b15_for_pending_notice() -> None:
+    """Mỗi khối digest có `step` = `source_step` của notice; khối "chờ duyệt" (notice THẬT của B15) mang `step="B15"`, kind vẫn
+    `result`; khối khác mang bước của nó (B11 câu hỏi)."""
+    f = make_flow(classify(adobe_item(), extend_item()), extract={"duration": "30"})
+    await f.submit(APPROVE_PLUS_ASK)
+    [d1] = digests(await f.assistant_msgs())
+    assert [(i["child_id"], i["kind"], i["step"]) for i in d1["items"]] == [("T1-1", "result", "B15"), ("T1-2", "question", "B11")]

@@ -442,7 +442,8 @@ def child_title(seed: Mapping[str, Any]) -> str:
 
 def compose_digest(view: Sequence[ChildView], seeds: Mapping[str, Mapping[str, Any]], *, round_no: int) -> Digest:
     """Tin tổng hợp vòng `round_no` (P9, 5.2.6): `{role:"assistant", kind:"digest", round, text, items:[{child_id, index, title,
-    kind, text, needs}]}`. Mỗi notice chưa gửi một item, theo `index` rồi thứ tự tạo; con không có notice mới → không lặp lại.
+    kind, text, needs, step}]}` — `step` = `source_step` của notice (Q6 c2: FE gắn nhãn "Chờ IT duyệt" cho khối `result` của B15 — tin
+    "chờ duyệt" — mà không đổi `kind`, không migration). Mỗi notice chưa gửi một item, theo `index` rồi thứ tự tạo; con không có notice mới → không lặp lại.
     `text` = các khối "Ý {index} – {title}: {body}" nối xuống dòng, + câu tổng kết (bảng 5.2.5) khi MỌI con đã kết thúc (vòng cuối không
     còn notice nào → chỉ câu tổng kết). Không chữ nào ngoài `body` notice + mẫu + số."""
     items: list[dict[str, Any]] = []
@@ -452,7 +453,7 @@ def compose_digest(view: Sequence[ChildView], seeds: Mapping[str, Mapping[str, A
         for n in sorted(child.pending, key=lambda n: (n.created_at, n.notice_id)):
             items.append({
                 "child_id": child.child_id, "index": child.index, "title": title,
-                "kind": "result" if n.kind == "answer" else n.kind, "text": n.body, "needs": n.needs,
+                "kind": "result" if n.kind == "answer" else n.kind, "text": n.body, "needs": n.needs, "step": n.source_step,
             })  # fmt: skip
             ids.append(n.notice_id)
     lines = [f"Ý {it['index']} – {it['title']}: {it['text']}" for it in items]

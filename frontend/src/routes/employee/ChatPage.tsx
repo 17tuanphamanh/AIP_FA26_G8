@@ -217,7 +217,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       onExpire={() => onClockExpire(deadline)}
     />
   ) : null;
-  const composer = composerFor(view, waiting, settling, deadline !== null && deadline === expiredDeadline);
+  const composer = composerFor(view, waiting, settling, deadline !== null && deadline === expiredDeadline, progress !== null);
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -325,14 +325,15 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
 const SENT_NOTE = "Đã gửi — đang xử lý";
 
-/** `approvalExpired`: đồng hồ duyệt đang ở pha quá hạn (chưa tải lại được trạng thái mới) → câu "đang chuyển". */
-function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean, approvalExpired = false) {
+/** `approvalExpired`: đồng hồ duyệt đang ở pha quá hạn (chưa tải lại được trạng thái mới) → câu "đang chuyển". `parent`: ticket cha
+ *  chưa đóng mà không chờ gì của người dùng (chờ các ý — D-77) → câu của cha, không nhãn trạng thái ticket thường (Q6 c2). */
+function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean, approvalExpired = false, parent = false) {
   if (settling) return { enabled: false, label: "Tin nhắn", placeholder: `${SENT_NOTE}…` };
   if (waiting === "clarify") return { enabled: true, label: "Trả lời", placeholder: "Trả lời câu hỏi ở trên…" };
   if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Nhắn thêm nếu chưa ổn…" };
   if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: approvalExpired ? "Đang chuyển kỹ thuật viên" : "Đang chờ IT duyệt" };
   if (waiting === "reply") return { enabled: false, label: "Tin nhắn", placeholder: "Phản hồi trong khung ở trên" };
-  return { enabled: false, label: "Tin nhắn", placeholder: `${statusLabel(view.status)}…` };
+  return { enabled: false, label: "Tin nhắn", placeholder: `${parent && !view.final_state ? PARENT_PROCESSING : statusLabel(view.status)}…` };
 }
 
 type ActionPanelProps = {

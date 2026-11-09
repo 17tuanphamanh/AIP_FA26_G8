@@ -95,8 +95,15 @@ const ITEM_LABEL: Readonly<Record<DigestItem["kind"], string>> = {
   escalation: "Đã chuyển kỹ thuật viên",
 };
 
-/** Nhãn góc phải của khối (Bản 4) theo `kind`; kind lạ → "Đã xử lý". */
-export const itemLabel = (item: Pick<DigestItem, "kind">): string => ownEntry(ITEM_LABEL, item.kind, ITEM_LABEL.result);
+/** Bước của notice "chờ duyệt" (B15 — Q3 M4). Notice này mang kind `result` (đổi kind cần migration — sau demo). */
+export const PENDING_APPROVAL_STEP = "B15";
+
+/** Nhãn góc phải của khối (Bản 4) theo `kind`; kind lạ → "Đã xử lý". Q6 c2 (D-77): khối `result` có `step` B15 là tin "chờ duyệt"
+ *  → "Chờ IT duyệt" (cùng chữ dải tiến độ); khối không có `step` (tin cũ) → theo `kind` như trước. */
+export const itemLabel = (item: Pick<DigestItem, "kind" | "step">): string =>
+  item.kind === "result" && item.step === PENDING_APPROVAL_STEP
+    ? PROGRESS_LABEL.pending_approval
+    : ownEntry(ITEM_LABEL, item.kind, ITEM_LABEL.result);
 
 // ---------------------------------------------------------------- form trả lời
 
