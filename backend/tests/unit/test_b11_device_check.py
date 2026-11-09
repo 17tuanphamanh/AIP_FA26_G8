@@ -41,6 +41,8 @@ OTHER_FACTS: dict[str, Any] = {"device_registered": True, "device_owner_is_reque
                                "last_connection_ok": False}  # fmt: skip
 GONE_FACTS: dict[str, Any] = {"device_registered": False, "device_owner_is_requester": False, "cert_status": "none",
                               "last_connection_ok": False}  # fmt: skip
+# Q3 M1: VPN chỉ thiếu slot enum `action` → câu CỐ ĐỊNH (`config/slots.yaml` fixed_questions), 0 lời gọi LLM
+ACTION_Q = "Bạn cần mình gia hạn chứng chỉ VPN, cấp lại quyền VPN hay chỉ kiểm tra tình trạng VPN?"
 
 
 def test_question_text_fixed_and_id_only_when_pattern_matches() -> None:
@@ -175,13 +177,20 @@ async def test_unknown_device_after_last_turn_is_e4_as_before() -> None:
     ("intent-khac", {"device_id": "LAP-0610"}, OTHER_FACTS, [DEV_0610], "software"),
 ])  # fmt: skip
 @pytest.mark.asyncio
-async def test_other_cases_ask_with_llm_as_before(
+async def test_other_cases_ask_as_before(
     why: str, slots: dict[str, str], facts: dict[str, Any], devices: list[dict[str, Any]] | None, intent: str
 ) -> None:
+    """Luồng cũ: không câu "không tìm thấy máy", không E5 sớm. Sau Q3 M1 VPN thiếu đúng slot enum `action` → câu cố định
+    (0 lời gọi LLM); intent khác còn slot tự do → LLM như trước."""
     h, gw = _harness()
     out = await _node(h, _state(slots, facts, devices, intent=intent))
     assert out["status"] == S_CLARIFYING, why
-    assert len(gw.llm.calls_for("b11_clarify_question")) == 1, why
+    if intent == "vpn":
+        assert gw.llm.calls_for("b11_clarify_question") == [], why
+        assert h.notifier.sent == [("t1", ACTION_Q, "answer")], why
+        assert _detail(h)["prompt"] is None, why
+    else:
+        assert len(gw.llm.calls_for("b11_clarify_question")) == 1, why
     assert "slots" not in out and "facts" not in out, why
     detail = _detail(h)
     assert (detail["owner_mismatch_early"], detail["device_not_found"]) == (False, False), why
@@ -285,13 +294,13 @@ async def test_graph_typo_device_asked_once_then_correct_code_continues() -> Non
 
 @pytest.mark.asyncio
 async def test_graph_second_unknown_code_falls_back_to_old_flow() -> None:
-    """Lần 2 vẫn mã không có: máy này B6 không tra → luồng cũ (hỏi hành động bằng LLM, rồi dựng Action trên máy 404 → B12/B15
-    quyết như trước); câu "không tìm thấy" chỉ gửi MỘT lần."""
+    """Lần 2 vẫn mã không có: máy này B6 không tra → luồng cũ (hỏi hành động — sau Q3 M1 là câu cố định, không LLM — rồi dựng
+    Action trên máy 404 → B12/B15 quyết như trước); câu "không tìm thấy" chỉ gửi MỘT lần."""
     h, gw = _graph()
     await _submit(h, "Máy LAP-0012 của mình không vào được VPN")
     v = await _reply(h, "LAP-0013")
     assert v["status"] == S_CLARIFYING and v["missing_slots"] == ["action"]
-    assert len(gw.llm.calls_for("b11_clarify_question")) == 1
+    assert gw.llm.calls_for("b11_clarify_question") == [] and _asked(h) == [NOT_FOUND, ACTION_Q]
     v = await _reply(h, "gia hạn giúp mình")
     assert v["intended_action"].params["device_id"] == "LAP-0013"
     assert _asked(h).count(NOT_FOUND) == 1 and len(_asked(h)) == 2
