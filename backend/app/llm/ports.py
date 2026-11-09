@@ -59,6 +59,7 @@ class LlmPort(Protocol):
         n: int = 1,
         temperature: float | None = None,
         kb_version: str | None = None,
+        keep_tail: Mapping[str, int] | None = None,  # Q1 điểm 2: biến ∈ `trim_vars` → giữ nguyên k ký tự cuối khi phải cắt
     ) -> tuple[T, LLMMeta]: ...
 
 

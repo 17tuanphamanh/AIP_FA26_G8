@@ -6234,6 +6234,38 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   sau đều xanh — chưa rõ nguyên nhân (không lấy được output lỗi).
 - **Chưa làm:** commit 4 KB (chờ ĐP); test PG (`integration/test_migration_0015_it_help.py`, 0016 dời) — chờ CI/TA; probe LLM thật — mốc G.
 
+### Soát DỪNG 2 (ĐP 09/11 11:35) — sửa trước khi gộp, thêm commit (không sửa commit cũ)
+
+- **Số D (commit `7bb903a`):** D-56 → **D-75**, D-57 → **D-76** ở mọi chỗ của lô (tài liệu, chú thích code, docstring test, PROGRESS); dòng giữ chỗ D-56
+  (đổi LLM chấm) trả nguyên văn; tiêu đề mục 3 `decisions.md` giữ "D-01…D-55" + ghi chú "D-75, D-76: bản demo lo-0811; D-57…D-74 ở dev-tuananh".
+  Kiểm: các dòng `D-5[67]` của `decisions.md` y hệt `fd8c020`; diff của lô không thêm dòng `D-5[67]` nào ngoài ghi chú đó.
+- **cong5-v2:** README ghi "v2 là dữ liệu cho bản demo, chưa chấm — sau demo"; bộ chấm không đổi.
+- **Câu trả lời phân loại không bị cắt ở B3 (commit `b3: khong cat cau tra loi phan loai khi cau ghep dai`):** chọn cắt ở GATEWAY cho riêng ca phân
+  loại — chỉ gateway biết khung prompt + `budget_in` của vai (một nguồn `config/llm.yaml`); `clarify_wait` không đo được token (không có prompt,
+  import-linter cấm node dùng client LLM); state vẫn giữ TRỌN câu ghép nên B2 chấm trọn trước khi B3 bị cắt. `LlmPort.complete(keep_tail={biến: k})`
+  (biến ∈ `trim_vars`, ngoài → `PromptContractError`) → renderer giữ nguyên k ký tự cuối, cắt PHẦN ĐẦU phần trước ở ranh giới từ ("…"); riêng phần
+  cuối vượt trần → bỏ phần đầu, cắt ĐUÔI phần cuối. `clarify_wait` ghi `triage_reply_chars` (câu trả lời có thể chứa xuống dòng — không tách theo
+  "\n"); B3 (`triage="done"`) gửi L0(câu gốc) + "\n" + L0(câu trả lời) với `keep_tail`. Mutation 3/3 đỏ (trước: 37 pass + 1 xfail; mỗi ca đỏ;
+  sau khôi phục: 37 pass + 1 xfail): B3 không truyền `keep_tail` → 2; renderer bỏ qua `keep_tail` → 3; không ghi `triage_reply_chars` → 2.
+  **Sự cố công cụ (đã xử lý):** lượt mutation đầu dùng `shutil` sao lưu/khôi phục — đột biến P2a CÙNG độ dài (`keep`→`None`) và khôi phục trả mtime
+  cùng giây → Python dùng lại `.pyc` đã đột biến (kiểm theo mtime giây + kích thước) → lượt đó và 2 lượt unit toàn bộ ngay sau ra đỏ giả. Đã xoá
+  `__pycache__`, chạy lại mutation với `PYTHONDONTWRITEBYTECODE=1` + khôi phục bằng ghi lại nội dung (kết quả trên), unit toàn bộ 2 lượt xanh.
+  Mutation DỪNG 2 (M1–M8) đều đổi độ dài file → không dính. Thêm: `$TMPDIR` = `/tmp/claude-501` dùng CHUNG giữa các phiên (phiên Q4 báo) — đã soát:
+  script mutation trong đó đúng là của phiên này, không chạy script phiên khác, không còn `*.mutbak`, diff 3 file từng đột biến sau 13:00 đúng
+  bằng phần đã viết; file tạm của phiên này đã dọn khỏi `$TMPDIR`; từ đây chỉ dùng scratchpad riêng của phiên.
+  **Giới hạn — CHỜ ĐP:** khung prompt b03 v6 = 1612 / `budget_in` 2000 token (ước tính ceil(ký tự/3); v5 là 1032) → phần yêu cầu chỉ còn ~1160 ký
+  tự. Ca ĐP đặt "gốc 4000 + trả lời 1500 → trọn câu trả lời" KHÔNG đạt được với trần hiện tại: câu trả lời 1500 ký tự một mình đã vượt → đi nhánh cắt
+  đuôi câu trả lời (đúng chốt). Test của ca đó để `xfail(strict)` "CHỜ ĐP"; ca 1000 ký tự xanh. Muốn đạt: nâng `budget_in` vai fast (≈ ≥ 2150) hoặc
+  rút gọn prompt (v7, phải probe lại). Hệ quả chung: mọi yêu cầu > ~1160 ký tự đều bị cắt ở B3 (cờ `request_trimmed`).
+- **Test canary chập chờn — ĐÃ TÁI HIỆN, gốc lỗi có TỪ TRƯỚC lô:** `test_chain_m5.py` 30 lần liên tiếp → 2 lần đỏ (cùng ca
+  `software-llm_only-software_name`); chạy riêng ca đó lặp → đỏ ở lần 86. Không phải trạng thái dùng chung (FakeClock, `rng` gateway cố định seed,
+  store/registry mới mỗi ca; đổi `PYTHONHASHSEED` không tái hiện ổn định). Nguồn bất định là canary `CANARY-M5-<uuid4>` của chính test: khi một đoạn UUID
+  có dạng 2–4 chữ cái + 3–5 chữ số đứng riêng (lần đỏ: `bba12380`), `domain/target._DEVICE_TEXT` coi là mã MÁY người khác → `target_is_other` → B6
+  không suy máy → B11 hỏi mã máy bằng LLM → test không cấp kịch bản `b11_clarify_question` → E9 ở B11, assert điều kiện trước B14 đỏ. KHÔNG phải rò
+  rỉ (chuỗi chưa tới B14; phần kiểm canary chưa chạy). Ước tính ≈ 1,3 %/lần chạy ca `software`. Đề xuất (CHƯA làm — test và `target.py` ngoài phạm vi
+  lô, `target.py` thuộc phiên Q4): canary dùng `uuid.uuid4().hex` (một khối 32 hex, không đứng riêng được) — hoặc phiên Q4 cân nhắc loại chuỗi hex
+  khỏi `_DEVICE_TEXT`.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

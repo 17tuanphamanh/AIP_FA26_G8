@@ -300,6 +300,7 @@ class TrimmingLlm:
         n: int = 1,
         temperature: float | None = None,
         kb_version: str | None = None,
+        keep_tail: Mapping[str, int] | None = None,  # Q1 điểm 2 — LlmPort
     ) -> tuple[T, LLMMeta]:
         self.calls.append(prompt_id)
         if prompt_id == "b14_risk_vote":

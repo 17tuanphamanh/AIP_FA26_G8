@@ -159,6 +159,9 @@ class TicketState(TypedDict, total=False):
     # Q1 (D-75, ĐP 09/11): câu hỏi phân loại của B3 — None = chưa hỏi; "waiting" = đang chờ trả lời (`clarify_wait` đi nhánh phân loại,
     # không trích slot); "done" = đã hỏi một lần (B3 lần sau mơ hồ → E1, không hỏi lại). KHÔNG tính vào `clarification_turns`.
     triage: Literal["waiting", "done"] | None
+    # Q1 điểm 2 (ĐP chốt 09/11): số ký tự câu trả lời phân loại ở CUỐI `redacted_request` (câu ghép giữ trọn câu trả lời — `combine_triage`).
+    # B3 dùng để gateway cắt phần câu gốc trước, không cắt câu trả lời (`keep_tail`). Câu trả lời có thể chứa xuống dòng → không tách theo "\n".
+    triage_reply_chars: int | None
     # bộ đếm [Chốt]
     clarification_turns: int
     reasoning_loops: int

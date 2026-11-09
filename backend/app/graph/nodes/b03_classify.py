@@ -53,7 +53,8 @@
    luồng chỉ-trả-lời; tin tổng hợp của cha báo phần đó chuyển kỹ thuật viên). Một ý `it_help` qua ngưỡng `TAU_INTENT` (dưới ngưỡng → hỏi
    phân loại như mục 9) → KHÔNG kiểm `enabled_intents` (it_help không thuộc tập này), KHÔNG `sanitize_slots` (slot `{}`), KHÔNG báo trùng M1
    → `S_DIAGNOSING` → B6 (0 tool). Điểm log 1 thêm `request_trimmed` (bool — gateway cắt đuôi `redacted_request` theo `budget_in`, prompt v6
-   `trim_vars`; an toàn vì B2 đã sàng lọc TRỌN câu trước B3).
+   `trim_vars`; an toàn vì B2 đã sàng lọc TRỌN câu trước B3). Sau câu hỏi phân loại (`triage="done"`): gateway giữ trọn câu trả lời
+   (`keep_tail` = độ dài bản L0 của `triage_reply_chars` ký tự cuối), cắt PHẦN ĐẦU câu gốc trước — ĐP chốt điểm 2.
 
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
@@ -127,10 +128,11 @@ def make(deps: NodeDeps) -> NodeFn:
         if r.data is not None:  # Phase 3: không tới (model_missing) — có model thì chỉ ghi, vẫn xuống LLM
             info["model_probs"], info["model_version"] = dict(r.data.probs), r.data.version
         info["layer"] = "llm"
+        request, keep = _llm_request(state, text)
         try:
             out, meta = await deps.llm.complete(
                 "fast", "b03_classify",
-                {"redacted_request": text, "label_hint": None}, ClassifyOut,
+                {"redacted_request": request, "label_hint": None}, ClassifyOut, keep_tail=keep,
             )  # fmt: skip
         except LLMSchemaError:
             info["llm_error"] = "LLMSchemaError"
@@ -193,6 +195,17 @@ def make(deps: NodeDeps) -> NodeFn:
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
             **flags,
         )  # fmt: skip
+
+    def _llm_request(state: Any, text: str) -> tuple[str, dict[str, int] | None]:
+        """Q1 điểm 2 (ĐP chốt 09/11): sau câu hỏi phân loại, `redacted_request` = câu gốc + "\n" + câu trả lời (`triage_reply_chars` ký tự
+        cuối). Gửi LLM bản L0 của hai phần và nhờ gateway giữ trọn phần trả lời (`keep_tail`) — vượt trần thì cắt PHẦN ĐẦU câu gốc trước.
+        B2 đã sàng lọc TRỌN câu ghép. Ca khác: như cũ (gateway cắt đuôi theo `trim_vars`)."""
+        n = state.get("triage_reply_chars")
+        if state.get("triage") != "done" or not isinstance(n, int) or n <= 0:
+            return text, None
+        whole = str(state["redacted_request"])
+        head, reply = l0(whole[: len(whole) - n].rstrip("\n")), l0(whole[len(whole) - n :])
+        return (f"{head}\n{reply}" if head else reply), {"redacted_request": len(reply)}
 
     def _answer_only_as_out_of_scope(intents: Sequence[IntentItem]) -> list[IntentItem]:
         """D-76: `it_help` chỉ chạy ở ticket một ý khi cờ bật; còn lại coi như `out_of_scope` (E1 / con E1 như trước lô)."""

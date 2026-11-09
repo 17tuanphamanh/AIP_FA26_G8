@@ -10,6 +10,9 @@
   `trim_vars`, vd. `user_request` của `b11_clarify_question` v4) CẮT ĐUÔI biến chuỗi đó tới độ dài lớn nhất còn vừa trần — ở ranh giới
   từ, nên mặt nạ che (`<SĐT_1>`, `[BÍ_MẬT_ĐÃ_ẨN]`, không có khoảng trắng) không bao giờ bị cắt đôi — thêm "…"; vẫn vượt (kể cả khi
   cắt hết) → `LLMBudgetExceeded` (P2 mục 4 "vượt trần token"), không request nào được gửi. Không bao giờ cắt nhiệm vụ.
+  Q1 điểm 2 (ĐP chốt 09/11, bản demo lo-0811): lời gọi truyền `keep_tail={biến: k}` (biến ∈ `trim_vars`) → giữ NGUYÊN `k` ký tự cuối, cắt
+  PHẦN ĐẦU phần trước ở ranh giới từ ("…" ở đầu); riêng `k` ký tự cuối đã vượt → bỏ phần đầu rồi cắt đuôi như trên. Dùng cho B3 sau câu hỏi
+  phân loại: phần cuối là câu trả lời của người dùng — thông tin chính, không được mất.
 - **`random_boundary`:** sinh `boundary` ngẫu nhiên mỗi lần render (b02_injection_judge, 7.4); không trùng giá trị nào.
 """
 
@@ -128,6 +131,47 @@ def _longest_fitting(text: str, fits: Callable[[str], bool]) -> str:
     return best
 
 
+def _clip_head(text: str, n: int) -> str:
+    """Phần CUỐI của `text` dài tối đa `n` ký tự, bắt đầu ở RANH GIỚI TỪ, đánh dấu "…" ở đầu — đối xứng `_clip`. `n ≥ len(text)` → giữ
+    nguyên; không có ranh giới nào → "" (mặt nạ che không chứa khoảng trắng nên không bị cắt đôi)."""
+    if n >= len(text):
+        return text
+    if n <= 0:
+        return ""
+    start = len(text) - n
+    tail = text[start:]
+    if not text[start - 1].isspace():  # điểm cắt rơi giữa từ → tiến tới khoảng trắng kế tiếp
+        found = _SPACE.search(tail)
+        tail = tail[found.end():] if found else ""
+    tail = tail.lstrip()
+    return ELLIPSIS + tail if tail else ""
+
+
+def _keep_tail_fitting(text: str, keep: int, fits: Callable[[str], bool]) -> str:
+    """Q1 điểm 2 (ĐP chốt 09/11): giữ NGUYÊN `keep` ký tự cuối (câu trả lời phân loại), cắt PHẦN ĐẦU phần trước (câu gốc) ở ranh giới
+    từ cho vừa. Riêng phần cuối đã không vừa → bỏ hết phần đầu rồi cắt ĐUÔI phần cuối như `_longest_fitting`."""
+    keep = max(0, min(keep, len(text)))
+    head, tail = text[: len(text) - keep], text[len(text) - keep :]
+    if not fits(tail):
+        return _longest_fitting(tail, fits)
+    body = head.rstrip()
+    sep = head[len(body):]  # dấu ngăn giữa hai phần (xuống dòng) — giữ khi còn phần đầu
+
+    def joined(n: int) -> str:
+        part = _clip_head(body, n)
+        return part + sep + tail if part else tail
+
+    best, lo, hi = tail, 0, len(body)
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        cand = joined(mid)
+        if fits(cand):
+            best, lo = cand, mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
 def check_variables(prompt: Prompt, variables: Mapping[str, Any]) -> None:
     allowed, given = set(prompt.spec.allowed_vars), set(variables)
     extra, missing = sorted(given - allowed), sorted(allowed - given)
@@ -142,6 +186,7 @@ def render(
     budget_in: int,
     estimate: TokenEstimator = estimate_tokens,
     boundary: BoundaryFactory = new_boundary,
+    keep_tail: Mapping[str, int] | None = None,
 ) -> Rendered:
     check_variables(prompt, variables)
     spec = prompt.spec
@@ -154,6 +199,7 @@ def render(
     trimmed_evidence = 0
     trimmed_chars = 0
     trimmable = [n for n in spec.trim_vars if isinstance(variables[n], str)]  # chỉ biến chuỗi — JSON/khối đặc biệt không cắt đuôi
+    head_trimmed: set[str] = set()  # Q1 điểm 2: biến đã cắt đầu (keep_tail) — chỉ một lần
     mark: str | None = None
     while True:
         values = dict(fixed)
@@ -184,8 +230,13 @@ def render(
                 vals = {**base, name: candidate}
                 return estimate(_sub(spec.system, vals)) + estimate(_sub(spec.user, vals))
 
-            fixed[name] = _longest_fitting(whole, lambda c: est_with(c) <= budget_in)
-            trimmed_chars += len(whole) - len(fixed[name])
+            keep = (keep_tail or {}).get(name, 0) if name not in head_trimmed else 0
+            if keep:  # Q1 điểm 2: cắt đầu, giữ trọn phần cuối (câu trả lời phân loại); một lần cho mỗi biến
+                head_trimmed.add(name)
+                fixed[name] = _keep_tail_fitting(whole, keep, lambda c: est_with(c) <= budget_in)
+            else:
+                fixed[name] = _longest_fitting(whole, lambda c: est_with(c) <= budget_in)
+            trimmed_chars += max(1, len(whole) - len(fixed[name])) if fixed[name] != whole else 0
             if not fixed[name]:  # cắt hết mà khung vẫn không vừa (hoặc chỉ vừa khi bỏ trống) → không gửi câu hỏi mù
                 raise LLMBudgetExceeded(f"{prompt.id}: {est_with('')} token (ước tính) > budget_in {budget_in} sau khi cắt")
         else:

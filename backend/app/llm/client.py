@@ -172,11 +172,14 @@ class LLMClient:
         n: int = 1,
         temperature: float | None = None,
         kb_version: str | None = None,
+        keep_tail: Mapping[str, int] | None = None,
     ) -> tuple[T, LLMMeta]:
         if n != 1:
             raise ValueError("n > 1 chưa hỗ trợ ở Phase 3 (hỏi nhiều lần: B14, Phase 6)")
         prompt = self._registry.get(prompt_id)
         spec = prompt.spec
+        if keep_tail and not set(keep_tail) <= set(spec.trim_vars):  # Q1 điểm 2: chỉ biến được phép cắt mới có phần đuôi giữ nguyên
+            raise PromptContractError(f"{prompt_id}: keep_tail {sorted(keep_tail)} ngoài trim_vars {list(spec.trim_vars)}")
         if role != spec.role or schema is not prompt.schema or cache_policy not in ("default", "bypass"):
             raise PromptContractError(
                 f"{prompt_id}: node truyền role={role!r}, schema={schema.__name__}, cache_policy={cache_policy!r}; "
@@ -187,7 +190,7 @@ class LLMClient:
             raise RuntimeError(f"{prompt_id}: gọi LLM ngoài lượt graph — không có span cha để ghi llm_calls (Q-3d-2)")
         call = _Call(uuid4().hex, self._clock.now(), prompt, role, sensitivity)
         try:
-            obj = await self._run(call, prompt, variables, schema, cache_policy, temperature, kb_version, parent)
+            obj = await self._run(call, prompt, variables, schema, cache_policy, temperature, kb_version, parent, keep_tail)
         except BaseException as e:
             call.error = type(e).__name__
             raise
@@ -200,6 +203,7 @@ class LLMClient:
     async def _run[T: BaseModel](
         self, call: _Call, prompt: Prompt, variables: Mapping[str, Any], schema: type[T],
         cache_policy: CachePolicy, temperature: float | None, kb_version: str | None, parent: TraceParent | None,
+        keep_tail: Mapping[str, int] | None = None,
     ) -> T:  # fmt: skip
         rcfg = self._rt.roles[call.role]
         chain = list(self._rt.chains[call.role])
@@ -208,7 +212,7 @@ class LLMClient:
         primary = chain[0]
         call.provider, call.model, call.model_version = primary.provider, primary.model, primary.model_version
         rendered = render(prompt, variables, budget_in=rcfg.budget_in, estimate=self._estimate,
-                          boundary=self._boundary)  # fmt: skip
+                          boundary=self._boundary, keep_tail=keep_tail)  # fmt: skip
         call.est_tokens_in = rendered.est_tokens
         call.trimmed_evidence, call.trimmed_messages = rendered.trimmed_evidence, rendered.trimmed_messages
         call.trimmed_chars = rendered.trimmed_chars

@@ -73,7 +73,7 @@ def make(deps: NodeDeps) -> NodeFn:
             return await goto(
                 state, S_SCREENING, next_node="b02_screen", step="B11", event="triage_reply",
                 audit_detail={"reply_chars": len(text), "combined_trimmed": trimmed}, redacted_request=combined,
-                triage="done", conversation=[user_msg(text)],
+                triage="done", triage_reply_chars=len(text), conversation=[user_msg(text)],
             )  # fmt: skip
         info: dict[str, Any] = {"prompt": None, "llm_error": None, "off_topic": None, "streak": None,
                                 "other_target_mention": False, "other_target_reason": None,

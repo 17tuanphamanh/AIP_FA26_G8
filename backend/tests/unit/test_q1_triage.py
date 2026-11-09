@@ -425,3 +425,66 @@ async def test_short_request_not_flagged_trimmed() -> None:
     e = env(classify(it("vpn", 0.92, "VPN báo lỗi 809")))
     await submit(e, "VPN báo lỗi 809")
     assert _one(e, "intent_classified")["detail"]["request_trimmed"] is False
+
+
+# ---- ĐP chốt điểm 2 (11:35): câu trả lời phân loại KHÔNG bị cắt ở B3 khi câu ghép dài ------------------------------------------------
+
+
+# Khung prompt b03 v6 = 1612 / `budget_in` 2000 token (ước tính ceil(ký tự/3)) → phần yêu cầu chứa được ~1160 ký tự. Câu trả lời dài hơn thế
+# một mình đã vượt trần → nhánh "cắt đuôi câu trả lời" (ĐP chốt điểm 2). Ca ĐP đặt (trả lời 1500) cần nâng `budget_in` fast (~≥ 2150) hoặc rút
+# gọn prompt — CHỜ ĐP chốt (PROGRESS "Q1 + Q12").
+CHO_BUDGET = pytest.mark.xfail(strict=True, reason="CHỜ ĐP: khung b03 v6 1612/2000 token — trả lời 1500 ký tự không vừa (nâng budget_in fast hoặc rút gọn prompt)")
+
+
+async def _long_combined(reply_chars: int) -> tuple[Env, dict[str, Any], str]:
+    from app.api.tickets import TEXT_MAX
+
+    original = ("máy em bị lỗi gì đó không rõ " * 200)[:TEXT_MAX]
+    answer = ("máy in tầng 2 báo kẹt giấy, đã tắt bật lại vẫn không in được " * 40)[:reply_chars].rstrip()
+    e = env(classify(), classify(it("it_help", 0.9, "máy in tầng 2 báo kẹt giấy")))
+    await submit(e, original)
+    return e, await reply(e, answer), answer
+
+
+def _assert_b3_prompt_keeps_reply(e: Env, v: dict[str, Any], answer: str) -> None:
+    assert e.judge_seen[1] == v["redacted_request"] and v["redacted_request"].endswith("\n" + answer)  # B2: TRỌN câu ghép
+    user = str(e.gw.llm.calls_for("b03_classify")[1].rendered_messages[1]["content"])
+    assert l0(answer) in user  # trọn câu trả lời trong prompt b03 THẬT gửi đi
+    assert user.split("Yêu cầu: ", 1)[1].startswith("…")  # phần bị cắt là ĐẦU câu gốc
+    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_long_combined_b3_prompt_keeps_whole_reply_and_cuts_original_head() -> None:
+    """Gốc 4000 + trả lời 1000 ký tự (vừa phần còn lại của trần): B2 chấm TRỌN câu ghép; prompt b03 gửi đi chứa TRỌN câu trả lời, phần bị
+    cắt là ĐẦU câu gốc. Mutation "cắt đuôi như cũ" (không `keep_tail`) → đỏ ở đây."""
+    e, v, answer = await _long_combined(1000)
+    _assert_b3_prompt_keeps_reply(e, v, answer)
+
+
+@CHO_BUDGET
+@pytest.mark.asyncio
+async def test_long_combined_reply_1500_kept_whole_as_specified() -> None:
+    """Ca ĐP đặt (09/11 11:35): gốc 4000 + trả lời 1500 → prompt b03 chứa trọn câu trả lời."""
+    e, v, answer = await _long_combined(1500)
+    _assert_b3_prompt_keeps_reply(e, v, answer)
+
+
+@pytest.mark.asyncio
+async def test_reply_alone_over_budget_cuts_reply_tail_not_head() -> None:
+    """Riêng câu trả lời đã vượt trần (1500 ký tự với khung v6): bỏ hết câu gốc, cắt ĐUÔI câu trả lời — giữ ĐẦU câu trả lời."""
+    e, _, answer = await _long_combined(1500)
+    user = str(e.gw.llm.calls_for("b03_classify")[1].rendered_messages[1]["content"])
+    request = user.split("Yêu cầu: ", 1)[1].split("\nGợi ý nhãn:", 1)[0]
+    assert request.endswith("…") and l0(answer).startswith(request[:-1].rstrip())
+    assert "máy em bị lỗi" not in request
+
+
+@pytest.mark.asyncio
+async def test_short_combined_b3_prompt_untouched() -> None:
+    e = env(classify(), classify(it("vpn", 0.92, "VPN báo lỗi 809")))
+    await submit(e, "Máy em bị lỗi")
+    await reply(e, "VPN báo lỗi 809")
+    user = str(e.gw.llm.calls_for("b03_classify")[1].rendered_messages[1]["content"])
+    assert "Yêu cầu: Máy em bị lỗi\nVPN báo lỗi 809" in user
+    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is False
