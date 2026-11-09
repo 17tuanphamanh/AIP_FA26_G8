@@ -18,6 +18,7 @@ from app.graph.worker_jobs import (
 )
 from tests.fakes.graph import Crash
 from tests.unit._t20b import (
+    ADOBE_PRINTER,
     TC34,
     TC35,
     Flow,
@@ -25,6 +26,7 @@ from tests.unit._t20b import (
     classify,
     extend_item,
     make_flow,
+    oos_item,
     reset_item,
 )
 
@@ -53,15 +55,15 @@ class WakeCounter:
 @pytest.mark.asyncio
 async def test_s1_all_children_stopped_by_db_wakes_parent_once() -> None:
     """s1 (a): cha ở `parent_wait`, mọi con đã dừng theo DB (tín hiệu `after_turn` bị mất) → `wake_parent` 1 lần → digest vòng 1."""
-    f = make_flow(classify(reset_item(), adobe_item()))
-    await f.submit(TC34)
+    f = make_flow(classify(adobe_item(), oos_item()))
+    await f.submit(ADOBE_PRINTER)  # D-77: vòng 1 đã báo, cha chờ con 1 (chờ duyệt) ở `parent_wait`
 
     async def lost(_: str) -> None:  # tín hiệu đánh thức bị mất (process chết sau khi nhả khoá con)
         return None
 
     original = f.h.runner.wake_parent
     f.h.runner.wake_parent = lost  # type: ignore[method-assign,assignment]
-    await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2"))
+    await f.deliver("T1-1", S_PENDING_APPROVAL, f.decision("T1-1"))
     f.h.runner.wake_parent = original  # type: ignore[method-assign]
     assert (await f.waiting("T1")) == "parent_wait"
     counter = WakeCounter(f)
@@ -69,7 +71,7 @@ async def test_s1_all_children_stopped_by_db_wakes_parent_once() -> None:
     report = await jobs(f).scan_parents()
     assert counter.calls == ["T1"] and report.woken == 1
     assert (await f.waiting("T1")) == "parent_reply_wait"
-    assert len([m for m in await f.assistant_msgs() if m.get("kind") == "digest"]) == 1
+    assert len([m for m in await f.assistant_msgs() if m.get("kind") == "digest"]) == 2  # vòng 1 (chờ duyệt) + vòng 2 (kết quả)
 
 
 @pytest.mark.asyncio

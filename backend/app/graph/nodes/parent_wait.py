@@ -2,12 +2,16 @@
 Bản giả (gate2, `FAKE_SCENARIO`): `graph/nodes/fake/parent_wait.py`.
 
 Mỗi lần chạy: khởi động con chưa có thread (`current_run().children.start_missing`, P4) → đối soát con từ DB (`tickets.children_view`
-— D-17, không đọc checkpoint con) → chưa đủ con dừng: `interrupt` rồi `goto` QUAY LẠI chính node (đánh thức sớm là bình thường) → đủ:
+— D-17, không đọc checkpoint con) → chưa `round_ready` (D-77: mọi con dừng — kể cả chờ L1 duyệt — VÀ có notice chưa gửi hoặc mọi con
+kết thúc): `interrupt` rồi `goto` QUAY LẠI chính node (đánh thức sớm là bình thường) → đủ:
 vòng `parent_round + 1` (chạy lại cùng lượt SAU khi tin vòng này đã gửi — `peek` thấy — thì `children_view(delivered_round=n)` dựng
 lại ĐÚNG notice của vòng đó, `effects.once` không gửi/đánh dấu lại), MỘT tin `digest` (`compose_digest`, thuần) qua `effects.once("notify_user", tickets.deliver_round, …,
 sub=f"round:{n}")` — notice vừa gom được đánh dấu `delivered_round` CÙNG transaction → mọi con đã kết thúc: `aggregate_children` →
-`b20_audit` (cha: không `exit_code`, `close_reason` NULL, không `escalations` — D-30); còn ý chờ người dùng: hạn `clarify` (có câu hỏi,
-24 h) hoặc `confirm` (48 h) qua `effects.once("deadline_set", sub=f"round:{n}")` → `S_CONFIRMING` → `parent_reply_wait`.
+`b20_audit` (cha: không `exit_code`, `close_reason` NULL, không `escalations` — D-30); còn ý chờ người dùng (`awaiting` CHỈ gồm con
+`needs ≠ none`): hạn `clarify` (có câu hỏi, 24 h) hoặc `confirm` (48 h) qua `effects.once("deadline_set", sub=f"round:{n}")` →
+`S_CONFIRMING` → `parent_reply_wait`; không ý nào chờ người dùng (chỉ còn con chờ duyệt — D-77) → `S_CLASSIFYING` → `parent_wait`, KHÔNG
+đặt hạn người dùng (lần chạy sau không có notice mới → `interrupt`). Chạy lại sau khi đã gửi vòng `n`: không xét lại `round_ready`.
+Giới hạn (D-77): con chờ duyệt kết thúc trong lúc cha ở `parent_reply_wait` → kết quả đi vòng sau lần trả lời kế tiếp / hết hạn của cha.
 """
 
 from datetime import timedelta
@@ -15,7 +19,7 @@ from typing import Any
 
 from langgraph.types import interrupt
 
-from app.domain.children import aggregate_children, needs_of, stopped
+from app.domain.children import aggregate_children, needs_of, round_ready
 from app.domain.messages import compose_digest
 from app.domain.states import (
     S_CLASSIFYING,
@@ -53,7 +57,7 @@ def make(deps: NodeDeps) -> NodeFn:
         view = await deps.tickets.children_view(
             state["ticket_id"], state["children"], delivered_round=rnd if sent else None
         )  # D-17: DB — đã gửi thì dựng lại ĐÚNG notice của vòng đó (không gom notice mới tới sau)
-        if not all(stopped(c) for c in view):
+        if not sent and not round_ready(view):  # đã gửi vòng này (chạy lại) → không xét lại, dựng lại đúng vòng đó
             interrupt({"wait": "children"})
             # resume: interrupt() TRẢ VỀ giá trị đánh thức → quay lại CHÍNH node để đối soát với dữ liệu mới (P1 §8.2)
             return await goto(state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="parent_woken")
@@ -70,7 +74,12 @@ def make(deps: NodeDeps) -> NodeFn:
             if final == S_REJECTED:
                 return await goto(state, S_REJECTED, next_node="b20_audit", step="B5", event="children_aggregated", **done)
             return await goto(state, S_ESCALATED, next_node="b20_audit", step="B5", event="children_aggregated", **done)
-        awaiting = {c.child_id: needs_of(c) for c in view if c.final_state is None}
+        awaiting = {c.child_id: n for c in view if c.final_state is None and (n := needs_of(c)) != "none"}
+        if not awaiting:  # Q6: chỉ còn con chờ duyệt — cha chờ con, KHÔNG đặt hạn người dùng
+            return await goto(
+                state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="digest_sent", parent_round=rnd, awaiting={},
+                conversation=[digest.msg],
+            )  # fmt: skip
         kind = "clarify" if "answer" in awaiting.values() else "confirm"
         hours = deps.constants.CLARIFY_TIMEOUT_HOURS if kind == "clarify" else deps.constants.CONFIRM_TIMEOUT_HOURS
         await effects.once(

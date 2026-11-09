@@ -6424,6 +6424,137 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   ca 1500 ký tự giữ `xfail(strict)` lý do "CHỜ Q10: vai chat_fast budget_in 3000" (Q10 bỏ xfail). Canary m5 đổi sang `uuid.uuid4().hex`
   (commit `test: canary m5 khong trung dang ma may`), ca `software` chạy 200 lần liên tiếp → 200/200 xanh, 0 đỏ (09/11); 100 000 canary `.hex` ngẫu nhiên → 0 khớp `_DEVICE_TEXT`/`_MACHINE`.
 
+## Q6 — ý chờ duyệt không giữ câu hỏi của ý khác (09/11/2026, nhánh `q6-nhieu-y-cho-duyet`, nền `lo-0811` `8e74401`) — DỪNG 2 xong (D-77), chưa push
+
+**Trạng thái:** ĐP duyệt DỪNG 1 lúc 20:05 (Đ1–Đ6, mục "ĐP duyệt DỪNG 1" dưới). Đã code S1–S6, sửa 14 test cũ, viết D-77 + P1 §8. Unit xanh,
+lint xanh; test PG mới CHỜ TA/CI. Một commit `b5: y cho duyet khong giu cau hoi cua y khac`.
+
+**Bằng chứng (lời giao ĐP):** audit ticket 0106501f… — con 1 B15 `queued` 15:12:11, con 2 B11 hỏi 15:12:21, cha chỉ `digest_sent` 15:43:47 (đúng lúc
+con 1 E6). Người dùng không thấy câu hỏi của con 2 suốt 31 phút.
+
+### Đây là đổi quyết định đã chốt, không phải lỗi so với đặc tả
+
+Hành vi 31 phút đúng với đặc tả hiện hành: P1 §8.1 mục 2 ("`S_PENDING_APPROVAL` **không** phải điểm dừng"), §8.2 (`interrupt` "có con … chờ L1
+duyệt"), §8.3 ("Câu hỏi làm rõ cũng bị gom. Nếu ý 2 cần hỏi thêm trong khi ý 1 đang chờ duyệt, câu hỏi chỉ đến cùng tin tổng hợp"), `decisions.md`
+Q12 "Giữ một tin mỗi lượt; chấp nhận chờ ý chậm nhất (tối đa SLA 30 phút)" — Đã chốt. Lời giao ĐP ghi rõ "Đổi D-31" → cần ghi một D mới (đề xuất
+**D-77**) và sửa P1 §8.1–8.3 + dòng Q12.
+
+### PLAN
+
+| # | Việc | File |
+|---|---|---|
+| S1 | `ChildView.awaiting_approval: bool = False` (đọc từ DB). `stopped()` = kết thúc ∨ notice chưa gửi `needs≠none` ∨ `awaiting_approval`. Hàm mới `round_ready(view)` = mọi con `stopped` ∧ (có ≥ 1 notice chưa gửi ∨ mọi con đã kết thúc). Vế "mọi con kết thúc" BẮT BUỘC: vòng tổng kết của tc34 có 0 notice ("Cả 2 yêu cầu đã hoàn tất.", `items=[]`) — chỉ "có ≥ 1 notice" như lời giao thì cha không bao giờ đóng ở ca đó | `domain/children.py` |
+| S2 | `children_view`: `awaiting_approval` = con có phiếu `approvals.status='pending'` VÀ không còn lượt `turns` mở (cùng cách tính `running` đang có). Nguồn là bảng `approvals`, không phải notice B15: notice có thể bị output guard chặn (0 tin) và sau khi gửi thì không còn trong "notice chưa gửi". Bản giả đọc `approvals_table` như `children_progress_rows` | `db/tickets.py`, `tests/fakes/graph.py` |
+| S3 | `parent_wait`: (a) `if not sent and not round_ready(view)` → `interrupt` như cũ. Đã gửi vòng `n` (chạy lại) thì KHÔNG xét lại cổng, dựng lại đúng vòng `n` (như cũ). Lý do: con chờ duyệt có thể vừa được duyệt và đang chạy B17 giữa hai lần chạy → nếu xét lại cổng thì vòng đã đánh dấu gửi nhưng không vào `conversation` tới lần đánh thức sau. (b) `awaiting` CHỈ gồm con `needs≠none` (bản cũ gồm mọi con chưa kết thúc → con chờ duyệt mang `needs="none"` → `/reply` đòi cả ý đó, `child_event` sai loại). (c) `awaiting` rỗng mà còn con chưa kết thúc (chỉ còn con chờ duyệt) → `goto(S_CLASSIFYING → S_CLASSIFYING, next="parent_wait", event="digest_sent", parent_round=n, awaiting={})`, KHÔNG `deadline_set`; lần chạy sau không có notice mới → `interrupt` (không vòng rỗng). Mọi con kết thúc → aggregate như cũ | `graph/nodes/parent_wait.py` |
+| S4 | Khoá effects giữ nguyên: `notify_user` `sub=round:{n}`, `deadline_set` `sub=round:{n}` (chỉ nhánh chờ người dùng), `peek` + `children_view(delivered_round=n)` khi chạy lại. Không đổi `parent_reply_wait`, B15, `ChildAwareNotifier` (notice "chờ duyệt" kind `result` giữ nguyên — đổi kind cần migration, để sau demo) | — |
+| S5 | **[ĐP chọn]** Lưới an toàn `parents_to_wake` (SQL + bản giả) đổi theo đúng `round_ready` (docstring NGHI-2 đòi điều kiện quét = điều kiện `children_view`): con chờ duyệt tính là dừng, thêm vế "có notice chưa gửi ∨ mọi con kết thúc" → không đánh thức cha mỗi 60 giây khi chỉ còn con chờ duyệt. Không làm thì lưới vẫn an toàn (hẹp hơn, chỉ chậm ở ca mất tín hiệu đánh thức) | `db/runtime.py`, `tests/fakes/graph.py` |
+| S6 | **[ĐP chọn]** `runner.CHILD_STOPS` thêm `approval_wait`: lượt con KHÔNG lồng dừng ở `approval_wait` (chỉ xảy ra khi worker phục hồi lượt con chết giữa B15) sẽ đánh thức cha. Không làm → vòng "chờ duyệt" của con đó chỉ đi khi có tín hiệu khác | `graph/runner.py` (1 dòng) |
+| S7 | Sửa test cũ ghim hành vi D-31 cũ (danh sách dưới), sửa tài liệu (dưới) | — |
+
+### Rủi ro (vòng / khoá effects)
+
+- **R1 vòng rỗng / lặp vô hạn:** nhánh S3(c) `goto` lại `parent_wait` trong CÙNG lượt. Nếu cổng chỉ là "mọi con dừng" thì vòng `n+1` rỗng → lặp tới
+  `recursion_limit` → cha E9 (đã thấy ở mutation M2). Chặn bằng vế "có notice chưa gửi" của `round_ready`.
+- **R2 hai vòng trong một lượt → mất một dòng audit:** sau S3(c) lần chạy lại cùng lượt có thể gặp notice MỚI (con khác vừa ghi notice từ lượt không
+  lồng — L1 duyệt / worker E6 — trong khe vài ms) → gửi vòng `n+1` ngay. Tin và khoá effects đúng (`round:n+1` khác `round:n`), nhưng dòng audit
+  `digest_sent` thứ hai trùng `audit_key(ticket, B5, digest_sent, turn, loop_seq)` → `ON CONFLICT DO NOTHING` → mất một dòng audit. Xác suất thấp;
+  sửa triệt để phải đổi `goto`/state (file dùng chung) → **đề xuất chấp nhận, ghi chú**, ĐP chốt.
+- **R3 kết quả duyệt bị giữ khi cha chờ người dùng:** cha đang `parent_reply_wait` (ý 2 chờ trả lời) mà ý 1 được duyệt/E6 → `wake_parent` không làm
+  gì (như cũ) → kết quả ý 1 đi cùng vòng SAU lần trả lời kế tiếp (hoặc khi hết hạn 24 h/48 h của cha). Khung tiến độ `children_progress` vẫn thấy ý 1
+  `closed` ngay. Chen tin vào giữa sẽ phá "một lượt người dùng — một tin" và phải đổi `parent_reply_wait` → **đề xuất giữ**, ghim bằng test Đ3.
+- **R4 hạn cũ của cha:** sau `reply` → vòng nhánh S3(c) (không đặt hạn mới) thì hạn vòng trước (đã đặt ở `round:n-1`) vẫn chưa bắn → khi tới hạn,
+  `timeout` gặp cha ở `S_CLASSIFYING` → `late_event` 409 (như đường aggregate hiện nay). Vô hại, không sửa.
+- **R5 FE:** cha ở `parent_wait` sau khi đã có tin tổng hợp (trạng thái `S_CLASSIFYING`) — FE không hiện ô trả lời (chỉ hiện khi `parent_reply_wait`)
+  là đúng; nhãn trạng thái cha có thể hiện "đang phân loại" — CHƯA kiểm FE (ngoài phạm vi lô).
+
+### Test viết trước — `backend/tests/unit/test_q6_cho_duyet.py` (8 ca, ĐỎ cả 8 trên mã hiện tại)
+
+| Ca | Kiểm |
+|---|---|
+| `test_stopped_counts_awaiting_approval` | thuần: chờ duyệt = dừng; đang xử lý / notice `none` một mình = chưa dừng |
+| `test_round_ready_needs_one_unsent_notice_unless_all_closed` | thuần: notice chờ duyệt đã gửi không chặn câu hỏi ý 2; 2 ý chờ duyệt đã báo → không vòng; mọi con kết thúc 0 notice → vẫn gửi |
+| `test_q6_round_one_sent_at_once_with_pending_notice_and_question` | ca 31 phút: vòng 1 ngay trong lượt gửi câu = [ý 1 `result/none` "cần được duyệt" (notice THẬT B15), ý 2 `question/answer`]; `awaiting={T1-2: answer}`; hạn cha `clarify`; con 1 vẫn `approval_wait` |
+| `test_q6_answer_item2_then_approve_item1_new_round_without_repeat` | trả lời ý 2 → vòng 2 chỉ ý 2 (không lặp tin chờ duyệt); xác nhận ý 2 → cha `parent_wait`, KHÔNG vòng rỗng; duyệt ý 1 → vòng 3 = kết quả ý 1 → `ALL_RESOLVED`; số tin assistant = số lượt người dùng (4) |
+| `test_q6_approval_while_parent_waits_reply_is_carried_by_next_round` | R3: duyệt ý 1 khi cha chờ trả lời → không tin chen; vòng sau mang cả hai ý |
+| `test_q6_e6_item1_new_round_parent_aggregates` | ý 1 chờ duyệt + ý 2 E1 → vòng 1 ngay, cha `parent_wait`/`S_CLASSIFYING`, 0 hạn; E6 ý 1 → vòng 2 → `S_ESCALATED`/`ALL_ESCALATED`, `exit_code`/`close_reason` NULL, 0 escalation cha |
+| `test_q6_two_items_both_pending_one_round_no_user_deadline` | Adobe + cấp quyền `shared/templates` (cả hai qua B15) → 1 vòng báo cả 2, 0 hạn, `awaiting` rỗng; đánh thức thừa không gửi lại; duyệt ý 2 → vòng 2 chỉ ý 2 |
+| `test_q6_rerun_after_round_sent_on_wait_children_branch_no_duplicate` | chết trước audit `digest_sent` (nhánh chờ con) → `recover` dựng lại đúng vòng 1, `notify_user` 1 lần, rồi chờ con |
+
+Luồng 2 ý không chờ duyệt: `tc35`, `tc32`, `test_s10_biii…` (TC35) **không đổi** — xanh cả trên bản dựng thử.
+
+**Kiểm bằng bản dựng thử (đã gỡ):** S1–S3 áp lên mã → 8/8 xanh. Mutation M1 (`stopped()` về bản cũ) → 8/8 đỏ. Mutation M2 (bỏ vế "có notice")
+→ 5/8 đỏ (4 ca luồng: cha `recursion_limit` → E9 ngay sau `digest_sent` — vòng rỗng lặp; + ca thuần `round_ready`). Patch bản dựng thử để ở scratchpad phiên (không commit).
+
+**Test cũ đỏ trên bản dựng thử — đều ghim hành vi D-31 cũ (TC34 = reset + Adobe dùng để "giữ cha ở `parent_wait` trong lúc con 2 chờ duyệt"); CHƯA sửa:**
+- Đổi kỳ vọng theo luật mới: `test_t20b_flows.py::test_tc34…`, `::test_tc36…`, `::test_tc12r…` (vòng 1 tới ngay: [ý 1 `result/confirm`, ý 2 chờ duyệt];
+  kết quả ý 2 đi vòng sau; số tin vẫn = số lượt người dùng); `test_t20b_parent.py::test_p1…` (đảo nghĩa → thay bằng "con đang xử lý → 0 tin"),
+  `::test_p2…` (`awaiting` vòng 1 chỉ ý 1), `::test_p_parent_digest_only_after_all_stopped…`; `test_t20b_api.py::test_a7…` (mốc tiến độ: ý 1
+  `needs_user` thay `ready` vì cha đã ở `parent_reply_wait`).
+- Chỉ đổi kịch bản dựng (TC34 → "Adobe + máy in" — vẫn giữ cha ở `parent_wait` theo luật mới), giữ nguyên điều cần kiểm:
+  `test_t20b_api.py::test_a3…`, `test_t20b_dung2_fixes.py::test_q11_missing_child_submit…`, `test_t20b_s10_fixes.py::test_s10_8a…`,
+  `test_t20b_scan.py::test_s1_all_children_stopped_by_db_wakes_parent_once`, `test_t20b_seed.py::test_c3…`,
+  `test_wait_nodes_no_writes_g4.py::test_parent_wait_prewake_part_is_idempotent_across_wakes`.
+- Test PG cần TA chạy: `children_view` có `awaiting_approval` (phiếu `pending` + lượt mở / đóng) — viết khi duyệt (S2); `parents_to_wake` nếu làm S5.
+  `stack/gate5.py` tc34 (stack thật, không chạy trong `make test`) có thể đổi số tin/vòng — CHƯA đọc kỹ, kiểm khi code.
+
+**Tài liệu sẽ sửa (sau duyệt):** `build/decisions.md` + **D-77** (con chờ duyệt là điểm dừng; điều kiện vòng; cha chờ con không đặt hạn; kết quả
+duyệt khi cha chờ trả lời đi vòng sau) + dòng Q12 ("chấp nhận chờ ý chậm nhất" → bỏ cho ý chờ duyệt) + nhật ký; `nen-tang/P1-langgraph-runtime.md`
+§8.1 mục 2, §8.2 mã giả, §8.3 gạch 1 và 3; docstring `children.py`, `parent_wait.py`, `runner.after_turn` (nếu S6), `ports.parents_to_wake` (nếu S5).
+
+### Điểm chờ ĐP chốt
+
+- **Đ1** Duyệt đổi D-31/Q12 thành D-77 như trên (số D).
+- **Đ2** Vế "∨ mọi con đã kết thúc" trong điều kiện vòng (bắt buộc để vòng tổng kết 0 notice vẫn gửi).
+- **Đ3** R3: kết quả duyệt khi cha đang chờ trả lời → đi vòng sau (đề xuất giữ) hay chen tin mới.
+- **Đ4** R2: chấp nhận mất một dòng audit `digest_sent` khi hai vòng trong cùng lượt (đề xuất chấp nhận + ghi chú).
+- **Đ5** Làm S5 (`parents_to_wake`) và S6 (`CHILD_STOPS`) trong lô này không — đụng `db/runtime.py`, `graph/runner.py` ngoài 3 file lời giao nêu.
+  Đề xuất: S5 có (giữ lưới = điều kiện cha, cần TA chạy PG), S6 có (1 dòng).
+- **Đ6** Test cũ: duyệt danh sách đổi kỳ vọng / đổi kịch bản ở trên.
+
+### ĐP duyệt DỪNG 1 (09/11 20:05) và DỪNG 2 (code)
+
+Đ1 D-77 DUYỆT (sửa P1 §8.1–8.3 + dòng Q12, ghi "ĐP chốt 09/11, bản demo lo-0811"); Đ2 DUYỆT; Đ3 có điều kiện (dưới); Đ4 CHẤP NHẬN; Đ5 làm CẢ
+S5 và S6, mỗi việc test + mutation riêng; Đ6 DUYỆT, giữ nguyên ý định từng test (không nới khẳng định an toàn).
+
+**Đ3 — chọn nhánh KHÔNG làm (không nhỏ).** Đẩy ngay kết quả của con chờ duyệt trong lúc cha ở `parent_reply_wait` cần, ít nhất: (1)
+`wake_parent` resume `parent_reply_wait` bằng sự kiện mới — node hiện coi mọi sự kiện khác `timeout` là `reply` có `items`; (2) node đó tự
+gửi vòng (`deliver_round`, khoá `round:n+1`) và đổi `awaiting`: con được DUYỆT dừng ở `confirm_wait` (`needs=confirm`) → phải thêm vào
+`awaiting`, mà `/reply` kiểm `items ≡ awaiting` chặt (`api/tickets.py`) → câu trả lời người dùng đang soạn theo `awaiting` cũ bị 422; (3)
+FE dựng form trả lời CHỈ từ tin digest có `round` lớn nhất (`routes/employee/multi.ts` `latestRound` + `awaitingItems`) → vòng chen chỉ có
+kết quả ý 1 sẽ làm MẤT ô trả lời câu hỏi ý 2 → phải sửa FE; (4) chuyển `S_CONFIRMING → S_CONFIRMING` cho node chờ. Vượt "chỉ trong đường
+đánh thức cha".
+
+**Giới hạn (Đ3, D-77 (e)):** con chờ duyệt được duyệt / bị từ chối / hết hạn (E6) trong lúc cha đang chờ người dùng trả lời một ý khác thì
+người dùng chưa nhận tin nào: kết quả đó đi cùng vòng tổng hợp SAU lần trả lời kế tiếp (hoặc khi hạn 24 h/48 h của cha hết), trong khi
+dải tiến độ trên màn hình đổi ngay sang "Đã có kết quả — chờ tổng hợp" / "Đã xong" (ghim bằng
+`test_q6_approval_while_parent_waits_reply_is_carried_by_next_round`, `test_t20b_api.py::test_a7…`).
+
+**Đ4 — ghi chú (chấp nhận):** sau vòng nhánh "chờ con" (S3 c), lần chạy lại `parent_wait` trong CÙNG lượt có thể gặp notice mới (vài ms)
+→ vòng `n+1` gửi đúng (khoá `round:n+1`), nhưng dòng audit `digest_sent` thứ hai trùng `audit_key(ticket, B5, digest_sent, turn,
+loop_seq)` → `ON CONFLICT DO NOTHING` → mất một dòng audit. Tin, notice, effects vẫn đúng.
+
+**Đ5:** S5 `db/runtime.py _PARENTS_TO_WAKE` + bản giả `MemoryDeadlines.parents_to_wake` + docstring `ports`; S6 `runner.CHILD_STOPS` +
+`approval_wait`. Test S5: `unit/test_q6_cho_duyet.py::test_q6_s5_safety_net_matches_round_ready` (graph thật, bản giả) + PG
+`integration/test_t20b_pg.py::test_q6_children_view_awaiting_approval_and_parents_to_wake` (CHỜ TA/CI). Test S6:
+`unit/test_t20b_wake.py::test_w2_child_stops_at_approval_wait_wakes_parent_after_release` (runner, lượt con THƯỜNG dừng `approval_wait`).
+Không làm ca S6 trên graph thật (phục hồi lượt con chết giữa B15): `Crash` của harness là `BaseException` giết cả lượt cha đang lồng →
+kịch bản hai lượt mở cùng phục hồi, thứ tự phục hồi không tất định — không đáng tin hơn ca runner.
+
+**(a) gate5 (stack thật, KHÔNG chạy — cần docker) đổi kỳ vọng — CHƯA sửa `backend/tests/stack/gate5.py`:** `_tc34_like` dòng 529–531 ("cha ở
+parent_wait" `S_CLASSIFYING`, "0 tin assistant trước khi duyệt", `children_progress` `[ready, pending_approval]`) → nay `S_CONFIRMING`, 1 tin
+(vòng 1), `[needs_user, pending_approval]`; `tc34` dòng 544 `_decide_child` chờ một lượt của CHA sau khi duyệt (`ctx.settle(t, before)`) —
+cha đang `parent_reply_wait` nên KHÔNG có lượt → hết giờ chờ; dòng 546–553 (digest vòng 1 hai `result`, reply cả hai, 2 tin) → vòng 1 =
+kết quả ý 1 + chờ duyệt ý 2, reply ý 1, vòng 2 = kết quả ý 2, reply ý 2, 3 tin. Cùng lý do: `tc36` dòng 582–590, `tc12r` dòng 615–623.
+Cách sửa như `unit/test_t20b_flows.py` (đã sửa); việc của người chạy `make gate5`.
+
+**(b) FE (chỉ đọc):** cha ở `parent_wait` sau khi đã gửi vòng → API `waiting_for = null` (`api/tickets.py WAITING_FOR` không có
+`parent_wait`) → `ChatPage.composerFor` trả ô nhập KHOÁ (`enabled: false`), placeholder `statusLabel("S_CLASSIFYING")…` = "Đang tiếp nhận
+yêu cầu…" (nhãn ticket thường — lệch với nhãn cha); khung hành động hiện "Đang xử lý các ý… Bạn không cần làm gì."; nhãn cha
+`PARENT_PROCESSING`; tin digest chỉ đọc, không form (test FE `multi.test.tsx` "waiting_for ≠ reply … tin digest chỉ đọc" đã ghim); dải tiến độ
+"Chờ IT duyệt"; polling 2 s (`waiting_for` null). Cần sửa FE (CHƯA sửa): (i) placeholder ô nhập của cha dùng `PARENT_PROCESSING` thay
+`statusLabel(view.status)`; (ii) khối "chờ duyệt" trong digest mang nhãn "Đã xử lý" (`itemLabel` theo kind `result`) — sai nghĩa, cần nhãn
+"Chờ IT duyệt" (FE nhận theo `source`/chữ, hoặc đổi kind sau demo).
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

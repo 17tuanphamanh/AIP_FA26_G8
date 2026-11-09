@@ -282,8 +282,9 @@ class MemoryDeadlines:
                 if n["child_ticket_id"] == child_id and n["delivered_at"] is None and n["needs"] != "none"]  # fmt: skip
 
     async def parents_to_wake(self, limit: int) -> list[str]:
-        """Như SQL (P12 a, 2 vế): cha chưa kết thúc mà (1) số `child_submit` (khác `result_ref`) < số con, HOẶC (2) mọi con đã dừng theo
-        điều kiện `children_view` (`final` VÀ không lượt mở, hoặc notice chưa gửi `needs≠none`)."""
+        """Như SQL (P12 a, 2 vế): cha chưa kết thúc mà (1) số `child_submit` (khác `result_ref`) < số con, HOẶC (2) điều kiện `round_ready`
+        (D-77): mọi con đã dừng (`final` hoặc phiếu `pending`, VÀ không lượt mở; hoặc notice chưa gửi `needs≠none`) VÀ (có notice chưa gửi
+        HOẶC mọi con kết thúc)."""
         assert self.tickets is not None and self.effects is not None
         out = []
         for tid, r in self.tickets.rows.items():
@@ -292,12 +293,21 @@ class MemoryDeadlines:
                 continue
             submitted = {e["result_ref"] for e in self.effects.rows.values() if e["ticket_id"] == tid and e["kind"] == "child_submit"}
 
+            def idle(c: str) -> bool:
+                assert self.tickets is not None
+                return all(t["ended_at"] is not None for t in self.tickets._turns.of(c))
+
             def ended(c: str) -> bool:
                 assert self.tickets is not None
-                return self.tickets.rows[c]["final"] is not None and all(
-                    t["ended_at"] is not None for t in self.tickets._turns.of(c))  # fmt: skip
+                return self.tickets.rows[c]["final"] is not None and idle(c)
 
-            if len(submitted) < len(kids) or all(ended(c) or self._pending_needs(c) for c in kids):
+            def approving(c: str) -> bool:
+                return idle(c) and any(a["ticket_id"] == c and a["status"] == "pending" for a in self.approvals.values())
+
+            unsent = any(n["parent_ticket_id"] == tid and n["delivered_at"] is None for n in self.tickets.notices)
+            ready = all(ended(c) or approving(c) or self._pending_needs(c) for c in kids) and (
+                unsent or all(ended(c) for c in kids))  # fmt: skip
+            if len(submitted) < len(kids) or ready:
                 out.append(tid)
         return out[:limit]
 
@@ -747,7 +757,9 @@ class MemoryTickets:
                 and (n["delivered_at"] is None if delivered_round is None else n["delivered_round"] == delivered_round)
             )  # fmt: skip
             running = any(t["ended_at"] is None for t in self._turns.of(cid))  # như SQL: còn lượt mở → chưa kết thúc
-            out.append(ChildView(cid, child_index(cid), final.final_state if final and not running else None, pending))
+            approving = any(a["ticket_id"] == cid and a["status"] == "pending" for a in self.approvals_table.values())
+            out.append(ChildView(cid, child_index(cid), final.final_state if final and not running else None, pending,
+                                 approving and not running))
         return out
 
     async def deliver_round(self, parent_id: str, round_no: int, notice_ids: Sequence[int], at: datetime) -> str:

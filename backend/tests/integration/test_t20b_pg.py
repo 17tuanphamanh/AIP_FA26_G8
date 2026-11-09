@@ -313,6 +313,55 @@ async def test_s_parents_to_wake_and_orphan_children(rw: AsyncEngine) -> None:
     assert orphans == [OrphanChild(o1, "answer")]
 
 
+# ---- D-77 (Q6): con chờ duyệt là điểm dừng — children_view.awaiting_approval + parents_to_wake theo round_ready ------------------
+
+
+async def _close_turns(rw: AsyncEngine, ticket: str) -> None:
+    async with rw.begin() as conn:
+        await conn.execute(text("UPDATE turns SET ended_at = now() WHERE ticket_id = :t AND ended_at IS NULL"), {"t": ticket})
+
+
+async def _pending_approval(rw: AsyncEngine, child: str) -> None:
+    await RecordingApprovals(rw).create(child, APPROVER, NOW + timedelta(minutes=30), "c" * 64, backup_approver_id=None,
+                                        conflict_detected=False, conflict_type=None)  # fmt: skip
+
+
+async def test_q6_children_view_awaiting_approval_and_parents_to_wake(rw: AsyncEngine) -> None:
+    """D-77: `awaiting_approval` = phiếu `pending` VÀ không còn lượt mở (B15 đang chạy → chưa). `parents_to_wake` vế 2 = `round_ready`:
+    con chờ duyệt + con có câu hỏi chưa gửi → chọn; hai con chờ duyệt mà notice đã gửi hết → KHÔNG chọn (không đánh thức mỗi 60 s); có
+    notice mới chưa gửi → chọn lại."""
+    store, dl = SqlTicketStore(rw), SqlDeadlineStore(rw)
+    asked = await _parent(rw)
+    a1, a2 = await _children(rw, asked, 2)
+    await _pending_approval(rw, a1)
+    await _notice(rw, a1, "B15", "none")
+    view = await store.children_view(asked, [a1, a2])
+    assert [v.awaiting_approval for v in view] == [False, False]  # a1 còn lượt mở (B15 chưa xong)
+    assert asked not in set(await dl.parents_to_wake(1000))
+    await _close_turns(rw, a1)
+    await _notice(rw, a2, "B11", "answer")
+    view = await store.children_view(asked, [a1, a2])
+    assert [v.awaiting_approval for v in view] == [True, False]
+    assert asked in set(await dl.parents_to_wake(1000))
+
+    quiet = await _parent(rw)
+    q1, q2 = await _children(rw, quiet, 2)
+    ids = []
+    for c in (q1, q2):
+        await _pending_approval(rw, c)
+        ref = await _notice(rw, c, "B15", "none")
+        assert ref is not None
+        ids.append(int(ref.removeprefix("notice:")))
+        await _close_turns(rw, c)
+    assert quiet in set(await dl.parents_to_wake(1000))  # vòng 1 chưa gửi
+    await store.deliver_round(quiet, 1, ids, NOW + timedelta(minutes=1))
+    assert quiet not in set(await dl.parents_to_wake(1000))  # đã báo, chỉ còn chờ duyệt → không đánh thức
+    await store.finalize_once(q2, _final())
+    await _notice(rw, q2, "B20", "none")
+    await _close_turns(rw, q2)
+    assert quiet in set(await dl.parents_to_wake(1000))  # notice mới của q2 → vòng 2
+
+
 # ---- P13: SqlPresetResolver cho ticket con --------------------------------------------------------------------------------------
 
 

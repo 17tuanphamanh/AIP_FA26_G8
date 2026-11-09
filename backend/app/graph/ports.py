@@ -123,8 +123,9 @@ class DeadlineStore(Protocol):
 
     async def parents_to_wake(self, limit: int) -> list[str]:
         """Phase 5 T20b P12 (a), chỉ đọc DB: cha `is_parent`, `final_state IS NULL` mà (1) số con đã khởi động (dòng `child_submit` của cha,
-        khác `result_ref`) < số con (Q-T20b-7 — bắt cả con có `turns` mà thread rỗng), HOẶC (2) MỌI con đã dừng theo đúng điều kiện
-        `children_view` (`final_state` VÀ không còn lượt mở, hoặc notice chưa gửi `needs ≠ none`) — NGHI-2."""
+        khác `result_ref`) < số con (Q-T20b-7 — bắt cả con có `turns` mà thread rỗng), HOẶC (2) đúng điều kiện `children.round_ready` trên
+        `children_view` (D-77): mọi con đã dừng (`final_state` hoặc phiếu `pending`, VÀ không còn lượt mở; hoặc notice chưa gửi
+        `needs ≠ none`) VÀ (có notice chưa gửi HOẶC mọi con đã kết thúc) — NGHI-2."""
         ...
 
     async def orphan_children(

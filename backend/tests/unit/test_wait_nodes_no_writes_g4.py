@@ -30,7 +30,14 @@ from app.graph.late_event import wake_parent
 from app.graph.nodes import approval_wait, clarify_wait, confirm_wait, parent_reply_wait
 from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemorySpans
-from tests.unit._t20b import TC34, Flow, adobe_item, classify, make_flow, reset_item
+from tests.unit._t20b import (
+    ADOBE_PRINTER,
+    Flow,
+    adobe_item,
+    classify,
+    make_flow,
+    oos_item,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -133,8 +140,8 @@ def _audit_events(f: Flow) -> list[tuple[str, str, str]]:
 
 
 async def test_parent_wait_prewake_part_is_idempotent_across_wakes(monkeypatch: pytest.MonkeyPatch) -> None:
-    f = make_flow(classify(reset_item(), adobe_item()))
-    r = await f.submit(TC34)  # con 1 → confirm_wait (dừng), con 2 → approval_wait; cha chờ ở parent_wait
+    f = make_flow(classify(adobe_item(), oos_item()))
+    r = await f.submit(ADOBE_PRINTER)  # D-77: con 1 → approval_wait, con 2 → E1; vòng 1 đã báo → cha chờ con ở parent_wait
     assert (r.status, r.waiting_at) == (S_CLASSIFYING, "parent_wait")
 
     passes = {"n": 0}

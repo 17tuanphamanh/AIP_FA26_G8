@@ -34,7 +34,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.db.models import ChildNotice, Ticket, TicketHidden, Turn
+from app.db.models import Approval, ChildNotice, Ticket, TicketHidden, Turn
 from app.db.runtime import current_tx
 from app.db.security_events import check_event, insert_event
 from app.domain.children import (
@@ -52,6 +52,7 @@ _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 _TURNS: Table = Turn.__table__  # type: ignore[assignment]
 _NOTICES: Table = ChildNotice.__table__  # type: ignore[assignment]
 _HIDDEN: Table = TicketHidden.__table__  # type: ignore[assignment]
+_APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 _FINAL_COLUMNS = (
     "final_state", "exit_code", "block_reason", "close_reason", "resolution_path",
     "aggregate_status", "auto_closed", "intent", "slots", "total_turns", "total_duration_seconds",
@@ -307,6 +308,9 @@ class SqlTicketStore:
             running: set[str] = set((await conn.execute(
                 select(_TURNS.c.ticket_id).where(_TURNS.c.ticket_id.in_(list(children)), _TURNS.c.ended_at.is_(None))
             )).scalars().all())  # fmt: skip
+            approving: set[str] = set((await conn.execute(
+                select(_APPROVALS.c.ticket_id).where(_APPROVALS.c.ticket_id.in_(list(children)), _APPROVALS.c.status == "pending")
+            )).scalars().all())  # fmt: skip
             rows = (await conn.execute(
                 select(n.notice_id, n.child_ticket_id, n.source_step, n.kind, n.needs, n.body, n.created_at)
                 .where(n.parent_ticket_id == parent_id, n.child_ticket_id.in_(list(children)), unsent)
@@ -319,7 +323,8 @@ class SqlTicketStore:
             )
         # Con "kết thúc" = có `final_state` VÀ không còn lượt mở (soát lượt 2: B20 của con ghi `final_state` TRƯỚC notice escalation —
         # cha đối soát giữa hai việc đó sẽ đóng mà notice không bao giờ được gửi)
-        return [ChildView(cid, child_index(cid), None if cid in running else finals.get(cid), tuple(pending[cid]))
+        return [ChildView(cid, child_index(cid), None if cid in running else finals.get(cid), tuple(pending[cid]),
+                          cid in approving and cid not in running)
                 for cid in children]  # fmt: skip
 
     async def deliver_round(self, parent_id: str, round_no: int, notice_ids: Sequence[int], at: datetime) -> str:

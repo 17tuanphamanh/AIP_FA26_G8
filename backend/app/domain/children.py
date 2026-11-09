@@ -2,8 +2,9 @@
 
 Cha đối soát con từ DB (D-17): `tickets.final_state` + `child_notices` chưa gửi — KHÔNG đọc checkpoint con. `ChildView` là đúng phần đó.
 
-- **Con đã dừng** (P1 §8.1): đã kết thúc (`final_state`), HOẶC có notice chưa gửi `needs ≠ none` (đang chờ người dùng ở
-  `clarify_wait`/`confirm_wait`). Con ở `approval_wait` (chờ L1) KHÔNG phải điểm dừng.
+- **Con đã dừng** (P1 §8.1; D-77): đã kết thúc (`final_state`), HOẶC có notice chưa gửi `needs ≠ none` (đang chờ người dùng ở
+  `clarify_wait`/`confirm_wait`), HOẶC đang chờ L1 duyệt (`awaiting_approval`: phiếu `pending` + không còn lượt mở).
+- **Gửi một vòng** (`round_ready`, D-77): mọi con đã dừng VÀ (có ≥ 1 notice chưa gửi HOẶC mọi con đã kết thúc).
 - `needs` của con chưa kết thúc = `needs` của notice chưa gửi MỚI NHẤT (một con dừng ở một điểm chờ một lúc).
 - `aggregate_children` (bảng 5.2.5): chỉ gọi khi mọi con có `final_state`; ưu tiên ESCALATED > REJECTED > RESOLVED.
 """
@@ -52,6 +53,7 @@ class ChildView:
     index: int  # 1..n — hậu tố của `child_id` (`<cha>-<i>`), = thứ tự ý LLM trả
     final_state: str | None
     pending: tuple[Notice, ...] = ()
+    awaiting_approval: bool = False  # Q6: phiếu duyệt `pending` VÀ không còn lượt mở (DB — D-17)
 
 
 def child_id(parent_id: str, index: int) -> str:
@@ -71,8 +73,17 @@ def child_index(cid: str) -> int:
 
 
 def stopped(view: ChildView) -> bool:
-    """Con đã dừng: kết thúc, hoặc có notice chưa gửi `needs ≠ none`. Chờ L1 duyệt KHÔNG phải điểm dừng (D-31)."""
-    return view.final_state is not None or any(n.needs != "none" for n in view.pending)
+    """Con đã dừng: kết thúc, có notice chưa gửi `needs ≠ none`, HOẶC đang chờ L1 duyệt (D-77 — ý chờ duyệt không giữ câu hỏi của
+    ý khác)."""
+    return view.final_state is not None or view.awaiting_approval or any(n.needs != "none" for n in view.pending)
+
+
+def round_ready(view: Sequence[ChildView]) -> bool:
+    """Gửi một vòng khi mọi con đã dừng VÀ (có ít nhất một notice chưa gửi HOẶC mọi con đã kết thúc — vòng tổng kết không có notice).
+    Không notice mới mà còn con chờ duyệt → KHÔNG gửi (không vòng rỗng, không lặp tin "chờ duyệt" đã gửi)."""
+    if not all(stopped(c) for c in view):
+        return False
+    return any(c.pending for c in view) or all(c.final_state is not None for c in view)
 
 
 def needs_of(view: ChildView) -> NoticeNeeds:
