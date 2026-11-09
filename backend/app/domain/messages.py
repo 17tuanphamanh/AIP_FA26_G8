@@ -482,9 +482,10 @@ def reply_text(items: Sequence[tuple[int, Mapping[str, Any]]]) -> str:
 # ---- Q3 M4 (ĐP 09/11): tin cho người dùng khi yêu cầu chờ duyệt (B15) ---------------------------------------------------------------
 # Theo MẪU, không LLM: nhãn hành động (`ACTION_LABELS`) + cụm đích (`target_phrase` — định danh đã qua regex); KHÔNG nêu người duyệt.
 # `kind` riêng (FE hiển thị như tin thường — kind lạ không lỗi, không nút); needs `none`. Ticket con: notice (`notify/child.py`, bước B15).
+# Q6 c3 (D-77 (e)): KHÔNG hứa "ngay" — nhiều ý mà cha đang chờ người dùng trả lời ý khác thì kết quả duyệt đi vòng sau lần trả lời kế tiếp.
 APPROVAL_PENDING_KIND: Final = "approval_pending"
 APPROVAL_PENDING_TAIL: Final = (
-    "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn ngay tại đây."
+    "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn tại đây."
 )
 
 
