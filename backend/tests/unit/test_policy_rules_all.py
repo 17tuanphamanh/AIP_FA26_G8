@@ -332,20 +332,21 @@ def test_h4_cong_5_moi_luat_r01_r15_co_ca_khop() -> None:
 # ---- h1 — đếm luật ---------------------------------------------------------------------------------------------------
 
 
-def test_h1_dung_20_luat_r01_r20_7_12_1() -> None:
-    """h1 (P8, kiểm đếm bảng 4.4 [Chốt N4]): đúng 20 id R01…R20, không trùng, thứ tự tăng dần trong file;
-    7 allow / 12 approval_required / 1 deny."""
+def test_h1_dung_21_luat_r01_r21_7_12_2() -> None:
+    """h1 (P8, kiểm đếm bảng 4.4 [Chốt N4]): đúng 21 id R01…R21, không trùng, thứ tự tăng dần trong file;
+    7 allow / 12 approval_required / 2 deny. Đổi ở Q5 (ĐP 09/11 10:05 duyệt mở rộng N4 cho BẢN DEMO): + R21 deny phần mềm bị cấm
+    (nội dung kiểm ở `test_q5_phan_mem_cam.py`); bản đo `bf94df2` vẫn 20 luật 7/12/1."""
     rules = get_policy().rules
     ids = [r.id for r in rules]
-    assert ids == [f"R{n:02d}" for n in range(1, 21)]
-    assert len(set(ids)) == 20
+    assert ids == [f"R{n:02d}" for n in range(1, 22)]
+    assert len(set(ids)) == 21
     by_type: dict[str, set[str]] = {}
     for r in rules:
         by_type.setdefault(str(r.type), set()).add(r.id)
     assert by_type.get(AUTO) == {"R01", "R02", "R06", "R10", "R11", "R16", "R20"}
     assert by_type.get(HITL) == {"R03", "R04", "R05", "R07", "R08", "R09", "R13", "R14", "R15", "R17", "R18", "R19"}
-    assert by_type.get(DENY) == {"R12"}
-    assert {k: len(v) for k, v in by_type.items()} == {AUTO: 7, HITL: 12, DENY: 1}
+    assert by_type.get(DENY) == {"R12", "R21"}
+    assert {k: len(v) for k, v in by_type.items()} == {AUTO: 7, HITL: 12, DENY: 2}
 
 
 # ---- P8 — nội dung R01–R15 đúng bảng 4.4 nguyên văn ----------------------------------------------------------------------
@@ -485,7 +486,7 @@ def test_h3_khong_dieu_kien_nao_tham_chieu_action_target() -> None:
     """h3 (P10, Việc treo 19): không điều kiện nào — kể cả trong nhóm `all`/`any` lồng — dùng fact `action.target`."""
     raw = json.loads((REPO / "config" / "policy.json").read_text(encoding="utf-8"))
     facts = [f for r in raw["rules"] for f in _facts_in(r["conditions"])]
-    assert len(raw["rules"]) == 20 and facts
+    assert len(raw["rules"]) == 21 and facts  # Q5: + R21
     assert "action.target" not in facts
 
 

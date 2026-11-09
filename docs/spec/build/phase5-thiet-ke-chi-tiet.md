@@ -173,6 +173,8 @@ Fact VPN giữ nguyên (`device_registered`, `device_owner_is_requester`, …). 
 
 ### 4.4. Bảng 20 luật [Chốt nội dung §6.3; Chốt 01/10 cho R09; Đề xuất điều kiện cụ thể]
 
+> **Ghi chú 09/11/2026 — bản demo `lo-0811` (Q5, ĐP duyệt 09/11 10:05):** thêm **R21** `deny` · software · `install_software` · `action.facts.software_prohibited is_true` · "Phần mềm bị cấm theo quy định của công ty" (fact chỉ từ tool `check_catalog_entry.prohibited` — danh sách cấm do hệ thống ngoài giữ, `mock_services/seed.json` `prohibited_software`). Bản demo: **N4 = 21 luật, 7 allow / 12 approval_required / 2 deny**. Bản đo `bf94df2` giữ 20 luật 7/12/1 — nội dung dưới đây là của bản đo, không viết lại.
+
 Ký hiệu: `F.x` = `action.facts.x`; `P.x` = `action.params.x`; `other` = `ctx.target_is_other`.
 
 | Mã | Loại | Intent | Hành động | Điều kiện (`all`) | Mô tả (`description`) |
@@ -1096,6 +1098,9 @@ Có sẵn (soát 10/10, chưa chạy): 503 khi không đặt; hình dạng hợp
 **Test cũ được đổi:** `test_executor_vpn.py` (tên lớp/import, đổi tên file theo lớp mới nếu cần; `"UNDO_FAILED: no_undo"` → `"not_reversible"` nếu có ca); `test_executor_plans.py` (luật `check_plans` mới — giữ mọi ca từ chối cũ còn đúng ý); `test_messages*`/`test_b17*` chỉ chữ ký `result_text`; test ghim mặc định `enabled_intents` nếu có. Test cũ khác đỏ → DỪNG hỏi.
 
 ### 7.6. `make gate5` — cổng 5 tự động phần đơn ý (P8)
+
+> **Ghi chú 09/11/2026 — bản demo `lo-0811` (Q5):** ví dụ **tc17** đổi "cài utorrent" → **"cài photoshop"** (utorrent nay bị R21 deny);
+> kỳ vọng giữ nguyên (catalog 404 = dữ liệu → R13 → chờ duyệt, 0 ghi). Dòng tc17 dưới đây là của bản đo, không viết lại.
 
 | Mã | Người gửi · câu (preset) | Kỳ vọng |
 |---|---|---|

@@ -75,7 +75,7 @@ TC01 = ("tc01", AN, "đặt lại mật khẩu tài khoản AD.")
 TC03 = ("tc03", AN, "cài Zoom")
 TC07 = ("tc07", AN, "đặt lại mật khẩu AD cho svc_backup.")
 TC08 = ("tc08", BINH, "xin quyền đọc finance/Q3 30 ngày")
-TC17 = ("tc17", AN, "cài utorrent")
+TC17 = ("tc17", AN, "cài photoshop")  # Q5 (ĐP 09/11): utorrent nay bị cấm → R21
 TC18 = ("tc18", AN, "đặt lại mật khẩu tài khoản AD.")
 TC21A = ("tc21a", AN, "cài Zoom")
 TC21B = ("tc21b", AN, "cài Adobe Acrobat Pro")
@@ -372,7 +372,7 @@ def tc08(ctx: Ctx) -> None:
 
 
 def tc17(ctx: Ctx) -> None:
-    """utorrent: catalog 404 là DỮ LIỆU (không E2) → `in_catalog=False` → R13 → chờ duyệt, 0 ghi."""
+    """photoshop (Q5: thay utorrent): catalog 404 là DỮ LIỆU (không E2) → `in_catalog=False` → R13 → chờ duyệt, 0 ghi."""
     rep = ctx.report
     _begin(ctx)
     t, v = ctx.ticket(TC17)

@@ -113,6 +113,14 @@ class CatalogEntry:
     aliases: tuple[str, ...] = ()  # mock-fidelity F1: tên gọi khác, tra cứu qua software.find_entry
 
 
+@dataclass(frozen=True)
+class Prohibited:
+    """Q5: danh sách cấm — `names`: khoá tra cứu đã chuẩn hoá → (slug, tên hiển thị); `keywords`: chuỗi con trên tên đã chuẩn hoá."""
+
+    names: dict[str, tuple[str, str]] = field(default_factory=dict)
+    keywords: tuple[str, ...] = ()
+
+
 @dataclass
 class LicensePool:
     name: str
@@ -160,6 +168,7 @@ class MockState:
     permissions: list[Permission]
     serial_seq: int = 0
     outbox: list[OutboxMessage] = field(default_factory=list)  # F2: hộp thư đi (SMS/email), `/_admin/reset` dựng state mới → rỗng
+    prohibited: Prohibited = field(default_factory=Prohibited)  # Q5 — danh sách phần mềm bị cấm (seed `prohibited_software`)
 
     def next_serial(self) -> str:
         self.serial_seq += 1
@@ -294,6 +303,10 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
             for c in seed.catalog
         },
         licenses={p.name: LicensePool(p.name, p.total, p.used) for p in seed.licenses},
+        prohibited=Prohibited(
+            names={k: (p.name, p.display_name) for p in seed.prohibited_software.names for k in p.lookup_keys()},
+            keywords=tuple(seed.prohibited_software.keywords),
+        ),
         installed=[
             Installed(i.device_id, i.name, i.version, ago(i.installed_days_ago)) for i in seed.installed
         ],

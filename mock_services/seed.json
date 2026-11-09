@@ -700,6 +700,16 @@
       "requires_local_admin": true
     }
   ],
+  "prohibited_software": {
+    "names": [
+      {"name": "utorrent", "display_name": "uTorrent", "aliases": ["u torrent"]},
+      {"name": "bittorrent", "display_name": "BitTorrent", "aliases": ["bit torrent"]},
+      {"name": "qbittorrent", "display_name": "qBittorrent", "aliases": ["qbit torrent"]},
+      {"name": "kmspico", "display_name": "KMSpico", "aliases": ["kms pico"]},
+      {"name": "kmsauto", "display_name": "KMSAuto", "aliases": ["kms auto", "kmsauto net"]}
+    ],
+    "keywords": ["crack", "keygen", "torrent", "patch-lau"]
+  },
   "licenses": [
     {
       "name": "adobe-acrobat-pro",

@@ -65,7 +65,7 @@ def test_f1_slug_still_resolves(client: TestClient, agent: Headers, slug: str) -
     assert client.get(f"/software/catalog/{slug}", headers=agent).json()["name"] == slug
 
 
-@pytest.mark.parametrize("unknown", ["utorrent", "Zoom Workplace Pro", "Microsoft", "Visual Studio", "7"])
+@pytest.mark.parametrize("unknown", ["photoshop", "Zoom Workplace Pro", "Microsoft", "Visual Studio", "7"])  # Q5: utorrent → bị cấm
 def test_f1_unknown_name_is_404(client: TestClient, agent: Headers, unknown: str) -> None:
     assert client.get(f"/software/catalog/{unknown}", headers=agent).status_code == 404
     assert client.get(f"/software/licenses/{unknown}", headers=agent).status_code == 404

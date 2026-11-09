@@ -29,6 +29,17 @@ def find_entry(state: MockState, name: str) -> CatalogEntry | None:
                  if key in {normalize(e.display_name), *map(normalize, e.aliases)}), None)  # fmt: skip
 
 
+def prohibited_match(state: MockState, name: str) -> tuple[str, str] | None:
+    """Q5: (slug, tên hiển thị) khi tên NGOÀI danh mục thuộc danh sách cấm (slug/tên/alias) hoặc chứa một từ khoá cấm; không thì None.
+    Từ khoá khớp → slug = tên hiển thị = tên đã chuẩn hoá. Seed bảo đảm danh sách cấm không chạm danh mục (`SeedData._references`)."""
+    key = normalize(name)
+    if (hit := state.prohibited.names.get(key)) is not None:
+        return hit
+    if any(kw in key for kw in state.prohibited.keywords):
+        return key, key
+    return None
+
+
 def catalog_entry(state: MockState, name: str) -> CatalogEntry:
     entry = find_entry(state, name)
     if entry is None:
@@ -61,11 +72,21 @@ def require_device(state: MockState, device_id: str) -> None:
 
 @router.get("/catalog/{name}", dependencies=[Depends(require_read)])
 async def catalog(name: str, request: Request) -> dict[str, Any]:
-    e = catalog_entry(mock_state(request), name)
+    """Trong danh mục → thuộc tính + `prohibited: false`. Ngoài danh mục: bị cấm (Q5) → 200 `in_catalog: false, prohibited: true`,
+    thuộc tính danh mục null; không cấm → 404 như cũ (dữ liệu "không có", không phải lỗi)."""
+    state = mock_state(request)
+    e = find_entry(state, name)
+    if e is None:
+        hit = prohibited_match(state, name)
+        if hit is None:
+            raise HTTPException(404, "not_found")
+        return {"name": hit[0], "display_name": hit[1], "in_catalog": False, "prohibited": True, "license_type": None,
+                "paid": None, "version": None, "requires_approval": None, "requires_local_admin": None}  # fmt: skip
     return {
         "name": e.name,
         "display_name": e.display_name,
         "in_catalog": True,
+        "prohibited": False,
         "license_type": e.license_type,
         "paid": e.license_type == "paid",
         "version": e.version,

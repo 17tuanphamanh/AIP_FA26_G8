@@ -40,8 +40,11 @@ EXPECTED: list[tuple[str, dict[str, Any], Any]] = [
     ("check_last_connection", {"user_id": "nv001"},
      lambda d: d.root[0].result == "failed" and d.root[0].error_code == "CERT_EXPIRED"),
     ("check_last_connection", {"user_id": "nv003"}, None),
-    ("check_catalog_entry", {"software_name": "Zoom"}, lambda d: d.in_catalog and not d.paid),
-    ("check_catalog_entry", {"software_name": "utorrent"}, None),  # TC17: không tồn tại ≠ lỗi
+    ("check_catalog_entry", {"software_name": "Zoom"}, lambda d: d.in_catalog and not d.paid and not d.prohibited),
+    ("check_catalog_entry", {"software_name": "photoshop"}, None),  # TC17 (Q5: ví dụ photoshop): không tồn tại ≠ lỗi
+    ("check_catalog_entry", {"software_name": "utorrent"},  # Q5: bị cấm → 200, không có thuộc tính danh mục
+     lambda d: (d.name, d.in_catalog, d.prohibited, d.paid) == ("utorrent", False, True, None)),
+    ("check_catalog_entry", {"software_name": "windows-crack"}, lambda d: (d.in_catalog, d.prohibited) == (False, True)),
     ("check_license_available", {"software_name": "ms-project"}, lambda d: d.available == 0),
     ("check_license_available", {"software_name": "adobe-acrobat-pro"}, lambda d: d.available == 3),
     ("check_installed_list", {"device_id": "LAP-0342"},

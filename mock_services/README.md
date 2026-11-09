@@ -86,6 +86,15 @@ hoặc `aliases` trong seed, đều sau chuẩn hoá (chữ thường, khoảng 
 `a-z 0-9 -`; `display_name` không rỗng; slug, tên hiển thị và alias dùng chung một không gian tên — không trùng giữa các phần mềm,
 không trùng nhau trong một mục, alias không rỗng và không lặp lại slug / tên hiển thị của chính nó.
 
+**Phần mềm bị cấm (Q5, 09/11/2026):** `seed.json` mục `prohibited_software` (bắt buộc) — `names` (slug + tên hiển thị + alias, tra như
+danh mục: uTorrent, BitTorrent, qBittorrent, KMSpico, KMSAuto) và `keywords` (`crack`, `keygen`, `torrent`, `patch-lau`; lưu dạng đã chuẩn
+hoá, khớp khi là CHUỖI CON của tên đã chuẩn hoá). `GET /software/catalog/{name}`: trong danh mục → như cũ + `"prohibited": false`; ngoài
+danh mục mà bị cấm → **200** `{"name", "display_name", "in_catalog": false, "prohibited": true}` + `license_type`, `paid`, `version`,
+`requires_approval`, `requires_local_admin` = `null` (khớp từ khoá → `name` = `display_name` = tên đã chuẩn hoá); ngoài danh mục, không
+cấm → 404 như cũ. `licenses`, `install` không đổi (tên cấm → 404). Seed bị từ chối khi tên cấm trùng tên tra cứu của danh mục, hoặc từ khoá
+rỗng / chưa chuẩn hoá / là chuỗi con của slug, tên hiển thị hay alias nào trong danh mục (chống chặn nhầm). Đổi seed → máy demo build lại
+container mock + `python -m app.seed reset`.
+
 ```
 GET  /software/licenses/{name}      thêm "assignments": [{"assignment_id", "user_id"}] — ai đang giữ (rỗng với phần mềm miễn phí;
                                     phần `used` dựng sẵn từ seed không có tên người giữ)
@@ -214,7 +223,7 @@ Test tự động của bảng này: `backend/tests/e2e/test_tools_vs_mock.py` (
 | `check_device_registered` | `nv001`, `KHONG-CO` | 404 → rỗng (không phải lỗi) |
 | `check_vpn_cert_expiry` | `nv001`, `LAP-0342` | `status=expired`, `days_to_expiry=-3` |
 | `check_last_connection` | `nv001` / `nv003` | lần gần nhất `failed`, `CERT_EXPIRED` / `[]` |
-| `check_catalog_entry` | `Zoom` / `utorrent` | miễn phí, trong danh mục / 404 → rỗng |
+| `check_catalog_entry` | `Zoom` / `photoshop` / `utorrent` | miễn phí, trong danh mục / 404 → rỗng (TC17) / bị cấm: `in_catalog=false`, `prohibited=true` (Q5) |
 | `check_license_available` | `ms-project` / `adobe-acrobat-pro` | `available=0` / `available=3` |
 | `check_installed_list` | `LAP-0342` / `PC-0977` | `ms-office`, `zoom` / `[]` |
 | `check_current_permissions` | `nv002`, `finance/Q3` | một quyền `read`, `status=expired` |
