@@ -1,4 +1,4 @@
-"""A4 (bn-a, 08/11, migration 0015) — TOTP không dùng lại được (test viết trước, DỪNG 1).
+"""A4 (bn-a, 08/11, migration 0016 — dời từ 0015) — TOTP không dùng lại được (test viết trước, DỪNG 1).
 
 Hợp đồng (PLAN bn-a mục A4):
 - `auth.mfa.totp_step(secret, otp, at) -> int | None`: bước (counter = floor(unix/30)) mà mã khớp trong cửa sổ ±1 bước như
@@ -22,7 +22,7 @@ from tests.unit.auth_helpers import AuthEnv, auth_env
 
 T0 = datetime(2099, 9, 26, 8, 0, 10, tzinfo=UTC)  # giây 10 của một bước 30 s (unix chia hết cho 30 ở :00)
 
-CHO_0015 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0015 (lô P5 gộp 0014 trước) — gỡ cờ khi hiện thực")
+CHO_0016 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 — gỡ cờ khi hiện thực")
 
 
 @pytest.fixture
@@ -44,11 +44,11 @@ def _code(secret: str, at: datetime) -> str:
 # ---- hàm thuần -----------------------------------------------------------------------------------------------------------------
 
 
-@CHO_0015
+@CHO_0016
 
 
 def test_a4_totp_step_returns_matched_counter_within_window() -> None:
-    # A4: `totp_step` có khi hiện thực (chờ 0015) — gỡ ignore
+    # A4: `totp_step` có khi hiện thực (chờ 0016) — gỡ ignore
     from app.auth.mfa import totp_step  # type: ignore[attr-defined]
 
     secret = pyotp.random_base32()
@@ -64,7 +64,7 @@ def test_a4_totp_step_returns_matched_counter_within_window() -> None:
 # ---- luồng đăng nhập -----------------------------------------------------------------------------------------------------------
 
 
-@CHO_0015
+@CHO_0016
 
 
 def test_a4_same_code_twice_in_same_step_rejected_as_replay(env: AuthEnv) -> None:
@@ -77,7 +77,7 @@ def test_a4_same_code_twice_in_same_step_rejected_as_replay(env: AuthEnv) -> Non
     assert env.sink.of("mfa_failed")[-1].detail == {"reason": "otp_replayed"}
 
 
-@CHO_0015
+@CHO_0016
 
 
 def test_a4_previous_step_code_rejected_after_current_step_accepted(env: AuthEnv) -> None:
@@ -97,7 +97,7 @@ def test_a4_next_step_code_accepted(env: AuthEnv) -> None:
     assert env.login("quan.tm", otp=_code(secret, env.clock.now())).status_code == 200
 
 
-@CHO_0015
+@CHO_0016
 
 
 def test_a4_replay_counts_toward_lockout(env: AuthEnv) -> None:

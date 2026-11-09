@@ -1,9 +1,9 @@
-"""Migration 0015 (bn-a, 08/11) — kiểm TĨNH chạy được không cần Docker (test viết trước, DỪNG 1). Bản Postgres thật:
-`integration/test_migration_0015.py`, `integration/test_txlog_pg.py` (TA chạy).
+"""Migration 0016 (bn-a, 08/11; dời từ 0015 sang 0016 ngày 09/11 — số 0015 thuộc lô Q1 `it_help`) — kiểm TĨNH chạy được không cần Docker (test viết trước, DỪNG 1). Bản Postgres thật:
+`integration/test_migration_0016.py`, `integration/test_txlog_pg.py` (TA chạy).
 
-- File `0015_*.py` nối sau `0014` (lô P5 `ticket_hidden`), có `downgrade`; khai đủ S1/S2/S4/A4.
+- File `0016_*.py` nối sau `0015` (lô Q1 `it_help`), có `downgrade`; khai đủ S1/S2/S4/A4.
 - `models.py` khớp: `users.mfa_last_step` BigInteger NULL; chỉ mục từng phần `ix_approvals_pending_deadline`.
-- Xác nhận code (S1, S2) — test canh, XANH sẵn trên d9b356e, giữ xanh sau 0015:
+- Xác nhận code (S1, S2) — test canh, XANH sẵn trên d9b356e, giữ xanh sau 0016:
   - `transaction_log`: chỉ `executor/txlog.SqlTxLog._insert` ghi, và chỉ INSERT — không `update(`/`delete(`/SQL UPDATE/DELETE nào trên bảng.
   - `tickets.final_state`: chỉ `db/tickets.SqlTicketStore.finalize_once` ghi (UPDATE … WHERE final_state IS NULL).
 """
@@ -18,12 +18,12 @@ REPO = Path(__file__).resolve().parents[3]
 APP = REPO / "backend" / "app"
 VERSIONS = APP / "db" / "alembic" / "versions"
 
-CHO_0015 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0015 (lô P5 gộp 0014 trước) — gỡ cờ khi hiện thực")
+CHO_0016 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 — gỡ cờ khi hiện thực")
 
 
 def _migration() -> tuple[Path, str]:
-    found = sorted(VERSIONS.glob("0015_*.py"))
-    assert len(found) == 1, f"cần đúng một file 0015_*.py, thấy {[p.name for p in found]}"
+    found = sorted(VERSIONS.glob("0016_*.py"))
+    assert len(found) == 1, f"cần đúng một file 0016_*.py, thấy {[p.name for p in found]}"
     return found[0], found[0].read_text(encoding="utf-8")
 
 
@@ -40,21 +40,21 @@ def _assigns(source: str) -> dict[str, object]:
     return out
 
 
-@CHO_0015
+@CHO_0016
 
 
-def test_0015_chains_after_0014_and_has_downgrade() -> None:
+def test_0016_chains_after_0015_and_has_downgrade() -> None:
     _, src = _migration()
     names = _assigns(src)
-    assert (names.get("revision"), names.get("down_revision")) == ("0015", "0014")
+    assert (names.get("revision"), names.get("down_revision")) == ("0016", "0015")
     funcs = {n.name for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
     assert {"upgrade", "downgrade"} <= funcs
 
 
-@CHO_0015
+@CHO_0016
 
 
-def test_0015_declares_s1_s2_s4_a4() -> None:
+def test_0016_declares_s1_s2_s4_a4() -> None:
     _, src = _migration()
     assert re.search(r"REVOKE UPDATE, DELETE, TRUNCATE ON transaction_log FROM app_rw", src)
     assert "transaction_log_append_only" in src and "transaction_log_no_truncate" in src
@@ -63,10 +63,10 @@ def test_0015_declares_s1_s2_s4_a4() -> None:
     assert "mfa_last_step" in src
 
 
-@CHO_0015
+@CHO_0016
 
 
-def test_models_match_0015() -> None:
+def test_models_match_0016() -> None:
     from app.db.models import Approval, User
     from sqlalchemy import BigInteger, Table
 

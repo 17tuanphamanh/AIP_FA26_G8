@@ -8,7 +8,7 @@ owner tắt được trigger append-only, `app_rw` thì không; `app_rw` có CRU
   hội thoại, theo ticket CHA). Một transaction.
 - `sessions`: `expires_at < cutoff` VÀ không dòng `tickets`/`turns` nào trỏ tới (FK — ĐP chốt Q2; không sửa `tickets`).
 - `wait_deadlines`: `fired_at < cutoff` (mọi chỗ đọc chỉ lấy `fired_at IS NULL`).
-- `record_run`: ĐÚNG 1 dòng `security_events` loại `retention_run` (ĐP chốt Q5) — loại này vào CHECK ở migration 0015; TỚI LÚC ĐÓ (cờ chờ:
+- `record_run`: ĐÚNG 1 dòng `security_events` loại `retention_run` (ĐP chốt Q5) — loại này vào CHECK ở migration 0016 (dời từ 0015 — ĐP chốt 09/11, bản demo lo-0811: số 0015 thuộc lô Q12 `it_help`); TỚI LÚC ĐÓ (cờ chờ:
   `retention_run` chưa có trong `SECURITY_EVENT_TYPES`) ghi 1 dòng log INFO cùng số đếm. `detail` chỉ số đếm + `dry_run`.
 KHÔNG câu lệnh nào chạm `audit_logs`, `security_events` ngoài INSERT, `tickets`, `transaction_log`.
 """
@@ -86,8 +86,8 @@ class SqlRetentionStore:
         return await self._delete(_DELETE_WAITS, cutoff)
 
     async def record_run(self, detail: Mapping[str, Any], *, at: datetime) -> None:
-        if RETENTION_EVENT not in SECURITY_EVENT_TYPES:  # cờ chờ migration 0015 (CHECK chưa nhận loại này)
-            log.info("retention_run (chưa ghi security_events — chờ 0015): %s",
+        if RETENTION_EVENT not in SECURITY_EVENT_TYPES:  # cờ chờ migration 0016 (CHECK chưa nhận loại này)
+            log.info("retention_run (chưa ghi security_events — chờ 0016): %s",
                      " ".join(f"{k}={v}" for k, v in sorted(detail.items())))  # fmt: skip
             return
         async with self._engine.begin() as conn:
