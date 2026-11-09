@@ -66,12 +66,92 @@
 
   /* Bóng ô nhập lớn (B4EmpHome, B4EmpChat). */
   --shadow-input: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.04);
+
+  /* Chuyển động — ngắn, êm, một đường cong chung. Dùng qua lớp `animate-*` / `ease-soft`. Máy bật "giảm chuyển động" →
+     tắt hết (khối @media cuối file). */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-rise-in: rise-in 260ms var(--ease-soft) both;
+  --animate-fade-in: fade-in 200ms ease-out both;
+  --animate-pop-in: pop-in 180ms var(--ease-soft) both;
+  --animate-drop-in: drop-in 220ms var(--ease-soft) both;
+
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes drop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 /* Kích thước bố cục (KH 4.5): dùng qua `w-(--sidebar-width)`, `max-w-(--chat-width)`. */
 :root {
   --sidebar-width: 264px;
   --chat-width: 720px;
+}
+
+/* Điện thoại: dưới điểm `lg` (64rem = 1024 px — cùng điểm với biến thể `max-lg:`). Từ 1024 px trở lên KHÔNG có gì ở đây
+   chạy. Vẫn đúng 5 cỡ chữ, chỉ đổi giá trị của 2 cỡ:
+   - `label` 13 → 14 px: chữ trên màn nhỏ không được dưới 14 px;
+   - `title` 34 → 28 px: tiêu đề màn không chiếm nửa màn hình hẹp.
+   Đặt NGOÀI mọi @layer nên thắng khối @theme ở trên (nằm trong layer theme). */
+@media (width < 64rem) {
+  :root {
+    --text-title: 28px;
+    --text-title--line-height: 34px;
+    --text-label: 14px;
+    --text-label--line-height: 20px;
+  }
+
+  /* `viewport-fit=cover` (index.html) cho trang phủ cả vùng tai thỏ khi xoay ngang → đệm trái/phải cho cả trang; trên/dưới do
+     từng thanh dính (thanh đầu, ô chat, thanh quyết định) tự đệm. Máy không có tai thỏ: env() = 0, không đổi gì. */
+  body {
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
+  }
+}
+
+/* Chiều cao khung theo `dvh` (vùng nhìn thấy THẬT, trừ thanh địa chỉ và bàn phím ảo trên trình duyệt hỗ trợ) thay cho 100% ở
+   khối @layer base — ô chat dính đáy không bị bàn phím che. Trình duyệt chưa biết `dvh` giữ nguyên 100%. */
+@supports (height: 100dvh) {
+  @media (width < 64rem) {
+    html,
+    body,
+    #root {
+      height: 100dvh;
+    }
+  }
 }
 
 @layer base {
@@ -87,5 +167,54 @@
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
     -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Chuyển động nền cho mọi phần tử tương tác: đổi màu / viền / bóng mượt thay vì nhảy; bấm nút lún nhẹ. Lớp tiện ích
+   (`transition-*`) của từng component vẫn thắng vì nằm ở layer utilities. */
+@layer base {
+  a,
+  button,
+  input,
+  textarea,
+  select,
+  summary,
+  [role="tab"],
+  [role="radio"],
+  [role="option"] {
+    transition-property: color, background-color, border-color, outline-color, box-shadow, opacity, transform;
+    transition-duration: 160ms;
+    transition-timing-function: var(--ease-soft);
+  }
+
+  button:not(:disabled):active,
+  [role="tab"]:active,
+  [role="radio"]:not([aria-disabled="true"]):active {
+    transform: scale(0.98);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* "Giảm chuyển động" của hệ điều hành → bỏ mọi hiệu ứng (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  button:not(:disabled):active,
+  [role="tab"]:active,
+  [role="radio"]:active {
+    transform: none;
   }
 }

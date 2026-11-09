@@ -1,3 +1,4 @@
+import { MaNhan } from "../../components/MaNhan.tsx";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -6,7 +7,7 @@ import { hasPerm } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
 import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
-import { TICKET_ID_PATTERN, TICKET_UNAVAILABLE } from "./inbox.ts";
+import { deadlineText, TICKET_ID_PATTERN, TICKET_UNAVAILABLE } from "./inbox.ts";
 
 // Xem ticket CHỈ ĐỌC để ghi đè (KH 4.6: tab "Hệ thống đã tự xử lý" ẩn tới Phase 7 → mở bằng mã ticket, hoặc từ phiếu đã
 // quyết). Hội thoại: `GET /api/tickets/{id}` THẬT (component chỉ đọc của F3, không mock). Q-fe-24 [Chốt]: nút "Ghi đè…"
@@ -24,27 +25,35 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
   const valid = TICKET_ID_PATTERN.test(ticketId);
   const query = useQuery({ ...ticketReadOnlyQuery(ticketId), enabled: valid });
   const view = query.data;
+  // R3: hạn của LẦN CHỜ HIỆN TẠI; null / thiếu / không phải thời điểm → không hiện gì (không đoán, không "—").
+  const waitDeadline = view?.final_state ? null : deadlineText(view?.deadline);
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-8">
+    <section className="flex flex-col gap-6 px-12 pt-20 pb-8 max-lg:px-4 max-lg:pt-16 max-lg:pb-6">
       <div className="flex flex-col gap-1">
-        <Link to="/approvals" className="text-secondary text-fpt-blue">
+        <Link to="/approvals" className="text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
           ‹ Chờ tôi duyệt
         </Link>
         <h1 className="text-title">
-          Ticket <span className="font-mono">{ticketId}</span>
+          Yêu cầu <span className="font-mono">{ticketId}</span>
         </h1>
-        <p className="text-ink-2">Xem chỉ đọc. Ghi đè không đổi ticket — chỉ ghi vào nhật ký để đánh giá lại hệ thống.</p>
+        <p className="text-ink-2">Xem chỉ đọc. Ghi đè không đổi yêu cầu — chỉ ghi vào nhật ký để đánh giá lại hệ thống.</p>
         {view ? (
           <p data-testid="ticket-state" className="text-secondary text-ink-2">
-            Trạng thái <span className="font-mono">{view.status}</span>
+            Trạng thái <MaNhan loai="trang_thai" ma={view.status} />
             {view.exit_code ? (
               <>
                 {" "}
-                · Mã kết thúc <span className="font-mono">{view.exit_code}</span>
+                · Kết thúc <MaNhan loai="ma_ket_thuc" ma={view.exit_code} />
               </>
             ) : null}
             {view.final_state ? " · Đã kết thúc" : " · Chưa kết thúc"}
+            {waitDeadline ? (
+              <>
+                {" "}
+                · Hạn của lần chờ hiện tại <span data-testid="ticket-deadline">{waitDeadline}</span>
+              </>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -53,7 +62,7 @@ function TicketOverride({ ticketId }: { ticketId: string }) {
         <TicketConversation ticketId={ticketId} failText={TICKET_UNAVAILABLE} />
       ) : (
         <p role="alert" className="text-danger">
-          Mã ticket không hợp lệ.
+          Mã yêu cầu không hợp lệ.
         </p>
       )}
 

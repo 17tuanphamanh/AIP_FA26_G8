@@ -38,7 +38,12 @@ try:
     cfg = load_llm_config(s.config_dir / "llm.yaml")
     backend = s.llm_backend if s.llm_backend in ("scripted", "real") else "?"
     if backend == "real":
-        models = [getattr(s, cfg.roles[r].model_setting) for r in ROLES] + [f.model for r in ROLES for f in cfg.fallback[r]]
+        models = []
+        for r in ROLES:
+            m = getattr(s, cfg.roles[r].model_setting)
+            if m or cfg.roles[r].model_default_role is None:  # Q10: CHAT_MODEL trống → vai chat mượn đích của vai gốc (đã kiểm)
+                models.append(m)
+            models.extend(f.model for f in cfg.fallback[r])
     else:
         models = [SCRIPTED_MODEL]
     out = {"backend": backend, "cap_usd": float(cfg.spend.cap_usd),

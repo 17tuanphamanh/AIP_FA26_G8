@@ -2,6 +2,7 @@ import type { Me } from "../api/types.ts";
 import { sameUser, useLoginSteps } from "../auth/useLoginSteps.ts";
 import { Modal } from "./Modal.tsx";
 import { OtpInput } from "./OtpInput.tsx";
+import { PasswordField } from "./PasswordField.tsx";
 
 export type ReauthOutcome = { kind: "ok" } | { kind: "cancel" } | { kind: "other_user"; me: Me };
 
@@ -39,7 +40,7 @@ export function ReauthDialog({ userId, onDone }: ReauthDialogProps) {
         </p>
         {step === "otp" ? (
           <div className="flex justify-center">
-            <OtpInput digits={digits} onChange={setDigits} disabled={busy} />
+            <OtpInput digits={digits} onChange={setDigits} disabled={busy} focusKey={steps.otpFocus} />
           </div>
         ) : (
           <div className="overflow-hidden rounded-group border border-line">
@@ -60,14 +61,13 @@ export function ReauthDialog({ userId, onDone }: ReauthDialogProps) {
             <label htmlFor="reauth-password" className="sr-only">
               Mật khẩu
             </label>
-            <input
+            <PasswordField
               id="reauth-password"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mật khẩu"
-              autoComplete="current-password"
-              className="h-13 w-full px-4 placeholder:text-ink-2"
+              onChange={setPassword}
+              shown={steps.passwordShown}
+              onToggle={steps.togglePassword}
+              inputClassName="h-13 px-4 placeholder:text-ink-2"
             />
           </div>
         )}

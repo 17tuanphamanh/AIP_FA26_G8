@@ -1,11 +1,12 @@
-// Lịch sử "Gần đây" trên thanh bên = ticket tạo TRONG PHIÊN NÀY (KH 4.6): chỉ trong bộ nhớ, mất khi tải lại trang,
-// xoá khi đăng xuất / hết phiên. Chưa có `GET /api/tickets?mine=1` (Phase 7) — không hiện dữ liệu bịa.
+// Ticket tạo TRONG PHIÊN NÀY (KH 4.6): chỉ trong bộ nhớ, mất khi tải lại trang, xoá khi đăng xuất / hết phiên. "Gần đây"
+// trên thanh bên = các ticket này GHÉP với `GET /api/tickets` (P3 — sống qua F5 / đăng nhập lại): `recentTickets` bên dưới.
 //
 // Câu yêu cầu (12b Q-fe-18): `TicketView.conversation` KHÔNG chứa câu yêu cầu đầu (Nợ API #8) → giữ câu vừa gõ ở đây,
 // và CHỈ giữ khi 202 trả `notices` rỗng — guard không che gì (backend/app/guard/privacy.py: notices rỗng ⇔ 0 bí mật,
 // 0 PII) nên câu gõ vào trùng câu đã che. `notices` khác rỗng → KHÔNG giữ câu gốc ở đâu cả. Tiêu đề và mục "Gần đây"
 // chỉ lấy từ câu yêu cầu, không lấy từ câu trả lời.
 import { useSyncExternalStore } from "react";
+import type { TicketListItem } from "../../api/types.ts";
 import type { Tone } from "./status.ts";
 
 export type SessionTicket = {
@@ -22,9 +23,18 @@ export const REDACTED_NOTE = "Nội dung đã được ẩn bớt thông tin nh�
 
 let items: readonly SessionTicket[] = [];
 const listeners = new Set<() => void>();
+// P3 menu ⋯ "Xóa": id đang/đã ẩn TRONG PHIÊN NÀY — `recentTickets` lọc theo tập này nên mục mất ngay mà dữ liệu gốc (phiên + cache
+// API) không đổi; API lỗi → bỏ id khỏi tập, mục hiện lại ĐÚNG chỗ cũ. Chỉ trong bộ nhớ, xoá cùng `clear()` (server mới là nguồn sự thật).
+let hidden: ReadonlySet<string> = new Set();
+const EMPTY: ReadonlySet<string> = new Set();
 
 function set(next: readonly SessionTicket[]): void {
   items = next;
+  for (const listener of listeners) listener();
+}
+
+function setHidden(next: ReadonlySet<string>): void {
+  hidden = next;
   for (const listener of listeners) listener();
 }
 
@@ -41,8 +51,21 @@ export const sessionTickets = {
     if (!current || current.tone === tone) return;
     set(items.map((t) => (t.ticket_id === ticket_id ? { ...t, tone } : t)));
   },
+  /** Bỏ hẳn khỏi danh sách phiên (sau khi API ẩn thành công). */
+  remove(ticket_id: string): void {
+    if (items.some((t) => t.ticket_id === ticket_id)) set(items.filter((t) => t.ticket_id !== ticket_id));
+  },
+  /** Đánh dấu đang ẩn (trước khi API trả) — mục biến khỏi "Gần đây" ngay. */
+  hide(ticket_id: string): void {
+    if (!hidden.has(ticket_id)) setHidden(new Set([...hidden, ticket_id]));
+  },
+  /** API ẩn lỗi → mục hiện lại ở chỗ cũ. */
+  unhide(ticket_id: string): void {
+    if (hidden.has(ticket_id)) setHidden(new Set([...hidden].filter((id) => id !== ticket_id)));
+  },
   clear(): void {
     if (items.length) set([]);
+    if (hidden.size) setHidden(new Set());
   },
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
@@ -51,15 +74,55 @@ export const sessionTickets = {
     };
   },
   getSnapshot: (): readonly SessionTicket[] => items,
+  getHidden: (): ReadonlySet<string> => hidden,
 };
 
 export function useSessionTickets(): readonly SessionTicket[] {
   return useSyncExternalStore(sessionTickets.subscribe, sessionTickets.getSnapshot);
 }
 
+/** Tập id đang/đã ẩn trong phiên (menu ⋯ "Xóa"). */
+export function useHiddenTickets(): ReadonlySet<string> {
+  return useSyncExternalStore(sessionTickets.subscribe, sessionTickets.getHidden);
+}
+
 /** Tiêu đề hội thoại / mục "Gần đây": câu yêu cầu, một dòng, cắt ngắn (KH 4.6). Không có → DEFAULT_TITLE. */
-export function titleOf(ticket: SessionTicket | undefined, max = 60): string {
+export function titleOf(ticket: Pick<SessionTicket, "request"> | undefined, max = 60): string {
   if (!ticket?.request) return DEFAULT_TITLE;
   const line = ticket.request.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/** Một dòng "Gần đây" (thanh bên): `request` đưa vào `titleOf`. */
+export type RecentTicket = Pick<SessionTicket, "ticket_id" | "request" | "tone">;
+
+/** Chấm của ticket CHỈ có trong danh sách API (không có `waiting_for` — danh sách không đọc checkpoint): xong → xanh lá;
+ *  đã kết thúc khác / có mã thoát (đã chuyển, dừng, bị từ chối, chặn) → xám; chưa kết thúc → cam. */
+export function listTone(item: Pick<TicketListItem, "final_state" | "exit_code">): Tone {
+  if (item.final_state === "S_RESOLVED") return "done";
+  if (item.final_state || item.exit_code) return "closed";
+  return "waiting";
+}
+
+/** Ticket trong phiên trước (mới nhất trước, giữ chấm + tiêu đề của phiên — câu đã che thì vẫn DEFAULT_TITLE), rồi ticket
+ *  từ API theo thứ tự backend (`created_at DESC`) mà phiên chưa có. Khử trùng theo `ticket_id`; bỏ id trong `hidden` (menu ⋯
+ *  "Xóa" — lọc, không đổi thứ tự các mục còn lại). */
+export function recentTickets(
+  session: readonly SessionTicket[],
+  fromApi: readonly TicketListItem[],
+  hidden: ReadonlySet<string> = EMPTY,
+): RecentTicket[] {
+  const seen = new Set<string>(hidden);
+  const out: RecentTicket[] = [];
+  for (const t of session) {
+    if (seen.has(t.ticket_id)) continue;
+    seen.add(t.ticket_id);
+    out.push({ ticket_id: t.ticket_id, request: t.request, tone: t.tone });
+  }
+  for (const item of fromApi) {
+    if (seen.has(item.ticket_id)) continue;
+    seen.add(item.ticket_id);
+    out.push({ ticket_id: item.ticket_id, request: item.request_text, tone: listTone(item) });
+  }
+  return out;
 }

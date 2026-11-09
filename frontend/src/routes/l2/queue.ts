@@ -1,8 +1,11 @@
 // Hàm thuần cho màn L2 (B4L2Queue, B4L2Detail). Thứ tự hàng đợi: backend ĐÃ sắp theo `priority`, `created_at`,
 // `escalation_id` với `priority` lấy từ bảng seed `exit_code_priority` — nguồn duy nhất (B20 §5.1). Frontend KHÔNG sắp
 // lại và KHÔNG giữ bảng ưu tiên/nhãn/màu theo mã E nào của riêng mình: chỉ gom các dòng LIÊN TIẾP cùng `priority`.
-import { CLOSE_NOTE_MAX, QUEUE_LIMIT } from "../../api/escalations.ts";
+import { CLOSE_NOTE_MAX } from "../../api/escalations.ts";
 import type { EscalationCloseResult, EscalationQueueItem, HandoffNote } from "../../api/types.ts";
+import { labelOf } from "../../lib/lookup.ts";
+import { KHAC, maKetThuc } from "../../lib/nhan.ts";
+import { FLASH } from "../../components/flash.ts";
 
 /** Nhãn seed có thể kèm phần phụ sau dấu phẩy ("Thường, cần bổ sung KB") → tên nhóm "Thường" + huy hiệu trên dòng. */
 export function splitLabel(label: string): { base: string; extra: string | null } {
@@ -47,16 +50,15 @@ export function waitingText(createdAt: string, now: number): string {
 export const EMPTY_NOTE = "(không có)";
 /** Chi tiết: ca không còn trong hàng đợi (đã đóng, hoặc id sai) — P2. */
 export const GONE_TEXT = "Ca đã đóng hoặc không còn trong hàng đợi";
-/** Chi tiết: không thấy ca mà hàng đợi đã đủ `QUEUE_LIMIT` ca → có thể ca nằm ngoài giới hạn, KHÔNG khẳng định là đã đóng
- *  (server sắp ca cũ trước; escalation chưa đóng được tới Phase 7 nên hàng đợi dev dài dần). */
-export const OVERFLOW_TEXT = `Không tìm thấy ca trong ${QUEUE_LIMIT} ca đầu của hàng đợi`;
-export const OVERFLOW_NOTE =
-  `Hàng đợi đang quá ${QUEUE_LIMIT} ca (màn chỉ tải tối đa ${QUEUE_LIMIT}) — ca này có thể nằm ngoài giới hạn hoặc đã đóng. ` +
-  "Xem riêng một ca có ở Phase 7.";
+/** Chi tiết ca đã đóng (`?status=closed`) không có trong các trang đã tải và không còn trang nào. */
+export const CLOSED_GONE_TEXT = "Không tìm thấy ca đã đóng này";
+/** Chi tiết: không thấy ca trong các trang ĐÃ tải mà server còn trang (`next_cursor`) → KHÔNG khẳng định là đã đóng. */
+export const notLoadedText = (n: number): string => `Không tìm thấy ca trong ${n} ca đã tải`;
+export const NOT_LOADED_NOTE = "Ca có thể nằm ở phần chưa tải — bấm “Tải thêm” để tải tiếp danh sách.";
 
 export const HANDOFF_FIELDS: readonly { key: keyof HandoffNote; label: string }[] = [
   { key: "request", label: "Yêu cầu (đã che)" },
-  { key: "done_so_far", label: "Agent đã làm" },
+  { key: "done_so_far", label: "Hệ thống đã làm" },
   { key: "why_escalated", label: "Lý do chuyển" },
   { key: "next_for_l2", label: "Việc cần làm" },
 ];
@@ -80,26 +82,47 @@ export function reasonLine(item: EscalationQueueItem): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-export const DENY_BADGE = "E5 — không thực hiện lại";
+export const DENY_BADGE = "Không thực hiện lại";
 export const DENY_BANNER = {
-  strong: "Ca E5 — không thực hiện lại hành động.",
-  rest: "Chỉ xác nhận từ chối hoặc mở ticket mới.",
+  strong: "Ca không đủ điều kiện tự xử lý — không thực hiện lại hành động.",
+  rest: "Chỉ xác nhận từ chối hoặc mở yêu cầu mới.",
 };
 
+/** Nhãn mã kết thúc của một ca cho nhân sự IT (bảng ĐP 23:10; E1 + `injection_suspected` → nhãn riêng); mã lạ → "Khác". */
+export function exitNhan(item: Pick<EscalationQueueItem, "exit_code" | "reason_detail">): { nhan: string; ma: string; goiY?: string } {
+  const n = maKetThuc(item.exit_code, item.reason_detail);
+  return n ? { nhan: n.nhan, ma: item.exit_code, ...(n.goiY ? { goiY: n.goiY } : {}) } : { nhan: KHAC, ma: item.exit_code };
+}
+
 export const CLOSE_OPTIONS: readonly { value: EscalationCloseResult; title: string; desc: string }[] = [
-  { value: "completed", title: "Đã hoàn tất", desc: "L2 đã làm xong việc agent định làm" },
+  { value: "completed", title: "Đã hoàn tất", desc: "L2 đã làm xong việc hệ thống định làm" },
   { value: "confirmed_denial", title: "Xác nhận từ chối", desc: "Giữ nguyên quyết định không thực hiện" },
-  { value: "reopened_as_new", title: "Mở ticket mới", desc: "Chạy lại từ đầu, liên kết ticket này" },
+  { value: "reopened_as_new", title: "Mở yêu cầu mới", desc: "Xử lý lại từ đầu, có liên kết tới yêu cầu này" },
+];
+const CLOSE_TITLE: Record<string, string> = Object.fromEntries(CLOSE_OPTIONS.map((o) => [o.value, o.title]));
+/** Nhãn kết quả đóng theo khoá (đã kiểm enum ở api/escalations.ts; khoá lạ → hiện nguyên). */
+export const closeResultLabel = (value: string): string => labelOf(CLOSE_TITLE, value);
+
+export const CLOSED_TEXT = "Đã đóng ca — ca đã rời danh sách Mở.";
+/** Đóng thành công với "Mở ticket mới" (hợp đồng sửa lần 3, ĐP 26/10 23:51): đợt này KHÔNG tạo ticket mới phía server
+ *  (`new_ticket_id` luôn null) — chỉ ghi nhận, nhân viên được báo tự gửi yêu cầu mới. Không mã, không link. */
+export const REOPENED_TEXT = "Đã ghi. Nhân viên sẽ được báo gửi yêu cầu mới.";
+/** 409 `already_closed` (ĐP 02/11): cùng câu với flash khi chuyển sang `?status=closed`. */
+export const ALREADY_CLOSED_TEXT = FLASH.escalation_already_closed;
+
+export const STATUS_TABS: readonly { key: "open" | "closed"; label: string }[] = [
+  { key: "open", label: "Mở" },
+  { key: "closed", label: "Đã đóng" },
 ];
 
 /**
  * Lý do KHOÁ "Đã hoàn tất" (null = mở):
- * - `is_deny_case` (mọi E5 — backend/app/audit/handoff.py): B20 [Chốt] nguyên tắc 5, 422 ở Phase 7.
+ * - `is_deny_case` (mọi E5 — backend/app/audit/handoff.py): B20 [Chốt] nguyên tắc 5, server trả 422.
  * - E6 (hết hạn duyệt): B20 §4.3 + decisions.md mục 2 Q2 [Chốt] — L2 không hoàn tất tay (12b Q-fe-21).
  */
 export function completedLock(item: Pick<EscalationQueueItem, "is_deny_case" | "exit_code">): string | null {
-  if (item.is_deny_case) return "Không dùng với ca E5 — không thực hiện lại hành động";
-  if (item.exit_code === "E6") return "Không dùng với ca hết hạn duyệt (E6) — L2 không hoàn tất tay";
+  if (item.is_deny_case) return "Không dùng với ca không đủ điều kiện tự xử lý — không thực hiện lại hành động";
+  if (item.exit_code === "E6") return "Không dùng với ca quá hạn chờ duyệt — L2 không hoàn tất tay";
   return null;
 }
 
@@ -119,11 +142,12 @@ export function closeProblem(result: EscalationCloseResult | null, note: string,
 export const GROUP_PAGE_SIZE = 10;
 /** Ô tìm tối đa 100 ký tự. Chữ tìm chỉ dùng để so chuỗi — không thành RegExp, không dựng HTML. */
 export const SEARCH_MAX = 100;
-/** Đang tìm mà hàng đợi đã chạm trần → nói rõ phạm vi tìm (ca ngoài 200 ca đầu không tìm được — nợ API #10). */
-export const SEARCH_LIMIT_NOTE = ` · chỉ tìm trong ${QUEUE_LIMIT} ca đã tải`;
+/** Đang tìm mà server còn trang chưa tải (`next_cursor`) → nói rõ phạm vi tìm. */
+export const searchScopeNote = (loaded: number): string => ` · chỉ tìm trong ${loaded} ca đã tải`;
 export const NO_MATCH_TEXT = "Không có ca nào khớp ô tìm";
-/** 0 ca khớp khi đã chạm trần: KHÔNG khẳng định ca không tồn tại. */
-export const NO_MATCH_FULL_TEXT = `Không có ca nào khớp trong ${QUEUE_LIMIT} ca đã tải — ca cần tìm có thể nằm ngoài danh sách.`;
+/** 0 ca khớp khi còn trang chưa tải: KHÔNG khẳng định ca không tồn tại. */
+export const noMatchPartialText = (loaded: number): string =>
+  `Không có ca nào khớp trong ${loaded} ca đã tải — ca cần tìm có thể nằm ngoài danh sách.`;
 
 /** Chữ thường, bỏ dấu tiếng Việt, đ → d: gõ "an ninh" khớp "An ninh", "tu choi" khớp "từ chối". */
 export function foldText(text: string): string {

@@ -1,19 +1,25 @@
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { QUEUE_LIMIT, QUEUE_REFRESH_MS, queueQuery, queueRefetchInterval } from "../../api/escalations.ts";
-import type { EscalationQueueItem } from "../../api/types.ts";
+import { hasMore, loadedItems, QUEUE_REFRESH_MS, queueQuery, queueRefetchInterval, type QueueItem } from "../../api/escalations.ts";
+import type { EscalationQueueStatus } from "../../api/types.ts";
+import { Segmented } from "../../components/Segmented.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
+import { formatAt } from "../shared/traceText.ts";
+import { NhanMa } from "../../components/MaNhan.tsx";
 import {
+  closeResultLabel,
   DENY_BADGE,
+  exitNhan,
   EMPTY_VIEW,
   GROUP_PAGE_SIZE,
   NO_IDS,
-  NO_MATCH_FULL_TEXT,
   NO_MATCH_TEXT,
-  SEARCH_LIMIT_NOTE,
+  noMatchPartialText,
   SEARCH_MAX,
+  searchScopeNote,
+  STATUS_TABS,
   type QueueView,
   clampPage,
   filterQueue,
@@ -27,46 +33,68 @@ import {
   waitingText,
 } from "./queue.ts";
 
-// B4L2Queue — hàng đợi escalate THẬT (`GET /api/escalations/queue`, quyền escalation:handle: L1 + L2). Thứ tự của server
-// giữ nguyên, chỉ gom nhóm liên tiếp theo `priority` (queue.ts). L1/L2 được thấy mã E (KH 4.2 #2). Không nút duyệt nào
-// ở màn này [Chốt 2.2]. Khác Bản 4: nhóm không tô màu theo mức (màu theo hạng = bảng ưu tiên thứ hai ở frontend).
-// Tìm nhanh + thẻ nhóm + thu gọn nhóm + phân trang trong nhóm: làm ở trình duyệt, trên các ca ĐÃ tải, KHÔNG sắp lại thứ tự
-// server. Không dòng nào bị ẩn mà thiếu con số bên cạnh ("Khớp k / N ca", "· N ca", "Ca a–b / N", số trên thẻ).
+// B4L2Queue — hàng đợi escalate (hợp đồng N-PA §4: `GET /api/escalations/queue?status=&limit=&after=` → `{items,
+// next_cursor}`; quyền escalation:handle: L1 + L2). Lọc "Mở" (mặc định) / "Đã đóng"; "Tải thêm" theo `next_cursor` (nối trang
+// cuối, giữ thứ tự server). Gom nhóm liên tiếp theo `priority` (queue.ts). L1/L2 được thấy mã E (KH 4.2 #2). Không nút duyệt
+// nào ở màn này [Chốt 2.2]. Tìm nhanh + thẻ nhóm + thu gọn + phân trang trong nhóm: làm ở trình duyệt, CHỈ trên các ca ĐÃ
+// tải, KHÔNG sắp lại. Không dòng nào bị ẩn mà thiếu con số bên cạnh ("Khớp k / N ca", "· N ca", "Ca a–b / N", số trên thẻ).
 
 export function EscalationQueue() {
-  const query = useQuery({ ...queueQuery(), refetchInterval: (q) => queueRefetchInterval(q.state.error) });
-  const items = query.data;
+  const [status, setStatus] = useState<EscalationQueueStatus>("open");
+  return <QueueList key={status} status={status} onStatus={setStatus} />;
+}
+
+function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStatus: (s: EscalationQueueStatus) => void }) {
+  const query = useInfiniteQuery({ ...queueQuery(status), refetchInterval: (q) => queueRefetchInterval(q.state.error) });
+  const items = loadedItems(query.data);
+  const more = hasMore(query.data);
+  const pages = query.data?.pages.map((p) => p.items) ?? [];
   const [search, setSearch] = useState("");
   const words = searchWords(search);
   const shown = items ? filterQueue(items, search) : [];
-  const full = items !== undefined && items.length >= QUEUE_LIMIT;
+  const loadingMore = useRef(false); // chặn bấm 2 lần trong cùng một nhịp
+  const busy = query.isFetching;
+
+  async function loadMore() {
+    if (loadingMore.current || busy || !more) return;
+    loadingMore.current = true;
+    try {
+      await query.fetchNextPage({ cancelRefetch: false });
+    } finally {
+      loadingMore.current = false;
+    }
+  }
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-4">
-        <div className="flex min-w-0 grow flex-col gap-1">
-          <h1 className="text-title">Hàng đợi escalate</h1>
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
+      <div className="flex items-end gap-4 max-lg:flex-wrap max-lg:items-center">
+        <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
+          <h1 className="text-title">Hàng chờ chuyển L2</h1>
           <p className="text-ink-2">
             {items ? (
               <>
-                <span data-testid="queue-count">Đang hiện {items.length} ca</span> ·{" "}
+                <span data-testid="queue-count">
+                  Đã tải {items.length} ca{more ? " · còn ca chưa tải" : ""}
+                </span>{" "}
+                ·{" "}
               </>
             ) : null}
-            theo mức ưu tiên, rồi thời gian chờ · tự tải lại mỗi {QUEUE_REFRESH_MS / 1000} giây.
+            theo thứ tự của máy chủ · tự tải lại mỗi {QUEUE_REFRESH_MS / 1000} giây.
           </p>
         </div>
+        <Segmented label="Trạng thái ca" options={STATUS_TABS} value={status} onChange={onStatus} />
         <button
           type="button"
           onClick={() => void query.refetch()}
           disabled={query.isFetching}
-          className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60"
+          className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60 max-lg:min-h-11"
         >
-          {query.isFetching ? "Đang tải…" : "Tải lại"}
+          {query.isFetching && !query.isFetchingNextPage ? "Đang tải…" : "Tải lại"}
         </button>
       </div>
 
       {items && items.length > 0 ? (
-        <div className="flex items-center gap-3 rounded-group border border-line px-5 py-3">
+        <div className="flex items-center gap-3 rounded-group border border-line px-5 py-3 max-lg:flex-wrap max-lg:px-4">
           <label htmlFor="queue-search" className="shrink-0 text-secondary">
             Tìm ca
           </label>
@@ -76,15 +104,15 @@ export function EscalationQueue() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             maxLength={SEARCH_MAX}
-            placeholder="Mã ticket, mã E, tên nhóm, lý do…"
+            placeholder="Mã yêu cầu, mã lỗi (E…), tên nhóm, lý do…"
             autoComplete="off"
             spellCheck={false}
             data-testid="queue-search"
-            className="h-9 min-w-0 grow rounded-lg border border-line px-3 text-secondary"
+            className="h-9 min-w-0 grow rounded-lg border border-line px-3 text-secondary max-lg:min-h-11 max-lg:text-body"
           />
           {words.length > 0 ? (
             <span role="status" data-testid="queue-search-count" className="shrink-0 text-secondary text-ink-2">
-              Khớp {shown.length} / {items.length} ca{full ? SEARCH_LIMIT_NOTE : ""}
+              Khớp {shown.length} / {items.length} ca{more ? searchScopeNote(items.length) : ""}
             </span>
           ) : null}
         </div>
@@ -92,7 +120,7 @@ export function EscalationQueue() {
 
       {items === undefined ? (
         query.isPending ? (
-          <p className="text-ink-2">Đang tải hàng đợi…</p>
+          <p className="text-ink-2 motion-safe:animate-pulse">Đang tải hàng đợi…</p>
         ) : (
           <p role="alert" className="text-danger">
             Chưa tải được hàng đợi: {errorMessage(query.error instanceof ApiError ? query.error : null)}
@@ -102,19 +130,41 @@ export function EscalationQueue() {
         <>
           {query.isError ? (
             <p role="status" className="text-secondary text-ink-2">
-              Chưa tải lại được — đang hiện dữ liệu lần trước.
+              Chưa tải được — đang hiện dữ liệu lần trước.
             </p>
           ) : null}
-          {full ? (
-            <p role="status" className="rounded-group bg-orange-bg px-4 py-3 text-secondary text-orange-ink" data-testid="queue-overflow">
-              Hàng đợi đang quá {QUEUE_LIMIT} ca — chỉ hiện {QUEUE_LIMIT} ca đầu theo ưu tiên (ca cũ trước), ca mới hơn có thể
-              chưa hiện.
-            </p>
-          ) : null}
-          <QueueGroups all={items} items={shown} searchKey={words.join(" ")} full={full} now={query.dataUpdatedAt} />
+          <QueueGroups
+            all={items}
+            pages={pages}
+            items={shown}
+            searchKey={words.join(" ")}
+            more={more}
+            status={status}
+            now={query.dataUpdatedAt}
+          />
+          {more ? <LoadMore loading={busy} onMore={() => void loadMore()} /> : null}
         </>
       )}
     </section>
+  );
+}
+
+/** "Tải thêm": `aria-disabled` (KHÔNG `disabled` — giữ tiêu điểm bàn phím) khi đang tải; cùng một phần tử suốt vòng đời. */
+function LoadMore({ loading, onMore }: { loading: boolean; onMore: () => void }) {
+  return (
+    <div className="flex justify-center">
+      <button
+        type="button"
+        data-testid="queue-more"
+        aria-disabled={loading ? true : undefined}
+        onClick={() => {
+          if (!loading) onMore();
+        }}
+        className={`h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue max-lg:min-h-11 ${loading ? "cursor-wait opacity-60" : ""}`}
+      >
+        {loading ? "Đang tải…" : "Tải thêm"}
+      </button>
+    </div>
   );
 }
 
@@ -129,15 +179,20 @@ type Found = { key: string; view: QueueView };
  */
 function QueueGroups({
   all,
+  pages,
   items,
   searchKey,
-  full,
+  more,
+  status,
   now,
 }: {
-  all: EscalationQueueItem[];
-  items: EscalationQueueItem[];
+  all: QueueItem[];
+  /** Ca theo từng trang server (để biết ca nào vừa tới bằng "Tải thêm" — KHÔNG phải ca mới). */
+  pages: readonly (readonly QueueItem[])[];
+  items: QueueItem[];
   searchKey: string;
-  full: boolean;
+  more: boolean;
+  status: EscalationQueueStatus;
   now: number;
 }) {
   const searching = searchKey !== "";
@@ -145,13 +200,13 @@ function QueueGroups({
   const [found, setFound] = useState<Found>({ key: searchKey, view: EMPTY_VIEW });
   const [missed, setMissed] = useState<ReadonlySet<number>>(NO_IDS);
   // null = chưa có lần tải nào (lần dựng đầu là lần tải đầu → không ca nào là "mới").
-  const [source, setSource] = useState<EscalationQueueItem[] | null>(null);
+  const [source, setSource] = useState<{ all: QueueItem[]; pages: number } | null>(null);
   // Dữ liệu mới (tự tải lại / nút "Tải lại") → dọn trạng thái NGAY lúc dựng, không qua effect. `saved` dọn theo danh sách
   // CHƯA lọc (theo danh sách đã lọc thì gõ tìm sẽ làm bung nhóm đang thu gọn); `found` dọn theo các ca khớp. Không có gì
   // đổi → pruneQueueView / trackMissed trả đúng object cũ → không setState.
   let latest = saved; // trạng thái đã lưu sau khi dọn theo dữ liệu mới
-  if (source !== all) {
-    setSource(all);
+  if (source?.all !== all) {
+    setSource({ all, pages: pages.length });
     latest = pruneQueueView(saved, all);
     if (latest !== saved) setSaved(latest);
     const nextFound = pruneQueueView(found.view, items);
@@ -159,10 +214,16 @@ function QueueGroups({
   }
   if (found.key !== searchKey) setFound({ key: searchKey, view: EMPTY_VIEW });
   // Lần dựng không có dữ liệu mới: chỉ bỏ các ca đã báo mà nay hiện ra / rời hàng đợi.
-  const nextMissed = trackMissed(missed, source === all ? all : source, all, latest);
+  // Ca của các trang vừa nối bằng "Tải thêm" là ca ĐÃ CÓ ở server, không phải ca mới → tính vào "trước".
+  const before = source === null ? null : source.all === all ? all : [...source.all, ...pages.slice(source.pages).flat()];
+  const nextMissed = trackMissed(missed, before, all, latest);
   if (nextMissed !== missed) setMissed(nextMissed);
 
-  if (all.length === 0) return <p className="rounded-group bg-group px-5 py-4 text-ink-2">Không có ca nào đang chờ</p>;
+  if (all.length === 0) {
+    return (
+      <p className="rounded-group bg-group px-5 py-4 text-ink-2">{status === "closed" ? "Chưa có ca nào đã đóng" : "Không có ca nào đang chờ"}</p>
+    );
+  }
 
   // Tên nhóm lấy từ danh sách CHƯA lọc (nhãn không đổi theo chữ gõ); số đếm bên cạnh là số ca đang khớp.
   const allGroups = groupQueue(all);
@@ -198,7 +259,7 @@ function QueueGroups({
     return (
       <div className="flex flex-col gap-4">
         {missedLine}
-        <p className="rounded-group bg-group px-5 py-4 text-ink-2">{full ? NO_MATCH_FULL_TEXT : NO_MATCH_TEXT}</p>
+        <p className="rounded-group bg-group px-5 py-4 text-ink-2">{more ? noMatchPartialText(all.length) : NO_MATCH_TEXT}</p>
       </div>
     );
   }
@@ -229,7 +290,7 @@ function QueueGroups({
   // Thẻ đang chọn không có ca (đang tìm) → chỉ suy ra tạm "Tất cả", không đặt lại.
   const current = groups.some((g) => g.priority === saved.active) ? saved.active : null;
   const tabClass = (selected: boolean) =>
-    `h-8 shrink-0 rounded-md px-4 text-secondary ${selected ? "bg-white font-semibold shadow-input" : ""}`;
+    `h-8 shrink-0 rounded-md px-4 text-secondary max-lg:min-h-11 ${selected ? "bg-white font-semibold shadow-input" : ""}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -274,13 +335,13 @@ function QueueGroups({
             data-priority={group.priority}
             className="flex flex-col gap-1.5"
           >
-            <h2 id={`queue-group-${group.key}`} className="pl-1 text-label text-ink-2">
+            <h2 id={`queue-group-${group.key}`} className="pt-2 pl-1 text-secondary font-semibold text-ink">
               <button
                 type="button"
                 onClick={() => toggle(group.priority)}
                 aria-expanded={open}
                 data-testid="queue-group-toggle"
-                className="inline-flex items-center gap-2 rounded-md py-0.5 pr-2 focus-visible:outline-2 focus-visible:outline-fpt-blue"
+                className="inline-flex items-center gap-2 rounded-md py-0.5 pr-2 focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:min-h-11"
               >
                 <svg
                   width="12"
@@ -296,7 +357,7 @@ function QueueGroups({
                   <path d="M9 6l6 6-6 6" />
                 </svg>
                 <span data-testid="queue-group-name">{group.name}</span>
-                <span className="font-normal" data-testid="queue-group-count">
+                <span className="font-normal text-ink-2" data-testid="queue-group-count">
                   · {total} ca
                 </span>
               </button>
@@ -320,15 +381,15 @@ function QueueGroups({
   );
 }
 
-const PAGER_BUTTON = "h-7.5 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60";
+const PAGER_BUTTON = "h-7.5 rounded-full bg-button-2 px-3.5 text-secondary font-semibold text-fpt-blue disabled:opacity-60 max-lg:min-h-11 max-lg:min-w-11";
 
 function Pager({ name, page, total, onGo }: { name: string; page: number; total: number; onGo: (page: number) => void }) {
   const pages = pageCount(total);
   const from = (page - 1) * GROUP_PAGE_SIZE + 1;
   const to = Math.min(page * GROUP_PAGE_SIZE, total);
   return (
-    <nav aria-label={`Phân trang trong nhóm ${name}`} data-testid="queue-pager" className="flex items-center gap-2 pt-0.5">
-      <span className="mr-auto pl-1 text-secondary text-ink-2">
+    <nav aria-label={`Phân trang trong nhóm ${name}`} data-testid="queue-pager" className="flex items-center gap-2 pt-0.5 max-lg:flex-wrap">
+      <span className="mr-auto pl-1 text-secondary text-ink-2 max-lg:basis-full">
         Ca {from}–{to} / {total} · trang {page}/{pages}
       </span>
       <button type="button" className={PAGER_BUTTON} disabled={page <= 1} onClick={() => onGo(1)}>
@@ -347,25 +408,30 @@ function Pager({ name, page, total, onGo }: { name: string; page: number; total:
   );
 }
 
-function QueueRow({ item, now }: { item: EscalationQueueItem; now: number }) {
+function QueueRow({ item, now }: { item: QueueItem; now: number }) {
   const reason = reasonLine(item);
   const extra = splitLabel(item.label).extra;
-  const meta = [waitingText(item.created_at, now), item.assigned_to ? `${item.assigned_to} đang xử lý` : ""]
-    .filter(Boolean)
-    .join(" · ");
+  const closed = typeof item.closed_at === "string";
+  const meta = closed
+    ? ["Đã đóng", item.close_result ? closeResultLabel(item.close_result) : "", formatAt(item.closed_at!)].filter(Boolean).join(" · ")
+    : [waitingText(item.created_at, now), item.assigned_to ? `${item.assigned_to} đang xử lý` : ""].filter(Boolean).join(" · ");
   return (
-    <li className="border-t border-line first:border-t-0">
+    <li className="border-t border-line first:border-t-0 motion-safe:animate-rise-in">
       <Link
-        to={`/escalations/${item.escalation_id}`}
+        to={closed ? `/escalations/${item.escalation_id}?status=closed` : `/escalations/${item.escalation_id}`}
         data-testid="queue-row"
         data-escalation-id={item.escalation_id}
         data-ticket-id={item.ticket_id}
         data-exit-code={item.exit_code}
-        className="grid min-h-13 grid-cols-[44px_minmax(0,1fr)_auto_14px] items-center gap-4 px-5 py-2 hover:bg-group focus-visible:outline-2 focus-visible:outline-fpt-blue"
+        className={`grid min-h-14 grid-cols-[220px_minmax(0,1fr)_auto_14px] items-center gap-4 border-l-3 py-2.5 pr-5 pl-4.5 hover:bg-group focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fpt-blue max-lg:grid-cols-[minmax(0,1fr)_14px] max-lg:gap-y-1 max-lg:pr-4 ${
+          item.is_deny_case ? "border-l-danger" : "border-l-transparent"
+        }`}
       >
-        <span className="font-mono text-label font-normal text-ink-2">{item.exit_code}</span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate" title={reason}>
+        <span data-testid="queue-exit" className="truncate text-secondary text-ink-2 max-lg:col-start-1 max-lg:row-start-2 max-lg:whitespace-normal">
+          <NhanMa {...exitNhan(item)} />
+        </span>
+        <span className="flex min-w-0 items-center gap-2 max-lg:col-start-1 max-lg:row-start-1 max-lg:flex-wrap">
+          <span className="truncate font-semibold max-lg:whitespace-normal" title={reason}>
             {reason}
           </span>
           {item.is_deny_case ? (
@@ -377,8 +443,8 @@ function QueueRow({ item, now }: { item: EscalationQueueItem; now: number }) {
             <span className="shrink-0 rounded-full bg-orange-bg px-2 text-label text-orange-ink">{extra}</span>
           ) : null}
         </span>
-        <span className="text-secondary text-ink-2">{meta}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <span className="text-secondary text-ink-2 tabular-nums max-lg:col-start-1 max-lg:row-start-3">{meta}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="stroke-ink-3 max-lg:col-start-2 max-lg:row-span-3 max-lg:row-start-1" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
         </svg>
       </Link>

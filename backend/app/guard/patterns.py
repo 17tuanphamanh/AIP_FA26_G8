@@ -74,6 +74,7 @@ class PrivacyFileIn(_In):
     secret_mask: str = Field(min_length=1)
     rules: list[PrivacyRuleIn]
     entropy_exclude: list[ExcludeIn] = Field(min_length=1)
+    pii_exclude: list[ExcludeIn] = Field(min_length=1)  # be-pii-uuid: vùng mà luật PII không che (UUID)
 
 
 class InjectionPatternIn(_In):
@@ -112,6 +113,7 @@ class PrivacyPatterns:
     secret_mask: str
     rules: tuple[PrivacyRule, ...]
     entropy_exclude: tuple[tuple[str, re.Pattern[str]], ...]
+    pii_exclude: tuple[tuple[str, re.Pattern[str]], ...] = ()  # be-pii-uuid: khớp PII chồng lên vùng này → giữ nguyên
 
 
 def _compile(where: str, regex: str) -> re.Pattern[str]:
@@ -146,7 +148,8 @@ def load_privacy_patterns(path: Path) -> PrivacyPatterns:
         pattern = _compile(f"{path.name}:{r.id}", r.regex) if r.regex is not None else None
         rules.append(PrivacyRule(r.id, r.kind, pattern, r.label, r.canonical, r.min_len or 0, r.min_bits or 0.0))
     excludes = tuple((e.id, _compile(f"{path.name}:entropy_exclude.{e.id}", e.regex)) for e in spec.entropy_exclude)
-    return PrivacyPatterns(spec.secret_mask, tuple(rules), excludes)
+    pii_excludes = tuple((e.id, _compile(f"{path.name}:pii_exclude.{e.id}", e.regex)) for e in spec.pii_exclude)
+    return PrivacyPatterns(spec.secret_mask, tuple(rules), excludes, pii_excludes)
 
 
 def load_injection_patterns(path: Path) -> tuple[InjectionPattern, ...]:

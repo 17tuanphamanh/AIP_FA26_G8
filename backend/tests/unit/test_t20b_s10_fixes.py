@@ -13,12 +13,14 @@ from app.domain.states import S_CLASSIFYING, S_CONFIRMING
 from app.graph.late_event import wake_parent
 from tests.fakes.graph import Crash
 from tests.unit._t20b import (
+    ADOBE_PRINTER,
     TC34,
     TC35,
     adobe_item,
     classify,
     extend_item,
     make_flow,
+    oos_item,
     reset_item,
 )
 
@@ -26,9 +28,9 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_s10_8a_started_child_held_elsewhere_does_not_block_parent() -> None:
-    f = make_flow(classify(reset_item(), adobe_item()), lock_timeout=3.0)
-    await f.submit(TC34)
-    assert (await f.waiting("T1")) == "parent_wait"  # con 2 chờ duyệt
+    f = make_flow(classify(adobe_item(), oos_item()), lock_timeout=3.0)
+    await f.submit(ADOBE_PRINTER)
+    assert (await f.waiting("T1")) == "parent_wait"  # D-77: vòng 1 đã báo, con 1 chờ duyệt → cha chờ con
     async with f.h.lock.hold("T1-1"):  # một lượt khác đang giữ khoá con 1 (lâu hơn lock_timeout)
         r = await asyncio.wait_for(wake_parent(f.h.runner, "T1"), timeout=1)  # không CHỜ khoá con đã khởi động
     assert r is not None and (r.status, r.waiting_at) == (S_CLASSIFYING, "parent_wait")

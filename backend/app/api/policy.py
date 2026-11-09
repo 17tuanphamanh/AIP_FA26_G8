@@ -14,9 +14,13 @@ như lúc khởi động. `check_policy_config` chỉ ném một `RuntimeError` 
 - `version_preview` = `"file-" + sha256(JSON chuẩn hoá)[:8]`; chuẩn hoá = `sort_keys=True`, `separators=(",", ":")`,
   `ensure_ascii=False`, UTF-8. KHÔNG so được với `version` của GET (cái đó băm BYTE THÔ của file, gồm thụt dòng và thứ tự khoá):
   cùng nội dung cũng cho hai giá trị khác nhau.
-- `loc` tính TỪ GỐC `content` (không có tiền tố "content"), `errors(include_url=False, include_input=False, include_context=False)`:
-  `ctx` của lỗi `value_error` chứa object `ValueError` — không bỏ thì 500 khi tuần tự hoá. Tên khoá thừa giữ nguyên trong `loc`
-  (khác `api.errors`, vốn đổi thành `<extra>`): thân này là policy của chính Trưởng BP, FE cần chỉ đúng khoá sai.
+- `loc` tính TỪ GỐC `content` (không có tiền tố "content"), `errors(include_url=False, include_input=False)`. `ctx` CHỈ đọc để
+  dựng câu (`expected` của `literal_error`), không bao giờ trả ra: `ctx` của lỗi `value_error` chứa object `ValueError` — tuần tự
+  hoá thì 500. Tên khoá thừa giữ nguyên trong `loc` (khác `api.errors`, vốn đổi thành `<extra>`): thân này là policy của chính
+  Trưởng BP, FE cần chỉ đúng khoá sai.
+- `msg` tiếng Việt theo `type` của lỗi pydantic (`schema_msg`): `literal_error` → "Phải là một trong: <ctx.expected>"; `missing`,
+  `extra_forbidden`, lỗi kiểu số nguyên / số thực / chuỗi / bool → câu cố định; `value_error` / `assertion_error` (câu tiếng Việt do
+  validator của schema tự viết) → giữ câu gốc, bỏ tiền tố "Value error, " pydantic tự thêm; loại khác → "Giá trị không hợp lệ".
 - NaN/Infinity (JSON không chuẩn) bị chặn ngay lúc đọc thân (`parse_constant`, như `parse_policy`) → 422 `invalid_policy` với đúng
   một lỗi `loc == []`. Thân sai hình dạng (thiếu `content`, không phải object, khoá lạ, JSON hỏng) → 422 `invalid_request`.
 - KHÔNG log nội dung policy hay `msg`: chỉ log số lỗi.
@@ -28,6 +32,7 @@ PUT `/api/policy` → 405 (path có GET); `/api/policy/versions/{id}/restore`, `
 import hashlib
 import json
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -62,6 +67,24 @@ VERSION_SHA_CHARS = 8  # "file-" + 8 = 13 ký tự ≤ 16 (cột `policy_version
 FILE_VERSION_ID = 0  # chưa có phiên bản DB
 STARTUP_SUFFIX = " — từ chối khởi động"  # đuôi của `check_policy_config`; vô nghĩa với người sửa policy
 NON_FINITE_MSG = "NaN/Infinity không hợp lệ trong JSON policy"
+
+# Câu lỗi schema theo `type` của pydantic — msg gốc tiếng Anh ("Input should be …") không trả cho Trưởng BP.
+LITERAL_MSG = "Phải là một trong: "
+FIXED_MSGS: dict[str, str] = {
+    "missing": "Thiếu trường bắt buộc",
+    "extra_forbidden": "Trường không được phép",
+    "int_type": "Phải là số nguyên",
+    "int_parsing": "Phải là số nguyên",
+    "int_from_float": "Phải là số nguyên",
+    "float_type": "Phải là số",
+    "float_parsing": "Phải là số",
+    "string_type": "Phải là chuỗi",
+    "bool_type": "Phải là đúng/sai",
+    "bool_parsing": "Phải là đúng/sai",
+}
+OWN_MSG_TYPES = frozenset({"value_error", "assertion_error"})  # validator của schema tự viết câu (tiếng Việt) → giữ câu
+VALUE_ERROR_PREFIX = "Value error, "  # pydantic tự thêm trước câu của `ValueError` — không phải chữ của validator
+FALLBACK_MSG = "Giá trị không hợp lệ"
 
 
 class PolicyView(BaseModel):
@@ -179,14 +202,28 @@ def _config_issues(policy: PolicyFile) -> list[PolicyIssue]:
     return issues
 
 
+def schema_msg(error: Mapping[str, Any]) -> str:
+    """THUẦN: một lỗi pydantic (`ErrorDetails`) → câu tiếng Việt theo `type`. `literal_error` lấy giá trị từ `ctx.expected`
+    (`'a', 'b' or 'c'` → `'a', 'b', 'c'`); thiếu `ctx.expected` → câu dự phòng."""
+    kind = error.get("type")
+    if kind in OWN_MSG_TYPES:
+        return str(error["msg"]).removeprefix(VALUE_ERROR_PREFIX)
+    if kind == "literal_error":
+        expected = (error.get("ctx") or {}).get("expected")
+        if not isinstance(expected, str) or not expected:
+            return FALLBACK_MSG
+        return LITERAL_MSG + ", ".join(expected.rsplit(" or ", 1))
+    return FIXED_MSGS.get(str(kind), FALLBACK_MSG)
+
+
 def policy_issues(content: dict[str, Any]) -> list[PolicyIssue]:
     """Rỗng ⇔ policy hợp lệ. Schema `PolicyFile` trước; chỉ khi schema qua mới kiểm action thuộc intent."""
     try:
         policy = PolicyFile.model_validate(content)
     except ValidationError as exc:
         return [
-            PolicyIssue(loc=list(e["loc"]), msg=e["msg"])
-            for e in exc.errors(include_url=False, include_input=False, include_context=False)
+            PolicyIssue(loc=list(e["loc"]), msg=schema_msg(e))
+            for e in exc.errors(include_url=False, include_input=False)
         ]
     return _config_issues(policy)
 

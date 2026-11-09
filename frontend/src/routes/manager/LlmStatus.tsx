@@ -16,19 +16,19 @@ export const LLM_STATUS_MISSING_TITLE = "Máy chủ chưa có trang Trạng thá
 export const LLM_STATUS_MISSING_TEXT = "Máy chủ chưa có route /api/admin/llm-status. Khi bản backend mới được triển khai, trang này tự hiện số liệu thật.";
 export const COST_UPPER_BOUND_TEXT =
   "Chi phí tính theo bảng giá giờ cao điểm trong cấu hình — là cận trên, có thể cao hơn hoá đơn nhà cung cấp.";
-export const AVG_DEFINITION_TEXT = "Trung bình mỗi ticket = tổng chi ÷ số ticket có ít nhất một lời gọi LLM, tính trên toàn bộ lịch sử.";
+export const AVG_DEFINITION_TEXT = "Trung bình mỗi yêu cầu = tổng chi ÷ số yêu cầu có ít nhất một lời gọi LLM, tính trên toàn bộ lịch sử.";
 const NOT_SET = "chưa cấu hình";
 
 type Dot = "bg-done" | "bg-fpt-orange" | "bg-danger" | "bg-ink-3";
 
 const BACKEND: Record<LlmBackend, { dot: Dot; text: string }> = {
-  scripted: { dot: "bg-ink-3", text: "Giả lập (scripted) — không gọi nhà cung cấp thật" },
-  real: { dot: "bg-done", text: "Thật (real) — gọi nhà cung cấp LLM" },
+  scripted: { dot: "bg-ink-3", text: "Giả lập — không gọi nhà cung cấp thật" },
+  real: { dot: "bg-done", text: "Thật — gọi nhà cung cấp AI" },
 };
 const SPEND: Record<LlmSpendStatus, { dot: Dot; text: (warnPercent: number) => string }> = {
   ok: { dot: "bg-done", text: () => "Trong ngưỡng" },
   warn: { dot: "bg-fpt-orange", text: (w) => `Từ ngưỡng cảnh báo (${formatRate(w / 100)} trần) trở lên` },
-  over: { dot: "bg-danger", text: () => "Đã chạm trần — model trả phí bị chặn" },
+  over: { dot: "bg-danger", text: () => "Đã chạm trần — mô hình trả phí bị chặn" },
 };
 const KB: Record<LlmKbStatus, { dot: Dot; text: string }> = {
   ready: { dot: "bg-done", text: "Đã nạp" },
@@ -78,11 +78,11 @@ function Body({ data }: { data: Status }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card id="llm-backend" title="Backend và model">
+        <Card id="llm-backend" title="Máy chủ và mô hình AI">
           <State dot={backend.dot} text={backend.text} testId="llm-backend-state" />
           <dl className="flex flex-col gap-1">
-            <Row label="Model nhanh (fast)" value={<span className="font-mono">{textOr(data.models.fast)}</span>} testId="llm-model-fast" />
-            <Row label="Model mạnh (strong)" value={<span className="font-mono">{textOr(data.models.strong)}</span>} testId="llm-model-strong" />
+            <Row label="Mô hình nhanh" value={<span className="font-mono">{textOr(data.models.fast)}</span>} testId="llm-model-fast" />
+            <Row label="Mô hình mạnh" value={<span className="font-mono">{textOr(data.models.strong)}</span>} testId="llm-model-strong" />
           </dl>
           <State
             dot={data.api_key_configured ? "bg-done" : "bg-fpt-orange"}
@@ -108,10 +108,10 @@ function Body({ data }: { data: Status }) {
           <dl className="flex flex-col gap-1">
             <Row label="Lời gọi trong 24 giờ qua" value={formatNumber(data.usage.calls_24h, "count")} testId="llm-calls-24h" />
             <Row label="Tổng số lời gọi" value={formatNumber(data.usage.calls_total, "count")} testId="llm-calls-total" />
-            <Row label="Số ticket có lời gọi" value={formatNumber(data.usage.tickets_with_calls, "count")} testId="llm-tickets" />
+            <Row label="Số yêu cầu có lời gọi" value={formatNumber(data.usage.tickets_with_calls, "count")} testId="llm-tickets" />
             <Row
-              label="Chi phí trung bình mỗi ticket"
-              value={avg === null ? "— (chưa có ticket)" : `${formatUsd(avg)} USD`}
+              label="Chi phí trung bình mỗi yêu cầu"
+              value={avg === null ? "— (chưa có yêu cầu)" : `${formatUsd(avg)} USD`}
               testId="llm-avg-cost"
             />
           </dl>
@@ -141,7 +141,7 @@ export function LlmStatus() {
   const missing = routeMissing(query.error);
 
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-title">Trạng thái LLM</h1>
         <p className="text-ink-2">Chỉ để xem — trang này không có thao tác sửa cấu hình nào.</p>
@@ -151,7 +151,7 @@ export function LlmStatus() {
       ) : query.isError ? (
         <LoadError error={query.error} what="trạng thái LLM" />
       ) : query.isPending ? (
-        <p className="text-ink-2">Đang tải trạng thái LLM…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải trạng thái LLM…</p>
       ) : (
         <Body data={query.data} />
       )}

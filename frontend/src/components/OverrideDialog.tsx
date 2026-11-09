@@ -24,6 +24,16 @@ type OverrideDialogProps = {
 };
 
 const NOTE_ERROR_ID = "override-note-error";
+const FIELD_ERROR_ID = "override-field-error";
+
+/** Câu lỗi ngay dưới ô (L1). */
+function FieldError({ text }: { text: string }) {
+  return (
+    <p id={FIELD_ERROR_ID} role="alert" className="-mt-2 px-1 text-secondary text-danger">
+      {text}
+    </p>
+  );
+}
 
 // Hộp "Ghi đè…" (KH 4.6; 4d `e510a6e`): 4 lựa chọn `override_decision` (đủ cả 4 — client không biết quyết định gốc,
 // Q-fe-10), 6 `reason_code`, ghi chú bắt buộc khi "Khác". 403 `reauth_required` → hộp đăng nhập lại (Q-fe-4, Q-fe-25)
@@ -35,7 +45,7 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
   const [decision, setDecision] = useState<OverrideDecision | null>(null);
   const [reason, setReason] = useState<OverrideReasonCode | null>(null);
   const [note, setNote] = useState("");
-  const [error, setError] = useState<{ text: string; field: "note" | null } | null>(null);
+  const [error, setError] = useState<{ text: string; field: "decision" | "reason" | "note" | null } | null>(null);
   const [done, setDone] = useState<{ original: string | null; redacted: boolean } | null>(null);
   const retry = useReauthRetry({
     send: (body: OverrideIn) => submit(ticketId, body),
@@ -57,7 +67,8 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
     if (sending || done || retry.busy()) return;
     const problem = overrideProblem(decision, reason, note);
     if (problem !== null || decision === null || reason === null) {
-      setError(problem === null ? null : { text: problem, field: null });
+      // L1 (soát 01/11): lỗi nhập báo ĐÚNG ô (viền đỏ + câu ngay dưới), không gom về cuối hộp.
+      setError(problem === null ? null : { text: problem, field: decision === null ? "decision" : reason === null ? "reason" : "note" });
       return;
     }
     setError(null);
@@ -72,11 +83,17 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
         <div className="flex flex-col gap-1 text-center">
           <h2 className="text-heading">Ghi đè quyết định</h2>
           <p className="text-secondary text-ink-2">
-            Ticket <span className="font-mono">{ticketId}</span> — ghi vào nhật ký để đánh giá lại (không gỡ được), không đổi ticket.
+            Yêu cầu <span className="font-mono">{ticketId}</span> — ghi vào nhật ký để đánh giá lại (không gỡ được), không đổi yêu cầu.
           </p>
         </div>
 
-        <div role="radiogroup" aria-label="Quyết định đúng" className="overflow-hidden rounded-group border border-line">
+        <div
+          role="radiogroup"
+          aria-label="Quyết định đúng"
+          aria-invalid={error?.field === "decision" || undefined}
+          aria-describedby={error?.field === "decision" ? FIELD_ERROR_ID : undefined}
+          className={`overflow-hidden rounded-group border ${error?.field === "decision" ? "border-danger" : "border-line"}`}
+        >
           {OVERRIDE_OPTIONS.map((option) => {
             const on = decision === option.value;
             return (
@@ -104,9 +121,13 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
             );
           })}
         </div>
+        {error?.field === "decision" ? <FieldError text={error.text} /> : null}
 
-        <div className="overflow-hidden rounded-xl bg-group">
-          <label htmlFor="override-reason" className="flex items-center justify-between gap-4 border-b border-line px-4 py-3">
+        <div className={`overflow-hidden rounded-xl bg-group ${error?.field === "reason" || noteError ? "ring-1 ring-danger" : ""}`}>
+          <label
+            htmlFor="override-reason"
+            className={`flex items-center justify-between gap-4 border-b border-line px-4 py-3 ${error?.field === "reason" ? "bg-danger-bg" : ""}`}
+          >
             Lý do
             <select
               id="override-reason"
@@ -116,7 +137,9 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
                 setReason(e.target.value ? (e.target.value as OverrideReasonCode) : null);
                 setError(null);
               }}
-              className="min-w-0 bg-transparent text-right text-ink-2"
+              aria-invalid={error?.field === "reason" || undefined}
+              aria-describedby={error?.field === "reason" ? FIELD_ERROR_ID : undefined}
+              className="min-w-0 bg-transparent text-right text-ink-2 max-lg:min-h-11"
             >
               <option value="">Chọn lý do…</option>
               {OVERRIDE_REASONS.map((r) => (
@@ -142,9 +165,10 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
               setError(null);
             }}
             placeholder={reason === "other" ? "Ghi chú (bắt buộc khi chọn “Khác”)" : "Ghi chú (không bắt buộc)"}
-            className="block w-full resize-none bg-transparent px-4 py-3"
+            className={`block w-full resize-none px-4 py-3 ${noteError ? "bg-danger-bg" : "bg-transparent"}`}
           />
         </div>
+        {error?.field === "reason" ? <FieldError text={error.text} /> : null}
         {error && noteError ? (
           <p id={NOTE_ERROR_ID} role="alert" data-testid="override-note-error" className="-mt-2 px-1 text-secondary text-danger">
             {error.text}
@@ -154,7 +178,7 @@ export function OverrideDialog({ ticketId, onClose, submit = overrideTicket }: O
           {note.trim().length}/{NOTE_MAX}
         </span>
 
-        {error && !noteError ? (
+        {error && error.field === null ? (
           <p role="alert" className="text-secondary text-danger">
             {error.text}
           </p>

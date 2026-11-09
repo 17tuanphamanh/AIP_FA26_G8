@@ -28,6 +28,7 @@ NEW_PRESETS = frozenset({"tc01", "tc03", "tc07", "tc08", "tc17", "tc18", "tc21a"
 # T20b (phase5 5.2.7): 5 kịch bản nhiều ý — preset cha + preset con `<cha>-<i>`
 MULTI = frozenset({"tc34", "tc35", "tc36", "tc32", "tc12r"})
 T20B_PRESETS = MULTI | {c for cs in gate5.CHILD_PRESETS.values() for c in cs}
+SIM_PRESETS = frozenset({"sim_khongluat"})  # preset dev-only của scripts/sim/chay_thu_phuong_an.py (P6 gói tuần 8, D-67)
 
 
 class IntentsRun(FakeRun):
@@ -60,7 +61,7 @@ def test_all_order_preflight_first_audit_last_every_table_7_6_case() -> None:
 
 def test_nine_new_presets_old_thirteen_untouched() -> None:
     """P8: 9 preset MỚI; 13 preset cũ vẫn đủ (không xoá/đổi tên)."""
-    assert {f.stem for f in SCRIPTED.glob("*.yaml")} == OLD_PRESETS | NEW_PRESETS | T20B_PRESETS
+    assert {f.stem for f in SCRIPTED.glob("*.yaml")} == OLD_PRESETS | NEW_PRESETS | T20B_PRESETS | SIM_PRESETS
     assert {p for p, _, _ in gate5.TICKET_PRESETS} == NEW_PRESETS
 
 

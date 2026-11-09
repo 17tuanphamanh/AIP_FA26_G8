@@ -191,7 +191,7 @@ async def test_read_success_returns_validated_model_and_unpacks() -> None:
 async def test_404_and_empty_list_are_empty_not_errors() -> None:
     reg = _registry(FakeClock(), check_catalog_entry=Handler(status_error(404)),
                     check_lockout_history=Handler([]))  # fmt: skip
-    missing = await reg.call("check_catalog_entry", {"software_name": "utorrent"}, caller_step="B6")
+    missing = await reg.call("check_catalog_entry", {"software_name": "photoshop"}, caller_step="B6")
     assert (missing.data, missing.error, missing.empty) == (None, None, True)
     empty = await reg.call("check_lockout_history", {"user_id": "nv002"}, caller_step="B11")
     assert empty.error is None and empty.empty and empty.data == LockoutList([])

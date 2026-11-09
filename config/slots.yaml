@@ -14,11 +14,20 @@ tool_arg_slots:
   - software_name
   - resource_path
 
+# device_prefixes (Q4, ĐP 09/11): tiền tố mã máy CÓ THẬT (mọi máy trong mock_services/seed.json: LAP, PC). MỘT nguồn cho: chuẩn hoá slot
+# `device_id` dạng lỏng ("lap 0610" → LAP-0610), mã máy trong câu (`device_text` của L-03) và loại trừ mã máy khi dò định danh người
+# (domain/slots.py, domain/target.py). Tiền tố ngoài danh sách chỉ là mã máy khi đứng ngay sau "máy/laptop/pc/thiết bị". Mỗi tiền tố
+# 2–4 chữ HOA; cấm NV, SVC, ADM (dáng mã người); rỗng mà có intent khai báo slot device_id → không khởi động (settings.SlotsFile).
+device_prefixes: [LAP, PC]
+
 # query_slots (3-Q13): slot nối thêm vào câu truy hồi RAG khi câu người dùng chưa có (build_query,
 # Phase 3 chặng 3c) — không nối device_id (vô nghĩa với KB) hay tên intent.
 query_slots:
   - error_code
 
+# fixed_questions (Q3 M1, ĐP 09/11): câu hỏi CỐ ĐỊNH cho slot có danh sách giá trị (account_type, action, permission_level —
+# domain/slots.FIXED_QUESTION_SLOTS). B11 dùng câu này, KHÔNG gọi LLM, khi MỌI slot đang thiếu có câu ở đây (ghép tối đa 2 câu theo thứ tự
+# thiếu); còn slot tự do thì hỏi bằng LLM. Câu `action` phải nêu đủ mọi action_types (test_b11_fixed_questions). Xưng "mình", gọi "bạn".
 intents:
   vpn:                                             # Phase 3; Phase 5 T22a khai báo thêm 3 loại dưới (CHƯA bật)
     required: [device_id, action]
@@ -28,6 +37,8 @@ intents:
       device_id:  {pattern: '^[A-Z]{2,4}-\d{3,5}$'}
       error_code: {pattern: '^(0x[0-9A-Fa-f]{4,8}|\d{3,4})$'}
       reason:     {max_len: 200}                   # luật chung 100 ký tự (P1) chặt hơn — ghi "spec cần sửa (3f)"
+    fixed_questions:
+      action: "Bạn cần mình gia hạn chứng chỉ VPN, cấp lại quyền VPN hay chỉ kiểm tra tình trạng VPN?"
 
   # Phase 5 T22a (phase5 mục 4.1 P6, 4.2): KHAI BÁO, KHÔNG BẬT — ENABLED_INTENTS giữ [vpn] (B3 bỏ intent chưa bật, 3-Q27). Slot
   # bắt buộc/tùy chọn theo B11 §0.3 [Chốt]; account thêm target_user tùy chọn (4.2, Q-T22a-3); value_rules theo 4.2 (+ device_id
@@ -45,6 +56,9 @@ intents:
     value_rules:
       account_type: {pattern: '^(ad|email|erp)$'}
       target_user:  {pattern: '^[a-z0-9_]{3,64}$'}
+    fixed_questions:
+      account_type: "Tài khoản bạn nói là tài khoản đăng nhập máy tính (Windows), email hay ERP?"
+      action: "Bạn cần mình đặt lại mật khẩu hay mở khoá tài khoản?"
   software:
     required: [software_name, device_id]
     optional: [action, version, justification]
@@ -52,6 +66,8 @@ intents:
     value_rules:
       software_name: {pattern: '^[A-Za-z0-9][A-Za-z0-9 .+#-]{0,63}$'}
       device_id:     {pattern: '^[A-Z]{2,4}-\d{3,5}$'}
+    fixed_questions:                               # action là tuỳ chọn (không bao giờ thiếu) — câu chờ ĐP duyệt
+      action: "Bạn cần mình cài phần mềm này lên máy của bạn, đúng không?"
   access:
     required: [action]
     optional: [resource_path, permission_level, duration, target_user, justification]
@@ -64,3 +80,6 @@ intents:
       permission_level: {pattern: '^(read|write|full)$'}
       duration:         {pattern: '^[1-9][0-9]{0,2}$'}
       target_user:      {pattern: '^[a-z0-9_]{3,64}$'}
+    fixed_questions:
+      action: "Bạn cần xem quyền đang có, xin quyền mới hay gia hạn quyền đã có?"
+      permission_level: "Bạn cần quyền chỉ đọc hay được chỉnh sửa?"

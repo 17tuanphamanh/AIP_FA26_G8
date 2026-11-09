@@ -360,8 +360,11 @@ def test_tc09_no_approval_skips_q4b7_checks() -> None:
 
 
 def test_tc16_still_e3_template() -> None:
-    """S0-P7: tc16 (câu hỏi thông tin, KB không có MFA) vẫn E3 `no_grounding` + mẫu "Mình chưa có thông tin về việc này"."""
-    assert gate3.user_message("E3").startswith("Mình chưa có thông tin về việc này")
+    """S0-P7: tc16 (câu hỏi thông tin, KB không có MFA) vẫn E3 `no_grounding` + mẫu giữ ý "chưa có thông tin về việc này".
+    P6 lời nói (ĐP 08/11): mẫu mở bằng câu nói trợ lý hỗ trợ gì (chi tiết: `test_messages_scope.py`), rồi mới báo đã chuyển."""
+    text = gate3.user_message("E3")
+    assert text.startswith("Mình là trợ lý IT, hiện hỗ trợ: ")
+    assert "Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên." in text
 
 
 # ---- Preset và KB fixture --------------------------------------------------------------------------------------------

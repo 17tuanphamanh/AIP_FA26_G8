@@ -411,9 +411,15 @@ def test_ratio_functions_read_v_leaf() -> None:
 def test_alembic_single_head_is_0009() -> None:
     """A4: chuỗi M9 không rẽ nhánh — `0009` (chỉ mục M9) nối thẳng sau `0008` (view M9). Gói 2b (U20, PLAN-2B1 G8 #6): head duy
     nhất nay là `0010` (chống spam), nối thẳng sau `0009`. GIỮ TÊN: `mutate_a4.py` mã I5 gọi test này theo tên.
-    F12: head nay là 0011 (view child_notices), nối sau 0010."""
+    F12: head nay là 0011 (view child_notices), nối sau 0010. Notify-email: head nay là 0012 (email_outbox), nối sau 0011. D-67: head
+    nay là 0013 (chiến lược M5 lúc vận hành), nối sau 0012. P3 menu ⋯: head nay là 0014 (`ticket_hidden`), nối sau 0013. Lô Q12 (D-76, ĐP
+    chốt 09/11): head nay là 0015 (CHECK intent + `it_help`), nối sau 0014."""
     script = ScriptDirectory.from_config(Config(str(REPO / "alembic.ini")))
-    assert script.get_heads() == ["0011"]
+    assert script.get_heads() == ["0015"]
+    assert script.get_revision("0015").down_revision == "0014"  # type: ignore[union-attr]
+    assert script.get_revision("0014").down_revision == "0013"  # type: ignore[union-attr]
+    assert script.get_revision("0013").down_revision == "0012"  # type: ignore[union-attr]
+    assert script.get_revision("0012").down_revision == "0011"  # type: ignore[union-attr]
     assert script.get_revision("0011").down_revision == "0010"  # type: ignore[union-attr]
     assert script.get_revision("0010").down_revision == "0009"  # type: ignore[union-attr]
     assert script.get_revision("0009").down_revision == "0008"  # type: ignore[union-attr]
@@ -496,3 +502,219 @@ def test_leaf_n3_single_source() -> None:
     assert "_SEVERITY_SQL" not in _names(weighted)  # nhánh ELSE nằm trong hằng, không viết lại
     assert not any(isinstance(c, ast.Constant) and isinstance(c.value, str) and "CASE" in c.value for c in ast.walk(weighted))
     assert "_LEAF_N3_SEV_SQL" not in _names(funcs["_point4_per_leaf"])
+
+
+# ---- D13: số đếm tử/mẫu ----------------------------------------------------------------------------------------------
+# Không DB: conn giả nhận diện câu SQL theo mảnh đặc trưng (`_d13_route`), trả dòng tính tay, ghi lại thứ tự câu đã chạy.
+
+D13_RATIO_SQL = {  # nguyên văn SQL của 3 hàm tỉ lệ TRƯỚC D13 — tách mảnh FILTER ra hằng không được đổi một ký tự nào
+    "automation_rate": (
+        "SELECT count(*), count(*) FILTER (WHERE t.final_state = 'S_RESOLVED' AND NOT EXISTS (SELECT 1 FROM approvals a "
+        "WHERE a.ticket_id = t.ticket_id) AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.ticket_id = t.ticket_id)) "
+        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.final_state IS NOT NULL"
+    ),
+    "escalation_rate_raw": (
+        "SELECT count(*), count(*) FILTER (WHERE t.exit_code IS NOT NULL) "
+        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.final_state IS NOT NULL"
+    ),
+    "deflection_rate": (
+        "SELECT count(*), count(*) FILTER (WHERE t.resolution_path = 'deflected') "
+        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.final_state IS NOT NULL"
+    ),
+}
+D13_FILTERS = {"automation_rate": "_AUTOMATED", "escalation_rate_raw": "_ESCALATED", "deflection_rate": "_DEFLECTED"}
+
+
+def _d13_route(sql: str) -> str:
+    """Tên câu SQL theo mảnh đặc trưng; xét theo thứ tự (câu đếm chung chứa mảnh của cả 3 tỉ lệ nên xét trước)."""
+    if "resolution_path = 'deflected'" in sql and "t.exit_code IS NOT NULL" in sql:
+        return "ratio_counts"
+    for name, piece in (
+        ("escalation_rate_weighted", "GROUP BY g.sev"), ("automation_rate", "NOT EXISTS (SELECT 1 FROM approvals"),
+        ("deflection_rate", "resolution_path = 'deflected'"), ("escalation_rate_raw", "t.exit_code IS NOT NULL"),
+        ("approval_expired_count", "t.exit_code = 'E6'"), ("decided_by_distribution", "GROUP BY x.decided_by"),
+        ("top_matched_rules", "GROUP BY x.matched_rule_id"), ("override_count", "a.step = :step"),
+        ("e1_split", "t.exit_code = 'E1'"), ("e3_cases", "t.exit_code = 'E3'"),
+    ):  # fmt: skip
+        if piece in sql:
+            return name
+    if "ap.approver_id = :approver_id" in sql:
+        return "own_sample"
+    raise AssertionError(f"câu SQL lạ: {sql[:80]}")
+
+
+class _D13Result:
+    def __init__(self, rows: list[Any]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[Any]:
+        return self.rows
+
+    def one(self) -> Any:
+        [row] = self.rows
+        return row
+
+
+class D13Conn:
+    def __init__(self, rows: Mapping[str, list[Any]]) -> None:
+        self.rows = rows
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def execute(self, clause: Any, params: dict[str, Any]) -> _D13Result:
+        name = _d13_route(clause.text)
+        self.calls.append((name, clause.text, params))
+        return _D13Result(list(self.rows[name]))
+
+    def names(self) -> list[str]:
+        return [name for name, _, _ in self.calls]
+
+
+# 3 lá đã kết thúc: A S_RESOLVED auto (không phiếu, không escalation), B E1, C S_RESOLVED có phiếu duyệt.
+# automation: chỉ A → (num, den) = (1, 3); raw: chỉ B có exit_code → (1, 3); deflection: không lá nào deflected → (0, 3).
+# Dòng tỉ lệ = (den, num); dòng ratio_counts = (den, automation, raw, deflection).
+HAND_3: dict[str, list[Any]] = {
+    "automation_rate": [(3, 1)], "escalation_rate_raw": [(3, 1)], "deflection_rate": [(3, 0)],
+    "ratio_counts": [(3, 1, 1, 0)],
+    # nhóm N3 (sev, #lá, #lá có exit_code): routine (1) 4 lá / 1 escalate; approval (2) KHÔNG có lá; sensitive (3) 2 / 2
+    "escalation_rate_weighted": [(1, 4, 1), (3, 2, 2)],
+    "approval_expired_count": [(0,)], "decided_by_distribution": [], "top_matched_rules": [], "override_count": [(0,)],
+    "e1_split": [], "e3_cases": [], "own_sample": [(0,)],
+}  # fmt: skip
+EMPTY: dict[str, list[Any]] = {
+    "automation_rate": [(0, 0)], "escalation_rate_raw": [(0, 0)], "deflection_rate": [(0, 0)],
+    "ratio_counts": [(0, 0, 0, 0)], "escalation_rate_weighted": [],
+}  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_ratio_sql_unchanged() -> None:
+    """Hàm tỉ lệ dùng lại hằng mảnh FILTER nhưng câu SQL gửi đi giữ NGUYÊN VĂN như trước D13 (giá trị không đổi)."""
+    for name, sql in D13_RATIO_SQL.items():
+        conn = D13Conn(HAND_3)
+        await getattr(business, name)(conn, FRM, TO)
+        assert [(n, s) for n, s, _ in conn.calls] == [(name, sql)], name
+
+
+@pytest.mark.asyncio
+async def test_ratio_counts_shares_filters() -> None:
+    """MỘT nguồn điều kiện: mảnh FILTER của từng tỉ lệ có trong câu của hàm tỉ lệ VÀ câu đếm chung; câu đếm đọc `v_leaf`,
+    cùng cửa sổ lá và cùng mẫu số (lá đã kết thúc)."""
+    conn = D13Conn(HAND_3)
+    await business.ratio_counts(conn, FRM, TO)  # type: ignore[arg-type]
+    [(name, counts_sql, params)] = conn.calls
+    assert name == "ratio_counts" and params == {"frm": FRM, "to": TO}
+    for key, const in D13_FILTERS.items():
+        piece = getattr(business, const)
+        assert f"FILTER (WHERE {piece})" in D13_RATIO_SQL[key], key
+        assert f"FILTER (WHERE {piece})" in counts_sql, key
+    assert f"FROM {views.V_LEAF} t WHERE {business._LEAF_WINDOW} AND {business._DONE}" in counts_sql
+    names = {n.id for n in ast.walk(_d13_func("ratio_counts")) if isinstance(n, ast.Name)}
+    assert {"V_LEAF", "_AUTOMATED", "_ESCALATED", "_DEFLECTED"} <= names
+
+
+def _d13_func(name: str) -> ast.AsyncFunctionDef:
+    tree = ast.parse(BUSINESS_SRC.read_text(encoding="utf-8"))
+    [fn] = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == name]
+    return fn
+
+
+@pytest.mark.asyncio
+async def test_counts_hand_3_done_1_auto() -> None:
+    """3 lá đã kết thúc, 1 lá auto → automation (1/3); raw (1/3); deflection (0/3). Tỉ lệ == num/den từng khoá."""
+    counts = await business.ratio_counts(D13Conn(HAND_3), FRM, TO)  # type: ignore[arg-type]
+    assert counts == {
+        "automation_rate": business.RatioCount(num=1, den=3),
+        "escalation_rate_raw": business.RatioCount(num=1, den=3),
+        "deflection_rate": business.RatioCount(num=0, den=3),
+    }
+    for key, count in counts.items():
+        rate = await getattr(business, key)(D13Conn(HAND_3), FRM, TO)
+        assert rate == pytest.approx(count.num / count.den), key  # 1/3, 1/3, 0/3
+
+
+@pytest.mark.asyncio
+async def test_counts_empty_window() -> None:
+    """Mẫu 0 → tỉ lệ None (không đổi), số đếm 0/0; weighted: cỡ mẫu 0, 3 nhóm 0/0 kèm trọng số danh nghĩa."""
+    counts = await business.ratio_counts(D13Conn(EMPTY), FRM, TO)  # type: ignore[arg-type]
+    assert counts == dict.fromkeys(D13_FILTERS, business.RatioCount(num=0, den=0))
+    for key in D13_FILTERS:
+        assert await getattr(business, key)(D13Conn(EMPTY), FRM, TO) is None, key
+    r = await escalation_rate_weighted(D13Conn(EMPTY), FRM, TO)  # type: ignore[arg-type]
+    assert (r.raw, r.weighted) == (None, None)
+    assert r.count == business.WeightedCount(
+        den=0, by_group={g: business.GroupCount(num=0, den=0, weight=N3_WEIGHTS[g]) for g in N3_WEIGHTS}
+    )
+
+
+@pytest.mark.asyncio
+async def test_weighted_counts_missing_group() -> None:
+    """Nhóm thiếu lá: routine 1/4 (w 0,7), approval 0/0 (w 0,2), sensitive 2/2 (w 0,1). Cỡ mẫu = 4 + 0 + 2 = 6; KHÔNG có tử
+    tổng (a/b của weighted chỉ hiện theo nhóm). weighted = (0,7·1/4 + 0,1·2/2) / (0,7 + 0,1) = 0,275 / 0,8 = 0,34375."""
+    r = await escalation_rate_weighted(D13Conn(HAND_3), FRM, TO)  # type: ignore[arg-type]
+    assert r.count == business.WeightedCount(
+        den=6,
+        by_group={
+            "routine": business.GroupCount(num=1, den=4, weight=0.7),
+            "approval": business.GroupCount(num=0, den=0, weight=0.2),
+            "sensitive": business.GroupCount(num=2, den=2, weight=0.1),
+        },
+    )
+    assert [f.name for f in dataclasses.fields(business.WeightedCount)] == ["den", "by_group"]
+    assert r.weighted == pytest.approx(0.34375)
+    assert r.raw == pytest.approx(3 / 6)  # (1 + 0 + 2) / 6 — giá trị cũ, không đổi
+    assert r.by_group == {"routine": 0.25, "approval": None, "sensitive": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_weighted_subclass_is_weightedrate() -> None:
+    """Luật 1 / drift nhận lớp con: vẫn là `WeightedRate`, 4 trường giữ nguyên giá trị tính tay; `WeightedRate` vẫn 4 trường."""
+    r = await escalation_rate_weighted(D13Conn(HAND_3), FRM, TO)  # type: ignore[arg-type]
+    assert isinstance(r, WeightedRate) and isinstance(r, business.CountedWeightedRate)
+    assert [f.name for f in dataclasses.fields(WeightedRate)] == ["raw", "weighted", "by_group", "sensitivity"]
+    # 60/30/10: (0,6·0,25 + 0,1·1) / 0,7 = 0,25/0,7; 80/15/5: (0,8·0,25 + 0,05·1) / 0,85 = 0,25/0,85
+    assert r.sensitivity == {"60/30/10": pytest.approx(0.25 / 0.7), "80/15/5": pytest.approx(0.25 / 0.85)}
+
+
+@pytest.mark.asyncio
+async def test_business_metrics_counts_all() -> None:
+    """scope all: `values` như cũ (weighted là `WeightedRate` GỐC, không lộ lớp con ra response); `counts` đủ 4 khoá; câu đếm
+    chung chạy đúng một lần SAU mọi truy vấn chỉ số (cùng conn = cùng snapshot ở route); không đếm cỡ mẫu own."""
+    conn = D13Conn(HAND_3)
+    m = await business.business_metrics(conn, FRM, TO)  # type: ignore[arg-type]
+    assert tuple(m.values) == business.BUSINESS_METRICS
+    assert m.values["automation_rate"] == pytest.approx(1 / 3)
+    assert m.values["deflection_rate"] == 0.0
+    weighted = m.values["escalation_rate_weighted"]
+    assert type(weighted) is WeightedRate
+    assert weighted.weighted == pytest.approx(0.34375)
+    assert set(m.counts) == set(business.COUNTED_KEYS)
+    assert m.counts["automation_rate"] == business.RatioCount(num=1, den=3)
+    assert m.counts["escalation_rate_weighted"].den == 6
+    assert m.sample is None
+    assert conn.names().count("ratio_counts") == 1 and conn.names()[-1] == "ratio_counts"
+    assert "own_sample" not in conn.names()
+
+
+@pytest.mark.asyncio
+async def test_business_metrics_own_sample() -> None:
+    """scope own: 3 khoá own là SỐ ĐẾM → không có `counts`; chỉ `sample` = số lá own trong cửa sổ (5), cùng điều kiện cửa sổ +
+    phiếu của người duyệt như 3 hàm own."""
+    rows: dict[str, list[Any]] = {**HAND_3, "approval_expired_count": [(1,)], "decided_by_distribution": [("llm", 1), ("rule", 3)],
+            "own_sample": [(5,)]}  # fmt: skip
+    conn = D13Conn(rows)
+    m = await business.business_metrics(conn, FRM, TO, approver_id="u-l1")  # type: ignore[arg-type]
+    assert m.values == {"approval_expired_count": 1, "decided_by_distribution": {"llm": 1, "rule": 3}, "top_matched_rules": []}
+    assert m.counts == {}
+    assert m.sample == 5
+    [(_, sql, params)] = [c for c in conn.calls if c[0] == "own_sample"]
+    assert sql == f"SELECT count(*) FROM {views.V_LEAF} t WHERE {business._LEAF_WINDOW} AND {business._OWN}"
+    assert params == {"frm": FRM, "to": TO, "approver_id": "u-l1"}
+    assert "ratio_counts" not in conn.names()
+
+
+def test_business_metrics_defaults() -> None:
+    """Chỗ khác dựng `BusinessMetrics` 2 tham số (spy của test snapshot _pg) vẫn chạy: `counts` rỗng, `sample` None."""
+    m = business.BusinessMetrics(values=dict.fromkeys(business.BUSINESS_METRICS), unavailable=())
+    assert (m.counts, m.sample) == ({}, None)
+    assert business.COUNTED_KEYS == ("automation_rate", "escalation_rate_raw", "escalation_rate_weighted", "deflection_rate")
+    assert set(business.COUNTED_KEYS) <= set(business.BUSINESS_METRICS)

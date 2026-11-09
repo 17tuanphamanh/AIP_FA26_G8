@@ -399,7 +399,11 @@ roles:
            max_tokens: 400, temperature: 0, budget_in: 2000}
   strong: {provider: cloud_a, model_setting: strong_model, timeout_s: 20, max_retries: 1, deadline_s: 50,
            max_tokens: 900, temperature: 0, budget_in: 6000}
-fallback: {fast: [], strong: []}
+  chat_fast:   {provider: cloud_a, model_setting: chat_model, model_default_role: fast, timeout_s: 12, max_retries: 2,
+                deadline_s: 45, max_tokens: 400, temperature: 0, budget_in: 3000}
+  chat_strong: {provider: cloud_a, model_setting: chat_model, model_default_role: strong, timeout_s: 25, max_retries: 1,
+                deadline_s: 55, max_tokens: 900, temperature: 0, budget_in: 6000}
+fallback: {fast: [], strong: [], chat_fast: [], chat_strong: []}
 spend: {cap_usd: 38, warn_ratio: 0.8, refresh_s: 60}
 limits: {max_concurrency: 8, retry_on: [429], backoff_base_s: 1, jitter_max_s: 0.25}
 cache: {ttl_hours_runtime: 24}
@@ -409,7 +413,8 @@ pricing:
 
 # Như _PAID_YAML nhưng vai trò `fast` có MỘT fallback mà model của nó KHÔNG có dòng giá.
 _FALLBACK_NO_PRICE_YAML = _PAID_YAML.replace(
-    "fallback: {fast: [], strong: []}", "fallback: {fast: [{provider: cloud_a, model: fb-khong-gia}], strong: []}"
+    "fallback: {fast: [], strong: [], chat_fast: [], chat_strong: []}",
+    "fallback: {fast: [{provider: cloud_a, model: fb-khong-gia}], strong: [], chat_fast: [], chat_strong: []}",
 )
 
 

@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard Strategies */
+        get: operations["dashboard_strategies_api_dashboard_strategies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/alerts": {
         parameters: {
             query?: never;
@@ -66,6 +83,126 @@ export interface paths {
         put?: never;
         /** Ack */
         post: operations["ack_api_alerts__alert_id__ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Llm Status */
+        get: operations["llm_status_api_admin_llm_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/email-outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Email Outbox */
+        get: operations["email_outbox_api_admin_email_outbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/strategy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Strategy */
+        get: operations["get_strategy_api_admin_strategy_get"];
+        /** Put Strategy */
+        put: operations["put_strategy_api_admin_strategy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/strategy/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Strategy History */
+        get: operations["strategy_history_api_admin_strategy_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current Policy */
+        get: operations["current_policy_api_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Policy Versions */
+        get: operations["policy_versions_api_policy_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/policy/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Policy */
+        post: operations["validate_policy_api_policy_validate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -198,10 +335,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Tickets
+         * @description P3 "Gần đây": ticket gốc của CHÍNH người gọi — lọc `requester_id = p.user_id` cho MỌI vai (kể cả `ticket:read:any`: danh
+         *     sách không bao giờ có ticket người khác). Chỉ DB (không checkpoint); route đọc như `GET /{id}` — không bộ đếm 429.
+         */
+        get: operations["list_tickets_api_tickets_get"];
         put?: never;
         /** Create Ticket */
         post: operations["create_ticket_api_tickets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide Ticket
+         * @description Ẩn ticket gốc của chính người gọi khỏi danh sách "Gần đây" (`GET /api/tickets`). Không xoá dữ liệu; `GET /{id}` vẫn đọc được.
+         *     Gọi lại vẫn 204. Không có / không phải của người gọi / ticket con → 404 `not_found`.
+         */
+        post: operations["hide_ticket_api_tickets__ticket_id__hide_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -259,6 +422,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply
+         * @description T20b P11 (5.2.6): người dùng trả lời MỘT lần cho mọi ý của tin tổng hợp. Thứ tự kiểm như `/messages`: 413 → quyền → 404 → 403
+         *     (không phải chủ) → 409 `CHILD_MESSAGE` (gọi vào ticket con) → 422 hình dạng body → privacy guard TỪNG `answer`/`note` (503 khi guard
+         *     lỗi; bí mật → MỘT sự kiện `privacy_secret_redacted {count}` tổng) → `start_event(S_CONFIRMING, {"kind":"reply","items":…},
+         *     wait_node="parent_reply_wait", validate=…)`: không ở `parent_reply_wait` (kể cả ticket thường) → 409 + `late_event`; `items` ≠ đúng
+         *     `awaiting` → 422 `{error:"invalid_request", fields:["body.items.<child_id>"]}`. Tin người dùng ghép do NODE ghi (P8), không do route.
+         */
+        post: operations["reply_api_tickets__ticket_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/override": {
         parameters: {
             query?: never;
@@ -270,6 +457,23 @@ export interface paths {
         put?: never;
         /** Override */
         post: operations["override_api_tickets__ticket_id__override_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ticket Events */
+        get: operations["ticket_events_api_tickets__ticket_id__events_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -344,10 +548,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/escalations/{escalation_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Escalation */
+        post: operations["close_escalation_api_escalations__escalation_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ticket Trace */
+        get: operations["ticket_trace_api_tickets__ticket_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Notifications */
+        get: operations["my_notifications_api_me_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AffectedView
+         * @description Người BỊ TÁC ĐỘNG (`Action.requested_for`) — có thể khác người gửi (account/access, slot `target_user`).
+         */
+        AffectedView: {
+            /** User Id */
+            user_id: string;
+            /** Is Requester */
+            is_requester: boolean;
+            /** Department */
+            department: string | null;
+            manager: components["schemas"]["ManagerRef"];
+        };
         /** AiDashboard */
         AiDashboard: {
             /**
@@ -443,6 +711,63 @@ export interface components {
              */
             created_at: string;
         };
+        /** ApprovalInfo */
+        ApprovalInfo: {
+            /** Approver Id */
+            approver_id: string | null;
+            /** Approver Name */
+            approver_name: string | null;
+            result: components["schemas"]["ApprovalResult"] | null;
+            /** At */
+            at: string | null;
+        };
+        /** @enum {string} */
+        ApprovalResult: "pending" | "approved" | "rejected" | "timeout";
+        /**
+         * ApprovalView
+         * @description Phiếu cho người duyệt (P6) — ĐÚNG 14 khoá (12 khoá P6 + F6 `affected`, `risk_view`); `action`/`facts` là object ĐÃ BĂM
+         *     (G4-13).
+         */
+        ApprovalView: {
+            /** Approval Id */
+            approval_id: string;
+            /** Ticket Id */
+            ticket_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Deadline
+             * Format: date-time
+             */
+            deadline: string;
+            requester: components["schemas"]["RequesterView"];
+            /** Request Summary */
+            request_summary: string;
+            /** Action */
+            action: {
+                [key: string]: unknown;
+            };
+            /** Action Plan Hash */
+            action_plan_hash: string;
+            /** Risk */
+            risk: {
+                [key: string]: unknown;
+            } | null;
+            /** Facts */
+            facts: {
+                [key: string]: unknown;
+            };
+            /**
+             * Role As
+             * @enum {string}
+             */
+            role_as: "primary" | "backup" | "viewer";
+            procedure: components["schemas"]["ProcedureRef"] | null;
+            affected: components["schemas"]["AffectedView"];
+            risk_view: components["schemas"]["RiskView"] | null;
+            /** Matched Rules */
+            matched_rules?: components["schemas"]["MatchedRule"][] | null;
+        };
         /** @enum {string} */
         AudienceParam: "manager" | "dev" | "ops";
         /** BusinessAll */
@@ -464,7 +789,20 @@ export interface components {
              * @enum {string}
              */
             scope: "all";
+            /** Min Sample */
+            min_sample: number;
             metrics: components["schemas"]["BusinessAllMetrics"];
+            counts: components["schemas"]["BusinessAllCounts"];
+        };
+        /**
+         * BusinessAllCounts
+         * @description Số đếm tử/mẫu — tập trường = `COUNTED_KEYS` (test hai chiều).
+         */
+        BusinessAllCounts: {
+            automation_rate: components["schemas"]["RatioCount"] | null;
+            escalation_rate_raw: components["schemas"]["RatioCount"] | null;
+            escalation_rate_weighted: components["schemas"]["WeightedCount"] | null;
+            deflection_rate: components["schemas"]["RatioCount"] | null;
         };
         /** BusinessAllMetrics */
         BusinessAllMetrics: {
@@ -507,6 +845,10 @@ export interface components {
              * @enum {string}
              */
             scope: "own";
+            /** Min Sample */
+            min_sample: number;
+            /** Sample */
+            sample: number | null;
             metrics: components["schemas"]["BusinessOwnMetrics"];
         };
         /** BusinessOwnMetrics */
@@ -520,6 +862,23 @@ export interface components {
             /** Top Matched Rules */
             top_matched_rules: components["schemas"]["RuleCount"][] | null;
         };
+        /** ClassifyInfo */
+        ClassifyInfo: {
+            /** Intent */
+            intent: string | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Model Probs */
+            model_probs: {
+                [key: string]: number;
+            } | null;
+            /** Model Version */
+            model_version: string | null;
+            /** Is Multi */
+            is_multi: boolean | null;
+        };
+        /** @enum {string} */
+        CloseResult: "completed" | "confirmed_denial" | "reopened_as_new";
         /** DayCost */
         DayCost: {
             /**
@@ -529,6 +888,11 @@ export interface components {
             day_start: string;
             /** Cost Usd */
             cost_usd: number;
+        };
+        /** DiagnoseInfo */
+        DiagnoseInfo: {
+            /** Fact Keys */
+            fact_keys: string[];
         };
         /** E1Split */
         E1Split: {
@@ -574,10 +938,129 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** EscalationCloseOut */
+        EscalationCloseOut: {
+            /** Escalation Id */
+            escalation_id: number;
+            /** Ticket Id */
+            ticket_id: string;
+            close_result: components["schemas"]["CloseResult"];
+            /** Close Reason */
+            close_reason: string | null;
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /** Closed By */
+            closed_by: string;
+            /** Close Note */
+            close_note: string;
+            /** New Ticket Id */
+            new_ticket_id: string | null;
+        };
+        /** EscalationQueueItem */
+        EscalationQueueItem: {
+            /** Escalation Id */
+            escalation_id: number;
+            /** Ticket Id */
+            ticket_id: string;
+            /** Exit Code */
+            exit_code: string;
+            /** Priority */
+            priority: number;
+            /** Label */
+            label: string;
+            /** Reason Detail */
+            reason_detail: string | null;
+            /** Is Deny Case */
+            is_deny_case: boolean;
+            /** Handoff Note */
+            handoff_note: {
+                [key: string]: unknown;
+            };
+            /** Assigned To */
+            assigned_to: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Closed At */
+            closed_at: string | null;
+            close_result: components["schemas"]["CloseResult"] | null;
+            /** Closed By */
+            closed_by: string | null;
+            /** Close Note */
+            close_note: string | null;
+        };
+        /** EscalationQueuePage */
+        EscalationQueuePage: {
+            /** Items */
+            items: components["schemas"]["EscalationQueueItem"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** ExecCall */
+        ExecCall: {
+            /** Name */
+            name: string;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "ok" | "failed";
+        };
+        /** ExecutionInfo */
+        ExecutionInfo: {
+            /** Action */
+            action: string | null;
+            /** Success */
+            success: boolean | null;
+            /** Rollback Status */
+            rollback_status: string | null;
+            /** Calls */
+            calls: components["schemas"]["ExecCall"][];
+        };
+        /** GroupCount */
+        GroupCount: {
+            /** Num */
+            num: number;
+            /** Den */
+            den: number;
+            /** Weight */
+            weight: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HistoryItem */
+        HistoryItem: {
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Changed By */
+            changed_by: string;
+            /** Strategy From */
+            strategy_from: string;
+            /** Strategy To */
+            strategy_to: string;
+            /** Reason */
+            reason: string;
+        };
+        /** InvalidPolicy */
+        InvalidPolicy: {
+            /**
+             * Error
+             * @constant
+             */
+            error: "invalid_policy";
+            /** Errors */
+            errors: components["schemas"]["PolicyIssue"][];
         };
         /**
          * InvalidRequestBody
@@ -592,6 +1075,41 @@ export interface components {
             /** Fields */
             fields: string[];
         };
+        /** Kb */
+        Kb: {
+            /** Alias */
+            alias: string;
+            /** Collection */
+            collection: string | null;
+            status: components["schemas"]["KbState"];
+        };
+        /** KbSource */
+        KbSource: {
+            /** Doc Id */
+            doc_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** @enum {string} */
+        KbState: "ready" | "missing" | "unknown";
+        /** @enum {string} */
+        Kind: "approval_decided" | "escalation_closed";
+        /** LlmStatus */
+        LlmStatus: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Backend */
+            backend: ("scripted" | "real") | null;
+            models: components["schemas"]["Models"];
+            /** Api Key Configured */
+            api_key_configured: boolean;
+            spend: components["schemas"]["Spend"];
+            usage: components["schemas"]["Usage"];
+            kb: components["schemas"]["Kb"];
+        };
         /** LoginIn */
         LoginIn: {
             /** Username */
@@ -601,12 +1119,382 @@ export interface components {
             /** Otp */
             otp?: string | null;
         };
+        /**
+         * ManagerRef
+         * @description Quản lý của người bị tác động: `known` ⇔ có dòng `users` VÀ `manager_id` khác NULL; `unknown` → `user_id`/`full_name` null.
+         *     `full_name` null khi `known` mà dòng của sếp chưa có (chưa từng đăng nhập).
+         */
+        ManagerRef: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "known" | "unknown";
+            /** User Id */
+            user_id: string | null;
+            /** Full Name */
+            full_name: string | null;
+        };
+        /** MatchedRule */
+        MatchedRule: {
+            /** Rule Id */
+            rule_id: string;
+            /** Description */
+            description: string | null;
+            decision: components["schemas"]["RuleDecision"] | null;
+            /** Applied */
+            applied: boolean;
+        };
+        /** Models */
+        Models: {
+            /** Fast */
+            fast: string | null;
+            /** Strong */
+            strong: string | null;
+        };
+        /** NotificationPage */
+        NotificationPage: {
+            /** Items */
+            items: components["schemas"]["NotificationView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** NotificationView */
+        NotificationView: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["Kind"];
+            /** Ticket Id */
+            ticket_id: string;
+            /** Text */
+            text: string;
+            result: components["schemas"]["Result"];
+            /** New Ticket Id */
+            new_ticket_id: string | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** OutboxItem */
+        OutboxItem: {
+            /** Id */
+            id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Sent At */
+            sent_at: string | null;
+            /** Kind */
+            kind: string;
+            /** Recipient */
+            recipient: string | null;
+            /** Status */
+            status: string;
+            /** Attempts */
+            attempts: number;
+            /** Last Error Class */
+            last_error_class: string | null;
+        };
+        /** OutboxList */
+        OutboxList: {
+            /** Items */
+            items: components["schemas"]["OutboxItem"][];
+        };
+        /** @enum {string} */
+        OutboxStatus: "pending" | "sent" | "failed" | "skipped";
+        /** OutcomeInfo */
+        OutcomeInfo: {
+            /** Route */
+            route: string | null;
+            /** Exit Code */
+            exit_code: string | null;
+            close_result?: components["schemas"]["CloseResult"] | null;
+            /** Close Note */
+            close_note?: string | null;
+        };
+        /** PolicyInfo */
+        PolicyInfo: {
+            /** Rule Id */
+            rule_id: string | null;
+            /** Rule Description */
+            rule_description: string | null;
+            /** Policy Decision */
+            policy_decision: string | null;
+            /** Risk Level */
+            risk_level: string | null;
+            /** Decided By */
+            decided_by: ("rule" | "llm") | null;
+            /** Raw Prob */
+            raw_prob: number | null;
+            /** Calibrated Prob */
+            calibrated_prob: number | null;
+            /** Matched Rules */
+            matched_rules?: components["schemas"]["MatchedRule"][] | null;
+        };
+        /**
+         * PolicyIssue
+         * @description Một lỗi policy: vị trí từ gốc `content` + câu lỗi. Không `input`, `url`, `ctx`.
+         */
+        PolicyIssue: {
+            /** Loc */
+            loc: (string | number)[];
+            /** Msg */
+            msg: string;
+        };
+        /** PolicyVersionItem */
+        PolicyVersionItem: {
+            /** Version Id */
+            version_id: number;
+            /** Version */
+            version: string;
+            /** Updated By */
+            updated_by: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Is Current */
+            is_current: boolean;
+            /** Restored From */
+            restored_from: string | null;
+        };
+        /**
+         * PolicyView
+         * @description Policy đang chạy — ĐÚNG 6 khoá.
+         */
+        PolicyView: {
+            /** Version Id */
+            version_id: number;
+            /** Version */
+            version: string;
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+            /** Updated By */
+            updated_by: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Is Current */
+            is_current: boolean;
+        };
+        /** ProcedureRef */
+        ProcedureRef: {
+            /** Doc Id */
+            doc_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** @enum {string} */
+        QueueStatus: "open" | "closed";
+        /** RatioCell */
+        RatioCell: {
+            /** Num */
+            num: number;
+            /** Den */
+            den: number;
+        };
+        /** RatioCount */
+        RatioCount: {
+            /** Num */
+            num: number;
+            /** Den */
+            den: number;
+        };
+        /** RatioMetric */
+        RatioMetric: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "ratio";
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["RatioCell"] | null;
+            };
+        };
+        /** RequesterView */
+        RequesterView: {
+            /** Role */
+            role: string;
+            /** Department */
+            department: string | null;
+        };
+        /** @enum {string} */
+        Result: "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new";
+        /**
+         * RiskView
+         * @description `RiskDecision` (cùng tên trường, cùng enum — một nguồn) + 2 cờ suy ra; FE ghép chữ hiển thị từ các cờ này.
+         */
+        RiskView: {
+            /**
+             * Decided By
+             * @enum {string}
+             */
+            decided_by: "rule" | "llm";
+            /** Policy Decision */
+            policy_decision: ("allow" | "approval_required" | "deny") | null;
+            /** Matched Rule Id */
+            matched_rule_id: string | null;
+            /** Raw Prob */
+            raw_prob: number | null;
+            /** Calibrated Prob */
+            calibrated_prob: number | null;
+            /** P Method */
+            p_method: ("self_report" | "sampling_k5") | null;
+            /**
+             * Risk Level
+             * @enum {string}
+             */
+            risk_level: "low" | "medium" | "high";
+            /**
+             * Route
+             * @enum {string}
+             */
+            route: "AUTO" | "HITL" | "ESCALATE_L2";
+            /** Reason */
+            reason: string;
+            /** Thresholds */
+            thresholds: [
+                number,
+                number
+            ] | null;
+            /** Calibrated */
+            calibrated: boolean;
+            /** Auto Allowed */
+            auto_allowed: boolean;
+        };
         /** RuleCount */
         RuleCount: {
             /** Rule Id */
             rule_id: string;
             /** Count */
             count: number;
+        };
+        /** @enum {string} */
+        RuleDecision: "allow" | "approval_required" | "deny";
+        /** @enum {string} */
+        ScreenDecision: "safe" | "attack" | "suspected" | "unavailable";
+        /** ScreenInfo */
+        ScreenInfo: {
+            /** Layer */
+            layer: ("regex" | "model" | "llm") | null;
+            /** P Injection */
+            p_injection: number | null;
+            decision: components["schemas"]["ScreenDecision"] | null;
+        };
+        /** @enum {string} */
+        Source: "real" | "sim";
+        /** Spend */
+        Spend: {
+            /** Total Usd */
+            total_usd: number;
+            /** Cap Usd */
+            cap_usd: number;
+            /** Percent */
+            percent: number;
+            /** Warn Percent */
+            warn_percent: number;
+            status: components["schemas"]["SpendState"];
+        };
+        /** @enum {string} */
+        SpendState: "ok" | "warn" | "over";
+        /** StrategyDashboard */
+        StrategyDashboard: {
+            source: components["schemas"]["Source"];
+            /**
+             * From
+             * Format: date-time
+             */
+            from: string;
+            /**
+             * To
+             * Format: date-time
+             */
+            to: string;
+            /** Strategies */
+            strategies: string[];
+            /** Intent Mix */
+            intent_mix: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** Metrics */
+            metrics: (components["schemas"]["RatioMetric"] | components["schemas"]["ValueMetric"])[];
+            /** Unavailable */
+            unavailable: string[];
+        };
+        /** StrategyHistory */
+        StrategyHistory: {
+            /** Items */
+            items: components["schemas"]["HistoryItem"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** StrategyState */
+        StrategyState: {
+            /** Strategy */
+            strategy: string;
+            /** Selectable */
+            selectable: string[];
+            /** Llm Calibrated */
+            llm_calibrated: boolean;
+            /** Eval Mode */
+            eval_mode: boolean;
+            /** Changed By */
+            changed_by: string | null;
+            /** Changed At */
+            changed_at: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /** TicketList */
+        TicketList: {
+            /** Items */
+            items: components["schemas"]["TicketListItem"][];
+        };
+        /**
+         * TicketListItem
+         * @description P3 "Gần đây" — một dòng của `GET /api/tickets`: CHỈ cột bảng `tickets` (không checkpoint). `request_text` như `TicketView`
+         *     (bản ĐÃ CHE, cắt `REQUEST_TEXT_MAX` — không bao giờ câu gốc).
+         */
+        TicketListItem: {
+            /** Ticket Id */
+            ticket_id: string;
+            /** Request Text */
+            request_text: string | null;
+            /** Final State */
+            final_state: string | null;
+            /** Exit Code */
+            exit_code: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Closed At */
+            closed_at: string | null;
+        };
+        /** TicketTrace */
+        TicketTrace: {
+            /** Ticket Id */
+            ticket_id: string;
+            /** Is Parent */
+            is_parent: boolean;
+            /** Parent Ticket Id */
+            parent_ticket_id: string | null;
+            /** Steps */
+            steps: components["schemas"]["TraceStep"][];
+            /** Children */
+            children: components["schemas"]["TraceChild"][];
         };
         /**
          * TicketView
@@ -635,6 +1523,70 @@ export interface components {
             created_at: string;
             /** Closed At */
             closed_at: string | null;
+            /** Children Progress */
+            children_progress?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Deadline */
+            deadline: string | null;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            server_now: string;
+            /** Request Text */
+            request_text?: string | null;
+        };
+        /** TraceChild */
+        TraceChild: {
+            /** Ticket Id */
+            ticket_id: string;
+            /** Intent */
+            intent: string | null;
+            /** Exit Code */
+            exit_code: string | null;
+        };
+        /** TraceStep */
+        TraceStep: {
+            /** Step */
+            step: string;
+            /** Event */
+            event: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            screen: components["schemas"]["ScreenInfo"] | null;
+            classify: components["schemas"]["ClassifyInfo"] | null;
+            diagnose: components["schemas"]["DiagnoseInfo"] | null;
+            /** Sources */
+            sources: components["schemas"]["KbSource"][] | null;
+            policy: components["schemas"]["PolicyInfo"] | null;
+            approval: components["schemas"]["ApprovalInfo"] | null;
+            execution: components["schemas"]["ExecutionInfo"] | null;
+            outcome: components["schemas"]["OutcomeInfo"] | null;
+        };
+        /** Usage */
+        Usage: {
+            /** Calls Total */
+            calls_total: number;
+            /** Calls 24H */
+            calls_24h: number;
+            /** Tickets With Calls */
+            tickets_with_calls: number;
+            /** Avg Cost Per Ticket Usd */
+            avg_cost_per_ticket_usd: number | null;
+        };
+        /** ValidateOk */
+        ValidateOk: {
+            /**
+             * Valid
+             * @constant
+             */
+            valid: true;
+            /** Version Preview */
+            version_preview: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -649,8 +1601,48 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** ValueCell */
+        ValueCell: {
+            /** Value */
+            value: number | null;
+        };
+        /** ValueMetric */
+        ValueMetric: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "value";
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "count" | "s" | "min" | "usd";
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["ValueNCell"] | components["schemas"]["ValueCell"] | null;
+            };
+        };
+        /** ValueNCell */
+        ValueNCell: {
+            /** Value */
+            value: number | null;
+            /** N */
+            n: number;
+        };
         /** @enum {string} */
         WaitingFor: "clarify" | "approval" | "confirm" | "reply";
+        /** WeightedCount */
+        WeightedCount: {
+            /** Den */
+            den: number;
+            /** By Group */
+            by_group: {
+                [key: string]: components["schemas"]["GroupCount"];
+            };
+        };
         /** WeightedRate */
         WeightedRate: {
             /** Raw */
@@ -793,12 +1785,74 @@ export interface operations {
             };
         };
     };
+    dashboard_strategies_api_dashboard_strategies_get: {
+        parameters: {
+            query?: {
+                source?: components["schemas"]["Source"];
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyDashboard"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
     alerts_api_alerts_get: {
         parameters: {
             query?: {
                 status?: components["schemas"]["AlertStatus"] | null;
                 audience?: components["schemas"]["AudienceParam"] | null;
                 limit?: number;
+                from?: string | null;
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -916,6 +1970,414 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+        };
+    };
+    llm_status_api_admin_llm_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    email_outbox_api_admin_email_outbox_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["OutboxStatus"] | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_strategy_api_admin_strategy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    put_strategy_api_admin_strategy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    strategy_history_api_admin_strategy_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyHistory"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    current_policy_api_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    policy_versions_api_policy_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyVersionItem"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    validate_policy_api_policy_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidateOk"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidPolicy"] | components["schemas"]["InvalidRequestBody"];
                 };
             };
         };
@@ -1098,6 +2560,64 @@ export interface operations {
             };
         };
     };
+    list_tickets_api_tickets_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
     create_ticket_api_tickets_post: {
         parameters: {
             query?: never;
@@ -1114,6 +2634,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    hide_ticket_api_tickets__ticket_id__hide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1137,6 +2713,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TicketView"];
                 };
+            };
+            /** @description conversation_purged */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1211,6 +2794,37 @@ export interface operations {
             };
         };
     };
+    reply_api_tickets__ticket_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     override_api_tickets__ticket_id__override_post: {
         parameters: {
             query?: never;
@@ -1224,6 +2838,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ticket_events_api_tickets__ticket_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1310,7 +2955,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApprovalView"];
                 };
             };
             /** @description Validation Error */
@@ -1327,7 +2972,9 @@ export interface operations {
     escalation_queue_api_escalations_queue_get: {
         parameters: {
             query?: {
+                status?: components["schemas"]["QueueStatus"];
                 limit?: number;
+                after?: string | null;
             };
             header?: never;
             path?: never;
@@ -1341,9 +2988,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["EscalationQueuePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
             /** @description Validation Error */
@@ -1353,6 +3034,217 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    close_escalation_api_escalations__escalation_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                escalation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationCloseOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    ticket_trace_api_tickets__ticket_id__trace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketTrace"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    my_notifications_api_me_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };

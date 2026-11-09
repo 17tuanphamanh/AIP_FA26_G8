@@ -1,22 +1,18 @@
-// F5 — Trưởng BP IT: Tổng quan (nghiệp vụ + AI), Cảnh báo + "Đã xem", Chính sách (sửa JSON, lỗi từng dòng, lịch sử, quay
-// lui). Không gọi backend: fetch giả trả đúng hình dạng route thật M9 A3 @3f15afb (dashboard/alerts — N-A3) và hợp đồng
-// [Đề xuất F5 — Q-fe-26] (policy).
+// F5 — Trưởng BP IT: Tổng quan (nghiệp vụ + AI), Cảnh báo + "Đã xem", Chính sách (xem, lịch sử, kiểm tra — lỗi từng dòng).
+// Không gọi backend: fetch giả trả đúng hình dạng route thật M9 A3 @3f15afb (dashboard/alerts — N-A3) và route thật F7
+// backend/app/api/policy.py (policy — N-POL1).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isAlertItem, parseAlerts } from "../../api/alerts.ts";
-import { createClient } from "../../api/client.ts";
 import { parseAi, parseBusiness } from "../../api/dashboard.ts";
 import { ApiError } from "../../api/errors.ts";
 import type { AiDashboard, AiMetrics, AlertItem, AlertList, BusinessDashboard, BusinessMetrics, Me, PolicyVersionItem, PolicyView } from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
-import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { homePath, STAFF_NAV } from "../../auth/permissions.ts";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
-import { useAuth } from "../../auth/useAuth.ts";
-import { FlashNotice } from "../../components/FlashNotice.tsx";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
 import { Alerts } from "./Alerts.tsx";
@@ -40,10 +36,23 @@ import {
   UNAVAILABLE_TEXT,
 } from "./metrics.ts";
 import { PolicyEditor } from "./PolicyEditor.tsx";
-import { formatPolicy, restoreConfirmText, TOO_LARGE_TEXT, VERSION_CONFLICT_TEXT } from "./policyText.ts";
+import {
+  CHECK_FAILED_TEXT,
+  checkFailure,
+  CHECK_FORBIDDEN_TEXT,
+  CHECK_MISSING_TEXT,
+  formatPolicy,
+  INVALID_TEXT,
+  NOT_OBJECT_TEXT,
+  SHAPE_TEXT,
+  TOO_LARGE_TEXT,
+  VALID_TEXT,
+} from "./policyText.ts";
 import { rangeWindow } from "./range.ts";
 
 const clients: QueryClient[] = [];
+/** Thanh bên có chuông thông báo (N-TB, useInfiniteQuery): client không chạy query nào → chuông ẩn, 0 lời gọi mạng. */
+const idleClient = () => new QueryClient({ defaultOptions: { queries: { enabled: false } } });
 afterEach(() => {
   cleanup();
   for (const client of clients.splice(0)) client.clear();
@@ -269,7 +278,7 @@ describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 t
     expect(metricText("override_count", 0, ["override_count"], "count").text).toBe(UNAVAILABLE_TEXT);
     expect(metricText("deflection_rate", undefined, [], "rate").text).toBe(UNAVAILABLE_TEXT);
     expect(metricText("deflection_rate", null, [], "rate")).toStrictEqual({ state: "empty", text: "—", note: EMPTY_NOTE });
-    expect(EMPTY_NOTE).toBe("Không có ticket trong khoảng này");
+    expect(EMPTY_NOTE).toBe("Không có yêu cầu trong khoảng này");
     expect(metricText("deflection_rate", 0, [], "rate").text).toMatch(/^0\s%$/);
     expect(metricText("approval_expired_count", 0, [], "count").text).toBe("0");
     expect(metricText("automation_rate", 0.63, [], "rate").text).toMatch(/^63\s%$/);
@@ -386,7 +395,7 @@ describe("t57 (P6): nhãn 16 luật; 'Đã xem' chỉ gỡ SAU 200; 409 / 404 c�
       "reflex_approval", "drift", "refresh_reuse", "permission_denied_burst", "policy_saved", "b2_degraded",
       "b3_degraded", "llm_budget", "finalize_failed", "execution_failed",
     ]);
-    expect(alertLabel("custom_rule_x")).toBe("custom_rule_x");
+    expect(alertLabel("custom_rule_x")).toBe("Khác"); // N-NGU: luật lạ → "Khác" (mã luật vẫn hiện nhỏ ở dòng dưới)
   });
 
   it("sắp: critical → warning → info → lạ, rồi window_start giảm dần (Q-fe-27)", () => {
@@ -522,46 +531,47 @@ describe("t58: khối 'Cảnh báo đang mở' trên Tổng quan — tối đa 5
 
 // ------------------------------------------------------------------------------------------------ t60–t63 chính sách
 
+// Route THẬT F7 (backend/app/api/policy.py, N-POL1): bản file `version_id` 0, `updated_by` null; `/versions` MẢNG TRẦN;
+// validate cần policy:edit. Luật MẪU trung tính — không chép config/policy.json.
 const POLICY = {
-  constants: { SLA_MINUTES: 30, THRESHOLD_LOW: 0.25, THRESHOLD_HIGH: 0.75 },
+  constants: { DEMO_LIMIT: 3, THRESHOLD_LOW: 0.2, THRESHOLD_HIGH: 0.8 },
   rules: [
-    { id: "R17", type: "approval_required", description: "Thiết bị chưa đăng ký" },
-    { id: "R20", type: "allow", description: "Cấp lại cho thiết bị đã đăng ký" },
+    { id: "D1", type: "allow", description: "Luật mẫu: cho phép thao tác đọc" },
+    { id: "D2", type: "approval_required", description: "Luật mẫu: thay đổi cần duyệt" },
   ],
 };
+const FILE_VERSION = "file-0a1b2c3d";
 const view = (over: Partial<PolicyView> = {}): PolicyView => ({
-  version_id: 14,
-  version: "4",
+  version_id: 0,
+  version: FILE_VERSION,
   content: POLICY,
-  updated_by: "it_mgr01",
-  updated_at: "2026-09-30T03:00:00Z",
+  updated_by: null,
+  updated_at: "2026-10-01T01:00:00Z",
   is_current: true,
   ...over,
 });
 const VERSIONS: PolicyVersionItem[] = [
-  { version_id: 14, version: "4", updated_by: "it_mgr01", updated_at: "2026-09-30T03:00:00Z", is_current: true, restored_from: null },
-  { version_id: 13, version: "3", updated_by: "it_mgr01", updated_at: "2026-09-28T03:00:00Z", is_current: false, restored_from: "1" },
-  { version_id: 12, version: "2", updated_by: "it_mgr01", updated_at: "2026-09-27T03:00:00Z", is_current: false, restored_from: null },
-  { version_id: 11, version: "1", updated_by: null, updated_at: "2026-09-25T03:00:00Z", is_current: false, restored_from: null },
+  { version_id: 0, version: FILE_VERSION, updated_by: null, updated_at: "2026-10-01T01:00:00Z", is_current: true, restored_from: null },
 ];
 
-type PolicyState = { current: () => PolicyView; put?: (body: unknown, auth: string | null) => Response; restore?: (id: string, auth: string | null) => Response };
+type PolicyState = { current?: () => PolicyView; versions?: () => Response; validate?: (body: unknown) => Response | Promise<Response> };
 
-function policyRoutes(state: PolicyState): Handler {
+function policyRoutes(state: PolicyState = {}): Handler {
   return (method, url, init) => {
     const path = pathOf(url);
-    const auth = new Headers(init.headers).get("Authorization");
-    if (path === "/api/policy" && method === "GET") return json(200, state.current());
-    if (path === "/api/policy/versions") return json(200, VERSIONS);
-    if (path === "/api/policy" && method === "PUT") return state.put ? state.put(JSON.parse(String(init.body)), auth) : json(201, { version_id: 15, version: "5" });
-    const id = /^\/api\/policy\/versions\/(\d+)\/restore$/.exec(path)?.[1];
-    if (id && method === "POST") return state.restore ? state.restore(id, auth) : json(201, { version_id: 15, version: "5" });
+    if (path === "/api/policy" && method === "GET") return json(200, (state.current ?? (() => view()))());
+    if (path === "/api/policy/versions" && method === "GET") return state.versions ? state.versions() : json(200, VERSIONS);
+    if (path === "/api/policy/validate" && method === "POST") {
+      const body: unknown = JSON.parse(String(init.body));
+      return state.validate ? state.validate(body) : json(200, { valid: true, version_preview: "file-deadbeef" });
+    }
     return undefined;
   };
 }
 
-const puts = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && pathOf(c.url) === "/api/policy");
-const restores = (calls: Call[]) => calls.filter((c) => c.method === "POST" && /\/restore$/.test(pathOf(c.url)));
+const validates = (calls: Call[]) => calls.filter((c) => c.method === "POST" && pathOf(c.url) === "/api/policy/validate");
+/** Mọi lời gọi ghi tới /api/policy* ngoài validate (PUT, restore, simulate…) — N-POL1 không được có. */
+const writes = (calls: Call[]) => calls.filter((c) => pathOf(c.url).startsWith("/api/policy") && c.method !== "GET" && pathOf(c.url) !== "/api/policy/validate");
 
 /**
  * Tab "JSON" có ngay khi màn mount, còn ô JSON chỉ có SAU khi GET /api/policy về (nháp nạp từ server) → chờ chính ô đó.
@@ -572,143 +582,87 @@ async function openJson() {
   fireEvent.click(await screen.findByRole("tab", { name: "JSON" }));
   return screen.findByLabelText<HTMLTextAreaElement>("Nội dung chính sách (JSON)");
 }
-const saveButton = () => screen.getByRole("button", { name: /^Lưu/ });
+const checkButton = () => screen.getByRole("button", { name: /^Kiểm tra|^Đang kiểm tra/ });
 const lineOf = (text: string, needle: string) => text.split("\n").findIndex((l) => l.includes(needle)) + 1;
 const gutterMark = (line: number) => document.querySelector<HTMLElement>(`[data-testid="gutter-line"][data-line="${line}"]`)?.dataset.mark;
 
-describe("t60 (P7): lỗi cú pháp khoá Lưu; 422 đúng dòng; base_version_id + 409; > 64 KB byte; chấm bản nháp", () => {
-  it("JSON sai cú pháp → 'Dòng N, cột M · …', số dòng đỏ, nút 'Lưu · còn 1 lỗi' khoá, bấm → 0 PUT; Bảng không hiện bản cũ", async () => {
-    const calls = stubFetch(policyRoutes({ current: () => view() }));
+describe("t60 (N-POL1 P2): xem chính sách + lịch sử theo hình dạng thật", () => {
+  it("bản file: 'Đang áp dụng bản file-…'; lịch sử 1 dòng đậm 'đang áp dụng', updated_by null → 'Hệ thống', không 'khôi phục'", async () => {
+    const calls = stubFetch(policyRoutes());
     renderAt("/policy");
-    const area = await openJson();
-    const broken = formatPolicy(POLICY).replace('"SLA_MINUTES": 30,', '"SLA_MINUTES": 30');
-    fireEvent.change(area, { target: { value: broken } });
-    const line = lineOf(broken, '"THRESHOLD_LOW"');
-    const problem = await screen.findByTestId("policy-problem");
-    expect(problem.textContent).toMatch(new RegExp(`^Dòng ${line}, cột \\d+ · Thiếu dấu phẩy`));
-    expect(gutterMark(line)).toBe("error");
-    expect(saveButton().textContent).toBe("Lưu · còn 1 lỗi");
-    expect(saveButton().hasAttribute("disabled")).toBe(true);
-    fireEvent.click(saveButton());
-    await tick();
-    expect(puts(calls)).toHaveLength(0);
-    fireEvent.click(screen.getByRole("tab", { name: "Bảng" }));
-    expect(screen.getByTestId("table-invalid")).toBeTruthy();
-    expect(screen.queryAllByTestId("constant-row")).toHaveLength(0);
-  });
-
-  it("422 invalid_policy → lỗi hiện ở ĐÚNG dòng theo loc (+ 'Toàn tệp' khi loc rỗng); body có base_version_id của bản đã tải", async () => {
-    const calls = stubFetch(
-      policyRoutes({
-        current: () => view(),
-        put: () =>
-          json(422, {
-            error: "invalid_policy",
-            errors: [
-              { loc: ["constants", "THRESHOLD_LOW"], msg: "Ngưỡng dưới 0.9 phải nhỏ hơn ngưỡng trên 0.75" },
-              { loc: ["rules", 1, "type"], msg: "type không hợp lệ" },
-              { loc: [], msg: "Thiếu khối business_hours" },
-            ],
-          }),
-      }),
-    );
-    renderAt("/policy");
-    const area = await openJson();
-    const text = formatPolicy(POLICY).replace('"THRESHOLD_LOW": 0.25', '"THRESHOLD_LOW": 0.9').replace('"type": "allow"', '"type": "alow"');
-    fireEvent.change(area, { target: { value: text } });
-    fireEvent.click(saveButton());
-    await waitFor(() => expect(screen.getAllByTestId("policy-problem")).toHaveLength(3));
-    const low = lineOf(text, '"THRESHOLD_LOW"');
-    const type = lineOf(text, '"type": "alow"');
-    const texts = screen.getAllByTestId("policy-problem").map((p) => p.textContent);
-    expect(texts).toStrictEqual([
-      `Dòng ${low} · Ngưỡng dưới 0.9 phải nhỏ hơn ngưỡng trên 0.75`,
-      `Dòng ${type} · type không hợp lệ`,
-      "Toàn tệp · Thiếu khối business_hours",
+    const rows = await screen.findAllByTestId("version-row");
+    expect(screen.getByText(`Đang áp dụng bản ${FILE_VERSION}`)).toBeTruthy();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dataset.current).toBe("true");
+    expect(rows[0]!.textContent).toMatch(new RegExp(`^Bản ${FILE_VERSION} · đang áp dụngHệ thống · \\d{2}/\\d{2}`));
+    expect(rows[0]!.textContent).not.toContain("khôi phục");
+    expect(rows[0]!.querySelector(".font-semibold")).toBeTruthy();
+    // Bảng dựng từ nội dung thật trả về.
+    expect(screen.getAllByTestId("rule-row")).toHaveLength(2);
+    // Khối "Cách xử lý" (N-PA) gọi route riêng `/api/admin/strategy*` — ở đây chỉ soát lời gọi của nội dung chính sách.
+    expect(calls.filter((c) => c.method === "GET" && pathOf(c.url).startsWith("/api/policy")).map((c) => pathOf(c.url)).sort()).toStrictEqual([
+      "/api/policy",
+      "/api/policy/versions",
     ]);
-    expect(gutterMark(low)).toBe("error");
-    expect(gutterMark(type)).toBe("error");
-    expect(gutterMark(low - 1)).toBeUndefined();
-    const body = JSON.parse(puts(calls)[0]!.body!) as { content: unknown; base_version_id: number };
-    expect(Object.keys(body).sort()).toStrictEqual(["base_version_id", "content"]);
-    expect(body.base_version_id).toBe(14);
-    expect(body.content).toStrictEqual(JSON.parse(text));
-    // Tab Bảng đánh dấu đúng hàng theo loc.
-    fireEvent.click(screen.getByRole("tab", { name: "Bảng" }));
-    const flagged = screen.getAllByTestId("constant-row").filter((r) => r.dataset.flagged === "true").map((r) => r.dataset.key);
-    expect(flagged).toStrictEqual(["THRESHOLD_LOW"]);
   });
 
-  it("server có bản mới trong lúc đang sửa → base GIỮ bản cũ → 409 version_conflict: câu báo, đúng 1 PUT, không ghi đè; 'Tải bản mới nhất' thay nháp", async () => {
-    let current = view();
-    const calls = stubFetch(policyRoutes({ current: () => current, put: () => json(409, { detail: "version_conflict" }) }));
-    const client = renderAt("/policy");
-    const area = await openJson();
-    const draftText = formatPolicy(POLICY).replace('"SLA_MINUTES": 30', '"SLA_MINUTES": 25');
-    fireEvent.change(area, { target: { value: draftText } });
-    current = view({ version_id: 15, version: "5", content: { ...POLICY, constants: { ...POLICY.constants, SLA_MINUTES: 40 } } });
-    await client.invalidateQueries({ queryKey: ["policy"] }); // tải lại ngầm (vd quay lại tab) thấy bản 5
-    expect(screen.getByLabelText<HTMLTextAreaElement>("Nội dung chính sách (JSON)").value).toBe(draftText); // nháp giữ nguyên
-    fireEvent.click(saveButton());
-    expect((await screen.findByTestId("policy-message")).textContent).toBe(VERSION_CONFLICT_TEXT);
-    await tick();
-    expect(puts(calls)).toHaveLength(1);
-    expect((JSON.parse(puts(calls)[0]!.body!) as { base_version_id: number }).base_version_id).toBe(14);
-    fireEvent.click(screen.getByRole("button", { name: "Tải bản mới nhất (bỏ bản nháp)" }));
-    await waitFor(() =>
-      expect(screen.getByLabelText<HTMLTextAreaElement>("Nội dung chính sách (JSON)").value).toBe(formatPolicy(current.content)),
-    );
-    expect(puts(calls)).toHaveLength(1);
-  });
-
-  it("vượt 64 KB tính bằng BYTE UTF-8 (chữ có dấu) dù dưới 64 K ký tự → 'Nội dung quá dài', Lưu khoá, 0 PUT", async () => {
-    const calls = stubFetch(policyRoutes({ current: () => view() }));
+  it("nhiều mục: sắp version_id giảm; chỉ mục is_current đậm + 'đang áp dụng'; restored_from null / không khoá → không hiện; có giá trị → 'khôi phục từ bản X'", async () => {
+    const noRestored: Partial<PolicyVersionItem> = { ...VERSIONS[0]! };
+    delete noRestored.restored_from;
+    const list = [
+      { ...noRestored, version_id: 1, version: "file-11111111", updated_by: "it_mgr01", is_current: false },
+      { ...VERSIONS[0]!, version_id: 3, version: "file-33333333", is_current: true, restored_from: "file-11111111" },
+      { ...VERSIONS[0]!, version_id: 2, version: "file-22222222", is_current: false, restored_from: null },
+    ];
+    stubFetch(policyRoutes({ versions: () => json(200, list) }));
     renderAt("/policy");
-    const area = await openJson();
-    const big = formatPolicy({ ...POLICY, ghi_chu: "ệ".repeat(22_000) }); // "ệ" = 3 byte UTF-8
-    expect(big.length).toBeLessThan(64 * 1024);
-    expect(new TextEncoder().encode(big).length).toBeGreaterThan(64 * 1024);
-    fireEvent.change(area, { target: { value: big } });
-    const problem = await screen.findByTestId("policy-problem");
-    expect(problem.textContent).toMatch(new RegExp(`^${TOO_LARGE_TEXT}`));
-    expect(saveButton().hasAttribute("disabled")).toBe(true);
-    fireEvent.click(saveButton());
-    await tick();
-    expect(puts(calls)).toHaveLength(0);
+    const rows = await screen.findAllByTestId("version-row");
+    expect(rows.map((r) => [r.dataset.version, r.dataset.current])).toStrictEqual([
+      ["file-33333333", "true"],
+      ["file-22222222", "false"],
+      ["file-11111111", "false"],
+    ]);
+    expect(rows.map((r) => r.textContent!.includes("đang áp dụng"))).toStrictEqual([true, false, false]);
+    expect(rows.map((r) => r.textContent!.includes("khôi phục"))).toStrictEqual([true, false, false]);
+    expect(rows[0]!.textContent).toContain("khôi phục từ bản file-11111111");
+    expect(rows.map((r) => r.textContent!.includes("Hệ thống"))).toStrictEqual([true, true, false]);
+    expect(rows[2]!.textContent).toContain("it_mgr01");
   });
 
-  it("khoá trùng → cảnh báo vàng, KHÔNG khoá Lưu; sửa → chấm 'Bản nháp chưa lưu'; 201 → 'Đã lưu thành bản 5', hết chấm", async () => {
-    let current = view();
-    const calls = stubFetch(
-      policyRoutes({
-        current: () => current,
-        put: (body) => {
-          current = view({ version_id: 15, version: "5", content: (body as { content: Record<string, unknown> }).content });
-          return json(201, { version_id: 15, version: "5" });
-        },
-      }),
-    );
+  it("/versions trả {items} (không phải mảng trần) → 'Chưa tải được lịch sử phiên bản.', nội dung chính sách vẫn hiện", async () => {
+    stubFetch(policyRoutes({ versions: () => json(200, { items: VERSIONS }) }));
     renderAt("/policy");
-    const area = await openJson();
-    expect(screen.queryByTestId("draft-mark")).toBeNull();
-    const dup = formatPolicy(POLICY).replace('"SLA_MINUTES": 30,', '"SLA_MINUTES": 30,\n    "SLA_MINUTES": 45,');
-    fireEvent.change(area, { target: { value: dup } });
-    expect(screen.getByTestId("draft-mark").textContent).toContain("Bản nháp chưa lưu");
-    const warning = screen.getByTestId("policy-warning");
-    expect(warning.textContent).toMatch(/^Khoá "SLA_MINUTES" lặp ở dòng \d+ và \d+ — hệ thống dùng giá trị sau cùng/);
-    expect(gutterMark(Number(warning.dataset.line))).toBe("warn");
-    expect(screen.queryByTestId("policy-problem")).toBeNull();
-    expect(saveButton().textContent).toBe("Lưu");
-    fireEvent.click(saveButton());
-    expect((await screen.findByTestId("policy-message")).textContent).toBe("Đã lưu thành bản 5.");
-    await waitFor(() => expect(screen.queryByTestId("draft-mark")).toBeNull());
-    expect((JSON.parse(puts(calls)[0]!.body!) as { content: { constants: { SLA_MINUTES: number } } }).content.constants.SLA_MINUTES).toBe(45);
-    fireEvent.click(screen.getByRole("tab", { name: "Bảng" }));
-    const sla = screen.getAllByTestId("constant-row").find((r) => r.dataset.key === "SLA_MINUTES")!;
-    expect(sla.textContent).toContain("45"); // Bảng = giá trị sau cùng, như server
+    expect(await screen.findByTestId("versions-error")).toBeTruthy();
+    expect(screen.queryAllByTestId("version-row")).toHaveLength(0);
+    expect(screen.getAllByTestId("rule-row")).toHaveLength(2);
   });
 
-  it("route chưa có (404 'Not Found') → 'Chính sách có từ Phase 7', không khối lỗi đỏ", async () => {
+  it("GET /api/policy thân sai dạng (content là mảng) → khối lỗi tải, KHÔNG dựng bảng / ô JSON", async () => {
+    stubFetch(policyRoutes({ current: () => ({ ...view(), content: [] as unknown as Record<string, unknown> }) }));
+    renderAt("/policy");
+    expect((await screen.findByTestId("policy-load-error")).textContent).toContain("Chưa tải được chính sách");
+    expect(screen.queryAllByTestId("rule-row")).toHaveLength(0);
+    expect(screen.queryByLabelText("Nội dung chính sách (JSON)")).toBeNull();
+  });
+
+  it("M4 (ĐP 02/11): tải lỗi → CHỈ câu lỗi + 'Thử lại' (không 'Đang tải…', không nút Kiểm tra, không tab Bảng/JSON); Thử lại → nạp được", async () => {
+    let fail = true;
+    stubFetch(policyRoutes({ current: () => (fail ? { ...view(), content: [] as unknown as Record<string, unknown> } : view()) }));
+    renderAt("/policy");
+    await screen.findByTestId("policy-load-error");
+    const section = screen.getByRole("heading", { name: "Nội dung chính sách" }).closest("section")!;
+    expect(section.textContent).not.toContain("Đang tải chính sách");
+    expect(screen.queryByRole("button", { name: /^Kiểm tra/ })).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Cách hiển thị chính sách" })).toBeNull();
+    expect(screen.queryByTestId("policy-mode")).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    expect(await screen.findAllByTestId("rule-row")).toHaveLength(2);
+    expect(screen.queryByTestId("policy-load-error")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Kiểm tra/ })).toBeTruthy();
+  });
+
+  it("route chưa có (404 'Not Found') → 'Chưa có chức năng chính sách' (không còn 'Phase 7'), không khối lỗi đỏ", async () => {
     stubFetch((_m, url) => (pathOf(url).startsWith("/api/policy") ? json(404, { detail: "Not Found" }) : undefined));
     renderAt("/policy");
     const box = await screen.findByTestId("policy-missing");
@@ -717,165 +671,204 @@ describe("t60 (P7): lỗi cú pháp khoá Lưu; 422 đúng dòng; base_version_i
   });
 });
 
-// ------------------------------------------------------------------------------------------------ t61
-
-/** JWT dạng thật (3 đoạn base64url) — client đọc `sub` để so danh tính, không kiểm chữ ký. */
-const jwt = (sub: string, n: string) => `h.${btoa(JSON.stringify({ sub, n })).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_")}.s`;
-const OLD = jwt("it_mgr01", "old");
-const NEW = jwt("it_mgr01", "new");
-const tokenBody = (token: string) => json(200, { access_token: token, token_type: "bearer", expires_in: 900, csrf_token: "c" });
-const EMPLOYEE: Me = { user_id: "nv001", role: "employee", permissions: BASE };
-const OTHER = jwt("nv001", "x");
-
-function reauthSetup({ login, meAfterLogin = MGR }: { login: () => Response; meAfterLogin?: Me }) {
-  const calls: Call[] = [];
-  let loggedIn = false;
-  const routes = policyRoutes({
-    current: () => view(),
-    put: (_b, auth) => (auth === `Bearer ${NEW}` ? json(201, { version_id: 15, version: "5" }) : json(403, { detail: "reauth_required" })),
-    restore: (_id, auth) => (auth === `Bearer ${NEW}` ? json(201, { version_id: 15, version: "5" }) : json(403, { detail: "reauth_required" })),
-  });
-  const fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
-    const method = init.method ?? "GET";
-    calls.push({ method, url, body: typeof init.body === "string" ? init.body : null, auth: new Headers(init.headers).get("Authorization") });
-    if (url === "/api/auth/refresh") return tokenBody(OLD); // tải trang: khôi phục phiên (đăng nhập đã lâu)
-    if (url === "/api/auth/login") {
-      const res = login();
-      loggedIn = res.ok;
-      return res;
-    }
-    if (url === "/api/auth/me") return json(200, loggedIn ? meAfterLogin : MGR);
-    // Như backend: người không có policy:read (nhân viên) → 403 cho mọi route chính sách.
-    if (url.startsWith("/api/policy") && new Headers(init.headers).get("Authorization") === `Bearer ${OTHER}`) return json(403, { detail: "forbidden" });
-    return (await routes(method, url, init)) ?? json(404, { detail: "not_found" });
-  });
-  const client = createClient({ fetch, readCookie: () => "csrf-1", locks: null, channel: null, onSessionEnd: vi.fn() });
-
-  function Gate({ children }: { children: ReactNode }) {
-    return useAuth().state.status === "signedIn" ? children : <p>Đang kiểm tra…</p>;
-  }
-  function Landing() {
-    return (
-      <>
-        <p data-testid="landing">{useLocation().pathname}</p>
-        <FlashNotice />
-      </>
-    );
-  }
-  const queryClient = new QueryClient();
-  clients.push(queryClient);
-  render(
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider client={client} subscribe={() => () => {}}>
-        <MemoryRouter initialEntries={["/policy"]}>
-          <Routes>
-            <Route
-              path="/policy"
-              element={
-                <Gate>
-                  <PolicyEditor client={client} />
-                </Gate>
-              }
-            />
-            <Route path="/chat" element={<Landing />} />
-            <Route path="/dashboard" element={<Landing />} />
-          </Routes>
-        </MemoryRouter>
-      </AuthProvider>
-    </QueryClientProvider>,
-  );
-  return { calls, queryClient };
-}
-
-async function reauthWith(password: string) {
-  const dialog = await screen.findByRole("dialog", { name: "Xác nhận lại đăng nhập" });
-  fireEvent.change(within(dialog).getByLabelText("Tên đăng nhập"), { target: { value: "quan.tm" } });
-  fireEvent.change(within(dialog).getByLabelText("Mật khẩu"), { target: { value: password } });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Đăng nhập lại" }));
-}
-
-describe("t61: Lưu / quay lui gặp 403 reauth_required → đăng nhập lại (luồng F1) → gửi lại ĐÚNG 1 lần", () => {
-  it("Lưu, cùng người: PUT gửi 2 lần (token cũ → mới), body lần 2 = lần 1; 'Đã lưu thành bản 5'", async () => {
-    const { calls } = reauthSetup({ login: () => tokenBody(NEW) });
+describe("t61 (N-POL1 P3): Kiểm tra = POST /api/policy/validate; lỗi 422 theo dòng; 403 / 503 / mạng", () => {
+  it("hợp lệ → 1 POST tới /api/policy/validate, thân ĐÚNG {content} = JSON đang sửa; câu 'hợp lệ'; sửa tiếp → câu biến mất", async () => {
+    const calls = stubFetch(policyRoutes());
+    renderAt("/policy");
     const area = await openJson();
-    fireEvent.change(area, { target: { value: formatPolicy(POLICY).replace('"SLA_MINUTES": 30', '"SLA_MINUTES": 35') } });
-    fireEvent.click(saveButton());
-    await reauthWith("pw");
-    expect((await screen.findByTestId("policy-message")).textContent).toBe("Đã lưu thành bản 5.");
-    const sent = puts(calls);
-    expect(sent.map((c) => c.auth)).toStrictEqual([`Bearer ${OLD}`, `Bearer ${NEW}`]);
-    expect(JSON.parse(sent[1]!.body!)).toStrictEqual(JSON.parse(sent[0]!.body!));
-    await tick(30);
-    expect(puts(calls)).toHaveLength(2);
-    expect(screen.queryByRole("dialog", { name: "Xác nhận lại đăng nhập" })).toBeNull();
+    const text = formatPolicy(POLICY).replace('"DEMO_LIMIT": 3', '"DEMO_LIMIT": 4');
+    fireEvent.change(area, { target: { value: text } });
+    fireEvent.click(checkButton());
+    expect((await screen.findByTestId("policy-message")).textContent).toBe(VALID_TEXT);
+    expect(validates(calls)).toHaveLength(1);
+    const body = JSON.parse(validates(calls)[0]!.body!) as Record<string, unknown>;
+    expect(Object.keys(body)).toStrictEqual(["content"]);
+    expect(body.content).toStrictEqual(JSON.parse(text));
+    fireEvent.change(area, { target: { value: text.replace('"DEMO_LIMIT": 4', '"DEMO_LIMIT": 5') } });
+    expect(screen.queryByTestId("policy-message")).toBeNull();
+    expect(writes(calls)).toHaveLength(0);
   });
 
-  it("Lưu, đăng nhập lại bằng NGƯỜI KHÁC → không gửi lại, xoá cache, về trang đầu người mới + câu báo huỷ", async () => {
-    const { calls, queryClient } = reauthSetup({ login: () => tokenBody(OTHER), meAfterLogin: EMPLOYEE });
+  it("422 invalid_policy → mỗi lỗi ở ĐÚNG dòng theo loc (khối, khoá lồng, phần tử mảng) + 'Toàn tệp' khi loc rỗng; số dòng đỏ; Bảng tô hàng", async () => {
+    const errors = [
+      { loc: ["constants"], msg: "Value error, THRESHOLD_LOW phải nhỏ hơn THRESHOLD_HIGH" },
+      { loc: ["constants", "DEMO_LIMIT"], msg: "Input should be a valid integer" },
+      { loc: ["rules", 1, "type"], msg: "Input should be 'allow', 'approval_required' or 'deny'" },
+      { loc: [], msg: "NaN/Infinity không hợp lệ trong JSON policy" },
+    ];
+    const calls = stubFetch(policyRoutes({ validate: () => json(422, { error: "invalid_policy", errors }) }));
+    renderAt("/policy");
     const area = await openJson();
-    fireEvent.change(area, { target: { value: formatPolicy(POLICY).replace('"SLA_MINUTES": 30', '"SLA_MINUTES": 35') } });
-    fireEvent.click(saveButton());
-    await reauthWith("pw");
-    expect((await screen.findByTestId("landing")).textContent).toBe(homePath(EMPLOYEE));
-    expect(screen.getByTestId("flash").textContent).toBe("Bạn đã đăng nhập bằng tài khoản khác — thao tác trên chính sách đã huỷ.");
-    // Không còn dữ liệu nào của người cũ. (Router chuyển trang trong startTransition → màn cũ kịp render lại sau
-    // `clear()` và dựng lại truy vấn bằng token NGƯỜI MỚI — backend trả 403, không có dữ liệu.)
-    await tick(30);
-    expect(queryClient.getQueryCache().getAll().filter((q) => q.state.data !== undefined)).toHaveLength(0);
-    expect(calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/policy") && c.auth === `Bearer ${OLD}` && c.url === "/api/policy")).toHaveLength(1);
-    expect(puts(calls)).toHaveLength(1);
-  });
-
-  it("Quay lui, cùng người: POST restore gửi 2 lần (cũ → mới) rồi dừng", async () => {
-    const { calls } = reauthSetup({ login: () => tokenBody(NEW) });
-    fireEvent.click(await screen.findByRole("button", { name: "Quay lui bản 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Áp dụng lại" }));
-    await reauthWith("pw");
-    expect((await screen.findByTestId("policy-message")).textContent).toBe("Đã áp dụng lại nội dung bản 2 thành bản 5.");
-    expect(restores(calls).map((c) => [pathOf(c.url), c.auth])).toStrictEqual([
-      ["/api/policy/versions/12/restore", `Bearer ${OLD}`],
-      ["/api/policy/versions/12/restore", `Bearer ${NEW}`],
+    const text = formatPolicy(POLICY).replace('"THRESHOLD_LOW": 0.2', '"THRESHOLD_LOW": 0.9').replace('"type": "approval_required"', '"type": "alow"');
+    fireEvent.change(area, { target: { value: text } });
+    fireEvent.click(checkButton());
+    await waitFor(() => expect(screen.getAllByTestId("policy-problem")).toHaveLength(4));
+    expect(screen.getByTestId("policy-message").textContent).toBe(INVALID_TEXT);
+    const constants = lineOf(text, '"constants"');
+    const limit = lineOf(text, '"DEMO_LIMIT"');
+    const type = lineOf(text, '"type": "alow"');
+    expect(screen.getAllByTestId("policy-problem").map((p) => p.textContent)).toStrictEqual([
+      `Dòng ${constants} · Value error, THRESHOLD_LOW phải nhỏ hơn THRESHOLD_HIGH`,
+      `Dòng ${limit} · Input should be a valid integer`,
+      `Dòng ${type} · Input should be 'allow', 'approval_required' or 'deny'`,
+      "Toàn tệp · NaN/Infinity không hợp lệ trong JSON policy",
     ]);
-    await tick(30);
-    expect(restores(calls)).toHaveLength(2);
+    expect([constants, limit, type].map(gutterMark)).toStrictEqual(["error", "error", "error"]);
+    expect(gutterMark(type - 1)).toBeUndefined();
+    expect(validates(calls)).toHaveLength(1);
+    fireEvent.click(screen.getByRole("tab", { name: "Bảng" }));
+    expect(screen.getAllByTestId("constant-row").filter((r) => r.dataset.flagged === "true").map((r) => r.dataset.key)).toStrictEqual(["DEMO_LIMIT"]);
+    expect(screen.getAllByTestId("rule-row").map((r) => r.dataset.flagged)).toStrictEqual(["false", "true"]);
+  });
+
+  it("422 invalid_request (thân sai hình dạng) → câu riêng, không danh sách lỗi theo dòng", async () => {
+    stubFetch(policyRoutes({ validate: () => json(422, { error: "invalid_request", fields: ["content"] }) }));
+    renderAt("/policy");
+    await openJson();
+    fireEvent.click(checkButton());
+    expect((await screen.findByTestId("policy-message")).textContent).toBe(SHAPE_TEXT);
+    expect(screen.queryAllByTestId("policy-problem")).toHaveLength(0);
+  });
+
+  it("403 → 'không có quyền kiểm tra' (role=alert), KHÔNG rơi về câu chung, trang vẫn hiện", async () => {
+    stubFetch(policyRoutes({ validate: () => json(403, { detail: "forbidden" }) }));
+    renderAt("/policy");
+    await openJson();
+    fireEvent.click(checkButton());
+    const message = await screen.findByTestId("policy-message");
+    expect(message.textContent).toBe(CHECK_FORBIDDEN_TEXT);
+    expect(message.getAttribute("role")).toBe("alert");
+    expect(screen.getByLabelText("Nội dung chính sách (JSON)")).toBeTruthy();
+  });
+
+  it("503 kèm chi tiết máy chủ → câu chung CỐ ĐỊNH, chi tiết KHÔNG lên màn", async () => {
+    const SECRET = "db 10.0.0.5:5432 timeout — RuntimeError at policy.py:212";
+    stubFetch(policyRoutes({ validate: () => json(503, { detail: SECRET, error: SECRET }) }));
+    renderAt("/policy");
+    await openJson();
+    fireEvent.click(checkButton());
+    expect((await screen.findByTestId("policy-message")).textContent).toBe(CHECK_FAILED_TEXT);
+    expect(document.body.textContent).not.toContain("10.0.0.5");
+    expect(document.body.textContent).not.toContain("policy.py");
+  });
+
+  it("lỗi mạng (fetch ném) → cùng câu chung, không lộ thông điệp lỗi", async () => {
+    stubFetch(async (method, url, init) => {
+      if (pathOf(url) === "/api/policy/validate") throw new TypeError("Failed to fetch (proxy 10.9.8.7)");
+      return policyRoutes()(method, url, init);
+    });
+    renderAt("/policy");
+    await openJson();
+    fireEvent.click(checkButton());
+    expect((await screen.findByTestId("policy-message")).textContent).toBe(CHECK_FAILED_TEXT);
+    expect(document.body.textContent).not.toContain("10.9.8.7");
+  });
+
+  it("JSON sai cú pháp → 'Dòng N, cột M · …', nút 'Kiểm tra · còn 1 lỗi' khoá, bấm → 0 POST; Bảng không hiện bản cũ", async () => {
+    const calls = stubFetch(policyRoutes());
+    renderAt("/policy");
+    const area = await openJson();
+    const broken = formatPolicy(POLICY).replace('"DEMO_LIMIT": 3,', '"DEMO_LIMIT": 3');
+    fireEvent.change(area, { target: { value: broken } });
+    const line = lineOf(broken, '"THRESHOLD_LOW"');
+    expect((await screen.findByTestId("policy-problem")).textContent).toMatch(new RegExp(`^Dòng ${line}, cột \\d+ · Thiếu dấu phẩy`));
+    expect(gutterMark(line)).toBe("error");
+    expect(checkButton().textContent).toBe("Kiểm tra · còn 1 lỗi");
+    expect(checkButton().hasAttribute("disabled")).toBe(true);
+    fireEvent.click(checkButton());
+    await tick();
+    expect(validates(calls)).toHaveLength(0);
+    fireEvent.click(screen.getByRole("tab", { name: "Bảng" }));
+    expect(screen.getByTestId("table-invalid")).toBeTruthy();
+  });
+
+  it("gốc không phải object ([]) → 'Toàn tệp · …object JSON', khoá, 0 POST", async () => {
+    const calls = stubFetch(policyRoutes());
+    renderAt("/policy");
+    const area = await openJson();
+    fireEvent.change(area, { target: { value: "[]" } });
+    expect((await screen.findByTestId("policy-problem")).textContent).toBe(`Toàn tệp · ${NOT_OBJECT_TEXT}`);
+    expect(checkButton().hasAttribute("disabled")).toBe(true);
+    fireEvent.click(checkButton());
+    await tick();
+    expect(validates(calls)).toHaveLength(0);
+  });
+
+  it("thân vượt 64 KB tính bằng BYTE UTF-8 (chữ có dấu) dù dưới 64 K ký tự → 'Nội dung quá dài', khoá, 0 POST", async () => {
+    const calls = stubFetch(policyRoutes());
+    renderAt("/policy");
+    const area = await openJson();
+    const big = formatPolicy({ ...POLICY, ghi_chu: "ệ".repeat(22_000) }); // "ệ" = 3 byte UTF-8
+    expect(big.length).toBeLessThan(64 * 1024);
+    fireEvent.change(area, { target: { value: big } });
+    expect((await screen.findByTestId("policy-problem")).textContent).toMatch(new RegExp(`^${TOO_LARGE_TEXT}`));
+    expect(checkButton().hasAttribute("disabled")).toBe(true);
+    fireEvent.click(checkButton());
+    await tick();
+    expect(validates(calls)).toHaveLength(0);
+  });
+
+  it("khoá trùng → cảnh báo vàng, KHÔNG khoá Kiểm tra; chấm 'Đã sửa — chưa lưu'", async () => {
+    const calls = stubFetch(policyRoutes());
+    renderAt("/policy");
+    const area = await openJson();
+    expect(screen.queryByTestId("draft-mark")).toBeNull();
+    const dup = formatPolicy(POLICY).replace('"DEMO_LIMIT": 3,', '"DEMO_LIMIT": 3,\n    "DEMO_LIMIT": 5,');
+    fireEvent.change(area, { target: { value: dup } });
+    expect(screen.getByTestId("draft-mark").textContent).toContain("Đã sửa — chưa lưu");
+    const warning = screen.getByTestId("policy-warning");
+    expect(warning.textContent).toMatch(/^Khoá "DEMO_LIMIT" lặp ở dòng \d+ và \d+ — hệ thống dùng giá trị sau cùng/);
+    expect(gutterMark(Number(warning.dataset.line))).toBe("warn");
+    expect(checkButton().textContent).toBe("Kiểm tra");
+    fireEvent.click(checkButton());
+    expect((await screen.findByTestId("policy-message")).textContent).toBe(VALID_TEXT);
+    expect((JSON.parse(validates(calls)[0]!.body!) as { content: { constants: { DEMO_LIMIT: number } } }).content.constants.DEMO_LIMIT).toBe(5);
   });
 });
 
-// ------------------------------------------------------------------------------------------------ t62, t63
+describe("t62 (N-POL1 P4): KHÔNG có Lưu / Quay lui / Mô phỏng; chỉ policy:read → chỉ xem", () => {
+  it("policy:edit: có 'Kiểm tra', không nút Lưu / Quay lui / Mô phỏng; ghi chú chỉ xem + kiểm; 0 lời gọi ghi", async () => {
+    const calls = stubFetch(policyRoutes());
+    renderAt("/policy");
+    const area = await openJson();
+    expect(area.readOnly).toBe(false);
+    expect(checkButton()).toBeTruthy();
+    for (const name of [/Lưu/, /Quay lui/, /Mô phỏng/, /Áp dụng/, /Khôi phục/]) expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.getByTestId("policy-mode").textContent).toBe("Màn này chỉ xem và kiểm tra chính sách — chưa lưu được thay đổi từ đây.");
+    fireEvent.change(area, { target: { value: formatPolicy(POLICY).replace('"DEMO_LIMIT": 3', '"DEMO_LIMIT": 4') } });
+    fireEvent.click(checkButton());
+    await screen.findByTestId("policy-message");
+    expect(writes(calls)).toHaveLength(0);
+  });
 
-describe("t62: chỉ có policy:read → chỉ xem (không Lưu, không Quay lui, ô JSON chỉ đọc)", () => {
-  it("không nút Lưu / Quay lui; textarea readOnly; lịch sử vẫn hiện", async () => {
-    stubFetch(policyRoutes({ current: () => view() }));
+  it("chỉ policy:read: không nút Kiểm tra; textarea readOnly; lịch sử vẫn hiện; 0 POST", async () => {
+    const calls = stubFetch(policyRoutes());
     renderAt("/policy", READER);
     const area = await openJson();
     expect(area.readOnly).toBe(true);
-    expect(screen.queryByRole("button", { name: /^Lưu/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Quay lui/ })).toBeNull();
-    expect(await screen.findAllByTestId("version-row")).toHaveLength(4);
+    expect(screen.queryByRole("button", { name: /Kiểm tra|Lưu|Quay lui/ })).toBeNull();
+    expect(await screen.findAllByTestId("version-row")).toHaveLength(1);
     expect(screen.getByText("Bạn chỉ có quyền xem chính sách.")).toBeTruthy();
+    expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0);
   });
 });
 
-describe("t63: quay lui — hộp xác nhận nêu rõ tạo phiên bản mới; Huỷ → 0 POST; Áp dụng lại → 1 POST", () => {
-  it("câu xác nhận; Huỷ; xác nhận → POST /restore của đúng version_id → 201 → câu báo + tải lại lịch sử", async () => {
-    const calls = stubFetch(policyRoutes({ current: () => view() }));
-    renderAt("/policy");
-    const rows = await screen.findAllByTestId("version-row");
-    expect(rows.map((r) => r.dataset.version)).toStrictEqual(["4", "3", "2", "1"]);
-    expect(rows[1]!.textContent).toContain("khôi phục từ bản 1");
-    expect(within(rows[0]!).queryByRole("button", { name: /Quay lui/ })).toBeNull(); // bản đang áp dụng
-    fireEvent.click(screen.getByRole("button", { name: "Quay lui bản 2" }));
-    expect(screen.getByTestId("restore-confirm-text").textContent).toBe("Nội dung bản 2 sẽ được áp dụng lại thành một phiên bản mới.");
-    expect(restoreConfirmText("2")).toBe("Nội dung bản 2 sẽ được áp dụng lại thành một phiên bản mới.");
-    fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
-    await tick();
-    expect(restores(calls)).toHaveLength(0);
-    const versionsBefore = calls.filter((c) => pathOf(c.url) === "/api/policy/versions").length;
-    fireEvent.click(screen.getByRole("button", { name: "Quay lui bản 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Áp dụng lại" }));
-    expect((await screen.findByTestId("policy-message")).textContent).toBe("Đã áp dụng lại nội dung bản 2 thành bản 5.");
-    expect(restores(calls).map((c) => pathOf(c.url))).toStrictEqual(["/api/policy/versions/12/restore"]);
-    await waitFor(() => expect(calls.filter((c) => pathOf(c.url) === "/api/policy/versions").length).toBe(versionsBefore + 1));
+describe("t63 (N-POL1 P3): hàm checkFailure — mỗi mã một câu, không mã nào lộ chi tiết", () => {
+  it.each([
+    [new ApiError(422, "invalid_policy", [], null, [{ loc: ["rules", 0], msg: "x" }]), INVALID_TEXT, 1],
+    [new ApiError(422, "invalid_policy"), INVALID_TEXT, 1], // không có errors → 1 lỗi "Toàn tệp"
+    [new ApiError(422, "invalid_request", ["content"]), SHAPE_TEXT, 0],
+    [new ApiError(403, "forbidden"), CHECK_FORBIDDEN_TEXT, 0],
+    [new ApiError(413, "payload_too_large"), TOO_LARGE_TEXT, 0],
+    [new ApiError(404, "Not Found"), CHECK_MISSING_TEXT, 0],
+    [new ApiError(500, "Traceback (most recent call last)"), CHECK_FAILED_TEXT, 0],
+    [new ApiError(502, "invalid_validate_body"), CHECK_FAILED_TEXT, 0],
+    [new ApiError(503, "monitor_unavailable"), CHECK_FAILED_TEXT, 0],
+    [new TypeError("Failed to fetch"), CHECK_FAILED_TEXT, 0],
+  ])("%s → câu đúng", (error, text, issues) => {
+    const failure = checkFailure(error);
+    expect(failure.text).toBe(text);
+    expect(failure.issues).toHaveLength(issues);
   });
 });
 
@@ -893,9 +886,11 @@ describe("t64: L1 (ha.lt) không vào được 3 màn Trưởng BP IT — 0 lờ
   it("thanh bên: L1 không có Tổng quan/Cảnh báo/Chính sách; Trưởng BP IT có cả 3 + 'Chờ tôi duyệt'; trang đầu /dashboard", () => {
     const labels = (me: Me) => {
       const view = render(
-        <MemoryRouter>
-          <Sidebar me={me} onSignOut={async () => true} />
-        </MemoryRouter>,
+        <QueryClientProvider client={idleClient()}>
+          <MemoryRouter>
+            <Sidebar me={me} onSignOut={async () => true} />
+          </MemoryRouter>
+        </QueryClientProvider>,
       );
       const names = within(view.container).getAllByRole("link").map((a) => a.textContent);
       view.unmount();
@@ -982,7 +977,7 @@ describe("t109 (P2): parseAlerts / isAlertItem — MỘT hình dạng {items, tr
 // ------------------------------------------------------------------------------------------------ t110
 
 describe("t110 (P3): 'Đang mở' = /api/alerts?status=open, 'Tất cả' = /api/alerts — không audience, limit, tham số rỗng", () => {
-  it("màn Cảnh báo (2 bộ lọc) + khối Tổng quan: đúng 2 URL, chỉ GET", async () => {
+  it("màn Cảnh báo (2 bộ lọc): đúng 2 URL; khối Tổng quan: status=open + from/to của khung (D13); chỉ GET", async () => {
     const calls = dashboardServer({ alerts: () => json(200, alertList([alert(1, "drift", "info", 0)])) });
     renderAt("/alerts");
     await waitFor(() => expect(alertRow(1)).not.toBeNull());
@@ -993,9 +988,17 @@ describe("t110 (P3): 'Đang mở' = /api/alerts?status=open, 'Tất cả' = /api
     renderAt("/dashboard");
     const block = await screen.findByTestId("open-alerts");
     await waitFor(() => expect(within(block).getAllByTestId("alert-row")).toHaveLength(1));
-    const urls = calls.filter((c) => pathOf(c.url).startsWith("/api/alerts")).map((c) => `${c.method} ${c.url}`);
-    expect(new Set(urls)).toStrictEqual(new Set(["GET /api/alerts?status=open", "GET /api/alerts"]));
-    expect(urls.filter((u) => u === "GET /api/alerts?status=open").length).toBeGreaterThanOrEqual(2); // màn Cảnh báo + khối Tổng quan
+    const alertCalls = calls.filter((c) => pathOf(c.url).startsWith("/api/alerts"));
+    const urls = alertCalls.filter((c) => !queryOf(c.url).has("from")).map((c) => `${c.method} ${c.url}`);
+    expect(new Set(urls)).toStrictEqual(new Set(["GET /api/alerts?status=open", "GET /api/alerts"])); // màn Cảnh báo
+    // Khối Tổng quan (D13): đúng 3 tham số status=open, from, to — không audience, limit, tham số rỗng.
+    const windowed = alertCalls.filter((c) => queryOf(c.url).has("from"));
+    expect(windowed.length).toBeGreaterThanOrEqual(1);
+    for (const c of windowed) {
+      expect(c.method).toBe("GET");
+      expect([...queryOf(c.url).keys()]).toStrictEqual(["status", "from", "to"]);
+      expect(queryOf(c.url).get("status")).toBe("open");
+    }
   });
 });
 
@@ -1297,7 +1300,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     dashboardServer();
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính ticket lá.");
+    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính yêu cầu lá.");
     expect([kpiValue("automation_rate"), kpiValue("escalation_rate_weighted"), kpiValue("deflection_rate"), kpiValue("approval_expired_count")]).toStrictEqual([
       "63 %",
       "14,2 %",
@@ -1312,7 +1315,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
       ["sensitive", "Nhạy cảm", "—"], // nhóm 0 lá → null → "—", KHÔNG "0 %"
     ]);
     expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Độ nhạy trọng số: 60/30/10: 14,2 % · 80/15/5: 15,1 %");
-    const e1 = within(screen.getByRole("region", { name: /Ca không xác định được ý định/ })).getAllByTestId("bar-row");
+    const e1 = within(screen.getByRole("region", { name: /Ngoài phạm vi hoặc chưa rõ yêu cầu · E1/ })).getAllByTestId("bar-row"); // N-NGU
     expect(e1.map((r) => r.dataset.key)).toStrictEqual(["out_of_scope", "intent_low_confidence", "multi_intent_not_enabled", "intent_not_enabled", "other"]);
     expect(text(e1[4]!.firstElementChild)).toBe("Lý do khác");
     expect(screen.getAllByTestId("rule-row")).toHaveLength(1);
@@ -1364,9 +1367,9 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     expect(text(kpi("escalation_rate_weighted"))).toContain("thô —");
     expect(screen.getAllByTestId("weighted-group").map((g) => text(g.lastElementChild))).toStrictEqual(["—", "—", "—"]);
     expect(screen.queryAllByTestId("bar-row")).toHaveLength(0);
-    expect(screen.getAllByText("Không có ticket trong khoảng này.")).toHaveLength(2); // decided_by + E1
+    expect(screen.getAllByText("Không có yêu cầu trong khoảng này.")).toHaveLength(2); // decided_by + E1
     expect(screen.getByText("Không có luật nào khớp trong khoảng này.")).toBeTruthy();
-    expect(screen.getByText("Không có ca E3 trong khoảng này.")).toBeTruthy();
+    expect(screen.getByText("Không có ca thiếu tài liệu hướng dẫn trong khoảng này.")).toBeTruthy(); // N-NGU: không mã trần
     expect(text(document.querySelector("main") ?? document.body)).not.toMatch(/\b0 %/);
   });
 
@@ -1502,7 +1505,8 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
   };
 
   it("labelOf / ownEntry / alertLabel / severityLabel / severityDot / audienceLabel; sắp xếp coi mức lạ là cuối", () => {
-    expect([alertLabel("constructor"), alertLabel("injection_detected")]).toStrictEqual(["constructor", "Yêu cầu bị chặn vì nghi chèn lệnh (E0)"]);
+    // N-NGU: luật lạ → "Khác"; nhãn không chứa mã (mã E0 hiện riêng, chữ nhỏ).
+    expect([alertLabel("constructor"), alertLabel("injection_detected")]).toStrictEqual(["Khác", "Yêu cầu bị chặn vì nghi tấn công"]);
     expect([severityLabel("__proto__"), severityLabel("toString"), severityLabel("critical")]).toStrictEqual(["__proto__", "toString", "Nghiêm trọng"]);
     expect([severityDot("__proto__"), severityDot("constructor"), severityDot("critical")]).toStrictEqual(["bg-ink-3", "bg-ink-3", "bg-danger"]);
     expect([audienceLabel("toString"), audienceLabel("manager")]).toStrictEqual(["toString", "Trưởng BP IT"]);
@@ -1523,10 +1527,10 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
     expect(screen.getAllByTestId("alert-row").map((r) => r.dataset.alertId)).toStrictEqual(["2", "1"]);
     const row = alertRow(1)!;
     expect(row.dataset.severity).toBe("__proto__");
-    expect(text(row)).toContain("constructor — mức __proto__");
+    expect(text(row)).toContain("Khác — mức __proto__constructor"); // N-NGU: "Khác" + mã luật chữ nhỏ
     expect(text(within(row).getByTestId("alert-audience"))).toBe("Người nhận: toString");
     expect(row.querySelector('[aria-hidden="true"]')!.className).toContain("bg-ink-3");
-    expect(text(alertRow(2))).toContain("toString — mức Nghiêm trọng");
+    expect(text(alertRow(2))).toContain("Khác — mức Nghiêm trọngtoString");
     noLeak();
   });
 
@@ -1565,6 +1569,9 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
       ["constructor", "constructor"],
       ["SLA_MINUTES", "Hạn duyệt (phút)"],
     ]);
+    // L3 (soát 01/11): khoá chưa có nhãn chỉ hiện MỘT lần ("constructor", không "constructor / constructor"); có nhãn → nhãn + khoá
+    expect(rows.map((r) => r.querySelector("span")!.children.length)).toStrictEqual([1, 1, 2]);
+    expect(text(rows[1]!.querySelector("span"))).toBe("constructor");
     const rules = screen.getAllByTestId("rule-row").map((r) => text(r.lastElementChild));
     expect(rules).toStrictEqual(["Không hợp lệ (constructor)", "Không hợp lệ (__proto__)", "Không hợp lệ (toString)", "Cho phép"]);
     for (const r of screen.getAllByTestId("rule-row").slice(0, 3)) expect(r.lastElementChild!.className).toContain("text-danger");
@@ -1578,9 +1585,11 @@ describe("t126: thanh bên — me.role '__proto__' / 'constructor' / 'toString' 
   /** [tiêu đề khu IT, nhãn vai trò dưới user_id]. */
   const roleTexts = (me: Me) => {
     const view = render(
-      <MemoryRouter>
-        <Sidebar me={me} onSignOut={async () => true} />
-      </MemoryRouter>,
+      <QueryClientProvider client={idleClient()}>
+        <MemoryRouter>
+          <Sidebar me={me} onSignOut={async () => true} />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     const heading = view.container.querySelector("nav > span.text-label")?.textContent ?? null;
     const label = within(view.container).getByTestId("me-user-id").nextElementSibling?.textContent ?? null;
@@ -1595,7 +1604,7 @@ describe("t126: thanh bên — me.role '__proto__' / 'constructor' / 'toString' 
   });
 
   it("role hợp lệ vẫn ra nhãn cũ", () => {
-    expect(roleTexts(L1)).toStrictEqual(["Người duyệt L1", "IT Helpdesk L1"]);
+    expect(roleTexts(L1)).toStrictEqual(["Người duyệt L1", "Nhân viên hỗ trợ L1"]);
     expect(roleTexts(MGR)).toStrictEqual(["Trưởng bộ phận IT", "Trưởng bộ phận IT"]);
   });
 });

@@ -26,7 +26,7 @@ trên (Phase 1a, 25/09/2026). Bảng dưới ghi nguồn từng nhóm cột; **[
 | `policy_rules` | PK (`rule_id`, `version_id`) (TK); `rule_type`, `intent`, `action`, `conditions`, `description` (N3-9.3) |
 | `kb_versions` | toàn bộ theo P3 mục 8 |
 | `kb_documents` | front matter P3 mục 4; PK (`doc_id`, `version`) và `kb_version` [ĐX] |
-| `tickets` | 20 cột (TK, N3-9.1, N4-9 điểm 8, B03-B05 5.4, B19) + `is_parent` (P7 2.10) = 21. `redacted_request` thay `raw_request` (D-07, A1) |
+| `tickets` | 20 cột (TK, N3-9.1, N4-9 điểm 8, B03-B05 5.4, B19) + `is_parent` (P7 2.10) = 21. `redacted_request` thay `raw_request` (D-07, A1). Migration 0013 (D-67): `strategy` (chiến lược M5 chụp lúc tạo, NULL = ticket cũ), `source` (`real`/`sim`/`eval`) = 23 |
 | `approvals` | B15 mục 8 + P7 2.6; CHECK "rejected phải có note" (TK); `created_at` [ĐX] |
 | `transaction_log` | `step_name`, `status` {begun, undone, undo_failed}, `detail` (TK, N4 5.3, B17 mục 8 — A3); `log_id`, `turn_id`, `created_at` [ĐX] |
 | `exit_code_priority` | seed đúng B20 4.1 (E7 = 1 … E1/E3/E4/E8 = 6, E9 ngang E2) |
@@ -38,6 +38,7 @@ trên (Phase 1a, 25/09/2026). Bảng dưới ghi nguồn từng nhóm cột; **[
 | `llm_calls` | HD17.1, P2 mục 11; `call_id`, `created_at` [ĐX] |
 | `alerts` | P9 mục 6–7 (`rule_id`, `severity`, `value`, `status`, `acked_by`, UNIQUE (`rule_id`, `window_start`)); `acked_at`, `detail`, `created_at` [ĐX] |
 | `security_events`, `llm_cache`, `wait_deadlines`, `side_effects`, `child_notices` | DDL nguyên văn P7 2.3–2.9 |
+| `m5_strategy_changes` | Migration 0013 (D-67): lịch sử đổi chiến lược M5 lúc vận hành, CHỈ GHI THÊM (`app_rw` SELECT/INSERT + trigger `forbid_mutation`); hiện hành = dòng `id` lớn nhất, chưa có dòng → `hybrid` |
 
 **Index thêm theo P9 mục 4 (điều chỉnh 3):** `audit_logs(step, created_at)`,
 `escalations(closed_at, exit_code)`, `llm_calls(created_at)`.
@@ -46,7 +47,7 @@ trên (Phase 1a, 25/09/2026). Bảng dưới ghi nguồn từng nhóm cột; **[
 - `docker/postgres/init-roles.sh` chạy bằng superuser lúc khởi tạo volume. Script tạo `app_migrate`,
   `app_rw`, `app_monitor` với mật khẩu lấy từ env, và cho `app_migrate` làm owner schema.
 - Alembic chạy bằng `app_migrate`. Downgrade không đụng role.
-- Trigger `forbid_mutation` chặn UPDATE/DELETE trên `audit_logs` và `security_events`. Thêm
+- Trigger `forbid_mutation` chặn UPDATE/DELETE trên `audit_logs` và `security_events` (0013: cả `m5_strategy_changes`). Thêm
   [ĐX]: chặn cả TRUNCATE.
 
 **Checkpoint LangGraph** (`checkpointer.setup()`) làm ở Phase 2.

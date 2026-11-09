@@ -20,10 +20,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, func, insert, literal, select, text, update
+from sqlalchemy import (
+    RowMapping,
+    Table,
+    exists,
+    func,
+    insert,
+    literal,
+    select,
+    text,
+    update,
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.db.models import ChildNotice, Ticket, Turn
+from app.db.models import Approval, ChildNotice, Ticket, TicketHidden, Turn
 from app.db.runtime import current_tx
 from app.db.security_events import check_event, insert_event
 from app.domain.children import (
@@ -34,11 +45,14 @@ from app.domain.children import (
     child_index,
     child_ref,
 )
+from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 _TURNS: Table = Turn.__table__  # type: ignore[assignment]
 _NOTICES: Table = ChildNotice.__table__  # type: ignore[assignment]
+_HIDDEN: Table = TicketHidden.__table__  # type: ignore[assignment]
+_APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 _FINAL_COLUMNS = (
     "final_state", "exit_code", "block_reason", "close_reason", "resolution_path",
     "aggregate_status", "auto_closed", "intent", "slots", "total_turns", "total_duration_seconds",
@@ -55,6 +69,9 @@ class NewTicket:
     session_id: str | None
     redacted_request: str  # ĐÃ qua privacy guard (D-07)
     created_at: datetime
+    # D-67 (migration 0013): chiến lược M5 chụp lúc tạo (None = không ghi → B12 coi là `hybrid`), nguồn ticket (`real`/`sim`/`eval`)
+    strategy: str | None = None
+    source: str = "real"
 
 
 @dataclass(frozen=True)
@@ -95,11 +112,28 @@ _HANDOFF_ROWS = text(
     " ORDER BY n.created_at DESC, n.notice_id DESC LIMIT 1) AS needs "
     "FROM tickets c WHERE c.parent_ticket_id = :parent"
 )
+# M1 (B3 báo trùng): ticket LÁ còn mở của một người từ `since` + `intent` của dòng audit B3 `intent_classified` mới nhất (`tickets.intent` NULL tới
+# B20). "Còn mở" (ĐP 08/11) = `final_state IS NULL` HOẶC (`S_ESCALATED` VÀ `close_reason IS NULL` — chờ kỹ thuật viên). Chỉ đọc; `ix_tickets_requester_created_at` + `ix_audit_logs_ticket`. Lọc ở đây chỉ để thu nhỏ tập — quyết định ở `pick_duplicate`.
+_OPEN_CANDIDATES = text(
+    "SELECT t.ticket_id, t.requester_id, t.final_state, t.close_reason, t.is_parent, t.parent_ticket_id, t.created_at, "
+    "(SELECT a.intent FROM audit_logs a WHERE a.ticket_id = t.ticket_id AND a.step = 'B3' AND a.event = 'intent_classified' "
+    " AND a.intent IS NOT NULL ORDER BY a.log_id DESC LIMIT 1) AS intent "
+    "FROM tickets t WHERE t.requester_id = :requester AND t.created_at >= :since AND t.is_parent = false "
+    "AND (t.final_state IS NULL OR (t.final_state = 'S_ESCALATED' AND t.close_reason IS NULL))"
+)
 _STARTED = text("SELECT result_ref FROM side_effects WHERE ticket_id = :parent AND kind = 'child_submit'")
 STARTED_PREFIX = "started:"  # `result_ref` của `child_submit` (`graph.children._started`)
 CREATE_ROUTE = "/api/tickets"  # `security_events.route` của sự kiện ghi lúc tạo ticket
 
 type NewEvents = Sequence[tuple[str, Mapping[str, Any]]]  # (event_type, detail) — không chứa văn bản người dùng
+
+
+def _ticket_row(mapping: RowMapping) -> TicketRow:
+    values = dict(mapping)
+    values["created_at"] = values["created_at"].astimezone(UTC)
+    if values["closed_at"] is not None:
+        values["closed_at"] = values["closed_at"].astimezone(UTC)
+    return TicketRow(**values)
 
 
 class TicketMissing(LookupError):
@@ -119,7 +153,7 @@ class SqlTicketStore:
                     ticket_id=ticket.ticket_id, requester_id=ticket.requester_id,
                     requester_role=ticket.requester_role, requester_dept=ticket.requester_dept,
                     session_id=ticket.session_id, redacted_request=ticket.redacted_request,
-                    created_at=ticket.created_at,
+                    created_at=ticket.created_at, strategy=ticket.strategy, source=ticket.source,
                 )
             )  # fmt: skip
             await conn.execute(
@@ -143,13 +177,52 @@ class SqlTicketStore:
                     )
                 )
             ).first()
+        return None if row is None else _ticket_row(row._mapping)
+
+    async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
+        """P3 "Gần đây": ticket GỐC (`parent_ticket_id IS NULL`) của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa
+        `limit` dòng — trừ ticket người đó đã ẩn (`ticket_hidden`, lọc trong WHERE nên TRƯỚC `LIMIT`). Không checkpoint. Index
+        `ix_tickets_requester_created_at` (migration 0010); `NOT EXISTS` đi theo PK `ticket_hidden(user_id, ticket_id)`."""
+        t, h = _TICKETS.c, _HIDDEN.c
+        hidden = exists().where(h.user_id == requester_id, h.ticket_id == t.ticket_id)
+        stmt = (
+            select(*(t[c] for c in _ROW_COLUMNS))
+            .where(t.requester_id == requester_id, t.parent_ticket_id.is_(None), ~hidden)
+            .order_by(t.created_at.desc(), t.ticket_id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_ticket_row(r._mapping) for r in rows]
+
+    async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
+        """P3 menu ⋯ "Xóa": ẩn `ticket_id` khỏi "Gần đây" của `user_id`. Idempotent — `ON CONFLICT DO NOTHING` (lần sau không đổi
+        `hidden_at`; quyền `app_rw` chỉ cần INSERT). Không đụng `tickets` hay bảng nào khác. Quyền chủ ticket do route kiểm."""
+        stmt = pg_insert(_HIDDEN).values(user_id=user_id, ticket_id=ticket_id, hidden_at=at).on_conflict_do_nothing()
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(_OPEN_CANDIDATES, {"requester": requester_id, "since": since})).all()
+        return [
+            OpenCandidate(
+                ticket_id=r.ticket_id, requester_id=r.requester_id, intent=r.intent, final_state=r.final_state,
+                close_reason=r.close_reason,
+                is_parent=r.is_parent, parent_ticket_id=r.parent_ticket_id, created_at=r.created_at.astimezone(UTC),
+            )
+            for r in rows
+        ]  # fmt: skip
+
+    async def strategy_of(self, ticket_id: str) -> str | None:
+        """D-67: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(select(_TICKETS.c.strategy).where(_TICKETS.c.ticket_id == ticket_id))
+            ).first()
         if row is None:
-            return None
-        values = dict(row._mapping)
-        values["created_at"] = values["created_at"].astimezone(UTC)
-        if values["closed_at"] is not None:
-            values["closed_at"] = values["closed_at"].astimezone(UTC)
-        return TicketRow(**values)
+            raise TicketMissing(ticket_id)
+        return None if row[0] is None else str(row[0])
 
     async def created_at(self, ticket_id: str) -> datetime:
         async with self._engine.connect() as conn:
@@ -195,14 +268,14 @@ class SqlTicketStore:
     async def create_child(
         self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime, intents: int, intent_type: str
     ) -> str:
-        """`INSERT … SELECT` từ dòng cha (người gửi, vai trò, phòng ban, phiên) — trong transaction của `effects.once("child_create")`;
+        """`INSERT … SELECT` từ dòng cha (người gửi, vai trò, phòng ban, phiên; D-67: `strategy`, `source`) — trong transaction của `effects.once("child_create")`;
         cha không có dòng → `TicketMissing`. Không dòng `turns` (lượt đầu do `ChildOps.start_missing` mở)."""
         p = _TICKETS.c
         stmt = insert(_TICKETS).from_select(
             ["ticket_id", "parent_ticket_id", "session_id", "requester_id", "requester_role", "requester_dept",
-             "redacted_request", "created_at"],
+             "redacted_request", "created_at", "strategy", "source"],
             select(literal(child_id), p.ticket_id, p.session_id, p.requester_id, p.requester_role, p.requester_dept,
-                   literal(redacted_request), literal(created_at)).where(p.ticket_id == parent_id),
+                   literal(redacted_request), literal(created_at), p.strategy, p.source).where(p.ticket_id == parent_id),
         ).returning(_TICKETS.c.ticket_id)  # fmt: skip
         # RETURNING, KHÔNG `rowcount`: SQLAlchemy chỉ giữ `rowcount` của UPDATE/DELETE (INSERT → -1 khi không `preserve_rowcount`) —
         # verify 14/10 đỏ 12 test PG vì vậy
@@ -235,6 +308,9 @@ class SqlTicketStore:
             running: set[str] = set((await conn.execute(
                 select(_TURNS.c.ticket_id).where(_TURNS.c.ticket_id.in_(list(children)), _TURNS.c.ended_at.is_(None))
             )).scalars().all())  # fmt: skip
+            approving: set[str] = set((await conn.execute(
+                select(_APPROVALS.c.ticket_id).where(_APPROVALS.c.ticket_id.in_(list(children)), _APPROVALS.c.status == "pending")
+            )).scalars().all())  # fmt: skip
             rows = (await conn.execute(
                 select(n.notice_id, n.child_ticket_id, n.source_step, n.kind, n.needs, n.body, n.created_at)
                 .where(n.parent_ticket_id == parent_id, n.child_ticket_id.in_(list(children)), unsent)
@@ -247,7 +323,8 @@ class SqlTicketStore:
             )
         # Con "kết thúc" = có `final_state` VÀ không còn lượt mở (soát lượt 2: B20 của con ghi `final_state` TRƯỚC notice escalation —
         # cha đối soát giữa hai việc đó sẽ đóng mà notice không bao giờ được gửi)
-        return [ChildView(cid, child_index(cid), None if cid in running else finals.get(cid), tuple(pending[cid]))
+        return [ChildView(cid, child_index(cid), None if cid in running else finals.get(cid), tuple(pending[cid]),
+                          cid in approving and cid not in running)
                 for cid in children]  # fmt: skip
 
     async def deliver_round(self, parent_id: str, round_no: int, notice_ids: Sequence[int], at: datetime) -> str:

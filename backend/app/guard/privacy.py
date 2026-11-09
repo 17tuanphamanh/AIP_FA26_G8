@@ -5,6 +5,8 @@ ticket, checkpoint, audit, LLM chỉ thấy bản đã che.
 `config/privacy_patterns.json` theo đúng thứ tự: bí mật (PEM, JWT, API key, cụm mật khẩu, OTP, chuỗi entropy cao) →
 `[BÍ_MẬT_ĐÃ_ẨN]`, KHÔNG giữ giá trị; PII (email ngoài tên miền công ty, SĐT, CCCD, STK) → `<LOẠI_n>` — cùng giá trị
 (đã chuẩn hoá) trong MỘT văn bản → cùng nhãn. Không lưu ánh xạ nhãn ↔ giá trị (3-Q23). Không log văn bản.
+be-pii-uuid: khớp PII mà phần bị thay CHỒNG lên một vùng `pii_exclude` (UUID 8-4-4-4-12, tính trên văn bản hiện tại của từng luật) →
+giữ nguyên, không đếm. Không miễn URL; luật bí mật/entropy không đổi.
 
 `NotRedactingGuard` (không che) CHỈ nạp khi `PRIVACY_GUARD=none` VÀ `APP_ENV` ∈ {dev, test} (`main._default_guard`).
 """
@@ -184,11 +186,14 @@ class RegexPrivacyGuard:
         assert rule.pattern is not None and rule.label is not None
         label = rule.label
         count = 0
+        protected = [m.span() for _, ex in self._p.pii_exclude for m in ex.finditer(text)]
 
         def one(m: re.Match[str]) -> str:
             nonlocal count
             start, end = _value_span(m)
             value = m.string[start:end]
+            if any(s < end and start < e for s, e in protected):  # be-pii-uuid: nằm (một phần) trong UUID → không phải PII
+                return m.group(0)
             if rule.id == "email" and self._is_company(value):
                 return m.group(0)
             count += 1

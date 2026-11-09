@@ -9,12 +9,20 @@ import { INBOX_REFRESH_MS, inboxRefetchInterval, listApprovals, overrideTicket }
 import { type AuthChannel, createClient } from "../../api/client.ts";
 import { errorMessage, ApiError, GENERIC_LOGIN_ERROR } from "../../api/errors.ts";
 import { offsetFrom, recordServerDate, serverNow } from "../../api/serverClock.ts";
-import type { ApprovalListItem, ApprovalStatus, ApprovalViewP4, Me, OverrideIn } from "../../api/types.ts";
+import type {
+  ApprovalAffected,
+  ApprovalListItem,
+  ApprovalRiskView,
+  ApprovalStatus,
+  ApprovalViewP4,
+  Me,
+  OverrideIn,
+} from "../../api/types.ts";
 import { AuthContext, type AuthValue } from "../../auth/context.ts";
 import { AuthProvider } from "../../auth/AuthProvider.tsx";
 import { RequirePerm } from "../../auth/RequireAuth.tsx";
 import { useAuth } from "../../auth/useAuth.ts";
-import { ActionView, FlatTable } from "../../components/ActionView.tsx";
+import { ActionView, FACT_SHOW_RAW_LABEL, FactTable, FlatTable, RAW_NOTE, SHOW_RAW_TEXT } from "../../components/ActionView.tsx";
 import { FlashNotice } from "../../components/FlashNotice.tsx";
 import { OverrideDialog } from "../../components/OverrideDialog.tsx";
 import { ApprovalDetailRoute } from "./ApprovalDetail.tsx";
@@ -25,10 +33,13 @@ import {
   BACKUP_TEXT,
   DECISION_SENT,
   decisionRole,
+  deadlineText,
   INBOX_COUNT_STALE_TEXT,
   INBOX_STALE_TEXT,
   isShortValue,
   isUrgent,
+  managerText,
+  MANAGER_UNKNOWN_TEXT,
   NOTICES_TEXT,
   OVERRIDE_DONE,
   OVERRIDE_FORBIDDEN,
@@ -43,6 +54,8 @@ import {
   reflexText,
   remainingShort,
   RISK_MISSING_TEXT,
+  riskSummary,
+  UNCALIBRATED_TEXT,
   SHORT_VALUE_MAX,
   sortByDeadline,
   TICKET_UNAVAILABLE,
@@ -97,6 +110,28 @@ const NESTED_ACTION = {
   facts: { device_registered: true, cert_days_to_expiry: -3, history: [] },
 };
 
+// F6 #76: người bị tác động (chính người gửi, sếp có tên) + RiskDecision của luật + 2 cờ suy ra.
+const AFFECTED: ApprovalAffected = {
+  user_id: "nv001",
+  is_requester: true,
+  department: "Finance",
+  manager: { status: "known", user_id: "mgr01", full_name: "Lê Thị Hạnh" },
+};
+const RISK_VIEW: ApprovalRiskView = {
+  decided_by: "rule",
+  policy_decision: "approval_required",
+  matched_rule_id: "R18",
+  raw_prob: null,
+  calibrated_prob: null,
+  p_method: null,
+  risk_level: "medium",
+  route: "HITL",
+  reason: "Ngoài giờ hành chính",
+  thresholds: null,
+  calibrated: false,
+  auto_allowed: false,
+};
+
 function viewOf(id: string, over: Partial<ApprovalViewP4> = {}): ApprovalViewP4 {
   return {
     approval_id: id,
@@ -111,6 +146,8 @@ function viewOf(id: string, over: Partial<ApprovalViewP4> = {}): ApprovalViewP4 
     facts: { cert_status: "expired" },
     role_as: "primary",
     procedure: { doc_id: "KB-VPN-004", title: "Gia hạn và cấp lại chứng chỉ VPN" },
+    affected: AFFECTED,
+    risk_view: RISK_VIEW,
     ...over,
   };
 }
@@ -326,8 +363,8 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
     expect(new Set(table)).toStrictEqual(new Set(EXPECTED));
     expect(table).toHaveLength(EXPECTED.length); // không trùng, không thiếu
     const row = document.querySelector('[data-key="params.window.to"]')!;
-    expect(row.querySelector("dd")?.textContent).toBe("null");
-    expect(document.querySelector('[data-key="type"] dd')?.textContent).toBe('"renew_vpn_cert"');
+    expect(row.querySelector('[data-testid="raw-value"]')?.textContent).toBe("null"); // gốc nguyên văn (TẮT: hiện "(không có)")
+    expect(document.querySelector('[data-key="type"] [data-testid="raw-value"]')?.textContent).toBe('"renew_vpn_cert"');
 
     fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
     const text = screen.getByTestId("action-json").textContent ?? "";
@@ -350,7 +387,7 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
     expect(screen.getAllByTestId("fact-row").map((r) => r.dataset.key)).toStrictEqual(["cert_status"]);
     expect(screen.getAllByTestId("action-row")).toHaveLength(EXPECTED.length);
     expect(screen.getByTestId("action-hash").textContent).toBe(HASH);
-    expect(screen.getByText("Finance")).toBeTruthy();
+    expect(screen.getAllByText("Finance")).toHaveLength(2); // người gửi + người bị ảnh hưởng (cùng phòng ban)
     expect(screen.queryByTestId("backup-banner")).toBeNull();
     expect(screen.getByRole("button", { name: /^Đồng ý/ })).toBeTruthy();
   });
@@ -437,12 +474,18 @@ describe("t44: từ chối thiếu lý do hoặc thiếu ghi chú → không g�
     fireEvent.change(note, { target: { value: "Sai máy" } }); // có ghi chú, chưa chọn lý do
     fireEvent.click(send);
     expect(within(dialog).getByRole("alert").textContent).toBe("Chọn lý do từ chối.");
+    // L1: viền đỏ + câu gắn đúng ô "Lý do"
+    expect(reason.getAttribute("aria-invalid")).toBe("true");
+    expect(reason.getAttribute("aria-describedby")).toBe(within(dialog).getByRole("alert").id);
+    expect(note.getAttribute("aria-invalid")).toBeNull();
 
     fireEvent.change(reason, { target: { value: "wrong_device" } });
     for (const value of ["", "   ", "\n\t "]) {
       fireEvent.change(note, { target: { value } });
       fireEvent.click(send);
       expect(within(dialog).getByRole("alert").textContent).toBe("Nhập lý do gửi người dùng (bắt buộc).");
+      expect(note.getAttribute("aria-invalid")).toBe("true");
+      expect(reason.getAttribute("aria-invalid")).toBeNull();
     }
     await new Promise((r) => setTimeout(r, 20));
     expect(posts(calls, "/decision")).toHaveLength(0);
@@ -524,8 +567,23 @@ describe("t46: hộp thư 404 → đường lỗi chung (N4c P5: route 4c đã c
     expect(screen.queryByTestId("inbox-missing")).toBeNull();
     expect(document.body.textContent).not.toContain("Phase 4 (4c)");
     expect(screen.getByRole("tablist")).toBeTruthy();
-    expect(screen.getByLabelText("Mã ticket")).toBeTruthy();
+    expect(screen.getByLabelText("Mã yêu cầu")).toBeTruthy();
     expect(calls[0]?.url).toBe("/api/approvals?mine=1&status=pending");
+  });
+
+  it("M5 (ĐP 02/11): ô Mã yêu cầu trống / chỉ khoảng trắng → 'Nhập mã yêu cầu.'; sai mẫu vẫn câu cũ; không điều hướng", async () => {
+    stubFetch((_method, url) => (url.startsWith("/api/approvals?") ? json(200, { items: [] }) : undefined));
+    renderAt("/approvals");
+    const input = await screen.findByLabelText("Mã yêu cầu");
+    for (const value of ["", "   "]) {
+      fireEvent.change(input, { target: { value } });
+      fireEvent.click(screen.getByRole("button", { name: "Xem yêu cầu" }));
+      expect((await screen.findByRole("alert")).textContent).toBe("Nhập mã yêu cầu.");
+    }
+    fireEvent.change(input, { target: { value: "a b/c" } });
+    fireEvent.click(screen.getByRole("button", { name: "Xem yêu cầu" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Mã yêu cầu chỉ gồm chữ, số và . _ - (tối đa 64 ký tự).");
+    expect(screen.getByLabelText("Mã yêu cầu")).toBeTruthy(); // vẫn ở hộp thư
   });
 
   it("P9: không có approval:decide (L2) → trang không có quyền, không gọi API", async () => {
@@ -572,8 +630,14 @@ describe("t47: ghi đè — 'Khác' thiếu ghi chú → không gửi; 409/422 �
     const reasons = [...(within(dialog).getByLabelText("Lý do") as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
     expect(reasons).toStrictEqual(["too_risky_for_auto", "approval_unnecessary", "should_not_escalate", "wrong_answer", "policy_gap", "other"]);
 
+    // L1: chưa chọn quyết định → nhóm quyết định viền đỏ + câu ngay dưới
+    fireEvent.click(within(dialog).getByRole("button", { name: "Gửi ghi đè" }));
+    expect(within(dialog).getByRole("alert").textContent).toBe("Chọn quyết định đúng cho yêu cầu này.");
+    expect(within(dialog).getByRole("radiogroup").getAttribute("aria-invalid")).toBe("true");
     fillOverride(dialog, "Chuyển L2", "other", "   ");
     expect(within(dialog).getByRole("alert").textContent).toBe("Lý do “Khác” cần ghi chú.");
+    expect(within(dialog).getByLabelText("Ghi chú ghi đè").getAttribute("aria-invalid")).toBe("true");
+    expect(within(dialog).getByRole("radiogroup").getAttribute("aria-invalid")).toBeNull();
     await new Promise((r) => setTimeout(r, 20));
     expect(posts(calls, "/override")).toHaveLength(0);
 
@@ -801,7 +865,8 @@ describe("t51: decision 403 (xung đột lợi ích theo chuỗi quản lý — 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(errorMessage(new ApiError(403, "forbidden")));
     expect(alert.textContent).toBe("Bạn không có quyền thực hiện thao tác này.");
-    expect(document.body.textContent).not.toMatch(/xung đột|quản lý|forbidden|permission_denied/i);
+    // "Quản lý" là nhãn dòng của khối "Người bị ảnh hưởng" (F6) → chỉ chặn chữ của LÝ DO xung đột ("chuỗi quản lý").
+    expect(document.body.textContent).not.toMatch(/xung đột|chuỗi quản lý|forbidden|permission_denied/i);
     expect(screen.queryByTestId("decision-sent")).toBeNull();
     expect((screen.getByRole("button", { name: /^Đồng ý/ }) as HTMLButtonElement).disabled).toBe(false);
     expect(posts(calls, "/decision")).toHaveLength(1);
@@ -990,7 +1055,7 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
     expect(actionLabel(null)).toBe(ACTION_UNKNOWN);
     expect(ACTION_UNKNOWN).toBe("Chưa rõ hành động — mở phiếu để xem");
     expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
-    expect(actionLabel("hanh_dong_la")).toBe("hanh_dong_la");
+    expect(actionLabel("hanh_dong_la")).toBe("Khác · hanh_dong_la"); // N-NGU: mã lạ → "Khác · mã"
   });
 
   it("màn: dòng null đứng đúng chỗ theo hạn, đỏ khi < 20%, nhãn P3 + '(không có)', bấm → mở phiếu", async () => {
@@ -1024,10 +1089,12 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
 
 // ------------------------------------------------------------------------------------------------ t81
 
-const NULL_VIEW: Partial<ApprovalViewP4> = { requester: { role: "employee", department: null }, risk: null, procedure: null };
+const NULL_VIEW: Partial<ApprovalViewP4> = { requester: { role: "employee", department: null }, risk: null, risk_view: null, procedure: null };
 
 describe("t81: phiếu có phòng ban / rủi ro / căn cứ null → '—', câu rủi ro, '(không có)'; thanh quyết định VẪN có", () => {
-  const dd = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+  // Khối "Người gửi" (khối "Người bị ảnh hưởng" cũng có dòng "Phòng ban") — tra trong khối đúng.
+  const dd = (label: string) =>
+    within(screen.getByText("Người gửi", { selector: "h2" }).parentElement!).getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
 
   it("hiện thay thế đúng chỗ, không dựng bảng rỗng; Đồng ý gửi đúng body cũ", async () => {
     const calls = stubFetch((method, url) => {
@@ -1430,8 +1497,8 @@ describe("t91: câu lỗi của hộp ghi đè — 403 forbidden riêng; 404 (k�
   });
 
   it("hằng câu + overrideErrorMessage thuần: P5 đúng chữ; 403 mã khác → câu 403 chung; lỗi không phải ApiError → câu mất kết nối", () => {
-    expect(OVERRIDE_FORBIDDEN).toBe("Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).");
-    expect(OVERRIDE_NOT_FOUND).toBe("Không tìm thấy ticket hoặc bạn không được xem ticket này.");
+    expect(OVERRIDE_FORBIDDEN).toBe("Bạn không được ghi đè yêu cầu này (không có quyền, hoặc đây là yêu cầu do chính bạn gửi).");
+    expect(OVERRIDE_NOT_FOUND).toBe("Không tìm thấy yêu cầu hoặc bạn không được xem yêu cầu này.");
     expect(overrideErrorMessage(new ApiError(403, null))).toBe(errorMessage(new ApiError(403, null)));
     expect(overrideErrorMessage(new ApiError(403, "reauth_required"))).toBe(errorMessage(new ApiError(403, "reauth_required")));
     expect(overrideErrorMessage(new TypeError("Failed to fetch"))).toBe(errorMessage(null));
@@ -1505,7 +1572,7 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
   it("readonlyText / actionLabel: khoá prototype → câu 'không còn chờ duyệt' / hiện nguyên mã; khoá hợp lệ giữ nhãn cũ", () => {
     for (const key of PROTO_KEYS) {
       expect(readonlyText(key as ApprovalStatus)).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
-      expect(actionLabel(key)).toBe(key);
+      expect(actionLabel(key)).toBe(`Khác · ${key}`); // N-NGU: mã lạ → "Khác · mã"
     }
     expect(readonlyText("rejected")).toBe("Phiếu đã từ chối — chỉ xem, không quyết định được nữa.");
     expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
@@ -1522,7 +1589,8 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
     expect((await screen.findByTestId("approval-status")).textContent).toBe("");
     expect(screen.getByTestId("approval-readonly").textContent).toBe("Phiếu không còn chờ duyệt — chỉ xem, không quyết định được nữa.");
     expect(screen.getByText("Vai trò", { selector: "dt" }).nextElementSibling?.textContent).toBe(key);
-    expect(screen.getByText(key, { selector: "p.text-heading" })).toBeTruthy(); // tiêu đề hành động = nguyên mã
+    // N-NGU: tiêu đề hành động lạ = "Khác · mã" (B1: tiêu đề phiếu là tên hành động; đầu thẻ hành động bỏ tên lặp)
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`Khác · ${key}`);
     expect(errors()).toHaveLength(0);
     noLeak();
   });
@@ -1555,5 +1623,541 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
     expect(within(rows[3]!).getByTestId("inbox-time").textContent).toBe("Đã đồng ý");
     expect(errors()).toHaveLength(0);
     noLeak();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t142 (F6 #76, R3 #76)
+
+describe("t142: hàm thuần — nhãn rủi ro, quản lý, hạn tuyệt đối", () => {
+  it("riskSummary: nhãn theo bảng; giá trị lạ → nguyên mã; LLM chưa hiệu chỉnh mới có câu 'chưa hiệu chỉnh'", () => {
+    // N-NGU: hướng xử lý / bên quyết định / luật = cặp "Nhãn · mã" (bảng ĐP 23:10); luật kèm mô tả từ matched_rules.
+    expect(riskSummary(RISK_VIEW)).toMatchObject({
+      level: "Trung bình",
+      route: { nhan: "Chờ IT duyệt", ma: "HITL" },
+      rule: { nhan: "Luật chưa có mô tả", ma: "R18" },
+      source: { nhan: "Theo luật", ma: "rule" },
+      note: null,
+    });
+    expect(riskSummary(RISK_VIEW, [{ rule_id: "R18", description: "Ngoài giờ cần duyệt", decision: "approval_required", applied: true }]).rule).toStrictEqual({
+      nhan: "Ngoài giờ cần duyệt",
+      ma: "R18",
+    });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "low", route: "AUTO" })).toMatchObject({ level: "Thấp", route: { nhan: "Tự xử lý", ma: "AUTO" } });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "high", route: "ESCALATE_L2" })).toMatchObject({ level: "Cao", route: { nhan: "Chuyển kỹ thuật viên L2" } });
+    expect(riskSummary({ ...RISK_VIEW, risk_level: "toString" as never, route: "constructor" as never })).toMatchObject({
+      level: "toString",
+      route: { nhan: "Khác", ma: "constructor" },
+    });
+    const llm = { ...RISK_VIEW, decided_by: "llm" as const, matched_rule_id: null, policy_decision: null };
+    expect(riskSummary(llm).note).toBe(UNCALIBRATED_TEXT);
+    expect(UNCALIBRATED_TEXT).toBe("Chưa hiệu chỉnh, không tự xử lý");
+    expect(riskSummary({ ...llm, calibrated_prob: 0.4, calibrated: true }).note).toBeNull(); // đã hiệu chỉnh → không câu
+    expect(riskSummary({ ...RISK_VIEW, calibrated: false }).note).toBeNull(); // luật (rule) không bao giờ có câu này
+  });
+
+  it("managerText: known có tên / không tên; unknown → 'Chưa rõ quản lý', KHÔNG 'không có quản lý'", () => {
+    expect(managerText({ status: "known", user_id: "m-1", full_name: "Lê Thị Hạnh" })).toBe("Lê Thị Hạnh (m-1)");
+    expect(managerText({ status: "known", user_id: "m-1", full_name: null })).toBe("m-1 (chưa có tên)");
+    expect(managerText({ status: "unknown", user_id: null, full_name: null })).toBe(MANAGER_UNKNOWN_TEXT);
+    expect(MANAGER_UNKNOWN_TEXT).not.toMatch(/không có quản lý/i);
+  });
+
+  it("deadlineText: giờ Việt Nam; null / không phải chuỗi / không phải thời điểm → null", () => {
+    expect(deadlineText("2026-09-30T14:30:00Z")).toBe("21:30 30/09/2026");
+    expect(deadlineText("2026-09-30T17:05:00+00:00")).toBe("00:05 01/10/2026"); // qua nửa đêm giờ VN
+    for (const bad of [null, undefined, "", "không phải ngày", 0, 1.7e12, {}, []]) expect(deadlineText(bad)).toBeNull();
+  });
+});
+
+describe("t143: màn chi tiết phiếu — người bị ảnh hưởng, mức rủi ro, hạn duyệt", () => {
+  const txt = (id: string) => screen.getByTestId(id).textContent;
+
+  function open(over: Partial<ApprovalViewP4>, path = "/approvals/f6") {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/f6") return json(200, viewOf("f6", over));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("f6")]);
+      return undefined;
+    });
+    renderAt(path);
+  }
+
+  it("người bị ảnh hưởng = người gửi: tài khoản, phòng ban, quản lý có tên; KHÔNG có dải 'khác người gửi'", async () => {
+    open({});
+    await screen.findByTestId("affected");
+    expect(txt("affected-user")).toBe("nv001");
+    expect(txt("affected-relation")).toBe("Chính người gửi yêu cầu");
+    expect(txt("affected-department")).toBe("Finance");
+    expect(txt("affected-manager")).toBe("Lê Thị Hạnh (mgr01)");
+    expect(screen.queryByTestId("affected-other")).toBeNull();
+  });
+
+  it("khác người gửi → dải cảnh báo 'Khác người gửi yêu cầu'; quản lý chưa rõ; phòng ban null → '—'", async () => {
+    open({
+      affected: { user_id: "nv006", is_requester: false, department: null, manager: { status: "unknown", user_id: null, full_name: null } },
+    });
+    await screen.findByTestId("affected");
+    expect(txt("affected-user")).toBe("nv006");
+    expect(screen.getByTestId("affected-other").textContent).toContain("Khác người gửi yêu cầu");
+    expect(txt("affected-relation")).toBe("Khác người gửi yêu cầu");
+    expect(txt("affected-department")).toBe("—");
+    expect(txt("affected-manager")).toBe("Chưa rõ quản lý");
+    expect(txt("affected-manager")).not.toMatch(/không có quản lý/i);
+    expect(screen.getByTestId("affected-manager").dataset.known).toBe("false");
+  });
+
+  it("quản lý known mà sếp chưa có tên → 'id (chưa có tên)'", async () => {
+    open({ affected: { ...AFFECTED, manager: { status: "known", user_id: "mgr02", full_name: null } } });
+    await screen.findByTestId("affected");
+    expect(txt("affected-manager")).toBe("mgr02 (chưa có tên)");
+  });
+
+  it("mức rủi ro: nhãn Việt, hướng xử lý, lý do, luật khớp, nguồn; bảng gốc vẫn còn; luật không có câu 'chưa hiệu chỉnh'", async () => {
+    open({});
+    await screen.findByTestId("risk-summary");
+    expect(txt("risk-level")).toBe("Trung bình");
+    expect(screen.getByTestId("risk-level").dataset.level).toBe("medium");
+    expect(txt("risk-route")).toBe("Chờ IT duyệt · HITL"); // N-NGU: "Nhãn · mã"
+    expect(txt("risk-reason")).toBe("Ngoài giờ hành chính");
+    expect(txt("risk-rule")).toBe(`${txt("risk-rule").split(" · ")[0]} · R18`); // N-NGU: "Mô tả · R18"
+    expect(txt("risk-rule")).not.toBe("R18");
+    expect(txt("risk-source")).toBe("Theo luật · rule");
+    expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
+    expect(screen.getAllByTestId("risk-row").length).toBeGreaterThan(0);
+  });
+
+  it("mức Cao + LLM chưa hiệu chỉnh → nhãn 'Cao' và câu 'Chưa hiệu chỉnh, không tự xử lý'; luật khớp '—'", async () => {
+    open({
+      risk: { decided_by: "llm", matched_rule_id: null, reason: "x", thresholds: null },
+      risk_view: { ...RISK_VIEW, decided_by: "llm", policy_decision: null, matched_rule_id: null, raw_prob: 0.6, p_method: "self_report", risk_level: "high" },
+    });
+    await screen.findByTestId("risk-summary");
+    expect(txt("risk-level")).toBe("Cao");
+    expect(txt("risk-rule")).toBe("—");
+    expect(txt("risk-source")).toBe("Theo đánh giá của AI · llm"); // N-NGU
+    expect(txt("risk-uncalibrated")).toBe(UNCALIBRATED_TEXT);
+  });
+
+  it("LLM đã hiệu chỉnh → không có câu 'chưa hiệu chỉnh'", async () => {
+    open({
+      risk_view: { ...RISK_VIEW, decided_by: "llm", policy_decision: null, matched_rule_id: null, calibrated_prob: 0.4, calibrated: true, thresholds: [0.3, 0.7] },
+    });
+    await screen.findByTestId("risk-summary");
+    expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
+  });
+
+  it("risk null (và risk_view null) → câu 'chưa có đánh giá', không bảng tóm tắt, thanh quyết định vẫn có", async () => {
+    open({ risk: null, risk_view: null });
+    await screen.findByTestId("risk-missing");
+    expect(screen.queryByTestId("risk-summary")).toBeNull();
+    expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+  });
+
+  it("hạn duyệt: đồng hồ đếm ngược VÀ mốc tuyệt đối giờ Việt Nam", async () => {
+    open({ deadline: "2099-09-30T14:30:00Z" });
+    await screen.findByTestId("approval-deadline");
+    expect(txt("approval-deadline-at")).toBe("21:30 30/09/2099");
+  });
+
+  it("hạn hỏng (không phải thời điểm) → không hiện mốc tuyệt đối, màn không vỡ", async () => {
+    open({ deadline: "không phải ngày" });
+    await screen.findByTestId("request-summary");
+    expect(screen.queryByTestId("approval-deadline-at")).toBeNull();
+  });
+
+  it("viewer: vẫn thấy người bị ảnh hưởng + rủi ro, KHÔNG có thanh quyết định", async () => {
+    open({ role_as: "viewer" });
+    await screen.findByTestId("viewer-note");
+    expect(txt("affected-user")).toBe("nv001");
+    expect(txt("risk-level")).toBe("Trung bình");
+    expect(screen.queryByTestId("decision-bar")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Đồng ý/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Từ chối/ })).toBeNull();
+  });
+
+  it("primary: có thanh quyết định (đối chứng của ca viewer)", async () => {
+    open({});
+    await screen.findByTestId("affected");
+    expect(screen.getByTestId("decision-bar")).toBeTruthy();
+  });
+});
+
+describe("t144: fail-closed — phiếu thiếu / sai kiểu người bị ảnh hưởng hoặc rủi ro → không hiện phiếu, KHÔNG thanh quyết định", () => {
+  async function expectBlocked(over: Record<string, unknown>) {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/bad") return json(200, { ...viewOf("bad"), ...over });
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("bad")]);
+      return undefined;
+    });
+    renderAt("/approvals/bad");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(errorMessage(new ApiError(502, "invalid_approval_body")));
+    expect(alert.textContent).not.toContain("invalid_approval_body");
+    expect(screen.queryByTestId("decision-bar")).toBeNull();
+    expect(screen.queryByTestId("affected")).toBeNull();
+    expect(screen.queryByTestId("action-hash")).toBeNull(); // không hiện nửa phiếu
+    expect(screen.queryByRole("button", { name: /^Đồng ý/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Từ chối/ })).toBeNull();
+  }
+
+  it("thiếu affected", () => expectBlocked({ affected: undefined }));
+  it("affected sai kiểu (user_id số)", () => expectBlocked({ affected: { ...AFFECTED, user_id: 5 } }));
+  it("manager.status lạ", () => expectBlocked({ affected: { ...AFFECTED, manager: { status: "none", user_id: null, full_name: null } } }));
+  it("risk_view sai enum (risk_level 'critical')", () => expectBlocked({ risk_view: { ...RISK_VIEW, risk_level: "critical" } }));
+  it("risk_view null mà risk có", () => expectBlocked({ risk_view: null }));
+});
+
+describe("t145: màn xem ticket (ghi đè) — hạn của lần chờ hiện tại", () => {
+  const T = "tkt-145";
+  const ticket = (over: Record<string, unknown>) => ({
+    ticket_id: T,
+    status: "S_PENDING_APPROVAL",
+    waiting_for: "approval",
+    conversation: [],
+    exit_code: null,
+    close_reason: null,
+    final_state: null,
+    created_at: "2026-09-30T13:00:00Z",
+    closed_at: null,
+    deadline: null,
+    ...over,
+  });
+
+  async function show(over: Record<string, unknown>) {
+    stubFetch((_method, url) => (url === `/api/tickets/${T}` ? json(200, ticket(over)) : undefined));
+    renderAt(`/approvals/ticket/${T}`);
+    await screen.findByTestId("ticket-state");
+  }
+
+  it("deadline là mốc → 'Hạn của lần chờ hiện tại 21:30 30/09/2026'", async () => {
+    await show({ deadline: "2026-09-30T14:30:00Z" });
+    expect(screen.getByTestId("ticket-deadline").textContent).toBe("21:30 30/09/2026");
+    expect(screen.getByTestId("ticket-state").textContent).toContain("Hạn của lần chờ hiện tại");
+  });
+
+  it("deadline null → không hiện gì (không '—', không 'Hạn')", async () => {
+    await show({ deadline: null });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+    expect(screen.getByTestId("ticket-state").textContent).not.toMatch(/Hạn/);
+  });
+
+  it("thiếu khoá deadline (backend/fixture cũ) hoặc sai kiểu → không hiện, màn không vỡ", async () => {
+    await show({ deadline: undefined });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+    cleanup();
+    await show({ deadline: 1234 });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+    cleanup();
+    await show({ deadline: "không phải ngày" });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+  });
+
+  it("ticket đã kết thúc → không hiện hạn dù thân có chuỗi (không còn lần chờ)", async () => {
+    await show({ final_state: "S_CLOSED", deadline: "2026-09-30T14:30:00Z" });
+    expect(screen.queryByTestId("ticket-deadline")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t231 (đợt 2 tên gọi, B1)
+
+describe("t231: B1 — tiêu đề phiếu là tên hành động; mã phiếu + mã yêu cầu ở dòng dưới", () => {
+  it("h1 = 'Cấp lại chứng chỉ VPN'; dòng dưới có 'Phiếu r' và 'Mã yêu cầu'; không còn 'Mã ticket'", async () => {
+    detailApi(() => json(202, {}));
+    renderAt("/approvals/r");
+    await screen.findByTestId("decision-bar");
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1.textContent).toBe("Cấp lại chứng chỉ VPN");
+    const meta = h1.nextElementSibling?.textContent ?? "";
+    expect(meta).toContain("Phiếu r");
+    expect(meta).toContain("Mã yêu cầu");
+    expect(document.body.textContent).not.toContain("Mã ticket");
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t232 (đợt 2 tên gọi, B2)
+
+describe("t232: B2 — TẮT chỉ chữ người đọc được, BẬT khoá gốc + JSON.stringify; gốc luôn trong DOM; không đoán", () => {
+  // Object có khoá đã biết, khoá lạ, giá trị lạ, giá trị trùng tên thuộc tính prototype, mảng, null, chuỗi rỗng.
+  const ACTION = {
+    type: "grant_permission",
+    target: "folder:finance/Q3",
+    requested_for: "nv001",
+    scope: "single_account",
+    privilege_level: "elevated",
+    reversible: false,
+    reversibility: "none",
+    data_sensitivity: "constructor",
+    params: { resource_path: "finance/Q3", permission_level: "write", duration_days: 30, account_type: "__proto__", software_name: "Visio" },
+    facts: { cert_status: "expired", device_registered: true, cert_days_to_expiry: -3, khoa_moi: "gia_tri_moi", trong: "" },
+    khoa_la: { x: null, y: [1, "a"] },
+  };
+  /** Giá trị tại đường dẫn — viết RIÊNG ở test, không dùng flattenEntries. */
+  const at = (path: string): unknown =>
+    path.split(/\.|\[(\d+)\]/).filter(Boolean).reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], ACTION);
+  const LABELED: Record<string, string> = {
+    type: "Cấp quyền truy cập",
+    target: "Thư mục finance/Q3",
+    scope: "Một tài khoản",
+    privilege_level: "Quyền nâng cao",
+    reversible: "Không",
+    reversibility: "Không hoàn tác được",
+    "params.permission_level": "Đọc và ghi",
+    "params.duration_days": "30 ngày",
+    "facts.cert_status": "Đã hết hạn",
+    "facts.device_registered": "Có",
+  };
+  /** Khoá có nhãn 1-1 (TẮT chỉ hiện nhãn). Còn lại (khoá lạ, facts.<lạ>, khoa_la.*) → khoá gốc luôn hiện (a). */
+  const KEY_LABEL: Record<string, string> = {
+    type: "Loại hành động",
+    target: "Đối tượng",
+    requested_for: "Thực hiện cho",
+    scope: "Phạm vi",
+    privilege_level: "Mức quyền",
+    reversible: "Hoàn tác được",
+    reversibility: "Mức hoàn tác",
+    data_sensitivity: "Độ nhạy dữ liệu",
+    "params.resource_path": "Đường dẫn thư mục",
+    "params.permission_level": "Mức quyền xin cấp",
+    "params.duration_days": "Thời hạn",
+    "params.account_type": "Loại tài khoản",
+    "params.software_name": "Tên phần mềm",
+    "facts.cert_status": "Trạng thái chứng chỉ",
+    "facts.device_registered": "Máy đã đăng ký",
+    "facts.cert_days_to_expiry": "Số ngày tới hạn chứng chỉ (âm = đã quá hạn)",
+  };
+  const row = (key: string) => screen.getAllByTestId("action-row").find((r) => r.dataset.key === key)!;
+  const raw = (r: HTMLElement) => within(r).getByTestId("raw-value");
+  /** Chữ NHÌN THẤY của một phần tử (bỏ phần tử con `hidden`). */
+  const visible = (el: Element): string =>
+    [...el.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : (n as HTMLElement).hidden ? "" : visible(n as Element))).join("");
+
+  it("TẮT (mặc định): khoá có nhãn chỉ hiện nhãn; giá trị có nhãn chỉ nhãn; chuỗi không nhãn === chính giá trị; gốc vẫn trong DOM", () => {
+    render(<ActionView action={ACTION} hash={"a".repeat(64)} title="Cấp quyền truy cập" />);
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("false");
+    const rows = screen.getAllByTestId("action-row");
+    expect(rows.map((r) => r.dataset.key)).toStrictEqual(jsonKeyPaths(ACTION)); // đủ, không trùng, không sắp lại
+    for (const r of rows) {
+      const key = r.dataset.key!;
+      const value = at(key);
+      expect(raw(r).textContent).toBe(JSON.stringify(value)); // gốc KHÔNG bị bỏ
+      expect(raw(r).hidden).toBe(true);
+      const dt = visible(r.querySelector("dt")!);
+      expect(dt).toBe(Object.hasOwn(KEY_LABEL, key) ? KEY_LABEL[key] : dt.includes(key) ? dt : key); // (a) khoá lạ: có khoá gốc
+      if (!Object.hasOwn(KEY_LABEL, key)) expect(dt).toContain(key);
+      const dd = visible(r.querySelector("dd")!);
+      if (Object.hasOwn(LABELED, key)) expect(dd).toBe(LABELED[key]);
+      else if (value === null) expect(dd).toBe("(không có)"); // (b)
+      else if (value === "") expect(dd).toBe("(trống)"); // (b)
+      else if (typeof value === "string") expect(dd).toBe(value); // chuỗi không nhãn: đúng từng ký tự, không ngoặc kép
+      else expect(dd).toBe(JSON.stringify(value)); // (e) số / bool / mảng-phần tử
+    }
+    // (d) danh tính: font đơn cách
+    for (const key of ["requested_for", "params.resource_path", "params.software_name"]) {
+      expect(within(row(key)).getByTestId("display-value").className).toContain("font-mono");
+    }
+    expect(within(row("target")).getByText("finance/Q3").className).toContain("font-mono");
+    expect(within(row("facts.khoa_moi")).getByTestId("display-value").className).toContain("font-sans");
+    // Điều kiện 4: mã băm rút gọn + câu chú thích đầu bảng; mã đủ ở chân.
+    expect(screen.getByTestId("action-hash-short").textContent).toBe(`${"a".repeat(12)}…`);
+    expect(screen.getByTestId("raw-note").textContent).toBe(RAW_NOTE);
+    expect(screen.getByTestId("action-hash").textContent).toBe("a".repeat(64));
+  });
+
+  it("BẬT: mọi dòng = khoá gốc + JSON.stringify từng ký tự (như 395e3c9); tab JSON === JSON.stringify(action, null, 2)", () => {
+    render(<ActionView action={ACTION} hash={"b".repeat(64)} title="Cấp quyền truy cập" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("true");
+    for (const r of screen.getAllByTestId("action-row")) {
+      const key = r.dataset.key!;
+      expect(raw(r).hidden).toBe(false);
+      expect(raw(r).textContent).toBe(JSON.stringify(at(key)));
+      expect(visible(r.querySelector("dt")!)).toContain(key);
+      expect(within(r).queryByTestId("display-value")?.hidden ?? true).toBe(true);
+    }
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    expect(screen.getByTestId("action-json").textContent).toBe(JSON.stringify(ACTION, null, 2));
+    expect(screen.getByTestId("action-hash").textContent).toBe("b".repeat(64));
+  });
+
+  // (c) mỗi loại một ca: TẮT vẫn hiện JSON.stringify (ngoặc kép, escape) + "định dạng gốc".
+  it.each([
+    ["khoảng trắng đầu", " nv001"],
+    ["khoảng trắng cuối", "nv001 "],
+    ["ký tự điều khiển", "nv\u0000001"],
+    ["xuống dòng", "nv\n001"],
+    ["zero-width", "nv\u200b001"],
+    ["soft hyphen", "nv\u00ad001"],
+    ["BOM", "\ufeffnv001"],
+    ["điều hướng chữ (RLO)", "nv\u202e001"],
+    ["trông như số", "0123"],
+    ["trông như số âm thập phân", "-1.5e3"],
+    ["trông như true", "true"],
+    ["trông như False", "False"],
+    ["trông như null", "null"],
+  ])("(c) %s → TẮT vẫn hiện JSON.stringify + 'định dạng gốc'", (_name, value) => {
+    render(<ActionView action={{ requested_for: value, target: `device:${value}` }} hash={"c".repeat(64)} title="x" />);
+    for (const key of ["requested_for", "target"]) {
+      const r = row(key);
+      expect(within(r).queryByTestId("value-label")).toBeNull(); // target có phần sau lạ → không nhãn tiền tố
+      const shown = within(r).getByTestId("display-value");
+      expect(shown.hidden).toBe(false);
+      const v = key === "target" ? `device:${value}` : value;
+      // JSON.stringify + escape \uXXXX cho ký tự vô hình (JSON.stringify bỏ sót) — vẫn là JSON của đúng chuỗi.
+      const expected = JSON.stringify(v).replace(/[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/gu, (c) => `\\u${c.codePointAt(0)!.toString(16).padStart(4, "0")}`);
+      expect(shown.firstChild?.textContent).toBe(expected);
+      expect(JSON.parse(shown.firstChild!.textContent!)).toBe(v); // parse lại ra đúng giá trị
+      expect(/[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u.test(shown.textContent!)).toBe(false); // không còn ký tự vô hình
+      expect(within(r).getByTestId("raw-format-note").textContent).toBe("định dạng gốc");
+    }
+  });
+
+  // ---- Mục 0d (ĐP 01/11 16:00) ----
+  const HIDDEN = /[\u007f-\u009f\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/u;
+
+  it("0d-1: BẬT + tab JSON dùng cùng hàm an toàn — parse lại bằng sâu đúng gốc, không còn ký tự vô hình (khoá lẫn giá trị)", () => {
+    const DIRTY = {
+      type: "renew_vpn_cert",
+      target: "device:LAP\u200b0342",
+      requested_for: "nv\u202e001",
+      params: { device_id: "LAP\u00ad0342", "kho\u200ba": "x\u007fy\u0085z" },
+      facts: { cert_status: "\ufeffexpired" },
+    };
+    render(<ActionView action={DIRTY} hash={"e".repeat(64)} title="x" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    const at = (path: string): unknown => path.split(".").reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], DIRTY);
+    for (const r of screen.getAllByTestId("action-row")) {
+      const text = raw(r).textContent!;
+      expect(HIDDEN.test(text)).toBe(false); // (ii)
+      expect(JSON.parse(text)).toStrictEqual(at(r.dataset.key!)); // (i)
+      expect(HIDDEN.test(visible(r.querySelector("dt")!))).toBe(false); // khoá gốc cũng thấy được
+    }
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    const json = screen.getByTestId("action-json").textContent!;
+    expect(HIDDEN.test(json)).toBe(false);
+    expect(JSON.parse(json)).toStrictEqual(DIRTY);
+    expect(json).toContain("LAP\\u200b0342");
+  });
+
+  it("0d-1 (iii): object sạch → BẬT === JSON.stringify từng dòng, tab JSON === JSON.stringify(action, null, 2)", () => {
+    render(<ActionView action={ACTION} hash={"f".repeat(64)} title="x" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    for (const r of screen.getAllByTestId("action-row")) expect(raw(r).textContent).toBe(JSON.stringify(at(r.dataset.key!)));
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    expect(screen.getByTestId("action-json").textContent).toBe(JSON.stringify(ACTION, null, 2));
+  });
+
+  it("(h) Cyrillic ở requested_for / device_id / phần sau ':' của target → dạng gốc, escape \\uXXXX ngoài ASCII; tiếng Việt ở resource_path, software_name không bị đánh dấu", () => {
+    // "\u0430" (U+0430 Cyrillic) thay "a" Latin — trông giống hệt.
+    const SPOOF = {
+      target: "device:L\u0410P-0342",
+      requested_for: "\u0430dmin",
+      params: { device_id: "LAP-0\u04173", resource_path: "Phòng Kế toán/Quý 3", software_name: "Bộ gõ Tiếng Việt" },
+    };
+    render(<ActionView action={SPOOF} hash={"9".repeat(64)} title="x" />);
+    const cases: [string, string, string][] = [
+      ["target", "device:L\u0410P-0342", '"device:L\\u0410P-0342"'],
+      ["requested_for", "\u0430dmin", '"\\u0430dmin"'],
+      ["params.device_id", "LAP-0\u04173", '"LAP-0\\u04173"'],
+    ];
+    for (const [key, value, shown] of cases) {
+      const r = row(key);
+      expect(within(r).queryByTestId("value-label")).toBeNull();
+      const el = within(r).getByTestId("display-value");
+      expect(el.firstChild?.textContent).toBe(shown);
+      expect(JSON.parse(el.firstChild!.textContent!)).toBe(value);
+      expect(within(r).getByTestId("raw-format-note").textContent).toBe("định dạng gốc");
+    }
+    for (const [key, value] of [["params.resource_path", "Phòng Kế toán/Quý 3"], ["params.software_name", "Bộ gõ Tiếng Việt"]] as const) {
+      const r = row(key);
+      expect(within(r).getByTestId("display-value").textContent).toBe(value); // tiếng Việt hiện nguyên, không đánh dấu
+      expect(within(r).queryByTestId("raw-format-note")).toBeNull();
+    }
+    // BẬT: cùng hàm — danh tính ASCII cũng escape ngoài ASCII
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    expect(raw(row("requested_for")).textContent).toBe('"\\u0430dmin"');
+    expect(raw(row("params.resource_path")).textContent).toBe(JSON.stringify("Phòng Kế toán/Quý 3"));
+  });
+
+  it("chuỗi thường KHÔNG bị coi là (c): 'LAP-0342', 'finance/Q3', 'Visio 2021', 'nv001'", () => {
+    render(<ActionView action={{ a: "LAP-0342", b: "finance/Q3", c: "Visio 2021", d: "nv001" }} hash={"d".repeat(64)} title="x" />);
+    expect(screen.queryByTestId("raw-format-note")).toBeNull();
+    expect(screen.getAllByTestId("display-value").map((e) => e.textContent)).toStrictEqual(["LAP-0342", "finance/Q3", "Visio 2021", "nv001"]);
+  });
+
+  it("điều kiện 6: không nhớ sang phiếu khác — bật ở phiếu này, mở phiếu khác (dựng lại) → TẮT", () => {
+    const { rerender } = render(<ActionView key="p1" action={ACTION} hash={"c".repeat(64)} title="x" />);
+    fireEvent.click(screen.getByRole("button", { name: SHOW_RAW_TEXT }));
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("true");
+    rerender(<ActionView key="p2" action={ACTION} hash={"c".repeat(64)} title="x" />);
+    expect(screen.getByRole("button", { name: SHOW_RAW_TEXT }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("bảng khác (rủi ro, dữ kiện, chính sách) không đổi: FlatTable vẫn hiện khoá gốc + giá trị JSON, không công tắc", () => {
+    render(<FlatTable value={{ scope: "single_device", reversible: true }} testId="kv" />);
+    expect(screen.queryByTestId("raw-value")).toBeNull();
+    expect(screen.queryByTestId("value-label")).toBeNull();
+    expect(document.querySelector('[data-key="scope"] dd')?.textContent).toBe('"single_device"');
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t234 (ĐP 02/11 B4)
+
+describe("t234: B4 — bảng 'Dữ kiện đã kiểm' dùng nhãn mục 3; khoá lạ giữ khoá gốc; cùng luật hiển thị an toàn 0c/0d", () => {
+  const facts = {
+    device_registered: true,
+    cert_status: "expired",
+    cert_days_to_expiry: -3,
+    target_user_status: "probation",
+    khoa_la: "abc",
+    device_count: 2,
+    target_lock_reason: "gia_tri_la",
+    the_rong: "",
+    the_null: null,
+    vo_hinh: "LAP\u200b0342",
+    giong_so: "42",
+  };
+  const row = (key: string) => screen.getAllByTestId("fact-row").find((r) => r.dataset.key === key)!;
+  const shown = (key: string) => {
+    const r = row(key);
+    const label = within(r).queryByTestId("value-label");
+    return (label ?? within(r).getByTestId("display-value")).textContent;
+  };
+
+  it("TẮT (mặc định): nhãn khoá + nhãn giá trị; khoá lạ hiện khoá gốc; giá trị lạ hiện nguyên; đủ dòng đúng thứ tự, data-key = khoá gốc", () => {
+    render(<FactTable facts={facts} />);
+    expect(screen.getAllByTestId("fact-row").map((r) => r.dataset.key)).toStrictEqual(Object.keys(facts));
+    expect(screen.getByRole("button", { name: FACT_SHOW_RAW_LABEL }).getAttribute("aria-pressed")).toBe("false");
+    const dt = (key: string) => row(key).querySelector("dt")!;
+    expect(dt("device_registered").textContent).toBe("Máy đã đăng ký · device_registered"); // khoá gốc có trong DOM…
+    expect(within(row("device_registered")).getByTestId("raw-key").hidden).toBe(true); // …nhưng ẩn khi tắt
+    expect(shown("device_registered")).toBe("Có");
+    expect(shown("cert_status")).toBe("Đã hết hạn");
+    expect(dt("cert_days_to_expiry").firstChild!.textContent).toBe("Số ngày tới hạn chứng chỉ (âm = đã quá hạn)");
+    expect(shown("cert_days_to_expiry")).toBe("-3");
+    expect(shown("target_user_status")).toBe("Đang thử việc");
+    expect(shown("device_count")).toBe("2");
+    expect(dt("khoa_la").textContent).toBe("khoa_la"); // khoá lạ: khoá gốc, không nhãn đoán
+    expect(shown("khoa_la")).toBe("abc");
+    expect(shown("target_lock_reason")).toBe("gia_tri_la"); // giá trị ngoài bảng: không nhãn
+    expect(shown("the_rong")).toBe("(trống)");
+    expect(shown("the_null")).toBe("(không có)");
+  });
+
+  it("0c/0d: ký tự vô hình / chuỗi giống số → dạng gốc có escape + 'định dạng gốc' kể cả khi tắt; BẬT → khoá gốc + safeJsonText từng dòng", () => {
+    render(<FactTable facts={facts} />);
+    expect(within(row("vo_hinh")).getByTestId("display-value").textContent).toBe('"LAP\\u200b0342"định dạng gốc');
+    expect(within(row("giong_so")).getByTestId("raw-format-note")).toBeTruthy();
+    for (const r of screen.getAllByTestId("fact-row")) expect(r.textContent).not.toMatch(/[\u200b-\u200f\u2060\ufeff]/);
+    fireEvent.click(screen.getByRole("button", { name: FACT_SHOW_RAW_LABEL }));
+    expect(within(row("device_registered")).getByTestId("raw-key").hidden).toBe(false);
+    expect(within(row("cert_status")).getByTestId("raw-value").textContent).toBe('"expired"');
+    expect(within(row("vo_hinh")).getByTestId("raw-value").textContent).toBe('"LAP\\u200b0342"');
+    expect(JSON.parse(within(row("vo_hinh")).getByTestId("raw-value").textContent!)).toBe(facts.vo_hinh);
+  });
+
+  it("công tắc của bảng dữ kiện tách khỏi công tắc bảng hành động; khoá '__proto__' / 'constructor' không có nhãn", () => {
+    render(<FactTable facts={JSON.parse('{"__proto__": "x", "constructor": "y"}')} />);
+    expect(screen.getAllByTestId("fact-row").map((r) => r.querySelector("dt")!.textContent)).toStrictEqual(['__proto__', "constructor"]);
+    expect(screen.queryByRole("button", { name: SHOW_RAW_TEXT })).toBeNull(); // tên riêng, không trùng nút bảng hành động
   });
 });

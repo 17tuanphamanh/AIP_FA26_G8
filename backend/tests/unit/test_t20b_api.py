@@ -36,7 +36,9 @@ from tests.fakes.auth import (
 )
 from tests.fakes.desk import MASK, SECRET, MaskingGuard, harness_runtime
 from tests.fakes.rate import MemoryRateGate
+from tests.fakes.strategy import MemoryStrategyStore
 from tests.unit._t20b import (
+    ADOBE_PRINTER,
     RESET,
     TC34,
     TC35,
@@ -45,6 +47,7 @@ from tests.unit._t20b import (
     classify,
     extend_item,
     make_flow,
+    oos_item,
     reset_item,
 )
 from tests.unit.auth_helpers import BASE_URL, auth_settings
@@ -100,7 +103,7 @@ async def api(f: Flow, guard: Any = None) -> AsyncIterator[Api]:
     rate = MemoryRateGate(RateLimits.from_settings(settings), tickets=lambda: f.h.tickets.rows.values(), sink=sink)  # gói 2b
     app = create_app(
         settings, health_checks={}, idp=FakeIdentityProvider(), store=store, sink=sink, alerts=f.h.alerts,
-        runtime=harness_runtime(f.h), guard=guard, clock=clock, rate=rate,
+        runtime=harness_runtime(f.h), guard=guard, clock=clock, rate=rate, strategy=MemoryStrategyStore(),
     )  # fmt: skip
     transport = httpx.ASGITransport(app=app, client=("203.0.113.7", 50000))
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
@@ -174,9 +177,10 @@ async def test_a2_items_must_equal_awaiting_422(items: dict[str, Any], field: st
 
 
 async def test_a3_reply_when_not_waiting_reply_409_one_late_event() -> None:
-    """a3: cha KHÔNG ở `parent_reply_wait` (đang `parent_wait` — con 2 chờ duyệt) → 409 + đúng 1 dòng `late_event`."""
-    f = make_flow(classify(reset_item(), adobe_item()))
-    await f.submit(TC34)
+    """a3: cha KHÔNG ở `parent_reply_wait` (đang `parent_wait` — đã báo vòng 1, chỉ còn con 1 chờ duyệt, D-77) → 409 + đúng 1 dòng
+    `late_event`."""
+    f = make_flow(classify(adobe_item(), oos_item()))
+    await f.submit(ADOBE_PRINTER)
     assert (await f.waiting("T1")) == "parent_wait"
     async with api(f) as a:
         an = await a.token("an.nv")
@@ -307,8 +311,9 @@ async def test_a7_children_progress_pure_five_states() -> None:
 
 
 async def test_a7_get_parent_children_progress_milestones() -> None:
-    """a7 + 5.2.7: `GET` cha có `children_progress` đúng ở từng mốc — `ready` + `pending_approval` lúc chờ duyệt, `needs_user` sau
-    digest, `closed`/`resolved` cuối. Chỉ từ DB + checkpoint CHA."""
+    """a7 + 5.2.7: `GET` cha có `children_progress` đúng ở từng mốc — D-77: vòng 1 đi ngay → `needs_user` (ý 1) + `pending_approval`
+    (ý 2); duyệt ý 2 trong lúc cha chờ trả lời → ý 2 `ready` (kết quả chờ vòng sau); trả lời ý 1 → ý 1 `closed`, ý 2 `needs_user`;
+    `closed`/`resolved` cuối. Chỉ từ DB + checkpoint CHA."""
     install = cap(ACTION_LABELS["install_software"])
     f = make_flow(classify(reset_item(), adobe_item()))
     await f.submit(TC34)
@@ -319,11 +324,15 @@ async def test_a7_get_parent_children_progress_milestones() -> None:
             assert isinstance(view.get("children_progress"), list), view.get("children_progress")
             return [(x["child_id"], x["index"], x["title"], x["progress"], x["outcome"]) for x in view["children_progress"]]
 
-        assert progress(await a.get(an)) == [("T1-1", 1, "Đặt lại mật khẩu", "ready", None),
+        assert progress(await a.get(an)) == [("T1-1", 1, "Đặt lại mật khẩu", "needs_user", None),
                                              ("T1-2", 2, install, "pending_approval", None)]  # fmt: skip
         await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2"))
-        assert [p[3] for p in progress(await a.get(an))] == ["needs_user", "needs_user"]
-        r = await a.reply(an, {"T1-1": {"confirmed": True}, "T1-2": {"confirmed": True}})
+        assert [p[3] for p in progress(await a.get(an))] == ["needs_user", "ready"]
+        r = await a.reply(an, {"T1-1": {"confirmed": True}})
+        assert r.status_code == 202, r.text
+        await a.drain()
+        assert [(p[3], p[4]) for p in progress(await a.get(an))] == [("closed", "resolved"), ("needs_user", None)]
+        r = await a.reply(an, {"T1-2": {"confirmed": True}})
         assert r.status_code == 202, r.text
         await a.drain()
         assert [(p[3], p[4]) for p in progress(await a.get(an))] == [("closed", "resolved"), ("closed", "resolved")]

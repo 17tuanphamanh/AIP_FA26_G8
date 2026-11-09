@@ -189,8 +189,8 @@ class PlanExecutor:
 
     def _outputs(self, results: list[Any]) -> dict[str, str]:
         """Kết quả MỌI bước đã xong (`tools.models`) → khoá ĐÓNG cho tin B18 (P4): `Cert` → `serial`, `expires_on`;
-        `ResetPasswordResult` → `delivered_via`; `AssignLicenseResult` → `license_id`, `software`; `InstallResult` → `software`,
-        `version`; `PermissionEntry` (cấp/gia hạn) → `level`, `expires_on`. Ngày theo giờ địa phương. `ExecutionResult` lọc lại regex."""
+        `ResetPasswordResult` → `delivered_via`, `expires_in_minutes`, `sent_to`; `AssignLicenseResult` → `license_id`, `software`; `InstallResult` → `software`,
+        `version`, `already_installed` ("true" chỉ khi tool báo đã có sẵn — Q3 M6); `PermissionEntry` (cấp/gia hạn) → `level`, `expires_on`. Ngày theo giờ địa phương. `ExecutionResult` lọc lại regex."""
         out: dict[str, str] = {}
         for data in results:
             if isinstance(data, Cert):
@@ -198,12 +198,18 @@ class PlanExecutor:
                 out["expires_on"] = self._local_date(data.expires_at)
             elif isinstance(data, ResetPasswordResult):
                 out["delivered_via"] = data.delivered_via
+                if data.expires_in_minutes is not None:
+                    out["expires_in_minutes"] = str(data.expires_in_minutes)
+                if data.sent_to is not None:
+                    out["sent_to"] = data.sent_to
             elif isinstance(data, AssignLicenseResult):
                 out["license_id"] = data.assignment_id
                 out["software"] = data.name
             elif isinstance(data, InstallResult):
                 out["software"] = data.name
                 out["version"] = data.version
+                if data.already_installed is True:  # Q3 M6: chỉ bool từ đầu ra tool — máy đã có sẵn, không cài lại
+                    out["already_installed"] = "true"
             elif isinstance(data, PermissionEntry):
                 out["level"] = data.level
                 if data.expires_at is not None:

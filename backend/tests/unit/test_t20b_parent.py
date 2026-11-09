@@ -27,6 +27,7 @@ from tests.unit._t20b import (
     oos_item,
     reset_item,
 )
+from tests.unit.test_t20b_q5_q6 import PoolExhaustedLock
 
 pytestmark = pytest.mark.asyncio
 
@@ -43,23 +44,27 @@ def unfired(f: Flow, ticket_id: str) -> list[str]:
 
 
 async def tc34_all_stopped() -> Flow:
-    """TC34 tới khi duyệt con 2 (lượt thường của con → after_turn → đánh thức cha → digest vòng 1)."""
+    """TC34 sau lượt gửi câu: con 1 dừng `confirm_wait`, con 2 dừng chờ duyệt (D-77: cũng là điểm dừng) → digest vòng 1 ngay."""
     f = make_flow(classify(reset_item(), adobe_item()))
     await f.submit(TC34)
-    await f.deliver("T1-2", "S_PENDING_APPROVAL", f.decision("T1-2"))
     return f
 
 
 # ---- p1 ------------------------------------------------------------------------------------------------------------------------
 
 
-async def test_p1_one_child_stopped_other_in_approval_wait_parent_waits_zero_messages() -> None:
-    """p1 (M-T20b-4, M-T20b-12): con 1 dừng (`confirm_wait`, notice chưa gửi), con 2 `approval_wait` → cha `interrupt` ở
-    `parent_wait`, 0 tin; đánh thức sớm → `goto` quay lại CHÍNH node (`parent_woken`), vẫn 0 tin, notice vẫn chưa gửi."""
+async def test_p1_one_child_stopped_other_still_processing_parent_waits_zero_messages() -> None:
+    """p1 (M-T20b-4, M-T20b-12): con 1 dừng (`confirm_wait`, notice chưa gửi), con 2 CHƯA dừng (D-77: chờ duyệt nay là điểm dừng →
+    dùng con 2 chưa khởi động được — pool khoá hết chờ) → cha `interrupt` ở `parent_wait`, 0 tin; đánh thức sớm (con 2 vẫn chưa chạy)
+    → `goto` quay lại CHÍNH node (`parent_woken`), vẫn 0 tin, notice vẫn chưa gửi."""
     f = make_flow(classify(reset_item(), adobe_item()))
+    lock = PoolExhaustedLock()
+    lock.exhausted.add("T1-2")
+    f.h.lock = lock
+    f.h.runner._lock = lock
     r = await f.submit(TC34)
     assert (r.status, r.waiting_at) == (S_CLASSIFYING, "parent_wait")
-    assert (await f.waiting("T1-2")) == "approval_wait"
+    assert (await f.waiting("T1-1")) == "confirm_wait" and (await f.h.runner.snapshot("T1-2")).values == {}
     assert await f.assistant_msgs() == []
     assert f.h.effects.count("T1", "notify_user") == 0
     r2 = await wake_parent(f.h.runner, "T1")
@@ -75,21 +80,23 @@ async def test_p1_one_child_stopped_other_in_approval_wait_parent_waits_zero_mes
 
 
 async def test_p2_all_stopped_confirm_only_one_digest_round1() -> None:
-    """p2 (M-T20b-7): mọi con dừng (chỉ cần xác nhận) → đúng 1 tin `digest` vòng 1 (2 khối `result`); notice vừa gom có
-    `delivered_round=1` + `delivered_at`; hạn `confirm` của cha; `awaiting` đúng; `digest_sent` `CLASSIFYING → CONFIRMING`."""
+    """p2 (M-T20b-7): mọi con dừng (con 1 chờ xác nhận, con 2 chờ duyệt — D-77) → đúng 1 tin `digest` vòng 1 (2 khối `result`: kết
+    quả ý 1 + "chờ duyệt" ý 2); notice vừa gom có `delivered_round=1` + `delivered_at`; hạn `confirm` của cha; `awaiting` CHỈ ý chờ người
+    dùng; `digest_sent` `CLASSIFYING → CONFIRMING`."""
     f = await tc34_all_stopped()
     assert (await f.waiting("T1")) == "parent_reply_wait"
     v = await f.values("T1")
     assert (v["status"], v["parent_round"]) == (S_CONFIRMING, 1)
-    assert v["awaiting"] == {"T1-1": "confirm", "T1-2": "confirm"}
+    assert v["awaiting"] == {"T1-1": "confirm"}
     [d] = digests(await f.assistant_msgs())
     assert len(await f.assistant_msgs()) == 1
+    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — D-77: báo ngay ở vòng 1.
     assert (d["round"], [i["child_id"] for i in d["items"]], [i["kind"] for i in d["items"]]) == (
         1, ["T1-1", "T1-2"], ["result", "result"])  # fmt: skip
-    assert [i["needs"] for i in d["items"]] == ["confirm", "confirm"]
+    assert [i["needs"] for i in d["items"]] == ["confirm", "none"]
     for cid in ("T1-1", "T1-2"):
-        [nt] = f.h.tickets.notices_of(cid)
-        assert nt["delivered_round"] == 1 and nt["delivered_at"] is not None
+        for nt in f.h.tickets.notices_of(cid):
+            assert nt["delivered_round"] == 1 and nt["delivered_at"] is not None
     assert unfired(f, "T1") == ["confirm"]
     assert f.h.effects.count("T1", "notify_user") == 1 and f.h.effects.count("T1", "deadline_set") == 1
     [sent] = f.h.audit.of("T1", "digest_sent")
@@ -136,9 +143,11 @@ async def test_p3_rerun_after_sent_no_resend_no_remark() -> None:
 async def test_p4_p6_all_children_end_before_parent_wait_closes_now() -> None:
     """p4 (D-17, TC32 nhanh): mọi con kết thúc ngay khi khởi động (con 1 nhắm người khác → E5, con 2 ngoài phạm vi → E1) → cha đóng
     ngay `S_ESCALATED`/`ALL_ESCALATED`, đúng 1 tin (2 khối `escalation` + câu tổng kết), không cần đánh thức.
-    p6 (D-30, M-T20b-9): cha `close_reason`/`exit_code` NULL, 0 `escalations` của cha, `resolution_path` NULL, hàng đợi L2 không có cha."""
-    reset_other = f"{RESET} cho Nguyễn Văn A"
-    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "Nguyễn Văn A"})
+    p6 (D-30, M-T20b-9): cha `close_reason`/`exit_code` NULL, 0 `escalations` của cha, `resolution_path` NULL, hàng đợi L2 không có cha.
+    be-target-guard (L-03): con 1 nêu đích HỢP LỆ `nv005` (không luật → E5) — đích sai mẫu ("Nguyễn Văn A") nay làm B11 HỎI `target_user`
+    (con chưa kết thúc), không còn hợp với p4."""
+    reset_other = f"{RESET} cho nv005"
+    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "nv005"})
     f = make_flow(classify(i1, oos_item()))
     r = await f.submit(f"{reset_other}, tiện {PRINTER}")
     assert (r.status, r.waiting_at) == (S_ESCALATED, None), f.h.audit.events("T1")
@@ -162,12 +171,14 @@ async def test_p4_p6_all_children_end_before_parent_wait_closes_now() -> None:
     assert "T1" not in queue and {"T1-1", "T1-2"} <= set(queue)
 
 
-async def test_p_parent_digest_only_after_all_stopped_no_child_message_reaches_user() -> None:
-    """D-31 (bảng 5.2.7 tc34): trước khi duyệt con 2 → 0 tin tới người dùng (cha 0 tin assistant; con không gửi qua notifier);
-    chỉ khối của span (không lấy câu khác) — tiêu đề theo nhãn."""
+async def test_p_parent_digest_only_no_child_message_reaches_user() -> None:
+    """D-31 (bảng 5.2.7 tc34; D-77): con KHÔNG BAO GIỜ gửi qua notifier — mọi tin tới người dùng là digest của cha (vòng 1 ngay khi
+    mọi con dừng, kể cả con chờ duyệt); duyệt con 2 trong lúc cha chờ trả lời ý 1 → không tin chen, con vẫn không gửi. Chỉ khối của span
+    (không lấy câu khác) — tiêu đề theo nhãn."""
     f = make_flow(classify(reset_item(), adobe_item()))
     await f.submit(TC34)
-    assert await f.assistant_msgs() == [] and f.h.notifier.sent == []
-    await f.deliver("T1-2", "S_PENDING_APPROVAL", f.decision("T1-2"))
     [d] = digests(await f.assistant_msgs())
+    assert len(await f.assistant_msgs()) == 1 and f.h.notifier.sent == []
     assert ADOBE not in d["text"] and RESET not in d["text"]  # thân = body notice + nhãn, không chép span
+    await f.deliver("T1-2", "S_PENDING_APPROVAL", f.decision("T1-2"))
+    assert len(await f.assistant_msgs()) == 1 and f.h.notifier.sent == []

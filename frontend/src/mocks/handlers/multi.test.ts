@@ -1,10 +1,12 @@
-// t78: handler giả nhiều ý (F6 P6) — chạy trực tiếp bằng `getResponse` của MSW, không service worker, không mạng.
-// Lời gọi backend THẬT của handler (`/api/auth/me` qua bypass) đi vào fetch giả.
+// t78 / t133: handler giả nhiều ý (F6 P6; N-T20 P5 — route thật T20b, MSW chỉ minh hoạ ca lỗi) — chạy trực tiếp bằng
+// `getResponse` của MSW, không service worker, không mạng. Lời gọi backend THẬT của handler (`/api/auth/me` qua bypass) đi
+// vào fetch giả.
 import { getResponse, isPassthroughResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseTicketView } from "../../api/tickets.ts";
 import type { Me, TicketView } from "../../api/types.ts";
-import { aggregate } from "../fixtures/multi.ts";
-import { multiHandlers, replyFields, resetMultiTickets } from "./employee-multi.ts";
+import { aggregate, summaryText } from "../fixtures/multi.ts";
+import { awaitingFields, multiHandlers, resetMultiTickets, shapeFields } from "./employee-multi.ts";
 
 afterEach(() => resetMultiTickets());
 
@@ -68,21 +70,26 @@ describe("t78: handler nhiều ý — chỉ id tkt-demo-multi-, kiểm thân ch�
     expect(Number.isNaN(Date.parse((await get(ID))?.headers.get("Date") ?? ""))).toBe(false);
   });
 
-  it("GET đầu = cha đang chờ các ý (3 trạng thái khác nhau, chưa tin nào); GET hai = round 1 (confirm / answer + options / none)", async () => {
+  it("GET đầu = cha đang chờ các ý (3 trạng thái khác nhau, chưa tin nào); GET hai = round 1 (confirm / answer / none) — đúng hợp đồng T20b", async () => {
     stubBackend(EMPLOYEE);
     const first = await view(ID);
     expect([first.status, first.waiting_for, first.final_state, first.conversation.length]).toStrictEqual(["S_CLASSIFYING", null, null, 0]);
     expect(first.children_progress?.map((p) => p.progress)).toStrictEqual(["ready", "pending_approval", "processing"]);
     const round1 = await view(ID);
     expect([round1.status, round1.waiting_for, round1.exit_code, round1.close_reason]).toStrictEqual(["S_CONFIRMING", "reply", null, null]);
-    const digest = round1.conversation[0] as { kind: string; round: number; items: { child_id: string; needs: string; options?: string[] }[] };
+    const digest = round1.conversation[0] as { kind: string; round: number; text: string; items: Record<string, unknown>[] };
     expect([digest.kind, digest.round]).toStrictEqual(["digest", 1]);
     expect(digest.items.map((i) => [i.child_id, i.needs])).toStrictEqual([
       [c(1), "confirm"],
       [c(2), "answer"],
       [c(3), "none"],
     ]);
-    expect(digest.items[1]!.options).toStrictEqual(["LAP-0342", "PC-1107"]);
+    // t133: đúng 6 khoá của `compose_digest` — không options / sources; `text` = các dòng "Ý i – title: text"; tiêu đề kiểu
+    // `child_title`; dải tiến độ không có outcome "blocked"; cả thân qua bộ kiểm chặt của giao diện.
+    for (const item of digest.items) expect(Object.keys(item).sort()).toStrictEqual(["child_id", "index", "kind", "needs", "text", "title"]);
+    expect(digest.text.split("\n")).toStrictEqual(digest.items.map((i) => `Ý ${String(i.index)} – ${String(i.title)}: ${String(i.text)}`));
+    expect(round1.children_progress?.map((p) => p.title)).toStrictEqual(["Đặt lại mật khẩu", "Cài đặt phần mềm", "Cấp quyền truy cập"]);
+    expect(parseTicketView(round1, ID)).toBe(round1);
     expect(round1.children_progress?.map((p) => [p.progress, p.outcome])).toStrictEqual([
       ["needs_user", null],
       ["needs_user", null],
@@ -90,23 +97,36 @@ describe("t78: handler nhiều ý — chỉ id tkt-demo-multi-, kiểm thân ch�
     ]);
   });
 
-  it("thân sai → 422 đúng vị trí: khoá thừa (đỉnh / items / trong ý), thiếu ý, ý ngoài awaiting, sai kiểu, rỗng, quá dài", async () => {
+  it("t133 thân sai → 422 như route thật: khoá sai dạng → body.items (chung); hình dạng Pydantic → items.<cid>.<Nhánh>.<trường>; lệch awaiting → body.items.<cid> sắp theo id", async () => {
     stubBackend(EMPLOYEE);
     await toRound1();
     const cases: [unknown, string[]][] = [
-      [[], ["body"]],
-      [{ ...ROUND1_OK, force: true }, ["body.<extra>"]],
-      [{ items: { ...ROUND1_OK.items, [c(3)]: { confirmed: true } } }, ["body.items.<extra>"]],
+      [[], [""]],
+      [{ ...ROUND1_OK, force: true }, ["<extra>"]],
+      [{ items: {} }, ["items"]],
+      [{ items: { ...ROUND1_OK.items, "mật khẩu: Abc123": { confirmed: true } } }, ["body.items"]], // khoá người gửi không bị dội
+      [{ items: { ...ROUND1_OK.items, [`${ID}-x`]: { confirmed: true } } }, ["body.items"]],
+      [{ items: { ...ROUND1_OK.items, [`${ID}-100`]: { confirmed: true } } }, ["body.items"]],
+      [{ items: { ...ROUND1_OK.items, [c(3)]: { confirmed: true } } }, [`body.items.${c(3)}`]],
       [{ items: { [c(1)]: { confirmed: true } } }, [`body.items.${c(2)}`]],
-      [{ items: { [c(1)]: { confirmed: "yes" }, [c(2)]: { answer: "LAP-0342" } } }, [`body.items.${c(1)}.confirmed`]],
-      [{ items: { [c(1)]: { answer: "x" }, [c(2)]: { answer: "LAP-0342" } } }, [`body.items.${c(1)}.<extra>`, `body.items.${c(1)}.confirmed`]],
-      [{ items: { [c(1)]: { confirmed: false, note: "n".repeat(1001) }, [c(2)]: { answer: "LAP-0342" } } }, [`body.items.${c(1)}.note`]],
-      [{ items: { [c(1)]: { confirmed: true }, [c(2)]: { answer: "   " } } }, [`body.items.${c(2)}.answer`]],
-      [{ items: { [c(1)]: { confirmed: true }, [c(2)]: { answer: "LAP-0342", note: "x" } } }, [`body.items.${c(2)}.<extra>`]],
+      [{ items: { [c(1)]: { answer: "x" }, [c(2)]: { answer: "LAP-0342" } } }, [`body.items.${c(1)}`]],
+      [{ items: { [c(1)]: { confirmed: true }, [c(2)]: { confirmed: true } } }, [`body.items.${c(2)}`]],
+      [
+        { items: { [c(1)]: { confirmed: "yes" }, [c(2)]: { answer: "LAP-0342" } } },
+        [`items.${c(1)}.ReplyAnswer.answer`, `items.${c(1)}.ReplyAnswer.<extra>`, `items.${c(1)}.ReplyConfirm.confirmed`],
+      ],
+      [
+        { items: { [c(1)]: { confirmed: false, note: "n".repeat(1001) }, [c(2)]: { answer: "LAP-0342" } } },
+        [`items.${c(1)}.ReplyAnswer.answer`, `items.${c(1)}.ReplyAnswer.<extra>`, `items.${c(1)}.ReplyConfirm.note`],
+      ],
+      [
+        { items: { [c(1)]: { confirmed: true }, [c(2)]: { answer: "" } } },
+        [`items.${c(2)}.ReplyAnswer.answer`, `items.${c(2)}.ReplyConfirm.confirmed`, `items.${c(2)}.ReplyConfirm.<extra>`],
+      ],
     ];
     for (const [body, fields] of cases) {
       const res = await post(ID, body);
-      expect(res?.status).toBe(422);
+      expect(res?.status, JSON.stringify(body).slice(0, 80)).toBe(422);
       expect(await res?.json()).toStrictEqual({ error: "invalid_request", fields });
     }
     expect((await view(ID)).waiting_for).toBe("reply"); // thân sai không đổi trạng thái
@@ -135,25 +155,36 @@ describe("t78: handler nhiều ý — chỉ id tkt-demo-multi-, kiểm thân ch�
     expect(digest2.round).toBe(2);
     expect(digest2.items.map((i) => [i.child_id, i.needs])).toStrictEqual([[c(2), "confirm"]]);
     expect(digest2.items[0]!.text).toContain("LAP-0342");
-    expect((await post(ID, ROUND1_OK))?.status).toBe(422); // ý 1 không còn trong awaiting
+    const stale = await post(ID, ROUND1_OK);
+    expect(stale?.status).toBe(422); // ý 1 không còn trong awaiting, ý 2 sai loại
+    expect(await stale?.json()).toStrictEqual({ error: "invalid_request", fields: [`body.items.${c(1)}`, `body.items.${c(2)}`] });
 
     expect((await post(ID, { items: { [c(2)]: { confirmed: false, note: " chưa mở được " } } }))?.status).toBe(202);
     const closed = await view(ID);
-    expect(closed.conversation.at(-1)).toStrictEqual({ role: "user", text: "Ý 2: Chưa ổn — chưa mở được" });
+    expect(closed.conversation.at(-2)).toStrictEqual({ role: "user", text: "Ý 2: Chưa ổn — chưa mở được" });
+    // Vòng cuối: tin digest `items: []`, `text` = câu tổng kết (resolved + escalated + rejected → PARTIALLY_ESCALATED).
+    expect(closed.conversation.at(-1)).toStrictEqual({
+      role: "assistant",
+      kind: "digest",
+      round: 3,
+      text: "Đã xong 1/3 yêu cầu; phần còn lại đã chuyển kỹ thuật viên.",
+      items: [],
+    });
+    expect(parseTicketView(closed, ID)).toBe(closed);
     expect([closed.status, closed.final_state, closed.waiting_for]).toStrictEqual(["S_RESOLVED", "S_RESOLVED", null]);
     expect(Number.isNaN(Date.parse(closed.closed_at ?? ""))).toBe(false);
     expect(closed.children_progress?.map((p) => p.outcome)).toStrictEqual(["resolved", "escalated", "rejected"]);
     expect((await post(ID, { items: { [c(2)]: { confirmed: true } } }))?.status).toBe(409); // trả muộn sau khi cha đóng
   });
 
-  it("-422 → thân hợp lệ vẫn 422 tại ý 2; -409 → 409; trước round (đang xử lý) → 409; thiếu ticket:message → 403", async () => {
+  it("-422 → thân đúng vẫn 422 tại ý 2 (dạng thật body.items.<cid>); -409 → 409; trước round (đang xử lý) → 409; thiếu ticket:message → 403", async () => {
     stubBackend(EMPLOYEE);
     const bad = "tkt-demo-multi-422";
     expect((await post(bad, { items: { [c(1, bad)]: { confirmed: true } } }))?.status).toBe(409); // chưa tới round 1
     await toRound1(bad);
     const res = await post(bad, { items: { [c(1, bad)]: { confirmed: true }, [c(2, bad)]: { answer: "PC-1107" } } });
     expect(res?.status).toBe(422);
-    expect(await res?.json()).toStrictEqual({ error: "invalid_request", fields: [`body.items.${c(2, bad)}.answer`] });
+    expect(await res?.json()).toStrictEqual({ error: "invalid_request", fields: [`body.items.${c(2, bad)}`] });
 
     const late = "tkt-demo-multi-409";
     await toRound1(late);
@@ -166,9 +197,15 @@ describe("t78: handler nhiều ý — chỉ id tkt-demo-multi-, kiểm thân ch�
     expect(forbidden?.status).toBe(403);
   });
 
-  it("replyFields + bảng đóng cha B5", () => {
-    expect(replyFields({ items: {} }, {})).toStrictEqual([]);
-    expect(replyFields({ items: null }, { a: "answer" })).toStrictEqual(["body.items"]);
+  it("shapeFields / awaitingFields + bảng đóng cha + câu tổng kết 5.2.5", () => {
+    expect(shapeFields("p", { items: { "p-1": { confirmed: true } } })).toStrictEqual([]);
+    expect(shapeFields("p", { items: null })).toStrictEqual(["items"]);
+    expect(shapeFields("p", { items: { "p-1": { confirmed: true }, "q-1": { confirmed: true } } })).toStrictEqual(["body.items"]);
+    expect(awaitingFields({ "p-2": { answer: "a" }, "p-1": { confirmed: true } }, { "p-1": "confirm", "p-2": "answer" })).toStrictEqual([]);
+    expect(awaitingFields({ "p-10": { confirmed: true } }, { "p-1": "confirm", "p-2": "answer" })).toStrictEqual(["body.items.p-1", "body.items.p-10", "body.items.p-2"]);
+    expect(summaryText(["resolved", "resolved"])).toBe("Cả 2 yêu cầu đã hoàn tất.");
+    expect(summaryText(["resolved", "rejected", "resolved"])).toBe("Đã xong 2/3 yêu cầu; có yêu cầu không được duyệt.");
+    expect(summaryText(["escalated", "rejected"])).toBe("Các yêu cầu không xử lý tự động được (chuyển kỹ thuật viên hoặc không được duyệt).");
     expect(aggregate(["resolved", "resolved", "resolved"])).toBe("S_RESOLVED");
     expect(aggregate(["resolved", "escalated", "rejected"])).toBe("S_RESOLVED");
     expect(aggregate(["escalated", "escalated"])).toBe("S_ESCALATED");

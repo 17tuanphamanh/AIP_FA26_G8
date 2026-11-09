@@ -22,6 +22,7 @@ from app.llm.config import (
     SCRIPTED_PROVIDER,
     LlmConfig,
     RuntimeLlm,
+    check_prompt_roles,
     check_timing,
     load_llm_config,
     resolve,
@@ -37,7 +38,7 @@ from app.llm.providers.scripted import (
 )
 from app.llm.registry import PromptRegistry, load_prompts
 from app.llm.store import SqlLlmStore
-from app.settings import Settings
+from app.settings import DEV_FAKE_ENVS, Settings
 
 log = logging.getLogger(__name__)
 
@@ -58,12 +59,18 @@ def check_llm(settings: Settings) -> LlmSetup:
     check_timing(cfg, settings.worker_stale_turn_seconds)
     runtime = resolve(cfg, settings, backend)
     registry = load_prompts(settings.config_dir / "prompts")
-    answer = registry.get(ANSWER_PROMPT)  # f1 (PLAN-3g): bằng chứng B10 phải vừa khung vào của vai trò
-    check_evidence_budget(answer, cfg.roles[answer.spec.role].budget_in, settings.rag_evidence_max_tokens)
+    check_prompt_roles(cfg, registry)  # Q10: prompt id có thật, vai gán cùng tầng với `role` file khai
+    answer = registry.get(ANSWER_PROMPT)  # f1 (PLAN-3g): bằng chứng B10 phải vừa khung vào của vai trò THỰC SỰ dùng (Q10: chat_strong)
+    check_evidence_budget(answer, cfg.roles[runtime.role_of(answer)].budget_in, settings.rag_evidence_max_tokens)
     presets = None
     if backend == "scripted":
         presets = load_presets(settings.llm_script_preset_dir or settings.config_dir / "scripted", registry)
     return LlmSetup(config=cfg, runtime=runtime, registry=registry, presets=presets)
+
+
+def sim_presets_allowed(settings: Settings) -> bool:
+    """Preset `sim_*` (dữ liệu thử, `scripts/sim`) chỉ khi APP_ENV ∈ {dev, test} VÀ không EVAL_MODE (P6 gói tuần 8, D-67)."""
+    return settings.app_env in DEV_FAKE_ENVS and not settings.eval_mode
 
 
 @asynccontextmanager
@@ -77,7 +84,9 @@ async def open_llm(
     async with AsyncExitStack() as stack:
         if setup.runtime.backend == "scripted":
             assert setup.presets is not None
-            providers[SCRIPTED_PROVIDER] = PresetScriptedLLM(setup.presets, SqlPresetResolver(engine))
+            providers[SCRIPTED_PROVIDER] = PresetScriptedLLM(
+                setup.presets, SqlPresetResolver(engine), allow_sim=sim_presets_allowed(settings)
+            )
         else:
             for name in sorted({t.provider for chain in setup.runtime.chains.values() for t in chain}):
                 p = setup.config.providers[name]

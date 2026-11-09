@@ -37,8 +37,9 @@ pytestmark = pytest.mark.asyncio
 POLICY = Path(__file__).resolve().parents[3] / "config" / "policy.json"
 IN_HOURS = datetime(2026, 9, 29, 3, 0, tzinfo=UTC)  # thứ Ba 10:00 giờ VN
 AFTER_HOURS = datetime(2026, 9, 29, 13, 0, tzinfo=UTC)  # thứ Ba 20:00 giờ VN
+# D-67 (sửa có chủ ý): `strategy` luôn có ở điểm 4, cả lúc vận hành (trước: chỉ khi EVAL_MODE — Q-6C-3)
 POINT4 = {"decided_by", "policy_decision", "matched_rule_id", "all_matched", "risk_level", "reason", "route",
-          "policy_version_id", "raw_prob", "p_method", "policy_sha256"}  # fmt: skip
+          "policy_version_id", "raw_prob", "p_method", "policy_sha256", "strategy"}  # fmt: skip
 
 
 class SpyEstimator:
@@ -161,7 +162,7 @@ async def test_deny_rule_is_e5_without_approval(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(b12_assess, "evaluate", lambda action, ctx: verdict)
     out, _, _ = await _node(_state())
     assert (out["status"], out["next"], out["exit_code"]) == (S_ESCALATED, "b20_audit", "E5")
-    assert "escalation_reason_detail" not in out
+    assert out["escalation_reason_detail"] == "policy_deny"  # M2 (ĐP 08/11): trước không ghi lý do
     risk = _risk(out)
     assert (risk.policy_decision, risk.matched_rule_id, risk.route, risk.risk_level) == (
         "deny", "R12", "ESCALATE_L2", "high")
@@ -172,6 +173,7 @@ async def test_point4_detail_and_lineage() -> None:
     [row] = h.audit.of("t1", "risk_decided")
     detail = row["detail"]
     assert set(detail) == POINT4
+    assert detail["strategy"] == "hybrid"  # D-67: ticket chưa ghi chiến lược (NULL) → hybrid, vẫn ghi vào điểm 4
     assert detail["policy_sha256"] == hashlib.sha256(POLICY.read_bytes()).hexdigest()
     assert detail["policy_version_id"] is None and detail["raw_prob"] is None and detail["p_method"] is None
     assert (detail["decided_by"], detail["policy_decision"], detail["matched_rule_id"], detail["route"]) == (

@@ -81,10 +81,11 @@ async def test_q5_parent_e9_has_one_escalation_and_shows_in_l2_queue() -> None:
 
 
 async def test_q5_parent_normal_close_no_escalation_not_in_queue() -> None:
-    other = item("account", f"{RESET} cho Nguyễn Văn A", action="reset_password",
-                 slots={"account_type": "ad", "target_user": "Nguyễn Văn A"})  # fmt: skip
+    # be-target-guard (L-03): đích HỢP LỆ nv005 — đích sai mẫu nay làm B11 hỏi `target_user` (con chưa kết thúc)
+    other = item("account", f"{RESET} cho nv005", action="reset_password",
+                 slots={"account_type": "ad", "target_user": "nv005"})  # fmt: skip
     f = make_flow(classify(other, oos_item()))  # con 1 E5 (người khác, không luật) + con 2 E1 → cha ALL_ESCALATED
-    r = await f.submit(f"{RESET} cho Nguyễn Văn A, tiện {PRINTER}")
+    r = await f.submit(f"{RESET} cho nv005, tiện {PRINTER}")
     assert r.status == S_ESCALATED and r.values.get("exit_code") is None  # cha đóng bình thường (ALL_ESCALATED)
     assert f.h.escalations.of("T1") == []
     queue = {i.ticket_id for i in await f.h.escalations.list_open(100)}

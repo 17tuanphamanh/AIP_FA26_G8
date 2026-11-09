@@ -121,7 +121,7 @@ def test_scripted_in_dev_test_starts(env: str) -> None:
 
 def test_d15_repo_config_loads_and_has_no_interpolation() -> None:
     cfg = load_llm_config(LLM_YAML)
-    assert set(cfg.roles) == {"fast", "strong"}
+    assert set(cfg.roles) == {"fast", "strong", "chat_fast", "chat_strong"}  # Q10: + 2 vai chat (chi tiết: test_llm_chat_roles.py)
     assert cfg.fallback["strong"] == ()
     def strings(node: Any) -> list[str]:
         if isinstance(node, dict):

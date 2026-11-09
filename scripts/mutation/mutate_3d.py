@@ -42,8 +42,8 @@ MUTATIONS_ALL = [
      pt(UT_CLIENT),
      ["test_d5_injection_judge_never_cached"]),
     ("M-3d-2 strong được fallback", CLIENT,
-     ('        if call.role == "strong":\n'
-      '            chain = chain[:1]  # P2 mục 5: strong KHÔNG fallback — kể cả sang provider khác\n'),
+     ('        if call.llm_role in NO_FALLBACK_ROLES:\n'
+      '            chain = chain[:1]  # P2 mục 5: strong KHÔNG fallback — kể cả sang provider khác (chat_strong cũng vậy)\n'),
      ('        if False:  # MUTATION strong được fallback\n'
       '            chain = chain[:1]\n'),
      pt(UT_CLIENT),

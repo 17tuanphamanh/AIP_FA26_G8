@@ -9,6 +9,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
+from uuid import uuid4
 
 from app.approval.store import NoticeKind, SqlApprovals
 from app.audit.alerts import AlertWriter
@@ -205,6 +206,39 @@ async def seed_users(engine: AsyncEngine) -> None:
             f"('{SESSION}', '{REQUESTER}', gen_random_uuid(), '2100-01-01T00:00:00Z') "
             "ON CONFLICT DO NOTHING"
         ))  # fmt: skip
+
+
+@dataclass(frozen=True)
+class OwnRequester:
+    """Người gửi RIÊNG của một ca test (dòng `users` + một phiên còn hạn + bản AD giả tương ứng).
+
+    DB `migrated` dùng chung cả phiên pytest và không dọn giữa các ca (audit/tickets append-only), còn B3 báo trùng (M1)
+    đọc MỌI ticket còn mở cùng `requester_id` trong 24 giờ: ca nào đếm tin/`side_effects` của ticket chạy B3 thật mà dùng
+    chung `REQUESTER` thì dính ticket do ca khác để lại → thêm tin `duplicate`. Mỗi ca một người gửi thì không lẫn."""
+
+    user_id: str
+    session_id: str
+
+    def ad(self) -> FakeAd:
+        """AD giả chỉ có người này (B1 tra theo `sessions.user_id`); truyền vào `open_pg_runtime(ad=…)`."""
+        return FakeAd(ad_user(self.user_id))
+
+
+async def seed_requester(engine: AsyncEngine) -> OwnRequester:
+    """Một người gửi mới (mã ngẫu nhiên) + phiên còn hạn rất xa (FakeClock ở năm 2026) — cùng cách `seed_users`."""
+    user_id = f"nv-{uuid4().hex[:10]}"
+    session_id = f"sess-{user_id}"
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("INSERT INTO users (user_id, username, role) VALUES (:u, :n, 'employee')"),
+            {"u": user_id, "n": f"{user_id}.nv"},
+        )  # fmt: skip
+        await conn.execute(
+            text("INSERT INTO sessions (session_id, user_id, token_family_id, expires_at) "
+                 "VALUES (:s, :u, gen_random_uuid(), '2100-01-01T00:00:00Z')"),
+            {"s": session_id, "u": user_id},
+        )  # fmt: skip
+    return OwnRequester(user_id, session_id)
 
 
 async def create_ticket(

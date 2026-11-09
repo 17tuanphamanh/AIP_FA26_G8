@@ -1,13 +1,25 @@
-import { type ClipboardEvent, type KeyboardEvent, useRef } from "react";
+import { type ClipboardEvent, type KeyboardEvent, useEffect, useRef } from "react";
 
 export const OTP_LENGTH = 6;
 
-type OtpInputProps = { digits: string[]; onChange: (digits: string[]) => void; disabled?: boolean };
+type OtpInputProps = {
+  digits: string[];
+  onChange: (digits: string[]) => void;
+  disabled?: boolean;
+  /** Đổi giá trị → đưa con trỏ về ô đầu (sau khi hết `disabled`) — dùng khi sai mã, 6 ô đã xoá trắng. */
+  focusKey?: number;
+};
 
 // Mã TOTP 6 số, mỗi số một ô (B4Login bước OTP). Gõ → sang ô sau; Backspace ở ô trống → về ô trước;
 // dán cả mã → rải vào các ô. Ô đầu có autocomplete="one-time-code" để trình duyệt/điện thoại tự điền.
-export function OtpInput({ digits, onChange, disabled }: OtpInputProps) {
+export function OtpInput({ digits, onChange, disabled, focusKey = 0 }: OtpInputProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const focused = useRef(focusKey); // lần dựng đầu: autoFocus lo
+  useEffect(() => {
+    if (disabled || focused.current === focusKey) return;
+    focused.current = focusKey;
+    refs.current[0]?.focus();
+  }, [focusKey, disabled]);
 
   function fill(start: number, raw: string) {
     const incoming = raw.replace(/\D/g, "").slice(0, OTP_LENGTH - start).split("");
@@ -37,7 +49,7 @@ export function OtpInput({ digits, onChange, disabled }: OtpInputProps) {
   }
 
   return (
-    <div className="flex gap-2" role="group" aria-label="Mã xác thực 6 số">
+    <div className="flex gap-2 max-lg:w-full max-lg:justify-center" role="group" aria-label="Mã xác thực 6 số">
       {Array.from({ length: OTP_LENGTH }, (_, i) => (
         <input
           key={i}
@@ -58,7 +70,7 @@ export function OtpInput({ digits, onChange, disabled }: OtpInputProps) {
           autoComplete={i === 0 ? "one-time-code" : "off"}
           autoFocus={i === 0}
           disabled={disabled}
-          className="h-16 w-14 rounded-xl border border-line bg-white text-center text-heading focus-visible:outline-2 focus-visible:outline-fpt-blue"
+          className="h-16 w-14 rounded-xl border border-line bg-white text-center text-heading focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:w-auto max-lg:max-w-14 max-lg:min-w-0 max-lg:flex-1"
         />
       ))}
     </div>

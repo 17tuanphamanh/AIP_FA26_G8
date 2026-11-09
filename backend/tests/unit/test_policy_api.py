@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx2
 import pytest
+from app.api.policy import schema_msg
 from tests.unit.auth_helpers import AuthEnv, auth_env
 from tests.unit.policy_fake import (  # noqa: F401 — fake_config là fixture
     fake_config,
@@ -539,3 +540,81 @@ def test_t22_no_policy_content_in_logs(
         assert MARKER not in text, rec
         for msg in msgs:
             assert msg not in text, (msg, rec)
+
+
+# ---- T23: câu lỗi schema tiếng Việt theo loại lỗi pydantic (lô N, N9) -------------------------------------------------
+
+
+def _wrong_type_5(c: dict[str, Any]) -> None:
+    c["rules"][5]["type"] = "maybe_khong_co"
+
+
+def _max_loops_str(c: dict[str, Any]) -> None:
+    c["constants"]["MAX_LOOPS"] = "bon"
+
+
+def _max_loops_frac(c: dict[str, Any]) -> None:
+    c["constants"]["MAX_LOOPS"] = 1.5
+
+
+def _description_int(c: dict[str, Any]) -> None:
+    c["rules"][0]["description"] = 5
+
+
+def _threshold_str(c: dict[str, Any]) -> None:
+    c["constants"]["THRESHOLD_LOW"] = "thap"
+
+
+def _bad_rule_id(c: dict[str, Any]) -> None:
+    c["rules"][0]["id"] = "X1"  # sai mẫu ^R\d{2}$ → string_pattern_mismatch (không có câu riêng)
+
+
+SCHEMA_MSG_CASES: list[tuple[str, Mutate, list[Any], str]] = [
+    ("literal_rule_type", _wrong_type_5, ["rules", 5, "type"], "Phải là một trong: 'allow', 'approval_required', 'deny'"),
+    ("literal_p_method", _m5_method_unknown, ["m5", "p_method"], "Phải là một trong: 'self_report', 'sampling_k5'"),
+    ("missing", _no_business_hours, ["business_hours"], "Thiếu trường bắt buộc"),
+    ("extra_forbidden", _extra_block, ["extra_block"], "Trường không được phép"),
+    ("int_parsing", _max_loops_str, ["constants", "MAX_LOOPS"], "Phải là số nguyên"),
+    ("int_from_float", _max_loops_frac, ["constants", "MAX_LOOPS"], "Phải là số nguyên"),
+    ("float_parsing", _threshold_str, ["constants", "THRESHOLD_LOW"], "Phải là số"),
+    ("string_type", _description_int, ["rules", 0, "description"], "Phải là chuỗi"),
+    ("du_phong", _bad_rule_id, ["rules", 0, "id"], "Giá trị không hợp lệ"),
+]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "loc", "msg"), [c[1:] for c in SCHEMA_MSG_CASES], ids=[c[0] for c in SCHEMA_MSG_CASES]
+)
+def test_t23_schema_msg_vietnamese_by_type(env: AuthEnv, mutate: Mutate, loc: list[Any], msg: str) -> None:
+    """T23: 422 invalid_policy giữ loc + hình dạng {loc, msg}; msg tiếng Việt theo `type` lỗi pydantic, không còn "Input should"."""
+    errors = _errors(_validate(env, variant(mutate), env.manager_token()))
+    assert {"loc": loc, "msg": msg} in errors, errors
+    assert all("Input should" not in e["msg"] and "Field required" not in e["msg"] for e in errors), errors
+
+
+def test_t23_own_vietnamese_msg_kept(env: AuthEnv) -> None:
+    """T23: câu do validator của schema tự viết (value_error) giữ nguyên chữ, bỏ tiền tố "Value error, " — THRESHOLD_LOW ≥ HIGH."""
+    errors = _errors(_validate(env, variant(_low_eq_high), env.manager_token()))
+    assert {"loc": ["constants"], "msg": "THRESHOLD_LOW phải nhỏ hơn THRESHOLD_HIGH"} in errors, errors
+    assert all(not e["msg"].startswith("Value error") for e in errors), errors
+
+
+SCHEMA_MSG_PURE: list[tuple[str, dict[str, Any], str]] = [
+    ("bool_type", {"type": "bool_type", "msg": "Input should be a valid boolean"}, "Phải là đúng/sai"),
+    ("bool_parsing", {"type": "bool_parsing", "msg": "Input should be a valid boolean, unable to interpret input"}, "Phải là đúng/sai"),
+    ("int_type", {"type": "int_type", "msg": "Input should be a valid integer"}, "Phải là số nguyên"),
+    ("float_type", {"type": "float_type", "msg": "Input should be a valid number"}, "Phải là số"),
+    ("float_parsing", {"type": "float_parsing", "msg": "Input should be a valid number, unable to parse string as a number"}, "Phải là số"),
+    ("literal_mot_gia_tri", {"type": "literal_error", "msg": "x", "ctx": {"expected": "'only'"}}, "Phải là một trong: 'only'"),
+    ("literal_thieu_ctx", {"type": "literal_error", "msg": "Input should be 'a' or 'b'"}, "Giá trị không hợp lệ"),
+    ("value_error", {"type": "value_error", "msg": "Value error, câu tự viết", "ctx": {"error": ValueError("x")}}, "câu tự viết"),
+    ("value_error_khong_tien_to", {"type": "value_error", "msg": "câu tự viết"}, "câu tự viết"),
+    ("assertion_error", {"type": "assertion_error", "msg": "Assertion failed, câu tự viết"}, "Assertion failed, câu tự viết"),
+    ("loai_la", {"type": "greater_than_equal", "msg": "Input should be greater than or equal to 1"}, "Giá trị không hợp lệ"),
+]
+
+
+@pytest.mark.parametrize(("error", "msg"), [c[1:] for c in SCHEMA_MSG_PURE], ids=[c[0] for c in SCHEMA_MSG_PURE])
+def test_t23_schema_msg_pure(error: dict[str, Any], msg: str) -> None:
+    """T23 (thuần): bool / int_type (không dựng được qua schema policy hiện tại), literal thiếu ctx, value_error, loại lạ."""
+    assert schema_msg(error) == msg

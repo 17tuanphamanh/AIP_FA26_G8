@@ -73,7 +73,7 @@ def one(rel: str, old: str, new: str) -> tuple[str, str, str, int]:
 # ---- chuỗi đích ------------------------------------------------------------------------------------------------------
 
 _SPLIT_LOOP = "        for i, (it, verdict) in enumerate(zip(intents, verdicts, strict=True), start=1):\n"
-_SPAN_TEXT = "        slots, dropped = sanitize_slots(deps.slots.intents[it.type], raw, text=l0(it.span))  # P2: text = span của ý\n"
+_SPAN_TEXT = "        slots, dropped = sanitize_slots(spec, raw, text=l0(it.span))  # P2: text = span của ý\n"  # be-target-guard
 _CREATE = (
     "            ref = await effects.once(\n"
     '                state, "child_create", deps.tickets.create_child, cid, parent_id=parent,\n'
@@ -92,7 +92,7 @@ _DELIVER_CHECK = '                    if snap.values.get("status") != status or 
 _VALIDATE = '            session_id=p.session_id, wait_node="parent_reply_wait", validate=_items_match(redacted.items),\n'
 _WOKEN = '            return await goto(state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="parent_woken")\n'
 _STOPS = 'CHILD_STOPS = frozenset({None, "clarify_wait", "confirm_wait"})'
-_FLAG = '        if "target_user" in dropped:  # Q-T20a-4 áp TỪNG con\n'
+_FLAG = '        if reason is not None:  # Q-T20a-4 + L-03 áp TỪNG con\n'  # be-target-guard: cờ theo `target_check`
 _EVENT_PEEK = '            if await effects.peek(state, "child_event", step="B5", sub=sub) is not None:\n'
 
 UNIT = [

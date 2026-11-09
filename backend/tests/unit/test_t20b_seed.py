@@ -18,9 +18,11 @@ from tests.unit._t20b import (
     SESSION_NV001,
     TC32,
     TC34,
+    TWO_APPROVALS,
     Flow,
     adobe_item,
     classify,
+    grant_item,
     make_flow,
     oos_item,
     reset_item,
@@ -109,9 +111,9 @@ async def test_c2_child_goto_audit_rows() -> None:
 async def test_c3_start_twice_second_does_nothing() -> None:
     """c3: cha chạy lại `parent_wait` (đánh thức sớm → `start_missing` lần 2) → con đã có thread không chạy gì: 1 dòng `turns`
     submit, 1 `child_started`; `child_submit` của cha 1 dòng/con; mỗi con 1 lượt submit."""
-    f = make_flow(classify(reset_item(), adobe_item()))
-    await f.submit(TC34)
-    assert (await f.waiting("T1")) == "parent_wait"  # con 2 chờ duyệt → cha chờ
+    f = make_flow(classify(adobe_item(), grant_item()))
+    await f.submit(TWO_APPROVALS)
+    assert (await f.waiting("T1")) == "parent_wait"  # D-77: hai con chờ duyệt, vòng 1 đã báo → cha chờ con
     before = {cid: f.h.audit.events(cid) for cid in ("T1-1", "T1-2")}
     turns_before = {cid: len(f.h.turns.of(cid)) for cid in ("T1-1", "T1-2")}
     await wake_parent(f.h.runner, "T1")

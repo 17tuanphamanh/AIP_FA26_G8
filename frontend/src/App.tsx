@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ComponentType, useCallback } from "react";
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router";
+import { type ComponentType, useCallback, useRef } from "react";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from "react-router";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 import { LoginPage } from "./auth/LoginPage.tsx";
 import { CHAT_NAV, homePath, STAFF_NAV } from "./auth/permissions.ts";
@@ -8,7 +8,11 @@ import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
 import { useAuth, useMe } from "./auth/useAuth.ts";
 import { FlashNotice } from "./components/FlashNotice.tsx";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
+import { MobileNavBar, NavDrawer } from "./components/MobileNav.tsx";
+import { useEnterOnChange } from "./components/motion.ts";
+import { PlacedBell } from "./components/PlacedBell.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { useMobileNav } from "./components/useMobileNav.ts";
 import { ChatHome } from "./routes/employee/ChatHome.tsx";
 import { ChatRoute } from "./routes/employee/ChatPage.tsx";
 import { sessionTickets } from "./routes/employee/sessionTickets.ts";
@@ -21,19 +25,41 @@ import { Alerts } from "./routes/manager/Alerts.tsx";
 import { DashboardPage } from "./routes/manager/DashboardPage.tsx";
 import { LlmStatus } from "./routes/manager/LlmStatus.tsx";
 import { PolicyEditor } from "./routes/manager/PolicyEditor.tsx";
+import { ApprovalTraceLink, EscalationTraceLink, TicketTraceLink, TicketTraceRoute } from "./routes/shared/TicketTrace.tsx";
 import { NotFound } from "./routes/NotFound.tsx";
 
 const queryClient = new QueryClient();
 
-function Shell() {
+// Vỏ nội dung `ref={content}` (hiệu ứng đổi màn, commit 0eb24d8) PHẢI có `h-full` + `overflow-y-auto`: vỏ này đứng giữa `main`
+// và màn, không có chiều cao thì `h-full` / `min-h-full` của màn bên trong tính ra "auto" — chuỗi chiều cao đứt. Hậu quả
+// (đã sửa): chat `/chat/:id` mất header và ô nhập dính đáy, phiếu duyệt `/approvals/:id` mất đầu phiếu và thanh quyết
+// định dính đáy (cả hai trôi theo cuộn của cả trang), trang chủ chat `/chat` mất căn giữa dọc. Cuộn nằm ở vỏ (như `main`
+// trước 0eb24d8) nên nút "Nhật ký quyết định" (`sticky`) vẫn dính suốt màn dài.
+// Điện thoại (dưới 1024 px) — các lớp `max-lg:` chỉ chạy dưới 1024 px:
+// - thanh bên thu vào nút menu (MobileNav.tsx), khung xếp dọc: thanh đầu → nội dung; vỏ nội dung là cột flex;
+// - `wrap-anywhere`: chuỗi dài không dấu cách (mã ticket, UUID) ngắt dòng thay vì đẩy tràn ngang;
+// - không cuộn ngang cả trang: bảng rộng tự cuộn ngang TRONG khung của nó.
+/** Khung sau đăng nhập. Xuất ra để test dựng đúng khung thật (Shell.test.tsx). */
+export function Shell() {
   const me = useMe();
   const { signOut } = useAuth();
+  const content = useRef<HTMLDivElement>(null);
+  const { pathname } = useLocation();
+  useEnterOnChange(content, pathname); // đổi màn → nội dung trượt nhẹ vào, không dựng lại màn
+  const { open, toggle, close, buttonRef, drawerRef } = useMobileNav(pathname);
   return (
-    <div className="flex h-full">
-      <Sidebar me={me} onSignOut={signOut} />
-      <main className="min-w-0 grow overflow-y-auto">
-        <FlashNotice />
-        <Outlet />
+    <div className="flex h-full max-lg:flex-col">
+      <MobileNavBar open={open} onToggle={toggle} buttonRef={buttonRef}>
+        <PlacedBell me={me} where="header" />
+      </MobileNavBar>
+      <NavDrawer open={open} onClose={close} drawerRef={drawerRef}>
+        <Sidebar me={me} onSignOut={signOut} />
+      </NavDrawer>
+      <main inert={open} className="min-w-0 grow overflow-y-auto max-lg:min-h-0">
+        <div ref={content} className="h-full overflow-y-auto motion-safe:animate-fade-in max-lg:flex max-lg:flex-col max-lg:overflow-x-hidden max-lg:wrap-anywhere">
+          <FlashNotice />
+          <Outlet />
+        </div>
       </main>
     </div>
   );
@@ -79,6 +105,7 @@ const escalationRoutes = [
     path: `${ESCALATIONS.to.slice(1)}/:escalationId`,
     element: (
       <RequirePerm perm={ESCALATIONS.perm}>
+        <EscalationTraceLink />
         <EscalationDetailRoute />
       </RequirePerm>
     ),
@@ -99,6 +126,7 @@ const approvalRoutes = [
     path: `${APPROVALS.to.slice(1)}/ticket/:ticketId`,
     element: (
       <RequirePerm perm="decision:override">
+        <TicketTraceLink />
         <TicketOverrideRoute />
       </RequirePerm>
     ),
@@ -107,6 +135,7 @@ const approvalRoutes = [
     path: `${APPROVALS.to.slice(1)}/:approvalId`,
     element: (
       <RequirePerm perm={APPROVALS.perm}>
+        <ApprovalTraceLink />
         <ApprovalDetailRoute />
       </RequirePerm>
     ),
@@ -132,6 +161,18 @@ const managerRoutes = STAFF_NAV.filter((item) => item.to in MANAGER_SCREENS).map
   };
 });
 
+// Nhật ký quyết định (chỉ đọc) — L1, L2, Trưởng BP IT (`ticket:read:any`); nút mở nằm cạnh 3 màn trên.
+const traceRoutes = [
+  {
+    path: "trace/:ticketId",
+    element: (
+      <RequirePerm perm="ticket:read:any">
+        <TicketTraceRoute />
+      </RequirePerm>
+    ),
+  },
+];
+
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   {
@@ -146,6 +187,7 @@ const router = createBrowserRouter([
       ...escalationRoutes,
       ...approvalRoutes,
       ...managerRoutes,
+      ...traceRoutes,
       { path: "*", element: <NotFound /> },
     ],
   },

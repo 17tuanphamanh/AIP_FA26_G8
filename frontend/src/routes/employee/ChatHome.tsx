@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { createTicket, TEXT_MAX, withBusyRetry } from "../../api/tickets.ts";
+import logoUrl from "../../assets/logo.svg";
 import { Composer } from "../../components/Composer.tsx";
+import { isDesktop } from "../../lib/viewport.ts";
 import { describeSendError } from "./sendError.ts";
 import { sessionTickets } from "./sessionTickets.ts";
 import { SUGGESTIONS } from "./suggestions.ts";
@@ -29,6 +31,9 @@ export function ChatHome() {
   const [waitNote, setWaitNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const caretToEnd = useRef(false);
+  // Tự focus ô nhập chỉ ở khổ ≥ 1024 px: trên điện thoại focus lúc mở trang bật bàn phím ảo (Android) ngay và che lời chào + nút
+  // gợi ý. Nút gợi ý vẫn focus ô nhập (người dùng vừa chạm). Đọc MỘT lần lúc dựng — `autoFocus` chỉ có nghĩa lúc gắn.
+  const [focusOnMount] = useState(isDesktop);
 
   // Nút gợi ý (F6 P4): điền câu mẫu → focus ô nhập, con trỏ cuối câu để sửa tiếp. KHÔNG gửi.
   function suggest(sample: string) {
@@ -67,9 +72,11 @@ export function ChatHome() {
   }
 
   return (
-    <section className="flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-20">
-      <div className="flex w-full max-w-(--chat-width) flex-col items-center">
-        <h1 className="text-center text-title">Hôm nay IT giúp gì cho bạn?</h1>
+    <section className="flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-16 max-lg:px-4 max-lg:pt-6 max-lg:pb-8">
+      <div className="flex w-full max-w-(--chat-width) flex-col items-center motion-safe:animate-rise-in">
+        <img src={logoUrl} alt="" width={48} height={48} className="size-12" />
+        <h1 className="mt-6 text-center text-title">Hôm nay IT giúp gì cho bạn?</h1>
+        <p className="mt-2 text-center text-ink-2">Mô tả vấn đề bằng lời thường — trợ lý sẽ hướng dẫn, hoặc chuyển IT khi cần.</p>
         <div className="mt-8 w-full">
           <Composer
             variant="home"
@@ -82,7 +89,7 @@ export function ChatHome() {
             busy={busy}
             error={fieldError}
             hint={<LockHint />}
-            autoFocus
+            autoFocus={focusOnMount}
             inputRef={inputRef}
           />
         </div>
@@ -91,15 +98,20 @@ export function ChatHome() {
             {error ?? waitNote}
           </p>
         ) : null}
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {SUGGESTIONS.map((suggestion) => (
+        <div className="mt-6 grid w-full gap-3 sm:grid-cols-2">
+          {SUGGESTIONS.map((suggestion, i) => (
             <button
               key={suggestion.label}
+              style={{ animationDelay: `${120 + i * 50}ms` }}
               type="button"
+              aria-label={suggestion.label}
               onClick={() => suggest(suggestion.text)}
-              className="h-9 rounded-full border border-line bg-white px-3.5 text-secondary hover:bg-group"
+              className="flex min-w-0 flex-col rounded-group border border-line bg-white px-4 py-3 text-left hover:-translate-y-0.5 hover:border-fpt-blue/40 hover:bg-group hover:shadow-input focus-visible:outline-2 focus-visible:outline-fpt-blue motion-safe:animate-rise-in"
             >
-              {suggestion.label}
+              <span className="flex min-w-0 flex-col">
+                <span className="text-secondary font-semibold">{suggestion.label}</span>
+                <span className="truncate text-label font-normal text-ink-2">{suggestion.text}</span>
+              </span>
             </button>
           ))}
         </div>

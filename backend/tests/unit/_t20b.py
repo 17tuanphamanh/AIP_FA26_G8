@@ -39,6 +39,11 @@ EXTEND = "gia hạn quyền thư mục finance/public-reports"
 TC35 = f"{RESET} và {EXTEND}"
 PRINTER = "sửa máy in tầng 3 giúp mình"
 TC32 = f"{RESET}, tiện {PRINTER}"
+# D-77 (Q6): ý 1 chờ duyệt + ý 2 E1 ngay → vòng 1 gửi ngay, rồi cha CHỜ CON ở `parent_wait` (không ý nào chờ người dùng) — kịch bản dựng
+# "cha đứng ở `parent_wait`" thay cho TC34 (TC34 nay gửi vòng 1 ngay và chờ trả lời ý 1).
+ADOBE_PRINTER = f"{ADOBE}, tiện {PRINTER}"
+TEMPLATES = "cấp quyền thư mục shared/templates chỉ đọc cho mình 30 ngày"
+TWO_APPROVALS = f"{ADOBE} với lại {TEMPLATES}"  # D-77: hai ý cùng qua B15 → một vòng báo cả hai, cha chờ con
 
 
 def item(
@@ -57,6 +62,11 @@ def adobe_item(span: str = ADOBE, **kw: Any) -> dict[str, Any]:
 
 def extend_item(span: str = EXTEND, **kw: Any) -> dict[str, Any]:
     return item("access", span, action="extend_permission", slots={"resource_path": "finance/public-reports"}, **kw)
+
+
+def grant_item(span: str = TEMPLATES, **kw: Any) -> dict[str, Any]:
+    return item("access", span, action="grant_permission",
+                slots={"resource_path": "shared/templates", "permission_level": "read", "duration": "30"}, **kw)  # fmt: skip
 
 
 def oos_item(span: str = PRINTER, **kw: Any) -> dict[str, Any]:

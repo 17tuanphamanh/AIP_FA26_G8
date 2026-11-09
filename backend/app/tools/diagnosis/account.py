@@ -14,6 +14,10 @@ không gọi. 404 → KHÔNG đặt fact của dòng đó (không bao giờ đ�
 - `check_lockout_history` → chỉ `diagnostics`.
 
 Không tự suy `action` (khác VPN): "không đăng nhập được" có thể là đặt lại hay mở khoá — để B11 hỏi.
+
+Q3 M3 (ĐP 09/11) — không hỏi điều hệ thống đã biết: suy slot `account_type = "ad"` (như VPN suy máy duy nhất) khi ĐỦ: `allow_infer` (B6 tắt
+khi cờ `target_is_other` bật), `account_type` chưa có (nên lời tra ĐÃ dùng `ad` mặc định), không `target_user` (đích = người gửi), `action`
+là `unlock_account` hoặc chưa có, và fact `target_account_locked is True` (đầu ra tool). Ca khác → không suy (B11 hỏi câu cố định).
 """
 
 from collections.abc import Mapping
@@ -43,8 +47,11 @@ def target_calls(requester_id: str, slots: Mapping[str, str]) -> list[tuple[str,
     return calls(requester_id, slots)
 
 
+INFER_AD_ACTIONS = frozenset({None, "unlock_account"})  # Q3 M3: hành động cho phép suy loại tài khoản (chưa có = None)
+
+
 def infer_account(
-    diag: Mapping[str, Any], *, requester_id: str, slots: Mapping[str, str]
+    diag: Mapping[str, Any], *, requester_id: str, slots: Mapping[str, str], allow_infer: bool = True
 ) -> tuple[dict[str, str], dict[str, str | int | bool]]:
     status = diag["check_account_status"] if isinstance(diag["check_account_status"], AccountStatus) else None
     privilege = diag["check_privilege_level"] if isinstance(diag["check_privilege_level"], Privilege) else None
@@ -61,6 +68,10 @@ def infer_account(
     if privilege is not None:
         facts["target_account_privilege"] = privilege.level
     assert set(facts) <= FACT_KEYS  # hợp đồng nội bộ; build_action kiểm lại bằng FactKeyViolation
+    own = "target_user" not in slots and requested_for_of("account", slots, requester_id) == requester_id
+    if (allow_infer and own and "account_type" not in slots and slots.get("action") in INFER_AD_ACTIONS
+            and facts.get("target_account_locked") is True):  # fmt: skip
+        return {"account_type": "ad"}, facts
     return {}, facts
 
 

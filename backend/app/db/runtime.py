@@ -96,19 +96,25 @@ _MARK_REMINDER: dict[ReminderN, TextClause] = {
 
 # Phase 5 T20b P12 (a) — hai vế (spec gốc + Q-T20b-7 thay vế 1, duyệt DỪNG 2): cha chưa kết thúc mà (1) số con ĐÃ khởi động (dòng
 # `child_submit` của cha — `result_ref` = `started:<con>`, đếm khác nhau) < số con (con chưa khởi động / khởi động lỗi trước checkpoint đầu:
-# có `turns` mà thread rỗng — FAIL-2), HOẶC (2) mọi con đã dừng theo ĐÚNG điều kiện `SqlTicketStore.children_view` + `domain.children.stopped`:
-# `final_state` VÀ không còn lượt `turns` mở, hoặc có notice chưa gửi `needs ≠ none` (con cạn phục hồi ở B20 / tín hiệu đánh thức bị mất
-# — NGHI-2). Đánh thức thừa (cha không ở `parent_wait`) là no-op.
+# có `turns` mà thread rỗng — FAIL-2), HOẶC (2) ĐÚNG điều kiện `domain.children.round_ready` trên `SqlTicketStore.children_view` (D-77):
+# mọi con đã dừng (`final_state` hoặc phiếu duyệt `pending`, VÀ không còn lượt `turns` mở; hoặc có notice chưa gửi `needs ≠ none`) VÀ (có
+# notice chưa gửi HOẶC mọi con đã kết thúc) — vế sau để cha chỉ còn con chờ duyệt (đã báo) không bị đánh thức mỗi chu kỳ (con cạn phục hồi
+# ở B20 / tín hiệu đánh thức bị mất — NGHI-2). Đánh thức thừa (cha không ở `parent_wait`) là no-op.
 _PARENTS_TO_WAKE = text(
     "SELECT p.ticket_id FROM tickets p "
     "WHERE p.is_parent AND p.final_state IS NULL "
     "AND EXISTS (SELECT 1 FROM tickets c WHERE c.parent_ticket_id = p.ticket_id) "
     "AND ((SELECT count(DISTINCT s.result_ref) FROM side_effects s WHERE s.ticket_id = p.ticket_id AND s.kind = 'child_submit') "
     "      < (SELECT count(*) FROM tickets c WHERE c.parent_ticket_id = p.ticket_id) "
-    "  OR NOT EXISTS (SELECT 1 FROM tickets c WHERE c.parent_ticket_id = p.ticket_id AND NOT ("
-    "      (c.final_state IS NOT NULL AND NOT EXISTS (SELECT 1 FROM turns t WHERE t.ticket_id = c.ticket_id AND t.ended_at IS NULL)) "
+    "  OR (NOT EXISTS (SELECT 1 FROM tickets c WHERE c.parent_ticket_id = p.ticket_id AND NOT ("
+    "      ((c.final_state IS NOT NULL "
+    "        OR EXISTS (SELECT 1 FROM approvals a WHERE a.ticket_id = c.ticket_id AND a.status = 'pending')) "
+    "       AND NOT EXISTS (SELECT 1 FROM turns t WHERE t.ticket_id = c.ticket_id AND t.ended_at IS NULL)) "
     "      OR EXISTS (SELECT 1 FROM child_notices n WHERE n.child_ticket_id = c.ticket_id AND n.parent_ticket_id = p.ticket_id "
-    "                 AND n.delivered_at IS NULL AND n.needs <> 'none')))) "
+    "                 AND n.delivered_at IS NULL AND n.needs <> 'none'))) "
+    "    AND (EXISTS (SELECT 1 FROM child_notices n WHERE n.parent_ticket_id = p.ticket_id AND n.delivered_at IS NULL) "
+    "         OR NOT EXISTS (SELECT 1 FROM tickets c WHERE c.parent_ticket_id = p.ticket_id AND (c.final_state IS NULL "
+    "             OR EXISTS (SELECT 1 FROM turns t WHERE t.ticket_id = c.ticket_id AND t.ended_at IS NULL)))))) "
     "ORDER BY p.created_at LIMIT :limit"
 )
 # P12 (b) mở rộng (Q-T20b-5 (iii)): con chưa kết thúc, cha ĐÃ kết thúc, có notice `needs ≠ none` (đã gửi hay chưa) — `needs` của notice đó

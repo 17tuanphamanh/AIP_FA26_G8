@@ -208,14 +208,24 @@ class SqlPresetResolver:
         return self._cache[trace.turn_id]
 
 
+SIM_PREFIX = "sim_"  # preset dữ liệu thử của `scripts/sim` (P6 gói tuần 8, D-67) — kể cả preset con `sim_…-<i>`
+
+
 class PresetScriptedLLM:
-    def __init__(self, presets: Presets, resolver: PresetResolver) -> None:
+    """`allow_sim` (mặc định False — đóng): preset `sim_*` chỉ dùng được khi APP_ENV ∈ {dev, test} VÀ EVAL_MODE=false (wiring tính,
+    `sim_presets_allowed`) — dữ liệu thử không được lẫn vào lượt đo. Không được phép → `ScriptExhausted` (lỗi rõ, KHÔNG rơi về
+    `default`). Preset khác không đổi hành vi."""
+
+    def __init__(self, presets: Presets, resolver: PresetResolver, *, allow_sim: bool = False) -> None:
         self.name = NAME
         self._presets = presets
         self._resolver = resolver
+        self._allow_sim = allow_sim
 
     async def chat(self, req: ProviderRequest) -> ProviderResponse:
         name = await self._resolver.tag_for(req.trace) or DEFAULT_PRESET
+        if name.startswith(SIM_PREFIX) and not self._allow_sim:
+            raise ScriptExhausted(f"preset {name!r} (dữ liệu thử) chỉ dùng khi APP_ENV ∈ {{dev, test}} và EVAL_MODE=false")
         preset = self._presets.get(name)
         if preset is None:
             raise ScriptExhausted(f"preset ScriptedLLM {name!r} không có (thẻ [fake:{name}])")

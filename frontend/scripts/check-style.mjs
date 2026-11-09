@@ -22,11 +22,19 @@ const RULES = [
       /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|\b(?:rgba?|hsla?|oklch|oklab)\(|\b(?:text|bg|border|fill|stroke|ring|outline|decoration|caret|accent|from|via|to|shadow)-\[/i,
   },
   {
-    name: "lưu trữ trình duyệt / HTML thô",
+    name: "lưu trữ trình duyệt",
     paths: ["src"],
     // Test được nhắc tới Storage để gài spy chứng minh code KHÔNG dùng (t5) — chỉ miễn cho *.test.*.
+    // NGOẠI LỆ DUY NHẤT (ĐP 26/10 N-TB P3): src/lib/lastSeen.ts — mốc ISO "đã xem thông báo", không token (lý do ở đầu
+    // file đó; eslint.config.js miễn đúng file này). Không thêm file nào khác.
+    skip: /\.test\.[jt]sx?$|[\\/]src[\\/]lib[\\/]lastSeen\.ts$/,
+    pattern: /localStorage|sessionStorage/,
+  },
+  {
+    name: "HTML thô",
+    paths: ["src"],
     skip: /\.test\.[jt]sx?$/,
-    pattern: /localStorage|sessionStorage|dangerouslySetInnerHTML/,
+    pattern: /dangerouslySetInnerHTML/,
   },
   {
     name: "Google Fonts / CDN",

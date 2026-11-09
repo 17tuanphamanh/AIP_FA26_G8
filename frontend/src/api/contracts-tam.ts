@@ -22,8 +22,8 @@ export type Accepted = { ticket_id: string; status: string; notices: string[] };
 export type Source = { chunk_id: string; title: string; heading_path: string };
 
 // Nguồn: domain/messages.py (answer, question, result), graph/nodes/b20_audit.py (escalation); 4c thêm rejection.
-// `kind` lạ → hiện `text` như tin thường, không lỗi (12b Q-fe-2); `digest` (tin tổng hợp nhiều ý) — Đề xuất F6, kiểu
-// `DigestConversationItem` ở khối route CHƯA CÓ. Xoá khi: TicketView khai kiểu conversation.
+// `kind` lạ → hiện `text` như tin thường, không lỗi (12b Q-fe-2); `digest` (tin tổng hợp nhiều ý) — kiểu
+// `DigestConversationItem` ở khối "Route ĐÃ CÓ — T20b". Xoá khi: TicketView khai kiểu conversation.
 export type ConversationItem =
   | { role: "user"; text: string }
   | DigestConversationItem
@@ -36,12 +36,12 @@ export type ConversationItem =
       sources?: Source[];
     };
 
-// Nguồn: backend/app/api/tickets.py TicketView (response_model) — `conversation` là list[dict] nên phần tử để `unknown`,
-// component tự kiểm dạng (components/Conversation.tsx). Xoá khi: `npm run gen:api` chạy được (12b Q-fe-1) → dùng
-// kiểu của schema.gen.ts (conversation vẫn phải kiểm dạng).
-// `children_progress`: CHƯA CÓ ở backend — Đề xuất F6 cho T20 (kiểu `ChildProgress` dưới); thiếu/null = ticket thường.
-// Giao diện vẫn kiểm dạng từng phần tử (routes/employee/multi.ts `normalizeProgress`).
-export type TicketView = {
+// Nguồn: backend/app/api/tickets.py TicketView (response_model) — PHẦN VIẾT TAY: `conversation` là list[dict] nên phần tử
+// để `unknown`, component tự kiểm dạng (components/Conversation.tsx); `children_progress` (T20b, kiểu `ChildProgress` dưới)
+// viết tay chặt hơn openapi (list[dict]) — hình dạng kiểm lúc chạy ở api/tickets.ts `parseTicketView`. `deadline` +
+// `server_now` LẤY TỪ schema.gen.ts (N-TB nối API thật, be-thong-bao 56ea4d9) — ghép ở types.ts `TicketView`; tập khoá +
+// từng khoá soát hai chiều ở schema.check.ts `TicketViewOk`.
+export type TicketViewBase = {
   ticket_id: string;
   status: string;
   waiting_for: "clarify" | "approval" | "confirm" | "reply" | null;
@@ -76,9 +76,9 @@ export type EscalationQueueItem = {
   created_at: string;
 };
 
-// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + P10 §3.4 — `POST /api/escalations/{id}/close` CHƯA CÓ (Phase 7, T31).
-// Body phỏng đoán: đúng 2 khoá; ghi chú bắt buộc (≤ 1000 như ghi chú confirm). Ca deny + `completed` → 422
-// `deny_case_cannot_complete`. Xoá khi: T31 merge → gen:api (xoá cùng mocks/handlers/escalation-close.ts).
+// Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + hợp đồng N-PA §4 — `POST /api/escalations/{id}/close` (route thật,
+// backend/app/api/escalations.py). Thân đúng 2 khoá; ghi chú bắt buộc 1–1000 ký tự. Thành công 200; 404 `not_found`; 409
+// `already_closed`; 422 fields ["close_result"] (ca deny/E5/E6 + `completed`) / ["note"]. Xoá khi: gen:api có kiểu này.
 export type EscalationCloseResult = "completed" | "confirmed_denial" | "reopened_as_new";
 export type EscalationCloseIn = { close_result: EscalationCloseResult; note: string };
 
@@ -138,6 +138,32 @@ export type InboxResponse = { items: ApprovalListItem[] };
 // action_metadata; `title` null khi không tìm thấy tài liệu ở bản KB hiện hành. `viewer` = người có `audit:read:all` xem
 // phiếu không giao cho mình (không quyết được, không ghi lần xem đầu).
 export type ApprovalRoleAs = "primary" | "backup" | "viewer";
+
+// F6 (#76): `affected` = người BỊ TÁC ĐỘNG (`Action.requested_for`), có thể khác người gửi; `risk_view` = RiskDecision + 2 cờ
+// suy ra (`calibrated`, `auto_allowed`), null ⇔ `risk` null. Nguồn: backend/app/api/approvals.py (AffectedView, ManagerRef,
+// RiskView) — soi hai chiều với openapi ở schema.check.ts. Xoá khi: ApprovalViewP4 lấy thẳng từ schema.gen.ts (cần `status`
+// của openapi là enum; hiện là `string`).
+export type ApprovalManagerRef = { status: "known" | "unknown"; user_id: string | null; full_name: string | null };
+export type ApprovalAffected = {
+  user_id: string;
+  is_requester: boolean;
+  department: string | null;
+  manager: ApprovalManagerRef;
+};
+export type ApprovalRiskView = {
+  decided_by: "rule" | "llm";
+  policy_decision: "allow" | "approval_required" | "deny" | null;
+  matched_rule_id: string | null;
+  raw_prob: number | null;
+  calibrated_prob: number | null;
+  p_method: "self_report" | "sampling_k5" | null;
+  risk_level: "low" | "medium" | "high";
+  route: "AUTO" | "HITL" | "ESCALATE_L2";
+  reason: string;
+  thresholds: [number, number] | null;
+  calibrated: boolean;
+  auto_allowed: boolean;
+};
 export type ApprovalViewP4 = {
   approval_id: string;
   ticket_id: string;
@@ -151,6 +177,10 @@ export type ApprovalViewP4 = {
   facts: Record<string, unknown>;
   role_as: ApprovalRoleAs;
   procedure: { doc_id: string; title: string | null } | null;
+  affected: ApprovalAffected;
+  risk_view: ApprovalRiskView | null;
+  /** N-PA §3 (route CHƯA CÓ ở be-tuan8): thiếu khoá = chưa có dữ liệu luật khớp. */
+  matched_rules?: MatchedRule[];
 };
 
 // Nguồn: backend/app/api/health.py health() — JSONResponse; 200 "ok" / 503 "degraded"; `runtime` chỉ để báo.
@@ -162,6 +192,10 @@ export type Health = {
   runtime: "up" | "down";
   kb: { alias: string; collection: string | null; status: "ready" | "missing" | "unknown" };
 };
+
+// Nguồn: backend/app/api/policy.py `ValidateIn` (extra="forbid", `content: dict`) — `POST /api/policy/validate` tự đọc thân
+// (`_read_body`) nên openapi không có requestBody. Kiểu PHẢN HỒI lấy từ schema.gen.ts (types.ts). Xoá khi: route khai body.
+export type PolicyValidateIn = { content: Record<string, unknown> };
 
 // Ghi đè `POST /api/tickets/{id}/override` (4d) — ghi một dòng audit OVERRIDE, KHÔNG đổi ticket. Thứ tự lỗi (code): 403
 // `forbidden` (không quyền) → 403 `reauth_required` (đăng nhập > 10 phút) → 404 `not_found` → 403 `forbidden` (người gửi tự
@@ -249,6 +283,34 @@ export type BusinessMetrics = {
 };
 export type BusinessDashboard = { from: string; to: string; unavailable: string[]; scope: "all"; metrics: BusinessMetrics };
 
+// D13 (backend 3ec275b: api/dashboard.py `BusinessAllCounts`, monitor/queries/business.py RatioCount, GroupCount,
+// WeightedCount; api/alerts.py `from`/`to`). schema.gen.ts chưa sinh lại → hình dạng kiểm LÚC CHẠY ở api/dashboard.ts.
+// TODO (A) gộp kiểu chính sau bảo vệ — lô N (N3): đã sinh lại schema.gen.ts + soát hai chiều 4 kiểu *Tam (schema.check.ts, hướng B).
+
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Tử/mẫu của một tỉ lệ đơn; `den` = #lá đã kết thúc trong cửa sổ. */
+export type RatioCountTam = { num: number; den: number };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Một nhóm N3: `num` = #lá có exit_code, `den` = #lá của nhóm, `weight` = trọng số danh nghĩa của backend. */
+export type GroupCountTam = { num: number; den: number; weight: number };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Weighted KHÔNG có tử tổng: chỉ cỡ mẫu `den` + a/b theo nhóm. */
+export type WeightedCountTam = { den: number; by_group: Record<string, GroupCountTam> };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Khoá pending / unavailable → null. */
+export type BusinessCountsTam = {
+  automation_rate: RatioCountTam | null;
+  escalation_rate_raw: RatioCountTam | null;
+  escalation_rate_weighted: WeightedCountTam | null;
+  deflection_rate: RatioCountTam | null;
+};
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** `min_sample`/`counts` tuỳ chọn: backend trước D13 không gửi → màn hiện như cũ (không "(a/b)"). */
+export type BusinessCountedTam = BusinessDashboard & { min_sample?: number; counts?: BusinessCountsTam };
+// TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
+/** Khung giờ của `GET /api/alerts` — lọc `window_start` trong `[from, to)`. */
+export type AlertsWindowTam = { from: string; to: string };
+
 /** `day_start` = 00:00 giờ VN của ngày, viết ở UTC (vd "2026-09-29T17:00:00Z" là ngày 30/09). */
 export type DayCost = { day_start: string; cost_usd: number };
 export type AiMetrics = {
@@ -269,71 +331,44 @@ export type AiMetrics = {
 };
 export type AiDashboard = { from: string; to: string; unavailable: string[]; metrics: AiMetrics };
 
-// ---------------------------------------------------------------- Route CHƯA CÓ (MSW)
+// ---------------------------------------------------------------- Route ĐÃ CÓ — T20b (nhiều ý, D-31; viết tay tới khi gen:api)
 
-// Yêu cầu nhiều ý (D-31) — Phase 5, T20. Toàn bộ khối này là [Đề xuất F6 — chốt ở T20]; hình dạng đầy đủ + chỗ
-// [Suy luận]: PLAN-fe mục 8 "Đề xuất hợp đồng cho T20". MSW: mocks/handlers/employee-multi.ts (chỉ id ticket nhiều ý minh hoạ).
+// ĐÃ CHỐT theo T20b 5df24c7: backend/app/api/tickets.py (`TicketView.children_progress`, `ReplyIn`, `_reply_body`,
+// `_items_match`, route `reply`), domain/children.py (`children_progress`, `child_index`, `SUMMARY`), domain/messages.py
+// (`compose_digest`, `child_title`, `reply_text`). openapi khai `children_progress: list[dict] | None` và `conversation:
+// list[dict]` → schema.check KHÔNG bắt được lệch: hình dạng kiểm LÚC CHẠY ở api/tickets.ts (`parseTicketView` — sai → 502
+// `invalid_ticket_body`, không vẽ một phần). Giá trị lạ của progress/outcome/kind/needs KHÔNG phải lỗi hình dạng (nhãn dự
+// phòng ở routes/employee/multi.ts, components/messages.ts). MSW chỉ còn minh hoạ ca lỗi khó tạo trên stack (id
+// `tkt-demo-multi-`, mocks/handlers/employee-multi.ts). Xoá khi: gen:api thành nguồn kiểu cho TicketView (vẫn phải kiểm dạng).
 
-// Nguồn: P1 §8.2–8.3 (khung tiến độ từng ý, không phải tin nhắn) + P10 §3.1 (`GET /api/tickets/{cha}` trả
-// `children_progress`) — Đề xuất F6. `title` = nhãn ngắn của ý do server đặt [Suy luận]; `outcome` chỉ khi `closed`.
-// Xoá khi: T20 merge (gen:api) — xoá cùng mocks/handlers/employee-multi.ts, mocks/fixtures/multi.ts.
+// `children_progress` (P11, 5.2.6): theo `index`; `child_id` = "<cha>-<index>"; `title` = `child_title(seed)` — CÓ THỂ "";
+// `outcome` chỉ khác null khi `closed` (con không bao giờ S_BLOCKED — P1). `null` = ticket thường / ticket con.
 export type ChildProgressState = "processing" | "pending_approval" | "ready" | "needs_user" | "closed";
-export type ChildOutcome = "resolved" | "escalated" | "rejected" | "blocked";
+export type ChildOutcome = "resolved" | "escalated" | "rejected";
 export type ChildProgress = {
   child_id: string;
   index: number;
   title: string;
-  progress: ChildProgressState;
-  outcome: ChildOutcome | null;
+  progress: ChildProgressState | (string & {});
+  outcome: ChildOutcome | (string & {}) | null;
 };
 
-// Nguồn: P1 §8.2 `compose_digest` (một tin / lượt, mỗi ý một khối "Ý n – …") + B03-B05 §5.4.1 (`needs` của notice) —
-// Đề xuất F6. `kind` theo notice của con: B10/B18 → result, B11 → question, B16 → rejection, B20 → escalation.
-// `options` (gợi ý trả lời, vd mã máy) [Suy luận]. `text` của tin = bản chữ thuần (dự phòng / kênh khác).
-// Xoá khi: T20 merge (gen:api).
+// Tin tổng hợp `compose_digest` (P9): `items[]` mỗi notice chưa gửi một khối (một con có thể có >1 khối, nhưng chỉ MỘT khối
+// `needs ≠ none`); notice B10 `answer` hiện là `result` (server đổi). KHÔNG có `options`, `sources`. `text` = các dòng
+// "Ý {index} – {title}: {text}" nối "\n" (+ câu tổng kết ở dòng cuối khi MỌI con đã kết thúc; vòng cuối không còn notice →
+// `items: []`, `text` = chỉ câu tổng kết). `DigestItem` là dạng ĐÃ chuẩn hoá (components/messages.ts — kind/needs lạ đã đổi).
 export type DigestItemKind = "result" | "question" | "rejection" | "escalation";
 export type DigestNeeds = "confirm" | "answer" | "none";
-export type DigestItem = {
-  child_id: string;
-  index: number;
-  title: string;
-  kind: DigestItemKind;
-  text: string;
-  needs: DigestNeeds;
-  options?: string[];
-  sources?: Source[];
-};
+// `step` (Q6 c2, D-77): bước của notice con (`source_step`, vd "B15" = tin "chờ duyệt"); tin cũ không có → undefined.
+export type DigestItem = { child_id: string; index: number; title: string; kind: DigestItemKind; text: string; needs: DigestNeeds; step?: string };
 export type DigestConversationItem = { role: "assistant"; kind: "digest"; round: number; text: string; items: DigestItem[] };
 
-// Nguồn: B19 §4 `ParentReplyIn` (khoá = child_ticket_id; `ConfirmIn | ClarifyAnswerIn`) + P1 §8.2 (mọi ý trong
-// `awaiting` phải có mặt, thiếu → 422) — Đề xuất F6: `{answer}` cho câu hỏi, `{confirmed, note?}` cho xác nhận (không gửi
-// `satisfaction` — "Có thể"). 202 = `Accepted`; 422 `fields: ["body.items.<child_id>…"]`; 409 trả muộn [Chốt 8.3].
-// Xoá khi: T20 merge (gen:api).
+// `ReplyIn` (extra="forbid" mọi tầng, `items` ≥ 1): khoá = child_id "<cha>-<số>" (khác dạng → 422 `["body.items"]`, vị trí
+// CHUNG), ĐÚNG tập `awaiting` và đúng loại theo `needs` (lệch → 422 `["body.items.<child_id>", …]` sắp theo id); lỗi hình
+// dạng Pydantic → `items.<child_id>.ReplyAnswer.answer` … (KHÔNG tiền tố `body.`). `note` rỗng → không gửi khoá. Không ở
+// `parent_reply_wait` → 409 sự kiện muộn. 202 = `Accepted`.
 export type ParentReplyItem = { answer: string } | { confirmed: boolean; note?: string };
 export type ParentReplyIn = { items: Record<string, ParentReplyItem> };
-
-// Nguồn: [Đề xuất F5 — chốt lại khi làm Phase 7] (Q-fe-26; PLAN-fe mục 7 #20, nợ API #11). P10 §3.3 chỉ có TÊN route;
-// tên trường bám cột bảng `policy_versions` (backend/app/db/models.py `PolicyVersion`: `version` String(16),
-// `policy_json` → `content`, `updated_by`, `updated_at`, `is_current`). Quay lui = TẠO phiên bản mới (append-only,
-// `restored_from` = version bản gốc). Xoá khi: Phase 7 có route (gen:api) — xoá cùng mocks/handlers/policy.ts.
-export type PolicyView = {
-  version_id: number;
-  version: string;
-  content: Record<string, unknown>;
-  updated_by: string | null;
-  updated_at: string;
-  is_current: boolean;
-};
-export type PolicyVersionItem = {
-  version_id: number;
-  version: string;
-  updated_by: string | null;
-  updated_at: string;
-  is_current: boolean;
-  restored_from?: string | null;
-};
-export type PolicyPutIn = { content: Record<string, unknown>; base_version_id: number };
-export type PolicySaved = { version_id: number; version: string };
 
 // ---------------------------------------------------------------- Route ĐÃ CÓ — I1 (viết tay tới khi gen:api)
 
@@ -354,3 +389,75 @@ export type LlmStatus = {
   usage: { calls_total: number; calls_24h: number; tickets_with_calls: number; avg_cost_per_ticket_usd: number | null };
   kb: { alias: string; collection: string | null; status: LlmKbStatus };
 };
+
+// ---------------------------------------------------------------- Route CHƯA CÓ — N-PA, hợp đồng chốt ĐP 26/10 17:30
+// Nguồn: hợp đồng API be-tuan8 / fe-phuong-an (bản chốt ĐP 26/10 17:30) + D-67. Backend (nhánh be-tuan8) chưa có code →
+// dev:mock dựng bằng MSW (mocks/handlers/strategy.ts, strategy-compare.ts, escalation-queue.ts, escalation-close.ts).
+// Hình dạng kiểm LÚC CHẠY (api/strategy.ts, dashboard.ts, approvals.ts, trace.ts, escalations.ts) — thân sai → 502.
+// Xoá khi: be-tuan8 merge, mọi route có response_model → `gen:api` thành nguồn kiểu (vẫn giữ kiểm lúc chạy).
+
+/** D-67: tập chọn được khi vận hành (`RUNTIME_SELECTABLE`). */
+export type RuntimeStrategy = "rule_only" | "hybrid" | "hybrid_guarded";
+/** `GET /api/admin/strategy` (cũng là thân 200 của PUT). `llm_calibrated` thiếu khoá → FE coi là CHƯA hiệu chỉnh. */
+export type StrategyView = {
+  strategy: RuntimeStrategy;
+  selectable: RuntimeStrategy[];
+  llm_calibrated?: boolean;
+  eval_mode: boolean;
+  changed_by: string | null;
+  changed_at: string | null;
+  reason: string | null;
+};
+/** `PUT /api/admin/strategy`: `reason` 10–500 ký tự sau khi cắt khoảng trắng. */
+export type StrategyIn = { strategy: RuntimeStrategy; reason: string };
+/** Một dòng `m5_strategy_changes`; `strategy_from` của dòng đầu tiên là "hybrid". */
+export type StrategyChange = {
+  changed_at: string;
+  changed_by: string;
+  strategy_from: RuntimeStrategy;
+  strategy_to: RuntimeStrategy;
+  reason: string;
+};
+/** `GET /api/admin/strategy/history?limit=` — mới nhất lên trước. */
+export type StrategyHistory = { items: StrategyChange[]; truncated: boolean };
+
+/** `GET /api/dashboard/strategies?from=&to=&source=` — không có giá trị `all`. */
+export type StrategySource = "real" | "sim";
+export type StrategyRatio = { num: number; den: number };
+export type StrategyValue = { value: number | null; n?: number };
+export type StrategyMetric = {
+  key: string;
+  kind: "ratio" | "value";
+  unit?: string;
+  values: Record<string, StrategyRatio | StrategyValue | null>;
+};
+export type StrategiesDashboard = {
+  source: StrategySource;
+  from: string;
+  to: string;
+  strategies: string[];
+  intent_mix: Record<string, Record<string, number>>;
+  metrics: StrategyMetric[];
+  unavailable: string[];
+};
+
+/** Các luật khớp (ApprovalView gốc + TicketTrace bước B13/B14 `policy`), thứ tự như `all_matched`. Hợp đồng sửa 21:15/21:30:
+ *  tối đa MỘT phần tử `applied` (0 = quyết định cuối không do luật, vd hybrid_guarded + AI lỗi → E5 llm_layer_disabled);
+ *  `decision` null = luật đã bị xoá khỏi chính sách. Thiếu khoá = chưa có dữ liệu (≠ mảng rỗng = không luật nào khớp). */
+export type MatchedRule = {
+  rule_id: string;
+  description: string | null;
+  decision: "allow" | "approval_required" | "deny" | null;
+  applied: boolean;
+};
+
+/** `GET /api/escalations/queue?status=open|closed&limit=&after=` → `{items, next_cursor}`. */
+export type EscalationQueueStatus = "open" | "closed";
+/** Ca đã đóng mang thêm 3 trường bắt buộc (+ `close_note` tuỳ chọn — FE đề nghị BE thêm); ca mở: vắng hoặc null. */
+export type EscalationClosedInfo = {
+  closed_at?: string | null;
+  close_result?: EscalationCloseResult | null;
+  closed_by?: string | null;
+  close_note?: string | null;
+};
+export type EscalationQueuePage = { items: (EscalationQueueItem & EscalationClosedInfo)[]; next_cursor: string | null };

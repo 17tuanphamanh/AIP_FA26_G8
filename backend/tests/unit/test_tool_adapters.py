@@ -37,7 +37,11 @@ READ_CALLS: list[tuple[str, dict[str, Any], str, dict[str, str]]] = [
 ]  # fmt: skip
 
 WRITE_CALLS: list[tuple[str, dict[str, Any], str, dict[str, Any]]] = [
-    ("reset_password", {"user_id": "nv001"}, "/ad/users/nv001/reset-password", {"account_type": "ad"}),
+    ("reset_password", {"user_id": "nv001"}, "/ad/users/nv001/reset-password", {"account_type": "ad", "channel": "sms"}),
+    ("reset_password", {"user_id": "nv007", "account_type": "email"}, "/ad/users/nv007/reset-password",
+     {"account_type": "email", "channel": "email"}),
+    ("reset_password", {"user_id": "nv001", "account_type": "erp"}, "/ad/users/nv001/reset-password",
+     {"account_type": "erp", "channel": "email"}),
     ("unlock_account", {"user_id": "nv007", "account_type": "email"}, "/ad/users/nv007/unlock",
      {"account_type": "email"}),
     ("lock_account", {"user_id": "nv007", "account_type": "email"}, "/ad/users/nv007/lock",

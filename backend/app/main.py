@@ -33,10 +33,14 @@ from app.api.auth import auth_error_handler
 from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.dashboard import router as dashboard_router
-from app.api.desk import Desk, RateGate, retry_after
+from app.api.dashboard_strategies import router as dashboard_strategies_router
+from app.api.desk import Desk, RateGate, StrategyStore, retry_after
+from app.api.email_outbox import router as email_outbox_router
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
 from app.api.escalations import router as escalations_router
+from app.api.events import AuditFeed, SqlAuditFeed
+from app.api.events import router as events_router
 from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe dựng dưới đây
     HealthCheck,
     KbProbe,
@@ -48,8 +52,12 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware
 from app.api.llm_status import router as llm_status_router
+from app.api.notifications import router as notifications_router
 from app.api.policy import router as policy_router
+from app.api.strategy import router as strategy_router
 from app.api.tickets import router as tickets_router
+from app.api.trace import SqlTraceSource, TraceSource
+from app.api.trace import router as trace_router
 from app.audit.alerts import AlertWriter
 from app.audit.security_events import SecurityEventWriter
 from app.auth.mfa import MfaCipher
@@ -58,6 +66,7 @@ from app.auth.ports import (
     AuthStore,
     IdentityProvider,
     IdentityUnavailable,
+    PasswordChangeRequired,
     SecurityEventSink,
 )
 from app.auth.service import AuthError, AuthService, auth_config
@@ -66,6 +75,8 @@ from app.auth.tokens import TokenSigner
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
+from app.db.m5_strategy import SqlStrategyStore
+from app.db.notifications import NotificationSource, SqlNotificationSource
 from app.db.rate_limits import (
     LOOSE_RATES_WARNING,
     RateLimits,
@@ -208,10 +219,13 @@ async def _monitor_unavailable(_: Request, exc: Exception) -> JSONResponse:  # M
 
 
 def llm_targets(cfg: LlmConfig, settings: Settings) -> tuple[str | None, ...]:
-    """Tên model của MỌI đích khi `real` (2 vai trò + fallback). `None` = env chưa đặt (vd FAST_MODEL)."""
+    """Tên model của MỌI đích khi `real` (2 vai trò + fallback; vai chat chỉ khi CHAT_MODEL đặt — trống thì nó mượn đích của vai gốc,
+    đã có trong danh sách). `None` = env chưa đặt (vd FAST_MODEL)."""
     out: list[str | None] = []
     for r in ROLES:
-        out.append(getattr(settings, cfg.roles[r].model_setting) or None)
+        model = getattr(settings, cfg.roles[r].model_setting) or None
+        if model is not None or cfg.roles[r].model_default_role is None:
+            out.append(model)
         out.extend(f.model for f in cfg.fallback[r])
     return tuple(out)
 
@@ -306,6 +320,10 @@ def create_app(
     clock: Clock | None = None,
     kb_probe: KbProbe | None = None,
     rate: RateGate | None = None,
+    events_feed: AuditFeed | None = None,
+    trace: TraceSource | None = None,
+    notifications: NotificationSource | None = None,
+    strategy: StrategyStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -329,6 +347,9 @@ def create_app(
             stack.push_async_callback(engines.dispose)
             app.state.engines = engines
             app.state.escalations = escalations or SqlEscalationStore(engines.main)
+            app.state.events_feed = events_feed or SqlAuditFeed(engines.main)  # SSE tiến trình ticket (api/events.py)
+            app.state.trace = trace or SqlTraceSource(engines.main)  # nhật ký quyết định (chỉ SELECT)
+            app.state.notifications = notifications or SqlNotificationSource(engines.main)  # GET /api/me/notifications (chỉ SELECT)
             rate_gate = rate or SqlRateGate(engines.main, RateLimits.from_settings(settings))  # Phase 5 gói 2b (D-54 a)
             registry = None
             identity = idp
@@ -336,7 +357,8 @@ def create_app(
                 registry, ad_http = build_read_registry(settings, clock)
                 stack.push_async_callback(ad_http.aclose)
                 identity = AdIdentityProvider(
-                    ad_http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable
+                    ad_http, registry, timeout=READ_TIMEOUT_S, unavailable=IdentityUnavailable,
+                    password_change=PasswordChangeRequired,
                 )
             auth_store = store or SqlAuthStore(engines.main)
             security = sink or SecurityEventWriter(engines.main, clock)  # auth + guard (3e) dùng chung
@@ -364,6 +386,7 @@ def create_app(
                     runner=rt.runner, tickets=rt.tickets, approvals=rt.approvals, guard=guard, security=security,
                     users=auth_store, clock=clock, background=background,
                     retry_after_seconds=lock_retry, rate=rate_gate,
+                    strategy=strategy or SqlStrategyStore(engines.main),
                 )  # fmt: skip
                 app.state.runtime_status = "up"
             try:
@@ -373,7 +396,14 @@ def create_app(
                 await background.shutdown(settings.background_shutdown_seconds)
                 app.state.desk, app.state.runtime_status = None, "down"
 
-    app = FastAPI(title="servicedesk-agent", lifespan=lifespan)
+    docs_on = settings.api_docs == "on"  # off: 404 cả 3 đường; app.openapi() nội bộ vẫn chạy
+    app = FastAPI(
+        title="servicedesk-agent",
+        lifespan=lifespan,
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
+    )
     app.state.health_timeout = settings.health_timeout
     app.state.health_checks = (
         health_checks if health_checks is not None else _default_checks(settings, app)
@@ -395,15 +425,21 @@ def create_app(
     app.state.llm_probe = _default_llm_probe(settings, app)
     app.state.monitor_probe = _default_monitor_probe(app)
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
+    app.include_router(dashboard_strategies_router)  # D-67 P2: /api/dashboard/strategies (so sánh phương án, app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)
     app.include_router(llm_status_router)  # I1: GET /api/admin/llm-status (chỉ đọc, Trưởng BP IT)
+    app.include_router(email_outbox_router)  # notify-email: GET /api/admin/email-outbox (chỉ đọc, Trưởng BP IT, không body)
+    app.include_router(strategy_router)  # D-67: /api/admin/strategy (+ /history) — chiến lược M5 lúc vận hành (chỉ manager)
     app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(tickets_router)
+    app.include_router(events_router)  # GET /api/tickets/{id}/events (SSE; ENABLE_SSE=false → 404)
     app.include_router(approvals_router)
     app.include_router(escalations_router)
+    app.include_router(trace_router)  # GET /api/tickets/{id}/trace (chỉ đọc)
+    app.include_router(notifications_router)  # GET /api/me/notifications (chỉ đọc, ticket của chính người gọi)
     return app
 
 

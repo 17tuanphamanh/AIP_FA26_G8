@@ -7,7 +7,8 @@ Thứ tự (lệch mã giả có chủ đích — quyết định Q-C 2b-2):
    nguồn lệch nhau. Làm ngược lại thì audit và `tickets` luôn giống hệt.
 3. Có `exit_code` (cha đóng bình thường không bao giờ có — D-30; cha đi đường lỗi CÓ — T20b Q-T20b-5): `effects.once("escalation_create")` (priority lấy từ
    bảng `exit_code_priority`, ghi chú bàn giao 4 phần theo mẫu) + `effects.once("notify_user")` với tin
-   theo mã [Chốt 7.1]. Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
+   theo mã [Chốt 7.1] (Q3 M5: `CodeTemplate.user_message_for(reason)` — câu theo lý do nếu mẫu khai `user_message_by_reason`, hiện chỉ
+   E5; E1 `injection_suspected` vẫn dùng mẫu E0, E0 không có câu theo lý do; D-76: cờ ENABLE_IT_HELP bật → `user_message_it_help` nếu mã khai — E1). Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
    nên chạy lại cũng chỉ có một tin.
 
 Không làm ở đây: `wake_parent` (runner gọi SAU khi nhả khoá ticket con — tránh deadlock, 2b-Q7);
@@ -92,7 +93,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 handoff_note=note.model_dump(),
                 is_deny_case=is_deny_case(code), created_at=now,
             )  # fmt: skip
-            text = deps.templates.of(_message_code(state, code)).user_message
+            # Q3 M5: câu theo `escalation_reason_detail` nếu mã khai báo (E5), không thì câu mặc định của mã
+            # D-76: cờ ENABLE_IT_HELP bật → câu có vế "hướng dẫn sự cố IT thường gặp" nếu mã khai (hiện chỉ E1)
+            text = deps.templates.of(_message_code(state, code)).user_message_for(
+                state.get("escalation_reason_detail"), it_help=deps.enable_it_help
+            )
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, ticket_id, text, "none", step="B20"
             )

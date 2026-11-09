@@ -6,9 +6,12 @@ từ chối `manual` ở MỌI chế độ, còn lại `check_strategy(settings.
 Lệch S1 (PLAN-6C mục 0): `M5Config.calibrator_version` chỉ kiểm độ dài ở Settings; mẫu `VERSION_PATTERN` kiểm ở `open_runtime` qua
 `load_calibrator` — vẫn lỗi khởi động TRƯỚC DB.
 
-- c1: `STRATEGY ∈ {llm_only, rule_only, full_auto, hybrid_guarded}` + `EVAL_MODE=false` → `StrategyNotAllowed` trước DB; `manual` →
-  từ chối ở cả `EVAL_MODE` false/true; `hybrid` → chạy; `EVAL_MODE=true` + `llm_only` → chạy. Runtime chạy hết → estimator thật
-  (`LlmRiskEstimator`), `NodeDeps.strategy`/`eval_mode` = Settings.
+- c1: `STRATEGY ∈ {llm_only, full_auto}` + `EVAL_MODE=false` → `StrategyNotAllowed` trước DB; `manual` → từ chối ở cả `EVAL_MODE`
+  false/true; `hybrid` → chạy; `EVAL_MODE=true` + `llm_only` → chạy. Runtime chạy hết → estimator thật (`LlmRiskEstimator`),
+  `NodeDeps.eval_mode` = Settings.
+- D-67 (sửa c1 có chủ ý): `rule_only`, `hybrid_guarded` rời `EVAL_ONLY` (chọn được lúc vận hành qua DB) → `STRATEGY=rule_only|
+  hybrid_guarded` + `EVAL_MODE=false` KHỞI ĐỘNG ĐƯỢC nhưng env bị bỏ qua (log cảnh báo — DB quyết); `NodeDeps` không còn `strategy`
+  (B12 đọc chiến lược đã chụp trên ticket).
 - c2: `policy.json` khối `m5` thiếu/khoá lạ → `ValidationError` khi nạp; `calibrator_version` sai mẫu / không có file / file hỏng →
   `RuntimeError` "calibrator" trước DB; `null` → `NodeDeps.calibrator is None`; calibrator fit thật (khuôn cb2/cb3 của 6A) lưu vào
   `<config>/calibrators/` → nạp đúng version (P10: chỉ qua `load_calibrator(version, config_dir / "calibrators")`).
@@ -47,7 +50,8 @@ from pydantic import SecretStr, ValidationError
 REPO = Path(__file__).resolve().parents[3]
 POLICY_JSON = REPO / "config" / "policy.json"
 NO_DB = "postgresql+psycopg://x@127.0.0.1:1/khong_co"
-EVAL_ONLY = ("llm_only", "rule_only", "full_auto", "hybrid_guarded")  # phase6 5.3 EVAL_ONLY
+EVAL_ONLY = ("llm_only", "full_auto")  # phase6 5.3 EVAL_ONLY — D-67: rule_only, hybrid_guarded rời tập này (chạy được lúc vận hành)
+RUNTIME_ONLY_FROM_DB = ("rule_only", "hybrid_guarded")  # D-67: env ngoài EVAL_MODE chấp nhận nhưng bỏ qua
 MANUAL_MSG = "manual chỉ tính giải tích ở harness M8, không chạy hệ thống"  # PLAN-6C Q-6C-1 (nguyên văn)
 NOT_ALLOWED_MSG = "chỉ dùng ở chế độ đánh giá"
 NOW = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
@@ -199,19 +203,34 @@ async def test_c1_hybrid_runs_with_real_estimator(monkeypatch: pytest.MonkeyPatc
     `DisabledEstimator`); `strategy == "hybrid"`, `eval_mode is False`."""
     deps = await _deps_of(monkeypatch, _settings(strategy="hybrid", eval_mode=False), can_execute=can_execute)
     assert isinstance(deps.estimator, LlmRiskEstimator)
-    assert deps.strategy == "hybrid"
+    assert not hasattr(deps, "strategy")  # D-67: B12 đọc chiến lược trên ticket, không từ NodeDeps
     assert deps.eval_mode is False
 
 
 @pytest.mark.asyncio
 @PROCESSES
 async def test_c1_llm_only_runs_in_eval_mode(monkeypatch: pytest.MonkeyPatch, can_execute: bool) -> None:
-    """c1 (st15 "eval_mode=True: cả 5 qua"): `EVAL_MODE=true` + `llm_only` → khởi động được; `NodeDeps.strategy == "llm_only"`,
-    `NodeDeps.eval_mode is True` (cùng nguồn Settings — N2); estimator thật."""
+    """c1 (st15 "eval_mode=True: cả 5 qua"): `EVAL_MODE=true` + `llm_only` → khởi động được; `NodeDeps.eval_mode is True` (cùng nguồn
+    Settings — N2); estimator thật. D-67: chiến lược EVAL chụp lên ticket ở API (`api/strategy.snapshot_for_new_ticket`), không ở
+    NodeDeps."""
     deps = await _deps_of(monkeypatch, _settings(strategy="llm_only", eval_mode=True), can_execute=can_execute)
     assert isinstance(deps.estimator, LlmRiskEstimator)
-    assert deps.strategy == "llm_only"
+    assert not hasattr(deps, "strategy")
     assert deps.eval_mode is True
+
+
+@pytest.mark.asyncio
+@PROCESSES
+@pytest.mark.parametrize("strategy", RUNTIME_ONLY_FROM_DB)
+async def test_c1_d67_runtime_strategy_in_env_starts_but_is_ignored(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, strategy: str, can_execute: bool
+) -> None:
+    """D-67 (sửa c1 có chủ ý): `STRATEGY=rule_only|hybrid_guarded` + `EVAL_MODE=false` → khởi động được (trước D-67: từ chối); env bị
+    bỏ qua — log cảnh báo nêu "bị bỏ qua ngoài EVAL_MODE" (chiến lược vận hành do DB quyết)."""
+    caplog.set_level("WARNING", logger="app.graph.wiring")
+    deps = await _deps_of(monkeypatch, _settings(strategy=strategy, eval_mode=False), can_execute=can_execute)
+    assert deps.eval_mode is False
+    assert any("bị bỏ qua ngoài EVAL_MODE" in r.getMessage() and strategy in r.getMessage() for r in caplog.records)
 
 
 # ---- c2: policy.json khối m5 -------------------------------------------------------------------------------------------

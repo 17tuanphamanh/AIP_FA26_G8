@@ -15,7 +15,8 @@ Không có `MONITOR_DATABASE_URL` (autouse) → mọi request qua được kiể
 """
 
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from types import UnionType
@@ -23,9 +24,13 @@ from typing import Any, get_args
 
 import pytest
 from app.api.dashboard import (
+    MIN_SAMPLE,
     WINDOW_LO,
     AiMetrics,
+    BusinessAll,
+    BusinessAllCounts,
     BusinessAllMetrics,
+    BusinessOwn,
     BusinessOwnMetrics,
     business_scope,
     resolve_window,
@@ -33,7 +38,16 @@ from app.api.dashboard import (
 from app.api.errors import InvalidRequest
 from app.main import create_app
 from app.monitor.queries.ai import AI_METRICS
-from app.monitor.queries.business import BUSINESS_METRICS, OWN_KEYS
+from app.monitor.queries.business import (
+    BUSINESS_METRICS,
+    COUNTED_KEYS,
+    OWN_KEYS,
+    BusinessMetrics,
+    GroupCount,
+    RatioCount,
+    WeightedCount,
+    WeightedRate,
+)
 from fastapi.routing import APIRoute, iter_route_contexts
 from tests.fakes.auth import EPOCH
 from tests.unit.auth_helpers import AuthEnv, auth_env, auth_settings
@@ -311,5 +325,110 @@ def test_openapi_a3_matches_fixture() -> None:
     `response_model` ở route trả `Any`, đổi kiểu trường, đổi mặc định… → đỏ; đổi API thì sửa fixture CÓ CHỦ Ý (lệnh trong
     `a3_openapi`)."""
     expected = json.loads(OPENAPI_FIXTURE.read_text(encoding="utf-8"))
-    assert (len(expected["paths"]), len(expected["components"]["schemas"])) == (4, 18)  # fixture rỗng / thiếu thì đỏ
+    # fixture rỗng / thiếu thì đỏ. D13: 18 → 22 (RatioCount, GroupCount, WeightedCount, BusinessAllCounts)
+    assert (len(expected["paths"]), len(expected["components"]["schemas"])) == (4, 22)
     assert a3_openapi(create_app(auth_settings(), health_checks={}).openapi()) == expected
+
+
+# ---- D13: số đếm tử/mẫu + min_sample ----------------------------------------------------------------------------------
+
+# Một cửa sổ, số tính tay: 3 lá đã kết thúc, 1 auto → automation 1/3; weighted routine 1/4, approval 0 lá, sensitive 2/2
+# → weighted = (0,7·0,25 + 0,1·1) / 0,8 = 0,34375; raw = 3/6 = 0,5.
+D13_WEIGHTED = WeightedRate(
+    raw=0.5, weighted=0.34375, by_group={"routine": 0.25, "approval": None, "sensitive": 1.0},
+    sensitivity={"60/30/10": 0.25 / 0.7, "80/15/5": 0.25 / 0.85},
+)  # fmt: skip
+D13_VALUES: dict[str, Any] = {
+    "automation_rate": 1 / 3, "escalation_rate_raw": 1 / 3, "escalation_rate_weighted": D13_WEIGHTED,
+    "deflection_rate": 0.0, "approval_expired_count": 0, "decided_by_distribution": {}, "top_matched_rules": [],
+    "override_count": 0, "e1_split": None, "e3_cases": None,
+}  # fmt: skip
+D13_COUNTS: dict[str, Any] = {  # thiếu `deflection_rate` → response trả null cho khoá đó
+    "automation_rate": RatioCount(num=1, den=3),
+    "escalation_rate_raw": RatioCount(num=1, den=3),
+    "escalation_rate_weighted": WeightedCount(
+        den=6,
+        by_group={
+            "routine": GroupCount(num=1, den=4, weight=0.7),
+            "approval": GroupCount(num=0, den=0, weight=0.2),
+            "sensitive": GroupCount(num=2, den=2, weight=0.1),
+        },
+    ),
+}
+
+
+def _d13_fake(monkeypatch: pytest.MonkeyPatch, got: BusinessMetrics) -> list[str | None]:
+    """Thay snapshot + truy vấn: route chạy thật tới chỗ dựng response; trả danh sách `approver_id` route đã truyền."""
+    seen: list[str | None] = []
+
+    @asynccontextmanager
+    async def snapshot(engines: Any) -> AsyncIterator[None]:
+        yield None
+
+    async def fake(conn: Any, frm: datetime, to: datetime, *, approver_id: str | None = None) -> BusinessMetrics:
+        seen.append(approver_id)
+        return got
+
+    monkeypatch.setattr("app.api.dashboard.read_snapshot", snapshot)
+    monkeypatch.setattr("app.api.dashboard.business_metrics", fake)
+    return seen
+
+
+def test_counts_model_matches_constants() -> None:
+    """Hai chiều: trường `BusinessAllCounts` = `COUNTED_KEYS` (⊆ BUSINESS_METRICS); mọi trường bắt buộc, nhận None; own KHÔNG có
+    `counts` (3 khoá own là số đếm) mà có `sample`."""
+    assert set(COUNTED_KEYS) <= set(BUSINESS_METRICS)
+    assert set(BusinessAllCounts.model_fields) == set(COUNTED_KEYS)
+    for name, field in BusinessAllCounts.model_fields.items():
+        assert field.is_required(), name
+        assert isinstance(field.annotation, UnionType) and type(None) in get_args(field.annotation), name
+    assert {"min_sample", "counts"} <= set(BusinessAll.model_fields)
+    assert {"min_sample", "sample"} <= set(BusinessOwn.model_fields) and "counts" not in BusinessOwn.model_fields
+    assert MIN_SAMPLE == 20
+
+
+def test_business_all_counts_json(env: AuthEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _d13_fake(monkeypatch, BusinessMetrics(values=D13_VALUES, unavailable=(), counts=D13_COUNTS))
+    status, body = _get(env, ROUTES[0], env.manager_token())
+    assert status == 200, body
+    assert seen == [None]
+    assert body["scope"] == "all" and body["min_sample"] == 20
+    assert body["metrics"] == BusinessAllMetrics(**D13_VALUES).model_dump(mode="json")  # metrics y như trước D13
+    assert body["metrics"]["escalation_rate_weighted"] == {
+        "raw": 0.5, "weighted": 0.34375, "by_group": {"routine": 0.25, "approval": None, "sensitive": 1.0},
+        "sensitivity": {"60/30/10": 0.25 / 0.7, "80/15/5": 0.25 / 0.85},
+    }  # fmt: skip
+    assert body["counts"] == {
+        "automation_rate": {"num": 1, "den": 3},
+        "escalation_rate_raw": {"num": 1, "den": 3},
+        "escalation_rate_weighted": {
+            "den": 6,
+            "by_group": {
+                "routine": {"num": 1, "den": 4, "weight": 0.7},
+                "approval": {"num": 0, "den": 0, "weight": 0.2},
+                "sensitive": {"num": 2, "den": 2, "weight": 0.1},
+            },
+        },
+        "deflection_rate": None,
+    }
+    assert "sample" not in body
+
+
+def test_business_counts_missing_all_null(env: AuthEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`BusinessMetrics` không có số đếm (như spy test snapshot _pg) → `counts` đủ 4 khoá, đều null — không 500."""
+    _d13_fake(monkeypatch, BusinessMetrics(values=dict.fromkeys(BUSINESS_METRICS), unavailable=()))
+    status, body = _get(env, ROUTES[0], env.manager_token())
+    assert status == 200, body
+    assert body["counts"] == dict.fromkeys(COUNTED_KEYS)
+
+
+def test_business_own_sample_json(env: AuthEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    """L1: `sample` = số lá own trong cửa sổ (5), `min_sample` 20; không có `counts`; metrics đúng 3 khoá như cũ."""
+    values = {"approval_expired_count": 1, "decided_by_distribution": {"llm": 1, "rule": 3}, "top_matched_rules": []}
+    seen = _d13_fake(monkeypatch, BusinessMetrics(values=values, unavailable=(), sample=5))
+    status, body = _get(env, ROUTES[0], env.token("ha.lt"))
+    assert status == 200, body
+    assert len(seen) == 1 and seen[0] is not None  # own: approver_id = người trong token
+    assert (body["scope"], body["min_sample"], body["sample"]) == ("own", 20, 5)
+    assert body["metrics"] == values
+    assert "counts" not in body

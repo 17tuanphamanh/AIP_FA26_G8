@@ -36,6 +36,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.domain.context import RequesterContext
 from app.domain.exit_codes import BlockReason, CloseReason, ExitCode
+from app.domain.intents import IT_HELP
 from app.domain.states import ALL_STATES, S_ESCALATED, TERMINAL
 from app.domain.ticket_state import ExecutionResult, RiskDecision, TicketState
 
@@ -70,7 +71,9 @@ ROLLBACK_STATUSES = _literal_values(ExecutionResult.model_fields["rollback_statu
 APPROVAL_RESULTS = _literal_values(_ticket_hints["approval_result"])
 
 # Chưa có hằng trong domain — nguồn ghi cạnh từng dòng.
-INTENTS = ("account", "vpn", "software", "access")  # N3-9.3, phạm vi 4 loại [Chốt]
+INTENTS = ("account", "vpn", "software", "access")  # N3-9.3, phạm vi 4 loại hành động [Chốt] — eval/monitor/policy dùng, không đổi nghĩa
+# D-76 (ĐP chốt 09/11, bản demo lo-0811): + intent chỉ-trả-lời `it_help` — CHỈ cho CHECK của `tickets` và `audit_logs` (migration 0015)
+TICKET_INTENTS = (*INTENTS, IT_HELP)
 RESOLUTION_PATHS = ("auto", "approved", "rejected", "escalated", "deflected")  # N3-9.1
 AGGREGATE_STATUSES = (  # B03-B05 mục 5.4
     "ALL_RESOLVED", "PARTIALLY_ESCALATED", "ALL_ESCALATED",
@@ -106,6 +109,11 @@ SIDE_EFFECT_KINDS = (  # P7 2.8
 )  # fmt: skip
 NOTICE_KINDS = ("answer", "question", "result", "rejection", "escalation")  # P7 2.9
 NOTICE_NEEDS = ("none", "answer", "confirm")  # P7 2.9
+TICKET_SOURCES = ("real", "sim", "eval")  # migration 0013 (D-67): nguồn ticket — thật / chạy dữ liệu thử / đánh giá
+EMAIL_STATUSES = ("pending", "sent", "failed", "skipped")  # migration 0012 (notify-email)
+EMAIL_KINDS = (  # migration 0012: 4 loại tin người dùng (B10/B16/B18/B20) + 3 loại thông báo người duyệt (B15, nhắc 50 %/80 %)
+    "answer", "rejection", "result", "escalation", "approval_new", "approval_reminder_1", "approval_reminder_2",
+)  # fmt: skip
 
 
 def check_in(column: str, values: Iterable[str], name: str | None = None) -> CheckConstraint:
@@ -165,6 +173,7 @@ class User(Base):
         String(16), nullable=False, server_default=text("'active'")
     )
     hired_at: Mapped[date | None] = mapped_column(Date)
+    email: Mapped[str | None] = mapped_column(String(254))  # migration 0012: đồng bộ từ AD (`upsert_user`); NULL = AD không có
     mfa_secret_enc: Mapped[bytes | None] = mapped_column(BYTEA)
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -290,13 +299,14 @@ class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
         check_in("requester_role", ROLES),
-        check_in("intent", INTENTS),
+        check_in("intent", TICKET_INTENTS),  # D-76: + it_help (migration 0015)
         check_in("final_state", FINAL_STATES),
         check_in("exit_code", EXIT_CODES),
         check_in("block_reason", BLOCK_REASONS),
         check_in("close_reason", CLOSE_REASONS),  # NULL qua được — ticket cha (P7 2.10)
         check_in("resolution_path", RESOLUTION_PATHS),
         check_in("aggregate_status", AGGREGATE_STATUSES),
+        check_in("source", TICKET_SOURCES),  # migration 0013
         Index("ix_tickets_leaf", "created_at", postgresql_where=text("is_parent = false")),
         Index("ix_tickets_parent", "parent_ticket_id"),
         Index("ix_tickets_requester_created_at", "requester_id", "created_at"),  # migration 0010: bộ đếm 429 ticket mới
@@ -323,6 +333,9 @@ class Ticket(Base):
     created_at: Mapped[datetime] = _now()
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_parent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # migration 0013 (D-67): chiến lược M5 CHỤP lúc tạo ticket (NULL = ticket cũ, B12 coi là `hybrid`); nguồn ticket
+    strategy: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'real'"))
 
 
 # ---- 8. approvals (B15 mục 8, P7 2.6, TK) ---------------------------------------------------
@@ -399,6 +412,8 @@ class Escalation(Base):
     __table_args__ = (
         check_in("exit_code", EXIT_CODES),
         check_in("close_result", CLOSE_RESULTS),
+        # migration 0013 (ĐP bổ sung 26/10): ghi chú khi L2 đóng ca — dùng ở P4 (agent B)
+        CheckConstraint("close_note IS NULL OR char_length(close_note) BETWEEN 1 AND 1000", name="close_note_len"),
         Index("ix_escalations_ticket", "ticket_id"),
         Index("ix_escalations_closed_at_exit_code", "closed_at", "exit_code"),  # P9 mục 4
     )
@@ -418,6 +433,7 @@ class Escalation(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     new_ticket_id: Mapped[str | None] = _ticket_fk(nullable=True)
     created_at: Mapped[datetime] = _now()
+    close_note: Mapped[str | None] = mapped_column(Text)  # migration 0013 — 1–1000 ký tự hoặc NULL
 
 
 # ---- 12. audit_logs (N3-9.2, N4-9, TK, P7 2.7, B20) — append-only ---------------------------
@@ -428,7 +444,7 @@ class AuditLog(Base):
     __table_args__ = (
         check_in("from_status", STATES),
         check_in("to_status", STATES),
-        check_in("intent", INTENTS),
+        check_in("intent", TICKET_INTENTS),  # D-76: + it_help (migration 0015)
         check_in("decided_by", DECIDED_BY),
         check_in("policy_decision", POLICY_DECISIONS),
         check_in("risk_level", RISK_LEVELS),
@@ -767,3 +783,69 @@ class RateHit(Base):
     hit_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = _user_fk(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ---- 24. email_outbox (notify-email) — migration 0012 ----------------------------------------------------------------------
+
+
+class EmailOutbox(Base):
+    """Hàng đợi email gửi người dùng/người duyệt. Ghi CÙNG transaction `effects.once` (`current_tx()`) với dòng `side_effects`;
+    worker `send_emails` gửi qua SMTP. KHÔNG lưu địa chỉ: worker nối `users.email` của `recipient_user_id` lúc gửi. `body` đã qua
+    privacy guard. KHÔNG append-only (worker đổi `status`, `attempts`…), `app_rw` không có DELETE. `next_attempt_at`: lịch thử lại
+    (backoff) và hạn giữ chỗ của lượt gửi đang chạy."""
+
+    __tablename__ = "email_outbox"
+    __table_args__ = (
+        check_in("status", EMAIL_STATUSES),
+        check_in("kind", EMAIL_KINDS),
+        CheckConstraint("attempts >= 0", name="attempts_nonneg"),
+        Index("ix_email_outbox_due", "next_attempt_at", postgresql_where=text("status = 'pending'")),
+        Index("ix_email_outbox_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[str | None] = _ticket_fk(nullable=True)
+    recipient_user_id: Mapped[str] = _user_fk(nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    subject: Mapped[str] = mapped_column(String(256), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)  # đã qua privacy guard
+    status: Mapped[str] = mapped_column(String(8), nullable=False, server_default=text("'pending'"))
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    last_error_class: Mapped[str | None] = mapped_column(String(64))  # tên lớp exception / lý do skipped — không thông điệp
+    created_at: Mapped[datetime] = _now()
+    next_attempt_at: Mapped[datetime] = _now()
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    effect_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+
+
+# ---- 25. m5_strategy_changes (D-67) — migration 0013 -----------------------------------------------------------------------
+
+
+class M5StrategyChange(Base):
+    """Lịch sử đổi chiến lược M5 lúc vận hành. CHỈ GHI THÊM (trigger `forbid_mutation` chặn UPDATE/DELETE/TRUNCATE; `app_rw` chỉ
+    SELECT, INSERT). Chiến lược hiện hành = dòng có `id` lớn nhất; chưa có dòng nào → `hybrid` (xử lý ở code). Tập giá trị hợp lệ
+    ở `risk/strategy.RUNTIME_SELECTABLE`, không chép thành CHECK (một nguồn)."""
+
+    __tablename__ = "m5_strategy_changes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    strategy: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by: Mapped[str] = _user_fk(nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # đã qua privacy guard
+    changed_at: Mapped[datetime] = _now()
+
+
+# ---- 26. ticket_hidden (P3 menu ⋯ "Xóa") — migration 0014 ------------------------------------------------------------------
+
+
+class TicketHidden(Base):
+    """Ticket người dùng đã ẨN khỏi danh sách "Gần đây" của CHÍNH họ (`POST /api/tickets/{id}/hide`). Chỉ là tuỳ chọn hiển thị: không
+    xoá/sửa ticket, audit, phiếu duyệt hay escalation; `GET /api/tickets/{id}` vẫn đọc được. Ngoại lệ §4 `docs/spec/CLAUDE.md` (bảng ngoài
+    P7) TA/ĐP duyệt 08/11. `app_rw` chỉ SELECT, INSERT (ẩn lại = `ON CONFLICT DO NOTHING`; chưa có "bỏ ẩn" nên không DELETE).
+    `hidden_at` từ Clock của app (server_default chỉ là lưới an toàn)."""
+
+    __tablename__ = "ticket_hidden"
+
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.user_id"), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(64), ForeignKey("tickets.ticket_id"), primary_key=True)
+    hidden_at: Mapped[datetime] = _now()

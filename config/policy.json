@@ -119,6 +119,10 @@
       {"fact": "action.facts.device_registered", "op": "is_true"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"},
       {"fact": "ctx.target_is_other", "op": "is_false"}]},
-     "description": "Cấp lại cho thiết bị đã đăng ký của chính người gửi"}
+     "description": "Cấp lại cho thiết bị đã đăng ký của chính người gửi"},
+    {"id": "R21", "type": "deny", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.software_prohibited", "op": "is_true"}]},
+     "description": "Phần mềm bị cấm theo quy định của công ty"}
   ]
 }

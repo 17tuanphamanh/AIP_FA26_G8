@@ -42,6 +42,9 @@ _TARGET_KINDS = frozenset({"folder", "user", "device"})
 _ACCOUNT_TYPES = frozenset({"ad", "email", "erp"})
 _DURATION_MAX = 999  # value_rules.duration ^[1-9][0-9]{0,2}$
 _DROPPED_ACTION_KEYS = ("requested_for",)  # người bị tác động: đã có ở `ctx.target_is_other`
+# Q5 (ĐP 09/11): fact KHÔNG gửi B14 — giữ đầu vào `b14_risk_estimate`/`b14_risk_vote` giống bản đo RQ1 (bf94df2). Ca bị cấm đã dừng ở
+# luật deny R21 trước lớp LLM nên B14 không cần fact này.
+B14_EXCLUDED_FACTS = frozenset({"software_prohibited"})
 
 
 def evidence_for_estimator(chunks: Sequence[ChunkRef], score: float | None, threshold: float) -> list[ChunkRef]:
@@ -101,13 +104,14 @@ def _target_kind(target: str) -> str:
 def intended_action_vars(action: Action) -> dict[str, Any]:
     """6C P8 (N1): `Action` → biến `intended_action` — bỏ `requested_for`; `params` chỉ khoá ∈ `PARAMS_BY_ACTION[type]` có giá trị
     đạt mẫu chặt (`_param_ok`); `target` giữ khi là `device:<mã máy>` đúng mẫu, còn lại chỉ còn loại đích (`folder`/`user`/`device`,
-    lạ → `other`). Trường còn lại là enum/tập đóng (`facts` — `domain/facts.FACT_VALUE_SETS`)."""
+    lạ → `other`). Trường còn lại là enum/tập đóng (`facts` — `domain/facts.FACT_VALUE_SETS`; bỏ `B14_EXCLUDED_FACTS`, Q5)."""
     data = action.model_dump(mode="json")
     for key in _DROPPED_ACTION_KEYS:
         data.pop(key, None)
     allowed = PARAMS_BY_ACTION.get(action.type, {})
     data["params"] = {k: v for k, v in action.params.items() if k in allowed and _param_ok(k, v)}
     data["target"] = _target_kind(action.target)
+    data["facts"] = {k: v for k, v in action.facts.items() if k not in B14_EXCLUDED_FACTS}
     return data
 
 

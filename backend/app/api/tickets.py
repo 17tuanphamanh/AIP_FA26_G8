@@ -14,8 +14,12 @@ ghi TRƯỚC `start_event` (lỗi ghi → 503).
   Bị từ chối ở 403/404: chỉ ghi `permission_denied` (404 id giả: không ghi gì), không gọi guard,
   không ghi `turns`/`late_event`.
 
+`POST /api/tickets/{id}/hide` → 204 (P3 menu ⋯ "Xóa"): ẩn ticket gốc của CHÍNH người gọi khỏi `GET /api/tickets` (bảng `ticket_hidden`,
+migration 0014) — không xoá/sửa dữ liệu nghiệp vụ, không audit; còn lại → 404 như `GET /{id}`.
+
 `GET /api/tickets/{id}` → `TicketView`: đã có `final_state` thì `status` lấy từ `tickets`, còn mở thì từ
-checkpoint; `waiting_for` CHỈ từ checkpoint; đọc checkpoint lỗi → 503 (không đoán).
+checkpoint; `waiting_for` CHỈ từ checkpoint; đọc checkpoint lỗi → 503 (không đoán). M2 (bn-a): ticket ĐÃ kết thúc mà checkpoint rỗng
+(job hạn giữ đã dọn — 90 ngày, P7 mục 4) → 410 `conversation_purged`, SAU kiểm quyền (người không được đọc vẫn 404).
 
 `POST /api/tickets/{id}/override` → 201 (Phase 4 4d P1–P4, TC23; PLAN-4d 2.1): người có `decision:override` ghi lại "đáng lẽ quyết
 khác" cho ticket ĐÃ kết thúc — KHÔNG đổi kết quả ticket (một dòng `audit_logs` `step="OVERRIDE"` qua `desk.approvals.record_override`;
@@ -32,11 +36,15 @@ import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response
 from langgraph.types import StateSnapshot
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.api.alerts import (  # CHUNG thân lỗi (một schema OpenAPI, như notifications)
+    ErrorDetail,
+    InvalidRequestBody,
+)
 from app.api.desk import (
     SECRET_EVENT,
     Desk,
@@ -48,13 +56,17 @@ from app.api.desk import (
 )
 from app.api.errors import InvalidRequest, error_fields
 from app.api.ratelimit import limit_messages, limit_tickets
+from app.api.strategy import snapshot_for_new_ticket
 from app.auth.authz import can_override, can_read_ticket
 from app.auth.deps import deny, require
 from app.auth.models import Principal
 from app.core.ids import new_ticket_id, new_turn_id
 from app.db.tickets import NewTicket, TicketRow
 from app.domain.children import children_progress
-from app.domain.messages import child_title
+from app.domain.messages import (  # Q1: TEXT_MAX một nguồn ở domain (câu ghép sau câu hỏi phân loại cũng dùng)
+    TEXT_MAX,
+    child_title,
+)
 from app.domain.override import (
     Decision,
     OverrideReason,
@@ -67,11 +79,11 @@ from app.graph.late_event import InvalidReply, Validate, start_event
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-TEXT_MAX = 4000
 NOTE_MAX = 1000
 CHILD_MESSAGE = "Vui lòng trả lời trong hội thoại chung"  # P1 mục 6.1, D-31
 _CHILD_INDEX = re.compile(r"[0-9]{1,2}")  # khoá `items` của `/reply` = id con `<cha>-<i>`: phần sau `<cha>-` CHỈ là số (T20b, soát lượt 4)
 NOT_FOUND = "not_found"
+PURGED = "conversation_purged"  # M2: 410 — hội thoại đã dọn theo hạn giữ
 
 type WaitingFor = Literal["clarify", "approval", "confirm", "reply"]
 WAITING_FOR: dict[str, WaitingFor] = {
@@ -147,6 +159,50 @@ class TicketView(BaseModel):
     closed_at: datetime | None
     # T20b P11 (5.2.6): ticket cha → tiến độ từng ý (chỉ từ DB + checkpoint CHA); ticket thường/con → None
     children_progress: list[dict[str, Any]] | None = None
+    # R3: hạn của LẦN CHỜ HIỆN TẠI (UTC) — approval: `approvals.deadline` của phiếu `pending`; clarify/confirm: dòng `wait_deadlines`
+    # chưa bắn (đúng dòng worker bắn timeout). Đã kết thúc / không chờ / con chờ clarify-confirm (hạn do cha giữ — không có dòng) → None.
+    # Ticket CHA chưa kết thúc: (1) hạn chờ riêng của cha (`wait_deadlines` của cha); (2) không có → hạn SỚM NHẤT các phiếu `pending` của
+    # con; (3) không có → None. Quá hạn mà worker chưa bắn → vẫn trả mốc (trong quá khứ). Không mặc định: OpenAPI ghi bắt buộc (có thể null).
+    deadline: datetime | None
+    server_now: datetime  # giờ máy chủ (`desk.clock`, có múi giờ) — FE tính đồng hồ đếm ngược theo giờ máy chủ, không theo giờ máy khách
+    # be-api8-cau-dau (nợ API #8 / Q-fe-18): câu yêu cầu đầu — `tickets.redacted_request` (bản ĐÃ CHE, D-07; không bao giờ raw) cắt
+    # REQUEST_TEXT_MAX ký tự. Ticket con mà `redacted_request` trùng nguyên câu của cha (B5 seed khi span không hợp lệ) → None.
+    request_text: str | None = None
+
+
+REQUEST_TEXT_MAX = 500
+LIST_LIMIT_DEFAULT = 20
+LIST_LIMIT_MAX = 50
+
+
+class TicketListItem(BaseModel):
+    """P3 "Gần đây" — một dòng của `GET /api/tickets`: CHỈ cột bảng `tickets` (không checkpoint). `request_text` như `TicketView`
+    (bản ĐÃ CHE, cắt `REQUEST_TEXT_MAX` — không bao giờ câu gốc)."""
+
+    ticket_id: str
+    request_text: str | None
+    final_state: str | None
+    exit_code: str | None
+    created_at: datetime
+    closed_at: datetime | None
+
+
+class TicketList(BaseModel):
+    items: list[TicketListItem]
+
+
+HIDE_ERRORS: dict[int | str, dict[str, Any]] = {401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}}
+LIST_ERRORS: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 422: {"model": InvalidRequestBody}, 503: {"model": ErrorDetail},
+}  # fmt: skip
+
+
+def request_text_of(row: TicketRow, parent_request: str | None) -> str | None:
+    """Câu đầu hiển thị cho ticket: bản đã che, cắt `REQUEST_TEXT_MAX`; con trùng nguyên câu cha → None (không lặp câu của cha)."""
+    text = row.redacted_request
+    if row.parent_ticket_id is not None and parent_request is not None and text.strip() == parent_request.strip():
+        return None
+    return text[:REQUEST_TEXT_MAX] or None
 
 
 def _accepted(ticket_id: str, status: str, notices: list[str]) -> JSONResponse:
@@ -187,12 +243,13 @@ async def create_ticket(
     body = await parse_body(request, TicketIn)
     redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
+    strategy, source = await snapshot_for_new_ticket(request, desk)  # D-67: chụp chiến lược M5 + nguồn lúc TẠO
     ticket_id, turn_id = new_ticket_id(), new_turn_id()
     await desk.tickets.create(
         NewTicket(
             ticket_id=ticket_id, requester_id=p.user_id, requester_role=p.role,
             requester_dept=user.department if user else None, session_id=p.session_id,
-            redacted_request=redacted.text, created_at=desk.clock.now(),
+            redacted_request=redacted.text, created_at=desk.clock.now(), strategy=strategy, source=source,
         ),
         turn_id=turn_id,
         security_events=[(SECRET_EVENT, {"count": redacted.secrets_found})] if redacted.secrets_found else (),
@@ -201,7 +258,49 @@ async def create_ticket(
     return _accepted(ticket_id, S_NEW, redacted.notices)
 
 
-@router.get("/api/tickets/{ticket_id}", response_model=TicketView)
+@router.get("/api/tickets", response_model=TicketList, responses=LIST_ERRORS)
+async def list_tickets(
+    p: Annotated[Principal, Depends(require("ticket:read:own"))],
+    desk: Annotated[Desk, Depends(get_desk)],
+    limit: Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
+) -> TicketList:
+    """P3 "Gần đây": ticket gốc của CHÍNH người gọi — lọc `requester_id = p.user_id` cho MỌI vai (kể cả `ticket:read:any`: danh
+    sách không bao giờ có ticket người khác). Chỉ DB (không checkpoint); route đọc như `GET /{id}` — không bộ đếm 429."""
+    rows = await desk.tickets.list_own(p.user_id, limit)
+    return TicketList(items=[
+        TicketListItem(
+            ticket_id=r.ticket_id, request_text=request_text_of(r, None), final_state=r.final_state, exit_code=r.exit_code,
+            created_at=r.created_at, closed_at=r.closed_at,
+        )
+        for r in rows
+    ])  # fmt: skip
+
+
+@router.post("/api/tickets/{ticket_id}/hide", status_code=204, responses=HIDE_ERRORS)
+async def hide_ticket(
+    ticket_id: str,
+    request: Request,
+    p: Annotated[Principal, Depends(require("ticket:read:own"))],
+    desk: Annotated[Desk, Depends(get_desk)],
+) -> Response:
+    """Ẩn ticket gốc của chính người gọi khỏi danh sách "Gần đây" (`GET /api/tickets`). Không xoá dữ liệu; `GET /{id}` vẫn đọc được.
+    Gọi lại vẫn 204. Không có / không phải của người gọi / ticket con → 404 `not_found`."""
+    # 404 giống hệt `GET /{id}`: không có → không ghi gì; của người khác (kể cả `ticket:read:any`) → `permission_denied` (`not_owner`);
+    # ticket con của mình → không ghi (danh sách không có con). Không ghi audit (tuỳ chọn hiển thị, không phải quyết định của hệ
+    # thống — `ticket_hidden.hidden_at` giữ vết; ĐP duyệt 08/11); không 429, không guard (không có chữ người dùng).
+    row = await desk.tickets.get(ticket_id)
+    if row is None:
+        raise HTTPException(404, NOT_FOUND)
+    if row.requester_id != p.user_id:
+        await deny(request, p, "ticket:read:own", ticket_id=ticket_id, reason="not_owner")
+        raise HTTPException(404, NOT_FOUND)
+    if row.parent_ticket_id is not None:
+        raise HTTPException(404, NOT_FOUND)
+    await desk.tickets.hide(p.user_id, ticket_id, desk.clock.now())
+    return Response(status_code=204)
+
+
+@router.get("/api/tickets/{ticket_id}", response_model=TicketView, responses={410: {"description": PURGED}})
 async def read_ticket(
     ticket_id: str,
     request: Request,
@@ -215,6 +314,8 @@ async def read_ticket(
         log.exception("đọc checkpoint của ticket %s lỗi", ticket_id)
         raise HTTPException(503, "checkpoint_unavailable") from None
     values = snap.values or {}
+    if row.final_state is not None and not values:  # M2: ticket đã kết thúc mà checkpoint rỗng = job hạn giữ đã dọn (90 ngày)
+        raise HTTPException(410, PURGED)
     progress = None
     if row.is_parent:  # T20b P11: chỉ DB (`children_progress_rows`) + checkpoint CHA (danh sách con, seed, `awaiting`)
         children = list(values.get("children") or [])
@@ -224,13 +325,21 @@ async def read_ticket(
             await desk.tickets.children_progress_rows(ticket_id, children),
             {cid: child_title(seeds.get(cid) or {}) for cid in children}, awaiting,
         )  # fmt: skip
+    waiting_for = WAITING_FOR.get(snap.next[0]) if snap.next else None
+    deadline = None
+    if row.final_state is None and row.is_parent:  # cha: hạn riêng → hạn sớm nhất phiếu `pending` của con → None
+        deadline = await desk.approvals.parent_deadline(ticket_id)
+    elif row.final_state is None and waiting_for in ("approval", "clarify", "confirm"):  # R3
+        deadline = await desk.approvals.open_deadline(ticket_id, waiting_for)
+    parent = await desk.tickets.get(row.parent_ticket_id) if row.parent_ticket_id is not None else None
     return TicketView(
         ticket_id=ticket_id,
         status=row.final_state or values.get("status") or S_NEW,
-        waiting_for=WAITING_FOR.get(snap.next[0]) if snap.next else None,
+        waiting_for=waiting_for,
         conversation=list(values.get("conversation") or []),
         exit_code=row.exit_code, close_reason=row.close_reason, final_state=row.final_state,
-        created_at=row.created_at, closed_at=row.closed_at, children_progress=progress,
+        created_at=row.created_at, closed_at=row.closed_at, children_progress=progress, deadline=deadline,
+        server_now=desk.clock.now(), request_text=request_text_of(row, parent.redacted_request if parent else None),
     )  # fmt: skip
 
 

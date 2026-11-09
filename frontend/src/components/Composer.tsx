@@ -29,6 +29,10 @@ function SendIcon() {
   );
 }
 
+/** Khung ô nhập: bo 24, bóng nhẹ (token); viền xanh khi đang gõ. Ô bị khoá → nền xám. */
+const FRAME =
+  "flex rounded-input border border-line bg-white shadow-input focus-within:border-fpt-blue/50 has-[textarea:disabled]:bg-group has-[textarea:disabled]:shadow-none";
+
 // Ô nhập B4EmpHome (lớn, bo 24) / B4EmpChat (một dòng, dính đáy). Enter gửi, Shift+Enter xuống dòng; đang gõ dấu
 // tiếng Việt (IME đang ghép chữ) thì Enter KHÔNG gửi.
 export function Composer({ inputRef, ...props }: ComposerProps) {
@@ -43,13 +47,19 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
   }
 
   const home = props.variant === "home";
+  // L2 (soát 01/11): ô có `maxLength` cắt im lặng khi dán quá dài → gần giới hạn (≥ 87,5%, vd 3500/4000) hiện "n/max";
+  // chạm giới hạn → kèm câu báo phần thừa bị bỏ.
+  const length = props.value.length;
+  const counter = length >= Math.floor(props.maxLength * 0.875);
+  const atMax = length >= props.maxLength;
+  const counterId = `${id}-counter`;
   return (
     <div className="flex flex-col gap-1.5">
       <div
         className={
           home
-            ? "flex flex-col gap-3 rounded-input border border-line bg-white py-5 pr-5 pb-3 pl-6 shadow-input"
-            : "flex items-end gap-2 rounded-input border border-line bg-white py-2 pr-2 pl-5 shadow-input"
+            ? `${FRAME} flex-col gap-3 py-4 pr-4 pb-3 pl-5`
+            : `${FRAME} items-end gap-2 py-2 pr-2 pl-5`
         }
       >
         <label htmlFor={id} className="sr-only">
@@ -67,9 +77,9 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
           disabled={props.disabled}
           autoFocus={props.autoFocus}
           aria-invalid={props.error ? true : undefined}
-          aria-describedby={props.error ? errorId : undefined}
-          className={`resize-none bg-transparent placeholder:text-ink-2 focus-visible:outline-none disabled:text-ink-2 ${
-            home ? "w-full" : "max-h-40 min-h-10 grow py-2"
+          aria-describedby={[props.error ? errorId : "", atMax ? counterId : ""].filter(Boolean).join(" ") || undefined}
+          className={`resize-none bg-transparent field-sizing-content placeholder:text-ink-2 focus-visible:outline-none disabled:text-ink-2 ${
+            home ? "max-h-60 min-h-14 w-full" : "max-h-40 min-h-10 grow py-2 max-lg:min-h-11"
           }`}
         />
         {props.onSubmit ? (
@@ -80,7 +90,7 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
               aria-label="Gửi"
               onClick={() => canSend && props.onSubmit?.()}
               disabled={!canSend}
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-send text-white disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpt-blue"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-send text-white hover:bg-send/90 disabled:bg-ink-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpt-blue max-lg:size-11"
             >
               <SendIcon />
             </button>
@@ -90,6 +100,12 @@ export function Composer({ inputRef, ...props }: ComposerProps) {
       {props.error ? (
         <p id={errorId} role="alert" className="px-5 text-label font-normal text-danger">
           {props.error}
+        </p>
+      ) : null}
+      {counter ? (
+        <p id={counterId} data-testid="composer-counter" className={`px-5 text-right text-label font-normal tabular-nums ${atMax ? "text-orange-ink" : "text-ink-2"}`}>
+          {length}/{props.maxLength}
+          {atMax ? " · Đã tới giới hạn — phần dán thêm bị bỏ." : ""}
         </p>
       ) : null}
     </div>

@@ -1,28 +1,39 @@
-"""Mock Active Directory: đăng nhập (argon2id), thuộc tính người dùng, lịch sử khoá, mức đặc quyền,
+"""Mock Active Directory: đăng nhập (argon2id), thuộc tính người dùng (kèm email), lịch sử khoá, mức đặc quyền,
 chuỗi quản lý; ghi: đặt lại mật khẩu, mở khoá, khoá (P5 mục 7).
 
-Mock đơn giản hoá: khoá tài khoản (`accounts.*.locked`) không chặn `/ad/authenticate` — người bị
-khoá email/ERP vẫn đăng nhập service desk để xin mở khoá. Trạng thái làm việc (disabled,
-terminated…) do backend quyết định sau khi đăng nhập (P6 mục 4 bước 5), mock chỉ trả thuộc tính.
+Khoá tài khoản AD (`accounts.ad.locked`) chặn `/ad/authenticate`: mật khẩu đúng → 403 `account_locked` (mật khẩu sai vẫn
+401 — không dò được tài khoản nào đang khoá). Khoá email/ERP không chặn — người bị khoá email/ERP vẫn đăng nhập service
+desk để xin mở khoá. Trạng thái làm việc (disabled, terminated…) do backend quyết định sau khi đăng nhập (P6 mục 4 bước
+5), mock chỉ trả thuộc tính. Ghi: tài khoản `enabled=false` hoặc người `terminated` → reset/unlock 409 `account_disabled`;
+unlock tài khoản không khoá → 409 `not_locked`.
 
 F2: `reset-password` có `channel="sms"` (chỉ tài khoản `ad`) — mật khẩu tạm một lần, hạn `TEMP_PASSWORD_TTL`, gửi SMS tới
-`phone` trong seed + email báo chủ tài khoản (`app/notify.py`); `/ad/change-password` đổi mật khẩu tạm lấy mật khẩu mới.
+`phone` trong seed + email báo chủ tài khoản (`app/notify.py`, chỉ vào hộp thư đi); `/ad/change-password` đổi mật khẩu tạm lấy
+mật khẩu mới.
+
+Cổng đăng nhập giả lập `GET /portal` (chỉ `APP_ENV` dev/test, môi trường khác → 404): HTML tối giản, không JS — đăng nhập,
+gặp mật khẩu tạm thì form đổi mật khẩu. Dùng chung logic với `/ad/authenticate` và `/ad/change-password`, không cần token
+(là màn hình của người dùng cuối, như trang đăng nhập Windows/OWA).
 """
 
+import os
 import secrets
 from datetime import timedelta
+from html import escape
 from typing import Any, Literal
+from urllib.parse import parse_qs
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app import notify
 from app.security import require_read, require_write
 from app.state import MockState, User
 
-router = APIRouter(prefix="/ad")
+api = APIRouter(prefix="/ad")
 
 AccountType = Literal["ad", "email", "erp"]
 _hasher = PasswordHasher()
@@ -68,6 +79,7 @@ def user_view(user: User, account_type: str = "ad") -> dict[str, Any]:
         "user_id": user.user_id,
         "username": user.username,
         "full_name": user.full_name,
+        "email": user.email,
         "title": user.title,
         "department": user.department,
         "groups": user.groups,
@@ -92,32 +104,37 @@ class Credentials(BaseModel):
     password: str
 
 
-@router.post("/authenticate", dependencies=[Depends(require_read)])
-async def authenticate(body: Credentials, request: Request) -> dict[str, Any]:
-    state = mock_state(request)
-    user = next((u for u in state.users.values() if u.username == body.username), None)
+def check_login(state: MockState, dummy: str, username: str, password: str) -> User:
+    """Logic chung của `/ad/authenticate` và cổng `/portal`. Sai mật khẩu / user lạ / mật khẩu tạm hết hạn → 401; mật khẩu
+    đúng nhưng AD khoá → 403 `account_locked`; mật khẩu tạm còn hạn → 403 `password_change_required`."""
+    user = next((u for u in state.users.values() if u.username == username), None)
     # Không có user vẫn verify một hash giả: thời gian phản hồi tương đương, không dò được
     # username nào tồn tại (P6 mục 4 "Thông báo lỗi").
-    stored = user.password_hash if user is not None else request.app.state.dummy_hash
-    try:
-        _hasher.verify(stored, body.password)
-    except (VerificationError, InvalidHashError):
-        raise HTTPException(401, "invalid_credentials") from None
-    if user is None:  # không thể xảy ra trừ khi ai đó đoán trúng mật khẩu ngẫu nhiên của hash giả
+    stored = user.password_hash if user is not None else dummy
+    if not _verify(stored, password) or user is None:  # user None: chỉ khi đoán trúng mật khẩu ngẫu nhiên của hash giả
         raise HTTPException(401, "invalid_credentials")
-    if user.must_change_password:  # F2: hash đang là của mật khẩu tạm — còn hạn thì bắt đổi, hết hạn thì như sai mật khẩu
-        if _temp_valid(state, user):
-            raise HTTPException(403, "password_change_required")
+    # F2: hash đang là của mật khẩu tạm — hết hạn thì như sai mật khẩu
+    if user.must_change_password and not _temp_valid(state, user):
         raise HTTPException(401, "invalid_credentials")
+    if user.accounts["ad"].locked:  # kiểm SAU mật khẩu: mật khẩu sai không cho biết tài khoản có đang khoá
+        raise HTTPException(403, "account_locked")
+    if user.must_change_password:
+        raise HTTPException(403, "password_change_required")
+    return user
+
+
+@api.post("/authenticate", dependencies=[Depends(require_read)])
+async def authenticate(body: Credentials, request: Request) -> dict[str, Any]:
+    user = check_login(mock_state(request), request.app.state.dummy_hash, body.username, body.password)
     return user_view(user)
 
 
-@router.get("/users/{user_id}", dependencies=[Depends(require_read)])
+@api.get("/users/{user_id}", dependencies=[Depends(require_read)])
 async def read_user(user_id: str, request: Request, account_type: AccountType = "ad") -> dict[str, Any]:
     return user_view(get_user(mock_state(request), user_id), account_type)
 
 
-@router.get("/users/{user_id}/lockouts", dependencies=[Depends(require_read)])
+@api.get("/users/{user_id}/lockouts", dependencies=[Depends(require_read)])
 async def lockouts(
     user_id: str, request: Request, account_type: AccountType | None = None
 ) -> list[dict[str, Any]]:
@@ -130,7 +147,7 @@ async def lockouts(
     ]
 
 
-@router.get("/users/{user_id}/privilege", dependencies=[Depends(require_read)])
+@api.get("/users/{user_id}/privilege", dependencies=[Depends(require_read)])
 async def privilege(user_id: str, request: Request, account_type: AccountType = "ad") -> dict[str, Any]:
     user = get_user(mock_state(request), user_id)
     account = user.accounts.get(account_type)
@@ -144,7 +161,7 @@ async def privilege(user_id: str, request: Request, account_type: AccountType = 
     }
 
 
-@router.get("/users/{user_id}/manager-chain", dependencies=[Depends(require_read)])
+@api.get("/users/{user_id}/manager-chain", dependencies=[Depends(require_read)])
 async def manager_chain(user_id: str, request: Request) -> list[dict[str, Any]]:
     state = mock_state(request)
     user = get_user(state, user_id)
@@ -186,6 +203,11 @@ def _account(request: Request, user_id: str, account_type: str) -> tuple[User, A
     return user, account
 
 
+def _require_enabled(user: User, account: Any) -> None:
+    if not account.enabled or user.employment_status == "terminated":
+        raise HTTPException(409, "account_disabled")
+
+
 class ResetPasswordBody(BaseModel):
     # F2: chỉ body này cấm trường lạ — không nhận số điện thoại từ lời gọi (số lấy từ seed của chính chủ).
     model_config = ConfigDict(extra="forbid")
@@ -193,9 +215,10 @@ class ResetPasswordBody(BaseModel):
     channel: Literal["email", "sms"] = "email"
 
 
-@router.post("/users/{user_id}/reset-password", dependencies=[Depends(require_write)])
+@api.post("/users/{user_id}/reset-password", dependencies=[Depends(require_write)])
 async def reset_password(user_id: str, body: ResetPasswordBody, request: Request) -> dict[str, Any]:
     user, account = _account(request, user_id, body.account_type)
+    _require_enabled(user, account)
     state = mock_state(request)
     if body.channel == "email":
         account.password_last_set = state.now()
@@ -217,14 +240,16 @@ async def reset_password(user_id: str, body: ResetPasswordBody, request: Request
     user.temp_password_expires_at = now + TEMP_PASSWORD_TTL
     account.password_last_set = now
     notify.send_temp_password_sms(state.outbox, user.phone, temp, now, _TTL_MINUTES)
-    notify.send_sms_reset_notice(state.outbox, user.username, user.phone, now, _TTL_MINUTES)
-    # Mật khẩu tạm chỉ đi qua SMS — KHÔNG bao giờ nằm trong phản hồi API.
+    if user.email is not None:  # seed bắt buộc email — nhánh này chỉ để kiểu chặt
+        notify.send_sms_reset_notice(state.outbox, user.email, user.phone, now, _TTL_MINUTES)
+    # Mật khẩu tạm chỉ đi qua SMS — KHÔNG bao giờ nằm trong phản hồi API. `sent_to` là số ĐÃ CHE.
     return {
         "user_id": user_id,
         "account_type": body.account_type,
         "delivered_via": "sms",
         "must_change_at_next_login": True,
         "expires_in_minutes": _TTL_MINUTES,
+        "sent_to": notify.mask_phone(user.phone),
     }
 
 
@@ -241,30 +266,41 @@ class ChangePasswordBody(BaseModel):
         return self
 
 
-@router.post("/change-password", dependencies=[Depends(require_write)])
-async def change_password(body: ChangePasswordBody, request: Request) -> dict[str, Any]:
-    """F2: đổi mật khẩu tạm (còn hạn, chưa dùng) lấy mật khẩu mới. Sai / hết hạn / đã dùng / user lạ → cùng một 401."""
-    state = mock_state(request)
+def apply_change(state: MockState, dummy: str, body: ChangePasswordBody) -> User:
+    """Logic chung của `/ad/change-password` và cổng `/portal`. Sai / hết hạn / đã dùng / user lạ → cùng một 401; mật khẩu
+    tạm đúng nhưng AD đang khoá → 403 `account_locked` (không đổi gì)."""
     user = next((u for u in state.users.values() if u.username == body.username), None)
-    stored = user.password_hash if user is not None else request.app.state.dummy_hash  # luôn verify một hash như authenticate
+    stored = user.password_hash if user is not None else dummy  # luôn verify một hash như authenticate
     if not _verify(stored, body.temp_password) or user is None or not _temp_valid(state, user):
         raise HTTPException(401, "invalid_credentials")
+    if user.accounts["ad"].locked:
+        raise HTTPException(403, "account_locked")
     user.password_hash = _hasher.hash(body.new_password)
     user.must_change_password, user.temp_password_expires_at = False, None
     user.accounts["ad"].password_last_set = state.now()
+    return user
+
+
+@api.post("/change-password", dependencies=[Depends(require_write)])
+async def change_password(body: ChangePasswordBody, request: Request) -> dict[str, Any]:
+    """F2: đổi mật khẩu tạm (còn hạn, chưa dùng) lấy mật khẩu mới."""
+    user = apply_change(mock_state(request), request.app.state.dummy_hash, body)
     return {"user_id": user.user_id, "username": user.username, "password_changed": True}
 
 
-@router.post("/users/{user_id}/unlock", dependencies=[Depends(require_write)])
+@api.post("/users/{user_id}/unlock", dependencies=[Depends(require_write)])
 async def unlock(user_id: str, body: AccountBody, request: Request) -> dict[str, Any]:
-    _, account = _account(request, user_id, body.account_type)
+    user, account = _account(request, user_id, body.account_type)
+    _require_enabled(user, account)
+    if not account.locked:
+        raise HTTPException(409, "not_locked")
     was_locked = account.locked
     account.locked, account.lock_reason = False, None
     return {"user_id": user_id, "account_type": body.account_type, "locked": False,
             "was_locked": was_locked}  # fmt: skip
 
 
-@router.post("/users/{user_id}/lock", dependencies=[Depends(require_write)])
+@api.post("/users/{user_id}/lock", dependencies=[Depends(require_write)])
 async def lock(user_id: str, body: LockBody, request: Request) -> dict[str, Any]:
     _, account = _account(request, user_id, body.account_type)
     account.locked, account.lock_reason = True, body.reason
@@ -274,3 +310,136 @@ async def lock(user_id: str, body: LockBody, request: Request) -> dict[str, Any]
 def dummy_hash() -> str:
     """Hash của một chuỗi ngẫu nhiên — chỉ để `authenticate` tốn cùng thời gian khi user không có."""
     return _hasher.hash(secrets.token_urlsafe(32))
+
+
+# ---- Cổng đăng nhập giả lập (chỉ APP_ENV dev/test) ------------------------------------------------
+
+PORTAL_ENVS = frozenset({"dev", "test"})
+_PORTAL_HEADERS = {
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
+_PORTAL_ERRORS = {
+    "invalid_credentials": "Tên đăng nhập hoặc mật khẩu không đúng.",
+    "account_locked": "Tài khoản đang bị khoá. Liên hệ IT Service Desk để mở khoá.",
+    "account_disabled": "Tài khoản đã bị vô hiệu hoá. Liên hệ IT Service Desk.",
+}
+
+
+def _require_portal() -> None:
+    # Đọc env lúc nhận request (không phải lúc import): test bật/tắt bằng monkeypatch; thiếu APP_ENV → tắt (fail-closed).
+    if os.environ.get("APP_ENV", "") not in PORTAL_ENVS:
+        raise HTTPException(404, "Not Found")
+
+
+portal = APIRouter(prefix="/portal", dependencies=[Depends(_require_portal)], include_in_schema=False)
+
+
+def _page(body: str, status: int = 200) -> HTMLResponse:
+    html = (
+        '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Cổng đăng nhập (giả lập)</title>'
+        "<style>body{font-family:sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem}label{display:block;"
+        "margin:.6rem 0}input{width:100%;padding:.4rem}.err{color:#b00020}.ok{color:#006d32}</style></head>"
+        f"<body><h1>Cổng đăng nhập (giả lập)</h1>{body}</body></html>"
+    )
+    return HTMLResponse(html, status_code=status, headers=_PORTAL_HEADERS)
+
+
+def _note(text: str | None, cls: str = "err") -> str:
+    return f'<p class="{cls}">{escape(text)}</p>' if text else ""
+
+
+def _login_form(error: str | None = None, status: int = 200) -> HTMLResponse:
+    return _page(
+        f'{_note(error)}<form method="post" action="/portal/login">'
+        '<label>Tên đăng nhập <input name="username" autocomplete="username" required></label>'
+        '<label>Mật khẩu <input name="password" type="password" autocomplete="current-password" required></label>'
+        "<button>Đăng nhập</button></form>",
+        status,
+    )
+
+
+def _change_form(username: str, error: str | None = None, status: int = 200) -> HTMLResponse:
+    # Không bao giờ điền sẵn mật khẩu (tạm hay mới) vào trang — chỉ username.
+    return _page(
+        f"{_note(error)}<p>Bạn đang dùng mật khẩu tạm. Hãy đặt mật khẩu mới (từ 12 ký tự, khác mật khẩu tạm).</p>"
+        '<form method="post" action="/portal/change-password">'
+        f'<input type="hidden" name="username" value="{escape(username)}">'
+        '<label>Mật khẩu tạm <input name="temp_password" type="password" autocomplete="current-password" required></label>'
+        '<label>Mật khẩu mới <input name="new_password" type="password" autocomplete="new-password" required></label>'
+        '<label>Nhập lại mật khẩu mới <input name="confirm_password" type="password" autocomplete="new-password" required>'
+        "</label><button>Đổi mật khẩu</button></form>",
+        status,
+    )
+
+
+def _success(user: User) -> HTMLResponse:
+    return _page(_note(f"Đăng nhập thành công. Xin chào {user.full_name}.", "ok"))
+
+
+async def _form(request: Request) -> dict[str, str]:
+    """Đọc form urlencoded (không cần python-multipart). Trường lặp → lấy giá trị đầu."""
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    return {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
+
+
+def _portal_login_result(user: User) -> HTMLResponse:
+    account = user.accounts["ad"]
+    if not account.enabled or user.employment_status == "terminated":
+        return _login_form(_PORTAL_ERRORS["account_disabled"], 403)
+    return _success(user)
+
+
+@portal.get("")
+async def portal_home() -> HTMLResponse:
+    return _login_form()
+
+
+@portal.post("/login")
+async def portal_login(request: Request) -> HTMLResponse:
+    form = await _form(request)
+    username, password = form.get("username", ""), form.get("password", "")
+    if not username or not password:
+        return _login_form("Nhập tên đăng nhập và mật khẩu.", 400)
+    state = mock_state(request)
+    try:
+        user = check_login(state, request.app.state.dummy_hash, username, password)
+    except HTTPException as e:
+        if e.detail == "password_change_required":
+            return _change_form(username)
+        return _login_form(_PORTAL_ERRORS.get(str(e.detail), _PORTAL_ERRORS["invalid_credentials"]), e.status_code)
+    return _portal_login_result(user)
+
+
+@portal.post("/change-password")
+async def portal_change_password(request: Request) -> HTMLResponse:
+    form = await _form(request)
+    username = form.get("username", "")
+    if not username:
+        return _login_form("Phiên đổi mật khẩu không hợp lệ — đăng nhập lại.", 400)
+    if form.get("new_password", "") != form.get("confirm_password", ""):
+        return _change_form(username, "Hai lần nhập mật khẩu mới không khớp.", 422)
+    try:
+        body = ChangePasswordBody(
+            username=username, temp_password=form.get("temp_password", ""), new_password=form.get("new_password", "")
+        )
+    except ValidationError:
+        return _change_form(username, "Mật khẩu mới phải từ 12 ký tự và khác mật khẩu tạm.", 422)
+    state = mock_state(request)
+    dummy = request.app.state.dummy_hash
+    try:
+        apply_change(state, dummy, body)
+        user = check_login(state, dummy, username, body.new_password)  # đăng nhập lại bằng mật khẩu mới như người dùng thật
+    except HTTPException as e:
+        if e.detail == "invalid_credentials":
+            return _change_form(username, "Mật khẩu tạm sai hoặc đã hết hạn.", 401)
+        return _login_form(_PORTAL_ERRORS.get(str(e.detail), _PORTAL_ERRORS["invalid_credentials"]), e.status_code)
+    return _portal_login_result(user)
+
+
+# `main.py` gắn `ad.router`: API /ad/* + cổng /portal. Đặt CUỐI file — include_router chép route đã khai báo lúc gọi.
+router = APIRouter()
+router.include_router(api)
+router.include_router(portal)

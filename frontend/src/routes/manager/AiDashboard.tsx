@@ -1,3 +1,4 @@
+import { Ma } from "../../components/MaNhan.tsx";
 import type { AiDashboard as Ai, DayCost } from "../../api/types.ts";
 import {
   AI_METRICS,
@@ -95,10 +96,18 @@ export function AiDashboardView({ data }: { data: Ai }) {
           data-testid="ai-metric"
           data-metric={metric.name}
           data-state={stateOf(data, metric.name)}
-          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-6 border-t border-line px-5 py-3 first:border-t-0"
+          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-6 border-t border-line px-5 py-3 first:border-t-0 max-lg:grid-cols-1 max-lg:gap-1"
         >
           <span className="flex flex-col">
-            <span>{metric.label}</span>
+            <span>
+              {metric.label}
+              {metric.ma ? (
+                <>
+                  {" · "}
+                  <Ma ma={metric.ma} />
+                </>
+              ) : null}
+            </span>
             <span className="font-mono text-label font-normal text-ink-2">{metric.name}</span>
           </span>
           <span className="flex justify-end text-right">

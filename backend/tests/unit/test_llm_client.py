@@ -499,7 +499,8 @@ async def test_d8_script_exhausted_is_not_llm_unavailable() -> None:
         await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut, cache_policy="bypass")
     with pytest.raises(ScriptExhausted, match="không có kịch bản"):
         await gw.client.complete("fast", "b11_clarify_question",
-                                 {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn"}, QuestionOut)
+                                 {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
+                                  "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ", "user_request": "VPN báo lỗi 809", "last_question": "(chưa có)",}, QuestionOut)
     assert len(gw.llm.calls) == 3  # không retry ScriptExhausted
     assert [r.error for r in gw.store.rows] == [None, "ScriptExhausted", "ScriptExhausted"]
 
@@ -621,7 +622,9 @@ async def test_d17_spend_read_failure_blocks_paid_targets_only() -> None:
 @pytest.mark.asyncio
 async def test_d17_cost_added_immediately_without_waiting_refresh() -> None:
     server = Server(ok(ANSWER_OK, tokens=(1000, 1000)))
-    store = MemoryLlmStore(base_spend=38.0 - 0.001)
+    # Q2 M2: b10_answer v3 dài hơn → giữ chỗ xấu nhất ≈ 0,00101 USD (433 token vào + 900 ra) > khoảng trống 0,001 cũ. Khoảng trống
+    # 0,0015: lời gọi 1 lọt; lời gọi 2 bị chặn CHỈ vì đã cộng 0,00125 (không cộng thì 0,0015 ≥ 0,00101 vẫn lọt).
+    store = MemoryLlmStore(base_spend=38.0 - 0.0015)
     gw = make_gateway(runtime=runtime((target("cloud_a"),)), providers={"cloud_a": openai_provider(server)},
                       store=store)  # fmt: skip
     _, meta = await gw.client.complete("strong", "b10_answer", ANSWER_VARS, AnswerOut)
