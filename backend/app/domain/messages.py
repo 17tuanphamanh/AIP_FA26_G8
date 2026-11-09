@@ -70,6 +70,17 @@ USER_ID: Final = re.compile(r"[a-z0-9_]{3,64}")
 RESOURCE_PATH: Final = re.compile(r"(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}")
 CERT_STATUS_TEXT: Final = {"valid": "còn hiệu lực", "expired": "đã hết hạn", "revoked": "đã bị thu hồi", "none": "chưa có"}
 ASK_CONFIRM: Final = "Bạn thử kết nối lại rồi xác nhận giúp mình nhé."
+# Q2 M3 (ĐP 09/11): mẫu `check_vpn_status` — kết quả kiểm tra có vấn đề thì GỢI Ý bước tiếp (chỉ câu chữ, không tự sinh hành động);
+# đứng sau dòng trạng thái, trước câu mời xác nhận. `{device}` = "máy <mã>" (qua `DEVICE_ID`) hoặc "máy của bạn". Lúc này ô nhập là
+# ghi chú xác nhận → yêu cầu mới mở bằng mục "Yêu cầu mới" ở thanh bên (FE `auth/permissions.ts` CHAT_NAV). Không ghi "cần IT
+# duyệt": gia hạn máy của chính mình trong giờ hành chính thường tự động (KB-VPN-004).
+VPN_STATUS_NEXT: Final[Mapping[str, str]] = {
+    "expired": ('Chứng chỉ hết hạn là lý do máy không vào được VPN. Để gia hạn, bạn bấm "Yêu cầu mới" ở thanh bên và nhắn '
+                '"gia hạn chứng chỉ VPN {device}", mình sẽ xử lý.'),
+    "revoked": ('Chứng chỉ đã bị thu hồi nên máy không vào được VPN. Để xin cấp lại, bạn bấm "Yêu cầu mới" ở thanh bên và nhắn '
+                '"cấp lại quyền VPN {device}".'),
+}  # fmt: skip
+VPN_STATUS_UNREGISTERED: Final = "Máy chưa đăng ký VPN nên chưa kết nối được; mình chuyển kỹ thuật viên nếu bạn cần đăng ký."
 RESULT_ACTIONS: Final = frozenset({
     "renew_vpn_cert", "reissue_vpn_access", "check_vpn_status",
     "reset_password", "unlock_account", "install_software", "view_permissions", "grant_permission", "extend_permission",
@@ -252,9 +263,37 @@ def result_text(
             cert += f", quá hạn {-days} ngày"
         conn = facts.get("last_connection_ok")
         last = "thành công" if conn is True else "không thành công" if conn is False else "chưa có dữ liệu"
-        return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. "
+        hints = [VPN_STATUS_NEXT[status].format(device=device)] if isinstance(status, str) and status in VPN_STATUS_NEXT else []
+        if facts.get("device_registered") is False:
+            hints.append(VPN_STATUS_UNREGISTERED)
+        nxt = "".join(f"{h} " for h in hints)
+        return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. {nxt}"
                 "Bạn xem thông tin này đã đủ chưa rồi xác nhận giúp mình nhé.")  # fmt: skip
     return _new_action_text(action, outputs, requester_id, rows)
+
+
+# Q2 M1 (ĐP 09/11): câu mở đầu của B10 khi người dùng BÁO LỖI VPN mà fact B6 cho thấy máy của họ đã đăng ký, chứng chỉ còn hạn
+# (`b10_route.symptom_to_info`) — ghép bằng CODE từ fact (enum/bool/số) + mã máy qua `DEVICE_ID`, không LLM.
+SYMPTOM_LAST_FAIL: Final = "Lần kết nối gần nhất không thành công."
+
+
+def symptom_intro(device_id: str | None, facts: Mapping[str, FactValue]) -> str:
+    """"Mình đã kiểm tra máy {id}: máy đã đăng ký, chứng chỉ VPN còn hạn {n} ngày, nên lỗi không nằm ở chứng chỉ." — mã sai mẫu/
+    không có → "máy của bạn"; `cert_days_to_expiry` không phải số nguyên dương → bỏ vế "{n} ngày"; `last_connection_ok is False`
+    → thêm `SYMPTOM_LAST_FAIL`."""
+    device = f"máy {device_id}" if isinstance(device_id, str) and DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    days = facts.get("cert_days_to_expiry")
+    left = f"còn hạn {days} ngày" if type(days) is int and days > 0 else "còn hạn"
+    text = f"Mình đã kiểm tra {device}: máy đã đăng ký, chứng chỉ VPN {left}, nên lỗi không nằm ở chứng chỉ."
+    return f"{text} {SYMPTOM_LAST_FAIL}" if facts.get("last_connection_ok") is False else text
+
+
+def device_not_found_question(device_id: str) -> str:
+    """Q2 M4 (ĐP 09/11): câu hỏi CỐ ĐỊNH của B11 khi máy người dùng nêu không có trong danh mục (`check_device_registered` 404) —
+    không LLM; mã chỉ in khi khớp `DEVICE_ID`."""
+    device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy này"
+    return (f"Mình không tìm thấy {device} trong danh mục. Bạn xem mã máy dán ở thân máy (dạng LAP-0342) rồi gửi lại "
+            "giúp mình.")  # fmt: skip
 
 
 def result_msg(text: str, ref: str | None) -> Msg:
@@ -335,6 +374,12 @@ OTHER_LABEL: Final = "Yêu cầu khác"
 DIGEST_ITEM_KINDS: Final = ("result", "question", "rejection", "escalation")
 CONFIRMED_TEXT: Final = "Đã ổn"
 UNRESOLVED_TEXT: Final = "Chưa ổn"
+# Q2 M2 (ĐP 09/11): câu kết CỐ ĐỊNH của câu trả lời B10 có bước — sau các bước, trước mục nguồn (`answer.render_answer`). Nhãn nút
+# = nhãn FE (`ChatPage.tsx`); "Chưa ổn" ở `confirm_wait` → E8 (chuyển kỹ thuật viên kèm bàn giao).
+ANSWER_CLOSING: Final = (
+    f'Bạn thử lần lượt rồi báo mình nhé: chọn "{CONFIRMED_TEXT}" nếu đã được, "{UNRESOLVED_TEXT}" nếu vẫn lỗi để mình chuyển '
+    "kỹ thuật viên kèm thông tin đã kiểm tra."
+)
 
 
 @dataclass(frozen=True)

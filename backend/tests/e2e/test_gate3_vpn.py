@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 import pytest
+from app.domain.messages import device_not_found_question
 from app.domain.states import (
     S_CLARIFYING,
     S_CONFIRMING,
@@ -325,12 +326,24 @@ def _classify_with_fact_slot(v: Mapping[str, Any]) -> Step:
 async def test_h14_g01_fact_in_slot_dropped_unknown_device_e5_no_approval_no_write(stack: Stack) -> None:
     """h14 (G-01) + Phase 4 P7 (Q-4-M, G4-16; bảng 3.2 x6): slot `device_registered=true` bị loại (vẫn `slot_fact_collision`);
     LAP-9999 không tồn tại → R17 nay đòi chủ máy → không luật nào → lớp LLM (6C: b14 = 0,9) → E5 `llm_high_risk`, 0 phiếu, 0 lời gọi
-    ghi (3h: R17 → HITL)."""
+    ghi (3h: R17 → HITL).
+    Q2 (ĐP 09/11 điểm 1) — kỳ vọng cũ: lượt đầu dựng Action trên LAP-9999 → E5 ngay. Mới: B6 đã tra LAP-9999 ra 404 → B11 hỏi lại mã
+    MỘT lần bằng câu cố định (0 Action, 0 phiếu, 0 ghi, giữ slot `action`); người dùng gửi lại đúng LAP-9999 → máy này B6 không tra →
+    luồng cũ → E5 `llm_high_risk` như trên."""
     async with gate3(stack.pg, stack.qdrant_url, stack.mock, clock=at_ict(10),
                      scripts=vpn_scripts(b03_classify=_classify_with_fact_slot)) as p, api(p) as a:  # fmt: skip
         t = await a.create(AN, G01)
+        first = await a.view(t, AN)
+        asked = await a.state(t)
+        r = await a.post(f"/api/tickets/{t}/messages", {"text": "LAP-9999"}, AN)
+        assert r.status_code == 202, r.text
         v = await a.view(t, AN)
         values = await a.state(t)
+    assert first["status"] == S_CLARIFYING and asked.get("intended_action") is None, first
+    [question] = _msgs(first, "question")
+    assert question["text"] == device_not_found_question("LAP-9999")
+    assert asked["slots"] == {"action": "reissue_vpn_access"}
+    assert (await audit_detail(p.rw, t, "B11", "asked"))["device_not_found"] is True
     point1 = await audit_detail(p.rw, t, "B3", "intent_classified")
     assert point1["slot_fact_collision"] is True and "device_registered" in point1["dropped_slot_keys"]
     assert "device_registered" not in (values.get("slots") or {})

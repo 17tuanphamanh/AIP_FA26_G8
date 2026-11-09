@@ -14,9 +14,15 @@
 4. Hậu kiểm bằng CODE (`domain.answer.check_citations`): `cannot_answer` → E3 `no_grounding` (Q-3g-1); trích dẫn ngoài
    anchor → E3 `invalid_citation`. Anchor = `chunk_id` top-5 ∩ anchor của khối THẬT SỰ gửi LLM — không bao giờ là chunk
    liền kề (chúng chỉ là ngữ cảnh đọc thêm).
-5. `render_answer` theo mẫu (không LLM) → output guard (P4) → vi phạm → E3 `output_guard_block`, 0 tin gửi đi.
+5. Q2 M2: `cap_steps` giữ tối đa 3 bước (audit `steps_truncated`); `render_answer` theo mẫu (không LLM, câu kết cố định sau các bước) → output guard (P4) → vi phạm → E3 `output_guard_block`, 0 tin gửi đi.
 6. `notify_user` (needs=confirm) + hạn `confirm` 48 h, đều qua `effects.once` (chạy lại node / resume `confirm_wait` không gửi
    lại — D-18); `lineage` (prompt, model, `kb_version`) ghi CÙNG transaction với audit của `goto` (Q-3g-3) → `S_CONFIRMING`.
+
+Q2 M1 (ĐP 09/11) — "báo lỗi VPN khi chứng chỉ còn hạn": sau `b10_need_type`, nếu `symptom_to_info(state)` (intent `vpn`, need
+`action`, CHƯA có slot `action`, fact B6 `device_owner_is_requester is True`, `device_registered is True`, `cert_status == "valid"`)
+→ đi nhánh info (B9 → expand → b10_answer) thay vì B11 — không có hành động nào hợp lý để hỏi "cấp mới/gia hạn/thu hồi". Cổng
+grounding giữ nguyên (thiếu bằng chứng → E3). Câu mở đầu theo fact (`messages.symptom_intro`, CODE) ghép TRƯỚC câu trả lời; output
+guard chạy trên toàn tin. State `need_type="info"` (đã trả lời như info); audit giữ `need_type` của LLM + `symptom_to_info` (bool).
 
 Lỗi: `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded` → E2 `llm_unavailable`; hết hạn cả lượt
 (ở LLM hoặc RAG) → E2 `turn_budget_exceeded`, bắt tường minh (`step` hằng). Không `except Exception` — lỗi khác → E9.
@@ -27,9 +33,9 @@ from datetime import timedelta
 from typing import Any
 
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.answer import check_citations, render_answer
+from app.domain.answer import cap_steps, check_citations, render_answer
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import answer_msg
+from app.domain.messages import answer_msg, symptom_intro
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_RETRIEVING
 from app.domain.ticket_state import ChunkRef
 from app.graph import effects
@@ -46,7 +52,7 @@ def _info() -> dict[str, Any]:
     return {
         "need_type": None, "prompt": None, "llm_error": None, "rag_error": None, "evidence_blocks": None,
         "trimmed_evidence": None, "evidence_truncated": False, "citation": None, "cited": [], "guard": None,
-        "grounding": None,
+        "grounding": None, "symptom_to_info": False, "steps_truncated": False,
     }  # fmt: skip
 
 
@@ -54,6 +60,18 @@ def grounding(chunks: list[ChunkRef], score: float | None, threshold: float) -> 
     """S0-P3: đạt ngưỡng = có chunk VÀ `score` ≥ ngưỡng (bằng ngưỡng là đạt — c15). Thiếu `score` → coi như dưới ngưỡng."""
     above = bool(chunks) and score is not None and score >= threshold
     return {"top_score": score, "above_threshold": above, "kb_gap": not above}
+
+
+def symptom_to_info(state: Any) -> bool:
+    """Q2 M1: báo lỗi VPN mà máy của chính người gửi đã đăng ký, chứng chỉ còn hạn, chưa nêu hành động → trả lời theo KB."""
+    facts = state.get("facts") or {}
+    return (
+        state.get("intent") == "vpn"
+        and not (state.get("slots") or {}).get("action")
+        and facts.get("device_owner_is_requester") is True
+        and facts.get("device_registered") is True
+        and facts.get("cert_status") == "valid"
+    )
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -91,7 +109,8 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E2.value, escalation_reason_detail="llm_unavailable",
             )  # fmt: skip
         info["need_type"], info["prompt"] = need.type, f"{meta.prompt_id}@{meta.prompt_version}"
-        if need.type == "action":
+        info["symptom_to_info"] = symptom = need.type == "action" and symptom_to_info(state)
+        if need.type == "action" and not symptom:
             if deps.grounding_gate_actions and not above:  # S0-P11: ablation — hành vi 3h (B9 chặn cả hành động)
                 return await goto(
                     state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
@@ -161,7 +180,9 @@ def make(deps: NodeDeps) -> NodeFn:
         by_id = {c.chunk_id: c for c in chunks}
         cited = [by_id[i] for i in dict.fromkeys(ans.citations)]
         info["cited"] = [c.chunk_id for c in cited]
-        body = render_answer(ans.answer_markdown, ans.steps, cited)
+        intro = symptom_intro((state.get("slots") or {}).get("device_id"), state.get("facts") or {}) if symptom else None
+        steps, info["steps_truncated"] = cap_steps(ans.steps)  # Q2 M2: tối đa 3 bước, bước LLM xếp đầu được giữ
+        body = render_answer(ans.answer_markdown, steps, cited, intro=intro)
         info["guard"] = deps.output_guard.violation(body)
         if info["guard"] is not None:  # P4: chữ LLM có bí mật / canary / đoạn prompt hệ thống → không gửi, không lưu
             return await goto(
