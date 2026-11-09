@@ -83,6 +83,7 @@ class Entry:
 
 INTENT_LABEL: Final[Mapping[str, str]] = {  # tập đóng `INTENTS`
     "vpn": "VPN", "account": "tài khoản", "software": "cài đặt phần mềm", "access": "quyền truy cập",
+    "it_help": "hỏi đáp IT",  # D-57 (lô Q12): intent chỉ-trả-lời
 }  # fmt: skip
 
 S_ = Stat
@@ -108,6 +109,8 @@ TABLE: Final[Mapping[tuple[str, str, str | None], Entry]] = {
         S_("diagnose", "done", "Đã kiểm tra hệ thống"), S_("lookup", "active", "Đang tra cứu hướng dẫn"),
     )),
     ("B6", "diagnosis_skipped", None): Entry((S_("lookup", "active", "Đang tra cứu hướng dẫn"),)),
+    # D-57 (lô Q12): câu hỏi IT chung — không có gì để kiểm tra trên hệ thống, đi thẳng tra cứu hướng dẫn
+    ("B6", "diagnosis_not_applicable", None): Entry((S_("lookup", "active", "Đang tra cứu hướng dẫn"),)),
     ("B7", "tool_system_error", None): Entry((S_("diagnose", "failed", "Chưa kiểm tra được hệ thống"),)),
     ("B8", "retrieved", None): Entry(
         (S_("lookup", "done", "Đã tìm thấy hướng dẫn liên quan"),),

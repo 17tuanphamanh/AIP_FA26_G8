@@ -48,6 +48,13 @@
    `out_of_scope` rõ mà 0 ý trong phạm vi → E1 ngay, không hỏi. Nhiều ý: không đổi. Hỏi phân loại KHÔNG tính vào `clarification_turns`.
    Audit `triage_asked`: điểm log 1 + `triage_reason` ∈ {no_intent, low_confidence} + `guard` — không chữ người dùng.
 
+10. D-57 (ĐP chốt 09/11, bản demo lo-0811 — lô Q12): `it_help` (câu HỎI cách làm / BÁO hiện tượng IT ngoài 4 loại, trả lời từ KB `general`).
+   Ngay sau LLM: cờ `ENABLE_IT_HELP` tắt HOẶC câu ≥ 2 ý → mọi ý `it_help` đổi thành `out_of_scope` (con bắt đầu ở B6 — `children.py` — không có
+   luồng chỉ-trả-lời; tin tổng hợp của cha báo phần đó chuyển kỹ thuật viên). Một ý `it_help` qua ngưỡng `TAU_INTENT` (dưới ngưỡng → hỏi
+   phân loại như mục 9) → KHÔNG kiểm `enabled_intents` (it_help không thuộc tập này), KHÔNG `sanitize_slots` (slot `{}`), KHÔNG báo trùng M1
+   → `S_DIAGNOSING` → B6 (0 tool). Điểm log 1 thêm `request_trimmed` (bool — gateway cắt đuôi `redacted_request` theo `budget_in`, prompt v6
+   `trim_vars`; an toàn vì B2 đã sàng lọc TRỌN câu trước B3).
+
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
 slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi khác (`ScriptExhausted`, `MlContractError`…) → E9.
@@ -62,6 +69,7 @@ from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.children import child_id, child_ref
 from app.domain.dedup import duplicate_text, pick_duplicate
 from app.domain.exit_codes import ExitCode
+from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import duplicate_msg, triage_msg, triage_question
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
 from app.domain.states import S_CLARIFYING, S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
@@ -88,7 +96,7 @@ def _point1() -> dict[str, Any]:
     return {
         "layer": None, "intent": None, "confidence": None, "is_multi": None, "model_probs": None,
         "model_version": None, "prompt": None, "ml_error": None, "llm_error": None, "span_not_in_text": False,
-        "other_target_mention": False, "other_target_reason": None, **audit_dropped({}, frozenset()),
+        "other_target_mention": False, "other_target_reason": None, "request_trimmed": False, **audit_dropped({}, frozenset()),
     }  # fmt: skip
 
 
@@ -139,23 +147,33 @@ def make(deps: NodeDeps) -> NodeFn:
                 escalation_reason_detail="llm_unavailable",
             )  # fmt: skip
         info["prompt"], info["is_multi"] = f"{meta.prompt_id}@{meta.prompt_version}", out.is_multi
-        in_scope = [i for i in out.intents if i.type != "out_of_scope"]
-        if not _splits(out.intents, text):  # Q-T20b-12: lần trước đã tách (con 1 đã tạo) mà lần này không → không đi tiếp đường khác
+        info["request_trimmed"] = meta.trimmed_chars > 0  # Q1 điểm 2: chỉ cờ, không độ dài/chữ
+        intents = _answer_only_as_out_of_scope(out.intents)  # D-57: cờ tắt / nhiều ý
+        in_scope = [i for i in intents if i.type != "out_of_scope"]
+        if not _splits(intents, text):  # Q-T20b-12: lần trước đã tách (con 1 đã tạo) mà lần này không → không đi tiếp đường khác
             first = child_id(state["ticket_id"], 1)
             if await effects.peek(state, "child_create", step="B5", sub=first) is not None:
-                raise SplitChanged(f"B3 chạy lại: lần trước đã tách ticket con, lần này {len(out.intents)} ý không tách")
-        if not out.intents and state.get("triage") is None:  # Q1: chào / cảm ơn / mơ hồ → hỏi MỘT câu phân loại
+                raise SplitChanged(f"B3 chạy lại: lần trước đã tách ticket con, lần này {len(intents)} ý không tách")
+        if not intents and state.get("triage") is None:  # Q1: chào / cảm ơn / mơ hồ → hỏi MỘT câu phân loại
             return await _ask_triage(state, "no_intent", loops, info)
         if not in_scope:
             return await _out_of_scope(state, loops, info)
-        if len(out.intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — T20b: phán từng ý → B5 tách ticket con
-            return await _split(state, out.intents, text, loops, info)
+        if len(intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — T20b: phán từng ý → B5 tách ticket con
+            return await _split(state, intents, text, loops, info)
         it = in_scope[0]
         info["intent"], info["confidence"] = it.type, it.confidence
         if it.confidence < deps.constants.TAU_INTENT:  # D-27: không chắc thì không đoán
             if state.get("triage") is None:  # Q1: chưa hỏi phân loại → hỏi một lần thay vì chuyển người ngay
                 return await _ask_triage(state, "low_confidence", loops, info)
             return await _low_confidence(state, loops, info)
+        if it.type in ANSWER_ONLY_INTENTS:  # D-57: chỉ trả lời — không slot, không báo trùng, không thuộc ENABLED_INTENTS
+            span_ok = bool(it.span.strip()) and phrase_in_text(it.span, text)
+            info["span_not_in_text"] = bool(it.span.strip()) and not span_ok
+            return await goto(
+                state, S_DIAGNOSING, next_node="b06_diagnose", step="B3", event="intent_classified", audit_detail=info,
+                intent=it.type, intent_confidence=it.confidence, span=it.span if span_ok else None, slots={}, facts={},
+                reasoning_loops=loops,
+            )  # fmt: skip
         if it.type not in deps.enabled_intents:  # 3-Q27
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_not_enabled", audit_detail=info,
@@ -175,6 +193,12 @@ def make(deps: NodeDeps) -> NodeFn:
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
             **flags,
         )  # fmt: skip
+
+    def _answer_only_as_out_of_scope(intents: Sequence[IntentItem]) -> list[IntentItem]:
+        """D-57: `it_help` chỉ chạy ở ticket một ý khi cờ bật; còn lại coi như `out_of_scope` (E1 / con E1 như trước lô)."""
+        if deps.enable_it_help and len(intents) < 2:
+            return list(intents)
+        return [i.model_copy(update={"type": "out_of_scope"}) if i.type in ANSWER_ONLY_INTENTS else i for i in intents]
 
     async def _out_of_scope(state: Any, loops: int, info: dict[str, Any]) -> dict[str, Any]:
         return await goto(

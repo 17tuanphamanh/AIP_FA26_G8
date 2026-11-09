@@ -76,7 +76,8 @@ async def test_each_exit_code_one_escalation_with_handoff_and_message(code: str)
     assert esc["handoff_note"]["why_escalated"].startswith("Lý do chuyển: ")  # ĐP 02/11: "nhãn · mã", mã để cuối
     assert f" · {code}. Mức ưu tiên: " in esc["handoff_note"]["why_escalated"]
     assert esc["is_deny_case"] is (code == "E5")  # 2b-Q4
-    message = TEMPLATES.of(code).user_message
+    # D-57 (ĐP 09/11): cờ ENABLE_IT_HELP bật mặc định → mã có `user_message_it_help` (E1) gửi câu đó
+    message = TEMPLATES.of(code).user_message_for(None, it_help=True)
     assert h.notifier.sent[-1] == ("t1", message, "none")
     assert r.values["conversation"][-1] == {
         "role": "assistant", "kind": "escalation", "text": message, "ref": r.values["conversation"][-1]["ref"]}

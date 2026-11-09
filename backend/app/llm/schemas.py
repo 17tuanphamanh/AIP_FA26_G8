@@ -28,7 +28,7 @@ class IntentItem(BaseModel):
 
     model_config = _OUT
 
-    type: Literal["account", "vpn", "software", "access", "out_of_scope"]
+    type: Literal["account", "vpn", "software", "access", "it_help", "out_of_scope"]  # D-57: + it_help (chỉ trả lời, KB general)
     confidence: float = Field(ge=0, le=1)
     span: str = Field(max_length=500)  # phần câu dẫn tới intent [Chốt]
     action_hint: str | None = None  # ví dụ "renew_vpn_cert"

@@ -5,7 +5,6 @@ Bản Postgres thật: `integration/test_migration_0015_it_help.py` (chờ CI / 
 - Đổi CHECK `intent` của `tickets` và `audit_logs` sang `TICKET_INTENTS` (= `INTENTS` + `it_help`); `policy_rules` KHÔNG đổi (không có luật
   cho it_help). Downgrade trả về 4 loại.
 - `models.py` khớp: `INTENTS` giữ 4 loại hành động (eval/monitor/policy dùng — không đổi nghĩa); `TICKET_INTENTS` mới cho 2 bảng.
-`TICKET_INTENTS` đọc qua `getattr` (tên mới) để mypy của `make lint` không vỡ trước khi hiện thực.
 """
 
 import ast
@@ -72,7 +71,7 @@ def test_0015_changes_only_tickets_and_audit_logs_intent_checks() -> None:
 
 
 def test_models_ticket_intents() -> None:
-    ticket_intents = getattr(models, "TICKET_INTENTS")  # noqa: B009 — tên mới
+    ticket_intents = models.TICKET_INTENTS
     assert models.INTENTS == ("account", "vpn", "software", "access")  # không đổi nghĩa
     assert ticket_intents == (*models.INTENTS, "it_help")
     assert _intent_check(models.Ticket.__table__) == FIVE

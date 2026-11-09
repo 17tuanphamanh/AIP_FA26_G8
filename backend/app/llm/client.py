@@ -111,6 +111,7 @@ class _Call:
     est_tokens_in: int = 0
     trimmed_evidence: int = 0
     trimmed_messages: int = 0
+    trimmed_chars: int = 0  # Q1 điểm 2: chỉ đưa lên `LLMMeta`, không vào span/`llm_calls`
     prompt_full: str | None = None
     error: str | None = None
     turn_bound: bool = False  # deadline của lời gọi bị hạn cả lượt chặn (9.0), không phải `deadline_s` của vai trò
@@ -210,6 +211,7 @@ class LLMClient:
                           boundary=self._boundary)  # fmt: skip
         call.est_tokens_in = rendered.est_tokens
         call.trimmed_evidence, call.trimmed_messages = rendered.trimmed_evidence, rendered.trimmed_messages
+        call.trimmed_chars = rendered.trimmed_chars
         if self._eval_mode:
             call.prompt_full = json.dumps(rendered.messages, ensure_ascii=False)
         if primary.price is None:  # 3-Q26: không chi tiền cho thứ không đo được
@@ -389,7 +391,7 @@ class LLMClient:
             tokens_in=call.tokens_in, tokens_out=call.tokens_out, cost_usd=call.cost_usd,
             latency_ms=self._latency_ms(call), cache_hit=call.cache_hit,
             json_valid_first_try=bool(call.json_valid_first_try), used_fallback=call.used_fallback,
-            trimmed_evidence=call.trimmed_evidence, trimmed_messages=call.trimmed_messages,
+            trimmed_evidence=call.trimmed_evidence, trimmed_messages=call.trimmed_messages, trimmed_chars=call.trimmed_chars,
         )  # fmt: skip
 
     async def _record(self, call: _Call, parent: TraceParent | None) -> None:

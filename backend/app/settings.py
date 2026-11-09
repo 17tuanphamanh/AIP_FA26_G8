@@ -733,6 +733,9 @@ class CodeTemplate(BaseModel):
     next_for_l2_by_reason: dict[str, Annotated[str, Field(min_length=1)]] = Field(default_factory=dict)
     # Q3 M5 (ĐP 09/11): tin người dùng THAY `user_message` theo `escalation_reason_detail` — đọc như `next_for_l2_by_reason`
     user_message_by_reason: dict[str, Annotated[str, Field(min_length=1)]] = Field(default_factory=dict)
+    # D-57 (ĐP chốt 09/11, bản demo lo-0811): câu THAY `user_message` khi cờ ENABLE_IT_HELP bật (hiện chỉ E1 khai — thêm vế "và hướng dẫn các
+    # sự cố IT thường gặp…"). Câu theo lý do (`user_message_by_reason`) vẫn ưu tiên hơn.
+    user_message_it_help: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _known_reasons(self) -> "CodeTemplate":
@@ -745,9 +748,10 @@ class CodeTemplate(BaseModel):
     def next_for(self, reason: str | None) -> str:
         return self.next_for_l2_by_reason.get(reason, self.next_for_l2) if reason else self.next_for_l2
 
-    def user_message_for(self, reason: str | None) -> str:
-        """Q3 M5: câu theo lý do nếu khai báo, không thì `user_message` mặc định của mã."""
-        return self.user_message_by_reason.get(reason, self.user_message) if reason else self.user_message
+    def user_message_for(self, reason: str | None, *, it_help: bool = False) -> str:
+        """Q3 M5: câu theo lý do nếu khai báo; không thì (D-57) `user_message_it_help` khi cờ bật và mã có khai; không thì `user_message`."""
+        default = self.user_message_it_help if it_help and self.user_message_it_help else self.user_message
+        return self.user_message_by_reason.get(reason, default) if reason else default
 
 
 class EscalationTemplates(BaseModel):

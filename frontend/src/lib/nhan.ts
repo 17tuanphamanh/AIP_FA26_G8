@@ -115,6 +115,10 @@ export const SU_KIEN: Readonly<Record<string, string>> = {
   guard_unavailable: "Chưa kiểm tra an toàn được",
   classifier_unavailable: "Chưa phân loại được (dịch vụ lỗi)",
   intent_classified: "Đã phân loại yêu cầu",
+  // Lô Q1 + Q12 (ĐP chốt 09/11): hỏi lại loại yêu cầu khi câu mơ hồ; câu hỏi IT chung không cần kiểm tra hệ thống
+  triage_asked: "Hỏi lại loại yêu cầu",
+  triage_reply: "Người dùng trả lời câu hỏi loại yêu cầu",
+  diagnosis_not_applicable: "Không cần kiểm tra hệ thống (câu hỏi hướng dẫn)",
   intent_low_confidence: "Chưa chắc loại yêu cầu",
   intent_out_of_scope: "Ngoài phạm vi hỗ trợ",
   intent_not_enabled: "Loại yêu cầu chưa bật",
@@ -206,7 +210,13 @@ export const TRANG_THAI: Readonly<Record<string, string>> = {
 };
 
 /** Nhãn loại yêu cầu (intent) — như backend/app/domain/messages.py; khoá lạ → null (màn tự hiện "Khác · mã"). */
-export const LOAI_YEU_CAU: Readonly<Record<string, string>> = { vpn: "VPN", account: "Tài khoản", software: "Phần mềm", access: "Quyền truy cập" };
+export const LOAI_YEU_CAU: Readonly<Record<string, string>> = {
+  vpn: "VPN",
+  account: "Tài khoản",
+  software: "Phần mềm",
+  access: "Quyền truy cập",
+  it_help: "Hỏi đáp IT", // D-57 (ĐP chốt 09/11): intent chỉ-trả-lời — câu hỏi IT chung trả lời từ KB general
+};
 
 // ---------------------------------------------------------------- hàm dùng chung
 export type Loai = "ma_ket_thuc" | "ly_do" | "huong_xu_ly" | "duong_xu_ly" | "ben_quyet_dinh" | "buoc" | "su_kien" | "trang_thai" | "loai_yeu_cau";

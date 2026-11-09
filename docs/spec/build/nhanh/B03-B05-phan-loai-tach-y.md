@@ -196,7 +196,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 | Mã | Kịch bản | Mong đợi |
 |---|---|---|
 | TC12 | Câu chứa nhiều yêu cầu khác mức rủi ro | Tách ticket con, mỗi con phân loại riêng |
-| TC15 | Yêu cầu ngoài 4 loại (hỏng máy in) | E1, chuyển L2 ngay |
+| TC15 | Yêu cầu ngoài 4 loại (hỏng máy in) | E1, chuyển L2 ngay — nhờ kỹ thuật viên làm trực tiếp; hỏi cách làm / báo hiện tượng → `it_help` (D-57 (ĐP chốt 09/11, bản demo lo-0811)) |
 | Cổng 3 | 20 câu VPN (viết tắt, không dấu) | Đúng ≥ 18/20 |
 | Cổng 5 | 45 câu (10/loại × 4 + 5 ngoài phạm vi; macro-F1 tính 5 lớp) | Macro-F1 ≥ 0,85 |
 | Cổng 5 | Bộ 10 câu nhiều ý | Tách đúng; ticket cha đúng 6 trường hợp |
@@ -253,6 +253,8 @@ S_CLASSIFYING
            + label_hint = các nhãn "chắc có" nếu model thấy ≥2 nhãn (để tách span)
    │
    ├─ intents rỗng / tất cả out_of_scope ───────────────────────────► [B4] E1 (out_of_scope) → B20
+   │    D-56 (ĐP chốt 09/11, bản demo lo-0811): intents rỗng (hoặc 1 ý < τ_intent) và CHƯA hỏi → câu hỏi phân loại cố định → S_CLARIFYING;
+   │    đã hỏi → E1 như trên. out_of_scope rõ → E1 ngay. D-57: 1 ý it_help → B6 (0 tool) → B8 general → B10 info
    ├─ 1 intent trong phạm vi, confidence ≥ τ_intent ─────────────────► S_DIAGNOSING (B6)
    ├─ 1 intent, confidence < τ_intent ───────────────────────────────► [B4] E1 (intent_low_confidence, D-27)
    └─ ≥2 intent (is_multi) ──► [B5] tạo ticket con (qua effects.once, D-18):
@@ -292,7 +294,7 @@ VÒNG CỦA CHA (D-31) — người dùng chỉ nhận tin từ cha, một tin m
 
 ```python
 class IntentItem(BaseModel):
-    type: Literal["account", "vpn", "software", "access", "out_of_scope"]
+    type: Literal["account", "vpn", "software", "access", "it_help", "out_of_scope"]  # D-57 (ĐP chốt 09/11, bản demo lo-0811): + it_help
     confidence: float = Field(ge=0, le=1)
     span: str = Field(max_length=500)                 # phần câu dẫn tới intent [Chốt]
     action_hint: str | None                           # ví dụ "reset_password", "install_software"
@@ -531,7 +533,7 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 
 | Tình huống | Kết quả |
 |---|---|
-| "Máy in hỏng" | `out_of_scope` → E1 (TC15 **[Chốt]**) |
+| "Máy in hỏng" | `out_of_scope` → E1 (TC15 **[Chốt]**) — (ĐP chốt 09/11, bản demo lo-0811): "sửa máy in giúp em" → `out_of_scope`; "máy in không in được" → `it_help` (D-57) |
 | "reset mk email giúp mình" (viết tắt) | `account`, slot `account_type=email`, `action=reset_password` |
 | Một intent trong phạm vi nhưng confidence 0,4 | E1, `reason_detail=intent_low_confidence` (D-27) |
 | "Reset mật khẩu, tiện cài luôn Photoshop" | 2 con: account (R01 allow) + software (ngoài danh mục → duyệt) (TC12 **[Chốt]**) |
@@ -559,7 +561,7 @@ Cha: mọi con kết thúc ─► 1 tin tổng kết "Cả 2 yêu cầu đã ho�
 | Integration (ScriptedLLM) | TC12 | 2 con, mỗi con có `Action` và `decided_by` riêng; một tin nhắn tổng hợp |
 | Integration | TC34, TC35, TC36 | Như mục 0.4; đếm tin gửi người dùng = số lượt người dùng (D-31) |
 | Integration | Cha đóng | `close_reason IS NULL`, không dòng `escalations` cho cha; truy vấn escalation rate trên ticket lá không đếm cha (D-30) |
-| Integration | TC15 | E1, ghi chú "cần kỹ thuật viên" |
+| Integration | TC15 | E1, ghi chú "cần kỹ thuật viên" (ca nhờ kỹ thuật viên làm trực tiếp; ca hỏi cách làm → `it_help` — D-57 (ĐP chốt 09/11, bản demo lo-0811)) |
 | Integration | TC32: một con E1 tức thì | Cha đóng đúng, không cần `child_done` (D-17) |
 | Integration | Giết process sau `child_submit`, trước checkpoint cha | Đúng 2 con, mỗi con chạy 1 lần (D-18) |
 | Probe (LLM thật) | Intent VPN | ≥ 18/20 câu tiếng Việt (viết tắt, không dấu) **[Chốt cổng 3]** |

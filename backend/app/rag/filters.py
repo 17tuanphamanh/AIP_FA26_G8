@@ -11,6 +11,8 @@ chạy lại D-23, `expand_for_answer` D-24) đi qua đây nên không đường
 
 from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 
+from app.domain.intents import ANSWER_ONLY_INTENTS
+
 _ALLOWED = {
     "employee": ["public", "internal"],
     "l1": ["public", "internal", "restricted"],
@@ -31,7 +33,10 @@ def base_filter(role: str) -> list[FieldCondition]:
 
 
 def intent_filter(intent: str) -> FieldCondition:
-    return FieldCondition(key="request_type", match=MatchAny(any=[intent, "general"]))
+    """Lần truy hồi đầu: tài liệu của intent + `general`. D-57: intent chỉ-trả-lời (`it_help`) → CHỈ `general` (không có tài liệu loại
+    `it_help` — `KB_REQUEST_TYPES`). Lần chạy lại D-23 không lọc intent — không đổi."""
+    types = ["general"] if intent in ANSWER_ONLY_INTENTS else [intent, "general"]
+    return FieldCondition(key="request_type", match=MatchAny(any=types))
 
 
 def query_filter(role: str, *extra: FieldCondition) -> Filter:

@@ -31,6 +31,7 @@ from app.core.hashing import hash_action
 from app.domain.action import PARAMS_BY_ACTION, Action
 from app.domain.exit_codes import ExitCode
 from app.domain.facts import check_facts
+from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.states import S_ASSESSING, S_ESCALATED, S_EXECUTING
 from app.domain.ticket_state import ChunkRef, RiskDecision
 from app.graph.context import current_run
@@ -96,6 +97,8 @@ async def ticket_strategy(deps: NodeDeps, ticket_id: str) -> Strategy:
 
 def make(deps: NodeDeps) -> NodeFn:
     async def b12_assess(state: Any) -> dict[str, Any]:
+        if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-57: intent chỉ-trả-lời không bao giờ tới M5 — tới đây là bug → E9
+            raise ValueError(f"b12_assess nhận intent chỉ-trả-lời {state.get('intent')!r} — không bao giờ đánh giá hành động")
         action = Action.model_validate(state["intended_action"])  # thiếu = bug B11 → E9
         ctx = build_ctx(state, current_run().clock.now(), deps.business_hours)
         strategy = await ticket_strategy(deps, state["ticket_id"])

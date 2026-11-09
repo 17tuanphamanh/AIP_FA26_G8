@@ -193,7 +193,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 
 | Mã | Kịch bản | Mong đợi |
 |---|---|---|
-| TC11 | Yêu cầu diễn đạt mơ hồ | B11 hỏi lại có giới hạn |
+| TC11 | Yêu cầu diễn đạt mơ hồ | B11 hỏi lại có giới hạn (chưa rõ loại: B3 hỏi một câu phân loại trước, không tính vào 3 lượt — D-56 (ĐP chốt 09/11, bản demo lo-0811)) |
 | TC14 | Hỏi 3 lần vẫn không đủ | E4, chuyển L2, không đoán mò |
 | TC06 | Chẩn đoán đã suy ra `device_id` | Không hỏi lại |
 | Cổng 1 | Hash của Action | Không đổi khi đổi thứ tự khóa |
@@ -385,7 +385,7 @@ async def clarify_wait(state):                                          # KHÔNG
 
 | Tình huống | Kết quả | TC |
 |---|---|---|
-| Yêu cầu mơ hồ | Hỏi lại có giới hạn | TC11 **[Chốt]** |
+| Yêu cầu mơ hồ | Hỏi lại có giới hạn (chưa rõ loại → B3 hỏi phân loại trước — D-56 (ĐP chốt 09/11, bản demo lo-0811)) | TC11 **[Chốt]** |
 | 3 lượt vẫn thiếu | E4, không đoán | TC14 **[Chốt]** |
 | Người dùng im 24 giờ | E4; trả lời muộn → 409 + `late_event` | biến thể TC27 |
 | Người dùng trả lời lạc đề 2 lần liên tiếp | E4 ngay, không chờ đủ 3 lượt | — |
