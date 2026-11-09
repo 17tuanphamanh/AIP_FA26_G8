@@ -19,11 +19,14 @@
    `no_procedure` (kèm `intended_action` để L2 thấy hành động dự kiến); `RetrievalSystemError` → E2 `rag_system_error`.
    Có → `S_ASSESSING`; audit `procedure_doc` + `procedure_kb_version`.
 3. Đã hỏi đủ `MAX_CLARIFICATION_TURNS` lượt mà vẫn thiếu → E4 `clarification_exhausted`.
-4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` v3 (Q3 M2: + `missing_desc` = `slot_text.describe_missing` — nhãn + giải thích + ví
+4. Hỏi ≤ 2 slot: LLM fast `b11_clarify_question` v4 (Q3 M2: + `missing_desc` = `slot_text.describe_missing` — nhãn + giải thích + ví
    dụ từng slot, slot `action` kèm nhãn các việc của intent; `action_label` = nhãn `slots.action` hoặc "chưa rõ" — chỉ HẰNG, không chữ
    người dùng; `diagnostics_summary` = `facts` + `device_id` các máy CỦA người gửi — f4;
    `previous_reply` ∈ none/usable/unusable — ĐP 08/11 P6: chỉ chào lượt đầu, trả lời trước không dùng được thì "Mình chưa rõ ý
-   bạn,", tối đa 2 câu) → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
+   bạn,", tối đa 2 câu. **Q11 (ĐP 09/11):** + `user_request` = `state["redacted_request"]` — bản ĐÃ che, cùng bản B3 đọc, KHÔNG có câu gốc
+   trong state; ticket con: `redacted_request` của con = span của con (B3 `_seed`); context builder cắt đuôi theo `budget_in` vai fast
+   (`trim_vars`) — và `last_question` = `domain.messages.last_question(state)` (tin `question` cuối, đã qua scrub + output guard) hoặc
+   "(chưa có)" ở lượt đầu) → output guard (P4) → vi phạm: E3 `output_guard_block`, 0 tin. `notify_user` (needs=answer) + hạn `clarify` 24 h qua
    `effects.once`, khoá RIÊNG từng lượt hỏi (`sub=f"q{n}"`, P5) → `S_CLARIFYING`.
 5. be-target-guard (L-03): intent ∈ {account, access}, `ctx_flags.target_is_other` bật mà CHƯA có `target_user` → `missing =
    ["target_user", *missing]` (`target_required`). Câu hỏi CỐ ĐỊNH `domain/target.TARGET_QUESTION` — KHÔNG gọi LLM (`prompt` None),
@@ -38,17 +41,17 @@ minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không
 6. be-b11-khoa-slot: câu LLM viết (chỉ nhánh LLM) qua `domain/slot_text.scrub_slot_keys` TRƯỚC output guard / notify / conversation — bỏ
    "(device_id)"… và thay khoá trơn bằng nhãn tiếng Việt, với MỌI khoá slot của `config/slots.yaml`; rỗng sau khi dọn → câu cố định.
 Audit `detail`: tên slot thiếu, lượt hỏi, tool đã gọi, `facts` (enum/bool/int), `target_required`, `slot_keys_removed` (số đếm) — không câu
-người dùng, không chữ LLM.
+người dùng, không chữ LLM (kể cả sau Q11: `user_request`/`last_question` chỉ đi vào prompt, không vào audit).
 """
 
 import asyncio
 from datetime import timedelta
-from typing import Any
+from typing import Any, Final
 
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import TARGET_USER_INTENTS, build_action
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import ACTION_LABELS, question_msg
+from app.domain.messages import ACTION_LABELS, last_question, question_msg
 from app.domain.slot_text import UNKNOWN_ACTION, describe_missing, scrub_slot_keys
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
 from app.domain.target import TARGET_QUESTION
@@ -63,6 +66,8 @@ from app.llm.schemas import QuestionOut
 from app.rag.models import RetrievalSystemError
 from app.tools.diagnosis import DIAGNOSERS, vpn
 from app.tools.retry import retries_of
+
+NO_LAST_QUESTION: Final = "(chưa có)"  # biến `last_question` ở lượt hỏi đầu (Q11) — đúng chữ lời giao, prompt v4 giải thích nghĩa
 
 
 def _info(missing: list[str], turns: int, target_required: bool) -> dict[str, Any]:
@@ -204,7 +209,8 @@ def make(deps: NodeDeps) -> NodeFn:
                     {"missing": asked, "intent": state["intent"], "diagnostics_summary": summary,
                      "previous_reply": previous_reply(state, turns),
                      "missing_desc": describe_missing(asked, action_choices=action_choices(deps, state["intent"])),
-                     "action_label": action_label(state)}, QuestionOut,
+                     "action_label": action_label(state), "user_request": str(state["redacted_request"]),
+                     "last_question": last_question(state) or NO_LAST_QUESTION}, QuestionOut,
                 )  # fmt: skip
             except LLMSchemaError as exc:
                 info["llm_error"] = type(exc).__name__

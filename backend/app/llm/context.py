@@ -6,12 +6,15 @@
   `{{ … }}` được giữ nguyên chữ (chống chèn template). Không dùng Jinja (không logic, không thêm phụ thuộc).
 - **Biến đặc biệt:** `evidence` (khối `[anchor_chunk_id] title › heading\\n<text>`, 7.4), `recent_messages` (≤ 4 tin
   mới nhất, P2 mục 7). Giá trị khác: chuỗi giữ nguyên, còn lại JSON gọn.
-- **Cắt:** ước lượng token vượt `budget_in` → bỏ khối bằng chứng điểm thấp nhất trước, rồi tin nhắn cũ nhất; vẫn vượt
-  → `LLMBudgetExceeded` (P2 mục 4 "vượt trần token"), không request nào được gửi. Không bao giờ cắt nhiệm vụ.
+- **Cắt:** ước lượng token vượt `budget_in` → bỏ khối bằng chứng điểm thấp nhất trước, rồi tin nhắn cũ nhất, rồi (chỉ prompt khai
+  `trim_vars`, vd. `user_request` của `b11_clarify_question` v4) CẮT ĐUÔI biến chuỗi đó tới độ dài lớn nhất còn vừa trần — ở ranh giới
+  từ, nên mặt nạ che (`<SĐT_1>`, `[BÍ_MẬT_ĐÃ_ẨN]`, không có khoảng trắng) không bao giờ bị cắt đôi — thêm "…"; vẫn vượt (kể cả khi
+  cắt hết) → `LLMBudgetExceeded` (P2 mục 4 "vượt trần token"), không request nào được gửi. Không bao giờ cắt nhiệm vụ.
 - **`random_boundary`:** sinh `boundary` ngẫu nhiên mỗi lần render (b02_injection_judge, 7.4); không trùng giá trị nào.
 """
 
 import json
+import re
 import secrets
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -47,6 +50,7 @@ class Rendered:
     est_tokens: int
     trimmed_evidence: int  # số khối bằng chứng bị cắt
     trimmed_messages: int  # số tin nhắn cũ bị cắt (ngoài phần vượt MAX_RECENT_MESSAGES)
+    trimmed_chars: int = 0  # số ký tự bị cắt đuôi khỏi các biến `trim_vars` (chưa ghi vào span/`llm_calls` — không đổi cột DB)
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,40 @@ def _sub(template: str, values: Mapping[str, str]) -> str:
     return PLACEHOLDER.sub(lambda m: values[m.group(1)], template)  # re.sub không quét lại chuỗi thay vào
 
 
+_SPACE = re.compile(r"\s")
+ELLIPSIS = "…"
+
+
+def _clip(text: str, n: int) -> str:
+    """Phần đầu của `text` dài tối đa `n` ký tự, cắt ở RANH GIỚI TỪ + "…". Không có ranh giới nào trong `n` ký tự → "" (không cắt giữa
+    một từ — mặt nạ che không chứa khoảng trắng nên không bao giờ bị cắt đôi). `n ≥ len(text)` → giữ nguyên. Không giảm khi `n` tăng."""
+    if n >= len(text):
+        return text
+    head = text[:n]
+    if not text[n].isspace():  # điểm cắt rơi giữa từ → lùi về khoảng trắng gần nhất
+        spaces = list(_SPACE.finditer(head))
+        head = head[: spaces[-1].start()] if spaces else ""
+    head = head.rstrip()
+    return head + ELLIPSIS if head else ""
+
+
+def _longest_fitting(text: str, fits: Callable[[str], bool]) -> str:
+    """Bản `_clip` dài nhất của `text` mà `fits` còn đúng; "" nếu ngay cả bản rỗng cũng không vừa. Tìm nhị phân — không giả định công
+    thức ước lượng token (`estimate` do `LLMClient` tiêm)."""
+    best = ""
+    if not fits(""):
+        return best
+    lo, hi = 0, len(text) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        cand = _clip(text, mid)
+        if fits(cand):
+            best, lo = cand, mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
 def check_variables(prompt: Prompt, variables: Mapping[str, Any]) -> None:
     allowed, given = set(prompt.spec.allowed_vars), set(variables)
     extra, missing = sorted(given - allowed), sorted(allowed - given)
@@ -114,6 +152,8 @@ def render(
     if messages is not None and len(messages) > MAX_RECENT_MESSAGES:
         messages = messages[-MAX_RECENT_MESSAGES:]
     trimmed_evidence = 0
+    trimmed_chars = 0
+    trimmable = [n for n in spec.trim_vars if isinstance(variables[n], str)]  # chỉ biến chuỗi — JSON/khối đặc biệt không cắt đuôi
     mark: str | None = None
     while True:
         values = dict(fixed)
@@ -129,7 +169,7 @@ def render(
         est = estimate(system) + estimate(user)
         if est <= budget_in:
             msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-            return Rendered(msgs, est, trimmed_evidence, trimmed_messages)
+            return Rendered(msgs, est, trimmed_evidence, trimmed_messages, trimmed_chars)
         if evidence:
             # điểm thấp nhất trước; hoà điểm → khối xếp sau (hạng thấp hơn) bị cắt trước
             evidence.pop(min(range(len(evidence)), key=lambda i: (evidence[i].score, -i)))
@@ -137,6 +177,17 @@ def render(
         elif messages:
             messages.pop(0)  # tin cũ nhất
             trimmed_messages += 1
+        elif name := next((n for n in trimmable if fixed[n]), None):
+            whole = fixed[name]
+
+            def est_with(candidate: str, name: str = name, base: dict[str, str] = values) -> int:
+                vals = {**base, name: candidate}
+                return estimate(_sub(spec.system, vals)) + estimate(_sub(spec.user, vals))
+
+            fixed[name] = _longest_fitting(whole, lambda c: est_with(c) <= budget_in)
+            trimmed_chars += len(whole) - len(fixed[name])
+            if not fixed[name]:  # cắt hết mà khung vẫn không vừa (hoặc chỉ vừa khi bỏ trống) → không gửi câu hỏi mù
+                raise LLMBudgetExceeded(f"{prompt.id}: {est_with('')} token (ước tính) > budget_in {budget_in} sau khi cắt")
         else:
             raise LLMBudgetExceeded(f"{prompt.id}: {est} token (ước tính) > budget_in {budget_in} sau khi cắt")
 
