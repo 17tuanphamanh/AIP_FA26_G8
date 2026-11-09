@@ -27,6 +27,9 @@ x-backend-env: &backend-env
   LLM_BACKEND: ${LLM_BACKEND:?LLM_BACKEND phai khai bao trong .env (scripted | real)}
   FAST_MODEL: ${FAST_MODEL:-}
   STRONG_MODEL: ${STRONG_MODEL:-}
+  # Q10: model của hai vai chat (B3/B10/B11). Rỗng = dùng FAST_MODEL/STRONG_MODEL như cũ. Backend và worker PHẢI thấy cùng giá trị
+  # (worker chạy lại lượt dở cũng đi qua các bước hội thoại) — anchor này vào cả hai.
+  CHAT_MODEL: ${CHAT_MODEL:-}
   LLM_BASE_URL: ${LLM_BASE_URL:-}
   LLM_API_KEY: ${LLM_API_KEY:-}
   SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}

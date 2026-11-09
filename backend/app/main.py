@@ -219,10 +219,13 @@ async def _monitor_unavailable(_: Request, exc: Exception) -> JSONResponse:  # M
 
 
 def llm_targets(cfg: LlmConfig, settings: Settings) -> tuple[str | None, ...]:
-    """Tên model của MỌI đích khi `real` (2 vai trò + fallback). `None` = env chưa đặt (vd FAST_MODEL)."""
+    """Tên model của MỌI đích khi `real` (2 vai trò + fallback; vai chat chỉ khi CHAT_MODEL đặt — trống thì nó mượn đích của vai gốc,
+    đã có trong danh sách). `None` = env chưa đặt (vd FAST_MODEL)."""
     out: list[str | None] = []
     for r in ROLES:
-        out.append(getattr(settings, cfg.roles[r].model_setting) or None)
+        model = getattr(settings, cfg.roles[r].model_setting) or None
+        if model is not None or cfg.roles[r].model_default_role is None:
+            out.append(model)
         out.extend(f.model for f in cfg.fallback[r])
     return tuple(out)
 

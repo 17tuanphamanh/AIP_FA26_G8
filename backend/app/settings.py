@@ -21,7 +21,7 @@
 - `config/dedup.yaml` (`get_dedup`, M1): `DEDUP_WINDOW_HOURS` (cửa sổ báo trùng, giờ) + mẫu tin cố định `{loai}`/`{ma}` — KHÔNG
   phải biến `.env`.
 Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
-trò (`FAST_MODEL`, `STRONG_MODEL`), `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env (PLAN-3d Q-3d-3).
+trò (`FAST_MODEL`, `STRONG_MODEL`), `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env (PLAN-3d Q-3d-3); thêm `CHAT_MODEL` cho hai vai chat (Q10).
 
 File env: `APP_ENV_FILE` (mặc định `.env`, tính từ thư mục đang chạy); đặt RỖNG để tắt hẳn —
 khi đó chỉ đọc biến môi trường. `conftest.py` ở gốc repo đặt rỗng trước khi import app, để test
@@ -118,6 +118,10 @@ class Settings(BaseSettings):
     # base_url của provider — config/llm.yaml trỏ tới TÊN các trường này (`model_setting`, `base_url_setting`).
     fast_model: str | None = None
     strong_model: str | None = None
+    # Q10 (ĐP 09/11): model của hai vai `chat_fast`/`chat_strong` (các bước hội thoại B3/B10/B11 — `prompt_roles` trong llm.yaml). Để TRỐNG =
+    # mỗi vai chat dùng đúng model của fast/strong (hành vi như trước lô Q10). B2 (chấm tấn công) và B14 (ước lượng rủi ro) không bao giờ
+    # đi vai này — model của hai chốt an toàn đó đã đo trong báo cáo. Có giá trị thì PHẢI có dòng `pricing` (như FAST/STRONG).
+    chat_model: str | None = None
     # repr=False: URL có thể mang khoá (`user:pass@`, `?api-key=`) — không lộ qua repr/str của Settings (S9).
     llm_base_url: str | None = Field(default=None, repr=False)
     # Preset ScriptedLLM trên stack dev (`[fake:<preset>]`, Q-3d-12). None → `<config_dir>/scripted`.

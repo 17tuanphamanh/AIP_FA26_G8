@@ -13,6 +13,7 @@ Hợp đồng (PLAN mục "Q1 + Q12" ở PROGRESS.md, ĐP duyệt 09/11 09:35):
 ScriptedLLM, không gọi LLM thật.
 """
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, cast
@@ -40,7 +41,7 @@ from app.rag.models import EvidenceBlock, RetrievalResult
 from tests.fakes.executor import MemoryTxLog
 from tests.fakes.graph import GraphHarness, MemoryAudit, MemoryEffects, MemorySpans
 from tests.fakes.identity import ad_user
-from tests.fakes.llm import Gateway, make_gateway
+from tests.fakes.llm import Gateway, make_gateway, scripted_runtime
 from tests.fakes.rag import FakeRag
 from tests.fixtures.llm.vpn import vpn_scripts
 from tests.unit.test_b11_slots import _node, _node_harness, _state
@@ -98,9 +99,14 @@ class Env:
         return len(self.gw.llm.calls_for("b03_classify"))
 
 
-def env(*b03: Reply, judge: list[dict[str, Any]] | None = None, it_help: bool = True) -> Env:
+# Trần vào của vai fast TRƯỚC lô Q10 (b03 đi vai `fast`). Q10: b03 đi vai `chat_fast` (3000) nên câu ≤ TEXT_MAX không còn bị cắt ở B3; các ca
+# kiểm CƠ CHẾ cắt của gateway (giữ đuôi, cờ `request_trimmed`) ép lại trần cũ này bằng `env(..., budget_in=OLD_FAST_BUDGET)`.
+OLD_FAST_BUDGET = 2000
+
+
+def env(*b03: Reply, judge: list[dict[str, Any]] | None = None, it_help: bool = True, budget_in: int | None = None) -> Env:
     """B1→B2→B3 thật; `b03` = các phản hồi `b03_classify` theo thứ tự lượt; `judge` = phán của B2 L4 theo lượt (mặc định: không
-    tấn công). Ghi lại chữ B2/B3 nhận để kiểm câu ghép."""
+    tấn công). Ghi lại chữ B2/B3 nhận để kiểm câu ghép. `budget_in` (tuỳ chọn) ghi đè trần vào của vai `chat_fast` — vai b03 đi."""
     clock = FakeClock()
     b03_seen: list[str] = []
     judge_seen: list[str] = []
@@ -114,8 +120,12 @@ def env(*b03: Reply, judge: list[dict[str, Any]] | None = None, it_help: bool = 
         judge_seen.append(str(v["text"]))
         return Reply(verdicts.pop(0) if verdicts else NOT_ATTACK)
 
+    runtime = None
+    if budget_in is not None:
+        base = scripted_runtime()
+        runtime = dataclasses.replace(base, roles={**base.roles, "chat_fast": base.roles["chat_fast"].model_copy(update={"budget_in": budget_in})})
     gw = make_gateway({**vpn_scripts(action=None), "b02_injection_judge": judge_step,  # type: ignore[dict-item]
-                       "b03_classify": classify_step}, clock=clock)  # fmt: skip
+                       "b03_classify": classify_step}, clock=clock, runtime=runtime)  # fmt: skip
     h = GraphHarness(clock=clock, nodes="real", llm=gw.client, rag=_rag(), enable_it_help=it_help)
     h.identity.add_session(SESSION, "nv001", expires_at=clock.now() + timedelta(days=365))
     h.ad.users["nv001"] = ad_user("nv001")
@@ -359,15 +369,30 @@ async def test_combined_text_capped_at_text_max_keeping_the_whole_reply() -> Non
 
     original = ("máy em bị lỗi gì đó " * 300)[: TEXT_MAX - 10]
     answer = "VPN báo lỗi 809 trên máy LAP-0342, em làm ở nhà"
-    e = env(classify(), classify(it("vpn", 0.92, "VPN báo lỗi 809")))
+    e = env(classify(), classify(it("vpn", 0.92, "VPN báo lỗi 809")), budget_in=OLD_FAST_BUDGET)
     await submit(e, original)
     v = await reply(e, answer)
     assert len(v["redacted_request"]) <= TEXT_MAX
     assert v["redacted_request"].endswith("\n" + answer)
     assert e.judge_seen[1] == v["redacted_request"]  # B2 chấm TRỌN câu ghép
-    # B3 đọc bản L0 của câu ghép; gateway (prompt v6 `trim_vars`, ĐP chốt điểm 2) có thể cắt ĐUÔI khi vượt trần token vai fast — ghi cờ
+    # B3 đọc bản L0 của câu ghép; gateway (prompt v6 `trim_vars`, ĐP chốt điểm 2) có thể cắt ĐUÔI khi vượt trần token — ở trần CŨ 2000 thì
+    # cắt và ghi cờ (Q10: ở trần chat_fast 3000 câu ≤ TEXT_MAX vừa trọn — ca riêng bên dưới)
     assert e.b03_seen[1] == l0(v["redacted_request"])
     assert e.h.audit.of("t1", "intent_classified")[0]["detail"]["request_trimmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_combined_text_at_text_max_fits_chat_fast_budget_whole() -> None:
+    """Q10: cùng ca trên ở cấu hình THẬT (b03 đi vai chat_fast, 3000): câu ghép ≤ TEXT_MAX vào B3 trọn vẹn, không bị cắt, không cờ."""
+    from app.api.tickets import TEXT_MAX
+
+    original = ("máy em bị lỗi gì đó " * 300)[: TEXT_MAX - 10]
+    answer = "VPN báo lỗi 809 trên máy LAP-0342, em làm ở nhà"
+    e = env(classify(), classify(it("vpn", 0.92, "VPN báo lỗi 809")))
+    await submit(e, original)
+    v = await reply(e, answer)
+    assert e.b03_seen[1] == l0(v["redacted_request"])
+    assert e.h.audit.of("t1", "intent_classified")[0]["detail"]["request_trimmed"] is False
 
 
 @pytest.mark.asyncio
@@ -411,13 +436,27 @@ async def test_long_reply_with_injection_still_e0() -> None:
 
 @pytest.mark.asyncio
 async def test_max_length_request_classified_not_e2_and_flagged() -> None:
+    """Ở trần CŨ của vai fast (2000): câu dài nhất bị cắt đuôi, không E2, ghi cờ `request_trimmed`."""
+    from app.api.tickets import TEXT_MAX
+
+    text = ("VPN báo lỗi 809 trên máy LAP-0342 " * 200)[:TEXT_MAX]
+    e = env(classify(it("vpn", 0.92, "VPN báo lỗi 809")), budget_in=OLD_FAST_BUDGET)
+    v = await submit(e, text)
+    assert v.get("exit_code") != "E2" and v["intent"] == "vpn"
+    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_max_length_request_fits_chat_fast_budget_and_not_flagged() -> None:
+    """Q10: cấu hình THẬT (b03 đi vai chat_fast, 3000): câu dài nhất (TEXT_MAX) vào B3 trọn vẹn — không cắt, không cờ."""
     from app.api.tickets import TEXT_MAX
 
     text = ("VPN báo lỗi 809 trên máy LAP-0342 " * 200)[:TEXT_MAX]
     e = env(classify(it("vpn", 0.92, "VPN báo lỗi 809")))
     v = await submit(e, text)
     assert v.get("exit_code") != "E2" and v["intent"] == "vpn"
-    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is True
+    assert l0(text) in str(e.gw.llm.calls_for("b03_classify")[0].rendered_messages[1]["content"])
+    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is False
 
 
 @pytest.mark.asyncio
@@ -430,50 +469,50 @@ async def test_short_request_not_flagged_trimmed() -> None:
 # ---- ĐP chốt điểm 2 (11:35): câu trả lời phân loại KHÔNG bị cắt ở B3 khi câu ghép dài ------------------------------------------------
 
 
-# Khung prompt b03 v6 = 1612 / `budget_in` 2000 token (ước tính ceil(ký tự/3)) → phần yêu cầu chứa được ~1160 ký tự. Câu trả lời dài hơn thế
-# một mình đã vượt trần → nhánh "cắt đuôi câu trả lời" (ĐP chốt điểm 2). Ca ĐP đặt (trả lời 1500) cần nâng `budget_in` fast (~≥ 2150) hoặc rút
-# gọn prompt — ĐP chốt 09/11 16:00: KHÔNG nâng vai fast (B2 dùng chung); lô Q10 cho b03 đi vai chat_fast budget_in 3000 rồi bỏ xfail.
-CHO_BUDGET = pytest.mark.xfail(strict=True, reason="CHỜ Q10: vai chat_fast budget_in 3000")
+# Khung prompt b03 v6 = 1612 token (ước tính ceil(ký tự/3)). Vai fast (`budget_in` 2000) chỉ chứa ~1160 ký tự yêu cầu nên ca ĐP đặt (trả lời
+# 1500) không đạt — ĐP chốt 09/11 16:00: KHÔNG nâng vai fast (B2 dùng chung). Lô Q10: b03 đi vai `chat_fast` (`budget_in` 3000, `prompt_roles`
+# trong config/llm.yaml) → ca đó đạt, đã bỏ `xfail(strict)` "CHỜ Q10".
 
 
-async def _long_combined(reply_chars: int) -> tuple[Env, dict[str, Any], str]:
+async def _long_combined(reply_chars: int, *, budget_in: int | None = None) -> tuple[Env, dict[str, Any], str]:
     from app.api.tickets import TEXT_MAX
 
     original = ("máy em bị lỗi gì đó không rõ " * 200)[:TEXT_MAX]
     answer = ("máy in tầng 2 báo kẹt giấy, đã tắt bật lại vẫn không in được " * 40)[:reply_chars].rstrip()
-    e = env(classify(), classify(it("it_help", 0.9, "máy in tầng 2 báo kẹt giấy")))
+    e = env(classify(), classify(it("it_help", 0.9, "máy in tầng 2 báo kẹt giấy")), budget_in=budget_in)
     await submit(e, original)
     return e, await reply(e, answer), answer
 
 
-def _assert_b3_prompt_keeps_reply(e: Env, v: dict[str, Any], answer: str) -> None:
+def _assert_b3_prompt_keeps_reply(e: Env, v: dict[str, Any], answer: str, *, gateway_cut: bool) -> None:
     assert e.judge_seen[1] == v["redacted_request"] and v["redacted_request"].endswith("\n" + answer)  # B2: TRỌN câu ghép
     user = str(e.gw.llm.calls_for("b03_classify")[1].rendered_messages[1]["content"])
     assert l0(answer) in user  # trọn câu trả lời trong prompt b03 THẬT gửi đi
-    assert user.split("Yêu cầu: ", 1)[1].startswith("…")  # phần bị cắt là ĐẦU câu gốc
-    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is True
+    if gateway_cut:  # trần 2000 (cũ): gateway cắt ĐẦU câu gốc, giữ trọn đuôi (`keep_tail`)
+        assert user.split("Yêu cầu: ", 1)[1].startswith("…")  # phần bị cắt là ĐẦU câu gốc
+    assert _one(e, "intent_classified")["detail"]["request_trimmed"] is gateway_cut
 
 
 @pytest.mark.asyncio
 async def test_long_combined_b3_prompt_keeps_whole_reply_and_cuts_original_head() -> None:
-    """Gốc 4000 + trả lời 1000 ký tự (vừa phần còn lại của trần): B2 chấm TRỌN câu ghép; prompt b03 gửi đi chứa TRỌN câu trả lời, phần bị
-    cắt là ĐẦU câu gốc. Mutation "cắt đuôi như cũ" (không `keep_tail`) → đỏ ở đây."""
-    e, v, answer = await _long_combined(1000)
-    _assert_b3_prompt_keeps_reply(e, v, answer)
+    """Gốc 4000 + trả lời 1000 ký tự (vừa phần còn lại của trần) ở trần CŨ 2000: B2 chấm TRỌN câu ghép; prompt b03 gửi đi chứa TRỌN câu
+    trả lời, phần bị cắt là ĐẦU câu gốc. Mutation "cắt đuôi như cũ" (không `keep_tail`) → đỏ ở đây."""
+    e, v, answer = await _long_combined(1000, budget_in=OLD_FAST_BUDGET)
+    _assert_b3_prompt_keeps_reply(e, v, answer, gateway_cut=True)
 
 
-@CHO_BUDGET
 @pytest.mark.asyncio
 async def test_long_combined_reply_1500_kept_whole_as_specified() -> None:
-    """Ca ĐP đặt (09/11 11:35): gốc 4000 + trả lời 1500 → prompt b03 chứa trọn câu trả lời."""
+    """Ca ĐP đặt (09/11 11:35): gốc 4000 + trả lời 1500 → prompt b03 chứa trọn câu trả lời. Cấu hình THẬT (b03 đi vai chat_fast, 3000): trước
+    Q10 ca này xfail "CHỜ Q10" vì vai fast (2000) chỉ chứa ~1160 ký tự yêu cầu; nay câu ghép (≤ TEXT_MAX) vào B3 trọn vẹn, gateway không cắt."""
     e, v, answer = await _long_combined(1500)
-    _assert_b3_prompt_keeps_reply(e, v, answer)
+    _assert_b3_prompt_keeps_reply(e, v, answer, gateway_cut=False)
 
 
 @pytest.mark.asyncio
 async def test_reply_alone_over_budget_cuts_reply_tail_not_head() -> None:
-    """Riêng câu trả lời đã vượt trần (1500 ký tự với khung v6): bỏ hết câu gốc, cắt ĐUÔI câu trả lời — giữ ĐẦU câu trả lời."""
-    e, _, answer = await _long_combined(1500)
+    """Riêng câu trả lời đã vượt trần (1500 ký tự với khung v6, trần CŨ 2000): bỏ hết câu gốc, cắt ĐUÔI câu trả lời — giữ ĐẦU câu trả lời."""
+    e, _, answer = await _long_combined(1500, budget_in=OLD_FAST_BUDGET)
     user = str(e.gw.llm.calls_for("b03_classify")[1].rendered_messages[1]["content"])
     request = user.split("Yêu cầu: ", 1)[1].split("\nGợi ý nhãn:", 1)[0]
     assert request.endswith("…") and l0(answer).startswith(request[:-1].rstrip())
