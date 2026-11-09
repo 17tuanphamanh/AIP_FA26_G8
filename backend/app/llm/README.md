@@ -9,6 +9,10 @@ mục 7 (3d). Khi lệch spec: `PROGRESS.md` mục "Phase 3 — chặng 3d" (ch�
 - `config.py` — `config/llm.yaml` (không nội suy `${…}`): model hai vai trò, `base_url`, khoá đọc từ env qua TÊN
   trường `Settings`; `resolve` từ chối khởi động khi `real` thiếu model/giá/URL/khoá; `check_timing` (công thức
   Q-3a-16 < `WORKER_STALE_TURN_SECONDS/2`). `wiring.py` — `check_llm` (trước mọi kết nối) + `open_llm`.
+- Vai chat (Q10): ngoài `fast`/`strong`, `config/llm.yaml` có `chat_fast`/`chat_strong` (model từ `CHAT_MODEL`; TRỐNG = dùng đích của
+  fast/strong) và bảng `prompt_roles` (prompt id → vai THỰC SỰ dùng: model, `budget_in`, timeout, khoá cache). 5 prompt hội thoại
+  (b03, b10_need_type, b10_answer, b11_*) đi vai chat; b02_injection_judge và b14_* bị cấm khỏi bảng (validator từ chối khởi động —
+  model đã đo trong báo cáo). File prompt giữ nguyên `role`; `RuntimeLlm.role_of(prompt)` là chỗ duy nhất đổi prompt → vai.
 - `registry.py` (prompt YAML: id = tên file, biến template == `allowed_vars`, `sha256`), `context.py` (render MỘT lượt
   — giá trị không bị render lại; `random_boundary` từ `secrets`; ước lượng token `ceil(ký tự/3)`; vượt `budget_in` → cắt
   bằng chứng, tin nhắn, rồi đuôi biến `trim_vars` của prompt — Q11: `user_request` của `b11_clarify_question` — ở ranh giới từ), `schemas.py`

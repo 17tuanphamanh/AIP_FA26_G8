@@ -3,8 +3,9 @@
 Thứ tự trong một lời gọi:
 
 1. Prompt từ registry; `role`/`schema`/`cache_policy` của node phải khớp YAML (Q-3d-5) — lệch → `PromptContractError`.
-2. Render + whitelist + cắt theo `budget_in` (`llm/context.py`).
-3. Chuỗi đích của vai trò; **strong KHÔNG fallback** (P2 mục 5). Đích chính không có dòng pricing →
+2. Vai THỰC SỰ dùng (`RuntimeLlm.role_of`: `prompt_roles` của llm.yaml, không có thì `role` file khai — Q10) quyết định
+   `budget_in`, timeout, chuỗi đích, khoá cache; render + whitelist + cắt theo `budget_in` của vai đó (`llm/context.py`).
+3. Chuỗi đích của vai trò; **strong và chat_strong KHÔNG fallback** (P2 mục 5). Đích chính không có dòng pricing →
    `LLMBudgetExceeded`, 0 request (3-Q26).
 4. Cache (trừ prompt `bypass`) — hit thì trả luôn, chi phí 0.
 5. Mỗi đích: trần chi (đích trả phí, Q-3d-14) → mỗi request trả phí giữ chỗ chi phí xấu nhất trước khi gửi (S9: song
@@ -35,7 +36,7 @@ from pydantic import BaseModel, ValidationError
 from app.core.clock import Clock
 from app.core.turn_budget import TurnBudgetExceeded, window
 from app.llm.cache import cache_key, cache_mode
-from app.llm.config import RoleCfg, RuntimeLlm, Target
+from app.llm.config import NO_FALLBACK_ROLES, LlmRole, RoleCfg, RuntimeLlm, Target
 from app.llm.context import (
     BoundaryFactory,
     Rendered,
@@ -94,8 +95,9 @@ class _Call:
     span_id: str
     t0: datetime
     prompt: Prompt
-    role: Role
+    role: Role  # vai node truyền = `role` file prompt khai (hợp đồng)
     sensitivity: Sensitivity
+    llm_role: LlmRole  # vai thực sự dùng (Q10: sau `prompt_roles`) — chọn cấu hình vai, chuỗi đích
     provider: str = ""
     model: str = ""
     model_version: str | None = None
@@ -188,7 +190,7 @@ class LLMClient:
         parent = self._trace()
         if parent is None and self._store.requires_trace:
             raise RuntimeError(f"{prompt_id}: gọi LLM ngoài lượt graph — không có span cha để ghi llm_calls (Q-3d-2)")
-        call = _Call(uuid4().hex, self._clock.now(), prompt, role, sensitivity)
+        call = _Call(uuid4().hex, self._clock.now(), prompt, role, sensitivity, self._rt.role_of(prompt))
         try:
             obj = await self._run(call, prompt, variables, schema, cache_policy, temperature, kb_version, parent, keep_tail)
         except BaseException as e:
@@ -205,10 +207,10 @@ class LLMClient:
         cache_policy: CachePolicy, temperature: float | None, kb_version: str | None, parent: TraceParent | None,
         keep_tail: Mapping[str, int] | None = None,
     ) -> T:  # fmt: skip
-        rcfg = self._rt.roles[call.role]
-        chain = list(self._rt.chains[call.role])
-        if call.role == "strong":
-            chain = chain[:1]  # P2 mục 5: strong KHÔNG fallback — kể cả sang provider khác
+        rcfg = self._rt.roles[call.llm_role]
+        chain = list(self._rt.chains[call.llm_role])
+        if call.llm_role in NO_FALLBACK_ROLES:
+            chain = chain[:1]  # P2 mục 5: strong KHÔNG fallback — kể cả sang provider khác (chat_strong cũng vậy)
         primary = chain[0]
         call.provider, call.model, call.model_version = primary.provider, primary.model, primary.model_version
         rendered = render(prompt, variables, budget_in=rcfg.budget_in, estimate=self._estimate,
@@ -406,6 +408,7 @@ class LLMClient:
             duration_ms=latency, status="error" if call.error else "ok",
             attributes={
                 "prompt_id": call.prompt.id, "prompt_version": call.prompt.version, "role": call.role,
+                "llm_role": call.llm_role,
                 "sensitivity": call.sensitivity, "attempts": call.attempts, "failures": list(call.failures),
                 "est_tokens_in": call.est_tokens_in, "usage_tokens_in": call.usage_tokens_in,
                 "trimmed_evidence": call.trimmed_evidence, "trimmed_messages": call.trimmed_messages,

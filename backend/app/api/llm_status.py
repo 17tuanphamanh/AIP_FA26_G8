@@ -29,7 +29,7 @@ from app.api.alerts import ErrorDetail
 from app.api.health import _kb_status
 from app.auth.deps import require
 from app.auth.models import Principal
-from app.llm.config import ROLES, SCRIPTED_MODEL, LlmConfig, load_llm_config
+from app.llm.config import BASE_ROLES, ROLES, SCRIPTED_MODEL, LlmConfig, load_llm_config
 from app.monitor.db import read_snapshot
 from app.monitor.queries.llm_usage import LlmUsage, llm_usage
 from app.settings import Settings
@@ -90,7 +90,7 @@ READ_ERRORS: dict[int | str, dict[str, Any]] = {
 def _models(cfg: LlmConfig, settings: Settings) -> Models:
     if settings.llm_backend == "scripted":
         return Models(fast=SCRIPTED_MODEL, strong=SCRIPTED_MODEL)
-    got = {r: getattr(settings, cfg.roles[r].model_setting) or None for r in ROLES}
+    got = {r: getattr(settings, cfg.roles[r].model_setting) or None for r in BASE_ROLES}  # Q10: trạng thái chỉ báo fast/strong, không đổi hợp đồng API
     return Models(fast=got["fast"], strong=got["strong"])
 
 
