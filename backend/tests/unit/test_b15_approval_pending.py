@@ -2,7 +2,7 @@
 
 Bằng chứng (demo): 8 ca gửi duyệt (gia hạn VPN, uTorrent…) → người dùng KHÔNG nhận tin nào — B15 chỉ `notify_approver`. Nay: sau khi tạo
 phiếu + `notify_approver`, B15 gửi MỘT tin CỐ ĐỊNH qua `effects.once("notify_user", sub="approval_pending")` + output guard:
-"Yêu cầu {nhãn hành động} cho {đích} cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn ngay tại đây."
+"Yêu cầu {nhãn hành động} cho {đích} cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn tại đây."
 (`ACTION_LABELS` + `target_phrase`; KHÔNG nêu người duyệt). Chạy lại node / nhánh phiếu cũ (TC33) không gửi lần 2. Ticket CON: tin thành
 notice của con (needs=none) như mọi `notify_user` khác của con. `kind` tin = `approval_pending`, needs `none` (FE: tin thường, không nút).
 """
@@ -28,7 +28,7 @@ from tests.unit.test_b15_prepare_approval import NOW, Env, _crash_once, _x1
 
 pytestmark = pytest.mark.asyncio
 
-TAIL = "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn ngay tại đây."
+TAIL = "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn tại đây."
 X1_TEXT = f"Yêu cầu gia hạn chứng chỉ VPN cho máy LAP-0501 {TAIL}"
 
 

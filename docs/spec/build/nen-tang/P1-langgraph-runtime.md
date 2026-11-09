@@ -485,8 +485,8 @@ Khóa cấp session tách "giữ khóa" khỏi "giữ transaction": kết nối 
 Ba thành phần:
 
 1. **Hộp thư con (`child_notices`, P7).** Mọi chỗ con định nhắn người dùng — B10 (câu trả lời), B11 (câu hỏi), B16 (lý do từ chối), B18 (kết quả), B20 (thông báo chuyển kỹ thuật viên) — đều gọi cùng hàm `notify_user`. Hàm này kiểm `state["parent_ticket_id"]`: nếu là con thì ghi vào `child_notices` (kèm `needs ∈ {none, answer, confirm}`) thay vì gửi. **Không nhánh nào phải đổi logic**, chỉ thêm tham số `needs` ở B10, B11, B18.
-2. **Điểm dừng của con.** Con được coi là "đã dừng" khi (a) đã kết thúc (`tickets.final_state` có giá trị), hoặc (b) đang chờ người dùng ở `clarify_wait`/`confirm_wait` và có notice `needs≠none` chưa gửi. `S_PENDING_APPROVAL` **không** phải điểm dừng, vì đó là chờ L1, không phải chờ người dùng. Con ở điểm dừng (b) **không** đặt hạn riêng — hạn do cha giữ.
-3. **Vòng của cha.** Cha lặp: chờ mọi con dừng → gửi một tin tổng hợp → chờ người dùng trả lời một lần → chuyển từng phần câu trả lời xuống đúng con → chờ các con dừng lại lần nữa → … cho tới khi mọi con kết thúc.
+2. **Điểm dừng của con.** Con được coi là "đã dừng" khi (a) đã kết thúc (`tickets.final_state` có giá trị), hoặc (b) đang chờ người dùng ở `clarify_wait`/`confirm_wait` và có notice `needs≠none` chưa gửi, hoặc (c) **đang chờ L1 duyệt** (phiếu `approvals.status='pending'` và không còn lượt mở) **(D-77 — ĐP chốt 09/11, bản demo lo-0811; bản trước: `S_PENDING_APPROVAL` không phải điểm dừng)**. Con ở điểm dừng (b) **không** đặt hạn riêng — hạn do cha giữ.
+3. **Vòng của cha.** Cha lặp: chờ mọi con dừng → gửi một tin tổng hợp → chờ người dùng trả lời một lần → chuyển từng phần câu trả lời xuống đúng con → chờ các con dừng lại lần nữa → … cho tới khi mọi con kết thúc. **D-77 (ĐP chốt 09/11, bản demo lo-0811):** chỉ gửi vòng khi có ít nhất một notice chưa gửi hoặc mọi con đã kết thúc; không ý nào chờ người dùng mà còn con chờ duyệt → cha quay lại chờ con, không đặt hạn người dùng.
 
 ```python
 # notify/service.py — điểm gửi tin DUY NHẤT cho người yêu cầu (luôn được gọi qua effects.once)
@@ -509,8 +509,10 @@ async def notify_user(state, text, *, needs="none"):
 async def parent_wait(state):                                    # S_CLASSIFYING (cha)
     view = await children_view(state["children"])                # đọc DB, không tin sự kiện (D-17)
     # view[cid] = {"final": final_state | None, "pending": [notice chưa gửi], "needs": none|answer|confirm}
-    if not all(v["final"] or v["needs"] != "none" for v in view.values()):
-        interrupt({"wait": "children"})                          # có con đang xử lý hoặc chờ L1 duyệt
+    # D-77 (ĐP chốt 09/11, bản demo lo-0811): con chờ L1 duyệt cũng đã dừng; cần ≥ 1 notice chưa gửi hoặc mọi con kết thúc
+    stopped = all(v["final"] or v["needs"] != "none" or v["awaiting_approval"] for v in view.values())
+    if not (stopped and (any(v["pending"] for v in view.values()) or all(v["final"] for v in view.values()))):
+        interrupt({"wait": "children"})                          # có con đang xử lý, hoặc không có gì mới để báo
         # Khi được đánh thức, LangGraph chạy lại node và interrupt() TRẢ VỀ giá trị resume
         # (không dừng lần nữa). Vì vậy phải quay lại chính node này để đối soát với dữ liệu mới,
         # thay vì đi tiếp với `view` cũ — đánh thức sớm (một con dừng, con khác chưa) là chuyện bình thường.
@@ -524,12 +526,15 @@ async def parent_wait(state):                                    # S_CLASSIFYING
         agg, final = aggregate_children(view)                    # bảng 6 trường hợp [Chốt B5]
         return goto(state, final, next_node="b20_audit", step="B5", event="children_aggregated",
                     aggregate_status=agg, parent_round=rnd)      # D-30: không exit_code, không close_reason
+    awaiting = {cid: v["needs"] for cid, v in view.items() if not v["final"] and v["needs"] != "none"}  # D-77
+    if not awaiting:                                             # chỉ còn con chờ duyệt: chờ con, KHÔNG đặt hạn người dùng
+        return goto(state, S_CLASSIFYING, next_node="parent_wait", step="B5", event="digest_sent",
+                    parent_round=rnd, awaiting={})
     kind = "clarify" if any(v["needs"] == "answer" for v in view.values()) else "confirm"
     await effects.once(state, "deadline_set", deadlines.set, state["ticket_id"], kind,
                        step="B5", sub=f"round:{rnd}")            # 24h nếu có câu hỏi, 48h nếu chỉ xác nhận
     return goto(state, S_CONFIRMING, next_node="parent_reply_wait", step="B5",
-                event="digest_sent", parent_round=rnd,
-                awaiting={cid: v["needs"] for cid, v in view.items() if not v["final"]})
+                event="digest_sent", parent_round=rnd, awaiting=awaiting)
 
 async def parent_reply_wait(state):                              # S_CONFIRMING (cha)
     ev = interrupt({"wait": "parent_reply"})
@@ -563,9 +568,9 @@ async def parent_reply_wait(state):                              # S_CONFIRMING 
 
 ### 8.3. Đánh đổi đã chấp nhận và cách giảm nhẹ
 
-- **Người dùng chờ ý chậm nhất.** Nếu ý 1 xong ngay còn ý 2 chờ L1 duyệt, tin đầu tiên chỉ đến khi ý 2 có kết quả hoặc hết hạn duyệt (tối đa `SLA_MINUTES=30` **[Chốt]**, sau đó con thành E6 và đã dừng). **Giảm nhẹ [Đề xuất]:** khung trạng thái trên giao diện (T0, polling 2 giây **[Chốt]**) hiển thị tiến độ từng ý ("Đang xử lý", "Chờ IT duyệt", "Đã có kết quả — chờ tổng hợp"). Khung này không phải tin nhắn, nên không phá nguyên tắc một tin.
+- **Người dùng chờ ý chậm nhất.** ~~Nếu ý 1 xong ngay còn ý 2 chờ L1 duyệt, tin đầu tiên chỉ đến khi ý 2 có kết quả hoặc hết hạn duyệt (tối đa `SLA_MINUTES=30` **[Chốt]**, sau đó con thành E6 và đã dừng).~~ **Bỏ bởi D-77 (ĐP chốt 09/11, bản demo lo-0811):** ý chờ duyệt là điểm dừng — tin đầu tiên đi ngay, báo "đang chờ duyệt" cùng kết quả/câu hỏi các ý khác; kết quả duyệt đi ở vòng mới khi cha đang chờ con. **Giới hạn còn lại:** nếu lúc đó cha đang chờ người dùng trả lời ý khác, kết quả duyệt đi cùng vòng sau lần trả lời kế tiếp (hoặc khi hết hạn của cha). **Giảm nhẹ [Đề xuất]:** khung trạng thái trên giao diện (T0, polling 2 giây **[Chốt]**) hiển thị tiến độ từng ý ("Đang xử lý", "Chờ IT duyệt", "Đã có kết quả — chờ tổng hợp"). Khung này không phải tin nhắn, nên không phá nguyên tắc một tin.
 - **Tác dụng phụ bên ngoài vẫn xảy ra ngay.** Ví dụ reset mật khẩu gửi email mật khẩu mới ngay ở B17. Đó là hành vi của hệ thống ngoài, không phải tin trong hội thoại.
-- **Câu hỏi làm rõ cũng bị gom.** Nếu ý 2 cần hỏi thêm trong khi ý 1 đang chờ duyệt, câu hỏi chỉ đến cùng tin tổng hợp. Đổi lại người dùng trả lời một lần cho mọi ý.
+- **Câu hỏi làm rõ cũng bị gom.** ~~Nếu ý 2 cần hỏi thêm trong khi ý 1 đang chờ duyệt, câu hỏi chỉ đến cùng tin tổng hợp.~~ **D-77 (ĐP chốt 09/11, bản demo lo-0811):** câu hỏi của ý 2 không còn chờ ý 1 duyệt — đi ngay trong vòng có tin "đang chờ duyệt" của ý 1. Người dùng vẫn trả lời một lần cho mọi ý đang chờ mình.
 
 ### 8.4. Đóng ticket cha [Đề xuất D-30]
 

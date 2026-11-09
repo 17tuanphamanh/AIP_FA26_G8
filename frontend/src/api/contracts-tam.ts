@@ -359,7 +359,8 @@ export type ChildProgress = {
 // `items: []`, `text` = chỉ câu tổng kết). `DigestItem` là dạng ĐÃ chuẩn hoá (components/messages.ts — kind/needs lạ đã đổi).
 export type DigestItemKind = "result" | "question" | "rejection" | "escalation";
 export type DigestNeeds = "confirm" | "answer" | "none";
-export type DigestItem = { child_id: string; index: number; title: string; kind: DigestItemKind; text: string; needs: DigestNeeds };
+// `step` (Q6 c2, D-77): bước của notice con (`source_step`, vd "B15" = tin "chờ duyệt"); tin cũ không có → undefined.
+export type DigestItem = { child_id: string; index: number; title: string; kind: DigestItemKind; text: string; needs: DigestNeeds; step?: string };
 export type DigestConversationItem = { role: "assistant"; kind: "digest"; round: number; text: string; items: DigestItem[] };
 
 // `ReplyIn` (extra="forbid" mọi tầng, `items` ≥ 1): khoá = child_id "<cha>-<số>" (khác dạng → 422 `["body.items"]`, vị trí

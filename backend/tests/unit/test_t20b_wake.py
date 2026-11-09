@@ -103,14 +103,15 @@ async def test_w1_child_ends_wakes_parent() -> None:
     assert spy.calls == [("p1", frozenset())]
 
 
-async def test_w2_child_stops_at_approval_wait_does_not_wake() -> None:
-    """w2 (P6, D-31): con dừng ở `approval_wait` (chờ L1 không phải điểm dừng) → KHÔNG đánh thức."""
+async def test_w2_child_stops_at_approval_wait_wakes_parent_after_release() -> None:
+    """w2 (P6; D-77 đổi D-31): con dừng ở `approval_wait` sau một lượt THƯỜNG (chờ L1 nay là điểm dừng) → `wake_parent(cha)` đúng một
+    lần, SAU khi nhả khoá con (cùng ràng buộc 2b-Q7 như w1)."""
     h, spy, r = await _parent_and_child({"b11_slots": ["missing", "complete"]})
     assert r.waiting_at == "clarify_wait"
     spy.calls.clear()
     r = await deliver_event(h.runner, "p1-1", S_CLARIFYING, {"kind": "user_reply", "text": "máy LAP-1"})
     assert r.waiting_at == "approval_wait"
-    assert spy.calls == []
+    assert spy.calls == [("p1", frozenset())]
 
 
 async def test_w3_nested_child_turns_never_call_after_turn_no_deadlock() -> None:

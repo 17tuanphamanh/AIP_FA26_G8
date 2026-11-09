@@ -53,7 +53,8 @@ function toDigestItem(raw: unknown): DigestItem | null {
   }
   const kind = ITEM_KINDS.has(String(raw.kind)) ? (raw.kind as DigestItemKind) : "result";
   const needs = NEEDS.has(String(raw.needs)) ? (raw.needs as DigestNeeds) : "none";
-  return { child_id, index, title, kind, text, needs };
+  // `step` (Q6 c2): chỉ nhận chuỗi; thiếu / sai kiểu → bỏ khoá (khối cũ hiện như trước).
+  return typeof raw.step === "string" ? { child_id, index, title, kind, text, needs, step: raw.step } : { child_id, index, title, kind, text, needs };
 }
 
 /** Dòng của một khối trong `text` của tin — đúng mẫu `compose_digest` (backend/app/domain/messages.py). */

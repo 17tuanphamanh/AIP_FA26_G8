@@ -17,8 +17,9 @@ duyệt → reset svc_backup · tc08 R07 (+R09) TỪ CHỐI → 0 ghi · tc17 ca
 E2 · tc21a cài lỗi 500 → E7 · tc21b có phí: license OK, cài lỗi → E7, 0 hoàn tác · hb04 AutoCAD hết license 409 → E7 · g5-audit
 `audit_check` trên đúng ticket của lần chạy + quét log. `S=all` ghi biên bản `bienban-gate5-<YYYYmmdd>.md` (không commit bản đã điền).
 
-T20b — nhiều ý (phase5 5.2.7, PLAN-T20b S15): preset cha `tcNN` + preset con `tcNN-<i>` (resolver P13). tc34 (= TC12) reset + Adobe:
-0 tin tới cha trước khi duyệt → duyệt → 1 digest → `/reply` → `ALL_RESOLVED` · tc35 câu hỏi ở ý 2 → 2 vòng → `ALL_RESOLVED` · tc36 "Chưa
+T20b — nhiều ý (phase5 5.2.7, PLAN-T20b S15): preset cha `tcNN` + preset con `tcNN-<i>` (resolver P13). tc34 (= TC12) reset + Adobe
+(D-77): vòng 1 ngay (kết quả ý 1 + "chờ duyệt" ý 2, 0 lời gọi ghi ý 2) → duyệt (không tin chen) → `/reply` ý 1 → vòng 2 → `/reply` ý 2 →
+`ALL_RESOLVED` · tc35 câu hỏi ở ý 2 → 2 vòng → `ALL_RESOLVED` · tc36 "Chưa
 ổn" ý 1 → `PARTIALLY_ESCALATED` · tc32 ý ngoài phạm vi → con E1 ngay → `PARTIALLY_ESCALATED` · tc12r L1 từ chối ý 2 → `PARTIALLY_REJECTED`.
 Mỗi kịch bản: số tin assistant của cha = số lượt người dùng (D-31), `/messages`·`/confirm` lên con → 409, `/reply` thiếu/thừa ý → 422 và
 0 `child_event`, `children_progress` theo mốc; con được gắn chủ để `g5-audit` soát đủ điểm log của từng con.
@@ -496,12 +497,16 @@ def _reply(ctx: Ctx, t: str, items: Mapping[str, Any]) -> dict[str, Any]:
     return ctx.settle(t, before)
 
 
-def _decide_child(ctx: Ctx, t: str, child: str, body: Mapping[str, Any]) -> dict[str, Any]:
-    """L1 quyết phiếu của con → con chạy tiếp → `after_turn` đánh thức cha → chờ lượt của CHA đóng."""
-    before = ctx.turn_count(t)
+def _decide_child_while_parent_waits(ctx: Ctx, t: str, child: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    """D-77: L1 quyết phiếu của con trong lúc cha đang chờ người dùng trả lời ý khác (`parent_reply_wait`) → chờ lượt của CON đóng
+    (`ctx.decide`); `after_turn` đánh thức cha là no-op → cha KHÔNG có lượt mới, KHÔNG tin chen (kết quả đi vòng sau lần trả lời kế tiếp)."""
+    before, msgs = ctx.turn_count(t), len(_assistant(ctx.view(t)))
     r, _ = ctx.decide(child, body)
     ctx.report.eq(child, f"{HA} quyết phiếu con → 202", 202, r.status_code)
-    return ctx.settle(t, before)
+    v = ctx.view(t)
+    ctx.report.eq(t, "D-77: cha chờ trả lời → 0 lượt mới, 0 tin chen", (before, msgs, S_CONFIRMING),
+                  (ctx.turn_count(t), len(_assistant(v)), v["status"]))  # fmt: skip
+    return v
 
 
 def _parent_closed(ctx: Ctx, t: str, v: Mapping[str, Any], final: str, agg: str, assistant: int) -> None:
@@ -520,15 +525,17 @@ def _child_final(ctx: Ctx, c: str, final: str, close_reason: str | None, code: s
 
 
 def _tc34_like(ctx: Ctx, spec: tuple[str, str, str]) -> tuple[str, list[str], dict[str, Any]]:
-    """Chung tc34 / tc36 / tc12r tới lúc con 2 chờ duyệt: con 1 R01 AUTO → reset 1 lần → `confirm_wait`; con 2 R14 → phiếu; 0 tin tới
-    cha trước khi duyệt; `children_progress` = [ready, pending_approval]."""
+    """Chung tc34 / tc36 / tc12r tới lúc con 2 chờ duyệt: con 1 R01 AUTO → reset 1 lần → `confirm_wait`; con 2 R14 → phiếu. D-77: con
+    chờ duyệt cũng đã dừng → vòng 1 NGAY (kết quả ý 1 + "chờ duyệt" ý 2), cha chờ trả lời ý 1; `children_progress` =
+    [needs_user, pending_approval]."""
     rep = ctx.report
     _begin(ctx)
     t, v = ctx.ticket(spec)
     c1, c2 = _children(ctx, t, 2)
-    rep.eq(t, "cha ở parent_wait (chưa đủ con dừng)", "S_CLASSIFYING", v["status"])
-    rep.eq(t, "0 tin assistant trước khi duyệt (D-31)", 0, len(_assistant(v)))
-    rep.eq(t, "children_progress lúc chờ duyệt", ["ready", "pending_approval"], _progress(v))
+    rep.eq(t, "cha chờ trả lời ý 1 (D-77: vòng 1 không chờ ý chờ duyệt)", S_CONFIRMING, v["status"])
+    rep.eq(t, "1 tin assistant trước khi duyệt = vòng 1 (D-77)", 1, len(_assistant(v)))
+    _digest_round(ctx, t, v, 1, ["result", "result"])  # kết quả ý 1 + "chờ duyệt" ý 2 (kind `result`, needs none — Q3 M4)
+    rep.eq(t, "children_progress lúc chờ duyệt", ["needs_user", "pending_approval"], _progress(v))
     rep.eq(c1, "con 1 chờ xác nhận", S_CONFIRMING, ctx.view(c1)["status"])
     rep.eq(c1, f"POST {RESET_NV001} đúng 1 lần", 1, ctx.calls(RESET_NV001))
     rep.eq(c2, "con 2 chờ duyệt", S_PENDING_APPROVAL, ctx.view(c2)["status"])
@@ -537,20 +544,23 @@ def _tc34_like(ctx: Ctx, spec: tuple[str, str, str]) -> tuple[str, list[str], di
 
 
 def tc34(ctx: Ctx) -> None:
-    """tc12 / tc34 (5.2.7): duyệt con 2 → assign + install → cha 1 digest 2 khối `result` → `/reply` cả hai "Đã ổn" → 2 con
-    `resolved_user_confirmed` → tin tổng kết → cha `S_RESOLVED`/`ALL_RESOLVED`; tin assistant của cha = 2."""
+    """tc12 / tc34 (5.2.7; D-77): vòng 1 ngay → duyệt con 2 (cha đang chờ trả lời ý 1: không tin chen) → assign + install → `/reply`
+    ý 1 "Đã ổn" → vòng 2 (kết quả ý 2) → `/reply` ý 2 "Đã ổn" → 2 con `resolved_user_confirmed` → tin tổng kết → cha `S_RESOLVED`/
+    `ALL_RESOLVED`; tin assistant của cha = 3 = số lượt người dùng."""
     rep = ctx.report
     t, (c1, c2), _ = _tc34_like(ctx, TC34)
-    v = _decide_child(ctx, t, c2, {"decision": "approved"})
+    v = _decide_child_while_parent_waits(ctx, t, c2, {"decision": "approved"})
     rep.eq(c2, "duyệt → assign 1 + install 1", (1, 1), (ctx.calls(ASSIGN_ACROBAT), ctx.calls(INSTALL)))
-    _digest_round(ctx, t, v, 1, ["result", "result"])
-    rep.eq(t, "children_progress sau digest", ["needs_user", "needs_user"], _progress(v))
-    items = {c1: {"confirmed": True}, c2: {"confirmed": True}}
+    rep.eq(t, "children_progress sau duyệt", ["needs_user", "ready"], _progress(v))
+    items = {c1: {"confirmed": True}}
     _guards(ctx, t, [c1, c2], items)
     v = _reply(ctx, t, items)
-    for c in (c1, c2):
-        _child_final(ctx, c, S_RESOLVED, "resolved_user_confirmed", None)
-    _parent_closed(ctx, t, v, S_RESOLVED, "ALL_RESOLVED", 2)
+    _child_final(ctx, c1, S_RESOLVED, "resolved_user_confirmed", None)
+    _digest_round(ctx, t, v, 2, ["result"])
+    rep.eq(t, "children_progress sau vòng 2", ["closed", "needs_user"], _progress(v))
+    v = _reply(ctx, t, {c2: {"confirmed": True}})
+    _child_final(ctx, c2, S_RESOLVED, "resolved_user_confirmed", None)
+    _parent_closed(ctx, t, v, S_RESOLVED, "ALL_RESOLVED", 3)
     rep.eq(t, "tổng lời gọi ghi = 3 (reset + assign + install)", 3, ctx.mock_writes())
 
 
@@ -575,19 +585,20 @@ def tc35(ctx: Ctx) -> None:
 
 
 def tc36(ctx: Ctx) -> None:
-    """tc36: như tc34, trả lời {ý 1 "Chưa ổn" + ghi chú, ý 2 "Đã ổn"} → con 1 E8, con 2 `resolved_user_confirmed`; cha
-    `S_RESOLVED`/`PARTIALLY_ESCALATED`; 1 dòng `escalations` (con 1), 0 cho cha."""
+    """tc36 (D-77): như tc34, ý 1 "Chưa ổn" + ghi chú (vòng 1) → con 1 E8 → vòng 2 (`escalation` ý 1 + kết quả ý 2) → ý 2 "Đã ổn" →
+    con 2 `resolved_user_confirmed`; cha `S_RESOLVED`/`PARTIALLY_ESCALATED`; 1 dòng `escalations` (con 1), 0 cho cha; 3 tin."""
     rep = ctx.report
     t, (c1, c2), _ = _tc34_like(ctx, TC36)
-    v = _decide_child(ctx, t, c2, {"decision": "approved"})
-    _digest_round(ctx, t, v, 1, ["result", "result"])
-    items = {c1: {"confirmed": False, "note": UNRESOLVED_NOTE}, c2: {"confirmed": True}}
+    _decide_child_while_parent_waits(ctx, t, c2, {"decision": "approved"})
+    items = {c1: {"confirmed": False, "note": UNRESOLVED_NOTE}}
     _guards(ctx, t, [c1, c2], items)
     v = _reply(ctx, t, items)
     _child_final(ctx, c1, S_ESCALATED, None, "E8")
+    _digest_round(ctx, t, v, 2, ["escalation", "result"])
+    v = _reply(ctx, t, {c2: {"confirmed": True}})
     _child_final(ctx, c2, S_RESOLVED, "resolved_user_confirmed", None)
     rep.eq(c1, "escalations con 1", [["E8", None]], ctx.escalation(c1))
-    _parent_closed(ctx, t, v, S_RESOLVED, "PARTIALLY_ESCALATED", 2)
+    _parent_closed(ctx, t, v, S_RESOLVED, "PARTIALLY_ESCALATED", 3)
 
 
 def tc32(ctx: Ctx) -> None:
@@ -608,18 +619,18 @@ def tc32(ctx: Ctx) -> None:
 
 
 def tc12r(ctx: Ctx) -> None:
-    """tc12r: như tc34, L1 TỪ CHỐI ý 2 → con 2 `S_REJECTED` (notice `rejection`, `needs=none`) → digest `result` + `rejection` →
-    `/reply` {ý 1} → cha `S_RESOLVED`/`PARTIALLY_REJECTED`; 0 lời gọi ghi cho ý 2."""
+    """tc12r (D-77): vòng 1 ngay → L1 TỪ CHỐI ý 2 (cha chờ trả lời ý 1: không tin chen) → con 2 `S_REJECTED` (notice `rejection`,
+    `needs=none`) → `/reply` {ý 1} → vòng 2 `rejection` + tổng kết → cha `S_RESOLVED`/`PARTIALLY_REJECTED`; 0 lời gọi ghi cho ý 2; 2 tin."""
     rep = ctx.report
     t, (c1, c2), _ = _tc34_like(ctx, TC12R)
-    v = _decide_child(ctx, t, c2, {"decision": "rejected", "reason_code": "policy_violation", "note": REJECT_NOTE})
+    _decide_child_while_parent_waits(ctx, t, c2, {"decision": "rejected", "reason_code": "policy_violation", "note": REJECT_NOTE})
     _child_final(ctx, c2, S_REJECTED, "rejected_by_approver", None)
     rep.eq(c2, "0 lời gọi ghi cho ý 2", 0, ctx.calls(ASSIGN_ACROBAT) + ctx.calls(INSTALL))
-    _digest_round(ctx, t, v, 1, ["result", "rejection"])
     items = {c1: {"confirmed": True}}
     _guards(ctx, t, [c1, c2], items)
     v = _reply(ctx, t, items)
     _child_final(ctx, c1, S_RESOLVED, "resolved_user_confirmed", None)
+    _digest_round(ctx, t, v, 2, ["rejection"])
     _parent_closed(ctx, t, v, S_RESOLVED, "PARTIALLY_REJECTED", 2)
     rep.eq(t, "tổng lời gọi ghi = 1 (chỉ reset)", 1, ctx.mock_writes())
 

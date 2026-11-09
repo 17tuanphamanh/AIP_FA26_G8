@@ -60,27 +60,32 @@ def assert_parent_closed(f: Flow, final_state: str, aggregate: str) -> None:
 
 
 async def test_tc34_two_children_one_needs_approval_all_resolved() -> None:
-    """tc34: con 1 R01 → reset 1 lần → `confirm_wait`; con 2 R14 → phiếu → 0 tin tới cha trước khi duyệt → duyệt → install →
-    dừng; cha 1 digest 2 khối `result` → reply cả hai "Đã ổn" → 2 con `resolved_user_confirmed` → tin tổng kết → `S_RESOLVED`/
-    `ALL_RESOLVED`, `close_reason`/`exit_code` NULL; số tin assistant cha = số lượt người dùng (2)."""
+    """tc34 (D-77): con 1 R01 → reset 1 lần → `confirm_wait`; con 2 R14 → phiếu, 0 lời gọi ghi trước khi duyệt; vòng 1 NGAY: kết quả ý 1
+    (`confirm`) + "chờ duyệt" ý 2 (`none`), `awaiting` chỉ ý 1 → duyệt → install 1 lần → `confirm_wait`, KHÔNG tin chen (cha đang chờ
+    trả lời) → reply ý 1 "Đã ổn" → vòng 2 kết quả ý 2 → reply ý 2 "Đã ổn" → 2 con `resolved_user_confirmed` → tin tổng kết →
+    `S_RESOLVED`/`ALL_RESOLVED`, `close_reason`/`exit_code` NULL; số tin assistant cha = số lượt người dùng (3)."""
     f = make_flow(classify(reset_item(), adobe_item()))
     await f.submit(TC34)
-    assert f.h.executor.calls["T1-1"] == 1 and f.h.executor.calls["T1-2"] == 0
-    assert await f.assistant_msgs() == []  # 0 tin trước khi duyệt
-    await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2"))
+    assert f.h.executor.calls["T1-1"] == 1 and f.h.executor.calls["T1-2"] == 0  # chưa duyệt → 0 lời gọi ghi
     [d1] = digests(await f.assistant_msgs())
-    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — cha gom cùng vòng với kết quả của ý 2.
+    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — D-77: báo ngay ở vòng 1.
     assert [(i["child_id"], i["kind"], i["needs"]) for i in d1["items"]] == [
-        ("T1-1", "result", "confirm"), ("T1-2", "result", "none"), ("T1-2", "result", "confirm")]
+        ("T1-1", "result", "confirm"), ("T1-2", "result", "none")]
     assert "cần được duyệt" in d1["items"][1]["text"]
-    await reply(f, {"T1-1": {"confirmed": True}, "T1-2": {"confirmed": True}})
+    assert (await f.values("T1"))["awaiting"] == {"T1-1": "confirm"}
+    await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2"))
+    assert f.h.executor.calls["T1-2"] == 1 and len(await f.assistant_msgs()) == 1
+    await reply(f, {"T1-1": {"confirmed": True}})
+    d2 = digests(await f.assistant_msgs())[-1]
+    assert (d2["round"], [(i["child_id"], i["kind"], i["needs"]) for i in d2["items"]]) == (2, [("T1-2", "result", "confirm")])
+    await reply(f, {"T1-2": {"confirmed": True}})
     for cid in ("T1-1", "T1-2"):
         v = await f.values(cid)
         assert (v["status"], v["close_reason"]) == (S_RESOLVED, "resolved_user_confirmed")
         assert f.h.executor.calls[cid] == 1
     assert_parent_closed(f, S_RESOLVED, "ALL_RESOLVED")
     msgs = await f.assistant_msgs()
-    assert len(msgs) == 2  # = lượt người dùng: gửi câu + một lần trả lời
+    assert len(msgs) == 3  # = lượt người dùng: gửi câu + hai lần trả lời
     assert msgs[-1]["text"] == "Cả 2 yêu cầu đã hoàn tất." and msgs[-1]["items"] == []
     assert (await f.waiting("T1")) is None
 
@@ -106,19 +111,20 @@ async def test_tc35_question_then_second_round_all_resolved() -> None:
 
 
 async def test_tc36_unresolved_one_confirmed_other_partially_escalated() -> None:
-    """tc36: như tc34 nhưng trả lời {ý 1 "Chưa ổn" + ghi chú, ý 2 "Đã ổn"} → con 1 E8, con 2 `resolved_user_confirmed`; cha
-    `S_RESOLVED`/`PARTIALLY_ESCALATED`, `close_reason` NULL; 1 dòng `escalations` (con 1), 0 cho cha."""
+    """tc36 (D-77): như tc34 nhưng ý 1 "Chưa ổn" + ghi chú (vòng 1), ý 2 "Đã ổn" (vòng 2) → con 1 E8, con 2 `resolved_user_confirmed`;
+    cha `S_RESOLVED`/`PARTIALLY_ESCALATED`, `close_reason` NULL; 1 dòng `escalations` (con 1), 0 cho cha."""
     f = make_flow(classify(reset_item(), adobe_item()))
     await f.submit(TC34)
     await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2"))
-    await reply(f, {"T1-1": {"confirmed": False, "note": "vẫn chưa đăng nhập được"}, "T1-2": {"confirmed": True}})
+    await reply(f, {"T1-1": {"confirmed": False, "note": "vẫn chưa đăng nhập được"}})
+    await reply(f, {"T1-2": {"confirmed": True}})
     c1, c2 = await f.values("T1-1"), await f.values("T1-2")
     assert (c1["status"], c1["exit_code"]) == (S_ESCALATED, "E8")
     assert (c2["status"], c2["close_reason"]) == (S_RESOLVED, "resolved_user_confirmed")
     assert_parent_closed(f, S_RESOLVED, "PARTIALLY_ESCALATED")
     assert len(f.h.escalations.of("T1-1")) == 1
     msgs = await f.assistant_msgs()
-    assert len(msgs) == 2
+    assert len(msgs) == 3  # = lượt người dùng: gửi câu + hai lần trả lời
     assert msgs[-1]["text"].splitlines()[-1] == "Đã xong 1/2 yêu cầu; phần còn lại đã chuyển kỹ thuật viên."
 
 
@@ -138,19 +144,23 @@ async def test_tc32_out_of_scope_child_e1_immediately_partially_escalated() -> N
 
 
 async def test_tc12r_l1_rejects_child2_partially_rejected() -> None:
-    """tc12r: L1 từ chối ý 2 → con 2 `S_REJECTED` (notice `rejection`, `needs=none`) → digest `result` + `rejection` → reply {ý 1} →
-    cha `S_RESOLVED`/`PARTIALLY_REJECTED`; 0 lời gọi ghi cho ý 2."""
+    """tc12r (D-77): vòng 1 ngay (`result` ý 1 + "chờ duyệt" ý 2) → L1 từ chối ý 2 → con 2 `S_REJECTED` (notice `rejection`,
+    `needs=none`), không tin chen (cha chờ trả lời ý 1) → reply {ý 1} → vòng 2 = `rejection` + câu tổng kết → cha `S_RESOLVED`/
+    `PARTIALLY_REJECTED`; 0 lời gọi ghi cho ý 2."""
     f = make_flow(classify(reset_item(), adobe_item()))
     await f.submit(TC34)
+    [d1] = digests(await f.assistant_msgs())
+    assert [i["kind"] for i in d1["items"]] == ["result", "result"]
     await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2", "rejected", note="Không đủ license"))
     assert (await f.values("T1-2"))["status"] == S_REJECTED
-    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — cha gom cùng vòng với kết quả của ý 2.
+    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — gửi ở vòng 1; từ chối gửi ở vòng 2.
     pending, nt = f.h.tickets.notices_of("T1-2")
-    assert (pending["kind"], pending["needs"], pending["source_step"]) == ("result", "none", "B15")
+    assert (pending["kind"], pending["needs"], pending["source_step"], pending["delivered_round"]) == ("result", "none", "B15", 1)
     assert (nt["kind"], nt["needs"], nt["source_step"]) == ("rejection", "none", "B16")
-    [d1] = digests(await f.assistant_msgs())
-    assert [i["kind"] for i in d1["items"]] == ["result", "result", "rejection"]
+    assert len(await f.assistant_msgs()) == 1
     await reply(f, {"T1-1": {"confirmed": True}})
+    d2 = digests(await f.assistant_msgs())[-1]
+    assert [i["kind"] for i in d2["items"]] == ["rejection"]
     assert_parent_closed(f, S_RESOLVED, "PARTIALLY_REJECTED")
     assert f.h.executor.calls["T1-2"] == 0
     assert len(await f.assistant_msgs()) == 2

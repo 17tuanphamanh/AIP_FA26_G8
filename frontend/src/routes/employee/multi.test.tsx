@@ -859,3 +859,55 @@ describe("t134: câu tổng kết vòng cuối còn khối (khớp từng ký t�
     expect(errors.mock.calls.filter((a) => a.some((x) => String(x).includes("same key")))).toHaveLength(0); // khoá React không trùng
   });
 });
+
+// ------------------------------------------------------------------------------------------------ Q6 c2 (D-77)
+
+describe("Q6 c2: khối 'chờ duyệt' (step B15) + ô nhập của cha khi chờ con", () => {
+  const PENDING: DigestItem = {
+    child_id: C1, index: 1, title: "Cài đặt phần mềm", kind: "result", needs: "none", step: "B15",
+    text: "Yêu cầu cài đặt phần mềm cần được duyệt theo quy định của công ty.",
+  };
+  const ASKED: DigestItem = { child_id: C2, index: 2, title: "Cấp quyền truy cập", kind: "question", needs: "answer", step: "B11", text: "Bao nhiêu ngày?" };
+
+  it("itemLabel: result + step B15 → 'Chờ IT duyệt'; result không step / bước khác → 'Đã xử lý'; kind khác giữ nhãn theo kind", () => {
+    expect(itemLabel({ kind: "result", step: "B15" })).toBe("Chờ IT duyệt");
+    expect(itemLabel({ kind: "result" })).toBe("Đã xử lý");
+    expect(itemLabel({ kind: "result", step: "B18" })).toBe("Đã xử lý");
+    expect(itemLabel({ kind: "question", step: "B15" })).toBe("Cần bạn trả lời");
+    expect(itemLabel({ kind: "rejection", step: "B15" })).toBe("IT chưa duyệt");
+  });
+
+  it("normalizeConversation giữ `step` chuỗi; `step` không phải chuỗi → bỏ (item cũ không step giữ nguyên)", () => {
+    const [m] = normalizeConversation([
+      { role: "assistant", kind: "digest", round: 1, text: "x", items: [PENDING, { ...ASKED, step: 42 }, ITEMS[0]] },
+    ]);
+    expect(m?.digest?.items.map((i) => i.step)).toStrictEqual(["B15", undefined, undefined]);
+  });
+
+  it("màn: cha S_CLASSIFYING (chờ con) — khối B15 nhãn 'Chờ IT duyệt', ô nhập khoá với câu của cha, không câu của ticket thường", async () => {
+    stubApi(() =>
+      view({
+        status: "S_CLASSIFYING",
+        waiting_for: null,
+        conversation: [{ role: "assistant", kind: "digest", round: 1, text: "Ý 1 …", items: [PENDING] }],
+        children_progress: [{ child_id: C1, index: 1, title: "Cài đặt phần mềm", progress: "pending_approval", outcome: null }],
+      }),
+    );
+    renderChat();
+    const digest = await screen.findByTestId("digest");
+    expect(within(digest).getByText("Chờ IT duyệt")).toBeTruthy();
+    expect(within(digest).queryByText("Đã xử lý")).toBeNull();
+    const box = screen.getByPlaceholderText(`${PARENT_PROCESSING}…`) as HTMLTextAreaElement;
+    expect(box.disabled).toBe(true);
+    expect(screen.queryByPlaceholderText("Đang tiếp nhận yêu cầu…")).toBeNull();
+    expect(document.body.textContent).not.toMatch(LEAK);
+  });
+
+  it("màn: ticket thường S_CLASSIFYING — ô nhập giữ câu cũ 'Đang tiếp nhận yêu cầu…'", async () => {
+    const v = view({ status: "S_CLASSIFYING", waiting_for: null, conversation: [] });
+    delete v.children_progress;
+    stubApi(() => v);
+    renderChat();
+    expect(await screen.findByPlaceholderText("Đang tiếp nhận yêu cầu…")).toBeTruthy();
+  });
+});
