@@ -28,7 +28,8 @@
 7. be-target-guard (L-03): cờ đó còn bật khi intent ∈ {account, access}, CHƯA có `target_user` hợp lệ VÀ câu nêu người khác
    (`domain/target.mention_reason`: định danh lạ / cụm "tài khoản dịch vụ", "đồng nghiệp"…) hoặc có khoá lạ `unknown_key`
    (`domain/target.target_check`). Một ý: dò câu; B5: TỪNG con dò TOÀN CÂU GỐC (không chỉ span — ý tự xưng trong câu có nêu người
-   khác cũng bật, chấp nhận có chủ ý). Không bao giờ hạ cờ. Điểm log 1 thêm `other_target_mention` (bool), `other_target_reason`
+   khác cũng bật, chấp nhận có chủ ý); Q4: con bỏ qua slot tài nguyên đã sạch của các ý CHẠY ĐƯỢC khác (`sibling_slots`, xem
+   `domain/target.py`), mọi lời gọi truyền `device_prefixes` (config). Không bao giờ hạ cờ. Điểm log 1 thêm `other_target_mention` (bool), `other_target_reason`
    (hằng | None); dòng tách B5: `other_target_mention` (bất kỳ con) + `children_other_target_reason` (theo con). Không câu/token.
 
 8. M1 — báo trùng yêu cầu (nhánh đơn ý `intent_classified`, ticket lá): có ticket CÒN MỞ (`final_state IS NULL`) của cùng người gửi,
@@ -157,9 +158,11 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         raw = {**it.slots, **({"action": it.action_hint} if it.action_hint else {})}
         spec = deps.slots.intents[it.type]
-        slots, dropped = sanitize_slots(spec, raw, text=text)  # 3-Q1: cửa DUY NHẤT
+        prefixes = deps.slots.device_prefixes  # Q4
+        slots, dropped = sanitize_slots(spec, raw, text=text, device_prefixes=prefixes)  # 3-Q1: cửa DUY NHẤT
         span = it.span if it.span.strip() and phrase_in_text(it.span, text) else None  # Q-3f-4
-        mention, reason = target_check(it.type, slots, dropped, spec.keys, text, requester_id_of(state))  # Q-T20a-4 + L-03
+        mention, reason = target_check(it.type, slots, dropped, spec.keys, text, requester_id_of(state),
+                                       device_prefixes=prefixes)  # Q-T20a-4 + L-03  # fmt: skip
         info.update(audit_dropped(dropped, known), span_not_in_text=bool(it.span.strip()) and span is None,
                     other_target_mention=mention, other_target_reason=reason)  # fmt: skip
         flags = {"ctx_flags": {"target_is_other": True}} if reason is not None else {}
@@ -217,7 +220,7 @@ def make(deps: NodeDeps) -> NodeFn:
             and any(_verdict(it, text) == RUNNABLE for it in intents)  # fmt: skip
 
     def _seed(
-        state: Any, cid: str, it: IntentItem, verdict: str, text: str, loops: int
+        state: Any, cid: str, it: IntentItem, verdict: str, text: str, loops: int, siblings: Sequence[dict[str, str]] = ()
     ) -> tuple[dict[str, Any], bool, str | None]:
         """Seed của con (bảng 5.2.3) — KHÔNG `requester_context` (ChildOps đọc lại từ state cha), KHÔNG `risk`/`action`, `facts={}`
         (G-01). Slot chỉ lấy trong `span` của CHÍNH ý (P2 — chống "mượn" đích của ý khác); dò người khác trên TOÀN CÂU GỐC (L-03).
@@ -238,9 +241,11 @@ def make(deps: NodeDeps) -> NodeFn:
             return seed, False, None
         raw = {**it.slots, **({"action": it.action_hint} if it.action_hint else {})}
         spec = deps.slots.intents[it.type]
-        slots, dropped = sanitize_slots(spec, raw, text=l0(it.span))  # P2: text = span của ý
+        prefixes = deps.slots.device_prefixes  # Q4
+        slots, dropped = sanitize_slots(spec, raw, text=l0(it.span), device_prefixes=prefixes)  # P2: text = span của ý
         seed["slots"] = slots
-        mention, reason = target_check(it.type, slots, dropped, spec.keys, text, requester_id_of(state))  # TOÀN CÂU GỐC
+        mention, reason = target_check(it.type, slots, dropped, spec.keys, text, requester_id_of(state), device_prefixes=prefixes,
+                                       sibling_slots=siblings, own_span=it.span)  # TOÀN CÂU GỐC; Q4: ý bên cạnh  # fmt: skip
         if reason is not None:  # Q-T20a-4 + L-03 áp TỪNG con
             seed["ctx_flags"] = {"target_is_other": True}
         return seed, mention, reason
@@ -252,12 +257,15 @@ def make(deps: NodeDeps) -> NodeFn:
         if RUNNABLE not in verdicts:
             return await _whole_e1(state, intents, verdicts, loops, info)
         parent, run = state["ticket_id"], current_run()
+        clean = [sanitize_slots(deps.slots.intents[it.type], it.slots, text=l0(it.span), device_prefixes=deps.slots.device_prefixes)[0]
+                 if v == RUNNABLE else {} for it, v in zip(intents, verdicts, strict=True)]  # Q4: slot sạch của mọi ý chạy được  # fmt: skip
         seeds: dict[str, dict[str, Any]] = {}
         mentions: list[bool] = []
         reasons: list[str | None] = []
         for i, (it, verdict) in enumerate(zip(intents, verdicts, strict=True), start=1):
             cid = child_id(parent, i)
-            seeds[cid], mention, reason = _seed(state, cid, it, verdict, text, loops)
+            siblings = [c for j, c in enumerate(clean, start=1) if j != i]
+            seeds[cid], mention, reason = _seed(state, cid, it, verdict, text, loops, siblings)
             mentions.append(mention)
             reasons.append(reason)
             ref = await effects.once(

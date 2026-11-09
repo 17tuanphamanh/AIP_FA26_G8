@@ -6087,6 +6087,88 @@ Q3 là 8738 → +27 đúng số test mới). Không gọi LLM thật (ScriptedLL
   (như B3). (7) Lệch tài liệu còn lại: mã giả `llm.complete("fast", "b11_clarify_question", …)` ở `phase3-thiet-ke-chi-tiet.md` (~dòng 1798) và `build/nhanh/B11-bo-sung-thong-tin.md`
   (~dòng 309) vẫn là bản 3 biến; bảng 7.4 đã cập nhật.
 
+## Q4 — L-03 báo nhầm: mã máy, cụm người khác, nhiều ý (09/11/2026, nhánh `q4-l03-bao-nham` trên `lo-0811` `fd8c020`) — xong, 1 commit, chưa push
+
+**Trạng thái:** ĐP duyệt PLAN 09/11 10:05 (8 chốt, dưới). Test viết trước `backend/tests/unit/test_target_guard_3.py` (153 test): trên `fd8c020`
+đỏ phần lớn (lúc DỪNG 1: 79/91 đỏ), sau khi sửa xanh hết. Test L-03 cũ (`test_target_guard.py`, `_2`, `test_target_mention.py`,
+`test_slots_device_id_norm.py`) **không sửa dòng nào**, 192/192 xanh. `uv run pytest backend/tests/unit` **8983 pass / 4 skip / 11 xfail /
+0 fail** (09/11, bản cuối sau sửa S6 lần 4; junit 8998 test). Bộ L-03 (5 file) 345/345. `make lint` exit 0 (ruff, mypy ×4, import-linter 10/10, gitleaks). ScriptedLLM, không `make test`, không docker.
+Tái hiện trên `fd8c020`: "loi 809", "cong 443" (a); "đồng nghiệp … vẫn vào được" (b); "7-zip" ở con account (c); thêm serial chứng chỉ
+"VPN-2025-0342" (→ mã máy `VPN-2025`). **Không tái hiện:** "phong 302", "tang 3 phong 301" ("phong" 5 chữ, mẫu 2–4 chữ) — giữ làm test chống hồi quy.
+
+**Đã sửa:**
+- `config/slots.yaml` `device_prefixes: [LAP, PC]` (mọi máy của `mock_services/seed.json`) + `settings.SlotsFile.device_prefixes` kiểm lúc nạp:
+  2–4 chữ HOA ASCII, cấm `NV`/`SVC`/`ADM`, rỗng mà có intent có slot `device_id` → không khởi động (test `load_slots` từ chối).
+- `domain/slots.py` — MỘT nguồn dáng mã máy (trả nợ ĐP 08/11 "gộp regex slots.py ↔ target._canonical_devices"): `canonical_device_id`,
+  `device_ids_in_text(…, cued=)`, `is_device_code`, `sanitize_slots(device_prefixes=)`. Tiền tố ngoài danh sách: slot dạng lỏng không chuẩn
+  hoá (→ `bad_value` → `dropped` → hỏi), dạng chuẩn "MAC-0123" giữ (→ B6 tra, 404 → Q2 hỏi lại); trong câu chỉ tính khi đứng ngay sau
+  "máy/máy tính/laptop/pc/thiết bị". `None` = dáng cũ, chỉ cho lời gọi trần ở test cũ; mọi lời gọi trong `backend/app` truyền danh sách (test AST).
+- `domain/target.py`: `device_text` + loại trừ mã máy của `identifier` dùng `slots.py` (bỏ `_canonical_devices`, `_MACHINE`); "kt-0012" nay là
+  định danh lạ (chỉ chặt hơn). vpn/software: cụm CHUNG (đồng nghiệp, người khác, nhân viên mới, X ấy) bật MỌI vị trí, CHỈ miễn ở ngữ cảnh so
+  sánh, viết theo DANH SÁCH CHO PHÉP (S6 hai lần FAIL với danh sách cấm): cụm ngay sau "cho/giúp/hộ/dùm/giùm/của/để" không bao giờ miễn;
+  miễn khi đứng sau "giống (như)/so với"; sau "như" đứng một mình chỉ khi không "cũng/chẳng hạn/ví dụ như" VÀ 200 ký tự trước không có cho/giúp/
+  hộ/dùm/giùm/để/cài/cấp/gia hạn ("cài Zoom cho các bạn như nhân viên mới" là liệt kê); hoặc theo sau là "vẫn (≤ 4 từ) được|bình thường" / "thì (≤ 2 từ)
+  được" (≤ 4 từ chen trước, + "em/mình/tôi/tớ" sở hữu ngay sau cụm; từ = chữ/số liền nhau, mọi ký tự khác — dấu câu, …, -, ngoặc, emoji,
+  xuống dòng — và liên từ nhưng/và/còn/mà/song/vì/chứ/để/nên/nếu/tại/bởi/do/khi/hay/hoặc/dù/tuy là hết vế; mọi từ chen giữa, TRƯỚC lẫn sau
+  "vẫn/thì", không là phủ định — cả kh/khum/kg/hem/hổng/đâu —, lỗi/nhu cầu — mới/phải/cần/lỗi/bị/hỏng/hư/muốn/nhờ/xin — hay tự xưng) RỒI chỉ được
+  là hết câu hoặc dấu . , ; ! (không "?"). Thêm so với lời chốt: ca phủ định / câu hỏi / điều kiện không được miễn. Câu 4000 ký tự xấu nhất
+  ≤ 0,004 s; neo `\Z` (không `$` — `$` khớp trước "\n" cuối). account/access không đổi.
+  Nhiều ý: `target_check(sibling_slots=, own_span=)` — bỏ qua slot tài nguyên của ý chạy được khác, trừ giá trị dáng mã người
+  (`^[a-z0-9_]{3,64}$` có số/`_`, sau casefold) hoặc có trong span của chính ý.
+- `b03_classify.py` (ĐP chốt 8 — nhỏ nhất, không đổi bố cục): nhánh một ý + `_seed` truyền `device_prefixes`; `_seed` thêm tham số `siblings`;
+  `_split` thêm 1 biểu thức lọc slot sạch của ý `RUNNABLE` + 1 dòng chọn ý khác. `clarify_wait.py`: truyền `device_prefixes`. Audit không thêm trường.
+
+**Lưới cuối (không đổi, test chứng minh):** B6 chỉ tự suy máy tra theo `user_id` người gửi (`vpn.py:52–64`); máy người khác chỉ vào qua slot →
+fact `device_owner_is_requester=False` → `build_ctx.target_is_other` (`risk/context.py:31`) → không luật allow; B15 [1] P6 không đọc cờ
+(`test_net_other_device_no_flag_*`, `test_net_nodes_no_flag_other_device_llm_hitl_then_b15_p6_e5`). account/access: hậu quả tối đa khi
+lọt cờ là chạy trên CHÍNH người gửi.
+
+**Mutation** (mỗi lần: đổi → chạy 5 file test L-03 → khôi phục, sha256 khớp): M1 bỏ lọc tiền tố → đỏ 16 ("loi 809", "cong 443", serial);
+M2 bỏ ngữ cảnh so sánh → đỏ 7 (ca b); M3 B5 `sibling_slots=()` → đỏ 1 (ca c); M4 bỏ loại trừ dáng mã người → đỏ 2; M5 bỏ luật "máy + tiền tố
+lạ" → đỏ 4; M6 miễn cả chủ ngữ (chỉ tính sau máy/giới từ) → đỏ 7 (gồm "chị ấy không vào được VPN", "VPN đồng nghiệp em lỗi"; "máy anh ấy
+không vào mạng" có "máy" phía trước nên M6 không chạm); M7 B5 lấy cả slot ý không chạy được → đỏ 1; M8 bỏ `own_span` → đỏ 1; M9 `_seed`
+không truyền tiền tố → đỏ 2 (test AST + con vpn "loi 809"); M10 bỏ loại phủ định trong so sánh → đỏ 2. Lần đầu M4 chỉ đỏ 1 (`own_span` che trùng)
+→ thêm ca `svc_backup-chi-o-y-ben-canh` → đỏ 2. Sau sửa S6 chạy lại M1–M10 (M6 → đỏ 12, M10 → đỏ 7) + M11a vế câu vượt xuống dòng/
+liên từ → đỏ 2; M11b cho "cũng như" → đỏ 2; M11c bỏ kiểm sau "được" → đỏ 2. **Bản cuối (sau S6 lần 4), chạy lại toàn bộ** (kịch bản ở scratchpad riêng của phiên — xem "Sự cố" dưới): M1 bỏ lọc tiền tố 16 · M2 bỏ ngữ
+cảnh so sánh 10 · M3 B5 `sibling_slots=()` 1 · M4 bỏ loại trừ dáng mã người 2 · M5 bỏ "máy + tiền tố lạ" 4 · M6 miễn cả chủ ngữ (chỉ tính sau
+giới từ) 39 · M7 B5 lấy slot ý không chạy được 1 · M8 bỏ `own_span` 1 · M9 `_seed` không truyền tiền tố 2 · M10 bỏ phủ định 2 · M11a từ qua ký
+tự khác 1 · M11b cho "cũng/hạn/dụ như" 5 · M11c bỏ danh sách cho phép sau "được" 2 · M11d bỏ luật giới từ 2 · M11e bỏ liên từ hết vế 2 · M12a từ
+chen trước "vẫn/thì" chỉ lọc liên từ 6 · M12b bỏ "dù/tuy" 1 · M12c `\Z` → `$` 1 · M12d bỏ lỗi/nhu cầu 1 · M13 bỏ kiểm yêu cầu trước "như" 4 —
+**20/20 đỏ** (M6 44, M2 11, M11b 1 sau khi thêm ca tách "Em không vào được VPN, cũng như đồng nghiệp"); sha256 của `git diff` trước/sau khớp. Các
+lớp chồng nhau nên M10, M11a, M11e, M12b, M12d từng 0 đỏ → thêm ca tách riêng từng lớp.
+
+**Sự cố (đã xử lý, báo ĐP):** `$TMPDIR` = `/tmp/claude-501` dùng CHUNG giữa các phiên. Kịch bản mutation của tôi (`$TMPDIR/mut.py`) bị phiên khác
+(Q1/Q12 — tìm `state.get("triage")`) ghi đè; lần chạy kế tiếp tôi chạy nhầm script đó trong worktree này: nó tạo `b03_classify.py.mutbak` rồi
+dừng ở assert TRƯỚC khi ghi (`cmp` xác nhận `b03_classify.py` y hệt bản sao, không file nào khác bị chạm). Đã chuyển `.mutbak` ra scratchpad (không
+xoá), viết lại kịch bản trong scratchpad riêng, chạy lại đủ M1–M12d. Chiều ngược lại (phiên kia có từng chạy nhầm script của tôi) — không biết.
+
+**S6 — security-reviewer soát diff:** mục 1, 3–8 PASS (không ReDoS; `device_prefixes` chỉ từ config; audit không thêm trường; không đụng
+`evaluate`/`build_ctx`/B15/B17). **Mục 2 FAIL** ở bản đầu: regex so sánh miễn nhầm "thì có được không", "thì mới vào được", "cũng như các đồng
+nghiệp", vế câu qua "nhưng"/xuống dòng, phủ định gõ tắt ("vẫn kh vào được", "vẫn có vào được đâu") — nền `fd8c020` vẫn bật cờ các câu này (lưới
+cuối không vượt quyền, nhưng là âm tính giả mới). Đã sửa (siết regex như trên) + 10 test bật cờ + test AST quét cả `module.fn(...)` và
+`mention_reason` (`mentions_other_target` nay truyền `device_prefixes`). **Soát lại lần 2: mục 1, 3, 4, 5 PASS; mục 2 FAIL** — vẫn lọt:
+liên từ ngoài danh sách ("vì", "chứ"), "để … vẫn được", "thì họ vào được", "được hay không / được ạ? / được phép không?", ký tự "…" "-" ")",
+"cũng  như" hai dấu cách, "chẳng hạn/ví dụ như". Đổi hẳn sang danh sách cho phép (trên) + 17 test (14 ca soát + 3 ca tách mutation). **Soát lại lần 3: mục 1, 3, 4 PASS; mục 2 FAIL** — từ
+chen TRƯỚC "vẫn/thì" không được lọc ("Đồng nghiệp không vào được VPN em vẫn vào được", "Chị ấy bị lỗi VPN em vẫn bình thường", "Đồng nghiệp cần
+cài Zoom em thì được"), thiếu nhượng bộ "dù/mặc dù", `$` trước "\n". Đã sửa (lọc từ chen trước như sau, "em" chỉ sở hữu ngay sau cụm, "dù/tuy",
+`\Z`) + 13 test (9 ca soát + 4 ca tách mutation). **Soát lại lần 4: mục 1, 3, 4 PASS; mục 2 FAIL** — "như" liệt kê ("Cài Zoom cho các
+bạn như nhân viên mới", "Cấp VPN cho mọi người, như đồng nghiệp ngồi cạnh"); NGHI `_DEVICE_CUE` quét cả đầu câu. Đã sửa ("như" như trên;
+`_DEVICE_CUE` cửa sổ 30 ký tự + `\Z`; câu 4000 ký tự / 580 mã ≤ 0,006 s) + 6 test. **Lần 5 CHƯA soát** — ĐP quyết có cần không. Reviewer ghi nhận
+(có từ trước Q4, không làm): cụm chung thiếu "anh ta/cô ta/họ/sếp/bạn cùng phòng"; tên viết thường ("cho anh nam") không bật `_NAMED`.
+
+**Chốt ĐP 09/11 10:05:** (1) giới từ — duyệt, rồi thay bằng (2): cụm chung bật mọi vị trí, chỉ miễn so sánh; (3) tiền tố lạ sau máy/laptop/pc/
+thiết bị; (4) "kt-0012" thành định danh — giữ; (5) `settings.py` — duyệt; (6) gộp regex, chữ số Unicode thôi bật cờ (lưới cuối bắt),
+`messages.DEVICE_ID` (Q2) giữ nguyên; (7) không làm alias phần mềm, không tính mã máy ý bên cạnh cho vpn/software; (8) Q4 gộp trước Q1+Q12.
+Security-reviewer soát PLAN (DỪNG 1): không FAIL; nhận các đề xuất (dáng mã người, `own_span`, SVC/ADM, cue laptop/pc/thiết bị, test AST).
+
+**Giới hạn còn lại:** (a) tiền tố lạ không đứng sau máy/laptop/pc/thiết bị ("MAC-0123 không vào được VPN") không là mã máy; (b) "cài 7zip" (không
+gạch, dáng mã người) ở ý bên cạnh vẫn làm con account bật cờ; (c) con vpn/software không tính `device_id` ý bên cạnh ("cài 7-Zip lên LAP-0342 và
+gia hạn VPN" → con vpn bật `device_text`); (d) chữ số Unicode trong mã máy không bật cờ; (e) ngữ cảnh so sánh là mẫu chữ — câu so sánh khác
+dạng vẫn bật (thận trọng); câu lỗi có "vẫn … được" không phủ định (hiếm) bị miễn; câu gõ HOÀN TOÀN không dấu trùng chữ khi bỏ dấu ("phong van
+thu duoc" — van = vấn) có thể bị miễn (câu có dấu thì không); (f) không có danh mục alias phần mềm cục bộ; (g) B5: định danh không dáng mã người
+("hoa.nguyen") chỉ nằm trong span ý bên cạnh và LLM cắt span ý account không chứa nó → con account không cờ, việc rơi vào chính người gửi.
+**Chưa đo (LLM thật):** tần suất báo nhầm còn lại trên câu thật — chưa đo.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

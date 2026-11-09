@@ -58,7 +58,7 @@ from app.domain.action import ActionMeta
 from app.domain.approval import Roster
 from app.domain.exit_codes import REASON_DETAILS, ExitCode
 from app.domain.policy import BusinessHours, Rule, check_rules
-from app.domain.slots import IntentSlots
+from app.domain.slots import DEVICE_PREFIX_SHAPE, RESERVED_DEVICE_PREFIXES, IntentSlots
 
 log = logging.getLogger(__name__)
 
@@ -552,6 +552,19 @@ class SlotsFile(BaseModel):
     # 3f (phase3 3.2): slot theo intent — Phase 3 chỉ `vpn`. Mặc định rỗng (fixture test tối giản vẫn nạp được);
     # intent bật mà không có mục ở đây → `check_intent_config` từ chối khởi động.
     intents: dict[str, IntentSlots] = Field(default_factory=dict)
+    # Q4 (ĐP 09/11): tiền tố mã máy có thật — MỘT nguồn cho domain/slots.py + domain/target.py (nơi gọi truyền `device_prefixes`).
+    # Mặc định rỗng (fixture tối giản không có intent máy vẫn nạp được); có intent khai báo slot `device_id` mà rỗng → từ chối.
+    device_prefixes: frozenset[str] = frozenset()
+
+    @model_validator(mode="after")
+    def _device_prefixes_ok(self) -> "SlotsFile":
+        if bad := sorted(p for p in self.device_prefixes if not DEVICE_PREFIX_SHAPE.fullmatch(p)):
+            raise ValueError(f"device_prefixes sai dáng (2–4 chữ HOA ASCII): {bad}")
+        if bad := sorted(self.device_prefixes & RESERVED_DEVICE_PREFIXES):
+            raise ValueError(f"device_prefixes trùng dáng mã người (cấm {sorted(RESERVED_DEVICE_PREFIXES)}): {bad}")
+        if not self.device_prefixes and (used := sorted(i for i, s in self.intents.items() if "device_id" in s.keys)):
+            raise ValueError(f"device_prefixes rỗng mà intent có slot device_id: {used}")
+        return self
 
     @property
     def declared_names(self) -> frozenset[str]:
