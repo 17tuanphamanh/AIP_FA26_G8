@@ -432,8 +432,8 @@ async def test_short_request_not_flagged_trimmed() -> None:
 
 # Khung prompt b03 v6 = 1612 / `budget_in` 2000 token (ước tính ceil(ký tự/3)) → phần yêu cầu chứa được ~1160 ký tự. Câu trả lời dài hơn thế
 # một mình đã vượt trần → nhánh "cắt đuôi câu trả lời" (ĐP chốt điểm 2). Ca ĐP đặt (trả lời 1500) cần nâng `budget_in` fast (~≥ 2150) hoặc rút
-# gọn prompt — CHỜ ĐP chốt (PROGRESS "Q1 + Q12").
-CHO_BUDGET = pytest.mark.xfail(strict=True, reason="CHỜ ĐP: khung b03 v6 1612/2000 token — trả lời 1500 ký tự không vừa (nâng budget_in fast hoặc rút gọn prompt)")
+# gọn prompt — ĐP chốt 09/11 16:00: KHÔNG nâng vai fast (B2 dùng chung); lô Q10 cho b03 đi vai chat_fast budget_in 3000 rồi bỏ xfail.
+CHO_BUDGET = pytest.mark.xfail(strict=True, reason="CHỜ Q10: vai chat_fast budget_in 3000")
 
 
 async def _long_combined(reply_chars: int) -> tuple[Env, dict[str, Any], str]:
