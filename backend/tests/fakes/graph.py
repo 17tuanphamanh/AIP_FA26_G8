@@ -956,7 +956,7 @@ class GraphHarness:
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd` + `vpn`; e2e gắn registry tới mock
     vpn: SeedVpn | None = None  # B6 thật (3f): VPN giả đọc mock_services/seed.json — None = dựng theo `clock`
     enable_proactive_diagnosis: bool = True  # ablation RQ3 (B6)
-    enable_it_help: bool = True  # D-57: cờ ENABLE_IT_HELP (B3, B20)
+    enable_it_help: bool = True  # D-76: cờ ENABLE_IT_HELP (B3, B20)
     grounding_gate_actions: bool = False  # Phase 4 S0-P11: ablation B9 cho nhánh hành động
     max_recover_attempts: int = 3
     # Hạn cho cả lượt (9.0): mặc định = Settings (100 s / 2 s) — test FakeClock tua quá hạn trong một lượt sẽ ra E2

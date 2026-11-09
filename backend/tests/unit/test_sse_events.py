@@ -483,7 +483,7 @@ def _all_text() -> list[str]:
     return out
 
 
-# ---- Q1 (D-56): câu hỏi phân loại của B3 không làm lệch câu hỏi B11 ------------------------------------------------------------
+# ---- Q1 (D-75): câu hỏi phân loại của B3 không làm lệch câu hỏi B11 ------------------------------------------------------------
 
 
 def test_q1_triage_question_and_b11_question_picked_by_source() -> None:

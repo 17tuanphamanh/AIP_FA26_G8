@@ -1,6 +1,6 @@
 """tickets, audit_logs: CHECK intent nhan them it_help
 
-D-57 (ĐP chốt 09/11, bản demo lo-0811 — lô Q12): intent chỉ-trả-lời `it_help` (câu hỏi IT chung trả lời từ KB `general`). B20 ghi
+D-76 (ĐP chốt 09/11, bản demo lo-0811 — lô Q12): intent chỉ-trả-lời `it_help` (câu hỏi IT chung trả lời từ KB `general`). B20 ghi
 `tickets.intent`, `goto` ghi `audit_logs.intent` từ state → hai CHECK này phải nhận giá trị mới. `policy_rules` GIỮ 4 loại (không có luật cho
 it_help). Danh sách viết tĩnh — migration không đổi theo models (khuôn 0002/0007).
 

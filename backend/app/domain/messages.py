@@ -49,12 +49,12 @@ def question_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "question", "text": text, "ref": ref, "needs": "answer"}
 
 
-# ---- Q1 (ĐP 09/11, D-56): câu hỏi phân loại CỐ ĐỊNH của B3 — không LLM -----------------------------------------------------------
+# ---- Q1 (ĐP 09/11, D-75): câu hỏi phân loại CỐ ĐỊNH của B3 — không LLM -----------------------------------------------------------
 # Trần một tin người dùng (API `POST /api/tickets`, `/reply`) — một nguồn; `api/tickets.py` dùng lại. Câu ghép sau câu hỏi phân loại cũng ≤ trần này.
 TEXT_MAX: Final = 4000
 TRIAGE_ORIGIN: Final = "triage"  # khoá `origin` của tin câu hỏi phân loại — SSE (`api/events.pick_message`) tách với câu hỏi B11
 TRIAGE_SCOPE: Final = "Chào bạn, mình là trợ lý IT. Mình xử lý trực tiếp: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục"
-IT_HELP_CLAUSE: Final = "và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook"  # chỉ khi ENABLE_IT_HELP bật (D-57)
+IT_HELP_CLAUSE: Final = "và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook"  # chỉ khi ENABLE_IT_HELP bật (D-76)
 TRIAGE_ASK: Final = "Bạn đang gặp việc gì? Mô tả ngắn giúp mình, ví dụ:"
 
 

@@ -19,7 +19,7 @@ Sau `interrupt()`, thứ tự cố định:
    người khác hoặc có khoá bị bỏ `unknown_key` NGOÀI `spec.keys` (khoá đã khai báo mà không đang hỏi KHÔNG tính) —
    `domain/target.target_check`. Không bao giờ hạ cờ. `detail` thêm `other_target_mention`, `other_target_reason` (không câu/token).
 
-Q1 (D-56, ĐP 09/11): `triage == "waiting"` (B3 vừa hỏi câu phân loại) → sau bước 1–3 (DÙNG CHUNG: E0 trước, rồi timeout E4, rồi che L1)
+Q1 (D-75, ĐP 09/11): `triage == "waiting"` (B3 vừa hỏi câu phân loại) → sau bước 1–3 (DÙNG CHUNG: E0 trước, rồi timeout E4, rồi che L1)
 KHÔNG trích slot, KHÔNG gọi LLM: `redacted_request` = câu gốc (đã che) + "\n" + câu trả lời (đã che), ≤ `TEXT_MAX` (giữ NGUYÊN câu trả lời,
 cắt phần ĐẦU câu gốc ở ranh giới từ — `messages.combine_triage`; ĐP chốt điểm 3) → `S_CLARIFYING → S_SCREENING` (step B11 như mọi goto của node chờ này — g25, event
 `triage_reply`, `triage="done"`) → B2 sàng lọc ĐẦY ĐỦ câu ghép → B3 lần 2. Audit: `reply_chars` (số), `combined_trimmed` (bool).

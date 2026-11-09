@@ -33,7 +33,7 @@ def base_filter(role: str) -> list[FieldCondition]:
 
 
 def intent_filter(intent: str) -> FieldCondition:
-    """Lần truy hồi đầu: tài liệu của intent + `general`. D-57: intent chỉ-trả-lời (`it_help`) → CHỈ `general` (không có tài liệu loại
+    """Lần truy hồi đầu: tài liệu của intent + `general`. D-76: intent chỉ-trả-lời (`it_help`) → CHỈ `general` (không có tài liệu loại
     `it_help` — `KB_REQUEST_TYPES`). Lần chạy lại D-23 không lọc intent — không đổi."""
     types = ["general"] if intent in ANSWER_ONLY_INTENTS else [intent, "general"]
     return FieldCondition(key="request_type", match=MatchAny(any=types))

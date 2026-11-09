@@ -6184,8 +6184,8 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
 - Không đổi: `stack/gate5.py` (tc32 `out_of_scope` rõ), `config/scripted/default.yaml` (`out_of_scope` rõ → E1 như cũ), `eval/scenarios/*` (không ca
   E1 mơ hồ), test monitor/B20 (chỉ đọc chuỗi lý do E1 có sẵn).
 
-**Tài liệu sẽ sửa (chưa sửa):** `build/decisions.md` + **D-56** (2 chuyển `S_CLASSIFYING → S_CLARIFYING`, `S_CLARIFYING → S_SCREENING`, ĐP chốt
-09/11, lô Q1) và **D-57** (`it_help` chỉ-trả-lời, TC15 tách hai phía, `ENABLE_IT_HELP`, `TICKET_INTENTS` + migration 0015, Q7 dời 0016);
+**Tài liệu sẽ sửa (chưa sửa):** `build/decisions.md` + **D-75** (2 chuyển `S_CLASSIFYING → S_CLARIFYING`, `S_CLARIFYING → S_SCREENING`, ĐP chốt
+09/11, lô Q1) và **D-76** (`it_help` chỉ-trả-lời, TC15 tách hai phía, `ENABLE_IT_HELP`, `TICKET_INTENTS` + migration 0015, Q7 dời 0016);
 `NGU-CANH-DAY-DU.md` bảng 2.1 (~dòng 1466: thêm 2 dòng), TC15 (dòng 1254), TC11 (dòng 1250: "B3 hỏi phân loại → B11 hỏi lại"), Phần IV B3
 "Trạng thái ra" (dòng 1748: + `S_CLARIFYING`); `build/nhanh/B03-B05-phan-loai-tach-y.md` dòng 199, 255 (intents rỗng → hỏi phân loại), 295
 (Literal + `it_help`), 534, 562; `build/nen-tang/P11-huan-luyen-model.md` dòng 190 (CHỈ ghi chú lệch nhãn, không đổi dữ liệu);
@@ -6200,13 +6200,13 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   cắt đuôi ở ranh giới từ) — test `test_b03_prompt_v6.py::test_max_size_request_fits_fast_budget`.
 - P2-3 Câu ghép có thể dài gấp đôi `TEXT_MAX`; B2 L4 phải chấm TRỌN câu (không cắt khi sàng lọc). Đề xuất: câu ghép ≤ `TEXT_MAX`, giữ NGUYÊN câu
   trả lời, cắt ĐẦU phần câu gốc (câu gốc đã mơ hồ) — test `test_q1_triage.py::test_combined_text_capped_at_text_max_keeping_the_whole_reply`.
-- P2-4 Số D: D-56 (chuyển) + D-57 (it_help/TC15) — hay gộp một D.
+- P2-4 Số D: D-75 (chuyển) + D-76 (it_help/TC15) — hay gộp một D.
 - P2-5 Nhãn FE: `LOAI_YEU_CAU.it_help = "Hỏi đáp IT"`; 3 sự kiện mới (`triage_asked`, `triage_reply`, `diagnosis_not_applicable`) cần nhãn trong
   `SU_KIEN` — chữ do code đề xuất khi hiện thực. `routes/manager/metrics.ts` không ánh xạ intent (chỉ lý do E1) → không đổi.
 
 ### DỪNG 2 — code (09/11, ĐP duyệt 10:15): 3 commit, CHƯA push; commit 4 (KB) chờ ĐP gửi file
 
-- **Commit 1 `0e82aaa`** `b3: hoi mot cau phan loai khi yeu cau mo ho` — D-56: 2 chuyển trạng thái; `triage` ∈ waiting/done; B3 hỏi câu cố định
+- **Commit 1 `0e82aaa`** `b3: hoi mot cau phan loai khi yeu cau mo ho` — D-75: 2 chuyển trạng thái; `triage` ∈ waiting/done; B3 hỏi câu cố định
   (`messages.triage_question`, output guard, `effects.once` notify + hạn `clarify`), `clarify_wait` nhánh phân loại (E0 → E4 → che → câu ghép
   ≤ `TEXT_MAX` → B2); `TEXT_MAX` một nguồn ở `domain/messages.py`; B11 lượt đầu không lấy câu phân loại làm `last_question`; cờ `ENABLE_IT_HELP`
   (Settings/NodeDeps/wiring/compose/.env.example — câu hỏi phân loại phụ thuộc cờ); SSE: dòng bảng `triage_asked`/`triage_reply`, tin phân loại mang
@@ -6218,7 +6218,7 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   (`test_monitor_dash_business::test_alembic_single_head_is_0009`) thêm 0015 — sửa cơ học mọi lô migration đều làm, ngoài danh sách 5.
 - **Commit 3** `b3: cau hoi IT chung tra loi tu KB general` — schema + `it_help`; prompt `b03_classify` v6 (+ `trim_vars`); `LLMMeta.trimmed_chars`
   → audit B3 `request_trimmed`; B3 (cờ tắt / nhiều ý → `out_of_scope`; một ý → B6), B6 `diagnosis_not_applicable`, B8 lọc `["general"]`, B10 ép
-  `info`, chặn E9 ở B11/B12; mẫu E1 `user_message_it_help` + B20 theo cờ; nhãn SSE/FE; tài liệu D-56/D-57 + NGU-CANH/B03-B05/P11/B11; probe
+  `info`, chặn E9 ở B11/B12; mẫu E1 `user_message_it_help` + B20 theo cờ; nhãn SSE/FE; tài liệu D-75/D-76 + NGU-CANH/B03-B05/P11/B11; probe
   `cong5-v2` + `eval/probe/README.md`.
 - **Test cũ đổi kỳ vọng NGOÀI danh sách 5 (cùng nguyên nhân đã duyệt):** `test_b03_no_recent_messages` + `test_chain_t20a` (ghim version v5 → v6),
   `test_b11_clarify_v4::test_prompts_without_trim_vars_are_not_trimmed` (b03 nay cũng có `trim_vars` — điểm 2), `test_b20_audit[E1]` (tin E1 có vế
@@ -6228,7 +6228,7 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   `[intent, general]` → 1; M6 gọi `b10_need_type` cho it_help → 2; M7 bỏ `trim_vars` b03 → 5; M8 cắt phần trả lời thay vì câu gốc → 4.
 - **Giới hạn đã biết:** (1) `trim_vars` của B3 cắt ĐUÔI — câu ghép rất dài (> trần token fast) thì B3 có thể không thấy hết câu trả lời (B2 vẫn
   chấm trọn; cờ `request_trimmed`). (2) Gốc 4000 + trả lời 4000 → câu ghép = chỉ câu trả lời (câu gốc bỏ hết). (3) Bộ chấm probe
-  `cong5_score.LABELS` chưa nhận `it_help` → `cong5-v2` chưa chạy được (đổi macro-F1 5 → 6 lớp là quyết định cách đo). (4) D-56 trước đây
+  `cong5_score.LABELS` chưa nhận `it_help` → `cong5-v2` chưa chạy được (đổi macro-F1 5 → 6 lớp là quyết định cách đo). (4) D-75 trước đây
   được giữ chỗ cho "đổi LLM chấm gói 3" — đã ghi chú đổi sang số trống kế tiếp. (5) Một lần hook commit 2 báo đỏ
   `test_chain_m5::test_c15_canary_never_reaches_b14_prompt[software-llm_only-…]`; chạy riêng 3/3, cả file 3/3, lượt toàn bộ trước đó và lần hook
   sau đều xanh — chưa rõ nguyên nhân (không lấy được output lỗi).

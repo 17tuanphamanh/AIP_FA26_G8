@@ -1,4 +1,4 @@
-"""Intent chỉ-trả-lời (D-57, ĐP chốt 09/11, bản demo lo-0811 — lô Q12). Một nguồn cho hằng `it_help`.
+"""Intent chỉ-trả-lời (D-76, ĐP chốt 09/11, bản demo lo-0811 — lô Q12). Một nguồn cho hằng `it_help`.
 
 `it_help` = câu HỎI cách làm / BÁO hiện tượng IT ngoài 4 loại hành động mà KB `general` hướng dẫn được (máy in, Wi-Fi, Outlook…). KHÔNG có
 slot, KHÔNG có hành động: B3 → B6 (0 tool) → B8 (lọc `request_type ∈ ["general"]`) → B10 ép `info` → `S_CONFIRMING`. Không bao giờ tới

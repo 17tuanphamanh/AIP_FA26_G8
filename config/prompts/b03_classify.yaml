@@ -13,7 +13,7 @@
 # v5 (M3): bỏ biến chết `recent_messages` và khối "Hội thoại gần nhất". B3 chạy một lần ngay sau B2, lúc `conversation` của ticket luôn rỗng
 # (runner._initial_state; B1/B2 không ghi tin; ticket con được gieo như thể B3 đã chạy) → khối đó luôn ra "(không có)". Không đổi
 # intent, slot, action_hint, target_user, schema, role. Chỉ đổi chữ của lời nhắn người dùng (bớt hai dòng) — chưa thử với LLM thật (dồn mốc G).
-# v6 (lô Q1 + Q12, ĐP chốt 09/11, bản demo lo-0811 — D-56, D-57): (1) Q1: câu chỉ chào / cảm ơn / hỏi trợ lý là ai / than phiền chung, hoặc
+# v6 (lô Q1 + Q12, ĐP chốt 09/11, bản demo lo-0811 — D-75, D-76): (1) Q1: câu chỉ chào / cảm ơn / hỏi trợ lý là ai / than phiền chung, hoặc
 # mơ hồ không biết việc gì → intents rỗng (B3 hỏi MỘT câu phân loại cố định), KHÔNG xếp out_of_scope; rõ LOẠI mà thiếu chi tiết → phân loại
 # bình thường, confidence là mức chắc về LOẠI; yêu cầu đặc quyền (admin máy, local/domain admin, quản trị hệ thống) → out_of_scope. (2) Q12: loại
 # mới it_help (câu HỎI cách làm / BÁO hiện tượng IT ngoài 4 loại mà tài liệu hướng dẫn được), ví dụ hai phía của TC15 (hiện tượng máy in →

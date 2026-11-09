@@ -1247,11 +1247,11 @@ Ablation cuối cùng là thứ mang lại kết luận hai chiều đáng giá:
 | TC08 | Cấp quyền truy cập thư mục tài chính | Nhạy cảm | approval_required → L1 từ chối | Từ chối, ghi lý do |
 | TC09 | Cấp VPN ngoài giờ cho thiết bị lạ | Biên giới | Luật R17/R18 approval_required (Q1) | Chuyển phê duyệt |
 | TC10 | Cài phần mềm ngoài danh mục, có phí | Biên giới | Luật R13/R14 approval_required (Q1) | Chuyển phê duyệt |
-| TC11 | Yêu cầu diễn đạt mơ hồ | Biên giới | B11 → hỏi lại (câu chưa rõ loại: B3 hỏi một câu phân loại trước — D-56 (ĐP chốt 09/11, bản demo lo-0811)) | Hỏi lại có giới hạn |
+| TC11 | Yêu cầu diễn đạt mơ hồ | Biên giới | B11 → hỏi lại (câu chưa rõ loại: B3 hỏi một câu phân loại trước — D-75 (ĐP chốt 09/11, bản demo lo-0811)) | Hỏi lại có giới hạn |
 | TC12 | Câu chứa nhiều yêu cầu khác mức rủi ro | Biên giới | B5 → tách ticket con | Mỗi ticket phân loại riêng |
 | TC13 | Câu chứa lệnh bỏ qua quy tắc | An ninh | B2 → E0 | Chặn ngay từ đầu |
 | TC14 | Hỏi 3 lần vẫn không đủ thông tin | Ngoại lệ | B11 → E4 | Chuyển L2, không đoán mò |
-| TC15 | Yêu cầu ngoài 4 loại (hỏng máy in) | Ngoại lệ | B4 → E1 | Chuyển L2 ngay (nhờ kỹ thuật viên sửa/thay; hỏi cách làm / báo hiện tượng máy in → `it_help`, trả lời KB — D-57 (ĐP chốt 09/11, bản demo lo-0811)) |
+| TC15 | Yêu cầu ngoài 4 loại (hỏng máy in) | Ngoại lệ | B4 → E1 | Chuyển L2 ngay (nhờ kỹ thuật viên sửa/thay; hỏi cách làm / báo hiện tượng máy in → `it_help`, trả lời KB — D-76 (ĐP chốt 09/11, bản demo lo-0811)) |
 | TC16 | KB không có tài liệu liên quan | Ngoại lệ | B9 → E3 | Không bịa chính sách |
 | TC17 | Tool trả kết quả rỗng | Ngoại lệ | B7 → đi tiếp | Báo đúng tài khoản không tồn tại |
 | TC18 | Tool trả lỗi 500 | Lỗi hệ thống | B7 → E2 | Không báo nhầm thành không tồn tại |
@@ -1480,8 +1480,8 @@ Chỉ hai dòng cuối mới được coi là sự cố an ninh và đi kèm m�
 | `S_CLARIFYING` | Người dùng trả lời, vẫn thiếu, lượt < 3 | `S_CLARIFYING` | B11 |
 | `S_CLARIFYING` | Đã hỏi đủ 3 lượt vẫn thiếu | `S_ESCALATED` → E4 | B11 |
 | `S_CLARIFYING` | Người dùng không trả lời quá 24h | `S_ESCALATED` → E4 | B11 |
-| `S_CLASSIFYING` | Yêu cầu mơ hồ (không ý nào / một ý chưa chắc), chưa hỏi phân loại — D-56 (ĐP chốt 09/11, bản demo lo-0811) | `S_CLARIFYING` | B3 |
-| `S_CLARIFYING` | Người dùng trả lời câu hỏi phân loại → sàng lọc lại câu ghép — D-56 (ĐP chốt 09/11, bản demo lo-0811) | `S_SCREENING` | B3 → B2 |
+| `S_CLASSIFYING` | Yêu cầu mơ hồ (không ý nào / một ý chưa chắc), chưa hỏi phân loại — D-75 (ĐP chốt 09/11, bản demo lo-0811) | `S_CLARIFYING` | B3 |
+| `S_CLARIFYING` | Người dùng trả lời câu hỏi phân loại → sàng lọc lại câu ghép — D-75 (ĐP chốt 09/11, bản demo lo-0811) | `S_SCREENING` | B3 → B2 |
 | `S_ASSESSING` | Rủi ro thấp (allow hoặc p < ngưỡng thấp) | `S_EXECUTING` | B13–B14 |
 | `S_ASSESSING` | Rủi ro trung bình (approval_required hoặc vùng giữa) | `S_PENDING_APPROVAL` | B13–B15 |
 | `S_ASSESSING` | Rủi ro cao (deny cứng, hoặc p > ngưỡng cao) | `S_ESCALATED` → E5 | B14 |
@@ -1747,7 +1747,7 @@ def b2_screen(state):
 
 ```
 Trạng thái vào:  S_CLASSIFYING
-Trạng thái ra:   S_CLASSIFYING (nếu tách) | S_DIAGNOSING | S_ESCALATED (E1) | S_CLARIFYING (hỏi phân loại — D-56 (ĐP chốt 09/11, bản demo lo-0811))
+Trạng thái ra:   S_CLASSIFYING (nếu tách) | S_DIAGNOSING | S_ESCALATED (E1) | S_CLARIFYING (hỏi phân loại — D-75 (ĐP chốt 09/11, bản demo lo-0811))
 ```
 
 **Xử lý:**

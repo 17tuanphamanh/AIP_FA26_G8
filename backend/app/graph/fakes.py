@@ -313,7 +313,7 @@ class NodeDeps:
     # M1: cửa sổ + mẫu tin báo trùng yêu cầu của B3 (`config/dedup.yaml`, không phải biến .env). Mặc định = cấu hình repo.
     dedup: DedupConfig = field(default_factory=get_dedup)
     enable_proactive_diagnosis: bool = True
-    # D-57 (lô Q1+Q12): `Settings.enable_it_help` — B3 (it_help / câu hỏi phân loại), B20 (vế "hướng dẫn…" của tin E1). Mặc định bật như Settings.
+    # D-76 (lô Q1+Q12): `Settings.enable_it_help` — B3 (it_help / câu hỏi phân loại), B20 (vế "hướng dẫn…" của tin E1). Mặc định bật như Settings.
     enable_it_help: bool = True
     # Phase 4 S0-P11: `GROUNDING_GATE_ACTIONS` (ablation) — B10 áp B9 cho cả nhánh hành động. Mặc định = Settings (tắt).
     grounding_gate_actions: bool = False

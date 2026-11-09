@@ -215,7 +215,7 @@ export const LOAI_YEU_CAU: Readonly<Record<string, string>> = {
   account: "Tài khoản",
   software: "Phần mềm",
   access: "Quyền truy cập",
-  it_help: "Hỏi đáp IT", // D-57 (ĐP chốt 09/11): intent chỉ-trả-lời — câu hỏi IT chung trả lời từ KB general
+  it_help: "Hỏi đáp IT", // D-76 (ĐP chốt 09/11): intent chỉ-trả-lời — câu hỏi IT chung trả lời từ KB general
 };
 
 // ---------------------------------------------------------------- hàm dùng chung

@@ -88,7 +88,7 @@ def _b03_calls(gw: Gateway) -> int:
 @pytest.mark.parametrize(
     ("reply", "reason"),
     [
-        # Q1 (ĐP 09/11, D-56): rỗng / đơn ý confidence thấp nay HỎI PHÂN LOẠI trước (test_f4_q1_triage_first bên dưới); E1 của chúng chỉ
+        # Q1 (ĐP 09/11, D-75): rỗng / đơn ý confidence thấp nay HỎI PHÂN LOẠI trước (test_f4_q1_triage_first bên dưới); E1 của chúng chỉ
         # tới sau khi đã hỏi — `test_q1_triage.py::test_still_unclear_after_reply_goes_e1_without_second_question`.
         (out(item("out_of_scope", 0.95)), "out_of_scope"),
         (out(item("account", 0.9)), "intent_not_enabled"),

@@ -35,7 +35,7 @@ SCOPE_LABELS = ("VPN", "tài khoản và mật khẩu", "cài phần mềm", "qu
 E1_TAIL = "Yêu cầu này mình đã chuyển kỹ thuật viên hỗ trợ bạn."
 E3_TAIL = "Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên."  # giữ ý "chưa có thông tin về việc này" (TC16)
 E4_TAIL = "Yêu cầu này mình đã chuyển kỹ thuật viên để hỗ trợ bạn trực tiếp."
-# D-57 (ĐP chốt 09/11): cờ ENABLE_IT_HELP bật (mặc định) → tin E1 thật gửi đi dùng `user_message_it_help` — câu phạm vi thêm vế hướng dẫn
+# D-76 (ĐP chốt 09/11): cờ ENABLE_IT_HELP bật (mặc định) → tin E1 thật gửi đi dùng `user_message_it_help` — câu phạm vi thêm vế hướng dẫn
 IT_HELP_CLAUSE = "; và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook."
 E0_NEUTRAL = "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét."  # nguyên văn trước P6
 

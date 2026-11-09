@@ -22,7 +22,7 @@
 10. Q3 M3 (ĐP 09/11): account — `infer_account` suy `account_type="ad"` khi AD của CHÍNH người gửi đang khoá (điều kiện ở
    `tools/diagnosis/account.py`); cờ `target_is_other` bật → `allow_infer=False` như mục 9. Audit `slots_inferred` như VPN.
 
-11. D-57 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`) → 0 lời gọi tool, `facts={}`, event `diagnosis_not_applicable` → B8.
+11. D-76 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`) → 0 lời gọi tool, `facts={}`, event `diagnosis_not_applicable` → B8.
 
 Điểm log 2 ở MỌI nhánh: `tools_called`, `tool_retry_count`, `slots_inferred`, `facts`, `rediagnose`, `phase`.
 """
@@ -71,7 +71,7 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=_point2([], device_id=device_id, rediagnose=rediag), exit_code=ExitCode.E2.value,
                 reasoning_loops=loops, escalation_reason_detail="max_loops_exceeded",
             )  # fmt: skip
-        if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-57: chỉ trả lời — không có gì để chẩn đoán, 0 lời gọi tool
+        if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-76: chỉ trả lời — không có gì để chẩn đoán, 0 lời gọi tool
             return await goto(
                 state, S_RETRIEVING, next_node="b08_retrieve", step="B6", event="diagnosis_not_applicable",
                 audit_detail=_point2([], device_id=None, rediagnose=False), facts={}, ctx_flags={"target_is_other": other},

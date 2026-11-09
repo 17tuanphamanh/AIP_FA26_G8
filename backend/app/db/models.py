@@ -72,7 +72,7 @@ APPROVAL_RESULTS = _literal_values(_ticket_hints["approval_result"])
 
 # Chưa có hằng trong domain — nguồn ghi cạnh từng dòng.
 INTENTS = ("account", "vpn", "software", "access")  # N3-9.3, phạm vi 4 loại hành động [Chốt] — eval/monitor/policy dùng, không đổi nghĩa
-# D-57 (ĐP chốt 09/11, bản demo lo-0811): + intent chỉ-trả-lời `it_help` — CHỈ cho CHECK của `tickets` và `audit_logs` (migration 0015)
+# D-76 (ĐP chốt 09/11, bản demo lo-0811): + intent chỉ-trả-lời `it_help` — CHỈ cho CHECK của `tickets` và `audit_logs` (migration 0015)
 TICKET_INTENTS = (*INTENTS, IT_HELP)
 RESOLUTION_PATHS = ("auto", "approved", "rejected", "escalated", "deflected")  # N3-9.1
 AGGREGATE_STATUSES = (  # B03-B05 mục 5.4
@@ -299,7 +299,7 @@ class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
         check_in("requester_role", ROLES),
-        check_in("intent", TICKET_INTENTS),  # D-57: + it_help (migration 0015)
+        check_in("intent", TICKET_INTENTS),  # D-76: + it_help (migration 0015)
         check_in("final_state", FINAL_STATES),
         check_in("exit_code", EXIT_CODES),
         check_in("block_reason", BLOCK_REASONS),
@@ -444,7 +444,7 @@ class AuditLog(Base):
     __table_args__ = (
         check_in("from_status", STATES),
         check_in("to_status", STATES),
-        check_in("intent", TICKET_INTENTS),  # D-57: + it_help (migration 0015)
+        check_in("intent", TICKET_INTENTS),  # D-76: + it_help (migration 0015)
         check_in("decided_by", DECIDED_BY),
         check_in("policy_decision", POLICY_DECISIONS),
         check_in("risk_level", RISK_LEVELS),

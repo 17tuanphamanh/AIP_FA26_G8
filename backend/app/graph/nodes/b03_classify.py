@@ -40,7 +40,7 @@
    lỗi + mã ticket (không thông điệp, không traceback), bỏ qua tin báo trùng, luồng chạy tiếp; riêng `TurnBudgetExceeded` vẫn lan lên (E2).
    Phạm vi bắt lỗi CHỈ là bước đọc store — gửi tin hỏng (notifier) vẫn là lỗi thật → E9.
 
-9. Q1 (D-56, ĐP 09/11 — TC11): nhánh MỘT ý — `intents` rỗng (chào/cảm ơn/mơ hồ, prompt v6) HOẶC đúng 1 ý trong phạm vi mà `confidence <
+9. Q1 (D-75, ĐP 09/11 — TC11): nhánh MỘT ý — `intents` rỗng (chào/cảm ơn/mơ hồ, prompt v6) HOẶC đúng 1 ý trong phạm vi mà `confidence <
    TAU_INTENT` → nếu ticket CHƯA hỏi phân loại (`triage` None) → MỘT câu CỐ ĐỊNH `messages.triage_question(enable_it_help)` (không LLM) qua
    output guard (chặn → không gửi, E1 như trước lô, audit `guard`) + `effects.once("notify_user", needs=answer, sub="triage")` + hạn `clarify`
    (`CLARIFY_TIMEOUT_HOURS`, như B11) → `S_CLASSIFYING → S_CLARIFYING` (event `triage_asked`, `triage="waiting"`) → `clarify_wait` (nhánh phân
@@ -48,7 +48,7 @@
    `out_of_scope` rõ mà 0 ý trong phạm vi → E1 ngay, không hỏi. Nhiều ý: không đổi. Hỏi phân loại KHÔNG tính vào `clarification_turns`.
    Audit `triage_asked`: điểm log 1 + `triage_reason` ∈ {no_intent, low_confidence} + `guard` — không chữ người dùng.
 
-10. D-57 (ĐP chốt 09/11, bản demo lo-0811 — lô Q12): `it_help` (câu HỎI cách làm / BÁO hiện tượng IT ngoài 4 loại, trả lời từ KB `general`).
+10. D-76 (ĐP chốt 09/11, bản demo lo-0811 — lô Q12): `it_help` (câu HỎI cách làm / BÁO hiện tượng IT ngoài 4 loại, trả lời từ KB `general`).
    Ngay sau LLM: cờ `ENABLE_IT_HELP` tắt HOẶC câu ≥ 2 ý → mọi ý `it_help` đổi thành `out_of_scope` (con bắt đầu ở B6 — `children.py` — không có
    luồng chỉ-trả-lời; tin tổng hợp của cha báo phần đó chuyển kỹ thuật viên). Một ý `it_help` qua ngưỡng `TAU_INTENT` (dưới ngưỡng → hỏi
    phân loại như mục 9) → KHÔNG kiểm `enabled_intents` (it_help không thuộc tập này), KHÔNG `sanitize_slots` (slot `{}`), KHÔNG báo trùng M1
@@ -148,7 +148,7 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         info["prompt"], info["is_multi"] = f"{meta.prompt_id}@{meta.prompt_version}", out.is_multi
         info["request_trimmed"] = meta.trimmed_chars > 0  # Q1 điểm 2: chỉ cờ, không độ dài/chữ
-        intents = _answer_only_as_out_of_scope(out.intents)  # D-57: cờ tắt / nhiều ý
+        intents = _answer_only_as_out_of_scope(out.intents)  # D-76: cờ tắt / nhiều ý
         in_scope = [i for i in intents if i.type != "out_of_scope"]
         if not _splits(intents, text):  # Q-T20b-12: lần trước đã tách (con 1 đã tạo) mà lần này không → không đi tiếp đường khác
             first = child_id(state["ticket_id"], 1)
@@ -166,7 +166,7 @@ def make(deps: NodeDeps) -> NodeFn:
             if state.get("triage") is None:  # Q1: chưa hỏi phân loại → hỏi một lần thay vì chuyển người ngay
                 return await _ask_triage(state, "low_confidence", loops, info)
             return await _low_confidence(state, loops, info)
-        if it.type in ANSWER_ONLY_INTENTS:  # D-57: chỉ trả lời — không slot, không báo trùng, không thuộc ENABLED_INTENTS
+        if it.type in ANSWER_ONLY_INTENTS:  # D-76: chỉ trả lời — không slot, không báo trùng, không thuộc ENABLED_INTENTS
             span_ok = bool(it.span.strip()) and phrase_in_text(it.span, text)
             info["span_not_in_text"] = bool(it.span.strip()) and not span_ok
             return await goto(
@@ -195,7 +195,7 @@ def make(deps: NodeDeps) -> NodeFn:
         )  # fmt: skip
 
     def _answer_only_as_out_of_scope(intents: Sequence[IntentItem]) -> list[IntentItem]:
-        """D-57: `it_help` chỉ chạy ở ticket một ý khi cờ bật; còn lại coi như `out_of_scope` (E1 / con E1 như trước lô)."""
+        """D-76: `it_help` chỉ chạy ở ticket một ý khi cờ bật; còn lại coi như `out_of_scope` (E1 / con E1 như trước lô)."""
         if deps.enable_it_help and len(intents) < 2:
             return list(intents)
         return [i.model_copy(update={"type": "out_of_scope"}) if i.type in ANSWER_ONLY_INTENTS else i for i in intents]
@@ -216,7 +216,7 @@ def make(deps: NodeDeps) -> NodeFn:
     async def _ask_triage(
         state: Any, reason: Literal["no_intent", "low_confidence"], loops: int, info: dict[str, Any]
     ) -> dict[str, Any]:
-        """Q1 (D-56): câu hỏi phân loại CỐ ĐỊNH, qua output guard + `effects.once` (chạy lại node / resume không gửi lại)."""
+        """Q1 (D-75): câu hỏi phân loại CỐ ĐỊNH, qua output guard + `effects.once` (chạy lại node / resume không gửi lại)."""
         text = triage_question(deps.enable_it_help)
         info.update(triage_reason=reason, guard=deps.output_guard.violation(text))
         if info["guard"] is not None:  # câu do cấu hình viết — vẫn qua cổng đầu ra; chặn → không gửi, E1 như trước lô

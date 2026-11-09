@@ -29,7 +29,7 @@ codes:
     user_message: >-
       Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục.
       Yêu cầu này mình đã chuyển kỹ thuật viên hỗ trợ bạn.
-    # D-57 (ĐP chốt 09/11, bản demo lo-0811): dùng THAY user_message khi ENABLE_IT_HELP bật (mặc định) — thêm vế hướng dẫn sự cố IT chung.
+    # D-76 (ĐP chốt 09/11, bản demo lo-0811): dùng THAY user_message khi ENABLE_IT_HELP bật (mặc định) — thêm vế hướng dẫn sự cố IT chung.
     user_message_it_help: >-
       Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục; và hướng dẫn các sự cố IT
       thường gặp như máy in, Wi-Fi, Outlook. Yêu cầu này mình đã chuyển kỹ thuật viên hỗ trợ bạn.

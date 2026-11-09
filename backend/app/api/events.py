@@ -83,7 +83,7 @@ class Entry:
 
 INTENT_LABEL: Final[Mapping[str, str]] = {  # tập đóng `INTENTS`
     "vpn": "VPN", "account": "tài khoản", "software": "cài đặt phần mềm", "access": "quyền truy cập",
-    "it_help": "hỏi đáp IT",  # D-57 (lô Q12): intent chỉ-trả-lời
+    "it_help": "hỏi đáp IT",  # D-76 (lô Q12): intent chỉ-trả-lời
 }  # fmt: skip
 
 S_ = Stat
@@ -99,7 +99,7 @@ TABLE: Final[Mapping[tuple[str, str, str | None], Entry]] = {
         (S_("understand", "done", "Đã hiểu yêu cầu: nhiều ý"), S_("diagnose", "active", "Đang xử lý từng ý")),
         "Yêu cầu có nhiều ý nên được tách ra xử lý riêng từng ý",
     ),
-    # Q1 (D-56): câu hỏi phân loại của B3 — chờ người dùng như câu hỏi B11; trả lời → sàng lọc lại từ đầu
+    # Q1 (D-75): câu hỏi phân loại của B3 — chờ người dùng như câu hỏi B11; trả lời → sàng lọc lại từ đầu
     ("B3", "triage_asked", None): Entry(
         (S_("clarify", "active", "Cần bạn cho biết đang gặp việc gì"),), "Yêu cầu chưa rõ loại việc nên cần hỏi lại một câu",
     ),
@@ -109,7 +109,7 @@ TABLE: Final[Mapping[tuple[str, str, str | None], Entry]] = {
         S_("diagnose", "done", "Đã kiểm tra hệ thống"), S_("lookup", "active", "Đang tra cứu hướng dẫn"),
     )),
     ("B6", "diagnosis_skipped", None): Entry((S_("lookup", "active", "Đang tra cứu hướng dẫn"),)),
-    # D-57 (lô Q12): câu hỏi IT chung — không có gì để kiểm tra trên hệ thống, đi thẳng tra cứu hướng dẫn
+    # D-76 (lô Q12): câu hỏi IT chung — không có gì để kiểm tra trên hệ thống, đi thẳng tra cứu hướng dẫn
     ("B6", "diagnosis_not_applicable", None): Entry((S_("lookup", "active", "Đang tra cứu hướng dẫn"),)),
     ("B7", "tool_system_error", None): Entry((S_("diagnose", "failed", "Chưa kiểm tra được hệ thống"),)),
     ("B8", "retrieved", None): Entry(

@@ -20,12 +20,12 @@ AUDIT: Final = "b20_audit"
 _ROUTES: Final[dict[str, tuple[str, ...]]] = {
     "b01_identity": ("b02_screen",),
     "b02_screen": ("b03_classify",),
-    "b03_classify": ("b06_diagnose", "parent_wait", "clarify_wait"),  # Q1 (D-56): câu hỏi phân loại chờ ở `clarify_wait`
+    "b03_classify": ("b06_diagnose", "parent_wait", "clarify_wait"),  # Q1 (D-75): câu hỏi phân loại chờ ở `clarify_wait`
     "b06_diagnose": ("b08_retrieve", "b11_slots"),
     "b08_retrieve": ("b10_route",),
     "b10_route": ("b11_slots", "confirm_wait"),
     "b11_slots": ("b12_assess", "clarify_wait", "b06_diagnose"),
-    "clarify_wait": ("b11_slots", "b06_diagnose", "b02_screen"),  # Q1 (D-56): trả lời câu hỏi phân loại → B2 sàng lọc câu ghép
+    "clarify_wait": ("b11_slots", "b06_diagnose", "b02_screen"),  # Q1 (D-75): trả lời câu hỏi phân loại → B2 sàng lọc câu ghép
     "b12_assess": ("b17_execute", "b15_prepare_approval"),
     "b15_prepare_approval": ("approval_wait",),
     "approval_wait": ("b17_execute",),

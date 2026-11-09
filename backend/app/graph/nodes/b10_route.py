@@ -24,7 +24,7 @@ Q2 M1 (ĐP 09/11) — "báo lỗi VPN khi chứng chỉ còn hạn": sau `b10_ne
 grounding giữ nguyên (thiếu bằng chứng → E3). Câu mở đầu theo fact (`messages.symptom_intro`, CODE) ghép TRƯỚC câu trả lời; output
 guard chạy trên toàn tin. State `need_type="info"` (đã trả lời như info); audit giữ `need_type` của LLM + `symptom_to_info` (bool).
 
-D-57 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`) → KHÔNG gọi `b10_need_type`, ép `info` (audit `need_type="info"`,
+D-76 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`) → KHÔNG gọi `b10_need_type`, ép `info` (audit `need_type="info"`,
 `answer_only=true`) → B9 → expand → `b10_answer` như mọi câu trả lời KB; thiếu căn cứ → E3 như cũ. Không bao giờ sang B11.
 
 Lỗi: `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded` → E2 `llm_unavailable`; hết hạn cả lượt
@@ -94,7 +94,7 @@ def make(deps: NodeDeps) -> NodeFn:
         kb_version = state["kb_version"]
         info["grounding"] = grounding(chunks, state.get("retrieval_score"), deps.constants.RETRIEVAL_THRESHOLD)
         above = info["grounding"]["above_threshold"]
-        if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-57: chỉ trả lời — ép `info`, KHÔNG gọi b10_need_type
+        if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-76: chỉ trả lời — ép `info`, KHÔNG gọi b10_need_type
             info["need_type"], info["answer_only"] = "info", True
             return await _answer(state, info, chunks, kb_version, above, symptom=False)
         try:
@@ -133,7 +133,7 @@ def make(deps: NodeDeps) -> NodeFn:
     async def _answer(
         state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
     ) -> dict[str, Any]:
-        """B9 → expand → `b10_answer` → hậu kiểm → output guard → gửi (nhánh `info` — cũ, và `it_help` D-57)."""
+        """B9 → expand → `b10_answer` → hậu kiểm → output guard → gửi (nhánh `info` — cũ, và `it_help` D-76)."""
         if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
