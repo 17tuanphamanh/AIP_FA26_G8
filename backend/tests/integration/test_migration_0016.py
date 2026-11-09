@@ -1,6 +1,6 @@
-"""Migration 0015 (bn-a, 08/11 — nối sau 0014 `ticket_hidden` của lô P5) trên Postgres 16 thật (test viết trước, DỪNG 1; TA chạy).
+"""Migration 0016 (bn-a, 08/11 — dời từ 0015 sang 0016 ngày 09/11, nối sau 0015 `it_help` của lô Q1) trên Postgres 16 thật (test viết trước, DỪNG 1; TA chạy).
 
-Hợp đồng (PLAN bn-a mục "Migration 0015"):
+Hợp đồng (PLAN bn-a mục "Migration 0015", nay là 0016):
 - S1 `transaction_log` append-only: `app_rw` chỉ SELECT, INSERT (REVOKE UPDATE, DELETE, TRUNCATE); trigger `transaction_log_append_only`
   (BEFORE UPDATE OR DELETE, FOR EACH ROW) + `transaction_log_no_truncate` (BEFORE TRUNCATE, FOR EACH STATEMENT) dùng `forbid_mutation()`
   như `audit_logs` — chặn cả role owner (`app_migrate`).
@@ -9,7 +9,7 @@ Hợp đồng (PLAN bn-a mục "Migration 0015"):
 - S4 chỉ mục từng phần `ix_approvals_pending_deadline` ON approvals(deadline) WHERE status = 'pending'.
 - A4 cột `users.mfa_last_step BIGINT NULL`.
 - (chờ ĐP) `security_events.event_type` thêm `retention_run`.
-- Lên 0015 → xuống 0014 → lên 0015: xuống trả đúng quyền cũ (`app_rw` lại có UPDATE/DELETE `transaction_log`), bỏ trigger/chỉ mục/cột.
+- Lên 0016 → xuống 0015 → lên 0016: xuống trả đúng quyền cũ (`app_rw` lại có UPDATE/DELETE `transaction_log`), bỏ trigger/chỉ mục/cột.
 Mỗi test một database riêng (`fresh_database`).
 """
 
@@ -21,8 +21,8 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
 
-# Cờ chờ: cả module đỏ tới khi có 0015 (sau khi lô P5 gộp 0014) — strict: có 0015 mà chưa gỡ cờ → XPASS đỏ.
-pytestmark = pytest.mark.xfail(strict=True, reason="CHỜ migration 0015")
+# Cờ chờ: cả module đỏ tới khi có 0016 — strict: có 0016 mà chưa gỡ cờ → XPASS đỏ.
+pytestmark = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016")
 PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 
@@ -51,13 +51,13 @@ def _state(engine: Engine) -> dict[str, Any]:
     return {"rw": rw, "tx_triggers": tx_triggers, "ticket_triggers": ticket_triggers, "index": index, "col": col}
 
 
-def test_0015_up_down_up(pg: PgUrls) -> None:
+def test_0016_up_down_up(pg: PgUrls) -> None:
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
         owner = create_engine(db.role("app_migrate"))
         try:
-            command.upgrade(cfg, "0015")
-            assert _scalar(owner, "SELECT version_num FROM alembic_version") == "0015"
+            command.upgrade(cfg, "0016")
+            assert _scalar(owner, "SELECT version_num FROM alembic_version") == "0016"
             up = _state(owner)
             assert up["rw"] == {"SELECT": True, "INSERT": True, "UPDATE": False, "DELETE": False, "TRUNCATE": False}
             assert up["tx_triggers"] == {"transaction_log_append_only", "transaction_log_no_truncate"}
@@ -65,14 +65,14 @@ def test_0015_up_down_up(pg: PgUrls) -> None:
             assert up["index"] is not None and "(deadline)" in up["index"] and "WHERE" in up["index"]
             assert "'pending'" in up["index"]
             assert up["col"] == "bigint/YES"
-            command.downgrade(cfg, "0014")
+            command.downgrade(cfg, "0015")
             down = _state(owner)
             assert down["rw"] == {"SELECT": True, "INSERT": True, "UPDATE": True, "DELETE": True, "TRUNCATE": False}  # như 0001
             assert down["tx_triggers"] == set()
             assert "tickets_final_state_once" not in down["ticket_triggers"]
             assert (down["index"], down["col"]) == (None, None)
             assert _scalar(owner, "SELECT count(*) FROM pg_proc WHERE proname = 'forbid_mutation'") == 1  # của 0001 — không bị xoá
-            command.upgrade(cfg, "0015")
+            command.upgrade(cfg, "0016")
             assert _state(owner) == up
         finally:
             owner.dispose()
@@ -85,7 +85,7 @@ def _seed(engine: Engine) -> None:
                           "VALUES ('t-15', 'nv-15', 'employee', 'x')"))  # fmt: skip
 
 
-def test_0015_transaction_log_insert_only_for_rw_and_owner(pg: PgUrls) -> None:
+def test_0016_transaction_log_insert_only_for_rw_and_owner(pg: PgUrls) -> None:
     with fresh_database(pg) as db:
         command.upgrade(alembic_config(db), "head")
         rw, owner = create_engine(db.role("app_rw")), create_engine(db.role("app_migrate"))
@@ -105,7 +105,7 @@ def test_0015_transaction_log_insert_only_for_rw_and_owner(pg: PgUrls) -> None:
             owner.dispose()
 
 
-def test_0015_final_state_written_once(pg: PgUrls) -> None:
+def test_0016_final_state_written_once(pg: PgUrls) -> None:
     with fresh_database(pg) as db:
         command.upgrade(alembic_config(db), "head")
         rw = create_engine(db.role("app_rw"))
@@ -126,7 +126,7 @@ def test_0015_final_state_written_once(pg: PgUrls) -> None:
             rw.dispose()
 
 
-def test_0015_pending_deadline_index_used_by_scan(pg: PgUrls) -> None:
+def test_0016_pending_deadline_index_used_by_scan(pg: PgUrls) -> None:
     """S4: truy vấn quét hạn phiếu (`status='pending' AND deadline <= :now`) CÓ THỂ dùng chỉ mục từng phần (planner chọn khi bảng
     lớn — ở đây chỉ kiểm chỉ mục khớp điều kiện bằng `enable_seqscan = off`)."""
     with fresh_database(pg) as db:

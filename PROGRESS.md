@@ -6242,6 +6242,187 @@ dạng vẫn bật (thận trọng); câu lỗi có "vẫn … được" không 
 thu duoc" — van = vấn) có thể bị miễn (câu có dấu thì không); (f) không có danh mục alias phần mềm cục bộ; (g) B5: định danh không dáng mã người
 ("hoa.nguyen") chỉ nằm trong span ý bên cạnh và LLM cắt span ý account không chứa nó → con account không cờ, việc rơi vào chính người gửi.
 **Chưa đo (LLM thật):** tần suất báo nhầm còn lại trên câu thật — chưa đo.
+## Q1 + Q12 — câu mơ hồ / câu chào / đặc quyền + intent chỉ-trả-lời `it_help` (09/11/2026, nhánh `q1-mo-ho`, nền `lo-0811` `fd8c020`) — DỪNG 1: PLAN, CHỜ DUYỆT
+
+**Trạng thái:** chỉ có PLAN này. Chưa viết test, chưa sửa code: (a) lời giao bị cắt giữa mục 8 ("FE nhãn intent (`frontend/src/lib/nhan.ts`,") —
+chưa nhận phần sau; (b) hai mâu thuẫn đặc tả dưới đây quyết định nội dung test → theo CLAUDE.md phải hỏi trước, không tự chọn.
+
+### Mâu thuẫn đặc tả — CẦN ĐP CHỐT trước khi viết test
+
+- **MT-1 — bảng chuyển 2.1 [Chốt] (`domain/states.py TABLE_2_1`, `NGU-CANH-DAY-DU.md` Phần IV mục 2) không có hai chuyển Q1 cần:**
+  (i) B3 hỏi phân loại `S_CLASSIFYING → S_CLARIFYING`; (ii) trả lời → sàng lọc lại `S_CLARIFYING → S_SCREENING` (B2 `_pass`/`_block` đi từ
+  `S_SCREENING`; chạy B2 khi đang `S_CLARIFYING` thì `S_CLARIFYING → S_CLASSIFYING/S_BLOCKED` cũng không có trong bảng). Không có đường
+  hợp lệ nào khác tới `S_CLARIFYING` ngoài `S_RETRIEVING` (đi vòng qua trạng thái giả → audit sai). **Đề xuất:** thêm đúng 2 dòng vào
+  `TABLE_2_1` (27 → 29 cặp; `test_states.py` ghim 27 → sửa), ghi thành D-xx mới ở `build/decisions.md` như D-29 đã làm; 6 chuyển cấm không
+  đổi (F5 vẫn chỉ cho B2 ra `S_CLASSIFYING/S_BLOCKED/S_ESCALATED`). Phương án khác (chờ ở `S_CLASSIFYING`) phải sửa API/worker/FE — trái lời giao.
+- **MT-2 — TC15 [tài liệu 1] "Yêu cầu ngoài 4 loại (hỏng máy in) → B4 → E1, chuyển L2 ngay"** (`NGU-CANH-DAY-DU.md:1254`,
+  `build/nhanh/B03-B05-phan-loai-tach-y.md:199`) trái định nghĩa `it_help` ("BÁO sự cố … máy in" → trả lời từ KB). Cùng loại: P11 mục 4
+  (`nen-tang/P11-huan-luyen-model.md:190`) gán máy in/email đầy/wifi là `out_of_scope` trong dữ liệu `intent-clf`; `models.INTENTS` ghi
+  "phạm vi 4 loại [Chốt]" (N3-9.3). **Đề xuất:** TC15 đổi thành "việc cần kỹ thuật viên tới tận nơi (sửa/thay phần cứng: 'sửa máy in tầng 3
+  giúp em') → E1"; "máy in không in được / làm sao cài máy in" → `it_help` → KB, "Chưa ổn" → E8 (vẫn tới L2, kèm bàn giao). Ghi D-xx + sửa 3
+  chỗ tài liệu. Model `intent-clf` hiện chỉ GHI `model_probs` (B3 luôn xuống LLM — `b03_classify.py:110`) nên không gãy; nhãn huấn luyện để
+  sau demo. ĐP chọn: theo đề xuất / giữ TC15 nguyên (khi đó Q12 bỏ "báo sự cố", chỉ nhận câu HỎI cách làm).
+
+### Q1 — B3 hỏi phân loại một lần
+
+| # | Việc | File | Ghi chú |
+|---|---|---|---|
+| 1 | Prompt `b03_classify` v5 → **v6** (lý do đầu file): câu chào/cảm ơn/hỏi trợ lý là ai/than phiền chung/mơ hồ → `intents=[]`, KHÔNG `out_of_scope`; rõ LOẠI thiếu chi tiết → phân loại, slot trống, confidence là mức chắc về LOẠI; đặc quyền (admin máy, local/domain admin, quản trị hệ thống) → `out_of_scope` kể cả có chữ "quyền"; `out_of_scope` chỉ khi việc rõ KHÔNG phải IT hoặc đặc quyền; + loại `it_help` (Q12) có ví dụ dương/âm | `config/prompts/b03_classify.yaml` | `allowed_vars`/role/schema-name không đổi |
+| 2 | `IntentItem.type` Literal + `"it_help"` | `llm/schemas.py` | |
+| 3 | Câu cố định `TRIAGE_QUESTION` (đúng chữ lời giao) + test ghim | `domain/messages.py` | |
+| 4 | B3 nhánh một ý: `intents==[]` HOẶC đúng 1 ý trong phạm vi mà `confidence < TAU_INTENT` → nếu `state.triage` chưa có → hỏi; đã có → E1 như cũ (`out_of_scope` / `intent_low_confidence`). Có ý `out_of_scope` và 0 ý trong phạm vi → E1 ngay, không hỏi. Nhiều ý: không đổi | `graph/nodes/b03_classify.py` | KHÔNG đụng dòng `target_check` (phiên Q4) |
+| 5 | Hỏi: output guard (chặn → KHÔNG gửi, E1 như chưa có Q1, audit `guard`) → `effects.once("notify_user", …, "answer", step="B3", sub="triage")` → `effects.once("deadline_set", "clarify", +CLARIFY_TIMEOUT_HOURS, step="B3", sub="triage")` → `goto(S_CLASSIFYING→S_CLARIFYING, next="clarify_wait", event="triage_asked", triage="waiting", conversation=[question_msg])` | b03 | cần MT-1 |
+| 6 | **Chọn MỞ RỘNG `clarify_wait`, không node mới:** `api/tickets.py WAITING_FOR`, `late_event.py`, `routing.WAIT_NODES`, worker `_EXPECTED` đều khoá theo TÊN node `clarify_wait` → node mới phải sửa API/worker (trái lời giao). Sau `interrupt()`: `screen_reply` (E0) → timeout (E4 `clarify_timeout`) — DÙNG CHUNG, giữ nguyên thứ tự Q11 → **nếu `state.triage == "waiting"`**: che L1 thuần → `redacted_request = gốc + "\n" + trả lời đã che` → `goto(S_CLARIFYING→S_SCREENING, next="b02_screen", step="B3", event="triage_reply", triage="done", conversation=[user_msg])`. Nhánh B11 cũ không đổi một dòng | `graph/nodes/clarify_wait.py` | cần MT-1 |
+| 7 | Trạng thái: `triage: Literal["waiting","done"] \| None` — hai giá trị vì sau khi phân loại xong B11 còn dùng `clarify_wait`; một cờ bool "đã hỏi" sẽ đưa câu trả lời B11 nhầm vào nhánh phân loại | `domain/ticket_state.py` | |
+| 8 | Cạnh: `b03_classify` + `clarify_wait`; `clarify_wait` + `b02_screen` | `graph/routing.py` | |
+| 9 | `reasoning_loops`: tính bình thường, không đặt lại — B3 lần 2 là vòng suy luận thật (B3 #1 = 1, B3 #2 = 2, B6 = 3; `MAX_LOOPS` mặc định đặc tả = 5 — chưa đọc `policy.json` theo lời giao). `clarification_turns` KHÔNG tăng (B11 vẫn đủ 3 lượt; tổng tối đa 4 câu hỏi/ticket) | b03 | ĐP chốt có tính hỏi phân loại vào 3 lượt không |
+| 10 | B11 lượt đầu: `last_question` lấy "(chưa có)" khi `clarification_turns == 0` (tránh lấy câu hỏi phân loại làm "câu vừa hỏi" của Q11) | `graph/nodes/b11_slots.py` | 1 dòng |
+| 11 | Audit `triage_asked`: `triage_reason ∈ {no_intent, low_confidence}`, `guard`; `triage_reply`: `reply_chars` (số). Không chữ người dùng | b03, clarify_wait | |
+| 12 | `tickets.redacted_request` (DB) GIỮ câu gốc; câu ghép chỉ ở state/checkpoint (L2 thấy cả hai tin trong `conversation`) | — | nêu để ĐP biết |
+
+### Q12 — `it_help` (TA đã chọn: thêm intent + migration)
+
+| # | Việc / quyết định | File |
+|---|---|---|
+| 13 | Hằng một nguồn `IT_HELP`, `ANSWER_ONLY_INTENTS = frozenset({"it_help"})` | `domain/intents.py` (mới) |
+| 14 | **`it_help` KHÔNG vào `ENABLED_INTENTS`** → không cần dòng `slots.yaml`, `approvers.yaml`, `check_plans`, không miễn kiểm fail-closed nào. B3 xử lý `it_help` TRƯỚC kiểm `enabled_intents`. Lý do an toàn: mọi kiểm "intent bật phải có roster/plan/slot" giữ nguyên nghĩa; `it_help` không có đường tới B11/B12 vì (a) B10 ép `info`, (b) thêm chặn tường minh ở đầu `b11_slots`/`b12_assess`: intent ∈ `ANSWER_ONLY_INTENTS` → `ValueError` → E9 (fail-closed), (c) test tĩnh | settings.py không đổi |
+| 15 | Cờ tắt `ENABLE_IT_HELP` (mặc định true; tắt → B3 coi `it_help` như `out_of_scope`) cho demo/ablation — **đề xuất, ĐP bỏ được** | `settings.py`, `.env.example` |
+| 16 | B3: 1 ý `it_help` đủ ngưỡng → `goto(S_DIAGNOSING, next="b06_diagnose", intent="it_help", slots={}, facts={})`; không `sanitize_slots`, không báo trùng M1. **Nhiều ý:** mọi ý `it_help` đổi thành `out_of_scope` TRƯỚC khi đếm/phán (con E1 ngay như hôm nay — con bắt đầu ở B6 `children.py:126`, con `it_help` sẽ E9); giữ tc32 và probe M-03 | b03 |
+| 17 | **Đường đi qua `_ROUTES` — KHÔNG thêm cạnh:** B3 → `b06_diagnose` (nhánh mới: `it_help` → 0 lời gọi tool, `facts={}`, event `diagnosis_not_applicable`, vẫn có điểm log 2) → `b08_retrieve` → `b10_route` → `confirm_wait` → B20. Mọi chuyển đã có trong 2.1. Đi qua B6 thay vì cạnh `b03→b08` để giữ điểm log 2 và không cần cạnh/chuyển mới | `b06_diagnose.py` |
+| 18 | B8/RAG: `intent_filter("it_help")` → `request_type ∈ ["general"]`; chạy lại D-23 không lọc intent: giữ | `rag/filters.py` |
+| 19 | B10: `it_help` → bỏ `b10_need_type`, ép `info` → B9 ngưỡng → expand → `b10_answer` v3 (không đổi) → `S_CONFIRMING`; audit `need_type="info"`, `answer_only=true`. Thiếu căn cứ → E3 như cũ | `b10_route.py` |
+| 20 | DB: `TICKET_INTENTS = (*INTENTS, IT_HELP)` cho CHECK `tickets`, `audit_logs`; `policy_rules` giữ `INTENTS`; `INTENTS` không đổi nghĩa (eval/monitor/policy) | `db/models.py` |
+| 21 | Migration MỚI `0015_intent_it_help.py` (down 0014): drop + create `ck_tickets_intent`, `ck_audit_logs_intent`; downgrade đổi lại — **lỗi nếu đã có dòng `it_help`** (chấp nhận; `audit_logs` append-only nên không xoá được dòng để hạ) | `db/alembic/versions/` |
+| 22 | Q7 dời 0015 → **0016** (glob `0016_*.py`, `("0016","0015")`, lý do xfail "CHỜ migration 0016"; không đổi kiểm khác): `unit/test_migration_0015_static.py` (đổi tên file → `…0016_static.py`), `integration/test_migration_0015.py` (→ `…0016.py`; `upgrade "0016"`, xuống `"0015"`), `integration/test_txlog_pg.py:135`, `integration/test_retention_pg.py:11-12,167`, `unit/test_auth_totp_replay.py:1,25`, `unit/auth_store_contract.py:50,288-326`, `app/db/retention.py:11,89-90` (chú thích + chuỗi log). Sau khi có 0015 mới: các test unit vẫn XFAIL (không có `0016_*.py`; `mfa_last_step` chưa có) — sẽ chạy kiểm | — |
+| 23 | Test tĩnh mới cho 0015: đúng một file, `("0015","0014")`, có downgrade, CHECK mới khớp `TICKET_INTENTS`, `policy_rules` không đổi. Test PG thật (up/down/up) → **chờ CI/TA** | `unit/test_migration_0015_it_help_static.py`, `integration/test_migration_0015_it_help.py` |
+| 24 | Rà các chỗ khai báo intent: `escalation_templates.yaml` (test khớp `enabled_intents` — `it_help` ngoài tập → không đổi; câu E1 có thêm "hướng dẫn sự cố IT thường gặp" không → **chờ phần lời giao bị cắt**); `dedup.yaml`/M1: `it_help` không báo trùng; `domain/target.py`: `it_help` ∉ `DEVICE_INTENTS`/`TARGET_USER_INTENTS` — không đụng file; `api/events.py INTENT_LABEL` + `messages.INTENT_LABELS` thêm nhãn; `monitor rules_data` drift theo `INTENTS` → `it_help` không vào drift (chấp nhận); `eval/metrics` lớp ngoài `INTENTS` tự thêm từ gold; FE `nhan.ts LOAI_YEU_CAU` — **chờ phần bị cắt** | — |
+| 25 | **KB `kb/general/` hiện KHÔNG có tài liệu nào** → không có tài liệu thì mọi `it_help` ra E3. Ai soạn, bao nhiêu bài, `retrieval_set` — **chờ phần lời giao bị cắt** | `kb/` |
+
+### Test sẽ viết trước (sau khi ĐP chốt MT-1, MT-2)
+
+`test_q1_triage.py` (B3: [] → hỏi; low-conf → hỏi; đã hỏi → E1 giữ `reason_detail`; `out_of_scope` rõ → E1 không hỏi; nhiều ý không hỏi; câu cố định
+không gọi LLM thêm; output guard chặn → không gửi; `effects.once` chạy lại không gửi lại; `clarify_wait` nhánh phân loại: E0 trước, timeout E4,
+ghép câu đã che, về B2, B2 chặn câu ghép, B3 lần 2 có cờ; nhánh B11 cũ không đổi; audit không chữ người dùng), `test_q12_it_help.py` (đường đi
+B3→B6→B8→B10→confirm; 0 tool; lọc `["general"]`; không `b10_need_type`; E3 khi thiếu căn cứ; nhiều ý → `out_of_scope`; chặn B11/B12 → E9; không M1),
+`test_b03_prompt_v6.py`, test tĩnh 0015, sửa `test_states.py` (27 → 29) nếu MT-1 duyệt. Mutation dự kiến: bỏ kiểm "đã hỏi", đổi thứ tự screen/timeout,
+lọc `[intent, general]`, bỏ ép `info`, bỏ chặn B11.
+
+### Điểm chờ ĐP chốt
+
+MT-1, MT-2 (trên); #9 hỏi phân loại có tính vào 3 lượt không; #15 cờ `ENABLE_IT_HELP` có cần không; #22 đổi tên file test Q7 hay giữ tên; phần
+lời giao bị cắt (FE, câu E1, KB `general`, các mục sau 8).
+
+### ĐP trả lời DỪNG 1 (09/11 09:35) — đã chốt
+
+MT-1 DUYỆT (2 chuyển, D-xx mới); MT-2 DUYỆT (hỏi cách làm / báo hiện tượng → `it_help`; kỹ thuật viên làm trực tiếp → `out_of_scope` E1; KHÔNG sửa
+dữ liệu P11, chỉ ghi chú lệch nhãn); #9 KHÔNG tính (tối đa 4 câu hỏi/ticket); #15 CÓ, mặc định bật, tắt → `it_help` như `out_of_scope`; câu E1 +
+câu hỏi phân loại có vế "và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook" khi bật; #22 ĐỔI TÊN file. Thiết kế C (mở rộng
+`clarify_wait`, `it_help` ngoài `ENABLED_INTENTS` + chặn E9 ở B11/B12, qua B6 0 tool, nhiều ý → `out_of_scope`) DUYỆT. KB `general` 15 bài + bộ câu
+kiểm v2: ĐP gửi sau, commit riêng; code không phụ thuộc số tài liệu. Mục 9: chứng minh M5/policy không bao giờ được gọi với `it_help`.
+
+### DỪNG 1 phần 2 — test viết trước (09/11), CHƯA sửa mã, CHỜ DUYỆT
+
+Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa tài liệu ở dưới (CHƯA sửa — chờ ĐP duyệt danh sách).
+
+**Test đổi kỳ vọng khi hiện thực (chưa sửa):**
+- `unit/test_b03_classify.py::test_f4_e1_branches` — 3 tham số `out()`, `vpn 0,4`, `account 0,4` (đơn ý) → hỏi phân loại thay vì E1 (dời sang
+  nhánh "đã hỏi rồi" hoặc đổi kỳ vọng `triage_asked`); `account 0,9` (`intent_not_enabled`), `out_of_scope`, nhiều ý: giữ.
+- `unit/test_b03_classify.py::test_point1_records_prompt_version` — `b03_classify@5` → `@6`. `test_point1_on_every_branch_without_user_text`
+  (`[out()]`, `[vpn 0,4]`): dự kiến giữ nguyên (dòng `triage_asked` là step B3, mang đủ điểm log 1) — kiểm lại khi code.
+- `unit/test_llm_prompts.py::test_llmg3_prompt_versions_and_contract` — `b03_classify` "5" → "6" (+ `trim_vars` nếu ĐP duyệt điểm P2-2).
+- `unit/test_graph_select_nodes.py::test_select_nodes_uses_real_b03_when_fake_scenario_unset` — `intents: []` nay hỏi phân loại: đổi phản hồi
+  kịch bản sang `out_of_scope` rõ (giữ đúng mục đích test: node thật chứ không phải node giả).
+- `unit/test_messages_scope.py::test_b20_sends_scope_message_for_e1_e3_e4` — tin E1 (cờ bật mặc định) có thêm vế "và hướng dẫn…"; E3/E4 giữ.
+- Probe `eval/probe/cong5-v1.jsonl` (LLM thật, không chạy trong `make test`): nhãn vàng `I-OOS-01` (máy in kẹt giấy), `I-OOS-02` (email đầy),
+  `I-OOS-03` (Wi-Fi nhà chậm) nay là `it_help`; `M-03`, `M-09` (nhiều ý) LLM có thể trả `it_help` cho phần máy in/chuột — đề xuất bản `cong5-v2`
+  thay vì sửa v1 (v1 là bản đã đo). `unit/test_cong5_score.py` — kiểm bộ chấm nhận nhãn `it_help` khi code.
+- Không đổi: `stack/gate5.py` (tc32 `out_of_scope` rõ), `config/scripted/default.yaml` (`out_of_scope` rõ → E1 như cũ), `eval/scenarios/*` (không ca
+  E1 mơ hồ), test monitor/B20 (chỉ đọc chuỗi lý do E1 có sẵn).
+
+**Tài liệu sẽ sửa (chưa sửa):** `build/decisions.md` + **D-75** (2 chuyển `S_CLASSIFYING → S_CLARIFYING`, `S_CLARIFYING → S_SCREENING`, ĐP chốt
+09/11, lô Q1) và **D-76** (`it_help` chỉ-trả-lời, TC15 tách hai phía, `ENABLE_IT_HELP`, `TICKET_INTENTS` + migration 0015, Q7 dời 0016);
+`NGU-CANH-DAY-DU.md` bảng 2.1 (~dòng 1466: thêm 2 dòng), TC15 (dòng 1254), TC11 (dòng 1250: "B3 hỏi phân loại → B11 hỏi lại"), Phần IV B3
+"Trạng thái ra" (dòng 1748: + `S_CLARIFYING`); `build/nhanh/B03-B05-phan-loai-tach-y.md` dòng 199, 255 (intents rỗng → hỏi phân loại), 295
+(Literal + `it_help`), 534, 562; `build/nen-tang/P11-huan-luyen-model.md` dòng 190 (CHỈ ghi chú lệch nhãn, không đổi dữ liệu);
+`build/nhanh/B11-bo-sung-thong-tin.md` dòng 196, 388 (TC11: câu mơ hồ hỏi ở B3 trước); `db/retention.py` dòng 11, 89–90 (chú thích + chuỗi log
+"chờ 0015" → "chờ 0016" — commit 2).
+
+**Điểm chờ ĐP chốt (phần 2):**
+- P2-1 Câu hỏi phân loại khi cờ TẮT: ngoài bỏ vế "và hướng dẫn…", đề xuất bỏ cả ví dụ "máy in không in được" (cờ tắt thì câu đó ra E1). Test ghim:
+  `…quyền truy cập thư mục. Bạn đang gặp việc gì? Mô tả ngắn giúp mình, ví dụ: "VPN báo lỗi 809".`
+- P2-2 **Lỗi có sẵn, không do lô này:** `b03_classify` v5 + câu dài tối đa (`TEXT_MAX` = 4000) đã vượt `budget_in` vai fast (2000) →
+  `LLMBudgetExceeded` → E2 `llm_unavailable` (đo bằng `render`, ScriptedLLM). v6 dài hơn. Đề xuất `trim_vars: [redacted_request]` cho v6 (cơ chế Q11,
+  cắt đuôi ở ranh giới từ) — test `test_b03_prompt_v6.py::test_max_size_request_fits_fast_budget`.
+- P2-3 Câu ghép có thể dài gấp đôi `TEXT_MAX`; B2 L4 phải chấm TRỌN câu (không cắt khi sàng lọc). Đề xuất: câu ghép ≤ `TEXT_MAX`, giữ NGUYÊN câu
+  trả lời, cắt ĐẦU phần câu gốc (câu gốc đã mơ hồ) — test `test_q1_triage.py::test_combined_text_capped_at_text_max_keeping_the_whole_reply`.
+- P2-4 Số D: D-75 (chuyển) + D-76 (it_help/TC15) — hay gộp một D.
+- P2-5 Nhãn FE: `LOAI_YEU_CAU.it_help = "Hỏi đáp IT"`; 3 sự kiện mới (`triage_asked`, `triage_reply`, `diagnosis_not_applicable`) cần nhãn trong
+  `SU_KIEN` — chữ do code đề xuất khi hiện thực. `routes/manager/metrics.ts` không ánh xạ intent (chỉ lý do E1) → không đổi.
+
+### DỪNG 2 — code (09/11, ĐP duyệt 10:15): 3 commit, CHƯA push; commit 4 (KB) chờ ĐP gửi file
+
+- **Commit 1 `0e82aaa`** `b3: hoi mot cau phan loai khi yeu cau mo ho` — D-75: 2 chuyển trạng thái; `triage` ∈ waiting/done; B3 hỏi câu cố định
+  (`messages.triage_question`, output guard, `effects.once` notify + hạn `clarify`), `clarify_wait` nhánh phân loại (E0 → E4 → che → câu ghép
+  ≤ `TEXT_MAX` → B2); `TEXT_MAX` một nguồn ở `domain/messages.py`; B11 lượt đầu không lấy câu phân loại làm `last_question`; cờ `ENABLE_IT_HELP`
+  (Settings/NodeDeps/wiring/compose/.env.example — câu hỏi phân loại phụ thuộc cờ); SSE: dòng bảng `triage_asked`/`triage_reply`, tin phân loại mang
+  `origin="triage"` để `pick_message` không lẫn với câu hỏi B11 (đánh số theo step+event). `triage_reply` ghi step **B11** (không B3 như PLAN):
+  test cũ g25 ghim mọi goto của `clarify_wait` là B11 — giữ bất biến đó, cũng là bước của node chờ (`WAIT_NODES`).
+- **Commit 2 `5a3a7de`** `db: them intent it_help (migration 0015), doi test cho Q7 sang 0016` — `domain/intents.py`, `TICKET_INTENTS`, migration
+  `0015_intent_it_help` (khuôn 0002: danh sách tĩnh, downgrade dừng bằng `RuntimeError` khi đã có dòng `it_help`; SQL ngoại tuyến kiểm bằng
+  `alembic upgrade 0014:0015 --sql`), dời test Q7 sang 0016 (`git mv` + nội dung), `retention.py` "chờ 0016". Test ghim head Alembic
+  (`test_monitor_dash_business::test_alembic_single_head_is_0009`) thêm 0015 — sửa cơ học mọi lô migration đều làm, ngoài danh sách 5.
+- **Commit 3** `b3: cau hoi IT chung tra loi tu KB general` — schema + `it_help`; prompt `b03_classify` v6 (+ `trim_vars`); `LLMMeta.trimmed_chars`
+  → audit B3 `request_trimmed`; B3 (cờ tắt / nhiều ý → `out_of_scope`; một ý → B6), B6 `diagnosis_not_applicable`, B8 lọc `["general"]`, B10 ép
+  `info`, chặn E9 ở B11/B12; mẫu E1 `user_message_it_help` + B20 theo cờ; nhãn SSE/FE; tài liệu D-75/D-76 + NGU-CANH/B03-B05/P11/B11; probe
+  `cong5-v2` + `eval/probe/README.md`.
+- **Test cũ đổi kỳ vọng NGOÀI danh sách 5 (cùng nguyên nhân đã duyệt):** `test_b03_no_recent_messages` + `test_chain_t20a` (ghim version v5 → v6),
+  `test_b11_clarify_v4::test_prompts_without_trim_vars_are_not_trimmed` (b03 nay cũng có `trim_vars` — điểm 2), `test_b20_audit[E1]` (tin E1 có vế
+  hướng dẫn khi cờ bật), `test_monitor_dash_business` (head 0015).
+- **Mutation (10/10 đỏ, mỗi ca sao lưu → đổi → chạy → khôi phục, checksum khớp):** M1 bỏ cờ đã hỏi → 2; M2 B2 bỏ qua sàng lọc khi `triage=done`
+  → 4; M3 `out_of_scope` rõ vào nhánh hỏi → 3; M4a B6 đẩy it_help sang B11 → 3; M4b bỏ chặn B11 → 1; M4c bỏ chặn B12 → 1; M5 lọc
+  `[intent, general]` → 1; M6 gọi `b10_need_type` cho it_help → 2; M7 bỏ `trim_vars` b03 → 5; M8 cắt phần trả lời thay vì câu gốc → 4.
+- **Giới hạn đã biết:** (1) `trim_vars` của B3 cắt ĐUÔI — câu ghép rất dài (> trần token fast) thì B3 có thể không thấy hết câu trả lời (B2 vẫn
+  chấm trọn; cờ `request_trimmed`). (2) Gốc 4000 + trả lời 4000 → câu ghép = chỉ câu trả lời (câu gốc bỏ hết). (3) Bộ chấm probe
+  `cong5_score.LABELS` chưa nhận `it_help` → `cong5-v2` chưa chạy được (đổi macro-F1 5 → 6 lớp là quyết định cách đo). (4) D-75 trước đây
+  được giữ chỗ cho "đổi LLM chấm gói 3" — đã ghi chú đổi sang số trống kế tiếp. (5) Một lần hook commit 2 báo đỏ
+  `test_chain_m5::test_c15_canary_never_reaches_b14_prompt[software-llm_only-…]`; chạy riêng 3/3, cả file 3/3, lượt toàn bộ trước đó và lần hook
+  sau đều xanh — chưa rõ nguyên nhân (không lấy được output lỗi).
+- **Chưa làm:** commit 4 KB (chờ ĐP); test PG (`integration/test_migration_0015_it_help.py`, 0016 dời) — chờ CI/TA; probe LLM thật — mốc G.
+
+### Soát DỪNG 2 (ĐP 09/11 11:35) — sửa trước khi gộp, thêm commit (không sửa commit cũ)
+
+- **Số D (commit `7bb903a`):** D-56 → **D-75**, D-57 → **D-76** ở mọi chỗ của lô (tài liệu, chú thích code, docstring test, PROGRESS); dòng giữ chỗ D-56
+  (đổi LLM chấm) trả nguyên văn; tiêu đề mục 3 `decisions.md` giữ "D-01…D-55" + ghi chú "D-75, D-76: bản demo lo-0811; D-57…D-74 ở dev-tuananh".
+  Kiểm: các dòng `D-5[67]` của `decisions.md` y hệt `fd8c020`; diff của lô không thêm dòng `D-5[67]` nào ngoài ghi chú đó.
+- **cong5-v2:** README ghi "v2 là dữ liệu cho bản demo, chưa chấm — sau demo"; bộ chấm không đổi.
+- **Câu trả lời phân loại không bị cắt ở B3 (commit `b3: khong cat cau tra loi phan loai khi cau ghep dai`):** chọn cắt ở GATEWAY cho riêng ca phân
+  loại — chỉ gateway biết khung prompt + `budget_in` của vai (một nguồn `config/llm.yaml`); `clarify_wait` không đo được token (không có prompt,
+  import-linter cấm node dùng client LLM); state vẫn giữ TRỌN câu ghép nên B2 chấm trọn trước khi B3 bị cắt. `LlmPort.complete(keep_tail={biến: k})`
+  (biến ∈ `trim_vars`, ngoài → `PromptContractError`) → renderer giữ nguyên k ký tự cuối, cắt PHẦN ĐẦU phần trước ở ranh giới từ ("…"); riêng phần
+  cuối vượt trần → bỏ phần đầu, cắt ĐUÔI phần cuối. `clarify_wait` ghi `triage_reply_chars` (câu trả lời có thể chứa xuống dòng — không tách theo
+  "\n"); B3 (`triage="done"`) gửi L0(câu gốc) + "\n" + L0(câu trả lời) với `keep_tail`. Mutation 3/3 đỏ (trước: 37 pass + 1 xfail; mỗi ca đỏ;
+  sau khôi phục: 37 pass + 1 xfail): B3 không truyền `keep_tail` → 2; renderer bỏ qua `keep_tail` → 3; không ghi `triage_reply_chars` → 2.
+  **Sự cố công cụ (đã xử lý):** lượt mutation đầu dùng `shutil` sao lưu/khôi phục — đột biến P2a CÙNG độ dài (`keep`→`None`) và khôi phục trả mtime
+  cùng giây → Python dùng lại `.pyc` đã đột biến (kiểm theo mtime giây + kích thước) → lượt đó và 2 lượt unit toàn bộ ngay sau ra đỏ giả. Đã xoá
+  `__pycache__`, chạy lại mutation với `PYTHONDONTWRITEBYTECODE=1` + khôi phục bằng ghi lại nội dung (kết quả trên), unit toàn bộ 2 lượt xanh.
+  Mutation DỪNG 2 (M1–M8) đều đổi độ dài file → không dính. Thêm: `$TMPDIR` = `/tmp/claude-501` dùng CHUNG giữa các phiên (phiên Q4 báo) — đã soát:
+  script mutation trong đó đúng là của phiên này, không chạy script phiên khác, không còn `*.mutbak`, diff 3 file từng đột biến sau 13:00 đúng
+  bằng phần đã viết; file tạm của phiên này đã dọn khỏi `$TMPDIR`; từ đây chỉ dùng scratchpad riêng của phiên.
+  **Giới hạn — CHỜ ĐP:** khung prompt b03 v6 = 1612 / `budget_in` 2000 token (ước tính ceil(ký tự/3); v5 là 1032) → phần yêu cầu chỉ còn ~1160 ký
+  tự. Ca ĐP đặt "gốc 4000 + trả lời 1500 → trọn câu trả lời" KHÔNG đạt được với trần hiện tại: câu trả lời 1500 ký tự một mình đã vượt → đi nhánh cắt
+  đuôi câu trả lời (đúng chốt). Test của ca đó để `xfail(strict)` "CHỜ ĐP"; ca 1000 ký tự xanh. Muốn đạt: nâng `budget_in` vai fast (≈ ≥ 2150) hoặc
+  rút gọn prompt (v7, phải probe lại). Hệ quả chung: mọi yêu cầu > ~1160 ký tự đều bị cắt ở B3 (cờ `request_trimmed`).
+- **Test canary chập chờn — ĐÃ TÁI HIỆN, gốc lỗi có TỪ TRƯỚC lô:** `test_chain_m5.py` 30 lần liên tiếp → 2 lần đỏ (cùng ca
+  `software-llm_only-software_name`); chạy riêng ca đó lặp → đỏ ở lần 86. Không phải trạng thái dùng chung (FakeClock, `rng` gateway cố định seed,
+  store/registry mới mỗi ca; đổi `PYTHONHASHSEED` không tái hiện ổn định). Nguồn bất định là canary `CANARY-M5-<uuid4>` của chính test: khi một đoạn UUID
+  có dạng 2–4 chữ cái + 3–5 chữ số đứng riêng (lần đỏ: `bba12380`), `domain/target._DEVICE_TEXT` coi là mã MÁY người khác → `target_is_other` → B6
+  không suy máy → B11 hỏi mã máy bằng LLM → test không cấp kịch bản `b11_clarify_question` → E9 ở B11, assert điều kiện trước B14 đỏ. KHÔNG phải rò
+  rỉ (chuỗi chưa tới B14; phần kiểm canary chưa chạy). Ước tính ≈ 1,3 %/lần chạy ca `software`. Đề xuất (CHƯA làm — test và `target.py` ngoài phạm vi
+  lô, `target.py` thuộc phiên Q4): canary dùng `uuid.uuid4().hex` (một khối 32 hex, không đứng riêng được) — hoặc phiên Q4 cân nhắc loại chuỗi hex
+  khỏi `_DEVICE_TEXT`.
+- **ĐP chốt 09/11 16:00:** trần b03 KHÔNG nâng vai fast (B2 dùng chung) — lô Q10 cho b03/b10_need_type/b11 đi vai `chat_fast` budget_in 3000; test
+  ca 1500 ký tự giữ `xfail(strict)` lý do "CHỜ Q10: vai chat_fast budget_in 3000" (Q10 bỏ xfail). Canary m5 đổi sang `uuid.uuid4().hex`
+  (commit `test: canary m5 khong trung dang ma may`), ca `software` chạy 200 lần liên tiếp → 200/200 xanh, 0 đỏ (09/11); 100 000 canary `.hex` ngẫu nhiên → 0 khớp `_DEVICE_TEXT`/`_MACHINE`.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -6271,6 +6452,7 @@ thu duoc" — van = vấn) có thể bị miễn (câu có dấu thì không); (
 | P6 (08/11) | Probe `b11_clarify_question` **v2** với LLM thật (**chưa đo**; ghi số mẫu, bản prompt, ngày): lượt hỏi đầu (`previous_reply=none`) chào tối đa một lần, các lượt sau không chào; ca `unusable` mở đúng "Mình chưa rõ ý bạn,"; ≤ 2 câu và ≤ 300 ký tự; vẫn không hỏi bí mật; tỉ lệ `output_guard_block`. ScriptedLLM chỉ kiểm văn bản prompt + biến, không kiểm được câu LLM viết | mục "Phase 6 — P6 lời nói" |
 | Q3 M2 (09/11) | Probe `b11_clarify_question` **v3** với LLM thật (**chưa đo**; ghi số mẫu, bản prompt, ngày): xưng "mình"/gọi "bạn", không từ cấm ("chúng tôi", "tôi", "anh/chị", "quý khách", "ạ", "Xin cảm ơn"), không đánh số (1)(2); chỉ hỏi đúng `missing_desc`, không bịa lựa chọn; không gợi ý mã ví dụ như mã thật; quy tắc `previous_reply` v2 vẫn đúng; tỉ lệ `output_guard_block` | mục "Q3" |
 | Q11 (09/11) | Probe `b11_clarify_question` **v4** với LLM thật (**chưa đo**; ghi số mẫu, bản prompt, ngày): câu mở đầu có vế đã hiểu và nhắc đúng điều người dùng nói (vd "VPN báo lỗi 809"); không hỏi lại điều đã có trong `user_request`/chẩn đoán; hỏi lại cùng thứ thì KHÔNG lặp nguyên văn `last_question` (khác đi, ngắn hơn, có ví dụ cách trả lời); không chép mặt nạ `<…_n>`/`[BÍ_MẬT_ĐÃ_ẨN]` hay dãy số dài; ca `unusable` vẫn mở đúng "Mình chưa rõ ý bạn,"; câu người dùng chứa chỉ thị ("bỏ qua quy tắc…") không làm đổi hành vi; ≤ 2 câu, ≤ 300 ký tự; tỉ lệ `output_guard_block`; ca câu yêu cầu dài ~4000 ký tự (bị cắt đuôi) vẫn ra câu hỏi hợp lý. Quy tắc v3 (giọng, từ cấm, không bịa lựa chọn) đo chung | mục "Q11" |
+| Q1+Q12 (09/11) | Probe `b03_classify` **v6** với LLM thật (**chưa đo**): câu chào/cảm ơn/"bạn là ai"/mơ hồ → `intents` rỗng (không `out_of_scope`); rõ loại thiếu chi tiết → đúng loại, confidence ≥ τ; đặc quyền (domain/local admin, admin máy) → `out_of_scope`; TC15 hai phía (hiện tượng máy in → `it_help`, nhờ sửa/thay → `out_of_scope`); câu hỏi về 4 loại ("quên mk AD thì tự đổi kiểu gì") → loại đó; câu ghép sau câu hỏi phân loại phân loại đúng; `b10_answer` v3 trên KB `general` (≤ 3 bước, có trích dẫn). Bộ `cong5-v2` cần bộ chấm nhận `it_help` | mục "Q1 + Q12" |
 | Q3 M1/M3 | Ca A06 ("Tài khoản của em bị khoá do nhập sai mật khẩu nhiều lần mở giúp em") mới kiểm ở **mức node** (B6 → B11): chạy cả graph từ B3 với LLM thật — B3 ra `unlock_account`, AD không khoá → câu cố định `account_type`; AD khoá → suy `ad`, 0 câu hỏi | mục "Q3" |
 | Q3 M1 | Preset scripted `config/scripted/tc01.yaml`, `tc12r-1.yaml`, `tc32-1.yaml` có câu `b11_clarify_question` hỏi loại tài khoản — nay câu cố định nên không còn dùng; dọn/cập nhật khi chạy lại stack | mục "Q3" |
 

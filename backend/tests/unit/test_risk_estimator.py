@@ -185,6 +185,7 @@ class RecordingLlm:
         n: int = 1,
         temperature: float | None = None,
         kb_version: str | None = None,
+        keep_tail: Mapping[str, int] | None = None,  # Q1 điểm 2 — LlmPort
     ) -> tuple[T, LLMMeta]:
         self.calls.append(PortCall(role, prompt_id, dict(variables), schema, {
             "sensitivity": sensitivity, "cache_policy": cache_policy, "n": n, "temperature": temperature,

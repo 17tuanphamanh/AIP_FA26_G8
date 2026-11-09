@@ -132,7 +132,9 @@ async def test_select_nodes_uses_real_b03_when_fake_scenario_unset() -> None:
     from app.llm.providers.scripted import Reply
     from tests.fakes.llm import make_gateway
 
-    gw = make_gateway({"b03_classify": [Reply({"intents": [], "is_multi": False})]})
+    # Q1 (ĐP 09/11): `intents: []` nay hỏi phân loại — đổi sang `out_of_scope` RÕ để giữ đúng ý test (node thật, không phải node giả)
+    oos = {"type": "out_of_scope", "confidence": 0.95, "span": "", "action_hint": None, "slots": {}}
+    gw = make_gateway({"b03_classify": [Reply({"intents": [oos], "is_multi": False})]})
     h = GraphHarness(llm=gw.client)
     h.scenario.plan("t1", b03_classify="single")  # nếu lỡ dùng FAKE sẽ sang B6 — phải KHÔNG xảy ra
     nodes = select_nodes(_settings(None), h.deps())

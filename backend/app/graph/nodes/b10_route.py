@@ -24,6 +24,9 @@ Q2 M1 (ĐP 09/11) — "báo lỗi VPN khi chứng chỉ còn hạn": sau `b10_ne
 grounding giữ nguyên (thiếu bằng chứng → E3). Câu mở đầu theo fact (`messages.symptom_intro`, CODE) ghép TRƯỚC câu trả lời; output
 guard chạy trên toàn tin. State `need_type="info"` (đã trả lời như info); audit giữ `need_type` của LLM + `symptom_to_info` (bool).
 
+D-76 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`) → KHÔNG gọi `b10_need_type`, ép `info` (audit `need_type="info"`,
+`answer_only=true`) → B9 → expand → `b10_answer` như mọi câu trả lời KB; thiếu căn cứ → E3 như cũ. Không bao giờ sang B11.
+
 Lỗi: `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded` → E2 `llm_unavailable`; hết hạn cả lượt
 (ở LLM hoặc RAG) → E2 `turn_budget_exceeded`, bắt tường minh (`step` hằng). Không `except Exception` — lỗi khác → E9.
 Audit `detail`: chỉ enum, định danh, số đếm — không câu người dùng, không chữ LLM.
@@ -35,6 +38,7 @@ from typing import Any
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.answer import cap_steps, check_citations, render_answer
 from app.domain.exit_codes import ExitCode
+from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import answer_msg, symptom_intro
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_RETRIEVING
 from app.domain.ticket_state import ChunkRef
@@ -52,7 +56,7 @@ def _info() -> dict[str, Any]:
     return {
         "need_type": None, "prompt": None, "llm_error": None, "rag_error": None, "evidence_blocks": None,
         "trimmed_evidence": None, "evidence_truncated": False, "citation": None, "cited": [], "guard": None,
-        "grounding": None, "symptom_to_info": False, "steps_truncated": False,
+        "grounding": None, "symptom_to_info": False, "steps_truncated": False, "answer_only": False,
     }  # fmt: skip
 
 
@@ -90,6 +94,9 @@ def make(deps: NodeDeps) -> NodeFn:
         kb_version = state["kb_version"]
         info["grounding"] = grounding(chunks, state.get("retrieval_score"), deps.constants.RETRIEVAL_THRESHOLD)
         above = info["grounding"]["above_threshold"]
+        if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-76: chỉ trả lời — ép `info`, KHÔNG gọi b10_need_type
+            info["need_type"], info["answer_only"] = "info", True
+            return await _answer(state, info, chunks, kb_version, above, symptom=False)
         try:
             need, meta = await deps.llm.complete(
                 "fast", "b10_need_type",
@@ -121,6 +128,12 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_RETRIEVING, next_node="b11_slots", step="B10", event="needs_action", audit_detail=info,
                 need_type="action",
             )  # fmt: skip
+        return await _answer(state, info, chunks, kb_version, above, symptom=symptom)
+
+    async def _answer(
+        state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
+    ) -> dict[str, Any]:
+        """B9 → expand → `b10_answer` → hậu kiểm → output guard → gửi (nhánh `info` — cũ, và `it_help` D-76)."""
         if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,

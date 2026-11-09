@@ -25,7 +25,7 @@ VARS = {"redacted_request": "VPN không vào được", "label_hint": None}
 def test_prompt_declares_only_request_and_hint_and_bumps_version() -> None:
     raw = yaml.safe_load(PROMPT_FILE.read_text(encoding="utf-8"))
     assert raw["allowed_vars"] == ["redacted_request", "label_hint"]
-    assert int(raw["version"]) == 5
+    assert int(raw["version"]) == 6  # lô Q1+Q12 (ĐP 09/11): v6 — allowed_vars giữ nguyên
 
 
 def test_prompt_text_has_no_recent_messages_block() -> None:

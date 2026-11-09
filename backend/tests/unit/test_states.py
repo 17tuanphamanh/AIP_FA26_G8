@@ -25,7 +25,7 @@ STATES = [
     "S_RESOLVED", "S_REJECTED", "S_BLOCKED",
 ]  # fmt: skip
 
-# Bảng 2.1 — 27 cặp khác nhau.
+# Bảng 2.1 — 27 cặp khác nhau + 2 cặp D-xx (ĐP chốt 09/11, lô Q1: hỏi phân loại) = 29.
 EXPECTED_TABLE = {
     ("S_NEW", "S_SCREENING"), ("S_NEW", "S_BLOCKED"),
     ("S_SCREENING", "S_CLASSIFYING"), ("S_SCREENING", "S_BLOCKED"),
@@ -43,6 +43,8 @@ EXPECTED_TABLE = {
     ("S_EXECUTING", "S_CONFIRMING"), ("S_EXECUTING", "S_ESCALATED"),
     ("S_CONFIRMING", "S_RESOLVED"), ("S_CONFIRMING", "S_ESCALATED"),
     ("S_ESCALATED", "S_RESOLVED"),
+    # D-xx (ĐP chốt 09/11, lô Q1): B3 hỏi một câu phân loại; câu trả lời quay lại B2 sàng lọc đầy đủ câu ghép
+    ("S_CLASSIFYING", "S_CLARIFYING"), ("S_CLARIFYING", "S_SCREENING"),
 }  # fmt: skip
 # Quy tắc 1 — giữ nguyên trạng thái xử lý (phần chưa có trong bảng).
 EXTRA_SELF = {(s, s) for s in [
@@ -110,14 +112,14 @@ def test_constants_match_spec() -> None:
     assert ALL_STATES == set(STATES)
     assert len(ALL_STATES) == 14
     assert TABLE_2_1 == EXPECTED_TABLE
-    assert len(TABLE_2_1) == 27
+    assert len(TABLE_2_1) == 29  # 27 + 2 (D-xx lô Q1)
     assert len(FORBIDDEN) == 6
 
 
 def test_expected_counts() -> None:
-    # 27 bảng + 6 quy tắc 1 + 2 quy tắc 2 = 35; ticket cha thêm 5 = 40.
-    assert len(expected_allowed(False)) == 35
-    assert len(expected_allowed(True)) == 40
+    # 29 bảng (27 + 2 D-xx lô Q1) + 6 quy tắc 1 + 2 quy tắc 2 = 37; ticket cha thêm 5 = 42.
+    assert len(expected_allowed(False)) == 37
+    assert len(expected_allowed(True)) == 42
 
 
 @pytest.mark.parametrize("is_parent", [False, True], ids=["thuong", "cha"])
@@ -284,3 +286,19 @@ def test_illegal_transition_is_domain_error() -> None:
     assert issubclass(IllegalTransition, DomainError)
     assert "S_NEW" in str(IllegalTransition("S_NEW", "S_EXECUTING"))
 
+
+
+# ---- D-xx (ĐP chốt 09/11, lô Q1): 2 chuyển mới, 6 chuyển cấm giữ nguyên ----------------------------------------------------
+
+
+def test_q1_triage_transitions_allowed_and_screening_still_guarded() -> None:
+    state = clean_state()
+    assert transition_ok(state, "S_CLASSIFYING", "S_CLARIFYING")
+    assert transition_ok(state, "S_CLARIFYING", "S_SCREENING")
+    # B2 vẫn chỉ ra 3 đích (F5 không đổi): câu ghép không đi tắt sang bước sau
+    for to in ("S_DIAGNOSING", "S_RETRIEVING", "S_CLARIFYING", "S_ASSESSING", "S_CONFIRMING"):
+        assert not transition_ok(state, "S_SCREENING", to), to
+    # không mở đường tắt khác từ chờ phân loại
+    for to in ("S_CLASSIFYING", "S_DIAGNOSING", "S_RETRIEVING", "S_BLOCKED"):
+        assert not transition_ok(state, "S_CLARIFYING", to), to
+    assert not transition_ok(state, "S_CLASSIFYING", "S_RETRIEVING")

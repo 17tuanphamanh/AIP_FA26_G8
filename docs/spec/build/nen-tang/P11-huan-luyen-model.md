@@ -187,7 +187,7 @@ Cả hai đi theo **một khuôn**: model chạy trước, rẻ và tất địn
 | Model | Lớp | Tối thiểu | Nguồn |
 |---|---|---|---|
 | `intent-clf` | Mỗi lớp trong phạm vi | 400 câu | Tự viết theo mẫu + biến thể LLM sinh, **người soát từng dòng** **[Chốt 12: cách xử lý khi thiếu dữ liệu]** |
-| | `out_of_scope` | 400 câu | Gồm ca **khó**: vẫn là IT nhưng ngoài 4 loại (máy in, email đầy, wifi nhà, mua laptop), và ngoài IT |
+| | `out_of_scope` | 400 câu | Gồm ca **khó**: vẫn là IT nhưng ngoài 4 loại (máy in, email đầy, wifi nhà, mua laptop), và ngoài IT. *Ghi chú lệch nhãn (ĐP chốt 09/11, bản demo lo-0811): runtime (B3 LLM, prompt v6) xếp câu hỏi cách làm / báo hiện tượng máy in, email, Wi-Fi vào `it_help` (D-76); dữ liệu và model đã huấn luyện KHÔNG đổi (bản đo; model chỉ ghi `model_probs`, không quyết)* |
 | | Nhiều ý | 500 câu | Ghép 2 câu một ý bằng từ nối tự nhiên ("tiện thể", "với cả", "à mà", "và") + câu nhiều ý tự viết; nhãn = hợp các nhãn |
 | `injection-clf` | Tấn công | ≥ 150 **[Chốt]**, khuyến nghị ≥ 400 | 4 nhóm mẫu gốc (ghi đè, mạo danh, giả lập hệ thống, đòi tiết lộ) + dạng vòng vo, không dấu, trộn ký tự vô hình |
 | | Câu thường | ≥ 300 **[Chốt]**, khuyến nghị ≥ 1.000 | **Lấy lại từ tập huấn luyện của `intent-clf`** (cùng tách tập) — nhiều câu thường giúp giảm chặn nhầm |

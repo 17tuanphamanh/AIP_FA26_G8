@@ -63,7 +63,10 @@ from app.auth.models import Principal
 from app.core.ids import new_ticket_id, new_turn_id
 from app.db.tickets import NewTicket, TicketRow
 from app.domain.children import children_progress
-from app.domain.messages import child_title
+from app.domain.messages import (  # Q1: TEXT_MAX một nguồn ở domain (câu ghép sau câu hỏi phân loại cũng dùng)
+    TEXT_MAX,
+    child_title,
+)
 from app.domain.override import (
     Decision,
     OverrideReason,
@@ -76,7 +79,6 @@ from app.graph.late_event import InvalidReply, Validate, start_event
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-TEXT_MAX = 4000
 NOTE_MAX = 1000
 CHILD_MESSAGE = "Vui lòng trả lời trong hội thoại chung"  # P1 mục 6.1, D-31
 _CHILD_INDEX = re.compile(r"[0-9]{1,2}")  # khoá `items` của `/reply` = id con `<cha>-<i>`: phần sau `<cha>-` CHỈ là số (T20b, soát lượt 4)

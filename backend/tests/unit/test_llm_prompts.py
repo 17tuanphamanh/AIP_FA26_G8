@@ -230,7 +230,7 @@ def test_prompt_hash_is_sha256_of_file(registry: PromptRegistry, tmp_path: Path)
 @pytest.mark.parametrize(("pid", "version", "role", "schema", "allowed"), [
     ("b10_answer", "3", "strong", "AnswerOut", ("question", "evidence")),  # Q2 M2: v3, hợp đồng giữ nguyên
     ("b10_need_type", "2", "fast", "NeedTypeOut", ("text", "evidence_titles")),
-    ("b03_classify", "5", "fast", "ClassifyOut", ("redacted_request", "label_hint")),  # M3: v5 bỏ recent_messages
+    ("b03_classify", "6", "fast", "ClassifyOut", ("redacted_request", "label_hint")),  # M3: v5 bỏ recent_messages; Q1+Q12: v6
 ])  # fmt: skip
 def test_llmg3_prompt_versions_and_contract(
     registry: PromptRegistry, pid: str, version: str, role: str, schema: str, allowed: tuple[str, ...]

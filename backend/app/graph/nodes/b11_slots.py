@@ -63,6 +63,7 @@ from typing import Any, Final, Literal
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.action import TARGET_USER_INTENTS, build_action
 from app.domain.exit_codes import ExitCode
+from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import (
     ACTION_LABELS,
     device_not_found_question,
@@ -150,6 +151,8 @@ def action_choices(deps: NodeDeps, intent: str) -> list[str]:
 
 def make(deps: NodeDeps) -> NodeFn:
     async def b11_slots(state: Any) -> dict[str, Any]:
+        if state["intent"] in ANSWER_ONLY_INTENTS:  # D-76: chỉ-trả-lời không có slot/hành động — tới đây là bug → E9 (fail-closed)
+            raise ValueError(f"b11_slots nhận intent chỉ-trả-lời {state['intent']!r} — không bao giờ dựng hành động")
         spec = deps.slots.intents[state["intent"]]
         slots = dict(state.get("slots") or {})
         missing = spec.missing(slots)  # T20a P4
@@ -260,7 +263,8 @@ def make(deps: NodeDeps) -> NodeFn:
                      "previous_reply": previous_reply(state, turns),
                      "missing_desc": describe_missing(asked, action_choices=action_choices(deps, state["intent"])),
                      "action_label": action_label(state), "user_request": str(state["redacted_request"]),
-                     "last_question": last_question(state) or NO_LAST_QUESTION}, QuestionOut,
+                     # Q1: lượt B11 đầu không đọc `conversation` — tin `question` có thể là câu hỏi phân loại của B3, không phải "câu B11 vừa hỏi"
+                     "last_question": (last_question(state) if turns > 0 else "") or NO_LAST_QUESTION}, QuestionOut,
                 )  # fmt: skip
             except LLMSchemaError as exc:
                 info["llm_error"] = type(exc).__name__

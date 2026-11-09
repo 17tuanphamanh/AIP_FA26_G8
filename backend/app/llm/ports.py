@@ -37,6 +37,9 @@ class LLMMeta(BaseModel):
     used_fallback: bool
     trimmed_evidence: int = 0
     trimmed_messages: int = 0
+    # Q1 điểm 2 (ĐP chốt 09/11): số ký tự bị cắt đuôi khỏi biến `trim_vars` (`Rendered.trimmed_chars`) — node ghi cờ bool vào audit
+    # (B3 `request_trimmed`); KHÔNG vào span/`llm_calls` (không đổi cột DB)
+    trimmed_chars: int = 0
     logprobs: list[Any] | None = None  # chỉ khi provider trả (RQ2) — chưa dùng ở Phase 3
 
 
@@ -56,6 +59,7 @@ class LlmPort(Protocol):
         n: int = 1,
         temperature: float | None = None,
         kb_version: str | None = None,
+        keep_tail: Mapping[str, int] | None = None,  # Q1 điểm 2: biến ∈ `trim_vars` → giữ nguyên k ký tự cuối khi phải cắt
     ) -> tuple[T, LLMMeta]: ...
 
 

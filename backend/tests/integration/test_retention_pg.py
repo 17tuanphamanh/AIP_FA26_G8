@@ -8,8 +8,8 @@ Hợp đồng (PLAN bn-a mục M2; P7 mục 4 [Chốt 17.2]):
   - `purge_ticket_rows(ticket_id)`: xoá `side_effects` của ticket, `child_notices` có `parent_ticket_id` = ticket (P7 mục 4).
   - `count_expired_sessions(cutoff)` / `delete_expired_sessions(cutoff)`: `sessions.expires_at < cutoff` VÀ không dòng `tickets`/`turns` nào
     trỏ tới (ĐP chốt Q2). `count_fired_waits` / `delete_fired_waits`: `wait_deadlines.fired_at < cutoff` (ĐP chốt Q3).
-  - `record_run(detail, at)`: đúng 1 dòng `security_events` loại `retention_run` (ĐP chốt Q5 — loại mới ở migration 0015; tới lúc đó 1
-    dòng log — ca kiểm dòng sự kiện gắn cờ chờ 0015).
+  - `record_run(detail, at)`: đúng 1 dòng `security_events` loại `retention_run` (ĐP chốt Q5 — loại mới ở migration 0016 — dời từ 0015; tới lúc đó 1
+    dòng log — ca kiểm dòng sự kiện gắn cờ chờ 0016).
 - KHÔNG đụng `audit_logs` (append-only: REVOKE + trigger) — số dòng không đổi; `tickets` còn nguyên (FK của audit).
 Database riêng cho module (`audit_logs`/`security_events` append-only không dọn được giữa các test).
 """
@@ -164,7 +164,7 @@ async def test_m2_dry_run_deletes_nothing(rw: AsyncEngine, saver: AsyncPostgresS
     assert report.dry_run is True and report.threads >= 1
 
 
-@pytest.mark.xfail(strict=True, reason="CHỜ migration 0015 (loại security_events `retention_run`)")
+@pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 (loại security_events `retention_run`)")
 async def test_m2_each_run_writes_exactly_one_retention_event(rw: AsyncEngine, saver: AsyncPostgresSaver) -> None:
     before_events = int(await scalar(rw, "SELECT count(*) FROM security_events WHERE event_type = 'retention_run'"))
     await _job(rw, saver, dry_run=True).run()
