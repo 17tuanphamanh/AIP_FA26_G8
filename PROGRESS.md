@@ -6424,10 +6424,11 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   ca 1500 ký tự giữ `xfail(strict)` lý do "CHỜ Q10: vai chat_fast budget_in 3000" (Q10 bỏ xfail). Canary m5 đổi sang `uuid.uuid4().hex`
   (commit `test: canary m5 khong trung dang ma may`), ca `software` chạy 200 lần liên tiếp → 200/200 xanh, 0 đỏ (09/11); 100 000 canary `.hex` ngẫu nhiên → 0 khớp `_DEVICE_TEXT`/`_MACHINE`.
 
-## Q6 — ý chờ duyệt không giữ câu hỏi của ý khác (09/11/2026, nhánh `q6-nhieu-y-cho-duyet`, nền `lo-0811` `8e74401`) — DỪNG 2 xong (D-77), chưa push
+## Q6 — ý chờ duyệt không giữ câu hỏi của ý khác (09/11/2026, nhánh `q6-nhieu-y-cho-duyet`, nền `lo-0811` `8e74401`) — DỪNG 2 xong (D-77) + c1–c3, chưa push
 
 **Trạng thái:** ĐP duyệt DỪNG 1 lúc 20:05 (Đ1–Đ6, mục "ĐP duyệt DỪNG 1" dưới). Đã code S1–S6, sửa 14 test cũ, viết D-77 + P1 §8. Unit xanh,
-lint xanh; test PG mới CHỜ TA/CI. Một commit `b5: y cho duyet khong giu cau hoi cua y khac`.
+lint xanh; test PG mới chạy ở CI khi gộp (ĐP 20:55). Commit `b258d90` (`b5: y cho duyet khong giu cau hoi cua y khac`); ĐP 20:55 giao thêm,
+21:30 duyệt: `69313b6` (c1 gate5), `34c4d97` (c2 nhãn "Chờ IT duyệt" + ô nhập cha), `79e5bff` (c3 câu B15 bỏ "ngay").
 
 **Bằng chứng (lời giao ĐP):** audit ticket 0106501f… — con 1 B15 `queued` 15:12:11, con 2 B11 hỏi 15:12:21, cha chỉ `digest_sent` 15:43:47 (đúng lúc
 con 1 E6). Người dùng không thấy câu hỏi của con 2 suốt 31 phút.
@@ -6540,20 +6541,26 @@ loop_seq)` → `ON CONFLICT DO NOTHING` → mất một dòng audit. Tin, notice
 Không làm ca S6 trên graph thật (phục hồi lượt con chết giữa B15): `Crash` của harness là `BaseException` giết cả lượt cha đang lồng →
 kịch bản hai lượt mở cùng phục hồi, thứ tự phục hồi không tất định — không đáng tin hơn ca runner.
 
-**(a) gate5 (stack thật, KHÔNG chạy — cần docker) đổi kỳ vọng — CHƯA sửa `backend/tests/stack/gate5.py`:** `_tc34_like` dòng 529–531 ("cha ở
+**(a) gate5 — ĐÃ SỬA ở `69313b6` (c1), CHƯA CHẠY (cần docker — chạy khi deploy); đã qua ruff + mypy + import.** Hàm `_decide_child` thay bằng
+`_decide_child_while_parent_waits` (chờ lượt CON đóng, khẳng định cha 0 lượt mới / 0 tin chen / vẫn `S_CONFIRMING`); giữ mọi khẳng định an toàn
+(0 lời gọi ghi trước khi duyệt, E8 + `PARTIALLY_ESCALATED`, 0 escalation của cha). Phân tích gốc (trước khi sửa): `_tc34_like` dòng 529–531 ("cha ở
 parent_wait" `S_CLASSIFYING`, "0 tin assistant trước khi duyệt", `children_progress` `[ready, pending_approval]`) → nay `S_CONFIRMING`, 1 tin
 (vòng 1), `[needs_user, pending_approval]`; `tc34` dòng 544 `_decide_child` chờ một lượt của CHA sau khi duyệt (`ctx.settle(t, before)`) —
 cha đang `parent_reply_wait` nên KHÔNG có lượt → hết giờ chờ; dòng 546–553 (digest vòng 1 hai `result`, reply cả hai, 2 tin) → vòng 1 =
 kết quả ý 1 + chờ duyệt ý 2, reply ý 1, vòng 2 = kết quả ý 2, reply ý 2, 3 tin. Cùng lý do: `tc36` dòng 582–590, `tc12r` dòng 615–623.
-Cách sửa như `unit/test_t20b_flows.py` (đã sửa); việc của người chạy `make gate5`.
+Đã sửa theo cùng cách `unit/test_t20b_flows.py`.
 
 **(b) FE (chỉ đọc):** cha ở `parent_wait` sau khi đã gửi vòng → API `waiting_for = null` (`api/tickets.py WAITING_FOR` không có
 `parent_wait`) → `ChatPage.composerFor` trả ô nhập KHOÁ (`enabled: false`), placeholder `statusLabel("S_CLASSIFYING")…` = "Đang tiếp nhận
 yêu cầu…" (nhãn ticket thường — lệch với nhãn cha); khung hành động hiện "Đang xử lý các ý… Bạn không cần làm gì."; nhãn cha
 `PARENT_PROCESSING`; tin digest chỉ đọc, không form (test FE `multi.test.tsx` "waiting_for ≠ reply … tin digest chỉ đọc" đã ghim); dải tiến độ
-"Chờ IT duyệt"; polling 2 s (`waiting_for` null). Cần sửa FE (CHƯA sửa): (i) placeholder ô nhập của cha dùng `PARENT_PROCESSING` thay
-`statusLabel(view.status)`; (ii) khối "chờ duyệt" trong digest mang nhãn "Đã xử lý" (`itemLabel` theo kind `result`) — sai nghĩa, cần nhãn
-"Chờ IT duyệt" (FE nhận theo `source`/chữ, hoặc đổi kind sau demo).
+"Chờ IT duyệt"; polling 2 s (`waiting_for` null). **ĐÃ SỬA ở `34c4d97` (c2):** (i) ô nhập của cha chưa đóng mà không chờ người dùng → placeholder
+"Đang xử lý các ý…" (`PARENT_PROCESSING`), ticket thường giữ "Đang tiếp nhận yêu cầu…"; (ii) backend `compose_digest` thêm `step` (=
+`source_step` của notice) vào mỗi khối — không đổi kind, không migration (hợp đồng: `conversation` là `list[dict]`, FE `parseDigest` không chặn
+khoá lạ; notice con bước B15 CHỈ là tin "chờ duyệt"); FE khối `result` có `step` B15 → "Chờ IT duyệt", khối cũ không `step` → như trước.
+
+**(c) Câu B15 — ĐÃ SỬA ở `79e5bff` (c3):** `APPROVAL_PENDING_TAIL` bỏ chữ "ngay" ("…có kết quả mình báo bạn tại đây.") vì giới hạn Đ3. Câu cũ có
+đúng 3 chỗ trong repo (`domain/messages.py`, `unit/test_b15_approval_pending.py` dòng 5 và 31) — đổi cả 3; FE/e2e/gate không ghim câu này.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
