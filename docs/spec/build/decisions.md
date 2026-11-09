@@ -24,6 +24,8 @@
 
 ### 1.1. Đánh số 20 luật (N4) [Đề xuất đánh số; nội dung luật = bảng Phần I mục 6.3 của NGU-CANH]
 
+> **Ghi chú 09/11/2026 — bản demo `lo-0811` (Q5, ĐP duyệt 09/11 10:05):** thêm **R21** `deny` · software · `install_software` · `action.facts.software_prohibited is_true` · "Phần mềm bị cấm theo quy định của công ty" (fact chỉ từ tool `check_catalog_entry.prohibited` — danh sách cấm do hệ thống ngoài giữ, `mock_services/seed.json` `prohibited_software`). Bản demo: **N4 = 21 luật, 7 allow / 12 approval_required / 2 deny**. Bản đo `bf94df2` giữ 20 luật 7/12/1 — nội dung dưới đây là của bản đo, không viết lại.
+
 Giữ đúng các mã đã xuất hiện trong tài liệu: R01 (TC01), R04 (TC07), R07 (TC08), R12 (deny), R20 (TC02). Đủ 7 `allow` + 12 `approval_required` + 1 `deny` = 20.
 
 | Mã | Loại | Nhóm | Luật |

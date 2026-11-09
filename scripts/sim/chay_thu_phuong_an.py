@@ -74,7 +74,7 @@ REQUESTS: tuple[Req, ...] = (
     Req("allow", "tc01", "đặt lại mật khẩu tài khoản AD."),  # gate5 TC01 — R01
     Req("allow", "tc03", "cài Zoom"),  # gate5 TC03 — R11
     Req("approval", "tc07", "đặt lại mật khẩu AD cho svc_backup."),  # gate5 TC07 — R03
-    Req("approval", "tc17", "cài utorrent"),  # gate5 TC17 — R13
+    Req("approval", "tc17", "cài photoshop"),  # gate5 TC17 — R13 (Q5: thay utorrent, nay bị cấm)
     Req("no_rule", "sim_khongluat", "Đặt lại mật khẩu tài khoản AD cho nv005 giúp mình."),  # TC37 (test_chain_m5)
     Req("no_rule", "sim_khongluat", "Bạn nv005 cần đặt lại mật khẩu AD, làm giúp mình."),  # TC37 (test_chain_m5)
 )

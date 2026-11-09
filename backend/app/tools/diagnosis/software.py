@@ -5,7 +5,7 @@ KHOÁ TRA CỨU — giá trị fact luôn từ đầu ra tool (test AST `test_fa
 
 `diag` (TQ-2): `ToolResult.data` — model đã validate; danh sách rỗng = RootModel rỗng; `None` = 404 hoặc không gọi.
 
-- `check_catalog_entry(name)` (khi có tên) → `in_catalog`, `license_paid`, `requires_local_admin`. **404 → `in_catalog=False`** (mock
+- `check_catalog_entry(name)` (khi có tên) → `in_catalog`, `software_prohibited` (Q5), `license_paid`, `requires_local_admin`. **404 → `in_catalog=False`** (mock
   trả 404 cho phần mềm ngoài danh mục — dữ liệu, không phải lỗi; chặt hơn: R13 bắt); `license_paid`, `requires_local_admin` không đặt.
   Q5: tên ngoài danh mục mà bị cấm → 200 `in_catalog=False, prohibited=True` (thuộc tính danh mục null) — cũng không đặt hai fact đó.
 - `check_license_available(name)` (khi có tên), `check_installed_list(device_id)` (khi có máy) → chỉ `diagnostics`.
@@ -53,6 +53,7 @@ def infer_software(
     inferred, facts = device_facts(devices, requester_id=requester_id, device_id=slots.get("device_id"), allow_infer=allow_infer)
     if "software_name" in slots:  # đã gọi catalog (calls) — 404 là dữ liệu "ngoài danh mục"
         facts["in_catalog"] = entry is not None and entry.in_catalog
+        facts["software_prohibited"] = entry is not None and entry.prohibited  # Q5: chỉ từ đầu ra tool; 404 → không cấm (dữ liệu)
         # thuộc tính danh mục chỉ khi trong danh mục (Q5: tên cấm ngoài danh mục → 200 với thuộc tính null; model đã ép đủ khi in_catalog)
         if entry is not None and entry.in_catalog and entry.paid is not None and entry.requires_local_admin is not None:
             facts["license_paid"] = entry.paid

@@ -259,7 +259,7 @@ make gate5 S=all           # ghi biên bản bienban-gate5-<YYYYmmdd>.md (KHÔNG
 | `tc03` | an.nv "cài Zoom" (máy LAP-0342 do B6 suy) → R11 AUTO → 1 install, 0 `POST /software/licenses/*` → xác nhận → `S_RESOLVED` |
 | `tc07` | an.nv "đặt lại mật khẩu AD cho svc_backup." → R03 (+R04) → phiếu l1_01 → duyệt → B17 tra lại AD nv001 + svc_backup → reset svc_backup đúng 1, 0 reset nv001 |
 | `tc08` | binh.tt "xin quyền đọc finance/Q3 30 ngày" → R07 (+R09) → l1_01 từ chối có lý do → `S_REJECTED`, tin "Yêu cầu cấp quyền truy cập cho thư mục finance/Q3 chưa được duyệt. Lý do: …", 0 ghi |
-| `tc17` | an.nv "cài utorrent" → catalog 404 là dữ liệu (không E2) → R13 → chờ duyệt, 0 ghi, 0 escalation |
+| `tc17` | an.nv "cài photoshop" (Q5: thay utorrent — nay bị cấm, R21) → catalog 404 là dữ liệu (không E2) → R13 → chờ duyệt, 0 ghi, 0 escalation |
 | `tc18` | 500 ở `/ad/users/nv001/privilege` (check_privilege_level) → B7 E2 `tool_system_error`, tin mẫu E2, 0 ghi |
 | `tc21a` | "cài Zoom" + install 500 → E7 `exec_failed`, 1 lời gọi ghi, ghi chú bàn giao 4 phần có "có thể đã được áp dụng" |
 | `tc21b` | "cài Adobe Acrobat Pro" → R14 → duyệt → assign OK, install 500 → E7, 0 uninstall, tổng ghi 2, ghi chú "license … ĐÃ cấp … KHÔNG được thu hồi tự động" (cổng 5 "phần mềm có phí lỗi khi cài → không gọi hoàn tác") |

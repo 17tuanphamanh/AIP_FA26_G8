@@ -6087,6 +6087,81 @@ Q3 là 8738 → +27 đúng số test mới). Không gọi LLM thật (ScriptedLL
   (như B3). (7) Lệch tài liệu còn lại: mã giả `llm.complete("fast", "b11_clarify_question", …)` ở `phase3-thiet-ke-chi-tiet.md` (~dòng 1798) và `build/nhanh/B11-bo-sung-thong-tin.md`
   (~dòng 309) vẫn là bản 3 biến; bảng 7.4 đã cập nhật.
 
+## Q5 — phần mềm bị cấm: từ chối ngay theo quy định (09/11/2026, nhánh `q5-phan-mem-cam` trên `fd8c020`; ĐP duyệt PLAN 10:05) — 2 commit, chưa push
+
+**Kết quả (sau duyệt):** commit 1 `29bbc34` `mock: danh sach phan mem bi cam`; commit 2 `policy: tu choi phan mem bi cam` (hash ở MẪU B —
+commit tự chứa file này). `make lint` exit 0; `uv run pytest backend/tests/unit` **8861 pass / 4 skip / 11 xfail / 0 fail**; mock
+`mock_services/tests` **511 pass**; FE `npm run typecheck|lint|check:style` sạch, `npm run test` **1275 pass** (48 file). Không gọi LLM thật,
+không `make test`/docker (e2e `test_tools_vs_mock`, `test_b06_vs_mock`, `make gate5 S=tc17` → TA/CI). sha `config/policy.json` mới
+**`6f5fef9940d0386feea87f85f1a3c8e61aefdb2c63ac4df8516044886fbd8309`** (cũ `e78f76e8…0db047`) — không chỗ nào trong repo ghim (D5).
+Chốt ĐP 10:05: Q5-1 N4 mở rộng CHO BẢN DEMO (21 luật 7/12/2; bản đo `bf94df2` giữ 20); Q5-2 TC17 → "photoshop"; D1 + `kmspico`, `kmsauto`;
+D3 fact KHÔNG gửi B14 (`risk/estimator.B14_EXCLUDED_FACTS`, lọc ở `intended_action_vars` — đường duy nhất vào `b14_risk_estimate` và
+`b14_risk_vote`; test render thật qua gateway); docs/spec: ghi chú có ngày ở decisions 1.1, phase5 4.4, 7.6. Deploy: đổi seed → build lại
+container mock + `python -m app.seed reset`.
+Mutation (script tự khôi phục byte gốc, xanh lại sau mỗi lượt): M1 bỏ R21 → đỏ 8; M2 R21 → approval_required → đỏ 7; M3 fact từ slot →
+đỏ 5 (gồm `test_facts_ast::t2[software.py-infer_software]`); M4 404 coi là cấm → đỏ 2; M5 B14 không loại fact → đỏ 3; M6 bản giả không trả
+tên cấm → đỏ 4; M7 mock không khớp từ khoá → đỏ 5; M8 seed không kiểm từ khoá chạm danh mục → đỏ 2; M9 mock trả `prohibited=true` cho
+phần mềm trong danh mục → đỏ 1.
+Nợ: `scripts/rule_coverage.py::expected_facts` tra catalog chỉ theo slug (mock tra cả tên hiển thị/alias) và chưa biết `software_prohibited`
+— làm sau (D6).
+
+**PLAN (DỪNG 1, giữ nguyên để đối chiếu):** PLAN + test viết trước, chưa sửa code/`policy.json`/`seed.json`. Bằng chứng: "Cài giúp mình uTorrent", "Cài Windows
+crack lên máy em" → catalog 404 → `in_catalog=False` → R13 → gửi L1 chờ duyệt. Đúng ra: từ chối ngay (deny → E5 `policy_deny`, 0 phiếu duyệt).
+
+**Mâu thuẫn đặc tả — ĐP chốt trước khi sửa (CLAUDE.md: không tự chọn):**
+- **Q5-1 · N4 [Đã chốt] "20 luật, 7 allow / 12 approval_required / 1 deny"** (`build/decisions.md` 1.1, phase5 4.4 [Chốt T22a], test
+  `test_policy_rules_all.py::test_h1_dung_20_luat_r01_r20_7_12_1`). R21 deny → 21 luật, 7/12/**2**. Đề xuất: ĐP ghi chốt mở rộng N4 (R21, Q5); test h1
+  sửa thành R01…R21, deny = {R12, R21}; sửa `docs/spec` (bảng 1.1 + nhật ký decisions, bảng 4.4) chỉ khi ĐP bảo.
+- **Q5-2 · TC17 dùng "utorrent"** làm ví dụ "catalog 404 = dữ liệu → R13 → chờ duyệt" (phase5 7.6 dòng ~1106, `backend/tests/stack/gate5.py` tc17,
+  `config/scripted/tc17.yaml`, `scripts/sim/chay_thu_phuong_an.py`, stack README, `mock_services/README.md`, e2e `test_tools_vs_mock.py:44`).
+  Sau Q5 utorrent → R21 deny → TC17 mất ý gốc (NGU-CANH TC17 "tool trả rỗng → đi tiếp"). Đề xuất: đổi tên mẫu TC17 sang **"photoshop"** (đã là
+  tên lạ của `test_infer_software` s3), giữ nguyên kỳ vọng R13/chờ duyệt.
+
+**Thiết kế đề xuất (ĐP duyệt nội dung):**
+- **D1 · Mock giữ danh sách (G-01).** `seed.json` thêm `prohibited_software`:
+  `names` = utorrent ("uTorrent", alias "u torrent"), bittorrent ("BitTorrent", "bit torrent"), qbittorrent ("qBittorrent", "qbit torrent");
+  `keywords` = `crack`, `keygen`, `torrent`, `patch-lau` (lưu dạng đã chuẩn hoá `software.normalize`). So khớp: tên chuẩn hoá trùng slug/tên
+  hiển thị/alias của `names`, HOẶC chứa một từ khoá (chuỗi con). Không có "patch" đứng một mình. Ghi chú: slot `software_name` chỉ nhận ASCII
+  (`slots.yaml` `^[A-Za-z0-9][A-Za-z0-9 .+#-]{0,63}$`) nên "patch lậu" có dấu không bao giờ tới tool — chỉ "patch lau" không dấu bắt được.
+  `seed_model` từ chối seed khi: thiếu mục; tên cấm trùng tên tra cứu của danh mục; từ khoá rỗng/chưa chuẩn hoá; từ khoá là chuỗi con của
+  slug/tên hiển thị/alias nào trong danh mục (chống chặn nhầm — đã kiểm: không từ khoá nào đụng 7 phần mềm hiện có).
+- **D2 · Phản hồi `GET /software/catalog/{tên}`:** trong danh mục → như cũ + `prohibited: false`; ngoài danh mục + cấm → **200**
+  `{name, display_name, in_catalog: false, prohibited: true}` + 5 thuộc tính danh mục `null`; ngoài danh mục, không cấm → 404 như cũ.
+  `licenses`, `install` không đổi (tên cấm → 404 — không cài được kể cả lọt). Backend `CatalogEntry`: `prohibited: bool` BẮT BUỘC (như
+  `requires_local_admin`, P7); 5 thuộc tính thành `| None`, validator: `in_catalog=true` ⇒ đủ 5 (thiếu → lỗi hợp đồng như cũ).
+  Không chọn cách thêm tool đọc mới (đổi `TOOL_MAP`/D-46, số tool).
+- **D3 · Fact `software_prohibited: bool`** (`domain/facts.py`), đặt trong `infer_software` CHỈ từ `entry.prohibited` khi đã tra catalog
+  (như `in_catalog`): cấm → True; trong danh mục / 404 → False; chưa có tên → không đặt. Tool lỗi → B7 E2 `tool_system_error` trước khi
+  infer (không bao giờ thành "không cấm"). Hệ quả cần ĐP biết: `intended_action.facts` gửi B14 (ca software tới lớp LLM, vd cài cho người
+  khác) có thêm `software_prohibited: false` → đầu vào prompt B14 đổi so với bản đo `bf94df2` (bản đo không bị đụng). Phương án khác: chỉ
+  đặt khi True — không đề xuất.
+- **D4 · Luật R21** (cuối file): `{"id": "R21", "type": "deny", "intent": "software", "action": "install_software", "conditions": {"all":
+  [{"fact": "action.facts.software_prohibited", "op": "is_true"}]}, "description": "Phần mềm bị cấm theo quy định của công ty"}`.
+  Engine: `strictest` deny(3) > approval_required(2) > allow(1) ⇒ R13 khớp kèm vẫn thua; `all_matched` = `["R13", "R21"]`. B12 deny → E5
+  `policy_deny` → B20 (không qua B15). Người dùng nhận câu E5 `policy_deny` của Q3 M5 (đã có, không sửa).
+- **D5 · sha policy:** KHÔNG có chỗ nào trong repo ghim sha của `config/policy.json` (`test_config_files` so với byte file; `api/policy`
+  version `file-<sha[:8]>`; audit điểm 4 và eval runner đọc lúc chạy; `eval/offline` so manifest với file `--policy` truyền vào — bản đo
+  `bf94df2` dùng file luật đóng băng của nó). → không sửa gì, báo sha mới ở MẪU B. sha hiện tại `e78f76e8…0db047`.
+- **D6 · Phát hiện kèm:** bản giả `tests/fakes/seed_tools.SeedTools` tra catalog CHỈ theo slug (mock thật tra cả tên hiển thị/alias) →
+  unit "7-Zip" ra 404 → R13 (mock thật: R11). Sửa bản giả cho giống mock ở commit 1 (cần cho ca "7-Zip như cũ").
+  `scripts/rule_coverage.py` cũng tra theo slug — không sửa (ngoài phạm vi), ghi nợ.
+- Ngoài phạm vi: người có ≥ 2 máy vẫn bị B11 hỏi mã máy trước khi deny (slot `device_id` bắt buộc; B11/slots thuộc lô Q4).
+
+**Bước (Ai làm: agent chính — mọi file ở đây là lõi/dùng chung, không giao subagent):**
+
+| Bước | Commit | File |
+|---|---|---|
+| S1 | 1 `mock: danh sach phan mem bi cam` | `mock_services/seed.json`, `app/seed_model.py`, `app/state.py`, `app/software.py`, `README.md`; test mock `test_prohibited.py` (mới), `test_endpoints.py` (utorrent → 200 cấm; 404 dùng photoshop), `test_fidelity.py` (bỏ utorrent khỏi danh sách tên lạ) |
+| S2 | 1 | `backend/app/tools/models.py` (`CatalogEntry`), `tools/diagnosis/software.py` (thuộc tính danh mục chỉ khi `in_catalog`), `tests/fakes/seed_tools.py` (D6 + cấm), `test_q5_catalog_prohibited.py` (mới), `test_tool_models_p7.py`, e2e `test_tools_vs_mock.py` |
+| S3 | 2 `policy: tu choi phan mem bi cam` | `domain/facts.py`, `tools/diagnosis/software.py`, `config/policy.json` (R21), `frontend/src/routes/l1/actionLabels.ts` (nhãn fact — test sync FE đòi), `test_q5_phan_mem_cam.py` (mới), `test_slots_facts.py` (20 → 21), `test_policy_rules_all.py` h1, kỳ vọng facts có thêm `software_prohibited` (`test_infer_software`, `test_nodes_t20a`, e2e `test_b06_vs_mock`) |
+| S4 | 2 | TC17 → photoshop (nếu Q5-1/Q5-2 duyệt), `PROGRESS.md`; `docs/spec` chỉ khi ĐP bảo |
+
+**Test viết trước (DỪNG 1, chưa có code):** `backend/tests/unit/test_q5_catalog_prohibited.py` (7 ca) + `test_q5_phan_mem_cam.py` (21 ca):
+7 xanh (ca giữ hành vi: R13 khi không cấm/thiếu fact, R11; đối chứng R12 → câu `policy_deny` qua B20; tool lỗi → E2; AST bắt đột biến
+"fact từ slot"), 21 đỏ đúng lý do (chưa có `prohibited`/fact/R21; ca "như cũ" đỏ vì thiếu khoá fact + "7-Zip" vì D6).
+`mock_services/tests/test_prohibited.py` (25 ca) — CHƯA chạy (lời giao chỉ cho chạy `backend/tests/unit`).
+Mutation sẽ thử ở DỪNG 2: bỏ R21; R21 → approval_required; fact lấy từ slot; mock trả `prohibited=false`; bỏ kiểm chuỗi con ở seed_model.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
