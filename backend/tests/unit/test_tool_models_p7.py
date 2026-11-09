@@ -15,7 +15,7 @@ ACCOUNT_STATUS: dict[str, Any] = {
                 "password_last_set": "2026-09-01T00:00:00+00:00"},
 }  # fmt: skip
 CATALOG: dict[str, Any] = {
-    "name": "autocad", "display_name": "AutoCAD", "in_catalog": True, "license_type": "paid", "paid": True,
+    "name": "autocad", "display_name": "AutoCAD", "in_catalog": True, "prohibited": False, "license_type": "paid", "paid": True,
     "version": "2026", "requires_approval": True, "requires_local_admin": True,
 }  # fmt: skip
 

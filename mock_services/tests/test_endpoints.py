@@ -62,7 +62,9 @@ def test_vpn(client: TestClient, agent: dict[str, str]) -> None:
 def test_software(client: TestClient, agent: dict[str, str]) -> None:
     zoom = client.get("/software/catalog/Zoom", headers=agent).json()
     assert zoom["paid"] is False and zoom["in_catalog"] is True
-    assert client.get("/software/catalog/utorrent", headers=agent).status_code == 404
+    assert client.get("/software/catalog/photoshop", headers=agent).status_code == 404  # TC17 (Q5: ví dụ photoshop)
+    banned = client.get("/software/catalog/utorrent", headers=agent).json()  # Q5: bị cấm → 200, không phải 404
+    assert (banned["in_catalog"], banned["prohibited"]) == (False, True)
     assert client.get("/software/licenses/adobe acrobat pro", headers=agent).json()["available"] == 3
     assert client.get("/software/licenses/ms-project", headers=agent).json()["available"] == 0
     assert client.get("/software/licenses/zoom", headers=agent).json()["available"] is None
