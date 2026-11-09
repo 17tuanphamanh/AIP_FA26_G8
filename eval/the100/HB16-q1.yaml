@@ -1,0 +1,42 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 33 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB16-q1, HB16-q2
+id: HB16-q1
+family: HB16
+source: ho_bo_sung
+requester:
+  user_id: fin_head
+  role: employee
+  dept: finance
+  tenure_days: 3300
+at: '2026-10-16T09:05:00+07:00'
+faults: []
+turns:
+- 'Hai tháng tới nv001 sẽ phụ chị chạy số liệu quý, em cấp quyền vào finance/public-reports cho bạn ấy, thời hạn 60 ngày nhé.'
+- on_question_about: permission_level
+  reply: 'Đọc và ghi em nhé.'
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv001
+    params:
+      permission_level: write
+      duration_days: 60
+  facts:
+    has_permission_record: true
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: active
+    existing_permission_level: read
+labels:
+  annotator_1: AUTO
+  annotator_2: HITL

@@ -1,10 +1,15 @@
 // Hàm thuần cho màn L1 (B4L1Queue, B4L1Detail, hộp ghi đè). Không gọi mạng, không đọc đồng hồ — `now` truyền vào
 // (giờ MÁY CHỦ: api/serverClock.ts). Tên khoá của `action` / `risk` / `facts` KHÔNG được đọc ở đây: phiếu hiện đúng
 // object đã băm, đủ mọi khoá (KH 4.2 #5), risk hiện khoá–giá trị chung (F4 P1).
+import { HUONG_XU_LY, KHAC, luatIT, nhanIT } from "../../lib/nhan.ts";
+import { ACTION_TYPE_LABEL, flatKeyLabel } from "./actionLabels.ts";
 import { NOTE_MAX } from "../../api/approvals.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import type {
+  MatchedRule,
+  ApprovalAffected,
   ApprovalListItem,
+  ApprovalRiskView,
   ApprovalStatus,
   DecisionIn,
   OverrideDecision,
@@ -12,7 +17,7 @@ import type {
   OverrideReasonCode,
   ReasonCode,
 } from "../../api/types.ts";
-import { labelOf, ownEntry } from "../../lib/lookup.ts";
+import { ownEntry } from "../../lib/lookup.ts";
 
 // ---------------------------------------------------------------- hộp thư
 
@@ -90,14 +95,34 @@ const READONLY_STATE: Partial<Record<ApprovalStatus, string>> = {
 export const readonlyText = (status: ApprovalStatus): string =>
   `Phiếu ${ownEntry<string | undefined>(READONLY_STATE, status, undefined) ?? "không còn chờ duyệt"} — chỉ xem, không quyết định được nữa.`;
 
-/** Phase 4 chỉ có intent VPN (KH 4.6). Loại lạ → hiện nguyên mã, không đoán nghĩa. */
-export const ACTION_LABEL: Record<string, string> = {
-  renew_vpn_cert: "Cấp lại chứng chỉ VPN",
-  reissue_vpn_access: "Cấp lại truy cập VPN",
-};
+/** Tên hành động (B2 — bảng nhãn đợt 2: đủ 9 loại trong config/action_metadata.yaml). Loại lạ → hiện nguyên mã, không đoán. */
+export const ACTION_LABEL: Readonly<Record<string, string>> = ACTION_TYPE_LABEL;
 /** Hộp thư không biết hành động (`action_type` null — dòng audit B15 không có): dòng VẪN hiện, mở phiếu để xem object. */
 export const ACTION_UNKNOWN = "Chưa rõ hành động — mở phiếu để xem";
-export const actionLabel = (type: string | null): string => (type === null ? ACTION_UNKNOWN : labelOf(ACTION_LABEL, type));
+/** Loại hành động lạ → "Khác · <mã>" (không hiện mã trần một mình — bảng ĐP 23:10). */
+export const actionLabel = (type: string | null): string =>
+  type === null ? ACTION_UNKNOWN : Object.hasOwn(ACTION_LABEL, type) ? ACTION_LABEL[type]! : `${KHAC} · ${type}`;
+
+/** Nhãn cạnh khoá đã biết của object hành động đã băm (G4-13: khoá + giá trị giữ NGUYÊN; chỉ thêm nhãn). */
+export const ACTION_KEY_LABEL: Record<string, string> = {
+  type: "Loại hành động",
+  target: "Đối tượng",
+  requested_for: "Thực hiện cho",
+  scope: "Phạm vi",
+  privilege_level: "Mức quyền",
+  reversible: "Hoàn tác được",
+  reversibility: "Mức hoàn tác",
+  data_sensitivity: "Độ nhạy dữ liệu",
+  params: "Tham số",
+  facts: "Dữ kiện",
+};
+/** Nhãn cho một khoá phẳng (`params.device_id` → nhãn của `params`); khoá lạ → null (chỉ hiện khoá). */
+export function actionKeyLabel(key: string): string | null {
+  const full = flatKeyLabel(key); // B2: params.* / facts.* có nhãn riêng
+  if (full !== null) return full;
+  const head = key.split(".")[0] ?? key;
+  return Object.hasOwn(ACTION_KEY_LABEL, head) ? ACTION_KEY_LABEL[head]! : null;
+}
 
 /** Hộp thư đã có dữ liệu nhưng lần tải lại gần nhất lỗi (Q-fe-38): giữ danh sách cũ, báo có thể đã cũ + câu lỗi. */
 export const INBOX_STALE_TEXT = "Chưa cập nhật được hộp thư — danh sách dưới đây có thể đã cũ.";
@@ -120,6 +145,68 @@ export const RISK_MISSING_TEXT = "Chưa có đánh giá rủi ro cho phiếu nà
 export function decisionRole(roleAs: unknown): "primary" | "backup" | "viewer" {
   return roleAs === "primary" || roleAs === "backup" ? roleAs : "viewer";
 }
+// ---------------------------------------------------------------- người bị ảnh hưởng, mức rủi ro, hạn (F6 #76, R3 #76)
+
+/** Quản lý chưa biết (`manager.status = "unknown"`): backend gộp "không có sếp" và "không biết" làm một → KHÔNG BAO GIỜ viết
+ *  "không có quản lý". */
+export const MANAGER_UNKNOWN_TEXT = "Chưa rõ quản lý";
+/** Sếp có trong `manager_id` nhưng chưa từng đăng nhập nên chưa có tên. */
+export const MANAGER_NO_NAME_TEXT = "(chưa có tên)";
+export const AFFECTED_OTHER_TEXT = "Khác người gửi yêu cầu";
+export const AFFECTED_SELF_TEXT = "Chính người gửi yêu cầu";
+
+export const RISK_LEVEL_LABEL: Record<ApprovalRiskView["risk_level"], string> = { low: "Thấp", medium: "Trung bình", high: "Cao" };
+/** Hướng xử lý, bên quyết định: nhãn từ src/lib/nhan.ts (bảng ĐP 26/10 23:10) — màn hiện "Nhãn · mã" (MaNhan). */
+export const RISK_ROUTE_LABEL = HUONG_XU_LY;
+/** Điểm LLM chưa qua hiệu chỉnh: xác suất không dùng để tự xử lý — chữ của FE (backend chỉ trả cờ). */
+export const UNCALIBRATED_TEXT = "Chưa hiệu chỉnh, không tự xử lý";
+
+type Pair = { nhan: string; ma: string; goiY?: string };
+export type RiskSummary = { level: string; route: Pair; reason: string; rule: Pair | null; source: Pair; note: string | null };
+
+/**
+ * Tóm tắt `risk_view` cho người duyệt. Hướng xử lý / bên quyết định: "Nhãn · mã" (mã lạ → "Khác · mã"). Luật khớp: "Mô tả ·
+ * R18" — mô tả lấy từ `matched_rules` của phiếu (luật cùng id), không có → "Luật chưa có mô tả · R18".
+ */
+export function riskSummary(view: ApprovalRiskView, rules: readonly MatchedRule[] = []): RiskSummary {
+  const ruleId = view.matched_rule_id;
+  return {
+    level: ownEntry<string>(RISK_LEVEL_LABEL, view.risk_level, view.risk_level),
+    route: nhanIT("huong_xu_ly", view.route),
+    reason: view.reason,
+    rule: ruleId === null ? null : luatIT(ruleId, rules.find((r) => r.rule_id === ruleId)?.description),
+    source: nhanIT("ben_quyet_dinh", view.decided_by),
+    note: view.decided_by === "llm" && !view.calibrated ? UNCALIBRATED_TEXT : null,
+  };
+}
+
+/** Quản lý của người bị ảnh hưởng thành một dòng chữ. */
+export function managerText(manager: ApprovalAffected["manager"]): string {
+  if (manager.status !== "known") return MANAGER_UNKNOWN_TEXT;
+  const id = manager.user_id ?? MISSING_VALUE;
+  return manager.full_name ? `${manager.full_name} (${id})` : `${id} ${MANAGER_NO_NAME_TEXT}`;
+}
+
+const VN_TIME = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Ho_Chi_Minh",
+  hour: "2-digit",
+  minute: "2-digit",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hourCycle: "h23",
+});
+
+/** Mốc hạn tuyệt đối theo giờ Việt Nam ("21:30 30/09/2026"); null / chuỗi không phải thời điểm → null (không hiện). Ghép từ
+ *  từng phần của Intl nên không phụ thuộc dấu phân cách của từng bản ICU. */
+export function deadlineText(deadline: unknown): string | null {
+  if (typeof deadline !== "string") return null;
+  const ms = Date.parse(deadline);
+  if (Number.isNaN(ms)) return null;
+  const p = Object.fromEntries(VN_TIME.formatToParts(new Date(ms)).map((part) => [part.type, part.value]));
+  return `${p.hour}:${p.minute} ${p.day}/${p.month}/${p.year}`;
+}
+
 export const DECISION_SENT = "Đã gửi quyết định";
 export const NOTICES_TEXT = "Ghi chú đã được ẩn bớt thông tin nhạy cảm";
 /** Màn xem ticket để ghi đè: GET ticket lỗi (vd 404) → câu trung tính, không mã lỗi (Q-fe-24). */
@@ -218,7 +305,7 @@ export const OVERRIDE_REASONS: readonly { value: OverrideReasonCode; label: stri
 
 /** Ghi chú bắt buộc khi lý do "Khác" (4d P2), luôn ≤ 1000. Trả câu lỗi, null = gửi được. */
 export function overrideProblem(decision: OverrideDecision | null, reason: OverrideReasonCode | null, note: string): string | null {
-  if (decision === null) return "Chọn quyết định đúng cho ticket này.";
+  if (decision === null) return "Chọn quyết định đúng cho yêu cầu này.";
   if (reason === null) return "Chọn lý do ghi đè.";
   const text = note.trim();
   if (reason === "other" && !text) return "Lý do “Khác” cần ghi chú.";
@@ -236,8 +323,8 @@ export const OVERRIDE_DONE = "Đã ghi nhận ghi đè.";
 export const OVERRIDE_ORIGINAL_PREFIX = "Quyết định ban đầu của hệ thống: ";
 export const OVERRIDE_NOTE_INVALID = "Ghi chú không hợp lệ hoặc trống sau khi ẩn thông tin nhạy cảm — hãy viết lại ghi chú.";
 /** 403 `forbidden`: không có quyền HOẶC người gửi tự ghi đè — cùng một mã, client không phân biệt được (4d). */
-export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè ticket này (không có quyền, hoặc đây là ticket do chính bạn gửi).";
-export const OVERRIDE_NOT_FOUND = "Không tìm thấy ticket hoặc bạn không được xem ticket này.";
+export const OVERRIDE_FORBIDDEN = "Bạn không được ghi đè yêu cầu này (không có quyền, hoặc đây là yêu cầu do chính bạn gửi).";
+export const OVERRIDE_NOT_FOUND = "Không tìm thấy yêu cầu hoặc bạn không được xem yêu cầu này.";
 
 /** Nhãn của một quyết định ghi đè (như hộp chọn); giá trị lạ / thiếu → null — không đoán. */
 export const overrideDecisionLabel = (value: unknown): string | null =>

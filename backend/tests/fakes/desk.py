@@ -6,7 +6,8 @@
   đăng nhập ghi — đăng nhập thật qua HTTP rồi tạo ticket là đi đúng đường B1.
 - `MaskingGuard`: che `SECRET` → `[BÍ_MẬT_ĐÃ_ẨN]`, đếm số lần gọi (kiểm guard chạy SAU kiểm quyền).
 - `desk_env`: app + client httpx async (ASGITransport) + lifespan chạy tay — test giữ được task nền
-  bằng `asyncio.Event` (không `sleep`) và đợi hết task nền bằng `drain()`.
+  bằng `asyncio.Event` (không `sleep`) và đợi hết task nền bằng `drain()`. Cổng đếm 429 (gói 2b) = `MemoryRateGate`
+  với ngưỡng của chính `settings` của env (conftest gốc đặt số lớn; test 429 truyền `ticket_rate_10min=…`).
 """
 
 import asyncio
@@ -20,6 +21,7 @@ import httpx
 from app.api.background import BackgroundRuns
 from app.core.clock import FakeClock
 from app.db.identity import LiveSession
+from app.db.rate_limits import RateLimits
 from app.db.session import Engines
 from app.graph.ports import ToolCaller
 from app.graph.wiring import Runtime
@@ -38,6 +40,8 @@ from tests.fakes.auth import (
 )
 from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import FakeAd, MemoryIdentity, ad_user
+from tests.fakes.rate import MemoryRateGate
+from tests.fakes.strategy import MemoryStrategyStore
 from tests.unit.auth_helpers import BASE_URL, auth_settings
 
 # Chuỗi canary: không được xuất hiện ở bất kỳ đâu sau guard. Ghép lúc chạy — viết liền thì gitleaks
@@ -111,6 +115,8 @@ class DeskEnv:
     guard: Any  # MaskingGuard (mặc định) hoặc guard thật `RegexPrivacyGuard` (3e)
     idp: FakeIdentityProvider
     settings: Settings
+    rate: MemoryRateGate  # gói 2b: cổng đếm 429 giả (`hits`, `calls`)
+    strategy: MemoryStrategyStore  # D-67: `m5_strategy_changes` giả
 
     @property
     def background(self) -> BackgroundRuns:
@@ -171,16 +177,18 @@ async def desk_env(
     h.scenario.plan_all(**(plan or {}))
     guard = guard or MaskingGuard()
     settings = auth_settings(**settings_over)
+    rate = MemoryRateGate(RateLimits.from_settings(settings), tickets=lambda: h.tickets.rows.values(), sink=sink)
+    strategy = MemoryStrategyStore()
     app = create_app(
         settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=h.alerts,
-        runtime=runtime or harness_runtime(h), guard=guard, clock=clock,
+        runtime=runtime or harness_runtime(h), guard=guard, clock=clock, rate=rate, strategy=strategy,
     )  # fmt: skip
     transport = httpx.ASGITransport(app=app, client=("203.0.113.7", 50000))
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client,
     ):
-        yield DeskEnv(app, client, h, clock, sink, store, guard, idp, settings)
+        yield DeskEnv(app, client, h, clock, sink, store, guard, idp, settings, rate, strategy)
         await app.state.background.drain()
 
 

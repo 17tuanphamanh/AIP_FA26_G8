@@ -99,5 +99,12 @@
       "id": "email",
       "regex": "^[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+$"
     }
+  ],
+  "pii_exclude": [
+    {
+      "id": "uuid",
+      "description": "be-pii-uuid (ĐP 02/11 22:25): khớp PII (SĐT, CCCD, STK, email) CHỒNG lên một UUID 8-4-4-4-12 thì giữ nguyên — mã ticket trong link /chat/<uuid> từng bị che '0-8471-62786' thành <SĐT_1>. Chỉ miễn đúng dạng UUID, KHÔNG miễn URL (SĐT trong URL vẫn là PII). Sai độ dài nhóm → không phải UUID → luật PII áp như cũ.",
+      "regex": "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b"
+    }
   ]
 }

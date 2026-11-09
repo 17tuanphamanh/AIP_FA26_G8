@@ -116,7 +116,9 @@ class _Partial:
     top_score: float
     query_truncated: bool
 
-    def finish(self, kb_version: str, *, fallback: bool, tried: bool, retries: int) -> RetrievalResult:
+    def finish(
+        self, kb_version: str, *, fallback: bool, tried: bool, retries: int, embed_truncated: bool = False
+    ) -> RetrievalResult:
         return RetrievalResult(
             chunks=self.chunks,
             top_score=self.top_score,
@@ -125,6 +127,7 @@ class _Partial:
             fallback_tried=tried,
             retries=retries,
             query_truncated=self.query_truncated,
+            embed_truncated=embed_truncated,
         )
 
 
@@ -200,7 +203,7 @@ class Retriever:
             async with asyncio.timeout(limit_s):
                 coll, kb_version = await self._pinned(collection, retries, stage)
                 stage.value = "embed"
-                dense, sparse = await self._embed(q, retries, kb_version)
+                dense, sparse, cut = await self._embed(q, retries, kb_version)
                 first = await self._search(
                     coll, q, ctx.role, use_intent=bool(q.intent), dense=dense, sparse=sparse,
                     retries=retries, kb_version=kb_version, stage=stage,
@@ -211,9 +214,15 @@ class Retriever:
                         retries=retries, kb_version=kb_version, stage=stage,
                     )  # fmt: skip
                     if alt.top_score >= self._threshold:
-                        return alt.finish(kb_version, fallback=True, tried=True, retries=retries.total)
-                    return first.finish(kb_version, fallback=False, tried=True, retries=retries.total)
-                return first.finish(kb_version, fallback=False, tried=False, retries=retries.total)
+                        return alt.finish(
+                            kb_version, fallback=True, tried=True, retries=retries.total, embed_truncated=cut
+                        )
+                    return first.finish(
+                        kb_version, fallback=False, tried=True, retries=retries.total, embed_truncated=cut
+                    )
+                return first.finish(
+                    kb_version, fallback=False, tried=False, retries=retries.total, embed_truncated=cut
+                )
         except TimeoutError:
             if turn_bound:  # hết khung vì hạn cả lượt, không phải vì RAG chậm quá rag_deadline_s
                 raise TurnBudgetExceeded(f"rag:retrieve ({stage.value})") from None
@@ -282,7 +291,8 @@ class Retriever:
                 "procedure", retries.total, kb_version=stage.kb_version, detail="deadline"
             ) from None
 
-    async def _embed(self, q: RetrievalQuery, retries: _Counter, kb_version: str) -> tuple[list[float], Any]:
+    async def _embed(self, q: RetrievalQuery, retries: _Counter, kb_version: str) -> tuple[list[float], Any, bool]:
+        """(dense, sparse, cờ `truncated` của embed). R2: cờ chỉ được trả đi để GHI — không ném, không đổi vectơ."""
         emb = await self._ml.embed([q.text])
         retries.add(emb.attempts, failed=emb.error is not None)
         if emb.error is not None:
@@ -290,7 +300,7 @@ class Retriever:
         assert emb.data is not None
         dense = emb.data.vectors[0]
         sparse = to_sparse(tokenize_vi(q.text, lexicon=self._lexicon))
-        return dense, sparse
+        return dense, sparse, any(emb.data.truncated)
 
     async def _search(
         self,
@@ -343,7 +353,7 @@ class Retriever:
         meta = await self._call(self._index.get_metadata, collection, retries=retries)
         if meta.get("pipeline_sha") != self._pipeline_sha:
             raise RetrievalSystemError("pipeline", retries.total, kb_version=kb_version)
-        dense, sparse = await self._embed(q, retries, kb_version)
+        dense, sparse, _ = await self._embed(q, retries, kb_version)  # sweep/eval: cờ embed không dùng
         partial = await self._search(
             collection, q, ctx.role, use_intent=use_intent, dense=dense, sparse=sparse,
             retries=retries, kb_version=kb_version, stage=_StageBox("search"),

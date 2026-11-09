@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 19 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB09-q1, HB09-q2
+id: HB09-q1
+family: HB09
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-13T09:05:00+07:00'
+faults: []
+turns:
+- 'Bạn nv003 bên em không vào được ERP, IT xem giúp với.'
+- on_question_about: action
+  reply: 'Đặt lại mật khẩu cho bạn ấy giúp mình nhé.'
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv003
+    requested_for: nv003
+    params:
+      account_type: erp
+  facts:
+    target_account_locked: false
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: probation
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

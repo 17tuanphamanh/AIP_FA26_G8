@@ -1,6 +1,6 @@
 # Phase 6 — Thiết kế chi tiết (M5 lớp LLM: toán quyết định, calibrator, estimator, chiến lược, nối B12)
 
-*Thuộc bộ `build/`. Phiên bản **1.1 — 14/10/2026** (1.1: **6C đã hiện thực** — mục 6.9; **6D viết chi tiết** — mục 7; 1.0: **6C viết chi tiết** — mục 6, soát `457239d`; 0.9: Q-6-8 chốt C + 3 điều kiện 6C; **6B đã hiện thực** — mục 5.11; 0.8: soát mục 5 trên `fe61fa3` — sửa P1 chỗ estimator giả, P12 chốt, thêm es10; 0.7: **6A đã hiện thực** — mục 4.10 "Chốt khi hiện thực"; 0.6 chỉ cập nhật phối hợp/git theo luật 4.0 của phiên git — mục 0.2, 4.8, 5.9, 8; **nội dung kỹ thuật 6A/6B giữ nguyên từ 0.5**; code nền soát lại tại `3ff63e1`: file 6A/6B dựa vào không đổi). Bản 0.5 — 06/10/2026: soát lại với code `1455b55`; **6A đã chạy thử bằng cài đặt tham chiếu trên đúng bản thư viện đã khoá** — mọi số ở 4.5–4.6 khớp; sửa P8, 4.3, cb3, cb5 theo kết quả chạy; nơi chạy = worktree riêng, mục 0.2. **6A và 6B viết đủ để code ngay**; 6C, 6D ở mức khung (P-x chốt khi mở chặng). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 6, §7.2–7.4; `B12-B14` v1.2 (§3, §4.1, §5, §5.1–5.2, §11); `P8` v1.1 (§5.3, §6.1, §9); `P2` (gateway, prompt registry, cache); `decisions.md` Q8, Q9, D-34; `claude/phase5-6-phan-tich-va-chia-chang.md` v0.1 (G6-x, D-35…D-43, lịch). Code đã đọc trên máy tại `aac90b1`, soát lại tại `1455b55` (03/10) và `3ff63e1` (09/10): các file 6A/6B dựa vào — `risk/*`, `b12_assess.py`, `llm/*`, `config/prompts`, `policy.json`, `.importlinter`, `pyproject`/`uv.lock` — **không đổi** từ `aac90b1`.*
+*Thuộc bộ `build/`. Phiên bản **1.2 — 16/10/2026** (1.2: **6D đã hiện thực** — mục 7.7; sửa r5, r7; 7.6 đổi nguồn DB + lệnh chạy trong container; lịch 8; 1.1: **6C đã hiện thực** — mục 6.9; **6D viết chi tiết** — mục 7; 1.0: **6C viết chi tiết** — mục 6, soát `457239d`; 0.9: Q-6-8 chốt C + 3 điều kiện 6C; **6B đã hiện thực** — mục 5.11; 0.8: soát mục 5 trên `fe61fa3` — sửa P1 chỗ estimator giả, P12 chốt, thêm es10; 0.7: **6A đã hiện thực** — mục 4.10 "Chốt khi hiện thực"; 0.6 chỉ cập nhật phối hợp/git theo luật 4.0 của phiên git — mục 0.2, 4.8, 5.9, 8; **nội dung kỹ thuật 6A/6B giữ nguyên từ 0.5**; code nền soát lại tại `3ff63e1`: file 6A/6B dựa vào không đổi). Bản 0.5 — 06/10/2026: soát lại với code `1455b55`; **6A đã chạy thử bằng cài đặt tham chiếu trên đúng bản thư viện đã khoá** — mọi số ở 4.5–4.6 khớp; sửa P8, 4.3, cb3, cb5 theo kết quả chạy; nơi chạy = worktree riêng, mục 0.2. **6A và 6B viết đủ để code ngay**; 6C, 6D ở mức khung (P-x chốt khi mở chặng). Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 6, §7.2–7.4; `B12-B14` v1.2 (§3, §4.1, §5, §5.1–5.2, §11); `P8` v1.1 (§5.3, §6.1, §9); `P2` (gateway, prompt registry, cache); `decisions.md` Q8, Q9, D-34; `claude/phase5-6-phan-tich-va-chia-chang.md` v0.1 (G6-x, D-35…D-43, lịch). Code đã đọc trên máy tại `aac90b1`, soát lại tại `1455b55` (03/10) và `3ff63e1` (09/10): các file 6A/6B dựa vào — `risk/*`, `b12_assess.py`, `llm/*`, `config/prompts`, `policy.json`, `.importlinter`, `pyproject`/`uv.lock` — **không đổi** từ `aac90b1`.*
 
 *Nhãn: **[Chốt]** spec gốc · **[Chốt 01/10]** Tuấn Anh chốt Q-6-x ngày 01/10/2026 · **[Đề xuất]** Tuấn Anh soát khi duyệt PLAN · **[Suy luận]** agent kiểm lại trên code.*
 
@@ -711,9 +711,9 @@ scripts/mutation/mutate_6d.py
 | r2 | Bỏ trùng | 6 dòng cùng 1 `reason` + 4 câu khác → tối đa 5 câu khác nhau |
 | r3 | Tất định | cùng `seed` → cùng danh sách; khác `seed` → khác (trên ≥ 20 câu) |
 | r4 | `min_llm` | 3 câu llm + 20 câu luật, `n=10, min_llm=3` → đủ 3 llm; 1 câu llm → 1 llm + 9 luật, báo thiếu |
-| r5 | Không rò | đầu ra (và stdout của vỏ) **không** chứa `ticket_id`, `route`, `rule_id`, `R0`–`R20`, khoá `expected_route` — kiểm bằng chuỗi canary đặt trong các trường đó |
+| r5 | Không rò | đầu ra (và stdout của vỏ) **không** chứa giá trị của các **trường** `ticket_id`, `route`, `rule_id`, `expected_route` — kiểm bằng chuỗi canary đặt trong các trường đó. Chữ `reason` giữ **nguyên văn** (có thể chứa mã/mô tả luật — Quân được đọc) [sửa 1.2, Q-6D-2 = C; bản 1.1 cấm `R0`–`R20` trong đầu ra là sai ý định] |
 | r6 | `template_reasons` | 4 câu; khớp **từng ký tự** với `reason` do `strategy.decide` sinh ở cùng tham số (không chép tay chuỗi) |
-| r7 | `concentration` biên | 6/10 giá trị ở 2 mức (= 60 %) → `self_report`; 7/10 → `sampling_k5`; n = 19 → `None`; [0,9]×20 → `sampling_k5`, share 1,0 |
+| r7 | `concentration` biên | 12/20 và 18/30 giá trị ở 2 mức (= 60 %) → `self_report`; 14/20, 21/30 → `sampling_k5`; n = 19 → `None`; [0,9]×20 → `sampling_k5`, share 1,0 [sửa 1.2: bản 1.1 ghi "6/10", mâu thuẫn n < 20 → `None`] |
 | r8 | Làm tròn | 0,904 và 0,896 cùng mức 0,90 |
 | r9 | Đầu vào xấu | NaN, 1,2, −0,1 → `ValueError` (thông điệp không chứa giá trị) |
 | r10 | Cảnh báo dữ liệu giả | `llm_backend="scripted"` → dòng cảnh báo đầu + mã 3; `"real"` → không cảnh báo |
@@ -736,11 +736,32 @@ scripts/mutation/mutate_6d.py
 
 ### 7.6. Sau 6D — phần thủ công của cổng 6
 
-1. **Đọc lý do (Quân) [Chốt cổng 6]:** sau lượt `G=2345` chung (17/10 — DB stack có ticket của gate 3/4/5), Tuấn Anh chạy (khuôn `audit_check.py` — trong container backend hoặc trên máy với `PYTHONPATH=backend`): `sample_reasons.py --since <giờ bắt đầu lượt> --n 10 --seed <số> --min-llm 3 --templates --key-out <file riêng>` → gửi Quân **chỉ** danh sách câu (10 + 4 mẫu). Quân đánh dấu từng câu "hiểu được / không hiểu" + 1 dòng góp ý, ký biên bản. Câu không hiểu → sửa mẫu `reason` (5.3, chặng sau) hoặc `description` luật (báo Phase 5). Dương, Duy Anh **không** nhận danh sách này (D-43).
+1. **Đọc lý do (Quân) [Chốt cổng 6]:** nguồn = DB stack của **lượt verify đầy đủ gần nhất trên HEAD có 6C** (mốc main 16/10, HEAD có cả 6D; lượt cổng 5 15/10 00:22 cũng dùng được nếu DB chưa bị dựng lại) — có ticket của gate 3/4/5. Tuấn Anh chạy **trong container backend** (image không có `scripts/` — Q-6D-5 = A), qua phiếu phiên git vì đụng stack: `python -m app.audit.m5_review sample --since <giờ bắt đầu lượt, ISO có múi giờ> --n 10 --seed <số> --min-llm 3 --templates --key-out /tmp/khoa-6d.csv` → chép `/tmp/khoa-6d.csv` ra máy, giữ riêng. Gửi Quân **chỉ** stdout (10 câu + 4 câu `[mẫu]`); ghi lại `--since` và `--seed` vào biên bản để lặp lại được. Stack chạy ScriptedLLM nên câu của ca `decided_by=llm` có thể trùng nhau (bỏ trùng → ít hơn 3; stderr báo "thiếu câu llm", vẫn thoát 0) — 4 mẫu bù phần này. Quân đánh dấu từng câu "hiểu được / không hiểu" + 1 dòng góp ý, ký biên bản. Câu không hiểu → sửa mẫu `reason` (5.3, chặng sau) hoặc `description` luật (báo Phase 5). Dương, Duy Anh **không** nhận danh sách này (D-43).
 2. **Probe p (mốc G, LLM thật):** người không xây M5 (Duy Anh) chạy `hybrid` + `EVAL_MODE=true` + `LLM_CACHE_MODE=eval` trên ~30 kịch bản D2 mà `rule_coverage.py` báo "none" → `probe_p_distribution.py --since … --csv …` → Tuấn Anh ghi `m5.p_method` vào `policy.json` theo khuyến nghị; ghi vào "Dồn về mốc G" của PROGRESS. Chạy trên ScriptedLLM chỉ để thử công cụ (mã 3).
-3. **Checklist cổng 6** (phiên Phase 6 giữ, `claude/` Project): tự động 1.1 (6A dm1–dm8; 6B st15; 6C c1, c3–c5, c15, c18) · mutation 6A 12/12, 6B 9/9, 6C 14/14, 6D 6/6 · xác nhận người: Dương (dm3–dm8, #32), Duy Anh (6B verify), Quân (6C c9–c11, c15 + biên bản 10 lý do) · probe → mốc G · spec "Chốt khi hiện thực" 6A–6D · `decisions.md` D-36…D-40, D-42 (Phase 5 ghi).
+3. **Checklist cổng 6** (phiên Phase 6 giữ, `claude/checklist-cong-6.md` trong Project): tự động 1.1 (6A dm1–dm8; 6B st15; 6C c1, c3–c5, c15, c18) · mutation 6A 12/12, 6B 5/5 + 9/9, 6C 10/10 + 14/14, 6D 6/6 · xác nhận người: Dương (dm3–dm8, #32), Duy Anh (6B verify), Quân (6C c9–c11, c15 + biên bản 10 lý do) · probe → mốc G · spec "Chốt khi hiện thực" 6A–6D · `decisions.md` D-36…D-40, D-42 (Phase 5 ghi).
 
 ---
+
+### 7.7. Chốt khi hiện thực (6D) — 15/10/2026, `m5-tuananh`: `8c3ce2b` trên `78a25cd`, PR #47 → gộp `1b4b16b` (15/10 tối)
+
+**Kết quả:** `make verify G=0` XANH (backend **6587 passed / 4 skipped**, mock 106, ml 123); unit 5906 → **5948** (+42, r1–r10); r11 **3/3** (Postgres testcontainers); lint xanh (mypy, import-linter 10/10, gitleaks 0); lượt đỏ 42/42 do `NotImplementedError` (không do import); mutation lượt 1 **6/6** đỏ đúng dự đoán (M-6D-6 ở làn `--integration`, Tuấn Anh chạy ngoài sandbox), md5 `m5_review.py` `f4da37cc8e82c102a10419ddc07a5424` trước = sau; security-reviewer **5/5 PASS**, 0 FAIL. Phiên git soát đạt; gộp thử với `93a9090` sạch. 6D chỉ đọc, ngoài luồng → không chạy thử stack trước gộp; lượt verify mốc main 16/10 chạy trên HEAD đã có 6D.
+
+**Khác/thêm so với 7.1–7.4 (đã duyệt MẪU A 15/10):**
+1. **Q-6D-1 = A (P5):** `sample` thoát 1 **chỉ khi tổng < n**; thiếu câu `llm` so với `--min-llm` → chỉ báo stderr "thiếu câu llm: k/m", thoát 0. Mã: 0 đủ n · 1 thiếu · 2 lỗi DB/ghi file (chỉ tên lớp lỗi).
+2. **Q-6D-2 = C (r5):** giữ nguyên văn `reason`; canary chỉ đặt ở trường riêng (r5 đã sửa ở 7.3).
+3. **Q-6D-3 = A (P7):** `probe` thoát 0 có khuyến nghị · 1 n < 20 · 2 lỗi DB/ghi file · 3 `LLM_BACKEND` ≠ `real` — **3 thắng 1**; dòng cảnh báo là dòng đầu stdout, vẫn in bảng.
+4. **Q-6D-4 = A (P7):** `LLM_BACKEND` chưa đặt (None) cũng tính là ≠ `real` → cảnh báo + 3.
+5. **Q-6D-5 = A:** chạy trong container bằng `python -m app.audit.m5_review sample|probe …` (image không có `scripts/`); hai vỏ `scripts/*.py` chỉ cho chạy trên máy (`PYTHONPATH=backend`). Không sửa Makefile/Dockerfile — **chưa có đích `make`** cho probe (Duy Anh 15/10 hỏi "đích riêng cho phân phối p"): thêm khi chuẩn bị mốc G nếu cần.
+6. **Q-6D-6 = A (7.4):** M-6D-6 thuộc làn `--integration` của `mutate_6d.py`; M-6D-1…5 làn unit.
+7. **r7:** 12/20, 18/30 (= 60 % → `self_report`), 14/20, 21/30 (→ `sampling_k5`) — đã sửa ở 7.3.
+8. **P3/P4 chi tiết:** `pick` lấy ≥ `min_llm` câu llm trước rồi bù câu luật, **xáo thứ tự in** (người đọc không đoán được câu nào từ LLM); 4 mẫu dựng bằng `strategy.decide` với số cố định (`raw_prob` 0,10 / 0,60, calibrator + ngưỡng ví dụ, luật allow giả `rule_id="(mẫu)"`) — không chép tay chuỗi.
+9. **Thêm ngoài P1–P9:** `histogram`, `probe_report`, `open_engine` (= `readonly_engine`), `sample_main`/`probe_main`, `python -m` dispatch — đều trong `m5_review.py`.
+
+**Ghi nhận (không sửa ở 6D):**
+- **Hai định nghĩa "dòng điểm log 4":** `audit/check.py` (`POINT4_KEY`, chỉ `risk_decided`) và `eval/predictions.py:23` (T29, nhận cả `llm_layer_disabled`). [Suy luận] Khác có lý do: `audit_check`/6D cần dòng có quyết định đủ trường; T29 cần route của **mọi** lá, kể cả lỗi estimator. Chưa gộp một nguồn — nếu gộp, đặt hằng `step` chung, `event` để từng nơi chọn (việc của Phase 5/T29, không gấp).
+- **`LLM_BACKEND` của tiến trình probe** có thể khác backend đã sinh dữ liệu → probe ở mốc G phải chạy **trong cùng container** của lượt sinh dữ liệu LLM thật.
+- security-reviewer (thấp, cùng khuôn `audit/check.py`): `get_settings()` ngoài `try` (bí mật đều `SecretStr`); mutation khôi phục bằng `write_text` (CRLF trên Windows); exception ngoài dự kiến thoát 1, trùng nghĩa "thiếu".
+- **PROGRESS mục 6D** còn ghi "chưa commit" + "Chờ: commit…" (ghi lúc DỪNG) → sửa thành "đã gộp `1b4b16b` (PR #47)" ở commit kế tiếp của Phase 6 (cùng commit spec 1.2).
 
 ## 8. Lịch và thứ tự
 
@@ -748,8 +769,8 @@ scripts/mutation/mutate_6d.py
 |---|---|---|---|
 | 6A | ~3 giờ, 09/10 (worktree `-m5`) | 4d commit | Dương soát số (issue #32) |
 | 6B | ~5 giờ, DỪNG 1 10/10, DỪNG 2 11/10 | 6A, P12 chốt | Duy Anh chạy verify |
-| 6C | DỪNG 1 + DỪNG 2 14/10 (kéo sớm — Phase 5 đồng ý tin #16–#18); PR #44; chạy thử `G=2345` trên `pull/44/merge` 15–16/10; gộp trước 16/10 21:00 | 6B, **T24**, Q-6-8 = C | Quân chạy `make verify G=0` + đọc c9–c11, c15; lượt `G=2345` chung 17/10 (cổng 5 + mốc main) |
-| 6D | ~2 giờ, mở sau khi #44 gộp (~16–17/10) | 6C gộp; đọc lý do sau lượt `G=2345` 17/10; probe thật ở mốc G | Quân đọc 10 lý do + 4 mẫu; probe thật (Duy Anh) |
+| 6C | **Xong** — DỪNG 1 + DỪNG 2 14/10; PR #44; chạy thử stack trên cây gộp `28bfef7` (gate2 89/0, gate3 78/0, gate4 73/0, gate5 227/0); gộp `5f2ece2` 15/10 | 6B, **T24**, Q-6-8 = C | Quân xác nhận trên #44 (chạy pytest 2 file + đọc c9–c11, c15) |
+| 6D | **Xong** — 1 DỪNG 15/10 (`8c3ce2b`); PR #47 gộp `1b4b16b` 15/10 tối | 6C gộp; đọc lý do sau lượt verify mốc main 16/10; probe thật ở mốc G (muộn nhất 22/10) | Quân đọc 10 lý do + 4 mẫu; probe thật (Duy Anh) |
 
 Cổng 6 đạt khi: phần tự động 1.1 xanh; mutation 6A ×1, 6B ×2, 6C ×2, 6D ×1; Quân ký biên bản đọc lý do; probe ghi vào "Dồn về mốc G" của PROGRESS; spec "Chốt khi hiện thực" từng chặng; `decisions.md` D-36…D-40, D-42.
 
@@ -757,6 +778,7 @@ Cổng 6 đạt khi: phần tự động 1.1 xanh; mutation 6A ×1, 6B ×2, 6C �
 
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
+| 16/10/2026 | 1.2 | 6D hiện thực (`8c3ce2b`, PR #47 → `1b4b16b`): mục 7.7 "Chốt khi hiện thực" (Q-6D-1…6, mutation 6/6, security 5/5, hai định nghĩa điểm 4, `LLM_BACKEND` của probe). Sửa r5 (canary ở trường, giữ nguyên văn `reason`) và r7 (12/20, 18/30). 7.6: nguồn DB = lượt verify mốc main 16/10, chạy `python -m app.audit.m5_review` trong container qua phiếu phiên git; checklist ở `claude/checklist-cong-6.md`. Lịch 8: 6C, 6D xong |
 | 14/10/2026 | 1.1 | 6C hiện thực (`f030926` + `b7cb1a4`, PR #44): mục 6.9 "Chốt khi hiện thực" (Q-6C-1…12, mutation 14/14, N7, health 200, báo M9). Mục 7 (6D) viết chi tiết: `audit/m5_review.py` + 2 script chỉ đọc, P1–P9, r1–r11, M-6D-1…6, phần thủ công cổng 6 (Quân đọc 10 lý do + 4 mẫu; probe ở mốc G; checklist). Lịch 8 cập nhật |
 | 13/10/2026 | 1.0 | Mục 6 (6C) viết chi tiết trên `457239d` (sau T24): sự thật code 6.0, P1–P12 (chiến lược + `check_strategy` cả API/worker, khối `m5`, B12 đường LLM, `llm_high_risk`, `full_auto` C, điểm 4 + lineage, B17 D-42, `audit_check`, N1 danh sách trắng gồm `target`/`requested_for`, N4 `trimmed_evidence`, calibrator, N6 preset), hồi quy, 18 test, 9 mutation, 8 bất biến, 2 DỪNG. Q-6-8 chuyển 6.8 |
 | 10/10/2026 | 0.9 | 6B hiện thực (`d8e3cbe` + `6fda378`): mục 5.11 "Chốt khi hiện thực" + nợ N1–N6 chuyển 6C. Q-6-8 chốt **C** (Tuấn Anh 10/10): `decided_by` NULL + `detail.strategy = "full_auto"`; thêm 3 điều kiện bắt buộc cho 6C (mục 6.8). Không đổi mục 4–5 |

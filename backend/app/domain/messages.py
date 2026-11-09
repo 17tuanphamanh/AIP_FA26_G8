@@ -1,6 +1,7 @@
 """Tin nhắn trong `conversation` (phase3 mục 10.2, 3-Q28 bản 1.1; chốt P9 3g) — theo khuôn B20 `{role, kind, text, ref}`.
 
-- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có). `needs` như
+- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có), `duplicate`
+  (B3 — M1), `approval_pending` (B15 — Q3 M4). `needs` như
   tham số `notify_user`.
 - `sources` CHỈ ở `answer`, mỗi nguồn ĐÚNG 3 khoá `chunk_id`, `title`, `heading_path` — không đoạn trích, không bằng chứng
   đã mở rộng (P9).
@@ -25,7 +26,9 @@ from app.domain.action import SOFTWARE_NAME, Action, FactValue
 from app.domain.children import ChildView, summary_text
 from app.domain.ticket_state import EXEC_OUTPUT_PATTERNS, ChunkRef, Msg
 
-MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation")
+# Q3 (ĐP 09/11): + `approval_pending` (B15 — tin chờ duyệt, needs `none`; FE hiện như tin thường, không nút). Không phải `NOTICE_KINDS`:
+# notice con của B15 dùng `result` cho tới migration thêm loại riêng.
+MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation", "duplicate", "approval_pending")
 SOURCE_KEYS: Final = ("chunk_id", "title", "heading_path")
 
 
@@ -46,6 +49,56 @@ def question_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "question", "text": text, "ref": ref, "needs": "answer"}
 
 
+# ---- Q1 (ĐP 09/11, D-75): câu hỏi phân loại CỐ ĐỊNH của B3 — không LLM -----------------------------------------------------------
+# Trần một tin người dùng (API `POST /api/tickets`, `/reply`) — một nguồn; `api/tickets.py` dùng lại. Câu ghép sau câu hỏi phân loại cũng ≤ trần này.
+TEXT_MAX: Final = 4000
+TRIAGE_ORIGIN: Final = "triage"  # khoá `origin` của tin câu hỏi phân loại — SSE (`api/events.pick_message`) tách với câu hỏi B11
+TRIAGE_SCOPE: Final = "Chào bạn, mình là trợ lý IT. Mình xử lý trực tiếp: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục"
+IT_HELP_CLAUSE: Final = "và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook"  # chỉ khi ENABLE_IT_HELP bật (D-76)
+TRIAGE_ASK: Final = "Bạn đang gặp việc gì? Mô tả ngắn giúp mình, ví dụ:"
+
+
+def triage_question(it_help: bool) -> str:
+    """Câu hỏi phân loại (lời giao ĐP 09/11). Cờ `ENABLE_IT_HELP` tắt → bỏ vế hướng dẫn và ví dụ máy in (ĐP chốt điểm 1, DỪNG 1 phần 2)."""
+    if it_help:
+        return f'{TRIAGE_SCOPE}; {IT_HELP_CLAUSE}. {TRIAGE_ASK} "VPN báo lỗi 809" hoặc "máy in không in được".'
+    return f'{TRIAGE_SCOPE}. {TRIAGE_ASK} "VPN báo lỗi 809" hoặc "quên mật khẩu máy tính".'
+
+
+def triage_msg(text: str, ref: str | None) -> Msg:
+    """Tin câu hỏi phân loại: như `question_msg` (FE/API coi là câu hỏi chờ trả lời) + `origin` để không lẫn với câu hỏi B11."""
+    return {**question_msg(text, ref), "origin": TRIAGE_ORIGIN}
+
+
+def combine_triage(original: str, reply: str, limit: int = TEXT_MAX) -> tuple[str, bool]:
+    """Câu ghép sau câu hỏi phân loại = câu gốc (đã che) + "\\n" + câu trả lời (đã che), ≤ `limit` (ĐP chốt điểm 3): giữ NGUYÊN câu trả lời,
+    cắt PHẦN ĐẦU câu gốc ở ranh giới khoảng trắng (mặt nạ `<…_n>`/`[…]` không có khoảng trắng nên không bị cắt đôi), đánh dấu "…".
+    Câu trả lời một mình đã chạm trần → chỉ còn câu trả lời. Trả (câu ghép, đã cắt?)."""
+    whole = f"{original}\n{reply}"
+    if len(whole) <= limit:
+        return whole, False
+    room = limit - len(reply) - 2  # "…" + "\n"
+    if room <= 0:
+        return reply, True
+    tail = original[len(original) - room:]
+    if not original[len(original) - room - 1].isspace():  # đang ở giữa một từ → bỏ tới khoảng trắng kế tiếp
+        cut = next((i for i, ch in enumerate(tail) if ch.isspace()), len(tail))
+        tail = tail[cut:]
+    tail = tail.lstrip()
+    return (f"…{tail}\n{reply}" if tail else reply), True
+
+
+def last_question(state: Any) -> str:
+    """Chữ của tin `question` CUỐI trong `conversation` — đúng bản đã gửi người dùng (B11 chỉ ghi tin sau scrub + output guard; ngoài B11
+    chỉ B3 tạo tin `question` — câu hỏi phân loại cố định, Q1). Không có → "" (không lấy tin người dùng hay tin khác thay). Dùng cho
+    `b11_extract_slots.question` (M4, `clarify_wait`) và `b11_clarify_question.last_question` (Q11, `b11_slots` — lượt B11 đầu không đọc hàm
+    này, để câu hỏi phân loại không thành "câu B11 vừa hỏi")."""
+    for msg in reversed(list(state.get("conversation") or [])):
+        if msg.get("role") == "assistant" and msg.get("kind") == "question":
+            return str(msg.get("text") or "")
+    return ""
+
+
 def user_msg(redacted_text: str) -> Msg:
     return {"role": "user", "text": redacted_text}
 
@@ -57,6 +110,17 @@ USER_ID: Final = re.compile(r"[a-z0-9_]{3,64}")
 RESOURCE_PATH: Final = re.compile(r"(?!.*(^|/)\.{1,2}(/|$))[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+){0,4}")
 CERT_STATUS_TEXT: Final = {"valid": "còn hiệu lực", "expired": "đã hết hạn", "revoked": "đã bị thu hồi", "none": "chưa có"}
 ASK_CONFIRM: Final = "Bạn thử kết nối lại rồi xác nhận giúp mình nhé."
+# Q2 M3 (ĐP 09/11): mẫu `check_vpn_status` — kết quả kiểm tra có vấn đề thì GỢI Ý bước tiếp (chỉ câu chữ, không tự sinh hành động);
+# đứng sau dòng trạng thái, trước câu mời xác nhận. `{device}` = "máy <mã>" (qua `DEVICE_ID`) hoặc "máy của bạn". Lúc này ô nhập là
+# ghi chú xác nhận → yêu cầu mới mở bằng mục "Yêu cầu mới" ở thanh bên (FE `auth/permissions.ts` CHAT_NAV). Không ghi "cần IT
+# duyệt": gia hạn máy của chính mình trong giờ hành chính thường tự động (KB-VPN-004).
+VPN_STATUS_NEXT: Final[Mapping[str, str]] = {
+    "expired": ('Chứng chỉ hết hạn là lý do máy không vào được VPN. Để gia hạn, bạn bấm "Yêu cầu mới" ở thanh bên và nhắn '
+                '"gia hạn chứng chỉ VPN {device}", mình sẽ xử lý.'),
+    "revoked": ('Chứng chỉ đã bị thu hồi nên máy không vào được VPN. Để xin cấp lại, bạn bấm "Yêu cầu mới" ở thanh bên và nhắn '
+                '"cấp lại quyền VPN {device}".'),
+}  # fmt: skip
+VPN_STATUS_UNREGISTERED: Final = "Máy chưa đăng ký VPN nên chưa kết nối được; mình chuyển kỹ thuật viên nếu bạn cần đăng ký."
 RESULT_ACTIONS: Final = frozenset({
     "renew_vpn_cert", "reissue_vpn_access", "check_vpn_status",
     "reset_password", "unlock_account", "install_software", "view_permissions", "grant_permission", "extend_permission",
@@ -68,6 +132,17 @@ MAX_PERMISSION_ROWS: Final = 10
 ASK_CONFIRM_LOGIN: Final = "Bạn đăng nhập thử rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_OPEN: Final = "Bạn mở thử rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_VIEW: Final = "Bạn xem đã đủ chưa rồi xác nhận giúp mình nhé."
+# Lô N (N10, ca TC07): đối tượng KHÁC người gửi (`requested_for != requester_id` — đúng quy tắc của `person_phrase`) → người gửi
+# không tự thử được; câu xác nhận nói việc của người gửi. Tài khoản dịch vụ = fact `target_is_service_account` (B6
+# `check_account_status`; `ACCOUNT_TYPE_TEXT` chỉ có ad/email/erp). Ca tự yêu cầu cho mình dùng câu cũ y nguyên.
+ASK_CONFIRM_OTHER: Final = "Bạn nhờ người dùng máy này kết nối lại rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_LOGIN_OTHER: Final = "Bạn nhờ người dùng tài khoản này đăng nhập thử rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_LOGIN_SERVICE: Final = "Bạn kiểm tra dịch vụ dùng tài khoản này đã đăng nhập lại được chưa rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_OPEN_OTHER: Final = "Bạn nhờ người được yêu cầu mở thử rồi xác nhận giúp mình nhé."
+ASK_CONFIRM_VIEW_OTHER: Final = "Bạn xem danh sách quyền này đã đủ chưa rồi xác nhận giúp mình nhé."
+RESET_SMS_TAIL: Final = "bạn sẽ được yêu cầu đổi mật khẩu khi đăng nhập."
+RESET_SMS_TAIL_OTHER: Final = "người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới."
+RESET_DEFAULT_OTHER: Final = "Người dùng tài khoản này sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập tới."
 
 
 def _until(outputs: Mapping[str, str]) -> str:
@@ -86,6 +161,16 @@ def person_phrase(requested_for: str, requester_id: str) -> str:
     if requested_for == requester_id:
         return "bạn"
     return requested_for if USER_ID.fullmatch(requested_for) else "người được yêu cầu"
+
+
+def _confirm_texts(action: Action, requester_id: str) -> tuple[str, str, str, str]:
+    """(kết nối VPN, đăng nhập, mở thử, xem) — câu xác nhận theo đối tượng: của mình → câu cũ; người khác → câu cho bên thứ ba;
+    tài khoản dịch vụ (`target_is_service_account is True`) → câu kiểm dịch vụ cho mẫu đăng nhập."""
+    if action.requested_for == requester_id:
+        return ASK_CONFIRM, ASK_CONFIRM_LOGIN, ASK_CONFIRM_OPEN, ASK_CONFIRM_VIEW
+    service = action.facts.get("target_is_service_account") is True
+    login = ASK_CONFIRM_LOGIN_SERVICE if service else ASK_CONFIRM_LOGIN_OTHER
+    return ASK_CONFIRM_OTHER, login, ASK_CONFIRM_OPEN_OTHER, ASK_CONFIRM_VIEW_OTHER
 
 
 def _local_date(raw: object, tz: ZoneInfo) -> date | None:
@@ -135,30 +220,47 @@ def _dmy(iso: str | None) -> str | None:
     return None if iso is None else f"{date.fromisoformat(iso):%d/%m/%Y}"
 
 
+def _reset_delivery(outputs: Mapping[str, str], *, other: bool = False) -> str:
+    """Câu kênh nhận mật khẩu tạm — chỉ từ `outputs` đã qua mẫu (`sent_to` chỉ số ĐÃ CHE, phút 1–60); KHÔNG bao giờ mật khẩu.
+    sms: mock gửi mật khẩu tạm một lần tới số trong AD. email: chỉ nói điều hệ thống tài khoản xác nhận (mock không gửi gì
+    thật ở kênh này). `other` (lô N, N10): tài khoản của người khác → câu đổi mật khẩu (SMS, email, mặc định) nói về người dùng
+    tài khoản đó; ca của mình giữ chữ cũ."""
+    via = _out(outputs, "delivered_via")
+    if via == "sms":
+        to = _out(outputs, "sent_to")
+        minutes = _out(outputs, "expires_in_minutes")
+        return (f"Mật khẩu tạm đã gửi qua SMS tới {f'số {to}' if to else 'số điện thoại đã đăng ký'}"
+                f"{f', hiệu lực {minutes} phút' if minutes else ''}, chỉ dùng một lần; "
+                f"{RESET_SMS_TAIL_OTHER if other else RESET_SMS_TAIL}")  # fmt: skip
+    if via == "email":
+        tail = RESET_SMS_TAIL_OTHER if other else "bạn cần đổi mật khẩu ở lần đăng nhập tới."
+        return f"Hệ thống tài khoản xác nhận mật khẩu tạm được gửi qua email; {tail}"
+    return RESET_DEFAULT_OTHER if other else "Bạn cần đổi mật khẩu ở lần đăng nhập tới."
+
+
 def _new_action_text(
     action: Action, outputs: Mapping[str, str], requester_id: str, rows: Sequence[PermRow] | None
 ) -> str:
     """6 mẫu T24 (bảng 7.3) — chỉ enum, định danh qua mẫu, ngày; thiếu giá trị → bỏ cụm."""
     p = action.params
     who = person_phrase(action.requested_for, requester_id)
+    _, confirm_login, confirm_open, confirm_view = _confirm_texts(action, requester_id)
     kind = ACCOUNT_TYPE_TEXT.get(str(p.get("account_type")))
     account = f"tài khoản {kind} của {who}" if kind else f"tài khoản của {who}"
     path_raw = str(p.get("resource_path", ""))
     folder = f"thư mục {path_raw}" if RESOURCE_PATH.fullmatch(path_raw) else "thư mục được yêu cầu"
     until = _dmy(_out(outputs, "expires_on"))
     if action.type == "reset_password":
-        via = _out(outputs, "delivered_via")
-        sent = f"Mật khẩu tạm đã gửi qua {via}" if via else "Mật khẩu tạm đã gửi"
-        return f"Đã đặt lại mật khẩu {account}. {sent}; cần đổi ở lần đăng nhập tới. {ASK_CONFIRM_LOGIN}"
+        return f"Đã đặt lại mật khẩu {account}. {_reset_delivery(outputs, other=action.requested_for != requester_id)} {confirm_login}"
     if action.type == "unlock_account":
-        return f"Đã mở khoá {account}. {ASK_CONFIRM_LOGIN}"
+        return f"Đã mở khoá {account}. {confirm_login}"
     if action.type == "install_software":
         raw_software = str(p.get("software_name", ""))  # Q-T24-7: tên đã chuẩn hoá của Action, KHÔNG lấy tên hệ thống ngoài trả về
         software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
         version = _out(outputs, "version")
         device_id = str(p.get("device_id", ""))
         device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
-        return f"Đã cài {software}{f' phiên bản {version}' if version else ''} lên {device}. {ASK_CONFIRM_OPEN}"
+        return f"Đã cài {software}{f' phiên bản {version}' if version else ''} lên {device}. {confirm_open}"
     if action.type == "view_permissions":
         if rows is None:
             return (f"Mình chưa đọc được danh sách quyền truy cập của {who}. "
@@ -168,13 +270,13 @@ def _new_action_text(
             f"{path} ({level}, {f'hết hạn {day:%d/%m/%Y}' if day is not None else 'không thời hạn'})"
             for path, level, day in shown
         )
-        return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {ASK_CONFIRM_VIEW}"
+        return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {confirm_view}"
     if action.type == "grant_permission":
         level = _out(outputs, "level")
         return (f"Đã cấp quyền {f'{level} ' if level else ''}{folder} cho {who}"
-                f"{f', hiệu lực tới {until}' if until else ''}. {ASK_CONFIRM_OPEN}")  # fmt: skip
+                f"{f', hiệu lực tới {until}' if until else ''}. {confirm_open}")  # fmt: skip
     if action.type == "extend_permission":
-        return f"Đã gia hạn quyền {folder} của {who}{f' tới {until}' if until else ''}. {ASK_CONFIRM_OPEN}"
+        return f"Đã gia hạn quyền {folder} của {who}{f' tới {until}' if until else ''}. {confirm_open}"
     raise ValueError(f"không có mẫu tin kết quả cho {action.type!r}")
 
 
@@ -186,10 +288,11 @@ def result_text(
     action_type = action.type
     device_id = str(action.params.get("device_id", ""))
     device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    confirm = _confirm_texts(action, requester_id)[0]
     if action_type == "renew_vpn_cert":
-        return f"Đã gia hạn chứng chỉ VPN cho {device}{_until(outputs)}. {ASK_CONFIRM}"
+        return f"Đã gia hạn chứng chỉ VPN cho {device}{_until(outputs)}. {confirm}"
     if action_type == "reissue_vpn_access":
-        return f"Đã cấp lại quyền truy cập VPN cho {device}{_until(outputs)}. {ASK_CONFIRM}"
+        return f"Đã cấp lại quyền truy cập VPN cho {device}{_until(outputs)}. {confirm}"
     if action_type == "check_vpn_status":
         status = facts.get("cert_status")
         cert = CERT_STATUS_TEXT.get(status, "chưa rõ") if isinstance(status, str) else "chưa rõ"
@@ -200,9 +303,37 @@ def result_text(
             cert += f", quá hạn {-days} ngày"
         conn = facts.get("last_connection_ok")
         last = "thành công" if conn is True else "không thành công" if conn is False else "chưa có dữ liệu"
-        return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. "
+        hints = [VPN_STATUS_NEXT[status].format(device=device)] if isinstance(status, str) and status in VPN_STATUS_NEXT else []
+        if facts.get("device_registered") is False:
+            hints.append(VPN_STATUS_UNREGISTERED)
+        nxt = "".join(f"{h} " for h in hints)
+        return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. {nxt}"
                 "Bạn xem thông tin này đã đủ chưa rồi xác nhận giúp mình nhé.")  # fmt: skip
     return _new_action_text(action, outputs, requester_id, rows)
+
+
+# Q2 M1 (ĐP 09/11): câu mở đầu của B10 khi người dùng BÁO LỖI VPN mà fact B6 cho thấy máy của họ đã đăng ký, chứng chỉ còn hạn
+# (`b10_route.symptom_to_info`) — ghép bằng CODE từ fact (enum/bool/số) + mã máy qua `DEVICE_ID`, không LLM.
+SYMPTOM_LAST_FAIL: Final = "Lần kết nối gần nhất không thành công."
+
+
+def symptom_intro(device_id: str | None, facts: Mapping[str, FactValue]) -> str:
+    """"Mình đã kiểm tra máy {id}: máy đã đăng ký, chứng chỉ VPN còn hạn {n} ngày, nên lỗi không nằm ở chứng chỉ." — mã sai mẫu/
+    không có → "máy của bạn"; `cert_days_to_expiry` không phải số nguyên dương → bỏ vế "{n} ngày"; `last_connection_ok is False`
+    → thêm `SYMPTOM_LAST_FAIL`."""
+    device = f"máy {device_id}" if isinstance(device_id, str) and DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    days = facts.get("cert_days_to_expiry")
+    left = f"còn hạn {days} ngày" if type(days) is int and days > 0 else "còn hạn"
+    text = f"Mình đã kiểm tra {device}: máy đã đăng ký, chứng chỉ VPN {left}, nên lỗi không nằm ở chứng chỉ."
+    return f"{text} {SYMPTOM_LAST_FAIL}" if facts.get("last_connection_ok") is False else text
+
+
+def device_not_found_question(device_id: str) -> str:
+    """Q2 M4 (ĐP 09/11): câu hỏi CỐ ĐỊNH của B11 khi máy người dùng nêu không có trong danh mục (`check_device_registered` 404) —
+    không LLM; mã chỉ in khi khớp `DEVICE_ID`."""
+    device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy này"
+    return (f"Mình không tìm thấy {device} trong danh mục. Bạn xem mã máy dán ở thân máy (dạng LAP-0342) rồi gửi lại "
+            "giúp mình.")  # fmt: skip
 
 
 def result_msg(text: str, ref: str | None) -> Msg:
@@ -267,6 +398,11 @@ def rejection_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "rejection", "text": text, "ref": ref, "needs": "none"}
 
 
+def duplicate_msg(text: str, ref: str | None) -> Msg:
+    """M1 — tin báo trùng yêu cầu của B3 (mẫu cố định, không LLM). Không phải `NOTICE_KINDS`: B3 chỉ chạy ở ticket lá, không phải con."""
+    return {"role": "assistant", "kind": "duplicate", "text": text, "ref": ref, "needs": "none"}
+
+
 # ---- Tin tổng hợp của ticket cha (Phase 5 T20b P8, P9 — phase5 5.2.5, 5.2.6; D-31) ----------------------------------------------
 # Thuần, theo mẫu, KHÔNG LLM (chốt 10/10 (a)). Tiêu đề ý: `ACTION_LABELS[seed.slots.action]` nếu có, không thì nhãn loại yêu cầu theo
 # `seed.intent`; ý E1 (không có `intent`) → `OTHER_LABEL`. Chữ cái đầu viết hoa ("Đặt lại mật khẩu").
@@ -278,6 +414,12 @@ OTHER_LABEL: Final = "Yêu cầu khác"
 DIGEST_ITEM_KINDS: Final = ("result", "question", "rejection", "escalation")
 CONFIRMED_TEXT: Final = "Đã ổn"
 UNRESOLVED_TEXT: Final = "Chưa ổn"
+# Q2 M2 (ĐP 09/11): câu kết CỐ ĐỊNH của câu trả lời B10 có bước — sau các bước, trước mục nguồn (`answer.render_answer`). Nhãn nút
+# = nhãn FE (`ChatPage.tsx`); "Chưa ổn" ở `confirm_wait` → E8 (chuyển kỹ thuật viên kèm bàn giao).
+ANSWER_CLOSING: Final = (
+    f'Bạn thử lần lượt rồi báo mình nhé: chọn "{CONFIRMED_TEXT}" nếu đã được, "{UNRESOLVED_TEXT}" nếu vẫn lỗi để mình chuyển '
+    "kỹ thuật viên kèm thông tin đã kiểm tra."
+)
 
 
 @dataclass(frozen=True)
@@ -300,7 +442,8 @@ def child_title(seed: Mapping[str, Any]) -> str:
 
 def compose_digest(view: Sequence[ChildView], seeds: Mapping[str, Mapping[str, Any]], *, round_no: int) -> Digest:
     """Tin tổng hợp vòng `round_no` (P9, 5.2.6): `{role:"assistant", kind:"digest", round, text, items:[{child_id, index, title,
-    kind, text, needs}]}`. Mỗi notice chưa gửi một item, theo `index` rồi thứ tự tạo; con không có notice mới → không lặp lại.
+    kind, text, needs, step}]}` — `step` = `source_step` của notice (Q6 c2: FE gắn nhãn "Chờ IT duyệt" cho khối `result` của B15 — tin
+    "chờ duyệt" — mà không đổi `kind`, không migration). Mỗi notice chưa gửi một item, theo `index` rồi thứ tự tạo; con không có notice mới → không lặp lại.
     `text` = các khối "Ý {index} – {title}: {body}" nối xuống dòng, + câu tổng kết (bảng 5.2.5) khi MỌI con đã kết thúc (vòng cuối không
     còn notice nào → chỉ câu tổng kết). Không chữ nào ngoài `body` notice + mẫu + số."""
     items: list[dict[str, Any]] = []
@@ -310,7 +453,7 @@ def compose_digest(view: Sequence[ChildView], seeds: Mapping[str, Mapping[str, A
         for n in sorted(child.pending, key=lambda n: (n.created_at, n.notice_id)):
             items.append({
                 "child_id": child.child_id, "index": child.index, "title": title,
-                "kind": "result" if n.kind == "answer" else n.kind, "text": n.body, "needs": n.needs,
+                "kind": "result" if n.kind == "answer" else n.kind, "text": n.body, "needs": n.needs, "step": n.source_step,
             })  # fmt: skip
             ids.append(n.notice_id)
     lines = [f"Ý {it['index']} – {it['title']}: {it['text']}" for it in items]
@@ -334,3 +477,45 @@ def reply_text(items: Sequence[tuple[int, Mapping[str, Any]]]) -> str:
             note = str(item.get("note") or "").strip()
             parts.append(f"Ý {index}: {UNRESOLVED_TEXT} — {note}" if note else f"Ý {index}: {UNRESOLVED_TEXT}")
     return " · ".join(parts)
+
+
+# ---- Q3 M4 (ĐP 09/11): tin cho người dùng khi yêu cầu chờ duyệt (B15) ---------------------------------------------------------------
+# Theo MẪU, không LLM: nhãn hành động (`ACTION_LABELS`) + cụm đích (`target_phrase` — định danh đã qua regex); KHÔNG nêu người duyệt.
+# `kind` riêng (FE hiển thị như tin thường — kind lạ không lỗi, không nút); needs `none`. Ticket con: notice (`notify/child.py`, bước B15).
+# Q6 c3 (D-77 (e)): KHÔNG hứa "ngay" — nhiều ý mà cha đang chờ người dùng trả lời ý khác thì kết quả duyệt đi vòng sau lần trả lời kế tiếp.
+APPROVAL_PENDING_KIND: Final = "approval_pending"
+APPROVAL_PENDING_TAIL: Final = (
+    "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn tại đây."
+)
+
+
+def approval_pending_text(action_type: str, target_phrase: str) -> str:
+    """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa)."""
+    label = ACTION_LABELS.get(action_type)
+    head = f"Yêu cầu {label} cho {target_phrase}" if label is not None and target_phrase else "Yêu cầu của bạn"
+    return f"{head} {APPROVAL_PENDING_TAIL}"
+
+
+def approval_pending_msg(text: str, ref: str | None) -> Msg:
+    return {"role": "assistant", "kind": APPROVAL_PENDING_KIND, "text": text, "ref": ref, "needs": "none"}
+
+
+# ---- Q3 M6 (ĐP 09/11): cài phần mềm mà máy ĐÃ có sẵn — không nói "Đã cài" -------------------------------------------------------------
+# B18 dùng mẫu này thay `result_text` khi `install_software` và `outputs["already_installed"] == "true"` (executor chỉ ghi khi tool trả True).
+# Tên phần mềm/máy qua mẫu như `result_text`; phiên bản qua `EXEC_OUTPUT_PATTERNS` — thiếu thì bỏ cụm "(phiên bản …)".
+
+
+def already_installed_text(action: Action, outputs: Mapping[str, str]) -> str:
+    p = action.params
+    raw_software = str(p.get("software_name", ""))
+    software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
+    device_id = str(p.get("device_id", ""))
+    device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    version = _out(outputs, "version")
+    head = f"{software} đã có sẵn trên {device}{f' (phiên bản {version})' if version else ''}, mình không cài lại."
+    head = head[:1].upper() + head[1:] if software == "phần mềm" else head
+    return f'{head} Nếu {software} không mở được, bạn chọn "{UNRESOLVED_TEXT}" để mình chuyển kỹ thuật viên.'
+
+
+def is_already_installed(action: Action, outputs: Mapping[str, str]) -> bool:
+    return action.type == "install_software" and _out(outputs, "already_installed") == "true"

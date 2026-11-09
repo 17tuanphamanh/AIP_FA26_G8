@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 29 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB14-q1, HB14-q2
+id: HB14-q1
+family: HB14
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-15T09:05:00+07:00'
+faults: []
+turns:
+- 'Quyền thư mục của em sắp hết hạn, gia hạn thêm 180 ngày giúp em.'
+- on_question_about: resource_path
+  reply: 'Thư mục finance/Q3 ạ.'
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-003
+  action:
+    type: extend_permission
+    target: folder:finance/Q3
+    requested_for: nv001
+    params:
+      duration_days: 180
+  facts:
+    existing_permission_level: read
+    has_permission_record: true
+    resource_sensitivity: high
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: HITL

@@ -4,6 +4,9 @@
 Thứ tự (lời giao DỪNG 2, C5):
 1. Chốt phòng thủ P6 — đích `device:` mà `facts.device_owner_is_requester` không phải True → E5 `approval_target_unverified`,
    TRƯỚC mọi lời gọi AD (G4-16: luật sai cũng không mở được phiếu cho máy của người khác).
+1b. Chốt dự phòng L-03 (be-target-guard, cùng kiểu P6): intent ∈ {account, access}, `ctx_flags.target_is_other` bật mà
+   `action.requested_for` == người gửi (đích người khác chưa xác minh được) → E5 `approval_target_unverified`, `stage="target_flag_guard"`,
+   0 phiếu, TRƯỚC roster/AD.
 2. `effects.peek("approval_create")` có (chạy lại — TC33, P9) → nhánh phiếu cũ: `approvals.get` → `once("notify_approver",
    a.approver_id)` → `goto` theo phiếu cũ. KHÔNG chọn người, KHÔNG tra AD, KHÔNG ensure (AD lỗi lúc chạy lại không làm mồ côi
    phiếu `pending`; người duyệt đổi trạng thái giữa hai lần chạy không làm báo nhầm người).
@@ -13,6 +16,10 @@ Thứ tự (lời giao DỪNG 2, C5):
    E2 `approver_lookup_error`; hết hạn lượt → E2 `turn_budget_exceeded`; `Refuse` → E5 `no_valid_approver` + `rejected_candidates`.
 5. `ensure` người duyệt + dự phòng (dòng `users` cho FK — Q-4-N; không tạo phiên). 6. `once("approval_create")`.
 7. Hook `after_approval_create` (TC33 giết process tại đây). 8. `approvals.get`. 9. `once("notify_approver", a.approver_id)`.
+9b. Q3 M4 (ĐP 09/11): tin CỐ ĐỊNH cho người dùng (`messages.approval_pending_text`: nhãn hành động + `target_phrase`, không nêu người duyệt)
+   → output guard (vi phạm → 0 tin, `detail.user_notice_guard`, vẫn chờ duyệt) → `once("notify_user", needs="none", sub="approval_pending")`
+   → `conversation` kind `approval_pending`. Cả nhánh thường lẫn nhánh `peek`: chạy lại cùng lượt chỉ trả `ref` cũ — không gửi lần 2. Ticket
+   con: `ChildAwareNotifier` ghi notice (bước B15).
 10. `goto(S_PENDING_APPROVAL, …)` — điểm log 5 (P10): cột `approver_id`, `deadline`, `conflict_detected` (`audit_columns`),
     `action_plan_hash`, `intended_action` (hộp thư 4c đọc cột này); `detail` chỉ id/enum/số.
 
@@ -25,7 +32,7 @@ from typing import Any
 
 from app.core.hashing import hash_action
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.action import Action
+from app.domain.action import TARGET_USER_INTENTS, Action
 from app.domain.approval import (
     ApproverLookupError,
     Choice,
@@ -39,6 +46,11 @@ from app.domain.approval import (
 )
 from app.domain.context import RequesterContext
 from app.domain.exit_codes import ExitCode
+from app.domain.messages import (
+    approval_pending_msg,
+    approval_pending_text,
+    target_phrase,
+)
 from app.domain.states import S_ESCALATED, S_PENDING_APPROVAL
 from app.graph import effects
 from app.graph.context import current_run
@@ -87,11 +99,23 @@ def make(deps: NodeDeps) -> NodeFn:
         await effects.once(
             state, "notify_approver", deps.approvals.notify_approver, approval_id, a.approver_id, step="B15",
         )  # fmt: skip
+        detail = _point5(a, choice, roster, deps.approval_sla_minutes)
+        update: dict[str, Any] = {}
+        requester = RequesterContext.model_validate(state["requester_context"]).user_id
+        text = approval_pending_text(action.type, target_phrase(action, requester))  # [9b] Q3 M4
+        if (violation := deps.output_guard.violation(text)) is not None:  # mẫu cũng là chữ gửi người dùng → chặn = 0 tin
+            detail["user_notice_guard"] = violation
+        else:
+            ref = await effects.once(
+                state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "none", step="B15",
+                sub="approval_pending",
+            )  # fmt: skip
+            update["conversation"] = [approval_pending_msg(text, ref)]
         return await goto(
             state, S_PENDING_APPROVAL, next_node="approval_wait", step="B15", event="queued",
             approval_id=approval_id, action_plan_hash=hash_action(action), intended_action=action,
             audit_columns={"approver_id": a.approver_id, "deadline": a.deadline, "conflict_detected": a.conflict_detected},
-            audit_detail=_point5(a, choice, roster, deps.approval_sla_minutes),
+            audit_detail=detail, **update,
         )  # fmt: skip
 
     async def b15_prepare_approval(state: Any) -> dict[str, Any]:
@@ -102,6 +126,13 @@ def make(deps: NodeDeps) -> NodeFn:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B15", event="approval_target_unverified",
                 audit_detail={"stage": "target_guard"}, exit_code=ExitCode.E5.value,
+                escalation_reason_detail="approval_target_unverified",
+            )  # fmt: skip
+        flag = (state.get("ctx_flags") or {}).get("target_is_other", False) is not False
+        if state["intent"] in TARGET_USER_INTENTS and flag and action.requested_for == requester.user_id:  # [1b] L-03
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B15", event="approval_target_unverified",
+                audit_detail={"stage": "target_flag_guard"}, exit_code=ExitCode.E5.value,
                 escalation_reason_detail="approval_target_unverified",
             )  # fmt: skip
         roster = deps.approvers[state["intent"]]  # thiếu = cấu hình lệch mà open_approvers bỏ sót → KeyError → E9

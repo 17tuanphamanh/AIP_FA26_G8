@@ -42,7 +42,7 @@ from tests.fakes.llm import make_gateway
 from tests.unit.test_rag_retriever import _cfg, _ctx, _retriever, _spy
 
 MARGIN = 2.0
-B03_VARS: dict[str, Any] = {"redacted_request": "vpn lỗi", "recent_messages": [], "label_hint": None}
+B03_VARS: dict[str, Any] = {"redacted_request": "vpn lỗi", "label_hint": None}
 NOT_ATTACK = {"is_attack": False, "category": "none", "reason": "bình thường"}
 
 
@@ -324,7 +324,9 @@ async def test_b2_turn_budget_exceeded_keeps_security_flag() -> None:
     clock = FakeClock()
     ml = FakeMlService().slow("classify", 99, times=3)
     gw = make_gateway({"b02_injection_judge": [Reply(NOT_ATTACK)]}, clock=clock)
-    h = GraphHarness(clock=clock, nodes="real", ml=ml, llm=gw.client, turn_budget_s=8.0, safety_margin_s=2.0)
+    # Gói 1 (D-52, ĐT 4.6) — đổi có chủ ý: `/classify` không còn thử lại khi timeout, nên lượt không còn hết hạn nhờ backoff của
+    # lần thử lại (8 s: 2 + 1 + 2 + 2 s); hạn 3 s − 2 s an toàn = 1 s dùng được → timeout bị cắt còn 1 s, hết hạn ngay ở L3.
+    h = GraphHarness(clock=clock, nodes="real", ml=ml, llm=gw.client, turn_budget_s=3.0, safety_margin_s=2.0)
     v = (await h.submit_as("t1", SESSION, text="VPN không vào được")).values
     assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E2", "turn_budget_exceeded")
     assert v["security_flag"] is True  # chưa sàng lọc xong — L2 bàn giao có cờ an ninh

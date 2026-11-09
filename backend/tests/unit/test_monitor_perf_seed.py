@@ -30,14 +30,15 @@ def postgres_sees(sql: str) -> str:
 
 @pytest.mark.parametrize(("name", "sql"), _STEPS, ids=[name for name, _ in _STEPS])
 def test_seed_sql_has_no_double_percent_at_postgres(name: str, sql: str) -> None:
-    """Không câu nào gửi `%%` tới Postgres (đủ 20 câu của `_STEPS`)."""
+    """Không câu nào gửi `%%` tới Postgres (đủ 21 câu của `_STEPS`)."""
     final = postgres_sees(sql)
     assert "%%" not in final, f"{name}: Postgres sẽ nhận '%%' — trong text() chỉ viết một dấu %"
 
 
-def test_all_twenty_statements_checked() -> None:
-    """Danh sách tham số hoá ở trên không rỗng / không sót câu."""
-    assert len(_STEPS) == 20
+def test_all_twenty_one_statements_checked() -> None:
+    """Danh sách tham số hoá ở trên không rỗng / không sót câu (F12: + `child_notices`)."""
+    assert len(_STEPS) == 21
+    assert "child_notices" in dict(_STEPS) and "child_notices" in seed.TABLES
 
 
 def test_rule_is_not_vacuous() -> None:

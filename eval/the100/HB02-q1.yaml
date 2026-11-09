@@ -1,0 +1,33 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 5 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB02-q1, HB02-q2
+id: HB02-q1
+family: HB02
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-07T09:10:00+07:00'
+faults: []
+turns:
+- 'Tuần sau em chuyển sang dự án mới, có chút việc liên quan tới quyền truy cập tài khoản em cần IT hỗ trợ ạ.'
+- on_question_about: action
+  reply: 'muốn kiểm tra quyền truy cập của tài khoản nv002'
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv002
+  facts:
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: AUTO

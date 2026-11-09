@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 30 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB14-q3, HB14-q4
+id: HB14-q4
+family: HB14
+source: ho_bo_sung
+requester:
+  user_id: nv007
+  role: employee
+  dept: hr
+  tenure_days: 1500
+at: '2026-10-15T11:10:00+07:00'
+faults: []
+turns:
+- 'Chị muốn gia hạn quyền trên thư mục hr/salaries.'
+- on_question_about: duration
+  reply: 'Thêm 180 ngày em nhé.'
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-003
+  action:
+    type: extend_permission
+    target: folder:hr/salaries
+    requested_for: nv007
+    params:
+      duration_days: 180
+  facts:
+    existing_permission_level: write
+    has_permission_record: true
+    resource_sensitivity: high
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: HITL

@@ -1,0 +1,39 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 50 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB01-q5, HB01-q6
+id: HB01-q6
+family: HB01
+source: ho_bo_sung
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T14:20:00+07:00'
+faults: []
+turns:
+- 'Đặt lại mật khẩu cho nv002 giúp mình nhé, cậu ấy đang ngồi chờ bên cạnh mình.'
+- on_question_about: account_type
+  reply: 'Mật khẩu đăng nhập Windows (AD) nha.'
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv002
+    requested_for: nv002
+    params:
+      account_type: ad
+  facts:
+    target_account_locked: false
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

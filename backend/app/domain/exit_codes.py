@@ -82,9 +82,14 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "approver_no_longer_valid",
     # Phase 6 6C (P3, Q-6C-2): B12 — lớp LLM của M5 định tuyến chuyển L2 (E5); lỗi estimator vẫn là `llm_layer_disabled`
     "llm_high_risk",
+    # M2 (ĐP 08/11): B12 — luật `deny` khớp → E5 (trước: không ghi lý do); tách khỏi lỗi lớp AI (`llm_layer_disabled`). Không đổi route/mã
+    "policy_deny",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",
     # Phase 5 T20b (P2, bảng 5.2.2, D-49): `span` của một ý (câu nhiều ý) rỗng hoặc không nằm trong câu → con E1
     "split_span_invalid",
+    # Phase 5 gói 1 (D-52, bảng 4.2 #4 #5): B2 `review` — model nghi (p ≥ τ hoặc 422 too_many_windows) mà LLM chấm nói không → E1
+    # (không mã thoát mới; tin người dùng = tin E0 — B20; không security_event/security_flag)
+    "injection_suspected",
 })  # fmt: skip

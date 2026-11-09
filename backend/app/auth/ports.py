@@ -28,9 +28,15 @@ class IdentityUnavailable(Exception):
     không đếm vào `login_failed` (B01 mục 5)."""
 
 
+class PasswordChangeRequired(Exception):
+    """AD xác nhận mật khẩu (tạm) đúng nhưng bắt đổi trước khi dùng — KHÔNG phải lỗi hạ tầng, KHÔNG phải sai mật khẩu.
+    Đăng nhập → 403 `password_change_required`, không đếm lần sai, không tạo phiên."""
+
+
 class IdentityProvider(Protocol):
     async def authenticate(self, username: str, password: str) -> AdUser | None:
-        """None = sai tên đăng nhập hoặc mật khẩu. Lỗi hệ thống → `IdentityUnavailable`."""
+        """None = sai tên đăng nhập hoặc mật khẩu. Mật khẩu tạm phải đổi → `PasswordChangeRequired`.
+        Lỗi hệ thống → `IdentityUnavailable`."""
         ...
 
     async def get_user(self, user_id: str) -> AdUser | None:

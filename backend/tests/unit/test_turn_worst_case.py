@@ -1,8 +1,10 @@
 """f19 (phase3 mục 9.0; PLAN-3f S0, cập nhật S6 + S7) — lượt XẤU NHẤT trên FakeClock qua graph thật, hạn lượt mặc định (100 s / 2 s).
 
-Mọi phụ thuộc ngoài chậm tới trần riêng của nó: AD (B1) 2 lần quá timeout rồi trả lời sau 4,9 s; ml `/classify` (B2 L3) 3
-lần quá timeout; L4 `b02_injection_judge` 3 lần Timeout rồi trả lời; ml `/classify_intent` (B3) 3 lần quá timeout;
-`b03_classify` 2 lần Timeout rồi trả lời; 3 tool VPN (B6) mỗi lời gọi 4,9 s. Tổng trần riêng > 120 s → hạn lượt phải cắt.
+Mọi phụ thuộc ngoài chậm tới trần riêng của nó: AD (B1) 2 lần quá timeout rồi trả lời sau 4,9 s; ml `/classify` (B2 L3)
+quá timeout — gói 1 (D-52, ĐT 4.6): KHÔNG thử lại nên chỉ 1 lời gọi; L4 `b02_injection_judge` 3 lần Timeout rồi trả lời; ml
+`/classify_intent` (B3) 3 lần quá timeout; `b03_classify` Timeout hết lượt thử rồi trả lời (gói 1 — đổi có chủ ý: thêm 1 lần, bù
+khoảng 7 s B2 không còn tốn cho thử lại, để ca `B6` vẫn hết hạn đúng ở B6; Q10: b03 đi vai `chat_fast` — `max_retries` 2, timeout 12 s — nên
+2 lần Timeout; số lần lấy từ `config/llm.yaml`, không ghi cứng); 3 tool VPN (B6) mỗi lời gọi 4,9 s. Tổng trần riêng > 120 s → hạn lượt phải cắt.
 Đạt khi: E2 `turn_budget_exceeded`, đồng hồ không vượt hạn − biên, và KHÔNG lời gọi nào nhận timeout > phần còn lại − biên
 — đo ở NƠI NHẬN (handler AD/VPN, `FakeMlService.seen`, `ScriptedLLM.calls`). M-3f-7a/b/c làm đỏ test này.
 """
@@ -20,7 +22,7 @@ from app.settings import Settings
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import SESSION, ad_user
-from tests.fakes.llm import make_gateway
+from tests.fakes.llm import make_gateway, scripted_runtime
 from tests.fakes.rag import SpyPoint
 from tests.fakes.vpn import SeedVpn
 from tests.unit.test_rag_retriever import _payload, _retriever, _spy
@@ -33,6 +35,7 @@ NOT_ATTACK = {"is_attack": False, "category": "none", "reason": "yêu cầu hỗ
 VPN_ONE = {"intents": [{"type": "vpn", "confidence": 0.92, "span": NORMAL, "action_hint": "renew_vpn_cert",
                         "slots": {"device_id": "LAP-0342"}}], "is_multi": False}  # fmt: skip
 SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
+B03_TIMEOUTS = scripted_runtime().roles["chat_fast"].max_retries  # Q10: b03 đi vai chat_fast; hết lượt thử = max_retries + 1 lời gọi
 
 type Handler = Callable[[Any, float], Awaitable[object]]
 
@@ -69,7 +72,7 @@ async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_rem
     ml.slow("embed", 4.9).slow("rerank", 99, times=3)
     gw = make_gateway({
         "b02_injection_judge": [Timeout(), Timeout(), Timeout(), Reply(NOT_ATTACK)],
-        "b03_classify": [Timeout(), Timeout(), Reply(VPN_ONE)],
+        "b03_classify": [*[Timeout()] * B03_TIMEOUTS, Reply(VPN_ONE)],  # gói 1: +1 Timeout; Q10: theo vai chat_fast (xem docstring)
     }, clock=clock)  # fmt: skip
     spy = _spy(points=[SpyPoint("p1", _payload("KB-VPN-001", 0, "vpn lỗi 809 chứng chỉ"), score=0.9)])
     rag = _retriever(spy, ml.client(clock), clock=clock)  # Retriever THẬT, cùng ml-service giả chậm
@@ -91,7 +94,7 @@ async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_rem
             "tool:vpn"} <= kinds  # lượt đi qua đủ lớp  # fmt: skip
     if ends_at == "b08_retrieve":
         assert {"ml:embed", "ml:rerank"} <= kinds
-    assert len(seen) >= 18
+    assert len(seen) >= 13 + B03_TIMEOUTS + 1  # gói 1 — đổi có chủ ý: `/classify` 3 → 1 lời gọi (−2), `b03_classify` +1 → 18 − 1 = 17; Q10: 13 + lần gọi b03
     for kind, timeout, at in seen:
         remaining = (usable_end - at).total_seconds()
         assert timeout <= remaining + 1e-9, f"{kind}: timeout {timeout:g}s > còn {remaining:g}s lúc {at}"

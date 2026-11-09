@@ -21,6 +21,14 @@ EXPECTED_TABLES = {
     "audit_logs", "lineage", "turns", "spans", "llm_calls", "alerts",
     # 5 bảng mới (P7)
     "security_events", "llm_cache", "wait_deadlines", "side_effects", "child_notices",
+    # bảng thứ 23 — migration 0010 (gói 2b, D-54 a, đặc tả 4.8): bộ đếm 429 của tin nhắn
+    "rate_hits",
+    # bảng thứ 24 — migration 0012 (notify-email): hàng đợi email
+    "email_outbox",
+    # bảng thứ 25 — migration 0013 (D-67): lịch sử đổi chiến lược M5 lúc vận hành (chỉ ghi thêm)
+    "m5_strategy_changes",
+    # bảng thứ 26 — migration 0014 (P3 menu ⋯ "Xóa"): ticket người dùng đã ẩn khỏi "Gần đây"
+    "ticket_hidden",
 }  # fmt: skip
 
 
@@ -44,11 +52,13 @@ def _scalar(conn: Connection, sql: str) -> object:
     return conn.execute(text(sql)).scalar()
 
 
-def test_upgrade_creates_exactly_22_tables(migrated: PgUrls) -> None:
+def test_upgrade_creates_exactly_24_tables(migrated: PgUrls) -> None:
+    """Gói 2b (PLAN-2B1 G8 #3, Q-2B1-6): 22 bảng gốc + `rate_hits` (0010) + `email_outbox` (0012, notify-email) + D-67
+    `m5_strategy_changes` (0013) — giữ tên test."""
     engine = create_engine(migrated.role("app_migrate"))
     with engine.connect() as conn:
         assert _tables(conn) == EXPECTED_TABLES
-        assert len(EXPECTED_TABLES) == 22
+        assert len(EXPECTED_TABLES) == 26
         assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)  # migration 0003
         assert _scalar(conn, "SELECT to_regclass('public.auth_failures')") == "auth_failures"
         owners: Any = conn.execute(
@@ -61,7 +71,7 @@ def test_upgrade_creates_exactly_22_tables(migrated: PgUrls) -> None:
                 "WHERE trigger_schema = 'public'"
             )
         ).all()
-        assert {t for t, _ in triggers} == {"audit_logs", "security_events"}
+        assert {t for t, _ in triggers} == {"audit_logs", "security_events", "m5_strategy_changes"}  # D-67: 0013
     engine.dispose()
 
 
@@ -113,7 +123,9 @@ def test_downgrade_is_clean_then_upgrade_again(migrated: PgUrls) -> None:
 
 
 def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
-    """0003 hạ xuống bỏ đúng 4 bảng checkpoint; nâng lại chạy `setup()` từ đầu, grant lại app_rw."""
+    """0003 hạ xuống bỏ đúng 4 bảng checkpoint; nâng lại chạy `setup()` từ đầu, grant lại app_rw.
+    Gói 2b (PLAN-2B1 G8 #5): xuống `0002` thì `rate_hits` (0010) cũng không còn; notify-email: `email_outbox` (0012) cũng vậy; D-67:
+    `m5_strategy_changes` (0013) cũng vậy."""
     with fresh_database(pg) as db:
         cfg = alembic_config(db)
         command.upgrade(cfg, "head")
@@ -121,7 +133,9 @@ def test_0003_checkpoint_tables_down_and_up(pg: PgUrls) -> None:
         owner = create_engine(db.role("app_migrate"))
         try:
             with owner.connect() as conn:
-                assert _all_tables(conn) == EXPECTED_TABLES
+                assert _all_tables(conn) == EXPECTED_TABLES - {
+                    "rate_hits", "email_outbox", "m5_strategy_changes", "ticket_hidden",
+                }  # D-67: 0013; P3 menu ⋯: 0014
             command.upgrade(cfg, "head")
             with owner.connect() as conn:
                 assert _all_tables(conn) - EXPECTED_TABLES == set(CHECKPOINT_TABLES)

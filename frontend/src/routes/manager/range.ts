@@ -6,7 +6,9 @@
 //   30 ngày  : from = 00:00 VN của 29 ngày trước
 //   to       = thời điểm hiện tại (tính LÚC GỬI — nút "Tải lại" lấy giờ mới).
 import { queryOptions } from "@tanstack/react-query";
-import { type DashboardWindow, getAiDashboard, getBusinessDashboard } from "../../api/dashboard.ts";
+import { listAlerts } from "../../api/alerts.ts";
+import { type DashboardWindow, getAiDashboard, getBusinessDashboard, getStrategiesDashboard } from "../../api/dashboard.ts";
+import type { StrategySource } from "../../api/types.ts";
 
 export type RangeKey = "today" | "7d" | "30d";
 export const RANGES: readonly { key: RangeKey; label: string; days: number }[] = [
@@ -67,9 +69,25 @@ export const businessQuery = (range: RangeKey) =>
     retry: false,
   });
 
+/** Khối "Cảnh báo đang mở" của Tổng quan (D13): cùng khung với số liệu. Khoá có tiền tố `["alerts","open"]` (useAlertAck). */
+export const openAlertsQuery = (range: RangeKey) =>
+  queryOptions({
+    queryKey: ["alerts", "open", range] as const,
+    queryFn: () => listAlerts("open", rangeWindow(range, Date.now())),
+    retry: false,
+  });
+
 export const aiQuery = (range: RangeKey) =>
   queryOptions({
     queryKey: ["dashboard", "ai", range] as const,
     queryFn: () => getAiDashboard(rangeWindow(range, Date.now())),
+    retry: false,
+  });
+
+/** So sánh phương án (N-PA §2): cùng khoảng thời gian với hai tab kia; khoá theo khoảng + nguồn. */
+export const strategiesQuery = (range: RangeKey, source: StrategySource) =>
+  queryOptions({
+    queryKey: ["dashboard", "strategies", range, source] as const,
+    queryFn: () => getStrategiesDashboard(rangeWindow(range, Date.now()), source),
     retry: false,
   });

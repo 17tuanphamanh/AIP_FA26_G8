@@ -20,12 +20,16 @@ Hạn cho cả lượt: `Runner(turn_budget_s, safety_margin_s)`.
 LLM gateway (3d): `check_llm` cùng luật fail-closed (LLM_BACKEND, pricing, prompt, preset — trước khi đụng DB); gateway
 ghi cache/trace/chi tiêu vào Postgres, trace gắn lượt + span node qua `tracing.trace_parent`.
 Người duyệt (4b): roster `config/approvers.yaml` (kiểm trước DB) → `NodeDeps.approvers`; `NodeDeps.approver_users` =
-`auth.user_sync.AuthApproverUsers` trên `SqlAuthStore` + `SecurityEventWriter` + khoá HMAC dẫn xuất từ `JWT_SIGNING_KEY`
-(`username_hash.username_key` — cùng hàm với `TokenSigner.username_key`). Thiếu khoá → WARNING, `available=False` (B15 → E2
-`approver_sync_unavailable` theo ticket) — KHÔNG đổi điều kiện khởi động (Q-4b-5).
+`auth.user_sync.AuthApproverUsers` trên `SqlAuthStore` + `SecurityEventWriter` + khoá HMAC username ma qua `username_hash.resolve_key`
+(backend: dẫn xuất từ `JWT_SIGNING_KEY` — cùng hàm với `TokenSigner.username_key`; worker: `USERNAME_HMAC_KEY` — A2 bn-a; lệch → không
+khởi động). Thiếu khoá → WARNING, `available=False` (B15 → E2 `approver_sync_unavailable` theo ticket) — KHÔNG đổi điều kiện khởi động
+của backend (Q-4b-5); worker tự từ chối thiếu khoá ở `worker.require_worker_keys`.
 M5 lớp 2 (Phase 6 6C, P1/P10, N2/N5): chiến lược = `Settings.strategy` (Q-6C-1 = B — `manual` bị từ chối ở mọi chế độ, còn lại
 `check_strategy`) và calibrator (`m5.calibrator_version` → CHỈ `load_calibrator`; null → None = không AUTO) kiểm TRƯỚC DB ở cả backend
 lẫn worker; `NodeDeps.estimator` = `LlmRiskEstimator` trên cùng gateway, `eval_mode` cùng nguồn Settings với gateway (N2).
+Email (notify-email): `Settings.email_active` (EMAIL_ENABLED=true và không EVAL_MODE) → `notify_user` của ticket thường/cha bọc
+`notify.notifier.EmailingNotifier` (bên trong `ChildAwareNotifier` — con không email), phiếu duyệt dùng `EmailingApprovals` (B15
+`notify_approver` thêm dòng outbox); cùng privacy guard với `NodeDeps.privacy`. Tắt → y như cũ, không dòng `email_outbox` nào.
 """
 
 import logging
@@ -44,7 +48,7 @@ from app.audit.writer import AuditWriter
 from app.auth.service import auth_config, lock_policy
 from app.auth.store import SqlAuthStore
 from app.auth.user_sync import AdUserSync, AuthApproverUsers
-from app.auth.username_hash import username_key
+from app.auth.username_hash import resolve_key
 from app.core.clock import Clock
 from app.db.escalations import SqlEscalationStore
 from app.db.identity import SqlIdentityReads
@@ -81,7 +85,13 @@ from app.guard.privacy import guard_from_settings
 from app.llm import LlmPort
 from app.llm.wiring import check_llm, open_llm
 from app.ml import MlClient, MlPort
-from app.notify.child import ChildAwareNotifier
+from app.notify.child import ChildAwareNotifier, UserNotifier
+from app.notify.notifier import (
+    ApproverEmailNotice,
+    EmailingApprovals,
+    EmailingNotifier,
+    email_outbox_from_settings,
+)
 from app.rag.bm25 import load_lexicon
 from app.rag.ingest.kbversion import pipeline_sha
 from app.rag.ports import RagPort
@@ -96,6 +106,7 @@ from app.settings import (
     check_intent_config,
     check_policy_config,
     get_action_metadata,
+    get_dedup,
     get_escalation_templates,
     get_policy,
     get_slots,
@@ -141,13 +152,17 @@ def fake_scenario(settings: Settings) -> FakeScenario:
 
 
 def m5_strategy(settings: Settings) -> Strategy:
-    """6C P1 (Q-6C-1 = B): chiến lược M5 từ `Settings.strategy`. `manual` (P8 — chỉ tính giải tích ở harness) → từ chối ở MỌI chế
-    độ; chiến lược chỉ-để-so-sánh khi không EVAL_MODE → `StrategyNotAllowed` (cổng 6). Gọi ở `open_runtime` TRƯỚC DB (backend +
-    worker, N5) và lại ở `_open` (lớp thứ hai cho nơi dựng runtime không qua `open_runtime`)."""
+    """6C P1 (Q-6C-1 = B): kiểm `Settings.strategy` lúc khởi động. `manual` (P8 — chỉ tính giải tích ở harness) → từ chối ở MỌI chế
+    độ; chiến lược chỉ-để-so-sánh (D-67: `llm_only`, `full_auto`) khi không EVAL_MODE → `StrategyNotAllowed` (cổng 6). Gọi ở
+    `open_runtime` TRƯỚC DB (backend + worker, N5) và lại ở `_open` (lớp thứ hai cho nơi dựng runtime không qua `open_runtime`).
+    D-67: ngoài EVAL_MODE chiến lược lúc vận hành do DB quyết (`m5_strategy_changes`, chụp lên ticket lúc tạo) — `STRATEGY` chỉ có
+    nghĩa khi EVAL_MODE; `rule_only`/`hybrid_guarded` đặt ở env ngoài EVAL_MODE được chấp nhận nhưng BỊ BỎ QUA (log cảnh báo)."""
     strategy = settings.strategy
     if strategy == "manual":
         raise RuntimeError(MANUAL_REFUSED)
     check_strategy(strategy, eval_mode=settings.eval_mode)
+    if not settings.eval_mode and strategy != "hybrid":
+        log.warning("STRATEGY=%s bị bỏ qua ngoài EVAL_MODE — chiến lược vận hành do DB quyết (PUT /api/admin/strategy)", strategy)
     return strategy
 
 
@@ -229,14 +244,15 @@ async def open_runtime(
 
 
 def approver_users(settings: Settings, engines: Engines, sink: SecurityEventWriter) -> AuthApproverUsers:
-    """B15 `ensure` (4b P5, TQ-3): `AdUserSync` trên bảng `users` thật, cùng tham số khoá với đăng nhập (`auth_config`). Thiếu
-    `JWT_SIGNING_KEY` → WARNING + `available=False` (Q-4b-5 — không đổi điều kiện khởi động). Khoá không log."""
-    if settings.jwt_signing_key is None:
-        log.warning("JWT_SIGNING_KEY chưa cấu hình — B15 không đồng bộ được người duyệt, ticket cần duyệt sẽ ra E2")
+    """B15 `ensure` (4b P5, TQ-3): `AdUserSync` trên bảng `users` thật, cùng tham số khoá với đăng nhập (`auth_config`). Không có khoá
+    HMAC username ma (`resolve_key` → None) → WARNING + `available=False` (Q-4b-5 — không đổi điều kiện khởi động). Khoá không log."""
+    key = resolve_key(settings.jwt_signing_key, settings.username_hmac_key)
+    if key is None:
+        log.warning("thiếu khoá HMAC username ma (JWT_SIGNING_KEY / USERNAME_HMAC_KEY) — B15 không đồng bộ được người duyệt, "
+                    "ticket cần duyệt sẽ ra E2")  # fmt: skip
         return AuthApproverUsers(None)
     return AuthApproverUsers(AdUserSync(
-        store=SqlAuthStore(engines.main), sink=sink,
-        username_key=username_key(settings.jwt_signing_key.get_secret_value().encode("utf-8")),
+        store=SqlAuthStore(engines.main), sink=sink, username_key=key,
         lock=lock_policy(auth_config(settings, get_policy().constants)),
     ))  # fmt: skip
 
@@ -254,13 +270,17 @@ async def _open(
     approval_sla_minutes: int | None = None, approvers: Mapping[str, Roster] | None = None,
     calibrator: Calibrator | None = None,
 ) -> AsyncIterator[Runtime]:  # fmt: skip
+    m5_strategy(settings)  # lớp thứ hai (6C P1): D-67 — NodeDeps không còn mang chiến lược, nên kiểm ở đây thay cho `strategy=`
     deadlines = SqlDeadlineStore(engines.main)
     security = SecurityEventWriter(engines.main, clock)
     turns = SqlTurnStore(engines.main)
     tickets = SqlTicketStore(engines.main)
-    approvals = SqlApprovals(engines.main)
+    privacy = guard_from_settings(settings)
+    outbox = email_outbox_from_settings(settings, engines.main, privacy, clock)  # None = email tắt (hoặc EVAL_MODE)
+    approvals = SqlApprovals(engines.main) if outbox is None else EmailingApprovals(engines.main, ApproverEmailNotice(outbox))
+    inner: UserNotifier = LoggingNotifier() if outbox is None else EmailingNotifier(LoggingNotifier(), outbox)
     deps = NodeDeps(
-        notifier=ChildAwareNotifier.on_engine(engines.main, LoggingNotifier()), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
+        notifier=ChildAwareNotifier.on_engine(engines.main, inner), approvals=approvals, executor=executor, txlog=SqlTxLog(engines.main, clock),
         deadlines=deadlines, constants=get_policy().constants,
         identity=SqlIdentityReads(engines.main), directory=directory,
         alerts=AlertWriter(engines.main, clock), lockout=timedelta(minutes=settings.lockout_minutes),
@@ -268,16 +288,16 @@ async def _open(
         templates=get_escalation_templates(), ml=ml, rag=rag, llm=llm, approver_id=approver_id,
         scenario=scenario, security_events=security,
         slots=get_slots(), action_metadata=get_action_metadata().root,
-        enabled_intents=frozenset(settings.enabled_intents),
-        enable_proactive_diagnosis=settings.enable_proactive_diagnosis,
+        enabled_intents=frozenset(settings.enabled_intents), dedup=get_dedup(),  # M1: sai config/dedup.yaml → không khởi động
+        enable_proactive_diagnosis=settings.enable_proactive_diagnosis, enable_it_help=settings.enable_it_help,
         grounding_gate_actions=settings.grounding_gate_actions, commit_sha=settings.app_git_sha,
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
-        privacy=guard_from_settings(settings),
+        privacy=privacy,
         approval_sla_minutes=approval_sla_minutes if approval_sla_minutes is not None else get_policy().constants.SLA_MINUTES,
         approvers=approvers if approvers is not None else open_approvers(settings).root,
         approver_users=approver_users(settings, engines, security),
         estimator=LlmRiskEstimator(llm, p_method=get_policy().m5.p_method, eval_mode=settings.eval_mode),
-        calibrator=calibrator, strategy=m5_strategy(settings), eval_mode=settings.eval_mode,
+        calibrator=calibrator, eval_mode=settings.eval_mode,
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

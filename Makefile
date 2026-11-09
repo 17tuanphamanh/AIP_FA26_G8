@@ -24,6 +24,18 @@ endif
 .PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 gate4 gate5 vpn-smoke models ml-bench \
 	rerank-bench verify verify-status audit-check
 
+# Phase 5 (gói 2b, D-54 a): `RATE=loose` nới 3 ngưỡng 429 của backend bằng số lớn cho lượt chạy tay gate / vpn-smoke / probe /
+# harness / demo — `make up RATE=loose` (compose nội suy `${TICKET_RATE_10MIN:-}`…, biến shell thắng .env). Cùng số với `LOOSE_RATES` của
+# scripts/verify.sh (test ghim). Không có giá trị "tắt"; RATE khác `loose` → dừng. Đi qua MAKEFLAGS tới `make up` con (gate2 restart-all).
+RATE ?=
+ifeq ($(RATE),loose)
+export TICKET_RATE_10MIN := 100000
+export TICKET_RATE_HOUR := 100000
+export MESSAGE_RATE_10MIN := 100000
+else ifneq ($(RATE),)
+$(error RATE=$(RATE) không hợp lệ — chỉ RATE=loose (nới ngưỡng 429) hoặc bỏ trống)
+endif
+
 # Compose đọc .env; chưa có .env thì dùng .env.example (giá trị mẫu, chỉ cho máy dev).
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 COMPOSE := docker compose --env-file $(ENV_FILE)
@@ -88,8 +100,9 @@ test:
 
 # Test ml-service với model/tokenizer THẬT (a3, a4, a5, a6, a16 — thiết kế Phase 3 mục 4.8). Cài nhóm uv
 # `ml` (torch…) vào .venv; cần `make models` trước — thiếu model thì FAIL, không skip. Không vào CI.
+# Gói 2 (D-53): cả test marker ml_torch (B3Model giả nhỏ, nạp safetensors, script chuyển .pt) — cần torch, không cần model.
 test-ml:
-	uv run --group ml pytest ml_service/tests -o pythonpath=ml_service -m ml_real
+	uv run --group ml pytest ml_service/tests -o pythonpath=ml_service -m "ml_real or ml_torch"
 
 # ruff, mypy, import-linter, gitleaks (cổng T01 mục 4).
 lint:
@@ -202,8 +215,10 @@ seed:
 	$(COMPOSE) exec -T mock python -m app.seed reset
 
 # Probe với LLM thật (intent, injection, phân phối p) — TỐN TIỀN, không nằm trong make test.
+# Cổng 5 thủ công (phase5 7.13): make probe F=<bộ câu .jsonl> — stack LLM_BACKEND=real (README stack "Chạy smoke LLM thật").
 probe:
-	@echo "TODO (Phase 3): chưa có probe; chưa chốt provider LLM (N1)." >&2; exit 1
+	@test -n "$(F)" || { echo "thiếu F=<bộ câu .jsonl>" >&2; exit 2; }
+	COMPOSE="$(COMPOSE)" PYTHONPATH=backend uv run python -m tests.probe.cong5 $(F)
 
 # Harness M8, chỉ khi EVAL_MODE=true. Ví dụ: make eval STRATEGY=hybrid SPLIT=test
 eval:

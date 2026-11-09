@@ -1,4 +1,5 @@
-"""S1 T29 — hợp đồng `predictions.jsonl` v1 (`app.eval.predictions`, duyệt #32 ngày 13/10; chốt ở ghi chú t29-chot).
+"""S1 T29 — hợp đồng `predictions.jsonl` v1 (`app.eval.predictions`, duyệt #32 ngày 13/10; chốt ở ghi chú t29-chot) + v1.1
+(P8 v1.4 §5.6: `schema_version`, `fold`, `kb_gap`, `hidden_factor`, `run_started_at`, `in_business_hours`; P6 22/10: `m5_aborted`).
 
 Chỉ dữ liệu tổng hợp. Lỗi đầu vào → `ValueError`, thông điệp nêu tên trường/số dòng, KHÔNG in giá trị dữ liệu.
 """
@@ -10,21 +11,30 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from app.eval.predictions import PredictionRecord, Split, Strategy, load_predictions
+from app.eval.predictions import (
+    PredictionRecord,
+    Split,
+    Strategy,
+    load_predictions,
+    m5_outcome,
+)
 from app.settings import Settings
 from pydantic import ValidationError
+from tests.unit.eval.contract_v11 import V11
 
 CONTRACT_FIELDS = {
     "run_id", "strategy", "split", "scenario_id", "family", "ticket_id", "parent_ticket_id",
     "expected_route", "route", "decided_by", "raw_prob", "calibrated_prob", "p_method",
     "final_state", "exit_code", "close_reason", "resolution_path", "has_approval", "clarification_turns",
     "intent", "gold_intent", "doc_ids", "gold_doc_ids",
+    "schema_version", "fold", "kb_gap", "hidden_factor", "run_started_at", "in_business_hours", "m5_aborted",
 }  # fmt: skip
-RISK_FIELDS = ("decided_by", "raw_prob", "calibrated_prob", "p_method")
+RISK_FIELDS = ("decided_by", "raw_prob", "calibrated_prob", "p_method", "kb_gap")
+V11_FIELDS = tuple(V11)
 
 
 def rec(**over: Any) -> dict[str, Any]:
-    """Một lá tổng hợp hợp lệ: ca LLM, HITL, đã duyệt, đóng resolved."""
+    """Một lá tổng hợp hợp lệ: ca LLM, HITL, đã duyệt, đóng resolved; `kb_gap = False` (tới M5 — trường điểm log 4 có giá trị)."""
     base: dict[str, Any] = {
         "run_id": "0123456789ab", "strategy": "hybrid", "split": "test",
         "scenario_id": "TCX1-v1", "family": "TCX1", "ticket_id": "T-0001", "parent_ticket_id": None,
@@ -33,6 +43,7 @@ def rec(**over: Any) -> dict[str, Any]:
         "final_state": "S_RESOLVED", "exit_code": None, "close_reason": "resolved_user_confirmed",
         "resolution_path": "approved", "has_approval": True, "clarification_turns": 1,
         "intent": "vpn", "gold_intent": "vpn", "doc_ids": ["kb-a", "kb-b"], "gold_doc_ids": ["kb-a"],
+        **V11, "kb_gap": False,
     }  # fmt: skip
     base.update(over)
     return base
@@ -40,7 +51,7 @@ def rec(**over: Any) -> dict[str, Any]:
 
 def no_m5(**over: Any) -> dict[str, Any]:
     """Lá không tới M5 (không có điểm log 4)."""
-    return rec(route=None, decided_by=None, raw_prob=None, calibrated_prob=None, p_method=None, **over)
+    return rec(route=None, decided_by=None, raw_prob=None, calibrated_prob=None, p_method=None, kb_gap=None, **over)
 
 
 def parse(data: dict[str, Any]) -> PredictionRecord:
@@ -240,3 +251,170 @@ def test_load_rejects_duplicate_scenario_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="scenario_id.*dòng 2") as exc:
         load_predictions(write(tmp_path / "p.jsonl", rows))
     assert "ZZSECRET" not in str(exc.value)
+
+
+def test_expected_route_none_accepted() -> None:
+    """G2-schema (20/10): dữ liệu thật mang `gold.expected_route = null` tới 25/10 → bản ghi CHƯA NHÃN hợp lệ (đụng hợp đồng v1 —
+    G2-Q22). Các ràng buộc khác vẫn giữ: route lạ vẫn bị từ chối."""
+    r = parse(rec(expected_route=None))
+    assert r.expected_route is None
+    assert PredictionRecord.model_validate_json(r.model_dump_json()) == r
+    with pytest.raises(ValidationError):
+        parse(rec(expected_route="SENTINEL_ROUTE"))
+
+
+# ---- v1.1 (P8 v1.4 §5.6) ----------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("field", V11_FIELDS)
+def test_v11_fields_required(field: str) -> None:
+    """Không trường v1.1 nào có mặc định: runner phải ghi tường minh (kể cả `null` khi chưa có nguồn)."""
+    data = rec()
+    del data[field]
+    with pytest.raises(ValidationError, match=field):
+        parse(data)
+
+
+def test_v11_null_record_ok() -> None:
+    """Bản ghi như lượt stack ghi: 4 trường chưa có nguồn = `null`."""
+    r = parse(rec(**V11))
+    assert (r.schema_version, r.fold, r.kb_gap, r.hidden_factor, r.in_business_hours) == ("1.1", None, None, None, None)
+    assert PredictionRecord.model_validate_json(r.model_dump_json()) == r
+
+
+@pytest.mark.parametrize("value", ["1.0", "1", 1.1, "v1.1", "1.2"])
+def test_schema_version_exact(value: Any) -> None:
+    with pytest.raises(ValidationError, match="schema_version"):
+        parse(rec(schema_version=value))
+
+
+@pytest.mark.parametrize(("value", "ok"), [(1, True), (5, True), (None, True), (0, False), (6, False), (-1, False)])
+def test_fold_bounds(value: int | None, ok: bool) -> None:
+    """P8 §4.3 / §8 `CV_K = 5`: phần 1..5; `None` = chưa gán (lượt stack, G2-Q3)."""
+    if ok:
+        assert parse(rec(fold=value)).fold == value
+    else:
+        with pytest.raises(ValidationError, match="fold"):
+            parse(rec(fold=value))
+
+
+@pytest.mark.parametrize("value", [True, "1", 1.0])
+def test_fold_strict(value: Any) -> None:
+    with pytest.raises(ValidationError, match="fold"):
+        parse(rec(fold=value))
+
+
+@pytest.mark.parametrize("field", ["kb_gap", "hidden_factor", "in_business_hours", "m5_aborted"])
+@pytest.mark.parametrize(("value", "ok"), [(True, True), (False, True), (None, True), ("true", False), (1, False), (0, False)])
+def test_v11_bool_strict(field: str, value: Any, ok: bool) -> None:
+    if ok:
+        assert getattr(parse(rec(**{field: value})), field) is value
+    else:
+        with pytest.raises(ValidationError, match=field):
+            parse(rec(**{field: value}))
+
+
+@pytest.mark.parametrize("value", ["2026-10-19T10:00:00+07:00", "2026-10-19T03:00:00Z", "2026-10-19T03:00:00.123456+00:00"])
+def test_run_started_at_accepts_offset(value: str) -> None:
+    assert parse(rec(run_started_at=value)).run_started_at == value
+
+
+@pytest.mark.parametrize("value", ["2026-10-19T10:00:00", "2026-10-19", "", "SENTINEL_TIME", "2026-13-01T00:00:00+07:00", None, 0])
+def test_run_started_at_rejected(value: Any) -> None:
+    """ISO 8601 CÓ offset (giờ không múi giờ không so được với khung giờ `at` +07:00); lỗi không in giá trị."""
+    with pytest.raises(ValidationError, match="run_started_at") as exc:
+        parse(rec(run_started_at=value))
+    assert "SENTINEL_TIME" not in str(exc.value)
+
+
+# ---- m5_aborted + quy tắc "không tới điểm log 4" (P8 §5.4 [Chốt 22/10]) ---------------------------------------------------------
+
+
+def outcome(**over: Any) -> str:
+    return m5_outcome(parse(no_m5(**over)))
+
+
+def test_m5_aborted_is_a_required_nullable_bool_in_the_contract() -> None:
+    data = rec()
+    del data["m5_aborted"]
+    with pytest.raises(ValidationError, match="m5_aborted"):
+        parse(data)
+    assert parse(rec(m5_aborted=None)).m5_aborted is None
+    assert parse(no_m5(m5_aborted=True)).m5_aborted is True
+
+
+def test_m5_outcome_route_present_is_log4_regardless_of_flag() -> None:
+    assert m5_outcome(parse(rec(m5_aborted=None))) == "log4"
+    assert m5_outcome(parse(rec(m5_aborted=False))) == "log4"
+
+
+@pytest.mark.parametrize(
+    ("flag", "expected"),
+    [(True, "aborted"), (False, "out")],
+)
+def test_m5_outcome_labeled_without_route_follows_the_flag(flag: bool, expected: str) -> None:
+    """Đã nhãn, `route = None`: M5 bị ngắt → `aborted` (ESCALATE_L2 ở phương án có LLM); không ngắt → `out` (ngoài mẫu số)."""
+    assert outcome(m5_aborted=flag) == expected
+    # mã thoát / trạng thái KHÔNG quyết định: E9 ở bước khác, kẹt B11 (final_state null), E1 đều theo cờ
+    assert outcome(m5_aborted=flag, exit_code="E9") == expected
+    assert outcome(m5_aborted=flag, final_state=None) == expected
+    assert outcome(m5_aborted=flag, exit_code="E1") == expected
+
+
+def test_m5_outcome_labeled_without_route_and_null_flag_raises() -> None:
+    with pytest.raises(ValueError, match="m5_aborted"):
+        outcome(m5_aborted=None)
+
+
+@pytest.mark.parametrize("flag", [True, False, None])
+def test_m5_outcome_unlabeled_is_out_without_needing_the_flag(flag: bool | None) -> None:
+    assert outcome(expected_route=None, m5_aborted=flag) == "out"
+
+
+def _v1_row(**over: Any) -> dict[str, Any]:
+    """Dòng hợp đồng v1 (trước §5.6): không có 6 trường v1.1."""
+    return {k: v for k, v in rec(**over).items() if k not in V11}
+
+
+def test_load_v1_file_rejected(tmp_path: Path) -> None:
+    """V11-Q6: file v1 (không có `schema_version`) bị từ chối với thông điệp riêng — không điền mặc định."""
+    rows = [rec(), _v1_row(ticket_id="T-2", scenario_id="S-2", exit_code="E1")]
+    with pytest.raises(ValueError, match="dòng 2: bản v1") as exc:
+        load_predictions(write(tmp_path / "p.jsonl", rows))
+    assert "T-2" not in str(exc.value)
+
+
+def test_load_v1_first_line_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="dòng 1: bản v1"):
+        load_predictions(write(tmp_path / "p.jsonl", [_v1_row()]))
+
+
+def test_load_bad_schema_version_not_called_v1(tmp_path: Path) -> None:
+    """Có `schema_version` nhưng sai giá trị → lỗi trường thường (không gọi là bản v1)."""
+    with pytest.raises(ValueError, match="dòng 1: không hợp lệ \\(schema_version\\)"):
+        load_predictions(write(tmp_path / "p.jsonl", [rec(schema_version="1.0")]))
+
+
+def test_load_folds_ok(tmp_path: Path) -> None:
+    rows = [rec(ticket_id="T-1", scenario_id="S-1", family="F-A", fold=1), rec(ticket_id="T-2", scenario_id="S-2", family="F-B", fold=5),
+            rec(ticket_id="T-3", scenario_id="S-3", family="F-A", fold=1)]  # fmt: skip
+    assert [r.fold for r in load_predictions(write(tmp_path / "p.jsonl", rows))] == [1, 5, 1]
+
+
+def test_load_rejects_family_in_two_folds(tmp_path: Path) -> None:
+    """P8 §4.3: MỌI kịch bản của một họ vào CÙNG một phần."""
+    rows = [rec(ticket_id="T-1", scenario_id="S-1", family="F-ZZSECRET", fold=1),
+            rec(ticket_id="T-2", scenario_id="S-2", family="F-OTHER", fold=2),
+            rec(ticket_id="T-3", scenario_id="S-3", family="F-ZZSECRET", fold=2)]  # fmt: skip
+    with pytest.raises(ValueError, match="dòng 3.*family.*fold") as exc:
+        load_predictions(write(tmp_path / "p.jsonl", rows))
+    assert "ZZSECRET" not in str(exc.value)
+
+
+@pytest.mark.parametrize("folds", [(None, 3), (3, None)])
+def test_load_rejects_partial_folds(tmp_path: Path, folds: tuple[int | None, int | None]) -> None:
+    """Một file: hoặc mọi dòng đã gán `fold`, hoặc không dòng nào (gán dở = lỗi, không đoán)."""
+    rows = [rec(ticket_id="T-1", scenario_id="S-1", family="F-A", fold=folds[0]),
+            rec(ticket_id="T-2", scenario_id="S-2", family="F-B", fold=folds[1])]  # fmt: skip
+    with pytest.raises(ValueError, match="fold"):
+        load_predictions(write(tmp_path / "p.jsonl", rows))

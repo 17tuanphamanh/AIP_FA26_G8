@@ -10,8 +10,9 @@ export const STAFF_NAV: readonly NavItem[] = [
   { to: "/dashboard", label: "Tổng quan", perm: "dashboard:read:all", stage: "F5" },
   { to: "/alerts", label: "Cảnh báo", perm: "alert:read", stage: "F5" },
   { to: "/policy", label: "Chính sách", perm: "policy:read", stage: "F5" },
+  { to: "/llm-status", label: "Trạng thái LLM", perm: "llm_status:read", stage: "I1" },
   { to: "/approvals", label: "Chờ tôi duyệt", perm: "approval:decide", stage: "F4" },
-  { to: "/escalations", label: "Hàng đợi escalate", perm: "escalation:handle", stage: "F3" },
+  { to: "/escalations", label: "Hàng chờ chuyển L2", perm: "escalation:handle", stage: "F3" },
 ];
 
 export const CHAT_NAV: NavItem = { to: "/chat", label: "Yêu cầu mới", perm: "ticket:create", stage: "F2" };
@@ -34,7 +35,7 @@ export function homePath(me: Me): string {
 // Nhãn CHỈ để hiển thị (Q-fe-9: `me` chưa có tên) — không dùng để quyết quyền.
 export const ROLE_LABEL: Record<Me["role"], string> = {
   employee: "Nhân viên",
-  l1: "IT Helpdesk L1",
+  l1: "Nhân viên hỗ trợ L1",
   l2: "Kỹ thuật viên L2",
   manager: "Trưởng bộ phận IT",
 };

@@ -322,10 +322,10 @@ class Ctx:
         ))
 
     def ticket_lock_count(self, ticket: str) -> int:
-        """Khoá advisory của ĐÚNG ticket này (`pg_advisory_lock(hashtext(id))`: khoá bigint = classid
+        """Khoá advisory của ĐÚNG ticket này (`pg_advisory_lock(hashtextextended(id, 0))`: khoá bigint = classid
         (32 bit cao) + objid (32 bit thấp), objsubid = 1)."""
         return int(self.shell.sql(
-            f"WITH k AS (SELECT hashtext({q(ticket)})::bigint AS h) SELECT count(*) FROM pg_locks, k "
+            f"WITH k AS (SELECT hashtextextended({q(ticket)}, 0) AS h) SELECT count(*) FROM pg_locks, k "
             "WHERE locktype = 'advisory' AND objsubid = 1 AND granted "
             "AND classid::bigint = ((k.h >> 32) & 4294967295) AND objid::bigint = (k.h & 4294967295)"
         ))  # fmt: skip

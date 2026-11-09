@@ -1,10 +1,10 @@
 ---
 doc_id: KB-ACC-001
-version: 1
+version: 2
 request_type: account
 doc_type: howto
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: "Tự đặt lại mật khẩu tài khoản cá nhân"
@@ -17,6 +17,8 @@ tags: [account, mật khẩu, đặt lại mật khẩu, tài khoản cá nhân]
 Quy trình này dành cho người dùng cần xử lý mật khẩu của chính tài khoản cá nhân mình đang sử dụng.
 
 Trước khi thực hiện, người dùng cần xác định đúng tài khoản và đúng hệ thống đang gặp vấn đề. Không nên sử dụng quy trình dành cho tài khoản cá nhân để yêu cầu thay đổi mật khẩu cho đồng nghiệp, tài khoản dịch vụ hoặc tài khoản có quyền đặc biệt.
+
+Hệ thống tự đặt lại mật khẩu, không cần người duyệt, khi đồng thời thỏa các điều kiện sau: tài khoản là của chính người dùng, là tài khoản người dùng thông thường (không phải tài khoản quản trị hay tài khoản dịch vụ) và đang hoạt động hoặc đang thử việc. Các trường hợp còn lại cần người duyệt hoặc IT xem xét.
 
 Nếu người dùng chỉ gặp vấn đề ở một hệ thống cụ thể, cần mô tả rõ hệ thống đó thay vì kết luận ngay rằng toàn bộ tài khoản có lỗi mật khẩu.
 

@@ -85,17 +85,17 @@ SPEC_11_2: dict[str, Any] = {
          "conditions": {"all": [
             {"fact": "action.facts.device_registered", "op": "is_false"},
             {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
-         "description": "Thiết bị chưa đăng ký"},
+         "description": "Thiết bị chưa đăng ký cần người duyệt"},
         {"id": "R18", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
          "conditions": {"all": [
             {"fact": "time.within_business_hours", "op": "is_false"},
             {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
-         "description": "Ngoài giờ hành chính"},
+         "description": "Yêu cầu gửi ngoài giờ hành chính cần người duyệt"},
         {"id": "R19", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
          "conditions": {"all": [
             {"fact": "requester.employment_status", "op": "eq", "value": "probation"},
             {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},  # Phase 4 P7 (Q-4-M)
-         "description": "Nhân viên chưa qua thử việc"},
+         "description": "Nhân viên chưa qua thử việc cần người duyệt"},
         {"id": "R20", "type": "allow", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
          "conditions": {"all": [
             {"fact": "action.facts.device_registered", "op": "is_true"},
@@ -121,6 +121,15 @@ def test_policy_json_rules_are_exactly_spec_11_2() -> None:
     assert [r for r in raw["rules"] if r["id"] in VPN_RULE_IDS] == SPEC_11_2["rules"]
     assert [r.id for r in get_policy().rules if r.id in VPN_RULE_IDS] == list(VPN_RULE_IDS)
     check_policy_config(get_policy(), get_slots(), get_action_metadata())
+
+
+def test_v17_approval_required_description_ends_with_consequence() -> None:
+    """V17 (phase5 7.12 #2): `description` là lý do hiện trên màn duyệt → mọi luật `approval_required` nêu hệ quả, cùng khuôn
+    R03–R15 (R17–R19 trước V17 chỉ nêu điều kiện)."""
+    raw = json.loads((REPO / "config" / "policy.json").read_text(encoding="utf-8"))
+    rules = [r for r in raw["rules"] if r["type"] == "approval_required"]
+    assert rules
+    assert [r["id"] for r in rules if not r["description"].endswith("cần người duyệt")] == []
 
 
 def test_policy_sha256_is_file_bytes() -> None:

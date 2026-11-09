@@ -6,6 +6,9 @@ container postgres). Không nằm trong `make test`. Mục lục: [Thành viên 
 [Demo VPN thứ Sáu](#demo-vpn-thứ-sáu) ·
 [Chạy smoke LLM thật](#chạy-smoke-llm-thật) · [Đo CPU của worker](#đo-cpu-của-worker).
 
+**Ngưỡng 429 (Phase 5 gói 2b, D-54 a):** chạy tay gate2–5, `vpn-smoke`, `probe`, harness, demo thì dựng stack bằng `make up RATE=loose` (nới 3
+ngưỡng chống spam bằng số lớn; ghi vào biên bản) — `make verify` tự nới, không cần.
+
 ## Thành viên chạy cổng 3 rồi cổng 4 (một trang)
 
 Người chạy: thành viên **không** làm chính. Máy riêng, **NGOÀI GIỜ** hành chính (sau 18:00 hoặc cuối tuần — gate3 khi đó đi
@@ -256,7 +259,7 @@ make gate5 S=all           # ghi biên bản bienban-gate5-<YYYYmmdd>.md (KHÔNG
 | `tc03` | an.nv "cài Zoom" (máy LAP-0342 do B6 suy) → R11 AUTO → 1 install, 0 `POST /software/licenses/*` → xác nhận → `S_RESOLVED` |
 | `tc07` | an.nv "đặt lại mật khẩu AD cho svc_backup." → R03 (+R04) → phiếu l1_01 → duyệt → B17 tra lại AD nv001 + svc_backup → reset svc_backup đúng 1, 0 reset nv001 |
 | `tc08` | binh.tt "xin quyền đọc finance/Q3 30 ngày" → R07 (+R09) → l1_01 từ chối có lý do → `S_REJECTED`, tin "Yêu cầu cấp quyền truy cập cho thư mục finance/Q3 chưa được duyệt. Lý do: …", 0 ghi |
-| `tc17` | an.nv "cài utorrent" → catalog 404 là dữ liệu (không E2) → R13 → chờ duyệt, 0 ghi, 0 escalation |
+| `tc17` | an.nv "cài photoshop" (Q5: thay utorrent — nay bị cấm, R21) → catalog 404 là dữ liệu (không E2) → R13 → chờ duyệt, 0 ghi, 0 escalation |
 | `tc18` | 500 ở `/ad/users/nv001/privilege` (check_privilege_level) → B7 E2 `tool_system_error`, tin mẫu E2, 0 ghi |
 | `tc21a` | "cài Zoom" + install 500 → E7 `exec_failed`, 1 lời gọi ghi, ghi chú bàn giao 4 phần có "có thể đã được áp dụng" |
 | `tc21b` | "cài Adobe Acrobat Pro" → R14 → duyệt → assign OK, install 500 → E7, 0 uninstall, tổng ghi 2, ghi chú "license … ĐÃ cấp … KHÔNG được thu hồi tự động" (cổng 5 "phần mềm có phí lỗi khi cài → không gọi hoàn tác") |
@@ -317,14 +320,26 @@ kiểm script (0 USD). Với `real`, script **TỪ CHỐI** (exit 2, trước m�
 nạp > 1, hoặc model đang dùng chưa có dòng `pricing`. Trần chi là `spend.cap_usd` trong `config/llm.yaml` (Q-3d-3 — không có
 biến env `LLM_SPEND_CAP_USD`). **Không commit `llm.yaml` đã hạ cap** — chỉ hạ tạm trên máy người chạy:
 
-1. `config/llm.yaml`: `spend: {cap_usd: 1, …}` và thêm dòng `pricing` của model đã chọn (USD / 1M token).
-2. `.env`: `LLM_BACKEND=real`, `FAST_MODEL`, `STRONG_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` (nên `LLM_CACHE_MODE=bypass` để
-   số liệu không bị cache che).
-3. `docker compose build backend worker` → `make up`.
-4. `make vpn-smoke` — ghi số liệu vào PROGRESS (số mẫu, bản prompt, ngày).
-5. Trả `cap_usd` về 38, gỡ dòng `pricing` tạm, `.env` về `LLM_BACKEND=scripted` → `docker compose build backend worker` →
-   `make up`.
-6. `git diff config/llm.yaml` phải RỖNG.
+Đã chạy được ngày 17/10/2026 (chặng LLM-G, commit `0e74095`; lệnh đúng như đã chạy, có tên model, ghi ở PROGRESS mục "Mốc G — chặng
+LLM-G"). `config/` được COPY vào image (`backend/Dockerfile`) → mọi lần đổi `llm.yaml` phải `--build`. Biến LLM truyền bằng biến shell —
+KHÔNG sửa `.env` (khoá `LLM_API_KEY` vẫn lấy từ `.env`). `<FAST_MODEL>`, `<STRONG_MODEL>`, `<LLM_BASE_URL>` = tên model có dòng `pricing`
+trong `config/llm.yaml` và base_url của provider đó; model đang chọn ghi ở `docs/spec/build/decisions.md`. Model chưa có dòng giá → thêm dòng
+giá tạm cùng lúc hạ cap (không commit).
+
+1. Làm nóng rerank khi còn scripted (image đúng commit đang đứng):
+   `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV= docker compose up -d --build --no-deps --force-recreate --wait --wait-timeout 180 backend worker`
+   → `make seed` → `make gate3 S="preflight tc04"` (dòng `làm nóng rerank: …`, 0 FAIL).
+2. `config/llm.yaml`: `spend: {cap_usd: 1, …}` — `git diff config/llm.yaml` đúng 1 dòng. KHÔNG commit.
+3. Tạo lại với LLM thật (build lại để image mang cap 1):
+   `LLM_BACKEND=real FAST_MODEL=<FAST_MODEL> STRONG_MODEL=<STRONG_MODEL> LLM_BASE_URL=<LLM_BASE_URL> LLM_CACHE_MODE=bypass FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV= docker compose up -d --build --no-deps --force-recreate --wait --wait-timeout 180 backend worker`
+   → `docker compose exec -T backend printenv LLM_BACKEND FAST_MODEL STRONG_MODEL LLM_CACHE_MODE` = `real`, model, model, `bypass`
+   (không in khoá). Thiếu khoá/model/giá → backend từ chối khởi động, không healthy.
+4. `make seed` → `make vpn-smoke` — ghi số liệu vào PROGRESS (model, số mẫu, bản prompt, ngày, cost). Đổi riêng model strong để so: tạo lại như
+   bước 3 với `STRONG_MODEL=…` khác, KHÔNG cần `--build` (cap 1 đã ở trong image).
+5. Trả về: `git checkout -- config/llm.yaml` → `git diff config/llm.yaml` RỖNG →
+   `docker compose up -d --build --no-deps --force-recreate --wait --wait-timeout 180 backend worker` (KHÔNG biến shell — theo `.env`; thiếu
+   `--build` thì image vẫn giữ cap 1) → `docker compose exec -T backend printenv LLM_BACKEND` = `scripted`.
+6. `make verify G=…` (scripted) để xác nhận stack đã về đúng; không chạy verify G≠0 hay ingest khi đang ở LLM thật.
 
 ## `make verify` (Phase 4, mục 4.4)
 

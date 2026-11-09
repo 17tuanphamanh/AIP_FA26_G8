@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 38 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB04-q7, HB04-q8
+id: HB04-q8
+family: HB04
+source: bien_the
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-10-18T15:00:00+07:00'
+faults: []
+turns:
+- 'Cho mình xin cài MS Project nhé, tuần sau cần dùng gấp.'
+- on_question_about: device_id
+  reply: 'Cài vào máy PC-0977 của mình nhé.'
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: E6
+  approver_decision: ignore
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:PC-0977
+    params:
+      software_name: MS Project
+      device_id: PC-0977
+  facts:
+    device_owner_is_requester: true
+    device_registered: false
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: false
+labels:
+  annotator_1: HITL
+  annotator_2: ESCALATE_L2

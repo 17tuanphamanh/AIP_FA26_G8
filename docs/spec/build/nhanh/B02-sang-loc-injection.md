@@ -302,7 +302,7 @@ def block(state, **info):
                 close_reason="blocked_injection_detected", screening=info)
 ```
 
-`NEUTRAL_MSG` = "Yêu cầu không xử lý được, vui lòng liên hệ bộ phận IT." **[Chốt 7.1]**
+`NEUTRAL_MSG` = `user_message` của mã E0 trong `config/escalation_templates.yaml` — một nguồn, spec không chép lại chữ (chốt 15/10/2026). Hiện thực: `b02_screen` không tự nhắn; B20 gửi tin theo mã thoát từ file mẫu này. Yêu cầu giữ nguyên: trung tính, không nêu lớp/mẫu nào bắt **[Chốt 7.1]**.
 
 ## 6. Quyết định thiết kế và lý do
 
@@ -423,3 +423,4 @@ Phase 3 hiện thực theo `build/phase3-thiet-ke-chi-tiet.md` mục 8, 8.9; khi
 | 25/09/2026 | 1.1 | Nạp ngữ cảnh chung CTX-1.0, đặc tả gốc, TC, mục mở rộng và sổ tay sửa lỗi |
 | 25/09/2026 | 1.2 | L3 dùng `injection-clf` do nhóm huấn luyện (mDeBERTa-v3-base, D-33, P11); Prompt Guard 2 chỉ làm baseline RQ4 |
 | 30/09/2026 | 1.3 | Thêm mục "Chốt khi hiện thực Phase 3" trỏ về `phase3-thiet-ke-chi-tiet.md` (mục 8, 8.9) |
+| 17/10/2026 | 1.4 | `NEUTRAL_MSG` trỏ về `user_message` của E0 trong `config/escalation_templates.yaml` (B20 gửi) thay vì chép chữ cũ đã lệch code (chốt 15/10/2026) |

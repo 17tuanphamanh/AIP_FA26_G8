@@ -7,6 +7,8 @@
   `statuses` = mã phản hồi đã trả (request chưa xong thì chưa có mã — `count` vẫn tính).
 - `POST /_admin/calls/reset` xoá bộ đếm; `POST /_admin/reset` (nạp lại seed) cũng xoá.
 - `POST /_admin/users/{user_id}/status` body `{"employment_status": …}` — người bị khoá trong lúc ticket chờ (h17).
+- F2: `GET /_admin/outbox` → `[{"channel", "to", "at", "body"}]` — tin SMS/email mock "đã gửi", mật khẩu tạm ĐÃ CHE;
+  `POST /_admin/reset` dựng lại state nên hộp thư đi rỗng.
 
 Như `/_admin/faults`: không đòi token — mock chỉ nghe trong mạng Docker nội bộ, đây là cần gạt của người chạy test.
 """
@@ -80,6 +82,11 @@ async def reset_calls(request: Request) -> dict[str, str]:
     calls: CallLog = request.app.state.calls
     calls.clear()
     return {"status": "cleared"}
+
+
+@router.get("/outbox")
+async def list_outbox(request: Request) -> list[dict[str, Any]]:
+    return [m.view() for m in mock_state(request).outbox]
 
 
 class StatusIn(BaseModel):

@@ -3,7 +3,9 @@
     python -m app.rag.eval_cli [--kb-dir kb] [--sweep] [--csv]
 
 Không sửa gì (chỉ đọc Qdrant qua alias `kb_current` hiện tại — không ingest lại). Mặc định in Recall@5/FG/MRR ở
-đúng `RETRIEVAL_THRESHOLD` đang cấu hình (giống cổng kiểm ingest bước 10, dùng `RetrieveGateAdapter`). `--sweep`
+đúng `RETRIEVAL_THRESHOLD` đang cấu hình (giống cổng kiểm ingest bước 10, dùng `RetrieveGateAdapter`). R1: kèm P@1 và Recall@5 ở
+ngưỡng (đúng tài liệu trong top-5 VÀ top_score ≥ ngưỡng) và một dòng "Không lọc intent" (mỗi câu thêm một `search_once(use_intent=False)`);
+`recall_at5` giữ nghĩa cũ, cổng ingest không đọc chỉ số mới. `--sweep`
 in thêm bảng 13 ngưỡng (`gate.sweep`, Q-3c-15) — CHỈ để quan sát độ nhạy, KHÔNG dùng để chọn ngưỡng thật (D-22:
 chọn ngưỡng làm trên model thật, có kiểm định, ở mốc riêng). `--csv` in bảng sweep dạng CSV ra stdout thay bảng
 người đọc (người chuyển hướng `> eval/reports/…`), không vẽ hình.
@@ -31,6 +33,7 @@ from app.rag.ingest.gate import (
     RetrieveGateAdapter,
     SweepPoint,
     evaluate,
+    evaluate_without_intent,
     gate_ctx,
     gate_intent,
     load_retrieval_set,
@@ -85,6 +88,16 @@ def _print_current(threshold: float, m: GateMetrics) -> None:
         f"Recall@5 {m.recall_at5:.3f}  trả lời bừa {m.false_grounding_rate:.3f}  MRR {m.mrr:.3f}  "
         f"(câu có đáp án={m.positives}, câu âm tính={m.negatives}, ngưỡng={threshold:.2f})"
     )
+    # R1: chỉ số MỚI, dòng riêng — dòng trên giữ nguyên chữ. Recall@5 ở ngưỡng = đúng tài liệu trong top-5 VÀ top_score ≥ ngưỡng.
+    print(f"  P@1 {m.p_at_1:.3f}  Recall@5 ở ngưỡng {m.recall_at_threshold:.3f}")
+
+
+def _print_without_intent(m: GateMetrics) -> None:
+    """R1 — lượt chạy không lọc intent (`search_once(use_intent=False)`), cùng bộ chỉ số, cùng ngưỡng."""
+    print(
+        f"Không lọc intent: Recall@5 {m.recall_at5:.3f}  trả lời bừa {m.false_grounding_rate:.3f}  MRR {m.mrr:.3f}  "
+        f"P@1 {m.p_at_1:.3f}  Recall@5 ở ngưỡng {m.recall_at_threshold:.3f}"
+    )
 
 
 async def _run(deps: EvalDeps, kb_dir: Path, *, do_sweep: bool, csv: bool) -> int:
@@ -104,6 +117,7 @@ async def _run(deps: EvalDeps, kb_dir: Path, *, do_sweep: bool, csv: bool) -> in
     m = await evaluate(rs, adapter, coll, deps.threshold)
     print(f"collection={coll}")
     _print_current(deps.threshold, m)
+    _print_without_intent(await evaluate_without_intent(rs, deps.retriever, coll, deps.threshold))
     if not do_sweep:
         return 0
     pairs: dict[str, tuple[tuple[list[str], float], tuple[list[str], float]]] = {}
@@ -122,15 +136,17 @@ async def _run(deps: EvalDeps, kb_dir: Path, *, do_sweep: bool, csv: bool) -> in
 
 def _print_sweep(points: Sequence[SweepPoint], *, csv: bool) -> None:
     if csv:
-        print("threshold,recall_at5,false_grounding_rate,mrr,positives,negatives")
+        print("threshold,recall_at5,false_grounding_rate,mrr,positives,negatives,p_at_1,recall_at_threshold")
         for p in points:
             m = p.metrics
-            print(f"{p.threshold},{m.recall_at5},{m.false_grounding_rate},{m.mrr},{m.positives},{m.negatives}")
+            print(f"{p.threshold},{m.recall_at5},{m.false_grounding_rate},{m.mrr},{m.positives},{m.negatives},"
+                  f"{m.p_at_1},{m.recall_at_threshold}")  # fmt: skip
         return
-    print(f"\n{'T':>5} {'Recall@5':>9} {'trả lời bừa':>12} {'MRR':>6}")
+    print(f"\n{'T':>5} {'Recall@5':>9} {'trả lời bừa':>12} {'MRR':>6} {'P@1':>6} {'R@5 ở T':>8}")
     for p in points:
         m = p.metrics
-        print(f"{p.threshold:>5.2f} {m.recall_at5:>9.3f} {m.false_grounding_rate:>12.3f} {m.mrr:>6.3f}")
+        print(f"{p.threshold:>5.2f} {m.recall_at5:>9.3f} {m.false_grounding_rate:>12.3f} {m.mrr:>6.3f} "
+              f"{m.p_at_1:>6.3f} {m.recall_at_threshold:>8.3f}")  # fmt: skip
     print("(bảng sweep chỉ để quan sát — KHÔNG dùng để chọn RETRIEVAL_THRESHOLD, D-22)")
 
 

@@ -187,7 +187,7 @@ Cả hai đi theo **một khuôn**: model chạy trước, rẻ và tất địn
 | Model | Lớp | Tối thiểu | Nguồn |
 |---|---|---|---|
 | `intent-clf` | Mỗi lớp trong phạm vi | 400 câu | Tự viết theo mẫu + biến thể LLM sinh, **người soát từng dòng** **[Chốt 12: cách xử lý khi thiếu dữ liệu]** |
-| | `out_of_scope` | 400 câu | Gồm ca **khó**: vẫn là IT nhưng ngoài 4 loại (máy in, email đầy, wifi nhà, mua laptop), và ngoài IT |
+| | `out_of_scope` | 400 câu | Gồm ca **khó**: vẫn là IT nhưng ngoài 4 loại (máy in, email đầy, wifi nhà, mua laptop), và ngoài IT. *Ghi chú lệch nhãn (ĐP chốt 09/11, bản demo lo-0811): runtime (B3 LLM, prompt v6) xếp câu hỏi cách làm / báo hiện tượng máy in, email, Wi-Fi vào `it_help` (D-76); dữ liệu và model đã huấn luyện KHÔNG đổi (bản đo; model chỉ ghi `model_probs`, không quyết)* |
 | | Nhiều ý | 500 câu | Ghép 2 câu một ý bằng từ nối tự nhiên ("tiện thể", "với cả", "à mà", "và") + câu nhiều ý tự viết; nhãn = hợp các nhãn |
 | `injection-clf` | Tấn công | ≥ 150 **[Chốt]**, khuyến nghị ≥ 400 | 4 nhóm mẫu gốc (ghi đè, mạo danh, giả lập hệ thống, đòi tiết lộ) + dạng vòng vo, không dấu, trộn ký tự vô hình |
 | | Câu thường | ≥ 300 **[Chốt]**, khuyến nghị ≥ 1.000 | **Lấy lại từ tập huấn luyện của `intent-clf`** (cùng tách tập) — nhiều câu thường giúp giảm chặn nhầm |
@@ -219,7 +219,7 @@ Tăng cường áp **sau** khi chia tập, và chỉ trên tập huấn luyện.
 
 1. Chia **70 / 15 / 15** (train / validation / test) **theo `template`** — mọi biến thể của một mẫu vào cùng một tập.
 2. **Loại khỏi toàn bộ dữ liệu huấn luyện** mọi câu gần trùng với **tập test của M8** (P8): chuẩn hóa (bỏ dấu, thường hóa, gộp khoảng trắng) rồi so khớp chính xác, và so cosine bge-m3 ≥ 0,90 → loại. Nếu không, số liệu RQ1/RQ3 ở Phase 10 bị thổi phồng vì B3 đã "học thuộc" câu test.
-3. Bộ 40 câu probe intent (cổng 5) và bộ 15 + 30 câu injection (cổng 5) **[Chốt]** là **tập kiểm độc lập**, không bao giờ dùng để huấn luyện hay chọn ngưỡng.
+3. Bộ 45 câu probe intent (cổng 5; 10/loại × 4 + 5 ngoài phạm vi, macro-F1 5 lớp — chốt 15/10/2026) và bộ 15 + 30 câu injection (cổng 5) **[Chốt]** là **tập kiểm độc lập**, không bao giờ dùng để huấn luyện, chọn ngưỡng hay chỉnh prompt.
 4. Ghi `data/DATASET.md`: số câu mỗi lớp mỗi tập, sha256 từng file, danh sách câu đã loại ở bước 2.
 
 ## 4. Huấn luyện
@@ -273,7 +273,7 @@ ml-service nạp theo biến môi trường `INTENT_MODEL_DIR`, `GUARD_MODEL_DIR
 | Model | Chỉ số | Mục tiêu |
 |---|---|---|
 | `intent-clf` (model đơn thuần) | Macro-F1 theo nhãn; F1 từng nhãn; **exact-match tập nhãn** ở câu nhiều ý; recall `out_of_scope`; tách riêng câu có dấu / không dấu | Macro-F1 ≥ 0,85 |
-| Cascade B3 (model → LLM) | Macro-F1 trên bộ 40 câu probe; **% câu xuống LLM**; p95 độ trễ B3 | Macro-F1 ≥ 0,85 **[Chốt cổng 5]**; xuống LLM ≤ 30% |
+| Cascade B3 (model → LLM) | Macro-F1 trên bộ 45 câu probe; **% câu xuống LLM**; p95 độ trễ B3 | Macro-F1 ≥ 0,85 **[Chốt cổng 5]**; xuống LLM ≤ 30% |
 | `injection-clf` | Recall, tỉ lệ chặn nhầm, AUC trên test; bộ 15 + 30 câu | Chặn ≥ 13/15, chặn nhầm ≤ 1/30 **[Chốt cổng 5]** |
 | Cả hai | p95 suy luận CPU (ONNX int8, VM 4 vCPU) | < 100 ms **[Chốt P4]** |
 
@@ -319,3 +319,4 @@ Trước khi có model, `/classify_intent` trả 503 và B3 tự đi đường L
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 25/09/2026 | 1.0 | Tạo file: hai model phân loại (intent đa nhãn, injection), chọn backbone, dữ liệu, chống rò rỉ với M8, huấn luyện, ngưỡng, xuất ONNX, đánh giá |
+| 17/10/2026 | 1.1 | Bộ probe intent cổng 5 = 45 câu, macro-F1 5 lớp; bộ probe không dùng chỉnh prompt (chốt 15/10/2026) — mục 3.4, 5.1 |

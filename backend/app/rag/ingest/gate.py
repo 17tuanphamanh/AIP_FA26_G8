@@ -29,6 +29,7 @@ from pydantic import (
 
 from app.db.models import KB_REQUEST_TYPES
 from app.domain.context import RequesterContext, Role
+from app.domain.ticket_state import ChunkRef
 from app.rag.ingest.config import (
     GATE_EPS,
     GATE_MAX_DELTA,
@@ -150,28 +151,45 @@ class RetrieveGateAdapter:
 
 @dataclass(frozen=True)
 class GateMetrics:
+    """`recall_at5` KHÔNG xét ngưỡng (nghĩa cũ). R1 thêm hai trường MỚI — cổng ingest (`decide`) không đọc chúng; mặc định 0.0 để mọi chỗ
+    dựng 5 đối số cũ vẫn chạy:
+    - `p_at_1`: tỉ lệ câu có đáp án mà tài liệu hạng 1 ∈ `expected_doc_ids`;
+    - `recall_at_threshold`: tỉ lệ câu có đáp án mà tài liệu đúng nằm trong top-5 VÀ `top_score ≥ threshold` (bằng ngưỡng thì trúng)."""
+
     recall_at5: float
     false_grounding_rate: float
     mrr: float
     positives: int
     negatives: int
+    p_at_1: float = 0.0
+    recall_at_threshold: float = 0.0
 
 
 def metrics(results: list[tuple[EvalItem, list[str], float]], threshold: float) -> GateMetrics:
     """`results`: (câu, top-5 doc_id theo hạng, top_score). Hàm thuần."""
-    pos = [(item, top) for item, top, _ in results if item.expected_doc_ids]
+    pos = [(item, top, score) for item, top, score in results if item.expected_doc_ids]
     neg = [score for item, _, score in results if not item.expected_doc_ids]
     hit = 0
+    hit_at_threshold = 0
+    first = 0
     rr = 0.0
-    for item, top in pos:
+    for item, top, score in pos:
         top5 = top[:GATE_TOP_DOCS]
         expected = set(item.expected_doc_ids)
         if expected & set(top5):
             hit += 1
             rr += 1.0 / next(rank for rank, d in enumerate(top5, start=1) if d in expected)
+            if score >= threshold:
+                hit_at_threshold += 1
+        if top5 and top5[0] in expected:
+            first += 1
     recall = hit / len(pos) if pos else 0.0
     fg = sum(1 for s in neg if s >= threshold) / len(neg) if neg else 0.0
-    return GateMetrics(recall, fg, rr / len(pos) if pos else 0.0, len(pos), len(neg))
+    return GateMetrics(
+        recall, fg, rr / len(pos) if pos else 0.0, len(pos), len(neg),
+        p_at_1=first / len(pos) if pos else 0.0,
+        recall_at_threshold=hit_at_threshold / len(pos) if pos else 0.0,
+    )  # fmt: skip
 
 
 async def evaluate(
@@ -181,6 +199,27 @@ async def evaluate(
     for item in rs.items:
         top, score = await retriever.top_docs(item, collection=collection)
         results.append((item, top, score))
+    return metrics(results, threshold)
+
+
+class OnceSearcher(Protocol):
+    """`rag.retriever.Retriever.search_once` — MỘT lần tìm, `use_intent` tường minh (không có bước D-23 thử lại không lọc)."""
+
+    async def search_once(
+        self, q: RetrievalQuery, ctx: RequesterContext, *, collection: str, use_intent: bool
+    ) -> tuple[list[ChunkRef], float]: ...
+
+
+async def evaluate_without_intent(
+    rs: RetrievalSet, searcher: OnceSearcher, collection: str, threshold: float
+) -> GateMetrics:
+    """R1 — lượt chạy KHÔNG lọc intent: mỗi câu tìm một lần với `use_intent=False` (vẫn lọc quyền theo `role` của câu), cùng `metrics`.
+    Chỉ để quan sát (`eval_cli`) — KHÔNG phải điều kiện của cổng ingest."""
+    results = []
+    for item in rs.items:
+        q = RetrievalQuery(text=item.query, intent=gate_intent(item.intent))
+        chunks, score = await searcher.search_once(q, gate_ctx(item.role), collection=collection, use_intent=False)
+        results.append((item, [c.doc_id for c in chunks][:GATE_TOP_DOCS], score))
     return metrics(results, threshold)
 
 

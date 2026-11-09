@@ -13,6 +13,11 @@ thay vì 401/403) → engine monitor (thiếu DSN → 503 `monitor_unavailable`,
   FastAPI lọc IM LẶNG khoá không có trong `response_model` — thêm chỉ số mà quên model thì response mất khoá không ai biết;
   ở đây dựng model lỗi to (test hai chiều tập trường = `BUSINESS_METRICS` / `OWN_KEYS` / `AI_METRICS`).
 - `from`/`to` trả lại ở UTC.
+- Số đếm (D13): `metrics` giữ nguyên; business thêm `min_sample` (= `MIN_SAMPLE`, giao diện hiện "chưa đủ dữ liệu" khi mẫu
+  nhỏ hơn). all: `counts` — `{num, den}` của tỉ lệ đơn, weighted chỉ `den` + `{num, den, weight}` theo nhóm N3 (khoá thiếu
+  / pending → null). own: `sample` = #lá own trong cửa sổ (3 khoá own là số đếm, không có tử/mẫu).
+- `ErrorDetail`, `InvalidRequestBody`, `GET_ERRORS` khai ở đây (D13): `api.alerts` dùng `window`/`resolve_window` của module
+  này, nên module này không import ngược `api.alerts` (vòng import). `api.alerts` xuất lại 3 tên cho các route khác.
 
 Cửa sổ (`resolve_window`, Q-M9-A3-5): thiếu `to` → now (Clock của app); thiếu `from` → `to − 7 ngày`; `from < to`;
 `to − from ≤ 90 ngày`; chặn biên `from ≥ 2000-01-01T00:00Z`, `to ≤ now + 1 ngày` — kiểm biên TRƯỚC khi tính mặc định
@@ -26,22 +31,25 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from app.api.alerts import GET_ERRORS
 from app.api.errors import InvalidRequest
 from app.auth.deps import deny, require
 from app.auth.models import Principal
 from app.monitor.db import read_snapshot
 from app.monitor.queries.ai import DayCost, ai_metrics
 from app.monitor.queries.business import (
+    COUNTED_KEYS,
     E1Split,
     E3Cases,
+    RatioCount,
     RuleCount,
+    WeightedCount,
     WeightedRate,
     business_metrics,
 )
 
 router = APIRouter()
 
+MIN_SAMPLE = 20  # cỡ mẫu tối thiểu để giao diện hiện tỉ lệ thay vì "chưa đủ dữ liệu" (D13) — hằng duy nhất
 WINDOW_LO = datetime(2000, 1, 1, tzinfo=UTC)
 WINDOW_AHEAD = timedelta(days=1)
 WINDOW_DEFAULT = timedelta(days=7)
@@ -49,6 +57,27 @@ WINDOW_MAX = timedelta(days=90)
 FROM, TO = "query.from", "query.to"
 
 type Scope = Literal["all", "own"]
+
+
+class ErrorDetail(BaseModel):
+    """Thân lỗi `HTTPException(…, "<mã>")` của repo: 401 `unauthorized`, 403 `forbidden`, 404, 409, 503."""
+
+    detail: str
+
+
+class InvalidRequestBody(BaseModel):
+    """Thân 422 thật (`api.errors.invalid_request`): chỉ vị trí trường, không trả lại giá trị người gửi."""
+
+    error: Literal["invalid_request"]
+    fields: list[str]
+
+
+GET_ERRORS: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorDetail},
+    403: {"model": ErrorDetail},
+    422: {"model": InvalidRequestBody},
+    503: {"model": ErrorDetail},
+}
 
 
 def _bounded_utc(field: str, value: datetime | None, lo: datetime, hi: datetime) -> datetime | None:
@@ -118,6 +147,15 @@ class BusinessOwnMetrics(_Metrics):
     top_matched_rules: list[RuleCount] | None
 
 
+class BusinessAllCounts(_Metrics):
+    """Số đếm tử/mẫu — tập trường = `COUNTED_KEYS` (test hai chiều)."""
+
+    automation_rate: RatioCount | None
+    escalation_rate_raw: RatioCount | None
+    escalation_rate_weighted: WeightedCount | None
+    deflection_rate: RatioCount | None
+
+
 class AiMetrics(_Metrics):
     tokens_per_ticket: float | None
     cost_per_day: list[DayCost] | None
@@ -143,11 +181,15 @@ class _Dashboard(BaseModel):
 
 class BusinessAll(_Dashboard):
     scope: Literal["all"]
+    min_sample: int
     metrics: BusinessAllMetrics
+    counts: BusinessAllCounts
 
 
 class BusinessOwn(_Dashboard):
     scope: Literal["own"]
+    min_sample: int
+    sample: int | None  # #lá own trong cửa sổ; không có số → null
     metrics: BusinessOwnMetrics
 
 
@@ -173,10 +215,11 @@ async def dashboard_business(
     frm, to = resolve_window(*raw, now=_now(request))
     async with read_snapshot(request.app.state.engines) as conn:
         got = await business_metrics(conn, frm, to, approver_id=None if kind == "all" else p.user_id)
-    body = {"from": frm, "to": to, "unavailable": list(got.unavailable), "scope": kind}
+    body = {"from": frm, "to": to, "unavailable": list(got.unavailable), "scope": kind, "min_sample": MIN_SAMPLE}
     if kind == "all":
-        return BusinessAll.model_validate({**body, "metrics": BusinessAllMetrics(**got.values)})
-    return BusinessOwn.model_validate({**body, "metrics": BusinessOwnMetrics(**got.values)})
+        counts = BusinessAllCounts.model_validate({key: got.counts.get(key) for key in COUNTED_KEYS})
+        return BusinessAll.model_validate({**body, "metrics": BusinessAllMetrics(**got.values), "counts": counts})
+    return BusinessOwn.model_validate({**body, "metrics": BusinessOwnMetrics(**got.values), "sample": got.sample})
 
 
 @router.get("/api/dashboard/ai", response_model=AiDashboard, responses=GET_ERRORS)

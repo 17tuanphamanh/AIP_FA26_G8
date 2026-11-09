@@ -45,6 +45,7 @@ class UserSync:
     hired_at: date | None
     is_privileged_account: bool
     synced_at: datetime
+    email: str | None = None  # notify-email: chuỗi AD thô — `upsert_user` kiểm dạng, sai/thiếu → `users.email` NULL
 
 
 @dataclass(frozen=True)

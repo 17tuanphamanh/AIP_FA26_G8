@@ -1,28 +1,39 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { ApiError, errorMessage } from "../../api/errors.ts";
+import { ApiError, PURGED_TEXT, errorMessage, isPurged } from "../../api/errors.ts";
 import {
   confirmBody,
   confirmTicket,
   getTicket,
   NOTE_MAX,
   replyTicket,
+  REQUEST_TEXT_MAX,
   sendMessage,
   TEXT_MAX,
   withBusyRetry,
 } from "../../api/tickets.ts";
 import type { Accepted, ParentReplyIn, TicketView } from "../../api/types.ts";
 import { Composer } from "../../components/Composer.tsx";
-import { Conversation } from "../../components/Conversation.tsx";
+import logoUrl from "../../assets/logo.svg";
+import { AVATAR_CLASS } from "../../components/avatar.ts";
+import { Conversation, USER_BUBBLE } from "../../components/Conversation.tsx";
 import { DigestMessage, type SendResult } from "../../components/DigestMessage.tsx";
 import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
-import { latestRound, normalizeProgress, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel } from "./multi.ts";
+import { ApprovalClock } from "./ApprovalClock.tsx";
+import { clockDeadline } from "./approvalClock.ts";
+import { latestRound, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel, progressItems } from "./multi.ts";
+import { ProgressStepper } from "./ProgressStepper.tsx";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
 import { FINAL_NOTE, POLL_PROCESSING_MS, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
+import { StreamingText } from "./StreamingText.tsx";
+import { usePacedMessages } from "./usePacedMessages.ts";
+import { ThinkingBox } from "./ThinkingBox.tsx";
+import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
+import { POLL_STREAMING_MS, reconcile, type StreamPhase, useTicketStream } from "./useTicketStream.ts";
 
 const PILL: Record<Tone, { box: string; dot: string }> = {
   processing: { box: "bg-selected text-fpt-blue", dot: "bg-fpt-blue" },
@@ -37,7 +48,9 @@ export function ChatRoute() {
   return <ChatPage key={ticketId} ticketId={ticketId} />;
 }
 
-const stopOn = (error: unknown) => error instanceof ApiError && (error.status === 403 || error.status === 404);
+const stopOn = (error: unknown) => error instanceof ApiError && (error.status === 403 || error.status === 404 || isPurged(error));
+/** Thân ticket sai hình dạng (api/tickets.ts `parseTicketView`): đang polling → giữ bản hợp lệ cũ + câu lỗi dữ liệu (Q-fe-46). */
+const badBody = (error: unknown): error is ApiError => error instanceof ApiError && error.code === "invalid_ticket_body";
 
 /** Sau 202 backend xử lý ở NỀN: lượt GET ngay sau đó có thể vẫn là bước cũ (vẫn `confirm`/`clarify`). Giữ khoá thao tác
  *  tới khi ticket đổi thật (hoặc quá `SETTLE_MAX_MS`) — không để bấm lần hai rồi nhận 409 "đã sang bước khác". */
@@ -45,13 +58,14 @@ const SETTLE_MAX_MS = 30_000;
 const progressOf = (v: TicketView) => `${v.status}|${v.waiting_for}|${v.final_state}|${v.conversation.length}`;
 
 // B4EmpChat + B4EmpStates (đã tinh chỉnh KH 4.6): một cột 720 px; polling theo KH mục 5; ô nhập theo `waiting_for`.
-// Ticket cha nhiều ý (F6, D-31 — có `children_progress`): dải tiến độ dưới header (không phải tin nhắn), tin tổng hợp
+// Ticket cha nhiều ý (D-31, T20b — có `children_progress`): dải tiến độ dưới header (không phải tin nhắn), tin tổng hợp
 // round lớn nhất có form khi `waiting_for = "reply"`, nhãn cha theo 12b Q-fe-34. Ticket thường: không nhánh nào đổi.
 export function ChatPage({ ticketId }: { ticketId: string }) {
   const location = useLocation();
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ["ticket", ticketId], [ticketId]);
   const settlingRef = useRef(false);
+  const streamPhaseRef = useRef<StreamPhase>("off"); // SSE đang sống → polling chỉ còn là lưới an toàn thưa
   const query = useQuery({
     queryKey,
     queryFn: () => getTicket(ticketId),
@@ -60,16 +74,31 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     refetchInterval: (q) => {
       if (stopOn(q.state.error)) return false;
       const delay = pollDelay(q.state.data);
+      if (delay !== false && streamPhaseRef.current === "streaming") return POLL_STREAMING_MS;
       return delay !== false && settlingRef.current ? POLL_PROCESSING_MS : delay;
     },
     retry: false,
   });
   const view = query.data;
+  // Đồng hồ chờ duyệt hết hạn → tải lại ticket NGAY một lần (ApprovalClock gọi đúng một lần mỗi hạn); kết luận theo ticket.
+  // Ghi lại hạn đã quá → ô nhập đổi "Đang chuyển kỹ thuật viên" tới khi ticket tải lại đổi bước / đổi hạn (ĐP soát 23d0f6a #5).
+  const [expiredDeadline, setExpiredDeadline] = useState<string | null>(null);
+  const onClockExpire = useCallback(
+    (expired: string) => {
+      setExpiredDeadline(expired);
+      void queryClient.refetchQueries({ queryKey, exact: true });
+    },
+    [queryClient, queryKey],
+  );
   const messages = useMemo(() => normalizeConversation(view?.conversation), [view]);
-  // Câu yêu cầu + tiêu đề: chỉ từ bộ nhớ phiên (12b Q-fe-18) — không lấy tin người dùng trong `conversation` (đó là
-  // câu TRẢ LỜI khi hỏi thêm). Tải lại trang / mở bằng URL → không có → "Yêu cầu của bạn", không bong bóng.
+  // Câu yêu cầu + tiêu đề (12b Q-fe-18): có bộ nhớ phiên (`mine`) → dùng nó, như cũ. Không có (tải lại trang / mở bằng
+  // URL / mở từ danh sách) → `request_text` của ticket (câu ĐÃ CHE từ backend, Nợ API #8); null/thiếu → "Yêu cầu của
+  // bạn", không bong bóng. Không lấy tin người dùng trong `conversation` (đó là câu TRẢ LỜI khi hỏi thêm).
   const mine = useSessionTickets().find((t) => t.ticket_id === ticketId);
-  const title = titleOf(mine);
+  const savedRequest = mine ? null : view?.request_text?.trim() ? view.request_text : null;
+  // Backend cắt ở REQUEST_TEXT_MAX điểm mã, không thêm dấu → đủ độ dài thì bong bóng thêm "…" (chỉ chỗ hiện; tiêu đề tự cắt riêng).
+  const savedBubble = savedRequest !== null && Array.from(savedRequest).length >= REQUEST_TEXT_MAX ? `${savedRequest}…` : savedRequest;
+  const title = titleOf(mine ?? (savedRequest === null ? undefined : { request: savedRequest }));
 
   useEffect(() => {
     if (view) sessionTickets.setTone(ticketId, statusTone(view));
@@ -92,6 +121,16 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   useEffect(() => {
     settlingRef.current = settling;
   }, [settling]);
+
+  // SSE tiến trình (chỉ khi server bật; 404/lỗi/ngắt quá 3 lần → tự về polling hiện có, không mất tin: tin chính thức luôn từ GET).
+  const streamActive = view !== undefined && !view.final_state && (!view.waiting_for || settling);
+  const stream = useTicketStream({ ticketId, active: streamActive, onSync: () => void queryClient.invalidateQueries({ queryKey }) });
+  useEffect(() => {
+    streamPhaseRef.current = stream.phase;
+  }, [stream.phase]);
+  const reducedMotion = usePrefersReducedMotion();
+  const paced = usePacedMessages(stream.view.messages, reducedMotion); // nhịp chữ chạy phía màn; chỉ đổi sang tin chính thức khi đã hiện hết
+  const { official, streaming } = useMemo(() => reconcile(messages, paced), [messages, paced]);
 
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -131,17 +170,28 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const sendReply = (body: ParentReplyIn) => submit(() => replyTicket(ticketId, body));
 
   if (query.isPending) {
-    return <p className="px-12 py-10 text-ink-2">Đang tải yêu cầu…</p>;
+    return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse max-lg:px-4 max-lg:py-6">Đang tải yêu cầu…</p>;
+  }
+  if (!view && isPurged(query.error)) {
+    // M2 bn-a: ticket đã kết thúc, hội thoại đã dọn theo hạn giữ (410) — câu trung tính, không phải lỗi, không hỏi lại.
+    return (
+      <section className="px-12 py-10 max-lg:px-4 max-lg:py-6">
+        <h1 className="text-heading">{PURGED_TEXT}</h1>
+        <Link to="/chat" className="mt-4 inline-block font-semibold text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
+          Tạo yêu cầu mới
+        </Link>
+      </section>
+    );
   }
   if (!view) {
     const e = query.error;
     return (
-      <section className="px-12 py-10">
+      <section className="px-12 py-10 max-lg:px-4 max-lg:py-6">
         <h1 className="text-heading">
           {e instanceof ApiError && e.status === 404 ? "Không tìm thấy yêu cầu này." : "Chưa tải được yêu cầu."}
         </h1>
         <p className="mt-2 text-ink-2">{e instanceof ApiError && e.status === 404 ? "" : errorMessage(e instanceof ApiError ? e : null)}</p>
-        <Link to="/chat" className="mt-4 inline-block font-semibold text-fpt-blue">
+        <Link to="/chat" className="mt-4 inline-block font-semibold text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
           Tạo yêu cầu mới
         </Link>
       </section>
@@ -151,33 +201,44 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const tone = statusTone(view);
   // Đang chờ backend nhận câu trả lời / xác nhận vừa gửi → không mở lại ô nhập, nút của bước cũ.
   const waiting = view.final_state || settling ? null : view.waiting_for;
-  const composer = composerFor(view, waiting, settling);
   // Nhiều ý (D-31): form CHỈ cho tin tổng hợp round lớn nhất và CHỈ khi cha đang chờ trả lời; tin cũ chỉ đọc.
-  const progress = normalizeProgress(view.children_progress);
-  const outcomes = Object.fromEntries((progress ?? []).map((p) => [p.child_id, p.outcome]));
+  const progress = progressItems(view.children_progress);
   const activeRound = waiting === "reply" ? latestRound(messages) : null;
   const pillLabel = progress ? parentStatusLabel(view, progress) : statusLabel(view.final_state ?? view.status);
+  // N-TB P5 (sửa ĐP 27/10 00:05): "Chờ IT duyệt · còn mm:ss" CHỈ khi waiting_for = approval; độ lệch từ `server_now` đo lúc
+  // nhận (`dataUpdatedAt`); ticket cha: `deadline` của cha như server trả.
+  const deadline = clockDeadline(view, waiting);
+  const clock = deadline ? (
+    <ApprovalClock
+      key={deadline}
+      deadline={deadline}
+      serverNow={view.server_now}
+      receivedAt={query.dataUpdatedAt}
+      onExpire={() => onClockExpire(deadline)}
+    />
+  ) : null;
+  const composer = composerFor(view, waiting, settling, deadline !== null && deadline === expiredDeadline, progress !== null);
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-6">
+      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-white/90 px-6 backdrop-blur max-lg:h-14 max-lg:px-4">
         <div className="flex min-w-0 grow flex-col">
           <h1 className="truncate text-body font-semibold">{title}</h1>
+          <span className="hidden truncate text-label font-normal text-ink-2 lg:inline">
+            Mã yêu cầu <span className="font-mono select-all" data-testid="ticket-id">{view.ticket_id}</span>
+          </span>
         </div>
-        <span className="hidden text-label font-normal text-ink-2 lg:inline">
-          Mã yêu cầu <span className="font-mono select-all" data-testid="ticket-id">{view.ticket_id}</span>
-        </span>
-        <span role="status" className={`inline-flex h-7 shrink-0 items-center gap-2 rounded-full px-3 text-secondary ${PILL[tone].box}`}>
-          <span className={`size-1.75 rounded-full ${PILL[tone].dot}`} aria-hidden="true" />
+        <span role="status" className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-full px-3.5 text-secondary font-semibold ${PILL[tone].box}`}>
+          <span className={`size-2 rounded-full ${PILL[tone].dot} ${tone === "processing" ? "motion-safe:animate-pulse" : ""}`} aria-hidden="true" />
           {pillLabel}
         </span>
       </header>
       {progress ? <ProgressStrip items={progress} /> : null}
 
-      <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-8 pb-6">
-        <div className="flex w-full max-w-(--chat-width) grow flex-col gap-6">
+      <div className="flex min-h-0 grow flex-col items-center overflow-y-auto px-6 pt-10 pb-8 max-lg:px-4 max-lg:pt-6 max-lg:pb-6">
+        <div className="flex w-full max-w-(--chat-width) grow flex-col gap-8">
           {notices.length > 0 ? (
-            <div role="status" className="rounded-group bg-group px-4 py-3 text-secondary text-ink-2" data-testid="notices">
+            <div role="status" className="rounded-group border border-line bg-group px-4 py-3 text-secondary text-ink-2 motion-safe:animate-drop-in" data-testid="notices">
               {notices.map((notice) => (
                 <p key={notice}>{notice}</p>
               ))}
@@ -186,26 +247,37 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           {mine ? (
             <p
               data-role="request"
-              className={`max-w-130 self-end rounded-sheet bg-button-2 px-4.5 py-3 whitespace-pre-line ${
-                mine.request === null ? "text-ink-2 italic" : ""
-              }`}
+              className={`${USER_BUBBLE} motion-safe:animate-rise-in ${mine.request === null ? "text-ink-2 italic" : ""}`}
             >
               {mine.request ?? REDACTED_NOTE}
             </p>
+          ) : savedRequest !== null ? (
+            <p data-role="request" className={USER_BUBBLE}>
+              {savedBubble}
+            </p>
           ) : null}
           <Conversation
-            messages={messages}
+            messages={official}
             renderDigest={(digest) => (
               <DigestMessage
                 digest={digest}
-                outcomes={outcomes}
                 newRequestLink
                 form={digest.round === activeRound ? { sending, onSend: sendReply } : undefined}
               />
             )}
           />
+          {streaming.map((message) => (
+            <StreamingText key={message.id} message={message} reducedMotion={reducedMotion} />
+          ))}
+          {streamActive && (stream.view.steps.length > 0 || stream.view.log.length > 0) ? (
+            <div data-testid="stream-progress" className="ml-10 flex flex-col gap-3">
+              <ProgressStepper steps={stream.view.steps} />
+              <ThinkingBox log={stream.view.log} current={stream.view.steps.findLast((s) => s.state === "active")?.label} />
+            </div>
+          ) : null}
           <ActionPanel
             view={view}
+            clock={clock}
             waiting={waiting}
             settling={settling}
             sending={sending}
@@ -215,7 +287,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           />
           {query.isError ? (
             <p role="status" className="text-secondary text-ink-2">
-              Tạm mất kết nối tới máy chủ — đang thử lại…
+              {badBody(query.error) ? errorMessage(query.error) : "Tạm mất kết nối tới máy chủ — đang thử lại…"}
             </p>
           ) : null}
           <div ref={end} />
@@ -223,7 +295,8 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
       </div>
 
       {view.final_state ? null : (
-        <div className="flex shrink-0 justify-center px-6 pb-6">
+        <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4 max-lg:px-3 max-lg:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t from-white to-white/0" />
           <div className="flex w-full max-w-(--chat-width) flex-col gap-2">
             {waitNote || error ? (
               <p role={error ? "alert" : "status"} className={`px-5 text-secondary ${error ? "text-danger" : "text-ink-2"}`}>
@@ -242,6 +315,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               busy={sending}
               error={fieldError}
             />
+            <p className="text-center text-label font-normal text-ink-2">Trợ lý AI có thể nhầm — hãy đọc kỹ hướng dẫn trước khi làm theo.</p>
           </div>
         </div>
       )}
@@ -251,13 +325,15 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
 const SENT_NOTE = "Đã gửi — đang xử lý";
 
-function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean) {
+/** `approvalExpired`: đồng hồ duyệt đang ở pha quá hạn (chưa tải lại được trạng thái mới) → câu "đang chuyển". `parent`: ticket cha
+ *  chưa đóng mà không chờ gì của người dùng (chờ các ý — D-77) → câu của cha, không nhãn trạng thái ticket thường (Q6 c2). */
+function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean, approvalExpired = false, parent = false) {
   if (settling) return { enabled: false, label: "Tin nhắn", placeholder: `${SENT_NOTE}…` };
   if (waiting === "clarify") return { enabled: true, label: "Trả lời", placeholder: "Trả lời câu hỏi ở trên…" };
   if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Nhắn thêm nếu chưa ổn…" };
-  if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: "Đang chờ IT duyệt" };
+  if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: approvalExpired ? "Đang chuyển kỹ thuật viên" : "Đang chờ IT duyệt" };
   if (waiting === "reply") return { enabled: false, label: "Tin nhắn", placeholder: "Phản hồi trong khung ở trên" };
-  return { enabled: false, label: "Tin nhắn", placeholder: `${statusLabel(view.status)}…` };
+  return { enabled: false, label: "Tin nhắn", placeholder: `${parent && !view.final_state ? PARENT_PROCESSING : statusLabel(view.status)}…` };
 }
 
 type ActionPanelProps = {
@@ -269,15 +345,21 @@ type ActionPanelProps = {
   parent: boolean;
   /** Tin tổng hợp đang có form trả lời (waiting_for = reply) — khi đó form nằm trong hội thoại. */
   replyShown: boolean;
+  /** Đồng hồ chờ duyệt (null = không có hạn → chỉ nhãn tĩnh). */
+  clock: ReactNode;
   onConfirm: (ok: boolean) => void;
 };
 
-function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onConfirm }: ActionPanelProps) {
+function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
-      <div className="flex flex-col items-start gap-3 rounded-sheet bg-group p-5" data-testid="final-note">
+      <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5 motion-safe:animate-rise-in" data-testid="final-note">
         <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
-        <Link to="/chat" className="font-semibold text-fpt-blue">
+        <Link
+          to="/chat"
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-selected max-lg:min-h-11"
+        >
+          <span aria-hidden="true">+</span>
           Tạo yêu cầu mới
         </Link>
       </div>
@@ -285,13 +367,13 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onC
   }
   if (waiting === "confirm") {
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-sheet bg-group py-4 pr-4 pl-5">
+      <div className="ml-10 flex flex-wrap items-center gap-3 rounded-group border border-line bg-white py-4 pr-4 pl-5 motion-safe:animate-rise-in">
         <span className="grow font-semibold">Vấn đề của bạn đã được giải quyết chưa?</span>
         <button
           type="button"
           disabled={sending}
           onClick={() => onConfirm(false)}
-          className="h-11 rounded-full bg-white px-5 font-semibold disabled:opacity-60"
+          className="h-11 rounded-full border border-line bg-white px-5 font-semibold hover:bg-group disabled:opacity-60"
         >
           Chưa ổn
         </button>
@@ -299,7 +381,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onC
           type="button"
           disabled={sending}
           onClick={() => onConfirm(true)}
-          className="h-11 rounded-full bg-fpt-blue px-5.5 font-semibold text-white disabled:opacity-60"
+          className="h-11 rounded-full bg-fpt-blue px-5.5 font-semibold text-white hover:bg-fpt-blue/90 disabled:opacity-60"
         >
           Đã ổn
         </button>
@@ -307,28 +389,37 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, onC
     );
   }
   if (waiting === "approval") {
-    // TicketView chưa có `deadline` → chưa có đồng hồ đếm ngược (KH 1.3 #2).
+    // Có hạn → đồng hồ (N-TB P5); không có hạn / hạn hỏng → nhãn tĩnh như cũ.
     return (
-      <div className="flex flex-col gap-2 rounded-sheet bg-orange-bg p-5">
-        <span className="text-label text-orange-ink">Chờ IT duyệt</span>
-        <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
-        <span className="text-label font-normal text-ink-2">Bạn có thể rời trang — kết quả sẽ hiện trong cuộc trò chuyện này.</span>
+      <div className="ml-10 flex items-start rounded-group border-l-3 border-l-fpt-orange bg-orange-bg py-4 pr-5 pl-4.5 motion-safe:animate-rise-in">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          {clock ?? <span className="text-label text-orange-ink">Chờ IT duyệt</span>}
+          <p>Yêu cầu cần IT duyệt trước khi thực hiện.</p>
+          <span className="text-label font-normal text-ink-2">Bạn có thể rời trang — kết quả sẽ hiện trong cuộc trò chuyện này.</span>
+        </div>
       </div>
     );
   }
   if (waiting === "reply") {
     // Form nằm trong tin tổng hợp. Không có tin nào đọc được (dữ liệu hỏng) → báo, không mở ô nhập nào.
     return replyShown ? null : (
-      <p role="status" className="rounded-sheet bg-group p-5">
+      <p role="status" className="rounded-group border border-line bg-group p-5">
         Chưa hiện được nội dung cần phản hồi. Vui lòng tải lại trang.
       </p>
     );
   }
   if (waiting === "clarify") return null; // câu hỏi đã nằm trong hội thoại; ô trả lời ở dưới
   return (
-    <p className="inline-flex items-center gap-2 text-secondary text-ink-2" data-testid="processing">
-      <span className="size-1.75 animate-pulse rounded-full bg-fpt-blue" aria-hidden="true" />
-      {settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}… Bạn không cần làm gì.
-    </p>
+    <div className="flex items-start gap-3 motion-safe:animate-fade-in">
+      <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-secondary text-ink-2" data-testid="processing">
+        <span className="inline-flex h-6 items-center gap-1 rounded-full bg-group px-2.5" aria-hidden="true">
+          <span className="size-1.5 rounded-full bg-fpt-blue motion-safe:animate-bounce" />
+          <span className="size-1.5 rounded-full bg-fpt-blue/70 motion-safe:animate-bounce motion-safe:[animation-delay:150ms]" />
+          <span className="size-1.5 rounded-full bg-fpt-blue/40 motion-safe:animate-bounce motion-safe:[animation-delay:300ms]" />
+        </span>
+        {settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}… Bạn không cần làm gì.
+      </p>
+    </div>
   );
 }

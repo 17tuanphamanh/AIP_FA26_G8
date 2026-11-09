@@ -51,6 +51,13 @@ export default defineConfig([
     rules: { "no-restricted-globals": "off", "no-restricted-properties": "off" },
   },
   {
+    // NGOẠI LỆ DUY NHẤT của luật cấm Storage (ĐP 26/10 N-TB P3): mốc `last_seen_at` của chuông thông báo — hợp đồng
+    // thông báo §1 giữ trạng thái đọc ở trình duyệt. Giá trị CHỈ là chuỗi ISO, không token (lý do + giới hạn: đầu file đó).
+    // Không thêm file nào khác vào đây; check:style miễn đúng file này.
+    files: ["src/lib/lastSeen.ts"],
+    rules: { "no-restricted-globals": "off", "no-restricted-properties": "off" },
+  },
+  {
     // Cấu hình + script chạy bằng Node (không vào bundle): được in ra terminal.
     files: ["*.{js,ts}", "scripts/**/*.mjs"],
     extends: [js.configs.recommended],

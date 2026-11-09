@@ -24,8 +24,10 @@ from app.core.clock import FakeClock
 from app.domain.action import Action, FactValue
 from app.domain.context import RequesterContext
 from app.domain.facts import check_facts
-from app.domain.states import S_ESCALATED
+from app.domain.messages import device_not_found_question
+from app.domain.states import S_CLARIFYING, S_ESCALATED
 from app.domain.ticket_state import ChunkRef
+from app.graph.late_event import deliver_event
 from app.rag.models import RetrievalResult
 from app.risk.context import build_ctx
 from app.risk.models import RiskContext, RuleVerdict
@@ -270,8 +272,15 @@ async def test_x5_graph_other_persons_device_at_20h_e5_no_approval() -> None:
 @pytest.mark.asyncio
 async def test_x6_graph_nonexistent_device_e5_no_approval() -> None:
     """x6 (bảng 3.2, h14 mới) / P7: nv001 xin gia hạn LAP-9999 (không tồn tại) trong giờ → R17 nay đòi chủ máy → không luật nào
-    → E5 `llm_layer_disabled`, 0 phiếu, 0 lời gọi ghi (3h: R17 → phiếu duyệt)."""
+    → E5 `llm_layer_disabled`, 0 phiếu, 0 lời gọi ghi (3h: R17 → phiếu duyệt).
+    Q2 (ĐP 09/11 điểm 1): mã máy nêu ngay câu đầu mà B6 tra ra 404 → B11 hỏi lại mã MỘT lần (0 Action, 0 phiếu, 0 ghi); người dùng
+    gửi lại đúng LAP-9999 → máy này B6 không tra → luồng cũ tới B12 như trên (x6 vẫn được kiểm qua đồ thị)."""
     h, v = await _graph(TRONG_GIO.astimezone(UTC), "gia hạn VPN cho máy LAP-9999")
+    assert (v["status"], v.get("intended_action")) == (S_CLARIFYING, None)
+    assert [t for _, t, n in h.notifier.sent if n == "answer"] == [device_not_found_question("LAP-9999")]
+    assert h.approvals.count("t1") == 0 and h.executor.calls["t1"] == 0
+    v = cast(dict[str, Any], (await deliver_event(h.runner, "t1", S_CLARIFYING,
+                                                  {"kind": "user_reply", "text": "LAP-9999"})).values)  # fmt: skip
     facts = v["intended_action"].facts
     assert facts["device_registered"] is False and facts.get("device_owner_is_requester") is not True
     _e5_no_approval_no_write(h, v)

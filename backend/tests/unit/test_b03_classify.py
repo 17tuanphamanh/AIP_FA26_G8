@@ -14,7 +14,7 @@ import pytest
 import yaml
 from app.core.clock import FakeClock
 from app.domain.facts import FACT_KEYS
-from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
+from app.domain.states import S_CLARIFYING, S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
 from app.domain.ticket_state import ChunkRef
 from app.graph.builder import wrap_node
 from app.graph.context import RunContext, bind_run
@@ -88,12 +88,10 @@ def _b03_calls(gw: Gateway) -> int:
 @pytest.mark.parametrize(
     ("reply", "reason"),
     [
-        (out(), "out_of_scope"),  # rỗng
+        # Q1 (ĐP 09/11, D-75): rỗng / đơn ý confidence thấp nay HỎI PHÂN LOẠI trước (test_f4_q1_triage_first bên dưới); E1 của chúng chỉ
+        # tới sau khi đã hỏi — `test_q1_triage.py::test_still_unclear_after_reply_goes_e1_without_second_question`.
         (out(item("out_of_scope", 0.95)), "out_of_scope"),
-        (out(item("vpn", 0.4)), "intent_low_confidence"),
         (out(item("account", 0.9)), "intent_not_enabled"),
-        # thứ tự CỐ ĐỊNH: ý chưa bật nhưng confidence thấp → low_confidence (kiểm confidence trước — M-3f-6)
-        (out(item("account", 0.4)), "intent_low_confidence"),
         # T20b (Q-T20b-2 = B, đổi từ `multi_intent_not_enabled`): ≥ 2 ý mà 0 ý chạy được → cả câu E1 với `reason_detail` của ý
         # ĐẦU TIÊN trong phạm vi (vpn 0,3 → confidence thấp). Ca ≥ 2 ý có ý chạy được nay TÁCH (test_t20b_split_* bên dưới).
         (out(item("vpn", 0.3), item("software", 0.3)), "intent_low_confidence"),
@@ -106,6 +104,23 @@ async def test_f4_e1_branches(reply: Reply, reason: str) -> None:
     assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E1", reason)
     assert (row["step"], row["from_status"], row["to_status"]) == ("B4", S_CLASSIFYING, S_ESCALATED)
     assert "intent" not in v or v["intent"] is None  # E1 không đặt intent vào state
+
+
+@pytest.mark.parametrize(
+    ("reply", "reason"),
+    [
+        (out(), "no_intent"),  # rỗng
+        (out(item("vpn", 0.4)), "low_confidence"),
+        # thứ tự CỐ ĐỊNH giữ: ý chưa bật nhưng confidence thấp → nhánh confidence (kiểm confidence trước — M-3f-6) → hỏi phân loại
+        (out(item("account", 0.4)), "low_confidence"),
+    ],
+)
+async def test_f4_q1_triage_first(reply: Reply, reason: str) -> None:
+    """Q1 (ĐP 09/11): đổi kỳ vọng ĐÃ DUYỆT — 3 ca cũ ra E1 nay hỏi MỘT câu phân loại (`S_CLARIFYING`), chưa đặt intent."""
+    v, row, _, _ = await _run([reply])
+    assert (v["status"], v.get("exit_code")) == (S_CLARIFYING, None)
+    assert (row["step"], row["event"], row["detail"]["triage_reason"]) == ("B3", "triage_asked", reason)
+    assert "intent" not in v or v["intent"] is None
 
 
 async def test_f4_vpn_goes_to_b6() -> None:
@@ -219,8 +234,10 @@ async def test_f18_hallucinated_device_dropped_at_node() -> None:
     v, row, _, _ = await _run([out(item("vpn", 0.9, slots={"device_id": "LAP-0417", "error_code": "691"}))])
     assert row["detail"]["dropped_slot_reasons"] == {"device_id": "slot_not_in_text", "error_code": "slot_not_in_text"}
     assert row["detail"]["slot_fact_collision"] is False
-    # B6 tự tra theo người gửi (nv001 có đúng LAP-0342) — không phải LAP-0417 LLM bịa
-    assert v["slots"]["device_id"] == "LAP-0342"
+    # be-target-guard-2 (ĐP duyệt 02/11 13:35, đổi CÓ CHỦ ĐÍCH): khoá `device_id` bị bỏ (mọi lý do) → cờ người khác → B6 KHÔNG tự suy
+    # máy của người gửi (trước: suy LAP-0342) → B11 hỏi mã máy. Không bao giờ dùng LAP-0417 LLM bịa.
+    assert v["ctx_flags"] == {"target_is_other": True} and row["detail"]["other_target_reason"] == "dropped"
+    assert "device_id" not in v["slots"]
 
 
 # ---- Q-3f-4, Q-3f-5 ---------------------------------------------------------------------------------------------------
@@ -257,9 +274,10 @@ async def test_point1_on_every_branch_without_user_text(script: Script) -> None:
 
 
 async def test_point1_records_prompt_version() -> None:
-    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 (DỪNG 2)."""
+    """Đổi ở T20a (P9, Q-T20a-1 b): prompt `b03_classify` lên v3 (DỪNG 2); mốc G LLM-G DỪNG 3: v4; M3: v5 (bỏ recent_messages);
+    lô Q1+Q12 (ĐP 09/11): v6 (intents rỗng cho câu mơ hồ, it_help, trim_vars)."""
     _, row, _, _ = await _run([out(item("vpn", 0.9))])
-    assert row["detail"]["prompt"] == "b03_classify@3" and row["detail"]["layer"] == "llm"
+    assert row["detail"]["prompt"] == "b03_classify@6" and row["detail"]["layer"] == "llm"
 
 
 async def test_model_result_in_phase3_still_goes_llm() -> None:

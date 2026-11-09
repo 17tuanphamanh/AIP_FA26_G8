@@ -8,6 +8,7 @@
 - Lọc `audience` bằng SQL TRƯỚC `LIMIT` (lọc sau thì `truncated` sai và mất dòng); mỗi mệnh đề WHERE có ngoặc riêng
   (thiếu ngoặc quanh `OR` thì `status` không còn áp cho nhánh "luật lạ").
 - Xếp `created_at DESC, alert_id DESC`; lấy `limit + 1` dòng → `truncated` (không cắt im lặng).
+- Khung giờ (D13) `[frm, to)` lọc theo `_WINDOW_COLUMN`, cũng trong WHERE trước `LIMIT`; không truyền → không lọc.
 """
 
 from collections.abc import Mapping
@@ -19,12 +20,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.db.models import ALERT_STATUSES
+from app.monitor.queries.common import window_params
 from app.monitor.rules import AUDIENCE_VALUES, REGISTRY, Audience, RuleSpec
 
 DEFAULT_AUDIENCE: tuple[Audience, ...] = ("manager",)
 _COLUMNS = (
     "alert_id, rule_id, subject, severity, value, window_start, status, detail, acked_by, acked_at, created_at"
 )
+_WINDOW_COLUMN = "window_start"  # cột lọc khung giờ — đổi sang `created_at` chỉ sửa dòng này
+_WINDOW_WHERE = f"({_WINDOW_COLUMN} >= :frm AND {_WINDOW_COLUMN} < :to)"
 
 
 @dataclass(frozen=True)
@@ -61,15 +65,20 @@ async def list_alerts(
     audience: str | None,
     limit: int,
     registry: Mapping[str, RuleSpec] = REGISTRY,
+    frm: datetime | None = None,
+    to: datetime | None = None,
 ) -> AlertPage:
     """Cảnh báo mới nhất trước. `status`/`audience` None = không lọc. `audience` = X: luật có X trong audience; với X thuộc
-    `DEFAULT_AUDIENCE` thêm mọi `rule_id` không có trong `registry`."""
+    `DEFAULT_AUDIENCE` thêm mọi `rule_id` không có trong `registry`. `frm`/`to`: cả hai None = không lọc; có thì đủ cả hai,
+    có múi giờ, `frm < to` (sai → `ValueError`)."""
     if limit < 1:
         raise ValueError("limit phải ≥ 1")
     if status is not None and status not in ALERT_STATUSES:
         raise ValueError(f"status lạ: {status!r}")
     if audience is not None and audience not in AUDIENCE_VALUES:
         raise ValueError(f"audience lạ: {audience!r}")
+    if (frm is None) != (to is None):
+        raise ValueError("khung giờ cần đủ frm và to")
     where: list[str] = []
     params: dict[str, Any] = {"limit": limit + 1}
     if status is not None:
@@ -82,6 +91,9 @@ async def list_alerts(
             params["known"] = list(registry)
         else:
             where.append("(rule_id = ANY(CAST(:ids AS text[])))")
+    if frm is not None and to is not None:
+        where.append(_WINDOW_WHERE)
+        params |= window_params(frm, to)
     sql = f"SELECT {_COLUMNS} FROM alerts"
     if where:
         sql += " WHERE " + " AND ".join(where)

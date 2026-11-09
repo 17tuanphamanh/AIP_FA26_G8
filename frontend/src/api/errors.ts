@@ -4,8 +4,8 @@ import { ownEntry } from "../lib/lookup.ts";
 //   {detail: "<mã hoặc câu>"}                  — HTTPException, AuthError, 409 sự kiện muộn, 413
 //   {error: "<mã>", fields?: ["body.text", …]}  — 422 kiểm dữ liệu (`invalid_request`), 503 privacy guard
 // (backend/app/api/errors.py). Thân lỗi không bao giờ chứa giá trị người dùng gửi (chống rò qua 422).
-// F5 [Đề xuất — Phase 7]: 422 `invalid_policy` kèm `errors: [{loc, msg}]` (dạng lỗi Pydantic, `loc` tính từ gốc nội
-// dung chính sách) → `issues`.
+// F7 (route thật `POST /api/policy/validate`, backend/app/api/policy.py): 422 `invalid_policy` kèm `errors: [{loc, msg}]`
+// (dạng lỗi Pydantic, `loc` tính từ gốc nội dung chính sách) → `issues`.
 
 export class ApiError extends Error {
   readonly status: number;
@@ -71,27 +71,47 @@ export async function readApiError(res: Response): Promise<ApiError> {
 }
 
 // Mã máy của backend → câu cho người dùng. Mã lạ: 409 có thể là câu tiếng Việt sẵn (`LateEvent.message`).
+/** M2 bn-a (ĐP chốt Q4): `GET /api/tickets/{id}` 410 `conversation_purged` — job hạn giữ (90 ngày) đã dọn checkpoint của ticket đã kết thúc. */
+export const PURGED_CODE = "conversation_purged";
+export const PURGED_TEXT = "Nội dung hội thoại đã được dọn theo chính sách lưu trữ.";
+/** Lỗi đọc ticket là "đã dọn theo hạn giữ" (410 + mã) — màn hiện câu trung tính, không coi là lỗi, không hỏi lại. */
+export const isPurged = (error: unknown): boolean => error instanceof ApiError && error.status === 410 && error.code === PURGED_CODE;
+
 const CODE_MESSAGES: Record<string, string> = {
+  [PURGED_CODE]: PURGED_TEXT,
   reauth_required: "Cần đăng nhập lại để xác nhận thao tác này.",
   privacy_guard_unavailable: "Chưa gửi được — hệ thống kiểm tra nội dung đang bận, vui lòng thử lại.",
   ticket_busy: "Hệ thống đang bận, sẽ tự thử lại.",
+  // Tạo ticket khi chưa đọc được phương án xử lý (hợp đồng sửa lần 3, ĐP 26/10 23:51): 503, KHÔNG tự gửi lại (api/tickets.ts).
+  strategy_unavailable: "Hệ thống tạm thời chưa nhận yêu cầu, vui lòng thử lại sau ít phút.",
   payload_too_large: "Nội dung quá dài.",
-  // Đóng escalation (B20 §4.3, P10 §3.4 — route Phase 7; hiện chỉ MSW trả).
+  // Đóng escalation (B20 §4.3; hợp đồng N-PA §4 — route be-tuan8, hiện chỉ MSW trả).
+  already_closed: "Ca đã được đóng",
+  invalid_queue_body: "Hàng đợi trả về không đúng dạng — không hiển thị để tránh hiểu sai. Vui lòng tải lại trang.",
   deny_case_cannot_complete:
-    "Không đóng được: ca E5 không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở ticket mới.",
+    "Không đóng được: ca không đủ điều kiện tự xử lý không được chọn “Đã hoàn tất”. Chỉ xác nhận từ chối hoặc mở yêu cầu mới.",
   escalation_not_found: "Ca đã đóng hoặc không còn trong hàng đợi.",
   // Duyệt (backend/app/api/approvals.py) + xem phiếu (4c P6).
   rejected_requires_note: "Từ chối cần ghi chú lý do gửi người dùng.",
   plan_changed: "Hành động đã thay đổi sau khi tạo phiếu — không thể duyệt",
+  // Phiếu thiếu / sai kiểu người bị ảnh hưởng hoặc mức rủi ro — api/approvals.ts `parseApprovalView` (502 do client đặt, fail-closed).
+  invalid_approval_body: "Phiếu trả về thiếu hoặc sai thông tin người bị ảnh hưởng / mức rủi ro nên không hiện để duyệt. Vui lòng tải lại trang.",
   // Ghi đè (4d P1–P4; KH 4.6, 12b Q-fe-10).
-  ticket_open: "Ticket chưa kết thúc — chỉ ghi đè được ticket đã đóng.",
-  already_overridden: "Bạn đã ghi đè ticket này rồi — mỗi người chỉ ghi đè một ticket một lần.",
+  ticket_open: "Yêu cầu chưa kết thúc — chỉ ghi đè được yêu cầu đã đóng.",
+  already_overridden: "Bạn đã ghi đè yêu cầu này rồi — mỗi người chỉ ghi đè một yêu cầu một lần.",
   same_as_original: "Quyết định bạn chọn trùng với quyết định ban đầu của hệ thống — hãy chọn quyết định khác.",
   // Tổng quan / cảnh báo (M9: thiếu kết nối monitor → 503, fail-closed — KH mục 5 dòng dashboard).
   monitor_unavailable: "Số liệu tạm thời không có",
-  // Chính sách [Đề xuất F5 — Phase 7].
-  version_conflict: "Đã có phiên bản mới hơn — tải lại trước khi lưu",
+  // Ticket nhiều ý (T20b): `children_progress` / tin tổng hợp sai hình dạng — api/tickets.ts `parseTicketView` (502 do client đặt).
+  invalid_ticket_body: "Chưa đọc được dữ liệu của yêu cầu này. Vui lòng tải lại trang.",
+  // Chính sách (F7 — chỉ có validate; `version_conflict` của Lưu bỏ cùng nút, N-POL2 thêm lại theo route thật).
   invalid_policy: "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.",
+  // Cách xử lý của hệ thống + So sánh phương án (D-67; hợp đồng N-PA §1–2).
+  same_as_current: "Phương án này đang được áp dụng",
+  invalid_strategy_body: "Máy chủ trả cách xử lý không đúng dạng — không hiển thị để tránh hiểu sai.",
+  invalid_strategy_history_body: "Máy chủ trả lịch sử đổi không đúng dạng — không hiển thị để tránh hiểu sai.",
+  invalid_strategies_body: "Số liệu so sánh trả về không đúng dạng — không hiển thị để tránh hiểu sai.",
+  strategies_source_mismatch: "Số liệu trả về không đúng nguồn đã chọn — không hiển thị để tránh hiểu sai.",
 };
 
 export function errorMessage(error: ApiError | null): string {
@@ -124,6 +144,12 @@ export function errorMessage(error: ApiError | null): string {
 // Đăng nhập (P6 §4): sai tên/mật khẩu/OTP, tài khoản khoá hay ngừng hoạt động đều là MỘT câu chung — chống dò
 // username. Chỉ `mfa_not_enrolled` có câu riêng (chỉ tới được sau khi mật khẩu đúng — 12b Q-fe-3).
 export const GENERIC_LOGIN_ERROR = "Tên đăng nhập hoặc mật khẩu không đúng.";
+/** Ô trống ở bước mật khẩu (soát 01/11 M1, M2 — ĐP 02/11): báo ngay, KHÔNG gửi request. */
+export const EMPTY_USERNAME = "Nhập tên đăng nhập.";
+export const EMPTY_PASSWORD = "Nhập mật khẩu.";
+/** Sai mã ở bước OTP (soát 01/11 M3 — ĐP quyết 02/11). Chỉ tới được bước này khi mật khẩu đã đúng nên câu riêng không lộ
+ *  thêm gì; backend vẫn trả cùng mã `invalid_login` (Q-fe-3) — chỉ FE đổi câu. */
+export const OTP_WRONG = "Mã xác thực không đúng hoặc đã hết hạn.";
 export const USERNAME_HINT = "Tên đăng nhập chỉ gồm chữ thường không dấu, số và các ký tự . _ - (vd an.nv).";
 
 export function loginErrorMessage(error: ApiError | null): string {

@@ -2,7 +2,7 @@ import { Link } from "react-router";
 
 export function NotFound() {
   return (
-    <section className="px-12 py-10">
+    <section className="px-12 py-10 max-lg:px-4 max-lg:py-6">
       <p className="text-label text-ink-2">Lỗi 404</p>
       <h1 className="mt-2 text-title">Không tìm thấy trang</h1>
       <p className="mt-2 max-w-(--chat-width) text-ink-2">Đường dẫn không đúng hoặc trang đã được chuyển.</p>

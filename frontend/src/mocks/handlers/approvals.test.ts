@@ -2,6 +2,7 @@
 // không mạng. Lời gọi backend THẬT của handler (`/api/auth/me`, `/api/approvals` qua bypass) đi vào fetch giả.
 import { getResponse, isPassthroughResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
+import { parseApprovalView } from "../../api/approvals.ts";
 import type { ApprovalListItem, Me } from "../../api/types.ts";
 import { approvalHandlers } from "./approvals.ts";
 import { overrideHandlers } from "./override.ts";
@@ -264,19 +265,38 @@ describe("t85: xem phiếu chỉ chặn id apv-demo-; id khác → passthrough; 
     },
   );
 
-  it("apv-demo-01 → fixture (12 khoá như ApprovalView); apv-demo-viewer → role_as viewer, pending; apv-demo-08 → các trường null", async () => {
+  it("apv-demo-01 → fixture (14 khoá như ApprovalView + `matched_rules` của N-PA); apv-demo-viewer → role_as viewer, pending; apv-demo-08 → các trường null", async () => {
     stubReal(L1);
     const view = async (id: string) => (await (await getResponse(approvalHandlers, get(`/api/approvals/${id}`)))!.json()) as Record<string, unknown>;
     const normal = await view("apv-demo-01");
     expect(Object.keys(normal).sort()).toStrictEqual(
-      ["action", "action_plan_hash", "approval_id", "deadline", "facts", "procedure", "request_summary", "requester", "risk", "role_as", "status", "ticket_id"],
+      [
+        "action", "action_plan_hash", "affected", "approval_id", "deadline", "facts", "matched_rules", "procedure", "request_summary",
+        "requester", "risk", "risk_view", "role_as", "status", "ticket_id",
+      ],
     );
     expect(normal.approval_id).toBe("apv-demo-01");
+    expect(Object.keys(await view("apv-demo-03"))).not.toContain("matched_rules"); // phiếu khác: thiếu khoá → "Chưa có dữ liệu"
     const watcher = await view("apv-demo-viewer");
     expect([watcher.role_as, watcher.status]).toStrictEqual(["viewer", "pending"]);
     const sparse = await view("apv-demo-08");
     expect([(sparse.requester as { department: unknown }).department, sparse.risk, sparse.procedure]).toStrictEqual([null, null, null]);
+    expect(sparse.risk_view).toBeNull(); // risk_view null ⇔ risk null
+    expect((sparse.affected as { department: unknown }).department).toBeNull();
     expect(typeof sparse.action_plan_hash).toBe("string");
+  });
+
+  it("MỌI phiếu minh hoạ qua parseApprovalView (dev:mock không tự chặn mình); 03 = người bị tác động khác người gửi, 02 = LLM chưa hiệu chỉnh", async () => {
+    stubReal(L1);
+    const view = async (id: string) => parseApprovalView(await (await getResponse(approvalHandlers, get(`/api/approvals/${id}`)))!.json());
+    for (const n of ["01", "02", "03", "05", "06", "07", "08", "viewer"]) expect((await view(`apv-demo-${n}`)).approval_id).toBe(`apv-demo-${n}`);
+    const other = await view("apv-demo-03");
+    expect(other.affected.is_requester).toBe(false);
+    expect((other.action as { requested_for: string }).requested_for).toBe(other.affected.user_id);
+    expect((await view("apv-demo-01")).affected.manager.status).toBe("known");
+    const llm = (await view("apv-demo-02")).risk_view;
+    expect([llm?.decided_by, llm?.calibrated, llm?.auto_allowed]).toStrictEqual(["llm", false, false]);
+    expect((await view("apv-demo-08")).risk_view).toBeNull();
   });
 
   it("không có approval:decide → 403 (như require của route thật)", async () => {

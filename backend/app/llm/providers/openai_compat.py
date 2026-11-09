@@ -8,11 +8,14 @@
 - `json_mode: json_object` (LLM-JSON, provider chỉ nhận `{"type": "json_object"}`, vd. DeepSeek): response_format không
   mang schema → thêm vào CUỐI system message (không có thì chèn một system message ở đầu) yêu cầu trả đúng một đối tượng
   json theo JSON Schema của lời gọi. Dựng list mới, không sửa `req.messages`. `json_schema`: messages gửi y nguyên.
+- `extra_body` (LLM-G, vd. DeepSeek `{"thinking": {"type": "disabled"}}`): giữ BẢN SAO lúc dựng, chỉ truyền cho SDK khi
+  khác None (None → body y như trước). Khoá trùng tham số gateway đã bị `ProviderCfg` từ chối. Không log body.
 - Logger `httpx2` ghi NGUYÊN URL ở mức INFO (`HTTP Request: POST http://user:pass@host/v1?api-key=…`) → nâng lên
   WARNING (S9). `httpx2` chỉ SDK openai dùng (test AST ở test_llm_security.py); log `openai` ở DEBUG không có thân
   request (đã dò 29/09/2026 với openai 3.19.2).
 """
 
+import copy
 import json
 import logging
 from typing import Any, cast
@@ -51,10 +54,12 @@ class OpenAICompatProvider:
         base_url: str,
         api_key: SecretStr,
         json_mode: str = "json_schema",
+        extra_body: dict[str, Any] | None = None,
         http_client: httpx2.AsyncClient | None = None,
     ) -> None:
         self.name = name
         self._json_mode = json_mode
+        self._extra_body = copy.deepcopy(extra_body)
         self._host = urlsplit(base_url).hostname  # chỉ tên máy vào nhãn lỗi — không log base_url (có thể chứa khoá)
         self._client = AsyncOpenAI(
             base_url=base_url, api_key=api_key.get_secret_value(), max_retries=0, http_client=http_client
@@ -81,6 +86,7 @@ class OpenAICompatProvider:
                 *req.messages[first + 1 :]]  # fmt: skip
 
     async def chat(self, req: ProviderRequest) -> ProviderResponse:
+        extra: dict[str, Any] = {} if self._extra_body is None else {"extra_body": self._extra_body}
         try:
             r = await self._client.chat.completions.create(
                 model=req.model,
@@ -89,6 +95,7 @@ class OpenAICompatProvider:
                 temperature=req.temperature,
                 response_format=cast(Any, self._response_format(req)),
                 timeout=req.timeout_s,
+                **extra,
             )
         except APITimeoutError:
             raise ProviderError("timeout", host=self._host) from None

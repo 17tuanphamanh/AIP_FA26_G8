@@ -1,41 +1,42 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, errorMessage, type Issue, routeMissing } from "../../api/errors.ts";
 import type { Client } from "../../api/client.ts";
 import { api } from "../../api/http.ts";
-import { POLICY_MAX_BYTES, policyQuery, policyVersionsQuery, putPolicy, restorePolicyVersion, utf8Bytes } from "../../api/policy.ts";
-import type { PolicySaved, PolicyVersionItem } from "../../api/types.ts";
+import { POLICY_MAX_BYTES, policyQuery, policyVersionsQuery, utf8Bytes, validateBodyBytes, validatePolicy } from "../../api/policy.ts";
 import { hasPerm } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
-import { Modal } from "../../components/Modal.tsx";
 import { Segmented } from "../../components/Segmented.tsx";
-import { useReauthRetry } from "../../components/useReauthRetry.tsx";
 import { Forbidden } from "../Forbidden.tsx";
 import { POLICY_MISSING_TITLE } from "./metrics.ts";
-import { MissingPanel, MockNote } from "./panels.tsx";
+import { MissingPanel } from "./panels.tsx";
 import { PolicyHistory } from "./PolicyHistory.tsx";
 import { PolicyTable } from "./PolicyTable.tsx";
+import { StrategySection } from "./StrategySection.tsx";
 import {
+  checkFailure,
   checkPolicyText,
   duplicateText,
   formatPolicy,
   lineAt,
   locLine,
-  restoreConfirmText,
+  NOT_OBJECT_TEXT,
   syntaxText,
   TOO_LARGE_TEXT,
-  VERSION_CONFLICT_TEXT,
+  VALID_TEXT,
 } from "./policyText.ts";
 
-// B4MgrPolicy (P10 §3.3; F5 P7). Route CHƯA CÓ — Phase 7 (MSW ở dev:mock; dev thật → 404 → "Chính sách có từ Phase 7").
+// B4MgrPolicy (P10 §3.3; F7 route THẬT — N-POL1): XEM chính sách đang chạy + lịch sử phiên bản, KIỂM bản đang sửa. Đầu
+// trang: khối "Cách xử lý của hệ thống" (D-67, N-PA P2 — StrategySection.tsx, route riêng, đổi được khi có policy:edit).
 // - Tab "JSON" = ô sửa có cột số dòng (không thư viện editor). Tab "Bảng" chỉ xem. Kiểm phía máy khách CHỈ cú pháp
-//   (JSON.parse quyết; vị trí từ policyText.ts) → nút Lưu khoá. Kiểm nghĩa là của server: 422 `invalid_policy`
-//   `errors[{loc, msg}]` → đánh dấu đúng dòng theo `loc`.
-// - PUT gửi `base_version_id` = bản mà nháp dựa trên (giữ nguyên khi dữ liệu tải lại ngầm); 409 `version_conflict` →
-//   báo, KHÔNG ghi đè, không tự gửi lại.
-// - Lưu / quay lui: 403 `reauth_required` → đăng nhập lại (luồng F1, có OTP) → gửi lại ĐÚNG 1 lần (useReauthRetry).
-// - Quay lui = TẠO phiên bản mới chép nội dung bản chọn (Q-fe-26). Không tự lưu, không lưu nháp vào bộ nhớ trình
-//   duyệt; rời trang khi có nháp → mất nháp (PLAN-fe mục 7 #21).
+//   (JSON.parse quyết; vị trí từ policyText.ts) + gốc phải là object + trần 64 KB của thân → nút Kiểm tra khoá. Kiểm
+//   NGHĨA là của server: `POST /api/policy/validate` → 422 `invalid_policy` `errors[{loc, msg}]` → đánh dấu đúng dòng
+//   theo `loc` (đường dẫn cấu trúc từ gốc nội dung).
+// - Kiểm tra cần `policy:edit` (route validate); chỉ `policy:read` → chỉ xem, ô JSON chỉ đọc, không nút.
+// - 403 → câu "không có quyền"; 5xx / lỗi mạng / thân sai dạng → câu chung, KHÔNG hiện chi tiết máy chủ.
+// - KHÔNG có Lưu / Quay lui / Mô phỏng: backend chưa có route (PUT /api/policy → 405; …/restore, /simulate → 404). Nút
+//   cũ (PUT + restore theo [Đề xuất F5]) đã gỡ cùng hàm gọi API — N-POL2 thêm lại theo hợp đồng thật. Nội dung sửa trong
+//   ô chỉ để kiểm, không lưu đi đâu (rời trang → mất).
 
 type Tab = "table" | "json";
 const TABS: readonly { key: Tab; label: string }[] = [
@@ -43,99 +44,50 @@ const TABS: readonly { key: Tab; label: string }[] = [
   { key: "json", label: "JSON" },
 ];
 
-/** Nháp: `base` = version_id mà nháp dựa trên; `original` = văn bản lúc nạp (so để biết có thay đổi). */
-type Draft = { base: number; original: string; text: string };
+/** Nháp: `base` = `version` mà nháp dựa trên; `original` = văn bản lúc nạp (so để biết có thay đổi). */
+type Draft = { base: string; original: string; text: string };
 type Message = { tone: "ok" | "error"; text: string };
 
-const MISSING_TEXT = "Máy chủ chưa có chức năng chính sách. Khi Phase 7 làm xong, màn này tự dùng dữ liệu thật — không cần sửa giao diện.";
+const MISSING_TEXT = "Máy chủ chưa có chức năng chính sách. Khi máy chủ có, màn này tự dùng dữ liệu thật — không cần sửa giao diện.";
 const LINE_PX = 26; // leading-6.5
 
-function saveErrorMessage(e: unknown): string {
-  if (routeMissing(e)) return `${POLICY_MISSING_TITLE} — máy chủ chưa có chức năng này.`;
-  if (e instanceof ApiError && e.status === 413) return TOO_LARGE_TEXT;
-  return errorMessage(e instanceof ApiError ? e : null);
-}
+const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** `client` mặc định là client dùng chung — CÙNG client với đăng nhập lại (test truyền client riêng, như t48). */
+/** `client` mặc định là client dùng chung (test truyền client riêng). */
 export function PolicyEditor({ client = api }: { client?: Client }) {
   const me = useMe();
-  const canEdit = hasPerm(me, "policy:edit");
-  const queryClient = useQueryClient();
+  const canCheck = hasPerm(me, "policy:edit");
   const policy = useQuery(policyQuery(client));
   const versions = useQuery(policyVersionsQuery(client));
   const [tab, setTab] = useState<Tab>("table");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [message, setMessage] = useState<Message | null>(null);
-  const [conflict, setConflict] = useState(false);
-  const [confirming, setConfirming] = useState<PolicyVersionItem | null>(null);
   const [jump, setJump] = useState<{ line: number } | null>(null);
-  const [sentText, setSentText] = useState<string | null>(null); // văn bản của lần PUT gần nhất — định vị 422 khi ô sửa lỗi cú pháp
+  const [checking, setChecking] = useState(false);
+  const [sentText, setSentText] = useState<string | null>(null); // văn bản của lần kiểm gần nhất — định vị 422 khi ô sửa lỗi cú pháp
+  const run = useRef(0); // lần kiểm mới nhất — kết quả của lần cũ về muộn bị bỏ
 
   // Nạp / làm mới nháp từ server: lần đầu, hoặc khi server có bản mới mà nháp CHƯA sửa. Đang tải lại → chờ (không nạp
-  // dữ liệu cũ). Nháp đã sửa → giữ nguyên, kể cả `base` (bản mới của người khác → PUT sẽ 409, không ghi đè).
-  if (policy.data && !policy.isFetching && (draft === null || (draft.text === draft.original && draft.base !== policy.data.version_id))) {
+  // dữ liệu cũ). Nháp đã sửa → giữ nguyên.
+  if (policy.data && !policy.isFetching && (draft === null || (draft.text === draft.original && draft.base !== policy.data.version))) {
     const original = formatPolicy(policy.data.content);
-    setDraft({ base: policy.data.version_id, original, text: original });
+    setDraft({ base: policy.data.version, original, text: original });
   }
 
   const text = draft?.text ?? "";
   const dirty = draft !== null && draft.text !== draft.original;
   const check = useMemo(() => checkPolicyText(text), [text]);
-  const bytes = useMemo(() => utf8Bytes(text), [text]);
+  const notObject = check.valid && !isRecord(check.value);
+  const bytes = useMemo(() => (check.valid && isRecord(check.value) ? validateBodyBytes(check.value) : utf8Bytes(text)), [check, text]);
   const tooLarge = bytes > POLICY_MAX_BYTES;
-
-  const reloadAll = () => void queryClient.invalidateQueries({ queryKey: ["policy"] });
-
-  const save = useReauthRetry({
-    send: async (p: { body: { content: Record<string, unknown>; base_version_id: number }; text: string }) => ({
-      saved: await putPolicy(p.body, client),
-      text: p.text,
-    }),
-    onSuccess: ({ saved, text: savedText }: { saved: PolicySaved; text: string }) => {
-      setIssues([]);
-      setSentText(null);
-      setDraft({ base: saved.version_id, original: savedText, text: savedText });
-      setMessage({ tone: "ok", text: `Đã lưu thành bản ${saved.version}.` });
-      reloadAll();
-    },
-    onFailure: (e) => {
-      if (e instanceof ApiError && e.status === 422 && (e.code === "invalid_policy" || e.issues.length > 0)) {
-        setIssues(e.issues.length > 0 ? e.issues : [{ loc: [], msg: errorMessage(e) }]);
-        setMessage({ tone: "error", text: "Chưa lưu — chính sách chưa hợp lệ, xem các dòng được đánh dấu." });
-      } else if (e instanceof ApiError && e.status === 409 && e.code === "version_conflict") {
-        setConflict(true);
-        setMessage({ tone: "error", text: VERSION_CONFLICT_TEXT });
-      } else {
-        setMessage({ tone: "error", text: saveErrorMessage(e) });
-      }
-    },
-    onCancelled: () => setMessage({ tone: "error", text: "Chưa lưu — cần đăng nhập lại để xác nhận thao tác này." }),
-    otherUserFlash: "policy_other_user",
-  });
-
-  const restore = useReauthRetry({
-    send: async (v: PolicyVersionItem) => ({ saved: await restorePolicyVersion(v.version_id, client), from: v.version }),
-    onSuccess: ({ saved, from }: { saved: PolicySaved; from: string }) => {
-      setIssues([]);
-      setConflict(false);
-      setSentText(null);
-      setMessage({ tone: "ok", text: `Đã áp dụng lại nội dung bản ${from} thành bản ${saved.version}.` });
-      reloadAll();
-      setDraft(null); // nạp lại từ bản mới (đang tải → chờ, không nạp bản cũ)
-    },
-    onFailure: (e) => setMessage({ tone: "error", text: saveErrorMessage(e) }),
-    onCancelled: () => setMessage({ tone: "error", text: "Chưa quay lui — cần đăng nhập lại để xác nhận thao tác này." }),
-    otherUserFlash: "policy_other_user",
-  });
-
-  const busy = save.sending || restore.sending;
 
   if (policy.error instanceof ApiError && policy.error.status === 403) return <Forbidden />;
   if (routeMissing(policy.error)) {
     return (
-      <section className="flex flex-col gap-6 px-12 py-10">
+      <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
         <h1 className="text-title">Chính sách</h1>
+        <StrategySection client={client} />
         <MissingPanel testId="policy-missing" title={POLICY_MISSING_TITLE} text={MISSING_TEXT} />
       </section>
     );
@@ -147,6 +99,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
     check.valid && check.root ? lineAt(check.root, loc) : sentText !== null ? locLine(sentText, loc) : null;
   const problems: { line: number | null; text: string }[] = [];
   if (!check.valid) problems.push({ line: check.line, text: syntaxText(check) });
+  if (notObject) problems.push({ line: null, text: `Toàn tệp · ${NOT_OBJECT_TEXT}` });
   if (tooLarge) problems.push({ line: null, text: `${TOO_LARGE_TEXT} — ${Math.ceil(bytes / 1024)} KB, tối đa ${POLICY_MAX_BYTES / 1024} KB` });
   for (const issue of issues) {
     const line = issueLine(issue.loc);
@@ -155,85 +108,104 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
   const warnings = check.valid ? check.duplicates.map((d) => ({ line: d.lines[d.lines.length - 1]!, lines: d.lines, text: duplicateText(d) })) : [];
   const errorLines = new Set(problems.flatMap((p) => (p.line === null ? [] : [p.line])));
   const warnLines = new Set(warnings.flatMap((w) => w.lines));
-  const blocking = (check.valid ? 0 : 1) + (tooLarge ? 1 : 0);
-  const canSave = canEdit && draft !== null && dirty && check.valid && !tooLarge && !busy;
+  const blocking = (check.valid ? 0 : 1) + (notObject ? 1 : 0) + (tooLarge ? 1 : 0);
+  const canSend = canCheck && draft !== null && check.valid && !notObject && !tooLarge && !checking;
 
-  function onSave() {
-    if (!canSave || !check.valid || draft === null || save.busy()) return;
+  async function onCheck() {
+    if (!canSend || !check.valid || !isRecord(check.value)) return;
+    const mine = ++run.current;
     setMessage(null);
-    setConflict(false);
-    setSentText(text);
-    save.run({ body: { content: check.value as Record<string, unknown>, base_version_id: draft.base }, text });
-  }
-
-  function reloadLatest() {
-    setConflict(false);
     setIssues([]);
-    setMessage(null);
-    setSentText(null);
-    reloadAll();
-    setDraft(null);
+    setSentText(text);
+    setChecking(true);
+    try {
+      await validatePolicy(check.value, client);
+      if (mine === run.current) setMessage({ tone: "ok", text: VALID_TEXT });
+    } catch (e) {
+      if (mine !== run.current) return;
+      const failure = checkFailure(e);
+      setIssues(failure.issues);
+      setMessage({ tone: "error", text: failure.text });
+    } finally {
+      if (mine === run.current) setChecking(false);
+    }
   }
 
   function edit(next: string) {
     setDraft((d) => (d ? { ...d, text: next } : d));
+    if (message?.tone === "ok") setMessage(null); // "hợp lệ" chỉ đúng cho văn bản đã kiểm
   }
 
   const current = policy.data;
+  // Soát 01/11 M4 (ĐP 02/11): chưa có dữ liệu mà tải lỗi → CHỈ câu lỗi + "Thử lại" (không "Đang tải…", không nút Kiểm tra,
+  // không tab Bảng/JSON — trước đây hiện cùng lúc ba trạng thái mâu thuẫn).
+  const loadFailed = policy.isError && draft === null;
   return (
-    <section className="flex flex-col gap-6 px-12 py-10">
-      <div className="flex items-end gap-3">
-        <div className="flex min-w-0 grow flex-col gap-1">
-          <h1 className="text-title">Chính sách</h1>
-          <p className="flex items-center gap-2 text-ink-2">
-            {current ? `Đang áp dụng bản ${current.version}` : "Đang tải chính sách…"}
-            {dirty ? (
-              <span data-testid="draft-mark" className="inline-flex items-center gap-1.5 text-orange-ink">
-                <span className="size-1.75 rounded-full bg-fpt-orange" aria-hidden="true" />
-                Bản nháp chưa lưu
-              </span>
-            ) : null}
-          </p>
+    <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
+      <h1 className="text-title">Chính sách</h1>
+      {/* N-PA P2: cách xử lý của hệ thống (D-67) — độc lập với nội dung chính sách bên dưới. */}
+      <StrategySection client={client} />
+      <div className="flex items-end gap-3 border-t border-line pt-6 max-lg:flex-wrap max-lg:items-start">
+        <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
+          <h2 className="text-heading">Nội dung chính sách</h2>
+          {loadFailed ? null : (
+            <p className="flex items-center gap-2 text-ink-2">
+              {current ? `Đang áp dụng bản ${current.version}` : "Đang tải chính sách…"}
+              {dirty ? (
+                <span data-testid="draft-mark" className="inline-flex items-center gap-1.5 text-orange-ink">
+                  <span className="size-1.75 rounded-full bg-fpt-orange" aria-hidden="true" />
+                  Đã sửa — chưa lưu
+                </span>
+              ) : null}
+            </p>
+          )}
         </div>
-        <Segmented label="Cách hiển thị chính sách" options={TABS} value={tab} onChange={setTab} />
-        {canEdit ? (
+        {loadFailed ? null : <Segmented label="Cách hiển thị chính sách" options={TABS} value={tab} onChange={setTab} />}
+        {canCheck && !loadFailed ? (
           <button
             type="button"
-            onClick={onSave}
-            disabled={!canSave}
+            onClick={() => void onCheck()}
+            disabled={!canSend}
             className="h-11 rounded-full bg-fpt-blue px-5 font-semibold text-white disabled:bg-line disabled:text-ink-2"
           >
-            {save.sending ? "Đang lưu…" : blocking > 0 ? `Lưu · còn ${blocking} lỗi` : "Lưu"}
+            {checking ? "Đang kiểm tra…" : blocking > 0 ? `Kiểm tra · còn ${blocking} lỗi` : "Kiểm tra"}
           </button>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <MockNote text="chính sách thật có từ Phase 7" />
-        {canEdit ? null : <span className="text-secondary text-ink-2">Bạn chỉ có quyền xem chính sách.</span>}
-      </div>
+      {loadFailed ? null : (
+        <p data-testid="policy-mode" className="text-secondary text-ink-2">
+          {canCheck
+            ? "Màn này chỉ xem và kiểm tra chính sách — chưa lưu được thay đổi từ đây."
+            : "Bạn chỉ có quyền xem chính sách."}
+        </p>
+      )}
 
       {message ? (
-        <div className="flex items-center gap-3">
-          <p role={message.tone === "ok" ? "status" : "alert"} data-testid="policy-message" className={`text-secondary ${message.tone === "ok" ? "text-ink-2" : "text-danger"}`}>
-            {message.text}
-          </p>
-          {conflict ? (
-            <button type="button" onClick={reloadLatest} className="h-7.5 shrink-0 rounded-full bg-button-2 px-3.5 text-label text-fpt-blue">
-              Tải bản mới nhất (bỏ bản nháp)
-            </button>
-          ) : null}
-        </div>
+        <p role={message.tone === "ok" ? "status" : "alert"} data-testid="policy-message" className={`text-secondary ${message.tone === "ok" ? "text-ink-2" : "text-danger"}`}>
+          {message.text}
+        </p>
       ) : null}
 
       {policy.isError ? (
-        <p role="alert" className="text-danger">
-          Chưa tải được chính sách: {errorMessage(policy.error instanceof ApiError ? policy.error : null)}
-        </p>
+        <div className="flex flex-col items-start gap-3">
+          <p role="alert" data-testid="policy-load-error" className="text-danger">
+            Chưa tải được chính sách: {errorMessage(policy.error instanceof ApiError ? policy.error : null)}
+          </p>
+          <button
+            type="button"
+            data-testid="policy-retry"
+            onClick={() => void policy.refetch()}
+            disabled={policy.isFetching}
+            className="h-9 rounded-full bg-button-2 px-5 text-secondary font-semibold text-fpt-blue disabled:opacity-60 max-lg:min-h-11"
+          >
+            {policy.isFetching ? "Đang tải lại…" : "Thử lại"}
+          </button>
+        </div>
       ) : draft === null ? (
-        <p className="text-ink-2">Đang tải chính sách…</p>
+        <p className="text-ink-2 motion-safe:animate-pulse">Đang tải chính sách…</p>
       ) : (
-        <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-6 max-lg:grid-cols-1">
           <div className="min-w-0">
             {tab === "table" ? (
               <PolicyTable check={check} issues={issues} />
@@ -241,7 +213,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
               <JsonEditor
                 text={text}
                 onChange={edit}
-                readOnly={!canEdit || busy}
+                readOnly={!canCheck || checking}
                 invalid={!check.valid}
                 errorLines={errorLines}
                 warnLines={warnLines}
@@ -253,7 +225,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
             {problems.length > 0 ? (
               <section aria-labelledby="policy-problems-heading" className="flex flex-col gap-2">
                 <h2 id="policy-problems-heading" className="pl-1 text-label text-ink-2">
-                  Cần sửa trước khi lưu
+                  Cần sửa
                 </h2>
                 <ul id="policy-problems" data-testid="policy-problems" className="flex flex-col gap-1.5 rounded-group bg-danger-bg px-4 py-3.5 text-secondary text-danger-ink">
                   {problems.map((p, k) => (
@@ -267,7 +239,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
             {warnings.length > 0 ? (
               <section aria-labelledby="policy-warnings-heading" className="flex flex-col gap-2">
                 <h2 id="policy-warnings-heading" className="pl-1 text-label text-ink-2">
-                  Lưu ý (không chặn lưu)
+                  Lưu ý (không chặn kiểm tra)
                 </h2>
                 <ul data-testid="policy-warnings" className="flex flex-col gap-1.5 rounded-group bg-orange-bg px-4 py-3.5 text-secondary text-orange-ink">
                   {warnings.map((w, k) => (
@@ -283,48 +255,18 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
                 Lịch sử phiên bản
               </h2>
               {versions.isError ? (
-                <p className="rounded-group border border-line px-4 py-3 text-secondary text-ink-2">Chưa tải được lịch sử phiên bản.</p>
+                <p data-testid="versions-error" className="rounded-group border border-line px-4 py-3 text-secondary text-ink-2">
+                  Chưa tải được lịch sử phiên bản.
+                </p>
               ) : versions.data ? (
-                <PolicyHistory versions={versions.data} dirty={dirty} canEdit={canEdit} busy={busy} onRestore={setConfirming} />
+                <PolicyHistory versions={versions.data} dirty={dirty} />
               ) : (
-                <p className="px-1 text-secondary text-ink-2">Đang tải lịch sử…</p>
+                <p className="px-1 text-secondary text-ink-2 motion-safe:animate-pulse">Đang tải lịch sử…</p>
               )}
-              {canEdit ? (
-                <span className="px-1 text-label font-normal text-ink-2">Lưu hoặc quay lui cần nhập lại mã 6 số nếu đã quá 10 phút.</span>
-              ) : null}
             </section>
           </aside>
         </div>
       )}
-
-      {confirming ? (
-        <Modal label="Áp dụng lại phiên bản" onClose={() => setConfirming(null)}>
-          <h2 className="text-center text-heading">Quay lui bản {confirming.version}?</h2>
-          <p data-testid="restore-confirm-text" className="text-center text-ink-2">
-            {restoreConfirmText(confirming.version)}
-          </p>
-          {dirty ? <p className="text-center text-secondary text-orange-ink">Bản nháp chưa lưu sẽ bị thay bằng nội dung mới.</p> : null}
-          <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => setConfirming(null)} className="h-11 rounded-full bg-button-2 font-semibold">
-              Huỷ
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const target = confirming;
-                setConfirming(null);
-                setMessage(null);
-                restore.run(target);
-              }}
-              className="h-11 rounded-full bg-fpt-blue font-semibold text-white"
-            >
-              Áp dụng lại
-            </button>
-          </div>
-        </Modal>
-      ) : null}
-      {save.dialog}
-      {restore.dialog}
     </section>
   );
 }
@@ -332,7 +274,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
 function ProblemText({ line, text, onJump }: { line: number | null; text: string; onJump: (line: number) => void }) {
   if (line === null) return <>{text}</>;
   return (
-    <button type="button" onClick={() => onJump(line)} className="text-left hover:underline">
+    <button type="button" onClick={() => onJump(line)} className="text-left hover:underline max-lg:min-h-11">
       {text}
     </button>
   );

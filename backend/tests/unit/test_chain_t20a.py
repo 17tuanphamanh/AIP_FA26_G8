@@ -22,6 +22,7 @@ from app.domain.states import (
     S_EXECUTING,
     S_RETRIEVING,
 )
+from app.domain.target import TARGET_QUESTION
 from app.domain.ticket_state import RiskDecision
 from app.graph.builder import wrap_node
 from app.graph.context import RunContext, bind_run
@@ -162,22 +163,37 @@ async def test_g2_other_persons_account_target_is_other() -> None:
 )
 async def test_g10_dropped_target_user_is_other_no_rule(text: str, target_user: str, reason: str) -> None:
     """g10 (Q-T20a-4, duyệt DỪNG 1 — agent chính viết): nv001 nhờ đặt lại mật khẩu cho NGƯỜI KHÁC, LLM đưa định danh vào
-    `target_user` nhưng `sanitize_slots` bỏ (bất kỳ lý do) → B3 đặt `ctx_flags.target_is_other=True` → B6 giữ → `requested_for` vẫn
-    là người gửi (không có định danh dùng được) nhưng B12 KHÔNG khớp R01/allow nào → lớp LLM (`DisabledEstimator`) → E5. Không có
-    cờ này thì cùng chuỗi ra allow / R01 trên chính nv001 (g1)."""
-    state, audit, env = await chain("nv001", text, "account", "reset_password",
-                                    {"account_type": "ad", "target_user": target_user})  # fmt: skip
+    `target_user` nhưng `sanitize_slots` bỏ (bất kỳ lý do) → B3 đặt `ctx_flags.target_is_other=True` → B6 giữ.
+    be-target-guard (L-03, ĐỔI CÓ CHỦ ĐÍCH): trước — B11 dựng `Action` trên CHÍNH nv001 rồi B12 không luật → E5 `llm_layer_disabled`;
+    nay — cờ bật mà chưa có `target_user` → B11 HỎI `target_user` (câu cố định, không LLM), KHÔNG dựng `Action` trên người gửi."""
+    env = Env()
+    item = {"type": "account", "confidence": 0.93, "span": text, "action_hint": "reset_password",
+            "slots": {"account_type": "ad", "target_user": target_user}}  # fmt: skip
+    gw = make_gateway({"b02_injection_judge": lambda _: Reply(NOT_ATTACK),
+                       "b03_classify": lambda _: Reply({"intents": [item], "is_multi": False})}, clock=env.clock)  # fmt: skip
+    h = GraphHarness(clock=env.clock, directory=env.directory(), llm=gw.client, rag=FakeRag())
+    audit = MemoryAudit()
+    state: dict[str, Any] = {
+        "ticket_id": "t1", "turn_id": "T1", "status": S_CLASSIFYING, "redacted_request": text, "reasoning_loops": 0,
+        "conversation": [], "requester_context": rc("nv001"), "clarification_turns": 0,
+    }  # fmt: skip
+    steps = (("b03_classify", b03_classify, S_DIAGNOSING), ("b06_diagnose", b06_diagnose, S_RETRIEVING),
+             ("b11_slots", b11_slots, S_CLARIFYING))  # fmt: skip
+    for name, module, expect in steps:
+        deps = dataclasses.replace(h.deps(), enabled_intents=FOUR)
+        run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
+                         clock=env.clock, txlog=MemoryTxLog())  # fmt: skip
+        with bind_run(run):
+            update = await wrap_node(name, module.make(deps))(dict(state))
+        state = {**state, **update}
+        assert state["status"] == expect, (name, state.get("exit_code"), state.get("escalation_reason_detail"))
     [b3] = [r for r in audit.rows if r["step"] == "B3"]
     assert b3["detail"]["dropped_slot_reasons"] == {"target_user": reason}
     assert target_user not in repr(b3["detail"])  # audit chỉ có key bị bỏ, không giá trị slot
     assert state["ctx_flags"] == {"target_is_other": True}
-    action = state["intended_action"]
-    assert (action.requested_for, action.target) == ("nv001", "user:nv001")
-    assert build_ctx(state, env.clock.now(), get_policy().business_hours).target_is_other is True
-    assert (state.get("exit_code"), state.get("escalation_reason_detail")) == ("E5", "llm_layer_disabled")
-    assert _all_matched(audit) == []
-    risk = _risk(state)
-    assert (risk.policy_decision, risk.matched_rule_id) == (None, None)
+    assert state["missing_slots"][0] == "target_user" and state.get("intended_action") is None
+    assert state["conversation"][-1]["text"] == TARGET_QUESTION
+    assert not [r for r in audit.rows if r["step"] == "B13/B14"]
 
 
 @pytest.mark.asyncio
@@ -194,8 +210,9 @@ async def test_g11_target_user_in_clarify_reply_is_other(
     rule: str | None,
 ) -> None:  # fmt: skip
     """g11 (Q-T20a-6, duyệt DỪNG 2 — agent chính viết): lượt 1 "đặt lại mật khẩu giúp em" → B11 hỏi `account_type` → lượt 2 nêu
-    NGƯỜI KHÁC → `clarify_wait` bỏ `target_user` (`unknown_key` — không phải slot đang thiếu) → `ctx_flags.target_is_other=True` →
-    B12 không luật nào (không allow/R01) → E5. Đối chứng: trả lời không nêu người khác → allow / R01 (chính cờ là nguyên nhân).
+    NGƯỜI KHÁC → `clarify_wait` bỏ `target_user` (`unknown_key` — không phải slot đang thiếu) → `ctx_flags.target_is_other=True`.
+    be-target-guard (L-03, ĐỔI CÓ CHỦ ĐÍCH): trước — B11 dựng `Action` trên nv001, B12 không luật → E5; nay — cờ bật, chưa có
+    `target_user` → B11 HỎI `target_user` (câu cố định), không `Action`. Đối chứng: trả lời không nêu người khác → allow / R01 (như cũ).
     `clarify_wait` chạy ở mức node: `interrupt` thay bằng sự kiện trả lời (như runner resume)."""
     env = Env()
     text = "Đặt lại mật khẩu giúp em"
@@ -211,9 +228,13 @@ async def test_g11_target_user_in_clarify_reply_is_other(
         "ticket_id": "t1", "turn_id": "T1", "status": S_CLASSIFYING, "redacted_request": text, "reasoning_loops": 0,
         "conversation": [], "requester_context": rc("nv001"), "clarification_turns": 0,
     }  # fmt: skip
-    steps = (("b03_classify", b03_classify, S_DIAGNOSING), ("b06_diagnose", b06_diagnose, S_RETRIEVING),
-             ("b11_slots", b11_slots, S_CLARIFYING), ("clarify_wait", clarify_wait, S_CLARIFYING),
-             ("b11_slots", b11_slots, S_ASSESSING), ("b12_assess", b12_assess, None))  # fmt: skip
+    steps: list[tuple[str, Any, str | None]] = [
+        ("b03_classify", b03_classify, S_DIAGNOSING), ("b06_diagnose", b06_diagnose, S_RETRIEVING),
+        ("b11_slots", b11_slots, S_CLARIFYING), ("clarify_wait", clarify_wait, S_CLARIFYING),
+        ("b11_slots", b11_slots, S_CLARIFYING if flag else S_ASSESSING), ("b12_assess", b12_assess, None),
+    ]  # fmt: skip
+    if flag:  # L-03: dừng ở lượt hỏi `target_user` — không tới B12
+        steps.pop()
     for name, module, expect in steps:
         deps = dataclasses.replace(h.deps(), enabled_intents=FOUR)
         run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
@@ -224,19 +245,22 @@ async def test_g11_target_user_in_clarify_reply_is_other(
         if expect is not None:
             assert state["status"] == expect, (name, state.get("exit_code"), state.get("escalation_reason_detail"),
                                                [(r["step"], r["event"]) for r in audit.rows])  # fmt: skip
-    assert state["missing_slots"] == [] and state["slots"] == {"action": "reset_password", "account_type": "ad"}
+    assert state["slots"] == {"action": "reset_password", "account_type": "ad"}
     [replied] = [r for r in audit.rows if r["event"] == "user_replied"]
     assert replied["detail"]["dropped_slot_reasons"] == ({"target_user": "unknown_key"} if flag else {})
     assert "lan_nguyen" not in repr(replied["detail"])  # audit chỉ có key bị bỏ, không giá trị slot
+    if flag:  # L-03: hỏi đích, không Action trên nv001
+        assert state["ctx_flags"] == {"target_is_other": True}
+        assert state["missing_slots"] == ["target_user"] and state.get("intended_action") is None
+        assert state["conversation"][-1]["text"] == TARGET_QUESTION
+        assert (decision, rule) == (None, None)
+        return
+    assert state["missing_slots"] == []
     action = state["intended_action"]
     assert (action.requested_for, action.target) == ("nv001", "user:nv001")
     assert build_ctx(state, env.clock.now(), get_policy().business_hours).target_is_other is flag
     risk = _risk(state)
     assert (risk.policy_decision, risk.matched_rule_id) == (decision, rule)
-    if flag:
-        assert state["ctx_flags"] == {"target_is_other": True}
-        assert (state.get("exit_code"), state.get("escalation_reason_detail")) == ("E5", "llm_layer_disabled")
-        assert _all_matched(audit) == []
 
 
 # ---- h3: prompt v3 / v2 ----------------------------------------------------------------------------------------------------
@@ -247,12 +271,12 @@ def test_h3_prompt_versions_and_contract() -> None:
     `action_hint` hợp lệ của từng intent (bảng 5.1.4)."""
     b03 = yaml.safe_load((PROMPTS / "b03_classify.yaml").read_text(encoding="utf-8"))
     b11 = yaml.safe_load((PROMPTS / "b11_extract_slots.yaml").read_text(encoding="utf-8"))
-    assert int(b03["version"]) == 3 and int(b11["version"]) == 2
+    assert int(b03["version"]) == 6 and int(b11["version"]) == 3  # lô Q1+Q12 (ĐP 09/11): b03 v6  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint); v5: M3 bỏ recent_messages; b11 v3: M4 bn-a (+ `question`)
     registry = repo_registry()
     assert len(registry) == 8
     by_id = {p.id: p for p in registry}
-    assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "recent_messages", "label_hint"}
-    assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent"}
+    assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "label_hint"}  # M3: bỏ recent_messages
+    assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent", "question"}  # M4 bn-a: đổi CÓ CHỦ ĐÍCH
     system = b03["system"]
     for word in ("device_id", "error_code", "account_type", "target_user", "software_name", "resource_path",
                  "permission_level", "duration", "renew_vpn_cert", "reissue_vpn_access", "check_vpn_status",

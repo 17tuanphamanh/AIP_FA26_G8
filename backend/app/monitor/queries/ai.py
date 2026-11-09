@@ -8,6 +8,8 @@
 - `final_state IS NOT NULL` chỉ áp cho `tokens_per_ticket` (chỉ số theo ticket). Chỉ số theo lời gọi / dòng audit /
   span không lọc (Q-M9-A2-7): mỗi dòng đã có kết quả lúc ghi; lọc thì luật 12/13 "trong ngày" bỏ sót lá đang chạy.
 - Tỉ lệ có mẫu số 0 → `None`. Nguồn pending → `null` + tên trong `unavailable` (không trả 0).
+- F12: `multi_intent_first_stop_to_reply_s` đọc `v_child_notices` (0011) + `v_leaf` (cửa sổ theo con); còn
+  `multi_intent_messages_per_turn` pending (`d30_parent_turns`).
 - JSON `detail` so sánh dạng chữ (`->> ... = 'true'`), không ép kiểu: dòng ghi lệch kiểu không làm hỏng cả truy vấn.
 """
 
@@ -28,7 +30,7 @@ from app.monitor.queries.common import (
     scalar_row,
     window_params,
 )
-from app.monitor.views import V_LEAF
+from app.monitor.views import V_CHILD_NOTICES, V_LEAF
 from app.monitor.window import VN_TZ, day_start
 
 AI_METRICS: tuple[str, ...] = (
@@ -208,6 +210,26 @@ async def intent_model_version(conn: AsyncConnection, frm: datetime, to: datetim
     return value
 
 
+async def multi_intent_first_stop_to_reply_s(conn: AsyncConnection, frm: datetime, to: datetime) -> float | None:
+    """Câu nhiều ý (P9 §5.2, D-31; F12 #45): trung vị (`percentile_cont(0.5)`, nội suy) theo ticket CHA của số giây từ khi con
+    đầu tiên dừng tới khi cha gửi tin — CHỈ vòng đầu. Nguồn `v_child_notices` (0011: notice của con là lá, không `body`).
+    - Cha vào cửa sổ ⇔ `min(created_at)` của các con (`v_leaf.parent_ticket_id`) ∈ `[frm, to)` — không đọc ticket cha (D-30).
+    - Vòng đầu = `min(delivered_round)` trên notice ĐÃ gửi; giá trị = `min(delivered_at) − min(created_at)` của notice thuộc
+      vòng đó (notice chưa gửi hoặc gửi ở vòng sau không tính, kể cả khi tạo sớm hơn).
+    - Cha chưa gửi vòng nào → không tính; không còn cha nào → None."""
+    row = await scalar_row(conn, (
+        f"WITH par AS (SELECT t.parent_ticket_id AS p FROM {V_LEAF} t WHERE t.parent_ticket_id IS NOT NULL "
+        "GROUP BY t.parent_ticket_id HAVING min(t.created_at) >= :frm AND min(t.created_at) < :to), "
+        f"r1 AS (SELECT n.parent_ticket_id AS p, min(n.delivered_round) AS r FROM {V_CHILD_NOTICES} n "
+        "JOIN par ON par.p = n.parent_ticket_id WHERE n.delivered_round IS NOT NULL GROUP BY n.parent_ticket_id), "
+        "per AS (SELECT CAST(extract(epoch FROM min(n.delivered_at) - min(n.created_at)) AS double precision) AS s "
+        f"FROM {V_CHILD_NOTICES} n JOIN r1 ON r1.p = n.parent_ticket_id AND n.delivered_round = r1.r "
+        "GROUP BY n.parent_ticket_id) "
+        "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY per.s) FROM per"
+    ), window_params(frm, to))  # fmt: skip
+    return None if row[0] is None else float(row[0])
+
+
 # Khóa → truy vấn `(conn, frm, to)`. None = chưa có nguồn: khóa đó PHẢI pending trong METRIC_SOURCES (test ghim).
 QUERIES: Mapping[str, Callable[..., Awaitable[Any]] | None] = {
     "tokens_per_ticket": tokens_per_ticket,
@@ -222,8 +244,8 @@ QUERIES: Mapping[str, Callable[..., Awaitable[Any]] | None] = {
     "intent_filter_fallback_rate": intent_filter_fallback_rate,
     "b3_llm_rate": b3_llm_rate,
     "intent_model_version": intent_model_version,
-    "multi_intent_first_stop_to_reply_s": None,  # Phase 5 (D-31)
-    "multi_intent_messages_per_turn": None,  # Phase 5 (D-31)
+    "multi_intent_first_stop_to_reply_s": multi_intent_first_stop_to_reply_s,  # F12 (D-31)
+    "multi_intent_messages_per_turn": None,  # D-31: cần lượt của ticket cha (D-30) — pending `d30_parent_turns`
 }
 
 

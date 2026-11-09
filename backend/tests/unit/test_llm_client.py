@@ -104,10 +104,11 @@ def ok(content: dict[str, Any] | str, *, tokens: tuple[int, int] = (100, 10)) ->
 
 
 def openai_provider(server: Server, name: str = "cloud_a", base_url: str = "http://llm.test/v1",
-                    json_mode: str = "json_schema") -> OpenAICompatProvider:  # fmt: skip
+                    json_mode: str = "json_schema", **kw: Any) -> OpenAICompatProvider:  # fmt: skip
+    """`kw` (vd. `extra_body`) chỉ truyền khi test đặt — mặc định dựng provider y như cấu hình không có trường thêm."""
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(server.handler))
     return OpenAICompatProvider(name, base_url=base_url, api_key=SecretStr("k-test"), json_mode=json_mode,
-                                http_client=client)  # fmt: skip
+                                http_client=client, **kw)  # fmt: skip
 
 
 def scripted(name: str, *steps: Any) -> ScriptedLLM:
@@ -131,7 +132,7 @@ async def test_smoke_scripted_end_to_end() -> None:
     out, meta = await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
     assert out == NeedTypeOut(type="info", confidence=0.9)
     assert (meta.provider, meta.model, meta.prompt_id, meta.prompt_version) == ("scripted", "scripted",
-                                                                                "b10_need_type", "1")
+                                                                                "b10_need_type", "2")
     assert meta.json_valid_first_try and not meta.cache_hit and meta.cost_usd == 0
     assert meta.prompt_hash == repo_registry().get("b10_need_type").sha256
     assert len(gw.llm.calls) == 1 and len(gw.store.rows) == 1 and len(gw.store.spans) == 1
@@ -220,6 +221,65 @@ async def test_json_object_through_gateway_carries_schema() -> None:
     await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
     system = server.bodies()[0]["messages"][0]
     assert system["role"] == "system" and SCHEMA_TEXT in system["content"]
+
+
+
+# ---- LLM-G: extra_body (DeepSeek `thinking`) — None = body y như trước; có thì chỉ THÊM khoá, không đổi trường gateway ----
+
+THINKING_OFF = {"thinking": {"type": "disabled"}}
+GATEWAY_KEYS = {"model", "messages", "max_tokens", "temperature", "response_format"}
+VPN_MESSAGES = [{"role": "system", "content": "Phân loại nhu cầu."}, {"role": "user", "content": "gia hạn VPN"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("json_mode", ["json_schema", "json_object"])
+async def test_llmg_no_extra_body_sends_exact_gateway_keys(json_mode: str) -> None:
+    server = Server(ok(NEED_OK))
+    await openai_provider(server, json_mode=json_mode).chat(provider_req(VPN_MESSAGES))
+    assert set(server.bodies()[0]) == GATEWAY_KEYS
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_none_same_body_as_omitted() -> None:
+    plain, none = Server(ok(NEED_OK)), Server(ok(NEED_OK))
+    await openai_provider(plain, json_mode="json_object").chat(provider_req(VPN_MESSAGES))
+    await openai_provider(none, json_mode="json_object", extra_body=None).chat(provider_req(VPN_MESSAGES))
+    assert none.bodies() == plain.bodies()
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_adds_thinking_and_keeps_gateway_fields() -> None:
+    plain, extra = Server(ok(NEED_OK)), Server(ok(NEED_OK))
+    await openai_provider(plain, json_mode="json_object").chat(provider_req(VPN_MESSAGES))
+    await openai_provider(extra, json_mode="json_object", extra_body=THINKING_OFF).chat(provider_req(VPN_MESSAGES))
+    (before,), (after,) = plain.bodies(), extra.bodies()
+    assert set(after) == GATEWAY_KEYS | {"thinking"} and after["thinking"] == {"type": "disabled"}
+    assert {k: after[k] for k in GATEWAY_KEYS} == before
+    assert (after["model"], after["temperature"], after["max_tokens"]) == ("m-cloud_a", 0, 400)
+    assert after["response_format"] == {"type": "json_object"}
+    assert after["messages"][0]["content"].endswith(SCHEMA_TEXT)  # ghi chú json vẫn ở cuối system message
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_copied_not_shared() -> None:
+    server = Server(ok(NEED_OK))
+    cfg = {"thinking": {"type": "disabled"}}
+    provider = openai_provider(server, json_mode="json_object", extra_body=cfg)
+    cfg["thinking"]["type"] = "enabled"  # sửa dict cấu hình sau khi dựng: provider không thấy
+    await provider.chat(provider_req(VPN_MESSAGES))
+    assert server.bodies()[0]["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_llmg_extra_body_through_gateway() -> None:
+    server = Server(ok(NEED_OK))
+    gw = make_gateway(runtime=runtime((target("cloud_a"),)),
+                      providers={"cloud_a": openai_provider(server, json_mode="json_object",
+                                                            extra_body=THINKING_OFF)})  # fmt: skip
+    out, _ = await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut)
+    (body,) = server.bodies()
+    assert out == NeedTypeOut(type="info", confidence=0.9)
+    assert body["thinking"] == {"type": "disabled"} and body["response_format"] == {"type": "json_object"}
 
 
 def test_smoke_check_llm_scripted_loads_presets() -> None:
@@ -439,7 +499,8 @@ async def test_d8_script_exhausted_is_not_llm_unavailable() -> None:
         await gw.client.complete("fast", "b10_need_type", NEED, NeedTypeOut, cache_policy="bypass")
     with pytest.raises(ScriptExhausted, match="không có kịch bản"):
         await gw.client.complete("fast", "b11_clarify_question",
-                                 {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn"}, QuestionOut)
+                                 {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
+                                  "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ", "user_request": "VPN báo lỗi 809", "last_question": "(chưa có)",}, QuestionOut)
     assert len(gw.llm.calls) == 3  # không retry ScriptExhausted
     assert [r.error for r in gw.store.rows] == [None, "ScriptExhausted", "ScriptExhausted"]
 
@@ -561,7 +622,9 @@ async def test_d17_spend_read_failure_blocks_paid_targets_only() -> None:
 @pytest.mark.asyncio
 async def test_d17_cost_added_immediately_without_waiting_refresh() -> None:
     server = Server(ok(ANSWER_OK, tokens=(1000, 1000)))
-    store = MemoryLlmStore(base_spend=38.0 - 0.001)
+    # Q2 M2: b10_answer v3 dài hơn → giữ chỗ xấu nhất ≈ 0,00101 USD (433 token vào + 900 ra) > khoảng trống 0,001 cũ. Khoảng trống
+    # 0,0015: lời gọi 1 lọt; lời gọi 2 bị chặn CHỈ vì đã cộng 0,00125 (không cộng thì 0,0015 ≥ 0,00101 vẫn lọt).
+    store = MemoryLlmStore(base_spend=38.0 - 0.0015)
     gw = make_gateway(runtime=runtime((target("cloud_a"),)), providers={"cloud_a": openai_provider(server)},
                       store=store)  # fmt: skip
     _, meta = await gw.client.complete("strong", "b10_answer", ANSWER_VARS, AnswerOut)

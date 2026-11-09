@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from tests.fakes.desk import MASK, SECRET, MaskingGuard
 from tests.fakes.graph import Crash
 from tests.unit._t20b import (
+    ADOBE_PRINTER,
     TC34,
     TC35,
     Flow,
@@ -30,6 +31,7 @@ from tests.unit._t20b import (
     classify,
     extend_item,
     make_flow,
+    oos_item,
     reset_item,
 )
 
@@ -214,9 +216,9 @@ async def test_q10_slow_read_skips_only_that_step(slow: str) -> None:
 
 
 async def test_q11_missing_child_submit_backfilled_once_no_restart() -> None:
-    f = make_flow(classify(reset_item(), adobe_item()))
-    await f.submit(TC34)
-    assert (await f.waiting("T1")) == "parent_wait"  # con 2 chờ duyệt
+    f = make_flow(classify(adobe_item(), oos_item()))
+    await f.submit(ADOBE_PRINTER)
+    assert (await f.waiting("T1")) == "parent_wait"  # D-77: vòng 1 đã báo, con 1 chờ duyệt → cha chờ con
     lost = [k for k, e in f.h.effects.rows.items() if e["kind"] == "child_submit" and e["result_ref"] == "started:T1-2"]
     assert len(lost) == 1
     del f.h.effects.rows[lost[0]]  # chết giữa lượt lồng của con 2 và lúc ghi `child_submit`

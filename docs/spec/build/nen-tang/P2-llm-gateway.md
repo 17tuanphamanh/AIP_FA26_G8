@@ -338,7 +338,7 @@ Mỗi lời gọi (kể cả cache hit) ghi 1 span `llm:<prompt_id>` + 1 dòng `
 - **Dev:** `ollama` trong compose, model khoảng 7–8B lượng tử 4-bit cho vai trò fast.
 - **Máy GPU:** `vllm serve <model> --guided-decoding-backend …` cho throughput cao và logprobs (cách "xác suất token" của RQ2).
 - **Chọn model bằng probe**, không theo cảm tính:
-  - Probe intent 40 câu (F1).
+  - Probe intent 45 câu (macro-F1 5 lớp — chốt 15/10/2026).
   - Tỉ lệ JSON hợp lệ trên 100 lời gọi.
   - p95 độ trễ.
   - Ghi kết quả vào `decisions.md`.
@@ -382,3 +382,14 @@ Phase 6 chặng 6B hiện thực theo `build/phase6-thiet-ke-chi-tiet.md` mục 
 - **§5, §8 cache B14:** 2 prompt `b14_risk_estimate`, `b14_risk_vote` để `cache: default` trong file prompt; **estimator** truyền `cache_policy="bypass"` khi `EVAL_MODE=false` (vận hành không bao giờ cache B14) và `"default"` khi đánh giá (cache eval tái lập). Không dùng danh sách `no_cache_prompts`.
 - **§6, §7 prompt + whitelist:** thêm `b14_risk_vote` (câu hỏi nhị phân, schema `RiskVoteOut`). `allowed_vars` của `b14_risk_estimate` = `[intended_action, risk_context, evidence]`, của `b14_risk_vote` thêm `sample_idx` — dựng **chỉ** qua hàm thuần `risk/estimator.estimator_vars`; `risk_context` bỏ `now`, `captured_at`, `user_id`, `manager_id`. Schema `RiskEstimateOut {prob_needs_human, factors: list[FactorCode] ≤ 5, rationale ≤ 600}` — `rationale` không ra khỏi estimator.
 - **Nợ 6C (N1):** `intended_action` hiện là `Action.model_dump` đầy đủ → giá trị slot chữ tự do trong `Action.params` (vd `software_name`) vào prompt; 6C thêm danh sách trắng `params` theo `action_type` trước khi nối estimator cho software/access.
+
+### Chốt khi hiện thực mốc G — LLM-G (17/10/2026)
+
+Gắn LLM thật (DeepSeek) theo `PROGRESS.md` mục "Mốc G — chặng LLM-G": code `0e74095`, tiến độ `90deec7`, CI 39027370481 xanh. Khi lệch, mục PROGRESS đó thắng (trừ bất biến và mục [Chốt]).
+
+- **§5 `extra_body` (khoá mới của provider):** `None` thì body gửi đi như cũ. Validator từ chối 26 khoá mà gateway đã tự đặt hoặc làm hỏng cách đọc phản hồi (so sau strip + lower): `model`, `messages`, `max_tokens`, `max_completion_tokens`, `temperature`, `response_format`, `timeout`, `stream`, `stream_options`, `n`, `tools`, `tool_choice`, `functions`, `function_call`, `parallel_tool_calls`, `logprobs`, `top_logprobs`, `modalities`, `audio`, `prediction`, `stop`, `top_p`, `seed`, `logit_bias`, `presence_penalty`, `frequency_penalty`. Lúc nạp: giá trị phải dựng được JSON (`allow_nan=False`); model cấu hình đặt `hide_input_in_errors=True` nên lỗi nạp không in giá trị. Provider sao chép sâu `extra_body` cho mỗi lời gọi. Mutation 7/7 (`scripts/mutation/mutate_llmg.py`).
+- **§5 provider `cloud_a` (DeepSeek):** `json_mode: json_object` — trả lời Q-3d-3 cho provider này; gateway vẫn kiểm schema như cũ (một lần sửa). `extra_body: {thinking: {type: disabled}}`.
+- **§5 `pricing`:** 2 dòng model DeepSeek, lấy **giá giờ cao điểm** → `cost_usd` là cận trên (lượt DỪNG 2: hệ thống ghi 0,053 USD, nhà cung cấp tính khoảng 0,02 USD). `spend.cap_usd` giữ 38. Hạn mức chi đặt cả ở phía nhà cung cấp (trả trước, có cảnh báo số dư).
+- **§8 khoá cache:** khoá chưa gồm `json_mode` và `extra_body` (Việc treo 36). Tới khi sửa: đổi một trong hai giá trị này thì xoá bảng `llm_cache` trước khi đo **[Đề xuất]**.
+- **§12–13 chọn model: CHƯA chốt.** Một vòng đo trên stack (fast = strong = model rẻ): `make vpn-smoke` 31 PASS / 9 FAIL — `b10_answer` bị cắt ở `max_tokens` 900 (tc05), `b10_need_type` xếp câu báo lỗi thành `info` (tc06); NỢ-3-2 còn mở. Chốt model sau khi sửa prompt (DỪNG 3) + probe JSON hợp lệ ≥ 99% / 200 lời gọi; ghi vào `decisions.md`. Spec không chép tên model — xem `config/llm.yaml` và `.env`.
+- Việc treo 37 (YAML lỗi cú pháp in dòng hỏng vào traceback khởi động) và 38 (cân nhắc cấm thêm khoá định tuyến trong `extra_body`) — ghi ở PROGRESS, không chặn.

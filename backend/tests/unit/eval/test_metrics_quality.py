@@ -39,6 +39,7 @@ from app.eval.predictions import PredictionRecord
 from app.rag.ingest.config import GATE_TOP_DOCS
 from app.rag.ingest.gate import EvalItem
 from app.rag.ingest.gate import metrics as gate_metrics
+from tests.unit.eval.contract_v11 import V11
 
 TOL = 1e-9
 _ids = itertools.count()
@@ -61,6 +62,7 @@ def leaf(
         "final_state": "S_RESOLVED", "exit_code": None, "close_reason": None, "resolution_path": None,
         "has_approval": False, "clarification_turns": 0,
         "intent": intent, "gold_intent": gold_intent, "doc_ids": docs, "gold_doc_ids": gold_docs,
+        **V11,
     }  # fmt: skip
     return PredictionRecord.model_validate(data)
 

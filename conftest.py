@@ -13,6 +13,8 @@ Kèm: `ML_SERVICE_TOKEN` ngẫu nhiên mỗi phiên (3-Q21, Q-3a-5): backend/wor
    test kiểm luật đó tự xoá biến (monkeypatch). Không phải token thật nào — không có ml-service nào nhận nó.
 Kèm: `LLM_BACKEND=scripted` (3-Q26, PLAN-3d Q-3d-13): bắt buộc mọi env; test không bao giờ gọi LLM thật.
    Test kiểm luật fail-closed tự xoá/đổi biến.
+Kèm: 3 ngưỡng 429 (Phase 5 gói 2b, D-54 a) = số lớn: test dựng nhiều ticket cho một người (DB Postgres chung, FakeClock cố định
+   → mọi ticket nằm trong cùng cửa sổ). Không có giá trị "tắt"; test của 429 tự truyền số nhỏ, test mặc định của Settings tự xoá biến.
 Kèm: chặn mạng của SDK `openai` (PLAN-3d, chốt DỪNG 1). SDK 3.x đi qua `httpx2`, respx không chặn được: provider
    thật dựng thiếu transport giả sẽ gọi thẳng ra Internet (CI không có sandbox). Transport thật của `httpx2` bị thay
    bằng hàm ném `NetworkBlocked` — lỗi này không phải `httpx2.RequestError` nên SDK không bọc thành lỗi kết nối,
@@ -29,6 +31,8 @@ os.environ["APP_ENV_FILE"] = ""
 os.environ["APP_ENV"] = "test"
 os.environ["ML_SERVICE_TOKEN"] = secrets.token_urlsafe(32)
 os.environ["LLM_BACKEND"] = "scripted"
+for _rate in ("TICKET_RATE_10MIN", "TICKET_RATE_HOUR", "MESSAGE_RATE_10MIN"):  # Phase 5 (gói 2b)
+    os.environ[_rate] = "100000"
 
 collect_ignore_glob = [".env*"]
 

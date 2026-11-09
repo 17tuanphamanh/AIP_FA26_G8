@@ -9,8 +9,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from app.core.clock import FakeClock
+from app.domain.states import S_DIAGNOSING
+from app.graph.builder import wrap_node
+from app.graph.context import RunContext, bind_run
+from app.graph.tracing import short_traceback
 from app.settings import get_slots
 from app.tools.breaker import BreakerBoard
 from app.tools.models import LockoutList
@@ -22,6 +27,8 @@ from app.tools.registry import (
     ToolResult,
 )
 from app.tools.specs import REGISTRY, SPECS, TOOL_MAP, ToolSpecError, validate_specs
+from tests.fakes.executor import MemoryTxLog
+from tests.fakes.graph import MemoryAudit, MemoryEffects, MemorySpans
 from tests.unit._http_errors import status_error, timeout_error
 
 REPO = Path(__file__).resolve().parents[3]
@@ -184,7 +191,7 @@ async def test_read_success_returns_validated_model_and_unpacks() -> None:
 async def test_404_and_empty_list_are_empty_not_errors() -> None:
     reg = _registry(FakeClock(), check_catalog_entry=Handler(status_error(404)),
                     check_lockout_history=Handler([]))  # fmt: skip
-    missing = await reg.call("check_catalog_entry", {"software_name": "utorrent"}, caller_step="B6")
+    missing = await reg.call("check_catalog_entry", {"software_name": "photoshop"}, caller_step="B6")
     assert (missing.data, missing.error, missing.empty) == (None, None, True)
     empty = await reg.call("check_lockout_history", {"user_id": "nv002"}, caller_step="B11")
     assert empty.error is None and empty.empty and empty.data == LockoutList([])
@@ -304,3 +311,80 @@ async def test_unexpected_exception_propagates_and_counts_as_failure() -> None:
             await reg.call("check_last_connection", {"user_id": "nv001"}, caller_step="B6")
     result = await reg.call("check_last_connection", {"user_id": "nv001"}, caller_step="B6")
     assert result.error == CIRCUIT_OPEN
+
+
+# ---- F15 (Việc treo 18): lỗi hợp đồng không chép giá trị (input của ta / chữ của hệ thống ngoài) -----------------------
+
+CANARY = "CANARY-F15-xyz"
+
+
+def _assert_no_value(exc: ToolContractError, where: str) -> None:
+    assert CANARY not in str(exc)
+    assert f"('{where}', " in str(exc)  # loc + type, không msg
+    assert exc.__cause__ is None and exc.__suppress_context__ and exc.__context__ is None
+    assert CANARY not in short_traceback(exc)
+
+
+@pytest.mark.asyncio
+async def test_f15_a_bad_input_message_has_loc_type_only() -> None:
+    h = Handler([])
+    reg = _registry(FakeClock(), check_account_status=h)
+    with pytest.raises(ToolContractError, match="input sai schema") as info:
+        await reg.call("check_account_status", {"user_id": "nv001", "account_type": CANARY}, caller_step="B6")
+    _assert_no_value(info.value, "account_type")
+    assert "literal_error" in str(info.value) and h.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_f15_b_bad_output_message_has_loc_type_only() -> None:
+    reg = _registry(FakeClock(), check_catalog_entry=Handler({"name": CANARY}))
+    with pytest.raises(ToolContractError, match="output sai schema") as info:
+        await reg.call("check_catalog_entry", {"software_name": "zoom"}, caller_step="B6")
+    _assert_no_value(info.value, "display_name")
+    assert "missing" in str(info.value)
+
+
+@pytest.mark.asyncio
+async def test_f15_c_boundary_e9_audit_span_log_have_no_canary(caplog: pytest.LogCaptureFixture) -> None:
+    clock = FakeClock()
+    reg = _registry(clock, check_catalog_entry=Handler({"name": CANARY}))
+
+    async def node(state: Any) -> dict[str, Any]:
+        await reg.call("check_catalog_entry", {"software_name": "zoom"}, caller_step="B6")
+        return {}
+
+    audit, spans = MemoryAudit(), MemorySpans()
+    run = RunContext(turn_id="T1", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=spans,
+                     clock=clock, txlog=MemoryTxLog())  # fmt: skip
+    state = {"ticket_id": "t1", "turn_id": "T1", "status": S_DIAGNOSING, "reasoning_loops": 1}
+    with bind_run(run):
+        update = await wrap_node("b06_diagnose", node)(state)
+    assert update["exit_code"] == "E9"
+    [row] = audit.rows
+    assert row["event"] == "unhandled_exception"
+    assert row["detail"]["exception"].startswith("ToolContractError: check_catalog_entry: output sai schema")
+    assert CANARY not in row["detail"]["exception"] and CANARY not in row["detail"]["traceback"]
+    assert "ValidationError" not in row["detail"]["traceback"]  # chuỗi exception không còn lỗi pydantic gốc
+    [span] = [s for s in spans.spans if s.status == "error"]
+    assert CANARY not in repr(span.attributes)
+    assert CANARY not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "args", "step"), [
+    ("check_catalog_entry", {"software_name": "zoom"}, "B6"),  # đọc
+    ("install_software", INSTALL, "B17"),  # ghi
+])  # fmt: skip
+async def test_f15_d_http_4xx_contract_error_drops_url(tool: str, args: dict[str, Any], step: str) -> None:
+    """4xx ngoài 404/429 → ToolContractError: `HTTPStatusError` mang URL (có giá trị slot) không được nằm trong chuỗi exception."""
+    req = httpx.Request("GET", f"http://mock:8100/software/catalog/{CANARY}")
+    with pytest.raises(httpx.HTTPStatusError) as raised:  # lỗi thật của `raise_for_status` (adapters/http.py): thông điệp có URL
+        httpx.Response(400, request=req, json={"detail": CANARY}).raise_for_status()
+    err = raised.value
+    assert CANARY in str(err)
+    reg = _registry(FakeClock(), **{tool: Handler(err)})
+    with pytest.raises(ToolContractError, match="HTTP 400") as info:
+        await reg.call(tool, args, caller_step=step)
+    exc = info.value
+    assert CANARY not in str(exc) and CANARY not in short_traceback(exc)
+    assert exc.__cause__ is None and exc.__suppress_context__

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PURGED_TEXT } from "../../api/errors.ts";
 import type { Me, TicketView } from "../../api/types.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
 import { ChatHome } from "./ChatHome.tsx";
@@ -98,7 +99,9 @@ describe("t25: ChatPage — hỏi thêm → trả lời → đi tiếp", () => {
 });
 
 // t26 (12b Q-fe-18): câu yêu cầu chỉ hiện khi 202 có notices rỗng; notices có → câu gốc KHÔNG ở đâu cả (bong bóng,
-// tiêu đề, thanh bên). Tiêu đề / "Gần đây" chỉ từ câu yêu cầu, không từ câu trả lời. Tải lại → "Yêu cầu của bạn".
+// tiêu đề, thanh bên). Tiêu đề / "Gần đây" chỉ từ câu yêu cầu, không từ câu trả lời.
+// Sửa có chủ ý (Q-fe-18 (a), Nợ API #8): tải lại / mở bằng URL mà ticket có `request_text` (câu ĐÃ CHE) → đúng 1 bong
+// bóng + tiêu đề từ nó; có bộ nhớ phiên → giữ (b), không nhân đôi; `request_text` null hoặc thiếu khoá → như cũ.
 describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
   const EMPLOYEE: Me = {
     user_id: "nv001",
@@ -107,7 +110,8 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
   };
   const REPLY = { role: "user", text: "LAP-0342" }; // câu TRẢ LỜI khi hỏi thêm — không được thành tiêu đề
 
-  function mount(notices: string[], at = "/chat") {
+  function mount(notices: string[], at = "/chat", request_text?: string | null) {
+    const extra = request_text === undefined ? {} : { request_text };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -115,7 +119,7 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
           return json(202, { ticket_id: ID, status: "S_NEW", notices });
         }
         if (url === `/api/tickets/${ID}`) {
-          return json(200, view({ status: "S_DIAGNOSING", waiting_for: null, conversation: [QUESTION, REPLY] }));
+          return json(200, view({ status: "S_DIAGNOSING", waiting_for: null, conversation: [QUESTION, REPLY], ...extra }));
         }
         return json(404, { detail: "not_found" });
       }),
@@ -147,6 +151,7 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
   const heading = () => screen.getByRole("heading", { level: 1 }).textContent;
   const recent = () => screen.getByRole("list", { name: "Yêu cầu gần đây" }).textContent;
   const bubble = () => document.querySelector('[data-role="request"]')?.textContent;
+  const bubbles = () => document.querySelectorAll('[data-role="request"]').length;
 
   it("notices rỗng → hiện câu vừa gõ ở bong bóng, tiêu đề, thanh bên; câu trả lời không thành tiêu đề", async () => {
     const unmount = mount([]);
@@ -178,13 +183,87 @@ describe("t26: câu yêu cầu trong bộ nhớ phiên", () => {
     }
   });
 
-  it("tải lại trang (bộ nhớ phiên trống) → tiêu đề \"Yêu cầu của bạn\", không bong bóng, câu trả lời không thành tiêu đề", async () => {
+  it("tải lại trang, ticket thiếu khoá request_text (backend cũ) → tiêu đề \"Yêu cầu của bạn\", không bong bóng, câu trả lời không thành tiêu đề", async () => {
     const unmount = mount([], `/chat/${ID}`);
     try {
       await screen.findByText(QUESTION.text);
       expect(heading()).toBe(DEFAULT_TITLE);
       expect(bubble()).toBeUndefined();
-      expect(screen.getByText("Chưa có yêu cầu nào trong phiên này.")).toBeTruthy();
+      expect(screen.getByText("Chưa có yêu cầu nào.")).toBeTruthy();
+    } finally {
+      unmount();
+    }
+  });
+  it("tải lại trang, có request_text → đúng 1 bong bóng người dùng (trên hội thoại) + tiêu đề từ câu đã che", async () => {
+    const masked = "Không vào được VPN, gọi giúp em số <SĐT_1>";
+    const unmount = mount([], `/chat/${ID}`, masked);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(1);
+      expect(bubble()).toBe(masked);
+      expect(heading()).toBe(masked);
+      expect(heading()).not.toBe(REPLY.text);
+      const req = document.querySelector('[data-role="request"]')!;
+      expect(req.compareDocumentPosition(screen.getByText(QUESTION.text)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByText("Chưa có yêu cầu nào.")).toBeTruthy(); // GET /api/tickets 404 ở fetch giả → chỉ ticket trong phiên (rỗng)
+    } finally {
+      unmount();
+    }
+  });
+
+  it("có bộ nhớ phiên (mine) + ticket có request_text → giữ hành vi (b), không nhân đôi bong bóng", async () => {
+    const unmount = mount([], "/chat", "bản che từ backend — không được hiện");
+    try {
+      await send("VPN công ty dùng cổng nào?");
+      expect(bubbles()).toBe(1);
+      expect(bubble()).toBe("VPN công ty dùng cổng nào?");
+      expect(heading()).toBe("VPN công ty dùng cổng nào?");
+      expect(document.body.textContent).not.toContain("bản che từ backend");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("tải lại trang, request_text toàn khoảng trắng → như null: \"Yêu cầu của bạn\", không bong bóng", async () => {
+    const unmount = mount([], `/chat/${ID}`, "  \n\t  ");
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(0);
+      expect(heading()).toBe(DEFAULT_TITLE);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("tải lại trang, request_text đúng 500 ký tự (backend đã cắt) → bong bóng thêm \"…\" ở cuối; dưới 500 → không thêm", async () => {
+    const cut = `${"Không vào được VPN từ nhà. ".repeat(20)}`.slice(0, 500);
+    expect(Array.from(cut).length).toBe(500);
+    let unmount = mount([], `/chat/${ID}`, cut);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(1);
+      expect(bubble()).toBe(`${cut}…`);
+      expect(heading()!.endsWith("…")).toBe(true);
+      expect(heading()!.length).toBeLessThanOrEqual(60); // tiêu đề vẫn cắt riêng ở 60 như cũ
+    } finally {
+      unmount();
+    }
+    const short = cut.slice(0, 499);
+    unmount = mount([], `/chat/${ID}`, short);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubble()).toBe(short);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("tải lại trang, request_text null → như cũ: \"Yêu cầu của bạn\", không bong bóng", async () => {
+    const unmount = mount([], `/chat/${ID}`, null);
+    try {
+      await screen.findByText(QUESTION.text);
+      expect(bubbles()).toBe(0);
+      expect(heading()).toBe(DEFAULT_TITLE);
     } finally {
       unmount();
     }
@@ -317,6 +396,74 @@ describe("t123: final_state '__proto__' / 'constructor' / 'toString' → câu k�
       expect((await screen.findByTestId("final-note")).firstElementChild?.textContent).toBe(
         "Yêu cầu đã hoàn tất. Cần thêm gì, bạn tạo yêu cầu mới nhé.",
       );
+    } finally {
+      page.done();
+    }
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ t201 (hợp đồng sửa lần 3, ĐP 26/10 23:51)
+
+describe("t201: tạo ticket 503 `strategy_unavailable` → đúng câu, giữ chữ đã gõ, KHÔNG tự gửi lại (kể cả có Retry-After), không lộ mã", () => {
+  it("1 lần gọi; câu đúng chữ; ô nhập giữ nguyên; người dùng bấm Gửi lại → gọi lần 2", async () => {
+    const TEXT = "Tôi không vào được VPN từ sáng nay.";
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ detail: "strategy_unavailable" }), { status: 503, headers: { "Content-Type": "application/json", "Retry-After": "1" } }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const queryClient = new QueryClient();
+    const rendered = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/chat"]}>
+          <Routes>
+            <Route path="/chat" element={<ChatHome />} />
+            <Route path="/chat/:ticketId" element={<p>trang ticket</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    try {
+      const box = screen.getByLabelText("Mô tả vấn đề") as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: TEXT } });
+      fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe("Hệ thống tạm thời chưa nhận yêu cầu, vui lòng thử lại sau ít phút.");
+      expect(box.value).toBe(TEXT);
+      expect(document.body.textContent).not.toMatch(/strategy_unavailable|503|tự thử lại/);
+      // Quá Retry-After (1 giây) mà vẫn chỉ 1 lần gọi — không tự gửi lại.
+      await new Promise((r) => setTimeout(r, 1_200));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText("trang ticket")).toBeNull();
+      // Người dùng tự bấm gửi lại → đúng 1 lần gọi nữa, cùng chữ.
+      fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+      const [, init] = fetchSpy.mock.calls[1] as unknown as [string, RequestInit];
+      expect(JSON.parse(String(init.body))).toStrictEqual({ text: TEXT });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(box.value).toBe(TEXT);
+    } finally {
+      rendered.unmount();
+      queryClient.clear();
+    }
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ M2 bn-a: hội thoại đã dọn (410)
+
+describe("M2: GET ticket 410 conversation_purged → câu chính sách lưu trữ, dừng polling", () => {
+  it("410 → tiêu đề đúng câu ĐP chốt, không 'Chưa tải được', không alert; chỉ 1 lần GET (không hỏi lại)", async () => {
+    const page = mountTicket(() => json(410, { detail: "conversation_purged" }));
+    try {
+      const heading = await screen.findByRole("heading", { name: PURGED_TEXT });
+      expect(heading).toBeTruthy();
+      expect(PURGED_TEXT).toBe("Nội dung hội thoại đã được dọn theo chính sách lưu trữ.");
+      expect(screen.queryByText("Chưa tải được yêu cầu.")).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/410|conversation_purged/);
+      await new Promise((r) => setTimeout(r, 2500));
+      const gets = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter((c) => c[0] === `/api/tickets/${ID}`);
+      expect(gets).toHaveLength(1);
     } finally {
       page.done();
     }

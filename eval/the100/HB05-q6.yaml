@@ -1,0 +1,38 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 39 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB05-q5, HB05-q6
+id: HB05-q6
+family: HB05
+source: bien_the
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-17T09:30:00+07:00'
+faults: []
+turns:
+- 'LAP-0501 của em có vấn đề với chứng chỉ VPN, cuối tuần IT có ai xử lý được không ạ?'
+- on_question_about: action
+  reply: 'Dạ em cần gia hạn chứng chỉ ạ.'
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+  facts:
+    cert_days_to_expiry: 5
+    cert_status: valid
+    device_count: 1
+    device_owner_is_requester: true
+    device_registered: true
+    has_registered_device: true
+labels:
+  annotator_1: HITL
+  annotator_2: AUTO

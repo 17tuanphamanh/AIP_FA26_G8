@@ -268,9 +268,10 @@ def test_a2_only_point1_rows_does_not_demand_points_2_to_8() -> None:
 
 
 def test_a2_unrelated_events_not_checked() -> None:
-    """Dòng có bước trùng nhưng sự kiện không thuộc bảng (B15 nhánh E, B13/B14 `llm_layer_disabled`, B3 khác, OVERRIDE) → không
-    bị đòi trường điểm 1/4/5."""
-    rows = [_row(30, "B15", "no_valid_approver"), _row(31, "B13/B14", "llm_layer_disabled"), _row(32, "B3", "injection_checked"),
+    """Dòng có bước trùng nhưng sự kiện không thuộc bảng (B15 nhánh E, B3 khác, OVERRIDE) → không bị đòi trường điểm 1/4/5.
+    Nhánh be-audit-diem4 (nợ ca (b), D-67): B13/B14 `llm_layer_disabled` NAY được soát như điểm 4 — bỏ khỏi danh sách này, kiểm ở
+    `test_audit_check_llm_down.py`."""
+    rows = [_row(30, "B15", "no_valid_approver"), _row(32, "B3", "injection_checked"),
             _row(33, "OVERRIDE", "override_recorded", {"reason_code": "policy_gap"}, overrider_id="l1_02")]  # fmt: skip
     assert required(T, rows, final_state=None) == []
 

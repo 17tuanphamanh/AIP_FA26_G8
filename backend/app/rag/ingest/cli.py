@@ -44,7 +44,7 @@ async def _build_deps(settings: Settings) -> AsyncIterator[IngestDeps]:
     token = settings.require_ml_token()
     http = httpx.AsyncClient(base_url=settings.ml_service_url)
     qdrant = AsyncQdrantClient(url=settings.qdrant_url, timeout=60)
-    engine = create_async_engine(settings.database_url, pool_size=2)
+    engine = create_async_engine(settings.database_url, pool_size=2, hide_parameters=True)
     try:
         ml = MlClient(http, token.get_secret_value())
         yield IngestDeps(

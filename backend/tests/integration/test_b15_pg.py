@@ -190,7 +190,8 @@ async def test_x14_x14b_pg_rerun_after_kill_old_approval_via_sql_peek_no_ad(db: 
     """x14 + x14b trên Postgres (P9, TC33, Q-4b-3): x14/x14b unit chạy trên `MemoryEffects`, TC33 PG (`test_graph_pg`) còn B15 GIẢ —
     đây là test duy nhất chạy `SqlEffectStore.peek` thật. Lần 1 tạo phiếu rồi chết tại hook; giữa hai lần chạy `l1_01` bị disabled VÀ
     AD sập; lần 2 (runtime mới, CÙNG `turn_id` + `reasoning_loops` như recover) → `S_PENDING_APPROVAL` với phiếu cũ, vẫn 1 phiếu,
-    đúng 1 `notify_approver` cho `l1_01`, 0 lời gọi AD, audit `queued` `recovered=true`."""
+    đúng 1 `notify_approver` cho `l1_01`, 0 lời gọi AD, audit `queued` `recovered=true`. Q3 M4: hook giết process TRƯỚC `queued()` →
+    lần 1 chưa gửi tin nào; lần 2 gửi đúng 1 tin "chờ duyệt" (`once` sub `approval_pending`)."""
     clock = FakeClock(NOW)
     ticket, turn = f"tk-{uuid4().hex[:8]}", f"turn-{uuid4().hex[:8]}"
     await create_ticket(rw, ticket, created_at=clock.now())
@@ -215,7 +216,7 @@ async def test_x14_x14b_pg_rerun_after_kill_old_approval_via_sql_peek_no_ad(db: 
     ]
     assert notified == [(str(aid), "l1_01")]
     assert await _rows(rw, "SELECT kind, count(*) FROM side_effects WHERE ticket_id = :t GROUP BY kind ORDER BY kind",
-                       t=ticket) == [("approval_create", 1), ("notify_approver", 1)]  # fmt: skip
+                       t=ticket) == [("approval_create", 1), ("notify_approver", 1), ("notify_user", 1)]  # fmt: skip
     [(q_approver, detail)] = await _rows(rw, "SELECT approver_id, detail FROM audit_logs WHERE ticket_id = :t AND step = 'B15' "
                                              "AND event = 'queued'", t=ticket)  # fmt: skip
     assert (q_approver, detail["recovered"], detail["rejected_candidates"], detail["choice_reason"]) == (

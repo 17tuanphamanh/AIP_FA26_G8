@@ -43,6 +43,7 @@ class A:
 @dataclass(frozen=True)
 class E:
     is_deny_case: bool
+    exit_code: str = "E1"
 
 
 def _for(user_id: str) -> Action:
@@ -106,6 +107,13 @@ def test_can_close_escalation() -> None:
     assert can_close_escalation(_p("l2_01", "l2"), E(True), "completed") == "unprocessable"
     assert can_close_escalation(_p("l2_01", "l2"), E(True), "confirmed_denial") == "allow"
     assert can_close_escalation(_p("it_mgr01", "manager"), E(False), "completed") == "forbidden"
+    # P4 tuần 8: L1 cũng đóng được (escalation:handle — P6 §5.3); `completed` cho E5/E6 → 422 kể cả khi `is_deny_case` sai (B20:303)
+    assert can_close_escalation(_p("l1_01", "l1"), E(False), "completed") == "allow"
+    assert can_close_escalation(_p("nv001", "employee"), E(False), "confirmed_denial") == "forbidden"
+    for code in ("E5", "E6"):
+        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "completed") == "unprocessable"
+        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "confirmed_denial") == "allow"
+        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "reopened_as_new") == "allow"
 
 
 def test_can_read_audit() -> None:

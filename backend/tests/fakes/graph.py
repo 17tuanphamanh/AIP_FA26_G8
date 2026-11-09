@@ -20,19 +20,34 @@ import importlib.util
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from app.approval.store import ApprovalRow, InboxRow, NoticeKind
+from app.approval.store import (
+    ApprovalRow,
+    InboxRow,
+    NoticeKind,
+    OpenWaitKind,
+    PolicyMatchRow,
+)
 from app.audit.writer import check_audit_row
 from app.auth.models import UserRecord
 from app.auth.service import auth_config, lock_policy
 from app.auth.user_sync import AdUserSync, AuthApproverUsers
 from app.auth.username_hash import username_key
 from app.core.clock import Clock, FakeClock
-from app.db.escalations import QueueItem
+from app.db.escalations import (
+    ClosedEscalation,
+    CloseRequest,
+    EscalationHead,
+    QueueItem,
+    QueueKey,
+    QueueStatus,
+    ReopenHook,
+    close_audit_row,
+)
 from app.db.lineage import LINEAGE_KEY, check_lineage_row
 from app.db.models import CONFLICT_TYPES, NOTICE_KINDS, NOTICE_NEEDS
 from app.db.runtime import (
@@ -56,8 +71,10 @@ from app.domain.children import (
     child_index,
     child_ref,
 )
+from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
+from app.domain.states import S_ESCALATED
 from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
 from app.graph.checkpoint import make_serde
@@ -66,7 +83,14 @@ from app.graph.ports import SpanRecord, TicketBusy, ToolCaller
 from app.graph.runner import Runner
 from app.llm import LlmPort
 from app.notify.child import ChildAwareNotifier
-from app.settings import Settings, get_escalation_templates, get_policy, open_approvers
+from app.settings import (
+    DedupConfig,
+    Settings,
+    get_dedup,
+    get_escalation_templates,
+    get_policy,
+    open_approvers,
+)
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.fakes.ad_seed import ROSTER_CHAIN, seed_ad_records
 from tests.fakes.auth import InMemoryAuthStore, RecordingSink
@@ -258,8 +282,9 @@ class MemoryDeadlines:
                 if n["child_ticket_id"] == child_id and n["delivered_at"] is None and n["needs"] != "none"]  # fmt: skip
 
     async def parents_to_wake(self, limit: int) -> list[str]:
-        """Như SQL (P12 a, 2 vế): cha chưa kết thúc mà (1) số `child_submit` (khác `result_ref`) < số con, HOẶC (2) mọi con đã dừng theo
-        điều kiện `children_view` (`final` VÀ không lượt mở, hoặc notice chưa gửi `needs≠none`)."""
+        """Như SQL (P12 a, 2 vế): cha chưa kết thúc mà (1) số `child_submit` (khác `result_ref`) < số con, HOẶC (2) điều kiện `round_ready`
+        (D-77): mọi con đã dừng (`final` hoặc phiếu `pending`, VÀ không lượt mở; hoặc notice chưa gửi `needs≠none`) VÀ (có notice chưa gửi
+        HOẶC mọi con kết thúc)."""
         assert self.tickets is not None and self.effects is not None
         out = []
         for tid, r in self.tickets.rows.items():
@@ -268,12 +293,21 @@ class MemoryDeadlines:
                 continue
             submitted = {e["result_ref"] for e in self.effects.rows.values() if e["ticket_id"] == tid and e["kind"] == "child_submit"}
 
+            def idle(c: str) -> bool:
+                assert self.tickets is not None
+                return all(t["ended_at"] is not None for t in self.tickets._turns.of(c))
+
             def ended(c: str) -> bool:
                 assert self.tickets is not None
-                return self.tickets.rows[c]["final"] is not None and all(
-                    t["ended_at"] is not None for t in self.tickets._turns.of(c))  # fmt: skip
+                return self.tickets.rows[c]["final"] is not None and idle(c)
 
-            if len(submitted) < len(kids) or all(ended(c) or self._pending_needs(c) for c in kids):
+            def approving(c: str) -> bool:
+                return idle(c) and any(a["ticket_id"] == c and a["status"] == "pending" for a in self.approvals.values())
+
+            unsent = any(n["parent_ticket_id"] == tid and n["delivered_at"] is None for n in self.tickets.notices)
+            ready = all(ended(c) or approving(c) or self._pending_needs(c) for c in kids) and (
+                unsent or all(ended(c) for c in kids))  # fmt: skip
+            if len(submitted) < len(kids) or ready:
                 out.append(tid)
         return out[:limit]
 
@@ -326,6 +360,7 @@ class MemoryApprovals:
         audit: "MemoryAudit | None" = None, tickets: "MemoryTickets | None" = None,
     ) -> None:  # fmt: skip
         self._table = deadlines.approvals
+        self._waits = deadlines.waits  # R3: `open_deadline` đọc `wait_deadlines` giả (cùng list worker đọc)
         self._clock = clock
         self._users = users
         self._audit = audit  # 4c P5: `inbox` lấy `intended_action` từ dòng audit B15 `queued` (như SQL)
@@ -427,6 +462,33 @@ class MemoryApprovals:
 
     async def procedure_title(self, doc_id: str) -> str | None:
         return self.titles.get(doc_id)
+
+    async def parent_deadline(self, parent_id: str) -> datetime | None:
+        """Như SQL: hạn chờ riêng chưa bắn của cha (hạn muộn nhất); không có → min hạn phiếu `pending` của các con; không có → None."""
+        own = [w["deadline"] for w in self._waits if w["ticket_id"] == parent_id and w["fired_at"] is None]
+        if own:
+            return max(own)
+        rows = self._tickets.rows if self._tickets is not None else {}
+        children = {t for t, r in rows.items() if r["parent_ticket_id"] == parent_id}
+        pending = [a["deadline"] for a in self._table.values() if a["ticket_id"] in children and a["status"] == "pending"]
+        return min(pending) if pending else None
+
+    async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
+        """Như SQL (R3): `approval` → phiếu `pending` mới nhất của ticket; `clarify`/`confirm` → dòng chưa bắn cùng loại, hạn muộn nhất."""
+        if kind == "approval":
+            pending = [a for a in self._table.values() if a["ticket_id"] == ticket_id and a["status"] == "pending"]
+            return max(pending, key=lambda a: a.get("created_at", a["deadline"]))["deadline"] if pending else None
+        waits = [w["deadline"] for w in self._waits if (w["ticket_id"], w["kind"]) == (ticket_id, kind) and w["fired_at"] is None]
+        return max(waits) if waits else None
+
+    async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
+        """Như SQL (P3 tuần 8): dòng B13/B14 ghi SAU CÙNG (thứ tự ghi = `log_id`) có `created_at <= before`."""
+        rows = [r for r in (self._audit.rows if self._audit else [])
+                if (r["ticket_id"], r["step"]) == (ticket_id, "B13/B14") and r.get("created_at", before) <= before]  # fmt: skip
+        if not rows:
+            return None
+        last = rows[-1]
+        return PolicyMatchRow(all_matched=(last.get("detail") or {}).get("all_matched"), matched_rule_id=last.get("matched_rule_id"))
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:
         """Như SQL (4d P3): dòng `B13/B14 risk_decided` ghi SAU CÙNG (thứ tự ghi = `log_id`) + có `B10 deflected_info_only`."""
@@ -541,6 +603,12 @@ class MemoryTickets:
         self.approvals_table: dict[str, dict[str, Any]] = {}  # = `MemoryDeadlines.approvals` (harness nối) — `children_progress_rows`
         self.effects: MemoryEffects | None = None  # harness nối — `started_children`, `children_status` đọc dòng `child_submit`
         self.txlog: MemoryTxLog | None = None  # harness nối — `children_status.executed`
+        # D-67: chiến lược M5 chụp lúc tạo ticket (test đặt `strategies["t1"] = "rule_only"`); vắng = None → B12 coi là `hybrid`
+        self.strategies: dict[str, str | None] = {}
+        self.sources: dict[str, str] = {}
+        self.hidden: dict[tuple[str, str], datetime] = {}  # `ticket_hidden` giả: (user_id, ticket_id) → hidden_at
+        self.audit: MemoryAudit | None = None  # harness nối — `open_candidates` đọc `intent` từ dòng audit B3 (như SQL)
+        self.open_candidates_error: BaseException | None = None  # M1: tiêm lỗi đọc store báo trùng
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -573,6 +641,8 @@ class MemoryTickets:
             session_id=ticket.session_id, redacted_request=ticket.redacted_request,
             requester_role=ticket.requester_role, requester_dept=ticket.requester_dept,
         )  # fmt: skip
+        self.strategies[ticket.ticket_id] = ticket.strategy
+        self.sources[ticket.ticket_id] = ticket.source
         await self._turns.start(turn_id=turn_id, ticket_id=ticket.ticket_id,
                                 session_id=ticket.session_id, event_type="submit",
                                 at=ticket.created_at)  # fmt: skip
@@ -590,6 +660,41 @@ class MemoryTickets:
             close_reason=final.close_reason if final else None, created_at=r["created_at"],
             closed_at=final.closed_at if final else None,
         )  # fmt: skip
+
+    async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
+        """Như SQL: gốc (`parent_ticket_id IS NULL`) của đúng người gửi, `created_at DESC, ticket_id DESC`, `LIMIT`."""
+        own = [t for t, r in self.rows.items() if r["requester_id"] == requester_id and r["parent_ticket_id"] is None
+               and (requester_id, t) not in self.hidden]  # fmt: skip
+        own.sort(key=lambda t: (self.rows[t]["created_at"], t), reverse=True)
+        return [row for t in own[:limit] if (row := await self.get(t)) is not None]
+
+    async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
+        """Như SQL: `INSERT … ON CONFLICT DO NOTHING` — lần sau giữ `hidden_at` cũ; FK `ticket_id` → `tickets`."""
+        if ticket_id not in self.rows:
+            raise ValueError(f"FK ticket_hidden.ticket_id: {ticket_id} chưa có")
+        self.hidden.setdefault((user_id, ticket_id), at)
+
+    async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
+        """M1: cố ý trả MỌI dòng (tập cha tối đa) — mọi điều kiện lọc phải do `pick_duplicate` làm, để mutation ở đó đỏ trong unit test.
+        `intent` từ dòng audit B3 `intent_classified` MỚI NHẤT của ticket (như `SqlTicketStore`)."""
+        if self.open_candidates_error is not None:
+            raise self.open_candidates_error
+        rows = self.audit.rows if self.audit is not None else []
+        out: list[OpenCandidate] = []
+        for tid, r in self.rows.items():
+            intents = [x["intent"] for x in rows if x["ticket_id"] == tid and x["step"] == "B3"
+                       and x["event"] == "intent_classified" and x.get("intent") is not None]  # fmt: skip
+            final: FinalSummary | None = r["final"]
+            out.append(OpenCandidate(
+                ticket_id=tid, requester_id=r["requester_id"], intent=intents[-1] if intents else None,
+                final_state=final.final_state if final else None, close_reason=final.close_reason if final else None,
+                is_parent=r["is_parent"],
+                parent_ticket_id=r["parent_ticket_id"], created_at=r["created_at"],
+            ))  # fmt: skip
+        return out
+
+    async def strategy_of(self, ticket_id: str) -> str | None:
+        return self.strategies.get(ticket_id)
 
     async def created_at(self, ticket_id: str) -> datetime:
         return self.rows[ticket_id]["created_at"]  # type: ignore[no-any-return]
@@ -626,6 +731,8 @@ class MemoryTickets:
             redacted_request=redacted_request, parent_ticket_id=parent_id, requester_role=parent["requester_role"],
             requester_dept=parent["requester_dept"],
         )  # fmt: skip
+        self.strategies[child_id] = self.strategies.get(parent_id)  # D-67: con kế thừa từ cha
+        self.sources[child_id] = self.sources.get(parent_id, "real")
         self.created_children.append(child_id)
         return child_ref(child_id, intents, intent_type)
 
@@ -650,7 +757,9 @@ class MemoryTickets:
                 and (n["delivered_at"] is None if delivered_round is None else n["delivered_round"] == delivered_round)
             )  # fmt: skip
             running = any(t["ended_at"] is None for t in self._turns.of(cid))  # như SQL: còn lượt mở → chưa kết thúc
-            out.append(ChildView(cid, child_index(cid), final.final_state if final and not running else None, pending))
+            approving = any(a["ticket_id"] == cid and a["status"] == "pending" for a in self.approvals_table.values())
+            out.append(ChildView(cid, child_index(cid), final.final_state if final and not running else None, pending,
+                                 approving and not running))
         return out
 
     async def deliver_round(self, parent_id: str, round_no: int, notice_ids: Sequence[int], at: datetime) -> str:
@@ -727,8 +836,9 @@ class MemoryNoticeStore:
 
 
 class MemoryEscalations:
-    def __init__(self, tickets: MemoryTickets) -> None:
+    def __init__(self, tickets: MemoryTickets, audit: "MemoryAudit | None" = None) -> None:
         self._tickets = tickets
+        self._audit = audit
         self._priority = seed_priority()
         self.rows: list[dict[str, Any]] = []
 
@@ -752,18 +862,61 @@ class MemoryEscalations:
         final: FinalSummary | None = row.get("final")
         return not row.get("is_parent") or (final is not None and final.exit_code is not None)
 
+    def _item(self, r: dict[str, Any]) -> QueueItem:
+        return QueueItem(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
+            priority=r["priority"], label=self._priority[r["exit_code"]][1],
+            reason_detail=r["reason_detail"], is_deny_case=r["is_deny_case"],
+            handoff_note=r["handoff_note"], assigned_to=None, created_at=r["created_at"],
+            closed_at=r["closed_at"], close_result=r.get("close_result"), closed_by=r.get("closed_by"),
+            close_note=r.get("close_note"),
+        )  # fmt: skip
+
+    @staticmethod
+    def _order(r: dict[str, Any]) -> tuple[int, datetime, int]:
+        return r["priority"], r["created_at"], r["escalation_id"]
+
     async def list_open(self, limit: int) -> list[QueueItem]:
         rows = [r for r in self.rows if r["closed_at"] is None and self._leaf_or_failed_parent(r["ticket_id"])]
-        rows.sort(key=lambda r: (r["priority"], r["created_at"], r["escalation_id"]))
-        return [
-            QueueItem(
-                escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
-                priority=r["priority"], label=self._priority[r["exit_code"]][1],
-                reason_detail=r["reason_detail"], is_deny_case=r["is_deny_case"],
-                handoff_note=r["handoff_note"], assigned_to=None, created_at=r["created_at"],
-            )
-            for r in rows[:limit]
-        ]
+        rows.sort(key=self._order)
+        return [self._item(r) for r in rows[:limit]]
+
+    async def list_page(self, status: QueueStatus, limit: int, after: QueueKey | None) -> list[QueueItem]:
+        """Như SQL (P4 tuần 8): `open` | `closed`, thứ tự `priority, created_at, escalation_id`, keyset SAU `after`."""
+        rows = [r for r in self.rows
+                if (r["closed_at"] is None) == (status == "open") and self._leaf_or_failed_parent(r["ticket_id"])]  # fmt: skip
+        rows.sort(key=self._order)
+        if after is not None:
+            rows = [r for r in rows if self._order(r) > (after.priority, after.created_at, after.escalation_id)]
+        return [self._item(r) for r in rows[:limit]]
+
+    async def get(self, escalation_id: int) -> EscalationHead | None:
+        r = next((r for r in self.rows if r["escalation_id"] == escalation_id), None)
+        return None if r is None else EscalationHead(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
+            is_deny_case=r["is_deny_case"], closed_at=r["closed_at"],
+        )  # fmt: skip
+
+    async def close(self, req: CloseRequest, *, reopen: ReopenHook | None = None) -> ClosedEscalation | None:
+        """Như SQL: đóng nếu còn mở (không `await` giữa kiểm và ghi → hai lần đóng: một thắng); `tickets.close_reason` chỉ khi
+        `S_ESCALATED` và còn NULL; một dòng audit `B20`/`escalation_closed` vào `MemoryAudit` (nếu có). Móc `reopen` cần
+        transaction SQL — bản giả không hỗ trợ."""
+        assert reopen is None, "MemoryEscalations: móc reopen chỉ có ở SqlEscalationStore"
+        r = next((r for r in self.rows if r["escalation_id"] == req.escalation_id), None)
+        if r is None or r["closed_at"] is not None:
+            return None
+        r.update(closed_at=req.at, close_result=req.close_result, closed_by=req.closed_by, close_note=req.close_note)
+        ticket = self._tickets.rows.get(r["ticket_id"], {})
+        final: FinalSummary | None = ticket.get("final")
+        if final is not None and final.close_reason is None and final.final_state == S_ESCALATED:
+            final = ticket["final"] = replace(final, close_reason=req.close_reason)
+        if self._audit is not None:
+            await self._audit.record(close_audit_row(req, r["ticket_id"]))
+        return ClosedEscalation(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], close_result=req.close_result,
+            close_reason=final.close_reason if final is not None else None, closed_at=req.at, closed_by=req.closed_by,
+            close_note=req.close_note, new_ticket_id=None,
+        )  # fmt: skip
 
 
 class MemoryTicketLock:
@@ -815,6 +968,7 @@ class GraphHarness:
     directory: ToolCaller | None = None  # None = registry thật trên `FakeAd` + `vpn`; e2e gắn registry tới mock
     vpn: SeedVpn | None = None  # B6 thật (3f): VPN giả đọc mock_services/seed.json — None = dựng theo `clock`
     enable_proactive_diagnosis: bool = True  # ablation RQ3 (B6)
+    enable_it_help: bool = True  # D-76: cờ ENABLE_IT_HELP (B3, B20)
     grounding_gate_actions: bool = False  # Phase 4 S0-P11: ablation B9 cho nhánh hành động
     max_recover_attempts: int = 3
     # Hạn cho cả lượt (9.0): mặc định = Settings (100 s / 2 s) — test FakeClock tua quá hạn trong một lượt sẽ ra E2
@@ -831,6 +985,7 @@ class GraphHarness:
     auth_store: InMemoryAuthStore | None = None
     approvers: Mapping[str, Roster] = field(default_factory=lambda: open_approvers(_DEFAULT_SETTINGS).root)
     approver_users: ApproverUsers | None = None
+    dedup: DedupConfig | None = None  # M1: None = `config/dedup.yaml`
     roster_in_ad: bool = True  # gộp `ROSTER_CHAIN` (seed.json) vào `ad` — chỉ khi `directory` None
     tickets: MemoryTickets = field(init=False)
     notices: "MemoryNoticeStore" = field(init=False)  # Phase 5 T20b: `child_notices` giả (ghi vào `tickets.notices`)
@@ -857,6 +1012,7 @@ class GraphHarness:
                 lock=lock_policy(auth_config(_DEFAULT_SETTINGS, get_policy().constants)),
             ))  # fmt: skip
         self.tickets = MemoryTickets(self.turns)
+        self.tickets.audit = self.audit
         self.deadlines.tickets = self.tickets  # Phase 5 T20b: con không đặt hạn, cha thay hạn mọi loại (Q-T20b-3)
         self.tickets.approvals_table = self.deadlines.approvals
         self.deadlines.effects = self.effects
@@ -886,8 +1042,9 @@ class GraphHarness:
             escalations=self.escalations, templates=get_escalation_templates(), ml=self.ml.client(self.clock),
             rag=self.rag, llm=self.llm, scenario=self.scenario, approver_id=self.approver_id,
             security_events=self.security_events, enable_proactive_diagnosis=self.enable_proactive_diagnosis,
+            enable_it_help=self.enable_it_help,
             grounding_gate_actions=self.grounding_gate_actions, approvers=self.approvers,
-            approver_users=self.approver_users,
+            approver_users=self.approver_users, dedup=self.dedup or get_dedup(),
         )  # fmt: skip
 
     def _make_runner(self) -> Runner:

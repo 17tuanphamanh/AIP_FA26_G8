@@ -41,6 +41,9 @@ _B16_PLAN_CHANGED: Final = "action_plan_changed_since_approval"  # B16 duyệt n
 _ABSENT: Final = object()
 # Dòng điểm log 4 (b12_assess `_point4`) — một nguồn cho `audit_check` và `m5_review` (phase6 7.1 P2).
 POINT4_KEY: Final = ("B13/B14", "risk_decided")
+# Dòng fail-closed của B12 khi estimator lỗi (b12_assess, nhánh `except (LLMUnavailable, LLMSchemaError, LLMBudgetExceeded)`) — soát
+# như điểm 4 nhưng KHÔNG thuộc `POINT4_KEY` (m5_review / T29 không đổi).
+LLM_DOWN_KEY: Final = ("B13/B14", "llm_layer_disabled")
 
 
 @dataclass(frozen=True)
@@ -127,6 +130,23 @@ def _point4_need(row: Mapping[str, Any]) -> list[str]:
     return list(_P4_RULE)
 
 
+_P4_LLM_DOWN: Final = ("decided_by", "risk_level", "reason", "exit_code", "detail.route", "detail.policy_sha256",
+                       "detail.estimator_error")  # fmt: skip
+_P4_LLM_DOWN_VALUES: Final = {"decided_by": "llm", "exit_code": "E5", "detail.route": "ESCALATE_L2"}
+
+
+def _llm_down_need(row: Mapping[str, Any]) -> list[str]:
+    """Dòng `LLM_DOWN_KEY` (đường fail-closed khi estimator lỗi — B12 dựng quyết định "sập" `decided_by=llm`, `risk_level=high`,
+    `route=ESCALATE_L2`, `reason=LLM_DOWN_REASON`, `exit_code=E5`, `detail.estimator_error` = tên lớp lỗi). Bắt buộc ≠ null theo thứ tự
+    `_P4_LLM_DOWN`; `decided_by`, `exit_code`, `detail.route` còn phải ĐÚNG giá trị của `_P4_LLM_DOWN_VALUES` (sai → báo đúng trường
+    đó); khoá `detail.all_matched` phải có. `policy_decision`, `matched_rule_id`, `raw_prob`, `p_method`, `detail.thresholds` NULL hợp
+    lệ CHỈ ở dòng này (dòng `risk_decided` vẫn theo `_point4_need`, không nới). `detail.strategy` KHÔNG bắt buộc (dòng vận hành trước
+    D-67 không có). Dòng `llm_layer_disabled` ghi trước a88617a (01/10) sẽ bị báo thiếu `detail.estimator_error` — đúng sự thật."""
+    missing = set(_lacks(row, _P4_LLM_DOWN))
+    wrong = {f for f, want in _P4_LLM_DOWN_VALUES.items() if f not in missing and _get(row, f) != want}
+    return [f for f in _P4_LLM_DOWN if f in missing or f in wrong] + _lacks(row, (), ["detail.all_matched"])
+
+
 def _point(row: Mapping[str, Any], *, approved: bool) -> tuple[int, list[str]] | None:
     """Điểm 1–7 theo bảng PLAN-4d mục 4 (Q-4d-1 = A: kiểm ĐÚNG chỗ code ghi). Dòng không thuộc bảng → None."""
     step, event = row.get("step"), row.get("event")
@@ -144,6 +164,8 @@ def _point(row: Mapping[str, Any], *, approved: bool) -> tuple[int, list[str]] |
         return 3, _lacks(row, ["kb_version"], ["detail.grounding.top_score"])
     if (step, event) == POINT4_KEY:  # b12_assess `_point4` + `_RISK_COLUMNS` của goto
         return 4, _lacks(row, _point4_need(row))
+    if (step, event) == LLM_DOWN_KEY:  # b12_assess nhánh estimator lỗi (fail-closed)
+        return 4, _llm_down_need(row)
     if (step, event) == ("B15", "queued"):
         return 5, _lacks(row, ["approver_id", "deadline", "conflict_detected", "action_plan_hash", "detail.choice_reason"])
     if step == "B16" and event in ("approved", "rejected", "approval_timeout", _B16_PLAN_CHANGED):
@@ -239,7 +261,7 @@ def scan_log(lines: Iterable[str], scanner: SecretScanner) -> list[SecretHit]:
 def readonly_engine(dsn: str) -> AsyncEngine:
     """Engine mà MỌI giao dịch là READ ONLY (INSERT/UPDATE → lỗi Postgres `read_only_sql_transaction`) — Postgres ép theo phiên,
     không phụ thuộc quyền của role (app_rw CÓ quyền INSERT)."""
-    return create_async_engine(dsn, connect_args={"options": "-c default_transaction_read_only=on"})
+    return create_async_engine(dsn, connect_args={"options": "-c default_transaction_read_only=on"}, hide_parameters=True)
 
 
 async def load(

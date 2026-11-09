@@ -9,7 +9,7 @@ là người gửi (D-16, `scope_tool_target`).
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 AccountType = Literal["ad", "email", "erp"]
 PrivilegeLevel = Literal["standard_user", "elevated", "admin"]
@@ -123,6 +123,9 @@ class AdUser(_Out):
     hired_at: date
     is_privileged_account: bool
     account: AccountState
+    # notify-email: địa chỉ email trong AD — TUỲ CHỌN (AD/mock cũ thiếu trường → None, không lỗi hợp đồng). Chuỗi thô: dạng được kiểm
+    # ở `auth/store.upsert_user` (sai dạng → NULL), không ở đây (một địa chỉ hỏng không được làm hỏng đăng nhập/B1).
+    email: str | None = None
 
 
 class AccountStatus(AdUser):
@@ -210,15 +213,31 @@ class ConnectionList(RootModel[list[Connection]]):
 
 
 class CatalogEntry(_Out):
+    """Q5 (ĐP 09/11): hệ thống ngoài giữ danh sách phần mềm BỊ CẤM. Trong danh mục → đủ thuộc tính + `prohibited`; ngoài danh mục mà
+    bị cấm → 200 `in_catalog=False, prohibited=True`, thuộc tính danh mục null; ngoài danh mục, không cấm → 404 (không có model)."""
+
     name: str
     display_name: str
     in_catalog: bool
-    license_type: Literal["free", "paid"]
-    paid: bool
-    version: str
-    requires_approval: bool
-    # Phase 5 T22a P7: nguồn của fact `requires_local_admin` (R11, R15) — BẮT BUỘC, không mặc định (thiếu → lỗi rõ, không coi là false)
-    requires_local_admin: bool
+    # Q5: nguồn của fact `software_prohibited` (R21) — BẮT BUỘC, không mặc định (như `requires_local_admin`: thiếu → lỗi hợp đồng rõ,
+    # không âm thầm coi là "không cấm")
+    prohibited: bool
+    # 5 thuộc tính danh mục: null khi `in_catalog=False`; `in_catalog=True` mà thiếu/null → lỗi hợp đồng (`_catalog_fields`)
+    license_type: Literal["free", "paid"] | None = None
+    paid: bool | None = None
+    version: str | None = None
+    requires_approval: bool | None = None
+    # Phase 5 T22a P7: nguồn của fact `requires_local_admin` (R11, R15) — BẮT BUỘC khi trong danh mục (thiếu → lỗi rõ, không coi là false)
+    requires_local_admin: bool | None = None
+
+    @model_validator(mode="after")
+    def _catalog_fields(self) -> "CatalogEntry":
+        if self.in_catalog:
+            missing = [k for k in ("license_type", "paid", "version", "requires_approval", "requires_local_admin")
+                       if getattr(self, k) is None]  # fmt: skip
+            if missing:
+                raise ValueError(f"in_catalog=true nhưng thiếu {missing}")
+        return self
 
 
 class LicenseInfo(_Out):
@@ -269,12 +288,16 @@ class ResetPasswordResult(_Out):
     account_type: AccountType
     delivered_via: str
     must_change_at_next_login: bool
+    # Kênh sms: hạn mật khẩu tạm (phút) và số nhận ĐÃ CHE (mock: `0900***123`). Kênh email không có → None.
+    expires_in_minutes: int | None = None
+    sent_to: str | None = None
 
 
 class LockStateResult(_Out):
     user_id: str
     account_type: AccountType
     locked: bool
+    was_locked: bool | None = None  # chỉ `unlock` trả (lock không có) — giữ lại thay vì bỏ qua như trường lạ
 
 
 class InstallResult(_Out):
@@ -282,6 +305,8 @@ class InstallResult(_Out):
     name: str
     version: str
     installed_at: datetime
+    # Q3 M6 (ĐP 09/11): mock trả True khi máy ĐÃ có phần mềm (không cài lại). Thiếu trường → False (cài mới — như trước).
+    already_installed: bool = False
 
 
 class UninstallResult(_Out):

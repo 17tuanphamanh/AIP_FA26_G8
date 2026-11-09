@@ -3,12 +3,15 @@
 from datetime import UTC, datetime
 
 import pytest
+from app.ad import _require_portal
 from app.main import create_app
 from app.security import ServiceTokens, require_read, require_write
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from fastapi.testclient import TestClient
 
-UNGUARDED = ("/health", "/_admin")
+# /console: trang HTML cho người xem (trình duyệt không gắn được header token) — rào là APP_ENV dev/test, kiểm ở test_console.py.
+# /portal: màn hình người dùng cuối, không token — cũng chỉ mở ở APP_ENV dev/test (test_every_portal_route_is_env_gated).
+UNGUARDED = ("/health", "/_admin", "/console", "/portal")
 
 
 def _guard(route: RouteContext) -> str | None:
@@ -43,10 +46,17 @@ def test_every_non_admin_route_is_guarded() -> None:
     assert [r.path for r in GUARDED if _guard(r) is None] == []
 
 
+def test_every_portal_route_is_env_gated() -> None:
+    portal = [r for r in ROUTES if r.path.startswith("/portal")]
+    assert {r.path for r in portal} == {"/portal", "/portal/login", "/portal/change-password"}
+    assert all(_require_portal in {d.call for d in r.dependant.dependencies} for r in portal)
+
+
 def test_every_post_except_authenticate_is_a_write() -> None:
     posts = {r.path for r in GUARDED if _method(r) == "POST"} - {"/ad/authenticate"}
     assert posts == {r.path for r in WRITE_ROUTES}
-    assert len(WRITE_ROUTES) == 13  # 8 tool ghi + 5 tool hoàn tác (P5 mục 4)
+    # 8 tool ghi + 5 tool hoàn tác (P5 mục 4) + /ad/change-password (F2) + /vpn/connect (mock-fidelity F4) — hai cái cuối chưa có tool backend
+    assert len(WRITE_ROUTES) == 15
 
 
 @pytest.mark.parametrize("route", WRITE_ROUTES, ids=lambda r: r.path)

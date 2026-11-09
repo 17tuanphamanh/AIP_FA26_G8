@@ -15,7 +15,7 @@
     "CONFIRM_TIMEOUT_HOURS": 48
   },
   "business_hours": {"tz": "Asia/Ho_Chi_Minh", "weekdays": [1, 2, 3, 4, 5], "start": "08:00", "end": "18:00"},
-  "m5": {"p_method": "self_report", "calibrator_version": null},
+  "m5": {"p_method": "sampling_k5", "calibrator_version": null},
   "rules": [
     {"id": "R01", "type": "allow", "intent": "account", "action": "reset_password",
      "conditions": {"all": [
@@ -103,22 +103,26 @@
      "conditions": {"all": [
       {"fact": "action.facts.device_registered", "op": "is_false"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
-     "description": "Thiết bị chưa đăng ký"},
+     "description": "Thiết bị chưa đăng ký cần người duyệt"},
     {"id": "R18", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
      "conditions": {"all": [
       {"fact": "time.within_business_hours", "op": "is_false"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
-     "description": "Ngoài giờ hành chính"},
+     "description": "Yêu cầu gửi ngoài giờ hành chính cần người duyệt"},
     {"id": "R19", "type": "approval_required", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
      "conditions": {"all": [
       {"fact": "requester.employment_status", "op": "eq", "value": "probation"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
-     "description": "Nhân viên chưa qua thử việc"},
+     "description": "Nhân viên chưa qua thử việc cần người duyệt"},
     {"id": "R20", "type": "allow", "intent": "vpn", "action": ["renew_vpn_cert", "reissue_vpn_access"],
      "conditions": {"all": [
       {"fact": "action.facts.device_registered", "op": "is_true"},
       {"fact": "action.facts.device_owner_is_requester", "op": "is_true"},
       {"fact": "ctx.target_is_other", "op": "is_false"}]},
-     "description": "Cấp lại cho thiết bị đã đăng ký của chính người gửi"}
+     "description": "Cấp lại cho thiết bị đã đăng ký của chính người gửi"},
+    {"id": "R21", "type": "deny", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.software_prohibited", "op": "is_true"}]},
+     "description": "Phần mềm bị cấm theo quy định của công ty"}
   ]
 }

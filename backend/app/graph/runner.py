@@ -84,7 +84,9 @@ log = logging.getLogger(__name__)
 EXECUTE_NODE = "b17_execute"
 DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module
 PARENT_WAIT = "parent_wait"
-CHILD_STOPS = frozenset({None, "clarify_wait", "confirm_wait"})  # T20b P6: con kết thúc (None) / dừng chờ người dùng → đánh thức cha
+# T20b P6: con kết thúc (None) / dừng chờ người dùng → đánh thức cha. D-77: dừng chờ L1 duyệt cũng là điểm dừng (lượt con KHÔNG lồng
+# tới `approval_wait` — vd worker phục hồi lượt con chết giữa B15 — phải đánh thức cha để vòng "chờ duyệt" đi ngay).
+CHILD_STOPS = frozenset({None, "clarify_wait", "confirm_wait", "approval_wait"})
 # Worker không biết lời gọi ghi đã tới hệ thống đích hay chưa (có thể có `begun`) → cùng câu chốt với B17 bước 0 (DỪNG 3 3h,
 # h15b): L2 không được hiểu là "chưa làm". `reason_detail` giữ `execution_interrupted` (Q-3h-3).
 INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (worker không chạy lại B17): {MAY_HAVE_WRITTEN}."
@@ -351,8 +353,8 @@ class Runner:
     # ---- ticket con → cha (D-17) --------------------------------------------------------------
 
     async def after_turn(self, result: RunResult) -> None:
-        """Gọi SAU khi nhả khoá ticket (2b-Q7). Thread con đã kết thúc HOẶC dừng chờ người dùng (`clarify_wait`/`confirm_wait` —
-        T20b P6, P1 §6.1) → đánh thức cha. Dừng ở `approval_wait` (chờ L1) không phải điểm dừng (D-31) → không đánh thức."""
+        """Gọi SAU khi nhả khoá ticket (2b-Q7). Thread con đã kết thúc, dừng chờ người dùng (`clarify_wait`/`confirm_wait` — T20b P6,
+        P1 §6.1) HOẶC dừng chờ L1 duyệt (`approval_wait` — D-77) → đánh thức cha."""
         parent = result.values.get("parent_ticket_id")
         if result.waiting_at not in CHILD_STOPS or not parent:
             return

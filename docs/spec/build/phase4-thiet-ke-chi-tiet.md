@@ -1,6 +1,6 @@
 # Phase 4 — Thiết kế chi tiết (HITL: B15–B16, nhắc, xem phiếu, ghi đè, audit)
 
-*Thuộc bộ `build/`. Phiên bản **1.8 — 06/10/2026, cổng 4 ĐẠT** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c xong**: DỪNG 1 `aac90b1` mục 6.4; DỪNG 2 `b457e6e` mục 6.5 · **4d xong**: DỪNG 1 `e510a6e` mục 7.7; DỪNG 2 `858573d` mục 7.8 · **nghiệm thu** mục 7.9) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
+*Thuộc bộ `build/`. Phiên bản **1.9 — 16/10/2026** (V16 `68c7f7d`: mục 4.4 — bước 9 hỏi CI của đúng HEAD; cổng đỏ lưu log backend/worker). Bản **1.8 — 06/10/2026, cổng 4 ĐẠT** (**4a xong**: S0 `5ed423d` mục 4.0.1; DỪNG 2 `f64fd86` mục 4.10 · **4b xong**: DỪNG 1 `cd3f094` mục 5.6; DỪNG 2 `3b9d745` mục 5.7 · **4c xong**: DỪNG 1 `aac90b1` mục 6.4; DỪNG 2 `b457e6e` mục 6.5 · **4d xong**: DỪNG 1 `e510a6e` mục 7.7; DỪNG 2 `858573d` mục 7.8 · **nghiệm thu** mục 7.9) — **đã chốt đủ 21 câu Q-4-A…U** (Q-4-U = phương án A+). 0.4: soát lại với code; 0.5: phối hợp M9 (mục 0.2); 0.6: Q-4-U phân tích sâu (mục 3.3). Q-4-U (B9 cho yêu cầu hành động) làm ở **S0 = DỪNG 1 của 4a**. Đủ 4 chặng 4a–4d; 4a làm ngay sau khi 3h DỪNG 3b commit. Nguồn: `huong-dan-xay-dung-he-thong-2.md` §5 Phase 4, `B15-B16` v1.4, `B20` §8, `P6`, `P7`, `phase3-thiet-ke-chi-tiet.md` v1.9, `claude/phase4-phan-tich-va-chia-chang.md` v0.2 (mã G4-1…14). Code đã đọc trên máy tại `02ed795` (nhánh `dev-tuananh`).*
 
 *Nhãn: **[Chốt]** spec đã chốt · **[Đề xuất]** chờ Tuấn Anh chốt · **[Suy luận]** rút từ code/spec, agent phải kiểm lại trên code.*
 
@@ -365,7 +365,7 @@ backend/tests/unit/…                      # test mục 4.5
 | 6 | (G có 2) `FAKE_SCENARIO=approval FAKE_NODE_DELAY=40 $(COMPOSE) up -d --force-recreate --no-deps backend worker` → chờ như 5 → `make gate2 S=all` | 0 FAIL |
 | 7 | (`BENCH=1`) `bench_checkpoint` | in số |
 | 8 | Trả về cấu hình `.env`: `$(COMPOSE) up -d --force-recreate --no-deps backend worker` (không biến shell) → chờ healthy | exit 0 |
-| 9 | `gh run list --branch <nhánh hiện tại> -L 1` — lỗi thì ghi "bỏ qua (gh)" | không bắt buộc |
+| 9 | **[V16, 16/10]** `gh run list --branch <nhánh> --commit <HEAD> -L 1 --json status,conclusion,databaseId` (CI của **đúng HEAD**, không phải run mới nhất của nhánh). Không git → BỎ QUA "bỏ qua (không có git)"; gh lỗi → BỎ QUA "bỏ qua (gh)"; không có run → BỎ QUA "chưa có CI cho HEAD <sha7>"; `completed` + `success` → PASS "success <id> (<sha7>)"; `completed` + khác → FAIL "<conclusion> <id>"; chưa xong → ĐANG CHẠY; cây có thay đổi (kể cả file untracked) → thêm "CI của HEAD; cây có N thay đổi chưa commit". Bước 9 **không** đổi dòng KẾT LUẬN | không bắt buộc |
 
 **Đầu ra:** `.verify/run-<YYYYmmdd-HHMMSS>.log` (toàn bộ) và `.verify/summary.txt` (ghi đè mỗi lần) dạng:
 
@@ -377,7 +377,10 @@ verify G=3 HEAD=<7 ký tự> dirty=<số file> bắt đầu=<giờ> kết thúc=
 | 5 | gate3 | PASS | 6m03s | 8/8 PASS, 0 FAIL |
 …
 KẾT LUẬN: XANH | ĐỎ ở bước <n> (<tên>) — 30 dòng cuối log: <đường dẫn>
+log backend/worker của bước <n>: .verify/run-<giờ>-step<n>-logs.txt   ← chỉ khi một cổng đỏ (V16)
 ```
+
+**Cổng đỏ (V16, 16/10):** trong nhánh FAIL của cổng 2/3/4/5 (bước 6/5/10/12), **trước bước 8** (bước 8 tạo lại container → mất log), script lưu `$(COMPOSE) logs --no-color --timestamps --since <giờ bắt đầu bước, UTC> backend worker` ra `.verify/run-<giờ>-step<N>-logs.txt`; lỗi khi lưu chỉ ghi chú, không dừng verify. Cổng xanh không gọi `compose logs`.
 
 **Luật:** không `down -v`, không `volume rm/prune`; không in giá trị biến môi trường (chỉ tên); không `set -x`; `APP_ENV` phải là `dev` (dùng lại chốt an toàn của gate2/gate3). `make verify-status` = in `.verify/summary.txt`. Lệnh `!` quá 120 s bị đẩy nền là **bình thường**: Tuấn Anh chỉ gõ `! make verify`, rồi báo agent "xong" — **agent tự đọc `.verify/summary.txt`** và dán vào MẪU B.
 
@@ -809,6 +812,7 @@ Cổng 4 đạt khi: `make lint`, `make test` xanh; CI xanh; e2e i1–i17; mutat
 |---|---|---|
 | 30/09/2026 | 0.1 | Tạo file: sự thật code `02ed795`; 10 lỗ hổng bổ sung G4-15…24; thuật toán chọn người duyệt theo [Chốt]; bảng test xung đột mới; 20 câu Q-4; chặng 4a đủ |
 | 06/10/2026 | 1.8 | Mục 7.9: **đóng Việc treo 35** — số CPU cao của worker là một mẫu `docker stats` trùng healthcheck (0,34–0,42 s CPU mỗi 5 s); tiến trình worker ≈ 0,13% trên cả hai máy; thêm quy ước đo; hoãn đổi healthcheck |
+| 16/10/2026 | 1.9 | Mục 4.4 (V16 `68c7f7d`, verify G=2345 xanh): bước 9 lọc `--commit <HEAD>` + 6 ca ánh xạ (trước: run mới nhất của nhánh — in nhầm số CI, PASS cả khi CI đỏ); cổng đỏ lưu log backend/worker ra `run-*-step<N>-logs.txt` trước bước 8; mẫu summary thêm dòng trỏ log |
 | 03/10/2026 | 1.7 | **Cổng 4 đạt:** mục 7.9 nghiệm thu bởi Tạ Duy Anh (gate3 78/0 — trả NỢ-3-1; gate4 lượt 1 60/4 do ml-service hết giờ khi máy tải nặng, lượt 2 73/0); Việc treo 35 (worker ~98% CPU sau gate4, chưa giải thích); bài học dựng máy thành viên → README; lịch 4d hash/CI; dòng "Cổng 4 ĐẠT" |
 | 03/10/2026 | 1.6 | 4d DỪNG 2: mục 7.8 "Chốt khi hiện thực" (17 dòng: Q-4d-3 hiện thực ở B16 + dòng điểm 6 mới, i8 bốn ca, luật viết e2e, Q-4d-8 = B sửa 7.7 #6, Q-4d-6/7 → Việc treo 33, 34, Q-4d-9 = B bỏ g4-08, Q-4d-10 = A g4-12 theo ticket lần chạy, TQ-15/16/17, `verify G=234` + caffeinate Q-4d-4, M-4d-15…17, gộp PR #26 M9 + hợp đồng `OVERRIDE_STEP/EVENT`); kịch bản gate4 thay 7.4; lịch 4d hash/CI |
 | 02/10/2026 | 1.5 | 4d DỪNG 1: mục 7.7 "Chốt khi hiện thực" (12 dòng + bảng điểm `audit_check` thay 7.2: Q-4d-1 = A, Q-4d-2 = A, thứ tự P1 thật, `ESCALATE_L2 → L2`, `audit_check` READ ONLY, B17 lớp 2, TC26 — cấm F3 ở B16 + Q-4d-3, rerank nguội + Việc treo 31, 32); lịch 4c hash/CI, 4d người chạy cổng = Duy Anh |

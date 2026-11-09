@@ -21,11 +21,14 @@ from app.db.models import DECIDED_BY
 from app.eval.metrics import (
     calibration_scores,
     decided_by_distribution,
+    efficiency,
     mean_route_cost,
+    n_unlabeled,
     safety,
 )
 from app.eval.predictions import PredictionRecord
 from app.risk.decision_math import DEFAULT_COST, clopper_pearson_upper
+from tests.unit.eval.contract_v11 import V11
 
 TOL = 1e-9
 L2: Final = "ESCALATE_L2"
@@ -52,6 +55,7 @@ def leaf(
         "final_state": "S_RESOLVED", "exit_code": None, "close_reason": "resolved_user_confirmed",
         "resolution_path": "auto", "has_approval": False, "clarification_turns": 0,
         "intent": "vpn", "gold_intent": "vpn", "doc_ids": None, "gold_doc_ids": (),
+        **V11,
     }  # fmt: skip
     return PredictionRecord.model_validate(data)
 
@@ -333,3 +337,59 @@ def test_empty_records_raises() -> None:
         calibration_scores([], "raw")
     with pytest.raises(ValueError, match="rỗng"):
         decided_by_distribution([])
+
+
+# ---- G2-schema: bản ghi CHƯA NHÃN (expected_route None — dữ liệu thật tới 25/10, G2-Q22) ----------------------------------
+
+
+def unlabeled(*preds: str | None) -> list[PredictionRecord]:
+    return [leaf("AUTO", p).model_copy(update={"expected_route": None}) for p in preds]
+
+
+def test_n_unlabeled_helper() -> None:
+    assert n_unlabeled(h_set()) == 0
+    assert n_unlabeled(h_set() + unlabeled("AUTO", None, "HITL")) == 3
+
+
+def test_safety_skips_unlabeled() -> None:
+    """Chỉ số cần nhãn bỏ qua lá chưa nhãn (không coi là AUTO, không lỗi) và đếm `n_unlabeled`; phần đã nhãn giữ nguyên số."""
+    base = safety(h_set())
+    mixed = safety(h_set() + unlabeled("AUTO", "HITL", None, "ESCALATE_L2"))
+    assert base.n_unlabeled == 0 and mixed.n_unlabeled == 4
+    for field in ("n_m5", "fnr", "fnr_upper95", "fpr", "accuracy", "macro_f1", "cost"):
+        assert getattr(mixed, field) == getattr(base, field), field
+    assert {g: dict(row) for g, row in mixed.confusion.items()} == {g: dict(row) for g, row in base.confusion.items()}
+
+
+def test_mean_route_cost_skips_unlabeled() -> None:
+    assert mean_route_cost(h_set() + unlabeled("AUTO", "HITL")) == mean_route_cost(h_set())
+
+
+def test_safety_all_unlabeled() -> None:
+    s = safety(unlabeled("AUTO", "HITL"))
+    assert (s.n_m5, s.n_unlabeled, s.fnr.value, s.fpr.value, s.macro_f1, s.cost.value) == (0, 2, None, None, None, None)
+
+
+def test_calibration_skips_unlabeled() -> None:
+    labelled = [leaf("HITL", "HITL", by="llm", raw=0.8, pm="self_report"), leaf("AUTO", "HITL", by="llm", raw=0.2, pm="self_report")]
+    extra = [r.model_copy(update={"expected_route": None}) for r in
+             (leaf("AUTO", "HITL", by="llm", raw=0.99, pm="self_report"), leaf("AUTO", "HITL", by="llm", raw=0.01, pm="self_report"))]
+    base, mixed = calibration_scores(labelled, "raw"), calibration_scores(labelled + extra, "raw")
+    assert base is not None and mixed is not None
+    assert (mixed.n, mixed.ece, mixed.brier) == (base.n, base.ece, base.brier)
+    assert (base.n_unlabeled, mixed.n_unlabeled) == (0, 2)
+
+
+def test_safety_ignores_v11_fields() -> None:
+    """Hợp đồng v1.1 chỉ để trường sẵn: §6.1 / §6.2 KHÔNG lọc hay nhóm theo `hidden_factor`, `kb_gap`, `fold`,
+    `in_business_hours` (FNR theo `hidden_factor` — §6.1:247 — là việc ghi nợ, chưa làm)."""
+    base = [leaf("HITL", "AUTO"), leaf("HITL", "HITL"), leaf("AUTO", "AUTO"), leaf("AUTO", "HITL"),
+            leaf(L2, "HITL", by="llm", raw=0.6, pm="self_report"), leaf("HITL", None)]  # fmt: skip
+    flags = [True, False, True, False, True, False]
+    varied = [PredictionRecord.model_validate({**r.model_dump(), "hidden_factor": f, "kb_gap": (not f) if r.route else None,
+                                               "fold": 1 + i % 5, "in_business_hours": f})
+              for i, (r, f) in enumerate(zip(base, flags, strict=True))]  # fmt: skip
+    assert safety(varied) == safety(base)
+    assert efficiency(varied) == efficiency(base)
+    assert calibration_scores(varied, "raw") == calibration_scores(base, "raw")
+    assert decided_by_distribution(varied) == decided_by_distribution(base)

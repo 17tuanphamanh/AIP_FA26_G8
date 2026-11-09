@@ -21,6 +21,10 @@
 - 4d (P3, P4 — route ghi đè; Q-4d-2 = A, cùng lý do `main.py` dựng `Desk` với lớp này): `decision_trail` (đọc `audit_logs` để suy
   `original_decision`), `record_override` (MỘT dòng `step="OVERRIDE"` qua `AuditWriter.record_new` — idempotent theo người ghi đè;
   không đụng `tickets`).
+- P3 tuần 8 (`matched_rules` của màn duyệt; cùng lý do `main.py` dựng `Desk` với lớp này): `policy_matches` — `detail.all_matched` +
+  `matched_rule_id` của dòng B13/B14 mới nhất (theo `log_id`) ghi không muộn hơn lúc tạo phiếu. Chỉ đọc.
+- R3 (`TicketView.deadline`; cùng lý do `main.py` dựng `Desk` với lớp này): `open_deadline` — hạn lần chờ hiện tại: phiếu `pending` mới
+  nhất (`approvals.deadline`) hoặc dòng `wait_deadlines` cùng loại chưa bắn (đúng dòng worker bắn timeout clarify/confirm). Chỉ đọc.
 """
 
 import logging
@@ -44,6 +48,7 @@ log = logging.getLogger(__name__)
 _APPROVALS: Table = Approval.__table__  # type: ignore[assignment]
 
 type NoticeKind = Literal["new", "reminder_1", "reminder_2"]
+type OpenWaitKind = Literal["approval", "clarify", "confirm"]  # R3: kiểu chờ có hạn thật
 
 # 4c P5: vai trò lọc Ở SQL (trước LIMIT); hành động của phiếu = dòng audit B15 `queued` CÙNG ticket + `action_plan_hash` (mới nhất) —
 # không đọc checkpoint từng phiếu (5.7 #5). Xung đột lợi ích lọc ở route (`authz.approval_role`).
@@ -73,8 +78,27 @@ _RISK_DECIDED = text(
     "SELECT detail->>'route' AS route, policy_decision FROM audit_logs "
     "WHERE ticket_id = :t AND step = 'B13/B14' AND event = 'risk_decided' ORDER BY log_id DESC LIMIT 1"
 )
+# P3 tuần 8: đánh giá B13/B14 mà phiếu dựa vào — dòng MỚI NHẤT không muộn hơn lúc tạo phiếu (mọi event: risk_decided, llm_layer_disabled)
+_POLICY_MATCHES = text(
+    "SELECT detail->'all_matched' AS all_matched, matched_rule_id FROM audit_logs "
+    "WHERE ticket_id = :t AND step = 'B13/B14' AND created_at <= :before ORDER BY log_id DESC LIMIT 1"
+)
 _DEFLECTED = text(
     "SELECT EXISTS (SELECT 1 FROM audit_logs WHERE ticket_id = :t AND step = 'B10' AND event = 'deflected_info_only')"
+)
+# R3: hạn lần chờ hiện tại — phiếu `pending` mới nhất của ticket; hạn hỏi lại/xác nhận chưa bắn (worker bắn từ CHÍNH dòng này).
+_OPEN_APPROVAL_DEADLINE = text(
+    "SELECT deadline FROM approvals WHERE ticket_id = :t AND status = 'pending' ORDER BY created_at DESC, approval_id DESC LIMIT 1"
+)
+_OPEN_WAIT_DEADLINE = text(
+    "SELECT deadline FROM wait_deadlines WHERE ticket_id = :t AND kind = :k AND fired_at IS NULL ORDER BY deadline DESC LIMIT 1"
+)
+# ticket CHA (TicketView.deadline): hạn chờ riêng của cha (mọi loại — `SqlDeadlineStore._set` giữ đúng một dòng chưa bắn), rồi hạn sớm nhất của
+# phiếu `pending` của các con.
+_PARENT_OWN_WAIT = text("SELECT deadline FROM wait_deadlines WHERE ticket_id = :t AND fired_at IS NULL ORDER BY deadline DESC LIMIT 1")
+_CHILD_EARLIEST_PENDING = text(
+    "SELECT min(a.deadline) FROM approvals a JOIN tickets c ON c.ticket_id = a.ticket_id "
+    "WHERE c.parent_ticket_id = :t AND a.status = 'pending'"
 )
 # 4c P6: tài liệu ở bản KB HIỆN HÀNH (`kb_documents.kb_version` chỉ có ở tài liệu bật — Q-3b-2).
 _PROCEDURE_TITLE = text(
@@ -126,6 +150,14 @@ class InboxRow:
     backup_approver_id: str | None
     requester_id: str
     intended_action: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class PolicyMatchRow:
+    """Phần dòng audit B13/B14 cho `matched_rules` (P3 tuần 8): `all_matched` thô (không phải list → route bỏ khoá)."""
+
+    all_matched: Any
+    matched_rule_id: str | None
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -237,6 +269,28 @@ class SqlApprovals:
         async with self._engine.connect() as conn:
             title = (await conn.execute(_PROCEDURE_TITLE, {"doc": doc_id})).scalar()
         return None if title is None else str(title)
+
+    async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
+        """R3: `approval` → phiếu `pending`; `clarify`/`confirm` → `wait_deadlines` chưa bắn. Không có → None."""
+        async with self._engine.connect() as conn:
+            if kind == "approval":
+                deadline = (await conn.execute(_OPEN_APPROVAL_DEADLINE, {"t": ticket_id})).scalar()
+            else:
+                deadline = (await conn.execute(_OPEN_WAIT_DEADLINE, {"t": ticket_id, "k": kind})).scalar()
+        return _utc(deadline)
+
+    async def parent_deadline(self, parent_id: str) -> datetime | None:
+        """Hạn của ticket CHA: hạn chờ riêng chưa bắn; không có → phiếu `pending` sớm nhất của các con; không có → None."""
+        async with self._engine.connect() as conn:
+            own = (await conn.execute(_PARENT_OWN_WAIT, {"t": parent_id})).scalar()
+            deadline = own if own is not None else (await conn.execute(_CHILD_EARLIEST_PENDING, {"t": parent_id})).scalar()
+        return _utc(deadline)
+
+    async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
+        """P3 tuần 8: dòng B13/B14 mới nhất (`log_id`) có `created_at <= before`; không có → None."""
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(_POLICY_MATCHES, {"t": ticket_id, "before": before})).first()
+        return None if row is None else PolicyMatchRow(all_matched=row.all_matched, matched_rule_id=row.matched_rule_id)
 
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:
         """4d P3: dòng `risk_decided` mới nhất (`log_id` lớn nhất) + có `B10 deflected_info_only` hay không."""

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from app.approval.store import ApprovalRow, InboxRow
+from app.approval.store import ApprovalRow, InboxRow, OpenWaitKind, PolicyMatchRow
 from app.db.identity import LiveSession
 from app.db.runtime import (
     DueReminder,
@@ -23,6 +23,7 @@ from app.db.tickets import NewEvents, NewTicket, TicketRow
 from app.domain.alerts import AlertDraft
 from app.domain.approval import ReminderN
 from app.domain.children import ChildHandoffRow, ChildProgressRow, ChildView
+from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
 from app.tools.registry import ToolResult
@@ -122,8 +123,9 @@ class DeadlineStore(Protocol):
 
     async def parents_to_wake(self, limit: int) -> list[str]:
         """Phase 5 T20b P12 (a), chỉ đọc DB: cha `is_parent`, `final_state IS NULL` mà (1) số con đã khởi động (dòng `child_submit` của cha,
-        khác `result_ref`) < số con (Q-T20b-7 — bắt cả con có `turns` mà thread rỗng), HOẶC (2) MỌI con đã dừng theo đúng điều kiện
-        `children_view` (`final_state` VÀ không còn lượt mở, hoặc notice chưa gửi `needs ≠ none`) — NGHI-2."""
+        khác `result_ref`) < số con (Q-T20b-7 — bắt cả con có `turns` mà thread rỗng), HOẶC (2) đúng điều kiện `children.round_ready` trên
+        `children_view` (D-77): mọi con đã dừng (`final_state` hoặc phiếu `pending`, VÀ không còn lượt mở; hoặc notice chưa gửi
+        `needs ≠ none`) VÀ (có notice chưa gửi HOẶC mọi con đã kết thúc) — NGHI-2."""
         ...
 
     async def orphan_children(
@@ -191,7 +193,17 @@ class TicketStore(TicketReader, Protocol):
 
     async def created_at(self, ticket_id: str) -> datetime: ...
 
+    async def strategy_of(self, ticket_id: str) -> str | None:
+        """D-67: chiến lược M5 đã CHỤP lúc tạo ticket (B12 đọc, không đọc từ `NodeDeps`). None = ticket cũ / không ghi → `hybrid`."""
+        ...
+
     async def count_turns(self, ticket_id: str) -> int: ...
+
+    async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
+        """M1 (B3 báo trùng yêu cầu): ticket của `requester_id` tạo từ `since`, kèm `intent` lấy từ dòng audit B3 `intent_classified`
+        (`tickets.intent` chỉ được ghi ở B20, ticket còn mở thì NULL). Chỉ đọc. Trả TẬP CHA — có thể thừa (đã đóng, là cha, chưa có
+        intent…); người gọi lọc lại bằng `domain.dedup.pick_duplicate` (nơi duy nhất quyết định)."""
+        ...
 
     async def finalize_once(self, ticket_id: str, summary: FinalSummary) -> FinalSummary:
         """Ghi nếu `final_state IS NULL`; luôn trả dòng ĐANG CÓ (vừa ghi hoặc từ lần trước)."""
@@ -202,7 +214,7 @@ class TicketStore(TicketReader, Protocol):
     async def create_child(
         self, child_id: str, *, parent_id: str, redacted_request: str, created_at: datetime, intents: int, intent_type: str
     ) -> str:
-        """Dòng `tickets` của con: chép `requester_id/role/dept`, `session_id` từ dòng cha; `parent_ticket_id = parent_id`; KHÔNG dòng
+        """Dòng `tickets` của con: chép `requester_id/role/dept`, `session_id`, D-67 `strategy`/`source` từ dòng cha; `parent_ticket_id = parent_id`; KHÔNG dòng
         `turns` (lượt đầu do `ChildOps.start` mở). CHỈ gọi qua `effects.once("child_create", sub=child_id)` (D-18). Trả
         `domain.children.child_ref(child_id, intents, intent_type)` = `result_ref` (Q-T20b-12)."""
         ...
@@ -269,6 +281,15 @@ class TicketRepo(TicketStore, Protocol):
         """`security_events` (event_type, detail) INSERT cùng transaction (3e, phase3 mục 8.3)."""
         ...
 
+    async def list_own(self, requester_id: str, limit: int) -> list[TicketRow]:
+        """P3 "Gần đây" (`GET /api/tickets`): ticket GỐC của ĐÚNG `requester_id`, `created_at DESC, ticket_id DESC`, tối đa `limit`,
+        trừ ticket người đó đã ẩn (lọc trước `LIMIT`). Chỉ DB."""
+        ...
+
+    async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
+        """P3 menu ⋯ "Xóa": ẩn ticket khỏi "Gần đây" của `user_id` — idempotent, không đổi dữ liệu nghiệp vụ."""
+        ...
+
     async def children_progress_rows(self, parent_id: str, children: Sequence[str]) -> list[ChildProgressRow]:
         """Phase 5 T20b P11 (DỪNG 2): mỗi con (theo thứ tự `children`) — `final_state`, có phiếu `approvals.status='pending'`, có notice
         chưa gửi `needs ≠ none` của `parent_id`. Chỉ DB."""
@@ -297,6 +318,11 @@ class ApprovalRepo(Protocol):
         """4c P6: tiêu đề tài liệu `doc_id` ở bản KB hiện hành; không có → None (không chặn)."""
         ...
 
+    async def policy_matches(self, ticket_id: str, before: datetime) -> PolicyMatchRow | None:
+        """P3 tuần 8 (`ApprovalView.matched_rules`): `detail.all_matched` + `matched_rule_id` của dòng B13/B14 MỚI NHẤT (`log_id`) có
+        `created_at <= before` (lúc tạo phiếu); không có → None."""
+        ...
+
     async def decision_trail(self, ticket_id: str) -> DecisionTrail:
         """4d P3 (Q-4d-2 = A): dòng `B13/B14 risk_decided` MỚI NHẤT của ticket (`detail.route`, cột `policy_decision`) + có dòng
         `B10 deflected_info_only` hay không — để route ghi đè suy `original_decision`."""
@@ -305,4 +331,16 @@ class ApprovalRepo(Protocol):
     async def record_override(self, rec: OverrideRecord) -> bool:
         """4d P4: ghi MỘT dòng `audit_logs` `step="OVERRIDE"` (qua `AuditWriter.record_new`) — True = dòng mới; người này đã ghi đè
         ticket này (trùng `idempotency_key`) → False. KHÔNG đụng `tickets`, checkpoint, lượt."""
+        ...
+
+    async def open_deadline(self, ticket_id: str, kind: OpenWaitKind) -> datetime | None:
+        """R3 (`TicketView.deadline`, chỉ đọc): `approval` → `approvals.deadline` của phiếu `pending` mới nhất của ticket;
+        `clarify`/`confirm` → dòng `wait_deadlines` cùng loại chưa bắn (`fired_at IS NULL`, hạn muộn nhất) — đúng dòng worker bắn
+        timeout. Không có → None. Nằm ở đây vì `Desk` (`main.py`) chỉ có `tickets`/`approvals` (như `inbox`, `procedure_title`)."""
+        ...
+
+    async def parent_deadline(self, parent_id: str) -> datetime | None:
+        """`TicketView.deadline` của ticket CHA chưa kết thúc, theo thứ tự: (1) dòng `wait_deadlines` chưa bắn của CHÍNH cha
+        (`parent_wait` đặt khi gửi tin tổng hợp — `db/runtime.py:SqlDeadlineStore._set`; mỗi lúc chỉ một dòng chưa bắn); (2) không có →
+        `min(approvals.deadline)` các phiếu `pending` của ticket CON; (3) không có → None. Chỉ đọc."""
         ...

@@ -18,14 +18,14 @@ export function ProgressStrip({ items }: { items: readonly ProgressView[] }) {
       role="group"
       aria-label="Tiến độ từng việc"
       data-testid="progress-strip"
-      className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line px-6 py-2.5 text-secondary"
+      className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line px-6 py-2.5 text-secondary max-lg:px-4"
     >
       {items.map((item) => {
         const tone = progressTone(item);
         return (
           <span key={item.child_id} data-testid="progress-item" data-child={item.child_id} data-tone={tone} className="inline-flex items-center gap-1.5">
             <span className={`size-1.75 shrink-0 rounded-full ${DOT[tone]}`} aria-hidden="true" />
-            <span className="font-semibold">{item.title}</span>
+            <span className="font-semibold">{item.title || `Ý ${item.index}`}</span>
             <span className="text-ink-2">· {progressLabel(item)}</span>
           </span>
         );

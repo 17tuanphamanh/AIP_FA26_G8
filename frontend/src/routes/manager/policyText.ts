@@ -5,6 +5,7 @@
 //   object. Nó KHÔNG BAO GIỜ khoá nút Lưu khi JSON.parse đã đọc được (lệch nhau → chỉ bỏ đánh dấu dòng).
 // - Kiểm NGHĨA (ngưỡng, loại luật, id trùng…) là việc của server (422) — không viết lại validator ở đây (hai nguồn luật).
 // Dòng/cột tính từ 1; xuống dòng = "\n" (textarea luôn chuẩn hoá về "\n").
+import { ApiError, errorMessage, type Issue, routeMissing } from "../../api/errors.ts";
 import { ownEntry } from "../../lib/lookup.ts";
 
 export type JsonNode =
@@ -112,7 +113,7 @@ export function locate(text: string): Located {
         return { kind: "scalar", line };
       }
     }
-    return fail(i, `Cần một giá trị (chuỗi, số, object, mảng, true, false, null) — gặp ${show(c)}`);
+    return fail(i, `Cần một giá trị (chuỗi, số, đối tượng, mảng, true, false, null) — gặp ${show(c)}`);
   }
 
   function object(line: number): JsonNode {
@@ -126,7 +127,7 @@ export function locate(text: string): Located {
     }
     for (;;) {
       ws();
-      if (i >= n) fail(i, "Nội dung kết thúc khi object chưa đóng — thiếu }");
+      if (i >= n) fail(i, "Nội dung kết thúc khi đối tượng chưa đóng — thiếu }");
       if (text[i] !== '"') fail(i, text[i] === "}" ? "Dấu phẩy thừa trước }" : `Cần tên khoá trong ngoặc kép — gặp ${show(text[i])}`);
       const keyLine = lineOf(i);
       const key = string();
@@ -144,7 +145,7 @@ export function locate(text: string): Located {
         i++;
         break;
       }
-      fail(i, i >= n ? "Nội dung kết thúc khi object chưa đóng — thiếu }" : `Thiếu dấu phẩy hoặc } — gặp ${show(text[i])}`);
+      fail(i, i >= n ? "Nội dung kết thúc khi đối tượng chưa đóng — thiếu }" : `Thiếu dấu phẩy hoặc } — gặp ${show(text[i])}`);
     }
     for (const [key, lines] of seen) if (lines.length > 1) duplicates.push({ key, lines });
     return { kind: "object", line, members };
@@ -257,8 +258,30 @@ export function duplicateText(dup: DuplicateKey): string {
 /** Nội dung server trả → văn bản hiện trong ô sửa. */
 export const formatPolicy = (content: unknown): string => JSON.stringify(content, null, 2);
 
-// Câu trên màn Chính sách (dùng chung với test / verify).
-export const VERSION_CONFLICT_TEXT = "Đã có phiên bản mới hơn — tải lại trước khi lưu";
+// Câu trên màn Chính sách (dùng chung với test / verify). N-POL1: chỉ xem + kiểm (`POST /api/policy/validate`); câu của
+// Lưu / quay lui (409 `version_conflict`, hộp xác nhận quay lui) bỏ cùng nút — N-POL2 thêm lại theo route thật.
 export const TOO_LARGE_TEXT = "Nội dung quá dài";
-/** Hộp xác nhận quay lui (Q-fe-26: quay lui = tạo phiên bản mới, append-only). */
-export const restoreConfirmText = (version: string): string => `Nội dung bản ${version} sẽ được áp dụng lại thành một phiên bản mới.`;
+export const NOT_OBJECT_TEXT = "Nội dung chính sách phải là một đối tượng JSON ({…})";
+export const VALID_TEXT = "Chính sách hợp lệ — máy chủ không thấy lỗi nào.";
+export const INVALID_TEXT = "Chính sách chưa hợp lệ — xem các dòng được đánh dấu.";
+/** 422 `invalid_request` (thân sai hình dạng) — không có vị trí trong nội dung để đánh dấu. */
+export const SHAPE_TEXT = "Máy chủ không đọc được nội dung gửi đi — kiểm tra lại JSON rồi thử lại.";
+/** 403 của validate (cần `policy:edit`). */
+export const CHECK_FORBIDDEN_TEXT = "Bạn không có quyền kiểm tra chính sách.";
+/** 5xx, lỗi mạng, thân trả về sai dạng: câu chung, KHÔNG kèm chi tiết từ máy chủ. */
+export const CHECK_FAILED_TEXT = "Chưa kiểm tra được — hệ thống đang bận hoặc mất kết nối. Vui lòng thử lại sau.";
+export const CHECK_MISSING_TEXT = "Máy chủ chưa có chức năng kiểm tra chính sách.";
+
+/** Lỗi của validate → câu + (422 `invalid_policy`) danh sách lỗi theo vị trí. Không bao giờ đưa thân lỗi 5xx ra màn. */
+export function checkFailure(e: unknown): { text: string; issues: Issue[] } {
+  if (!(e instanceof ApiError)) return { text: CHECK_FAILED_TEXT, issues: [] };
+  if (e.status === 422 && e.code === "invalid_policy") {
+    return { text: INVALID_TEXT, issues: e.issues.length > 0 ? e.issues : [{ loc: [], msg: INVALID_TEXT }] };
+  }
+  if (e.status === 422) return { text: SHAPE_TEXT, issues: [] };
+  if (e.status === 403) return { text: CHECK_FORBIDDEN_TEXT, issues: [] };
+  if (e.status === 413) return { text: TOO_LARGE_TEXT, issues: [] };
+  if (routeMissing(e)) return { text: CHECK_MISSING_TEXT, issues: [] };
+  if (e.status === 401 || e.status === 429) return { text: errorMessage(e), issues: [] };
+  return { text: CHECK_FAILED_TEXT, issues: [] };
+}

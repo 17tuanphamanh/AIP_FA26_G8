@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 9 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB04-q1, HB04-q2
+id: HB04-q2
+family: HB04
+source: bien_the
+requester:
+  user_id: nv001
+  role: employee
+  dept: finance
+  tenure_days: 980
+at: '2026-10-07T09:45:00+07:00'
+faults: []
+turns:
+- 'IT ơi, máy LAP-0342 em cần cài thêm phần mềm, khi nào tiện anh làm giúp em nhé.'
+- on_question_about: software_name
+  reply: 'phần mềm MS Project.'
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: E7
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0342
+    params:
+      software_name: MS Project
+      device_id: LAP-0342
+  facts:
+    device_owner_is_requester: true
+    device_registered: true
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: false
+labels:
+  annotator_1: HITL
+  annotator_2: ESCALATE_L2

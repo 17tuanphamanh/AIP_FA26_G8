@@ -28,6 +28,7 @@ def pt(*args: str) -> list[str]:
 
 GUARD = "ml_service/app/guard.py"
 B02 = "backend/app/graph/nodes/b02_screen.py"
+B2_REVIEW = "backend/app/guard/b2_review.py"  # gói 1 (D-52): quyết định theo điểm của `active` chuyển vào hàm thuần
 SETTINGS = "backend/app/settings.py"
 CLIENT = "backend/app/ml/client.py"
 
@@ -54,17 +55,17 @@ def one(rel: str, old: str, new: str) -> tuple[str, str, str, int]:
 _MAX = "    p_malicious = max(softmax(row)[guard.injection_index] for row in rows)\n"
 _CAP = "        raise TooManyWindows(count)\n"
 _SHA = "        if actual != expected:\n"
-_ACTIVE = '        if p_mal is not None and clf_mode == "active":\n'
-_DEFAULT = '    b2_classifier_mode: Literal["shadow", "active"] = "shadow"\n'
+_ACTIVE = '    if mode != "active" or p_mal is None:\n'  # gói 1: mốc dời sang `b2_review.classifier_shortcut`
+_DEFAULT = '    b2_classifier_mode: Literal["shadow", "active", "review"] = "shadow"\n'  # gói 1: Literal thêm `review`
 _L3_422 = '    return endpoint == "classify" and response.status_code == 422 and _error_code(response) == "too_many_windows"\n'
 
 _SHADOW_BLOCKS = (
-    "        if p_mal is not None and p_mal >= TAU_BLOCK:  # MUTATION M-T23a-2: chặn theo điểm bất kể mode\n"
-    '            return await _block(state, layer_decided="classifier", p_mal=p_mal, clf_mode=clf_mode)\n'
+    "    if p_mal is not None and p_mal >= TAU_BLOCK:  # MUTATION M-T23a-2: chặn theo điểm bất kể mode\n"
+    '        return Verdict("E0", "classifier")\n'
 )
 _SHADOW_PASSES = (
-    "        if p_mal is not None and p_mal <= TAU_PASS:  # MUTATION M-T23a-3: cho qua theo điểm bất kể mode\n"
-    '            return await _pass(state, layer_decided="classifier", p_mal=p_mal, clf_mode=clf_mode)\n'
+    "    if p_mal is not None and p_mal <= TAU_PASS:  # MUTATION M-T23a-3: cho qua theo điểm bất kể mode\n"
+    '        return Verdict("pass", "classifier")\n'
 )
 
 SHADOW = "test_shadow_classifier_never_decides"
@@ -75,10 +76,10 @@ MUTATIONS_ALL: list[Mutation] = [
              [one(GUARD, _MAX, _MAX.replace("for row in rows)", "for row in rows[:1])  # MUTATION M-T23a-1"))],
              ML, ["test_suspicious_tail_in_last_window_is_scored"]),
     Mutation("M-T23a-2 shadow vẫn chặn ≥ TAU_BLOCK",
-             [one(B02, _ACTIVE, _SHADOW_BLOCKS + _ACTIVE)],
+             [one(B2_REVIEW, _ACTIVE, _SHADOW_BLOCKS + _ACTIVE)],
              BE, [f"{SHADOW}[0.95]"]),
     Mutation("M-T23a-3 shadow vẫn cho qua ≤ TAU_PASS",
-             [one(B02, _ACTIVE, _SHADOW_PASSES + _ACTIVE)],
+             [one(B2_REVIEW, _ACTIVE, _SHADOW_PASSES + _ACTIVE)],
              BE, [f"{SHADOW}[0.05]", "test_shadow_low_score_attack_still_judged_by_llm"]),
     Mutation("M-T23a-4 mặc định → active",
              [one(SETTINGS, _DEFAULT, _DEFAULT.replace('= "shadow"', '= "active"  # MUTATION M-T23a-4'))],

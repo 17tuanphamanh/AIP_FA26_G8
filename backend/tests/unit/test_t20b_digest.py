@@ -40,7 +40,7 @@ T0 = datetime(2026, 10, 15, 3, 0, tzinfo=UTC)
 
 
 P = "P1"
-ITEM_KEYS = {"child_id", "index", "title", "kind", "text", "needs"}
+ITEM_KEYS = {"child_id", "index", "title", "kind", "text", "needs", "step"}  # `step` = `source_step` của notice (Q6 c2)
 MSG_KEYS = {"role", "kind", "round", "text", "items"}
 
 
@@ -125,10 +125,12 @@ def test_m1_m2_digest_round1_order_by_index_and_shape() -> None:
     assert set(d.msg) == MSG_KEYS
     assert (d.msg["role"], d.msg["kind"], d.msg["round"]) == ("assistant", "digest", 1)
     assert d.msg["items"] == [
-        {"child_id": "P1-1", "index": 1, "title": RESET_TITLE, "kind": "result", "text": "Theo KB, làm A.", "needs": "confirm"},
+        {"child_id": "P1-1", "index": 1, "title": RESET_TITLE, "kind": "result", "text": "Theo KB, làm A.", "needs": "confirm",
+         "step": "B10"},
         {"child_id": "P1-1", "index": 1, "title": RESET_TITLE, "kind": "result", "text": "Đã đặt lại mật khẩu.",
-         "needs": "confirm"},
-        {"child_id": "P1-2", "index": 2, "title": INSTALL_TITLE, "kind": "question", "text": "Máy nào?", "needs": "answer"},
+         "needs": "confirm", "step": "B18"},
+        {"child_id": "P1-2", "index": 2, "title": INSTALL_TITLE, "kind": "question", "text": "Máy nào?", "needs": "answer",
+         "step": "B11"},
     ]  # fmt: skip
     assert d.msg["text"] == "\n".join([
         _line(1, RESET_TITLE, "Theo KB, làm A."), _line(1, RESET_TITLE, "Đã đặt lại mật khẩu."),

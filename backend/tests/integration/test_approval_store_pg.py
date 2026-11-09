@@ -11,6 +11,7 @@ import pytest_asyncio
 from alembic import command
 from app.approval.store import SqlApprovals
 from app.core.clock import FakeClock
+from app.db.runtime import SqlDeadlineStore
 from app.db.tickets import NewTicket, SqlTicketStore
 from app.domain.states import S_PENDING_APPROVAL
 from app.graph.worker_jobs import WorkerJobs
@@ -164,3 +165,36 @@ async def test_approval_insert_rolls_back_with_side_effect(db: PgUrls, rw: Async
         assert (await rt.runner.snapshot(ticket)).values["status"] == S_PENDING_APPROVAL
     assert await scalar(rw, "SELECT count(*) FROM approvals WHERE ticket_id=:t "
                             "AND status='pending'", t=ticket) == 1  # fmt: skip
+
+
+# ---- R3: open_deadline (TicketView.deadline) ----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_open_deadline_approval_only_pending(rw: AsyncEngine) -> None:
+    """R3: `approval` → `approvals.deadline` của phiếu `pending` (UTC); phiếu đóng → None (M-R3-3b); ticket không phiếu → None."""
+    store = SqlApprovals(rw)
+    ticket, aid = await _approval(rw)
+    got = await store.open_deadline(ticket, "approval")
+    assert got == NOW + timedelta(minutes=30) and got is not None and got.tzinfo == UTC
+    assert await store.close(aid, "approved", NOW, decided_by=APPROVER) == 1
+    assert await store.open_deadline(ticket, "approval") is None
+    assert await store.open_deadline("khong-co", "approval") is None
+
+
+@pytest.mark.asyncio
+async def test_open_deadline_wait_kinds_unfired_only(rw: AsyncEngine) -> None:
+    """R3: `clarify`/`confirm` → dòng `wait_deadlines` CÙNG loại chưa bắn (đúng dòng worker bắn); đã bắn / khác loại → None; hạn
+    duyệt không lẫn vào."""
+    store, waits = SqlApprovals(rw), SqlDeadlineStore(rw)
+    ticket, _ = await _approval(rw)
+    confirm_at, clarify_at = NOW + timedelta(hours=48), NOW + timedelta(hours=24)
+    await waits.set(ticket, "confirm", confirm_at, "turn-c")
+    assert await store.open_deadline(ticket, "confirm") == confirm_at
+    assert await store.open_deadline(ticket, "clarify") is None
+    await waits.set(ticket, "clarify", clarify_at, "turn-q")
+    assert await store.open_deadline(ticket, "clarify") == clarify_at
+    [due] = [d for d in await waits.due(NOW + timedelta(hours=49), 50) if (d.ticket_id, d.kind) == (ticket, "confirm")]
+    await waits.mark_fired(due, NOW + timedelta(hours=49))
+    assert await store.open_deadline(ticket, "confirm") is None
+    assert await store.open_deadline(ticket, "clarify") == clarify_at

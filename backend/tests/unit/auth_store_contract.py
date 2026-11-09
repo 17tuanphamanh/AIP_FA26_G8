@@ -47,6 +47,7 @@ def _session(env: StoreEnv, user_id: str, family: uuid.UUID | None = None,
     )  # fmt: skip
 
 
+CHO_0016 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 (A4 `users.mfa_last_step`) — gỡ cờ khi hiện thực")
 HCM = ZoneInfo("Asia/Ho_Chi_Minh")  # múi giờ khác UTC — đầu vào cố ý không chuẩn
 
 
@@ -283,3 +284,48 @@ class AuthStoreContract:
                             s.expires_at)  # fmt: skip
         with pytest.raises(Exception):  # noqa: B017 — UNIQUE refresh_token_hash
             await env.store.create_session(dup)
+
+    # ---- A4 (bn-a, migration 0016 — dời từ 0015): bước TOTP đã chấp nhận ------------------------------------------------------------------
+
+    @CHO_0016
+    @pytest.mark.asyncio
+    async def test_accept_totp_step_strictly_increasing(self, env: StoreEnv) -> None:
+        store: Any = env.store  # A4: `accept_totp_step` vào AuthStore khi có 0016 — gỡ dòng này
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        assert await store.accept_totp_step(uid, 100) is True  # chưa có bước nào
+        assert await store.accept_totp_step(uid, 100) is False  # cùng bước = dùng lại
+        assert await store.accept_totp_step(uid, 99) is False  # bước cũ hơn
+        assert await store.accept_totp_step(uid, 101) is True
+        assert await store.accept_totp_step(uid, 100) is False  # mốc đã lên 101
+
+    @CHO_0016
+    @pytest.mark.asyncio
+    async def test_accept_totp_step_concurrent_same_step_exactly_once(self, env: StoreEnv) -> None:
+        store: Any = env.store  # A4: `accept_totp_step` vào AuthStore khi có 0016 — gỡ dòng này
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        results = await asyncio.gather(*[store.accept_totp_step(uid, 500) for _ in range(5)])
+        assert sorted(results) == [False, False, False, False, True]
+
+    @CHO_0016
+    @pytest.mark.asyncio
+    async def test_set_mfa_secret_clears_accepted_step_and_upsert_keeps_it(self, env: StoreEnv) -> None:
+        store: Any = env.store  # A4: `accept_totp_step` vào AuthStore khi có 0016 — gỡ dòng này
+        uid = _uid()
+        await env.store.upsert_user(_sync(env, uid))
+        assert await store.accept_totp_step(uid, 300) is True
+        await env.store.upsert_user(_sync(env, uid, status="probation"))  # đồng bộ AD không đụng bước đã nhận
+        assert await store.accept_totp_step(uid, 300) is False
+        await env.store.set_mfa_secret(uid, b"\x00secret-moi")  # enroll/reset: secret mới → bước cũ hết nghĩa
+        assert await store.accept_totp_step(uid, 300) is True
+
+    @CHO_0016
+    @pytest.mark.asyncio
+    async def test_accept_totp_step_isolated_per_user(self, env: StoreEnv) -> None:
+        store: Any = env.store  # A4: `accept_totp_step` vào AuthStore khi có 0016 — gỡ dòng này
+        a, b = _uid(), _uid()
+        for uid in (a, b):
+            await env.store.upsert_user(_sync(env, uid))
+        assert await store.accept_totp_step(a, 700) is True
+        assert await store.accept_totp_step(b, 700) is True

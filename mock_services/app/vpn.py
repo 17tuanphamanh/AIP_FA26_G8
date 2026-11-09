@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.ad import get_user, mock_state
 from app.security import require_read, require_write
-from app.state import Cert, Device, MockState
+from app.state import Cert, Connection, Device, MockState
 
 router = APIRouter(prefix="/vpn")
 
@@ -73,8 +73,9 @@ async def certs(user_id: str, request: Request, device_id: str | None = None) ->
 async def connections(user_id: str, request: Request) -> list[dict[str, Any]]:
     state = mock_state(request)
     get_user(state, user_id)
-    rows = sorted((c for c in state.connections if c.user_id == user_id), key=lambda c: c.at,
-                  reverse=True)[:CONNECTION_LIMIT]  # fmt: skip
+    # cùng mốc `at` (đồng hồ test đứng yên, hoặc hai lần gọi trong cùng tick): lần ghi sau xếp trước
+    indexed = [(c.at, i, c) for i, c in enumerate(state.connections) if c.user_id == user_id]
+    rows = [c for _, _, c in sorted(indexed, key=lambda t: (t[0], t[1]), reverse=True)[:CONNECTION_LIMIT]]
     return [
         {"at": c.at, "device_id": c.device_id, "result": c.result, "error_code": c.error_code}
         for c in rows
@@ -109,6 +110,40 @@ def _issue(request: Request, user_id: str, device_id: str) -> dict[str, Any]:
                 False)  # fmt: skip
     state.certs.append(cert)
     return cert_view(state, cert)
+
+
+class ConnectBody(BaseModel):
+    user_id: str = Field(min_length=1)
+    device_id: str = Field(min_length=1)
+
+
+def _connect_outcome(state: MockState, user_id: str, device: Device) -> str | None:
+    """Mã lỗi của lần kết nối thử theo trạng thái thật; None = kết nối được."""
+    if not device.registered:
+        return "DEVICE_NOT_REGISTERED"
+    certs = [c for c in state.certs if c.user_id == user_id and c.device_id == device.device_id]
+    if not certs:
+        return "NO_CERT"
+    statuses = {cert_view(state, c)["status"] for c in certs}
+    if "valid" in statuses:
+        return None
+    return "CERT_EXPIRED" if "expired" in statuses else "CERT_REVOKED"  # chỉ còn chứng chỉ đã thu hồi
+
+
+@router.post("/connect", dependencies=[Depends(require_write)])
+async def connect(body: ConnectBody, request: Request) -> dict[str, Any]:
+    """Kết nối thử một máy vào VPN; kết quả (cả thất bại) ghi vào lịch sử `/vpn/connections`."""
+    state = mock_state(request)
+    get_user(state, body.user_id)
+    dev = state.devices.get(body.device_id)
+    if dev is None or dev.owner_id != body.user_id:
+        raise HTTPException(404, "not_found")
+    error_code = _connect_outcome(state, body.user_id, dev)
+    result = "success" if error_code is None else "failed"
+    conn = Connection(body.user_id, body.device_id, state.now(), result, error_code)
+    state.connections.append(conn)
+    return {"at": conn.at, "user_id": conn.user_id, "device_id": conn.device_id, "result": result,
+            "error_code": error_code}  # fmt: skip
 
 
 @router.post("/certs/{user_id}/renew", dependencies=[Depends(require_write)])

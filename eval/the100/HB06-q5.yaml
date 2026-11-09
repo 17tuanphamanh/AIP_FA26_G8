@@ -1,0 +1,39 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 46 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB06-q5, HB06-q6
+id: HB06-q5
+family: HB06
+source: bien_the
+requester:
+  user_id: l1_01
+  role: employee
+  dept: it
+  tenure_days: 1200
+at: '2026-10-07T13:15:00+07:00'
+faults: []
+turns:
+- 'Em cần dùng VPN để trực hỗ trợ từ xa tuần này, nhờ anh cấp lại quyền truy cập VPN giúp em.'
+- on_question_about: device_id
+  reply: 'Máy PC-0123 của em ạ.'
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:PC-0123
+  facts:
+    cert_days_to_expiry: 265
+    cert_status: valid
+    device_count: 2
+    device_owner_is_requester: true
+    device_registered: true
+    has_registered_device: true
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

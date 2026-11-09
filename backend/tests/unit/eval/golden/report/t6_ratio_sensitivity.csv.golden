@@ -1,0 +1,16 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,arm,ratio,t_low_theoretical,cost,cost_weighted_70_20_10
+manual@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Thủ công,5.000000,0.200000,2.250000,1.500000
+manual@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Thủ công,10.000000,0.100000,2.250000,1.500000
+manual@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Thủ công,20.000000,0.050000,2.250000,1.500000
+full_auto@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Full-auto,5.000000,0.200000,4.375000,2.000000
+full_auto@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Full-auto,10.000000,0.100000,8.750000,4.000000
+full_auto@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Full-auto,20.000000,0.050000,17.500000,8.000000
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,5.000000,0.200000,1.125000,0.500000
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,10.000000,0.100000,1.125000,0.500000
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,20.000000,0.050000,1.125000,0.500000
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,5.000000,0.200000,1.375000,0.966667
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,10.000000,0.100000,1.375000,0.966667
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,20.000000,0.050000,1.375000,0.966667
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,5.000000,0.200000,2.000000,0.916667
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,10.000000,0.100000,2.625000,1.250000
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,20.000000,0.050000,3.875000,1.916667

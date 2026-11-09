@@ -69,12 +69,12 @@ _MEMO = "            seen[user_id] = await lookup(user_id)  # ném → không gh
 _R17 = (
     '      {"fact": "action.facts.device_registered", "op": "is_false"},\n'
     '      {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},\n'
-    '     "description": "Thiết bị chưa đăng ký"},\n'
+    '     "description": "Thiết bị chưa đăng ký cần người duyệt"},\n'
 )
 _R18 = (
     '      {"fact": "time.within_business_hours", "op": "is_false"},\n'
     '      {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},\n'
-    '     "description": "Ngoài giờ hành chính"},\n'
+    '     "description": "Yêu cầu gửi ngoài giờ hành chính cần người duyệt"},\n'
 )
 _ROUTE_CHAIN = "    return await manager_chain(user_id, me.manager_id if me else None, fetch_manager)\n"
 _GUARD = (

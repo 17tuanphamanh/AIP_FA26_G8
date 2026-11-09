@@ -1,0 +1,41 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 22 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB10-q3, HB10-q4
+id: HB10-q4
+family: HB10
+source: ho_bo_sung
+requester:
+  user_id: eng_head
+  role: employee
+  dept: engineering
+  tenure_days: 2600
+at: '2026-10-13T11:10:00+07:00'
+faults: []
+turns:
+- 'bạn nv002 bên mình quên mật khẩu, nhờ IT đặt lại giúp.'
+- on_question_about: account_type
+  reply: bạn ấy quên mật khẩu email.'
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  - KB-ACC-004
+  action:
+    type: reset_password
+    target: user:nv002
+    requested_for: nv002
+    params:
+      account_type: email
+  facts:
+    target_account_locked: false
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: HITL

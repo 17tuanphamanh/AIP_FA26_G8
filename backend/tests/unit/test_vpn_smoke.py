@@ -96,6 +96,18 @@ def test_probe_real_without_pricing_reports_false_and_leaks_nothing() -> None:
     assert SECRET not in out and "model-chua-co-gia" not in out and "llm.example" not in out
 
 
+@pytest.mark.parametrize(("chat_model", "ok"), [
+    ("", True),  # Q10: CHAT_MODEL trống → vai chat mượn model của fast/strong, không đòi thêm dòng giá
+    ("deepseek-v4-pro", True),
+    ("model-chua-co-gia", False),
+])  # fmt: skip
+def test_probe_real_checks_chat_model_pricing_only_when_set(chat_model: str, ok: bool) -> None:
+    out = _run_probe(LLM_BACKEND="real", FAST_MODEL="deepseek-flash", STRONG_MODEL="deepseek-flash", CHAT_MODEL=chat_model,
+                     LLM_API_KEY=SECRET, LLM_BASE_URL="https://llm.example/v1")  # fmt: skip
+    assert json.loads(out.strip().splitlines()[-1]) == {"backend": "real", "cap_usd": 38.0, "pricing_ok": ok}
+    assert "model-chua-co-gia" not in out and SECRET not in out
+
+
 def test_probe_scripted_reads_config_cap() -> None:
     assert json.loads(_run_probe(LLM_BACKEND="scripted").strip()) == {"backend": "scripted", "cap_usd": 38.0,
                                                                        "pricing_ok": True}  # fmt: skip

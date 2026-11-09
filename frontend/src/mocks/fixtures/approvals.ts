@@ -7,7 +7,16 @@
 // Mốc giờ tính từ `base` (giờ nạp trang) → mỗi lần tải trang dữ liệu mới, ổn định trong một phiên trang.
 // Hộp thư ở dev:mock = phiếu THẬT của backend + các phiếu này (mocks/handlers/approvals.ts). Xoá khi: 4c + 4d có
 // response_model (gen:api) và không còn cần minh hoạ (cùng mocks/handlers/approvals.ts, override.ts).
-import type { ApprovalListItem, ApprovalRoleAs, ApprovalStatus, ApprovalViewP4, OverrideDecision } from "../../api/types.ts";
+import type {
+  ApprovalAffected,
+  ApprovalListItem,
+  ApprovalRiskView,
+  ApprovalRoleAs,
+  ApprovalStatus,
+  ApprovalViewP4,
+  MatchedRule,
+  OverrideDecision,
+} from "../../api/types.ts";
 
 export const APPROVAL_DEMO_PREFIX = "apv-demo-";
 export const TICKET_DEMO_PREFIX = "tkt-demo-";
@@ -52,6 +61,12 @@ type Spec = {
   auditMissing?: boolean;
   /** false → không nằm trong hộp thư. */
   listed?: boolean;
+  /** Người BỊ TÁC ĐỘNG (F6 #76); mặc định = người gửi, quản lý chưa rõ. Khác người gửi → `is_requester` false. */
+  affected?: { user_id: string; department: string | null; manager: ApprovalAffected["manager"] };
+  /** true → đánh giá do LLM, chưa hiệu chỉnh (`risk_view.calibrated` false): màn hiện "chưa hiệu chỉnh, không tự xử lý". */
+  llmRisk?: boolean;
+  /** N-PA §3: các luật khớp (khoá gốc `matched_rules`); vắng → phiếu không có khoá (màn hiện "Chưa có dữ liệu luật khớp"). */
+  matched?: MatchedRule[];
 };
 
 const NV001: Requester = { user_id: "nv001", department: "Finance" }; // an.nv — LAP-0342, chứng chỉ hết hạn 3 ngày
@@ -64,14 +79,51 @@ const R17: Rule = { id: "R17", reason: "Thiết bị chưa đăng ký" };
 const R18: Rule = { id: "R18", reason: "Ngoài giờ hành chính" };
 const R19: Rule = { id: "R19", reason: "Nhân viên chưa qua thử việc" };
 
+/** apv-demo-01 (N-PA P4, Q-fe-N3): 3 luật, đúng 1 applied (R18) — R20 (allow) là luật thua có quyết định KHÁC, R19
+ *  (approval_required) là luật thua CÙNG quyết định; R20 không có mô tả (null → "—"). */
+const MATCHED_01: MatchedRule[] = [
+  { rule_id: "R18", description: "Yêu cầu gửi ngoài giờ hành chính cần người duyệt", decision: "approval_required", applied: true },
+  { rule_id: "R19", description: "Nhân viên chưa qua thử việc cần người duyệt", decision: "approval_required", applied: false },
+  { rule_id: "R20", description: null, decision: "allow", applied: false },
+];
+
 const KB_CERT = { doc_id: "KB-VPN-004", title: "Gia hạn và cấp lại chứng chỉ VPN" };
 const KB_DEVICE = { doc_id: "KB-VPN-005", title: "Đăng ký thiết bị mới để dùng VPN" };
+
+const UNKNOWN_MANAGER: ApprovalAffected["manager"] = { status: "unknown", user_id: null, full_name: null };
+type RiskBody = Omit<ApprovalRiskView, "calibrated" | "auto_allowed">;
+const RULE_RISK: RiskBody = {
+  decided_by: "rule",
+  policy_decision: "approval_required",
+  matched_rule_id: null,
+  raw_prob: null,
+  calibrated_prob: null,
+  p_method: null,
+  risk_level: "medium",
+  route: "HITL",
+  reason: "",
+  thresholds: null,
+};
+/** Đánh giá của LLM, chưa có calibrated_prob → `calibrated` false (điểm tự khai, không dùng để tự xử lý). */
+const LLM_RISK: RiskBody = {
+  decided_by: "llm",
+  policy_decision: null,
+  matched_rule_id: null,
+  raw_prob: 0.62,
+  calibrated_prob: null,
+  p_method: "self_report",
+  risk_level: "high",
+  route: "HITL",
+  reason: "Mô hình thấy chứng chỉ bị thu hồi bất thường, không có luật khớp",
+  thresholds: null,
+};
 
 const SPECS: readonly Spec[] = [
   {
     // Còn 4/30 phút (13%) → ĐỎ; đã qua cả 2 mốc nhắc.
     n: "01", status: "pending", role_as: "primary", created: -26, action_type: "renew_vpn_cert", device_id: "LAP-0342",
-    requester: NV001, rule: R18,
+    requester: NV001, rule: R18, matched: MATCHED_01,
+    affected: { user_id: "nv001", department: "Finance", manager: { status: "known", user_id: "mgr01", full_name: "Lê Thị Hạnh" } },
     request: "VPN báo chứng chỉ hết hạn trên máy LAP-0342, tối nay em cần vào hệ thống kế toán để chốt sổ ạ.",
     facts: { device_registered: true, device_owner_is_requester: true, cert_status: "expired", cert_days_to_expiry: -3, last_connection_ok: false },
     procedure: KB_CERT, hash: "9f2c7e5d1b8a4c3e6f0d2a9b7c5e1f3a8d6b4c2e0f9a7b5c3d1e8f6a4b2c0e41",
@@ -79,7 +131,8 @@ const SPECS: readonly Spec[] = [
   {
     // Dự phòng: chỉ duyệt được sau nhắc 2 (4c P4, Q-4-O) → luôn có reminder_2_at. Còn 5/30 phút (17%) → ĐỎ.
     n: "02", status: "pending", role_as: "backup", created: -25, action_type: "reissue_vpn_access", device_id: "LAP-0610",
-    requester: NV005, rule: R18,
+    requester: NV005, rule: R18, llmRisk: true,
+    affected: { user_id: "nv005", department: "Sales", manager: { status: "known", user_id: "mgr02", full_name: null } }, // sếp chưa từng đăng nhập
     request: "Máy LAP-0610 không vào được VPN, báo chứng chỉ bị thu hồi. Nhờ IT cấp lại giúp em.",
     facts: { device_registered: true, device_owner_is_requester: true, cert_status: "revoked", cert_days_to_expiry: 65, last_connection_ok: false },
     procedure: { doc_id: "KB-VPN-004", title: null }, // không tìm thấy tiêu đề ở bản KB hiện hành → chỉ doc_id (4c P6)
@@ -89,8 +142,10 @@ const SPECS: readonly Spec[] = [
     // Còn 26/30 phút → KHÔNG đỏ, chưa nhắc.
     n: "03", status: "pending", role_as: "primary", created: -4, action_type: "renew_vpn_cert", device_id: "LAP-0501",
     requester: NV003, rule: R19,
-    request: "Chứng chỉ VPN máy LAP-0501 còn 5 ngày nữa hết hạn, em xin gia hạn trước để không bị gián đoạn.",
-    facts: { device_registered: true, device_owner_is_requester: true, cert_status: "valid", cert_days_to_expiry: 5, last_connection_ok: true },
+    // Người bị tác động KHÁC người gửi (nhờ hộ): is_requester false → màn hiện dải "Khác người gửi yêu cầu".
+    affected: { user_id: "nv006", department: "Operations", manager: { status: "unknown", user_id: null, full_name: null } },
+    request: "Nhờ IT gia hạn trước chứng chỉ VPN máy LAP-0501 của bạn nv006 (còn 5 ngày nữa hết hạn) để không bị gián đoạn công việc.",
+    facts: { device_registered: true, device_owner_is_requester: false, cert_status: "valid", cert_days_to_expiry: 5, last_connection_ok: true },
     procedure: KB_CERT, hash: "c4d9a2e7f1b6c3d8e0a5f2b7c9d4e1a6f3b8c0d5e2a7f4b9c1d6e3a8f5b0c2d7",
   },
   {
@@ -128,6 +183,7 @@ const SPECS: readonly Spec[] = [
     // `procedure` null. Còn 28/30 phút → không đỏ. Vẫn quyết được: căn cứ là object đã băm + mã băm.
     n: "08", status: "pending", role_as: "primary", created: -2, action_type: "reissue_vpn_access", device_id: null,
     requester: NV004_NO_DEPT, rule: null, auditMissing: true,
+    affected: { user_id: "nv004", department: null, manager: { status: "unknown", user_id: null, full_name: null } },
     request: "Em cần cấp lại quyền VPN cho tài khoản để tuần sau làm việc từ xa ạ.",
     facts: { device_registered: false, cert_status: "none", last_connection_ok: false },
     procedure: null, hash: "a3f9c1e7b5d2a8f4c0e6b2d8a4f0c6e2b8d4a0f6c2e8b4d0a6f2c8e4b0d6a2f1",
@@ -174,10 +230,15 @@ function build(spec: Spec, base: number): ApprovalFixture {
         };
   const meta = { approval_id, ticket_id, status: spec.status, deadline: iso(deadline), role_as: spec.role_as, item };
   if (spec.planChanged) return { ...meta, view: "plan_changed" };
+  const affected: ApprovalAffected = {
+    ...(spec.affected ?? { user_id: spec.requester.user_id, department: spec.requester.department, manager: UNKNOWN_MANAGER }),
+    is_requester: (spec.affected?.user_id ?? spec.requester.user_id) === spec.requester.user_id,
+  };
+  const risk = spec.rule && (spec.llmRisk ? LLM_RISK : { ...RULE_RISK, matched_rule_id: spec.rule.id, reason: spec.rule.reason });
   const action = {
     type: spec.action_type,
     target: spec.device_id ? `device:${spec.device_id}` : `user:${spec.requester.user_id}`,
-    requested_for: spec.requester.user_id,
+    requested_for: affected.user_id,
     scope: "single_device",
     privilege_level: "standard_user",
     reversible: true,
@@ -195,21 +256,13 @@ function build(spec: Spec, base: number): ApprovalFixture {
     request_summary: spec.request,
     action,
     action_plan_hash: spec.hash,
-    risk: spec.rule && {
-      decided_by: "rule",
-      policy_decision: "approval_required",
-      matched_rule_id: spec.rule.id,
-      raw_prob: null,
-      calibrated_prob: null,
-      p_method: null,
-      risk_level: "medium",
-      route: "HITL",
-      reason: spec.rule.reason,
-      thresholds: null,
-    },
+    risk,
+    risk_view: risk && { ...risk, calibrated: risk.calibrated_prob !== null, auto_allowed: risk.route === "AUTO" },
     facts: spec.facts,
     role_as: spec.role_as,
     procedure: spec.procedure,
+    affected,
+    ...(spec.matched ? { matched_rules: spec.matched } : {}),
   };
   return { ...meta, view };
 }

@@ -20,7 +20,7 @@ from app.core.clock import FakeClock
 from app.core.turn_budget import TurnDeadline, bind_turn_deadline
 from app.domain.answer import check_citations, render_answer
 from app.domain.context import RequesterContext
-from app.domain.messages import SOURCE_KEYS
+from app.domain.messages import ANSWER_CLOSING, SOURCE_KEYS
 from app.domain.states import (
     S_CLARIFYING,
     S_CONFIRMING,
@@ -148,7 +148,7 @@ def test_g3_check_citations(citations: list[str], cannot: bool, verdict: str) ->
 def test_render_answer_numbered_steps_and_dedup_sources() -> None:
     body = render_answer("  Bạn làm như sau.  ", ["Mở ABC Connect", " ", "Chọn SSTP"], [TOP[1], TOP[0], TOP[1]])
     assert body == (
-        "Bạn làm như sau.\n\n1. Mở ABC Connect\n2. Chọn SSTP\n\n"
+        f"Bạn làm như sau.\n\n1. Mở ABC Connect\n2. Chọn SSTP\n\n{ANSWER_CLOSING}\n\n"  # Q2 M2: câu kết sau các bước
         "Nguồn:\n- Lỗi 809 › Mục 2\n- VPN công ty › Mục 1"
     )
     assert render_answer("Trả lời.", None, [TOP[0]]) == "Trả lời.\n\nNguồn:\n- VPN công ty › Mục 1"
@@ -174,13 +174,13 @@ async def test_info_answer_sends_once_sets_confirm_deadline_and_lineage() -> Non
     assert (wait["kind"], wait["deadline"], wait["created_turn"]) == ("confirm", h.clock.now() + timedelta(hours=48),
                                                                       "T1")  # fmt: skip
     [lin] = h.audit.lineage
-    assert lin == {"prompt_id": "b10_answer", "prompt_version": "1", "model": "scripted", "kb_version": KBV,
+    assert lin == {"prompt_id": "b10_answer", "prompt_version": "3", "model": "scripted", "kb_version": KBV,
                    "commit_sha": None,  # Phase 4 P4: NodeDeps.commit_sha (test: None)
                    "ticket_id": "t1", "turn_id": "T1", "step": "B10", "created_at": h.clock.now()}  # fmt: skip
     row = _only(h)
     assert (row["event"], row["to_status"]) == ("deflected_info_only", S_CONFIRMING)
     assert row["detail"]["citation"] == "ok" and row["detail"]["cited"] == [c.chunk_id for c in TOP]
-    assert row["detail"]["prompt"] == "b10_answer@1" and row["detail"]["evidence_truncated"] is False
+    assert row["detail"]["prompt"] == "b10_answer@3" and row["detail"]["evidence_truncated"] is False
     # audit/lineage không mang chữ người dùng hay chữ LLM (3.6)
     blob = repr(h.audit.rows) + repr(h.audit.lineage)
     assert QUESTION not in blob and ANSWER_TEXT not in blob and "Mở ABC Connect" not in blob

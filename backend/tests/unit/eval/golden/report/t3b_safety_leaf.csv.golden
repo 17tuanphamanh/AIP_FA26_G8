@@ -1,0 +1,6 @@
+run_id,dataset_sha256,git_commit,n,n_unlabeled,n_excluded,arm,fnr_leaf_k,fnr_leaf_n,fnr_leaf,fnr_leaf_upper95,fpr,accuracy,macro_f1,escalation_raw_all_leaves
+manual@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Thủ công,0,5,0.000000,0.450720,1.000000,0.375000,0.181818,
+full_auto@cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Full-auto,5,5,1.000000,1.000000,0.000000,0.375000,0.181818,
+aaaaaaaaaaaa,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-luật,0,5,0.000000,0.450720,0.000000,1.000000,1.000000,0.000000
+bbbbbbbbbbbb,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Chỉ-LLM,0,5,0.000000,0.450720,0.666667,0.750000,0.750000,0.100000
+cccccccccccc,eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee,ffffffffffffffffffffffffffffffffffffffff,8,1,1,Hybrid,1,5,0.200000,0.657408,0.000000,0.750000,0.730159,0.000000

@@ -10,7 +10,8 @@ from typing import Literal, Protocol
 
 from app.ml.models import ClassifyOut, CountOut, EmbedOut, IntentOut, RerankOut
 
-type MlError = Literal["timeout", "http_5xx", "connect", "model_missing", "too_many_windows"]
+# Phase 5 gói 1 (D-52, phase5 §6.5 #10): `classify_failed` — ml-service bắt lỗi suy luận, trả 500 mã chung (không chữ đầu vào).
+type MlError = Literal["timeout", "http_5xx", "connect", "model_missing", "too_many_windows", "classify_failed"]
 
 
 class MlContractError(Exception):

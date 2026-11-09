@@ -8,6 +8,8 @@ Tiến độ theo phase ở [PROGRESS.md](PROGRESS.md).
 > Hiện mới có **khung thư mục**, chưa có logic nghiệp vụ. Agent thử nghiệm cũ đã gỡ;
 > xem lại trong lịch sử git (nhánh `doi-ten-tieng-anh`).
 
+**Chạy lại hệ thống từ đầu (hội đồng, người ngoài nhóm):** xem [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md).
+
 ## Dựng môi trường
 
 ```bash
@@ -44,6 +46,12 @@ tiếp ngoài `make` thì tự thêm thư mục đó vào `PATH`.
 
 **Từ Phase 3d, `.env` phải có `LLM_BACKEND=scripted`** (máy dev, LLM giả `ScriptedLLM`, không gọi API) — thiếu thì
 `make up`/`make gate2` dừng và backend/worker từ chối khởi động; `real` chỉ dùng từ mốc G (`config/llm.yaml`).
+
+### Đổi hàm băm khoá ticket (G1)
+
+Khoá ticket là `pg_advisory_lock(hashtextextended(ticket_id, 0))` (bigint, 64 bit; trước là `hashtext`, 32 bit nên hai ticket khác nhau
+có thể trùng khoá và chặn nhau). Đổi hàm băm là đổi khoá: dừng và khởi động lại `backend` VÀ `worker` cùng lúc, đừng để bản cũ và bản
+mới chạy song song (khoá của hai bản không còn loại trừ nhau, và lượt đang giữ khoá kiểu cũ không bị chặn bởi bản mới).
 
 Các lệnh `make ingest | seed | probe | eval | eval-rag | load` đã có tên nhưng chưa có nội dung
 (in TODO và thoát mã 1) — sẽ làm theo từng phase.

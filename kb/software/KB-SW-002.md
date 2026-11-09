@@ -1,10 +1,10 @@
 ---
 doc_id: KB-SW-002
-version: 1
+version: 2
 request_type: software
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: "Yêu cầu phần mềm ngoài danh mục hoặc có phí"
@@ -20,7 +20,7 @@ Nếu phần mềm người dùng cần không nằm trong danh sách trên, ph�
 
 Người dùng cần ghi đúng tên phần mềm mình thực sự cần sử dụng. Không sử dụng tên của một phần mềm khác đã có trong danh mục để thay thế.
 
-Yêu cầu phần mềm ngoài danh mục cần được phân biệt với yêu cầu cài một phần mềm đã được duyệt sẵn.
+Yêu cầu phần mềm ngoài danh mục cần được phân biệt với yêu cầu cài một phần mềm đã được duyệt sẵn. Yêu cầu cài phần mềm ngoài danh mục cần phê duyệt; yêu cầu cài phần mềm cần quyền quản trị máy để cài đặt cũng cần phê duyệt.
 
 ## Phần mềm có phí trong danh mục
 

@@ -1,25 +1,58 @@
 # LLM gateway — P2 mục 5, sửa theo PLAN-3d (Q-3d-3, Q-3d-4, Q-3d-5, Q-3d-7). Sửa file này là đổi hành vi agent.
 #
-# KHÔNG nội suy ${…}. Tên model hai vai trò, base_url, khoá API đọc từ env qua TÊN trường của Settings
-# (FAST_MODEL, STRONG_MODEL, LLM_BASE_URL, LLM_API_KEY). Bảng `pricing` ghi TÊN MODEL CỐ ĐỊNH: model không có
-# dòng giá thì không bao giờ được gọi (LLM_BACKEND=real mà FAST_MODEL/STRONG_MODEL thiếu dòng → từ chối khởi động).
+# KHÔNG nội suy ${…}. Tên model các vai trò, base_url, khoá API đọc từ env qua TÊN trường của Settings
+# (FAST_MODEL, STRONG_MODEL, CHAT_MODEL, LLM_BASE_URL, LLM_API_KEY). Bảng `pricing` ghi TÊN MODEL CỐ ĐỊNH: model không có
+# dòng giá thì không bao giờ được gọi (LLM_BACKEND=real mà FAST_MODEL/STRONG_MODEL/CHAT_MODEL thiếu dòng → từ chối khởi động).
 # Bật LLM thật (mốc G): thêm dòng giá của model đã chọn vào `pricing` + đặt 4 biến env trên, không sửa code.
+# LLM-G: DeepSeek (base_url https://api.deepseek.com) chỉ nhận response_format json_object; hai model mặc định BẬT chế độ
+# suy nghĩ (bỏ qua temperature) → tắt bằng trường thân request `thinking`. extra_body không được trùng tham số gateway.
 providers:
-  cloud_a: {kind: openai_compat, base_url_setting: llm_base_url, api_key_setting: llm_api_key, json_mode: json_schema}
+  cloud_a:
+    kind: openai_compat
+    base_url_setting: llm_base_url
+    api_key_setting: llm_api_key
+    json_mode: json_object
+    extra_body: {thinking: {type: disabled}}
 
 # Thời gian (Q-3d-7): với mỗi vai trò, (max_retries+1)·timeout_s + Σ backoff + max_retries·jitter_max_s phải
 # < WORKER_STALE_TURN_SECONDS/2 (60 s) và ≤ deadline_s < 60 s — backend/worker kiểm lúc khởi động.
 #   fast:   4 × 8 + (1+2+4) + 3 × 0.25 = 39.75 s ≤ 45 s
 #   strong: 2 × 20 + 1 + 0.25          = 41.25 s ≤ 50 s   (max_retries 1, không phải 3 như P2 §9: 4 × 20 + 7.75 > 60)
+# Q10 — hai vai chat (các bước hội thoại; deepseek-v4-pro có thể chậm hơn flash → timeout dài hơn, KHÔNG thêm lần thử lại):
+#   chat_fast:   3 × 12 + (1+2) + 2 × 0.25 = 39.5 s  ≤ 45 s       (timeout 12 > 8, retry 2 < 3; xấu nhất không vượt fast 39.75 s)
+#   chat_strong: 2 × 25 + 1 + 0.25         = 51.25 s ≤ 55 s < 60 s (timeout 25 > 20; retry giữ 1 — về 0 thì một 429/5xx đơn lẻ làm B10 ra E2)
+# Trần vào `budget_in` đếm bằng ước tính ceil(ký tự/3) (llm/context.estimate_tokens) — KHÔNG phụ thuộc model, đổi CHAT_MODEL không đổi cách đếm:
+#   fast 2000 (B2 dùng — chốt đã đo, KHÔNG nâng); chat_fast 3000 (khung b03 v6 ~1611 token + yêu cầu 4000 ký tự ~1334 token vừa; vai fast chỉ
+#   chứa ~1160 ký tự yêu cầu); strong 6000; chat_strong 6000 (≥ strong; f1: khung b10_answer ~408 + RAG_EVIDENCE_MAX_TOKENS 4000 ≤ 6000).
+#   CHAT_MODEL TRỐNG chỉ giữ MODEL như cũ — trần vào của 5 prompt hội thoại vẫn là 3000/6000.
+# Giữ chỗ chi phí xấu nhất MỖI request = giá(budget_in token vào) + giá(max_tokens token ra) (llm/client._reserve), USD:
+#   fast/flash 0,00108 · chat_fast/flash 0,00138 · chat_fast/v4-pro 0,005544 · strong/flash 0,00288 · chat_strong/v4-pro 0,011484
+#   max_concurrency 8 × 0,011484 = 0,092 USD ≪ trần chi 38 USD. Kiểm bằng backend/tests/unit/test_llm_chat_roles.py.
+# `model_default_role` (chỉ vai chat): CHAT_MODEL trống → đích chính = đích chính của vai đó (chat_fast → fast, chat_strong → strong), hành vi y hệt trước Q10.
 roles:
-  fast:   {provider: cloud_a, model_setting: fast_model,   timeout_s: 8,  max_retries: 3, deadline_s: 45, max_tokens: 400, temperature: 0, budget_in: 2000}
-  strong: {provider: cloud_a, model_setting: strong_model, timeout_s: 20, max_retries: 1, deadline_s: 50, max_tokens: 900, temperature: 0, budget_in: 6000}
+  fast:        {provider: cloud_a, model_setting: fast_model,   timeout_s: 8,  max_retries: 3, deadline_s: 45, max_tokens: 400, temperature: 0, budget_in: 2000}
+  strong:      {provider: cloud_a, model_setting: strong_model, timeout_s: 20, max_retries: 1, deadline_s: 50, max_tokens: 900, temperature: 0, budget_in: 6000}
+  chat_fast:   {provider: cloud_a, model_setting: chat_model, model_default_role: fast,   timeout_s: 12, max_retries: 2, deadline_s: 45, max_tokens: 400, temperature: 0, budget_in: 3000}
+  chat_strong: {provider: cloud_a, model_setting: chat_model, model_default_role: strong, timeout_s: 25, max_retries: 1, deadline_s: 55, max_tokens: 900, temperature: 0, budget_in: 6000}
+
+# Q10: vai THỰC SỰ dùng theo prompt id — ghi đè trường `role` của config/prompts/<id>.yaml khi chọn model, trần vào, timeout (file prompt giữ
+# nguyên `role`; node vẫn truyền vai đó). Chỉ 5 prompt HỘI THOẠI: B3 hiểu ý, B10 xác định nhu cầu + viết câu trả lời, B11 hỏi lại + trích slot.
+# CẤM có b02_injection_judge (τ 0,9999 chọn theo model này, D-52) và b14_risk_estimate/b14_risk_vote (RQ1 đo theo model này): validator
+# từ chối khởi động. Prompt id không có trong config/prompts, vai lạ, hoặc vai khác tầng với `role` của prompt → cũng từ chối khởi động.
+prompt_roles:
+  b03_classify: chat_fast
+  b10_need_type: chat_fast
+  b11_clarify_question: chat_fast
+  b11_extract_slots: chat_fast
+  b10_answer: chat_strong
 
 # fast: chuỗi dự phòng (vd. [{provider: local, model: <tên cố định>}]) — chưa có local ở Phase 3.
-# strong: KHÔNG fallback (P2 mục 5) — validator từ chối danh sách khác rỗng.
+# strong và chat_strong: KHÔNG fallback (P2 mục 5) — validator từ chối danh sách khác rỗng.
 fallback:
   fast: []
   strong: []
+  chat_fast: []
+  chat_strong: []  # như strong: validator từ chối danh sách khác rỗng
 
 # N1: trần tổng ≤ 1.000.000 đ ≈ 38 USD cho cả đồ án. SUM(llm_calls.cost_usd), cache hit = 0. Chỉ chặn model giá > 0.
 spend: {cap_usd: 38, warn_ratio: 0.8, refresh_s: 60}
@@ -29,5 +62,8 @@ limits: {max_concurrency: 8, retry_on: [429, 500, 502, 503, 504], backoff_base_s
 cache: {ttl_hours_runtime: 24}
 
 # USD / 1M token. `scripted` = ScriptedLLM (LLM_BACKEND=scripted, chỉ dev/test), giá 0.
+# DeepSeek: api-docs.deepseek.com, đọc 17/10/2026, giá GIỜ CAO ĐIỂM — giờ thấp điểm bằng một nửa, trần chi đếm dư.
 pricing:
   scripted: {in: 0, out: 0}
+  deepseek-flash: {in: 0.30, out: 1.20}
+  deepseek-v4-pro: {in: 1.32, out: 3.96}

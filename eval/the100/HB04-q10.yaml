@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 40 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB04-q9, HB04-q10
+id: HB04-q10
+family: HB04
+source: bien_the
+requester:
+  user_id: l1_lead
+  role: employee
+  dept: it
+  tenure_days: 1500
+at: '2026-10-11T20:00:00+07:00'
+faults: []
+turns:
+- 'Cài AutoCAD trên PC-0700 giúp mình nhé.'
+- on_question_about: target_corrected
+  reply: 'Xin lỗi, đúng là LAP-0700 chứ không phải PC.'
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: E6
+  approver_decision: ignore
+  gold_doc_ids:
+  - KB-SW-002
+  action:
+    type: install_software
+    target: device:LAP-0700
+    params:
+      software_name: AutoCAD
+      device_id: LAP-0700
+  facts:
+    device_owner_is_requester: true
+    device_registered: false
+    in_catalog: true
+    license_paid: true
+    requires_local_admin: true
+labels:
+  annotator_1: HITL
+  annotator_2: ESCALATE_L2

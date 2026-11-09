@@ -1,0 +1,40 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 31 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB15-q1, HB15-q2
+id: HB15-q2
+family: HB15
+source: ho_bo_sung
+requester:
+  user_id: fin_head
+  role: employee
+  dept: finance
+  tenure_days: 3300
+at: '2026-10-16T09:40:00+07:00'
+faults: []
+turns:
+- 'Bên IT hỗ trợ bạn nv003 đặt lại mật khẩu tài khoản nhé.'
+- on_question_about: account_type
+  reply: 'Tài khoản ERP mà công ty cấp cho bạn nv003.'
+- on_confirm: false
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: E8
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv003
+    requested_for: nv003
+    params:
+      account_type: erp
+  facts:
+    target_account_locked: false
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: probation
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 
 from fastapi import HTTPException, Request
@@ -27,6 +28,7 @@ from app.api.errors import InvalidRequest, PrivacyGuardUnavailable, error_fields
 from app.auth.models import Principal, UserRecord
 from app.auth.ports import SecurityEventSink
 from app.core.clock import Clock
+from app.db.m5_strategy import StrategyChange
 from app.graph.ports import ApprovalRepo, TicketRepo
 from app.graph.runner import Runner
 from app.guard.privacy import PrivacyGuard, RedactionResult
@@ -41,6 +43,25 @@ class UserDirectory(Protocol):
     async def get_user(self, user_id: str) -> UserRecord | None: ...
 
 
+class RateGate(Protocol):
+    """429 theo tài khoản (Phase 5 gói 2b, D-54 a — `api/ratelimit.py`): `None` = cho qua; số = `Retry-After` (giây). Bản SQL:
+    `db/rate_limits.SqlRateGate`; bản giả: `tests/fakes/rate.py`."""
+
+    async def tickets(self, user_id: str, now: datetime, route: str) -> int | None: ...
+
+    async def messages(self, user_id: str, now: datetime, route: str) -> int | None: ...
+
+
+class StrategyStore(Protocol):
+    """Chiến lược M5 lúc vận hành (D-67) — bản SQL: `db/m5_strategy.SqlStrategyStore`; bản giả: `tests/fakes/strategy.py`."""
+
+    async def current(self) -> StrategyChange | None: ...
+
+    async def history(self, limit: int) -> tuple[list[StrategyChange], bool]: ...
+
+    async def append(self, strategy: str, *, changed_by: str, reason: str, at: datetime) -> StrategyChange: ...
+
+
 @dataclass(frozen=True)
 class Desk:
     runner: Runner
@@ -52,6 +73,8 @@ class Desk:
     clock: Clock
     background: BackgroundRuns
     retry_after_seconds: int  # TicketBusy → 503 + Retry-After (= ceil(TICKET_LOCK_TIMEOUT))
+    rate: RateGate  # Phase 5 gói 2b: bộ đếm 429 (ticket mới; tin nhắn `/messages` `/reply` `/confirm`)
+    strategy: StrategyStore  # D-67: chiến lược M5 lúc vận hành (chụp lên ticket mới; route `/api/admin/strategy`)
 
 
 def retry_after(lock_timeout: float) -> int:

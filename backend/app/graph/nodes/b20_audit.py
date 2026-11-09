@@ -7,7 +7,8 @@ Thứ tự (lệch mã giả có chủ đích — quyết định Q-C 2b-2):
    nguồn lệch nhau. Làm ngược lại thì audit và `tickets` luôn giống hệt.
 3. Có `exit_code` (cha đóng bình thường không bao giờ có — D-30; cha đi đường lỗi CÓ — T20b Q-T20b-5): `effects.once("escalation_create")` (priority lấy từ
    bảng `exit_code_priority`, ghi chú bàn giao 4 phần theo mẫu) + `effects.once("notify_user")` với tin
-   theo mã [Chốt 7.1]. Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
+   theo mã [Chốt 7.1] (Q3 M5: `CodeTemplate.user_message_for(reason)` — câu theo lý do nếu mẫu khai `user_message_by_reason`, hiện chỉ
+   E5; E1 `injection_suspected` vẫn dùng mẫu E0, E0 không có câu theo lý do; D-76: cờ ENABLE_IT_HELP bật → `user_message_it_help` nếu mã khai — E1). Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
    nên chạy lại cũng chỉ có một tin.
 
 Không làm ở đây: `wake_parent` (runner gọi SAU khi nhả khoá ticket con — tránh deadlock, 2b-Q7);
@@ -42,6 +43,15 @@ POINT_8_EVENT = "closed"
 # `tickets.children_status`; chỉ mã + id con, không chữ người dùng) để L2 tự kiểm con nào đã chạy B17 / đang chờ người dùng / chưa
 # khởi động; nhãn `close_reason` của con KHÔNG đổi. Danh sách con đọc từ DB theo `parent_ticket_id`, KHÔNG theo `state.children` (cha E9
 # ngay ở B3 chạy lại — `SplitChanged` — chưa có `children` trong checkpoint mà dòng con đã tạo; soát lượt 4 mục 4); ticket lá → không dòng.
+
+
+# Phase 5 gói 1 (D-52, ĐT 4.4): E1 `injection_suspected` của B2 nhận ĐÚNG tin của E0 — tin E1 riêng sẽ cho kẻ dò biết đã lừa được
+# LLM chấm. Escalation vẫn mang `exit_code` E1 (ưu tiên L2 "Thường" theo bảng). Chọn theo `escalation_reason_detail`.
+SUSPECTED_MESSAGE_CODE = {"injection_suspected": "E0"}
+
+
+def _message_code(state: Any, code: str) -> str:
+    return SUSPECTED_MESSAGE_CODE.get(str(state.get("escalation_reason_detail") or ""), code)
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -83,7 +93,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 handoff_note=note.model_dump(),
                 is_deny_case=is_deny_case(code), created_at=now,
             )  # fmt: skip
-            text = deps.templates.of(code).user_message
+            # Q3 M5: câu theo `escalation_reason_detail` nếu mã khai báo (E5), không thì câu mặc định của mã
+            # D-76: cờ ENABLE_IT_HELP bật → câu có vế "hướng dẫn sự cố IT thường gặp" nếu mã khai (hiện chỉ E1)
+            text = deps.templates.of(_message_code(state, code)).user_message_for(
+                state.get("escalation_reason_detail"), it_help=deps.enable_it_help
+            )
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, ticket_id, text, "none", step="B20"
             )

@@ -1,0 +1,42 @@
+# Sinh boi private/build_cards.py tu card_spec.csv dong 18 — chi tu viet cac cau <<TU_VIET>>.
+# pair: HB08-q3, HB08-q4
+id: HB08-q4
+family: HB08
+source: ho_bo_sung
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-10-12T11:10:00+07:00'
+faults: []
+turns:
+- 'Em muốn xin quyền truy cập vào trong thư muc finance/public-reports trong vòng 30 ngày để làm báo cáo, anh có thể giúp em được không ạ?'
+- on_question_about: permission_level
+  reply: 'Em chỉ cần quyền đọc thôi ạ.'
+- on_confirm: false
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: E8
+  approver_decision: approve
+  gold_doc_ids:
+  - KB-ACS-001
+  - KB-ACS-002
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: nv003
+    params:
+      permission_level: read
+      duration_days: 30
+  facts:
+    has_permission_record: false
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: probation
+labels:
+  annotator_1: HITL
+  annotator_2: AUTO

@@ -6,6 +6,10 @@
 
 *Cập nhật 10/10/2026 (Phase 6, G6-3): "hỏi nhiều lần" thống nhất k = 5 ở mục 7.2, 14.2, 15.1, 15.2 (trước ghi 7); mục 9 — 8 test toán quyết định hiện thực ở Phase 6 chặng 6A, không có sẵn trong scaffold.*
 
+*Cập nhật 17/10/2026 (Phase 5): cổng 5 thủ công ở mục 5.1 — bộ intent 45 câu, macro-F1 tính trên 5 lớp, bộ câu chỉ để đo (chốt 15/10/2026).*
+
+*Cập nhật 18/10/2026 (Phase 5, D-52…D-55): gắn 2 model phân loại của nhóm vào luồng thật mà không tăng bỏ sót — B2 dùng model chặn tấn công ở chế độ `review` (model chỉ nghi rồi chuyển người; LLM chấm vẫn xét mọi câu không khớp mẫu); B3 chạy model intent chỉ để ghi điểm; chống dò và spam (giới hạn tần suất theo tài khoản, cảnh báo người gửi lặp lại cho L2); câu nhiều ý có ý không chắc mà các ý "dính nhau" thì chuyển người cả câu. Ghi chú ở mục 2 (RQ4), 4, 5.1 (Phase 5, 7, 8, 10), 6, 11, 16.3, 16.4, 17.9.3, 18.1. Chi tiết: `build/decisions.md` D-52…D-55; `build/phase5-thiet-ke-chi-tiet.md` mục 7.14.*
+
 ---
 
 ## Mục lục
@@ -84,6 +88,8 @@ Sơ đồ bài toán: Bài toán "L1 tốn người cho việc lặp lại" → 
 
 RQ1 và RQ3 là phần bắt buộc của Objective 3. RQ2 là Nên có. Với RQ4 và RQ5, phần xây dựng thuộc Objective 1 và bắt buộc: B2 có cơ chế chặn injection hai tầng; LLM gateway hỗ trợ API và model local bằng cấu hình; router fast/strong hoạt động. Phần thực nghiệm so sánh (regex/mô hình phân loại/fine-tune/LLM; chạy model local thật so với API) là tùy chọn ở Phase 11.
 
+*Cập nhật 18/10/2026 (D-52):* bản chạy thật dùng model chặn tấn công ở chế độ `review`, nên LLM chấm vẫn xét mọi câu không khớp mẫu và B2 chưa giảm lời gọi LLM. Vế "chi phí thấp hơn" của RQ4 chỉ đo được offline ở Phase 11.
+
 Chi tiết: `docs/00-context/research-design.md`.
 
 ---
@@ -134,7 +140,7 @@ LangGraph, FastAPI, PostgreSQL, vector DB, embedding + rerank là lựa chọn c
 | Embedding + rerank | `bge-m3`, `bge-reranker-v2-m3` | Gốc (loại), bổ sung (model) | Hỗ trợ tiếng Việt, chạy local miễn phí, kết quả tái lập được |
 | Tìm từ khóa | BM25 + gộp RRF | Gốc (hybrid search) | Bắt mã lỗi như "809" mà vector hay bỏ sót; RRF gộp mà không cần quy đổi thang điểm |
 | Hiệu chỉnh xác suất | Platt/temperature scaling (scikit-learn) | Gốc | LLM thường tự tin quá mức; ngưỡng chỉ có nghĩa khi p đã hiệu chỉnh |
-| Chặn injection tầng 2 | LLM phân loại riêng; mở rộng: mô hình phân loại nhỏ fine-tune tiếng Việt | Gốc; mở rộng bổ sung | Xem mục 6 (B2) và RQ4 |
+| Chặn injection tầng 2 | LLM phân loại riêng; mở rộng: mô hình phân loại nhỏ fine-tune tiếng Việt | Gốc; mở rộng bổ sung | Xem mục 6 (B2) và RQ4. *Cập nhật 18/10/2026:* model của nhóm chạy chế độ `review`, chỉ nghi rồi chuyển người (D-52) |
 | Gọi hệ thống ngoài | httpx + `call_with_retry` | Gốc (retry) | Timeout, dễ giả lập lỗi; tách lỗi hệ thống khỏi "không tồn tại" |
 | Quét hạn chờ | APScheduler | Bổ sung | Chỉ cần quét định kỳ, không cần hàng đợi như Celery |
 | Giao diện | React + Vite + TypeScript + Tailwind + TanStack Query | Bổ sung | 4 vai trò, hàng đợi duyệt có đồng hồ, polling gọn. Nhóm yếu frontend có thể dùng Streamlit nhưng khó phân quyền |
@@ -310,12 +316,14 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 - 20 luật đều có ca khớp và ca suýt khớp; nhiều luật khớp → luật chặt nhất thắng.
 
 **Cổng 5 — thủ công (LLM thật):**
-- Intent macro-F1 ≥ 0,85 trên 40 câu mẫu (10 câu mỗi loại + 5 ngoài phạm vi).
+- Intent macro-F1 ≥ 0,85 trên 45 câu mẫu (10 câu mỗi loại × 4 loại + 5 ngoài phạm vi; macro-F1 tính trên 5 lớp — chốt 15/10/2026). Bộ câu này chỉ để đo, không dùng chỉnh ngưỡng hay prompt.
 - Chặn ≥ 13/15 câu tấn công; không chặn nhầm quá 1/30 câu thường; thông báo trung tính.
 - Recall@5 ≥ 0,8 trên 30 câu kiểm tra truy hồi.
 - Ghi chú bàn giao của ca E7 nêu rõ bước đã làm, đã hoàn tác tới đâu, phần L2 cần làm tay.
 
 **Rủi ro:** câu nhiều ý bị tách sai. Có bộ 10 câu nhiều ý riêng trong probe.
+
+> **Cập nhật 18/10/2026 — sau cổng 5 (D-52…D-55):** 18–21/10 gắn 2 model của nhóm vào luồng thật: B2 chế độ `review`, B3 ghi điểm, chống dò và spam, bước "dính nhau" cho câu nhiều ý. Phần B2 của cổng 5 tính lại offline từ lượt 17/10, không chạy lại bộ câu: tiêu chí chính E0 ≥ 13/15 câu tấn công và ≤ 1/30 câu thường; tiêu chí phụ E0 hoặc E1 ≥ 13/15 và ≤ 3/30. Ngưỡng của model chọn trên tập validation; không ngưỡng nào đạt thì giữ `shadow`. Phần nào chưa xanh lúc 14:00 ngày 21/10 thì không gộp. Chi tiết: `build/phase5-thiet-ke-chi-tiet.md` mục 7.14.
 
 #### Phase 6 — M5 lớp LLM (đóng góp chính)
 
@@ -364,6 +372,8 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 
 **Rủi ro:** giao diện ngốn thời gian của luồng chính — chỉ làm "Nên có" sau khi "Phải có" xong.
 
+> **Cập nhật 18/10/2026 (D-54):** L2 có thêm trang Cảnh báo chỉ xem (cảnh báo an ninh gắn nhãn L2: câu tấn công E0 và người gửi lặp lại); chỉ Trưởng BP được xác nhận đã xem. Ghi chú bàn giao của ca E0 và E1 `injection_suspected` thêm dòng lịch sử người gửi trong 7 ngày (số lần bị chặn, bị nghi, gửi quá nhanh).
+
 #### Phase 8 — Harness, calibration, đóng băng
 
 **Mục tiêu:** công cụ chạy thực nghiệm tái lập được; code đóng băng trước khi đo.
@@ -389,6 +399,8 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 **Triển khai:** đóng băng staging; sao lưu; ghi lại cấu hình máy chạy thực nghiệm.
 
 **Rủi ro:** sửa code sau khi đã nhìn kết quả → số liệu thiếu khách quan. Sau tag, mọi thay đổi phải ghi lý do.
+
+> **Cập nhật 18/10/2026 (D-54):** API có giới hạn tần suất theo tài khoản (10 ticket mỗi 10 phút, 30 ticket mỗi giờ, 30 tin mỗi 10 phút), không có giá trị "tắt". Harness và lượt thử tay nới bằng số lớn, ghi vào biên bản và manifest.
 
 #### Phase 9 — Gán nhãn và chia tập
 
@@ -427,6 +439,8 @@ Mỗi phase dưới đây ghi: mục tiêu, việc làm (mã task trong `backlog
 
 **Rủi ro:** kết quả không ủng hộ giả thuyết. Vẫn báo cáo trung thực — phân tích vì sao cũng là đóng góp.
 
+> **Cập nhật 18/10/2026 (D-52):** RQ1 chạy với B2 `review` bật. Harness đếm ticket dừng ở B2 theo lý do (E0, E1 `injection_suspected`, E2 ở B2). Chỉ số M5 tính trên phần giao (ticket tới điểm log 4 ở mọi phương án được so), vì B2 không cache nên tập ticket dừng ở B2 có thể khác nhau giữa các lần chạy. Manifest ghi chế độ B2, model LLM chấm, ngưỡng của model, mã băm 2 model, ngưỡng tần suất đã nới. Đếm thêm, chỉ để báo: số cảnh báo người gửi lặp lại và số câu nhiều ý bị chuyển người vì "dính nhau".
+
 #### Phase 11 — Thực nghiệm mở rộng RQ2, RQ4, RQ5 (tùy chọn)
 
 **Mục tiêu:** các thực nghiệm so sánh sâu. Phần xây dựng tương ứng đã bắt buộc ở các phase trước và không chờ phase này: B2 chặn injection hai tầng (Phase 5); LLM gateway hỗ trợ API và model local bằng cấu hình, router fast/strong (Phase 3); M5 với một cách lấy p (Phase 6).
@@ -460,8 +474,8 @@ Mỗi nhánh là một node LangGraph viết đúng theo mã giả gốc; mọi 
 | Nhánh | Làm gì | Dùng gì | Lưu ý quan trọng |
 |---|---|---|---|
 | B1 Xác thực | Gọi mock AD; sai 1 lần → đóng bình thường; sai 5 lần/10 phút → cảnh báo Trưởng BP | httpx, bảng `auth_failures` | Một lần sai không phải sự cố an ninh; AD lỗi → 503, không tạo ticket |
-| B2 Chặn injection → E0 | Tầng 1 regex; tầng 2 phân loại riêng | `injection_patterns.json`, LLM fast | Lời gọi tách khỏi agent chính; thông báo trung tính, không tiết lộ đã phát hiện |
-| B3–B5 Phân loại, tách ý → E1 | LLM trả intent + đoạn câu + slot; nhiều ý → ticket con quay lại B3 | Structured output, mỗi con một `thread_id` | Mỗi ý được đánh giá rủi ro riêng; cha đóng khi mọi con xong, gom một tin |
+| B2 Chặn injection → E0 | Tầng 1 regex; tầng 2 phân loại riêng | `injection_patterns.json`, LLM fast | Lời gọi tách khỏi agent chính; thông báo trung tính, không tiết lộ đã phát hiện. *Cập nhật 18/10/2026:* tầng 2 = model của nhóm (chế độ `review`) + LLM chấm mọi câu không khớp mẫu; model nghi mà LLM bảo sạch → E1 `injection_suspected` (chuyển L2, người dùng nhận tin của E0); kèm giới hạn tần suất theo tài khoản (D-52, D-54) |
+| B3–B5 Phân loại, tách ý → E1 | LLM trả intent + đoạn câu + slot; nhiều ý → ticket con quay lại B3 | Structured output, mỗi con một `thread_id` | Mỗi ý được đánh giá rủi ro riêng; cha đóng khi mọi con xong, gom một tin. *Cập nhật 18/10/2026:* model intent chỉ ghi điểm (D-53); có ý không chắc mà các ý "dính nhau" → chuyển người cả câu (D-55) |
 | B6–B7 Chẩn đoán → E2 | Code gọi 3 tool theo loại yêu cầu, suy slot từ kết quả | httpx, `call_with_retry` (2 lần, backoff 1s/2s) | 404/rỗng là dữ liệu hợp lệ, không phải lỗi; LLM không tự chọn tool |
 | B8–B9 Tra cứu → E2/E3 | Tìm hybrid, rerank, lấy top 5; điểm < 0.6 → E3 | Qdrant, `bge-m3`, BM25, RRF, `bge-reranker-v2-m3` | RAG lỗi hạ tầng là E2, không phải E3 |
 | B10 Chỉ cần trả lời | LLM phân biệt thông tin/hành động; trả lời chỉ từ tài liệu | LLM fast + strong | Code hậu kiểm trích dẫn; không có trích dẫn hợp lệ → E3 |
@@ -695,8 +709,8 @@ Số VRAM ở trên là mức tham khảo; đo lại khi cài đặt.
 
 | Bước | Đề xuất | Lý do |
 |---|---|---|
-| B2 tầng 2 | Mô hình phân loại nhỏ + LLM cho vùng lưng chừng | Nhanh, rẻ, có số liệu đo; model đa ngôn ngữ có sẵn chưa chắc tốt với tiếng Việt → fine-tune và đo lại |
-| B3 intent | Có thể fine-tune PhoBERT/XLM-R; slot vẫn dùng LLM | Thêm một thành phần học máy có huấn luyện |
+| B2 tầng 2 | Mô hình phân loại nhỏ + LLM cho vùng lưng chừng | Nhanh, rẻ, có số liệu đo; model đa ngôn ngữ có sẵn chưa chắc tốt với tiếng Việt → fine-tune và đo lại. *Cập nhật 18/10/2026:* bản chạy thật không dùng "vùng lưng chừng" — LLM chấm xét mọi câu, model chỉ nghi rồi chuyển người (D-52) |
+| B3 intent | Có thể fine-tune PhoBERT/XLM-R; slot vẫn dùng LLM | Thêm một thành phần học máy có huấn luyện. *Cập nhật 18/10/2026:* model XLM-R của nhóm chỉ ghi điểm, LLM vẫn quyết (D-53) |
 | B10 phân loại, B11 câu hỏi và trích slot | Local cỡ 7–8B | Tác vụ đơn giản, gọi nhiều lần |
 | B10 viết câu trả lời có trích dẫn | Giữ API | Chất lượng tiếng Việt quan trọng |
 | B14 ước lượng rủi ro | Thực nghiệm cả hai | Là câu hỏi RQ2/RQ5 |
@@ -915,7 +929,7 @@ Mỗi actor có một nhóm tính năng lõi (Phải có) phục vụ luồng ch
 |---|---|---|---|
 | Sửa policy JSON có kiểm tra hợp lệ, lịch sử phiên bản, quay lui | Gốc: cấu hình không cần build lại | Phải có | 7 |
 | Dashboard: automation, escalation (cảnh báo 40%), deflection, hết hạn duyệt, phân bố `decided_by`, top luật, số lần ghi đè | Giám sát M5 | Phải có | 7 |
-| Cảnh báo an ninh: injection (E0), dò mật khẩu | Gốc §1.3 | Phải có | 2–5 |
+| Cảnh báo an ninh: injection (E0), dò mật khẩu; người gửi lặp lại (*bổ sung 18/10/2026, D-54*) | Gốc §1.3 | Phải có | 2–5 |
 | Mô phỏng tác động trước khi lưu policy: chạy policy mới trên N ticket gần nhất, hiện số ca đổi route | Tránh nới lỏng mù; gắn trực tiếp M5 | Nên có | 7 |
 | Danh sách lỗ hổng KB (các ca E3) để giao viết tài liệu | Gốc §8.4 | Nên có | 7 |
 | Xuất báo cáo CSV theo khoảng ngày | Báo cáo định kỳ | Có thể | 7 |
@@ -928,6 +942,7 @@ Mỗi actor có một nhóm tính năng lõi (Phải có) phục vụ luồng ch
 | Ghi chú bàn giao 4 phần + hội thoại của ticket | Gốc §5.3: biết đã làm tới đâu | Phải có | 7 |
 | Đóng với 3 kết quả; chặn "hoàn tất" cho ca bị deny | Gốc §1.2 | Phải có | 7 |
 | Soạn tài liệu KB từ ca E3 vừa xử lý | Quyền gốc: L2 cập nhật KB | Nên có | 7 |
+| Trang Cảnh báo chỉ xem (cảnh báo an ninh gắn nhãn L2); dòng lịch sử người gửi trong ghi chú bàn giao (*bổ sung 18/10/2026, D-54*) | Biết người gửi bị nghi lặp lại trước khi xử lý ca | Phải có | 7 |
 
 > **Bổ sung ngữ cảnh (E9):** hàng đợi escalate ưu tiên ở trên (Rất cao → an ninh → có SLA → hạ tầng → cao → thường) cần thêm E9 vào nhóm mức ưu tiên "Cao" — ngang với nhóm hạ tầng (E2), vì một lỗi chưa lường trước có thể là bug thật sự cần kỹ thuật viên/dev xem trực tiếp, không chỉ là một ca nghiệp vụ thông thường (xem `NGU-CANH-DAY-DU.md` Phần IV mục 7, dòng E9).
 
@@ -1134,6 +1149,7 @@ Ba điều "không" này là điều cần kiểm tra kỹ nhất khi code: mộ
 | Escalation rate cao | > 40% trên phân bố vận hành giả định | Mục 8.3 (`NGU-CANH-DAY-DU.md` gốc) | Hiện cảnh báo đỏ trên dashboard Trưởng BP — không tự đổi ngưỡng |
 | An ninh — injection | Mỗi lần `exit_code=E0` | Mục 1.3 gốc | Ghi log cảnh báo, báo Trưởng bộ phận IT ngay |
 | An ninh — dò mật khẩu | `auth_failure_streak` ≥ `MAX_AUTH_FAILURES` (mặc định 5/10 phút) | Mục 6, `NGU-CANH-DAY-DU.md` Phần IV | Ghi log cảnh báo, báo Trưởng bộ phận IT ngay |
+| An ninh — người gửi lặp lại (*bổ sung 18/10/2026*) | ≥ 3 lần bị nghi tấn công hoặc ≥ 3 lần gửi quá nhanh trong 24 giờ → cảnh báo; trong 7 ngày có cả E0 lẫn bị nghi → nghiêm trọng | D-54 | Báo Trưởng bộ phận IT và L2; không tự khoá tài khoản |
 | Bug/lỗi chưa lường trước | Số ticket `exit_code=E9` tăng đột biến so với đường nền | Mục 17.5 (bổ sung E9) | Báo dev — khác ý nghĩa với cảnh báo hạ tầng (E2) |
 | Hạ tầng ngoài yếu | Circuit breaker mở (5 lỗi liên tiếp/60 giây) | Mục 17.3 | Báo vận hành/dev; ticket liên quan tự đi E2, Monitor chỉ hiển thị tần suất |
 | Dồn hạn chờ duyệt | `S_PENDING_APPROVAL` timeout (`exit_code=E6`) tăng bất thường trong một khung giờ | Mục 6, 8.2 (gốc) | Báo Trưởng bộ phận IT — có thể thiếu người duyệt trực |
@@ -1188,7 +1204,7 @@ Bộ `build/` bổ sung các quyết định D-01…D-33 (danh sách, trạng th
 - **Runtime (mục 6, 14.3):** side effect idempotent (D-18), khóa ticket cấp session (D-19), bảng chuyển trạng thái tường minh (D-29).
 - **RAG (mục 6 B8–B10, 17.4):** chunk theo token bge-m3 (D-21), bộ câu không có đáp án để chọn ngưỡng E3 (D-22), truy hồi lại không lọc intent (D-23), ghép đoạn liền kề cho B10 (D-24), ablation RAG (D-25).
 - **Yêu cầu nhiều ý (mục 6 B5, B19):** cha đối soát con từ DB (D-17), cha không mã thoát và chỉ số tính trên ticket lá (D-30), một tin trả lời mỗi lượt người dùng (D-31).
-- **Model phân loại do nhóm huấn luyện (mục 4, 11; B2, B3):** B3 chạy model intent đa nhãn trước, LLM cho vùng lưng chừng và tách span (D-32); backbone mDeBERTa-v3-base cho cả model intent và model injection (D-33). Quy trình huấn luyện: `build/nen-tang/P11-huan-luyen-model.md`.
+- **Model phân loại do nhóm huấn luyện (mục 4, 11; B2, B3):** B3 chạy model intent đa nhãn trước, LLM cho vùng lưng chừng và tách span (D-32); backbone mDeBERTa-v3-base cho cả model intent và model injection (D-33). Quy trình huấn luyện: `build/nen-tang/P11-huan-luyen-model.md`. *Cập nhật 18/10/2026:* B3 chỉ ghi điểm, LLM vẫn quyết (D-53, thay D-32); B2 chế độ `review` (D-52).
 - **Khác:** B17 kiểm cả người gửi và người hưởng lợi (D-15), ticket L2 mở lại chạy từ B1 (D-26), tách `intent_low_confidence` (D-27).
 
 Các mục 1–17 chưa đổi theo; patch chờ chốt ở `claude/bo-sung-bo-tai-lieu-build.md`.

@@ -21,6 +21,9 @@
 # Mọi hàm bước được gọi trong `if`/`||` — ở đó `set -e` KHÔNG có hiệu lực, nên MỖI lệnh con tự `|| return 1` (không thì một
 # lệnh con đỏ mà lệnh sau xanh → cả bước "xanh oan").
 #
+# Chặng V16: cổng (2/3/4/5) đỏ → lưu `compose logs backend worker` từ giờ bắt đầu bước ra `.verify/run-<giờ>-step<N>-logs.txt`
+# TRƯỚC bước 8 (tạo lại container làm mất log); bước 9 hỏi CI của ĐÚNG commit HEAD (`--commit`), không phải run mới nhất của nhánh.
+#
 # Phase 4 4d DỪNG 2 (Q-4d-4): trên macOS tự giữ máy thức (`caffeinate -i -w $$` — hết khi script thoát) và CẢNH BÁO khi chạy pin
 # (Mac ngủ giữa lượt → hạn lượt theo đồng hồ tường hết → E2 `turn_budget_exceeded`). Không có `caffeinate` → bỏ qua.
 
@@ -33,6 +36,11 @@ MAKE="${MAKE_BIN:-make}"  # Makefile truyền MAKE_BIN (không dùng biến MAKE
 HEALTH_URL="http://127.0.0.1:8000/api/health"
 WAIT_S=180
 KNOWN_GATES="02345"
+# Phase 5 (gói 2b, D-54 a): ngưỡng 429 nới bằng số lớn ở MỌI lần tạo lại backend+worker ngay trước một cổng (`recreate` của gate2–5) —
+# gate2 một mình tạo > 10 ticket cho `an.nv` trong vài phút. Bước 3 `make up` KHÔNG nới (Q-2B1-7 A): `check_app_env` chạy SAU khi dựng
+# mà bước 3 đỏ thì không có bước 8 → không được bỏ lại stack đã nới; giữa bước 3 và cổng đầu không có ticket nào (seed, health, ingest
+# `run --rm`). Cùng số với `RATE=loose` của Makefile (test ghim). Bước 8 gỡ → về `.env`.
+LOOSE_RATES="TICKET_RATE_10MIN=100000 TICKET_RATE_HOUR=100000 MESSAGE_RATE_10MIN=100000"
 
 if ! [[ "$G" =~ ^[0-9]+$ ]]; then
   echo "G phải là chuỗi chữ số (vd 3, 23, 0) — nhận: '$G'" >&2
@@ -57,6 +65,8 @@ RESTORE=0
 RESTORED=0
 KB_NOW="" # KB script đã nạp trong lượt này: "" | fixture | real (T24 Q-T24-1)
 STEP_DUR=0
+STEP_SINCE="" # giờ bắt đầu bước đang/vừa chạy, UTC ISO — cho `compose logs --since` (V16)
+GATE_LOGS="" # file log backend+worker đã lưu khi cổng đỏ (V16)
 START_HMS="$(date +%H:%M:%S)"
 POWER_NOTE=""
 : >"$LOG"
@@ -102,6 +112,7 @@ fail() { # fail <#> <tên> <file đầu ra của bước>
 run_step() {
   local num=$1 name=$2 out=$3 rc=0 t0=$SECONDS
   shift 3
+  STEP_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   say "==== bước $num: $name"
   "$@" >"$out" 2>&1 || rc=$?
   cat "$out" >>"$LOG"
@@ -134,8 +145,8 @@ wait_health() {
 }
 
 recreate() { # recreate <FAKE_SCENARIO> <FAKE_NODE_DELAY> <APPROVAL_SLA_MINUTES_DEV> — tạo lại backend+worker với biến shell (rỗng = không đặt)
-  # shellcheck disable=SC2086  # $COMPOSE là chuỗi lệnh, cần tách từ
-  env FAKE_SCENARIO="$1" FAKE_NODE_DELAY="$2" APPROVAL_SLA_MINUTES_DEV="$3" \
+  # shellcheck disable=SC2086  # $COMPOSE, $LOOSE_RATES là chuỗi lệnh / chuỗi phép gán, cần tách từ
+  env FAKE_SCENARIO="$1" FAKE_NODE_DELAY="$2" APPROVAL_SLA_MINUTES_DEV="$3" $LOOSE_RATES \
     $COMPOSE up -d --force-recreate --no-deps --wait --wait-timeout "$WAIT_S" backend worker || return 1
   wait_health || return 1
 }
@@ -159,11 +170,19 @@ step_gate2() { recreate approval 40 "" || return 1; "$MAKE" gate2 S=all || retur
 step_gate4() { recreate "" "" 2 || return 1; "$MAKE" gate4 S=all || return 1; }
 step_gate5() { recreate "" "" "" || return 1; "$MAKE" gate5 S=all || return 1; }
 step_bench() { PYTHONPATH=backend uv run python -m tests.stack.bench_checkpoint || return 1; }
-step_restore() { # bước 8 — không biến shell nào đè FAKE_* / APPROVAL_SLA_MINUTES_DEV → đúng cấu hình .env
+step_restore() { # bước 8 — không biến shell nào đè FAKE_* / APPROVAL_SLA_MINUTES_DEV / ngưỡng 429 → đúng cấu hình .env
   # shellcheck disable=SC2086
-  env -u FAKE_SCENARIO -u FAKE_NODE_DELAY -u APPROVAL_SLA_MINUTES_DEV \
+  env -u FAKE_SCENARIO -u FAKE_NODE_DELAY -u APPROVAL_SLA_MINUTES_DEV -u TICKET_RATE_10MIN -u TICKET_RATE_HOUR -u MESSAGE_RATE_10MIN \
     $COMPOSE up -d --force-recreate --no-deps --wait --wait-timeout "$WAIT_S" backend worker || return 1
   wait_health || return 1
+}
+
+save_gate_logs() { # save_gate_logs <#> — cổng đỏ: lưu log backend+worker của bước TRƯỚC bước 8 (V16); lỗi chỉ ghi chú
+  local f=".verify/run-$STAMP-step$1-logs.txt"
+  # shellcheck disable=SC2086  # $COMPOSE là chuỗi lệnh, cần tách từ
+  $COMPOSE logs --no-color --timestamps --since "$STEP_SINCE" backend worker >"$f" 2>&1 \
+    || say "compose logs lỗi — bỏ qua (xem $f)"
+  GATE_LOGS="$f"
 }
 
 restore() {
@@ -222,6 +241,7 @@ run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả
       else
         add_row 5 gate3 FAIL "$STEP_DUR" "$(gate_totals "$out")"
         fail 5 gate3 "$out"
+        save_gate_logs 5
         return 1
       fi
       ;;
@@ -232,6 +252,7 @@ run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả
       else
         add_row 6 gate2 FAIL "$STEP_DUR" "$(gate_totals "$out")"
         fail 6 gate2 "$out"
+        save_gate_logs 6
         return 1
       fi
       ;;
@@ -243,6 +264,7 @@ run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả
       else
         add_row 10 gate4 FAIL "$STEP_DUR" "$(gate_totals "$out")"
         fail 10 gate4 "$out"
+        save_gate_logs 10
         return 1
       fi
       ;;
@@ -254,16 +276,53 @@ run_gate() { # run_gate <chữ số> — 0 nếu xanh; đỏ → ghi fail, trả
       else
         add_row 12 gate5 FAIL "$STEP_DUR" "$(gate_totals "$out")"
         fail 12 gate5 "$out"
+        save_gate_logs 12
         return 1
       fi
       ;;
   esac
 }
 
+dirty_count() { # số dòng `git status --porcelain`; pipefail: git lỗi không được giết summary
+  { git status --porcelain 2>/dev/null || true; } | wc -l | tr -d ' '
+}
+
+ci_step() { # bước 9 — CI của ĐÚNG commit HEAD (V16); không bắt buộc, KHÔNG đổi KẾT LUẬN; chỉ PASS khi run của HEAD success
+  local sha sha7 branch dirty note="" out st concl id
+  sha="$(git rev-parse HEAD 2>/dev/null)" || sha=""
+  if [[ -z "$sha" ]]; then
+    add_row 9 "CI (gh)" "BỎ QUA" 0 "bỏ qua (không có git)"
+    return 0
+  fi
+  sha7="${sha:0:7}"
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  dirty="$(dirty_count)"
+  if ((dirty > 0)); then note="; CI của HEAD; cây có $dirty thay đổi chưa commit"; fi
+  # '|' tách trường (không dùng tab: IFS tab gộp trường rỗng). conclusion chưa có: gh trả "" hoặc jq ra "null".
+  if ! out="$(gh run list --branch "$branch" --commit "$sha" -L 1 --json status,conclusion,databaseId \
+    --jq '.[] | "\(.status)|\(.conclusion)|\(.databaseId)"' 2>/dev/null)"; then
+    add_row 9 "CI (gh)" "BỎ QUA" 0 "bỏ qua (gh)$note"
+    return 0
+  fi
+  if [[ -z "$out" ]]; then
+    add_row 9 "CI (gh)" "BỎ QUA" 0 "chưa có CI cho HEAD $sha7$note"
+    return 0
+  fi
+  IFS='|' read -r st concl id <<<"$out"
+  if [[ "$concl" == "null" ]]; then concl=""; fi
+  if [[ "$st" != "completed" ]]; then
+    add_row 9 "CI (gh)" "ĐANG CHẠY" 0 "$st $id$note"
+  elif [[ "$concl" == "success" ]]; then
+    add_row 9 "CI (gh)" PASS 0 "success $id ($sha7)$note"
+  else
+    add_row 9 "CI (gh)" FAIL 0 "${concl:-chưa có kết luận} $id$note"
+  fi
+}
+
 finish() {
   local head dirty env_file conclusion
   head="$(git rev-parse --short=7 HEAD 2>/dev/null || echo '?')"
-  dirty="$({ git status --porcelain 2>/dev/null || true; } | wc -l | tr -d ' ')"  # pipefail: git lỗi không được giết summary
+  dirty="$(dirty_count)"
   env_file=".env.example"
   if test -f .env; then env_file=".env"; fi
   if [[ -z "$FAILED_STEP" ]]; then
@@ -276,6 +335,7 @@ finish() {
     echo "| # | Bước | Kết quả | Thời gian | Ghi chú |"
     printf '%s' "$ROWS"
     echo "$conclusion"
+    if [[ -n "$GATE_LOGS" ]]; then echo "log backend/worker của bước $FAILED_STEP: $GATE_LOGS"; fi
     if [[ -n "$FAILED_STEP" ]]; then
       echo "---- 30 dòng cuối của bước $FAILED_STEP ----"
       tail -30 "$FAILED_OUT"
@@ -330,13 +390,8 @@ main() {
 main || true
 restore || true
 
-# 9 — CI (không bắt buộc): gh lỗi (vd sandbox chặn keychain) → "bỏ qua (gh)"
-branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
-if ci="$(gh run list --branch "$branch" -L 1 2>/dev/null)" && [[ -n "$ci" ]]; then
-  add_row 9 "CI (gh)" PASS 0 "$(printf '%s' "$ci" | cut -f1-2,7 | tr '\t' ' ')"
-else
-  add_row 9 "CI (gh)" "BỎ QUA" 0 "bỏ qua (gh)"
-fi
+# 9 — CI của HEAD (không bắt buộc): gh lỗi (vd sandbox chặn keychain) → "bỏ qua (gh)"
+ci_step || true
 
 finish
 [[ -z "$FAILED_STEP" ]]

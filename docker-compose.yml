@@ -4,7 +4,9 @@
 name: servicedesk
 
 # Env chung của backend và worker. Worker KHÔNG nhận SVC_EXECUTOR_TOKEN (credential ghi duy nhất,
-# D-03) — chỉ backend (nơi chạy B17) có.
+# D-03) — chỉ backend (nơi chạy B17) có. A2 (bn-a): JWT_SIGNING_KEY, MFA_ENC_KEY, MIGRATE_DATABASE_URL cũng CHỈ backend (thêm riêng ở
+# service backend);
+# worker nhận USERNAME_HMAC_KEY (khoá HMAC username ma) — thấy JWT/MFA hoặc thiếu USERNAME_HMAC_KEY thì worker từ chối khởi động.
 x-backend-env: &backend-env
   # Bắt buộc khai báo (2b-3 Q3): thiếu → compose dừng. Thành phần giả chỉ nạp khi dev/test.
   APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
@@ -13,7 +15,6 @@ x-backend-env: &backend-env
   FAKE_SCENARIO: ${FAKE_SCENARIO:-}
   FAKE_NODE_DELAY: ${FAKE_NODE_DELAY:-}
   DATABASE_URL: postgresql+psycopg://app_rw:${PG_RW_PASSWORD}@postgres:5432/${PG_DATABASE}
-  MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
   # M9 — role chỉ-đọc app_monitor. Ghi cứng như DATABASE_URL (DSN localhost trong .env không đè). Tắt để thử 503:
   # docker compose run --rm -e MONITOR_DATABASE_URL= … (rỗng = chưa đặt → route M9 trả 503, không rơi về app_rw).
   MONITOR_DATABASE_URL: postgresql+psycopg://app_monitor:${PG_MONITOR_PASSWORD}@postgres:5432/${PG_DATABASE}
@@ -26,10 +27,11 @@ x-backend-env: &backend-env
   LLM_BACKEND: ${LLM_BACKEND:?LLM_BACKEND phai khai bao trong .env (scripted | real)}
   FAST_MODEL: ${FAST_MODEL:-}
   STRONG_MODEL: ${STRONG_MODEL:-}
+  # Q10: model của hai vai chat (B3/B10/B11). Rỗng = dùng FAST_MODEL/STRONG_MODEL như cũ. Backend và worker PHẢI thấy cùng giá trị
+  # (worker chạy lại lượt dở cũng đi qua các bước hội thoại) — anchor này vào cả hai.
+  CHAT_MODEL: ${CHAT_MODEL:-}
   LLM_BASE_URL: ${LLM_BASE_URL:-}
   LLM_API_KEY: ${LLM_API_KEY:-}
-  JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
-  MFA_ENC_KEY: ${MFA_ENC_KEY:-}
   SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
   SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
   GRAPH_CONCURRENCY: ${GRAPH_CONCURRENCY:-8}
@@ -37,6 +39,7 @@ x-backend-env: &backend-env
   TICKET_LOCK_TIMEOUT: ${TICKET_LOCK_TIMEOUT:-5}
   EVAL_MODE: ${EVAL_MODE:-false}
   ENABLE_PROACTIVE_DIAGNOSIS: ${ENABLE_PROACTIVE_DIAGNOSIS:-true}
+  ENABLE_IT_HELP: ${ENABLE_IT_HELP:-true}  # D-76: tắt → it_help như out_of_scope (phương án lùi)
   STRATEGY: ${STRATEGY:-hybrid}
   LLM_CACHE_MODE: ${LLM_CACHE_MODE:-default}
   REDIAGNOSE_ON_NEW_SLOT: ${REDIAGNOSE_ON_NEW_SLOT:-false}
@@ -50,6 +53,31 @@ x-backend-env: &backend-env
   # chỉ ghi điểm). Backend và worker PHẢI thấy cùng giá trị (worker chạy lại lượt dở cũng đi qua B2). Giá trị khác →
   # từ chối khởi động.
   B2_CLASSIFIER_MODE: ${B2_CLASSIFIER_MODE:-}
+  # Phase 5 (gói 1, D-52): τ của chế độ `review` ([0,50; 0,9999], không mặc định) — `review` mà rỗng → backend và worker từ
+  # chối khởi động. Chọn theo `scripts/eval/b2_tau_select.py`; bản ghi ở ml_models/injection-clf/tai-lieu/thresholds.json.
+  B2_TAU_REVIEW: ${B2_TAU_REVIEW:-}
+  # Phase 5 (gói 2b, D-54 a): 3 ngưỡng 429 theo tài khoản — rỗng = mặc định settings.py (10 ticket/10 phút, 30 ticket/giờ, 30 tin
+  # nhắn/10 phút). Không có giá trị "tắt": cổng/đo/demo nới bằng số lớn — `make verify` tự truyền, chạy tay `make up RATE=loose`.
+  TICKET_RATE_10MIN: ${TICKET_RATE_10MIN:-}
+  TICKET_RATE_HOUR: ${TICKET_RATE_HOUR:-}
+  MESSAGE_RATE_10MIN: ${MESSAGE_RATE_10MIN:-}
+  # SSE tiến trình ticket (GET /api/tickets/{id}/events): mặc định tắt → route 404, frontend dùng polling.
+  ENABLE_SSE: ${ENABLE_SSE:-false}
+  SSE_POLL_MS: ${SSE_POLL_MS:-300}
+  SSE_HEARTBEAT_S: ${SSE_HEARTBEAT_S:-15}
+  # Notify-email: backend ghi hàng đợi `email_outbox`, worker gửi qua SMTP — backend và worker PHẢI thấy cùng giá trị. Mặc định tắt;
+  # EMAIL_ENABLED=true mà thiếu SMTP_HOST / SMTP_FROM / EMAIL_LINK_BASE_URL (hoặc chỉ có một trong SMTP_USERNAME/SMTP_PASSWORD) → cả hai
+  # từ chối khởi động. EVAL_MODE=true → luôn tắt. Rỗng = mặc định settings.py (cổng 587, STARTTLS bật, chu kỳ 15 s).
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  EMAIL_LINK_BASE_URL: ${EMAIL_LINK_BASE_URL:-}
+  EMAIL_SEND_INTERVAL_SECONDS: ${EMAIL_SEND_INTERVAL_SECONDS:-}
+  API_DOCS: ${API_DOCS:-on}
 
 services:
   postgres:
@@ -87,6 +115,23 @@ services:
     environment:
       <<: *backend-env
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
+      MFA_ENC_KEY: ${MFA_ENC_KEY:-}
+      # Role app_migrate (owner, DDL) — CHỈ Alembic dùng, chạy qua `compose run backend alembic upgrade head` (make up). Worker không nhận
+      # (ĐP 08/11 20:35): thấy biến này worker từ chối khởi động.
+      MIGRATE_DATABASE_URL: postgresql+psycopg://app_migrate:${PG_MIGRATE_PASSWORD}@postgres:5432/${PG_DATABASE}
+      # Soát A2 (7a): backend CŨNG nhận USERNAME_HMAC_KEY để `resolve_key` so với khoá dẫn xuất từ JWT_SIGNING_KEY — lệch (xoay JWT mà
+      # quên tạo lại khoá worker) → runtime backend không mở (503, healthcheck đỏ) thay vì backend và worker băm username ma khác nhau.
+      USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}
+    healthcheck:
+      # D-50: /api/health trả 200 khi phụ thuộc lõi sống, `runtime` không đổi mã → phải đọc JSON: healthy chỉ khi
+      # 200 VÀ "runtime" == "up". 503 / chưa nghe cổng (runtime mở trong lifespan) → urlopen ném lỗi → thoát 1.
+      # Kết quả health cache 10s (HEALTH_CACHE_SECONDS) → interval 10s; retries 3 chịu được một lượt lõi chập chờn.
+      test: ["CMD", "python", "-c", "import json,sys,urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/health', timeout=4); sys.exit(0 if json.load(r).get('runtime')=='up' else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,7 +146,10 @@ services:
     image: servicedesk-backend:dev  # CÙNG image với backend (T01 mục 5), chỉ khác lệnh
     pull_policy: never
     command: ["python", "-m", "app.worker"]
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # Rỗng → worker tự từ chối khởi động, thông báo nêu tên biến (không dùng `:?` — sẽ chặn mọi lệnh compose, kể cả `down`).
+      USERNAME_HMAC_KEY: ${USERNAME_HMAC_KEY:-}
     healthcheck:
       # Worker ghi heartbeat mỗi 10 giây (app/heartbeat.py); cũ hơn 60 giây / không có file → thoát 1.
       # retries 1: một lần kiểm hỏng là unhealthy — ngưỡng 60 giây đã nằm trong chính lệnh kiểm.
@@ -126,6 +174,18 @@ services:
       SVC_AGENT_TOKEN: ${SVC_AGENT_TOKEN:-}
       SVC_EXECUTOR_TOKEN: ${SVC_EXECUTOR_TOKEN:-}
       SVC_WORKER_TOKEN: ${SVC_WORKER_TOKEN:-}
+      # Màn /console và cổng /portal của mock chỉ phục vụ khi APP_ENV ∈ {dev, test}; môi trường khác → 404.
+      APP_ENV: ${APP_ENV:?APP_ENV phai khai bao trong .env}
+      # /console còn cần cờ này bật (đúng 1 hoặc true); mặc định 0 = tắt → 404 kể cả ở dev/test.
+      MOCK_CONSOLE_ENABLED: ${MOCK_CONSOLE_ENABLED:-0}
+      # Email thật nạp đè seed.json (gitignore) — đọc qua thư mục mount bên dưới; không có file → dùng @demo-corp.local.
+      MOCK_SEED_LOCAL: /srv/mock_local/seed.local.json
+    ports:
+      # Chỉ localhost: màn /console (http://127.0.0.1:8100/console, cần MOCK_CONSOLE_ENABLED=1) hiện mật khẩu tạm ở trang điện thoại giả lập.
+      - "127.0.0.1:8100:8100"
+    # Mount THƯ MỤC (không mount thẳng file): file chưa tồn tại thì Docker không tự tạo thư mục rỗng mang tên file.
+    volumes:
+      - ./mock_services:/srv/mock_local:ro
 
   # P4 — model nạp một lần, CPU. Model tải trên máy bằng `make models` rồi mount read-only; không bind cổng
   # 8200 ra host (P4 mục 5). ML_MAX_CONCURRENCY không truyền ở đây: mặc định nằm ở ml_service/app/settings.py
@@ -134,7 +194,8 @@ services:
   # Phase 5 (T23a, ML-GAN — D-44): model phân loại của nhóm (P11) ở TEAM_MODELS_DIR (mặc định ./ml_models) mount
   # read-only vào /ml_models.
   # GUARD_MODEL_DIR / INTENT_MODEL_DIR là đường dẫn TRONG container; rỗng = không nạp → /classify, /classify_intent
-  # 503 model_missing như Phase 3. GUARD_MODEL_SHA256 đặt thì model.safetensors lệch → ml-service không khởi động.
+  # 503 model_missing như Phase 3; có đặt → nạp model đó, SHA-256 trọng số + manifest bắt buộc, lệch → ml-service không
+  # khởi động. Gói 2 (D-53): INTENT_MODEL_DIR = bản safetensors (scripts/ml/convert_intent_pt.py), thêm ~1,2 GB RAM.
   ml-service:
     build:
       context: .
@@ -146,13 +207,20 @@ services:
       ML_THREADS: ${ML_THREADS:-4}
       GUARD_MODEL_DIR: ${GUARD_MODEL_DIR:-}
       GUARD_MODEL_SHA256: ${GUARD_MODEL_SHA256:-}
+      # Phase 5 (gói 1, D-52 — phase5 §6.5 #9): SHA-256 của MANIFEST.sha256 trong GUARD_MODEL_DIR. Đặt GUARD_MODEL_DIR thì
+      # GUARD_MODEL_SHA256 và GUARD_MANIFEST_SHA256 BẮT BUỘC — thiếu/lệch → ml-service không khởi động (cả stack đứng).
+      # ML_CLASSIFY_CONCURRENCY, ML_MODELS_ROOT không truyền: mặc định ở ml_service/app/settings.py (như ML_MAX_CONCURRENCY).
+      GUARD_MANIFEST_SHA256: ${GUARD_MANIFEST_SHA256:-}
       INTENT_MODEL_DIR: ${INTENT_MODEL_DIR:-}
+      # Gói 2 (D-53): SHA-256 của model.safetensors và của MANIFEST.sha256 trong INTENT_MODEL_DIR — bắt buộc khi đặt dir.
+      INTENT_MODEL_SHA256: ${INTENT_MODEL_SHA256:-}
+      INTENT_MANIFEST_SHA256: ${INTENT_MANIFEST_SHA256:-}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
       - ${TEAM_MODELS_DIR:-./ml_models}:/ml_models:ro
     healthcheck:
       # 200 chỉ khi đã nạp + warm-up xong; nạp 2 model CPU mất tới vài phút lần đầu. ML-GAN: thêm SHA-256 file 1,1 GB
-      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan).
+      # và nạp model của nhóm → 240s (chốt 4 PLAN-ml-gan). Gói 2 (D-53): intent thêm SHA-256 ~1,1 GB + nạp (ước 10–25 s).
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health').status==200 else 1)"]
       interval: 10s
       timeout: 5s

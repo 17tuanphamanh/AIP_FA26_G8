@@ -7,19 +7,25 @@ import { serverNow } from "../../api/serverClock.ts";
 import type { ApprovalListItem, ApprovalViewP4, DecisionIn, ReasonCode } from "../../api/types.ts";
 import { hasPerm, ROLE_LABEL } from "../../auth/permissions.ts";
 import { useMe } from "../../auth/useAuth.ts";
-import { ActionView, FlatTable } from "../../components/ActionView.tsx";
+import { ActionView, FactTable, FlatTable } from "../../components/ActionView.tsx";
 import { useServerNow } from "../../components/clock.ts";
 import { Modal } from "../../components/Modal.tsx";
 import { RejectSheet } from "../../components/RejectSheet.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
+import { MatchedRules } from "../shared/MatchedRules.tsx";
+import { NhanMa } from "../../components/MaNhan.tsx";
 import {
   actionLabel,
+  AFFECTED_OTHER_TEXT,
+  AFFECTED_SELF_TEXT,
   approveBody,
   BACKUP_TEXT,
   DECISION_SENT,
+  deadlineText,
   decisionRole,
   isReflex,
   isUrgent,
+  managerText,
   MISSING_VALUE,
   NOTICES_TEXT,
   PLAN_CHANGED_TEXT,
@@ -28,6 +34,7 @@ import {
   rejectBody,
   remainingClock,
   RISK_MISSING_TEXT,
+  riskSummary,
   STATUS_LABEL,
   VIEW_NOT_FOUND_TEXT,
   viewedSeconds,
@@ -43,7 +50,7 @@ import {
 // → hỏi lại; thanh quyết định nằm NGOÀI vùng cuộn, nền đặc (12b Q-fe-32 — như Bản 4: không bao giờ đè nội dung).
 
 const BACK = (
-  <Link to="/approvals" className="text-secondary text-fpt-blue">
+  <Link to="/approvals" className="text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
     ‹ Chờ tôi duyệt
   </Link>
 );
@@ -58,7 +65,7 @@ export function ApprovalDetailRoute() {
 
 function Blocked({ text }: { text: string }) {
   return (
-    <section className="flex flex-col gap-2 px-12 py-10" data-testid="approval-blocked">
+    <section className="flex flex-col gap-2 px-12 py-10 max-lg:px-4 max-lg:py-6" data-testid="approval-blocked">
       {BACK}
       <h1 className="text-heading">{text}</h1>
     </section>
@@ -70,10 +77,10 @@ function ApprovalDetail({ id }: { id: string }) {
   // Hash lệch → KHÔNG hiện bản nào, kể cả bản đã tải trước đó (fail-closed, G4-13).
   if (isPlanChanged(query.error)) return <Blocked text={PLAN_CHANGED_TEXT} />;
   if (query.data) return <Detail view={query.data} />;
-  if (query.isPending) return <p className="px-12 py-10 text-ink-2">Đang tải phiếu…</p>;
+  if (query.isPending) return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse max-lg:px-4 max-lg:py-6">Đang tải phiếu…</p>;
   if (query.error instanceof ApiError && query.error.status === 404) return <Blocked text={VIEW_NOT_FOUND_TEXT} />;
   return (
-    <section className="flex flex-col gap-2 px-12 py-10">
+    <section className="flex flex-col gap-2 px-12 py-10 max-lg:px-4 max-lg:py-6">
       {BACK}
       <h1 className="text-heading">Chưa tải được phiếu</h1>
       <p role="alert" className="text-ink-2">
@@ -109,16 +116,25 @@ function Deadline({ view, createdAt }: { view: ApprovalViewP4; createdAt: string
     );
   }
   const urgent = isUrgent(createdAt, view.deadline, now);
+  // Phần thời gian còn lại (0–1) — chỉ khi biết lúc tạo phiếu; không biết thì chỉ hiện chữ.
+  const end = Date.parse(view.deadline);
+  const start = createdAt === null ? Number.NaN : Date.parse(createdAt);
+  const left = end > start ? Math.min(1, Math.max(0, (end - now) / (end - start))) : null;
   return (
-    <span
-      data-testid="approval-deadline"
-      data-urgent={urgent}
-      className={`shrink-0 rounded-full px-3.5 py-1.5 text-secondary font-semibold tabular-nums ${
-        urgent ? "bg-danger-bg text-danger" : "bg-group text-ink"
-      }`}
-    >
-      {remainingClock(view.deadline, now, createdAt)}
-    </span>
+    <div className="flex shrink-0 flex-col items-end gap-2 max-lg:items-start">
+      <span
+        data-testid="approval-deadline"
+        data-urgent={urgent}
+        className={`font-semibold tabular-nums ${urgent ? "text-danger" : "text-ink"}`}
+      >
+        {remainingClock(view.deadline, now, createdAt)}
+      </span>
+      {left !== null ? (
+        <span aria-hidden="true" className="block h-1 w-44 overflow-hidden rounded-full bg-line">
+          <span className={`block h-full rounded-full ${urgent ? "bg-danger" : "bg-fpt-orange"}`} style={{ width: `${left * 100}%` }} />
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -202,27 +218,42 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
   const title = typeof actionType === "string" ? actionLabel(actionType) : "Hành động";
   const requesterRole = ownEntry(ROLE_LABEL, view.requester.role, view.requester.role || MISSING_VALUE);
   const department = view.requester.department || MISSING_VALUE;
+  const deadlineAt = deadlineText(view.deadline);
+  const { affected } = view;
+  const risk = view.risk_view ? riskSummary(view.risk_view, view.matched_rules) : null;
   // Thiếu cả `procedure` (lệch spec) → không vỡ màn: hiện "(không có)".
   const procedureTitle = view.procedure?.title?.trim();
   const procedureDoc = view.procedure?.doc_id ?? "(không có)";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div data-testid="approval-scroll" className="min-h-0 grow overflow-y-auto">
-        <section className="flex flex-col gap-6 px-12 pt-8 pb-6">
-          <div className="flex flex-col gap-1">
-            {BACK}
-            <div className="flex items-center gap-4">
-              <h1 className="min-w-0 grow text-title">
-                Phiếu <span className="font-mono">{view.approval_id}</span>
-              </h1>
-              <Deadline view={view} createdAt={createdAt} />
-            </div>
+      {/* Đầu phiếu đứng yên khi cuộn: tên phiếu + đồng hồ hạn duyệt luôn trong tầm mắt. Hàng nút quay lại ngang hàng nút
+          "Nhật ký quyết định" (nổi ở góc phải). */}
+      <header className="shrink-0 border-b border-line bg-white px-12 pt-6 pb-4 max-lg:px-4 max-lg:pt-3 max-lg:pb-3">
+        <div className="flex h-9 items-center max-lg:h-11">{BACK}</div>
+        <div className="mt-1 flex items-end gap-6 max-lg:flex-col max-lg:items-stretch max-lg:gap-2">
+          <div className="flex min-w-0 grow flex-col gap-1">
+            {/* B1 (ĐP 01/11 12:25): tiêu đề = tên hành động cần duyệt; mã phiếu xuống dòng dưới. */}
+            <h1 className="min-w-0 text-title">{title}</h1>
             <p className="text-label font-normal text-ink-2">
-              Mã ticket <span className="font-mono select-all">{view.ticket_id}</span>
+              Phiếu <span className="font-mono">{view.approval_id}</span> · Mã yêu cầu{" "}
+              {/* Mã yêu cầu dài (UUID): rút gọn khi HIỂN THỊ — chữ đủ vẫn trong trang, chọn/sao chép được, hiện khi rê chuột. */}
+              <span className="inline-block max-w-[10ch] truncate align-bottom font-mono select-all" title={view.ticket_id}>
+                {view.ticket_id}
+              </span>
+              {deadlineAt ? (
+                <>
+                  {" "}
+                  · Hạn duyệt <span data-testid="approval-deadline-at">{deadlineAt}</span>
+                </>
+              ) : null}
             </p>
           </div>
-
+          <Deadline view={view} createdAt={createdAt} />
+        </div>
+      </header>
+      <div data-testid="approval-scroll" className="min-h-0 grow overflow-y-auto">
+        <section className="flex flex-col gap-6 px-12 pt-6 pb-6 max-lg:px-4 max-lg:pt-4 max-lg:pb-4">
           {role === "backup" ? (
             <div role="note" data-testid="backup-banner" className="rounded-group bg-orange-bg px-5 py-3.5 text-orange-ink">
               <b className="font-semibold">{BACKUP_TEXT}</b> — người duyệt chính chưa quyết sau lần nhắc thứ hai.
@@ -243,23 +274,120 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                 <Link
                   to={`/approvals/ticket/${encodeURIComponent(view.ticket_id)}`}
                   data-testid="override-link"
-                  className="shrink-0 text-secondary font-semibold text-fpt-blue"
+                  className="shrink-0 text-secondary font-semibold text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center"
                 >
-                  Xem ticket · Ghi đè…
+                  Xem yêu cầu · Ghi đè…
                 </Link>
               ) : null}
             </div>
           ) : null}
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <Block title="Hệ thống sẽ thực hiện chính xác">
-              <ActionView action={view.action} hash={view.action_plan_hash} title={title} />
-            </Block>
+          {/* Thứ tự theo cách người duyệt đọc: người gửi xin gì → hệ thống sẽ làm gì → các luật khớp. Cột phải: rủi ro trước,
+              rồi người bị ảnh hưởng, người gửi, căn cứ, dữ kiện. Chỉ đổi vị trí — nội dung từng khối giữ nguyên. */}
+          <div className="grid items-start gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="flex min-w-0 flex-col gap-6">
+                <Block title="Yêu cầu của người gửi">
+                  <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
+                    {view.request_summary}
+                  </p>
+                </Block>
+              <Block title="Hệ thống sẽ thực hiện chính xác">
+                <ActionView action={view.action} hash={view.action_plan_hash} title={title} />
+              </Block>
+              {/* N-PA P4: các luật khớp (khoá gốc `matched_rules`, tuỳ chọn) — số luật áp dụng sai chỉ báo tại bảng. */}
+              <MatchedRules rules={view.matched_rules} />
+            </div>
             <aside className="flex flex-col gap-6">
-              <Block title="Yêu cầu của người gửi">
-                <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
-                  {view.request_summary}
-                </p>
+              <Block title="Đánh giá rủi ro">
+                {view.risk ? (
+                  <div className="flex flex-col gap-2">
+                    {risk ? (
+                      <dl data-testid="risk-summary" className="overflow-hidden rounded-group border border-line text-secondary">
+                        <div className="flex justify-between gap-4 px-5 py-3">
+                          <dt>Mức rủi ro</dt>
+                          <dd data-testid="risk-level" data-level={view.risk_view?.risk_level} className="font-semibold">
+                            {risk.level}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Hướng xử lý</dt>
+                          <dd data-testid="risk-route" className="text-ink-2">
+                            <NhanMa {...risk.route} />
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Lý do</dt>
+                          <dd data-testid="risk-reason" className="text-right text-ink-2">
+                            {risk.reason}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Luật khớp</dt>
+                          <dd data-testid="risk-rule" className="text-right text-ink-2">
+                            {risk.rule ? <NhanMa {...risk.rule} /> : MISSING_VALUE}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                          <dt>Nguồn đánh giá</dt>
+                          <dd data-testid="risk-source" className="text-right text-ink-2">
+                            <NhanMa {...risk.source} />
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : null}
+                    {risk?.note ? (
+                      <p role="note" data-testid="risk-uncalibrated" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                        {risk.note}
+                      </p>
+                    ) : null}
+                    {/* NGU-2: bảng rủi ro thô (khoá kỹ thuật) thu vào khối đóng sẵn — tóm tắt phía trên đã đủ để quyết. */}
+                    <details data-testid="risk-raw" className="overflow-hidden rounded-group border border-line">
+                      <summary className="cursor-pointer px-5 py-2.5 text-secondary text-ink-2 max-lg:py-3">Chi tiết kỹ thuật</summary>
+                      <div className="border-t border-line">
+                        <FlatTable value={view.risk} testId="risk-row" />
+                      </div>
+                    </details>
+                  </div>
+                ) : (
+                  <p data-testid="risk-missing" className="rounded-group border border-line px-5 py-3 text-ink-2">
+                    {RISK_MISSING_TEXT}
+                  </p>
+                )}
+              </Block>
+              <Block title="Người bị ảnh hưởng">
+                <div data-testid="affected" className="flex flex-col gap-2">
+                  {!affected.is_requester ? (
+                    <p role="note" data-testid="affected-other" className="rounded-group bg-orange-bg px-5 py-3 text-orange-ink">
+                      <b className="font-semibold">{AFFECTED_OTHER_TEXT}</b> — hành động áp dụng lên tài khoản này, không phải người gửi.
+                    </p>
+                  ) : null}
+                  <dl className="overflow-hidden rounded-group border border-line text-secondary">
+                    <div className="flex justify-between gap-4 px-5 py-3">
+                      <dt>Tài khoản</dt>
+                      <dd data-testid="affected-user" className="font-mono text-ink-2">
+                        {affected.user_id}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Quan hệ với người gửi</dt>
+                      <dd data-testid="affected-relation" className="text-ink-2">
+                        {affected.is_requester ? AFFECTED_SELF_TEXT : AFFECTED_OTHER_TEXT}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Phòng ban</dt>
+                      <dd data-testid="affected-department" className="text-ink-2">
+                        {affected.department || MISSING_VALUE}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                      <dt>Quản lý</dt>
+                      <dd data-testid="affected-manager" data-known={affected.manager.status === "known"} className="text-right text-ink-2">
+                        {managerText(affected.manager)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
               </Block>
               <Block title="Người gửi">
                 <dl className="overflow-hidden rounded-group border border-line text-secondary">
@@ -279,21 +407,8 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                   {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
                 </p>
               </Block>
-              <Block title="Đánh giá rủi ro">
-                {view.risk ? (
-                  <div className="overflow-hidden rounded-group border border-line">
-                    <FlatTable value={view.risk} testId="risk-row" />
-                  </div>
-                ) : (
-                  <p data-testid="risk-missing" className="rounded-group border border-line px-5 py-3 text-ink-2">
-                    {RISK_MISSING_TEXT}
-                  </p>
-                )}
-              </Block>
               <Block title="Dữ kiện đã kiểm">
-                <div className="overflow-hidden rounded-group border border-line">
-                  <FlatTable value={view.facts} testId="fact-row" />
-                </div>
+                <FactTable facts={view.facts} />
               </Block>
             </aside>
           </div>
@@ -313,7 +428,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
       </div>
 
       {canDecide && !sent ? (
-        <div data-testid="decision-bar" className="flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white px-12">
+        <div data-testid="decision-bar" className="flex h-19 shrink-0 items-center gap-3 border-t border-line bg-white px-12 max-lg:h-auto max-lg:flex-wrap max-lg:px-4 max-lg:pt-3 max-lg:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => {
@@ -321,16 +436,16 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               setSheet(true);
             }}
             disabled={sending}
-            className="h-11 rounded-full bg-danger-bg px-5.5 font-semibold text-danger disabled:opacity-60"
+            className="h-11 rounded-full bg-danger-bg px-5.5 font-semibold text-danger disabled:opacity-60 max-lg:flex-1"
           >
             Từ chối
           </button>
-          <span className="grow text-label font-normal text-ink-2">Quyết định được ghi vào nhật ký kiểm toán.</span>
+          <span className="grow text-label font-normal text-ink-2 max-lg:order-first max-lg:basis-full">Quyết định được ghi vào nhật ký kiểm toán.</span>
           <button
             type="button"
             onClick={approve}
             disabled={sending}
-            className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white disabled:opacity-60"
+            className="h-11 rounded-full bg-fpt-blue px-6 font-semibold text-white disabled:opacity-60 max-lg:flex-1"
           >
             {sending && !sheet ? "Đang gửi…" : "Đồng ý thực hiện"}
           </button>

@@ -30,7 +30,22 @@ exit 0
 COMPOSE_STUB = r"""#!/usr/bin/env bash
 echo "compose $* | FAKE_SCENARIO=${FAKE_SCENARIO-<unset>} FAKE_NODE_DELAY=${FAKE_NODE_DELAY-<unset>} SLA=${APPROVAL_SLA_MINUTES_DEV-<unset>}" >>"$STUB_LOG"
 if [[ "$*" == *"printenv APP_ENV"* ]]; then echo "${STUB_APPENV:-dev}"; fi
+if [[ "${1:-}" == logs ]]; then
+  case " ${STUB_FAIL:-} " in *" compose-logs "*) echo "giả: compose logs lỗi" >&2; exit 1 ;; esac
+  echo "backend-1  | log giả của container"
+fi
 exit 0
+"""
+# V16: gh GIẢ — ghi tham số (+ biểu thức --jq ra file riêng), trả STUB_GH_OUT (dạng đã qua --jq) với mã STUB_GH_RC (mặc định 1 = lỗi).
+GH_STUB = r"""#!/usr/bin/env bash
+echo "gh $*" >>"$STUB_LOG"
+prev=""
+for a in "$@"; do
+  if [[ "$prev" == "--jq" ]]; then printf '%s' "$a" >"$STUB_LOG.jq"; fi
+  prev="$a"
+done
+if [[ -n "${STUB_GH_OUT:-}" ]]; then printf '%s\n' "$STUB_GH_OUT"; fi
+exit "${STUB_GH_RC:-1}"
 """
 UV_STUB = r"""#!/usr/bin/env bash
 echo "uv $*" >>"$STUB_LOG"
@@ -51,9 +66,16 @@ def _stub(bin_dir: Path, name: str, body: str) -> Path:
     return path
 
 
+def _git(work: Path, home: Path, *args: str) -> str:
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1"}
+    out = subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+                          *args], cwd=work, env=env, capture_output=True, text=True, check=True)  # fmt: skip
+    return out.stdout.strip()
+
+
 def _run(
     tmp_path: Path, *, g: str, bench: str = "0", fail: str = "", appenv: str = "dev", uname: str = "Linux",
-    power: str = "AC Power",
+    power: str = "AC Power", git: bool = False, dirty: int = 0, gh_rc: int = 1, gh_out: str = "",
 ) -> tuple[int, list[str], str]:  # fmt: skip
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -61,18 +83,26 @@ def _run(
     compose = _stub(bin_dir, "compose", COMPOSE_STUB)
     _stub(bin_dir, "uv", UV_STUB)
     _stub(bin_dir, "curl", "#!/usr/bin/env bash\nexit 0\n")
-    _stub(bin_dir, "gh", "#!/usr/bin/env bash\nexit 1\n")
+    _stub(bin_dir, "gh", GH_STUB)
     _stub(bin_dir, "uname", UNAME_STUB)
     _stub(bin_dir, "pmset", PMSET_STUB)
     _stub(bin_dir, "caffeinate", CAFFEINATE_STUB)
     work = tmp_path / "repo"
     work.mkdir(exist_ok=True)
+    if git:  # V16 bước 9: repo thật có 1 commit (`.verify/` bị bỏ qua như repo thật) + `dirty` file chưa commit
+        _git(work, tmp_path, "init", "-q", "-b", "dev-test")
+        (work / ".gitignore").write_text(".verify/\n", encoding="utf-8")
+        _git(work, tmp_path, "add", ".gitignore")
+        _git(work, tmp_path, "commit", "-q", "-m", "init")
+        for i in range(dirty):
+            (work / f"chua-commit-{i}.txt").write_text("x", encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("")
     env = {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path), "G": g, "BENCH": bench,
         "MAKE_BIN": str(make), "COMPOSE": str(compose), "STUB_LOG": str(log), "STUB_FAIL": fail, "STUB_APPENV": appenv,
-        "STUB_UNAME": uname, "STUB_POWER": power,
+        "STUB_UNAME": uname, "STUB_POWER": power, "STUB_GH_RC": str(gh_rc), "STUB_GH_OUT": gh_out,
+        "GIT_CEILING_DIRECTORIES": str(tmp_path), "GIT_CONFIG_NOSYSTEM": "1",  # không lần lên repo nào ngoài thư mục tạm
         "FAKE_SCENARIO": "tu-shell-cha", "FAKE_NODE_DELAY": "7", "APPROVAL_SLA_MINUTES_DEV": "9",  # biến shell cha — bước 8 phải gỡ
     }  # fmt: skip
     out = subprocess.run(["bash", str(SCRIPT)], cwd=work, env=env, capture_output=True, text=True, timeout=60, check=False)
@@ -278,3 +308,92 @@ def test_t24_red_gate5_reports_step_12_and_restores(tmp_path: Path) -> None:
     rc, calls, summary = _run(tmp_path, g="5", fail="gate5")
     assert rc != 0 and "KẾT LUẬN: ĐỎ ở bước 12 (gate5)" in summary
     assert _ups(calls)[-1] == RESTORED and "| 8 | trả về .env | PASS |" in summary
+
+
+# ---- Chặng V16: gate đỏ → lưu log backend/worker TRƯỚC bước 8; bước 9 CI theo đúng commit HEAD -----------------------------------
+
+SINCE_RE = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"  # UTC ISO — giờ bắt đầu bước
+
+
+@pytest.mark.parametrize(("g", "fail", "step"), [("2", "gate2", 6), ("3", "gate3", 5), ("4", "gate4", 10), ("5", "gate5", 12)])
+def test_v16_red_gate_saves_container_logs_before_restore(tmp_path: Path, g: str, fail: str, step: int) -> None:
+    rc, calls, summary = _run(tmp_path, g=g, fail=fail)
+    assert rc != 0 and f"KẾT LUẬN: ĐỎ ở bước {step} ({fail})" in summary
+    [i] = [n for n, c in enumerate(calls) if c.startswith("compose logs")]
+    assert re.fullmatch(rf"compose logs --no-color --timestamps --since {SINCE_RE} backend worker", calls[i].split(" | ")[0])
+    restore = max(n for n, c in enumerate(calls) if c.startswith("compose up"))
+    assert calls[restore].endswith(RESTORED) and i < restore  # log lấy TRƯỚC khi bước 8 tạo lại backend+worker
+    [saved] = list((tmp_path / "repo" / ".verify").glob(f"run-*-step{step}-logs.txt"))
+    assert "log giả của container" in saved.read_text(encoding="utf-8")
+    assert f"log backend/worker của bước {step}: .verify/{saved.name}" in summary.splitlines()
+
+
+def test_v16_green_gates_never_call_compose_logs(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="2345")
+    assert rc == 0 and "KẾT LUẬN: XANH" in summary
+    assert not [c for c in calls if c.startswith("compose logs")]
+    assert not list((tmp_path / "repo" / ".verify").glob("run-*-step*-logs.txt")) and "log backend/worker" not in summary
+
+
+def test_v16_compose_logs_error_does_not_stop_verify(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="4", fail="gate4 compose-logs")
+    assert rc != 0 and "KẾT LUẬN: ĐỎ ở bước 10 (gate4)" in summary  # vẫn là bước 10, không phải lỗi mới
+    assert _ups(calls)[-1] == RESTORED and "| 8 | trả về .env | PASS |" in summary
+
+
+def _gh_calls(calls: list[str]) -> list[str]:
+    return [c for c in calls if c.startswith("gh ")]
+
+
+@pytest.mark.parametrize(
+    ("gh_rc", "gh_out", "result", "note"),
+    [
+        (1, "", "BỎ QUA", "bỏ qua (gh)"),
+        (0, "", "BỎ QUA", "chưa có CI cho HEAD {sha7}"),
+        (0, "completed|success|38670134404", "PASS", "success 38670134404 ({sha7})"),
+        (0, "completed|failure|222", "FAIL", "failure 222"),
+        (0, "completed|cancelled|223", "FAIL", "cancelled 223"),
+        (0, "completed||224", "FAIL", "chưa có kết luận 224"),
+        (0, "in_progress||333", "ĐANG CHẠY", "in_progress 333"),  # gh trả conclusion ""
+        (0, "queued|null|444", "ĐANG CHẠY", "queued 444"),  # jq "\(.conclusion)" của null = "null"
+    ],
+    ids=["gh-loi", "chua-co-run", "success", "failure", "cancelled", "completed-khong-ket-luan", "dang-chay", "cho-null"],
+)
+def test_v16_ci_step_filters_by_head_commit(tmp_path: Path, gh_rc: int, gh_out: str, result: str, note: str) -> None:
+    rc, calls, summary = _run(tmp_path, g="0", git=True, gh_rc=gh_rc, gh_out=gh_out)
+    sha = _git(tmp_path / "repo", tmp_path, "rev-parse", "HEAD")
+    assert rc == 0 and "KẾT LUẬN: XANH" in summary  # bước 9 không đổi KẾT LUẬN (kể cả FAIL)
+    [gh] = _gh_calls(calls)
+    assert gh.startswith(f"gh run list --branch dev-test --commit {sha} -L 1 --json status,conclusion,databaseId --jq "), gh
+    assert f"| 9 | CI (gh) | {result} | 0s | {note.format(sha7=sha[:7])} |" in summary.splitlines()
+    if result != "PASS":
+        assert "| 9 | CI (gh) | PASS |" not in summary
+
+
+def test_v16_ci_step_dirty_tree_note(tmp_path: Path) -> None:
+    rc, _, summary = _run(tmp_path, g="0", git=True, dirty=2, gh_rc=0, gh_out="completed|success|111")
+    sha7 = _git(tmp_path / "repo", tmp_path, "rev-parse", "--short=7", "HEAD")
+    assert rc == 0 and "dirty=2" in summary
+    assert f"| 9 | CI (gh) | PASS | 0s | success 111 ({sha7}); CI của HEAD; cây có 2 thay đổi chưa commit |" in summary
+
+
+def test_v16_ci_step_without_git_skips_and_never_calls_gh(tmp_path: Path) -> None:
+    rc, calls, summary = _run(tmp_path, g="0", gh_rc=0, gh_out="completed|success|111")
+    assert rc == 0 and _gh_calls(calls) == []
+    assert "| 9 | CI (gh) | BỎ QUA | 0s | bỏ qua (không có git) |" in summary.splitlines()
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="cần jq để chạy biểu thức --jq thật")
+def test_v16_ci_jq_expression_shapes(tmp_path: Path) -> None:
+    """Biểu thức `--jq` mà verify.sh truyền cho gh, chạy bằng jq thật: ra đúng dạng mà các ca trên giả lập."""
+    _run(tmp_path, g="0", git=True, gh_rc=0)
+    expr = (tmp_path / "calls.log.jq").read_text(encoding="utf-8")
+    samples = {
+        "[]": "",
+        '[{"status":"completed","conclusion":"success","databaseId":38670134404}]': "completed|success|38670134404",
+        '[{"status":"in_progress","conclusion":"","databaseId":333}]': "in_progress||333",
+        '[{"status":"queued","conclusion":null,"databaseId":444}]': "queued|null|444",
+    }
+    for doc, want in samples.items():
+        out = subprocess.run(["jq", "-r", expr], input=doc, capture_output=True, text=True, check=True)
+        assert out.stdout.strip() == want, (doc, out.stdout)

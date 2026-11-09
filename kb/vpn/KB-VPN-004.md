@@ -1,10 +1,10 @@
 ---
 doc_id: KB-VPN-004
-version: 2
+version: 3
 request_type: vpn
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-10-01
+updated_at: 2026-10-18
 sensitivity: internal
 enabled: true
 title: Gia hạn và cấp lại chứng chỉ VPN
@@ -47,7 +47,7 @@ Yêu cầu gia hạn hoặc cấp lại chứng chỉ VPN cho thiết bị đã 
 Yêu cầu gia hạn hoặc cấp lại chứng chỉ VPN cần người duyệt trong các trường hợp sau:
 
 - Thiết bị chưa được đăng ký với bộ phận IT. Bạn cần đăng ký thiết bị trước, xem tài liệu về đăng ký thiết bị mới để dùng VPN.
-- Bạn gửi yêu cầu ngoài giờ hành chính, tức là buổi tối, cuối tuần hoặc ngày lễ.
+- Bạn gửi yêu cầu ngoài giờ hành chính, tức là ngoài khung 08:00–18:00 từ thứ Hai đến thứ Sáu, ví dụ buổi tối hoặc cuối tuần.
 - Bạn là nhân viên chưa qua thử việc.
 
 Khi cần người duyệt, trợ lý IT chuyển yêu cầu cho người có thẩm quyền và báo lại cho bạn kết quả. Trong lúc chờ duyệt, bạn chưa dùng được chứng chỉ VPN mới, nên hãy gửi yêu cầu sớm trong giờ hành chính nếu bạn cần kết nối gấp.

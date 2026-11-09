@@ -14,10 +14,14 @@
 - `config/approvers.yaml` (`open_approvers`, Phase 4 4b P1): người duyệt chính/dự phòng/Trưởng BP theo intent — gọi ở
   `open_runtime` trước DB; thiếu intent đang bật, khoá lạ, id sai mẫu, trùng người → không khởi động. `approval_sla_minutes`
   (P12): `APPROVAL_SLA_MINUTES_DEV` chỉ dev/test.
+- `config/retention.yaml` (`open_retention`, M2 bn-a — P7 mục 4 [Chốt 17.2]): hạn giữ checkpoint/hội thoại, phiên, hạn chờ đã bắn + công tắc
+  `dry_run` (mặc định true). Công tắc nằm trong file commit, KHÔNG qua env/`.env` máy đo. Sai → worker không khởi động.
 - `config/escalation_templates.yaml` (`get_escalation_templates`): mẫu thông báo + `next_for_l2` theo mã E
   của B20 (B20 mục 4.2, 7.1) — đủ E0–E9, không chuỗi rỗng.
+- `config/dedup.yaml` (`get_dedup`, M1): `DEDUP_WINDOW_HOURS` (cửa sổ báo trùng, giờ) + mẫu tin cố định `{loai}`/`{ma}` — KHÔNG
+  phải biến `.env`.
 Giá, timeout, prompt KHÔNG nằm ở đây — thuộc config/llm.yaml, config/prompts/ (P2). Riêng tên model hai vai
-trò (`FAST_MODEL`, `STRONG_MODEL`), `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env (PLAN-3d Q-3d-3).
+trò (`FAST_MODEL`, `STRONG_MODEL`), `LLM_BASE_URL`, `LLM_API_KEY` đọc từ env (PLAN-3d Q-3d-3); thêm `CHAT_MODEL` cho hai vai chat (Q10).
 
 File env: `APP_ENV_FILE` (mặc định `.env`, tính từ thư mục đang chạy); đặt RỖNG để tắt hẳn —
 khi đó chỉ đọc biến môi trường. `conftest.py` ở gốc repo đặt rỗng trước khi import app, để test
@@ -29,7 +33,9 @@ import json
 import logging
 import os
 import re
+import string
 from collections.abc import Mapping
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -41,6 +47,7 @@ from pydantic import (
     Field,
     RootModel,
     SecretStr,
+    StrictBool,
     StringConstraints,
     field_validator,
     model_validator,
@@ -49,13 +56,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.domain.action import ActionMeta
 from app.domain.approval import Roster
-from app.domain.exit_codes import ExitCode
+from app.domain.exit_codes import REASON_DETAILS, ExitCode
 from app.domain.policy import BusinessHours, Rule, check_rules
-from app.domain.slots import IntentSlots
+from app.domain.slots import DEVICE_PREFIX_SHAPE, RESERVED_DEVICE_PREFIXES, IntentSlots
 
 log = logging.getLogger(__name__)
 
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")  # Phase 4 P4: `APP_GIT_SHA` chỉ nhận SHA-1 đầy đủ, chữ thường
+# Dạng địa chỉ email chấp nhận (SMTP_FROM, `users.email` đồng bộ từ AD): một `@`, không khoảng trắng/ký tự điều khiển, tên miền có dấu
+# chấm; tổng ≤ 254 (RFC 5321) kiểm riêng ở nơi dùng.
+_DOMAIN_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+EMAIL_ADDRESS_RE = re.compile(rf"[A-Za-z0-9.!#$%&'*+/=?^_`{{|}}~-]{{1,64}}@{_DOMAIN_LABEL}(?:\.{_DOMAIN_LABEL})+")
 
 
 def env_file_from_env() -> str | None:
@@ -66,14 +77,19 @@ def env_file_from_env() -> str | None:
 class Settings(BaseSettings):
     # env_file đọc lúc import module: đổi APP_ENV_FILE sau khi đã import app.settings thì không ăn.
     # env_ignore_empty: `LLM_API_KEY=` (để trống tới mốc G) được hiểu là chưa đặt → None.
+    # hide_input_in_errors (A2 bn-a): lỗi cấu hình không in giá trị (khoá, DSN) — chỉ tên trường + lý do.
     model_config = SettingsConfigDict(
-        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+        env_file=env_file_from_env(), env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
     # ---- Bí mật ----
     llm_api_key: SecretStr | None = None
     jwt_signing_key: SecretStr | None = None
     mfa_enc_key: SecretStr | None = None
+    # A2 (bn-a): khoá HMAC username ma CHO WORKER (worker không nhận JWT_SIGNING_KEY/MFA_ENC_KEY) — 64 hex = đúng khoá backend dẫn xuất
+    # từ JWT_SIGNING_KEY (`auth.username_hash.username_key`, tạo bằng `scripts/ops/derive_username_key.py`). Lệch → `resolve_key` từ chối.
+    username_hmac_key: SecretStr | None = None
     # Token dịch vụ (P6 mục 3, D-03): mock kiểm ở header X-Service-Token.
     svc_agent_token: SecretStr | None = None  # tool đọc (B6, B11), đăng nhập qua AD
     svc_executor_token: SecretStr | None = None  # DUY NHẤT có quyền ghi (B17)
@@ -102,6 +118,10 @@ class Settings(BaseSettings):
     # base_url của provider — config/llm.yaml trỏ tới TÊN các trường này (`model_setting`, `base_url_setting`).
     fast_model: str | None = None
     strong_model: str | None = None
+    # Q10 (ĐP 09/11): model của hai vai `chat_fast`/`chat_strong` (các bước hội thoại B3/B10/B11 — `prompt_roles` trong llm.yaml). Để TRỐNG =
+    # mỗi vai chat dùng đúng model của fast/strong (hành vi như trước lô Q10). B2 (chấm tấn công) và B14 (ước lượng rủi ro) không bao giờ
+    # đi vai này — model của hai chốt an toàn đó đã đo trong báo cáo. Có giá trị thì PHẢI có dòng `pricing` (như FAST/STRONG).
+    chat_model: str | None = None
     # repr=False: URL có thể mang khoá (`user:pass@`, `?api-key=`) — không lộ qua repr/str của Settings (S9).
     llm_base_url: str | None = Field(default=None, repr=False)
     # Preset ScriptedLLM trên stack dev (`[fake:<preset>]`, Q-3d-12). None → `<config_dir>/scripted`.
@@ -118,6 +138,10 @@ class Settings(BaseSettings):
     lock_pool_size: int | None = Field(default=None, ge=1)  # mặc định GRAPH_CONCURRENCY + 2 (D-19)
     ticket_lock_timeout: float = Field(default=5.0, gt=0)  # giây; SET lock_timeout trên lock pool
     health_timeout: float = Field(default=2.0, gt=0)  # giây mỗi phụ thuộc ở /api/health
+    # ---- SSE tiến trình ticket (GET /api/tickets/{id}/events) ----
+    enable_sse: bool = False  # tắt → route trả 404, màn chat dùng polling như cũ
+    sse_poll_ms: int = Field(default=300, ge=50)  # nhịp đọc DB tìm dòng audit mới
+    sse_heartbeat_s: float = Field(default=15.0, gt=0)  # comment giữ kết nối khi không có sự kiện
     graph_recursion_limit: int = Field(default=60, ge=10)  # P1 mục 7: lưới cuối sau MAX_LOOPS
     checkpoint_pool_size: int = Field(default=10, ge=1)  # pool psycopg của AsyncPostgresSaver
     # ---- Worker (P1 mục 7) ----
@@ -155,6 +179,8 @@ class Settings(BaseSettings):
     # ---- API ----
     max_request_body_bytes: int = Field(default=64 * 1024, ge=1)  # đếm byte ĐỌC THẬT (2b-3 Q5)
     background_shutdown_seconds: float = Field(default=10.0, ge=0)  # tắt app: chờ lượt nền rồi huỷ
+    # `off` → không mở /docs, /redoc, /openapi.json (máy demo). Không phụ thuộc APP_ENV: demo chạy APP_ENV=dev.
+    api_docs: Literal["on", "off"] = "on"
     # ---- Privacy guard (B02 L1, phase3 mục 8.3, 3-Q25) ----
     # Mặc định MỌI env là guard regex thật. `none` (NotRedactingGuard) chỉ khi đặt tường minh VÀ APP_ENV ∈ {dev, test}
     # (`main._default_guard` → `require_dev_fakes`) — không có đường nào lưu dữ liệu thô ở môi trường thật.
@@ -184,6 +210,10 @@ class Settings(BaseSettings):
 
     # ---- Phạm vi intent (3-Q27, phase3 3.5) — Phase 5 T24 P1 (Q-5-7): bật đủ 4 loại ----
     enabled_intents: list[str] = Field(default_factory=lambda: ["vpn", "account", "software", "access"], min_length=1)
+    # D-76 (ĐP chốt 09/11, lô Q1+Q12): intent chỉ-trả-lời `it_help` (câu hỏi IT chung → KB `general`). KHÔNG nằm trong `enabled_intents`
+    # (không slot/roster/plan). Tắt → B3 coi `it_help` như `out_of_scope` (E1 như trước lô) và câu hỏi phân loại / tin E1 bỏ vế "hướng dẫn…"
+    # — phương án lùi nếu KB `general` không qua cổng nạp trên máy demo.
+    enable_it_help: bool = True
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False
@@ -196,7 +226,11 @@ class Settings(BaseSettings):
     # Phase 5 (T23a, ML-GAN — D-44): quyền quyết định của model chặn tấn công ở B2 L3. `shadow` (mặc định): vẫn gọi
     # /classify, ghi `p_mal` vào `screening`, nhưng không chặn/cho qua theo điểm — mọi câu không khớp mẫu xuống L4.
     # `active`: ≥ TAU_BLOCK chặn, ≤ TAU_PASS qua. Giá trị khác → không khởi động. Node B2 đọc MỘT lần lúc dựng graph (backend VÀ worker).
-    b2_classifier_mode: Literal["shadow", "active"] = "shadow"
+    # Phase 5 (gói 1, D-52): thêm `review` — model nghi (p ≥ τ) mà LLM chấm nói không → E1 `injection_suspected`; model không
+    # bao giờ cho câu đi thẳng. `review` BẮT BUỘC `B2_TAU_REVIEW` ([0,50; 0,9999], không mặc định); `active` chỉ ở dev/test
+    # (D-44: 31/900 câu tấn công đi thẳng). Sai → backend VÀ worker từ chối khởi động (`_b2_mode_guard`).
+    b2_classifier_mode: Literal["shadow", "active", "review"] = "shadow"
+    b2_tau_review: float | None = Field(default=None, ge=0.5, le=0.9999, allow_inf_nan=False)
 
     # ---- Phase 4 ----
     # S0-P11 (Q-4-U A+, D-34): `true` → yêu cầu HÀNH ĐỘNG cũng phải qua cổng độ liên quan B9 như Phase 3 (ablation Phase 10,
@@ -210,6 +244,14 @@ class Settings(BaseSettings):
     # (`require_dev_fakes` ở `open_runtime`, trước DB); môi trường khác đặt biến này → từ chối khởi động.
     approval_sla_minutes_dev: int | None = Field(default=None, ge=1, le=30)
 
+    @field_validator("username_hmac_key", mode="before")
+    @classmethod
+    def _username_key_hex(cls, v: object) -> object:
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if raw is not None and not (isinstance(raw, str) and re.fullmatch(r"[0-9a-fA-F]{64}", raw)):
+            raise ValueError("USERNAME_HMAC_KEY phải là 64 ký tự hex (32 byte) — từ chối khởi động")
+        return v
+
     @field_validator("app_git_sha", mode="before")
     @classmethod
     def _git_sha_40_hex(cls, v: object) -> object:
@@ -221,10 +263,68 @@ class Settings(BaseSettings):
         log.warning("APP_GIT_SHA không phải 40 ký tự hex — bỏ qua, lineage.commit_sha = NULL")
         return None
 
+    # ---- Phase 5 (gói 2b) — chống spam D-54 (a), đặc tả `claude/dac-ta-bat-2-model.md` 4.8 ----
+    # 429 theo tài khoản (sau xác thực, đếm theo `user_id`): ticket mới (`POST /api/tickets`, không tính ticket con) ≤ N trong 10 phút và
+    # ≤ M mỗi giờ; `/messages`, `/reply`, `/confirm` chung một bộ ≤ K trong 10 phút (bảng `rate_hits`). KHÔNG có giá trị "tắt": cổng, đo,
+    # demo nới bằng số lớn (`make up RATE=loose`, `make verify` tự nới) và ghi vào biên bản.
+    ticket_rate_10min: int = Field(default=10, ge=1)
+    ticket_rate_hour: int = Field(default=30, ge=1)
+    message_rate_10min: int = Field(default=30, ge=1)
+
     # ---- M9 (P9; kế hoạch M9 mục 4.1) ----
     # DSN role app_monitor (chỉ SELECT). KHÔNG mặc định: thiếu/rỗng → route M9 trả 503 `monitor_unavailable`, job M9
     # không chạy — không bao giờ rơi về app_rw (`monitor/db.py`). repr=False: DSN mang mật khẩu.
     monitor_database_url: str | None = Field(default=None, repr=False)
+
+    # ---- Notify-email (hàng đợi `email_outbox` + worker `send_emails`) ----
+    # Mặc định TẮT. Bật mà thiếu biến bắt buộc → MỌI tiến trình (backend, worker) từ chối khởi động, thông báo nêu tên biến
+    # (`_email_config`). EVAL_MODE=true → luôn tắt (`email_active`): không ghi outbox, không gửi. SMTP_PASSWORD là SecretStr;
+    # SMTP_USERNAME/SMTP_PASSWORD đi cặp; có tài khoản thì bắt buộc STARTTLS (không gửi mật khẩu qua kênh rõ).
+    email_enabled: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_starttls: bool = True
+    smtp_username: str | None = Field(default=None, repr=False)
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    email_link_base_url: str | None = None  # gốc URL frontend cho dòng "Xem chi tiết: …" (không có "/" cuối)
+    email_send_interval_seconds: float = Field(default=15.0, gt=0)  # chu kỳ job `send_emails` của worker
+
+    @field_validator("email_link_base_url", mode="after")
+    @classmethod
+    def _link_base(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().rstrip("/")
+        if not re.fullmatch(r"https?://[^\s/?#]+(/[^\s?#]*)?", v):
+            raise ValueError("EMAIL_LINK_BASE_URL phải là URL http(s)://… không có query/fragment")
+        return v
+
+    @model_validator(mode="after")
+    def _email_config(self) -> "Settings":
+        if not self.email_enabled:
+            return self
+        if self.eval_mode:  # EVAL_MODE luôn tắt email — không đòi biến SMTP
+            log.warning("EMAIL_ENABLED=true bị bỏ qua vì EVAL_MODE=true — không ghi email_outbox, không gửi")
+            return self
+        required = {
+            "SMTP_HOST": self.smtp_host, "SMTP_FROM": self.smtp_from, "EMAIL_LINK_BASE_URL": self.email_link_base_url,
+        }  # fmt: skip
+        missing = [name for name, value in required.items() if not value]
+        if (self.smtp_username is None) != (self.smtp_password is None):
+            missing.append("SMTP_PASSWORD" if self.smtp_password is None else "SMTP_USERNAME")
+        if missing:
+            raise ValueError(f"EMAIL_ENABLED=true nhưng thiếu biến: {', '.join(missing)} — từ chối khởi động")
+        if self.smtp_username is not None and not self.smtp_starttls:
+            raise ValueError("SMTP_USERNAME đặt mà SMTP_STARTTLS=false — không gửi mật khẩu SMTP qua kênh rõ, từ chối khởi động")
+        if self.smtp_from is not None and not EMAIL_ADDRESS_RE.fullmatch(self.smtp_from):
+            raise ValueError("SMTP_FROM không phải địa chỉ email hợp lệ — từ chối khởi động")
+        return self
+
+    @property
+    def email_active(self) -> bool:
+        """Email thật sự chạy: EMAIL_ENABLED=true VÀ không EVAL_MODE. Mọi nơi dựng notifier/job email chỉ hỏi thuộc tính này."""
+        return self.email_enabled and not self.eval_mode
 
     @field_validator("llm_backend", mode="before")
     @classmethod
@@ -234,6 +334,13 @@ class Settings(BaseSettings):
             raise ValueError(f"LLM_BACKEND={v!r} không hợp lệ — giá trị hợp lệ: {' | '.join(LLM_BACKENDS)}")
         return v
 
+    @field_validator("api_docs", mode="before")
+    @classmethod
+    def _api_docs_value(cls, v: object) -> object:
+        if v not in API_DOCS_VALUES:
+            raise ValueError(f"API_DOCS={v!r} không hợp lệ — giá trị hợp lệ: {' | '.join(API_DOCS_VALUES)}")
+        return v
+
     @model_validator(mode="after")
     def _eval_mode_not_in_prod(self) -> "Settings":
         # P2 mục 11: EVAL_MODE ghi prompt đầy đủ vào `llm_calls.prompt_full` — chỉ môi trường thử nghiệm. Thiếu
@@ -241,6 +348,18 @@ class Settings(BaseSettings):
         if self.eval_mode and self.app_env not in EVAL_MODE_ENVS:
             raise ValueError(
                 f"EVAL_MODE=true chỉ dùng được khi APP_ENV ∈ {sorted(EVAL_MODE_ENVS)} "
+                f"(đang là {self.app_env!r}) — từ chối khởi động"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _b2_mode_guard(self) -> "Settings":
+        # Phase 5 (gói 1, D-52): kiểm ở Settings → MỌI tiến trình dựng Settings (backend, worker) cùng từ chối.
+        if self.b2_classifier_mode == "review" and self.b2_tau_review is None:
+            raise ValueError("B2_CLASSIFIER_MODE=review cần b2_tau_review (B2_TAU_REVIEW, khoảng [0,50; 0,9999]) — từ chối khởi động")
+        if self.b2_classifier_mode == "active" and self.app_env not in B2_ACTIVE_ENVS:
+            raise ValueError(
+                f"B2_CLASSIFIER_MODE=active chỉ dùng được khi APP_ENV ∈ {sorted(B2_ACTIVE_ENVS)} "
                 f"(đang là {self.app_env!r}) — từ chối khởi động"
             )
         return self
@@ -328,8 +447,10 @@ class Settings(BaseSettings):
 
 
 DEV_FAKE_ENVS = frozenset({"dev", "test"})
+B2_ACTIVE_ENVS = DEV_FAKE_ENVS  # Phase 5 (gói 1, D-52): `active` 0,90/0,10 giữ trong code, chỉ thử ở dev/test
 EVAL_MODE_ENVS = frozenset({"dev", "test", "staging"})  # S9 PLAN-3d: prod và APP_ENV thiếu → từ chối
 LLM_BACKENDS = ("scripted", "real")
+API_DOCS_VALUES = ("on", "off")
 
 
 @lru_cache
@@ -439,6 +560,19 @@ class SlotsFile(BaseModel):
     # 3f (phase3 3.2): slot theo intent — Phase 3 chỉ `vpn`. Mặc định rỗng (fixture test tối giản vẫn nạp được);
     # intent bật mà không có mục ở đây → `check_intent_config` từ chối khởi động.
     intents: dict[str, IntentSlots] = Field(default_factory=dict)
+    # Q4 (ĐP 09/11): tiền tố mã máy có thật — MỘT nguồn cho domain/slots.py + domain/target.py (nơi gọi truyền `device_prefixes`).
+    # Mặc định rỗng (fixture tối giản không có intent máy vẫn nạp được); có intent khai báo slot `device_id` mà rỗng → từ chối.
+    device_prefixes: frozenset[str] = frozenset()
+
+    @model_validator(mode="after")
+    def _device_prefixes_ok(self) -> "SlotsFile":
+        if bad := sorted(p for p in self.device_prefixes if not DEVICE_PREFIX_SHAPE.fullmatch(p)):
+            raise ValueError(f"device_prefixes sai dáng (2–4 chữ HOA ASCII): {bad}")
+        if bad := sorted(self.device_prefixes & RESERVED_DEVICE_PREFIXES):
+            raise ValueError(f"device_prefixes trùng dáng mã người (cấm {sorted(RESERVED_DEVICE_PREFIXES)}): {bad}")
+        if not self.device_prefixes and (used := sorted(i for i, s in self.intents.items() if "device_id" in s.keys)):
+            raise ValueError(f"device_prefixes rỗng mà intent có slot device_id: {used}")
+        return self
 
     @property
     def declared_names(self) -> frozenset[str]:
@@ -570,6 +704,40 @@ def approval_sla_minutes(settings: Settings) -> int:
     return settings.approval_sla_minutes_dev
 
 
+# ---- config/retention.yaml (M2 bn-a; P7 mục 4 [Chốt 17.2]) -----------------------------------
+
+RETENTION_FILE = "retention.yaml"
+RETENTION_MIN_DAYS = 90  # sàn hạn giữ hội thoại/checkpoint (huong-dan 17.2, P7 mục 4)
+
+
+class RetentionConfig(BaseModel):
+    """Job hạn giữ của worker (`graph/retention.RetentionJob`). Số ngày tính từ `closed_at` của ticket / `expires_at` của phiên /
+    `fired_at` của hạn chờ. `dry_run` bool CHẶT (chuỗi "false" không được hiểu là tắt) — mặc định chỉ đếm."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    # checkpoint + hội thoại, side_effects, child_notices (P7 mục 4). SÀN 90 (ĐP 08/11 20:35): chỉ được giữ LÂU hơn — gõ nhầm "9" không
+    # thành dọn ticket 9 ngày tuổi.
+    retention_days: int = Field(default=90, ge=RETENTION_MIN_DAYS)
+    session_grace_days: int = Field(default=30, ge=1)  # sessions: 30 ngày sau khi hết hạn (P7 mục 4)
+    wait_grace_days: int = Field(default=7, ge=1)  # wait_deadlines: 7 ngày sau fired_at (P7 mục 4)
+    dry_run: StrictBool = True
+    batch: int = Field(default=500, ge=1)  # tối đa số ticket mỗi lượt
+
+
+def load_retention(path: Path) -> RetentionConfig:
+    return RetentionConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def open_retention(settings: Settings) -> RetentionConfig:
+    """Nạp `<config_dir>/retention.yaml` — thiếu file, YAML hỏng, khoá lạ, giá trị sai → `RuntimeError` (worker từ chối khởi động, TRƯỚC DB)."""
+    path = settings.config_dir / RETENTION_FILE
+    try:
+        return load_retention(path)
+    except (OSError, yaml.YAMLError, ValueError) as e:  # ValidationError là ValueError
+        raise RuntimeError(f"{RETENTION_FILE} không nạp được ({type(e).__name__}) — từ chối khởi động") from e
+
+
 # ---- config/escalation_templates.yaml ---------------------------------------------------------
 
 
@@ -578,6 +746,29 @@ class CodeTemplate(BaseModel):
 
     user_message: str = Field(min_length=1)  # tin gửi người dùng [Chốt B20 7.1]
     next_for_l2: str = Field(min_length=1)  # phần (4) của ghi chú bàn giao (B20 4.2)
+    # M2 (ĐP 08/11): câu phần (4) THAY `next_for_l2` theo `escalation_reason_detail` — khoá ∈ REASON_DETAILS, chuỗi không rỗng
+    next_for_l2_by_reason: dict[str, Annotated[str, Field(min_length=1)]] = Field(default_factory=dict)
+    # Q3 M5 (ĐP 09/11): tin người dùng THAY `user_message` theo `escalation_reason_detail` — đọc như `next_for_l2_by_reason`
+    user_message_by_reason: dict[str, Annotated[str, Field(min_length=1)]] = Field(default_factory=dict)
+    # D-76 (ĐP chốt 09/11, bản demo lo-0811): câu THAY `user_message` khi cờ ENABLE_IT_HELP bật (hiện chỉ E1 khai — thêm vế "và hướng dẫn các
+    # sự cố IT thường gặp…"). Câu theo lý do (`user_message_by_reason`) vẫn ưu tiên hơn.
+    user_message_it_help: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _known_reasons(self) -> "CodeTemplate":
+        if unknown := sorted(set(self.next_for_l2_by_reason) - REASON_DETAILS):
+            raise ValueError(f"next_for_l2_by_reason: lý do không có trong REASON_DETAILS: {unknown}")
+        if unknown := sorted(set(self.user_message_by_reason) - REASON_DETAILS):
+            raise ValueError(f"user_message_by_reason: lý do không có trong REASON_DETAILS: {unknown}")
+        return self
+
+    def next_for(self, reason: str | None) -> str:
+        return self.next_for_l2_by_reason.get(reason, self.next_for_l2) if reason else self.next_for_l2
+
+    def user_message_for(self, reason: str | None, *, it_help: bool = False) -> str:
+        """Q3 M5: câu theo lý do nếu khai báo; không thì (D-76) `user_message_it_help` khi cờ bật và mã có khai; không thì `user_message`."""
+        default = self.user_message_it_help if it_help and self.user_message_it_help else self.user_message
+        return self.user_message_by_reason.get(reason, default) if reason else default
 
 
 class EscalationTemplates(BaseModel):
@@ -604,3 +795,38 @@ def load_escalation_templates(path: Path) -> EscalationTemplates:
 @lru_cache
 def get_escalation_templates() -> EscalationTemplates:
     return load_escalation_templates(get_settings().config_dir / "escalation_templates.yaml")
+
+
+# ---- config/dedup.yaml (M1 — báo trùng yêu cầu) ------------------------------------------------
+
+
+class DedupConfig(BaseModel):
+    """Cửa sổ và mẫu tin của báo trùng yêu cầu (B3). Không phải biến `.env` và không nằm trong `policy.json`: một file riêng,
+    sai schema → không khởi động. Mẫu chỉ có hai chỗ trống `{loai}` (nhãn loại yêu cầu) và `{ma}` (mã ticket đang mở)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    DEDUP_WINDOW_HOURS: int = Field(strict=True, ge=1, le=720)  # ≤ 30 ngày
+    template: str = Field(min_length=1)
+
+    @field_validator("template")
+    @classmethod
+    def _placeholders(cls, value: str) -> str:
+        fields = list(string.Formatter().parse(value))
+        names = {name for _, name, _, _ in fields if name is not None}
+        if names != {"loai", "ma"} or any(spec or conv for _, name, spec, conv in fields if name is not None):
+            raise ValueError("template phải có đúng hai chỗ trống {loai} và {ma} (không định dạng, không chỗ trống khác)")
+        return value
+
+    @property
+    def window(self) -> timedelta:
+        return timedelta(hours=self.DEDUP_WINDOW_HOURS)
+
+
+def load_dedup(path: Path) -> DedupConfig:
+    return DedupConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+@lru_cache
+def get_dedup() -> DedupConfig:
+    return load_dedup(get_settings().config_dir / "dedup.yaml")

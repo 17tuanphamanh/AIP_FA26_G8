@@ -18,4 +18,9 @@ Sửa file ở đây là **đổi hành vi agent** — chạy lại test (và pr
 - `policy.json`: `TAU_INTENT` (3f, B3 đường LLM, 0,6).
 - `prompts/b03_classify.yaml` v2 (3f): câu xã giao/đệm không là một ý; việc ngoài phạm vi có yêu cầu LÀ một ý riêng —
   chất lượng thật đo ở mốc G (probe).
+- `prompts/b03_classify.yaml` v5 (M3): bỏ biến chết `recent_messages` + khối "Hội thoại gần nhất" (B3 chạy lúc `conversation` luôn rỗng) —
+  `allowed_vars` còn `redacted_request`, `label_hint`; truyền thêm `recent_messages` → `PromptVariableError`. Chưa thử với LLM thật.
 - `scripted/vpn.yaml` (3f): preset stack `[fake:vpn]` — luồng VPN thật B2 → B3 → B6 khi KHÔNG đặt `FAKE_SCENARIO`.
+- `dedup.yaml` (M1): `DEDUP_WINDOW_HOURS` (mặc định 24) + mẫu tin cố định `{loai}`/`{ma}` của báo trùng yêu cầu ở B3 — ticket lá có intent
+  mà người gửi đang có ticket CÒN MỞ cùng intent trong cửa sổ → một tin theo mẫu (không LLM, qua output guard) + khoá audit `duplicate_of`.
+  Không dừng luồng, không đổi `exit_code`, M5 không thấy. Không phải biến `.env`; sai schema → backend/worker không khởi động.

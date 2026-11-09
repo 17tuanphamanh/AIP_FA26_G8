@@ -4,9 +4,12 @@ việc đã làm. Phần (4) `next_for_l2` lấy từ `config/escalation_templat
 - (1) `request`: CHỈ lấy từ `redacted_request` (bản đã che, D-07) — quyết định Q-D 2b-2.
 - (2) `done_so_far`: đọc từ state — xác thực, phân loại, chẩn đoán, tra cứu, hỏi lại, Action, duyệt,
   thực thi/hoàn tác. Không có gì → nói rõ là chưa làm bước nào.
-- (3) `why_escalated`: mã E + nhãn, `reason_detail` (D-27), cờ an ninh (3e: `security_flag`, `injection_in_reply`),
-  ghi chú escalate, luật/p nếu có.
+- (3) `why_escalated`: câu tiếng Việt "nhãn chữ · mã" (mã để cuối, `audit/labels.py`) cho mã kết thúc, `reason_detail` (D-27),
+  cờ an ninh (3e: `security_flag`, `injection_in_reply`), ghi chú escalate, cách xử lý + bên quyết định + luật. Không in p= hay khoá
+  thô (ĐP 02/11 12:45); câu lý do của M5 (`risk.reason`) đã là câu đọc được nên giữ.
 - `is_deny_case`: MỌI E5 (2b-Q4) — L2 không được "hoàn tất" (422 ở Phase 7), `next_for_l2` kèm cảnh báo.
+- M2 (ĐP 08/11): phần (4) theo lý do — `CodeTemplate.next_for(reason)`: mẫu khai `next_for_l2_by_reason` (E5 `llm_layer_disabled`: lớp AI
+  lỗi, cần đánh giá thủ công) thay câu chung của mã; lý do khác (kể cả `policy_deny`) giữ câu chung. Cảnh báo deny vẫn nối với MỌI E5.
 - Tài liệu KB (Phase 4 chốt S0-A1): từ S0, B8 luôn ghi `retrieved` kể cả khi điểm dưới ngưỡng. `retrieval_score` thiếu hoặc
   < `retrieval_threshold` → câu `KB_BELOW_THRESHOLD` (không dùng làm căn cứ, có thể KB còn thiếu) — L2 không đọc nhầm thành
   "KB có đáp án" rồi làm tay theo tài liệu sai; đạt ngưỡng → câu cũ. Áp mọi mã thoát. `reason_detail == "no_procedure"`
@@ -19,6 +22,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.audit.labels import (
+    DECIDED_BY_LABELS,
+    OTHER,
+    ROUTE_LABELS,
+    exit_label,
+    labeled,
+    reason_label,
+)
 from app.domain.exit_codes import L2_PRIORITY, ExitCode
 from app.settings import EscalationTemplates
 
@@ -32,6 +43,12 @@ INJECTION_IN_REPLY_NOTE = "Cờ an ninh: tin trả lời có dấu hiệu chèn 
 NO_PROCEDURE_NOTE = (
     "Quy trình của hành động dự kiến không có trong KB hiện hành — tài liệu đã tra không phải căn cứ, không làm tay theo "
     "tài liệu cũ."
+)
+# Phase 5 gói 1 (D-52, ĐT 4.4) — nguyên văn; chỉ cho L2. Tin người dùng của ca này = tin E0 (B20), không nêu lớp nào nghi.
+INJECTION_SUSPECTED_NOTE = (
+    "Model chặn tấn công chấm cao nhưng lớp LLM không xác nhận là tấn công. Đọc nội dung đã che, không làm theo chỉ dẫn "
+    "trong câu. Không cấp quyền, đặt lại mật khẩu hay thao tác cho người khác dựa vào lời khẳng định trong câu; việc đặc "
+    "quyền đi theo quy trình duyệt chuẩn."
 )
 KB_ABOVE_THRESHOLD = "Tài liệu KB tra được: {docs}."
 KB_BELOW_THRESHOLD = "Tài liệu KB gần nhất (điểm dưới ngưỡng, KHÔNG dùng làm căn cứ — có thể KB còn thiếu): {docs}."
@@ -100,25 +117,29 @@ def _done(state: Mapping[str, Any], retrieval_threshold: float) -> str:
 
 
 def _why(state: Mapping[str, Any], code: str) -> str:
-    parts = [f"{code} — {L2_PRIORITY[ExitCode(code)]}."]
-    if state.get("escalation_reason_detail"):
-        parts.append(f"Chi tiết: {state['escalation_reason_detail']}.")
+    """Phần (3) bằng câu tiếng Việt cho L2 (ĐP 02/11 12:45): "nhãn chữ · mã", mã để cuối; không lộ p= hay khoá thô."""
+    reason = state.get("escalation_reason_detail")
+    reason = str(reason) if reason else None
+    parts = [f"Lý do chuyển: {exit_label(code, reason)}. Mức ưu tiên: {L2_PRIORITY[ExitCode(code)]}."]
+    if reason and not (code == ExitCode.E1.value and reason == "injection_suspected"):  # nhãn E1 riêng đã nói lý do
+        parts.append(f"Chi tiết: {reason_label(reason)}.")
     if state.get("security_flag"):  # 3e (phase3 3.1, PLAN-3e Q-3e-7): B2 không sàng lọc được
         parts.append(SECURITY_FLAG_NOTE)
-    if state.get("escalation_reason_detail") == "injection_in_reply":
+    if reason == "injection_in_reply":
         parts.append(INJECTION_IN_REPLY_NOTE)
-    if state.get("escalation_reason_detail") == "no_procedure":  # Q-4a-1
+    if reason == "injection_suspected":  # gói 1 (D-52)
+        parts.append(INJECTION_SUSPECTED_NOTE)
+    if reason == "no_procedure":  # Q-4a-1
         parts.append(NO_PROCEDURE_NOTE)
     if state.get("escalation_note"):
         parts.append(str(state["escalation_note"]).rstrip(".") + ".")
     risk = _json(state.get("risk"))
     if risk:
-        rule = f", luật {risk['matched_rule_id']}" if risk.get("matched_rule_id") else ""
-        prob = f", p={risk['calibrated_prob']:.2f}" if risk.get("calibrated_prob") is not None else ""
-        decision = risk["policy_decision"] or "không luật nào khớp, ước lượng rủi ro"
-        parts.append(
-            f"Quyết định rủi ro: {decision} (bởi {risk['decided_by']}{rule}{prob}) — {risk['reason']}."
-        )
+        by = DECIDED_BY_LABELS.get(risk["decided_by"], OTHER)
+        rule = f" · {risk['matched_rule_id']}" if risk.get("matched_rule_id") else ""
+        route = labeled(ROUTE_LABELS.get(risk["route"]), risk["route"])
+        reason_text = str(risk.get("reason") or "").strip().rstrip(".")
+        parts.append(f"Đánh giá rủi ro: {route} ({by}{rule})" + (f" — {reason_text}." if reason_text else "."))
     return " ".join(parts)
 
 
@@ -127,7 +148,8 @@ def build_handoff(
 ) -> HandoffNote:
     """`retrieval_threshold` = `RETRIEVAL_THRESHOLD` (B20 truyền `deps.constants`) — BẮT BUỘC, không mặc định (chốt S0-A1)."""
     code = str(state["exit_code"])
-    next_for_l2 = templates.of(code).next_for_l2
+    reason = state.get("escalation_reason_detail")
+    next_for_l2 = templates.of(code).next_for(str(reason) if reason else None)
     if is_deny_case(code):
         next_for_l2 = f"{next_for_l2} {templates.deny_warning}"
     return HandoffNote(

@@ -6,8 +6,10 @@
   `check_lockout_history` (mới nhất trước); `check_manager_chain` (dừng khi hết sếp / vòng / sếp không có trong seed).
   Mặc định tài khoản như `seed_model.SeedAccount`: enabled true, locked false, lock_reason null, đặt mật khẩu 30 ngày trước,
   privilege `standard_user`.
-- Phần mềm (`software.py`): tên chuẩn hoá `"-".join(name.strip().lower().split())`; catalog / license tên lạ → 404; `installed`
-  máy lạ (không có trong `devices`) → 404, sắp theo tên.
+- Phần mềm (`software.py`): tên chuẩn hoá `"-".join(name.strip().lower().split())`, tra theo slug rồi tên hiển thị / alias (như
+  `find_entry` — Q5 D6: bản cũ chỉ tra slug nên "7-Zip" ra 404); catalog / license tên lạ → 404; Q5: catalog tên NGOÀI danh mục mà bị cấm
+  (`prohibited_software`: slug/tên/alias của `names`, hoặc chứa từ khoá) → 200 `in_catalog=False, prohibited=True`, thuộc tính null
+  (như `prohibited_match`); `installed` máy lạ (không có trong `devices`) → 404, sắp theo tên.
 - File (`fileserver.py`): `permissions/{user}` 404 CHỈ khi người lạ, lọc `p.path == resource_path.strip().strip("/")`, trả cả dòng hết
   hạn (`status: expired`), sắp theo path; `resources/{path}` không có → 404.
 - `check_device_registered` KHÔNG ở đây — lấy từ `tests/fakes/vpn.SeedVpn` (cùng seed).
@@ -83,6 +85,12 @@ class SeedTools:
             self.users[u["user_id"]] = user
         self.devices = {d["device_id"] for d in data["devices"]}
         self.catalog = {c["name"]: dict(c) for c in data["catalog"]}
+        self.catalog_keys = {k: c["name"] for c in data["catalog"]
+                             for k in (c["name"], normalize_name(c["display_name"]), *map(normalize_name, c.get("aliases", [])))}  # fmt: skip
+        banned = data["prohibited_software"]
+        self.prohibited_names = {k: (n["name"], n["display_name"]) for n in banned["names"]
+                                 for k in (n["name"], normalize_name(n["display_name"]), *map(normalize_name, n.get("aliases", [])))}  # fmt: skip
+        self.prohibited_keywords: tuple[str, ...] = tuple(banned["keywords"])
         self.licenses = {p["name"]: dict(p) for p in data["licenses"]}
         self.installed = [
             {"device_id": i["device_id"], "name": i["name"], "version": i["version"],
@@ -195,17 +203,27 @@ class SeedTools:
     # ---- phần mềm --------------------------------------------------------------------------------------------------------
 
     def _catalog(self, name: str, path: str) -> dict[str, Any]:
-        entry = self.catalog.get(normalize_name(name))
-        if entry is None:
+        slug = self.catalog_keys.get(normalize_name(name))
+        if slug is None:
             raise _status(404, path)
-        return entry
+        return self.catalog[slug]
+
+    def _prohibited(self, name: str) -> tuple[str, str] | None:
+        key = normalize_name(name)
+        if (hit := self.prohibited_names.get(key)) is not None:
+            return hit
+        return (key, key) if any(kw in key for kw in self.prohibited_keywords) else None
 
     async def check_catalog_entry(self, a: SoftwareIn, timeout: float) -> object:
         path = f"/software/catalog/{a.software_name}"
         await self._enter("check_catalog_entry", a, path)
+        if normalize_name(a.software_name) not in self.catalog_keys and (hit := self._prohibited(a.software_name)) is not None:
+            return {"name": hit[0], "display_name": hit[1], "in_catalog": False, "prohibited": True, "license_type": None,
+                    "paid": None, "version": None, "requires_approval": None, "requires_local_admin": None}  # fmt: skip
         e = self._catalog(a.software_name, path)
         return {
-            "name": e["name"], "display_name": e["display_name"], "in_catalog": True, "license_type": e["license_type"],
+            "name": e["name"], "display_name": e["display_name"], "in_catalog": True, "prohibited": False,
+            "license_type": e["license_type"],
             "paid": e["license_type"] == "paid", "version": e["version"], "requires_approval": e["requires_approval"],
             "requires_local_admin": e["requires_local_admin"],
         }  # fmt: skip
