@@ -14,6 +14,12 @@ tool_arg_slots:
   - software_name
   - resource_path
 
+# device_prefixes (Q4, ĐP 09/11): tiền tố mã máy CÓ THẬT (mọi máy trong mock_services/seed.json: LAP, PC). MỘT nguồn cho: chuẩn hoá slot
+# `device_id` dạng lỏng ("lap 0610" → LAP-0610), mã máy trong câu (`device_text` của L-03) và loại trừ mã máy khi dò định danh người
+# (domain/slots.py, domain/target.py). Tiền tố ngoài danh sách chỉ là mã máy khi đứng ngay sau "máy/laptop/pc/thiết bị". Mỗi tiền tố
+# 2–4 chữ HOA; cấm NV, SVC, ADM (dáng mã người); rỗng mà có intent khai báo slot device_id → không khởi động (settings.SlotsFile).
+device_prefixes: [LAP, PC]
+
 # query_slots (3-Q13): slot nối thêm vào câu truy hồi RAG khi câu người dùng chưa có (build_query,
 # Phase 3 chặng 3c) — không nối device_id (vô nghĩa với KB) hay tên intent.
 query_slots:

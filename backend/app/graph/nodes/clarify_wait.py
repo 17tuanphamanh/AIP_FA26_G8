@@ -96,9 +96,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E2.value, conversation=[user_msg(text)], escalation_reason_detail="llm_unavailable",
             )  # fmt: skip
         spec = deps.slots.intents[state["intent"]]
-        clean, dropped = sanitize_slots(spec, got.slots, text=text, allowed=frozenset(missing))  # 3-Q1 + P2: cửa DUY NHẤT
+        prefixes = deps.slots.device_prefixes  # Q4
+        clean, dropped = sanitize_slots(spec, got.slots, text=text, allowed=frozenset(missing), device_prefixes=prefixes)  # 3-Q1 + P2
         merged = {**(state.get("slots") or {}), **clean}
-        mention, reason = target_check(state["intent"], merged, dropped, spec.keys, text, requester_id_of(state))  # L-03
+        mention, reason = target_check(state["intent"], merged, dropped, spec.keys, text, requester_id_of(state),
+                                       device_prefixes=prefixes)  # L-03  # fmt: skip
         streak = 0 if clean and not got.off_topic else int(state.get("off_topic_streak") or 0) + 1
         info.update(prompt=f"{meta.prompt_id}@{meta.prompt_version}", off_topic=got.off_topic, streak=streak,
                     other_target_mention=mention, other_target_reason=reason, **audit_dropped(dropped, known))  # fmt: skip
