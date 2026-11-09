@@ -206,6 +206,10 @@ class Settings(BaseSettings):
 
     # ---- Phạm vi intent (3-Q27, phase3 3.5) — Phase 5 T24 P1 (Q-5-7): bật đủ 4 loại ----
     enabled_intents: list[str] = Field(default_factory=lambda: ["vpn", "account", "software", "access"], min_length=1)
+    # D-57 (ĐP chốt 09/11, lô Q1+Q12): intent chỉ-trả-lời `it_help` (câu hỏi IT chung → KB `general`). KHÔNG nằm trong `enabled_intents`
+    # (không slot/roster/plan). Tắt → B3 coi `it_help` như `out_of_scope` (E1 như trước lô) và câu hỏi phân loại / tin E1 bỏ vế "hướng dẫn…"
+    # — phương án lùi nếu KB `general` không qua cổng nạp trên máy demo.
+    enable_it_help: bool = True
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False

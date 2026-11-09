@@ -260,7 +260,8 @@ def make(deps: NodeDeps) -> NodeFn:
                      "previous_reply": previous_reply(state, turns),
                      "missing_desc": describe_missing(asked, action_choices=action_choices(deps, state["intent"])),
                      "action_label": action_label(state), "user_request": str(state["redacted_request"]),
-                     "last_question": last_question(state) or NO_LAST_QUESTION}, QuestionOut,
+                     # Q1: lượt B11 đầu không đọc `conversation` — tin `question` có thể là câu hỏi phân loại của B3, không phải "câu B11 vừa hỏi"
+                     "last_question": (last_question(state) if turns > 0 else "") or NO_LAST_QUESTION}, QuestionOut,
                 )  # fmt: skip
             except LLMSchemaError as exc:
                 info["llm_error"] = type(exc).__name__

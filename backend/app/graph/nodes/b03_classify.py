@@ -40,6 +40,14 @@
    lỗi + mã ticket (không thông điệp, không traceback), bỏ qua tin báo trùng, luồng chạy tiếp; riêng `TurnBudgetExceeded` vẫn lan lên (E2).
    Phạm vi bắt lỗi CHỈ là bước đọc store — gửi tin hỏng (notifier) vẫn là lỗi thật → E9.
 
+9. Q1 (D-56, ĐP 09/11 — TC11): nhánh MỘT ý — `intents` rỗng (chào/cảm ơn/mơ hồ, prompt v6) HOẶC đúng 1 ý trong phạm vi mà `confidence <
+   TAU_INTENT` → nếu ticket CHƯA hỏi phân loại (`triage` None) → MỘT câu CỐ ĐỊNH `messages.triage_question(enable_it_help)` (không LLM) qua
+   output guard (chặn → không gửi, E1 như trước lô, audit `guard`) + `effects.once("notify_user", needs=answer, sub="triage")` + hạn `clarify`
+   (`CLARIFY_TIMEOUT_HOURS`, như B11) → `S_CLASSIFYING → S_CLARIFYING` (event `triage_asked`, `triage="waiting"`) → `clarify_wait` (nhánh phân
+   loại: ghép câu trả lời → B2 → B3 lần 2). ĐÃ hỏi (`triage` có giá trị) → E1 như cũ (`out_of_scope` / `intent_low_confidence`). Có ý
+   `out_of_scope` rõ mà 0 ý trong phạm vi → E1 ngay, không hỏi. Nhiều ý: không đổi. Hỏi phân loại KHÔNG tính vào `clarification_turns`.
+   Audit `triage_asked`: điểm log 1 + `triage_reason` ∈ {no_intent, low_confidence} + `guard` — không chữ người dùng.
+
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
 slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi khác (`ScriptExhausted`, `MlContractError`…) → E9.
@@ -47,15 +55,16 @@ slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi
 
 import logging
 from collections.abc import Sequence
-from typing import Any, Final
+from datetime import timedelta
+from typing import Any, Final, Literal
 
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.children import child_id, child_ref
 from app.domain.dedup import duplicate_text, pick_duplicate
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import duplicate_msg
+from app.domain.messages import duplicate_msg, triage_msg, triage_question
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
-from app.domain.states import S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
+from app.domain.states import S_CLARIFYING, S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
 from app.domain.target import requester_id_of, target_check
 from app.graph import effects
 from app.graph.context import current_run
@@ -135,21 +144,18 @@ def make(deps: NodeDeps) -> NodeFn:
             first = child_id(state["ticket_id"], 1)
             if await effects.peek(state, "child_create", step="B5", sub=first) is not None:
                 raise SplitChanged(f"B3 chạy lại: lần trước đã tách ticket con, lần này {len(out.intents)} ý không tách")
+        if not out.intents and state.get("triage") is None:  # Q1: chào / cảm ơn / mơ hồ → hỏi MỘT câu phân loại
+            return await _ask_triage(state, "no_intent", loops, info)
         if not in_scope:
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope", audit_detail=info,
-                exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="out_of_scope",
-            )  # fmt: skip
+            return await _out_of_scope(state, loops, info)
         if len(out.intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — T20b: phán từng ý → B5 tách ticket con
             return await _split(state, out.intents, text, loops, info)
         it = in_scope[0]
         info["intent"], info["confidence"] = it.type, it.confidence
         if it.confidence < deps.constants.TAU_INTENT:  # D-27: không chắc thì không đoán
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_low_confidence",
-                audit_detail=info, exit_code=ExitCode.E1.value, reasoning_loops=loops,
-                escalation_reason_detail="intent_low_confidence",
-            )  # fmt: skip
+            if state.get("triage") is None:  # Q1: chưa hỏi phân loại → hỏi một lần thay vì chuyển người ngay
+                return await _ask_triage(state, "low_confidence", loops, info)
+            return await _low_confidence(state, loops, info)
         if it.type not in deps.enabled_intents:  # 3-Q27
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_not_enabled", audit_detail=info,
@@ -168,6 +174,41 @@ def make(deps: NodeDeps) -> NodeFn:
             state, S_DIAGNOSING, next_node="b06_diagnose", step="B3", event="intent_classified", audit_detail=info,
             intent=it.type, intent_confidence=it.confidence, span=span, slots=slots, facts={}, reasoning_loops=loops,
             **flags,
+        )  # fmt: skip
+
+    async def _out_of_scope(state: Any, loops: int, info: dict[str, Any]) -> dict[str, Any]:
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope", audit_detail=info,
+            exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="out_of_scope",
+        )  # fmt: skip
+
+    async def _low_confidence(state: Any, loops: int, info: dict[str, Any]) -> dict[str, Any]:
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_low_confidence",
+            audit_detail=info, exit_code=ExitCode.E1.value, reasoning_loops=loops,
+            escalation_reason_detail="intent_low_confidence",
+        )  # fmt: skip
+
+    async def _ask_triage(
+        state: Any, reason: Literal["no_intent", "low_confidence"], loops: int, info: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Q1 (D-56): câu hỏi phân loại CỐ ĐỊNH, qua output guard + `effects.once` (chạy lại node / resume không gửi lại)."""
+        text = triage_question(deps.enable_it_help)
+        info.update(triage_reason=reason, guard=deps.output_guard.violation(text))
+        if info["guard"] is not None:  # câu do cấu hình viết — vẫn qua cổng đầu ra; chặn → không gửi, E1 như trước lô
+            return await (_out_of_scope if reason == "no_intent" else _low_confidence)(state, loops, info)
+        run = current_run()
+        ref = await effects.once(
+            state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "answer", step="B3", sub="triage",
+        )  # fmt: skip
+        deadline = run.clock.now() + timedelta(hours=deps.constants.CLARIFY_TIMEOUT_HOURS)
+        await effects.once(
+            state, "deadline_set", deps.deadlines.set, state["ticket_id"], "clarify", deadline, run.turn_id, step="B3",
+            sub="triage",
+        )  # fmt: skip
+        return await goto(
+            state, S_CLARIFYING, next_node="clarify_wait", step="B3", event="triage_asked", audit_detail=info,
+            triage="waiting", conversation=[triage_msg(text, ref)], reasoning_loops=loops,
         )  # fmt: skip
 
     async def _duplicate_notice(state: Any, intent: str, info: dict[str, Any]) -> dict[str, Any]:

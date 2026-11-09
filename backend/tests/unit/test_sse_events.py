@@ -481,3 +481,21 @@ def _all_text() -> list[str]:
     for entry in events.TABLE.values():
         out += [s.label for s in entry.statuses] + ([entry.thought] if entry.thought else [])
     return out
+
+
+# ---- Q1 (D-56): câu hỏi phân loại của B3 không làm lệch câu hỏi B11 ------------------------------------------------------------
+
+
+def test_q1_triage_question_and_b11_question_picked_by_source() -> None:
+    from datetime import UTC, datetime
+
+    from app.domain.messages import question_msg, triage_msg, user_msg
+
+    convo = [triage_msg("Câu hỏi phân loại", "m0"), user_msg("VPN báo lỗi"), question_msg("Câu B11 thứ nhất", "m1")]
+    at = datetime(2026, 11, 9, tzinfo=UTC)
+    b3 = FeedRow(log_id=1, ticket_id="t1", step="B3", event="triage_asked", to_status="S_CLARIFYING", created_at=at, ordinal=1, total=1)
+    b11 = FeedRow(log_id=2, ticket_id="t1", step="B11", event="asked", to_status="S_CLARIFYING", created_at=at, ordinal=1, total=1)
+    assert message_kind("B3", "triage_asked", None) == "question"
+    picked_b3, picked_b11 = events.pick_message(convo, b3), events.pick_message(convo, b11)
+    assert picked_b3 is not None and picked_b3["text"] == "Câu hỏi phân loại"
+    assert picked_b11 is not None and picked_b11["text"] == "Câu B11 thứ nhất"

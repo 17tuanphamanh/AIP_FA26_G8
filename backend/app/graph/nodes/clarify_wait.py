@@ -19,6 +19,11 @@ Sau `interrupt()`, thứ tự cố định:
    người khác hoặc có khoá bị bỏ `unknown_key` NGOÀI `spec.keys` (khoá đã khai báo mà không đang hỏi KHÔNG tính) —
    `domain/target.target_check`. Không bao giờ hạ cờ. `detail` thêm `other_target_mention`, `other_target_reason` (không câu/token).
 
+Q1 (D-56, ĐP 09/11): `triage == "waiting"` (B3 vừa hỏi câu phân loại) → sau bước 1–3 (DÙNG CHUNG: E0 trước, rồi timeout E4, rồi che L1)
+KHÔNG trích slot, KHÔNG gọi LLM: `redacted_request` = câu gốc (đã che) + "\n" + câu trả lời (đã che), ≤ `TEXT_MAX` (giữ NGUYÊN câu trả lời,
+cắt phần ĐẦU câu gốc ở ranh giới từ — `messages.combine_triage`; ĐP chốt điểm 3) → `S_CLARIFYING → S_SCREENING` (step B11 như mọi goto của node chờ này — g25, event
+`triage_reply`, `triage="done"`) → B2 sàng lọc ĐẦY ĐỦ câu ghép → B3 lần 2. Audit: `reply_chars` (số), `combined_trimmed` (bool).
+
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt → E2 `turn_budget_exceeded` (bắt tường minh, `step="B11"`).
 Audit `detail`: key slot bị bỏ + lý do (chỉ key đã khai báo — Q-3f-5), cờ lạc đề — không câu người dùng, không giá trị slot.
 """
@@ -29,9 +34,9 @@ from langgraph.types import interrupt
 
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import ExitCode
-from app.domain.messages import last_question, user_msg
+from app.domain.messages import combine_triage, last_question, user_msg
 from app.domain.slots import audit_dropped, sanitize_slots
-from app.domain.states import S_CLARIFYING, S_ESCALATED
+from app.domain.states import S_CLARIFYING, S_ESCALATED, S_SCREENING
 from app.domain.target import requester_id_of, target_check
 from app.graph import effects
 from app.graph.fakes import NodeDeps
@@ -63,6 +68,13 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E4.value, escalation_reason_detail="clarify_timeout",
             )  # fmt: skip
         text = deps.privacy.redact_text(raw).text  # P3: từ đây chỉ dùng bản ĐÃ CHE
+        if state.get("triage") == "waiting":  # Q1: trả lời câu hỏi phân loại → về B2 với câu ghép (không LLM ở đây)
+            combined, trimmed = combine_triage(str(state["redacted_request"]), text)
+            return await goto(
+                state, S_SCREENING, next_node="b02_screen", step="B11", event="triage_reply",
+                audit_detail={"reply_chars": len(text), "combined_trimmed": trimmed}, redacted_request=combined,
+                triage="done", conversation=[user_msg(text)],
+            )  # fmt: skip
         info: dict[str, Any] = {"prompt": None, "llm_error": None, "off_topic": None, "streak": None,
                                 "other_target_mention": False, "other_target_reason": None,
                                 **audit_dropped({}, known)}  # fmt: skip

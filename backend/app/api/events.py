@@ -48,6 +48,7 @@ from app.api.desk import Desk, get_desk
 from app.api.tickets import WAITING_FOR, _readable
 from app.auth.deps import require
 from app.auth.models import Principal
+from app.domain.messages import TRIAGE_ORIGIN
 from app.domain.states import S_ASSESSING, S_ESCALATED, S_EXECUTING
 
 log = logging.getLogger(__name__)
@@ -97,6 +98,11 @@ TABLE: Final[Mapping[tuple[str, str, str | None], Entry]] = {
         (S_("understand", "done", "Đã hiểu yêu cầu: nhiều ý"), S_("diagnose", "active", "Đang xử lý từng ý")),
         "Yêu cầu có nhiều ý nên được tách ra xử lý riêng từng ý",
     ),
+    # Q1 (D-56): câu hỏi phân loại của B3 — chờ người dùng như câu hỏi B11; trả lời → sàng lọc lại từ đầu
+    ("B3", "triage_asked", None): Entry(
+        (S_("clarify", "active", "Cần bạn cho biết đang gặp việc gì"),), "Yêu cầu chưa rõ loại việc nên cần hỏi lại một câu",
+    ),
+    ("B11", "triage_reply", None): Entry((S_("clarify", "done", "Đã nhận câu trả lời của bạn"),)),
     ("B5", "child_started", None): Entry((S_("diagnose", "active", "Đang kiểm tra hệ thống"),)),
     ("B6", "diagnosed", None): Entry((
         S_("diagnose", "done", "Đã kiểm tra hệ thống"), S_("lookup", "active", "Đang tra cứu hướng dẫn"),
@@ -197,6 +203,7 @@ WAITING_LABEL: Final[Mapping[str, str]] = {
 MESSAGE_KIND: Final[Mapping[tuple[str, str], str]] = {
     ("B10", "deflected_info_only"): "answer",
     ("B11", "asked"): "question",
+    ("B3", "triage_asked"): "question",  # Q1: tin `origin="triage"` — `pick_message` tách khỏi câu hỏi B11
     ("B18", "executed_ok"): "result",
     ("B16", "rejected"): "rejection",
 }
@@ -373,7 +380,9 @@ def pick_message(conversation: Sequence[Mapping[str, Any]], row: FeedRow) -> Map
     kind = message_kind(row.step, row.event, row.exit_code)
     if kind is None or row.ordinal is None:
         return None
-    mine = [m for m in conversation if m.get("role") == "assistant" and m.get("kind") == kind]
+    triage = (row.step, row.event) == ("B3", "triage_asked")  # Q1: thứ tự đếm theo (step, event) → chỉ so với tin CÙNG nguồn
+    mine = [m for m in conversation if m.get("role") == "assistant" and m.get("kind") == kind
+            and (kind != "question" or (m.get("origin") == TRIAGE_ORIGIN) == triage)]  # fmt: skip
     idx = row.ordinal - 1
     if len(conversation) >= CONVERSATION_CAP and row.total is not None:
         idx -= max(0, row.total - len(mine))

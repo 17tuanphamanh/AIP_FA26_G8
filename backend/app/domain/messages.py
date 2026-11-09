@@ -49,10 +49,50 @@ def question_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "question", "text": text, "ref": ref, "needs": "answer"}
 
 
+# ---- Q1 (ĐP 09/11, D-56): câu hỏi phân loại CỐ ĐỊNH của B3 — không LLM -----------------------------------------------------------
+# Trần một tin người dùng (API `POST /api/tickets`, `/reply`) — một nguồn; `api/tickets.py` dùng lại. Câu ghép sau câu hỏi phân loại cũng ≤ trần này.
+TEXT_MAX: Final = 4000
+TRIAGE_ORIGIN: Final = "triage"  # khoá `origin` của tin câu hỏi phân loại — SSE (`api/events.pick_message`) tách với câu hỏi B11
+TRIAGE_SCOPE: Final = "Chào bạn, mình là trợ lý IT. Mình xử lý trực tiếp: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục"
+IT_HELP_CLAUSE: Final = "và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook"  # chỉ khi ENABLE_IT_HELP bật (D-57)
+TRIAGE_ASK: Final = "Bạn đang gặp việc gì? Mô tả ngắn giúp mình, ví dụ:"
+
+
+def triage_question(it_help: bool) -> str:
+    """Câu hỏi phân loại (lời giao ĐP 09/11). Cờ `ENABLE_IT_HELP` tắt → bỏ vế hướng dẫn và ví dụ máy in (ĐP chốt điểm 1, DỪNG 1 phần 2)."""
+    if it_help:
+        return f'{TRIAGE_SCOPE}; {IT_HELP_CLAUSE}. {TRIAGE_ASK} "VPN báo lỗi 809" hoặc "máy in không in được".'
+    return f'{TRIAGE_SCOPE}. {TRIAGE_ASK} "VPN báo lỗi 809" hoặc "quên mật khẩu máy tính".'
+
+
+def triage_msg(text: str, ref: str | None) -> Msg:
+    """Tin câu hỏi phân loại: như `question_msg` (FE/API coi là câu hỏi chờ trả lời) + `origin` để không lẫn với câu hỏi B11."""
+    return {**question_msg(text, ref), "origin": TRIAGE_ORIGIN}
+
+
+def combine_triage(original: str, reply: str, limit: int = TEXT_MAX) -> tuple[str, bool]:
+    """Câu ghép sau câu hỏi phân loại = câu gốc (đã che) + "\\n" + câu trả lời (đã che), ≤ `limit` (ĐP chốt điểm 3): giữ NGUYÊN câu trả lời,
+    cắt PHẦN ĐẦU câu gốc ở ranh giới khoảng trắng (mặt nạ `<…_n>`/`[…]` không có khoảng trắng nên không bị cắt đôi), đánh dấu "…".
+    Câu trả lời một mình đã chạm trần → chỉ còn câu trả lời. Trả (câu ghép, đã cắt?)."""
+    whole = f"{original}\n{reply}"
+    if len(whole) <= limit:
+        return whole, False
+    room = limit - len(reply) - 2  # "…" + "\n"
+    if room <= 0:
+        return reply, True
+    tail = original[len(original) - room:]
+    if not original[len(original) - room - 1].isspace():  # đang ở giữa một từ → bỏ tới khoảng trắng kế tiếp
+        cut = next((i for i, ch in enumerate(tail) if ch.isspace()), len(tail))
+        tail = tail[cut:]
+    tail = tail.lstrip()
+    return (f"…{tail}\n{reply}" if tail else reply), True
+
+
 def last_question(state: Any) -> str:
-    """Chữ của tin `question` CUỐI trong `conversation` — đúng bản đã gửi người dùng (B11 chỉ ghi tin sau scrub + output guard; chỉ B11
-    tạo tin `question`). Không có → "" (không lấy tin người dùng hay tin khác thay). Dùng cho `b11_extract_slots.question` (M4, `clarify_wait`)
-    và `b11_clarify_question.last_question` (Q11, `b11_slots`)."""
+    """Chữ của tin `question` CUỐI trong `conversation` — đúng bản đã gửi người dùng (B11 chỉ ghi tin sau scrub + output guard; ngoài B11
+    chỉ B3 tạo tin `question` — câu hỏi phân loại cố định, Q1). Không có → "" (không lấy tin người dùng hay tin khác thay). Dùng cho
+    `b11_extract_slots.question` (M4, `clarify_wait`) và `b11_clarify_question.last_question` (Q11, `b11_slots` — lượt B11 đầu không đọc hàm
+    này, để câu hỏi phân loại không thành "câu B11 vừa hỏi")."""
     for msg in reversed(list(state.get("conversation") or [])):
         if msg.get("role") == "assistant" and msg.get("kind") == "question":
             return str(msg.get("text") or "")
