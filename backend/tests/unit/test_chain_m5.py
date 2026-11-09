@@ -242,7 +242,9 @@ async def test_c15_canary_never_reaches_b14_prompt(
     `resource_path`, `target_user` → đi B3 → B6 → B11 → B12 → B14 (gateway thật, EVAL). Đã tới B14 (≥ 1 bản render `b14_*`; k = 5 →
     5 bản) → không chuỗi nào (canary, chuỗi lệnh thô, marker sau chuẩn hoá) có trong bản render `b14_*` (tin nhắn + biến) lẫn
     `prompt_full` của dòng `llm_calls` `b14_*`. Đối chứng dương: chuỗi đã vào `Action`; canary CÓ trong `prompt_full` của B3."""
-    canary = f"CANARY-M5-{uuid.uuid4()}"
+    # 32 hex liền (`.hex`): không đoạn nào đứng riêng dạng mã máy (chữ + số) — `uuid4()` có gạch nối từng làm `domain/target` thấy
+    # "máy người khác" (vd `bba12380`) → B11 hỏi lại → ca đỏ ~1,3 %/lần (quan sát 09/11, lô Q1+Q12)
+    canary = f"CANARY-M5-{uuid.uuid4().hex}"
     run = await chain_m5(user, text.format(canary=canary), intent, hint, slots(canary), strategy=strategy, p=0.5,
                          p_method=p_method, setup=_canary_setup)  # fmt: skip
     action = run.state["intended_action"]

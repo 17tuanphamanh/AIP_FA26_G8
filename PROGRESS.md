@@ -6265,6 +6265,9 @@ Xem MẪU B trong báo cáo phiên; danh sách test đổi kỳ vọng + sửa t
   rỉ (chuỗi chưa tới B14; phần kiểm canary chưa chạy). Ước tính ≈ 1,3 %/lần chạy ca `software`. Đề xuất (CHƯA làm — test và `target.py` ngoài phạm vi
   lô, `target.py` thuộc phiên Q4): canary dùng `uuid.uuid4().hex` (một khối 32 hex, không đứng riêng được) — hoặc phiên Q4 cân nhắc loại chuỗi hex
   khỏi `_DEVICE_TEXT`.
+- **ĐP chốt 09/11 16:00:** trần b03 KHÔNG nâng vai fast (B2 dùng chung) — lô Q10 cho b03/b10_need_type/b11 đi vai `chat_fast` budget_in 3000; test
+  ca 1500 ký tự giữ `xfail(strict)` lý do "CHỜ Q10: vai chat_fast budget_in 3000" (Q10 bỏ xfail). Canary m5 đổi sang `uuid.uuid4().hex`
+  (commit `test: canary m5 khong trung dang ma may`), ca `software` chạy 200 lần liên tiếp → 200/200 xanh, 0 đỏ (09/11); 100 000 canary `.hex` ngẫu nhiên → 0 khớp `_DEVICE_TEXT`/`_MACHINE`.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
