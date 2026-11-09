@@ -63,12 +63,13 @@ def _env() -> tuple[ChildAwareNotifier, MemoryTickets, RecordingNotifier]:
 
 
 def test_n2_notice_kind_by_step_table() -> None:
-    """P5 (a): B10 → answer, B11 → question, B16 → rejection, B18 → result, B20 → escalation; bước khác → `ValueError` (E9)."""
+    """P5 (a): B10 → answer, B11 → question, B16 → rejection, B18 → result, B20 → escalation; Q3 M4: B15 (tin chờ duyệt) → result;
+    bước khác → `ValueError` (E9)."""
     assert NOTICE_KIND_BY_STEP == {"B10": "answer", "B11": "question", "B16": "rejection", "B18": "result",
-                                   "B20": "escalation"}  # fmt: skip
-    assert [notice_kind(s) for s in ("B10", "B11", "B16", "B18", "B20")] == ["answer", "question", "rejection", "result",
-                                                                             "escalation"]  # fmt: skip
-    for bad in ("B15", "B17", "B19", "B5", ""):
+                                   "B20": "escalation", "B15": "result"}  # fmt: skip
+    assert [notice_kind(s) for s in ("B10", "B11", "B15", "B16", "B18", "B20")] == [
+        "answer", "question", "result", "rejection", "result", "escalation"]  # fmt: skip
+    for bad in ("B17", "B19", "B5", ""):
         with pytest.raises(ValueError):
             notice_kind(bad)
 
@@ -107,7 +108,7 @@ async def test_n1_normal_and_parent_ticket_use_inner_notifier(ticket: str) -> No
 async def test_n1_child_unknown_step_or_outside_once_value_error() -> None:
     """P5 (a): bước khác → `ValueError` (E9, thấy được); con gửi ngoài `effects.once` (không `current_effect()`) → `ValueError`."""
     n, tickets, inner = _env()
-    with bind_effect("B15", "khoa-3"), pytest.raises(ValueError):
+    with bind_effect("B17", "khoa-3"), pytest.raises(ValueError):  # Q3 M4: B15 nay có loại notice — dùng bước khác
         await n.notify_user("P-1", "x", "none")
     with pytest.raises(ValueError):
         await n.notify_user("P-1", "x", "none")

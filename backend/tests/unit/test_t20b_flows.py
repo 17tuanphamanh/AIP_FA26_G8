@@ -69,7 +69,10 @@ async def test_tc34_two_children_one_needs_approval_all_resolved() -> None:
     assert await f.assistant_msgs() == []  # 0 tin trước khi duyệt
     await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2"))
     [d1] = digests(await f.assistant_msgs())
-    assert [i["kind"] for i in d1["items"]] == ["result", "result"]
+    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — cha gom cùng vòng với kết quả của ý 2.
+    assert [(i["child_id"], i["kind"], i["needs"]) for i in d1["items"]] == [
+        ("T1-1", "result", "confirm"), ("T1-2", "result", "none"), ("T1-2", "result", "confirm")]
+    assert "cần được duyệt" in d1["items"][1]["text"]
     await reply(f, {"T1-1": {"confirmed": True}, "T1-2": {"confirmed": True}})
     for cid in ("T1-1", "T1-2"):
         v = await f.values(cid)
@@ -141,10 +144,12 @@ async def test_tc12r_l1_rejects_child2_partially_rejected() -> None:
     await f.submit(TC34)
     await f.deliver("T1-2", S_PENDING_APPROVAL, f.decision("T1-2", "rejected", note="Không đủ license"))
     assert (await f.values("T1-2"))["status"] == S_REJECTED
-    [nt] = f.h.tickets.notices_of("T1-2")
+    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — cha gom cùng vòng với kết quả của ý 2.
+    pending, nt = f.h.tickets.notices_of("T1-2")
+    assert (pending["kind"], pending["needs"], pending["source_step"]) == ("result", "none", "B15")
     assert (nt["kind"], nt["needs"], nt["source_step"]) == ("rejection", "none", "B16")
     [d1] = digests(await f.assistant_msgs())
-    assert [i["kind"] for i in d1["items"]] == ["result", "rejection"]
+    assert [i["kind"] for i in d1["items"]] == ["result", "result", "rejection"]
     await reply(f, {"T1-1": {"confirmed": True}})
     assert_parent_closed(f, S_RESOLVED, "PARTIALLY_REJECTED")
     assert f.h.executor.calls["T1-2"] == 0

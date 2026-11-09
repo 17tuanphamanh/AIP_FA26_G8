@@ -10,6 +10,10 @@
 # deny_warning : nối vào next_for_l2 với MỌI E5 (2b-Q4: mọi E5 là deny case).
 # next_for_l2_by_reason (tuỳ chọn): câu THAY next_for_l2 khi escalation_reason_detail khớp khoá (khoá ∈ REASON_DETAILS).
 #   M2 (ĐP 08/11): E5 luật cấm (`policy_deny`) dùng câu E5 chung; lớp AI lỗi (`llm_layer_disabled`) câu riêng. deny_warning vẫn nối.
+# user_message_by_reason (tuỳ chọn, Q3 M5 — ĐP 09/11): câu THAY user_message theo escalation_reason_detail (khoá ∈ REASON_DETAILS), đọc
+#   như next_for_l2_by_reason; thiếu/lạ → user_message. Khuôn: vì sao (chung — không lộ luật/điểm), ai xử lý, người dùng chờ ở đâu.
+#   E5: câu mặc định + llm_high_risk, policy_deny, approval_target_unverified do ĐP soạn; 6 lý do E5 còn lại là câu ĐỀ XUẤT [chờ ĐP duyệt].
+#   E0 KHÔNG có mục này (không tiết lộ).
 
 deny_warning: >-
   CẢNH BÁO: KHÔNG thực hiện lại hành động này. L2 chỉ được xác nhận từ chối và đóng, hoặc mở ticket
@@ -47,7 +51,38 @@ codes:
       Đã hỏi lại tối đa mà vẫn thiếu thông tin (hoặc người dùng không trả lời): liên hệ người dùng để
       lấy thông tin còn thiếu rồi xử lý.
   E5:
-    user_message: Yêu cầu của bạn cần được xem xét kỹ hơn trước khi xử lý.
+    user_message: >-
+      Yêu cầu này cần kỹ thuật viên xem xét trước khi làm. Mình đã chuyển kèm thông tin đã kiểm tra; kết quả sẽ báo bạn tại đây.
+    user_message_by_reason:
+      # ĐP soạn (09/11)
+      llm_high_risk: >-
+        Yêu cầu này cần kỹ thuật viên xem trực tiếp trước khi làm để tránh thao tác nhầm. Mình đã chuyển kèm thông tin đã kiểm tra;
+        kết quả sẽ báo bạn tại đây.
+      policy_deny: >-
+        Theo quy định của công ty, việc này không được thực hiện tự động. Mình đã chuyển kỹ thuật viên xem xét; bạn sẽ nhận phản hồi
+        tại đây.
+      approval_target_unverified: >-
+        Máy hoặc tài khoản này không thuộc tài khoản của bạn nên mình không tự xử lý được. Mình đã chuyển kỹ thuật viên kiểm tra; bạn
+        sẽ nhận phản hồi tại đây.
+      # Đề xuất cùng khuôn — [chờ ĐP duyệt]
+      llm_layer_disabled: >-
+        Hệ thống chưa tự đánh giá được yêu cầu này nên mình chưa làm. Mình đã chuyển kỹ thuật viên xem xét kèm thông tin đã kiểm tra;
+        kết quả sẽ báo bạn tại đây.
+      no_valid_approver: >-
+        Yêu cầu này cần được duyệt nhưng hiện chưa tìm được người duyệt phù hợp. Mình đã chuyển kỹ thuật viên xử lý; bạn sẽ nhận phản
+        hồi tại đây.
+      approver_no_longer_valid: >-
+        Người đã duyệt yêu cầu này hiện không còn đủ điều kiện duyệt nên mình chưa làm. Mình đã chuyển kỹ thuật viên xem xét; bạn sẽ
+        nhận phản hồi tại đây.
+      person_no_longer_valid: >-
+        Thông tin tài khoản liên quan đã thay đổi trong lúc chờ nên mình chưa làm. Mình đã chuyển kỹ thuật viên kiểm tra; bạn sẽ nhận
+        phản hồi tại đây.
+      action_plan_changed_since_approval: >-
+        Nội dung yêu cầu đã khác so với lúc được duyệt nên mình chưa làm. Mình đã chuyển kỹ thuật viên xem xét; bạn sẽ nhận phản hồi
+        tại đây.
+      recheck_failed: >-
+        Lúc kiểm tra lại ngay trước khi làm, yêu cầu không còn đủ điều kiện thực hiện tự động. Mình đã chuyển kỹ thuật viên xem xét;
+        bạn sẽ nhận phản hồi tại đây.
     next_for_l2: >-
       Hành động bị chặn vì rủi ro cao / luật deny / kế hoạch bị thay đổi sau khi duyệt: xem lý do và
       luật khớp trong ghi chú.

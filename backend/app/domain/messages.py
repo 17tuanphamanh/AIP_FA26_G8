@@ -1,6 +1,7 @@
 """Tin nhắn trong `conversation` (phase3 mục 10.2, 3-Q28 bản 1.1; chốt P9 3g) — theo khuôn B20 `{role, kind, text, ref}`.
 
-- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có). `needs` như
+- `kind` ∈ `answer` (B10), `question` (B11), `result` (B18), `rejection` (B16 — Phase 4 4c P1), `escalation` (B20 — đã có), `duplicate`
+  (B3 — M1), `approval_pending` (B15 — Q3 M4). `needs` như
   tham số `notify_user`.
 - `sources` CHỈ ở `answer`, mỗi nguồn ĐÚNG 3 khoá `chunk_id`, `title`, `heading_path` — không đoạn trích, không bằng chứng
   đã mở rộng (P9).
@@ -25,7 +26,9 @@ from app.domain.action import SOFTWARE_NAME, Action, FactValue
 from app.domain.children import ChildView, summary_text
 from app.domain.ticket_state import EXEC_OUTPUT_PATTERNS, ChunkRef, Msg
 
-MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation", "duplicate")
+# Q3 (ĐP 09/11): + `approval_pending` (B15 — tin chờ duyệt, needs `none`; FE hiện như tin thường, không nút). Không phải `NOTICE_KINDS`:
+# notice con của B15 dùng `result` cho tới migration thêm loại riêng.
+MSG_KINDS: Final = ("answer", "question", "result", "rejection", "escalation", "duplicate", "approval_pending")
 SOURCE_KEYS: Final = ("chunk_id", "title", "heading_path")
 
 
@@ -378,3 +381,44 @@ def reply_text(items: Sequence[tuple[int, Mapping[str, Any]]]) -> str:
             note = str(item.get("note") or "").strip()
             parts.append(f"Ý {index}: {UNRESOLVED_TEXT} — {note}" if note else f"Ý {index}: {UNRESOLVED_TEXT}")
     return " · ".join(parts)
+
+
+# ---- Q3 M4 (ĐP 09/11): tin cho người dùng khi yêu cầu chờ duyệt (B15) ---------------------------------------------------------------
+# Theo MẪU, không LLM: nhãn hành động (`ACTION_LABELS`) + cụm đích (`target_phrase` — định danh đã qua regex); KHÔNG nêu người duyệt.
+# `kind` riêng (FE hiển thị như tin thường — kind lạ không lỗi, không nút); needs `none`. Ticket con: notice (`notify/child.py`, bước B15).
+APPROVAL_PENDING_KIND: Final = "approval_pending"
+APPROVAL_PENDING_TAIL: Final = (
+    "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn ngay tại đây."
+)
+
+
+def approval_pending_text(action_type: str, target_phrase: str) -> str:
+    """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa)."""
+    label = ACTION_LABELS.get(action_type)
+    head = f"Yêu cầu {label} cho {target_phrase}" if label is not None and target_phrase else "Yêu cầu của bạn"
+    return f"{head} {APPROVAL_PENDING_TAIL}"
+
+
+def approval_pending_msg(text: str, ref: str | None) -> Msg:
+    return {"role": "assistant", "kind": APPROVAL_PENDING_KIND, "text": text, "ref": ref, "needs": "none"}
+
+
+# ---- Q3 M6 (ĐP 09/11): cài phần mềm mà máy ĐÃ có sẵn — không nói "Đã cài" -------------------------------------------------------------
+# B18 dùng mẫu này thay `result_text` khi `install_software` và `outputs["already_installed"] == "true"` (executor chỉ ghi khi tool trả True).
+# Tên phần mềm/máy qua mẫu như `result_text`; phiên bản qua `EXEC_OUTPUT_PATTERNS` — thiếu thì bỏ cụm "(phiên bản …)".
+
+
+def already_installed_text(action: Action, outputs: Mapping[str, str]) -> str:
+    p = action.params
+    raw_software = str(p.get("software_name", ""))
+    software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
+    device_id = str(p.get("device_id", ""))
+    device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
+    version = _out(outputs, "version")
+    head = f"{software} đã có sẵn trên {device}{f' (phiên bản {version})' if version else ''}, mình không cài lại."
+    head = head[:1].upper() + head[1:] if software == "phần mềm" else head
+    return f'{head} Nếu {software} không mở được, bạn chọn "{UNRESOLVED_TEXT}" để mình chuyển kỹ thuật viên.'
+
+
+def is_already_installed(action: Action, outputs: Mapping[str, str]) -> bool:
+    return action.type == "install_software" and _out(outputs, "already_installed") == "true"

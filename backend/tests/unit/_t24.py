@@ -102,6 +102,7 @@ class FakeWrites:
         self.faults: dict[str, Fault] = {}
         self.begun_before: dict[str, bool] = {}
         self.versions: dict[str, str] = {"zoom": "6.1.0", "adobe-acrobat-pro": "2024.1"}
+        self.already_installed: set[str] = set()  # Q3 M6: phần mềm máy đã có — phản hồi kèm `already_installed: true` như mock
         self.license_used: dict[str, int] = {"adobe-acrobat-pro": 7}  # lần cấp kế tiếp → LIC-adobe-acrobat-pro-008
         self.license_total: dict[str, int] = {"adobe-acrobat-pro": 20}
         self.previous_expiry: datetime | None = NOW + timedelta(days=5)  # dòng quyền đang có (extend)
@@ -141,6 +142,7 @@ class FakeWrites:
             return self._hit("install_software", a, lambda: {
                 "device_id": a.device_id, "name": a.software_name, "version": self.versions.get(a.software_name, "1.0"),
                 "installed_at": self.clock.now().isoformat(),
+                **({"already_installed": True} if a.software_name in self.already_installed else {}),
             })  # fmt: skip
 
         async def uninstall_software(a: InstallIn, timeout: float) -> object:

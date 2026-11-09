@@ -21,6 +21,7 @@ from app.llm.context import check_variables, render
 from app.llm.errors import PromptVariableError
 from app.llm.providers.scripted import Reply
 from app.llm.registry import PromptRegistry, load_prompts
+from app.settings import get_slots
 from tests.unit.test_b11_slots import (
     CANARY,
     CONFIG,
@@ -34,7 +35,7 @@ from tests.unit.test_b11_slots import (
 
 PROMPTS = Path(__file__).resolve().parents[3] / "config" / "prompts"
 PID = "b11_clarify_question"
-VARS = {"missing", "diagnostics_summary", "intent", "previous_reply"}
+VARS = {"missing", "diagnostics_summary", "intent", "previous_reply", "missing_desc", "action_label"}  # Q3 M2: v3 thêm 2 biến
 OPENER = "Mình chưa rõ ý bạn,"
 
 
@@ -49,7 +50,8 @@ def _reply_line(content: str, value: str) -> bool:
 
 
 def _vars(**over: Any) -> dict[str, Any]:
-    return {"missing": ["device_id"], "diagnostics_summary": {"devices": []}, "intent": "vpn", "previous_reply": "none", **over}
+    return {"missing": ["device_id"], "diagnostics_summary": {"devices": []}, "intent": "vpn", "previous_reply": "none",
+            "missing_desc": "- mã máy", "action_label": "chưa rõ", **over}
 
 
 # ---- prompt: phiên bản, hợp đồng, nội dung ---------------------------------------------------------------------------
@@ -57,7 +59,7 @@ def _vars(**over: Any) -> dict[str, Any]:
 
 def test_version_bumped_and_contract_kept(registry: PromptRegistry) -> None:
     prompt = registry.get(PID)
-    assert prompt.version == "2"  # sửa nội dung → tăng version (khoá cache + llm_calls.prompt_version)
+    assert prompt.version == "3"  # sửa nội dung → tăng version (khoá cache + llm_calls.prompt_version); Q3 M2: v3
     assert (prompt.spec.role, prompt.spec.cache, prompt.spec.schema_name) == ("fast", "default", "QuestionOut")
     assert set(prompt.spec.allowed_vars) == VARS
 
@@ -87,7 +89,7 @@ def test_user_block_shows_previous_reply(registry: PromptRegistry) -> None:
 
 def test_previous_reply_is_required_and_nothing_else_is_accepted(registry: PromptRegistry) -> None:
     prompt = registry.get(PID)
-    check_variables(prompt, _vars())  # đủ 4 biến: qua
+    check_variables(prompt, _vars())  # đủ 6 biến (v3): qua
     without = _vars()
     del without["previous_reply"]
     with pytest.raises(PromptVariableError, match=r"thiếu biến \['previous_reply'\]"):
@@ -114,7 +116,7 @@ async def test_node_passes_previous_reply_by_turn_and_streak(turns: int, streak:
     assert _reply_line(cast(str, call.rendered_messages[1]["content"]), expected)  # biến thật sự vào prompt đã render
     assert out["clarification_turns"] == turns + 1
     [row] = h.audit.of("t1", "asked")
-    assert row["detail"]["prompt"] == f"{PID}@2"
+    assert row["detail"]["prompt"] == f"{PID}@3"
 
 
 @pytest.mark.asyncio
@@ -144,8 +146,10 @@ async def test_graph_three_asks_none_unusable_usable() -> None:
     await _reply(h, "hôm nay trời đẹp quá")  # lạc đề → streak 1 → lượt hỏi 2
     await _reply(h, "PC-0977")  # có slot sạch (streak về 0), còn thiếu action → lượt hỏi 3
     calls = gw.llm.calls_for(PID)
-    assert [c.variables["previous_reply"] for c in calls] == ["none", "unusable", "usable"]
-    assert [c.variables["missing"] for c in calls] == [["device_id", "action"], ["device_id", "action"], ["action"]]
+    # Q3 M1: lượt 3 chỉ còn thiếu `action` (slot enum) → câu CỐ ĐỊNH, không gọi LLM — chỉ 2 lời gọi.
+    assert [c.variables["previous_reply"] for c in calls] == ["none", "unusable"]
+    assert [c.variables["missing"] for c in calls] == [["device_id", "action"], ["device_id", "action"]]
+    assert h.notifier.sent[-1][1] == get_slots().intents["vpn"].fixed_questions["action"]
 
 
 # ---- output guard + dọn khoá slot vẫn chạy như cũ ở lượt có câu mở đầu "Mình chưa rõ ý bạn," -------------------------------------

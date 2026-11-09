@@ -190,7 +190,7 @@ class PlanExecutor:
     def _outputs(self, results: list[Any]) -> dict[str, str]:
         """Kết quả MỌI bước đã xong (`tools.models`) → khoá ĐÓNG cho tin B18 (P4): `Cert` → `serial`, `expires_on`;
         `ResetPasswordResult` → `delivered_via`, `expires_in_minutes`, `sent_to`; `AssignLicenseResult` → `license_id`, `software`; `InstallResult` → `software`,
-        `version`; `PermissionEntry` (cấp/gia hạn) → `level`, `expires_on`. Ngày theo giờ địa phương. `ExecutionResult` lọc lại regex."""
+        `version`, `already_installed` ("true" chỉ khi tool báo đã có sẵn — Q3 M6); `PermissionEntry` (cấp/gia hạn) → `level`, `expires_on`. Ngày theo giờ địa phương. `ExecutionResult` lọc lại regex."""
         out: dict[str, str] = {}
         for data in results:
             if isinstance(data, Cert):
@@ -208,6 +208,8 @@ class PlanExecutor:
             elif isinstance(data, InstallResult):
                 out["software"] = data.name
                 out["version"] = data.version
+                if data.already_installed is True:  # Q3 M6: chỉ bool từ đầu ra tool — máy đã có sẵn, không cài lại
+                    out["already_installed"] = "true"
             elif isinstance(data, PermissionEntry):
                 out["level"] = data.level
                 if data.expires_at is not None:

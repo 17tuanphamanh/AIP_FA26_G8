@@ -84,12 +84,13 @@ async def test_p2_all_stopped_confirm_only_one_digest_round1() -> None:
     assert v["awaiting"] == {"T1-1": "confirm", "T1-2": "confirm"}
     [d] = digests(await f.assistant_msgs())
     assert len(await f.assistant_msgs()) == 1
+    # Q3 M4: con 2 qua B15 để lại notice "chờ duyệt" (kind result, needs none) — cha gom cùng vòng với kết quả của ý 2.
     assert (d["round"], [i["child_id"] for i in d["items"]], [i["kind"] for i in d["items"]]) == (
-        1, ["T1-1", "T1-2"], ["result", "result"])  # fmt: skip
-    assert [i["needs"] for i in d["items"]] == ["confirm", "confirm"]
+        1, ["T1-1", "T1-2", "T1-2"], ["result", "result", "result"])  # fmt: skip
+    assert [i["needs"] for i in d["items"]] == ["confirm", "none", "confirm"]
     for cid in ("T1-1", "T1-2"):
-        [nt] = f.h.tickets.notices_of(cid)
-        assert nt["delivered_round"] == 1 and nt["delivered_at"] is not None
+        for nt in f.h.tickets.notices_of(cid):
+            assert nt["delivered_round"] == 1 and nt["delivered_at"] is not None
     assert unfired(f, "T1") == ["confirm"]
     assert f.h.effects.count("T1", "notify_user") == 1 and f.h.effects.count("T1", "deadline_set") == 1
     [sent] = f.h.audit.of("T1", "digest_sent")

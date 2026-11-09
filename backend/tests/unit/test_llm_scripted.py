@@ -85,7 +85,7 @@ async def test_d19_unknown_tag_or_missing_prompt_is_script_exhausted() -> None:
         with pytest.raises(ScriptExhausted, match=match):
             await gw.client.complete("fast", "b11_clarify_question",
                                      {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
-                                      "previous_reply": "none"},
+                                      "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ",},
                                      QuestionOut)  # fmt: skip
 
 
@@ -123,7 +123,7 @@ CALLS: list[tuple[str, str, dict[str, Any]]] = [
     ("fast", "b10_need_type", {"text": "gia hạn giúp", "evidence_titles": ["Gia hạn chứng chỉ"]}),
     ("strong", "b10_answer", {"question": "gia hạn thế nào", "evidence": EVIDENCE}),
     ("fast", "b11_clarify_question", {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
-                                      "previous_reply": "none"}),
+                                      "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ",}),
     ("fast", "b11_extract_slots", {"text": "máy em là PC-0977", "missing": ["device_id"], "intent": "vpn",
                                     "question": "Bạn cho mình xin mã máy nhé."}),  # M4 bn-a: + question
 ]  # fmt: skip

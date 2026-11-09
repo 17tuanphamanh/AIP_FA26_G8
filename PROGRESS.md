@@ -6019,6 +6019,36 @@ tiến trình, cấu hình pytest không in dòng tổng). Không gọi LLM th�
   `previous_reply`). Còn lệch có chủ ý, chưa sửa: mã giả `llm.complete("fast", "b11_clarify_question", …)` ở `phase3-thiet-ke-chi-tiet.md`
   (~dòng 1798) và `build/nhanh/B11-bo-sung-thong-tin.md` (~dòng 309) vẫn là bản 3 biến.
 
+## Q3 — câu hỏi lại, tin chờ duyệt, câu E5, "đã có sẵn" (09/11/2026, nhánh `q3-cau-hoi` trên `bd32816`; ĐP soát ĐẠT 09/11 01:50) — chưa push
+
+**Trạng thái:** xong, 7 commit, CHƯA push. Mỗi mục một commit, test viết trước. `make lint` exit 0; `uv run pytest backend/tests/unit`
+**8738 pass / 4 skip / 11 xfail / 0 fail** (09/11, sau commit 7). Không gọi LLM thật (ScriptedLLM). FE không đổi nên không chạy.
+Mutation (đã khôi phục, xanh lại): M3 bỏ điều kiện đích = người gửi → đỏ 3; M4 bỏ `effects.once` → đỏ 4; M5 đảo câu hai lý do E5 → đỏ 1;
+M6 bỏ nhánh `already_installed` → đỏ 2.
+- **M1 — `0e2f6ef` `b11: cau hoi co dinh cho slot co danh sach gia tri`:** mọi slot đang thiếu thuộc {`account_type`, `action`,
+  `permission_level`} → câu CỐ ĐỊNH (`config/slots.yaml` `fixed_questions` từng intent; ghép ≤ 2 câu theo thứ tự thiếu), không LLM — vẫn
+  output guard, `notify_user`, hạn `clarify`, khoá theo lượt. Slot tự do vẫn qua LLM.
+- **M2 — `2700936` `b11: prompt hoi lai co mo ta slot va giong thong nhat`:** `b11_clarify_question` **v2 → v3**: + `missing_desc`
+  (`slot_text.describe_missing` — nhãn + giải thích + ví dụ minh hoạ dạng, KHÔNG định danh thật), + `action_label`; quy tắc giọng
+  ("mình"/"bạn", danh sách từ cấm, không đánh số, chỉ hỏi đúng mô tả); giữ quy tắc `previous_reply`.
+- **M3 — `b8a0ce8` `b6: suy loai tai khoan ad khi tai khoan ad dang bi khoa`:** account, `action` ∈ {unlock_account, chưa có},
+  `account_type` thiếu, đích = người gửi (không `target_user`, cờ `target_is_other` tắt), `target_account_locked is True` → B6 suy
+  `account_type="ad"` (`slots_inferred`).
+- **M4 — `64f9860` `b15: bao nguoi dung khi yeu cau cho duyet`:** B15 gửi MỘT tin mẫu (`approval_pending_text`, không nêu người duyệt)
+  qua `effects.once("notify_user", sub="approval_pending")` + output guard (chặn → 0 tin, vẫn chờ duyệt, audit `user_notice_guard`);
+  chạy lại / nhánh phiếu cũ (TC33) không gửi lần 2. Ticket con: notice bước B15, kind `result`, needs `none`.
+- **M5 — `ab195c8` `e5: cau cho nguoi dung theo ly do`:** `escalation_templates.yaml` E5 + `user_message_by_reason` (9 lý do E5: 3 câu ĐP
+  soạn + 6 câu đề xuất — ĐP duyệt 09/11 01:50); B20 chọn qua `CodeTemplate.user_message_for`; E0 giữ nguyên.
+- **M6 — `e4854a4` `messages: bao phan mem da co san thay vi da cai`:** `InstallResult.already_installed` → executor
+  `outputs.already_installed="true"` → B18 mẫu "… đã có sẵn trên … mình không cài lại …"; audit `executed_ok.already_installed`.
+- **Commit 7 — `messages: them loai tin approval_pending, ghi progress Q3`:** `approval_pending` vào `MSG_KINDS` (không kéo theo
+  `schema.gen.ts`: `conversation` là `list[dict]`; FE không có bảng nhãn theo kind cho tin hội thoại — kind lạ hiện như tin thường) + mục này.
+- **Spec cần sửa:** notice con "chờ duyệt" của B15 đang dùng kind `result` (CHECK `child_notices.kind` P7 2.9 chỉ 5 loại) → FE gắn nhãn
+  khối "Đã xử lý". Chờ lô khác: migration 0015 thêm `approval_pending` vào CHECK + nhãn FE "Đang chờ duyệt" (cùng Q6) — KHÔNG làm ở Q3.
+  Trước Q6, notice này chỉ tới người dùng cùng vòng digest sau khi duyệt (tc34/tc12r/p2 nay 3 khối).
+- **Lệch đã báo:** khi gỡ test B17 (M6) đã lỡ đọc `config/policy.json` (chỉ in 4 luật cài phần mềm, không sửa) — lời giao cấm đọc; sau đó
+  dùng verdict `allow` giả.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -6045,6 +6075,9 @@ tiến trình, cấu hình pytest không in dòng tổng). Không gọi LLM th�
 | S5 R1/R2 | `make eval-rag` trên KB thật: số P@1, Recall@5 ở ngưỡng, lượt không lọc intent; tỉ lệ `embed_truncated` ở audit B8. **Chưa đo** | S5 R1, R2 |
 | bn-a M4 | Probe `b11_extract_slots` v3 (+ `question`) với LLM thật: câu trả lời ngắn ("máy thứ nhất", "cái đó") có trích đúng nhờ câu hỏi không; LLM có lấy mã ví dụ trong câu hỏi không (code vẫn loại — đo tỉ lệ slot bị `sanitize_slots` bỏ). **Chưa đo.** | PROGRESS bn-a |
 | P6 (08/11) | Probe `b11_clarify_question` **v2** với LLM thật (**chưa đo**; ghi số mẫu, bản prompt, ngày): lượt hỏi đầu (`previous_reply=none`) chào tối đa một lần, các lượt sau không chào; ca `unusable` mở đúng "Mình chưa rõ ý bạn,"; ≤ 2 câu và ≤ 300 ký tự; vẫn không hỏi bí mật; tỉ lệ `output_guard_block`. ScriptedLLM chỉ kiểm văn bản prompt + biến, không kiểm được câu LLM viết | mục "Phase 6 — P6 lời nói" |
+| Q3 M2 (09/11) | Probe `b11_clarify_question` **v3** với LLM thật (**chưa đo**; ghi số mẫu, bản prompt, ngày): xưng "mình"/gọi "bạn", không từ cấm ("chúng tôi", "tôi", "anh/chị", "quý khách", "ạ", "Xin cảm ơn"), không đánh số (1)(2); chỉ hỏi đúng `missing_desc`, không bịa lựa chọn; không gợi ý mã ví dụ như mã thật; quy tắc `previous_reply` v2 vẫn đúng; tỉ lệ `output_guard_block` | mục "Q3" |
+| Q3 M1/M3 | Ca A06 ("Tài khoản của em bị khoá do nhập sai mật khẩu nhiều lần mở giúp em") mới kiểm ở **mức node** (B6 → B11): chạy cả graph từ B3 với LLM thật — B3 ra `unlock_account`, AD không khoá → câu cố định `account_type`; AD khoá → suy `ad`, 0 câu hỏi | mục "Q3" |
+| Q3 M1 | Preset scripted `config/scripted/tc01.yaml`, `tc12r-1.yaml`, `tc32-1.yaml` có câu `b11_clarify_question` hỏi loại tài khoản — nay câu cố định nên không còn dùng; dọn/cập nhật khi chạy lại stack | mục "Q3" |
 
 **Máy chính (Tuấn Anh) — 06/10/2026 14:50:** `.env` về `LLM_BACKEND=scripted` (backend + worker đều `scripted`; `make gate3 S=preflight`
 5 PASS / 0 FAIL khi đè `FAKE_SCENARIO= FAKE_NODE_DELAY= APPROVAL_SLA_MINUTES_DEV=`; stack đã trả về đúng `.env`). `.env` VẪN giữ
