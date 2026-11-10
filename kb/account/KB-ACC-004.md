@@ -1,22 +1,22 @@
 ---
 doc_id: KB-ACC-004
-version: 1
+version: 2
 request_type: account
 doc_type: faq
 owner: it_mgr01
-updated_at: 2026-10-04
+updated_at: 2026-11-09
 sensitivity: internal
 enabled: true
 title: "Đổi mật khẩu email khác đổi mật khẩu Windows"
 distractor: true
-tags: [account, email, windows, mật khẩu]
+tags: [account, email, windows, mật khẩu, tài khoản AD, mật khẩu email]
 ---
 
 ## Xác định đúng hệ thống đang gặp vấn đề
 
 Khi người dùng gặp vấn đề về mật khẩu, trước tiên cần xác định hệ thống nào đang không đăng nhập được.
 
-Người dùng nên nêu rõ vấn đề xảy ra khi đăng nhập email, Windows hay một hệ thống khác. Chỉ mô tả rằng mật khẩu không sử dụng được là chưa đủ để xác định cách xử lý phù hợp.
+Người dùng nên nêu rõ vấn đề xảy ra khi đăng nhập email, Windows hay một hệ thống khác. Mật khẩu đăng nhập Windows là mật khẩu tài khoản AD của công ty. Chỉ mô tả rằng mật khẩu không sử dụng được là chưa đủ để xác định cách xử lý phù hợp.
 
 Không nên mặc định rằng việc thay đổi mật khẩu ở một hệ thống sẽ tự động giải quyết vấn đề đăng nhập ở hệ thống khác.
 

@@ -1,20 +1,20 @@
 ---
 doc_id: KB-ACC-002
-version: 2
+version: 3
 request_type: account
 doc_type: troubleshooting
 owner: it_mgr01
-updated_at: 2026-10-18
+updated_at: 2026-11-09
 sensitivity: internal
 enabled: true
 title: "Tài khoản bị khóa: nguyên nhân và cách mở"
 distractor: false
-tags: [account, tài khoản bị khóa, tài khoản bị vô hiệu hóa, đăng nhập]
+tags: [account, tài khoản bị khóa, tài khoản bị vô hiệu hóa, đăng nhập, mở khóa tài khoản, tài khoản AD, nhập sai mật khẩu]
 ---
 
 ## Xác định tình trạng tài khoản
 
-Khi người dùng không thể đăng nhập, cần kiểm tra tình trạng của tài khoản trước khi xác định cách xử lý.
+Khi người dùng không thể đăng nhập, cần kiểm tra tình trạng của tài khoản trước khi xác định cách xử lý. Trường hợp thường gặp nhất là tài khoản AD (tài khoản đăng nhập máy tính Windows) bị khóa sau khi nhập sai mật khẩu nhiều lần.
 
 Tài khoản trong hệ thống có thể ở các trạng thái đang hoạt động, thử việc, bị vô hiệu hóa hoặc đã nghỉ việc. Những trạng thái này không có cùng ý nghĩa và không nên được xử lý giống nhau.
 

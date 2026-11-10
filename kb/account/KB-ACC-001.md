@@ -1,20 +1,20 @@
 ---
 doc_id: KB-ACC-001
-version: 2
+version: 3
 request_type: account
 doc_type: howto
 owner: it_mgr01
-updated_at: 2026-10-18
+updated_at: 2026-11-09
 sensitivity: internal
 enabled: true
 title: "Tự đặt lại mật khẩu tài khoản cá nhân"
 distractor: false
-tags: [account, mật khẩu, đặt lại mật khẩu, tài khoản cá nhân]
+tags: [account, mật khẩu, đặt lại mật khẩu, tài khoản cá nhân, quên mật khẩu, tài khoản AD, tài khoản Windows, mk]
 ---
 
 ## Khi nào sử dụng quy trình đặt lại mật khẩu cá nhân
 
-Quy trình này dành cho người dùng cần xử lý mật khẩu của chính tài khoản cá nhân mình đang sử dụng.
+Quy trình này dành cho người dùng cần xử lý mật khẩu của chính tài khoản cá nhân mình đang sử dụng. Tài khoản cá nhân ở đây là tài khoản công ty dùng để đăng nhập máy tính Windows, nhân viên thường gọi là tài khoản AD. Khi quên mật khẩu (mk) tài khoản AD hoặc mật khẩu đăng nhập máy tính, dùng quy trình này.
 
 Trước khi thực hiện, người dùng cần xác định đúng tài khoản và đúng hệ thống đang gặp vấn đề. Không nên sử dụng quy trình dành cho tài khoản cá nhân để yêu cầu thay đổi mật khẩu cho đồng nghiệp, tài khoản dịch vụ hoặc tài khoản có quyền đặc biệt.
 
