@@ -49,6 +49,12 @@ NEGATIVE = [
     ("Cài 7-Zip lên máy LAP-0417 giúp mình", "software"), ("Cho mình quyền đọc thư mục shared/templates", "access"),
     ("quen mk ad r reset giup e", "account"), ("Mất bao lâu để cấp quyền?", "access"), ("Quên mật khẩu email", "account"),
     ("VPN báo lỗi 809 phải làm sao vậy bạn", "vpn"),
+    # tự soát 12/11: việc ĐÃ xảy ra (kể lại) — người dùng xin làm thuận, không phải xin thao tác ngược
+    ("em bị thu hồi quyền truy cập VPN, cấp lại giúp em", "vpn"),
+    ("VPN không vào được, em đã xoá chứng chỉ cũ và cài lại ABC Connect", "vpn"),
+    ("em đã gỡ Zoom rồi cài lại mà vẫn lỗi, cài lại giúp em", "software"),
+    ("em vừa xoá nhầm quyền thư mục shared/templates, cấp lại giúp em", "access"),
+    ("em bi thu hoi quyen vpn, cap lai giup em", "vpn"),
 ]  # fmt: skip
 
 

@@ -38,13 +38,16 @@ _NOT_LOSS = (
     r"màn hình|hình|hết|nhiều|khoảng|thời gian|\d))"
 )
 _OBJECT = r"(?:vpn|chứng chỉ|quyền|truy cập|tài khoản|tk|email|mail)"
+# Việc ĐÃ xảy ra (người dùng kể lại, không xin làm): "em bị thu hồi quyền VPN, cấp lại giúp", "em đã xoá chứng chỉ cũ rồi cài lại",
+# "em vừa gỡ Zoom" — bỏ qua. Lookbehind độ dài cố định nên tách từng cụm.
+_NOT_PAST = r"(?<!bị )(?<!đã )(?<!vừa )(?<!mới )(?<!lỡ )(?<!nhầm )"
 _REVOKE_VERB = r"(?:thu hồi|vô hiệu hoá|vô hiệu hóa|vô hiệu|revoke|disable|huỷ|hủy|xoá|xóa)"
 _ACTION_VERB = r"(?:mở khoá|mở khóa|gia hạn|cấp lại|cấp|cài đặt|cài|đặt lại|reset)"
 
 _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("lost_device", rf"\b{_LOSS_VERB}\s+(?:cái\s+|chiếc\s+)?{_DEVICE}\b"),
     ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,40}}?\b{_LOSS_AFTER}\b{_NOT_LOSS}"),
-    ("revoke", rf"\b{_REVOKE_VERB}\s+(?:\S+\s+){{0,3}}?{_OBJECT}\b"),
+    ("revoke", rf"{_NOT_PAST}\b{_REVOKE_VERB}\s+(?:\S+\s+){{0,3}}?{_OBJECT}\b"),
     ("lock", r"(?<!mở )(?<!bị )(?<!đã )\b(?:khoá|khóa)\s+(?:hẳn|luôn|ngay|tạm thời|giúp|giùm|hộ)\b"),
     ("lock", rf"(?<!mở )(?<!bị )\b(?:khoá|khóa)\s+{_OBJECT}\s+(?:\S+\s+)?(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại giúp)\b"),
     ("lock", r"\btạm khoá\b|\btạm khóa\b"),
@@ -56,13 +59,14 @@ _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
                      rf"(?:cai\s+|chiec\s+)?{_DEVICE_FOLDED}\b")),
     ("lost_device", (rf"\b{_DEVICE_FOLDED}\b[^.!?\n]{{0,40}}?\b(?:bi mat|da mat|lam mat|that lac|bi trom|bi danh cap|bi cuop)\b"
                      rf"{fold(_NOT_LOSS)}")),
-    ("revoke", r"\b(?:thu hoi|vo hieu hoa|vo hieu|revoke|disable)\s+(?:\S+\s+){0,3}?(?:vpn|chung chi|quyen|truy cap|tai khoan|tk|email|mail)\b"),
+    ("revoke", (rf"{fold(_NOT_PAST)}\b(?:thu hoi|vo hieu hoa|vo hieu|revoke|disable)\s+(?:\S+\s+){{0,3}}?"
+                r"(?:vpn|chung chi|quyen|truy cap|tai khoan|tk|email|mail)\b")),
     ("lock", r"(?<!mo )(?<!bi )\bkhoa\s+(?:han|luon|tam thoi)\b"),
     ("negate", r"\b(?:thoi khoi|khoi can|khong muon)\s+(?:\S+\s+)?(?:mo khoa|gia han|cap lai|cai dat|cai|dat lai|reset)\b"),
     ("cancel", r"\b(?:huy|thoi)\s+(?:yeu cau|ticket|phieu)\b"),
 )  # fmt: skip
-_UNINSTALL_ACCENTED: Final = r"\b(?:gỡ bỏ|gỡ cài đặt|gỡ|uninstall|remove|xoá|xóa)\b(?!\s*(?:lỗi|rối|khoá|khóa))"
-_UNINSTALL_FOLDED: Final = r"\b(?:go bo|go cai dat|go phan mem|go ung dung|uninstall|remove)\b"
+_UNINSTALL_ACCENTED: Final = rf"{_NOT_PAST}\b(?:gỡ bỏ|gỡ cài đặt|gỡ|uninstall|remove|xoá|xóa)\b(?!\s*(?:lỗi|rối|khoá|khóa))"
+_UNINSTALL_FOLDED: Final = rf"{fold(_NOT_PAST)}\b(?:go bo|go cai dat|go phan mem|go ung dung|uninstall|remove)\b"
 
 _RES: Final = tuple((k, re.compile(p)) for k, p in _ACCENTED)
 _RES_FOLDED: Final = tuple((k, re.compile(p)) for k, p in _FOLDED)
