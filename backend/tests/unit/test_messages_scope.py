@@ -135,10 +135,11 @@ async def test_b20_sends_scope_message_for_e1_e3_e4() -> None:
     await h3.submit("e3", b08_retrieve="no_evidence")
     await h4.submit("e4", b11_slots="missing")
     await deliver_event(h4.runner, "e4", S_CLARIFYING, {"kind": "timeout"})
-    # Q12 (ĐP 09/11, đổi kỳ vọng đã duyệt): E1 có vế hướng dẫn khi cờ bật; E3/E4 giữ nguyên
+    # Q12 (ĐP 09/11): E1 có vế hướng dẫn khi cờ bật. Chấm thử 11/11 (đổi kỳ vọng có chủ đích): E3/E4 CŨNG có vế đó — câu hỏi phân loại
+    # (D-75) hứa "hướng dẫn máy in, Wi-Fi, Outlook", E3 ngay sau mà chỉ kể 4 mảng là tự mâu thuẫn (ca D5 chấm thử). Đuôi giữ nguyên.
     assert await _sent_text(h1, "e1") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E1_TAIL}"
-    assert await _sent_text(h3, "e3") == f"{_scope_sentence()} {E3_TAIL}"
-    assert await _sent_text(h4, "e4") == f"{_scope_sentence()} {E4_TAIL}"
+    assert await _sent_text(h3, "e3") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E3_TAIL}"
+    assert await _sent_text(h4, "e4") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E4_TAIL}"
 
 
 @pytest.mark.asyncio
