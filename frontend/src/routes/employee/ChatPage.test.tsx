@@ -10,6 +10,7 @@ import { Sidebar } from "../../components/Sidebar.tsx";
 import { ChatHome } from "./ChatHome.tsx";
 import { ChatRoute, FOLLOW_UP_LABEL } from "./ChatPage.tsx";
 import { DEFAULT_TITLE, REDACTED_NOTE, sessionTickets } from "./sessionTickets.ts";
+import { L2_CLOSED_NOTE, finalNoteOf } from "./status.ts";
 import { SUGGESTIONS } from "./suggestions.ts";
 
 afterEach(() => {
@@ -399,6 +400,38 @@ describe("t123: final_state '__proto__' / 'constructor' / 'toString' → câu k�
     } finally {
       page.done();
     }
+  });
+});
+
+// Kiểm thử 12/11: L2 đã đóng ca → câu kết thúc không còn hứa "Kỹ thuật viên sẽ liên hệ bạn" (cuộc trò chuyện không có tin đóng ca).
+describe("12/11: ca đã chuyển L2 rồi được đóng → câu kết thúc trung tính", () => {
+  it.each(["resolved_after_escalation", "resolved_after_deny_review"])("close_reason %j → L2_CLOSED_NOTE", async (reason) => {
+    const page = mountTicket(() =>
+      json(200, view({ status: "S_ESCALATED", waiting_for: null, final_state: "S_ESCALATED", exit_code: "E1", close_reason: reason })),
+    );
+    try {
+      expect((await screen.findByTestId("final-note")).firstElementChild?.textContent).toBe(L2_CLOSED_NOTE);
+    } finally {
+      page.done();
+    }
+  });
+
+  it("chưa đóng (close_reason null) → câu cũ 'Kỹ thuật viên sẽ liên hệ bạn để hỗ trợ tiếp.'", async () => {
+    const page = mountTicket(() =>
+      json(200, view({ status: "S_ESCALATED", waiting_for: null, final_state: "S_ESCALATED", exit_code: "E1", close_reason: null })),
+    );
+    try {
+      expect((await screen.findByTestId("final-note")).firstElementChild?.textContent).toBe("Kỹ thuật viên sẽ liên hệ bạn để hỗ trợ tiếp.");
+    } finally {
+      page.done();
+    }
+  });
+
+  it("close_reason lạ hoặc của ca khác (resolved_user_confirmed trên S_RESOLVED) → không đổi câu", () => {
+    expect(finalNoteOf({ final_state: "S_RESOLVED", close_reason: "resolved_user_confirmed" })).toBe(
+      "Yêu cầu đã hoàn tất. Cần thêm gì, bạn tạo yêu cầu mới nhé.",
+    );
+    expect(finalNoteOf({ final_state: "S_ESCALATED", close_reason: "__proto__" })).toBe("Kỹ thuật viên sẽ liên hệ bạn để hỗ trợ tiếp.");
   });
 });
 

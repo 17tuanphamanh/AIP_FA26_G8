@@ -143,7 +143,8 @@ function InboxRow({ item, now }: { item: ApprovalListItem; now: number }) {
         <span className="flex min-w-0 flex-col max-lg:col-span-2 max-lg:col-start-1 max-lg:row-start-2">
           <span className="truncate font-semibold max-lg:whitespace-normal">{actionLabel(item.action_type)}</span>
           <span className="truncate text-secondary text-ink-2 max-lg:whitespace-normal">
-            Máy {item.device_id ?? "(không có)"} · Yêu cầu{" "}
+            {/* Kiểm thử 12/11: phiếu quyền thư mục / tài khoản không có máy → không in "Máy (không có)". */}
+            {item.device_id ? `Máy ${item.device_id} · ` : null}Yêu cầu{" "}
             {/* Mã ticket dài (UUID): chỉ rút gọn khi HIỂN THỊ — chữ đủ vẫn nằm trong trang + hiện khi rê chuột. */}
             <span className="inline-block max-w-[10ch] truncate align-bottom font-mono" title={item.ticket_id}>
               {item.ticket_id}

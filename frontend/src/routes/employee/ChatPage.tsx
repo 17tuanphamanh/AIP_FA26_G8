@@ -22,14 +22,13 @@ import { Conversation, USER_BUBBLE } from "../../components/Conversation.tsx";
 import { DigestMessage, type SendResult } from "../../components/DigestMessage.tsx";
 import { normalizeConversation } from "../../components/messages.ts";
 import { ProgressStrip } from "../../components/ProgressStrip.tsx";
-import { ownEntry } from "../../lib/lookup.ts";
 import { ApprovalClock } from "./ApprovalClock.tsx";
 import { clockDeadline } from "./approvalClock.ts";
 import { latestRound, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel, progressItems } from "./multi.ts";
 import { ProgressStepper } from "./ProgressStepper.tsx";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
-import { FINAL_NOTE, POLL_PROCESSING_MS, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
+import { POLL_PROCESSING_MS, finalNoteOf, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
 import { StreamingText } from "./StreamingText.tsx";
 import { usePacedMessages } from "./usePacedMessages.ts";
 import { ThinkingBox } from "./ThinkingBox.tsx";
@@ -390,7 +389,7 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
   if (view.final_state) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5 motion-safe:animate-rise-in" data-testid="final-note">
-        <p>{parent ? PARENT_FINAL_NOTE : ownEntry(FINAL_NOTE, view.final_state, statusLabel(view.final_state))}</p>
+        <p>{parent ? PARENT_FINAL_NOTE : finalNoteOf(view)}</p>
         <Link
           to="/chat"
           className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-selected max-lg:min-h-11"

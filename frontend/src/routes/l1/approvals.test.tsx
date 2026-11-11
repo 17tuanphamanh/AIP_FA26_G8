@@ -1091,12 +1091,14 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
     await screen.findAllByTestId("inbox-row");
     expect(rowIds()).toStrictEqual(["u", "a", "v"]);
     expect(screen.getByRole("tab", { name: /^Chờ duyệt/ }).textContent).toBe("Chờ duyệt · 3");
-    const [rowU, , rowV] = screen.getAllByTestId("inbox-row");
+    const [rowU, rowA, rowV] = screen.getAllByTestId("inbox-row");
+    expect(rowA!.textContent).toContain("Máy LAP-0342 · Yêu cầu"); // có máy → vẫn in máy
     expect(rowU!.dataset.urgent).toBe("true");
     expect(rowV!.dataset.urgent).toBe("false");
     for (const row of [rowU!, rowV!]) {
       expect(row.textContent).toContain(ACTION_UNKNOWN);
-      expect(row.textContent).toContain("Máy (không có)");
+      expect(row.textContent).not.toContain("Máy"); // kiểm thử 12/11: không máy → không in "Máy (không có)"
+      expect(row.textContent).toContain("Yêu cầu");
     }
     expect(rowU!.tagName).toBe("A");
     expect(rowU!.getAttribute("href")).toBe("/approvals/u");
