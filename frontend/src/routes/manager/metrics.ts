@@ -110,6 +110,8 @@ export const E1_LABEL: Record<string, string> = {
   intent_low_confidence: "Chưa chắc ý định",
   multi_intent_not_enabled: "Nhiều ý (chưa bật)",
   intent_not_enabled: "Ý định chưa bật",
+  split_span_invalid: "Tách ý không hợp lệ",
+  reverse_action_requested: "Xin thu hồi / khoá / gỡ / huỷ", // D-84 (12/11)
   other: "Lý do khác",
 };
 

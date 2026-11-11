@@ -43,6 +43,7 @@
    B6 tra theo người (có `device_count`) mà máy không có trong danh sách → không kết luận (luồng cũ).
    ĐP 09/11 điểm 1: máy 404 ĐỦ slot (B3 đã gợi ý hành động — bằng chứng (d)) cũng hỏi lại mã như trên, giữ slot `action`, KHÔNG dựng
    Action, không gọi tool. Máy của người khác ở đường đủ slot giữ luồng cũ (`_build` → B12 → chốt P6 ở B15).
+   D-85 (12/11): software cũng hỏi lại mã máy 404 như trên (chỉ nhánh "not_found"; máy của người khác giữ luồng cũ).
 
 8. D-81 (chấm thử 11/11, T4) — trong `_build`, SAU khi tra lại fact theo slot cuối: `unlock_account` cho tài khoản CỦA CHÍNH người gửi
    mà `target_account_locked is False` → KHÔNG dựng Action (không B12/B14/phiếu duyệt): bỏ slot `action`, giữ fact mới, hỏi câu CỐ ĐỊNH
