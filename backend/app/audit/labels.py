@@ -42,7 +42,7 @@ REASON_LABELS: Final[dict[str, str]] = {
     "injection_in_reply": "Nghi tấn công trong câu trả lời bổ sung",
     "intent_low_confidence": "Chưa chắc loại yêu cầu",
     "out_of_scope": "Ngoài phạm vi hỗ trợ",
-    "reverse_action_requested": "Xin thu hồi, khoá, gỡ hoặc huỷ — hệ thống không tự làm",  # D-84
+    "reverse_action_requested": "Xin thu hồi, khoá, gỡ, huỷ hoặc báo mất máy / lộ mật khẩu — hệ thống không tự làm",  # D-84
     "intent_not_enabled": "Loại yêu cầu chưa bật",
     "split_span_invalid": "Tách ý không hợp lệ",
     "tool_system_error": "Công cụ chẩn đoán lỗi",

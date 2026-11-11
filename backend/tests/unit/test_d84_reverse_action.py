@@ -37,6 +37,28 @@ POSITIVE = [
     ("huỷ yêu cầu này giúp em", "vpn", "cancel"),
     ("Gỡ Zoom khỏi máy LAP-0342 giúp em", "software", "uninstall"),
     ("go bo zoom tren may em", "software", "uninstall"),
+    # bổ sung 12/11 02:30 — câu đo trên máy demo (LLM thật): rút/bỏ/hạ quyền → hỏi lặp hoặc phiếu CẤP quyền; "khoá … lại" → dựng
+    # hành động MỞ khoá; "không cần … nữa" → E3; lộ / bị hack → TỰ đặt lại mật khẩu email, mật khẩu tạm gửi vào hộp thư bị chiếm
+    ("Rút quyền ghi thư mục hr/salaries của em, em chuyển bộ phận rồi", "access", "revoke"),
+    ("Bỏ quyền đọc thư mục shared/templates của em đi", "access", "revoke"),
+    ("Hạ quyền thư mục engineering/specs của em từ ghi xuống chỉ đọc thôi", "access", "revoke"),
+    ("gỡ quyền ghi", "access", "revoke"),
+    ("rut quyen ghi finance/Q3 cua em", "access", "revoke"),
+    ("Khoá tài khoản ERP của em lại giúp em, em nghi bị lộ mật khẩu", "account", "lock"),
+    ("khoá lại tài khoản email của em giúp", "account", "lock"),
+    ("Không cần gia hạn VPN cho máy LAP-0342 nữa đâu, em sắp trả máy", "vpn", "negate"),
+    ("Em không cần quyền đọc finance/Q3 nữa, gỡ giúp em", "access", "negate"),
+    ("khong can gia han vpn nua", "vpn", "negate"),
+    ("Em bị lộ mật khẩu email rồi, đặt lại giúp em", "account", "compromised"),
+    ("Tài khoản email của em hình như bị hack, có người gửi mail lạ từ hộp thư em, đổi mật khẩu gấp giúp em", "account", "compromised"),
+    ("Hình như có người lấy được mật khẩu AD của em, có đăng nhập lạ lúc 2h sáng", "account", "compromised"),
+    ("có người đăng nhập vào tài khoản email của em lúc nửa đêm", "account", "compromised"),
+    ("Em lỡ nhập mật khẩu vào trang web lạ trong email, đổi mật khẩu giúp em", "account", "compromised"),
+    ("tài khoản email em bị chiếm mất rồi", "account", "compromised"),
+    ("em bi lo mk email r, reset giup e", "account", "compromised"),
+    ("tai khoan email bi hack roi doi mk gap", "account", "compromised"),
+    ("co nguoi biet mk cua em roi", "account", "compromised"),
+    ("my account was hacked, please reset", "account", "compromised"),
 ]
 
 NEGATIVE = [
@@ -60,6 +82,24 @@ NEGATIVE = [
     ("laptop em bị mất chuột với tai nghe", "software"),
     ("may tinh em bi mat sac roi", "vpn"),
     ("xoá cache Teams rồi cài lại Teams giúp em", "software"),
+    # bổ sung 12/11 02:30 — câu thường gặp gần nghĩa với mẫu mới
+    ("Em lỡ nhập sai mật khẩu nhiều lần nên bị khoá tài khoản, mở giúp em", "account"),
+    ("Khoá tài khoản tự mở lại sau bao lâu vậy?", "account"), ("Sao khoá tài khoản cứ tự bật lại vậy?", "account"),
+    ("Mở khoá tài khoản email giúp em, em bị khoá lại rồi", "account"),
+    ("tài khoản bị khoá lại sau 5 lần nhập sai, mở giúp", "account"),
+    ("cấp toàn bộ quyền đọc thư mục shared/templates cho em", "access"),
+    ("cap toan bo quyen doc thu muc shared/templates cho em", "access"),
+    ("Em bị rút quyền đọc finance/Q3 rồi, cấp lại giúp em", "access"),
+    ("em đã gỡ quyền cũ, giờ xin quyền mới", "access"),
+    ("Gia hạn quyền đọc finance/Q3 thêm 30 ngày", "access"),
+    ("Mình cần quyền đọc và ghi để kiểm tra dữ liệu, không cần quyền xóa.", "access"),
+    ("Tên đăng nhập là an.nv, quên mật khẩu rồi", "account"), ("ten dang nhap la an.nv, quen mat khau", "account"),
+    ("Em cần đăng nhập lại mà quên mật khẩu", "account"),
+    ("Em không cần phải nhập mật khẩu nữa sau khi đặt lại à?", "account"),
+    ("Có ai biết cách gia hạn VPN không?", "vpn"), ("co ai biet cach gia han vpn khong", "vpn"),
+    ("Có ai đăng nhập được VPN không, em không vào được", "vpn"), ("co ai dang nhap duoc vpn ko", "vpn"),
+    ("Có ai hỗ trợ đặt lại mật khẩu email không?", "account"),
+    ("ổ C bị chiếm hết dung lượng, gỡ bớt ứng dụng giúp em", "vpn"), ("o C bi chiem het dung luong", "vpn"),
 ]  # fmt: skip
 
 
@@ -123,6 +163,21 @@ async def test_b3_normal_request_unchanged() -> None:
     v, row, _h, _gw = await _run(lambda _: out(item("vpn", 0.95)))
     assert v["status"] != S_ESCALATED or v.get("escalation_reason_detail") != "reverse_action_requested"
     assert row["detail"]["reverse_action"] is None
+
+
+COMPROMISED = "Em bị lộ mật khẩu email rồi, đặt lại giúp em"
+
+
+@pytest.mark.asyncio
+async def test_b3_compromised_account_escalates_without_reset() -> None:
+    """Đo 12/11 (LLM thật): câu này được TỰ đặt lại mật khẩu email, mật khẩu tạm gửi "qua email" — vào chính hộp thư đã lộ.
+    KB-GEN-008: nghi lộ / bị chiếm là sự cố an toàn thông tin do kỹ thuật viên xử lý → E1, không dựng hành động."""
+    v, row, h, _gw = await _run(lambda _: out(item("account", 0.95, span=COMPROMISED, action="reset_password",
+                                                  slots={"account_type": "email"})), text=COMPROMISED)  # fmt: skip
+    assert (v["status"], v["exit_code"], v["escalation_reason_detail"]) == (S_ESCALATED, "E1", "reverse_action_requested")
+    assert row["detail"]["reverse_action"] == "compromised"
+    assert v.get("intended_action") is None
+    assert not [r for r in h.audit.rows if r["step"] in ("B6", "B11", "B12")]
 
 
 # ---- clarify_wait --------------------------------------------------------------------------------------------------------------

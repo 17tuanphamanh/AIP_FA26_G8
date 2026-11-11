@@ -111,7 +111,7 @@ export const E1_LABEL: Record<string, string> = {
   multi_intent_not_enabled: "Nhiều ý (chưa bật)",
   intent_not_enabled: "Ý định chưa bật",
   split_span_invalid: "Tách ý không hợp lệ",
-  reverse_action_requested: "Xin thu hồi / khoá / gỡ / huỷ", // D-84 (12/11)
+  reverse_action_requested: "Thu hồi / khoá / gỡ / mất máy / lộ mật khẩu", // D-84 (12/11)
   other: "Lý do khác",
 };
 
