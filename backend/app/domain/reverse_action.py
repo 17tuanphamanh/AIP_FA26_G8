@@ -58,6 +58,11 @@ _REVOKE_PERM = r"(?:rút lại|rút bớt|rút|tước|bỏ|gỡ bỏ|gỡ|hạ 
 # Sự cố an ninh tài khoản (đo trên máy demo 12/11): "Em bị lộ mật khẩu email rồi, đặt lại giúp em" và "email bị hack, đổi mật khẩu gấp"
 # → hệ thống TỰ đặt lại mật khẩu email và gửi mật khẩu tạm "qua email" — tức vào chính hộp thư đang bị chiếm. KB-GEN-008: nghi lộ /
 # bị chiếm là sự cố an toàn thông tin, kỹ thuật viên xử lý trực tiếp. Chuyển người như báo mất máy.
+# Chủ ngữ "người lạ": "có người / có ai (lạ, khác)", "ai đó", "người nào đó" + tối đa hai trợ từ ("đang cố", "đã", "định").
+_WHO = (
+    r"\b(?:có\s+(?:ai|người)|ai đó|người nào đó|kẻ nào đó|kẻ gian)\s+(?:lạ\s+|khác\s+)?(?:(?:đã|đang|cố|định|muốn|vừa)\s+){0,2}"
+)
+_WHO_FOLDED = r"\b(?:co\s+(?:ai|nguoi)|ai do|nguoi nao do|ke nao do|ke gian)\s+(?:la\s+|khac\s+)?(?:(?:da|dang|co|dinh|muon|vua)\s+){0,2}"
 _COMPROMISED = (
     # "chiếm" chỉ khi kèm quyền / tài khoản: "ổ C bị chiếm hết dung lượng" không phải sự cố an ninh
     r"\bbị\s+(?:hack|hách|hắc|xâm nhập|chiếm đoạt|chiếm quyền|chiếm\s+(?:mất\s+)?(?:tài khoản|tk|email|mail|hộp thư)|đánh cắp|lấy cắp|lừa)\b"
@@ -66,11 +71,13 @@ _COMPROMISED = (
     r"|\blộ\s+(?:mất\s+)?(?:mật khẩu|mk|pass|password|thông tin đăng nhập|otp|mã xác minh)\b"
     # "có ai/người …" phải kèm đích là mật khẩu hoặc tài khoản CỦA người gửi: "Có ai biết cách gia hạn VPN không?", "có ai đăng nhập
     # được VPN không?" là câu hỏi thường, không khớp.
-    r"|\bcó\s+(?:ai|người)\s+(?:lạ\s+|khác\s+)?(?:lấy được|lấy|biết|dò|đánh cắp)\s+(?:được\s+)?(?:mật khẩu|mk|pass)\b"
-    r"|\bcó\s+(?:ai|người)\s+(?:lạ\s+|khác\s+)?(?:đăng nhập|truy cập|vào)\s+(?:được\s+)?(?:vào\s+)?(?:tài khoản|tk|email|mail|hộp thư)\s+(?:\S+\s+)?"
+    rf"|{_WHO}(?:lấy được|lấy|biết|dò|đánh cắp)\s+(?:được\s+)?(?:mật khẩu|mk|pass)\b"
+    rf"|{_WHO}(?:đăng nhập|truy cập|vào)\s+(?:được\s+)?(?:vào\s+)?(?:tài khoản|tk|email|mail|hộp thư)\s+(?:\S+\s+)?"
     r"(?:của\s+)?(?:em|mình|tôi|tớ|anh|chị)\b"
     r"|\bngười lạ\s+(?:đã\s+)?(?:đăng nhập|truy cập|vào|dùng)\b"
     r"|\bđăng nhập lạ\b"
+    r"|\bđăng nhập\s+(?:\S+\s+){0,3}?(?:thiết bị|máy|nơi|địa điểm|vị trí|ip|quốc gia)\s+lạ\b"
+    r"|\b(?:mã\s+)?(?:otp|mã xác minh|mã xác thực)\s+lạ\b"
     r"|\b(?:mật khẩu|mk|pass)\s+(?:\S+\s+){0,3}?vào\s+(?:trang|web|website|link|liên kết|đường link|form)\s+(?:\S+\s+)?"
     r"(?:lạ|giả|giả mạo|lừa đảo)\b"
 )
@@ -79,8 +86,8 @@ _COMPROMISED_FOLDED = (
     r"|\b(?:tai khoan|tk|email|mail|hop thu)\b[^.!?\n]{0,30}?\bbi\s+chiem\b"
     r"|\b(?:hacked|compromised)\b"
     r"|\bbi\s+lo\s+(?:mat\s+)?(?:mat khau|mk|pass|password|otp)\b"
-    r"|\bco\s+(?:ai|nguoi)\s+(?:la\s+|khac\s+)?(?:lay duoc|lay|biet|do)\s+(?:duoc\s+)?(?:mat khau|mk|pass)\b"
-    r"|\bco\s+(?:ai|nguoi)\s+(?:la\s+|khac\s+)?(?:dang nhap|truy cap|vao)\s+(?:duoc\s+)?(?:vao\s+)?(?:tai khoan|tk|email|mail|hop thu)\s+(?:\S+\s+)?"
+    rf"|{_WHO_FOLDED}(?:lay duoc|lay|biet|do)\s+(?:duoc\s+)?(?:mat khau|mk|pass)\b"
+    rf"|{_WHO_FOLDED}(?:dang nhap|truy cap|vao)\s+(?:duoc\s+)?(?:vao\s+)?(?:tai khoan|tk|email|mail|hop thu)\s+(?:\S+\s+)?"
     r"(?:cua\s+)?(?:em|minh|toi|to|anh|chi)\b"
 )
 

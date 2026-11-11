@@ -9,6 +9,8 @@ Sau `interrupt()`, thứ tự cố định:
    đây CHỈ bản đã che được gửi LLM, đưa vào `sanitize_slots`, lưu `conversation`; bản thô không lưu ở đâu cả.
 3b. (D-84, 12/11) Câu trả lời xin thao tác NGƯỢC ("thôi đừng gia hạn", "khoá hẳn", "gỡ…" — `domain/reverse_action`) → E1
    `reverse_action_requested`, câu trả lời (đã che) vào `conversation`, KHÔNG gọi LLM trích slot, không dựng hành động.
+3c. (12/11) Ticket `account`, câu trả lời nhắc tài khoản dịch vụ bên ngoài ("Gmail cá nhân", Zalo… — `domain/personal_account`) → E1
+   `out_of_scope` như B3, không trích slot (không để "Gmail" thành `account_type=email` rồi đặt lại email CÔNG TY).
 4. LLM fast `b11_extract_slots` (biến `question` = chữ của tin `kind="question"` CUỐI trong `conversation` — câu B11 vừa gửi, đã qua
    dọn khoá slot + output guard, kể cả câu cố định L-03; không có → "" — M4 bn-a) → `sanitize_slots(spec, got.slots, text=bản đã che,
    allowed=missing)` (P2: slot phải có trong CÂU TRẢ LỜI — câu hỏi KHÔNG vào `text`, chỉ nhận slot đang thiếu, key fact bị bỏ — 3-Q1). Không slot sạch hoặc LLM báo lạc đề → `off_topic_streak`+1;
@@ -37,6 +39,7 @@ from langgraph.types import interrupt
 from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.exit_codes import ExitCode
 from app.domain.messages import combine_triage, last_question, user_msg
+from app.domain.personal_account import personal_account_mentioned
 from app.domain.reverse_action import reverse_action_kind
 from app.domain.slots import audit_dropped, sanitize_slots
 from app.domain.states import S_CLARIFYING, S_ESCALATED, S_SCREENING
@@ -80,12 +83,18 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         info: dict[str, Any] = {"prompt": None, "llm_error": None, "off_topic": None, "streak": None,
                                 "other_target_mention": False, "other_target_reason": None, "reverse_action": None,
-                                **audit_dropped({}, known)}  # fmt: skip
+                                "personal_account": False, **audit_dropped({}, known)}  # fmt: skip
         if (kind := reverse_action_kind(text, {str(state.get("intent") or "")})) is not None:  # D-84: "thôi đừng gia hạn…" → người
             info["reverse_action"] = kind
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B11", event="reverse_action_requested", audit_detail=info,
                 exit_code=ExitCode.E1.value, conversation=[user_msg(text)], escalation_reason_detail="reverse_action_requested",
+            )  # fmt: skip
+        if personal_account_mentioned(text, {str(state.get("intent") or "")}):  # 12/11: hỏi "email hay ERP?" → "Gmail cá nhân"
+            info["personal_account"] = True
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B11", event="intent_out_of_scope", audit_detail=info,
+                exit_code=ExitCode.E1.value, conversation=[user_msg(text)], escalation_reason_detail="out_of_scope",
             )  # fmt: skip
         try:
             return await _extract(state, text, info)

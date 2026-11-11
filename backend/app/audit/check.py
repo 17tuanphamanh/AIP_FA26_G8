@@ -36,7 +36,9 @@ _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 SCANNED_COLUMNS: Final = tuple(
     c.name for c in _AUDIT.columns if isinstance(c.type, (String, JSON)) and c.name != "ticket_id"
 )
-_P1_E1_EXEMPT: Final = frozenset({"intent_out_of_scope", "multi_intent_not_enabled"})  # detail.intent/confidence là None (b03)
+# detail.intent/confidence là None (b03). D-84 (soát 12/11): `reverse_action_requested` rẽ TRƯỚC khi chọn ý (câu nhiều ý cũng chuyển cả
+# ticket) → không có intent/độ tin cậy của một ý; thiếu dòng này thì mọi ticket D-84 bị báo thiếu điểm 1.
+_P1_E1_EXEMPT: Final = frozenset({"intent_out_of_scope", "multi_intent_not_enabled", "reverse_action_requested"})
 _B16_PLAN_CHANGED: Final = "action_plan_changed_since_approval"  # B16 duyệt nhưng kế hoạch đã đổi (Q-4d-3) — vẫn là điểm 6
 _ABSENT: Final = object()
 # Dòng điểm log 4 (b12_assess `_point4`) — một nguồn cho `audit_check` và `m5_review` (phase6 7.1 P2).

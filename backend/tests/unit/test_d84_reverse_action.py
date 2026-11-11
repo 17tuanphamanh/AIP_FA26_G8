@@ -59,6 +59,12 @@ POSITIVE = [
     ("tai khoan email bi hack roi doi mk gap", "account", "compromised"),
     ("co nguoi biet mk cua em roi", "account", "compromised"),
     ("my account was hacked, please reset", "account", "compromised"),
+    ("Tài khoản AD bị khoá liên tục, chắc có người dò mật khẩu, mở giúp em", "account", "compromised"),
+    ("Có người đang cố đăng nhập tài khoản email em", "account", "compromised"),
+    ("ai đó đăng nhập vào email của em", "account", "compromised"), ("ai do dang nhap vao email cua em", "account", "compromised"),
+    ("hình như ai đó biết mật khẩu của em", "account", "compromised"),
+    ("Em nhận được thông báo đăng nhập từ thiết bị lạ", "account", "compromised"),
+    ("em nhận được mã OTP lạ dù không đăng nhập", "account", "compromised"),
 ]
 
 NEGATIVE = [
@@ -100,6 +106,7 @@ NEGATIVE = [
     ("Có ai đăng nhập được VPN không, em không vào được", "vpn"), ("co ai dang nhap duoc vpn ko", "vpn"),
     ("Có ai hỗ trợ đặt lại mật khẩu email không?", "account"),
     ("ổ C bị chiếm hết dung lượng, gỡ bớt ứng dụng giúp em", "vpn"), ("o C bi chiem het dung luong", "vpn"),
+    ("Mã OTP không về điện thoại, đặt lại mật khẩu giúp em", "account"), ("nhờ ai đó cài giúp em Zoom", "software"),
 ]  # fmt: skip
 
 
@@ -178,6 +185,17 @@ async def test_b3_compromised_account_escalates_without_reset() -> None:
     assert row["detail"]["reverse_action"] == "compromised"
     assert v.get("intended_action") is None
     assert not [r for r in h.audit.rows if r["step"] in ("B6", "B11", "B12")]
+
+
+@pytest.mark.asyncio
+async def test_b3_reverse_row_passes_audit_check() -> None:
+    """Soát 12/11: dòng B4 `reverse_action_requested` không có intent/độ tin cậy (rẽ trước khi chọn ý) — audit_check không được báo
+    thiếu điểm 1 (trước đó mọi ticket D-84 đều bị báo thiếu)."""
+    from app.audit.check import required
+
+    _v, row, h, _gw = await _run(lambda _: out(item("vpn", 0.95, span=LOST, action="reissue_vpn_access")), text=LOST)
+    rows = [r for r in h.audit.rows if r["ticket_id"] == row["ticket_id"]]
+    assert [(m.point, m.fields) for m in required(row["ticket_id"], rows, final_state=None)] == []
 
 
 # ---- clarify_wait --------------------------------------------------------------------------------------------------------------
