@@ -6687,6 +6687,7 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   xuống chỉ đọc" thành phiếu CẤP quyền; "rút / bỏ / gỡ quyền" hỏi lặp; "khoá tài khoản ERP lại" dựng hành động MỞ khoá → nay E1),
   **D-87** ("Đặt lại mật khẩu Gmail cá nhân" thành đặt lại email CÔNG TY → nay E1 ngoài phạm vi), sửa `audit_check` (dòng B4 của D-84
   bị báo thiếu điểm 1), **D-84 thêm** "ngắt / tắt VPN" ("máy nhiễm mã độc, ngắt VPN" thành phiếu GIA HẠN chứng chỉ; "tắt VPN" thành phiếu CẤP LẠI) và máy nhiễm mã độc. D-86 vẫn để dành cho đề xuất "đã có quyền" (chờ TA).
+- 03:50: subagent (TA ra lệnh) soát bộ dò D-84/D-87 bằng 133 câu viết khác câu đã thử — trước sửa bắt nhầm 38/48 (có cả luồng chính "Tài khoản bị tạm khoá do nhập sai, mở giúp em", "Tắt VPN đi bật lại vẫn lỗi") và bỏ lọt 63/71; viết lại khối mẫu: bắt nhầm 0/48, bỏ lọt 2/71 (`test_d84_review_1211.py`). Thêm: khung hội thoại chỉ đọc của L1/L2 hiện câu yêu cầu đầu.
 - Lưu ý demo: đặt lại mật khẩu AD trên giả lập đổi mật khẩu thật → người đó không đăng nhập lại bằng mật khẩu demo tới khi đặt lại giả lập.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
