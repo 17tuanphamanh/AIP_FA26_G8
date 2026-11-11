@@ -49,6 +49,11 @@
       "regex": "(^|\\n)\\s*#{2,}\\s*(system|instruction|chi dan he thong)\\b"
     },
     {
+      "id": "SYS-04",
+      "group": "system_spoof",
+      "regex": "[\"']\\s*(approved|is_approved|pre_approved|authorized|is_admin|admin_approved|approval_(status|result|state)|decision)\\s*[\"']\\s*:\\s*(true\\b|[\"']\\s*(true|yes|approved|granted|allowed)\\s*[\"'])"
+    },
+    {
       "id": "LEAK-01",
       "group": "prompt_leak",
       "regex": "\\b(cho (toi|minh) xem|in ra|hien thi|tiet lo|show)\\b.{0,25}\\b(prompt|system prompt|huong dan (he thong|cua ban|goc)|chi dan (goc|cua ban))\\b"
