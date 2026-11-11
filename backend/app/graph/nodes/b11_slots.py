@@ -44,6 +44,12 @@
    ĐP 09/11 điểm 1: máy 404 ĐỦ slot (B3 đã gợi ý hành động — bằng chứng (d)) cũng hỏi lại mã như trên, giữ slot `action`, KHÔNG dựng
    Action, không gọi tool. Máy của người khác ở đường đủ slot giữ luồng cũ (`_build` → B12 → chốt P6 ở B15).
 
+8. D-81 (chấm thử 11/11, T4) — trong `_build`, SAU khi tra lại fact theo slot cuối: `unlock_account` cho tài khoản CỦA CHÍNH người gửi
+   mà `target_account_locked is False` → KHÔNG dựng Action (không B12/B14/phiếu duyệt): bỏ slot `action`, giữ fact mới, hỏi câu CỐ ĐỊNH
+   `messages.not_locked_question` (không LLM; guard, notify, hạn, hết lượt như bước 5; audit `unlock_not_locked=true`). Người dùng trả
+   lời "đặt lại mật khẩu" → `reset_password` đi luồng thường; vẫn đòi mở khoá → hỏi lại tới hết lượt → E4. Tài khoản người khác: không
+   đổi (luồng cũ — người duyệt/kỹ thuật viên).
+
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
 5b. Q3 M1 (ĐP 09/11): MỌI slot đang thiếu thuộc `FIXED_QUESTION_SLOTS` (account_type, action, permission_level) → câu CỐ ĐỊNH của intent
@@ -61,13 +67,14 @@ from datetime import timedelta
 from typing import Any, Final, Literal
 
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.action import TARGET_USER_INTENTS, build_action
+from app.domain.action import TARGET_USER_INTENTS, build_action, requested_for_of
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import (
     ACTION_LABELS,
     device_not_found_question,
     last_question,
+    not_locked_question,
     question_msg,
 )
 from app.domain.slot_text import UNKNOWN_ACTION, describe_missing, scrub_slot_keys
@@ -92,7 +99,20 @@ def _info(missing: list[str], turns: int, target_required: bool) -> dict[str, An
     return {"missing": missing, "turn": turns, "prompt": None, "llm_error": None, "guard": None, "tools_called": [],
             "tool_retry_count": 0, "facts": None, "procedure_doc": None, "procedure_kb_version": None,
             "rag_error": None, "target_required": target_required, "slot_keys_removed": 0,
-            "owner_mismatch_early": False, "device_not_found": False}  # fmt: skip
+            "owner_mismatch_early": False, "device_not_found": False, "unlock_not_locked": False}  # fmt: skip
+
+
+def unlock_not_needed(state: Any, slots: dict[str, Any], facts: dict[str, Any]) -> bool:
+    """D-81: mở khoá tài khoản CỦA CHÍNH người gửi (không `target_user` khác, cờ `target_is_other` tắt) mà fact MỚI tra theo slot cuối
+    (`target_account_locked`, đầu ra `check_account_status`) là False → không có gì để mở khoá. Fact thiếu (tool 404) → False (luồng cũ)."""
+    requester = state["requester_context"].user_id
+    return (
+        state["intent"] == "account"
+        and slots.get("action") == "unlock_account"
+        and requested_for_of("account", slots, requester) == requester
+        and (state.get("ctx_flags") or {}).get("target_is_other", False) is False
+        and facts.get("target_account_locked") is False
+    )
 
 
 def target_required(state: Any, slots: dict[str, Any]) -> bool:
@@ -199,6 +219,11 @@ def make(deps: NodeDeps) -> NodeFn:
             diag = {t: None for t in module.TOOLS} | {r.tool: r.data for r in results}
             _, facts = module.infer(diag, requester_id=requester, slots=slots)
         info["facts"] = facts
+        if module is not None and unlock_not_needed(state, slots, facts):  # D-81: không dựng Action, hỏi câu cố định
+            info["unlock_not_locked"], info["missing"] = True, ["action"]
+            kept = {k: v for k, v in slots.items() if k != "action"}
+            return await _ask(state, ["action"], info, fixed_text=not_locked_question(slots.get("account_type")),
+                              dropped={"slots": kept, "facts": facts})  # fmt: skip
         metadata = deps.action_metadata[intent]
         action = build_action(intent, slots, facts, state["requester_context"], metadata)
         info["procedure_doc"] = doc = metadata[action.type].procedure_doc
@@ -223,9 +248,12 @@ def make(deps: NodeDeps) -> NodeFn:
             intended_action=action, facts=facts, missing_slots=[], tool_retry_count=retries,
         )  # fmt: skip
 
-    async def _ask(state: Any, missing: list[str], info: dict[str, Any]) -> dict[str, Any]:
+    async def _ask(
+        state: Any, missing: list[str], info: dict[str, Any], *, fixed_text: str | None = None,
+        dropped: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:  # fmt: skip
         turns = info["turn"]
-        seen = device_lookup(state)
+        seen = None if fixed_text is not None else device_lookup(state)
         if seen == "other":  # Q2 M4: máy của người khác — không hỏi hành động, chuyển L2 ngay (như chốt P6 ở B15)
             info["owner_mismatch_early"] = True
             return await goto(
@@ -233,7 +261,7 @@ def make(deps: NodeDeps) -> NodeFn:
                 audit_detail=info, exit_code=ExitCode.E5.value, missing_slots=missing,
                 escalation_reason_detail="approval_target_unverified",
             )  # fmt: skip
-        dropped: dict[str, Any] = {}
+        dropped = dict(dropped or {})
         if seen == "not_found":  # Q2 M4: mã máy không có — bỏ slot + fact máy cũ (kể cả khi đã đủ slot — ĐP 09/11 điểm 1)
             slots = {k: v for k, v in state["slots"].items() if k != "device_id"}
             facts = {k: v for k, v in (state.get("facts") or {}).items() if k not in vpn.DEVICE_FACTS}
@@ -247,7 +275,9 @@ def make(deps: NodeDeps) -> NodeFn:
                 escalation_reason_detail="clarification_exhausted",
             )  # fmt: skip
         fixed = deps.slots.intents[state["intent"]].fixed_question(missing)  # Q3 M1: mọi slot thiếu đều là slot enum
-        if seen == "not_found":  # hỏi lại mã bằng câu CỐ ĐỊNH (không LLM)
+        if fixed_text is not None:  # D-81: câu CỐ ĐỊNH do `_build` dựng từ fact (không LLM)
+            q = QuestionOut(text=fixed_text)
+        elif seen == "not_found":  # hỏi lại mã bằng câu CỐ ĐỊNH (không LLM)
             q = QuestionOut(text=device_not_found_question(str(state["slots"]["device_id"])))
         elif info["target_required"]:  # L-03: câu CỐ ĐỊNH, không gọi LLM (`prompt` None) — vẫn qua guard/notify/hạn dưới
             q = QuestionOut(text=TARGET_QUESTION)

@@ -7,6 +7,8 @@ b03_classify:
   intents: [{type: vpn, confidence: 0.92, span: "", action_hint: renew_vpn_cert, slots: {device_id: LAP-0700}}]
   is_multi: false
 b10_need_type: {type: action, confidence: 0.9}
+# D-80: chỉ gọi khi điểm B9 dưới ngưỡng; câu viết lại KHÔNG thêm ý mới (ca E3 vẫn E3).
+b09_rewrite_query: {query: "preset g4_0700 — câu viết lại an toàn"}
 b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
 b11_clarify_question: {text: "Bạn cho mình xin mã thiết bị (ví dụ LAP-0700) để kiểm tra chứng chỉ VPN nhé."}
 b11_extract_slots: {slots: {}, off_topic: true}

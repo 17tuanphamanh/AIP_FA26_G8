@@ -45,6 +45,7 @@ prompt_roles:
   b11_clarify_question: chat_fast
   b11_extract_slots: chat_fast
   b10_answer: chat_strong
+  b09_rewrite_query: chat_fast  # D-80 (11/11): viết lại câu hỏi khi dưới ngưỡng — cùng vai hội thoại như b10_need_type
 
 # fast: chuỗi dự phòng (vd. [{provider: local, model: <tên cố định>}]) — chưa có local ở Phase 3.
 # strong và chat_strong: KHÔNG fallback (P2 mục 5) — validator từ chối danh sách khác rỗng.

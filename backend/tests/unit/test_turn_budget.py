@@ -217,8 +217,9 @@ NODE_CALL_SITES: dict[tuple[str, str], int] = {
     ("b03_classify.py", "llm.complete"): 1,
     ("b06_diagnose.py", "directory.call"): 1,
     ("b08_retrieve.py", "rag.retrieve"): 1,
-    ("b10_route.py", "llm.complete"): 2,  # 3g: b10_need_type, b10_answer
+    ("b10_route.py", "llm.complete"): 3,  # 3g: b10_need_type, b10_answer; D-80 (11/11): b09_rewrite_query
     ("b10_route.py", "rag.expand_for_answer"): 1,  # 3g
+    ("b10_route.py", "rag.retrieve"): 1,  # D-80 (11/11): truy hồi lại MỘT lần bằng câu đã viết lại (Retriever.retrieve — lớp cắt)
     ("b11_slots.py", "llm.complete"): 1,  # 3g DỪNG 2: b11_clarify_question
     ("b11_slots.py", "directory.call"): 1,  # 3g DỪNG 2: validate_targets (2 tool song song, một điểm gọi)
     ("b11_slots.py", "rag.procedure_available"): 1,  # Phase 4 S0-P10: căn cứ quy trình (Retriever.procedure_available)
@@ -246,7 +247,7 @@ def _node_call_sites() -> dict[tuple[str, str], int]:
 
 def test_p7_node_external_call_sites_are_registered() -> None:
     found = _node_call_sites()
-    assert sum(found.values()) >= 17  # 3.9: danh sách không rỗng (3f: 8 → 3g DỪNG 1: 11 → DỪNG 2: 14; trước 4b: 16 → 4b: 17)
+    assert sum(found.values()) >= 17  # 3.9: danh sách không rỗng (3f: 8 → 3g DỪNG 1: 11 → DỪNG 2: 14; trước 4b: 16 → 4b: 17 → D-80: 19)
     assert found == NODE_CALL_SITES
 
 

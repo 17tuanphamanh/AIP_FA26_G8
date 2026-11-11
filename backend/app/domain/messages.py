@@ -143,6 +143,20 @@ RESULT_ACTIONS: Final = frozenset({
 })  # có mẫu ở `result_text` — T24 P4: đủ 9  # fmt: skip
 # T24 bảng 7.3 / 7.4: `{loại}` của tài khoản (enum `account_type`)
 ACCOUNT_TYPE_TEXT: Final[Mapping[str, str]] = {"ad": "đăng nhập (AD)", "email": "email", "erp": "ERP"}
+# Chấm thử 11/11: tin kết quả từng in khoá chuẩn hoá ("Đã cài adobe-acrobat-pro"). Tên hiển thị là HẰNG trong mã, chép từ danh mục
+# phần mềm của mock (`mock_services/seed.json`, `display_name`) — KHÔNG đọc tên do hệ thống ngoài trả về lúc chạy (Q-T24-7 giữ nguyên).
+# Khoá ngoài bảng → in khoá chuẩn hoá như cũ.
+SOFTWARE_LABELS: Final[Mapping[str, str]] = {
+    "zoom": "Zoom", "vscode": "Visual Studio Code", "7zip": "7-Zip", "ms-office": "Microsoft Office",
+    "adobe-acrobat-pro": "Adobe Acrobat Pro", "ms-project": "Microsoft Project", "autocad": "AutoCAD",
+}  # fmt: skip
+
+
+def software_label(raw: str) -> str:
+    """Khoá chuẩn hoá → tên hiển thị (bảng hằng); khoá hợp mẫu ngoài bảng → giữ khoá; sai mẫu → "phần mềm"."""
+    if not SOFTWARE_NAME.fullmatch(raw):
+        return "phần mềm"
+    return SOFTWARE_LABELS.get(raw, raw)
 PERMISSION_LEVELS: Final = frozenset({"read", "write", "full"})
 MAX_PERMISSION_ROWS: Final = 10
 ASK_CONFIRM_LOGIN: Final = "Bạn đăng nhập thử rồi xác nhận giúp mình nhé."
@@ -271,8 +285,8 @@ def _new_action_text(
     if action.type == "unlock_account":
         return f"Đã mở khoá {account}. {confirm_login}"
     if action.type == "install_software":
-        raw_software = str(p.get("software_name", ""))  # Q-T24-7: tên đã chuẩn hoá của Action, KHÔNG lấy tên hệ thống ngoài trả về
-        software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
+        # Q-T24-7: tên đã chuẩn hoá của Action, KHÔNG lấy tên hệ thống ngoài trả về; hiển thị qua bảng hằng (chấm thử 11/11)
+        software = software_label(str(p.get("software_name", "")))
         version = _out(outputs, "version")
         device_id = str(p.get("device_id", ""))
         device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
@@ -352,6 +366,16 @@ def device_not_found_question(device_id: str) -> str:
             "giúp mình.")  # fmt: skip
 
 
+def not_locked_question(account_type: str | None) -> str:
+    """D-81 (chấm thử 11/11, T4): người dùng xin mở khoá tài khoản CỦA CHÍNH MÌNH mà tool báo tài khoản KHÔNG bị khoá → B11 hỏi câu CỐ
+    ĐỊNH này thay vì dựng hành động (trước: B14 → phiếu duyệt → người duyệt duyệt → thực thi lỗi E6). Loại tài khoản qua
+    `ACCOUNT_TYPE_TEXT` (giá trị lạ → bỏ cụm). Không LLM."""
+    kind = ACCOUNT_TYPE_TEXT.get(account_type or "")
+    account = f"tài khoản {kind} của bạn" if kind else "tài khoản của bạn"
+    return (f"Mình đã kiểm tra: {account} hiện không bị khoá nên không cần mở khoá. Nếu bạn quên mật khẩu, mình có thể đặt lại "
+            "mật khẩu giúp bạn. Bạn cần mình đặt lại mật khẩu, hay đang gặp lỗi khác?")  # fmt: skip
+
+
 def result_msg(text: str, ref: str | None) -> Msg:
     return {"role": "assistant", "kind": "result", "text": text, "ref": ref, "needs": "confirm"}
 
@@ -381,6 +405,14 @@ ACTION_LABELS: Final[Mapping[str, str]] = {
 }
 
 
+def action_on(label: str, phrase: str) -> str:
+    """Chấm thử 11/11 (T4): "mở khoá tài khoản" + "tài khoản của bạn" từng ra "mở khoá tài khoản cho tài khoản của bạn". Nhãn kết thúc
+    bằng "tài khoản" mà cụm đích bắt đầu bằng "tài khoản" → ghép thẳng ("mở khoá tài khoản của bạn"); còn lại "<nhãn> cho <đích>"."""
+    if label.endswith(" tài khoản") and phrase.startswith("tài khoản"):
+        return f"{label.removesuffix(' tài khoản')} {phrase}"
+    return f"{label} cho {phrase}"
+
+
 def target_phrase(action: Action, requester_id: str) -> str:
     """T20a P11: cụm chỉ đích của hành động cho tin từ chối, theo tiền tố `action.target`. `device:<id>` → "máy <id>" (sai mẫu →
     "máy của bạn" — giữ chữ VPN cũ); `user:<id>` → "tài khoản của bạn" (id == người gửi) / "tài khoản <id>" (sai mẫu → "tài khoản
@@ -404,7 +436,7 @@ def rejection_text(action_type: str, target_phrase: str, reason_code: str | None
     if label is None or not target_phrase:
         head = "Yêu cầu của bạn chưa được duyệt."
     else:
-        head = f"Yêu cầu {label} cho {target_phrase} chưa được duyệt."
+        head = f"Yêu cầu {action_on(label, target_phrase)} chưa được duyệt."
     reason = REASON_LABELS.get(reason_code, NO_REASON) if reason_code is not None else NO_REASON
     text = f"{head} Lý do: {reason}."
     return text if note is None else f"{text} Ghi chú của người duyệt: {note}"
@@ -508,7 +540,7 @@ APPROVAL_PENDING_TAIL: Final = (
 def approval_pending_text(action_type: str, target_phrase: str) -> str:
     """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa)."""
     label = ACTION_LABELS.get(action_type)
-    head = f"Yêu cầu {label} cho {target_phrase}" if label is not None and target_phrase else "Yêu cầu của bạn"
+    head = f"Yêu cầu {action_on(label, target_phrase)}" if label is not None and target_phrase else "Yêu cầu của bạn"
     return f"{head} {APPROVAL_PENDING_TAIL}"
 
 
@@ -523,8 +555,7 @@ def approval_pending_msg(text: str, ref: str | None) -> Msg:
 
 def already_installed_text(action: Action, outputs: Mapping[str, str]) -> str:
     p = action.params
-    raw_software = str(p.get("software_name", ""))
-    software = raw_software if SOFTWARE_NAME.fullmatch(raw_software) else "phần mềm"
+    software = software_label(str(p.get("software_name", "")))
     device_id = str(p.get("device_id", ""))
     device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
     version = _out(outputs, "version")

@@ -6637,6 +6637,27 @@ TA 11/11 16:33: "hoàn thiện hết luôn" → làm Q7 (trước dời "sau dem
 - Deploy: `make up` tự `alembic upgrade head` → 0016 trên DB demo (dữ liệu cũ hợp lệ: trigger chỉ chặn ĐỔI final_state đã có).
 - Chưa có test riêng cho nhánh `ChildOps` (con đã dọn — không tới được theo luồng thật, job chỉ dọn khi cả họ đã đóng).
 
+## Chấm thử hệ thống thật + sửa sau chấm (11/11/2026, nhánh `cham-1111-sua`, nền `main` `eb4457e`) — D-80, D-81
+
+Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 39 ca dễ → rất khó + 8 câu dò P1–P8) qua API như người dùng thật
+(đăng nhập, gửi, xác nhận, duyệt bằng tài khoản L1/L2). Kết quả chi tiết ở tài liệu chấm (Project `claude/`). Sửa ở nhánh này:
+
+- **D-80** viết lại câu hỏi để truy hồi lại một lần khi điểm B9 dưới ngưỡng (`b09_rewrite_query` v1, cờ `ENABLE_QUERY_REWRITE`, mặc
+  định bật; `NodeDeps`/harness mặc định tắt). Cùng ngưỡng; lỗi lần viết lại giữ E3. 37 preset `config/scripted/*` thêm khoá
+  `b09_rewrite_query`. Test `test_d80_rewrite_query.py` 8 ca; đổi mã M1 (bỏ điều kiện cờ), M2 (bỏ áp ngưỡng lần 2), M3 (gửi câu viết
+  lại cho `b10_answer`), M4 (lỗi LLM → E2) đều bị bắt. Bảng prompt/vai/điểm gọi cập nhật CÓ CHỦ ĐÍCH: `test_llm_prompts` (9 file),
+  `test_llm_chat_roles`, `test_chain_t20a` (9 prompt), `test_b11_clarify_v4` (`trim_vars`), `test_turn_budget` (`NODE_CALL_SITES` +2).
+- Tin E3/E4 bản `it_help` (D-76): câu phạm vi thêm "hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook" (trước đó bot nói
+  phạm vi chỉ gồm VPN/tài khoản/phần mềm/quyền dù vừa trả lời được câu máy in). Test `test_messages_scope`, `test_q13c_bot_lap`,
+  `test_s0_grounding` đổi theo.
+- **D-81** (ca T4): xin mở khoá tài khoản CỦA CHÍNH MÌNH mà tài khoản không bị khoá → B11 hỏi câu cố định (đề nghị đặt lại mật khẩu),
+  không dựng hành động (trước: phiếu duyệt → duyệt → thực thi lỗi E6). Kèm câu chữ: không lặp "tài khoản cho tài khoản"
+  (`action_on`), tên phần mềm hiển thị qua bảng hằng `SOFTWARE_LABELS` ("Đã cài Zoom"). Test `test_d81_unlock_not_locked.py` 16 ca
+  (bỏ từng điều kiện đều đỏ); `test_install_already.py` +2; `test_target_phrase`, `test_messages_t24`, `gate5.py` đổi chuỗi kỳ vọng.
+- Chưa sửa (ghi cho báo cáo): T3 "cài lại Office bị lỗi" ra E5 `llm_high_risk` (B14 thận trọng — lõi, không đổi); thông báo trùng hiện
+  mã ticket đầy đủ (là mã thật, giữ).
+- Unit toàn bộ xanh, `make lint` xanh. Integration/e2e chạy ở CI.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

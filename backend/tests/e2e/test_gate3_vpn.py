@@ -93,7 +93,8 @@ def _msgs(v: Mapping[str, Any], kind: str) -> list[dict[str, Any]]:
 
 
 def _user_message(code: str) -> str:
-    return get_escalation_templates().of(code).user_message
+    """Harness chạy với `ENABLE_IT_HELP` bật (mặc định) → mã có khai `user_message_it_help` (E1/E3/E4, chấm thử 11/11) dùng biến thể đó."""
+    return get_escalation_templates().of(code).user_message_for(None, it_help=True)
 
 
 # ---- Đợt 1 (demo thứ Sáu): h1, h2, h4, h6, h11 ------------------------------------------------------------------------

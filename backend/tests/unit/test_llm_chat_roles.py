@@ -55,10 +55,11 @@ CHAT_PROMPT_ROLES = {
     "b11_clarify_question": "chat_fast",
     "b11_extract_slots": "chat_fast",
     "b10_answer": "chat_strong",
+    "b09_rewrite_query": "chat_fast",  # D-80 (11/11): viết lại câu hỏi để truy hồi — prompt hội thoại, cùng vai B10 need_type
 }
 PINNED: dict[str, Role] = {"b02_injection_judge": "fast", "b14_risk_estimate": "strong", "b14_risk_vote": "strong"}
 DECLARED: dict[str, Role] = {"b03_classify": "fast", "b10_need_type": "fast", "b11_clarify_question": "fast", "b11_extract_slots": "fast",
-            "b10_answer": "strong", **PINNED}  # fmt: skip
+            "b10_answer": "strong", "b09_rewrite_query": "fast", **PINNED}  # fmt: skip
 BASE_MODEL = {"fast": "m-fast", "strong": "m-strong"}
 
 REAL = {"fast_model": "m-fast", "strong_model": "m-strong", "llm_base_url": "http://llm.test/v1",
@@ -357,6 +358,7 @@ OK_REPLY: dict[str, dict[str, Any]] = {
     "b02_injection_judge": {"is_attack": False, "category": "none", "reason": "bình thường"},
     "b03_classify": {"intents": [], "is_multi": False},
     "b10_need_type": {"type": "info", "confidence": 0.9},
+    "b09_rewrite_query": {"query": "Cách kết nối Wi-Fi công ty?"},
     "b10_answer": {"answer_markdown": "Không đủ căn cứ.", "citations": [], "cannot_answer": True},
     "b11_clarify_question": {"text": "Bạn dùng máy nào?"},
     "b11_extract_slots": {"slots": {}, "off_topic": False},
@@ -486,7 +488,7 @@ async def test_chat_strong_never_falls_back_even_if_a_chain_is_built_by_hand() -
 
 LONG = (("VPN báo lỗi 809 trên máy LAP-0342 ở nhà " * 120)[:4000]).rstrip()  # 4000 ký tự = TEXT_MAX
 TEXT_VAR = {"b03_classify": "redacted_request", "b10_need_type": "text", "b11_clarify_question": "user_request",
-            "b11_extract_slots": "text", "b10_answer": "question"}  # fmt: skip
+            "b11_extract_slots": "text", "b10_answer": "question", "b09_rewrite_query": "question"}  # fmt: skip
 OLD_BUDGET = {"fast": 2000, "strong": 6000}  # trần TRƯỚC lô này của vai file khai
 
 

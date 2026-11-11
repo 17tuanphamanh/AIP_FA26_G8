@@ -425,7 +425,7 @@ async def test_s13_graph_no_procedure_zero_writes_zero_approvals_handoff() -> No
     assert "Hành động dự kiến: renew_vpn_cert → device:LAP-0342." in done
     assert BELOW in done  # S0-A1: điểm truy hồi 0,047 < ngưỡng
     [msg] = [m for m in v["conversation"] if m.get("kind") == "escalation"]
-    assert msg["text"] == get_escalation_templates().of("E3").user_message  # mẫu tin E3 không đổi
+    assert msg["text"] == get_escalation_templates().of("E3").user_message_for(None, it_help=True)  # mẫu E3 (bản it_help, 11/11)
 
 
 @pytest.mark.asyncio

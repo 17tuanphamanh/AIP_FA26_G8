@@ -41,6 +41,7 @@ x-backend-env: &backend-env
   ENABLE_PROACTIVE_DIAGNOSIS: ${ENABLE_PROACTIVE_DIAGNOSIS:-true}
   ENABLE_IT_HELP: ${ENABLE_IT_HELP:-true}  # D-76: tắt → it_help như out_of_scope (phương án lùi)
   ENABLE_KB_FOLLOWUP: ${ENABLE_KB_FOLLOWUP:-true}  # D-78: tắt → "Chưa ổn" sau câu trả lời KB ra E8 như cũ (phương án lùi)
+  ENABLE_QUERY_REWRITE: ${ENABLE_QUERY_REWRITE:-true}  # D-80: tắt → câu hỏi dưới ngưỡng ra E3 ngay như cũ (phương án lùi)
   ENABLE_SESSION_MEMORY: ${ENABLE_SESSION_MEMORY:-true}  # D-79: tắt → không "hỏi tiếp" sau khi ticket kết thúc (phương án lùi)
   STRATEGY: ${STRATEGY:-hybrid}
   LLM_CACHE_MODE: ${LLM_CACHE_MODE:-default}

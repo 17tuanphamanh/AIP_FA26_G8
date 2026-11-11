@@ -27,6 +27,7 @@ Mỗi tính năng thêm sau bản đo có một cờ; đặt `false` là quay v�
 | `ENABLE_IT_HELP` | D-76 — câu hỏi IT chung (máy in, Wi-Fi, Outlook…) trả lời từ KB `general` | coi như ngoài phạm vi (E1) |
 | `ENABLE_KB_FOLLOWUP` | D-78 — "Chưa ổn" + ghi chú sau câu trả lời KB → hỏi tiếp tối đa 2 vòng trong cùng ticket | E8 như bản đo |
 | `ENABLE_SESSION_MEMORY` | D-79 — "Hỏi tiếp về yêu cầu này" trên ticket đã kết thúc → ticket mới mang gợi ý loại việc trước | không có ô hỏi tiếp |
+| `ENABLE_QUERY_REWRITE` | D-80 — câu hỏi gõ không dấu / viết tắt / có lời chào mà điểm truy hồi dưới ngưỡng → viết lại câu, truy hồi lại một lần (cùng ngưỡng) | chuyển kỹ thuật viên (E3) như bản đo |
 
 ## Dựng môi trường
 

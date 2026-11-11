@@ -9,6 +9,8 @@ b03_classify:
     - {type: software, confidence: 0.92, span: "cài luôn Adobe Acrobat Pro", action_hint: install_software, slots: {software_name: Adobe Acrobat Pro}}
   is_multi: true
 b10_need_type: {type: info, confidence: 0.5}
+# D-80: chỉ gọi khi điểm B9 dưới ngưỡng; câu viết lại KHÔNG thêm ý mới (ca E3 vẫn E3).
+b09_rewrite_query: {query: "preset tc12r — câu viết lại an toàn"}
 b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
 b11_clarify_question: {text: "Bạn cho mình biết thêm thông tin về yêu cầu này nhé."}
 b11_extract_slots: {slots: {}, off_topic: true}
