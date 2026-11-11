@@ -67,7 +67,7 @@ _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("negate", r"\b(?:thoi khoi|khoi can|khong muon)\s+(?:\S+\s+)?(?:mo khoa|gia han|cap lai|cai dat|cai|dat lai|reset)\b"),
     ("cancel", r"\b(?:huy|thoi)\s+(?:yeu cau|ticket|phieu)\b"),
 )  # fmt: skip
-_UNINSTALL_ACCENTED: Final = rf"{_NOT_PAST}\b(?:gỡ bỏ|gỡ cài đặt|gỡ|uninstall|remove|xoá|xóa)\b(?!\s*(?:lỗi|rối|khoá|khóa))"
+_UNINSTALL_ACCENTED: Final = rf"{_NOT_PAST}\b(?:gỡ bỏ|gỡ cài đặt|gỡ|uninstall|remove|xoá|xóa)\b(?!\s*(?:lỗi|rối|khoá|khóa|cache|bộ nhớ đệm|file tạm|tệp tạm|lịch sử))"
 _UNINSTALL_FOLDED: Final = rf"{fold(_NOT_PAST)}\b(?:go bo|go cai dat|go phan mem|go ung dung|uninstall|remove)\b"
 
 _RES: Final = tuple((k, re.compile(p)) for k, p in _ACCENTED)

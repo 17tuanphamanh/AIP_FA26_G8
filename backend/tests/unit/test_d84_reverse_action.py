@@ -59,6 +59,7 @@ NEGATIVE = [
     ("Máy LAP-0342 của mình bị mất sạc, công ty có cấp lại không?", "vpn"),
     ("laptop em bị mất chuột với tai nghe", "software"),
     ("may tinh em bi mat sac roi", "vpn"),
+    ("xoá cache Teams rồi cài lại Teams giúp em", "software"),
 ]  # fmt: skip
 
 
