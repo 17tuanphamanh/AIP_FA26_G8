@@ -290,6 +290,7 @@ async def _open(
         slots=get_slots(), action_metadata=get_action_metadata().root,
         enabled_intents=frozenset(settings.enabled_intents), dedup=get_dedup(),  # M1: sai config/dedup.yaml → không khởi động
         enable_proactive_diagnosis=settings.enable_proactive_diagnosis, enable_it_help=settings.enable_it_help,
+        enable_kb_followup=settings.enable_kb_followup,
         grounding_gate_actions=settings.grounding_gate_actions, commit_sha=settings.app_git_sha,
         output_guard=OutputGuard.from_config(settings.config_dir, settings.output_canaries),
         privacy=privacy,

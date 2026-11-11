@@ -14,6 +14,9 @@
 #   như next_for_l2_by_reason; thiếu/lạ → user_message. Khuôn: vì sao (chung — không lộ luật/điểm), ai xử lý, người dùng chờ ở đâu.
 #   E5: câu mặc định + llm_high_risk, policy_deny, approval_target_unverified do ĐP soạn; 6 lý do E5 còn lại là câu ĐỀ XUẤT [chờ ĐP duyệt].
 #   E0 KHÔNG có mục này (không tiết lộ).
+# user_message_repeat (tuỳ chọn, Q13c — 11/11, bản nộp main): ≥ 2 câu THAY user_message khi trong CÙNG phiên đăng nhập đã có ticket khác
+#   kết thúc bằng một mã có mục này (B20 đếm). Lần lặp thứ n dùng câu thứ (n-1) mod số câu — ticket đầu phiên giữ câu đầy đủ. Không nêu lại
+#   câu phạm vi, không thêm hứa hẹn mới; vẫn nói đã chuyển kỹ thuật viên. Câu theo lý do (user_message_by_reason) vẫn ưu tiên. E0 KHÔNG có.
 
 deny_warning: >-
   CẢNH BÁO: KHÔNG thực hiện lại hành động này. L2 chỉ được xác nhận từ chối và đóng, hoặc mở ticket
@@ -36,6 +39,9 @@ codes:
     next_for_l2: >-
       Yêu cầu ngoài phạm vi tự động (hoặc phân loại chưa chắc chắn): xác định loại yêu cầu, xử lý
       thủ công hoặc hướng dẫn người dùng tới đúng kênh.
+    user_message_repeat:
+      - Việc này nằm ngoài những gì mình xử lý tự động được, nên mình đã chuyển kỹ thuật viên hỗ trợ bạn.
+      - Yêu cầu này cần kỹ thuật viên xử lý trực tiếp, mình đã chuyển tiếp cho bạn rồi.
   E2:
     user_message: Hệ thống đang gặp sự cố nên chưa xử lý được yêu cầu của bạn. Kỹ thuật viên sẽ tiếp nhận.
     next_for_l2: >-
@@ -47,6 +53,9 @@ codes:
       Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên.
     next_for_l2: >-
       Không có căn cứ trong KB: trả lời người dùng thủ công và ghi nhận nhu cầu bổ sung tài liệu KB.
+    user_message_repeat:
+      - Tài liệu hướng dẫn của mình chưa có nội dung cho việc này, nên mình đã chuyển kỹ thuật viên hỗ trợ bạn.
+      - Mình chưa tìm được hướng dẫn phù hợp cho trường hợp này, kỹ thuật viên sẽ tiếp nhận yêu cầu của bạn.
   E4:
     user_message: >-
       Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục.
@@ -54,6 +63,9 @@ codes:
     next_for_l2: >-
       Đã hỏi lại tối đa mà vẫn thiếu thông tin (hoặc người dùng không trả lời): liên hệ người dùng để
       lấy thông tin còn thiếu rồi xử lý.
+    user_message_repeat:
+      - Mình vẫn chưa đủ thông tin để làm tiếp, nên đã chuyển kỹ thuật viên hỗ trợ bạn trực tiếp.
+      - Để bạn không phải chờ thêm, mình đã chuyển yêu cầu này cho kỹ thuật viên hỗ trợ trực tiếp.
   E5:
     user_message: >-
       Yêu cầu này cần kỹ thuật viên xem xét trước khi làm. Mình đã chuyển kèm thông tin đã kiểm tra; kết quả sẽ báo bạn tại đây.

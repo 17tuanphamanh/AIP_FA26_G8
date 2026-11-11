@@ -43,7 +43,7 @@ TABLE_7_4 = {
     "b02_injection_judge": ("fast", "bypass", "InjectionJudgeOut", {"text"}),
     "b03_classify": ("fast", "default", "ClassifyOut", {"redacted_request", "label_hint"}),  # M3: bỏ recent_messages (v5)
     "b10_need_type": ("fast", "default", "NeedTypeOut", {"text", "evidence_titles"}),
-    "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence"}),
+    "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence", "previous_answer"}),  # Q13a (D-78): v4
     # P6 lời nói (ĐP 08/11, v2): + `previous_reply` ∈ {none, usable, unusable} — enum do node tính, không chữ người dùng
     # Q3 M2 (ĐP 09/11, v3): + `missing_desc` (bảng nhãn slot), `action_label` (nhãn việc hoặc "chưa rõ") — hằng do code dựng
     # Q11 (ĐP 09/11, v4): + `user_request` (= `redacted_request` ĐÃ che, cắt đuôi theo `budget_in` vai fast) và `last_question` (câu B11
@@ -160,7 +160,7 @@ async def node(state, deps):
     await deps.llm.complete("strong", "b10_need_type", {"text": "x", "extra": 1}, AnswerOut)
     await deps.llm.complete("fast", "b11_extract_slots", {"text": "x", "missing": []}, ExtractSlotsOut)
     await deps.llm.complete("fast", "khong_co", {}, QuestionOut)
-    await deps.llm.complete("fast", "b10_answer", dict(question="q", evidence=[]), AnswerOut)
+    await deps.llm.complete("fast", "b10_answer", dict(question="q", evidence=[], previous_answer="(chưa có)"), AnswerOut)
     await deps.llm.complete("fast", "b10_need_type", {"text": "x", "evidence_titles": []}, NeedTypeOut)
 '''
     sites = llm_call_sites(fake, "fake.py")
@@ -224,11 +224,11 @@ def test_prompt_hash_is_sha256_of_file(registry: PromptRegistry, tmp_path: Path)
 
     prompt = registry.get("b10_answer")
     assert prompt.sha256 == hashlib.sha256((PROMPTS / "b10_answer.yaml").read_bytes()).hexdigest()
-    assert prompt.version == "3"  # Q2 M2 (ĐP 09/11): v3 — tối đa 3 bước
+    assert prompt.version == "4"  # Q13a (D-78): v4 — thêm previous_answer (v3 Q2 M2: tối đa 3 bước)
 
 
 @pytest.mark.parametrize(("pid", "version", "role", "schema", "allowed"), [
-    ("b10_answer", "3", "strong", "AnswerOut", ("question", "evidence")),  # Q2 M2: v3, hợp đồng giữ nguyên
+    ("b10_answer", "4", "strong", "AnswerOut", ("question", "evidence", "previous_answer")),  # Q13a (D-78): v4 thêm previous_answer
     ("b10_need_type", "2", "fast", "NeedTypeOut", ("text", "evidence_titles")),
     ("b03_classify", "6", "fast", "ClassifyOut", ("redacted_request", "label_hint")),  # M3: v5 bỏ recent_messages; Q1+Q12: v6
 ])  # fmt: skip
@@ -313,9 +313,9 @@ def _ev(anchor: str, score: float, size: int) -> dict[str, Any]:
 def test_d13_lowest_score_evidence_cut_first(registry: PromptRegistry) -> None:
     prompt = registry.get("b10_answer")
     ev = [_ev("A#0", 0.9, 900), _ev("B#0", 0.5, 900), _ev("C#0", 0.7, 900)]
-    full = render(prompt, {"question": "q", "evidence": ev}, budget_in=100_000)
+    full = render(prompt, {"question": "q", "evidence": ev, "previous_answer": "(chưa có)"}, budget_in=100_000)
     budget = full.est_tokens - 250  # thiếu ~ một khối (900 ký tự ≈ 300 token ước tính)
-    r = render(prompt, {"question": "q", "evidence": ev}, budget_in=budget)
+    r = render(prompt, {"question": "q", "evidence": ev, "previous_answer": "(chưa có)"}, budget_in=budget)
     user = r.messages[1]["content"]
     assert (r.trimmed_evidence, r.est_tokens <= budget) == (1, True)
     assert "[A#0]" in user and "[C#0]" in user and "[B#0]" not in user

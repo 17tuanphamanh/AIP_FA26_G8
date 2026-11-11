@@ -174,13 +174,13 @@ async def test_info_answer_sends_once_sets_confirm_deadline_and_lineage() -> Non
     assert (wait["kind"], wait["deadline"], wait["created_turn"]) == ("confirm", h.clock.now() + timedelta(hours=48),
                                                                       "T1")  # fmt: skip
     [lin] = h.audit.lineage
-    assert lin == {"prompt_id": "b10_answer", "prompt_version": "3", "model": "scripted", "kb_version": KBV,
+    assert lin == {"prompt_id": "b10_answer", "prompt_version": "4", "model": "scripted", "kb_version": KBV,
                    "commit_sha": None,  # Phase 4 P4: NodeDeps.commit_sha (test: None)
                    "ticket_id": "t1", "turn_id": "T1", "step": "B10", "created_at": h.clock.now()}  # fmt: skip
     row = _only(h)
     assert (row["event"], row["to_status"]) == ("deflected_info_only", S_CONFIRMING)
     assert row["detail"]["citation"] == "ok" and row["detail"]["cited"] == [c.chunk_id for c in TOP]
-    assert row["detail"]["prompt"] == "b10_answer@3" and row["detail"]["evidence_truncated"] is False
+    assert row["detail"]["prompt"] == "b10_answer@4" and row["detail"]["evidence_truncated"] is False
     # audit/lineage không mang chữ người dùng hay chữ LLM (3.6)
     blob = repr(h.audit.rows) + repr(h.audit.lineage)
     assert QUESTION not in blob and ANSWER_TEXT not in blob and "Mở ABC Connect" not in blob

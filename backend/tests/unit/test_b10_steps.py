@@ -145,7 +145,7 @@ async def test_three_steps_not_truncated() -> None:
 
 def test_b10_answer_prompt_v3_short_steps_and_voice() -> None:
     prompt = {p.id: p for p in load_prompts(CONFIG / "prompts")}["b10_answer"]
-    assert prompt.spec.version == 3
+    assert prompt.spec.version == 4  # Q13a (D-78): v4 giữ nguyên các quy tắc v3, thêm previous_answer
     system = prompt.spec.system
     assert "TỐI ĐA 3 bước" in system and "cao nhất" in system
     assert '"mình"' in system and '"bạn"' in system
@@ -153,4 +153,4 @@ def test_b10_answer_prompt_v3_short_steps_and_voice() -> None:
         assert banned in system  # nêu đích danh để cấm
     assert "tối đa 8 bước" not in system
     raw = (CONFIG / "prompts" / "b10_answer.yaml").read_text(encoding="utf-8")
-    assert raw.index("# v3") < raw.index("id: b10_answer")  # lý do tăng version ghi đầu file
+    assert raw.index("# v3") < raw.index("# v4") < raw.index("id: b10_answer")  # lý do tăng version ghi đầu file

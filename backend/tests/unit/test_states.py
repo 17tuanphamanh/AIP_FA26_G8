@@ -25,7 +25,7 @@ STATES = [
     "S_RESOLVED", "S_REJECTED", "S_BLOCKED",
 ]  # fmt: skip
 
-# Bảng 2.1 — 27 cặp khác nhau + 2 cặp D-xx (ĐP chốt 09/11, lô Q1: hỏi phân loại) = 29.
+# Bảng 2.1 — 27 cặp khác nhau + 2 cặp D-75 (lô Q1: hỏi phân loại) + 1 cặp D-78 (lô Q13a: hỏi tiếp) = 30.
 EXPECTED_TABLE = {
     ("S_NEW", "S_SCREENING"), ("S_NEW", "S_BLOCKED"),
     ("S_SCREENING", "S_CLASSIFYING"), ("S_SCREENING", "S_BLOCKED"),
@@ -45,6 +45,8 @@ EXPECTED_TABLE = {
     ("S_ESCALATED", "S_RESOLVED"),
     # D-xx (ĐP chốt 09/11, lô Q1): B3 hỏi một câu phân loại; câu trả lời quay lại B2 sàng lọc đầy đủ câu ghép
     ("S_CLASSIFYING", "S_CLARIFYING"), ("S_CLARIFYING", "S_SCREENING"),
+    # D-78 (11/11, lô Q13a): "Chưa ổn" + ghi chú sau câu trả lời KB → quay lại B2 sàng lọc đầy đủ câu ghép
+    ("S_CONFIRMING", "S_SCREENING"),
 }  # fmt: skip
 # Quy tắc 1 — giữ nguyên trạng thái xử lý (phần chưa có trong bảng).
 EXTRA_SELF = {(s, s) for s in [
@@ -112,14 +114,14 @@ def test_constants_match_spec() -> None:
     assert ALL_STATES == set(STATES)
     assert len(ALL_STATES) == 14
     assert TABLE_2_1 == EXPECTED_TABLE
-    assert len(TABLE_2_1) == 29  # 27 + 2 (D-xx lô Q1)
+    assert len(TABLE_2_1) == 30  # 27 + 2 (D-75 lô Q1) + 1 (D-78 lô Q13a)
     assert len(FORBIDDEN) == 6
 
 
 def test_expected_counts() -> None:
-    # 29 bảng (27 + 2 D-xx lô Q1) + 6 quy tắc 1 + 2 quy tắc 2 = 37; ticket cha thêm 5 = 42.
-    assert len(expected_allowed(False)) == 37
-    assert len(expected_allowed(True)) == 42
+    # 30 bảng (27 + 2 D-75 lô Q1 + 1 D-78 lô Q13a) + 6 quy tắc 1 + 2 quy tắc 2 = 38; ticket cha thêm 5 = 43.
+    assert len(expected_allowed(False)) == 38
+    assert len(expected_allowed(True)) == 43
 
 
 @pytest.mark.parametrize("is_parent", [False, True], ids=["thuong", "cha"])

@@ -315,6 +315,8 @@ class NodeDeps:
     enable_proactive_diagnosis: bool = True
     # D-76 (lô Q1+Q12): `Settings.enable_it_help` — B3 (it_help / câu hỏi phân loại), B20 (vế "hướng dẫn…" của tin E1). Mặc định bật như Settings.
     enable_it_help: bool = True
+    # D-78 (lô Q13a): `Settings.enable_kb_followup` — B19 hỏi tiếp sau câu trả lời KB. Mặc định bật như Settings.
+    enable_kb_followup: bool = True
     # Phase 4 S0-P11: `GROUNDING_GATE_ACTIONS` (ablation) — B10 áp B9 cho cả nhánh hành động. Mặc định = Settings (tắt).
     grounding_gate_actions: bool = False
     # Phase 4 P4: `lineage.commit_sha` (B10, B12) = `Settings.app_git_sha` (None = không biết — build từ cây bẩn/test).

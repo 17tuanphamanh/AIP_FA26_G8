@@ -214,6 +214,9 @@ class Settings(BaseSettings):
     # (không slot/roster/plan). Tắt → B3 coi `it_help` như `out_of_scope` (E1 như trước lô) và câu hỏi phân loại / tin E1 bỏ vế "hướng dẫn…"
     # — phương án lùi nếu KB `general` không qua cổng nạp trên máy demo.
     enable_it_help: bool = True
+    # D-78 (11/11, bản nộp main — lô Q13a): "Chưa ổn" + ghi chú sau câu trả lời KB → hỏi tiếp tối đa 2 vòng trong cùng ticket. Tắt →
+    # mọi "Chưa ổn" ra E8 như trước lô (phương án lùi).
+    enable_kb_followup: bool = True
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False
@@ -753,6 +756,9 @@ class CodeTemplate(BaseModel):
     # D-76 (ĐP chốt 09/11, bản demo lo-0811): câu THAY `user_message` khi cờ ENABLE_IT_HELP bật (hiện chỉ E1 khai — thêm vế "và hướng dẫn các
     # sự cố IT thường gặp…"). Câu theo lý do (`user_message_by_reason`) vẫn ưu tiên hơn.
     user_message_it_help: str | None = Field(default=None, min_length=1)
+    # Q13c (11/11, bản nộp main): câu THAY khi trong CÙNG phiên đã có ticket khác kết thúc bằng mã có biến thể (B20 đếm) — bớt lặp câu phạm
+    # vi y nguyên. Lần thứ n (n ≥ 1) dùng `user_message_repeat[(n - 1) % len]`; ticket đầu phiên giữ `user_message`. Không LLM.
+    user_message_repeat: tuple[Annotated[str, Field(min_length=1)], ...] = ()
 
     @model_validator(mode="after")
     def _known_reasons(self) -> "CodeTemplate":
@@ -765,10 +771,14 @@ class CodeTemplate(BaseModel):
     def next_for(self, reason: str | None) -> str:
         return self.next_for_l2_by_reason.get(reason, self.next_for_l2) if reason else self.next_for_l2
 
-    def user_message_for(self, reason: str | None, *, it_help: bool = False) -> str:
-        """Q3 M5: câu theo lý do nếu khai báo; không thì (D-76) `user_message_it_help` khi cờ bật và mã có khai; không thì `user_message`."""
-        default = self.user_message_it_help if it_help and self.user_message_it_help else self.user_message
-        return self.user_message_by_reason.get(reason, default) if reason else default
+    def user_message_for(self, reason: str | None, *, it_help: bool = False, repeat: int = 0) -> str:
+        """Q3 M5: câu theo lý do nếu khai báo; không thì (Q13c) biến thể lần lặp `repeat` ≥ 1 nếu mã có khai; không thì (D-76)
+        `user_message_it_help` khi cờ bật và mã có khai; không thì `user_message`."""
+        if reason and reason in self.user_message_by_reason:
+            return self.user_message_by_reason[reason]
+        if repeat > 0 and self.user_message_repeat:
+            return self.user_message_repeat[(repeat - 1) % len(self.user_message_repeat)]
+        return self.user_message_it_help if it_help and self.user_message_it_help else self.user_message
 
 
 class EscalationTemplates(BaseModel):
@@ -783,6 +793,11 @@ class EscalationTemplates(BaseModel):
         if missing:
             raise ValueError(f"escalation_templates thiếu mã: {missing}")
         return self
+
+    @property
+    def repeat_codes(self) -> tuple[str, ...]:
+        """Q13c: các mã có biến thể lặp — B20 đếm ticket cùng phiên kết thúc bằng một trong các mã này."""
+        return tuple(sorted(c.value for c, t in self.codes.items() if t.user_message_repeat))
 
     def of(self, code: str) -> CodeTemplate:
         return self.codes[ExitCode(code)]

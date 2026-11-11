@@ -6562,6 +6562,34 @@ khoá lạ; notice con bước B15 CHỈ là tin "chờ duyệt"); FE khối `re
 **(c) Câu B15 — ĐÃ SỬA ở `79e5bff` (c3):** `APPROVAL_PENDING_TAIL` bỏ chữ "ngay" ("…có kết quả mình báo bạn tại đây.") vì giới hạn Đ3. Câu cũ có
 đúng 3 chỗ trong repo (`domain/messages.py`, `unit/test_b15_approval_pending.py` dòng 5 và 31) — đổi cả 3; FE/e2e/gate không ghim câu này.
 
+## Q13a — hỏi tiếp sau câu trả lời KB trong cùng ticket (11/11/2026, nhánh `q13a-hoi-tiep`, nền `main` `52acf02`) — D-78
+
+TA (11/11 12:35) cho tự làm + tự kiểm thử + tự sửa. Hợp đồng ở `docs/spec/build/decisions.md` D-78 và docstring `graph/nodes/confirm_wait.py`.
+
+- B19: "Chưa ổn" + ghi chú (không rỗng sau che L1) trên ticket trả lời KB (`need_type == "info"`, không phải ticket con, cờ
+  `ENABLE_KB_FOLLOWUP` bật, < 2 vòng) → câu ghép (gốc + tiền tố cố định + ghi chú) → `S_CONFIRMING → S_SCREENING` → B2 sàng lọc đầy đủ →
+  đi lại trọn đường. Vòng 3 → E8 như cũ (audit `followup_rounds`). `reasoning_loops` đặt lại 0 mỗi vòng.
+- `b10_answer` v4: biến `previous_answer` (`trim_vars`), không lặp bước đã đưa; hết bước mới → `cannot_answer` (E3).
+- Cờ mới `ENABLE_KB_FOLLOWUP` (settings, NodeDeps, wiring, docker-compose, `.env.example`) — tắt = E8 như trước lô.
+- FE: placeholder ô ghi chú khi chờ xác nhận gợi ý ghi đã thử gì (không đổi nhãn, không đổi luồng).
+- Test viết trước `backend/tests/unit/test_q13a_hoi_tiep.py` (18 ca; đỏ khi chưa có code — ImportError). Mutation (6): bỏ giới hạn vòng,
+  cho nhánh hành động, bỏ cờ, đi thẳng B3 bỏ B2, `previous_answer` luôn rỗng, cho ticket con hỏi tiếp → đều đỏ.
+- Test sửa (giữ ý định): `test_states` (bảng 30 cặp, 38/43 cặp hợp lệ), các test gọi `b10_answer` thêm `previous_answer`, version 3 → 4
+  (`test_llm_prompts`, `test_b10_steps`, `test_b10_route`), `test_b11_clarify_v4` (prompt có `trim_vars`).
+- Kiểm: unit toàn bộ xanh; ruff, mypy app + tests, lint-imports xanh; FE typecheck/lint/check:style + 1283 test xanh.
+- Chưa: chạy với LLM thật (máy demo sau deploy); ticket con chưa áp dụng (giới hạn ghi ở D-78).
+
+## Q13c — bớt lặp câu cố định E1/E3/E4 trong cùng phiên (11/11/2026, nhánh `q13a-hoi-tiep`, commit thứ hai)
+
+- `config/escalation_templates.yaml`: E1, E3, E4 thêm `user_message_repeat` (2 câu mỗi mã; không nêu lại câu phạm vi, vẫn báo đã chuyển kỹ
+  thuật viên, không hứa thêm). `CodeTemplate.user_message_for(reason, *, it_help, repeat)`: câu theo lý do vẫn ưu tiên; `repeat ≥ 1` →
+  biến thể xoay vòng; còn lại như cũ. `EscalationTemplates.repeat_codes` = mã có biến thể.
+- B20: `repeat` = `TicketStore.session_exit_count(session_id, repeat_codes, exclude=ticket)` — ticket KHÁC cùng phiên đăng nhập đã kết thúc
+  bằng E1/E3/E4. Ticket đầu phiên giữ câu đầy đủ. Đọc lỗi → 0 (câu đầy đủ), escalation vẫn tạo. E0 không có biến thể (không tiết lộ).
+- Test viết trước `test_q13c_bot_lap.py` (8 ca); PG `test_b20_pg.py::test_q13c_session_exit_count_sql` (CI chạy). `test_messages_scope`:
+  3 ticket nay ở 3 harness riêng (mỗi ticket đầu phiên) — ý định "E1/E3/E4 nêu phạm vi" giữ nguyên.
+- Mutation (5): repeat luôn 0, fake không lọc phiên, bỏ try/except, lý do mất ưu tiên, không xoay vòng → đều đỏ. Unit toàn bộ xanh.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

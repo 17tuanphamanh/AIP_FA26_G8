@@ -121,7 +121,7 @@ CALLS: list[tuple[str, str, dict[str, Any]]] = [
     ("fast", "b02_injection_judge", {"text": "VPN báo lỗi chứng chỉ trên LAP-0342"}),
     ("fast", "b03_classify", {"redacted_request": "Gia hạn chứng chỉ VPN cho máy LAP-0342", "label_hint": None}),
     ("fast", "b10_need_type", {"text": "gia hạn giúp", "evidence_titles": ["Gia hạn chứng chỉ"]}),
-    ("strong", "b10_answer", {"question": "gia hạn thế nào", "evidence": EVIDENCE}),
+    ("strong", "b10_answer", {"question": "gia hạn thế nào", "evidence": EVIDENCE, "previous_answer": "(chưa có)"}),
     ("fast", "b11_clarify_question", {"missing": ["device_id"], "diagnostics_summary": "", "intent": "vpn",
                                       "previous_reply": "none", "missing_desc": "- mã máy: mã in trên tem dán ở máy tính (ví dụ: LAP-1234)", "action_label": "chưa rõ", "user_request": "VPN báo lỗi 809", "last_question": "(chưa có)",}),
     ("fast", "b11_extract_slots", {"text": "máy em là PC-0977", "missing": ["device_id"], "intent": "vpn",
@@ -157,7 +157,7 @@ async def test_d18_vpn_scripts_info_flow_and_overrides() -> None:
     classify, _ = await gw.client.complete("fast", "b03_classify", {"redacted_request": "VPN không vào được",
                                            "label_hint": None}, ClassifyOut)  # fmt: skip
     assert classify.intents[0].slots == {} and classify.intents[0].action_hint is None  # TC06: không có mã máy
-    no_ev, _ = await gw.client.complete("strong", "b10_answer", {"question": "x", "evidence": []}, AnswerOut)
+    no_ev, _ = await gw.client.complete("strong", "b10_answer", {"question": "x", "evidence": [], "previous_answer": "(chưa có)"}, AnswerOut)
     assert no_ev.cannot_answer and no_ev.citations == []
     scripts = vpn_scripts(b10_need_type=[])
     assert scripts["b10_need_type"] == []  # ghi đè theo prompt

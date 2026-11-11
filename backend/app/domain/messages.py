@@ -99,6 +99,22 @@ def last_question(state: Any) -> str:
     return ""
 
 
+# ---- Q13a (D-78, 11/11, bản nộp main): hỏi tiếp sau câu trả lời KB trong CÙNG ticket ------------------------------------------------
+# Ghi chú "Chưa ổn" của người dùng ghép sau câu gốc với tiền tố CỐ ĐỊNH (không LLM) để B2/B3/B10 hiểu đây là phản hồi sau hướng dẫn.
+FOLLOWUP_MAX_ROUNDS: Final = 2
+FOLLOWUP_PREFIX: Final = "Đã làm theo hướng dẫn nhưng chưa ổn: "
+NO_PREVIOUS_ANSWER: Final = "(chưa có)"
+
+
+def last_answer(state: Any) -> str:
+    """Chữ của tin `answer` CUỐI trong `conversation` — đúng câu trả lời KB đã gửi người dùng (B10 chỉ ghi tin sau output guard). Không có →
+    "". Dùng cho biến `previous_answer` của `b10_answer` ở vòng hỏi tiếp (Q13a) — câu bot, không phải chữ người dùng."""
+    for msg in reversed(list(state.get("conversation") or [])):
+        if msg.get("role") == "assistant" and msg.get("kind") == "answer":
+            return str(msg.get("text") or "")
+    return ""
+
+
 def user_msg(redacted_text: str) -> Msg:
     return {"role": "user", "text": redacted_text}
 

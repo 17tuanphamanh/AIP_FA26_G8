@@ -38,7 +38,7 @@ WAITING: Final = frozenset({S_CLARIFYING, S_PENDING_APPROVAL, S_CONFIRMING})
 
 type Transition = tuple[str, str]
 
-# Bảng 2.1 [Chốt] — 31 dòng, 27 cặp khác nhau (nhiều dòng chỉ khác sự kiện) + 2 cặp D-75 (lô Q1) = 29 cặp.
+# Bảng 2.1 [Chốt] — 31 dòng, 27 cặp khác nhau (nhiều dòng chỉ khác sự kiện) + 2 cặp D-75 (lô Q1) + 1 cặp D-78 (lô Q13a) = 30 cặp.
 TABLE_2_1: Final[frozenset[Transition]] = frozenset({
     (S_NEW, S_SCREENING),                 # B1 xác thực thành công
     (S_NEW, S_BLOCKED),                   # B1 invalid_credentials / repeated_auth_failure
@@ -71,6 +71,9 @@ TABLE_2_1: Final[frozenset[Transition]] = frozenset({
     # sàng lọc ĐẦY ĐỦ câu ghép. 6 chuyển cấm không đổi (F5 vẫn chỉ cho B2 ra S_CLASSIFYING / S_BLOCKED / S_ESCALATED).
     (S_CLASSIFYING, S_CLARIFYING),        # B3 hỏi phân loại (`triage_asked`)
     (S_CLARIFYING, S_SCREENING),          # trả lời câu hỏi phân loại → B2 (`triage_reply`)
+    # D-78 (11/11, bản nộp main — lô Q13a): "Chưa ổn" + ghi chú sau câu trả lời KB → ghi chú ghép vào câu gốc, quay lại B2 sàng lọc
+    # ĐẦY ĐỦ (tối đa 2 vòng/ticket). F5 không đổi: B2 vẫn chỉ ra S_CLASSIFYING / S_BLOCKED / S_ESCALATED.
+    (S_CONFIRMING, S_SCREENING),          # B19 hỏi tiếp sau câu trả lời KB (`followup_reply`)
 })  # fmt: skip
 
 # D-20: chỉ thêm khi cờ REDIAGNOSE_ON_NEW_SLOT bật (mặc định tắt).

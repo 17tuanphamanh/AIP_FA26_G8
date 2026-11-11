@@ -30,7 +30,7 @@ _ROUTES: Final[dict[str, tuple[str, ...]]] = {
     "b15_prepare_approval": ("approval_wait",),
     "approval_wait": ("b17_execute",),
     "b17_execute": ("confirm_wait",),
-    "confirm_wait": (),
+    "confirm_wait": ("b02_screen",),  # Q13a (D-78): hỏi tiếp sau câu trả lời KB → B2 sàng lọc câu ghép
     "parent_wait": ("parent_wait", "parent_reply_wait"),
     "parent_reply_wait": ("parent_wait",),
 }

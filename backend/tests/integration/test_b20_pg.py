@@ -28,6 +28,7 @@ from tests.integration.graph_pg import (
     create_ticket,
     open_pg_runtime,
     scalar,
+    seed_requester,
     seed_users,
 )
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
@@ -213,6 +214,26 @@ async def test_finalize_once_never_overwrites(rw: AsyncEngine) -> None:
                          "vpn", {"a": 1}, 3, 99, NOW + timedelta(hours=1))  # fmt: skip
     assert await store.finalize_once(ticket, first) == first
     assert await store.finalize_once(ticket, later) == first  # trả dòng đang có, không đè
+
+
+@pytest.mark.asyncio
+async def test_q13c_session_exit_count_sql(rw: AsyncEngine) -> None:
+    """Q13c: đếm ticket KHÁC cùng `session_id`, ĐÃ kết thúc, `exit_code` ∈ codes — không đếm ticket đang mở, phiên khác, mã khác, chính nó."""
+    store = SqlTicketStore(rw)
+    sid, other = (await seed_requester(rw)).session_id, (await seed_requester(rw)).session_id  # FK tickets.session_id → sessions
+    made: dict[str, str] = {}
+    for name, session, code in (("a", sid, "E3"), ("b", sid, "E1"), ("c", sid, "E5"), ("d", other, "E3"), ("open", sid, None),
+                                ("me", sid, "E3")):  # fmt: skip
+        made[name] = await _ticket(rw)
+        async with rw.begin() as conn:
+            await conn.execute(text("UPDATE tickets SET session_id=:s WHERE ticket_id=:t"), {"s": session, "t": made[name]})
+        if code is not None:
+            await store.finalize_once(made[name], FinalSummary("S_ESCALATED", code, None, None, "escalated", None, False,
+                                                               None, None, 1, 1, NOW))  # fmt: skip
+    assert await store.session_exit_count(sid, ("E1", "E3", "E4"), exclude=made["me"]) == 2  # a, b
+    assert await store.session_exit_count(sid, ("E3",), exclude=made["me"]) == 1
+    assert await store.session_exit_count(other, ("E1", "E3", "E4"), exclude=made["me"]) == 1
+    assert await store.session_exit_count(sid, (), exclude=made["me"]) == 0
 
 
 # ---- hàng đợi L2 ------------------------------------------------------------------------------
