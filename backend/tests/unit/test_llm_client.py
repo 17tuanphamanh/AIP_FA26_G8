@@ -53,7 +53,7 @@ NEED = {"text": "làm sao gia hạn chứng chỉ VPN", "evidence_titles": ["Gia
 NEED_OK = {"type": "info", "confidence": 0.9}
 EVIDENCE = [{"anchor_chunk_id": "KB-VPN-003#1", "title": "Gia hạn", "heading_path": "Các bước", "text": "Mở ứng dụng.",
              "score": 0.8}]  # fmt: skip
-ANSWER_VARS = {"question": "gia hạn chứng chỉ VPN thế nào", "evidence": EVIDENCE}
+ANSWER_VARS = {"question": "gia hạn chứng chỉ VPN thế nào", "evidence": EVIDENCE, "previous_answer": "(chưa có)"}  # Q13a: b10_answer v4
 ANSWER_OK = {"answer_markdown": "Mở ứng dụng VPN.", "citations": ["KB-VPN-003#1"]}
 
 

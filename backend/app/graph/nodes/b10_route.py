@@ -27,6 +27,9 @@ guard chạy trên toàn tin. State `need_type="info"` (đã trả lời như in
 D-76 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`) → KHÔNG gọi `b10_need_type`, ép `info` (audit `need_type="info"`,
 `answer_only=true`) → B9 → expand → `b10_answer` như mọi câu trả lời KB; thiếu căn cứ → E3 như cũ. Không bao giờ sang B11.
 
+Q13a (D-78, 11/11): `b10_answer` v4 nhận thêm `previous_answer` (`previous_answer(state)`) — ở vòng hỏi tiếp sau "Chưa ổn" là câu trả lời KB
+đã gửi trước đó, để LLM không lặp bước; lượt thường là "(chưa có)".
+
 Lỗi: `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded` → E2 `llm_unavailable`; hết hạn cả lượt
 (ở LLM hoặc RAG) → E2 `turn_budget_exceeded`, bắt tường minh (`step` hằng). Không `except Exception` — lỗi khác → E9.
 Audit `detail`: chỉ enum, định danh, số đếm — không câu người dùng, không chữ LLM.
@@ -39,7 +42,12 @@ from app.core.turn_budget import TurnBudgetExceeded
 from app.domain.answer import cap_steps, check_citations, render_answer
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
-from app.domain.messages import answer_msg, symptom_intro
+from app.domain.messages import (
+    NO_PREVIOUS_ANSWER,
+    answer_msg,
+    last_answer,
+    symptom_intro,
+)
 from app.domain.states import S_CONFIRMING, S_ESCALATED, S_RETRIEVING
 from app.domain.ticket_state import ChunkRef
 from app.graph import effects
@@ -76,6 +84,14 @@ def symptom_to_info(state: Any) -> bool:
         and facts.get("device_registered") is True
         and facts.get("cert_status") == "valid"
     )
+
+
+def previous_answer(state: Any) -> str:
+    """Q13a (D-78): biến `previous_answer` của `b10_answer` — câu trả lời KB đã gửi ở vòng trước (chỉ khi đang ở vòng hỏi tiếp), còn lại
+    `NO_PREVIOUS_ANSWER`. Là chữ BOT đã qua output guard, không phải chữ người dùng."""
+    if int(state.get("followup_round") or 0) <= 0:
+        return NO_PREVIOUS_ANSWER
+    return last_answer(state) or NO_PREVIOUS_ANSWER
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -156,7 +172,9 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         try:
             ans, meta = await deps.llm.complete(
-                "strong", "b10_answer", {"question": state["redacted_request"], "evidence": evidence}, AnswerOut,
+                "strong", "b10_answer",
+                {"question": state["redacted_request"], "evidence": evidence, "previous_answer": previous_answer(state)},
+                AnswerOut,
                 kb_version=kb_version,
             )  # fmt: skip
         except LLMSchemaError as exc:

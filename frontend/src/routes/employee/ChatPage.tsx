@@ -330,7 +330,8 @@ const SENT_NOTE = "Đã gửi — đang xử lý";
 function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean, approvalExpired = false, parent = false) {
   if (settling) return { enabled: false, label: "Tin nhắn", placeholder: `${SENT_NOTE}…` };
   if (waiting === "clarify") return { enabled: true, label: "Trả lời", placeholder: "Trả lời câu hỏi ở trên…" };
-  if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Nhắn thêm nếu chưa ổn…" };
+  // Q13a (D-78): ghi chú gửi kèm "Chưa ổn" sau câu trả lời KB mở vòng hỏi tiếp (tối đa 2 vòng) — gợi ý người dùng mô tả đã thử gì.
+  if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Chưa ổn? Ghi bạn đã thử gì, lỗi còn thế nào rồi bấm Chưa ổn…" };
   if (waiting === "approval") return { enabled: false, label: "Tin nhắn", placeholder: approvalExpired ? "Đang chuyển kỹ thuật viên" : "Đang chờ IT duyệt" };
   if (waiting === "reply") return { enabled: false, label: "Tin nhắn", placeholder: "Phản hồi trong khung ở trên" };
   return { enabled: false, label: "Tin nhắn", placeholder: `${parent && !view.final_state ? PARENT_PROCESSING : statusLabel(view.status)}…` };

@@ -214,6 +214,9 @@ class Settings(BaseSettings):
     # (không slot/roster/plan). Tắt → B3 coi `it_help` như `out_of_scope` (E1 như trước lô) và câu hỏi phân loại / tin E1 bỏ vế "hướng dẫn…"
     # — phương án lùi nếu KB `general` không qua cổng nạp trên máy demo.
     enable_it_help: bool = True
+    # D-78 (11/11, bản nộp main — lô Q13a): "Chưa ổn" + ghi chú sau câu trả lời KB → hỏi tiếp tối đa 2 vòng trong cùng ticket. Tắt →
+    # mọi "Chưa ổn" ra E8 như trước lô (phương án lùi).
+    enable_kb_followup: bool = True
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False
