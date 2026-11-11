@@ -152,7 +152,10 @@ async def test_b18_real_executor_already_installed_end_to_end(monkeypatch: pytes
 @pytest.mark.parametrize(
     ("raw", "shown"),
     [("zoom", "Zoom"), ("adobe-acrobat-pro", "Adobe Acrobat Pro"), ("vscode", "Visual Studio Code"), ("7zip", "7-Zip"),
-     ("notepad-plus", "notepad-plus"), ("Zoom Pro", "phần mềm"), ("", "phần mềm")],
+     ("notepad-plus", "notepad-plus"), ("Zoom Pro", "phần mềm"), ("", "phần mềm"),
+     # kiểm thử 12/11 (D4 "Đã cài 7-zip"): slot là tên hiển thị chuẩn hoá có dấu nối/chấm → vẫn ra tên đẹp
+     ("7-zip", "7-Zip"), ("vs-code", "Visual Studio Code"), ("ms.office", "Microsoft Office"), ("auto-cad", "AutoCAD"),
+     ("7-zip-pro", "7-zip-pro")],
 )  # fmt: skip
 def test_software_label(raw: str, shown: str) -> None:
     from app.domain.messages import software_label

@@ -71,7 +71,7 @@ export function AuthProvider({ children, client = api, subscribe = subscribeSess
   const signOut = useCallback(async () => {
     const done = await client.logout();
     if (done) {
-      setState({ status: "signedOut" });
+      setState({ status: "signedOut", reason: "logout" });
       onSignedOut?.();
     }
     return done;

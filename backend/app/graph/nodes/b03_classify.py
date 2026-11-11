@@ -6,7 +6,9 @@
    Phase 3 VẪN xuống LLM, chỉ ghi `model_probs`/`model_version` (nhánh model + `cascade_decide`: Phase 5).
 3. LLM fast `b03_classify` (`ClassifyOut`): `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded`
    → E2 `llm_unavailable`; hết hạn cả lượt (ở ml hoặc LLM) → E2 `turn_budget_exceeded`.
-4. Thứ tự kiểm CỐ ĐỊNH (mỗi ca E1 đúng một `reason_detail`): không ý nào trong phạm vi → `out_of_scope` → có ≥ 2 ý (đếm
+4. Thứ tự kiểm CỐ ĐỊNH (mỗi ca E1 đúng một `reason_detail`): không ý nào trong phạm vi → `out_of_scope` → (D-84, 12/11) câu xin
+   thao tác NGƯỢC (thu hồi, khoá, báo mất máy, gỡ cài, đừng làm, huỷ — `domain/reverse_action`) mà có intent ghi → `reverse_action_requested`
+   cả ticket, không tách, không slot → có ≥ 2 ý (đếm
    MỌI ý, kể cả ý ngoài phạm vi — Q-3f-6; câu xã giao không phải ý, prompt v2) → B4/B5 nhiều ý (dưới) → confidence <
    `TAU_INTENT` → `intent_low_confidence` → intent ∉ `ENABLED_INTENTS` → `intent_not_enabled`.
    **Nhiều ý (Phase 5 T20b P2, P3; D-49; phase5 5.2.2–5.2.3):** phán TỪNG ý theo bảng 5.2.2 (`out_of_scope` → `span` rỗng/không
@@ -78,6 +80,7 @@ from app.domain.dedup import duplicate_text, pick_duplicate
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import duplicate_msg, triage_msg, triage_question
+from app.domain.reverse_action import reverse_action_kind
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
 from app.domain.states import S_CLARIFYING, S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
 from app.domain.target import requester_id_of, target_check
@@ -105,6 +108,7 @@ def _point1() -> dict[str, Any]:
         "model_version": None, "prompt": None, "ml_error": None, "llm_error": None, "span_not_in_text": False,
         "other_target_mention": False, "other_target_reason": None, "request_trimmed": False, **audit_dropped({}, frozenset()),
         "follows_ticket": False,  # Q13b (D-79): ticket mở từ "Hỏi tiếp" (có gợi ý loại việc trước) — chỉ cờ, không id/chữ
+        "reverse_action": None,  # D-84: nhãn loại thao tác ngược (lost_device, revoke, lock, negate, cancel, uninstall) — không chữ
     }  # fmt: skip
 
 
@@ -168,6 +172,8 @@ def make(deps: NodeDeps) -> NodeFn:
             return await _ask_triage(state, "no_intent", loops, info)
         if not in_scope:
             return await _out_of_scope(state, loops, info)
+        if (kind := reverse_action_kind(text, {i.type for i in in_scope})) is not None:  # D-84: thao tác ngược → người, không hành động
+            return await _reverse_action(state, kind, loops, info)
         if len(intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — T20b: phán từng ý → B5 tách ticket con
             return await _split(state, intents, text, loops, info)
         it = in_scope[0]
@@ -227,6 +233,15 @@ def make(deps: NodeDeps) -> NodeFn:
         return await goto(
             state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope", audit_detail=info,
             exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="out_of_scope",
+        )  # fmt: skip
+
+    async def _reverse_action(state: Any, kind: str, loops: int, info: dict[str, Any]) -> dict[str, Any]:
+        """D-84: câu xin thu hồi / khoá / báo mất máy / gỡ cài / đừng làm — hệ thống không có thao tác đó; KHÔNG để LLM ánh xạ sang thao
+        tác thuận (cấp lại, cài, gia hạn). Cả ticket (kể cả câu nhiều ý) chuyển L2 — audit chỉ nhãn loại, không chữ người dùng."""
+        info["reverse_action"] = kind
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B4", event="reverse_action_requested", audit_detail=info,
+            exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="reverse_action_requested",
         )  # fmt: skip
 
     async def _low_confidence(state: Any, loops: int, info: dict[str, Any]) -> dict[str, Any]:

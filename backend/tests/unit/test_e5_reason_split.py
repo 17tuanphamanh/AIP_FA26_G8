@@ -122,4 +122,6 @@ def test_templates_reason_keys_validated() -> None:
 
 def test_templates_loaded_by_reason() -> None:
     assert TEMPLATES.of("E5").next_for_l2_by_reason == {"llm_layer_disabled": AI_DOWN_NOTE}
-    assert all(not TEMPLATES.of(c.value).next_for_l2_by_reason for c in ExitCode if c is not ExitCode.E5)
+    # D-84 (12/11): E1 có MỘT câu riêng cho `reverse_action_requested`; mã khác (trừ E5) vẫn không có
+    assert set(TEMPLATES.of("E1").next_for_l2_by_reason) == {"reverse_action_requested"}
+    assert all(not TEMPLATES.of(c.value).next_for_l2_by_reason for c in ExitCode if c not in (ExitCode.E5, ExitCode.E1))

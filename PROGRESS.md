@@ -6671,6 +6671,18 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
 - Ghi chú dữ liệu thử: `em.lv` (nghỉ việc) và `dung.dv` (bị tắt) không đăng nhập được theo seed — đúng thiết kế; kịch bản chấm đổi sang
   tài khoản đang hoạt động.
 
+## Kiểm đêm 11→12/11 trên máy demo (nhánh `sua-cau-rong` → `sua-dem-1211`, nền `main` `d02e07e`)
+
+- Chạy lại 44 ca: trạng thái cuối trùng 44/44 với lần chấm 1b17371. Kiểm thêm hội thoại nhiều lượt (/reply), bơm lỗi giả lập (E7 ghi
+  đúng 1 lần, E2 thử 3 lần, timeout), hết hạn duyệt (E6, duyệt muộn 409), giao diện 5180 (nhân viên → L1 → nhân viên; L2 đóng ca).
+- Hai subagent (TA ra lệnh) đề xuất 60 ca chưa chạy; ĐP kiểm trực tiếp các ca ưu tiên Cao. Sửa (mỗi sửa có test + đột biến đỏ):
+  câu chỉ khoảng trắng/ký tự vô hình (422 ở API + chặn nút Gửi), tự đăng xuất không nhớ trang người trước, 5 đầu vào lạ ra 500
+  (JSON lồng sâu, NUL, con trỏ tràn), hộp "Từ chối" giữ Tab, nhãn "7-zip", **D-84** thao tác ngược → E1, **D-85** phần mềm + mã máy
+  không có → hỏi lại mã. **Đề xuất D-86** (quyền của chính mình đã đủ → không dựng hành động) có code + test nhưng KHÔNG gộp: 13 test
+  kịch bản (chain_m5 c18, chain_t20a g5/g7, t20b) cố ý dùng quyền không hạn của nv001 trên `finance/public-reports` để đo R10/R07 → đổi
+  ý nghĩa bộ kịch bản đo, chờ TA (bản vá: Project `claude/de-xuat-d86.md`).
+- Kế hoạch + danh sách việc cần TA quyết: Project `claude/KE-HOACH-sua-dem-12-11.md`.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -7003,3 +7015,13 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     - Máy dev: colima (4 CPU, 8 GB) + gitleaks cài bằng brew. Makefile tự nhận socket colima và thêm
       `docker-credential-desktop` vào PATH (xem README "Dựng môi trường").
 15. **Ngoại lệ §4 `docs/spec/CLAUDE.md` — bảng thứ 26 `ticket_hidden`** (migration 0014, nhánh `p5-gan-day-menu`): TA/ĐP duyệt 08/11 (người kiểm thử yêu cầu menu ⋯ "Xóa" ở "Gần đây"; chỉ ẩn hiển thị của chính người đó, không đổi dữ liệu nghiệp vụ, không audit). *Giới hạn:* chưa có "bỏ ẩn" (`app_rw` không có DELETE — làm sau bằng migration mới); cửa sổ/tab khác đang mở không tự cập nhật "Gần đây", phải F5.
+16. **[Hỏi TA — 12/11, kiểm đêm] R05 ↔ D-15:** R05 (`config/policy.json`) đòi duyệt khi người hưởng lợi đã nghỉ việc, nhưng B17
+    (`b17_execute.py`, kiểm lại trước khi làm) luôn trả E5 `person_no_longer_valid` cho người đã nghỉ → mọi phiếu R05 được duyệt đều
+    không thực thi được, người duyệt mất công. Hai hướng khác nhau (đổi R05 thành deny, hay để B17 cho phép) → không tự chọn.
+17. **[Hỏi TA — 12/11] Cấp lại chứng chỉ VPN đã bị thu hồi** đang tự làm qua R20 (đặc tả phase3 ~341). Nếu bị thu hồi vì an ninh (mất
+    máy) thì tự cấp lại là ngược. Đề xuất thắt chặt: cấp lại chứng chỉ đã thu hồi phải qua duyệt. Đụng policy → chờ TA.
+18. **[Hỏi TA — 12/11] Ưu tiên L2 của ca báo mất thiết bị (D-84)** đang theo E1 ("Thường"); nên cao hơn.
+19. **[Hỏi TA — 12/11] "Gia hạn" quyền KHÔNG thời hạn** (an.nv `finance/public-reports`) đang tự làm qua R10 và biến quyền vĩnh viễn thành
+    hết hạn sau N ngày (mock đặt hạn = hôm nay + N). Đề xuất D-86 (chặn ở B11) đụng 13 test kịch bản đo R10/R07 → chờ TA chọn: (a) gộp D-86 +
+    đổi kịch bản; (b) chỉ sửa giả lập (gia hạn quyền không hạn = giữ không hạn); (c) để nguyên, ghi giới hạn.
+

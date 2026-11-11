@@ -43,6 +43,7 @@
    B6 tra theo người (có `device_count`) mà máy không có trong danh sách → không kết luận (luồng cũ).
    ĐP 09/11 điểm 1: máy 404 ĐỦ slot (B3 đã gợi ý hành động — bằng chứng (d)) cũng hỏi lại mã như trên, giữ slot `action`, KHÔNG dựng
    Action, không gọi tool. Máy của người khác ở đường đủ slot giữ luồng cũ (`_build` → B12 → chốt P6 ở B15).
+   D-85 (12/11): software cũng hỏi lại mã máy 404 như trên (chỉ nhánh "not_found"; máy của người khác giữ luồng cũ).
 
 8. D-81 (chấm thử 11/11, T4) — trong `_build`, SAU khi tra lại fact theo slot cuối: `unlock_account` cho tài khoản CỦA CHÍNH người gửi
    mà `target_account_locked is False` → KHÔNG dựng Action (không B12/B14/phiếu duyệt): bỏ slot `action`, giữ fact mới, hỏi câu CỐ ĐỊNH
@@ -136,16 +137,23 @@ def diagnostics_summary(state: Any, facts: dict[str, Any]) -> dict[str, Any]:
     return {"facts": dict(facts), "devices": [d["device_id"] for d in devices if d.get("owner_id") == requester]}
 
 
+# D-85 (kiểm thử 12/11: "Cài 7-Zip lên máy LAP-0717" — mã không có — ra E5 "cần kỹ thuật viên xem trực tiếp" thay vì hỏi lại mã như VPN):
+# software dùng chung phần tra máy với VPN (`vpn.device_facts`, TQ-4) nên hỏi lại mã một lần như Q2 M4.
+DEVICE_LOOKUP_INTENTS: Final = frozenset({"vpn", "software"})
+
+
 def device_lookup(state: Any) -> Literal["mine", "other", "not_found"] | None:
     """Q2 M4: kết quả B6 cho ĐÚNG máy trong slot (vpn). None = không kết luận được (không phải vpn, chưa có máy, B6 không tra máy
     này, B6 tra theo người mà máy không trong danh sách). Chỉ đọc dữ liệu tool (`facts`, `diagnostics`) — không đọc câu người dùng."""
     device_id = (state.get("slots") or {}).get("device_id")
     facts = state.get("facts") or {}
-    if state.get("intent") != "vpn" or not device_id or "device_registered" not in facts:
+    if state.get("intent") not in DEVICE_LOOKUP_INTENTS or not device_id or "device_registered" not in facts:
         return None
     listed = (state.get("diagnostics") or {}).get("check_device_registered") or []
     if not any(isinstance(d, dict) and d.get("device_id") == device_id for d in listed):
         return None if "device_count" in facts else "not_found"  # tra theo người: danh sách chỉ có máy của họ
+    if state.get("intent") != "vpn":  # D-85: software chỉ hỏi lại máy 404; máy của người khác giữ luồng cũ (B12/B15)
+        return None
     return "other" if facts.get("device_owner_is_requester") is False else "mine"
 
 

@@ -96,6 +96,7 @@ def test_pending_metric_has_reason() -> None:
 def test_e1_reasons_verbatim_reason_detail() -> None:
     assert E1_REASONS == (
         "out_of_scope", "multi_intent_not_enabled", "intent_low_confidence", "intent_not_enabled", "split_span_invalid",
+        "reverse_action_requested",  # D-84 (12/11): thêm vào CUỐI
     )  # fmt: skip
     assert set(E1_REASONS) <= REASON_DETAILS
     assert "intent_out_of_scope" not in E1_REASONS  # tên event audit B4, không phải reason_detail

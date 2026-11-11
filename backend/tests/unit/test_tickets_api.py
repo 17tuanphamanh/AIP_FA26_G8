@@ -89,7 +89,9 @@ async def test_duration_300s_from_app_clock() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("body", [None, {}, {"text": ""}, {"text": "x", "role": "l1"}, "không phải json"])
+@pytest.mark.parametrize("body", [None, {}, {"text": ""}, {"text": "   "}, {"text": "\n\t "}, {"text": "\u200b\u200b\u00ad"},
+                                  {"text": "x", "role": "l1"}, "không phải json"])
+# kiểm thử 11/11: câu chỉ khoảng trắng / ký tự vô hình (Cf) → 422 (trước: tạo ticket rồi E9)
 async def test_create_invalid_body_422_writes_nothing(body: Any) -> None:
     async with desk_env() as env:
         an = await env.token("an.nv")
@@ -271,7 +273,7 @@ async def test_denied_request_never_calls_guard() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("body", [{"text": ""}, {"text": "x", "extra": 1}, None])
+@pytest.mark.parametrize("body", [{"text": ""}, {"text": "  "}, {"text": "\ufeff\u2060 "}, {"text": "x", "extra": 1}, None])
 async def test_owner_bad_body_422_after_checks(body: Any) -> None:
     async with desk_env(plan=CLARIFY_PLAN) as env:
         an = await env.token("an.nv")
@@ -474,3 +476,53 @@ async def test_g18_other_user_404_does_not_see_conversation() -> None:
         missing = await env.client.get("/api/tickets/khong-co", headers=an)
         assert (other.status_code, other.json()) == (missing.status_code, missing.json()) == (404, NOT_FOUND)
         assert question["text"] not in other.text and "conversation" not in other.text
+
+
+@pytest.mark.asyncio
+async def test_blank_text_rejected_with_field_name() -> None:
+    """Kiểm thử 11/11: câu chỉ khoảng trắng → 422 `fields: ["text"]`, không tạo ticket, không gọi guard."""
+    async with desk_env() as env:
+        an = await env.token("an.nv")
+        r = await env.client.post("/api/tickets", json={"text": " \n "}, headers=an)
+        assert r.status_code == 422 and r.json()["fields"] == ["text"]
+        assert env.h.tickets.rows == {} and env.guard.calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["a", " \u200bVPN\u200b ", "?"])
+async def test_text_with_one_visible_char_is_accepted(text: str) -> None:
+    """Chặn rỗng KHÔNG chặn nhầm: còn một ký tự nhìn thấy (kể cả kèm zero-width) → 202 như trước."""
+    async with desk_env() as env:
+        an = await env.token("an.nv")
+        r = await env.client.post("/api/tickets", json={"text": text}, headers=an)
+        assert r.status_code == 202
+
+
+# ---- kiểm thử 12/11: đầu vào lạ từng ra 500 → nay 422/404, không ghi gì ----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content",
+    ["[" * 20000 + "]" * 20000, '{"text": "x", "follows_ticket_id": ' + "[" * 15000 + "]" * 15000 + "}",
+     '{"text": "VPN l\\u1ed7i\\u0000 abc"}', '{"text\\u0000": "x"}'],
+    ids=["json-long-sau", "truong-long-sau", "nul-trong-chu", "nul-trong-khoa"],
+)  # fmt: skip
+async def test_create_deep_or_nul_body_422_writes_nothing(content: str) -> None:
+    async with desk_env() as env:
+        an = await env.token("an.nv")
+        r = await env.client.post("/api/tickets", headers={**an, "Content-Type": "application/json"}, content=content)
+        assert r.status_code == 422 and r.json()["error"] == "invalid_request"
+        assert env.h.tickets.rows == {} and env.guard.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_nul_in_path_404_and_in_query_422() -> None:
+    async with desk_env() as env:
+        an = await env.token("an.nv")
+        r = await env.client.get("/api/tickets/abc%00def", headers=an)
+        assert (r.status_code, r.json()) == (404, {"detail": "not_found"})
+        q = await env.client.get("/api/tickets?limit=5&after=%00", headers=an)
+        assert (q.status_code, q.json()) == (422, {"error": "invalid_request", "fields": ["query"]})
+        ok = await env.client.get("/api/tickets?limit=5", headers=an)
+        assert ok.status_code == 200

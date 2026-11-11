@@ -62,11 +62,12 @@ def decode_cursor(value: str) -> Cursor:
         if not isinstance(at, str) or not isinstance(ident, str) or not ID_PATTERN.fullmatch(ident):
             raise ValueError("cursor")
         parsed = datetime.fromisoformat(at)
-    except (binascii.Error, KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
+        if parsed.tzinfo is None:
+            raise ValueError("cursor")
+        utc = parsed.astimezone(UTC)  # kiểm thử 12/11: "9999-12-31T23:59:59-14:00" tràn khi đổi sang UTC → OverflowError (từng 500)
+    except (binascii.Error, KeyError, TypeError, ValueError, UnicodeDecodeError, OverflowError) as exc:
         raise ValueError("cursor") from exc
-    if parsed.tzinfo is None:
-        raise ValueError("cursor")
-    return Cursor(parsed.astimezone(UTC), ident)
+    return Cursor(utc, ident)
 
 
 class NotificationSource(Protocol):

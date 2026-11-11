@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactNode, type Ref, useId } from "react";
+import { hasVisibleText } from "../lib/visibleText.ts";
 
 type ComposerProps = {
   /** Nhãn cho trình đọc màn hình (ẩn). */
@@ -38,7 +39,7 @@ const FRAME =
 export function Composer({ inputRef, ...props }: ComposerProps) {
   const id = useId();
   const errorId = `${id}-error`;
-  const canSend = !!props.onSubmit && !props.disabled && !props.busy && props.value.trim().length > 0;
+  const canSend = !!props.onSubmit && !props.disabled && !props.busy && hasVisibleText(props.value);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;

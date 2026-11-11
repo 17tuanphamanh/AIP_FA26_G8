@@ -7,6 +7,7 @@ import { NOTE_MAX, TEXT_MAX } from "../../api/tickets.ts";
 import type { ChildOutcome, ChildProgress, ChildProgressState, DigestItem, ParentReplyIn, ParentReplyItem, TicketView } from "../../api/types.ts";
 import type { Message } from "../../components/messages.ts";
 import { ownEntry } from "../../lib/lookup.ts";
+import { hasVisibleText } from "../../lib/visibleText.ts";
 import { statusLabel, type Tone } from "./status.ts";
 
 // ---------------------------------------------------------------- dải tiến độ (P1 §8.3 — không phải tin nhắn)
@@ -142,7 +143,7 @@ export function checkDigest(items: readonly DigestItem[], drafts: Drafts): Recor
       else if (draft.choice === false && draft.note.trim().length > NOTE_MAX) fail(REPLY_NOTE_TOO_LONG);
     } else {
       const answer = draft.answer.trim();
-      if (!answer) fail(REPLY_MISSING_ANSWER);
+      if (!hasVisibleText(answer)) fail(REPLY_MISSING_ANSWER); // kiểm thử 12/11: chỉ ký tự vô hình = chưa trả lời
       else if (answer.length > TEXT_MAX) fail(REPLY_ANSWER_TOO_LONG);
     }
   }
