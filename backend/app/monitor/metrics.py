@@ -90,6 +90,7 @@ def is_pending(key: str) -> bool:
 # (bảng 5.2.2, `graph/children.py` E1_REASONS) vào CUỐI; giữ `multi_intent_not_enabled` (dữ liệu Phase 3–4).
 E1_REASONS: tuple[str, ...] = (
     "out_of_scope", "multi_intent_not_enabled", "intent_low_confidence", "intent_not_enabled", "split_span_invalid",
+    "reverse_action_requested",  # D-84 (12/11): thêm vào CUỐI như F12
 )  # fmt: skip
 E1_OTHER = "other"
 

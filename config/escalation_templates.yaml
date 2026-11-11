@@ -42,6 +42,16 @@ codes:
     user_message_repeat:
       - Việc này nằm ngoài những gì mình xử lý tự động được, nên mình đã chuyển kỹ thuật viên hỗ trợ bạn.
       - Yêu cầu này cần kỹ thuật viên xử lý trực tiếp, mình đã chuyển tiếp cho bạn rồi.
+    # D-84 (kiểm thử 12/11): xin thu hồi / khoá / báo mất máy / gỡ cài / đừng làm — hệ thống không có thao tác ngược, không tự làm.
+    user_message_by_reason:
+      reverse_action_requested: >-
+        Việc thu hồi, khoá, gỡ cài đặt hoặc huỷ cần kỹ thuật viên làm trực tiếp, mình không tự thực hiện. Mình đã chuyển yêu cầu cho
+        kỹ thuật viên; nếu gấp (mất máy, nghi lộ mật khẩu), bạn gọi ngay bộ phận IT để được xử lý sớm nhất.
+    next_for_l2_by_reason:
+      reverse_action_requested: >-
+        Người dùng xin thao tác NGƯỢC (thu hồi, khoá, vô hiệu hoá, báo mất thiết bị, gỡ cài đặt, đừng làm / huỷ) — hệ thống chỉ có
+        thao tác thuận nên KHÔNG dựng hành động. Đọc yêu cầu (đã che), nếu là mất thiết bị hoặc nghi lộ thông tin thì xử lý như sự cố an
+        toàn thông tin (ưu tiên), thu hồi/khoá thủ công theo quy trình.
   E2:
     user_message: Hệ thống đang gặp sự cố nên chưa xử lý được yêu cầu của bạn. Kỹ thuật viên sẽ tiếp nhận.
     next_for_l2: >-

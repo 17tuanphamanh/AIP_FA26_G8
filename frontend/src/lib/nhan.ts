@@ -51,6 +51,7 @@ const LY_DO_RIENG: Readonly<Record<string, string>> = {
   screening_unavailable: "Chưa kiểm tra an toàn được",
   multi_intent_not_enabled: "Yêu cầu nhiều ý chưa bật",
   out_of_scope: "Ngoài phạm vi hỗ trợ",
+  reverse_action_requested: "Xin thu hồi, khoá, gỡ hoặc huỷ — hệ thống không tự làm", // D-84 (12/11)
 };
 
 // ---------------------------------------------------------------- cách xử lý, bên quyết định
@@ -122,6 +123,7 @@ export const SU_KIEN: Readonly<Record<string, string>> = {
   intent_low_confidence: "Chưa chắc loại yêu cầu",
   intent_out_of_scope: "Ngoài phạm vi hỗ trợ",
   intent_not_enabled: "Loại yêu cầu chưa bật",
+  reverse_action_requested: "Xin thu hồi, khoá, gỡ hoặc huỷ — chuyển kỹ thuật viên", // D-84 (12/11)
   split: "Đã tách thành nhiều ý",
   split_span_invalid: "Tách ý không hợp lệ",
   child_started: "Bắt đầu xử lý một ý",

@@ -67,7 +67,9 @@ def test_unknown_or_missing_reason_default(reason: str | None) -> None:
 def test_e0_unchanged_and_other_codes_have_no_reason_map() -> None:
     assert TEMPLATES.of("E0").user_message == E0_TEXT
     for code in ExitCode:
-        if code is not ExitCode.E5:
+        if code is ExitCode.E1:  # D-84 (12/11): một câu riêng cho thao tác ngược
+            assert set(TEMPLATES.of(code.value).user_message_by_reason) == {"reverse_action_requested"}
+        elif code is not ExitCode.E5:
             assert TEMPLATES.of(code.value).user_message_by_reason == {}, code
 
 

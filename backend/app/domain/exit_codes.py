@@ -84,6 +84,9 @@ REASON_DETAILS: frozenset[str] = frozenset({
     "llm_high_risk",
     # M2 (ĐP 08/11): B12 — luật `deny` khớp → E5 (trước: không ghi lý do); tách khỏi lỗi lớp AI (`llm_layer_disabled`). Không đổi route/mã
     "policy_deny",
+    # D-84 (kiểm thử 12/11): B3/B4 hoặc clarify_wait — người dùng xin thao tác NGƯỢC (thu hồi, khoá, báo mất máy, gỡ cài, đừng làm, huỷ)
+    # mà hệ thống không có → E1, không dựng hành động (`domain/reverse_action.py`)
+    "reverse_action_requested",
     # Đã có trong code từ Phase 2 (node giả B1/B3, runner)
     "execution_interrupted", "identity_unverifiable", "intent_low_confidence",
     "out_of_scope", "role_unmappable", "recover_exhausted",
