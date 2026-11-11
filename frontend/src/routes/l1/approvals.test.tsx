@@ -536,6 +536,25 @@ describe("t44: từ chối thiếu lý do hoặc thiếu ghi chú → không g�
   });
 });
 
+describe("kiểm thử 12/11: 503 ticket_busy khi gửi quyết định → tự gửi lại như câu báo hứa", () => {
+  it("503 bận (Retry-After: 1) rồi 202 → 2 POST, màn báo đã gửi, không còn câu lỗi", async () => {
+    let n = 0;
+    const calls = detailApi(() => {
+      n += 1;
+      return n === 1
+        ? json(503, { detail: "ticket_busy" }, { "Retry-After": "1" })
+        : json(202, { approval_id: "r", ticket_id: "t", status: "accepted", notices: [] });
+    });
+    renderAt("/approvals/r");
+    const approve = await screen.findByRole("button", { name: /^Đồng ý/ });
+    viewedLongEnough();
+    fireEvent.click(approve);
+    expect((await screen.findByTestId("decision-sent", {}, { timeout: 4000 })).textContent).toBe(DECISION_SENT);
+    expect(posts(calls, "/decision")).toHaveLength(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
 describe("t45: bấm Đồng ý 2 lần nhanh → đúng 1 request", () => {
   it("click ×2 cùng một nhịp (state chưa kịp khoá nút) → 1 POST, body {decision:'approved', view_started_at}", async () => {
     const calls = detailApi(

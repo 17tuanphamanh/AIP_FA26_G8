@@ -2,6 +2,7 @@ import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-quer
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { approvalQuery, decideApproval, inboxQuery } from "../../api/approvals.ts";
+import { withBusyRetry } from "../../api/tickets.ts";
 import { ApiError, errorMessage } from "../../api/errors.ts";
 import { serverNow } from "../../api/serverClock.ts";
 import type { ApprovalListItem, ApprovalViewP4, DecisionIn, ReasonCode } from "../../api/types.ts";
@@ -180,7 +181,14 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
     setError(null);
     setSheetError(null);
     try {
-      const res = await decideApproval(view.approval_id, body);
+      // Kiểm thử 12/11: 503 `ticket_busy` (có Retry-After) báo "Hệ thống đang bận, sẽ tự thử lại." nhưng trước đây KHÔNG thử lại —
+      // phiếu nằm chờ tới hết hạn. 503 bận nghĩa là backend CHƯA nhận quyết định → gửi lại an toàn (đã nhận rồi thì lần sau 409).
+      const res = await withBusyRetry(
+        () => decideApproval(view.approval_id, body),
+        () => (fromSheet ? setSheetError : setError)(errorMessage(new ApiError(503, "ticket_busy"))),
+      );
+      setError(null);
+      setSheetError(null);
       setSent({ redacted: Array.isArray(res.notices) && res.notices.length > 0 });
       setSheet(false);
       reload();
