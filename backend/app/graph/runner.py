@@ -198,9 +198,13 @@ class Runner:
         await self.after_turn(result)
         return result
 
-    async def run_new(self, ticket_id: str, turn_id: str) -> RunResult | None:
+    async def run_new(
+        self, ticket_id: str, turn_id: str, *, follows_ticket_id: str | None = None, prior_hint: str | None = None
+    ) -> RunResult | None:
         """Lượt `submit` mà API đã ghi (`tickets.create`): chạy state đầu dựng từ dòng `tickets`.
-        Lượt đã đóng, hoặc thread đã có state → None (worker đã phục hồi / lượt đang dở)."""
+        Lượt đã đóng, hoặc thread đã có state → None (worker đã phục hồi / lượt đang dở).
+        Q13b (D-79): `follows_ticket_id` + `prior_hint` (một dòng gợi ý dựng từ cột đóng của ticket cũ — `session_memory`) vào state đầu;
+        worker phục hồi lượt chết TRƯỚC checkpoint đầu dựng lại từ dòng `tickets` → mất gợi ý (ticket chạy như ticket thường — giới hạn)."""
         async with self._lock.hold(ticket_id):
             if not await self._turns.is_open(turn_id):
                 return None
@@ -209,7 +213,10 @@ class Runner:
                 return None  # không chạy lại từ START đè lên thread đang có
             if await self._unstarted_child(ticket_id, turn_id):
                 return None
-            result = await self._run_initial(ticket_id, turn_id)
+            result = await self._run_initial(
+                ticket_id, turn_id, extra={"follows_ticket_id": follows_ticket_id, "prior_hint": prior_hint}
+                if follows_ticket_id is not None else None,
+            )  # fmt: skip
         await self.after_turn(result)
         return result
 
@@ -229,9 +236,9 @@ class Runner:
         await self._turns.end(turn_id, self.clock.now())
         return True
 
-    async def _run_initial(self, ticket_id: str, turn_id: str) -> RunResult:
+    async def _run_initial(self, ticket_id: str, turn_id: str, extra: Mapping[str, Any] | None = None) -> RunResult:
         row = await self._row(ticket_id)
-        return await self._run(ticket_id, turn_id, _state_from_row(row, turn_id))
+        return await self._run(ticket_id, turn_id, {**_state_from_row(row, turn_id), **(extra or {})})
 
     async def resume(
         self, ticket_id: str, event: Mapping[str, Any], *, session_id: str | None = None

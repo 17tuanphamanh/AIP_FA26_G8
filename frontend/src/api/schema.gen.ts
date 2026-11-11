@@ -1536,6 +1536,11 @@ export interface components {
             server_now: string;
             /** Request Text */
             request_text?: string | null;
+            /**
+             * Can Follow Up
+             * @default false
+             */
+            can_follow_up: boolean;
         };
         /** TraceChild */
         TraceChild: {

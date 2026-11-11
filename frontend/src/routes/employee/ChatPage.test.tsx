@@ -8,7 +8,7 @@ import { PURGED_TEXT } from "../../api/errors.ts";
 import type { Me, TicketView } from "../../api/types.ts";
 import { Sidebar } from "../../components/Sidebar.tsx";
 import { ChatHome } from "./ChatHome.tsx";
-import { ChatRoute } from "./ChatPage.tsx";
+import { ChatRoute, FOLLOW_UP_LABEL } from "./ChatPage.tsx";
 import { DEFAULT_TITLE, REDACTED_NOTE, sessionTickets } from "./sessionTickets.ts";
 import { SUGGESTIONS } from "./suggestions.ts";
 
@@ -464,6 +464,79 @@ describe("M2: GET ticket 410 conversation_purged → câu chính sách lưu tr�
       await new Promise((r) => setTimeout(r, 2500));
       const gets = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter((c) => c[0] === `/api/tickets/${ID}`);
       expect(gets).toHaveLength(1);
+    } finally {
+      page.done();
+    }
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ Q13b (D-79): "Hỏi tiếp"
+describe("Q13b: ticket đã kết thúc + can_follow_up → ô 'Hỏi tiếp về yêu cầu này' tạo ticket MỚI kèm follows_ticket_id", () => {
+  const NEW_ID = "1111f300-6bb8-4cd1-8366-a6dcb8a17655";
+  const closed = (over: Partial<TicketView> = {}) =>
+    view({ status: "S_ESCALATED", waiting_for: null, final_state: "S_ESCALATED", exit_code: "E3", conversation: [], ...over });
+
+  function mount(ticket: TicketView) {
+    const calls: { method: string; url: string; body: string | null }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        const method = init.method ?? "GET";
+        calls.push({ method, url, body: typeof init.body === "string" ? init.body : null });
+        if (method === "POST" && url === "/api/tickets") return json(202, { ticket_id: NEW_ID, status: "S_NEW", notices: [] });
+        if (method === "GET" && url === `/api/tickets/${ID}`) return json(200, ticket);
+        if (method === "GET" && url === `/api/tickets/${NEW_ID}`)
+          return json(200, view({ ticket_id: NEW_ID, status: "S_DIAGNOSING", waiting_for: null, conversation: [] }));
+        return json(404, { detail: "not_found" });
+      }),
+    );
+    const queryClient = new QueryClient();
+    const r = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/chat/${ID}`]}>
+          <Routes>
+            <Route path="/chat/:ticketId" element={<ChatRoute />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    return {
+      calls,
+      done: () => {
+        r.unmount();
+        queryClient.clear();
+      },
+    };
+  }
+
+  it("can_follow_up=true → ô mở; gửi → 1 POST /api/tickets {text, follows_ticket_id} → sang ticket mới", async () => {
+    const page = mount(closed({ can_follow_up: true }));
+    try {
+      const box = (await screen.findByLabelText(FOLLOW_UP_LABEL)) as HTMLTextAreaElement;
+      expect(box.disabled).toBe(false);
+      expect(screen.getByTestId("final-note")).toBeTruthy(); // nút "Tạo yêu cầu mới" vẫn còn
+      fireEvent.change(box, { target: { value: "  vẫn chưa được  " } });
+      fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+      await waitFor(() => expect(page.calls.filter((c) => c.method === "POST")).toHaveLength(1));
+      const post = page.calls.find((c) => c.method === "POST")!;
+      expect(post.url).toBe("/api/tickets");
+      expect(JSON.parse(post.body ?? "null")).toStrictEqual({ text: "vẫn chưa được", follows_ticket_id: ID });
+      await waitFor(() => expect(page.calls.some((c) => c.method === "GET" && c.url === `/api/tickets/${NEW_ID}`)).toBe(true));
+      expect(sessionTickets.getSnapshot().some((t) => t.ticket_id === NEW_ID)).toBe(true);
+    } finally {
+      page.done();
+    }
+  });
+
+  it.each([
+    ["false", { can_follow_up: false }],
+    ["thiếu khoá (backend cũ / cờ tắt)", {}],
+  ])("can_follow_up %s → không có ô nhập (như trước lô)", async (_name, over) => {
+    const page = mount(closed(over as Partial<TicketView>));
+    try {
+      await screen.findByTestId("final-note");
+      expect(screen.queryByLabelText(FOLLOW_UP_LABEL)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Gửi" })).toBeNull();
     } finally {
       page.done();
     }

@@ -6590,6 +6590,25 @@ TA (11/11 12:35) cho tự làm + tự kiểm thử + tự sửa. Hợp đồng �
   3 ticket nay ở 3 harness riêng (mỗi ticket đầu phiên) — ý định "E1/E3/E4 nêu phạm vi" giữ nguyên.
 - Mutation (5): repeat luôn 0, fake không lọc phiên, bỏ try/except, lý do mất ưu tiên, không xoay vòng → đều đỏ. Unit toàn bộ xanh.
 
+## Q13b — "Hỏi tiếp" sau khi ticket đã kết thúc (11/11/2026, nhánh `q13b-bo-nho-phien`, nền `q13a-hoi-tiep` `0fe3762`) — D-79
+
+TA 10/11: "làm luôn nhưng có hướng backup" (hạn T5 12/11 12:00). Hướng lùi = cờ `ENABLE_SESSION_MEMORY=false` (đúng hành vi trước lô).
+
+- API: `POST /api/tickets` nhận `follows_ticket_id` (tuỳ chọn). Cờ tắt → 422. Ticket cũ không có / của người khác / là ticket con / chưa
+  kết thúc → 404 giống hệt nhau, kiểm trước guard/INSERT. `TicketView.can_follow_up` (bool, chỉ chủ ticket, ticket gốc đã kết thúc).
+- Mang sang MỘT dòng gợi ý từ cột đóng (`domain/session_memory.py`: intent đã biết + kết quả cố định) → `label_hint` của B3 (biến có sẵn,
+  không đổi prompt). Không chép câu người dùng/bot/slot. Ticket mới chạy đủ B1→B20. Audit điểm log 1 thêm cờ `follows_ticket`.
+- `TicketRepo.follow_up_source` (SQL + MemoryTickets), runner `run_new(..., follows_ticket_id, prior_hint)`; cờ ở settings, docker-compose,
+  `.env.example`.
+- FE: ô "Hỏi tiếp về yêu cầu này" trên ticket kết thúc có `can_follow_up`; gửi → `createTicket(text, ticketId)` → sang ticket mới.
+  `schema.gen.ts` sinh lại (chỉ thêm `can_follow_up`).
+- Test: `test_q13b_hoi_tiep_sau_ket_thuc.py` (10 ca) + 3 ca FE (`ChatPage.test.tsx`) + PG `test_b20_pg.py::test_q13b_follow_up_source_sql`
+  (SQL thật của `follow_up_source`; CI chạy). `test_ticket_server_now`: tập khoá TicketView thêm
+  `can_follow_up` (đổi có chủ đích). Mutation backend (7): bỏ kiểm chủ / ticket con / đã kết thúc, B3 bỏ hint, chép id/câu cũ vào hint,
+  API bỏ cờ (tạo / view), B12 đọc hint → đều đỏ. Mutation FE (2): không gửi `follows_ticket_id`, bỏ điều kiện `can_follow_up` → đều đỏ.
+- Kiểm: unit toàn bộ xanh; `make lint` xanh (ruff, mypy app + tests, lint-imports, gitleaks); FE typecheck/lint/check:style + 1286 test xanh.
+- Giới hạn: worker phục hồi lượt chết trước checkpoint đầu → mất gợi ý; chưa đo với LLM thật.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

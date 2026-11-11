@@ -15,8 +15,10 @@ export const REQUEST_TEXT_MAX = 500;
 
 const ticketPath = (id: string) => `/api/tickets/${encodeURIComponent(id)}`;
 
-export async function createTicket(text: string): Promise<Accepted> {
-  return (await api.request<Accepted>("/api/tickets", { method: "POST", json: { text } })).data;
+/** `followsTicketId` (Q13b, D-79): "Hỏi tiếp" từ ticket ĐÃ kết thúc của chính mình — backend kiểm chủ/đã kết thúc (sai → 404). */
+export async function createTicket(text: string, followsTicketId?: string): Promise<Accepted> {
+  const json = followsTicketId === undefined ? { text } : { text, follows_ticket_id: followsTicketId };
+  return (await api.request<Accepted>("/api/tickets", { method: "POST", json })).data;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

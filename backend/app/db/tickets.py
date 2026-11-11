@@ -47,6 +47,7 @@ from app.domain.children import (
 )
 from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
+from app.domain.session_memory import FollowUpSource
 
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 _TURNS: Table = Turn.__table__  # type: ignore[assignment]
@@ -213,6 +214,18 @@ class SqlTicketStore:
             )
             for r in rows
         ]  # fmt: skip
+
+    async def follow_up_source(self, ticket_id: str) -> FollowUpSource | None:
+        """Q13b (D-79): cột đóng của dòng `tickets` cũ cho "hỏi tiếp" (kiểm chủ + dựng gợi ý) — không đọc câu yêu cầu."""
+        t = _TICKETS.c
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(
+                select(t.ticket_id, t.requester_id, t.parent_ticket_id, t.is_parent, t.final_state, t.intent)
+                .where(t.ticket_id == ticket_id)
+            )).first()  # fmt: skip
+        if row is None:
+            return None
+        return FollowUpSource(row.ticket_id, row.requester_id, row.parent_ticket_id, bool(row.is_parent), row.final_state, row.intent)
 
     async def session_exit_count(self, session_id: str, codes: Sequence[str], *, exclude: str) -> int:
         """Q13c: số ticket KHÁC `exclude` cùng `session_id`, đã kết thúc (`final_state` có) với `exit_code` ∈ `codes` (chỉ đếm, không đọc chữ)."""

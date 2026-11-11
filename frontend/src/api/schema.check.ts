@@ -166,9 +166,16 @@ type TicketGen = S["TicketView"];
 export type TicketViewOk = [
   Expect<Mutual<Exclude<TicketView["deadline"], undefined>, TicketGen["deadline"]>>,
   Expect<Mutual<Exclude<TicketView["server_now"], undefined>, TicketGen["server_now"]>>,
+  // Q13b (D-79): `can_follow_up` (backend mặc định false → openapi ghi bắt buộc) TUỲ CHỌN ở FE như `deadline` — thân cũ thiếu khoá = không có ô.
+  Expect<Mutual<Exclude<TicketView["can_follow_up"], undefined>, TicketGen["can_follow_up"]>>,
   Expect<Mutual<keyof TicketView, keyof TicketGen>>,
   Expect<Mutual<TicketView["waiting_for"], TicketGen["waiting_for"]>>,
-  Expect<Same<Omit<TicketView, "conversation" | "children_progress" | "deadline" | "server_now">, Omit<TicketGen, "conversation" | "children_progress" | "deadline" | "server_now">>>,
+  Expect<
+    Same<
+      Omit<TicketView, "conversation" | "children_progress" | "deadline" | "server_now" | "can_follow_up">,
+      Omit<TicketGen, "conversation" | "children_progress" | "deadline" | "server_now" | "can_follow_up">
+    >
+  >,
   Expect<Mutual<TicketGen, Ok200<operations["read_ticket_api_tickets__ticket_id__get"]>>>,
 ];
 // P3 "Gần đây": GET /api/tickets — nối tên schema với ĐÚNG route; đúng 6 khoá mà parser (api/tickets.ts `parseTicketList`) kiểm.

@@ -217,6 +217,9 @@ class Settings(BaseSettings):
     # D-78 (11/11, bản nộp main — lô Q13a): "Chưa ổn" + ghi chú sau câu trả lời KB → hỏi tiếp tối đa 2 vòng trong cùng ticket. Tắt →
     # mọi "Chưa ổn" ra E8 như trước lô (phương án lùi).
     enable_kb_followup: bool = True
+    # D-79 (11/11, bản nộp main — lô Q13b): "Hỏi tiếp" sau khi ticket đã kết thúc — ticket MỚI kèm `follows_ticket_id`, B3 nhận một dòng
+    # gợi ý dựng từ cột đóng của ticket cũ. Tắt → API từ chối `follows_ticket_id` (422), `can_follow_up` luôn false (FE ẩn ô nhập).
+    enable_session_memory: bool = True
 
     # ---- Cờ thực nghiệm ----
     eval_mode: bool = False

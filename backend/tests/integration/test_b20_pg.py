@@ -15,6 +15,7 @@ from app.core.clock import FakeClock
 from app.db.escalations import SqlEscalationStore
 from app.db.tickets import SqlTicketStore
 from app.domain.final import FinalSummary
+from app.domain.session_memory import FollowUpSource, can_follow, prior_label_hint
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_PENDING_APPROVAL
 from app.graph.late_event import deliver_event
 from app.graph.runner import FINALIZE_FAILED
@@ -23,6 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.fakes.graph import Crash
 from tests.integration.graph_pg import (
+    REQUESTER,
     SESSION,
     PgRuntime,
     create_ticket,
@@ -234,6 +236,29 @@ async def test_q13c_session_exit_count_sql(rw: AsyncEngine) -> None:
     assert await store.session_exit_count(sid, ("E3",), exclude=made["me"]) == 1
     assert await store.session_exit_count(other, ("E1", "E3", "E4"), exclude=made["me"]) == 1
     assert await store.session_exit_count(sid, (), exclude=made["me"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_q13b_follow_up_source_sql(rw: AsyncEngine) -> None:
+    """Q13b (D-79): `follow_up_source` đọc ĐÚNG cột đóng (chủ, cha/con, kết quả, intent) của dòng `tickets`; id lạ → None.
+    Cùng hàm `can_follow` của API: ticket gốc đã kết thúc của chủ → được; ticket con, ticket đang mở, người khác → không."""
+    store = SqlTicketStore(rw)
+    root, child, still_open = await _ticket(rw), await _ticket(rw), await _ticket(rw)
+    async with rw.begin() as conn:
+        await conn.execute(text("UPDATE tickets SET parent_ticket_id=:p WHERE ticket_id=:t"), {"p": root, "t": child})
+    for ticket in (root, child):  # intent ghi ở B20 (finalize_once) như luồng thật
+        await store.finalize_once(ticket, FinalSummary("S_ESCALATED", "E3", None, None, "escalated", None, False,
+                                                       "vpn", None, 1, 1, NOW))  # fmt: skip
+
+    src = await store.follow_up_source(root)
+    assert src == FollowUpSource(root, REQUESTER, None, False, "S_ESCALATED", "vpn")
+    assert can_follow(src, REQUESTER) and not can_follow(src, "nguoi-khac")
+    assert prior_label_hint(src) == "vpn (câu này có thể nói tiếp yêu cầu trước của người dùng — loại vpn, đã chuyển kỹ thuật viên)"
+    child_src = await store.follow_up_source(child)
+    assert child_src is not None and child_src.parent_ticket_id == root and not can_follow(child_src, REQUESTER)
+    open_src = await store.follow_up_source(still_open)
+    assert open_src is not None and open_src.final_state is None and not can_follow(open_src, REQUESTER)
+    assert await store.follow_up_source(f"b20-{uuid4().hex[:12]}") is None
 
 
 # ---- hàng đợi L2 ------------------------------------------------------------------------------

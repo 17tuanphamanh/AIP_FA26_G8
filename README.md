@@ -5,10 +5,28 @@ Repo đồ án môn AIP, kỳ Fall 2026, nhóm 8.
 [docs/spec/](docs/spec/) — bắt đầu từ [docs/spec/CLAUDE.md](docs/spec/CLAUDE.md).
 Tiến độ theo phase ở [PROGRESS.md](PROGRESS.md).
 
-> Hiện mới có **khung thư mục**, chưa có logic nghiệp vụ. Agent thử nghiệm cũ đã gỡ;
-> xem lại trong lịch sử git (nhánh `doi-ten-tieng-anh`).
-
 **Chạy lại hệ thống từ đầu (hội đồng, người ngoài nhóm):** xem [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md).
+
+## Bản nộp và bản đo
+
+| Mốc | Ở đâu | Dùng cho |
+| --- | --- | --- |
+| **Bản đo** | tag `v1.0-freeze` (`bf94df2`, 29/10/2026) | Mọi số liệu RQ trong báo cáo đo trên bản này. Muốn chạy lại số liệu: `git checkout v1.0-freeze`. |
+| **Bản nộp** | nhánh `main` (14/11/2026) | Mã nguồn nộp và video demo. Gồm bản đo + mọi thay đổi sau đó (sửa lỗi sau buổi test của giám khảo, các lô Q1–Q13). Phần khác bản đo ghi ở báo cáo mục "Bản nộp khác bản đo" và [PROGRESS.md](PROGRESS.md). |
+
+Hệ thống: LangGraph B1→B20 (sàng lọc → phân loại → chẩn đoán → trả lời KB hoặc thực thi có duyệt → kiểm chứng → audit),
+FastAPI + PostgreSQL + Qdrant + ml-service (embed, rerank, phân loại) + mock AD/VPN/phần mềm/file server, giao diện React.
+Quyết định thiết kế đánh số D-xx ở [docs/spec/build/decisions.md](docs/spec/build/decisions.md).
+
+### Cờ tính năng của bản nộp (`.env`, mặc định đều bật)
+
+Mỗi tính năng thêm sau bản đo có một cờ; đặt `false` là quay về đúng hành vi cũ, không cần đổi code.
+
+| Cờ | Quyết định | Tắt thì |
+| --- | --- | --- |
+| `ENABLE_IT_HELP` | D-76 — câu hỏi IT chung (máy in, Wi-Fi, Outlook…) trả lời từ KB `general` | coi như ngoài phạm vi (E1) |
+| `ENABLE_KB_FOLLOWUP` | D-78 — "Chưa ổn" + ghi chú sau câu trả lời KB → hỏi tiếp tối đa 2 vòng trong cùng ticket | E8 như bản đo |
+| `ENABLE_SESSION_MEMORY` | D-79 — "Hỏi tiếp về yêu cầu này" trên ticket đã kết thúc → ticket mới mang gợi ý loại việc trước | không có ô hỏi tiếp |
 
 ## Dựng môi trường
 
@@ -44,8 +62,9 @@ tiếp ngoài `make` thì tự thêm thư mục đó vào `PATH`.
 `.env` thì `make up` dùng `.env.example` và in cảnh báo. Postgres bind `127.0.0.1:55432` (đổi bằng
 `PG_PORT`) để khỏi đụng Postgres của dự án khác trên máy.
 
-**Từ Phase 3d, `.env` phải có `LLM_BACKEND=scripted`** (máy dev, LLM giả `ScriptedLLM`, không gọi API) — thiếu thì
-`make up`/`make gate2` dừng và backend/worker từ chối khởi động; `real` chỉ dùng từ mốc G (`config/llm.yaml`).
+**`.env` phải có `LLM_BACKEND`:** `scripted` (LLM giả `ScriptedLLM`, không gọi API — máy dev, test, cổng) hoặc `real` (LLM thật theo
+`config/llm.yaml`, cách bật ở [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md) mục 9). Thiếu thì `make up`/`make gate2` dừng và
+backend/worker từ chối khởi động.
 
 ### Đổi hàm băm khoá ticket (G1)
 
@@ -53,8 +72,9 @@ Khoá ticket là `pg_advisory_lock(hashtextextended(ticket_id, 0))` (bigint, 64 
 có thể trùng khoá và chặn nhau). Đổi hàm băm là đổi khoá: dừng và khởi động lại `backend` VÀ `worker` cùng lúc, đừng để bản cũ và bản
 mới chạy song song (khoá của hai bản không còn loại trừ nhau, và lượt đang giữ khoá kiểu cũ không bị chặn bởi bản mới).
 
-Các lệnh `make ingest | seed | probe | eval | eval-rag | load` đã có tên nhưng chưa có nội dung
-(in TODO và thoát mã 1) — sẽ làm theo từng phase.
+Lệnh khác: `make ingest` (nạp KB), `make seed` (đặt lại dữ liệu mock), `make eval-rag` (đo truy hồi trên KB đang chạy),
+`make probe F=<bộ câu>` (LLM thật, tốn tiền), `make gate2…gate5` (cổng từng phase). `make eval` và `make load` vẫn in TODO
+và thoát mã 1 (chưa nối vào Makefile). Script đo offline nằm ở `scripts/eval/`; chuẩn bị môi trường đo: hướng dẫn chạy mục 11.
 
 ## Cấu trúc thư mục
 
