@@ -21,13 +21,13 @@ from app.domain.target import fold
 
 # Soát 12/11 03:50: thêm google / gg / g-mail, Microsoft cá nhân, YouTube, Insta, Grab, tài khoản ngân hàng; bỏ "fb" ("em fb lại" =
 # phản hồi). Không nhận khi tên dịch vụ chỉ là KÊNH hay NƠI ("gửi mật khẩu tạm qua Zalo", "em không có Zalo để nhận mã", "trên app
-# Gmail của điện thoại", "hotline qua Messenger", "đối soát đơn Shopee") — việc vẫn là tài khoản công ty.
+# Gmail của điện thoại", "hotline qua Messenger", "đối soát đơn Shopee", "thư từ Gmail của khách") — việc vẫn là tài khoản công ty.
 _SERVICES: Final = (
     r"gmail|g-mail|google|gg|yahoo|hotmail|outlook\.com|live\.com|icloud|apple id|microsoft cá nhân|facebook|messenger|zalo|instagram|"
     r"insta|youtube|tiktok|telegram|viber|whatsapp|twitter|shopee|lazada|tiki|grab|gojek|momo|zalopay|vnpay|internet banking|"
     r"tài khoản ngân hàng|vietcombank|vcb|techcombank|bidv|vietinbank|agribank|mbbank|tpbank|sacombank|netflix|spotify"
 )
-_NOT_CHANNEL: Final = r"(?<!qua )(?<!bằng )(?<!trên )(?<!app )(?<!ứng dụng )(?<!có )(?<!đơn )(?<!hotline )(?<!nhắn )(?<!gọi )"
+_NOT_CHANNEL: Final = r"(?<!qua )(?<!bằng )(?<!trên )(?<!app )(?<!ứng dụng )(?<!có )(?<!đơn )(?<!hotline )(?<!nhắn )(?<!gọi )(?<!từ )"
 _RE: Final = re.compile(rf"{_NOT_CHANNEL}\b(?:{_SERVICES})\b")
 _RE_FOLDED: Final = re.compile(rf"{fold(_NOT_CHANNEL)}\b(?:{fold(_SERVICES)})\b")
 

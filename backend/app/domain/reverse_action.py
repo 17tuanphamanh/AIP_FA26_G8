@@ -119,7 +119,7 @@ _COMPROMISED = (
     r"|\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b|\btiền chuộc\b"
     r"|(?<!tránh bị )(?<!không bị )(?<!khỏi bị )\blộ\s+(?:mất\s+)?(?:mật khẩu|mk|pass|password|thông tin đăng nhập|otp|mã xác minh)\b"
     # trật tự đảo: "Mật khẩu email của em bị lộ rồi" (soát 12/11 03:50)
-    r"|\b(?:mật khẩu|mk|pass|password)\b[^.!?\n]{0,30}?(?<!không )\bbị\s+lộ\b"
+    r"|\b(?:mật khẩu|mk|pass|password)\b[^.!?\n]{0,30}?(?<!không )(?<!không bị )\b(?:bị\s+)?lộ\b(?!\s+(?:ra|diện))"
     # "có ai/người …" phải kèm đích là mật khẩu (không phải mật khẩu wifi khách) hoặc tài khoản CỦA người gửi: "Có ai biết cách gia hạn
     # VPN không?", "có ai đăng nhập được VPN không?", "Có ai biết mật khẩu wifi khách không?" là câu hỏi thường, không khớp.
     rf"|{_WHO}(?:lấy được|lấy|biết|dò|đánh cắp|đổi)\s+(?:được\s+)?(?:mật khẩu|mk|pass)\b(?!\s+(?:wifi|wi-fi|wi fi|khách|máy in))"

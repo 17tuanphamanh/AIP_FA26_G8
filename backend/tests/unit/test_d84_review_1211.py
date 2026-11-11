@@ -9,6 +9,8 @@ from app.domain.reverse_action import reverse_action_kind
 
 # (câu, intent) — NÊN chuyển người (thao tác ngược, sự cố an ninh, tài khoản dịch vụ ngoài)
 SHOULD_FLAG = [
+    # bộ giữ lại thứ hai 04:42 (20 câu): bỏ lọt 1/10, bắt nhầm 1/10 — thêm vào đây
+    ("pass mail cty của em lộ rồi", "account"),
     # bộ giữ lại 04:25 (30 câu ĐP viết, chưa dùng để sửa): đo được bỏ lọt 2/15, bắt nhầm 0/15 — hai câu lọt nay thêm vào đây
     ("tài khoản email bị người ta chiếm rồi anh ơi", "account"),
     ("Em bấm nhầm vào link lạ trong email rồi", "account"),
@@ -116,6 +118,9 @@ SHOULD_FLAG = [
 
 # (câu, intent) — câu thường, KHÔNG được chuyển người
 MUST_PASS = [
+    ("Email công ty em không nhận được thư từ Gmail của khách", "account"),
+    ("Mật khẩu không bị lộ ra khi gõ chứ?", "account"),
+    ("Làm sao để mật khẩu không bị lộ?", "account"),
     # tên người "Huy" trong bản bỏ dấu (bộ đánh giá cong5), câu hỏi phòng ngừa
     ("Nhờ cấp cho bạn Huy (nv021) quyền sửa thư mục marketing/campaign trong một tháng.", "access"),
     ("Nho cap cho ban Huy (nv021) quyen sua thu muc marketing", "access"),
