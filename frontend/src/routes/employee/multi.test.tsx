@@ -309,6 +309,14 @@ describe("t68: thiếu trả lời → lỗi NGAY dưới đúng khối, 0 POST"
     });
     expect(checkDigest([ITEMS[2]!], {})).toStrictEqual({});
   });
+
+  it("checkDigest (kiểm thử 12/11): câu trả lời chỉ khoảng trắng / ký tự vô hình = chưa trả lời; còn một chữ thì qua", () => {
+    const plain: DigestItem = ITEMS[1]!;
+    for (const answer of ["   ", "\u200b\u200b", "\u00ad\u2060 \ufeff"]) {
+      expect(checkDigest([plain], { [C2]: { ...EMPTY_DRAFT, answer } })).toStrictEqual({ [C2]: REPLY_MISSING_ANSWER });
+    }
+    expect(checkDigest([plain], { [C2]: { ...EMPTY_DRAFT, answer: "\u200b30\u200b" } })).toStrictEqual({});
+  });
 });
 
 // ------------------------------------------------------------------------------------------------ t69

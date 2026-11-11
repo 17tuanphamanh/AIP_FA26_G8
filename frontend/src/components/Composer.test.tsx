@@ -38,3 +38,33 @@ describe("Composer — bộ đếm ký tự (L2)", () => {
     expect(screen.getByTestId("composer-counter").textContent).toBe("875/1000");
   });
 });
+
+describe("Composer — chỉ ký tự vô hình không gửi được (kiểm thử 12/11)", () => {
+  function Sender({ initial }: { initial: string }) {
+    const [value, setValue] = useState(initial);
+    const [sent, setSent] = useState(0);
+    return (
+      <>
+        <Composer variant="chat" label="Ô chat" placeholder="" value={value} onChange={setValue} onSubmit={() => setSent((n) => n + 1)} maxLength={4000} />
+        <output data-testid="sent">{sent}</output>
+      </>
+    );
+  }
+
+  it.each([["   "], ["​​"], ["­ ⁠﻿"], ["\n​\t"]])("%j → nút Gửi khoá, Enter không gửi", (text) => {
+    render(<Sender initial={text} />);
+    const send = screen.getByRole("button", { name: "Gửi" });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByLabelText("Ô chat"), { key: "Enter" });
+    fireEvent.click(send);
+    expect(screen.getByTestId("sent").textContent).toBe("0");
+  });
+
+  it("còn một chữ nhìn thấy (kể cả kèm zero-width) → gửi được", () => {
+    render(<Sender initial={"​VPN​"} />);
+    const send = screen.getByRole("button", { name: "Gửi" });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(send);
+    expect(screen.getByTestId("sent").textContent).toBe("1");
+  });
+});
