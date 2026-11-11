@@ -22,7 +22,6 @@ from tests.unit.auth_helpers import AuthEnv, auth_env
 
 T0 = datetime(2099, 9, 26, 8, 0, 10, tzinfo=UTC)  # giây 10 của một bước 30 s (unix chia hết cho 30 ở :00)
 
-CHO_0016 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 — gỡ cờ khi hiện thực")
 
 
 @pytest.fixture
@@ -44,12 +43,8 @@ def _code(secret: str, at: datetime) -> str:
 # ---- hàm thuần -----------------------------------------------------------------------------------------------------------------
 
 
-@CHO_0016
-
-
 def test_a4_totp_step_returns_matched_counter_within_window() -> None:
-    # A4: `totp_step` có khi hiện thực (chờ 0016) — gỡ ignore
-    from app.auth.mfa import totp_step  # type: ignore[attr-defined]
+    from app.auth.mfa import totp_step
 
     secret = pyotp.random_base32()
     step = int(T0.timestamp()) // 30
@@ -64,9 +59,6 @@ def test_a4_totp_step_returns_matched_counter_within_window() -> None:
 # ---- luồng đăng nhập -----------------------------------------------------------------------------------------------------------
 
 
-@CHO_0016
-
-
 def test_a4_same_code_twice_in_same_step_rejected_as_replay(env: AuthEnv) -> None:
     secret = _enrolled_manager(env)
     code = _code(secret, env.clock.now())
@@ -75,9 +67,6 @@ def test_a4_same_code_twice_in_same_step_rejected_as_replay(env: AuthEnv) -> Non
     r = env.login("quan.tm", otp=code)
     assert (r.status_code, r.json()) == (401, {"detail": GENERIC})
     assert env.sink.of("mfa_failed")[-1].detail == {"reason": "otp_replayed"}
-
-
-@CHO_0016
 
 
 def test_a4_previous_step_code_rejected_after_current_step_accepted(env: AuthEnv) -> None:
@@ -95,9 +84,6 @@ def test_a4_next_step_code_accepted(env: AuthEnv) -> None:
     assert env.login("quan.tm", otp=_code(secret, env.clock.now())).status_code == 200
     env.clock.advance(timedelta(seconds=30))
     assert env.login("quan.tm", otp=_code(secret, env.clock.now())).status_code == 200
-
-
-@CHO_0016
 
 
 def test_a4_replay_counts_toward_lockout(env: AuthEnv) -> None:

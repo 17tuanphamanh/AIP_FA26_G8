@@ -21,8 +21,6 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
 
-# Cờ chờ: cả module đỏ tới khi có 0016 — strict: có 0016 mà chưa gỡ cờ → XPASS đỏ.
-pytestmark = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016")
 PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 

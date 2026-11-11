@@ -164,7 +164,6 @@ async def test_m2_dry_run_deletes_nothing(rw: AsyncEngine, saver: AsyncPostgresS
     assert report.dry_run is True and report.threads >= 1
 
 
-@pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 (loại security_events `retention_run`)")
 async def test_m2_each_run_writes_exactly_one_retention_event(rw: AsyncEngine, saver: AsyncPostgresSaver) -> None:
     before_events = int(await scalar(rw, "SELECT count(*) FROM security_events WHERE event_type = 'retention_run'"))
     await _job(rw, saver, dry_run=True).run()

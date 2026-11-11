@@ -228,6 +228,14 @@ class Runner:
             raise LookupError(f"không có dòng tickets {ticket_id}")
         return row
 
+    async def final_state(self, ticket_id: str) -> str | None:
+        """`tickets.final_state` trong DB (không có TicketReader / không có dòng → None). Dùng khi snapshot rỗng để phân biệt ticket
+        CHƯA chạy lượt đầu với ticket ĐÃ kết thúc mà checkpoint bị job hạn giữ dọn (lô Q7, nợ 39)."""
+        if self._tickets is None:
+            return None
+        row = await self._tickets.get(ticket_id)
+        return row.final_state if row is not None else None
+
     async def _unstarted_child(self, ticket_id: str, turn_id: str) -> bool:
         """T20b P4: ticket CON chưa có thread → đóng lượt, không chạy gì (không bao giờ chạy con từ B1) — khởi động con là việc của
         cha (`parent_wait` → `ChildOps.start_missing`, một đường code). Gọi khi đang giữ khoá và snapshot rỗng."""
@@ -272,6 +280,12 @@ class Runner:
                 return None
             snap = await self.snapshot(ticket_id)
             node = _pending(snap)
+            if not snap.values and await self.final_state(ticket_id) is not None:
+                # Q7 / nợ 39: ticket ĐÃ kết thúc mà checkpoint đã bị dọn — đóng lượt, KHÔNG chạy graph từ START (sẽ dựng lại ticket
+                # "mới" từ câu yêu cầu cũ và có thể làm lại việc).
+                log.warning("ticket %s đã kết thúc, checkpoint đã dọn — đóng lượt %s, không chạy lại", ticket_id, turn_id)
+                await self._turns.end(turn_id, self.clock.now())
+                return await self._result(ticket_id, turn_id)
             if not snap.values and await self._unstarted_child(ticket_id, turn_id):
                 return None
             if not snap.values and attempts <= self._max_recover:

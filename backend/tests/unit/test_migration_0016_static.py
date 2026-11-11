@@ -12,13 +12,10 @@ import ast
 import re
 from pathlib import Path
 
-import pytest
-
 REPO = Path(__file__).resolve().parents[3]
 APP = REPO / "backend" / "app"
 VERSIONS = APP / "db" / "alembic" / "versions"
 
-CHO_0016 = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 — gỡ cờ khi hiện thực")
 
 
 def _migration() -> tuple[Path, str]:
@@ -40,18 +37,12 @@ def _assigns(source: str) -> dict[str, object]:
     return out
 
 
-@CHO_0016
-
-
 def test_0016_chains_after_0015_and_has_downgrade() -> None:
     _, src = _migration()
     names = _assigns(src)
     assert (names.get("revision"), names.get("down_revision")) == ("0016", "0015")
     funcs = {n.name for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
     assert {"upgrade", "downgrade"} <= funcs
-
-
-@CHO_0016
 
 
 def test_0016_declares_s1_s2_s4_a4() -> None:
@@ -61,9 +52,6 @@ def test_0016_declares_s1_s2_s4_a4() -> None:
     assert "tickets_final_state_once" in src
     assert "ix_approvals_pending_deadline" in src and "status = 'pending'" in src
     assert "mfa_last_step" in src
-
-
-@CHO_0016
 
 
 def test_models_match_0016() -> None:

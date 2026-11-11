@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import base64
 import binascii
+import hmac
 import os
 import sys
 from collections.abc import Sequence
@@ -69,12 +70,30 @@ def provisioning_uri(secret: str, username: str) -> str:
     return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=ISSUER)
 
 
-def verify_totp(secret: str, otp: str, at: datetime) -> bool:
-    """Chấp nhận mã của bước hiện tại ± 1 bước (30 giây) để bù lệch đồng hồ điện thoại."""
+TOTP_STEP_SECONDS = 30
+
+
+def totp_step(secret: str, otp: str, at: datetime) -> int | None:
+    """Bước TOTP (counter = floor(unix/30)) mà mã khớp trong cửa sổ ±1 bước (bù lệch đồng hồ điện thoại); sai dạng / không khớp → None.
+
+    Lô Q7 / A4 (migration 0016): trả BƯỚC (không chỉ đúng/sai) để `AuthStore.accept_totp_step` từ chối mã của bước đã dùng. So sánh hằng
+    thời gian; luôn tính đủ 3 bước (không thoát sớm theo kết quả)."""
     code = otp.strip()
     if not (code.isdigit() and len(code) == 6):
-        return False
-    return pyotp.TOTP(secret).verify(code, for_time=at, valid_window=1)
+        return None
+    totp = pyotp.TOTP(secret)
+    now_step = int(at.timestamp()) // TOTP_STEP_SECONDS
+    matched: int | None = None
+    for step in (now_step - 1, now_step, now_step + 1):
+        if hmac.compare_digest(totp.generate_otp(step), code) and matched is None:
+            matched = step
+    return matched
+
+
+def verify_totp(secret: str, otp: str, at: datetime) -> bool:
+    """Chấp nhận mã của bước hiện tại ± 1 bước (30 giây) để bù lệch đồng hồ điện thoại. Không chống dùng lại — đăng nhập dùng
+    `totp_step` + `AuthStore.accept_totp_step` (A4)."""
+    return totp_step(secret, otp, at) is not None
 
 
 @dataclass(frozen=True)

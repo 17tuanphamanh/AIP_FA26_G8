@@ -413,9 +413,11 @@ def test_alembic_single_head_is_0009() -> None:
     nhất nay là `0010` (chống spam), nối thẳng sau `0009`. GIỮ TÊN: `mutate_a4.py` mã I5 gọi test này theo tên.
     F12: head nay là 0011 (view child_notices), nối sau 0010. Notify-email: head nay là 0012 (email_outbox), nối sau 0011. D-67: head
     nay là 0013 (chiến lược M5 lúc vận hành), nối sau 0012. P3 menu ⋯: head nay là 0014 (`ticket_hidden`), nối sau 0013. Lô Q12 (D-76, ĐP
-    chốt 09/11): head nay là 0015 (CHECK intent + `it_help`), nối sau 0014."""
+    chốt 09/11): head nay là 0015 (CHECK intent + `it_help`), nối sau 0014. Lô Q7 (11/11): head nay là 0016 (txlog chỉ ghi thêm, khoá
+    final_state, chỉ mục phiếu chờ, chống dùng lại TOTP, `retention_run`), nối sau 0015."""
     script = ScriptDirectory.from_config(Config(str(REPO / "alembic.ini")))
-    assert script.get_heads() == ["0015"]
+    assert script.get_heads() == ["0016"]
+    assert script.get_revision("0016").down_revision == "0015"  # type: ignore[union-attr]
     assert script.get_revision("0015").down_revision == "0014"  # type: ignore[union-attr]
     assert script.get_revision("0014").down_revision == "0013"  # type: ignore[union-attr]
     assert script.get_revision("0013").down_revision == "0012"  # type: ignore[union-attr]

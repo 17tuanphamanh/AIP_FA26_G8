@@ -135,6 +135,7 @@ class InMemoryAuthStore:
         self.users: dict[str, UserRecord] = {}
         self.sessions: dict[str, SessionRecord] = {}
         self.created_at: dict[str, datetime] = {}
+        self.totp_steps: dict[str, int] = {}  # `users.mfa_last_step` (A4, migration 0016) — upsert không đụng
 
     # ---- users ----
     async def get_user(self, user_id: str) -> UserRecord | None:
@@ -172,6 +173,14 @@ class InMemoryAuthStore:
 
     async def set_mfa_secret(self, user_id: str, secret_enc: bytes) -> None:
         self.users[user_id] = replace(self.users[user_id], mfa_secret_enc=secret_enc)
+        self.totp_steps.pop(user_id, None)
+
+    async def accept_totp_step(self, user_id: str, step: int) -> bool:
+        last = self.totp_steps.get(user_id)  # không `await` giữa đọc và ghi → nguyên tử trong một event loop
+        if last is not None and step <= last:
+            return False
+        self.totp_steps[user_id] = step
+        return True
 
     # ---- auth_failures ----
     async def count_failures(self, usernames: tuple[str, ...], since: datetime) -> int:
