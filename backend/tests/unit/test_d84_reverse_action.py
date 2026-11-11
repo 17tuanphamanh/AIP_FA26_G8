@@ -65,6 +65,13 @@ POSITIVE = [
     ("hình như ai đó biết mật khẩu của em", "account", "compromised"),
     ("Em nhận được thông báo đăng nhập từ thiết bị lạ", "account", "compromised"),
     ("em nhận được mã OTP lạ dù không đăng nhập", "account", "compromised"),
+    # đo 12/11 03:55: "ngắt VPN" → phiếu GIA HẠN chứng chỉ; "tắt VPN" → phiếu CẤP LẠI quyền VPN (máy có chứng chỉ đã bị thu hồi)
+    ("Máy LAP-0342 của em hình như nhiễm mã độc, ngắt VPN của máy đó giúp em", "vpn", "revoke"),
+    ("Tắt VPN trên máy LAP-0610 giúp em", "vpn", "revoke"), ("ngat vpn may LAP-0342 giup em", "vpn", "revoke"),
+    ("tạm dừng VPN của em 1 tuần", "vpn", "revoke"), ("cắt VPN của máy LAP-0342", "vpn", "revoke"),
+    ("Máy em dính virus rồi, cài lại Zoom giúp em trên LAP-0417", "software", "compromised"),
+    ("may em nhiem virus, cai lai office", "software", "compromised"),
+    ("Máy em bị mã hoá dữ liệu, đòi tiền chuộc, đặt lại mật khẩu giúp", "account", "compromised"),
 ]
 
 NEGATIVE = [
@@ -107,6 +114,9 @@ NEGATIVE = [
     ("Có ai hỗ trợ đặt lại mật khẩu email không?", "account"),
     ("ổ C bị chiếm hết dung lượng, gỡ bớt ứng dụng giúp em", "vpn"), ("o C bi chiem het dung luong", "vpn"),
     ("Mã OTP không về điện thoại, đặt lại mật khẩu giúp em", "account"), ("nhờ ai đó cài giúp em Zoom", "software"),
+    ("Làm sao tắt VPN khi không dùng?", "vpn"), ("cách tắt VPN trên macOS", "vpn"), ("lam sao tat vpn", "vpn"),
+    ("VPN hay bị ngắt kết nối", "vpn"), ("VPN tự ngắt liên tục", "vpn"), ("Khi tắt VPN thì em vào web được", "vpn"),
+    ("Mỗi lần tắt VPN là mất mạng", "vpn"), ("em dùng VPN không được", "vpn"), ("em dung vpn khong duoc", "vpn"),
 ]  # fmt: skip
 
 
