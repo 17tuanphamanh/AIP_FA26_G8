@@ -1,4 +1,4 @@
-"""Tài khoản dịch vụ BÊN NGOÀI công ty (kiểm thử máy demo 12/11 03:10, LLM thật).
+"""Tài khoản dịch vụ BÊN NGOÀI công ty (kiểm thử máy demo 12/11 02:25, LLM thật).
 
 Đo được: lan.dt "Đặt lại mật khẩu Gmail cá nhân giúp chị" → B3 xếp `account` (`account_type=email`) → R01 tự làm → hệ thống đặt lại
 mật khẩu email CÔNG TY của chị (mật khẩu tạm gửi qua email). Facebook / Zalo thì LLM đã tự xếp ngoài phạm vi.

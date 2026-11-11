@@ -15,7 +15,7 @@ nới an toàn; khớp nhầm (dương tính giả) = một ca đáng tự làm 
 Bổ sung 12/11 02:30 (đo tiếp trên máy demo): "Rút / Bỏ / Gỡ quyền ghi …" → hỏi "xem, xin mới hay gia hạn?" lặp; "Hạ quyền … xuống chỉ
 đọc" → phiếu CẤP quyền đọc; "Khoá tài khoản ERP của em lại" → dựng hành động MỞ khoá (chỉ lớp LLM chặn); "Em bị lộ mật khẩu email,
 đặt lại giúp" → TỰ đặt lại, mật khẩu tạm gửi vào chính hộp thư đã lộ. Thêm nhãn `compromised` (tài khoản bị lộ / bị hack / bị chiếm —
-KB-GEN-008 coi là sự cố an toàn thông tin, kỹ thuật viên xử lý), mẫu rút / hạ quyền, "khoá … lại", "không cần … nữa". 03:55: "ngắt / tắt
+KB-GEN-008 coi là sự cố an toàn thông tin, kỹ thuật viên xử lý), mẫu rút / hạ quyền, "khoá … lại", "không cần … nữa". 02:45: "ngắt / tắt
 VPN" (thành phiếu GIA HẠN / CẤP LẠI VPN), máy nhiễm mã độc (`compromised`).
 
 Mẫu viết cho bản CÓ DẤU (chữ thường) và bản BỎ DẤU (`fold`). Bản bỏ dấu BỎ các mẫu dễ trùng nghĩa khi mất dấu: "máy"/"mấy" (cùng "may"),
@@ -59,7 +59,7 @@ _REVOKE_PERM = r"(?:rút lại|rút bớt|rút|tước|bỏ|gỡ bỏ|gỡ|hạ 
 # Sự cố an ninh tài khoản (đo trên máy demo 12/11): "Em bị lộ mật khẩu email rồi, đặt lại giúp em" và "email bị hack, đổi mật khẩu gấp"
 # → hệ thống TỰ đặt lại mật khẩu email và gửi mật khẩu tạm "qua email" — tức vào chính hộp thư đang bị chiếm. KB-GEN-008: nghi lộ /
 # bị chiếm là sự cố an toàn thông tin, kỹ thuật viên xử lý trực tiếp. Chuyển người như báo mất máy.
-# Ngắt / tắt VPN (đo 12/11 03:55, LLM thật): "Máy LAP-0342 hình như nhiễm mã độc, ngắt VPN của máy đó giúp em" → phiếu GIA HẠN chứng chỉ
+# Ngắt / tắt VPN (đo 12/11 02:45, LLM thật): "Máy LAP-0342 hình như nhiễm mã độc, ngắt VPN của máy đó giúp em" → phiếu GIA HẠN chứng chỉ
 # VPN; "Tắt VPN trên máy LAP-0610 giúp em" → phiếu CẤP LẠI quyền VPN (chứng chỉ máy này đang bị thu hồi). Không nhận câu hỏi cách làm
 # ("làm sao tắt VPN", "cách tắt VPN"), việc đã / đang xảy ra ("bị ngắt VPN", "khi tắt VPN thì…"); không có "chặn" ("mạng công ty chặn
 # VPN" là báo lỗi) và bản bỏ dấu không có "dung" ("dùng VPN").

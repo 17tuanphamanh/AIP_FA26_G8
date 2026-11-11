@@ -1,4 +1,4 @@
-"""Tài khoản CÁ NHÂN bên ngoài công ty (kiểm thử máy demo 12/11 03:10, LLM thật).
+"""Tài khoản CÁ NHÂN bên ngoài công ty (kiểm thử máy demo 12/11 02:25, LLM thật).
 
 Đo được: "Đặt lại mật khẩu Gmail cá nhân giúp chị" (lan.dt) → B3 xếp `account`, slot `account_type=email` → luật R01 cho tự làm →
 hệ thống ĐẶT LẠI mật khẩu email CÔNG TY của người gửi (mật khẩu tạm gửi qua email). Người dùng không xin việc đó; tài khoản Gmail,

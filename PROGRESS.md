@@ -6682,11 +6682,11 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   kịch bản (chain_m5 c18, chain_t20a g5/g7, t20b) cố ý dùng quyền không hạn của nv001 trên `finance/public-reports` để đo R10/R07 → đổi
   ý nghĩa bộ kịch bản đo, chờ TA (bản vá: Project `claude/de-xuat-d86.md`).
 - Kế hoạch + danh sách việc cần TA quyết: Project `claude/KE-HOACH-sua-dem-12-11.md`.
-- Gộp `main` `18fc8f5` (01:38) rồi kiểm tiếp trên máy demo (LLM thật, 02:00–03:40), thêm hai lượt sửa, mỗi lượt CI xanh rồi gộp `main`:
+- Gộp `main` `18fc8f5` (01:38) rồi kiểm tiếp trên máy demo (LLM thật, 01:45–03:00), thêm ba lượt sửa, mỗi lượt CI xanh rồi gộp `main`:
   **D-84 bổ sung** ("Em bị lộ mật khẩu email, đặt lại giúp" được TỰ đặt lại và gửi mật khẩu tạm vào chính hộp thư đã lộ; "hạ quyền …
   xuống chỉ đọc" thành phiếu CẤP quyền; "rút / bỏ / gỡ quyền" hỏi lặp; "khoá tài khoản ERP lại" dựng hành động MỞ khoá → nay E1),
   **D-87** ("Đặt lại mật khẩu Gmail cá nhân" thành đặt lại email CÔNG TY → nay E1 ngoài phạm vi), sửa `audit_check` (dòng B4 của D-84
-  bị báo thiếu điểm 1). D-86 vẫn để dành cho đề xuất "đã có quyền" (chờ TA).
+  bị báo thiếu điểm 1), **D-84 thêm** "ngắt / tắt VPN" ("máy nhiễm mã độc, ngắt VPN" thành phiếu GIA HẠN chứng chỉ; "tắt VPN" thành phiếu CẤP LẠI) và máy nhiễm mã độc. D-86 vẫn để dành cho đề xuất "đã có quyền" (chờ TA).
 - Lưu ý demo: đặt lại mật khẩu AD trên giả lập đổi mật khẩu thật → người đó không đăng nhập lại bằng mật khẩu demo tới khi đặt lại giả lập.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)

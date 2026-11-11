@@ -65,7 +65,7 @@ POSITIVE = [
     ("hình như ai đó biết mật khẩu của em", "account", "compromised"),
     ("Em nhận được thông báo đăng nhập từ thiết bị lạ", "account", "compromised"),
     ("em nhận được mã OTP lạ dù không đăng nhập", "account", "compromised"),
-    # đo 12/11 03:55: "ngắt VPN" → phiếu GIA HẠN chứng chỉ; "tắt VPN" → phiếu CẤP LẠI quyền VPN (máy có chứng chỉ đã bị thu hồi)
+    # đo 12/11 02:45: "ngắt VPN" → phiếu GIA HẠN chứng chỉ; "tắt VPN" → phiếu CẤP LẠI quyền VPN (máy có chứng chỉ đã bị thu hồi)
     ("Máy LAP-0342 của em hình như nhiễm mã độc, ngắt VPN của máy đó giúp em", "vpn", "revoke"),
     ("Tắt VPN trên máy LAP-0610 giúp em", "vpn", "revoke"), ("ngat vpn may LAP-0342 giup em", "vpn", "revoke"),
     ("tạm dừng VPN của em 1 tuần", "vpn", "revoke"), ("cắt VPN của máy LAP-0342", "vpn", "revoke"),
