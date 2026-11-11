@@ -9,7 +9,7 @@ Node của graph, một file mỗi nhánh (b01_identity.py … b20_audit.py). Xe
   → E2; `domain.approval.choose_approver` (roster `config/approvers.yaml`, AD bước `B15_APPROVER`, xung đột cả chuỗi quản lý) →
   `ensure` dòng `users` → `effects.once` tạo phiếu + báo `a.approver_id` → điểm log 5 (`audit_columns`, `intended_action`).
 - `b12_assess.py`: node THẬT (Phase 3 chặng 3h, phase3 11.3) — `build_ctx` (chỉ `intended_action`, `requester_context`,
-  `ctx_flags` + Clock) → `risk.policy_engine.evaluate` (R16–R20, `config/policy.json`): allow → B17, approval_required →
+  `ctx_flags` + Clock) → `risk.policy_engine.evaluate` (R01–R21, `config/policy.json`; R21 thêm sau bản đo — Q5): allow → B17, approval_required →
   B15, deny → E5; không luật nào → `deps.estimator` (Phase 6 6C: `LlmRiskEstimator`) → `risk.strategy.decide` (AUTO → B17 +
   `action_plan_hash`, HITL → B15, L2 → E5 `llm_high_risk`); lỗi estimator → E5 `llm_layer_disabled`; `full_auto` (EVAL) → B17,
   `risk` None, điểm 4 `decided_by` NULL. Điểm log 4 + `policy_sha256` +

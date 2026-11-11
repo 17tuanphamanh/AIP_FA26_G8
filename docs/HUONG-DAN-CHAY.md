@@ -205,7 +205,7 @@ Giải thích các biến quan trọng (sửa tay bằng `nano .env` nếu cần
 - `LLM_BACKEND=scripted` — **bắt buộc có**. `scripted` là LLM giả, không tốn tiền (dùng cho lần dựng đầu). Bật LLM thật: mục 9.
 - `JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`, `SVC_WORKER_TOKEN`, `ML_SERVICE_TOKEN` — **bắt buộc có giá trị**, mỗi khoá một giá trị riêng (đoạn lệnh trên đã sinh). Thiếu `ML_SERVICE_TOKEN` thì compose dừng ngay.
 - `USERNAME_HMAC_KEY` — **bắt buộc có giá trị**, sinh bằng lệnh ở trên (không tự đặt giá trị ngẫu nhiên: phải khớp `JWT_SIGNING_KEY`, lệch thì các trang ticket/duyệt báo 503).
-- `ENABLE_IT_HELP`, `ENABLE_KB_FOLLOWUP`, `ENABLE_SESSION_MEMORY`, `ENABLE_QUERY_REWRITE` — tính năng thêm sau bản đo, **mặc định bật**, không cần sửa (đặt `false` = hành vi bản đo; xem `README.md`).
+- `ENABLE_IT_HELP`, `ENABLE_KB_FOLLOWUP`, `ENABLE_SESSION_MEMORY`, `ENABLE_QUERY_REWRITE` — tính năng thêm sau bản đo, **mặc định bật**, không cần sửa (đặt `false` = tắt riêng tính năng đó; muốn đúng bản đo thì chạy tag `v1.0-freeze` — xem `README.md`).
 - `FAKE_SCENARIO` — **để trống**. Có giá trị (ví dụ `approval`) thì **toàn bộ các bước của agent chạy bằng node giả** (chỉ dùng cho kiểm thử nội bộ) — kết quả demo/đánh giá sẽ không phải của hệ thống thật.
 - `FAKE_NODE_DELAY` — **để trống**. Còn giá trị khi `FAKE_SCENARIO` trống thì backend **từ chối khởi động**.
 - `FAKE_APPROVER_ID` — giữ nguyên như `.env.example`.
@@ -490,7 +490,7 @@ Mọi vai trò đều có ô chat ở giữa màn hình ("Hôm nay IT giúp gì 
 | `lan.dt` | Đỗ Thị Lan | `fin_head` | Nhân viên | Trưởng phòng Kế toán |
 | `cuong.vq` | Vũ Quốc Cường | `eng_head` | Nhân viên | Trưởng phòng Kỹ thuật |
 | `son.nt` | Ngô Thanh Sơn | `sales_head` | Nhân viên | Trưởng phòng Kinh doanh |
-| `mai.tt` | Trịnh Thị Mai | `hr_head` | Nhân viên | Trưởng phòng Nhân sự |
+| `mai.tt` | Trịnh Thị Mai | `hr_head` | Nhân viên | Trưởng phòng Nhân sự — **tài khoản AD đang khoá** (dữ liệu dựng sẵn) — không đăng nhập được |
 | `svc-backup` | Tài khoản dịch vụ sao lưu | `svc_backup` | — | **Không dùng để đăng nhập** |
 
 ### 7.4. Dữ liệu dựng sẵn — cố ý, không phải lỗi
@@ -499,7 +499,7 @@ Các điểm dưới đây có thể trông lạ khi chạy lại, nhưng đều
 
 - `khoa.dv`: chức danh trong dữ liệu là **"Trưởng nhóm Helpdesk"**, nhưng vai trò trên web là **IT Helpdesk L1** (menu giống `ha.lt`).
 - `quan.tm`: menu có **Tổng quan, Cảnh báo, Chính sách, Trạng thái LLM, Chờ tôi duyệt**.
-- 4 trưởng phòng (`lan.dt`, `cuong.vq`, `son.nt`, `mai.tt`) đăng nhập với vai trò **Nhân viên** — không có quyền gì thêm trên web.
+- 3 trưởng phòng (`lan.dt`, `cuong.vq`, `son.nt`) đăng nhập với vai trò **Nhân viên** — không có quyền gì thêm trên web. `mai.tt` có tài khoản AD **đang khoá** (dữ liệu dựng sẵn) nên **không đăng nhập được** — đừng thử nhiều lần (mỗi lần sai bị đếm, đủ 5 lần dashboard báo cảnh báo).
 - `dung.dv` (bị vô hiệu hoá) và `em.lv` (đã nghỉ việc) **không đăng nhập được** — bị từ chối với câu **"Tên đăng nhập hoặc mật khẩu không đúng."** Hệ thống cố ý báo chung chung (không tiết lộ tài khoản bị vô hiệu hoá), **không phải gõ sai mật khẩu**. **Đừng thử lại nhiều lần.**
 - `svc-backup`: tài khoản dịch vụ, **không dùng để đăng nhập**.
 - Mốc thời gian trong seed là **tương đối**: "chứng chỉ hết hạn 3 ngày trước" luôn đúng dù chạy ngày nào.

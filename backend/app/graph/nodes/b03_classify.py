@@ -39,7 +39,8 @@
    `domain/dedup.pick_duplicate`; store chỉ trả tập cha (`TicketStore.open_candidates`). Output guard chặn mẫu → không gửi tin, audit
    vẫn ghi `duplicate_of`. Lỗi ĐỌC store (`open_candidates`) KHÔNG lan thành E9 (ĐP 08/11): bắt `Exception`, log cảnh báo chỉ có tên lớp
    lỗi + mã ticket (không thông điệp, không traceback), bỏ qua tin báo trùng, luồng chạy tiếp; riêng `TurnBudgetExceeded` vẫn lan lên (E2).
-   Phạm vi bắt lỗi CHỈ là bước đọc store — gửi tin hỏng (notifier) vẫn là lỗi thật → E9.
+   Phạm vi bắt lỗi CHỈ là bước đọc store — gửi tin hỏng (notifier) vẫn là lỗi thật → E9. Chấm thử 11/11: ticket đã có tin `duplicate`
+   trong `conversation` (vòng hỏi tiếp D-78 đi lại B3) → không gửi lại; chỉ đọc `kind` của tin, không đọc chữ.
 
 9. Q1 (D-75, ĐP 09/11 — TC11): nhánh MỘT ý — `intents` rỗng (chào/cảm ơn/mơ hồ, prompt v6) HOẶC đúng 1 ý trong phạm vi mà `confidence <
    TAU_INTENT` → nếu ticket CHƯA hỏi phân loại (`triage` None) → MỘT câu CỐ ĐỊNH `messages.triage_question(enable_it_help)` (không LLM) qua
@@ -278,6 +279,10 @@ def make(deps: NodeDeps) -> NodeFn:
         if found is None:
             return {}
         info["duplicate_of"] = found
+        if any(m.get("kind") == "duplicate" for m in state.get("conversation") or []):
+            # Chấm thử 11/11 (T7): vòng hỏi tiếp D-78 đi lại B3 → tin báo trùng lặp lại mỗi vòng. Ticket đã báo một lần → không báo nữa
+            # (audit vẫn ghi `duplicate_of`).
+            return {}
         text = duplicate_text(deps.dedup.template, intent, found)
         if deps.output_guard.violation(text) is not None:  # mẫu do cấu hình viết — vẫn qua cổng đầu ra như mọi tin gửi đi
             return {}

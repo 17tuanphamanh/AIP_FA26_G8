@@ -34,7 +34,8 @@ FALLBACK_LABEL = "thông tin còn thiếu"
 # Ví dụ chỉ minh hoạ DẠNG, KHÔNG là định danh có thật (máy/người/thư mục/phần mềm trong danh mục) — be-target-guard-2: câu hỏi không được
 # gợi ý máy của người gửi hay đích của người khác.
 SLOT_HINTS: dict[str, tuple[str, str | None]] = {
-    "device_id": ("mã in trên tem dán ở máy tính", "LAP-1234"),
+    # chấm thử 11/11: "mã in trên tem dán…" làm LLM viết "mã máy in trên tem…" (đọc thành "mã MÁY IN") → nói rõ tem ở thân máy tính
+    "device_id": ("mã máy tính ghi trên tem dán ở thân máy", "LAP-1234"),
     "error_code": ("mã lỗi hiện trên màn hình", "809"),
     "reason": ("vì sao bạn cần việc này", None),
     "action": ("việc bạn cần mình làm", None),

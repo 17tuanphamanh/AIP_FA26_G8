@@ -60,6 +60,10 @@ def vpn_scripts(
             slots["action"] = verb
         return Reply({"slots": slots, "off_topic": not slots})
 
+    def rewrite(v: Mapping[str, Any]) -> Step:
+        """D-80: trả lại đúng câu gốc → b10_route không truy hồi lại (harness test mặc định tắt cờ; khoá này để bật cờ không ra E9)."""
+        return Reply({"query": str(v["question"])[:300] or "VPN"})
+
     def risk_estimate(_: Mapping[str, Any]) -> Step:
         return Reply({"prob_needs_human": 0.9, "factors": ["missing_facts"], "rationale": "preset"})
 
@@ -70,7 +74,7 @@ def vpn_scripts(
     # `llm_high_risk`; ca cần HITL/AUTO ghi đè bằng `overrides`.
     scripts: dict[str, Script] = {
         "b02_injection_judge": judge, "b03_classify": classify, "b10_need_type": need_type, "b10_answer": answer,
-        "b11_clarify_question": clarify, "b11_extract_slots": extract,
+        "b11_clarify_question": clarify, "b11_extract_slots": extract, "b09_rewrite_query": rewrite,
         "b14_risk_estimate": risk_estimate, "b14_risk_vote": risk_vote,
     }  # fmt: skip
     scripts.update(overrides)

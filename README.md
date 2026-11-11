@@ -20,7 +20,7 @@ Quyết định thiết kế đánh số D-xx ở [docs/spec/build/decisions.md]
 
 ### Cờ tính năng của bản nộp (`.env`, mặc định đều bật)
 
-Mỗi tính năng thêm sau bản đo có một cờ; đặt `false` là quay về đúng hành vi cũ, không cần đổi code.
+Bốn tính năng lớn thêm sau bản đo có cờ riêng; đặt `false` là tắt riêng tính năng đó (quay về hành vi trước khi có nó), không cần đổi code. Các sửa đổi khác sau bản đo (D-75, D-77, D-81, luật R21, mẫu chặn SYS-04, biến thể câu lặp Q13c, vai chat Q10) KHÔNG có cờ — muốn đúng hành vi bản đo thì chạy tag `v1.0-freeze`.
 
 | Cờ | Quyết định | Tắt thì |
 | --- | --- | --- |

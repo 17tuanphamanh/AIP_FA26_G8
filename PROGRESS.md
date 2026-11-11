@@ -6658,6 +6658,19 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   mã ticket đầy đủ (là mã thật, giữ).
 - Unit toàn bộ xanh, `make lint` xanh. Integration/e2e chạy ở CI.
 
+## Chấm lại trên bản 1b17371 (11/11/2026 tối, máy demo) — sửa tin báo trùng lặp lại (nhánh `sua-tin-trung`)
+
+- Chấm trực tiếp 44 ca trên máy demo sau khi lên `1b17371`: D-80 đạt ở R1 (máy in không dấu), R3 (lời chào + Wi-Fi), R4 (Outlook viết
+  tắt) — trước đây E3; R5 (MFA) vẫn E3 đúng thiết kế; R2 (ổ cứng không dấu) vẫn E3. D-81 đạt ở T4 (báo không bị khoá, hỏi đặt lại mật
+  khẩu, không phiếu duyệt).
+- Lỗi mới thấy ở T7: vòng hỏi tiếp D-78 đi lại B3 nên tin "Bạn đang có một yêu cầu … đang xử lý" gửi lại MỖI vòng (3 lần trong một
+  ticket). Sửa: `b03_classify._duplicate_notice` — ticket đã có tin `duplicate` trong `conversation` thì không gửi lại (audit vẫn ghi
+  `duplicate_of`). Test `test_dedup_b3.py::test_followup_round_does_not_repeat_the_duplicate_notice`; bỏ điều kiện → test đỏ.
+- Câu hỏi B11 (LLM) xin mã máy viết "mã máy in trên tem dán…" (đọc thành "mã MÁY IN") — gốc ở gợi ý hằng `SLOT_HINTS["device_id"]`
+  ("mã in trên tem dán ở máy tính"). Đổi thành "mã máy tính ghi trên tem dán ở thân máy" (`domain/slot_text.py`); không đổi prompt.
+- Ghi chú dữ liệu thử: `em.lv` (nghỉ việc) và `dung.dv` (bị tắt) không đăng nhập được theo seed — đúng thiết kế; kịch bản chấm đổi sang
+  tài khoản đang hoạt động.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

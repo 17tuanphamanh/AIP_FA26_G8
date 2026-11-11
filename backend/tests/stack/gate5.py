@@ -332,7 +332,8 @@ def tc03(ctx: Ctx) -> None:
     rep.eq(t, "tổng lời gọi ghi = 1", 1, ctx.mock_writes())
     rep.eq(t, "transaction_log", [["install_software", "begun"]], ctx.txlog(t))
     rep.eq(t, "B6 tự suy máy: 0 tin question", [], gate3.msgs(v, "question"))
-    _result(ctx, t, v, "Đã cài Zoom")
+    # seed: LAP-0342 ĐÃ có Zoom 6.1 → mock trả already_installed → tin "đã có sẵn" (Q3 M6), không "Đã cài" (rà soát 11/11)
+    _result(ctx, t, v, "Zoom đã có sẵn trên máy LAP-0342")
     rep.check(t, "tin result nêu LAP-0342", any("LAP-0342" in m["text"] for m in gate3.msgs(v, "result")), "có", "không")
     _confirm(ctx, t, 1)
 
