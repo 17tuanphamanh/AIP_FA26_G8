@@ -263,7 +263,8 @@ def msgs(view: Mapping[str, Any], kind: str) -> list[dict[str, Any]]:
 
 
 def user_message(code: str) -> str:
-    return get_escalation_templates().of(code).user_message
+    """Stack dev chạy `ENABLE_IT_HELP` mặc định bật (compose) → biến thể `user_message_it_help` nếu mã khai (D-76; E3/E4 từ 11/11)."""
+    return get_escalation_templates().of(code).user_message_for(None, it_help=True)
 
 
 # ---- Kịch bản -------------------------------------------------------------------------------------------------------
