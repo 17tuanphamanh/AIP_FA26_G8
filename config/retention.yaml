@@ -1,6 +1,6 @@
 # Job hạn giữ của worker (M2 bn-a) — P7 mục 4 [Chốt 17.2]. Đọc bởi `settings.open_retention`; sai → worker không khởi động.
 # Bật xoá THẬT = đổi `dry_run: false` trong file này (commit, có người duyệt) — KHÔNG có biến env/.env nào bật được.
-# Dry-run: chỉ đếm + ghi 1 dòng sự kiện mỗi lượt (`security_events.retention_run` sau migration 0015; trước đó 1 dòng log).
+# Dry-run: chỉ đếm + ghi 1 dòng sự kiện mỗi lượt (`security_events.retention_run` từ migration 0016; trước đó 1 dòng log).
 retention_days: 90       # checkpoint + hội thoại của ticket đã kết thúc (tính từ closed_at); kèm side_effects, child_notices. SÀN 90
 session_grace_days: 30   # sessions hết hạn quá 30 ngày VÀ không còn dòng tickets/turns nào trỏ tới
 wait_grace_days: 7       # wait_deadlines đã bắn (fired_at) quá 7 ngày

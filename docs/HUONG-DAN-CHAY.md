@@ -205,7 +205,7 @@ Giải thích các biến quan trọng (sửa tay bằng `nano .env` nếu cần
 - `LLM_BACKEND=scripted` — **bắt buộc có**. `scripted` là LLM giả, không tốn tiền (dùng cho lần dựng đầu). Bật LLM thật: mục 9.
 - `JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`, `SVC_WORKER_TOKEN`, `ML_SERVICE_TOKEN` — **bắt buộc có giá trị**, mỗi khoá một giá trị riêng (đoạn lệnh trên đã sinh). Thiếu `ML_SERVICE_TOKEN` thì compose dừng ngay.
 - `USERNAME_HMAC_KEY` — **bắt buộc có giá trị**, sinh bằng lệnh ở trên (không tự đặt giá trị ngẫu nhiên: phải khớp `JWT_SIGNING_KEY`, lệch thì các trang ticket/duyệt báo 503).
-- `ENABLE_IT_HELP`, `ENABLE_KB_FOLLOWUP`, `ENABLE_SESSION_MEMORY`, `ENABLE_QUERY_REWRITE` — tính năng thêm sau bản đo, **mặc định bật**, không cần sửa (đặt `false` = hành vi bản đo; xem `README.md`).
+- `ENABLE_IT_HELP`, `ENABLE_KB_FOLLOWUP`, `ENABLE_SESSION_MEMORY`, `ENABLE_QUERY_REWRITE` — tính năng thêm sau bản đo, **mặc định bật**, không cần sửa (đặt `false` = tắt riêng tính năng đó; muốn đúng bản đo thì chạy tag `v1.0-freeze` — xem `README.md`).
 - `FAKE_SCENARIO` — **để trống**. Có giá trị (ví dụ `approval`) thì **toàn bộ các bước của agent chạy bằng node giả** (chỉ dùng cho kiểm thử nội bộ) — kết quả demo/đánh giá sẽ không phải của hệ thống thật.
 - `FAKE_NODE_DELAY` — **để trống**. Còn giá trị khi `FAKE_SCENARIO` trống thì backend **từ chối khởi động**.
 - `FAKE_APPROVER_ID` — giữ nguyên như `.env.example`.
