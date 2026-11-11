@@ -21,8 +21,6 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
 
-# Cờ chờ: cả module đỏ tới khi có 0016 — strict: có 0016 mà chưa gỡ cờ → XPASS đỏ.
-pytestmark = pytest.mark.xfail(strict=True, reason="CHỜ migration 0016")
 PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 
@@ -126,18 +124,17 @@ def test_0016_final_state_written_once(pg: PgUrls) -> None:
             rw.dispose()
 
 
-def test_0016_pending_deadline_index_used_by_scan(pg: PgUrls) -> None:
-    """S4: truy vấn quét hạn phiếu (`status='pending' AND deadline <= :now`) CÓ THỂ dùng chỉ mục từng phần (planner chọn khi bảng
-    lớn — ở đây chỉ kiểm chỉ mục khớp điều kiện bằng `enable_seqscan = off`)."""
+def test_0016_pending_deadline_index_matches_scan(pg: PgUrls) -> None:
+    """S4: chỉ mục từng phần khớp đúng điều kiện quét hạn phiếu (`status='pending' AND deadline <= :now`). Không khẳng định planner
+    CHỌN nó: bảng rỗng ở CI thì `ux_approvals_one_pending` (cũng từng phần theo `status='pending'`) rẻ ngang — CI 11/11 planner chọn
+    chỉ mục kia. Kiểm định nghĩa: cột `deadline`, vị từ `status = 'pending'`."""
     with fresh_database(pg) as db:
         command.upgrade(alembic_config(db), "head")
         owner = create_engine(db.role("app_migrate"))
         try:
-            with owner.connect() as conn:
-                conn.execute(text("SET enable_seqscan = off"))
-                plan = "\n".join(r[0] for r in conn.execute(text(
-                    "EXPLAIN SELECT approval_id FROM approvals WHERE status = 'pending' AND deadline <= now()"
-                )))  # fmt: skip
-            assert "ix_approvals_pending_deadline" in plan
+            indexdef = _scalar(owner, "SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_approvals_pending_deadline'")
+            assert indexdef is not None
+            assert "ON public.approvals" in indexdef and "(deadline)" in indexdef
+            assert "WHERE" in indexdef and "status" in indexdef and "'pending'" in indexdef
         finally:
             owner.dispose()

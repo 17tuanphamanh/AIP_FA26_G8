@@ -108,8 +108,9 @@ async def _guard(
     snap = await runner.snapshot(ticket_id)
     if not snap.values and not missing_is_late:
         raise TicketNotFound(ticket_id)
-    # API đã thấy dòng `tickets`: chưa có checkpoint = graph chưa chạy lượt đầu (vẫn S_NEW).
-    status = snap.values.get("status", S_NEW) if snap.values else S_NEW
+    # API đã thấy dòng `tickets`: chưa có checkpoint = graph chưa chạy lượt đầu (vẫn S_NEW) — TRỪ ticket đã kết thúc mà checkpoint đã bị
+    # job hạn giữ dọn: ghi trạng thái cuối trong DB (Q7 / nợ 39 — trước ghi "S_NEW", đọc audit dễ hiểu nhầm).
+    status = snap.values.get("status", S_NEW) if snap.values else (await runner.final_state(ticket_id) or S_NEW)
     waiting = snap.next[0] if snap.next else None
     spec = WAITS.get(waiting) if waiting else None
     if status != expected_status or spec is None or spec[0] != expected_status or (wait_node is not None and waiting != wait_node):
