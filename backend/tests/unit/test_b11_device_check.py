@@ -336,3 +336,45 @@ async def test_graph_full_slots_second_unknown_code_old_flow_asked_once() -> Non
     assert (action.params["device_id"], action.facts["device_registered"]) == ("LAP-0013", False)
     assert _asked(h) == [NOT_FOUND]
     assert v["status"] != S_CLARIFYING
+
+
+# ---- D-85 (kiểm thử 12/11): software — mã máy không có → hỏi lại mã như VPN; máy người khác giữ luồng cũ -----------------------
+
+SW_FACTS: dict[str, Any] = {"device_registered": False, "device_owner_is_requester": False, "in_catalog": True,
+                            "license_paid": False, "requires_local_admin": False}  # fmt: skip
+NOT_FOUND_0717 = ("Mình không tìm thấy máy LAP-0717 trong danh mục. Bạn xem mã máy dán ở thân máy (dạng LAP-0342) rồi gửi lại "
+                  "giúp mình.")  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_d85_software_full_slots_unknown_device_asks_code_no_action() -> None:
+    """Đo trên máy demo: "Cài 7-Zip lên máy LAP-0717 giúp mình" (máy không có) → E5 llm_high_risk. Nay: hỏi lại mã (câu cố định,
+    không LLM), KHÔNG dựng Action, giữ slot phần mềm, bỏ fact máy."""
+    h, gw = _harness()
+    out = await _node(h, _state({"device_id": "LAP-0717", "software_name": "7zip"}, SW_FACTS, None, intent="software"))
+    assert (out["status"], out["next"], out["clarification_turns"]) == (S_CLARIFYING, "clarify_wait", 1)
+    assert "intended_action" not in out and gw.llm.calls == []
+    assert h.notifier.sent == [("t1", NOT_FOUND_0717, "answer")]
+    assert out["slots"] == {"software_name": "7zip"}
+    assert out["facts"] == {"in_catalog": True, "license_paid": False, "requires_local_admin": False}
+    assert out["missing_slots"] == ["device_id"]
+    assert _detail(h)["device_not_found"] is True
+
+
+def test_d85_software_other_persons_device_keeps_old_path() -> None:
+    """Máy CÓ nhưng của người khác (software): `device_lookup` không kết luận (None) → không E5 sớm ở B11, giữ luồng cũ (dựng
+    Action → B12/B15). Chỉ VPN có E5 sớm (Q2 M4). Máy có, của chính mình → None (không hỏi lại)."""
+    other = _state({"device_id": "LAP-0610", "software_name": "7zip"}, {**SW_FACTS, "device_registered": True}, [DEV_0610],
+                   intent="software")  # fmt: skip
+    assert b11_slots.device_lookup(other) is None
+    mine = _state({"device_id": "LAP-0342", "software_name": "7zip"},
+                  {**SW_FACTS, "device_registered": True, "device_owner_is_requester": True}, [DEV_0342], intent="software")  # fmt: skip
+    assert b11_slots.device_lookup(mine) is None
+    gone = _state({"device_id": "LAP-0717", "software_name": "7zip"}, SW_FACTS, None, intent="software")
+    assert b11_slots.device_lookup(gone) == "not_found"
+
+
+def test_d85_lookup_intents() -> None:
+    assert b11_slots.DEVICE_LOOKUP_INTENTS == {"vpn", "software"}
+    st = _state({"device_id": "LAP-0717"}, SW_FACTS, None, intent="account")
+    assert b11_slots.device_lookup(st) is None  # intent khác: không kết luận
