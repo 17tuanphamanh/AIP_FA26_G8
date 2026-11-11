@@ -46,12 +46,12 @@ codes:
     # Bổ sung 12/11 02:30: rút / hạ quyền, "không cần … nữa", tài khoản bị lộ / bị chiếm (KB-GEN-008: sự cố an toàn thông tin).
     user_message_by_reason:
       reverse_action_requested: >-
-        Việc thu hồi, khoá, gỡ cài đặt, huỷ, hay xử lý khi mất máy hoặc nghi lộ mật khẩu cần kỹ thuật viên làm trực tiếp, mình không
-        tự thực hiện. Mình đã chuyển yêu cầu cho kỹ thuật viên; nếu gấp, bạn gọi ngay bộ phận IT để được xử lý sớm nhất.
+        Việc thu hồi, khoá, ngắt VPN, gỡ cài đặt, huỷ, hay xử lý khi mất máy, nghi lộ mật khẩu hoặc máy nhiễm mã độc cần kỹ thuật viên
+        làm trực tiếp, mình không tự thực hiện. Mình đã chuyển yêu cầu cho kỹ thuật viên; nếu gấp, bạn gọi ngay bộ phận IT để được xử lý sớm nhất.
     next_for_l2_by_reason:
       reverse_action_requested: >-
-        Người dùng xin thao tác NGƯỢC (thu hồi, rút / hạ quyền, khoá, vô hiệu hoá, gỡ cài đặt, đừng làm / huỷ) hoặc báo mất thiết bị,
-        tài khoản bị lộ / bị chiếm — hệ thống chỉ có thao tác thuận nên KHÔNG dựng hành động. Đọc yêu cầu (đã che), nếu là mất thiết bị
+        Người dùng xin thao tác NGƯỢC (thu hồi, rút / hạ quyền, khoá, ngắt / tắt VPN, vô hiệu hoá, gỡ cài đặt, đừng làm / huỷ) hoặc báo
+        mất thiết bị, tài khoản bị lộ / bị chiếm, máy nhiễm mã độc — hệ thống chỉ có thao tác thuận nên KHÔNG dựng hành động. Đọc yêu cầu (đã che), nếu là mất thiết bị
         hoặc nghi lộ thông tin thì xử lý như sự cố an toàn thông tin (ưu tiên; đặt lại mật khẩu qua kênh không phụ thuộc tài khoản bị
         lộ), thu hồi/khoá thủ công theo quy trình.
   E2:
