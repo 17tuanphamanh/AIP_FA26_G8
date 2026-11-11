@@ -126,15 +126,15 @@ def test_m1_result_actions_nine() -> None:
         pytest.param(action("grant_permission", params={"resource_path": "finance/public-reports", "permission_level": "read",
                                                         "duration_days": 30}),
                      {"level": "read", "expires_on": "2026-11-12"},
-                     "Đã cấp quyền read thư mục finance/public-reports cho bạn, hiệu lực tới 12/11/2026. "
+                     "Đã cấp quyền đọc thư mục finance/public-reports cho bạn, hiệu lực tới 12/11/2026. "
                      f"{CONFIRM_OPEN}", id="grant-du"),
         pytest.param(action("grant_permission"), {"expires_on": "2026-11-12"},
                      "Đã cấp quyền thư mục finance/public-reports cho bạn, hiệu lực tới 12/11/2026. "
                      f"{CONFIRM_OPEN}", id="grant-thieu-level"),
         pytest.param(action("grant_permission"), {"level": "read"},
-                     f"Đã cấp quyền read thư mục finance/public-reports cho bạn. {CONFIRM_OPEN}", id="grant-thieu-han"),
+                     f"Đã cấp quyền đọc thư mục finance/public-reports cho bạn. {CONFIRM_OPEN}", id="grant-thieu-han"),
         pytest.param(action("grant_permission", rf="nv005"), {"level": "write", "expires_on": "2026-11-12"},
-                     "Đã cấp quyền write thư mục finance/public-reports cho nv005, hiệu lực tới 12/11/2026. "
+                     "Đã cấp quyền ghi thư mục finance/public-reports cho nv005, hiệu lực tới 12/11/2026. "
                      f"{CONFIRM_OPEN_OTHER}", id="grant-nguoi-khac"),
         pytest.param(action("extend_permission", rf="nv005", params={"resource_path": "finance/Q3", "duration_days": 30}), {},
                      f"Đã gia hạn quyền thư mục finance/Q3 của nv005. {CONFIRM_OPEN_OTHER}", id="extend-nguoi-khac"),
@@ -241,11 +241,11 @@ def test_m1_vpn_reissue_has_template() -> None:
                      "Đã cấp quyền thư mục finance/public-reports cho bạn, hiệu lực tới 12/11/2026. "
                      f"{CONFIRM_OPEN}", "admin", id="level-la"),
         pytest.param(action("grant_permission"), {"level": "read", "expires_on": "2026-13-45"},
-                     f"Đã cấp quyền read thư mục finance/public-reports cho bạn. {CONFIRM_OPEN}", "2026-13-45", id="ngay-rac"),
+                     f"Đã cấp quyền đọc thư mục finance/public-reports cho bạn. {CONFIRM_OPEN}", "2026-13-45", id="ngay-rac"),
         pytest.param(action("grant_permission", params={"resource_path": "finance/../hr", "permission_level": "read",
                                                         "duration_days": 30}),
                      {"level": "read", "expires_on": "2026-11-12"},
-                     "Đã cấp quyền read thư mục được yêu cầu cho bạn, hiệu lực tới 12/11/2026. "
+                     "Đã cấp quyền đọc thư mục được yêu cầu cho bạn, hiệu lực tới 12/11/2026. "
                      f"{CONFIRM_OPEN}", "..", id="path-dot-dot"),
         pytest.param(action("extend_permission", params={"resource_path": "../../etc/passwd", "duration_days": 30}),
                      {"expires_on": "2026-11-12"},

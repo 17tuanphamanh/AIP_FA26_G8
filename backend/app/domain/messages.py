@@ -158,6 +158,9 @@ def software_label(raw: str) -> str:
         return "phần mềm"
     return SOFTWARE_LABELS.get(raw, raw)
 PERMISSION_LEVELS: Final = frozenset({"read", "write", "full"})
+# Chấm thử 11/11 (T2): tin kết quả từng in enum thô ("Đã cấp quyền read thư mục…"). Nhãn tiếng Việt cho tin người dùng; danh sách quyền
+# (view_permissions) giữ enum như cũ.
+PERMISSION_LEVEL_TEXT: Final[Mapping[str, str]] = {"read": "đọc", "write": "ghi", "full": "toàn quyền"}
 MAX_PERMISSION_ROWS: Final = 10
 ASK_CONFIRM_LOGIN: Final = "Bạn đăng nhập thử rồi xác nhận giúp mình nhé."
 ASK_CONFIRM_OPEN: Final = "Bạn mở thử rồi xác nhận giúp mình nhé."
@@ -303,6 +306,7 @@ def _new_action_text(
         return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {confirm_view}"
     if action.type == "grant_permission":
         level = _out(outputs, "level")
+        level = PERMISSION_LEVEL_TEXT.get(level or "", level)
         return (f"Đã cấp quyền {f'{level} ' if level else ''}{folder} cho {who}"
                 f"{f', hiệu lực tới {until}' if until else ''}. {confirm_open}")  # fmt: skip
     if action.type == "extend_permission":
