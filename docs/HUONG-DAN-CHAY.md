@@ -490,7 +490,7 @@ Mọi vai trò đều có ô chat ở giữa màn hình ("Hôm nay IT giúp gì 
 | `lan.dt` | Đỗ Thị Lan | `fin_head` | Nhân viên | Trưởng phòng Kế toán |
 | `cuong.vq` | Vũ Quốc Cường | `eng_head` | Nhân viên | Trưởng phòng Kỹ thuật |
 | `son.nt` | Ngô Thanh Sơn | `sales_head` | Nhân viên | Trưởng phòng Kinh doanh |
-| `mai.tt` | Trịnh Thị Mai | `hr_head` | Nhân viên | Trưởng phòng Nhân sự |
+| `mai.tt` | Trịnh Thị Mai | `hr_head` | Nhân viên | Trưởng phòng Nhân sự — **tài khoản AD đang khoá** (dữ liệu dựng sẵn) — không đăng nhập được |
 | `svc-backup` | Tài khoản dịch vụ sao lưu | `svc_backup` | — | **Không dùng để đăng nhập** |
 
 ### 7.4. Dữ liệu dựng sẵn — cố ý, không phải lỗi
@@ -499,7 +499,7 @@ Các điểm dưới đây có thể trông lạ khi chạy lại, nhưng đều
 
 - `khoa.dv`: chức danh trong dữ liệu là **"Trưởng nhóm Helpdesk"**, nhưng vai trò trên web là **IT Helpdesk L1** (menu giống `ha.lt`).
 - `quan.tm`: menu có **Tổng quan, Cảnh báo, Chính sách, Trạng thái LLM, Chờ tôi duyệt**.
-- 4 trưởng phòng (`lan.dt`, `cuong.vq`, `son.nt`, `mai.tt`) đăng nhập với vai trò **Nhân viên** — không có quyền gì thêm trên web.
+- 3 trưởng phòng (`lan.dt`, `cuong.vq`, `son.nt`) đăng nhập với vai trò **Nhân viên** — không có quyền gì thêm trên web. `mai.tt` có tài khoản AD **đang khoá** (dữ liệu dựng sẵn) nên **không đăng nhập được** — đừng thử nhiều lần (mỗi lần sai bị đếm, đủ 5 lần dashboard báo cảnh báo).
 - `dung.dv` (bị vô hiệu hoá) và `em.lv` (đã nghỉ việc) **không đăng nhập được** — bị từ chối với câu **"Tên đăng nhập hoặc mật khẩu không đúng."** Hệ thống cố ý báo chung chung (không tiết lộ tài khoản bị vô hiệu hoá), **không phải gõ sai mật khẩu**. **Đừng thử lại nhiều lần.**
 - `svc-backup`: tài khoản dịch vụ, **không dùng để đăng nhập**.
 - Mốc thời gian trong seed là **tương đối**: "chứng chỉ hết hạn 3 ngày trước" luôn đúng dù chạy ngày nào.
