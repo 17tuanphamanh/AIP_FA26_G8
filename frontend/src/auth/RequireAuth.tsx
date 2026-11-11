@@ -16,6 +16,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     );
   }
   if (state.status === "signedOut") {
+    if (state.reason === "logout") return <Navigate to="/login" replace />; // tự đăng xuất: không nhớ trang của người trước
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
   return children;
