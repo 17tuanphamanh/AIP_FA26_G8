@@ -8,7 +8,8 @@ Thứ tự (lệch mã giả có chủ đích — quyết định Q-C 2b-2):
 3. Có `exit_code` (cha đóng bình thường không bao giờ có — D-30; cha đi đường lỗi CÓ — T20b Q-T20b-5): `effects.once("escalation_create")` (priority lấy từ
    bảng `exit_code_priority`, ghi chú bàn giao 4 phần theo mẫu) + `effects.once("notify_user")` với tin
    theo mã [Chốt 7.1] (Q3 M5: `CodeTemplate.user_message_for(reason)` — câu theo lý do nếu mẫu khai `user_message_by_reason`, hiện chỉ
-   E5; E1 `injection_suspected` vẫn dùng mẫu E0, E0 không có câu theo lý do; D-76: cờ ENABLE_IT_HELP bật → `user_message_it_help` nếu mã khai — E1). Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
+   E5; E1 `injection_suspected` vẫn dùng mẫu E0, E0 không có câu theo lý do; D-76: cờ ENABLE_IT_HELP bật → `user_message_it_help` nếu mã khai — E1;
+   Q13c: trong cùng phiên đã có ticket khác kết thúc bằng mã có `user_message_repeat` (E1/E3/E4) → biến thể lần lặp, bớt lặp câu phạm vi). Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
    nên chạy lại cũng chỉ có một tin.
 
 Không làm ở đây: `wake_parent` (runner gọi SAU khi nhả khoá ticket con — tránh deadlock, 2b-Q7);
@@ -95,9 +96,11 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
             # Q3 M5: câu theo `escalation_reason_detail` nếu mã khai báo (E5), không thì câu mặc định của mã
             # D-76: cờ ENABLE_IT_HELP bật → câu có vế "hướng dẫn sự cố IT thường gặp" nếu mã khai (hiện chỉ E1)
-            text = deps.templates.of(_message_code(state, code)).user_message_for(
-                state.get("escalation_reason_detail"), it_help=deps.enable_it_help
-            )
+            message_code = _message_code(state, code)
+            text = deps.templates.of(message_code).user_message_for(
+                state.get("escalation_reason_detail"), it_help=deps.enable_it_help,
+                repeat=await _session_repeats(state, message_code, ticket_id),
+            )  # fmt: skip
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, ticket_id, text, "none", step="B20"
             )
@@ -105,6 +108,19 @@ def make(deps: NodeDeps) -> NodeFn:
                 {"role": "assistant", "kind": "escalation", "text": text, "ref": ref}
             ]
         return update
+
+    async def _session_repeats(state: Any, message_code: str, ticket_id: str) -> int:
+        """Q13c: số ticket khác trong cùng phiên đã nhận câu cùng nhóm (mã có `user_message_repeat`) — 0 khi mã không có biến thể, thiếu
+        `session_id` hoặc đọc store lỗi (câu đầy đủ; KHÔNG chặn escalation — log chỉ tên lớp lỗi)."""
+        codes = deps.templates.repeat_codes
+        session_id = state.get("session_id")
+        if message_code not in codes or not session_id:
+            return 0
+        try:
+            return await deps.tickets.session_exit_count(str(session_id), codes, exclude=ticket_id)
+        except Exception as exc:  # noqa: BLE001 — chỉ chọn câu; escalation + tin phải đi
+            log.warning("B20 %s: đếm ticket cùng phiên lỗi (%s) — dùng câu đầy đủ", ticket_id, type(exc).__name__)
+            return 0
 
     async def _with_children(note: HandoffNote, ticket_id: str) -> HandoffNote:
         """Đọc trạng thái con lỗi (DB) → ghi mã cố định, KHÔNG chặn escalation (soát lượt 4 NGHI (a)); log chỉ tên lớp lỗi."""

@@ -128,15 +128,17 @@ async def _sent_text(h: GraphHarness, ticket: str) -> str:
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_default_intents")
 async def test_b20_sends_scope_message_for_e1_e3_e4() -> None:
-    h = GraphHarness()
-    await h.submit("e1", b03_classify="out_of_scope")
-    await h.submit("e3", b08_retrieve="no_evidence")
-    await h.submit("e4", b11_slots="missing")
-    await deliver_event(h.runner, "e4", S_CLARIFYING, {"kind": "timeout"})
+    # Q13c (11/11): mỗi ticket ở harness RIÊNG = ticket đầu phiên → câu đầy đủ có phạm vi (ticket sau cùng phiên dùng biến thể —
+    # test_q13c_bot_lap.py). Ý định cũ giữ nguyên: E1/E3/E4 nêu phạm vi rồi mới báo đã chuyển.
+    h1, h3, h4 = GraphHarness(), GraphHarness(), GraphHarness()
+    await h1.submit("e1", b03_classify="out_of_scope")
+    await h3.submit("e3", b08_retrieve="no_evidence")
+    await h4.submit("e4", b11_slots="missing")
+    await deliver_event(h4.runner, "e4", S_CLARIFYING, {"kind": "timeout"})
     # Q12 (ĐP 09/11, đổi kỳ vọng đã duyệt): E1 có vế hướng dẫn khi cờ bật; E3/E4 giữ nguyên
-    assert await _sent_text(h, "e1") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E1_TAIL}"
-    assert await _sent_text(h, "e3") == f"{_scope_sentence()} {E3_TAIL}"
-    assert await _sent_text(h, "e4") == f"{_scope_sentence()} {E4_TAIL}"
+    assert await _sent_text(h1, "e1") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E1_TAIL}"
+    assert await _sent_text(h3, "e3") == f"{_scope_sentence()} {E3_TAIL}"
+    assert await _sent_text(h4, "e4") == f"{_scope_sentence()} {E4_TAIL}"
 
 
 @pytest.mark.asyncio

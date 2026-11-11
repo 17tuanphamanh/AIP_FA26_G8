@@ -214,6 +214,19 @@ class SqlTicketStore:
             for r in rows
         ]  # fmt: skip
 
+    async def session_exit_count(self, session_id: str, codes: Sequence[str], *, exclude: str) -> int:
+        """Q13c: số ticket KHÁC `exclude` cùng `session_id`, đã kết thúc (`final_state` có) với `exit_code` ∈ `codes` (chỉ đếm, không đọc chữ)."""
+        if not codes:
+            return 0
+        t = _TICKETS.c
+        async with self._engine.connect() as conn:
+            value = (await conn.execute(
+                select(func.count()).select_from(_TICKETS).where(
+                    t.session_id == session_id, t.ticket_id != exclude, t.final_state.is_not(None), t.exit_code.in_(list(codes)),
+                )
+            )).scalar()  # fmt: skip
+        return int(value or 0)
+
     async def strategy_of(self, ticket_id: str) -> str | None:
         """D-67: chiến lược M5 đã chụp lúc tạo ticket (B12). None = ticket cũ (trước migration 0013) hoặc không ghi."""
         async with self._engine.connect() as conn:

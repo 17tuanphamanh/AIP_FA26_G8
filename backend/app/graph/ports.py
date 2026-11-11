@@ -199,6 +199,10 @@ class TicketStore(TicketReader, Protocol):
 
     async def count_turns(self, ticket_id: str) -> int: ...
 
+    async def session_exit_count(self, session_id: str, codes: Sequence[str], *, exclude: str) -> int:
+        """Q13c: số ticket KHÁC `exclude` trong cùng phiên đăng nhập đã kết thúc bằng một mã trong `codes` (B20 chọn biến thể câu)."""
+        ...
+
     async def open_candidates(self, requester_id: str, *, since: datetime) -> list[OpenCandidate]:
         """M1 (B3 báo trùng yêu cầu): ticket của `requester_id` tạo từ `since`, kèm `intent` lấy từ dòng audit B3 `intent_classified`
         (`tickets.intent` chỉ được ghi ở B20, ticket còn mở thì NULL). Chỉ đọc. Trả TẬP CHA — có thể thừa (đã đóng, là cha, chưa có

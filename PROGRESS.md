@@ -6579,6 +6579,17 @@ TA (11/11 12:35) cho tự làm + tự kiểm thử + tự sửa. Hợp đồng �
 - Kiểm: unit toàn bộ xanh; ruff, mypy app + tests, lint-imports xanh; FE typecheck/lint/check:style + 1283 test xanh.
 - Chưa: chạy với LLM thật (máy demo sau deploy); ticket con chưa áp dụng (giới hạn ghi ở D-78).
 
+## Q13c — bớt lặp câu cố định E1/E3/E4 trong cùng phiên (11/11/2026, nhánh `q13a-hoi-tiep`, commit thứ hai)
+
+- `config/escalation_templates.yaml`: E1, E3, E4 thêm `user_message_repeat` (2 câu mỗi mã; không nêu lại câu phạm vi, vẫn báo đã chuyển kỹ
+  thuật viên, không hứa thêm). `CodeTemplate.user_message_for(reason, *, it_help, repeat)`: câu theo lý do vẫn ưu tiên; `repeat ≥ 1` →
+  biến thể xoay vòng; còn lại như cũ. `EscalationTemplates.repeat_codes` = mã có biến thể.
+- B20: `repeat` = `TicketStore.session_exit_count(session_id, repeat_codes, exclude=ticket)` — ticket KHÁC cùng phiên đăng nhập đã kết thúc
+  bằng E1/E3/E4. Ticket đầu phiên giữ câu đầy đủ. Đọc lỗi → 0 (câu đầy đủ), escalation vẫn tạo. E0 không có biến thể (không tiết lộ).
+- Test viết trước `test_q13c_bot_lap.py` (8 ca); PG `test_b20_pg.py::test_q13c_session_exit_count_sql` (CI chạy). `test_messages_scope`:
+  3 ticket nay ở 3 harness riêng (mỗi ticket đầu phiên) — ý định "E1/E3/E4 nêu phạm vi" giữ nguyên.
+- Mutation (5): repeat luôn 0, fake không lọc phiên, bỏ try/except, lý do mất ưu tiên, không xoay vòng → đều đỏ. Unit toàn bộ xanh.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

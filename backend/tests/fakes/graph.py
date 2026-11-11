@@ -609,6 +609,7 @@ class MemoryTickets:
         self.hidden: dict[tuple[str, str], datetime] = {}  # `ticket_hidden` giả: (user_id, ticket_id) → hidden_at
         self.audit: MemoryAudit | None = None  # harness nối — `open_candidates` đọc `intent` từ dòng audit B3 (như SQL)
         self.open_candidates_error: BaseException | None = None  # M1: tiêm lỗi đọc store báo trùng
+        self.session_exit_count_error: BaseException | None = None  # Q13c: tiêm lỗi đếm ticket cùng phiên (B20)
 
     def register(
         self, ticket_id: str, created_at: datetime, *, is_parent: bool = False,
@@ -695,6 +696,15 @@ class MemoryTickets:
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         return self.strategies.get(ticket_id)
+
+    async def session_exit_count(self, session_id: str, codes: Sequence[str], *, exclude: str) -> int:
+        """Như SQL (Q13c): ticket KHÁC `exclude`, cùng `session_id`, đã kết thúc với `exit_code` ∈ `codes`."""
+        if self.session_exit_count_error is not None:
+            raise self.session_exit_count_error
+        return sum(
+            1 for tid, r in self.rows.items()
+            if tid != exclude and r["session_id"] == session_id and r["final"] is not None and r["final"].exit_code in codes
+        )
 
     async def created_at(self, ticket_id: str) -> datetime:
         return self.rows[ticket_id]["created_at"]  # type: ignore[no-any-return]
