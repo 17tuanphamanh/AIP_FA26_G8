@@ -37,3 +37,50 @@ describe("M2: TicketConversation — 410 conversation_purged", () => {
     expect(screen.queryByTestId("conversation-purged")).toBeNull();
   });
 });
+
+// Kiểm thử 12/11: L1/L2 xem hội thoại chỉ đọc mà không thấy câu người dùng đã xin (conversation bắt đầu từ câu hỏi của bot).
+// Câu yêu cầu đầu = `request_text` (đã che) — bong bóng đầu, như ChatPage; null/rỗng → không bong bóng.
+const QUESTION = "Bạn cần dùng trong bao nhiêu ngày? Trả lời bằng số ngày, ví dụ 30.";
+function mountView(over: Record<string, unknown>) {
+  const body = {
+    ticket_id: "tkt-cu",
+    status: "S_CLARIFYING",
+    children_progress: [],
+    conversation: [{ role: "assistant", kind: "question", text: QUESTION, ref: null, needs: "answer" }],
+    request_text: "Cho mình quyền đọc thư mục shared/templates",
+    ...over,
+  };
+  vi.stubGlobal("fetch", vi.fn(async () => json(200, body)));
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TicketConversation ticketId="tkt-cu" />
+    </QueryClientProvider>,
+  );
+}
+
+describe("12/11: câu yêu cầu đầu trong hội thoại chỉ đọc của IT", () => {
+  it("có request_text → bong bóng đầu là câu gốc, rồi mới tới câu hỏi của bot", async () => {
+    mountView({});
+    const first = await screen.findByText("Cho mình quyền đọc thư mục shared/templates");
+    expect(first.getAttribute("data-role")).toBe("request");
+    const question = screen.getByText(QUESTION);
+    expect(first.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it.each([null, "   ", undefined])("request_text=%j → không bong bóng câu gốc", async (requestText) => {
+    mountView({ request_text: requestText });
+    expect(await screen.findByText(QUESTION)).toBeTruthy();
+    expect(document.querySelector('[data-role="request"]')).toBeNull();
+  });
+
+  it("chưa có tin nào nhưng có câu gốc → hiện câu gốc, không '(không có)'", async () => {
+    mountView({ conversation: [] });
+    expect(await screen.findByText("Cho mình quyền đọc thư mục shared/templates")).toBeTruthy();
+    expect(screen.queryByText("(không có)")).toBeNull();
+  });
+
+  it("câu gốc đủ 500 ký tự (backend cắt) → thêm '…'", async () => {
+    mountView({ request_text: "a".repeat(500) });
+    expect(await screen.findByText(`${"a".repeat(500)}…`)).toBeTruthy();
+  });
+});
