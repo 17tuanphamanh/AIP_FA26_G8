@@ -117,6 +117,8 @@ class ChildOps:
         runner = self._runner
         if (await runner.snapshot(cid)).values:
             return "exists"  # đã khởi động ở lần chạy trước (thread có state) — không chạy lại từ đầu
+        if await runner.final_state(cid) is not None:
+            return "exists"  # Q7 / nợ 39: con đã kết thúc, checkpoint đã bị job hạn giữ dọn — không khởi động lại
 
         async def work(turn_id: str) -> None:
             seeded = {**values, "turn_id": turn_id}

@@ -98,6 +98,7 @@ SECURITY_EVENT_TYPES = (  # P7 2.3
     "mfa_failed", "policy_saved", "injection_detected", "privacy_secret_redacted",
     "mfa_enrolled", "mfa_reset",  # migration 0002 (P7 2.3 bản 1.5)
     "rate_limited",  # migration 0010 (Phase 5 gói 2b, D-54 a): 429 theo tài khoản
+    "retention_run",  # migration 0016 (lô Q7 / bn-a Q5): job hạn giữ ghi một dòng mỗi lần chạy
 )  # fmt: skip
 AUTH_FAILURE_TYPES = ("login_failed", "mfa_failed")  # view auth_failures (P7 2.3)
 LLM_CACHE_MODES = ("runtime", "eval")  # P7 2.4
@@ -175,6 +176,7 @@ class User(Base):
     hired_at: Mapped[date | None] = mapped_column(Date)
     email: Mapped[str | None] = mapped_column(String(254))  # migration 0012: đồng bộ từ AD (`upsert_user`); NULL = AD không có
     mfa_secret_enc: Mapped[bytes | None] = mapped_column(BYTEA)
+    mfa_last_step: Mapped[int | None] = mapped_column(BigInteger)  # migration 0016 (A4): bước TOTP cuối đã nhận — chống dùng lại mã
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -354,6 +356,7 @@ class Approval(Base):
             postgresql_where=text("status = 'pending'"),
         ),
         Index("ix_approvals_ticket", "ticket_id"),  # M9 A4, migration 0009
+        Index("ix_approvals_pending_deadline", "deadline", postgresql_where=text("status = 'pending'")),  # migration 0016 (S4)
     )
 
     approval_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

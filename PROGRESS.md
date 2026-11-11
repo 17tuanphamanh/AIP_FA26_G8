@@ -6618,6 +6618,25 @@ TA 10/11: "làm luôn nhưng có hướng backup" (hạn T5 12/11 12:00). Hướ
   nay E0). Khoá chung (`status`) và giá trị `false` không chặn. Test: cặp khớp/suýt khớp + 5 biến thể khớp + 4 suýt khớp
   (`test_guard_injection.py`); ca "ít hơn 11 mẫu" đổi sang cắt còn 10 mẫu (giữ ý). Unit toàn bộ xanh.
 
+## Lô Q7 — migration 0016 + nợ 39 (11/11/2026, nhánh `q7-migration-0016`, nền `main` `eb4457e`)
+
+TA 11/11 16:33: "hoàn thiện hết luôn" → làm Q7 (trước dời "sau demo"). Hợp đồng + test viết trước của bn-a (08/11), số dời 0015 → 0016.
+- `0016_ghi_them_khoa_final_totp.py` (có downgrade): S1 `transaction_log` chỉ ghi thêm (REVOKE UPDATE/DELETE/TRUNCATE khỏi `app_rw` + trigger
+  `forbid_mutation()` chặn cả owner); S2 trigger `tickets_final_state_once` (đã có `final_state` thì không đổi); S4 chỉ mục từng phần
+  `ix_approvals_pending_deadline`; A4 `users.mfa_last_step`; `security_events` thêm `retention_run` (downgrade dừng nếu đã có dòng).
+- A4: `auth.mfa.totp_step` (bước khớp trong cửa sổ ±1, so sánh hằng thời gian) + `AuthStore.accept_totp_step` (SQL: một câu UPDATE có
+  điều kiện RETURNING; bản giả: không await giữa đọc/ghi). Đăng nhập: mã của bước đã dùng → 401 chung + `mfa_failed {"reason":
+  "otp_replayed"}`, tính vào ngưỡng khoá. `set_mfa_secret` xoá bước đã nhận.
+- Job hạn giữ nay ghi đúng 1 dòng `security_events` `retention_run` mỗi lần chạy (nhánh "chờ 0016" tự hết).
+- Nợ 39: `Runner.final_state`; `recover` gặp ticket ĐÃ kết thúc mà checkpoint đã dọn → đóng lượt, không chạy graph từ START (trước: chạy lại
+  cả ticket từ câu yêu cầu cũ — test đỏ xác nhận); `ChildOps._start_locked` coi con đã kết thúc là "exists"; `late_event` của ticket đã dọn
+  ghi `actual_status` = trạng thái cuối DB (trước "S_NEW").
+- Test: gỡ `xfail(strict)` chờ 0016 ở 5 file (unit: static, totp replay, auth store contract; PG: migration_0016, txlog_pg S1, retention_pg);
+  mới `test_q7_no39_recover_purged.py` (3 ca). Cập nhật có chủ đích: head alembic 0016, danh sách sự kiện 17 loại. Mutation: bỏ so bước TOTP
+  (bản giả / service) → test replay đỏ; bỏ nhánh recover mới / late_event → đỏ (chạy trước khi sửa).
+- Deploy: `make up` tự `alembic upgrade head` → 0016 trên DB demo (dữ liệu cũ hợp lệ: trigger chỉ chặn ĐỔI final_state đã có).
+- Chưa có test riêng cho nhánh `ChildOps` (con đã dọn — không tới được theo luồng thật, job chỉ dọn khi cả họ đã đóng).
+
 ## Chấm thử hệ thống thật + sửa sau chấm (11/11/2026, nhánh `cham-1111-sua`, nền `main` `eb4457e`) — D-80, D-81
 
 Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 39 ca dễ → rất khó + 8 câu dò P1–P8) qua API như người dùng thật
@@ -6885,7 +6904,7 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     đầu ra: `echo`, `guided_*`, `structured_outputs`, `continue_final_message`, `add_generation_prompt`; tăng chi: `best_of`, `min_tokens`,
     `ignore_eos`, `service_tier`, `reasoning_effort`, `reasoning`; lưu dữ liệu phía nhà cung cấp: `store`, `metadata`, `user`,
     `safety_identifier`. Chỉ tới được qua `llm.yaml` đã commit (sai cấu hình, không phải người dùng tấn công) — xét khi thêm provider thứ hai.
-39. **[Nợ sau bảo vệ — ĐP chốt 08/11 20:35, không làm]** **Phòng thủ `runner.recover` với ticket đã dọn (soát M2 bn-a, mục 7).** Nếu ticket
+39. **[ĐÃ LÀM 11/11 — lô Q7, nhánh `q7-migration-0016`]** ~~[Nợ sau bảo vệ — ĐP chốt 08/11 20:35, không làm]~~ **Phòng thủ `runner.recover` với ticket đã dọn (soát M2 bn-a, mục 7).** Nếu ticket
     ĐÃ kết thúc (`final_state IS NOT NULL`) mà snapshot checkpoint rỗng (job hạn giữ đã dọn) thì `recover` nên đóng lượt, KHÔNG `_run_initial`
     (chạy graph từ START); tương tự `ChildOps._start` với con có snapshot rỗng. Hiện không tới được: job chỉ chọn ticket không còn lượt mở ở
     cả họ, ticket đã kết thúc không mở lượt mới (guard sự kiện muộn 409, `wake_parent` không làm gì). Kèm: dòng `late_event` của ticket đã

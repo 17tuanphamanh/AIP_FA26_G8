@@ -71,7 +71,8 @@ def test_upgrade_creates_exactly_24_tables(migrated: PgUrls) -> None:
                 "WHERE trigger_schema = 'public'"
             )
         ).all()
-        assert {t for t, _ in triggers} == {"audit_logs", "security_events", "m5_strategy_changes"}  # D-67: 0013
+        # D-67: 0013; Q7 (0016, nợ 39): + transaction_log (chỉ ghi thêm) và tickets (final_state ghi một lần)
+        assert {t for t, _ in triggers} == {"audit_logs", "security_events", "m5_strategy_changes", "transaction_log", "tickets"}
     engine.dispose()
 
 

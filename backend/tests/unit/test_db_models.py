@@ -126,18 +126,21 @@ def test_side_effect_kinds_match_migration_0007() -> None:
 
 
 def test_security_event_types_match_migration_0010() -> None:
-    """U19: `rate_limited` là loại CUỐI của `SECURITY_EVENT_TYPES`; `0010` có `NEW_TYPES = ("rate_limited",)` và `OLD_TYPES` tĩnh đủ
-    15 giá trị cũ (khuôn `0002`/`0007`); CHECK của model khớp."""
+    """U19: `rate_limited` là loại của `0010`; `0010` có `NEW_TYPES = ("rate_limited",)` và `OLD_TYPES` tĩnh đủ 15 giá trị cũ (khuôn
+    `0002`/`0007`). Lô Q7 (11/11): `0016` thêm `retention_run` ở CUỐI — `OLD_EVENT_TYPES` của 0016 = 16 loại tới 0010; CHECK model khớp."""
     from app.db.models import SECURITY_EVENT_TYPES
 
-    assert SECURITY_EVENT_TYPES[-1] == "rate_limited" and len(SECURITY_EVENT_TYPES) == 16
-    assert SECURITY_EVENT_TYPES[-2] == "mfa_reset"  # thêm ở cuối, sau loại của 0002
+    assert SECURITY_EVENT_TYPES[-1] == "retention_run" and len(SECURITY_EVENT_TYPES) == 17
+    assert SECURITY_EVENT_TYPES[-2] == "rate_limited" and SECURITY_EVENT_TYPES[-3] == "mfa_reset"
+    upto_0010 = SECURITY_EVENT_TYPES[:-1]
     source = MIGRATION_0010.read_text(encoding="utf-8")
     assert re.search(r'^NEW_TYPES(\s*:[^=\n]+)?\s*=\s*\("rate_limited",\)', source, re.MULTILINE)  # viết tĩnh
-    for kind in SECURITY_EVENT_TYPES[:-1]:
+    for kind in upto_0010[:-1]:
         assert f'"{kind}"' in source  # OLD_TYPES viết tĩnh — migration không đổi theo models
     m10 = _migration(MIGRATION_0010)
-    assert tuple(m10.OLD_TYPES) == SECURITY_EVENT_TYPES[:-1] and tuple(m10.NEW_TYPES) == ("rate_limited",)
+    assert tuple(m10.OLD_TYPES) == upto_0010[:-1] and tuple(m10.NEW_TYPES) == ("rate_limited",)
+    m16 = _migration(MIGRATION_0010.with_name("0016_ghi_them_khoa_final_totp.py"))
+    assert tuple(m16.OLD_EVENT_TYPES) == upto_0010 and tuple(m16.NEW_EVENT_TYPES) == ("retention_run",)
     expected = "event_type IN (" + ", ".join(f"'{k}'" for k in SECURITY_EVENT_TYPES) + ")"
     assert _check("security_events", "event_type") == expected
 

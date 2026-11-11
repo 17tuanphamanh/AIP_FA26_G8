@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, Table, bindparam, func, select, text, update
+from sqlalchemy import Row, Table, bindparam, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -202,8 +202,25 @@ class SqlAuthStore:
     async def set_mfa_secret(self, user_id: str, secret_enc: bytes) -> None:
         async with self._engine.begin() as conn:
             await conn.execute(
-                update(_users).where(_users.c.user_id == user_id).values(mfa_secret_enc=secret_enc)
+                update(_users).where(_users.c.user_id == user_id).values(mfa_secret_enc=secret_enc, mfa_last_step=None)
             )
+
+    async def accept_totp_step(self, user_id: str, step: int) -> bool:
+        """Một câu `UPDATE … WHERE mfa_last_step IS NULL OR mfa_last_step < :step RETURNING` — Postgres khoá dòng, lượt đồng thời thứ
+        hai đọc lại điều kiện sau khi lượt đầu commit → 0 dòng."""
+        async with self._engine.begin() as conn:
+            row = (
+                await conn.execute(
+                    update(_users)
+                    .where(
+                        _users.c.user_id == user_id,
+                        or_(_users.c.mfa_last_step.is_(None), _users.c.mfa_last_step < step),
+                    )
+                    .values(mfa_last_step=step)
+                    .returning(_users.c.user_id)
+                )
+            ).first()
+        return row is not None
 
     # ---- auth_failures ----
 

@@ -132,7 +132,6 @@ async def test_get_status_reads_table(rw: AsyncEngine) -> None:
 # ---- S1 (bn-a, migration 0016 — dời từ 0015): transaction_log append-only — test viết trước, đỏ tới khi có 0016 -------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="CHỜ migration 0016 (S1)")
 async def test_s1_txlog_rows_cannot_be_updated_deleted_or_truncated_by_app_rw(rw: AsyncEngine) -> None:
     """Bằng chứng "có thể đã ghi" (`begun`) không sửa/xoá được — kể cả bằng role của app. Mỗi câu một transaction riêng."""
     ticket = await _ticket(rw)

@@ -38,7 +38,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from app.auth.mfa import MfaCipher, MfaError, verify_totp
+from app.auth.mfa import MfaCipher, MfaError, totp_step
 from app.auth.models import (
     IssuedTokens,
     Principal,
@@ -318,8 +318,13 @@ class AuthService:
         except MfaError:
             log.error("không giải mã được secret MFA của %s", user.user_id)
             raise AuthError(503, "mfa_unavailable") from None
-        if not verify_totp(secret, otp, now):
+        step = totp_step(secret, otp, now)
+        if step is None:
             await self._event("mfa_failed", user, username, ip, reason="invalid_otp")
+            await self._check_threshold(username, user, ip, now)
+            raise _invalid_login()
+        if not await self.store.accept_totp_step(user.user_id, step):  # A4: mã của bước đã dùng (hoặc cũ hơn) — dùng lại
+            await self._event("mfa_failed", user, username, ip, reason="otp_replayed")
             await self._check_threshold(username, user, ip, now)
             raise _invalid_login()
 
