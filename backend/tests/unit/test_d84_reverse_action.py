@@ -55,6 +55,10 @@ NEGATIVE = [
     ("em đã gỡ Zoom rồi cài lại mà vẫn lỗi, cài lại giúp em", "software"),
     ("em vừa xoá nhầm quyền thư mục shared/templates, cấp lại giúp em", "access"),
     ("em bi thu hoi quyen vpn, cap lai giup em", "vpn"),
+    # tự soát 12/11 trên bộ đánh giá (eval/probe cong5): mất PHỤ KIỆN, không phải mất máy
+    ("Máy LAP-0342 của mình bị mất sạc, công ty có cấp lại không?", "vpn"),
+    ("laptop em bị mất chuột với tai nghe", "software"),
+    ("may tinh em bi mat sac roi", "vpn"),
 ]  # fmt: skip
 
 

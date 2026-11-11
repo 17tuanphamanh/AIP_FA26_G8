@@ -32,10 +32,12 @@ _DEVICE = r"(?:laptop|máy tính|máy(?!\s*chủ)|điện thoại|thiết bị|m
 _DEVICE_FOLDED = r"(?:laptop|may tinh|dien thoai|thiet bi|macbook|ipad|o cung|usb|the nhan vien)"  # bỏ "may" (máy/mấy)
 _LOSS_VERB = r"(?:làm mất|đánh mất|bị mất|mất|thất lạc|đánh rơi|bỏ quên|để quên|bị trộm|bị ăn trộm|bị đánh cắp|bị cướp|bị giật)"
 _LOSS_AFTER = r"(?:bị mất|đã mất|làm mất|thất lạc|bị trộm|bị ăn trộm|bị đánh cắp|bị cướp|bị giật|để quên|bỏ quên)"
-# "mất" theo sau là thứ KHÔNG phải thiết bị → không phải báo mất máy ("máy em bị mất kết nối", "laptop mất 10 phút mới lên")
-_NOT_LOSS = (
-    r"(?!\s*(?:kết nối|mạng|wi-?fi|internet|tín hiệu|điện|nguồn|âm thanh|tiếng|dữ liệu|file|tệp|quyền|mật khẩu|truy cập|vpn|sóng|"
-    r"màn hình|hình|hết|nhiều|khoảng|thời gian|\d))"
+# Sau "bị mất / thất lạc / bị trộm…" chỉ coi là BÁO MẤT MÁY khi tiếp theo là hết câu hoặc từ chỉ hoàn cảnh (rồi, trộm, ở, hôm…) —
+# danh sách CHO PHÉP thay vì loại trừ: "máy bị mất kết nối", "bị mất sạc" (mất cục sạc), "mất 10 phút" đều không khớp (bộ đánh giá có
+# "Máy LAP-0342 của mình bị mất sạc, công ty có cấp lại không?" — tự soát 12/11).
+_LOSS_END = (
+    r"(?=\s*(?:$|[.,!?;:)]|rồi|trộm|cắp|cướp|mất|ở|tại|trên|dưới|lúc|khi|hôm|tối|sáng|chiều|trưa|ngoài|trong|giữa|giúp|nên|mà|và|"
+    r"với|thì|gấp|ngay|luôn|đâu|đó|này|ấy|cmnr|r\b))"
 )
 _OBJECT = r"(?:vpn|chứng chỉ|quyền|truy cập|tài khoản|tk|email|mail)"
 # Việc ĐÃ xảy ra (người dùng kể lại, không xin làm): "em bị thu hồi quyền VPN, cấp lại giúp", "em đã xoá chứng chỉ cũ rồi cài lại",
@@ -46,7 +48,7 @@ _ACTION_VERB = r"(?:mở khoá|mở khóa|gia hạn|cấp lại|cấp|cài đặ
 
 _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("lost_device", rf"\b{_LOSS_VERB}\s+(?:cái\s+|chiếc\s+)?{_DEVICE}\b"),
-    ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,40}}?\b{_LOSS_AFTER}\b{_NOT_LOSS}"),
+    ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,40}}?\b{_LOSS_AFTER}\b{_LOSS_END}"),
     ("revoke", rf"{_NOT_PAST}\b{_REVOKE_VERB}\s+(?:\S+\s+){{0,3}}?{_OBJECT}\b"),
     ("lock", r"(?<!mở )(?<!bị )(?<!đã )\b(?:khoá|khóa)\s+(?:hẳn|luôn|ngay|tạm thời|giúp|giùm|hộ)\b"),
     ("lock", rf"(?<!mở )(?<!bị )\b(?:khoá|khóa)\s+{_OBJECT}\s+(?:\S+\s+)?(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại giúp)\b"),
@@ -58,7 +60,7 @@ _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("lost_device", (rf"\b(?:lam mat|danh mat|bi mat|mat|that lac|danh roi|bo quen|de quen|bi trom|bi danh cap|bi cuop)\s+"
                      rf"(?:cai\s+|chiec\s+)?{_DEVICE_FOLDED}\b")),
     ("lost_device", (rf"\b{_DEVICE_FOLDED}\b[^.!?\n]{{0,40}}?\b(?:bi mat|da mat|lam mat|that lac|bi trom|bi danh cap|bi cuop)\b"
-                     rf"{fold(_NOT_LOSS)}")),
+                     rf"{fold(_LOSS_END)}")),
     ("revoke", (rf"{fold(_NOT_PAST)}\b(?:thu hoi|vo hieu hoa|vo hieu|revoke|disable)\s+(?:\S+\s+){{0,3}}?"
                 r"(?:vpn|chung chi|quyen|truy cap|tai khoan|tk|email|mail)\b")),
     ("lock", r"(?<!mo )(?<!bi )\bkhoa\s+(?:han|luon|tam thoi)\b"),
