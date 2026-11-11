@@ -6602,7 +6602,8 @@ TA 10/11: "làm luôn nhưng có hướng backup" (hạn T5 12/11 12:00). Hướ
   `.env.example`.
 - FE: ô "Hỏi tiếp về yêu cầu này" trên ticket kết thúc có `can_follow_up`; gửi → `createTicket(text, ticketId)` → sang ticket mới.
   `schema.gen.ts` sinh lại (chỉ thêm `can_follow_up`).
-- Test: `test_q13b_hoi_tiep_sau_ket_thuc.py` (10 ca) + 3 ca FE (`ChatPage.test.tsx`). `test_ticket_server_now`: tập khoá TicketView thêm
+- Test: `test_q13b_hoi_tiep_sau_ket_thuc.py` (10 ca) + 3 ca FE (`ChatPage.test.tsx`) + PG `test_b20_pg.py::test_q13b_follow_up_source_sql`
+  (SQL thật của `follow_up_source`; CI chạy). `test_ticket_server_now`: tập khoá TicketView thêm
   `can_follow_up` (đổi có chủ đích). Mutation backend (7): bỏ kiểm chủ / ticket con / đã kết thúc, B3 bỏ hint, chép id/câu cũ vào hint,
   API bỏ cờ (tạo / view), B12 đọc hint → đều đỏ. Mutation FE (2): không gửi `follows_ticket_id`, bỏ điều kiện `can_follow_up` → đều đỏ.
 - Kiểm: unit toàn bộ xanh; `make lint` xanh (ruff, mypy app + tests, lint-imports, gitleaks); FE typecheck/lint/check:style + 1286 test xanh.
