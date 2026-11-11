@@ -1,7 +1,7 @@
 # B19 — Người dùng xác nhận kết quả
 
 > **Tầng:** T2 · **Module:** M4 · **Objective:** 1 (+ số liệu trải nghiệm cho Obj 3) · **Phase:** 3
-> **Trạng thái vào:** `S_CONFIRMING` (từ B10 deflection hoặc B18) · **Ra:** `S_RESOLVED` | `S_ESCALATED` (E8)
+> **Trạng thái vào:** `S_CONFIRMING` (từ B10 deflection hoặc B18) · **Ra:** `S_RESOLVED` | `S_ESCALATED` (E8) | `S_SCREENING` (hỏi tiếp sau câu trả lời KB — D-78, mục 5.2)
 
 ---
 
@@ -158,6 +158,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
 |---|---|---|
 | `S_CONFIRMING` | Người dùng xác nhận đã xong | `S_RESOLVED` |
 | `S_CONFIRMING` | Người dùng báo chưa xong | `S_ESCALATED` → E8 |
+| `S_CONFIRMING` | Chưa ổn KÈM ghi chú sau câu trả lời KB, ticket gốc, < 2 vòng — D-78 (11/11/2026, bản nộp main) | `S_SCREENING` (→ B2) |
 | `S_CONFIRMING` | Không phản hồi quá 48 giờ | `S_RESOLVED` (tự động) |
 
 ### 0.3. Đặc tả gốc đã chốt
@@ -205,11 +206,13 @@ S_CONFIRMING ─ confirm_wait: interrupt({"wait":"confirm"})
    │  Worker: 48h → deliver_event(timeout)   (ticket con: timeout do cha chuyển xuống)
    ▼
    ├─ confirmed=true   ─► S_RESOLVED  close_reason=resolved_user_confirmed       ─► B20
+   ├─ confirmed=false + ghi chú, câu trả lời KB, < 2 vòng (D-78) ─► S_SCREENING ─► B2 (mục 5.2)
    ├─ confirmed=false  ─► S_ESCALATED E8 (ghi phản hồi người dùng)              ─► B20
    └─ timeout          ─► S_RESOLVED  auto_closed=True,
                                       close_reason=resolved_auto_timeout_48h    ─► B20
 Phản hồi đến sau khi ticket đã đóng → 409 + late_event ; nếu vẫn còn vấn đề:
    tạo ticket MỚI tham chiếu ticket cũ (không mở lại ticket cũ) [Chốt 8.3]
+   — hiện thực: ô "Hỏi tiếp về yêu cầu này" + follows_ticket_id (D-79, mục 5.3)
 ```
 
 ## 3. Công nghệ
@@ -260,6 +263,21 @@ async def confirm_wait(state):
 
 **Vì sao xác nhận vẫn nằm ở con, chỉ đường đi qua cha:** mỗi ý có kết quả riêng. Người dùng có thể thấy ý 1 ổn mà ý 2 chưa. Giữ `confirm_wait` ở con thì E8 chỉ gắn vào đúng ý bị lỗi, `close_reason` của từng ý vẫn là một trong 8 giá trị **[Chốt]**, và chỉ số "giải quyết trong một lượt" vẫn tính trên ticket lá (D-30).
 
+### 5.2. Hỏi tiếp sau câu trả lời KB — D-78 (11/11/2026, bản nộp main, lô Q13a)
+
+Mã ở trên là bản đo. Bản nộp thêm một nhánh TRƯỚC E8 (`confirm_wait.can_follow_up`): cờ `ENABLE_KB_FOLLOWUP` bật VÀ ticket tới B19 bằng câu
+trả lời KB (`need_type == "info"`) VÀ không phải ticket con VÀ `followup_round < 2` VÀ ghi chú sau che L1 không rỗng → câu ghép (câu gốc +
+tiền tố cố định "Đã làm theo hướng dẫn nhưng chưa ổn: " + ghi chú) → `S_CONFIRMING → S_SCREENING` (event `followup_reply`) → B2 sàng lọc
+đầy đủ → đi lại trọn đường như ticket mới. `b10_answer` v4 nhận `previous_answer` để không lặp bước. Ngoài điều kiện trên (ghi chú rỗng,
+ticket đã thực thi, ticket con, vòng thứ 3, cờ tắt) → E8 như mã bản đo. Chi tiết và lý do: `build/decisions.md` D-78.
+
+### 5.3. "Hỏi tiếp" sau khi ticket đã kết thúc — D-79 (11/11/2026, bản nộp main, lô Q13b)
+
+Hiện thực dòng "tạo ticket MỚI tham chiếu ticket cũ" [Chốt 8.3]: ticket đã kết thúc của chính người gửi có ô "Hỏi tiếp về yêu cầu này"
+(`TicketView.can_follow_up`) → `POST /api/tickets {text, follows_ticket_id}` tạo ticket MỚI chạy đủ B1→B20. Tham chiếu là
+`follows_ticket_id` trong state (không dùng `parent_ticket_id` — cột đó là quan hệ cha–con D-31). Mang sang đúng một dòng gợi ý loại việc
+dựng từ cột đóng của ticket cũ vào `label_hint` của B3; không mang chữ người dùng/bot/slot. Ticket cũ không mở lại. Chi tiết: D-79.
+
 ## 6. Quyết định thiết kế và lý do
 
 | Quyết định | Lý do |
@@ -291,7 +309,7 @@ async def confirm_wait(state):
 | Tình huống | Kết quả | TC |
 |---|---|---|
 | "Được rồi, cảm ơn" | `resolved_user_confirmed` | TC01 |
-| "Vẫn chưa vào được" | E8 | TC22 |
+| "Vẫn chưa vào được" | E8 (sau câu trả lời KB có ghi chú: hỏi tiếp ≤ 2 vòng rồi E8 — D-78) | TC22 |
 | Im lặng 48 giờ | `resolved_auto_timeout_48h`, `auto_closed=True` | — |
 | Xác nhận sau khi đã tự đóng | 409 + `late_event`; gợi ý tạo ticket mới | biến thể TC27 |
 | L1 bấm xác nhận thay người dùng | 403 | — |

@@ -1258,7 +1258,7 @@ Ablation cuối cùng là thứ mang lại kết luận hai chiều đáng giá:
 | TC19 | Chính L1 gửi yêu cầu cho mình | Xung đột lợi ích | B15 → Trưởng BP duyệt | Không được tự duyệt |
 | TC20 | L1 không phản hồi quá hạn SLA | Timeout | B16 → E6 | Fail-safe, không tự thực hiện |
 | TC21 | API lỗi khi đang thực thi | Lỗi thực thi | B17 → rollback → E7 | Hoàn tác rồi mới chuyển L2 |
-| TC22 | Người dùng báo chưa giải quyết được | Lỗi xử lý | B19 → E8 | Mở lại ticket |
+| TC22 | Người dùng báo chưa giải quyết được | Lỗi xử lý | B19 → E8 (bản nộp: sau câu trả lời KB có ghi chú thì hỏi tiếp ≤ 2 vòng rồi E8 — D-78) | Mở lại ticket |
 | TC23 | Agent tự xử lý nhưng L1 ghi đè sau | Override | Ghi override log | Lưu vết phục vụ đánh giá |
 | TC24 *(vòng rà soát 1)* | Xác thực sai một lần rồi đúng ở lần sau | An ninh — ca thường | B1 → đóng, không cờ an ninh, thử lại thành công | Không tính vào chỉ số an ninh |
 | TC25 *(vòng rà soát 1)* | Xác thực sai 5 lần liên tiếp trong 2 phút | An ninh — ca thật | B1 → `repeated_auth_failure`, cảnh báo | Tính vào chỉ số an ninh, khác TC24 |
@@ -1493,6 +1493,7 @@ Chỉ hai dòng cuối mới được coi là sự cố an ninh và đi kèm m�
 | `S_EXECUTING` | ActionPlan đã đổi so với lúc duyệt (hash lệch) | `S_ESCALATED` → E5 | B17 |
 | `S_CONFIRMING` | Người dùng xác nhận đã xong | `S_RESOLVED` | B19 |
 | `S_CONFIRMING` | Người dùng báo chưa xong | `S_ESCALATED` → E8 | B19 |
+| `S_CONFIRMING` | Chưa ổn KÈM ghi chú sau câu trả lời KB (ticket gốc, ≤ 2 vòng, cờ `ENABLE_KB_FOLLOWUP`) — D-78 (11/11/2026, bản nộp main) | `S_SCREENING` | B19 → B2 |
 | `S_CONFIRMING` | Không phản hồi quá 48h | `S_RESOLVED` (tự động) | B19 |
 | `S_ESCALATED` | L2 xử lý xong | `S_RESOLVED` | — |
 
@@ -2635,7 +2636,7 @@ def on_late_event(ticket_id, expected_state, event, handler_fn):
 
 1. Ticket đã hết hạn `S_PENDING_APPROVAL` → E6, nhưng người duyệt bấm "Đồng ý" muộn 5 phút sau — sự kiện bị bỏ qua, không được kéo ticket ngược lại `S_EXECUTING` (tránh hành động bị làm hai lần nếu L2 cũng đang xử lý).
 2. Ticket đã hết hạn `S_CLARIFYING` (24h không trả lời) → E4, nhưng người dùng trả lời câu hỏi muộn sau đó — câu trả lời muộn không được phép tự động kéo ticket đã escalate quay lại `S_ASSESSING`; L2 (đã nhận ticket) là người quyết định có dùng thông tin muộn này hay không.
-3. Ticket đã tự đóng ở `S_RESOLVED` (`close_reason=resolved_auto_timeout_48h`) sau 48h không phản hồi ở `S_CONFIRMING`, nhưng người dùng sau đó mới vào xác nhận hoặc báo lỗi — phản hồi muộn này KHÔNG được tự động mở lại ticket cũ (tránh việc một ticket đã tính vào chỉ số `auto_closed` bị "sống lại" âm thầm, làm sai lệch số liệu); nếu người dùng thực sự còn vấn đề, hệ thống tạo ticket **mới**, có thể tham chiếu `parent_ticket_id` tới ticket cũ để giữ ngữ cảnh.
+3. Ticket đã tự đóng ở `S_RESOLVED` (`close_reason=resolved_auto_timeout_48h`) sau 48h không phản hồi ở `S_CONFIRMING`, nhưng người dùng sau đó mới vào xác nhận hoặc báo lỗi — phản hồi muộn này KHÔNG được tự động mở lại ticket cũ (tránh việc một ticket đã tính vào chỉ số `auto_closed` bị "sống lại" âm thầm, làm sai lệch số liệu); nếu người dùng thực sự còn vấn đề, hệ thống tạo ticket **mới**, có thể tham chiếu `parent_ticket_id` tới ticket cũ để giữ ngữ cảnh. *(Bản nộp — D-79, 11/11/2026: hiện thực bằng ô "Hỏi tiếp về yêu cầu này" + `follows_ticket_id`, không dùng `parent_ticket_id` vì cột này đã là quan hệ cha–con của yêu cầu nhiều ý D-31.)*
 
 **Ngoại lệ có chủ đích (bổ sung sau vòng rà soát thứ ba):** tín hiệu "ticket con đã có kết quả" gửi tới ticket cha chỉ là tín hiệu đánh thức, không mang dữ liệu. Ticket cha luôn tự đọc lại trạng thái các con từ cơ sở dữ liệu, nên tín hiệu đến sớm hay bị bỏ qua cũng không làm cha kẹt.
 
