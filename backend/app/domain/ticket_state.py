@@ -164,6 +164,10 @@ class TicketState(TypedDict, total=False):
     triage_reply_chars: int | None
     # Q13a (D-78, 11/11): số vòng hỏi tiếp sau câu trả lời KB đã mở (0/None = chưa); tối đa `messages.FOLLOWUP_MAX_ROUNDS`.
     followup_round: int | None
+    # Q13b (D-79, 11/11): ticket mở từ ô "Hỏi tiếp" của ticket ĐÃ kết thúc — id ticket cũ + MỘT dòng gợi ý dựng từ cột đóng (intent, kết quả
+    # cuối; không chữ người dùng/bot, không slot) → `b03_classify.label_hint`. Không node nào khác đọc (test AST).
+    follows_ticket_id: str | None
+    prior_hint: str | None
     # bộ đếm [Chốt]
     clarification_turns: int
     reasoning_loops: int

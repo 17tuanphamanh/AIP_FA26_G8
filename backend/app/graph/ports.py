@@ -26,6 +26,7 @@ from app.domain.children import ChildHandoffRow, ChildProgressRow, ChildView
 from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
+from app.domain.session_memory import FollowUpSource
 from app.tools.registry import ToolResult
 
 # bản ghi dữ liệu dùng chung với store SQL
@@ -292,6 +293,10 @@ class TicketRepo(TicketStore, Protocol):
 
     async def hide(self, user_id: str, ticket_id: str, at: datetime) -> None:
         """P3 menu ⋯ "Xóa": ẩn ticket khỏi "Gần đây" của `user_id` — idempotent, không đổi dữ liệu nghiệp vụ."""
+        ...
+
+    async def follow_up_source(self, ticket_id: str) -> FollowUpSource | None:
+        """Q13b (D-79): cột đóng của ticket cũ cho "hỏi tiếp" — chủ, cha/con, kết quả cuối, `intent`. Không có → None. Chỉ DB."""
         ...
 
     async def children_progress_rows(self, parent_id: str, children: Sequence[str]) -> list[ChildProgressRow]:

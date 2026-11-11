@@ -57,6 +57,10 @@
    `trim_vars`; an toàn vì B2 đã sàng lọc TRỌN câu trước B3). Sau câu hỏi phân loại (`triage="done"`): gateway giữ trọn câu trả lời
    (`keep_tail` = độ dài bản L0 của `triage_reply_chars` ký tự cuối), cắt PHẦN ĐẦU câu gốc trước — ĐP chốt điểm 2.
 
+11. Q13b (D-79, 11/11, bản nộp main): ticket mở từ "Hỏi tiếp" của ticket ĐÃ kết thúc → `label_hint` = `state["prior_hint"]` (MỘT dòng dựng từ
+   cột đóng của ticket cũ — `domain/session_memory.prior_label_hint`; không chữ người dùng/bot, không slot). Prompt đã nói "Gợi ý nhãn (nếu
+   có) chỉ để tham khảo" — không đổi prompt. Audit điểm log 1 thêm cờ `follows_ticket` (bool, không id).
+
 Điểm log 1 ở MỌI nhánh (kể cả lỗi) qua `audit_detail`: lớp, intent, confidence, prompt id@version, lỗi ml/LLM (tên lớp),
 slot bị bỏ (chỉ key đã khai báo — Q-3f-5), `slot_fact_collision`, `span_not_in_text`. KHÔNG có câu người dùng hay giá trị
 slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi khác (`ScriptExhausted`, `MlContractError`…) → E9.
@@ -99,6 +103,7 @@ def _point1() -> dict[str, Any]:
         "layer": None, "intent": None, "confidence": None, "is_multi": None, "model_probs": None,
         "model_version": None, "prompt": None, "ml_error": None, "llm_error": None, "span_not_in_text": False,
         "other_target_mention": False, "other_target_reason": None, "request_trimmed": False, **audit_dropped({}, frozenset()),
+        "follows_ticket": False,  # Q13b (D-79): ticket mở từ "Hỏi tiếp" (có gợi ý loại việc trước) — chỉ cờ, không id/chữ
     }  # fmt: skip
 
 
@@ -108,6 +113,7 @@ def make(deps: NodeDeps) -> NodeFn:
     async def b03_classify(state: Any) -> dict[str, Any]:
         loops = int(state.get("reasoning_loops") or 0) + 1
         info = _point1()
+        info["follows_ticket"] = state.get("follows_ticket_id") is not None
         if loops > deps.constants.MAX_LOOPS:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B3", event="max_loops_exceeded", audit_detail=info,
@@ -133,7 +139,7 @@ def make(deps: NodeDeps) -> NodeFn:
         try:
             out, meta = await deps.llm.complete(
                 "fast", "b03_classify",
-                {"redacted_request": request, "label_hint": None}, ClassifyOut, keep_tail=keep,
+                {"redacted_request": request, "label_hint": state.get("prior_hint")}, ClassifyOut, keep_tail=keep,
             )  # fmt: skip
         except LLMSchemaError:
             info["llm_error"] = "LLMSchemaError"

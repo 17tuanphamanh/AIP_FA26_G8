@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ApiError, PURGED_TEXT, errorMessage, isPurged } from "../../api/errors.ts";
 import {
   confirmBody,
   confirmTicket,
+  createTicket,
   getTicket,
   NOTE_MAX,
   replyTicket,
@@ -62,6 +63,7 @@ const progressOf = (v: TicketView) => `${v.status}|${v.waiting_for}|${v.final_st
 // round lớn nhất có form khi `waiting_for = "reply"`, nhãn cha theo 12b Q-fe-34. Ticket thường: không nhánh nào đổi.
 export function ChatPage({ ticketId }: { ticketId: string }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ["ticket", ticketId], [ticketId]);
   const settlingRef = useRef(false);
@@ -169,6 +171,31 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 
   const sendReply = (body: ParentReplyIn) => submit(() => replyTicket(ticketId, body));
 
+  /** Q13b (D-79): "Hỏi tiếp" từ ticket ĐÃ kết thúc → ticket MỚI kèm `follows_ticket_id` (backend kiểm chủ) → sang trang ticket mới. */
+  async function sendFollowUp() {
+    const value = draft.trim();
+    if (!value || sending) return;
+    setSending(true);
+    setFieldError(null);
+    setError(null);
+    try {
+      const accepted = await withBusyRetry(
+        () => createTicket(value, ticketId),
+        (seconds) => setWaitNote(`Hệ thống đang bận — tự thử lại sau ${seconds} giây…`),
+      );
+      sessionTickets.add(accepted.ticket_id, value, accepted.notices);
+      setDraft("");
+      navigate(`/chat/${encodeURIComponent(accepted.ticket_id)}`, { state: { notices: accepted.notices } });
+    } catch (e) {
+      const described = describeSendError(e);
+      setFieldError(described.field);
+      setError(described.message);
+    } finally {
+      setSending(false);
+      setWaitNote(null);
+    }
+  }
+
   if (query.isPending) {
     return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse max-lg:px-4 max-lg:py-6">Đang tải yêu cầu…</p>;
   }
@@ -218,6 +245,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
     />
   ) : null;
   const composer = composerFor(view, waiting, settling, deadline !== null && deadline === expiredDeadline, progress !== null);
+  const followUp = Boolean(view.final_state) && view.can_follow_up === true; // Q13b: ô "Hỏi tiếp" trên ticket đã kết thúc
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -294,7 +322,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
         </div>
       </div>
 
-      {view.final_state ? null : (
+      {view.final_state && !followUp ? null : (
         <div className="relative flex shrink-0 justify-center bg-white px-6 pb-4 max-lg:px-3 max-lg:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t from-white to-white/0" />
           <div className="flex w-full max-w-(--chat-width) flex-col gap-2">
@@ -309,7 +337,9 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               placeholder={composer.placeholder}
               value={composer.enabled ? draft : ""}
               onChange={setDraft}
-              onSubmit={waiting === "clarify" ? () => void run(() => sendMessage(ticketId, draft.trim())) : undefined}
+              onSubmit={
+                waiting === "clarify" ? () => void run(() => sendMessage(ticketId, draft.trim())) : followUp ? () => void sendFollowUp() : undefined
+              }
               maxLength={waiting === "confirm" ? NOTE_MAX : TEXT_MAX}
               disabled={!composer.enabled}
               busy={sending}
@@ -324,11 +354,16 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
 }
 
 const SENT_NOTE = "Đã gửi — đang xử lý";
+export const FOLLOW_UP_LABEL = "Hỏi tiếp về yêu cầu này";
 
 /** `approvalExpired`: đồng hồ duyệt đang ở pha quá hạn (chưa tải lại được trạng thái mới) → câu "đang chuyển". `parent`: ticket cha
  *  chưa đóng mà không chờ gì của người dùng (chờ các ý — D-77) → câu của cha, không nhãn trạng thái ticket thường (Q6 c2). */
 function composerFor(view: TicketView, waiting: TicketView["waiting_for"], settling: boolean, approvalExpired = false, parent = false) {
   if (settling) return { enabled: false, label: "Tin nhắn", placeholder: `${SENT_NOTE}…` };
+  // Q13b (D-79): ticket đã kết thúc mà backend cho hỏi tiếp → ô nhập mở, gửi = tạo ticket MỚI (mang gợi ý loại việc, không mang chữ cũ).
+  if (view.final_state && view.can_follow_up === true) {
+    return { enabled: true, label: FOLLOW_UP_LABEL, placeholder: "Hỏi tiếp, ví dụ: vẫn chưa được, hoặc hỏi thêm về việc này…" };
+  }
   if (waiting === "clarify") return { enabled: true, label: "Trả lời", placeholder: "Trả lời câu hỏi ở trên…" };
   // Q13a (D-78): ghi chú gửi kèm "Chưa ổn" sau câu trả lời KB mở vòng hỏi tiếp (tối đa 2 vòng) — gợi ý người dùng mô tả đã thử gì.
   if (waiting === "confirm") return { enabled: true, label: "Ghi chú nếu chưa ổn", placeholder: "Chưa ổn? Ghi bạn đã thử gì, lỗi còn thế nào rồi bấm Chưa ổn…" };

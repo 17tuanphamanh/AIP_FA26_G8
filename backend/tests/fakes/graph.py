@@ -74,6 +74,7 @@ from app.domain.children import (
 from app.domain.dedup import OpenCandidate
 from app.domain.final import FinalSummary
 from app.domain.override import DecisionTrail, OverrideRecord
+from app.domain.session_memory import FollowUpSource
 from app.domain.states import S_ESCALATED
 from app.domain.ticket_state import ExecutionResult
 from app.graph.builder import build_graph, fake_nodes, real_nodes
@@ -696,6 +697,15 @@ class MemoryTickets:
 
     async def strategy_of(self, ticket_id: str) -> str | None:
         return self.strategies.get(ticket_id)
+
+    async def follow_up_source(self, ticket_id: str) -> FollowUpSource | None:
+        """Như SQL (Q13b): cột đóng của dòng — `intent` lấy từ kết quả cuối (`tickets.intent` ghi ở B20)."""
+        r = self.rows.get(ticket_id)
+        if r is None:
+            return None
+        final: FinalSummary | None = r["final"]
+        return FollowUpSource(ticket_id, r["requester_id"], r["parent_ticket_id"], r["is_parent"],
+                              final.final_state if final else None, final.intent if final else None)  # fmt: skip
 
     async def session_exit_count(self, session_id: str, codes: Sequence[str], *, exclude: str) -> int:
         """Như SQL (Q13c): ticket KHÁC `exclude`, cùng `session_id`, đã kết thúc với `exit_code` ∈ `codes`."""

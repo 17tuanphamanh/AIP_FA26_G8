@@ -73,6 +73,7 @@ from app.domain.override import (
     OverrideRecord,
     original_decision,
 )
+from app.domain.session_memory import can_follow, prior_label_hint
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW
 from app.graph.late_event import InvalidReply, Validate, start_event
 
@@ -95,6 +96,8 @@ WAITING_FOR: dict[str, WaitingFor] = {
 class TicketIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=TEXT_MAX)
+    # Q13b (D-79): "Hỏi tiếp" từ ticket ĐÃ kết thúc của chính người gửi. Cờ `ENABLE_SESSION_MEMORY` tắt → 422 (như trước lô: khoá lạ).
+    follows_ticket_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class MessageIn(BaseModel):
@@ -168,6 +171,9 @@ class TicketView(BaseModel):
     # be-api8-cau-dau (nợ API #8 / Q-fe-18): câu yêu cầu đầu — `tickets.redacted_request` (bản ĐÃ CHE, D-07; không bao giờ raw) cắt
     # REQUEST_TEXT_MAX ký tự. Ticket con mà `redacted_request` trùng nguyên câu của cha (B5 seed khi span không hợp lệ) → None.
     request_text: str | None = None
+    # Q13b (D-79): FE mở ô "Hỏi tiếp về yêu cầu này" — cờ `ENABLE_SESSION_MEMORY` bật VÀ ticket đã kết thúc VÀ là ticket GỐC VÀ người đọc là
+    # CHỦ ticket (L1/L2 đọc được ticket người khác nhưng không hỏi tiếp thay).
+    can_follow_up: bool = False
 
 
 REQUEST_TEXT_MAX = 500
@@ -241,6 +247,14 @@ async def create_ticket(
 ) -> JSONResponse:
     await limit_tickets(request, p, desk)  # 429 ngay sau `require`, trước đọc thân (gói 2b)
     body = await parse_body(request, TicketIn)
+    hint: str | None = None
+    if body.follows_ticket_id is not None:  # Q13b (D-79): kiểm TRƯỚC guard/INSERT — sai thì không tạo gì
+        if not request.app.state.settings.enable_session_memory:
+            raise InvalidRequest(["body.follows_ticket_id"])
+        src = await desk.tickets.follow_up_source(body.follows_ticket_id)
+        if src is None or not can_follow(src, p.user_id):
+            raise HTTPException(404, NOT_FOUND)  # không có / người khác / ticket con / chưa kết thúc: GIỐNG HỆT nhau
+        hint = prior_label_hint(src)
     redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
     strategy, source = await snapshot_for_new_ticket(request, desk)  # D-67: chụp chiến lược M5 + nguồn lúc TẠO
@@ -254,7 +268,9 @@ async def create_ticket(
         turn_id=turn_id,
         security_events=[(SECRET_EVENT, {"count": redacted.secrets_found})] if redacted.secrets_found else (),
     )  # fmt: skip
-    desk.background.spawn(desk.runner.run_new(ticket_id, turn_id), name=f"submit:{ticket_id}")
+    desk.background.spawn(
+        desk.runner.run_new(ticket_id, turn_id, follows_ticket_id=body.follows_ticket_id, prior_hint=hint), name=f"submit:{ticket_id}"
+    )  # fmt: skip
     return _accepted(ticket_id, S_NEW, redacted.notices)
 
 
@@ -340,6 +356,10 @@ async def read_ticket(
         exit_code=row.exit_code, close_reason=row.close_reason, final_state=row.final_state,
         created_at=row.created_at, closed_at=row.closed_at, children_progress=progress, deadline=deadline,
         server_now=desk.clock.now(), request_text=request_text_of(row, parent.redacted_request if parent else None),
+        can_follow_up=bool(
+            request.app.state.settings.enable_session_memory and row.final_state is not None and row.parent_ticket_id is None
+            and row.requester_id == p.user_id
+        ),
     )  # fmt: skip
 
 

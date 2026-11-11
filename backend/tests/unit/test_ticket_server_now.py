@@ -21,6 +21,7 @@ OLD_KEYS = {
     "ticket_id", "status", "waiting_for", "conversation", "exit_code", "close_reason", "final_state", "created_at", "closed_at",
     "children_progress", "deadline",
     "request_text",  # be-api8-cau-dau: câu đầu ĐÃ CHE (đổi CÓ CHỦ ĐÍCH tập trường TicketView)
+    "can_follow_up",  # Q13b (D-79): chỉ một bool — ticket kết thúc có được "Hỏi tiếp" không (đổi CÓ CHỦ ĐÍCH)
 }  # fmt: skip
 
 
