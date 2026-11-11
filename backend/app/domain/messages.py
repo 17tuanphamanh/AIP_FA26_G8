@@ -152,11 +152,17 @@ SOFTWARE_LABELS: Final[Mapping[str, str]] = {
 }  # fmt: skip
 
 
+_LABEL_KEY = re.compile(r"[^a-z0-9]")  # kiểm thử 12/11 (D4): slot "7-zip" (= tên hiển thị "7-Zip" chuẩn hoá) ≠ khoá danh mục "7zip"
+_LABELS_BY_BARE_KEY: Final[Mapping[str, str]] = {_LABEL_KEY.sub("", k): v for k, v in SOFTWARE_LABELS.items()}
+
+
 def software_label(raw: str) -> str:
-    """Khoá chuẩn hoá → tên hiển thị (bảng hằng); khoá hợp mẫu ngoài bảng → giữ khoá; sai mẫu → "phần mềm"."""
+    """Khoá chuẩn hoá → tên hiển thị (bảng hằng); không trùng khoá thì so khoá đã bỏ dấu nối/chấm ("7-zip", "vs-code", "ms.office"
+    → "7zip", "vscode", "msoffice"); khoá hợp mẫu ngoài bảng → giữ khoá; sai mẫu → "phần mềm". Chỉ đổi CHỮ HIỂN THỊ — không đổi
+    khoá gửi tool hay mã băm hành động."""
     if not SOFTWARE_NAME.fullmatch(raw):
         return "phần mềm"
-    return SOFTWARE_LABELS.get(raw, raw)
+    return SOFTWARE_LABELS.get(raw) or _LABELS_BY_BARE_KEY.get(_LABEL_KEY.sub("", raw), raw)
 PERMISSION_LEVELS: Final = frozenset({"read", "write", "full"})
 # Chấm thử 11/11 (T2): tin kết quả từng in enum thô ("Đã cấp quyền read thư mục…"). Nhãn tiếng Việt cho tin người dùng; danh sách quyền
 # (view_permissions) giữ enum như cũ.
