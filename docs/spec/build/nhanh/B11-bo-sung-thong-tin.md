@@ -337,6 +337,8 @@ async def clarify_wait(state):                                          # KHÔNG
                 slots=new_slots, off_topic_streak=streak)
 ```
 
+> **Bản nộp `main` (đối chiếu 11/11/2026):** mã giả trên là thiết kế Phase 3. Code thật (`graph/nodes/b11_slots.py`) gọi prompt `b11_clarify_question` **v4** với biến `missing`, `missing_desc`, `action_label`, `diagnostics_summary`, `intent`, `previous_reply`, `last_question`, `user_request` (câu yêu cầu ĐÃ che; `trim_vars`) — Q3, Q11; vai `chat_fast` theo `config/llm.yaml` `prompt_roles` (Q10). Slot liệt kê sẵn (enum) dùng câu hỏi cố định, không gọi LLM (Q3).
+
 **Chuyển `S_CLARIFYING → S_CLARIFYING` (quay về `b11_slots`)** có trong bảng gốc **[Chốt 2.1]**. Khi đủ slot thì `b11_slots` đưa sang `S_ASSESSING`.
 
 **Chẩn đoán lại (D-20):** `TOOL_ARG_SLOTS` = {`device_id`, `resource_path`, `target_user`, `software_name`, `account_type`} — các slot mà ít nhất một tool chẩn đoán dùng làm tham số. Khi người dùng cung cấp hoặc đổi một slot trong tập này, B6 chạy lại **chỉ** các tool bị ảnh hưởng, rồi quay về `b11_slots` với `facts` mới (B06-B07 mục 5). Nếu cờ tắt (mặc định tới khi chốt), hành vi giống bản 1.0: `facts` của đối tượng mới có thể thiếu, luật `allow` khi đó không khớp (an toàn) và ca đi xuống lớp LLM hoặc người duyệt. `validate_targets` vẫn luôn chạy trước khi dựng `Action`, nên đối tượng không tồn tại không bao giờ lọt vào `Action` dù cờ bật hay tắt.
