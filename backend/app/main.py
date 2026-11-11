@@ -50,7 +50,7 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
     MonitorStatus,
 )
 from app.api.health import router as health_router
-from app.api.limits import BodyLimitMiddleware
+from app.api.limits import BodyLimitMiddleware, NulGuardMiddleware
 from app.api.llm_status import router as llm_status_router
 from app.api.notifications import router as notifications_router
 from app.api.policy import router as policy_router
@@ -432,6 +432,7 @@ def create_app(
     app.include_router(strategy_router)  # D-67: /api/admin/strategy (+ /history) — chiến lược M5 lúc vận hành (chỉ manager)
     app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
+    app.add_middleware(NulGuardMiddleware)  # kiểm thử 12/11: NUL trong đường dẫn/query → 404/422, không 500
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(tickets_router)

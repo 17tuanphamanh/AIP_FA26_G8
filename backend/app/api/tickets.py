@@ -30,7 +30,6 @@ không đụng `tickets`, checkpoint, lượt, `start_event`, executor). Thứ t
 `already_overridden` (khoá idempotency theo ticket + người, quyết bằng INSERT).
 """
 
-import json
 import logging
 import re
 from datetime import datetime
@@ -49,6 +48,7 @@ from app.api.desk import (
     SECRET_EVENT,
     Desk,
     get_desk,
+    load_json_body,
     parse_body,
     record_redacted,
     redact,
@@ -421,11 +421,7 @@ async def _reply_body(request: Request, parent_id: str) -> ReplyIn:
     """Như `parse_body` (422 chỉ vị trí trường) + chặn khoá `items` không có dạng `<cha>-<i>` TRƯỚC khi kiểm hình dạng, với vị trí CHUNG
     `body.items` — khoá dict là chữ tự do của người gửi chưa qua guard, không được dội lại trong 422 (soát DỪNG 2 mục 6). Sau bước này mọi
     vị trí trường nêu tên đều là id do hệ thống sinh (`<cha>-<số>`)."""
-    raw = await request.body()
-    try:
-        data: Any = json.loads(raw) if raw else None
-    except ValueError:
-        raise InvalidRequest([]) from None
+    data = load_json_body(await request.body())  # JSON hỏng / lồng quá sâu / có NUL → 422 (kiểm thử 12/11)
     items = data.get("items") if isinstance(data, dict) else None
     prefix = f"{parent_id}-"
     if isinstance(items, dict) and any(not (k.startswith(prefix) and _CHILD_INDEX.fullmatch(k[len(prefix):])) for k in items):

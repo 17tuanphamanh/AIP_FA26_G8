@@ -88,15 +88,33 @@ def get_desk(request: Request) -> Desk:
     return desk
 
 
-async def parse_body[M: BaseModel](request: Request, model: type[M]) -> M:
-    """Đọc + kiểm body TRONG handler (không để FastAPI kiểm trước dependency): thứ tự kiểm của
-    2b-3 là quyền → 404/403/409 → body 422. JSON hỏng cũng là 422. Lỗi CHỈ mang vị trí trường
-    (`api/errors.invalid_request`) — không `input` (có thể chứa mật khẩu, phase3 mục 8.3)."""
-    raw = await request.body()
+def load_json_body(raw: bytes) -> Any:
+    """JSON của body → dữ liệu, hoặc `InvalidRequest([])` (422) khi: JSON hỏng; lồng quá sâu (`RecursionError` của bộ đọc JSON — kiểm
+    thử 12/11: `[[[…]]]` 20 000 tầng, 40 KB < giới hạn body, từng ra 500); có ký tự NUL trong chuỗi hoặc khoá (Postgres không nhận
+    0x00 — từng ra 500 khi ghi). Duyệt KHÔNG đệ quy (ngăn xếp) nên không vấp lại giới hạn đệ quy."""
     try:
         data: Any = json.loads(raw) if raw else None
-    except ValueError:
+    except (ValueError, RecursionError):
         raise InvalidRequest([]) from None
+    stack: list[Any] = [data]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, str):
+            if "\x00" in node:
+                raise InvalidRequest([])
+        elif isinstance(node, dict):
+            stack.extend(node.keys())
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return data
+
+
+async def parse_body[M: BaseModel](request: Request, model: type[M]) -> M:
+    """Đọc + kiểm body TRONG handler (không để FastAPI kiểm trước dependency): thứ tự kiểm của
+    2b-3 là quyền → 404/403/409 → body 422. JSON hỏng / lồng quá sâu / có NUL cũng là 422 (`load_json_body`). Lỗi CHỈ mang vị
+    trí trường (`api/errors.invalid_request`) — không `input` (có thể chứa mật khẩu, phase3 mục 8.3)."""
+    data = load_json_body(await request.body())
     try:
         return model.model_validate(data)
     except ValidationError as exc:

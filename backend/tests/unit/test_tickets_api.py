@@ -496,3 +496,33 @@ async def test_text_with_one_visible_char_is_accepted(text: str) -> None:
         an = await env.token("an.nv")
         r = await env.client.post("/api/tickets", json={"text": text}, headers=an)
         assert r.status_code == 202
+
+
+# ---- kiểm thử 12/11: đầu vào lạ từng ra 500 → nay 422/404, không ghi gì ----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content",
+    ["[" * 20000 + "]" * 20000, '{"text": "x", "follows_ticket_id": ' + "[" * 15000 + "]" * 15000 + "}",
+     '{"text": "VPN l\\u1ed7i\\u0000 abc"}', '{"text\\u0000": "x"}'],
+    ids=["json-long-sau", "truong-long-sau", "nul-trong-chu", "nul-trong-khoa"],
+)  # fmt: skip
+async def test_create_deep_or_nul_body_422_writes_nothing(content: str) -> None:
+    async with desk_env() as env:
+        an = await env.token("an.nv")
+        r = await env.client.post("/api/tickets", headers={**an, "Content-Type": "application/json"}, content=content)
+        assert r.status_code == 422 and r.json()["error"] == "invalid_request"
+        assert env.h.tickets.rows == {} and env.guard.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_nul_in_path_404_and_in_query_422() -> None:
+    async with desk_env() as env:
+        an = await env.token("an.nv")
+        r = await env.client.get("/api/tickets/abc%00def", headers=an)
+        assert (r.status_code, r.json()) == (404, {"detail": "not_found"})
+        q = await env.client.get("/api/tickets?limit=5&after=%00", headers=an)
+        assert (q.status_code, q.json()) == (422, {"error": "invalid_request", "fields": ["query"]})
+        ok = await env.client.get("/api/tickets?limit=5", headers=an)
+        assert ok.status_code == 200

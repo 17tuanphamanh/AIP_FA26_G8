@@ -270,7 +270,9 @@ GOOD = encode_cursor(NotificationRow("appr:1", "approval_decided", "T", "approve
 
 @pytest.mark.parametrize(
     "after",
-    ["!!!", "abc", "e30", "bnVsbA", "x" * 600, "", "eyJ0IjoiMjAyNi0xMC0wMVQwMDowMDowMCIsImkiOiJhcHByOjEifQ"],  # cuối: t không múi giờ
+    ["!!!", "abc", "e30", "bnVsbA", "x" * 600, "", "eyJ0IjoiMjAyNi0xMC0wMVQwMDowMDowMCIsImkiOiJhcHByOjEifQ",  # t không múi giờ
+     # kiểm thử 12/11: "9999-12-31T23:59:59-14:00" tràn khi đổi sang UTC (OverflowError) — từng ra 500
+     "eyJ0IjogIjk5OTktMTItMzFUMjM6NTk6NTktMTQ6MDAiLCAiaSI6ICJhcHByOjEifQ"],
 )
 def test_bad_after_is_422(mixed: tuple[AuthEnv, MemoryNotifications], after: str) -> None:
     env, source = mixed

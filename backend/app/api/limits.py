@@ -70,3 +70,34 @@ async def _reject(send: Send) -> None:
                     (b"content-length", str(len(TOO_LARGE_BODY)).encode())],
     })  # fmt: skip
     await send({"type": "http.response.body", "body": TOO_LARGE_BODY})
+
+
+NOT_FOUND_BODY = json.dumps({"detail": "not_found"}).encode()
+BAD_QUERY_BODY = json.dumps({"error": "invalid_request", "fields": ["query"]}).encode()
+
+
+class NulGuardMiddleware:
+    """Kiểm thử 12/11: ký tự NUL trong đường dẫn (`/api/tickets/abc%00def`) đi thẳng xuống truy vấn Postgres (không nhận 0x00) → 500.
+    Chặn ở cửa: NUL trong đường dẫn → 404 như id không có (không lộ gì); `%00` trong query → 422 `fields: ["query"]`. Body JSON có NUL
+    do `api/desk.load_json_body` chặn (422)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            if "\x00" in scope.get("path", ""):
+                await _send_json(send, 404, NOT_FOUND_BODY)
+                return
+            if b"%00" in scope.get("query_string", b"") or b"\x00" in scope.get("query_string", b""):
+                await _send_json(send, 422, BAD_QUERY_BODY)
+                return
+        await self.app(scope, receive, send)
+
+
+async def _send_json(send: Send, status: int, body: bytes) -> None:
+    await send({
+        "type": "http.response.start", "status": status,
+        "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+    })  # fmt: skip
+    await send({"type": "http.response.body", "body": body})
