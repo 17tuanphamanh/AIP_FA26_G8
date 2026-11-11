@@ -67,7 +67,8 @@ def test_m1_target_phrase(action_type: str, target: str, expected: str) -> None:
                      "Yêu cầu đặt lại mật khẩu cho tài khoản nv005 chưa được duyệt. Lý do: trái chính sách.",
                      id="m1-reset-nguoi-khac"),
         pytest.param("unlock_account", "tài khoản của bạn",
-                     "Yêu cầu mở khoá tài khoản cho tài khoản của bạn chưa được duyệt. Lý do: trái chính sách.",
+                     # chấm thử 11/11 (D-81 kèm): không lặp chữ — trước "mở khoá tài khoản cho tài khoản của bạn"
+                     "Yêu cầu mở khoá tài khoản của bạn chưa được duyệt. Lý do: trái chính sách.",
                      id="m1-unlock-chinh-minh"),
         pytest.param("renew_vpn_cert", "máy LAP-0501",
                      "Yêu cầu gia hạn chứng chỉ VPN cho máy LAP-0501 chưa được duyệt. Lý do: trái chính sách.",

@@ -6618,7 +6618,7 @@ TA 10/11: "làm luôn nhưng có hướng backup" (hạn T5 12/11 12:00). Hướ
   nay E0). Khoá chung (`status`) và giá trị `false` không chặn. Test: cặp khớp/suýt khớp + 5 biến thể khớp + 4 suýt khớp
   (`test_guard_injection.py`); ca "ít hơn 11 mẫu" đổi sang cắt còn 10 mẫu (giữ ý). Unit toàn bộ xanh.
 
-## Chấm thử hệ thống thật + sửa sau chấm (11/11/2026, nhánh `cham-1111-sua`, nền `main` `eb4457e`) — D-80
+## Chấm thử hệ thống thật + sửa sau chấm (11/11/2026, nhánh `cham-1111-sua`, nền `main` `eb4457e`) — D-80, D-81
 
 Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 39 ca dễ → rất khó + 8 câu dò P1–P8) qua API như người dùng thật
 (đăng nhập, gửi, xác nhận, duyệt bằng tài khoản L1/L2). Kết quả chi tiết ở tài liệu chấm (Project `claude/`). Sửa ở nhánh này:
@@ -6631,9 +6631,12 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
 - Tin E3/E4 bản `it_help` (D-76): câu phạm vi thêm "hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook" (trước đó bot nói
   phạm vi chỉ gồm VPN/tài khoản/phần mềm/quyền dù vừa trả lời được câu máy in). Test `test_messages_scope`, `test_q13c_bot_lap`,
   `test_s0_grounding` đổi theo.
-- Chưa sửa (ghi cho báo cáo): T3 "cài lại Office bị lỗi" ra E5 `llm_high_risk` (B14 thận trọng — lõi, không đổi); câu B15/E6 với
-  `unlock_account` khi tài khoản không bị khoá ghi "mở khoá tài khoản cho tài khoản của bạn" (lặp chữ); khoá phần mềm thô
-  (`adobe-acrobat-pro`) trong vài câu; thông báo trùng hiện mã ticket đầy đủ.
+- **D-81** (ca T4): xin mở khoá tài khoản CỦA CHÍNH MÌNH mà tài khoản không bị khoá → B11 hỏi câu cố định (đề nghị đặt lại mật khẩu),
+  không dựng hành động (trước: phiếu duyệt → duyệt → thực thi lỗi E6). Kèm câu chữ: không lặp "tài khoản cho tài khoản"
+  (`action_on`), tên phần mềm hiển thị qua bảng hằng `SOFTWARE_LABELS` ("Đã cài Zoom"). Test `test_d81_unlock_not_locked.py` 16 ca
+  (bỏ từng điều kiện đều đỏ); `test_install_already.py` +2; `test_target_phrase`, `test_messages_t24`, `gate5.py` đổi chuỗi kỳ vọng.
+- Chưa sửa (ghi cho báo cáo): T3 "cài lại Office bị lỗi" ra E5 `llm_high_risk` (B14 thận trọng — lõi, không đổi); thông báo trùng hiện
+  mã ticket đầy đủ (là mã thật, giữ).
 - Unit toàn bộ xanh, `make lint` xanh. Integration/e2e chạy ở CI.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
