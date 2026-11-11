@@ -8,6 +8,8 @@ b03_classify:
   intents: [{type: access, confidence: 0.92, span: "", action_hint: grant_permission, slots: {resource_path: finance/Q3, permission_level: read, duration: "30"}}]
   is_multi: false
 b10_need_type: {type: action, confidence: 0.9}
+# D-80: chỉ gọi khi điểm B9 dưới ngưỡng; câu viết lại KHÔNG thêm ý mới (ca E3 vẫn E3).
+b09_rewrite_query: {query: "preset tc08 — câu viết lại an toàn"}
 b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
 b11_clarify_question: {text: "Bạn cần quyền gì (đọc/ghi) trên thư mục nào, trong bao nhiêu ngày nhé?"}
 b11_extract_slots: {slots: {}, off_topic: true}

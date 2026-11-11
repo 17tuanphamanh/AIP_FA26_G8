@@ -8,6 +8,8 @@ b03_classify:
   intents: [{type: account, confidence: 0.92, span: "", action_hint: reset_password, slots: {account_type: ad}}]
   is_multi: false
 b10_need_type: {type: action, confidence: 0.9}
+# D-80: chỉ gọi khi điểm B9 dưới ngưỡng; câu viết lại KHÔNG thêm ý mới (ca E3 vẫn E3).
+b09_rewrite_query: {query: "preset tc01 — câu viết lại an toàn"}
 b10_answer: {answer_markdown: "", citations: [], cannot_answer: true}
 b11_clarify_question: {text: "Bạn cần đặt lại mật khẩu tài khoản nào (AD, email hay ERP) nhé?"}
 b11_extract_slots: {slots: {}, off_topic: true}

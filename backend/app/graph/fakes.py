@@ -317,6 +317,9 @@ class NodeDeps:
     enable_it_help: bool = True
     # D-78 (lô Q13a): `Settings.enable_kb_followup` — B19 hỏi tiếp sau câu trả lời KB. Mặc định bật như Settings.
     enable_kb_followup: bool = True
+    # D-80: `Settings.enable_query_rewrite` — viết lại câu hỏi dưới ngưỡng rồi truy hồi lại một lần. Mặc định TẮT ở NodeDeps (test cũ đi
+    # đường E3 không có kịch bản cho prompt mới); wiring đặt theo Settings (mặc định bật).
+    enable_query_rewrite: bool = False
     # Phase 4 S0-P11: `GROUNDING_GATE_ACTIONS` (ablation) — B10 áp B9 cho cả nhánh hành động. Mặc định = Settings (tắt).
     grounding_gate_actions: bool = False
     # Phase 4 P4: `lineage.commit_sha` (B10, B12) = `Settings.app_git_sha` (None = không biết — build từ cây bẩn/test).

@@ -116,8 +116,16 @@ class RiskVoteOut(BaseModel):
     factors: list[FactorCode] = Field(max_length=3)
 
 
+class RewriteQueryOut(BaseModel):
+    """D-80 (chấm thử 11/11) — `b09_rewrite_query`: câu hỏi viết lại CHỈ để truy hồi lại một lần khi câu gốc dưới ngưỡng (nhánh trả lời)."""
+
+    model_config = _OUT
+
+    query: str = Field(min_length=1, max_length=300)
+
+
 SCHEMAS: dict[str, type[BaseModel]] = {
     cls.__name__: cls
     for cls in (InjectionJudgeOut, ClassifyOut, NeedTypeOut, AnswerOut, QuestionOut, ExtractSlotsOut, RiskEstimateOut,
-                RiskVoteOut)
+                RiskVoteOut, RewriteQueryOut)
 }

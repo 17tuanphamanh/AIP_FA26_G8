@@ -6618,6 +6618,24 @@ TA 10/11: "làm luôn nhưng có hướng backup" (hạn T5 12/11 12:00). Hướ
   nay E0). Khoá chung (`status`) và giá trị `false` không chặn. Test: cặp khớp/suýt khớp + 5 biến thể khớp + 4 suýt khớp
   (`test_guard_injection.py`); ca "ít hơn 11 mẫu" đổi sang cắt còn 10 mẫu (giữ ý). Unit toàn bộ xanh.
 
+## Chấm thử hệ thống thật + sửa sau chấm (11/11/2026, nhánh `cham-1111-sua`, nền `main` `eb4457e`) — D-80
+
+Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 39 ca dễ → rất khó + 8 câu dò P1–P8) qua API như người dùng thật
+(đăng nhập, gửi, xác nhận, duyệt bằng tài khoản L1/L2). Kết quả chi tiết ở tài liệu chấm (Project `claude/`). Sửa ở nhánh này:
+
+- **D-80** viết lại câu hỏi để truy hồi lại một lần khi điểm B9 dưới ngưỡng (`b09_rewrite_query` v1, cờ `ENABLE_QUERY_REWRITE`, mặc
+  định bật; `NodeDeps`/harness mặc định tắt). Cùng ngưỡng; lỗi lần viết lại giữ E3. 37 preset `config/scripted/*` thêm khoá
+  `b09_rewrite_query`. Test `test_d80_rewrite_query.py` 8 ca; đổi mã M1 (bỏ điều kiện cờ), M2 (bỏ áp ngưỡng lần 2), M3 (gửi câu viết
+  lại cho `b10_answer`), M4 (lỗi LLM → E2) đều bị bắt. Bảng prompt/vai/điểm gọi cập nhật CÓ CHỦ ĐÍCH: `test_llm_prompts` (9 file),
+  `test_llm_chat_roles`, `test_chain_t20a` (9 prompt), `test_b11_clarify_v4` (`trim_vars`), `test_turn_budget` (`NODE_CALL_SITES` +2).
+- Tin E3/E4 bản `it_help` (D-76): câu phạm vi thêm "hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook" (trước đó bot nói
+  phạm vi chỉ gồm VPN/tài khoản/phần mềm/quyền dù vừa trả lời được câu máy in). Test `test_messages_scope`, `test_q13c_bot_lap`,
+  `test_s0_grounding` đổi theo.
+- Chưa sửa (ghi cho báo cáo): T3 "cài lại Office bị lỗi" ra E5 `llm_high_risk` (B14 thận trọng — lõi, không đổi); câu B15/E6 với
+  `unlock_account` khi tài khoản không bị khoá ghi "mở khoá tài khoản cho tài khoản của bạn" (lặp chữ); khoá phần mềm thô
+  (`adobe-acrobat-pro`) trong vài câu; thông báo trùng hiện mã ticket đầy đủ.
+- Unit toàn bộ xanh, `make lint` xanh. Integration/e2e chạy ở CI.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

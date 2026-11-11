@@ -273,7 +273,7 @@ def test_h3_prompt_versions_and_contract() -> None:
     b11 = yaml.safe_load((PROMPTS / "b11_extract_slots.yaml").read_text(encoding="utf-8"))
     assert int(b03["version"]) == 6 and int(b11["version"]) == 3  # lô Q1+Q12 (ĐP 09/11): b03 v6  # b03 v4: mốc G LLM-G DỪNG 3 (chỉ đổi action_hint); v5: M3 bỏ recent_messages; b11 v3: M4 bn-a (+ `question`)
     registry = repo_registry()
-    assert len(registry) == 8
+    assert len(registry) == 9  # D-80 (11/11): + b09_rewrite_query — đổi CÓ CHỦ ĐÍCH
     by_id = {p.id: p for p in registry}
     assert set(by_id["b03_classify"].spec.allowed_vars) == {"redacted_request", "label_hint"}  # M3: bỏ recent_messages
     assert set(by_id["b11_extract_slots"].spec.allowed_vars) == {"text", "missing", "intent", "question"}  # M4 bn-a: đổi CÓ CHỦ ĐÍCH

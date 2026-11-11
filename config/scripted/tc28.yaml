@@ -7,6 +7,8 @@ b03_classify:
   intents: [{type: vpn, confidence: 0.92, span: "", action_hint: null, slots: {}}]
   is_multi: false
 b10_need_type: {type: info, confidence: 0.9}
+# D-80: chỉ gọi khi điểm B9 dưới ngưỡng; câu viết lại KHÔNG thêm ý mới (ca E3 vẫn E3).
+b09_rewrite_query: {query: "VPN công ty dùng cổng nào?"}
 b10_answer:
   answer_markdown: "VPN công ty dùng IKEv2 (cổng UDP 500 và 4500); mạng chặn UDP thì dùng SSTP (cổng TCP 443)."
   citations: ["KB-VPN-001#v1#1"]

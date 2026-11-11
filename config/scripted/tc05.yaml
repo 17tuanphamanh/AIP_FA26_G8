@@ -7,6 +7,8 @@ b03_classify:
   intents: [{type: vpn, confidence: 0.92, span: "", action_hint: null, slots: {}}]
   is_multi: false
 b10_need_type: {type: info, confidence: 0.9}
+# D-80: chỉ gọi khi điểm B9 dưới ngưỡng; câu viết lại KHÔNG thêm ý mới (ca E3 vẫn E3).
+b09_rewrite_query: {query: "VPN báo lỗi 809, hướng dẫn khắc phục như thế nào?"}
 b10_answer:
   answer_markdown: "Lỗi không kết nối được VPN thường do mạng đang dùng chặn cổng của IKEv2."
   citations: ["KB-VPN-003#v1#0"]

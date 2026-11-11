@@ -206,7 +206,8 @@ def test_frame_alone_over_budget_still_raises(registry: PromptRegistry) -> None:
 
 def test_prompts_without_trim_vars_are_not_trimmed(registry: PromptRegistry) -> None:
     # lô Q1 (ĐP chốt 09/11, điểm 2): b03_classify v6 cũng cắt `redacted_request` (B2 đã sàng lọc trọn câu trước B3)
-    trimmed = {PID: ("user_request",), "b03_classify": ("redacted_request",), "b10_answer": ("previous_answer",)}  # Q13a
+    trimmed = {PID: ("user_request",), "b03_classify": ("redacted_request",), "b10_answer": ("previous_answer",),  # Q13a
+               "b09_rewrite_query": ("question",)}  # D-80 (11/11): câu đã che, chỉ để truy hồi lại  # fmt: skip
     for prompt in registry:
         assert prompt.spec.trim_vars == trimmed.get(prompt.id, ()), prompt.id
 

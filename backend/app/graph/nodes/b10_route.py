@@ -56,15 +56,16 @@ from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
-from app.llm.schemas import AnswerOut, NeedTypeOut
+from app.llm.schemas import AnswerOut, NeedTypeOut, RewriteQueryOut
 from app.rag.models import RetrievalSystemError
+from app.rag.query import build_query
 
 
 def _info() -> dict[str, Any]:
     return {
         "need_type": None, "prompt": None, "llm_error": None, "rag_error": None, "evidence_blocks": None,
         "trimmed_evidence": None, "evidence_truncated": False, "citation": None, "cited": [], "guard": None,
-        "grounding": None, "symptom_to_info": False, "steps_truncated": False, "answer_only": False,
+        "grounding": None, "symptom_to_info": False, "steps_truncated": False, "answer_only": False, "rewrite": None,
     }  # fmt: skip
 
 
@@ -150,6 +151,8 @@ def make(deps: NodeDeps) -> NodeFn:
         state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
     ) -> dict[str, Any]:
         """B9 → expand → `b10_answer` → hậu kiểm → output guard → gửi (nhánh `info` — cũ, và `it_help` D-76)."""
+        if not above and deps.enable_query_rewrite:  # D-80: viết lại câu hỏi rồi truy hồi lại MỘT lần, CÙNG ngưỡng
+            chunks, kb_version, above = await _rewrite_retry(state, info, chunks, kb_version)
         if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
@@ -234,5 +237,39 @@ def make(deps: NodeDeps) -> NodeFn:
                      "kb_version": kb_version, "commit_sha": deps.commit_sha},  # P4: commit của image (Settings)
             need_type="info", answer_ref=ref, conversation=[answer_msg(body, ref, cited)],
         )  # fmt: skip
+
+    async def _rewrite_retry(
+        state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str
+    ) -> tuple[list[ChunkRef], str, bool]:
+        """D-80 (chấm thử 11/11): câu hỏi gõ không dấu / viết tắt / có lời chào, từ đệm cho điểm truy hồi dưới ngưỡng dù KB có bài. LLM
+        `b09_rewrite_query` viết lại câu (CHỈ để truy hồi) → truy hồi lại một lần → áp CÙNG `RETRIEVAL_THRESHOLD`. Đạt → dùng đoạn mới
+        làm căn cứ (câu hỏi gửi `b10_answer` vẫn là câu gốc đã che). Lỗi LLM/RAG, câu viết lại trùng câu gốc, hoặc vẫn dưới ngưỡng → giữ
+        nguyên (E3 như trước) — lỗi KHÔNG đổi E3 thành E2. Audit chỉ điểm/cờ, không chữ."""
+        original = state["redacted_request"]
+        rec: dict[str, Any] = {"tried": True, "changed": False, "top_score": None, "above_threshold": False, "error": None}
+        info["rewrite"] = rec
+        try:
+            out, _meta = await deps.llm.complete(
+                "fast", "b09_rewrite_query", {"question": original}, RewriteQueryOut, kb_version=kb_version
+            )  # fmt: skip
+        except (LLMSchemaError, LLMUnavailable, LLMBudgetExceeded) as exc:
+            rec["error"] = type(exc).__name__
+            return chunks, kb_version, False
+        rewritten = out.query.strip()
+        if not rewritten or rewritten.casefold() == original.strip().casefold():
+            return chunks, kb_version, False
+        rec["changed"] = True
+        q = build_query(rewritten, state.get("intent"), state.get("slots") or {}, query_slots=deps.query_slots)
+        try:
+            res = await deps.rag.retrieve(q, state["requester_context"])
+        except RetrievalSystemError as exc:
+            rec["error"] = exc.stage
+            return chunks, kb_version, False
+        g = grounding(list(res.chunks), res.top_score, deps.constants.RETRIEVAL_THRESHOLD)
+        rec["top_score"], rec["above_threshold"] = res.top_score, g["above_threshold"]
+        if not g["above_threshold"]:
+            return chunks, kb_version, False
+        info["grounding"] = g
+        return list(res.chunks), res.kb_version, True
 
     return b10_route

@@ -43,6 +43,8 @@ TABLE_7_4 = {
     "b02_injection_judge": ("fast", "bypass", "InjectionJudgeOut", {"text"}),
     "b03_classify": ("fast", "default", "ClassifyOut", {"redacted_request", "label_hint"}),  # M3: bỏ recent_messages (v5)
     "b10_need_type": ("fast", "default", "NeedTypeOut", {"text", "evidence_titles"}),
+    # D-80 (ĐP 11/11): viết lại câu hỏi CHỈ để truy hồi lại khi điểm B9 dưới ngưỡng — `question` = câu ĐÃ che
+    "b09_rewrite_query": ("fast", "default", "RewriteQueryOut", {"question"}),
     "b10_answer": ("strong", "default", "AnswerOut", {"question", "evidence", "previous_answer"}),  # Q13a (D-78): v4
     # P6 lời nói (ĐP 08/11, v2): + `previous_reply` ∈ {none, usable, unusable} — enum do node tính, không chữ người dùng
     # Q3 M2 (ĐP 09/11, v3): + `missing_desc` (bảng nhãn slot), `action_label` (nhãn việc hoặc "chưa rõ") — hằng do code dựng
@@ -73,8 +75,8 @@ def _vars(prompt_id: str, **over: Any) -> dict[str, Any]:
 
 def test_d10_exactly_eight_prompt_files_match_table(registry: PromptRegistry) -> None:
     files = sorted(p.stem for p in PROMPTS.glob("*.yaml"))
-    assert files == sorted(TABLE_7_4)  # quét được đúng 8 file
-    assert len(registry) == 8
+    assert files == sorted(TABLE_7_4)  # quét được đúng 9 file (D-80: + b09_rewrite_query)
+    assert len(registry) == 9
     for prompt in registry:
         role, cache, schema, variables = TABLE_7_4[prompt.id]
         spec = prompt.spec
