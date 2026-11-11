@@ -1,6 +1,7 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
 > Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Quân chạy lại từ đầu theo hướng dẫn ngày 28/10/2026 trên `dev-tuananh` @ `df865dc` (máy Windows + WSL2, lựa chọn A): đạt, các chỗ lệch đã sửa vào file. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
+> **Cập nhật 11/11/2026 cho bản nộp `main`:** bản chạy là `main` (mục 2); thêm khoá bắt buộc `USERNAME_HMAC_KEY` (mục 3 — thiếu thì worker không lên); KB 33 bài (mục 5.3); `CHAT_MODEL` cho LLM thật (mục 9.1). Các bước khác giữ như bản đã chạy thử 26–28/10. Bản `main` đã chạy trên máy demo của nhóm (nâng cấp từ bản cũ, KB 33 bài nạp ngày 09/11); lần chạy từ máy sạch theo đúng file này: ⚠️ **CẦN BỔ SUNG** (nhóm ghi ngày + người chạy).
 > Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ).
 
 **File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
@@ -95,9 +96,9 @@ Trên Windows, mọi lệnh `make`, `docker compose`, `npm` trong file này ch�
 Repo là repo riêng tư trên GitHub: `https://github.com/17tuanphamanh/AIP_FA26_G8`.
 
 - **Cách chính:** nhóm thêm tài khoản GitHub của thầy/cô làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
-- **Dự phòng:** tải **file zip của tag `v1.0-freeze`** (trang *Tags* của repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
+- **Dự phòng:** tải **file zip của nhánh `main`** (nút *Code → Download ZIP* trên trang repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
 
-Bản dùng để chạy và chấm là tag **`v1.0-freeze`** (nhóm tạo tag chiều 27/10, chậm nhất sáng 28/10).
+Bản dùng để chạy và chấm là nhánh **`main`** (bản nộp 14/11/2026). Tag **`v1.0-freeze`** (29/10) là **bản đo** — mọi số RQ trong báo cáo đo trên tag này; chỉ dùng tag khi chạy lại đánh giá (mục 11). Hai bản khác nhau ở đâu: `README.md` mục "Bản nộp và bản đo".
 
 ### 2.2. Clone
 
@@ -131,14 +132,14 @@ git clone https://github.com/17tuanphamanh/AIP_FA26_G8
 cd AIP_FA26_G8
 ```
 
-Chuyển sang đúng bản dùng để chạy — tag `v1.0-freeze`:
+Đứng đúng bản dùng để chạy — nhánh `main` (clone xong là đã ở `main`; lệnh dưới để chắc chắn):
 
 ```bash
-git checkout v1.0-freeze
+git checkout main
 ```
 
-- Git sẽ báo `You are in 'detached HEAD' state` — **bình thường** khi đứng trên tag. Chỉ chạy, **không commit gì** trên tag.
-- Báo `pathspec 'v1.0-freeze' did not match`: tag chưa được tạo hoặc bản clone chưa có tag — chạy `git fetch --tags` rồi thử lại. Trước khi có tag (trước 28/10), người chạy thử trong nhóm dùng `git checkout dev-tuananh`.
+- Chỉ chạy, **không commit gì**.
+- Muốn chạy lại số đo của báo cáo: `git checkout v1.0-freeze` (Git báo `detached HEAD` là bình thường) rồi làm từ mục 3 trên **DB xoá sạch** (`docker compose down -v`, mục 10) — DB của `main` có migration mới hơn tag.
 
 ---
 
@@ -173,18 +174,38 @@ p.write_text(s)
 PY
 ```
 
+Rồi sinh khoá thứ 7, **`USERNAME_HMAC_KEY`** (bắt buộc từ 08/11/2026 — thiếu thì worker từ chối khởi động). Khoá này **dẫn xuất từ `JWT_SIGNING_KEY`** nên phải chạy **sau** đoạn trên. Lệnh ghi khoá vào file tạm ngoài repo, điền vào dòng `USERNAME_HMAC_KEY=` đang trống của `.env`, rồi xoá file tạm — không in khoá ra màn hình:
+
+```bash
+PYTHONPATH=backend uv run python scripts/ops/derive_username_key.py --env-file .env --out /tmp/uk.env && python3 - <<'PY'
+import pathlib, re
+p, t = pathlib.Path(".env"), pathlib.Path("/tmp/uk.env")
+line = t.read_text().strip(); t.unlink()
+s = p.read_text()
+s, n = re.subn(r"(?m)^USERNAME_HMAC_KEY=[ \t]*$", lambda m: line, s)
+p.write_text(s)
+print("USERNAME_HMAC_KEY:", "da sinh" if n else "da co gia tri, giu nguyen")
+PY
+```
+
+- Lần đầu `uv run` tự dựng môi trường Python (vài phút) — bình thường.
+- Báo `/tmp/uk.env đã tồn tại`: xoá file đó (`rm /tmp/uk.env`) rồi chạy lại.
+- Sau này đổi `JWT_SIGNING_KEY` thì phải sinh lại khoá này (xoá giá trị cũ trong `.env` rồi chạy lại lệnh).
+
 Kiểm lại (chỉ in 1 = có giá trị, 0 = trống — không in nội dung `.env`):
 
 ```bash
-for v in LLM_BACKEND JWT_SIGNING_KEY MFA_ENC_KEY SVC_AGENT_TOKEN SVC_EXECUTOR_TOKEN SVC_WORKER_TOKEN ML_SERVICE_TOKEN FAKE_SCENARIO FAKE_NODE_DELAY; do echo "$v: $(grep -cE "^$v=.+" .env)"; done; echo "LLM_BACKEND=scripted: $(grep -c '^LLM_BACKEND=scripted$' .env)"
+for v in LLM_BACKEND JWT_SIGNING_KEY MFA_ENC_KEY SVC_AGENT_TOKEN SVC_EXECUTOR_TOKEN SVC_WORKER_TOKEN ML_SERVICE_TOKEN USERNAME_HMAC_KEY FAKE_SCENARIO FAKE_NODE_DELAY; do echo "$v: $(grep -cE "^$v=.+" .env)"; done; echo "LLM_BACKEND=scripted: $(grep -c '^LLM_BACKEND=scripted$' .env)"
 ```
 
-Phải ra: 7 dòng đầu (`LLM_BACKEND` và 6 khoá) là **1**; `FAKE_SCENARIO`, `FAKE_NODE_DELAY` là **0**; dòng cuối `LLM_BACKEND=scripted: 1`.
+Phải ra: 8 dòng đầu (`LLM_BACKEND` và 7 khoá) là **1**; `FAKE_SCENARIO`, `FAKE_NODE_DELAY` là **0**; dòng cuối `LLM_BACKEND=scripted: 1`.
 
 Giải thích các biến quan trọng (sửa tay bằng `nano .env` nếu cần; lưu: `Ctrl+O` → `Enter`, thoát: `Ctrl+X`):
 
 - `LLM_BACKEND=scripted` — **bắt buộc có**. `scripted` là LLM giả, không tốn tiền (dùng cho lần dựng đầu). Bật LLM thật: mục 9.
 - `JWT_SIGNING_KEY`, `MFA_ENC_KEY`, `SVC_AGENT_TOKEN`, `SVC_EXECUTOR_TOKEN`, `SVC_WORKER_TOKEN`, `ML_SERVICE_TOKEN` — **bắt buộc có giá trị**, mỗi khoá một giá trị riêng (đoạn lệnh trên đã sinh). Thiếu `ML_SERVICE_TOKEN` thì compose dừng ngay.
+- `USERNAME_HMAC_KEY` — **bắt buộc có giá trị**, sinh bằng lệnh ở trên (không tự đặt giá trị ngẫu nhiên: phải khớp `JWT_SIGNING_KEY`, lệch thì các trang ticket/duyệt báo 503).
+- `ENABLE_IT_HELP`, `ENABLE_KB_FOLLOWUP`, `ENABLE_SESSION_MEMORY` — tính năng thêm sau bản đo, **mặc định bật**, không cần sửa (đặt `false` = hành vi bản đo; xem `README.md`).
 - `FAKE_SCENARIO` — **để trống**. Có giá trị (ví dụ `approval`) thì **toàn bộ các bước của agent chạy bằng node giả** (chỉ dùng cho kiểm thử nội bộ) — kết quả demo/đánh giá sẽ không phải của hệ thống thật.
 - `FAKE_NODE_DELAY` — **để trống**. Còn giá trị khi `FAKE_SCENARIO` trống thì backend **từ chối khởi động**.
 - `FAKE_APPROVER_ID` — giữ nguyên như `.env.example`.
@@ -325,12 +346,14 @@ make ingest
 **Chạy thành công thì cuối output có các dòng như sau:**
 
 ```text
-tài liệu: 18 enabled / 18 tổng; số đoạn: 77; max text_tokens: 277; truncated=0
+tài liệu: 33 enabled / 33 tổng; số đoạn: 132; max text_tokens: …; truncated=0
 ...
 alias kb_current → kb_<kb_version>
 ...
-xong: kb_version=..., collection=kb_..., số đoạn=77, truncated=0, eval_status=evaluated
+xong: kb_version=..., collection=kb_..., số đoạn=132, truncated=0, eval_status=evaluated
 ```
+
+- Bản `main` có **33 bài** (18 bài của bản đo + 15 bài `kb/general`: máy in, Outlook, Wi-Fi…). Đứng trên tag `v1.0-freeze` thì là 18 bài, 77 đoạn.
 
 - Trên DB vừa xoá sạch có thể gặp dòng `cảnh báo: owner it_mgr01 chưa có trong bảng users — ghi kb_documents.owner = NULL`. Ingest vẫn hoàn tất bình thường.
 - Ngay sau khi ingest xong, `/api/health` có thể vẫn báo `kb.status = missing` thêm **khoảng 10–60 giây** (backend kiểm lại KB theo chu kỳ ~10 giây) — chờ rồi kiểm lại (mục 5.4), **không cần** khởi động lại gì.
@@ -534,6 +557,14 @@ FAST_MODEL=deepseek-flash
 STRONG_MODEL=deepseek-flash
 LLM_API_KEY=dien-key-cua-ban-vao-day
 ```
+
+Cấu hình của bản nộp dùng model mạnh hơn cho các bước hội thoại (B3 phân loại, B10 trả lời, B11 hỏi thêm) — thêm dòng:
+
+```dotenv
+CHAT_MODEL=deepseek-v4-pro
+```
+
+Để trống `CHAT_MODEL` thì các bước đó dùng `FAST_MODEL`/`STRONG_MODEL` như bản đo. B2 (sàng lọc) và B14 luôn dùng model của bản đo.
 
 Thay `dien-key-cua-ban-vao-day` bằng API key DeepSeek của bạn. Sau khi lưu `.env`, chạy lại:
 
