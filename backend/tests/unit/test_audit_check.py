@@ -71,6 +71,9 @@ P1_B4 = _row(2, "B4", "intent_low_confidence", {"layer": "llm", "dropped_slot_ke
                                                 "confidence": 0.41})  # fmt: skip
 P1_B4_OOS = _row(3, "B4", "intent_out_of_scope", {"layer": "model", "dropped_slot_keys": [], "intent": None, "confidence": None})
 P1_B4_MULTI = _row(4, "B4", "multi_intent_not_enabled", {"layer": "llm", "dropped_slot_keys": []})
+# D-84: dòng B4 thật của `b03_classify._reverse_action` (intent/confidence None — rẽ trước khi chọn ý)
+P1_B4_REVERSE = _row(4, "B4", "reverse_action_requested", {"layer": "llm", "dropped_slot_keys": [], "intent": None, "confidence": None,
+                                                           "reverse_action": "compromised"})  # fmt: skip
 P2_B6 = _row(5, "B6", "diagnosed", {"tools_called": ["vpn_status"], "facts": {"cert_status": "expired"}, "tool_retry_count": 0})
 P2_B7 = _row(6, "B7", "facts_merged", {"tools_called": [], "facts": {}, "tool_retry_count": 1})
 P3_RETRIEVED = _row(7, "B8", "retrieved", {"query": "gia hạn vpn", "top_score": 0.83}, kb_version=HEX64)
@@ -302,7 +305,8 @@ def test_a2_point3_alias_error_does_not_demand_kb_version() -> None:
     assert required(T, [copy.deepcopy(P3_ERROR_ALIAS)], final_state=None) == []
 
 
-@pytest.mark.parametrize("row", [P1_B4_OOS, P1_B4_MULTI], ids=["intent_out_of_scope", "multi_intent_not_enabled"])
+@pytest.mark.parametrize("row", [P1_B4_OOS, P1_B4_MULTI, P1_B4_REVERSE],
+                         ids=["intent_out_of_scope", "multi_intent_not_enabled", "reverse_action_requested"])  # fmt: skip
 def test_a2_point1_e1_events_exempt_from_intent_and_confidence(row: dict[str, Any]) -> None:
     assert required(T, [copy.deepcopy(row)], final_state=None) == []
 

@@ -8,7 +8,8 @@
    → E2 `llm_unavailable`; hết hạn cả lượt (ở ml hoặc LLM) → E2 `turn_budget_exceeded`.
 4. Thứ tự kiểm CỐ ĐỊNH (mỗi ca E1 đúng một `reason_detail`): không ý nào trong phạm vi → `out_of_scope` → (D-84, 12/11) câu xin
    thao tác NGƯỢC (thu hồi, khoá, báo mất máy, gỡ cài, đừng làm, huỷ — `domain/reverse_action`) mà có intent ghi → `reverse_action_requested`
-   cả ticket, không tách, không slot → có ≥ 2 ý (đếm
+   cả ticket, không tách, không slot → (12/11) có intent `account` mà câu nhắc tài khoản dịch vụ BÊN NGOÀI (Gmail, Zalo… —
+   `domain/personal_account`) → `out_of_scope` (cờ audit `personal_account`) → có ≥ 2 ý (đếm
    MỌI ý, kể cả ý ngoài phạm vi — Q-3f-6; câu xã giao không phải ý, prompt v2) → B4/B5 nhiều ý (dưới) → confidence <
    `TAU_INTENT` → `intent_low_confidence` → intent ∉ `ENABLED_INTENTS` → `intent_not_enabled`.
    **Nhiều ý (Phase 5 T20b P2, P3; D-49; phase5 5.2.2–5.2.3):** phán TỪNG ý theo bảng 5.2.2 (`out_of_scope` → `span` rỗng/không
@@ -80,6 +81,7 @@ from app.domain.dedup import duplicate_text, pick_duplicate
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import duplicate_msg, triage_msg, triage_question
+from app.domain.personal_account import personal_account_mentioned
 from app.domain.reverse_action import reverse_action_kind
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
 from app.domain.states import S_CLARIFYING, S_CLASSIFYING, S_DIAGNOSING, S_ESCALATED
@@ -108,7 +110,8 @@ def _point1() -> dict[str, Any]:
         "model_version": None, "prompt": None, "ml_error": None, "llm_error": None, "span_not_in_text": False,
         "other_target_mention": False, "other_target_reason": None, "request_trimmed": False, **audit_dropped({}, frozenset()),
         "follows_ticket": False,  # Q13b (D-79): ticket mở từ "Hỏi tiếp" (có gợi ý loại việc trước) — chỉ cờ, không id/chữ
-        "reverse_action": None,  # D-84: nhãn loại thao tác ngược (lost_device, revoke, lock, negate, cancel, uninstall) — không chữ
+        "reverse_action": None,  # D-84: nhãn loại thao tác ngược (lost_device, compromised, revoke, lock, negate, cancel, uninstall)
+        "personal_account": False,  # 12/11: câu nhắc tài khoản dịch vụ bên ngoài (Gmail, Zalo…) → E1 out_of_scope — chỉ cờ, không chữ
     }  # fmt: skip
 
 
@@ -174,6 +177,9 @@ def make(deps: NodeDeps) -> NodeFn:
             return await _out_of_scope(state, loops, info)
         if (kind := reverse_action_kind(text, {i.type for i in in_scope})) is not None:  # D-84: thao tác ngược → người, không hành động
             return await _reverse_action(state, kind, loops, info)
+        if personal_account_mentioned(text, {i.type for i in in_scope}):  # 12/11: "Gmail cá nhân" → không đặt lại email CÔNG TY
+            info["personal_account"] = True
+            return await _out_of_scope(state, loops, info)
         if len(intents) >= 2:  # Q-3f-6: MỌI ý (vpn + ngoài phạm vi = 2 ý) — T20b: phán từng ý → B5 tách ticket con
             return await _split(state, intents, text, loops, info)
         it = in_scope[0]
