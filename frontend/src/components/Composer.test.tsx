@@ -68,3 +68,10 @@ describe("Composer — chỉ ký tự vô hình không gửi được (kiểm th
     expect(screen.getByTestId("sent").textContent).toBe("1");
   });
 });
+
+describe("Bong bóng chat ngắt chuỗi dài (kiểm thử 12/11)", () => {
+  it("USER_BUBBLE có wrap-anywhere ở mọi khổ (không chỉ dưới 1024 px)", async () => {
+    const { USER_BUBBLE } = await import("./Conversation.tsx");
+    expect(USER_BUBBLE.split(" ")).toContain("wrap-anywhere");
+  });
+});

@@ -287,7 +287,7 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
           <div className="grid items-start gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="flex min-w-0 flex-col gap-6">
                 <Block title="Yêu cầu của người gửi">
-                  <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line">
+                  <p data-testid="request-summary" className="rounded-group border border-line px-5 py-3 whitespace-pre-line wrap-anywhere">
                     {view.request_summary}
                   </p>
                 </Block>

@@ -28,7 +28,9 @@ function AssistantMessage({ message }: { message: Message }) {
 }
 
 /** Bong bóng tin của người dùng — dùng chung cho câu yêu cầu đầu (ChatPage). */
-export const USER_BUBBLE = "max-w-[80%] self-end rounded-sheet rounded-br-md bg-selected px-5 py-3 whitespace-pre-line";
+// Kiểm thử 12/11: chuỗi dài không dấu cách (đường dẫn, mã lỗi) tràn ra ngoài bong bóng ở màn ≥ 1024 px (`wrap-anywhere` của App chỉ áp
+// dưới 1024) — ngắt ngay trong bong bóng.
+export const USER_BUBBLE = "max-w-[80%] self-end rounded-sheet rounded-br-md bg-selected px-5 py-3 whitespace-pre-line wrap-anywhere";
 
 type ConversationProps = { messages: Message[]; renderDigest?: (digest: Digest) => ReactNode };
 
