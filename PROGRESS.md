@@ -6666,6 +6666,8 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
 - Lỗi mới thấy ở T7: vòng hỏi tiếp D-78 đi lại B3 nên tin "Bạn đang có một yêu cầu … đang xử lý" gửi lại MỖI vòng (3 lần trong một
   ticket). Sửa: `b03_classify._duplicate_notice` — ticket đã có tin `duplicate` trong `conversation` thì không gửi lại (audit vẫn ghi
   `duplicate_of`). Test `test_dedup_b3.py::test_followup_round_does_not_repeat_the_duplicate_notice`; bỏ điều kiện → test đỏ.
+- Câu hỏi B11 (LLM) xin mã máy viết "mã máy in trên tem dán…" (đọc thành "mã MÁY IN") — gốc ở gợi ý hằng `SLOT_HINTS["device_id"]`
+  ("mã in trên tem dán ở máy tính"). Đổi thành "mã máy tính ghi trên tem dán ở thân máy" (`domain/slot_text.py`); không đổi prompt.
 - Ghi chú dữ liệu thử: `em.lv` (nghỉ việc) và `dung.dv` (bị tắt) không đăng nhập được theo seed — đúng thiết kế; kịch bản chấm đổi sang
   tài khoản đang hoạt động.
 
