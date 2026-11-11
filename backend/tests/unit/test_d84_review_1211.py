@@ -9,6 +9,9 @@ from app.domain.reverse_action import reverse_action_kind
 
 # (câu, intent) — NÊN chuyển người (thao tác ngược, sự cố an ninh, tài khoản dịch vụ ngoài)
 SHOULD_FLAG = [
+    # bộ giữ lại 04:25 (30 câu ĐP viết, chưa dùng để sửa): đo được bỏ lọt 2/15, bắt nhầm 0/15 — hai câu lọt nay thêm vào đây
+    ("tài khoản email bị người ta chiếm rồi anh ơi", "account"),
+    ("Em bấm nhầm vào link lạ trong email rồi", "account"),
     # câu TRẢ LỜI ở bước hỏi lại (clarify_wait dùng cùng bộ dò)
     ("LAP-0417, mà thôi khỏi", "vpn"),
     ("LAP-0417 nhưng không gia hạn đâu nhé, chỉ check hạn thôi", "vpn"),

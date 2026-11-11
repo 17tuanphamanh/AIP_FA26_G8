@@ -115,7 +115,7 @@ _COMPROMISED = (
     # "chiếm" chỉ khi kèm quyền / tài khoản: "ổ C bị chiếm hết dung lượng" không phải sự cố an ninh
     rf"{_NOT_PREVENT}\bbị\s+(?:hack|hách|hắc|xâm nhập|xâm phạm|chiếm đoạt|chiếm quyền|chiếm\s+(?:mất\s+)?(?:tài khoản|tk|email|mail|hộp thư)|"
     r"đánh cắp|lấy cắp|lừa|login\s+(?:từ|ở|tại)|đăng nhập\s+(?:từ|ở|tại|trái phép))\b"
-    r"|\b(?:tài khoản|tk|email|mail|hộp thư)\b[^.!?\n]{0,30}?\bbị\s+chiếm\b"
+    r"|\b(?:tài khoản|tk|email|mail|hộp thư)\b[^.!?\n]{0,30}?\bbị\s+(?:(?:người ta|ai đó|kẻ gian|người lạ|hacker)\s+)?chiếm\b"
     r"|\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b|\btiền chuộc\b"
     r"|(?<!tránh bị )(?<!không bị )(?<!khỏi bị )\blộ\s+(?:mất\s+)?(?:mật khẩu|mk|pass|password|thông tin đăng nhập|otp|mã xác minh)\b"
     # trật tự đảo: "Mật khẩu email của em bị lộ rồi" (soát 12/11 03:50)
@@ -138,12 +138,12 @@ _COMPROMISED = (
     r"|\blỡ\s+(?:điền|nhập|đưa|cung cấp|gửi|khai|gõ)\s+(?:luôn\s+)?(?:mật khẩu|mk|pass|otp|mã otp|mã xác minh)\b"
     r"|\b(?:email|mail|thư|tin nhắn|link|trang|web)\s+(?:\S+\s+)?(?:giả mạo|lừa đảo)\b"
     r"|\btự\s+(?:động\s+)?gửi\s+(?:\S+\s+){0,3}?(?:spam|thư rác|mail lạ|email lạ|lừa đảo)\b"
-    r"|\b(?:click|bấm|nhấn|nhấp|mở)\s+(?:vào\s+)?(?:link|liên kết|đường link|file|tệp)\s+(?:đính kèm\s+)?lạ\b"
+    r"|\b(?:click|bấm|nhấn|nhấp|mở)\s+(?:nhầm\s+|phải\s+|lỡ\s+)?(?:vào\s+)?(?:link|liên kết|đường link|file|tệp)\s+(?:đính kèm\s+)?lạ\b"
 )
 _COMPROMISED_FOLDED = (
     r"(?<!tranh )(?<!khong )(?<!khoi )(?<!chong )(?<!phong )(?<!ngua )\bbi\s+(?:hack|hach|hac|xam nhap|xam pham|chiem doat|chiem quyen|chiem\s+(?:mat\s+)?(?:tai khoan|tk|email|mail|hop thu)|danh cap|"
     r"lay cap|lua|login\s+(?:tu|o|tai))\b"
-    r"|\b(?:tai khoan|tk|email|mail|hop thu)\b[^.!?\n]{0,30}?\bbi\s+chiem\b"
+    r"|\b(?:tai khoan|tk|email|mail|hop thu)\b[^.!?\n]{0,30}?\bbi\s+(?:(?:nguoi ta|ai do|ke gian|nguoi la|hacker)\s+)?chiem\b"
     r"|\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b"
     r"|(?<!khong )\bbi\s+lo\s+(?:mat\s+)?(?:mat khau|mk|pass|password|otp)\b"
     r"|\b(?:mat khau|mk|pass|password)\b[^.!?\n]{0,30}?(?<!khong )\bbi\s+lo\b"
