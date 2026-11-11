@@ -51,7 +51,7 @@ _OBJECT = r"(?:vpn|chứng chỉ|quyền|truy cập|tài khoản|tk|email|mail)"
 # Việc ĐÃ xảy ra (người dùng kể lại, không xin làm): "em bị thu hồi quyền VPN, cấp lại giúp", "em đã xoá chứng chỉ cũ rồi cài lại",
 # "em vừa gỡ Zoom" — bỏ qua. Lookbehind độ dài cố định nên tách từng cụm.
 _NOT_PAST = r"(?<!bị )(?<!đã )(?<!vừa )(?<!mới )(?<!lỡ )(?<!nhầm )"
-_REVOKE_VERB = r"(?:thu hồi|vô hiệu hoá|vô hiệu hóa|vô hiệu|revoke|disable|huỷ|hủy|xoá|xóa)"
+_REVOKE_VERB = r"(?:thu hồi|thu lại|vô hiệu hoá|vô hiệu hóa|vô hiệu|revoke|disable|huỷ|hủy|xoá|xóa)"
 _ACTION_VERB = r"(?:mở khoá|mở khóa|gia hạn|cấp lại|cấp|cài đặt|cài|đặt lại|reset)"
 # Bổ sung 12/11 02:30 (đo trên máy demo): "Rút / Bỏ / Gỡ quyền ghi …" → bot hỏi "xem, xin mới hay gia hạn?" lặp tới E4; "Hạ quyền … xuống
 # chỉ đọc" → phiếu CẤP quyền đọc (người dùng vẫn giữ quyền ghi mà tưởng đã hạ). Chỉ khớp khi "quyền" đứng ngay sau động từ.
@@ -113,15 +113,23 @@ _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("revoke", rf"{_NOT_PAST}\b{_REVOKE_VERB}\s+(?:\S+\s+){{0,3}}?{_OBJECT}\b"),
     ("revoke", rf"{_NOT_PAST}\b{_REVOKE_PERM}\b"),
     ("revoke", _DISABLE_VPN),
+    # "Đóng tài khoản ERP của em", "Xoá / Gỡ / Bỏ em (ra) khỏi nhóm Finance / thư mục finance/Q3" — chỉ "tài khoản" sau "đóng" ("đóng
+    # Outlook / email rồi mở lại" là thao tác sửa lỗi).
+    ("revoke", rf"{_NOT_PAST}\bđóng\s+(?:hẳn\s+)?(?:tài khoản|tk)\b"),
+    ("revoke", (rf"{_NOT_PAST}\b(?:xoá|xóa|gỡ|bỏ|rút|loại)\s+(?:\S+\s+){{0,2}}?(?:ra\s+)?khỏi\s+"
+                r"(?:nhóm|group|thư mục|danh sách|quyền|vpn)\b")),
     ("lock", r"(?<!mở )(?<!bị )(?<!đã )\b(?:khoá|khóa)\s+(?:hẳn|luôn|ngay|tạm thời|giúp|giùm|hộ)\b"),
     # "Khoá tài khoản ERP của em lại giúp em" (đo 12/11: dựng hành động MỞ khoá, chỉ lớp LLM chặn) — tối đa 3 từ giữa, không vượt qua
     # "mở" / "tự" ("khoá tài khoản tự mở lại sau bao lâu?", "khoá tài khoản cứ tự bật lại" là câu hỏi, không xin khoá).
     ("lock", (rf"(?<!mở )(?<!bị )(?<!đã )(?<!lỡ )(?<!tự )(?<!vừa )\b(?:khoá|khóa)\s+(?:lại\s+)?{_OBJECT}\s+(?:(?!mở\b|tự\b)\S+\s+){{0,3}}?"
-              r"(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại)\b")),
+              r"(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại|đi)\b")),
     ("lock", r"\btạm khoá\b|\btạm khóa\b"),
     ("negate", rf"\b(?:đừng|thôi khỏi|khỏi cần|không muốn)\s+(?:\S+\s+)?{_ACTION_VERB}\b"),
     # "Không cần gia hạn VPN cho máy LAP-0342 nữa đâu" / "em không cần quyền đọc finance/Q3 nữa" — phải có "nữa" (không còn cần).
     ("negate", rf"\bkhông cần\s+(?:\S+\s+)?(?:{_ACTION_VERB}|{_OBJECT})\b[^.!?\n]{{0,50}}?\bnữa\b"),
+    # "Em không dùng VPN nữa, thu lại giúp em" — KHÔNG nhận "không dùng ĐƯỢC VPN nữa" / "không dùng VPN được nữa" (báo lỗi).
+    ("negate", (rf"\bkhông\s+(?:dùng|xài|sử dụng)\s+(?:(?!được\b)\S+\s+){{0,2}}?{_OBJECT}\b(?:(?!được)[^.!?\n]){{0,30}}?"
+                r"\bnữa\b")),
     ("cancel", r"\b(?:huỷ|hủy|thôi|bỏ)\s+(?:cái\s+)?(?:yêu cầu|ticket|phiếu)\b"),
     ("compromised", _COMPROMISED),  # sau cùng: câu vừa xin khoá vừa nghi lộ vẫn mang nhãn "lock" như trước
 )
