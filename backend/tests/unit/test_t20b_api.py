@@ -173,6 +173,22 @@ async def test_a2_items_must_equal_awaiting_422(items: dict[str, Any], field: st
         assert (await f.waiting("T1")) == "parent_reply_wait"
 
 
+@pytest.mark.parametrize("answer", ["", "  \n", "\u200b\u00ad"])
+async def test_a2_blank_answer_422_nothing_reaches_child(answer: str) -> None:
+    """Kiểm thử 11/11: câu trả lời rỗng / chỉ khoảng trắng / chỉ ký tự vô hình → 422 `invalid_request` (lỗi kiểu của ý đó),
+    0 `child_event`, không `late_event`, cha vẫn chờ — như a2. Trước sửa: khoảng trắng lọt vào con rồi E9."""
+    f = await tc35()
+    async with api(f) as a:
+        an = await a.token("an.nv")
+        r = await a.reply(an, {"T1-1": {"confirmed": True}, "T1-2": {"answer": answer}})
+        await a.drain()
+        assert r.status_code == 422 and r.json()["error"] == "invalid_request", r.text
+        assert any(x.startswith("items.T1-2") for x in r.json()["fields"]), r.text
+        assert f.h.effects.count("T1", "child_event") == 0
+        assert a.late("T1") == []
+        assert (await f.waiting("T1")) == "parent_reply_wait"
+
+
 # ---- a3 ------------------------------------------------------------------------------------------------------------------------
 
 

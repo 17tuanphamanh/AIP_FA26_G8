@@ -39,7 +39,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from langgraph.types import StateSnapshot
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError
 
 from app.api.alerts import (  # CHUNG thân lỗi (một schema OpenAPI, như notifications)
     ErrorDetail,
@@ -76,6 +76,7 @@ from app.domain.override import (
 from app.domain.session_memory import can_follow, prior_label_hint
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW
 from app.graph.late_event import InvalidReply, Validate, start_event
+from app.guard.normalize import l0
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,16 +94,28 @@ WAITING_FOR: dict[str, WaitingFor] = {
 }  # fmt: skip
 
 
+def _not_blank(value: str) -> str:
+    """Kiểm thử 11/11: câu chỉ có khoảng trắng hoặc ký tự vô hình (zero-width, soft hyphen — `Cf`) từng tạo ticket rồi
+    ra E9 ("Hệ thống đang gặp sự cố") vì guard L0 xoá hết chữ — chặn ở cửa (422 `fields`). Dùng ĐÚNG `l0` của guard
+    để "rỗng" ở cửa trùng "rỗng" sau chuẩn hoá. Chỉ kiểm, không đổi văn bản (văn bản lưu vẫn đi qua guard như cũ)."""
+    if not l0(value).strip():
+        raise ValueError("blank")
+    return value
+
+
+type UserText = Annotated[str, Field(min_length=1, max_length=TEXT_MAX), AfterValidator(_not_blank)]
+
+
 class TicketIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    text: str = Field(min_length=1, max_length=TEXT_MAX)
+    text: UserText
     # Q13b (D-79): "Hỏi tiếp" từ ticket ĐÃ kết thúc của chính người gửi. Cờ `ENABLE_SESSION_MEMORY` tắt → 422 (như trước lô: khoá lạ).
     follows_ticket_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class MessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    text: str = Field(min_length=1, max_length=TEXT_MAX)
+    text: UserText
 
 
 class ConfirmIn(BaseModel):
@@ -115,7 +128,7 @@ class ReplyAnswer(BaseModel):
     """Một ý `needs=answer` của `/reply` (T20b P11, 5.2.6)."""
 
     model_config = ConfigDict(extra="forbid")
-    answer: str = Field(min_length=1, max_length=TEXT_MAX)
+    answer: UserText
 
 
 class ReplyConfirm(BaseModel):
