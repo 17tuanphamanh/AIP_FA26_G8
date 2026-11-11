@@ -72,6 +72,13 @@ POSITIVE = [
     ("Máy em dính virus rồi, cài lại Zoom giúp em trên LAP-0417", "software", "compromised"),
     ("may em nhiem virus, cai lai office", "software", "compromised"),
     ("Máy em bị mã hoá dữ liệu, đòi tiền chuộc, đặt lại mật khẩu giúp", "account", "compromised"),
+    # soát thêm 12/11 03:20: "thu lại", "đóng tài khoản", "gỡ / xoá … khỏi nhóm / thư mục", "khoá … đi", "không dùng … nữa"
+    ("Em không dùng VPN nữa, thu lại chứng chỉ giúp em", "vpn", "revoke"),
+    ("Em nghỉ việc rồi, khoá tài khoản email của em đi", "account", "lock"),
+    ("em không sử dụng tài khoản ERP nữa, đóng giúp em", "account", "negate"),
+    ("Đóng tài khoản ERP của em", "account", "revoke"),
+    ("Xoá em khỏi nhóm Finance", "access", "revoke"), ("Gỡ em khỏi thư mục finance/Q3", "access", "revoke"),
+    ("Bỏ em ra khỏi nhóm VPN", "vpn", "revoke"),
 ]
 
 NEGATIVE = [
@@ -117,6 +124,9 @@ NEGATIVE = [
     ("Làm sao tắt VPN khi không dùng?", "vpn"), ("cách tắt VPN trên macOS", "vpn"), ("lam sao tat vpn", "vpn"),
     ("VPN hay bị ngắt kết nối", "vpn"), ("VPN tự ngắt liên tục", "vpn"), ("Khi tắt VPN thì em vào web được", "vpn"),
     ("Mỗi lần tắt VPN là mất mạng", "vpn"), ("em dùng VPN không được", "vpn"), ("em dung vpn khong duoc", "vpn"),
+    ("Em không dùng được VPN nữa", "vpn"), ("Em không dùng VPN được nữa", "vpn"),
+    ("Em không sử dụng email công ty được nữa, đặt lại mật khẩu giúp", "account"),
+    ("Em đóng Outlook rồi mở lại vẫn lỗi, đặt lại mật khẩu email giúp", "account"),
 ]  # fmt: skip
 
 
