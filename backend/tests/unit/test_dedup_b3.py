@@ -289,3 +289,29 @@ async def test_failure_to_send_the_notice_is_still_a_real_error() -> None:
     h.notifier.notify_user = flaky  # type: ignore[method-assign]
     v = await run(h)
     assert v["exit_code"] == "E9" and ("B6", "diagnosed") not in h.audit.events("t1")
+
+
+# ---- chấm thử 11/11 (T7): vòng hỏi tiếp D-78 đi lại B3 → KHÔNG báo trùng lần nữa -------------------------------------------------
+
+
+async def test_followup_round_does_not_repeat_the_duplicate_notice() -> None:
+    """Ticket đã có tin `duplicate` trong `conversation` (vòng đầu đã báo) → lượt sau qua B3 không gửi lại, không thêm tin; audit vẫn
+    ghi `duplicate_of`; luồng đi tiếp như thường."""
+    h, _ = _env([OK])
+    seed(h, "old")
+    h.tickets.register("t1", h.clock.now())
+    who = RequesterContext(user_id="nv001", role="employee", department="it", manager_id=None, employment_status="active",
+                           tenure_days=400, is_privileged_account=False, captured_at=h.clock.now())  # fmt: skip
+    earlier = {"role": "assistant", "kind": "duplicate", "text": NOTICE.format(tid="old"), "ref": "n1", "needs": "none"}
+    state = {"ticket_id": "t1", "turn_id": "T2", "status": S_CLASSIFYING, "redacted_request": TEXT, "reasoning_loops": 0,
+             "conversation": [earlier], "requester_context": who.model_dump(mode="json")}  # fmt: skip
+    audit = MemoryAudit()
+    run_ctx = RunContext(turn_id="T2", trace_id="0" * 32, audit=audit, effects=MemoryEffects(), spans=MemorySpans(),
+                         clock=h.clock, txlog=MemoryTxLog())  # fmt: skip
+    with bind_run(run_ctx):
+        update = await wrap_node("b03_classify", b03_classify.make(h.deps()))(state)
+    assert update["status"] == S_DIAGNOSING
+    assert notices(h) == []
+    assert not any(m.get("kind") == "duplicate" for m in update.get("conversation") or [])
+    [row] = [r for r in audit.rows if r["step"] == "B3" and r["event"] == "intent_classified"]
+    assert row["detail"]["duplicate_of"] == "old"
