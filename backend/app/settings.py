@@ -483,8 +483,8 @@ class PolicyConstants(BaseModel):
     MAX_AUTH_FAILURES: int = Field(ge=1)
     AUTH_FAILURE_WINDOW_MINUTES: int = Field(ge=1)
     SLA_MINUTES: int = Field(ge=1)
-    THRESHOLD_LOW: float = Field(ge=0, le=1)
-    THRESHOLD_HIGH: float = Field(ge=0, le=1)
+    THRESHOLD_LOW: float = Field(ge=0, le=1, strict=True)  # E5 soát 12/11 (D-90): `true` không thành 1.0
+    THRESHOLD_HIGH: float = Field(ge=0, le=1, strict=True)
     RETRIEVAL_THRESHOLD: float = Field(ge=0, le=1)
     TAU_INTENT: float = Field(ge=0, le=1)  # B3 đường LLM: confidence < ngưỡng → E1 intent_low_confidence (D-27, 3-Q29)
     CLARIFY_TIMEOUT_HOURS: int = Field(ge=1)

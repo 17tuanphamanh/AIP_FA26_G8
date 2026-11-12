@@ -96,7 +96,8 @@ class RiskEstimateOut(BaseModel):
 
     model_config = _OUT
 
-    prob_needs_human: float = Field(ge=0, le=1, allow_inf_nan=False)
+    # E5 soát 12/11 (D-90): kiểu CHẶT — `false`/`true`/"0.1" không thành 0.0/1.0/0.1 (sai hướng, bỏ qua lần sửa schema)
+    prob_needs_human: float = Field(ge=0, le=1, allow_inf_nan=False, strict=True)
     factors: list[FactorCode] = Field(max_length=5)
     rationale: str = Field(max_length=600)
 
