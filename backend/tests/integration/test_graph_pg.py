@@ -31,7 +31,7 @@ from app.executor.txlog import SqlTxLog
 from app.graph.checkpoint import CHECKPOINT_TABLES
 from app.graph.late_event import LateEvent, deliver_event
 from app.graph.ports import TicketBusy
-from app.graph.runner import INTERRUPTED_NOTE
+from app.graph.runner import NOT_SENT_NOTE
 from app.graph.worker_jobs import WorkerJobs
 from langgraph.checkpoint.postgres import PostgresSaver
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -199,7 +199,8 @@ async def test_worker_recover_never_executes(db: PgUrls, rw: AsyncEngine) -> Non
         snap = await rt.runner.snapshot(ticket)
         assert rt.executor.calls[ticket] == 0
     assert (snap.values["status"], snap.values["exit_code"]) == (S_ESCALATED, "E7")
-    assert snap.values["escalation_note"] == INTERRUPTED_NOTE
+    # E11 (soát 12/11): executor GIẢ chết trước khi ghi `begun` → transaction_log trống → câu "chưa gửi lệnh ghi"
+    assert snap.values["escalation_note"] == NOT_SENT_NOTE
     assert await scalar(
         rw, "SELECT count(*) FROM audit_logs WHERE ticket_id=:t AND event='execution_interrupted'",
         t=ticket,
