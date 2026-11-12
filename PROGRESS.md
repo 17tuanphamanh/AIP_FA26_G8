@@ -6690,6 +6690,15 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
 - 03:50: subagent (TA ra lệnh) soát bộ dò D-84/D-87 bằng 133 câu viết khác câu đã thử — trước sửa bắt nhầm 38/48 (có cả luồng chính "Tài khoản bị tạm khoá do nhập sai, mở giúp em", "Tắt VPN đi bật lại vẫn lỗi") và bỏ lọt 63/71; viết lại khối mẫu: bắt nhầm 0/48, bỏ lọt 2/71 (`test_d84_review_1211.py`). Thêm: khung hội thoại chỉ đọc của L1/L2 hiện câu yêu cầu đầu.
 - Lưu ý demo: đặt lại mật khẩu AD trên giả lập đổi mật khẩu thật → người đó không đăng nhập lại bằng mật khẩu demo tới khi đặt lại giả lập.
 
+- 12/11 sáng (nhánh `sua-sang-1211c`, nền `main` `b219b00`): TA cho chạy 20 agent soát chỉ đọc (báo cáo ở `/tmp/soat-1211/` trên
+  máy làm việc, tổng hợp ở Project `claude/KE-HOACH-sua-dem-12-11.md`). Kiểm HỘP ĐEN bộ dò D-84/D-87 (348 câu mới, người viết không đọc
+  code bộ dò): bản `main` còn lọt 34/125 câu cần chuyển người. Tái hiện trên máy demo (LLM thật, giờ hành chính): "My laptop was
+  stolen yesterday, pls reset my password and VPN cert" → TỰ gia hạn chứng chỉ VPN cho đúng máy bị trộm; "tk e bị ng khác đăng nhập,
+  reset giúp e" → TỰ đặt lại mật khẩu AD; "Delete app Telegram…" / "Tháo phần mềm UltraViewer…" → phiếu duyệt CÀI. Sửa bộ dò (không
+  đụng lõi): chuẩn hoá NFKC + bỏ zero-width + gộp dấu cách + cắt 8 000 ký tự, thêm các nhóm cách nói (xem D-84/D-87). Đo chia đôi:
+  sửa theo nửa DEV → nửa giữ lại lọt 14/61 → 8/61, bắt nhầm 3/65 → 3/65; rồi vá cả nửa giữ lại (`test_d84_hopden_1211.py`, 370 test).
+  411 câu `eval/` không đổi kết quả; unit 9705 passed. Số mù cuối cùng cần một bộ câu MỚI.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*
@@ -7031,4 +7040,7 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
 19. **[Hỏi TA — 12/11] "Gia hạn" quyền KHÔNG thời hạn** (an.nv `finance/public-reports`) đang tự làm qua R10 và biến quyền vĩnh viễn thành
     hết hạn sau N ngày (mock đặt hạn = hôm nay + N). Đề xuất D-86 (chặn ở B11) đụng 13 test kịch bản đo R10/R07 → chờ TA chọn: (a) gộp D-86 +
     đổi kịch bản; (b) chỉ sửa giả lập (gia hạn quyền không hạn = giữ không hạn); (c) để nguyên, ghi giới hạn.
-
+20. **[Hỏi TA — 12/11] D-84 chạy TRƯỚC M5** (B3, trước tách ý và B12): câu vừa xin việc bị CẤM vừa có cụm "ngược" ("Cài uTorrent lên
+    LAP-0342 giúp em, đừng cài Zoom nữa") ra E1 thay vì E5 (R21 deny). Không có việc gì được tự làm, nhưng L2 "hoàn tất" được ca E1 còn E5
+    thì không, và ghi chú L2 không cảnh báo deny (soát bảo mật 12/11). Hai hướng: thêm câu cảnh báo vào `next_for_l2_by_reason`, hay
+    thêm `reverse_action_requested` vào danh sách không cho hoàn tất → không tự chọn.
