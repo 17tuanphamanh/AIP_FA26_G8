@@ -416,7 +416,8 @@ def test_alembic_single_head_is_0009() -> None:
     chốt 09/11): head nay là 0015 (CHECK intent + `it_help`), nối sau 0014. Lô Q7 (11/11): head nay là 0016 (txlog chỉ ghi thêm, khoá
     final_state, chỉ mục phiếu chờ, chống dùng lại TOTP, `retention_run`), nối sau 0015."""
     script = ScriptDirectory.from_config(Config(str(REPO / "alembic.ini")))
-    assert script.get_heads() == ["0016"]
+    assert script.get_heads() == ["0017"]  # E12 (12/11): chỉ mục llm_calls(span_id), app_rw không xoá phiếu duyệt
+    assert script.get_revision("0017").down_revision == "0016"  # type: ignore[union-attr]
     assert script.get_revision("0016").down_revision == "0015"  # type: ignore[union-attr]
     assert script.get_revision("0015").down_revision == "0014"  # type: ignore[union-attr]
     assert script.get_revision("0014").down_revision == "0013"  # type: ignore[union-attr]

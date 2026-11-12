@@ -613,7 +613,10 @@ class Span(Base):
 
 class LlmCall(Base):
     __tablename__ = "llm_calls"
-    __table_args__ = (Index("ix_llm_calls_created_at", "created_at"),)  # P9 mục 4
+    __table_args__ = (
+        Index("ix_llm_calls_created_at", "created_at"),  # P9 mục 4
+        Index("ix_llm_calls_span_id", "span_id"),  # E12 (0017): tab "So sánh 30 ngày" nối theo span_id
+    )
 
     call_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     span_id: Mapped[str] = mapped_column(String(32), ForeignKey("spans.span_id"), nullable=False)
