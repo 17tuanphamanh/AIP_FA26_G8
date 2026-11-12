@@ -354,7 +354,11 @@ class AuthService:
     async def refresh(self, refresh_token: str, *, ip: str | None) -> LoginResult:
         """Xoay vòng (P6 mục 4). Token đã xoay bị trình lại → thu hồi cả họ + refresh_reuse_detected.
         Hai request đồng thời cùng token (2 tab): request thứ hai bị coi là reuse — hành vi đã biết,
-        frontend xử lý ở Phase 7."""
+        frontend xử lý ở Phase 7.
+
+        Q1 (soát 12/11): sau khi dòng `users` cục bộ còn active, đồng bộ lại từ AD (`_resync`). Không còn trong AD / nghỉ việc /
+        nhóm không ra role → thu hồi mọi phiên của người đó, 401. Role đổi → `AdUserSync` thu hồi phiên → 401 (đăng nhập lại).
+        AD không trả lời → 503, KHÔNG thu hồi (frontend coi 503 là lỗi tạm; không cấp token mới khi chưa hỏi được AD)."""
         now = self.clock.now()
         old = await self.store.get_session_by_refresh_hash(hash_refresh_token(refresh_token))
         if old is None:
@@ -367,9 +371,20 @@ class AuthService:
             await self.store.revoke_session(old.session_id, "expired", now)
             raise _unauthorized()
         user = await self.store.get_user(old.user_id)
+        if user is not None and user.active:
+            try:  # Q1 (soát 12/11, agent 13 F1): AD là nguồn — đồng bộ như đăng nhập (bước 4)
+                user = await self._resync(user.user_id, now)
+            except IdentityUnavailable:
+                log.warning("refresh: AD không trả lời — 503, không cấp token, GIỮ phiên")
+                raise AuthError(503, "identity_unavailable") from None
         if user is None or not user.active:
             await self.store.revoke_user_sessions(old.user_id, "user_disabled", now)
             self._evict_user(old.user_id)
+            raise _unauthorized()
+        # Role đổi trong AD → `AdUserSync` vừa thu hồi phiên (như đăng nhập) → 401, KHÔNG phải dùng lại token. Bị xoay ("rotated")
+        # bởi request đồng thời → để `rotate_session` dưới phát hiện dùng lại như cũ.
+        current = await self.store.get_session(old.session_id)
+        if current is not None and current.revoked_at is not None and current.revoke_reason != "rotated":
             raise _unauthorized()
         new = SessionRecord(
             session_id=uuid4().hex,
@@ -388,6 +403,14 @@ class AuthService:
         self._cache.pop(old.session_id, None)
         await self.sink.record("token_refreshed", user_id=user.user_id, ip_prefix=ip)
         return LoginResult(tokens, user)
+
+    async def _resync(self, user_id: str, now: datetime) -> UserRecord | None:
+        """Q1: đọc lại người dùng từ AD + `AdUserSync` (cùng đường đăng nhập). Không còn trong AD / nhóm không ra role → None.
+        `IdentityUnavailable` lan ra (refresh → 503)."""
+        ad = await self.idp.get_user(user_id)
+        if ad is None:
+            return None
+        return await self._sync.sync_user_from_ad(self.idp.get_user, ad, now)
 
     async def _reuse_detected(self, session: SessionRecord, ip: str | None, now: datetime) -> None:
         revoked = await self.store.revoke_family(session.token_family_id, "reuse_detected", now)
