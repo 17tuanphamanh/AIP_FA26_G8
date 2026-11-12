@@ -90,3 +90,24 @@ def test_gate2_pg_locks_query_computes_the_new_key() -> None:
     'khoá nhả' mà không chứng minh gì."""
     src = (REPO / "backend" / "tests" / "stack" / "gate2.py").read_text(encoding="utf-8")
     assert "hashtextextended(" in src and "objsubid = 1" in src
+
+
+class ExhaustedEngine:
+    """Lock pool cạn: `connect()` ném `sqlalchemy.exc.TimeoutError` (QueuePool hết `pool_timeout`) TRƯỚC khi có kết nối."""
+
+    @asynccontextmanager
+    async def connect(self) -> AsyncIterator[RecordingConn]:
+        from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+        raise PoolTimeout("QueuePool limit reached")
+        yield RecordingConn([])  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_e13_lock_pool_exhausted_is_ticket_busy_not_500() -> None:
+    """E13 (soát 12/11, agent 04 N6): cạn lock pool → `TicketBusy` (route trả 503 + Retry-After như mọi ca bận), không 500."""
+    from app.graph.ports import TicketBusy
+
+    with pytest.raises(TicketBusy):
+        async with PgTicketLock(ExhaustedEngine()).hold("ticket-1"):  # type: ignore[arg-type]
+            pass

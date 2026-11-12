@@ -37,6 +37,7 @@ def create_engines(settings: Settings) -> Engines:
         settings.database_url,
         pool_size=settings.effective_lock_pool_size,
         max_overflow=0,  # cạn lock pool thì chờ, không mở thêm kết nối ngoài hạn mức
+        pool_timeout=5,  # E13 (soát 12/11): chờ tối đa 5 s rồi `TicketBusy` → 503 + Retry-After (trước: 30 s rồi 500)
         pool_pre_ping=True,
         connect_args={"options": f"-c lock_timeout={lock_timeout_ms}"},
         hide_parameters=True,

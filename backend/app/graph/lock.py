@@ -6,10 +6,11 @@ nhả khoá cấp session khi kết nối đóng, không để kết nối còn 
 """
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.graph.ports import TicketBusy
@@ -29,7 +30,11 @@ class PgTicketLock:
 
     @asynccontextmanager
     async def hold(self, ticket_id: str) -> AsyncIterator[None]:
-        async with self._engine.connect() as conn:
+        async with AsyncExitStack() as stack:
+            try:
+                conn = await stack.enter_async_context(self._engine.connect())
+            except PoolTimeout as exc:  # E13 (soát 12/11): lock pool cạn → bận (503 + Retry-After), không 500 sau 30 s
+                raise TicketBusy(ticket_id) from exc
             try:
                 await conn.execute(text(LOCK_SQL), {"t": ticket_id})
                 await conn.commit()
