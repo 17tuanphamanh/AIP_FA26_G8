@@ -262,3 +262,29 @@ async def test_closed_at_uses_app_clock() -> None:
         r = await _close(env, 1, await _login(env, "long.nh"))
         assert esc.rows[0]["closed_at"] == env.clock.now() and r.json()["closed_at"].startswith(env.clock.now().strftime("%Y-%m-%dT%H:%M"))
 
+
+
+# ---- Q5a (soát 12/11, agent 13 F4): không tự đóng ca escalation của chính ticket mình gửi -------------------------------------
+
+
+@pytest.mark.parametrize(("user", "uid"), [("long.nh", "l2_01"), ("ha.lt", "l1_01")])
+async def test_q5a_khong_tu_dong_ca_cua_ticket_minh_gui(user: str, uid: str) -> None:
+    async with env_with(("E9", False), ("E1", False)) as (env, esc):
+        env.h.tickets.rows["esc-1"]["requester_id"] = uid
+        env.h.tickets.rows["esc-2"]["requester_id"] = uid
+        headers = await _login(env, user)
+        denied = env.denied()
+        for eid in (1, 2):  # E9 lỗi hệ thống; E1 nghi tấn công — đều không được tự đóng `completed`
+            r = await _close(env, eid, headers)
+            assert r.status_code == 403 and r.json() == {"detail": "forbidden"}, r.text
+        assert env.denied() == denied + 2
+        assert all(row["closed_at"] is None for row in esc.rows)
+        assert _audit(env, "esc-1") == [] and env.h.tickets.final("esc-1").close_reason is None  # type: ignore[union-attr]
+
+
+async def test_q5a_nguoi_khac_van_dong_duoc() -> None:
+    async with env_with(("E9", False)) as (env, esc):
+        env.h.tickets.rows["esc-1"]["requester_id"] = "l2_01"  # long.nh gửi, ha.lt đóng
+        r = await _close(env, 1, await _login(env, "ha.lt"))
+        assert r.status_code == 200, r.text
+        assert esc.rows[0]["closed_by"] == "l1_01"

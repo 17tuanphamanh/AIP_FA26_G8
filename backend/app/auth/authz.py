@@ -101,9 +101,13 @@ def can_override(p: Principal, t: TicketLike) -> bool:
 
 
 def can_close_escalation(
-    p: Principal, e: EscalationLike, result: str
+    p: Principal, e: EscalationLike, result: str, *, requester_id: str | None
 ) -> Literal["allow", "forbidden", "unprocessable"]:
+    """`requester_id` = người gửi ticket của ca (None = không biết — ticket không còn). Q5a (soát 12/11, agent 13 F4): người xử lý là
+    CHÍNH người gửi → forbidden — không tự đóng ca của mình (vd L2 tự gửi rồi tự đóng `completed`, cả ca E1 nghi tấn công)."""
     if not p.has("escalation:handle"):
+        return "forbidden"
+    if requester_id is not None and requester_id == p.user_id:
         return "forbidden"
     if cannot_complete(result, exit_code=e.exit_code, is_deny_case=e.is_deny_case):  # deny [Chốt] + E5/E6 (B20:303)
         return "unprocessable"

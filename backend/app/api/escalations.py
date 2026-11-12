@@ -10,7 +10,8 @@ nhân viên, manager → 403).
 - Ca đã đóng kèm `closed_at`, `close_result`, `closed_by`, `close_note` (bản ĐÃ che); ca mở → null.
 
 `POST /api/escalations/{id}/close` thân `{close_result, note}` → 200 `EscalationCloseOut`. Thứ tự kiểm: 401 → 403 (`require`) → 422 thân
-(`parse_body`, `fields` không tiền tố như mọi thân tự kiểm) → 404 `not_found` (id không có / hỏng) → 409 `already_closed` → 422
+(`parse_body`, `fields` không tiền tố như mọi thân tự kiểm) → 404 `not_found` (id không có / hỏng) → 409 `already_closed` → 403 +
+`permission_denied` khi người đóng là CHÍNH người gửi ticket (Q5a soát 12/11 — `authz.can_close_escalation`) → 422
 `fields: ["close_result"]` (`completed` cho ca deny / E5 / E6 — `authz.can_close_escalation`) → privacy guard trên `note` (lỗi → 503;
 bản che chỉ khoảng trắng hoặc > 1000 ký tự → 422 `fields: ["note"]`, KHÔNG cắt — cắt ngang có thể vỡ mặt nạ) → `close` MỘT transaction
 (`db/escalations.SqlEscalationStore.close`); thua lần đóng đồng thời → 409.
@@ -33,7 +34,7 @@ from app.api.alerts import ErrorDetail
 from app.api.desk import Desk, get_desk, parse_body, record_redacted, redact
 from app.api.errors import InvalidRequest
 from app.auth.authz import can_close_escalation
-from app.auth.deps import require
+from app.auth.deps import deny, require
 from app.auth.models import Principal
 from app.db.escalations import (
     ClosedEscalation,
@@ -195,8 +196,10 @@ async def close_escalation(
         raise HTTPException(404, NOT_FOUND)
     if head.closed_at is not None:
         raise HTTPException(409, ALREADY_CLOSED)
-    verdict = can_close_escalation(p, head, body.close_result)
-    if verdict == "forbidden":  # `require` đã chặn — giữ để luật một chỗ (authz) vẫn là nguồn quyết
+    ticket = await desk.tickets.get(head.ticket_id)
+    verdict = can_close_escalation(p, head, body.close_result, requester_id=ticket.requester_id if ticket else None)
+    if verdict == "forbidden":  # thiếu quyền (`require` đã chặn) hoặc chính người gửi ticket (Q5a) — luật một chỗ (authz)
+        await deny(request, p, "escalation:handle", escalation_id=head.escalation_id)
         raise HTTPException(403, "forbidden")
     if verdict == "unprocessable":
         raise InvalidRequest(["close_result"])

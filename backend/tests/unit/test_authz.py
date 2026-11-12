@@ -103,17 +103,21 @@ def test_can_override_not_own_request() -> None:
 
 
 def test_can_close_escalation() -> None:
-    assert can_close_escalation(_p("l2_01", "l2"), E(False), "completed") == "allow"
-    assert can_close_escalation(_p("l2_01", "l2"), E(True), "completed") == "unprocessable"
-    assert can_close_escalation(_p("l2_01", "l2"), E(True), "confirmed_denial") == "allow"
-    assert can_close_escalation(_p("it_mgr01", "manager"), E(False), "completed") == "forbidden"
+    assert can_close_escalation(_p("l2_01", "l2"), E(False), "completed", requester_id="nv001") == "allow"
+    assert can_close_escalation(_p("l2_01", "l2"), E(True), "completed", requester_id="nv001") == "unprocessable"
+    assert can_close_escalation(_p("l2_01", "l2"), E(True), "confirmed_denial", requester_id="nv001") == "allow"
+    assert can_close_escalation(_p("it_mgr01", "manager"), E(False), "completed", requester_id="nv001") == "forbidden"
     # P4 tuần 8: L1 cũng đóng được (escalation:handle — P6 §5.3); `completed` cho E5/E6 → 422 kể cả khi `is_deny_case` sai (B20:303)
-    assert can_close_escalation(_p("l1_01", "l1"), E(False), "completed") == "allow"
-    assert can_close_escalation(_p("nv001", "employee"), E(False), "confirmed_denial") == "forbidden"
+    assert can_close_escalation(_p("l1_01", "l1"), E(False), "completed", requester_id="nv001") == "allow"
+    assert can_close_escalation(_p("nv001", "employee"), E(False), "confirmed_denial", requester_id="nv001") == "forbidden"
     for code in ("E5", "E6"):
-        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "completed") == "unprocessable"
-        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "confirmed_denial") == "allow"
-        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "reopened_as_new") == "allow"
+        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "completed", requester_id="nv001") == "unprocessable"
+        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "confirmed_denial", requester_id="nv001") == "allow"
+        assert can_close_escalation(_p("l2_01", "l2"), E(False, code), "reopened_as_new", requester_id="nv001") == "allow"
+    # Q5a (soát 12/11, F4): người xử lý là chính người gửi ticket → forbidden (kể cả kết quả hợp lệ)
+    assert can_close_escalation(_p("l2_01", "l2"), E(False), "completed", requester_id="l2_01") == "forbidden"
+    assert can_close_escalation(_p("l1_01", "l1"), E(True), "confirmed_denial", requester_id="l1_01") == "forbidden"
+    assert can_close_escalation(_p("l2_01", "l2"), E(False), "completed", requester_id=None) == "allow"
 
 
 def test_can_read_audit() -> None:
