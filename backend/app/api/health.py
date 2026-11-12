@@ -17,6 +17,10 @@ không chứa số tiền, DSN hay tên model. Probe dựng ở `main.py` (`app.
 gọi LLM thật. Probe lỗi/timeout → `llm="unknown"`, `monitor="down"` (log tên lớp lỗi). CẢ response (body + mã, kể cả
 503) cache 10 giây với khoá single-flight: hai lần gọi trong 10 giây — kể cả đồng thời — mỗi phụ thuộc chỉ kiểm một lần.
 Đồng hồ dùng chung `app.state.kb_monotonic`.
+
+O3 (soát 12/11): `warnings` — danh sách MÃ CỐ ĐỊNH (`WARNING_CODES`), CHỈ báo, không đổi 200/503: `llm_spend_cap_reached` (từ
+`llm`), `mock_faults_active` (mock đang bơm lỗi — chỉ dev/test), `ml_models_missing` (ml-service thiếu model nhóm nhưng vẫn 200).
+Probe `app.state.warnings_probe` dựng ở `main.py`; lỗi → `[]`. Chưa có `worker_heartbeat_stale` (heartbeat nằm trong container worker).
 """
 
 import asyncio
@@ -35,6 +39,9 @@ type LlmStatus = Literal["scripted", "real:configured", "real:missing_pricing", 
 type MonitorStatus = Literal["ok", "not_configured", "wrong_role", "down"]
 type LlmProbe = Callable[[], Awaitable[LlmStatus]]
 type MonitorProbe = Callable[[], Awaitable[MonitorStatus]]
+type WarningsProbe = Callable[[], Awaitable[list[str]]]
+# O3 (soát 12/11): `warnings` — MÃ CỐ ĐỊNH, CHỈ báo (không đổi 200/503). Mã lạ từ probe bị lọc (không chữ tự do ra ngoài).
+WARNING_CODES: frozenset[str] = frozenset({"llm_spend_cap_reached", "mock_faults_active", "ml_models_missing"})
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -99,19 +106,22 @@ async def _health(request: Request) -> tuple[dict[str, object], int]:
         if cached is not None and now - cached[0] < HEALTH_CACHE_SECONDS:
             return cached[1], cached[2]
         timeout = state.health_timeout
-        results, kb, llm, monitor = await asyncio.gather(
+        no_warnings: list[str] = []
+        results, kb, llm, monitor, extra = await asyncio.gather(
             run_checks(state.health_checks, timeout),
             _kb_status(request),
             _probe("llm", state.llm_probe, timeout, "unknown"),
             _probe("monitor", state.monitor_probe, timeout, "down"),
+            _probe("warnings", state.warnings_probe, timeout, no_warnings),
         )
         failed = sorted(name for name, status in results.items() if status != "ok")
+        warnings = {w for w in extra if w in WARNING_CODES} | ({"llm_spend_cap_reached"} if llm == "spend_cap_reached" else set())
         body: dict[str, object] = {
             "status": "ok" if not failed else "degraded", "checks": results, "failed": failed,
             "runtime": getattr(state, "runtime_status", "down"),
-            "kb": kb, "llm": llm, "monitor": monitor,
+            "kb": kb, "llm": llm, "monitor": monitor, "warnings": sorted(warnings),
         }  # fmt: skip
-        code = 200 if not failed else 503  # chỉ `checks` quyết mã — `kb`, `llm`, `monitor` chỉ báo
+        code = 200 if not failed else 503  # chỉ `checks` quyết mã — `kb`, `llm`, `monitor`, `warnings` chỉ báo
         state._health_cache = (now, body, code)
         return body, code
 

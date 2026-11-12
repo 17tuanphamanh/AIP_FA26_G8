@@ -27,6 +27,23 @@ async def guard_status(http: httpx.AsyncClient, base_url: str) -> GuardStatus:
     return "loaded" if isinstance(injection, dict) and injection.get("version") else "unknown"
 
 
+TEAM_MODELS = ("injection", "intent")
+
+
+async def missing_models(http: httpx.AsyncClient, base_url: str) -> list[str] | None:
+    """O3 (soát 12/11): tên model NHÓM mà `/health` của ml-service báo `"missing"` (ml-service vẫn 200 khi thiếu). Không đọc được
+    `/health` (lỗi mạng, 503 đang nạp, thân lạ) → None — "không biết" khác "thiếu"."""
+    try:
+        r = await http.get(f"{base_url.rstrip('/')}/health")
+        r.raise_for_status()
+        models = r.json()["models"]
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(models, dict):
+        return None
+    return [name for name in TEAM_MODELS if models.get(name) == "missing"]
+
+
 async def warn_if_guard_missing(http: httpx.AsyncClient, base_url: str) -> GuardStatus:
     status = await guard_status(http, base_url)
     if status == "missing":

@@ -48,6 +48,7 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
     LlmStatus,
     MonitorProbe,
     MonitorStatus,
+    WarningsProbe,
 )
 from app.api.health import router as health_router
 from app.api.limits import BodyLimitMiddleware, NulGuardMiddleware
@@ -101,7 +102,10 @@ from app.llm.store import (
     SqlLlmStore,  # M9 (A4): cùng SUM(llm_calls.cost_usd) gateway dùng để áp trần chi
 )
 from app.llm.wiring import check_llm
-from app.ml.startup import warn_if_guard_missing  # Phase 5 (gói 1)
+from app.ml.startup import (  # Phase 5 (gói 1); O3 (12/11)
+    missing_models,
+    warn_if_guard_missing,
+)
 from app.monitor.db import MONITOR_ROLE, MonitorUnavailable, monitor_engine
 from app.rag.ingest.config import ALIAS as KB_ALIAS
 from app.settings import Settings, get_policy, get_settings
@@ -163,6 +167,27 @@ def _default_checks(settings: Settings, app: FastAPI) -> dict[str, HealthCheck]:
             (await client.get(f"{settings.ml_service_url.rstrip('/')}/health")).raise_for_status()
 
     return {"db": db, "qdrant": qdrant, "mock": mock, "ml": ml}
+
+
+def _default_warnings_probe(settings: Settings) -> WarningsProbe:
+    """O3 (soát 12/11): mã cảnh báo cho `/api/health` (chỉ báo). Mock `/_admin/faults` chỉ hỏi khi `APP_ENV` dev/test; ml `/health`
+    không cần token. Lỗi từng phần → bỏ phần đó (phụ thuộc chết đã hiện ở `checks`)."""
+
+    async def probe() -> list[str]:
+        out: list[str] = []
+        async with httpx.AsyncClient(timeout=settings.health_timeout) as client:
+            if settings.app_env in ("dev", "test"):
+                try:
+                    r = await client.get(f"{settings.mock_url.rstrip('/')}/_admin/faults")
+                    if r.status_code == 200 and r.json():
+                        out.append("mock_faults_active")
+                except (httpx.HTTPError, ValueError):
+                    pass
+            if await missing_models(client, settings.ml_service_url):
+                out.append("ml_models_missing")
+        return out
+
+    return probe
 
 
 def _default_kb_probe(settings: Settings) -> KbProbe:
@@ -424,6 +449,7 @@ def create_app(
     # A4: `llm`, `monitor` của /api/health — chỉ báo, không đổi mã. Test gán đè `app.state.*_probe` (như `kb_probe`).
     app.state.llm_probe = _default_llm_probe(settings, app)
     app.state.monitor_probe = _default_monitor_probe(app)
+    app.state.warnings_probe = _default_warnings_probe(settings)  # O3 (12/11) — test gán đè như các probe khác
     app.include_router(dashboard_router)  # A3: /api/dashboard/* (đọc qua app_monitor)
     app.include_router(dashboard_strategies_router)  # D-67 P2: /api/dashboard/strategies (so sánh phương án, app_monitor)
     app.include_router(alerts_router)  # A3: /api/alerts (đọc qua app_monitor), ack (ghi app_rw qua audit)

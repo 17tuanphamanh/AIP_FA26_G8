@@ -60,6 +60,7 @@ def test_all_ok_returns_200() -> None:
         "kb": {"alias": "kb_current", "collection": None, "status": "missing"},
         # M9 (A4): `LLM_BACKEND=scripted` do conftest gốc đặt cho mọi test; test này không có DSN monitor.
         "llm": "scripted", "monitor": "not_configured",
+        "warnings": [],  # O3 (12/11): mã cảnh báo, chỉ báo — mock/ml không có trong test → rỗng
     }  # fmt: skip
 
 
