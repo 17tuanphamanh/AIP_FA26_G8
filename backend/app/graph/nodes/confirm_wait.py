@@ -19,6 +19,9 @@ lần nữa) → `S_CONFIRMING → S_SCREENING` (event `followup_reply`, step B1
 `reasoning_loops` đặt lại 0 (vòng hỏi tiếp là một yêu cầu mới của người dùng — B3/B6 đếm lại `MAX_LOOPS` cho vòng đó; tổng số lượt vẫn bị
 chặn bởi `FOLLOWUP_MAX_ROUNDS`; khoá `effects.once` không trùng vì mỗi vòng là một `turn_id` mới).
 Audit `followup_reply`: `followup_round`, `note_chars`, `combined_trimmed` — không chữ người dùng. E8 ghi `followup_rounds` đã dùng.
+
+U2 (soát 12/11): E8 kèm ghi chú KHÔNG rỗng (sau che L1) → ghi chú vào `conversation` + `user_feedback` (B19 mục 5) → B20 đưa vào ghi chú bàn
+giao L2 ("Người dùng báo: …"); audit E8 thêm `note_chars`.
 """
 
 from typing import Any
@@ -86,9 +89,15 @@ def make(deps: NodeDeps) -> NodeFn:
                     reasoning_loops=0,  # vòng hỏi tiếp = một yêu cầu mới của người dùng; tổng vẫn bị chặn bởi FOLLOWUP_MAX_ROUNDS
                     conversation=[user_msg(note)],
                 )  # fmt: skip
+        # U2 (soát 12/11, agent 18 V3): ghi chú của E8 không bị vứt — bản ĐÃ CHE vào hội thoại + `user_feedback` (B20 đưa vào ghi chú
+        # bàn giao L2). Audit chỉ ghi số ký tự, không chữ người dùng (như `followup_reply`).
+        note = deps.privacy.redact_text(str(ev.get("note") or "")).text.strip()
+        extra: dict[str, Any] = {"user_feedback": note, "conversation": [user_msg(note)]} if note else {}
         return await goto(
             state, S_ESCALATED, next_node="b20_audit", step="B19", event="user_reported_unresolved",
-            exit_code=ExitCode.E8.value, audit_detail={"followup_rounds": rounds},
+            exit_code=ExitCode.E8.value,
+            audit_detail={"followup_rounds": rounds, **({"note_chars": len(note)} if note else {})},
+            **extra,
         )  # fmt: skip
 
     return confirm_wait

@@ -133,6 +133,9 @@ def _why(state: Mapping[str, Any], code: str) -> str:
         parts.append(NO_PROCEDURE_NOTE)
     if state.get("escalation_note"):
         parts.append(str(state["escalation_note"]).rstrip(".") + ".")
+    feedback = str(state.get("user_feedback") or "").strip()
+    if code == ExitCode.E8.value and feedback:  # U2: ghi chú "Chưa ổn" (bản ĐÃ CHE ở B19), cắt như `request`
+        parts.append(f"Người dùng báo: {feedback[:REQUEST_MAX]}")
     risk = _json(state.get("risk"))
     if risk:
         by = DECIDED_BY_LABELS.get(risk["decided_by"], OTHER)
