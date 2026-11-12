@@ -40,7 +40,14 @@ from app.domain.action import SOFTWARE_NAME, Action
 from app.domain.messages import ACCOUNT_TYPE_TEXT, DEVICE_ID, RESOURCE_PATH, USER_ID
 from app.domain.ticket_state import ExecutionResult
 from app.executor.errors import ExecutionInterrupted
-from app.executor.plans import PLAN, Step, plan_for, step_args, undo_args
+from app.executor.plans import (
+    PLAN,
+    Step,
+    plan_for,
+    step_args,
+    undo_args,
+    unexpected_result,
+)
 from app.executor.txlog import TxLog
 from app.tools.models import (
     AssignLicenseResult,
@@ -57,7 +64,9 @@ log = logging.getLogger(__name__)
 WRITE_STEP = "B17"
 # Mã lỗi mà lệnh ghi CÓ THỂ đã tới đích (dù báo lỗi): hết thời gian chờ phản hồi, 5xx, lỗi lạ. Không thuộc: 404/409/429 (đích từ
 # chối), connect_error / circuit_open / turn_budget_exceeded (chưa gửi).
-MAYBE_APPLIED_KINDS = frozenset({"timeout", "http_5xx", "other"})
+MAYBE_APPLIED_KINDS = frozenset({"timeout", "http_5xx", "other", "unexpected_result"})
+# V9 (D-90): 2xx hợp schema nhưng kết quả không khớp yêu cầu (sai đối tượng / chưa có hiệu lực) — `plans.unexpected_result`
+UNEXPECTED_RESULT = "unexpected_result"
 # Tên lớp lỗi httpx mà registry ghi vào `ToolResult.error` (`f"{type(e).__name__}: …"`) khi hết thời gian
 TIMEOUT_ERRORS = frozenset({"TimeoutException", "ConnectTimeout", "ReadTimeout", "WriteTimeout", "PoolTimeout"})
 
@@ -72,7 +81,7 @@ class WriteCaller(Protocol):
 
 def error_kind(error: str) -> str:
     """Chuỗi lỗi của registry → mã thuộc tập ĐÓNG (P6): không bao giờ trả lại chữ của hệ thống ngoài."""
-    if error in ("circuit_open", "turn_budget_exceeded"):
+    if error in ("circuit_open", "turn_budget_exceeded", UNEXPECTED_RESULT):
         return error
     name = error.split(":", 1)[0]
     if name in TIMEOUT_ERRORS:
@@ -143,13 +152,19 @@ class PlanExecutor:
             await self._txlog.begin(ticket_id, turn_id, step.tool)
             progress.began = True
             progress.sent += 1
+            args = step_args(step.tool, action)
             try:
-                result = await self._registry.call(step.tool, step_args(step.tool, action), caller_step=WRITE_STEP)
+                result = await self._registry.call(step.tool, args, caller_step=WRITE_STEP)
             except TurnBudgetExceeded:
                 if not done:
                     raise  # bước đầu: chưa ghi gì → E2 (P4)
                 # soát S12 NGHI-6a (kế hoạch nhiều bước): đã ghi bước trước → KHÔNG thoát kiểu E2 mà hoàn tác + E7 có handoff
                 result = ToolResult(step.tool, None, "turn_budget_exceeded", 0, False)
+            if result.error is None and (broken := unexpected_result(step.tool, args, result.data)) is not None:
+                # V9 (D-90): 2xx nhưng sai đối tượng / chưa có hiệu lực → lỗi "có thể đã áp dụng"; KHÔNG hoàn tác chính bước này
+                # (định danh trả về có thể sai — hoàn tác theo nó là ghi vào đối tượng khác). Log chỉ tên điều kiện, không giá trị.
+                log.warning("executor: bước %s trả kết quả không khớp yêu cầu (%s, ticket %s)", step.tool, broken, ticket_id)
+                result = ToolResult(step.tool, None, UNEXPECTED_RESULT, result.attempts, False)
             if result.error is not None:
                 kind = error_kind(result.error)
                 status, details = await self._rollback(ticket_id, turn_id, action, done, progress)
@@ -243,6 +258,8 @@ def _handoff(
     else:
         undo = "; ".join(f"{tool}: {status}" for tool, status in details)
     manual = _manual(action, done, failed, kind, details)
+    if kind == UNEXPECTED_RESULT:
+        manual = "hệ thống đích báo thành công nhưng kết quả không khớp yêu cầu (sai đối tượng hoặc chưa có hiệu lực); " + manual
     if maybe:
         manual = f"lệnh ở bước {failed} có thể đã được áp dụng — kiểm trên hệ thống đích trước khi làm lại; " + manual
     return (

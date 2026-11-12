@@ -83,6 +83,44 @@ def step_args(tool: str, action: Action) -> dict[str, Any]:
     return dict(builders[tool]())
 
 
+def _same_id(sent: object, got: object) -> bool:
+    return str(sent).strip().upper() == str(got).strip().upper()
+
+
+def _same_path(sent: object, got: object) -> bool:
+    return str(sent).strip().strip("/") == str(got).strip().strip("/")  # = chuẩn hoá đường dẫn của file server
+
+
+def unexpected_result(tool: str, args: Mapping[str, Any], data: Any) -> str | None:
+    """V9 (soát 12/11, D-90): hậu điều kiện của bước GHI chính đã trả 2xx hợp schema — định danh trả về phải đúng định danh đã gửi,
+    cờ ngữ nghĩa phải nói "đã làm". Trả TÊN điều kiện hỏng (tập đóng, không chứa giá trị) hoặc None. Tool hoàn tác không kiểm ở đây
+    (`_rollback` đi đường riêng). `data` None ở bước ghi = hỏng (`empty_result`)."""
+    checks: dict[str, Any] = {
+        "renew_vpn_cert": lambda d: ("device_mismatch" if not _same_id(args["device_id"], d.device_id)
+                                     else "cert_not_valid" if d.status != "valid" else None),
+        "reset_password": lambda d: ("user_mismatch" if d.user_id != args["user_id"]
+                                     else "account_type_mismatch" if d.account_type != args["account_type"]
+                                     else "not_delivered" if d.delivered_via not in ("email", "sms") else None),
+        "unlock_account": lambda d: ("user_mismatch" if d.user_id != args["user_id"]
+                                     else "account_type_mismatch" if d.account_type != args["account_type"]
+                                     else "still_locked" if d.locked is not False else None),
+        "assign_paid_license": lambda d: "user_mismatch" if d.user_id != args["user_id"] else None,
+        "install_software": lambda d: "device_mismatch" if not _same_id(args["device_id"], d.device_id) else None,
+        "grant_permission": lambda d: ("path_mismatch" if not _same_path(args["resource_path"], d.path)
+                                       else "permission_not_active" if d.status != "active"
+                                       else "level_mismatch" if d.level != args["level"] else None),
+        "extend_permission": lambda d: ("path_mismatch" if not _same_path(args["resource_path"], d.path)
+                                        else "permission_not_active" if d.status != "active" else None),
+    }  # fmt: skip
+    checks["reissue_vpn_access"] = checks["renew_vpn_cert"]
+    check = checks.get(tool)
+    if check is None:
+        return None
+    if data is None:
+        return "empty_result"
+    return check(data)  # type: ignore[no-any-return]
+
+
 def undo_args(undo: str, action: Action, result: Any) -> dict[str, Any]:
     """Tham số hoàn tác — từ `Action` + kết quả bước được hoàn tác (`tools.models`): `revoke_vpn_cert(user_id, serial)`,
     `lock_account(user_id, account_type, reason="admin")`, `uninstall_software(device_id, software_name)`,

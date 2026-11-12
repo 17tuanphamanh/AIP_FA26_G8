@@ -100,7 +100,7 @@ _RANK = 'DECISION_RANK: Mapping[str, int] = {"allow": 1, "approval_required": 2,
 _WINDOW = "    return local.isoweekday() in hours.weekdays and hours.start <= local.time() < hours.end\n"
 _STEP0 = '        if await deps.txlog.has_begun(state["ticket_id"]):  # [0] NGHI-2 — TRƯỚC mọi bước kiểm lại\n'
 _EXEC_BEGUN = "        if await self._txlog.has_begun(ticket_id):\n"
-_WRITE = "                result = await self._registry.call(step.tool, step_args(step.tool, action), caller_step=WRITE_STEP)\n"
+_WRITE = "                result = await self._registry.call(step.tool, args, caller_step=WRITE_STEP)\n"
 _APPROVED = '            approved = state.get("approval_result") == "approved" and db_status == "approved"\n'
 _CTX_FACTS = "        requester=requester, facts=dict(action.facts), now=now,\n"
 _ESTIMATE = '        raise LLMUnavailable("lớp LLM rủi ro (B14) chưa bật ở Phase 3 — 3-Q30")\n'
@@ -114,7 +114,7 @@ _BEGAN = "            progress.began = True\n"
 _AFTER_BEGUN = "            if not progress.began:\n                raise  # trước begun: chưa gửi gì → boundary E9 như cũ\n"
 _CATCH_ALL = "        except Exception as e:\n            if not progress.began:"
 _CAUSE = "            cause = type(e).__name__  # CHỈ tên lớp lỗi — không str(e), không nội dung phản hồi (luật 8.9)\n"
-_MAYBE = 'MAYBE_APPLIED_KINDS = frozenset({"timeout", "http_5xx", "other"})'
+_MAYBE = 'MAYBE_APPLIED_KINDS = frozenset({"timeout", "http_5xx", "other", "unexpected_result"})'
 _GIVE_UP_BEGUN = "        if node != AUDIT and await self._txlog.has_begun(ticket_id):  # chốt FAIL mục 7 (d): theo ticket, mọi lượt\n"
 _B18_CATCH = "        except Exception as exc:  # noqa: BLE001 — xem dòng trên\n"
 _VIA = '        via_approval = bool(state.get("approval_id")) or state.get("approval_result") is not None\n'
