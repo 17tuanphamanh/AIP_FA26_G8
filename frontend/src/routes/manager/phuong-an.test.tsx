@@ -666,3 +666,21 @@ describe("t184 (soát bảo mật NGHI-1): PUT 2xx khác 200 / 200 thân sai →
     expect(screen.queryByText(/Đã áp dụng/)).toBeNull();
   });
 });
+
+// ------------------------------------------------------------------------------------------------ B2 (soát 12/11, agent 20 L3)
+
+describe("B2 12/11: dòng l2_rate ở tab So sánh không trùng tên 'Chuyển L2' của tab Nghiệp vụ, có chú thích đếm gì", () => {
+  it("nhãn riêng + một dòng chú thích; số không đổi", async () => {
+    renderDashboard({ strategies: (source) => json(200, buildStrategies(source as "real", "a", "b")) });
+    await openCompare();
+    const table = await screen.findByTestId("compare-table");
+    const th = table.querySelector<HTMLElement>('[data-key="l2_rate"] th')!;
+    expect(METRIC_LABEL.l2_rate).toBe("Chuyển L2 ở bước đánh giá rủi ro");
+    expect(th.querySelector('[data-testid="metric-label"]')!.textContent).toBe(METRIC_LABEL.l2_rate);
+    expect(th.querySelector('[data-testid="metric-hint"]')!.textContent).toBe(
+      "Chỉ đếm ca bước đánh giá rủi ro (M5) quyết định chuyển L2 — khác “Chuyển L2” ở tab Nghiệp vụ (mọi ca kết thúc bằng mã E).",
+    );
+    const auto = table.querySelector<HTMLElement>('[data-key="auto_rate"] th')!;
+    expect(auto.querySelector('[data-testid="metric-hint"]')).toBeNull(); // chỉ dòng có chú thích mới có
+  });
+});

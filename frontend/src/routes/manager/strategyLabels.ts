@@ -7,7 +7,7 @@ export const METRIC_LABEL: Record<string, string> = {
   tickets: "Số yêu cầu đã kết thúc",
   auto_rate: "Hệ thống tự xử lý",
   hitl_rate: "Qua L1 duyệt",
-  l2_rate: "Chuyển L2",
+  l2_rate: "Chuyển L2 ở bước đánh giá rủi ro", // B2 (12/11): khác "Chuyển L2" tab Nghiệp vụ — xem METRIC_HINT
   confirmed_rate: "Người dùng xác nhận đã xong",
   no_response_rate: "Tự đóng vì không phản hồi sau 48 giờ",
   unresolved_rate: "Người dùng báo chưa giải quyết",
@@ -28,5 +28,11 @@ export const METRIC_LABEL: Record<string, string> = {
 /** Loại yêu cầu (`intent_mix`) — như backend/app/domain/messages.py; khoá lạ → hiện nguyên. */
 export const INTENT_LABEL: Record<string, string> = { vpn: "VPN", account: "Tài khoản", software: "Phần mềm", access: "Quyền truy cập" };
 
+/** Một dòng chú thích dưới nhãn — chỉ cho chỉ số dễ hiểu nhầm (B2, soát 12/11 agent 20 L3). Không đổi số. */
+export const METRIC_HINT: Record<string, string> = {
+  l2_rate: "Chỉ đếm ca bước đánh giá rủi ro (M5) quyết định chuyển L2 — khác “Chuyển L2” ở tab Nghiệp vụ (mọi ca kết thúc bằng mã E).",
+};
+
 export const metricLabel = (key: string): string => labelOf(METRIC_LABEL, key);
+export const metricHint = (key: string): string | null => (Object.hasOwn(METRIC_HINT, key) ? METRIC_HINT[key]! : null);
 export const intentLabel = (key: string): string => labelOf(INTENT_LABEL, key);

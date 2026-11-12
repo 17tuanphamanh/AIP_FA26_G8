@@ -5,7 +5,7 @@ import { Segmented } from "../../components/Segmented.tsx";
 import { COMPARE_MISSING_TEXT, COMPARE_NOTE, cellText, intentCell, intentKeys, SIM_BAND, SOURCES, UNAVAILABLE_CELL } from "./compare.ts";
 import { WINDOW_INVALID_TEXT } from "./metrics.ts";
 import { LoadError, MissingPanel } from "./panels.tsx";
-import { intentLabel, metricLabel } from "./strategyLabels.ts";
+import { intentLabel, metricHint, metricLabel } from "./strategyLabels.ts";
 import { strategyName } from "./strategyText.ts";
 
 // Tab "So sánh phương án" (D-67 "Đo hiệu quả"; hợp đồng N-PA §2). Một cột mỗi `strategies[i]`, một dòng mỗi `metrics[j]` —
@@ -76,7 +76,12 @@ export function CompareTable({ data }: { data: StrategiesDashboard }) {
             {data.metrics.map((m, i) => (
               <tr key={`${m.key}-${i}`} data-testid="compare-row" data-key={m.key} className="border-t border-line">
                 <th scope="row" className="px-4 py-2.5 text-left font-normal">
-                  {metricLabel(m.key)}
+                  <span data-testid="metric-label">{metricLabel(m.key)}</span>
+                  {metricHint(m.key) ? (
+                    <span data-testid="metric-hint" className="block text-secondary text-ink-2">
+                      {metricHint(m.key)}
+                    </span>
+                  ) : null}
                 </th>
                 {data.strategies.map((s) => (
                   <td key={s} data-testid="compare-cell" data-strategy={s} className={TD}>
