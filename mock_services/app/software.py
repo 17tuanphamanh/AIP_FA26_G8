@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.ad import get_user, mock_state
 from app.security import require_read, require_write
+from app.seed_model import compact_key as compact
 from app.state import CatalogEntry, Installed, MockState
 
 router = APIRouter(prefix="/software")
@@ -35,7 +36,10 @@ def prohibited_match(state: MockState, name: str) -> tuple[str, str] | None:
     key = normalize(name)
     if (hit := state.prohibited.names.get(key)) is not None:
         return hit
-    if any(kw in key for kw in state.prohibited.keywords):
+    short = compact(name)
+    if (hit := state.prohibited.compact_names.get(short)) is not None:  # K4: "KMS_Pico", "kms-auto.net"
+        return hit
+    if any(compact(kw) in short for kw in state.prohibited.keywords):  # K4: chuỗi con trên dạng rút gọn ("kmspico.exe", "KMSAuto Lite")
         return key, key
     return None
 

@@ -75,6 +75,12 @@ def grounding(chunks: list[ChunkRef], score: float | None, threshold: float) -> 
     return {"top_score": score, "above_threshold": above, "kb_gap": not above}
 
 
+# K3 (soát 12/11, agent 16 V22): slot `action` CHỈ ĐỌC mà B3 đã nhận → nhánh hành động dù `b10_need_type` nói `info`
+# ("Em đang có quyền gì" → danh sách quyền CỦA người gửi qua B11 → M5, không phải bài KB liệt kê mọi thư mục). Chỉ `view_permissions`:
+# `check_vpn_status` giữ hành vi cũ (Q2 M1 trả lời theo KB có chủ đích); hành động GHI không bao giờ bị ép ở đây.
+INFO_TO_ACTION_SLOTS: frozenset[str] = frozenset({"view_permissions"})
+
+
 def symptom_to_info(state: Any) -> bool:
     """Q2 M1: báo lỗi VPN mà máy của chính người gửi đã đăng ký, chứng chỉ còn hạn, chưa nêu hành động → trả lời theo KB."""
     facts = state.get("facts") or {}
@@ -133,8 +139,11 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E2.value, escalation_reason_detail="llm_unavailable",
             )  # fmt: skip
         info["need_type"], info["prompt"] = need.type, f"{meta.prompt_id}@{meta.prompt_version}"
-        info["symptom_to_info"] = symptom = need.type == "action" and symptom_to_info(state)
-        if need.type == "action" and not symptom:
+        need_type = need.type
+        if need_type == "info" and (state.get("slots") or {}).get("action") in INFO_TO_ACTION_SLOTS:
+            info["need_type_override"], need_type = "view_permissions_slot", "action"  # K3 (V22): B3 đã nhận việc xem quyền
+        info["symptom_to_info"] = symptom = need_type == "action" and symptom_to_info(state)
+        if need_type == "action" and not symptom:
             if deps.grounding_gate_actions and not above:  # S0-P11: ablation — hành vi 3h (B9 chặn cả hành động)
                 return await goto(
                     state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,

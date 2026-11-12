@@ -102,6 +102,15 @@ class SeedConnection(_Strict):
     error_code: str | None = None
 
 
+_JOINERS = str.maketrans("", "", "-._")
+
+
+def compact_key(text: str) -> str:
+    """K4 (soát 12/11): dạng RÚT GỌN để so tên cấm — chữ thường, bỏ khoảng trắng, '-', '.', '_': "KMSpico-Portable.exe" →
+    "kmspicoportableexe". Chỉ dùng cho danh sách cấm (bắt biến thể) và kiểm "cấm không chạm danh mục"; tra danh mục giữ `_lookup_key`."""
+    return "".join(text.lower().split()).translate(_JOINERS)
+
+
 def _lookup_key(text: str) -> str:
     """Cùng cách chuẩn hoá với `software.normalize`: "Zoom  Workplace" → "zoom-workplace"."""
     return "-".join(text.strip().lower().split())
@@ -252,8 +261,13 @@ class SeedData(_Strict):
         for p in self.prohibited_software.names:
             if clash := sorted(p.lookup_keys() & set(owner_of)):
                 raise ValueError(f"tên cấm {p.name}: trùng tên tra cứu danh mục {clash}")
-        if hits := sorted({f"{kw} ⊂ {key}" for kw in self.prohibited_software.keywords for key in owner_of if kw in key}):
+        if hits := sorted({f"{kw} ⊂ {key}" for kw in self.prohibited_software.keywords for key in owner_of
+                           if compact_key(kw) in compact_key(key)}):  # K4: so trên dạng rút gọn, như lúc tra
             raise ValueError(f"từ khoá cấm khớp phần mềm trong danh mục: {hits}")
+        catalog_short = {compact_key(k): owner for k, owner in owner_of.items()}
+        for p in self.prohibited_software.names:
+            if clash := sorted({compact_key(k) for k in p.lookup_keys()} & set(catalog_short)):
+                raise ValueError(f"tên cấm {p.name}: trùng tên tra cứu danh mục (dạng rút gọn) {clash}")
         for pool in self.licenses:
             if pool.used > pool.total:
                 raise ValueError(f"license {pool.name}: used > total")

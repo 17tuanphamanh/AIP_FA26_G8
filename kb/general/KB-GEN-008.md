@@ -1,10 +1,10 @@
 ---
 doc_id: KB-GEN-008
-version: 1
+version: 2
 request_type: general
 doc_type: policy
 owner: it_mgr01
-updated_at: 2026-11-09
+updated_at: 2026-11-12
 sensitivity: internal
 enabled: true
 title: "Nhận diện email lừa đảo (phishing) và cách báo cáo"
@@ -49,6 +49,6 @@ Nếu bạn đã lỡ bấm vào liên kết, mở tệp đính kèm hoặc nh�
 
 1. Ngắt kết nối mạng của máy tính (tắt Wi-Fi hoặc rút dây mạng) nếu bạn đã mở tệp đính kèm.
 2. Báo ngay cho bộ phận IT (máy lẻ 1234), nói rõ bạn đã làm gì và vào lúc nào. Đây là sự cố an toàn thông tin, kỹ thuật viên IT sẽ xử lý trực tiếp.
-3. Nếu đã nhập mật khẩu, đổi mật khẩu tài khoản công ty càng sớm càng tốt theo tài liệu tự đặt lại mật khẩu, hoặc nhờ kỹ thuật viên hỗ trợ.
+3. Nếu đã nhập mật khẩu, nói rõ điều đó khi báo IT ở bước 2. Không tự đặt lại hay tự đổi mật khẩu qua trợ lý IT: kỹ thuật viên sẽ khóa phiên đăng nhập đang mở và đặt lại mật khẩu cùng bạn. Không gửi mật khẩu qua chat hoặc email.
 
 Không tự quét hoặc tự "dọn" máy bằng phần mềm tải từ Internet.
