@@ -11,6 +11,11 @@ Thứ tự:
    - phiếu không còn `pending` → `already_decided`; `clock.now() >= deadline` (Clock của APP, bằng hạn
      là muộn) → `expired`; ticket CON mà ticket CHA đã có `final_state` → `parent_closed` (Q4 soát 12/11, V11) →
      `record_late` + 409 (TC27); phiếu giữ `pending`.
+2b. Q2 (soát 12/11, agent 13 F1): NGOÀI transaction (không giữ khoá dòng khi gọi AD), hỏi AD người quyết (`AuthService.idp`):
+   không còn hợp lệ làm l1 LẪN Trưởng BP (`domain.approval.invalid_reason` — CÙNG tiêu chí B17 `approver_no_longer_valid`:
+   không có, không `active`, nhóm không ra role) → 403 + `permission_denied` (`reason=approver_<lý do>`); AD không trả lời → 503
+   `identity_unavailable` (fail-closed). Phiếu giữ `pending`, không `start_event`. Đóng khe "nghỉ việc sau khi đăng nhập vẫn duyệt
+   được tới hết phiên" (bảng `users` chỉ đồng bộ lúc đăng nhập).
 3. Body: `rejected` thiếu `note` → 422. `reason_code` chỉ nhận mã trong `ReasonCode` (danh sách CỐ ĐỊNH, PLAN-3e
    Q-3e-13): ô này không qua privacy guard mà nằm nguyên văn trong checkpoint → chuỗi tự do (vd mật khẩu dán nhầm)
    bị 422 `invalid_request`, không lưu gì.
@@ -69,11 +74,12 @@ from app.api.desk import (
 from app.api.errors import InvalidRequest
 from app.api.matched_rules import MatchedRule, matched_rules, rule_index
 from app.auth.authz import ApprovalParties, RoleAs, approval_role
-from app.auth.deps import deny, require
+from app.auth.deps import deny, get_auth, require
 from app.auth.models import Principal
+from app.auth.ports import IdentityUnavailable
 from app.core.hashing import hash_action
 from app.domain.action import Action
-from app.domain.approval import manager_chain
+from app.domain.approval import invalid_reason, manager_chain
 from app.domain.messages import ReasonCode
 from app.domain.states import S_PENDING_APPROVAL
 from app.domain.ticket_state import RiskDecision
@@ -268,6 +274,9 @@ async def decide(
             extra={"approval_id": approval_id, "clicked_by": p.user_id, "reason": late},
         )  # fmt: skip
         raise HTTPException(409, "Yêu cầu đã chuyển sang bước khác")
+    if (gone := await _approver_gone(request, p)) is not None:
+        await deny(request, p, "approval:decide", approval_id=approval_id, reason=f"approver_{gone}")
+        raise HTTPException(403, "forbidden")
 
     body = await parse_body(request, DecisionIn)
     if body.decision == "rejected" and not (body.note and body.note.strip()):
@@ -295,6 +304,19 @@ async def decide(
     notices = redacted.notices if redacted is not None else []
     return JSONResponse({"approval_id": approval_id, "ticket_id": ticket_id, "status": "accepted", "notices": notices,
                          "decided_as": role}, status_code=202)  # fmt: skip
+
+
+async def _approver_gone(request: Request, p: Principal) -> str | None:
+    """Q2: lý do người quyết KHÔNG còn hợp lệ trong AD (hợp lệ làm l1 hoặc Trưởng BP = như B17), None = còn hợp lệ. AD lỗi → 503."""
+    try:
+        ad = await get_auth(request).idp.get_user(p.user_id)
+    except IdentityUnavailable:
+        log.warning("quyết phiếu: AD không trả lời khi kiểm người duyệt — 503")
+        raise HTTPException(503, "identity_unavailable") from None
+    reason = invalid_reason(ad, "l1")
+    if reason is None or invalid_reason(ad, "manager") is None:
+        return None
+    return reason
 
 
 @router.get("/api/approvals")
