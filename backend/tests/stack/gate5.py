@@ -126,8 +126,8 @@ EXPECTED: Mapping[str, Risk] = {
     "tc08": Risk("R07", "HITL", frozenset({"R07", "R09"})),
     "tc17": Risk("R13", "HITL", frozenset({"R13"})),
     "tc21a": Risk("R11", "AUTO", frozenset({"R11"})),
-    "tc21b": Risk("R14", "HITL", frozenset({"R14"})),
-    "hb04": Risk("R14", "HITL", frozenset({"R14", "R15"})),
+    "tc21b": Risk("R14", "HITL", frozenset({"R14", "R23"})),  # D-93: danh mục seed đánh dấu requires_approval → R23 khớp cùng
+    "hb04": Risk("R14", "HITL", frozenset({"R14", "R15", "R23"})),
 }
 
 # TQ-13: ENABLED_INTENTS hiệu lực TRONG container — chỉ in nhãn. Không đọc `.env` (Settings đọc biến môi trường của container).

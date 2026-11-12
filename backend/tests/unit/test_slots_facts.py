@@ -48,9 +48,9 @@ def test_fact_keys_closed_list() -> None:
         "target_account_privilege", "target_is_service_account", "target_user_status", "target_disable_reason",
         "target_account_locked", "target_lock_reason", "in_catalog", "license_paid", "requires_local_admin",
         "resource_sensitivity", "same_department", "has_permission_record", "existing_permission_level",
-        "software_prohibited",
+        "software_prohibited", "catalog_requires_approval",  # D-93 (soát 12/11): 21 → 22
     }  # fmt: skip
-    assert len(FACT_KEYS) == 21
+    assert len(FACT_KEYS) == 22
 
 
 def test_no_slot_is_named_like_a_fact() -> None:

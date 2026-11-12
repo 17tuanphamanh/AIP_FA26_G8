@@ -131,8 +131,9 @@ def _raw_rules() -> list[dict[str, Any]]:
 
 def test_r21_exact_and_last() -> None:
     rules = _raw_rules()
-    assert rules[-1] == R21
-    assert [r["id"] for r in rules] == [f"R{n:02d}" for n in range(1, 22)]
+    # D-93 (soát 12/11): + R22, R23 (approval_required phần mềm) SAU R21 — R21 giữ đúng nội dung, vẫn là deny phần mềm duy nhất
+    assert [r for r in rules if r["id"] == "R21"] == [R21]
+    assert [r["id"] for r in rules] == [f"R{n:02d}" for n in range(1, 24)]
     assert {r["id"] for r in rules if r["type"] == "deny"} == {"R12", "R21"}
 
 
@@ -149,7 +150,8 @@ def _verdict(facts: dict[str, Any], *, target_is_other: bool = False) -> Any:
         pytest.param({"in_catalog": False, "software_prohibited": True}, "deny", "R21", ["R13", "R21"], id="cam-thang-R13"),
         pytest.param({"in_catalog": False, "software_prohibited": False}, "approval_required", "R13", ["R13"], id="la-khong-cam-R13"),
         pytest.param({"in_catalog": False}, "approval_required", "R13", ["R13"], id="thieu-fact-cam-khong-khop-R21"),
-        pytest.param({"in_catalog": True, "software_prohibited": False, "license_paid": False, "requires_local_admin": False},
+        pytest.param({"in_catalog": True, "software_prohibited": False, "license_paid": False, "requires_local_admin": False,
+                      "catalog_requires_approval": False, "device_registered": True},  # D-93: R11 đòi thêm 2 fact
                      "allow", "R11", ["R11"], id="mien-phi-R11"),
     ],
 )  # fmt: skip
@@ -273,8 +275,8 @@ async def test_b20_control_r12_deny_sends_policy_deny_text() -> None:
 ASIS_CASES = [
     pytest.param("Cài 7-Zip giúp em", "7-Zip", "allow", "R11", ["R11"], True, id="7-Zip-R11"),
     pytest.param("Cài Zoom giúp em với", "Zoom", "allow", "R11", ["R11"], True, id="Zoom-R11"),
-    pytest.param("Cài Adobe Acrobat Pro cho em", "Adobe Acrobat Pro", "approval_required", "R14", ["R14"], True,
-                 id="Acrobat-Pro-paid-R14"),
+    pytest.param("Cài Adobe Acrobat Pro cho em", "Adobe Acrobat Pro", "approval_required", "R14", ["R14", "R23"], True,
+                 id="Acrobat-Pro-paid-R14"),  # D-93: danh mục seed đánh dấu requires_approval → R23 khớp cùng (R14 vẫn thắng)
     pytest.param("Cài Photoshop cho em", "Photoshop", "approval_required", "R13", ["R13"], False, id="ten-la-khong-cam-R13"),
 ]  # fmt: skip
 

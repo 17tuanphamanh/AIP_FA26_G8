@@ -174,6 +174,8 @@ Fact VPN giữ nguyên (`device_registered`, `device_owner_is_requester`, …). 
 ### 4.4. Bảng 20 luật [Chốt nội dung §6.3; Chốt 01/10 cho R09; Đề xuất điều kiện cụ thể]
 
 > **Ghi chú 09/11/2026 — bản demo `lo-0811` (Q5, ĐP duyệt 09/11 10:05):** thêm **R21** `deny` · software · `install_software` · `action.facts.software_prohibited is_true` · "Phần mềm bị cấm theo quy định của công ty" (fact chỉ từ tool `check_catalog_entry.prohibited` — danh sách cấm do hệ thống ngoài giữ, `mock_services/seed.json` `prohibited_software`). Bản demo: **N4 = 21 luật, 7 allow / 12 approval_required / 2 deny**. Bản đo `bf94df2` giữ 20 luật 7/12/1 — nội dung dưới đây là của bản đo, không viết lại.
+>
+> **Ghi chú 12/11/2026 — soát 20 agent (D-93, TA duyệt C2):** **R11** đòi thêm `F.software_prohibited` is_false · `F.catalog_requires_approval` is_false · `F.device_registered` is_true (mô tả: "Cài phần mềm miễn phí trong danh mục (không bị cấm, danh mục không đòi duyệt) lên máy ĐÃ ĐĂNG KÝ của mình"); thêm **R22** `approval_required` · software · `install_software` · `F.device_registered` is_false · `F.device_owner_is_requester` is_true · "Cài phần mềm lên thiết bị chưa đăng ký cần người duyệt" (như R17 của VPN); **R23** `approval_required` · software · `install_software` · `F.catalog_requires_approval` is_true · "Phần mềm danh mục đánh dấu phải duyệt cần người duyệt". Fact mới `catalog_requires_approval` (bool) = `check_catalog_entry.requires_approval`, chỉ khi trong danh mục. **N4 = 23 luật, 7 allow / 14 approval_required / 2 deny.** Đo: 19 kịch bản cài phần mềm của `eval/` không đổi quyết định; trên seed mọi mục `requires_approval` đều có phí (R14 vẫn thắng, R23 khớp cùng).
 
 Ký hiệu: `F.x` = `action.facts.x`; `P.x` = `action.params.x`; `other` = `ctx.target_is_other`.
 

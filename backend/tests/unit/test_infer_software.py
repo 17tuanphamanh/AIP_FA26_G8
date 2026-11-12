@@ -81,7 +81,7 @@ async def test_s1_zoom_on_own_lap0342() -> None:
     _, _, _, inferred, facts = await _run(ME, {"software_name": "Zoom", "device_id": "LAP-0342"})
     assert facts == {
         "in_catalog": True, "license_paid": False, "requires_local_admin": False, "software_prohibited": False,  # Q5
-        "device_registered": True, "device_owner_is_requester": True,
+        "device_registered": True, "device_owner_is_requester": True, "catalog_requires_approval": False,  # D-93
     }  # fmt: skip
     assert inferred == {}  # đã nêu máy → không suy gì
 

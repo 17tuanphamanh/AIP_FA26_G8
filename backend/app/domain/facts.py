@@ -40,6 +40,8 @@ FACT_TYPES: Mapping[str, type] = {
     "existing_permission_level": str,  # check_current_permissions — mức CAO NHẤT (read < write < full) mọi dòng của đúng thư mục
     # ---- Q5 (ĐP 09/11) ----
     "software_prohibited": bool,  # check_catalog_entry.prohibited (danh sách cấm do hệ thống ngoài giữ); 404 → false — R21 deny
+    # ---- soát 12/11 (D-93) ----
+    "catalog_requires_approval": bool,  # check_catalog_entry.requires_approval — chỉ khi trong danh mục; R23 approval, R11 đòi false
 }
 FACT_KEYS: frozenset[str] = frozenset(FACT_TYPES)
 CERT_STATUSES: frozenset[str] = frozenset({"valid", "expired", "revoked", "none"})

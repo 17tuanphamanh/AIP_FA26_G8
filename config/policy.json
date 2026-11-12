@@ -76,8 +76,11 @@
       {"fact": "ctx.target_is_other", "op": "is_false"},
       {"fact": "action.facts.in_catalog", "op": "is_true"},
       {"fact": "action.facts.license_paid", "op": "is_false"},
-      {"fact": "action.facts.requires_local_admin", "op": "is_false"}]},
-     "description": "Cài phần mềm miễn phí trong danh mục lên máy của mình"},
+      {"fact": "action.facts.requires_local_admin", "op": "is_false"},
+      {"fact": "action.facts.software_prohibited", "op": "is_false"},
+      {"fact": "action.facts.catalog_requires_approval", "op": "is_false"},
+      {"fact": "action.facts.device_registered", "op": "is_true"}]},
+     "description": "Cài phần mềm miễn phí trong danh mục (không bị cấm, danh mục không đòi duyệt) lên máy ĐÃ ĐĂNG KÝ của mình"},
     {"id": "R12", "type": "deny", "intent": "access", "action": ["grant_permission", "extend_permission"],
      "conditions": {"all": [
       {"fact": "action.facts.target_user_status", "op": "eq", "value": "disabled"},
@@ -123,6 +126,15 @@
     {"id": "R21", "type": "deny", "intent": "software", "action": "install_software",
      "conditions": {"all": [
       {"fact": "action.facts.software_prohibited", "op": "is_true"}]},
-     "description": "Phần mềm bị cấm theo quy định của công ty"}
+     "description": "Phần mềm bị cấm theo quy định của công ty"},
+    {"id": "R22", "type": "approval_required", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.device_registered", "op": "is_false"},
+      {"fact": "action.facts.device_owner_is_requester", "op": "is_true"}]},
+     "description": "Cài phần mềm lên thiết bị chưa đăng ký cần người duyệt"},
+    {"id": "R23", "type": "approval_required", "intent": "software", "action": "install_software",
+     "conditions": {"all": [
+      {"fact": "action.facts.catalog_requires_approval", "op": "is_true"}]},
+     "description": "Phần mềm danh mục đánh dấu phải duyệt cần người duyệt"}
   ]
 }

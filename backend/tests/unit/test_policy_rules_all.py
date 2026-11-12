@@ -107,6 +107,7 @@ GOC: dict[str, Goc] = {
     "G-INSTALL": Goc(NV001, "install_software", "device:LAP-0342", "nv001", {}, {
         "in_catalog": True, "license_paid": False, "requires_local_admin": False,
         "device_owner_is_requester": True, "device_registered": True,
+        "software_prohibited": False, "catalog_requires_approval": False,  # D-93 (soát 12/11)
     }),
 }  # fmt: skip
 
@@ -248,6 +249,16 @@ BANG_4_7 = [
                  id="f10-R11-may-nguoi-khac-owner-false"),
     pytest.param(_ca("G-INSTALL", bo=("device_owner_is_requester",)),
                  id="f11-R11-thieu-device_owner_is_requester"),
+    # ---- D-93 (soát 12/11): R11 đòi không bị cấm, danh mục không đòi duyệt, máy ĐÃ đăng ký; R22, R23 approval ----
+    pytest.param(_ca("G-INSTALL", bo=("software_prohibited",)), id="f12-R11-thieu-software_prohibited"),
+    pytest.param(_ca("G-INSTALL", bo=("catalog_requires_approval",)), id="f13-R11-thieu-catalog_requires_approval"),
+    pytest.param(_ca("G-INSTALL", bo=("device_registered",)), id="f14-R11-thieu-device_registered"),
+    pytest.param(_ca("G-INSTALL", facts={"device_registered": False}, decision=HITL, rule_id="R22", khop="R22"),
+                 id="f15-R22-may-chua-dang-ky"),
+    pytest.param(_ca("G-INSTALL", facts={"catalog_requires_approval": True}, decision=HITL, rule_id="R23", khop="R23"),
+                 id="f16-R23-danh-muc-doi-duyet"),
+    pytest.param(_ca("G-INSTALL", facts={"software_prohibited": True, "catalog_requires_approval": True}, decision=DENY,
+                     rule_id="R21", khop="R21 R23"), id="f17-R21+R23-deny-thang"),
 ]
 # fmt: on
 
@@ -302,7 +313,8 @@ ALLOW_FACTS_4_4: dict[str, tuple[str, ...]] = {
     # T20a P1 (Q-T20a-1 d): + `existing_permission_level` (ca r3)
     "R10": ("has_permission_record", "same_department", "resource_sensitivity", "target_user_status", "duration_days",
             "existing_permission_level"),
-    "R11": ("in_catalog", "license_paid", "requires_local_admin"),
+    "R11": ("in_catalog", "license_paid", "requires_local_admin", "software_prohibited", "catalog_requires_approval",
+            "device_registered"),  # D-93
 }  # fmt: skip
 
 
@@ -338,15 +350,15 @@ def test_h1_dung_21_luat_r01_r21_7_12_2() -> None:
     (nội dung kiểm ở `test_q5_phan_mem_cam.py`); bản đo `bf94df2` vẫn 20 luật 7/12/1."""
     rules = get_policy().rules
     ids = [r.id for r in rules]
-    assert ids == [f"R{n:02d}" for n in range(1, 22)]
-    assert len(set(ids)) == 21
+    assert ids == [f"R{n:02d}" for n in range(1, 24)]  # D-93 (soát 12/11): + R22 (máy chưa đăng ký), R23 (danh mục đòi duyệt)
+    assert len(set(ids)) == 23
     by_type: dict[str, set[str]] = {}
     for r in rules:
         by_type.setdefault(str(r.type), set()).add(r.id)
     assert by_type.get(AUTO) == {"R01", "R02", "R06", "R10", "R11", "R16", "R20"}
-    assert by_type.get(HITL) == {"R03", "R04", "R05", "R07", "R08", "R09", "R13", "R14", "R15", "R17", "R18", "R19"}
+    assert by_type.get(HITL) == {"R03", "R04", "R05", "R07", "R08", "R09", "R13", "R14", "R15", "R17", "R18", "R19", "R22", "R23"}
     assert by_type.get(DENY) == {"R12", "R21"}
-    assert {k: len(v) for k, v in by_type.items()} == {AUTO: 7, HITL: 12, DENY: 2}
+    assert {k: len(v) for k, v in by_type.items()} == {AUTO: 7, HITL: 14, DENY: 2}
 
 
 # ---- P8 — nội dung R01–R15 đúng bảng 4.4 nguyên văn ----------------------------------------------------------------------
@@ -400,7 +412,9 @@ BANG_4_4: dict[str, tuple[str, str, set[str], list[tuple[str, str, str]], str]] 
     "R11": (AUTO, "software", {"install_software"}, [
         _c(_OTHER, "is_false"), _c(_F + "in_catalog", "is_true"), _c(_F + "license_paid", "is_false"),
         _c(_F + "requires_local_admin", "is_false"),
-    ], "Cài phần mềm miễn phí trong danh mục lên máy của mình"),
+        _c(_F + "software_prohibited", "is_false"), _c(_F + "catalog_requires_approval", "is_false"),
+        _c(_F + "device_registered", "is_true"),  # D-93 (soát 12/11)
+    ], "Cài phần mềm miễn phí trong danh mục (không bị cấm, danh mục không đòi duyệt) lên máy ĐÃ ĐĂNG KÝ của mình"),
     "R12": (DENY, "access", {"grant_permission", "extend_permission"}, [
         _c(_F + "target_user_status", "eq", "disabled"), _c(_F + "target_disable_reason", "eq", "security"),
     ], "Cấm cấp quyền cho tài khoản bị vô hiệu hoá vì lý do bảo mật"),
@@ -486,7 +500,7 @@ def test_h3_khong_dieu_kien_nao_tham_chieu_action_target() -> None:
     """h3 (P10, Việc treo 19): không điều kiện nào — kể cả trong nhóm `all`/`any` lồng — dùng fact `action.target`."""
     raw = json.loads((REPO / "config" / "policy.json").read_text(encoding="utf-8"))
     facts = [f for r in raw["rules"] for f in _facts_in(r["conditions"])]
-    assert len(raw["rules"]) == 21 and facts  # Q5: + R21
+    assert len(raw["rules"]) == 23 and facts  # Q5: + R21; D-93: + R22, R23
     assert "action.target" not in facts
 
 

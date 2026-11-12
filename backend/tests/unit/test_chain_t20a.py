@@ -94,7 +94,7 @@ BANG_G = [
     pytest.param("nv001", "Cài Zoom giúp em với", "software", "install_software", {"software_name": "Zoom"},
                  "allow", "R11", ["R11"], "device:LAP-0342", id="g3-nv001-cai-Zoom-khong-neu-may-R11"),
     pytest.param("nv001", "Cài AutoCAD cho em để vẽ bản vẽ", "software", "install_software", {"software_name": "AutoCAD"},
-                 "approval_required", "R14", ["R14", "R15"], "device:LAP-0342", id="g4-nv001-cai-AutoCAD-R14-R15"),
+                 "approval_required", "R14", ["R14", "R15", "R23"], "device:LAP-0342", id="g4-nv001-cai-AutoCAD-R14-R15"),  # D-93
     pytest.param("nv001", "Gia hạn quyền thư mục finance/public-reports thêm 30 ngày", "access", "extend_permission",
                  {"resource_path": "finance/public-reports", "duration": "30"}, "allow", "R10", ["R10"],
                  "folder:finance/public-reports", id="g5-nv001-gia-han-public-reports-30-R10"),

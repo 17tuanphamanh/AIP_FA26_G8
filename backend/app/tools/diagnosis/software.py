@@ -58,6 +58,8 @@ def infer_software(
         if entry is not None and entry.in_catalog and entry.paid is not None and entry.requires_local_admin is not None:
             facts["license_paid"] = entry.paid
             facts["requires_local_admin"] = entry.requires_local_admin
+            if entry.requires_approval is not None:  # D-93: cờ của danh mục (trước bị bỏ qua) → R23 / R11
+                facts["catalog_requires_approval"] = entry.requires_approval
     assert set(facts) <= FACT_KEYS  # hợp đồng nội bộ; build_action kiểm lại bằng FactKeyViolation
     return inferred, facts
 

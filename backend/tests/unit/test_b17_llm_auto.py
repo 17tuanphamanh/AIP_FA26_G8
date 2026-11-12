@@ -100,7 +100,8 @@ def _software_other_device() -> Action:
 def _software_own() -> Action:
     """R11 allow: cài phần mềm miễn phí trong danh mục lên máy của chính mình (`device_owner_is_requester` — khuôn N1 `_software`)."""
     return t24_action("install_software", facts={"in_catalog": True, "license_paid": False, "requires_local_admin": False,
-                                                 "device_owner_is_requester": True})  # fmt: skip
+                                                 "device_owner_is_requester": True, "device_registered": True,
+                                                 "software_prohibited": False, "catalog_requires_approval": False})  # fmt: skip  # D-93
 
 
 def _access_grant(**facts: Any) -> Action:
