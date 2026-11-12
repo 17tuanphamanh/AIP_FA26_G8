@@ -6704,6 +6704,11 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   giết (`test_b17_soat_1211.py`). Mốc đột biến M-3h-19 (`scripts/mutation/mutate_3h.py`) cập nhật theo dòng kiểm người mới.
 - 12/11 (nhánh `sua-che-1211`, TA duyệt siết): **D-89** luật che `config/privacy_patterns.json` — lọt 49/95 → 5/95 câu dò biên, 0/653
   câu eval đổi; thay giới hạn 0–4 từ đệm của Q-3e-9 (test ghim giới hạn cũ đổi thành test "giờ đã che").
+- 12/11 (nhánh tích hợp `gop-1211` = main `b0f0dad` + D-88 + D-89, chờ TA duyệt gộp `main`): CI nhánh `sua-b17-1211` ĐỎ 5 test e2e
+  `test_gate3_vpn.py` (h15b, h16, h17, h18, h19) — không phải lỗi code mà đúng luật mới: DB e2e dùng chung cả phiên, ca E7 của h15 (cùng
+  `an.nv` + vpn) còn mở nên D-88 (2) chặn mọi lần ghi sau. Sửa: fixture `stack` đóng các ca E7 "có thể đã ghi" còn mở trước mỗi test (như
+  L2 đã kiểm), thêm h15c (xin lại khi E7 còn mở → E5 `prior_write_unconfirmed`, 0 lời gọi ghi, trên stack thật). CI `gop-1211` xanh:
+  10 930 + 511 + 226 passed, frontend 1 309 passed.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
