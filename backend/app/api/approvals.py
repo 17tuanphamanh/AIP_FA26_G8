@@ -9,7 +9,8 @@ Thứ tự:
      `domain.approval.conflict_type` với B15; chuỗi quản lý của người quyết dựng từ bảng `users` (`manager_id`, ≤ 5 cấp, chặn
      vòng — `domain.approval.manager_chain`, Phase 4 P4);
    - phiếu không còn `pending` → `already_decided`; `clock.now() >= deadline` (Clock của APP, bằng hạn
-     là muộn) → `expired` → `record_late` + 409 (TC27).
+     là muộn) → `expired`; ticket CON mà ticket CHA đã có `final_state` → `parent_closed` (Q4 soát 12/11, V11) →
+     `record_late` + 409 (TC27); phiếu giữ `pending`.
 3. Body: `rejected` thiếu `note` → 422. `reason_code` chỉ nhận mã trong `ReasonCode` (danh sách CỐ ĐỊNH, PLAN-3e
    Q-3e-13): ô này không qua privacy guard mà nằm nguyên văn trong checkpoint → chuỗi tự do (vd mật khẩu dán nhầm)
    bị 422 `invalid_request`, không lưu gì.
@@ -87,7 +88,7 @@ INBOX_LIMIT = 50  # P5
 REQUEST_SUMMARY_MAX = 500  # P6: tickets.redacted_request[:500]
 NOT_FOUND = "not_found"
 type InboxStatus = Literal["pending", "approved", "rejected", "timeout"]
-type LateReason = Literal["expired", "already_decided"]
+type LateReason = Literal["expired", "already_decided", "parent_closed"]
 
 
 class DecisionIn(BaseModel):
@@ -254,6 +255,10 @@ async def decide(
             late = "already_decided"
         elif now >= a.deadline:
             late = "expired"
+        elif ticket is not None and ticket.parent_ticket_id is not None:
+            parent = await desk.tickets.get(ticket.parent_ticket_id)
+            if parent is not None and parent.final_state is not None:
+                late = "parent_closed"  # Q4 (soát 12/11, V11): cha đã kết thúc → không cho con chạy tiếp; phiếu giữ pending
         ticket_id, actual = a.ticket_id, (snap.values or {}).get("status")
         first_viewed_at = a.first_viewed_at
     if late is not None:
