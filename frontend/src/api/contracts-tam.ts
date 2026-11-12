@@ -169,7 +169,8 @@ export type ApprovalViewP4 = {
   ticket_id: string;
   status: ApprovalStatus;
   deadline: string;
-  requester: { role: string; department: string | null };
+  /** Q3 (12/11): + `user_id` (từ ticket, phía server), `full_name` (bảng users; chưa có dòng → null). */
+  requester: { user_id: string; full_name: string | null; role: string; department: string | null };
   request_summary: string;
   action: Record<string, unknown>;
   action_plan_hash: string;

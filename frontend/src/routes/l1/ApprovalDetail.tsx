@@ -400,6 +400,18 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
               <Block title="Người gửi">
                 <dl className="overflow-hidden rounded-group border border-line text-secondary">
                   <div className="flex justify-between gap-4 px-5 py-3">
+                    <dt>Họ tên</dt>
+                    <dd data-testid="requester-name" className="text-ink-2">
+                      {view.requester.full_name || MISSING_VALUE}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
+                    <dt>Tài khoản</dt>
+                    <dd data-testid="requester-user" className="font-mono text-ink-2">
+                      {view.requester.user_id || MISSING_VALUE}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                     <dt>Vai trò</dt>
                     <dd className="text-ink-2">{requesterRole}</dd>
                   </div>

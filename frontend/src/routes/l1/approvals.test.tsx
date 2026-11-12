@@ -138,7 +138,7 @@ function viewOf(id: string, over: Partial<ApprovalViewP4> = {}): ApprovalViewP4 
     ticket_id: `0f4e2a6c-9b1d-4c7e-8a3f-${id.padStart(12, "0")}`,
     status: "pending",
     deadline: at(20),
-    requester: { role: "employee", department: "Finance" },
+    requester: { user_id: "nv001", full_name: "Nguyễn Văn An", role: "employee", department: "Finance" },
     request_summary: "VPN báo chứng chỉ hết hạn trên máy LAP-0342.",
     action: NESTED_ACTION,
     action_plan_hash: "9f2c7e5d1b8a4c3e6f0d2a9b7c5e1f3a8d6b4c2e0f9a7b5c3d1e8f6a4b2c0e41",
@@ -1110,7 +1110,12 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
 
 // ------------------------------------------------------------------------------------------------ t81
 
-const NULL_VIEW: Partial<ApprovalViewP4> = { requester: { role: "employee", department: null }, risk: null, risk_view: null, procedure: null };
+const NULL_VIEW: Partial<ApprovalViewP4> = {
+  requester: { user_id: "nv001", full_name: null, role: "employee", department: null },
+  risk: null,
+  risk_view: null,
+  procedure: null,
+};
 
 describe("t81: phiếu có phòng ban / rủi ro / căn cứ null → '—', câu rủi ro, '(không có)'; thanh quyết định VẪN có", () => {
   // Khối "Người gửi" (khối "Người bị ảnh hưởng" cũng có dòng "Phòng ban") — tra trong khối đúng.
@@ -1146,9 +1151,27 @@ describe("t81: phiếu có phòng ban / rủi ro / căn cứ null → '—', câ
     expect(body.decision).toBe("approved");
   });
 
+  it("Q3 (12/11): khối Người gửi hiện họ tên + tài khoản người gửi; chưa có họ tên → '—'", async () => {
+    stubFetch((_method, url) => {
+      if (url === "/api/approvals/n") return json(200, viewOf("n"));
+      if (url === "/api/approvals/m") return json(200, viewOf("m", NULL_VIEW));
+      if (url.startsWith("/api/approvals?")) return inbox([listItem("n"), listItem("m")]);
+      return undefined;
+    });
+    renderAt("/approvals/n");
+    await screen.findByTestId("request-summary");
+    expect(dd("Họ tên")).toBe("Nguyễn Văn An");
+    expect(screen.getByTestId("requester-user").textContent).toBe("nv001");
+    cleanup();
+    renderAt("/approvals/m");
+    await screen.findByTestId("request-summary");
+    expect(dd("Họ tên")).toBe("—");
+    expect(screen.getByTestId("requester-user").textContent).toBe("nv001");
+  });
+
   it("vai trò người gửi rỗng (thiếu requester_context) → '—'", async () => {
     stubFetch((_method, url) => {
-      if (url === "/api/approvals/y") return json(200, viewOf("y", { requester: { role: "", department: "Finance" } }));
+      if (url === "/api/approvals/y") return json(200, viewOf("y", { requester: { user_id: "nv001", full_name: "Nguyễn Văn An", role: "", department: "Finance" } }));
       if (url.startsWith("/api/approvals?")) return inbox([listItem("y")]);
       return undefined;
     });
@@ -1603,7 +1626,7 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
     const errors = childErrors();
     stubFetch((_method, url) =>
       url === "/api/approvals/p"
-        ? json(200, viewOf("p", { status: key as ApprovalStatus, requester: { role: key, department: null }, action: { ...NESTED_ACTION, type: key } }))
+        ? json(200, viewOf("p", { status: key as ApprovalStatus, requester: { user_id: "nv001", full_name: null, role: key, department: null }, action: { ...NESTED_ACTION, type: key } }))
         : undefined,
     );
     renderAt("/approvals/p");
@@ -1618,7 +1641,7 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
 
   it("chi tiết phiếu: status + vai trò hợp lệ vẫn ra nhãn cũ", async () => {
     stubFetch((_method, url) =>
-      url === "/api/approvals/q" ? json(200, viewOf("q", { status: "approved", requester: { role: "l2", department: null } })) : undefined,
+      url === "/api/approvals/q" ? json(200, viewOf("q", { status: "approved", requester: { user_id: "l2_01", full_name: null, role: "l2", department: null } })) : undefined,
     );
     renderAt("/approvals/q");
     expect((await screen.findByTestId("approval-status")).textContent).toBe("Đã đồng ý");

@@ -37,7 +37,7 @@ export type ApprovalFixture = {
   view: ApprovalViewP4 | "plan_changed";
 };
 
-type Requester = { user_id: string; department: string | null };
+type Requester = { user_id: string; full_name: string | null; department: string | null };
 type Rule = { id: string; reason: string };
 
 type Spec = {
@@ -69,11 +69,11 @@ type Spec = {
   matched?: MatchedRule[];
 };
 
-const NV001: Requester = { user_id: "nv001", department: "Finance" }; // an.nv — LAP-0342, chứng chỉ hết hạn 3 ngày
-const NV002: Requester = { user_id: "nv002", department: "Engineering" }; // binh.tt — LAP-0417, PC-0977 chưa đăng ký
-const NV003: Requester = { user_id: "nv003", department: "Finance" }; // chau.hm (thử việc) — LAP-0501
-const NV004_NO_DEPT: Requester = { user_id: "nv004", department: null }; // dung.dv — ngữ cảnh người gửi thiếu phòng ban
-const NV005: Requester = { user_id: "nv005", department: "Sales" }; // hoa.bt — LAP-0610, chứng chỉ bị thu hồi
+const NV001: Requester = { user_id: "nv001", full_name: "Nguyễn Văn An", department: "Finance" }; // an.nv — LAP-0342, chứng chỉ hết hạn 3 ngày
+const NV002: Requester = { user_id: "nv002", full_name: "Trần Thị Bình", department: "Engineering" }; // binh.tt — LAP-0417, PC-0977 chưa đăng ký
+const NV003: Requester = { user_id: "nv003", full_name: "Hoàng Minh Châu", department: "Finance" }; // chau.hm (thử việc) — LAP-0501
+const NV004_NO_DEPT: Requester = { user_id: "nv004", full_name: null, department: null }; // dung.dv — ngữ cảnh người gửi thiếu phòng ban
+const NV005: Requester = { user_id: "nv005", full_name: "Bùi Thị Hoa", department: "Sales" }; // hoa.bt — LAP-0610, chứng chỉ bị thu hồi
 
 const R17: Rule = { id: "R17", reason: "Thiết bị chưa đăng ký" };
 const R18: Rule = { id: "R18", reason: "Ngoài giờ hành chính" };
@@ -252,7 +252,7 @@ function build(spec: Spec, base: number): ApprovalFixture {
     ticket_id,
     status: spec.status,
     deadline: meta.deadline,
-    requester: { role: "employee", department: spec.requester.department },
+    requester: { user_id: spec.requester.user_id, full_name: spec.requester.full_name, role: "employee", department: spec.requester.department },
     request_summary: spec.request,
     action,
     action_plan_hash: spec.hash,

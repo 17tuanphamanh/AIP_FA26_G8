@@ -404,7 +404,9 @@ async def test_view_contract_fake_action_keys_and_values() -> None:
         assert set(body) == VIEW_KEYS
         assert (str(body["approval_id"]), body["ticket_id"], body["status"]) == (aid, ticket, "pending")
         assert datetime.fromisoformat(body["deadline"]) == row["deadline"]
-        assert body["requester"] == {"role": rc.role, "department": rc.department}
+        sender = env.store.users.get(rc.user_id)  # Q3 (12/11): + mã + họ tên người gửi
+        assert body["requester"] == {"user_id": rc.user_id, "full_name": sender.full_name if sender else None,
+                                     "role": rc.role, "department": rc.department}  # fmt: skip
         assert body["action"] == FAKE_ACTION.model_dump(mode="json")
         assert body["action_plan_hash"] == row["action_plan_hash"] == hash_action(body["action"])
         assert body["facts"] == body["action"]["facts"]
@@ -462,7 +464,8 @@ async def test_view_requester_is_l1_role_and_department() -> None:
         assert (rc.user_id, rc.role, rc.department) == (BACKUP, "l1", "it")
         r = await _view(env, aid, await _login(env, "ha.lt"))
         assert r.status_code == 200, r.text
-        assert r.json()["requester"] == {"role": "l1", "department": "it"}
+        body = r.json()["requester"]
+        assert (body["user_id"], body["role"], body["department"]) == (BACKUP, "l1", "it")  # Q3 (12/11): + user_id, full_name
 
 
 # ---- F6: người bị tác động + khối rủi ro + response_model ----

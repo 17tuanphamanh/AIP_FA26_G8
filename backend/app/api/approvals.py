@@ -114,6 +114,11 @@ class InboxItem(BaseModel):
 
 
 class RequesterView(BaseModel):
+    """Người GỬI yêu cầu. Q3 (soát 12/11, agent 13 V3): + `user_id` (từ ticket, phía server) và `full_name` (bảng `users`; chưa có
+    dòng → null) để người duyệt biết AI gửi — nhất là khi người bị tác động khác người gửi. `role`/`department`: bản chụp B1 (B15 §4)."""
+
+    user_id: str
+    full_name: str | None
     role: str
     department: str | None
 
@@ -348,9 +353,12 @@ async def view_approval(
     if meta is not None:
         procedure = ProcedureRef(doc_id=meta.procedure_doc, title=await desk.approvals.procedure_title(meta.procedure_doc))
     rc = _as_json(values.get("requester_context")) or {}
+    requester_id = ticket.requester_id if ticket else str(rc.get("user_id") or "")
+    sender = await desk.users.get_user(requester_id) if requester_id else None  # lỗi đọc nổi lên như `_affected`
+    requester = RequesterView(user_id=requester_id, full_name=sender.full_name if sender else None,
+                              role=str(rc.get("role") or ""), department=rc.get("department"))  # fmt: skip
     return ApprovalView(
-        approval_id=a.approval_id, ticket_id=a.ticket_id, status=a.status, deadline=a.deadline,
-        requester=RequesterView(role=str(rc.get("role") or ""), department=rc.get("department")),
+        approval_id=a.approval_id, ticket_id=a.ticket_id, status=a.status, deadline=a.deadline, requester=requester,
         request_summary=(ticket.redacted_request if ticket else "")[:REQUEST_SUMMARY_MAX],
         action=action.model_dump(mode="json"), action_plan_hash=a.action_plan_hash, risk=_as_json(values.get("risk")),
         facts=dict(action.facts), role_as=role or "viewer", procedure=procedure, affected=affected, risk_view=risk_view,

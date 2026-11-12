@@ -1320,8 +1320,16 @@ export interface components {
                 [key: string]: components["schemas"]["RatioCell"] | null;
             };
         };
-        /** RequesterView */
+        /**
+         * RequesterView
+         * @description Người GỬI yêu cầu. Q3 (soát 12/11, agent 13 V3): + `user_id` (từ ticket, phía server) và `full_name` (bảng `users`; chưa có
+         *     dòng → null) để người duyệt biết AI gửi — nhất là khi người bị tác động khác người gửi. `role`/`department`: bản chụp B1 (B15 §4).
+         */
         RequesterView: {
+            /** User Id */
+            user_id: string;
+            /** Full Name */
+            full_name: string | null;
             /** Role */
             role: string;
             /** Department */

@@ -139,6 +139,7 @@ export type ApprovalViewOk = [
   Expect<Same<ApprovalAffected, S["AffectedView"]>>,
   Expect<Same<ApprovalManagerRef, S["ManagerRef"]>>,
   Expect<Same<ApprovalRiskView, S["RiskView"]>>,
+  Expect<Mutual<ApprovalViewP4["requester"], ApprovalGen["requester"]>>, // Q3 (12/11): + user_id, full_name
   Expect<Mutual<ApprovalViewP4["affected"], ApprovalGen["affected"]>>,
   Expect<Mutual<ApprovalViewP4["risk_view"], ApprovalGen["risk_view"]>>,
   Expect<Mutual<ApprovalViewP4["role_as"], ApprovalGen["role_as"]>>,
