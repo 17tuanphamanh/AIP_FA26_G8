@@ -1,10 +1,10 @@
 ---
 doc_id: KB-GEN-013
-version: 1
+version: 2
 request_type: general
 doc_type: troubleshooting
 owner: l1_lead
-updated_at: 2026-11-09
+updated_at: 2026-11-12
 sensitivity: internal
 enabled: true
 title: "Windows Update: máy đòi khởi động lại hoặc cập nhật bị treo"
@@ -20,7 +20,7 @@ Bộ phận IT cho máy tính công ty tự tải các bản cập nhật Window
 - Khi Windows báo "Restart required" (cần khởi động lại), hãy sắp xếp khởi động lại sớm.
 - Máy để quá lâu không cập nhật có thể bị hạn chế kết nối vào hệ thống nội bộ.
 
-Bản cập nhật Windows khác với cập nhật phiên bản phần mềm như Zoom hay Microsoft Office. Cập nhật phần mềm đã cài xem tài liệu riêng về cập nhật phần mềm.
+Bản cập nhật Windows khác với cập nhật phiên bản phần mềm như Zoom hay Microsoft Office. Cập nhật phần mềm đã cài xem bài "Cập nhật phiên bản phần mềm đã cài".
 
 ## Cập nhật Windows mà không ảnh hưởng công việc
 

@@ -1,10 +1,10 @@
 ---
 doc_id: KB-VPN-003
-version: 2
+version: 3
 request_type: vpn
 doc_type: troubleshooting
 owner: it_mgr01
-updated_at: 2026-09-27
+updated_at: 2026-11-12
 sensitivity: internal
 enabled: true
 title: Xử lý lỗi VPN 809 trên Windows
@@ -40,4 +40,4 @@ Nếu đã đổi mạng và đổi sang SSTP mà vẫn gặp lỗi 809, làm ti
 
 Liên hệ bộ phận IT (máy lẻ 1234) hoặc tạo yêu cầu trên trợ lý IT khi đã làm đủ 6 bước mà vẫn gặp lỗi 809, hoặc khi lỗi xuất hiện trên nhiều máy trong cùng văn phòng (có thể máy chủ đang gặp sự cố). Khi liên hệ, ghi rõ: mã lỗi 809, mạng bạn đang dùng (nhà, văn phòng, mạng công cộng), giao thức đã thử (IKEv2, SSTP) và các bước đã làm. Thông tin này giúp IT xử lý nhanh mà không phải hỏi lại.
 
-Các mã lỗi VPN khác như 789, 812 hoặc 691 có cách xử lý khác, xem tài liệu riêng về các mã lỗi đó.
+Các mã lỗi VPN khác như 789, 812 hoặc 691 có cách xử lý khác: khi báo IT, ghi rõ mã lỗi để kỹ thuật viên hướng dẫn đúng cách.

@@ -47,3 +47,27 @@ def test_luat_kiem_bat_duoc_cau_cu() -> None:
            "3. Nếu đã nhập mật khẩu, đổi mật khẩu tài khoản công ty càng sớm càng tốt theo tài liệu tự đặt lại mật khẩu.")  # fmt: skip
     [sec] = [s for s in _sections(old) if LEAK.search(s)]
     assert [s for s in _sentences(sec) if SELF.search(s) and not NEG.search(s)]
+
+
+# ---- K2 (soát 12/11, agent 08 F-L4, F-L7) ---------------------------------------------------------------------------------------
+
+
+def test_kb_khong_tro_toi_tai_lieu_khong_co() -> None:
+    """KB-VPN-003 từng bảo "xem tài liệu riêng về các mã lỗi" 789/812/691 — bài đó (KB-VPN-008) chưa soạn. Mọi mã bài nhắc tới phải tồn
+    tại, và không còn câu trỏ tới "tài liệu riêng" không nêu mã."""
+    ids = {p.stem for p in KB.rglob("KB-*.md")}
+    texts = {p: p.read_text(encoding="utf-8") for p in KB.rglob("*.md")}
+    missing = sorted({(p.name, m) for p, t in texts.items() for m in re.findall(r"KB-[A-Z]{2,4}-\d{3}", t) if m not in ids})
+    assert missing == []
+    assert [p.name for p, t in texts.items() if re.search(r"xem tài liệu riêng", t, re.IGNORECASE)] == []
+
+
+def test_vi_du_ten_mien_thu_khop_seed() -> None:
+    """KB-GEN-008 lấy tên miền thư công ty làm dấu hiệu nhận thư thật → phải là tên miền email của người dùng trong seed mock."""
+    import json
+
+    seed = json.loads((KB.parent / "mock_services" / "seed.json").read_text(encoding="utf-8"))
+    domains = {u["email"].rsplit("@", 1)[1] for u in seed["users"] if u.get("email")}
+    text = (KB / "general" / "KB-GEN-008.md").read_text(encoding="utf-8")
+    assert "congty-abc.vn" not in text
+    assert any(d in text for d in domains), domains

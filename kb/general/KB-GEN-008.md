@@ -1,6 +1,6 @@
 ---
 doc_id: KB-GEN-008
-version: 2
+version: 3
 request_type: general
 doc_type: policy
 owner: it_mgr01
@@ -17,7 +17,7 @@ tags: [general, email lừa đảo, phishing, thư giả mạo, bảo mật, an 
 Email lừa đảo (phishing, thư giả mạo) là thư giả danh người quen, cấp trên, bộ phận IT, ngân hàng hoặc đối tác để lừa bạn bấm vào liên kết, mở tệp đính kèm hoặc cung cấp thông tin. Các dấu hiệu thường gặp:
 
 - Thúc giục gấp: "tài khoản sẽ bị khóa trong hôm nay", "cần chuyển khoản ngay", "xác nhận trước khi hết hạn".
-- Địa chỉ người gửi lạ hoặc gần giống địa chỉ thật, ví dụ sai một chữ cái trong tên miền congty-abc.vn.
+- Địa chỉ người gửi lạ hoặc gần giống địa chỉ thật, ví dụ sai một chữ cái trong tên miền demo-corp.local.
 - Liên kết trong thư dẫn tới trang web không phải của công ty. Rê chuột lên liên kết (không bấm) để xem địa chỉ thật hiện ở góc dưới cửa sổ.
 - Tệp đính kèm lạ, nhất là tệp nén, tệp có đuôi lạ, hoặc tệp Office yêu cầu "Enable content".
 - Yêu cầu cung cấp mật khẩu, mã xác minh hoặc thông tin cá nhân.
