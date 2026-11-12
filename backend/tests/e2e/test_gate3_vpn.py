@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 import pytest
+from app.db.escalations import WRITE_DOUBT_REASONS
 from app.domain.messages import device_not_found_question
 from app.domain.states import (
     S_CLARIFYING,
@@ -36,6 +37,7 @@ from app.domain.states import (
 from app.guard.privacy import NOTICE_SECRET
 from app.llm.providers.scripted import Reply, Step
 from app.settings import get_escalation_templates
+from sqlalchemy import create_engine, text
 from tests.e2e.gate3_env import (
     admin,
     api,
@@ -83,8 +85,22 @@ class Stack:
     mock: MockServer
 
 
+def _close_open_write_doubt(pg: PgUrls) -> None:
+    """D-88 (2): B17 chặn ghi khi người gửi còn ca E7 "có thể đã ghi" MỞ cùng intent. DB e2e dùng chung cả phiên, cùng `an.nv`
+    + vpn → ca E7 của h15/h15b/h16 chặn mọi test sau. Trước mỗi test: đóng các ca đó như L2 đã kiểm hệ thống đích."""
+    engine = create_engine(pg.role("app_rw"))
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE escalations SET closed_at = now(), close_result = 'completed' "
+                              "WHERE closed_at IS NULL AND exit_code = 'E7' AND reason_detail = ANY(:r)"),
+                         {"r": list(WRITE_DOUBT_REASONS)})  # fmt: skip
+    finally:
+        engine.dispose()
+
+
 @pytest.fixture
 def stack(migrated: PgUrls, qdrant_url: str, kb: None, mock_server: MockServer, reset: None) -> Stack:
+    _close_open_write_doubt(migrated)
     return Stack(migrated, qdrant_url, mock_server)
 
 
@@ -397,6 +413,28 @@ async def test_h15b_worker_recover_after_write_e7_single_write(stack: Stack) -> 
     assert MAY_HAVE_WRITTEN in handoff["why_escalated"], handoff
     assert await calls(stack.mock, RENEW) == 1
     assert await calls(stack.mock) == 1
+
+
+async def test_h15c_second_request_while_e7_open_e5_no_second_write(stack: Stack) -> None:
+    """D-88 (2): ca trước E7 `exec_interrupted` (lệnh gia hạn CÓ THỂ đã tới đích) còn mở → cùng người xin lại cùng intent →
+    B17 dừng E5 `recheck_failed` (`prior_write_unconfirmed`) TRƯỚC mọi lời gọi ghi. Mock reset về seed (bộ đếm = 0) giữa hai
+    ticket để ticket 2 đi đúng đường của ticket 1 (R20 → B17)."""
+    async with gate3(stack.pg, stack.qdrant_url, stack.mock, clock=at_ict(10), scripts=vpn_scripts()) as p:
+        t, turn = await _crash_mid_b17(stack, p)
+        async with api(p) as a:
+            await a.app.state.desk.runner.recover(t, turn)
+        await admin(stack.mock, "reset")
+        async with api(p) as a:
+            t2 = await a.create(AN, TC02)
+            v = await a.view(t2, AN)
+            values = await a.state(t2)
+    assert (await escalation(p.rw, t))[:2] == ("E7", "exec_interrupted")
+    assert (v["final_state"], v["exit_code"]) == (S_ESCALATED, "E5")
+    assert (await escalation(p.rw, t2))[:2] == ("E5", "recheck_failed")
+    detail = await audit_detail(p.rw, t2, "B17", "recheck_failed")
+    assert (detail["recheck"], detail["prior_ticket_id"], detail["write_calls"]) == ("prior_write_unconfirmed", t, 0)
+    assert t in values["escalation_note"]
+    assert await calls(stack.mock) == 0
 
 
 async def test_h16_write_fault_500_e7_exec_failed_no_revoke_four_part_note(stack: Stack) -> None:
