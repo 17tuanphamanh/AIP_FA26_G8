@@ -18,6 +18,7 @@ lỗi). `TurnBudgetExceeded` luôn ném (không thành `ToolResult.error`): node
 """
 
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -170,8 +171,8 @@ class ToolRegistry:
         # Span "tool:<name>" thật (bảng spans) làm ở Phase 2 (P1 mục 9); tạm ghi log một dòng.
         log.info(
             "tool:%s step=%s attempts=%d empty=%s error=%s ms=%.0f",
-            spec.name, step, result.attempts, result.empty, result.error, seconds * 1000,
-        )  # fmt: skip
+            spec.name, step, result.attempts, result.empty, error_label(result.error), seconds * 1000,
+        )  # fmt: skip  — E11 soát 12/11: chỉ NHÃN lỗi, không chữ/URL của hệ thống ngoài
 
 
 def _validated(model: type[BaseModel], data: Any, what: str) -> BaseModel:
@@ -184,6 +185,22 @@ def _validated(model: type[BaseModel], data: Any, what: str) -> BaseModel:
         problems = sorted({(".".join(map(str, err["loc"])), err["type"])
                            for err in e.errors(include_url=False, include_input=False)})  # fmt: skip
     raise ToolContractError(f"{what}: {problems}") from None
+
+
+_CLOSED_ERRORS = frozenset({"circuit_open", "turn_budget_exceeded"})
+_ERROR_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}")
+
+
+def error_label(error: str | None) -> str | None:
+    """`ToolResult.error` → nhãn cho LOG (E11 soát 12/11): tên lớp lỗi, kèm mã HTTP nếu có; mã đóng giữ nguyên; dáng lạ → "other".
+    Không bao giờ trả `detail` của hệ thống đích hay `str(e)` của httpx (có thể mang URL chứa giá trị slot)."""
+    if error is None or error in _CLOSED_ERRORS:
+        return error
+    name, _, rest = error.partition(":")
+    if not _ERROR_NAME.fullmatch(name):
+        return "other"
+    code = rest.split()[0] if name == "HTTPStatusError" and rest.split() else ""
+    return f"{name}: {code}" if code.isdigit() and len(code) == 3 else name
 
 
 def _detail(response: httpx.Response) -> str:
