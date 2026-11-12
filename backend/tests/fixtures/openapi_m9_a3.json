@@ -11,6 +11,20 @@
         ],
         "parameters": [
           {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "real",
+                "all"
+              ],
+              "type": "string",
+              "default": "real",
+              "title": "Source"
+            }
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,
@@ -124,6 +138,20 @@
           }
         ],
         "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "real",
+                "all"
+              ],
+              "type": "string",
+              "default": "real",
+              "title": "Source"
+            }
+          },
           {
             "name": "from",
             "in": "query",
@@ -457,6 +485,14 @@
             "format": "date-time",
             "title": "To"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "real",
+              "all"
+            ],
+            "title": "Source"
+          },
           "unavailable": {
             "items": {
               "type": "string"
@@ -472,6 +508,7 @@
         "required": [
           "from",
           "to",
+          "source",
           "unavailable",
           "metrics"
         ],
@@ -804,6 +841,14 @@
             "format": "date-time",
             "title": "To"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "real",
+              "all"
+            ],
+            "title": "Source"
+          },
           "unavailable": {
             "items": {
               "type": "string"
@@ -831,6 +876,7 @@
         "required": [
           "from",
           "to",
+          "source",
           "unavailable",
           "scope",
           "min_sample",
@@ -1037,6 +1083,14 @@
             "format": "date-time",
             "title": "To"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "real",
+              "all"
+            ],
+            "title": "Source"
+          },
           "unavailable": {
             "items": {
               "type": "string"
@@ -1072,6 +1126,7 @@
         "required": [
           "from",
           "to",
+          "source",
           "unavailable",
           "scope",
           "min_sample",

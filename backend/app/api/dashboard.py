@@ -13,6 +13,9 @@ thay vì 401/403) → engine monitor (thiếu DSN → 503 `monitor_unavailable`,
   FastAPI lọc IM LẶNG khoá không có trong `response_model` — thêm chỉ số mà quên model thì response mất khoá không ai biết;
   ở đây dựng model lỗi to (test hai chiều tập trường = `BUSINESS_METRICS` / `OWN_KEYS` / `AI_METRICS`).
 - `from`/`to` trả lại ở UTC.
+- Nguồn ticket (B1, 12/11): `?source=real` (mặc định) chỉ đếm ticket thật; `?source=all` gồm cả `sim` (chạy dữ liệu thử) và
+  `eval` (EVAL_MODE). Thân trả lại `source`. Lọc đặt bằng `queries.common.only_sources` quanh hàm gom; định nghĩa chỉ số
+  không đổi. Luật cảnh báo và tab So sánh không qua đây (tab So sánh có `source` real|sim riêng).
 - Số đếm (D13): `metrics` giữ nguyên; business thêm `min_sample` (= `MIN_SAMPLE`, giao diện hiện "chưa đủ dữ liệu" khi mẫu
   nhỏ hơn). all: `counts` — `{num, den}` của tỉ lệ đơn, weighted chỉ `den` + `{num, den, weight}` theo nhóm N3 (khoá thiếu
   / pending → null). own: `sample` = #lá own trong cửa sổ (3 khoá own là số đếm, không có tử/mẫu).
@@ -34,6 +37,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from app.api.errors import InvalidRequest
 from app.auth.deps import deny, require
 from app.auth.models import Principal
+from app.db.models import TICKET_SOURCES
 from app.monitor.db import read_snapshot
 from app.monitor.queries.ai import DayCost, ai_metrics
 from app.monitor.queries.business import (
@@ -46,6 +50,7 @@ from app.monitor.queries.business import (
     WeightedRate,
     business_metrics,
 )
+from app.monitor.queries.common import only_sources
 
 router = APIRouter()
 
@@ -57,6 +62,8 @@ WINDOW_MAX = timedelta(days=90)
 FROM, TO = "query.from", "query.to"
 
 type Scope = Literal["all", "own"]
+DashSource = Literal["real", "all"]  # gán thường (không `type`): OpenAPI inline enum, không thêm schema
+SOURCE_SETS: dict[str, tuple[str, ...]] = {"real": ("real",), "all": TICKET_SOURCES}
 
 
 class ErrorDetail(BaseModel):
@@ -176,6 +183,7 @@ class AiMetrics(_Metrics):
 class _Dashboard(BaseModel):
     frm: datetime = Field(alias="from")
     to: datetime
+    source: DashSource
     unavailable: list[str]
 
 
@@ -210,12 +218,17 @@ async def dashboard_business(
     request: Request,
     scope: Annotated[tuple[Scope, Principal], Depends(business_scope)],
     raw: Annotated[tuple[datetime | None, datetime | None], Depends(window)],
+    source: Annotated[DashSource, Query()] = "real",
 ) -> Any:
     kind, p = scope
     frm, to = resolve_window(*raw, now=_now(request))
-    async with read_snapshot(request.app.state.engines) as conn:
-        got = await business_metrics(conn, frm, to, approver_id=None if kind == "all" else p.user_id)
-    body = {"from": frm, "to": to, "unavailable": list(got.unavailable), "scope": kind, "min_sample": MIN_SAMPLE}
+    with only_sources(SOURCE_SETS[source]):
+        async with read_snapshot(request.app.state.engines) as conn:
+            got = await business_metrics(conn, frm, to, approver_id=None if kind == "all" else p.user_id)
+    body = {
+        "from": frm, "to": to, "source": source, "unavailable": list(got.unavailable), "scope": kind,
+        "min_sample": MIN_SAMPLE,
+    }  # fmt: skip
     if kind == "all":
         counts = BusinessAllCounts.model_validate({key: got.counts.get(key) for key in COUNTED_KEYS})
         return BusinessAll.model_validate({**body, "metrics": BusinessAllMetrics(**got.values), "counts": counts})
@@ -227,10 +240,12 @@ async def dashboard_ai(
     request: Request,
     _: Annotated[Principal, Depends(require("dashboard:read:all"))],
     raw: Annotated[tuple[datetime | None, datetime | None], Depends(window)],
+    source: Annotated[DashSource, Query()] = "real",
 ) -> AiDashboard:
     frm, to = resolve_window(*raw, now=_now(request))
-    async with read_snapshot(request.app.state.engines) as conn:
-        got = await ai_metrics(conn, frm, to)
+    with only_sources(SOURCE_SETS[source]):
+        async with read_snapshot(request.app.state.engines) as conn:
+            got = await ai_metrics(conn, frm, to)
     return AiDashboard.model_validate(
-        {"from": frm, "to": to, "unavailable": list(got.unavailable), "metrics": AiMetrics(**got.values)}
+        {"from": frm, "to": to, "source": source, "unavailable": list(got.unavailable), "metrics": AiMetrics(**got.values)}
     )

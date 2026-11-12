@@ -110,8 +110,9 @@ export type BusinessDashboardOk = [
 
 type AiMetricsGen = S["AiMetrics"];
 export type AiDashboardOk = [
-  Expect<Same<AiDashboard, S["AiDashboard"]>>,
-  Expect<Mutual<AiDashboard, Ok200<operations["dashboard_ai_api_dashboard_ai_get"]>>>,
+  // B1: `source` tuỳ chọn ở kiểu viết tay (backend trước B1 không gửi) → so bản bắt buộc với openapi.
+  Expect<Same<Required<AiDashboard>, S["AiDashboard"]>>,
+  Expect<Mutual<Required<AiDashboard>, Ok200<operations["dashboard_ai_api_dashboard_ai_get"]>>>,
   Expect<Same<AiMetrics, AiMetricsGen>>,
   Expect<Mutual<AiMetrics["cost_per_day"], AiMetricsGen["cost_per_day"]>>,
   Expect<Same<DayCost, S["DayCost"]>>,

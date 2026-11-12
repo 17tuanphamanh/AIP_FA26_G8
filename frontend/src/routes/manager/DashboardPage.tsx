@@ -6,11 +6,11 @@ import { Forbidden } from "../Forbidden.tsx";
 import { AiDashboardView } from "./AiDashboard.tsx";
 import { OpenAlertsBlock } from "./Alerts.tsx";
 import { BusinessKpis, BusinessSections, E3Section } from "./BusinessDashboard.tsx";
-import { DASHBOARD_MISSING_TITLE, WINDOW_INVALID_TEXT } from "./metrics.ts";
+import { DASH_SOURCES, DASHBOARD_MISSING_TITLE, sourceViewText, WINDOW_INVALID_TEXT } from "./metrics.ts";
 import { LoadError, MissingPanel } from "./panels.tsx";
 import { aiQuery, businessQuery, DEFAULT_RANGE, RANGES, type RangeKey, strategiesQuery, vnDateTime } from "./range.ts";
 import { StrategyCompareTab } from "./StrategyCompare.tsx";
-import type { StrategySource } from "../../api/types.ts";
+import type { DashboardSource, StrategySource } from "../../api/types.ts";
 
 // B4MgrDashboard — trang đầu của Trưởng BP IT (`dashboard:read:all`, 12b Q-fe-8). Tab "Nghiệp vụ | AI | So sánh phương án"
 // trong CÙNG trang (F5 P1; N-PA P3 — tab thứ 3 dùng chung khoảng thời gian, route chưa có → khối báo TRONG tab, giữ hàng tab). Route thật M9 A3 (không còn MSW). Backend cũ chưa có route → 404 "Not Found" → "Tổng quan có từ M9 (chặng A3)"
@@ -30,8 +30,10 @@ export function DashboardPage() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
   const [tab, setTab] = useState<Tab>("business");
-  const business = useQuery({ ...businessQuery(range), enabled: tab === "business" });
-  const ai = useQuery({ ...aiQuery(range), enabled: tab === "ai" });
+  // B1: nguồn ticket của Nghiệp vụ / AI (mặc định chỉ ticket thật). Tab So sánh có ô nguồn real|sim riêng.
+  const [dashSource, setDashSource] = useState<DashboardSource>("real");
+  const business = useQuery({ ...businessQuery(range, dashSource), enabled: tab === "business" });
+  const ai = useQuery({ ...aiQuery(range, dashSource), enabled: tab === "ai" });
   const [source, setSource] = useState<StrategySource>("real");
   const strategies = useQuery({ ...strategiesQuery(range, source), enabled: tab === "strategies" });
   const active = tab === "business" ? business : tab === "ai" ? ai : strategies;
@@ -40,6 +42,7 @@ export function DashboardPage() {
   // Route chưa có: Nghiệp vụ / AI → cả trang báo chưa có (như cũ); So sánh phương án → báo trong tab, giữ hàng tab.
   const missing = tab !== "strategies" && routeMissing(active.error);
   const shown = active.isError ? null : (active.data ?? null);
+  const viewing = tab !== "strategies" && shown && "source" in shown ? sourceViewText(shown.source as DashboardSource | undefined) : null;
 
   function reload() {
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -56,6 +59,11 @@ export function DashboardPage() {
               ? `Từ ${vnDateTime(shown.from)} đến ${vnDateTime(shown.to)} (giờ Việt Nam) · chỉ tính yêu cầu lá đã kết thúc.`
               : "Giờ Việt Nam · chỉ tính yêu cầu lá đã kết thúc."}
           </p>
+          {viewing ? (
+            <p data-testid="dashboard-source" className="text-ink-2">
+              {viewing}
+            </p>
+          ) : null}
         </div>
         {missing ? null : <Segmented label="Khoảng thời gian" options={RANGES} value={range} onChange={setRange} />}
       </div>
@@ -66,6 +74,9 @@ export function DashboardPage() {
         <>
           <div className="flex items-center gap-3 max-lg:flex-wrap">
             <Segmented label="Loại số liệu" options={TABS} value={tab} onChange={setTab} />
+            {tab === "strategies" ? null : (
+              <Segmented label="Nguồn ticket" options={DASH_SOURCES} value={dashSource} onChange={setDashSource} />
+            )}
             <button
               type="button"
               onClick={reload}

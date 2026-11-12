@@ -1,7 +1,7 @@
 // Hàm thuần cho Tổng quan + Cảnh báo (F5 P3, P6). Không gọi mạng, không đọc đồng hồ.
 // Chỉ số (ke-hoach-m9-monitor.md §4.3 [Chốt]): "chưa có nguồn" (tên trong `unavailable`) ≠ "đã đo, không có ca" (null)
 // ≠ "đã đo, bằng 0" (0). KHÔNG BAO GIỜ hiện 0 thay cho null/unavailable — 0 là sai sự thật và che lỗ hổng.
-import type { AlertItem, RatioCountTam } from "../../api/types.ts";
+import type { AlertItem, DashboardSource, RatioCountTam } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import { BEN_QUYET_DINH, KHAC } from "../../lib/nhan.ts";
 import { vnDate } from "./range.ts";
@@ -106,6 +106,19 @@ export const DECIDED_BY_LABEL: Readonly<Record<string, string>> = BEN_QUYET_DINH
 
 /** B3 (soát 12/11, agent 20 L4): mẫu số chỉ gồm lá ĐÃ KẾT THÚC — ca tự làm xong nhưng người dùng chưa xác nhận chưa được tính. */
 export const AUTOMATION_PENDING_NOTE = "chỉ tính khi người dùng bấm “Đã ổn” hoặc sau 48 giờ không phản hồi";
+
+/** B1 (12/11): nguồn ticket của tab Nghiệp vụ/AI. Mặc định chỉ ticket thật; "Gồm dữ liệu thử" thêm `sim` (chạy dữ liệu thử) và `eval`. */
+export const DASH_SOURCES: readonly { key: DashboardSource; label: string }[] = [
+  { key: "real", label: "Ticket thật" },
+  { key: "all", label: "Gồm dữ liệu thử" },
+];
+
+/** Dòng "Đang xem" theo `source` backend TRẢ VỀ (không theo ô đang chọn); thân không có `source` (backend trước B1) → null. */
+export function sourceViewText(source: DashboardSource | undefined): string | null {
+  if (source === "real") return "Đang xem: ticket thật (không gồm dữ liệu thử sim/eval).";
+  if (source === "all") return "Đang xem: ticket thật và dữ liệu thử (sim/eval).";
+  return null;
+}
 
 /** Lý do E1 (backend monitor/metrics.py E1_REASONS + "other") [Suy luận nhãn]; khoá lạ → hiện nguyên. */
 export const E1_LABEL: Record<string, string> = {

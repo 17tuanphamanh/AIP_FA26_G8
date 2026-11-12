@@ -307,7 +307,13 @@ export type BusinessCountsTam = {
 };
 // TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
 /** `min_sample`/`counts` tuỳ chọn: backend trước D13 không gửi → màn hiện như cũ (không "(a/b)"). */
-export type BusinessCountedTam = BusinessDashboard & { min_sample?: number; counts?: BusinessCountsTam };
+export type BusinessCountedTam = BusinessDashboard & { min_sample?: number; counts?: BusinessCountsTam; source?: DashboardSource };
+/**
+ * B1 (12/11): nguồn ticket của tab Nghiệp vụ/AI — `real` (mặc định của backend) chỉ ticket thật; `all` gồm cả `sim` (chạy dữ
+ * liệu thử) và `eval`. Thân trả lại `source`; TUỲ CHỌN ở kiểu viết tay (backend trước B1 không gửi và không lọc) — schema.check
+ * so bản `Required` với openapi. Có mặt mà khác nguồn đã gửi → 502 (api/dashboard.ts).
+ */
+export type DashboardSource = "real" | "all";
 // TẠM tới khi chạy gen:api: gộp vào kiểu chính + thêm soát hai chiều ở schema.check.ts
 /** Khung giờ của `GET /api/alerts` — lọc `window_start` trong `[from, to)`. */
 export type AlertsWindowTam = { from: string; to: string };
@@ -330,7 +336,7 @@ export type AiMetrics = {
   multi_intent_first_stop_to_reply_s: number | null;
   multi_intent_messages_per_turn: number | null;
 };
-export type AiDashboard = { from: string; to: string; unavailable: string[]; metrics: AiMetrics };
+export type AiDashboard = { from: string; to: string; source?: DashboardSource; unavailable: string[]; metrics: AiMetrics };
 
 // ---------------------------------------------------------------- Route ĐÃ CÓ — T20b (nhiều ý, D-31; viết tay tới khi gen:api)
 

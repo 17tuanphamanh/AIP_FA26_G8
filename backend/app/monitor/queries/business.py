@@ -34,11 +34,15 @@ from app.monitor.metrics import (
     is_pending,
 )
 from app.monitor.queries.common import DONE as _DONE
-from app.monitor.queries.common import LEAF_WINDOW as _LEAF_WINDOW
+from app.monitor.queries.common import LEAF_SOURCE
+from app.monitor.queries.common import LEAF_WINDOW as _WINDOW
+from app.monitor.queries.common import leaf_params as _params
 from app.monitor.queries.common import ratio as _ratio
 from app.monitor.queries.common import scalar_row as _scalar_row
-from app.monitor.queries.common import window_params as _params
 from app.monitor.views import V_DECISIONS, V_LEAF
+
+# B1: cửa sổ lá + nguồn ticket (`common.only_sources`; không đặt → đủ 3 nguồn như trước). Tham số qua `_params` = `leaf_params`.
+_LEAF_WINDOW = f"{_WINDOW} AND {LEAF_SOURCE}"
 
 BUSINESS_METRICS: tuple[str, ...] = (
     "automation_rate", "escalation_rate_raw", "escalation_rate_weighted", "deflection_rate",

@@ -5,7 +5,7 @@
 // routes/manager/range.ts. Thân sai hình dạng → 502 `invalid_dashboard_body`: không dựng màn từ dữ liệu không rõ.
 import { ApiError } from "./errors.ts";
 import { api } from "./http.ts";
-import type { AiDashboard, BusinessCountedTam, StrategiesDashboard, StrategySource } from "./types.ts";
+import type { AiDashboard, BusinessCountedTam, DashboardSource, StrategiesDashboard, StrategySource } from "./types.ts";
 
 export type DashboardWindow = { from: string; to: string };
 export type DashboardKind = "business" | "ai";
@@ -86,25 +86,32 @@ function framed(body: unknown, shapes: Record<string, Shape>): body is { metrics
   return Object.entries(shapes).every(([name, ok]) => metrics[name] === undefined || ok(metrics[name]));
 }
 
+/** B1: `source` trong thân CÓ MẶT thì phải trùng nguồn đã gửi (khác → 502, không hiện số của nguồn khác); THIẾU (backend
+ * trước B1) → qua, màn không ghi "Đang xem". */
+const sourceOk = (body: unknown, sent: DashboardSource) => {
+  const got = (body as { source?: unknown }).source;
+  return got === undefined || got === sent;
+};
+
 /** `scope` phải là "all" (`dashboard:read:all`): "own" (L1) có tập chỉ số khác — màn này không dựng từ nó. */
-export function parseBusiness(body: unknown): BusinessCountedTam {
-  if (!framed(body, BUSINESS_SHAPES) || (body as { scope?: unknown }).scope !== "all" || !countsOk(body)) {
+export function parseBusiness(body: unknown, sent: DashboardSource = "real"): BusinessCountedTam {
+  if (!framed(body, BUSINESS_SHAPES) || (body as { scope?: unknown }).scope !== "all" || !countsOk(body) || !sourceOk(body, sent)) {
     throw new ApiError(502, "invalid_dashboard_body");
   }
   return body as unknown as BusinessCountedTam;
 }
 
-export function parseAi(body: unknown): AiDashboard {
-  if (!framed(body, AI_SHAPES)) throw new ApiError(502, "invalid_dashboard_body");
+export function parseAi(body: unknown, sent: DashboardSource = "real"): AiDashboard {
+  if (!framed(body, AI_SHAPES) || !sourceOk(body, sent)) throw new ApiError(502, "invalid_dashboard_body");
   return body as unknown as AiDashboard;
 }
 
-export async function getBusinessDashboard(w: DashboardWindow): Promise<BusinessCountedTam> {
-  return parseBusiness((await api.request<unknown>(`/api/dashboard/business?${query(w)}`)).data);
+export async function getBusinessDashboard(w: DashboardWindow, source: DashboardSource = "real"): Promise<BusinessCountedTam> {
+  return parseBusiness((await api.request<unknown>(`/api/dashboard/business?${query(w)}&source=${source}`)).data, source);
 }
 
-export async function getAiDashboard(w: DashboardWindow): Promise<AiDashboard> {
-  return parseAi((await api.request<unknown>(`/api/dashboard/ai?${query(w)}`)).data);
+export async function getAiDashboard(w: DashboardWindow, source: DashboardSource = "real"): Promise<AiDashboard> {
+  return parseAi((await api.request<unknown>(`/api/dashboard/ai?${query(w)}&source=${source}`)).data, source);
 }
 
 // ---------------------------------------------------------------- So sánh phương án (route CHƯA CÓ — N-PA §2)

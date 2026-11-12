@@ -628,6 +628,11 @@ export interface components {
              * Format: date-time
              */
             to: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "real" | "all";
             /** Unavailable */
             unavailable: string[];
             metrics: components["schemas"]["AiMetrics"];
@@ -782,6 +787,11 @@ export interface components {
              * Format: date-time
              */
             to: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "real" | "all";
             /** Unavailable */
             unavailable: string[];
             /**
@@ -838,6 +848,11 @@ export interface components {
              * Format: date-time
              */
             to: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "real" | "all";
             /** Unavailable */
             unavailable: string[];
             /**
@@ -1683,6 +1698,7 @@ export interface operations {
     dashboard_business_api_dashboard_business_get: {
         parameters: {
             query?: {
+                source?: "real" | "all";
                 from?: string | null;
                 to?: string | null;
             };
@@ -1742,6 +1758,7 @@ export interface operations {
     dashboard_ai_api_dashboard_ai_get: {
         parameters: {
             query?: {
+                source?: "real" | "all";
                 from?: string | null;
                 to?: string | null;
             };

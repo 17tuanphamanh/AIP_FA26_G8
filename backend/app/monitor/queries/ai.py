@@ -25,7 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.monitor.metrics import E2_LLM_REASONS, is_pending
 from app.monitor.queries.common import (
     DONE,
+    LEAF_SOURCE,
     LEAF_WINDOW,
+    leaf_params,
     ratio,
     scalar_row,
     window_params,
@@ -39,6 +41,8 @@ AI_METRICS: tuple[str, ...] = (
     "intent_model_version", "multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn",
 )  # fmt: skip
 P95 = 0.95
+# B1: cửa sổ lá + nguồn ticket (`common.only_sources`; không đặt → đủ 3 nguồn như trước). Tham số: `leaf_params`.
+_LEAF_WINDOW = f"{LEAF_WINDOW} AND {LEAF_SOURCE}"
 # Cộng 36 giờ vào 00:00 của một ngày luôn rơi vào ngày KẾ (ngày dài 23–25 giờ khi có DST) → `day_start` ra mốc kế.
 _NEXT_DAY = timedelta(hours=36)
 
@@ -84,8 +88,8 @@ async def tokens_per_ticket(conn: AsyncConnection, frm: datetime, to: datetime) 
     row = await scalar_row(conn, (
         "SELECT count(DISTINCT t.ticket_id), "
         "COALESCE(sum(COALESCE(c.tokens_in, 0) + COALESCE(c.tokens_out, 0)), 0) "
-        f"{_leaf_calls()} WHERE {LEAF_WINDOW} AND {DONE}"
-    ), window_params(frm, to))  # fmt: skip
+        f"{_leaf_calls()} WHERE {_LEAF_WINDOW} AND {DONE}"
+    ), leaf_params(frm, to))  # fmt: skip
     leaves, tokens = int(row[0]), int(row[1])
     return None if leaves == 0 else tokens / leaves
 
@@ -97,14 +101,14 @@ async def cost_per_day(
     gọi → 0.0 (đã đo, không chi). Ngày đầu/cuối bị cắt theo `frm`/`to`.
     Là chi phí của ticket lá (qua `v_leaf`), khác tổng chi toàn bảng `llm_calls` mà luật 14 đọc; hai số lệch nhau từ
     Phase 5 (Q-M9-A2-3)."""
-    params = window_params(frm, to)
+    params = leaf_params(frm, to)
     starts = day_starts(frm, to, tz)
     params |= {"starts": starts, "ends": [*starts[1:], day_start(starts[-1] + _NEXT_DAY, tz)]}
     rows = (await conn.execute(text(
         "SELECT b.d, COALESCE(sum(x.cost_usd), 0) "
         "FROM unnest(CAST(:starts AS timestamptz[]), CAST(:ends AS timestamptz[])) AS b(d, e) "
         f"LEFT JOIN (SELECT c.created_at, c.cost_usd {_leaf_calls()} "
-        "WHERE c.created_at >= :frm AND c.created_at < :to) x ON x.created_at >= b.d AND x.created_at < b.e "
+        f"WHERE c.created_at >= :frm AND c.created_at < :to AND {LEAF_SOURCE}) x ON x.created_at >= b.d AND x.created_at < b.e "
         "GROUP BY b.d ORDER BY b.d"
     ), params)).all()  # fmt: skip
     return tuple(DayCost(day_start=d.astimezone(UTC), cost_usd=float(cost)) for d, cost in rows)
@@ -116,15 +120,15 @@ async def latency_p95_by_step(conn: AsyncConnection, frm: datetime, to: datetime
     rows = (await conn.execute(text(
         f"SELECT s.name, percentile_cont({P95}) WITHIN GROUP (ORDER BY s.duration_ms) "
         f"FROM spans s JOIN turns u ON u.turn_id = s.turn_id JOIN {V_LEAF} t ON t.ticket_id = u.ticket_id "
-        f"WHERE {LEAF_WINDOW} AND s.span_type = 'node' AND s.duration_ms IS NOT NULL GROUP BY s.name ORDER BY s.name"
-    ), window_params(frm, to))).all()  # fmt: skip
+        f"WHERE {_LEAF_WINDOW} AND s.span_type = 'node' AND s.duration_ms IS NOT NULL GROUP BY s.name ORDER BY s.name"
+    ), leaf_params(frm, to))).all()  # fmt: skip
     return {name: float(p95) for name, p95 in rows}
 
 
 async def _call_rate(conn: AsyncConnection, frm: datetime, to: datetime, *, num: str, den: str) -> float | None:
     row = await scalar_row(conn, (
-        f"SELECT count(*) FILTER (WHERE {den}), count(*) FILTER (WHERE {num}) {_leaf_calls()} WHERE {LEAF_WINDOW}"
-    ), window_params(frm, to))  # fmt: skip
+        f"SELECT count(*) FILTER (WHERE {den}), count(*) FILTER (WHERE {num}) {_leaf_calls()} WHERE {_LEAF_WINDOW}"
+    ), leaf_params(frm, to))  # fmt: skip
     return ratio(row[1], row[0])
 
 
@@ -148,9 +152,9 @@ async def fallback_rate(conn: AsyncConnection, frm: datetime, to: datetime) -> f
 
 async def e2_llm_count(conn: AsyncConnection, frm: datetime, to: datetime) -> int:
     """#lá `exit_code = 'E2'` có dòng escalation E2 mới nhất mang `reason_detail` thuộc `E2_LLM_REASONS`."""
-    params = {**window_params(frm, to), "reasons": list(E2_LLM_REASONS)}
+    params = {**leaf_params(frm, to), "reasons": list(E2_LLM_REASONS)}
     row = await scalar_row(conn, (
-        f"SELECT count(*) FROM {V_LEAF} t WHERE {LEAF_WINDOW} AND t.exit_code = 'E2' AND "
+        f"SELECT count(*) FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND t.exit_code = 'E2' AND "
         "(SELECT e.reason_detail FROM escalations e WHERE e.ticket_id = t.ticket_id AND e.exit_code = 'E2' "
         "ORDER BY e.created_at DESC, e.escalation_id DESC LIMIT 1) = ANY(CAST(:reasons AS text[]))"
     ), params)  # fmt: skip
@@ -160,7 +164,7 @@ async def e2_llm_count(conn: AsyncConnection, frm: datetime, to: datetime) -> in
 async def e9_count(conn: AsyncConnection, frm: datetime, to: datetime) -> int:
     """#lá `exit_code = 'E9'`."""
     row = await scalar_row(
-        conn, f"SELECT count(*) FROM {V_LEAF} t WHERE {LEAF_WINDOW} AND t.exit_code = 'E9'", window_params(frm, to)
+        conn, f"SELECT count(*) FROM {V_LEAF} t WHERE {_LEAF_WINDOW} AND t.exit_code = 'E9'", leaf_params(frm, to)
     )
     return int(row[0])
 
@@ -170,8 +174,8 @@ async def _audit_rate(
 ) -> float | None:
     row = await scalar_row(conn, (
         f"SELECT count(*) FILTER (WHERE {den}), count(*) FILTER (WHERE {num}) "
-        f"FROM audit_logs a JOIN {V_LEAF} t ON t.ticket_id = a.ticket_id WHERE {LEAF_WINDOW} AND {steps}"
-    ), window_params(frm, to))  # fmt: skip
+        f"FROM audit_logs a JOIN {V_LEAF} t ON t.ticket_id = a.ticket_id WHERE {_LEAF_WINDOW} AND {steps}"
+    ), leaf_params(frm, to))  # fmt: skip
     return ratio(row[1], row[0])
 
 
@@ -203,9 +207,9 @@ async def intent_model_version(conn: AsyncConnection, frm: datetime, to: datetim
     vẫn ready, không vào `unavailable` (Q-M9-A2-1)."""
     result = await conn.execute(text(
         f"SELECT a.detail->>'model_version' FROM audit_logs a JOIN {V_LEAF} t ON t.ticket_id = a.ticket_id "
-        f"WHERE {LEAF_WINDOW} AND {_B3_STEPS} AND a.detail->>'model_version' IS NOT NULL "
+        f"WHERE {_LEAF_WINDOW} AND {_B3_STEPS} AND a.detail->>'model_version' IS NOT NULL "
         "ORDER BY a.created_at DESC, a.log_id DESC LIMIT 1"
-    ), window_params(frm, to))  # fmt: skip
+    ), leaf_params(frm, to))  # fmt: skip
     value: str | None = result.scalar_one_or_none()
     return value
 
@@ -218,7 +222,7 @@ async def multi_intent_first_stop_to_reply_s(conn: AsyncConnection, frm: datetim
       vòng đó (notice chưa gửi hoặc gửi ở vòng sau không tính, kể cả khi tạo sớm hơn).
     - Cha chưa gửi vòng nào → không tính; không còn cha nào → None."""
     row = await scalar_row(conn, (
-        f"WITH par AS (SELECT t.parent_ticket_id AS p FROM {V_LEAF} t WHERE t.parent_ticket_id IS NOT NULL "
+        f"WITH par AS (SELECT t.parent_ticket_id AS p FROM {V_LEAF} t WHERE t.parent_ticket_id IS NOT NULL AND {LEAF_SOURCE} "
         "GROUP BY t.parent_ticket_id HAVING min(t.created_at) >= :frm AND min(t.created_at) < :to), "
         f"r1 AS (SELECT n.parent_ticket_id AS p, min(n.delivered_round) AS r FROM {V_CHILD_NOTICES} n "
         "JOIN par ON par.p = n.parent_ticket_id WHERE n.delivered_round IS NOT NULL GROUP BY n.parent_ticket_id), "
@@ -226,7 +230,7 @@ async def multi_intent_first_stop_to_reply_s(conn: AsyncConnection, frm: datetim
         f"FROM {V_CHILD_NOTICES} n JOIN r1 ON r1.p = n.parent_ticket_id AND n.delivered_round = r1.r "
         "GROUP BY n.parent_ticket_id) "
         "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY per.s) FROM per"
-    ), window_params(frm, to))  # fmt: skip
+    ), leaf_params(frm, to))  # fmt: skip
     return None if row[0] is None else float(row[0])
 
 

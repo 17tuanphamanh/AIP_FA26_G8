@@ -510,19 +510,24 @@ def test_leaf_n3_single_source() -> None:
 # ---- D13: số đếm tử/mẫu ----------------------------------------------------------------------------------------------
 # Không DB: conn giả nhận diện câu SQL theo mảnh đặc trưng (`_d13_route`), trả dòng tính tay, ghi lại thứ tự câu đã chạy.
 
-D13_RATIO_SQL = {  # nguyên văn SQL của 3 hàm tỉ lệ TRƯỚC D13 — tách mảnh FILTER ra hằng không được đổi một ký tự nào
+# Nguyên văn SQL của 3 hàm tỉ lệ TRƯỚC D13 — tách mảnh FILTER ra hằng không được đổi một ký tự nào. B1 (12/11): thêm DUY NHẤT
+# điều kiện nguồn `t.source = ANY(...)` ngay sau cửa sổ (không đặt nguồn → đủ 3 nguồn = số như cũ); định nghĩa tử/mẫu giữ nguyên.
+D13_RATIO_SQL = {
     "automation_rate": (
         "SELECT count(*), count(*) FILTER (WHERE t.final_state = 'S_RESOLVED' AND NOT EXISTS (SELECT 1 FROM approvals a "
         "WHERE a.ticket_id = t.ticket_id) AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.ticket_id = t.ticket_id)) "
-        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.final_state IS NOT NULL"
+        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.source = ANY(CAST(:sources AS text[])) "
+        "AND t.final_state IS NOT NULL"
     ),
     "escalation_rate_raw": (
         "SELECT count(*), count(*) FILTER (WHERE t.exit_code IS NOT NULL) "
-        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.final_state IS NOT NULL"
+        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.source = ANY(CAST(:sources AS text[])) "
+        "AND t.final_state IS NOT NULL"
     ),
     "deflection_rate": (
         "SELECT count(*), count(*) FILTER (WHERE t.resolution_path = 'deflected') "
-        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.final_state IS NOT NULL"
+        "FROM v_leaf t WHERE t.created_at >= :frm AND t.created_at < :to AND t.source = ANY(CAST(:sources AS text[])) "
+        "AND t.final_state IS NOT NULL"
     ),
 }
 D13_FILTERS = {"automation_rate": "_AUTOMATED", "escalation_rate_raw": "_ESCALATED", "deflection_rate": "_DEFLECTED"}
@@ -605,7 +610,7 @@ async def test_ratio_counts_shares_filters() -> None:
     conn = D13Conn(HAND_3)
     await business.ratio_counts(conn, FRM, TO)  # type: ignore[arg-type]
     [(name, counts_sql, params)] = conn.calls
-    assert name == "ratio_counts" and params == {"frm": FRM, "to": TO}
+    assert name == "ratio_counts" and params == {"frm": FRM, "to": TO, "sources": ["real", "sim", "eval"]}
     for key, const in D13_FILTERS.items():
         piece = getattr(business, const)
         assert f"FILTER (WHERE {piece})" in D13_RATIO_SQL[key], key
@@ -711,7 +716,7 @@ async def test_business_metrics_own_sample() -> None:
     assert m.sample == 5
     [(_, sql, params)] = [c for c in conn.calls if c[0] == "own_sample"]
     assert sql == f"SELECT count(*) FROM {views.V_LEAF} t WHERE {business._LEAF_WINDOW} AND {business._OWN}"
-    assert params == {"frm": FRM, "to": TO, "approver_id": "u-l1"}
+    assert params == {"frm": FRM, "to": TO, "sources": ["real", "sim", "eval"], "approver_id": "u-l1"}
     assert "ratio_counts" not in conn.names()
 
 

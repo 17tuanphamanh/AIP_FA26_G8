@@ -8,7 +8,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { listAlerts } from "../../api/alerts.ts";
 import { type DashboardWindow, getAiDashboard, getBusinessDashboard, getStrategiesDashboard } from "../../api/dashboard.ts";
-import type { StrategySource } from "../../api/types.ts";
+import type { DashboardSource, StrategySource } from "../../api/types.ts";
 
 export type RangeKey = "today" | "7d" | "30d";
 export const RANGES: readonly { key: RangeKey; label: string; days: number }[] = [
@@ -62,10 +62,10 @@ export function vnDate(iso: string): string {
 
 // Khoá truy vấn theo khoảng (KHÔNG theo giờ): đổi khoảng → khoá mới, không mượn số của khoảng khác. Không
 // `placeholderData` — lỗi thì màn không có số nào để hiện.
-export const businessQuery = (range: RangeKey) =>
+export const businessQuery = (range: RangeKey, source: DashboardSource = "real") =>
   queryOptions({
-    queryKey: ["dashboard", "business", range] as const,
-    queryFn: () => getBusinessDashboard(rangeWindow(range, Date.now())),
+    queryKey: ["dashboard", "business", range, source] as const,
+    queryFn: () => getBusinessDashboard(rangeWindow(range, Date.now()), source),
     retry: false,
   });
 
@@ -77,10 +77,10 @@ export const openAlertsQuery = (range: RangeKey) =>
     retry: false,
   });
 
-export const aiQuery = (range: RangeKey) =>
+export const aiQuery = (range: RangeKey, source: DashboardSource = "real") =>
   queryOptions({
-    queryKey: ["dashboard", "ai", range] as const,
-    queryFn: () => getAiDashboard(rangeWindow(range, Date.now())),
+    queryKey: ["dashboard", "ai", range, source] as const,
+    queryFn: () => getAiDashboard(rangeWindow(range, Date.now()), source),
     retry: false,
   });
 
