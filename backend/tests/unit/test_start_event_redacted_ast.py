@@ -33,6 +33,10 @@ TYPED_KEYS = frozenset({"kind", "approver_id", "at", "reason_code", "view_durati
 # `approval_role(...)` import thẳng từ `app.auth.authz` (Literal "primary" | "backup" do server tính).
 ROLE_KEYS = frozenset({"decided_as"})
 ROLE_FUNC, ROLE_MODULE = "approval_role", "app.auth.authz"
+# D-92 (soát 12/11): `screen_hit` = MÃ mẫu injection API thấy trên bản gốc — chỉ nhận khi giá trị là lời gọi TRỰC TIẾP `hit_payload(...)`
+# (import thẳng từ `app.guard.screen`, chỉ trả {"id", "group"} của `ScreenHit`) hoặc `hit_payload(...) if … else None`.
+HIT_KEYS = frozenset({"screen_hit"})
+HIT_FUNC, HIT_MODULE = "hit_payload", "app.guard.screen"
 REDACT_MODULE = "app.api.desk"
 REDACT_FUNCS = frozenset({"redact", "redact_reply_items"})  # T20b Q-T20b-8 = A
 EXPECTED_USER_TEXT = {
@@ -213,9 +217,25 @@ def check_call(tree: ast.Module, fn: Fn, outer: list[Fn], call: ast.Call) -> tup
             continue
         if key.value in ROLE_KEYS and isinstance(value, ast.Name) and value.id in roles:
             continue
+        if key.value in HIT_KEYS and _is_hit_form(tree, value):
+            continue
         used = {n.id for n in ast.walk(value) if isinstance(n, ast.Name)}
         (free if used and used <= clean else bad).append(key.value)
     return free, bad
+
+
+def _is_hit_form(tree: ast.Module, value: ast.expr) -> bool:
+    imported = any(
+        isinstance(n, ast.ImportFrom) and n.module == HIT_MODULE and any(a.name == HIT_FUNC and a.asname is None for a in n.names)
+        for n in ast.walk(tree)
+    )  # fmt: skip
+
+    def call(e: ast.expr) -> bool:
+        return isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id == HIT_FUNC
+
+    if isinstance(value, ast.IfExp):
+        return imported and call(value.body) and isinstance(value.orelse, ast.Constant) and value.orelse.value is None
+    return imported and call(value)
 
 
 def _sink_references(tree: ast.Module) -> list[str]:
@@ -407,3 +427,31 @@ def test_n1_self_check_redact_reply_items_trusted_only_as_redact(name: str) -> N
     head, body, expected = _REPLY[name]
     results = scan(ast.parse(head + f"\nasync def route(d, q, r, body):\n    {body}\n"))
     assert ("route" in {fn for fn, _ in results}) and expected in [v for (fn, _), v in results.items() if fn == "route"]
+
+
+# ---- D-92: `screen_hit` chỉ nhận lời gọi trực tiếp `hit_payload(...)` ----------------------------------------------------------
+
+_HIT_HEAD = "from app.guard.screen import hit_payload\nfrom app.graph.late_event import start_event\n"
+
+
+@pytest.mark.parametrize(
+    ("body", "bad"),
+    [
+        ('await start_event(r, "t", "S", {"kind": "user_reply", "screen_hit": hit_payload(m(body.text))})', []),
+        ('await start_event(r, "t", "S", {"kind": "x", "screen_hit": hit_payload(m(body.note)) if body.note else None})', []),
+        ('await start_event(r, "t", "S", {"kind": "user_reply", "screen_hit": body.text})', ["screen_hit"]),
+        ('await start_event(r, "t", "S", {"kind": "x", "screen_hit": hit_payload(m(body.note)) if body.note else body.note})',
+         ["screen_hit"]),
+        ('h = hit_payload(m(body.text))\n    await start_event(r, "t", "S", {"kind": "x", "screen_hit": h})', ["screen_hit"]),
+    ],
+)  # fmt: skip
+def test_d92_screen_hit_chi_nhan_hit_payload(body: str, bad: list[str]) -> None:
+    tree = ast.parse(_HIT_HEAD + f"async def f(r, body, m):\n    {body}\n")
+    found = scan(tree)
+    assert [b for _, (_, b) in found.items()] == [bad]
+
+
+def test_d92_screen_hit_ham_cung_ten_khong_import_tu_guard_bi_chan() -> None:
+    tree = ast.parse("from app.graph.late_event import start_event\nfrom x import hit_payload\n"
+                     'async def f(r, body):\n    await start_event(r, "t", "S", {"screen_hit": hit_payload(body.text)})\n')  # fmt: skip
+    assert [b for _, (_, b) in scan(tree).items()] == [["screen_hit"]]

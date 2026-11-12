@@ -76,7 +76,9 @@ from app.domain.override import (
 from app.domain.session_memory import can_follow, prior_label_hint
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW
 from app.graph.late_event import InvalidReply, Validate, start_event
+from app.guard import injection
 from app.guard.normalize import l0
+from app.guard.screen import hit_payload
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -268,6 +270,7 @@ async def create_ticket(
         if src is None or not can_follow(src, p.user_id):
             raise HTTPException(404, NOT_FOUND)  # không có / người khác / ticket con / chưa kết thúc: GIỐNG HỆT nhau
         hint = prior_label_hint(src)
+    raw_hit = hit_payload(injection.match(body.text))  # D-92: so mẫu trên bản GỐC trước khi che — chỉ mã mẫu đi tiếp, không chữ
     redacted = await redact(desk, request, body.text)
     user = await desk.users.get_user(p.user_id)
     strategy, source = await snapshot_for_new_ticket(request, desk)  # D-67: chụp chiến lược M5 + nguồn lúc TẠO
@@ -282,7 +285,8 @@ async def create_ticket(
         security_events=[(SECRET_EVENT, {"count": redacted.secrets_found})] if redacted.secrets_found else (),
     )  # fmt: skip
     desk.background.spawn(
-        desk.runner.run_new(ticket_id, turn_id, follows_ticket_id=body.follows_ticket_id, prior_hint=hint), name=f"submit:{ticket_id}"
+        desk.runner.run_new(ticket_id, turn_id, follows_ticket_id=body.follows_ticket_id, prior_hint=hint, raw_screen_hit=raw_hit),
+        name=f"submit:{ticket_id}",
     )  # fmt: skip
     return _accepted(ticket_id, S_NEW, redacted.notices)
 
@@ -389,7 +393,8 @@ async def post_message(
     redacted = await redact(desk, request, body.text)
     await record_redacted(desk, request, p, ticket_id, redacted)
     await start_event(
-        desk.runner, ticket_id, S_CLARIFYING, {"kind": "user_reply", "text": redacted.text},
+        desk.runner, ticket_id, S_CLARIFYING,
+        {"kind": "user_reply", "text": redacted.text, "screen_hit": hit_payload(injection.match(body.text))},  # D-92: chỉ mã mẫu
         spawn=desk.background.spawn, session_id=p.session_id,
     )  # fmt: skip
     return _accepted(ticket_id, S_CLARIFYING, redacted.notices)
@@ -409,7 +414,8 @@ async def confirm(
     if redacted is not None:
         await record_redacted(desk, request, p, ticket_id, redacted)
     note = redacted.text if redacted is not None else None
-    event = {"kind": "confirmed" if body.confirmed else "unresolved", "note": note}
+    event = {"kind": "confirmed" if body.confirmed else "unresolved", "note": note,
+             "screen_hit": hit_payload(injection.match(body.note)) if body.note else None}  # D-92  # fmt: skip
     await start_event(
         desk.runner, ticket_id, S_CONFIRMING, event, spawn=desk.background.spawn,
         session_id=p.session_id,

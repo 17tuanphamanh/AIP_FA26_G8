@@ -168,6 +168,8 @@ class TicketState(TypedDict, total=False):
     # cuối; không chữ người dùng/bot, không slot) → `b03_classify.label_hint`. Không node nào khác đọc (test AST).
     follows_ticket_id: str | None
     prior_hint: str | None
+    # D-92 (soát 12/11): API so mẫu injection trên bản GỐC (trước khi che) — CHỈ mã mẫu + nhóm (`{"id", "group"}`), không chữ; B2 đọc.
+    raw_screen_hit: dict[str, str] | None
     # bộ đếm [Chốt]
     clarification_turns: int
     reasoning_loops: int

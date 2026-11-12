@@ -1111,12 +1111,12 @@ class GraphHarness:
 
     async def submit_as(
         self, ticket_id: str, session_id: str | None, text: str = "yêu cầu",
-        parent_ticket_id: str | None = None,
+        parent_ticket_id: str | None = None, raw_screen_hit: Mapping[str, str] | None = None,
     ) -> Any:  # fmt: skip
-        """Như API (2b-3): có dòng `tickets` trước, rồi mới submit graph."""
+        """Như API (2b-3): có dòng `tickets` trước, rồi mới submit graph. `raw_screen_hit` (D-92): mã mẫu API thấy trên bản gốc."""
         self.tickets.register(ticket_id, self.clock.now())
         return await self.runner.submit(
             ticket_id, session_id=session_id, redacted_request=text,
-            parent_ticket_id=parent_ticket_id,
+            parent_ticket_id=parent_ticket_id, raw_screen_hit=raw_screen_hit,
         )  # fmt: skip
 

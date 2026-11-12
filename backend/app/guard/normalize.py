@@ -29,9 +29,30 @@ def l0(text: str) -> str:
     return normalize(_strip_format_chars(unicodedata.normalize("NFKC", normalize(text))))
 
 
+# E1 soát 12/11 (agent 15 L3, D-92): đồng hình theo HÌNH (unidecode chuyển theo CÁCH ĐỌC: Kirin "р" → "r", "у" → "u", "х" → "kh") — áp
+# TRƯỚC unidecode trong bản "khung xương"; leetspeak là bản riêng (không đè bản gốc: mã máy/số liệu không bị đổi ở các bản kia).
+_SHAPE = str.maketrans({
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j", "ѕ": "s", "һ": "h", "ԁ": "d", "ԛ": "q",
+    "ԝ": "w", "к": "k", "м": "m", "т": "t", "в": "b", "н": "h", "ё": "e", "ї": "i",
+    "α": "a", "ο": "o", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "η": "n", "μ": "u", "β": "b",
+    "ω": "w", "γ": "y", "ς": "s", "σ": "o",
+})  # fmt: skip
+_LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"})
+_NON_WORD = re.compile(r"[\W_]+")  # dấu câu, markdown, emoji, U+2800, "_", "." chen giữa từ → một dấu cách
+
+
 def match_forms(text: str) -> tuple[str, ...]:
-    """Các bản để so mẫu L2 (đã qua `l0`, chữ thường), không trùng lặp, bản có dấu giữ dòng đứng đầu."""
+    """Các bản để so mẫu L2 (đã qua `l0`, chữ thường), không trùng lặp, bản có dấu giữ dòng đứng đầu. E1 (D-92) thêm: bản "khung xương"
+    (đồng hình theo hình → unidecode), bản bỏ ký tự không phải chữ/số (gộp thành một dấu cách) và bản leetspeak của khung xương."""
     accented = l0(text).lower()
     folded = unidecode(accented).lower()
-    forms = (accented, folded, _NEWLINES.sub(" ", accented), _NEWLINES.sub(" ", folded))
+    shaped = accented.translate(_SHAPE)
+    skeleton = unidecode(shaped).lower()
+    # bỏ ký tự không phải chữ/số TRƯỚC unidecode (unidecode xoá emoji → hai từ dính liền)
+    words = " ".join(unidecode(_NON_WORD.sub(" ", shaped)).lower().split())
+    leet = " ".join(_NON_WORD.sub(" ", unidecode(shaped.translate(_LEET)).lower()).split())
+    # ký hiệu (emoji, U+2800 "chữ nổi trống", …) chen GIỮA từ: xoá hẳn (không thay bằng dấu cách)
+    joined = " ".join(unidecode("".join(ch for ch in shaped if not unicodedata.category(ch).startswith("S"))).lower().split())
+    forms = (accented, folded, _NEWLINES.sub(" ", accented), _NEWLINES.sub(" ", folded), skeleton, _NEWLINES.sub(" ", skeleton),
+             words, leet, joined)  # fmt: skip
     return tuple(dict.fromkeys(forms))

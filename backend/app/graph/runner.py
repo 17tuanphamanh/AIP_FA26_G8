@@ -183,6 +183,7 @@ class Runner:
         session_id: str | None,
         redacted_request: str,
         parent_ticket_id: str | None = None,
+        raw_screen_hit: Mapping[str, str] | None = None,
     ) -> RunResult:
         async with self._lock.hold(ticket_id):
             turn_id = new_turn_id()
@@ -194,13 +195,16 @@ class Runner:
                 ticket_id, turn_id, session_id=session_id, redacted_request=redacted_request,
                 parent_ticket_id=parent_ticket_id,
             )  # fmt: skip
+            if raw_screen_hit is not None:  # D-92
+                initial = {**initial, "raw_screen_hit": dict(raw_screen_hit)}
             result = await self._run(ticket_id, turn_id, initial)
         await self.after_turn(result)
         return result
 
     async def run_new(
-        self, ticket_id: str, turn_id: str, *, follows_ticket_id: str | None = None, prior_hint: str | None = None
-    ) -> RunResult | None:
+        self, ticket_id: str, turn_id: str, *, follows_ticket_id: str | None = None, prior_hint: str | None = None,
+        raw_screen_hit: Mapping[str, str] | None = None,
+    ) -> RunResult | None:  # fmt: skip
         """Lượt `submit` mà API đã ghi (`tickets.create`): chạy state đầu dựng từ dòng `tickets`.
         Lượt đã đóng, hoặc thread đã có state → None (worker đã phục hồi / lượt đang dở).
         Q13b (D-79): `follows_ticket_id` + `prior_hint` (một dòng gợi ý dựng từ cột đóng của ticket cũ — `session_memory`) vào state đầu;
@@ -213,10 +217,12 @@ class Runner:
                 return None  # không chạy lại từ START đè lên thread đang có
             if await self._unstarted_child(ticket_id, turn_id):
                 return None
-            result = await self._run_initial(
-                ticket_id, turn_id, extra={"follows_ticket_id": follows_ticket_id, "prior_hint": prior_hint}
-                if follows_ticket_id is not None else None,
-            )  # fmt: skip
+            extra: dict[str, Any] = {}
+            if follows_ticket_id is not None:
+                extra |= {"follows_ticket_id": follows_ticket_id, "prior_hint": prior_hint}
+            if raw_screen_hit is not None:  # D-92: chỉ mã mẫu + nhóm; worker phục hồi lượt chết trước checkpoint đầu thì mất (B2 vẫn so bản che)
+                extra["raw_screen_hit"] = dict(raw_screen_hit)
+            result = await self._run_initial(ticket_id, turn_id, extra=extra or None)
         await self.after_turn(result)
         return result
 

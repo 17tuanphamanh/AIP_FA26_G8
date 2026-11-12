@@ -16,13 +16,13 @@ from app.graph import effects
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
-from app.guard.screen import screen_reply
+from app.guard.screen import screen_event
 
 
 def make(deps: NodeDeps) -> NodeFn:
     async def clarify_wait(state: Any) -> dict[str, Any]:
         ev = interrupt({"wait": "clarify"})
-        if (hit := screen_reply(str(ev.get("text") or ""))) is not None:
+        if (hit := screen_event(str(ev.get("text") or ""), ev)) is not None:
             await effects.once(
                 state, "security_event", deps.security_events.record, "injection_detected",
                 ticket_id=state["ticket_id"], detail={"layer": "regex_reply", "pattern_id": hit.id}, step="B11",

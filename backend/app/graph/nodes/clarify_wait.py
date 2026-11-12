@@ -48,7 +48,7 @@ from app.graph import effects
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
-from app.guard.screen import screen_reply
+from app.guard.screen import screen_event
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import ExtractSlotsOut
 
@@ -59,7 +59,7 @@ def make(deps: NodeDeps) -> NodeFn:
     async def clarify_wait(state: Any) -> dict[str, Any]:
         ev = interrupt({"wait": "clarify"})
         raw = str(ev.get("text") or "")
-        if (hit := screen_reply(raw)) is not None:  # 3-Q3: trước mọi nhánh, trước khi che hay gửi LLM
+        if (hit := screen_event(raw, ev)) is not None:  # 3-Q3: trước mọi nhánh, trước khi che hay gửi LLM; D-92: cả bản gốc
             await effects.once(
                 state, "security_event", deps.security_events.record, "injection_detected",
                 ticket_id=state["ticket_id"], detail={"layer": "regex_reply", "pattern_id": hit.id}, step="B11",

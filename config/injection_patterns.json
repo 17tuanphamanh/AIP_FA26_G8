@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "B02 L2 (phase3 mục 8.4, bản đầu). Regex viết trên bản KHÔNG DẤU, chữ thường; guard/injection.py so trên 4 bản của L0 guard (có dấu / unidecode × giữ dòng / gộp dòng). Mỗi mẫu có test khớp + suýt khớp (e5). Thêm mẫu: id mới, không mẫu quá rộng (chặn nhầm ≤ 1/30 — B02 mục 13). Sửa file này là đổi hành vi agent → chạy lại test.",
+  "description": "B02 L2 (phase3 mục 8.4, bản đầu). Regex viết trên bản KHÔNG DẤU, chữ thường; guard/injection.py so trên 4 bản của L0 guard (có dấu / unidecode × giữ dòng / gộp dòng). Mỗi mẫu có test khớp + suýt khớp (e5). Thêm mẫu: id mới, không mẫu quá rộng (chặn nhầm ≤ 1/30 — B02 mục 13). Sửa file này là đổi hành vi agent → chạy lại test. E1 soát 12/11 (D-92): thêm OVR-04…09, IMP-04…07 (\"đã duyệt sẵn\"…), LEAK-03; neo SYS-01/03 cho phép tiền tố markdown; SYS-04 dạng không ngoặc.",
   "patterns": [
     {
       "id": "OVR-01",
@@ -30,12 +30,12 @@
     {
       "id": "IMP-03",
       "group": "impersonation",
-      "regex": "\\bi am (the )?(admin|administrator|root)\\b"
+      "regex": "\\bi am (the |an |a )?(admin|administrator|root|sysadmin)\\b"
     },
     {
       "id": "SYS-01",
       "group": "system_spoof",
-      "regex": "(^|\\n)\\s*(system|assistant|developer)\\s*:"
+      "regex": "(^|\\n)[\\s>*_`#\\[\\]]*(system|assistant|developer)\\s*:|\\b(assistant|system)\\s*:\\s*(da duyet|approved|duyet)"
     },
     {
       "id": "SYS-02",
@@ -46,12 +46,12 @@
     {
       "id": "SYS-03",
       "group": "system_spoof",
-      "regex": "(^|\\n)\\s*#{2,}\\s*(system|instruction|chi dan he thong)\\b"
+      "regex": "(^|\\n)[\\s>*_`\\[\\]]*#{2,}\\s*(system|instruction|chi dan he thong)\\b"
     },
     {
       "id": "SYS-04",
       "group": "system_spoof",
-      "regex": "[\"']\\s*(approved|is_approved|pre_approved|authorized|is_admin|admin_approved|approval_(status|result|state)|decision)\\s*[\"']\\s*:\\s*(true\\b|[\"']\\s*(true|yes|approved|granted|allowed)\\s*[\"'])"
+      "regex": "[\"']\\s*(approved|is_approved|pre_approved|authorized|is_admin|admin_approved|approval_(status|result|state)|decision)\\s*[\"']\\s*:\\s*(true\\b|[\"']\\s*(true|yes|approved|granted|allowed)\\s*[\"'])|\\b(approval_status|is_approved|approved)\\s*[:=]\\s*(true|approved|yes)\\b"
     },
     {
       "id": "LEAK-01",
@@ -62,6 +62,61 @@
       "id": "LEAK-02",
       "group": "prompt_leak",
       "regex": "\\b(reveal|print|repeat)\\b.{0,20}\\b(system prompt|your instructions)\\b"
+    },
+    {
+      "id": "OVR-04",
+      "group": "override",
+      "regex": "\\b(dung|thoi|ngung|ngung lai) (lam theo|tuan theo|nghe theo|lam)\\b.{0,15}\\b(huong dan|chi dan|quy tac|quy dinh|rang buoc)( he thong| an toan| cua ban)?\\b"
+    },
+    {
+      "id": "OVR-05",
+      "group": "override",
+      "regex": "\\b(huy bo|lo di|ghi de|bo het)\\b.{0,12}\\b((toan bo|moi|tat ca|cac|nhung) (chi dan|huong dan|quy tac|rang buoc|chinh sach)|(chi dan|huong dan|quy tac|rang buoc|chinh sach) (truoc do|he thong|an toan))\\b|\\bghi de (chinh sach|quy tac|policy)\\b"
+    },
+    {
+      "id": "OVR-06",
+      "group": "override",
+      "regex": "\\b(quy tac|chinh sach|rang buoc)( an toan)?\\b.{0,15}\\bkhong con (hieu luc|ap dung|tac dung)\\b"
+    },
+    {
+      "id": "OVR-07",
+      "group": "override",
+      "regex": "\\b(bo qua|skip|bypass)\\b.{0,10}\\b(buoc|qua trinh|khau)\\s+(phe duyet|duyet|xac minh danh tinh)\\b|\\b(skip|bypass)\\b.{0,10}\\b(the )?approval\\b"
+    },
+    {
+      "id": "OVR-08",
+      "group": "override",
+      "regex": "\\b(ignore|disregard)\\b.{0,10}\\b(the above|everything above|all of the above)\\b|\\boverride\\b.{0,15}\\b(your|the|all|safety)\\b.{0,15}\\b(rules?|polic(y|ies)|instructions?|guidelines?)\\b"
+    },
+    {
+      "id": "OVR-09",
+      "group": "override",
+      "regex": "\\b(new instructions?|huong dan moi|chi dan moi)\\s*:|\\b(stop following|do not follow|don'?t follow)\\b.{0,20}\\b(your|the|previous|prior)?\\s*(guidelines?|instructions?|rules?)\\b"
+    },
+    {
+      "id": "IMP-04",
+      "group": "impersonation",
+      "regex": "\\b(toi|minh|em|anh|chi)\\s+(la|dang la)\\s+(ky thuat vien|nhan vien it|nguoi (cua|ben) (phong|bo phan) it)\\b.{0,40}\\b(duoc phep|cu (dat lai|cap|lam|thuc hien)|tu cap|da kiem tra roi)"
+    },
+    {
+      "id": "IMP-05",
+      "group": "impersonation",
+      "regex": "\\bi'?m\\s+(the |an |a )?(admin|administrator|sysadmin|root)\\b|\\b(as|speaking as)\\s+(the |an |a )?(it manager|system administrator|sysadmin|administrator)\\b"
+    },
+    {
+      "id": "IMP-06",
+      "group": "impersonation",
+      "regex": "\\b(duyet san|phe duyet qua dien thoai|ma duyet\\s*[a-z]{2,4}-?\\d+|pre-?approved|approval (has been |was |is )?(already )?granted|already approved)\\b|\\b(quan ly|truong phong|sep|l1|ky thuat vien|manager|security team)\\b.{0,25}\\bda (duoc )?(duyet|phe duyet|xac nhan|cho phep)\\b.{0,40}\\b(thuc thi|cu (lam|thuc hien)|lam luon|cap luon|dat lai luon|bam thuc thi)\\b|\\bda duoc \\w{1,3} duyet\\b.{0,25}\\bthuc (thi|hien) (ngay|luon)\\b"
+    },
+    {
+      "id": "IMP-07",
+      "group": "impersonation",
+      "regex": "\\bghi chu he thong\\s*:|\\bthis is the security team\\b|\\bday la doi (an ninh|bao mat)\\b"
+    },
+    {
+      "id": "LEAK-03",
+      "group": "prompt_leak",
+      "regex": "\\b(nhac lai|lap lai) (nguyen van |chinh xac )?.{0,20}\\b(quy tac|chi dan|huong dan) (ban|duoc giao|cua ban)\\b|\\b(liet ke|cho xem|in ra)\\b.{0,15}\\b(cau hinh va prompt|system prompt|prompt ban dang dung)\\b|\\bdump\\b.{0,15}\\b(configuration|config|hidden rules)\\b|\\bwhat were you told before\\b"
     }
   ]
 }

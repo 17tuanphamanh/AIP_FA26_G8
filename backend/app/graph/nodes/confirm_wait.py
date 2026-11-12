@@ -37,7 +37,7 @@ from app.graph import effects
 from app.graph.fakes import NodeDeps
 from app.graph.goto import goto
 from app.graph.tracing import NodeFn
-from app.guard.screen import screen_reply
+from app.guard.screen import screen_event
 
 
 def can_follow_up(state: Any, *, enabled: bool) -> bool:
@@ -53,7 +53,7 @@ def can_follow_up(state: Any, *, enabled: bool) -> bool:
 def make(deps: NodeDeps) -> NodeFn:
     async def confirm_wait(state: Any) -> dict[str, Any]:
         ev = interrupt({"wait": "confirm"})
-        if (hit := screen_reply(str(ev.get("note") or ""))) is not None:
+        if (hit := screen_event(str(ev.get("note") or ""), ev)) is not None:  # D-92: cả bản gốc (API chuyển mã mẫu)
             await effects.once(
                 state, "security_event", deps.security_events.record, "injection_detected",
                 ticket_id=state["ticket_id"], detail={"layer": "regex_reply", "pattern_id": hit.id}, step="B19",

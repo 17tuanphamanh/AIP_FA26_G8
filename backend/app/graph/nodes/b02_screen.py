@@ -39,6 +39,7 @@ from app.guard import injection
 from app.guard.b2_review import after_judge, classifier_shortcut
 from app.guard.mask_words import mask_regex, replace_masks
 from app.guard.patterns import privacy_patterns
+from app.guard.screen import hit_from_payload
 from app.llm import LLMBudgetExceeded, LLMSchemaError, LLMUnavailable
 from app.llm.schemas import InjectionJudgeOut
 from app.settings import get_settings
@@ -59,6 +60,8 @@ def make(deps: NodeDeps) -> NodeFn:
         text = state["redacted_request"]
         if (hit := injection.match(text)) is not None:  # L2 (L0 bên trong)
             return await _block(state, layer_decided="regex", pattern_id=hit.id, group=hit.group)
+        if (raw := hit_from_payload(state.get("raw_screen_hit"))) is not None:  # D-92: API khớp trên bản GỐC (che đã nuốt từ khoá)
+            return await _block(state, layer_decided="regex", pattern_id=raw.id, group=raw.group, matched_on="raw")
         try:
             return await _screen(state, text)
         except TurnBudgetExceeded:  # 9.0: chưa sàng lọc xong mà lượt hết hạn — không cho qua
