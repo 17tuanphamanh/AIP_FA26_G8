@@ -21,6 +21,7 @@
 11. [Chạy đánh giá (G8)](#11-chạy-đánh-giá-g8) — ghi giờ, nới giới hạn, chuyển cache LLM giữa hai máy
 12. [Lỗi thường gặp](#12-lỗi-thường-gặp)
 13. [Lệnh khác](#13-lệnh-khác)
+14. [Trước khi quay / trước buổi demo](#14-trước-khi-quay--trước-buổi-demo)
 
 ---
 
@@ -785,3 +786,50 @@ Cách tăng RAM cho Docker:
 | `make lint` | ruff, mypy, import-linter, gitleaks (cần cài `gitleaks`) |
 | `make seed` | Nạp lại dữ liệu demo cho mock |
 | `make down` | Dừng stack, giữ dữ liệu |
+
+---
+
+## 14. Trước khi quay / trước buổi demo
+
+Gộp từ soát vận hành 12/11 (agent 10) và kiểm trực tiếp 12/11. Làm theo thứ tự, từ tối hôm trước đến 5 phút trước khi quay.
+
+**Ba quy tắc không được quên**
+
+1. **Hàng chờ L2 không còn ca E7 mở từ đợt thử** (`exec_failed`, `exec_interrupted`, `execution_interrupted`). D-88 chặn cùng người gửi
+   và cùng loại yêu cầu trong 7 ngày nếu còn ca E7 "có thể đã ghi" mở → ca demo cùng người sẽ ra E5 `recheck_failed`. Đóng các ca
+   này trên màn L2 trước khi quay.
+2. **Quay trong giờ hành chính thứ Hai–Sáu, 08:00–18:00** (R18). Ngoài giờ, VPN và một số việc khác thành ca cần duyệt. Không đổi giờ
+   máy, không sửa `weekdays` trong `config/policy.json`.
+3. **Không thử đăng nhập `dung.dv` / `em.lv` / `mai.tt` nhiều lần.** Ba tài khoản này cố ý không vào được; thử nhiều lần chạm giới hạn
+   theo IP và chặn luôn các tài khoản khác.
+
+**Tối hôm trước**
+
+| # | Việc | Kiểm |
+|---|---|---|
+| 1 | Bản chạy đúng commit đã kiểm trực tiếp. Deploy bằng `docker compose -p servicedesk …` theo lệnh đã soạn, **không** dùng `make up` trần khi chưa chắc `MODELS_DIR` (bẫy: thư mục model khác → ml-service không lên) | `git log --oneline -1` trên máy demo |
+| 2 | Đổi `mock_services/seed.json` hoặc code mock → build lại image mock (seed nằm trong image) rồi đặt lại mock | `curl -s 127.0.0.1:8100/health` |
+| 3 | Đổi bài trong `kb/` → nạp lại KB (`python -m app.rag.ingest.cli --kb-dir /srv/kb`); bài đổi chữ phải tăng `version` | ingest in `eval_status=evaluated`, Recall@5 không tụt |
+| 4 | colima đủ tài nguyên: `--memory 10`, `--cpu` ≥ 4 | `docker stats`; không container nào `OOMKilled` |
+| 5 | Dùng `RATE=loose` nếu sẽ tạo nhiều ca liên tục (429 theo tài khoản) | — |
+| 6 | Đăng nhập lại mọi vai sẽ dùng (phiên 8 giờ). `quan.tm` cần mã OTP mới mỗi lần | — |
+
+**Sáng hôm quay (≤ 10 phút trước)**
+
+| # | Việc | Kiểm |
+|---|---|---|
+| 7 | Đặt lại mock về seed: `docker compose -p servicedesk exec -T mock python -m app.seed reset` (hoặc `make seed`) — đưa mật khẩu AD, chứng chỉ, quyền, license, lỗi bơm, hộp thư về ban đầu | in `{'status': 'reset', 'users': 17, 'devices': 10}` |
+| 8 | Sức khoẻ: `docker compose -p servicedesk ps` (backend, worker, ml-service, postgres `healthy`; mock, qdrant `running`); `curl -s 127.0.0.1:8000/api/health` | `status=ok`, `failed=[]`, `kb.status=ready`, `llm` khác `spend_cap_reached`, `monitor=ok` |
+| 9 | Không còn lỗi bơm ở mock | `curl -s 127.0.0.1:8100/_admin/faults` ra `[]` |
+| 10 | LLM thật trả lời: gửi thử 1 câu hỏi KB, có hotspot dự phòng | câu trả lời có "Nguồn" |
+| 11 | Hàng chờ L2 không có ca E7 mở (quy tắc 1) | màn L2, lọc E7 |
+
+**Trong lúc quay**
+
+- Trình bày **từng câu một**. Nhiều câu cùng lúc làm hàng chờ ml-service dài, dễ ra E2.
+- **Không khởi động lại backend/worker** khi có ca đang chạy: ca treo 2–3 phút; nếu đang ở B17 thì thành E7 sang L2 (và kéo theo quy tắc 1).
+- Ca cần duyệt: tạo ngay trong lúc trình bày (hạn duyệt 30 phút).
+- Dashboard cần ≥ 20 ca kết thúc mới có số KPI; ca tự xử lý phải bấm "Đã ổn" mới vào "Tự xử lý". Không chạy sim/eval trên DB demo
+  (dashboard chưa lọc `source`).
+- Không mở trên màn hình: `docker compose config`, `docker inspect`, output `mfa enroll`, file `.env`.
+
