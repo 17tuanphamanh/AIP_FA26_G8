@@ -27,6 +27,7 @@ khẩu", "khoá tài khoản tự mở lại sau bao lâu?", "toàn bộ quyền
 """
 
 import re
+import unicodedata
 from collections.abc import Collection
 from typing import Final, Literal
 
@@ -34,15 +35,51 @@ from app.domain.target import fold
 
 type ReverseKind = Literal["lost_device", "compromised", "revoke", "lock", "negate", "cancel", "uninstall"]
 
+# Kiểm hộp đen 12/11 (subagent, 348 câu mới): chữ full-width lọt 121/121, zero-width trong từ lọt 111/121, NBSP lọt 40/121 — mẫu viết
+# cho chữ thường có dấu dựng sẵn. Chuẩn hoá trước khi dò: NFKC (gộp dấu tách rời kiểu NFD, full-width → thường, NBSP → cách), bỏ ký tự
+# không bề rộng, gộp dấu cách liền nhau (lookbehind độ dài cố định "(?<!bị )" bị né bởi hai dấu cách).
+_ZERO_WIDTH: Final = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"), None)
+_SPACES: Final = re.compile(r"[^\S\n]+")
+
+
+# API cắt chữ THÔ ở 4 000 ký tự nhưng NFKC ở l0 có thể nở ra (U+FDFA → 18 ký tự): soát bảo mật 12/11 đo chuỗi tệ nhất lọt qua API
+# ~38 000 ký tự → 0,33 s mỗi lần dò (mẫu có lookahead tới hết câu là bậc hai). Chỉ dò 8 000 ký tự đầu — gấp đôi trần API.
+_MAX_DETECT_CHARS: Final = 8_000
+
+
+def normalize_for_detect(text: str) -> str:
+    """Chuẩn hoá văn bản cho các bộ dò tất định (D-84, D-87): NFKC, bỏ zero-width, gộp dấu cách, chữ thường, cắt 8 000 ký tự."""
+    return _SPACES.sub(" ", unicodedata.normalize("NFKC", text.translate(_ZERO_WIDTH)))[:_MAX_DETECT_CHARS].lower()
+
 # Intent có hành động GHI — chỉ ở các intent này mới có nguy cơ ánh xạ ngược. it_help / out_of_scope không dựng hành động.
 WRITE_INTENTS: Final = frozenset({"vpn", "account", "access", "software"})
 
-_DEVICE = r"(?:laptop|máy tính|máy(?!\s*chủ)|điện thoại|đt|thiết bị|macbook|ipad|ổ cứng|usb|thẻ nhân viên|lap|[a-z]{2,4}-\d{3,5})"
+_DEVICE = (
+    r"(?:laptop|máy tính|máy(?!\s*chủ)|điện thoại|đt|thiết bị|macbook|ipad|iphone|smartphone|ổ cứng|usb|thẻ nhân viên|lap|"
+    r"[a-z]{2,4}-\d{3,5})"
+)
 # bỏ "may" (máy/mấy); "dt" = "đt" (điện thoại); mã máy (LAP-0610) cũng là thiết bị
-_DEVICE_FOLDED = r"(?:laptop|may tinh|dien thoai|dt|thiet bi|macbook|ipad|o cung|usb|the nhan vien|lap|[a-z]{2,4}-\d{3,5})"
+_DEVICE_FOLDED = r"(?:laptop|may tinh|dien thoai|dt|thiet bi|macbook|ipad|iphone|smartphone|o cung|usb|the nhan vien|lap|[a-z]{2,4}-\d{3,5})"
+# "Cài phần mềm theo dõi thất lạc thiết bị (Find My Device)" — chống mất, không phải báo mất (kiểm hộp đen 12/11).
+# "Em không bị mất máy, chỉ quên mật khẩu thôi" — phủ định.
+_NOT_ANTI_LOSS = r"(?<!theo dõi )(?<!chống )(?<!phòng )(?<!tìm )(?<!không )(?<!ko )(?<!chưa )(?<!không bị )(?<!ko bị )(?<!chưa bị )"
+# "phát hiện cái laptop LAP-0342 không còn trong xe nữa", "không thấy laptop đâu"
+_GONE = (
+    r"\bkhông\s+(?:còn|thấy)\s+(?:ở\s+)?(?:trong|ở|trên)\s+(?:xe|ô tô|túi|balo|ba lô|cặp|phòng|bàn|tủ|ngăn|taxi|grab|chỗ|văn phòng)\b"
+    r"|\bkhông\s+(?:còn\s+)?thấy\s+(?:\S+\s+)?đâu\b"
+)
+# Báo mất máy bằng tiếng Anh (kiểm hộp đen 12/11, LLM thật: "My laptop was stolen yesterday, pls reset my password and VPN cert" →
+# TỰ gia hạn chứng chỉ VPN cho đúng máy vừa bị trộm).
+_EN_DEVICE = r"(?:laptop|notebook|phone|iphone|smartphone|macbook|ipad|computer|pc|device|[a-z]{2,4}-\d{3,5})"
+_LOST_EN = (
+    rf"\b{_EN_DEVICE}\b[^.!?\n]{{0,30}}?\b(?:was|got|has been|have been|is|been|were)\s+(?:stolen|lost|taken|snatched)\b"
+    rf"|\b(?:lost|stolen)\s+(?:my\s+|the\s+|our\s+|a\s+)?(?:company\s+|work\s+|office\s+)?{_EN_DEVICE}\b"
+    r"(?!\s+(?:charger|bag|case|password|connection|cable))"
+    r"|\bsomeone\s+(?:stole|took|has stolen)\b"
+)
 _LOSS_VERB = (
-    r"(?:làm mất|đánh mất|bị mất|mất|thất lạc|đánh rơi|bỏ quên|để quên|bị trộm|bị ăn trộm|bị đánh cắp|bị cướp giật|bị cướp|bị giật|"
-    r"cướp giật|bị lấy mất|lấy mất|bị móc túi mất|bị móc túi)"
+    r"(?:làm mất|đánh mất|bị mất|mất|thất lạc|đánh rơi|làm rơi|rơi mất|bỏ quên|để quên|bị trộm|bị ăn trộm|bị đánh cắp|bị cướp giật|"
+    r"bị cướp|bị giật|cướp giật|bị lấy mất|lấy mất|bị móc túi mất|bị móc túi)"
 )
 _LOSS_AFTER = (
     r"(?:bị mất|đã mất|làm mất|thất lạc|bị trộm|bị ăn trộm|bị đánh cắp|bị cướp|bị giật|để quên|bỏ quên|lấy mất|bị lấy mất|"
@@ -64,18 +101,27 @@ _OBJECT = r"(?:vpn|chứng chỉ|cert|quyền|truy cập|tài khoản|tk|account
 _NOT_PAST = r"(?<!bị )(?<!đã )(?<!vừa )(?<!mới )(?<!lỡ )(?<!nhầm )"
 # Người KHÁC / hệ thống đã làm ("Sếp thu hồi quyền ghi của em", "Hệ thống tự thu hồi quyền", "Em bị IT hạ quyền") và câu có xin LẠI
 # ("… rồi cấp lại cái mới", "giờ em cần lại") — đó là xin làm thuận (soát 12/11 03:50).
-_NOT_OTHERS = r"(?<!sếp )(?<!tự )(?<!it )(?<!admin )"
+# Kiểm hộp đen 12/11: "(?<!it )" trần làm lọt câu XIN "Bạn Lan nghỉ việc từ hôm nay, IT vô hiệu hoá tài khoản giúp chị" — chỉ loại khi
+# "bị IT / bị admin" (đã xảy ra).
+_NOT_OTHERS = r"(?<!sếp )(?<!tự )(?<!bị it )(?<!bị admin )"
 _NOT_REGRANT = r"(?![^.!?\n]*\b(?:cấp lại|xin lại|cần lại|cho lại|mở lại|cấp cho em lại)\b)"
 _NOT_REGRANT_FOLDED = r"(?![^.!?\n]*\b(?:cap lai|xin lai|can lai|cho lai|mo lai)\b)"
 _REVOKE_VERB = r"(?:thu hồi|thu lại|vô hiệu hoá|vô hiệu hóa|vô hiệu|revoke|disable|deactivate|huỷ|hủy|xoá|xóa)"
-_ACTION_VERB = r"(?:mở khoá|mở khóa|gia hạn|cấp lại|cấp|cài đặt|cài|đặt lại|reset)"
+# "đổi / thay" (mật khẩu) chỉ ở bản CÓ dấu — bỏ dấu "doi" trùng "đợi" ("không muốn đợi lâu") — soát tầng hiểu yêu cầu 12/11:
+# "Em KHÔNG muốn đổi mật khẩu", trả lời "thôi đừng đổi mật khẩu nữa" lọt bộ dò.
+_ACTION_VERB = r"(?:mở khoá|mở khóa|gia hạn|cấp lại|cấp|cài đặt|cài|đặt lại|reset|đổi|thay)"
+_NEGATE_EN = (
+    r"\b(?:don[’']?t|do not|no need to|never mind|nevermind|cancel that|please stop)\b[^.!?\n]{0,25}?"
+    r"\b(?:renew|reset|unlock|install|grant|reissue|re-issue|extend|change)\b"
+)
 # Bản bỏ dấu: "huy" (huỷ) trùng TÊN người ("Nhờ cấp cho bạn Huy (nv021) quyền sửa…" — bộ đánh giá cong5) → bỏ khi có từ xưng hô đứng trước.
 _HUY_FOLDED = r"(?<!ban )(?<!anh )(?<!chi )(?<!em )(?<!cho )(?<!a )(?<!c )(?<!ten )(?<!ong )(?<!ba )huy"
 _ACTION_VERB_FOLDED = r"(?:mo khoa|gia han|cap lai|cap|cai dat|cai|dat lai|reset)"
 _NO = r"(?:không|ko|k|kh|hông|hok)"  # teencode "ko / k" (soát 12/11 03:50)
 _NO_FOLDED = r"(?:khong|ko|k|kh|hong|hok)"
 # Phủ định một việc phụ rồi vẫn xin việc khác ("Em không cần cài gì nữa, chỉ cần cấp quyền đọc") — không phải huỷ.
-_NOT_ONLY = r"(?![^.!?\n]*\bchỉ cần\b)"
+# Xét cả phần sau của tin nhắn, kể cả câu sau ("Không cần reset mk đâu a, e nhớ ra r. Chỉ cần mở khoá tk thôi").
+_NOT_ONLY = r"(?![^\n]*\bchỉ cần\b)"
 # Bổ sung 12/11 02:30 (đo trên máy demo): "Rút / Bỏ / Gỡ quyền ghi …" → bot hỏi "xem, xin mới hay gia hạn?" lặp tới E4; "Hạ quyền … xuống
 # chỉ đọc" → phiếu CẤP quyền đọc (người dùng vẫn giữ quyền ghi mà tưởng đã hạ). Chỉ khớp khi "quyền" đứng ngay sau động từ (cho chen
 # "hết / bớt / toàn bộ"). "Trả lại quyền … CHO EM" là xin cấp lại — không khớp.
@@ -110,13 +156,21 @@ _WHO_FOLDED = r"\b(?:co\s+(?:ai|nguoi)|ai do|nguoi nao do|ke nao do|ke gian)\s+(
 _MINE = r"(?:của\s+)?(?:em|mình|tôi|tớ|anh|chị)\b"
 _MINE_FOLDED = r"(?:cua\s+)?(?:em|e|minh|toi|to|anh|chi)\b"
 # Câu hỏi phòng ngừa ("để tránh bị hack", "làm sao để không bị lộ", "cài antivirus để máy khỏi dính virus") — không phải báo sự cố.
-_NOT_PREVENT = r"(?<!tránh )(?<!không )(?<!khỏi )(?<!chống )(?<!phòng )(?<!ngừa )"
+_NOT_PREVENT = r"(?<!tránh )(?<!không )(?<!khỏi )(?<!chống )(?<!phòng )(?<!ngừa )(?<!sợ )(?<!ngại )"  # "Em sợ bị hack nên muốn đổi mật khẩu"
+# Đích của "lộ / rò rỉ / gửi nhầm": cả chứng chỉ / file cấu hình VPN ("gửi nhầm file .ovpn cho khách" — kiểm hộp đen 12/11).
+_SECRET = r"(?:mật khẩu|mk|pass|password|otp|mã otp|mã xác minh|thông tin đăng nhập|chứng chỉ|cert|file\s+(?:cấu hình|\.?ovpn)|\.ovpn)"
+_SECRET_FOLDED = r"(?:mat khau|mk|pass|password|otp|ma otp|ma xac minh|thong tin dang nhap|chung chi|cert|file\s+(?:cau hinh|\.?ovpn)|\.ovpn)"
+# "tk e bị ng khác đăng nhập", "Tài khoản của em bị ai đó đăng nhập" (LLM thật 12/11: TỰ đặt lại mật khẩu AD).
+_BY_OTHER = r"(?:người khác|ng khác|người lạ|ng lạ|ai đó|ai|kẻ gian|kẻ lạ|hacker|người ta|đứa nào)"
+_BY_OTHER_FOLDED = r"(?:nguoi khac|ng khac|nguoi la|ng la|ai do|ke gian|ke la|hacker|nguoi ta)"
 _COMPROMISED = (
     # "chiếm" chỉ khi kèm quyền / tài khoản: "ổ C bị chiếm hết dung lượng" không phải sự cố an ninh
     rf"{_NOT_PREVENT}\bbị\s+(?:hack|hách|hắc|xâm nhập|xâm phạm|chiếm đoạt|chiếm quyền|chiếm\s+(?:mất\s+)?(?:tài khoản|tk|email|mail|hộp thư)|"
     r"đánh cắp|lấy cắp|lừa|login\s+(?:từ|ở|tại)|đăng nhập\s+(?:từ|ở|tại|trái phép))\b"
     r"|\b(?:tài khoản|tk|email|mail|hộp thư)\b[^.!?\n]{0,30}?\bbị\s+(?:(?:người ta|ai đó|kẻ gian|người lạ|hacker)\s+)?chiếm\b"
-    r"|\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b|\btiền chuộc\b"
+    # "Đổi mật khẩu theo yêu cầu sau đợt diễn tập phishing của công ty" không phải sự cố (kiểm hộp đen 12/11)
+    r"|(?<!diễn tập )(?<!tập huấn )(?<!đào tạo )(?<!thử nghiệm )(?<!mô phỏng )(?<!bài test )"
+    r"\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b(?!\s+(?:test|simulation|training|drill))|\btiền chuộc\b"
     r"|(?<!tránh bị )(?<!không bị )(?<!khỏi bị )\blộ\s+(?:mất\s+)?(?:mật khẩu|mk|pass|password|thông tin đăng nhập|otp|mã xác minh)\b"
     # trật tự đảo: "Mật khẩu email của em bị lộ rồi" (soát 12/11 03:50)
     r"|\b(?:mật khẩu|mk|pass|password)\b[^.!?\n]{0,50}?(?<!không )(?<!không bị )(?<!ko )(?<!ko bị )(?<!dễ )(?<!dễ bị )(?<!phải )(?<!phải bị )(?<!tránh bị )(?<!khỏi bị )\b"
@@ -133,31 +187,62 @@ _COMPROMISED = (
     r"|\b(?:mã\s+)?(?:otp|mã xác minh|mã xác thực)\s+lạ\b"
     # Máy nhiễm mã độc (KB-GEN-008: ngắt mạng, báo IT — kỹ thuật viên xử lý trực tiếp); chỉ xét khi có intent ghi, câu hỏi it_help không vào.
     rf"|{_NOT_PREVENT}\b(?:nhiễm|dính|bị)\s+(?:virus|vi rút|mã độc|malware|ransomware|trojan|mã hoá dữ liệu|mã hóa dữ liệu)\b"
-    r"|\b(?:mật khẩu|mk|pass)\s+(?:\S+\s+){0,3}?vào\s+(?:trang|web|website|link|liên kết|đường link|form)\s+(?:\S+\s+)?"
-    r"(?:lạ|giả|giả mạo|lừa đảo)\b"
+    # "nhập mật khẩu vào một trang GIỐNG trang công ty" (soát eval/KB 12/11 — KB-GEN-008 coi là lộ mật khẩu)
+    r"|\b(?:mật khẩu|mk|pass)\s+(?:\S+\s+){0,3}?vào\s+(?:một\s+|1\s+|cái\s+)?(?:trang|web|website|link|liên kết|đường link|form)\s+"
+    r"(?:\S+\s+)?(?:lạ|giả|giả mạo|lừa đảo|giống|nhái|na ná|y hệt)\b"
     # nạn nhân lừa đảo: "em lỡ điền mật khẩu rồi" (KHÔNG nhận "lỡ nhập SAI mật khẩu"), thư / trang giả mạo, tài khoản tự gửi spam
-    r"|\blỡ\s+(?:điền|nhập|đưa|cung cấp|gửi|khai|gõ|dán|share|chia sẻ|đăng)\s+(?:luôn\s+)?(?:mật khẩu|mk|pass|otp|mã otp|mã xác minh)\b"
+    r"|\blỡ\s+(?:điền|nhập|đưa|cung cấp|gửi|khai|gõ|dán|share|chia sẻ|đăng|đọc|nói|báo)\s+(?:luôn\s+)?(?:mật khẩu|mk|pass|otp|mã otp|mã xác minh)\b"
+    # "Em vô tình gửi mật khẩu VPN vào nhóm chat chung", "lỡ tay share file .ovpn" (kiểm hộp đen 12/11)
+    rf"|\b(?:vô tình|lỡ tay|nhầm tay|sơ ý)\s+(?:gửi|đưa|share|chia sẻ|đăng|dán|post|forward|đọc|nói|báo|cung cấp)\s+(?:\S+\s+){{0,2}}?{_SECRET}\b"
+    # "Laptop em tự nhiên chuột di chuyển lung tung, nghi bị điều khiển từ xa"
+    rf"|{_NOT_PREVENT}\bbị\s+(?:ai\s+|người khác\s+|người lạ\s+|kẻ gian\s+)?(?:điều khiển|truy cập|remote|kiểm soát)\s+(?:máy\s+)?từ xa\b"
     r"|\b(?:email|mail|thư|tin nhắn|link|trang|web)\s+(?:\S+\s+)?(?:giả mạo|lừa đảo|giả danh)\b"
     r"|\btự\s+(?:động\s+)?gửi\s+(?:\S+\s+){0,3}?(?:spam|thư rác|mail lạ|email lạ|lừa đảo)\b"
     r"|\b(?:click|bấm|nhấn|nhấp|mở)\s+(?:nhầm\s+|phải\s+|lỡ\s+)?(?:vào\s+)?(?:link|liên kết|đường link|file|tệp)\s+(?:\S+\s+){0,3}?"
     r"(?:lạ|giả danh|giả mạo|lừa đảo)\b"
+    # Bổ sung sau kiểm hộp đen 12/11 (dựa nửa DEV của 348 câu):
+    rf"|{_NOT_PREVENT}\bbị\s+{_BY_OTHER}\s+(?:(?:đã|đang|vừa|cố)\s+)?(?:đăng nhập|truy cập|login|log in|dùng|sử dụng|lấy|chiếm|đổi|vào)\b"
+    rf"|\b{_SECRET}\b[^.!?\n]{{0,50}}?(?<!không )(?<!không bị )(?<!ko bị )\b(?:bị\s+)?(?:rò rỉ|lọt ra ngoài|lộ ra ngoài)\b"
+    rf"|\brò rỉ\s+(?:mất\s+)?{_SECRET}\b"
+    rf"|\b(?:chứng chỉ|cert)\b[^.!?\n]{{0,50}}?(?<!không )(?<!không bị )(?<!ko bị )(?<!tránh bị )\b(?:bị\s+)?lộ\b(?!\s+diện)"
+    rf"|\b(?:gửi|đưa|share|chia sẻ|đăng|dán|post|forward)\s+(?:nhầm|lộn)\s+(?:\S+\s+){{0,2}}?{_SECRET}\b"
+    # thư lừa: "nhận một mail tên '…', em có mở ra và đăng nhập theo hướng dẫn"
+    r"|\bnhận\s+(?:được\s+)?(?:một\s+|1\s+|cái\s+)?(?:mail|email|e-mail|thư|tin nhắn|sms)\b[^.!?\n]{0,80}?\b(?:mở|bấm|click|nhấn|ấn)\b"
+    r"[^.!?\n]{0,40}?\b(?:đăng nhập|nhập mật khẩu|điền mật khẩu|nhập mk|điền mk)\b"
 )
 _COMPROMISED_FOLDED = (
-    r"(?<!tranh )(?<!khong )(?<!khoi )(?<!chong )(?<!phong )(?<!ngua )\bbi\s+(?:hack|hach|hac|xam nhap|xam pham|chiem doat|chiem quyen|chiem\s+(?:mat\s+)?(?:tai khoan|tk|email|mail|hop thu)|danh cap|"
+    r"(?<!tranh )(?<!khong )(?<!khoi )(?<!chong )(?<!phong )(?<!ngua )(?<!so )(?<!ngai )\bbi\s+(?:hack|hach|hac|xam nhap|xam pham|chiem doat|chiem quyen|chiem\s+(?:mat\s+)?(?:tai khoan|tk|email|mail|hop thu)|danh cap|"
     r"lay cap|lua|login\s+(?:tu|o|tai))\b"
     r"|\b(?:tai khoan|tk|email|mail|hop thu)\b[^.!?\n]{0,30}?\bbi\s+(?:(?:nguoi ta|ai do|ke gian|nguoi la|hacker)\s+)?chiem\b"
-    r"|\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b"
+    r"|(?<!dien tap )(?<!tap huan )(?<!dao tao )(?<!thu nghiem )(?<!mo phong )(?<!bai test )"
+    r"\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b(?!\s+(?:test|simulation|training|drill))"
     r"|(?<!khong )\bbi\s+lo\s+(?:mat\s+)?(?:mat khau|mk|pass|password|otp)\b"
     r"|\b(?:mat khau|mk|pass|password)\b[^.!?\n]{0,30}?(?<!khong )\bbi\s+lo\b"
     r"|(?<!phong )(?<!khoi )(?<!tranh )(?<!chong )\b(?:nhiem|dinh)\s+(?:virus|vi rut|ma doc|malware|ransomware|trojan)\b"
     rf"|{_WHO_FOLDED}(?:lay duoc|lay|biet|do|doi)\s+(?:duoc\s+)?(?:mat khau|mk|pass)\b(?!\s+(?:wifi|wi-fi|wi fi|khach|may in))"
     rf"|{_WHO_FOLDED}(?:dang nhap|truy cap|vao|dung|su dung)\s+(?:duoc\s+)?(?:\S+\s+){{0,2}}?(?:tai khoan|tk|email|mail|hop thu)\s+(?:\S+\s+)?"
     rf"{_MINE_FOLDED}"
+    # Bổ sung sau kiểm hộp đen 12/11 — bản bỏ dấu ("bi ng khac dang nhap", "mat khau bi ro ri", "gui nham file .ovpn")
+    rf"|(?<!tranh )(?<!khong )(?<!khoi )\bbi\s+{_BY_OTHER_FOLDED}\s+(?:(?:da|dang|vua)\s+)?(?:dang nhap|truy cap|login|lay|chiem)\b"
+    rf"|\b{_SECRET_FOLDED}\b[^.!?\n]{{0,50}}?(?<!khong )(?<!khong bi )(?<!ko bi )\b(?:bi\s+)?(?:ro ri|lot ra ngoai|lo ra ngoai)\b"
+    rf"|\bro ri\s+(?:mat\s+)?{_SECRET_FOLDED}\b"
+    rf"|\b(?:gui|dua|share|chia se|dang|dan|post|forward)\s+(?:nham|lon)\s+(?:\S+\s+){{0,2}}?{_SECRET_FOLDED}\b"
+    # không có "lo" trần / "nhap": "lỡ nhập SAI mật khẩu" (bị khoá, xin mở) là luồng mở khoá thường gặp nhất
+    rf"|\b(?:vo tinh|lo tay|nham tay|so y)\s+(?:gui|dua|share|chia se|dang|dan|post|forward|doc|noi|bao|cung cap)\s+"
+    rf"(?:\S+\s+){{0,2}}?{_SECRET_FOLDED}\b"
+    r"|(?<!tranh )(?<!khong )\bbi\s+(?:ai\s+|nguoi khac\s+|nguoi la\s+|ke gian\s+)?(?:dieu khien|truy cap|remote|kiem soat)\s+(?:may\s+)?tu xa\b"
 )
 
 _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
-    ("lost_device", rf"\b{_LOSS_VERB}\s+(?:cái\s+|chiếc\s+|con\s+)?{_DEVICE}\b{_NOT_HOME}"),
-    ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,40}}?\b{_LOSS_AFTER}\b{_LOSS_END}{_NOT_HOME}"),
+    # "mất luôn cái điện thoại công ty", "mất cả laptop" (kiểm hộp đen 12/11)
+    ("lost_device", rf"{_NOT_ANTI_LOSS}\b{_LOSS_VERB}\s+(?:luôn\s+|cả\s+)?(?:cái\s+|chiếc\s+|con\s+)?{_DEVICE}\b{_NOT_HOME}"),
+    ("lost_device", _LOST_EN),
+    # "Em tìm lại được laptop đã báo mất, cấp lại VPN" — KB-GEN-009: máy đã báo mất phải báo IT trước khi dùng lại (soát eval/KB 12/11)
+    ("lost_device", rf"\btìm\s+(?:lại\s+)?(?:được|thấy)\s+(?:cái\s+|chiếc\s+)?{_DEVICE}\b[^.!?\n]{{0,30}}?\b(?:báo mất|bị mất|đã mất|thất lạc)\b"),
+    ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,30}}?(?:{_GONE})"),
+    ("lost_device", (r"\bkhông\s+(?:còn\s+)?thấy\s+(?:cái\s+|chiếc\s+)?(?:laptop|điện thoại|đt|macbook|ipad|iphone|lap|[a-z]{2,4}-\d{3,5})\b"
+                     r"(?:\s+(?:của\s+)?(?:em|mình|tôi|anh|chị))?\s*(?:đâu|nữa|$|[.!?])")),
+    ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,40}}?(?<!không )(?<!ko )(?<!chưa )\b{_LOSS_AFTER}\b{_LOSS_END}{_NOT_HOME}"),
     ("lost_device", r"\bkhông tìm thấy\s+(?:cái\s+|chiếc\s+|con\s+)?(?:laptop|điện thoại|đt|macbook|ipad|lap|[a-z]{2,4}-\d{3,5})\b"),
     ("revoke", rf"{_NOT_PAST}{_NOT_OTHERS}\b{_REVOKE_VERB}\s+(?:\S+\s+){{0,3}}?{_OBJECT}\b{_NOT_REGRANT}"),
     ("revoke", rf"{_NOT_PAST}{_NOT_OTHERS}\b{_REVOKE_PERM}\b{_NOT_REGRANT}"),
@@ -180,15 +265,34 @@ _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     # "mở" / "tự" ("khoá tài khoản tự mở lại sau bao lâu?", "khoá tài khoản cứ tự bật lại" là câu hỏi, không xin khoá). "lock tk AD
     # của em lại", "Chặn tài khoản của nv006 lại" (chặn chỉ với tài khoản / email — "mạng chặn VPN" là báo lỗi).
     ("lock", (rf"(?<!mở )(?<!bị )(?<!đã )(?<!lỡ )(?<!tự )(?<!vừa )\b(?:khoá|khóa|lock)\s+(?:lại\s+)?{_OBJECT}\s+"
-              r"(?:(?!mở\b|tự\b)\S+\s+){0,3}?(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại|đi)\b")),
+              r"(?:(?!mở\b|tự\b)\S+\s+){0,5}?(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại|đi|gấp|tạm thời)\b")),
     ("lock", r"(?<!bị )(?<!đã )\bchặn\s+(?:lại\s+)?(?:tài khoản|tk|email|mail)\s+(?:(?!mở\b)\S+\s+){0,3}?(?:giúp|giùm|hộ|ngay|luôn|hẳn|lại|đi)\b"),
     # "Khoá tạm / tạm khoá / tạm ngưng tài khoản …" — KHÔNG nhận "Tài khoản bị tạm khoá do nhập sai, mở giúp em" (luồng mở khoá thường
     # gặp nhất — trước 03:50 mẫu "tạm khoá" trần bắt nhầm câu này).
     ("lock", (r"(?<!bị )(?<!đã )(?<!đang )\b(?:khoá tạm|khóa tạm|tạm khoá|tạm khóa|tạm ngưng|tạm dừng)\s+(?:thời\s+)?(?:lại\s+)?"
-              r"(?:tài khoản|tk|email|mail|giúp|giùm|hộ)\b")),
-    ("negate", rf"\b(?:đừng(?!\s+(?:quên|lo|ngại)\b)|thôi khỏi|khỏi cần|khỏi|{_NO}\s+muốn)\s+(?:\S+\s+)?{_ACTION_VERB}\b{_NOT_ONLY}"),
+              r"(?:tài khoản|tk|email|mail|giúp|giùm|hộ|chứng chỉ|cert|vpn)\b")),
+    # Kiểm hộp đen 12/11 (LLM thật: "Đóng băng tài khoản…", "lock my account please" → hỏi "đặt lại mật khẩu hay MỞ khoá?"):
+    (
+        "lock",
+        r"(?<!bị )(?<!đã )\b(?:đóng băng|freeze|suspend|tạm đình chỉ|đình chỉ)\s+(?:\S+\s+){0,2}?(?:tài khoản|tk|account|email|mail|vpn)\b",
+    ),
+    ("lock", r"(?<!un)\block\s+(?:my\s+|the\s+|this\s+|our\s+|his\s+|her\s+)?(?:\S+\s+)?(?:account|acc|email|mailbox|vpn|user)\b"),
+    # "Em xin khoá tài khoản email trong thời gian đi công tác", "Em muốn khoá tài khoản cũ", "nhờ IT khoá tk của bạn Hùng" — chen tối đa
+    # 2 từ, không chen "mở" / "bị" ("muốn mở khoá", "muốn biết vì sao bị khoá").
+    ("lock", (r"\b(?:muốn|xin|cần|nhờ|giúp|giùm|hãy|vui lòng|làm ơn|đề nghị|yêu cầu)\s+(?:(?!mở\b|bị\b)\S+\s+){0,2}?(?:khoá|khóa|lock)\s+"
+              r"(?:lại\s+)?(?:\S+\s+)?(?:tài khoản|tk|account|email|mail|vpn)\b")),
+    # chen tối đa 1 từ, không phải "phải" ("Em không muốn phải đổi mật khẩu thường xuyên, có cách nào không" là hỏi chính sách)
+    ("negate", (rf"\b(?:đừng(?!\s+(?:quên|lo|ngại)\b)|thôi khỏi|khỏi cần|khỏi|{_NO}\s+muốn|chưa\s+(?:cần|muốn))\s+(?:(?!phải\b)\S+\s+)?"
+                rf"{_ACTION_VERB}\b{_NOT_ONLY}")),
+    ("negate", _NEGATE_EN),
     # "Không cần gia hạn VPN cho máy LAP-0342 nữa đâu" / "em không cần quyền đọc finance/Q3 nữa" — phải có "nữa" (không còn cần).
     ("negate", rf"\b{_NO}\s+cần\s+(?:\S+\s+)?(?:{_ACTION_VERB}|{_OBJECT})\b[^.!?\n]{{0,50}}?\bnữa\b{_NOT_ONLY}"),
+    # "Ko cần reset mk đâu", "không cần đổi mật khẩu đâu" — "đâu" chỉ khi ngay sau "cần" là VIỆC; "ko cần quyền sửa đâu, đọc thôi là dc"
+    # (đích là quyền) là ràng buộc của yêu cầu, không phải từ chối.
+    ("negate", rf"\b{_NO}\s+cần\s+{_ACTION_VERB}\b[^.!?\n]{{0,50}}?\bđâu\b{_NOT_ONLY}"),
+    # "Không cần cấp lại VPN, chứng chỉ cũ vẫn chạy" — "không cần + VIỆC" ĐẦU câu / mệnh đề (cho một chủ ngữ đứng trước); câu hỏi "có
+    # cần … không" không bắt đầu bằng "không cần".
+    ("negate", rf"(?:^|[.,!?;:]\s*)(?:(?:em|mình|tôi|tớ|anh|chị|e)\s+)?{_NO}\s+cần\s+{_ACTION_VERB}\b{_NOT_ONLY}"),
     # "Em không dùng VPN nữa, thu lại giúp em" — KHÔNG nhận "không dùng ĐƯỢC VPN nữa" / "không dùng VPN được nữa" (báo lỗi).
     ("negate", (rf"\b{_NO}\s+(?:dùng|xài|sử dụng)\s+(?:(?!được\b)\S+\s+){{0,2}}?{_OBJECT}\b(?:(?!được)[^.!?\n]){{0,30}}?"
                 r"\bnữa\b")),
@@ -199,13 +303,21 @@ _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("cancel", r"\b(?:thôi|bỏ)\s+(?:cái\s+)?(?:yêu cầu|ticket|phiếu)\b"),
     # "cái yêu cầu xin quyền … e gửi sáng nay a huỷ giúp e nhé" (bộ kiểm mù 12/11)
     ("cancel", r"\b(?:yêu cầu|ticket|phiếu)\b[^.!?\n]{0,60}?\b(?:huỷ|hủy|rút lại|cancel)\s+(?:giúp|giùm|hộ|đi|luôn)\b"),
+    # "Gỡ FortiClient VPN khỏi máy em" (intent vpn, không phải software) — "gỡ / xoá / tháo … (ra) khỏi máy" ở MỌI intent ghi;
+    # "xoá chứng chỉ cũ khỏi máy rồi cấp lại" là xin làm thuận.
+    # không nhận câu hỏi cách làm ("Cách gỡ Zoom khỏi máy như thế nào?" — soát eval/KB 12/11)
+    ("uninstall", (rf"{_NOT_PAST}(?<!cách )(?<!sao )(?<!để )(?<!phải )(?<!cần )\b(?:gỡ bỏ|gỡ|xoá|xóa|tháo|delete|remove|uninstall)\s+"
+                   rf"(?:\S+\s+){{1,3}}?(?:ra\s+)?khỏi\s+"
+                   r"(?:máy|laptop|pc|điện thoại|macbook)\b(?![^.!?\n]*\b(?:cài lại|cấp lại|cài mới|rồi cài)\b)")),
     ("compromised", _COMPROMISED),  # sau cùng: câu vừa xin khoá vừa nghi lộ vẫn mang nhãn "lock" như trước
 )
 _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
-    ("lost_device", (rf"\b(?:lam mat|danh mat|bi mat|mat|that lac|danh roi|bo quen|de quen|bi trom|bi danh cap|bi cuop|cuop giat|"
-                     rf"bi lay mat|lay mat)\s+(?:cai\s+|chiec\s+|con\s+)?{_DEVICE_FOLDED}\b(?![^.!?\n]{{0,20}}\bo nha\b)")),
-    ("lost_device", (rf"\b{_DEVICE_FOLDED}\b[^.!?\n]{{0,40}}?\b(?:bi mat|da mat|lam mat|that lac|bi trom|bi danh cap|bi cuop|lay mat|"
-                     rf"bi lay mat)\b{fold(_LOSS_END)}(?![^.!?\n]{{0,20}}\bo nha\b)")),
+    ("lost_device", (rf"{fold(_NOT_ANTI_LOSS)}\b(?:lam mat|danh mat|bi mat|mat|that lac|danh roi|lam roi|roi mat|bo quen|de quen|bi trom|"
+                     rf"bi danh cap|bi cuop|cuop giat|bi lay mat|lay mat)\s+(?:luon\s+|ca\s+)?(?:cai\s+|chiec\s+|con\s+)?{_DEVICE_FOLDED}\b"
+                     r"(?![^.!?\n]{0,20}\bo nha\b)")),
+    ("lost_device", (rf"\b{_DEVICE_FOLDED}\b[^.!?\n]{{0,40}}?(?<!khong )(?<!ko )(?<!chua )\b(?:bi mat|da mat|lam mat|that lac|bi trom|"
+                     rf"bi danh cap|bi cuop|lay mat|bi lay mat)\b{fold(_LOSS_END)}(?![^.!?\n]{{0,20}}\bo nha\b)")),
+    ("lost_device", rf"\b{_DEVICE_FOLDED}\b[^.!?\n]{{0,30}}?(?:{fold(_GONE)})"),
     ("revoke", (rf"{fold(_NOT_PAST)}{fold(_NOT_OTHERS)}\b(?:thu hoi|thu lai|vo hieu hoa|vo hieu|revoke|disable|{_HUY_FOLDED}|xoa)\s+(?:\S+\s+){{0,3}}?"
                 rf"(?:vpn|chung chi|quyen|truy cap|tai khoan|tk|email|mail)\b{_NOT_REGRANT_FOLDED}")),
     # bỏ "bo quyen" ("toàn bộ quyền") và "go quyen" (gõ) — mất dấu là lẫn nghĩa
@@ -214,11 +326,17 @@ _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("revoke", _DISABLE_VPN_FOLDED),
     ("revoke", rf"{fold(_NOT_PAST)}\bdong\s+(?:han\s+)?(?:tai khoan|tk)\b"),
     ("lock", (r"(?<!mo )(?<!bi )(?<!no )(?<!tu )\bkhoa\s+(?:han|luon|tam thoi)\b(?!\s+(?:roi|r\b|tu|mat))")),
-    ("lock", (r"(?<!mo )(?<!bi )(?<!da )(?<!tu )\b(?:khoa|lock)\s+(?:lai\s+)?(?:tk|tai khoan|email|mail|vpn)\s+(?:(?!mo\b|tu\b)\S+\s+){0,3}?"
-              r"(?:giup|gium|ho|ngay|luon|han|lai|di)\b")),
-    ("lock", r"(?<!bi )(?<!da )(?<!dang )\b(?:khoa tam|tam khoa|tam ngung)\s+(?:thoi\s+)?(?:lai\s+)?(?:tk|tai khoan|email|mail|giup)\b"),
-    ("negate", (rf"\b(?:thoi khoi|khoi can|khoi|{_NO_FOLDED}\s+muon)\s+(?:\S+\s+)?{_ACTION_VERB_FOLDED}\b"
-                r"(?![^.!?\n]*\bchi can\b)")),
+    ("lock", (r"(?<!mo )(?<!bi )(?<!da )(?<!tu )\b(?:khoa|lock)\s+(?:lai\s+)?(?:tk|tai khoan|email|mail|vpn)\s+(?:(?!mo\b|tu\b)\S+\s+){0,5}?"
+              r"(?:giup|gium|ho|ngay|luon|han|lai|di|gap|tam thoi)\b")),
+    ("lock", r"(?<!bi )(?<!da )(?<!dang )\b(?:khoa tam|tam khoa|tam ngung)\s+(?:thoi\s+)?(?:lai\s+)?(?:tk|tai khoan|email|mail|giup|chung chi|cert|vpn)\b"),
+    ("lock", r"(?<!bi )(?<!da )\b(?:dong bang|freeze|suspend|dinh chi)\s+(?:\S+\s+){0,2}?(?:tai khoan|tk|account|email|mail|vpn)\b"),
+    # bỏ dấu không có "can" (cần / cán) — "xin / nho / muon … khoa tk"
+    ("lock", (r"\b(?:muon|xin|nho|giup|gium|hay|vui long|lam on|de nghi|yeu cau)\s+(?:(?!mo\b|bi\b)\S+\s+){0,2}?(?:khoa|lock)\s+"
+              r"(?:lai\s+)?(?:\S+\s+)?(?:tai khoan|tk|account|email|mail|vpn)\b")),
+    ("negate", (rf"\b(?:thoi khoi|khoi can|khoi|{_NO_FOLDED}\s+muon|chua\s+(?:can|muon))\s+(?:(?!phai\b)\S+\s+)?{_ACTION_VERB_FOLDED}\b"
+                r"(?![^\n]*\bchi can\b)")),
+    # "dung cap lai chung chi VPN nha" — "dung" (đừng / dùng) chỉ khi đứng NGAY trước việc ("dùng để gia hạn" có "de" chen giữa)
+    ("negate", r"\bdung\s+(?:cap lai|gia han|reset|mo khoa|dat lai)\b(?![^.!?\n]*\bchi can\b)"),
     ("negate", (rf"\b{_NO_FOLDED}\s+can\s+(?:\S+\s+)?(?:{_ACTION_VERB_FOLDED[3:-1]}|vpn|chung chi|quyen|tai khoan|email)\b"
                 r"[^.!?\n]{0,50}?\bnua\b(?![^.!?\n]*\bchi can\b)")),
     ("negate", rf"\bthoi\s+khoi\b|\bdoi y\b|\b{_NO_FOLDED}\s+can\s+nua\b"),
@@ -231,13 +349,18 @@ _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
 _UNINSTALL_NOT = r"(?!\s*(?:lỗi|rối|khoá|khóa|cache|bộ nhớ đệm|file|tệp|dữ liệu|rác|bớt|lịch sử|bản cũ|phiên bản cũ))"
 _UNINSTALL_ACCENTED: Final = (
     rf"{_NOT_PAST}(?<!cách )(?<!sao )(?<!phải )(?<!cần )\b(?:gỡ bỏ|gỡ cài đặt|bỏ cài đặt|huỷ cài đặt|hủy cài đặt|gỡ|uninstall|uninstal|"
-    rf"remove|xoá|xóa)\b{_UNINSTALL_NOT}"
+    rf"remove|delete|xoá|xóa|tháo bỏ|loại bỏ)\b{_UNINSTALL_NOT}"
     r"|\bdọn\s+(?:\S+\s+){0,2}?khỏi\s+(?:máy|laptop|pc)\b"
+    # "Tháo phần mềm UltraViewer ra khỏi máy em" (kiểm hộp đen 12/11 — LLM thật: phiếu duyệt CÀI UltraViewer); "tháo" trần là phần cứng
+    r"|\btháo\s+(?:phần mềm|ứng dụng|app)\b|\btháo\s+(?:\S+\s+){1,3}?ra\s+khỏi\b"
+    # "anh gỡ bớt mấy phần mềm không dùng như CCleaner" — "bớt" bị loại ở trên vì "xoá bớt file"; ở đây đích là phần mềm
+    r"|\b(?:gỡ|xoá|xóa)\s+bớt\s+(?:mấy\s+|vài\s+|các\s+|những\s+|một số\s+)?(?:phần mềm|ứng dụng|app)\b"
 )
 _UNINSTALL_FOLDED: Final = (
     rf"{fold(_NOT_PAST)}(?<!cach )(?<!sao )(?<!phai )(?<!can )\b(?:go bo|go cai dat|bo cai dat|huy cai dat|go phan mem|go ung dung|"
-    rf"uninstall|uninstal|remove|xoa)\b{fold(_UNINSTALL_NOT)}"
-    r"|\bgo\s+\S+\s+khoi\s+(?:may|laptop|pc)\b|\bdon\s+(?:\S+\s+){0,2}?khoi\s+(?:may|laptop|pc)\b"
+    rf"uninstall|uninstal|remove|delete|xoa|thao bo|loai bo)\b{fold(_UNINSTALL_NOT)}"
+    r"|(?<!cach )(?<!sao )(?<!de )(?<!phai )\bgo\s+\S+\s+khoi\s+(?:may|laptop|pc)\b|\bdon\s+(?:\S+\s+){0,2}?khoi\s+(?:may|laptop|pc)\b"
+    r"|\bthao\s+(?:phan mem|ung dung|app)\b|\bthao\s+(?:\S+\s+){1,3}?ra\s+khoi\b"
 )
 
 _RES: Final = tuple((k, re.compile(p)) for k, p in _ACCENTED)
@@ -250,7 +373,7 @@ def reverse_action_kind(text: str, intents: Collection[str]) -> ReverseKind | No
     intent `software` (ở intent khác "gỡ" thường là "gỡ lỗi"). Không trả câu hay đoạn khớp — chỉ nhãn (audit không chép chữ người dùng)."""
     if not WRITE_INTENTS.intersection(intents):
         return None
-    lowered = text.lower()
+    lowered = normalize_for_detect(text)
     folded = fold(lowered)
     for kind, pat in _RES:
         if pat.search(lowered):
