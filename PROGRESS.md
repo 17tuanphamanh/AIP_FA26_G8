@@ -6732,6 +6732,27 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   "mk: Ignore previous…" → E0 ở tin đầu và qua `/reply` ticket cha (con E0 `injection_in_reply`, không lưu chữ gốc); 3 câu che D-89
   giống trưa. Không có E7 mở trong 7 ngày (D-88). Mock đã đặt lại. CLI-1…4, 6 chạy tối 12/11 trên nền `53c6183` → vào bản nộp.
   Nhánh Đợt 2 `dot2-1213` = `53c6183` + D-95 (E12: audit người duyệt + hash, migration 0017), CI xanh.
+- 12→13/11 đêm (TA 23:23 giao làm hết Đợt 2 trong đêm; nhánh `dot2-1213`, KHÔNG đụng máy demo / `main`): ĐP tự làm các mục CLI-2/3/4
+  (CLI không chạy). Mỗi mục: test viết trước (đỏ đúng lý do) → sửa → mutation thử (đỏ) → unit + lint xanh → 1 commit → push → CI.
+  - **Q3** thẻ duyệt hiện người gửi (`RequesterView` thêm `user_id`, `full_name`; FE dòng "Họ tên"/"Tài khoản"); **Q4** quyết phiếu khi
+    ticket cha đã kết thúc → 409 `parent_closed`, phiếu giữ `pending`; **B4** nhãn E1 `injection_suspected` + sự kiện `followup_reply`;
+    **O5** HUONG-DAN mục 14 "Trước khi quay"; **O6** hook commit-msg chặn thêm "subagent"; **O3** `/api/health` thêm `warnings` (mã cố định
+    `llm_spend_cap_reached`, `mock_faults_active`, `ml_models_missing`; không đổi mã trạng thái) + `restart: unless-stopped` 6 dịch vụ;
+    **K2** sửa liên kết/tên miền 3 bài KB; **K5** ghi chú tags không được index; **B2** tách tên chỉ số "Chuyển L2 ở bước đánh giá rủi ro";
+    **B3** chú thích mẫu nhỏ + "Tự xử lý" chỉ tính khi người dùng bấm "Đã ổn" hoặc sau 48 giờ.
+  - **O2** `mfa enroll <user> --user-id <mã AD>`: DB mới chưa có dòng `users` → đồng bộ từ AD qua `AdUserSync` rồi enroll (sai người, không
+    có trong AD, AD sập, nhóm không ra role, đã nghỉ → báo lỗi, không ghi gì). HUONG-DAN mục 8 thêm lệnh `--user-id it_mgr01`.
+  - **O1 + E8** `scripts/ops/db_moi_giu_kb.sh` + `make db-moi-giu-kb` (mặc định chỉ in lệnh; `ARGS=--chay` mới chạy): dừng backend/worker,
+    gỡ container postgres, kiểm nhãn compose rồi xoá ĐÚNG `servicedesk_pgdata` (giữ qdrant), postgres mới → migrate → backend/worker →
+    ingest chỉ ghi bù DB → mock về seed. Không `down`, không dựng lại ml-service (tránh bẫy MODELS_DIR), không `make up`.
+  - **B1** tab Nghiệp vụ/AI mặc định chỉ ticket `source='real'`, `?source=all` gồm sim/eval (thân trả `source`); lọc bằng
+    `queries.common.only_sources` quanh hàm gom (ContextVar — chữ ký `(conn, frm, to)` bị ghim không đổi); luật cảnh báo và tab So sánh
+    không đặt nguồn → như cũ. Định nghĩa chỉ số không đổi; 3 câu SQL ghim trong test thêm đúng một điều kiện nguồn. FE ô "Ticket thật /
+    Gồm dữ liệu thử" + dòng "Đang xem". Test PG mới chạy toàn bộ `business_metrics`/`ai_metrics` với `:sources` (CI xanh).
+  - **Q2** route quyết phiếu hỏi AD người quyết trước `start_event`: không còn hợp lệ l1 lẫn Trưởng BP (cùng tiêu chí B17) → 403 +
+    `permission_denied`; AD lỗi → 503. **Q1** refresh đồng bộ AD như đăng nhập: không còn trong AD / nghỉ / nhóm không ra role → thu hồi
+    phiên, 401; role đổi → 401 (không báo dùng lại token); AD lỗi → 503 KHÔNG thu hồi phiên (frontend coi 503 là lỗi tạm). **Q5a** L1/L2
+    không tự đóng ca escalation của ticket chính mình gửi → 403. Q5b/c/d → câu hỏi 21–23.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
@@ -7078,3 +7099,12 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     LAP-0342 giúp em, đừng cài Zoom nữa") ra E1 thay vì E5 (R21 deny). Không có việc gì được tự làm, nhưng L2 "hoàn tất" được ca E1 còn E5
     thì không, và ghi chú L2 không cảnh báo deny (soát bảo mật 12/11). Hai hướng: thêm câu cảnh báo vào `next_for_l2_by_reason`, hay
     thêm `reverse_action_requested` vào danh sách không cho hoàn tất → không tự chọn.
+21. **[Hỏi TA — 13/11, Q5b] Quyền xem "Nhật ký quyết định" (trace):** P6 §5.3 `can_read_audit` = `audit:read:all` hoặc `audit:read:own`
+    giới hạn ở phiếu mình từng duyệt; route `api/trace.py` (docstring: "L1, L2, Trưởng BP") dùng `ticket:read:any`, nên L2 (không có quyền
+    audit nào) và L1 không duyệt ticket đó vẫn xem được. L2 dùng trace khi xử lý ca chuyển. Hai hướng (theo P6 → L2 404, L1 chỉ ticket có
+    phiếu mình duyệt; hay sửa P6 theo route) → không tự chọn.
+22. **[Hỏi TA — 13/11, Q5c] `/docs`, `/openapi.json`:** test `test_api_docs_switch.py` ghi rõ công tắc `API_DOCS` CỐ Ý không phụ thuộc
+    APP_ENV (demo chạy dev); compose truyền `${API_DOCS:-on}`. Tắt mặc định ngoài dev cần đổi mặc định ở `settings.py` + compose →
+    trái quyết định cũ. Đề xuất: đặt `API_DOCS=off` trong `.env` máy demo sau giờ quay (backend chỉ bind 127.0.0.1).
+23. **[Hỏi TA — 13/11, Q5d] `X-Sim-Run`:** script sim tạo ticket bằng tài khoản NHÂN VIÊN kèm header, nên chặn theo vai làm hỏng sim.
+    Chặn đúng cần khoá chạy sim phía server (biến mới trong `settings.py`) → dừng. Đề xuất: giữ (chỉ APP_ENV dev/test), ghi giới hạn.
