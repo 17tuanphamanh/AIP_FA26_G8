@@ -71,7 +71,7 @@ slot. E1 ghi `step="B4"`, còn lại `"B3"`. Không `except Exception` — lỗi
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from typing import Any, Final, Literal
 
@@ -114,6 +114,10 @@ def _point1() -> dict[str, Any]:
         "personal_account": False,  # 12/11: câu nhắc tài khoản dịch vụ bên ngoài (Gmail, Zalo…) → E1 out_of_scope — chỉ cờ, không chữ
     }  # fmt: skip
 
+
+def _subset(small: Mapping[str, Any], big: Mapping[str, Any]) -> bool:
+    """Mọi slot của `small` có trong `big` với cùng giá trị (U1)."""
+    return all(k in big and big[k] == v for k, v in small.items())
 
 def make(deps: NodeDeps) -> NodeFn:
     known = deps.slots.declared_names
@@ -166,6 +170,9 @@ def make(deps: NodeDeps) -> NodeFn:
         info["prompt"], info["is_multi"] = f"{meta.prompt_id}@{meta.prompt_version}", out.is_multi
         info["request_trimmed"] = meta.trimmed_chars > 0  # Q1 điểm 2: chỉ cờ, không độ dài/chữ
         intents = _answer_only_as_out_of_scope(out.intents)  # D-76: cờ tắt / nhiều ý
+        intents, merged = _dedupe(intents, text)  # U1 (soát 12/11): một việc bị tách thành 2 ý giống nhau → gộp, không chạy 2 lần
+        if merged:
+            info["deduplicated_intents"] = merged
         in_scope = [i for i in intents if i.type != "out_of_scope"]
         if not _splits(intents, text):  # Q-T20b-12: lần trước đã tách (con 1 đã tạo) mà lần này không → không đi tiếp đường khác
             first = child_id(state["ticket_id"], 1)
@@ -323,6 +330,28 @@ def make(deps: NodeDeps) -> NodeFn:
         if it.type not in deps.enabled_intents:
             return "intent_not_enabled"
         return RUNNABLE
+
+    def _dedupe(intents: Sequence[IntentItem], text: str) -> tuple[list[IntentItem], int]:
+        """U1 (soát 12/11, agent 18 L1): LLM tách MỘT việc thành 2 ý cùng loại → 2 con → thực thi 2 lần. Hai ý CHẠY ĐƯỢC cùng `type` + cùng
+        `action_hint` (khác None) mà slot sạch (trong `span` của chính ý, như `_seed`) của một ý ⊆ ý kia → bỏ ý ít thông tin hơn (bằng nhau →
+        giữ ý trước, ở vị trí cũ). Khác đích / khác máy (slot lệch), thiếu `action_hint`, khác loại → giữ. Trả (danh sách mới, số ý đã bỏ)."""
+        kept: list[tuple[IntentItem, dict[str, Any] | None]] = []
+        for it in intents:
+            clean = None
+            if it.action_hint and _verdict(it, text) == RUNNABLE:
+                spec = deps.slots.intents[it.type]
+                clean = sanitize_slots(spec, it.slots, text=l0(it.span), device_prefixes=deps.slots.device_prefixes)[0]
+            for k, (other, other_clean) in enumerate(kept):
+                if clean is None or other_clean is None or (other.type, other.action_hint) != (it.type, it.action_hint):
+                    continue
+                if _subset(clean, other_clean):
+                    break  # ý này không thêm gì → bỏ
+                if _subset(other_clean, clean):
+                    kept[k] = (it, clean)  # ý trước ít thông tin hơn → thay bằng ý này, giữ vị trí
+                    break
+            else:
+                kept.append((it, clean))
+        return [it for it, _ in kept], len(intents) - len(kept)
 
     def _splits(intents: Sequence[IntentItem], text: str) -> bool:
         """Có đi `_split` và tạo con không: ≥ 1 ý trong phạm vi, ≥ 2 ý, ≥ 1 ý chạy được (bảng 5.2.2)."""
