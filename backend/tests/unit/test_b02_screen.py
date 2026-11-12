@@ -41,7 +41,8 @@ def _scr(layer: str, p: float | None, mode: str, *, ml_error: str | None = None,
          is_attack: bool = False, category: str = "none") -> dict[str, Any]:  # fmt: skip
     """Gói 1 (D-52) — đổi có chủ ý: `screening` ở mọi nhánh đã gọi L3 có thêm `ml_error`, `masks_replaced` (0 ngoài `review`);
     nhánh đã gọi L4 có thêm `llm_is_attack`, `llm_category`, `llm_role`, `llm_model` (ScriptedLLM → "scripted")."""
-    out: dict[str, Any] = {"layer_decided": layer, "p_mal": p, "clf_mode": mode, "ml_error": ml_error, "masks_replaced": 0}
+    out: dict[str, Any] = {"layer_decided": layer, "p_mal": p, "clf_mode": mode, "ml_error": ml_error, "masks_replaced": 0,
+                           "clf_version": "0" if p is not None else None}  # E1 12/11: lineage L3 (FakeMlService trả "0")
     if judged:
         out |= {"llm_is_attack": is_attack, "llm_category": category, "llm_role": "fast", "llm_model": "scripted"}
     return out

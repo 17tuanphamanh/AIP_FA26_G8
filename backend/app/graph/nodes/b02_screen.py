@@ -74,8 +74,10 @@ def make(deps: NodeDeps) -> NodeFn:
     async def _screen(state: Any, text: str) -> dict[str, Any]:
         model_text, replaced = replace_masks(text, masks) if masks is not None else (text, 0)  # gói 1: chỉ `review`
         r = await deps.ml.classify(model_text)  # L3
-        p_mal = r.data.p_malicious if r.error is None and r.data is not None else None
-        base = {"p_mal": p_mal, "clf_mode": clf_mode, "ml_error": r.error, "masks_replaced": replaced}
+        ok = r.error is None and r.data is not None
+        p_mal = r.data.p_malicious if ok and r.data is not None else None
+        clf_version = r.data.version if ok and r.data is not None else None  # E1 soát 12/11: lineage — model nào đã chấm
+        base = {"p_mal": p_mal, "clf_mode": clf_mode, "ml_error": r.error, "masks_replaced": replaced, "clf_version": clf_version}
         if (quick := classifier_shortcut(clf_mode, p_mal)) is not None:  # chỉ `active`
             decide = _block if quick.outcome == "E0" else _pass
             return await decide(state, layer_decided=quick.layer, **base)
@@ -88,6 +90,7 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_ESCALATED, next_node="b20_audit", step="B2", event="guard_unavailable",
                 audit_detail={
                     "ml_error": r.error, "llm_error": type(exc).__name__, "p_mal": p_mal, "clf_mode": clf_mode,
+                    "clf_version": clf_version,
                 },
                 exit_code=ExitCode.E2.value, security_flag=True,
                 escalation_reason_detail="screening_unavailable",
@@ -106,7 +109,7 @@ def make(deps: NodeDeps) -> NodeFn:
         return await _pass(state, **info)
 
     async def _block(state: Any, **info: Any) -> dict[str, Any]:
-        # `info` chỉ có lớp, id/nhóm mẫu, p_mal, clf_mode, mã lỗi L3, số nhãn đã thay, phán quyết/vai trò/model của L4 — KHÔNG
+        # `info` chỉ có lớp, id/nhóm mẫu, p_mal, clf_mode, phiên bản L3, mã lỗi L3, số nhãn đã thay, phán quyết/vai trò/model của L4 — KHÔNG
         # có câu người dùng (8.5)
         await effects.once(
             state, "security_event", deps.security_events.record, "injection_detected",
