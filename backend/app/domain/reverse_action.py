@@ -187,8 +187,9 @@ _COMPROMISED = (
     r"|\b(?:mã\s+)?(?:otp|mã xác minh|mã xác thực)\s+lạ\b"
     # Máy nhiễm mã độc (KB-GEN-008: ngắt mạng, báo IT — kỹ thuật viên xử lý trực tiếp); chỉ xét khi có intent ghi, câu hỏi it_help không vào.
     rf"|{_NOT_PREVENT}\b(?:nhiễm|dính|bị)\s+(?:virus|vi rút|mã độc|malware|ransomware|trojan|mã hoá dữ liệu|mã hóa dữ liệu)\b"
-    r"|\b(?:mật khẩu|mk|pass)\s+(?:\S+\s+){0,3}?vào\s+(?:trang|web|website|link|liên kết|đường link|form)\s+(?:\S+\s+)?"
-    r"(?:lạ|giả|giả mạo|lừa đảo)\b"
+    # "nhập mật khẩu vào một trang GIỐNG trang công ty" (soát eval/KB 12/11 — KB-GEN-008 coi là lộ mật khẩu)
+    r"|\b(?:mật khẩu|mk|pass)\s+(?:\S+\s+){0,3}?vào\s+(?:một\s+|1\s+|cái\s+)?(?:trang|web|website|link|liên kết|đường link|form)\s+"
+    r"(?:\S+\s+)?(?:lạ|giả|giả mạo|lừa đảo|giống|nhái|na ná|y hệt)\b"
     # nạn nhân lừa đảo: "em lỡ điền mật khẩu rồi" (KHÔNG nhận "lỡ nhập SAI mật khẩu"), thư / trang giả mạo, tài khoản tự gửi spam
     r"|\blỡ\s+(?:điền|nhập|đưa|cung cấp|gửi|khai|gõ|dán|share|chia sẻ|đăng|đọc|nói|báo)\s+(?:luôn\s+)?(?:mật khẩu|mk|pass|otp|mã otp|mã xác minh)\b"
     # "Em vô tình gửi mật khẩu VPN vào nhóm chat chung", "lỡ tay share file .ovpn" (kiểm hộp đen 12/11)
@@ -236,6 +237,8 @@ _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     # "mất luôn cái điện thoại công ty", "mất cả laptop" (kiểm hộp đen 12/11)
     ("lost_device", rf"{_NOT_ANTI_LOSS}\b{_LOSS_VERB}\s+(?:luôn\s+|cả\s+)?(?:cái\s+|chiếc\s+|con\s+)?{_DEVICE}\b{_NOT_HOME}"),
     ("lost_device", _LOST_EN),
+    # "Em tìm lại được laptop đã báo mất, cấp lại VPN" — KB-GEN-009: máy đã báo mất phải báo IT trước khi dùng lại (soát eval/KB 12/11)
+    ("lost_device", rf"\btìm\s+(?:lại\s+)?(?:được|thấy)\s+(?:cái\s+|chiếc\s+)?{_DEVICE}\b[^.!?\n]{{0,30}}?\b(?:báo mất|bị mất|đã mất|thất lạc)\b"),
     ("lost_device", rf"\b{_DEVICE}\b[^.!?\n]{{0,30}}?(?:{_GONE})"),
     ("lost_device", (r"\bkhông\s+(?:còn\s+)?thấy\s+(?:cái\s+|chiếc\s+)?(?:laptop|điện thoại|đt|macbook|ipad|iphone|lap|[a-z]{2,4}-\d{3,5})\b"
                      r"(?:\s+(?:của\s+)?(?:em|mình|tôi|anh|chị))?\s*(?:đâu|nữa|$|[.!?])")),
@@ -302,7 +305,9 @@ _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("cancel", r"\b(?:yêu cầu|ticket|phiếu)\b[^.!?\n]{0,60}?\b(?:huỷ|hủy|rút lại|cancel)\s+(?:giúp|giùm|hộ|đi|luôn)\b"),
     # "Gỡ FortiClient VPN khỏi máy em" (intent vpn, không phải software) — "gỡ / xoá / tháo … (ra) khỏi máy" ở MỌI intent ghi;
     # "xoá chứng chỉ cũ khỏi máy rồi cấp lại" là xin làm thuận.
-    ("uninstall", (rf"{_NOT_PAST}\b(?:gỡ bỏ|gỡ|xoá|xóa|tháo|delete|remove|uninstall)\s+(?:\S+\s+){{1,3}}?(?:ra\s+)?khỏi\s+"
+    # không nhận câu hỏi cách làm ("Cách gỡ Zoom khỏi máy như thế nào?" — soát eval/KB 12/11)
+    ("uninstall", (rf"{_NOT_PAST}(?<!cách )(?<!sao )(?<!để )(?<!phải )(?<!cần )\b(?:gỡ bỏ|gỡ|xoá|xóa|tháo|delete|remove|uninstall)\s+"
+                   rf"(?:\S+\s+){{1,3}}?(?:ra\s+)?khỏi\s+"
                    r"(?:máy|laptop|pc|điện thoại|macbook)\b(?![^.!?\n]*\b(?:cài lại|cấp lại|cài mới|rồi cài)\b)")),
     ("compromised", _COMPROMISED),  # sau cùng: câu vừa xin khoá vừa nghi lộ vẫn mang nhãn "lock" như trước
 )
@@ -354,7 +359,7 @@ _UNINSTALL_ACCENTED: Final = (
 _UNINSTALL_FOLDED: Final = (
     rf"{fold(_NOT_PAST)}(?<!cach )(?<!sao )(?<!phai )(?<!can )\b(?:go bo|go cai dat|bo cai dat|huy cai dat|go phan mem|go ung dung|"
     rf"uninstall|uninstal|remove|delete|xoa|thao bo|loai bo)\b{fold(_UNINSTALL_NOT)}"
-    r"|\bgo\s+\S+\s+khoi\s+(?:may|laptop|pc)\b|\bdon\s+(?:\S+\s+){0,2}?khoi\s+(?:may|laptop|pc)\b"
+    r"|(?<!cach )(?<!sao )(?<!de )(?<!phai )\bgo\s+\S+\s+khoi\s+(?:may|laptop|pc)\b|\bdon\s+(?:\S+\s+){0,2}?khoi\s+(?:may|laptop|pc)\b"
     r"|\bthao\s+(?:phan mem|ung dung|app)\b|\bthao\s+(?:\S+\s+){1,3}?ra\s+khoi\b"
 )
 

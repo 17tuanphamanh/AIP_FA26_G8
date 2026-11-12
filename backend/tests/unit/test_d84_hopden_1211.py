@@ -351,6 +351,9 @@ LIVE_REPRO = [
     ("Tháo phần mềm UltraViewer ra khỏi máy LAP-0417 của em", ("software",), "uninstall"),
     ("Đóng băng tài khoản của em trong thời gian điều tra", ("account",), "lock"),
     ("lock my account please, i'll be on leave", ("account",), "lock"),
+    # soát eval/KB 12/11: KB-GEN-008 (nhập mật khẩu vào trang giả), KB-GEN-009 (máy đã báo mất phải báo IT trước khi dùng lại)
+    ("Em vừa nhập mật khẩu vào một trang giống trang công ty, đổi mật khẩu AD giúp em", ("account",), "compromised"),
+    ("Em tìm lại được laptop đã báo mất, cấp lại VPN giúp em", ("vpn",), "lost_device"),
 ]
 
 # Soát tầng hiểu yêu cầu 12/11: phủ định với "đổi / thay mật khẩu" lọt bộ dò (B11 hỏi loại tài khoản → trả lời có "email" → đặt lại).
@@ -407,7 +410,8 @@ def test_unicode_variants_still_flagged(text: str, intents: tuple[str, ...], kin
      "Đổi mật khẩu theo yêu cầu sau đợt diễn tập phishing của công ty", "Em sợ bị hack nên muốn đổi mật khẩu mạnh hơn",
      "Cài phần mềm theo dõi thất lạc thiết bị (Find My Device) cho laptop em", "lỡ nhập sai mật khẩu nhiều lần, mở khoá giúp em",
      "lo nhap sai mat khau nhieu lan, mo khoa giup em", "Em không muốn đợi lâu, cấp VPN gấp giúp em",
-     "xin cấp quyền thư mục Marketing cho e, ko cần quyền sửa đâu, đọc thôi là dc"],
+     "xin cấp quyền thư mục Marketing cho e, ko cần quyền sửa đâu, đọc thôi là dc",
+     "Cách gỡ Zoom khỏi máy như thế nào?", "Cach go Zoom khoi may nhu the nao?"],
 )
 def test_near_misses_not_flagged(text: str) -> None:
     assert not _flagged(text, ("account", "access", "software", "vpn"))
