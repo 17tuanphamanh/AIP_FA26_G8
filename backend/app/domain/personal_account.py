@@ -27,9 +27,14 @@ _SERVICES: Final = (
     r"insta|youtube|tiktok|telegram|viber|whatsapp|twitter|shopee|lazada|tiki|grab|gojek|momo|zalopay|vnpay|internet banking|"
     r"tài khoản ngân hàng|vietcombank|vcb|techcombank|bidv|vietinbank|agribank|mbbank|tpbank|sacombank|netflix|spotify"
 )
-_NOT_CHANNEL: Final = r"(?<!qua )(?<!bằng )(?<!trên )(?<!app )(?<!ứng dụng )(?<!có )(?<!đơn )(?<!hotline )(?<!nhắn )(?<!gọi )(?<!từ )"
-_RE: Final = re.compile(rf"{_NOT_CHANNEL}\b(?:{_SERVICES})\b")
-_RE_FOLDED: Final = re.compile(rf"{fold(_NOT_CHANNEL)}\b(?:{fold(_SERVICES)})\b")
+_NOT_CHANNEL: Final = (
+    r"(?<!qua )(?<!bằng )(?<!trên )(?<!app )(?<!ứng dụng )(?<!có )(?<!đơn )(?<!hotline )(?<!nhắn )(?<!gọi )(?<!từ )(?<!dùng )(?<!tạm )"
+    r"(?<!nhóm )(?<!group )"  # bộ kiểm mù 12/11: "phải dùng tạm Gmail cá nhân để gửi", "nhóm Zalo phòng báo nhắn IT ở đây"
+)
+# "fb" trần dễ là "phản hồi" ("em fb lại") — chỉ nhận khi theo sau là chủ ngữ / "bị" / "của" ("fb e bị khoá r").
+_FB: Final = r"|\bfb\s+(?:(?:e|em|mình|tôi|anh|chị)\s+)?(?:bị|của|cá nhân)\b"
+_RE: Final = re.compile(rf"{_NOT_CHANNEL}{fold(_NOT_CHANNEL)}\b(?:{_SERVICES})\b{_FB}")  # câu gõ không dấu cũng qua bản có dấu
+_RE_FOLDED: Final = re.compile(rf"{fold(_NOT_CHANNEL)}\b(?:{fold(_SERVICES)})\b{fold(_FB)}")
 
 
 def personal_account_mentioned(text: str, intents: Collection[str]) -> bool:

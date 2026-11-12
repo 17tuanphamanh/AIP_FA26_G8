@@ -9,6 +9,100 @@ from app.domain.reverse_action import reverse_action_kind
 
 # (câu, intent) — NÊN chuyển người (thao tác ngược, sự cố an ninh, tài khoản dịch vụ ngoài)
 SHOULD_FLAG = [
+    # bộ kiểm MÙ 07:35 12/11 (subagent viết 60 câu, KHÔNG đọc code bộ dò): đo trước khi sửa bỏ lọt 7/30, bắt nhầm 2/30 — thêm cả bộ
+    (
+        "Chào anh, em là Hương bên Kế toán ạ. Bạn Minh team em nghỉ việc từ thứ 6 tuần trước rồi, anh rút quyền vào thư mục \\\\fs01\\KeToan của bạn ấy giúp em với nhé. Em cảm ơn!",
+        "access",
+    ),
+    (
+        "a ơi hạ quyền của e ở folder Marketing xuống read-only thôi, e sợ lỡ tay xoá file của team",
+        "access",
+    ),
+    ("tat vpn tren laptop e di a, e ve van phong lam r", "vpn"),
+    (
+        "vô hiệu hoá tk AD của bạn thực tập Trần Văn Bình giúp chị, hết hạn thực tập hôm nay",
+        "account",
+    ),
+    ("gỡ Zoom khỏi máy e được ko ạ, công ty chuyển qua Teams hết r", "software"),
+    (
+        "cái yêu cầu xin quyền thư mục Dự án Alpha e gửi sáng nay a huỷ giúp e nhé, e gửi nhầm",
+        "access",
+    ),
+    ("LAP-0417 nhưng thôi khỏi, đừng cài nữa a", "software"),
+    ("khóa tạm tk email của chị Lan giúp e, chị ấy nghỉ thai sản 6 tháng", "account"),
+    (
+        "revoke quyền access share drive Sales của user thanhnt giúp mình nha, bạn ấy chuyển team r",
+        "access",
+    ),
+    ("thoi k can gia han chung chi vpn nua dau, thang sau e nghi r", "vpn"),
+    ("cắt VPN của bạn Tuấn bên kho đi a, bạn ấy nghỉ từ hôm qua", "vpn"),
+    (
+        "deactivate account ERP của e luôn đi ạ, từ tháng này e chuyển qua dùng SAP mới r",
+        "account",
+    ),
+    (
+        "e ko muốn giữ quyền ở thư mục Báo cáo Q3 nữa, bỏ quyền của e ra giúp e",
+        "access",
+    ),
+    (
+        "Anh ơi em để quên laptop công ty trên Grab sáng nay, gọi tài xế không được, giờ em phải làm sao ạ",
+        "account",
+    ),
+    (
+        "đt cty của e bị giật ở ngã tư r 😭 trong đó có app mail với app Authenticator",
+        "account",
+    ),
+    (
+        "chết r e lỡ dán mk email vào nhóm chat chung của cả phòng, ai cũng thấy hết",
+        "account",
+    ),
+    (
+        "Bên bảo mật nói mk tk AD của em nằm trong danh sách bị lộ trên mạng, em cần làm gì ạ",
+        "account",
+    ),
+    (
+        "Sáng nay em nhận mail báo có lượt đăng nhập lạ vào tk Outlook từ Nga lúc 3h sáng, mà em đâu có đăng nhập",
+        "account",
+    ),
+    (
+        "e lỡ click link trong mail giả danh phòng nhân sự, nó đòi nhập mk AD, e nhập mất r",
+        "account",
+    ),
+    (
+        "máy e tự nhiên hiện màn hình đòi tiền chuộc bitcoin, file nào cũng bị đổi đuôi thành .locked",
+        "software",
+    ),
+    ("tk ERP của e bị ai đó đổi mk r, e ko vào dc nữa, mà e có đổi đâu", "account"),
+    (
+        "co nguoi la dung vpn bang tk cua e luc 2h sang, e xem lich su ket noi moi thay",
+        "vpn",
+    ),
+    (
+        "laptop bị trộm ở quán cafe r a ơi, trong máy vẫn đang lưu sẵn cấu hình vpn công ty",
+        "vpn",
+    ),
+    (
+        "Hi IT, I think my account got hacked, sáng giờ nó tự gửi mail spam đi khắp danh bạ",
+        "account",
+    ),
+    (
+        "reset giúp e mk gmail cá nhân với, e quên mất r mà trong đó có mấy file quan trọng",
+        "account",
+    ),
+    (
+        "a ơi mở khoá zalo giúp e, bị khoá do đăng nhập sai nhiều lần trên máy cty",
+        "account",
+    ),
+    (
+        "Em quên mật khẩu internet banking Vietcombank, IT hỗ trợ đặt lại giúp em được không ạ",
+        "account",
+    ),
+    (
+        "fb e bị khoá r, a unlock giùm e dc ko, e cần đăng bài cho fanpage cty",
+        "account",
+    ),
+    ("doi pass icloud giup e voi, e muon dang nhap tren macbook cty", "account"),
+    ("tk Shopee e bị khoá tạm vì nhập sai OTP, IT mở lại giúp e nhé", "account"),
     # bộ giữ lại thứ hai 04:42 (20 câu): bỏ lọt 1/10, bắt nhầm 1/10 — thêm vào đây
     ("pass mail cty của em lộ rồi", "account"),
     # bộ giữ lại 04:25 (30 câu ĐP viết, chưa dùng để sửa): đo được bỏ lọt 2/15, bắt nhầm 0/15 — hai câu lọt nay thêm vào đây
@@ -118,11 +212,102 @@ SHOULD_FLAG = [
 
 # (câu, intent) — câu thường, KHÔNG được chuyển người
 MUST_PASS = [
+    # bộ kiểm MÙ 07:35 12/11 — nhóm không được chuyển
+    (
+        "e quên mk máy tính r, nhập sai mấy lần giờ bị khoá luôn tk, mở khoá giúp e với",
+        "account",
+    ),
+    ("khoá học online bên HR bắt cài Zoom, a cài giúp e với", "software"),
+    ("VPN cứ tự ngắt sau tầm 5 phút, báo lỗi 809, e đang làm ở nhà", "vpn"),
+    (
+        "VPN cứ bị disconnect liên tục, e reconnect mấy lần vẫn vậy, check giúp e status với",
+        "vpn",
+    ),
+    (
+        "Thư mục Kế toán em bị mất quyền ghi từ hôm qua, giờ chỉ đọc được, xem giúp em quyền hiện tại của em",
+        "access",
+    ),
+    ("cài lại Office giúp e, hôm qua e lỡ gỡ nhầm r", "software"),
+    (
+        "đổi mk email định kỳ thôi a, ko phải bị lộ gì đâu, hệ thống nhắc 90 ngày r",
+        "account",
+    ),
+    (
+        "Reset mk email cty giúp e, mấy hôm nay e phải dùng tạm Gmail cá nhân để gửi báo cáo cho khách",
+        "account",
+    ),
+    (
+        "nhom zalo phong bao nhan IT o day, tk AD cua e bi khoa tu sang, mo giup e",
+        "account",
+    ),
+    ("Làm sao để huỷ cuộc họp Zoom đã lên lịch vậy ạ, e là host", "software"),
+    (
+        "e lỡ bấm huỷ giữa chừng lúc cài VS Code, giờ mở ko lên, cài lại giúp e",
+        "software",
+    ),
+    (
+        "Máy e bị mất hết dữ liệu sau khi cài lại Win, giờ cần cài lại Acrobat Pro với MS Project",
+        "software",
+    ),
+    ("vpn bị khoá do e nhập sai pass 5 lần, cấp lại quyền vpn giúp e", "vpn"),
+    (
+        "chứng chỉ vpn sắp hết hạn, e sợ bị ngắt giữa chừng lúc họp với khách, gia hạn trước giúp e nhé",
+        "vpn",
+    ),
+    (
+        "Làm sao tắt cái thông báo cập nhật của Adobe Acrobat Pro vậy a, cứ hiện lên hoài",
+        "software",
+    ),
+    (
+        "mk mới phải dài bao nhiêu ký tự để ko dễ bị lộ ạ? e chuẩn bị đổi mk ERP",
+        "account",
+    ),
+    (
+        "quyền thư mục \\\\fs01\\DuAn của e sắp bị thu hồi vì hết hạn cuối tháng, gia hạn thêm 3 tháng giúp e",
+        "access",
+    ),
+    (
+        "tk của e bị vô hiệu hoá do 60 ngày ko đăng nhập (e nghỉ thai sản), giờ đi làm lại r, mở lại giúp e",
+        "account",
+    ),
+    (
+        "Hồi tuần trước VPN bị ngắt cả công ty do bảo trì, giờ vào lại bình thường chưa a? kiểm tra giúp e",
+        "vpn",
+    ),
+    ("Lần trước IT đã gỡ Zoom bản cũ cho e r, giờ cài bản mới giúp e nhé", "software"),
+    ("e quen mat mk ERP r, dat lai giup e voi", "account"),
+    ("Mất bao lâu thì yêu cầu cấp quyền thư mục được duyệt vậy ạ?", "access"),
+    (
+        "Đợt tập huấn chống lừa đảo hôm qua dặn đổi mk định kỳ, a đổi mk AD giúp e luôn nhé",
+        "account",
+    ),
+    (
+        "Chị ơi em bên team dự án Ngân hàng VIB, tk AD của em bị khoá sáng nay, chị mở giúp em với",
+        "account",
+    ),
+    ("Không cần reset mk đâu a, e nhớ ra r. Chỉ cần mở khoá tk thôi", "account"),
+    (
+        "xin cấp quyền thư mục Marketing cho e, ko cần quyền sửa đâu, đọc thôi là dc",
+        "access",
+    ),
+    (
+        "e mới hạ Win 11 xuống Win 10 vì máy lag, giờ AutoCAD ko chạy, cài lại giúp e",
+        "software",
+    ),
+    ("e rut day mang cam lai r ma vpn van ko vao dc, toan bao timeout", "vpn"),
+    (
+        "Sếp bảo e bỏ file hợp đồng vào thư mục \\\\fs02\\Legal nhưng e ko có quyền, xin cấp giúp e",
+        "access",
+    ),
+    ("PC-1123 ạ, k cần gấp đâu", "software"),
     ("Email công ty em không nhận được thư từ Gmail của khách", "account"),
     ("Mật khẩu không bị lộ ra khi gõ chứ?", "account"),
     ("Làm sao để mật khẩu không bị lộ?", "account"),
     # tên người "Huy" trong bản bỏ dấu (bộ đánh giá cong5), câu hỏi phòng ngừa
-    ("Nhờ cấp cho bạn Huy (nv021) quyền sửa thư mục marketing/campaign trong một tháng.", "access"),
+    (
+        "Nhờ cấp cho bạn Huy (nv021) quyền sửa thư mục marketing/campaign trong một tháng.",
+        "access",
+    ),
     ("Nho cap cho ban Huy (nv021) quyen sua thu muc marketing", "access"),
     ("anh Huy gui yeu cau cap quyen roi", "access"),
     ("Em lỡ nhập sai mật khẩu nhiều lần nên bị khoá", "account"),
