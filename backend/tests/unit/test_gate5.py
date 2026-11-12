@@ -205,7 +205,9 @@ async def test_t20b_child_expected_risk_matches_real_chain_on_seed(
     it = _intents(parent)[index]
     data = yaml.safe_load((SCRIPTED / f"{child}.yaml").read_text(encoding="utf-8"))
     assert data["b11_extract_slots"]["slots"] == extra, child
-    state, _audit, _ = await chain("nv001", it["span"], it["type"], it["action_hint"], {**it["slots"], **extra})
+    # V6 (D-91): slot câu trả lời (số ngày) cần dấu vết trong câu — chain ghép thẳng vào B3 nên ghép cả câu trả lời vào span
+    reply = "".join(f" {v} ngày" for k, v in extra.items() if k == "duration")
+    state, _audit, _ = await chain("nv001", it["span"] + reply, it["type"], it["action_hint"], {**it["slots"], **extra})
     risk = RiskDecision.model_validate(state["risk"])
     assert (risk.matched_rule_id, risk.route) == (rule, route), child
 

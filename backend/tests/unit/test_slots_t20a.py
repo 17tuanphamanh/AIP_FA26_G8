@@ -165,7 +165,7 @@ def test_p6_duration_bad_value(value: str) -> None:
 
 @pytest.mark.parametrize("value", ["1", "30", "90", "999"])
 def test_p6_duration_ok(value: str) -> None:
-    clean, _ = sanitize_slots(SLOTS.intents["access"], {"duration": value}, text="gia hạn")
+    clean, _ = sanitize_slots(SLOTS.intents["access"], {"duration": value}, text=f"gia hạn {value} ngày")  # V6: cần dấu vết
     assert clean == {"duration": value}
 
 

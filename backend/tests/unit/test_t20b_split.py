@@ -224,8 +224,10 @@ async def test_v6_slot_only_in_other_span_dropped() -> None:
 async def test_v7_target_user_dropped_flag_only_on_that_child() -> None:
     """v7 (Q-T20a-4 áp từng con, M-T20b-14): ý account có `target_user` sai mẫu → `ctx_flags.target_is_other=True` ở CON ĐÓ (seed +
     checkpoint con); con kia không có cờ."""
-    reset_other = f"{RESET} cho Nguyễn Văn A"
-    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "Nguyễn Văn A"})
+    # V5 (D-91): tên VIẾT HOA sau "cho" nay bật cờ trên TOÀN CÂU (cả con cài phần mềm — test v7b); ở đây tên viết thường để chỉ xét cờ do
+    # `target_user` sai mẫu bị bỏ
+    reset_other = f"{RESET} cho nguyễn văn a"
+    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "nguyễn văn a"})
     f = make_flow(classify(i1, adobe_item()))
     await f.submit(f"{reset_other}, tiện {ADOBE}")
     s = await seeds(f)
@@ -234,6 +236,18 @@ async def test_v7_target_user_dropped_flag_only_on_that_child() -> None:
     assert s["T1-2"].get("ctx_flags") in (None, {})
     assert (await f.values("T1-1"))["ctx_flags"] == {"target_is_other": True}
     assert not ((await f.values("T1-2")).get("ctx_flags") or {}).get("target_is_other")
+
+
+async def test_v7b_ten_viet_hoa_tren_toan_cau_bat_co_ca_hai_con() -> None:
+    """V5 (D-91): "cho Nguyễn Văn A" (tên trần viết hoa) — L-03 dò người khác trên TOÀN CÂU GỐC → con cài phần mềm cũng bật cờ (không gợi ý
+    máy của người gửi, hỏi máy) — chiều an toàn."""
+    reset_other = f"{RESET} cho Nguyễn Văn A"
+    i1 = item("account", reset_other, action="reset_password", slots={"account_type": "ad", "target_user": "Nguyễn Văn A"})
+    f = make_flow(classify(i1, adobe_item()))
+    await f.submit(f"{reset_other}, tiện {ADOBE}")
+    s = await seeds(f)
+    assert s["T1-1"]["ctx_flags"] == {"target_is_other": True}
+    assert s["T1-2"]["ctx_flags"] == {"target_is_other": True}
 
 
 # ---- v8: đơn ý y nguyên ---------------------------------------------------------------------------------------------------------

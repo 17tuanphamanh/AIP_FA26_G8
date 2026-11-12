@@ -37,11 +37,13 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.facts import FACT_KEYS
+from app.domain.slot_evidence import lacks_evidence
 
 MAX_VALUE_LEN = 100  # P1: dài hơn → bỏ cả giá trị
 # P2 + Q-3f-3 — hằng CODE, không cấu hình được (sửa slots.yaml không tắt được luật chống bịa slot).
 # T20a P5: `target_user`, `resource_path`, `software_name` quyết AI/CÁI GÌ bị tác động — LLM tự điền là đổi đích hành động. Slot chuẩn
-# hoá (`account_type`, `permission_level`, `duration`, `action`) không đòi có trong câu; `value_rules` chặn ngoài tập.
+# hoá (`account_type`, `permission_level`, `duration`, `action`): V6 (soát 12/11, D-91) — cần DẤU VẾT trong câu (`slot_evidence`), không cần
+# nguyên văn; `value_rules` chặn ngoài tập.
 TOKEN_IN_TEXT = frozenset({"device_id", "error_code", "target_user", "resource_path"})
 PHRASE_IN_TEXT = frozenset({"reason", "software_name"})
 MUST_APPEAR_IN_TEXT = TOKEN_IN_TEXT | PHRASE_IN_TEXT
@@ -226,7 +228,9 @@ def sanitize_slots(
             dropped[k] = "bad_action"
         elif (rule := spec.value_rules.get(k)) is not None and not rule.ok(value):
             dropped[k] = "bad_value"
-        elif k in MUST_APPEAR_IN_TEXT and not in_text(k, value, text, device_prefixes):
+        elif (k in MUST_APPEAR_IN_TEXT and not in_text(k, value, text, device_prefixes)) or lacks_evidence(
+            k, value, text, intent_actions=frozenset(spec.action_types)
+        ):  # V6 (D-91): slot chuẩn hoá (account_type, permission_level, duration, action) cần DẤU VẾT trong câu
             dropped[k] = "slot_not_in_text"
         else:
             clean[k] = value

@@ -120,6 +120,31 @@ _NAMED = r"(?i:\bcho (?:anh|chị|bạn|sếp|cô|chú)) (\w)"  # "cho chị Hoa
 # be-target-guard-2: cụm MÁY của người khác ("máy của chị Hoa", "máy anh Nam", "máy của sếp") — không có "em/mình/tôi" (tự xưng)
 _DEVICE_PHRASES = (r"\bmáy (?:tính )?của (?:anh|chị|bạn|sếp|cô|chú|cậu)\b",)
 _DEVICE_NAMED = r"(?i:\b(?:máy (?:tính )?(?:của )?|của )(?:anh|chị|bạn|sếp|cô|chú|cậu)) (\w)"  # + "máy lap-0610 của chị Hoa"
+# V5 (soát 12/11, D-91): tên TRẦN sau giới từ người-được-làm-hộ ("của Bình", "cho Bình", "hộ Bình", "giúp chị Lan") và "máy (của) Bình" —
+# trước chỉ nhận "cho + kính ngữ + Tên" / "máy + kính ngữ + Tên"; LLM bỏ sót `target_user` là làm trên CHÍNH người gửi (R01/R10/R11/R20 AUTO).
+# Tên = MỘT từ chữ cái, hoa chữ đầu, phần còn lại thường, ≥ 2 ký tự, không thuộc `_NOT_NAMES` (sản phẩm, hãng máy, hệ thống, phòng ban, đại
+# từ). Chiều an toàn: bắt nhầm chỉ thêm câu hỏi đích. Cùng mẫu: vai trò người khác ("cho sếp", "của trưởng phòng", "giúp quản lý").
+_HONORIFIC = r"(?:anh|chị|bạn|sếp|cô|chú|cậu|em|ông|bà|bác)"
+_BARE_NAMED = rf"(?i:(?<!\w)(?:của|cho|hộ|giúp|giùm|dùm)\s+(?:{_HONORIFIC}\s+)?)(\w+)"
+_DEVICE_BARE = rf"(?i:(?<!\w)máy\s+(?:tính\s+)?(?:của\s+)?(?:{_HONORIFIC}\s+)?)(\w+)"
+_ROLE_BENEFIT = (r"(?<!\w)(?:của|cho|hộ|giúp|giùm|dùm)\s+(?:sếp|trưởng phòng|trưởng nhóm|trưởng bộ phận|quản lý|giám đốc|phó giám đốc"
+                 r"|leader|manager)(?!\w)")  # fmt: skip
+_NOT_NAMES = frozenset({
+    # đại từ / kính ngữ viết hoa
+    "em", "anh", "chi", "ban", "minh", "toi", "to", "tao", "no", "ho", "sep", "co", "chu", "cau", "ong", "ba", "bac", "chung", "may",
+    # sản phẩm, dịch vụ, hệ thống
+    "windows", "zoom", "outlook", "teams", "office", "excel", "word", "powerpoint", "onenote", "onedrive", "sharepoint", "adobe",
+    "acrobat", "photoshop", "illustrator", "chrome", "firefox", "edge", "safari", "slack", "skype", "zalo", "facebook", "messenger",
+    "gmail", "google", "microsoft", "apple", "mac", "macbook", "imac", "iphone", "ipad", "android", "dell", "lenovo", "asus", "acer",
+    "thinkpad", "cisco", "forticlient", "fortinet", "anydesk", "teamviewer", "ultraviewer", "vpn", "wifi", "jira", "confluence", "git",
+    "github", "gitlab", "visual", "studio", "python", "java", "docker", "postman", "notepad", "kaspersky", "bitdefender", "sophos",
+    "erp", "sap", "misa", "bravo", "oracle", "vnpt", "viettel", "mobifone", "vinaphone", "shopee", "lazada", "tiki", "momo", "grab",
+    "telegram", "discord", "steam", "linux", "ubuntu", "unikey", "foxit", "winrar", "vlc", "spotify", "canva", "figma", "notion",
+    "trello", "dropbox", "autocad", "matlab", "tableau", "power", "sql", "server", "admin", "administrator", "user", "guest", "test",
+    "ad", "it", "hr", "email", "mail", "web", "app", "phan", "phong", "cong", "tong", "nhanh", "ke", "nhan", "kinh",
+    "ky", "hanh", "marketing", "sales", "finance", "legal", "support", "helpdesk", "service", "desk", "team", "nhom", "tai", "khoan",
+    "thu", "muc", "quyen", "file", "folder", "drive", "shared", "public", "templates", "reports", "mat", "khau", "laptop", "pc",
+})  # fmt: skip
 _EMPLOYEE = re.compile(r"nv\d{3,5}")  # mã nhân viên (seed nvXXX) — dò riêng cho vpn/software
 _USER_LIKE = re.compile(r"[a-z0-9_]{3,64}")  # dáng `target_user` (slots.yaml) — giá trị ý bên cạnh dáng này không bao giờ bỏ qua
 
@@ -149,6 +174,15 @@ _GENERIC_FORMS = (_forms(str), _forms(fold))
 _NAMED_RES = (re.compile(_NAMED), re.compile(fold(_NAMED)))
 _DEVICE_PHRASE_RES = tuple(re.compile(p) for p in _DEVICE_PHRASES) + tuple(re.compile(fold(p)) for p in _DEVICE_PHRASES)
 _DEVICE_NAMED_RES = (re.compile(_DEVICE_NAMED), re.compile(fold(_DEVICE_NAMED)))
+_BARE_NAMED_RES = (re.compile(_BARE_NAMED), re.compile(fold(_BARE_NAMED)))
+_DEVICE_BARE_RES = (re.compile(_DEVICE_BARE), re.compile(fold(_DEVICE_BARE)))
+_ROLE_RES = (re.compile(_ROLE_BENEFIT), re.compile(fold(_ROLE_BENEFIT)))
+
+
+def _looks_like_name(word: str) -> bool:
+    """V5: một từ dáng TÊN NGƯỜI — chữ cái, hoa chữ đầu, còn lại thường, ≥ 2 ký tự, không thuộc `_NOT_NAMES` (so bản bỏ dấu, chữ thường)."""
+    return (len(word) >= 2 and word.isalpha() and word[0].isupper() and word[1:].islower()
+            and fold(word).casefold() not in _NOT_NAMES)  # fmt: skip
 
 
 def _ignored_values(values: Iterable[str]) -> frozenset[str]:
@@ -215,6 +249,12 @@ def _has_phrase(text: str, *, device: bool = False) -> bool:
     for r in _NAMED_RES + (_DEVICE_NAMED_RES if device else ()):
         for target in (text, fold(text)):
             if any(m.group(1).isupper() for m in r.finditer(target)):
+                return True
+    if any(r.search(lowered) or r.search(folded) for r in _ROLE_RES):  # V5: "cho sếp", "của trưởng phòng"
+        return True
+    for r in _BARE_NAMED_RES + (_DEVICE_BARE_RES if device else ()):  # V5: tên trần
+        for target in (text, fold(text)):
+            if any(_looks_like_name(m.group(1)) for m in r.finditer(target)):
                 return True
     return False
 

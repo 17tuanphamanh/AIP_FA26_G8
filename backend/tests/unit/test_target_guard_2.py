@@ -122,7 +122,9 @@ def test_account_access_unchanged_by_device_rules() -> None:
     """Cụm máy và `device_text` chỉ áp vpn/software — account/access giữ đúng bản be-target-guard."""
     acc = SLOTS.intents["account"].keys
     assert target_check("account", {"account_type": "ad"}, {}, acc, "đặt lại mật khẩu AD, máy LAP 0610", "nv001") == (False, None)
-    assert target_check("account", {"account_type": "ad"}, {}, acc, "đặt lại mật khẩu máy của sếp", "nv001") == (False, None)
+    assert target_check("account", {"account_type": "ad"}, {}, acc, "đặt lại mật khẩu máy tính của chị", "nv001") == (False, None)
+    # V5 (D-91): "của sếp" là VAI TRÒ người khác — bật cờ ở account qua lưới account (không phải luật máy)
+    assert target_check("account", {"account_type": "ad"}, {}, acc, "đặt lại mật khẩu máy của sếp", "nv001") == (True, "phrase")
 
 
 # ---- node B3 → B6, B11 -------------------------------------------------------------------------------------------------------
