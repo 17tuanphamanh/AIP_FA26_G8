@@ -415,7 +415,10 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         return await goto(
             state, S_CONFIRMING, next_node="confirm_wait", step="B18", event="executed_ok",
-            audit_detail={**rule, **_point7(res), "already_installed": already}, execution=res,
+            audit_detail={**rule, **_point7(res), "already_installed": already,
+                          # E12 (soát 12/11): AI đã duyệt (AUTO: None) + hash hành động ĐÃ thực thi — đối chiếu dòng B16 không cần bảng approvals
+                          "approver_id": decided_by, "action_plan_hash": hash_action(action)},
+            execution=res,
             conversation=[result_msg(text, ref)],
         )  # fmt: skip
 

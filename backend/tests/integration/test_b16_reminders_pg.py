@@ -246,7 +246,8 @@ async def test_b16_rejection_pg_note_masked_everywhere_point6(db: PgUrls, rw: As
                            "WHERE ticket_id = :t AND step = 'B16'", t=ticket)  # fmt: skip
     assert (audit["approval_result"], audit["note"], audit["response_time_seconds"]) == ("rejected", masked, 75.0)
     assert audit["detail"] == {"view_duration": None, "decided_without_view": True, "decided_as": "primary",
-                               "reason_code": "wrong_device", "close_applied": 1, "note_suppressed": False}  # fmt: skip
+                               "reason_code": "wrong_device", "close_applied": 1, "note_suppressed": False,
+                               "approver_id": APPROVER}  # fmt: skip  — E12 (12/11): + người đã bấm
     approval = await _row(rw, "SELECT note, decided_at FROM approvals WHERE approval_id = :a", a=int(aid))
     assert (approval["note"], approval["decided_at"]) == (masked, T0 + timedelta(seconds=75))
     assert await scalar(rw, "SELECT count(*) FROM side_effects WHERE ticket_id = :t AND kind = 'notify_user' AND step = 'B16'",

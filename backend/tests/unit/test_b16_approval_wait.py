@@ -177,13 +177,16 @@ async def test_c1_http_reject_with_phone_masked_for_requester() -> None:
 async def test_c2_point6_approved() -> None:
     h = GraphHarness()
     row = await _pending(h)
+    approved_hash = (await h.runner.snapshot("t1")).values["action_plan_hash"]
     h.clock.advance(timedelta(seconds=90))
     await _decide(h, _event(h, "approved", view_duration=30.0))
     b16 = _b16(h)
     assert (b16["event"], b16["approval_result"], b16.get("note")) == ("approved", "approved", None)
     assert b16["response_time_seconds"] == 90.0
+    # E12 (soát 12/11) — đổi có chủ ý: + người ĐÃ bấm, + hash hành động đã duyệt
     assert b16["detail"] == {"view_duration": 30.0, "decided_without_view": False, "decided_as": "primary",
-                             "reason_code": None, "close_applied": 1}  # fmt: skip
+                             "reason_code": None, "close_applied": 1, "approver_id": APPROVER,
+                             "action_plan_hash": approved_hash}  # fmt: skip
     assert row["decided_at"] == h.clock.now()  # d1
 
 
@@ -194,9 +197,10 @@ async def test_c2_point6_rejected() -> None:
     await _decide(h, _event(h, "rejected", note="không hợp lệ", reason_code="policy_violation", view_duration=12.5))
     b16 = _b16(h)
     assert (b16["approval_result"], b16["note"], b16["response_time_seconds"]) == ("rejected", "không hợp lệ", 45.0)
-    assert set(b16["detail"]) == POINT6 | {"note_suppressed"}
+    assert set(b16["detail"]) == POINT6 | {"note_suppressed", "approver_id"}  # E12 (12/11): + người đã bấm
     assert b16["detail"] == {"view_duration": 12.5, "decided_without_view": False, "decided_as": "primary",
-                             "reason_code": "policy_violation", "close_applied": 1, "note_suppressed": False}  # fmt: skip
+                             "reason_code": "policy_violation", "close_applied": 1, "note_suppressed": False,
+                             "approver_id": APPROVER}  # fmt: skip
     assert row["decided_at"] == h.clock.now()  # d1
 
 

@@ -50,7 +50,8 @@ def _point6(ev: dict[str, Any], kind: str, a: ApprovalRow | None, applied: int) 
                 "decided_as": None, "reason_code": None, "close_applied": applied}  # fmt: skip
     view = ev.get("view_duration")
     return {"view_duration": view, "decided_without_view": view is None, "decided_as": ev.get("decided_as"),
-            "reason_code": ev.get("reason_code"), "close_applied": applied}  # fmt: skip
+            "reason_code": ev.get("reason_code"), "close_applied": applied,
+            "approver_id": ev.get("approver_id")}  # fmt: skip  — E12 (soát 12/11): người ĐÃ bấm (server đặt), có thể là dự phòng
 
 
 def _response_time(ev: dict[str, Any], kind: str, a: ApprovalRow | None) -> float | None:
@@ -97,7 +98,8 @@ def make(deps: NodeDeps) -> NodeFn:
         if kind == "approved":
             return await goto(
                 state, S_EXECUTING, next_node="b17_execute", step="B16", event="approved",
-                approval_result="approved", audit_columns=columns, audit_detail=detail,
+                approval_result="approved", audit_columns=columns,
+                audit_detail={**detail, "action_plan_hash": state.get("action_plan_hash")},  # E12: duyệt ĐÚNG hành động nào
             )  # fmt: skip
         if kind == "rejected":
             return await _rejected(state, ev, note, columns, detail)
