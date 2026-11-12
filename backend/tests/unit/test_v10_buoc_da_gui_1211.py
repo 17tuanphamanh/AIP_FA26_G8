@@ -37,3 +37,25 @@ def test_mot_buoc_khong_co_cau_license() -> None:
 
 def test_khong_buoc_nao_khong_them_gi() -> None:
     assert steps_note(_paid(), ()) == ""
+
+
+async def test_m4_may_da_co_phan_mem_co_phi_khong_cap_license() -> None:
+    """V10 (agent 12 M4): máy ĐÃ có phần mềm có phí → PLAN bỏ bước cấp license (trước: trừ license vô ích rồi "đã có sẵn")."""
+    ex, writes, _, _ = executor()
+    writes.already_installed.add("adobe-acrobat-pro")
+    paid_installed = action("install_software", params={"device_id": "LAP-0342", "software_name": "adobe-acrobat-pro"},
+                            facts={"in_catalog": True, "license_paid": True, "requires_local_admin": False,
+                                   "software_installed_on_device": True})  # fmt: skip
+    res = await ex.execute("t1", "T1", paid_installed)
+    assert res.success and writes.order == ["install_software"]
+    assert writes.license_used["adobe-acrobat-pro"] == 7  # không trừ
+    assert res.outputs.get("already_installed") == "true"
+
+
+async def test_m4_chua_co_van_cap_license_truoc() -> None:
+    ex, writes, _, _ = executor()
+    res = await ex.execute("t1", "T1", action("install_software", params={"device_id": "LAP-0342",
+                                                                         "software_name": "adobe-acrobat-pro"},
+                                              facts={"in_catalog": True, "license_paid": True, "requires_local_admin": False,
+                                                     "software_installed_on_device": False}))  # fmt: skip
+    assert res.success and writes.order == ["assign_paid_license", "install_software"]

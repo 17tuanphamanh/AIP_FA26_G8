@@ -80,10 +80,11 @@ def b11_state(user: str, intent: str, slots: dict[str, str], facts: dict[str, An
 # Kỳ vọng fact — chép từ bảng 5.1.6 i1, s1/s4, c1 + seed.
 I1 = {"target_account_privilege": "standard_user", "target_is_service_account": False, "target_user_status": "active",
       "target_account_locked": False}  # fmt: skip
-S1 = {"in_catalog": True, "license_paid": False, "requires_local_admin": False, "device_registered": True,
+S0 = {"in_catalog": True, "license_paid": False, "requires_local_admin": False, "device_registered": True,
       "device_owner_is_requester": True, "software_prohibited": False,
       "catalog_requires_approval": False}  # fmt: skip  # Q5: + software_prohibited; D-93: + catalog_requires_approval
-S4 = {**S1, "device_count": 1, "has_registered_device": True}
+S1 = {**S0, "software_installed_on_device": True}  # V10 M4: máy nêu tên → đã tra danh sách cài (seed: LAP-0342 có zoom)
+S4 = {**S0, "device_count": 1, "has_registered_device": True}  # máy suy ở B6 → chưa tra danh sách cài
 C1 = {"resource_sensitivity": "low", "same_department": True, "has_permission_record": True,
       "existing_permission_level": "read", "target_user_status": "active"}  # fmt: skip
 Q3_NV001 = {"resource_sensitivity": "high", "same_department": True, "has_permission_record": True,

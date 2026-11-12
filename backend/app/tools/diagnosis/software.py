@@ -19,7 +19,7 @@ from typing import Any
 from app.domain.action import normalize_software_name
 from app.domain.facts import FACT_KEYS
 from app.tools.diagnosis.vpn import device_facts
-from app.tools.models import CatalogEntry, DeviceList
+from app.tools.models import CatalogEntry, DeviceList, InstalledList
 
 TOOLS = (
     "check_catalog_entry", "check_license_available", "check_installed_list", "check_device_registered",
@@ -60,6 +60,9 @@ def infer_software(
             facts["requires_local_admin"] = entry.requires_local_admin
             if entry.requires_approval is not None:  # D-93: cờ của danh mục (trước bị bỏ qua) → R23 / R11
                 facts["catalog_requires_approval"] = entry.requires_approval
+            installed = diag.get("check_installed_list")
+            if isinstance(installed, InstalledList):  # V10 (M4): chỉ khi đã tra danh sách cài của đúng máy
+                facts["software_installed_on_device"] = any(i.name == entry.name for i in installed.root)
     assert set(facts) <= FACT_KEYS  # hợp đồng nội bộ; build_action kiểm lại bằng FactKeyViolation
     return inferred, facts
 

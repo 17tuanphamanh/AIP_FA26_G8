@@ -42,6 +42,8 @@ FACT_TYPES: Mapping[str, type] = {
     "software_prohibited": bool,  # check_catalog_entry.prohibited (danh sách cấm do hệ thống ngoài giữ); 404 → false — R21 deny
     # ---- soát 12/11 (D-93) ----
     "catalog_requires_approval": bool,  # check_catalog_entry.requires_approval — chỉ khi trong danh mục; R23 approval, R11 đòi false
+    # V10 (agent 12 M4): máy đã có phần mềm (tên chuẩn danh mục ∈ check_installed_list) — PLAN bỏ bước cấp license (không trừ license vô ích)
+    "software_installed_on_device": bool,
 }
 FACT_KEYS: frozenset[str] = frozenset(FACT_TYPES)
 CERT_STATUSES: frozenset[str] = frozenset({"valid", "expired", "revoked", "none"})

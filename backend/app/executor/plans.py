@@ -61,6 +61,8 @@ def plan_for(action: Action, plans: Mapping[str, tuple[Step, ...]] | None = None
     """T24 P2: các bước của `action` sau khi lọc `when`. `action.type` không có trong PLAN → KeyError (E9)."""
     steps = (PLAN if plans is None else plans)[action.type]
     paid = action.facts.get("license_paid") is not False  # thiếu fact → coi như CÓ phí (D-48)
+    # V10 (soát 12/11, agent 12 M4): máy ĐÃ có phần mềm → không cấp license (bước cài trả `already_installed`, tin "đã có sẵn")
+    paid = paid and action.facts.get("software_installed_on_device") is not True
     return tuple(s for s in steps if s.when == "always" or (s.when == "paid_license" and paid))
 
 

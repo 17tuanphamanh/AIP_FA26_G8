@@ -82,6 +82,7 @@ async def test_s1_zoom_on_own_lap0342() -> None:
     assert facts == {
         "in_catalog": True, "license_paid": False, "requires_local_admin": False, "software_prohibited": False,  # Q5
         "device_registered": True, "device_owner_is_requester": True, "catalog_requires_approval": False,  # D-93
+        "software_installed_on_device": True,  # V10 M4: seed LAP-0342 đã có zoom
     }  # fmt: skip
     assert inferred == {}  # đã nêu máy → không suy gì
 

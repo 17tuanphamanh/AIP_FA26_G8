@@ -148,11 +148,13 @@ E1 = [
     pytest.param("nv005", "account", {"account_type": "erp"}, {}, {}, id="e1-i8-nv005-erp-404"),
     pytest.param("nv001", "software", {"software_name": "Zoom", "device_id": "LAP-0342"},
                  {"in_catalog": True, "license_paid": False, "requires_local_admin": False, "device_registered": True,
-                  "device_owner_is_requester": True, "software_prohibited": False, "catalog_requires_approval": False}, {},
-                 id="e1-s1-zoom-LAP-0342"),  # D-93: + catalog_requires_approval
+                  "device_owner_is_requester": True, "software_prohibited": False, "catalog_requires_approval": False,
+                  "software_installed_on_device": True}, {},
+                 id="e1-s1-zoom-LAP-0342"),  # D-93: + catalog_requires_approval; V10 M4: seed LAP-0342 đã có zoom
     pytest.param("nv001", "software", {"software_name": "AutoCAD", "device_id": "LAP-0342"},
                  {"in_catalog": True, "license_paid": True, "requires_local_admin": True, "device_registered": True,
-                  "device_owner_is_requester": True, "software_prohibited": False, "catalog_requires_approval": True}, {},
+                  "device_owner_is_requester": True, "software_prohibited": False, "catalog_requires_approval": True,
+                  "software_installed_on_device": False}, {},
                  id="e1-s2-autocad"),
     pytest.param("nv001", "software", {"software_name": "Photoshop", "device_id": "LAP-0342"},
                  {"in_catalog": False, "device_registered": True, "device_owner_is_requester": True,
