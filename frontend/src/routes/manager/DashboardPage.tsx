@@ -53,8 +53,8 @@ export function DashboardPage() {
           <h1 className="text-title">Tổng quan</h1>
           <p data-testid="dashboard-window" className="text-ink-2">
             {shown
-              ? `Từ ${vnDateTime(shown.from)} đến ${vnDateTime(shown.to)} (giờ Việt Nam) · chỉ tính yêu cầu lá.`
-              : "Giờ Việt Nam · chỉ tính yêu cầu lá."}
+              ? `Từ ${vnDateTime(shown.from)} đến ${vnDateTime(shown.to)} (giờ Việt Nam) · chỉ tính yêu cầu lá đã kết thúc.`
+              : "Giờ Việt Nam · chỉ tính yêu cầu lá đã kết thúc."}
           </p>
         </div>
         {missing ? null : <Segmented label="Khoảng thời gian" options={RANGES} value={range} onChange={setRange} />}

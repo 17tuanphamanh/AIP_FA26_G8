@@ -24,6 +24,7 @@ import {
   ALERT_LABEL,
   alertLabel,
   audienceLabel,
+  AUTOMATION_PENDING_NOTE,
   DASHBOARD_MISSING_TITLE,
   E1_LABEL,
   EMPTY_NOTE,
@@ -307,6 +308,9 @@ describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 t
     expect(within(tile("approval_expired_count")).getByTestId("kpi-value").textContent).toBe("0");
     expect(within(tile("automation_rate")).getByTestId("kpi-value").textContent).toMatch(/^63\s%$/);
     expect(weighted.textContent).toMatch(/thô 16\s%/); // số thô vẫn hiện ở dòng phụ
+    // B3 (12/11, agent 20 L4): ca tự xử lý chỉ vào mẫu khi đã kết thúc — nói rõ dưới ô "Tự xử lý"
+    expect(tile("automation_rate").textContent).toContain(AUTOMATION_PENDING_NOTE);
+    expect(AUTOMATION_PENDING_NOTE).toBe("chỉ tính khi người dùng bấm “Đã ổn” hoặc sau 48 giờ không phản hồi");
   });
 });
 
@@ -1300,7 +1304,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     dashboardServer();
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính yêu cầu lá.");
+    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính yêu cầu lá đã kết thúc."); // B3 (12/11)
     expect([kpiValue("automation_rate"), kpiValue("escalation_rate_weighted"), kpiValue("deflection_rate"), kpiValue("approval_expired_count")]).toStrictEqual([
       "63 %",
       "14,2 %",

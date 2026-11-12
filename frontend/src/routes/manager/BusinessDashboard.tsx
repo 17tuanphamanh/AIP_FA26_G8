@@ -5,6 +5,7 @@ import { GOI_Y_TRONG_SO, luatIT, MA_KET_THUC } from "../../lib/nhan.ts";
 import type { BusinessCountedTam as Business, BusinessMetrics, E3Cases, GroupCountTam } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import {
+  AUTOMATION_PENDING_NOTE,
   countedRateText,
   DECIDED_BY_LABEL,
   E1_LABEL,
@@ -166,7 +167,15 @@ export function BusinessKpis({ data }: { data: Business }) {
       : undefined;
   return (
     <div className="grid grid-cols-4 gap-4 max-lg:grid-cols-2">
-      <Kpi data={data} name="automation_rate" value={metric(data, "automation_rate")} label="Tự xử lý" kind="rate" text={rateText(data, "automation_rate")} />
+      <Kpi
+        data={data}
+        name="automation_rate"
+        value={metric(data, "automation_rate")}
+        label="Tự xử lý"
+        kind="rate"
+        text={rateText(data, "automation_rate")}
+        extra={AUTOMATION_PENDING_NOTE}
+      />
       <Kpi
         data={data}
         name="escalation_rate_weighted"

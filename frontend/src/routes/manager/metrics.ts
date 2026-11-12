@@ -104,6 +104,9 @@ export function countedRateText(
 /** `decided_by` (rule / llm / model) — nhãn từ src/lib/nhan.ts (bảng ĐP 26/10 23:10); khoá lạ → hiện nguyên. */
 export const DECIDED_BY_LABEL: Readonly<Record<string, string>> = BEN_QUYET_DINH;
 
+/** B3 (soát 12/11, agent 20 L4): mẫu số chỉ gồm lá ĐÃ KẾT THÚC — ca tự làm xong nhưng người dùng chưa xác nhận chưa được tính. */
+export const AUTOMATION_PENDING_NOTE = "chỉ tính khi người dùng bấm “Đã ổn” hoặc sau 48 giờ không phản hồi";
+
 /** Lý do E1 (backend monitor/metrics.py E1_REASONS + "other") [Suy luận nhãn]; khoá lạ → hiện nguyên. */
 export const E1_LABEL: Record<string, string> = {
   out_of_scope: "Ngoài phạm vi hỗ trợ",
