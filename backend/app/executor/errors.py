@@ -13,7 +13,11 @@ class ExecutionInterrupted(Exception):
 
     Thông điệp chỉ có định danh."""
 
-    def __init__(self, message: str, *, cause: str | None = None, write_calls: int = 0) -> None:
+    def __init__(
+        self, message: str, *, cause: str | None = None, write_calls: int = 0, steps_begun: tuple[str, ...] = ()
+    ) -> None:
         super().__init__(message)
         self.cause = cause
         self.write_calls = write_calls
+        # V10 (soát 12/11, agent 12 M3): tên tool (tập đóng) các bước đã `begun` ở LẦN NÀY — ghi chú L2 nêu bước đã gửi + license
+        self.steps_begun = steps_begun

@@ -60,11 +60,12 @@ from pydantic import ValidationError
 from app.core.errors import DomainError
 from app.core.hashing import hash_action
 from app.core.turn_budget import TurnBudgetExceeded
-from app.domain.action import Action
+from app.domain.action import SOFTWARE_NAME, Action
 from app.domain.approval import invalid_reason
 from app.domain.context import RequesterContext
 from app.domain.exit_codes import ExitCode
 from app.domain.messages import (
+    USER_ID,
     already_installed_text,
     is_already_installed,
     permission_rows,
@@ -116,6 +117,21 @@ def _point7(res: ExecutionResult) -> dict[str, Any]:
         "rollback_status": res.rollback_status, "action_plan_hash_matched": res.action_plan_hash_matched,
         "write_calls": _write_calls(res),
     }  # fmt: skip
+
+
+def steps_note(action: Action, steps: tuple[str, ...]) -> str:
+    """V10 (soát 12/11, agent 12 M3): kế hoạch nhiều bước bị gián đoạn → ghi chú L2 nêu bước đã gửi (tên tool, tập đóng) và câu license
+    khi đã gửi bước cấp license (KHÔNG thu hồi tự động — D-48). Định danh chỉ qua mẫu (P6). Không có bước → ""."""
+    if not steps:
+        return ""
+    note = f" Bước đã gửi: {', '.join(steps)}."
+    if "assign_paid_license" in steps:
+        software = str(action.params.get("software_name") or "")
+        software = software if SOFTWARE_NAME.fullmatch(software) else "—"
+        who = action.requested_for if USER_ID.fullmatch(action.requested_for) else "—"
+        note += (f" License {software} có thể ĐÃ cấp cho {who} và KHÔNG được thu hồi tự động — kiểm rồi cài bằng tay hoặc thu hồi "
+                 "license.")  # fmt: skip
+    return note
 
 
 def llm_auto(state: Any, action: Action) -> bool:
@@ -353,7 +369,8 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_ESCALATED, next_node="b20_audit", step="B17", event="exec_interrupted",
                 audit_detail={**rule, "success": False, "write_calls": exc.write_calls, "cause": exc.cause,
                               "action_plan_hash_matched": matched},
-                exit_code=ExitCode.E7.value, escalation_reason_detail="exec_interrupted", escalation_note=INTERRUPTED_NOTE,
+                exit_code=ExitCode.E7.value, escalation_reason_detail="exec_interrupted",
+                escalation_note=INTERRUPTED_NOTE + steps_note(action, exc.steps_begun),
             )  # fmt: skip
         except TurnBudgetExceeded:
             return await goto(

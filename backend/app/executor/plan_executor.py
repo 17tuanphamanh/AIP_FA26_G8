@@ -29,7 +29,7 @@ httpx/nội dung phản hồi của hệ thống ngoài KHÔNG bao giờ đượ
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
@@ -103,6 +103,7 @@ class _Progress:
 
     began: bool = False  # đã INSERT `begun` ít nhất một bước
     sent: int = 0  # lời gọi ghi đã gửi (bước + hoàn tác) — cận trên của số lời gọi tới đích
+    steps: list[str] = field(default_factory=list)  # V10: tool các bước đã `begun` (theo thứ tự)
 
 
 class PlanExecutor:
@@ -142,7 +143,7 @@ class PlanExecutor:
             cause = type(e).__name__  # CHỈ tên lớp lỗi — không str(e), không nội dung phản hồi (luật 8.9)
             log.warning("executor: lỗi sau begun (ticket %s, %s): %s", ticket_id, action.type, cause)
             raise ExecutionInterrupted(f"ticket {ticket_id}: lỗi sau begun ({cause})", cause=cause,
-                                       write_calls=progress.sent) from e  # fmt: skip
+                                       write_calls=progress.sent, steps_begun=tuple(progress.steps)) from e  # fmt: skip
 
     async def _apply(
         self, ticket_id: str, turn_id: str, action: Action, steps: tuple[Step, ...], progress: _Progress
@@ -152,6 +153,7 @@ class PlanExecutor:
             await self._txlog.begin(ticket_id, turn_id, step.tool)
             progress.began = True
             progress.sent += 1
+            progress.steps.append(step.tool)
             args = step_args(step.tool, action)
             try:
                 result = await self._registry.call(step.tool, args, caller_step=WRITE_STEP)

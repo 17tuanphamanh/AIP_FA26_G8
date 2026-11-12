@@ -575,7 +575,9 @@ async def test_fail7_error_after_begin_is_e7_warning_not_e9(kind: str) -> None:
     fail_after_send(env.writes, kind)
     out = await env.node(_state(), boundary=True)
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E7", "exec_interrupted")
-    assert out["escalation_note"] == b17_execute.INTERRUPTED_NOTE and MAY_HAVE_WRITTEN in out["escalation_note"]
+    # V10 (soát 12/11): + "Bước đã gửi: …" (tên tool các bước đã `begun`)
+    assert out["escalation_note"] == b17_execute.INTERRUPTED_NOTE + " Bước đã gửi: renew_vpn_cert."
+    assert MAY_HAVE_WRITTEN in out["escalation_note"]
     detail = env.detail("exec_interrupted")
     assert (detail["cause"], detail["write_calls"]) == (kind, 1)  # chỉ tên lớp lỗi
     assert SECRET_BODY not in repr(env.h.audit.rows) and env.h.audit.of("t1", "unhandled_exception") == []
