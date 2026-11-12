@@ -25,6 +25,7 @@ mau+='|generated with[[:space:]]*\[?claude'
 mau+='|claude\.ai/(code|share)'
 mau+='|noreply@anthropic\.com'
 mau+='|🤖'
+mau+='|subagent'  # O6 (soát 12/11): 4 commit cũ trên main mang chữ này lọt qua
 
 # Bỏ dòng comment của git (# ...) — `git commit -v` nhét cả diff vào đó, mà diff
 # có thể chứa mẫu một cách chính đáng (đúng như file này). Chỉ soi phần người viết.
@@ -33,8 +34,8 @@ if grep -v '^#' "$msg" | grep -qiE "$mau"; then
 
   ✖ Commit bị chặn: thông điệp có dấu vết AI.
 
-  Repo này không nhận Co-Authored-By: Claude, Claude-Session, link claude.ai
-  hay 🤖 trong lịch sử. Xoá các dòng đó rồi commit lại.
+  Repo này không nhận Co-Authored-By: Claude, Claude-Session, link claude.ai,
+  🤖 hay chữ "subagent" trong lịch sử. Xoá các dòng đó rồi commit lại.
 
   Thật sự cần giữ:  git commit --no-verify
 
