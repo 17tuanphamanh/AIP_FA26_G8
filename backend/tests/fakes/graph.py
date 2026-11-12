@@ -39,6 +39,7 @@ from app.auth.user_sync import AdUserSync, AuthApproverUsers
 from app.auth.username_hash import username_key
 from app.core.clock import Clock, FakeClock
 from app.db.escalations import (
+    WRITE_DOUBT_REASONS,
     ClosedEscalation,
     CloseRequest,
     EscalationHead,
@@ -872,6 +873,19 @@ class MemoryEscalations:
                           "handoff_note": dict(handoff_note), "is_deny_case": is_deny_case,
                           "created_at": created_at, "closed_at": None, "assigned_to": None})  # fmt: skip
         return str(len(self.rows))
+
+    async def open_write_doubt(
+        self, *, requester_id: str, intent: str, since: datetime, exclude_ticket_id: str
+    ) -> str | None:
+        """Như SQL `open_write_doubt`: escalation E7 mở (lý do có thể đã ghi) của ticket KHÁC, cùng người gửi, cùng intent (từ B20)."""
+        for r in sorted(self.rows, key=lambda x: x["created_at"], reverse=True):
+            t = self._tickets.rows.get(r["ticket_id"], {})
+            final: FinalSummary | None = t.get("final")
+            if (r["closed_at"] is None and r["exit_code"] == "E7" and r["reason_detail"] in WRITE_DOUBT_REASONS
+                    and r["created_at"] >= since and t.get("requester_id") == requester_id
+                    and final is not None and final.intent == intent and r["ticket_id"] != exclude_ticket_id):  # fmt: skip
+                return str(r["ticket_id"])
+        return None
 
     def of(self, ticket_id: str) -> list[dict[str, Any]]:
         return [r for r in self.rows if r["ticket_id"] == ticket_id]

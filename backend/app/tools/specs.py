@@ -19,6 +19,9 @@ READ_STEPS = frozenset({"B6", "B11"})  # [Chốt 17.3]: chẩn đoán + kiểm t
 WRITE_STEPS = frozenset({"B17"})  # [Chốt]: B17 là điểm ghi duy nhất
 RECHECK_STEP = "B17_RECHECK"  # 3-Q37: B17 ĐỌC lại AD trước khi ghi (tool đọc không bao giờ khai báo "B17")
 APPROVER_STEP = "B15_APPROVER"  # Phase 4 4b P3: B15 tra người duyệt + chuỗi quản lý của họ (ad_get_user)
+# Soát executor 12/11 (N1): B17 đọc lại các fact luật dùng (máy, chứng chỉ, khoá tài khoản, quyền, danh mục) ngay trước khi ghi —
+# bản chụp B6/B11 có thể cũ sau thời gian chờ duyệt (đặc tả B17 §0.3). Vẫn là tool ĐỌC, nhãn riêng như 3-Q37 (không "B17").
+DIAG_STEPS = READ_STEPS | {RECHECK_STEP}
 READ_TIMEOUT_S = 5.0  # [Chốt 17.3]: đọc 5 giây, 2 lần retry
 WRITE_TIMEOUT_S = 5.0  # [Chốt 17.3]: ghi 5 giây, KHÔNG retry
 
@@ -50,7 +53,7 @@ def _read(
     inp: type[BaseModel],
     out: type[BaseModel],
     arg_slots: Iterable[str] = (),
-    steps: frozenset[str] = READ_STEPS,
+    steps: frozenset[str] = DIAG_STEPS,
 ) -> ToolSpec:
     return ToolSpec(
         name=name,

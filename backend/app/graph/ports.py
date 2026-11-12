@@ -266,6 +266,14 @@ class EscalationStore(Protocol):
         created_at: datetime,
     ) -> str: ...
 
+    async def open_write_doubt(
+        self, *, requester_id: str, intent: str, since: datetime, exclude_ticket_id: str
+    ) -> str | None:
+        """B17 bước [0b] (soát executor 12/11, N2): ticket KHÁC của cùng người gửi, cùng intent, có escalation E7 còn MỞ (lệnh ghi
+        có thể đã gửi — `exec_failed` / `exec_interrupted` / `execution_interrupted`) tạo từ `since` → `ticket_id` của nó; không có
+        → None. Chỉ đọc."""
+        ...
+
 
 class SecurityEvents(Protocol):
     """`audit/security_events.SecurityEventWriter.record` (cùng chữ ký, phase3 mục 8.2). Node CHỈ gọi qua

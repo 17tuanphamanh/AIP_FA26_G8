@@ -294,9 +294,15 @@ async def _approved(env: Env, action: Action) -> str:
     pytest.param(_account_colleague, True, id="account-TC37-da-duyet"),
     pytest.param(_software_other_device, True, id="software-nguoi-khac-da-duyet"),
 ])  # fmt: skip
-async def test_c9_env_control_rule_or_approval_paths_execute(make: Callable[[], Action], via_approval: bool) -> None:
+async def test_c9_env_control_rule_or_approval_paths_execute(
+    make: Callable[[], Action], via_approval: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Đối chứng môi trường c9 (không phải hành vi mới): cùng `Env`, cùng loại hành động đi đường CŨ (luật allow, hoặc qua duyệt
-    đủ 3 điều kiện) → thực thi được — chứng minh c9 đỏ chỉ vì cổng D-42, không vì executor/hệ thống ghi giả của intent đó."""
+    đủ 3 điều kiện) → thực thi được — chứng minh c9 đỏ chỉ vì cổng D-42, không vì executor/hệ thống ghi giả của intent đó.
+    Soát 12/11: ca qua duyệt bỏ bước [3c] đọc lại fact (fact viết tay ở đây không khớp AD giả của harness) — [3c] có test riêng
+    `test_b17_soat_1211.py`."""
+    if via_approval:
+        monkeypatch.setattr(b17_execute, "fact_recheck_calls", lambda state, rid: [])
     env = Env(IN_HOURS)
     action = make()
     other = action.requested_for != ME

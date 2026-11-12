@@ -34,6 +34,8 @@ from app.domain.states import S_ESCALATED
 log = logging.getLogger(__name__)
 
 _ESC: Table = Escalation.__table__  # type: ignore[assignment]
+# E7 mà lệnh ghi CÓ THỂ đã tới hệ thống đích (B17 `exec_failed` / `exec_interrupted`, worker `execution_interrupted`).
+WRITE_DOUBT_REASONS: tuple[str, ...] = ("exec_failed", "exec_interrupted", "execution_interrupted")
 _PRIO: Table = ExitCodePriority.__table__  # type: ignore[assignment]
 _TICKETS: Table = Ticket.__table__  # type: ignore[assignment]
 _AUDIT: Table = AuditLog.__table__  # type: ignore[assignment]
@@ -175,6 +177,27 @@ class SqlEscalationStore:
             return await run(conn)
         async with self._engine.begin() as own:
             return await run(own)
+
+    async def open_write_doubt(
+        self, *, requester_id: str, intent: str, since: datetime, exclude_ticket_id: str
+    ) -> str | None:
+        """Xem `graph.ports.EscalationStore.open_write_doubt`. `tickets.intent` có từ B20 (ticket đã kết thúc E7)."""
+        query = (
+            select(_ESC.c.ticket_id)
+            .join(_TICKETS, _TICKETS.c.ticket_id == _ESC.c.ticket_id)
+            .where(
+                _ESC.c.closed_at.is_(None), _ESC.c.exit_code == "E7", _ESC.c.reason_detail.in_(WRITE_DOUBT_REASONS),
+                _ESC.c.created_at >= since, _TICKETS.c.requester_id == requester_id, _TICKETS.c.intent == intent,
+                _TICKETS.c.ticket_id != exclude_ticket_id,
+            )
+            .order_by(_ESC.c.created_at.desc())
+            .limit(1)
+        )  # fmt: skip
+        conn = current_tx()
+        if conn is not None:
+            return (await conn.execute(query)).scalar_one_or_none()
+        async with self._engine.connect() as own:
+            return (await own.execute(query)).scalar_one_or_none()
 
     async def list_open(self, limit: int) -> list[QueueItem]:
         query = (
