@@ -37,6 +37,11 @@ def hit_from_payload(payload: object) -> ScreenHit | None:
     return None
 
 
+def reply_hits(texts: Mapping[str, str | None]) -> dict[str, dict[str, str]]:
+    """`/reply` của cha (D-92 bổ sung 12/11): {mã ý: chữ GỐC của answer/note} → {mã ý: mã mẫu + nhóm} CHỈ cho ý khớp. Không chữ."""
+    return {cid: {"id": hit.id, "group": hit.group} for cid, text in texts.items() if text and (hit := injection.match(text))}
+
+
 def screen_event(text: str, ev: Mapping[str, Any]) -> ScreenHit | None:
     """Câu trả lời / ghi chú: khớp trên bản đã che, hoặc API đã thấy khớp trên bản gốc (`ev["screen_hit"]`)."""
     return screen_reply(text) or hit_from_payload(ev.get("screen_hit"))

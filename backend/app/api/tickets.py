@@ -32,6 +32,7 @@ không đụng `tickets`, checkpoint, lượt, `start_event`, executor). Thứ t
 
 import logging
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -78,7 +79,7 @@ from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW
 from app.graph.late_event import InvalidReply, Validate, start_event
 from app.guard import injection
 from app.guard.normalize import l0
-from app.guard.screen import hit_payload
+from app.guard.screen import hit_payload, reply_hits
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -438,6 +439,11 @@ async def _reply_body(request: Request, parent_id: str) -> ReplyIn:
         raise InvalidRequest(error_fields(exc.errors(include_url=False, include_input=False))) from None
 
 
+def _reply_texts(items: Mapping[str, ReplyAnswer | ReplyConfirm]) -> dict[str, str | None]:
+    """Chữ GỐC từng ý — CHỈ để `reply_hits` so mẫu (D-92); không đi vào sự kiện/kho."""
+    return {cid: item.answer if isinstance(item, ReplyAnswer) else item.note for cid, item in items.items()}
+
+
 def _items_match(items: dict[str, dict[str, Any]]) -> Validate:
     """Kiểm DƯỚI khoá cha (P11, chốt (c) — chặt): `items` ≡ ĐÚNG tập `awaiting`, mỗi ý đúng loại theo `needs` (`answer` ↔ `{answer}`,
     `confirm` ↔ `{confirmed, note?}`). Lệch → `InvalidReply` (vị trí trường, sắp theo id) — không giao gì, không `late_event`."""
@@ -471,7 +477,9 @@ async def reply(
     await record_redacted(desk, request, p, ticket_id, redacted.result)
     try:
         await start_event(
-            desk.runner, ticket_id, S_CONFIRMING, {"kind": "reply", "items": redacted.items}, spawn=desk.background.spawn,
+            desk.runner, ticket_id, S_CONFIRMING,
+            {"kind": "reply", "items": redacted.items, "screen_hits": reply_hits(_reply_texts(body.items))},  # D-92: chỉ mã mẫu
+            spawn=desk.background.spawn,
             session_id=p.session_id, wait_node="parent_reply_wait", validate=_items_match(redacted.items),
         )  # fmt: skip
     except InvalidReply as exc:
