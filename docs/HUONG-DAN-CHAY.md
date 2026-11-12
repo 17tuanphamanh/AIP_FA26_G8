@@ -519,6 +519,14 @@ Lệnh dưới đã chạy thử thành công trên `dev-tuananh` @ `1a0145f` ng
    docker compose exec backend python -m app.auth.mfa enroll quan.tm --by ten-cua-ban --reason demo
    ```
 
+   Trên DB vừa xoá sạch, `quan.tm` chưa có dòng trong bảng `users` (chưa ai đăng nhập) nên lệnh trên báo "chưa có trong bảng users". Khi đó thêm `--user-id it_mgr01` để lệnh đồng bộ người này từ AD trước rồi mới đặt OTP:
+
+   ```bash
+   docker compose exec backend python -m app.auth.mfa enroll quan.tm --user-id it_mgr01 --by ten-cua-ban --reason demo
+   ```
+
+   `--user-id` phải đúng mã AD của chính tài khoản đó; sai người, không có trong AD, AD không trả lời hay tài khoản đã nghỉ thì lệnh báo lỗi và không ghi gì.
+
 2. Lệnh in ra mã `otpauth://…` và một dòng `Secret: …` riêng. Thêm vào app **Google Authenticator** trên điện thoại: bấm **"+"** → **"Nhập khoá thiết lập"** — tên tài khoản `quan.tm`, khoá là phần chữ ở dòng **`Secret:`**, loại **Dựa trên thời gian** (hoặc "Quét mã QR" nếu có mã QR).
 
    > ❗ Output của lệnh `enroll` / `reset` chứa **khoá bí mật OTP**. **Không** chép output này vào chat, tin nhắn, báo cáo hay ảnh chụp màn hình — khi báo kết quả chỉ ghi "đã đặt OTP, đăng nhập được". Lỡ để lộ thì chạy lại bằng `reset` (bên dưới) để đổi khoá.
