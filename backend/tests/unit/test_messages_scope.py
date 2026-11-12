@@ -1,4 +1,6 @@
-"""P6 lời nói (ĐP 08/11), mục 1: tin chuyển người E1 / E3 / E4 nói trước trợ lý hỗ trợ được gì, rồi mới báo đã chuyển.
+"""P6 lời nói (ĐP 08/11), mục 1: tin chuyển người E1 / E3 nói trước trợ lý hỗ trợ được gì, rồi mới báo đã chuyển.
+U3 (soát 12/11, agent 18 L2 — kế hoạch TA duyệt 12/11): E4 THÔI nêu phạm vi — E4 chỉ xảy ra sau khi B11 đã hỏi thêm cho một yêu cầu TRONG
+phạm vi, nên câu phạm vi lạc nghĩa; E4 nói "chưa đủ thông tin… đã chuyển kỹ thuật viên" (`E4_MESSAGE`).
 
 - Danh sách loại việc trong câu mở đầu lấy theo `enabled_intents` (mặc định của `Settings`, đối chiếu `slots.yaml`): bảng nhãn dưới
   đây phải trùng ĐÚNG tập intent đang bật — bật thêm intent mà quên nhãn/câu thì đỏ ở đây, không bịa thêm, không thiếu.
@@ -34,7 +36,10 @@ SCOPE_LABELS = ("VPN", "tài khoản và mật khẩu", "cài phần mềm", "qu
 # Test vàng câu chữ (phần sau câu phạm vi). E1 / E3 / E4 = SCOPE + đuôi.
 E1_TAIL = "Yêu cầu này mình đã chuyển kỹ thuật viên hỗ trợ bạn."
 E3_TAIL = "Mình chưa có thông tin về việc này nên đã chuyển cho kỹ thuật viên."  # giữ ý "chưa có thông tin về việc này" (TC16)
-E4_TAIL = "Yêu cầu này mình đã chuyển kỹ thuật viên để hỗ trợ bạn trực tiếp."
+E4_MESSAGE = (
+    "Mình chưa có đủ thông tin để làm tiếp yêu cầu này, nên đã chuyển kỹ thuật viên hỗ trợ bạn trực tiếp. Kỹ thuật viên có thể "
+    "liên hệ bạn để hỏi thêm."
+)
 # D-76 (ĐP chốt 09/11): cờ ENABLE_IT_HELP bật (mặc định) → tin E1 thật gửi đi dùng `user_message_it_help` — câu phạm vi thêm vế hướng dẫn
 IT_HELP_CLAUSE = "; và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook."
 E0_NEUTRAL = "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét."  # nguyên văn trước P6
@@ -79,12 +84,20 @@ def test_scope_sentence_is_the_one_in_the_task() -> None:
 
 
 @pytest.mark.usefixtures("_default_intents")
-@pytest.mark.parametrize(("code", "tail"), [("E1", E1_TAIL), ("E3", E3_TAIL), ("E4", E4_TAIL)])
+@pytest.mark.parametrize(("code", "tail"), [("E1", E1_TAIL), ("E3", E3_TAIL)])
 def test_handoff_messages_state_scope_then_transfer(code: str, tail: str) -> None:
     text = TEMPLATES.of(code).user_message
     assert text == f"{_scope_sentence()} {tail}"
     assert text.startswith(_scope_sentence())  # nói làm được gì trước
     assert "kỹ thuật viên" in text.split(_scope_sentence(), 1)[1]  # rồi mới báo đã chuyển
+
+
+def test_e4_says_missing_information_not_scope() -> None:
+    template = TEMPLATES.of("E4")
+    assert template.user_message == E4_MESSAGE and not _says_scope(E4_MESSAGE)
+    assert template.user_message_it_help is None  # biến thể ENABLE_IT_HELP chỉ thêm vế phạm vi → bỏ
+    assert template.user_message_for(None, it_help=True) == E4_MESSAGE
+    assert all(not _says_scope(t) for t in template.user_message_repeat)
 
 
 def test_e3_keeps_the_no_information_idea() -> None:
@@ -100,7 +113,7 @@ def test_e0_stays_the_neutral_sentence_byte_for_byte() -> None:
     assert not _says_scope(text)
 
 
-@pytest.mark.parametrize("code", ["E0", "E2", "E5", "E6", "E7", "E8", "E9"])
+@pytest.mark.parametrize("code", ["E0", "E2", "E4", "E5", "E6", "E7", "E8", "E9"])
 def test_other_codes_do_not_state_scope(code: str) -> None:
     assert not _says_scope(TEMPLATES.of(code).user_message)
 
@@ -139,7 +152,7 @@ async def test_b20_sends_scope_message_for_e1_e3_e4() -> None:
     # (D-75) hứa "hướng dẫn máy in, Wi-Fi, Outlook", E3 ngay sau mà chỉ kể 4 mảng là tự mâu thuẫn (ca D5 chấm thử). Đuôi giữ nguyên.
     assert await _sent_text(h1, "e1") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E1_TAIL}"
     assert await _sent_text(h3, "e3") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E3_TAIL}"
-    assert await _sent_text(h4, "e4") == f"{_scope_sentence()[:-1]}{IT_HELP_CLAUSE} {E4_TAIL}"
+    assert await _sent_text(h4, "e4") == E4_MESSAGE  # U3: E4 không nêu phạm vi
 
 
 @pytest.mark.asyncio

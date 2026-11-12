@@ -75,13 +75,12 @@ codes:
       - Tài liệu hướng dẫn của mình chưa có nội dung cho việc này, nên mình đã chuyển kỹ thuật viên hỗ trợ bạn.
       - Mình chưa tìm được hướng dẫn phù hợp cho trường hợp này, kỹ thuật viên sẽ tiếp nhận yêu cầu của bạn.
   E4:
+    # U3 (soát 12/11, agent 18 L2): E4 chỉ xảy ra SAU khi B11 đã hỏi thêm cho một yêu cầu TRONG phạm vi (hỏi tối đa / lạc đề hai lần /
+    # quá hạn trả lời) → không dùng câu "phạm vi hỗ trợ" (người dùng vừa hỏi đúng việc trong phạm vi). Bỏ biến thể ENABLE_IT_HELP
+    # (vốn chỉ thêm vế phạm vi). Biến thể lặp (Q13c) giữ nguyên.
     user_message: >-
-      Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục.
-      Yêu cầu này mình đã chuyển kỹ thuật viên để hỗ trợ bạn trực tiếp.
-    # Chấm thử 11/11: như E3 — câu phạm vi khớp câu hỏi phân loại khi ENABLE_IT_HELP bật.
-    user_message_it_help: >-
-      Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục; và hướng dẫn các sự cố IT
-      thường gặp như máy in, Wi-Fi, Outlook. Yêu cầu này mình đã chuyển kỹ thuật viên để hỗ trợ bạn trực tiếp.
+      Mình chưa có đủ thông tin để làm tiếp yêu cầu này, nên đã chuyển kỹ thuật viên hỗ trợ bạn trực tiếp. Kỹ thuật viên có thể
+      liên hệ bạn để hỏi thêm.
     next_for_l2: >-
       Đã hỏi lại tối đa mà vẫn thiếu thông tin (hoặc người dùng không trả lời): liên hệ người dùng để
       lấy thông tin còn thiếu rồi xử lý.
