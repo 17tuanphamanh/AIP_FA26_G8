@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "B02 L1 (phase3 mục 8.3; PLAN-3e Q-3e-3, Q-3e-4). Chạy trên văn bản đã qua L0 guard, ĐÚNG thứ tự dưới đây (guard/patterns.py kiểm thứ tự). Có nhóm tên 'v' → chỉ thay nhóm đó; không có → thay cả đoạn khớp. Sửa file này là đổi hành vi guard → chạy lại test. Q-3e-10: chỉ loại trừ token giống ĐƯỜNG DẪN THẬT (có \\, hoặc bắt đầu /, ~/, ./, ../, <ổ đĩa>:, http(s)://) — khoá base64 có / vẫn bị luật 6 che. Q-3e-11: thêm file_path (có / + đuôi file cố định).",
+  "description": "B02 L1 (phase3 mục 8.3; PLAN-3e Q-3e-3, Q-3e-4). Chạy trên văn bản đã qua L0 guard, ĐÚNG thứ tự dưới đây (guard/patterns.py kiểm thứ tự). Có nhóm tên 'v' → chỉ thay nhóm đó; không có → thay cả đoạn khớp. Sửa file này là đổi hành vi guard → chạy lại test. Q-3e-10: chỉ loại trừ token giống ĐƯỜNG DẪN THẬT (có \\, hoặc bắt đầu /, ~/, ./, ../, <ổ đĩa>:, http(s)://) — khoá base64 có / vẫn bị luật 6 che. Q-3e-11: thêm file_path (có / + đuôi file cố định). Soát 12/11 (TA duyệt siết): password, otp, api_key, cccd, bank_account — xem description từng luật.",
   "secret_mask": "[BÍ_MẬT_ĐÃ_ẨN]",
   "rules": [
     {
@@ -16,18 +16,19 @@
     {
       "id": "api_key",
       "kind": "secret",
-      "regex": "\\b(?:sk|pk|ghp|xox[bp])[-_][A-Za-z0-9_-]{16,}\\b"
+      "regex": "\\b(?:sk|pk|ghp|xox[bp])[-_][A-Za-z0-9_-]{12,}\\b|\\bAKIA[0-9A-Z]{16}\\b"
     },
     {
       "id": "password",
       "kind": "secret",
-      "description": "Q-3e-4, Q-3e-9: 0–4 từ đệm (không dấu câu, không phải lỗi|loi|mã|ma|code|error) giữa từ khoá và là/la/:/=; 'mk' chỉ đi với : hoặc =; giá trị là từ hỏi (gì|gi|sao|bao|nào|nao) → không che",
-      "regex": "(?i)(?:\\b(?:mật\\s*khẩu|mat\\s*khau|pass(?:word|code)?|pwd)\\b(?:\\s+(?!(?:lỗi|loi|mã|ma|code|error)(?!\\w))[^\\s:=,.;!?]+){0,4}?\\s*(?:(?:là|la)(?!\\w)\\s*[:=]?|[:=])|\\bmk\\s*[:=])\\s*(?P<v>(?!(?:gì|gi|sao|bao|nào|nao)[?.!,;:]*(?!\\S))\\S+)"
+      "description": "Q-3e-4, Q-3e-9; soát 12/11 (TA duyệt siết): (1) từ khoá (mật khẩu — cả 'mật-khẩu' và không dấu —, pass, password, passcode, pwd, pw, secret, api key) + 0–8 từ đệm (không dấu câu, không phải lỗi|loi|mã|ma|code|error) + là/la/:/=; (2) 'mk' + 0–2 từ đệm + : hoặc = ('mk' còn là teencode 'mình'); (3) KHÔNG cần là/: khi 0–3 từ sau từ khoá có token DÁNG mật khẩu (≥ 6 ký tự, có chữ số, và có ký tự đặc biệt @#$%^&*+=~! hoặc cả chữ hoa lẫn thường; không phải mã máy LAP-0342; '_' không tính — mã người dùng it_mgr01); (4) 'login / đăng nhập / user: <tên> / <mật khẩu>'. Giá trị không là từ hỏi hay hư từ (gì, sao, mật, của, do, sai, em…); token kế tiếp ≤ 8 ký tự có chữ số được che cùng (mật khẩu có dấu cách: 'Abc 123')",
+      "regex": "(?i)(?:\\b(?:mật[\\s-]*khẩu|mat[\\s-]*khau|pass(?:word|code)?|pwd|pw|secret|api[\\s_-]*key)\\b(?:\\s+(?!(?:lỗi|loi|mã|ma|code|error)(?!\\w))[^\\s:=,.;!?]+){0,8}?\\s*(?:(?:là|la)(?!\\w)\\s*[:=]?|[:=])|\\bmk\\b(?:\\s+[^\\s:=,.;!?]+){0,2}?\\s*[:=]|\\b(?:mật[\\s-]*khẩu|mat[\\s-]*khau|pass(?:word)?|pw|mk)\\b(?:\\s+(?!(?:lỗi|loi|mã|ma|code|error)(?!\\w))[^\\s:=,.;!?]+){0,3}?\\s+(?=(?-i:(?![A-Za-z]{2,4}-\\d{3,5}(?!\\S))(?=\\S*\\d)(?:(?=\\S*[@#$%^&*+=~!])|(?=\\S*[A-Z])(?=\\S*[a-z]))\\S{6,}))|\\b(?:login|đăng\\s*nhập|dang\\s*nhap|user(?:name)?)\\s*[:=]?\\s*\\S+\\s+/\\s+(?=\\S{4,}))\\s*(?P<v>(?!(?:gì|gi|sao|bao|nào|nao|mật|mat|tài|tai|của|cua|do|vì|vi|cái|cai|một|mot|như|nhu|giống|giong|khi|lúc|luc|bị|bi|không|khong|có|co|đúng|dung|sai|đã|da|em|anh|chị|chi|mình|minh|tôi|toi|gì|thế|the|vậy|vay|ai)[?.!,;:]*(?!\\S))\\S+(?:\\s(?=[^\\s]*\\d)[^\\s,.;!?]{1,8}(?!\\S))?)"
     },
     {
       "id": "otp",
       "kind": "secret",
-      "regex": "(?i)\\b(?:otp|mã\\s*xác\\s*(?:thực|minh))\\s*(?:là|:)?\\s*(?P<v>\\d{4,8})\\b"
+      "regex": "(?i)(?:\\b(?:otp|2fa|totp|cvv|cvc|passcode|authenticator|token)\\b|\\bmã\\s*(?:otp|2fa|totp|xác\\s*(?:thực|minh|nhận)|bảo\\s*mật|pin|cvv)\\b|\\bma\\s*(?:otp|xac\\s*(?:thuc|minh|nhan)|pin)\\b|\\bcode\\s*xác\\s*(?:minh|thực)\\b)(?:\\s+(?!\\d)[^\\s\\d:=,.;!?]+){0,2}?\\s*(?:là|la|:|=)?\\s*(?P<v>\\d{3}[ ]\\d{3}(?!\\d)|\\d{3,8})\\b",
+      "description": "Soát 12/11: otp, 2FA, TOTP, CVV/CVC, passcode, authenticator, token, mã xác minh/thực/nhận, mã bảo mật, mã PIN, code xác minh + 0–2 từ đệm + 3–8 chữ số (hoặc 3 + 3 cách nhau một dấu cách). Không có 'pin' trần (pin = pin máy) và 'mã' trần (mã lỗi)."
     },
     {
       "id": "entropy",
@@ -55,14 +56,16 @@
       "kind": "pii",
       "label": "CCCD",
       "canonical": "digits",
-      "regex": "(?<!\\d)0\\d{11}(?!\\d)"
+      "regex": "(?<!\\d)0\\d{2}(?:[ .-]?\\d{3}){3}(?!\\d)|(?i:\\b(?:cmnd|cmt|chứng\\s*minh(?:\\s*nhân\\s*dân|\\s*thư)?|chung\\s*minh(?:\\s*nhan\\s*dan|\\s*thu)?|số\\s*định\\s*danh|so\\s*dinh\\s*danh|cccd|căn\\s*cước|can\\s*cuoc|hộ\\s*chiếu|ho\\s*chieu|passport)\\b)\\D{0,10}(?P<v>[A-Za-z]?\\d(?:[ .-]?\\d){6,11})(?!\\d)",
+      "description": "Soát 12/11: 12 số bắt đầu 0, cho phân cách cách/chấm/gạch giữa nhóm 3 số (cả đoạn); hoặc sau từ khoá CMND/CMT/chứng minh/số định danh/CCCD/căn cước/hộ chiếu/passport: 7–12 chữ số (có thể 1 chữ cái đầu — hộ chiếu), có phân cách (chỉ phần số)."
     },
     {
       "id": "bank_account",
       "kind": "pii",
       "label": "STK",
       "canonical": "digits",
-      "regex": "(?i)(?:stk|số\\s*tài\\s*khoản|tài\\s*khoản\\s*ngân\\s*hàng)\\D{0,10}(?P<v>\\d[\\d\\s.-]{7,18}\\d)"
+      "regex": "(?i)(?:stk|số\\s*tk|so\\s*tk|số\\s*tài\\s*khoản|so\\s*tai\\s*khoan|tài\\s*khoản\\s*ngân\\s*hàng|tai\\s*khoan\\s*ngan\\s*hang|tk\\s*ngân\\s*hàng|tk\\s*ngan\\s*hang|chuyển\\s*khoản\\s*(?:vào|tới|đến|qua)|chuyen\\s*khoan\\s*(?:vao|toi|den|qua)|số\\s*thẻ|so\\s*the|mã\\s*thẻ|ma\\s*the|thẻ\\s*(?:atm|visa|master(?:card)?|tín\\s*dụng|ngân\\s*hàng|ghi\\s*nợ)|the\\s*(?:atm|visa|master(?:card)?|tin\\s*dung)|card)\\D{0,10}(?P<v>\\d[\\d\\s.-]{7,18}\\d)",
+      "description": "Soát 12/11: STK / số TK / số tài khoản / tài khoản ngân hàng (có dấu và không dấu), 'chuyển khoản vào …', và SỐ THẺ (số thẻ, mã thẻ, thẻ ATM/Visa/Master/tín dụng, card) — chung nhãn STK để khỏi đổi PRIVACY_RULE_ORDER / MASK_WORDS. CVV ở luật otp."
     }
   ],
   "entropy_exclude": [

@@ -6702,6 +6702,8 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
 - 12/11 (nhánh `sua-b17-1211`, TA duyệt sửa lõi): **D-88** — B17 đọc lại fact luật dùng trước khi ghi (ca đã duyệt), chặn ghi lần 2
   khi còn escalation E7 mở cùng người gửi + intent, AD `enabled=false` = không hợp lệ. Unit 10 107 passed; 4 đột biến của phần mới đều bị
   giết (`test_b17_soat_1211.py`). Mốc đột biến M-3h-19 (`scripts/mutation/mutate_3h.py`) cập nhật theo dòng kiểm người mới.
+- 12/11 (nhánh `sua-che-1211`, TA duyệt siết): **D-89** luật che `config/privacy_patterns.json` — lọt 49/95 → 5/95 câu dò biên, 0/653
+  câu eval đổi; thay giới hạn 0–4 từ đệm của Q-3e-9 (test ghim giới hạn cũ đổi thành test "giờ đã che").
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
