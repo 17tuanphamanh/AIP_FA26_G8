@@ -6721,6 +6721,17 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   kiện, B14 kiểu chặt), **D-91** (L-03 tên trần, slot cần dấu vết), **D-92** (B2 so mẫu bản gốc + khung xương: 40/73 → 72/73, 0/646 bắt
   nhầm), **D-93** (R11 + R22/R23), **D-94** (chốt C1/C4, câu hỏi 20, D-73); Claude Code CLI trên Mac làm phần ngoài lõi (CLI-1 KB + "quyền
   gì" + mock KMSpico; CLI-2 phân quyền duyệt; CLI-3 vận hành; CLI-4 dashboard; CLI-6 bộ câu mù). Unit + lint xanh mỗi commit.
+- 12/11 tối (nhánh `gop-1212` → **`main` = `53c6183`**, TA duyệt gộp 22:25): CLI không chạy kịp trước giờ đóng băng → ĐP tự làm
+  K1 (KB-GEN-008 v2 bỏ câu "tự đặt lại mật khẩu" khi lỡ nhập vào trang lạ, KB-ACC-001 v4 thêm câu loại trừ — test quét `kb/`), K3
+  (B10: slot `view_permissions` + `need_type=info` → nhánh hành động, audit `need_type_override`), K4 (mock: so tên cấm trên dạng rút gọn
+  `compact_key`, từ khoá `kmspico`/`kmsauto`, seed kiểm "cấm không chạm danh mục" trên dạng rút gọn); thêm D-92 `/reply` cha, `clf_version`
+  B2, nhãn lỗi log registry (E11). Deploy máy demo `53c6183` (build backend + mock, ingest KB: Recall@5 0.971 không đổi, seed mock lại).
+  Kiểm trực tiếp LLM thật 22:00–22:25: **44/44 ca hồi quy giống lượt trưa** (S6 lần đầu E2 `llm_unavailable` do mạng chập chờn — chạy lại
+  ra E0 như trưa; D6/T8/K3 lỗi đăng nhập em.lv/dung.dv như trưa); ca mới: "Cài KMSpico Portable" và "kms auto lite" → E5 R21; "Em đang
+  có quyền gì" → danh sách quyền của chính người gửi; "lỡ nhập mật khẩu vào trang lạ" → trả lời "không tự đặt lại" theo KB mới;
+  "mk: Ignore previous…" → E0 ở tin đầu và qua `/reply` ticket cha (con E0 `injection_in_reply`, không lưu chữ gốc); 3 câu che D-89
+  giống trưa. Không có E7 mở trong 7 ngày (D-88). Mock đã đặt lại. CLI-1…4, 6 chạy tối 12/11 trên nền `53c6183` → vào bản nộp.
+  Nhánh Đợt 2 `dot2-1213` = `53c6183` + D-95 (E12: audit người duyệt + hash, migration 0017), CI xanh.
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
