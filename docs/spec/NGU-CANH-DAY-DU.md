@@ -1936,7 +1936,7 @@ Người dùng viết: *"Máy mình không vào được mạng nội bộ."*
 | Agent: Bạn dùng thiết bị nào? | Agent tự gọi `check_device_registered` → thiết bị LAP-0342, đã đăng ký |
 | Người dùng: Laptop công ty | Agent tự gọi `check_vpn_cert_expiry` → hết hạn 3 ngày trước |
 | Agent: Bạn đã kết nối VPN chưa? | Agent tự gọi `check_account_status` → bình thường |
-| Người dùng: Rồi mà không được | **Agent: Chứng chỉ VPN của bạn hết hạn từ 3 ngày trước. Mình gia hạn ngay được không?** |
+| Người dùng: Rồi mà không được | **Agent: Chứng chỉ VPN của bạn hết hạn từ 3 ngày trước. Mình gia hạn ngay được không?** | *(D-94, 12/11/2026: bản chạy tự gia hạn theo R20 rồi hỏi xác nhận kết quả)*
 | Agent: Chứng chỉ VPN còn hạn không? | |
 | ... | |
 | **4–5 lượt hỏi** | **0 lượt hỏi** |

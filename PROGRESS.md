@@ -6710,6 +6710,18 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   L2 đã kiểm), thêm h15c (xin lại khi E7 còn mở → E5 `prior_write_unconfirmed`, 0 lời gọi ghi, trên stack thật). CI `gop-1211` xanh:
   10 930 + 511 + 226 passed, frontend 1 309 passed.
 
+- 12/11 trưa (máy demo chạy `34b1e1f` = D-84…D-89, kiểm trực tiếp LLM thật giờ hành chính): 44 ca hồi quy 40/44 giống lượt trước ngay lần
+  đầu; 4 ca lệch (D3, D4, K7, S11 → E5 `recheck_failed`) do chính D-88 (2): còn 3 ca E7 `exec_failed` tồn từ đợt bơm lỗi đêm 11/11 (an.nv
+  phần mềm, chau.hm VPN, binh.tt phần mềm) — TA duyệt đóng dưới vai long.nh, chạy lại 4 ca đúng như trước (K7 duyệt → cài; S11 duyệt R19 →
+  gia hạn). N1 không bắt nhầm luồng đã duyệt (T1, T2, K5, K7, S11 thực thi). Che D-89: 3/3 câu (mật khẩu viết tự nhiên, "pass mới:",
+  OTP "482 918") đều che. **Bài học demo:** ca E7 "có thể đã ghi" còn mở chặn mọi yêu cầu cùng người + cùng loại 7 ngày → đóng hết ca E7 của
+  đợt thử trước khi quay. Lịch: **quay demo thứ Sáu 13/11 trong giờ hành chính** (TA chốt 10:15; thứ Bảy 14/11 R18 áp cả ngày; D-73 không có
+  trên `main`).
+- 12/11 chiều (TA 14:02 "sửa hết", kế hoạch `claude/KE-HOACH-sua-het-12-11.md`; nhánh `gop-1212`): ĐP làm lõi **D-90** (executor hậu điều
+  kiện, B14 kiểu chặt), **D-91** (L-03 tên trần, slot cần dấu vết), **D-92** (B2 so mẫu bản gốc + khung xương: 40/73 → 72/73, 0/646 bắt
+  nhầm), **D-93** (R11 + R22/R23), **D-94** (chốt C1/C4, câu hỏi 20, D-73); Claude Code CLI trên Mac làm phần ngoài lõi (CLI-1 KB + "quyền
+  gì" + mock KMSpico; CLI-2 phân quyền duyệt; CLI-3 vận hành; CLI-4 dashboard; CLI-6 bộ câu mù). Unit + lint xanh mỗi commit.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

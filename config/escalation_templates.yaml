@@ -53,7 +53,8 @@ codes:
         Người dùng xin thao tác NGƯỢC (thu hồi, rút / hạ quyền, khoá, ngắt / tắt VPN, vô hiệu hoá, gỡ cài đặt, đừng làm / huỷ) hoặc báo
         mất thiết bị, tài khoản bị lộ / bị chiếm, máy nhiễm mã độc — hệ thống chỉ có thao tác thuận nên KHÔNG dựng hành động. Đọc yêu cầu (đã che), nếu là mất thiết bị
         hoặc nghi lộ thông tin thì xử lý như sự cố an toàn thông tin (ưu tiên; đặt lại mật khẩu qua kênh không phụ thuộc tài khoản bị
-        lộ), thu hồi/khoá thủ công theo quy trình.
+        lộ), thu hồi/khoá thủ công theo quy trình. Bộ dò này chạy TRƯỚC lớp luật nên câu có thể còn kèm việc BỊ CẤM (phần mềm cấm,
+        cấp quyền cho tài khoản bị khoá vì bảo mật…): kiểm chính sách trước khi làm tay, không thực hiện phần bị cấm (câu hỏi 20).
   E2:
     user_message: Hệ thống đang gặp sự cố nên chưa xử lý được yêu cầu của bạn. Kỹ thuật viên sẽ tiếp nhận.
     next_for_l2: >-

@@ -183,7 +183,7 @@ Mọi node có lớp bọc lỗi chưa lường trước → E9.
   - Sai: `except: account=None` → "Tài khoản của bạn không tồn tại" trong khi server đang chết.
   - Đúng: HTTP 500/timeout đã retry đủ → E2 "Hệ thống đang gặp sự cố"; HTTP 200 rỗng → "Không tìm thấy tài khoản này, bạn kiểm tra lại giúp mình".
 - **Giới hạn:** tối đa 5 vòng suy luận mỗi ticket.
-- **Ví dụ TC06:** "Máy mình không vào được mạng nội bộ" → agent tự gọi 3 tool → LAP-0342 đã đăng ký; chứng chỉ VPN hết hạn 3 ngày trước; tài khoản bình thường → "Chứng chỉ VPN của bạn hết hạn từ 3 ngày trước. Mình gia hạn ngay được không?" — **0 lượt hỏi** thay vì 4–5.
+- **Ví dụ TC06:** "Máy mình không vào được mạng nội bộ" → agent tự gọi 3 tool → LAP-0342 đã đăng ký; chứng chỉ VPN hết hạn 3 ngày trước; tài khoản bình thường → "Chứng chỉ VPN của bạn hết hạn từ 3 ngày trước. Mình gia hạn ngay được không?" — **0 lượt hỏi** thay vì 4–5. *(D-94, 12/11: bản chạy gia hạn luôn theo R20 rồi hỏi xác nhận KẾT QUẢ — không hỏi trước khi làm.)*
 - **Ablation [Chốt]:** cờ `enable_proactive_diagnosis = True/False`, đo chênh lệch `clarification_turns` trung bình. Đây là RQ3 (bắt buộc).
 - **Nguồn gốc:** nhận định của nhóm Microsoft (Roy et al., 2024) — điểm mạnh của agent so với RAG thuần là chủ động thu thập dữ liệu chẩn đoán.
 
