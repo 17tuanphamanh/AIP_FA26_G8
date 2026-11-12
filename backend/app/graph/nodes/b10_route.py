@@ -159,9 +159,21 @@ def make(deps: NodeDeps) -> NodeFn:
     async def _answer(
         state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
     ) -> dict[str, Any]:
-        """B9 → expand → `b10_answer` → hậu kiểm → output guard → gửi (nhánh `info` — cũ, và `it_help` D-76)."""
+        """B9 → expand → `b10_answer` → hậu kiểm → output guard → gửi (nhánh `info` — cũ, và `it_help` D-76).
+
+        R1 (soát 12/11, agent 16 F4): D-80 viết lại ĐẠT ngưỡng → cập nhật `retrieved`, `retrieval_score`, `kb_version` của state theo kết quả
+        MỚI (mọi kết cục sau đó) — ghi chú bàn giao L2 đọc state, không được thấy bài cũ dưới ngưỡng."""
+        fresh: dict[str, Any] = {}
         if not above and deps.enable_query_rewrite:  # D-80: viết lại câu hỏi rồi truy hồi lại MỘT lần, CÙNG ngưỡng
-            chunks, kb_version, above = await _rewrite_retry(state, info, chunks, kb_version)
+            chunks, kb_version, above, score = await _rewrite_retry(state, info, chunks, kb_version)
+            if above:
+                fresh = {"retrieved": chunks, "retrieval_score": score, "kb_version": kb_version}
+        out = await _grounded(state, info, chunks, kb_version, above, symptom=symptom)
+        return {**out, **fresh}
+
+    async def _grounded(
+        state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
+    ) -> dict[str, Any]:
         if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
@@ -249,7 +261,7 @@ def make(deps: NodeDeps) -> NodeFn:
 
     async def _rewrite_retry(
         state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str
-    ) -> tuple[list[ChunkRef], str, bool]:
+    ) -> tuple[list[ChunkRef], str, bool, float | None]:
         """D-80 (chấm thử 11/11): câu hỏi gõ không dấu / viết tắt / có lời chào, từ đệm cho điểm truy hồi dưới ngưỡng dù KB có bài. LLM
         `b09_rewrite_query` viết lại câu (CHỈ để truy hồi) → truy hồi lại một lần → áp CÙNG `RETRIEVAL_THRESHOLD`. Đạt → dùng đoạn mới
         làm căn cứ (câu hỏi gửi `b10_answer` vẫn là câu gốc đã che). Lỗi LLM/RAG, câu viết lại trùng câu gốc, hoặc vẫn dưới ngưỡng → giữ
@@ -263,22 +275,22 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         except (LLMSchemaError, LLMUnavailable, LLMBudgetExceeded) as exc:
             rec["error"] = type(exc).__name__
-            return chunks, kb_version, False
+            return chunks, kb_version, False, None
         rewritten = out.query.strip()
         if not rewritten or rewritten.casefold() == original.strip().casefold():
-            return chunks, kb_version, False
+            return chunks, kb_version, False, None
         rec["changed"] = True
         q = build_query(rewritten, state.get("intent"), state.get("slots") or {}, query_slots=deps.query_slots)
         try:
             res = await deps.rag.retrieve(q, state["requester_context"])
         except RetrievalSystemError as exc:
             rec["error"] = exc.stage
-            return chunks, kb_version, False
+            return chunks, kb_version, False, None
         g = grounding(list(res.chunks), res.top_score, deps.constants.RETRIEVAL_THRESHOLD)
         rec["top_score"], rec["above_threshold"] = res.top_score, g["above_threshold"]
         if not g["above_threshold"]:
-            return chunks, kb_version, False
+            return chunks, kb_version, False, None
         info["grounding"] = g
-        return list(res.chunks), res.kb_version, True
+        return list(res.chunks), res.kb_version, True, res.top_score
 
     return b10_route
