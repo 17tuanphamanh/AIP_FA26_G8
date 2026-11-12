@@ -6753,6 +6753,20 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
     `permission_denied`; AD lỗi → 503. **Q1** refresh đồng bộ AD như đăng nhập: không còn trong AD / nghỉ / nhóm không ra role → thu hồi
     phiên, 401; role đổi → 401 (không báo dùng lại token); AD lỗi → 503 KHÔNG thu hồi phiên (frontend coi 503 là lỗi tạm). **Q5a** L1/L2
     không tự đóng ca escalation của ticket chính mình gửi → 403. Q5b/c/d → câu hỏi 21–23.
+  - CLI-7: **S4** README dòng "Bản đo" nói đúng cách tái lập số RQ (phương án LLM tính lại offline 5 phần, τ 0,50 offline — D-70; checkout tag
+    chỉ cho lại mã; cần cache LLM của lượt đo); **S3** `scripts/report/do_tre_chi_phi.sql` (chỉ đọc: p50/p95 độ trễ lượt đầu, USD/yêu cầu
+    gồm ticket con, theo `source`; test PG số tính tay, chạy thử bằng psql thật); **S2** `ml_models/MODELS.md` (hash từng file theo
+    MANIFEST trên máy demo, τ, cách dùng, nguồn từng số; số test của injection-clf "chưa truy được" — nằm trong file bàn giao trên iCloud).
+    **S1** không làm được trên máy TA: không có thư mục kết quả lượt đo RQ (predictions/manifest) — nằm trên máy đo của Duy Anh.
+  - CLI-5: **U2** "Chưa ổn" + ghi chú trên ticket đã thực thi → E8 như cũ, ghi chú (bản đã che) vào hội thoại + `user_feedback` (B19 §5,
+    khoá state mới, không vào audit) → ghi chú bàn giao L2 "Người dùng báo: …"; **U3** tin E4 "chưa đủ thông tin… đã chuyển" thay câu phạm
+    vi (E4 chỉ xảy ra sau khi B11 hỏi cho yêu cầu trong phạm vi; thay một phần quyết định "P6 lời nói 08/11 mục 1" cho riêng E4);
+    **U4** tin E1 việc ngược thêm "các việc khác trong cùng tin nhắn (nếu có) mình cũng chưa làm"; **R1** D-80 viết lại đạt ngưỡng → state
+    `retrieved`/`retrieval_score`/`kb_version` theo kết quả mới; **U1** B3 gộp ý trùng (cùng loại + cùng `action_hint` + slot ⊆) trước khi
+    tách, audit `deduplicated_intents`. **R2–R4** chỉ PLAN (đổi truy hồi/prompt): `claude/plan-r2-r4-1213.md` — đề xuất để sau bảo vệ.
+  - Kiểm: unit + lint xanh từng commit; PG integration liên quan (monitor/auth/approval/escalation/dash + test mới) chạy trên Postgres 16.2
+    cục bộ (không Docker) — xanh; CI từng lần push. **Trước khi gộp `main`:** U1/U2/U3/U4/R1 đổi hành vi agent → chạy lại 44 ca LLM thật
+    + eval, ingest KB (K2), build mock không cần (K4 đã ở `53c6183`).
 
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
