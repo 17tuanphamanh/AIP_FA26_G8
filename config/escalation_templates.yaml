@@ -47,7 +47,8 @@ codes:
     user_message_by_reason:
       reverse_action_requested: >-
         Việc thu hồi, khoá, ngắt VPN, gỡ cài đặt, huỷ, hay xử lý khi mất máy, nghi lộ mật khẩu hoặc máy nhiễm mã độc cần kỹ thuật viên
-        làm trực tiếp, mình không tự thực hiện. Mình đã chuyển yêu cầu cho kỹ thuật viên; nếu gấp, bạn gọi ngay bộ phận IT để được xử lý sớm nhất.
+        làm trực tiếp, mình không tự thực hiện. Các việc khác trong cùng tin nhắn (nếu có) mình cũng chưa làm. Mình đã chuyển cả yêu cầu cho
+        kỹ thuật viên; nếu gấp, bạn gọi ngay bộ phận IT để được xử lý sớm nhất.
     next_for_l2_by_reason:
       reverse_action_requested: >-
         Người dùng xin thao tác NGƯỢC (thu hồi, rút / hạ quyền, khoá, ngắt / tắt VPN, vô hiệu hoá, gỡ cài đặt, đừng làm / huỷ) hoặc báo

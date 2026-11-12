@@ -248,4 +248,6 @@ def test_user_message_and_l2_note_declared() -> None:
     t = get_escalation_templates().of("E1")
     msg = t.user_message_for("reverse_action_requested", it_help=True)
     assert "kỹ thuật viên" in msg and "thu hồi" in msg and "không tự thực hiện" in msg
+    # U4 (soát 12/11, agent 18 L3): câu nhiều ý có phần ngược → cả ticket E1; tin nói rõ các việc khác cũng CHƯA làm
+    assert "Các việc khác trong cùng tin nhắn (nếu có) mình cũng chưa làm" in msg
     assert "NGƯỢC" in t.next_for("reverse_action_requested")
