@@ -6699,6 +6699,9 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   sửa theo nửa DEV → nửa giữ lại lọt 14/61 → 8/61, bắt nhầm 3/65 → 3/65; rồi vá cả nửa giữ lại (`test_d84_hopden_1211.py`, 370 test).
   411 câu `eval/` không đổi kết quả; unit 9705 passed. Số mù cuối cùng cần một bộ câu MỚI.
 
+- 12/11 (nhánh `sua-che-1211`, TA duyệt siết): **D-89** luật che `config/privacy_patterns.json` — lọt 49/95 → 5/95 câu dò biên, 0/653
+  câu eval đổi; thay giới hạn 0–4 từ đệm của Q-3e-9 (test ghim giới hạn cũ đổi thành test "giờ đã che").
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

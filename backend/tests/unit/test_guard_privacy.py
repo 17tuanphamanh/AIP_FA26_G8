@@ -226,9 +226,75 @@ def test_q3e4_not_a_password(guard: RegexPrivacyGuard, text: str) -> None:
     assert (r.text, r.secrets_found) == (text, 0)
 
 
-def test_q3e9_five_fillers_not_matched(guard: RegexPrivacyGuard) -> None:
-    text = "mật khẩu đăng nhập hiện tại của tôi là Abc@123"  # 5 từ đệm > 4 (chốt Q-3e-9) — giới hạn biết trước
-    assert guard.redact_text(text).secrets_found == 0
+def test_q3e9_five_fillers_now_masked(guard: RegexPrivacyGuard) -> None:
+    """Trước: 5 từ đệm > 4 (chốt Q-3e-9) → lọt — giới hạn biết trước. D-89 (soát 12/11, TA duyệt siết): 0–8 từ đệm."""
+    text = "mật khẩu đăng nhập hiện tại của tôi là Abc@123"
+    r = guard.redact_text(text)
+    assert r.secrets_found == 1 and "Abc@123" not in r.text
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("mật khẩu tài khoản AD của em là Abc@12346", "Abc@12346"),
+        ("mật khẩu đăng nhập máy tính của em là Abc@12347", "Abc@12347"),
+        ("Pass của tài khoản AD cũ của em là Abc@1111", "Abc@1111"),
+        ("mật khẩu Abc@12345 bị khoá rồi", "Abc@12345"),
+        ("mật khẩu VPN Abc@2026", "Abc@2026"),
+        ("em dùng mật khẩu Hoa2024 cho cả email", "Hoa2024"),
+        ("Em đặt mật khẩu thành Minh@2025 mà không vào được", "Minh@2025"),
+        ("mk AD: Abc@12348", "Abc@12348"),
+        ("MK hiện tại: Tuan@123", "Tuan@123"),
+        ("mk của em: abc123", "abc123"),
+        ("pw: Zxc#9876", "Zxc#9876"),
+        ("Mật-khẩu: Abc@999", "Abc@999"),
+        ("mật khẩu là Abc@123 456", "456"),
+        ("user: nv001 / Abc@1234", "Abc@1234"),
+        ("Mã 2FA của em là 482916", "482916"),
+        ("otp 482 918", "482 918"),
+        ("Mã TOTP 551234 hết hạn rồi", "551234"),
+        ("CVV: 456", "456"),
+        ("AWS key AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
+    ],
+)
+def test_d89_soat_1211_secrets_masked(guard: RegexPrivacyGuard, text: str, secret: str) -> None:
+    """D-89: câu mật khẩu / OTP / CVV viết tự nhiên — trước lọt (soát 12/11, 49/95 câu dò biên lọt)."""
+    r = guard.redact_text(text)
+    assert secret not in r.text and r.secrets_found >= 1, r.text
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("CCCD: 001 203 004 568", "001 203 004 568"),
+        ("CMND 123456789", "123456789"),
+        ("Số định danh 001.203.004.569", "001.203.004.569"),
+        ("hộ chiếu C1234567", "C1234567"),
+        ("tai khoan ngan hang 0071001234567", "0071001234567"),
+        ("Số TK 102345678901 tại BIDV", "102345678901"),
+        ("chuyển khoản vào 0451000123456 VCB", "0451000123456"),
+        ("số thẻ 4111 1111 1111 1111", "4111 1111 1111 1111"),
+        ("thẻ ATM 970422 1234 5678 902", "970422 1234 5678 902"),
+    ],
+)
+def test_d89_soat_1211_pii_masked(guard: RegexPrivacyGuard, text: str, value: str) -> None:
+    assert value not in guard.redact_text(text).text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nhờ reset mật khẩu cho tải khoản it_mgr01, gấp", "đổi mật khẩu cho máy LAP-0342", "tài khoản sales_head bị khoá",
+        "Mật khẩu đăng nhập máy tính là mật khẩu AD đúng không", "mật khẩu của em bị khoá do nhập sai nhiều lần là sao ạ",
+        "VPN báo lỗi 809, mã lỗi 0x80070005", "pin laptop còn 20% thì có gia hạn VPN được không", "token hết hạn sau 15 phút",
+        "cấp quyền đọc thư mục finance/Q3 cho em", "Gia hạn quyền ghi engineering/specs thêm 30 ngày", "cài Office365 cho máy LAP-0417",
+        "Ticket 2bc98258-b90e-47a5-ba39-1356172ff2a8 sao chưa xong", "cấp VPN cho máy PC-0977 với",
+    ],
+)
+def test_d89_soat_1211_normal_text_unchanged(guard: RegexPrivacyGuard, text: str) -> None:
+    """Che thừa làm hỏng slot (mã máy, mã người dùng, đường dẫn) — các câu thường phải giữ nguyên."""
+    r = guard.redact_text(text)
+    assert (r.text, r.secrets_found) == (text, 0)
 
 
 @pytest.mark.parametrize("text", [
