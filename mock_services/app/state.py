@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from app.notify import OutboxMessage, mask_email
-from app.seed_model import SeedData
+from app.seed_model import SeedData, compact_key
 
 SEED_PATH = Path(__file__).resolve().parents[1] / "seed.json"
 SEED_LOCAL_ENV = "MOCK_SEED_LOCAL"
@@ -119,6 +119,7 @@ class Prohibited:
 
     names: dict[str, tuple[str, str]] = field(default_factory=dict)
     keywords: tuple[str, ...] = ()
+    compact_names: dict[str, tuple[str, str]] = field(default_factory=dict)  # K4 (12/11): dạng rút gọn (`compact_key`) → như `names`
 
 
 @dataclass
@@ -306,6 +307,8 @@ def build_state(seed: SeedData, now: Now = system_now) -> MockState:
         prohibited=Prohibited(
             names={k: (p.name, p.display_name) for p in seed.prohibited_software.names for k in p.lookup_keys()},
             keywords=tuple(seed.prohibited_software.keywords),
+            compact_names={compact_key(k): (p.name, p.display_name)
+                           for p in seed.prohibited_software.names for k in p.lookup_keys()},
         ),
         installed=[
             Installed(i.device_id, i.name, i.version, ago(i.installed_days_ago)) for i in seed.installed
