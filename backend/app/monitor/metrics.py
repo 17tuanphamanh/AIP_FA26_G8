@@ -91,6 +91,7 @@ def is_pending(key: str) -> bool:
 E1_REASONS: tuple[str, ...] = (
     "out_of_scope", "multi_intent_not_enabled", "intent_low_confidence", "intent_not_enabled", "split_span_invalid",
     "reverse_action_requested",  # D-84 (12/11): thêm vào CUỐI như F12
+    "injection_suspected",  # B4 soát 12/11 (agent 07): E1 "nghi tấn công" của B2 — trước rơi vào E1_OTHER
 )  # fmt: skip
 E1_OTHER = "other"
 

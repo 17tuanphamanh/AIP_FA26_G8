@@ -112,6 +112,7 @@ export const E1_LABEL: Record<string, string> = {
   intent_not_enabled: "Ý định chưa bật",
   split_span_invalid: "Tách ý không hợp lệ",
   reverse_action_requested: "Thu hồi / khoá / gỡ / mất máy / lộ mật khẩu", // D-84 (12/11)
+  injection_suspected: "Nghi tấn công / lừa hệ thống", // B4 (12/11): trước rơi vào "Lý do khác"
   other: "Lý do khác",
 };
 

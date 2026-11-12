@@ -129,7 +129,7 @@ class RuleCount:
 @dataclass(frozen=True)
 class E1Split:
     total: int  # số lá E1 = tổng `counts`
-    counts: Mapping[str, int]  # 5 khóa E1_REASONS (reason_detail nguyên văn) + "other"
+    counts: Mapping[str, int]  # các khóa E1_REASONS (reason_detail nguyên văn) + "other"
     shares: Mapping[str, float | None]  # count / total; total 0 → None
 
 
@@ -305,7 +305,7 @@ async def override_count(conn: AsyncConnection, frm: datetime, to: datetime) -> 
 
 
 async def e1_split(conn: AsyncConnection, frm: datetime, to: datetime) -> E1Split:
-    """Lá E1 tách theo `escalations.reason_detail` nguyên văn (dòng E1 mới nhất của lá) → 5 khóa `E1_REASONS` +
+    """Lá E1 tách theo `escalations.reason_detail` nguyên văn (dòng E1 mới nhất của lá) → các khóa `E1_REASONS` +
     `other` (reason_detail khác hoặc không có dòng); tổng = số lá E1 đã kết thúc."""
     rows = (await conn.execute(text(
         "SELECT (SELECT e.reason_detail FROM escalations e WHERE e.ticket_id = t.ticket_id AND e.exit_code = 'E1' "

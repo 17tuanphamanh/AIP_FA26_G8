@@ -341,16 +341,19 @@ async def test_e1_split_verbatim_and_other(rw: AsyncEngine, mon: AsyncEngine) ->
         await seed.escalation(conn, span, exit_code="E1", created_at=at, reason_detail="split_span_invalid")
         rev = await escalated(conn, at, "E1")  # D-84 (12/11): thao tác ngược → khóa riêng, không rơi vào other
         await seed.escalation(conn, rev, exit_code="E1", created_at=at, reason_detail="reverse_action_requested")
+        inj = await escalated(conn, at, "E1")  # B4 (12/11): E1 nghi tấn công của B2 → khóa riêng, không rơi vào other
+        await seed.escalation(conn, inj, exit_code="E1", created_at=at, reason_detail="injection_suspected")
     e1 = await q(mon, b.e1_split, 10)
     assert dict(e1.counts) == {
         "out_of_scope": 2, "multi_intent_not_enabled": 1, "intent_low_confidence": 1, "intent_not_enabled": 1,
-        "split_span_invalid": 1, "reverse_action_requested": 1, "other": 2,
+        "split_span_invalid": 1, "reverse_action_requested": 1, "injection_suspected": 1, "other": 2,
     }  # fmt: skip
-    assert e1.total == 9 == sum(e1.counts.values())
-    assert e1.shares["out_of_scope"] == pytest.approx(2 / 9)
-    assert e1.shares["split_span_invalid"] == pytest.approx(1 / 9)
-    assert e1.shares["reverse_action_requested"] == pytest.approx(1 / 9)
-    assert e1.shares["other"] == pytest.approx(2 / 9)
+    assert e1.total == 10 == sum(e1.counts.values())
+    assert e1.shares["out_of_scope"] == pytest.approx(2 / 10)
+    assert e1.shares["split_span_invalid"] == pytest.approx(1 / 10)
+    assert e1.shares["reverse_action_requested"] == pytest.approx(1 / 10)
+    assert e1.shares["injection_suspected"] == pytest.approx(1 / 10)
+    assert e1.shares["other"] == pytest.approx(2 / 10)
 
 
 @pytest.mark.asyncio

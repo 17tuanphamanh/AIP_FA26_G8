@@ -179,6 +179,7 @@ export const SU_KIEN: Readonly<Record<string, string>> = {
   execution_interrupted: "Thực hiện bị gián đoạn",
   user_confirmed: "Người dùng xác nhận đã ổn",
   user_reported_unresolved: "Người dùng báo chưa giải quyết",
+  followup_reply: "Người dùng nhắn tiếp sau câu trả lời", // B4 (12/11): B19 hỏi tiếp sau câu trả lời KB
   closed: "Đã ghi nhận và kết thúc",
   escalation_closed: "Kỹ thuật viên đóng ca",
   max_loops_exceeded: "Vượt số vòng xử lý",

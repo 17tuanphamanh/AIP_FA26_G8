@@ -97,6 +97,7 @@ def test_e1_reasons_verbatim_reason_detail() -> None:
     assert E1_REASONS == (
         "out_of_scope", "multi_intent_not_enabled", "intent_low_confidence", "intent_not_enabled", "split_span_invalid",
         "reverse_action_requested",  # D-84 (12/11): thêm vào CUỐI
+        "injection_suspected",  # B4 soát 12/11 (agent 07): E1 "nghi tấn công" của B2 không còn rơi vào "other"
     )  # fmt: skip
     assert set(E1_REASONS) <= REASON_DETAILS
     assert "intent_out_of_scope" not in E1_REASONS  # tên event audit B4, không phải reason_detail
