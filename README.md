@@ -11,7 +11,7 @@ Tiến độ theo phase ở [PROGRESS.md](PROGRESS.md).
 
 | Mốc | Ở đâu | Dùng cho |
 | --- | --- | --- |
-| **Bản đo** | tag `v1.0-freeze` (`bf94df2`, 29/10/2026) | Mọi số liệu RQ trong báo cáo đo trên bản này. Muốn chạy lại số liệu: `git checkout v1.0-freeze`. |
+| **Bản đo** | tag `v1.0-freeze` (`bf94df2`, 29/10/2026) | Mọi số liệu RQ trong báo cáo đo trên bản này: stack + LLM thật sinh xác suất thô và route của luật. Phương án có LLM (Hybrid, Chỉ-LLM, Hybrid-guarded) được tính lại **offline** bằng kiểm tra chéo 5 phần (`backend/app/eval/offline.py`: fit hiệu chỉnh + chọn ngưỡng trên 4 phần, đo phần còn lại), τ của B2 báo ở 0,50 cũng tính lại offline (D-70). Vì vậy `git checkout v1.0-freeze` chỉ cho lại **mã** đã đo; muốn có lại số phải chạy lại harness rồi chạy `offline.py`: với cache LLM của lượt đo (không có trong repo, chuyển tay theo `docs/HUONG-DAN-CHAY.md` mục 11.3) thì ra lại đúng lời gọi cũ; không có cache thì gọi LLM thật và số có thể lệch vì LLM không tất định — xem `backend/app/eval/README.md`. |
 | **Bản nộp** | nhánh `main` (14/11/2026) | Mã nguồn nộp và video demo. Gồm bản đo + mọi thay đổi sau đó (sửa lỗi sau buổi test của giám khảo, các lô Q1–Q13). Phần khác bản đo ghi ở báo cáo mục "Bản nộp khác bản đo" và [PROGRESS.md](PROGRESS.md). |
 
 Hệ thống: LangGraph B1→B20 (sàng lọc → phân loại → chẩn đoán → trả lời KB hoặc thực thi có duyệt → kiểm chứng → audit),
