@@ -621,10 +621,26 @@ async def test_fail7_b18_error_after_successful_write_is_e7_not_e9() -> None:
     object.__setattr__(env.h.notifier, "notify_user", notify_fails)  # thay method trên instance
     out = await env.node(_state(), boundary=True)
     assert (out["exit_code"], out["escalation_reason_detail"]) == ("E7", "exec_interrupted")
-    assert MAY_HAVE_WRITTEN in out["escalation_note"] and out["execution"].success
+    # V10 (soát 12/11): executor đã thành công → ghi chú nói ĐÃ THÀNH CÔNG, không làm lại (trước: "có thể đã gửi lệnh ghi")
+    assert "ĐÃ THÀNH CÔNG (renew_vpn_cert)" in out["escalation_note"] and "KHÔNG làm lại" in out["escalation_note"]
+    assert out["execution"].success
     detail = env.detail("exec_interrupted")
     assert (detail["stage"], detail["cause"], detail["write_calls"]) == ("b18", "RuntimeError", 1)
     assert SECRET_BODY not in repr(env.h.audit.rows) and env.writes.calls == {"renew_vpn_cert": 1}
+
+
+async def test_v10_deadline_error_before_notify_user_gets_no_done_message() -> None:
+    """V10 (soát 12/11, agent 12 M2): hạn đặt TRƯỚC tin kết quả — hạn lỗi thì người dùng KHÔNG nhận "Đã …" rồi "Có sự cố…" cùng lượt."""
+    env = Env(IN_HOURS)
+
+    async def set_fails(*_: object) -> None:
+        raise RuntimeError("deadline sập")
+
+    object.__setattr__(env.h.deadlines, "set", set_fails)
+    out = await env.node(_state(), boundary=True)
+    assert (out["exit_code"], out["escalation_reason_detail"]) == ("E7", "exec_interrupted")
+    assert "ĐÃ THÀNH CÔNG" in out["escalation_note"]
+    assert [s for s in env.h.notifier.sent if s[2] == "confirm"] == []
 
 
 async def test_t21_final_goto_error_after_write_is_e7_not_e9() -> None:

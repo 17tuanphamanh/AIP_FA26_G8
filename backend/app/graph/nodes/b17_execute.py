@@ -89,6 +89,9 @@ from app.tools.specs import RECHECK_STEP
 
 INVALID_PEOPLE = frozenset({"disabled", "terminated"})
 INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (transaction_log đã có begun): {MAY_HAVE_WRITTEN}."
+# V10 (soát 12/11): executor đã báo THÀNH CÔNG, lỗi ở B18 (đặt hạn / gửi tin kết quả) — L2 biết lệnh ghi đã tới đích, không làm lại
+B18_FAILED_NOTE = ("Lệnh ghi ĐÃ THÀNH CÔNG ({steps}) nhưng lỗi ở bước báo kết quả / đặt hạn xác nhận — xác nhận kết quả với người "
+                   "dùng, KHÔNG làm lại.")  # fmt: skip
 WRITE_DOUBT_WINDOW = timedelta(days=7)
 PRIOR_DOUBT_NOTE = (
     "Chưa thực thi: ticket {prior} của cùng người gửi (cùng loại yêu cầu) còn chờ kỹ thuật viên kiểm vì lệnh ghi có thể đã tới hệ "
@@ -375,20 +378,22 @@ def make(deps: NodeDeps) -> NodeFn:
             already = is_already_installed(action, res.outputs)  # Q3 M6: máy đã có sẵn → không nói "Đã cài"
             text = (already_installed_text(action, res.outputs) if already
                     else result_text(action, res.outputs, action.facts, requester_id=requester.user_id, rows=rows))  # fmt: skip
-            ref = await effects.once(
-                state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "confirm", step="B18",
-            )  # fmt: skip
+            # V10 (soát 12/11, agent 12 M2): đặt hạn TRƯỚC, gửi tin SAU — lỗi/chết ở bước hạn thì người dùng chưa nhận tin "Đã …" rồi lại
+            # nhận "Có sự cố…" cùng lượt; hạn treo khi chết chỉ thành `late_event` (vô hại)
             deadline = run.clock.now() + timedelta(hours=deps.constants.CONFIRM_TIMEOUT_HOURS)
             await effects.once(
                 state, "deadline_set", deps.deadlines.set, state["ticket_id"], "confirm", deadline, run.turn_id, step="B18",
+            )  # fmt: skip
+            ref = await effects.once(
+                state, "notify_user", deps.notifier.notify_user, state["ticket_id"], text, "confirm", step="B18",
             )  # fmt: skip
         # Sau lời gọi ghi đã thành công, MỌI lỗi phải thành E7 có câu cảnh báo (chốt FAIL mục 7 c), không E9 "xử lý thủ công".
         except Exception as exc:  # noqa: BLE001 — xem dòng trên
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B17", event="exec_interrupted",
                 audit_detail={**rule, **_point7(res), "stage": "b18", "cause": type(exc).__name__},
-                exit_code=ExitCode.E7.value, escalation_reason_detail="exec_interrupted", escalation_note=INTERRUPTED_NOTE,
-                execution=res,
+                exit_code=ExitCode.E7.value, escalation_reason_detail="exec_interrupted",
+                escalation_note=B18_FAILED_NOTE.format(steps=", ".join(res.steps_done) or "—"), execution=res,
             )  # fmt: skip
         return await goto(
             state, S_CONFIRMING, next_node="confirm_wait", step="B18", event="executed_ok",
