@@ -22,7 +22,7 @@ export PATH := $(DOCKER_DESKTOP_BIN):$(PATH)
 endif
 
 .PHONY: up down test test-ml lint ingest tokenizer seed probe eval eval-rag load gate2 gate3 gate4 gate5 vpn-smoke models ml-bench \
-	rerank-bench verify verify-status audit-check
+	rerank-bench verify verify-status audit-check db-moi-giu-kb
 
 # Phase 5 (gói 2b, D-54 a): `RATE=loose` nới 3 ngưỡng 429 của backend bằng số lớn cho lượt chạy tay gate / vpn-smoke / probe /
 # harness / demo — `make up RATE=loose` (compose nội suy `${TICKET_RATE_10MIN:-}`…, biến shell thắng .env). Cùng số với `LOOSE_RATES` của
@@ -89,6 +89,11 @@ up:
 # Dừng và xoá container; GIỮ volume dữ liệu (xoá hẳn: docker compose down -v).
 down:
 	$(COMPOSE) down
+
+# DB mới mà GIỮ KB (O1): xoá đúng volume servicedesk_pgdata, không dựng lại ml-service/qdrant, ingest chỉ ghi bù DB.
+# Mặc định chỉ in lệnh; chạy thật: make db-moi-giu-kb ARGS=--chay. Chi tiết: đầu scripts/ops/db_moi_giu_kb.sh.
+db-moi-giu-kb:
+	bash scripts/ops/db_moi_giu_kb.sh $(ARGS)
 
 # unit + integration + e2e với ScriptedLLM, testcontainers. Không gồm probe/ và load/.
 # backend và mock_services đều là package `app` → chạy pytest riêng, mỗi lần một PYTHONPATH.

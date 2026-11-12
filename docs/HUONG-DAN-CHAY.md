@@ -617,6 +617,7 @@ make up
 |---|---|---|
 | Dừng | `make down` | **Giữ** DB và KB (kể cả OTP đã đặt) |
 | Xoá sạch và dựng lại | `docker compose down -v` → `make up` → `make ingest` | **Xoá** DB và KB (volume `pgdata`, `qdrant`) — phải `make ingest` lại |
+| Xoá ca cũ, **giữ KB** (trước buổi demo) | `make db-moi-giu-kb` (chỉ in lệnh) → kiểm → `make db-moi-giu-kb ARGS=--chay` | **Xoá** DB (volume `servicedesk_pgdata`: ticket, hàng chờ L2, chi LLM, phiên, OTP); **giữ** Qdrant → ingest chỉ ghi bù DB, không embed lại (vài giây). Không dựng lại ml-service (tránh bẫy `MODELS_DIR`). Sau đó đặt OTP với `--user-id it_mgr01` (mục 8) |
 | Đưa dữ liệu mock về ban đầu | `make seed` | Chỉ mock; tắt mọi lỗi đang bơm, xoá hộp thư SMS/email giả |
 
 > `docker compose down -v` cần `.env` có `LLM_BACKEND` và `ML_SERVICE_TOKEN` (compose đọc biến cả khi dừng).
