@@ -58,7 +58,7 @@ _LOSS_END = (
 )
 # "Em để quên laptop ở nhà, cấp VPN tạm cho máy mượn" — để quên ở nhà không phải sự cố an ninh.
 _NOT_HOME = r"(?![^.!?\n]{0,20}\bở nhà\b)"
-_OBJECT = r"(?:vpn|chứng chỉ|cert|quyền|truy cập|tài khoản|tk|email|mail)"
+_OBJECT = r"(?:vpn|chứng chỉ|cert|quyền|truy cập|tài khoản|tk|account|email|mail)"
 # Việc ĐÃ xảy ra (người dùng kể lại, không xin làm): "em bị thu hồi quyền VPN, cấp lại giúp", "em đã xoá chứng chỉ cũ rồi cài lại",
 # "em vừa gỡ Zoom" — bỏ qua. Lookbehind độ dài cố định nên tách từng cụm.
 _NOT_PAST = r"(?<!bị )(?<!đã )(?<!vừa )(?<!mới )(?<!lỡ )(?<!nhầm )"
@@ -67,7 +67,7 @@ _NOT_PAST = r"(?<!bị )(?<!đã )(?<!vừa )(?<!mới )(?<!lỡ )(?<!nhầm )"
 _NOT_OTHERS = r"(?<!sếp )(?<!tự )(?<!it )(?<!admin )"
 _NOT_REGRANT = r"(?![^.!?\n]*\b(?:cấp lại|xin lại|cần lại|cho lại|mở lại|cấp cho em lại)\b)"
 _NOT_REGRANT_FOLDED = r"(?![^.!?\n]*\b(?:cap lai|xin lai|can lai|cho lai|mo lai)\b)"
-_REVOKE_VERB = r"(?:thu hồi|thu lại|vô hiệu hoá|vô hiệu hóa|vô hiệu|revoke|disable|huỷ|hủy|xoá|xóa)"
+_REVOKE_VERB = r"(?:thu hồi|thu lại|vô hiệu hoá|vô hiệu hóa|vô hiệu|revoke|disable|deactivate|huỷ|hủy|xoá|xóa)"
 _ACTION_VERB = r"(?:mở khoá|mở khóa|gia hạn|cấp lại|cấp|cài đặt|cài|đặt lại|reset)"
 # Bản bỏ dấu: "huy" (huỷ) trùng TÊN người ("Nhờ cấp cho bạn Huy (nv021) quyền sửa…" — bộ đánh giá cong5) → bỏ khi có từ xưng hô đứng trước.
 _HUY_FOLDED = r"(?<!ban )(?<!anh )(?<!chi )(?<!em )(?<!cho )(?<!a )(?<!c )(?<!ten )(?<!ong )(?<!ba )huy"
@@ -119,11 +119,12 @@ _COMPROMISED = (
     r"|\b(?:hacked|compromised|phishing|keylogger|trojan|ransomware)\b|\btiền chuộc\b"
     r"|(?<!tránh bị )(?<!không bị )(?<!khỏi bị )\blộ\s+(?:mất\s+)?(?:mật khẩu|mk|pass|password|thông tin đăng nhập|otp|mã xác minh)\b"
     # trật tự đảo: "Mật khẩu email của em bị lộ rồi" (soát 12/11 03:50)
-    r"|\b(?:mật khẩu|mk|pass|password)\b[^.!?\n]{0,30}?(?<!không )(?<!không bị )\b(?:bị\s+)?lộ\b(?!\s+(?:ra|diện))"
+    r"|\b(?:mật khẩu|mk|pass|password)\b[^.!?\n]{0,50}?(?<!không )(?<!không bị )(?<!ko )(?<!ko bị )(?<!dễ )(?<!dễ bị )(?<!phải )(?<!phải bị )(?<!tránh bị )(?<!khỏi bị )\b"
+    r"(?:bị\s+)?lộ\b(?!\s+(?:ra|diện))"
     # "có ai/người …" phải kèm đích là mật khẩu (không phải mật khẩu wifi khách) hoặc tài khoản CỦA người gửi: "Có ai biết cách gia hạn
     # VPN không?", "có ai đăng nhập được VPN không?", "Có ai biết mật khẩu wifi khách không?" là câu hỏi thường, không khớp.
     rf"|{_WHO}(?:lấy được|lấy|biết|dò|đánh cắp|đổi)\s+(?:được\s+)?(?:mật khẩu|mk|pass)\b(?!\s+(?:wifi|wi-fi|wi fi|khách|máy in))"
-    rf"|{_WHO}(?:đăng nhập|truy cập|vào|dùng|sử dụng)\s+(?:được\s+)?(?:vào\s+)?(?:tài khoản|tk|email|mail|hộp thư)\s+(?:\S+\s+)?{_MINE}"
+    rf"|{_WHO}(?:đăng nhập|truy cập|vào|dùng|sử dụng)\s+(?:được\s+)?(?:\S+\s+){{0,2}}?(?:tài khoản|tk|email|mail|hộp thư)\s+(?:\S+\s+)?{_MINE}"
     r"|\bngười lạ\s+(?:(?:đã|đang|vừa)\s+)?(?:đăng nhập|truy cập|vào|dùng)\b"
     r"|\bđăng nhập lạ\b"
     # "Em nhận được thông báo đăng nhập từ thiết bị lạ"; KHÔNG nhận "Em đăng nhập từ máy lạ (máy mượn) được không?" (chính mình, câu hỏi)
@@ -135,10 +136,11 @@ _COMPROMISED = (
     r"|\b(?:mật khẩu|mk|pass)\s+(?:\S+\s+){0,3}?vào\s+(?:trang|web|website|link|liên kết|đường link|form)\s+(?:\S+\s+)?"
     r"(?:lạ|giả|giả mạo|lừa đảo)\b"
     # nạn nhân lừa đảo: "em lỡ điền mật khẩu rồi" (KHÔNG nhận "lỡ nhập SAI mật khẩu"), thư / trang giả mạo, tài khoản tự gửi spam
-    r"|\blỡ\s+(?:điền|nhập|đưa|cung cấp|gửi|khai|gõ)\s+(?:luôn\s+)?(?:mật khẩu|mk|pass|otp|mã otp|mã xác minh)\b"
-    r"|\b(?:email|mail|thư|tin nhắn|link|trang|web)\s+(?:\S+\s+)?(?:giả mạo|lừa đảo)\b"
+    r"|\blỡ\s+(?:điền|nhập|đưa|cung cấp|gửi|khai|gõ|dán|share|chia sẻ|đăng)\s+(?:luôn\s+)?(?:mật khẩu|mk|pass|otp|mã otp|mã xác minh)\b"
+    r"|\b(?:email|mail|thư|tin nhắn|link|trang|web)\s+(?:\S+\s+)?(?:giả mạo|lừa đảo|giả danh)\b"
     r"|\btự\s+(?:động\s+)?gửi\s+(?:\S+\s+){0,3}?(?:spam|thư rác|mail lạ|email lạ|lừa đảo)\b"
-    r"|\b(?:click|bấm|nhấn|nhấp|mở)\s+(?:nhầm\s+|phải\s+|lỡ\s+)?(?:vào\s+)?(?:link|liên kết|đường link|file|tệp)\s+(?:đính kèm\s+)?lạ\b"
+    r"|\b(?:click|bấm|nhấn|nhấp|mở)\s+(?:nhầm\s+|phải\s+|lỡ\s+)?(?:vào\s+)?(?:link|liên kết|đường link|file|tệp)\s+(?:\S+\s+){0,3}?"
+    r"(?:lạ|giả danh|giả mạo|lừa đảo)\b"
 )
 _COMPROMISED_FOLDED = (
     r"(?<!tranh )(?<!khong )(?<!khoi )(?<!chong )(?<!phong )(?<!ngua )\bbi\s+(?:hack|hach|hac|xam nhap|xam pham|chiem doat|chiem quyen|chiem\s+(?:mat\s+)?(?:tai khoan|tk|email|mail|hop thu)|danh cap|"
@@ -149,7 +151,7 @@ _COMPROMISED_FOLDED = (
     r"|\b(?:mat khau|mk|pass|password)\b[^.!?\n]{0,30}?(?<!khong )\bbi\s+lo\b"
     r"|(?<!phong )(?<!khoi )(?<!tranh )(?<!chong )\b(?:nhiem|dinh)\s+(?:virus|vi rut|ma doc|malware|ransomware|trojan)\b"
     rf"|{_WHO_FOLDED}(?:lay duoc|lay|biet|do|doi)\s+(?:duoc\s+)?(?:mat khau|mk|pass)\b(?!\s+(?:wifi|wi-fi|wi fi|khach|may in))"
-    rf"|{_WHO_FOLDED}(?:dang nhap|truy cap|vao|dung|su dung)\s+(?:duoc\s+)?(?:vao\s+)?(?:tai khoan|tk|email|mail|hop thu)\s+(?:\S+\s+)?"
+    rf"|{_WHO_FOLDED}(?:dang nhap|truy cap|vao|dung|su dung)\s+(?:duoc\s+)?(?:\S+\s+){{0,2}}?(?:tai khoan|tk|email|mail|hop thu)\s+(?:\S+\s+)?"
     rf"{_MINE_FOLDED}"
 )
 
@@ -195,6 +197,8 @@ _ACCENTED: Final[tuple[tuple[ReverseKind, str], ...]] = (
     ("negate", rf"\bthôi\s+khỏi\b|\bđổi ý\b|\bnhớ ra\s+(?:mật khẩu|mk|pass)\b|\b{_NO}\s+cần\s+nữa\b|\bđừng\s+(?:làm|xử lý|thực hiện)\b"),
     ("cancel", r"\b(?:huỷ|hủy|bỏ qua|rút lại|cancel)\s+(?:\S+\s+){0,3}?(?:yêu cầu|ticket|phiếu|request)\b"),
     ("cancel", r"\b(?:thôi|bỏ)\s+(?:cái\s+)?(?:yêu cầu|ticket|phiếu)\b"),
+    # "cái yêu cầu xin quyền … e gửi sáng nay a huỷ giúp e nhé" (bộ kiểm mù 12/11)
+    ("cancel", r"\b(?:yêu cầu|ticket|phiếu)\b[^.!?\n]{0,60}?\b(?:huỷ|hủy|rút lại|cancel)\s+(?:giúp|giùm|hộ|đi|luôn)\b"),
     ("compromised", _COMPROMISED),  # sau cùng: câu vừa xin khoá vừa nghi lộ vẫn mang nhãn "lock" như trước
 )
 _FOLDED: Final[tuple[tuple[ReverseKind, str], ...]] = (
