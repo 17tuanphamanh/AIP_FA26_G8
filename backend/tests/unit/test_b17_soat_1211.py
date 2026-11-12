@@ -37,6 +37,13 @@ from tests.unit.test_b17_llm_auto import (
 pytestmark = pytest.mark.asyncio
 
 
+def _assert_e5_prior_zero_writes(env: Env, out: dict[str, Any]) -> None:
+    """Như `_assert_e5_recheck_zero_writes` nhưng transaction_log có sẵn dòng `begun` của ticket TRƯỚC (`t0`) — ticket này không thêm dòng."""
+    assert (out["status"], out["exit_code"], out["escalation_reason_detail"]) == (S_ESCALATED, "E5", "recheck_failed")
+    assert env.writes_total() == 0 and [r for r in env.txlog.rows if r["ticket_id"] != "t0"] == []
+    assert env.rows("executed_ok") == []
+
+
 def _reset_own() -> Action:
     """R01: đặt lại mật khẩu AD của chính mình (AUTO)."""
     return t24_action("reset_password", rf=ME, params={"account_type": "ad"},
@@ -46,10 +53,12 @@ def _reset_own() -> Action:
 
 async def _prior_e7(
     env: Env, *, intent: str = "account", reason: str = "exec_failed", requester: str = ME, closed: bool = False,
-    exit_code: str = "E7",
+    exit_code: str = "E7", begun: bool = True,
 ) -> None:
-    """Ticket `t0` đã kết thúc E7 (lệnh ghi có thể đã tới đích), escalation còn mở (hoặc đã đóng)."""
+    """Ticket `t0` đã kết thúc E7 (lệnh ghi có thể đã tới đích — `begun` trong transaction_log), escalation còn mở (hoặc đã đóng)."""
     at = env.clock.now() - timedelta(hours=1)
+    if begun:
+        await env.txlog.begin("t0", "T0", "reset_password")
     env.h.tickets.register("t0", at, requester_id=requester)
     await env.h.tickets.finalize_once("t0", FinalSummary(
         final_state=S_ESCALATED, exit_code=exit_code, block_reason=None, close_reason=None, resolution_path=None,
@@ -78,7 +87,7 @@ async def test_n2_open_e7_same_requester_same_intent_blocks_second_write(reason:
     env = Env(IN_HOURS)
     await _prior_e7(env, reason=reason)
     out = await env.b17(_base_state(_reset_own(), other=False, status=S_EXECUTING))
-    _assert_e5_recheck_zero_writes(env, out)
+    _assert_e5_prior_zero_writes(env, out)
     assert _detail(env)["recheck"] == "prior_write_unconfirmed"
     assert _detail(env)["prior_ticket_id"] == "t0"
     assert "t0" in out["escalation_note"]
@@ -91,6 +100,7 @@ async def test_n2_open_e7_same_requester_same_intent_blocks_second_write(reason:
         pytest.param({"intent": "vpn"}, id="khac-intent"),
         pytest.param({"requester": COLLEAGUE}, id="nguoi-khac"),
         pytest.param({"reason": "recheck_failed", "exit_code": "E5"}, id="E5-chua-ghi"),
+        pytest.param({"begun": False}, id="txlog-trong-chua-gui-lenh-ghi"),  # E11 (soát 12/11, agent 12 L1)
     ],
 )
 async def test_n2_other_cases_still_execute(prior: dict[str, Any]) -> None:

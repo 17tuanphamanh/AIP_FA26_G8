@@ -198,7 +198,8 @@ def make(deps: NodeDeps) -> NodeFn:
             requester_id=requester.user_id, intent=str(state.get("intent")), since=run.clock.now() - WRITE_DOUBT_WINDOW,
             exclude_ticket_id=state["ticket_id"],
         )  # fmt: skip
-        if prior is not None:
+        # E11 (soát 12/11, agent 12 L1): ca trước mà transaction_log TRỐNG (chết trước lời gọi ghi đầu) không "có thể đã ghi" → không chặn
+        if prior is not None and await deps.txlog.has_begun(prior):
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B17", event="recheck_failed",
                 audit_detail={"recheck": "prior_write_unconfirmed", "prior_ticket_id": prior, "write_calls": 0},

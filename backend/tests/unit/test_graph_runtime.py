@@ -236,6 +236,7 @@ async def test_worker_recover_before_execute_goes_e7_without_executing() -> None
         await h.submit("t1", b12_assess="auto")
     assert h.executor.calls["t1"] == 1  # lần chạy bị "giết" giữa chừng
     [open_turn] = _open_turns(h)
+    await h.txlog.begin("t1", open_turn, "renew_vpn_cert")  # executor thật ghi `begun` TRƯỚC lời gọi ghi (executor giả không ghi)
     h.restart(can_execute=False)
     r = await h.runner.recover("t1", open_turn)
     assert r is not None
@@ -247,6 +248,23 @@ async def test_worker_recover_before_execute_goes_e7_without_executing() -> None
     assert (row["step"], row["from_status"], row["to_status"], row["turn_id"]) == (
         "B17", "S_EXECUTING", S_ESCALATED, open_turn)
     assert r.waiting_at is None and _open_turns(h) == []
+
+
+@pytest.mark.asyncio
+async def test_e11_worker_recover_before_execute_txlog_empty_says_not_sent() -> None:
+    """E11 (soát 12/11, agent 12 L1): txlog TRỐNG (chết trước lời gọi ghi đầu) → vẫn E7 `execution_interrupted`, nhưng ghi chú nói đúng
+    "chưa gửi lệnh ghi nào" (không "có thể đã ghi")."""
+    from app.graph.runner import NOT_SENT_NOTE
+
+    h = GraphHarness()
+    h.executor.crash_once.add("t1")
+    with pytest.raises(Crash):
+        await h.submit("t1", b12_assess="auto")
+    [open_turn] = _open_turns(h)
+    h.restart(can_execute=False)
+    r = await h.runner.recover("t1", open_turn)
+    assert r is not None and (r.values["exit_code"], r.values["escalation_reason_detail"]) == ("E7", "execution_interrupted")
+    assert r.values["escalation_note"] == NOT_SENT_NOTE and "có thể đã gửi" not in NOT_SENT_NOTE
 
 
 MAY_HAVE_WRITTEN = "có thể đã gửi lệnh ghi — L2 kiểm trên hệ thống đích trước khi làm tay"

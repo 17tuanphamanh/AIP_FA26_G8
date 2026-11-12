@@ -90,6 +90,9 @@ CHILD_STOPS = frozenset({None, "clarify_wait", "confirm_wait", "approval_wait"})
 # Worker không biết lời gọi ghi đã tới hệ thống đích hay chưa (có thể có `begun`) → cùng câu chốt với B17 bước 0 (DỪNG 3 3h,
 # h15b): L2 không được hiểu là "chưa làm". `reason_detail` giữ `execution_interrupted` (Q-3h-3).
 INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (worker không chạy lại B17): {MAY_HAVE_WRITTEN}."
+# E11 (soát 12/11, agent 12 L1): `transaction_log` của ticket TRỐNG — chưa lời gọi ghi nào được gửi
+NOT_SENT_NOTE = ("Thực thi bị gián đoạn (worker không chạy lại B17) TRƯỚC lời gọi ghi đầu tiên — transaction_log trống, chưa gửi lệnh "
+                 "ghi nào; L2 làm tay nếu vẫn cần.")  # fmt: skip
 FINALIZE_FAILED = "finalize_failed_permanent"
 RECOVER_EXHAUSTED = "recover_exhausted"
 
@@ -305,10 +308,11 @@ class Runner:
             elif attempts > self._max_recover:
                 result = await self._give_up(ticket_id, turn_id, snap, node, attempts)
             elif not self._can_execute and node == EXECUTE_NODE:
+                begun = await self._txlog.has_begun(ticket_id)  # E11 (soát 12/11): txlog trống → nói đúng "chưa gửi lệnh ghi"
                 result = await self._divert(
                     ticket_id, turn_id, snap.values, as_node=EXECUTE_NODE, step="B17",
                     event="execution_interrupted", exit_code=ExitCode.E7.value,
-                    escalation_note=INTERRUPTED_NOTE,
+                    escalation_note=INTERRUPTED_NOTE if begun else NOT_SENT_NOTE,
                     escalation_reason_detail="execution_interrupted",
                 )  # fmt: skip
             else:
