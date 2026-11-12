@@ -26,6 +26,15 @@
    bất kỳ trong policy tham chiếu (tính lúc dựng node = lúc khởi động; hiện chỉ `employment_status`) — dựng lại từ AD mới bằng
    chính `RequesterContext.from_ad` tại mốc `captured_at` của B1 — khác bản chụp → E5 `recheck_failed` (vd `active` →
    `probation` trong lúc chờ: bản chụp làm R19 trượt). Không dựng lại được (nhóm AD không còn ra role…) → cũng E5.
+   **Soát executor 12/11 (TA duyệt sửa lõi):** tài khoản AD `account.enabled=False` cũng là "không còn hợp lệ" (D-15 chỉ xét
+   `employment_status` — HR `active` mà AD đã tắt vẫn được cấp chứng chỉ).
+0b. **N2 (soát 12/11):** ticket KHÁC của cùng người gửi, cùng intent, còn escalation E7 MỞ mà lệnh ghi CÓ THỂ đã tới đích
+   (`deps.escalations.open_write_doubt`, 7 ngày) → E5 `recheck_failed` (`recheck="prior_write_unconfirmed"`), 0 lời gọi ghi. Trước:
+   E7 "có thể đã áp dụng" rồi người dùng xin lại → ghi lần 2 (2 SMS, mật khẩu tạm lần 1 mất hiệu lực; chứng chỉ mới lần 1 bị thu hồi).
+3c. **N1 (soát 12/11), chỉ ca đi qua duyệt:** đọc lại các fact `action.facts.*` mà luật tham chiếu (+ `cert_status`) bằng ĐÚNG lời gọi + hàm suy luận của
+   B11 (`caller_step="B17_RECHECK"`) — khác bản chụp → E5 `recheck_failed` (`recheck="facts_changed"`, `fields`), 0 lời gọi ghi. Trước:
+   an ninh khoá lại tài khoản (`lock_reason` → admin) hoặc thu hồi chứng chỉ trong lúc chờ duyệt → B17 vẫn mở khoá / gia hạn (đặc
+   tả B17 §0.3 hứa bắt "thiết bị bị thu hồi"). Lỗi tool → E2 `tool_system_error`; hết hạn lượt → E2 `turn_budget_exceeded`.
 4–5. `deps.executor.execute(ticket_id, turn_id, action)` (P7: `PlanExecutor` chỉ ở API; worker `RefusingExecutor`):
    `ExecutionInterrupted` → E7 `exec_interrupted` (`begun` có từ trước: 0 lời gọi ghi; lỗi SAU `begin` của lần này — chốt FAIL
    mục 7: audit `cause` = tên lớp lỗi, `write_calls` = cận trên); `TurnBudgetExceeded` (P4 — trước khi gửi) → E2
@@ -75,10 +84,17 @@ from app.graph.tracing import NodeFn
 from app.risk.context import build_ctx
 from app.risk.policy_engine import evaluate
 from app.settings import get_policy
+from app.tools.diagnosis import DIAGNOSERS, vpn
 from app.tools.specs import RECHECK_STEP
 
 INVALID_PEOPLE = frozenset({"disabled", "terminated"})
 INTERRUPTED_NOTE = f"Thực thi bị gián đoạn (transaction_log đã có begun): {MAY_HAVE_WRITTEN}."
+WRITE_DOUBT_WINDOW = timedelta(days=7)
+PRIOR_DOUBT_NOTE = (
+    "Chưa thực thi: ticket {prior} của cùng người gửi (cùng loại yêu cầu) còn chờ kỹ thuật viên kiểm vì lệnh ghi có thể đã tới hệ "
+    "thống đích. Kiểm và đóng ticket đó trước, rồi mới làm việc này — tránh làm hai lần (đặt lại mật khẩu, gia hạn chứng chỉ…)."
+)
+_MISSING = object()
 
 
 def _write_calls(res: ExecutionResult) -> int:
@@ -123,8 +139,47 @@ def watched_requester_fields() -> tuple[str, ...]:
     return fields
 
 
+def watched_action_facts() -> frozenset[str]:
+    """N1 (soát 12/11): fact `action.facts.*` mà luật trong policy (lúc khởi động) tham chiếu, cộng `cert_status` (chứng chỉ bị an
+    ninh thu hồi trong lúc chờ duyệt — luật hiện không xét nhưng người duyệt đã thấy trạng thái cũ)."""
+    prefix = "action.facts."
+    names = {f.removeprefix(prefix) for rule in get_policy().rules for f in rule.conditions.facts() if f.startswith(prefix)}
+    return frozenset(names | {"cert_status"})
+
+
+def fact_recheck_calls(state: Any, requester_id: str) -> list[tuple[str, dict[str, str]]]:
+    """Đúng bộ lời gọi B11 `_build` dùng để dựng `action.facts` (VPN: tool nhận `device_id`; intent khác: `module.target_calls`)."""
+    intent = state.get("intent")
+    slots = dict(state.get("slots") or {})
+    if intent == "vpn":
+        return vpn.target_calls(requester_id, slots["device_id"]) if slots.get("device_id") else []
+    module = DIAGNOSERS.get(intent) if isinstance(intent, str) else None
+    return [] if module is None else module.target_calls(requester_id, slots)
+
+
+def fresh_facts(state: Any, results: list[Any], requester_id: str) -> dict[str, Any]:
+    """Đúng hàm suy luận B11 `_build` trên kết quả đọc lại. VPN chỉ lấy `vpn.DEVICE_FACTS` (B11 chỉ làm mới phần máy)."""
+    intent = state.get("intent")
+    slots = dict(state.get("slots") or {})
+    if intent == "vpn":
+        diag = {t: None for t in vpn.TOOLS} | {r.tool: (None if r.empty else r.data) for r in results}
+        _, facts = vpn.infer_vpn(diag, requester_id=requester_id, device_id=slots["device_id"])
+        return {k: v for k, v in facts.items() if k in vpn.DEVICE_FACTS}
+    module = DIAGNOSERS[intent]
+    diag = {t: None for t in module.TOOLS} | {r.tool: r.data for r in results}
+    _, facts = module.infer(diag, requester_id=requester_id, slots=slots)
+    return dict(facts)
+
+
 def make(deps: NodeDeps) -> NodeFn:
     watched = watched_requester_fields()
+    watched_facts = watched_action_facts()
+
+    async def _reads(calls: list[tuple[str, dict[str, str]]]) -> list[Any]:
+        """MỘT điểm gọi tool đọc của B17 (người ở [3], fact ở [3c]) — song song, hạn lượt/retry/breaker ở registry."""
+        return await asyncio.gather(
+            *[deps.directory.call(t, a, caller_step=RECHECK_STEP) for t, a in calls], return_exceptions=True
+        )
 
     async def b17_execute(state: Any) -> dict[str, Any]:
         run = current_run()
@@ -136,6 +191,17 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         action = Action.model_validate(state["intended_action"])  # thiếu = bug → E9
         requester = RequesterContext.model_validate(state["requester_context"])
+        prior = await deps.escalations.open_write_doubt(  # [0b] N2 — ca trước còn "có thể đã ghi"
+            requester_id=requester.user_id, intent=str(state.get("intent")), since=run.clock.now() - WRITE_DOUBT_WINDOW,
+            exclude_ticket_id=state["ticket_id"],
+        )  # fmt: skip
+        if prior is not None:
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B17", event="recheck_failed",
+                audit_detail={"recheck": "prior_write_unconfirmed", "prior_ticket_id": prior, "write_calls": 0},
+                exit_code=ExitCode.E5.value, escalation_reason_detail="recheck_failed",
+                escalation_note=PRIOR_DOUBT_NOTE.format(prior=prior),
+            )  # fmt: skip
         verdict = evaluate(action, build_ctx(state, run.clock.now(), deps.business_hours))  # [1] P8: hiện hành
         rule = {"policy_decision": verdict.decision, "matched_rule_id": verdict.rule_id,
                 "all_matched": verdict.all_matched, "write_calls": 0}  # fmt: skip
@@ -193,10 +259,7 @@ def make(deps: NodeDeps) -> NodeFn:
 
         people = list(dict.fromkeys([requester.user_id, action.requested_for]))  # [3] D-15 (sửa)
         lookups = list(dict.fromkeys([*people, *([decided_by] if decided_by else [])]))  # P13: + người đã duyệt, CÙNG gather
-        checks = await asyncio.gather(
-            *[deps.directory.call("ad_get_user", {"user_id": uid}, caller_step=RECHECK_STEP) for uid in lookups],
-            return_exceptions=True,
-        )  # fmt: skip
+        checks = await _reads([("ad_get_user", {"user_id": uid}) for uid in lookups])
         for outcome in checks:  # lỗi hợp đồng (bug) ném trước — E9; hết hạn lượt sau — E2
             if isinstance(outcome, BaseException) and not isinstance(outcome, TurnBudgetExceeded):
                 raise outcome
@@ -211,11 +274,12 @@ def make(deps: NodeDeps) -> NodeFn:
         for uid in people:
             data, err, _ = found[uid]  # type: ignore[misc]
             status = getattr(data, "employment_status", None)
-            if err is not None or data is None or status in INVALID_PEOPLE:
+            ad_disabled = getattr(getattr(data, "account", None), "enabled", True) is False  # soát 12/11: AD đã tắt, HR còn active
+            if err is not None or data is None or status in INVALID_PEOPLE or ad_disabled:
                 return await goto(
                     state, S_ESCALATED, next_node="b20_audit", step="B17", event="person_no_longer_valid",
                     audit_detail={**rule, "user_id": uid, "role": "requester" if uid == requester.user_id else "beneficiary",
-                                  "ad_error": err is not None, "employment_status": status},
+                                  "ad_error": err is not None, "employment_status": status, "ad_disabled": ad_disabled},
                     exit_code=ExitCode.E5.value, escalation_reason_detail="person_no_longer_valid",
                 )  # fmt: skip
             if uid == requester.user_id:
@@ -246,6 +310,36 @@ def make(deps: NodeDeps) -> NodeFn:
                     state, S_ESCALATED, next_node="b20_audit", step="B17", event="approver_no_longer_valid",
                     audit_detail={**rule, "user_id": decided_by, "role": "approver", "reason": reason},
                     exit_code=ExitCode.E5.value, escalation_reason_detail="approver_no_longer_valid",
+                )  # fmt: skip
+
+        # [3c] N1 — chỉ ca ĐÃ QUA DUYỆT: khe thời gian (chờ duyệt, tới 30 phút) nằm ở đây; ca AUTO đi B11 → B12 → B17 trong CÙNG lượt,
+        # fact B11 vừa đọc.
+        if via_approval and (calls := fact_recheck_calls(state, requester.user_id)):
+            outs = await _reads(calls)
+            for outcome in outs:  # lỗi hợp đồng (bug) ném trước — E9; hết hạn lượt sau — E2
+                if isinstance(outcome, BaseException) and not isinstance(outcome, TurnBudgetExceeded):
+                    raise outcome
+            if any(isinstance(o, TurnBudgetExceeded) for o in outs):
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="turn_budget_exceeded",
+                    audit_detail={**rule, "stage": "recheck_facts"}, exit_code=ExitCode.E2.value,
+                    escalation_reason_detail="turn_budget_exceeded",
+                )  # fmt: skip
+            if failed := [r.tool for r in outs if r.error is not None]:
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="tool_system_error",
+                    audit_detail={**rule, "stage": "recheck_facts", "tools": failed}, exit_code=ExitCode.E2.value,
+                    escalation_reason_detail="tool_system_error",
+                )  # fmt: skip
+            reread = fresh_facts(state, outs, requester.user_id)
+            snapshot = set(action.facts) & vpn.DEVICE_FACTS if state.get("intent") == "vpn" else set(action.facts)
+            keys = watched_facts & (set(reread) | snapshot)
+            changed = sorted(k for k in keys if reread.get(k, _MISSING) != action.facts.get(k, _MISSING))
+            if changed:
+                return await goto(
+                    state, S_ESCALATED, next_node="b20_audit", step="B17", event="recheck_failed",
+                    audit_detail={**rule, "recheck": "facts_changed", "fields": changed}, exit_code=ExitCode.E5.value,
+                    escalation_reason_detail="recheck_failed",
                 )  # fmt: skip
 
         try:  # [4–5]

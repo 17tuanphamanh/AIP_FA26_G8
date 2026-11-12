@@ -6699,6 +6699,10 @@ Chấm trực tiếp trên stack demo (bản `96ded36`, LLM thật, RAG thật, 
   sửa theo nửa DEV → nửa giữ lại lọt 14/61 → 8/61, bắt nhầm 3/65 → 3/65; rồi vá cả nửa giữ lại (`test_d84_hopden_1211.py`, 370 test).
   411 câu `eval/` không đổi kết quả; unit 9705 passed. Số mù cuối cùng cần một bộ câu MỚI.
 
+- 12/11 (nhánh `sua-b17-1211`, TA duyệt sửa lõi): **D-88** — B17 đọc lại fact luật dùng trước khi ghi (ca đã duyệt), chặn ghi lần 2
+  khi còn escalation E7 mở cùng người gửi + intent, AD `enabled=false` = không hợp lệ. Unit 10 107 passed; 4 đột biến của phần mới đều bị
+  giết (`test_b17_soat_1211.py`). Mốc đột biến M-3h-19 (`scripts/mutation/mutate_3h.py`) cập nhật theo dòng kiểm người mới.
+
 ## Dồn về mốc G (cần LLM thật — làm sau Phase 7, trước Phase 8)
 
 *Mỗi phase ghi thêm vào đây phần cổng cần LLM thật mà chưa chạy.*

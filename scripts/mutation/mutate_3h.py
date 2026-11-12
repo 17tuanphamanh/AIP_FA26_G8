@@ -131,7 +131,7 @@ _MEM = (
     '        return any(r["ticket_id"] == ticket_id and r["status"] == "begun" for r in self.rows)\n'
 )
 _DURABILITY = 'DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module'
-_PERSON = "            if err is not None or data is None or status in INVALID_PEOPLE:\n"
+_PERSON = "            if err is not None or data is None or status in INVALID_PEOPLE or ad_disabled:\n"
 _VERDICT = "        verdict = evaluate(action, build_ctx(state, run.clock.now(), deps.business_hours))  # [1] P8: hiện hành\n"
 _MOCK_MW = (
     '    app.middleware("http")(fault_middleware)\n'
