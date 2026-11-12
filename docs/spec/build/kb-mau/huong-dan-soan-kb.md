@@ -54,6 +54,7 @@ tags: [vpn, lỗi 809, windows]
 | `enabled` | `false` = tài liệu cũ, không còn dùng; máy bỏ qua khi nạp |
 | `title` | 5–120 ký tự, nêu đúng chủ đề — tiêu đề được ghép vào đầu **mọi** đoạn |
 | `distractor` | `true` cho tài liệu gây nhiễu (mục 7) — vẫn là tài liệu đúng, chỉ đánh dấu để đo |
+| `tags` | **Chỉ là nhãn cho người đọc — KHÔNG vào chỉ mục tìm kiếm** (chuỗi được index = `title › heading` + thân đoạn; soát 12/11, agent 08 F-V6). Thêm tag không sửa được ca truy hồi kém / E3: muốn máy tìm ra thì sửa tiêu đề, heading hoặc thân bài (mục 4.8) |
 | Trường khác | Không được thêm trường ngoài bảng này |
 
 ## 4. Quy tắc viết thân bài

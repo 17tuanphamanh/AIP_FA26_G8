@@ -18,5 +18,6 @@ Kiểm trước khi nộp (cần `make up`; không ghi gì):
 make ingest ARGS=--dry-run
 ```
 
-Nạp thật: `make ingest`. Sửa bất kỳ chữ nào trong một tài liệu → tăng `version`, không thì máy từ chối nạp. Tài liệu
+Nạp thật: `make ingest`. Sửa bất kỳ chữ nào trong một tài liệu → tăng `version`, không thì máy từ chối nạp. Trường
+`tags` chỉ là nhãn cho người đọc, **không vào chỉ mục**: muốn máy tìm ra thì sửa tiêu đề, heading hoặc thân bài. Tài liệu
 thật do TV1 thêm; test dùng KB tổng hợp ở `backend/tests/fixtures/kb/`, không dùng thư mục này.
