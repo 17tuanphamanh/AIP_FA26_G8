@@ -49,6 +49,7 @@ import {
   TOO_LARGE_TEXT,
   VALID_TEXT,
 } from "./policyText.ts";
+import { intentLabel } from "./strategyLabels.ts";
 import { rangeWindow } from "./range.ts";
 
 const clients: QueryClient[] = [];
@@ -514,6 +515,7 @@ describe("t58: khối 'Cảnh báo đang mở' trên Tổng quan — tối đa 5
     expect(within(block).getAllByTestId("alert-row").map((r) => r.dataset.severity)).toStrictEqual(["critical", "critical", "warning", "warning", "warning"]);
     expect(within(block).getByRole("link", { name: "Tất cả" }).getAttribute("href")).toBe("/alerts");
     expect(within(block).queryByRole("button", { name: "Chi tiết" })).toBeNull(); // khối gọn
+    for (const r of within(block).getAllByTestId("alert-row")) expect(text(r)).not.toMatch(/password_bruteforce|injection_detected|e9_spike|e6_spike|escalation_rate_high/); // gọn 13/11: mã luật thô chỉ ở màn Cảnh báo
   });
 
   it("request_excerpt chứa '<b>x</b>' → hiện nguyên văn, không in đậm", async () => {
@@ -1326,7 +1328,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     const override = screen.getByTestId("metric-override_count");
     expect([override.dataset.state, text(override)]).toStrictEqual(["value", "Số lần L1 ghi đè: 0"]);
     expect(screen.getAllByTestId("e3-case")).toHaveLength(1);
-    expect(text(screen.getByTestId("e3-case"))).toContain("software · 29/09 · KB v12 · t-e3");
+    expect(text(screen.getByTestId("e3-case"))).toContain("Phần mềm · 29/09 · KB v12 · t-e3"); // gọn 13/11: nhãn loại yêu cầu
     expect(screen.queryByTestId("e3-truncated")).toBeNull();
   });
 
@@ -1349,6 +1351,38 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     const e3 = text(screen.getByTestId("e3-case"));
     expect(e3).toContain("chưa rõ ý định · 30/09 · t-e3b");
     expect(e3).not.toContain("KB");
+  });
+
+  it("gọn 13/11 (TA): không tên trường API thô; E3 chỉ 5 ca + 'Xem thêm'; mã KB/ticket dài rút 8 ký tự (đủ ở title)", async () => {
+    const kb = "2b59041b53c04eaecd18497a14e9142707f353dc5a24260170979ed01600e34a";
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      ticket_id: `ee6d285e-7549-4cdc-a38b-7a27944bf4${i}0`,
+      intent: i === 0 ? "it_help" : "vpn",
+      created_at: "2026-09-29T17:30:00Z",
+      kb_version: kb,
+      request_excerpt: `Câu ${i}`,
+    }));
+    dashboardServer({ business: () => json(200, business({ e3_cases: { items, truncated: false } })) });
+    renderAt("/dashboard");
+    await screen.findAllByTestId("kpi");
+    for (const tile of screen.getAllByTestId("kpi")) {
+      expect(text(tile)).not.toContain(tile.dataset.metric!); // tên trường chỉ ở title
+      expect(tile.getAttribute("title")).toBe(tile.dataset.metric);
+    }
+    for (const field of ["decided_by_distribution", "escalation_rate_weighted", "top_matched_rules", "e1_split", "e3_cases"]) {
+      const h = document.querySelector<HTMLElement>(`h2[data-field="${field}"]`)!;
+      expect([text(h).includes(field), h.getAttribute("title")]).toStrictEqual([false, field]);
+    }
+    expect(screen.getAllByTestId("e3-case")).toHaveLength(5);
+    const first = text(screen.getAllByTestId("e3-case")[0]!);
+    expect(first).toContain("Hỏi đáp IT · 30/09 · KB 2b59041b · ee6d285e");
+    expect(first).not.toContain(kb);
+    const more = screen.getByTestId("e3-more");
+    expect([text(more), more.getAttribute("aria-expanded")]).toStrictEqual(["Xem thêm 2 ca", "false"]);
+    fireEvent.click(more);
+    expect(screen.getAllByTestId("e3-case")).toHaveLength(7);
+    expect(text(screen.getByTestId("e3-more"))).toBe("Thu gọn");
+    expect([intentLabel("it_help"), intentLabel("none")]).toStrictEqual(["Hỏi đáp IT", "Chưa phân loại (bị chặn / ngoài phạm vi)"]);
   });
 
   it("cửa sổ rỗng (0 ticket): tỉ lệ '—', nhóm '—', không thanh, không luật, không ca E3 — không chữ '0 %' nào", async () => {

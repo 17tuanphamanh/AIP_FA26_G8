@@ -26,7 +26,14 @@ export const METRIC_LABEL: Record<string, string> = {
 };
 
 /** Loại yêu cầu (`intent_mix`) — như backend/app/domain/messages.py; khoá lạ → hiện nguyên. */
-export const INTENT_LABEL: Record<string, string> = { vpn: "VPN", account: "Tài khoản", software: "Phần mềm", access: "Quyền truy cập" };
+export const INTENT_LABEL: Record<string, string> = {
+  vpn: "VPN",
+  account: "Tài khoản",
+  software: "Phần mềm",
+  access: "Quyền truy cập",
+  it_help: "Hỏi đáp IT", // gọn 13/11 (TA): trước hiện khoá thô
+  none: "Chưa phân loại (bị chặn / ngoài phạm vi)",
+};
 
 /** Một dòng chú thích dưới nhãn — chỉ cho chỉ số dễ hiểu nhầm (B2, soát 12/11 agent 20 L3). Không đổi số. */
 export const METRIC_HINT: Record<string, string> = {

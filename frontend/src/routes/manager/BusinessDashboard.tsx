@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { policyQuery } from "../../api/policy.ts";
 import { NhanMa } from "../../components/MaNhan.tsx";
-import { GOI_Y_TRONG_SO, luatIT, MA_KET_THUC } from "../../lib/nhan.ts";
+import { GOI_Y_TRONG_SO, LOAI_YEU_CAU, luatIT, MA_KET_THUC } from "../../lib/nhan.ts";
 import type { BusinessCountedTam as Business, BusinessMetrics, E3Cases, GroupCountTam } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
 import {
@@ -54,34 +55,31 @@ function Kpi({
 }) {
   const m = text ?? metricText(name, value, data.unavailable, kind);
   return (
-    <div data-testid="kpi" data-metric={name} data-state={m.state} className="flex flex-col gap-0.5 rounded-group bg-group px-5 py-4.5">
+    <div data-testid="kpi" data-metric={name} data-state={m.state} title={name} className="flex min-w-0 flex-col gap-0.5 rounded-group bg-group px-5 py-4.5">
       <span className="text-secondary text-ink-2" title={goiY} data-testid={goiY ? "kpi-goi-y" : undefined}>
         {label}
         {goiY ? <span className="sr-only"> ({goiY})</span> : null}
       </span>
-      <span data-testid="kpi-value" className={m.state === "value" ? "text-title tabular-nums" : "text-heading text-ink-2"}>
+      <span data-testid="kpi-value" className={m.state === "value" ? "text-title tabular-nums wrap-anywhere" : "text-heading text-ink-2"}>
         {m.text}
       </span>
-      <span className="text-label font-normal text-ink-2">
-        {m.note ?? <span className="font-mono">{name}</span>}
-        {extra ? ` · ${extra}` : ""}
-      </span>
+      {/* Gọn 13/11 (TA): bỏ tên trường API dưới ô số (vẫn ở `title` + `data-metric` để tra định nghĩa trong báo cáo). */}
+      {m.note || extra ? <span className="text-label font-normal text-ink-2">{[m.note, extra].filter(Boolean).join(" · ")}</span> : null}
     </div>
   );
 }
 
-/** Đầu khối: nhãn tiếng Việt + tên trường API (Bản 4: "Ai quyết định mức rủi ro · decided_by_distribution"). */
+/** Đầu khối: nhãn tiếng Việt (+ mã E nếu có). Bản 4 vẽ kèm tên trường API; gọn 13/11 (TA): tên trường chỉ còn ở `title`. */
 function Heading({ id, text, field, ma }: { id: string; text: string; field: string; ma?: string }) {
   return (
-    <h2 id={id} className="pl-1 text-label text-ink-2">
+    <h2 id={id} title={field} data-field={field} className="pl-1 text-label text-ink-2">
       {text}
       {ma ? (
         <>
           {" · "}
           <span className="font-mono font-normal">{ma}</span>
         </>
-      ) : null}{" "}
-      · <span className="font-mono font-normal">{field}</span>
+      ) : null}
     </h2>
   );
 }
@@ -109,8 +107,8 @@ function Bars({ values, labels }: { values: Record<string, number>; labels: Reco
   return (
     <div className="flex flex-col gap-3.5 px-5 py-4.5">
       {entries.map(([key, n], i) => (
-        <div key={key} data-testid="bar-row" data-key={key} className="grid grid-cols-[120px_minmax(0,1fr)_56px] items-center gap-3">
-          <span className="truncate text-secondary">{labelOf(labels, key)}</span>
+        <div key={key} data-testid="bar-row" data-key={key} className="grid grid-cols-[minmax(0,11rem)_minmax(3rem,1fr)_56px] items-center gap-3">
+          <span className="text-secondary">{labelOf(labels, key)}</span>
           <span className="h-2.5 rounded-full bg-button-2">
             <span className={`block h-2.5 rounded-full ${i === 0 ? "bg-fpt-blue" : "bg-send"}`} style={{ width: `${Math.round((n / total) * 100)}%` }} />
           </span>
@@ -121,24 +119,52 @@ function Bars({ values, labels }: { values: Record<string, number>; labels: Reco
   );
 }
 
+/** Gọn 13/11 (TA): mã dài (băm KB 64 ký tự, UUID ticket) chỉ hiện 8 ký tự đầu — bản đầy đủ ở `title`. */
+const shortId = (id: string) => (id.length > 12 ? id.slice(0, 8) : id);
+/** Số ca E3 hiện sẵn; còn lại sau nút "Xem thêm". */
+export const E3_PREVIEW = 5;
+
 function E3List({ cases }: { cases: E3Cases }) {
+  const [all, setAll] = useState(false);
   if (cases.items.length === 0) return <p className="px-4 py-3 text-secondary text-ink-2">Không có ca thiếu tài liệu hướng dẫn trong khoảng này.</p>;
+  const shown = all ? cases.items : cases.items.slice(0, E3_PREVIEW);
+  const hidden = cases.items.length - shown.length;
   return (
     <>
       <ul aria-label="Ca thiếu tài liệu">
-        {cases.items.map((c) => (
+        {shown.map((c) => (
           <li key={c.ticket_id} data-testid="e3-case" className="flex flex-col border-t border-line px-4 py-2.5 first:border-t-0">
             {/* Chữ thô (React tự thoát) — request_excerpt có "<b>" vẫn hiện nguyên văn. */}
             <span data-testid="e3-excerpt" className="truncate text-secondary">
               “{c.request_excerpt}”
             </span>
             <span className="truncate text-label font-normal text-ink-2">
-              {c.intent ?? "chưa rõ ý định"} · {vnDate(c.created_at)}
-              {c.kb_version ? ` · KB ${c.kb_version}` : ""} · <span className="font-mono">{c.ticket_id}</span>
+              {c.intent ? labelOf(LOAI_YEU_CAU, c.intent) : "chưa rõ ý định"} · {vnDate(c.created_at)}
+              {c.kb_version ? (
+                <>
+                  {" · KB "}
+                  <span title={c.kb_version}>{shortId(c.kb_version)}</span>
+                </>
+              ) : null}{" "}
+              ·{" "}
+              <span className="font-mono" title={c.ticket_id}>
+                {shortId(c.ticket_id)}
+              </span>
             </span>
           </li>
         ))}
       </ul>
+      {hidden > 0 || all ? (
+        <button
+          type="button"
+          data-testid="e3-more"
+          aria-expanded={all}
+          onClick={() => setAll((v) => !v)}
+          className="w-full border-t border-line px-4 py-2.5 text-left text-label text-fpt-blue hover:bg-group max-lg:min-h-11"
+        >
+          {all ? "Thu gọn" : `Xem thêm ${hidden} ca`}
+        </button>
+      ) : null}
       {cases.truncated ? (
         <p role="status" data-testid="e3-truncated" className="border-t border-line px-4 py-2.5 text-label font-normal text-ink-2">
           {E3_TRUNCATED_TEXT}
@@ -221,7 +247,7 @@ function WeightedGroups({ data }: { data: Business }) {
       ) : (
         <ul className="overflow-hidden rounded-group border border-line">
           {groups.map(([key, rate]) => (
-            <li key={key} data-testid="weighted-group" data-key={key} className="flex h-11 items-center gap-3 border-t border-line px-5 first:border-t-0">
+            <li key={key} data-testid="weighted-group" data-key={key} className="flex min-h-11 items-center gap-3 border-t border-line px-5 py-2 first:border-t-0">
               <span className="grow text-secondary">{labelOf(WEIGHT_GROUP_LABEL, key)}</span>
               <span className="text-secondary text-ink-2 tabular-nums">{groupText(key, rate)}</span>
             </li>
@@ -285,7 +311,7 @@ export function BusinessSections({ data }: { data: Business }) {
           ) : (
             <ul className="overflow-hidden rounded-group border border-line">
               {rules.map((r) => (
-                <li key={r.rule_id} data-testid="rule-row" className="flex h-11 items-center gap-3 border-t border-line px-5 first:border-t-0">
+                <li key={r.rule_id} data-testid="rule-row" className="flex min-h-11 items-center gap-3 border-t border-line px-5 py-2 first:border-t-0">
                   <span data-testid="rule-name" className="grow text-secondary">
                     <NhanMa {...luatIT(r.rule_id, ruleDescriptions ? ownEntry<string | null>(ruleDescriptions, r.rule_id, null) : null)} />
                   </span>

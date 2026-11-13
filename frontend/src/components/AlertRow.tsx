@@ -44,15 +44,16 @@ export function AlertRow({
             ) : null}
             <span className="sr-only"> — mức {severityLabel(alert.severity)}</span>
           </span>
-          <span className="truncate text-label font-normal text-ink-2 max-lg:whitespace-normal">
-            <span className="font-mono">{alert.rule_id}</span>
+          <span className="truncate text-label font-normal text-ink-2 max-lg:whitespace-normal" title={`${alert.rule_id}${alert.subject ? ` · ${alert.subject}` : ""}`}>
+            {/* Gọn 13/11 (TA): khối Tổng quan (compact) bỏ mã luật thô, mã đối tượng dài chỉ 8 ký tự đầu — màn Cảnh báo giữ đủ. */}
+            {compact ? null : <span className="font-mono">{alert.rule_id}</span>}
             {alert.subject ? (
               <>
-                {" · "}
-                <span className="font-mono">{alert.subject}</span>
+                {compact ? "" : " · "}
+                <span className="font-mono">{compact && alert.subject.length > 12 ? alert.subject.slice(0, 8) : alert.subject}</span>
               </>
             ) : null}
-            {" · "}
+            {compact && !alert.subject ? "" : " · "}
             {vnDateTime(alert.window_start)}
             {typeof alert.value === "number" ? ` · giá trị ${formatNumber(alert.value, "number")}` : ""}
           </span>
