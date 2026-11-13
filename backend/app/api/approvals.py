@@ -78,7 +78,7 @@ from app.auth.deps import deny, get_auth, require
 from app.auth.models import Principal
 from app.auth.ports import IdentityUnavailable
 from app.core.hashing import hash_action
-from app.domain.action import Action
+from app.domain.action import Action, procedure_doc_for
 from app.domain.approval import invalid_reason, manager_chain
 from app.domain.messages import ReasonCode
 from app.domain.states import S_PENDING_APPROVAL
@@ -378,7 +378,12 @@ async def view_approval(
     meta = (get_action_metadata().root.get(str(values.get("intent"))) or {}).get(action.type)
     procedure = None
     if meta is not None:
-        procedure = ProcedureRef(doc_id=meta.procedure_doc, title=await desk.approvals.procedure_title(meta.procedure_doc))
+        # 13/11: tài khoản dịch vụ / quản trị → bài quy trình riêng (nếu có trong KB hiện hành); không có → bài thường.
+        doc_id = procedure_doc_for(meta, action.facts)
+        title = await desk.approvals.procedure_title(doc_id)
+        if title is None and doc_id != meta.procedure_doc:
+            doc_id, title = meta.procedure_doc, await desk.approvals.procedure_title(meta.procedure_doc)
+        procedure = ProcedureRef(doc_id=doc_id, title=title)
     rc = _as_json(values.get("requester_context")) or {}
     requester_id = ticket.requester_id if ticket else str(rc.get("user_id") or "")
     sender = await desk.users.get_user(requester_id) if requester_id else None  # lỗi đọc nổi lên như `_affected`

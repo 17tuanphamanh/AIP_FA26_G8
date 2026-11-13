@@ -112,12 +112,22 @@ class ActionMeta(BaseModel):
     scope: Scope
     privilege_level: PrivilegeLevel
     procedure_doc: str = Field(pattern=DOC_ID_PATTERN)  # S0-P10: bắt buộc — thiếu/sai mẫu → không khởi động
+    # 13/11: căn cứ khi tài khoản đích là tài khoản dịch vụ / quản trị (theo fact) — chỉ dùng để HIỂN THỊ căn cứ trên thẻ duyệt
+    # (`procedure_doc_for`); B11 vẫn kiểm `procedure_doc` (lúc đó chưa có fact).
+    procedure_doc_privileged: str | None = Field(default=None, pattern=DOC_ID_PATTERN)
 
     @model_validator(mode="after")
     def _reversible_matches(self) -> "ActionMeta":
         if self.reversible != (self.reversibility != "none"):
             raise ValueError("reversible phải khớp reversibility (none ↔ false)")
         return self
+
+
+def procedure_doc_for(meta: ActionMeta, facts: Mapping[str, object]) -> str:
+    """Căn cứ quy trình hiện cho người duyệt: tài khoản đích là tài khoản dịch vụ (`target_is_service_account is True`) hoặc
+    quản trị (`target_account_privilege == "admin"`) và metadata có `procedure_doc_privileged` → bài đó; còn lại `procedure_doc`."""
+    privileged = facts.get("target_is_service_account") is True or facts.get("target_account_privilege") == "admin"
+    return meta.procedure_doc_privileged if privileged and meta.procedure_doc_privileged else meta.procedure_doc
 
 
 class Action(BaseModel, frozen=True):

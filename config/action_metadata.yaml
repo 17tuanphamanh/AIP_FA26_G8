@@ -11,8 +11,9 @@ vpn:
 # metadata cho mọi action_type đã khai báo trong slots.yaml (bật hay không). data_sensitivity/privilege_level tĩnh [Chốt B11 §0.3];
 # độ nhạy thật của tài nguyên và quyền tài khoản đích nằm ở fact (domain/facts.py) — luật đọc fact, không đọc hai trường này.
 account:
-  reset_password:     {reversible: true, reversibility: partial, data_sensitivity: medium, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACC-001}
-  unlock_account:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACC-002}
+# procedure_doc_privileged (13/11): căn cứ hiện trên thẻ duyệt khi tài khoản đích là tài khoản dịch vụ / quản trị (KB-ACC-003).
+  reset_password:     {reversible: true, reversibility: partial, data_sensitivity: medium, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACC-001, procedure_doc_privileged: KB-ACC-003}
+  unlock_account:     {reversible: true, reversibility: full, data_sensitivity: low, scope: single_account, privilege_level: standard_user, procedure_doc: KB-ACC-002, procedure_doc_privileged: KB-ACC-003}
 software:
   install_software:   {reversible: true, reversibility: partial, data_sensitivity: low, scope: single_device, privilege_level: standard_user, procedure_doc: KB-SW-001}
 access:

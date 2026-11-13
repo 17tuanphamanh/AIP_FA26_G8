@@ -785,3 +785,36 @@ async def test_f6_f12_openapi_approval_view_schema() -> None:
     assert _enum_values(spec, risk["policy_decision"]) == {"allow", "approval_required", "deny"}  # fmt: skip
     for key in ("calibrated", "auto_allowed"):
         assert risk[key].get("type") == "boolean", (key, risk[key])
+
+
+@pytest.mark.parametrize(
+    ("facts", "titles", "want"),
+    [
+        ({"target_is_service_account": True, "target_account_privilege": "admin"},
+         {"KB-ACC-001": "Tự đặt lại mật khẩu tài khoản cá nhân", "KB-ACC-003": "Quy trình đặt lại mật khẩu tài khoản quản trị"},
+         {"doc_id": "KB-ACC-003", "title": "Quy trình đặt lại mật khẩu tài khoản quản trị"}),
+        ({"target_is_service_account": True, "target_account_privilege": "admin"},
+         {"KB-ACC-001": "Tự đặt lại mật khẩu tài khoản cá nhân"},  # bài đặc quyền không có trong KB hiện hành → về bài thường
+         {"doc_id": "KB-ACC-001", "title": "Tự đặt lại mật khẩu tài khoản cá nhân"}),
+        ({"target_is_service_account": False, "target_account_privilege": "standard_user"},
+         {"KB-ACC-001": "Tự đặt lại mật khẩu tài khoản cá nhân", "KB-ACC-003": "Quy trình đặt lại mật khẩu tài khoản quản trị"},
+         {"doc_id": "KB-ACC-001", "title": "Tự đặt lại mật khẩu tài khoản cá nhân"}),
+    ],
+    ids=["dich-vu", "dich-vu-thieu-bai", "thuong"],
+)  # fmt: skip
+async def test_view_procedure_tai_khoan_dich_vu_1313(facts: dict[str, Any], titles: dict[str, str], want: dict[str, str]) -> None:
+    """13/11: đặt lại mật khẩu `svc_backup` (dịch vụ, quản trị) → căn cứ KB-ACC-003, không phải KB-ACC-001 (tài khoản cá nhân)."""
+    async with desk_env() as env:
+        ticket, aid = await _pending(env)
+        m = get_action_metadata().of("account")["reset_password"]
+        action = Action(
+            type="reset_password", target="user:svc_backup", requested_for="svc_backup", scope=m.scope,
+            privilege_level=m.privilege_level, reversible=m.reversible, reversibility=m.reversibility,
+            data_sensitivity=m.data_sensitivity, params={"account_type": "ad"}, facts=facts,
+        )  # fmt: skip
+        await env.h.runner.graph.aupdate_state(env.h.runner.config(ticket), {"intent": "account"})
+        await _put_action(env, ticket, aid, action)
+        env.h.approvals.titles.update(titles)
+        r = await _view(env, aid, await _login(env, "ha.lt"))
+        assert r.status_code == 200, r.text
+        assert r.json()["procedure"] == want
