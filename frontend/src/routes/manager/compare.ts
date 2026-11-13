@@ -1,6 +1,6 @@
 // Hàm thuần của tab "So sánh phương án" (hợp đồng N-PA §2). KHÔNG xếp hạng, KHÔNG tô màu, KHÔNG mũi tên, KHÔNG điểm tổng:
 // mỗi ô chỉ là chữ. Định dạng dùng chung với các tab khác (metrics.ts).
-import type { StrategyMetric, StrategyRatio, StrategySource, StrategyValue } from "../../api/types.ts";
+import type { StrategiesDashboard, StrategyMetric, StrategyRatio, StrategySource, StrategyValue } from "../../api/types.ts";
 import { formatRate, formatUsd } from "./metrics.ts";
 
 /** Mẫu số / số ca dưới ngưỡng này → "chưa đủ dữ liệu (n=…)". */
@@ -70,3 +70,12 @@ export function intentCell(mix: Record<string, Record<string, number>>, strategy
   const row = Object.hasOwn(mix, strategy) ? mix[strategy]! : null;
   return row && Object.hasOwn(row, intent) ? integer.format(row[intent]!) : NO_VALUE;
 }
+
+/** Phương án có ít nhất một ô số (khác null) — cột toàn "—" làm bảng trông như lỗi (gọn 13/11, TA). */
+export function strategiesWithData(data: StrategiesDashboard): string[] {
+  const has = data.strategies.filter((s) => data.metrics.some((m) => Object.hasOwn(m.values, s) && m.values[s] !== null && m.values[s] !== undefined));
+  return has.length > 0 ? has : [...data.strategies];
+}
+
+export const HIDDEN_STRATEGY_NOTE = (names: string[]) =>
+  `Chưa có ticket thật cho: ${names.join("; ")}. Các phương án này chỉ chạy trên bộ tình huống thử — chọn “Dữ liệu thử” để so sánh đủ.`;

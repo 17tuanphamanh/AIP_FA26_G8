@@ -15,6 +15,7 @@ import { DEMO_UPDATED_AT, DEMO_VERSION, POLICY_DEMO } from "../../mocks/fixtures
 import { buildStrategies, METRIC_KEYS } from "../../mocks/fixtures/strategy.ts";
 import { cellText, COMPARE_NOTE, SIM_BAND } from "./compare.ts";
 import { DashboardPage } from "./DashboardPage.tsx";
+import { CompareTable } from "./StrategyCompare.tsx";
 import { MONITOR_DOWN_TEXT } from "./metrics.ts";
 import { PolicyEditor } from "./PolicyEditor.tsx";
 import { METRIC_LABEL } from "./strategyLabels.ts";
@@ -682,5 +683,20 @@ describe("B2 12/11: dòng l2_rate ở tab So sánh không trùng tên 'Chuyển 
     );
     const auto = table.querySelector<HTMLElement>('[data-key="auto_rate"] th')!;
     expect(auto.querySelector('[data-testid="metric-hint"]')).toBeNull(); // chỉ dòng có chú thích mới có
+  });
+});
+
+describe("gọn 13/11 (TA): nguồn Thật — cột phương án toàn '—' bị ẩn, kèm một câu giải thích", () => {
+  it("chỉ còn cột có số; câu nêu tên phương án bị ẩn; nguồn Thử giữ đủ cột", () => {
+    const base = buildStrategies("real", "2026-11-06T00:00:00+07:00", "2026-11-13T00:00:00+07:00");
+    const real = { ...base, metrics: base.metrics.map((m) => ({ ...m, values: { ...m.values, rule_only: null, hybrid_guarded: null } })) };
+    render(<CompareTable data={real} />);
+    expect(screen.getAllByTestId("compare-col").map((c) => c.dataset.strategy)).toStrictEqual(["hybrid"]);
+    expect(screen.getByTestId("compare-hidden").textContent).toMatch(/^Chưa có ticket thật cho: .+; .+\. /);
+    cleanup();
+    const sim = buildStrategies("sim", "2026-11-06T00:00:00+07:00", "2026-11-13T00:00:00+07:00");
+    render(<CompareTable data={sim} />);
+    expect(screen.getAllByTestId("compare-col")).toHaveLength(sim.strategies.length);
+    expect(screen.queryByTestId("compare-hidden")).toBeNull();
   });
 });

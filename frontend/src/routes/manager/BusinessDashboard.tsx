@@ -100,8 +100,9 @@ const usable = (data: Business, name: Name) => !data.unavailable.includes(name) 
 /** Tỉ lệ có thể null (nhóm 0 lá) → "—"; KHÔNG BAO GIỜ "0 %" cho null. */
 const rateOrEmpty = (value: number | null) => (value === null ? EMPTY_TEXT : formatRate(value));
 
-function Bars({ values, labels }: { values: Record<string, number>; labels: Record<string, string> }) {
-  const entries = Object.entries(values);
+function Bars({ values, labels, hideZero = false }: { values: Record<string, number>; labels: Record<string, string>; hideZero?: boolean }) {
+  // Gọn 13/11 (TA): khối E1 bỏ các dòng 0 (đa số loại chưa bật) — tổng vẫn tính trên mọi dòng.
+  const entries = Object.entries(values).filter(([, n]) => !hideZero || n !== 0);
   const total = entries.reduce((sum, [, n]) => sum + (Number.isFinite(n) ? n : 0), 0);
   if (entries.length === 0 || total === 0) return <p className="px-5 py-3.5 text-secondary text-ink-2">Không có yêu cầu trong khoảng này.</p>;
   return (
@@ -210,7 +211,7 @@ export function BusinessKpis({ data }: { data: Business }) {
         goiY={GOI_Y_TRONG_SO}
         kind="rate"
         text={weightedText}
-        extra={`${weightedCount ? `n=${weightedCount.den} · ` : ""}thô ${raw.text}`}
+        extra={`${weightedCount ? `n=${weightedCount.den} · ` : ""}chưa trọng số ${raw.text}`}
       />
       <Kpi
         data={data}
@@ -256,7 +257,7 @@ function WeightedGroups({ data }: { data: Business }) {
       )}
       {sensitivity.length > 0 ? (
         <p data-testid="weighted-sensitivity" className="pl-1 text-label font-normal text-ink-2">
-          Độ nhạy trọng số: {tooSmall ? INSUFFICIENT_TEXT : sensitivity.map(([key, rate]) => `${key}: ${rateOrEmpty(rate)}`).join(" · ")}
+          Nếu đổi tỉ lệ trọng số: {tooSmall ? INSUFFICIENT_TEXT : sensitivity.map(([key, rate]) => `${key} → ${rateOrEmpty(rate)}`).join(" · ")}
         </p>
       ) : null}
     </div>
@@ -292,6 +293,9 @@ export function BusinessSections({ data }: { data: Business }) {
         {usable(data, "decided_by_distribution") && decidedBy ? (
           <div className="rounded-group border border-line">
             <Bars values={decidedBy} labels={DECIDED_BY_LABEL} />
+            <p data-testid="decided-by-note" className="border-t border-line px-5 py-2.5 text-label font-normal text-ink-2">
+              Chỉ tính {Object.values(decidedBy).reduce((a, n) => a + (Number.isFinite(n) ? n : 0), 0)} ca đi tới bước đánh giá rủi ro (ca hỏi đáp, bị chặn, ngoài phạm vi không qua bước này).
+            </p>
           </div>
         ) : (
           <StateLine data={data} name="decided_by_distribution" />
@@ -330,7 +334,7 @@ export function BusinessSections({ data }: { data: Business }) {
         <Heading id="e1-split" text={MA_KET_THUC.E1!.nhan} ma="E1" field="e1_split" />
         {usable(data, "e1_split") && e1 ? (
           <div className="rounded-group border border-line">
-            <Bars values={e1.counts} labels={E1_LABEL} />
+            <Bars values={e1.counts} labels={E1_LABEL} hideZero />
           </div>
         ) : (
           <StateLine data={data} name="e1_split" />

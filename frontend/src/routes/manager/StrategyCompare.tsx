@@ -2,7 +2,7 @@ import { BAD_STRATEGIES, SOURCE_MISMATCH } from "../../api/dashboard.ts";
 import { ApiError, errorMessage, routeMissing } from "../../api/errors.ts";
 import type { StrategiesDashboard, StrategySource } from "../../api/types.ts";
 import { Segmented } from "../../components/Segmented.tsx";
-import { COMPARE_MISSING_TEXT, COMPARE_NOTE, cellText, intentCell, intentKeys, SIM_BAND, SOURCES, UNAVAILABLE_CELL } from "./compare.ts";
+import { COMPARE_MISSING_TEXT, COMPARE_NOTE, cellText, HIDDEN_STRATEGY_NOTE, intentCell, intentKeys, SIM_BAND, SOURCES, strategiesWithData, UNAVAILABLE_CELL } from "./compare.ts";
 import { WINDOW_INVALID_TEXT } from "./metrics.ts";
 import { LoadError, MissingPanel } from "./panels.tsx";
 import { intentLabel, metricHint, metricLabel } from "./strategyLabels.ts";
@@ -46,7 +46,11 @@ function CompareBody({ query }: { query: Q }) {
 const TH = "px-4 py-2.5 text-left font-normal text-ink-2";
 const TD = "px-4 py-2.5 tabular-nums";
 
-export function CompareTable({ data }: { data: StrategiesDashboard }) {
+export function CompareTable({ data: full }: { data: StrategiesDashboard }) {
+  // Chỉ ẩn ở nguồn "Thật" (hệ thống chạy một phương án); "Dữ liệu thử" giữ đủ cột, kể cả cột 0 lá (t200).
+  const shown = full.source === "sim" ? [...full.strategies] : strategiesWithData(full);
+  const hidden = full.strategies.filter((s) => !shown.includes(s));
+  const data = { ...full, strategies: shown };
   const unavailable = new Set(data.unavailable);
   const intents = intentKeys(data.strategies, data.intent_mix);
   const shownKeys = new Set(data.metrics.map((m) => m.key));
@@ -96,6 +100,11 @@ export function CompareTable({ data }: { data: StrategiesDashboard }) {
       {extraUnavailable.length > 0 ? (
         <p data-testid="compare-unavailable" className="text-secondary text-ink-2">
           {UNAVAILABLE_CELL}: {extraUnavailable.map(metricLabel).join(", ")}
+        </p>
+      ) : null}
+      {hidden.length > 0 ? (
+        <p data-testid="compare-hidden" className="text-secondary text-ink-2">
+          {HIDDEN_STRATEGY_NOTE(hidden.map(strategyName))}
         </p>
       ) : null}
       <p data-testid="compare-note" className="text-secondary text-ink-2">

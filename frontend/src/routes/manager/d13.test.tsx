@@ -186,7 +186,7 @@ describe("D13: tỉ lệ đơn 'x % (a/b)', mẫu < min_sample → 'chưa đủ 
     await screen.findAllByTestId("kpi");
     expect(kpiValue("automation_rate")).toBe(`65${NBSP}% (13/20)`);
     expect(kpiValue("deflection_rate")).toBe(`20${NBSP}% (4/20)`);
-    expect(kpi("escalation_rate_weighted").textContent).toContain(`thô 20${NBSP}% (4/20)`);
+    expect(kpi("escalation_rate_weighted").textContent).toContain(`chưa trọng số 20${NBSP}% (4/20)`);
     cleanup();
     // den = 14 + 5 + 0 = 19 < 20.
     server(() => counted(13, 3, 4, { routine: [2, 14], approval: [1, 5], sensitive: [0, 0] }, 0.15));
@@ -194,7 +194,7 @@ describe("D13: tỉ lệ đơn 'x % (a/b)', mẫu < min_sample → 'chưa đủ 
     await screen.findAllByTestId("kpi");
     expect(kpiValue("automation_rate")).toBe("chưa đủ dữ liệu (n=19)");
     expect(kpiValue("deflection_rate")).toBe("chưa đủ dữ liệu (n=19)");
-    expect(kpi("escalation_rate_weighted").textContent).toContain("thô chưa đủ dữ liệu (n=19)");
+    expect(kpi("escalation_rate_weighted").textContent).toContain("chưa trọng số chưa đủ dữ liệu (n=19)");
     expect(kpi("automation_rate").dataset.state).toBe("insufficient");
   });
 
@@ -219,7 +219,7 @@ describe("D13: weighted — 'chưa đủ dữ liệu' theo den TỔNG; từng nh
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
     expect(kpiValue("escalation_rate_weighted")).toBe("chưa đủ dữ liệu (n=19)");
-    expect(screen.getByTestId("weighted-sensitivity").textContent).toBe("Độ nhạy trọng số: chưa đủ dữ liệu");
+    expect(screen.getByTestId("weighted-sensitivity").textContent).toBe("Nếu đổi tỉ lệ trọng số: chưa đủ dữ liệu");
     expect(group("routine").textContent).toBe("Thường2/14");
     expect(group("approval").textContent).toBe("Cần duyệt1/5");
     expect(group("sensitive").textContent).toBe("Nhạy cảm0/0");
@@ -233,7 +233,7 @@ describe("D13: weighted — 'chưa đủ dữ liệu' theo den TỔNG; từng nh
     await screen.findAllByTestId("kpi");
     expect(kpiValue("escalation_rate_weighted")).toBe(`20${NBSP}%`);
     expect(kpi("escalation_rate_weighted").textContent).toContain("n=20");
-    expect(screen.getByTestId("weighted-sensitivity").textContent).toContain(`60/30/10: 20${NBSP}%`);
+    expect(screen.getByTestId("weighted-sensitivity").textContent).toContain(`60/30/10 → 20${NBSP}%`);
     expect(group("routine").textContent).toBe("Thường3/15");
     expect(group("approval").textContent).toBe("Cần duyệt1/5");
   });

@@ -3,7 +3,7 @@
 // ≠ "đã đo, bằng 0" (0). KHÔNG BAO GIỜ hiện 0 thay cho null/unavailable — 0 là sai sự thật và che lỗ hổng.
 import type { AlertItem, DashboardSource, RatioCountTam } from "../../api/types.ts";
 import { labelOf, ownEntry } from "../../lib/lookup.ts";
-import { BEN_QUYET_DINH, KHAC } from "../../lib/nhan.ts";
+import { BEN_QUYET_DINH, BUOC, KHAC } from "../../lib/nhan.ts";
 import { vnDate } from "./range.ts";
 
 export type MetricKind = "rate" | "count" | "number";
@@ -21,8 +21,8 @@ export const POLICY_MISSING_TITLE = "Chưa có chức năng chính sách";
 
 /** Chỉ số biết trước khi nào có nguồn (ke-hoach-m9-monitor.md §1.3, §5.2; backend monitor/metrics.py "pending"). */
 const SOURCE_HINT: Record<string, string> = {
-  multi_intent_first_stop_to_reply_s: "Nguồn có từ Phase 5",
-  multi_intent_messages_per_turn: "Nguồn có từ Phase 5",
+  multi_intent_first_stop_to_reply_s: "Chưa có ca nhiều ý trong khoảng này",
+  multi_intent_messages_per_turn: "Chưa có ca nhiều ý trong khoảng này",
 };
 
 const NBSP = " ";
@@ -141,9 +141,9 @@ export const WEIGHT_GROUP_LABEL: Record<string, string> = { routine: "Thường"
 /** Tab AI (§5.2; backend api/dashboard.py `AiMetrics` — đủ 14 khoá, đúng thứ tự): nhãn + loại. */
 /** `ma`: mã bước / mã kết thúc liên quan — hiện SAU nhãn, chữ nhỏ (bảng ĐP 23:10: nhãn không chứa mã). */
 export const AI_METRICS: readonly { name: string; label: string; kind: MetricKind; ma?: string }[] = [
-  { name: "tokens_per_ticket", label: "Token mỗi yêu cầu", kind: "number" },
-  { name: "cost_per_day", label: "Chi phí theo ngày (USD)", kind: "number" },
-  { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước", kind: "number" },
+  { name: "tokens_per_ticket", label: "Token mỗi yêu cầu", kind: "count" },
+  { name: "cost_per_day", label: "Chi phí LLM — tổng và theo ngày", kind: "number" },
+  { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước (bước chậm nhất trước)", kind: "number" },
   { name: "cache_hit_rate", label: "Tỉ lệ trúng cache", kind: "rate" },
   { name: "json_invalid_first_try_rate", label: "JSON lỗi ở lần gọi đầu", kind: "rate" },
   { name: "fallback_rate", label: "Phải dùng model dự phòng", kind: "rate" },
@@ -244,3 +244,31 @@ export function rule1WindowNote(alert: AlertItem): string | null {
   const last = new Date(end - 1).toISOString();
   return `Đo trên ${days} ngày trọn ${vnDate(start.toISOString())}–${vnDate(last)} (giờ VN), không theo khoảng đang chọn.`;
 }
+
+// ---------------------------------------------------------------- tab AI: bước và độ trễ (gọn 13/11, TA)
+/** Bước chờ người (không có mã B trong bảng bước). */
+export const WAIT_STEP: Readonly<Record<string, string>> = {
+  approval_wait: "Chờ L1 duyệt",
+  clarify_wait: "Chờ người dùng bổ sung",
+  confirm_wait: "Chờ người dùng xác nhận",
+};
+
+/**
+ * Gọn 13/11 (TA): khoá bước thô ("node:b08_retrieve", "B3") → "Tra cứu tài liệu · B8". Khoá lạ → hiện nguyên (không đoán).
+ */
+export function stepLabel(step: string): { nhan: string | null; ma: string } {
+  const bare = step.replace(/^node:/, "");
+  const b = /^b(\d+)(?:_|$)/i.exec(bare);
+  if (b) {
+    const ma = `B${Number(b[1])}`;
+    return { nhan: ownEntry<string | null>(BUOC, ma, null), ma };
+  }
+  return { nhan: ownEntry<string | null>(WAIT_STEP, bare, null), ma: bare };
+}
+
+/** Độ trễ ≥ 1 giây hiện theo giây (1 chữ số lẻ) cho dễ đọc; dưới 1 giây giữ ms. */
+export function formatLatency(ms: number): string {
+  if (Math.abs(ms) < 1000) return formatMs(ms);
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 }).format(ms / 1000)}\u00a0giây`;
+}
+

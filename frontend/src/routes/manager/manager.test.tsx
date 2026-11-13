@@ -50,6 +50,7 @@ import {
   VALID_TEXT,
 } from "./policyText.ts";
 import { intentLabel } from "./strategyLabels.ts";
+import { formatLatency, stepLabel } from "./metrics.ts";
 import { rangeWindow } from "./range.ts";
 
 const clients: QueryClient[] = [];
@@ -308,7 +309,7 @@ describe("t54 (P3): unavailable → 'Chưa có dữ liệu', null → '—', 0 t
     }
     expect(within(tile("approval_expired_count")).getByTestId("kpi-value").textContent).toBe("0");
     expect(within(tile("automation_rate")).getByTestId("kpi-value").textContent).toMatch(/^63\s%$/);
-    expect(weighted.textContent).toMatch(/thô 16\s%/); // số thô vẫn hiện ở dòng phụ
+    expect(weighted.textContent).toMatch(/chưa trọng số 16\s%/); // số chưa trọng số vẫn hiện ở dòng phụ
     // B3 (12/11, agent 20 L4): ca tự xử lý chỉ vào mẫu khi đã kết thúc — nói rõ dưới ô "Tự xử lý"
     expect(tile("automation_rate").textContent).toContain(AUTOMATION_PENDING_NOTE);
     expect(AUTOMATION_PENDING_NOTE).toBe("chỉ tính khi người dùng bấm “Đã ổn” hoặc sau 48 giờ không phản hồi");
@@ -324,8 +325,15 @@ describe("t55: tab AI — 14 chỉ số đúng thứ tự backend; tỉ lệ, 0 
     await screen.findAllByTestId("kpi");
     fireEvent.click(screen.getByRole("tab", { name: "AI" }));
     const rows = await screen.findAllByTestId("ai-metric");
-    expect(rows.map((r) => r.dataset.metric)).toStrictEqual(Object.keys(AI_METRICS_BODY));
-    expect(rows).toHaveLength(14);
+    // Gọn 13/11 (TA): nhóm thành ô theo chủ đề; chỉ số nhiều ý chưa có số thì ẩn (không chiếm chỗ).
+    expect(rows.map((r) => r.dataset.metric)).toStrictEqual([
+      "e2_llm_count", "e9_count", "json_invalid_first_try_rate", "fallback_rate",
+      "b3_llm_rate", "b2_llm_rate", "intent_filter_fallback_rate", "cache_hit_rate",
+      "tokens_per_ticket", "cost_per_day", "latency_p95_by_step", "intent_model_version",
+    ]); // fmt: skip
+    expect(new Set([...rows.map((r) => r.dataset.metric), "multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"])).toStrictEqual(new Set(Object.keys(AI_METRICS_BODY)));
+    expect(rows).toHaveLength(12);
+    for (const r of rows) expect([r.textContent!.includes(r.dataset.metric!), r.getAttribute("title")]).toStrictEqual([false, r.dataset.metric]);
     const row = (name: string) => rows.find((r) => r.dataset.metric === name)!;
     const value = (name: string) => row(name).lastElementChild!.textContent;
     expect(value("cache_hit_rate")).toMatch(/^31\s%$/);
@@ -334,7 +342,7 @@ describe("t55: tab AI — 14 chỉ số đúng thứ tự backend; tỉ lệ, 0 
     expect(value("e2_llm_count")).toBe("1");
     expect([row("intent_filter_fallback_rate").dataset.state, value("intent_filter_fallback_rate")]).toStrictEqual(["empty", `—${EMPTY_NOTE}`]);
     expect([row("tokens_per_ticket").dataset.state, value("tokens_per_ticket")]).toStrictEqual(["empty", `—${EMPTY_NOTE}`]);
-    expect(row("multi_intent_messages_per_turn").dataset.state).toBe("unavailable");
+    expect(rows.some((r) => r.dataset.metric === "multi_intent_messages_per_turn")).toBe(false);
     expect(value("intent_model_version")).toBe("intent-clf-2026.09.20");
     expect(row("intent_model_version").dataset.state).toBe("value");
     const aiCall = calls.find((c) => pathOf(c.url) === "/api/dashboard/ai")!;
@@ -1313,17 +1321,18 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
       "21 %",
       "0",
     ]);
-    expect(text(kpi("escalation_rate_weighted"))).toContain("thô 16 %");
+    expect(text(kpi("escalation_rate_weighted"))).toContain("chưa trọng số 16 %");
     const groups = screen.getAllByTestId("weighted-group");
     expect(groups.map((g) => [g.dataset.key, text(g.firstElementChild), text(g.lastElementChild)])).toStrictEqual([
       ["routine", "Thường", "10 %"],
       ["approval", "Cần duyệt", "25 %"],
       ["sensitive", "Nhạy cảm", "—"], // nhóm 0 lá → null → "—", KHÔNG "0 %"
     ]);
-    expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Độ nhạy trọng số: 60/30/10: 14,2 % · 80/15/5: 15,1 %");
+    expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Nếu đổi tỉ lệ trọng số: 60/30/10 → 14,2 % · 80/15/5 → 15,1 %");
     const e1 = within(screen.getByRole("region", { name: /Ngoài phạm vi hoặc chưa rõ yêu cầu · E1/ })).getAllByTestId("bar-row"); // N-NGU
-    expect(e1.map((r) => r.dataset.key)).toStrictEqual(["out_of_scope", "intent_low_confidence", "multi_intent_not_enabled", "intent_not_enabled", "other"]);
-    expect(text(e1[4]!.firstElementChild)).toBe("Lý do khác");
+    expect(e1.map((r) => r.dataset.key)).toStrictEqual(["out_of_scope", "intent_not_enabled", "other"]); // gọn 13/11: dòng 0 ẩn
+    expect(text(e1[2]!.firstElementChild)).toBe("Lý do khác");
+    expect(text(screen.getByTestId("decided-by-note"))).toMatch(/^Chỉ tính \d+ ca đi tới bước đánh giá rủi ro/);
     expect(screen.getAllByTestId("rule-row")).toHaveLength(1);
     const override = screen.getByTestId("metric-override_count");
     expect([override.dataset.state, text(override)]).toStrictEqual(["value", "Số lần L1 ghi đè: 0"]);
@@ -1345,7 +1354,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     await screen.findAllByTestId("kpi");
     expect([kpi("escalation_rate_weighted").dataset.state, kpiValue("escalation_rate_weighted")]).toStrictEqual(["empty", "—"]);
     expect(screen.getAllByTestId("weighted-group").map((g) => text(g))).toStrictEqual(["Thường10 %", "experimental50 %"]);
-    expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Độ nhạy trọng số: 60/30/10: —");
+    expect(text(screen.getByTestId("weighted-sensitivity"))).toBe("Nếu đổi tỉ lệ trọng số: 60/30/10 → —");
     const banner = screen.getByTestId("e3-truncated");
     expect([banner.getAttribute("role"), banner.textContent]).toStrictEqual(["status", "Chỉ hiện 100 ca mới nhất."]);
     const e3 = text(screen.getByTestId("e3-case"));
@@ -1402,7 +1411,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
     expect(["automation_rate", "escalation_rate_weighted", "deflection_rate"].map(kpiValue)).toStrictEqual(["—", "—", "—"]);
-    expect(text(kpi("escalation_rate_weighted"))).toContain("thô —");
+    expect(text(kpi("escalation_rate_weighted"))).toContain("chưa trọng số —");
     expect(screen.getAllByTestId("weighted-group").map((g) => text(g.lastElementChild))).toStrictEqual(["—", "—", "—"]);
     expect(screen.queryAllByTestId("bar-row")).toHaveLength(0);
     expect(screen.getAllByText("Không có yêu cầu trong khoảng này.")).toHaveLength(2); // decided_by + E1
@@ -1452,7 +1461,8 @@ describe("t116 (P9): tab AI — cost_per_day theo ngày VN (T17:00Z → hôm sau
       "01/10 · 0 · chưa hết ngày",
     ]);
     expect(row("cost_per_day").dataset.state).toBe("value");
-    expect(screen.getAllByTestId("ai-latency-step").map((li) => text(li))).toStrictEqual(["B3 · 820 ms", "B10 · 2.400 ms"]);
+    expect(screen.getAllByTestId("ai-latency-step").map((li) => text(li))).toStrictEqual(["Trả lời từ tài liệu · B10 · 2,4 giây", "Phân loại và tách yêu cầu · B3 · 820 ms"]); // gọn 13/11: chậm nhất trước
+    expect(text(screen.getByTestId("ai-cost-total"))).toBe("4,0235 USD");
   });
 
   it("latency {} và cost [] → 'Không có dữ liệu trong khoảng này.'; cost null → '—'; intent null → '—' + 'Chưa ghi nhận phiên bản model'", async () => {
@@ -1469,15 +1479,18 @@ describe("t116 (P9): tab AI — cost_per_day theo ngày VN (T17:00Z → hôm sau
     expect([row("cost_per_day").dataset.state, value("cost_per_day")]).toStrictEqual(["empty", `—${EMPTY_NOTE}`]);
   });
 
-  it("multi_intent (pending, trong unavailable) → 'Chưa có dữ liệu' + 'Nguồn có từ Phase 5', không số 0", async () => {
+  it("multi_intent (pending, trong unavailable) → 'Chưa có dữ liệu' + 'Chưa có ca nhiều ý trong khoảng này', không số 0", async () => {
     dashboardServer();
     renderAt("/dashboard");
     await openAi();
-    for (const name of ["multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"]) {
-      expect([row(name).dataset.state, value(name)]).toStrictEqual(["unavailable", "Chưa có dữ liệuNguồn có từ Phase 5"]);
-    }
+    for (const name of ["multi_intent_first_stop_to_reply_s", "multi_intent_messages_per_turn"]) expect(row(name)).toBeNull(); // gọn 13/11: chưa có số → ẩn
+    cleanup();
+    dashboardServer({ ai: () => json(200, ai({ multi_intent_first_stop_to_reply_s: 11.54, multi_intent_messages_per_turn: null }, { unavailable: [] })) });
+    renderAt("/dashboard");
+    await openAi();
     expect(text(row("multi_intent_first_stop_to_reply_s").firstElementChild)).toContain("Nhiều ý: từ lúc dừng đầu tới câu trả lời (giây)");
-    expect(text(row("multi_intent_messages_per_turn").firstElementChild)).toContain("Nhiều ý: số tin mỗi lượt");
+    expect(value("multi_intent_first_stop_to_reply_s")).toBe("11,54");
+    expect(row("multi_intent_messages_per_turn")).toBeNull(); // null cũng ẩn
   });
 });
 
@@ -1589,7 +1602,7 @@ describe("t119 (2b): bảng nhãn tra theo khoá RIÊNG — '__proto__' / 'const
     const bars = (section: string) =>
       [...document.querySelectorAll<HTMLElement>(`section[aria-labelledby="${section}"] [data-testid="bar-row"]`)].map((r) => text(r.firstElementChild));
     expect(bars("decided-by")).toStrictEqual(["__proto__", "constructor"]);
-    expect(bars("e1-split")).toStrictEqual(["toString", "Lý do khác"]);
+    expect(bars("e1-split")).toStrictEqual(["toString"]); // gọn 13/11: dòng 0 ẩn
     noLeak();
   });
 
@@ -1644,5 +1657,16 @@ describe("t126: thanh bên — me.role '__proto__' / 'constructor' / 'toString' 
   it("role hợp lệ vẫn ra nhãn cũ", () => {
     expect(roleTexts(L1)).toStrictEqual(["Người duyệt L1", "Nhân viên hỗ trợ L1"]);
     expect(roleTexts(MGR)).toStrictEqual(["Trưởng bộ phận IT", "Trưởng bộ phận IT"]);
+  });
+});
+
+describe("gọn 13/11 (TA): tab AI không còn khoá thô", () => {
+  it("bước node:bNN_… → nhãn + mã B; bước chờ → nhãn; khoá lạ giữ nguyên", () => {
+    expect(stepLabel("node:b08_retrieve")).toStrictEqual({ nhan: "Tra cứu tài liệu", ma: "B8" });
+    expect(stepLabel("node:b17_execute")).toStrictEqual({ nhan: "Thực hiện", ma: "B17" });
+    expect(stepLabel("B3")).toStrictEqual({ nhan: "Phân loại và tách yêu cầu", ma: "B3" });
+    expect(stepLabel("node:approval_wait")).toStrictEqual({ nhan: "Chờ L1 duyệt", ma: "approval_wait" });
+    expect(stepLabel("node:la_lam")).toStrictEqual({ nhan: null, ma: "la_lam" });
+    expect([formatLatency(17), formatLatency(21297)]).toStrictEqual(["17\u00a0ms", "21,3\u00a0giây"]);
   });
 });
