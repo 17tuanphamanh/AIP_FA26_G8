@@ -320,8 +320,9 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                         </div>
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                           <dt>Hướng xử lý</dt>
-                          <dd data-testid="risk-route" className="text-ink-2">
-                            <NhanMa {...risk.route} />
+                          {/* Gọn 13/11 (TA): mã hướng xử lý / nguồn (HITL, rule, llm) chỉ ở `title` — nhãn đã đủ nghĩa. */}
+                          <dd data-testid="risk-route" title={risk.route.ma} className="text-ink-2">
+                            {risk.route.nhan}
                           </dd>
                         </div>
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
@@ -338,8 +339,8 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                         </div>
                         <div className="flex justify-between gap-4 border-t border-line px-5 py-3">
                           <dt>Nguồn đánh giá</dt>
-                          <dd data-testid="risk-source" className="text-right text-ink-2">
-                            <NhanMa {...risk.source} />
+                          <dd data-testid="risk-source" title={risk.source.ma} className="text-right text-ink-2">
+                            {risk.source.nhan}
                           </dd>
                         </div>
                       </dl>

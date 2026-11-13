@@ -1767,11 +1767,11 @@ describe("t143: màn chi tiết phiếu — người bị ảnh hưởng, mức 
     await screen.findByTestId("risk-summary");
     expect(txt("risk-level")).toBe("Trung bình");
     expect(screen.getByTestId("risk-level").dataset.level).toBe("medium");
-    expect(txt("risk-route")).toBe("Chờ IT duyệt · HITL"); // N-NGU: "Nhãn · mã"
+    expect([txt("risk-route"), screen.getByTestId("risk-route").title]).toStrictEqual(["Chờ IT duyệt", "HITL"]); // gọn 13/11: mã chỉ ở title
     expect(txt("risk-reason")).toBe("Ngoài giờ hành chính");
     expect(txt("risk-rule")).toBe(`${txt("risk-rule").split(" · ")[0]} · R18`); // N-NGU: "Mô tả · R18"
     expect(txt("risk-rule")).not.toBe("R18");
-    expect(txt("risk-source")).toBe("Theo luật · rule");
+    expect([txt("risk-source"), screen.getByTestId("risk-source").title]).toStrictEqual(["Theo luật", "rule"]);
     expect(screen.queryByTestId("risk-uncalibrated")).toBeNull();
     expect(screen.getAllByTestId("risk-row").length).toBeGreaterThan(0);
   });
@@ -1784,7 +1784,7 @@ describe("t143: màn chi tiết phiếu — người bị ảnh hưởng, mức 
     await screen.findByTestId("risk-summary");
     expect(txt("risk-level")).toBe("Cao");
     expect(txt("risk-rule")).toBe("—");
-    expect(txt("risk-source")).toBe("Theo đánh giá của AI · llm"); // N-NGU
+    expect(txt("risk-source")).toBe("Theo đánh giá của AI"); // gọn 13/11
     expect(txt("risk-uncalibrated")).toBe(UNCALIBRATED_TEXT);
   });
 
