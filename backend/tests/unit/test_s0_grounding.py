@@ -79,7 +79,8 @@ def _block(c: ChunkRef) -> EvidenceBlock:
 
 
 def _top(score: float) -> list[ChunkRef]:
-    return [_ref("KB-VPN-005", 0, score), _ref("KB-VPN-001", 1, score - 0.01)]
+    # R2 (13/11): đoạn dưới ngưỡng không còn làm bằng chứng → đoạn hạng 2 cùng điểm hạng 1 (kịch bản trả lời trích nó)
+    return [_ref("KB-VPN-005", 0, score), _ref("KB-VPN-001", 1, score)]
 
 
 @contextmanager

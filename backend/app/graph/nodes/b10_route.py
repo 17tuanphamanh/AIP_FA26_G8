@@ -7,7 +7,8 @@
    B9 (S0-P2): không chunk hoặc `retrieval_score` < `RETRIEVAL_THRESHOLD` → E3 `no_grounding` với step `B9`, event
    `no_evidence` — Y HỆT nhánh cũ ở B8 (B20, mẫu tin E3, M9 không đổi); 0 `expand`, 0 `b10_answer`. Mọi dòng audit của B10
    có `grounding = {top_score, above_threshold, kb_gap}` (M9: chỉ số "yêu cầu hành động thiếu KB").
-2. `expand_for_answer(top-5)` trên CÙNG `kb_version` đã ghim ở B8 (D-24) — `RetrievalSystemError` → E2 `rag_system_error`.
+2. `expand_for_answer(top-5 ĐẠT NGƯỠNG — R2 soát 12/11)` trên CÙNG `kb_version` đã ghim ở B8 (D-24) — `RetrievalSystemError` → E2
+   `rag_system_error`. Đoạn dưới `RETRIEVAL_THRESHOLD` bị bỏ (audit `below_threshold_dropped`), nên không là anchor hợp lệ.
    Không khối bằng chứng nào → E3 `no_grounding`, không gọi LLM viết câu trả lời.
 3. LLM strong `b10_answer`. Gateway phải cắt khối bằng chứng (`trimmed_evidence > 0`) → E3 `invalid_citation`,
    `evidence_truncated=true` (f1: LLM không thấy đủ bằng chứng — không đoán anchor).
@@ -180,6 +181,12 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
                 kb_version=kb_version,  # cột audit_logs.kb_version như dòng B9 cũ ở B8 (soát NGHI-5)
             )  # fmt: skip
+        # R2 (soát 12/11, agent 16 F2): ngưỡng áp MỌI đoạn làm bằng chứng — đoạn dưới ngưỡng (vd bài gây nhiễu 0,02 xếp hạng 2) không vào
+        # `expand_for_answer` nên cũng không là anchor hợp lệ (trích nó → `invalid_citation`). Hạng 1 đã đạt ở B9 → còn ít nhất một đoạn.
+        floor = deps.constants.RETRIEVAL_THRESHOLD
+        if any(c.score < floor for c in chunks):
+            info["below_threshold_dropped"] = sum(c.score < floor for c in chunks)
+            chunks = [c for c in chunks if c.score >= floor]
         try:
             evidence = await deps.rag.expand_for_answer(chunks, state["requester_context"], kb_version=kb_version)
         except RetrievalSystemError as exc:
