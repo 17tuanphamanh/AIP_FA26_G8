@@ -29,6 +29,8 @@ function valueText(value: number, unit: string | undefined): string {
     case "s":
       return `${decimal.format(value)}${NBSP}giây`;
     case "min":
+      // Gọn 13/11 (TA): 0 < x < 0,05 phút làm tròn thành "0 phút" trông như lỗi → nói theo giây.
+      if (value > 0 && value < 1) return `${integer.format(Math.max(1, Math.round(value * 60)))}${NBSP}giây`;
       return `${decimal.format(value)}${NBSP}phút`;
     case "usd":
       return `${formatUsd(value)}${NBSP}USD`;

@@ -49,11 +49,11 @@ function CostPerDay({ points, to }: { points: DayCost[]; to: string }) {
   const total = points.reduce((sum, p) => sum + (Number.isFinite(p.cost_usd) ? p.cost_usd : 0), 0);
   const max = Math.max(...points.map((p) => (Number.isFinite(p.cost_usd) ? p.cost_usd : 0)), 0);
   return (
-    <span className="flex flex-col gap-2">
+    <span className="flex w-full flex-col gap-2">
       <span data-testid="ai-cost-total" className="text-heading tabular-nums">
         {formatUsd(total)} USD
       </span>
-      <ul className="flex flex-col gap-1">
+      <ul className="flex w-full max-w-xl flex-col gap-1">
         {points.map((p) => (
           <li key={p.day_start} data-testid="ai-cost-day" data-day={p.day_start} className="grid grid-cols-[minmax(0,9rem)_minmax(2rem,1fr)] items-center gap-3 text-label font-normal tabular-nums">
             <span>
@@ -82,7 +82,7 @@ function LatencyByStep({ steps }: { steps: Record<string, number> }) {
   if (entries.length === 0) return <span className="text-ink-2">{AI_NO_DATA_TEXT}</span>;
   const max = Math.max(...entries.map(([, ms]) => ms), 0);
   return (
-    <ul className="flex flex-col gap-1.5">
+    <ul className="flex w-full max-w-2xl flex-col gap-1.5">
       {entries.map(([step, ms]) => {
         const l = stepLabel(step);
         return (

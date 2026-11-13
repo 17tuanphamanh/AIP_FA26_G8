@@ -143,7 +143,7 @@ export const WEIGHT_GROUP_LABEL: Record<string, string> = { routine: "Thường"
 export const AI_METRICS: readonly { name: string; label: string; kind: MetricKind; ma?: string }[] = [
   { name: "tokens_per_ticket", label: "Token mỗi yêu cầu", kind: "count" },
   { name: "cost_per_day", label: "Chi phí LLM — tổng và theo ngày", kind: "number" },
-  { name: "latency_p95_by_step", label: "Độ trễ p95 theo bước (bước chậm nhất trước)", kind: "number" },
+  { name: "latency_p95_by_step", label: "95 % lượt chạy xong trong khoảng thời gian này", kind: "number" },
   { name: "cache_hit_rate", label: "Tỉ lệ trúng cache", kind: "rate" },
   { name: "json_invalid_first_try_rate", label: "JSON lỗi ở lần gọi đầu", kind: "rate" },
   { name: "fallback_rate", label: "Phải dùng model dự phòng", kind: "rate" },

@@ -698,5 +698,10 @@ describe("gọn 13/11 (TA): nguồn Thật — cột phương án toàn '—' b�
     render(<CompareTable data={sim} />);
     expect(screen.getAllByTestId("compare-col")).toHaveLength(sim.strategies.length);
     expect(screen.queryByTestId("compare-hidden")).toBeNull();
+    // Dưới 1 phút nói theo giây (trước: "0 phút" trông như lỗi).
+    expect([cellText({ kind: "value", unit: "min" }, { value: 0.02, n: 52 }), cellText({ kind: "value", unit: "min" }, { value: 14.5, n: 52 })]).toStrictEqual([
+      "1\u00a0giây (n=52)",
+      "14,5\u00a0phút (n=52)",
+    ]);
   });
 });
