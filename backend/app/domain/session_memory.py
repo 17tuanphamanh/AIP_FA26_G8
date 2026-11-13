@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from app.domain.intents import IT_HELP
+from app.domain.states import S_BLOCKED, S_ESCALATED
 
 # Nhãn loại việc — CHỈ các intent đã biết; intent khác / rỗng → không gợi ý.
 _INTENT_HINT: Final = {
@@ -39,14 +40,24 @@ class FollowUpSource:
     intent: str | None
 
 
+# 13/11 (TA chốt, sửa D-79): ticket đã chuyển kỹ thuật viên / bị chặn — kỹ thuật viên liên hệ người dùng; hỏi tiếp ở đây chỉ sinh ticket mới
+# lạc ngữ cảnh. Chỉ còn "Tạo yêu cầu mới".
+NO_FOLLOW_UP_STATES: Final = frozenset({S_ESCALATED, S_BLOCKED})
+
+
+def follow_up_open(final_state: str | None) -> bool:
+    """Trạng thái cuối cho phép "Hỏi tiếp": đã kết thúc và không phải đã chuyển kỹ thuật viên / bị chặn."""
+    return final_state is not None and final_state not in NO_FOLLOW_UP_STATES
+
+
 def can_follow(src: FollowUpSource | None, requester_id: str) -> bool:
-    """Ticket cũ hợp lệ để hỏi tiếp: tồn tại, của ĐÚNG người gửi, là ticket GỐC (không phải con), đã kết thúc. Sai bất kỳ → API trả 404
-    giống hệt "không có" (không lộ ticket người khác có tồn tại)."""
+    """Ticket cũ hợp lệ để hỏi tiếp: tồn tại, của ĐÚNG người gửi, là ticket GỐC (không phải con), đã kết thúc và không phải đã chuyển kỹ
+    thuật viên / bị chặn (`follow_up_open`). Sai bất kỳ → API trả 404 giống hệt "không có" (không lộ ticket người khác có tồn tại)."""
     return (
         src is not None
         and src.requester_id == requester_id
         and src.parent_ticket_id is None
-        and src.final_state is not None
+        and follow_up_open(src.final_state)
     )
 
 

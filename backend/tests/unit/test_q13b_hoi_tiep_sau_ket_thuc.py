@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 from app.domain.session_memory import FollowUpSource, can_follow, prior_label_hint
-from app.domain.states import S_ESCALATED
+from app.domain.states import S_ESCALATED, S_RESOLVED
 from tests.fakes.desk import DeskEnv, desk_env
 
 NOT_FOUND = {"detail": "not_found"}
@@ -34,12 +34,13 @@ def src(**over: Any) -> FollowUpSource:
 
 
 def test_can_follow_rules() -> None:
-    assert can_follow(src(), "nv001") is True
+    assert can_follow(src(), "nv001") is False  # 13/11 (TA): đã chuyển kỹ thuật viên → không hỏi tiếp (test_hoi_tiep_chan_khi_chuyen_1313)
+    assert can_follow(src(final_state=S_RESOLVED), "nv001") is True
     assert can_follow(None, "nv001") is False
     assert can_follow(src(requester_id="nv002"), "nv001") is False
     assert can_follow(src(parent_ticket_id="p"), "nv001") is False
     assert can_follow(src(final_state=None), "nv001") is False
-    assert can_follow(src(is_parent=True, intent=None), "nv001") is True  # cha nhiều ý đã kết thúc: hỏi tiếp được, không gợi ý
+    assert can_follow(src(final_state=S_RESOLVED, is_parent=True, intent=None), "nv001") is True  # cha nhiều ý đã xong: hỏi tiếp được
 
 
 def test_prior_hint_only_closed_columns() -> None:
@@ -70,7 +71,8 @@ async def test_follow_up_creates_new_ticket_with_hint_and_no_old_text() -> None:
     async with desk_env(plan={"b12_assess": "deny"}) as env:
         an = await env.token("an.nv")
         old = await _closed(env, an, text=f"VPN lỗi {CANARY}")
-        env.h.tickets.rows[old]["final"] = dataclasses.replace(env.h.tickets.rows[old]["final"], intent="vpn")
+        # 13/11: ticket đã chuyển kỹ thuật viên không còn hỏi tiếp → dựng ticket ĐÃ XONG
+        env.h.tickets.rows[old]["final"] = dataclasses.replace(env.h.tickets.rows[old]["final"], intent="vpn", final_state=S_RESOLVED)
         r = await _follow(env, an, old)
         assert r.status_code == 202, r.text
         new = r.json()["ticket_id"]
@@ -78,7 +80,7 @@ async def test_follow_up_creates_new_ticket_with_hint_and_no_old_text() -> None:
         await env.drain()
         state = (await env.h.runner.snapshot(new)).values
         assert state["follows_ticket_id"] == old
-        assert state["prior_hint"] == prior_label_hint(src(intent="vpn"))
+        assert state["prior_hint"] == prior_label_hint(src(intent="vpn", final_state=S_RESOLVED))
         assert CANARY not in str(state) and state["redacted_request"] == "vẫn chưa được"
         assert (await env.ticket(old, an))["can_follow_up"] is True
 

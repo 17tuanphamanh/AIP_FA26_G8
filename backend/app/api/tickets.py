@@ -74,7 +74,7 @@ from app.domain.override import (
     OverrideRecord,
     original_decision,
 )
-from app.domain.session_memory import can_follow, prior_label_hint
+from app.domain.session_memory import can_follow, follow_up_open, prior_label_hint
 from app.domain.states import S_CLARIFYING, S_CONFIRMING, S_NEW
 from app.graph.late_event import InvalidReply, Validate, start_event
 from app.guard import injection
@@ -375,7 +375,7 @@ async def read_ticket(
         created_at=row.created_at, closed_at=row.closed_at, children_progress=progress, deadline=deadline,
         server_now=desk.clock.now(), request_text=request_text_of(row, parent.redacted_request if parent else None),
         can_follow_up=bool(
-            request.app.state.settings.enable_session_memory and row.final_state is not None and row.parent_ticket_id is None
+            request.app.state.settings.enable_session_memory and follow_up_open(row.final_state) and row.parent_ticket_id is None
             and row.requester_id == p.user_id
         ),
     )  # fmt: skip
