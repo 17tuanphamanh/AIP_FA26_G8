@@ -36,6 +36,7 @@ import {
   reasonLine,
   searchWords,
   trackMissed,
+  stripRawCodes,
   waitingText,
   whyLines,
 } from "./queue.ts";
@@ -1372,19 +1373,23 @@ describe("gọn 13/11 (TA): lý do chuyển dễ đọc", () => {
     expect(whyLines(why).split("\n")).toStrictEqual([
       "Lý do chuyển: Không đủ điều kiện tự xử lý · E5.",
       "Mức ưu tiên: Cao.",
-      "Chi tiết: Không được phép theo chính sách · policy_deny.",
-      "Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · R21).",
+      "Chi tiết: Không được phép theo chính sách.",
+      "Đánh giá rủi ro: Chuyển kỹ thuật viên L2 (Theo luật · R21).",
     ]);
     expect(whyLines("<b>x</b>")).toBe("<b>x</b>");
     expect(handoffRows({ why_escalated: why }).find((r) => r.key === "why_escalated")!.text).toBe(whyLines(why));
   });
   it("hàng đợi: bỏ phần đầu trùng cột mã E / nhóm ưu tiên; chỉ có phần đầu → yêu cầu (đã che); tìm kiếm vẫn thấy chữ đầy đủ", () => {
     const item = esc("E5", { handoff_note: { request: "Cấp quyền ghi", done_so_far: "", next_for_l2: "", why_escalated: why } });
-    expect(reasonLine(item)).toBe("Chi tiết: Không được phép theo chính sách · policy_deny. Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · R21).");
+    expect(reasonLine(item)).toBe("Chi tiết: Không được phép theo chính sách. Đánh giá rủi ro: Chuyển kỹ thuật viên L2 (Theo luật · R21).");
     const e8 = esc("E3", {
       handoff_note: { request: "VPN báo lỗi 809", done_so_far: "", next_for_l2: "", why_escalated: "Lý do chuyển: Người dùng báo chưa giải quyết · E8. Mức ưu tiên: Thường." },
     });
     expect(reasonLine(e8)).toBe("VPN báo lỗi 809");
     expect(filterQueue([item], "Lý do chuyển")).toHaveLength(1);
+    expect(filterQueue([item], "policy_deny")).toHaveLength(1); // tìm theo mã vẫn được (chữ đầy đủ)
+    expect(stripRawCodes("Chi tiết: Nghi tấn công trong câu trả lời bổ sung · injection_in_reply. Cờ an ninh: x · E0 · R03 · B8 · rule")).toBe(
+      "Chi tiết: Nghi tấn công trong câu trả lời bổ sung. Cờ an ninh: x · E0 · R03 · B8",
+    );
   });
 });

@@ -74,9 +74,17 @@ export function noteText(note: unknown, key: keyof HandoffNote): string | null {
 /** Nhãn mở đầu các phần của `why_escalated` (backend `audit/handoff.py::_why` nối các câu bằng một dấu cách). */
 const WHY_PART = /\s+(?=(?:Mức ưu tiên|Chi tiết|Đánh giá rủi ro|Người dùng báo|Cờ an ninh):)/u;
 
-/** Gọn 13/11 (TA): `why_escalated` một khối dài → mỗi phần một dòng (chỉ tách trước nhãn đã biết; chữ không đổi). */
+/** Mã máy sau dấu "·" (snake_case thường, hoặc HOA có gạch dưới như ESCALATE_L2). Giữ mã ngắn có nghĩa: E0, R21, B8. */
+const RAW_CODE = /\s·\s(?:[a-z][a-z0-9]*_[a-z0-9_]+|[a-z]{3,}|[A-Z][A-Z0-9]*_[A-Z0-9_]+)(?=[\s.,;)]|$)/gu;
+
+/** Gọn 13/11 (TA): bỏ mã máy thô khỏi chữ hiện cho người (nhãn tiếng Việt đứng trước đã đủ nghĩa). */
+export function stripRawCodes(text: string): string {
+  return text.replace(RAW_CODE, "");
+}
+
+/** Gọn 13/11 (TA): `why_escalated` một khối dài → mỗi phần một dòng (chỉ tách trước nhãn đã biết), bỏ mã máy thô. */
 export function whyLines(text: string): string {
-  return text.split(WHY_PART).join("\n");
+  return stripRawCodes(text).split(WHY_PART).join("\n");
 }
 
 /** 4 khối ghi chú bàn giao đúng thứ tự B20 §4.2; `text = null` → hiện "(không có)". */
@@ -98,7 +106,7 @@ export function reasonLine(item: EscalationQueueItem): string {
   const why = noteText(item.handoff_note, "why_escalated");
   const rest = why ? why.replace(WHY_HEAD, "").trim() : "";
   const text = rest || noteText(item.handoff_note, "request") || why || item.reason_detail || EMPTY_NOTE;
-  return text.replace(/\s+/g, " ").trim();
+  return stripRawCodes(text).replace(/\s+/g, " ").trim();
 }
 
 /** `why_escalated` đầy đủ một dòng (tooltip hàng đợi). */
