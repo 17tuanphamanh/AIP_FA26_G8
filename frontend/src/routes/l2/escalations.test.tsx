@@ -1386,6 +1386,10 @@ describe("gọn 13/11 (TA): lý do chuyển dễ đọc", () => {
       handoff_note: { request: "VPN báo lỗi 809", done_so_far: "", next_for_l2: "", why_escalated: "Lý do chuyển: Người dùng báo chưa giải quyết · E8. Mức ưu tiên: Thường." },
     });
     expect(reasonLine(e8)).toBe("VPN báo lỗi 809");
+    const e6 = esc("E3", {
+      handoff_note: { request: "Cấp quyền ghi finance/Q3", done_so_far: "", next_for_l2: "", why_escalated: "E6 — Có SLA. Quyết định rủi ro: không luật nào khớp (bởi llm) — x." },
+    });
+    expect(reasonLine(e6)).toBe("Cấp quyền ghi finance/Q3"); // lý do không theo mẫu → hiện yêu cầu
     expect(filterQueue([item], "Lý do chuyển")).toHaveLength(1);
     expect(filterQueue([item], "policy_deny")).toHaveLength(1); // tìm theo mã vẫn được (chữ đầy đủ)
     expect(stripRawCodes("Chi tiết: Nghi tấn công trong câu trả lời bổ sung · injection_in_reply. Cờ an ninh: x · E0 · R03 · B8 · rule")).toBe(

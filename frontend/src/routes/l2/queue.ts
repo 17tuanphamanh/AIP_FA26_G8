@@ -104,8 +104,12 @@ const WHY_HEAD = /^Lý do chuyển:[^]*?\.\s+Mức ưu tiên:[^.]*\.\s*/u;
  */
 export function reasonLine(item: EscalationQueueItem): string {
   const why = noteText(item.handoff_note, "why_escalated");
-  const rest = why ? why.replace(WHY_HEAD, "").trim() : "";
-  const text = rest || noteText(item.handoff_note, "request") || why || item.reason_detail || EMPTY_NOTE;
+  const request = noteText(item.handoff_note, "request");
+  // Lý do không theo mẫu "Lý do chuyển: …" (ca E6 hết hạn duyệt do worker ghi: "E6 — Có SLA. Quyết định rủi ro: … (bởi llm) — …")
+  // → dòng tóm tắt hiện yêu cầu (đã che) cho dễ đọc; chữ đầy đủ vẫn ở `title` và màn chi tiết.
+  const standard = why ? WHY_HEAD.test(why) : false;
+  const rest = why && standard ? why.replace(WHY_HEAD, "").trim() : "";
+  const text = rest || request || why || item.reason_detail || EMPTY_NOTE;
   return stripRawCodes(text).replace(/\s+/g, " ").trim();
 }
 
