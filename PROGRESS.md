@@ -7146,3 +7146,8 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     miễn cho B2) → **mâu thuẫn đặc tả, không tự chọn; đề xuất ghi giới hạn, làm sau bảo vệ**; (b) 6 ca escalation 17/10 do chính
     `long.nh` gửi — Q5a cấm tự đóng, cần người khác đóng (TA cho phép hoặc tự đóng); (c) S1 + số intent-clf của Duy: file nguồn không có
     trên máy; (d) τ `B2_TAU_REVIEW` trên `.env` máy demo — TA tự kiểm (em không đọc `.env`); (e) đo bộ câu mù, E15, gộp `main` + tag.
+28. **13/11 tối — đo đầu-cuối bộ câu mù 100 câu** (máy demo, LLM thật, backend `2ff1e04`, 18:00–18:46 NGOÀI giờ → R18; chỉ lượt đầu):
+    NÊN chuyển 60 → chuyển hẳn 46 (76,7 %; regex một mình 66,7 %), nhiều ý 3, hỏi lại 8, trả lời KB 2, chờ duyệt 1. Bình thường 40 →
+    E1 nhầm 3 (7,5 %), E3 thiếu KB 9, hỏi lại 16, chờ duyệt 6, tự làm 1 (đúng). Hai ca có hành động: BM-014 (mất laptop + đổi mật khẩu
+    → tách 2 ý, R01 tự đặt lại mật khẩu) và BM-100 ("đừng renew" → dựng gia hạn, chỉ dừng vì R18). Không chỉnh bộ dò theo bộ này (quá
+    khớp) — ghi giới hạn. Chi tiết: `claude/rq/bo-mu-1211/ket-qua-dau-cuoi-1311.md` (project). Mock đã đặt lại; 0 E7.
