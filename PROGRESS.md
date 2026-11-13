@@ -7130,3 +7130,16 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
 25. **13/11 sáng (TA "xử lý hết rồi quay"):** thêm `cf99273` tên miền compose, `1e442ef` R2 (đoạn dưới ngưỡng không làm bằng chứng),
     `8545b63` R3 (BM25 gộp dấu thanh oa/oe/uy ở âm tiết mở; `pipeline_sha` có khoá `tokenizer` → ingest lại, embed lại toàn KB). Số
     eval RAG/RQ trong báo cáo đo trên tag `v1.0-freeze` — bản nộp khác ở R2/R3 (ghi trong báo cáo). CI `8545b63` xanh.
+26. **13/11 trưa–chiều (máy demo, TA):** deploy `2ff1e04` (migrate 0017, ingest lại KB `kb_2b59041b…`: Recall@5 1.000, MRR 0.849).
+    Kiểm trực tiếp LLM thật: 44/44 ca hồi quy giống lượt 12/11; U2/U3/U4, tên miền, khoá/khóa, Q2, Q3 đạt; B1–B4 đạt (quan.tm).
+    Gọn giao diện theo TA (chỉ frontend, `42fcafe`…`d47a894`, CI xanh): bỏ khoá thô ở dashboard/tab AI/hàng chờ L2, số trong ngoặc
+    "140 trên 599 ca", thẻ duyệt thu gọn dữ kiện. Hàng chờ L2 (TA duyệt 13:05): đóng 995 ca thử tạo trước 12/11 (`confirmed_denial`).
+    Chi tiết: `claude/kiem-truc-tiep-1313.md` (project).
+27. **13/11 chiều (TA "sửa hết"):** `b0ba7e8` thẻ duyệt tài khoản dịch vụ/quản trị ghi căn cứ KB-ACC-003 (trước: KB-ACC-001 "tài khoản
+    cá nhân") — `ActionMeta.procedure_doc_privileged`, chỉ đổi phần hiển thị căn cứ, B11 không đổi; cần build lại backend (sau giờ quay).
+    `bdb4232` bỏ cảnh báo asyncio mark ở 7 file test. `c7f2c43` MODELS.md: số đo injection-clf (val/test/stress) và `thresholds.json`
+    hiện hành từ file bàn giao (đã tải về máy). CI `c7f2c43` xanh.
+    **Còn mở (cần người):** (a) [Hỏi TA] R4 ranh giới bằng chứng prompt B10 — đổi prompt (`config/prompts` thuộc danh sách không tự
+    sửa) và làm LLM cache b10 luôn trượt nếu dùng `random_boundary` → hai hướng, chờ TA/ĐP chọn; (b) 6 ca escalation 17/10 do chính
+    `long.nh` gửi — Q5a cấm tự đóng, cần người khác đóng (TA cho phép hoặc tự đóng); (c) S1 + số intent-clf của Duy: file nguồn không có
+    trên máy; (d) τ `B2_TAU_REVIEW` trên `.env` máy demo — TA tự kiểm (em không đọc `.env`); (e) đo bộ câu mù, E15, gộp `main` + tag.
