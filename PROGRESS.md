@@ -7151,3 +7151,7 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     E1 nhầm 3 (7,5 %), E3 thiếu KB 9, hỏi lại 16, chờ duyệt 6, tự làm 1 (đúng). Hai ca có hành động: BM-014 (mất laptop + đổi mật khẩu
     → tách 2 ý, R01 tự đặt lại mật khẩu) và BM-100 ("đừng renew" → dựng gia hạn, chỉ dừng vì R18). Không chỉnh bộ dò theo bộ này (quá
     khớp) — ghi giới hạn. Chi tiết: `claude/rq/bo-mu-1211/ket-qua-dau-cuoi-1311.md` (project). Mock đã đặt lại; 0 E7.
+29. **13/11 19:00:** TA chạy `841492b` lên máy demo (build backend) — thẻ duyệt `svc_backup` ra căn cứ KB-ACC-003 (đã kiểm, phiếu thử đã
+    từ chối). 6 ca escalation 17/10 do `long.nh` gửi: TA đăng nhập `ha.lt` trong khung trình duyệt, em đóng qua màn L2 (Xác nhận từ chối)
+    — 0 ca mở trước 12/11, 0 E7. **τ máy demo `B2_TAU_REVIEW=0.9999`** (TA kiểm `.env`) — lệch D-70 (dự định 0,50 cho máy demo);
+    video quay ở 0,9999. [Hỏi TA] giữ 0,9999 (khớp video, ghi lệch) hay đổi 0,50 theo D-70 (phải chạy lại 44 ca).
