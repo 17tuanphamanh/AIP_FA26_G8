@@ -22,7 +22,7 @@ D-53, D-69, D-70).
 | Cách dùng trong hệ thống | chế độ `review` (D-52): model chấm mọi câu không khớp regex; **LLM chấm vẫn xem mọi câu**; LLM nói không mà `p_mal ≥ τ` → E1 `injection_suspected`. Model không bao giờ cho câu đi thẳng. Nhãn che (`<SĐT_n>`, `<EMAIL_n>`…) được thay bằng từ thường trước khi chấm | D-52 |
 | **τ báo cáo** | **0,50** — giá trị nhỏ nhất có cận trên 95% (bootstrap theo nhóm) của E1 thừa trên câu thường ≤ E_max 15%, chọn trên b2-val v2.7 (sha `a4a2ed0d…`, LLM chấm `deepseek-flash` `d656ca0f…`): E1 thừa 6,3%, cận trên 11,56% | D-70 |
 | τ máy đo (`B2_TAU_REVIEW`) | 0,9999 — số RQ ở τ 0,50 được **tính lại offline** từ audit B2 của chính các lượt đã chạy; độ nhạy báo thêm ở 0,90 / 0,999 / 0,9999 | D-70 |
-| τ máy demo | D-70 ghi đổi thành 0,50; ghi chú nhóm 09/11 ghi 0,9999 → **cần kiểm `.env` máy demo** (soát 12/11, agent 17 L17) | D-70 |
+| τ máy demo | **0,9999** (TA kiểm `.env` máy demo 13/11 18:57). D-70 dự định đổi máy demo sang 0,50 nhưng chưa đổi; video demo 13/11 quay ở 0,9999. Số RQ báo cáo vẫn ở τ 0,50 tính lại offline (D-70) — không phụ thuộc τ máy demo | `.env` máy demo; D-70 |
 | `thresholds-20261029.json` | τ 0,9999 chọn nhầm trên validation 25/09 (sha `5360c267…`) — **đã thay** bằng lượt D-70 | file trên máy; D-70 |
 | `thresholds.json` (bản hiện hành) | `tau_review` **0,5**, `e_max` 0,15, ngày 2026-10-30, `data_sha256` `a4a2ed0d…11519`, LLM chấm `deepseek-flash`; luật chọn: τ nhỏ nhất (lưới 0,50–0,99 bước 0,01 + 0,995/0,999/0,9999) có cận trên 95% bootstrap theo nhóm (B=2000, seed 20261018) của E1 thừa ≤ E_max — khớp D-70 | `injection-clf/tai-lieu/thresholds.json` (đọc 13/11) |
 | Độ trễ | ~17 ms/câu trên CPU 24 luồng | `README_MODEL.md` |
