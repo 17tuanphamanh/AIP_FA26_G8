@@ -71,15 +71,39 @@ export function noteText(note: unknown, key: keyof HandoffNote): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-/** 4 khối ghi chú bàn giao đúng thứ tự B20 §4.2; `text = null` → hiện "(không có)". */
-export function handoffRows(note: unknown): { key: keyof HandoffNote; label: string; text: string | null }[] {
-  return HANDOFF_FIELDS.map((f) => ({ ...f, text: noteText(note, f.key) }));
+/** Nhãn mở đầu các phần của `why_escalated` (backend `audit/handoff.py::_why` nối các câu bằng một dấu cách). */
+const WHY_PART = /\s+(?=(?:Mức ưu tiên|Chi tiết|Đánh giá rủi ro|Người dùng báo|Cờ an ninh):)/u;
+
+/** Gọn 13/11 (TA): `why_escalated` một khối dài → mỗi phần một dòng (chỉ tách trước nhãn đã biết; chữ không đổi). */
+export function whyLines(text: string): string {
+  return text.split(WHY_PART).join("\n");
 }
 
-/** Tóm tắt 1 dòng cho hàng đợi: `why_escalated` gộp khoảng trắng (CSS cắt phần thừa). */
+/** 4 khối ghi chú bàn giao đúng thứ tự B20 §4.2; `text = null` → hiện "(không có)". */
+export function handoffRows(note: unknown): { key: keyof HandoffNote; label: string; text: string | null }[] {
+  return HANDOFF_FIELDS.map((f) => {
+    const text = noteText(note, f.key);
+    return { ...f, text: f.key === "why_escalated" && text !== null ? whyLines(text) : text };
+  });
+}
+
+/** Phần đầu "Lý do chuyển: <nhãn mã E>. Mức ưu tiên: <hạng>." — hàng đợi đã có cột mã E và nhóm theo ưu tiên. */
+const WHY_HEAD = /^Lý do chuyển:[^]*?\.\s+Mức ưu tiên:[^.]*\.\s*/u;
+
+/**
+ * Tóm tắt 1 dòng cho hàng đợi (CSS cắt phần thừa). Gọn 13/11 (TA): bỏ phần đầu trùng cột mã E / nhóm ưu tiên, giữ phần sau
+ * ("Chi tiết…", "Người dùng báo…"); không còn gì → yêu cầu (đã che) → `reason_detail`. Chữ đầy đủ ở `title` (dùng `fullReason`).
+ */
 export function reasonLine(item: EscalationQueueItem): string {
-  const text = noteText(item.handoff_note, "why_escalated") ?? item.reason_detail ?? EMPTY_NOTE;
+  const why = noteText(item.handoff_note, "why_escalated");
+  const rest = why ? why.replace(WHY_HEAD, "").trim() : "";
+  const text = rest || noteText(item.handoff_note, "request") || why || item.reason_detail || EMPTY_NOTE;
   return text.replace(/\s+/g, " ").trim();
+}
+
+/** `why_escalated` đầy đủ một dòng (tooltip hàng đợi). */
+export function fullReason(item: EscalationQueueItem): string {
+  return (noteText(item.handoff_note, "why_escalated") ?? item.reason_detail ?? EMPTY_NOTE).replace(/\s+/g, " ").trim();
 }
 
 export const DENY_BADGE = "Không thực hiện lại";
@@ -167,7 +191,7 @@ export function searchWords(query: string): string[] {
 /** Chuỗi để tìm của một ca: mã E, nhãn nhóm, lý do (1 dòng), mã ticket, số ca, người đang xử lý. */
 export function searchText(item: EscalationQueueItem): string {
   return foldText(
-    [item.exit_code, item.label, reasonLine(item), item.ticket_id, `#${item.escalation_id}`, item.assigned_to ?? ""].join(" "),
+    [item.exit_code, item.label, fullReason(item), reasonLine(item), item.ticket_id, `#${item.escalation_id}`, item.assigned_to ?? ""].join(" "),
   );
 }
 

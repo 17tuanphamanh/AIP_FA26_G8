@@ -26,6 +26,7 @@ import {
   groupQueue,
   pageCount,
   pruneQueueView,
+  fullReason,
   reasonLine,
   searchWords,
   splitLabel,
@@ -431,7 +432,7 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
           <NhanMa {...exitNhan(item)} />
         </span>
         <span className="flex min-w-0 items-center gap-2 max-lg:col-start-1 max-lg:row-start-1 max-lg:flex-wrap">
-          <span className="truncate font-semibold max-lg:whitespace-normal" title={reason}>
+          <span className="truncate font-semibold max-lg:whitespace-normal" title={fullReason(item)}>
             {reason}
           </span>
           {item.is_deny_case ? (

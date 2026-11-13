@@ -33,9 +33,11 @@ import {
   pageCount,
   pruneQueueView,
   type QueueView,
+  reasonLine,
   searchWords,
   trackMissed,
   waitingText,
+  whyLines,
 } from "./queue.ts";
 
 const clients: QueryClient[] = [];
@@ -1360,5 +1362,29 @@ describe("t108: dòng 'Có N ca mới ở nhóm đang ẩn hoặc thu gọn' —
     const b = esc("E3");
     await tick([...e0, a, ...e3, b]);
     expect(missedText()).toBe("Có 1 ca mới ở nhóm đang ẩn hoặc thu gọn: An ninh (1)");
+  });
+});
+
+describe("gọn 13/11 (TA): lý do chuyển dễ đọc", () => {
+  const why =
+    "Lý do chuyển: Không đủ điều kiện tự xử lý · E5. Mức ưu tiên: Cao. Chi tiết: Không được phép theo chính sách · policy_deny. Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · R21).";
+  it("chi tiết: mỗi phần một dòng, chữ giữ nguyên", () => {
+    expect(whyLines(why).split("\n")).toStrictEqual([
+      "Lý do chuyển: Không đủ điều kiện tự xử lý · E5.",
+      "Mức ưu tiên: Cao.",
+      "Chi tiết: Không được phép theo chính sách · policy_deny.",
+      "Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · R21).",
+    ]);
+    expect(whyLines("<b>x</b>")).toBe("<b>x</b>");
+    expect(handoffRows({ why_escalated: why }).find((r) => r.key === "why_escalated")!.text).toBe(whyLines(why));
+  });
+  it("hàng đợi: bỏ phần đầu trùng cột mã E / nhóm ưu tiên; chỉ có phần đầu → yêu cầu (đã che); tìm kiếm vẫn thấy chữ đầy đủ", () => {
+    const item = esc("E5", { handoff_note: { request: "Cấp quyền ghi", done_so_far: "", next_for_l2: "", why_escalated: why } });
+    expect(reasonLine(item)).toBe("Chi tiết: Không được phép theo chính sách · policy_deny. Đánh giá rủi ro: Chuyển kỹ thuật viên L2 · ESCALATE_L2 (Theo luật · R21).");
+    const e8 = esc("E3", {
+      handoff_note: { request: "VPN báo lỗi 809", done_so_far: "", next_for_l2: "", why_escalated: "Lý do chuyển: Người dùng báo chưa giải quyết · E8. Mức ưu tiên: Thường." },
+    });
+    expect(reasonLine(e8)).toBe("VPN báo lỗi 809");
+    expect(filterQueue([item], "Lý do chuyển")).toHaveLength(1);
   });
 });
