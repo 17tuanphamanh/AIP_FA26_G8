@@ -149,6 +149,7 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Detail({ view }: { view: ApprovalViewP4 }) {
+  const factCount = view.facts && typeof view.facts === "object" && !Array.isArray(view.facts) ? Object.keys(view.facts).length : 0;
   const me = useMe();
   const queryClient = useQueryClient();
   const createdAt = useCreatedAt(view);
@@ -427,9 +428,16 @@ function Detail({ view }: { view: ApprovalViewP4 }) {
                   {procedureTitle ? <span className="font-mono text-label font-normal text-ink-2">{procedureDoc}</span> : null}
                 </p>
               </Block>
-              <Block title="Dữ kiện đã kiểm">
-                <FactTable facts={view.facts} />
-              </Block>
+              {/* Gọn 13/11 (TA): dữ kiện thường trùng các dòng "dữ kiện" trong bảng hành động bên trái → thu vào khối đóng sẵn
+                  (vẫn đủ dữ liệu, bấm là mở). Quyết định dựa trên bảng hành động + mã băm, không đổi. */}
+              <section className="flex flex-col gap-2">
+                <details data-testid="facts-block" className="group">
+                  <summary className="cursor-pointer rounded-group border border-line px-5 py-2.5 text-secondary text-ink-2 group-open:mb-2 max-lg:py-3">
+                    Dữ kiện đã kiểm{factCount ? ` (${factCount})` : ""}
+                  </summary>
+                  <FactTable facts={view.facts} />
+                </details>
+              </section>
             </aside>
           </div>
 

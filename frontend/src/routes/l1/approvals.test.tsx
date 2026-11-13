@@ -1140,6 +1140,13 @@ describe("t81: phiếu có phòng ban / rủi ro / căn cứ null → '—', câ
     expect(dd("Vai trò")).toBe("Nhân viên");
     expect(screen.getByTestId("action-hash").textContent).toBe(viewOf("z").action_plan_hash); // căn cứ duyệt vẫn đủ
     expect(screen.getAllByTestId("fact-row").length).toBeGreaterThan(0);
+    // Gọn 13/11 (TA): khối dữ kiện đóng sẵn, tiêu đề kèm số dòng; dữ liệu vẫn đủ trong DOM.
+    const facts = screen.getByTestId("facts-block") as HTMLDetailsElement;
+    expect([facts.tagName, facts.open, facts.querySelector("summary")!.textContent]).toStrictEqual([
+      "DETAILS",
+      false,
+      `Dữ kiện đã kiểm (${screen.getAllByTestId("fact-row").length})`,
+    ]);
     expect(screen.getByTestId("decision-bar")).toBeTruthy();
     viewedLongEnough();
     fireEvent.click(screen.getByRole("button", { name: /^Đồng ý/ }));
