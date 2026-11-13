@@ -211,7 +211,7 @@ export function BusinessKpis({ data }: { data: Business }) {
         goiY={GOI_Y_TRONG_SO}
         kind="rate"
         text={weightedText}
-        extra={`${weightedCount ? `n=${weightedCount.den} · ` : ""}chưa trọng số ${raw.text}`}
+        extra={`${weightedCount ? `trên ${weightedCount.den} ca · ` : ""}chưa trọng số ${raw.text}`}
       />
       <Kpi
         data={data}

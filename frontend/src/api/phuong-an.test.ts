@@ -214,18 +214,18 @@ describe("t151: cellText — 'tỉ lệ (a/b)', mẫu < 20 → chưa đủ dữ 
   const ratio = { kind: "ratio" as const };
   it("ratio", () => {
     expect(MIN_SAMPLE).toBe(20);
-    expect(cellText(ratio, { num: 63, den: 100 })).toBe("63\u00a0% (63/100)");
-    expect(cellText(ratio, { num: 0, den: 20 })).toBe("0\u00a0% (0/20)");
-    expect(cellText(ratio, { num: 2, den: 19 })).toBe("chưa đủ dữ liệu (n=19)");
-    expect(cellText(ratio, { num: 0, den: 0 })).toBe("chưa đủ dữ liệu (n=0)");
+    expect(cellText(ratio, { num: 63, den: 100 })).toBe("63\u00a0% (63 trên 100 ca)");
+    expect(cellText(ratio, { num: 0, den: 20 })).toBe("0\u00a0% (0 trên 20 ca)");
+    expect(cellText(ratio, { num: 2, den: 19 })).toBe("chưa đủ dữ liệu (mới có 19 ca)");
+    expect(cellText(ratio, { num: 0, den: 0 })).toBe("chưa đủ dữ liệu (mới có 0 ca)");
     expect(cellText(ratio, null)).toBe("—");
   });
   it("value: count / s / min / usd / không đơn vị / n", () => {
     expect(cellText({ kind: "value", unit: "count" }, { value: 1234 })).toBe("1.234");
-    expect(cellText({ kind: "value", unit: "s" }, { value: 9.84, n: 340 })).toBe("9,8\u00a0giây (n=340)");
-    expect(cellText({ kind: "value", unit: "min" }, { value: 14.5, n: 20 })).toBe("14,5\u00a0phút (n=20)");
-    expect(cellText({ kind: "value", unit: "min" }, { value: 14.5, n: 19 })).toBe("chưa đủ dữ liệu (n=19)");
-    expect(cellText({ kind: "value", unit: "usd" }, { value: 0.0042, n: 340 })).toBe("0,0042\u00a0USD (n=340)");
+    expect(cellText({ kind: "value", unit: "s" }, { value: 9.84, n: 340 })).toBe("9,8\u00a0giây (đo trên 340 ca)");
+    expect(cellText({ kind: "value", unit: "min" }, { value: 14.5, n: 20 })).toBe("14,5\u00a0phút (đo trên 20 ca)");
+    expect(cellText({ kind: "value", unit: "min" }, { value: 14.5, n: 19 })).toBe("chưa đủ dữ liệu (mới có 19 ca)");
+    expect(cellText({ kind: "value", unit: "usd" }, { value: 0.0042, n: 340 })).toBe("0,0042\u00a0USD (đo trên 340 ca)");
     expect(cellText({ kind: "value" }, { value: 2.5 })).toBe("2,5");
     expect(cellText({ kind: "value", unit: "s" }, { value: null, n: 40 })).toBe("—");
     expect(cellText({ kind: "value", unit: "s" }, null)).toBe("—");

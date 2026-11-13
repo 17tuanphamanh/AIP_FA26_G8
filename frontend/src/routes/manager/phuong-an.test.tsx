@@ -538,9 +538,9 @@ describe("t167: bảng — cột theo strategies, dòng theo metrics ĐÚNG th�
     expect(rows[0]!.querySelector("th")!.textContent).toBe("zz_moi"); // khoá lạ → nguyên khoá
     expect(rows.find((r) => r.dataset.key === "auto_rate")!.querySelector("th")!.textContent).toBe(METRIC_LABEL.auto_rate);
     const cell = (key: string, s: string) => rows.find((r) => r.dataset.key === key)!.querySelector<HTMLElement>(`[data-strategy="${s}"]`)!.textContent;
-    expect(cell("l1_reject_rate", "hybrid_guarded")).toBe("chưa đủ dữ liệu (n=12)");
-    expect(cell("llm_cost_per_ticket", "rule_only")).toBe("chưa đủ dữ liệu (n=0)"); // {value: null, n: 0} (hợp đồng sửa lần 3)
-    expect(cell("auto_rate", "hybrid")).toBe("55,9\u00a0% (190/340)");
+    expect(cell("l1_reject_rate", "hybrid_guarded")).toBe("chưa đủ dữ liệu (mới có 12 ca)");
+    expect(cell("llm_cost_per_ticket", "rule_only")).toBe("chưa đủ dữ liệu (mới có 0 ca)"); // {value: null, n: 0} (hợp đồng sửa lần 3)
+    expect(cell("auto_rate", "hybrid")).toBe("55,9\u00a0% (190 trên 340 ca)");
     expect(screen.getByTestId("compare-note").textContent).toBe(COMPARE_NOTE);
     expect(COMPARE_NOTE).toBe(
       "Các chỉ số vận hành không có chiều tốt hơn, tuỳ ưu tiên của đơn vị. Tỉ lệ bỏ sót ca cần người chỉ đo được trên bộ tình huống có nhãn (báo cáo đánh giá).",
@@ -577,16 +577,16 @@ describe("t167: bảng — cột theo strategies, dòng theo metrics ĐÚNG th�
 
 // ------------------------------------------------------------------------------------------------ t200 (hợp đồng sửa lần 3, ĐP 26/10 23:51)
 
-describe("t200: ô so sánh — ratio {0,0} và value {null, n:0} → 'chưa đủ dữ liệu (n=0)' (không NaN/Infinity); cả ô null chỉ ở phương án 0 lá → '—'; không gửi source=all", () => {
+describe("t200: ô so sánh — ratio {0,0} và value {null, n:0} → 'chưa đủ dữ liệu (mới có 0 ca)' (không NaN/Infinity); cả ô null chỉ ở phương án 0 lá → '—'; không gửi source=all", () => {
   const rowsOf = (table: HTMLElement) => [...table.querySelectorAll<HTMLElement>('[data-testid="compare-row"]')];
   const cellOf = (table: HTMLElement, key: string, s: string) =>
     rowsOf(table).find((r) => r.dataset.key === key)!.querySelector<HTMLElement>(`[data-strategy="${s}"]`)!.textContent;
-  it("Thật: {num:0, den:0} và {value:null, n:0} ra 'chưa đủ dữ liệu (n=0)'; không ô nào chứa NaN / Infinity / '—'", async () => {
+  it("Thật: {num:0, den:0} và {value:null, n:0} ra 'chưa đủ dữ liệu (mới có 0 ca)'; không ô nào chứa NaN / Infinity / '—'", async () => {
     renderDashboard();
     await openCompare();
     const table = await screen.findByTestId("compare-table");
-    expect(cellOf(table, "quick_approve_rate", "hybrid_guarded")).toBe("chưa đủ dữ liệu (n=0)");
-    expect(cellOf(table, "llm_cost_per_ticket", "rule_only")).toBe("chưa đủ dữ liệu (n=0)");
+    expect(cellOf(table, "quick_approve_rate", "hybrid_guarded")).toBe("chưa đủ dữ liệu (mới có 0 ca)");
+    expect(cellOf(table, "llm_cost_per_ticket", "rule_only")).toBe("chưa đủ dữ liệu (mới có 0 ca)");
     expect(table.textContent).not.toMatch(/NaN|Infinity|∞/);
     const cells = [...table.querySelectorAll<HTMLElement>('[data-testid="compare-cell"]')].map((c) => c.textContent);
     expect(cells.filter((t) => t === "—")).toStrictEqual([]);
@@ -599,13 +599,13 @@ describe("t200: ô so sánh — ratio {0,0} và value {null, n:0} → 'chưa đ�
     await waitFor(() => expect(screen.getByTestId("compare").dataset.source).toBe("sim"));
     const table = screen.getByTestId("compare-table");
     expect(rowsOf(table).map((r) => cellOf(table, r.dataset.key!, "hybrid_guarded"))).toStrictEqual(METRIC_KEYS.map(() => "—"));
-    expect(cellOf(table, "auto_rate", "hybrid")).toBe("55,9\u00a0% (570/1.020)");
+    expect(cellOf(table, "auto_rate", "hybrid")).toBe("55,9\u00a0% (570 trên 1.020 ca)");
     expect(table.textContent).not.toMatch(/NaN|Infinity/);
     expect(strategyCalls(calls).map((q) => q.get("source"))).toStrictEqual(["real", "sim"]);
   });
   it("cellText trực tiếp: {num:0, den:0} với ngưỡng bất kỳ không chia — chữ không chứa NaN", () => {
-    expect(cellText({ kind: "ratio" }, { num: 0, den: 0 })).toBe("chưa đủ dữ liệu (n=0)");
-    expect(cellText({ kind: "value", unit: "usd" }, { value: null, n: 0 })).toBe("chưa đủ dữ liệu (n=0)");
+    expect(cellText({ kind: "ratio" }, { num: 0, den: 0 })).toBe("chưa đủ dữ liệu (mới có 0 ca)");
+    expect(cellText({ kind: "value", unit: "usd" }, { value: null, n: 0 })).toBe("chưa đủ dữ liệu (mới có 0 ca)");
     expect(cellText({ kind: "ratio" }, null)).toBe("—");
   });
 });
@@ -700,8 +700,8 @@ describe("gọn 13/11 (TA): nguồn Thật — cột phương án toàn '—' b�
     expect(screen.queryByTestId("compare-hidden")).toBeNull();
     // Dưới 1 phút nói theo giây (trước: "0 phút" trông như lỗi).
     expect([cellText({ kind: "value", unit: "min" }, { value: 0.02, n: 52 }), cellText({ kind: "value", unit: "min" }, { value: 14.5, n: 52 })]).toStrictEqual([
-      "1\u00a0giây (n=52)",
-      "14,5\u00a0phút (n=52)",
+      "1\u00a0giây (đo trên 52 ca)",
+      "14,5\u00a0phút (đo trên 52 ca)",
     ]);
   });
 });

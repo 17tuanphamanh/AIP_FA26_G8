@@ -20,7 +20,7 @@ export const SOURCES: readonly { key: StrategySource; label: string }[] = [
 const NBSP = "\u00a0";
 const integer = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 });
-const few = (n: number) => `chưa đủ dữ liệu (n=${integer.format(n)})`;
+const few = (n: number) => `chưa đủ dữ liệu (mới có ${integer.format(n)} ca)`;
 
 function valueText(value: number, unit: string | undefined): string {
   switch (unit) {
@@ -50,12 +50,12 @@ export function cellText(metric: Pick<StrategyMetric, "kind" | "unit">, cell: St
   if (metric.kind === "ratio") {
     const { num, den } = cell as StrategyRatio;
     if (den < MIN_SAMPLE) return few(den);
-    return `${formatRate(num / den)} (${integer.format(num)}/${integer.format(den)})`;
+    return `${formatRate(num / den)} (${integer.format(num)} trên ${integer.format(den)} ca)`; // gọn 13/11 (TA)
   }
   const { value, n } = cell as StrategyValue;
   if (n !== undefined && n < MIN_SAMPLE) return few(n);
   if (value === null) return NO_VALUE;
-  return `${valueText(value, metric.unit)}${n === undefined ? "" : ` (n=${integer.format(n)})`}`;
+  return `${valueText(value, metric.unit)}${n === undefined ? "" : ` (đo trên ${integer.format(n)} ca)`}`;
 }
 
 /** Các loại yêu cầu của bảng phụ: theo thứ tự xuất hiện đầu tiên khi đi qua các cột (thứ tự server), không sắp. */

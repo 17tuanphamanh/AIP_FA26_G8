@@ -78,9 +78,9 @@ export function metricText(name: string, value: unknown, unavailable: readonly s
 
 export const INSUFFICIENT_TEXT = "chưa đủ dữ liệu";
 /** "chưa đủ dữ liệu (n=19)" — mẫu nhỏ hơn `min_sample` của backend (cùng chữ với `few` của compare.ts). */
-export const insufficientText = (den: number): string => `${INSUFFICIENT_TEXT} (n=${integer.format(den)})`;
+export const insufficientText = (den: number): string => `${INSUFFICIENT_TEXT} (mới có ${integer.format(den)} ca)`; // gọn 13/11: "n=" khó hiểu
 /** "13/20". */
-export const fractionText = (num: number, den: number): string => `${integer.format(num)}/${integer.format(den)}`;
+export const fractionText = (num: number, den: number): string => `${integer.format(num)} trên ${integer.format(den)} ca`; // gọn 13/11 (TA): "140/599" khó hiểu
 
 /**
  * Tỉ lệ đơn kèm tử/mẫu. unavailable / thiếu trường → như `metricText`; thiếu `count` hoặc `minSample` (backend trước D13)

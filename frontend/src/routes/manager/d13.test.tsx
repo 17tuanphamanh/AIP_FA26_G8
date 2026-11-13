@@ -158,16 +158,16 @@ function server(business: () => unknown = () => counted(13, 4, 4, { routine: [2,
 describe("D13: tỉ lệ đơn 'x % (a/b)', mẫu < min_sample → 'chưa đủ dữ liệu (n=b)'", () => {
   it("biên den 20 / 19 với min_sample 20", () => {
     // 13/20 = 0,65 → "65 %"; den 20 ≥ 20 → hiện %.
-    expect(countedRateText("automation_rate", 0.65, { num: 13, den: 20 }, 20, [])).toStrictEqual({ state: "value", text: `65${NBSP}% (13/20)`, note: null });
+    expect(countedRateText("automation_rate", 0.65, { num: 13, den: 20 }, 20, [])).toStrictEqual({ state: "value", text: `65${NBSP}% (13 trên 20 ca)`, note: null });
     // 13/19 ≈ 0,684 nhưng den 19 < 20 → KHÔNG hiện %.
     const small = countedRateText("automation_rate", 13 / 19, { num: 13, den: 19 }, 20, []);
-    expect(small).toStrictEqual({ state: "insufficient", text: "chưa đủ dữ liệu (n=19)", note: null });
+    expect(small).toStrictEqual({ state: "insufficient", text: "chưa đủ dữ liệu (mới có 19 ca)", note: null });
   });
 
-  it("mẫu 0 → tỉ lệ null: 'chưa đủ dữ liệu (n=0)', không '0 %', không '—'", () => {
+  it("mẫu 0 → tỉ lệ null: 'chưa đủ dữ liệu (mới có 0 ca)', không '0 %', không '—'", () => {
     // 0/0: backend trả tỉ lệ null; den 0 < 20.
     const m = countedRateText("deflection_rate", null, { num: 0, den: 0 }, 20, []);
-    expect(m.text).toBe("chưa đủ dữ liệu (n=0)");
+    expect(m.text).toBe("chưa đủ dữ liệu (mới có 0 ca)");
     expect(m.text).not.toContain("%");
     expect(m.text).not.toContain("—");
   });
@@ -179,22 +179,22 @@ describe("D13: tỉ lệ đơn 'x % (a/b)', mẫu < min_sample → 'chưa đủ 
     expect(countedRateText("automation_rate", undefined, null, 20, ["automation_rate"]).text).toBe(UNAVAILABLE_TEXT);
   });
 
-  it("màn Tổng quan: den 20 → '% (a/b)'; den 19 → 'chưa đủ dữ liệu (n=19)' ở cả 3 ô tỉ lệ đơn", async () => {
+  it("màn Tổng quan: den 20 → '% (a/b)'; den 19 → 'chưa đủ dữ liệu (mới có 19 ca)' ở cả 3 ô tỉ lệ đơn", async () => {
     // den = 15 + 5 + 0 = 20. Tự xử lý 13/20 = 0,65; trả lời tài liệu 4/20 = 0,2; thô 4/20 = 0,2.
     server(() => counted(13, 4, 4, { routine: [3, 15], approval: [1, 5], sensitive: [0, 0] }, 0.2));
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(kpiValue("automation_rate")).toBe(`65${NBSP}% (13/20)`);
-    expect(kpiValue("deflection_rate")).toBe(`20${NBSP}% (4/20)`);
-    expect(kpi("escalation_rate_weighted").textContent).toContain(`chưa trọng số 20${NBSP}% (4/20)`);
+    expect(kpiValue("automation_rate")).toBe(`65${NBSP}% (13 trên 20 ca)`);
+    expect(kpiValue("deflection_rate")).toBe(`20${NBSP}% (4 trên 20 ca)`);
+    expect(kpi("escalation_rate_weighted").textContent).toContain(`chưa trọng số 20${NBSP}% (4 trên 20 ca)`);
     cleanup();
     // den = 14 + 5 + 0 = 19 < 20.
     server(() => counted(13, 3, 4, { routine: [2, 14], approval: [1, 5], sensitive: [0, 0] }, 0.15));
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(kpiValue("automation_rate")).toBe("chưa đủ dữ liệu (n=19)");
-    expect(kpiValue("deflection_rate")).toBe("chưa đủ dữ liệu (n=19)");
-    expect(kpi("escalation_rate_weighted").textContent).toContain("chưa trọng số chưa đủ dữ liệu (n=19)");
+    expect(kpiValue("automation_rate")).toBe("chưa đủ dữ liệu (mới có 19 ca)");
+    expect(kpiValue("deflection_rate")).toBe("chưa đủ dữ liệu (mới có 19 ca)");
+    expect(kpi("escalation_rate_weighted").textContent).toContain("chưa trọng số chưa đủ dữ liệu (mới có 19 ca)");
     expect(kpi("automation_rate").dataset.state).toBe("insufficient");
   });
 
@@ -213,16 +213,16 @@ describe("D13: tỉ lệ đơn 'x % (a/b)', mẫu < min_sample → 'chưa đủ 
 // ------------------------------------------------------------------------------------------------ weighted
 
 describe("D13: weighted — 'chưa đủ dữ liệu' theo den TỔNG; từng nhóm a/b, nhóm den < min_sample không %", () => {
-  it("den tổng 19 → KPI 'chưa đủ dữ liệu (n=19)', độ nhạy không số; nhóm chỉ a/b", async () => {
+  it("den tổng 19 → KPI 'chưa đủ dữ liệu (mới có 19 ca)', độ nhạy không số; nhóm chỉ a/b", async () => {
     // den = 14 + 5 + 0 = 19 < 20.
     server(() => counted(10, 3, 2, { routine: [2, 14], approval: [1, 5], sensitive: [0, 0] }, 0.15));
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(kpiValue("escalation_rate_weighted")).toBe("chưa đủ dữ liệu (n=19)");
+    expect(kpiValue("escalation_rate_weighted")).toBe("chưa đủ dữ liệu (mới có 19 ca)");
     expect(screen.getByTestId("weighted-sensitivity").textContent).toBe("Nếu đổi tỉ lệ trọng số: chưa đủ dữ liệu");
-    expect(group("routine").textContent).toBe("Thường2/14");
-    expect(group("approval").textContent).toBe("Cần duyệt1/5");
-    expect(group("sensitive").textContent).toBe("Nhạy cảm0/0");
+    expect(group("routine").textContent).toBe("Thường2 trên 14 ca");
+    expect(group("approval").textContent).toBe("Cần duyệt1 trên 5 ca");
+    expect(group("sensitive").textContent).toBe("Nhạy cảm0 trên 0 ca");
   });
 
   it("den tổng 20 → KPI hiện % weighted + n=20; nhóm 15 và 5 lá vẫn < 20 → chỉ a/b", async () => {
@@ -232,22 +232,22 @@ describe("D13: weighted — 'chưa đủ dữ liệu' theo den TỔNG; từng nh
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
     expect(kpiValue("escalation_rate_weighted")).toBe(`20${NBSP}%`);
-    expect(kpi("escalation_rate_weighted").textContent).toContain("n=20");
+    expect(kpi("escalation_rate_weighted").textContent).toContain("trên 20 ca");
     expect(screen.getByTestId("weighted-sensitivity").textContent).toContain(`60/30/10 → 20${NBSP}%`);
-    expect(group("routine").textContent).toBe("Thường3/15");
-    expect(group("approval").textContent).toBe("Cần duyệt1/5");
+    expect(group("routine").textContent).toBe("Thường3 trên 15 ca");
+    expect(group("approval").textContent).toBe("Cần duyệt1 trên 5 ca");
   });
 
   it("nhóm đủ mẫu (20 lá) → '% (a/b)'; nhóm 5 lá → a/b; nhóm 0 lá (by_group null) → '0/0', không %", async () => {
-    // den = 20 + 5 + 0 = 25. routine 5/20 = 0,25 → "25 % (5/20)"; approval 0/5 = 0 nhưng 5 < 20 → "0/5".
+    // den = 20 + 5 + 0 = 25. routine 5/20 = 0,25 → "25 % (5 trên 20 ca)"; approval 0/5 = 0 nhưng 5 < 20 → "0/5".
     // weighted = (0,7·0,25 + 0,2·0) / 0,9 ≈ 0,1944 → "19,4 %".
     server(() => counted(15, 5, 5, { routine: [5, 20], approval: [0, 5], sensitive: [0, 0] }, 0.7 * 0.25 / 0.9));
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
     expect(kpiValue("escalation_rate_weighted")).toBe(`19,4${NBSP}%`);
-    expect(group("routine").textContent).toBe(`Thường25${NBSP}% (5/20)`);
-    expect(group("approval").textContent).toBe("Cần duyệt0/5");
-    expect(group("sensitive").textContent).toBe("Nhạy cảm0/0");
+    expect(group("routine").textContent).toBe(`Thường25${NBSP}% (5 trên 20 ca)`);
+    expect(group("approval").textContent).toBe("Cần duyệt0 trên 5 ca");
+    expect(group("sensitive").textContent).toBe("Nhạy cảm0 trên 0 ca");
     expect(group("sensitive").textContent).not.toContain("%");
   });
 });
@@ -273,7 +273,7 @@ describe("D13: parseBusiness kiểm min_sample / counts KHI CÓ MẶT; thiếu �
   });
 
   it.each([
-    ["num > den (5/4)", withCount("automation_rate", { num: 5, den: 4 })],
+    ["num > den (5 trên 4 ca)", withCount("automation_rate", { num: 5, den: 4 })],
     ["den âm", withCount("automation_rate", { num: 0, den: -1 })],
     ["den lẻ 2.5", withCount("deflection_rate", { num: 1, den: 2.5 })],
     ["thiếu num", withCount("escalation_rate_raw", { den: 20 })],

@@ -1314,7 +1314,7 @@ describe("t115 (P8): màn Nghiệp vụ đọc data.metrics — KPI có trọng 
     dashboardServer();
     renderAt("/dashboard");
     await screen.findAllByTestId("kpi");
-    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính yêu cầu lá đã kết thúc."); // B3 (12/11)
+    expect(text(screen.getByTestId("dashboard-window"))).toBe("Từ 25/09 00:00 đến 01/10 12:05 (giờ Việt Nam) · chỉ tính yêu cầu lá đã kết thúc."); // B3 (12 trên 11 ca)
     expect([kpiValue("automation_rate"), kpiValue("escalation_rate_weighted"), kpiValue("deflection_rate"), kpiValue("approval_expired_count")]).toStrictEqual([
       "63 %",
       "14,2 %",

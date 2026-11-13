@@ -1,4 +1,4 @@
-// B1 (12/11): Tổng quan — tab Nghiệp vụ / AI mặc định chỉ ticket thật (`source=real`); ô "Gồm dữ liệu thử" gửi `source=all`.
+// B1 (12 trên 11 ca): Tổng quan — tab Nghiệp vụ / AI mặc định chỉ ticket thật (`source=real`); ô "Gồm dữ liệu thử" gửi `source=all`.
 // Dòng "Đang xem" theo `source` backend trả về; thân có `source` khác nguồn đã gửi → 502 (không hiện số của nguồn khác).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
