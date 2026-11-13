@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from hashlib import sha256
 from pathlib import Path
 
-from app.rag.bm25 import CODE_RE, HASH_NAME
+from app.rag.bm25 import CODE_RE, HASH_NAME, TOKENIZER_VERSION
 from app.rag.ingest.config import CHUNK_TEXT_MAX, CHUNK_TOKENS_MAX, CHUNK_TOKENS_MIN
 from app.rag.models import Doc, FrontMatter
 
@@ -39,5 +39,6 @@ def pipeline_sha(config_dir: Path) -> str:
         "code_re": CODE_RE.pattern,
         "hash": HASH_NAME,
         "pyvi": importlib.metadata.version("pyvi"),
+        "tokenizer": TOKENIZER_VERSION,  # R3 (13/11): phiên bản logic `tokenize_vi` — đổi thì ingest lại
     }
     return sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()

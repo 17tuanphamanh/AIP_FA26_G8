@@ -1,6 +1,6 @@
 """BM25 tiếng Việt — DÙNG CHUNG ingest và truy vấn (thiết kế Phase 3 mục 5.6; PLAN-3b mục 4.5).
 
-`tokenize_vi`: normalize + chữ thường → giữ mã (mã lỗi, mã máy, số ≥ 3 chữ số) bằng placeholder TRƯỚC (Q-3b-9) →
+`tokenize_vi`: normalize + chữ thường → gộp kiểu dấu thanh oa/oe/uy (R3, `fold_tone_marks`) → giữ mã (mã lỗi, mã máy, số ≥ 3 chữ số) bằng placeholder TRƯỚC (Q-3b-9) →
 mở viết tắt theo NGUYÊN TỪ (`config/vi_abbrev.yaml`) → tách từ bằng pyvi ("mật khẩu" → "mật_khẩu") → khôi phục mã
 (kể cả khi pyvi nối placeholder bằng "_") → bỏ dấu câu và stopword (`config/vi_stopwords.txt`, không có "không").
 `to_sparse`: băm token bằng mmh3 (không dấu, mod 2^31); va chạm băm được CỘNG DỒN — Qdrant đòi chỉ số duy nhất.
@@ -25,6 +25,28 @@ from app.settings import get_settings
 CODE_RE = re.compile(r"(?i)\b(0x[0-9a-f]+|\d{3,}|[a-z]{2,4}-\d{3,5})\b")
 PUNCT = ".,;:!?()[]{}\"'“”‘’…–—-/\\*`<>|=+#~^%&@$"
 HASH_NAME = "mmh3-u32-mod2^31"  # vào pipeline_sha — đổi cách băm là đổi collection
+# R3 (soát 12/11, agent 16 F5): phiên bản LOGIC tách từ — vào pipeline_sha; đổi `tokenize_vi`/`fold_tone_marks` thì tăng số này.
+# 1 = gộp kiểu dấu thanh cũ/mới ở âm tiết mở (13/11).
+TOKENIZER_VERSION = 1
+
+_TONE_BASE = {"o": "òóỏõọ", "u": "ùúủũụ"}
+_TONE_SECOND = {"a": "àáảãạ", "e": "èéẻẽẹ", "y": "ỳýỷỹỵ"}
+_PAIRS = {"o": "ae", "u": "y"}  # oa, oe, uy
+_NEW_TONE = re.compile(r"(?<!q)([ou])([àáảãạèéẻẽẹỳýỷỹỵ])(?!\w)")
+
+
+def fold_tone_marks(text: str) -> str:
+    """"hoà"→"hòa", "khoá"→"khóa", "khoẻ"→"khỏe", "thuỷ"→"thủy": cụm oa/oe/uy ở CUỐI âm tiết (không phụ âm cuối) đặt dấu trên nguyên
+    âm đầu (kiểu cũ, kiểu KB dùng nhiều nhất). Âm tiết có phụ âm cuối ("hoàn", "khoản") và "qu" ("quý") giữ nguyên. Chữ thường, NFC."""
+
+    def _swap(m: re.Match[str]) -> str:
+        first, marked = m.group(1), m.group(2)
+        for base, row in _TONE_SECOND.items():
+            if marked in row and base in _PAIRS[first]:
+                return _TONE_BASE[first][row.index(marked)] + base
+        return m.group(0)
+
+    return _NEW_TONE.sub(_swap, text)
 
 
 @dataclass(frozen=True)
@@ -54,7 +76,7 @@ def _vi() -> Any:
 
 def tokenize_vi(text: str, *, lexicon: ViLexicon | None = None) -> list[str]:
     lx = lexicon or load_lexicon(get_settings().config_dir)
-    t = textnorm.normalize(text).lower()
+    t = fold_tone_marks(textnorm.normalize(text).lower())  # R3: "khoá" và "khóa" là một token
     codes: dict[str, str] = {}
 
     def _hold(m: re.Match[str]) -> str:
