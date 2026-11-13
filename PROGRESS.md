@@ -7140,6 +7140,9 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     `bdb4232` bỏ cảnh báo asyncio mark ở 7 file test. `c7f2c43` MODELS.md: số đo injection-clf (val/test/stress) và `thresholds.json`
     hiện hành từ file bàn giao (đã tải về máy). CI `c7f2c43` xanh.
     **Còn mở (cần người):** (a) [Hỏi TA] R4 ranh giới bằng chứng prompt B10 — đổi prompt (`config/prompts` thuộc danh sách không tự
-    sửa) và làm LLM cache b10 luôn trượt nếu dùng `random_boundary` → hai hướng, chờ TA/ĐP chọn; (b) 6 ca escalation 17/10 do chính
+    sửa) và làm LLM cache b10 luôn trượt nếu dùng `random_boundary` → hai hướng, chờ TA/ĐP chọn. Thử 18:10 (nhánh nháp, đã xoá):
+    đổi b10 sang ranh giới ngẫu nhiên làm đỏ 7 test ghim hợp đồng — `test_d10_only_injection_judge_has_random_boundary` (chỉ b02 có
+    ranh giới ngẫu nhiên), cache/spend cap (D1f), version — và kéo lệch P2 §8 cache + tiêu chí tái lập P8 §5.5 sang cả B10 (D-65 mới chỉ
+    miễn cho B2) → **mâu thuẫn đặc tả, không tự chọn; đề xuất ghi giới hạn, làm sau bảo vệ**; (b) 6 ca escalation 17/10 do chính
     `long.nh` gửi — Q5a cấm tự đóng, cần người khác đóng (TA cho phép hoặc tự đóng); (c) S1 + số intent-clf của Duy: file nguồn không có
     trên máy; (d) τ `B2_TAU_REVIEW` trên `.env` máy demo — TA tự kiểm (em không đọc `.env`); (e) đo bộ câu mù, E15, gộp `main` + tag.
