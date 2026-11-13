@@ -8,7 +8,6 @@ import dataclasses
 from typing import Any
 
 import pytest
-
 from app.domain.session_memory import FollowUpSource, can_follow, follow_up_open
 from app.domain.states import S_BLOCKED, S_ESCALATED, S_REJECTED, S_RESOLVED
 from tests.fakes.desk import DeskEnv, desk_env
