@@ -3,6 +3,7 @@ lấy từ `exit_code_priority` (seed), `handoff_note` JSONB 4 phần; điểm l
 lại → không trùng, audit khớp `tickets` (Q-C); `finalize_once` không đè; hàng đợi L2 sắp đúng, bỏ ticket
 cha; giới hạn phục hồi với `turns.recover_attempts` thật (migration 0005, Q-B)."""
 
+import dataclasses
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -252,7 +253,9 @@ async def test_q13b_follow_up_source_sql(rw: AsyncEngine) -> None:
 
     src = await store.follow_up_source(root)
     assert src == FollowUpSource(root, REQUESTER, None, False, "S_ESCALATED", "vpn")
-    assert can_follow(src, REQUESTER) and not can_follow(src, "nguoi-khac")
+    assert not can_follow(src, REQUESTER)  # D-96 (13/11): đã chuyển kỹ thuật viên → không hỏi tiếp
+    done = dataclasses.replace(src, final_state="S_RESOLVED")
+    assert can_follow(done, REQUESTER) and not can_follow(done, "nguoi-khac")
     assert prior_label_hint(src) == "vpn (câu này có thể nói tiếp yêu cầu trước của người dùng — loại vpn, đã chuyển kỹ thuật viên)"
     child_src = await store.follow_up_source(child)
     assert child_src is not None and child_src.parent_ticket_id == root and not can_follow(child_src, REQUESTER)
