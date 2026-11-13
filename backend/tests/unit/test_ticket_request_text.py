@@ -12,7 +12,9 @@ from app.settings import Settings
 from tests.fakes.auth import EPOCH
 from tests.fakes.desk import MASK, SECRET, desk_env
 
-pytestmark = pytest.mark.asyncio
+
+@pytest.mark.asyncio
+
 
 
 async def test_request_text_is_redacted_row_for_owner_and_readers() -> None:
@@ -27,6 +29,9 @@ async def test_request_text_is_redacted_row_for_owner_and_readers() -> None:
             assert body["request_text"] == stored and SECRET not in str(body)
 
 
+@pytest.mark.asyncio
+
+
 async def test_request_text_never_leaks_pii_with_real_guard() -> None:
     real = RegexPrivacyGuard.from_settings(Settings(_env_file=None))  # type: ignore[call-arg]
     async with desk_env(guard=real) as env:
@@ -35,6 +40,9 @@ async def test_request_text_never_leaks_pii_with_real_guard() -> None:
         await env.drain()
         text = (await env.ticket(ticket, an))["request_text"]
         assert "0901234567" not in text and "<SĐT_1>" in text
+
+
+@pytest.mark.asyncio
 
 
 async def test_request_text_cut_to_500() -> None:
@@ -57,6 +65,9 @@ def test_child_with_full_parent_sentence_gets_none_span_kept() -> None:
     assert request_text_of(_row(f"  {whole} ", parent="p1"), whole) is None
     assert request_text_of(_row("cài Zoom", parent="p1"), whole) == "cài Zoom"
     assert request_text_of(_row(whole), None) == whole  # ticket thường
+
+
+@pytest.mark.asyncio
 
 
 async def test_child_ticket_via_route() -> None:

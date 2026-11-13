@@ -34,8 +34,6 @@ from tests.unit.test_b17_llm_auto import (
     _base_state,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 def _assert_e5_prior_zero_writes(env: Env, out: dict[str, Any]) -> None:
     """Như `_assert_e5_recheck_zero_writes` nhưng transaction_log có sẵn dòng `begun` của ticket TRƯỚC (`t0`) — ticket này không thêm dòng."""
@@ -83,6 +81,7 @@ def _detail(env: Env) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("reason", ["exec_failed", "exec_interrupted", "execution_interrupted"])
+@pytest.mark.asyncio
 async def test_n2_open_e7_same_requester_same_intent_blocks_second_write(reason: str) -> None:
     env = Env(IN_HOURS)
     await _prior_e7(env, reason=reason)
@@ -103,12 +102,16 @@ async def test_n2_open_e7_same_requester_same_intent_blocks_second_write(reason:
         pytest.param({"begun": False}, id="txlog-trong-chua-gui-lenh-ghi"),  # E11 (soát 12/11, agent 12 L1)
     ],
 )
+@pytest.mark.asyncio
 async def test_n2_other_cases_still_execute(prior: dict[str, Any]) -> None:
     env = Env(IN_HOURS)
     await _prior_e7(env, **prior)
     action = _reset_own()
     out = await env.b17(_base_state(action, other=False, status=S_EXECUTING))
     _assert_executed(env, out, action)
+
+
+@pytest.mark.asyncio
 
 
 async def test_n2_old_escalation_outside_window_does_not_block() -> None:
@@ -127,6 +130,9 @@ async def _approved_state(env: Env, action: Action) -> dict[str, Any]:
     a_id = await _approved(env, action)
     state.update(approval_id=a_id, approval_result="approved", action_plan_hash=hash_action(action))
     return state
+
+
+@pytest.mark.asyncio
 
 
 async def test_n1_fact_changed_while_waiting_approval_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,6 +155,9 @@ async def test_n1_fact_changed_while_waiting_approval_blocks(monkeypatch: pytest
     assert len(reads) == 1
 
 
+@pytest.mark.asyncio
+
+
 async def test_n1_unwatched_fact_change_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     """Chỉ so fact luật dùng (+ `cert_status`) — fact khác (số ngày còn hạn, lần kết nối cuối) đổi theo thời gian không chặn."""
     env = Env(IN_HOURS)
@@ -158,12 +167,18 @@ async def test_n1_unwatched_fact_change_is_ignored(monkeypatch: pytest.MonkeyPat
     _assert_executed(env, await env.b17(await _approved_state(env, action)), action)
 
 
+@pytest.mark.asyncio
+
+
 async def test_n1_same_facts_after_approval_executes(monkeypatch: pytest.MonkeyPatch) -> None:
     env = Env(IN_HOURS)
     action = _access_grant()
     monkeypatch.setattr(b17_execute, "fact_recheck_calls", lambda state, rid: [("ad_get_user", {"user_id": rid})])
     monkeypatch.setattr(b17_execute, "fresh_facts", lambda state, results, rid: dict(action.facts))
     _assert_executed(env, await env.b17(await _approved_state(env, action)), action)
+
+
+@pytest.mark.asyncio
 
 
 async def test_n1_auto_path_does_not_reread(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,6 +218,9 @@ def test_diag_tools_readable_at_recheck_but_never_b17() -> None:
 
 
 # ---- D-15 mở rộng ---------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
 
 
 async def test_ad_disabled_while_hr_active_blocks() -> None:

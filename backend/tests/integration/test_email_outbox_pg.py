@@ -29,8 +29,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tests.integration.pg import PgUrls, alembic_config, fresh_database
 
-pytestmark = pytest.mark.asyncio
-
 NOW = datetime(2026, 10, 24, 3, 0, tzinfo=UTC)
 BASE = "https://desk.congty-abc.vn"
 BODY = "Đã reset phiên VPN của bạn. Vui lòng kết nối lại."
@@ -172,6 +170,9 @@ def _sync(user_id: str, email: str | None) -> UserSync:
     )  # fmt: skip
 
 
+@pytest.mark.asyncio
+
+
 async def test_upsert_user_copies_valid_email_else_null(rw: AsyncEngine) -> None:
     store = SqlAuthStore(rw)
     uid = f"sync_{uuid4().hex[:8]}"
@@ -199,6 +200,9 @@ class AdWithEmail:
     is_privileged_account: bool = False
 
 
+@pytest.mark.asyncio
+
+
 async def test_ad_sync_carries_email_into_users(rw: AsyncEngine, clock: FakeClock) -> None:
     sync = AdUserSync(
         store=SqlAuthStore(rw), sink=SecurityEventWriter(rw, clock), username_key=b"k" * 32,
@@ -216,6 +220,9 @@ async def test_ad_sync_carries_email_into_users(rw: AsyncEngine, clock: FakeCloc
 # ---- E3/E4: ghi outbox cùng transaction ------------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
+
+
 async def test_outbox_row_in_effect_tx_with_effect_key(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
     ticket, key = await _ticket(rw), _key()
     assert await _notify_once(rw, outbox, ticket, key) == f"noop:{ticket}"  # tin chat như cũ
@@ -227,6 +234,9 @@ async def test_outbox_row_in_effect_tx_with_effect_key(rw: AsyncEngine, outbox: 
     assert await _rows(rw, "SELECT 1 FROM side_effects WHERE effect_key = :k", k=key)
 
 
+@pytest.mark.asyncio
+
+
 async def test_rerun_same_effect_no_duplicate(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
     ticket, key = await _ticket(rw), _key()
     await _notify_once(rw, outbox, ticket, key)
@@ -234,6 +244,9 @@ async def test_rerun_same_effect_no_duplicate(rw: AsyncEngine, outbox: SqlEmailO
     first = await outbox.enqueue_user(ticket_id=ticket, kind="result", text=BODY, effect_key=key)  # gọi thẳng: UNIQUE chặn
     rows = await _outbox_of(rw, ticket)
     assert len(rows) == 1 and first == rows[0].id
+
+
+@pytest.mark.asyncio
 
 
 async def test_rollback_leaves_no_row(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
@@ -244,10 +257,16 @@ async def test_rollback_leaves_no_row(rw: AsyncEngine, outbox: SqlEmailOutbox) -
     assert await _rows(rw, "SELECT 1 FROM side_effects WHERE effect_key = :k", k=key) == []
 
 
+@pytest.mark.asyncio
+
+
 async def test_b11_question_never_queued(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
     ticket = await _ticket(rw)
     await _notify_once(rw, outbox, ticket, _key(), step="B11", text_="Bạn dùng VPN trên máy nào?")
     assert await _outbox_of(rw, ticket) == []
+
+
+@pytest.mark.asyncio
 
 
 async def test_skipped_without_email(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
@@ -255,6 +274,9 @@ async def test_skipped_without_email(rw: AsyncEngine, outbox: SqlEmailOutbox) ->
     await _notify_once(rw, outbox, ticket, _key(), step="B20")
     (row,) = await _outbox_of(rw, ticket)
     assert (row.status, row.last_error_class, row.kind) == ("skipped", "NoRecipientEmail", "escalation")
+
+
+@pytest.mark.asyncio
 
 
 async def test_secret_in_body_skipped_and_audited_once(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
@@ -268,6 +290,9 @@ async def test_secret_in_body_skipped_and_audited_once(rw: AsyncEngine, outbox: 
     assert [e.detail for e in events] == [{"source": "email_outbox", "email_kind": "result", "secrets_found": 1}]
 
 
+@pytest.mark.asyncio
+
+
 async def test_child_ticket_no_email(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
     parent = await _ticket(rw)
     child = await _ticket(rw, parent=parent)
@@ -275,6 +300,9 @@ async def test_child_ticket_no_email(rw: AsyncEngine, outbox: SqlEmailOutbox) ->
     assert ref is not None and ref.startswith("notice:")  # D-31: con để lại notice
     assert await _outbox_of(rw, child) == [] and await _outbox_of(rw, parent) == []
     assert await outbox.enqueue_user(ticket_id=child, kind="result", text=BODY, effect_key=_key()) is None  # lớp thứ hai
+
+
+@pytest.mark.asyncio
 
 
 async def test_outbox_error_does_not_break_chat(rw: AsyncEngine, clock: FakeClock) -> None:
@@ -290,6 +318,9 @@ async def test_outbox_error_does_not_break_chat(rw: AsyncEngine, clock: FakeCloc
 
 
 # ---- người duyệt -----------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
 
 
 async def test_approver_new_in_effect_and_reminders_once(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:
@@ -342,6 +373,9 @@ async def _drain(rw: AsyncEngine) -> None:
 PHONE_LIKE_UUID = "23d1ce34-f9e3-43b0-8471-62786daeeefe"
 
 
+@pytest.mark.asyncio
+
+
 async def test_job_sends_pending_and_marks_sent(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: FakeClock) -> None:
     await _drain(rw)
     ticket = await _ticket(rw, ticket_id=PHONE_LIKE_UUID)
@@ -355,6 +389,9 @@ async def test_job_sends_pending_and_marks_sent(rw: AsyncEngine, outbox: SqlEmai
     (row,) = await _outbox_of(rw, ticket)
     assert (row.status, row.sent_at, row.attempts) == ("sent", NOW, 0)
     assert (await EmailSendJob(outbox, sender, clock).run()).sent == 0  # không gửi lại
+
+
+@pytest.mark.asyncio
 
 
 async def test_job_retry_backoff_then_failed(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: FakeClock) -> None:
@@ -376,6 +413,9 @@ async def test_job_retry_backoff_then_failed(rw: AsyncEngine, outbox: SqlEmailOu
     assert (await job.run()).failed == 0  # failed không bao giờ được lấy lại
 
 
+@pytest.mark.asyncio
+
+
 async def test_job_skips_when_email_removed_before_send(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: FakeClock) -> None:
     await _drain(rw)
     uid = f"gone_{uuid4().hex[:6]}"
@@ -388,6 +428,9 @@ async def test_job_skips_when_email_removed_before_send(rw: AsyncEngine, outbox:
     sender = RecSender()
     assert (await EmailSendJob(outbox, sender, clock).run()).skipped == 1
     assert sender.sent == [] and (await _outbox_of(rw, ticket))[0].status == "skipped"
+
+
+@pytest.mark.asyncio
 
 
 async def test_claim_skip_locked_and_lease(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: FakeClock) -> None:
@@ -408,6 +451,9 @@ async def test_claim_skip_locked_and_lease(rw: AsyncEngine, outbox: SqlEmailOutb
     assert len(await outbox.claim(clock.now(), 1, EMAIL_CLAIM_LEASE)) == 0
 
 
+@pytest.mark.asyncio
+
+
 async def test_batch_limit_20(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: FakeClock) -> None:
     await _drain(rw)
     ticket = await _ticket(rw)
@@ -419,6 +465,9 @@ async def test_batch_limit_20(rw: AsyncEngine, outbox: SqlEmailOutbox, clock: Fa
 
 
 # ---- E7: đọc cho API --------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
 
 
 async def test_recent_outbox_reads_without_body(rw: AsyncEngine, outbox: SqlEmailOutbox) -> None:

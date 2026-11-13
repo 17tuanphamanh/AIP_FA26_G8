@@ -16,8 +16,6 @@ from app.settings import get_escalation_templates
 from tests.fakes.graph import GraphHarness
 from tests.fakes.identity import REQUESTER
 
-pytestmark = pytest.mark.asyncio
-
 TEMPLATES = get_escalation_templates()
 SCOPE = "Mình là trợ lý IT, hiện hỗ trợ"
 REPEAT_CODES = ("E1", "E3", "E4")
@@ -58,10 +56,16 @@ def test_user_message_for_repeat_index() -> None:
     assert e5.user_message_for(reason, repeat=3) == e5.user_message_by_reason[reason]  # lý do vẫn ưu tiên
 
 
+@pytest.mark.asyncio
+
+
 async def test_first_ticket_in_session_keeps_full_message() -> None:
     h = GraphHarness()
     v = await _e3(h, "t1")
     assert _msg(v) == TEMPLATES.of("E3").user_message_for(None, it_help=True)
+
+
+@pytest.mark.asyncio
 
 
 async def test_second_and_third_ticket_same_session_vary() -> None:
@@ -76,6 +80,9 @@ async def test_second_and_third_ticket_same_session_vary() -> None:
     assert SCOPE not in second and SCOPE not in third
 
 
+@pytest.mark.asyncio
+
+
 async def test_other_session_starts_fresh() -> None:
     h = GraphHarness()
     await _e3(h, "t1")
@@ -83,6 +90,9 @@ async def test_other_session_starts_fresh() -> None:
     h.scenario.plan("t2", b08_retrieve="no_evidence")
     v = (await h.submit_as("t2", "s-khac")).values
     assert _msg(v) == TEMPLATES.of("E3").user_message_for(None, it_help=True)
+
+
+@pytest.mark.asyncio
 
 
 async def test_store_error_falls_back_to_full_message_and_still_escalates() -> None:
@@ -93,6 +103,9 @@ async def test_store_error_falls_back_to_full_message_and_still_escalates() -> N
     assert _msg(v) == TEMPLATES.of("E3").user_message_for(None, it_help=True)
     [esc] = h.escalations.of("t2")
     assert esc["exit_code"] == "E3"
+
+
+@pytest.mark.asyncio
 
 
 async def test_e0_never_varies() -> None:

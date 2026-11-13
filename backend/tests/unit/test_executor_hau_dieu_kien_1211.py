@@ -28,8 +28,6 @@ from app.tools.registry import ToolResult
 from tests.fakes.executor import MemoryTxLog
 from tests.unit._t24 import NOW, TZ, action
 
-pytestmark = pytest.mark.asyncio
-
 MAYBE_APPLIED = "có thể đã được áp dụng"
 LATER = NOW + timedelta(days=365)
 
@@ -114,6 +112,7 @@ def _paid() -> Any:
     ["renew_vpn_cert", "reissue_vpn_access", "reset_password", "unlock_account", "install_software", "grant_permission",
      "extend_permission"],
 )  # fmt: skip
+@pytest.mark.asyncio
 async def test_dung_ket_qua_van_thanh_cong(action_type: str) -> None:
     ex, writer, _ = _ex()
     res = await ex.execute("t1", "T1", action(action_type))
@@ -121,10 +120,16 @@ async def test_dung_ket_qua_van_thanh_cong(action_type: str) -> None:
     assert sum(writer.calls.values()) == 1
 
 
+@pytest.mark.asyncio
+
+
 async def test_dung_ket_qua_hai_buoc_co_phi() -> None:
     ex, writer, _ = _ex()
     res = await ex.execute("t1", "T1", _paid())
     assert res.success and writer.order == ["assign_paid_license", "install_software"]
+
+
+@pytest.mark.asyncio
 
 
 async def test_duong_dan_chuan_hoa_va_ma_may_khong_phan_biet_hoa_thuong_van_dung() -> (
@@ -203,6 +208,7 @@ SAI: list[tuple[str, str, Any, str]] = [
     SAI,
     ids=[f"{t}-{r}" for _, t, _, r in SAI],
 )
+@pytest.mark.asyncio
 async def test_ket_qua_sai_la_loi_khong_bao_da_lam(
     action_type: str, tool: str, bad: Any, reason: str
 ) -> None:
@@ -226,12 +232,16 @@ async def test_ket_qua_sai_la_loi_khong_bao_da_lam(
     SAI,
     ids=[f"{t}-{r}" for _, t, _, r in SAI],
 )
+@pytest.mark.asyncio
 async def test_ten_dieu_kien_hong(
     action_type: str, tool: str, bad: Any, reason: str
 ) -> None:
     from app.executor.plans import step_args
 
     assert unexpected_result(tool, step_args(tool, action(action_type)), bad) == reason
+
+
+@pytest.mark.asyncio
 
 
 async def test_buoc_hai_sai_doi_tuong_sau_khi_cap_license_ghi_chu_license() -> None:
@@ -250,11 +260,17 @@ async def test_buoc_hai_sai_doi_tuong_sau_khi_cap_license_ghi_chu_license() -> N
     assert "ĐÃ cấp cho nv001" in note and MAYBE_APPLIED in note
 
 
+@pytest.mark.asyncio
+
+
 async def test_buoc_mot_sai_nguoi_khong_cai() -> None:
     ex, writer, _ = _ex({"assign_paid_license": _assign(user="nv002")})
     res = await ex.execute("t1", "T1", _paid())
     assert (res.success, res.failed_step) == (False, "assign_paid_license")
     assert writer.order == ["assign_paid_license"]
+
+
+@pytest.mark.asyncio
 
 
 async def test_ket_qua_rong_cua_buoc_ghi_la_loi() -> None:

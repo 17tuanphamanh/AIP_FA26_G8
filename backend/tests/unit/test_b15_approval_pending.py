@@ -26,8 +26,6 @@ from tests.fakes.ad_seed import seed_ad_records
 from tests.fakes.graph import Crash
 from tests.unit.test_b15_prepare_approval import NOW, Env, _crash_once, _x1
 
-pytestmark = pytest.mark.asyncio
-
 TAIL = "cần được duyệt theo quy định của công ty. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn tại đây."
 X1_TEXT = f"Yêu cầu gia hạn chứng chỉ VPN cho máy LAP-0501 {TAIL}"
 
@@ -72,6 +70,9 @@ def test_kind_declared_in_msg_kinds_not_notice_kinds() -> None:
 # ---- node ---------------------------------------------------------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
+
+
 async def test_queued_sends_one_user_message() -> None:
     env = Env()
     _, state = _x1()
@@ -81,6 +82,9 @@ async def test_queued_sends_one_user_message() -> None:
     assert env.h.effects.count("t1", "notify_user") == 1 and env.h.effects.count("t1", "notify_approver") == 1
     [msg] = out["conversation"]
     assert (msg["kind"], msg["text"], msg["needs"], msg["ref"]) == (APPROVAL_PENDING_KIND, X1_TEXT, "none", "m1")
+
+
+@pytest.mark.asyncio
 
 
 async def test_message_never_names_approver() -> None:
@@ -95,6 +99,9 @@ async def test_message_never_names_approver() -> None:
         assert word not in text
 
 
+@pytest.mark.asyncio
+
+
 async def test_rerun_same_turn_sends_nothing_more() -> None:
     """Chạy lại node CÙNG lượt (nhánh `peek`) → vẫn đúng 1 tin."""
     env = Env()
@@ -103,6 +110,9 @@ async def test_rerun_same_turn_sends_nothing_more() -> None:
     await env.run(state)
     assert _user_msgs(env) == [("t1", X1_TEXT, "none")]
     assert env.h.effects.count("t1", "notify_user") == 1
+
+
+@pytest.mark.asyncio
 
 
 async def test_tc33_crash_after_create_then_rerun_one_message() -> None:
@@ -119,6 +129,9 @@ async def test_tc33_crash_after_create_then_rerun_one_message() -> None:
     assert env.h.effects.count("t1", "notify_user") == 1
 
 
+@pytest.mark.asyncio
+
+
 async def test_output_guard_blocks_zero_messages_still_queued() -> None:
     """Guard chặn mẫu → 0 tin (như các nhánh cũ), phiếu vẫn chờ duyệt (đã tạo + đã báo người duyệt); audit ghi lý do chặn."""
     env = Env()
@@ -131,6 +144,9 @@ async def test_output_guard_blocks_zero_messages_still_queued() -> None:
     assert "conversation" not in out
     assert env.h.approvals.count("t1") == 1 and len(env.h.approvals.notified) == 1
     assert env.row("queued")["detail"]["user_notice_guard"] == "canary"
+
+
+@pytest.mark.asyncio
 
 
 async def test_child_ticket_message_becomes_notice() -> None:
