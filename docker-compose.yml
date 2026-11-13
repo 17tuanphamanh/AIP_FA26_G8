@@ -81,6 +81,9 @@ x-backend-env: &backend-env
   EMAIL_LINK_BASE_URL: ${EMAIL_LINK_BASE_URL:-}
   EMAIL_SEND_INTERVAL_SECONDS: ${EMAIL_SEND_INTERVAL_SECONDS:-}
   API_DOCS: ${API_DOCS:-on}
+  # Tên miền email công ty — email thuộc miền này KHÔNG bị che (D-89; cần cho slot). Mặc định = tên miền của người dùng seed mock AD
+  # (`mock_services/seed.json`); settings.py giữ giá trị mẫu cho test/eval offline. Test: unit/test_compose_ten_mien_1313.py.
+  COMPANY_EMAIL_DOMAINS: '${COMPANY_EMAIL_DOMAINS:-["demo-corp.local"]}'
 
 services:
   postgres:
