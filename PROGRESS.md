@@ -7158,3 +7158,8 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     tính lại offline.]**
 30. **13/11 19:32 — bản nộp:** `main` = fast-forward lên nhánh `dot2-1213` (từ `53c6183`), CI `main` xanh; tag **`v1.1-nop-1411`** (TA
     duyệt tên). Máy demo chạy cùng mã (backend + frontend `841492b`; sau đó chỉ đổi tài liệu). `v1.0-freeze` giữ nguyên.
+31. **13/11 tối (TA thử trên máy demo, 19:35):** (a) ticket đã chuyển kỹ thuật viên vẫn có ô "Hỏi tiếp" → **D-96** (sửa D-79, TA chốt
+    19:40): `S_ESCALATED` / `S_BLOCKED` không hỏi tiếp — `can_follow_up` false, `follows_ticket_id` trỏ tới → 404 (`e83ee57`, test
+    `9f126aa`). (b) "bạn hỗ trợ cho tôi được những gì" ra E3 vì KB không có bài phạm vi → **KB-GEN-016** "Trợ lý IT hỗ trợ được những
+    việc gì" (`219011c`). Máy demo `8a04a4c` + ingest: 34 bài / 135 đoạn, cổng nhánh c Recall@5 1.000, trả lời bừa 0.045 (không đổi),
+    MRR 0.845; alias → `kb_3e24534d…`. CI `9f126aa` xanh.
