@@ -7154,4 +7154,7 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
 29. **13/11 19:00:** TA chạy `841492b` lên máy demo (build backend) — thẻ duyệt `svc_backup` ra căn cứ KB-ACC-003 (đã kiểm, phiếu thử đã
     từ chối). 6 ca escalation 17/10 do `long.nh` gửi: TA đăng nhập `ha.lt` trong khung trình duyệt, em đóng qua màn L2 (Xác nhận từ chối)
     — 0 ca mở trước 12/11, 0 E7. **τ máy demo `B2_TAU_REVIEW=0.9999`** (TA kiểm `.env`) — lệch D-70 (dự định 0,50 cho máy demo);
-    video quay ở 0,9999. [Hỏi TA] giữ 0,9999 (khớp video, ghi lệch) hay đổi 0,50 theo D-70 (phải chạy lại 44 ca).
+    video quay ở 0,9999. **[ĐÃ CHỐT 13/11 19:01 — TA "ok": giữ 0,9999 trên máy demo (khớp video), ghi lệch D-70; số RQ vẫn ở τ 0,50
+    tính lại offline.]**
+30. **13/11 19:32 — bản nộp:** `main` = fast-forward lên nhánh `dot2-1213` (từ `53c6183`), CI `main` xanh; tag **`v1.1-nop-1411`** (TA
+    duyệt tên). Máy demo chạy cùng mã (backend + frontend `841492b`; sau đó chỉ đổi tài liệu). `v1.0-freeze` giữ nguyên.
