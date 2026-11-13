@@ -3,7 +3,7 @@
 Trọng số **không** nằm trong repo (`.gitignore`: `ml_models/*-clf/`). File này ghi model nào được dùng, kiểm bằng hash gì, ngưỡng nào, và
 mỗi con số lấy từ đâu. Số nào không tìm được file nguồn ghi **"chưa truy được"**. Không chép dữ liệu huấn luyện vào repo.
 
-Lập 13/11/2026 (CLI-7 S2) từ: `MANIFEST.sha256`, `README_MODEL.md`, `mask_probe_results.md`, `thresholds-20261029.json`,
+Lập 13/11/2026 (CLI-7 S2; bổ sung chiều 13/11 từ `HANDOFF_MODEL_CHAN_TAN_CONG.docx` và `thresholds.json` khi file đã tải về máy) từ: `MANIFEST.sha256`, `README_MODEL.md`, `mask_probe_results.md`, `thresholds-20261029.json`,
 `inference_config.json`, `thresholds.json` trong thư mục `ml_models/` trên máy demo, cùng `docs/spec/build/decisions.md` (D-44, D-52,
 D-53, D-69, D-70).
 
@@ -24,10 +24,12 @@ D-53, D-69, D-70).
 | τ máy đo (`B2_TAU_REVIEW`) | 0,9999 — số RQ ở τ 0,50 được **tính lại offline** từ audit B2 của chính các lượt đã chạy; độ nhạy báo thêm ở 0,90 / 0,999 / 0,9999 | D-70 |
 | τ máy demo | D-70 ghi đổi thành 0,50; ghi chú nhóm 09/11 ghi 0,9999 → **cần kiểm `.env` máy demo** (soát 12/11, agent 17 L17) | D-70 |
 | `thresholds-20261029.json` | τ 0,9999 chọn nhầm trên validation 25/09 (sha `5360c267…`) — **đã thay** bằng lượt D-70 | file trên máy; D-70 |
-| `thresholds.json` (bản hiện hành) | chưa truy được nội dung (file chỉ nằm trên iCloud của máy demo lúc lập thẻ) | — |
+| `thresholds.json` (bản hiện hành) | `tau_review` **0,5**, `e_max` 0,15, ngày 2026-10-30, `data_sha256` `a4a2ed0d…11519`, LLM chấm `deepseek-flash`; luật chọn: τ nhỏ nhất (lưới 0,50–0,99 bước 0,01 + 0,995/0,999/0,9999) có cận trên 95% bootstrap theo nhóm (B=2000, seed 20261018) của E1 thừa ≤ E_max — khớp D-70 | `injection-clf/tai-lieu/thresholds.json` (đọc 13/11) |
 | Độ trễ | ~17 ms/câu trên CPU 24 luồng | `README_MODEL.md` |
 | Chặn nhầm khi câu có nhãn che (22 câu thường, ngưỡng 0,5) | để nguyên nhãn che: **10/22** bị chặn nhầm; giá trị giả: 3/22; từ thường: 0/22 → lý do D-52 thay nhãn che bằng từ thường | `mask_probe_results.md`; D-44 |
-| Precision / recall trên tập test của model | chưa truy được (số nằm trong `HANDOFF_MODEL_CHAN_TAN_CONG.docx`, chưa đọc được lúc lập thẻ) | — |
+| Số đo của model (seed 123, ngưỡng 0,5 — **chỉ model, chưa qua LLM chấm**) | **validation** 900/900: TP 867 · FP 58 · TN 842 · FN 33 → recall 0,9633, FPR 0,0644, FNR 0,0367, macro-F1 0,9494; **test v2.7** 900/900: macro-F1 0,9622, FPR 0,0311, FNR 0,0444; **stress set** 300 câu (Gemini sinh, đảo các lối tắt): macro-F1 0,8633, FPR 0,1133, FNR 0,1600, pair accuracy 0,70; câu không dấu (test, TB 3 seed): F1 0,856, FPR 0,148; hiệu chỉnh trên validation: Brier 0,0489, ECE 0,0491 (chưa temperature scaling) | `injection-clf/tai-lieu/HANDOFF_MODEL_CHAN_TAN_CONG.docx` mục 6, 9, 14, 17 (Dương, 03/10; đọc 13/11) |
+| Giới hạn ghi trong bàn giao | test v2.7 cùng bộ sinh với train (số lạc quan); stress set cho thấy chưa nên để model làm bộ chặn duy nhất (recall ~0,44 với tấn công nấp sau khung "giải thích / kiểm tra") → lý do hệ thống để LLM chấm mọi câu (D-52); hay chặn nhầm câu "xem quyền hiện có" (validation: 23/30 và 13/30 câu ở 2 mẫu) | như trên, mục 6, 16 |
+| Chia tập | 400 nhóm mẫu chia 280/60/60 (mọi biến thể của một mẫu cùng tập); train 4.200/4.200, validation 900/900, test 900/900; audit rò rỉ = 0; không câu nào lấy từ TC01–TC37 | như trên, mục 11–13 |
 
 ### 1.2. `intent-clf` — điểm loại yêu cầu ở B3, bản `v3.1-seed42-st`
 
