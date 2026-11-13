@@ -7127,3 +7127,6 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     R2 làm (`1e442ef`, ngưỡng áp mọi đoạn bằng chứng). R4 phương án cổng CI quét KB bằng mẫu injection L1: KHÔNG làm — bộ mẫu hiện
     tại (sau E1 thêm IMP-06/OVR-07 "đã duyệt sẵn") khớp nhầm 7 bài KB thật (KB-ACC-003, GEN-005, GEN-010, SW-001, SW-002, SW-004,
     VPN-005) → cần bộ mẫu riêng cho KB; ranh giới bằng chứng trong prompt B10 vẫn là đề xuất (`claude/plan-r2-r4-1213.md`).
+25. **13/11 sáng (TA "xử lý hết rồi quay"):** thêm `cf99273` tên miền compose, `1e442ef` R2 (đoạn dưới ngưỡng không làm bằng chứng),
+    `8545b63` R3 (BM25 gộp dấu thanh oa/oe/uy ở âm tiết mở; `pipeline_sha` có khoá `tokenizer` → ingest lại, embed lại toàn KB). Số
+    eval RAG/RQ trong báo cáo đo trên tag `v1.0-freeze` — bản nộp khác ở R2/R3 (ghi trong báo cáo). CI `8545b63` xanh.
