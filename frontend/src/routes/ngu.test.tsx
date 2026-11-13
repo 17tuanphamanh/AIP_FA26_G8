@@ -318,8 +318,9 @@ describe("t196: phiếu duyệt — hướng xử lý / nguồn / luật 'Nhãn 
     );
     mount(`/approvals/${v.approval_id}`, "/approvals/:approvalId", <ApprovalDetailRoute />);
     await screen.findByTestId("risk-summary");
-    expect(screen.getByTestId("risk-route").textContent).toBe("Chờ IT duyệt · HITL");
-    expect(screen.getByTestId("risk-source").textContent).toBe("Theo luật · rule");
+    // Gọn 13/11 (TA): hướng xử lý / nguồn chỉ hiện nhãn; mã ở `title`. Luật vẫn "Nhãn · mã".
+    expect([screen.getByTestId("risk-route").textContent, screen.getByTestId("risk-route").title]).toStrictEqual(["Chờ IT duyệt", "HITL"]);
+    expect([screen.getByTestId("risk-source").textContent, screen.getByTestId("risk-source").title]).toStrictEqual(["Theo luật", "rule"]);
     expect(screen.getByTestId("risk-rule").textContent).toBe("Yêu cầu gửi ngoài giờ hành chính cần người duyệt · R18");
     const raw = screen.getByTestId("risk-raw") as HTMLDetailsElement;
     expect(raw.tagName).toBe("DETAILS");
