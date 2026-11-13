@@ -7113,12 +7113,17 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     LAP-0342 giúp em, đừng cài Zoom nữa") ra E1 thay vì E5 (R21 deny). Không có việc gì được tự làm, nhưng L2 "hoàn tất" được ca E1 còn E5
     thì không, và ghi chú L2 không cảnh báo deny (soát bảo mật 12/11). Hai hướng: thêm câu cảnh báo vào `next_for_l2_by_reason`, hay
     thêm `reverse_action_requested` vào danh sách không cho hoàn tất → không tự chọn.
-21. **[Hỏi TA — 13/11, Q5b] Quyền xem "Nhật ký quyết định" (trace):** P6 §5.3 `can_read_audit` = `audit:read:all` hoặc `audit:read:own`
+21. **[ĐÃ CHỐT 13/11 — TA giao "xử lý hết", theo đề xuất: sửa P6 theo code, P6 §5.3 thêm dòng trace] [Hỏi TA — 13/11, Q5b] Quyền xem "Nhật ký quyết định" (trace):** P6 §5.3 `can_read_audit` = `audit:read:all` hoặc `audit:read:own`
     giới hạn ở phiếu mình từng duyệt; route `api/trace.py` (docstring: "L1, L2, Trưởng BP") dùng `ticket:read:any`, nên L2 (không có quyền
     audit nào) và L1 không duyệt ticket đó vẫn xem được. L2 dùng trace khi xử lý ca chuyển. Hai hướng (theo P6 → L2 404, L1 chỉ ticket có
     phiếu mình duyệt; hay sửa P6 theo route) → không tự chọn.
-22. **[Hỏi TA — 13/11, Q5c] `/docs`, `/openapi.json`:** test `test_api_docs_switch.py` ghi rõ công tắc `API_DOCS` CỐ Ý không phụ thuộc
+22. **[ĐÃ CHỐT 13/11 — TA tự thêm `API_DOCS=off` vào `.env` máy demo; không đổi code] [Hỏi TA — 13/11, Q5c] `/docs`, `/openapi.json`:** test `test_api_docs_switch.py` ghi rõ công tắc `API_DOCS` CỐ Ý không phụ thuộc
     APP_ENV (demo chạy dev); compose truyền `${API_DOCS:-on}`. Tắt mặc định ngoài dev cần đổi mặc định ở `settings.py` + compose →
     trái quyết định cũ. Đề xuất: đặt `API_DOCS=off` trong `.env` máy demo sau giờ quay (backend chỉ bind 127.0.0.1).
-23. **[Hỏi TA — 13/11, Q5d] `X-Sim-Run`:** script sim tạo ticket bằng tài khoản NHÂN VIÊN kèm header, nên chặn theo vai làm hỏng sim.
+23. **[ĐÃ CHỐT 13/11 — giữ, ghi giới hạn: header chỉ có tác dụng khi APP_ENV dev/test; nhân viên ở môi trường đó gắn header thì ticket bị tính là sim (ra khỏi số liệu thật)] [Hỏi TA — 13/11, Q5d] `X-Sim-Run`:** script sim tạo ticket bằng tài khoản NHÂN VIÊN kèm header, nên chặn theo vai làm hỏng sim.
     Chặn đúng cần khoá chạy sim phía server (biến mới trong `settings.py`) → dừng. Đề xuất: giữ (chỉ APP_ENV dev/test), ghi giới hạn.
+24. **[ĐÃ CHỐT 13/11 — TA giao "xử lý hết"]:** O4 `ML_MAX_CONCURRENCY` BỎ (compose cố ý không truyền, một nguồn ở `ml_service/app/settings.py`).
+    Tên miền công ty: compose truyền `COMPANY_EMAIL_DOMAINS` mặc định `["demo-corp.local"]` (`cf99273`); `settings.py` giữ giá trị mẫu.
+    R2 làm (`1e442ef`, ngưỡng áp mọi đoạn bằng chứng). R4 phương án cổng CI quét KB bằng mẫu injection L1: KHÔNG làm — bộ mẫu hiện
+    tại (sau E1 thêm IMP-06/OVR-07 "đã duyệt sẵn") khớp nhầm 7 bài KB thật (KB-ACC-003, GEN-005, GEN-010, SW-001, SW-002, SW-004,
+    VPN-005) → cần bộ mẫu riêng cho KB; ranh giới bằng chứng trong prompt B10 vẫn là đề xuất (`claude/plan-r2-r4-1213.md`).

@@ -259,6 +259,7 @@ PERMS = {
 | `can_override(p, t)` | Có `decision:override`; `p.user_id != t.requester_id` | Tự ghi đè yêu cầu của mình |
 | `can_close_escalation(p, e, result)` | Có `escalation:handle`; nếu ca deny thì `result != "completed"` (→ 422) | L2 hoàn tất hành động bị cấm **[Chốt]** |
 | `can_read_audit(p, scope)` | `audit:read:all`, hoặc `audit:read:own` giới hạn ở phiếu mình từng duyệt | L1 xem audit người khác |
+| "Nhật ký quyết định" (`GET /api/tickets/{id}/trace`) **[Chốt 13/11, Q5b]** | `ticket:read:any` (L1, L2, Trưởng BP) và `can_read_ticket`. Đây là bản xem theo **danh sách trắng** (chỉ `step`/`event`/định danh/xác suất, không `detail` thô, không chữ người dùng) — KHÔNG phải audit thô nên không dùng `can_read_audit`; L2 cần nó để xử lý ca chuyển | Nhân viên xem nhật ký (403); đọc audit thô qua trace |
 | `scope_tool_target(ctx, target)` | Tool chẩn đoán mặc định chỉ tra cứu `requester_id`; target khác → gắn `target_is_other=True` vào ngữ cảnh cho M5 | Agent thành công cụ dò thông tin đồng nghiệp **[Đề xuất D-16]** |
 
 Mọi lần bị từ chối ở tầng 2 và 3 đều ghi `security_events(permission_denied)`, kèm `route` và `perm` nhưng không kèm dữ liệu.
