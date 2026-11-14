@@ -250,7 +250,7 @@ make models
 
 1. Tải 2 thư mục model:
 
-   ⚠️ **CẦN BỔ SUNG:** link Drive 2 model của nhóm (`<link Drive>`) và cách giải nén (nếu là file nén).
+   Link Drive 2 model của nhóm: nhóm gửi kèm cùng file `.env`. Giải nén vào thư mục gốc repo sao cho có `ml_models/injection-clf/v3-seed123/` và `ml_models/intent-clf/v3.1-seed42-st/`.
 
 2. Đặt vào thư mục `ml_models/` ở gốc repo, giữ nguyên cấu trúc. Theo cấu hình mẫu, model intent dùng bản safetensors `ml_models/intent-clf/v3.1-seed42-st` (thư mục gốc có `seed_42.pt` **không** nạp được — ml-service từ chối khởi động).
 
@@ -274,7 +274,16 @@ make models
    INTENT_MANIFEST_SHA256=<sha256 của MANIFEST.sha256>
    ```
 
-   ⚠️ **CẦN BỔ SUNG:** 6 dòng giá trị chính xác (nhóm cung cấp cùng link Drive).
+   Giá trị đúng của bản nộp (file `.env` nhóm gửi đã có sẵn 6 dòng này):
+
+   ```dotenv
+   GUARD_MODEL_DIR=/ml_models/injection-clf/v3-seed123
+   GUARD_MODEL_SHA256=2d926f83df29cbdbc3637e22ecab893a1e6a0c2dc0f912315b3686a747108a02
+   GUARD_MANIFEST_SHA256=83784ea244c9bd4708ea1151fc3be9a2aa668b5e4602e1b38bf6aa4a7cf0b7ba
+   INTENT_MODEL_DIR=/ml_models/intent-clf/v3.1-seed42-st
+   INTENT_MODEL_SHA256=51f5d267bedabe0bcbb0cbe5faf8901deb792f3137b9697bbf2f7c4c96b120fc
+   INTENT_MANIFEST_SHA256=07e85489b61dbc6b9b4a726b5d7df86eeb3ef31f170ac7deac7bb63958186dc9
+   ```
 
    - Đặt `GUARD_MODEL_DIR` thì **bắt buộc** đủ `GUARD_MODEL_SHA256` và `GUARD_MANIFEST_SHA256`; tương tự với `INTENT_*`. Thiếu hoặc lệch → **ml-service từ chối khởi động và cả stack đứng** (backend chờ ml-service).
    - Máy 8 GB: chỉ đặt 3 dòng `GUARD_*`, để trống 3 dòng `INTENT_*` (mục 1, RAM).

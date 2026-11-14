@@ -1,11 +1,75 @@
-# AIP_FA26_G8 — servicedesk-agent
+# AITHA — AI Agent tự động hoá IT Service Desk cấp 1 có Human-in-the-Loop
 
-Repo đồ án môn AIP, kỳ Fall 2026, nhóm 8.
-**AI Agent tự động hoá IT Service Desk cấp 1 với Human-in-the-Loop.** Đặc tả đầy đủ ở
-[docs/spec/](docs/spec/) — bắt đầu từ [docs/spec/CLAUDE.md](docs/spec/CLAUDE.md).
-Tiến độ theo phase ở [PROGRESS.md](PROGRESS.md).
+*Agentic AI for Level-1 IT Service Desk Automation with Human-in-the-Loop* — đồ án tốt nghiệp ngành Trí tuệ nhân tạo,
+Đại học FPT, nhóm AIP491_G8, kỳ Fall 2026.
 
-**Chạy lại hệ thống từ đầu (hội đồng, người ngoài nhóm):** xem [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md).
+Nhân viên gửi yêu cầu IT bằng tiếng Việt (VPN, tài khoản, phần mềm, quyền truy cập). Agent tự hiểu yêu cầu, tự kiểm tra
+trạng thái hệ thống, trả lời từ tài liệu nội bộ có trích nguồn, hoặc thực hiện hành động. Mọi hành động nhạy cảm đều qua
+luật cứng hoặc người duyệt, và mọi quyết định đều truy vết được. Đóng góp chính của đồ án là **cơ chế quyết định khi nào
+cần chuyển cho con người**.
+
+![Kiến trúc hệ thống](docs/kien-truc/kien-truc-gon.png)
+
+## Điểm chính
+
+- **Luồng agent 20 bước** trên LangGraph: xác thực → sàng lọc tấn công → hiểu và tách yêu cầu → chẩn đoán chủ động →
+  trả lời có trích nguồn hoặc đánh giá rủi ro → duyệt → thực thi → xác nhận → ghi nhật ký. Lỗi ở bất kỳ bước nào cũng
+  chuyển người, không để treo.
+- **Quyết định khi nào cần người:** lớp luật (23 luật, luật chặt nhất thắng) chạy trước và không bị LLM ghi đè; ca luật
+  không phủ mới sang lớp LLM ước lượng rủi ro. Khi chưa có bộ hiệu chỉnh đủ tin cậy, lớp LLM chỉ được chuyển lên người,
+  không bao giờ tự làm.
+- **Duyệt và thực thi an toàn:** phiếu duyệt gắn mã băm của đúng một hành động, OTP cho trưởng bộ phận, kiểm lại luật
+  ngay trước khi thực thi, nhật ký giao dịch chỉ ghi thêm, hoàn tác được.
+- **Chặn prompt injection nhiều lớp:** mẫu cứng + model phân loại nhóm tự fine-tune + LLM chấm; che mật khẩu, khoá và
+  dữ liệu cá nhân trước khi gửi LLM.
+- **RAG lai:** bge-m3 (dense) + BM25, rerank bằng bge-reranker-v2-m3; không đủ căn cứ thì chuyển người, không trả lời bừa.
+- **Chất lượng:** hơn 11.400 test backend (unit, tích hợp PostgreSQL thật, end-to-end), 1.348 test giao diện, CI và
+  hook chặn commit (quét bí mật, test).
+
+## Kết quả chính
+
+Đo trên bản đóng băng `v1.0-freeze` với LLM thật (chi tiết và giới hạn ở báo cáo đồ án):
+
+| Phép đo | Kết quả |
+| --- | --- |
+| An toàn của lớp LLM (100 kịch bản có nhãn) | Bỏ sót 0/24 tình huống cần người; cận trên 95% là 11,7% |
+| Chặn prompt injection (95 câu do người viết, gán nhãn mù) | Nhiều lớp bắt 82%, riêng model nhóm 62%, Prompt Guard 2 20%; chặn nhầm 1/45 câu thường |
+| Truy hồi tài liệu (34 bài, bản nộp) | Recall@5 = 1,000; MRR = 0,845 |
+| Tái lập | Người thứ hai chạy lại: khớp quyết định 90/90 ca |
+
+Giới hạn đã biết: lợi ích chi phí của cách kết hợp luật và LLM so với chỉ dùng luật **chưa chứng minh được** vì bộ dữ
+liệu đánh giá còn nhỏ và độ đồng thuận gán nhãn thấp; hệ thống chạy trên môi trường giả lập, chưa thử với người dùng thật.
+
+## Chạy nhanh (cho thầy và hội đồng)
+
+Cần: Docker Desktop, git, make, Python 3, [uv](https://docs.astral.sh/uv/), Node.js 24 (npm 11). Windows chạy trong WSL2.
+RAM 16 GB, ổ trống từ 25 GB, có Internet ở lần chạy đầu. Lần đầu mất khoảng 45–60 phút, chủ yếu là tải model và build.
+
+1. **Lấy mã:** `git clone https://github.com/17tuanphamanh/aip_fa26_g8 && cd aip_fa26_g8`
+2. **Đặt file `.env`** nhóm gửi riêng vào thư mục gốc repo (cùng chỗ với `Makefile`). File này chứa khoá API nên không
+   nằm trong repo. Không có file này thì tạo theo mục 3 của [hướng dẫn](docs/HUONG-DAN-CHAY.md); khi đó hệ thống chạy LLM giả.
+3. **Tải 2 model chung** (bge-m3, bge-reranker-v2-m3; khoảng 4,5 GB): `make models`
+4. **Gắn 2 model của nhóm:** giải nén file model nhóm gửi kèm vào thư mục gốc repo, sao cho có
+   `ml_models/injection-clf/v3-seed123/` và `ml_models/intent-clf/v3.1-seed42-st/`, rồi chạy `chmod -R a+rX ml_models models`.
+   File `.env` đã trỏ sẵn tới hai thư mục này. Máy 8 GB RAM: xoá 3 dòng `INTENT_*` trong `.env`.
+5. **Dựng hệ thống:** `make up`, rồi `make ingest` để nạp kho tài liệu (lần đầu 15–25 phút).
+6. **Mở giao diện:** ở terminal thứ hai chạy `cd frontend && npm ci && npm run dev`, rồi mở http://localhost:5173 bằng Chrome.
+   Mật khẩu chung `Demo@2026!`: `an.nv` (nhân viên), `ha.lt` (IT L1, duyệt phiếu), `long.nh` (kỹ thuật viên L2),
+   `quan.tm` (trưởng bộ phận IT, cần đặt OTP một lần theo mục 8 của hướng dẫn). Hệ thống giả lập: http://127.0.0.1:8100/console
+7. **Tắt:** `make down` (dữ liệu vẫn giữ).
+
+Hướng dẫn đầy đủ, kể cả lỗi hay gặp: [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md).
+
+## Tài liệu
+
+- Hướng dẫn chạy: [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md)
+- Đặc tả và quyết định thiết kế: [docs/spec/](docs/spec/), [docs/spec/build/decisions.md](docs/spec/build/decisions.md)
+- Sơ đồ kiến trúc: [docs/kien-truc/](docs/kien-truc/)
+- Model của nhóm: [ml_models/MODELS.md](ml_models/MODELS.md)
+- Nhật ký tiến độ theo phase: [PROGRESS.md](PROGRESS.md)
+
+> `CLAUDE.md` và thư mục `.claude/` là cấu hình agent hỗ trợ viết code: nhóm dùng Claude Code và có khai báo mức dùng AI
+> trong báo cáo đồ án.
 
 ## Bản nộp và bản đo
 
