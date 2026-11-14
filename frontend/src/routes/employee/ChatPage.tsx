@@ -17,7 +17,6 @@ import {
 import type { Accepted, ParentReplyIn, TicketView } from "../../api/types.ts";
 import { Composer } from "../../components/Composer.tsx";
 import logoUrl from "../../assets/logo.svg";
-import { AVATAR_CLASS } from "../../components/avatar.ts";
 import { Conversation, USER_BUBBLE } from "../../components/Conversation.tsx";
 import { DigestMessage, type SendResult } from "../../components/DigestMessage.tsx";
 import { normalizeConversation } from "../../components/messages.ts";
@@ -33,7 +32,7 @@ import { StreamingText } from "./StreamingText.tsx";
 import { usePacedMessages } from "./usePacedMessages.ts";
 import { ThinkingBox } from "./ThinkingBox.tsx";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion.ts";
-import { POLL_STREAMING_MS, reconcile, type StreamPhase, useTicketStream } from "./useTicketStream.ts";
+import { displayText, POLL_STREAMING_MS, reconcile, type StreamPhase, useTicketStream } from "./useTicketStream.ts";
 
 const PILL: Record<Tone, { box: string; dot: string }> = {
   processing: { box: "bg-selected text-fpt-blue", dot: "bg-fpt-blue" },
@@ -132,6 +131,13 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
   const reducedMotion = usePrefersReducedMotion();
   const paced = usePacedMessages(stream.view.messages, reducedMotion); // nhịp chữ chạy phía màn; chỉ đổi sang tin chính thức khi đã hiện hết
   const { official, streaming } = useMemo(() => reconcile(messages, paced), [messages, paced]);
+  // Tin vừa chạy chữ xong → bản chính thức hiện tại chỗ, không chạy hiệu ứng vào lần nữa (không nháy).
+  const streamedTexts = useMemo(
+    () => new Set(stream.view.messages.filter((m) => m.ended).map((m) => displayText(m.text))),
+    [stream.view.messages],
+  );
+  const progressShown = streamActive && (stream.view.steps.length > 0 || stream.view.log.length > 0);
+  const answering = streaming.some((m) => m.text.length > 0);
 
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -285,6 +291,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
           ) : null}
           <Conversation
             messages={official}
+            quiet={(m) => m.role === "assistant" && streamedTexts.has(m.text)}
             renderDigest={(digest) => (
               <DigestMessage
                 digest={digest}
@@ -293,13 +300,25 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
               />
             )}
           />
-          {streaming.map((message) => (
-            <StreamingText key={message.id} message={message} reducedMotion={reducedMotion} />
-          ))}
-          {streamActive && (stream.view.steps.length > 0 || stream.view.log.length > 0) ? (
-            <div data-testid="stream-progress" className="ml-10 flex flex-col gap-3">
-              <ProgressStepper steps={stream.view.steps} />
-              <ThinkingBox log={stream.view.log} current={stream.view.steps.findLast((s) => s.state === "active")?.label} />
+          {/* Lượt trả lời đang chạy (TA 14/11): MỘT ảnh đại diện (vòng quay khi đang xử lý) — khung tiến trình ở trên, chữ chạy ở dưới.
+              Chữ bắt đầu chạy → danh sách bước thu lại, chỉ còn dòng đầu khung. */}
+          {progressShown || streaming.length > 0 ? (
+            <div className="flex items-start gap-3" data-testid="assistant-turn">
+              <TurnAvatar busy={progressShown} />
+              <div className="flex min-w-0 grow flex-col gap-4">
+                {progressShown ? (
+                  <div
+                    data-testid="stream-progress"
+                    className="overflow-hidden rounded-group border border-line bg-white shadow-input motion-safe:animate-pop-in"
+                  >
+                    <ThinkingBox log={stream.view.log} current={stream.view.steps.findLast((s) => s.state === "active")?.label} />
+                    <ProgressStepper steps={stream.view.steps} collapsed={answering} />
+                  </div>
+                ) : null}
+                {streaming.map((message) => (
+                  <StreamingText key={message.id} message={message} reducedMotion={reducedMotion} bare />
+                ))}
+              </div>
             </div>
           ) : null}
           <ActionPanel
@@ -310,6 +329,7 @@ export function ChatPage({ ticketId }: { ticketId: string }) {
             sending={sending}
             parent={progress !== null}
             replyShown={activeRound !== null}
+            streamShown={progressShown || streaming.length > 0}
             onConfirm={(ok) => void run(() => confirmTicket(ticketId, confirmBody(ok, ok ? undefined : draft)))}
           />
           {query.isError ? (
@@ -382,10 +402,22 @@ type ActionPanelProps = {
   replyShown: boolean;
   /** Đồng hồ chờ duyệt (null = không có hạn → chỉ nhãn tĩnh). */
   clock: ReactNode;
+  /** Khung tiến trình / chữ chạy đang hiện → không vẽ thêm dòng "đang xử lý" (một chỉ báo là đủ). */
+  streamShown: boolean;
   onConfirm: (ok: boolean) => void;
 };
 
-function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, onConfirm }: ActionPanelProps) {
+/** Ảnh đại diện trợ lý của lượt đang chạy: `busy` → vòng quay mảnh quanh logo (tắt khi giảm chuyển động). */
+function TurnAvatar({ busy }: { busy: boolean }) {
+  return (
+    <span className="relative mt-0.5 size-7 shrink-0">
+      {busy ? <span aria-hidden="true" className="chat-turn-ring" /> : null}
+      <img src={logoUrl} alt="" width={28} height={28} className="relative size-7 rounded-lg" />
+    </span>
+  );
+}
+
+function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clock, streamShown, onConfirm }: ActionPanelProps) {
   if (view.final_state) {
     return (
       <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5 motion-safe:animate-rise-in" data-testid="final-note">
@@ -444,16 +476,21 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
     );
   }
   if (waiting === "clarify") return null; // câu hỏi đã nằm trong hội thoại; ô trả lời ở dưới
+  if (streamShown) return null; // khung tiến trình đã nói hệ thống đang làm gì
   return (
     <div className="flex items-start gap-3 motion-safe:animate-fade-in">
-      <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-secondary text-ink-2" data-testid="processing">
-        <span className="inline-flex h-6 items-center gap-1 rounded-full bg-group px-2.5" aria-hidden="true">
+      <TurnAvatar busy />
+      <p
+        className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-group border border-line bg-white px-4 py-2.5 text-secondary shadow-input"
+        data-testid="processing"
+      >
+        <span className="inline-flex items-center gap-1" aria-hidden="true">
           <span className="size-1.5 rounded-full bg-fpt-blue motion-safe:animate-bounce" />
           <span className="size-1.5 rounded-full bg-fpt-blue/70 motion-safe:animate-bounce motion-safe:[animation-delay:150ms]" />
           <span className="size-1.5 rounded-full bg-fpt-blue/40 motion-safe:animate-bounce motion-safe:[animation-delay:300ms]" />
         </span>
-        {settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}… Bạn không cần làm gì.
+        <span className="shimmer-text font-semibold">{settling ? SENT_NOTE : parent ? PARENT_PROCESSING : statusLabel(view.status)}…</span>{" "}
+        <span className="text-ink-2">Bạn không cần làm gì.</span>
       </p>
     </div>
   );

@@ -115,6 +115,94 @@
   }
 }
 
+/* Màn chat (TA 14/11 — "chữ chạy và khung suy luận thô"): chữ bước đang làm loang sáng, con trỏ chữ chạy mảnh nhấp nháy êm,
+   markdown khi đang chạy chữ (con trỏ nằm cuối đoạn cuối, không xuống dòng riêng). Giảm chuyển động → khối @media cuối file. */
+.shimmer-text {
+  background: linear-gradient(
+      90deg,
+      var(--color-ink-2) 0%,
+      var(--color-ink-2) 38%,
+      var(--color-ink) 50%,
+      var(--color-ink-2) 62%,
+      var(--color-ink-2) 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.2s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+.stream-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 3px;
+  vertical-align: -0.17em;
+  border-radius: 1px;
+  background: var(--color-fpt-blue);
+  animation: caret-blink 0.9s ease-in-out infinite alternate;
+}
+@keyframes caret-blink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.15;
+  }
+}
+/* SafeMarkdown dựng khối flex-col; khi đang chạy chữ và khối cuối là đoạn văn → cho đoạn cuối "chảy" cùng dòng để con trỏ đứng
+   ngay sau chữ cuối (block-in-inline). Khối cuối là danh sách/khối mã → con trỏ xuống dòng như bình thường. */
+.stream-md > div:has(> p:last-child) {
+  display: inline;
+}
+.stream-md > div:has(> p:last-child) > * {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+.stream-md > div:has(> p:last-child) > p:last-child {
+  display: inline;
+  margin: 0;
+}
+/* Danh sách ở cuối khi đang chạy chữ: con trỏ đứng sau mục cuối (giả phần tử), ẩn con trỏ rời bên dưới. */
+.stream-md:has(> .stream-caret):has(> div > :is(ol, ul):last-child) > .stream-caret {
+  display: none;
+}
+.stream-md:has(> .stream-caret) > div > :is(ol, ul):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 3px;
+  vertical-align: -0.17em;
+  border-radius: 1px;
+  background: var(--color-fpt-blue);
+  animation: caret-blink 0.9s ease-in-out infinite alternate;
+}
+/* Ảnh đại diện trợ lý khi lượt đang chạy: quầng sáng lan ra nhẹ. */
+.chat-turn-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  animation: turn-halo 1.8s ease-out infinite;
+}
+@keyframes turn-halo {
+  0% {
+    box-shadow: 0 0 0 0 rgb(0 85 164 / 0.45);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px rgb(0 85 164 / 0);
+  }
+}
+
 /* Kích thước bố cục (KH 4.5): dùng qua `w-(--sidebar-width)`, `max-w-(--chat-width)`. */
 :root {
   --sidebar-width: 264px;
@@ -210,6 +298,17 @@
 
   html {
     scroll-behavior: auto;
+  }
+
+  .shimmer-text {
+    animation: none;
+    background: none;
+    color: var(--color-ink-2);
+  }
+  .stream-caret,
+  .chat-turn-ring,
+  .stream-md > div > :is(ol, ul):last-child > li:last-child::after {
+    animation: none;
   }
 
   button:not(:disabled):active,

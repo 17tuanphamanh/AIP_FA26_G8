@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import logoUrl from "../assets/logo.svg";
 import { AVATAR_CLASS } from "./avatar.ts";
 import { DigestMessage } from "./DigestMessage.tsx";
@@ -11,9 +11,12 @@ import { Sources } from "./Sources.tsx";
 // `digest` (tin tổng hợp nhiều ý, D-31): mặc định chỉ đọc; màn chat nhân viên truyền `renderDigest` để gắn form trả lời
 // cho tin round lớn nhất (routes/employee/ChatPage.tsx).
 
-function AssistantMessage({ message }: { message: Message }) {
+/** `enter`: chạy hiệu ứng trồi lên khi xuất hiện — chốt lúc gắn (đổi sau đó không chạy lại). Tin vừa chạy chữ xong (ChatPage) thì
+ *  không chạy: chữ đã nằm sẵn trên màn, chỉ đổi sang bản chính thức — không nháy. */
+function AssistantMessage({ message, enter = true }: { message: Message; enter?: boolean }) {
+  const [animate] = useState(enter);
   return (
-    <div className="flex items-start gap-3 motion-safe:animate-rise-in" data-kind={message.kind}>
+    <div className={`flex items-start gap-3 ${animate ? "motion-safe:animate-rise-in" : ""}`} data-kind={message.kind}>
       <img src={logoUrl} alt="" width={28} height={28} className={AVATAR_CLASS} />
       <div className="flex min-w-0 grow flex-col gap-3 pt-0.5">
         {!message.text.trim() ? null : message.kind === "answer" ? (
@@ -32,9 +35,14 @@ function AssistantMessage({ message }: { message: Message }) {
 // dưới 1024) — ngắt ngay trong bong bóng.
 export const USER_BUBBLE = "max-w-[80%] self-end rounded-sheet rounded-br-md bg-selected px-5 py-3 whitespace-pre-line wrap-anywhere";
 
-type ConversationProps = { messages: Message[]; renderDigest?: (digest: Digest) => ReactNode };
+type ConversationProps = {
+  messages: Message[];
+  renderDigest?: (digest: Digest) => ReactNode;
+  /** Tin trợ lý vừa hiện xong bằng chữ chạy → hiện ngay, không hiệu ứng vào (màn chat nhân viên). */
+  quiet?: (message: Message) => boolean;
+};
 
-export function Conversation({ messages, renderDigest }: ConversationProps) {
+export function Conversation({ messages, renderDigest, quiet }: ConversationProps) {
   return (
     <div role="log" aria-live="polite" aria-label="Cuộc trò chuyện" className="flex flex-col gap-8">
       {messages.map((message, index) =>
@@ -51,7 +59,7 @@ export function Conversation({ messages, renderDigest }: ConversationProps) {
             {renderDigest ? renderDigest(message.digest) : <DigestMessage digest={message.digest} />}
           </div>
         ) : (
-          <AssistantMessage key={index} message={message} />
+          <AssistantMessage key={index} message={message} enter={!quiet?.(message)} />
         ),
       )}
     </div>

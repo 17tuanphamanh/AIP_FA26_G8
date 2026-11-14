@@ -7176,3 +7176,10 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     che mật khẩu, chỉ đọc. (b) App: nhóm "Demo · hệ thống giả lập" ở thanh bên ("Điện thoại của tôi"; nhân viên IT thêm "Hệ thống giả
     lập"), link ở trang đăng nhập — chỉ bản dev hoặc build `VITE_DEMO_TOOLS=1`; link quản trị AD của Trưởng BP cũng theo cờ này.
     (c) Gói nộp: web build với `VITE_DEMO_TOOLS=1`, nút chạy mở thêm tab hệ thống giả lập.
+34. **14/11 tối — làm đẹp màn chat nhân viên (TA: "streaming + reasoning thô kệch, mất thiện cảm"):** chỉ giao diện, không đổi API/SSE.
+    Lượt trả lời đang chạy gom về MỘT khối (một ảnh đại diện có quầng sáng): khung "Hệ thống đang xử lý" (bước hiện tại loang sáng,
+    số giây, chi tiết thu gọn có biểu tượng theo loại) + đường thời gian các bước (vòng quay bước đang làm, dấu tích bật nhẹ) ở TRÊN,
+    chữ chạy ở DƯỚI; chữ bắt đầu chạy thì danh sách bước thu lại. Tin `answer` dựng Markdown ngay khi đang chạy (giấu `**`/`` ` ``
+    chưa đóng), con trỏ mảnh nhấp nháy êm đứng sau chữ cuối; tin chính thức thay bản chạy chữ tại chỗ, không chạy hiệu ứng vào lần
+    nữa. Bỏ dòng "đang xử lý" thứ hai khi đã có khung tiến trình. Giảm chuyển động → đứng yên. Khối tiến trình vẫn biến mất khi
+    ticket chờ người / kết thúc (giữ hành vi cũ).
