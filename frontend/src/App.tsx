@@ -7,6 +7,7 @@ import { CHAT_NAV, homePath, STAFF_NAV } from "./auth/permissions.ts";
 import { RequireAuth, RequirePerm } from "./auth/RequireAuth.tsx";
 import { useAuth, useMe } from "./auth/useAuth.ts";
 import { FlashNotice } from "./components/FlashNotice.tsx";
+import { HoursModeBanner } from "./components/HoursModeBanner.tsx";
 import { MockDataBadge } from "./components/MockDataBadge.tsx";
 import { MobileNavBar, NavDrawer } from "./components/MobileNav.tsx";
 import { useEnterOnChange } from "./components/motion.ts";
@@ -57,6 +58,7 @@ export function Shell() {
       </NavDrawer>
       <main inert={open} className="min-w-0 grow overflow-y-auto max-lg:min-h-0">
         <div ref={content} className="h-full overflow-y-auto motion-safe:animate-fade-in max-lg:flex max-lg:flex-col max-lg:overflow-x-hidden max-lg:wrap-anywhere">
+          <HoursModeBanner />
           <FlashNotice />
           <Outlet />
         </div>

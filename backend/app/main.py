@@ -34,7 +34,7 @@ from app.api.auth import router as auth_router
 from app.api.background import BackgroundRuns
 from app.api.dashboard import router as dashboard_router
 from app.api.dashboard_strategies import router as dashboard_strategies_router
-from app.api.desk import Desk, RateGate, StrategyStore, retry_after
+from app.api.desk import Desk, HoursModeStore, RateGate, StrategyStore, retry_after
 from app.api.email_outbox import router as email_outbox_router
 from app.api.errors import install_graph_errors, install_request_errors
 from app.api.escalations import EscalationQueue
@@ -51,6 +51,7 @@ from app.api.health import (  # M9 (A4): kiểu của `llm`, `monitor` + probe d
     WarningsProbe,
 )
 from app.api.health import router as health_router
+from app.api.hours_mode import router as hours_mode_router
 from app.api.limits import BodyLimitMiddleware, NulGuardMiddleware
 from app.api.llm_status import router as llm_status_router
 from app.api.notifications import router as notifications_router
@@ -76,6 +77,7 @@ from app.auth.tokens import TokenSigner
 from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
+from app.db.hours_mode import SqlHoursModeStore
 from app.db.m5_strategy import SqlStrategyStore
 from app.db.notifications import NotificationSource, SqlNotificationSource
 from app.db.rate_limits import (
@@ -349,6 +351,7 @@ def create_app(
     trace: TraceSource | None = None,
     notifications: NotificationSource | None = None,
     strategy: StrategyStore | None = None,
+    hours_mode: HoursModeStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -412,6 +415,7 @@ def create_app(
                     users=auth_store, clock=clock, background=background,
                     retry_after_seconds=lock_retry, rate=rate_gate,
                     strategy=strategy or SqlStrategyStore(engines.main),
+                    hours=hours_mode or SqlHoursModeStore(engines.main),
                 )  # fmt: skip
                 app.state.runtime_status = "up"
             try:
@@ -456,6 +460,7 @@ def create_app(
     app.include_router(llm_status_router)  # I1: GET /api/admin/llm-status (chỉ đọc, Trưởng BP IT)
     app.include_router(email_outbox_router)  # notify-email: GET /api/admin/email-outbox (chỉ đọc, Trưởng BP IT, không body)
     app.include_router(strategy_router)  # D-67: /api/admin/strategy (+ /history) — chiến lược M5 lúc vận hành (chỉ manager)
+    app.include_router(hours_mode_router)  # D-97: /api/hours-mode (đọc, mọi vai trò), /api/admin/hours-mode (đổi, chỉ manager)
     app.include_router(policy_router)  # F7: /api/policy (đọc), /versions, /validate (chỉ kiểm)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_body_bytes)
     app.add_middleware(NulGuardMiddleware)  # kiểm thử 12/11: NUL trong đường dẫn/query → 404/422, không 500

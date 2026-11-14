@@ -132,7 +132,10 @@ _MEM = (
 )
 _DURABILITY = 'DURABILITY: Durability = "sync"  # NGHI-3 — xem docstring module'
 _PERSON = "            if err is not None or data is None or status in INVALID_PEOPLE or ad_disabled:\n"
-_VERDICT = "        verdict = evaluate(action, build_ctx(state, run.clock.now(), deps.business_hours))  # [1] P8: hiện hành\n"
+_VERDICT = (
+    "        verdict = evaluate(action, build_ctx(state, run.clock.now(), deps.business_hours, hours_mode=hours_mode))"
+    "  # [1] P8: hiện hành\n"
+)
 _MOCK_MW = (
     '    app.middleware("http")(fault_middleware)\n'
     '    app.middleware("http")(count_middleware)  # SAU fault_middleware = ngoài cùng (đếm cả request bị bơm lỗi)\n'
@@ -255,8 +258,8 @@ UNIT = [
              [one(B17, _PERSON, "            if False:  # MUTATION M-3h-19\n")],
              UT, ["test_requester_no_longer_valid_is_e5", "test_beneficiary_terminated_is_e5"]),
     Mutation("M-3h-20 B17 kiểm lại theo giờ lúc B1 thay vì Clock hiện hành (P8)",
-             [one(B17, _VERDICT, "        verdict = evaluate(action, build_ctx(state, requester.captured_at, deps.business_hours))"
-                                 "  # MUTATION M-3h-20\n")],
+             [one(B17, _VERDICT, "        verdict = evaluate(action, build_ctx(state, requester.captured_at, deps.business_hours,"
+                                 " hours_mode=hours_mode))  # MUTATION M-3h-20\n")],
              UT, ["test_auto_path_now_after_hours_is_e5"]),
     Mutation("M-3h-21 mock: middleware đếm đăng ký TRƯỚC bơm lỗi (không còn ngoài cùng)",
              [one(MOCK_MAIN, _MOCK_MW, '    app.middleware("http")(count_middleware)  # MUTATION M-3h-21\n'

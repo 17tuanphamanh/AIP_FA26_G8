@@ -222,7 +222,8 @@ def make(deps: NodeDeps) -> NodeFn:
                 exit_code=ExitCode.E5.value, escalation_reason_detail="recheck_failed",
                 escalation_note=PRIOR_DOUBT_NOTE.format(prior=prior),
             )  # fmt: skip
-        verdict = evaluate(action, build_ctx(state, run.clock.now(), deps.business_hours))  # [1] P8: hiện hành
+        hours_mode = await deps.hours_mode.mode()  # D-97: cùng chế độ giả lập giờ như B12, đọc lại lúc thực thi
+        verdict = evaluate(action, build_ctx(state, run.clock.now(), deps.business_hours, hours_mode=hours_mode))  # [1] P8: hiện hành
         rule = {"policy_decision": verdict.decision, "matched_rule_id": verdict.rule_id,
                 "all_matched": verdict.all_matched, "write_calls": 0}  # fmt: skip
         if verdict.decision == "deny":

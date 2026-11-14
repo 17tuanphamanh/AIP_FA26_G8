@@ -10,7 +10,16 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app import ad, admin_calls, admin_faults, console, fileserver, software, vpn
+from app import (
+    ad,
+    admin_calls,
+    admin_faults,
+    console,
+    console_admin,
+    fileserver,
+    software,
+    vpn,
+)
 from app.admin_calls import CallLog, count_middleware
 from app.admin_faults import FaultTable, fault_middleware
 from app.security import ServiceTokens
@@ -41,7 +50,7 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    for module in (ad, vpn, software, fileserver, admin_faults, admin_calls, console):
+    for module in (ad, vpn, software, fileserver, admin_faults, admin_calls, console, console_admin):
         app.include_router(module.router)
     return app
 

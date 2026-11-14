@@ -54,6 +54,10 @@ th,td{border:1px solid #d0d5dd;padding:4px 8px;text-align:left;vertical-align:to
 th{background:#eaecf0}
 .muted{color:#667085}
 pre{margin:0;white-space:pre-wrap;font:inherit}
+form.f label{display:grid;grid-template-columns:160px minmax(0,360px);gap:8px;margin:6px 0;align-items:center}
+input,select,button{font:inherit;padding:4px 6px}
+button{cursor:pointer}
+.ok{color:#067647;font-weight:600}.err{color:#b42318;font-weight:600}
 """
 
 
@@ -74,18 +78,20 @@ def _table(headers: Sequence[str], rows: Iterable[Sequence[str]], empty: str = "
     return f"<table><tr>{head}</tr>{body}</table>"
 
 
-def _page(state: MockState, title: str, body: str) -> HTMLResponse:
+def _page(state: MockState, title: str, body: str, *, admin: bool = False, status: int = 200) -> HTMLResponse:
+    """`admin` (D-97 — trang quản trị nhân viên `console_admin`): KHÔNG tự làm mới (đang gõ form thì không mất chữ)."""
+    refresh = "" if admin else f'<meta http-equiv="refresh" content="{REFRESH_SECONDS}">'
+    mode = "trang quản trị (không tự làm mới)" if admin else f"tự làm mới mỗi {REFRESH_SECONDS} giây · chỉ đọc"
     html = (
-        '<!doctype html><html lang="vi"><head><meta charset="utf-8">'
-        f'<meta http-equiv="refresh" content="{REFRESH_SECONDS}">'
+        f'<!doctype html><html lang="vi"><head><meta charset="utf-8">{refresh}'
         f"<title>{escape(title)} — mock console</title><style>{_CSS}</style></head><body>"
         '<div class="banner">MÔI TRƯỜNG GIẢ LẬP</div><main>'
-        '<nav><a href="/console">Mục lục</a></nav>'
+        '<nav><a href="/console">Mục lục</a><a href="/console/nhan-vien">Quản trị nhân viên</a></nav>'
         f"<h1>{escape(title)}</h1>"
-        f'<p class="muted">Giờ VN: {escape(_vn(state.now()))} (UTC+7) · tự làm mới mỗi {REFRESH_SECONDS} giây · chỉ đọc</p>'
+        f'<p class="muted">Giờ VN: {escape(_vn(state.now()))} (UTC+7) · {mode}</p>'
         f"{body}</main></body></html>"
     )
-    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(html, status_code=status, headers={"Cache-Control": "no-store"})
 
 
 def _temp_password_live(state: MockState, user: User) -> bool:
@@ -100,6 +106,7 @@ def _temp_password_live(state: MockState, user: User) -> bool:
 async def index(request: Request) -> HTMLResponse:
     state = mock_state(request)
     pages = [
+        ("/console/nhan-vien", "Quản trị nhân viên: thêm, sửa, tắt / bật, mở khoá"),
         ("/console/ad", "Tài khoản AD"),
         ("/console/vpn", "VPN: chứng chỉ, kết nối"),
         ("/console/fileserver", "File server: quyền"),

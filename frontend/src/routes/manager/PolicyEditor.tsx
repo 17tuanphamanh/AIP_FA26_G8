@@ -13,6 +13,7 @@ import { MissingPanel } from "./panels.tsx";
 import { PolicyHistory } from "./PolicyHistory.tsx";
 import { PolicyTable } from "./PolicyTable.tsx";
 import { StrategySection } from "./StrategySection.tsx";
+import { HoursModeSection } from "./HoursModeSection.tsx";
 import {
   checkFailure,
   checkPolicyText,
@@ -88,6 +89,7 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
       <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
         <h1 className="text-title">Chính sách</h1>
         <StrategySection client={client} />
+        <HoursModeSection client={client} />
         <MissingPanel testId="policy-missing" title={POLICY_MISSING_TITLE} text={MISSING_TEXT} />
       </section>
     );
@@ -145,6 +147,8 @@ export function PolicyEditor({ client = api }: { client?: Client }) {
       <h1 className="text-title">Chính sách</h1>
       {/* N-PA P2: cách xử lý của hệ thống (D-67) — độc lập với nội dung chính sách bên dưới. */}
       <StrategySection client={client} />
+      {/* D-97: giả lập giờ hành chính cho demo luật VPN ngoài giờ (R18). */}
+      <HoursModeSection client={client} />
       <div className="flex items-end gap-3 border-t border-line pt-6 max-lg:flex-wrap max-lg:items-start">
         <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
           <h2 className="text-heading">Nội dung chính sách</h2>

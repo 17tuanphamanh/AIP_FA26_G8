@@ -51,6 +51,7 @@ from app.auth.user_sync import AdUserSync, AuthApproverUsers
 from app.auth.username_hash import resolve_key
 from app.core.clock import Clock
 from app.db.escalations import SqlEscalationStore
+from app.db.hours_mode import SqlHoursModeStore, StaticHoursMode
 from app.db.identity import SqlIdentityReads
 from app.db.runtime import SqlDeadlineStore, SqlEffectStore, SqlSpanSink, SqlTurnStore
 from app.db.session import Engines
@@ -300,6 +301,8 @@ async def _open(
         approver_users=approver_users(settings, engines, security),
         estimator=LlmRiskEstimator(llm, p_method=get_policy().m5.p_method, eval_mode=settings.eval_mode),
         calibrator=calibrator, eval_mode=settings.eval_mode,
+        # D-97: giả lập giờ hành chính (Trưởng BP bật) — EVAL_MODE bỏ qua (số đo luôn theo giờ thật, như `eval/schedule`).
+        hours_mode=StaticHoursMode() if settings.eval_mode else SqlHoursModeStore(engines.main),
     )  # fmt: skip
     async with open_postgres_saver(
         settings.database_url, max_size=settings.checkpoint_pool_size

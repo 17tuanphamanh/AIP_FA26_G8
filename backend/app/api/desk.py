@@ -28,6 +28,7 @@ from app.api.errors import InvalidRequest, PrivacyGuardUnavailable, error_fields
 from app.auth.models import Principal, UserRecord
 from app.auth.ports import SecurityEventSink
 from app.core.clock import Clock
+from app.db.hours_mode import HoursMode, HoursModeState
 from app.db.m5_strategy import StrategyChange
 from app.graph.ports import ApprovalRepo, TicketRepo
 from app.graph.runner import Runner
@@ -62,6 +63,14 @@ class StrategyStore(Protocol):
     async def append(self, strategy: str, *, changed_by: str, reason: str, at: datetime) -> StrategyChange: ...
 
 
+class HoursModeStore(Protocol):
+    """D-97: giả lập giờ hành chính — bản SQL: `db/hours_mode.SqlHoursModeStore`; bản giả: `tests/fakes/hours_mode.py`."""
+
+    async def current(self) -> HoursModeState: ...
+
+    async def set_mode(self, mode: HoursMode, *, changed_by: str, at: datetime) -> HoursModeState: ...
+
+
 @dataclass(frozen=True)
 class Desk:
     runner: Runner
@@ -75,6 +84,7 @@ class Desk:
     retry_after_seconds: int  # TicketBusy → 503 + Retry-After (= ceil(TICKET_LOCK_TIMEOUT))
     rate: RateGate  # Phase 5 gói 2b: bộ đếm 429 (ticket mới; tin nhắn `/messages` `/reply` `/confirm`)
     strategy: StrategyStore  # D-67: chiến lược M5 lúc vận hành (chụp lên ticket mới; route `/api/admin/strategy`)
+    hours: HoursModeStore | None = None  # D-97: giả lập giờ hành chính (route `/api/hours-mode`, `/api/admin/hours-mode`)
 
 
 def retry_after(lock_timeout: float) -> int:

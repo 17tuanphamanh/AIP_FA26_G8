@@ -100,12 +100,15 @@ def make(deps: NodeDeps) -> NodeFn:
         if state.get("intent") in ANSWER_ONLY_INTENTS:  # D-76: intent chỉ-trả-lời không bao giờ tới M5 — tới đây là bug → E9
             raise ValueError(f"b12_assess nhận intent chỉ-trả-lời {state.get('intent')!r} — không bao giờ đánh giá hành động")
         action = Action.model_validate(state["intended_action"])  # thiếu = bug B11 → E9
-        ctx = build_ctx(state, current_run().clock.now(), deps.business_hours)
+        hours_mode = await deps.hours_mode.mode()  # D-97: chế độ giả lập giờ hành chính lúc đánh giá (`real` = giờ thật)
+        ctx = build_ctx(state, current_run().clock.now(), deps.business_hours, hours_mode=hours_mode)
         strategy = await ticket_strategy(deps, state["ticket_id"])
         verdict = evaluate(action, ctx) if needs_rules(strategy) else None
         all_matched = list(verdict.all_matched) if verdict is not None else []
         lineage: dict[str, Any] = {"policy_version_id": None, "kb_version": state.get("kb_version"), "commit_sha": deps.commit_sha}
-        mode = {"strategy": strategy}  # D-67: ở MỌI đường điểm 4, cả lúc vận hành (trước: chỉ khi EVAL_MODE — Q-6C-3)
+        mode: dict[str, Any] = {"strategy": strategy}  # D-67: ở MỌI đường điểm 4, cả lúc vận hành (trước: chỉ khi EVAL_MODE — Q-6C-3)
+        if hours_mode != "real":  # D-97: ca chạy với giờ giả lập — truy được ở điểm 4 (giờ thật: không thêm khoá, detail như cũ)
+            mode["hours_mode"] = hours_mode
         est: RiskEstimate | None = None
         gap = False
         if needs_llm(strategy, verdict):

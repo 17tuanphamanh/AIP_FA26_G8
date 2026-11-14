@@ -13,7 +13,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -39,6 +39,7 @@ from tests.fakes.auth import (
     seed_ad_users,
 )
 from tests.fakes.graph import GraphHarness
+from tests.fakes.hours_mode import MemoryHoursModeStore
 from tests.fakes.identity import FakeAd, MemoryIdentity, ad_user
 from tests.fakes.rate import MemoryRateGate
 from tests.fakes.strategy import MemoryStrategyStore
@@ -117,6 +118,7 @@ class DeskEnv:
     settings: Settings
     rate: MemoryRateGate  # gói 2b: cổng đếm 429 giả (`hits`, `calls`)
     strategy: MemoryStrategyStore  # D-67: `m5_strategy_changes` giả
+    hours: MemoryHoursModeStore = field(default_factory=MemoryHoursModeStore)  # D-97: giả lập giờ hành chính giả
 
     @property
     def background(self) -> BackgroundRuns:
@@ -179,16 +181,17 @@ async def desk_env(
     settings = auth_settings(**settings_over)
     rate = MemoryRateGate(RateLimits.from_settings(settings), tickets=lambda: h.tickets.rows.values(), sink=sink)
     strategy = MemoryStrategyStore()
+    hours = MemoryHoursModeStore()
     app = create_app(
         settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=h.alerts,
-        runtime=runtime or harness_runtime(h), guard=guard, clock=clock, rate=rate, strategy=strategy,
+        runtime=runtime or harness_runtime(h), guard=guard, clock=clock, rate=rate, strategy=strategy, hours_mode=hours,
     )  # fmt: skip
     transport = httpx.ASGITransport(app=app, client=("203.0.113.7", 50000))
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client,
     ):
-        yield DeskEnv(app, client, h, clock, sink, store, guard, idp, settings, rate, strategy)
+        yield DeskEnv(app, client, h, clock, sink, store, guard, idp, settings, rate, strategy, hours)
         await app.state.background.drain()
 
 

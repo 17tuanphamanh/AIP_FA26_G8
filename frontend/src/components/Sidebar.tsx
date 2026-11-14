@@ -21,6 +21,9 @@ import type { Tone } from "../routes/employee/status.ts";
 /** `onSignOut` trả false khi CHƯA đăng xuất được (mạng/5xx) — phải báo, phiên vẫn sống. */
 type SidebarProps = { me: Me; onSignOut: () => Promise<boolean> };
 
+/** Trang quản trị nhân viên của AD giả lập (mock, chỉ nghe 127.0.0.1:8100; cần MOCK_CONSOLE_ENABLED=1). */
+export const AD_ADMIN_URL = "http://127.0.0.1:8100/console/nhan-vien";
+
 const itemClass = ({ isActive }: { isActive: boolean }) =>
   `flex h-9 items-center gap-2.5 rounded-lg px-3 text-secondary max-lg:min-h-11 ${
     isActive ? "bg-selected font-semibold text-fpt-blue" : "text-ink hover:bg-group"
@@ -244,6 +247,13 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
               {item.label}
             </NavLink>
           ))}
+          {/* D-97 (TA 14/11, cách 1): quản trị nhân viên nằm ở AD của công ty (ở đây: AD giả lập), KHÔNG trong app — app chỉ mở sang.
+              Ghi ra hệ thống ngoài vẫn chỉ qua B17. Trang chỉ chạy trên chính máy chạy hệ thống (127.0.0.1). */}
+          {hasPerm(me, "policy:edit") ? (
+            <a href={AD_ADMIN_URL} target="_blank" rel="noopener noreferrer" data-testid="nav-ad-admin" className={itemClass({ isActive: false })}>
+              Quản trị nhân viên (AD) ↗
+            </a>
+          ) : null}
         </>
       ) : hasPerm(me, CHAT_NAV.perm) ? (
         <>

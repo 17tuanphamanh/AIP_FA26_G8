@@ -170,6 +170,8 @@ class MockState:
     serial_seq: int = 0
     outbox: list[OutboxMessage] = field(default_factory=list)  # F2: hộp thư đi (SMS/email), `/_admin/reset` dựng state mới → rỗng
     prohibited: Prohibited = field(default_factory=Prohibited)  # Q5 — danh sách phần mềm bị cấm (seed `prohibited_software`)
+    # D-97 (TA 14/11): nhật ký thao tác của trang quản trị nhân viên (`console_admin`) — (lúc, câu đã dựng sẵn). Mất khi nạp lại seed.
+    admin_log: list[tuple[datetime, str]] = field(default_factory=list)
 
     def next_serial(self) -> str:
         self.serial_seq += 1

@@ -23,6 +23,7 @@ from typing import Any, Protocol
 from app.approval.store import ApprovalRow, NoticeKind
 from app.auth.ports import AdUser
 from app.core.fake_tag import FAKE_TAG
+from app.db.hours_mode import HoursModeReader, StaticHoursMode
 from app.domain.action import Action, ActionMeta
 from app.domain.approval import Lookup, Roster
 from app.domain.context import RequesterContext
@@ -332,6 +333,9 @@ class NodeDeps:
     # 3h (phase3 11.2, 11.3): giờ hành chính của luật R18 (`config/policy.json` — một nguồn). Lớp 2 của M5 (B14): mặc định
     # `DisabledEstimator` (ném → E5 `llm_layer_disabled`); runtime (`graph/wiring._open`, Phase 6 6C) dựng `LlmRiskEstimator`.
     business_hours: BusinessHours = field(default_factory=lambda: get_policy().business_hours)
+    # D-97 (demo 14/11): chế độ giả lập giờ hành chính (`db/hours_mode`) — B12/B17 đọc lúc đánh giá. Mặc định = theo giờ thật;
+    # runtime (`graph/wiring._open`) dựng bản đọc `security_events`.
+    hours_mode: HoursModeReader = field(default_factory=StaticHoursMode)
     estimator: RiskEstimator = field(default_factory=DisabledEstimator)
     # Phase 6 6C (P1, P10): calibrator nạp lúc khởi động (`m5.calibrator_version`) — None = chưa hiệu chỉnh → không bao giờ AUTO
     # (D-38); `eval_mode` = `Settings.eval_mode`. D-67: chiến lược M5 KHÔNG còn ở đây — B12 đọc chiến lược đã chụp trên ticket

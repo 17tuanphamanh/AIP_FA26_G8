@@ -7163,3 +7163,9 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     `9f126aa`). (b) "bạn hỗ trợ cho tôi được những gì" ra E3 vì KB không có bài phạm vi → **KB-GEN-016** "Trợ lý IT hỗ trợ được những
     việc gì" (`219011c`). Máy demo `8a04a4c` + ingest: 34 bài / 135 đoạn, cổng nhánh c Recall@5 1.000, trả lời bừa 0.045 (không đổi),
     MRR 0.845; alias → `kb_3e24534d…`. CI `9f126aa` xanh.
+32. **14/11 chiều — D-97 (TA chốt 17:50–17:59, phá đóng băng có chủ đích, vào bản nộp):** (a) công tắc "Giả lập giờ hành chính" cho
+    Trưởng BP (trang Chính sách; dải báo mọi màn) để demo R18 VPN ngoài giờ với LLM thật — chỉ ghi đè fact `within_business_hours`,
+    lưu bằng `security_events` (không bảng mới), EVAL_MODE bỏ qua; (b) quản trị nhân viên (xem/thêm/sửa/tắt-bật/mở khoá, không xoá,
+    không đặt/xem mật khẩu, mật khẩu demo chung) ở AD giả lập `/console/nhan-vien`, app chỉ có nút mở sang (giữ luật B17 ghi duy nhất);
+    (c) gói nộp đặt `MOCK_CONSOLE_ENABLED=1`. Kiểm ở máy cloud: unit backend, mock, FE, lint/mypy/import-linter xanh; CHƯA chạy
+    trên stack thật (Docker Hub bị chặn ở máy cloud) → TA thử trên Mac. SMS thật không làm (cần dịch vụ trả phí).
