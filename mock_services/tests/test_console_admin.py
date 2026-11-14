@@ -211,3 +211,16 @@ def test_seed_reset_drops_admin_changes(c: TestClient) -> None:
     assert c.post("/_admin/reset").status_code == 200
     assert "nv008" not in c.app.state.mock.users  # type: ignore[attr-defined]
     assert "(chưa có)" in c.get(BASE).text
+
+
+def test_list_has_search_box_and_add_button(c: TestClient) -> None:
+    text = c.get(BASE).text
+    assert 'data-loc="bang-nv"' in text and 'id="bang-nv"' in text  # ô tìm nhanh lọc ngay trên trang
+    assert f'href="{BASE}/them"' in text
+    assert 'class=on' in text and 'data-lam-moi="0"' in text  # tab đang mở, trang quản trị không tự làm mới
+
+
+def test_detail_shows_lock_reason_in_vietnamese_and_confirm_on_disable(c: TestClient) -> None:
+    text = c.get(f"{BASE}/nv007").text
+    assert "nhập sai mật khẩu nhiều lần" in text
+    assert 'data-hoi="Tắt tài khoản của Phan Thu Giang?' in text  # hỏi lại trước khi tắt

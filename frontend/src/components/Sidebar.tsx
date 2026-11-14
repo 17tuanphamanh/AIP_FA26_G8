@@ -6,6 +6,7 @@ import type { Me, TicketListItem } from "../api/types.ts";
 import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { CHAT_NAV, hasPerm, isStaff, ROLE_HEADING, ROLE_LABEL, STAFF_NAV } from "../auth/permissions.ts";
+import { AD_ADMIN_URL, DEMO_TOOLS, MOCK_CONSOLE_URL, phoneUrl } from "../lib/demoTools.ts";
 import { ownEntry } from "../lib/lookup.ts";
 import { PlacedBell } from "./PlacedBell.tsx";
 import {
@@ -21,8 +22,7 @@ import type { Tone } from "../routes/employee/status.ts";
 /** `onSignOut` trả false khi CHƯA đăng xuất được (mạng/5xx) — phải báo, phiên vẫn sống. */
 type SidebarProps = { me: Me; onSignOut: () => Promise<boolean> };
 
-/** Trang quản trị nhân viên của AD giả lập (mock, chỉ nghe 127.0.0.1:8100; cần MOCK_CONSOLE_ENABLED=1). */
-export const AD_ADMIN_URL = "http://127.0.0.1:8100/console/nhan-vien";
+export { AD_ADMIN_URL };
 
 const itemClass = ({ isActive }: { isActive: boolean }) =>
   `flex h-9 items-center gap-2.5 rounded-lg px-3 text-secondary max-lg:min-h-11 ${
@@ -223,6 +223,37 @@ function RecentRow({ ticket, onHide }: { ticket: RecentTicket; onHide: () => voi
   );
 }
 
+const demoItem =
+  "flex h-8 items-center gap-2 rounded-lg px-3 text-secondary text-ink hover:bg-white focus-visible:outline-2 focus-visible:outline-fpt-blue max-lg:min-h-11";
+
+/** Nhóm "Demo · giả lập" (TA 14/11 — "khó mở"): mọi người có "Điện thoại của tôi" (đọc SMS mật khẩu tạm); nhân viên IT có thêm
+ *  "Hệ thống giả lập" (AD, VPN, phần mềm…). Chỉ ở bản demo (lib/demoTools.ts). Mở tab mới — app không đọc gì từ trang đó. */
+function DemoTools({ me }: { me: Me }) {
+  if (!DEMO_TOOLS) return null;
+  return (
+    <div className="mx-1 mb-2 rounded-xl border border-dashed border-line bg-group p-1" data-testid="demo-tools">
+      <span className="block px-3 pt-1 pb-0.5 text-label text-ink-2">Demo · hệ thống giả lập</span>
+      <a href={phoneUrl(me.user_id)} target="_blank" rel="noopener noreferrer" data-testid="nav-demo-phone" className={demoItem}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="5" y="2" width="14" height="20" rx="2" />
+          <path d="M12 18h.01" />
+        </svg>
+        Điện thoại của tôi ↗
+      </a>
+      {isStaff(me) ? (
+        <a href={MOCK_CONSOLE_URL} target="_blank" rel="noopener noreferrer" data-testid="nav-demo-console" className={demoItem}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2" y="2" width="20" height="8" rx="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" />
+            <path d="M6 6h.01M6 18h.01" />
+          </svg>
+          Hệ thống giả lập ↗
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 // Thanh bên hợp nhất Bản 4 (B4Sidebar): 264 px, không có thanh trên. Mục theo `permissions` (KH 4.1 #8), không
 // theo tên role. Chuông thông báo ở hàng logo (N-TB — components/NotificationBell.tsx; route chưa có → ẩn). Hồ sơ hiện `user_id` (Q-fe-9 — `me` chưa có tên).
 export function Sidebar({ me, onSignOut }: SidebarProps) {
@@ -249,7 +280,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
           ))}
           {/* D-97 (TA 14/11, cách 1): quản trị nhân viên nằm ở AD của công ty (ở đây: AD giả lập), KHÔNG trong app — app chỉ mở sang.
               Ghi ra hệ thống ngoài vẫn chỉ qua B17. Trang chỉ chạy trên chính máy chạy hệ thống (127.0.0.1). */}
-          {hasPerm(me, "policy:edit") ? (
+          {DEMO_TOOLS && hasPerm(me, "policy:edit") ? (
             <a href={AD_ADMIN_URL} target="_blank" rel="noopener noreferrer" data-testid="nav-ad-admin" className={itemClass({ isActive: false })}>
               Quản trị nhân viên (AD) ↗
             </a>
@@ -275,6 +306,7 @@ export function Sidebar({ me, onSignOut }: SidebarProps) {
       ) : null}
 
       <span className="grow" />
+      <DemoTools me={me} />
       {/* Chỗ dành sẵn "Logo đơn vị" → logo FPT (gói fe-logo-fpt): cao 24 px, rộng theo tỉ lệ (330×93). */}
       <div className="mx-2 mb-2 flex h-9 items-center gap-2 px-1" data-testid="sidebar-fpt">
         <img src={fptLogoUrl} alt="Trường Đại học FPT" width={330} height={93} className="h-6 w-auto shrink-0" />

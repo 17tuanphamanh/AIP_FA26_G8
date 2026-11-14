@@ -7169,3 +7169,10 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     không đặt/xem mật khẩu, mật khẩu demo chung) ở AD giả lập `/console/nhan-vien`, app chỉ có nút mở sang (giữ luật B17 ghi duy nhất);
     (c) gói nộp đặt `MOCK_CONSOLE_ENABLED=1`. Kiểm ở máy cloud: unit backend, mock, FE, lint/mypy/import-linter xanh; CHƯA chạy
     trên stack thật (Docker Hub bị chặn ở máy cloud) → TA thử trên Mac. SMS thật không làm (cần dịch vụ trả phí).
+33. **14/11 tối — làm lại giao diện trang giả lập (TA: "nhìn chán, khó mở khó dùng"):** chỉ giao diện mock + lối vào, không đổi
+    hành vi agent/API. (a) `mock_services/app/console_ui.py`: thanh tab, thẻ tổng quan, nhãn màu, điện thoại vẽ như máy thật (nút sao
+    chép mật khẩu tạm), làm mới mềm 5 giây có Tạm dừng; trang quản trị nhân viên có tìm nhanh, hỏi lại trước khi tắt; cổng `/portal`
+    làm lại kiểu thẻ đăng nhập (CSP không JS giữ nguyên); thêm `/console/phone` (chọn máy, chỉ đếm tin). Giữ nguyên rào APP_ENV + cờ,
+    che mật khẩu, chỉ đọc. (b) App: nhóm "Demo · hệ thống giả lập" ở thanh bên ("Điện thoại của tôi"; nhân viên IT thêm "Hệ thống giả
+    lập"), link ở trang đăng nhập — chỉ bản dev hoặc build `VITE_DEMO_TOOLS=1`; link quản trị AD của Trưởng BP cũng theo cờ này.
+    (c) Gói nộp: web build với `VITE_DEMO_TOOLS=1`, nút chạy mở thêm tab hệ thống giả lập.

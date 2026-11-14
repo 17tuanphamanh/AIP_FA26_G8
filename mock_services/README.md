@@ -134,21 +134,25 @@ Mã 409 cũ giữ nguyên: `not_a_paid_license`, `no_license_available` (assign)
 ## Màn xem trạng thái (`/console`, `app/console.py`)
 
 HTML dựng ở server, tự làm mới 5 giây, **chỉ đọc**, để demo "trước/sau" khi agent xử lý ticket. Mỗi trang có giờ VN (UTC+7) và
-dòng **MÔI TRƯỜNG GIẢ LẬP**. Chỉ phục vụ khi `APP_ENV` là `dev` hoặc `test` (compose truyền `APP_ENV` vào container `mock`)
+nhãn **MÔI TRƯỜNG GIẢ LẬP**. Khung chung ở `app/console_ui.py` (14/11 — TA: "nhìn chán, khó mở"): thanh tab giữa các trang, nút
+"Mở ServiceDesk AI" (`APP_WEB_URL`, mặc định `http://localhost:5173`) và "Cổng đăng nhập", nhãn màu trạng thái, làm mới mềm bằng
+script (chỉ thay phần nội dung, có nút Tạm dừng, không làm mới khi đang chọn chữ / đang gõ; tắt JS thì về `<meta refresh>`). App
+mở sang từ nhóm "Demo · hệ thống giả lập" ở thanh bên và từ trang đăng nhập (chỉ bản dev hoặc build `VITE_DEMO_TOOLS=1`). Chỉ phục vụ khi `APP_ENV` là `dev` hoặc `test` (compose truyền `APP_ENV` vào container `mock`)
 **và** cờ `MOCK_CONSOLE_ENABLED` bật (đúng `1` hoặc `true`; mặc định `0` = tắt — đặt trong `.env` khi cần demo); thiếu một trong
 hai → **404** ở `/console` và mọi trang con. Không cần token (trình duyệt không gắn được header) — rào là `APP_ENV` + cờ + cổng chỉ
 bind localhost.
 
 | URL (`http://127.0.0.1:8100…`) | Nội dung |
 |---|---|
-| `/console` | mục lục + link điện thoại từng nhân viên |
+| `/console` | tổng quan: số liệu nhanh, thẻ tới từng trang, ô điện thoại từng nhân viên |
+| `/console/phone` | chọn máy của một nhân viên — người vừa nhận SMS lên đầu; **chỉ đếm số tin**, không in nội dung / số điện thoại |
 | `/console/ad` | user_id, tên, email AD **che** (`n***@d***`; không có → "—"), SĐT che, trạng thái, khoá, password_last_set, phải đổi mật khẩu, có mật khẩu tạm còn hạn (có/không — không hiện mật khẩu) |
 | `/console/vpn` | chứng chỉ (hạn, trạng thái), kết nối gần nhất mỗi người/máy |
 | `/console/fileserver` | quyền, mức, hạn, độ nhạy thư mục |
 | `/console/software` | máy → phần mềm đã cài; license còn lại + người giữ (chỉ có khi license cấp qua `assign`; seed không ghi người giữ → "—") |
 | `/console/outbox` | tin SMS/email, mật khẩu tạm **đã che** |
-| `/console/phone/{user_id}` | "điện thoại của nhân viên": SMS gửi tới số của **đúng** user đó, **hiện mật khẩu tạm** — trang duy nhất làm vậy |
-| `/console/calls` | lời gọi tới mock theo endpoint + mã trả về (bộ đếm không lưu thời điểm; lời gọi `/console` bị ẩn) |
+| `/console/phone/{user_id}` | "điện thoại của nhân viên" (vẽ như màn hình điện thoại): SMS gửi tới số của **đúng** user đó, **hiện mật khẩu tạm** (có nút sao chép) — trang duy nhất làm vậy |
+| `/console/calls` | lời gọi tới mock theo endpoint + mã trả về (bộ đếm không lưu thời điểm; lời gọi `/console` và `/favicon.ico` bị ẩn) |
 
 Lưu ý: lời gọi `/console/*` vẫn được `/_admin/calls` đếm (middleware đếm nằm ngoài) — lọc theo `path_prefix` khi đọc số liệu.
 `POST /_admin/faults` với `path_prefix` bao cả `/console` (ví dụ `/`) cũng làm hỏng màn này.

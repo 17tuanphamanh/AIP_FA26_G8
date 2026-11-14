@@ -4,6 +4,7 @@ import fptLogoUrl from "../assets/fpt-university-logo.png";
 import logoUrl from "../assets/logo.svg";
 import { OtpInput } from "../components/OtpInput.tsx";
 import { PasswordField } from "../components/PasswordField.tsx";
+import { DEMO_TOOLS, MOCK_CONSOLE_URL } from "../lib/demoTools.ts";
 import { LoginArt } from "./LoginArt.tsx";
 import { homePath } from "./permissions.ts";
 import { useAuth } from "./useAuth.ts";
@@ -171,6 +172,15 @@ export function LoginPage() {
                   Đăng nhập
                 </button>
                 <p className="text-center text-secondary text-ink-2">Quên mật khẩu? Liên hệ bộ phận IT để được cấp lại.</p>
+                {DEMO_TOOLS ? (
+                  <p className="text-center text-label font-normal text-ink-2" data-testid="login-demo-tools">
+                    Bản demo:{" "}
+                    <a href={MOCK_CONSOLE_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-fpt-blue hover:underline">
+                      mở hệ thống giả lập ↗
+                    </a>{" "}
+                    (điện thoại nhân viên, AD, VPN)
+                  </p>
+                ) : null}
               </form>
             )}
           </div>

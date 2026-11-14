@@ -337,12 +337,38 @@ def _require_portal() -> None:
 portal = APIRouter(prefix="/portal", dependencies=[Depends(_require_portal)], include_in_schema=False)
 
 
+_PORTAL_CSS = (
+    "*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;"
+    "font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#1d1d1f;"
+    "background:linear-gradient(160deg,#eaf1fa 0%,#f5f5f7 55%,#fdf1e8 100%)}"
+    ".box{width:100%;max-width:420px;background:#fff;border:1px solid #e5e5ea;border-radius:22px;padding:30px 30px 22px;"
+    "box-shadow:0 20px 50px rgba(0,40,90,.10)}"
+    ".brand{display:flex;align-items:center;gap:12px;margin-bottom:22px}.brand b{display:block;font-size:15px}"
+    ".brand small{color:#6e6e73;font-size:12.5px}.logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;"
+    "background:linear-gradient(135deg,#0055a4,#3b86d6);color:#fff;font-weight:800;letter-spacing:.02em}"
+    ".mock{margin-left:auto;background:#fff1e6;color:#b54708;border:1px solid #f8c9a0;border-radius:999px;padding:2px 9px;"
+    "font-size:10.5px;font-weight:700;letter-spacing:.05em}"
+    "h1{font-size:24px;margin:0 0 6px;letter-spacing:-.01em}p{margin:0 0 14px;color:#3a3a3c}"
+    "label{display:block;margin:14px 0 0;font-weight:600;font-size:13.5px}input{display:block;width:100%;height:44px;margin-top:6px;"
+    "padding:0 13px;border:1px solid #d2d2d7;border-radius:11px;font:inherit}"
+    "input:focus{outline:none;border-color:#0055a4;box-shadow:0 0 0 3px rgba(0,85,164,.15)}"
+    "button{width:100%;height:46px;margin-top:22px;border:0;border-radius:12px;background:#0055a4;color:#fff;font:inherit;"
+    "font-weight:600;cursor:pointer}button:hover{background:#00498d}"
+    ".err,.ok{padding:11px 14px;border-radius:12px;font-weight:500}.err{background:#fdecea;color:#b42318;border:1px solid #f5c2bc}"
+    ".ok{background:#e7f5ec;color:#1a7f37;border:1px solid #bfe5cb}"
+    ".foot{margin:22px 0 0;padding-top:14px;border-top:1px solid #efeff2;color:#8e8e93;font-size:12.5px;text-align:center}"
+)
+
+
 def _page(body: str, status: int = 200) -> HTMLResponse:
     html = (
-        '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Cổng đăng nhập (giả lập)</title>'
-        "<style>body{font-family:sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem}label{display:block;"
-        "margin:.6rem 0}input{width:100%;padding:.4rem}.err{color:#b00020}.ok{color:#006d32}</style></head>"
-        f"<body><h1>Cổng đăng nhập (giả lập)</h1>{body}</body></html>"
+        '<!doctype html><html lang="vi"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Cổng đăng nhập (giả lập)</title>'
+        f"<style>{_PORTAL_CSS}</style></head><body><main class=\"box\">"
+        '<div class="brand"><span class="logo">DC</span><div><b>Demo Corp</b><small>Cổng đăng nhập công ty</small></div>'
+        '<span class="mock">GIẢ LẬP</span></div>'
+        f"<h1>Đăng nhập</h1>{body}"
+        '<p class="foot">Tài khoản AD dùng chung với ServiceDesk AI · môi trường giả lập</p></main></body></html>'
     )
     return HTMLResponse(html, status_code=status, headers=_PORTAL_HEADERS)
 

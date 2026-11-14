@@ -18,7 +18,7 @@ from tests.test_seed import DEMO_PASSWORD
 
 USER_A, USER_B = "nv001", "nv002"
 STATIC_PAGES = ["/console", "/console/ad", "/console/vpn", "/console/fileserver", "/console/software",
-                "/console/outbox", "/console/calls", f"/console/phone/{USER_A}"]  # fmt: skip
+                "/console/outbox", "/console/calls", "/console/phone", f"/console/phone/{USER_A}"]  # fmt: skip
 NOT_PHONE_PAGES = [p for p in STATIC_PAGES if "/phone/" not in p]
 SMS = {"account_type": "ad", "channel": "sms"}
 
@@ -352,7 +352,55 @@ def test_calls_page_empty(c: TestClient) -> None:
 
 def test_html_is_escaped(c: TestClient) -> None:
     c.app.state.mock.users[USER_A].full_name = "<script>alert(1)</script>"  # type: ignore[attr-defined]
-    for path in ("/console/ad", "/console", f"/console/phone/{USER_A}"):
+    for path in ("/console/ad", "/console", "/console/phone", f"/console/phone/{USER_A}"):
         text = c.get(path).text
         assert "<script>alert(1)</script>" not in text
         assert "&lt;script&gt;" in text
+
+
+# ---- giao diện 14/11 (console_ui): tab, lối vào, làm mới mềm, trang chọn máy -------------------------------------------
+
+
+def test_every_page_has_tabs_app_link_and_soft_refresh(c: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_WEB_URL", "http://127.0.0.1:5173")
+    for path in STATIC_PAGES:
+        text = c.get(path).text
+        for href in ["/console", "/console/nhan-vien", "/console/phone", "/console/ad", "/console/vpn", "/console/outbox",
+                     "/console/calls", "/portal"]:  # fmt: skip
+            assert f'href="{href}"' in text, (path, href)
+        assert 'href="http://127.0.0.1:5173"' in text  # nút "Mở ServiceDesk AI"
+        assert 'data-lam-moi="1"' in text and "<noscript>" in text  # tắt JS thì về meta refresh
+        assert text.count(" class=on") == 1  # đúng một tab đang mở
+
+
+def test_app_link_defaults_to_localhost_5173(c: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("APP_WEB_URL", raising=False)
+    assert 'href="http://localhost:5173"' in c.get("/console").text
+
+
+def test_index_links_phone_picker_and_portal(c: TestClient) -> None:
+    text = c.get("/console").text
+    assert 'href="/console/phone"' in text and 'href="/portal"' in text
+    assert "Tài khoản đang khoá" in text  # thẻ số liệu
+
+
+def test_phone_picker_counts_only_and_puts_recent_first(
+    c: TestClient, executor: dict[str, str], canaries: list[str]
+) -> None:
+    _reset_sms(c, executor, USER_B)
+    text = c.get("/console/phone").text
+    assert "1 SMS" in text
+    assert text.index(f'href="/console/phone/{USER_B}"') < text.index(f'href="/console/phone/{USER_A}"')
+    assert canaries[0] not in text and "Mat khau tam cua ban" not in text  # chỉ đếm, không in nội dung
+    assert "0900000002" not in text and "0900000001" not in text  # không in số điện thoại
+
+
+def test_phone_page_copy_button_and_switcher_without_numbers(
+    c: TestClient, executor: dict[str, str], canaries: list[str]
+) -> None:
+    _reset_sms(c, executor, USER_A)
+    text = c.get(f"/console/phone/{USER_A}").text
+    assert f'data-copy="{canaries[0]}"' in text  # nút sao chép mật khẩu tạm trên máy của đúng người đó
+    assert f'<option value="/console/phone/{USER_B}">' in text  # đổi sang máy người khác
+    assert "0900000002" not in text
+    assert "còn hạn đến" in text
