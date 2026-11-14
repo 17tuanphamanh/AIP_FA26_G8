@@ -94,7 +94,7 @@ Theo [docs/spec/build/01-kien-truc-project.md](docs/spec/build/01-kien-truc-proj
 | `kb/` | Tài liệu KB — được commit |
 | `eval/` | Kịch bản, nhãn, kết quả thực nghiệm — được commit |
 | `docs/spec/` | Bộ đặc tả |
-| `docs/` | Đề bài, kiến trúc (trỏ sang đặc tả), nhật ký nhóm |
+| `docs/` | Hướng dẫn chạy (`HUONG-DAN-CHAY.md`), sơ đồ kiến trúc (`kien-truc/`, trỏ sang đặc tả) |
 | `pyproject.toml`, `uv.lock` | Phụ thuộc Python, pin bằng uv |
 | `Makefile` | Lệnh chung (01 mục 7.1) |
 | `.githooks/` | Hook git dùng chung — chặn commit khi test đỏ, chặn dấu vết AI |
