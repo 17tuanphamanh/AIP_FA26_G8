@@ -29,7 +29,12 @@ function LineIcon({ item }: { item: LogItem }) {
         </svg>
       </span>
     ) : (
-      <span className="inline-flex size-4 items-center justify-center rounded-full bg-orange-bg text-[10px] font-bold text-orange-ink">!</span>
+      <span className="inline-flex size-4 items-center justify-center rounded-full bg-orange-bg text-orange-ink">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" aria-hidden="true">
+          <path d="M12 5v9" />
+          <path d="M12 19.5v.01" />
+        </svg>
+      </span>
     );
   }
   return <span className="mx-[5px] mt-[3px] inline-block size-1.5 rounded-full bg-ink-3" />;
