@@ -55,11 +55,11 @@ contribution is the mechanism that decides when a request must go to a human.
 ## How it works
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/luong-quyet-dinh-dark.svg">
-  <img alt="Decision flow: the 23-rule policy decides first; requests no rule covers go to an LLM risk estimate, which can only escalate to a human approver until it is calibrated; rules are re-checked before execution" src="docs/assets/luong-quyet-dinh-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/luong-quyet-dinh-en-dark.svg">
+  <img alt="Decision flow: the 23-rule policy decides first; requests no rule covers go to an LLM risk estimate, which can only escalate to a human approver until it is calibrated; rules are re-checked before execution" src="docs/assets/luong-quyet-dinh-en-light.svg" width="100%">
 </picture>
 
-The labels in the diagram are in Vietnamese. Each request runs through a 20-step LangGraph workflow, and the policy is
+Each request runs through a 20-step LangGraph workflow, and the policy is
 always checked first. Only requests that no rule covers go to the LLM risk estimate. Until it is calibrated, that layer can
 only escalate to a person. A failure at any step also escalates.
 

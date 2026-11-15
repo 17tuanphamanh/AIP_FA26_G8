@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="348" viewBox="0 0 1028 348" role="img" aria-label="AITHA decision flow: the 23-rule policy decides first; requests no rule covers go to an LLM risk estimate, which can only escalate to a human approver until calibrated; rules are re-checked before execution">
+<defs><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#8C959F"/></marker><marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#D4A72C"/></marker></defs>
+<g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" fill="none" stroke="#8C959F" stroke-width="1.5">
+<path d="M108 62.0 H134" marker-end="url(#m)"/>
+<path d="M300 62.0 H326" marker-end="url(#m)"/>
+<path d="M514 62.0 H540" marker-end="url(#m)"/>
+<path d="M710 62.0 H810" marker-end="url(#m)"/>
+<path d="M421 84 V134" marker-end="url(#m)"/>
+<path d="M626 84 V158.0 H810" marker-end="url(#m)"/>
+<path d="M626 158.0 V238.0 H810" marker-end="url(#m)"/>
+<path d="M626 238.0 V318.0 H810" marker-end="url(#m)"/>
+<path d="M916 216 V182" stroke="#D4A72C" stroke-dasharray="5 4" marker-end="url(#ma)"/>
+<path d="M916 136 V86" marker-end="url(#m)"/>
+</g>
+<g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" fill="#59636E">
+<text x="724" y="54.0">allow</text>
+<text x="433" y="114">information only</text>
+<text x="640" y="150.0">needs approval</text>
+<text x="640" y="230.0">no rule matches</text>
+<text x="640" y="310.0">deny</text>
+<text x="928" y="115">approved</text>
+<text x="904" y="203" text-anchor="end" fill="#7D4E00">uncalibrated: escalate only</text>
+</g>
+<g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="middle">
+<rect x="8" y="40" width="100" height="44" rx="6" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="1"/>
+<text x="58.0" y="67.0" fill="#1F2328">Request</text>
+<rect x="136" y="40" width="164" height="44" rx="6" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="1"/>
+<text x="218.0" y="67.0" fill="#1F2328">Injection screening</text>
+<rect x="328" y="40" width="186" height="44" rx="6" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="1"/>
+<text x="421.0" y="67.0" fill="#1F2328">Classify, diagnose</text>
+<rect x="542" y="40" width="168" height="44" rx="6" fill="#1F2328" stroke="#1F2328" stroke-width="1"/>
+<text x="626.0" y="67.0" fill="#FFFFFF">Policy · 23 rules</text>
+<rect x="812" y="40" width="208" height="44" rx="6" fill="#DAFBE1" stroke="#4AC26B" stroke-width="1"/>
+<text x="916.0" y="67.0" fill="#1A7F37">Re-check rules, execute</text>
+<rect x="328" y="136" width="186" height="44" rx="6" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="1"/>
+<text x="421.0" y="163.0" fill="#1F2328">Answer from KB, cited</text>
+<rect x="812" y="136" width="208" height="44" rx="6" fill="#FFF8C5" stroke="#D4A72C" stroke-width="1"/>
+<text x="916.0" y="163.0" fill="#7D4E00">Human approver</text>
+<rect x="812" y="216" width="208" height="44" rx="6" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="1"/>
+<text x="916.0" y="243.0" fill="#1F2328">LLM risk estimate</text>
+<rect x="812" y="296" width="208" height="44" rx="6" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="1"/>
+<text x="916.0" y="323.0" fill="#1F2328">Deny or hand to L2</text>
+</g></svg>
