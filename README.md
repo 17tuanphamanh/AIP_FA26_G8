@@ -150,7 +150,6 @@ Hai bản khác nhau ở đâu: xem [docs/PHAT-TRIEN.md](docs/PHAT-TRIEN.md#bả
 
 Giảng viên hướng dẫn: TS. Lê Đình Huynh, Trường Đại học FPT.
 
-Nhóm dùng Claude Code hỗ trợ viết mã (cấu hình ở `CLAUDE.md` và `.claude/`) và đã khai báo việc này trong báo cáo.
 
 ## Giấy phép
 
