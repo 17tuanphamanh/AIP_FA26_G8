@@ -137,7 +137,8 @@ The [setup guide](docs/HUONG-DAN-CHAY.md) is in Vietnamese. It covers:
 
 | Version | Contents |
 | --- | --- |
-| [`v1.1-nop-1411`](https://github.com/17tuanphamanh/AIP_FA26_G8/releases/tag/v1.1-nop-1411), branch `main` | Submitted build |
+| [`v1.2-nop-1511`](https://github.com/17tuanphamanh/AIP_FA26_G8/releases/tag/v1.2-nop-1511) (`a2f4ad1`) | Submitted build: the exact source sent to the supervisor on 15 Nov 2026 |
+| Branch `main` | Submitted build plus documentation and the RQ4 evaluation script added afterwards; runtime code is unchanged |
 | [`v1.0-freeze`](https://github.com/17tuanphamanh/AIP_FA26_G8/releases/tag/v1.0-freeze) | Measured build used for the thesis research questions |
 
 ## Team

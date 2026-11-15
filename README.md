@@ -134,7 +134,8 @@ Muốn chạy không có `.env`, chạy trên máy 8 GB hoặc gặp lỗi, xem 
 
 | Phiên bản | Nội dung |
 | --- | --- |
-| [`v1.1-nop-1411`](https://github.com/17tuanphamanh/AIP_FA26_G8/releases/tag/v1.1-nop-1411), nhánh `main` | Bản nộp |
+| [`v1.2-nop-1511`](https://github.com/17tuanphamanh/AIP_FA26_G8/releases/tag/v1.2-nop-1511) (`a2f4ad1`) | Bản nộp: đúng mã nguồn gửi thầy ngày 15/11/2026 |
+| Nhánh `main` | Bản nộp cộng tài liệu và script đánh giá RQ4 thêm sau hạn; code chạy hệ thống không đổi |
 | [`v1.0-freeze`](https://github.com/17tuanphamanh/AIP_FA26_G8/releases/tag/v1.0-freeze) | Bản đo, dùng cho các số liệu RQ trong báo cáo |
 
 Hai bản khác nhau ở đâu: xem [docs/PHAT-TRIEN.md](docs/PHAT-TRIEN.md#bản-nộp-và-bản-đo).
