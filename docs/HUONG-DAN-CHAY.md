@@ -99,7 +99,7 @@ Repo là repo riêng tư trên GitHub: `https://github.com/17tuanphamanh/AIP_FA2
 - **Cách chính:** nhóm thêm tài khoản GitHub của thầy/cô làm **collaborator**. Sau khi chấp nhận lời mời (qua email hoặc trang thông báo GitHub), clone theo mục 2.2.
 - **Dự phòng:** tải **file zip của nhánh `main`** (nút *Code → Download ZIP* trên trang repo, hoặc file zip nhóm gửi kèm), giải nén rồi làm tiếp từ mục 3 bên trong thư mục giải nén.
 
-Bản dùng để chạy và chấm là nhánh **`main`** (bản nộp 14/11/2026). Tag **`v1.0-freeze`** (29/10) là **bản đo** — mọi số RQ trong báo cáo đo trên tag này; chỉ dùng tag khi chạy lại đánh giá (mục 11). Hai bản khác nhau ở đâu: `README.md` mục "Bản nộp và bản đo".
+Bản dùng để chạy và chấm là nhánh **`main`** (bản nộp 14/11/2026). Tag **`v1.0-freeze`** (29/10) là **bản đo** — mọi số RQ trong báo cáo đo trên tag này; chỉ dùng tag khi chạy lại đánh giá (mục 11). Hai bản khác nhau ở đâu: [PHAT-TRIEN.md](PHAT-TRIEN.md#bản-nộp-và-bản-đo) mục "Bản nộp và bản đo".
 
 ### 2.2. Clone
 

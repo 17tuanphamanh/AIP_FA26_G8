@@ -1,43 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="348" viewBox="0 0 1200 348" role="img" aria-label="Luồng quyết định của AITHA: chính sách 23 luật quyết định trước; việc luật không phủ sang LLM đánh giá rủi ro, khi chưa hiệu chỉnh chỉ được chuyển lên người duyệt; luật được kiểm lại trước khi thực thi">
+<svg xmlns="http://www.w3.org/2000/svg" width="1028" height="348" viewBox="0 0 1028 348" role="img" aria-label="Luồng quyết định của AITHA: chính sách 23 luật quyết định trước; việc luật không phủ sang LLM đánh giá rủi ro, khi chưa hiệu chỉnh chỉ được chuyển lên người duyệt; luật được kiểm lại trước khi thực thi">
 <defs><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#656C76"/></marker><marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#9E6A03"/></marker></defs>
 <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" fill="none" stroke="#656C76" stroke-width="1.5">
-<path d="M132 62.0 H170" marker-end="url(#m)"/>
-<path d="M348 62.0 H386" marker-end="url(#m)"/>
-<path d="M592 62.0 H630" marker-end="url(#m)"/>
-<path d="M808 62.0 H966" marker-end="url(#m)"/>
-<path d="M490 84 V134" marker-end="url(#m)"/>
-<path d="M720 84 V158.0 H966" marker-end="url(#m)"/>
-<path d="M720 158.0 V238.0 H966" marker-end="url(#m)"/>
-<path d="M720 238.0 V318.0 H966" marker-end="url(#m)"/>
-<path d="M1080 216 V182" stroke="#9E6A03" stroke-dasharray="5 4" marker-end="url(#ma)"/>
-<path d="M1080 136 V86" marker-end="url(#m)"/>
+<path d="M108 62.0 H134" marker-end="url(#m)"/>
+<path d="M300 62.0 H326" marker-end="url(#m)"/>
+<path d="M514 62.0 H540" marker-end="url(#m)"/>
+<path d="M710 62.0 H810" marker-end="url(#m)"/>
+<path d="M421 84 V134" marker-end="url(#m)"/>
+<path d="M626 84 V158.0 H810" marker-end="url(#m)"/>
+<path d="M626 158.0 V238.0 H810" marker-end="url(#m)"/>
+<path d="M626 238.0 V318.0 H810" marker-end="url(#m)"/>
+<path d="M916 216 V182" stroke="#9E6A03" stroke-dasharray="5 4" marker-end="url(#ma)"/>
+<path d="M916 136 V86" marker-end="url(#m)"/>
 </g>
 <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" fill="#9198A1">
-<text x="824" y="54.0">cho phép</text>
-<text x="502" y="114">chỉ cần thông tin</text>
-<text x="736" y="150.0">cần duyệt</text>
-<text x="736" y="230.0">không khớp luật nào</text>
-<text x="736" y="310.0">cấm</text>
-<text x="1092" y="115">đồng ý</text>
-<text x="1068" y="203" text-anchor="end" fill="#E3B341">chưa hiệu chỉnh: chỉ chuyển lên người</text>
+<text x="724" y="54.0">cho phép</text>
+<text x="433" y="114">chỉ cần thông tin</text>
+<text x="640" y="150.0">cần duyệt</text>
+<text x="640" y="230.0">không khớp luật nào</text>
+<text x="640" y="310.0">cấm</text>
+<text x="928" y="115">đồng ý</text>
+<text x="904" y="203" text-anchor="end" fill="#E3B341">chưa hiệu chỉnh: chỉ chuyển lên người</text>
 </g>
 <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="middle">
-<rect x="8" y="40" width="124" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
-<text x="70.0" y="67.0" fill="#F0F6FC">Yêu cầu</text>
-<rect x="172" y="40" width="176" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
-<text x="260.0" y="67.0" fill="#F0F6FC">Sàng lọc injection</text>
-<rect x="388" y="40" width="204" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
-<text x="490.0" y="67.0" fill="#F0F6FC">Phân loại, chẩn đoán</text>
-<rect x="632" y="40" width="176" height="44" rx="6" fill="#F0F6FC" stroke="#F0F6FC" stroke-width="1"/>
-<text x="720.0" y="67.0" fill="#0D1117">Chính sách · 23 luật</text>
-<rect x="968" y="40" width="224" height="44" rx="6" fill="#12261E" stroke="#238636" stroke-width="1"/>
-<text x="1080.0" y="67.0" fill="#3FB950">Kiểm lại luật, thực thi</text>
-<rect x="388" y="136" width="204" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
-<text x="490.0" y="163.0" fill="#F0F6FC">Trả lời từ KB, có nguồn</text>
-<rect x="968" y="136" width="224" height="44" rx="6" fill="#2B2111" stroke="#9E6A03" stroke-width="1"/>
-<text x="1080.0" y="163.0" fill="#E3B341">Người duyệt</text>
-<rect x="968" y="216" width="224" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
-<text x="1080.0" y="243.0" fill="#F0F6FC">LLM đánh giá rủi ro</text>
-<rect x="968" y="296" width="224" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
-<text x="1080.0" y="323.0" fill="#F0F6FC">Từ chối, chuyển L2</text>
+<rect x="8" y="40" width="100" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
+<text x="58.0" y="67.0" fill="#F0F6FC">Yêu cầu</text>
+<rect x="136" y="40" width="164" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
+<text x="218.0" y="67.0" fill="#F0F6FC">Sàng lọc injection</text>
+<rect x="328" y="40" width="186" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
+<text x="421.0" y="67.0" fill="#F0F6FC">Phân loại, chẩn đoán</text>
+<rect x="542" y="40" width="168" height="44" rx="6" fill="#F0F6FC" stroke="#F0F6FC" stroke-width="1"/>
+<text x="626.0" y="67.0" fill="#0D1117">Chính sách · 23 luật</text>
+<rect x="812" y="40" width="208" height="44" rx="6" fill="#12261E" stroke="#238636" stroke-width="1"/>
+<text x="916.0" y="67.0" fill="#3FB950">Kiểm lại luật, thực thi</text>
+<rect x="328" y="136" width="186" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
+<text x="421.0" y="163.0" fill="#F0F6FC">Trả lời từ KB, có nguồn</text>
+<rect x="812" y="136" width="208" height="44" rx="6" fill="#2B2111" stroke="#9E6A03" stroke-width="1"/>
+<text x="916.0" y="163.0" fill="#E3B341">Người duyệt</text>
+<rect x="812" y="216" width="208" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
+<text x="916.0" y="243.0" fill="#F0F6FC">LLM đánh giá rủi ro</text>
+<rect x="812" y="296" width="208" height="44" rx="6" fill="#151B23" stroke="#3D444D" stroke-width="1"/>
+<text x="916.0" y="323.0" fill="#F0F6FC">Từ chối, chuyển L2</text>
 </g></svg>
