@@ -26,10 +26,9 @@
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.png">
-    <img alt="Trợ lý kiểm tra máy của người dùng rồi trả lời từ tài liệu nội bộ, kèm nguồn tham khảo" src="docs/assets/hero-light.png" width="860">
-  </picture>
+  <img alt="Hoạt cảnh AITHA: trợ lý tự kiểm tra máy, trả lời có nguồn, tách tin nhắn nhiều việc, gửi phiếu duyệt, chặn prompt injection và màn chính sách" src="docs/assets/demo-vi.gif" width="860">
+  <br>
+  <sub>Dựng từ ảnh chụp giao diện bản nộp. Xem đủ 10 ca trong <a href="docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf">bản PDF demo</a>.</sub>
 </p>
 
 AITHA nhận yêu cầu IT bằng tiếng Việt, ví dụ lỗi VPN, quên mật khẩu, cài phần mềm hoặc xin quyền thư mục. Trợ lý tự kiểm

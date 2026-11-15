@@ -26,10 +26,9 @@
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.png">
-    <img alt="The assistant checks the user's machine, then answers from internal documents with a cited source" src="docs/assets/hero-light.png" width="860">
-  </picture>
+  <img alt="AITHA walkthrough: the assistant checks the machine, streams a cited answer, splits a multi-task message, raises an approval, blocks a prompt injection and shows the policy screen" src="docs/assets/demo-en.gif" width="860">
+  <br>
+  <sub>Assembled from screenshots of the submitted build (interface in Vietnamese). All 10 demo cases are in the <a href="docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf">demo PDF</a>.</sub>
 </p>
 
 AITHA takes IT requests written in Vietnamese, such as VPN errors, forgotten passwords, software installs or folder
