@@ -1,5 +1,11 @@
 # AITHA — AI Agent tự động hoá IT Service Desk cấp 1 có Human-in-the-Loop
 
+[![CI](https://github.com/17tuanphamanh/AIP_FA26_G8/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/17tuanphamanh/AIP_FA26_G8/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
+![FastAPI](https://img.shields.io/badge/FastAPI-LangGraph-009688)
+![React 19](https://img.shields.io/badge/React-19-61DAFB)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 *Agentic AI for Level-1 IT Service Desk Automation with Human-in-the-Loop* — đồ án tốt nghiệp ngành Trí tuệ nhân tạo,
 Đại học FPT, nhóm AIP491_G8, kỳ Fall 2026.
 
@@ -9,6 +15,27 @@ luật cứng hoặc người duyệt, và mọi quyết định đều truy v�
 cần chuyển cho con người**.
 
 ![Kiến trúc hệ thống](docs/kien-truc/kien-truc-gon.png)
+
+## English summary
+
+AITHA is an AI agent for Level-1 IT service desks that handles Vietnamese-language requests (VPN, accounts and passwords,
+software installs, folder access). A 20-step LangGraph workflow authenticates the user, screens for prompt injection,
+understands and splits the request, proactively checks system state, then either answers from internal documents with
+citations (hybrid RAG) or prepares an action. Every sensitive action goes through a deterministic rule layer (23 rules,
+strictest wins) and, when needed, a human approver. Until it is calibrated, the LLM risk layer can only escalate to a
+human, never auto-approve. Each approval is bound to a hash of one exact action, execution re-checks the rules, and every
+decision is logged.
+
+**Stack:** Python 3.12, FastAPI, LangGraph, PostgreSQL, Qdrant, bge-m3 + bge-reranker-v2-m3, two fine-tuned XLM-RoBERTa
+classifiers, React 19 + Vite + TypeScript, Docker Compose; LLM calls go through a provider-agnostic gateway (DeepSeek in
+the demo).
+
+**Results** (frozen build, real LLM): the LLM layer missed 0/24 cases that needed a human (95% upper bound 11.7%); the
+layered injection filter caught 82% of a blind 95-sentence test set, versus 20% for Prompt Guard 2; retrieval Recall@5 =
+1.0; an independent rerun reproduced 90/90 decisions. Known limitation: the cost benefit of combining rules and an LLM over
+rules alone is not yet shown on the current small evaluation set.
+
+Graduation project of a four-person team at FPT University (Fall 2026). Setup steps are in Vietnamese under "Chạy nhanh".
 
 ## Điểm chính
 
@@ -40,6 +67,17 @@ cần chuyển cho con người**.
 Giới hạn đã biết: lợi ích chi phí của cách kết hợp luật và LLM so với chỉ dùng luật **chưa chứng minh được** vì bộ dữ
 liệu đánh giá còn nhỏ và độ đồng thuận gán nhãn thấp; hệ thống chạy trên môi trường giả lập, chưa thử với người dùng thật.
 
+## Ảnh demo
+
+| | |
+| --- | --- |
+| ![Trả lời có nguồn](docs/anh-demo/01-tra-loi-co-nguon.png) | ![Phiếu duyệt](docs/anh-demo/02-phieu-duyet-rui-ro.png) |
+| Kiểm tra máy của người hỏi rồi trả lời từ tài liệu nội bộ, có ghi nguồn | Phiếu duyệt gắn đúng một hành động, kèm đánh giá rủi ro và hạn 30 phút |
+| ![Chặn tấn công](docs/anh-demo/03-chan-tan-cong.png) | ![Chính sách](docs/anh-demo/04-chinh-sach-quan-ly.png) |
+| Câu tấn công bị chặn, trợ lý chỉ trả lời trung tính | Trưởng bộ phận IT chọn cách hệ thống ra quyết định, có lịch sử đổi |
+
+Đủ 10 ca theo từng vai (33 hình): [docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf](docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf).
+
 ## Chạy nhanh (cho thầy và hội đồng)
 
 Cần: Docker Desktop, git, make, Python 3, [uv](https://docs.astral.sh/uv/), Node.js 24 (npm 11). Windows chạy trong WSL2.
@@ -49,7 +87,7 @@ RAM 16 GB, ổ trống từ 25 GB, có Internet ở lần chạy đầu. Lần �
 2. **Đặt file `.env`** nhóm gửi riêng vào thư mục gốc repo (cùng chỗ với `Makefile`). File này chứa khoá API nên không
    nằm trong repo. Không có file này thì tạo theo mục 3 của [hướng dẫn](docs/HUONG-DAN-CHAY.md); khi đó hệ thống chạy LLM giả.
 3. **Tải 2 model chung** (bge-m3, bge-reranker-v2-m3; khoảng 4,5 GB): `make models`
-4. **Gắn 2 model của nhóm:** giải nén file model nhóm gửi kèm vào thư mục gốc repo, sao cho có
+4. **Gắn 2 model của nhóm:** giải nén `aitha-model-freeze.zip` (thư mục Drive nhóm gửi kèm) vào `ml_models/`, sao cho có
    `ml_models/injection-clf/v3-seed123/` và `ml_models/intent-clf/v3.1-seed42-st/`, rồi chạy `chmod -R a+rX ml_models models`.
    File `.env` đã trỏ sẵn tới hai thư mục này. Máy 8 GB RAM: xoá 3 dòng `INTENT_*` trong `.env`.
 5. **Dựng hệ thống:** `make up`, rồi `make ingest` để nạp kho tài liệu (lần đầu 15–25 phút).
@@ -63,7 +101,6 @@ Hướng dẫn đầy đủ, kể cả lỗi hay gặp: [docs/HUONG-DAN-CHAY.md]
 ## Tài liệu
 
 - Hướng dẫn chạy: [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md)
-- Ảnh chụp demo 10 ca theo từng vai: [docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf](docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf)
 - Đặc tả và quyết định thiết kế: [docs/spec/](docs/spec/), [docs/spec/build/decisions.md](docs/spec/build/decisions.md)
 - Sơ đồ kiến trúc: [docs/kien-truc/](docs/kien-truc/)
 - Model của nhóm: [ml_models/MODELS.md](ml_models/MODELS.md)
@@ -151,7 +188,7 @@ Theo [docs/spec/build/01-kien-truc-project.md](docs/spec/build/01-kien-truc-proj
 | `backend/app/` | Backend modular monolith (FastAPI + LangGraph): `core`, `domain`, `db`, `auth`, `guard`, `llm`, `rag`, `tools`, `risk`, `approval`, `executor`, `audit`, `notify`, `graph`, `monitor`, `eval`, `api` |
 | `backend/tests/` | `unit/`, `integration/`, `e2e/` (chạy trong `make test`); `probe/` (LLM thật), `load/` (locust); `fakes/` |
 | `ml_service/` | Service model: embed, rerank, phân loại (P4) |
-| `ml_models/` | Model phân loại đã xuất (ONNX + ngưỡng + model card) — file `.onnx` không commit |
+| `ml_models/` | Model phân loại của nhóm (safetensors + ngưỡng), tải riêng; repo chỉ giữ `MODELS.md` (nguồn gốc, SHA-256, ngưỡng) |
 | `training/` | Script huấn luyện model phân loại (P11); `training/data/`, `training/runs/` không commit |
 | `mock_services/` | Giả lập AD, VPN, phần mềm, file server (P5) |
 | `frontend/` | React + Vite + TS (P10) |
@@ -168,8 +205,24 @@ Theo [docs/spec/build/01-kien-truc-project.md](docs/spec/build/01-kien-truc-proj
 ## Quy ước làm việc chung
 
 - **Không commit `.env`, dữ liệu nặng, `.venv/`** — đã chặn sẵn trong `.gitignore`. Nếu lỡ commit key thì phải vào trang nhà cung cấp **thu hồi (revoke) key ngay**, xoá dòng code là không đủ.
-- Message commit ghi rõ làm được gì, tiếng Việt không dấu — ví dụ `them tool tim kiem tai lieu, test pass`. Tránh `update`, `fix bug`.
+- Message commit theo kiểu Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, có thể kèm phạm vi), mô tả tiếng Việt
+  không dấu, ghi rõ làm được gì — ví dụ `feat(rag): viet lai cau hoi khi diem truy hoi thap`. Tránh `update`, `fix bug`.
 - Trước khi commit: `git status` → `git diff` → `make test` → mới `git add -A`.
 - Hook ở `.githooks/` sẽ tự chặn nếu test đỏ hoặc message có dấu vết AI — nhưng chỉ
   khi đã chạy `git config core.hooksPath .githooks` ở bước 2. Chưa chạy thì không ai gác.
 - Mỗi người làm xong phần của mình thì `git pull` trước, rồi mới `git push`.
+
+## Nhóm thực hiện
+
+| Thành viên | Phần chính |
+| --- | --- |
+| Phạm Tuấn Anh (nhóm trưởng) | Kiến trúc và đặc tả; luồng agent, cơ chế quyết định khi nào cần người, duyệt và thực thi, giao diện, hệ thống giả lập |
+| Phạm Lưu Dương | Tầng giám sát; model chặn tấn công; thực nghiệm RQ1; dữ liệu RQ4 |
+| Tạ Duy Anh | Tầng giám sát; model phân loại loại yêu cầu; thực nghiệm RQ3 và RQ4 |
+| Dương Anh Quân | Tổng quan tài liệu; thực nghiệm RQ2; kiểm thử và chất lượng; dữ liệu RQ4 |
+
+Giảng viên hướng dẫn: TS. Lê Đình Huynh — Trường Đại học FPT, cơ sở Hoà Lạc.
+
+## Giấy phép
+
+Mã nguồn phát hành theo giấy phép [MIT](LICENSE).
