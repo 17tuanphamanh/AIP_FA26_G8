@@ -63,6 +63,7 @@ Hướng dẫn đầy đủ, kể cả lỗi hay gặp: [docs/HUONG-DAN-CHAY.md]
 ## Tài liệu
 
 - Hướng dẫn chạy: [docs/HUONG-DAN-CHAY.md](docs/HUONG-DAN-CHAY.md)
+- Ảnh chụp demo 10 ca theo từng vai: [docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf](docs/anh-demo/AITHA-anh-chup-demo-10-ca.pdf)
 - Đặc tả và quyết định thiết kế: [docs/spec/](docs/spec/), [docs/spec/build/decisions.md](docs/spec/build/decisions.md)
 - Sơ đồ kiến trúc: [docs/kien-truc/](docs/kien-truc/)
 - Model của nhóm: [ml_models/MODELS.md](ml_models/MODELS.md)

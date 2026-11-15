@@ -1,7 +1,7 @@
 # Hướng dẫn chạy hệ thống — AI Agent IT Service Desk L1
 
-> Viết theo nhánh `dev-tuananh` @ `1a0145f` (26/10/2026). Đã chạy thử từ đầu trên commit này (lựa chọn A — chưa có 2 model nhóm, LLM giả): xoá sạch → `make up` → `make ingest` → web (`npm ci`) → đăng nhập các vai → đặt OTP `quan.tm` → `make up RATE=loose`. Quân chạy lại từ đầu theo hướng dẫn ngày 28/10/2026 trên `dev-tuananh` @ `df865dc` (máy Windows + WSL2, lựa chọn A): đạt, các chỗ lệch đã sửa vào file. Chỗ đánh dấu ⚠️ **CẦN BỔ SUNG** là phần đang chờ nhóm cung cấp; ❗ là lời dặn quan trọng cho người chạy.
-> **Cập nhật 11/11/2026 cho bản nộp `main`:** bản chạy là `main` (mục 2); thêm khoá bắt buộc `USERNAME_HMAC_KEY` (mục 3 — thiếu thì worker không lên); KB 33 bài (mục 5.3); `CHAT_MODEL` cho LLM thật (mục 9.1). Các bước khác giữ như bản đã chạy thử 26–28/10. Bản `main` đã chạy trên máy demo của nhóm (nâng cấp từ bản cũ, KB 33 bài nạp ngày 09/11); lần chạy từ máy sạch theo đúng file này: ⚠️ **CẦN BỔ SUNG** (nhóm ghi ngày + người chạy).
+> Hướng dẫn đã được chạy thử từ đầu ngày 26/10/2026, và Quân chạy lại theo đúng file ngày 28/10/2026 trên máy Windows + WSL2 (chưa gắn 2 model của nhóm, dùng LLM giả): đạt, các chỗ lệch đã sửa vào file. Dấu ❗ là lời dặn quan trọng cho người chạy.
+> **Cập nhật cho bản nộp `main`:** bản chạy là `main` (mục 2); thêm khoá bắt buộc `USERNAME_HMAC_KEY` (mục 3 — thiếu thì worker không lên); kho tài liệu 34 bài (mục 5.3); `CHAT_MODEL` cho LLM thật (mục 9.1). Các bước khác giữ như bản đã chạy thử 26–28/10. Bản `main` đã chạy trên máy demo của nhóm.
 > Sơ đồ kiến trúc: [`docs/kien-truc/kien-truc-gon.svg`](kien-truc/kien-truc-gon.svg) (gọn) · [`docs/kien-truc/kien-truc-8-tang.svg`](kien-truc/kien-truc-8-tang.svg) (đầy đủ).
 
 **File này dành cho ai:** người **ngoài nhóm** cần dựng và chạy lại hệ thống từ đầu (hội đồng chấm, người chạy lại kết quả). Không cần biết trước gì về dự án — cứ làm đúng thứ tự, chép **nguyên văn** từng lệnh.
