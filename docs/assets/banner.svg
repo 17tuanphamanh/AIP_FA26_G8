@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-label="AITHA — AI Agent tự động hoá IT Service Desk cấp 1, biết lúc nào cần con người">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#16305A"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#FFFFFF" fill-opacity="0.06"/>
+    </pattern>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="320" rx="18" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="18" fill="url(#dots)"/>
+
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="64" y="78" font-size="14" font-weight="600" letter-spacing="2.5" fill="#7DD3FC">ĐỒ ÁN TỐT NGHIỆP · ĐẠI HỌC FPT · FALL 2026</text>
+    <text x="60" y="160" font-size="82" font-weight="800" fill="#FFFFFF" letter-spacing="2">AITHA</text>
+    <rect x="64" y="178" width="132" height="5" rx="2.5" fill="url(#accent)"/>
+    <text x="64" y="226" font-size="27" font-weight="600" fill="#E2E8F0">AI Agent tự động hoá IT Service Desk cấp 1</text>
+    <text x="64" y="264" font-size="20" fill="#94A3B8">Tự xử lý việc thường ngày, <tspan fill="#FBBF24" font-weight="600">biết lúc nào phải hỏi con người.</tspan></text>
+  </g>
+
+  <!-- Minh hoạ: yêu cầu → lớp luật → người duyệt → thực thi có nhật ký -->
+  <g transform="translate(760 96)" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" fill="#CBD5E1" text-anchor="middle">
+    <path d="M70 52 H122" stroke="#64748B" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+    <path d="M200 52 H252" stroke="#64748B" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+    <path d="M330 52 H382" stroke="#64748B" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+
+    <!-- 1. yêu cầu -->
+    <circle cx="32" cy="52" r="38" fill="#0F2747" stroke="#38BDF8" stroke-width="2"/>
+    <path d="M14 38 h36 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-20 l-9 8 v-8 h-7 a6 6 0 0 1 -6 -6 v-14 a6 6 0 0 1 6 -6 z" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="24" cy="51" r="2.4" fill="#38BDF8"/><circle cx="32" cy="51" r="2.4" fill="#38BDF8"/><circle cx="40" cy="51" r="2.4" fill="#38BDF8"/>
+    <text x="32" y="118">Yêu cầu</text>
+    <text x="32" y="136" font-size="12" fill="#8496AE">tiếng Việt</text>
+
+    <!-- 2. lớp luật -->
+    <circle cx="162" cy="52" r="38" fill="#0F2747" stroke="#A78BFA" stroke-width="2"/>
+    <path d="M162 30 l20 7 v14 c0 13 -9 21 -20 25 c-11 -4 -20 -12 -20 -25 v-14 z" fill="none" stroke="#A78BFA" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M153 52 l6 6 l12 -12" fill="none" stroke="#A78BFA" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="162" y="118">23 luật</text>
+    <text x="162" y="136" font-size="12" fill="#8496AE">chặt nhất thắng</text>
+
+    <!-- 3. người duyệt -->
+    <circle cx="292" cy="52" r="38" fill="#0F2747" stroke="#FBBF24" stroke-width="2"/>
+    <circle cx="292" cy="42" r="9" fill="none" stroke="#FBBF24" stroke-width="2.5"/>
+    <path d="M274 72 c2 -11 9 -16 18 -16 c9 0 16 5 18 16" fill="none" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="292" y="118">Người duyệt</text>
+    <text x="292" y="136" font-size="12" fill="#8496AE">khi cần</text>
+
+    <!-- 4. thực thi -->
+    <circle cx="422" cy="52" r="38" fill="#0F2747" stroke="#34D399" stroke-width="2"/>
+    <path d="M407 53 l10 10 l20 -21" fill="none" stroke="#34D399" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="422" y="118">Thực thi</text>
+    <text x="422" y="136" font-size="12" fill="#8496AE">có nhật ký</text>
+  </g>
+</svg>

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 490" width="1280" height="490" role="img" aria-label="Cách AITHA quyết định: luật chạy trước; việc luật không phủ sang LLM ước lượng rủi ro, khi chưa hiệu chỉnh chỉ được chuyển lên người duyệt; mọi thao tác kiểm lại luật trước khi thực thi">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#16305A"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#FFFFFF" fill-opacity="0.05"/>
+    </pattern>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#94A3B8"/>
+    </marker>
+    <marker id="aw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#FBBF24"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="490" rx="18" fill="url(#bg)"/>
+  <rect width="1280" height="490" rx="18" fill="url(#dots)"/>
+
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" fill="none" stroke-width="2.2">
+    <!-- đường nối -->
+    <path d="M142 182 V122" stroke="#94A3B8" marker-end="url(#a)"/>
+    <path d="M252 237 H331" stroke="#94A3B8" marker-end="url(#a)"/>
+    <path d="M420 187 V72 H926" stroke="#94A3B8" marker-end="url(#a)"/>
+    <path d="M505 237 H616" stroke="#94A3B8" marker-end="url(#a)"/>
+    <path d="M420 287 V362 H616" stroke="#94A3B8" marker-end="url(#a)"/>
+    <path d="M420 362 V442 H616" stroke="#94A3B8" marker-end="url(#a)"/>
+    <path d="M740 327 V286" stroke="#FBBF24" stroke-dasharray="6 5" marker-end="url(#aw)"/>
+    <path d="M860 237 H1050 V119" stroke="#94A3B8" marker-end="url(#a)"/>
+  </g>
+
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" fill="#94A3B8">
+    <text x="154" y="157">chỉ cần thông tin</text>
+    <text x="292" y="210" font-size="13" text-anchor="middle">cần</text>
+    <text x="292" y="228" font-size="13" text-anchor="middle">hành động</text>
+    <text x="436" y="62">cho phép</text>
+    <text x="516" y="226">cần duyệt</text>
+    <text x="436" y="352">không luật nào khớp</text>
+    <text x="436" y="432">cấm</text>
+    <text x="874" y="226">đồng ý</text>
+    <text x="752" y="303" font-size="13" fill="#FBBF24" font-weight="600">chưa hiệu chỉnh:</text>
+    <text x="752" y="320" font-size="13" fill="#FBBF24" font-weight="600">chỉ chuyển lên người</text>
+  </g>
+
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <!-- RAG -->
+    <rect x="32" y="32" width="220" height="88" rx="12" fill="#0F2747" stroke="#38BDF8" stroke-width="2"/>
+    <text x="142" y="68" font-size="18" font-weight="700" fill="#E0F2FE">RAG lai</text>
+    <text x="142" y="94" font-size="14" fill="#94A3B8">trả lời có trích nguồn</text>
+
+    <!-- yêu cầu -->
+    <rect x="32" y="184" width="220" height="106" rx="12" fill="#0F2747" stroke="#38BDF8" stroke-width="2"/>
+    <text x="142" y="218" font-size="18" font-weight="700" fill="#FFFFFF">Yêu cầu tiếng Việt</text>
+    <text x="142" y="244" font-size="14" fill="#94A3B8">sàng lọc tấn công</text>
+    <text x="142" y="266" font-size="14" fill="#94A3B8">hiểu + chẩn đoán chủ động</text>
+
+    <!-- lớp luật -->
+    <path d="M335 237 L365 187 H475 L505 237 L475 287 H365 Z" fill="#1E1B4B" stroke="#A78BFA" stroke-width="2.4"/>
+    <text x="420" y="232" font-size="19" font-weight="800" fill="#EDE9FE">23 luật</text>
+    <text x="420" y="256" font-size="13" fill="#C4B5FD">chặt nhất thắng</text>
+
+    <!-- người duyệt -->
+    <rect x="620" y="188" width="240" height="96" rx="12" fill="#2A1F0A" stroke="#FBBF24" stroke-width="2"/>
+    <text x="740" y="222" font-size="18" font-weight="700" fill="#FEF3C7">Người duyệt</text>
+    <text x="740" y="246" font-size="14" fill="#FCD34D">phiếu gắn mã băm</text>
+    <text x="740" y="267" font-size="14" fill="#FCD34D">đúng một hành động</text>
+
+    <!-- LLM -->
+    <rect x="620" y="329" width="240" height="66" rx="12" fill="#0F2747" stroke="#64748B" stroke-width="2"/>
+    <text x="740" y="358" font-size="17" font-weight="700" fill="#E2E8F0">LLM ước lượng rủi ro</text>
+    <text x="740" y="380" font-size="13" fill="#94A3B8">không ghi đè được luật</text>
+
+    <!-- từ chối -->
+    <rect x="620" y="414" width="240" height="56" rx="12" fill="#2A0F14" stroke="#F87171" stroke-width="2"/>
+    <text x="740" y="448" font-size="16" font-weight="700" fill="#FEE2E2">Từ chối / chuyển kỹ thuật viên</text>
+
+    <!-- thực thi -->
+    <rect x="930" y="28" width="310" height="90" rx="12" fill="#0B2E24" stroke="#34D399" stroke-width="2"/>
+    <text x="1085" y="62" font-size="18" font-weight="700" fill="#D1FAE5">Kiểm lại luật, rồi thực thi</text>
+    <text x="1085" y="88" font-size="14" fill="#6EE7B7">nhật ký chỉ ghi thêm · hoàn tác được</text>
+  </g>
+
+  <!-- bất biến -->
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="930" y="270" width="310" height="200" rx="12" fill="#FFFFFF" fill-opacity="0.04" stroke="#334155" stroke-width="1.5"/>
+    <text x="950" y="302" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7DD3FC">LUÔN ĐÚNG</text>
+    <g font-size="14" fill="#CBD5E1">
+      <circle cx="956" cy="330" r="3" fill="#7DD3FC"/><text x="968" y="335">Luật chạy trước, LLM không ghi đè</text>
+      <circle cx="956" cy="362" r="3" fill="#7DD3FC"/><text x="968" y="367">Lỗi ở bước nào cũng chuyển người</text>
+      <circle cx="956" cy="394" r="3" fill="#7DD3FC"/><text x="968" y="399">Che mật khẩu, khoá trước khi gửi LLM</text>
+      <circle cx="956" cy="426" r="3" fill="#7DD3FC"/><text x="968" y="431">Mọi quyết định truy vết được</text>
+    </g>
+  </g>
+</svg>
