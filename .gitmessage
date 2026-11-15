@@ -1,0 +1,13 @@
+
+# <loai>(<pham vi>): <lam duoc gi> — tieng Viet khong dau, toi da 72 ky tu
+#
+# loai     : feat | fix | docs | test | refactor | perf | chore | ci | merge
+# pham vi  : tuy chon — graph, guard, risk, rag, executor, approval, monitor,
+#            fe, kb, eval, ml, config...
+# Vi du    : feat(rag): viet lai cau hoi khi diem truy hoi thap
+#            fix(fe): an nut duyet khi phieu da het han
+#            docs(readme): them so do luong quyet dinh
+#
+# Than (tuy chon), cach mot dong trong: vi sao doi, anh huong gi.
+# Tranh: "update", "fix bug", "wip". Moi dong toi da 72 ky tu.
+# Bat mau nay mot lan cho moi ban clone:  git config commit.template .gitmessage
