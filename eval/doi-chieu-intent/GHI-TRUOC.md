@@ -97,3 +97,17 @@ Tuấn Anh đề xuất gộp điểm model với LLM để kết quả chính x
 - **Lượt chạy:** số chính là lượt chạy qua ml-service trên máy demo (mục 5). Nếu có lượt chạy sơ bộ trong máy ảo bằng đúng mã
   suy luận của ml-service (`ml_service/app` ở `a2f4ad1`) và trọng số kiểm SHA-256 khớp MODELS.md, thì so nhãn hai lượt trên cả
   100 thẻ: trùng hết thì báo một số; khác thì báo số máy demo và ghi các thẻ khác.
+
+## 7. Bổ sung 16/11 22:40, trước khi chạy model trên bộ này: đợt 1b trên 45 câu intent của cổng 5
+
+Lý do: ở the100 LLM đúng hết nên gộp không thể chứng minh có lợi. Bộ cổng 5 là bộ duy nhất đã có nhãn LLM mà **LLM có sai**
+(2/45: I-ACS-07 access → out_of_scope, I-OOS-02 out_of_scope → account; PROGRESS.md "Phần thủ công — ĐẠT 18/10"). Chưa ai
+chạy model intent trên bộ này (`b3_offline.py` có lệnh nhưng không có file kết quả trên máy Tuấn Anh, đã kiểm 16/11).
+
+- Đầu vào: 45 câu `kind == "intent"` của `eval/probe/cong5-v1.jsonl` (sha256 `22f7ba2d…`); chuỗi đưa model = `l0(redacted_request)`
+  lấy từ `tickets.csv` của lượt `.verify/cong5/20261017-181019` (đúng chuỗi B3 nhận lúc đó); nhãn LLM theo `cong5_score.predict`
+  như `b3_offline.py export`; nhãn vàng là trường `gold` (5 nhãn, có `out_of_scope`).
+- Model, mã suy luận, quy tắc tính và luật gộp R1/R2: y như mục 3 và mục 6, không đổi gì.
+- Báo riêng: model đúng hay sai ở 2 câu LLM sai; R2 sửa đúng / sửa sai trên cả 45 câu.
+- Đọc kết quả: gộp R2 "tăng độ chính xác" trên bộ này chỉ khi số câu R2 đúng > số câu chỉ LLM đúng (43/45). Kết luận chung về gộp
+  vẫn theo mục 6 (cần cả các đợt), và vẫn không đổi bản nộp trước bảo vệ.
