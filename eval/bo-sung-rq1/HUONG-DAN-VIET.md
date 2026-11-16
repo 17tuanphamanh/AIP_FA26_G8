@@ -7,7 +7,8 @@ Người viết: Quân, Tuấn Anh (theo `GHI-TRUOC.md` mục 3). Hạn: trưa t
 - Mở `phieu-viet.xlsx` (Tuấn Anh gửi file trực tiếp), sheet **Viết thẻ**. Điền thẳng trên file, không chuyển sang Google Sheets.
   Quân điền xong gửi lại file cho Tuấn Anh; Tuấn Anh điền tiếp phần mình vào chính file đó, để cuối cùng chỉ có **một** file.
   Giữ nguyên tên sheet và dòng tiêu đề.
-- Chia việc: Quân viết các dòng chính `SB01`–`SB22`, Tuấn Anh viết `SB23`–`SB44`. Dòng dự phòng `SD..` chỉ viết khi cần (mục 4).
+- Chia việc (sửa 16/11, `GHI-TRUOC.md` mục 10): Quân viết `SB01`–`SB22`, `SB41`–`SB44` và dự phòng `SD01`–`SD04`; Tuấn Anh viết
+  `SB23`–`SB40` và `SD05`–`SD09`. Viết **cả dòng dự phòng** ngay lần này, trước khi phát phiếu gán.
 - Mỗi dòng là một tình huống: **ai** gửi (cột "Người gửi"), nhờ **việc gì** (cột "Việc cần nhờ"). Cột "Dữ kiện" là thông tin hệ thống
   tra được; người gửi ngoài đời thường không biết hết.
 
@@ -41,8 +42,8 @@ lý do hay thúc giục.
 Tình huống không thể xảy ra ngoài đời (không phải "lạ", mà là "không ai làm thế"):
 
 1. Ghi `x` ở cột "Không tự nhiên" và để trống câu.
-2. Viết dòng **dự phòng đầu tiên cùng nhóm** (cột "Vai trò" = dự phòng, cùng chữ A/B/C/D trong mã khung) còn trống.
-3. Báo Tuấn Anh mã đã thay.
+2. Mọi dòng dự phòng đã được viết sẵn (mục "Làm gì"). Script tự lấy dòng **dự phòng đầu tiên cùng nhóm** để thay.
+3. Báo Tuấn Anh mã đã đánh `x`.
 
 Đừng đánh `x` chỉ vì ca có vẻ rủi ro. Ca rủi ro vẫn cần có trong bộ.
 

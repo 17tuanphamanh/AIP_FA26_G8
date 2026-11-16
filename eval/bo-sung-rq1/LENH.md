@@ -76,6 +76,7 @@ EVAL_MODE=true EVAL_PASSWORD='<mật khẩu demo>' PYTHONPATH=backend uv run pyt
   --out ~/eval-runs/bo-sung-rq1/s1-moi
 ```
 
+- Bắt đầu lượt trước 16:00 (GHI-TRUOC mục 10, ý 6); ghi lại giờ bắt đầu và giờ xong.
 - `--check-only` phải in `loaded=44 errors=0`, hoặc đúng số thẻ trong `KHOA.md`.
 - Còn ca `skipped_hours` (chạy sát biên giờ) thì chạy lại đúng lệnh trên, thay `--out …` bằng `--resume ~/eval-runs/bo-sung-rq1/s1-moi`.
 - Ca `timeout` hoặc `error` không chạy bù: chụp màn 7 dòng tổng hợp gửi nhóm.

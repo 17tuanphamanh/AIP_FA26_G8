@@ -19,8 +19,8 @@ Rà soát 16/11 cho thấy cách đo đó **gần như ra kết quả định s�
 - *(Sửa 16/11 chiều, trước khi duyệt và commit: bản đầu ghi "lớp LLM không bao giờ tự xử lý", sai ở phần 2.)*
 
 Câu hỏi đáng đo là câu đứng trước việc hiệu chỉnh: **p thô của lớp LLM có mang tín hiệu nào để tách ca tự xử lý được với ca cần người
-không?** Có tín hiệu thì hiệu chỉnh có ý nghĩa khi đủ dữ liệu. Không có tín hiệu thì "lớp LLM luôn chuyển người" là lựa chọn đúng chứ
-không chỉ là thận trọng. Cả hai kết quả đều trả lời được câu hội đồng hỏi.
+không?** Có tín hiệu thì hiệu chỉnh có ý nghĩa khi đủ dữ liệu. Chưa thấy tín hiệu thì chưa đủ bằng chứng để cho lớp LLM tự xử lý, nên
+giữ mặc định an toàn (luôn chuyển người); kết quả đó không chứng minh LLM không có tín hiệu. *(Sửa 16/11, mục 10.)*
 
 ## 2. Câu hỏi và giả thuyết
 
@@ -120,6 +120,10 @@ không chỉ là thận trọng. Cả hai kết quả đều trả lời đượ
      - số tình huống cần người bị tự xử lý, kèm cận trên Clopper–Pearson một phía 95%.
   3. S1 cũ riêng và gộp mới + cũ, cùng các chỉ số trên.
   4. Độ nhạy theo nhãn: AUC trên các tình huống hai người gán khớp ngay từ đầu.
+  5. *(Thêm 16/11, mục 10)* Tỉ lệ nhãn AUTO trên mọi thẻ đã khoá, kèm Clopper–Pearson hai phía.
+  6. *(Thêm 16/11, mục 10)* Ở mỗi c, số tình huống cần người có p ≤ c **không áp D-34** (sai sót của riêng LLM), kèm cận trên một phía.
+  7. *(Thêm 16/11, mục 10)* KTC của AUC khi bootstrap theo người gửi thay cho theo tình huống.
+- "Chưa thấy tín hiệu" và "không đủ dữ liệu" đều đọc là "chưa đủ bằng chứng; giữ mặc định an toàn", không đọc là "LLM không có tín hiệu".
 - Sau khi thấy số, không đổi chỉ số, ngưỡng đọc, mẫu hay cách loại.
 
 ## 7. Cam kết báo cáo
@@ -149,7 +153,29 @@ không chỉ là thận trọng. Cả hai kết quả đều trả lời đượ
 - Chạy theo lịch, không chờ ý kiến thầy (Tuấn Anh chốt 16/11). Kết quả đưa vào phụ lục "đo bổ sung", tách khỏi số RQ1 chính.
 - Vai viết và gán như mục 3 (Tuấn Anh chốt 16/11).
 - Trước khi chạy, kiểm trần chi phí tài khoản DeepSeek.
+- Bắt đầu lượt trước 16:00 để cả 44 thẻ xong trước biên 17:49 (mục 10, ý 6).
 
 ## 10. Thay đổi sau khi ghi trước
 
-(chưa có)
+**16/11, khoảng 17:00 — trước khi có câu viết và trước khi có nhãn.** Lý do: phản biện độc lập (agent chỉ đọc) và Tuấn Anh đã chốt
+"cứ làm". Bản trước: commit `cba608a`.
+
+1. **Dự báo lớp AUTO quá ít.** 40/44 tình huống thuộc nhóm làm hộ (A–C). Ở bộ 100 thẻ, 40 thẻ làm hộ có nhãn chốt 34 HITL, 6 L2,
+   0 AUTO; `HUONG-DAN-GAN.md` câu 2 coi "người bị tác động không phải người xin" là HITL. Nhóm D (tự làm cho mình, không luật nào khớp)
+   chỉ có 6 ứng viên trong cả seed. Vì vậy lớp AUTO nhiều khả năng dưới 5 lá và AUC sẽ ra "không đủ dữ liệu". **Không đổi khung:** khung
+   đã phát cho người viết, và đổi khung theo dự báo nhãn là chọn mẫu theo kết quả. Bản thân điều này là một phát hiện: trong vùng không
+   luật nào phủ dựng được từ seed, gần như mọi tình huống là làm hộ người khác.
+2. **Thêm ba kết quả phụ** (mục 6, ý 5–7; đã có trong `phan_tich.py` ở commit này):
+   (a) tỉ lệ nhãn AUTO trên thẻ đã khoá, kèm Clopper–Pearson hai phía — trần tự động hoá mà lớp LLM có thể thêm trong vùng này;
+   (b) số tình huống cần người có p ≤ c không áp D-34 — số ca LLM sẽ cho tự xử lý sai nếu được phép, như HB12-q1/q2 ở bộ cũ;
+   (c) KTC của AUC bootstrap theo người gửi — nhóm A chỉ có 2 người gửi, nhiều tình huống gần giống nhau.
+3. **Sửa câu đọc kết quả** (mục 1, mục 6): bỏ câu "không có tín hiệu thì luôn chuyển người là lựa chọn đúng". KTC chứa 0,5 chỉ cho
+   biết chưa đủ bằng chứng; trên bộ cũ AUC điểm 0,767 nhưng KTC theo họ khoảng [0,42; 0,97] cũng đọc là "chưa thấy tín hiệu".
+4. **Vẫn chạy khi lớp AUTO dưới 5 sau khi gán:** khi đó (b) là số an toàn chính của đợt đo; chi phí một lượt nhỏ.
+5. **Người viết:** Quân viết thêm `SB41`–`SB44` (nhóm D, nguồn AUTO chính) và `SD01`–`SD04`; Tuấn Anh viết `SB23`–`SB40` và
+   `SD05`–`SD09`. Người xây M5 không viết nhóm D. Mọi dòng dự phòng viết xong cùng lúc với dòng chính, trước khi phát phiếu gán, để
+   người viết không thấy nhãn. Quy tắc "lấy thêm thẻ theo lớp nhãn" (mục 3) giữ nguyên; nếu dùng, các dòng dự phòng được gán ở một
+   phiếu gán thứ hai bởi cùng hai người, trước khi chạy. Cả 9 dòng dự phòng thuộc nhóm A–C nên quy tắc này khó cứu lớp AUTO.
+6. **Giờ chạy:** bắt đầu trước 16:00. Lượt S1 cũ chạy 16:40–17:36, sát biên ±10 phút quanh 17:49.
+7. **Giới hạn đã biết:** `phan_tich.py` chỉ so tên model trong manifest (`deepseek-flash`); nhà cung cấp đổi model bên dưới cùng tên
+   thì không phát hiện được. Ghi giờ chạy để đối chiếu thông báo đổi model của DeepSeek nếu có.

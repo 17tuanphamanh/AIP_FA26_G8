@@ -13,6 +13,9 @@ Phép đo ghi trước ở `eval/bo-sung-rq1/GHI-TRUOC.md` mục 5–6:
   liệu" (không đọc AUC).
 - PHỤ: bảng p × nhãn; điểm vận hành KHÔNG hiệu chỉnh "tự xử lý khi p ≤ c và không thiếu căn cứ (kb_gap)" với c ∈ {0; 0,2}: số ca AUTO
   được tự xử lý và số tình huống cần người bị tự xử lý (bỏ sót) kèm Clopper–Pearson; gộp với lượt S1 cũ (`--cu`) và báo riêng từng bộ.
+- PHỤ thêm 16/11, trước khi có nhãn (GHI-TRUOC mục 10): (a) tỉ lệ nhãn AUTO trên mọi thẻ đã khoá, kèm Clopper–Pearson hai phía —
+  trần tự động hoá mà lớp LLM có thể thêm trong vùng không luật nào phủ; (b) ở mỗi ngưỡng c, số tình huống cần người có p ≤ c KHÔNG
+  áp D-34 (sai sót của riêng LLM, kiểu HB12); (c) KTC của AUC bootstrap theo người gửi (độ nhạy: nhiều tình huống chung người gửi).
 """
 
 from __future__ import annotations
@@ -160,12 +163,32 @@ def nhan_khop_tu_dau(the_dir: Path) -> dict[str, bool]:
     return out
 
 
+def doc_the_phu(the_dir: Path) -> tuple[dict[str, str], Counter[str]]:
+    """({scenario_id: người gửi}, đếm nhãn chốt `gold.expected_route`) từ thẻ đã khoá — cho GHI-TRUOC mục 10 (a), (c)."""
+    import yaml
+
+    nguoi: dict[str, str] = {}
+    nhan: Counter[str] = Counter()
+    for path in sorted(the_dir.glob("*.yaml")):
+        d = yaml.safe_load(path.read_text(encoding="utf-8"))
+        uid = (d.get("requester") or {}).get("user_id")
+        if uid:
+            nguoi[str(d["id"])] = str(uid)
+        g = (d.get("gold") or {}).get("expected_route")
+        if g:
+            nhan[str(g)] += 1
+    return nguoi, nhan
+
+
 def muc_p(p: float) -> float:
     return min(MUC_P, key=lambda m: abs(m - p))
 
 
 def danh_gia(
-    ten: str, rs: Sequence[PredictionRecord], tinh_huong: Mapping[str, str] | None
+    ten: str,
+    rs: Sequence[PredictionRecord],
+    tinh_huong: Mapping[str, str] | None,
+    nguoi_gui: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     n_pos = sum(can_nguoi(r) for r in rs)
     n_neg = len(rs) - n_pos
@@ -180,6 +203,16 @@ def danh_gia(
         "bootstrap": {"n_boot": BOOTSTRAP_N, "seed": SEED, "n_dung": ci.n_used if ci else 0, "n_khong_xac_dinh": ci.n_undefined if ci else 0},
         "doc": doc_ket_luan(ci.lo if ci else None, ci.hi if ci else None, n_pos, n_neg),
     }  # fmt: skip
+    if nguoi_gui and rs:
+        theo_nguoi = [
+            r.model_copy(update={"family": nguoi_gui.get(r.scenario_id, r.family)})
+            for r in rs
+        ]
+        ci_ng = family_bootstrap_ci(
+            theo_nguoi, auc_or_none, n_boot=BOOTSTRAP_N, seed=SEED
+        )
+        out["auc_ktc95_theo_nguoi_gui"] = [ci_ng.lo, ci_ng.hi]
+        out["n_nguoi_gui"] = len({r.family for r in theo_nguoi})
     bang = Counter(
         (muc_p(float(r.raw_prob)), r.expected_route)
         for r in rs
@@ -207,6 +240,12 @@ def danh_gia(
             units.setdefault(key(r), []).append(r)
         th_can = [u for u in units.values() if any(can_nguoi(r) for r in u)]
         bo_sot = sum(1 for u in th_can if any(can_nguoi(r) and r in tu_dong for r in u))
+        p_thap = [
+            r for r in rs if r.raw_prob is not None and r.raw_prob <= c + 1e-9
+        ]  # không áp D-34
+        bo_sot_llm = sum(
+            1 for u in th_can if any(can_nguoi(r) and r in p_thap for r in u)
+        )
         lo_a, hi_a = (
             clopper_pearson_two_sided(auto_dung, n_neg) if n_neg else (None, None)
         )
@@ -215,6 +254,8 @@ def danh_gia(
             "auto_ktc95": [lo_a, hi_a], "tinh_huong_can_nguoi": len(th_can), "bo_sot": bo_sot,
             "bo_sot_ty_le": bo_sot / len(th_can) if th_can else None,
             "bo_sot_can_tren95_1phia": clopper_pearson_upper(bo_sot, len(th_can)) if th_can else None,
+            "bo_sot_khong_d34": bo_sot_llm,
+            "bo_sot_khong_d34_can_tren95_1phia": clopper_pearson_upper(bo_sot_llm, len(th_can)) if th_can else None,
         })  # fmt: skip
     out["van_hanh"] = van_hanh
     return out
@@ -235,6 +276,14 @@ def bang_md(kq: Mapping[str, Any]) -> str:
     if kq.get("lech_cau_hinh"):
         lines += [
             "**Lệch cấu hình so với S1 cũ:** " + "; ".join(kq["lech_cau_hinh"]),
+            "",
+        ]
+    nb = kq.get("nhan_bo_moi")
+    if nb:
+        lo_n, hi_n = nb["ktc95"]
+        lines += [
+            f"**Nhãn bộ mới (mục 10 a):** AUTO {nb['auto']}/{nb['n']} thẻ đã khoá, KTC 95% "
+            f"[{lo_n:.3f}; {hi_n:.3f}]".replace(".", ","),
             "",
         ]
     lines += [
@@ -266,16 +315,32 @@ def bang_md(kq: Mapping[str, Any]) -> str:
             )
             for r in d["bang_p"]
         ]
-        lines += ["", "| Tự xử lý khi p ≤ | AUTO được tự xử lý | Tình huống cần người bị tự xử lý | Cận trên 95% một phía |",
-                  "|---|---|---|---|"]  # fmt: skip
+        if d.get("auc_ktc95_theo_nguoi_gui"):
+            lo_g, hi_g = d["auc_ktc95_theo_nguoi_gui"]
+            ff = lambda x: "—" if x is None else f"{x:.3f}".replace(".", ",")
+            lines += [
+                "",
+                f"KTC 95% của AUC khi bootstrap theo người gửi ({d['n_nguoi_gui']} người): [{ff(lo_g)}; {ff(hi_g)}]",
+            ]
+        head = (
+            "| Tự xử lý khi p ≤ | AUTO được tự xử lý | Cần người bị tự xử lý (áp D-34) | Cận trên 95% | "
+            "Cần người có p ≤ ngưỡng (không áp D-34) | Cận trên 95% |"
+        )
+        lines += ["", head, "|---|---|---|---|---|---|"]
         for v in d["van_hanh"]:
             ct = (
                 "—"
                 if v["bo_sot_can_tren95_1phia"] is None
                 else f"{v['bo_sot_can_tren95_1phia']:.3f}".replace(".", ",")
             )
+            ct2 = (
+                "—"
+                if v["bo_sot_khong_d34_can_tren95_1phia"] is None
+                else f"{v['bo_sot_khong_d34_can_tren95_1phia']:.3f}".replace(".", ",")
+            )
             lines.append(
-                f"| {v['nguong_p']:.1f} | {v['auto_duoc_tu_xu_ly']}/{v['n_auto']} | {v['bo_sot']}/{v['tinh_huong_can_nguoi']} | {ct} |".replace(
+                f"| {v['nguong_p']:.1f} | {v['auto_duoc_tu_xu_ly']}/{v['n_auto']} | {v['bo_sot']}/{v['tinh_huong_can_nguoi']} | {ct} | "
+                f"{v['bo_sot_khong_d34']}/{v['tinh_huong_can_nguoi']} | {ct2} |".replace(
                     "0.", "0,"
                 )
             )
@@ -315,7 +380,16 @@ def main(argv: list[str] | None = None) -> int:
             else None
         )
         mau_moi, loai_moi = chon_mau(moi.records)
-        ket = [danh_gia("Bộ mới (chính)", mau_moi, th)]
+        nguoi_gui: dict[str, str] | None = None
+        nhan_bo_moi: dict[str, Any] | None = None
+        if a.the is not None:
+            nguoi_gui, dem = doc_the_phu(a.the)
+            n_the = sum(dem.values())
+            if n_the:
+                lo_n, hi_n = clopper_pearson_two_sided(dem["AUTO"], n_the)
+                nhan_bo_moi = {"n": n_the, "auto": dem["AUTO"], "ty_le_auto": dem["AUTO"] / n_the, "ktc95": [lo_n, hi_n],
+                               "dem": dict(sorted(dem.items()))}  # fmt: skip
+        ket = [danh_gia("Bộ mới (chính)", mau_moi, th, nguoi_gui)]
         if a.the is not None:
             khop = nhan_khop_tu_dau(a.the)
             thieu = {r.scenario_id for r in mau_moi} - khop.keys()
@@ -348,7 +422,8 @@ def main(argv: list[str] | None = None) -> int:
         kq = {"luot_moi": {"run_id": moi.manifest.get("run_id"), "dataset_sha256": moi.manifest.get("dataset_sha256"),
                            "git_commit": moi.manifest.get("git_commit"), "predictions_sha256": moi.sha_pred,
                            "llm_roles": (moi.manifest.get("config") or {}).get("llm_roles")},
-              "luot_cu": luot_cu, "lech_cau_hinh": lech, "loai_moi": dict(loai_moi), "ket_qua": ket}  # fmt: skip
+              "luot_cu": luot_cu, "lech_cau_hinh": lech, "loai_moi": dict(loai_moi), "nhan_bo_moi": nhan_bo_moi,
+              "ket_qua": ket}  # fmt: skip
         a.out.mkdir(parents=True)
         (a.out / "ket-qua.json").write_text(
             json.dumps(kq, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -387,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
             "loại: "
             + (", ".join(f"{k} {v}" for k, v in sorted(loai_moi.items())) or "0")
         )
+        if nhan_bo_moi:
+            print(f"nhãn bộ mới: AUTO {nhan_bo_moi['auto']}/{nhan_bo_moi['n']}")
         if lech:
             print("LỆCH CẤU HÌNH: " + "; ".join(lech))
     except (Dung, ValueError) as e:

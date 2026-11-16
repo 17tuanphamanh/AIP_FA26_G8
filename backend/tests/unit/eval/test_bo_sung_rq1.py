@@ -328,16 +328,18 @@ def test_auc_va_doc_ket_luan() -> None:
 
 def test_van_hanh_kb_gap_va_bo_sot() -> None:
     rs = [rec(1, "AUTO", 0.0), rec(2, "AUTO", 0.0, kb_gap=True), rec(3, "AUTO", 0.2), rec(4, "HITL", 0.0), rec(5, "HITL", 0.8),
-          rec(6, "ESCALATE_L2", 0.2)]  # fmt: skip
+          rec(6, "ESCALATE_L2", 0.2), rec(7, "ESCALATE_L2", 0.0, kb_gap=True)]  # fmt: skip
     v0, v2 = pt.danh_gia("x", rs, None)["van_hanh"]
     assert (
         v0["auto_duoc_tu_xu_ly"],
         v0["n_auto"],
         v0["bo_sot"],
         v0["tinh_huong_can_nguoi"],
-    ) == (1, 3, 1, 3)
+    ) == (1, 3, 1, 4)
     assert (v2["auto_duoc_tu_xu_ly"], v2["bo_sot"]) == (2, 2)
     assert v0["bo_sot_can_tren95_1phia"] > v0["bo_sot_ty_le"]
+    # mục 10 (b): không áp D-34 thì ca HB12-kiểu (cần L2, p = 0, thiếu căn cứ) cũng tính là LLM sai
+    assert (v0["bo_sot_khong_d34"], v2["bo_sot_khong_d34"]) == (2, 3)
 
 
 def test_chon_mau_dem_ly_do_loai() -> None:
@@ -473,6 +475,8 @@ def test_phan_tich_do_nhay_theo_nhan(tmp_path: Path) -> None:
         b = "HITL" if i == 0 else r.expected_route
         card = {
             "id": r.scenario_id,
+            "requester": {"user_id": f"nv00{i % 3}"},
+            "gold": {"expected_route": r.expected_route},
             "labels": {"annotator_1": r.expected_route, "annotator_2": b},
         }
         (the / f"{r.scenario_id}.yaml").write_text(
@@ -497,3 +501,10 @@ def test_phan_tich_do_nhay_theo_nhan(tmp_path: Path) -> None:
     )
     kq = json.loads((out / "ket-qua.json").read_text(encoding="utf-8"))
     assert [d["n_la"] for d in kq["ket_qua"]] == [12, 11]
+    nb = kq["nhan_bo_moi"]
+    assert (nb["auto"], nb["n"]) == (6, 12) and nb["ktc95"][0] < 0.5 < nb["ktc95"][1]
+    assert (
+        kq["ket_qua"][0]["n_nguoi_gui"] == 3
+        and len(kq["ket_qua"][0]["auc_ktc95_theo_nguoi_gui"]) == 2
+    )
+    assert "người gửi" in (out / "bang.md").read_text(encoding="utf-8")
