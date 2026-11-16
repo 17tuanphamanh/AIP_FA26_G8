@@ -70,7 +70,7 @@ def test_llm_view_tu_choi_luot_khac(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "o.jsonl").write_text("", encoding="utf-8")
-    with pytest.raises(ValueError, match="S1"):
+    with pytest.raises(ValueError, match="không phải lượt"):
         cb.llm_view(pred, tmp_path / "o.jsonl")
 
 
@@ -253,3 +253,43 @@ def test_dau_vao_da_commit_du_100_the() -> None:
     assert all(
         (r["llm_intent"] is None) == (r["llm_status"] != "mot_la") for r in items
     )
+
+
+def test_gop_R1_R2_theo_luat_khoa_truoc() -> None:
+    def row(i: str, gold: str, llm: str, model: str, p: float) -> dict[str, Any]:
+        return {"id": i, "gold": gold, "llm": llm, "model": model, "p_max": p}
+
+    one = [
+        row("a", "vpn", "vpn", "vpn", 0.9),  # khớp, đúng
+        row(
+            "b", "access", "account", "access", 0.9
+        ),  # lệch, model chắc và đúng → R2 sửa đúng
+        row(
+            "c", "account", "account", "access", 0.95
+        ),  # lệch, model chắc nhưng sai → R2 sửa sai
+        row(
+            "d", "software", "software", "vpn", 0.6
+        ),  # lệch, model không chắc → R2 giữ LLM
+    ]
+    g = pt.gop(one)
+    assert (g["chi_llm"]["k"], g["chi_llm"]["n"]) == (3, 4)
+    r1 = g["R1_dong_thuan"]
+    assert (
+        r1["tu_nhan"],
+        r1["tu_nhan_dung"]["k"],
+        r1["chuyen_nguoi_them"],
+        r1["llm_sai_duoc_chan"],
+    ) == (1, 1, 3, 1)
+    r2 = g["R2_model_sua_khi_chac"]
+    assert (r2["dung"]["k"], r2["so_lan_sua"], r2["sua_dung"], r2["sua_sai"]) == (
+        3,
+        2,
+        1,
+        1,
+    )
+
+
+def test_gop_tap_rong_khong_vo() -> None:
+    g = pt.gop([])
+    assert g["chi_llm"]["n"] == 0 and g["R1_dong_thuan"]["tu_nhan"] == 0
+    assert pt._pct(g["chi_llm"]) == "0/0"

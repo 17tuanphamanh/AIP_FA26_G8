@@ -42,13 +42,13 @@ def sha256_file(path: Path) -> str:
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
-def load_cards(the100: Path) -> list[dict[str, Any]]:
+def load_cards(cards_dir: Path, expect_n: int = 100) -> list[dict[str, Any]]:
     cards = [
         yaml.safe_load(p.read_text(encoding="utf-8"))
-        for p in sorted(the100.glob("*.yaml"))
+        for p in sorted(cards_dir.glob("*.yaml"))
     ]
-    if len(cards) != 100:
-        raise ValueError(f"the100: cần 100 thẻ, có {len(cards)}")
+    if len(cards) != expect_n:
+        raise ValueError(f"{cards_dir}: cần {expect_n} thẻ, có {len(cards)}")
     for c in cards:
         if not isinstance(c["turns"][0], str):
             raise TypeError(f"{c['id']}: lượt đầu phải là câu của người dùng")
@@ -57,7 +57,9 @@ def load_cards(the100: Path) -> list[dict[str, Any]]:
     return cards
 
 
-def llm_view(predictions: Path, outcomes: Path) -> dict[str, tuple[str, str | None]]:
+def llm_view(
+    predictions: Path, outcomes: Path, run_id: str = S1_RUN_ID
+) -> dict[str, tuple[str, str | None]]:
     """scenario_id → (llm_status, intent LLM). Thẻ không có dòng trong predictions xét theo outcomes."""
     preds = [
         json.loads(line)
@@ -65,8 +67,8 @@ def llm_view(predictions: Path, outcomes: Path) -> dict[str, tuple[str, str | No
         if line.strip()
     ]
     runs = {p["run_id"] for p in preds}
-    if runs != {S1_RUN_ID}:
-        raise ValueError(f"predictions không phải lượt S1 {S1_RUN_ID}: {sorted(runs)}")
+    if runs != {run_id}:
+        raise ValueError(f"predictions không phải lượt {run_id}: {sorted(runs)}")
     view: dict[str, tuple[str, str | None]] = {}
     for p in preds:
         if p["scenario_id"] in view:
@@ -119,8 +121,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--s1",
         type=Path,
         required=True,
-        help="thư mục s1 của gói kết quả (predictions.jsonl, outcomes.jsonl)",
+        help="thư mục lượt chạy có predictions.jsonl, outcomes.jsonl (đợt 1: s1 của gói kết quả)",
     )
+    ap.add_argument("--run-id", default=S1_RUN_ID, help="đợt 2: run_id lượt đo bổ sung")
+    ap.add_argument(
+        "--cards",
+        type=Path,
+        help="mặc định <app-root>/eval/the100; đợt 2: thẻ bộ mới đã khoá",
+    )
+    ap.add_argument("--expect-n", type=int, default=100)
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
 
@@ -149,12 +158,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     def redact(text: str) -> str:
         return l0(guard.redact_text(text).text)  # như B3: l0(redacted_request)
 
-    cards = load_cards(a.app_root / "eval" / "the100")
-    rows = build_rows(
-        cards, redact, llm_view(a.s1 / "predictions.jsonl", a.s1 / "outcomes.jsonl")
-    )
+    cards = load_cards(a.cards or a.app_root / "eval" / "the100", a.expect_n)
+    view = llm_view(a.s1 / "predictions.jsonl", a.s1 / "outcomes.jsonl", a.run_id)
+    rows = build_rows(cards, redact, view)
     header = {
-        "kind": "header", "app_commit": head.stdout.strip(), "s1_run_id": S1_RUN_ID,
+        "kind": "header", "app_commit": head.stdout.strip(), "s1_run_id": a.run_id,
         "s1_predictions_sha256": sha256_file(a.s1 / "predictions.jsonl"),
         "s1_outcomes_sha256": sha256_file(a.s1 / "outcomes.jsonl"), "n": len(rows),
     }  # fmt: skip

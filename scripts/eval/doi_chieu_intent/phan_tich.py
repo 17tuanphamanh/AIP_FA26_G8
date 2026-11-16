@@ -63,6 +63,30 @@ def macro_f1(gold: Sequence[str], pred: Sequence[str]) -> float:
     return sum(f1s) / len(f1s)
 
 
+def gop(one: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Mô phỏng gộp model với LLM trên tập chung (luật khoá 16/11 tối, `GHI-TRUOC.md` mục 6) — chỉ tính offline, không đổi hệ thống.
+
+    R1 đồng thuận: hai bên khớp thì nhận nhãn; lệch thì chuyển người (không tự nhận).
+    R2 model sửa khi chắc: hai bên lệch và điểm cao nhất của model ≥ 0,75 thì lấy nhãn model, còn lại lấy nhãn LLM."""
+    agree = [r for r in one if r["model"] == r["llm"]]
+    differ = [r for r in one if r["model"] != r["llm"]]
+    fixed = [r for r in differ if r["p_max"] >= TAU]
+    fixed_ids = {r["id"] for r in fixed}
+    r2 = [(r["model"] if r["id"] in fixed_ids else r["llm"]) for r in one]
+    return {
+        "chi_llm": rate(sum(r["llm"] == r["gold"] for r in one), len(one)),
+        "R1_dong_thuan": {
+            "tu_nhan": len(agree), "tu_nhan_dung": rate(sum(r["llm"] == r["gold"] for r in agree), len(agree)),
+            "chuyen_nguoi_them": len(differ), "llm_sai_duoc_chan": sum(r["llm"] != r["gold"] for r in differ),
+        },
+        "R2_model_sua_khi_chac": {
+            "dung": rate(sum(lab == r["gold"] for lab, r in zip(r2, one, strict=True)), len(one)),
+            "so_lan_sua": len(fixed), "sua_dung": sum(r["model"] == r["gold"] for r in fixed),
+            "sua_sai": sum(r["llm"] == r["gold"] for r in fixed),
+        },
+    }  # fmt: skip
+
+
 def analyse(
     dau_vao: Sequence[Mapping[str, Any]],
     model_ra: Sequence[Mapping[str, Any]],
@@ -105,6 +129,7 @@ def analyse(
             "ca_hai_dung": both[(True, True)], "chi_model_sai": both[(False, True)],
             "chi_llm_sai": both[(True, False)], "ca_hai_sai": both[(False, False)],
         },
+        "gop": gop(one),
         "macro_f1_model_100": macro_f1([r["gold"] for r in rows], [r["model"] for r in rows]),
         "model_du_doan": dict(Counter(r["model"] for r in rows)),
         "khong_nhan_nao_tren_tau": sum(r["n_tren_tau"] == 0 for r in rows),
@@ -115,6 +140,8 @@ def analyse(
 
 
 def _pct(r: Mapping[str, Any]) -> str:
+    if not r["n"]:
+        return "0/0"
     lo, hi = r["ktc95"]
     return f"{r['k']}/{r['n']} = {100 * r['ty_le']:.1f}% (KTC 95% {100 * lo:.1f}–{100 * hi:.1f}%)".replace(
         ".", ","
@@ -137,6 +164,14 @@ def bang_md(k: Mapping[str, Any]) -> str:
         (f"- Không nhãn nào ≥ 0,75: {k['khong_nhan_nao_tren_tau']}; từ 2 nhãn ≥ 0,75: {k['tu_2_nhan_tren_tau']}; "
          f"câu bị cắt độ dài: {k['bi_cat_do_dai']}"),
         f"- Trạng thái LLM của 100 thẻ: {k['trang_thai_llm']}", "",
+        "## Mô phỏng gộp model với LLM (tập chung, luật khoá trước)", "",
+        f"- Chỉ LLM: {_pct(k['gop']['chi_llm'])}",
+        (f"- R1 đồng thuận: tự nhận {k['gop']['R1_dong_thuan']['tu_nhan']} thẻ, đúng {_pct(k['gop']['R1_dong_thuan']['tu_nhan_dung'])}; "
+         f"chuyển người thêm {k['gop']['R1_dong_thuan']['chuyen_nguoi_them']}, "
+         f"trong đó LLM sai được chặn {k['gop']['R1_dong_thuan']['llm_sai_duoc_chan']}"),
+        (f"- R2 model sửa khi chắc: đúng {_pct(k['gop']['R2_model_sua_khi_chac']['dung'])}; "
+         f"sửa {k['gop']['R2_model_sua_khi_chac']['so_lan_sua']} lần, sửa đúng {k['gop']['R2_model_sua_khi_chac']['sua_dung']}, "
+         f"sửa sai {k['gop']['R2_model_sua_khi_chac']['sua_sai']}"), "",
         "## Các thẻ lệch", "", "| Thẻ | Nhãn vàng | LLM | Model | p cao nhất |", "|---|---|---|---|---|",
     ]  # fmt: skip
     for r in k["ca_lech"]:

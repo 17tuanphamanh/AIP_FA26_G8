@@ -71,3 +71,29 @@ docker compose exec -T backend python /tmp/cham.py /tmp/dau-vao.jsonl > /tmp/mod
 Gửi `/tmp/model-ra.jsonl` cho Claude. Script chỉ gọi `/health` và `/classify_intent`, không gọi LLM, không ghi DB, không in token.
 Hạn: trước T6 20/11 (cùng hạn dừng cứng của đo bổ sung). Quá hạn thì không chạy; báo cáo 4.9 phải bỏ câu "được chấm riêng" và
 ghi là chưa đo.
+
+## 6. Bổ sung 16/11 tối, trước khi chạy model: mô phỏng gộp model với LLM, hai đợt
+
+Tuấn Anh đề xuất gộp điểm model với LLM để kết quả chính xác hơn. Luật gộp khoá ở đây, **trước khi có bất kỳ số nào của model**,
+để không chọn cách gộp theo kết quả. Chỉ tính offline trên dữ liệu đã có; **không đổi hệ thống, không đổi B3**, không bật ô
+"Gợi ý nhãn" của prompt `b03_classify` (bản nộp đã chốt, mọi RQ đo với ô này để trống).
+
+- **R1 đồng thuận:** model và LLM khớp thì nhận nhãn; lệch thì chuyển người. Báo: số thẻ tự nhận, tỉ lệ đúng trên phần tự nhận,
+  số thẻ phải chuyển thêm, trong đó bao nhiêu thẻ LLM sai được chặn.
+- **R2 model sửa khi chắc:** lệch và điểm cao nhất của model ≥ 0,75 (ngưỡng sẵn có của gói, không chọn lại) thì lấy nhãn model,
+  còn lại lấy nhãn LLM. Báo: tỉ lệ đúng, số lần sửa, sửa đúng (LLM sai → model đúng), sửa sai (LLM đúng → model sai).
+- Không mô phỏng cách gộp theo trọng số điểm: lượt S1 không lưu độ chắc của LLM ở B3, và độ chắc LLM tự nêu không đáng tin
+  (probe B5, D-57).
+- **Đợt 1** — 100 thẻ the100 (mục 2–3). Đã biết trước: LLM đúng 93/93 trên tập chung, nên trên đợt này R2 không thể sửa đúng thẻ
+  nào; nó chỉ giữ nguyên hoặc làm giảm. R1 chỉ có thể thêm việc cho người.
+- **Đợt 2** — câu đầu của các thẻ bộ đo bổ sung RQ1 đã khoá (`eval/bo-sung-rq1`, viết 17/11, sau khi luật này khoá). Nhãn vàng là
+  intent theo loại thao tác của khung; intent LLM từ `predictions.jsonl` lượt đo bổ sung (Dương, T4 18/11, mã giống `bf94df2`).
+  Chạy cùng script với tham số `--cards`, `--run-id`, `--expect-n`; cùng quy tắc tính.
+- **Đọc kết quả:** gộp chỉ được coi là "chính xác hơn LLM" khi ở **cả hai đợt** R2 có sửa đúng > sửa sai và tỉ lệ đúng của R2 không
+  thấp hơn chỉ LLM. Kể cả khi đạt, kết quả chỉ vào báo cáo dưới dạng số offline và hướng phát triển; không đổi bản nộp trước bảo
+  vệ. Không đạt thì ghi: trên dữ liệu đo, gộp không tăng độ chính xác; giữ LLM quyết (D-53).
+- **Thứ tự để đợt 2 sạch:** người viết thẻ (Quân, Tuấn Anh) chỉ xem số tổng của đợt 1 trước khi nộp phiếu viết trưa 17/11; danh
+  sách thẻ lệch của đợt 1 công bố sau khi phiếu viết đã gửi.
+- **Lượt chạy:** số chính là lượt chạy qua ml-service trên máy demo (mục 5). Nếu có lượt chạy sơ bộ trong máy ảo bằng đúng mã
+  suy luận của ml-service (`ml_service/app` ở `a2f4ad1`) và trọng số kiểm SHA-256 khớp MODELS.md, thì so nhãn hai lượt trên cả
+  100 thẻ: trùng hết thì báo một số; khác thì báo số máy demo và ghi các thẻ khác.
