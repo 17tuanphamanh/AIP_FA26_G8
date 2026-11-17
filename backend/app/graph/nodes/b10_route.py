@@ -31,11 +31,22 @@ D-76 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`
 Q13a (D-78, 11/11): `b10_answer` v4 nhận thêm `previous_answer` (`previous_answer(state)`) — ở vòng hỏi tiếp sau "Chưa ổn" là câu trả lời KB
 đã gửi trước đó, để LLM không lặp bước; lượt thường là "(chưa có)".
 
+Kiểm thử 17/11 (TA) — hai lối ra thay cho E3 "chưa có thông tin" (`_dead_end`), áp ở MỌI nhánh B9/B10 vốn ra E3 vì thiếu căn cứ
+(`no_evidence`, `cannot_answer`; KHÔNG áp cho `invalid_citation`/`output_guard_block` — đó là lỗi chất lượng câu trả lời):
+1. Vòng hỏi tiếp sau "Chưa ổn" (`followup_round` > 0): tài liệu không còn gì mới → E8 (người dùng báo chưa ổn, `user_feedback` = ghi chú
+   của vòng đó) — người dùng đã làm theo hướng dẫn, cần kỹ thuật viên chứ không phải câu "chưa có thông tin". Cùng lý do: câu trả lời của vòng
+   hỏi tiếp mà HỨA chuyển kỹ thuật viên (`PROMISES_HANDOFF`, máy in 17/11: "mình sẽ chuyển bạn cho kỹ thuật viên nhé" rồi lại hỏi Đã ổn /
+   Chưa ổn) → E8 thật thay vì gửi câu hứa suông.
+2. VPN, máy của CHÍNH người gửi đã có fact chứng chỉ ở B6 (`vpn_status_fallback`): "Kiểm tra chứng chỉ VPN trên máy LAP-0417 còn hạn không"
+   từng ra E3 vì KB không có số liệu từng máy → sang B11 với `action=check_vpn_status` (CHỈ ĐỌC; R16 tự xử lý máy của mình, vẫn qua đủ
+   B11–B13) — tin kết quả có trạng thái chứng chỉ + gợi ý bước tiếp (Q2 M3).
+
 Lỗi: `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded` → E2 `llm_unavailable`; hết hạn cả lượt
 (ở LLM hoặc RAG) → E2 `turn_budget_exceeded`, bắt tường minh (`step` hằng). Không `except Exception` — lỗi khác → E9.
 Audit `detail`: chỉ enum, định danh, số đếm — không câu người dùng, không chữ LLM.
 """
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -44,6 +55,7 @@ from app.domain.answer import cap_steps, check_citations, render_answer
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import (
+    FOLLOWUP_PREFIX,
     NO_PREVIOUS_ANSWER,
     answer_msg,
     last_answer,
@@ -91,6 +103,37 @@ def symptom_to_info(state: Any) -> bool:
         and facts.get("device_owner_is_requester") is True
         and facts.get("device_registered") is True
         and facts.get("cert_status") == "valid"
+    )
+
+
+# Kiểm thử 17/11: câu trả lời của vòng hỏi tiếp hứa chuyển kỹ thuật viên ("mình sẽ chuyển bạn cho kỹ thuật viên nhé") — hệ thống không
+# chuyển gì cả nếu gửi câu đó kèm nút Đã ổn / Chưa ổn. So trên bản thường hoá (bỏ hoa, gộp khoảng trắng).
+PROMISES_HANDOFF = re.compile(r"(?:sẽ|đã|để mình|mình)\s+(?:\w+\s+){0,3}?chuyển\b[^.\n]{0,60}?kỹ thuật viên")
+
+
+def promises_handoff(text: str) -> bool:
+    return PROMISES_HANDOFF.search(" ".join(text.casefold().split())) is not None
+
+
+def followup_note(state: Any) -> str:
+    """Ghi chú (đã che) của vòng hỏi tiếp hiện tại = phần đuôi `redacted_request` do `confirm_wait` ghép, bỏ tiền tố."""
+    n = int(state.get("triage_reply_chars") or 0)
+    tail = str(state.get("redacted_request") or "")[-n:] if n > 0 else ""
+    return tail.removeprefix(FOLLOWUP_PREFIX).strip()
+
+
+def vpn_status_fallback(state: Any) -> bool:
+    """Kiểm thử 17/11: câu VPN mà KB không trả lời được nhưng B6 đã có fact chứng chỉ của máy CHÍNH người gửi → kiểm tra trạng thái (chỉ
+    đọc) thay cho E3. Không áp cho ticket chỉ-trả-lời, vòng hỏi tiếp, hay khi B3 đã nhận một hành động khác."""
+    facts = state.get("facts") or {}
+    slots = state.get("slots") or {}
+    return (
+        state.get("intent") == "vpn"
+        and int(state.get("followup_round") or 0) == 0
+        and slots.get("action") in (None, "check_vpn_status")
+        and bool(slots.get("device_id"))
+        and facts.get("device_owner_is_requester") is True
+        and isinstance(facts.get("cert_status"), str)
     )
 
 
@@ -157,6 +200,41 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         return await _answer(state, info, chunks, kb_version, above, symptom=symptom)
 
+    async def _dead_end(
+        state: Any, info: dict[str, Any], *, step: str, event: str, symptom: bool, kb_version: str | None = None
+    ) -> dict[str, Any]:
+        """Thiếu căn cứ để trả lời (kiểm thử 17/11): vòng hỏi tiếp → E8; câu HỎI về VPN máy của mình có fact → kiểm tra trạng thái (KHÔNG áp
+        cho nhánh báo lỗi Q2 M1 `symptom` — ca báo lỗi mà KB không có bài vẫn E3, kỹ thuật viên xử lý); còn lại E3 như cũ (`step` B9 | B10 giữ
+        đúng dòng audit cũ)."""
+        if int(state.get("followup_round") or 0) > 0:
+            note = followup_note(state)
+            info["followup_dead_end"] = event
+            extra: dict[str, Any] = {"user_feedback": note} if note else {}
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B10", event="followup_unresolved", audit_detail=info,
+                exit_code=ExitCode.E8.value, need_type="info", **extra,
+            )  # fmt: skip
+        if not symptom and state.get("intent") not in ANSWER_ONLY_INTENTS and vpn_status_fallback(state):
+            info["status_fallback"] = event
+            return await goto(
+                state, S_RETRIEVING, next_node="b11_slots", step="B10", event="needs_action", audit_detail=info,
+                need_type="action", slots={**(state.get("slots") or {}), "action": "check_vpn_status"},
+            )  # fmt: skip
+        if step == "B9":
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
+                exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding", kb_version=kb_version,
+            )  # fmt: skip
+        if event == "cannot_answer":
+            return await goto(
+                state, S_ESCALATED, next_node="b20_audit", step="B10", event="cannot_answer", audit_detail=info,
+                exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
+            )  # fmt: skip
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B10", event="no_evidence", audit_detail=info,
+            exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
+        )  # fmt: skip
+
     async def _answer(
         state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
     ) -> dict[str, Any]:
@@ -176,11 +254,8 @@ def make(deps: NodeDeps) -> NodeFn:
         state: Any, info: dict[str, Any], chunks: list[ChunkRef], kb_version: str, above: bool, *, symptom: bool
     ) -> dict[str, Any]:
         if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B9", event="no_evidence", audit_detail=info,
-                exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
-                kb_version=kb_version,  # cột audit_logs.kb_version như dòng B9 cũ ở B8 (soát NGHI-5)
-            )  # fmt: skip
+            # kb_version: cột audit_logs.kb_version như dòng B9 cũ ở B8 (soát NGHI-5)
+            return await _dead_end(state, info, step="B9", event="no_evidence", symptom=symptom, kb_version=kb_version)
         # R2 (soát 12/11, agent 16 F2): ngưỡng áp MỌI đoạn làm bằng chứng — đoạn dưới ngưỡng (vd bài gây nhiễu 0,02 xếp hạng 2) không vào
         # `expand_for_answer` nên cũng không là anchor hợp lệ (trích nó → `invalid_citation`). Hạng 1 đã đạt ở B9 → còn ít nhất một đoạn.
         floor = deps.constants.RETRIEVAL_THRESHOLD
@@ -197,10 +272,7 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         info["evidence_blocks"] = len(evidence)
         if not evidence:
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B10", event="no_evidence", audit_detail=info,
-                exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
-            )  # fmt: skip
+            return await _dead_end(state, info, step="B10", event="no_evidence", symptom=symptom)
         try:
             ans, meta = await deps.llm.complete(
                 "strong", "b10_answer",
@@ -230,10 +302,7 @@ def make(deps: NodeDeps) -> NodeFn:
         anchors = {c.chunk_id for c in chunks} & {b.anchor_chunk_id for b in evidence}
         info["citation"] = check_citations(ans.citations, cannot_answer=ans.cannot_answer, anchors=anchors)
         if info["citation"] == "no_grounding":  # Q-3g-1: LLM tự nhận không đủ căn cứ
-            return await goto(
-                state, S_ESCALATED, next_node="b20_audit", step="B10", event="cannot_answer", audit_detail=info,
-                exit_code=ExitCode.E3.value, need_type="info", escalation_reason_detail="no_grounding",
-            )  # fmt: skip
+            return await _dead_end(state, info, step="B10", event="cannot_answer", symptom=symptom)
         if info["citation"] == "invalid_citation":
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B10", event="invalid_citation", audit_detail=info,
@@ -245,6 +314,8 @@ def make(deps: NodeDeps) -> NodeFn:
         intro = symptom_intro((state.get("slots") or {}).get("device_id"), state.get("facts") or {}) if symptom else None
         steps, info["steps_truncated"] = cap_steps(ans.steps)  # Q2 M2: tối đa 3 bước, bước LLM xếp đầu được giữ
         body = render_answer(ans.answer_markdown, steps, cited, intro=intro)
+        if int(state.get("followup_round") or 0) > 0 and promises_handoff(ans.answer_markdown):  # hứa chuyển → chuyển thật (E8)
+            return await _dead_end(state, info, step="B10", event="answer_promises_handoff", symptom=symptom)
         info["guard"] = deps.output_guard.violation(body)
         if info["guard"] is not None:  # P4: chữ LLM có bí mật / canary / đoạn prompt hệ thống → không gửi, không lưu
             return await goto(

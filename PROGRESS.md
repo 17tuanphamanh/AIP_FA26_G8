@@ -7188,8 +7188,16 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     Hình 9.2); (b) ghi sẵn "(nv001)" trong câu vẫn bị hỏi lại "tài khoản của ai" (3 ca, an toàn nhưng thừa một lượt); (c) máy in "Chưa
     ổn" lần 1: bot nói "sẽ chuyển kỹ thuật viên" nhưng lại hỏi Đã ổn/Chưa ổn; (d) "kiểm tra chứng chỉ VPN còn hạn không" ra E3 thay vì
     chạy kiểm tra; (e) mai.tt không đăng nhập được trên máy demo (sai mật khẩu); (f) hàng đợi L2 máy demo còn 396 ca mở cũ — nạp lại seed
-    trước demo. (a)–(d) CHƯA sửa (ghi để TA quyết). **D-98:** mọi ca chuyển IT / bị chặn nêu lý do (E0, E1 nghi tấn công, E6, E7, E8; E5
+    trước demo. (a)–(d): xem mục 36. **D-98:** mọi ca chuyển IT / bị chặn nêu lý do (E0, E1 nghi tấn công, E6, E7, E8; E5
     thêm "Lý do chính: …" từ nhãn cố định theo mã yếu tố B14 / luật deny). **D-99:** vòng xử lý sau khi chuyển IT (nhận ca, chuyển lên
     Trưởng IT / nhà cung cấp, đóng kèm lời nhắn người gửi, `reopened_as_new` tạo ticket thật, hạn xử lý), migration 0018. Kiểm ở máy cloud:
     unit backend 10 702 đạt; integration Postgres 16 cục bộ (escalations, notifications, migration, b20, tickets, D-99) 107 đạt; FE vitest
     1 361 đạt, typecheck, eslint, check:style sạch; `make lint` sạch. Chưa chạy trên stack máy demo (nhánh `bao-ly-do-chuyen-it`).
+36. **17/11 đêm — sửa (b)–(d) của mục 35, đo (a) → D-100 (TA: "lên hướng fix bug và thực hiện đi"):** (b) câu có đúng một mã `nvNNN` khác
+    người gửi → B11 điền `target_user` từ câu, không hỏi lại; (c) vòng hỏi tiếp hết căn cứ hoặc câu trả lời hứa chuyển kỹ thuật viên → E8
+    `followup_unresolved` (thật sự chuyển, kèm ghi chú người dùng); (d) hỏi "chứng chỉ VPN máy mình còn hạn không" khi KB không trả lời được
+    → B11 `check_vpn_status` (chỉ đọc) thay vì E3. (a) KHÔNG đổi cổng B2: đo model chặn theo từng vế (`outputs/do-ve-1711/`) — nới theo vế gỡ
+    4/6 câu bình thường bị chặn nhầm nhưng lọt 11 câu tấn công (cong5-v2 3/15, test RQ4 4/50 — chỉ đọc, bộ TA 4/64); giữ τ 0,9999, người dùng
+    đã được giải thích + gợi ý gửi từng việc (D-98). Kiểm ở máy cloud: unit backend 10 726 đạt (+24 `test_kiem_thu_1711.py`); integration
+    Postgres 16 cục bộ (b10, b11, graph, b20, D-99) 48 đạt; FE vitest 1 361 đạt, typecheck, eslint, check:style sạch; `make lint` sạch.
+    Chưa kiểm lại trên stack máy demo.

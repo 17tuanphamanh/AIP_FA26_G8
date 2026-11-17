@@ -99,7 +99,8 @@ const BACKEND_EVENTS = (
   "no_evidence no_procedure no_valid_approver off_topic_twice output_guard_block override_recorded parent_woken person_no_longer_valid " +
   "queued rag_system_error recheck_failed recursion_limit rejected reply_timeout retrieval_error retrieved risk_decided role_unmappable " +
   "screened split split_span_invalid target_check_error tool_system_error turn_budget_exceeded unhandled_exception user_confirmed " +
-  "user_replied user_reported_unresolved closed injection_suspected recover_exhausted late_event privacy_secret_redacted finalize_failed_permanent escalation_closed"
+  "user_replied user_reported_unresolved closed injection_suspected recover_exhausted late_event privacy_secret_redacted finalize_failed_permanent escalation_closed " +
+  "escalation_claimed escalation_raised followup_unresolved"
 ).split(" ");
 
 describe("t191: bao phủ bảng — mọi mã của bảng ĐP có nhãn, đúng chữ", () => {

@@ -343,3 +343,17 @@ def target_check(
     if any(r == "unknown_key" and k not in spec_keys for k, r in dropped.items()):
         return False, "unknown_key"
     return False, None
+
+
+# Kiểm thử 17/11 (TA): "Cấp quyền chỉ đọc … cho An (nv001)" — người dùng ĐÃ ghi mã nhân viên mà B11 vẫn hỏi "tài khoản của ai" (LLM không đưa
+# khoá `target_user`, hoặc đưa tên "An" sai mẫu). Mã nhân viên dạng `nvNNN` ghi rõ trong câu = đúng câu trả lời người dùng sẽ gõ cho
+# TARGET_QUESTION → dùng luôn, không hỏi lại. CHỈ khi có ĐÚNG MỘT mã khác người gửi (hai mã trở lên → vẫn hỏi). Không nới lưới: đích
+# vẫn qua đủ kiểm tra như khi người dùng trả lời câu hỏi (fact người đích ở B6/B15, luật, chốt P6 — `target_is_other` giữ nguyên).
+_EMPLOYEE_CODE = re.compile(r"(?<![a-z0-9_.@-])nv\d{3,5}(?![a-z0-9_@-])")
+
+
+def sole_employee_code(text: str, requester_id: str) -> str | None:
+    """Mã nhân viên DUY NHẤT (khác người gửi) ghi trong câu, hoặc None."""
+    codes = {m.group(0) for m in _EMPLOYEE_CODE.finditer(text.casefold())} - {requester_id.casefold()}
+    return next(iter(codes)) if len(codes) == 1 else None
+

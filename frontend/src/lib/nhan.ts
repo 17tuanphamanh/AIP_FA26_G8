@@ -182,6 +182,9 @@ export const SU_KIEN: Readonly<Record<string, string>> = {
   followup_reply: "Người dùng nhắn tiếp sau câu trả lời", // B4 (12/11): B19 hỏi tiếp sau câu trả lời KB
   closed: "Đã ghi nhận và kết thúc",
   escalation_closed: "Kỹ thuật viên đóng ca",
+  escalation_claimed: "Kỹ thuật viên nhận ca", // D-99
+  escalation_raised: "Chuyển lên cấp cao hơn", // D-99
+  followup_unresolved: "Hướng dẫn không giúp được — chuyển kỹ thuật viên", // kiểm thử 17/11
   max_loops_exceeded: "Vượt số vòng xử lý",
   turn_budget_exceeded: "Hết thời gian cho lượt xử lý",
   recursion_limit: "Vượt giới hạn xử lý",

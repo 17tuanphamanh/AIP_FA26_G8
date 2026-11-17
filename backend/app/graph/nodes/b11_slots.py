@@ -80,7 +80,7 @@ from app.domain.messages import (
 )
 from app.domain.slot_text import UNKNOWN_ACTION, describe_missing, scrub_slot_keys
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
-from app.domain.target import TARGET_QUESTION
+from app.domain.target import TARGET_QUESTION, requester_id_of, sole_employee_code
 from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
@@ -185,9 +185,14 @@ def make(deps: NodeDeps) -> NodeFn:
         slots = dict(state.get("slots") or {})
         missing = spec.missing(slots)  # T20a P4
         need_target = target_required(state, slots)
+        from_text = None
+        if need_target and (from_text := sole_employee_code(str(state.get("redacted_request") or ""), requester_id_of(state))):
+            slots["target_user"], need_target = from_text, False  # kiểm thử 17/11: mã nhân viên đã ghi trong câu — không hỏi lại
+            missing = spec.missing(slots)
         if need_target:  # L-03: hỏi đích TRƯỚC
             missing = ["target_user", *missing]
         info = _info(missing, int(state.get("clarification_turns") or 0), need_target)
+        info["target_from_text"] = from_text is not None
         try:
             if missing or device_lookup(state) == "not_found":  # ĐP 09/11 điểm 1: máy 404 hỏi lại mã cả khi đủ slot
                 return await _ask(state, missing, info)
