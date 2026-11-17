@@ -455,7 +455,7 @@ async def close_escalation(
     out = EscalationCloseOut.model_validate(closed, from_attributes=True)
     if body.close_result == "reopened_as_new" and ticket is not None:
         new_id = await _reopen(
-            request, desk, queue, head, ticket.requester_id, ticket.redacted_request
+            request, desk, queue, head, ticket.requester_id, ticket.redacted_request, ticket.session_id
         )
         out = out.model_copy(update={"new_ticket_id": new_id})
     return out
@@ -483,8 +483,16 @@ async def _reopen(
     head: EscalationHead,
     requester_id: str,
     text: str,
+    session_id: str | None,
 ) -> str | None:
-    """D-99 (A): ticket mới cùng người gửi + cùng nội dung ĐÃ che, chạy lại từ đầu. Lỗi → None (ca đã đóng; log tên lớp lỗi)."""
+    """D-99 (A): ticket mới cùng người gửi + cùng nội dung ĐÃ che, chạy lại từ đầu. Lỗi → None (ca đã đóng; log tên lớp lỗi).
+
+    D-100 (máy demo 17/11): B1 đòi phiên CÒN SỐNG của người gửi — ticket mới mang phiên của ticket gốc (họ token: làm mới token vẫn
+    tính). Phiên đã hết hạn / đăng xuất → KHÔNG tạo ticket (trước đây: ticket mới bị B1 chặn `session_invalid`, người gửi không nhận
+    tin nào) → None: thông báo quay về câu "đề nghị bạn gửi một yêu cầu mới" kèm lời nhắn của IT."""
+    if session_id is None or desk.identity is None or await desk.identity.active_session(session_id, desk.clock.now()) is None:
+        log.info("reopen ca %s: phiên của người gửi không còn — không tạo ticket mới", head.escalation_id)
+        return None
     try:
         user = await desk.users.get_user(requester_id)
         strategy, source = await snapshot_for_new_ticket(request, desk)
@@ -492,7 +500,7 @@ async def _reopen(
         await desk.tickets.create(
             NewTicket(
                 ticket_id=ticket_id, requester_id=requester_id, requester_role=user.role if user else "employee",
-                requester_dept=user.department if user else None, session_id=None, redacted_request=text,
+                requester_dept=user.department if user else None, session_id=session_id, redacted_request=text,
                 created_at=desk.clock.now(), strategy=strategy, source=source,
             ),
             turn_id=turn_id,

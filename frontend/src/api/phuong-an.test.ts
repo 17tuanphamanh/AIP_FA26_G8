@@ -305,7 +305,7 @@ describe("t154: closeEscalation — route thật, không còn cờ chặn (ĐP 0
     expect(closeEscalation).toBe(requestClose);
     const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => json(200, {}));
     vi.stubGlobal("fetch", fetch);
-    await expect(closeEscalation(7, { close_result: "confirmed_denial", note: "x" })).resolves.toBeUndefined();
+    await expect(closeEscalation(7, { close_result: "confirmed_denial", note: "x" })).resolves.toEqual({ reopened: false });
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = fetch.mock.calls[0]!;
     expect(String(url)).toContain("/api/escalations/7/close");
@@ -378,15 +378,20 @@ describe("t187: matched_rules.decision null (luật đã xoá khỏi chính sác
   it("decision là chuỗi lạ vẫn 502", () => bad(() => parseApprovalView({ ...approval(), matched_rules: [{ ...nullRule, decision: "x" }] }), "invalid_approval_body"));
 });
 
-describe("t188: requestClose — 200 thì xong, thân KHÔNG đọc (hợp đồng sửa lần 3: new_ticket_id luôn null; server lỡ trả mã cũng bỏ qua)", () => {
+describe("t188 (D-100): requestClose — 200 thì xong; chỉ đọc CỜ 'đã tạo ticket mới' (chuỗi khác rỗng), không giữ mã", () => {
   it.each([
-    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: "tkt-moi-1" }],
-    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: null }],
-    [{ escalation_id: 1, close_result: "completed" }],
-    [{ new_ticket_id: 5 }],
-    [null],
-  ])("%j → resolve undefined", async (body) => {
+    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: "tkt-moi-1" }, true],
+    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: null }, false],
+    [{ escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: "" }, false],
+    [{ escalation_id: 1, close_result: "completed" }, false],
+    [{ new_ticket_id: 5 }, false],
+    [null, false],
+  ])("%j → reopened=%s", async (body, reopened) => {
     vi.stubGlobal("fetch", vi.fn(async () => json(200, body)));
-    await expect(requestClose(1, { close_result: "reopened_as_new", note: "x" })).resolves.toBeUndefined();
+    await expect(requestClose(1, { close_result: "reopened_as_new", note: "x" })).resolves.toEqual({ reopened });
+  });
+  it("kết quả khác reopened_as_new mà server lỡ trả mã → reopened=false", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, { new_ticket_id: "tkt-x" })));
+    await expect(requestClose(1, { close_result: "completed", note: "x" })).resolves.toEqual({ reopened: false });
   });
 });

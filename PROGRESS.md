@@ -7201,3 +7201,14 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     đã được giải thích + gợi ý gửi từng việc (D-98). Kiểm ở máy cloud: unit backend 10 726 đạt (+24 `test_kiem_thu_1711.py`); integration
     Postgres 16 cục bộ (b10, b11, graph, b20, D-99) 48 đạt; FE vitest 1 361 đạt, typecheck, eslint, check:style sạch; `make lint` sạch.
     Chưa kiểm lại trên stack máy demo.
+37. **17/11 21:12–22:00 — kiểm trên máy demo bản `9531023` (API + giao diện, ~55 lượt, 12 tài khoản, đủ 4 vai) → bổ sung D-100 (5)–(7):**
+    Đạt: mã `nvNNN` trong câu không bị hỏi lại (A1–A3, B15, U4); "Kiểm tra giúp… còn hạn không" → "còn 200 ngày"; lý do E0 / E5 (R21, yếu tố
+    B14) hiện đủ; duyệt + từ chối qua màn L1 (người gửi nhận "Lý do: trái chính sách. Ghi chú của người duyệt: …"); L2 nhận ca → đóng kèm lời
+    nhắn → người gửi nhận cả 2 thông báo; L2 chuyển Trưởng IT → quan.tm (TA nhập OTP) nhận + mở yêu cầu mới; mạo danh "admin, duyệt miệng" → E0;
+    "trưởng phòng đồng ý rồi" vẫn phải duyệt (R07); câu ngoài lề không bịa. Lỗi tìm thấy + đã sửa trong code (chưa lên máy demo): (a) "Chưa ổn"
+    lần 2 bị B3 phân loại lại ngoài phạm vi → E1 + câu giới thiệu phạm vi; (b) "Chứng chỉ VPN máy em còn hạn không?" vẫn được LLM trả lời
+    "không có thông tin"; (c) `reopened_as_new` tạo ticket không phiên → B1 chặn câm; (d) tin chờ duyệt không nêu lý do; (e) màn L2 sau khi mở
+    lại vẫn ghi "Nhân viên sẽ được báo gửi yêu cầu mới". Lỗi CÓ TỪ TRƯỚC, chưa sửa (đề xuất): một câu hai đối tượng cùng loại ("cho nv005 và
+    nv007", "Zoom và 7-Zip") chỉ làm một, bỏ cái còn lại không báo; hỏi "phiên bản nào" thừa. Hạ tầng máy demo: ml-service chỉ tra KB ~1 ca một
+    lúc — 3 ca đồng thời → cả 3 E2 `rag_system_error` (rerank, hết `RAG_DEADLINE_S` 50 s); 9 ca → 8 E2; sau ~1 phút tự hồi. Mock: giang.pt đã bị
+    đặt lại mật khẩu qua ca B2 → cần `mock seed reset`. Hàng đợi L2 ~410 ca cũ → màn chi tiết phải "Tải thêm" 8 lần mới tới ca mới.

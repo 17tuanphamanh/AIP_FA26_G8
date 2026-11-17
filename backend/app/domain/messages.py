@@ -103,6 +103,13 @@ def last_question(state: Any) -> str:
 # Ghi chú "Chưa ổn" của người dùng ghép sau câu gốc với tiền tố CỐ ĐỊNH (không LLM) để B2/B3/B10 hiểu đây là phản hồi sau hướng dẫn.
 FOLLOWUP_MAX_ROUNDS: Final = 2
 FOLLOWUP_PREFIX: Final = "Đã làm theo hướng dẫn nhưng chưa ổn: "
+
+
+def followup_note(state: Any) -> str:
+    """D-100: ghi chú (đã che) của vòng hỏi tiếp hiện tại = phần đuôi `redacted_request` do `confirm_wait` ghép, bỏ tiền tố."""
+    n = int(state.get("triage_reply_chars") or 0)
+    tail = str(state.get("redacted_request") or "")[-n:] if n > 0 else ""
+    return tail.removeprefix(FOLLOWUP_PREFIX).strip()
 NO_PREVIOUS_ANSWER: Final = "(chưa có)"
 
 
@@ -547,11 +554,36 @@ APPROVAL_PENDING_TAIL: Final = (
 )
 
 
-def approval_pending_text(action_type: str, target_phrase: str) -> str:
-    """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa)."""
+# D-100 (kiểm thử 17/11, nối D-98): luật "cần duyệt" khớp CHẶT NHẤT → lý do cho người gửi, theo MẪU (mã luật trong code, không chữ LLM,
+# không chép mô tả luật nguyên văn — mô tả viết cho IT). Luật không khai (hoặc HITL do AI đánh giá, không luật) → câu cũ, không nêu lý do.
+APPROVAL_REASONS: Final[Mapping[str, str]] = {
+    "R03": "đây là thao tác trên tài khoản dịch vụ",
+    "R04": "đây là thao tác trên tài khoản quản trị",
+    "R05": "tài khoản liên quan thuộc người đã nghỉ việc",
+    "R07": "thư mục chứa dữ liệu nhạy cảm",
+    "R08": "đây là quyền quản trị (toàn quyền) thư mục",
+    "R09": "thư mục thuộc phòng ban khác",
+    "R13": "phần mềm nằm ngoài danh mục của công ty",
+    "R14": "phần mềm có phí bản quyền",
+    "R15": "phần mềm cần quyền quản trị máy",
+    "R17": "thiết bị chưa đăng ký",
+    "R18": "yêu cầu gửi ngoài giờ hành chính",
+    "R19": "bạn đang trong thời gian thử việc",
+    "R22": "máy cần cài chưa đăng ký",
+    "R23": "phần mềm thuộc danh mục phải duyệt",
+}  # fmt: skip
+APPROVAL_PENDING_REASON_TAIL: Final = (
+    "cần được duyệt theo quy định của công ty vì {reason}. Mình đã gửi phiếu duyệt; có kết quả mình báo bạn tại đây."
+)
+
+
+def approval_pending_text(action_type: str, target_phrase: str, rule_id: str | None = None) -> str:
+    """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa). Luật cần duyệt có trong `APPROVAL_REASONS` →
+    nêu lý do (D-100)."""
     label = ACTION_LABELS.get(action_type)
     head = f"Yêu cầu {action_on(label, target_phrase)}" if label is not None and target_phrase else "Yêu cầu của bạn"
-    return f"{head} {APPROVAL_PENDING_TAIL}"
+    reason = APPROVAL_REASONS.get(rule_id or "")
+    return f"{head} {APPROVAL_PENDING_REASON_TAIL.format(reason=reason) if reason else APPROVAL_PENDING_TAIL}"
 
 
 def approval_pending_msg(text: str, ref: str | None) -> Msg:

@@ -151,6 +151,9 @@ async def test_completed_on_e5_e6_or_deny_case_422(code: str, deny: bool) -> Non
 )
 async def test_close_reason_mapping_and_new_ticket_only_for_reopen(code: str, deny: bool, result: str, reason: str) -> None:
     async with env_with((code, deny)) as (env, esc):
+        await _login(env, "an.nv")  # D-100: người gửi có phiên CÒN SỐNG — ticket mới mang phiên đó để qua B1
+        live = next(sid for sid, rec in env.store.sessions.items() if rec.user_id == "nv001")
+        env.h.tickets.rows["esc-1"].update(requester_id="nv001", session_id=live)
         tickets = set(env.h.tickets.rows)
         r = await _close(env, 1, await _login(env, "long.nh"), body={"close_result": result, "note": NOTE})
         assert r.status_code == 200, r.text
@@ -160,9 +163,23 @@ async def test_close_reason_mapping_and_new_ticket_only_for_reopen(code: str, de
             [new_id] = new
             assert r.json()["new_ticket_id"] == new_id == esc.rows[0]["new_ticket_id"]
             old, fresh = env.h.tickets.rows["esc-1"], env.h.tickets.rows[new_id]
-            assert (fresh["requester_id"], fresh["redacted_request"]) == (old["requester_id"], old["redacted_request"])
+            assert (fresh["requester_id"], fresh["redacted_request"], fresh["session_id"]) == (
+                old["requester_id"], old["redacted_request"], live)  # fmt: skip
         else:
             assert r.json()["new_ticket_id"] is None and not new
+
+
+@pytest.mark.parametrize("session", ["không-có-phiên", None])
+async def test_reopen_without_live_requester_session_creates_nothing(session: str | None) -> None:
+    """D-100 (máy demo 17/11): phiên của người gửi đã hết / đăng xuất → ticket mới sẽ bị B1 chặn `session_invalid` mà không ai được báo
+    → KHÔNG tạo; ca vẫn đóng, `new_ticket_id` null (thông báo quay về câu "đề nghị bạn gửi một yêu cầu mới")."""
+    async with env_with(("E6", False)) as (env, esc):
+        env.h.tickets.rows["esc-1"].update(session_id=session)
+        tickets = set(env.h.tickets.rows)
+        r = await _close(env, 1, await _login(env, "long.nh"), body={"close_result": "reopened_as_new", "note": NOTE})
+        assert r.status_code == 200, r.text
+        assert r.json()["new_ticket_id"] is None and set(env.h.tickets.rows) == tickets
+        assert esc.rows[0]["close_result"] == "reopened_as_new" and esc.rows[0].get("new_ticket_id") is None
 
 
 BAD_BODIES: list[tuple[Any, list[str]]] = [

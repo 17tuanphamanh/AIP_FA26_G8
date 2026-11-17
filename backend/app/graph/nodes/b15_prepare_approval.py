@@ -102,7 +102,10 @@ def make(deps: NodeDeps) -> NodeFn:
         detail = _point5(a, choice, roster, deps.approval_sla_minutes)
         update: dict[str, Any] = {}
         requester = RequesterContext.model_validate(state["requester_context"]).user_id
-        text = approval_pending_text(action.type, target_phrase(action, requester))  # [9b] Q3 M4
+        raw = state.get("risk")
+        risk = raw.model_dump(mode="json") if hasattr(raw, "model_dump") else (raw or {})
+        rule_id = risk.get("matched_rule_id") if isinstance(risk, dict) and risk.get("policy_decision") == "approval_required" else None
+        text = approval_pending_text(action.type, target_phrase(action, requester), rule_id)  # [9b] Q3 M4; lý do: D-100
         if (violation := deps.output_guard.violation(text)) is not None:  # mẫu cũng là chữ gửi người dùng → chặn = 0 tin
             detail["user_notice_guard"] = violation
         else:

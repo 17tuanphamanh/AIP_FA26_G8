@@ -75,10 +75,10 @@ def one(rel: str, old: str, new: str) -> tuple[str, str, str, int]:
 # ---- chuỗi đích ------------------------------------------------------------------------------------------------------
 
 _INFO_GATE = "        if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer\n"
-_INFO_BLOCK = (  # kiểm thử 17/11: lối ra thiếu căn cứ gom về `_dead_end` (E8 vòng hỏi tiếp / kiểm tra VPN / E3) — ý đột biến giữ nguyên
+_INFO_BLOCK = (  # D-100 (17/11): lối ra thiếu căn cứ gom về `_dead_end` (E8 vòng hỏi tiếp / E3) — ý đột biến giữ nguyên
     _INFO_GATE
     + "            # kb_version: cột audit_logs.kb_version như dòng B9 cũ ở B8 (soát NGHI-5)\n"
-    + '            return await _dead_end(state, info, step="B9", event="no_evidence", symptom=symptom, kb_version=kb_version)\n'
+    + '            return await _dead_end(state, info, step="B9", event="no_evidence", kb_version=kb_version)\n'
 )
 _AFTER_ANSWER = '        info["prompt"], info["trimmed_evidence"] = f"{meta.prompt_id}@{meta.prompt_version}", meta.trimmed_evidence\n'
 _ACTION_GATE = "            if deps.grounding_gate_actions and not above:  # S0-P11: ablation — hành vi 3h (B9 chặn cả hành động)\n"

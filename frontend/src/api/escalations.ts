@@ -133,11 +133,17 @@ export const queueRefetchInterval = (error: unknown): number | false => (is403(e
  * Gửi `POST /close`. CHỈ 200 = đã đóng; 2xx khác → 502
  * (không chắc đã ghi → không báo thành công giả; gửi lại → 409 `already_closed` là đúng sự thật).
  */
-export async function requestClose(id: number, body: EscalationCloseIn): Promise<void> {
+/** Kết quả đóng ca màn cần biết: `reopened` = server ĐÃ tạo ticket mới (D-99 (A)) — chỉ cờ, KHÔNG giữ mã ticket mới. */
+export type CloseOutcome = { reopened: boolean };
+
+export async function requestClose(id: number, body: EscalationCloseIn): Promise<CloseOutcome> {
   const res = await api.request<unknown>(`/api/escalations/${id}/close`, { method: "POST", json: body });
   if (res.status !== 200) throw new ApiError(502, "unexpected_close_status");
-  // Thân 200 KHÔNG đọc (hợp đồng sửa lần 3, ĐP 26/10 23:51): `new_ticket_id` luôn null đợt này — kể cả server lỡ trả mã, màn
-  // không hiện mã / link ticket mới.
+  // D-100: chỉ đọc `new_ticket_id` có phải chuỗi khác rỗng không (D-99 tạo ticket mới khi phiên người gửi còn sống) — màn vẫn KHÔNG hiện
+  // mã / link ticket mới (hợp đồng sửa lần 3).
+  const data: unknown = res.data;
+  const fresh = typeof data === "object" && data !== null ? (data as { new_ticket_id?: unknown }).new_ticket_id : undefined;
+  return { reopened: body.close_result === "reopened_as_new" && typeof fresh === "string" && fresh.length > 0 };
 }
 
 /** Đóng ca từ màn — route thật (ĐP 01/11 16:40: bỏ cờ CLOSE_AVAILABLE, hợp đồng N-PA §4). */

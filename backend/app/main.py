@@ -78,6 +78,7 @@ from app.core.clock import Clock, SystemClock
 from app.core.logging import configure_logging
 from app.db.escalations import SqlEscalationStore
 from app.db.hours_mode import SqlHoursModeStore
+from app.db.identity import SqlIdentityReads
 from app.db.m5_strategy import SqlStrategyStore
 from app.db.notifications import NotificationSource, SqlNotificationSource
 from app.db.rate_limits import (
@@ -90,7 +91,7 @@ from app.db.session import Engines, create_engines, ping
 from app.executor.plan_executor import PlanExecutor
 from app.executor.txlog import SqlTxLog
 from app.executor.wiring import build_write_registry
-from app.graph.ports import ToolCaller
+from app.graph.ports import IdentityReads, ToolCaller
 from app.graph.wiring import Runtime, fake_approver, fake_scenario, open_runtime
 from app.guard.patterns import check_guard
 from app.guard.privacy import PrivacyGuard, guard_from_settings
@@ -352,6 +353,7 @@ def create_app(
     notifications: NotificationSource | None = None,
     strategy: StrategyStore | None = None,
     hours_mode: HoursModeStore | None = None,
+    identity_reads: IdentityReads | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     clock = clock or SystemClock()
@@ -415,7 +417,7 @@ def create_app(
                     users=auth_store, clock=clock, background=background,
                     retry_after_seconds=lock_retry, rate=rate_gate,
                     strategy=strategy or SqlStrategyStore(engines.main),
-                    hours=hours_mode or SqlHoursModeStore(engines.main),
+                    hours=hours_mode or SqlHoursModeStore(engines.main), identity=identity_reads or SqlIdentityReads(engines.main),
                 )  # fmt: skip
                 app.state.runtime_status = "up"
             try:

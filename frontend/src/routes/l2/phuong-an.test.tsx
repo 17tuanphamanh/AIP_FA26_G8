@@ -16,7 +16,7 @@ import { closeOutcome } from "../../mocks/handlers/escalation-close.ts";
 import { queuePage } from "../../mocks/handlers/escalation-queue.ts";
 import { EscalationDetailRoute } from "./EscalationDetail.tsx";
 import { EscalationQueue } from "./EscalationQueue.tsx";
-import { ALREADY_CLOSED_TEXT, CLOSED_TEXT, REOPENED_TEXT } from "./queue.ts";
+import { ALREADY_CLOSED_TEXT, CLOSED_TEXT, REOPENED_NEW_TEXT, REOPENED_TEXT } from "./queue.ts";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -310,10 +310,10 @@ describe("t189: đóng ca 200 — 'Mở yêu cầu mới' → đúng câu REOPEN
     expect(done.textContent).toBe(REOPENED_TEXT);
     expect(done.querySelector("a")).toBeNull();
   });
-  it("reopened_as_new mà server lỡ trả mã → vẫn đúng câu, mã KHÔNG xuất hiện ở đâu trên màn (không chữ, không link)", async () => {
+  it("reopened_as_new và server ĐÃ tạo ticket mới (D-100) → câu 'đã mở yêu cầu mới', mã KHÔNG xuất hiện ở đâu trên màn", async () => {
     const leaked = "tkt-lo-ma-999";
     const { done } = await closeWith(/Mở yêu cầu mới/, () => json(200, { escalation_id: 1, close_result: "reopened_as_new", new_ticket_id: leaked }));
-    expect(done.textContent).toBe(REOPENED_TEXT);
+    expect(done.textContent).toBe(REOPENED_NEW_TEXT);
     expect(document.body.textContent).not.toContain(leaked);
     expect([...document.querySelectorAll("a")].some((a) => a.getAttribute("href")?.includes(leaked))).toBe(false);
     expect(document.body.textContent).not.toMatch(/Đã tạo yêu cầu mới/);

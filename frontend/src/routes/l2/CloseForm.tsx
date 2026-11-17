@@ -1,15 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { CLOSE_NOTE_MAX, closeEscalation, USER_MESSAGE_MAX } from "../../api/escalations.ts";
+import { CLOSE_NOTE_MAX, closeEscalation, type CloseOutcome, USER_MESSAGE_MAX } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueItem } from "../../api/types.ts";
 import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, closeProblem, completedLock, USER_MESSAGE_HINT } from "./queue.ts";
 
 type CloseFormProps = {
   item: EscalationQueueItem;
-  onSubmit?: (id: number, body: EscalationCloseIn) => Promise<void>;
-  /** 200: ca đã đóng với kết quả `result` (màn chi tiết giữ bản chụp ca + câu báo theo kết quả). */
-  onClosed?: (result: EscalationCloseResult) => void;
+  onSubmit?: (id: number, body: EscalationCloseIn) => Promise<CloseOutcome | void>;
+  /** 200: ca đã đóng với kết quả `result` (màn chi tiết giữ bản chụp ca + câu báo theo kết quả); `reopened`: đã tạo ticket mới (D-100). */
+  onClosed?: (result: EscalationCloseResult, reopened: boolean) => void;
   /** 409 `already_closed`: màn chi tiết chuyển sang xem ca ở danh sách Đã đóng (ĐP 02/11). Không truyền → báo tại chỗ. */
   onAlreadyClosed?: () => void;
 };
@@ -55,9 +55,9 @@ export function CloseForm({ item, onSubmit = closeEscalation, onClosed, onAlread
     setNoteError(null);
     try {
       const message = userMessage.trim();
-      await onSubmit(item.escalation_id, { close_result: result, note: note.trim(), ...(message ? { user_message: message } : {}) });
+      const out = await onSubmit(item.escalation_id, { close_result: result, note: note.trim(), ...(message ? { user_message: message } : {}) });
       reloadQueue();
-      onClosed?.(result);
+      onClosed?.(result, out?.reopened === true);
     } catch (e) {
       // Giữ nguyên lựa chọn + ghi chú để sửa rồi gửi lại.
       const api = e instanceof ApiError ? e : null;

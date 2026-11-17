@@ -2,7 +2,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { hasMore, loadedItems, queueQuery, type QueueItem, type QueueTier } from "../../api/escalations.ts";
+import { type CloseOutcome, hasMore, loadedItems, queueQuery, type QueueItem, type QueueTier } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueStatus } from "../../api/types.ts";
 import { flashState } from "../../components/flash.ts";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
@@ -14,6 +14,7 @@ import { HandlingActions } from "./HandlingActions.tsx";
 import {
   CLOSED_GONE_TEXT,
   CLOSED_TEXT,
+  REOPENED_NEW_TEXT,
   REOPENED_TEXT,
   closeResultLabel,
   DENY_BANNER,
@@ -44,7 +45,7 @@ function Back({ tier }: { tier: QueueTier }) {
 }
 
 /** Route `/escalations/:escalationId` — `key` theo id + trạng thái để form đóng không mang nháp sang ca khác. */
-type Submit = (id: number, body: EscalationCloseIn) => Promise<void>;
+type Submit = (id: number, body: EscalationCloseIn) => Promise<CloseOutcome | void>;
 
 /** `submit`: chỉ test truyền (mặc định `closeEscalation` — route thật). */
 export function EscalationDetailRoute({ submit, tier = 2 }: { submit?: Submit; tier?: QueueTier }) {
@@ -70,13 +71,15 @@ function EscalationDetail({
   const items = loadedItems(query.data);
   const found = id === null ? undefined : items?.find((i) => i.escalation_id === id);
   // Đóng xong: ca rời danh sách Mở (tải lại) — màn giữ bản chụp ca để còn hiện câu báo, không nhảy sang "không còn".
-  const [closedSnap, setClosedSnap] = useState<{ item: QueueItem; result: EscalationCloseResult } | null>(null);
+  const [closedSnap, setClosedSnap] = useState<{ item: QueueItem; result: EscalationCloseResult; reopened: boolean } | null>(null);
   const [raisedSnap, setRaisedSnap] = useState<QueueItem | null>(null); // D-99: ca vừa chuyển lên cấp 3 (rời hàng đợi cấp 2)
   const loadingMore = useRef(false);
   const navigate = useNavigate();
 
   if (closedSnap) {
-    return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} tier={tier} />;
+    return (
+      <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} reopened={closedSnap.reopened} tier={tier} />
+    );
   }
   if (raisedSnap) {
     return <Detail item={raisedSnap} now={query.dataUpdatedAt} justRaised tier={tier} />;
@@ -127,7 +130,7 @@ function EscalationDetail({
       now={query.dataUpdatedAt}
       submit={submit}
       tier={tier}
-      onClosed={(result) => setClosedSnap({ item: found, result })}
+      onClosed={(result, reopened) => setClosedSnap({ item: found, result, reopened })}
       onRaised={() => setRaisedSnap(found)}
       // 409: ca đã đóng ở nơi khác → xem ca ở danh sách Đã đóng (chỉ đọc: kết quả, người đóng, lúc đóng) + câu báo một lần.
       onAlreadyClosed={() =>
@@ -148,6 +151,7 @@ function Detail({
   onAlreadyClosed,
   justClosed = false,
   closedWith = null,
+  reopened = false,
   justRaised = false,
   onRaised,
   tier,
@@ -155,7 +159,7 @@ function Detail({
   item: QueueItem;
   now: number;
   submit?: Submit;
-  onClosed?: (result: EscalationCloseResult) => void;
+  onClosed?: (result: EscalationCloseResult, reopened: boolean) => void;
   onAlreadyClosed?: () => void;
   justClosed?: boolean;
   justRaised?: boolean;
@@ -163,6 +167,8 @@ function Detail({
   tier: QueueTier;
   /** Kết quả vừa đóng: "Mở ticket mới" → `REOPENED_TEXT` (hợp đồng sửa lần 3 — KHÔNG mã / link ticket mới); khác → `CLOSED_TEXT`. */
   closedWith?: EscalationCloseResult | null;
+  /** D-100: server đã tạo ticket mới cho `reopened_as_new` (phiên người gửi còn sống) — chỉ cờ, không mã. */
+  reopened?: boolean;
 }) {
   const closed = typeof item.closed_at === "string";
   return (
@@ -213,7 +219,7 @@ function Detail({
           {justClosed ? (
             <div className="flex flex-col gap-2">
               <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
-                {closedWith === "reopened_as_new" ? REOPENED_TEXT : CLOSED_TEXT}
+                {closedWith === "reopened_as_new" ? (reopened ? REOPENED_NEW_TEXT : REOPENED_TEXT) : CLOSED_TEXT}
               </p>
               <Link to={`${queueBase(tier)}/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
                 Xem ca trong danh sách Đã đóng

@@ -31,15 +31,15 @@ D-76 (ĐP chốt 09/11, bản demo lo-0811): intent chỉ-trả-lời (`it_help`
 Q13a (D-78, 11/11): `b10_answer` v4 nhận thêm `previous_answer` (`previous_answer(state)`) — ở vòng hỏi tiếp sau "Chưa ổn" là câu trả lời KB
 đã gửi trước đó, để LLM không lặp bước; lượt thường là "(chưa có)".
 
-Kiểm thử 17/11 (TA) — hai lối ra thay cho E3 "chưa có thông tin" (`_dead_end`), áp ở MỌI nhánh B9/B10 vốn ra E3 vì thiếu căn cứ
-(`no_evidence`, `cannot_answer`; KHÔNG áp cho `invalid_citation`/`output_guard_block` — đó là lỗi chất lượng câu trả lời):
-1. Vòng hỏi tiếp sau "Chưa ổn" (`followup_round` > 0): tài liệu không còn gì mới → E8 (người dùng báo chưa ổn, `user_feedback` = ghi chú
-   của vòng đó) — người dùng đã làm theo hướng dẫn, cần kỹ thuật viên chứ không phải câu "chưa có thông tin". Cùng lý do: câu trả lời của vòng
-   hỏi tiếp mà HỨA chuyển kỹ thuật viên (`PROMISES_HANDOFF`, máy in 17/11: "mình sẽ chuyển bạn cho kỹ thuật viên nhé" rồi lại hỏi Đã ổn /
-   Chưa ổn) → E8 thật thay vì gửi câu hứa suông.
-2. VPN, máy của CHÍNH người gửi đã có fact chứng chỉ ở B6 (`vpn_status_fallback`): "Kiểm tra chứng chỉ VPN trên máy LAP-0417 còn hạn không"
-   từng ra E3 vì KB không có số liệu từng máy → sang B11 với `action=check_vpn_status` (CHỈ ĐỌC; R16 tự xử lý máy của mình, vẫn qua đủ
-   B11–B13) — tin kết quả có trạng thái chứng chỉ + gợi ý bước tiếp (Q2 M3).
+Kiểm thử 17/11 (TA, D-100):
+1. Vòng hỏi tiếp sau "Chưa ổn" (`followup_round` > 0) mà thiếu căn cứ (`no_evidence`, `cannot_answer` — `_dead_end`; KHÔNG áp cho
+   `invalid_citation`/`output_guard_block`): → E8 (người dùng báo chưa ổn, `user_feedback` = ghi chú của vòng đó) thay cho E3 "chưa có
+   thông tin". Cùng lý do: câu trả lời của vòng hỏi tiếp mà HỨA chuyển kỹ thuật viên (`PROMISES_HANDOFF`, máy in 17/11) → E8 thật.
+2. Câu HỎI trạng thái chứng chỉ VPN máy của CHÍNH người gửi (`vpn_status_fallback`: chữ khớp `VPN_STATUS_QUESTION`, không phải câu hỏi
+   cách làm, không có động từ ghi; B6 có fact chứng chỉ) → B11 với `action=check_vpn_status` (CHỈ ĐỌC, R16, vẫn qua B11–B13), ngay sau
+   `b10_need_type` — KB không có số liệu từng máy: trước đây ra E3, hoặc LLM trả lời "không có thông tin về hạn chứng chỉ" dù B6 đã biết.
+   Ghi đè cả `action` B6 tự suy từ chứng chỉ (`renew_vpn_cert`/`reissue_vpn_access`) vì câu không có động từ ghi — người dùng hỏi, chưa
+   nhờ gia hạn; tin kết quả Q2 M3 đã gợi ý bước tiếp. Câu báo lỗi (Q2 M1) không khớp mẫu → giữ nguyên.
 
 Lỗi: `LLMSchemaError` → E2 `llm_schema_error`; `LLMUnavailable`/`LLMBudgetExceeded` → E2 `llm_unavailable`; hết hạn cả lượt
 (ở LLM hoặc RAG) → E2 `turn_budget_exceeded`, bắt tường minh (`step` hằng). Không `except Exception` — lỗi khác → E9.
@@ -47,6 +47,7 @@ Audit `detail`: chỉ enum, định danh, số đếm — không câu người d
 """
 
 import re
+import unicodedata
 from datetime import timedelta
 from typing import Any
 
@@ -55,9 +56,9 @@ from app.domain.answer import cap_steps, check_citations, render_answer
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
 from app.domain.messages import (
-    FOLLOWUP_PREFIX,
     NO_PREVIOUS_ANSWER,
     answer_msg,
+    followup_note,
     last_answer,
     symptom_intro,
 )
@@ -115,25 +116,43 @@ def promises_handoff(text: str) -> bool:
     return PROMISES_HANDOFF.search(" ".join(text.casefold().split())) is not None
 
 
-def followup_note(state: Any) -> str:
-    """Ghi chú (đã che) của vòng hỏi tiếp hiện tại = phần đuôi `redacted_request` do `confirm_wait` ghép, bỏ tiền tố."""
-    n = int(state.get("triage_reply_chars") or 0)
-    tail = str(state.get("redacted_request") or "")[-n:] if n > 0 else ""
-    return tail.removeprefix(FOLLOWUP_PREFIX).strip()
+# D-100 (kiểm thử 17/11): câu HỎI trạng thái chứng chỉ ("… còn hạn không", "hết hạn chưa", "khi nào hết hạn", "kiểm tra … còn hạn") — so
+# trên bản thường hoá (NFC, bỏ hoa, gộp khoảng trắng). Câu báo lỗi ("chứng chỉ còn hạn mà vẫn lỗi 809") KHÔNG khớp: cần từ hỏi ngay sau.
+_ASK = r"(?:không|ko|k|chưa|chứ|hông|hong|hok|hay\s+không|hay\s+chưa)\b"
+VPN_STATUS_QUESTION = re.compile(
+    rf"còn\s+hạn(?:\s+(?:sử\s+dụng|dùng))?\s+{_ASK}"
+    rf"|còn\s+(?:hiệu\s+lực|dùng\s+được|sử\s+dụng\s+được)\s+{_ASK}"
+    r"|hết\s+hạn\s+(?:chưa|hay\s+chưa|khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào|vào\s+(?:ngày|lúc)\s+nào)"
+    r"|(?:khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào|hôm\s+nào)\s+(?:\S+\s+){0,6}?hết\s+hạn"
+    r"|hạn(?:\s+(?:dùng|sử\s+dụng))?\s+(?:đến|tới)\s+(?:khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào)"
+    r"|còn\s+(?:bao\s+nhiêu|mấy)\s+ngày"
+    r"|(?:kiểm\s+tra|xem|tra|check)\s+(?:giúp|hộ|dùm|giùm)?\s*(?:\S+\s+){0,6}?(?:trạng\s+thái|hiệu\s+lực|hạn\s+chứng\s+chỉ)"
+    r"|trạng\s+thái\s+(?:của\s+)?(?:vpn|chứng\s+chỉ)"
+)
+# Hỏi CÁCH làm → câu trả lời KB (không ép kiểm tra); có động từ ghi → người dùng nhờ làm, giữ `action` của B3/B6.
+VPN_HOW_TO = re.compile(r"làm\s+(?:sao|thế\s+nào|cách\s+nào)|cách\s+(?:nào|để|kiểm\s+tra|xem)|hướng\s+dẫn|thế\s+nào\s+để|tự\s+(?:kiểm\s+tra|xem|check)|ở\s+đâu")
+VPN_WRITE_VERB = re.compile(r"gia\s+hạn|cấp\s+(?:lại|mới)|đăng\s+ký|thu\s+hồi|renew|reissue")
+STATUS_FALLBACK_ACTIONS: frozenset[str | None] = frozenset({None, "check_vpn_status", "renew_vpn_cert", "reissue_vpn_access"})
+
+
+def vpn_status_question(text: str) -> bool:
+    t = " ".join(unicodedata.normalize("NFC", text).casefold().split())
+    return VPN_STATUS_QUESTION.search(t) is not None and VPN_HOW_TO.search(t) is None and VPN_WRITE_VERB.search(t) is None
 
 
 def vpn_status_fallback(state: Any) -> bool:
-    """Kiểm thử 17/11: câu VPN mà KB không trả lời được nhưng B6 đã có fact chứng chỉ của máy CHÍNH người gửi → kiểm tra trạng thái (chỉ
-    đọc) thay cho E3. Không áp cho ticket chỉ-trả-lời, vòng hỏi tiếp, hay khi B3 đã nhận một hành động khác."""
+    """D-100: câu HỎI trạng thái chứng chỉ VPN máy của CHÍNH người gửi, B6 đã có fact chứng chỉ → kiểm tra (chỉ đọc) thay cho câu trả lời
+    KB (KB không có số liệu từng máy). Không áp cho vòng hỏi tiếp; `action` khác nhóm VPN (B3) → không ép."""
     facts = state.get("facts") or {}
     slots = state.get("slots") or {}
     return (
         state.get("intent") == "vpn"
         and int(state.get("followup_round") or 0) == 0
-        and slots.get("action") in (None, "check_vpn_status")
+        and slots.get("action") in STATUS_FALLBACK_ACTIONS
         and bool(slots.get("device_id"))
         and facts.get("device_owner_is_requester") is True
         and isinstance(facts.get("cert_status"), str)
+        and vpn_status_question(str(state.get("redacted_request") or ""))
     )
 
 
@@ -186,6 +205,12 @@ def make(deps: NodeDeps) -> NodeFn:
         need_type = need.type
         if need_type == "info" and (state.get("slots") or {}).get("action") in INFO_TO_ACTION_SLOTS:
             info["need_type_override"], need_type = "view_permissions_slot", "action"  # K3 (V22): B3 đã nhận việc xem quyền
+        if vpn_status_fallback(state):  # D-100: hỏi trạng thái chứng chỉ máy của mình → kiểm tra (chỉ đọc), không trả lời bằng KB
+            info["need_type_override"] = "vpn_status_question"
+            return await goto(
+                state, S_RETRIEVING, next_node="b11_slots", step="B10", event="needs_action", audit_detail=info,
+                need_type="action", slots={**(state.get("slots") or {}), "action": "check_vpn_status"},
+            )  # fmt: skip
         info["symptom_to_info"] = symptom = need_type == "action" and symptom_to_info(state)
         if need_type == "action" and not symptom:
             if deps.grounding_gate_actions and not above:  # S0-P11: ablation — hành vi 3h (B9 chặn cả hành động)
@@ -201,11 +226,9 @@ def make(deps: NodeDeps) -> NodeFn:
         return await _answer(state, info, chunks, kb_version, above, symptom=symptom)
 
     async def _dead_end(
-        state: Any, info: dict[str, Any], *, step: str, event: str, symptom: bool, kb_version: str | None = None
+        state: Any, info: dict[str, Any], *, step: str, event: str, kb_version: str | None = None
     ) -> dict[str, Any]:
-        """Thiếu căn cứ để trả lời (kiểm thử 17/11): vòng hỏi tiếp → E8; câu HỎI về VPN máy của mình có fact → kiểm tra trạng thái (KHÔNG áp
-        cho nhánh báo lỗi Q2 M1 `symptom` — ca báo lỗi mà KB không có bài vẫn E3, kỹ thuật viên xử lý); còn lại E3 như cũ (`step` B9 | B10 giữ
-        đúng dòng audit cũ)."""
+        """Thiếu căn cứ để trả lời (D-100): vòng hỏi tiếp → E8; còn lại E3 như cũ (`step` B9 | B10 giữ đúng dòng audit cũ)."""
         if int(state.get("followup_round") or 0) > 0:
             note = followup_note(state)
             info["followup_dead_end"] = event
@@ -213,12 +236,6 @@ def make(deps: NodeDeps) -> NodeFn:
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B10", event="followup_unresolved", audit_detail=info,
                 exit_code=ExitCode.E8.value, need_type="info", **extra,
-            )  # fmt: skip
-        if not symptom and state.get("intent") not in ANSWER_ONLY_INTENTS and vpn_status_fallback(state):
-            info["status_fallback"] = event
-            return await goto(
-                state, S_RETRIEVING, next_node="b11_slots", step="B10", event="needs_action", audit_detail=info,
-                need_type="action", slots={**(state.get("slots") or {}), "action": "check_vpn_status"},
             )  # fmt: skip
         if step == "B9":
             return await goto(
@@ -255,7 +272,7 @@ def make(deps: NodeDeps) -> NodeFn:
     ) -> dict[str, Any]:
         if not above:  # B9 (S0-P2): câu trả lời cần đoạn KB đạt ngưỡng — kiểm TRƯỚC expand/b10_answer
             # kb_version: cột audit_logs.kb_version như dòng B9 cũ ở B8 (soát NGHI-5)
-            return await _dead_end(state, info, step="B9", event="no_evidence", symptom=symptom, kb_version=kb_version)
+            return await _dead_end(state, info, step="B9", event="no_evidence", kb_version=kb_version)
         # R2 (soát 12/11, agent 16 F2): ngưỡng áp MỌI đoạn làm bằng chứng — đoạn dưới ngưỡng (vd bài gây nhiễu 0,02 xếp hạng 2) không vào
         # `expand_for_answer` nên cũng không là anchor hợp lệ (trích nó → `invalid_citation`). Hạng 1 đã đạt ở B9 → còn ít nhất một đoạn.
         floor = deps.constants.RETRIEVAL_THRESHOLD
@@ -272,7 +289,7 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
         info["evidence_blocks"] = len(evidence)
         if not evidence:
-            return await _dead_end(state, info, step="B10", event="no_evidence", symptom=symptom)
+            return await _dead_end(state, info, step="B10", event="no_evidence")
         try:
             ans, meta = await deps.llm.complete(
                 "strong", "b10_answer",
@@ -302,7 +319,7 @@ def make(deps: NodeDeps) -> NodeFn:
         anchors = {c.chunk_id for c in chunks} & {b.anchor_chunk_id for b in evidence}
         info["citation"] = check_citations(ans.citations, cannot_answer=ans.cannot_answer, anchors=anchors)
         if info["citation"] == "no_grounding":  # Q-3g-1: LLM tự nhận không đủ căn cứ
-            return await _dead_end(state, info, step="B10", event="cannot_answer", symptom=symptom)
+            return await _dead_end(state, info, step="B10", event="cannot_answer")
         if info["citation"] == "invalid_citation":
             return await goto(
                 state, S_ESCALATED, next_node="b20_audit", step="B10", event="invalid_citation", audit_detail=info,
@@ -315,7 +332,7 @@ def make(deps: NodeDeps) -> NodeFn:
         steps, info["steps_truncated"] = cap_steps(ans.steps)  # Q2 M2: tối đa 3 bước, bước LLM xếp đầu được giữ
         body = render_answer(ans.answer_markdown, steps, cited, intro=intro)
         if int(state.get("followup_round") or 0) > 0 and promises_handoff(ans.answer_markdown):  # hứa chuyển → chuyển thật (E8)
-            return await _dead_end(state, info, step="B10", event="answer_promises_handoff", symptom=symptom)
+            return await _dead_end(state, info, step="B10", event="answer_promises_handoff")
         info["guard"] = deps.output_guard.violation(body)
         if info["guard"] is not None:  # P4: chữ LLM có bí mật / canary / đoạn prompt hệ thống → không gửi, không lưu
             return await goto(

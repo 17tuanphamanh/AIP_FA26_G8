@@ -80,7 +80,12 @@ from app.domain.children import child_id, child_ref
 from app.domain.dedup import duplicate_text, pick_duplicate
 from app.domain.exit_codes import ExitCode
 from app.domain.intents import ANSWER_ONLY_INTENTS
-from app.domain.messages import duplicate_msg, triage_msg, triage_question
+from app.domain.messages import (
+    duplicate_msg,
+    followup_note,
+    triage_msg,
+    triage_question,
+)
 from app.domain.personal_account import personal_account_mentioned
 from app.domain.reverse_action import reverse_action_kind
 from app.domain.slots import audit_dropped, phrase_in_text, sanitize_slots
@@ -242,7 +247,21 @@ def make(deps: NodeDeps) -> NodeFn:
             return list(intents)
         return [i.model_copy(update={"type": "out_of_scope"}) if i.type in ANSWER_ONLY_INTENTS else i for i in intents]
 
+    async def _followup_unresolved(state: Any, loops: int, info: dict[str, Any], why: str) -> dict[str, Any]:
+        """D-100 (máy demo 17/11 tối): vòng hỏi tiếp sau "Chưa ổn" — ticket đã được nhận trong phạm vi ở vòng đầu; B3 phân loại lại câu ghép
+        (câu gốc + ghi chú) mà ra ngoài phạm vi / không chắc thì người dùng đã làm theo hướng dẫn mà chưa xong → E8 kèm ghi chú (bàn giao
+        "Người dùng báo: …"), KHÔNG phải E1 kèm câu giới thiệu phạm vi."""
+        info["followup_dead_end"] = why
+        note = followup_note(state)
+        extra: dict[str, Any] = {"user_feedback": note} if note else {}
+        return await goto(
+            state, S_ESCALATED, next_node="b20_audit", step="B4", event="followup_unresolved", audit_detail=info,
+            exit_code=ExitCode.E8.value, reasoning_loops=loops, **extra,
+        )  # fmt: skip
+
     async def _out_of_scope(state: Any, loops: int, info: dict[str, Any]) -> dict[str, Any]:
+        if int(state.get("followup_round") or 0) > 0:
+            return await _followup_unresolved(state, loops, info, "out_of_scope")
         return await goto(
             state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_out_of_scope", audit_detail=info,
             exit_code=ExitCode.E1.value, reasoning_loops=loops, escalation_reason_detail="out_of_scope",
@@ -258,6 +277,8 @@ def make(deps: NodeDeps) -> NodeFn:
         )  # fmt: skip
 
     async def _low_confidence(state: Any, loops: int, info: dict[str, Any]) -> dict[str, Any]:
+        if int(state.get("followup_round") or 0) > 0:
+            return await _followup_unresolved(state, loops, info, "intent_low_confidence")
         return await goto(
             state, S_ESCALATED, next_node="b20_audit", step="B4", event="intent_low_confidence",
             audit_detail=info, exit_code=ExitCode.E1.value, reasoning_loops=loops,

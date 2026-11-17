@@ -30,7 +30,7 @@ from app.auth.ports import SecurityEventSink
 from app.core.clock import Clock
 from app.db.hours_mode import HoursMode, HoursModeState
 from app.db.m5_strategy import StrategyChange
-from app.graph.ports import ApprovalRepo, TicketRepo
+from app.graph.ports import ApprovalRepo, IdentityReads, TicketRepo
 from app.graph.runner import Runner
 from app.guard.privacy import PrivacyGuard, RedactionResult
 
@@ -85,6 +85,8 @@ class Desk:
     rate: RateGate  # Phase 5 gói 2b: bộ đếm 429 (ticket mới; tin nhắn `/messages` `/reply` `/confirm`)
     strategy: StrategyStore  # D-67: chiến lược M5 lúc vận hành (chụp lên ticket mới; route `/api/admin/strategy`)
     hours: HoursModeStore | None = None  # D-97: giả lập giờ hành chính (route `/api/hours-mode`, `/api/admin/hours-mode`)
+    # D-100: phiên còn sống của người gửi (theo họ token, như B1) — `reopened_as_new` chỉ chạy lại khi phiên của ticket gốc còn sống
+    identity: IdentityReads | None = None
 
 
 def retry_after(lock_timeout: float) -> int:

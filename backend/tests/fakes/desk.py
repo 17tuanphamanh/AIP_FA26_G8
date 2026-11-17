@@ -185,6 +185,7 @@ async def desk_env(
     app = create_app(
         settings, health_checks={}, idp=idp, store=store, sink=sink, alerts=h.alerts,
         runtime=runtime or harness_runtime(h), guard=guard, clock=clock, rate=rate, strategy=strategy, hours_mode=hours,
+        identity_reads=h.identity,
     )  # fmt: skip
     transport = httpx.ASGITransport(app=app, client=("203.0.113.7", 50000))
     async with (
