@@ -69,7 +69,7 @@ Không làm:
 - **E0:**
   - `security_events(injection_detected)`;
   - M9 luật 2 cảnh báo mọi E0;
-  - tin người dùng: "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét."
+  - tin người dùng: "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét." *(D-98, 17/11: thay bằng câu nêu lý do — `config/escalation_templates.yaml`; E1 `injection_suspected` có câu riêng)*
 - **E1:** tin người dùng là "Mình là trợ lý IT, hiện hỗ trợ: VPN, tài khoản và mật khẩu, cài phần mềm, quyền truy cập thư mục. Yêu cầu này mình đã chuyển kỹ thuật viên hỗ trợ bạn." (P6 lời nói, ĐP 08/11: câu nói trợ lý hỗ trợ gì đứng trước, danh sách loại việc theo `enabled_intents`; riêng E1 `injection_suspected` vẫn nhận tin E0, mục 4.4); ưu tiên L2 "Thường" (`config/escalation_templates.yaml`, `domain/exit_codes.py:25`).
 - Người gửi xem được `exit_code` ticket của mình (`backend/app/api/tickets.py:141, 229`).
 - **Ràng buộc mã thoát:**

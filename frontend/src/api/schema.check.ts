@@ -203,14 +203,17 @@ export type TicketListOk = [
 
 // ---------------------------------------------------------------- Thông báo (N-TB, be-thong-bao 56ea4d9)
 // Kiểu ở types.ts LÀ kiểu sinh — soát nối tên schema với ĐÚNG route + thân lỗi dùng chung (401/403/503 `ErrorDetail`,
-// 422 `InvalidRequestBody`); `kind`/`result` của openapi ≡ đúng 2/5 giá trị parser chấp nhận (api/notifications.ts).
+// 422 `InvalidRequestBody`); `kind`/`result` của openapi ≡ đúng 4/7 giá trị parser chấp nhận (api/notifications.ts — D-99 thêm
+// `escalation_claimed`/`in_progress`, `escalation_raised`/`raised`).
 type Notif = operations["my_notifications_api_me_notifications_get"];
 type Err<Op, C extends number> = Op extends { responses: { [K in C]: { content: { "application/json": infer B } } } } ? B : never;
 export type NotificationOk = [
   Expect<Mutual<NotificationPage, Ok200<Notif>>>,
   Expect<Mutual<NotificationPage["items"][number], NotificationView>>,
-  Expect<Mutual<NotificationView["kind"], "approval_decided" | "escalation_closed">>,
-  Expect<Mutual<NotificationView["result"], "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new">>,
+  Expect<Mutual<NotificationView["kind"], "approval_decided" | "escalation_closed" | "escalation_claimed" | "escalation_raised">>,
+  Expect<
+    Mutual<NotificationView["result"], "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new" | "in_progress" | "raised">
+  >,
   Expect<Mutual<Extract<NotificationView["result"], "completed" | "confirmed_denial" | "reopened_as_new">, EscalationCloseResult>>,
   Expect<Mutual<NotificationView["new_ticket_id"], string | null>>,
   Expect<Mutual<NotificationPage["next_cursor"], string | null>>,

@@ -1,7 +1,7 @@
 // Hàm thuần cho màn L2 (B4L2Queue, B4L2Detail). Thứ tự hàng đợi: backend ĐÃ sắp theo `priority`, `created_at`,
 // `escalation_id` với `priority` lấy từ bảng seed `exit_code_priority` — nguồn duy nhất (B20 §5.1). Frontend KHÔNG sắp
 // lại và KHÔNG giữ bảng ưu tiên/nhãn/màu theo mã E nào của riêng mình: chỉ gom các dòng LIÊN TIẾP cùng `priority`.
-import { CLOSE_NOTE_MAX } from "../../api/escalations.ts";
+import { CLOSE_NOTE_MAX, type QueueTier } from "../../api/escalations.ts";
 import type { EscalationCloseResult, EscalationQueueItem, HandoffNote } from "../../api/types.ts";
 import { labelOf } from "../../lib/lookup.ts";
 import { KHAC, maKetThuc } from "../../lib/nhan.ts";
@@ -292,4 +292,40 @@ export function trackMissed(
   }
   if (next.size === missed.size && [...next].every((id) => missed.has(id))) return missed;
   return next;
+}
+
+
+// ---- D-99 (17/11): vòng xử lý sau khi chuyển IT — nhận ca, chuyển lên Trưởng IT, lời nhắn người dùng, hạn xử lý ----------------
+
+/** Đường dẫn gốc theo cấp: cấp 2 = hàng đợi L1/L2 (như cũ), cấp 3 = ca đã chuyển lên Trưởng bộ phận IT. */
+export const queueBase = (tier: QueueTier): string => (tier === 3 ? "/escalations-l3" : "/escalations");
+export const QUEUE_TITLE: Record<QueueTier, string> = { 2: "Hàng chờ chuyển L2", 3: "Ca chuyển lên Trưởng IT" };
+
+export const RAISE_TARGETS: readonly { key: "it_manager" | "vendor"; label: string; hint: string }[] = [
+  { key: "it_manager", label: "Trưởng bộ phận IT", hint: "An ninh, ngoại lệ chính sách, quyết định vượt quyền L2" },
+  { key: "vendor", label: "Bộ phận chuyên trách / nhà cung cấp", hint: "Phần cứng, bản quyền, hệ thống bên ngoài" },
+];
+export const raiseTargetLabel = (target: string | null | undefined): string =>
+  RAISE_TARGETS.find((t) => t.key === target)?.label ?? "Cấp cao hơn";
+
+/** Dòng "ai đang giữ ca" cho hàng đợi / chi tiết. */
+export function holderText(item: EscalationQueueItem): string {
+  if (item.assigned_to) return `${item.assigned_to} đang xử lý`;
+  return item.tier === 3 ? "Trưởng IT chưa nhận" : "Chưa ai nhận";
+}
+
+export const OVERDUE_BADGE = "Quá hạn";
+export const CLAIM_DONE_TEXT = "Bạn đã nhận ca này. Người gửi được báo là đã có kỹ thuật viên xử lý.";
+export const RAISE_DONE_TEXT = "Đã chuyển ca lên cấp cao hơn. Người gửi được báo lý do chuyển.";
+export const CLAIM_CONFLICT_TEXT = "Ca này đã có người khác nhận.";
+export const USER_MESSAGE_HINT = "Người gửi sẽ đọc câu này trong thông báo và trong yêu cầu của họ. Không ghi mật khẩu hay mã nội bộ.";
+
+/** Lỗi nhận ca / chuyển cấp → câu cho người xử lý (không lộ mã). */
+export function flowErrorText(status: number, detail: string | null): string {
+  if (status === 409 && detail === "already_claimed") return CLAIM_CONFLICT_TEXT;
+  if (status === 409 && detail === "already_closed") return "Ca này đã được đóng trước đó.";
+  if (status === 409 && (detail === "already_raised" || detail === "tier_changed")) return "Ca này vừa được chuyển cấp — tải lại hàng đợi.";
+  if (status === 403) return "Bạn không xử lý được ca ở cấp này.";
+  if (status === 422) return "Kiểm tra lại nơi chuyển và ghi chú lý do (1–1000 ký tự).";
+  return "Chưa gửi được — thử lại sau ít phút.";
 }

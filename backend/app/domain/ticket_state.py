@@ -186,6 +186,9 @@ class TicketState(TypedDict, total=False):
     # Ghi chú escalate: key không khai báo ở đây bị LangGraph bỏ IM LẶNG khi node trả về.
     escalation_note: str | None  # câu đọc được (boundary E9 — P1 mục 5.2; B1/B17 …)
     escalation_reason_detail: str | None  # D-27 — B20 chép vào escalations.reason_detail
+    # D-98 (17/11): mã yếu tố B14 (tập đóng `FactorCode`, giá trị chuỗi) khi B12 chuyển E5 `llm_high_risk` — CHỈ B20 đọc để ghép vế
+    # "Lý do chính" từ nhãn cố định. Không nằm trong `RiskDecision` (phiếu duyệt `RiskView` kế thừa — giữ nguyên hợp đồng API).
+    risk_factors: list[str] | None
     aggregate_status: str | None  # chỉ ticket cha (D-30) — AGGREGATE_STATUSES ở db/models.py
 
 

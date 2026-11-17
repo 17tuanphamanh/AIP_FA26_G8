@@ -7183,3 +7183,13 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     chưa đóng), con trỏ mảnh nhấp nháy êm đứng sau chữ cuối; tin chính thức thay bản chạy chữ tại chỗ, không chạy hiệu ứng vào lần
     nữa. Bỏ dòng "đang xử lý" thứ hai khi đã có khung tiến trình. Giảm chuyển động → đứng yên. Khối tiến trình vẫn biến mất khi
     ticket chờ người / kết thúc (giữ hành vi cũ).
+35. **17/11 tối — kiểm thử tài khoản nhân viên + trưởng phòng trên máy demo (27 ca) → D-98, D-99 (TA chốt):** 21 ca đúng nghiệp vụ; lệch:
+    (a) câu gộp 2 việc bình thường cũng bị E1 nghi tấn công (cuong.vq "Gia hạn VPN cho máy LAP-0417 của Bình và cài Zoom…", cùng lỗi
+    Hình 9.2); (b) ghi sẵn "(nv001)" trong câu vẫn bị hỏi lại "tài khoản của ai" (3 ca, an toàn nhưng thừa một lượt); (c) máy in "Chưa
+    ổn" lần 1: bot nói "sẽ chuyển kỹ thuật viên" nhưng lại hỏi Đã ổn/Chưa ổn; (d) "kiểm tra chứng chỉ VPN còn hạn không" ra E3 thay vì
+    chạy kiểm tra; (e) mai.tt không đăng nhập được trên máy demo (sai mật khẩu); (f) hàng đợi L2 máy demo còn 396 ca mở cũ — nạp lại seed
+    trước demo. (a)–(d) CHƯA sửa (ghi để TA quyết). **D-98:** mọi ca chuyển IT / bị chặn nêu lý do (E0, E1 nghi tấn công, E6, E7, E8; E5
+    thêm "Lý do chính: …" từ nhãn cố định theo mã yếu tố B14 / luật deny). **D-99:** vòng xử lý sau khi chuyển IT (nhận ca, chuyển lên
+    Trưởng IT / nhà cung cấp, đóng kèm lời nhắn người gửi, `reopened_as_new` tạo ticket thật, hạn xử lý), migration 0018. Kiểm ở máy cloud:
+    unit backend 10 702 đạt; integration Postgres 16 cục bộ (escalations, notifications, migration, b20, tickets, D-99) 107 đạt; FE vitest
+    1 361 đạt, typecheck, eslint, check:style sạch; `make lint` sạch. Chưa chạy trên stack máy demo (nhánh `bao-ly-do-chuyen-it`).

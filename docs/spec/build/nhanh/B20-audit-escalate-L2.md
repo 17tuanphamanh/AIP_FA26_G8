@@ -340,12 +340,13 @@ async def b20_audit(state):
 
 | Mã | Thông báo |
 |---|---|
-| E0 | Trung tính, không tiết lộ lý do |
-| E2, E7 | Thừa nhận sự cố hệ thống |
+| E0 | ~~Trung tính, không tiết lộ lý do~~ → **D-98 (17/11):** nêu lý do chung (có phần giống câu lệnh điều khiển trợ lý, không phải yêu cầu hỗ trợ), không nêu điểm / lớp chặn / mẫu khớp |
+| E1 `injection_suspected` | **D-98:** câu riêng — kiểm tra an toàn tự động chưa xác nhận được, đã chuyển kỹ thuật viên, gợi ý gửi từng việc |
+| E2, E7 | Thừa nhận sự cố hệ thống (E7, D-98: hệ thống liên quan báo lỗi / không phản hồi kịp, chưa chắc đã xong) |
 | E3 | "Mình chưa có thông tin về việc này" |
 | E1, E4, E8 | "Mình chuyển cho kỹ thuật viên" |
 | E5 | "Yêu cầu cần được xem xét kỹ hơn" |
-| E6 | "Yêu cầu đang được xử lý, sẽ phản hồi sớm" |
+| E6 | "Yêu cầu đang được xử lý, sẽ phản hồi sớm" → **D-98:** nêu hết hạn chờ duyệt |
 | E9 | Như E2 |
 
 **Ticket con và ticket cha (D-30, D-31, v1.3):**

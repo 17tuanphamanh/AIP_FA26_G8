@@ -4,8 +4,8 @@ phạm vi, nên câu phạm vi lạc nghĩa; E4 nói "chưa đủ thông tin… 
 
 - Danh sách loại việc trong câu mở đầu lấy theo `enabled_intents` (mặc định của `Settings`, đối chiếu `slots.yaml`): bảng nhãn dưới
   đây phải trùng ĐÚNG tập intent đang bật — bật thêm intent mà quên nhãn/câu thì đỏ ở đây, không bịa thêm, không thiếu.
-- E0 và nhánh E1 `injection_suspected` (B20 dùng mẫu E0) giữ NGUYÊN câu trung tính: không nêu phạm vi, không lộ lý do, để kẻ dò
-  không biết mình bị nhận ra (D-52).
+- D-98 (TA chốt 17/11, thay D-52): E0 và nhánh E1 `injection_suspected` NÊU LÝ DO chung (không nêu phạm vi, không lộ điểm hay lớp
+  chặn). E1 nghi có câu riêng ở `user_message_by_reason` của E1 — B20 không còn mượn mẫu E0.
 - Chỉ đổi chữ của `config/escalation_templates.yaml`: route, mã thoát, `next_for_l2` không thuộc test này.
 """
 
@@ -14,7 +14,6 @@ from collections.abc import Iterator
 import pytest
 from app.domain.states import S_CLARIFYING
 from app.graph.late_event import deliver_event
-from app.graph.nodes.b20_audit import SUSPECTED_MESSAGE_CODE, _message_code
 from app.llm.providers.scripted import Reply
 from app.settings import Settings, get_escalation_templates, get_settings, get_slots
 from tests.fakes.fake_ml import FakeMlService
@@ -42,7 +41,18 @@ E4_MESSAGE = (
 )
 # D-76 (ĐP chốt 09/11): cờ ENABLE_IT_HELP bật (mặc định) → tin E1 thật gửi đi dùng `user_message_it_help` — câu phạm vi thêm vế hướng dẫn
 IT_HELP_CLAUSE = "; và hướng dẫn các sự cố IT thường gặp như máy in, Wi-Fi, Outlook."
-E0_NEUTRAL = "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét."  # nguyên văn trước P6
+# D-98 (17/11): câu nêu lý do — test vàng nguyên văn.
+E0_REASON = (
+    "Tin nhắn này có phần nội dung giống câu lệnh điều khiển trợ lý chứ không phải yêu cầu hỗ trợ, nên để an toàn mình không xử lý "
+    "tự động. Mình đã chuyển bộ phận IT kiểm tra; nếu đây là yêu cầu bình thường, kỹ thuật viên sẽ liên hệ lại bạn."
+)
+E1_SUSPECTED = (
+    "Bước kiểm tra an toàn tự động chưa xác nhận được tin nhắn này, nên mình chưa làm gì để tránh thao tác nhầm. Mình đã chuyển kỹ "
+    "thuật viên xem trực tiếp và kết quả sẽ báo bạn tại đây; nếu cần nhanh, bạn có thể gửi lại từng việc thành từng tin ngắn."
+)
+# Từ không được xuất hiện trong câu báo cho người dùng: lộ cơ chế chặn (điểm, model, regex, LLM, mã).
+# "quy tắc" / "bỏ qua": câu không nhắc lại mẫu chặn (nhóm override) — test_b02_screen TC13 canh cùng ý.
+LEAK_WORDS = ("điểm", "xác suất", "model", "mô hình", "regex", "llm", "injection", "tấn công", "e0", "e1", "quy tắc", "bỏ qua")
 
 
 @pytest.fixture
@@ -107,10 +117,11 @@ def test_e3_keeps_the_no_information_idea() -> None:
 # ---- E0 và mọi mã không thuộc diện đổi: không nêu phạm vi ------------------------------------------------------------
 
 
-def test_e0_stays_the_neutral_sentence_byte_for_byte() -> None:
+def test_e0_states_reason_byte_for_byte() -> None:
     text = TEMPLATES.of("E0").user_message
-    assert text == E0_NEUTRAL
+    assert text == E0_REASON
     assert not _says_scope(text)
+    assert not any(w in text.casefold() for w in LEAK_WORDS)
 
 
 @pytest.mark.parametrize("code", ["E0", "E2", "E4", "E5", "E6", "E7", "E8", "E9"])
@@ -118,16 +129,19 @@ def test_other_codes_do_not_state_scope(code: str) -> None:
     assert not _says_scope(TEMPLATES.of(code).user_message)
 
 
-# ---- B20 chọn tin: injection_suspected dùng mẫu E0 (câu trung tính), mọi lý do E1 khác dùng mẫu E1 ----------------------
+# ---- D-98: E1 injection_suspected có câu riêng nêu lý do; câu theo lý do thắng biến thể lặp và vế hướng dẫn -------------
 
 
-def test_b20_message_code_suspected_uses_e0_template() -> None:
-    assert SUSPECTED_MESSAGE_CODE == {"injection_suspected": "E0"}
-    assert _message_code({"escalation_reason_detail": "injection_suspected"}, "E1") == "E0"
-    for reason in ("out_of_scope", "intent_low_confidence", "intent_not_enabled", None):
-        assert _message_code({"escalation_reason_detail": reason}, "E1") == "E1"
-    text = TEMPLATES.of(_message_code({"escalation_reason_detail": "injection_suspected"}, "E1")).user_message
-    assert text == E0_NEUTRAL and not _says_scope(text)
+def test_e1_suspected_has_own_reason_sentence() -> None:
+    e1 = TEMPLATES.of("E1")
+    for repeat in (0, 1, 2):
+        for it_help in (False, True):
+            text = e1.user_message_for("injection_suspected", it_help=it_help, repeat=repeat)
+            assert text == E1_SUSPECTED
+    assert E1_SUSPECTED != TEMPLATES.of("E0").user_message
+    assert not _says_scope(E1_SUSPECTED)
+    assert not any(w in E1_SUSPECTED.casefold() for w in LEAK_WORDS)
+    assert "vì" in E1_SUSPECTED or "nên" in E1_SUSPECTED  # có lý do, không chỉ "đã chuyển"
 
 
 # ---- đường chạy thật qua B20 (harness giả): người dùng nhận đúng tin -------------------------------------------------
@@ -156,10 +170,10 @@ async def test_b20_sends_scope_message_for_e1_e3_e4() -> None:
 
 
 @pytest.mark.asyncio
-async def test_b20_sends_neutral_e0_for_blocked_injection() -> None:
+async def test_b20_sends_e0_reason_for_blocked_injection() -> None:
     h = GraphHarness()
     await h.submit("t1", b02_screen="injection")
-    assert await _sent_text(h, "t1") == E0_NEUTRAL
+    assert await _sent_text(h, "t1") == E0_REASON
 
 
 @pytest.fixture
@@ -174,14 +188,14 @@ def _b2_review_mode(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_b2_review_mode")
-async def test_real_b2_injection_suspected_sends_e0_sentence_not_e1() -> None:
-    """Model chặn tấn công chấm cao nhưng LLM không xác nhận → E1 `injection_suspected` (mã E1 ở escalation) NHƯNG người dùng nhận
-    đúng câu E0: không phạm vi, không "kỹ thuật viên hỗ trợ bạn" — E1 riêng sẽ cho kẻ dò biết đã lừa được LLM chấm."""
+async def test_real_b2_injection_suspected_sends_reason_sentence() -> None:
+    """Model chặn tấn công chấm cao nhưng LLM không xác nhận → E1 `injection_suspected`; D-98: người dùng nhận câu nêu lý do riêng
+    (chưa xác nhận an toàn được, đã chuyển kỹ thuật viên, gợi ý gửi từng việc) — không phạm vi, không lộ điểm hay lớp chặn."""
     h, _ = _env({JUDGE: [Reply(NOT_ATTACK)]}, ml=FakeMlService(classify_p=0.95))
     v = (await h.submit_as("t1", SESSION, text=NORMAL)).values
     assert (v["exit_code"], v["escalation_reason_detail"]) == ("E1", "injection_suspected")
     text = await _sent_text(h, "t1")
-    assert text == E0_NEUTRAL
-    assert text != TEMPLATES.of("E1").user_message
-    assert not _says_scope(text) and "kỹ thuật viên" not in text
+    assert text == E1_SUSPECTED
+    assert text not in (TEMPLATES.of("E1").user_message, TEMPLATES.of("E0").user_message)
+    assert not _says_scope(text)
     assert v["conversation"][-1]["text"] == text

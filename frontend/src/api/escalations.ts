@@ -14,7 +14,14 @@ import type {
   EscalationCloseResult,
   EscalationQueuePage,
   EscalationQueueStatus,
+  EscalationRaiseIn,
 } from "./types.ts";
+
+/** D-99: cấp đang giữ ca — 2 = hàng đợi L1/L2, 3 = ca đã chuyển lên Trưởng bộ phận IT. */
+export type QueueTier = 2 | 3;
+/** Lời nhắn cho người dùng khi đóng ca (tuỳ chọn) — = `USER_MESSAGE_MAX` backend. Ghi chú chuyển cấp = `RAISE_NOTE_MAX`. */
+export const USER_MESSAGE_MAX = 500;
+export const RAISE_NOTE_MAX = 1000;
 
 /** Cỡ một trang hàng đợi (backend: tối đa 100 — Q-fe-N7 chọn 50). */
 export const QUEUE_PAGE_LIMIT = 50;
@@ -41,7 +48,11 @@ function isBaseItem(v: Record<string, unknown>): boolean {
     isNullableString(v.reason_detail) &&
     typeof v.is_deny_case === "boolean" &&
     isNullableString(v.assigned_to) &&
-    typeof v.created_at === "string"
+    typeof v.created_at === "string" &&
+    // D-99: có thì phải đúng kiểu (backend cũ / dev:mock không có → bỏ qua)
+    (v.tier === undefined || v.tier === 2 || v.tier === 3) &&
+    (v.overdue === undefined || typeof v.overdue === "boolean") &&
+    (v.user_message === undefined || isNullableString(v.user_message))
     // `handoff_note` kiểm lúc hiện (routes/l2/queue.ts `noteText` — thiếu / rỗng → "(không có)").
   );
 }
@@ -70,20 +81,27 @@ export function parseQueuePage(body: unknown, status: EscalationQueueStatus): Es
   return body as EscalationQueuePage;
 }
 
-export const queuePath = (status: EscalationQueueStatus, after: string | null): string =>
-  `/api/escalations/queue?status=${status}&limit=${QUEUE_PAGE_LIMIT}${after === null ? "" : `&after=${encodeURIComponent(after)}`}`;
+export const queuePath = (status: EscalationQueueStatus, after: string | null, tier: QueueTier = 2): string =>
+  `/api/escalations/queue?status=${status}&limit=${QUEUE_PAGE_LIMIT}${tier === 3 ? "&tier=3" : ""}${
+    after === null ? "" : `&after=${encodeURIComponent(after)}`
+  }`;
 
-export async function getEscalationQueuePage(status: EscalationQueueStatus, after: string | null): Promise<EscalationQueuePage> {
-  const { data } = await api.request<unknown>(queuePath(status, after));
+export async function getEscalationQueuePage(
+  status: EscalationQueueStatus,
+  after: string | null,
+  tier: QueueTier = 2,
+): Promise<EscalationQueuePage> {
+  const { data } = await api.request<unknown>(queuePath(status, after, tier));
   return parseQueuePage(data, status);
 }
 
 const is403 = (error: unknown) => error instanceof ApiError && error.status === 403;
 
-export const queueQuery = (status: EscalationQueueStatus = "open") =>
+export const queueQuery = (status: EscalationQueueStatus = "open", tier: QueueTier = 2) =>
   infiniteQueryOptions({
-    queryKey: ["escalations", "queue", status] as const,
-    queryFn: ({ pageParam }) => getEscalationQueuePage(status, pageParam),
+    // Cấp 2 giữ khoá cũ (màn & test cũ dùng chung cache); cấp 3 thêm phần tử — mọi khoá vẫn bắt đầu bằng ["escalations", "queue"].
+    queryKey: (tier === 2 ? ["escalations", "queue", status] : ["escalations", "queue", status, tier]) as readonly unknown[],
+    queryFn: ({ pageParam }) => getEscalationQueuePage(status, pageParam, tier),
     initialPageParam: null as string | null,
     getNextPageParam: (last: EscalationQueuePage) => last.next_cursor ?? undefined,
     retry: false,
@@ -124,4 +142,16 @@ export async function requestClose(id: number, body: EscalationCloseIn): Promise
 
 /** Đóng ca từ màn — route thật (ĐP 01/11 16:40: bỏ cờ CLOSE_AVAILABLE, hợp đồng N-PA §4). */
 export const closeEscalation = requestClose;
+
+/** D-99 nhận ca: CHỈ 200 = đã nhận (bấm lại khi chính mình đã nhận cũng 200). 409 `already_claimed` | `already_closed` | `tier_changed`. */
+export async function claimEscalation(id: number): Promise<void> {
+  const res = await api.request<unknown>(`/api/escalations/${id}/claim`, { method: "POST" });
+  if (res.status !== 200) throw new ApiError(502, "unexpected_claim_status");
+}
+
+/** D-99 chuyển lên cấp 3: CHỈ 200 = đã chuyển. 409 `already_claimed` (người khác giữ ca) | `already_raised`; 422 `target` / `note`. */
+export async function raiseEscalation(id: number, body: EscalationRaiseIn): Promise<void> {
+  const res = await api.request<unknown>(`/api/escalations/${id}/raise`, { method: "POST", json: body });
+  if (res.status !== 200) throw new ApiError(502, "unexpected_raise_status");
+}
 

@@ -62,6 +62,9 @@ NOT_ATTACK = {"is_attack": False, "category": "none", "reason": "yêu cầu hỗ
 # Câu E5 `policy_deny` ĐP soạn (Q3 M5, config/escalation_templates.yaml) — chép NGUYÊN VĂN, không đọc từ file mẫu.
 POLICY_DENY_TEXT = ("Theo quy định của công ty, việc này không được thực hiện tự động. Mình đã chuyển kỹ thuật viên xem xét; bạn sẽ "
                     "nhận phản hồi tại đây.")  # fmt: skip
+# D-98 (17/11): B20 nối vế lý do theo luật deny khớp — nguyên văn, không đọc từ file mẫu.
+R21_REASON = " Lý do chính: phần mềm này nằm trong danh sách bị cấm cài theo quy định công ty."
+R12_REASON = " Lý do chính: tài khoản nhận quyền đang bị khoá nên không được cấp quyền."
 R21 = {
     "id": "R21", "type": "deny", "intent": "software", "action": "install_software",
     "conditions": {"all": [{"fact": "action.facts.software_prohibited", "op": "is_true"}]},
@@ -239,7 +242,7 @@ async def test_prohibited_denied_e5_no_approval(text: str, name: str) -> None:
     assert (state["exit_code"], state["escalation_reason_detail"]) == ("E5", "policy_deny")
     assert not any(r["step"].startswith("B15") for r in audit.rows), [(r["step"], r["event"]) for r in audit.rows]
     assert h.approvals.count("t1") == 0
-    assert h.notifier.sent == [("t1", POLICY_DENY_TEXT, "none")]
+    assert h.notifier.sent == [("t1", POLICY_DENY_TEXT + R21_REASON, "none")]
 
 
 @pytest.mark.asyncio
@@ -269,7 +272,7 @@ async def test_b20_control_r12_deny_sends_policy_deny_text() -> None:
         with bind_run(run):
             state = {**state, **await wrap_node(name, module.make(deps))(dict(state))}
     assert (state["exit_code"], state["escalation_reason_detail"]) == ("E5", "policy_deny")
-    assert h.notifier.sent == [("t1", POLICY_DENY_TEXT, "none")]
+    assert h.notifier.sent == [("t1", POLICY_DENY_TEXT + R12_REASON, "none")]
 
 
 ASIS_CASES = [

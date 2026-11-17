@@ -1,7 +1,7 @@
 // Thông báo của người dùng — route THẬT backend/app/api/notifications.py (be-thong-bao 56ea4d9; hợp đồng thông báo §1):
 // `GET /api/me/notifications?limit=&after=` (quyền `ticket:read:own`) → `NotificationPage` {items, next_cursor}, mới nhất
 // trước. Kiểu từ schema.gen.ts (types.ts). Đọc CHẶT như hàng đợi L2: thân sai hình dạng, `kind`/`result` lạ, `kind` không
-// khớp `result`/`id` (`appr:<số>` | `esc:<số>` — `ID_PATTERN` của backend/app/db/notifications.py), `created_at` không phải
+// khớp `result`/`id` (`appr:<số>` | `esc:` | `escc:` | `escr:<số>` — `ID_PATTERN` của backend/app/db/notifications.py), `created_at` không phải
 // ISO có múi giờ → 502 `invalid_notifications_body` cho CẢ thân (không vẽ một phần, không đoán).
 // Backend cũ chưa có route (404) / người dùng không được đọc (403) → chuông ẩn im lặng (`notificationsUnavailable`).
 import { infiniteQueryOptions, type InfiniteData } from "@tanstack/react-query";
@@ -17,13 +17,22 @@ export const NOTIFICATION_POLL_MS = 30_000;
 
 const BAD_BODY = "invalid_notifications_body";
 
-/** Kết quả hợp lệ theo từng loại: phiếu duyệt → duyệt/từ chối; đóng ca L2 → 3 kết quả đóng (CLOSE_RESULTS). */
+/** Kết quả hợp lệ theo từng loại: phiếu duyệt → duyệt/từ chối; đóng ca L2 → 3 kết quả đóng (CLOSE_RESULTS); D-99: đã có người
+ *  nhận ca → `in_progress`; đã chuyển lên cấp 3 → `raised`. */
 const RESULTS_OF: Readonly<Record<NotificationKind, readonly NotificationResult[]>> = {
   approval_decided: ["approved", "rejected"],
   escalation_closed: ["completed", "confirmed_denial", "reopened_as_new"],
+  escalation_claimed: ["in_progress"],
+  escalation_raised: ["raised"],
 };
-/** `id` theo loại — đúng `ID_PATTERN` của backend (`(appr|esc):[0-9]{1,19}`). */
-const ID_OF: Readonly<Record<NotificationKind, RegExp>> = { approval_decided: /^appr:[0-9]{1,19}$/, escalation_closed: /^esc:[0-9]{1,19}$/ };
+/** `id` theo loại — đúng `ID_PATTERN` của backend (`(appr|esc|escc|escr):[0-9]{1,19}`). */
+const ID_OF: Readonly<Record<NotificationKind, RegExp>> = {
+  approval_decided: /^appr:[0-9]{1,19}$/,
+  escalation_closed: /^esc:[0-9]{1,19}$/,
+  escalation_claimed: /^escc:[0-9]{1,19}$/,
+  escalation_raised: /^escr:[0-9]{1,19}$/,
+};
+const isKind = (v: unknown): v is NotificationKind => typeof v === "string" && Object.hasOwn(RESULTS_OF, v);
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v !== "";
@@ -31,7 +40,7 @@ const nonEmpty = (v: unknown): v is string => typeof v === "string" && v !== "";
 function isItem(v: unknown): v is NotificationView {
   if (!isRecord(v)) return false;
   const kind = v.kind;
-  if (kind !== "approval_decided" && kind !== "escalation_closed") return false;
+  if (!isKind(kind)) return false;
   return (
     typeof v.id === "string" &&
     ID_OF[kind].test(v.id) &&

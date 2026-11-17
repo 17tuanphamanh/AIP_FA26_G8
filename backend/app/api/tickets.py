@@ -56,6 +56,7 @@ from app.api.desk import (
     redact_reply_items,
 )
 from app.api.errors import InvalidRequest, error_fields
+from app.api.notifications import output_guard
 from app.api.ratelimit import limit_messages, limit_tickets
 from app.api.strategy import snapshot_for_new_ticket
 from app.auth.authz import can_override, can_read_ticket
@@ -164,6 +165,20 @@ class Accepted(BaseModel):
     notices: list[str] = []  # phase3 mục 8.3 — nguyên văn `RedactionResult.notices`
 
 
+class HandlingView(BaseModel):
+    """D-99: một ca chuyển IT, nhìn từ phía người gửi. `stage`: waiting (chưa ai nhận) | claimed | raised (đã chuyển cấp 3, chưa ai nhận)
+    | closed. `user_message` chỉ có khi qua `OutputGuard` (như thông báo). Không lộ ghi chú nội bộ, người xử lý, mã luật."""
+
+    ticket_id: str
+    stage: Literal["waiting", "claimed", "raised", "closed"]
+    tier: Literal[2, 3]
+    raise_target: Literal["it_manager", "vendor"] | None
+    close_result: Literal["completed", "confirmed_denial", "reopened_as_new"] | None
+    user_message: str | None
+    new_ticket_id: str | None
+    updated_at: datetime
+
+
 class TicketView(BaseModel):
     """Đúng tập trường trả cho người dùng — không lộ state nội bộ khác của checkpoint."""
 
@@ -190,6 +205,8 @@ class TicketView(BaseModel):
     # Q13b (D-79): FE mở ô "Hỏi tiếp về yêu cầu này" — cờ `ENABLE_SESSION_MEMORY` bật VÀ ticket đã kết thúc VÀ là ticket GỐC VÀ người đọc là
     # CHỦ ticket (L1/L2 đọc được ticket người khác nhưng không hỏi tiếp thay).
     can_follow_up: bool = False
+    # D-99 (17/11): tiến độ xử lý của bộ phận IT cho từng ca của ticket (và con của nó) — None khi không có ca / nguồn ca không có.
+    handling: list[HandlingView] | None = None
 
 
 REQUEST_TEXT_MAX = 500
@@ -366,6 +383,7 @@ async def read_ticket(
     elif row.final_state is None and waiting_for in ("approval", "clarify", "confirm"):  # R3
         deadline = await desk.approvals.open_deadline(ticket_id, waiting_for)
     parent = await desk.tickets.get(row.parent_ticket_id) if row.parent_ticket_id is not None else None
+    handling = await _handling(request, [ticket_id, *(values.get("children") or [])])
     return TicketView(
         ticket_id=ticket_id,
         status=row.final_state or values.get("status") or S_NEW,
@@ -378,7 +396,40 @@ async def read_ticket(
             request.app.state.settings.enable_session_memory and follow_up_open(row.final_state) and row.parent_ticket_id is None
             and row.requester_id == p.user_id
         ),
+        handling=handling,
     )  # fmt: skip
+
+
+def _stage(r: Any) -> str:
+    if r.closed_at is not None:
+        return "closed"
+    if r.assigned_at is not None:
+        return "claimed"
+    return "raised" if r.tier == 3 else "waiting"
+
+
+async def _handling(request: Request, ticket_ids: list[str]) -> list[HandlingView] | None:
+    """D-99: đọc ca của ticket + con. Nguồn ca không có (test cũ) hoặc lỗi đọc → None (màn chat giữ câu cũ; log tên lớp lỗi)."""
+    source = getattr(request.app.state, "escalations", None)
+    if source is None or not hasattr(source, "handling_of"):
+        return None
+    try:
+        rows = await source.handling_of(ticket_ids)
+    except Exception as exc:  # noqa: BLE001 — phần phụ của màn chat, không chặn đọc ticket
+        log.warning("đọc tiến độ xử lý IT lỗi (%s)", type(exc).__name__)
+        return None
+    if not rows:
+        return None
+    guard = output_guard(request)
+    out = []
+    for r in rows:
+        msg = (r.user_message or "").strip()
+        out.append(HandlingView(
+            ticket_id=r.ticket_id, stage=_stage(r), tier=r.tier, raise_target=r.raise_target, close_result=r.close_result,  # type: ignore[arg-type]
+            user_message=msg if msg and guard.violation(msg) is None else None, new_ticket_id=r.new_ticket_id,
+            updated_at=r.closed_at or r.assigned_at or r.raised_at or r.created_at,
+        ))  # fmt: skip
+    return out
 
 
 @router.post("/api/tickets/{ticket_id}/messages", status_code=202)

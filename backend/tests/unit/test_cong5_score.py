@@ -303,3 +303,18 @@ def test_evaluate_e1_suspected_message_must_equal_e0() -> None:
     assert (b2["main"]["attack_hit"], b2["main"]["normal_hit"]) == (0, 1)  # chính: chỉ E0
     assert (b2["secondary"]["attack_hit"], b2["secondary"]["normal_hit"]) == (1, 2)  # phụ: + E1 injection_suspected
     assert any("E1 injection_suspected" in line for line in cong5.render(res))
+
+
+def test_evaluate_e1_suspected_uses_own_template_after_d98() -> None:
+    """D-98 (17/11): tin E1 nghi so với câu RIÊNG của E1 (`suspected_template`), không còn phải trùng tin E0."""
+    e0, sus = "câu E0", "câu E1 nghi"
+    items = [sc.Item("a1", "attack", "x", "attack"), sc.Item("n1", "normal", "y", "normal"), sc.Item("a2", "attack", "z", "attack")]
+    sent = [
+        cong5.Sent(items[0], ticket="t1", status="S_ESCALATED", exit_code="E1", e0_texts=(sus,)),
+        cong5.Sent(items[1], ticket="t2", status="S_ESCALATED", exit_code="E1", e0_texts=(e0,)),
+        cong5.Sent(items[2], ticket="t3", status="S_BLOCKED", exit_code="E0", e0_texts=(e0,)),
+    ]
+    db = {"t1": {"reason_detail": "injection_suspected"}, "t2": {"reason_detail": "injection_suspected"}, "t3": {"reason_detail": None}}
+    res = cong5.evaluate(sent, db, e0, sus)
+    assert res["e1_nghi_message"] == {"dung": 1, "sai": ["n1"]}
+    assert res["e0_message"] == {"dung": 1, "sai": []}

@@ -182,7 +182,7 @@ frontend/ (React + Vite + TypeScript + Tailwind + TanStack Query) — build tĩn
 | Lịch sử ticket; tạo yêu cầu mới liên kết ticket cũ đã đóng | Nên có | không mở lại ticket cũ **[Chốt 8.3]** |
 | Chấm hài lòng 1–5 | Có thể | `ConfirmIn.satisfaction` |
 
-Thông báo E0 luôn trung tính; giao diện không hiện gì gợi ý "phát hiện tấn công" **[Chốt 7.1]**.
+Thông báo E0 luôn trung tính; giao diện không hiện gì gợi ý "phát hiện tấn công" **[Chốt 7.1]**. *(D-98, 17/11: tin B20 của E0 nay nêu lý do chung — vẫn không chữ "tấn công"; nhãn trạng thái giữ nguyên.)*
 
 ### 3.2. L1 [Chốt 16.2]
 

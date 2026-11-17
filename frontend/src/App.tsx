@@ -114,6 +114,27 @@ const escalationRoutes = [
   },
 ];
 
+const ESCALATIONS_L3 = STAFF_NAV.find((item) => item.to === "/escalations-l3")!;
+const escalationL3Routes = [
+  {
+    path: ESCALATIONS_L3.to.slice(1),
+    element: (
+      <RequirePerm perm={ESCALATIONS_L3.perm}>
+        <EscalationQueue tier={3} />
+      </RequirePerm>
+    ),
+  },
+  {
+    path: `${ESCALATIONS_L3.to.slice(1)}/:escalationId`,
+    element: (
+      <RequirePerm perm={ESCALATIONS_L3.perm}>
+        <EscalationTraceLink tier={3} />
+        <EscalationDetailRoute tier={3} />
+      </RequirePerm>
+    ),
+  },
+];
+
 const APPROVALS = STAFF_NAV.find((item) => item.to === "/approvals")!;
 const approvalRoutes = [
   {
@@ -187,6 +208,7 @@ const router = createBrowserRouter([
       { index: true, element: <Home /> },
       ...chatRoutes,
       ...escalationRoutes,
+      ...escalationL3Routes,
       ...approvalRoutes,
       ...managerRoutes,
       ...traceRoutes,

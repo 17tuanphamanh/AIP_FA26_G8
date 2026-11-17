@@ -17,6 +17,7 @@ from typing import Literal, Protocol
 type RoleAs = Literal["primary", "backup"]
 
 from app.auth.models import Principal
+from app.auth.permissions import L3_PERM
 from app.domain.action import Action
 from app.domain.approval import ConflictType, conflict_type
 from app.domain.context import RequesterContext
@@ -100,14 +101,27 @@ def can_override(p: Principal, t: TicketLike) -> bool:
     return p.has("decision:override") and p.user_id != t.requester_id
 
 
+def can_handle_tier(p: Principal, tier: int) -> bool:
+    """D-99: cấp 2 → `escalation:handle` (L1, L2); cấp 3 → `escalation:handle:l3` (Trưởng bộ phận IT). L2 KHÔNG xử lý ca cấp 3."""
+    if tier == 3:
+        return p.has(L3_PERM)
+    return p.has("escalation:handle")
+
+
+def can_act_on_escalation(p: Principal, *, tier: int, requester_id: str | None) -> bool:
+    """Nhận ca / chuyển cấp / đóng: đúng cấp và không phải CHÍNH người gửi ticket (Q5a — không tự xử lý ca của mình)."""
+    if not can_handle_tier(p, tier):
+        return False
+    return requester_id is None or requester_id != p.user_id
+
+
 def can_close_escalation(
-    p: Principal, e: EscalationLike, result: str, *, requester_id: str | None
+    p: Principal, e: EscalationLike, result: str, *, requester_id: str | None, tier: int = 2
 ) -> Literal["allow", "forbidden", "unprocessable"]:
     """`requester_id` = người gửi ticket của ca (None = không biết — ticket không còn). Q5a (soát 12/11, agent 13 F4): người xử lý là
-    CHÍNH người gửi → forbidden — không tự đóng ca của mình (vd L2 tự gửi rồi tự đóng `completed`, cả ca E1 nghi tấn công)."""
-    if not p.has("escalation:handle"):
-        return "forbidden"
-    if requester_id is not None and requester_id == p.user_id:
+    CHÍNH người gửi → forbidden — không tự đóng ca của mình (vd L2 tự gửi rồi tự đóng `completed`, cả ca E1 nghi tấn công).
+    D-99: `tier` = cấp đang giữ ca — cấp 3 chỉ Trưởng IT đóng; luật `completed` (deny, E5/E6) giữ nguyên ở MỌI cấp (nguyên tắc 5)."""
+    if not can_act_on_escalation(p, tier=tier, requester_id=requester_id):
         return "forbidden"
     if cannot_complete(result, exit_code=e.exit_code, is_deny_case=e.is_deny_case):  # deny [Chốt] + E5/E6 (B20:303)
         return "unprocessable"

@@ -90,7 +90,8 @@ async def test_each_exit_code_one_escalation_with_handoff_and_message(code: str)
 
 
 @pytest.mark.asyncio
-async def test_e0_message_does_not_reveal_reason() -> None:
+async def test_e0_message_has_no_attack_words() -> None:
+    """D-98 (17/11): câu E0 nêu lý do CHUNG nhưng không gọi tên cơ chế chặn hay "tấn công"."""
     text = TEMPLATES.of("E0").user_message.lower()
     assert not any(w in text for w in ("injection", "tấn công", "chặn", "độc hại", "an ninh"))
 

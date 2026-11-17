@@ -210,7 +210,9 @@ def _assert_e1(h: GraphHarness, gw: Gateway, v: dict[str, Any]) -> None:
     assert row["detail"]["screening"] == v["screening"]
     assert h.security_events.rows == [] and h.effects.count("t1", "security_event") == 0  # mutation 4
     [(_, text, _)] = [s for s in h.notifier.sent if s[0] == "t1"]
-    assert text == templates.of("E0").user_message != templates.of("E1").user_message  # mutation 5
+    # mutation 5 — D-98 (17/11): câu riêng của E1 nghi (nêu lý do), khác câu E0 và câu E1 phạm vi
+    assert text == templates.of("E1").user_message_by_reason["injection_suspected"]
+    assert text not in (templates.of("E0").user_message, templates.of("E1").user_message)
     assert v["conversation"][-1]["text"] == text
     [esc] = h.escalations.of("t1")
     assert (esc["exit_code"], esc["reason_detail"]) == ("E1", "injection_suspected")

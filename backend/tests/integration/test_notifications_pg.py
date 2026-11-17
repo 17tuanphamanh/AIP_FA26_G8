@@ -226,9 +226,10 @@ def test_route_real_sql_json_contract_and_isolation(env: AuthEnv) -> None:
     rejected = next(i for i in body["items"] if i["result"] == "rejected")
     assert rejected["text"] == "Yêu cầu của bạn chưa được duyệt. Ghi chú của người duyệt: Thiếu thông tin máy"
     assert rejected["ticket_id"] == "P-A"
-    neutral = [i for i in body["items"] if i["kind"] == "escalation_closed" and i["text"] == api.NEUTRAL_TEXT]
-    assert sorted(i["result"] for i in neutral) == ["confirmed_denial", "reopened_as_new"]  # E0 + E1 injection_suspected, result thật
-    assert sum(1 for i in texts.values() if i["text"] == api.CLOSED_TEXT["reopened_as_new"]) == 1  # E1 out_of_scope
+    closed = [i for i in body["items"] if i["kind"] == "escalation_closed"]
+    assert all(i["text"] == api.CLOSED_TEXT[i["result"]] for i in closed)  # D-98: mọi mã (cả E0 / E1 nghi) câu theo kết quả
+    # E0 (confirmed_denial) + E1 injection_suspected (reopened_as_new) + E1 out_of_scope (reopened_as_new)
+    assert sum(1 for i in texts.values() if i["text"] == api.CLOSED_TEXT["reopened_as_new"]) == 2
     assert "của B" not in r.text
     other = _get(env, "binh.tt", "?limit=50").json()
     assert {i["ticket_id"] for i in other["items"]} == {"T-B1"} and len(other["items"]) == 3

@@ -13,6 +13,8 @@ export const STAFF_NAV: readonly NavItem[] = [
   { to: "/llm-status", label: "Trạng thái LLM", perm: "llm_status:read", stage: "I1" },
   { to: "/approvals", label: "Chờ tôi duyệt", perm: "approval:decide", stage: "F4" },
   { to: "/escalations", label: "Hàng chờ chuyển L2", perm: "escalation:handle", stage: "F3" },
+  // D-99 (17/11): ca L2 chuyển lên cấp 3 — Trưởng bộ phận IT nhận, xử lý, đóng kèm lời nhắn người gửi.
+  { to: "/escalations-l3", label: "Ca chuyển lên", perm: "escalation:handle:l3", stage: "D99" },
 ];
 
 export const CHAT_NAV: NavItem = { to: "/chat", label: "Yêu cầu mới", perm: "ticket:create", stage: "F2" };

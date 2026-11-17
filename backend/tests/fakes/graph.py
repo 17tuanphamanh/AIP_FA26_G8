@@ -39,15 +39,23 @@ from app.auth.user_sync import AdUserSync, AuthApproverUsers
 from app.auth.username_hash import username_key
 from app.core.clock import Clock, FakeClock
 from app.db.escalations import (
+    CLAIM_EVENT,
+    RAISE_EVENT,
     WRITE_DOUBT_REASONS,
+    ClaimOutcome,
+    ClaimRequest,
     ClosedEscalation,
     CloseRequest,
     EscalationHead,
+    HandlingRow,
     QueueItem,
     QueueKey,
     QueueStatus,
+    RaiseOutcome,
+    RaiseRequest,
     ReopenHook,
     close_audit_row,
+    flow_audit_row,
 )
 from app.db.lineage import LINEAGE_KEY, check_lineage_row
 from app.db.models import CONFLICT_TYPES, NOTICE_KINDS, NOTICE_NEEDS
@@ -871,7 +879,7 @@ class MemoryEscalations:
         self.rows.append({"escalation_id": len(self.rows) + 1, "ticket_id": ticket_id,
                           "exit_code": exit_code, "priority": rank, "reason_detail": reason_detail,
                           "handoff_note": dict(handoff_note), "is_deny_case": is_deny_case,
-                          "created_at": created_at, "closed_at": None, "assigned_to": None})  # fmt: skip
+                          "created_at": created_at, "closed_at": None, "assigned_to": None, "tier": 2})  # fmt: skip
         return str(len(self.rows))
 
     async def open_write_doubt(
@@ -901,9 +909,11 @@ class MemoryEscalations:
             escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
             priority=r["priority"], label=self._priority[r["exit_code"]][1],
             reason_detail=r["reason_detail"], is_deny_case=r["is_deny_case"],
-            handoff_note=r["handoff_note"], assigned_to=None, created_at=r["created_at"],
+            handoff_note=r["handoff_note"], assigned_to=r.get("assigned_to"), created_at=r["created_at"],
             closed_at=r["closed_at"], close_result=r.get("close_result"), closed_by=r.get("closed_by"),
-            close_note=r.get("close_note"),
+            close_note=r.get("close_note"), assigned_at=r.get("assigned_at"), tier=r.get("tier", 2), raised_at=r.get("raised_at"),
+            raised_by=r.get("raised_by"), raise_target=r.get("raise_target"), raise_note=r.get("raise_note"),
+            user_message=r.get("user_message"), new_ticket_id=r.get("new_ticket_id"),
         )  # fmt: skip
 
     @staticmethod
@@ -915,10 +925,11 @@ class MemoryEscalations:
         rows.sort(key=self._order)
         return [self._item(r) for r in rows[:limit]]
 
-    async def list_page(self, status: QueueStatus, limit: int, after: QueueKey | None) -> list[QueueItem]:
-        """Như SQL (P4 tuần 8): `open` | `closed`, thứ tự `priority, created_at, escalation_id`, keyset SAU `after`."""
+    async def list_page(self, status: QueueStatus, limit: int, after: QueueKey | None, *, tier: int = 2) -> list[QueueItem]:
+        """Như SQL (P4 tuần 8): `open` | `closed`, thứ tự `priority, created_at, escalation_id`, keyset SAU `after`; D-99: đúng `tier`."""
         rows = [r for r in self.rows
-                if (r["closed_at"] is None) == (status == "open") and self._leaf_or_failed_parent(r["ticket_id"])]  # fmt: skip
+                if (r["closed_at"] is None) == (status == "open") and self._leaf_or_failed_parent(r["ticket_id"])
+                and r.get("tier", 2) == tier]  # fmt: skip
         rows.sort(key=self._order)
         if after is not None:
             rows = [r for r in rows if self._order(r) > (after.priority, after.created_at, after.escalation_id)]
@@ -928,8 +939,56 @@ class MemoryEscalations:
         r = next((r for r in self.rows if r["escalation_id"] == escalation_id), None)
         return None if r is None else EscalationHead(
             escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], exit_code=r["exit_code"],
-            is_deny_case=r["is_deny_case"], closed_at=r["closed_at"],
+            is_deny_case=r["is_deny_case"], closed_at=r["closed_at"], tier=r.get("tier", 2), assigned_to=r.get("assigned_to"),
         )  # fmt: skip
+
+    async def claim(self, req: ClaimRequest) -> ClaimOutcome:
+        """Như SQL (D-99): ghi khi còn mở, đúng cấp, chưa ai nhận; bấm lại của chính người nhận → `claimed` không audit."""
+        r = next((r for r in self.rows if r["escalation_id"] == req.escalation_id), None)
+        if r is None:
+            return "not_found"
+        if r["closed_at"] is not None:
+            return "closed"
+        if r.get("tier", 2) != req.tier:
+            return "wrong_tier"
+        if r.get("assigned_to") is not None:
+            return "claimed" if r["assigned_to"] == req.user_id else "taken"
+        r.update(assigned_to=req.user_id, assigned_at=req.at)
+        if self._audit is not None:
+            await self._audit.record(flow_audit_row(event=CLAIM_EVENT, escalation_id=req.escalation_id, ticket_id=r["ticket_id"],
+                                                    at=req.at, detail={"by": req.user_id, "tier": req.tier}))  # fmt: skip
+        return "claimed"
+
+    async def raise_tier(self, req: RaiseRequest) -> RaiseOutcome:
+        r = next((r for r in self.rows if r["escalation_id"] == req.escalation_id), None)
+        if r is None:
+            return "not_found"
+        if r["closed_at"] is not None:
+            return "closed"
+        if r.get("tier", 2) != 2:
+            return "already_raised"
+        r.update(tier=3, raised_at=req.at, raised_by=req.raised_by, raise_target=req.target, raise_note=req.note,
+                 assigned_to=None, assigned_at=None)  # fmt: skip
+        if self._audit is not None:
+            await self._audit.record(flow_audit_row(
+                event=RAISE_EVENT, escalation_id=req.escalation_id, ticket_id=r["ticket_id"], at=req.at,
+                detail={"by": req.raised_by, "target": req.target, "note_length": len(req.note)},
+            ))  # fmt: skip
+        return "raised"
+
+    async def handling_of(self, ticket_ids: Sequence[str]) -> list[HandlingRow]:
+        rows = sorted((r for r in self.rows if r["ticket_id"] in set(ticket_ids)), key=lambda r: (r["created_at"], r["escalation_id"]))
+        return [HandlingRow(
+            escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], tier=r.get("tier", 2), assigned_at=r.get("assigned_at"),
+            raised_at=r.get("raised_at"), raise_target=r.get("raise_target"), closed_at=r["closed_at"],
+            close_result=r.get("close_result"), user_message=r.get("user_message"), new_ticket_id=r.get("new_ticket_id"),
+            created_at=r["created_at"],
+        ) for r in rows]  # fmt: skip
+
+    async def set_new_ticket(self, escalation_id: int, new_ticket_id: str) -> None:
+        r = next((r for r in self.rows if r["escalation_id"] == escalation_id), None)
+        if r is not None and r.get("close_result") == "reopened_as_new" and r.get("new_ticket_id") is None:
+            r["new_ticket_id"] = new_ticket_id
 
     async def close(self, req: CloseRequest, *, reopen: ReopenHook | None = None) -> ClosedEscalation | None:
         """Như SQL: đóng nếu còn mở (không `await` giữa kiểm và ghi → hai lần đóng: một thắng); `tickets.close_reason` chỉ khi
@@ -937,9 +996,12 @@ class MemoryEscalations:
         transaction SQL — bản giả không hỗ trợ."""
         assert reopen is None, "MemoryEscalations: móc reopen chỉ có ở SqlEscalationStore"
         r = next((r for r in self.rows if r["escalation_id"] == req.escalation_id), None)
-        if r is None or r["closed_at"] is not None:
+        if r is None or r["closed_at"] is not None or r.get("tier", 2) != req.tier:
             return None
-        r.update(closed_at=req.at, close_result=req.close_result, closed_by=req.closed_by, close_note=req.close_note)
+        r.update(closed_at=req.at, close_result=req.close_result, closed_by=req.closed_by, close_note=req.close_note,
+                 user_message=req.user_message)  # fmt: skip
+        if r.get("assigned_to") is None:
+            r.update(assigned_to=req.closed_by, assigned_at=req.at)
         ticket = self._tickets.rows.get(r["ticket_id"], {})
         final: FinalSummary | None = ticket.get("final")
         if final is not None and final.close_reason is None and final.final_state == S_ESCALATED:
@@ -949,7 +1011,7 @@ class MemoryEscalations:
         return ClosedEscalation(
             escalation_id=r["escalation_id"], ticket_id=r["ticket_id"], close_result=req.close_result,
             close_reason=final.close_reason if final is not None else None, closed_at=req.at, closed_by=req.closed_by,
-            close_note=req.close_note, new_ticket_id=None,
+            close_note=req.close_note, new_ticket_id=None, user_message=req.user_message,
         )  # fmt: skip
 
 

@@ -27,7 +27,7 @@ import { latestRound, PARENT_FINAL_NOTE, PARENT_PROCESSING, parentStatusLabel, p
 import { ProgressStepper } from "./ProgressStepper.tsx";
 import { describeSendError, readNotices } from "./sendError.ts";
 import { REDACTED_NOTE, sessionTickets, titleOf, useSessionTickets } from "./sessionTickets.ts";
-import { POLL_PROCESSING_MS, finalNoteOf, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
+import { POLL_PROCESSING_MS, finalNoteOf, handlingText, pollDelay, statusLabel, statusTone, type Tone } from "./status.ts";
 import { StreamingText } from "./StreamingText.tsx";
 import { usePacedMessages } from "./usePacedMessages.ts";
 import { ThinkingBox } from "./ThinkingBox.tsx";
@@ -422,6 +422,13 @@ function ActionPanel({ view, waiting, settling, sending, parent, replyShown, clo
     return (
       <div className="flex flex-col items-start gap-3 rounded-group border border-line bg-group p-5 motion-safe:animate-rise-in" data-testid="final-note">
         <p>{parent ? PARENT_FINAL_NOTE : finalNoteOf(view)}</p>
+        {parent && view.handling?.length ? (
+          <ul data-testid="handling-lines" className="flex list-disc flex-col gap-1 pl-5 text-secondary">
+            {view.handling.map((h) => (
+              <li key={`${h.ticket_id}|${h.updated_at}`}>{handlingText(h)}</li>
+            ))}
+          </ul>
+        ) : null}
         <Link
           to="/chat"
           className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-4 text-secondary font-semibold text-fpt-blue hover:bg-selected max-lg:min-h-11"

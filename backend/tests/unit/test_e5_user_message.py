@@ -34,7 +34,7 @@ E5_REASONS = frozenset({
     "llm_high_risk", "policy_deny", "approval_target_unverified", "llm_layer_disabled", "no_valid_approver",
     "approver_no_longer_valid", "person_no_longer_valid", "action_plan_changed_since_approval", "recheck_failed",
 })  # fmt: skip
-E0_TEXT = "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét."
+E0_TEXT = TEMPLATES.of("E0").user_message  # D-98: câu E0 nêu lý do chung — nguyên văn ghim ở test_messages_scope.py
 
 
 def test_e5_default_and_dp_sentences_exact() -> None:
@@ -67,8 +67,9 @@ def test_unknown_or_missing_reason_default(reason: str | None) -> None:
 def test_e0_unchanged_and_other_codes_have_no_reason_map() -> None:
     assert TEMPLATES.of("E0").user_message == E0_TEXT
     for code in ExitCode:
-        if code is ExitCode.E1:  # D-84 (12/11): một câu riêng cho thao tác ngược
-            assert set(TEMPLATES.of(code.value).user_message_by_reason) == {"reverse_action_requested"}
+        if code is ExitCode.E1:  # D-84 (12/11) thao tác ngược; D-98 (17/11) nghi tấn công, intent không chắc
+            assert set(TEMPLATES.of(code.value).user_message_by_reason) == {
+                "reverse_action_requested", "injection_suspected", "intent_low_confidence"}
         elif code is not ExitCode.E5:
             assert TEMPLATES.of(code.value).user_message_by_reason == {}, code
 

@@ -1399,7 +1399,7 @@ def make(deps: NodeDeps) -> NodeFn:
 
 - `TAU_BLOCK`, `TAU_PASS`: hằng module `guard/injection.py` (0,90 / 0,10) — Phase 3 không có model L3 nên chưa đưa vào `policy.json`; chuyển sang `constants` khi có model (Phase 5, B02).
 - `screening`, `security_flag` là key mới (mục 3.1).
-- Thông báo trung tính do **B20** gửi theo mẫu E0 **đã có** trong `config/escalation_templates.yaml`: "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét." [Chốt 7.1 — E0 không nêu lý do]. Không thêm chuỗi mới, không sửa file mẫu.
+- *(D-98, 17/11: thay — câu E0 nay nêu lý do chung, xem `decisions.md` D-98.)* Thông báo trung tính do **B20** gửi theo mẫu E0 **đã có** trong `config/escalation_templates.yaml`: "Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét." [Chốt 7.1 — E0 không nêu lý do]. Không thêm chuỗi mới, không sửa file mẫu.
 - `security_events.record` đi qua `effects.once` (kind mới `security_event` — mục 8.2). Lý do: chạy lại node sau sự cố không ghi hai sự kiện an ninh cho một lần tấn công.
 
 ### 8.6. Sàng lọc tin trả lời [3-Q3, phương án A]

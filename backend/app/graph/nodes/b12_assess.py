@@ -175,6 +175,7 @@ def make(deps: NodeDeps) -> NodeFn:
                 state, S_ESCALATED, next_node="b20_audit", step="B13/B14", event="risk_decided",
                 audit_detail=detail, lineage=lineage, risk=decision, exit_code=ExitCode.E5.value,
                 escalation_reason_detail="llm_high_risk",
+                risk_factors=[f.value for f in est.factors] if est is not None else None,  # D-98: chỉ B20 đọc (vế lý do)
             )  # fmt: skip
         return await goto(  # luật `deny` (M2: lý do riêng, khác lỗi estimator `llm_layer_disabled`)
             state, S_ESCALATED, next_node="b20_audit", step="B13/B14", event="risk_decided",

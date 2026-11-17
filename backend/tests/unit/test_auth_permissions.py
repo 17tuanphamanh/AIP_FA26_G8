@@ -75,7 +75,13 @@ def test_every_permission_belongs_to_the_matrix_or_p6() -> None:
         "approval:decide", "decision:override", "escalation:handle", "dashboard:read:own",
         "dashboard:read:all", "audit:read:own", "audit:read:all", "policy:read", "policy:edit",
         "kb:edit", "alert:read", "llm_status:read",
+        "escalation:handle:l3",  # D-99 (TA chốt 17/11): Trưởng bộ phận IT nhận ca L2 chuyển lên
     }  # fmt: skip
+
+
+def test_d99_only_manager_handles_tier3_and_manager_not_tier2() -> None:
+    assert {r for r, perms in PERMS.items() if "escalation:handle:l3" in perms} == {"manager"}
+    assert "escalation:handle" not in PERMS["manager"]  # Trưởng IT không xử lý ca cấp 2 (giữ ma trận P6)
 
 
 def test_llm_status_read_is_manager_only() -> None:

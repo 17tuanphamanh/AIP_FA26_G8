@@ -197,6 +197,18 @@ async def test_c4_no_match_preset_09_escalates_llm_high_risk() -> None:
     _assert_llm_path_events(h)
 
 
+@pytest.mark.asyncio
+async def test_c4_d98_llm_high_risk_carries_factor_codes() -> None:
+    """D-98 (17/11): nhánh `llm_high_risk` đặt `risk_factors` = mã B14 chọn (đúng thứ tự) — B20 ghép vế "Lý do chính" từ nhãn cố định.
+    Nhánh khác (HITL, AUTO, luật) KHÔNG đặt khoá này."""
+    out, _, _ = await _node(_no_match(), scripts=_scripts(0.95, factors=("target_is_other", "outside_business_hours")))
+    assert out["escalation_reason_detail"] == "llm_high_risk"
+    assert out["risk_factors"] == ["target_is_other", "outside_business_hours"]
+    assert "factors" not in _risk(out).model_dump()  # hợp đồng `RiskView` của phiếu duyệt giữ nguyên
+    rule_out, _, _ = await _node(_rule_match())
+    assert "risk_factors" not in rule_out
+
+
 # ---- c5: calibrator + raw 0,05 + có bằng chứng → AUTO + action_plan_hash -------------------------------------------------
 
 

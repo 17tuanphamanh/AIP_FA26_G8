@@ -2,10 +2,11 @@
 # Nạp + kiểm schema ở backend/app/settings.py (`get_escalation_templates`): thiếu mã nào hoặc chuỗi
 # rỗng → lỗi lúc nạp. Sửa file này là đổi hành vi agent (tin nhắn người dùng thấy) → chạy lại test.
 #
-# user_message : tin gửi người dùng khi ticket chuyển L2 [Chốt 7.1]. E0 trung tính, KHÔNG nêu lý do.
+# user_message : tin gửi người dùng khi ticket chuyển L2 [Chốt 7.1]. D-98 (TA chốt 17/11): MỌI ca chuyển IT / từ chối nêu rõ VÌ SAO
+#   (lý do chung — không lộ luật, điểm, mẫu chặn), ai xử lý, người dùng chờ ở đâu. Thay chốt cũ "E0 trung tính, KHÔNG nêu lý do".
 #   E1/E3/E4 (ĐP 08/11, P6 lời nói) mở bằng một câu nói trợ lý hỗ trợ gì, rồi mới báo đã chuyển. Danh sách loại việc trong câu
 #   đó PHẢI trùng `enabled_intents` (bật/tắt intent thì sửa cả 3 chỗ — backend/tests/unit/test_messages_scope.py giữ cho khớp).
-#   E0 và E1 `injection_suspected` (B20 dùng mẫu E0) giữ câu trung tính, KHÔNG nêu phạm vi.
+#   E0 và E1 `injection_suspected` (D-98: E1 nghi có câu riêng ở user_message_by_reason, không còn mượn mẫu E0) KHÔNG nêu phạm vi.
 # next_for_l2  : phần (4) của ghi chú bàn giao — L2 cần làm gì.
 # deny_warning : nối vào next_for_l2 với MỌI E5 (2b-Q4: mọi E5 là deny case).
 # next_for_l2_by_reason (tuỳ chọn): câu THAY next_for_l2 khi escalation_reason_detail khớp khoá (khoá ∈ REASON_DETAILS).
@@ -13,10 +14,30 @@
 # user_message_by_reason (tuỳ chọn, Q3 M5 — ĐP 09/11): câu THAY user_message theo escalation_reason_detail (khoá ∈ REASON_DETAILS), đọc
 #   như next_for_l2_by_reason; thiếu/lạ → user_message. Khuôn: vì sao (chung — không lộ luật/điểm), ai xử lý, người dùng chờ ở đâu.
 #   E5: câu mặc định + llm_high_risk, policy_deny, approval_target_unverified do ĐP soạn; 6 lý do E5 còn lại là câu ĐỀ XUẤT [chờ ĐP duyệt].
-#   E0 KHÔNG có mục này (không tiết lộ).
+#   E0 KHÔNG có mục này: câu E0 đã nêu lý do chung (D-98), không chia theo lớp chặn (regex / model / LLM).
 # user_message_repeat (tuỳ chọn, Q13c — 11/11, bản nộp main): ≥ 2 câu THAY user_message khi trong CÙNG phiên đăng nhập đã có ticket khác
 #   kết thúc bằng một mã có mục này (B20 đếm). Lần lặp thứ n dùng câu thứ (n-1) mod số câu — ticket đầu phiên giữ câu đầy đủ. Không nêu lại
 #   câu phạm vi, không thêm hứa hẹn mới; vẫn nói đã chuyển kỹ thuật viên. Câu theo lý do (user_message_by_reason) vẫn ưu tiên. E0 KHÔNG có.
+
+# D-98 (17/11): vế lý do B20 nối vào tin E5 cho người dùng — "<reason_prefix> nhãn1; nhãn2." (tối đa 3 nhãn, theo thứ tự B14 chọn).
+#   user_reason_factors: mã yếu tố B14 (`domain/risk_factors.FactorCode`) → câu thường; KHÔNG khai mã nội bộ (no_policy_evidence,
+#   routine_low_risk). user_reason_rules: luật deny (`config/policy.json`) → câu thường, không nêu mã luật. Nhãn không kết thúc bằng dấu chấm.
+reason_prefix: "Lý do chính:"
+user_reason_factors:
+  target_is_other: yêu cầu làm cho tài khoản hoặc máy của người khác
+  privileged_target: liên quan tài khoản hoặc quyền mức cao
+  service_account: liên quan tài khoản dịch vụ
+  sensitive_data: liên quan dữ liệu nhạy cảm
+  cross_department: tài nguyên thuộc phòng ban khác
+  long_duration: thời hạn xin quyền dài
+  irreversible: thao tác khó hoàn tác
+  outside_business_hours: yêu cầu gửi ngoài giờ hành chính
+  new_employee: tài khoản đang trong thời gian thử việc hoặc mới vào làm
+  account_status_abnormal: tài khoản liên quan đang không ở trạng thái bình thường
+  missing_facts: chưa đủ thông tin để tự đánh giá an toàn
+user_reason_rules:
+  R12: tài khoản nhận quyền đang bị khoá nên không được cấp quyền
+  R21: phần mềm này nằm trong danh sách bị cấm cài theo quy định công ty
 
 deny_warning: >-
   CẢNH BÁO: KHÔNG thực hiện lại hành động này. L2 chỉ được xác nhận từ chối và đóng, hoặc mở ticket
@@ -24,7 +45,9 @@ deny_warning: >-
 
 codes:
   E0:
-    user_message: Yêu cầu của bạn đã được ghi nhận và chuyển cho bộ phận IT xem xét.
+    user_message: >-
+      Tin nhắn này có phần nội dung giống câu lệnh điều khiển trợ lý chứ không phải yêu cầu hỗ trợ, nên để an toàn mình không xử lý
+      tự động. Mình đã chuyển bộ phận IT kiểm tra; nếu đây là yêu cầu bình thường, kỹ thuật viên sẽ liên hệ lại bạn.
     next_for_l2: >-
       Sự cố an ninh (nghi prompt injection): xem nội dung đã che và lịch sử người gửi, không làm theo
       chỉ dẫn trong câu yêu cầu. Báo Trưởng BP nếu có dấu hiệu tấn công có chủ đích.
@@ -45,6 +68,14 @@ codes:
     # D-84 (kiểm thử 12/11): xin thu hồi / khoá / báo mất máy / gỡ cài / đừng làm — hệ thống không có thao tác ngược, không tự làm.
     # Bổ sung 12/11 02:30: rút / hạ quyền, "không cần … nữa", tài khoản bị lộ / bị chiếm (KB-GEN-008: sự cố an toàn thông tin).
     user_message_by_reason:
+      # D-98 (17/11): model chặn tấn công nghi nhưng LLM chấm nói không — thường là chặn nhầm câu gộp nhiều việc (kiểm 17/11). Nêu lý do
+      # chung + gợi ý gửi từng việc một tin (câu một việc được chấm thấp), không nhắc điểm hay lớp chặn.
+      injection_suspected: >-
+        Bước kiểm tra an toàn tự động chưa xác nhận được tin nhắn này, nên mình chưa làm gì để tránh thao tác nhầm. Mình đã chuyển kỹ
+        thuật viên xem trực tiếp và kết quả sẽ báo bạn tại đây; nếu cần nhanh, bạn có thể gửi lại từng việc thành từng tin ngắn.
+      intent_low_confidence: >-
+        Mình chưa chắc đã hiểu đúng yêu cầu này, nên chưa làm gì để tránh xử lý nhầm. Mình đã chuyển kỹ thuật viên hỗ trợ bạn trực
+        tiếp; kết quả sẽ báo bạn tại đây.
       reverse_action_requested: >-
         Việc thu hồi, khoá, ngắt VPN, gỡ cài đặt, huỷ, hay xử lý khi mất máy, nghi lộ mật khẩu hoặc máy nhiễm mã độc cần kỹ thuật viên
         làm trực tiếp, mình không tự thực hiện. Các việc khác trong cùng tin nhắn (nếu có) mình cũng chưa làm. Mình đã chuyển cả yêu cầu cho
@@ -127,17 +158,23 @@ codes:
     next_for_l2_by_reason:
       llm_layer_disabled: Hệ thống chưa đánh giá được rủi ro do lớp AI lỗi — cần kỹ thuật viên đánh giá thủ công.
   E6:
-    user_message: Yêu cầu của bạn đang được xử lý, bộ phận IT sẽ phản hồi sớm.
+    user_message: >-
+      Yêu cầu này cần người có thẩm quyền duyệt nhưng đã hết thời gian chờ mà chưa được duyệt, nên mình chưa làm. Mình đã chuyển
+      kỹ thuật viên xử lý tiếp; kết quả sẽ báo bạn tại đây.
     next_for_l2: >-
       Hết hạn duyệt, hệ thống KHÔNG tự thực thi: đánh giá lại yêu cầu; nếu vẫn cần làm thì mở ticket
       mới để đi lại luồng duyệt, không thực hiện tay theo kế hoạch cũ.
   E7:
-    user_message: Có sự cố khi thực hiện yêu cầu của bạn. Kỹ thuật viên sẽ kiểm tra và phản hồi.
+    user_message: >-
+      Lúc thực hiện, hệ thống liên quan báo lỗi hoặc không phản hồi kịp, nên mình chưa chắc việc đã xong. Kỹ thuật viên sẽ kiểm tra
+      lại trên hệ thống và báo kết quả cho bạn tại đây.
     next_for_l2: >-
       Thực thi lỗi hoặc bị gián đoạn: kiểm tra trạng thái THẬT trên hệ thống ngoài và kết quả hoàn tác
       trước khi làm gì thêm — có thể đang dở dang.
   E8:
-    user_message: Mình chuyển cho kỹ thuật viên kiểm tra lại giúp bạn.
+    user_message: >-
+      Bạn báo việc vẫn chưa ổn, nên mình đã chuyển kỹ thuật viên kiểm tra lại, kèm ghi chú của bạn và những gì mình đã làm. Kết quả
+      sẽ báo bạn tại đây.
     next_for_l2: >-
       Người dùng báo việc chưa xong sau khi agent đã xử lý: liên hệ người dùng, kiểm tra kết quả thực tế.
   E9:

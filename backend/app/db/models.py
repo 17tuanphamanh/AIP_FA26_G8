@@ -417,6 +417,16 @@ class Escalation(Base):
         check_in("close_result", CLOSE_RESULTS),
         # migration 0013 (ĐP bổ sung 26/10): ghi chú khi L2 đóng ca — dùng ở P4 (agent B)
         CheckConstraint("close_note IS NULL OR char_length(close_note) BETWEEN 1 AND 1000", name="close_note_len"),
+        # migration 0018 (D-99, 17/11): nhận ca → chuyển cấp 3 → đóng có lời nhắn cho người dùng
+        CheckConstraint("tier IN (2, 3)", name="tier"),
+        CheckConstraint("(assigned_to IS NULL) = (assigned_at IS NULL)", name="assigned_pair"),
+        CheckConstraint("raise_target IS NULL OR raise_target IN ('it_manager', 'vendor')", name="raise_target"),
+        CheckConstraint("raise_note IS NULL OR char_length(raise_note) BETWEEN 1 AND 1000", name="raise_note_len"),
+        CheckConstraint(
+            "(tier = 3) = (raised_at IS NOT NULL AND raised_by IS NOT NULL AND raise_target IS NOT NULL AND raise_note IS NOT NULL)",
+            name="raised_iff_tier3",
+        ),
+        CheckConstraint("user_message IS NULL OR char_length(user_message) BETWEEN 1 AND 500", name="user_message_len"),
         Index("ix_escalations_ticket", "ticket_id"),
         Index("ix_escalations_closed_at_exit_code", "closed_at", "exit_code"),  # P9 mục 4
     )
@@ -437,6 +447,14 @@ class Escalation(Base):
     new_ticket_id: Mapped[str | None] = _ticket_fk(nullable=True)
     created_at: Mapped[datetime] = _now()
     close_note: Mapped[str | None] = mapped_column(Text)  # migration 0013 — 1–1000 ký tự hoặc NULL
+    # migration 0018 (D-99): nhận ca, cấp xử lý (2 = L2, 3 = Trưởng IT / nhà cung cấp), chuyển cấp, lời nhắn cho người dùng khi đóng
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tier: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("2"))
+    raised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    raised_by: Mapped[str | None] = _user_fk()
+    raise_target: Mapped[str | None] = mapped_column(String(16))
+    raise_note: Mapped[str | None] = mapped_column(Text)  # ĐÃ che, 1–1000 ký tự
+    user_message: Mapped[str | None] = mapped_column(Text)  # ĐÃ che + qua cổng tin trả lời, 1–500 ký tự
 
 
 # ---- 12. audit_logs (N3-9.2, N4-9, TK, P7 2.7, B20) — append-only ---------------------------

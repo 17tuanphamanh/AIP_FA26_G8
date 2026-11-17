@@ -2,7 +2,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { hasMore, loadedItems, queueQuery, type QueueItem } from "../../api/escalations.ts";
+import { hasMore, loadedItems, queueQuery, type QueueItem, type QueueTier } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueStatus } from "../../api/types.ts";
 import { flashState } from "../../components/flash.ts";
 import { TicketConversation } from "../../components/TicketConversation.tsx";
@@ -10,6 +10,7 @@ import { formatAt } from "../shared/traceText.ts";
 import { MaNhan, NhanMa } from "../../components/MaNhan.tsx";
 import { caSo } from "../../lib/nhan.ts";
 import { CloseForm } from "./CloseForm.tsx";
+import { HandlingActions } from "./HandlingActions.tsx";
 import {
   CLOSED_GONE_TEXT,
   CLOSED_TEXT,
@@ -22,6 +23,10 @@ import {
   handoffRows,
   NOT_LOADED_NOTE,
   notLoadedText,
+  QUEUE_TITLE,
+  queueBase,
+  RAISE_DONE_TEXT,
+  raiseTargetLabel,
   waitingText,
 } from "./queue.ts";
 
@@ -30,49 +35,57 @@ import {
 // khẳng định đã đóng, cho "Tải thêm". Hội thoại: `GET /api/tickets/{id}` thật (ticket:read:any), chỉ đọc. Ca mở: form đóng
 // (CloseForm). Ca đã đóng: chỉ đọc (kết quả, ghi chú, người đóng, lúc đóng).
 
-const BACK = (
-  <Link to="/escalations" className="text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
-    ‹ Hàng chờ chuyển L2
-  </Link>
-);
+function Back({ tier }: { tier: QueueTier }) {
+  return (
+    <Link to={queueBase(tier)} className="text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
+      ‹ {QUEUE_TITLE[tier]}
+    </Link>
+  );
+}
 
 /** Route `/escalations/:escalationId` — `key` theo id + trạng thái để form đóng không mang nháp sang ca khác. */
 type Submit = (id: number, body: EscalationCloseIn) => Promise<void>;
 
 /** `submit`: chỉ test truyền (mặc định `closeEscalation` — route thật). */
-export function EscalationDetailRoute({ submit }: { submit?: Submit }) {
+export function EscalationDetailRoute({ submit, tier = 2 }: { submit?: Submit; tier?: QueueTier }) {
   const { escalationId = "" } = useParams();
   const [params] = useSearchParams();
   const status: EscalationQueueStatus = params.get("status") === "closed" ? "closed" : "open";
-  return <EscalationDetail key={`${escalationId}|${status}`} escalationId={escalationId} status={status} submit={submit} />;
+  return <EscalationDetail key={`${tier}|${escalationId}|${status}`} escalationId={escalationId} status={status} submit={submit} tier={tier} />;
 }
 
 function EscalationDetail({
   escalationId,
   status,
   submit,
+  tier,
 }: {
   escalationId: string;
   status: EscalationQueueStatus;
   submit?: Submit;
+  tier: QueueTier;
 }) {
   const id = /^\d{1,15}$/.test(escalationId) ? Number(escalationId) : null;
-  const query = useInfiniteQuery(queueQuery(status));
+  const query = useInfiniteQuery(queueQuery(status, tier));
   const items = loadedItems(query.data);
   const found = id === null ? undefined : items?.find((i) => i.escalation_id === id);
   // Đóng xong: ca rời danh sách Mở (tải lại) — màn giữ bản chụp ca để còn hiện câu báo, không nhảy sang "không còn".
   const [closedSnap, setClosedSnap] = useState<{ item: QueueItem; result: EscalationCloseResult } | null>(null);
+  const [raisedSnap, setRaisedSnap] = useState<QueueItem | null>(null); // D-99: ca vừa chuyển lên cấp 3 (rời hàng đợi cấp 2)
   const loadingMore = useRef(false);
   const navigate = useNavigate();
 
   if (closedSnap) {
-    return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} />;
+    return <Detail item={closedSnap.item} now={query.dataUpdatedAt} justClosed closedWith={closedSnap.result} tier={tier} />;
+  }
+  if (raisedSnap) {
+    return <Detail item={raisedSnap} now={query.dataUpdatedAt} justRaised tier={tier} />;
   }
   if (query.isPending && id !== null) return <p className="px-12 py-10 text-ink-2 motion-safe:animate-pulse max-lg:px-4 max-lg:py-6">Đang tải ca…</p>;
   if (id !== null && items === undefined) {
     return (
       <section className="flex flex-col gap-2 px-12 py-10 max-lg:px-4 max-lg:py-6">
-        {BACK}
+        <Back tier={tier} />
         <h1 className="text-heading">Chưa tải được ca này.</h1>
         <p role="alert" className="text-ink-2">
           {errorMessage(query.error instanceof ApiError ? query.error : null)}
@@ -85,7 +98,7 @@ function EscalationDetail({
     const busy = query.isFetching;
     return (
       <section className="flex flex-col gap-2 px-12 py-10 max-lg:px-4 max-lg:py-6">
-        {BACK}
+        <Back tier={tier} />
         <h1 className="text-heading">{more ? notLoadedText(items?.length ?? 0) : status === "closed" ? CLOSED_GONE_TEXT : GONE_TEXT}</h1>
         <p className="text-ink-2">{more ? NOT_LOADED_NOTE : "Mở lại hàng đợi để xem các ca."}</p>
         {more ? (
@@ -113,10 +126,15 @@ function EscalationDetail({
       item={found}
       now={query.dataUpdatedAt}
       submit={submit}
+      tier={tier}
       onClosed={(result) => setClosedSnap({ item: found, result })}
+      onRaised={() => setRaisedSnap(found)}
       // 409: ca đã đóng ở nơi khác → xem ca ở danh sách Đã đóng (chỉ đọc: kết quả, người đóng, lúc đóng) + câu báo một lần.
       onAlreadyClosed={() =>
-        void navigate(`/escalations/${found.escalation_id}?status=closed`, { replace: true, state: flashState("escalation_already_closed") })
+        void navigate(`${queueBase(tier)}/${found.escalation_id}?status=closed`, {
+          replace: true,
+          state: flashState("escalation_already_closed"),
+        })
       }
     />
   );
@@ -130,6 +148,9 @@ function Detail({
   onAlreadyClosed,
   justClosed = false,
   closedWith = null,
+  justRaised = false,
+  onRaised,
+  tier,
 }: {
   item: QueueItem;
   now: number;
@@ -137,6 +158,9 @@ function Detail({
   onClosed?: (result: EscalationCloseResult) => void;
   onAlreadyClosed?: () => void;
   justClosed?: boolean;
+  justRaised?: boolean;
+  onRaised?: () => void;
+  tier: QueueTier;
   /** Kết quả vừa đóng: "Mở ticket mới" → `REOPENED_TEXT` (hợp đồng sửa lần 3 — KHÔNG mã / link ticket mới); khác → `CLOSED_TEXT`. */
   closedWith?: EscalationCloseResult | null;
 }) {
@@ -145,7 +169,7 @@ function Detail({
     <section className="flex flex-col gap-6 px-12 pt-6 pb-8 max-lg:px-4 max-lg:pt-3 max-lg:pb-6">
       <div className="flex flex-col gap-1">
         {/* Hàng nút quay lại ngang hàng nút "Nhật ký quyết định" (nổi ở góc phải). */}
-        <div className="flex h-9 items-center max-lg:h-11">{BACK}</div>
+        <div className="flex h-9 items-center max-lg:h-11"><Back tier={tier} /></div>
         <div className="flex items-center gap-4 max-lg:flex-wrap max-lg:gap-y-1">
           <h1 data-testid="detail-exit" className="min-w-0 grow text-title">
             <NhanMa {...exitNhan(item)} />
@@ -165,6 +189,7 @@ function Detail({
             </>
           ) : null}
           {item.assigned_to ? ` · ${item.assigned_to} đang xử lý` : ""}
+          {item.tier === 3 ? ` · Chuyển lên: ${raiseTargetLabel(item.raise_target)}${item.raised_by ? ` (bởi ${item.raised_by})` : ""}` : ""}
         </p>
       </div>
 
@@ -173,6 +198,11 @@ function Detail({
           {item.is_deny_case ? (
             <div role="note" data-testid="deny-banner" className="rounded-group bg-danger-bg px-5 py-3.5 text-danger-ink">
               <b className="font-semibold">{DENY_BANNER.strong}</b> {DENY_BANNER.rest}
+            </div>
+          ) : null}
+          {item.tier === 3 && item.raise_note ? (
+            <div role="note" data-testid="raise-note-view" className="rounded-group bg-group px-5 py-3.5">
+              <b className="font-semibold">Lý do chuyển lên:</b> <span className="whitespace-pre-line">{item.raise_note}</span>
             </div>
           ) : null}
           <Handoff note={item.handoff_note} />
@@ -185,14 +215,21 @@ function Detail({
               <p role="status" data-testid="close-done" className="rounded-group bg-group px-4 py-3">
                 {closedWith === "reopened_as_new" ? REOPENED_TEXT : CLOSED_TEXT}
               </p>
-              <Link to={`/escalations/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
+              <Link to={`${queueBase(tier)}/${item.escalation_id}?status=closed`} className="pl-1 text-secondary text-fpt-blue max-lg:inline-flex max-lg:min-h-11 max-lg:items-center">
                 Xem ca trong danh sách Đã đóng
               </Link>
             </div>
+          ) : justRaised ? (
+            <p role="status" data-testid="raise-done" className="rounded-group bg-group px-4 py-3">
+              {RAISE_DONE_TEXT}
+            </p>
           ) : closed ? (
             <ClosedInfo item={item} />
           ) : (
-            <CloseForm item={item} onSubmit={submit} onClosed={onClosed} onAlreadyClosed={onAlreadyClosed} />
+            <div className="flex flex-col gap-6">
+              <HandlingActions item={item} tier={tier} onRaised={() => onRaised?.()} />
+              <CloseForm item={item} onSubmit={submit} onClosed={onClosed} onAlreadyClosed={onAlreadyClosed} />
+            </div>
           )}
         </div>
       </div>
@@ -205,6 +242,7 @@ function ClosedInfo({ item }: { item: QueueItem }) {
   const rows: { label: string; text: string; testId: string }[] = [
     { label: "Kết quả", text: item.close_result ? closeResultLabel(item.close_result) : "—", testId: "closed-result" },
     { label: "Ghi chú", text: item.close_note ?? "—", testId: "closed-note" },
+    { label: "Lời nhắn người gửi", text: item.user_message ?? "—", testId: "closed-user-message" },
     { label: "Người đóng", text: item.closed_by ?? "—", testId: "closed-by" },
     { label: "Lúc đóng", text: item.closed_at ? formatAt(item.closed_at) : "—", testId: "closed-at" },
   ];

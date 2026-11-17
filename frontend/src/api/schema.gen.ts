@@ -158,6 +158,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hours-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hours Mode */
+        get: operations["get_hours_mode_api_hours_mode_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hours-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Hours Mode */
+        put: operations["put_hours_mode_api_admin_hours_mode_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/policy": {
         parameters: {
             query?: never;
@@ -542,6 +576,40 @@ export interface paths {
         get: operations["escalation_queue_api_escalations_queue_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/escalations/{escalation_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim Escalation */
+        post: operations["claim_escalation_api_escalations__escalation_id__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/escalations/{escalation_id}/raise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Raise Escalation */
+        post: operations["raise_escalation_api_escalations__escalation_id__raise_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -953,6 +1021,18 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** EscalationClaimOut */
+        EscalationClaimOut: {
+            /** Escalation Id */
+            escalation_id: number;
+            /**
+             * Tier
+             * @enum {integer}
+             */
+            tier: 2 | 3;
+            /** Assigned To */
+            assigned_to: string;
+        };
         /** EscalationCloseOut */
         EscalationCloseOut: {
             /** Escalation Id */
@@ -973,6 +1053,8 @@ export interface components {
             close_note: string;
             /** New Ticket Id */
             new_ticket_id: string | null;
+            /** User Message */
+            user_message?: string | null;
         };
         /** EscalationQueueItem */
         EscalationQueueItem: {
@@ -1008,6 +1090,31 @@ export interface components {
             closed_by: string | null;
             /** Close Note */
             close_note: string | null;
+            /** Assigned At */
+            assigned_at: string | null;
+            /**
+             * Tier
+             * @enum {integer}
+             */
+            tier: 2 | 3;
+            /** Raised At */
+            raised_at: string | null;
+            /** Raised By */
+            raised_by: string | null;
+            raise_target: components["schemas"]["RaiseTarget"] | null;
+            /** Raise Note */
+            raise_note: string | null;
+            /** User Message */
+            user_message: string | null;
+            /** New Ticket Id */
+            new_ticket_id: string | null;
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /** Overdue */
+            overdue: boolean;
         };
         /** EscalationQueuePage */
         EscalationQueuePage: {
@@ -1015,6 +1122,24 @@ export interface components {
             items: components["schemas"]["EscalationQueueItem"][];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /** EscalationRaiseOut */
+        EscalationRaiseOut: {
+            /** Escalation Id */
+            escalation_id: number;
+            /**
+             * Tier
+             * @constant
+             */
+            tier: 3;
+            raise_target: components["schemas"]["RaiseTarget"];
+            /**
+             * Raised At
+             * Format: date-time
+             */
+            raised_at: string;
+            /** Raised By */
+            raised_by: string;
         };
         /** ExecCall */
         ExecCall: {
@@ -1051,6 +1176,38 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HandlingView
+         * @description D-99: một ca chuyển IT, nhìn từ phía người gửi. `stage`: waiting (chưa ai nhận) | claimed | raised (đã chuyển cấp 3, chưa ai nhận)
+         *     | closed. `user_message` chỉ có khi qua `OutputGuard` (như thông báo). Không lộ ghi chú nội bộ, người xử lý, mã luật.
+         */
+        HandlingView: {
+            /** Ticket Id */
+            ticket_id: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "waiting" | "claimed" | "raised" | "closed";
+            /**
+             * Tier
+             * @enum {integer}
+             */
+            tier: 2 | 3;
+            /** Raise Target */
+            raise_target: ("it_manager" | "vendor") | null;
+            /** Close Result */
+            close_result: ("completed" | "confirmed_denial" | "reopened_as_new") | null;
+            /** User Message */
+            user_message: string | null;
+            /** New Ticket Id */
+            new_ticket_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** HistoryItem */
         HistoryItem: {
             /**
@@ -1066,6 +1223,22 @@ export interface components {
             strategy_to: string;
             /** Reason */
             reason: string;
+        };
+        /** HoursModeView */
+        HoursModeView: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "real" | "outside" | "inside";
+            /** Modes */
+            modes: string[];
+            /** Changed By */
+            changed_by: string | null;
+            /** Changed At */
+            changed_at: string | null;
+            /** Eval Mode */
+            eval_mode: boolean;
         };
         /** InvalidPolicy */
         InvalidPolicy: {
@@ -1108,7 +1281,7 @@ export interface components {
         /** @enum {string} */
         KbState: "ready" | "missing" | "unknown";
         /** @enum {string} */
-        Kind: "approval_decided" | "escalation_closed";
+        Kind: "approval_decided" | "escalation_closed" | "escalation_claimed" | "escalation_raised";
         /** LlmStatus */
         LlmStatus: {
             /**
@@ -1307,6 +1480,8 @@ export interface components {
         };
         /** @enum {string} */
         QueueStatus: "open" | "closed";
+        /** @enum {string} */
+        RaiseTarget: "it_manager" | "vendor";
         /** RatioCell */
         RatioCell: {
             /** Num */
@@ -1351,7 +1526,7 @@ export interface components {
             department: string | null;
         };
         /** @enum {string} */
-        Result: "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new";
+        Result: "approved" | "rejected" | "completed" | "confirmed_denial" | "reopened_as_new" | "in_progress" | "raised";
         /**
          * RiskView
          * @description `RiskDecision` (cùng tên trường, cùng enum — một nguồn) + 2 cờ suy ra; FE ghép chữ hiển thị từ các cờ này.
@@ -1564,6 +1739,8 @@ export interface components {
              * @default false
              */
             can_follow_up: boolean;
+            /** Handling */
+            handling?: components["schemas"]["HandlingView"][] | null;
         };
         /** TraceChild */
         TraceChild: {
@@ -2267,6 +2444,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    get_hours_mode_api_hours_mode_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoursModeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    put_hours_mode_api_admin_hours_mode_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoursModeView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
             /** @description Service Unavailable */
@@ -3003,6 +3292,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["QueueStatus"];
+                tier?: number;
                 limit?: number;
                 after?: string | null;
             };
@@ -3019,6 +3309,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EscalationQueuePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    claim_escalation_api_escalations__escalation_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                escalation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationClaimOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
+        };
+    };
+    raise_escalation_api_escalations__escalation_id__raise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                escalation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationRaiseOut"];
                 };
             };
             /** @description Unauthorized */

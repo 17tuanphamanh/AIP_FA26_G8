@@ -52,6 +52,21 @@ export type TicketViewBase = {
   created_at: string;
   closed_at: string | null;
   children_progress?: ChildProgress[] | null;
+  /** D-99 (17/11): tiến độ xử lý của bộ phận IT cho từng ca của ticket (backend `HandlingView`); null/thiếu = không có ca. */
+  handling?: HandlingView[] | null;
+};
+
+// Nguồn: backend/app/api/tickets.py HandlingView (D-99). `user_message` đã qua cổng tin trả lời ở server.
+export type HandlingStage = "waiting" | "claimed" | "raised" | "closed";
+export type HandlingView = {
+  ticket_id: string;
+  stage: HandlingStage;
+  tier: 2 | 3;
+  raise_target: EscalationRaiseTarget | null;
+  close_result: EscalationCloseResult | null;
+  user_message: string | null;
+  new_ticket_id: string | null;
+  updated_at: string;
 };
 
 // Nguồn: backend/app/api/tickets.py ConfirmIn (extra="forbid", note ≤ 1000). Xoá khi: route khai body trong openapi.
@@ -74,13 +89,27 @@ export type EscalationQueueItem = {
   handoff_note: HandoffNote;
   assigned_to: string | null;
   created_at: string;
+  // D-99 (17/11, backend api/escalations.py EscalationQueueItem): tuỳ chọn ở đây để bản giả dev:mock cũ vẫn hợp lệ.
+  assigned_at?: string | null;
+  tier?: 2 | 3;
+  raised_at?: string | null;
+  raised_by?: string | null;
+  raise_target?: EscalationRaiseTarget | null;
+  raise_note?: string | null;
+  user_message?: string | null;
+  new_ticket_id?: string | null;
+  due_at?: string;
+  overdue?: boolean;
 };
 
 // Nguồn: B20-audit-escalate-L2.md §4.3 (`close_result`) + hợp đồng N-PA §4 — `POST /api/escalations/{id}/close` (route thật,
 // backend/app/api/escalations.py). Thân đúng 2 khoá; ghi chú bắt buộc 1–1000 ký tự. Thành công 200; 404 `not_found`; 409
 // `already_closed`; 422 fields ["close_result"] (ca deny/E5/E6 + `completed`) / ["note"]. Xoá khi: gen:api có kiểu này.
 export type EscalationCloseResult = "completed" | "confirmed_denial" | "reopened_as_new";
-export type EscalationCloseIn = { close_result: EscalationCloseResult; note: string };
+export type EscalationCloseIn = { close_result: EscalationCloseResult; note: string; user_message?: string };
+// D-99: `POST /api/escalations/{id}/raise` thân `{target, note}`; `POST /claim` không thân.
+export type EscalationRaiseTarget = "it_manager" | "vendor";
+export type EscalationRaiseIn = { target: EscalationRaiseTarget; note: string };
 
 // Nguồn: backend/app/api/approvals.py ReasonCode — danh sách cố định (PLAN-3e Q-3e-13).
 // Xoá khi: route khai body trong openapi.

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+from app.settings import get_escalation_templates
 from tests.probe import cong5_score as sc
 from tests.stack import gate2, gate3, gate4, gate5, vpn_smoke
 from tests.stack.gate2 import Report, Run, Shell, StackError, Unsafe, q, subprocess_run
@@ -107,7 +108,9 @@ def _send(item: sc.Item, *, url: str, shell: Shell, tokens: Mapping[str, Mapping
     return sent
 
 
-def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str) -> dict[str, Any]:
+def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str, suspected_template: str | None = None) -> dict[str, Any]:
+    """`suspected_template`: tin E1 `injection_suspected` (D-98, 17/11: câu riêng của E1); None → so với `template` như trước D-98."""
+    suspected = template if suspected_template is None else suspected_template
     """Ghép kết quả gửi + DB → số đo (hàm thuần trên dữ liệu đã đọc)."""
     rows: list[dict[str, Any]] = []
     intent_pairs: list[tuple[str, tuple[str, ...]]] = []
@@ -148,7 +151,7 @@ def evaluate(sent: Sequence[Sent], db: Mapping[str, Any], template: str) -> dict
             else:
                 e0["sai"].append(it.id)
         if s.exit_code == "E1" and reason == sc.SUSPECTED:
-            if sc.e0_message_ok(s.e0_texts, template):
+            if sc.e0_message_ok(s.e0_texts, suspected):
                 e1_nghi["dung"] += 1
             else:
                 e1_nghi["sai"].append(it.id)
@@ -195,7 +198,7 @@ def render(res: Mapping[str, Any]) -> list[str]:
         f"Tấn công bị chặn: {a['blocked']}/{a['total']} theo lớp {a['by_layer']} · không chặn: {a['not_blocked']}",
         f"Câu thường bị chặn nhầm: {n['blocked']}/{n['total']} {n['ids']}",
         f"Tin E0 trùng mẫu user_message E0: đúng {e0['dung']}, sai {len(e0['sai'])} {e0['sai']}",
-        f"Tin E1 injection_suspected trùng mẫu E0: đúng {e1['dung']}, sai {len(e1['sai'])} {e1['sai']}",
+        f"Tin E1 injection_suspected trùng mẫu riêng (D-98): đúng {e1['dung']}, sai {len(e1['sai'])} {e1['sai']}",
         *(_b2_line(name, res["b2"][name]) for name in ("main", "secondary")),
         f"Nhiều ý tách đúng: {m['ok']}/{m['total']} · sai: {m['sai']}",
         f"p95 thời gian B3: {'—' if res['b3_p95_ms'] is None else format(res['b3_p95_ms'], '.0f')} ms ({res['b3_n']} ticket; {LOAD_NOTE})",
@@ -284,7 +287,8 @@ def main(argv: Sequence[str], *, run: Run = subprocess_run, env: Mapping[str, st
         db = dict(shell.sql(TICKETS_SQL.format(values=values)) or {})
     llm = dict(shell.sql(LLM_SQL.format(marker=marker)) or {})
     status, reasons = sc.run_valid([(str(e["ticket"]), str(e["error"])) for e in llm.get("errors") or []])
-    res = evaluate(sent, db, gate3.user_message("E0"))
+    suspected = get_escalation_templates().of("E1").user_message_for(sc.SUSPECTED, it_help=True)  # D-98
+    res = evaluate(sent, db, gate3.user_message("E0"), suspected)
     res.update({
         "sha256": sha, "file": str(path), "counts": counts, "head": gate4._git(run, "rev-parse", "HEAD"),
         "started": started.isoformat(), "ended": datetime.now(UTC).isoformat(), "llm_backend": backend, "cap_usd": cap,

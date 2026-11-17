@@ -8,7 +8,7 @@ Thứ tự (lệch mã giả có chủ đích — quyết định Q-C 2b-2):
 3. Có `exit_code` (cha đóng bình thường không bao giờ có — D-30; cha đi đường lỗi CÓ — T20b Q-T20b-5): `effects.once("escalation_create")` (priority lấy từ
    bảng `exit_code_priority`, ghi chú bàn giao 4 phần theo mẫu) + `effects.once("notify_user")` với tin
    theo mã [Chốt 7.1] (Q3 M5: `CodeTemplate.user_message_for(reason)` — câu theo lý do nếu mẫu khai `user_message_by_reason`, hiện chỉ
-   E5; E1 `injection_suspected` vẫn dùng mẫu E0, E0 không có câu theo lý do; D-76: cờ ENABLE_IT_HELP bật → `user_message_it_help` nếu mã khai — E1;
+   E5 và E1; D-98 (17/11): E1 `injection_suspected` dùng câu riêng của E1 (không mượn mẫu E0), E0 có câu nêu lý do chung; D-76: cờ ENABLE_IT_HELP bật → `user_message_it_help` nếu mã khai — E1;
    Q13c: trong cùng phiên đã có ticket khác kết thúc bằng mã có `user_message_repeat` (E1/E3/E4) → biến thể lần lặp, bớt lặp câu phạm vi). Tin nằm trong `conversation` của checkpoint (không thêm bảng): trả về cùng lượt
    nên chạy lại cũng chỉ có một tin.
 
@@ -46,13 +46,38 @@ POINT_8_EVENT = "closed"
 # ngay ở B3 chạy lại — `SplitChanged` — chưa có `children` trong checkpoint mà dòng con đã tạo; soát lượt 4 mục 4); ticket lá → không dòng.
 
 
-# Phase 5 gói 1 (D-52, ĐT 4.4): E1 `injection_suspected` của B2 nhận ĐÚNG tin của E0 — tin E1 riêng sẽ cho kẻ dò biết đã lừa được
-# LLM chấm. Escalation vẫn mang `exit_code` E1 (ưu tiên L2 "Thường" theo bảng). Chọn theo `escalation_reason_detail`.
-SUSPECTED_MESSAGE_CODE = {"injection_suspected": "E0"}
+# D-98 (17/11): vế lý do của tin E5 — tối đa REASON_MAX nhãn, theo thứ tự B14 chọn (ca `llm_high_risk`) hoặc luật deny (`policy_deny`).
+REASON_MAX = 3
+_REASON_SOURCES = {"llm_high_risk": "factors", "policy_deny": "rule"}
 
 
-def _message_code(state: Any, code: str) -> str:
-    return SUSPECTED_MESSAGE_CODE.get(str(state.get("escalation_reason_detail") or ""), code)
+def user_reason_suffix(state: Any, templates: Any) -> str:
+    """Hàm thuần: " Lý do chính: a; b." cho E5 `llm_high_risk` (`state.risk_factors`) / `policy_deny` (`risk.matched_rule_id`), hoặc
+    "" — chỉ ghép nhãn cố định của `escalation_templates.yaml` theo MÃ, không chép chữ tự do nào của LLM hay người dùng."""
+    if state.get("exit_code") != "E5":
+        return ""
+    source = _REASON_SOURCES.get(str(state.get("escalation_reason_detail") or ""))
+    raw = state.get("risk")
+    risk = raw.model_dump(mode="json") if hasattr(raw, "model_dump") else (raw or {})
+    if source is None or not isinstance(risk, dict):
+        return ""
+    if source == "rule":
+        label = templates.user_reason_rules.get(str(risk.get("matched_rule_id") or ""))
+        labels = [label] if label else []
+    else:
+        labels = []
+        for code in state.get("risk_factors") or ():
+            label = templates.user_reason_factors.get(code)
+            if label and label not in labels:
+                labels.append(label)
+    if not labels:
+        return ""
+    return f" {templates.reason_prefix} {'; '.join(labels[:REASON_MAX])}."
+
+
+# D-98 (TA chốt 17/11) thay D-52 (ĐT 4.4): E1 `injection_suspected` KHÔNG còn mượn tin trung tính của E0 — mẫu E1 có câu riêng theo lý
+# do (`user_message_by_reason.injection_suspected`), nói rõ vì sao chuyển mà không nêu điểm hay lớp chặn. Chặn nhầm câu gộp nhiều việc
+# là ca thường gặp (kiểm 17/11), người dùng cần biết lý do và cách gửi lại.
 
 
 def make(deps: NodeDeps) -> NodeFn:
@@ -96,11 +121,10 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
             # Q3 M5: câu theo `escalation_reason_detail` nếu mã khai báo (E5), không thì câu mặc định của mã
             # D-76: cờ ENABLE_IT_HELP bật → câu có vế "hướng dẫn sự cố IT thường gặp" nếu mã khai (hiện chỉ E1)
-            message_code = _message_code(state, code)
-            text = deps.templates.of(message_code).user_message_for(
+            text = deps.templates.of(code).user_message_for(
                 state.get("escalation_reason_detail"), it_help=deps.enable_it_help,
-                repeat=await _session_repeats(state, message_code, ticket_id),
-            )  # fmt: skip
+                repeat=await _session_repeats(state, code, ticket_id),
+            ) + user_reason_suffix(state, deps.templates)  # fmt: skip
             ref = await effects.once(
                 state, "notify_user", deps.notifier.notify_user, ticket_id, text, "none", step="B20"
             )

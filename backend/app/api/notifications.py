@@ -4,12 +4,13 @@ Suy ra từ dữ liệu sẵn có (`db/notifications.py`): phiếu duyệt đã 
 ở SQL). Server không lưu "đã đọc". Quyền: `ticket:read:own` (mọi vai trò). Thứ tự kiểm: 401 → 403 → 422 tham số → 503 nguồn.
 
 `text` là câu tiếng Việt thường, ghép từ bảng cố định bên dưới — không mã E*/R*/B*/S_*, không tên trường, không mã luật:
-- Ca L2 bị chặn vì nghi tấn công (`exit_code = E0`, hoặc `E1` với `reason_detail = injection_suspected` — cùng điều kiện chọn tin
-  với `graph/nodes/b20_audit.py:_message_code`) → MỘT câu trung tính cho mọi `result`, không gợi ý lý do [Chốt 7.1]. `result`
-  vẫn là giá trị thật.
+- Ca L2 đã đóng → câu theo `result` (`CLOSED_TEXT`) cho MỌI mã thoát. D-98 (TA chốt 17/11) bỏ câu trung tính riêng cho ca nghi tấn công
+  (E0, E1 `injection_suspected`): người dùng được biết kết quả xử lý như mọi ca khác.
 - Lý do từ chối của L1 (`approvals.note`, đã che lúc ghi — `approval_wait.py`) chỉ vào `text` khi qua `OutputGuard.violation`, đúng cổng
   của tin từ chối B16; vi phạm → bỏ câu ghi chú.
-- `new_ticket_id` luôn null (hợp đồng 26/10: `reopened_as_new` chỉ ghi kết quả, không đưa id ticket mới).
+- D-99 (17/11): thêm `escalation_claimed` (đã có người nhận ca) và `escalation_raised` (đã chuyển cấp 3 — câu theo `raise_target`, không
+  chép ghi chú nội bộ); ca đóng kèm lời nhắn người dùng (`escalations.user_message`, đã che lúc ghi) khi qua `OutputGuard` lần nữa; ca
+  `reopened_as_new` có ticket mới → câu "đã mở lại thành yêu cầu mới" + `new_ticket_id` thật (trước D-99 luôn null).
 """
 
 from datetime import UTC
@@ -31,7 +32,6 @@ from app.db.notifications import (
     decode_cursor,
     encode_cursor,
 )
-from app.domain.exit_codes import ExitCode
 from app.guard.output import OutputGuard
 
 router = APIRouter()
@@ -40,21 +40,29 @@ LIMIT_DEFAULT = 20
 LIMIT_MAX = 50
 AFTER_MAX = 512
 
-type Kind = Literal["approval_decided", "escalation_closed"]
-type Result = Literal["approved", "rejected", "completed", "confirmed_denial", "reopened_as_new"]
-
-# `escalation_reason_detail` của B2 khi model nghi mà LLM chấm nói không (= `b02_screen.SUSPECTED`; test ghim với
-# `b20_audit.SUSPECTED_MESSAGE_CODE`).
-INJECTION_SUSPECTED = "injection_suspected"
+type Kind = Literal["approval_decided", "escalation_closed", "escalation_claimed", "escalation_raised"]
+type Result = Literal["approved", "rejected", "completed", "confirmed_denial", "reopened_as_new", "in_progress", "raised"]
 
 APPROVED_TEXT = "Yêu cầu của bạn đã được phê duyệt. Hệ thống đang thực hiện và sẽ báo kết quả cho bạn."
 REJECTED_TEXT = "Yêu cầu của bạn chưa được duyệt."
 NOTE_PREFIX = "Ghi chú của người duyệt:"  # như `domain.messages.rejection_text`
-NEUTRAL_TEXT = "Yêu cầu của bạn đã được bộ phận IT xem xét xong."
 CLOSED_TEXT: dict[str, str] = {
     "completed": "Bộ phận IT đã xử lý xong yêu cầu của bạn.",
     "confirmed_denial": "Bộ phận IT đã xem xét và xác nhận không thực hiện yêu cầu này.",
     "reopened_as_new": "Kỹ thuật viên đề nghị bạn gửi một yêu cầu mới cho việc này.",
+}
+# D-99
+REOPENED_TEXT = "Kỹ thuật viên đã mở lại yêu cầu của bạn thành một yêu cầu mới, hệ thống đang xử lý lại từ đầu."
+USER_MESSAGE_PREFIX = "Lời nhắn từ bộ phận IT:"
+CLAIMED_TEXT: dict[int, str] = {
+    2: "Kỹ thuật viên đã nhận yêu cầu của bạn và đang xử lý.",
+    3: "Trưởng bộ phận IT đã nhận yêu cầu của bạn và đang xử lý.",
+}
+RAISED_TEXT: dict[str, str] = {
+    "it_manager": "Yêu cầu của bạn cần Trưởng bộ phận IT quyết định, nên kỹ thuật viên đã chuyển lên cấp cao hơn. Kết quả sẽ báo bạn tại đây.",
+    "vendor": (
+        "Yêu cầu của bạn cần bộ phận chuyên trách hoặc nhà cung cấp xử lý, nên kỹ thuật viên đã chuyển tiếp. Kết quả sẽ báo bạn tại đây."
+    ),
 }
 
 
@@ -64,7 +72,7 @@ class NotificationView(BaseModel):
     ticket_id: str  # ticket con → id của ticket CHA (D-31)
     text: str
     result: Result
-    new_ticket_id: str | None  # luôn null (xem docstring module)
+    new_ticket_id: str | None  # D-99: ticket mới của `reopened_as_new` (ca đóng trước D-99 / tạo lỗi → null)
     created_at: str  # ISO 8601 có múi giờ (UTC)
 
 
@@ -79,17 +87,20 @@ ERRORS: dict[int | str, dict[str, Any]] = {
 }  # fmt: skip
 
 
-def is_neutral(exit_code: str | None, reason_detail: str | None) -> bool:
-    """Ca L2 do nghi tấn công (E0, hoặc E1 `injection_suspected`) — người dùng chỉ thấy lời trung tính."""
-    return exit_code == ExitCode.E0.value or (exit_code == ExitCode.E1.value and reason_detail == INJECTION_SUSPECTED)
+def _with_message(base: str, message: str | None, guard: OutputGuard) -> str:
+    msg = (message or "").strip()
+    return f"{base} {USER_MESSAGE_PREFIX} {msg}" if msg and guard.violation(msg) is None else base
 
 
 def notification_text(row: NotificationRow, guard: OutputGuard) -> str:
-    """Hàm thuần theo bảng cố định — không LLM, không chép chữ nào ngoài `note` đã qua cổng."""
+    """Hàm thuần theo bảng cố định — không LLM, không chép chữ nào ngoài `note` / lời nhắn người dùng đã qua cổng."""
+    if row.kind == "escalation_claimed":
+        return CLAIMED_TEXT.get(row.tier or 2, CLAIMED_TEXT[2])
+    if row.kind == "escalation_raised":
+        return RAISED_TEXT.get(row.raise_target or "", RAISED_TEXT["it_manager"])
     if row.kind == "escalation_closed":
-        if is_neutral(row.exit_code, row.reason_detail):
-            return NEUTRAL_TEXT
-        return CLOSED_TEXT[row.result]
+        base = REOPENED_TEXT if row.result == "reopened_as_new" and row.new_ticket_id else CLOSED_TEXT[row.result]
+        return _with_message(base, row.user_message, guard)
     if row.result == "approved":
         return APPROVED_TEXT
     note = (row.note or "").strip()
@@ -101,7 +112,8 @@ def notification_text(row: NotificationRow, guard: OutputGuard) -> str:
 def _view(row: NotificationRow, guard: OutputGuard) -> NotificationView:
     return NotificationView(
         id=row.id, kind=row.kind, ticket_id=row.ticket_id, text=notification_text(row, guard),  # type: ignore[arg-type]
-        result=row.result, new_ticket_id=None, created_at=row.created_at.astimezone(UTC).isoformat(),  # type: ignore[arg-type]
+        result=row.result, new_ticket_id=row.new_ticket_id if row.kind == "escalation_closed" else None,  # type: ignore[arg-type]
+        created_at=row.created_at.astimezone(UTC).isoformat(),
     )  # fmt: skip
 
 

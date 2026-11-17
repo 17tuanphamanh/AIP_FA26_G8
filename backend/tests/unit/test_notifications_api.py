@@ -2,8 +2,8 @@
 `tests/fakes/notifications.MemoryNotifications` gán vào `app.state.notifications` (SQL thật: test_notifications_pg.py).
 
 - Chỉ ticket của người gọi (an.nv = nv001; binh.tt = nv002), cả qua con trỏ; không token → 401.
-- Hai `kind`, mọi `result`; `new_ticket_id` luôn null; ca E0 / E1 `injection_suspected` → CÙNG một câu trung tính cho từng `result`,
-  `result` vẫn là giá trị thật; text không mã E*/R*/B*/S_*.
+- Hai `kind`, mọi `result`; `new_ticket_id` luôn null; D-98: ca E0 / E1 `injection_suspected` → câu theo `result` như mọi ca;
+  text không mã E*/R*/B*/S_*.
 - Phân trang keyset > 2 trang, có dòng trùng `created_at`: không trùng, không sót, đúng thứ tự.
 - 422 `limit`/`after` sai (`{"error","fields"}`); ghi chú từ chối chỉ vào text khi qua `OutputGuard`.
 - Chuỗi SQL: điều kiện requester có đủ 2 lần (mỗi nhánh một lần) ở cả hai câu; route bind `user_id` của token.
@@ -18,7 +18,6 @@ import pytest
 from app.api import notifications as api
 from app.db import notifications as db
 from app.db.notifications import NotificationRow, decode_cursor, encode_cursor
-from app.graph.nodes.b20_audit import SUSPECTED_MESSAGE_CODE
 from app.settings import get_escalation_templates
 from tests.fakes.auth import EPOCH
 from tests.fakes.notifications import MemoryNotifications, StoredNotification
@@ -160,40 +159,35 @@ def test_employee_never_sees_other_employees_notifications_even_via_cursor(mixed
     assert other == theirs
 
 
-# ---- ca trung tính E0 / E1 injection_suspected -------------------------------------------------------------------------
+# ---- D-98 (17/11): ca nghi tấn công (E0 / E1 injection_suspected) đóng → câu theo kết quả như mọi ca, không còn câu trung tính ----
 
 
-NEUTRAL_CASES = [("E0", None), ("E0", "x"), ("E1", "injection_suspected")]
+SUSPECTED_CASES = [("E0", None), ("E0", "x"), ("E1", "injection_suspected")]
 
 
-@pytest.mark.parametrize(("exit_code", "detail"), NEUTRAL_CASES)
+@pytest.mark.parametrize(("exit_code", "detail"), SUSPECTED_CASES)
 @pytest.mark.parametrize("result", CLOSE_RESULTS)
-def test_suspected_attack_is_neutral_and_result_is_real(exit_code: str, detail: str | None, result: str) -> None:
+def test_suspected_attack_closed_states_real_result(exit_code: str, detail: str | None, result: str) -> None:
     [(env, _)] = list(_env(esc(1, A, 5, result, exit_code, detail)))
     [item] = _get(env).json()["items"]
-    assert item["text"] == api.NEUTRAL_TEXT == "Yêu cầu của bạn đã được bộ phận IT xem xét xong."
+    assert item["text"] == api.CLOSED_TEXT[result]
     assert item["result"] == result and item["new_ticket_id"] is None
     low = item["text"].casefold()
     assert not any(w in low for w in FORBIDDEN_WORDS) and not CODE_PATTERN.search(item["text"])
 
 
-def test_neutral_condition_pinned_to_b20_message_code() -> None:
-    """Cùng điều kiện chọn tin của B20: chỉ `injection_suspected` đổi E1 sang tin E0."""
-    assert SUSPECTED_MESSAGE_CODE == {api.INJECTION_SUSPECTED: "E0"}
-    assert api.is_neutral("E1", "injection_suspected") and api.is_neutral("E0", None)
-    for code in ("E1", "E2", "E3", "E5", "E9"):
-        assert not api.is_neutral(code, "out_of_scope")
-    assert not api.is_neutral("E2", "injection_suspected")
+def test_neutral_rule_removed() -> None:
+    assert not hasattr(api, "is_neutral") and not hasattr(api, "NEUTRAL_TEXT")
 
 
-def test_non_neutral_escalation_is_not_the_neutral_sentence() -> None:
+def test_non_suspected_escalation_uses_result_sentence() -> None:
     [(env, _)] = list(_env(esc(1, A, 5, "completed", "E1", "out_of_scope")))
     assert _get(env).json()["items"][0]["text"] == api.CLOSED_TEXT["completed"]
 
 
-def test_neutral_sentence_is_distinct_from_e0_template_words() -> None:
+def test_e0_template_has_no_attack_words() -> None:
     e0 = get_escalation_templates().of("E0").user_message
-    assert not any(w in e0.casefold() for w in FORBIDDEN_WORDS)  # mẫu E0 sẵn có cũng trung tính
+    assert not any(w in e0.casefold() for w in FORBIDDEN_WORDS)  # câu E0 nêu lý do chung, không gọi người dùng là kẻ tấn công
 
 
 # ---- không mã trong text -----------------------------------------------------------------------------------------------
@@ -305,10 +299,12 @@ def test_decode_rejects(value: str) -> None:
         decode_cursor(value)
 
 
-def test_sql_filters_requester_in_both_branches_of_both_queries() -> None:
+def test_sql_filters_requester_in_every_branch_of_both_queries() -> None:
+    """D-99: 4 nhánh (phiếu duyệt, ca đóng, ca đã nhận, ca chuyển cấp) — điều kiện requester ở MỌI nhánh."""
+    assert db.BRANCHES == 4
     for sql in (db.FIRST_PAGE_SQL, db.NEXT_PAGE_SQL):
-        assert sql.count(db.REQUESTER_PREDICATE) == 2
-        assert "t.requester_id = :user_id" in sql and sql.count("UNION ALL") == 1
+        assert sql.count(db.REQUESTER_PREDICATE) == db.BRANCHES
+        assert sql.count("UNION ALL") == db.BRANCHES - 1
         assert 'COLLATE "C" DESC' in sql and "LIMIT :n" in sql
     assert 'COLLATE "C") < (:c_at, :c_id)' in db.NEXT_PAGE_SQL
 

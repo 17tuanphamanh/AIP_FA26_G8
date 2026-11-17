@@ -1,8 +1,8 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { hasMore, loadedItems, QUEUE_REFRESH_MS, queueQuery, queueRefetchInterval, type QueueItem } from "../../api/escalations.ts";
+import { hasMore, loadedItems, QUEUE_REFRESH_MS, queueQuery, queueRefetchInterval, type QueueItem, type QueueTier } from "../../api/escalations.ts";
 import type { EscalationQueueStatus } from "../../api/types.ts";
 import { Segmented } from "../../components/Segmented.tsx";
 import { ownEntry } from "../../lib/lookup.ts";
@@ -27,6 +27,11 @@ import {
   pageCount,
   pruneQueueView,
   fullReason,
+  holderText,
+  OVERDUE_BADGE,
+  QUEUE_TITLE,
+  queueBase,
+  raiseTargetLabel,
   reasonLine,
   searchWords,
   splitLabel,
@@ -40,13 +45,29 @@ import {
 // nào ở màn này [Chốt 2.2]. Tìm nhanh + thẻ nhóm + thu gọn + phân trang trong nhóm: làm ở trình duyệt, CHỈ trên các ca ĐÃ
 // tải, KHÔNG sắp lại. Không dòng nào bị ẩn mà thiếu con số bên cạnh ("Khớp k / N ca", "· N ca", "Ca a–b / N", số trên thẻ).
 
-export function EscalationQueue() {
+// D-99: `tier` 3 = ca đã chuyển lên Trưởng bộ phận IT (`/escalations-l3`, quyền `escalation:handle:l3`). Dòng nối tới chi tiết theo
+// đường dẫn gốc của cấp (context — không truyền qua từng tầng).
+const TierContext = createContext<QueueTier>(2);
+
+export function EscalationQueue({ tier = 2 }: { tier?: QueueTier }) {
   const [status, setStatus] = useState<EscalationQueueStatus>("open");
-  return <QueueList key={status} status={status} onStatus={setStatus} />;
+  return (
+    <TierContext.Provider value={tier}>
+      <QueueList key={`${tier}|${status}`} status={status} onStatus={setStatus} tier={tier} />
+    </TierContext.Provider>
+  );
 }
 
-function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStatus: (s: EscalationQueueStatus) => void }) {
-  const query = useInfiniteQuery({ ...queueQuery(status), refetchInterval: (q) => queueRefetchInterval(q.state.error) });
+function QueueList({
+  status,
+  onStatus,
+  tier,
+}: {
+  status: EscalationQueueStatus;
+  onStatus: (s: EscalationQueueStatus) => void;
+  tier: QueueTier;
+}) {
+  const query = useInfiniteQuery({ ...queueQuery(status, tier), refetchInterval: (q) => queueRefetchInterval(q.state.error) });
   const items = loadedItems(query.data);
   const more = hasMore(query.data);
   const pages = query.data?.pages.map((p) => p.items) ?? [];
@@ -70,7 +91,7 @@ function QueueList({ status, onStatus }: { status: EscalationQueueStatus; onStat
     <section className="flex flex-col gap-6 px-12 py-10 max-lg:px-4 max-lg:py-6">
       <div className="flex items-end gap-4 max-lg:flex-wrap max-lg:items-center">
         <div className="flex min-w-0 grow flex-col gap-1 max-lg:basis-full">
-          <h1 className="text-title">Hàng chờ chuyển L2</h1>
+          <h1 className="text-title">{QUEUE_TITLE[tier]}</h1>
           <p className="text-ink-2">
             {items ? (
               <>
@@ -410,16 +431,17 @@ function Pager({ name, page, total, onGo }: { name: string; page: number; total:
 }
 
 function QueueRow({ item, now }: { item: QueueItem; now: number }) {
+  const base = queueBase(useContext(TierContext));
   const reason = reasonLine(item);
   const extra = splitLabel(item.label).extra;
   const closed = typeof item.closed_at === "string";
   const meta = closed
     ? ["Đã đóng", item.close_result ? closeResultLabel(item.close_result) : "", formatAt(item.closed_at!)].filter(Boolean).join(" · ")
-    : [waitingText(item.created_at, now), item.assigned_to ? `${item.assigned_to} đang xử lý` : ""].filter(Boolean).join(" · ");
+    : [waitingText(item.created_at, now), holderText(item)].filter(Boolean).join(" · ");
   return (
     <li className="border-t border-line first:border-t-0 motion-safe:animate-rise-in">
       <Link
-        to={closed ? `/escalations/${item.escalation_id}?status=closed` : `/escalations/${item.escalation_id}`}
+        to={closed ? `${base}/${item.escalation_id}?status=closed` : `${base}/${item.escalation_id}`}
         data-testid="queue-row"
         data-escalation-id={item.escalation_id}
         data-ticket-id={item.ticket_id}
@@ -442,6 +464,16 @@ function QueueRow({ item, now }: { item: QueueItem; now: number }) {
           ) : null}
           {extra ? (
             <span className="shrink-0 rounded-full bg-orange-bg px-2 text-label text-orange-ink">{extra}</span>
+          ) : null}
+          {item.tier === 3 ? (
+            <span className="shrink-0 rounded-full bg-group px-2 text-label text-ink-2" data-testid="raised-badge">
+              Lên: {raiseTargetLabel(item.raise_target)}
+            </span>
+          ) : null}
+          {item.overdue && !closed ? (
+            <span className="shrink-0 rounded-full bg-danger-bg px-2 text-label text-danger-ink" data-testid="overdue-badge">
+              {OVERDUE_BADGE}
+            </span>
           ) : null}
         </span>
         <span className="text-secondary text-ink-2 tabular-nums max-lg:col-start-1 max-lg:row-start-3">{meta}</span>

@@ -118,7 +118,7 @@ async def test_e10_tc13_blocked_by_regex_no_llm_neutral_message() -> None:
     assert set(event["detail"]) <= {"layer_decided", "pattern_id", "group", "p_mal", "llm_category"}
     for word in ("Bỏ qua", "bo qua", "quy tắc", "admin", "cấp quyền", TC13):
         assert word.lower() not in repr(event).lower()
-    # tin người dùng: đúng mẫu E0 trung tính, không lộ lớp/mẫu nào bắt
+    # tin người dùng: đúng mẫu E0 (D-98: nêu lý do chung), không lộ lớp/mẫu nào bắt
     [(_, text, _)] = [s for s in h.notifier.sent if s[0] == "t1"]
     assert text == get_escalation_templates().of("E0").user_message
     for leak in ("injection", "mẫu", "phát hiện", "OVR", "regex", "quy tắc"):

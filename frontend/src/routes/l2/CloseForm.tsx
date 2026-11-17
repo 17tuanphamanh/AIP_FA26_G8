@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { ApiError, errorMessage } from "../../api/errors.ts";
-import { CLOSE_NOTE_MAX, closeEscalation } from "../../api/escalations.ts";
+import { CLOSE_NOTE_MAX, closeEscalation, USER_MESSAGE_MAX } from "../../api/escalations.ts";
 import type { EscalationCloseIn, EscalationCloseResult, EscalationQueueItem } from "../../api/types.ts";
-import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, closeProblem, completedLock } from "./queue.ts";
+import { ALREADY_CLOSED_TEXT, CLOSE_OPTIONS, closeProblem, completedLock, USER_MESSAGE_HINT } from "./queue.ts";
 
 type CloseFormProps = {
   item: EscalationQueueItem;
@@ -23,6 +23,8 @@ export function CloseForm({ item, onSubmit = closeEscalation, onClosed, onAlread
   const lock = completedLock(item);
   const [result, setResult] = useState<EscalationCloseResult | null>(null);
   const [note, setNote] = useState("");
+  const [userMessage, setUserMessage] = useState(""); // D-99: lời nhắn cho người gửi (tuỳ chọn)
+  const [messageError, setMessageError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [choiceError, setChoiceError] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -52,7 +54,8 @@ export function CloseForm({ item, onSubmit = closeEscalation, onClosed, onAlread
     setChoiceError(null);
     setNoteError(null);
     try {
-      await onSubmit(item.escalation_id, { close_result: result, note: note.trim() });
+      const message = userMessage.trim();
+      await onSubmit(item.escalation_id, { close_result: result, note: note.trim(), ...(message ? { user_message: message } : {}) });
       reloadQueue();
       onClosed?.(result);
     } catch (e) {
@@ -66,6 +69,10 @@ export function CloseForm({ item, onSubmit = closeEscalation, onClosed, onAlread
         setChoiceError(api.code === "deny_case_cannot_complete" ? errorMessage(api) : "Kết quả đóng này không dùng được cho ca này.");
       } else if (api?.status === 422 && api.fields.includes("note")) {
         setNoteError(`Ghi chú đóng chưa hợp lệ — cần 1–${CLOSE_NOTE_MAX} ký tự.`);
+      } else if (api?.status === 422 && api.fields.includes("user_message")) {
+        setMessageError(`Lời nhắn chưa gửi được — cần 1–${USER_MESSAGE_MAX} ký tự, không chứa mật khẩu hay nội dung hệ thống.`);
+      } else if (api?.status === 409 && api.code === "already_claimed") {
+        setError("Ca này đang do người khác giữ — chỉ người đó đóng được.");
       } else {
         setError(errorMessage(api));
       }
@@ -148,6 +155,33 @@ export function CloseForm({ item, onSubmit = closeEscalation, onClosed, onAlread
       {noteError ? (
         <p role="alert" data-testid="close-note-error" className="text-secondary text-danger">
           {noteError}
+        </p>
+      ) : null}
+
+      <label htmlFor="close-user-message" className="mt-2 pl-1 text-label text-ink-2">
+        Lời nhắn cho người gửi (tuỳ chọn)
+      </label>
+      <textarea
+        id="close-user-message"
+        data-testid="close-user-message"
+        rows={3}
+        maxLength={USER_MESSAGE_MAX}
+        value={userMessage}
+        onChange={(e) => {
+          setUserMessage(e.target.value);
+          setMessageError(null);
+        }}
+        placeholder="Ví dụ: Mình đã cấp lại quyền, bạn đăng nhập lại để dùng nhé."
+        aria-invalid={messageError !== null || undefined}
+        aria-describedby="close-user-message-hint"
+        className="resize-none rounded-group border border-line px-5 py-3"
+      />
+      <span id="close-user-message-hint" className="pl-1 text-label font-normal text-ink-2">
+        {USER_MESSAGE_HINT} ({userMessage.trim().length}/{USER_MESSAGE_MAX})
+      </span>
+      {messageError ? (
+        <p role="alert" data-testid="close-message-error" className="text-secondary text-danger">
+          {messageError}
         </p>
       ) : null}
 

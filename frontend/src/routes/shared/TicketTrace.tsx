@@ -5,7 +5,7 @@ import { MatchedRules } from "./MatchedRules.tsx";
 import { MaNhan, NhanMa } from "../../components/MaNhan.tsx";
 import { luatIT } from "../../lib/nhan.ts";
 import { approvalQuery } from "../../api/approvals.ts";
-import { loadedItems, queueQuery } from "../../api/escalations.ts";
+import { loadedItems, queueQuery, type QueueTier } from "../../api/escalations.ts";
 import { TRACE_TICKET_ID, traceQuery, tracePath, type TicketTrace as Trace, type TraceStep } from "../../api/trace.ts";
 import {
   closeNoteLine,
@@ -246,10 +246,10 @@ export function ApprovalTraceLink() {
 }
 
 /** Chi tiết escalate `/escalations/:escalationId[?status=closed]` — ca tìm trong các trang đã tải như màn chi tiết. */
-export function EscalationTraceLink() {
+export function EscalationTraceLink({ tier = 2 }: { tier?: QueueTier }) {
   const { escalationId = "" } = useParams();
   const [params] = useSearchParams();
-  const query = useInfiniteQuery(queueQuery(params.get("status") === "closed" ? "closed" : "open"));
+  const query = useInfiniteQuery(queueQuery(params.get("status") === "closed" ? "closed" : "open", tier));
   const id = /^\d{1,15}$/.test(escalationId) ? Number(escalationId) : null;
   return <TraceButton ticketId={loadedItems(query.data)?.find((i) => i.escalation_id === id)?.ticket_id} />;
 }

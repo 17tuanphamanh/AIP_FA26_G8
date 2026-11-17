@@ -1,9 +1,11 @@
 """`POST /api/escalations/{id}/close` (P4 tuần 8; B20 mục 4.3, 5.1; P6 §5.3) — bản giả `MemoryEscalations` + `MemoryAudit` của harness.
 
-- Quyền `escalation:handle`: L1 VÀ L2 đóng được; nhân viên, manager → 403 (+ `permission_denied`).
+- Quyền `escalation:handle`: L1 VÀ L2 đóng được ca cấp 2; nhân viên → 403 TRƯỚC 422 thân; D-99: manager (Trưởng IT — chỉ ca cấp 3) qua
+  cổng vai trò, thân hợp lệ trên ca cấp 2 → 403 (+ `permission_denied`). Luật cấp 3 + nhận ca: `test_d99_luong_l2.py`.
 - Thứ tự: 401 → 403 → 422 thân (`fields` không tiền tố) → 404 `not_found` → 409 `already_closed` → 422 `fields: ["close_result"]`
   (`completed` cho ca deny / E5 / E6) → guard (503 khi lỗi; bản che chỉ khoảng trắng / > 1000 → 422 `["note"]`, KHÔNG cắt).
-- 200: thân đúng 8 khoá; `close_note` = bản ĐÃ che; `new_ticket_id` null (B — mọi `close_result`, kể cả `reopened_as_new`);
+- 200: thân đúng 9 khoá (D-99 thêm `user_message`); `close_note` = bản ĐÃ che; `new_ticket_id` null trừ `reopened_as_new` (D-99 (A):
+  tạo ticket THẬT cùng người gửi + cùng nội dung đã che);
   `tickets.close_reason` theo B20:297–301 khi ticket `S_ESCALATED` còn NULL, khác thì giữ nguyên + log.info.
 - Audit: MỘT dòng `B20`/`escalation_closed`, `detail` ĐÚNG {escalation_id, close_result, closed_by, note_length}; không chuỗi bí mật.
   `audit/check.required` không báo thiếu sai vì dòng này, và dòng này KHÔNG thay được ("B20","closed") của điểm 8.
@@ -30,7 +32,9 @@ from tests.unit.test_approvals_view import _login
 pytestmark = pytest.mark.asyncio
 
 URL = "/api/escalations/{}/close"
-OUT_KEYS = {"escalation_id", "ticket_id", "close_result", "close_reason", "closed_at", "closed_by", "close_note", "new_ticket_id"}
+OUT_KEYS = {
+    "escalation_id", "ticket_id", "close_result", "close_reason", "closed_at", "closed_by", "close_note", "new_ticket_id", "user_message",
+}  # fmt: skip
 NOTE = "Đã kiểm tra lại với người dùng."
 
 
@@ -87,11 +91,17 @@ async def test_l1_and_l2_can_close(user: str, role_id: str) -> None:
         assert final is not None and final.close_reason == "resolved_after_escalation"
 
 
-@pytest.mark.parametrize("user", ["an.nv", "quan.tm"])  # nhân viên, manager — không có escalation:handle
-async def test_employee_and_manager_forbidden(user: str) -> None:
+@pytest.mark.parametrize(
+    ("user", "body"),
+    [
+        ("an.nv", {"x": 1}),  # nhân viên: 403 TRƯỚC 422 thân
+        ("quan.tm", {"close_result": "completed", "note": NOTE}),  # D-99: manager chỉ ca cấp 3 — ca cấp 2 → 403
+    ],
+)
+async def test_employee_and_manager_forbidden(user: str, body: dict[str, Any]) -> None:
     async with env_with(("E1", False)) as (env, esc):
         denied = env.denied()
-        r = await _close(env, 1, await _login(env, user), body={"x": 1})  # 403 TRƯỚC 422 thân
+        r = await _close(env, 1, await _login(env, user), body=body)
         assert r.status_code == 403 and r.json() == {"detail": "forbidden"}
         assert env.denied() == denied + 1 and esc.rows[0]["closed_at"] is None
 
@@ -139,13 +149,20 @@ async def test_completed_on_e5_e6_or_deny_case_422(code: str, deny: bool) -> Non
         ("E2", False, "completed", "resolved_after_escalation"),
     ],
 )
-async def test_close_reason_mapping_and_no_new_ticket(code: str, deny: bool, result: str, reason: str) -> None:
-    async with env_with((code, deny)) as (env, _):
+async def test_close_reason_mapping_and_new_ticket_only_for_reopen(code: str, deny: bool, result: str, reason: str) -> None:
+    async with env_with((code, deny)) as (env, esc):
         tickets = set(env.h.tickets.rows)
         r = await _close(env, 1, await _login(env, "long.nh"), body={"close_result": result, "note": NOTE})
         assert r.status_code == 200, r.text
-        assert (r.json()["close_reason"], r.json()["new_ticket_id"]) == (reason, None)
-        assert set(env.h.tickets.rows) == tickets  # (B): reopened_as_new KHÔNG tạo ticket
+        assert r.json()["close_reason"] == reason
+        new = set(env.h.tickets.rows) - tickets
+        if result == "reopened_as_new":  # D-99 (A): ticket THẬT, cùng người gửi + cùng nội dung đã che, ghi vào ca
+            [new_id] = new
+            assert r.json()["new_ticket_id"] == new_id == esc.rows[0]["new_ticket_id"]
+            old, fresh = env.h.tickets.rows["esc-1"], env.h.tickets.rows[new_id]
+            assert (fresh["requester_id"], fresh["redacted_request"]) == (old["requester_id"], old["redacted_request"])
+        else:
+            assert r.json()["new_ticket_id"] is None and not new
 
 
 BAD_BODIES: list[tuple[Any, list[str]]] = [

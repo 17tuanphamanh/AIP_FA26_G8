@@ -56,7 +56,7 @@ async def test_server_now_aware_follows_clock_and_key_set_is_old_plus_server_now
         an = await env.token("an.nv")
         ticket, aid = await _pending(env, an)
         body = await env.ticket(ticket, an)
-        assert set(body) == OLD_KEYS | {"server_now"}  # không lộ approval_id, approver, hash, ghi chú...
+        assert set(body) == OLD_KEYS | {"server_now", "handling"}  # không lộ approval_id, approver, hash, ghi chú...
         first = _at(body["server_now"])
         assert first is not None and first.tzinfo is not None and first == env.clock.now()
         env.clock.advance(timedelta(minutes=7))
@@ -104,7 +104,7 @@ async def test_parent_with_nothing_pending_is_null() -> None:
         for aid in (a1, a2):
             env.h.approvals._table[aid]["status"] = "rejected"
         body = await env.ticket(p, an)
-        assert body["deadline"] is None and set(body) == OLD_KEYS | {"server_now"}
+        assert body["deadline"] is None and set(body) == OLD_KEYS | {"server_now", "handling"}
 
 
 async def test_finished_parent_deadline_null() -> None:

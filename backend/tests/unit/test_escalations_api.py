@@ -20,6 +20,8 @@ URL = "/api/escalations/queue"
 ITEM_KEYS = {
     "escalation_id", "ticket_id", "exit_code", "priority", "label", "reason_detail", "is_deny_case", "handoff_note", "assigned_to",
     "created_at", "closed_at", "close_result", "closed_by", "close_note",
+    # D-99 (17/11)
+    "assigned_at", "tier", "raised_at", "raised_by", "raise_target", "raise_note", "user_message", "new_ticket_id", "due_at", "overdue",
 }  # fmt: skip
 
 
@@ -93,11 +95,14 @@ async def test_l1_l2_read_queue_sorted_without_parents(env: AuthEnv, queue: Memo
     assert all(i["closed_at"] is i["close_result"] is i["closed_by"] is i["close_note"] is None for i in items)
 
 
-def test_employee_and_manager_are_forbidden(env: AuthEnv) -> None:
+def test_employee_forbidden_manager_reads_as_l3(env: AuthEnv) -> None:
     assert _get(env, user="an.nv").status_code == 403
-    r = env.client.get(URL, headers=env.bearer(env.manager_token()))
-    assert r.status_code == 403  # manager không có escalation:handle (P6 5.1)
-    assert len(env.sink.of("permission_denied")) == 2
+    assert len(env.sink.of("permission_denied")) == 1
+    # D-99: manager (Trưởng IT, `escalation:handle:l3`) đọc được hàng đợi để giám sát; xử lý chỉ ca cấp 3 (test_d99_luong_l2.py)
+    headers = env.bearer(env.manager_token())
+    for tier in ("2", "3"):
+        r = env.client.get(f"{URL}?tier={tier}", headers=headers)
+        assert r.status_code == 200, r.text
 
 
 @pytest.mark.parametrize("limit", ["0", "101", "x"])

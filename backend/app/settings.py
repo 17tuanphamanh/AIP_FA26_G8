@@ -38,7 +38,7 @@ from collections.abc import Mapping
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import (
@@ -58,6 +58,7 @@ from app.domain.action import ActionMeta
 from app.domain.approval import Roster
 from app.domain.exit_codes import REASON_DETAILS, ExitCode
 from app.domain.policy import BusinessHours, Rule, check_rules
+from app.domain.risk_factors import FactorCode
 from app.domain.slots import DEVICE_PREFIX_SHAPE, RESERVED_DEVICE_PREFIXES, IntentSlots
 
 log = logging.getLogger(__name__)
@@ -792,6 +793,27 @@ class EscalationTemplates(BaseModel):
 
     deny_warning: str = Field(min_length=1)  # nối vào next_for_l2 với MỌI E5 (2b-Q4)
     codes: dict[ExitCode, CodeTemplate]
+    # D-98 (17/11): vế "Lý do chính: …" B20 nối vào tin E5 cho người dùng. Yếu tố B14 (ca `llm_high_risk`) và luật deny (ca
+    # `policy_deny`) → câu thường; mã không khai → không nêu (vd `no_policy_evidence`, `routine_low_risk`: không phải lý do với người dùng).
+    reason_prefix: str = Field(default="Lý do chính:", min_length=1)
+    user_reason_factors: dict[FactorCode, str] = Field(default_factory=dict)
+    user_reason_rules: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("user_reason_factors", "user_reason_rules")
+    @classmethod
+    def _reason_texts(cls, v: dict[Any, str]) -> dict[Any, str]:
+        for key, text in v.items():
+            if not text.strip() or len(text) > 160 or text.rstrip().endswith("."):
+                raise ValueError(f"nhãn lý do {key}: rỗng, quá 160 ký tự hoặc kết thúc bằng dấu chấm")
+        return v
+
+    @field_validator("user_reason_rules")
+    @classmethod
+    def _rule_ids(cls, v: dict[str, str]) -> dict[str, str]:
+        bad = sorted(k for k in v if not re.fullmatch(r"R\d{2,3}", k))
+        if bad:
+            raise ValueError(f"user_reason_rules: mã luật lạ {bad}")
+        return v
 
     @model_validator(mode="after")
     def _all_codes(self) -> "EscalationTemplates":
