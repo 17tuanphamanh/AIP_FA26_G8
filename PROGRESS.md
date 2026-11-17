@@ -7218,4 +7218,8 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     mới…", ticket mới chạy hết luồng (E5 lại vì KMSpico cấm — đúng). Lệch: "Khi nào chứng chỉ VPN máy LAP-0417 của mình hết hạn?" vẫn trả lời KB
     (7 từ chen giữa "khi nào" … "hết hạn", mẫu chỉ cho 6) → nới 12 + test. Các ca bị mất trước đó: B16 KB, B17 E1 nghi tấn công (p 1,0 — đúng
     thiết kế), B18 hỏi loại tài khoản, B19 hỏi mã rồi chờ duyệt R03, B20 E0. **D-101** (TA 22:29): ml-service bỏ việc đã quá giờ chờ của backend,
-    embed hàng chờ riêng, rerank chờ một lần 40 s không thử lại — đo máy demo B6→B8 lẻ 4–18 s (trung vị ~9 s). Chưa kiểm đồng thời trên máy demo.
+    embed hàng chờ riêng, rerank chờ một lần 40 s không thử lại — đo máy demo B6→B8 lẻ 4–18 s (trung vị ~9 s). **Đo lại trên máy demo sau khi
+    lên `5a68f42` (23:20):** 3 ticket đồng thời → 0 E2 (B8 7,3 / 13,8 / 20,3 s; chậm nhất xong 29 s; trước: 3/3 E2); 5 ticket đồng thời → 1 E2
+    (ca cuối chạm `RAG_DEADLINE_S` 49,9 s; 4 ca còn lại B8 7,5 / 21,5 / 35,7 / 42,5 s; trước: 9 → 8 E2); ca đơn ngay sau đó B8 13,6 s — hồi ngay
+    (trước: ~1 phút). Giới hạn còn lại là phần cứng (~1 rerank / 7 s). Hai câu không có bài KB (âm thanh Teams, chuột USB) → E3 — thiếu nội
+    dung KB, không phải hạ tầng. Giao diện web (`npm run dev`, cổng 5173) tắt sau khi TA mở Terminal mới lúc 23:03 — cần bật lại.
