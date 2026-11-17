@@ -98,17 +98,18 @@ describe("HoursModeSection — Trưởng BP", () => {
   });
 
   it("backend chưa có route (404) → không hiện khối", async () => {
-    setup((client) => <HoursModeSection client={client} />, { missing: true });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByTestId("hours-mode-section")).toBeNull();
+    // Chờ theo SỰ KIỆN (đã gọi route rồi khối ẩn), không chờ cố định 50 ms — CI chậm từng đỏ chập chờn (run 44128085090).
+    const { calls } = setup((client) => <HoursModeSection client={client} />, { missing: true });
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/hours-mode")).toBe(true));
+    await waitFor(() => expect(screen.queryByTestId("hours-mode-section")).toBeNull());
   });
 });
 
 describe("HoursModeBanner — mọi vai trò", () => {
   it("theo giờ thật → không có dải báo", async () => {
-    setup((client) => <HoursModeBanner client={client} />, { me: EMP });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByTestId("hours-mode-banner")).toBeNull();
+    const { calls } = setup((client) => <HoursModeBanner client={client} />, { me: EMP });
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/hours-mode")).toBe(true));
+    await waitFor(() => expect(screen.queryByTestId("hours-mode-banner")).toBeNull());
   });
 
   it("đang giả lập ngoài giờ → nhân viên cũng thấy dải báo", async () => {
