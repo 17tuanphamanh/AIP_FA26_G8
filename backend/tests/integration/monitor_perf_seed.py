@@ -356,7 +356,7 @@ FROM leaf WHERE {_mix("i", SALT_APPROVAL, 7)} = 0
 _ESCALATIONS = f"""
 WITH {_LEAF_CTE}
 INSERT INTO escalations (ticket_id, exit_code, priority, reason_detail, handoff_note, is_deny_case, assigned_to,
-                         created_at)
+                         assigned_at, created_at)
 SELECT l.ticket_id, t.exit_code, p.rank,
        (ARRAY['out_of_scope','intent_low_confidence','llm_unavailable','no_grounding',
               'intent_not_enabled','multi_intent_not_enabled'])[1 + {_mix("l.i", SALT_REASON, 6)}],
@@ -364,6 +364,7 @@ SELECT l.ticket_id, t.exit_code, p.rank,
                           'context', '{{}}'::jsonb, 'next', 'L2 kiem tra'),
        false,
        CASE WHEN l.i % 2 = 0 THEN :m ELSE NULL END,
+       CASE WHEN l.i % 2 = 0 THEN l.created_at + make_interval(secs => 100) ELSE NULL END,  -- D-99: ck_escalations_assigned_pair
        l.created_at + make_interval(secs => 40)
 FROM leaf l JOIN tickets t USING (ticket_id) JOIN exit_code_priority p ON p.exit_code = t.exit_code
 WHERE t.exit_code IS NOT NULL
