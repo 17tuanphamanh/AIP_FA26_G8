@@ -12,6 +12,7 @@ sau `resolve()`; `GUARD_MANIFEST_SHA256` — SHA-256 của `MANIFEST.sha256`. Đ
 `GUARD_MANIFEST_SHA256` bắt buộc (kiểm ở `guard.check_guard`). Hai biến số không truyền qua compose (như `ML_MAX_CONCURRENCY`).
 Phase 5 gói 2 (D-53): `INTENT_MODEL_DIR` rỗng = không nạp, `/classify_intent` 503; có đặt → nạp `intent-clf` (`intent.py`) và
 `INTENT_MODEL_SHA256` (SHA-256 của `model.safetensors`) VÀ `INTENT_MANIFEST_SHA256` bắt buộc (kiểm ở `intent.check_intent`).
+D-101: `ML_EMBED_CONCURRENCY` (mặc định 1) — hàng chờ riêng cho `/embed` + `/count_tokens`, tách khỏi `/rerank`.
 """
 
 import os
@@ -46,6 +47,9 @@ class MlSettings(BaseSettings):
     intent_manifest_sha256: str | None = None
     # Phase 5 (gói 1, D-52)
     ml_classify_concurrency: int = Field(default=1, ge=1)
+    # D-101 (máy demo 17/11): hàng chờ RIÊNG cho /embed + /count_tokens — câu ngắn (vài trăm ms) không xếp sau rerank 10–15 s rồi hết
+    # hạn 5 s của backend (cùng lý do D-52 tách /classify). Không truyền qua compose (như ML_MAX_CONCURRENCY).
+    ml_embed_concurrency: int = Field(default=1, ge=1)
     ml_models_root: Path = Path("/ml_models")
     guard_manifest_sha256: str | None = None
 

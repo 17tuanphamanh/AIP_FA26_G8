@@ -158,7 +158,7 @@ async def test_c11_first_search_empty_then_fallback_rerank_fails() -> None:
         await r.retrieve(RetrievalQuery(text="dùng cổng 809", intent="account"), _ctx())
     assert err.value.stage == "rerank"
     assert fake.calls["embed"] == 1  # Q-3c-3: embed một lần, dùng lại cho D-23
-    assert fake.calls["rerank"] == 3  # hết lượt của MlClient (không lặp thêm ở retriever)
+    assert fake.calls["rerank"] == 1  # D-101: rerank chờ một lần, không thử lại (không lặp thêm ở retriever)
 
 
 # ---- c17: embed lỗi 2 lần rồi thành công → đúng 1 lời gọi ml.embed (không 9) ----------------------
@@ -196,7 +196,7 @@ async def test_rerank_timeout_raises_rerank_stage_not_empty_result() -> None:
     with pytest.raises(RetrievalSystemError) as err:
         await r.retrieve(RetrievalQuery(text="vpn lỗi 809", intent="vpn"), _ctx())
     assert err.value.stage == "rerank"
-    assert fake.calls["rerank"] == 3
+    assert fake.calls["rerank"] == 1  # D-101: hết giờ không thử lại
 
 
 # ---- c23: pipeline_sha lệch → E2 stage=pipeline, 0 lời gọi ml (Q-3c-2) ----------------------------

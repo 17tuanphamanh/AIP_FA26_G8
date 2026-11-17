@@ -13,14 +13,18 @@ import inspect
 
 import pytest
 from app.ml import MlPort
-from app.ml.client import TIMEOUT_S
+from app.ml.client import CONNECT_TIMEOUT_S, NO_SLOW_RETRY, TIMEOUT_S
 from app.settings import Settings, get_policy
 
 
-def worst_case_seconds(timeout: float) -> float:
+def worst_case_seconds(timeout: float, endpoint: str | None = None) -> float:
+    """Mọi lần thử đều hết giờ. D-101: endpoint trong `NO_SLOW_RETRY` (`/rerank`) chỉ thử lại khi KẾT NỐI lỗi (≤ `CONNECT_TIMEOUT_S`),
+    lần chờ dài chỉ một lần → TOOL_RETRY·connect + backoff + timeout."""
     constants = get_policy().constants
     attempts = constants.TOOL_RETRY + 1
     backoff = sum(constants.BACKOFF_BASE_SECONDS * 2 ** (k - 1) for k in range(1, constants.TOOL_RETRY + 1))
+    if endpoint in NO_SLOW_RETRY:
+        return constants.TOOL_RETRY * min(timeout, CONNECT_TIMEOUT_S) + backoff + timeout
     return attempts * timeout + backoff
 
 
@@ -38,7 +42,7 @@ def test_every_port_method_has_a_timeout() -> None:
 
 @pytest.mark.parametrize("endpoint", sorted(TIMEOUT_S))
 def test_worst_case_call_under_half_stale_turn(endpoint: str) -> None:
-    worst = worst_case_seconds(TIMEOUT_S[endpoint])
+    worst = worst_case_seconds(TIMEOUT_S[endpoint], endpoint)
     limit = stale_seconds() / 2
     assert worst < limit, (
         f"/{endpoint}: xấu nhất {worst:.0f} s ≥ {limit:.0f} s (stale/2) — worker sẽ recover lượt còn đang chạy"
@@ -50,3 +54,9 @@ def test_bound_formula_matches_call_with_retry() -> None:
     constants = get_policy().constants
     assert (constants.TOOL_RETRY, constants.BACKOFF_BASE_SECONDS) == (2, 1)
     assert worst_case_seconds(10) == 33
+
+
+def test_d101_rerank_fits_inside_rag_deadline() -> None:
+    """D-101: một lần chờ rerank + embed (một lần) nằm trong `RAG_DEADLINE_S` — rerank không bị hạn tra cứu cắt trước khi tự hết giờ."""
+    default = Settings.model_fields["rag_deadline_s"].default
+    assert TIMEOUT_S["rerank"] + TIMEOUT_S["embed"] < default

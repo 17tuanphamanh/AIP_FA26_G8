@@ -152,6 +152,8 @@ STATUS_Q = "Kiểm tra giúp em chứng chỉ VPN trên máy LAP-0501 còn hạn
         ("Chứng chỉ VPN máy LAP-0342 của em còn hạn không ạ?", True),
         ("chứng chỉ vpn của em hết hạn chưa", True),
         ("Khi nào chứng chỉ VPN của em hết hạn?", True),
+        ("Khi nào chứng chỉ VPN máy LAP-0417 của mình hết hạn?", True),  # máy demo 17/11 22:40 (7 từ chen giữa)
+        ("Bao giờ thì cái chứng chỉ VPN trên laptop LAP-0417 của mình hết hạn vậy?", True),
         ("chứng chỉ còn mấy ngày nữa hết hạn", True),
         ("Kiểm tra trạng thái VPN máy LAP-0342", True),
         ("Xem giúp em hạn chứng chỉ VPN", True),

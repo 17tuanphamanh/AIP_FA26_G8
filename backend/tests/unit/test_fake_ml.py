@@ -31,13 +31,20 @@ async def test_a14_rerank_semantic_in_unit_interval() -> None:
 
 
 async def test_fail_next_goes_through_real_client_retry() -> None:
-    fake = FakeMlService().fail_next("rerank", "timeout", 2)
+    """D-101: `/embed` còn thử lại khi hết giờ / 5xx; `/rerank` chờ MỘT lần — hết giờ / 5xx không thử lại."""
+    fake = FakeMlService().fail_next("embed", "timeout", 2)
     clock = FakeClock()
-    r = await fake.client(clock).rerank(Q_VPN, [P_VPN])
-    assert r.error is None and r.attempts == 2 and fake.calls["rerank"] == 3
-    fake.fail_next("rerank", "http_500", 3)
-    r = await fake.client(clock).rerank(Q_VPN, [P_VPN])
+    r = await fake.client(clock).embed([Q_VPN])
+    assert r.error is None and r.attempts == 2 and fake.calls["embed"] == 3
+    fake.fail_next("embed", "http_500", 3)
+    r = await fake.client(clock).embed([Q_VPN])
     assert (r.error, r.attempts) == ("http_5xx", 3)
+    fake.fail_next("rerank", "timeout", 1)
+    rr = await fake.client(clock).rerank(Q_VPN, [P_VPN])
+    assert (rr.error, rr.attempts, fake.calls["rerank"]) == ("timeout", 1, 1)
+    fake.fail_next("rerank", "http_500", 1)
+    rr = await fake.client(clock).rerank(Q_VPN, [P_VPN])
+    assert (rr.error, rr.attempts, fake.calls["rerank"]) == ("http_5xx", 1, 2)
 
 
 async def test_model_missing_and_classifiers() -> None:

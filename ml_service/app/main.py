@@ -11,6 +11,11 @@ model; song song hoá bằng threadpool + `asyncio.Semaphore(ML_MAX_CONCURRENCY)
 - Log chỉ ghi endpoint, số phần tử, số ký tự, thời lượng — KHÔNG ghi văn bản. Lỗi 422 trả về không kèm
   giá trị đầu vào (mặc định của FastAPI vọng lại `input`).
 - Response thành công có header `X-Model-Version: bge-m3@<rev7>;reranker@<rev7>` (P4 mục 7).
+- D-101 (máy demo 17/11 — 3 ticket đồng thời → cả 3 E2 sau 50 s, ~1 phút mới hồi): (1) request mang `X-Client-Timeout` (giây
+  backend chịu chờ) mà tới lượt đã chờ quá số đó → BỎ, không chạy model (`to_thread` không huỷ được việc đang chạy, nhưng việc
+  CHƯA chạy thì bỏ được — trước đây hàng chờ phình vì làm nốt mọi request backend đã bỏ và cả các lần thử lại); trả 503
+  `abandoned` (backend đã đi). Thiếu / sai header → chạy như cũ. (2) `/embed` + `/count_tokens` có hàng chờ riêng
+  (`ML_EMBED_CONCURRENCY`) — không xếp sau rerank.
 """
 
 import asyncio
@@ -52,7 +57,28 @@ from app.tokens import count
 log = logging.getLogger("app.ml_service")
 
 MODEL_VERSION_HEADER = "X-Model-Version"
+CLIENT_TIMEOUT_HEADER = "X-Client-Timeout"  # D-101: giây backend chịu chờ cho lần gọi này
+MAX_CLIENT_TIMEOUT_S = 120.0
 WARM_UP_TEXT = "khởi động ml-service"
+
+
+class Abandoned(Exception):
+    """D-101: request đã chờ trong hàng quá `X-Client-Timeout` — backend đã bỏ, không chạy model."""
+
+    def __init__(self, endpoint: str, waited: float) -> None:
+        super().__init__(endpoint)
+        self.endpoint = endpoint
+        self.waited = waited
+
+
+def client_timeout(request: Request) -> float | None:
+    """Giá trị header hợp lệ (0 < x ≤ 120) hoặc None (thiếu / sai → không bỏ, chạy như cũ)."""
+    raw = request.headers.get(CLIENT_TIMEOUT_HEADER)
+    try:
+        value = float(raw) if raw is not None else None
+    except ValueError:
+        return None
+    return value if value is not None and 0 < value <= MAX_CLIENT_TIMEOUT_S else None
 
 type Loader = Callable[[MlSettings], Models]
 
@@ -88,6 +114,18 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
     # Phase 5 gói 1 (D-52, ĐT 4.6): hàng chờ RIÊNG cho /classify và /classify_intent — classify không chờ rerank (10–15 s) rồi
     # hết hạn 2 s của backend
     classify_limiter = asyncio.Semaphore(settings.ml_classify_concurrency)
+    embed_limiter = asyncio.Semaphore(settings.ml_embed_concurrency)  # D-101: /embed + /count_tokens không chờ rerank
+
+    async def queued[T](
+        gate: asyncio.Semaphore, request: Request, endpoint: str, fn: Callable[..., T], *args: Any
+    ) -> T:
+        """D-101: chờ hàng, tới lượt mà đã quá `X-Client-Timeout` → `Abandoned` (không chạy model)."""
+        arrived, budget = time.perf_counter(), client_timeout(request)
+        async with gate:
+            waited = time.perf_counter() - arrived
+            if budget is not None and waited >= budget:
+                raise Abandoned(endpoint, waited)
+            return await anyio.to_thread.run_sync(fn, *args)
 
     async def run[T](fn: Callable[..., T], *args: Any) -> T:
         async with limiter:
@@ -96,6 +134,11 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
     async def run_classify[T](fn: Callable[..., T], *args: Any) -> T:
         async with classify_limiter:
             return await anyio.to_thread.run_sync(fn, *args)
+
+    @app.exception_handler(Abandoned)
+    async def abandoned(_: Request, exc: Abandoned) -> JSONResponse:
+        log.info("%s bỏ: đã chờ %.1f s > X-Client-Timeout — backend đã đi, không chạy model", exc.endpoint, exc.waited)
+        return JSONResponse({"error": "abandoned"}, status_code=503)
 
     @app.exception_handler(RequestValidationError)
     async def invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -139,14 +182,14 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
     @api.post("/embed")
     async def embed(body: EmbedIn, request: Request) -> EmbedOut:
         started = time.perf_counter()
-        out = await run(embed_sync, loaded(request), body.texts)
+        out = await queued(embed_limiter, request, "embed", embed_sync, loaded(request), body.texts)
         _log("embed", len(body.texts), sum(map(len, body.texts)), started, sum(out.truncated))
         return out
 
     @api.post("/rerank")
     async def rerank(body: RerankIn, request: Request) -> RerankOut:
         started = time.perf_counter()
-        out = await run(rerank_sync, loaded(request), body.query, body.passages)
+        out = await queued(limiter, request, "rerank", rerank_sync, loaded(request), body.query, body.passages)
         chars = len(body.query) + sum(map(len, body.passages))
         _log("rerank", len(body.passages), chars, started, sum(out.truncated))
         return out
@@ -155,7 +198,7 @@ def create_app(settings: MlSettings | None = None, loader: Loader = load_models)
     async def count_tokens(body: CountIn, request: Request) -> CountOut:
         started = time.perf_counter()
         models = loaded(request)
-        counts = await run(lambda: [count(models.tokenizer, t) for t in body.texts])
+        counts = await queued(embed_limiter, request, "count_tokens", lambda: [count(models.tokenizer, t) for t in body.texts])
         _log("count_tokens", len(body.texts), sum(map(len, body.texts)), started, 0)
         return CountOut(counts=counts, model=models.embed.repo)
 

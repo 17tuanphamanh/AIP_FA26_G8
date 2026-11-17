@@ -18,6 +18,7 @@ import pytest
 from app.core.clock import FakeClock
 from app.domain.states import S_ESCALATED
 from app.llm.providers.scripted import Reply, Timeout
+from app.ml.client import TIMEOUT_S as ML_TIMEOUT_S
 from app.settings import Settings
 from tests.fakes.fake_ml import FakeMlService
 from tests.fakes.graph import GraphHarness
@@ -99,5 +100,5 @@ async def test_f19_worst_case_turn_ends_e2_within_budget_and_no_call_exceeds_rem
         remaining = (usable_end - at).total_seconds()
         assert timeout <= remaining + 1e-9, f"{kind}: timeout {timeout:g}s > còn {remaining:g}s lúc {at}"
     last = [t for k, t, _ in seen if k == ("tool:vpn" if ends_at == "B6" else "ml:rerank")]
-    assert any(t < (5.0 if ends_at == "B6" else 18.0) for t in last)  # lời gọi cuối bị cắt theo phần còn lại
+    assert any(t < (5.0 if ends_at == "B6" else ML_TIMEOUT_S["rerank"]) for t in last)  # lời gọi cuối bị cắt theo phần còn lại
     assert (clock.now() - start).total_seconds() > budget - margin - 5  # thật sự bị cắt, không xong sớm tình cờ

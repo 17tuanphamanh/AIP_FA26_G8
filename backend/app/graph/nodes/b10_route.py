@@ -123,7 +123,7 @@ VPN_STATUS_QUESTION = re.compile(
     rf"còn\s+hạn(?:\s+(?:sử\s+dụng|dùng))?\s+{_ASK}"
     rf"|còn\s+(?:hiệu\s+lực|dùng\s+được|sử\s+dụng\s+được)\s+{_ASK}"
     r"|hết\s+hạn\s+(?:chưa|hay\s+chưa|khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào|vào\s+(?:ngày|lúc)\s+nào)"
-    r"|(?:khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào|hôm\s+nào)\s+(?:\S+\s+){0,6}?hết\s+hạn"
+    r"|(?:khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào|hôm\s+nào)\s+(?:\S+\s+){0,12}?hết\s+hạn"  # máy demo: 7 từ chen giữa
     r"|hạn(?:\s+(?:dùng|sử\s+dụng))?\s+(?:đến|tới)\s+(?:khi\s+nào|lúc\s+nào|bao\s+giờ|ngày\s+nào)"
     r"|còn\s+(?:bao\s+nhiêu|mấy)\s+ngày"
     r"|(?:kiểm\s+tra|xem|tra|check)\s+(?:giúp|hộ|dùm|giùm)?\s*(?:\S+\s+){0,6}?(?:trạng\s+thái|hiệu\s+lực|hạn\s+chứng\s+chỉ)"

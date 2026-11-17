@@ -7212,3 +7212,10 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     nv007", "Zoom và 7-Zip") chỉ làm một, bỏ cái còn lại không báo; hỏi "phiên bản nào" thừa. Hạ tầng máy demo: ml-service chỉ tra KB ~1 ca một
     lúc — 3 ca đồng thời → cả 3 E2 `rag_system_error` (rerank, hết `RAG_DEADLINE_S` 50 s); 9 ca → 8 E2; sau ~1 phút tự hồi. Mock: giang.pt đã bị
     đặt lại mật khẩu qua ca B2 → cần `mock seed reset`. Hàng đợi L2 ~410 ca cũ → màn chi tiết phải "Tải thêm" 8 lần mới tới ca mới.
+38. **17/11 22:36–23:00 — kiểm lại bản `b890603` trên máy demo + D-101 (hàng chờ ml-service):** đạt — "còn hạn không?" → kiểm tra máy
+    ("đã hết hạn, quá hạn 3 ngày" + gợi ý gia hạn); tin chờ duyệt có lý do (R14 "phần mềm có phí bản quyền", R03 "tài khoản dịch vụ"); R12 →
+    E5 "tài khoản nhận quyền đang bị khoá"; máy in "Chưa ổn" lần 2 → E8 đúng câu; L2 mở lại ca 1919 trên giao diện → "Hệ thống đã mở yêu cầu
+    mới…", ticket mới chạy hết luồng (E5 lại vì KMSpico cấm — đúng). Lệch: "Khi nào chứng chỉ VPN máy LAP-0417 của mình hết hạn?" vẫn trả lời KB
+    (7 từ chen giữa "khi nào" … "hết hạn", mẫu chỉ cho 6) → nới 12 + test. Các ca bị mất trước đó: B16 KB, B17 E1 nghi tấn công (p 1,0 — đúng
+    thiết kế), B18 hỏi loại tài khoản, B19 hỏi mã rồi chờ duyệt R03, B20 E0. **D-101** (TA 22:29): ml-service bỏ việc đã quá giờ chờ của backend,
+    embed hàng chờ riêng, rerank chờ một lần 40 s không thử lại — đo máy demo B6→B8 lẻ 4–18 s (trung vị ~9 s). Chưa kiểm đồng thời trên máy demo.

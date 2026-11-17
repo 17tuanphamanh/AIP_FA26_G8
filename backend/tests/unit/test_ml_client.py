@@ -15,6 +15,7 @@ import pytest
 from app.core.clock import FakeClock
 from app.ml import MlClient, MlContractError
 from app.ml import client as ml_client
+from app.ml.client import CONNECT_TIMEOUT_S, TIMEOUT_S
 
 pytestmark = pytest.mark.asyncio
 
@@ -198,12 +199,58 @@ async def test_a13_rerank_50_passages_two_batches_in_order() -> None:
     assert r.data.query_truncated is True  # một lô báo cắt → cả kết quả báo
 
 
+def _embed_echo(request: httpx.Request) -> httpx.Response:
+    n = len(json.loads(request.content)["texts"])
+    return ok({"vectors": [[1.0]] * n, "dim": 1, "model": "BAAI/bge-m3", "truncated": [False] * n, "token_counts": [1] * n})
+
+
 async def test_failed_batch_stops_and_sums_attempts() -> None:
-    t = Scripted(httpx.Response(500), _rerank_echo, httpx.Response(500))
-    r = await make(t).rerank("q", [f"p{i}" for i in range(40)])
+    """D-101: đổi sang `/embed` (còn thử lại 5xx) — `/rerank` không thử lại 5xx nữa (test riêng bên dưới)."""
+    t = Scripted(httpx.Response(500), _embed_echo, httpx.Response(500))
+    r = await make(t).embed([f"p{i}" for i in range(70)])
     assert r.error == "http_5xx" and r.data is None
     assert r.attempts == 1 + 3  # lô 1: 1 lần lỗi rồi xong; lô 2: hết lượt
     assert t.calls == 2 + 3
+
+
+# ---- D-101: rerank chờ một lần, ml-service biết giây chờ ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("step", "kind"),
+    [(httpx.ReadTimeout("chậm"), "timeout"), (httpx.Response(500), "http_5xx"), (httpx.Response(503, json={"error": "abandoned"}), "http_5xx")],
+)
+async def test_d101_rerank_timeout_or_5xx_not_retried(step: Step, kind: str) -> None:
+    t = Scripted(step, _rerank_echo)
+    r = await make(t).rerank("q", ["p1", "p2"])
+    assert (r.error, r.attempts, t.calls) == (kind, 1, 1)
+
+
+async def test_d101_rerank_connect_error_still_retried() -> None:
+    t = Scripted(httpx.ConnectError("mất kết nối"), _rerank_echo)
+    r = await make(t).rerank("q", ["p1", "p2"])
+    assert r.error is None and t.calls == 2
+
+
+async def test_d101_embed_timeout_still_retried() -> None:
+    t = Scripted(httpx.ReadTimeout("chậm"), _embed_echo)
+    r = await make(t).embed(["a"])
+    assert r.error is None and t.calls == 2
+
+
+async def test_d101_client_timeout_header_and_connect_cap() -> None:
+    seen: list[httpx.Request] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return _rerank_echo(request) if request.url.path == "/rerank" else _embed_echo(request)
+
+    client = make(Scripted(capture))
+    await client.rerank("q", ["p1"])
+    await client.embed(["a"])
+    assert [float(r.headers["X-Client-Timeout"]) for r in seen] == [TIMEOUT_S["rerank"], TIMEOUT_S["embed"]]
+    assert seen[0].extensions["timeout"]["connect"] == CONNECT_TIMEOUT_S
+    assert seen[0].extensions["timeout"]["read"] == TIMEOUT_S["rerank"]
 
 
 async def test_batches_split_by_bytes_too() -> None:

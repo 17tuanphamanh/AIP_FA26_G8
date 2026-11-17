@@ -19,6 +19,12 @@
 - Span `ml:<endpoint>`: một dòng log (như `ToolRegistry._span`) — không ghi văn bản.
 - Hạn cho cả lượt (phase3 9.0): timeout mỗi lần thử = `cap_timeout(TIMEOUT_S[endpoint])`; hết → `TurnBudgetExceeded`
   (KHÔNG thành `MlResult.error` — B2/B3 không được "rơi xuống LLM" khi chính lượt đã hết giờ).
+- D-101 (máy demo 17/11: 3 ticket đồng thời → cả 3 E2 `rag_system_error` sau 50 s, ~1 phút mới hồi): ml-service chạy rerank MỘT việc
+  một lúc (5–15 s/lần trên CPU máy demo); timeout 18 s + thử lại 2 lần xếp thêm việc vào cuối hàng trong khi ml-service vẫn làm nốt
+  việc đã bỏ → hàng chờ phình. Nay: (1) mỗi lời gọi gửi `X-Client-Timeout` (giây chờ của lần thử) — ml-service bỏ việc đã chờ quá số
+  đó thay vì chạy; (2) `/rerank` chờ MỘT lần tới 40 s (trong `RAG_DEADLINE_S` 50 s), hết giờ / 5xx KHÔNG thử lại (thử lại sau 18 s gần
+  như luôn vượt hạn 50 s, chỉ thêm tải) — mất kết nối vẫn thử lại; (3) mọi endpoint: timeout KẾT NỐI ≤ `CONNECT_TIMEOUT_S` (mạng
+  docker nội bộ) — trần xấu nhất `/rerank` = 2·5 + 3 + 40 = 53 s < `WORKER_STALE_TURN_SECONDS`/2.
 """
 
 import json
@@ -48,10 +54,14 @@ MAX_REQUEST_BYTES = 200 * 1024
 # 3·T+3 < WORKER_STALE_TURN_SECONDS/2=60 → T ≤ 18) — KHÔNG phải 2×p95 đo thật (tier ② trung vị p95 10,4 s
 # trên CPU dev, lớn nhất đo được 12,4 s, vẫn dưới 18 s nên timeout trên máy chậm sẽ là E2 an toàn, không
 # phải false-negative). Xem PROGRESS S9 (Q-3a-16) và nợ kỹ thuật đo lại trên máy staging GPU (N2).
-TIMEOUT_S = {"embed": 5.0, "rerank": 18.0, "count_tokens": 5.0, "classify": 2.0, "classify_intent": 2.0}
+# D-101: rerank 18 → 40 (một lần, không thử lại khi hết giờ — xem docstring).
+TIMEOUT_S = {"embed": 5.0, "rerank": 40.0, "count_tokens": 5.0, "classify": 2.0, "classify_intent": 2.0}
+CONNECT_TIMEOUT_S = 5.0  # D-101: kết nối tới ml-service (mạng docker nội bộ) — không chờ cả 40 s của rerank chỉ để kết nối
 MODEL_VERSION_HEADER = "X-Model-Version"
+CLIENT_TIMEOUT_HEADER = "X-Client-Timeout"  # D-101: ml-service bỏ việc đã chờ quá số giây này
 CLASSIFY_ENDPOINTS = frozenset({"classify", "classify_intent"})  # gói 1: 500 `classify_failed` là lỗi lớp 3, không thử lại
-NO_TIMEOUT_RETRY = frozenset({"classify"})  # gói 1 (ĐT 4.6): timeout không thử lại
+NO_TIMEOUT_RETRY = frozenset({"classify", "rerank"})  # gói 1 (ĐT 4.6): timeout không thử lại; D-101: thêm rerank
+NO_SLOW_RETRY = frozenset({"rerank"})  # D-101: 5xx cũng không thử lại (một lần chờ dài là đủ; chỉ mất kết nối mới thử lại)
 
 _SYSTEM_CLOCK = SystemClock()
 
@@ -93,7 +103,8 @@ def _error_code(response: httpx.Response) -> object:
 
 
 class _TimeoutNoRetry(Exception):
-    """`/classify` hết thời gian chờ — thoát `call_with_retry` ngay (nó chỉ bắt lỗi httpx), không thử lại."""
+    """`/classify`, `/rerank` hết thời gian chờ (D-101: `/rerank` cả 5xx) — thoát `call_with_retry` ngay (nó chỉ bắt lỗi httpx), không
+    thử lại."""
 
 
 def _is_l3_error(endpoint: str, response: httpx.Response) -> bool:
@@ -195,7 +206,11 @@ class MlClient:
             nonlocal kind
             try:
                 timeout = cap_timeout(TIMEOUT_S[endpoint], self._clock, what=f"ml:{endpoint}")  # 9.0
-                response = await self._http.post(f"/{endpoint}", content=payload, headers=self._headers, timeout=timeout)
+                headers = {**self._headers, CLIENT_TIMEOUT_HEADER: f"{timeout:.3f}"}  # D-101
+                response = await self._http.post(
+                    f"/{endpoint}", content=payload, headers=headers,
+                    timeout=httpx.Timeout(timeout, connect=min(timeout, CONNECT_TIMEOUT_S)),
+                )  # fmt: skip
             except httpx.TimeoutException as e:
                 kind = "timeout"
                 # chỉ timeout khi ĐÃ gửi (ml-service có thể đang chấm, `to_thread` không huỷ) mới không thử lại; chưa kết nối
@@ -213,6 +228,8 @@ class MlClient:
                 return response  # không raise → call_with_retry trả ngay, không retry
             if response.status_code >= 500 or response.status_code == 429:
                 kind = "http_5xx"
+                if endpoint in NO_SLOW_RETRY:  # D-101: không thử lại rerank sau 5xx
+                    raise _TimeoutNoRetry
             response.raise_for_status()
             return response
 
@@ -224,7 +241,7 @@ class MlClient:
             # timeout bị cắt theo hạn lượt mà lượt đã hết → TurnBudgetExceeded (giữ bất biến 9.0: không rơi xuống LLM khi chính
             # lượt hết giờ — trước gói 1 việc này do `check_sleep` của lần thử lại làm)
             cap_timeout(TIMEOUT_S[endpoint], self._clock, what=f"ml:{endpoint}")
-            return MlResult(None, "timeout", 1)
+            return MlResult(None, kind, 1)
         except httpx.HTTPStatusError as e:  # 4xx khác 404/429: call_with_retry raise lại, không retry
             raise MlContractError(f"ml-service /{endpoint}: HTTP {e.response.status_code}") from e
         if error is not None:
