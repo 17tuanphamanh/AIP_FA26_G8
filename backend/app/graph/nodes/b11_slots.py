@@ -51,6 +51,11 @@
    lời "đặt lại mật khẩu" → `reset_password` đi luồng thường; vẫn đòi mở khoá → hỏi lại tới hết lượt → E4. Tài khoản người khác: không
    đổi (luồng cũ — người duyệt/kỹ thuật viên).
 
+9. D-102 (kiểm thử 17/11) — ĐẦU nút, CHỈ lượt đầu (`clarification_turns == 0`): câu nêu ≥ 2 đối tượng khác nhau cùng loại nối liền
+   ("nv005 và nv007", "Zoom và 7-Zip", "LAP-0342 và PC-0977", hai thư mục — `domain/multi_object`) → bỏ slot đó, hỏi câu CỐ ĐỊNH
+   `multi_object_question` "mỗi yêu cầu một …, làm cái nào trước, cái còn lại gửi riêng" (không LLM; guard, notify, hạn, đếm lượt như
+   bước 5; audit `multi_object` = loại). Lượt sau không xét lại (không lặp). Trước đây làm một, bỏ một không báo.
+
 Lỗi LLM → E2 `llm_schema_error`/`llm_unavailable`; hết hạn cả lượt (LLM hoặc tool) → E2 `turn_budget_exceeded`, bắt tường
 minh (`step="B11"`). Không `except Exception`. Chẩn đoán lại D-20: không có ở 3g (Q-3g-7 — cờ bật thì không khởi động).
 5b. Q3 M1 (ĐP 09/11): MỌI slot đang thiếu thuộc `FIXED_QUESTION_SLOTS` (account_type, action, permission_level) → câu CỐ ĐỊNH của intent
@@ -78,6 +83,7 @@ from app.domain.messages import (
     not_locked_question,
     question_msg,
 )
+from app.domain.multi_object import multi_object, multi_object_question
 from app.domain.slot_text import UNKNOWN_ACTION, describe_missing, scrub_slot_keys
 from app.domain.states import S_ASSESSING, S_CLARIFYING, S_ESCALATED
 from app.domain.target import TARGET_QUESTION, requester_id_of, sole_employee_code
@@ -100,7 +106,8 @@ def _info(missing: list[str], turns: int, target_required: bool) -> dict[str, An
     return {"missing": missing, "turn": turns, "prompt": None, "llm_error": None, "guard": None, "tools_called": [],
             "tool_retry_count": 0, "facts": None, "procedure_doc": None, "procedure_kb_version": None,
             "rag_error": None, "target_required": target_required, "slot_keys_removed": 0,
-            "owner_mismatch_early": False, "device_not_found": False, "unlock_not_locked": False}  # fmt: skip
+            "owner_mismatch_early": False, "device_not_found": False, "unlock_not_locked": False,
+            "multi_object": None}  # fmt: skip
 
 
 def unlock_not_needed(state: Any, slots: dict[str, Any], facts: dict[str, Any]) -> bool:
@@ -183,6 +190,20 @@ def make(deps: NodeDeps) -> NodeFn:
             raise ValueError(f"b11_slots nhận intent chỉ-trả-lời {state['intent']!r} — không bao giờ dựng hành động")
         spec = deps.slots.intents[state["intent"]]
         slots = dict(state.get("slots") or {})
+        turns = int(state.get("clarification_turns") or 0)
+        found = None
+        if turns == 0:  # D-102: chỉ lượt đầu — câu trả lời điền slot rồi đi tiếp, không xét lại (không lặp)
+            text = str(state.get("redacted_request") or "")
+            found = multi_object(state["intent"], text, slots, device_prefixes=deps.slots.device_prefixes)
+        if found is not None:  # D-102: hai đối tượng cùng loại nối liền — hỏi câu CỐ ĐỊNH làm cái nào trước, không làm một bỏ một
+            slots = {k: v for k, v in slots.items() if k != found.kind}
+            asked = [found.kind, *(m for m in spec.missing(slots) if m != found.kind)]
+            info = _info(asked, turns, False) | {"multi_object": found.kind}
+            facts = dict(state.get("facts") or {})
+            if found.kind == "device_id":
+                facts = {k: v for k, v in facts.items() if k not in vpn.DEVICE_FACTS}
+            return await _ask(state, asked, info, fixed_text=multi_object_question(found),
+                              dropped={"slots": slots, "facts": facts})  # fmt: skip
         missing = spec.missing(slots)  # T20a P4
         need_target = target_required(state, slots)
         from_text = None
@@ -191,7 +212,7 @@ def make(deps: NodeDeps) -> NodeFn:
             missing = spec.missing(slots)
         if need_target:  # L-03: hỏi đích TRƯỚC
             missing = ["target_user", *missing]
-        info = _info(missing, int(state.get("clarification_turns") or 0), need_target)
+        info = _info(missing, turns, need_target)
         info["target_from_text"] = from_text is not None
         try:
             if missing or device_lookup(state) == "not_found":  # ĐP 09/11 điểm 1: máy 404 hỏi lại mã cả khi đủ slot

@@ -7223,3 +7223,14 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     (ca cuối chạm `RAG_DEADLINE_S` 49,9 s; 4 ca còn lại B8 7,5 / 21,5 / 35,7 / 42,5 s; trước: 9 → 8 E2); ca đơn ngay sau đó B8 13,6 s — hồi ngay
     (trước: ~1 phút). Giới hạn còn lại là phần cứng (~1 rerank / 7 s). Hai câu không có bài KB (âm thanh Teams, chuột USB) → E3 — thiếu nội
     dung KB, không phải hạ tầng. Giao diện web (`npm run dev`, cổng 5173) tắt sau khi TA mở Terminal mới lúc 23:03 — cần bật lại.
+39. **18/11 00:02–01:00 — sửa nốt lỗi tồn của mục 37 → D-102 (TA: "fix nốt lỗi kia… nếu còn lỗi khác cũng fix hết"):** câu nêu hai đối
+    tượng cùng loại nối liền ("cho nv005 và nv007", "Zoom và 7-Zip", "LAP-0342 và PC-0977", hai thư mục) → B11 hỏi câu cố định "mỗi yêu cầu
+    một …, bạn muốn làm cái nào trước", chỉ lượt đầu (không lặp), không LLM; "hoặc", mã đứng rời, câu tự giới thiệu không tính. Kèm: tin xem
+    quyền tách quyền đã hết hạn; nhãn duyệt `renew_vpn_cert` "Gia hạn chứng chỉ VPN"; chân trang E0 không còn bảo "liên hệ bộ phận IT"; màn L2
+    vừa đóng ca ghi "Đã đóng" / "đã xử lý". KHÔNG đổi: màn chi tiết L2 tự "Tải thêm" (N-PA chốt nút bấm tay; sau khi xoá dữ liệu cũ hàng đợi
+    < 50 ca nên không còn phải bấm); hỏi "phiên bản nào" thừa khi cài phần mềm (câu hỏi do LLM viết theo slot tuỳ chọn — chưa tái hiện được
+    sau D-102 vì câu hai tên giờ hỏi câu cố định trước); hai câu thiếu bài KB (âm thanh Teams, chuột USB) → E3 là đúng thiết kế, bổ sung KB là
+    việc nội dung. Kiểm ở máy cloud: unit backend 10 796 đạt, 4 bỏ qua (+29 `test_d102_multi_object.py`, +3 `test_messages_t24.py`);
+    integration Postgres 16 cục bộ (b10, b11, graph, D-99, đóng ca) 42 đạt; mock_services, ml_service đạt; FE vitest 1 364 đạt, typecheck,
+    eslint, check:style sạch; `make lint` sạch. e2e cần Docker — máy cloud không có (52 lỗi khởi tạo container), để CI chạy. Chưa kiểm
+    trên máy demo.

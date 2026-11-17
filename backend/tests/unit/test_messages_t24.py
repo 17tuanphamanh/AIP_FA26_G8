@@ -300,3 +300,27 @@ def test_m3_permission_rows_not_a_list_is_none(raw: object) -> None:
 
 def test_m3_permission_rows_empty_list() -> None:
     assert permission_rows([], TZ) == ()
+
+
+@pytest.mark.parametrize(
+    ("today", "expected"),
+    [
+        pytest.param(date(2026, 11, 2), "Quyền truy cập hiện có của bạn: finance/Q3 (read, hết hạn 02/11/2026); finance/public-reports "
+                     "(read, không thời hạn).", id="hom-nay-la-ngay-het-han-van-con"),
+        pytest.param(date(2026, 11, 17), "Quyền truy cập hiện có của bạn: finance/public-reports (read, không thời hạn). "
+                     "Quyền đã hết hạn: finance/Q3 (read, đã hết hạn 02/11/2026).", id="qua-han-tach-rieng"),
+    ],
+)  # fmt: skip
+def test_view_permissions_expired_not_listed_as_current(today: date, expected: str) -> None:
+    """Kiểm thử 17/11: quyền đã quá ngày hết hạn không nằm trong "hiện có" — câu riêng "đã hết hạn"."""
+    text = result_text(action("view_permissions"), {}, {}, requester_id="nv001", rows=VIEW_ROWS, today=today)
+    assert text == f"{expected} {CONFIRM_VIEW}"
+
+
+def test_view_permissions_only_expired() -> None:
+    rows: tuple[PermRow, ...] = (("finance/Q3", "read", date(2026, 11, 2)),)
+    text = result_text(action("view_permissions"), {}, {}, requester_id="nv001", rows=rows, today=date(2026, 11, 17))
+    assert text == (
+        "Quyền truy cập hiện có của bạn: chưa thấy quyền nào còn hiệu lực. Quyền đã hết hạn: finance/Q3 (read, đã hết hạn 02/11/2026). "
+        f"{CONFIRM_VIEW}"
+    )

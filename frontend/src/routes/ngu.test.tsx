@@ -331,7 +331,7 @@ describe("t196: phiếu duyệt — hướng xử lý / nguồn / luật 'Nhãn 
     expect(type.querySelector("dt")!.textContent).toBe("Loại hành động · type");
     // giá trị đã băm giữ NGUYÊN (G4-13); B2: nhãn chỉ đi kèm, ở phần tử riêng
     expect(within(type).getByTestId("raw-value").textContent).toBe('"renew_vpn_cert"');
-    expect(within(type).getByTestId("value-label").textContent).toBe("Cấp lại chứng chỉ VPN");
+    expect(within(type).getByTestId("value-label").textContent).toBe("Gia hạn chứng chỉ VPN");
   });
 });
 

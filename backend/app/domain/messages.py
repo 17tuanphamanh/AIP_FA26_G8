@@ -284,8 +284,26 @@ def _reset_delivery(outputs: Mapping[str, str], *, other: bool = False) -> str:
     return RESET_DEFAULT_OTHER if other else "Bạn cần đổi mật khẩu ở lần đăng nhập tới."
 
 
+def _perm_list(rows: Sequence[PermRow], *, expired: bool) -> str:
+    return "; ".join(
+        f"{path} ({level}, {f'{'đã hết hạn' if expired else 'hết hạn'} {day:%d/%m/%Y}' if day is not None else 'không thời hạn'})"
+        for path, level, day in rows
+    )
+
+
+def _permissions_text(who: str, rows: Sequence[PermRow], today: date | None) -> str:
+    """Kiểm thử 17/11: quyền đã quá ngày hết hạn KHÔNG nằm trong "hiện có" — tách câu riêng "đã hết hạn" (ngày hôm nay theo giờ làm
+    việc, B17 truyền vào; None = không biết hôm nay → giữ dáng cũ)."""
+    shown = [r for r in rows if RESOURCE_PATH.fullmatch(r[0]) and r[1] in PERMISSION_LEVELS][:MAX_PERMISSION_ROWS]
+    old = [r for r in shown if today is not None and r[2] is not None and r[2] < today]
+    current = [r for r in shown if r not in old]
+    none = "chưa thấy quyền nào còn hiệu lực" if old else "chưa thấy quyền nào"
+    text = f"Quyền truy cập hiện có của {who}: {_perm_list(current, expired=False) or none}."
+    return f"{text} Quyền đã hết hạn: {_perm_list(old, expired=True)}." if old else text
+
+
 def _new_action_text(
-    action: Action, outputs: Mapping[str, str], requester_id: str, rows: Sequence[PermRow] | None
+    action: Action, outputs: Mapping[str, str], requester_id: str, rows: Sequence[PermRow] | None, today: date | None = None
 ) -> str:
     """6 mẫu T24 (bảng 7.3) — chỉ enum, định danh qua mẫu, ngày; thiếu giá trị → bỏ cụm."""
     p = action.params
@@ -311,12 +329,7 @@ def _new_action_text(
         if rows is None:
             return (f"Mình chưa đọc được danh sách quyền truy cập của {who}. "
                     "Bạn liên hệ IT để kiểm lại rồi xác nhận giúp mình nhé.")  # fmt: skip
-        shown = [r for r in rows if RESOURCE_PATH.fullmatch(r[0]) and r[1] in PERMISSION_LEVELS][:MAX_PERMISSION_ROWS]
-        listed = "; ".join(
-            f"{path} ({level}, {f'hết hạn {day:%d/%m/%Y}' if day is not None else 'không thời hạn'})"
-            for path, level, day in shown
-        )
-        return f"Quyền truy cập hiện có của {who}: {listed or 'chưa thấy quyền nào'}. {confirm_view}"
+        return f"{_permissions_text(who, rows, today)} {confirm_view}"
     if action.type == "grant_permission":
         level = _out(outputs, "level")
         level = PERMISSION_LEVEL_TEXT.get(level or "", level)
@@ -329,9 +342,10 @@ def _new_action_text(
 
 def result_text(
     action: Action, outputs: Mapping[str, str], facts: Mapping[str, FactValue], *, requester_id: str,
-    rows: Sequence[PermRow] | None = (),
+    rows: Sequence[PermRow] | None = (), today: date | None = None,
 ) -> str:  # fmt: skip
-    """Tin kết quả B18 theo MẪU (P6; T24 P4 bảng 7.3). `rows` chỉ dùng cho `view_permissions` (None = chưa đọc được)."""
+    """Tin kết quả B18 theo MẪU (P6; T24 P4 bảng 7.3). `rows` chỉ dùng cho `view_permissions` (None = chưa đọc được); `today` (ngày
+    theo giờ làm việc) tách quyền đã hết hạn khỏi "hiện có"."""
     action_type = action.type
     device_id = str(action.params.get("device_id", ""))
     device = f"máy {device_id}" if DEVICE_ID.fullmatch(device_id) else "máy của bạn"
@@ -356,7 +370,7 @@ def result_text(
         nxt = "".join(f"{h} " for h in hints)
         return (f"Chứng chỉ VPN của {device}: {cert}. Lần kết nối gần nhất: {last}. {nxt}"
                 "Bạn xem thông tin này đã đủ chưa rồi xác nhận giúp mình nhé.")  # fmt: skip
-    return _new_action_text(action, outputs, requester_id, rows)
+    return _new_action_text(action, outputs, requester_id, rows, today)
 
 
 # Q2 M1 (ĐP 09/11): câu mở đầu của B10 khi người dùng BÁO LỖI VPN mà fact B6 cho thấy máy của họ đã đăng ký, chứng chỉ còn hạn

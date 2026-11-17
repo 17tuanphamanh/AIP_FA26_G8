@@ -170,7 +170,8 @@ function Detail({
   /** D-100: server đã tạo ticket mới cho `reopened_as_new` (phiên người gửi còn sống) — chỉ cờ, không mã. */
   reopened?: boolean;
 }) {
-  const closed = typeof item.closed_at === "string";
+  // Kiểm thử 17/11: vừa đóng xong (`justClosed`) thì bản chụp ca chưa có `closed_at` — đầu trang vẫn ghi "đang xử lý"/thời gian chờ.
+  const closed = typeof item.closed_at === "string" || justClosed;
   return (
     <section className="flex flex-col gap-6 px-12 pt-6 pb-8 max-lg:px-4 max-lg:pt-3 max-lg:pb-6">
       <div className="flex flex-col gap-1">
@@ -194,7 +195,7 @@ function Detail({
               · Lý do <MaNhan loai="ly_do" ma={item.reason_detail} />
             </>
           ) : null}
-          {item.assigned_to ? ` · ${item.assigned_to} đang xử lý` : ""}
+          {item.assigned_to ? ` · ${item.assigned_to} ${closed ? "đã xử lý" : "đang xử lý"}` : ""}
           {item.tier === 3 ? ` · Chuyển lên: ${raiseTargetLabel(item.raise_target)}${item.raised_by ? ` (bởi ${item.raised_by})` : ""}` : ""}
         </p>
       </div>

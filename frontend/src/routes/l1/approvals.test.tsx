@@ -233,7 +233,7 @@ describe("t39: hộp thư sắp theo deadline tăng dần ở client", () => {
     expect(within(rows[1]!).getByTestId("reminder-mark").textContent).toContain("Đã nhắc 2");
     expect(within(rows[2]!).getByTestId("reminder-mark").textContent).toContain("Đã nhắc 1");
     expect(within(rows[0]!).queryByTestId("reminder-mark")).toBeNull();
-    expect(rows[0]!.textContent).toContain("Cấp lại chứng chỉ VPN");
+    expect(rows[0]!.textContent).toContain("Gia hạn chứng chỉ VPN");
     expect(rows[0]!.textContent).toContain("LAP-0342");
     expect(calls.map((c) => c.url)).toContain("/api/approvals?mine=1&status=pending");
     // Không nút duyệt nào ở danh sách — chỉ ở chi tiết phiếu.
@@ -358,7 +358,7 @@ describe("t42: Bảng và JSON cùng ĐỦ khoá của một action lồng nhau 
   const HASH = viewOf("h").action_plan_hash;
 
   it("ActionView: tập khoá Bảng = tập khoá JSON = tập khoá object; JSON đúng JSON.stringify của object", () => {
-    render(<ActionView action={NESTED_ACTION} hash={HASH} title="Cấp lại chứng chỉ VPN" />);
+    render(<ActionView action={NESTED_ACTION} hash={HASH} title="Gia hạn chứng chỉ VPN" />);
     const table = [...document.querySelectorAll<HTMLElement>('[data-testid="action-row"]')].map((r) => r.dataset.key);
     expect(new Set(table)).toStrictEqual(new Set(EXPECTED));
     expect(table).toHaveLength(EXPECTED.length); // không trùng, không thiếu
@@ -1073,7 +1073,7 @@ describe("t80: dòng action_type null + device_id null — vẫn hiện, vẫn l
   it("actionLabel: null → câu P3; mã đã biết → nhãn; mã lạ → nguyên mã", () => {
     expect(actionLabel(null)).toBe(ACTION_UNKNOWN);
     expect(ACTION_UNKNOWN).toBe("Chưa rõ hành động — mở phiếu để xem");
-    expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
+    expect(actionLabel("renew_vpn_cert")).toBe("Gia hạn chứng chỉ VPN");
     expect(actionLabel("hanh_dong_la")).toBe("Khác · hanh_dong_la"); // N-NGU: mã lạ → "Khác · mã"
   });
 
@@ -1626,7 +1626,7 @@ describe("t124: L1 — status / action_type / vai trò người gửi '__proto__
       expect(actionLabel(key)).toBe(`Khác · ${key}`); // N-NGU: mã lạ → "Khác · mã"
     }
     expect(readonlyText("rejected")).toBe("Phiếu đã từ chối — chỉ xem, không quyết định được nữa.");
-    expect(actionLabel("renew_vpn_cert")).toBe("Cấp lại chứng chỉ VPN");
+    expect(actionLabel("renew_vpn_cert")).toBe("Gia hạn chứng chỉ VPN");
   });
 
   it.each(PROTO_KEYS)("chi tiết phiếu: status %j → nhãn trạng thái trống + dải chỉ đọc chung; vai trò người gửi cùng khoá → hiện nguyên", async (key) => {
@@ -1912,12 +1912,12 @@ describe("t145: màn xem ticket (ghi đè) — hạn của lần chờ hiện t�
 // ------------------------------------------------------------------------------------------------ t231 (đợt 2 tên gọi, B1)
 
 describe("t231: B1 — tiêu đề phiếu là tên hành động; mã phiếu + mã yêu cầu ở dòng dưới", () => {
-  it("h1 = 'Cấp lại chứng chỉ VPN'; dòng dưới có 'Phiếu r' và 'Mã yêu cầu'; không còn 'Mã ticket'", async () => {
+  it("h1 = 'Gia hạn chứng chỉ VPN'; dòng dưới có 'Phiếu r' và 'Mã yêu cầu'; không còn 'Mã ticket'", async () => {
     detailApi(() => json(202, {}));
     renderAt("/approvals/r");
     await screen.findByTestId("decision-bar");
     const h1 = screen.getByRole("heading", { level: 1 });
-    expect(h1.textContent).toBe("Cấp lại chứng chỉ VPN");
+    expect(h1.textContent).toBe("Gia hạn chứng chỉ VPN");
     const meta = h1.nextElementSibling?.textContent ?? "";
     expect(meta).toContain("Phiếu r");
     expect(meta).toContain("Mã yêu cầu");

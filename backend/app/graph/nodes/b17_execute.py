@@ -54,6 +54,7 @@ danh luật/người, enum, hash hex, số lời gọi ghi.
 import asyncio
 from datetime import timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
@@ -396,7 +397,8 @@ def make(deps: NodeDeps) -> NodeFn:
             )  # fmt: skip
             already = is_already_installed(action, res.outputs)  # Q3 M6: máy đã có sẵn → không nói "Đã cài"
             text = (already_installed_text(action, res.outputs) if already
-                    else result_text(action, res.outputs, action.facts, requester_id=requester.user_id, rows=rows))  # fmt: skip
+                    else result_text(action, res.outputs, action.facts, requester_id=requester.user_id, rows=rows,
+                                     today=run.clock.now().astimezone(ZoneInfo(deps.business_hours.tz)).date()))  # fmt: skip
             # V10 (soát 12/11, agent 12 M2): đặt hạn TRƯỚC, gửi tin SAU — lỗi/chết ở bước hạn thì người dùng chưa nhận tin "Đã …" rồi lại
             # nhận "Có sự cố…" cùng lượt; hạn treo khi chết chỉ thành `late_event` (vô hại)
             deadline = run.clock.now() + timedelta(hours=deps.constants.CONFIRM_TIMEOUT_HOURS)

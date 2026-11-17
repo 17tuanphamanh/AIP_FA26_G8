@@ -27,7 +27,7 @@ const has = (table: Labels, key: string): string | null => (Object.hasOwn(table,
 
 /** Tên hành động — dùng chung cho tiêu đề phiếu, hộp thư (inbox.ts ACTION_LABEL) và nhãn giá trị `type`. */
 export const ACTION_TYPE_LABEL: Readonly<Record<ActionType, string>> = {
-  renew_vpn_cert: "Cấp lại chứng chỉ VPN",
+  renew_vpn_cert: "Gia hạn chứng chỉ VPN",
   reissue_vpn_access: "Cấp lại truy cập VPN",
   check_vpn_status: "Kiểm tra trạng thái VPN",
   reset_password: "Đặt lại mật khẩu",

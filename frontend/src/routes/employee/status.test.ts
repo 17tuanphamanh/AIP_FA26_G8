@@ -1,7 +1,11 @@
 // t18–t20: nhãn trạng thái cho nhân viên (KH mục 5, 4.2) và nhịp polling [Chốt P10 §3.1].
 import { describe, expect, it } from "vitest";
+import type { HandlingView } from "../../api/types.ts";
 import {
+  BLOCKED_E0_NOTE,
   FINAL_NOTE,
+  finalNoteOf,
+  HANDLING_TEXT,
   POLL_PROCESSING_MS,
   POLL_WAITING_MS,
   pollDelay,
@@ -35,6 +39,16 @@ describe("trạng thái ticket (nhân viên)", () => {
     const shown = [statusLabel("S_BLOCKED"), FINAL_NOTE.S_BLOCKED];
     expect(shown.every((text) => typeof text === "string" && text.length > 0)).toBe(true);
     for (const text of shown) expect(text).not.toMatch(/tấn công|injection|phát hiện|chặn/i);
+  });
+
+  it("kiểm thử 17/11: E0 không bảo 'liên hệ IT' khi bot đã nói đã chuyển IT; có bước xử lý của IT thì hiện bước đó", () => {
+    const e0 = { final_state: "S_BLOCKED", close_reason: null, exit_code: "E0" };
+    expect(finalNoteOf(e0)).toBe(BLOCKED_E0_NOTE);
+    expect(BLOCKED_E0_NOTE).not.toMatch(/tấn công|injection|phát hiện|chặn|liên hệ bộ phận IT/i);
+    const waiting = { ticket_id: "t1", stage: "waiting", tier: 2, updated_at: "2026-11-17T10:00:00Z" } as unknown as HandlingView;
+    expect(finalNoteOf({ ...e0, handling: [waiting] })).toBe(HANDLING_TEXT.waiting);
+    // B1 (phiên/danh tính, không mã thoát) giữ câu cũ
+    expect(finalNoteOf({ final_state: "S_BLOCKED", close_reason: "invalid_credentials", exit_code: null })).toBe(FINAL_NOTE.S_BLOCKED);
   });
 
   it("t20: nhịp polling — 2 s đang xử lý, 10 s khi waiting_for ≠ null, dừng khi có final_state", () => {

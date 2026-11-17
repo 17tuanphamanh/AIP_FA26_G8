@@ -36,6 +36,11 @@ export const FINAL_NOTE: Readonly<Record<string, string>> = {
   S_BLOCKED: "Yêu cầu này không thể xử lý tự động. Vui lòng liên hệ bộ phận IT nếu bạn vẫn cần hỗ trợ.",
 };
 
+/** Kiểm thử 17/11: E0 (B2) — tin của bot đã nói "đã chuyển bộ phận IT kiểm tra… kỹ thuật viên sẽ liên hệ lại" (escalation_templates E0),
+ *  câu `FINAL_NOTE.S_BLOCKED` "Vui lòng liên hệ bộ phận IT" mâu thuẫn. Câu trung tính (t19: không chữ nào gợi ý phát hiện tấn công).
+ *  S_BLOCKED của B1 (phiên/danh tính, không mã thoát, không chuyển IT) giữ câu cũ. */
+export const BLOCKED_E0_NOTE = "Bộ phận IT sẽ kiểm tra yêu cầu này và liên hệ lại bạn nếu cần.";
+
 /** Kiểm thử 12/11: ca đã chuyển kỹ thuật viên mà L2 ĐÃ đóng (`close_reason` của B20 4.3) — câu cũ "Kỹ thuật viên sẽ liên hệ bạn…" không
  *  còn đúng, cuộc trò chuyện cũng không có tin nào (thông báo đóng ca chỉ ở chuông). Câu trung tính, đúng cho cả 3 kết quả đóng và ca
  *  nghi tấn công (như `NEUTRAL_TEXT` của backend/app/api/notifications.py) — không đoán kết quả cụ thể. */
@@ -69,11 +74,15 @@ export function handlingText(h: HandlingView): string {
 }
 
 /** Câu ở khối kết thúc của ticket lá (ticket cha dùng câu riêng). D-99: ticket đã chuyển IT mà có `handling` → câu theo bước xử lý. */
-export function finalNoteOf(view: Pick<TicketView, "final_state" | "close_reason"> & { handling?: HandlingView[] | null }): string {
+export function finalNoteOf(
+  view: Pick<TicketView, "final_state" | "close_reason"> & { exit_code?: string | null; handling?: HandlingView[] | null },
+): string {
   const state = view.final_state ?? "";
-  const last = state === "S_ESCALATED" ? view.handling?.at(-1) : undefined;
+  const e0 = state === "S_BLOCKED" && view.exit_code === "E0";
+  const last = state === "S_ESCALATED" || e0 ? view.handling?.at(-1) : undefined; // E0 cũng là một ca của bộ phận IT
   if (last) return handlingText(last);
   if (state === "S_ESCALATED" && view.close_reason != null && L2_CLOSE_REASONS.has(view.close_reason)) return L2_CLOSED_NOTE;
+  if (e0) return BLOCKED_E0_NOTE;
   return ownEntry(FINAL_NOTE, state, statusLabel(state));
 }
 

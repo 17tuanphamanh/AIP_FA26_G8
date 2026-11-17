@@ -379,7 +379,7 @@ describe("t32: 422 deny_case_cannot_complete → câu tiếng Việt rõ ràng, 
 
 describe("t33: đóng ca đi route thật (ĐP 01/11 16:40 — bỏ cờ CLOSE_AVAILABLE), không còn câu 'chưa bật'", () => {
   it("mặc định (không truyền submit) → nút bật, POST /close đúng thân, 200 → 'Đã đóng ca…'", async () => {
-    const calls = stubApi([esc("E3", { escalation_id: 33 })], () => json(200, {}));
+    const calls = stubApi([esc("E3", { escalation_id: 33, assigned_to: "ha.lt", assigned_at: "2026-11-17T09:00:00Z" })], () => json(200, {}));
     renderAt("/escalations/33");
     await screen.findByText("Ghi chú bàn giao");
     expect(screen.queryByTestId("close-unavailable")).toBeNull();
@@ -390,6 +390,10 @@ describe("t33: đóng ca đi route thật (ĐP 01/11 16:40 — bỏ cờ CLOSE_A
     fireEvent.change(screen.getByLabelText("Ghi chú đóng"), { target: { value: "  ghi chú  " } });
     fireEvent.click(send);
     await screen.findByTestId("close-done");
+    // kiểm thử 17/11: vừa đóng — đầu trang không còn "đang xử lý" / thời gian chờ
+    expect(document.body.textContent).toContain("ha.lt đã xử lý");
+    expect(document.body.textContent).not.toContain("ha.lt đang xử lý");
+    expect(document.body.textContent).toContain("Đã đóng");
     const posts = calls.filter((c) => c.method === "POST");
     expect(posts.map((c) => c.url)).toStrictEqual(["/api/escalations/33/close"]);
     expect(JSON.parse(posts[0]!.body!)).toStrictEqual({ close_result: "confirmed_denial", note: "ghi chú" });
