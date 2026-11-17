@@ -111,3 +111,13 @@ chạy model intent trên bộ này (`b3_offline.py` có lệnh nhưng không c�
 - Báo riêng: model đúng hay sai ở 2 câu LLM sai; R2 sửa đúng / sửa sai trên cả 45 câu.
 - Đọc kết quả: gộp R2 "tăng độ chính xác" trên bộ này chỉ khi số câu R2 đúng > số câu chỉ LLM đúng (43/45). Kết luận chung về gộp
   vẫn theo mục 6 (cần cả các đợt), và vẫn không đổi bản nộp trước bảo vệ.
+
+**Đầu vào đợt 1b đã dựng 17/11** bằng `scripts/eval/doi_chieu_intent/chuan_bi_cong5.py`: `dau-vao-cong5.jsonl` (45 câu, sha256
+`ed17ab51…`), nhãn LLM 43/45 đúng như PROGRESS.md ghi. Lượt chính trên máy demo, cùng cách đợt 1:
+
+```bash
+git fetch origin doi-chieu-intent
+git show origin/doi-chieu-intent:eval/doi-chieu-intent/dau-vao-cong5.jsonl > /tmp/dau-vao-cong5.jsonl
+docker compose cp /tmp/dau-vao-cong5.jsonl backend:/tmp/dau-vao-cong5.jsonl
+docker compose exec -T backend python /tmp/cham.py /tmp/dau-vao-cong5.jsonl > /tmp/model-ra-cong5.jsonl
+```

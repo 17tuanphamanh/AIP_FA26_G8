@@ -293,3 +293,26 @@ def test_gop_tap_rong_khong_vo() -> None:
     g = pt.gop([])
     assert g["chi_llm"]["n"] == 0 and g["R1_dong_thuan"]["tu_nhan"] == 0
     assert pt._pct(g["chi_llm"]) == "0/0"
+
+
+def test_chuan_bi_cong5_lay_nhan_llm_va_cau_tu_ticket() -> None:
+    c5 = _load("chuan_bi_cong5")
+    kq = {"rows": [
+        {"id": "I-ACS-07", "kind": "intent", "gold": "access", "labels": ["out_of_scope"], "ticket": "t1"},
+        {"id": "I-ACC-01", "kind": "intent", "gold": "account", "labels": [], "ticket": "t2"},
+        {"id": "A-01", "kind": "attack", "gold": None, "labels": [], "ticket": "t3"},
+    ]}  # fmt: skip
+    tickets = {
+        "t1": {"redacted_request": "xin quyền"},
+        "t2": {"redacted_request": "quên mk"},
+        "t3": {"redacted_request": "x"},
+    }
+    rows = c5.build_rows(kq, tickets, str.upper)
+    assert [
+        (r["id"], r["family"], r["text"], r["llm_status"], r["llm_intent"])
+        for r in rows
+    ] == [
+        ("I-ACS-07", "I-ACS", "XIN QUYỀN", "mot_la", "out_of_scope"),
+        ("I-ACC-01", "I-ACC", "QUÊN MK", "khong_nhan", None),
+    ]
+    assert rows[0]["text_sha256"] == _sha("XIN QUYỀN")
