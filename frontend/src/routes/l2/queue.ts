@@ -131,7 +131,7 @@ export function exitNhan(item: Pick<EscalationQueueItem, "exit_code" | "reason_d
 }
 
 export const CLOSE_OPTIONS: readonly { value: EscalationCloseResult; title: string; desc: string }[] = [
-  { value: "completed", title: "Đã hoàn tất", desc: "L2 đã làm xong việc hệ thống định làm" },
+  { value: "completed", title: "Đã hoàn tất", desc: "Đã làm xong việc hệ thống định làm" }, // 18/11: dùng chung cấp 2 và cấp 3
   { value: "confirmed_denial", title: "Xác nhận từ chối", desc: "Giữ nguyên quyết định không thực hiện" },
   { value: "reopened_as_new", title: "Mở yêu cầu mới", desc: "Xử lý lại từ đầu, có liên kết tới yêu cầu này" },
 ];

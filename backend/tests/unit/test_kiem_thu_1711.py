@@ -14,8 +14,9 @@ from typing import Any
 
 import pytest
 from app.domain.messages import FOLLOWUP_PREFIX, followup_note
-from app.domain.states import S_ESCALATED, S_RETRIEVING
+from app.domain.states import S_ESCALATED, S_PENDING_APPROVAL, S_RETRIEVING
 from app.domain.target import sole_employee_code
+from app.graph.nodes import b15_prepare_approval
 from app.graph.nodes.b10_route import (
     promises_handoff,
     vpn_status_fallback,
@@ -308,3 +309,38 @@ def test_approval_pending_text_with_reason() -> None:
     )
     assert approval_pending_text("renew_vpn_cert", "máy LAP-0342", None).endswith(APPROVAL_PENDING_TAIL)  # HITL do AI: câu cũ
     assert approval_pending_text("renew_vpn_cert", "máy LAP-0342", "R99").endswith(APPROVAL_PENDING_TAIL)
+
+
+# ---- kiểm thử 18/11: phiếu chờ duyệt do đánh giá rủi ro (không luật) cũng nêu lý do ------------------------------------------------
+
+
+def test_factor_reason_labels_fixed_text_only() -> None:
+    from app.domain.messages import factor_reason_labels
+
+    labels = {"target_is_other": "yêu cầu làm cho tài khoản hoặc máy của người khác", "outside_business_hours": "ngoài giờ"}
+    got = factor_reason_labels(["target_is_other", "la_xa", "target_is_other", "outside_business_hours", "x"], labels, 2)
+    assert got == ["yêu cầu làm cho tài khoản hoặc máy của người khác", "ngoài giờ"]  # mã lạ bỏ, không trùng, tối đa 2
+    assert factor_reason_labels([], labels, 2) == []
+
+
+def test_approval_pending_text_with_factor_labels() -> None:
+    from app.domain.messages import APPROVAL_PENDING_TAIL, approval_pending_text
+
+    text = approval_pending_text("view_permissions", "tài khoản nv001", None, ["yêu cầu làm cho tài khoản hoặc máy của người khác"])
+    assert "cần được duyệt theo quy định của công ty vì yêu cầu làm cho tài khoản hoặc máy của người khác. Mình đã gửi" in text
+    # luật có lý do riêng thắng yếu tố; không yếu tố, không luật → câu cũ
+    assert "vì yêu cầu gửi ngoài giờ hành chính." in approval_pending_text("renew_vpn_cert", "máy LAP-0342", "R18", ["x"])
+    assert approval_pending_text("view_permissions", "tài khoản nv001", None, []).endswith(APPROVAL_PENDING_TAIL)
+
+
+@pytest.mark.asyncio
+async def test_b15_pending_text_names_risk_factors() -> None:
+    from tests.unit.test_target_guard import b15_state, node
+
+    n = node()
+    st = {**b15_state("l1_02", flag=True), "risk_factors": ["target_is_other", "outside_business_hours", "missing_facts"]}
+    out = await n.run("b15_prepare_approval", b15_prepare_approval, st)
+    assert out["status"] == S_PENDING_APPROVAL
+    text = out["conversation"][-1]["text"]
+    assert "vì yêu cầu làm cho tài khoản hoặc máy của người khác; yêu cầu gửi ngoài giờ hành chính." in text, text
+    assert "chưa đủ thông tin" not in text  # tối đa 2 yếu tố

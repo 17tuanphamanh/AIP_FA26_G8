@@ -7243,3 +7243,11 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     khi tải lại; sửa: đóng luồng thì chốt tin dở (`abandon`, events.ts) để tin chính thức hiện; (2) màn L2 vừa chuyển lên cấp 3 vẫn ghi
     "l2_01 đang xử lý" → "Đã chuyển cấp" / "Đã chuyển lên cấp cao hơn". FE vitest 1 365 đạt, typecheck, eslint, check:style sạch. Đăng nhập
     quan.tm (OTP) để TA tự thử.
+41. **18/11 tối — thử tiếp trên máy demo (TA nhập OTP quan.tm, Claude bấm):** đạt — cấp 3 nhận ca → đóng "Đã hoàn tất" kèm lời nhắn →
+    đầu trang "Đã đóng · it_mgr01 đã xử lý", người gửi (an.nv) nhận lời nhắn; chau.hm nhận "Đã gia hạn chứng chỉ VPN … hiệu lực tới
+    18/11/2027" sau khi L1 duyệt; trưởng BP (lan.dt) "cho nv001 và nv003" → hỏi một lần, chọn nv003 → chuyển kỹ thuật viên nêu đủ 3 lý do
+    (thử việc, thiếu thông tin, ngoài giờ); câu hỏi hiện đủ chữ (sửa mục 40 đã lên máy). Sửa thêm: (1) phiếu chờ duyệt do ĐÁNH GIÁ RỦI RO
+    (không luật — vd trưởng BP xem quyền của nv001) trước chỉ ghi "cần được duyệt theo quy định" → nêu tối đa 2 yếu tố B14 bằng nhãn cố
+    định `user_reason_factors` (hàm chung `messages.factor_reason_labels`, B20 dùng lại); (2) mô tả lựa chọn đóng ca "L2 đã làm xong…" hiện
+    cả ở cấp 3 → "Đã làm xong việc hệ thống định làm". Unit backend 10 799 đạt, integration PG (B15, B20, duyệt, graph, D-99) 70 đạt, FE L2
+    127 đạt, `make lint` + typecheck + eslint + check:style sạch.

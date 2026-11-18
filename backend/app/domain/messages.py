@@ -16,7 +16,7 @@
 """
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Final, Literal
@@ -591,13 +591,26 @@ APPROVAL_PENDING_REASON_TAIL: Final = (
 )
 
 
-def approval_pending_text(action_type: str, target_phrase: str, rule_id: str | None = None) -> str:
+def approval_pending_text(
+    action_type: str, target_phrase: str, rule_id: str | None = None, factor_labels: Sequence[str] = ()
+) -> str:
     """Hành động không nhãn hoặc đích rỗng → câu chung "Yêu cầu của bạn …" (không bịa). Luật cần duyệt có trong `APPROVAL_REASONS` →
-    nêu lý do (D-100)."""
+    nêu lý do (D-100). Phiếu do đánh giá rủi ro (không luật) → nhãn CỐ ĐỊNH của các yếu tố B14 (`factor_labels`, kiểm thử 18/11)."""
     label = ACTION_LABELS.get(action_type)
     head = f"Yêu cầu {action_on(label, target_phrase)}" if label is not None and target_phrase else "Yêu cầu của bạn"
-    reason = APPROVAL_REASONS.get(rule_id or "")
+    reason = APPROVAL_REASONS.get(rule_id or "") or "; ".join(factor_labels)
     return f"{head} {APPROVAL_PENDING_REASON_TAIL.format(reason=reason) if reason else APPROVAL_PENDING_TAIL}"
+
+
+def factor_reason_labels(codes: Iterable[object], labels: Mapping[Any, str], limit: int) -> list[str]:
+    """Nhãn cố định (`escalation_templates.user_reason_factors`) của các mã yếu tố B14, không trùng, tối đa `limit`; mã không khai bỏ qua
+    (không chép chữ tự do nào). Dùng chung cho vế "Lý do chính" của E5 (B20) và lý do phiếu chờ duyệt (B15)."""
+    out: list[str] = []
+    for code in codes:
+        text = labels.get(str(code))
+        if text and text not in out:
+            out.append(text)
+    return out[:limit]
 
 
 def approval_pending_msg(text: str, ref: str | None) -> Msg:

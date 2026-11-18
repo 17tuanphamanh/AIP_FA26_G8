@@ -49,6 +49,7 @@ from app.domain.exit_codes import ExitCode
 from app.domain.messages import (
     approval_pending_msg,
     approval_pending_text,
+    factor_reason_labels,
     target_phrase,
 )
 from app.domain.states import S_ESCALATED, S_PENDING_APPROVAL
@@ -61,6 +62,8 @@ from app.graph.tracing import NodeFn
 from app.tools.models import AdUser
 from app.tools.specs import APPROVER_STEP
 
+# Kiểm thử 18/11: phiếu do đánh giá rủi ro (không luật) — nêu tối đa 2 yếu tố trong vế "vì …" của tin chờ duyệt.
+PENDING_REASON_MAX = 2
 
 def _rejected(rejected: Sequence[Rejected]) -> list[dict[str, str]]:
     return [{"user_id": r.user_id, "reason": r.reason} for r in rejected]
@@ -105,7 +108,8 @@ def make(deps: NodeDeps) -> NodeFn:
         raw = state.get("risk")
         risk = raw.model_dump(mode="json") if hasattr(raw, "model_dump") else (raw or {})
         rule_id = risk.get("matched_rule_id") if isinstance(risk, dict) and risk.get("policy_decision") == "approval_required" else None
-        text = approval_pending_text(action.type, target_phrase(action, requester), rule_id)  # [9b] Q3 M4; lý do: D-100
+        factors = factor_reason_labels(state.get("risk_factors") or (), deps.templates.user_reason_factors, PENDING_REASON_MAX)
+        text = approval_pending_text(action.type, target_phrase(action, requester), rule_id, factors)  # [9b] Q3 M4; lý do: D-100, 18/11
         if (violation := deps.output_guard.violation(text)) is not None:  # mẫu cũng là chữ gửi người dùng → chặn = 0 tin
             detail["user_notice_guard"] = violation
         else:

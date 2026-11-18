@@ -29,6 +29,7 @@ from app.domain.children import (
     HANDOFF_CHILDREN,
     handoff_children_line,
 )
+from app.domain.messages import factor_reason_labels
 from app.graph import effects
 from app.graph.context import current_run
 from app.graph.fakes import NodeDeps
@@ -65,11 +66,7 @@ def user_reason_suffix(state: Any, templates: Any) -> str:
         label = templates.user_reason_rules.get(str(risk.get("matched_rule_id") or ""))
         labels = [label] if label else []
     else:
-        labels = []
-        for code in state.get("risk_factors") or ():
-            label = templates.user_reason_factors.get(code)
-            if label and label not in labels:
-                labels.append(label)
+        labels = factor_reason_labels(state.get("risk_factors") or (), templates.user_reason_factors, REASON_MAX)
     if not labels:
         return ""
     return f" {templates.reason_prefix} {'; '.join(labels[:REASON_MAX])}."
