@@ -1,0 +1,187 @@
+{
+  "X_model_khop_llm": {
+    "k": 39,
+    "ktc95": [
+      0.7320750459065521,
+      0.9494576240866738
+    ],
+    "n": 45,
+    "ty_le": 0.8666666666666667
+  },
+  "Y_model_khop_vang_100": {
+    "k": 40,
+    "ktc95": [
+      0.759464191504486,
+      0.9629233386928087
+    ],
+    "n": 45,
+    "ty_le": 0.8888888888888888
+  },
+  "Y_model_khop_vang_tap_chung": {
+    "k": 40,
+    "ktc95": [
+      0.759464191504486,
+      0.9629233386928087
+    ],
+    "n": 45,
+    "ty_le": 0.8888888888888888
+  },
+  "Z_llm_khop_vang": {
+    "k": 43,
+    "ktc95": [
+      0.8485070997566608,
+      0.9945715112997491
+    ],
+    "n": 45,
+    "ty_le": 0.9555555555555556
+  },
+  "app_commit": "bf94df2(l0)",
+  "bang_cheo_tap_chung": {
+    "ca_hai_dung": 39,
+    "ca_hai_sai": 1,
+    "chi_llm_sai": 1,
+    "chi_model_sai": 4
+  },
+  "bi_cat_do_dai": 0,
+  "ca_lech": [
+    {
+      "gold": "software",
+      "id": "I-SW-03",
+      "llm": "software",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 1,
+      "p_max": 0.9818457785545565,
+      "truncated": false
+    },
+    {
+      "gold": "software",
+      "id": "I-SW-04",
+      "llm": "software",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 1,
+      "p_max": 0.8767069153778942,
+      "truncated": false
+    },
+    {
+      "gold": "software",
+      "id": "I-SW-06",
+      "llm": "software",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 1,
+      "p_max": 0.9799729153033948,
+      "truncated": false
+    },
+    {
+      "gold": "access",
+      "id": "I-ACS-07",
+      "llm": "out_of_scope",
+      "llm_status": "mot_la",
+      "model": "access",
+      "n_tren_tau": 1,
+      "p_max": 0.9788131654679499,
+      "truncated": false
+    },
+    {
+      "gold": "out_of_scope",
+      "id": "I-OOS-02",
+      "llm": "account",
+      "llm_status": "mot_la",
+      "model": "access",
+      "n_tren_tau": 1,
+      "p_max": 0.9272889064730001,
+      "truncated": false
+    },
+    {
+      "gold": "out_of_scope",
+      "id": "I-OOS-03",
+      "llm": "out_of_scope",
+      "llm_status": "mot_la",
+      "model": "vpn",
+      "n_tren_tau": 2,
+      "p_max": 0.8785917927612948,
+      "truncated": false
+    }
+  ],
+  "dau_vao_sha256": "ed17ab5179983413da37880d8079182e8655479fcc3e8c5cb4f79a310f8a24fc",
+  "gop": {
+    "R1_dong_thuan": {
+      "chuyen_nguoi_them": 6,
+      "llm_sai_duoc_chan": 2,
+      "tu_nhan": 39,
+      "tu_nhan_dung": {
+        "k": 39,
+        "ktc95": [
+          0.9097488990396657,
+          1.0
+        ],
+        "n": 39,
+        "ty_le": 1.0
+      }
+    },
+    "R2_model_sua_khi_chac": {
+      "dung": {
+        "k": 40,
+        "ktc95": [
+          0.759464191504486,
+          0.9629233386928087
+        ],
+        "n": 45,
+        "ty_le": 0.8888888888888888
+      },
+      "so_lan_sua": 6,
+      "sua_dung": 1,
+      "sua_sai": 4
+    },
+    "chi_llm": {
+      "k": 43,
+      "ktc95": [
+        0.8485070997566608,
+        0.9945715112997491
+      ],
+      "n": 45,
+      "ty_le": 0.9555555555555556
+    }
+  },
+  "health": {
+    "models": {
+      "embed": {
+        "dim": 1024,
+        "repo": "BAAI/bge-m3",
+        "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+      },
+      "injection": {
+        "model": "injection-clf",
+        "version": "v3-seed123"
+      },
+      "intent": {
+        "model": "intent-clf",
+        "version": "v3.1-seed42-st"
+      },
+      "rerank": {
+        "repo": "BAAI/bge-reranker-v2-m3",
+        "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
+      }
+    },
+    "status": "ok"
+  },
+  "khong_nhan_nao_tren_tau": 0,
+  "macro_f1_model_100": 0.9320728291316527,
+  "model": "intent-clf",
+  "model_du_doan": {
+    "access": 11,
+    "account": 10,
+    "out_of_scope": 6,
+    "software": 7,
+    "vpn": 11
+  },
+  "n_the": 45,
+  "s1_run_id": "cong5-20261017-181019",
+  "trang_thai_llm": {
+    "mot_la": 45
+  },
+  "tu_2_nhan_tren_tau": 2,
+  "version": "v3.1-seed42-st"
+}

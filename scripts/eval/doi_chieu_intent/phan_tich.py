@@ -151,19 +151,19 @@ def _pct(r: Mapping[str, Any]) -> str:
 def bang_md(k: Mapping[str, Any]) -> str:
     c = k["bang_cheo_tap_chung"]
     lines = [
-        "# Đối chiếu model intent với LLM trên 100 thẻ the100 — kết quả", "",
+        f"# Đối chiếu model intent với LLM trên {k['n_the']} câu — kết quả", "",
         (f"Model `{k['model']}` bản `{k['version']}`; intent LLM từ lượt S1 `{k['s1_run_id']}` (bản đo `{k['app_commit'][:7]}`); "
          f"đầu vào sha256 `{k['dau_vao_sha256'][:12]}…`. Quy tắc: `GHI-TRUOC.md`."), "",
-        f"- Model khớp nhãn vàng, 100 thẻ: {_pct(k['Y_model_khop_vang_100'])}",
+        f"- Model khớp nhãn vàng, cả {k['n_the']} câu: {_pct(k['Y_model_khop_vang_100'])}",
         f"- Model khớp nhãn vàng, tập chung {k['X_model_khop_llm']['n']} thẻ: {_pct(k['Y_model_khop_vang_tap_chung'])}",
         f"- Model khớp LLM, tập chung: {_pct(k['X_model_khop_llm'])}",
         f"- LLM khớp nhãn vàng, tập chung: {_pct(k['Z_llm_khop_vang'])}",
         (f"- Bảng chéo tập chung: cả hai đúng {c['ca_hai_dung']}, chỉ model sai {c['chi_model_sai']}, "
          f"chỉ LLM sai {c['chi_llm_sai']}, cả hai sai {c['ca_hai_sai']}"),
-        f"- Macro-F1 của model trên 4 nhãn vàng, 100 thẻ: {k['macro_f1_model_100']:.4f}".replace(".", ","),
+        f"- Macro-F1 của model trên 4 nhãn vàng, cả {k['n_the']} câu: {k['macro_f1_model_100']:.4f}".replace(".", ","),
         (f"- Không nhãn nào ≥ 0,75: {k['khong_nhan_nao_tren_tau']}; từ 2 nhãn ≥ 0,75: {k['tu_2_nhan_tren_tau']}; "
          f"câu bị cắt độ dài: {k['bi_cat_do_dai']}"),
-        f"- Trạng thái LLM của 100 thẻ: {k['trang_thai_llm']}", "",
+        f"- Trạng thái LLM của {k['n_the']} câu: {k['trang_thai_llm']}", "",
         "## Mô phỏng gộp model với LLM (tập chung, luật khoá trước)", "",
         f"- Chỉ LLM: {_pct(k['gop']['chi_llm'])}",
         (f"- R1 đồng thuận: tự nhận {k['gop']['R1_dong_thuan']['tu_nhan']} thẻ, đúng {_pct(k['gop']['R1_dong_thuan']['tu_nhan_dung'])}; "

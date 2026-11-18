@@ -196,6 +196,8 @@ def test_phan_tich_tinh_X_Y_Z_va_bang_cheo() -> None:
     assert 0.0 < lo < 1 / 3 < hi < 1.0
     md = pt.bang_md(k)
     assert "| b | access | access | account |" in md and "Model khớp LLM" in md
+    # nhãn theo số câu thật, không ghi cứng 100 thẻ
+    assert "trên 4 câu" in md and "cả 4 câu: 3/4" in md and "100 thẻ" not in md
 
 
 def test_phan_tich_tu_choi_sha_dau_vao_lech() -> None:
