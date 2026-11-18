@@ -11,7 +11,7 @@ git fetch origin
 git worktree add ../AIP_FA26_G8-bo-sung origin/do-bo-sung-rq1
 cd ../AIP_FA26_G8-bo-sung
 git log --oneline -1             # phải là commit mới nhất của nhánh
-git diff --stat bf94df2 -- backend config mock_services ml_service docker-compose.yml   # phải rỗng
+git diff --stat bf94df2 -- backend/app config mock_services ml_service docker-compose.yml   # phải rỗng (nhánh chỉ thêm 1 file test trong backend/tests)
 ```
 
 ## 1. Khung (Tuấn Anh hoặc Claude) — đã chạy, chạy lại để kiểm tái lập

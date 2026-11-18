@@ -179,3 +179,22 @@ giữ mặc định an toàn (luôn chuyển người); kết quả đó không 
 6. **Giờ chạy:** bắt đầu trước 16:00. Lượt S1 cũ chạy 16:40–17:36, sát biên ±10 phút quanh 17:49.
 7. **Giới hạn đã biết:** `phan_tich.py` chỉ so tên model trong manifest (`deepseek-flash`); nhà cung cấp đổi model bên dưới cùng tên
    thì không phát hiện được. Ghi giờ chạy để đối chiếu thông báo đổi model của DeepSeek nếu có.
+
+**18/11, khoảng 20:45 — sau khi nhận phiếu viết, trước khi phát phiếu gán (chưa có nhãn nào).** Tuấn Anh chốt ý 2 và 3 lúc khoảng 20:45; ý 4 là lịch đề xuất, đã ghi lên
+trang kế hoạch của nhóm.
+
+1. **Phiếu viết đủ hai phần lúc 18/11 tối, trễ khoảng một ngày so với hạn trưa 17/11.** Quân lưu file xlsx 17/11 18:15. Phần Tuấn
+   Anh viết trên Google Sheet (xong 18/11 tối), khác mục "điền thẳng trên file" của `HUONG-DAN-VIET.md`; Claude chép nguyên văn vào
+   cùng một `viet.xlsx` (đã so từng ô với hai file gốc: 53 dòng, 0 ô lệch, cột xám giữ nguyên), không sửa chữ nào.
+2. **Bỏ "x" ở 9 dòng của Tuấn Anh** (`SB24`, `SB30`, `SB31`, `SB33`, `SB34`, `SB35`, `SD07`–`SD09`). Tuấn Anh đánh "x" nhưng vẫn viết
+   câu. Giữ "x" thì nhóm C còn 7/12 (cả 3 dòng dự phòng nhóm C cũng "x") và `dung_the.py` dừng. Các tình huống này không thuộc loại
+   "không ai làm thế" ở `HUONG-DAN-VIET.md` mục 4: nhóm C theo thiết kế gồm nhân viên nhờ cho đồng nghiệp hoặc sếp. Đổi trước khi có
+   nhãn, theo một tiêu chí đã ghi sẵn, nên không phải chọn mẫu theo kết quả. Ghi chú "x" gốc giữ ở cột "Ghi chú" của `viet.xlsx`.
+3. **Kiểm kỹ thuật trước phiếu gán:** 10 câu của Quân thiếu nguyên văn thông tin mà bản đo bắt buộc phải thấy trong câu
+   (`config/slots.yaml`: `target_user`, `resource_path` phải có thật trong câu): `SB01`, `SB04`, `SB05`, `SB07`–`SB11`, `SB20` thiếu mã
+   người được làm hộ (chỉ có tên, hoặc gõ nhầm mã); `SB41` thiếu đường dẫn thư mục. Bản đo chưa có D-72 (sửa lỗi làm nhầm người), nên
+   thiếu mã thì hệ thống có thể dựng hành động cho chính người gửi, tức đo một việc khác việc đã gán nhãn; hoặc hỏi lại mà thẻ không có
+   câu trả lời và ca mất sau 300 giây. Quân tự bổ sung vào câu của mình, không ai gợi ý chữ, trước khi phát phiếu gán. Các câu còn lại
+   đủ các thông tin trên (kiểm bằng script chỉ in mã dòng, không in câu); 0 câu trùng nguyên văn với 199 câu của bộ 100 thẻ.
+4. **Lịch mới** (dừng cứng T6 20/11 giữ nguyên): gán T5 19/11 trước 12:00; gộp nhãn, phân xử T5 trưa; dựng và khoá thẻ T5 khoảng
+   14:00; Dương chạy T5, bắt đầu trước 16:00; không kịp thì T6 20/11 sáng.
