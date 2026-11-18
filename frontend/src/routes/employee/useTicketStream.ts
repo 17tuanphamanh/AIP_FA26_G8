@@ -130,7 +130,10 @@ export function useTicketStream({
       }
     };
     void loop();
-    return () => abort.abort();
+    return () => {
+      abort.abort();
+      dispatch({ type: "abandon" }); // tin đang chạy dở không còn ai gửi nốt → nhường tin chính thức (events.ts `StreamAction`)
+    };
   }, [ticketId, active, connect, retryDelayMs, reopenDelayMs]);
 
   // Phase suy ra khi render (không setState đồng bộ trong effect): hết cớ chạy → "off"; SSE đã bị loại (404 / lỗi quá số lần) → "fallback".

@@ -136,7 +136,7 @@ describe("D-99 nhận ca / chuyển lên cấp cao hơn", () => {
   });
 
   it("chuyển lên: bắt chọn nơi + ghi lý do; gửi đúng thân; xong → câu báo", async () => {
-    const calls = serve({ "2": [item()], "3": [] });
+    const calls = serve({ "2": [item({ assigned_to: "l2_01", assigned_at: NOW })], "3": [] });
     renderAt("/escalations/7");
     fireEvent.click(await screen.findByTestId("raise-open"));
     fireEvent.click(screen.getByRole("button", { name: "Chuyển" }));
@@ -145,6 +145,9 @@ describe("D-99 nhận ca / chuyển lên cấp cao hơn", () => {
     fireEvent.change(screen.getByTestId("raise-note"), { target: { value: "  Cần ngoại lệ chính sách  " } });
     fireEvent.click(screen.getByRole("button", { name: "Chuyển" }));
     expect((await screen.findByTestId("raise-done")).textContent).toBe(RAISE_DONE_TEXT);
+    // kiểm thử 18/11: đầu trang không còn "l2_01 đang xử lý" sau khi ca rời cấp 2
+    expect(document.body.textContent).not.toContain("l2_01 đang xử lý");
+    expect(document.body.textContent).toContain("Đã chuyển lên cấp cao hơn");
     const [raise] = posted(calls, "raise");
     expect(JSON.parse(raise!.body!)).toEqual({ target: "it_manager", note: "Cần ngoại lệ chính sách" });
   });

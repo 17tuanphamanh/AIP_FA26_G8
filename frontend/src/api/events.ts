@@ -84,7 +84,15 @@ const withLog = (log: LogItem[], item: LogItem): LogItem[] => [...log, item].sli
 /** Định tuyến MỘT sự kiện vào đúng khối: status → ProgressStepper (ticket gốc) hoặc dòng log (ticket con); thought/tool_call →
  *  ThinkingBox; token/message_end → tin đang chạy chữ; waiting/done → `end`. Sau `end`, sự kiện nội dung kế tiếp là LƯỢT MỚI:
  *  bước + log của lượt cũ bị xoá (tin giữ nguyên). */
-export function reduceStream(view: StreamView, event: StreamEvent): StreamView {
+/** Kiểm thử 18/11: luồng bị đóng phía màn (ticket chuyển sang chờ người — `active` = false) giữa các cụm token, trước `message_end` →
+ *  tin dở dang kẹt "đang chạy" và che tin chính thức (thấy cụt chữ tới khi tải lại trang). `abandon` (chỉ phía màn) chốt các tin đó là
+ *  xong → `reconcile` bỏ bản dở, hiện tin chính thức. */
+export type StreamAction = StreamEvent | { type: "abandon" };
+
+export function reduceStream(view: StreamView, event: StreamAction): StreamView {
+  if (event.type === "abandon") {
+    return view.messages.every((m) => m.ended) ? view : { ...view, messages: view.messages.map((m) => (m.ended ? m : { ...m, ended: true })) };
+  }
   if (event.type === "waiting") return { ...view, end: { type: "waiting", label: event.label, waitingFor: event.waitingFor } };
   if (event.type === "done") return { ...view, end: { type: "done", label: event.label } };
   const base = view.end ? { ...view, steps: [], log: [], end: null } : view;

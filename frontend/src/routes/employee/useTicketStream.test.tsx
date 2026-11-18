@@ -60,6 +60,20 @@ describe("useTicketStream", () => {
     expect(calls[0]!.signal.aborted).toBe(true);
   });
 
+  it("kiểm thử 18/11: đóng luồng (active=false) giữa các cụm token, chưa message_end → tin dở chốt xong, nhường tin chính thức", async () => {
+    const { result, calls, rerender } = setup(never);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    act(() => calls[0]!.onOpen());
+    await emit(calls[0]!, { type: "token", messageId: "question:1", text: "Mỗi yêu cầu mình chỉ xử lý một " }, "5.1");
+    expect(result.current.view.messages[0]).toMatchObject({ ended: false });
+    rerender({ active: false });
+    expect(result.current.view.messages[0]).toMatchObject({ text: "Mỗi yêu cầu mình chỉ xử lý một ", ended: true });
+    const full: Message = { role: "assistant", kind: "question", text: "Mỗi yêu cầu mình chỉ xử lý một tài khoản. Bạn muốn làm cho ai trước?", sources: [] };
+    const r = reconcile([full], result.current.view.messages);
+    expect(r.official).toStrictEqual([full]);
+    expect(r.streaming).toHaveLength(0);
+  });
+
   it("404 → fallback ngay, nhớ cho cả phiên, không thử lại", async () => {
     const { result, connect } = setup(() => ({ kind: "unavailable" }));
     await waitFor(() => expect(result.current.phase).toBe("fallback"));

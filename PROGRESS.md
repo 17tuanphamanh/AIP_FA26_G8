@@ -7234,3 +7234,12 @@ hoặc dùng `make verify`. Muốn chạy LLM thật: tạo lại backend + work
     integration Postgres 16 cục bộ (b10, b11, graph, D-99, đóng ca) 42 đạt; mock_services, ml_service đạt; FE vitest 1 364 đạt, typecheck,
     eslint, check:style sạch; `make lint` sạch. e2e cần Docker — máy cloud không có (52 lỗi khởi tạo container), để CI chạy. Chưa kiểm
     trên máy demo.
+40. **18/11 sáng — thử trên máy demo sau khi deploy D-102 + xoá DB (Claude chạy trình duyệt trong app, tài khoản thử):** đạt — "Zoom và
+    7-Zip" hỏi một lần rồi cài đúng 7-Zip; "cho nv005 và nv007" hỏi một lần, chọn nv005 → hỏi số ngày → phiếu duyệt R09 "Thực hiện cho nv005";
+    L1 từ chối có lý do → người gửi nhận đúng lý do + ghi chú; E0 hiện "Yêu cầu đang chờ kỹ thuật viên nhận xử lý", L2 đóng kèm lời nhắn →
+    người gửi nhận lời nhắn, đầu trang L2 "Đã đóng · l2_01 đã xử lý"; xem quyền tách "Quyền đã hết hạn" (binh.tt); nhãn phiếu "Gia hạn chứng
+    chỉ VPN" (chau.hm, R19) duyệt xong; ca E3 chuyển cấp 3 → người gửi thấy câu chuyển cấp. Sửa thêm 2 lỗi màn hình tìm được: (1) chữ chạy bị
+    cụt (câu hỏi dừng ở "…bạn gửi một ") khi luồng SSE đóng phía màn trước `message_end` (ticket sang chờ người) — tin dở che tin chính thức tới
+    khi tải lại; sửa: đóng luồng thì chốt tin dở (`abandon`, events.ts) để tin chính thức hiện; (2) màn L2 vừa chuyển lên cấp 3 vẫn ghi
+    "l2_01 đang xử lý" → "Đã chuyển cấp" / "Đã chuyển lên cấp cao hơn". FE vitest 1 365 đạt, typecheck, eslint, check:style sạch. Đăng nhập
+    quan.tm (OTP) để TA tự thử.

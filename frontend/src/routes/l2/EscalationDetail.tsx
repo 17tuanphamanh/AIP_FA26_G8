@@ -181,7 +181,9 @@ function Detail({
           <h1 data-testid="detail-exit" className="min-w-0 grow text-title">
             <NhanMa {...exitNhan(item)} />
           </h1>
-          <span className="shrink-0 text-secondary text-ink-2">{closed ? "Đã đóng" : waitingText(item.created_at, now)}</span>
+          <span className="shrink-0 text-secondary text-ink-2">
+            {closed ? "Đã đóng" : justRaised ? "Đã chuyển cấp" : waitingText(item.created_at, now)}
+          </span>
         </div>
         <p className="text-label font-normal text-ink-2">
           Mã yêu cầu{" "}
@@ -195,7 +197,12 @@ function Detail({
               · Lý do <MaNhan loai="ly_do" ma={item.reason_detail} />
             </>
           ) : null}
-          {item.assigned_to ? ` · ${item.assigned_to} ${closed ? "đã xử lý" : "đang xử lý"}` : ""}
+          {/* Kiểm thử 18/11: vừa chuyển lên cấp 3 thì ca đã rời người nhận ở cấp 2 — không còn "… đang xử lý". */}
+          {justRaised
+            ? " · Đã chuyển lên cấp cao hơn"
+            : item.assigned_to
+              ? ` · ${item.assigned_to} ${closed ? "đã xử lý" : "đang xử lý"}`
+              : ""}
           {item.tier === 3 ? ` · Chuyển lên: ${raiseTargetLabel(item.raise_target)}${item.raised_by ? ` (bởi ${item.raised_by})` : ""}` : ""}
         </p>
       </div>
