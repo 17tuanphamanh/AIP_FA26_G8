@@ -1,0 +1,39 @@
+id: SB31-q1
+family: SB31
+source: bo_sung_rq1
+requester:
+  user_id: nv002
+  role: employee
+  dept: engineering
+  tenure_days: 720
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Cấp quyền chỉ đọc folder engineering/specs trong 30 ngày cho anh Vũ Quốc Cường (eng_head) giúp em nhé.
+- on_question_about: resource_path
+  reply: Chỉ đọc, 30 ngày
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACS-001
+  action:
+    type: grant_permission
+    target: folder:engineering/specs
+    requested_for: eng_head
+    params:
+      duration_days: 30
+      permission_level: read
+  facts:
+    has_permission_record: false
+    resource_sensitivity: medium
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

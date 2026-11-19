@@ -198,3 +198,31 @@ trang kế hoạch của nhóm.
    đủ các thông tin trên (kiểm bằng script chỉ in mã dòng, không in câu); 0 câu trùng nguyên văn với 199 câu của bộ 100 thẻ.
 4. **Lịch mới** (dừng cứng T6 20/11 giữ nguyên): gán T5 19/11 trước 12:00; gộp nhãn, phân xử T5 trưa; dựng và khoá thẻ T5 khoảng
    14:00; Dương chạy T5, bắt đầu trước 16:00; không kịp thì T6 20/11 sáng.
+
+**19/11, khoảng 14:30 — sau khi gán nhãn và phân xử, trước khi chạy.** Ghi lại diễn biến; không đổi khung, tiêu chí hay cách tính.
+
+1. **Phiếu gán:** Claude nhận hai phiếu lúc 13:46 (hạn 12:00), qua Tuấn Anh. Cả hai đủ 44/44 dòng, đúng thứ tự, không sửa ô nội dung,
+   nhãn chỉ dùng 3 giá trị, dòng nào cũng có lý do, không dòng nào đánh "Mơ hồ". sha256: Dương `53e84f3c…`, Duy Anh `02639f8a…`.
+2. **Đồng ý (mục 4):** κ = 0,425; đồng ý thô 0,818; PABAK 0,727; 8 ca lệch. Script in `ket_luan: KHONG_DAT`, nhưng mục 4 đã ghi "không
+   đặt ngưỡng chặn", nên vẫn đi tiếp và báo đủ ba số. Trong 8 ca lệch, 6 ca là HITL so với ESCALATE_L2 (cùng phía "cần người", không
+   đổi nhãn nhị phân của AUC); 2 ca `SB41`, `SB42` là AUTO so với HITL. Nếu tính nhị phân (AUTO / cần người): đồng ý 42/44, κ 0,645
+   (số phụ, không ghi trước).
+3. **Phân xử:** Claude dựng file 8 ca lệch kèm nhãn và lý do của cả hai, Tuấn Anh gửi lại cho hai người, không góp ý về nhãn. Claude có
+   ghi một dòng kiểm dữ liệu ở `SB02`: lý do của Dương nói "xem quyền" trong khi hành động của dòng là "gia hạn quyền". Ghi chú này
+   chỉ so với cột Hành động; câu đầu của `SB02` có hỏi "Nv001 đang có những quyền gì… thì gia hạn", nên lý do của Dương có thể không
+   phải dán nhầm, và ghi chú có thể đã tác động tới trao đổi ở ca này (kết quả HITL, trùng nhãn Duy Anh).
+   Kết quả: 8/8 ca thống nhất qua trao đổi, 0 ca phải lấy nhãn chặt hơn. Nhãn cuối: AUTO 4 (`SB41`–`SB44`, đều nhóm D), HITL 33,
+   ESCALATE_L2 7. `phan-xu.csv` sha256 `376310c2…`.
+4. **Lớp AUTO có 4 tình huống (< 8, < 5):** không viết thêm thẻ dự phòng. Cả 9 dòng dự phòng thuộc nhóm A–C (ý 5 của mục này, 16/11)
+   nên không thêm được ca AUTO, và mỗi thẻ thêm phải qua phiếu gán thứ hai, không kịp trước giờ chạy 16:00. Theo ý 4 (16/11), vẫn chạy;
+   kết quả (b) là số an toàn chính, AUC nhiều khả năng ra "không đủ dữ liệu".
+5. **Nguy cơ mất độc lập của người gán:** 18/11 lúc 23:08, trước khi gán, Dương nhắn trong nhóm chung rằng sẽ gán "full HITL" và nêu
+   "yêu cầu hộ ở hệ thống mình auto chuyển lên xem xét"; Duy Anh đã đọc tin này. Kiểm sau khi nhận phiếu:
+   - nhãn của Dương không phải toàn HITL: 38 HITL, 4 ESCALATE_L2, 2 AUTO;
+   - không lý do nào của hai người nhắc tới cách hệ thống xử lý;
+   - không có câu lý do nào trùng nguyên văn giữa hai người;
+   - 34/44 dòng của Dương dùng cùng một lý do, "Người gửi không phải chính chủ, cần xác minh", đúng câu 2 của `HUONG-DAN-GAN.md`.
+
+   Không loại trừ được ảnh hưởng của tin nhắn lên nhãn. Báo cáo ghi điều này là giới hạn của đợt đo.
+6. **Khoá:** `dung_the.py the` dựng 44 thẻ, dòng kiểm: `rule_coverage 100% đi lớp LLM, 0 cảnh báo seed; dataset loader nạp đủ, đủ nhãn`.
+   `dataset_sha256` = `ad8ad99e29375d41af15c3838f00d69adf753b2165419c1b089949776291ffdd` (chi tiết ở `KHOA.md`).

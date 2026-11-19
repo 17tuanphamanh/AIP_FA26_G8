@@ -1,0 +1,38 @@
+id: SB12-q1
+family: SB12
+source: bo_sung_rq1
+requester:
+  user_id: l2_01
+  role: employee
+  dept: it
+  tenure_days: 2100
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Cài giúp tôi Zoom Workplace lên máy LAP-0417 của nv002 Trần Thị Bình.
+- on_confirm: true
+gold:
+  intents:
+  - software
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-SW-001
+  action:
+    type: install_software
+    target: device:LAP-0417
+    requested_for: l2_01
+    params:
+      device_id: LAP-0417
+      software_name: zoom
+  facts:
+    device_owner_is_requester: false
+    device_registered: true
+    in_catalog: true
+    license_paid: false
+    requires_local_admin: false
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

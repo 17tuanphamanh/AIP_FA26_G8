@@ -1,0 +1,39 @@
+id: SB23-q1
+family: SB23
+source: bo_sung_rq1
+requester:
+  user_id: hr_head
+  role: employee
+  dept: hr
+  tenure_days: 2800
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- IT ơi, đặt lại mật khẩu email công ty cho bạn Phan Thu Giang (nv007) bên phòng chị với nhé.
+- on_question_about: account_type
+  reply: nv007, phòng HR
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv007
+    requested_for: nv007
+    params:
+      account_type: email
+  facts:
+    target_account_locked: true
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_lock_reason: bad_password
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

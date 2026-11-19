@@ -1,0 +1,32 @@
+id: SB03-q1
+family: SB03
+source: bo_sung_rq1
+requester:
+  user_id: l1_02
+  role: employee
+  dept: it
+  tenure_days: 640
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Tôi cần kiểm tra xem nv006 của phòng sales hiện đang còn quyền truy cập vào những thư mục nào sau khi nghỉ việc.
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: ESCALATE_L2
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACS-005
+  action:
+    type: view_permissions
+    target: user:nv006
+    requested_for: nv006
+    params: {}
+  facts:
+    target_user_status: terminated
+labels:
+  annotator_1: ESCALATE_L2
+  annotator_2: ESCALATE_L2

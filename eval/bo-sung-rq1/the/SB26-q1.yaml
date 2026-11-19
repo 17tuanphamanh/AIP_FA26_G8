@@ -1,0 +1,39 @@
+id: SB26-q1
+family: SB26
+source: bo_sung_rq1
+requester:
+  user_id: fin_head
+  role: employee
+  dept: finance
+  tenure_days: 3300
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- IT ơi cấp lại quyền truy cập vpn cho lap LAP-0342 của bạn Nguyễn Văn An (nv001) phòng Kế toán giúp chị nha.
+- on_question_about: device_id
+  reply: Cấp lại VPN, LAP-0342
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0342
+    requested_for: fin_head
+    params: {}
+  facts:
+    cert_days_to_expiry: -3
+    cert_status: expired
+    device_count: 0
+    device_owner_is_requester: false
+    device_registered: true
+    has_registered_device: false
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

@@ -1,0 +1,39 @@
+id: SB29-q1
+family: SB29
+source: bo_sung_rq1
+requester:
+  user_id: nv003
+  role: employee
+  dept: finance
+  tenure_days: 30
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Hi IT, gia hạn thêm 30 ngày quyền đang có ở thư mục finance/public-reports cho bạn Nguyễn Văn An (nv001) giúp mình nhé.
+- on_question_about: resource_path
+  reply: Thêm 30 ngày, nv001
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACS-003
+  action:
+    type: extend_permission
+    target: folder:finance/public-reports
+    requested_for: nv001
+    params:
+      duration_days: 30
+  facts:
+    existing_permission_level: read
+    has_permission_record: true
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

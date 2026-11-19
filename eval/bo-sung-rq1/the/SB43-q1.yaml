@@ -1,0 +1,36 @@
+id: SB43-q1
+family: SB43
+source: bo_sung_rq1
+requester:
+  user_id: l1_02
+  role: employee
+  dept: it
+  tenure_days: 640
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Tôi quên mk tk đăng nhập máy (AD) của mình, cấp lại giúp tôi
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: AUTO
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:l1_02
+    requested_for: l1_02
+    params:
+      account_type: ad
+  facts:
+    target_account_locked: false
+    target_account_privilege: elevated
+    target_is_service_account: false
+    target_user_status: active
+labels:
+  annotator_1: AUTO
+  annotator_2: AUTO

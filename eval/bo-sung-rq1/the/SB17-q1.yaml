@@ -1,0 +1,37 @@
+id: SB17-q1
+family: SB17
+source: bo_sung_rq1
+requester:
+  user_id: l2_01
+  role: employee
+  dept: it
+  tenure_days: 2100
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Cấp lại quyền truy cập VPN của nv003 tại máy LAP-0501 cho tôi
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: reissue_vpn_access
+    target: device:LAP-0501
+    requested_for: l2_01
+    params: {}
+  facts:
+    cert_days_to_expiry: 5
+    cert_status: valid
+    device_count: 0
+    device_owner_is_requester: false
+    device_registered: true
+    has_registered_device: false
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

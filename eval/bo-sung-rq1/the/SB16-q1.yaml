@@ -1,0 +1,39 @@
+id: SB16-q1
+family: SB16
+source: bo_sung_rq1
+requester:
+  user_id: l1_02
+  role: employee
+  dept: it
+  tenure_days: 640
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Chứng chỉ VPN của nv003 còn 5 ngày, giúp tôi gia hạn thêm cho bạn ấy.
+- on_question_about: device_id
+  reply: LAP-0501
+- on_confirm: true
+gold:
+  intents:
+  - vpn
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-VPN-004
+  action:
+    type: renew_vpn_cert
+    target: device:LAP-0501
+    requested_for: l1_02
+    params: {}
+  facts:
+    cert_days_to_expiry: 5
+    cert_status: valid
+    device_count: 0
+    device_owner_is_requester: false
+    device_registered: true
+    has_registered_device: false
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

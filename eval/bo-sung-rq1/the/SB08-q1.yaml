@@ -1,0 +1,36 @@
+id: SB08-q1
+family: SB08
+source: bo_sung_rq1
+requester:
+  user_id: l1_02
+  role: employee
+  dept: it
+  tenure_days: 640
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Bạn đặt lại mk email công ty của nv001 Nguyễn Văn An phòng kế toán cho tôi
+- on_confirm: true
+gold:
+  intents:
+  - account
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACC-001
+  action:
+    type: reset_password
+    target: user:nv001
+    requested_for: nv001
+    params:
+      account_type: email
+  facts:
+    target_account_locked: false
+    target_account_privilege: standard_user
+    target_is_service_account: false
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL

@@ -1,0 +1,41 @@
+id: SB04-q1
+family: SB04
+source: bo_sung_rq1
+requester:
+  user_id: l1_02
+  role: employee
+  dept: it
+  tenure_days: 640
+at: '2026-11-18T10:00:00+07:00'
+faults: []
+turns:
+- Chị Đỗ Thị Lan phòng tài chính đang cần quyền để tuy cập vào trong thư mục finance/public-reports, bạn cấp cho chị ấy giúp tôi, mã của chị là fin_head
+- on_question_about: resource_path
+  reply: Chỉ cho quyền đọc thôi nhé.
+- on_question_about: permission_level
+  reply: 30 ngày nhé
+- on_confirm: true
+gold:
+  intents:
+  - access
+  need_type: action
+  expected_route: HITL
+  expected_exit: null
+  approver_decision: reject
+  gold_doc_ids:
+  - KB-ACS-001
+  action:
+    type: grant_permission
+    target: folder:finance/public-reports
+    requested_for: fin_head
+    params:
+      duration_days: 30
+      permission_level: read
+  facts:
+    has_permission_record: false
+    resource_sensitivity: low
+    same_department: true
+    target_user_status: active
+labels:
+  annotator_1: HITL
+  annotator_2: HITL
