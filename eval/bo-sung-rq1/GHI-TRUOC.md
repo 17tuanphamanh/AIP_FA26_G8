@@ -226,3 +226,62 @@ trang kế hoạch của nhóm.
    Không loại trừ được ảnh hưởng của tin nhắn lên nhãn. Báo cáo ghi điều này là giới hạn của đợt đo.
 6. **Khoá:** `dung_the.py the` dựng 44 thẻ, dòng kiểm: `rule_coverage 100% đi lớp LLM, 0 cảnh báo seed; dataset loader nạp đủ, đủ nhãn`.
    `dataset_sha256` = `ad8ad99e29375d41af15c3838f00d69adf753b2165419c1b089949776291ffdd` (chi tiết ở `KHOA.md`).
+
+**19/11, khoảng 18:00 — sau khi chạy.** Ghi lại diễn biến và quyết định; không đổi chỉ số, ngưỡng đọc, mẫu hay cách loại (mục 6).
+
+1. **Lượt chạy:**
+   - Người chạy: Dương, trên máy của Dương, worktree `do-bo-sung-rq1` @ `9d2e786` (`APP_GIT_SHA` của container = HEAD).
+   - Thời gian: 15:38:08 → 16:05:05 T5 19/11, run `7eae4ad6041a`.
+   - Cấu hình như S1 cũ: hybrid, có chẩn đoán, `sampling_k5`, B2 `review` τ 0,9999, `make up RATE=loose`. `llm_roles` khớp S1 cũ
+     (`deepseek-flash`), `p_method_mismatch` 0.
+   - Kết cục: done 42, timeout 1 (`SB18-q1`), multi_leaf 1, error 0, skipped_hours 0. Ca timeout không chạy bù.
+   - sha256:
+     - `predictions.jsonl` `2b4e527d0c54…`
+     - `manifest.json` `936bbc2fe2f6…`
+     - `bang.md` `3c5f3c428e09…`
+     - `ket-qua.json` `42aa0ed61c7a…`
+   - Hai file sau commit ở `ket-qua/7eae4ad6041a/`; `chi-tiet.csv` và `predictions.jsonl` Dương giữ trên máy.
+2. **Cách dựng stack:**
+   - `.env` nối bằng liên kết; model nối qua biến compose có sẵn `MODELS_DIR`, `TEAM_MODELS_DIR`.
+   - Dương báo lệnh kiểm git diff không rỗng (chỉ có `backend/tests/unit/eval/test_bo_sung_rq1.py`). Lệnh đúng ở `LENH.md` mục 0
+     (pathspec `backend/app`) chạy lại ở `9d2e786` ra rỗng.
+   - Không đổi code chạy. Câu "`backend/` … giống hệt" ở mục 5 chính xác là `backend/app`.
+3. **`ml_error` ở `/classify` (model chặn tấn công quá 2 s):**
+   - Dương báo 4/44 thẻ: `SB01`, `SB13`, `SB17`, `SB18`, đều nhãn HITL.
+   - Số này lấy từ audit B2; `predictions.jsonl` và `ket-qua.json` không có trường này.
+   - Theo code (`ml/client.py`, `b02_screen.py`, `b2_review.py`): timeout làm lớp model bỏ trống, LLM chấm vẫn chạy, ticket đi tiếp
+     B3. B14 không đọc kết quả B2 (`b12_assess.py`, `risk/context.py`), nên `ml_error` không đổi p của lá đã tới M5. Nó chỉ có thể làm
+     một ca lẽ ra dừng ở E1 lại tới M5.
+   - Bản ghi trước không có ngưỡng `ml_error`. Dương nhắc "quy tắc T2 5%": chưa tìm thấy nguồn trong repo và Project.
+4. **Quyết định (Tuấn Anh, 19/11): không chạy lại, không thêm thẻ.** Lý do:
+   - (a) mục 5 chỉ cho một lượt;
+   - (b) `LLM_CACHE_MODE=eval` cache B14, B3, B11 không hết hạn (`risk/estimator.py`), nên chạy lại trên cùng stack chỉ phát lại phiếu
+     cũ; tắt cache thì lệch cấu hình mục 5;
+   - (c) `ml_error` không đổi p ở M5 (ý 3);
+   - (d) mục 3: "Không thêm thẻ sau khi đã chạy"; nhóm D đã dùng hết 4 tổ hợp; hai người gán không còn mù.
+
+   Hai agent chỉ đọc (kiểm chứng, phản biện) đồng ý với quyết định.
+5. **Kết quả theo mục 6:**
+   - **Chính:** bộ mới 26 lá (22 cần người / 4 AUTO), AUC 0,443, KTC 95% [0,26; 0,725]. Đọc là **"không đủ dữ liệu"** (lớp AUTO dưới
+     5 lá), đúng dự báo ở ý 1 ngày 16/11.
+   - **Phụ (a):** AUTO 4/44 thẻ đã khoá, KTC [0,025; 0,217].
+   - **Phụ (b), số an toàn chính** (tình huống cần người có p ≤ c, không áp D-34):
+     - c = 0: 0/22, cận trên 0,127;
+     - c = 0,2: **2/22**, cận trên 0,259;
+     - gộp mới + cũ: 3/35, cận trên 0,207.
+   - **Phụ (c):** KTC của AUC theo người gửi (11 người): [0,275; 0,623].
+   - **Lá bị loại:** khong_toi_m5 10, luat_quyet 7. Thêm 1 thẻ multi_leaf không có bản ghi (26 + 10 + 7 = 43).
+6. **Ghi chú để đọc đúng:**
+   - Dòng độ nhạy (nhãn khớp từ đầu) có KTC [0,25; 0,447] dưới 0,5 chỉ vì cả 2 lá AUTO có p = 1,0, nên mọi mẫu bootstrap cho AUC ≤ 0,5.
+     Dòng này thuộc "không đủ dữ liệu", không đọc là "ngược chiều".
+   - Cột "áp D-34" là điểm vận hành giả định trên p thô, không phải hành vi của lượt chạy: D-38 không cho lớp LLM tự làm.
+   - 18/26 lá có p = 1,0 (15 cần người, 3 AUTO). `sampling_k5` chỉ cho 6 mức p.
+   - `SB43`, `SB44` (nhãn AUTO) là tự đặt lại mật khẩu của tài khoản có `target_account_privilege: elevated`.
+7. **Mô tả thêm sau khi thấy số** (Dương, trước 12:00 T6 20/11; không đổi số trên):
+   - 4 lá AUTO và 2 lá cần người có p = 0,2: `kb_gap`, các yếu tố rủi ro;
+   - tỉ lệ `kb_gap` trên 26 lá;
+   - lý do của 10 lá khong_toi_m5 và 7 lá luat_quyet (lúc khoá kiểm 100% đi lớp LLM; lúc chạy, hệ thống dựng hành động khác thẻ);
+   - thẻ multi_leaf;
+   - nguồn số `ml_error`;
+   - `git_dirty` và `commit_verified` trong `manifest.json`.
+8. Chú thích ở `phan_tich.py:48` ghi "GHI-TRUOC mục 5"; ngưỡng 5 lá thật ra ở mục 6. Không sửa script sau khi chạy.

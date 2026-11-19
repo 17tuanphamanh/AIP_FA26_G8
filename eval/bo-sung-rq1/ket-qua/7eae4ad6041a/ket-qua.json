@@ -1,0 +1,412 @@
+{
+  "luot_moi": {
+    "run_id": "7eae4ad6041a",
+    "dataset_sha256": "ad8ad99e29375d41af15c3838f00d69adf753b2165419c1b089949776291ffdd",
+    "git_commit": "9d2e78681b187fd5f267ca9ef2c93ce296232f14",
+    "predictions_sha256": "2b4e527d0c54c8140439e0bf5d242eefa62ea7837643aea23270a251de038d1e",
+    "llm_roles": {
+      "llm_backend": "real",
+      "fast_model": "deepseek-flash",
+      "strong_model": "deepseek-flash"
+    }
+  },
+  "luot_cu": {
+    "run_id": "95b5a579ec7e",
+    "predictions_sha256": "22b3c254012d70d823bc9d54b6035c98b6a2006b03f24ba882d6bb837c21c64f",
+    "loai": {
+      "khong_toi_m5": 13,
+      "luat_quyet": 26,
+      "llm_khong_co_p": 1
+    }
+  },
+  "lech_cau_hinh": [],
+  "loai_moi": {
+    "luat_quyet": 7,
+    "khong_toi_m5": 10
+  },
+  "nhan_bo_moi": {
+    "n": 44,
+    "auto": 4,
+    "ty_le_auto": 0.09090909090909091,
+    "ktc95": [
+      0.025328421703450767,
+      0.21668658946527453
+    ],
+    "dem": {
+      "AUTO": 4,
+      "ESCALATE_L2": 7,
+      "HITL": 33
+    }
+  },
+  "ket_qua": [
+    {
+      "bo": "Bộ mới (chính)",
+      "n_la": 26,
+      "n_can_nguoi": 22,
+      "n_auto": 4,
+      "n_ho": 26,
+      "auc": 0.4431818181818182,
+      "auc_ktc95": [
+        0.26,
+        0.7246376811594203
+      ],
+      "bootstrap": {
+        "n_boot": 2000,
+        "seed": 20260925,
+        "n_dung": 1978,
+        "n_khong_xac_dinh": 22
+      },
+      "doc": "không đủ dữ liệu",
+      "auc_ktc95_theo_nguoi_gui": [
+        0.275,
+        0.6234848484848481
+      ],
+      "n_nguoi_gui": 11,
+      "bang_p": [
+        {
+          "p": 0.0,
+          "AUTO": 0,
+          "HITL": 0,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.2,
+          "AUTO": 0,
+          "HITL": 1,
+          "ESCALATE_L2": 1
+        },
+        {
+          "p": 0.4,
+          "AUTO": 0,
+          "HITL": 0,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.6,
+          "AUTO": 0,
+          "HITL": 2,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.8,
+          "AUTO": 1,
+          "HITL": 2,
+          "ESCALATE_L2": 1
+        },
+        {
+          "p": 1.0,
+          "AUTO": 3,
+          "HITL": 13,
+          "ESCALATE_L2": 2
+        }
+      ],
+      "van_hanh": [
+        {
+          "nguong_p": 0.0,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 4,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.6023646356164746
+          ],
+          "tinh_huong_can_nguoi": 22,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.1273054316548387,
+          "bo_sot_khong_d34": 0,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.1273054316548387
+        },
+        {
+          "nguong_p": 0.2,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 4,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.6023646356164746
+          ],
+          "tinh_huong_can_nguoi": 22,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.1273054316548387,
+          "bo_sot_khong_d34": 2,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.2594665322284372
+        }
+      ]
+    },
+    {
+      "bo": "Bộ mới — nhãn khớp từ đầu (độ nhạy)",
+      "n_la": 20,
+      "n_can_nguoi": 18,
+      "n_auto": 2,
+      "n_ho": 20,
+      "auc": 0.3611111111111111,
+      "auc_ktc95": [
+        0.25,
+        0.4473684210526316
+      ],
+      "bootstrap": {
+        "n_boot": 2000,
+        "seed": 20260925,
+        "n_dung": 1730,
+        "n_khong_xac_dinh": 270
+      },
+      "doc": "không đủ dữ liệu",
+      "bang_p": [
+        {
+          "p": 0.0,
+          "AUTO": 0,
+          "HITL": 0,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.2,
+          "AUTO": 0,
+          "HITL": 1,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.4,
+          "AUTO": 0,
+          "HITL": 0,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.6,
+          "AUTO": 0,
+          "HITL": 2,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.8,
+          "AUTO": 0,
+          "HITL": 2,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 1.0,
+          "AUTO": 2,
+          "HITL": 13,
+          "ESCALATE_L2": 0
+        }
+      ],
+      "van_hanh": [
+        {
+          "nguong_p": 0.0,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 2,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.841886116991581
+          ],
+          "tinh_huong_can_nguoi": 18,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.1533175539572782,
+          "bo_sot_khong_d34": 0,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.1533175539572782
+        },
+        {
+          "nguong_p": 0.2,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 2,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.841886116991581
+          ],
+          "tinh_huong_can_nguoi": 18,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.1533175539572782,
+          "bo_sot_khong_d34": 1,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.23766091507463977
+        }
+      ]
+    },
+    {
+      "bo": "S1 cũ (tham khảo)",
+      "n_la": 56,
+      "n_can_nguoi": 51,
+      "n_auto": 5,
+      "n_ho": 14,
+      "auc": 0.7666666666666667,
+      "auc_ktc95": [
+        0.4299122807017544,
+        0.9671292846497764
+      ],
+      "bootstrap": {
+        "n_boot": 2000,
+        "seed": 20260925,
+        "n_dung": 1981,
+        "n_khong_xac_dinh": 19
+      },
+      "doc": "chưa thấy tín hiệu",
+      "bang_p": [
+        {
+          "p": 0.0,
+          "AUTO": 1,
+          "HITL": 0,
+          "ESCALATE_L2": 2
+        },
+        {
+          "p": 0.2,
+          "AUTO": 0,
+          "HITL": 0,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.4,
+          "AUTO": 0,
+          "HITL": 2,
+          "ESCALATE_L2": 2
+        },
+        {
+          "p": 0.6,
+          "AUTO": 2,
+          "HITL": 2,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.8,
+          "AUTO": 1,
+          "HITL": 7,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 1.0,
+          "AUTO": 1,
+          "HITL": 34,
+          "ESCALATE_L2": 2
+        }
+      ],
+      "van_hanh": [
+        {
+          "nguong_p": 0.0,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 5,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.5218237501049814
+          ],
+          "tinh_huong_can_nguoi": 13,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.20581666518655062,
+          "bo_sot_khong_d34": 1,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.31633976476272974
+        },
+        {
+          "nguong_p": 0.2,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 5,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.5218237501049814
+          ],
+          "tinh_huong_can_nguoi": 13,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.20581666518655062,
+          "bo_sot_khong_d34": 1,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.31633976476272974
+        }
+      ]
+    },
+    {
+      "bo": "Gộp mới + cũ (phụ)",
+      "n_la": 82,
+      "n_can_nguoi": 73,
+      "n_auto": 9,
+      "n_ho": 40,
+      "auc": 0.6270928462709284,
+      "auc_ktc95": [
+        0.40297968913270643,
+        0.8096077967171718
+      ],
+      "bootstrap": {
+        "n_boot": 2000,
+        "seed": 20260925,
+        "n_dung": 2000,
+        "n_khong_xac_dinh": 0
+      },
+      "doc": "chưa thấy tín hiệu",
+      "bang_p": [
+        {
+          "p": 0.0,
+          "AUTO": 1,
+          "HITL": 0,
+          "ESCALATE_L2": 2
+        },
+        {
+          "p": 0.2,
+          "AUTO": 0,
+          "HITL": 1,
+          "ESCALATE_L2": 1
+        },
+        {
+          "p": 0.4,
+          "AUTO": 0,
+          "HITL": 2,
+          "ESCALATE_L2": 2
+        },
+        {
+          "p": 0.6,
+          "AUTO": 2,
+          "HITL": 4,
+          "ESCALATE_L2": 0
+        },
+        {
+          "p": 0.8,
+          "AUTO": 2,
+          "HITL": 9,
+          "ESCALATE_L2": 1
+        },
+        {
+          "p": 1.0,
+          "AUTO": 4,
+          "HITL": 47,
+          "ESCALATE_L2": 4
+        }
+      ],
+      "van_hanh": [
+        {
+          "nguong_p": 0.0,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 9,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.3362671168799428
+          ],
+          "tinh_huong_can_nguoi": 35,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.08203163585667045,
+          "bo_sot_khong_d34": 1,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.12850103634130067
+        },
+        {
+          "nguong_p": 0.2,
+          "auto_duoc_tu_xu_ly": 0,
+          "n_auto": 9,
+          "ty_le_auto": 0.0,
+          "auto_ktc95": [
+            0.0,
+            0.3362671168799428
+          ],
+          "tinh_huong_can_nguoi": 35,
+          "bo_sot": 0,
+          "bo_sot_ty_le": 0.0,
+          "bo_sot_can_tren95_1phia": 0.08203163585667045,
+          "bo_sot_khong_d34": 3,
+          "bo_sot_khong_d34_can_tren95_1phia": 0.20688091821913734
+        }
+      ]
+    }
+  ]
+}
