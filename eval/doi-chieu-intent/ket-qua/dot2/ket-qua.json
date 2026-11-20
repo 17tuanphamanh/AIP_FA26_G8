@@ -1,0 +1,189 @@
+{
+  "X_model_khop_llm": {
+    "k": 34,
+    "ktc95": [
+      0.7016473331604236,
+      0.9428977418454741
+    ],
+    "n": 40,
+    "ty_le": 0.85
+  },
+  "Y_model_khop_vang_100": {
+    "k": 38,
+    "ktc95": [
+      0.7264931090961761,
+      0.9482691705137265
+    ],
+    "n": 44,
+    "ty_le": 0.8636363636363636
+  },
+  "Y_model_khop_vang_tap_chung": {
+    "k": 34,
+    "ktc95": [
+      0.7016473331604236,
+      0.9428977418454741
+    ],
+    "n": 40,
+    "ty_le": 0.85
+  },
+  "Z_llm_khop_vang": {
+    "k": 40,
+    "ktc95": [
+      0.9119026971211976,
+      1.0
+    ],
+    "n": 40,
+    "ty_le": 1.0
+  },
+  "app_commit": "bf94df2ba3d38ac8b4d3a713494e3cd69d8c6116",
+  "bang_cheo_tap_chung": {
+    "ca_hai_dung": 34,
+    "ca_hai_sai": 0,
+    "chi_llm_sai": 0,
+    "chi_model_sai": 6
+  },
+  "bi_cat_do_dai": 0,
+  "ca_lech": [
+    {
+      "gold": "access",
+      "id": "SB03-q1",
+      "llm": "access",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 0,
+      "p_max": 0.7025705351539919,
+      "truncated": false
+    },
+    {
+      "gold": "vpn",
+      "id": "SB15-q1",
+      "llm": "vpn",
+      "llm_status": "mot_la",
+      "model": "access",
+      "n_tren_tau": 2,
+      "p_max": 0.9819110813526359,
+      "truncated": false
+    },
+    {
+      "gold": "access",
+      "id": "SB19-q1",
+      "llm": "access",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 1,
+      "p_max": 0.8222644952019162,
+      "truncated": false
+    },
+    {
+      "gold": "vpn",
+      "id": "SB26-q1",
+      "llm": "vpn",
+      "llm_status": "mot_la",
+      "model": "access",
+      "n_tren_tau": 2,
+      "p_max": 0.9650554366236298,
+      "truncated": false
+    },
+    {
+      "gold": "account",
+      "id": "SB33-q1",
+      "llm": "account",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 1,
+      "p_max": 0.9838073336245019,
+      "truncated": false
+    },
+    {
+      "gold": "account",
+      "id": "SB35-q1",
+      "llm": "account",
+      "llm_status": "mot_la",
+      "model": "out_of_scope",
+      "n_tren_tau": 1,
+      "p_max": 0.9708224986465814,
+      "truncated": false
+    }
+  ],
+  "dau_vao_sha256": "375707fbd97954a82fcb0962d9d53a37628a4275a681f8fa3e4cd57e57a87611",
+  "gop": {
+    "R1_dong_thuan": {
+      "chuyen_nguoi_them": 6,
+      "llm_sai_duoc_chan": 0,
+      "tu_nhan": 34,
+      "tu_nhan_dung": {
+        "k": 34,
+        "ktc95": [
+          0.8971820757409874,
+          1.0
+        ],
+        "n": 34,
+        "ty_le": 1.0
+      }
+    },
+    "R2_model_sua_khi_chac": {
+      "dung": {
+        "k": 35,
+        "ktc95": [
+          0.7319670826382796,
+          0.9581403738613833
+        ],
+        "n": 40,
+        "ty_le": 0.875
+      },
+      "so_lan_sua": 5,
+      "sua_dung": 0,
+      "sua_sai": 5
+    },
+    "chi_llm": {
+      "k": 40,
+      "ktc95": [
+        0.9119026971211976,
+        1.0
+      ],
+      "n": 40,
+      "ty_le": 1.0
+    }
+  },
+  "health": {
+    "models": {
+      "embed": {
+        "dim": 1024,
+        "repo": "BAAI/bge-m3",
+        "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+      },
+      "injection": {
+        "model": "injection-clf",
+        "version": "v3-seed123"
+      },
+      "intent": {
+        "model": "intent-clf",
+        "version": "v3.1-seed42-st"
+      },
+      "rerank": {
+        "repo": "BAAI/bge-reranker-v2-m3",
+        "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
+      }
+    },
+    "status": "ok"
+  },
+  "khong_nhan_nao_tren_tau": 1,
+  "macro_f1_model_100": 0.9107142857142857,
+  "model": "intent-clf",
+  "model_du_doan": {
+    "access": 14,
+    "account": 13,
+    "out_of_scope": 4,
+    "software": 7,
+    "vpn": 6
+  },
+  "n_the": 44,
+  "s1_run_id": "7eae4ad6041a",
+  "trang_thai_llm": {
+    "dung_o_b2": 3,
+    "mot_la": 40,
+    "tach_nhieu_y": 1
+  },
+  "tu_2_nhan_tren_tau": 7,
+  "version": "v3.1-seed42-st"
+}

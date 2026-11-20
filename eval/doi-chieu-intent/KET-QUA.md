@@ -1,4 +1,4 @@
-# Đối chiếu model intent với LLM — kết quả lượt chính (17/11/2026)
+# Đối chiếu model intent với LLM — kết quả lượt chính (17/11/2026; đợt 2 ngày 20/11 ở mục 4)
 
 Quy tắc tính và cách đọc đã khoá trước ở `GHI-TRUOC.md` (mục 3, 4, 6, 7). File này chỉ ghi lượt chạy và đọc số theo các quy tắc đó.
 
@@ -47,3 +47,44 @@ như cùng một phép đo.
 
 Danh sách thẻ lệch của đợt 1 nằm ở `ket-qua/dot1/ket-qua.md`. Người viết thẻ bộ bổ sung không mở file này cho tới khi đã gửi phiếu
 viết (mục 6, "Thứ tự để đợt 2 sạch").
+
+## 4. Đợt 2 — 44 thẻ bộ đo bổ sung RQ1 (20/11/2026)
+
+- **Lượt chạy:** máy demo, stack `servicedesk`, 20/11/2026 lúc 10:30 (+07). Lệnh như `GHI-TRUOC.md` mục 8.
+- **Model:** `intent-clf` bản `v3.1-seed42-st`, cùng bản với đợt 1. Phiên bản lấy từ `/health` và từ từng phản hồi.
+- **Mã:** chưa kiểm commit của máy demo hôm nay; ghi chép 18/11 là `a5e728c`. Từ `8a04a4c` (đợt 1) tới `a5e728c`, `ml_service/`
+  chỉ đổi hàng chờ của `/embed`, `/rerank`, `/count_tokens` (D-101, `5a68f42`), không đổi đường `/classify_intent`. Vì vậy số này
+  vẫn là số của bản nộp.
+- **Đầu vào:** sha256 trong dòng đầu khớp file đã commit, `375707fbd979…`.
+- **Kết quả thô:** `ket-qua/dot2/model-ra.jsonl`, sha256 `39964f1350b9…`. Bảng tính bằng `phan_tich.py`: `ket-qua/dot2/ket-qua.md`
+  và `ket-qua.json`.
+
+| | Đợt 2 — 44 thẻ |
+|---|---|
+| Model khớp nhãn vàng, cả bộ | 38/44 = 86,4% (KTC 95% 72,6–94,8%) |
+| Macro-F1 của model, 4 nhãn IT | 0,9107 |
+| Tập chung (LLM ra đúng một nhãn) | 40 |
+| Chỉ LLM, đúng trên tập chung | 40/40 |
+| Model, đúng trên tập chung | 34/40 |
+| Bảng chéo: cả hai đúng / chỉ model sai / chỉ LLM sai / cả hai sai | 34 / 6 / 0 / 0 |
+| R2 (model sửa khi p ≥ 0,75): đúng | 35/40 |
+| R2: số lần sửa / sửa đúng / sửa sai | 5 / 0 / 5 |
+| R1 (lệch thì chuyển người): tự nhận / đúng | 34 / 34 |
+| R1: chuyển người thêm / lỗi LLM được chặn | 6 / 0 |
+
+Ngoài tập chung có 4 thẻ: 3 thẻ dừng ở B2 (SB07, SB20, SB21) và SB02, thẻ một ý mà LLM tách thành 2 yêu cầu (như HB04-q12,
+HB05-q6 ở đợt 1).
+
+**Đọc theo luật đã khoá:**
+
+- **Mục 4 (chất lượng model):**
+  - Cận dưới KTC của Y là 72,6%, dưới 85%, nên thuộc trường hợp "Y thấp hơn". Đây là bằng chứng trên câu người viết cho quyết định
+    không để model quyết ở B3; ghi là giới hạn của model.
+  - 6 thẻ lệch: 4 thẻ model trả `out_of_scope` (SB03, SB19, SB33, SB35), 2 thẻ `vpn` thành `access` (SB15, SB26).
+  - 5/6 thẻ lệch có điểm cao nhất từ 0,82 trở lên, nên điểm cao của model không bảo đảm đúng trên câu người viết.
+  - So hai đợt: Y đợt 1 là 95,0% (88,7–98,4%), đợt 2 là 86,4% (72,6–94,8%). Hai KTC chồng nhau và bộ 44 thẻ nhỏ, nên không kết luận
+    model kém hơn ở đợt 2.
+- **Mục 6 (gộp R2):** R2 sửa 5 lần, không lần nào đúng, tỉ lệ đúng 87,5% thấp hơn chỉ LLM (100%). Khớp kết luận ở mục 3: trên dữ liệu
+  đo, gộp R2 không tăng độ chính xác; giữ LLM quyết (D-53).
+- **R1:** đợt 2 thêm 6 lượt chuyển người và không chặn lỗi nào, vì LLM không sai thẻ nào. Cộng ba đợt: R1 thêm 17 lượt chuyển người
+  và chặn 2 lỗi LLM, cả 2 ở đợt 1b; một trong hai lỗi đó vốn đã sang người.
