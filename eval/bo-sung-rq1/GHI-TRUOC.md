@@ -285,3 +285,41 @@ trang kế hoạch của nhóm.
    - nguồn số `ml_error`;
    - `git_dirty` và `commit_verified` trong `manifest.json`.
 8. Chú thích ở `phan_tich.py:48` ghi "GHI-TRUOC mục 5"; ngưỡng 5 lá thật ra ở mục 6. Không sửa script sau khi chạy.
+
+**20/11, khoảng 10:30 — bảng mô tả của Dương và đính chính phần 19/11.** Không đổi số ở ý 5 phần 19/11. Các ý trên giữ nguyên
+chữ; chỗ sai sửa bằng đính chính ở đây.
+
+1. **Bảng mô tả** (ý 7 phần 19/11):
+   - Dương lập trên máy đo đêm 19/11, file `ket-qua/7eae4ad6041a/bang-mo-ta.md`, sha256 `96272de358ae…`.
+     Truy vấn audit DB chỉ đọc; không chép câu người dùng.
+   - Claude nhận 3 file lượt chạy; sha256 khớp ý 1 phần 19/11. `outcomes.jsonl` `c93ba1830bd6…`. Ba file vẫn để trên máy Dương.
+   - Claude đối chiếu với 3 file đó, khớp: route, p thô, `kb_gap`, `exit_code`, kết cục; số lá theo từng loại (18/26 lá
+     `kb_gap`; 10 lá không tới M5 gồm E1 ×3, E2 ×3, E3 ×2, timeout ×1, tự giải qua KB ×1; 7 lá `decided_by = rule`; SB02
+     `multi_leaf`); `git_dirty`, `commit_verified`.
+   - Phần lấy từ audit DB và log Claude không có nguồn để đối chiếu: yếu tố rủi ro, mã luật, hành động hệ thống dựng, số
+     `ml_error`.
+2. **Đính chính ý 3 phần 19/11 — nguồn số `ml_error`:**
+   - Số 4/44 lấy từ log backend và worker (dòng `ml:classify … error=timeout`; 44 lần gọi, 1 lần mỗi thẻ), không lấy từ
+     audit B2.
+   - Audit B2 có khoá `detail.screening.ml_error`, nhưng chưa truy vấn giá trị theo lá.
+3. **Đính chính ý 3 phần 19/11 — quy tắc 5%:**
+   - Dương dẫn nguồn: Project `claude/dieu-phoi/d4-buoc2-s3-lan3-tra-12-ca.md`, mục "Quy tắc chạy T2 02/11". Đây là quy tắc
+     chạy của RQ1 chính, không thuộc bản ghi trước này.
+   - Nội dung theo Dương: `ml_error` quá 5% số lần gọi `/classify` thì lượt là "chất lượng thấp", còn giờ thì chạy lại;
+     báo cáo tính cả khi giữ và khi bỏ ca `ml_error`.
+   - Claude không thấy file này trong Project hiện có (20/11), nên ghi theo lời Dương.
+   - 4/44 = 9,1% vượt ngưỡng theo cả hai cách đọc câu gốc ("quá 5%", "≥ 4/80").
+   - Quyết định không chạy lại (ý 4) giữ nguyên. Báo cáo ghi lượt này có `ml_error` 9,1%, vượt ngưỡng 5% của quy tắc chạy
+     RQ1 chính.
+   - Bỏ 4 ca `ml_error` không đổi số nào ở ý 5. 0/26 lá chính dính lỗi: SB01, SB13 do luật quyết; SB17 là E2; SB18 timeout.
+     Phụ (a) đếm nhãn của 44 thẻ đã khoá, không phụ thuộc lượt chạy.
+4. **Đính chính ý 7 phần 19/11 — 7 lá do luật quyết:**
+   - Câu "lúc chạy, hệ thống dựng hành động khác thẻ" là suy đoán, ghi như sự thật. Bảng của Dương cho thấy loại hành động
+     trùng thẻ ở cả 7 lá.
+   - Theo `config/policy.json` (sha256 `e78f76e8…`, khớp `policy_sha256` trong manifest):
+     - R09 chỉ khớp khi `action.facts.same_department` là false;
+     - R13 chỉ khớp khi `action.facts.in_catalog` là false.
+   - Lúc khoá, `rule_coverage` không thấy luật nào khớp. Vậy dữ kiện đó lúc chạy khác lúc khoá.
+   - Chưa kiểm vì sao khác: hệ thống hiểu sai đích hay phần mềm, hay `rule_coverage` tính dữ kiện khác lúc chạy. Nhãn cả
+     7 lá là HITL, nên luật khớp không làm sai route.
+5. **E2 ×3** (SB12, SB16, SB17): chưa tra `reason_detail`, nên không suy ra nguyên nhân.
