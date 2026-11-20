@@ -121,3 +121,25 @@ git show origin/doi-chieu-intent:eval/doi-chieu-intent/dau-vao-cong5.jsonl > /tm
 docker compose cp /tmp/dau-vao-cong5.jsonl backend:/tmp/dau-vao-cong5.jsonl
 docker compose exec -T backend python /tmp/cham.py /tmp/dau-vao-cong5.jsonl > /tmp/model-ra-cong5.jsonl
 ```
+
+## 8. Đầu vào đợt 2 đã dựng 20/11, trước khi chạy model trên bộ này
+
+- Lệnh: `chuan_bi.py --app-root <checkout bf94df2> --s1 <3 file lượt đo bổ sung> --run-id 7eae4ad6041a
+  --cards eval/bo-sung-rq1/the --expect-n 44` (thẻ đã khoá ở `9d2e786`, `dataset_sha256` `ad8ad99e…ffdd`).
+- Lượt đo bổ sung chạy T5 19/11 (Dương), không phải T4 18/11 như mục 6 dự kiến. Mã chạy `9d2e786`, `backend/app` giống
+  `bf94df2` (`eval/bo-sung-rq1/GHI-TRUOC.md` mục 10, phần 19/11 ý 2).
+- File `dau-vao-dot2.jsonl`: 44 thẻ, sha256 `375707fbd979…`. Dòng đầu ghi sha256 `predictions.jsonl` `2b4e527d0c54…` và
+  `outcomes.jsonl` `c93ba1830bd6…`.
+- Trạng thái LLM: một lá 40, dừng ở B2 3 (SB07, SB20, SB21), tách nhiều ý 1 (SB02 — thẻ một ý mà hệ thống tách 2 lá).
+- Nhãn LLM đúng 40/40 trên thẻ một lá. Như đợt 1, R2 không thể sửa đúng thẻ nào; chỉ giữ nguyên hoặc làm giảm.
+- Quy tắc tính, model, mã suy luận: như mục 3, 6, không đổi. Lượt chính trên máy demo, cùng cách đợt 1 (thêm `-p servicedesk`):
+
+```bash
+git fetch origin doi-chieu-intent
+mkdir -p .verify/doi-chieu-intent/dot2
+git show origin/doi-chieu-intent:eval/doi-chieu-intent/dau-vao-dot2.jsonl > .verify/doi-chieu-intent/dot2/dau-vao.jsonl
+git show origin/doi-chieu-intent:scripts/eval/doi_chieu_intent/cham.py > .verify/doi-chieu-intent/dot2/cham.py
+docker compose -p servicedesk cp .verify/doi-chieu-intent/dot2/dau-vao.jsonl backend:/tmp/dau-vao-dot2.jsonl
+docker compose -p servicedesk cp .verify/doi-chieu-intent/dot2/cham.py backend:/tmp/cham.py
+docker compose -p servicedesk exec -T backend python /tmp/cham.py /tmp/dau-vao-dot2.jsonl > .verify/doi-chieu-intent/dot2/model-ra.jsonl
+```
